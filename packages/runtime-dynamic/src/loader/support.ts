@@ -1,173 +1,94 @@
 import {
-	getPluginDefinitionFacts,
-	getPluginInfo,
-	pluginNodeAddressOf,
+	formatPluginNodeReference,
+	type CommitSummary,
 	type Context,
-	type PluginConfigDefinition,
 	type PluginConstructor,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import { requirePluginService, type PluginConfigDefinition } from '@pluxel/core/internal'
 import {
-	isPluginEnabled,
-	runtimeModuleRuntime,
-	unknownPluginSource,
-	type RuntimePluginDependencyInfo,
-	type RuntimePluginStatusOverview,
+	pluginCatalogEntry,
+	requireRuntimePluginGraphCoordinator,
+	runtimePluginStatusOverview,
+	runtimeStatePatch,
+	type PluginApplyReport,
+	type PluginRouteCatalogSnapshot,
+	type RuntimeStatePatch,
 } from '@pluxel/runtime/internal'
 import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
-import type { PluginRegistry, PluginRegistryTransaction } from './PluginRegistry'
+import type { PluginCatalogDraft } from './PluginCatalogDraft'
 
-export type RemovalScope = 'runtime' | 'persisted'
 export type LoaderCatalogEntry = Readonly<{
 	address: PluginNodeAddress
 	ctor: PluginConstructor
 	displayName: string
 	rootExportName: string
 }>
-export type LoaderSyncModulesOptions = {
-	exclude?: Iterable<string>
-	forceRegistrations?: boolean
-}
+
+export type LoaderBatchCommitOptions = Readonly<{
+	reason?: string
+	mode?: 'cold-boot' | 'live'
+	statePatch?: RuntimeStatePatch
+}>
 
 export type LoaderBatch = {
+	declarePlugin(moduleId: string, implementation: PluginConstructor): PluginNodeAddress
 	replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<ReplaceModuleResult>
 	removeModule(moduleId: string): ReplaceModuleResult
-	getAffectedModules(): readonly string[]
-	syncModules(
-		moduleIds: Iterable<string>,
-		options?: LoaderSyncModulesOptions,
-	): Promise<readonly string[]>
+	commit(options?: LoaderBatchCommitOptions): Promise<PluginApplyReport<CommitSummary>>
 	rollback(): void
-	commit(): void
-}
-
-export class AnchorStore {
-	private readonly anchors = new Set<string>()
-	private readonly hmrAnchors = new Set<string>()
-	private version = 0
-	private snapshotVersion = -1
-	private snapshotCache: ReadonlySet<string> = new Set<string>()
-
-	has(id: string): boolean {
-		return this.anchors.has(id)
-	}
-
-	values(): IterableIterator<string> {
-		return this.anchors.values()
-	}
-
-	snapshot(): ReadonlySet<string> {
-		if (this.snapshotVersion === this.version) return this.snapshotCache
-		this.snapshotCache = new Set(this.hmrAnchors)
-		this.snapshotVersion = this.version
-		return this.snapshotCache
-	}
-
-	add(id: string): void {
-		if (this.anchors.has(id)) return
-		this.anchors.add(id)
-		if (!id.includes('/node_modules/')) this.hmrAnchors.add(id)
-		this.version++
-	}
-
-	delete(id: string): void {
-		if (!this.anchors.delete(id)) return
-		this.hmrAnchors.delete(id)
-		this.version++
-	}
-}
-
-export class AnchorJournal {
-	private readonly snapshot = new Map<string, boolean>()
-
-	constructor(private readonly anchors: AnchorStore) {}
-
-	record(id: string): void {
-		if (!this.snapshot.has(id)) this.snapshot.set(id, this.anchors.has(id))
-	}
-
-	update(id: string, isAnchor: boolean): void {
-		if (isAnchor) this.anchors.add(id)
-		else this.anchors.delete(id)
-	}
-
-	rollback(): void {
-		for (const [id, had] of this.snapshot) {
-			if (had) this.anchors.add(id)
-			else this.anchors.delete(id)
-		}
-	}
-
-	commit(): void {
-		this.snapshot.clear()
-	}
 }
 
 export class LoaderBatchSession implements LoaderBatch {
-	private readonly anchors: AnchorJournal
-	private readonly affectedModules = new Set<string>()
 	private closed = false
 
 	constructor(
 		private readonly moduleReplacer: ModuleReplacer,
-		private readonly tx: PluginRegistryTransaction,
-		anchors: AnchorStore,
-		private readonly syncRuntimeForModules: (
-			moduleIds: Iterable<string>,
-			options?: LoaderSyncModulesOptions,
-		) => Promise<readonly string[]>,
-	) {
-		this.anchors = new AnchorJournal(anchors)
-	}
+		private readonly draft: PluginCatalogDraft,
+		private readonly ctx: Context,
+	) {}
 
 	async replaceModule(
 		moduleId: string,
 		mod: Record<string, unknown>,
 	): Promise<ReplaceModuleResult> {
 		this.assertOpen()
-		const result = await this.moduleReplacer.replaceModule(moduleId, mod, {
-			tx: this.tx,
-			anchors: this.anchors,
-		})
-		for (const affected of result.affectedModules) this.affectedModules.add(affected)
-		return result
+		return await this.moduleReplacer.replaceModule(this.draft, moduleId, mod)
+	}
+
+	declarePlugin(moduleId: string, implementation: PluginConstructor): PluginNodeAddress {
+		this.assertOpen()
+		return this.draft.declarePlugin(moduleId, implementation)
 	}
 
 	removeModule(moduleId: string): ReplaceModuleResult {
 		this.assertOpen()
-		const result = this.moduleReplacer.removeModule(moduleId, {
-			tx: this.tx,
-			anchors: this.anchors,
-		})
-		for (const affected of result.affectedModules) this.affectedModules.add(affected)
-		return result
+		return this.moduleReplacer.removeModule(this.draft, moduleId)
 	}
 
-	getAffectedModules(): readonly string[] {
-		return [...this.affectedModules]
-	}
-
-	async syncModules(
-		moduleIds: Iterable<string>,
-		options?: LoaderSyncModulesOptions,
-	): Promise<readonly string[]> {
+	async commit(options: LoaderBatchCommitOptions = {}): Promise<PluginApplyReport<CommitSummary>> {
 		this.assertOpen()
-		return await this.syncRuntimeForModules(moduleIds, options)
+		const coordinator = requireRuntimePluginGraphCoordinator(this.ctx)
+		const snapshot = this.draft.commitSnapshot()
+		this.closed = true
+		try {
+			return await coordinator.update({
+				catalog: snapshot,
+				statePatch: options.statePatch,
+				reason: options.reason ?? 'dynamic-catalog-update',
+				mode: options.mode ?? (coordinator.catalogSnapshot().revision === 0 ? 'cold-boot' : 'live'),
+			})
+		} catch (error) {
+			this.draft.rollback()
+			throw error
+		}
 	}
 
 	rollback(): void {
 		if (this.closed) return
 		this.closed = true
-		this.tx.rollback()
-		this.anchors.rollback()
-	}
-
-	commit(): void {
-		if (this.closed) return
-		this.closed = true
-		this.tx.commit()
-		this.anchors.commit()
+		this.draft.rollback()
 	}
 
 	private assertOpen(): void {
@@ -176,185 +97,157 @@ export class LoaderBatchSession implements LoaderBatch {
 }
 
 export class RuntimeResolver {
-	constructor(
-		private readonly ctx: Context,
-		private readonly registry: PluginRegistry,
-	) {}
+	constructor(private readonly ctx: Context) {}
 
 	resolve(address: PluginNodeAddress): PluginConstructor | undefined {
-		return this.registry.resolve(address)
+		return this.resolveDefinition(address.definition)
 	}
 
 	resolveDefinition(address: PluginDefinitionAddress): PluginConstructor | undefined {
-		return this.registry.resolveDefinition(address)
+		return pluginCatalogEntry(
+			requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot(),
+			address,
+		)?.candidate.implementation
 	}
 
 	isRunning(address: PluginNodeAddress): boolean {
-		return this.ctx.registry.isRunning(this.ctx.registry.internNodeAddress(address))
-	}
-
-	normalizeId(moduleId: string): string {
-		return runtimeModuleRuntime(this.ctx).normalizeId(moduleId)
+		return requirePluginService(this.ctx).isRunning(address)
 	}
 }
 
 export class PluginStatusReporter {
-	constructor(
-		private readonly ctx: Context,
-		private readonly registry: PluginRegistry,
-		private readonly runtime: RuntimeResolver,
-	) {}
+	constructor(private readonly ctx: Context) {}
 
-	snapshot(): RuntimePluginStatusOverview {
-		const statuses = this.registry.listRegistered().map((item) => {
-			const isRunning = this.runtime.isRunning(item.address)
-			const isEnabled = isPluginEnabled(this.ctx.runtimeState.snapshot(), item.address)
-			return {
-				address: item.address,
-				displayName: item.displayName,
-				rootExportName: item.rootExportName,
-				isRunning,
-				isEnabled,
-				lifecycleStage: !isEnabled
-					? ('disabled' as const)
-					: isRunning
-						? ('running' as const)
-						: ('stopped' as const),
-				source: unknownPluginSource(),
-			}
-		})
-		let running = 0
-		let disabled = 0
-		for (const status of statuses) {
-			if (status.isRunning) running++
-			if (!status.isEnabled) disabled++
-		}
-		return {
-			statuses,
-			summary: {
-				total: statuses.length,
-				running,
-				disabled,
-				stopped: statuses.length - running - disabled,
-			},
-		}
+	snapshot() {
+		return runtimePluginStatusOverview(this.ctx)
 	}
 }
 
 export class PluginDependencyInspector {
-	constructor(
-		private readonly ctx: Context,
-		private readonly registry: PluginRegistry,
-	) {}
+	constructor(private readonly ctx: Context) {}
 
-	list(address: PluginNodeAddress): RuntimePluginDependencyInfo {
-		const ctor = this.registry.require(address)
-		const facts = getPluginDefinitionFacts(ctor)
-		const node = this.ctx.registry.internNodeAddress(address)
-		return facts.requires.flatMap((required, index) => {
-			const resolved = this.ctx.registry.graph.depsOf(node)[index]
-			const dependency =
-				resolved && typeof resolved === 'object' && 'definition' in resolved
-					? this.ctx.registry.nodeAddressOf(resolved as never)
-					: ({ definition: required, variant: 'default' } as const)
-			const provider = this.registry.resolve(dependency)
-			return [
-				{
-					address: dependency,
-					displayName: provider
-						? getPluginInfo(provider).displayName
-						: dependency.definition.exportName,
-					isRunning: this.ctx.registry.isRunning(this.ctx.registry.internNodeAddress(dependency)),
-				},
-			]
-		})
-	}
-}
-
-export class PluginPruner {
-	constructor(
-		private readonly registry: PluginRegistry,
-		private readonly anchors: AnchorStore,
-	) {}
-
-	pruneModule(moduleId: string, scope: RemovalScope = 'runtime'): void {
-		if (scope === 'persisted') this.registry.disablePersistedByModule(moduleId)
-		this.registry.stopModule(moduleId)
-		this.registry.undeclareModule(moduleId)
-		this.anchors.delete(moduleId)
+	list(address: PluginNodeAddress) {
+		const catalog = requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot()
+		if (!pluginCatalogEntry(catalog, address.definition)) {
+			throw new Error(`Plugin not found: ${formatPluginNodeReference(address)}`)
+		}
+		const pluginService = requirePluginService(this.ctx)
+		return pluginService.resolvedDependencies(address).map((dependency) => ({
+			address: dependency,
+			displayName:
+				pluginCatalogEntry(catalog, dependency.definition)?.candidate.declaration.displayName ??
+				dependency.definition.exportName,
+			isRunning: pluginService.isRunning(dependency),
+		}))
 	}
 }
 
 export class LoaderRegistryView {
-	constructor(private readonly registry: PluginRegistry) {}
+	private cachedCatalog: PluginRouteCatalogSnapshot | undefined
+	private cachedEntries: readonly LoaderCatalogEntry[] = Object.freeze([])
+
+	constructor(private readonly ctx: Context) {}
 
 	listRegistered(): readonly LoaderCatalogEntry[] {
-		return this.registry.listRegistered().map((item) => ({
-			address: item.address,
-			ctor: item.ctor,
-			displayName: item.displayName,
-			rootExportName: item.rootExportName,
-		}))
+		const catalog = this.catalog()
+		if (catalog === this.cachedCatalog) return this.cachedEntries
+		this.cachedCatalog = catalog
+		this.cachedEntries = Object.freeze(
+			catalog.entries.map((entry) =>
+				Object.freeze({
+					address: Object.freeze({ definition: entry.address, variant: 'default' as const }),
+					ctor: entry.candidate.implementation,
+					displayName: entry.candidate.declaration.displayName,
+					rootExportName: entry.address.exportName,
+				}),
+			),
+		)
+		return this.cachedEntries
 	}
 
 	findModuleId(address: PluginNodeAddress): string | null {
-		return this.registry.findModuleId(address)
+		return this.entry(address)?.provenance.moduleId ?? null
 	}
 
 	getCtor(address: PluginNodeAddress): PluginConstructor | undefined {
-		return this.registry.resolve(address)
+		return this.entry(address)?.candidate.implementation
 	}
 
 	getExportKey(address: PluginNodeAddress): string | undefined {
-		return this.registry.getExportKey(address)
+		return this.entry(address)?.address.exportName
 	}
 
 	getConfig(address: PluginNodeAddress): PluginConfigDefinition | undefined {
-		return this.registry.getConfig(address)
+		return this.entry(address)?.candidate.declaration.config
+	}
+
+	private catalog(): PluginRouteCatalogSnapshot {
+		return requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot()
+	}
+
+	private entry(address: PluginNodeAddress) {
+		return pluginCatalogEntry(this.catalog(), address.definition)
 	}
 }
 
 export class LoaderAnchors {
-	constructor(private readonly anchors: AnchorStore) {}
+	private cachedCatalog: PluginRouteCatalogSnapshot | undefined
+	private all: ReadonlySet<string> = new Set<string>()
+	private hmr: ReadonlySet<string> = new Set<string>()
+
+	constructor(private readonly ctx: Context) {}
 
 	has(moduleId: string): boolean {
-		return this.anchors.has(moduleId)
+		this.refresh()
+		return this.all.has(moduleId)
 	}
 
 	list(): IterableIterator<string> {
-		return this.anchors.values()
+		this.refresh()
+		return this.all.values()
 	}
 
 	snapshot(): ReadonlySet<string> {
-		return this.anchors.snapshot()
+		this.refresh()
+		return this.hmr
 	}
 
-	remove(moduleId: string): void {
-		this.anchors.delete(moduleId)
+	private refresh(): void {
+		const catalog = requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot()
+		if (catalog === this.cachedCatalog) return
+		const all = new Set<string>()
+		const hmr = new Set<string>()
+		for (const entry of catalog.entries) {
+			const moduleId = entry.provenance.moduleId
+			if (!moduleId || moduleId.startsWith('pluxel:fixed:')) continue
+			all.add(moduleId)
+			if (!moduleId.includes('/node_modules/')) hmr.add(moduleId)
+		}
+		this.cachedCatalog = catalog
+		this.all = all
+		this.hmr = hmr
 	}
 }
 
 export class LoaderControl {
-	constructor(private readonly registry: PluginRegistry) {}
+	constructor(private readonly ctx: Context) {}
 
-	enable(address: PluginNodeAddress, ctor?: PluginConstructor): Promise<void> {
-		return this.registry.enable(address, ctor)
+	async enable(address: PluginNodeAddress): Promise<void> {
+		await requireRuntimePluginGraphCoordinator(this.ctx).updateRuntimeState(
+			runtimeStatePatch({ type: 'set-enabled', node: address, enabled: true }),
+			'plugin-enable',
+		)
 	}
 
-	enablePersisted(address: PluginNodeAddress): void {
-		this.registry.enablePersisted(address)
+	async disable(address: PluginNodeAddress): Promise<void> {
+		await requireRuntimePluginGraphCoordinator(this.ctx).updateRuntimeState(
+			runtimeStatePatch({ type: 'set-enabled', node: address, enabled: false }),
+			'plugin-disable',
+		)
 	}
 
-	deactivate(
-		address: PluginNodeAddress,
-		ctor: PluginConstructor,
-		options: { runtimeOnly: boolean },
-	): void {
-		this.registry.deactivate(address, ctor, options)
-	}
-
-	stop(address: PluginNodeAddress, ctor: PluginConstructor): void {
-		this.registry.stopPlugin(address, ctor)
+	async restart(address: PluginNodeAddress): Promise<void> {
+		await requireRuntimePluginGraphCoordinator(this.ctx).restartNode(address)
 	}
 }
 
@@ -365,14 +258,4 @@ export type LoaderApi = {
 	registry: LoaderRegistryView
 	anchors: LoaderAnchors
 	control: LoaderControl
-}
-
-export function catalogEntryOf(ctor: PluginConstructor): LoaderCatalogEntry {
-	const info = getPluginInfo(ctor)
-	return {
-		address: pluginNodeAddressOf(ctor),
-		ctor,
-		displayName: info.displayName,
-		rootExportName: info.rootExportName,
-	}
 }

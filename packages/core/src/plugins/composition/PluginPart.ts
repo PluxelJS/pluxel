@@ -1,17 +1,18 @@
 import type { Context } from '@pluxel/context'
 import type { BasePlugin, PluginCleanup } from './BasePlugin'
-import { CONFIGS, type ConfigHost } from './ConfigHost'
-import { PluginHost } from './PluginHost'
-import {
-	getPluginPartConfig,
-	getPluginPartOccurrences,
-	type PluginPartClass,
+import { PLUGIN_CONFIGS, type PluginConfigs } from './PluginConfigs'
+import { OptionalPluginBindings } from './OptionalPluginBindings'
+import type {
+	PluginPartClass,
+	PluginPartDefinitionNode,
+	PluginPartDefinitionTree,
 } from '../runtime/part-definition'
 import {
 	EffectsDisposedError,
 	type EffectsMeta,
 	type EffectsScope,
 } from '../../services/effects/EffectsService'
+import { inheritPinnedPluginInfo, pinContextValue } from './context-projection'
 
 const PART_CONSTRUCTION = Symbol('pluxel:part:construction')
 const PART_HOST = Symbol('pluxel:part:host')
@@ -41,6 +42,7 @@ type PartConstruction = Readonly<{
 	readonly plugin: BasePlugin
 	readonly path: PartPath
 	readonly ancestry: ReadonlySet<Function>
+	readonly definitions: PluginPartDefinitionTree
 }>
 
 type ChildScopeFactory = {
@@ -54,34 +56,27 @@ type OwnerContextFactory = {
 type PartEntry = Readonly<{
 	readonly fieldName: string
 	readonly instance: PluginPart<any, any>
-	readonly host: PartHostRuntime<any>
+	readonly host: PluginPartsRuntime<any>
+	readonly definition: PluginPartDefinitionNode
 }>
-
-function pin(target: object, key: PropertyKey, value: unknown): void {
-	Object.defineProperty(target, key, {
-		value,
-		writable: false,
-		enumerable: false,
-		configurable: false,
-	})
-}
 
 function createPartContext(parent: Context, path: PartPath): PluginPartContext {
 	const key = path.at(-1)!
 	const ctx = (parent as unknown as OwnerContextFactory)[OWNER_CONTEXT_VIEW]({
 		name: `${parent.name}.${key}`,
 	}) as PluginPartContext
+	inheritPinnedPluginInfo(ctx, parent)
 	const info = Object.freeze({ path: Object.freeze([...path]), key })
-	pin(ctx, 'partInfo', info)
+	pinContextValue(ctx, 'partInfo', info)
 	const factory = parent.effects as unknown as ChildScopeFactory
 	const createScope = factory[EFFECTS_CHILD_SCOPE]
 	if (typeof createScope !== 'function') {
 		throw new TypeError('[pluxel/core] Effects service cannot create an owner-bound child scope')
 	}
 	const effects = createScope.call(factory, ctx, { tag: `part:${path.join('.')}` })
-	pin(ctx, 'effects', effects)
+	pinContextValue(ctx, 'effects', effects)
 	const logger = parent.logger.with({ partPath: path.join('.') })
-	pin(ctx, 'logger', logger)
+	pinContextValue(ctx, 'logger', logger)
 	return ctx
 }
 
@@ -126,13 +121,12 @@ class PluginPartInitError extends Error {
 	}
 }
 
-export interface PartHost<_Host extends PluginPartOwner> {
+export interface PluginParts<_Host extends PluginPartOwner> {
 	/** The returned Part's own Host generic remains the source of host typing. */
 	use<P extends PluginPart<any, any>>(Part: PluginPartClass<P>): P
 }
 
-class PartHostRuntime<Host extends PluginPartOwner> implements PartHost<Host> {
-	readonly #facts
+class PluginPartsRuntime<Host extends PluginPartOwner> implements PluginParts<Host> {
 	readonly #entries: PartEntry[] = []
 	#cursor = 0
 
@@ -142,12 +136,11 @@ class PartHostRuntime<Host extends PluginPartOwner> implements PartHost<Host> {
 		private readonly plugin: BasePlugin,
 		private readonly path: PartPath,
 		private readonly ancestry: ReadonlySet<Function>,
-	) {
-		this.#facts = getPluginPartOccurrences(host.constructor)
-	}
+		private readonly definitions: PluginPartDefinitionTree,
+	) {}
 
 	use<P extends PluginPart<any, any>>(Part: PluginPartClass<P>): P {
-		const fact = this.#facts[this.#cursor]
+		const fact = this.definitions[this.#cursor]
 		if (!fact) {
 			throw new Error(
 				'[pluxel/core] parts.use() was not lowered. Keep it in a normal class field and use the Pluxel toolchain.',
@@ -174,20 +167,23 @@ class PartHostRuntime<Host extends PluginPartOwner> implements PartHost<Host> {
 			plugin: this.plugin,
 			path: childPath,
 			ancestry,
+			definitions: fact.parts,
 		})
 		const instance = Reflect.construct(Part, [construction]) as P
 		if (!(instance instanceof PluginPart)) {
 			throw new TypeError(`[pluxel/core] ${Part.name || '<anonymous>'} must extend PluginPart`)
 		}
-		const childHost = instance[PART_HOST] as PartHostRuntime<any>
+		const childHost = instance[PART_HOST] as PluginPartsRuntime<any>
 		childHost.finalize()
-		this.#entries.push(Object.freeze({ fieldName: fact.fieldName, instance, host: childHost }))
+		this.#entries.push(
+			Object.freeze({ fieldName: fact.fieldName, instance, host: childHost, definition: fact }),
+		)
 		return instance
 	}
 
 	finalize(): void {
-		if (this.#cursor === this.#facts.length) return
-		const missing = this.#facts.slice(this.#cursor).map((item) => item.fieldName)
+		if (this.#cursor === this.definitions.length) return
+		const missing = this.definitions.slice(this.#cursor).map((item) => item.fieldName)
 		throw new Error(
 			`[pluxel/core] Lowered PluginPart fields were not constructed: ${missing.join(', ')}`,
 		)
@@ -208,10 +204,8 @@ class PartHostRuntime<Host extends PluginPartOwner> implements PartHost<Host> {
 				childValue && typeof childValue === 'object'
 					? (childValue as Record<string, unknown>)
 					: Object.freeze({})
-			const childKeys = new Set(
-				getPluginPartOccurrences(entry.instance.constructor).map((x) => x.fieldName),
-			)
-			const declaration = getPluginPartConfig(entry.instance.constructor)
+			const childKeys = new Set(entry.definition.parts.map((x) => x.fieldName))
+			const declaration = entry.definition.config
 			if (declaration) {
 				const own: Record<string, unknown> = {}
 				for (const [key, item] of Object.entries(childRecord)) {
@@ -233,8 +227,8 @@ export abstract class PluginPart<
 	readonly #host: Host
 	readonly #plugin: BasePlugin
 	private [PART_INIT_ACTIVE] = false
-	readonly [PART_HOST]: PartHostRuntime<this>
-	#plugins?: PluginHost
+	readonly [PART_HOST]: PluginPartsRuntime<this>
+	#plugins?: OptionalPluginBindings
 
 	protected constructor() {
 		const construction = arguments[0] as PartConstruction | undefined
@@ -244,12 +238,13 @@ export abstract class PluginPart<
 		this.#ctx = construction.ctx as unknown as PluginPartContext<C>
 		this.#host = construction.host as Host
 		this.#plugin = construction.plugin
-		this[PART_HOST] = new PartHostRuntime<this>(
+		this[PART_HOST] = new PluginPartsRuntime<this>(
 			this,
 			this.#ctx,
 			this.#plugin,
 			construction.path,
 			construction.ancestry,
+			construction.definitions,
 		)
 	}
 
@@ -265,16 +260,16 @@ export abstract class PluginPart<
 		return this.#plugin
 	}
 
-	get parts(): PartHost<this> {
+	get parts(): PluginParts<this> {
 		return this[PART_HOST]
 	}
 
-	get plugins(): PluginHost {
-		return (this.#plugins ??= new PluginHost(this.#ctx, () => this[PART_INIT_ACTIVE]))
+	get plugins(): OptionalPluginBindings {
+		return (this.#plugins ??= new OptionalPluginBindings(this.#ctx, () => this[PART_INIT_ACTIVE]))
 	}
 
-	get configs(): ConfigHost {
-		return CONFIGS
+	get configs(): PluginConfigs {
+		return PLUGIN_CONFIGS
 	}
 
 	protected init?(_signal: AbortSignal): PluginCleanup | Promise<PluginCleanup>
@@ -298,20 +293,34 @@ async function startPluginPart(part: PluginPart<any, any>, signal: AbortSignal):
 	}
 }
 
-export function createRootPartHost(plugin: BasePlugin, ctx: Context): PartHostRuntime<BasePlugin> {
-	return new PartHostRuntime(plugin, ctx, plugin, Object.freeze([]), new Set([plugin.constructor]))
+export function createRootPluginParts(
+	plugin: BasePlugin,
+	ctx: Context,
+	definitions: PluginPartDefinitionTree,
+): PluginPartsRuntime<BasePlugin> {
+	return new PluginPartsRuntime(
+		plugin,
+		ctx,
+		plugin,
+		Object.freeze([]),
+		new Set([plugin.constructor]),
+		definitions,
+	)
 }
 
-export function finalizePluginParts(host: PartHost<BasePlugin>): void {
-	;(host as PartHostRuntime<BasePlugin>).finalize()
+export function finalizePluginParts(host: PluginParts<BasePlugin>): void {
+	;(host as PluginPartsRuntime<BasePlugin>).finalize()
 }
 
-export function startPluginParts(host: PartHost<BasePlugin>, signal: AbortSignal): Promise<void> {
-	return (host as PartHostRuntime<BasePlugin>).start(signal)
+export function startPluginParts(
+	host: PluginParts<BasePlugin>,
+	signal: AbortSignal,
+): Promise<void> {
+	return (host as PluginPartsRuntime<BasePlugin>).start(signal)
 }
 
-export function assignPluginPartConfig(host: PartHost<BasePlugin>, value: unknown): void {
-	;(host as PartHostRuntime<BasePlugin>).assignConfig(value)
+export function assignPluginPartConfig(host: PluginParts<BasePlugin>, value: unknown): void {
+	;(host as PluginPartsRuntime<BasePlugin>).assignConfig(value)
 }
 
 export type { PluginPartClass } from '../runtime/part-definition'

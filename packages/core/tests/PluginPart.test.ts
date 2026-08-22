@@ -167,6 +167,18 @@ describe('owner-bound PluginPart', () => {
 			expect(owner.branch.leaf.plugin).toBe(owner)
 			expect(owner.branch.ctx.partInfo.path).toEqual(['branch'])
 			expect(owner.branch.leaf.ctx.partInfo.path).toEqual(['branch', 'leaf'])
+			for (const partContext of [owner.branch.ctx, owner.branch.leaf.ctx]) {
+				expect(Object.hasOwn(partContext, 'pluginInfo')).toBe(true)
+				expect(partContext.pluginInfo).toBe(owner.ctx.pluginInfo)
+				const mutable = partContext as unknown as { pluginInfo: unknown }
+				expect(() => {
+					mutable.pluginInfo = {}
+				}).toThrow(TypeError)
+				expect(() => Object.defineProperty(partContext, 'pluginInfo', { value: {} })).toThrow(
+					TypeError,
+				)
+				expect(Reflect.deleteProperty(partContext, 'pluginInfo')).toBe(false)
+			}
 			expect(owner.config).toEqual({ ownerValue: 'owner-custom' })
 			expect(owner.branch.config).toEqual({ branchValue: 11 })
 			expect(owner.branch.leaf.config).toEqual({ leafValue: 21 })

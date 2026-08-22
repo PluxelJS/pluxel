@@ -62,6 +62,7 @@ function materializePluginOverview(
 		const isRunning = plugin.status.isRunning
 		const isEnabled = plugin.status.isEnabled
 		const lifecycleStage = plugin.status.lifecycleStage
+		const availability = plugin.status.availability
 		const sourceKind = plugin.status.source.kind
 		const sourceModuleId = plugin.status.source.moduleId
 		const sourcePackageName = plugin.status.source.packageName
@@ -79,6 +80,7 @@ function materializePluginOverview(
 					isRunning: Boolean(isRunning),
 					isEnabled: isEnabled !== false,
 					lifecycleStage: lifecycleStage ?? PluginStatusEntryLifecycleStage.stopped,
+					availability: availability ?? 'unavailable',
 					source: {
 						kind: sourceKind ?? PluginSourceInfoKind.unknown,
 						moduleId: sourceModuleId ?? null,

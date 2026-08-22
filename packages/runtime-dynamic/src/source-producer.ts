@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import type { Context } from '@pluxel/core'
+import { requireRouteCapability } from '@pluxel/runtime/internal'
 import type { DynamicPluginSource } from './sources'
 
 export type DynamicPluginSourceRequirementCode =
@@ -22,18 +23,10 @@ type SourceDeclarationReader = {
 }
 
 export function requireDynamicPluginSource(ctx: Context, source: DynamicPluginSource): void {
-	const route = (
-		ctx as Context & {
-			runtimeRoute?: { dynamicPluginSources?: SourceDeclarationReader }
-		}
-	).runtimeRoute
-	const rootRoute = (
-		ctx.root as Context & {
-			runtimeRoute?: { dynamicPluginSources?: SourceDeclarationReader }
-		}
-	).runtimeRoute
-	const reader = route?.dynamicPluginSources ?? rootRoute?.dynamicPluginSources
-	if (!reader) {
+	let reader: SourceDeclarationReader
+	try {
+		reader = requireRouteCapability(ctx, 'dynamicPluginSources')
+	} catch {
 		throw new DynamicPluginSourceRequirementError(
 			'DYNAMIC_SOURCE_REQUIRED',
 			'Dynamic plugin source publication requires a dynamic runtime host.',

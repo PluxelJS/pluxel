@@ -1,10 +1,41 @@
 import {
 	pluginDefinitionAddressEqual,
+	pluginDefinitionIndexKey,
 	pluginNodeAddressEqual,
+	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import type { RuntimeStateDraft, RuntimeStateSnapshot } from './RuntimeStateStore'
+
+export type RuntimeStateReadIndex = Readonly<{
+	enabledKeys: ReadonlySet<string>
+	forkIdsByDefinition: ReadonlyMap<string, readonly string[]>
+	forkNodeKeys: ReadonlySet<string>
+}>
+
+const readIndexes = new WeakMap<RuntimeStateSnapshot, RuntimeStateReadIndex>()
+
+/** Builds immutable-state lookup indexes once per published snapshot identity. */
+export function runtimeStateReadIndex(state: RuntimeStateSnapshot): RuntimeStateReadIndex {
+	const cached = readIndexes.get(state)
+	if (cached) return cached
+	const index: RuntimeStateReadIndex = Object.freeze({
+		enabledKeys: new Set(state.enabled.map(pluginNodeIndexKey)),
+		forkIdsByDefinition: new Map(
+			state.forks.map((entry) => [pluginDefinitionIndexKey(entry.definition), entry.forkIds]),
+		),
+		forkNodeKeys: new Set(
+			state.forks.flatMap((entry) =>
+				entry.forkIds.map((forkId) =>
+					pluginNodeIndexKey({ definition: entry.definition, variant: 'fork', forkId }),
+				),
+			),
+		),
+	})
+	readIndexes.set(state, index)
+	return index
+}
 
 export function samePluginDefinitionAddress(
 	left: PluginDefinitionAddress,
@@ -18,7 +49,7 @@ export function samePluginNodeAddress(left: PluginNodeAddress, right: PluginNode
 }
 
 export function isPluginEnabled(state: RuntimeStateSnapshot, node: PluginNodeAddress): boolean {
-	return state.enabled.some((candidate) => samePluginNodeAddress(candidate, node))
+	return runtimeStateReadIndex(state).enabledKeys.has(pluginNodeIndexKey(node))
 }
 
 export function setPluginEnabled(
@@ -55,7 +86,6 @@ export function listForkIds(
 	definition: PluginDefinitionAddress,
 ): readonly string[] {
 	return (
-		state.forks.find((entry) => samePluginDefinitionAddress(entry.definition, definition))
-			?.forkIds ?? []
+		runtimeStateReadIndex(state).forkIdsByDefinition.get(pluginDefinitionIndexKey(definition)) ?? []
 	)
 }

@@ -10,6 +10,7 @@
 import { readFile } from 'node:fs/promises'
 import type { Program } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
+import { PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import { normalizeSchemaSource } from '../utils/configHandler.ts'
 import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat.ts'
 import {
@@ -24,7 +25,7 @@ import {
 export interface ConfigSourcePluginOptions {
 	include?: string | string[]
 	exclude?: string | string[]
-	/** @default '@pluxel/runtime' */
+	/** @default '@pluxel/runtime/toolchain' */
 	metadataHelperImportSource?: string
 }
 
@@ -65,11 +66,14 @@ const AUTHORING_PACKAGES = new Set([
 	'@pluxel/runtime/test',
 	'@pluxel/test',
 ])
-const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime'
+const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
 	const helperSource =
 		options.metadataHelperImportSource?.trim() || DEFAULT_METADATA_HELPER_IMPORT_SOURCE
+	if (!helperSource.endsWith('/toolchain')) {
+		throw new TypeError('[pluxel-config] metadataHelperImportSource must name a /toolchain subpath')
+	}
 	const include = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',
@@ -125,7 +129,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 							? '__pluxelSetPluginConfig'
 							: '__pluxelSetPluginPartConfig'
 					lines.push(
-						`${helper}(${declaration.className}, { fieldName: ${JSON.stringify(declaration.fieldName)}, schema: ${declaration.schemaExpression}, source: ${JSON.stringify(declaration.source)} });`,
+						`${helper}(${declaration.className}, { abiVersion: ${PLUGIN_LOWERING_ABI_VERSION}, fieldName: ${JSON.stringify(declaration.fieldName)}, schema: ${declaration.schemaExpression}, source: ${JSON.stringify(declaration.source)} });`,
 					)
 				}
 				return { code: `${code}\n${lines.join('\n')}\n`, map: null }

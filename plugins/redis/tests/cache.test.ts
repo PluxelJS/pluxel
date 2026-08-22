@@ -1,5 +1,5 @@
-import { v } from '@pluxel/runtime'
-import { Plugin, withHost } from '@pluxel/test'
+import { type PluginConstructor, v } from '@pluxel/runtime'
+import { Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -81,6 +81,11 @@ class FakeRedisPlugin extends Redis {
 	}
 }
 
+function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+	host.add(plugins)
+	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+}
+
 describe('@pluxel/redis cache backend', () => {
 	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
 		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\u{1f680}:' }).success).toBe(
@@ -90,8 +95,8 @@ describe('@pluxel/redis cache backend', () => {
 	})
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
-		await withHost(async (host) => {
-			host.add([FakeRedisPlugin, RedisCacheBackendPlugin])
+		await withRuntimeHost(async (host) => {
+			addEnabled(host, [FakeRedisPlugin, RedisCacheBackendPlugin])
 			await host.commit()
 			const backend = host.require(RedisCacheBackendPlugin)
 			const redis = host.require(FakeRedisPlugin).fake
@@ -119,8 +124,8 @@ describe('@pluxel/redis cache backend', () => {
 	})
 
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
-		await withHost(async (host) => {
-			host.add([FakeRedisPlugin, RedisCacheBackendPlugin])
+		await withRuntimeHost(async (host) => {
+			addEnabled(host, [FakeRedisPlugin, RedisCacheBackendPlugin])
 			host.cfg(RedisCacheBackendPlugin).set({
 				keyPrefix: 'pluxel[prod]:cache:',
 				scanCount: 3,

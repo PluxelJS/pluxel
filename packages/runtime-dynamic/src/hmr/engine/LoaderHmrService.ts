@@ -5,9 +5,10 @@ import {
 	type CommitSummary,
 	type Context,
 	formatPluginNodeReference,
-	isPluginNodeSlot,
 	type PluginConstructor,
+	type PluginNodeSlot,
 } from '@pluxel/core'
+import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import { dirname, resolve } from 'pathe'
 import {
 	createServer,
@@ -20,6 +21,7 @@ import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	findNearestPackageRoot,
 	isPluginEnabled,
+	requireRuntimeStateStore,
 	resolveGlobPatterns,
 	setPkgrootCacheLimit,
 	startTimer,
@@ -53,14 +55,15 @@ function assertHmrExecutionOk(
 	result: HmrExecutionResult | undefined,
 	label: string,
 ): asserts result is HmrExecutionResult | undefined {
-	if (!result || result.commitResult.ok) return
+	if (!result) return
+	const commitResult = result.commitResult
+	if (commitResult.ok) return
+	const commitError = 'err' in commitResult ? commitResult.err : undefined
 	const stage = result.executeError ? 'execute' : result.injectError ? 'inject' : 'commit'
 	const message =
-		result.executeError ??
-		result.injectError ??
-		String(result.commitResult.err ?? `${stage} failed`)
+		result.executeError ?? result.injectError ?? String(commitError ?? `${stage} failed`)
 	throw new Error(`${label} failed during ${stage}: ${message}`, {
-		cause: result.commitResult.err,
+		cause: commitError,
 	})
 }
 
@@ -127,19 +130,6 @@ export interface LoaderHmrConfig {
 	 * Paths may be absolute or relative to `cwd`.
 	 */
 	clientEntries?: string[]
-	/**
-	 * When commit fails due to missing dependencies, automatically disable the offending plugins
-	 * (persisted) and retry commit so the rest of the batch can still load.
-	 *
-	 * @default true
-	 */
-	commitAutoDisableMissingDependencies?: boolean
-	/**
-	 * Safety cap for commit auto-disable retries.
-	 *
-	 * @default 8
-	 */
-	commitAutoDisableMaxPasses?: number
 	/** Fixed catalog evaluated by the canonical config runner. Internal route wiring only. */
 	fixedPlugins?: readonly PluginConstructor[]
 	/** Canonical owner derived from the config module path. Internal route wiring only. */
@@ -653,8 +643,6 @@ export class LoaderHmrService {
 		this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
 			dbgModules: this.dbg.modules,
 			useRequireShims: this.useRequireShims,
-			autoDisableMissingDependencies: this.config.commitAutoDisableMissingDependencies ?? true,
-			autoDisableMaxPasses: this.config.commitAutoDisableMaxPasses ?? 8,
 		})
 
 		this.batchProcessor = new HmrBatchProcessor(
@@ -703,9 +691,10 @@ export class LoaderHmrService {
 	private async bootstrapBaseline(): Promise<void> {
 		// Ensure on-disk config is loaded before any "enabled in config" decisions happen.
 		// (warmup/executeFiles/batches rely on it).
-		const configService = this.ctx.configService
+		const configService = requireConfigService(this.ctx)
 		if (!configService.isReady) await configService.ready
-		if (!this.ctx.runtimeState.isReady) await this.ctx.runtimeState.ready
+		const runtimeState = requireRuntimeStateStore(this.ctx)
+		if (!runtimeState.isReady) await runtimeState.ready
 
 		// 1) Bridge host modules (singleton identity).
 		await this.bridgeHostModules()
@@ -799,12 +788,14 @@ export class LoaderHmrService {
 	}
 
 	private attachCommitTracker() {
-		const unsubscribe = this.ctx.registry.subscribeCommitted((summary: CommitSummary) => {
-			const epoch = this.inFlightBatchEpoch
-			if (epoch !== null) {
-				this.commitByBatchEpoch.set(epoch, summary)
-			}
-		})
+		const unsubscribe = requirePluginService(this.ctx).subscribeCommitted(
+			(summary: CommitSummary) => {
+				const epoch = this.inFlightBatchEpoch
+				if (epoch !== null) {
+					this.commitByBatchEpoch.set(epoch, summary)
+				}
+			},
+		)
 		this.ctx.effects.defer(unsubscribe, { tag: 'LoaderHmrService.commitTracker' })
 	}
 
@@ -822,11 +813,8 @@ export class LoaderHmrService {
 		})
 	}
 
-	private formatIdentifier(id: unknown): string {
-		if (isPluginNodeSlot(id)) {
-			return formatPluginNodeReference(this.ctx.registry.nodeAddressOf(id))
-		}
-		return String(id)
+	private formatIdentifier(id: PluginNodeSlot): string {
+		return formatPluginNodeReference(requirePluginService(this.ctx).nodeAddressOf(id))
 	}
 
 	private enrichBatchSummary(summary: HmrBatchSummary, epoch: number): HmrBatchSummary {
@@ -843,7 +831,7 @@ export class LoaderHmrService {
 			this.formatIdentifier(id),
 		)
 		const restarted = commit.pluginChanges.restarted.map((id) => this.formatIdentifier(id))
-		const autoDisabled = commit.runtimeUpdate.autoDisabled.map((id) => this.formatIdentifier(id))
+		const autoDisabled: readonly string[] = []
 		const pluginChanges = { added, replaced, removed, availabilityChanged, restarted }
 		const pluginLifecycleReport = {
 			ok: commit.lifecycleReport.ok,
@@ -1180,6 +1168,7 @@ export class LoaderHmrService {
 		const hotspots =
 			reason === 'update' ? collectHotspots(this.timing, (id) => this.path.pretty(id)) : []
 
+		const pluginService = requirePluginService(this.ctx)
 		const report = await buildHmrOperationalReport({
 			reason,
 			cwd: this.hostRoot,
@@ -1189,9 +1178,9 @@ export class LoaderHmrService {
 			rootsPretty: scope.rootsPretty,
 			entriesByRoot: scope.entriesByRoot,
 			registryView,
-			isPluginEnabled: (address) => isPluginEnabled(this.ctx.runtimeState.snapshot(), address),
-			isRunning: (address) =>
-				this.ctx.registry.isRunning(this.ctx.registry.internNodeAddress(address)),
+			isPluginEnabled: (address) =>
+				isPluginEnabled(requireRuntimeStateStore(this.ctx).snapshot(), address),
+			isRunning: (address) => pluginService.isRunning(address),
 			resolveBareWorkspaceEntry: (specifier) =>
 				this.workspaceEntryResolver.resolveBareWorkspaceEntry(specifier),
 			resolveLimit: this.config.reportResolveLimit,

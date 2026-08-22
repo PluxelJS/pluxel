@@ -5,7 +5,7 @@ import {
 } from '@pluxel/core'
 
 import { type AnyElysiaApp } from '../../services/http/elysia'
-import { requireRouteCapability } from '../../runtime/capabilities'
+import { requireRuntimePluginGraphCoordinator } from '../../internal/reconciliation'
 import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 import { RUNTIME_INTERNAL_API_BASE } from '../../web/paths'
 import { debugSchemaSourceQuery } from './models'
@@ -25,18 +25,19 @@ interface PluginSchemaInfo {
 }
 
 function getPluginSchemaInfos(ctx: PluginContext): PluginSchemaInfo[] {
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const configMetadata = requireRouteCapability(ctx, 'configMetadata')
+	const catalog = requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot()
 	const result: PluginSchemaInfo[] = []
 
-	for (const entry of catalog.listRegistered()) {
-		const config = configMetadata.getConfig(entry.address)
+	for (const entry of catalog.entries) {
+		const declaration = entry.candidate.declaration
+		const address: PluginNodeAddress = { definition: declaration.address, variant: 'default' }
+		const config = declaration.config
 		result.push({
-			address: entry.address,
-			addressKey: pluginNodeIndexKey(entry.address),
-			domId: `plugin-${pluginNodePhysicalKey(entry.address)}`,
-			displayName: entry.displayName,
-			rootExportName: entry.rootExportName,
+			address,
+			addressKey: pluginNodeIndexKey(address),
+			domId: `plugin-${pluginNodePhysicalKey(address)}`,
+			displayName: declaration.displayName,
+			rootExportName: declaration.address.exportName,
 			hasSchema: !!config,
 			hasSchemaSource: !!config?.source,
 			fieldName: config?.fieldName,

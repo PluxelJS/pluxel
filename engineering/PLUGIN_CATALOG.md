@@ -5,13 +5,20 @@ catalog layout，不是插件能力、依赖、生命周期或 Workbench Extensi
 
 ## Ownership
 
-- `@Plugin`、`PluginInfo`、插件包 manifest 和 Workbench Contract 不声明 catalog group。
+- `@Plugin`、`PluginNodeInfo`、插件包 manifest 和 Workbench Contract 不声明 catalog group。
 - Workbench backend 在启用时拥有分类解析与偏好持久化；Workbench disabled 时不创建分类 service、文件或 route 成本。
 - 宿主只能通过顶层 `workbench.pluginGroups` 注册产品分类；插件作者不能在运行时创建、重命名或锁定分类。
 - 用户可以在已注册分类之间移动和排序插件，也可以明确放回未分组区，但不能创建、重命名或删除分类。
 
 这保持 core host-free，并避免把 UI 布局误当成插件身份。route `navigation.group`、tab group 和插件目录分类是
 三个独立契约，不能共享 ID 或状态语义。
+
+分类的唯一 Plugin 事实源是 runtime coordinator 的 committed immutable catalog/status projection。dynamic loader 只拥有当前 batch 的 unpublished
+draft，Workbench 不能读取它或维护第二份 committed registry。source/package provenance 从 catalog entry 读取；running 状态不决定 classification。
+
+catalog、偏好与布局全部以 canonical definition/node address 及其 index key 建 Map。读取 disabled、stopped、durable orphan 或 invalid address 只能做
+non-creating lookup/decode，不得调用 Core intern、创建 definition/node slot、materialized record、Context、effects 或 artifact lease。Workbench registry
+只为真正 running 且 mount contribution 的 owner 持有资源；catalog read model 不能借用该 registry 表示 availability。
 
 ## Host declaration
 
@@ -75,8 +82,10 @@ definition assignment 可以保留，以便相同 address 重新出现时恢复�
 写入 API 虽接收当前 node 列表以保持 UI mutation 直接，但先折叠并验证 definition family；必须拒绝未知 group、伪造 package group、
 未知 node、重复 membership 和 split-family 输入，不能把无效输入静默保存。
 
-有效布局由一次 catalog 扫描和偏好覆盖得到；实现不得按插件启动状态建立第二份分组图。disabled/stopped 插件仍在
-catalog 中分类，HMR 和 dynamic source add/remove 只使 catalog projection 重新计算，不参与 plugin lifecycle transaction。
+有效布局由一次 shared status/catalog projection 扫描和偏好覆盖得到；每次 projection 对 pinned revision 只建立一次 node/definition key 索引，分类
+实现不得按插件启动状态建立第二份分组图。disabled/stopped 插件仍在 catalog 中分类，HMR 和 dynamic source add/remove 只使 catalog projection
+重新计算，不参与 plugin lifecycle transaction。复杂度为 catalog/status records 加偏好 records 的线性构建与输出排序，不得为每个 group 重复全
+catalog 扫描。
 
 ## Persistence
 
@@ -93,6 +102,7 @@ reader/writer 只接受 version 3 definition address。其他版本、非法 add
 - Workbench disabled 零分类 service/持久化写入；
 - static definition address 规则、dynamic exact package、最长 prefix 与冲突拒绝；
 - disabled/stopped catalog entry 仍分类；
+- disabled/orphan read 和无效 mutation 不创建 Core slot/record 或 Workbench artifact owner；
 - 用户移动、明确未分组、恢复默认、排序和无效 mutation 拒绝；
 - 新 fork 继承 family 分类、同 definition variants 不可拆组；
 - 新安装 package 自动出现、卸载消失、同 address 重装恢复偏好；

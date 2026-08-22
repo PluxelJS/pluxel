@@ -40,12 +40,10 @@ function isAbstract(node: OxNode): boolean {
 
 function directPluginBase(node: OxNode): boolean {
 	const base = unwrapExpression(node.superClass)
-	if (base?.type === 'Identifier') {
-		return base.name === 'BasePlugin' || base.name === 'ForkablePlugin'
-	}
+	if (base?.type === 'Identifier') return base.name === 'BasePlugin'
 	if (base?.type !== 'MemberExpression') return false
 	const name = getStaticPropertyName(base.property, Boolean(base.computed))
-	return name === 'BasePlugin' || name === 'ForkablePlugin'
+	return name === 'BasePlugin'
 }
 
 function directPluginPart(node: OxNode): boolean {

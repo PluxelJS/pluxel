@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin, definePluginRef, withCoreHost, type CoreHost } from '@pluxel/core/test'
-import { clonePluginDefinition } from '../src/plugins/decorators/decorator/api'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { lowerTestReplacement } from './lowered-replacement'
 
 type NodeName = 'provider' | 'required' | 'optional' | 'independent'
 type EffectName = NodeName | 'optional-integration'
@@ -188,7 +188,11 @@ type Trace = {
 }
 
 describe('PluginService lifecycle model traces', () => {
-	beforeAll(() => clonePluginDefinition(LifecycleModelProvider, LifecycleModelProviderReplacement))
+	beforeAll(() => {
+		lowerTestReplacement(LifecycleModelProvider, LifecycleModelProviderReplacement, {
+			plugin: { displayName: 'Lifecycle model provider replacement' },
+		})
+	})
 	beforeEach(resetLifecycleModelState)
 
 	it('converges to the same running projection across batched and incremental add orders', async () => {
@@ -267,18 +271,18 @@ describe('PluginService lifecycle model traces', () => {
 		expect(optionalProviderGenerations).toEqual([1, 2])
 	})
 
-	it('serializes a commit queued while a provider generation is starting', async () => {
+	it('rejects an overlapping transaction and converges after the active commit', async () => {
 		await withCoreHost(async (host) => {
 			host.add([LifecycleModelQueuedProvider, LifecycleModelQueuedConsumer])
 			const initialCommit = host.commit()
 			await queuedInitStarted
 
-			host.remove(LifecycleModelQueuedProvider)
-			const removalCommit = host.commit()
+			expect(() => host.remove(LifecycleModelQueuedProvider)).toThrow(/another update is active/i)
 
 			releaseQueuedInit()
 			await initialCommit
-			await removalCommit
+			host.remove(LifecycleModelQueuedProvider)
+			await host.commit()
 
 			expect(host.has(LifecycleModelQueuedProvider)).toBe(false)
 			expect(host.has(LifecycleModelQueuedConsumer)).toBe(false)

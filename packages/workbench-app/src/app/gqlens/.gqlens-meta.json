@@ -1,11 +1,11 @@
 {
   "version": 1,
   "codegenVersion": "0.3.0",
-  "schemaHash": "ed106690315d0914738beacab07374f703bcff2e112229030bb62c76a69f624d",
+  "schemaHash": "a071f4b4c2901a727f0f2cff322b5851164520de08f80ba8eb5b395932fd29fa",
   "optionsHash": "565989a7dfb5134b576c47c1177cb75f856b36ace7c44ea9954db7454679ecb0",
   "files": {
-    "types.ts": "d5b32c89f1d1a84d06fa37c331c6508d3ae209648eced6db409d25d3422dec5b",
+    "types.ts": "12774a0ca70c6cca68bd7a2d37224a10b6b0eb9148351986e5fbc2887cb02df2",
     "invalidation.ts": "bf107fffeddafe2c205bb0e7ccccc5a9dd10ea0d91b4b70f61af43ca47c75549",
-    "accessor.ts": "b0ec48a8568f176eabb3502040f95af8074b7e2721a7eb8d2f37c1df2468c854"
+    "accessor.ts": "a4c2a828a2a4a10116f4ba1d15c59e216b08dbf71487040a15fa394949c3f40d"
   }
 }

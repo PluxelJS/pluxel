@@ -1,10 +1,7 @@
 import type { Context } from '@pluxel/context'
+import { requirePluginService } from '../../internal/plugin-service'
 import type { Cleanup, DisposableLike } from '../../services/effects/EffectsService'
 import { isPluginRef, type PluginRef } from '../runtime/definition'
-
-type OptionalResolver = {
-	resolvePluginRef<T>(ref: PluginRef<T>, consumer: Context): T | undefined
-}
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 	return (
@@ -23,7 +20,7 @@ function isDisposable(value: unknown): value is DisposableLike {
 }
 
 /** Init-only optional integration facade. Optional edges are static lowered facts. */
-export class PluginHost {
+export class OptionalPluginBindings {
 	constructor(
 		private readonly ctx: Context,
 		private readonly isInitActive: () => boolean,
@@ -36,10 +33,7 @@ export class PluginHost {
 		if (!isPluginRef(ref)) {
 			throw new TypeError('[pluxel/core] plugins.use() expects a lowered module-level PluginRef')
 		}
-		const registry = (this.ctx as unknown as { registry?: OptionalResolver }).registry
-		if (!registry || typeof registry.resolvePluginRef !== 'function') {
-			throw new Error('[pluxel/core] plugins.use() requires the Plugin registry')
-		}
+		const registry = requirePluginService(this.ctx)
 		const plugin = registry.resolvePluginRef(ref, this.ctx) as T | undefined
 		if (plugin === undefined) return
 		const resource = setup(plugin)

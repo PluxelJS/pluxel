@@ -263,7 +263,7 @@ function markBlockedNode<T>(
 export type TeardownStrategyOptions = {
 	/**
 	 * Bounded concurrency for stopping independent subtrees.
-	 * Default is 1 to preserve legacy "sequential stop" behavior.
+	 * Default is 1 for deterministic sequential teardown.
 	 */
 	concurrency?: number
 }

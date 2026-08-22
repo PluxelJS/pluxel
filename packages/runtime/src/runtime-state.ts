@@ -12,4 +12,7 @@ export type {
 	RuntimeStateSnapshot,
 	RuntimeStateStoreConfig,
 	RuntimeStateStoreMode,
+	RuntimeStateVersionedSnapshot,
 } from './services/RuntimeStateStore'
+
+export { RuntimeStateRevisionConflictError } from './services/RuntimeStateStore'

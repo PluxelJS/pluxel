@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import pkg from '../package.json'
 
@@ -127,18 +127,30 @@ async function loadOfficialCapabilityUncached<T>(
 	cwd: string,
 ): Promise<T> {
 	const projectRequire = createRequire(resolve(cwd, 'package.json'))
-	const rootSpecifier = metadata.owner
+	const ownerManifestSpecifier = `${metadata.owner}/package.json`
 	const importSpecifier =
 		metadata.subpath === '.' ? metadata.owner : `${metadata.owner}/${metadata.subpath.slice(2)}`
 
-	let ownerRootEntry: string
+	let ownerManifestPath: string
 	try {
-		ownerRootEntry = projectRequire.resolve(rootSpecifier)
+		ownerManifestPath = projectRequire.resolve(ownerManifestSpecifier)
 	} catch (cause) {
 		throw ownerMissingError(metadata, cwd, cause)
 	}
 
-	const ownerManifest = await findPackageManifest(ownerRootEntry, metadata.owner, cwd)
+	const ownerManifest = {
+		path: ownerManifestPath,
+		data: readPackageManifest(await readFile(ownerManifestPath, 'utf8'), ownerManifestPath),
+	}
+	if (ownerManifest.data.name !== metadata.owner) {
+		throw ownerMissingError(
+			metadata,
+			cwd,
+			new Error(
+				`Resolved owner manifest ${ownerManifestPath} declares ${ownerManifest.data.name ?? 'no package name'}.`,
+			),
+		)
+	}
 	await assertOwnerVersion(metadata, ownerManifest, cwd)
 
 	let resolvedImport: string
@@ -153,38 +165,6 @@ async function loadOfficialCapabilityUncached<T>(
 	} catch (cause) {
 		throw importFailedError(metadata, resolvedImport, cwd, cause)
 	}
-}
-
-async function findPackageManifest(
-	resolvedEntry: string,
-	expectedName: string,
-	cwd: string,
-): Promise<{ path: string; data: PackageManifest }> {
-	let dir = dirname(resolvedEntry)
-	while (true) {
-		const manifestPath = resolve(dir, 'package.json')
-		try {
-			const data = readPackageManifest(await readFile(manifestPath, 'utf8'), manifestPath)
-			if (data.name === expectedName) return { path: manifestPath, data }
-		} catch (error) {
-			if (!isFileNotFound(error)) throw error
-		}
-
-		const parent = dirname(dir)
-		if (parent === dir) break
-		dir = parent
-	}
-
-	throw new OfficialCapabilityError({
-		code: 'PLUXEL_CAPABILITY_OWNER_MISSING',
-		owner: expectedName,
-		subpath: '.',
-		cwd,
-		message: [
-			`Resolved ${expectedName}, but could not locate its package.json from ${resolvedEntry}.`,
-			`Run ${installHint(expectedName)} in the project rooted at ${cwd}.`,
-		].join('\n'),
-	})
 }
 
 async function assertOwnerVersion(
@@ -286,32 +266,10 @@ function getStartupCwd(): string {
 	return typeof value === 'string' && value ? value : process.cwd()
 }
 
-function installHint(owner: string): string {
-	switch (owner) {
-		case '@pluxel/rolldown':
-			return '`pnpm add -D @pluxel/rolldown`'
-		case '@pluxel/runtime-dynamic':
-			return '`pnpm add -D @pluxel/runtime-dynamic`'
-		case '@pluxel/market':
-			return '`pnpm add -D @pluxel/market`'
-		default:
-			return `\`pnpm add -D ${owner}\``
-	}
-}
-
 function readPackageManifest(source: string, path: string): PackageManifest {
 	const parsed = JSON.parse(source) as unknown
 	if (!parsed || typeof parsed !== 'object') {
 		throw new TypeError(`Invalid package manifest: ${path}`)
 	}
 	return parsed as PackageManifest
-}
-
-function isFileNotFound(error: unknown): boolean {
-	return (
-		typeof error === 'object' &&
-		error !== null &&
-		'code' in error &&
-		(error as { code?: unknown }).code === 'ENOENT'
-	)
 }

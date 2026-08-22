@@ -6,27 +6,29 @@ import type { WorkbenchConfig } from './workbench-config'
 //
 // Vite/loader-hmr-specific config keys must live in @pluxel/runtime-dynamic/hmr, so runtime remains a clean kernel.
 
+export interface RuntimeContextConfig {
+	/** ConfigService storage file path (workspace-relative unless absolute). */
+	path?: string
+	/** Workspace profile (generic). */
+	profile?: string
+	/** HTTP runtime settings. Workbench internals are owned by route launchers. */
+	http?: HttpServiceConfig
+	/** Host admin surface enablement and access policy. */
+	adminAccess?: AdminAccessConfig
+	/** Optional Workbench Plane capability and access policy. */
+	workbench?: WorkbenchConfig
+	/** @internal Deployment-owned root containing assembled Workbench artifacts. */
+	workbenchArtifactRoot?: string
+	/** @internal Dynamic/package hosts provide package artifact resolution explicitly. */
+	workbenchArtifactResolver?: (
+		root: import('@pluxel/core').Context,
+		owner: import('@pluxel/core').PluginNodeAddress,
+		artifactName: string,
+	) => string | null | Promise<string | null>
+}
+
 declare module '@pluxel/core' {
 	namespace Context {
-		interface Config {
-			/** ConfigService storage file path (workspace-relative unless absolute). */
-			path?: string
-			/** Workspace profile (generic). */
-			profile?: string
-			/** HTTP runtime settings. Workbench internals are owned by route launchers. */
-			http?: HttpServiceConfig
-			/** Host admin surface enablement and access policy. */
-			adminAccess?: AdminAccessConfig
-			/** Optional Workbench Plane capability and access policy. */
-			workbench?: WorkbenchConfig
-			/** @internal Deployment-owned root containing assembled Workbench artifacts. */
-			workbenchArtifactRoot?: string
-			/** @internal Dynamic/package hosts provide package artifact resolution explicitly. */
-			workbenchArtifactResolver?: (
-				root: import('@pluxel/core').Context,
-				owner: import('@pluxel/core').PluginNodeAddress,
-				artifactName: string,
-			) => string | null | Promise<string | null>
-		}
+		interface Config extends RuntimeContextConfig {}
 	}
 }

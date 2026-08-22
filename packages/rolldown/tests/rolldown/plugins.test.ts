@@ -42,8 +42,12 @@ describe('configSourcePlugin', () => {
 		`)
 
 		expect(result?.code).toContain('__setPluginPartConfig as __pluxelSetPluginPartConfig')
-		expect(result?.code).toContain('__pluxelSetPluginPartConfig(CachePart, { fieldName: "config"')
-		expect(result?.code).toContain('__pluxelSetPluginConfig(OwnerPlugin, { fieldName: "config"')
+		expect(result?.code).toContain(
+			'__pluxelSetPluginPartConfig(CachePart, { abiVersion: 1, fieldName: "config"',
+		)
+		expect(result?.code).toContain(
+			'__pluxelSetPluginConfig(OwnerPlugin, { abiVersion: 1, fieldName: "config"',
+		)
 	})
 
 	it('keeps Vite/Rolldown object hook filtering compatible', () => {
@@ -65,10 +69,10 @@ describe('configSourcePlugin', () => {
 
 		expect(result?.code).toContain('// [pluxel-config] Injected definition')
 		expect(result?.code).toContain(
-			'import { __setPluginConfig as __pluxelSetPluginConfig } from "@pluxel/runtime"',
+			'import { __setPluginConfig as __pluxelSetPluginConfig } from "@pluxel/runtime/toolchain"',
 		)
 		expect(result?.code).toContain(
-			'__pluxelSetPluginConfig(OrdersPlugin, { fieldName: "config", schema: OrdersConfig, source: "v.object({batchSize:v.optional(v.number(),10)})" })',
+			'__pluxelSetPluginConfig(OrdersPlugin, { abiVersion: 1, fieldName: "config", schema: OrdersConfig, source: "v.object({batchSize:v.optional(v.number(),10)})" })',
 		)
 		expect(result?.code).not.toContain('__registerConfigBinding__')
 		expect(result?.code).not.toContain('__setConfigLayout__')
@@ -126,9 +130,15 @@ describe('configSourcePlugin', () => {
 					config = this.configs.use(v.object({ enabled: v.boolean() }))
 				}
 			`,
-			'@scope/runtime',
+			'@scope/runtime/toolchain',
 		)
-		expect(result?.code).toContain('from "@scope/runtime"')
+		expect(result?.code).toContain('from "@scope/runtime/toolchain"')
+	})
+
+	it('rejects a generated-helper root alias', () => {
+		expect(() => configSourcePlugin({ metadataHelperImportSource: '@pluxel/runtime' })).toThrow(
+			'/toolchain subpath',
+		)
 	})
 
 	it.each(['@pluxel/core/test', '@pluxel/runtime/test', '@pluxel/test'])(

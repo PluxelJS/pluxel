@@ -1,8 +1,7 @@
 import { BasePlugin } from '../../composition/BasePlugin'
-import type { PluginIdentifier, SubclassOf } from '../../types'
-import type { PluginMarker, PluginOptions } from './types'
-
-const markers = new WeakMap<Function, PluginMarker>()
+import type { PluginToken, SubclassOf } from '../../types'
+import { registerPluginMarker } from './marker'
+import type { PluginOptions } from './types'
 
 function validateOptions(input: PluginOptions | undefined): PluginOptions {
 	if (input === undefined) return Object.freeze({})
@@ -10,7 +9,7 @@ function validateOptions(input: PluginOptions | undefined): PluginOptions {
 		throw new TypeError('[pluxel/core] @Plugin options must be an object')
 	}
 	for (const key of Object.keys(input)) {
-		if (key !== 'displayName' && key !== 'startTimeoutMs') {
+		if (key !== 'displayName' && key !== 'startTimeoutMs' && key !== 'forkable') {
 			throw new TypeError(`[pluxel/core] @Plugin options has unknown field ${key}`)
 		}
 	}
@@ -30,13 +29,18 @@ function validateOptions(input: PluginOptions | undefined): PluginOptions {
 	) {
 		throw new TypeError('[pluxel/core] @Plugin startTimeoutMs must be a positive finite integer')
 	}
+	const forkable = input.forkable
+	if (forkable !== undefined && forkable !== true) {
+		throw new TypeError('[pluxel/core] @Plugin forkable must be the literal true')
+	}
 	return Object.freeze({
 		...(displayName === undefined ? {} : { displayName }),
 		...(startTimeoutMs === undefined ? {} : { startTimeoutMs }),
+		...(forkable === undefined ? {} : { forkable }),
 	})
 }
 
-function isBasePluginSubclass(value: unknown): value is PluginIdentifier {
+function isBasePluginSubclass(value: unknown): value is PluginToken {
 	return (
 		typeof value === 'function' &&
 		(value === BasePlugin || BasePlugin.prototype.isPrototypeOf((value as Function).prototype))
@@ -44,11 +48,11 @@ function isBasePluginSubclass(value: unknown): value is PluginIdentifier {
 }
 
 export function Plugin(options?: PluginOptions): ClassDecorator
-export function Plugin<B extends PluginIdentifier>(
+export function Plugin<B extends PluginToken>(
 	provider: B,
 	options?: PluginOptions,
 ): <C extends SubclassOf<B>>(ctor: C) => void
-export function Plugin(a?: PluginOptions | PluginIdentifier, b?: PluginOptions) {
+export function Plugin(a?: PluginOptions | PluginToken, b?: PluginOptions) {
 	const provider = typeof a === 'function' ? a : undefined
 	const options = validateOptions(provider ? b : (a as PluginOptions | undefined))
 	if (provider && !isBasePluginSubclass(provider)) {
@@ -61,20 +65,9 @@ export function Plugin(a?: PluginOptions | PluginIdentifier, b?: PluginOptions) 
 		if (provider && !provider.prototype.isPrototypeOf(ctor.prototype)) {
 			throw new TypeError('[pluxel/core] @Plugin target must extend its abstract provider')
 		}
-		if (markers.has(ctor)) throw new Error('[pluxel/core] Plugin constructor is already decorated')
-		markers.set(
+		registerPluginMarker(
 			ctor,
 			Object.freeze({ options, ...(provider === undefined ? {} : { providerClass: provider }) }),
 		)
 	}
-}
-
-export function getPluginMarker(ctor: Function): PluginMarker | undefined {
-	return markers.get(ctor)
-}
-
-export function clonePluginMarker(from: Function, to: Function): void {
-	const marker = markers.get(from)
-	if (!marker) throw new Error('[pluxel/core] Cannot fork a constructor without @Plugin')
-	markers.set(to, marker)
 }

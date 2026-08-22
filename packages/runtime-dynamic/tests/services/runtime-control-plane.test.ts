@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { pluginNodeAddressOf } from '@pluxel/core'
+import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import type { PluginApplyReport } from '@pluxel/runtime/web'
 import { RuntimeRpcApi } from '../../../runtime/src/api/http/rpc/RuntimeRpcApi'
 import { installWorkbench } from '../../../runtime/src/services/workbench'
 import { createHmrTestContext } from '../support/hmr-context'
-import { lowerTestPlugin } from '../support/lowered-plugin'
+import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 
 async function loadModule(
 	fixture: ReturnType<typeof createHmrTestContext>,
@@ -24,25 +26,30 @@ describe('runtime control-plane RPC', () => {
 	it('exposes plugin status, config and dependency usecases through direct methods', async () => {
 		const fixture = createRpcFixture()
 
-		@Plugin()
-		class Provider extends BasePlugin {
+		abstract class ProviderToken extends BasePlugin {
+			abstract readonly kind: string
+		}
+		lowerTestAbstract(ProviderToken)
+
+		@Plugin(ProviderToken)
+		class Provider extends ProviderToken {
 			readonly kind = 'primary'
 		}
-		lowerTestPlugin(Provider)
+		lowerTestPlugin(Provider, { provides: pluginDefinitionAddressOf(ProviderToken) })
 
-		@Plugin({ displayName: 'Provider alt' })
-		class ProviderAlt extends BasePlugin {
+		@Plugin(ProviderToken, { displayName: 'Provider alt' })
+		class ProviderAlt extends ProviderToken {
 			readonly kind = 'alt'
 		}
-		lowerTestPlugin(ProviderAlt)
+		lowerTestPlugin(ProviderAlt, { provides: pluginDefinitionAddressOf(ProviderToken) })
 
 		@Plugin()
 		class Consumer extends BasePlugin {
-			constructor(readonly provider: Provider) {
+			constructor(readonly provider: ProviderToken) {
 				super()
 			}
 		}
-		lowerTestPlugin(Consumer, { requires: [Provider] })
+		lowerTestPlugin(Consumer, { requires: [ProviderToken] })
 
 		await loadModule(fixture, 'Provider.ts', { Provider })
 		await loadModule(fixture, 'ProviderAlt.ts', { ProviderAlt })
@@ -51,57 +58,100 @@ describe('runtime control-plane RPC', () => {
 		const provider = pluginNodeAddressOf(Provider)
 		const providerAlt = pluginNodeAddressOf(ProviderAlt)
 		const consumer = pluginNodeAddressOf(Consumer)
+		const providerToken = pluginDefinitionAddressOf(ProviderToken)
 
 		expect(await fixture.rpc.pluginConfig(consumer)).toMatchObject({
-			ok: true,
-			config: {},
-			defaults: {},
+			ok: false,
+			code: 'config_not_found',
+			state: 'unchanged',
 		})
 		expect(await fixture.rpc.patchPluginConfig(consumer, { missing: true })).toMatchObject({
 			ok: false,
 			code: 'config_not_found',
 		})
+		const providerSelection = await fixture.rpc.selectPluginBaseProvider({
+			consumer,
+			token: providerToken,
+			provider,
+		})
+		expect(providerSelection).toMatchObject({
+			ok: true,
+			status: 'applied',
+			report: { core: { status: 'unchanged' } },
+		})
+		if (providerSelection.ok) expectBrowserSafeReport(providerSelection.report)
 
 		const status = await fixture.rpc.applyPluginStatusActions([
 			{ address: provider, action: 'enable' },
+			{ address: providerAlt, action: 'enable' },
 			{ address: consumer, action: 'enable' },
 		])
 		expect(status.ok).toBe(true)
 		expect(status.results.map((entry) => [entry.address, entry.ok, entry.lifecycleStage])).toEqual([
 			[provider, true, 'running'],
+			[providerAlt, true, 'running'],
 			[consumer, true, 'running'],
 		])
 
-		expect(fixture.core.registry.getInstance(Consumer)?.provider.kind).toBe('primary')
-		expect(fixture.rpc.pluginDependencies(consumer)).toMatchObject([
-			{ address: provider, displayName: 'Provider' },
-		])
-		expect(fixture.rpc.inspectPluginDependencies(consumer)).toMatchObject([
-			{
-				index: 0,
-				token: provider.definition,
-				kind: 'plugin',
-				effective: provider,
-			},
-		])
+		expect(
+			(requirePluginService(fixture.ctx).getInstance(consumer) as Consumer | undefined)?.provider
+				.kind,
+		).toBe('primary')
+		expect(await fixture.rpc.pluginDependencies(consumer)).toMatchObject({
+			ok: true,
+			items: [{ address: provider, displayName: 'Provider' }],
+		})
+		expect(await fixture.rpc.inspectPluginDependencies(consumer)).toMatchObject({
+			ok: true,
+			items: [
+				{
+					index: 0,
+					token: providerToken,
+					kind: 'abstract',
+					effective: provider,
+				},
+			],
+		})
 
-		await expect(
-			fixture.rpc.setPluginDependencyTarget({
-				consumer,
-				index: 0,
-				provider: providerAlt,
-			}),
-		).resolves.toEqual({ ok: true })
+		const dependencySelection = await fixture.rpc.setPluginDependencyTarget({
+			consumer,
+			index: 0,
+			provider: providerAlt,
+		})
+		expect(dependencySelection).toMatchObject({
+			ok: true,
+			status: 'applied',
+			report: { core: { status: 'committed' } },
+		})
+		if (dependencySelection.ok) expectBrowserSafeReport(dependencySelection.report)
 
-		expect(fixture.core.registry.getInstance(Consumer)?.provider.kind).toBe('alt')
-		expect(fixture.rpc.inspectPluginDependencies(consumer)).toMatchObject([
-			{
-				index: 0,
-				token: provider.definition,
-				kind: 'plugin',
-				selected: providerAlt,
-				effective: providerAlt,
-			},
-		])
+		expect(
+			(requirePluginService(fixture.ctx).getInstance(consumer) as Consumer | undefined)?.provider
+				.kind,
+		).toBe('alt')
+		expect(await fixture.rpc.inspectPluginDependencies(consumer)).toMatchObject({
+			ok: true,
+			items: [
+				{
+					index: 0,
+					token: providerToken,
+					kind: 'abstract',
+					selected: providerAlt,
+					effective: providerAlt,
+				},
+			],
+		})
 	})
 })
+
+function expectBrowserSafeReport(report: PluginApplyReport): void {
+	expect(() => JSON.stringify(report)).not.toThrow()
+	const visit = (value: unknown): void => {
+		if (!value || typeof value !== 'object') return
+		expect(Object.isFrozen(value)).toBe(true)
+		expect(Object.getOwnPropertySymbols(value)).toEqual([])
+		expect(Object.hasOwn(value, 'graph')).toBe(false)
+		for (const child of Object.values(value)) visit(child)
+	}
+	visit(report)
+}

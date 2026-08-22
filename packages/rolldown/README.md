@@ -2,6 +2,8 @@
 
 Rolldown/Vite 工具链入口：
 
+该包不提供 root 或 `./workspace` 聚合入口；按实际能力导入下面的明确 subpath，避免加载无关工具链。
+
 - `@pluxel/rolldown/build`：`pluginPackage()` 与 `staticApplication()` 通过 tsdown 驱动 Rolldown，并组合同一个
   `createPluginBuildPipeline()`，统一 Plugin definition lowering、preprocessor/macro、lint、单 ObjectSchema config facts、
   Workbench source transform 和输出检查。`pluginPackage()` 的单次 semantic pass 验证 package-root named export，提取

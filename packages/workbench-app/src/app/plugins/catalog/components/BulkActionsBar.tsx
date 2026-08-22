@@ -1,7 +1,7 @@
 import { ActionIcon, Badge, Group, Paper, Text } from '@mantine/core'
-import { IconBan, IconPlayerStop, IconPower, IconX } from '@tabler/icons-react'
+import { IconBan, IconPower, IconX } from '@tabler/icons-react'
 
-export type BulkAction = 'stop' | 'disable' | 'enable' | 'clear'
+export type BulkAction = 'disable' | 'enable' | 'clear'
 
 type Props = {
 	count: number
@@ -23,16 +23,6 @@ export function BulkActionsBar({ count, busy, onAction }: Props) {
 					</Text>
 				</div>
 				<Group gap={4} wrap="nowrap">
-					<ActionIcon
-						size="sm"
-						variant="subtle"
-						disabled={busy}
-						onClick={() => onAction('stop')}
-						title="停止"
-						aria-label="停止"
-					>
-						<IconPlayerStop size={14} />
-					</ActionIcon>
 					<ActionIcon
 						size="sm"
 						variant="subtle"

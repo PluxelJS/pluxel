@@ -18,11 +18,12 @@ import {
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { IconPlus, IconRefresh } from '@tabler/icons-react'
+import { IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	ensurePluginFork,
 	inspectPluginDependencies,
+	removePluginFork,
 	rpcErrorMessage,
 	setPluginDependencyTarget,
 	useRuntimeTransportClient,
@@ -105,21 +106,29 @@ export function DependencyOverridesCard() {
 					provider,
 				}),
 			)
-			if (!result.ok) throw new Error(result.error || result.code || '操作失败')
+			if (result.ok === false) throw new Error(result.error || result.code || '操作失败')
 		},
 		[owner, transport],
 	)
 
 	const createFork = useCallback(
-		async (base: PluginNodeAddress, forkId: string): Promise<PluginNodeAddress> => {
+		async (
+			base: PluginNodeAddress,
+			forkId: string,
+			requirement: PluginDependencyState['token'],
+		): Promise<PluginNodeAddress> => {
 			const result = await transport.withRpc((rpc) =>
-				ensurePluginFork(rpc, { base, forkId, enable: true }),
+				ensurePluginFork(rpc, {
+					base,
+					forkId,
+					enable: true,
+					selectFor: { consumer: owner, requirement },
+				}),
 			)
-			if (!result.ok || !result.fork)
-				throw new Error(result.error || result.code || '创建 fork 失败')
+			if (result.ok === false) throw new Error(result.error || result.code || '创建 fork 失败')
 			return result.fork
 		},
-		[transport],
+		[owner, transport],
 	)
 
 	const handleForkCreate = useCallback(
@@ -156,8 +165,7 @@ export function DependencyOverridesCard() {
 						try {
 							const normalizedForkId = forkId.trim()
 							if (!normalizedForkId) throw new Error('forkId 不能为空')
-							const fork = await createFork(base.address, normalizedForkId)
-							await setDependencyTarget(row.index, fork)
+							const fork = await createFork(base.address, normalizedForkId, row.token)
 							await triggerRefresh()
 							notify({
 								title: 'Fork 已创建',
@@ -175,7 +183,63 @@ export function DependencyOverridesCard() {
 				},
 			})
 		},
-		[createFork, notify, setDependencyTarget, triggerRefresh],
+		[createFork, notify, triggerRefresh],
+	)
+
+	const handleForkRemove = useCallback(
+		(fork: Extract<PluginNodeAddress, { variant: 'fork' }>) => {
+			openConfirmModal({
+				title: '删除 Fork',
+				children: (
+					<Text size="sm">
+						将删除 {formatPluginNodeReference(fork)}{' '}
+						的运行时意图、配置与日志覆盖。插件业务数据不会被清理。
+					</Text>
+				),
+				labels: { confirm: '删除', cancel: '取消' },
+				confirmProps: { color: 'red' },
+				onConfirm: () => {
+					void (async () => {
+						try {
+							const result = await transport.withRpc((rpc) =>
+								removePluginFork(rpc, {
+									base: { definition: fork.definition, variant: 'default' },
+									forkId: fork.forkId,
+								}),
+							)
+							await triggerRefresh()
+							if (result.ok === false) {
+								const detail =
+									result.code === 'fork_referenced'
+										? `仍被 ${result.references.length} 个依赖覆盖引用，请先清除引用。`
+										: result.code === 'persistence_failed'
+											? `${result.error}（状态：${result.state}）`
+											: result.error
+								notify({ title: '删除 Fork 失败', message: detail, color: 'red' })
+								return
+							}
+							notify({
+								title:
+									result.status === 'already-absent'
+										? 'Fork 已不存在'
+										: result.status === 'removed-with-lifecycle-issues'
+											? 'Fork 已删除，但停止阶段存在问题'
+											: 'Fork 已删除',
+								message: formatPluginNodeReference(result.fork),
+								color: result.status === 'removed-with-lifecycle-issues' ? 'yellow' : 'green',
+							})
+						} catch (error) {
+							notify({
+								title: '删除 Fork 失败',
+								message: rpcErrorMessage(error, '操作失败'),
+								color: 'red',
+							})
+						}
+					})()
+				},
+			})
+		},
+		[notify, transport, triggerRefresh],
 	)
 
 	if (state === null || rows.length === 0) return null
@@ -218,6 +282,13 @@ export function DependencyOverridesCard() {
 					const defaultLabel = row.providerDefault
 						? formatPluginNodeReference(row.providerDefault)
 						: '未设置'
+					const forkOptions = row.options.filter(
+						(
+							option,
+						): option is typeof option & {
+							address: Extract<PluginNodeAddress, { variant: 'fork' }>
+						} => option.address.variant === 'fork',
+					)
 					return (
 						<Box key={`${row.index}:${tokenLabel}`} style={{ minWidth: 0 }}>
 							<Stack gap={6}>
@@ -291,6 +362,33 @@ export function DependencyOverridesCard() {
 										</ActionIcon>
 									</Tooltip>
 								</Group>
+								{forkOptions.length > 0 ? (
+									<Stack gap={4}>
+										<Text size="xs" c="dimmed">
+											Fork 节点
+										</Text>
+										<Group gap="xs" wrap="wrap">
+											{forkOptions.map((option) => (
+												<Group key={pluginNodeIndexKey(option.address)} gap={4} wrap="nowrap">
+													<Badge variant="outline" color="gray" radius="sm" size="sm">
+														{option.displayName}
+													</Badge>
+													<Tooltip label="删除此 Fork" withArrow>
+														<ActionIcon
+															size="xs"
+															variant="subtle"
+															color="red"
+															disabled={loading}
+															onClick={() => handleForkRemove(option.address)}
+														>
+															<IconTrash size={12} />
+														</ActionIcon>
+													</Tooltip>
+												</Group>
+											))}
+										</Group>
+									</Stack>
+								) : null}
 							</Stack>
 							{index < rows.length - 1 ? <Divider my="sm" /> : null}
 						</Box>

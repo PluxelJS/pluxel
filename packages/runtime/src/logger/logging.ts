@@ -656,10 +656,16 @@ export function requireActiveRuntimeLogging(): RuntimeLogging {
 	return logging
 }
 
-export function requireContextRuntimeLogging(ctx: Context): RuntimeLogging {
-	const logging = requireActiveRuntimeLogging()
+export function getContextRuntimeLogging(ctx: Context): RuntimeLogging | undefined {
+	const logging = getActiveRuntimeLogging()
+	if (!logging) return undefined
 	const rootId = (ctx.root.config.logger as LoggerServiceConfig | undefined)?.rootId
-	if (rootId !== logging.resolved.root.id) {
+	return rootId === logging.resolved.root.id ? logging : undefined
+}
+
+export function requireContextRuntimeLogging(ctx: Context): RuntimeLogging {
+	const logging = getContextRuntimeLogging(ctx)
+	if (!logging) {
 		throw new Error('Context is not bound to the active RuntimeLogging root')
 	}
 	return logging

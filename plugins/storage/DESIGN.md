@@ -17,9 +17,10 @@ exceptional platform lifecycle -> custom @Plugin(S3, ...)
 官方 concrete provider 只有 `S3Plugin`。local/remote 是同一资源角色的互斥启动配置，anonymous/vault 是 remote authentication
 配置；它们都随 config replacement 使用同一 graph lifecycle，不需要独立 enablement、依赖选择或插件 identity。
 
-`S3` 继承 `ForkablePlugin`，只发布 `client: S3Client`。`S3Client` 从 `S3mini` 自动取得除下划线 transport internals 外的完整作者面，
+`S3` 是普通 abstract capability token，只发布 `client: S3Client`；`S3Plugin` 通过
+`@Plugin(S3, { forkable: true })` 显式允许多实例。`S3Client` 从 `S3mini` 自动取得除下划线 transport internals 外的完整作者面，
 本地实现直接 `implements S3Client`，真实 `S3mini` 无需 adapter。S3 是 raw bucket capability，key prefix、metadata schema 与删除权由 consumer 决定。多个 bucket
-通过同一个 plugin type 的 fork、独立 config 和 dependency override 表达。
+通过同一个 concrete provider definition 的 fork、独立 config 和 dependency override 表达。其他 provider 必须独立决定是否安全支持 fork。
 
 只有实现拥有不同的外部资源生命周期或 s3mini 无法表达的平台认证/transport 时，才新增 `@Plugin(S3, ...)` provider。
 
@@ -35,7 +36,8 @@ ordinary config 只保存 Vault namespace/key 引用，不保存 access key。va
 不会构造半配置 client。credential snapshot 每 generation 读取一次，rotation 通过正常 restart/replacement 生效。
 
 provider effect 在 stop、replacement、rollback 和 shutdown 时清除 active client。remote 会 abort 仍在进行的 custom fetch；
-local 会 abort/等待已接纳文件操作。随后访问 token 抛带 `S3_NOT_RUNNING` code 的 `S3NotRunningError`。
+local 会 abort/等待已接纳文件操作。旧 caller facade 由 Core generation gate 拒绝；此前取得的 local client handle
+继续以带 `S3_NOT_RUNNING` code 的 `S3NotRunningError` 报告 withdrawal。
 
 ## 本地数据布局
 

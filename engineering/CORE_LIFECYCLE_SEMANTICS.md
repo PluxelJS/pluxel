@@ -22,16 +22,21 @@
 Core commit 的当前顺序是：
 
 ```text
-draft graph -> verify graph -> compute stop/start plan -> stop old generations -> confirm graph -> start new generations -> publish CommitSummary
+draft records/graph -> verify -> prepare stop/start plan -> stop old generations
+                    -> confirm records/graph -> start new generations -> publish CommitSummary
 ```
 
 关键边界：
 
-- verify 失败不会替换 committed graph，也不会停止当前 running generations；
+- verify/prepare 失败会丢弃全部 pending definition、node、binding 和 restart overlay，不替换 committed graph，也不停止当前 generations；
+- lifecycle transition 开始即越过 point of no return；之后的 config/start/drain failure 进入 report，不把已关闭 admission 的旧 generation
+  伪装成可恢复 snapshot；
 - stop 使用 required + optional ordering 的 consumer-first 顺序；
 - start 使用 provider-first 顺序，required provider failure 只阻塞 dependent closure；
 - optional absent -> absent retry 不重启 consumer；absent -> running、running -> absent 和 running generation replacement 会重启 consumer 及其 required dependent closure；
 - generation stop 先关闭 owner admission，再 abort generation，再 drain effects；
+- construction/finalize/config injection/init 失败会淘汰该 generation 的 runtime cache；rollback cleanup 失败不会覆盖 primary cause，
+  而是作为独立 `drain-failed` fact 进入同一 report；
 - `init()` abort 或 timeout 后的 late fulfillment 不会发布 running generation；late cleanup 会立即进入同一 drain/report 边界；
 - `CommitSummary` 描述 Core 已观察到的 lifecycle facts；宿主负责把这些事实解释为退出、告警、降级或重试策略。
 
@@ -49,6 +54,7 @@ draft graph -> verify graph -> compute stop/start plan -> stop old generations -
 | L8  | required provider failure 只阻塞 dependent closure，不破坏无关 running branch。                                          | `PluginService.failures.test.ts`, `PluginService.lifecycle-model.test.ts`                                           | 宿主进程级故障和外部系统故障不在 Core graph failure propagation 内。                                 |
 | L9  | optional absent -> absent 不产生 consumer restart；真实 availability transition 对同一 consumer 每个 plan 最多重启一次。 | `PluginService.optional.test.ts`, `PluginService.lifecycle-model.test.ts`                                           | optional callback 必须是 lowered direct `plugins.use()`。                                            |
 | L10 | 系统静止后，running projection 与最新成功验证的 desired graph 及 lifecycle failure facts 一致。                          | `PluginService.lifecycle-model.test.ts`, `PluginService.registration.test.ts`, `PluginService.failures.test.ts`     | 这是 bounded convergence 断言；timeout、外部 emission 和显式宿主 retry policy 仍可能让历史影响结果。 |
+| L11 | generation admission 的 primary failure 与 rollback drain failure 是独立事实；失败 instance 不留在 runtime cache。       | `PluginService.failures.test.ts`, `PluginService.late-init.test.ts`                                                 | late settlement 在初次 summary 发布后通过 immutable successor 增补，不回写历史对象。                 |
 
 ## Model-Style 测试要求
 

@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import type { PluginConstructor } from '@pluxel/runtime'
+import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
 
@@ -13,6 +14,11 @@ class LocalS3Consumer extends BasePlugin {
 }
 
 const temporaryRoots: string[] = []
+
+function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+	host.add(plugins)
+	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+}
 
 afterEach(async () => {
 	await Promise.all(
@@ -177,10 +183,10 @@ describe('S3Plugin local backend', () => {
 		})
 	})
 
-	it('revokes both the capability and captured local client on provider stop', async () => {
+	it('revokes the caller facade and captured local client on provider stop', async () => {
 		const root = await temporaryRoot()
-		await withHost(async (host) => {
-			host.add([S3Plugin, LocalS3Consumer])
+		await withRuntimeHost(async (host) => {
+			addEnabled(host, [S3Plugin, LocalS3Consumer])
 			host.cfg(S3Plugin).set({
 				backend: {
 					type: 'local',
@@ -192,9 +198,9 @@ describe('S3Plugin local backend', () => {
 			await host.commit()
 			const capability = host.require(LocalS3Consumer).s3
 			const client = capability.client
-			host.remove(S3Plugin)
+			host.cfg(S3Plugin).disable()
 			await host.commit()
-			expect(() => capability.client).toThrow(S3NotRunningError)
+			expect(() => capability.client).toThrow('Plugin owner stopped')
 			await expect(client.bucketExists()).rejects.toBeInstanceOf(S3NotRunningError)
 		})
 	})
@@ -207,8 +213,8 @@ async function temporaryRoot(): Promise<string> {
 }
 
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
-	await withHost(async (host) => {
-		host.add([S3Plugin, LocalS3Consumer])
+	await withRuntimeHost(async (host) => {
+		addEnabled(host, [S3Plugin, LocalS3Consumer])
 		host.cfg(S3Plugin).set({
 			backend: {
 				type: 'local',

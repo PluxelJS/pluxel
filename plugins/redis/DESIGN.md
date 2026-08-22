@@ -67,13 +67,16 @@ command。
 先撤销 holder，再 graceful close；close 失败才 destroy。
 
 holder 是嵌套共享对象，而不是直接改写 plugin field。Pluxel caller view 使用轻量 prototype binding，嵌套 holder
-保证所有 caller view 观察同一 lifecycle generation，旧 provider cleanup 后统一抛出 `RedisNotRunningError`。
+保证所有 caller view 观察同一 lifecycle generation；旧 caller facade 在 cleanup 前先由 Core generation gate 拒绝。
+`RedisNotRunningError` 只保护当前 provider 内部尚未发布或已撤销的 client holder，不替代 node-redis 自身的 captured-client
+关闭错误语义。
 
 node-redis 负责 established connection 的 reconnect。`disableOfflineQueue` 与 `commandQueueMaxLength` 控制断线和压力
 期间的行为，避免 Redis provider 自己再维护一套 command queue。
 
-`Redis` extends `ForkablePlugin`。多 endpoint/database 使用正常 Pluxel fork 与 dependency override，而不是在一个
-provider 内维护 connection name -> client map；每个 fork 因而拥有独立 config、lifecycle、failure 与 replacement 边界。
+`Redis` 是普通 abstract capability token；`RedisPlugin` 通过 `@Plugin(Redis, { forkable: true })` 显式允许多实例。
+多 endpoint/database 使用正常 Pluxel fork 与 dependency override，而不是在一个 provider 内维护 connection name -> client map；
+每个 fork因而拥有独立 config、lifecycle、failure 与 replacement 边界。其他 Redis provider 必须独立决定是否安全支持 fork。
 
 ## Secret
 

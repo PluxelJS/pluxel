@@ -17,8 +17,7 @@
 - [`CLI_SCAFFOLDING_REFACTOR.md`](CLI_SCAFFOLDING_REFACTOR.md)：bundled/local scaffold 重构落地后的
   remote Plugin template / giget adapter 后续决策。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含已否决的
-  decoratorless Plugin 与 catalog exact-only 简化，以及仍可升级为 proposal 的 multi-instance internals、Context kernel
-  与 binding 稳定性研究。
+  decoratorless Plugin 与 catalog exact-only 简化，以及仍可升级为 proposal 的 Context kernel 与 binding 稳定性研究。
 
 CLI 分发、local-first delegation 与官方能力按需加载的已实施约束见 [`../TOOLCHAIN.md`](../TOOLCHAIN.md) 和
 [`../../docs/development/tooling.md`](../../docs/development/tooling.md)。

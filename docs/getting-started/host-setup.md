@@ -220,7 +220,7 @@ Host 的两类状态不要混淆：
 - runtime state：哪些 Plugin enabled、fork、provider override；
 - Plugin config record：交给每个 Plugin schema 校验的 raw object。
 
-Static `configure()` 或 dynamic config 提供初始值，file/memory/readonly backend 决定持久化方式。Plugin 只看到已经 normalized 的 `this.config`；详细 contract 见 [配置模型](./configuration.md)。
+Static `configure()` 或 dynamic config 提供初始值，file/memory/readonly backend 决定持久化方式；`readonly` 会读取同一 durable file source，但拒绝 mutation，文件缺失时保留 startup snapshot 且不创建文件。Plugin 只看到已经 normalized 的 `this.config`；详细 contract 见 [配置模型](./configuration.md)。
 
 ### Workbench 与 admin access
 
@@ -252,6 +252,8 @@ Plugin 只使用 `ctx.logger`。完整 host logging plan、debug topics 和 sens
 ### 启动结果与进程策略
 
 graph commit 返回结构化 summary：成功节点进入 running，failed 节点回滚，required dependents blocked，无关 Plugin 可以继续。
+
+Static startup/HMR report 中的 `unavailable` 表示 enabled durable intent 当前没有 route catalog availability，例如 source 被移除后仍保留的 fork；它不是 `start-failed`。相同 definition address 再次出现时，runtime 会按保留的 enabled、fork 和 dependency policy 自动恢复。
 
 宿主决定：
 

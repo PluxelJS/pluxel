@@ -22,7 +22,7 @@ describe('PluginService registration state', () => {
 			@Plugin({ displayName: 'Raw Plugin' })
 			class RawPlugin extends BasePlugin {}
 
-			expect(() => host.add(RawPlugin)).toThrow(/Plugin definition was not lowered/)
+			expect(() => host.add(RawPlugin)).toThrow(/Plugin declaration was not lowered/)
 			expect(() => rawDefinePluginRef<RawPlugin>()).toThrow(/Plugin ref was not lowered/)
 		})
 	})

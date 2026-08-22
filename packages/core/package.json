@@ -47,6 +47,11 @@
 			"import": "./dist/test.mjs",
 			"require": "./dist/test.cjs"
 		},
+		"./toolchain": {
+			"@pluxel/source": "./src/toolchain.ts",
+			"import": "./dist/toolchain.mjs",
+			"require": "./dist/toolchain.cjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -75,6 +80,10 @@
 				"import": "./dist/test.mjs",
 				"require": "./dist/test.cjs"
 			},
+			"./toolchain": {
+				"import": "./dist/toolchain.mjs",
+				"require": "./dist/toolchain.cjs"
+			},
 			"./package.json": "./package.json"
 		}
 	},
@@ -83,6 +92,8 @@
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
 		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
+		"bench:caller-view": "pnpm run build && node --experimental-strip-types bench/pluginCallerView.bench.ts",
+		"bench:fork-cost": "pnpm run build && node --expose-gc --experimental-strip-types bench/pluginForkCost.bench.ts",
 		"bench:di": "pnpm exec tsdown bench/vendor/diod/src/index.ts --no-config --format esm --out-dir bench/vendor/diod/dist --minify && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},
 	"dependencies": {
@@ -92,7 +103,6 @@
 		"std-env": "^4.0.0-rc.1"
 	},
 	"devDependencies": {
-		"@abraham/reflection": "^0.13.0",
 		"@pluxel/context": "workspace:*",
 		"option-t": "^55.1.2",
 		"rolldown": "^1.1.5",
@@ -100,7 +110,6 @@
 		"unplugin-macros": "^0.20.2"
 	},
 	"inlinedDependencies": {
-		"@abraham/reflection": "0.13.0",
 		"option-t": "55.1.2"
 	}
 }

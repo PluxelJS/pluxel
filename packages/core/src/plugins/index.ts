@@ -5,14 +5,14 @@
 // - runtime/: orchestrator and commit scheduling
 // - runtime/plugin-service/: PluginService internals and runtime update helpers
 // - decorators/: thin @Plugin marker and decorator runtime
-// - composition/: BasePlugin + ConfigHost + PluginHost
+// - composition/: BasePlugin + PluginConfigs + OptionalPluginBindings
 // - types.ts: shared plugin type aliases
 
-export * from './composition/ConfigHost'
-export * from './composition/PluginHost'
+export * from './composition/PluginConfigs'
+export * from './composition/OptionalPluginBindings'
 export {
 	PluginPart,
-	type PartHost,
+	type PluginParts,
 	type PluginPartClass,
 	type PluginPartContext,
 	type PluginPartInfo,
@@ -22,13 +22,13 @@ export * from './composition/BasePlugin'
 export * from './types'
 export * from './decorators/PluginDecorator'
 export * from './decorators/decoratorRuntime'
-export * from './runtime/fork'
-export * from './runtime/definition'
 export {
-	__setPluginPartConfig,
-	__setPluginPartOptional,
-	__setPluginParts,
-} from './runtime/part-definition'
+	definePluginRef,
+	isPluginRef,
+	pluginDefinitionAddressOf,
+	pluginNodeAddressOf,
+	type PluginRef,
+} from './runtime/definition'
 export * from './runtime/identity'
 export {
 	collectPluginLifecycleBlocked,
@@ -52,14 +52,12 @@ export {
 	type RuntimeUpdateCommitSummary,
 } from './runtime/plugin-service/CommitPlan'
 export { PluginService } from './runtime/PluginService'
-export type {
-	RuntimeModuleDeclaration,
-	RuntimeModuleDeclarationItem,
-} from './runtime/plugin-service/RuntimeModuleRegistry'
+export type { PluginNodeInfo } from './runtime/PluginDefinitions'
 export type {
 	CascadeOptions,
-	ReplacePluginOptions,
-	RuntimeUpdateCommitOptions,
+	PreparedRuntimeUpdateCommitOptions,
+	PreparedRuntimeUpdate,
+	ReplaceDefinitionOptions,
 	RuntimeUpdateOptions,
 	RuntimeUpdateReason,
 	RuntimeUpdateTransaction,

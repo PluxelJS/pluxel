@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import type { PluginConstructor } from '@pluxel/runtime'
+import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { RedisPlugin, RedisRatesBackendPlugin } from '../src/index.ts'
 
@@ -13,6 +14,11 @@ class IntegrationConsumer extends BasePlugin {
 	}
 }
 
+function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+	host.add(plugins)
+	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+}
+
 const algorithms = [
 	{ algorithm: 'token-bucket', limit: 3, windowMs: 100, burst: 3 },
 	{ algorithm: 'fixed-window', limit: 3, windowMs: 100 },
@@ -23,8 +29,8 @@ const algorithms = [
 describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
-		await withHost(async (host) => {
-			host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, IntegrationConsumer])
+		await withRuntimeHost(async (host) => {
+			addEnabled(host, [RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, IntegrationConsumer])
 			host.cfg(RedisPlugin).set({ url: redisUrl! })
 			host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: prefix })
 			await host.commit()

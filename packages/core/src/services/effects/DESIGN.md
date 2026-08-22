@@ -331,20 +331,20 @@ Guard 只保存：
 - 每个 `Context` 持有一个 `EffectsService` 实例（由于 isolate，天然每插件隔离）
 - Host 卸载流程在合适时机调用 `await ctx.effects.dispose()`
 
-> 重要：effects 不负责 registry.unregister/commit。  
+> 重要：effects 不负责 Plugin graph transaction。
 > 它只负责释放资源/撤销副作用。卸载流程应由 host 层编排。
 
 ---
 
 ## 7. 推荐卸载流程（host 层）
 
-1. registry 标记 plugin unloading（可选：阻止新 side-effect）
+1. runtime coordinator prepare `dematerializeNode` transaction
 2. 关闭内部 owner invocation admission，abort 并等待已接纳调用退出
 3. `await ctx.effects.dispose()`（drain；包含 `init()` 返回的 cleanup/disposable）
-4. registry.unregister(plugin) + commit（真正卸载）
+4. 提交已验证 graph，并由 coordinator 同步 desired/applied/catalog projection
 
-插件自毁使用 `ctx.registry.shutdownSelf()` 调度后续 commit，不能从正在被停止的 owner invocation 中等待自己
-释放；该入口属于 lifecycle orchestration，不属于 effects 核心。
+Plugin generation 不直接改写 Core graph。若未来提供 self-disable，应由 runtime host-policy capability
+更新 desired state 后统一 reconcile；effects 仍只负责当前 generation 的资源释放。
 
 ---
 

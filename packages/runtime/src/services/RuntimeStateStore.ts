@@ -1,14 +1,13 @@
 import {
 	type Context as PluxelContext,
-	Injectable,
+	RootService,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
-	pluginDefinitionAddressEqual,
-	pluginNodeAddressEqual,
+	pluginDefinitionIndexKey,
+	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
@@ -18,6 +17,23 @@ export type RuntimeStateSnapshot = Readonly<{
 	providerDefaults: readonly RuntimeProviderDefaultState[]
 	dependencyOverrides: readonly RuntimeDependencyOverrideState[]
 }>
+
+export type RuntimeStateVersionedSnapshot = Readonly<{
+	revision: number
+	state: RuntimeStateSnapshot
+}>
+
+export class RuntimeStateRevisionConflictError extends Error {
+	public readonly code = 'runtime_state_revision_conflict' as const
+
+	constructor(
+		public readonly expectedRevision: number,
+		public readonly actualRevision: number,
+	) {
+		super(`[RuntimeStateStore] revision changed from ${expectedRevision} to ${actualRevision}`)
+		this.name = 'RuntimeStateRevisionConflictError'
+	}
+}
 
 export type RuntimeStateDraft = {
 	enabled: PluginNodeAddress[]
@@ -72,31 +88,23 @@ declare module '@pluxel/core' {
 		interface Config {
 			runtimeState?: RuntimeStateStoreConfig
 		}
-		interface Services {
-			runtimeState: RuntimeStateStore
-		}
 	}
 }
 
-@Injectable({ key: 'runtimeState' })
+@RootService({ key: 'runtimeState' })
 export class RuntimeStateStore {
 	public readonly ready: Promise<void>
 	public isReady = false
 
 	private readonly data: RuntimeStateDraft = createDefaultDraft()
+	private revision = 0
+	private snapshotCache!: RuntimeStateSnapshot
+	private versionedSnapshotCache!: RuntimeStateVersionedSnapshot
 	private readonly file: string
-	private readonly saveDelayMs = 200
 	private readonly mode: RuntimeStateStoreMode
 	private readonly readonlyMode: boolean
-	private saveTimer: ReturnType<typeof setTimeout> | null = null
-	private saveScheduled = false
-	private saveInFlight: Promise<void> | null = null
-	private saveAgain = false
-	private pendingWriteDigest: string | undefined
-	private lastWrittenDigest: string | undefined
 	private disposed = false
-	private batching = 0
-	private pendingSave = false
+	private durableCommitInFlight = false
 	private readonly storage: PersistenceNamespace
 
 	constructor(
@@ -111,8 +119,9 @@ export class RuntimeStateStore {
 		this.file = 'state.json'
 
 		if (cfg.snapshot) applySnapshot(this.data, cfg.snapshot)
+		this.refreshSnapshotCache()
 
-		if (this.mode === 'file') {
+		if (this.mode !== 'memory') {
 			this.ready = this.loadFromDisk(this.file).finally(() => {
 				this.isReady = true
 			})
@@ -125,84 +134,59 @@ export class RuntimeStateStore {
 	}
 
 	snapshot(): RuntimeStateSnapshot {
-		return freezeSnapshot(this.data)
+		return this.snapshotCache
 	}
 
-	update(run: (draft: RuntimeStateDraft) => void): void {
-		this.assertMutable('update')
-		this.batch(() => run(this.data))
+	versionedSnapshot(): RuntimeStateVersionedSnapshot {
+		return this.versionedSnapshotCache
 	}
 
-	batch(run: () => void): void {
-		this.batching++
+	/** Atomically persists and publishes graph policy after a coordinator prepare. */
+	async commitVersioned(
+		expectedRevision: number,
+		next: RuntimeStateSnapshot,
+	): Promise<RuntimeStateVersionedSnapshot> {
+		this.assertMutable('commitVersioned')
+		if (this.durableCommitInFlight) {
+			throw new Error('[RuntimeStateStore] nested durable graph transaction is not allowed')
+		}
+		this.assertRevision(expectedRevision)
+		const normalized = canonicalRuntimeStateSnapshot(next)
+		this.durableCommitInFlight = true
 		try {
-			run()
+			this.assertRevision(expectedRevision)
+			if (this.mode === 'file') await this.persistDraft(this.file, normalized)
+			replaceDraft(this.data, normalized)
+			this.revision++
+			this.refreshSnapshotCache(normalized)
+			return this.versionedSnapshotCache
 		} finally {
-			this.batching--
-			if (this.batching === 0 && this.pendingSave) {
-				this.pendingSave = false
-				this.scheduleSave()
-			}
-		}
-		if (this.batching === 0) this.requestSave()
-		else this.pendingSave = true
-	}
-
-	async flush(options: { force?: boolean } = {}): Promise<void> {
-		if (this.mode !== 'file') return
-		const force = options.force ?? false
-		const hadScheduled = this.saveScheduled || !!this.saveTimer
-		this.cancelScheduledSave()
-		if (this.saveInFlight) await this.saveInFlight.catch((): void => undefined)
-		if (hadScheduled || this.pendingSave) {
-			this.saveScheduled = false
-			this.pendingSave = false
-			await this.saveToDisk(this.file, { force }).catch((): void => undefined)
+			this.durableCommitInFlight = false
 		}
 	}
 
-	async dispose(): Promise<void> {
+	dispose(): void {
 		if (this.disposed) return
 		this.disposed = true
-		this.cancelScheduledSave()
-		await this.flush({ force: true }).catch((): void => undefined)
 	}
 
 	private assertMutable(action: string) {
+		if (this.disposed) throw new Error(`[RuntimeStateStore] ${action} is disabled after dispose.`)
 		if (!this.readonlyMode) return
 		throw new Error(`[RuntimeStateStore] ${action} is disabled in readonly mode.`)
 	}
 
-	private requestSave() {
-		if (this.mode !== 'file') return
-		if (this.disposed) return
-		if (this.batching > 0) {
-			this.pendingSave = true
-			return
-		}
-		this.scheduleSave()
+	private assertRevision(expectedRevision: number): void {
+		if (expectedRevision === this.revision) return
+		throw new RuntimeStateRevisionConflictError(expectedRevision, this.revision)
 	}
 
-	private scheduleSave() {
-		if (this.disposed) return
-		this.saveScheduled = true
-		if (this.saveTimer) return
-		this.saveTimer = setTimeout(() => {
-			this.saveTimer = null
-			if (!this.saveScheduled) return
-			this.saveScheduled = false
-			void this.saveToDisk(this.file).catch((error: unknown) => {
-				this.ctx.logger.error('RuntimeStateStore background save failed', { error })
-			})
-		}, this.saveDelayMs)
-	}
-
-	private cancelScheduledSave() {
-		this.saveScheduled = false
-		if (this.saveTimer) {
-			clearTimeout(this.saveTimer)
-			this.saveTimer = null
-		}
+	private refreshSnapshotCache(snapshot = freezeTrustedRuntimeStateSnapshot(this.data)): void {
+		this.snapshotCache = snapshot
+		this.versionedSnapshotCache = Object.freeze({
+			revision: this.revision,
+			state: this.snapshotCache,
+		})
 	}
 
 	private async loadFromDisk(file: string) {
@@ -211,67 +195,42 @@ export class RuntimeStateStore {
 		if (primary !== undefined) {
 			txt = primary
 		} else {
-			await this.saveToDisk(file)
+			if (!this.readonlyMode) await this.persistDraft(file, this.data)
 			return
 		}
-
-		const txtDigest = ohash(txt)
-		if (txtDigest === this.pendingWriteDigest || txtDigest === this.lastWrittenDigest) return
 
 		let parsed: unknown
 		try {
 			parsed = SuperJSON.parse(txt)
 		} catch (error) {
+			if (this.readonlyMode) {
+				throw new Error('[RuntimeStateStore] Persisted readonly state is malformed.', {
+					cause: error,
+				})
+			}
 			this.ctx.logger.warn('RuntimeStateStore parse failed; isolating broken state', {
 				file,
 				error,
 			})
 			await this.isolateBrokenStateFile(file, txt)
 			replaceDraft(this.data, createDefaultDraft())
-			await this.saveToDisk(file)
+			this.revision++
+			this.refreshSnapshotCache()
+			await this.persistDraft(file, this.data)
 			return
 		}
 
 		replaceDraft(this.data, coerceRuntimeStateFile(parsed))
+		this.revision++
+		this.refreshSnapshotCache()
 	}
 
-	private async saveToDisk(file: string, options: { force?: boolean } = {}): Promise<void> {
-		const force = options.force ?? false
-		if (!force && this.batching > 0) return
-
-		if (this.saveInFlight) {
-			this.saveAgain = true
-			await this.saveInFlight.catch((): void => undefined)
-			if (this.saveAgain) {
-				this.saveAgain = false
-				await this.saveToDisk(file, options)
-			}
-			return
-		}
-
-		const content = SuperJSON.stringify(toRuntimeStateFile(this.data))
-		const nextDigest = ohash(content)
-		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(file))) return
-
-		this.pendingWriteDigest = nextDigest
-		const task = this.storage
-			.put(file, content)
-			.then((): undefined => {
-				this.lastWrittenDigest = nextDigest
-				return undefined
-			})
-			.finally(() => {
-				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined
-			})
-		this.saveInFlight = task.finally(() => {
-			this.saveInFlight = null
-		})
-		await this.saveInFlight
-
-		if (this.saveAgain) {
-			this.saveAgain = false
-			await this.saveToDisk(file, options)
-		}
+	private async persistDraft(
+		file: string,
+		draft: RuntimeStateDraft | RuntimeStateSnapshot,
+	): Promise<void> {
+		const content = SuperJSON.stringify(toRuntimeStateFile(draft))
+		await this.storage.put(file, content)
 	}
 
 	private async isolateBrokenStateFile(file: string, content: string) {
@@ -298,7 +257,36 @@ function createDefaultDraft(): RuntimeStateDraft {
 	}
 }
 
-function replaceDraft(target: RuntimeStateDraft, source: RuntimeStateDraft): void {
+function cloneSnapshot(snapshot: RuntimeStateSnapshot): RuntimeStateDraft {
+	return {
+		enabled: snapshot.enabled.map(cloneNodeAddress),
+		forks: snapshot.forks.map(cloneForkState),
+		providerDefaults: snapshot.providerDefaults.map(cloneProviderDefault),
+		dependencyOverrides: snapshot.dependencyOverrides.map(cloneDependencyOverride),
+	}
+}
+
+function normalizeDraft(draft: RuntimeStateDraft): RuntimeStateDraft {
+	return {
+		enabled: parseUniqueNodes(draft.enabled, 'enabled'),
+		forks: parseForks(draft.forks, 'forks'),
+		providerDefaults: parseProviderDefaults(draft.providerDefaults, 'providerDefaults'),
+		dependencyOverrides: parseDependencyOverrides(draft.dependencyOverrides, 'dependencyOverrides'),
+	}
+}
+
+const canonicalSnapshots = new WeakSet<RuntimeStateSnapshot>()
+
+/** @internal Validates, sorts, clones, and deep-freezes one canonical revision snapshot. */
+export function canonicalRuntimeStateSnapshot(state: RuntimeStateSnapshot): RuntimeStateSnapshot {
+	if (canonicalSnapshots.has(state)) return state
+	return freezeTrustedRuntimeStateSnapshot(normalizeDraft(cloneSnapshot(state)))
+}
+
+function replaceDraft(
+	target: RuntimeStateDraft,
+	source: RuntimeStateDraft | RuntimeStateSnapshot,
+): void {
 	target.enabled = source.enabled.map(cloneNodeAddress)
 	target.forks = source.forks.map(cloneForkState)
 	target.providerDefaults = source.providerDefaults.map(cloneProviderDefault)
@@ -329,38 +317,66 @@ function applySnapshot(
 	}
 }
 
-function freezeSnapshot(draft: RuntimeStateDraft): RuntimeStateSnapshot {
-	return Object.freeze({
-		enabled: Object.freeze(draft.enabled.map(freezeNodeAddress)),
+/** @internal Deep-freezes already-admitted state and imposes canonical serialization order. */
+export function freezeTrustedRuntimeStateSnapshot(
+	draft: RuntimeStateDraft | RuntimeStateSnapshot,
+): RuntimeStateSnapshot {
+	const snapshot: RuntimeStateSnapshot = Object.freeze({
+		enabled: Object.freeze(sortByKey(draft.enabled.map(freezeNodeAddress), pluginNodeIndexKey)),
 		forks: Object.freeze(
-			draft.forks.map((entry) =>
-				Object.freeze({
-					definition: freezeDefinitionAddress(entry.definition),
-					forkIds: Object.freeze([...entry.forkIds]),
-				}),
+			sortByKey(
+				draft.forks.map((entry) =>
+					Object.freeze({
+						definition: freezeDefinitionAddress(entry.definition),
+						forkIds: Object.freeze([...entry.forkIds].sort()),
+					}),
+				),
+				(entry) => pluginDefinitionIndexKey(entry.definition),
 			),
 		),
 		providerDefaults: Object.freeze(
-			draft.providerDefaults.map((entry) =>
-				Object.freeze({
-					token: freezeDefinitionAddress(entry.token),
-					provider: freezeNodeAddress(entry.provider),
-				}),
+			sortByKey(
+				draft.providerDefaults.map((entry) =>
+					Object.freeze({
+						token: freezeDefinitionAddress(entry.token),
+						provider: freezeNodeAddress(entry.provider),
+					}),
+				),
+				(entry) => pluginDefinitionIndexKey(entry.token),
 			),
 		),
 		dependencyOverrides: Object.freeze(
-			draft.dependencyOverrides.map((entry) =>
-				Object.freeze({
-					consumerAddress: freezeNodeAddress(entry.consumerAddress),
-					requirementAddress: freezeDefinitionAddress(entry.requirementAddress),
-					providerAddress: freezeNodeAddress(entry.providerAddress),
-				}),
+			sortByKey(
+				draft.dependencyOverrides.map((entry) =>
+					Object.freeze({
+						consumerAddress: freezeNodeAddress(entry.consumerAddress),
+						requirementAddress: freezeDefinitionAddress(entry.requirementAddress),
+						providerAddress: freezeNodeAddress(entry.providerAddress),
+					}),
+				),
+				(entry) => overrideIndexKey(entry.consumerAddress, entry.requirementAddress),
 			),
 		),
 	})
+	canonicalSnapshots.add(snapshot)
+	return snapshot
 }
 
-function toRuntimeStateFile(draft: RuntimeStateDraft): RuntimeStateFile {
+function overrideIndexKey(
+	consumer: PluginNodeAddress,
+	requirement: PluginDefinitionAddress,
+): string {
+	return `${pluginNodeIndexKey(consumer)}:${pluginDefinitionIndexKey(requirement)}`
+}
+
+function sortByKey<T>(values: T[], keyOf: (value: T) => string): T[] {
+	return values
+		.map((value, order) => ({ value, key: keyOf(value), order }))
+		.sort((left, right) => left.key.localeCompare(right.key) || left.order - right.order)
+		.map(({ value }) => value)
+}
+
+function toRuntimeStateFile(draft: RuntimeStateDraft | RuntimeStateSnapshot): RuntimeStateFile {
 	return {
 		version: 4,
 		enabled: draft.enabled.map(cloneNodeAddress),
@@ -396,18 +412,24 @@ function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 
 function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddress[] {
 	const out: PluginNodeAddress[] = []
+	const seen = new Set<string>()
 	for (let i = 0; i < input.length; i++) {
 		const node = parseNode(input[i], `${at}[${i}]`)
-		if (out.some((candidate) => sameNode(candidate, node))) {
+		const key = pluginNodeIndexKey(node)
+		if (seen.has(key)) {
 			throw invalidState(`${at}[${i}] duplicates an earlier node`)
 		}
+		seen.add(key)
 		out.push(node)
 	}
-	return out
+	return out.sort((left, right) =>
+		pluginNodeIndexKey(left).localeCompare(pluginNodeIndexKey(right)),
+	)
 }
 
 function parseForks(input: readonly unknown[], at: string): RuntimeForkState[] {
 	const out: RuntimeForkState[] = []
+	const seen = new Set<string>()
 	for (let i = 0; i < input.length; i++) {
 		const raw = record(input[i], `${at}[${i}]`)
 		const definition = parseDefinition(raw.definition, `${at}[${i}].definition`)
@@ -418,12 +440,18 @@ function parseForks(input: readonly unknown[], at: string): RuntimeForkState[] {
 		if (new Set(forkIds).size !== forkIds.length) {
 			throw invalidState(`${at}[${i}].forkIds contains duplicates`)
 		}
-		if (out.some((candidate) => sameDefinition(candidate.definition, definition))) {
+		const key = pluginDefinitionIndexKey(definition)
+		if (seen.has(key)) {
 			throw invalidState(`${at}[${i}] duplicates a definition`)
 		}
-		out.push({ definition, forkIds })
+		seen.add(key)
+		out.push({ definition, forkIds: forkIds.sort() })
 	}
-	return out
+	return out.sort((left, right) =>
+		pluginDefinitionIndexKey(left.definition).localeCompare(
+			pluginDefinitionIndexKey(right.definition),
+		),
+	)
 }
 
 function parseProviderDefaults(
@@ -431,16 +459,21 @@ function parseProviderDefaults(
 	at: string,
 ): RuntimeProviderDefaultState[] {
 	const out: RuntimeProviderDefaultState[] = []
+	const seen = new Set<string>()
 	for (let i = 0; i < input.length; i++) {
 		const raw = record(input[i], `${at}[${i}]`)
 		const token = parseDefinition(raw.token, `${at}[${i}].token`)
 		const provider = parseNode(raw.provider, `${at}[${i}].provider`)
-		if (out.some((candidate) => sameDefinition(candidate.token, token))) {
+		const key = pluginDefinitionIndexKey(token)
+		if (seen.has(key)) {
 			throw invalidState(`${at}[${i}] duplicates a provider token`)
 		}
+		seen.add(key)
 		out.push({ token, provider })
 	}
-	return out
+	return out.sort((left, right) =>
+		pluginDefinitionIndexKey(left.token).localeCompare(pluginDefinitionIndexKey(right.token)),
+	)
 }
 
 function parseDependencyOverrides(
@@ -448,6 +481,7 @@ function parseDependencyOverrides(
 	at: string,
 ): RuntimeDependencyOverrideState[] {
 	const out: RuntimeDependencyOverrideState[] = []
+	const seen = new Set<string>()
 	for (let i = 0; i < input.length; i++) {
 		const raw = record(input[i], `${at}[${i}]`)
 		const consumerAddress = parseNode(raw.consumerAddress, `${at}[${i}].consumerAddress`)
@@ -456,18 +490,18 @@ function parseDependencyOverrides(
 			`${at}[${i}].requirementAddress`,
 		)
 		const providerAddress = parseNode(raw.providerAddress, `${at}[${i}].providerAddress`)
-		if (
-			out.some(
-				(candidate) =>
-					sameNode(candidate.consumerAddress, consumerAddress) &&
-					sameDefinition(candidate.requirementAddress, requirementAddress),
-			)
-		) {
+		const key = `${pluginNodeIndexKey(consumerAddress)}:${pluginDefinitionIndexKey(requirementAddress)}`
+		if (seen.has(key)) {
 			throw invalidState(`${at}[${i}] duplicates a consumer requirement`)
 		}
+		seen.add(key)
 		out.push({ consumerAddress, requirementAddress, providerAddress })
 	}
-	return out
+	return out.sort((left, right) => {
+		const leftKey = `${pluginNodeIndexKey(left.consumerAddress)}:${pluginDefinitionIndexKey(left.requirementAddress)}`
+		const rightKey = `${pluginNodeIndexKey(right.consumerAddress)}:${pluginDefinitionIndexKey(right.requirementAddress)}`
+		return leftKey.localeCompare(rightKey)
+	})
 }
 
 function parseDefinition(value: unknown, at: string): PluginDefinitionAddress {
@@ -505,14 +539,6 @@ function parseForkId(value: unknown, definition: PluginDefinitionAddress, at: st
 
 function invalidState(message: string): Error {
 	return new Error(`[RuntimeStateStore] ${message}`)
-}
-
-function sameDefinition(left: PluginDefinitionAddress, right: PluginDefinitionAddress): boolean {
-	return pluginDefinitionAddressEqual(left, right)
-}
-
-function sameNode(left: PluginNodeAddress, right: PluginNodeAddress): boolean {
-	return pluginNodeAddressEqual(left, right)
 }
 
 function cloneDefinitionAddress(definition: PluginDefinitionAddress): PluginDefinitionAddress {

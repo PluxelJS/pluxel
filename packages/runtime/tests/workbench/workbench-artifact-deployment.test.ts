@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { sanitizeWorkbenchOwnerName } from '@pluxel/core/federation'
-import { PluginSlotRegistry, type PluginNodeAddress } from '@pluxel/core'
+import { type PluginNodeAddress } from '@pluxel/core'
+import { PluginSlotRegistry } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 import { workbench } from '@pluxel/runtime/workbench'
 
@@ -47,6 +48,7 @@ describe('packaged Workbench artifact deployment paths', () => {
 			pluginInfo: {
 				nodeSlot,
 				nodeAddress,
+				definitionAddress: nodeAddress.definition,
 				displayName: 'DisposedPlugin',
 				rootExportName: 'Plugin',
 			},

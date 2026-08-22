@@ -1,5 +1,6 @@
 import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { isPluginEnabled as isRuntimePluginEnabled } from '../RuntimeStateStore'
+import { requireRuntimeStateStore } from '../../internal/runtime-state'
 
 export type PluginOwner = PluginNodeAddress
 export type RouteId = string
@@ -15,7 +16,7 @@ export interface PluginGatedOptions {
 	/**
 	 * Resolve whether a plugin is enabled.
 	 *
-	 * Default: `ctx.runtimeState?.snapshot().enabled.includes(plugin) ?? true`
+	 * Default: the host RuntimeState snapshot.
 	 */
 	isPluginEnabled?: IsPluginEnabled
 }
@@ -26,13 +27,7 @@ export interface PluginRoutingSnapshot {
 }
 
 function defaultIsPluginEnabled(plugin: PluginOwner, ctx: Context): boolean {
-	const runtimeState = (ctx as unknown as { runtimeState?: unknown }).runtimeState as
-		| { snapshot?: () => Parameters<typeof isRuntimePluginEnabled>[0] }
-		| undefined
-	const snapshot = runtimeState?.snapshot
-	return typeof snapshot === 'function'
-		? isRuntimePluginEnabled(snapshot.call(runtimeState), plugin)
-		: true
+	return isRuntimePluginEnabled(requireRuntimeStateStore(ctx).snapshot(), plugin)
 }
 
 export function resolveIsPluginEnabled(options: PluginGatedOptions | undefined): IsPluginEnabled {

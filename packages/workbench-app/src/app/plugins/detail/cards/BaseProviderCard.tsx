@@ -98,7 +98,7 @@ export function BaseProviderCard() {
 						provider,
 					}),
 				)
-				if (!result.ok) throw new Error(result.error || result.code || '操作失败')
+				if (result.ok === false) throw new Error(result.error || result.code || '操作失败')
 				await load()
 				await refetch()
 				notify({

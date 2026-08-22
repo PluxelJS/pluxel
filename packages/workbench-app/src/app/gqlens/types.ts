@@ -122,6 +122,8 @@ export type PluginStatus = {
   isRunning: Scalars['Boolean']['output'];
   isEnabled: Scalars['Boolean']['output'];
   lifecycleStage: PluginStatusLifecycleStage;
+  availability: PluginStatusAvailability;
+  issues: Array<PluginStatusIssue>;
   source: PluginSourceInfo;
 };
 
@@ -129,6 +131,30 @@ export type PluginStatusLifecycleStage =
   | 'running'
   | 'stopped'
   | 'disabled';
+
+export type PluginStatusAvailability =
+  | 'available'
+  | 'unavailable';
+
+export type PluginStatusIssue = {
+  __typename?: 'PluginStatusIssue';
+  id: Scalars['String']['output'];
+  code: PluginStatusIssueCode;
+  message: Scalars['String']['output'];
+};
+
+export type PluginStatusIssueCode =
+  | 'consumer_unavailable'
+  | 'requirement_removed'
+  | 'provider_unavailable'
+  | 'provider_disabled'
+  | 'provider_incompatible'
+  | 'fork_not_allowed'
+  | 'fork_default_forbidden'
+  | 'provider_default_requires_abstract'
+  | 'explicit_binding_invalid'
+  | 'missing_required_provider'
+  | 'definition_unavailable';
 
 export type PluginSourceInfo = {
   __typename?: 'PluginSourceInfo';
@@ -140,8 +166,8 @@ export type PluginSourceInfo = {
 };
 
 export type PluginSourceInfoKind =
-  | 'hmr'
   | 'package'
+  | 'hmr'
   | 'unknown';
 
 export type Query = {

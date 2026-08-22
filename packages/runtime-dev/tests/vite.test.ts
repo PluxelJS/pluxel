@@ -321,26 +321,50 @@ describe('runtime-dev Vite plugin stack', () => {
 			{
 				name: '@pluxel/runtime',
 				type: 'module',
-				exports: './index.js',
+				exports: {
+					'.': './index.js',
+					'./internal': './internal.js',
+					'./toolchain': './toolchain.js',
+				},
 			},
 			[
-				'const facts = new WeakMap()',
+				"import { addresses } from './state.js'",
 				'export class BasePlugin {}',
 				'export function Plugin() { return (target) => target }',
-				'export function __setPluginDefinition(target, value) { facts.set(target, value) }',
-				'export function getPluginDefinitionFacts(target) { const value = facts.get(target); if (!value) throw new Error("missing facts"); return value }',
+				'export function pluginDefinitionAddressOf(target) { const value = addresses.get(target); if (!value) throw new Error("missing address"); return value }',
 			].join('\n'),
 		)
+		await Promise.all([
+			writeFile(
+				join(root, 'node_modules', '@pluxel/runtime', 'state.js'),
+				'export const facts = new WeakMap()\nexport const addresses = new WeakMap()\n',
+			),
+			writeFile(
+				join(root, 'node_modules', '@pluxel/runtime', 'toolchain.js'),
+				[
+					"import { addresses, facts } from './state.js'",
+					'export function __setPluginDefinition(target, value) { facts.set(target, value); addresses.set(target, value.definition) }',
+				].join('\n'),
+			),
+			writeFile(
+				join(root, 'node_modules', '@pluxel/runtime', 'internal.js'),
+				[
+					"import { facts } from './state.js'",
+					'export function consumePluginDefinitionCandidate(target) { const value = facts.get(target); if (!value) throw new Error("missing candidate"); facts.delete(target); return { implementation: target, declaration: { address: value.definition, requires: value.requires } } }',
+				].join('\n'),
+			),
+		])
 		await writeFile(
 			modulePath,
 			[
-				"import { BasePlugin, getPluginDefinitionFacts, Plugin } from '@pluxel/runtime'",
+				"import { BasePlugin, pluginDefinitionAddressOf, Plugin } from '@pluxel/runtime'",
+				"import { consumePluginDefinitionCandidate } from '@pluxel/runtime/internal'",
 				'@Plugin()',
 				'export class Provider extends BasePlugin {}',
 				'@Plugin()',
 				'export class Consumer extends BasePlugin { constructor(readonly provider: Provider) { super() } }',
-				'export function providerDefinition() { return getPluginDefinitionFacts(Provider).definition }',
-				'export function consumerRequires() { return getPluginDefinitionFacts(Consumer).requires }',
+				'export function providerDefinition() { return pluginDefinitionAddressOf(Provider) }',
+				'export function consumerRequires() { return consumePluginDefinitionCandidate(Consumer).declaration.requires }',
 				'',
 			].join('\n'),
 		)

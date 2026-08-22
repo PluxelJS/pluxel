@@ -162,8 +162,9 @@ try {
 
 ## 生命周期、fork 与一致性
 
-`S3` 继承 `ForkablePlugin`。多个 bucket 应使用独立 `S3Plugin` fork、独立配置和 dependency override，而不是在每个 method 上增加 bucket name 参数。
+`S3` 是普通 abstract capability；官方 `S3Plugin` 通过 `@Plugin(S3, { forkable: true })` 显式允许多实例。多个 bucket 应使用独立 `S3Plugin` fork、独立配置和 dependency override，而不是在每个 method 上增加 bucket name 参数。
 
-provider stop/replacement 后，读取 `S3.client` 抛出 `S3NotRunningError`（code `S3_NOT_RUNNING`）。captured local client 会被 revoke；remote client 的 in-flight fetch 会收到 lifecycle abort。
+provider stop/replacement 后，旧 `S3` caller facade 先由 Core generation gate 拒绝。此前取得的 local client
+会被 revoke 并抛 `S3NotRunningError`（code `S3_NOT_RUNNING`）；remote client 的 in-flight fetch 会收到 lifecycle abort。
 
 对象存储不是关系型事务。若数据库 metadata 与对象必须协调，先设计显式 state machine，再用 outbox、幂等 key 和补偿流程处理对象 side effect；不要假设 DB transaction 能回滚 S3 PUT。

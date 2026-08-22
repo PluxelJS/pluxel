@@ -24,6 +24,8 @@ import {
 	isWorkbenchEnabled,
 	matchesWorkbenchUiBasePath,
 	readHostProduct,
+	readRuntimeRouteCapabilities,
+	requireRuntimeStateStore,
 	resolveDevWorkbenchClientEntryUrl,
 	resolveWorkbenchUiBasePath,
 	sameProduct,
@@ -32,13 +34,14 @@ import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { UI_PUBLIC_BASE } from '@pluxel/runtime/web/paths'
 import { formatPluginNodeReference, type PluginNodeAddress } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
 import { reloadStaticRuntime } from './hmr'
 import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application'
 import { toStaticRuntimeDefinition } from './internal/application'
-import { createStaticRuntimeHost } from './internal/host'
+import { createStaticRuntimeHost, readStaticRuntimeImplementations } from './internal/host'
 import { createNodeFetchRequest, writeNodeFetchResponse } from './internal/node-http'
 import type {
 	StaticRuntimeApplication,
@@ -193,18 +196,6 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			const host = state.host!
 			logStaticRuntimeStarted(host, startup, state.configFiles)
 
-			server.httpServer?.once('close', () => {
-				const active = state.host
-				state.host = undefined
-				if (active) {
-					void active.stop().catch((error) => {
-						server.config.logger.error('[runtime-static/vite] failed to stop static runtime', {
-							error: error as Error,
-						})
-					})
-				}
-			})
-
 			server.middlewares.use((req, res, next) => {
 				const activeHost = state.host
 				if (!activeHost) {
@@ -217,6 +208,11 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				}
 				void proxyToStaticRuntime(req, res, server, activeHost, next)
 			})
+		},
+		async closeBundle() {
+			const active = state.host
+			state.host = undefined
+			if (active) await active.stop()
 		},
 		async handleHotUpdate(ctx) {
 			const host = state.host
@@ -336,13 +332,14 @@ function formatStaticRuntimeReport(
 			: `${displayName} [${formatPluginNodeReference(address)}]:${status}`,
 	)
 	const status = countStatuses(report.entries)
-	const runtimeState = host.ctx.runtimeState.snapshot()
+	const runtimeState = requireRuntimeStateStore(host.ctx).snapshot()
+	const pluginService = requirePluginService(host.ctx)
 	const commit = report.commit
 	return {
 		plugins: {
 			catalog: catalogLabels.length,
 			enabled: catalog.filter(({ address }) => isPluginEnabled(runtimeState, address)).length,
-			started: catalog.filter(({ generation }) => host.ctx.registry.isRunning(generation)).length,
+			started: catalog.filter(({ address }) => pluginService.isRunning(address)).length,
 			disabled: status.disabled,
 			blocked: status.blocked,
 		},
@@ -351,17 +348,17 @@ function formatStaticRuntimeReport(
 		commit: commit
 			? {
 					added: commit.pluginChanges.added.map((slot) =>
-						formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)),
+						formatPluginNodeReference(pluginService.nodeAddressOf(slot)),
 					),
 					removed: commit.pluginChanges.removed.map((slot) =>
-						formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)),
+						formatPluginNodeReference(pluginService.nodeAddressOf(slot)),
 					),
 					replaced: commit.pluginChanges.replaced.map(
 						({ from, to }) =>
-							`${formatPluginNodeReference(host.ctx.registry.nodeAddressOf(from))} -> ${formatPluginNodeReference(host.ctx.registry.nodeAddressOf(to))}`,
+							`${formatPluginNodeReference(pluginService.nodeAddressOf(from))} -> ${formatPluginNodeReference(pluginService.nodeAddressOf(to))}`,
 					),
 					restarted: commit.pluginChanges.restarted.map((slot) =>
-						formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)),
+						formatPluginNodeReference(pluginService.nodeAddressOf(slot)),
 					),
 					lifecycleOk: commit.lifecycleReport.ok,
 				}
@@ -408,12 +405,13 @@ function affectedStaticRuntimePlugins(
 	host: StaticRuntimeHost,
 	report: StaticRuntimeHmrReport,
 ): number {
+	const pluginService = requirePluginService(host.ctx)
 	const affected = new Set<string>()
 	for (const address of [...report.added, ...report.removed, ...report.replaced]) {
 		affected.add(formatPluginNodeReference(address))
 	}
 	for (const slot of report.commit?.pluginChanges.restarted ?? []) {
-		affected.add(formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)))
+		affected.add(formatPluginNodeReference(pluginService.nodeAddressOf(slot)))
 	}
 	return affected.size
 }
@@ -512,7 +510,7 @@ async function configureStaticRuntimeDevRuntime(
 ): Promise<void> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
-	if (!ctx.runtimeRoute) {
+	if (!readRuntimeRouteCapabilities(ctx)) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
 	runtimeDev.attachPluginArtifactCompiler(ctx, {
@@ -587,8 +585,8 @@ function resolveStaticRuntimePluginDirs(
 	if (modules.length === 0) return undefined
 
 	const pluginDirs: Array<{ owner: PluginNodeAddress; dir: string }> = []
-	for (const { address, generation } of host.describeCatalog().plugins) {
-		const pluginDir = findSsrExportDir(modules, generation)
+	for (const { address, implementation } of readStaticRuntimeImplementations(host)) {
+		const pluginDir = findSsrExportDir(modules, implementation)
 		if (pluginDir) pluginDirs.push({ owner: address, dir: pluginDir })
 	}
 	return pluginDirs.length > 0 ? pluginDirs : undefined
@@ -604,12 +602,12 @@ function moduleGraphEntries(server: ViteDevServer): ViteSsrModuleLike[] {
 
 function findSsrExportDir(
 	modules: readonly ViteSsrModuleLike[],
-	generation: unknown,
+	implementation: unknown,
 ): string | undefined {
 	for (const module of modules) {
 		if (!module.file || !module.ssrModule) continue
 		for (const value of Object.values(module.ssrModule)) {
-			if (value === generation) return dirname(module.file)
+			if (value === implementation) return dirname(module.file)
 		}
 	}
 	return undefined

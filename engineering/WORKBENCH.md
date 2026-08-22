@@ -27,8 +27,13 @@ field patch 提交给同一个 Plugin node config owner；server 每次重新校
 
 Workbench 的插件详情页可以投影 constructor dependency，但这不是 plugin extension。若参数 token 是未装饰的抽象
 `BasePlugin`，host 从 catalog 中查找所有 `@Plugin(Token, ...)` provider，并允许选择具体实现。选择结果属于
-RuntimeState；host 启用目标 provider、应用 runtime dependency override 并 commit graph。commit 会重启被修改 plugin
-及其 dependent closure，保证旧 caller-bound capability view 不会继续调用先前实现。
+RuntimeState；provider default 与 consumer dependency override 是不同的显式 mutation。selection 不自动启用、fallback 或改写 provider；disabled/
+unavailable/incompatible target 以稳定 code 拒绝，用户必须独立 enable 可用 provider。成功 commit 会重启被修改 plugin 及其 dependent closure，
+保证旧 caller-bound capability view 不会继续调用先前实现。
+
+“创建并选择 Fork”使用一次 `ensurePluginFork` mutation，把 ensure、enable 与 stable requirement-address override 放入同一个 RuntimeState
+patch；任一 admission/persistence 失败都不会留下 orphan fork。详情页为当前 requirement 的全部 fork option 提供显式删除入口；删除先拒绝
+inbound override，再停止并清理 config/logging metadata，业务 persistence 不由 generic remove purge。
 
 因此 memory/Redis backend、不同数据库 provider 或应用自定义 capability provider 不需要各自注册管理 UI。关闭
 Workbench 后，static/dynamic/headless host 仍通过同一 constructor dependency 与 runtime state 完成选择。
@@ -152,7 +157,7 @@ sidecar 推导它，也不创建 product service、额外 HTTP route、polling �
 
 ## Plugin catalog classification
 
-插件目录分类属于 Workbench host layout，不进入 `@Plugin`、PluginInfo、Extension 或 Contract。宿主通过
+插件目录分类属于 Workbench host layout，不进入 `@Plugin`、`PluginNodeInfo`、Extension 或 Contract。宿主通过
 `workbench.pluginGroups[].definitions` 注册 definition family 分类；未命中宿主规则且拥有可信 `packageName` 的动态插件按精确包名自动分类。
 用户只能在已注册分类与未分组区之间移动、排序插件，不能创建、重命名或删除分类。
 
@@ -161,6 +166,27 @@ disabled/stopped Plugin 仍按 catalog source 分类；Workbench disabled 时不
 偏好使用结构化 definition address，目录展示的 variants 和 extension/resource owner 仍使用 node address；不使用 class/display name。
 新 fork 自动继承 family 分类，同一 definition 的 variants 不能拆到不同 group。完整身份、匹配和持久化规则见
 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。
+
+## Address-keyed non-materializing read model
+
+Workbench catalog、config、status、preference、bundle 与 artifact 查询只接收 canonical `PluginDefinitionAddress`/
+`PluginNodeAddress`，内部 Map 使用 Core canonical index key。它们不保存 Core slot，也不为 read 调用 `internDefinition`/`internNode`。disabled
+definition、durable disabled/orphan fork 和 invalid lookup 不会创建 Core definition/node record、Context、effects、Workbench mount 或 artifact
+lease；只有 Core materialization 和 running owner 的显式 `ctx.workbench.mount()` 可以创建对应生命周期状态。
+
+runtime-common status overview 是 HTTP、RPC、Workbench 目录与分类的 shared projection path。每次 projection 对 pinned catalog/RuntimeState 只建立一次
+enabled/fork/issue 索引，再按 address 投影 running/source facts；Workbench service 不得各自扫描并 intern 同一 node。持久化、跨边界 descriptor、
+artifact bundle 与 directory lookup 始终按 canonical node key 索引。WorkbenchRegistry 和 dev compiler 仅可在已经 running/materialized 的 mount lease
+内部持有现成 slot，用于 generation watch 与 Core graph relation；不得由 read lookup 创建 slot，并须在 owner withdrawal 时释放 slot、grant、bundle 与 lease。
+
+Plugin RPC 是 untrusted transport boundary：server 方法接收 `unknown` 并验证 structured address、action、object/index/forkId/field input。status、
+config、dependency/provider、fork 与 dependency query 使用封闭 discriminated union；malformed payload 返回 `invalid_input` 和明确的 `unchanged`
+state，合法 empty 与 invalid query 不可混为 `[]`/`null`。Workbench browser wrapper 只在这一边界解包 query union；unexpected programming/
+transport exception 保持 reject，不存在 `internal_error` 或按 message 猜测 code 的 catch-all。
+
+成功的 status、config、dependency/provider 与 fork mutation 都返回同一 address-only、deep-frozen `PluginApplyReport`。Workbench 可以按
+封闭 status/code 做交互提示，但不得把 report 降级成 boolean：drain/start issue、blocked reconciliation 与 committed/unchanged facts 仍可由
+调用者检查。fork metadata persistence 失败时 UI 根据 `retained | disabled-retained | unknown` 刷新并允许幂等重试。
 
 ## Plugin identity 与可读路径
 

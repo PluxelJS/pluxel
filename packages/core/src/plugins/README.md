@@ -29,7 +29,8 @@ reflection 或 name fallback。
 - `PluginService.ts`：registry、graph commit、slot-aware read 与 internal subscriptions；
 - `PluginActor.ts`：generation state machine、late init settle；
 - `plugin-service/LifecycleManager.ts`：start plan 与 timeout；
-- `commit.ts`、`fork.ts`：commit facts 与结构化 fork node。
+- `plugin-service/*`：commit planning、dependent closure、lifecycle report 与 transaction；fork 只是结构化 node variant，
+  不存在独立 constructor/runtime layer。
 
 ### decorators/
 
@@ -39,8 +40,8 @@ reflection 或 name fallback。
 ### composition/
 
 - `BasePlugin.ts`：Context、init cleanup adoption 与 generation drain；
-- `PluginHost.ts`：init-only optional callback facade；
-- `ConfigHost.ts`：Plugin/PluginPart object config sentinel；
+- `OptionalPluginBindings.ts`：init-only optional callback facade；
+- `PluginConfigs.ts`：Plugin/PluginPart object config sentinel；
 - `PluginPart.ts`：owner-bound Part authoring、containment construction 与 lifecycle；
 - `symbols.ts`：内部 Context/generation symbols。
 

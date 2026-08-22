@@ -1,8 +1,10 @@
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, definePluginRef, Plugin, v } from '@pluxel/runtime'
 import { TelegramConfig } from './config'
 import { PluginB } from './PluginB'
-import { PluginC } from './PluginC'
+import type { PluginC } from './PluginC'
 import { test1 } from './testconfig'
+
+const PluginCRef = definePluginRef<PluginC>()
 
 const PluginAConfig = v.object({
 	test: test1,
@@ -21,8 +23,9 @@ export class PluginA extends BasePlugin {
 		void this.config
 
 		this.pluginB.doSomething()
-		const pluginC = this.ctx.registry.getInstance(PluginC)
-		this.ctx.logger.info('PluginA optional dep', { pluginC: Boolean(pluginC) })
+		this.plugins.use(PluginCRef, () => {
+			this.ctx.logger.info('PluginA optional dep', { pluginC: true })
+		})
 
 		this.ctx.http.plugin.routes(
 			(app) =>

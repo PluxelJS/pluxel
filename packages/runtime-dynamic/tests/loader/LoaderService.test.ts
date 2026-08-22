@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-	clonePluginDefinition,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 	type PluginConstructor,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
+import { requirePluginService } from '@pluxel/core/internal'
+import { requireRuntimePluginGraphCoordinator, runtimeStatePatch } from '@pluxel/runtime/internal'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins, isEnabled } from '../support/runtime-state'
@@ -23,7 +24,7 @@ function forkAddress(plugin: PluginConstructor, forkId: string): PluginNodeAddre
 
 describe('LoaderService', () => {
 	it('registers disabled fixed plugins by address without changing enablement', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 
 		@Plugin()
 		class Fixed extends BasePlugin {}
@@ -37,11 +38,12 @@ describe('LoaderService', () => {
 		expect(isEnabled(ctx, address)).toBe(false)
 		expect(ctx.loader.api.registry.getCtor(address)).toBe(Fixed)
 		expect(ctx.loader.api.registry.findModuleId(address)).toBe(fixedOwner)
-		expect(core.registry.isRunning(Fixed)).toBe(false)
+		expect(ctx.loader.api.anchors.has(fixedOwner)).toBe(false)
+		expect(requirePluginService(ctx).isRunning(address)).toBe(false)
 	})
 
 	it('starts enabled fixed dependencies from lowered constructor facts', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 		const started: string[] = []
 
 		@Plugin()
@@ -63,11 +65,14 @@ describe('LoaderService', () => {
 		}
 		lowerTestPlugin(Consumer, { requires: [Provider] })
 
-		enablePlugins(ctx, Provider, Consumer)
 		await ctx.loader.registerFixedPlugins([Consumer, Provider], { moduleId: fixedOwner })
+		await enablePlugins(ctx, Provider, Consumer)
 
 		expect(started).toEqual(['provider', 'consumer'])
-		expect(core.registry.getInstance(Consumer)?.provider).toBeInstanceOf(Provider)
+		expect(
+			(requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as Consumer | undefined)
+				?.provider,
+		).toBeInstanceOf(Provider)
 	})
 
 	it('allows equal display names at distinct definition addresses', async () => {
@@ -93,15 +98,16 @@ describe('LoaderService', () => {
 	it('rejects a second module claiming an existing definition slot', async () => {
 		const { ctx } = createHmrTestContext()
 
-		@Plugin()
-		class Original extends BasePlugin {}
-		lowerTestPlugin(Original)
+		const Original = class Original extends BasePlugin {}
+		Plugin()(Original)
+		lowerTestPlugin(Original, { path: 'tests/runtime-dynamic/shared.ts' })
 
-		@Plugin({ displayName: 'Replacement generation' })
-		class Replacement extends BasePlugin {}
-		lowerTestPlugin(Replacement)
-
-		clonePluginDefinition(Original, Replacement)
+		const Replacement = class Replacement extends BasePlugin {}
+		Plugin({ displayName: 'Replacement generation' })(Replacement)
+		lowerTestPlugin(Replacement, {
+			path: 'tests/runtime-dynamic/shared.ts',
+			exportName: 'Original',
+		})
 		const address = pluginNodeAddressOf(Original)
 		await ctx.loader.replaceModule('first.ts', { Original })
 
@@ -133,34 +139,35 @@ describe('LoaderService', () => {
 		Plugin()(Unlowered)
 
 		await expect(ctx.loader.replaceModule('unlowered.ts', { Unlowered })).rejects.toThrow(
-			/Plugin definition was not lowered/i,
+			/Plugin declaration was not lowered/i,
 		)
 		expect(ctx.loader.api.registry.listRegistered()).toEqual([])
 		expect(ctx.loader.api.anchors.has('unlowered.ts')).toBe(false)
 	})
 
 	it('derives enabled fork nodes exclusively from RuntimeState v3', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 
-		@Plugin({ displayName: 'Forkable' })
-		class FixedForkable extends ForkablePlugin {}
+		@Plugin({ displayName: 'Forkable', forkable: true })
+		class FixedForkable extends BasePlugin {}
 		lowerTestPlugin(FixedForkable)
 
 		const base = pluginNodeAddressOf(FixedForkable)
 		const worker = forkAddress(FixedForkable, 'worker')
-		ctx.runtimeState.update((draft) => {
-			draft.forks = [{ definition: base.definition, forkIds: ['worker'] }]
-		})
-		enablePlugins(ctx, worker)
-
 		await ctx.loader.registerFixedPlugins([FixedForkable], { moduleId: fixedOwner })
-		expect(core.registry.isRunning(FixedForkable)).toBe(false)
+		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
+			runtimeStatePatch(
+				{ type: 'ensure-fork', definition: base.definition, forkId: 'worker' },
+				{ type: 'set-enabled', node: worker, enabled: true },
+			),
+		)
+		expect(requirePluginService(ctx).isRunning(base)).toBe(false)
 		expect(ctx.loader.api.runtime.isRunning(worker)).toBe(true)
 		expect(ctx.loader.api.registry.findModuleId(worker)).toBe(fixedOwner)
 	})
 
-	it('publishes address-first module ownership and no export-name identity map', async () => {
-		const { core, ctx } = createHmrTestContext()
+	it('keeps module provenance in the route catalog and out of Core identity', async () => {
+		const { ctx } = createHmrTestContext()
 
 		@Plugin({ displayName: 'Catalog entry' })
 		class CatalogEntry extends BasePlugin {}
@@ -171,14 +178,37 @@ describe('LoaderService', () => {
 
 		expect(ctx.loader.api.registry.findModuleId(address)).toBe('catalog.ts')
 		expect(ctx.loader.api.registry.getExportKey(address)).toBe('CatalogEntry')
-		expect(core.registry.getRuntimeModuleId(core.registry.internNodeAddress(address))).toBe(
-			'catalog.ts',
-		)
-		expect(core.registry.listRuntimeModuleItems('catalog.ts')).toEqual([{ ctor: CatalogEntry }])
+		expect(
+			requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot().entries[0]?.provenance,
+		).toEqual({
+			moduleId: 'catalog.ts',
+		})
 	})
 
-	it('does not publish rolled-back loader declarations to Core ownership', async () => {
-		const { core, ctx } = createHmrTestContext()
+	it('caches the anchor projection for one committed catalog snapshot', async () => {
+		const { ctx } = createHmrTestContext()
+
+		@Plugin()
+		class FirstAnchor extends BasePlugin {}
+		lowerTestPlugin(FirstAnchor)
+
+		@Plugin()
+		class SecondAnchor extends BasePlugin {}
+		lowerTestPlugin(SecondAnchor)
+
+		await ctx.loader.replaceModule('first-anchor.ts', { FirstAnchor })
+		const first = ctx.loader.api.anchors.snapshot()
+		expect(ctx.loader.api.anchors.snapshot()).toBe(first)
+		expect(first).toEqual(new Set(['first-anchor.ts']))
+
+		await ctx.loader.replaceModule('second-anchor.ts', { SecondAnchor })
+		const second = ctx.loader.api.anchors.snapshot()
+		expect(second).not.toBe(first)
+		expect(second).toEqual(new Set(['first-anchor.ts', 'second-anchor.ts']))
+	})
+
+	it('does not publish rolled-back loader declarations to the common catalog', async () => {
+		const { ctx } = createHmrTestContext()
 
 		@Plugin({ displayName: 'Rolled back' })
 		class RolledBack extends BasePlugin {}
@@ -187,10 +217,43 @@ describe('LoaderService', () => {
 		const batch = ctx.loader.beginBatch()
 		await batch.replaceModule('rolled-back.ts', { RolledBack })
 		batch.rollback()
-		core.registry.resetDraft()
 
 		expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(RolledBack))).toBeUndefined()
-		expect(core.registry.getRuntimeModuleId(pluginNodeAddressOf(RolledBack))).toBeUndefined()
-		expect(core.registry.listRuntimeModuleItems('rolled-back.ts')).toEqual([])
+		expect(requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot().entries).toEqual([])
+	})
+
+	it('rejects a stale route draft through the coordinator catalog revision', async () => {
+		const { ctx } = createHmrTestContext()
+
+		@Plugin()
+		class First extends BasePlugin {}
+		lowerTestPlugin(First)
+
+		@Plugin()
+		class Stale extends BasePlugin {}
+		lowerTestPlugin(Stale)
+
+		const first = ctx.loader.beginBatch()
+		const stale = ctx.loader.beginBatch()
+		await first.replaceModule('first.ts', { First })
+		await stale.replaceModule('stale.ts', { Stale })
+		await first.commit({
+			statePatch: runtimeStatePatch({
+				type: 'set-enabled',
+				node: pluginNodeAddressOf(First),
+				enabled: true,
+			}),
+		})
+
+		await expect(stale.commit()).rejects.toThrow(/catalog revision must advance/)
+		expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(First))).toBe(First)
+		expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(Stale))).toBeUndefined()
+		expect(requirePluginService(ctx).isRunning(pluginNodeAddressOf(First))).toBe(true)
+		expect(requirePluginService(ctx).isRunning(pluginNodeAddressOf(Stale))).toBe(false)
+		expect(
+			requireRuntimePluginGraphCoordinator(ctx)
+				.catalogSnapshot()
+				.entries.map((entry) => entry.candidate.implementation),
+		).toEqual([First])
 	})
 })

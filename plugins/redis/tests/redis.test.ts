@@ -1,41 +1,73 @@
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import {
+	formatPluginNodeReference,
+	pluginDefinitionAddressOf,
+	type PluginConstructor,
+	v,
+} from '@pluxel/runtime'
+import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatPluginNodeReference, v } from '@pluxel/runtime'
 
 const redisMock = vi.hoisted(() => {
-	const state = { open: false, ready: false }
-	const client = {
-		get isOpen() {
-			return state.open
-		},
-		get isReady() {
-			return state.ready
-		},
-		on: vi.fn(),
-		connect: vi.fn(),
-		close: vi.fn(),
-		destroy: vi.fn(),
+	const makeClient = () => {
+		const state = { open: false, ready: false }
+		const client = {
+			get isOpen() {
+				return state.open
+			},
+			get isReady() {
+				return state.ready
+			},
+			on: vi.fn(),
+			connect: vi.fn(async () => {
+				state.open = true
+				state.ready = true
+				return client
+			}),
+			close: vi.fn(async () => {
+				state.open = false
+				state.ready = false
+			}),
+			destroy: vi.fn(() => {
+				state.open = false
+				state.ready = false
+			}),
+		}
+		client.on.mockImplementation(() => client)
+		return { state, client }
 	}
-	client.on.mockImplementation(() => client)
+	const { state, client } = makeClient()
 	const createClient = vi.fn(() => client)
-	return { state, client, createClient }
+	return { state, client, createClient, makeClient }
 })
 
 vi.mock('redis', () => ({ createClient: redisMock.createClient }))
 
-import {
-	Redis,
-	RedisConfig,
-	RedisConnectionError,
-	RedisNotRunningError,
-	RedisPlugin,
-} from '../src/index.ts'
+import { Redis, RedisConfig, RedisConnectionError, RedisPlugin } from '../src/index.ts'
 
 @Plugin()
 class RedisConsumer extends BasePlugin {
 	constructor(readonly redis: Redis) {
 		super()
 	}
+}
+
+@Plugin()
+class RedisConsumerA extends BasePlugin {
+	constructor(readonly redis: Redis) {
+		super()
+	}
+}
+
+@Plugin()
+class RedisConsumerB extends BasePlugin {
+	constructor(readonly redis: Redis) {
+		super()
+	}
+}
+
+function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+	host.add(plugins)
+	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
 }
 
 beforeEach(() => {
@@ -60,8 +92,8 @@ beforeEach(() => {
 
 describe('@pluxel/redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
-		await withHost(async (host) => {
-			host.add([RedisPlugin, RedisConsumer])
+		await withRuntimeHost(async (host) => {
+			addEnabled(host, [RedisPlugin, RedisConsumer])
 			await host.commit()
 
 			const consumer = host.require(RedisConsumer)
@@ -79,10 +111,10 @@ describe('@pluxel/redis', () => {
 			)
 
 			const handle = consumer.redis
-			host.remove(RedisPlugin)
+			host.cfg(RedisPlugin).disable()
 			await host.commit()
 			expect(redisMock.client.close).toHaveBeenCalledOnce()
-			expect(() => handle.client).toThrow(RedisNotRunningError)
+			expect(() => handle.client).toThrow('Plugin owner stopped')
 		})
 	})
 
@@ -94,11 +126,51 @@ describe('@pluxel/redis', () => {
 		expect(v.safeParse(RedisConfig, { url: 'rediss://redis.example.com:6380' }).success).toBe(true)
 	})
 
+	it('isolates config, clients, and lifecycle across two forks of one provider', async () => {
+		const east = redisMock.makeClient()
+		const west = redisMock.makeClient()
+		redisMock.createClient
+			.mockImplementationOnce(() => east.client)
+			.mockImplementationOnce(() => west.client)
+
+		await withRuntimeHost(async (host) => {
+			host.add([RedisPlugin, RedisConsumerA, RedisConsumerB])
+			const East = host.fork(RedisPlugin, 'east')
+			const West = host.fork(RedisPlugin, 'west')
+			host.cfg(East).set({ url: 'redis://east.example:6379', database: 1 })
+			host.cfg(West).set({ url: 'redis://west.example:6379', database: 2 })
+			host.cfg(East).enable()
+			host.cfg(West).enable()
+			host.cfg(RedisConsumerA).enable()
+			host.cfg(RedisConsumerB).enable()
+			host.override(RedisConsumerA, pluginDefinitionAddressOf(Redis), East)
+			host.override(RedisConsumerB, pluginDefinitionAddressOf(Redis), West)
+
+			await host.commit()
+			const eastCapability = host.require(RedisConsumerA).redis
+			const westCapability = host.require(RedisConsumerB).redis
+			expect(eastCapability.client).toBe(east.client)
+			expect(westCapability.client).toBe(west.client)
+			expect(redisMock.createClient.mock.calls).toEqual([
+				[expect.objectContaining({ url: 'redis://east.example:6379', database: 1 })],
+				[expect.objectContaining({ url: 'redis://west.example:6379', database: 2 })],
+			])
+			expect(host.require(East).ctx).not.toBe(host.require(West).ctx)
+
+			host.cfg(East).disable()
+			await host.commitAllowFail()
+			expect(east.client.close).toHaveBeenCalledOnce()
+			expect(() => eastCapability.client).toThrow('Plugin owner stopped')
+			expect(west.client.close).not.toHaveBeenCalled()
+			expect(westCapability.client).toBe(west.client)
+		})
+	})
+
 	it('fails lifecycle honestly and destroys a client that cannot connect', async () => {
 		redisMock.client.connect.mockRejectedValueOnce(new Error('offline'))
 
-		await withHost(async (host) => {
-			host.add(RedisPlugin)
+		await withRuntimeHost(async (host) => {
+			addEnabled(host, [RedisPlugin])
 			const commit = await host.commitAllowFail()
 			expect(host.isRunning(RedisPlugin)).toBe(false)
 			expect(redisMock.client.destroy).toHaveBeenCalledOnce()

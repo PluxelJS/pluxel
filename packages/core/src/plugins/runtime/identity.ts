@@ -209,12 +209,25 @@ export class PluginSlotRegistry {
 		return this.internParsedDefinition(address)
 	}
 
+	lookupDefinition(input: PluginDefinitionAddress): PluginDefinitionSlot | undefined {
+		return this.lookupParsedDefinition(parsePluginDefinitionAddress(input))
+	}
+
 	internNode(input: PluginNodeAddress): PluginNodeSlot {
 		const address = parsePluginNodeAddress(input)
 		const definition = this.internParsedDefinition(address.definition)
 		return address.variant === 'default'
 			? this.defaultNode(definition)
 			: this.forkNode(definition, address.forkId)
+	}
+
+	lookupNode(input: PluginNodeAddress): PluginNodeSlot | undefined {
+		const address = parsePluginNodeAddress(input)
+		const definition = this.lookupParsedDefinition(address.definition)
+		if (!definition) return undefined
+		return address.variant === 'default'
+			? this.defaultNodes.get(definition)
+			: this.forkNodes.get(definition)?.get(address.forkId)
 	}
 
 	defaultNode(definition: PluginDefinitionSlot): PluginNodeSlot {
@@ -284,6 +297,16 @@ export class PluginSlotRegistry {
 		byExport.set(address.exportName, slot)
 		this.ownedDefinitions.add(slot)
 		return slot
+	}
+
+	private lookupParsedDefinition(
+		address: PluginDefinitionAddress,
+	): PluginDefinitionSlot | undefined {
+		const entry =
+			address.entry.kind === 'package-root'
+				? this.packageEntries.get(address.entry.packageName)
+				: this.sourceEntries.get(address.entry.sourceSpace)?.get(address.entry.path)
+		return entry ? this.definitions.get(entry)?.get(address.exportName) : undefined
 	}
 
 	private internParsedEntry(address: PluginEntryAddress): PluginEntrySlot {

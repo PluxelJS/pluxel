@@ -2,10 +2,10 @@
 // - 你需要同一个插件的多个运行实例
 // - 你要看 consumer 如何依赖某个 fork
 
-import { BasePlugin, formatPluginNodeReference, ForkablePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
 
-@Plugin()
-export class DemoWorker extends ForkablePlugin {
+@Plugin({ forkable: true })
+export class DemoWorker extends BasePlugin {
 	override init(): void {
 		this.ctx.logger.info('ready', {
 			address: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),

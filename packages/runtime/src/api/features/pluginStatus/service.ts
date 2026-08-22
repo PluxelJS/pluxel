@@ -1,6 +1,4 @@
 import {
-	getPluginInfo,
-	pluginDefinitionAddressEqual,
 	pluginNodeIndexKey,
 	type Context as PlxContext,
 	type PluginNodeAddress,
@@ -11,45 +9,28 @@ import type {
 	PluginStatusEntryLifecycleStage,
 	PluginStatusOverview,
 } from './schema'
-import { readRuntimePluginStatus, unknownPluginSource } from '../../../runtime/capabilities'
+import {
+	readRuntimeRouteCapabilities,
+	runtimePluginStatusOverview,
+	type RuntimePluginStatusSnapshot,
+	unknownPluginSource,
+} from '../../../runtime/capabilities'
 import { projectPluginCatalog } from '../plugins/catalog-projection'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>
 
 export function resolvePluginSource(pCtx: PlxContext, address: PluginNodeAddress): SourceOutput {
-	const ctor = pCtx.runtimeRoute?.catalog.resolve(address)
-	return (pCtx.runtimeRoute?.source?.resolveSource(address, ctor) ??
+	return (readRuntimeRouteCapabilities(pCtx)?.source?.resolveSource(address) ??
 		unknownPluginSource()) as SourceOutput
 }
 
 export function readStatusSnapshot(pCtx: PlxContext, address: PluginNodeAddress) {
-	const catalog = pCtx.runtimeRoute?.catalog
-	const registered = catalog?.listRegistered() ?? []
-	let entry = registered.find(
+	const entry = runtimePluginStatusOverview(pCtx).statuses.find(
 		(candidate) => pluginNodeIndexKey(candidate.address) === pluginNodeIndexKey(address),
 	)
-	if (!entry && address.variant === 'fork') {
-		const ctor = catalog?.resolve(address)
-		const base = registered.find((candidate) =>
-			pluginDefinitionAddressEqual(candidate.address.definition, address.definition),
-		)
-		if (ctor && base) {
-			entry = {
-				address,
-				ctor,
-				displayName: getPluginInfo(ctor).displayName,
-				rootExportName: base.rootExportName,
-			}
-		}
-	}
 	if (!entry) throw new Error('Plugin node is not present in the route catalog')
-	return readRuntimePluginStatus(pCtx, entry) as {
-		address: PluginNodeAddress
-		displayName: string
-		rootExportName: string
-		isRunning: boolean
-		isEnabled: boolean
+	return entry as RuntimePluginStatusSnapshot & {
 		lifecycleStage: LifecycleStage
 		source: SourceOutput
 	}
@@ -82,6 +63,8 @@ export function getStatusOverview(pCtx: PlxContext) {
 			isRunning: snapshot.isRunning,
 			isEnabled: snapshot.isEnabled,
 			lifecycleStage: snapshot.lifecycleStage,
+			availability: snapshot.availability,
+			issues: snapshot.issues,
 			source: snapshot.source,
 		})
 	}

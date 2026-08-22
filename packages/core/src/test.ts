@@ -1,45 +1,48 @@
 import './services/index'
+import { Context } from '@pluxel/context'
 import {
-	checkPluginDecorator,
+	BasePlugin,
+	pluginDefinitionAddressEqual,
 	pluginNodeAddressEqual,
+	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
-	type BasePlugin,
 	type CommitSummary,
-	Context,
-	type ForkablePluginConstructor,
+	type PluginConstructor,
+	type PluginDefinitionAddress,
 	type PluginLifecycleIssue,
 	type PluginLifecycleIssueKind,
 	type PluginLifecycleIssuePhase,
-	type PluginConstructor,
-	type PluginIdentifier,
-	type PluginPart,
 	type PluginNodeAddress,
 	type PluginNodeSlot,
-	type PluginService,
+	type PluginPart,
 } from './index'
+import { checkPluginDecorator } from './plugins/decorators/decorator/api'
+import { requireConfigService } from './internal/config-service'
+import { requirePluginService } from './internal/plugin-service'
+import { consumePluginDefinitionCandidate } from './plugins/runtime/definition'
+import { parsePluginNodeAddress } from './plugins/runtime/identity'
+import { assertCommitStarted, type PluginService } from './plugins/runtime/PluginService'
+import type { PreparedRuntimeUpdateCommitOptions } from './plugins/runtime/plugin-service/RuntimeUpdateTransaction'
 
 export {
 	BasePlugin,
-	ForkablePlugin,
 	Plugin,
 	PluginPart,
-	checkPluginDecorator,
 	collectPluginLifecycleBlocked,
 	collectPluginLifecycleDrainErrors,
 	collectPluginLifecycleIssuePlugins,
 	collectPluginLifecycleNotStarted,
 	definePluginRef,
-	getPluginDefinitionFacts,
-	getPluginInfo,
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleDrainErrorIssue,
 	isPluginLifecycleNotStartedIssue,
+	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
 } from './index'
+export { checkPluginDecorator }
 export { Context } from './index'
 export type {
 	CommitSummary,
-	ForkablePluginConstructor,
 	PluginCommitChanges,
 	PluginDefinitionAddress,
 	PluginLifecycleIssue,
@@ -51,9 +54,14 @@ export type {
 	PluginRef,
 	PluginReplacement,
 	PluginConstructor,
-	PluginIdentifier,
 	RuntimeUpdateCommitSummary,
 } from './index'
+
+declare const pluginNodeType: unique symbol
+
+/** Type-only author hint; the runtime value is exactly a frozen PluginNodeAddress. */
+export type PluginNodeHandle<T extends PluginConstructor> = PluginNodeAddress &
+	Readonly<{ [pluginNodeType]: T }>
 
 type NonFunctionPropertyNames<T extends object> = {
 	[K in keyof T]-?: T[K] extends (...args: any[]) => any ? never : K
@@ -69,69 +77,58 @@ export type CoreHostConfigPatch<T extends PluginConstructor> = Partial<{
 
 export type CoreHostConfigHandle<TTarget extends PluginConstructor> = {
 	readonly owner: PluginNodeAddress
-	set: (patch: CoreHostConfigPatch<TTarget>) => void
-	unset: (...keys: string[]) => void
-	rev: () => number
-	enable: () => void
-	disable: () => void
-	enabled: () => boolean
+	set(patch: CoreHostConfigPatch<TTarget>): void
+	unset(...keys: string[]): void
+	rev(): number
+	enable(): void
+	disable(): void
+	enabled(): boolean
 }
+
+type TypedTarget<T extends PluginConstructor> = T | PluginNodeHandle<T>
+type AnyTarget = PluginConstructor | PluginNodeAddress
 
 export interface CoreHost {
 	readonly ctx: Context
-	add(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): CoreHost
-	add(Plugins: readonly PluginConstructor[], opts?: { provideBase?: boolean }): CoreHost
-	remove(id: PluginIdentifier): CoreHost
-	remove(ids: readonly PluginIdentifier[]): CoreHost
-	restart(id: PluginIdentifier, opts?: { cascadeDependents?: boolean }): CoreHost
+	add(Plugin: PluginConstructor): CoreHost
+	add(Plugins: readonly PluginConstructor[]): CoreHost
+	remove(target: AnyTarget, options?: { cascadeDependents?: boolean }): CoreHost
+	remove(targets: readonly AnyTarget[]): CoreHost
+	restart(target: AnyTarget, options?: { cascadeDependents?: boolean }): CoreHost
 	replace(
-		id: PluginIdentifier,
+		target: AnyTarget,
 		next: PluginConstructor,
-		opts?: { cascadeDependents?: boolean; provideBase?: boolean },
+		options?: { cascadeDependents?: boolean },
 	): CoreHost
-	fork<T extends ForkablePluginConstructor>(
-		Plugin: T,
-		forkId: string,
-		opts?: { provideBase?: boolean },
-	): T
-	commit(): Promise<CommitSummary>
+	fork<T extends PluginConstructor>(Plugin: T, forkId: string): PluginNodeHandle<T>
+	override(
+		consumer: AnyTarget,
+		requirement: PluginConstructor | PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): CoreHost
+	commit(options?: PreparedRuntimeUpdateCommitOptions): Promise<CommitSummary>
 	commitAllowFail(): Promise<CommitSummary>
-	isRunning(id: PluginIdentifier): boolean
-	get<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined
-	require<T extends PluginIdentifier>(id: T): InstanceType<T>
-	cfg<T extends PluginConstructor>(target: T): CoreHostConfigHandle<T>
-	start<T extends PluginConstructor>(
-		Plugin: T,
-		opts?: { provideBase?: boolean },
-	): Promise<InstanceType<T>>
+	isRunning(target: AnyTarget): boolean
+	get<T extends PluginConstructor>(target: TypedTarget<T>): InstanceType<T> | undefined
+	get(target: PluginNodeAddress): BasePlugin | undefined
+	require<T extends PluginConstructor>(target: TypedTarget<T>): InstanceType<T>
+	require(target: PluginNodeAddress): BasePlugin
+	cfg<T extends PluginConstructor>(target: TypedTarget<T>): CoreHostConfigHandle<T>
+	start<T extends PluginConstructor>(Plugin: T): Promise<InstanceType<T>>
 	last(): CommitSummary | undefined
 	services(): PluginNodeSlot[]
 	plugins(): PluginConstructor[]
-	has(id: PluginIdentifier | PluginNodeSlot): boolean
+	has(target: AnyTarget): boolean
 	dispose(): Promise<void>
 }
 
 export type CoreTestContext = { readonly ctx: Context; dispose: () => Promise<void> }
 export type CoreHostOptions = { prepareCommit?: (ctx: Context) => Promise<void> | void }
 
-type RuntimeStateLike = {
-	snapshot(): { enabled: readonly PluginNodeAddress[] }
-	update(run: (draft: { enabled: PluginNodeAddress[] }) => void): void
-}
-
-function runtimeStateOf(ctx: Context): RuntimeStateLike | undefined {
-	const value = (ctx as unknown as { runtimeState?: unknown }).runtimeState
-	if (!value || typeof value !== 'object') return undefined
-	const candidate = value as Partial<RuntimeStateLike>
-	return typeof candidate.snapshot === 'function' && typeof candidate.update === 'function'
-		? (candidate as RuntimeStateLike)
-		: undefined
-}
-
 export type CoreHostLifecycleIssueExpectation = {
 	phase?: PluginLifecycleIssuePhase
 	kind?: PluginLifecycleIssueKind
-	blockedBy?: PluginConstructor
+	blockedBy?: PluginConstructor | PluginNodeAddress
 	message?: string | RegExp
 }
 
@@ -142,19 +139,25 @@ function normalizeConfig(config: Context.Config): Context.Config {
 	}) as Context.Config
 }
 
-function assertCommitSummary(
-	result: Awaited<ReturnType<PluginService['commit']>>,
+function targetAddress(target: AnyTarget): PluginNodeAddress {
+	return typeof target === 'function' ? pluginNodeAddressOf(target) : parsePluginNodeAddress(target)
+}
+
+function assertCommitResult(
+	result: Awaited<ReturnType<ReturnType<PluginService['beginUpdate']>['commit']>>,
 	registry: PluginService,
 ): CommitSummary {
-	if (!result.ok) throw result.err instanceof Error ? result.err : new Error(String(result.err))
+	if (result.ok === false) {
+		throw result.err instanceof Error ? result.err : new Error(String(result.err))
+	}
 	const summary = registry.lastCommit
-	if (!summary) throw new Error('commit succeeded but lastCommit is missing')
+	if (!summary) throw new Error('Core Plugin update committed without a CommitSummary')
 	return summary
 }
 
-function nodeFor(summary: CommitSummary, target: PluginConstructor): PluginNodeSlot | undefined {
-	const address = pluginNodeAddressOf(target)
-	const candidates: unknown[] = [...summary.graph.keys()]
+function nodeFor(summary: CommitSummary, target: AnyTarget): PluginNodeSlot | undefined {
+	const address = targetAddress(target)
+	const candidates: unknown[] = []
 	for (const issue of summary.lifecycleReport.issues) {
 		candidates.push(issue.plugin)
 		if (issue.blockedBy) candidates.push(issue.blockedBy)
@@ -162,12 +165,20 @@ function nodeFor(summary: CommitSummary, target: PluginConstructor): PluginNodeS
 	for (const node of candidates) {
 		if (!node || typeof node !== 'object' || !('definition' in node)) continue
 		const slot = node as PluginNodeSlot
-		const entry = slot.definition.entry.address
 		const current: PluginNodeAddress =
 			slot.variant === 'default'
-				? { definition: { entry, exportName: slot.definition.exportName }, variant: 'default' }
+				? {
+						definition: {
+							entry: slot.definition.entry.address,
+							exportName: slot.definition.exportName,
+						},
+						variant: 'default',
+					}
 				: {
-						definition: { entry, exportName: slot.definition.exportName },
+						definition: {
+							entry: slot.definition.entry.address,
+							exportName: slot.definition.exportName,
+						},
 						variant: 'fork',
 						forkId: slot.forkId,
 					}
@@ -178,7 +189,7 @@ function nodeFor(summary: CommitSummary, target: PluginConstructor): PluginNodeS
 
 export function findPluginLifecycleIssue(
 	summary: CommitSummary,
-	plugin: PluginConstructor,
+	plugin: AnyTarget,
 	expected: CoreHostLifecycleIssueExpectation = {},
 ): PluginLifecycleIssue | undefined {
 	const node = nodeFor(summary, plugin)
@@ -217,14 +228,12 @@ export function pluginLifecycleIssuePlugins(
 
 export function assertPluginLifecycleIssue(
 	summary: CommitSummary,
-	plugin: PluginConstructor,
+	plugin: AnyTarget,
 	expected: CoreHostLifecycleIssueExpectation = {},
 ): PluginLifecycleIssue {
 	const issue = findPluginLifecycleIssue(summary, plugin, expected)
 	if (issue) return issue
-	throw new Error(
-		`Expected lifecycle issue for ${pluginNodeAddressOf(plugin).definition.exportName}`,
-	)
+	throw new Error(`Expected lifecycle issue for ${targetAddress(plugin).definition.exportName}`)
 }
 
 export function createCoreHost(
@@ -233,116 +242,163 @@ export function createCoreHost(
 ): CoreHost {
 	let host!: CoreHost
 	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
-	const registry = ctx.registry as PluginService
-	const configService = ctx.configService
+	const registry = requirePluginService(ctx)
+	const configService = requireConfigService(ctx)
 	const localEnabled: PluginNodeAddress[] = []
+	let update: ReturnType<PluginService['beginUpdate']> | undefined
 
+	const currentUpdate = () => (update ??= registry.beginUpdate({ reason: 'core-test' }))
+	const candidateFor = (Plugin: PluginConstructor) => consumePluginDefinitionCandidate(Plugin)
 	const setEnabled = (owner: PluginNodeAddress, enabled: boolean) => {
-		const runtimeState = runtimeStateOf(ctx)
-		const mutate = (list: PluginNodeAddress[]) => {
-			const index = list.findIndex((item) => pluginNodeAddressEqual(item, owner))
-			if (enabled && index < 0) list.push(owner)
-			else if (!enabled && index >= 0) list.splice(index, 1)
-		}
-		if (runtimeState) runtimeState.update((draft) => mutate(draft.enabled))
-		else mutate(localEnabled)
+		const index = localEnabled.findIndex((item) => pluginNodeAddressEqual(item, owner))
+		if (enabled && index < 0) localEnabled.push(owner)
+		else if (!enabled && index >= 0) localEnabled.splice(index, 1)
 	}
 	const isEnabled = (owner: PluginNodeAddress) =>
-		(runtimeStateOf(ctx)?.snapshot().enabled ?? localEnabled).some((item) =>
-			pluginNodeAddressEqual(item, owner),
-		)
+		localEnabled.some((item) => pluginNodeAddressEqual(item, owner))
 
-	const last = () => registry.lastCommit
-	const services = () => [...(last()?.graph.keys() ?? [])] as PluginNodeSlot[]
-	const plugins = () =>
-		(last()?.graph.declarationsBySlot() ?? [])
-			.map((decl) => decl?.meta?.class)
-			.filter(
-				(value): value is PluginConstructor =>
-					typeof value === 'function' && checkPluginDecorator(value),
-			)
-	const has = (id: PluginIdentifier | PluginNodeSlot) =>
-		registry.resolvePluginNode(id) !== undefined
-	const get = <T extends PluginIdentifier>(id: T) => registry.getInstance(id)
-	const require = <T extends PluginIdentifier>(id: T) => {
-		const instance = get(id)
+	const addOne = (Plugin: PluginConstructor) => {
+		currentUpdate().materializeNode(pluginNodeAddressOf(Plugin), candidateFor(Plugin))
+	}
+	function add(Plugin: PluginConstructor): CoreHost
+	function add(Plugins: readonly PluginConstructor[]): CoreHost
+	function add(value: PluginConstructor | readonly PluginConstructor[]): CoreHost {
+		if (typeof value === 'function') addOne(value)
+		else for (const Plugin of value) addOne(Plugin)
+		return host
+	}
+	function remove(target: AnyTarget, options?: { cascadeDependents?: boolean }): CoreHost
+	function remove(targets: readonly AnyTarget[]): CoreHost
+	function remove(
+		value: AnyTarget | readonly AnyTarget[],
+		removeOptions?: { cascadeDependents?: boolean },
+	): CoreHost {
+		if (Array.isArray(value)) {
+			for (const target of value) currentUpdate().dematerializeNode(targetAddress(target))
+		} else currentUpdate().dematerializeNode(targetAddress(value as AnyTarget), removeOptions)
+		return host
+	}
+
+	async function commit(
+		allowFailure: boolean,
+		commitOptions?: PreparedRuntimeUpdateCommitOptions,
+	): Promise<CommitSummary> {
+		await options.prepareCommit?.(ctx)
+		const current = update ?? registry.beginUpdate({ reason: 'core-test-retry' })
+		update = undefined
+		try {
+			const summary = assertCommitResult(await current.commit(commitOptions), registry)
+			if (!allowFailure) assertCommitStarted(summary)
+			return summary
+		} catch (error) {
+			current.rollback()
+			throw error
+		}
+	}
+
+	const get = (target: AnyTarget) => registry.getInstance(targetAddress(target))
+	const requirePlugin = (target: AnyTarget) => {
+		const instance = get(target)
 		if (!instance) throw new Error('Plugin instance is not running')
 		return instance
 	}
-
-	async function commit(): Promise<CommitSummary> {
-		await options.prepareCommit?.(ctx)
-		return assertCommitSummary(await registry.commitStrict(), registry)
-	}
-	async function commitAllowFail(): Promise<CommitSummary> {
-		await options.prepareCommit?.(ctx)
-		return assertCommitSummary(await registry.commit(), registry)
-	}
-
-	function add(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): CoreHost
-	function add(Plugins: readonly PluginConstructor[], opts?: { provideBase?: boolean }): CoreHost
-	function add(
-		value: PluginConstructor | readonly PluginConstructor[],
-		opts?: { provideBase?: boolean },
-	): CoreHost {
-		if (typeof value === 'function') registry.register(value, opts)
-		else for (const Plugin of value) registry.register(Plugin, opts)
-		return host
-	}
-	function remove(id: PluginIdentifier): CoreHost
-	function remove(ids: readonly PluginIdentifier[]): CoreHost
-	function remove(value: PluginIdentifier | readonly PluginIdentifier[]): CoreHost {
-		if (Array.isArray(value)) for (const id of value) registry.unregister(id)
-		else registry.unregister(value as PluginIdentifier)
-		return host
+	const plugins = () => {
+		const implementations = new Set<PluginConstructor>()
+		for (const node of registry.graph.keys()) {
+			if (!isNodeSlot(node)) continue
+			const declaration = registry.graph.declaration(node)
+			if (declaration) implementations.add(declaration.meta!.definition.implementation)
+		}
+		return [...implementations]
 	}
 
 	host = {
 		ctx,
 		add,
 		remove,
-		restart: (id, opts) => (registry.restart(id, opts), host),
-		replace: (id, next, opts) => (registry.replace(id, next, opts), host),
-		fork: (Plugin, forkId, opts) => registry.registerFork(Plugin, forkId, opts) as typeof Plugin,
-		commit,
-		commitAllowFail,
-		isRunning: registry.isRunning.bind(registry),
-		get,
-		require,
-		cfg: (<T extends PluginConstructor>(Plugin: T): CoreHostConfigHandle<T> => {
-			const owner = pluginNodeAddressOf(Plugin)
-			const slot = registry.internNodeAddress(owner)
+		restart: (target, restartOptions) => (
+			currentUpdate().restartNode(targetAddress(target), restartOptions),
+			host
+		),
+		replace: (target, next, replaceOptions) => {
+			const address = targetAddress(target).definition
+			const candidate = candidateFor(next)
+			if (!pluginDefinitionAddressEqual(candidate.declaration.address, address)) {
+				throw new TypeError(
+					'CoreHost replacement must be lowered with the target Plugin definition address',
+				)
+			}
+			currentUpdate().replaceDefinition(address, candidate, replaceOptions)
+			return host
+		},
+		fork: (Plugin, forkId) => {
+			const defaultAddress = pluginNodeAddressOf(Plugin)
+			const address = parsePluginNodeAddress({
+				definition: defaultAddress.definition,
+				variant: 'fork',
+				forkId,
+			}) as PluginNodeHandle<typeof Plugin>
+			currentUpdate().materializeNode(address, candidateFor(Plugin))
+			return address
+		},
+		override: (consumer, requirement, provider) => {
+			currentUpdate().setDependencyOverride(
+				targetAddress(consumer),
+				typeof requirement === 'function' ? pluginDefinitionAddressOf(requirement) : requirement,
+				provider,
+			)
+			return host
+		},
+		commit: (commitOptions) => commit(false, commitOptions),
+		commitAllowFail: () => commit(true),
+		isRunning: (target) => registry.isRunning(targetAddress(target)),
+		get: get as CoreHost['get'],
+		require: requirePlugin as CoreHost['require'],
+		cfg: (<T extends PluginConstructor>(target: TypedTarget<T>): CoreHostConfigHandle<T> => {
+			const owner = targetAddress(target)
 			return {
 				owner,
-				set: (patch) => configService.patchConfig(slot, patch),
-				unset: (...keys) => configService.unsetConfigKeys(slot, keys),
-				rev: () => configService.getConfigRevision(slot),
+				set: (patch) => configService.patchConfig(owner, patch),
+				unset: (...keys) => configService.unsetConfigKeys(owner, keys),
+				rev: () => configService.getConfigRevision(owner),
 				enable: () => setEnabled(owner, true),
 				disable: () => setEnabled(owner, false),
 				enabled: () => isEnabled(owner),
 			}
 		}) as CoreHost['cfg'],
-		start: async (Plugin, opts) => {
-			host.add(Plugin, opts)
+		start: async (Plugin) => {
+			host.add(Plugin)
 			await host.commit()
 			return host.require(Plugin)
 		},
-		last,
-		services,
+		last: () => registry.lastCommit,
+		services: () => [...registry.graph.keys()] as PluginNodeSlot[],
 		plugins,
-		has,
+		has: (target) => registry.resolvePluginNode(targetAddress(target)) !== undefined,
 		dispose: async () => {
 			try {
-				registry.resetDraft()
-				for (const Plugin of plugins()) registry.unregister(Plugin)
-				if (last()) await host.commitAllowFail().catch((): undefined => undefined)
+				update?.rollback()
+				update = undefined
+				const nodes = [...registry.graph.keys()].filter(isNodeSlot)
+				if (nodes.length > 0) {
+					const shutdown = registry.beginUpdate({ reason: 'core-test-dispose' })
+					for (const node of nodes) {
+						shutdown.dematerializeNode(registry.nodeAddressOf(node), {
+							cascadeDependents: false,
+						})
+					}
+					await shutdown.commit()
+				}
 			} finally {
-				registry.resetDraft()
-				await ctx.effects.dispose()
+				await ctx.effects.dispose().catch((): undefined => undefined)
 			}
 		},
 	}
 	return host
+}
+
+function isNodeSlot(value: unknown): value is PluginNodeSlot {
+	return Boolean(value && typeof value === 'object' && 'definition' in value)
 }
 
 export async function withCoreHost<T>(
@@ -363,9 +419,8 @@ export function createCoreContext(config: Context.Config = {}): CoreTestContext 
 	return {
 		ctx,
 		dispose: async () => {
-			ctx.registry.resetDraft()
+			requirePluginService(ctx).resetDraft()
 			await ctx.effects.dispose().catch((): undefined => undefined)
-			ctx.registry.resetDraft()
 		},
 	}
 }

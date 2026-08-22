@@ -12,3 +12,6 @@ import '../node-artifact/NodeModuleService'
 import '../node-artifact/WorkerTaskService'
 import './CommandsService'
 import './commands/AgentToolsService'
+
+/** Context with all always-on runtime service augmentations, without installing them at import sites. */
+export type RuntimeServicesContext = import('@pluxel/core').Context

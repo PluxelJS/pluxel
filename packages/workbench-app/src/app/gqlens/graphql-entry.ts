@@ -1,6 +1,6 @@
 import { defineGQLensEntry } from '@gqlens/vite/entry'
 
-import { createInternalGraphQLSchemaSDL } from '@pluxel/runtime'
+import { createInternalGraphQLSchemaSDL } from '@pluxel/runtime/internal'
 
 const unknownPluginSource: {
 	__typename: 'PluginSourceInfo'

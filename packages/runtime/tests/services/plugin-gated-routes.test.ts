@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { withRuntimeContext } from '@pluxel/runtime/test'
-import { setPluginEnabled } from '@pluxel/runtime/internal'
+import { createElysiaApp } from '@pluxel/runtime'
 import {
-	createElysiaApp,
 	createPluginGatedRouter,
 	getPluginRoutingSnapshot,
 	type PluginGatedModuleDef,
-} from '@pluxel/runtime'
+} from '@pluxel/runtime/internal'
 
 const pluginA = {
 	definition: {
@@ -39,46 +38,45 @@ const routes: PluginGatedModuleDef[] = [
 ]
 
 describe('plugin gated routes', () => {
-	const enable = (
-		ctx: Parameters<typeof createPluginGatedRouter>[0],
-		owner: typeof pluginA | typeof pluginB,
-	) => {
-		ctx.runtimeState.update((draft) => setPluginEnabled(draft, owner, true))
-	}
-
 	it('returns 404 when plugin is disabled', async () => {
-		await withRuntimeContext(async (ctx) => {
-			enable(ctx, pluginA)
-			const api = createPluginGatedRouter(ctx, routes)
-			const app = createElysiaApp(ctx, { aot: true })
-			app.mount('/api', api)
+		await withRuntimeContext(
+			async (ctx) => {
+				const api = createPluginGatedRouter(ctx, routes)
+				const app = createElysiaApp(ctx, { aot: true })
+				app.mount('/api', api)
 
-			const res = await app.fetch(new Request('http://test/api/ok'))
-			expect(res.status).toBe(404)
-		})
+				const res = await app.fetch(new Request('http://test/api/ok'))
+				expect(res.status).toBe(404)
+			},
+			{ runtimeState: { mode: 'memory', snapshot: { enabled: [pluginA] } } },
+		)
 	})
 
 	it('handles request when plugin is enabled', async () => {
-		await withRuntimeContext(async (ctx) => {
-			enable(ctx, pluginB)
-			const api = createPluginGatedRouter(ctx, routes)
-			const app = createElysiaApp(ctx, { aot: true })
-			app.mount('/api', api)
+		await withRuntimeContext(
+			async (ctx) => {
+				const api = createPluginGatedRouter(ctx, routes)
+				const app = createElysiaApp(ctx, { aot: true })
+				app.mount('/api', api)
 
-			const res = await app.fetch(new Request('http://test/api/ok'))
-			expect(res.status).toBe(200)
-			expect(await res.text()).toBe('ok')
-		})
+				const res = await app.fetch(new Request('http://test/api/ok'))
+				expect(res.status).toBe(200)
+				expect(await res.text()).toBe('ok')
+			},
+			{ runtimeState: { mode: 'memory', snapshot: { enabled: [pluginB] } } },
+		)
 	})
 
 	it('computes a runtime snapshot of enabled plugins/routes', () => {
-		return withRuntimeContext((ctx) => {
-			enable(ctx, pluginA)
-			const snap = getPluginRoutingSnapshot(ctx, routes)
-			expect(snap).toEqual({
-				enabledPlugins: [pluginA],
-				enabledRouteIds: ['a.hello'],
-			})
-		})
+		return withRuntimeContext(
+			(ctx) => {
+				const snap = getPluginRoutingSnapshot(ctx, routes)
+				expect(snap).toEqual({
+					enabledPlugins: [pluginA],
+					enabledRouteIds: ['a.hello'],
+				})
+			},
+			{ runtimeState: { mode: 'memory', snapshot: { enabled: [pluginA] } } },
+		)
 	})
 })

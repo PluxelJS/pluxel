@@ -123,8 +123,7 @@ describe('HttpService plugin-scoped mount', () => {
 			)
 			expect(extraRes.status).toBe(404)
 
-			const instance = host.ctx.registry.getInstance(DynamicScopedHttpPlugin)
-			instance?.replaceRoutes()
+			host.require(DynamicScopedHttpPlugin).replaceRoutes()
 
 			rootRes = await host.ctx.http.fetch(
 				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),

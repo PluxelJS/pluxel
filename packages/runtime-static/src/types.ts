@@ -13,9 +13,9 @@ import type {
 	HttpServiceConfig,
 	PersistenceServiceConfig,
 	DatabaseConfig,
+	RuntimeStateStoreConfig,
 	WorkbenchConfig,
 } from '@pluxel/runtime'
-import type { RuntimeStateStoreConfig } from '@pluxel/runtime/internal'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 
 export type StaticRuntimeContextConfig = Omit<
@@ -59,7 +59,7 @@ export type StaticRuntimeDefinition = {
 	 */
 	name: string
 	/**
-	 * Fixed Plugin implementation generations. Identity comes from lowered root-entry/export facts.
+	 * Fixed Plugin implementations. Identity comes from lowered root-entry/export facts.
 	 */
 	plugins: readonly PluginConstructor[]
 }
@@ -155,6 +155,7 @@ export type StaticRuntimePluginStatus =
 	| 'config-invalid'
 	| 'dependency-missing'
 	| 'dependency-failed'
+	| 'unavailable'
 	| 'start-failed'
 	| 'unknown-config-entry'
 	| 'catalog-drift'
@@ -185,8 +186,6 @@ export type StaticRuntimeCatalogEntry = {
 	readonly displayName: string
 	readonly rootExportName: string
 	readonly provenance: PluginEntryAddress
-	/** Current implementation generation for this stable Plugin node. */
-	readonly generation: PluginConstructor
 }
 
 export type StaticRuntimeCatalogSnapshot = {

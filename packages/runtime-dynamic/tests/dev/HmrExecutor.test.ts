@@ -4,7 +4,6 @@ import { HmrExecutor, prefetchTransforms } from '../../src/hmr/engine/pipeline'
 
 type ExecutorOptions = {
 	errorLogs: Array<{ message: string; props: unknown }>
-	runtimeRollback: () => void
 	batchRollback: () => void
 	importModule: (id: string) => Promise<Record<string, unknown>>
 	replaceModule?: () => Promise<unknown> | unknown
@@ -16,19 +15,12 @@ function createExecutor(options: ExecutorOptions) {
 			logger: {
 				error: (message: string, props?: unknown) => options.errorLogs.push({ message, props }),
 			},
-			registry: {
-				beginUpdate: () => ({
-					rollback: options.runtimeRollback,
-					commit: vi.fn(),
-				}),
-			},
 			loader: {
 				beginBatch: () => ({
 					replaceModule: options.replaceModule ?? vi.fn(async () => ({})),
+					removeModule: vi.fn(),
 					rollback: options.batchRollback,
 					commit: vi.fn(),
-					getAffectedModules: () => [],
-					syncModules: vi.fn(async () => []),
 				}),
 			},
 		} as ConstructorParameters<typeof HmrExecutor>[0],
@@ -49,14 +41,12 @@ describe('HmrExecutor', () => {
 	it('marks invalid JavaScript evaluation as a failed batch result', async () => {
 		const errorLogs: Array<{ message: string; props: unknown }> = []
 		const batchRollback = vi.fn()
-		const runtimeRollback = vi.fn()
 		const replaceModule = vi.fn()
 		const syntaxError = new SyntaxError('Unexpected token')
 
 		const executor = createExecutor({
 			errorLogs,
 			batchRollback,
-			runtimeRollback,
 			replaceModule,
 			importModule: vi.fn(async () => {
 				throw syntaxError
@@ -68,7 +58,6 @@ describe('HmrExecutor', () => {
 		expect(result?.commitResult.ok).toBe(false)
 		expect(result?.executeError).toBe('Unexpected token')
 		expect(batchRollback).toHaveBeenCalledTimes(1)
-		expect(runtimeRollback).toHaveBeenCalledTimes(1)
 		expect(replaceModule).not.toHaveBeenCalled()
 		expect(errorLogs).toEqual([
 			{
@@ -81,13 +70,11 @@ describe('HmrExecutor', () => {
 	it('marks plugin injection failures as failed batch results', async () => {
 		const errorLogs: Array<{ message: string; props: unknown }> = []
 		const batchRollback = vi.fn()
-		const runtimeRollback = vi.fn()
 		const injectError = new Error('invalid plugin export')
 
 		const executor = createExecutor({
 			errorLogs,
 			batchRollback,
-			runtimeRollback,
 			importModule: vi.fn(async () => ({ Plugin: class Plugin {} })),
 			replaceModule: vi.fn(async () => {
 				throw injectError
@@ -99,7 +86,6 @@ describe('HmrExecutor', () => {
 		expect(result?.commitResult.ok).toBe(false)
 		expect(result?.injectError).toBe('invalid plugin export')
 		expect(batchRollback).toHaveBeenCalledTimes(1)
-		expect(runtimeRollback).toHaveBeenCalledTimes(1)
 		expect(errorLogs).toEqual([
 			{
 				message: 'replaceModule failed for {file}',

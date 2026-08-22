@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, getPluginInfo, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import { consumePluginDefinitionCandidate } from '@pluxel/test/unsafe'
 import { v } from '../src/config'
 
 const TestSchema = v.object({ test1: v.string() })
@@ -11,8 +12,8 @@ class ConfigSchemaTestPlugin extends BasePlugin {
 
 describe('single Plugin config schema', () => {
 	it('lowers one configs.use object schema into Plugin facts', () => {
-		const info = getPluginInfo(ConfigSchemaTestPlugin)
-		expect(info.config?.fieldName).toBe('config')
-		expect(info.config?.schema).toBe(TestSchema)
+		const candidate = consumePluginDefinitionCandidate(ConfigSchemaTestPlugin)
+		expect(candidate.declaration.config?.fieldName).toBe('config')
+		expect(candidate.declaration.config?.schema).toBe(TestSchema)
 	})
 })

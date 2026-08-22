@@ -13,34 +13,35 @@ export const PLUGIN_LIFECYCLE_ISSUE_KIND = {
 export type PluginLifecycleIssueKind =
 	(typeof PLUGIN_LIFECYCLE_ISSUE_KIND)[keyof typeof PLUGIN_LIFECYCLE_ISSUE_KIND]
 
-export type PluginLifecycleErrorInfo = {
+export type PluginLifecycleErrorInfo = Readonly<{
 	name: string
 	message: string
 	stack?: string
 	cause?: string
 	/** Present when startup failed inside an owner-contained PluginPart. */
 	partPath?: readonly string[]
-}
+}>
 
-export type PluginLifecycleIssue = {
+export type PluginLifecycleIssue = Readonly<{
 	plugin: PluginNodeSlot
 	phase: PluginLifecycleIssuePhase
 	kind: PluginLifecycleIssueKind
 	message: string
 	error?: PluginLifecycleErrorInfo
 	blockedBy?: PluginNodeSlot
-}
+}>
 
-export type PluginLifecycleReport = {
+export type PluginLifecycleReport = Readonly<{
 	readonly ok: boolean
 	readonly issues: readonly PluginLifecycleIssue[]
-}
+}>
 
 export type PluginLifecycleIssuePredicate = (issue: PluginLifecycleIssue) => boolean
 
 export type MutableLifecycleReport = {
 	issues: PluginLifecycleIssue[]
 	issueKeys: WeakMap<PluginNodeSlot, Set<string>>
+	onIssue?: () => void
 }
 
 export const EMPTY_LIFECYCLE_REPORT: PluginLifecycleReport = Object.freeze({
@@ -55,18 +56,17 @@ export const createLifecycleReport = (): MutableLifecycleReport => ({
 
 export function serializeLifecycleError(error: unknown): PluginLifecycleErrorInfo {
 	if (error instanceof Error) {
-		const info: PluginLifecycleErrorInfo = {
+		const cause = (error as Error & { cause?: unknown }).cause
+		const partPath = (error as Error & { partPath?: unknown }).partPath
+		return {
 			name: error.name || 'Error',
 			message: error.message,
+			...(error.stack ? { stack: error.stack } : {}),
+			...(cause !== null && cause !== undefined ? { cause: errorMessage(cause) } : {}),
+			...(Array.isArray(partPath) && partPath.every((item) => typeof item === 'string')
+				? { partPath: Object.freeze([...partPath]) as readonly string[] }
+				: {}),
 		}
-		if (error.stack) info.stack = error.stack
-		const cause = (error as Error & { cause?: unknown }).cause
-		if (cause !== null && cause !== undefined) info.cause = errorMessage(cause)
-		const partPath = (error as Error & { partPath?: unknown }).partPath
-		if (Array.isArray(partPath) && partPath.every((item) => typeof item === 'string')) {
-			info.partPath = Object.freeze([...partPath]) as readonly string[]
-		}
-		return info
 	}
 	return {
 		name: typeof error,
@@ -110,11 +110,38 @@ export function recordLifecycleIssue(
 	if (keys.has(key)) return
 	keys.add(key)
 	report.issues.push(issue)
+	report.onIssue?.()
+}
+
+/** Install the publication hook only after the initial immutable report has been published. */
+export function observeLifecycleReport(report: MutableLifecycleReport, onIssue: () => void): void {
+	report.onIssue = onIssue
 }
 
 export function finalizeLifecycleReport(report: MutableLifecycleReport): PluginLifecycleReport {
 	if (report.issues.length === 0) return EMPTY_LIFECYCLE_REPORT
-	return { ok: false, issues: report.issues }
+	const issues = report.issues.map((issue): PluginLifecycleIssue => {
+		const error = issue.error
+			? Object.freeze({
+					name: issue.error.name,
+					message: issue.error.message,
+					...(issue.error.stack === undefined ? {} : { stack: issue.error.stack }),
+					...(issue.error.cause === undefined ? {} : { cause: issue.error.cause }),
+					...(issue.error.partPath === undefined
+						? {}
+						: { partPath: Object.freeze([...issue.error.partPath]) }),
+				})
+			: undefined
+		return Object.freeze({
+			plugin: issue.plugin,
+			phase: issue.phase,
+			kind: issue.kind,
+			message: issue.message,
+			...(error === undefined ? {} : { error }),
+			...(issue.blockedBy === undefined ? {} : { blockedBy: issue.blockedBy }),
+		})
+	})
+	return Object.freeze({ ok: false, issues: Object.freeze(issues) })
 }
 
 export function isPluginLifecycleNotStartedIssue(issue: PluginLifecycleIssue): boolean {

@@ -2,7 +2,7 @@ import {
 	type Context as PluxelContext,
 	Injectable,
 	OverrideOf,
-	type PluginNodeSlot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
 	ConfigService as CoreConfigService,
@@ -37,6 +37,15 @@ export interface ConfigServiceConfig {
 	 * Existing file-backed config remains authoritative.
 	 */
 	environment?: false | Readonly<Record<string, string | undefined>>
+}
+
+export class ConfigMutationRejectedError extends Error {
+	public readonly code = 'config_mutation_rejected' as const
+
+	constructor(action: string) {
+		super(`[ConfigService] ${action} is disabled in readonly mode.`)
+		this.name = 'ConfigMutationRejectedError'
+	}
 }
 
 declare module '@pluxel/core' {
@@ -77,17 +86,17 @@ export class ConfigService extends CoreConfigService {
 			configRecordsFromEnvironment(cfg.environment),
 		)
 		if (Object.keys(initialPlugins).length > 0) this.replaceConfigRecords(initialPlugins)
-		if (this.mode === 'file') this.setReadyTask(this.loadFromDisk())
+		if (this.mode !== 'memory') this.setReadyTask(this.loadFromDisk())
 
 		this.ctx.effects.defer(() => this.dispose(), { tag: 'ConfigService' })
 	}
 
 	protected override assertConfigMutable(action: string): void {
 		if (!this.readonlyMode) return
-		throw new Error(`[ConfigService] ${action} is disabled in readonly mode.`)
+		throw new ConfigMutationRejectedError(action)
 	}
 
-	protected override onConfigChanged(_owner: PluginNodeSlot): void {
+	protected override onConfigChanged(_owner: PluginNodeAddress): void {
 		this.requestSave()
 	}
 
@@ -154,7 +163,7 @@ export class ConfigService extends CoreConfigService {
 	private async loadFromDisk(): Promise<void> {
 		const text = await this.storage.getText(this.file)
 		if (text === undefined) {
-			await this.saveToDisk()
+			if (!this.readonlyMode) await this.saveToDisk()
 			return
 		}
 
@@ -167,6 +176,11 @@ export class ConfigService extends CoreConfigService {
 			}
 			parsed = value as Record<string, unknown>
 		} catch (error) {
+			if (this.readonlyMode) {
+				throw new Error('[ConfigService] Persisted readonly config is malformed.', {
+					cause: error,
+				})
+			}
 			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', {
 				file: this.file,
 				error,

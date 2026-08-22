@@ -13,6 +13,14 @@ const loggerPluginAddress = parsePluginNodeAddress({
 	variant: 'default',
 })
 
+function installLoggerTestPluginInfo(ctx: object): void {
+	Object.defineProperty(ctx, 'pluginInfo', {
+		value: Object.freeze({ nodeAddress: loggerPluginAddress }),
+		writable: false,
+		configurable: false,
+	})
+}
+
 describe('LoggerService', () => {
 	let records: LogRecord[] = []
 
@@ -43,7 +51,7 @@ describe('LoggerService', () => {
 	it('encodes plugin identity in the category instead of record properties', () =>
 		withCoreContext(
 			(ctx) => {
-				ctx.pluginInfo = { nodeAddress: loggerPluginAddress } as never
+				installLoggerTestPluginInfo(ctx)
 				ctx.logger.warn('warn message')
 				const record = records.find((item) => item.rawMessage === 'warn message')
 				expect(record?.category).toEqual([
@@ -82,7 +90,7 @@ describe('LoggerService', () => {
 	it('encodes debug topic segments and preserves plugin ownership', () =>
 		withCoreContext(
 			(ctx) => {
-				ctx.pluginInfo = { nodeAddress: loggerPluginAddress } as never
+				installLoggerTestPluginInfo(ctx)
 				ctx.logger.getDebugChannel('hmr:cache').debug('cache probe')
 				const record = records.find((item) => item.rawMessage === 'cache probe')
 				expect(record?.category).toEqual([

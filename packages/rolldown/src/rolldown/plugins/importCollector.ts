@@ -30,15 +30,6 @@ export function collectImportSpecifiers(ast: Program): CollectedImportSpecifier[
 		if (node.type === 'ImportExpression') {
 			const specifier = readImportSource((node as { source?: unknown }).source)
 			if (specifier) out.push(withRange({ specifier, kind: 'dynamic' }, node.source))
-			return
-		}
-
-		// Older ESTree-compatible parsers may represent `import("x")` as a CallExpression.
-		if (node.type === 'CallExpression' && isImportCallee((node as { callee?: unknown }).callee)) {
-			const first = (node as { arguments?: unknown }).arguments
-			const source = Array.isArray(first) ? first[0] : undefined
-			const specifier = readImportSource(source)
-			if (specifier) out.push(withRange({ specifier, kind: 'dynamic' }, source))
 		}
 	})
 
@@ -63,11 +54,6 @@ function readImportSource(node: unknown): string | null {
 	const cooked = ((quasi as { value?: unknown }).value as { cooked?: unknown } | undefined)?.cooked
 	const raw = ((quasi as { value?: unknown }).value as { raw?: unknown } | undefined)?.raw
 	return typeof cooked === 'string' ? cooked : typeof raw === 'string' ? raw : null
-}
-
-function isImportCallee(node: unknown): boolean {
-	if (!node || typeof node !== 'object') return false
-	return (node as { type?: unknown }).type === 'Import'
 }
 
 function withRange<T extends CollectedImportSpecifier>(item: T, node: unknown): T {

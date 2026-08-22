@@ -230,7 +230,7 @@ describe('HMR UI smoke', () => {
 				)
 
 				const remoteEntryUrl = requireWorkbench(ctx).artifacts.getCompiledModule(
-					ctx.registry.internNodeAddress(owner.address),
+					owner.address,
 				)?.remoteEntryUrl
 				expect(remoteEntryUrl).toBeTruthy()
 				const manifestUrl = remoteEntryUrl?.replace(/remoteEntry\.js$/, 'mf-manifest.json')

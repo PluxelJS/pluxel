@@ -44,6 +44,8 @@ preset 在 TypeScript 擦除前运行 Pluxel semantic lowering，并执行 build
 | package metadata、Workbench/worker/database artifact       | `pluxel build` integration        |
 
 `@pluxel/test` 是 public dev-only core test surface，不会注册 runtime services。需要 `ctx.http` 或 `ctx.database` 时使用 runtime test entry。
+普通 Core/Runtime test host 只提供 `add`、`remove`、`restart`、`replace`、`fork`、`override`、`commit` 与只读查询，不暴露
+`PluginService`、graph 或 transaction internals；Core 自身的白盒测试显式从 `@pluxel/core/internal` 取得内部 authority。
 
 ## 常用测试
 
@@ -85,7 +87,35 @@ it('starts dependency order and drains effects', async () => {
 })
 ```
 
-`host.add/remove/cfg` 修改 draft，`await host.commit()` 才应用 graph plan。`commit()` 是 strict：有 start failure 时抛出；预期失败并需要 summary 时使用 `commitAllowFail()`。
+`host.add/remove` 只修改 catalog availability，`cfg(...).enable()/disable()` 修改 desired state；`add()` 不会隐式启用
+Plugin，`remove()` 也不会暗中清除其 desired state。`await host.commit()` 才统一应用新的 graph plan。`commit()` 是 strict：
+有 start failure 时抛出；预期失败并需要 summary 时使用 `commitAllowFail()`。
+
+测试 HMR/replacement 时，replacement 必须像真实模块求值一样拥有目标 canonical definition facts，test host 不会把任意
+subclass 偷偷改址。专门测试替身可以从 unsafe test entry 显式 lower：
+
+```ts no-twoslash
+import { InngestPlugin } from '@acme/inngest'
+import { withRuntimeHost } from '@pluxel/runtime/test'
+import { lowerTestReplacement } from '@pluxel/test/unsafe'
+
+class TestInngestPlugin extends InngestPlugin {
+	override async init() {}
+}
+
+lowerTestReplacement(InngestPlugin, TestInngestPlugin)
+
+await withRuntimeHost(async (host) => {
+	host.add(InngestPlugin)
+	host.replace(InngestPlugin, TestInngestPlugin)
+	host.cfg(InngestPlugin).enable()
+	await host.commit()
+})
+```
+
+替身若改变 constructor dependency，必须通过 `requires` 明确写出本次 evaluation 的 edge；不要复制旧 candidate metadata，
+也不要给 RuntimeHost 增加 constructor/address fallback。这个 helper 只属于 `@pluxel/test/unsafe`，生产 replacement facts 始终来自
+Vite/Rolldown semantic lowering。
 
 ### Runtime capability
 
@@ -201,7 +231,8 @@ cleanup test 要等待 host commit/dispose Promise，不能只检查是否调用
 
 ### Forks
 
-Core host 支持按 fork address 配置多个实例：
+Core host 支持按 fork address 配置多个实例；示例中的 concrete `ConnectorPlugin` 必须用
+`@Plugin({ forkable: true })` 显式声明它能够安全地同时运行多个 node：
 
 ```ts no-twoslash
 const East = host.fork(ConnectorPlugin, 'east')

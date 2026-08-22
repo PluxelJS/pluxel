@@ -40,7 +40,7 @@ type MutableServiceMeta = {
 	scope?: 'context' | 'root'
 }
 
-export const OVERRIDE_FLAG = Symbol('isOverride')
+const OVERRIDE_FLAG = Symbol('isOverride')
 /**
  * 可注入装饰器 @Injectable 和 @Injectable({...})
  */

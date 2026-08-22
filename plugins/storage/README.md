@@ -105,8 +105,8 @@ S3 key，不参与文件路径解析。默认 root `.pluxel/s3` 只适合开发�
 
 ## 多 bucket 与特殊平台
 
-`S3` 是 `ForkablePlugin`。多个 bucket 使用 `S3Plugin` fork、独立 backend 配置和 dependency override，不给每个 S3 method
-增加 connection name。绝大多数部署只治理这一个插件类型。
+`S3Plugin` 通过 `@Plugin(S3, { forkable: true })` 显式允许多实例。多个 bucket 使用 `S3Plugin` fork、独立 backend 配置和
+dependency override，不给每个 S3 method 增加 connection name。绝大多数部署只治理这一个插件类型。
 
 只有平台真正接管 client 生命周期或 s3mini 无法表达其认证协议时，才提供额外 `@Plugin(S3, ...)`；这属于扩展逃生口，不是
 普通 local/remote/anonymous/vault 配置的建模方式。s3mini 当前不接受 session token，因此 STS 或平台原生 credential chain

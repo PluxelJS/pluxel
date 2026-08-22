@@ -1,8 +1,8 @@
-import type { PluginConstructor } from '@pluxel/core'
+import { pluginDefinitionAddressOf, type PluginConstructor } from '@pluxel/core'
 import {
 	__setPluginDefinition,
-	getPluginDefinitionFacts,
-	hasPluginDefinitionFacts,
+	PLUGIN_LOWERING_ABI_VERSION,
+	PluginLoweringError,
 } from '@pluxel/test/unsafe'
 
 export type LowerTestPluginOptions = Readonly<{
@@ -18,15 +18,23 @@ export function lowerTestPlugin(
 	Plugin: PluginConstructor,
 	options: LowerTestPluginOptions = {},
 ): PluginConstructor {
-	if (hasPluginDefinitionFacts(Plugin)) return Plugin
+	try {
+		pluginDefinitionAddressOf(Plugin)
+		return Plugin
+	} catch (error) {
+		if (!(error instanceof PluginLoweringError) || error.code !== 'plugin_declaration_missing') {
+			throw error
+		}
+	}
 	const id = options.id ?? Plugin.name
 	__setPluginDefinition(Plugin, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
 		definition: {
 			entry: { kind: 'source-entry', sourceSpace: 'app', path: `pluxel-test:${id}` },
 			exportName: 'Plugin',
 		},
-		requires: options.requires?.map((required) => getPluginDefinitionFacts(required).definition),
+		requires: options.requires?.map(pluginDefinitionAddressOf),
 	})
 	return Plugin
 }

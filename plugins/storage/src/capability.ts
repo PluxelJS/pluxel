@@ -1,4 +1,4 @@
-import { ForkablePlugin } from '@pluxel/runtime'
+import { BasePlugin } from '@pluxel/runtime'
 import type { S3mini } from 's3mini'
 
 /**
@@ -30,6 +30,6 @@ export class S3UnsupportedOperationError extends Error {
 }
 
 /** Raw S3 capability. Consumers use s3mini's API; the host selects its implementation. */
-export abstract class S3 extends ForkablePlugin {
+export abstract class S3 extends BasePlugin {
 	abstract get client(): S3Client
 }

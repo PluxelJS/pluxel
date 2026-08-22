@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import {
-	getPluginInfo,
 	parsePluginNodeAddress,
 	pluginNodeIndexKey,
 	type Context,
 	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
+import {
+	pluginCatalogEntry,
+	requireRuntimePluginGraphCoordinator,
+} from '../../internal/reconciliation'
 import type {
 	WorkbenchCatalog,
 	WorkbenchLayout,
@@ -67,7 +71,7 @@ export class WorkbenchRegistry {
 				`[workbench] Plugin node already mounted a Workbench extension: ${pluginNodeIndexKey(owner.address)}`,
 			)
 		}
-		const disposeWatch = this.ctx.registry.watchInstance(ownerSlot, () => this.bump())
+		const disposeWatch = requirePluginService(this.ctx).watchInstance(ownerSlot, () => this.bump())
 		const mounted: MountedExtension = {
 			ownerSlot,
 			owner,
@@ -96,10 +100,11 @@ export class WorkbenchRegistry {
 	}
 
 	getPluginLayout(targetAddress: PluginNodeAddress): WorkbenchLayout {
-		const targetSlot = this.ctx.registry.internNodeAddress(targetAddress)
-		const target = this.describeNode(targetSlot)
+		const address = parsePluginNodeAddress(targetAddress)
+		const targetSlot = requirePluginService(this.ctx).resolvePluginNode(address)
+		const target = this.describeNode(address, targetSlot)
 		const items: WorkbenchLayoutItem[] = []
-		const mounted = this.extensions.get(targetSlot)
+		const mounted = targetSlot ? this.extensions.get(targetSlot) : undefined
 		if (mounted && this.isRunning(mounted.ownerSlot)) {
 			for (const [viewId, view] of Object.entries(mounted.extension.contract.views) as Array<
 				[string, WorkbenchViewSpec]
@@ -119,7 +124,7 @@ export class WorkbenchRegistry {
 				}
 			}
 		}
-		this.resolvePorts(targetSlot, target, items)
+		if (targetSlot) this.resolvePorts(targetSlot, target, items)
 		return Object.freeze({
 			revision: this.revision,
 			target,
@@ -238,6 +243,7 @@ export class WorkbenchRegistry {
 			if (candidates.length > 1) {
 				items.push(
 					this.portStatusItem(
+						targetSlot,
 						targetDescriptor,
 						outlet,
 						'Workbench renderer is ambiguous',
@@ -252,6 +258,7 @@ export class WorkbenchRegistry {
 			if (!selected) {
 				items.push(
 					this.portStatusItem(
+						targetSlot,
 						targetDescriptor,
 						outlet,
 						'Workbench renderer unavailable',
@@ -303,12 +310,12 @@ export class WorkbenchRegistry {
 	}
 
 	private portStatusItem(
+		targetSlot: PluginNodeSlot,
 		target: WorkbenchPluginDescriptor,
 		outlet: WorkbenchPortOutlet,
 		title: string,
 		description: string,
 	): WorkbenchLayoutItem {
-		const targetSlot = this.ctx.registry.internNodeAddress(target.address)
 		const targetKey = pluginNodeIndexKey(target.address)
 		return Object.freeze({
 			id: `${targetKey}:${outlet.id}:status`,
@@ -329,23 +336,27 @@ export class WorkbenchRegistry {
 	}
 
 	private isRequiredDependent(provider: PluginNodeSlot, consumer: PluginNodeSlot): boolean {
-		return this.ctx.registry.graph.depsOf(consumer).includes(provider)
+		return requirePluginService(this.ctx).graph.depsOf(consumer).includes(provider)
 	}
 
 	private isRunning(owner: PluginNodeSlot): boolean {
-		return this.ctx.registry.isRunning(owner)
+		return requirePluginService(this.ctx).isRunning(owner)
 	}
 
-	private describeNode(slot: PluginNodeSlot): WorkbenchPluginDescriptor {
-		const mounted = this.extensions.get(slot)
+	private describeNode(
+		address: PluginNodeAddress,
+		slot?: PluginNodeSlot,
+	): WorkbenchPluginDescriptor {
+		const mounted = slot ? this.extensions.get(slot) : undefined
 		if (mounted) return mounted.owner
-		const address = parsePluginNodeAddress(this.ctx.registry.nodeAddressOf(slot))
-		const ctor = this.ctx.runtimeRoute?.catalog.resolve(address)
-		const info = ctor ? getPluginInfo(ctor) : undefined
+		const declaration = pluginCatalogEntry(
+			requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot(),
+			address.definition,
+		)?.candidate.declaration
 		return Object.freeze({
 			address,
-			displayName: info?.displayName ?? address.definition.exportName,
-			rootExportName: info?.rootExportName ?? address.definition.exportName,
+			displayName: declaration?.displayName ?? address.definition.exportName,
+			rootExportName: address.definition.exportName,
 		})
 	}
 

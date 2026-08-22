@@ -1,4 +1,11 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf, withRuntimeHost } from '@pluxel/runtime/test'
+import type { PluginConstructor } from '@pluxel/runtime'
+import {
+	BasePlugin,
+	Plugin,
+	pluginNodeAddressOf,
+	type RuntimeHost,
+	withRuntimeHost,
+} from '@pluxel/runtime/test'
 import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
 import {
 	RUNTIME_INTERNAL_API_BASE,
@@ -36,14 +43,18 @@ class CanvasFontAdminConsumer extends BasePlugin {
 	}
 }
 
+function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+	host.add(plugins)
+	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+}
+
 const discoveredFamily = GlobalFonts.families[0]?.family
 
 describe('CanvasPlugin', () => {
 	it('creates native raster and SVG canvases in a headless host', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
+				addEnabled(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				await host.commit()
 				const canvas = host.require(CanvasTestConsumer).canvas.createCanvas(64, 32)
 				const context = canvas.getContext('2d')
@@ -66,8 +77,7 @@ describe('CanvasPlugin', () => {
 	it('creates a bounded native worker adapter from a detached host snapshot', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
+				addEnabled(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				await host.commit()
 				const capability = host.require(CanvasTestConsumer).canvas
 				const snapshot = capability.workerSnapshot
@@ -104,8 +114,7 @@ describe('CanvasPlugin', () => {
 		async () => {
 			await withRuntimeHost(
 				async (host) => {
-					host.add([FontsPlugin, CanvasPlugin, CanvasFontAdminConsumer])
-					host.cfg(FontsPlugin).enable()
+					addEnabled(host, [FontsPlugin, CanvasPlugin, CanvasFontAdminConsumer])
 					await host.commit()
 					const consumer = host.require(CanvasFontAdminConsumer)
 					const initialWorkerSnapshot = consumer.canvas.workerSnapshot
@@ -132,8 +141,7 @@ describe('CanvasPlugin', () => {
 	it('decodes caller-provided bytes without adding an outbound HTTP policy', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
+				addEnabled(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				await host.commit()
 				const capability = host.require(CanvasTestConsumer).canvas
 				const source = capability.createCanvas(11, 7)
@@ -164,8 +172,7 @@ describe('CanvasPlugin', () => {
 	it('uses bounded Pretext for multiline and rich-inline layout', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
+				addEnabled(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				await host.commit()
 				const capability = host.require(CanvasTestConsumer).canvas
 				const prepared = capability.prepareTextWithSegments({
@@ -190,8 +197,7 @@ describe('CanvasPlugin', () => {
 	it('rejects text before Pretext work when the host character budget is exceeded', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
+				addEnabled(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				host.cfg(CanvasPlugin).set({ maxTextCharacters: 4 })
 				await host.commit()
 
@@ -206,8 +212,7 @@ describe('CanvasPlugin', () => {
 	it('enforces allocation and decode boundaries before returning resources', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
+				addEnabled(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				host.cfg(CanvasPlugin).set({
 					maxWidth: 100,
 					maxHeight: 100,
@@ -241,8 +246,7 @@ describe('CanvasPlugin', () => {
 
 	it('uses FontsPlugin as its direct Port renderer and resource owner', async () => {
 		await withRuntimeHost(async (host) => {
-			host.add([FontsPlugin, CanvasPlugin])
-			host.cfg(FontsPlugin).enable()
+			addEnabled(host, [FontsPlugin, CanvasPlugin])
 			await host.commit()
 
 			const response = await host.ctx.http.fetch(

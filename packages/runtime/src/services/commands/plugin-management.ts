@@ -75,6 +75,25 @@ const pluginSnapshot = obj({
 	rootExportName: Type.String(),
 	isRunning: Type.Boolean(),
 	isEnabled: Type.Boolean(),
+	availability: Type.Union([Type.Literal('available'), Type.Literal('unavailable')]),
+	issues: Type.Array(
+		obj({
+			code: Type.Union([
+				Type.Literal('consumer_unavailable'),
+				Type.Literal('requirement_removed'),
+				Type.Literal('provider_unavailable'),
+				Type.Literal('provider_disabled'),
+				Type.Literal('provider_incompatible'),
+				Type.Literal('fork_not_allowed'),
+				Type.Literal('fork_default_forbidden'),
+				Type.Literal('provider_default_requires_abstract'),
+				Type.Literal('explicit_binding_invalid'),
+				Type.Literal('missing_required_provider'),
+				Type.Literal('definition_unavailable'),
+			]),
+			message: Type.String(),
+		}),
+	),
 	lifecycleStage: Type.Union([
 		Type.Literal('running'),
 		Type.Literal('stopped'),
@@ -111,26 +130,24 @@ async function mutatePlugin(
 ): Promise<PluginStatusSnapshot> {
 	const result = await applyStatusActions(ctx, [{ address, action }])
 	const mutation = result.results[0]
-	if (mutation?.ok) return requirePlugin(ctx, address)
+	if (!mutation) {
+		throw new Error('[runtime:commands] status mutation omitted its result')
+	}
+	if (mutation?.ok === true) return requirePlugin(ctx, address)
 
 	if (mutation?.code === 'plugin_not_found') return requirePlugin(ctx, address)
-	const causeCode =
-		mutation?.code ?? (result.commitError ? 'commit_failed' : 'plugin_operation_failed')
 	throw new CommandError('DEPENDENCY', 'Plugin operation failed', {
-		message:
-			mutation?.error ??
-			result.commitError ??
-			`Plugin ${action} failed: ${formatPluginNodeReference(address)}`,
+		message: mutation.error ?? `Plugin ${action} failed: ${formatPluginNodeReference(address)}`,
 		details: {
 			service: 'pluginLifecycle',
 			command: `plugin.${action}`,
-			retryable: action !== 'stop',
-			causeCode,
+			retryable: action !== 'disable',
+			causeCode: mutation.code,
 		},
 	})
 }
 
-function mutationCommand(ctx: Context, action: 'start' | 'stop' | 'restart'): AnyCommand {
+function mutationCommand(ctx: Context, action: PluginStatusAction): AnyCommand {
 	const label = action[0]!.toUpperCase() + action.slice(1)
 	return defineCommand({
 		name: `plugin.${action}`,
@@ -168,8 +185,8 @@ export function createPluginManagementCommands(ctx: Context): readonly AnyComman
 			output: pluginSnapshot,
 			execute: ({ address }) => requirePlugin(ctx, address),
 		}),
-		mutationCommand(ctx, 'start'),
-		mutationCommand(ctx, 'stop'),
+		mutationCommand(ctx, 'enable'),
+		mutationCommand(ctx, 'disable'),
 		mutationCommand(ctx, 'restart'),
 	]
 }

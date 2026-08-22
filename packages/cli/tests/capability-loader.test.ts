@@ -35,12 +35,11 @@ function projectWithRolldown(params: {
 			name: '@pluxel/rolldown',
 			version: params.version ?? '0.1.0',
 			type: 'module',
-			exports: params.exports ?? {
-				'.': './index.mjs',
-				'./build': './build.mjs',
+			exports: {
+				'./package.json': './package.json',
+				...(params.exports ?? { './build': './build.mjs' }),
 			},
 		}),
-		'node_modules/@pluxel/rolldown/index.mjs': 'export const root = true\n',
 		...(params.files ?? {
 			'node_modules/@pluxel/rolldown/build.mjs': 'export const marker = "project-owner"\n',
 		}),
@@ -48,7 +47,7 @@ function projectWithRolldown(params: {
 }
 
 describe('official capability loader', () => {
-	it('imports official owners from the project dependency graph', async () => {
+	it('imports a capability from a project owner without a package root export', async () => {
 		const root = await createProject(projectWithRolldown({}))
 		const loaded = await loadOfficialCapability<{ marker: string }>('rolldown-build', {
 			cwd: root,
@@ -84,9 +83,7 @@ describe('official capability loader', () => {
 	})
 
 	it('separates public subpath errors from owner import failures', async () => {
-		const missingSubpath = await createProject(
-			projectWithRolldown({ exports: { '.': './index.mjs' }, files: {} }),
-		)
+		const missingSubpath = await createProject(projectWithRolldown({ exports: {}, files: {} }))
 		const missingSubpathLoad = loadOfficialCapability('rolldown-database', {
 			cwd: missingSubpath,
 		})
@@ -97,7 +94,7 @@ describe('official capability loader', () => {
 
 		const importFailure = await createProject(
 			projectWithRolldown({
-				exports: { '.': './index.mjs', './build': './build.mjs' },
+				exports: { './build': './build.mjs' },
 				files: {
 					'node_modules/@pluxel/rolldown/build.mjs': 'throw new Error("fixture boom")\n',
 				},

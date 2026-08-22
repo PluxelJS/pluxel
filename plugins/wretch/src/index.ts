@@ -72,8 +72,10 @@ export class WretchPlugin extends BasePlugin {
 		const policy = this.requirePolicy()
 		const owner = this.ctx.caller ?? this.ctx
 		const lease = this.clientLease(owner)
+		const managed = this.managed
+		const hostTimeoutMs = this.config.timeoutMs
 		return wretch().defer((client, _url, options) => {
-			const state = this.managed.get(owner)
+			const state = managed.get(owner)
 			let configured = client
 			if (state) {
 				const headers = new Headers(options.headers)
@@ -91,7 +93,7 @@ export class WretchPlugin extends BasePlugin {
 			}
 			return configured.middlewares([
 				policy.middleware(
-					() => this.effectiveTimeout(state?.current.timeoutMs),
+					() => effectiveTimeout(hostTimeoutMs, state?.current.timeoutMs),
 					lease.controller.signal,
 				),
 			])
@@ -124,26 +126,25 @@ export class WretchPlugin extends BasePlugin {
 			throw new Error('Call enableManagedSettings() before binding WretchWorkbenchPort')
 		}
 		const storage = this.requireStorage()
+		const managed = this.managed
+		const hostTimeoutMs = this.config.timeoutMs
 		const key = settingsKey(owner.pluginInfo.nodeAddress)
 		const assertActive = (): void => {
-			if (!this.policy || this.storage !== storage || this.managed.get(owner) !== state) {
-				throw stoppedClientError()
-			}
+			if (managed.get(owner) !== state) throw stoppedClientError()
+		}
+		const snapshot = (): WretchManagedSettingsSnapshot => {
+			assertActive()
+			return Object.freeze({
+				settings: state.current,
+				hostTimeoutMs,
+				effectiveTimeoutMs: effectiveTimeout(hostTimeoutMs, state.current.timeoutMs),
+			})
 		}
 		return new ManagedSettingsRpc(
-			() => {
-				assertActive()
-				return this.snapshot(state)
-			},
+			snapshot,
 			async (settings) => {
 				assertActive()
-				const current = await replaceManagedSettings(
-					state,
-					storage,
-					key,
-					settings,
-					this.config.timeoutMs,
-				)
+				const current = await replaceManagedSettings(state, storage, key, settings, hostTimeoutMs)
 				assertActive()
 				return current
 			},
@@ -156,33 +157,27 @@ export class WretchPlugin extends BasePlugin {
 		)
 	}
 
-	private effectiveTimeout(consumerTimeout?: number): number {
-		if (!consumerTimeout) return this.config.timeoutMs
-		if (this.config.timeoutMs <= 0) return consumerTimeout
-		return Math.min(this.config.timeoutMs, consumerTimeout)
-	}
-
 	private clientLease(owner: Context): ClientLease {
-		const existing = this.clients.get(owner)
+		const clients = this.clients
+		const existing = clients.get(owner)
 		if (existing) {
 			if (!existing.active) throw stoppedClientError()
 			return existing
 		}
 		const lease: ClientLease = { active: true, controller: new AbortController() }
-		this.clients.set(owner, lease)
+		clients.set(owner, lease)
 		try {
 			owner.effects.defer(
 				() => {
 					if (!lease.active) return
-					lease.active = false
 					lease.controller.abort(stoppedClientError())
-					if (this.clients.get(owner) === lease) this.clients.delete(owner)
+					if (clients.get(owner) === lease) clients.delete(owner)
 				},
 				{ tag: 'wretch-client' },
 			)
 		} catch {
 			lease.active = false
-			if (this.clients.get(owner) === lease) this.clients.delete(owner)
+			if (clients.get(owner) === lease) clients.delete(owner)
 			throw stoppedClientError()
 		}
 		return lease
@@ -191,6 +186,7 @@ export class WretchPlugin extends BasePlugin {
 	private async initializeManagedSettings(owner: Context): Promise<ManagedSettingsState> {
 		const policy = this.requirePolicy()
 		const storage = this.requireStorage()
+		const managed = this.managed
 		const state = await loadManagedSettings(
 			storage,
 			settingsKey(owner.pluginInfo.nodeAddress),
@@ -203,25 +199,17 @@ export class WretchPlugin extends BasePlugin {
 		try {
 			owner.effects.defer(
 				async () => {
-					if (this.managed.get(owner) === state) this.managed.delete(owner)
+					if (managed.get(owner) === state) managed.delete(owner)
 					await disposeManagedSettings(state)
 				},
 				{ tag: 'wretch-managed-settings' },
 			)
-		} catch (error) {
+		} catch {
 			await disposeManagedSettings(state)
-			throw error
+			throw stoppedClientError()
 		}
-		this.managed.set(owner, state)
+		managed.set(owner, state)
 		return state
-	}
-
-	private snapshot(state: ManagedSettingsState): WretchManagedSettingsSnapshot {
-		return Object.freeze({
-			settings: state.current,
-			hostTimeoutMs: this.config.timeoutMs,
-			effectiveTimeoutMs: this.effectiveTimeout(state.current.timeoutMs),
-		})
 	}
 
 	private requireCaller(): Context {
@@ -239,6 +227,12 @@ export class WretchPlugin extends BasePlugin {
 		if (!this.storage) throw new Error('WretchPlugin is not running')
 		return this.storage
 	}
+}
+
+function effectiveTimeout(hostTimeoutMs: number, consumerTimeout?: number): number {
+	if (!consumerTimeout) return hostTimeoutMs
+	if (hostTimeoutMs <= 0) return consumerTimeout
+	return Math.min(hostTimeoutMs, consumerTimeout)
 }
 
 function settingsKey(owner: Context['pluginInfo']['nodeAddress']): string {

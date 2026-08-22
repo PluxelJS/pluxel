@@ -21,6 +21,17 @@ source/module 变化以 `PluginDefinitionSlot` 为 invalidation unit。一个 de
 definition/declaration 共享，不含 `forkId`；node binding 与 generation lease 仍隔离。身份作用域见
 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md#各领域作用域)。
 
+route 对新 module namespace 只消费一个 immutable definition candidate，并把整批 catalog snapshot 交给 runtime-common coordinator。
+coordinator 在旧 generation 仍开放时完成 role/collision、forkability、binding 与 combined graph prepare；catalog/RuntimeState revision race
+会丢弃 prepared overlay 并重新 plan。只有 revision 稳定后才进入 definition-wide stop/start 与 Core confirm。新 candidate 造成 structural
+reject 时保留旧 revision；进入 transition 后的 config/init/drain failure 属于新 revision 的 lifecycle facts，不回退旧 implementation。
+
+同一 address 的 concrete/abstract role 在 host lifetime 内稳定；coordinator 的小型 role tombstone 会跨 absent catalog revision 检查
+`plugin_definition_role_conflict`，但不跨 cold boot 持久化，也不创建 Core slot。collision、role conflict、optional-abstract violation 与 invalid live
+graph 都在 Core prepare 和持久化前以稳定 structural code 拒绝。第一次关闭旧 generation admission 是 PONR；graph-confirmation callback 本身只交换
+coordinator 自身 immutable snapshot/applied fields，不调用 route callback、loader method 或任何可能 throw 的用户代码。PONR 后的 Plugin
+teardown/init failure 只形成 lifecycle report，不再拒绝或回滚已确认的结构变化。
+
 optional ref 已被 lower 成 definition slot edge，不拥有 loader、watcher subscription 或 synthetic module owner。catalog/source
 transaction 让 provider running generation 出现、消失或 replacement 时，core 在同一 plan 中先停止 optional consumer closure、
 drain effects，再更新 provider并重启 consumer；absent 状态下重复失败不会制造 restart。
@@ -42,7 +53,8 @@ disabled Workbench Plane，以及 Node module 的合并 rebuild、staged setup �
 `staticRuntimeVitePlugin({ entry })` 通过 Vite SSR ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 plugin
 module 变化会失效精确 module/importer graph，并通过 core replacement lifecycle 更新 fixed catalog；entry 本身或
 只改变 `configure()` 结果的依赖变化会重建 host。single-active logging root 要求重建时先停止旧 host；新 application
-启动失败时 route 会用上一次成功的 application 重新创建 host，使后续 HMR 仍可重试。
+启动失败时 route 会用上一次成功的 application 重新创建 host，使后续 HMR 仍可重试。Vite plugin teardown 会等待
+active static host 完整停止；host lifecycle 与 ModuleRunner 都关闭后 `ViteDevServer.close()` 才完成。
 
 Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此 static route 在开发期具备与 dynamic route
 相同的 artifact HMR contract。两者的差别是 catalog policy：static 只有 application import 的 fixed catalog；dynamic 先提交
@@ -65,8 +77,19 @@ dynamic source 只接受精确文件和带显式、相对、正向 include glob 
 初始 entries 必须完成 graph commit 后 host 才报告 ready，不存在可跳过正确性的 optional warmup。source entry 已进入 module graph
 后，目录外的普通 import dependency 变化会沿 importer graph 回到 source anchor；没有任何
 source-owned importer 的过期事件作为 debug-level no-op，不制造失败告警。source producer 负责在目标目录原子发布普通 ESM entry，dynamic route
-负责解析、执行、batch commit、卸载和 optional availability invalidation。registry client、lockfile、market、安装状态、
+负责解析、执行、生成 catalog batch 并交给 common coordinator；卸载和 optional availability invalidation 也走同一路径。registry client、lockfile、market、安装状态、
 RPC 与 UI 都必须位于 source producer 插件，不得进入 HMR pipeline。
+
+Dynamic batch 只拥有一次更新期间的 unpublished catalog draft；commit 后唯一 authority 是 common coordinator 的 immutable
+catalog snapshot。loader registry、resolver、module provenance 与 mutable-source anchor 查询都从该 snapshot 派生；fixed
+config module provenance 不进入 source anchor set。anchor set 按 snapshot identity 至多构建一次并在同一 revision 内提供
+O(1) membership lookup。draft/snapshot publication 允许 O(C) 构建成本，
+不为追求假设的增量复杂度保留第二份 committed registry、persistent overlay 或 post-PONR route publication。
+
+catalog/source batch 可以触发 `O(C + F + B + E)` 的 bounded reconciliation；blocked closure 必须通过 reverse-edge queue 线性传播。
+definition replacement 继续由 Core 的 definition-to-materialized-node index 枚举 `k` 个 variants，复杂度为 `O(k + affected edges)`，不能扫描完整
+Core graph。纯 addressed restart 与 running config apply 不属于 catalog HMR，不得进入 full reconciler。static route 同样只读取 coordinator
+committed snapshot，不能为 fixed catalog 保留例外 authority。
 
 source watcher 和 resolved source declaration reader 在 fixed baseline commit 前安装。producer 可通过隔离的
 `@pluxel/runtime-dynamic/source-producer` 校验目标 file/directory；该入口不创建 watcher 或 publication lease，也不加载 Vite、

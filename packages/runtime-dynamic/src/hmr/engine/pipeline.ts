@@ -1,16 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import {
-	formatPluginNodeReference,
-	isPluginNodeSlot,
-	type Context,
-	type PluginNodeAddress,
-	type PluginNodeSlot,
-} from '@pluxel/core'
+import { formatPluginNodeReference, type Context, type PluginNodeAddress } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import { dirname, join } from 'pathe'
 import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
-import { isPluginEnabled, setPluginEnabled, startTimer } from '@pluxel/runtime/internal'
+import { isPluginEnabled, requireRuntimeStateStore, startTimer } from '@pluxel/runtime/internal'
 import type { LoaderBatch } from '../../loader/support'
 import {
 	HMR_CHANGED_PREVIEW_LIMIT,
@@ -31,10 +26,11 @@ import { runWithRequireShims } from './runtime-shims'
 
 export type PrefetchOrder = 'near' | 'all'
 
-type RuntimeCommitResult = Awaited<ReturnType<Context['registry']['commit']>>
-type RuntimeUpdate = ReturnType<Context['registry']['beginUpdate']>
-const createRuntimeCommitFailureResult = (cause: unknown): RuntimeCommitResult =>
-	({ ok: false, err: cause }) as RuntimeCommitResult
+type RuntimeCommitResult = Readonly<{ ok: true; val: null }> | Readonly<{ ok: false; err: unknown }>
+const createRuntimeCommitFailureResult = (cause: unknown): RuntimeCommitResult => ({
+	ok: false,
+	err: cause,
+})
 
 function formatErrorMessage(error: unknown): string {
 	if (error instanceof Error) return error.message || error.name
@@ -100,20 +96,6 @@ function dedupeIds(ids: readonly string[]) {
 		out.push(id)
 	}
 	return out
-}
-
-function excludeIds(ids: readonly string[], excluded: readonly string[]) {
-	if (ids.length === 0 || excluded.length === 0) return ids
-	const excludedSet = new Set(excluded)
-	const out: string[] = []
-	for (const id of ids) {
-		if (!excludedSet.has(id)) out.push(id)
-	}
-	return out
-}
-
-function addAll<T>(target: Set<T>, values: Iterable<T>) {
-	for (const value of values) target.add(value)
 }
 
 type BatchGraph = {
@@ -403,149 +385,28 @@ export async function prefetchTransforms(params: {
 export type HmrExecutorConfig = {
 	useRequireShims: boolean
 	dbgModules: LogtapeLogger | null
-	/**
-	 * When commit fails due to missing dependencies, automatically disable the offending plugins
-	 * (persisted) and retry commit so the rest of the batch can still load.
-	 *
-	 * @default true
-	 */
-	autoDisableMissingDependencies?: boolean
-	/**
-	 * Safety cap for auto-disable retries.
-	 *
-	 * @default 8
-	 */
-	autoDisableMaxPasses?: number
 }
 
 class HmrRuntimeCommitScheduler {
-	constructor(
-		private readonly ctx: Context,
-		private readonly cfg: Pick<
-			HmrExecutorConfig,
-			'autoDisableMissingDependencies' | 'autoDisableMaxPasses'
-		>,
-	) {}
-
-	async commitBatch(params: {
-		batch: LoaderBatch
-		runtimeUpdate: RuntimeUpdate
-		changedModules: readonly string[]
-	}): Promise<HmrExecutionResult> {
-		const { batch, runtimeUpdate, changedModules } = params
-		const affectedModules = readBatchAffectedModules(batch)
-		const syncedModules = new Set<string>()
-		runtimeUpdate.markAffectedModules([...changedModules, ...affectedModules])
-
-		const affectedOnlyModules = excludeIds(affectedModules, changedModules)
-		if (affectedOnlyModules.length > 0) {
-			addAll(syncedModules, await this.syncModulesToCoreDraft(batch, affectedOnlyModules, false))
-		}
-
+	async commitBatch(batch: LoaderBatch): Promise<HmrExecutionResult> {
 		const endCommit = startTimer()
-		const autoDisabled = new Map<PluginNodeSlot, PluginNodeAddress>()
 		let commitResult: RuntimeCommitResult
 		try {
-			commitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
-
-			if (!commitResult.ok) {
-				commitResult = await this.retryAfterAutoDisablingMissingDeps({
-					batch,
-					runtimeUpdate,
-					commitResult,
-					changedModules,
-					affectedModules,
-					autoDisabled,
-					syncedModules,
-				})
-			}
+			await batch.commit({ reason: 'hmr' })
+			commitResult = { ok: true, val: null }
 		} catch (error) {
 			commitResult = createRuntimeCommitFailureResult(error)
+			batch.rollback()
 		}
 
 		const commitMs = endCommit()
-		this.closeBatch(batch, runtimeUpdate, commitResult.ok)
-
 		return {
 			commitResult,
 			commitMs,
-			affectedModules,
-			syncedModules: [...syncedModules],
-			autoDisabled: [...autoDisabled.values()].map(formatPluginNodeReference).sort(),
+			affectedModules: [],
+			syncedModules: [],
+			autoDisabled: [],
 		}
-	}
-
-	private async retryAfterAutoDisablingMissingDeps(params: {
-		batch: LoaderBatch
-		runtimeUpdate: RuntimeUpdate
-		commitResult: RuntimeCommitResult
-		changedModules: readonly string[]
-		affectedModules: readonly string[]
-		autoDisabled: Map<PluginNodeSlot, PluginNodeAddress>
-		syncedModules: Set<string>
-	}): Promise<RuntimeCommitResult> {
-		let commitResult = params.commitResult
-		const autoDisableMissingDependencies = this.cfg.autoDisableMissingDependencies ?? true
-		const autoDisableMaxPasses = this.cfg.autoDisableMaxPasses ?? 8
-		if (!autoDisableMissingDependencies || autoDisableMaxPasses <= 0) return commitResult
-
-		let pass = 0
-		while (!commitResult.ok && pass < autoDisableMaxPasses) {
-			const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, commitResult.err)
-			if (disabled.size === 0) break
-			for (const [slot, address] of disabled) params.autoDisabled.set(slot, address)
-
-			addAll(
-				params.syncedModules,
-				await this.syncModulesToCoreDraft(
-					params.batch,
-					[...params.changedModules, ...params.affectedModules],
-					true,
-				),
-			)
-			params.runtimeUpdate.markAffectedModules(params.syncedModules)
-			commitResult = await params.runtimeUpdate.commit({
-				rollbackOnFailure: false,
-				autoDisabled: [...params.autoDisabled.keys()],
-			})
-			pass++
-		}
-		return commitResult
-	}
-
-	private async syncModulesToCoreDraft(
-		batch: LoaderBatch,
-		moduleIds: Iterable<string>,
-		forceRegistrations: boolean,
-	): Promise<readonly string[]> {
-		// LoaderService owns moduleId → exported ctor mapping. Re-sync through the batch is the
-		// stable orchestration boundary between HMR and runtime across commit retry attempts.
-		const synced: string[] = []
-		const seen = new Set<string>()
-		for (const id of moduleIds) {
-			if (seen.has(id)) continue
-			seen.add(id)
-			try {
-				for (const moduleId of await batch.syncModules([id], { forceRegistrations })) {
-					synced.push(moduleId)
-				}
-			} catch (error) {
-				this.ctx.logger.warn('runtime batch sync failed during commit retry', {
-					moduleId: id,
-					error,
-				})
-			}
-		}
-		return synced
-	}
-
-	private closeBatch(batch: LoaderBatch, runtimeUpdate: RuntimeUpdate, ok: boolean) {
-		if (ok) {
-			batch.commit()
-			return
-		}
-		batch.rollback()
-		runtimeUpdate.rollback()
 	}
 }
 
@@ -559,7 +420,7 @@ export class HmrExecutor {
 		private readonly timing: Pick<TimingTracker, 'start'>,
 		private readonly cfg: HmrExecutorConfig,
 	) {
-		this.commitScheduler = new HmrRuntimeCommitScheduler(ctx, cfg)
+		this.commitScheduler = new HmrRuntimeCommitScheduler()
 	}
 
 	private pickRunnerImportId(cleanId: string): string {
@@ -584,15 +445,12 @@ export class HmrExecutor {
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
 		const ordered = dedupeIds(cleanIds)
 
-		const runtimeUpdate = this.ctx.registry.beginUpdate({ reason: 'hmr' })
-		const batch = this.ctx.loader.beginBatch({ runtimeUpdate })
+		const batch = this.ctx.loader.beginBatch()
 		const dbg = this.cfg.dbgModules
 		const debugModules = dbg ? isLogEnabled(dbg, 'debug') : false
-		const changedModules: string[] = []
 
 		for (const id of dedupeIds(removedIds)) {
 			batch.removeModule(id)
-			changedModules.push(id)
 		}
 
 		for (let i = 0; i < ordered.length; i++) {
@@ -612,7 +470,6 @@ export class HmrExecutor {
 					this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
 					const error = new Error(cjsHint, { cause: err })
 					batch.rollback()
-					runtimeUpdate.rollback()
 					return {
 						commitResult: createRuntimeCommitFailureResult(error),
 						commitMs: 0,
@@ -624,7 +481,6 @@ export class HmrExecutor {
 				}
 				this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
 				batch.rollback()
-				runtimeUpdate.rollback()
 				return {
 					commitResult: createRuntimeCommitFailureResult(err),
 					commitMs: 0,
@@ -641,11 +497,9 @@ export class HmrExecutor {
 			try {
 				const result = await batch.replaceModule(id, mod)
 				hasPlugin = result.isAnchor
-				changedModules.push(id)
 			} catch (err) {
 				this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
 				batch.rollback()
-				runtimeUpdate.rollback()
 				return {
 					commitResult: createRuntimeCommitFailureResult(err),
 					commitMs: 0,
@@ -665,7 +519,7 @@ export class HmrExecutor {
 			}
 		}
 
-		return await this.commitScheduler.commitBatch({ batch, runtimeUpdate, changedModules })
+		return await this.commitScheduler.commitBatch(batch)
 	}
 
 	async runAndLoadAll(
@@ -679,10 +533,6 @@ export class HmrExecutor {
 		const ordered = dedupeCleanIds(filesPath, (p) => this.path.toClean(p))
 		return await this.runAndLoadAllClean(ordered, keepOrder)
 	}
-}
-
-function readBatchAffectedModules(batch: LoaderBatch): readonly string[] {
-	return batch.getAffectedModules().filter((id) => id.length > 0)
 }
 
 export function collectEnabledButStopped(
@@ -701,49 +551,6 @@ export function collectEnabledButStopped(
 	}
 	out.sort((a, b) => a.localeCompare(b))
 	return out
-}
-
-function disablePluginsOnMissingDepsFromCommitError(
-	ctx: Context,
-	error: unknown,
-): Map<PluginNodeSlot, PluginNodeAddress> {
-	const disabled = new Map<PluginNodeSlot, PluginNodeAddress>()
-	const issues = findGraphBuildIssues(error)
-	for (const issue of issues) {
-		if (issue.kind !== 'MissingDependency' || !isPluginNodeSlot(issue.nodeKey)) continue
-		const address = ctx.registry.nodeAddressOf(issue.nodeKey)
-		if (!ctx.loader.api.registry.getCtor(address)) continue
-		if (!isPluginEnabled(ctx.runtimeState.snapshot(), address)) continue
-		disabled.set(issue.nodeKey, address)
-	}
-	if (disabled.size === 0) return disabled
-	ctx.runtimeState.update((draft) => {
-		for (const address of disabled.values()) setPluginEnabled(draft, address, false)
-	})
-	ctx.logger.warn('auto-disabled plugins due to missing dependencies', {
-		stage: 'hmr batch commit',
-		disabled: [...disabled.values()].map(formatPluginNodeReference).sort(),
-		error,
-	})
-	return disabled
-}
-
-type GraphBuildIssueLike = Readonly<{
-	kind?: unknown
-	nodeKey?: unknown
-}>
-
-function findGraphBuildIssues(error: unknown): readonly GraphBuildIssueLike[] {
-	const seen = new Set<unknown>()
-	let current = error
-	while (current && !seen.has(current)) {
-		seen.add(current)
-		if (typeof current !== 'object') break
-		const record = current as { issues?: unknown; cause?: unknown; err?: unknown }
-		if (Array.isArray(record.issues)) return record.issues as GraphBuildIssueLike[]
-		current = record.cause ?? record.err
-	}
-	return []
 }
 
 function buildHostModuleClassificationHint(error: unknown): string | null {
@@ -1062,12 +869,13 @@ export class HmrBatchProcessor {
 			)
 		}
 
-		const activeServices = this.ctx.registry.graph.activeCount()
+		const pluginService = requirePluginService(this.ctx)
+		const activeServices = pluginService.graph.activeCount()
 		const pluginTotals = collectPluginTotals({
 			registryView: this.ctx.loader.api.registry,
-			isPluginEnabled: (address) => isPluginEnabled(this.ctx.runtimeState.snapshot(), address),
-			isRunning: (address) =>
-				this.ctx.registry.isRunning(this.ctx.registry.internNodeAddress(address)),
+			isPluginEnabled: (address) =>
+				isPluginEnabled(requireRuntimeStateStore(this.ctx).snapshot(), address),
+			isRunning: (address) => pluginService.isRunning(address),
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 		const batchMs = roundHmrMs(endBatch())

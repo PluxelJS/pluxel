@@ -7,7 +7,10 @@ import { describe, expect, it } from 'vitest'
 import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
 
 type PackageJson = {
-	exports?: unknown
+	types?: string
+	exports?: Record<string, unknown>
+	publishConfig?: { exports?: Record<string, unknown> }
+	compilerOptions?: Record<string, unknown>
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
 	peerDependencies?: Record<string, string>
@@ -73,6 +76,13 @@ describe('toolchain package boundaries', () => {
 		expect(rolldown.exports).toHaveProperty('./vite')
 		expect(rolldown.exports).toHaveProperty('./build')
 		expect(rolldown.exports).toHaveProperty('./distribution')
+		expect(Object.hasOwn(rolldown.exports ?? {}, '.')).toBe(false)
+		expect(rolldown.exports).not.toHaveProperty('./workspace')
+		expect(rolldown.types).toBeUndefined()
+		expect(Object.hasOwn(rolldown.publishConfig?.exports ?? {}, '.')).toBe(false)
+		expect(rolldown.publishConfig?.exports).not.toHaveProperty('./workspace')
+		expect(existsSync(`${root}/packages/rolldown/src/index.ts`)).toBe(false)
+		expect(existsSync(`${root}/packages/rolldown/src/workspace/index.ts`)).toBe(false)
 		expect(rolldown.exports).toHaveProperty('./distribution/schema.json')
 		expect(rolldown.exports).toHaveProperty('./vite/environment')
 		expect(rolldown.exports).toHaveProperty('./resolver/oxc')
@@ -312,7 +322,8 @@ describe('toolchain package boundaries', () => {
 		expect(nodeApplication).not.toContain('@pluxel/runtime/internal/static')
 		expect(nodeWorkbenchApplication).toContain('@pluxel/runtime/internal/static')
 		expect(staticHost).toContain('@pluxel/runtime/internal/static-host')
-		expect(staticHost).not.toMatch(/from ['"]@pluxel\/runtime\/internal['"]/)
+		expect(staticHost).toContain('installRuntimePluginGraphCoordinator')
+		expect(staticHost).not.toMatch(/export\s+(?:type\s+)?\*\s+from/)
 		expect(staticHost).not.toContain("from '@pluxel/runtime/internal/static'")
 		expect(staticHostRuntimeEntry).toContain("from './services/RuntimeStateHelpers'")
 		expect(staticHostRuntimeEntry).toContain("from './runtime/capabilities'")
@@ -370,8 +381,17 @@ describe('toolchain package boundaries', () => {
 	it('keeps one runtime authoring entry and route-owned dynamic services', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const coreManifest = await readJson(`${root}/packages/core/package.json`)
+		const contextIndex = await readFile(`${root}/packages/context/src/index.ts`, 'utf8')
+		const contextInternal = await readFile(`${root}/packages/context/src/internal.ts`, 'utf8')
 		const coreIndex = await readFile(`${root}/packages/core/src/index.ts`, 'utf8')
+		const coreInternal = await readFile(`${root}/packages/core/src/internal.ts`, 'utf8')
+		const coreTest = await readFile(`${root}/packages/core/src/test.ts`, 'utf8')
+		const coreToolchain = await readFile(`${root}/packages/core/src/toolchain.ts`, 'utf8')
 		const runtimeIndex = await readFile(`${root}/packages/runtime/src/index.ts`, 'utf8')
+		const runtimeInternal = await readFile(`${root}/packages/runtime/src/internal.ts`, 'utf8')
+		const runtimeTest = await readFile(`${root}/packages/runtime/src/test.ts`, 'utf8')
+		const runtimeToolchain = await readFile(`${root}/packages/runtime/src/toolchain.ts`, 'utf8')
+		const coreServices = await readFile(`${root}/packages/core/src/services/index.ts`, 'utf8')
 		const runtimeServices = await readFile(`${root}/packages/runtime/src/services/index.ts`, 'utf8')
 		const runtimeStaticIndex = await readFile(
 			`${root}/packages/runtime-static/src/index.ts`,
@@ -389,9 +409,7 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-dynamic/src/register-services.ts`,
 			'utf8',
 		)
-		const runtimeManifest = JSON.parse(
-			await readFile(`${root}/packages/runtime/package.json`, 'utf8'),
-		) as { exports?: Record<string, unknown> }
+		const runtimeManifest = await readJson(`${root}/packages/runtime/package.json`)
 		const runtimeDynamicManifest = JSON.parse(
 			await readFile(`${root}/packages/runtime-dynamic/package.json`, 'utf8'),
 		) as { exports?: Record<string, unknown> }
@@ -403,11 +421,64 @@ describe('toolchain package boundaries', () => {
 		expect(coreIndex).toContain("import './logger'")
 		expect(coreIndex).toContain("import './services'")
 		expect(coreIndex).toContain("export { EvtChannel } from './services'")
+		expect(contextIndex).not.toContain("from './symbols'")
+		expect(contextInternal).toContain("export { symbols } from './symbols'")
 		expect(coreManifest.exports).not.toHaveProperty('./env')
+		for (const subpath of ['./internal', './test', './toolchain']) {
+			expect(coreManifest.exports).toHaveProperty(subpath)
+			expect(runtimeManifest.exports).toHaveProperty(subpath)
+		}
+		expect(Object.keys(coreManifest.publishConfig?.exports ?? {}).sort()).toEqual(
+			Object.keys(coreManifest.exports ?? {}).sort(),
+		)
+		expect(Object.keys(runtimeManifest.publishConfig?.exports ?? {}).sort()).toEqual(
+			Object.keys(runtimeManifest.exports ?? {}).sort(),
+		)
 		expect(existsSync(`${root}/packages/core/src/env.ts`)).toBe(false)
 		expect(runtimeIndex).toContain("import './services'")
 		expect(runtimeIndex).not.toContain("import './services/vault'")
-		expect(runtimeIndex).toContain("export * from '@pluxel/core'")
+		expect(coreIndex.match(/export\s+(?:type\s+)?\*\s+from\s+[^\n]+/g)).toEqual([
+			"export * from '@pluxel/context'",
+		])
+		expect(runtimeIndex).not.toMatch(/export\s+(?:type\s+)?\*\s+from\s+['"]@pluxel\/core['"]/)
+		expect(runtimeIndex).toContain('PluginNodeInfo,')
+		const runtimeIndexDts = `${root}/packages/runtime/dist/index.d.mts`
+		const runtimeIndexDeclaration = existsSync(runtimeIndexDts)
+			? await readFile(runtimeIndexDts, 'utf8')
+			: undefined
+		expect(runtimeIndexDeclaration).toSatisfy(
+			(content: string | undefined) => content === undefined || content.includes('PluginNodeInfo'),
+		)
+		const forbiddenDefaultRootExports = [
+			'PluginService',
+			'PluginSlotRegistry',
+			'constructPluginGeneration',
+			'getPluginLifecycleAdapter',
+			'registerPluginGenerationFacade',
+			'__setPluginDefinition',
+			'__setPluginConfig',
+			'__setPluginParts',
+			'__setPluginPartConfig',
+			'__setPluginPartOptional',
+			'getPluginInfo',
+			'getPluginDefinitionFacts',
+			'getPluginConfigDefinition',
+			'checkPluginDecorator',
+		]
+		for (const forbidden of forbiddenDefaultRootExports) {
+			expect(coreIndex).not.toContain(forbidden)
+			expect(runtimeIndex).not.toContain(forbidden)
+		}
+		expect(coreInternal).toContain('PluginService')
+		expect(coreInternal).toContain('consumePluginDefinitionCandidate')
+		expect(coreToolchain).toContain('__setPluginDefinition')
+		expect(coreToolchain).toContain('PLUGIN_LOWERING_ABI_VERSION')
+		expect(coreTest).toContain('PluginNodeHandle')
+		expect(runtimeInternal).toContain("from './internal/reconciliation'")
+		expect(runtimeInternal).not.toContain("from './web/protocol'")
+		expect(runtimeToolchain).toContain("from '@pluxel/core/toolchain'")
+		expect(runtimeTest).toContain("from '@pluxel/core/test'")
+		expect(coreServices).not.toContain('PluginService')
 		expect(runtimeServices).toContain("import './ConfigService'")
 		expect(runtimeServices).toContain("import './workbench/WorkbenchService'")
 		expect(runtimeServices).not.toContain('vault')
@@ -423,8 +494,84 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeManifest.exports?.['./frozen']).toBeUndefined()
 		expect(runtimeDynamicManifest.exports?.['./register']).toBeUndefined()
 		expect(configSourcePlugin).toContain(
-			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime'",
+			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'",
 		)
+	})
+
+	it('keeps removed constructor-shaped Plugin runtime APIs out of production sources', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const pluginService = await readFile(
+			`${root}/packages/core/src/plugins/runtime/PluginService.ts`,
+			'utf8',
+		)
+		const sourceFiles = [
+			...(await collectSourceFiles(`${root}/packages`)),
+			...(await collectSourceFiles(`${root}/plugins`)),
+			...(await collectSourceFiles(`${root}/projects`)),
+		].filter((file) => file.includes('/src/'))
+		const forbidden = [
+			/\bForkablePlugin(?:Constructor)?\b/,
+			/\bclonePluginDefinition(?:Facts)?\b/,
+			/\bclonePluginMarker\b/,
+			/\bclonePluginPartOwnerFacts\b/,
+			/\bFORK_CTX\b/,
+			/\bPLUGIN_CTX\b/,
+			/\bprovideBase\b/,
+			/plugins\/runtime\/fork(?:-identity)?/,
+			/plugins\/composition\/(?:PluginHost|ConfigHost)/,
+			/\bRuntimeModuleRegistry\b/,
+		]
+		const forbiddenPluginServiceMethods = [
+			/\bfork\s*\(/,
+			/\bregisterFork\s*\(/,
+			/\bgetFork\s*\(/,
+			/\blistForks\s*\(/,
+		]
+		const offenders: string[] = []
+
+		for (const file of sourceFiles) {
+			const code = await readFile(file, 'utf8')
+			for (const pattern of forbidden) {
+				if (pattern.test(code)) offenders.push(`${file}:${pattern.source}`)
+			}
+		}
+		for (const pattern of forbiddenPluginServiceMethods) {
+			if (pattern.test(pluginService)) {
+				offenders.push(`packages/core/src/plugins/runtime/PluginService.ts:${pattern.source}`)
+			}
+		}
+
+		expect(offenders).toEqual([])
+	})
+
+	it('keeps the plugin runtime independent from reflection metadata', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const coreManifest = await readJson(`${root}/packages/core/package.json`)
+		const coreBuildConfig = await readFile(`${root}/packages/core/tsdown.config.ts`, 'utf8')
+		const runtimePackages = ['core', 'runtime', 'runtime-dev', 'runtime-dynamic', 'runtime-static']
+		const packageSourceFiles = await Promise.all(
+			runtimePackages.map((name) => collectSourceFiles(`${root}/packages/${name}/src`)),
+		)
+		const sourceFiles = packageSourceFiles.flat()
+		const offenders: string[] = []
+
+		for (const file of sourceFiles) {
+			const code = await readFile(file, 'utf8')
+			if (code.includes('@abraham/reflection')) offenders.push(file)
+			if (code.includes('design:paramtypes')) offenders.push(file)
+		}
+
+		expect(existsSync(`${root}/packages/core/src/reflection.ts`)).toBe(false)
+		expect(coreManifest.dependencies).not.toHaveProperty('@abraham/reflection')
+		expect(coreManifest.devDependencies).not.toHaveProperty('@abraham/reflection')
+		expect(coreManifest.inlinedDependencies).not.toHaveProperty('@abraham/reflection')
+		expect(coreBuildConfig).not.toContain('@abraham/reflection')
+		expect(offenders).toEqual([])
+
+		for (const packageName of runtimePackages) {
+			const config = await readJson(`${root}/packages/${packageName}/tsconfig.json`)
+			expect(config.compilerOptions).not.toHaveProperty('emitDecoratorMetadata')
+		}
 	})
 
 	it('keeps Workbench compiler attachment lifecycle in runtime-dev', async () => {
@@ -485,6 +632,7 @@ describe('toolchain package boundaries', () => {
 		]) {
 			expect(runtimePackage.exports).not.toHaveProperty(subpath)
 		}
+		expect(existsSync(`${root}/packages/runtime/src/protocol.ts`)).toBe(false)
 	})
 
 	it('keeps old HTTP workbench internals out of public runtime config surfaces', async () => {

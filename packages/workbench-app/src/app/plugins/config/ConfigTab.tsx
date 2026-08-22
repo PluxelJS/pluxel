@@ -77,7 +77,7 @@ export function ConfigTabContent({
 					if (result.application === 'saved-not-applied') {
 						notify({
 							title: '配置已保存，但尚未应用',
-							message: result.applyError ?? '插件重启失败，可稍后重试重启。',
+							message: result.applyFailure.message,
 							color: 'yellow',
 						})
 					} else {

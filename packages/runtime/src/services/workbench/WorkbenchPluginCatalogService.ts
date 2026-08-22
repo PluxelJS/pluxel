@@ -5,9 +5,7 @@ import {
 	pluginNodeIndexKey,
 	type Context,
 	type PluginDefinitionAddress,
-	type PluginDefinitionSlot,
 	type PluginNodeAddress,
-	type PluginNodeSlot,
 } from '@pluxel/core'
 import type { WorkbenchConfig, WorkbenchPluginGroupConfig } from '../../workbench-config'
 import { runtimePluginStatusOverview } from '../../runtime/capabilities'
@@ -36,9 +34,12 @@ type PluginCatalogPreferencesSnapshot = Readonly<{
 }>
 
 type PluginCatalogPreferences = {
-	assignments: Map<PluginDefinitionSlot, string | null>
+	assignments: Map<
+		string,
+		Readonly<{ definition: PluginDefinitionAddress; groupId: string | null }>
+	>
 	groupOrder: string[]
-	pluginOrder: Map<string, PluginDefinitionSlot[]>
+	pluginOrder: Map<string, PluginDefinitionAddress[]>
 }
 
 type NormalizedPackagePattern = Readonly<{
@@ -50,14 +51,15 @@ type NormalizedPackagePattern = Readonly<{
 type NormalizedHostGroup = Readonly<{
 	id: string
 	name: string
-	definitions: readonly PluginDefinitionSlot[]
+	definitionKeys: readonly string[]
 	packages: readonly NormalizedPackagePattern[]
 }>
 
 type CatalogEntry = Readonly<{
-	slot: PluginNodeSlot
-	definitionSlot: PluginDefinitionSlot
 	address: PluginNodeAddress
+	nodeKey: string
+	definition: PluginDefinitionAddress
+	definitionKey: string
 	packageName: string | null
 }>
 
@@ -80,16 +82,16 @@ export class WorkbenchPluginCatalogService {
 	readonly ready: Promise<void>
 
 	private readonly hostGroups: readonly NormalizedHostGroup[]
-	private readonly explicitDefinitionGroups = new Map<PluginDefinitionSlot, string>()
+	private readonly explicitDefinitionGroups = new Map<string, string>()
 	private readonly storage: PersistenceNamespace
 	private preferences: PluginCatalogPreferences = emptyPreferences()
 	private writeQueue: Promise<void> = Promise.resolve()
 
 	constructor(private readonly root: Context) {
-		this.hostGroups = normalizeHostGroups(root, readPluginGroups(root.config.workbench))
+		this.hostGroups = normalizeHostGroups(readPluginGroups(root.config.workbench))
 		for (const group of this.hostGroups) {
-			for (const definition of group.definitions) {
-				this.explicitDefinitionGroups.set(definition, group.id)
+			for (const definitionKey of group.definitionKeys) {
+				this.explicitDefinitionGroups.set(definitionKey, group.id)
 			}
 		}
 		this.storage = root.root.persistence.namespace('workbench')
@@ -114,10 +116,10 @@ export class WorkbenchPluginCatalogService {
 		const current = this.resolveLayout()
 		const registered = current.registered
 		const entries = current.entries
-		const knownNodes = new Set(entries.map((entry) => entry.slot))
-		const desired = new Map<PluginDefinitionSlot, string>()
+		const knownNodes = new Set(entries.map((entry) => entry.nodeKey))
+		const desired = new Map<string, string>()
 		const groupOrder: string[] = []
-		const pluginOrder = new Map<string, PluginDefinitionSlot[]>()
+		const pluginOrder = new Map<string, PluginDefinitionAddress[]>()
 
 		for (const rawGroup of groups) {
 			if (!rawGroup || typeof rawGroup !== 'object' || Array.isArray(rawGroup)) {
@@ -134,7 +136,7 @@ export class WorkbenchPluginCatalogService {
 			if (!Array.isArray(rawGroup.nodes)) {
 				throw invalid(`group "${groupId}" nodes must be an array`)
 			}
-			const order: PluginDefinitionSlot[] = []
+			const order: PluginDefinitionAddress[] = []
 			for (const rawOwner of rawGroup.nodes) {
 				let owner: PluginNodeAddress
 				try {
@@ -142,27 +144,32 @@ export class WorkbenchPluginCatalogService {
 				} catch (error) {
 					throw invalid(`group "${groupId}" contains an invalid Plugin node address`, error)
 				}
-				const slot = this.root.registry.internNodeAddress(owner)
-				if (!knownNodes.has(slot))
+				const nodeKey = pluginNodeIndexKey(owner)
+				if (!knownNodes.has(nodeKey))
 					throw invalid(`group "${groupId}" contains an unknown Plugin node`)
-				const definitionSlot = slot.definition
-				const previousGroup = desired.get(definitionSlot)
+				const definitionKey = pluginDefinitionIndexKey(owner.definition)
+				const previousGroup = desired.get(definitionKey)
 				if (previousGroup && previousGroup !== groupId) {
 					throw invalid('fork variants of one Plugin definition cannot be split across groups')
 				}
 				if (!previousGroup) {
-					desired.set(definitionSlot, groupId)
-					order.push(definitionSlot)
+					desired.set(definitionKey, groupId)
+					order.push(owner.definition)
 				}
 			}
 			pluginOrder.set(groupId, order)
 		}
 
-		const assignments = new Map<PluginDefinitionSlot, string | null>()
+		const assignments: PluginCatalogPreferences['assignments'] = new Map()
 		for (const entry of uniqueDefinitionEntries(entries)) {
-			const desiredGroup = desired.get(entry.definitionSlot) ?? null
+			const desiredGroup = desired.get(entry.definitionKey) ?? null
 			const defaultGroup = this.defaultGroup(entry, registered)
-			if (desiredGroup !== defaultGroup) assignments.set(entry.definitionSlot, desiredGroup)
+			if (desiredGroup !== defaultGroup) {
+				assignments.set(entry.definitionKey, {
+					definition: entry.definition,
+					groupId: desiredGroup,
+				})
+			}
 		}
 
 		this.preferences = { assignments, groupOrder, pluginOrder }
@@ -181,19 +188,20 @@ export class WorkbenchPluginCatalogService {
 		for (const groupId of registered.keys()) members.set(groupId, [])
 
 		for (const entry of entries) {
-			const hasOverride = this.preferences.assignments.has(entry.definitionSlot)
-			const override = this.preferences.assignments.get(entry.definitionSlot)
-			const groupId = hasOverride ? (override ?? null) : this.defaultGroup(entry, registered)
+			const override = this.preferences.assignments.get(entry.definitionKey)
+			const groupId = override ? override.groupId : this.defaultGroup(entry, registered)
 			if (groupId && registered.has(groupId)) members.get(groupId)!.push(entry)
 		}
 
 		for (const [groupId, memberEntries] of members) {
 			const order = this.preferences.pluginOrder.get(groupId) ?? []
-			const rank = new Map(order.map((slot, index) => [slot, index]))
+			const rank = new Map(
+				order.map((definition, index) => [pluginDefinitionIndexKey(definition), index]),
+			)
 			memberEntries.sort(
 				(a, b) =>
-					(rank.get(a.definitionSlot) ?? Number.MAX_SAFE_INTEGER) -
-						(rank.get(b.definitionSlot) ?? Number.MAX_SAFE_INTEGER) ||
+					(rank.get(a.definitionKey) ?? Number.MAX_SAFE_INTEGER) -
+						(rank.get(b.definitionKey) ?? Number.MAX_SAFE_INTEGER) ||
 					addressSortKey(a.address).localeCompare(addressSortKey(b.address)),
 			)
 		}
@@ -220,9 +228,10 @@ export class WorkbenchPluginCatalogService {
 
 	private catalogEntries(): CatalogEntry[] {
 		return runtimePluginStatusOverview(this.root).statuses.map((status) => ({
-			slot: this.root.registry.internNodeAddress(status.address),
-			definitionSlot: this.root.registry.internDefinitionAddress(status.address.definition),
 			address: status.address,
+			nodeKey: pluginNodeIndexKey(status.address),
+			definition: status.address.definition,
+			definitionKey: pluginDefinitionIndexKey(status.address.definition),
 			packageName: status.source.packageName?.trim() || null,
 		}))
 	}
@@ -244,7 +253,7 @@ export class WorkbenchPluginCatalogService {
 		entry: CatalogEntry,
 		registered: ReadonlyMap<string, RegisteredGroup>,
 	): string | null {
-		const explicit = this.explicitDefinitionGroups.get(entry.definitionSlot)
+		const explicit = this.explicitDefinitionGroups.get(entry.definitionKey)
 		if (explicit) return explicit
 		if (!entry.packageName) return null
 		const hostPackage = this.matchHostPackage(entry.packageName)
@@ -270,14 +279,11 @@ export class WorkbenchPluginCatalogService {
 	private async load(): Promise<void> {
 		const raw = await this.storage.getText(PREFERENCE_KEY)
 		if (raw === undefined) return
-		this.preferences = preferencesFromSnapshot(
-			this.root,
-			parsePreferencesSnapshot(JSON.parse(raw) as unknown),
-		)
+		this.preferences = preferencesFromSnapshot(parsePreferencesSnapshot(JSON.parse(raw) as unknown))
 	}
 
 	private async save(): Promise<void> {
-		const content = JSON.stringify(preferencesSnapshot(this.root, this.preferences))
+		const content = JSON.stringify(preferencesSnapshot(this.preferences))
 		this.writeQueue = this.writeQueue
 			.catch((): void => undefined)
 			.then(() => this.storage.put(PREFERENCE_KEY, content))
@@ -292,11 +298,10 @@ function readPluginGroups(config: unknown): readonly WorkbenchPluginGroupConfig[
 }
 
 function normalizeHostGroups(
-	root: Context,
 	input: readonly WorkbenchPluginGroupConfig[],
 ): readonly NormalizedHostGroup[] {
 	const groupIds = new Set<string>()
-	const nodeOwners = new Map<PluginDefinitionSlot, string>()
+	const definitionOwners = new Map<string, string>()
 	const patternOwners = new Map<string, string>()
 	return input.map((raw, index) => {
 		const at = `workbench.pluginGroups[${index}]`
@@ -307,7 +312,7 @@ function normalizeHostGroups(
 		}
 		if (groupIds.has(id)) throw new TypeError(`${at}.id duplicates group "${id}"`)
 		groupIds.add(id)
-		const definitions = (raw.definitions ?? []).map((definition, definitionIndex) => {
+		const definitionKeys = (raw.definitions ?? []).map((definition, definitionIndex) => {
 			let address: PluginDefinitionAddress
 			try {
 				address = parsePluginDefinitionAddress(definition)
@@ -319,13 +324,13 @@ function normalizeHostGroups(
 					},
 				)
 			}
-			const slot = root.registry.internDefinitionAddress(address)
-			const previous = nodeOwners.get(slot)
+			const definitionKey = pluginDefinitionIndexKey(address)
+			const previous = definitionOwners.get(definitionKey)
 			if (previous) {
 				throw new TypeError(`${at}.definitions assigns one Plugin definition to both groups`)
 			}
-			nodeOwners.set(slot, id)
-			return slot
+			definitionOwners.set(definitionKey, id)
+			return definitionKey
 		})
 		const packages = uniqueText(raw.packages ?? [], `${at}.packages`).map((pattern) => {
 			const firstWildcard = pattern.indexOf('*')
@@ -342,7 +347,7 @@ function normalizeHostGroups(
 			patternOwners.set(literal, id)
 			return { groupId: id, literal, prefix: firstWildcard >= 0 }
 		})
-		return Object.freeze({ id, name, definitions: Object.freeze(definitions), packages })
+		return Object.freeze({ id, name, definitionKeys: Object.freeze(definitionKeys), packages })
 	})
 }
 
@@ -430,40 +435,35 @@ function parsePreferencesSnapshot(input: unknown): PluginCatalogPreferencesSnaps
 }
 
 function preferencesFromSnapshot(
-	root: Context,
 	snapshot: PluginCatalogPreferencesSnapshot,
 ): PluginCatalogPreferences {
 	return {
 		assignments: new Map(
 			snapshot.assignments.map(({ definition, groupId }) => [
-				root.registry.internDefinitionAddress(definition),
-				groupId,
+				pluginDefinitionIndexKey(definition),
+				{ definition, groupId },
 			]),
 		),
 		groupOrder: [...snapshot.groupOrder],
 		pluginOrder: new Map(
-			snapshot.pluginOrder.map(({ groupId, definitions }) => [
-				groupId,
-				definitions.map((definition) => root.registry.internDefinitionAddress(definition)),
-			]),
+			snapshot.pluginOrder.map(({ groupId, definitions }) => [groupId, [...definitions]]),
 		),
 	}
 }
 
 function preferencesSnapshot(
-	root: Context,
 	preferences: PluginCatalogPreferences,
 ): PluginCatalogPreferencesSnapshot {
 	return {
 		version: 3,
-		assignments: [...preferences.assignments].map(([definition, groupId]) => ({
-			definition: root.registry.definitionAddressOf(definition),
+		assignments: [...preferences.assignments.values()].map(({ definition, groupId }) => ({
+			definition,
 			groupId,
 		})),
 		groupOrder: [...preferences.groupOrder],
 		pluginOrder: [...preferences.pluginOrder].map(([groupId, definitions]) => ({
 			groupId,
-			definitions: definitions.map((definition) => root.registry.definitionAddressOf(definition)),
+			definitions: [...definitions],
 		})),
 	}
 }
@@ -502,10 +502,10 @@ function definitionSortKey(address: PluginDefinitionAddress): string {
 }
 
 function uniqueDefinitionEntries(entries: readonly CatalogEntry[]): CatalogEntry[] {
-	const seen = new Set<PluginDefinitionSlot>()
+	const seen = new Set<string>()
 	return entries.filter((entry) => {
-		if (seen.has(entry.definitionSlot)) return false
-		seen.add(entry.definitionSlot)
+		if (seen.has(entry.definitionKey)) return false
+		seen.add(entry.definitionKey)
 		return true
 	})
 }

@@ -1,5 +1,4 @@
 import type { PluginNodeSlot } from '../identity'
-import type { PluginIdentifier } from '../../types'
 import type { PluginGraph } from '../PluginDefinitions'
 import type { PluginLifecycleReport } from './LifecycleReport'
 import type { RuntimeUpdateCommitMeta, RuntimeUpdateReason } from './RuntimeUpdateTransaction'
@@ -15,19 +14,16 @@ export type PluginCommitChanges = {
 	 * Plugins whose runtime availability may have changed in this commit.
 	 *
 	 * This includes anything that was stopped or (re)started (adds, replaces, restarts, retries).
-	 * Useful for efficient optional-dependency watchers (e.g. PluginHost.use).
+	 * Useful for efficient optional-dependency watchers (e.g. OptionalPluginBindings.use).
 	 */
 	readonly availabilityChanged: readonly PluginNodeSlot[]
 }
 
 export type RuntimeUpdateCommitSummary = {
 	readonly reason?: RuntimeUpdateReason
-	readonly affectedModules: readonly string[]
-	readonly autoDisabled: readonly PluginNodeSlot[]
 }
 
 export interface CommitSummary {
-	readonly graph: PluginGraph
 	readonly pluginChanges: PluginCommitChanges
 	readonly runtimeUpdate: RuntimeUpdateCommitSummary
 	readonly lifecycleReport: PluginLifecycleReport
@@ -52,7 +48,7 @@ export type CommitExecutionPlan = {
 
 export type PluginNodeResolver = (
 	graph: PluginGraph | undefined,
-	id: PluginIdentifier | PluginNodeSlot,
+	id: PluginNodeSlot,
 ) => PluginNodeSlot | undefined
 
 export const EMPTY_DELTA = {
@@ -156,23 +152,19 @@ export function createPluginCommitChanges(
 	plan: CommitExecutionPlan,
 	failed: ReadonlySet<PluginNodeSlot>,
 ): PluginCommitChanges {
-	return {
-		added: [...plan.added],
-		replaced: [...plan.replaced],
-		removed: [...plan.removed],
-		restarted: collectRestartedSummary(plan, failed),
-		availabilityChanged: uniquePluginNodeSlots(plan.toStop, plan.toStart),
-	}
+	return Object.freeze({
+		added: Object.freeze([...plan.added]),
+		replaced: Object.freeze(plan.replaced.map(({ from, to }) => Object.freeze({ from, to }))),
+		removed: Object.freeze([...plan.removed]),
+		restarted: Object.freeze(collectRestartedSummary(plan, failed)),
+		availabilityChanged: Object.freeze(uniquePluginNodeSlots(plan.toStop, plan.toStart)),
+	})
 }
 
 export function createRuntimeUpdateSummary(
 	meta: RuntimeUpdateCommitMeta | null,
 ): RuntimeUpdateCommitSummary {
-	const affectedModules = meta ? uniqueStrings(meta.affectedModules) : []
-	const autoDisabled = meta ? uniquePluginNodeSlots(meta.autoDisabled) : []
-	return meta
-		? { reason: meta.reason, affectedModules, autoDisabled }
-		: { affectedModules, autoDisabled }
+	return Object.freeze(meta ? { reason: meta.reason } : {})
 }
 
 function collectExistingSlots(graph: PluginGraph, ids: Iterable<PluginNodeSlot>): Set<number> {
@@ -217,8 +209,4 @@ function uniquePluginNodeSlots(
 		for (const id of second) out.add(id)
 	}
 	return [...out]
-}
-
-function uniqueStrings(values: Iterable<string>): string[] {
-	return [...new Set(values)]
 }

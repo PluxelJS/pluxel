@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { defineNodeModule, type PluginNodeAddress } from '@pluxel/runtime'
+import { requirePluginService } from '@pluxel/core/internal'
 import { dirname, join } from 'pathe'
 import { createHost, type Context, type Host } from '@pluxel/test'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
@@ -52,14 +53,17 @@ function createPluginContext(
 	overrides: Record<string, unknown> = {},
 	owner: PluginNodeAddress = pluginAddress(displayName),
 ): Context {
-	const nodeSlot = host.ctx.registry.internNodeAddress(owner)
+	const pluginService = requirePluginService(host.ctx)
+	const nodeSlot = pluginService.internNodeAddress(owner)
 	const ctx = host.ctx.extend({ name: displayName }) as Context
 	defineTestProperty(ctx, 'pluginInfo', {
 		nodeSlot,
 		nodeAddress: owner,
-		definition: owner.definition,
+		definitionAddress: owner.definition,
+		definitionSlot: pluginService.internDefinitionAddress(owner.definition),
+		implementation: class {},
+		definitionRevision: 1,
 		displayName,
-		rootExportName: owner.definition.exportName,
 	})
 	for (const [key, value] of Object.entries(overrides)) defineTestProperty(ctx, key, value)
 	return ctx
@@ -239,8 +243,8 @@ describe('PluginArtifactCompiler', () => {
 		const keyOf = (owner: PluginNodeAddress) => JSON.stringify(owner)
 		const store: PluginArtifactCompilerWorkbenchStore = {
 			...noopWorkbenchStore,
-			getCompiledModule(slot) {
-				return modules.get(keyOf(host.ctx.registry.nodeAddressOf(slot)))
+			getCompiledModule(owner) {
+				return modules.get(keyOf(owner))
 			},
 			async commitCompiledModule(module) {
 				modules.set(keyOf(module.owner.address), module)

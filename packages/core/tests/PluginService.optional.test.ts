@@ -1,6 +1,14 @@
-import { BasePlugin, Plugin, definePluginRef, withCoreHost } from '@pluxel/core/test'
-import { clonePluginDefinition } from '../src/plugins/decorators/decorator/api'
-import { beforeEach, describe, expect, it } from 'vitest'
+import {
+	BasePlugin,
+	Plugin,
+	definePluginRef,
+	pluginDefinitionAddressOf,
+	pluginNodeAddressOf,
+	withCoreHost,
+} from '@pluxel/core/test'
+import { requirePluginService } from '@pluxel/core/internal'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { lowerTestReplacement } from './lowered-replacement'
 import {
 	OptionalProvider as OptionalProviderCtor,
 	resetOptionalProvider,
@@ -45,7 +53,6 @@ class OptionalConsumer extends BasePlugin {
 }
 
 class OptionalProviderReplacement extends OptionalProviderCtor {}
-clonePluginDefinition(OptionalProviderCtor, OptionalProviderReplacement)
 
 @Plugin({ displayName: 'Required optional-provider consumer' })
 class RequiredOptionalProviderConsumer extends BasePlugin {
@@ -57,6 +64,27 @@ class RequiredOptionalProviderConsumer extends BasePlugin {
 const RequiredOptionalProviderConsumerRef = definePluginRef<RequiredOptionalProviderConsumer>()
 let nestedOptionalConsumerStarts = 0
 
+abstract class AbstractOptionalProvider extends BasePlugin {
+	abstract readonly value: string
+}
+
+@Plugin(AbstractOptionalProvider)
+class ConcreteAbstractOptionalProvider extends AbstractOptionalProvider {
+	readonly value = 'concrete'
+}
+
+const AbstractOptionalProviderRef = definePluginRef<AbstractOptionalProvider>()
+let abstractOptionalSetups = 0
+
+@Plugin()
+class AbstractOptionalConsumer extends BasePlugin {
+	override init() {
+		this.plugins.use(AbstractOptionalProviderRef, () => {
+			abstractOptionalSetups++
+		})
+	}
+}
+
 @Plugin({ displayName: 'Nested optional consumer' })
 class NestedOptionalConsumer extends BasePlugin {
 	readonly generation = ++nestedOptionalConsumerStarts
@@ -67,6 +95,11 @@ class NestedOptionalConsumer extends BasePlugin {
 }
 
 describe('static optional Plugin integration', () => {
+	beforeAll(() => {
+		lowerTestReplacement(OptionalProviderCtor, OptionalProviderReplacement, {
+			plugin: { displayName: 'Optional provider replacement' },
+		})
+	})
 	beforeEach(() => {
 		consumerStarts = 0
 		consumerCleanups = 0
@@ -75,6 +108,32 @@ describe('static optional Plugin integration', () => {
 		observedGenerations.length = 0
 		resetOptionalProvider()
 		resetSecondOptionalProvider()
+		abstractOptionalSetups = 0
+	})
+
+	it('does not resolve an abstract provider default through a concrete-only PluginRef', async () => {
+		await withCoreHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
+			host.add([ConcreteAbstractOptionalProvider, AbstractOptionalConsumer])
+			await host.commit()
+
+			const update = registry.beginUpdate({ reason: 'core-test' })
+			update.setProviderDefault(
+				pluginDefinitionAddressOf(AbstractOptionalProvider),
+				pluginNodeAddressOf(ConcreteAbstractOptionalProvider),
+			)
+			const prepared = update.prepare()
+			const result = await prepared.commit()
+
+			expect(result.ok).toBe(true)
+			expect(host.isRunning(AbstractOptionalConsumer)).toBe(true)
+			expect(abstractOptionalSetups).toBe(0)
+
+			const cleanup = registry.beginUpdate({ reason: 'core-test' })
+			cleanup.setProviderDefault(pluginDefinitionAddressOf(AbstractOptionalProvider), null)
+			const cleanupResult = await cleanup.commit()
+			expect(cleanupResult.ok).toBe(true)
+		})
 	})
 
 	it('does not disturb consumers on absent -> absent retries and restarts them on real transitions', async () => {
@@ -131,6 +190,7 @@ describe('static optional Plugin integration', () => {
 
 	it('restarts one consumer generation for provider replacement', async () => {
 		await withCoreHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
 			host.add([OptionalProviderCtor, OptionalConsumer])
 			await host.commit()
 			const first = host.require(OptionalConsumer)
@@ -142,13 +202,14 @@ describe('static optional Plugin integration', () => {
 			expect(consumerStarts).toBe(2)
 			expect(observedGenerations).toHaveLength(2)
 			expect(summary.pluginChanges.restarted).toEqual([
-				host.ctx.registry.resolvePluginNode(OptionalConsumer),
+				registry.resolvePluginNode(OptionalConsumer),
 			])
 		})
 	})
 
 	it('restarts optional consumers outside a required removal cascade', async () => {
 		await withCoreHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
 			host.add([OptionalProviderCtor, RequiredOptionalProviderConsumer, NestedOptionalConsumer])
 			await host.commit()
 			const firstOptionalConsumer = host.require(NestedOptionalConsumer)
@@ -161,13 +222,14 @@ describe('static optional Plugin integration', () => {
 			expect(host.require(NestedOptionalConsumer)).not.toBe(firstOptionalConsumer)
 			expect(nestedOptionalConsumerStarts).toBe(2)
 			expect(summary.pluginChanges.restarted).toEqual([
-				host.ctx.registry.resolvePluginNode(NestedOptionalConsumer),
+				registry.resolvePluginNode(NestedOptionalConsumer),
 			])
 		})
 	})
 
 	it('unions overlapping provider transitions so each consumer restarts once', async () => {
 		await withCoreHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
 			await host.start(OptionalConsumer)
 			host.add([OptionalProviderCtor, SecondOptionalProviderCtor])
 			const summary = await host.commit()
@@ -177,7 +239,7 @@ describe('static optional Plugin integration', () => {
 				new Set(['first', 'second']),
 			)
 			expect(summary.pluginChanges.restarted).toEqual([
-				host.ctx.registry.resolvePluginNode(OptionalConsumer),
+				registry.resolvePluginNode(OptionalConsumer),
 			])
 		})
 	})

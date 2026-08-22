@@ -1,207 +1,152 @@
-import { createErr } from 'option-t/plain_result'
-import type { PluginConstructor, PluginIdentifier } from '../../types'
-import type { PluginNodeSlot } from '../identity'
-import { collectPluginLifecycleNotStarted, type PluginLifecycleReport } from './LifecycleReport'
-import type { RuntimeModuleDeclaration, RuntimeModuleSnapshot } from './RuntimeModuleRegistry'
+import type { ConcretePluginDefinitionCandidate } from '../definition'
+import type { PluginDefinitionAddress, PluginNodeAddress } from '../identity'
 
-const DEFAULT_RUNTIME_UPDATE_REASON: RuntimeUpdateReason = 'startup'
-const RUNTIME_UPDATE_ALREADY_CLOSED_MESSAGE = 'Runtime update transaction is already closed'
+const DEFAULT_RUNTIME_UPDATE_REASON: RuntimeUpdateReason = 'runtime-update'
+const CLOSED_MESSAGE = 'Core Plugin update transaction is already closed'
+const PREPARED_MESSAGE = 'Core Plugin update transaction is already prepared'
 
 export type CascadeOptions = { cascadeDependents?: boolean }
-export type ReplacePluginOptions = CascadeOptions & { provideBase?: boolean }
+export type ReplaceDefinitionOptions = CascadeOptions
 export type RuntimeUpdateReason = string
+export type RuntimeUpdateOptions = { reason?: RuntimeUpdateReason }
+export type RuntimeUpdateCommitMeta = { reason: RuntimeUpdateReason }
+export type PreparedRuntimeUpdateCommitOptions = Readonly<{
+	/** Runs synchronously and exactly once when the prepared Core graph becomes committed fact. */
+	onGraphCommitted?: () => void
+}>
 
-export type RuntimeUpdateOptions = {
-	reason?: RuntimeUpdateReason
-}
-
-export type RuntimeUpdateCommitOptions = {
-	/**
-	 * Use strict commit semantics for this update.
-	 *
-	 * Strict commit returns an error result if any plugin fails to start.
-	 */
-	strict?: boolean
-	/**
-	 * Roll back core draft/pending restart state when commit returns an error.
-	 *
-	 * Defaults to true. Retry loops may set this to false, re-sync declarations, and call
-	 * commit again before eventually committing or rolling back the transaction.
-	 */
-	rollbackOnFailure?: boolean
-	/**
-	 * Plugins that an adapter disabled while recovering this runtime update.
-	 *
-	 * Core records this in the commit summary only; the policy and persistence side effects
-	 * remain owned by the adapter/control-plane layer.
-	 */
-	autoDisabled?: readonly PluginNodeSlot[]
-}
-
-export type RuntimeUpdateTransaction<TCommitResult = unknown> = {
+export interface PreparedRuntimeUpdate<TCommitResult = unknown> {
 	readonly reason: RuntimeUpdateReason
-	register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void
-	unregister(id: PluginIdentifier, opts?: CascadeOptions): void
-	replace(target: PluginIdentifier, next: PluginConstructor, opts?: ReplacePluginOptions): void
-	upsertModule(module: RuntimeModuleDeclaration): void
-	removeModule(moduleId: string): void
-	markAffectedModule(moduleId: string): void
-	markAffectedModules(moduleIds: Iterable<string>): void
-	restart(id: PluginIdentifier, opts?: CascadeOptions): void
-	commit(options?: RuntimeUpdateCommitOptions): Promise<TCommitResult>
+	commit(options?: PreparedRuntimeUpdateCommitOptions): Promise<TCommitResult>
 	rollback(): void
 }
 
-export type RuntimeUpdateCommitMeta = {
-	reason: RuntimeUpdateReason
-	affectedModules: readonly string[]
-	autoDisabled: readonly PluginNodeSlot[]
-}
-
-type RuntimeUpdateCommitSummaryLike = {
-	lifecycleReport: PluginLifecycleReport
+export interface RuntimeUpdateTransaction<TCommitResult = unknown> {
+	readonly reason: RuntimeUpdateReason
+	materializeNode(address: PluginNodeAddress, candidate: ConcretePluginDefinitionCandidate): void
+	dematerializeNode(address: PluginNodeAddress, options?: CascadeOptions): void
+	restartNode(address: PluginNodeAddress, options?: CascadeOptions): void
+	replaceDefinition(
+		address: PluginDefinitionAddress,
+		candidate: ConcretePluginDefinitionCandidate,
+		options?: ReplaceDefinitionOptions,
+	): void
+	setProviderDefault(token: PluginDefinitionAddress, provider: PluginNodeAddress | null): void
+	setDependencyOverride(
+		consumer: PluginNodeAddress,
+		requirement: PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): void
+	prepare(): PreparedRuntimeUpdate<TCommitResult>
+	commit(options?: PreparedRuntimeUpdateCommitOptions): Promise<TCommitResult>
+	rollback(): void
 }
 
 export type RuntimeUpdateController<TCommitResult> = {
-	lastCommitSummary(): RuntimeUpdateCommitSummaryLike | undefined
-	register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void
-	unregister(id: PluginIdentifier, opts?: CascadeOptions): void
-	replace(target: PluginIdentifier, next: PluginConstructor, opts?: ReplacePluginOptions): void
-	restart(id: PluginIdentifier, opts?: CascadeOptions): void
-	commitDraft(meta: RuntimeUpdateCommitMeta): Promise<TCommitResult>
-	completeTransaction(tx: RuntimeUpdateTransaction<TCommitResult>): void
+	materializeNode(address: PluginNodeAddress, candidate: ConcretePluginDefinitionCandidate): void
+	dematerializeNode(address: PluginNodeAddress, options?: CascadeOptions): void
+	restartNode(address: PluginNodeAddress, options?: CascadeOptions): void
+	replaceDefinition(
+		address: PluginDefinitionAddress,
+		candidate: ConcretePluginDefinitionCandidate,
+		options?: ReplaceDefinitionOptions,
+	): void
+	setProviderDefault(token: PluginDefinitionAddress, provider: PluginNodeAddress | null): void
+	setDependencyOverride(
+		consumer: PluginNodeAddress,
+		requirement: PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): void
+	prepareDraft(
+		tx: RuntimeUpdateTransaction<TCommitResult>,
+		meta: RuntimeUpdateCommitMeta,
+	): PreparedRuntimeUpdate<TCommitResult>
 	rollbackDraft(tx: RuntimeUpdateTransaction<TCommitResult>): void
-	snapshotRuntimeModule(moduleId: string): RuntimeModuleSnapshot
-	restoreRuntimeModule(moduleId: string, snapshot: RuntimeModuleSnapshot): void
-	upsertRuntimeModule(module: RuntimeModuleDeclaration): void
-	removeRuntimeModule(moduleId: string): void
 }
 
 export class PluginRuntimeUpdateTransaction<
-	TCommitResult extends { ok: boolean },
+	TCommitResult,
 > implements RuntimeUpdateTransaction<TCommitResult> {
-	public readonly reason: RuntimeUpdateReason
-	private closed = false
-	private readonly moduleSnapshots = new Map<string, RuntimeModuleSnapshot>()
-	private readonly affectedModules = new Set<string>()
+	readonly reason: RuntimeUpdateReason
+	private state: 'open' | 'prepared' | 'closed' = 'open'
+	private prepared?: PreparedRuntimeUpdate<TCommitResult>
 
-	public constructor(
+	constructor(
 		private readonly controller: RuntimeUpdateController<TCommitResult>,
 		options: RuntimeUpdateOptions = {},
 	) {
 		this.reason = options.reason ?? DEFAULT_RUNTIME_UPDATE_REASON
 	}
 
-	public register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void {
+	materializeNode(address: PluginNodeAddress, candidate: ConcretePluginDefinitionCandidate): void {
 		this.assertOpen()
-		this.controller.register(Plugin, opts)
+		this.controller.materializeNode(address, candidate)
 	}
 
-	public unregister(id: PluginIdentifier, opts?: CascadeOptions): void {
+	dematerializeNode(address: PluginNodeAddress, options?: CascadeOptions): void {
 		this.assertOpen()
-		this.controller.unregister(id, opts)
+		this.controller.dematerializeNode(address, options)
 	}
 
-	public replace(
-		target: PluginIdentifier,
-		next: PluginConstructor,
-		opts?: ReplacePluginOptions,
+	restartNode(address: PluginNodeAddress, options?: CascadeOptions): void {
+		this.assertOpen()
+		this.controller.restartNode(address, options)
+	}
+
+	replaceDefinition(
+		address: PluginDefinitionAddress,
+		candidate: ConcretePluginDefinitionCandidate,
+		options?: ReplaceDefinitionOptions,
 	): void {
 		this.assertOpen()
-		this.controller.replace(target, next, opts)
+		this.controller.replaceDefinition(address, candidate, options)
 	}
 
-	public upsertModule(module: RuntimeModuleDeclaration): void {
+	setProviderDefault(token: PluginDefinitionAddress, provider: PluginNodeAddress | null): void {
 		this.assertOpen()
-		this.recordModuleSnapshot(module.moduleId)
-		this.affectedModules.add(module.moduleId)
-		this.controller.upsertRuntimeModule(module)
+		this.controller.setProviderDefault(token, provider)
 	}
 
-	public removeModule(moduleId: string): void {
+	setDependencyOverride(
+		consumer: PluginNodeAddress,
+		requirement: PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): void {
 		this.assertOpen()
-		this.recordModuleSnapshot(moduleId)
-		this.affectedModules.add(moduleId)
-		this.controller.removeRuntimeModule(moduleId)
+		this.controller.setDependencyOverride(consumer, requirement, provider)
 	}
 
-	public markAffectedModule(moduleId: string): void {
+	prepare(): PreparedRuntimeUpdate<TCommitResult> {
+		if (this.state === 'prepared') return this.prepared!
 		this.assertOpen()
-		this.affectedModules.add(moduleId)
+		const prepared = this.controller.prepareDraft(this, { reason: this.reason })
+		this.prepared = prepared
+		this.state = 'prepared'
+		return prepared
 	}
 
-	public markAffectedModules(moduleIds: Iterable<string>): void {
-		this.assertOpen()
-		for (const moduleId of moduleIds) this.affectedModules.add(moduleId)
+	commit(options?: PreparedRuntimeUpdateCommitOptions): Promise<TCommitResult> {
+		return this.prepare().commit(options)
 	}
 
-	public restart(id: PluginIdentifier, opts?: CascadeOptions): void {
-		this.assertOpen()
-		this.controller.restart(id, opts)
-	}
-
-	public async commit(options: RuntimeUpdateCommitOptions = {}): Promise<TCommitResult> {
-		this.assertOpen()
-		const rollbackOnFailure = options.rollbackOnFailure ?? true
-		const result = await this.controller.commitDraft({
-			reason: this.reason,
-			affectedModules: [...this.affectedModules],
-			autoDisabled: options.autoDisabled ?? [],
-		})
-
-		if (!result.ok) {
-			if (rollbackOnFailure) {
-				this.rollback()
-			}
-			return result
+	rollback(): void {
+		if (this.state === 'closed') return
+		if (this.state === 'prepared') {
+			this.prepared!.rollback()
+			this.state = 'closed'
+			return
 		}
-
-		this.closed = true
-		this.controller.completeTransaction(this)
-		this.moduleSnapshots.clear()
-		this.affectedModules.clear()
-
-		const failed = options.strict
-			? collectPluginLifecycleNotStarted(this.controller.lastCommitSummary()?.lifecycleReport)
-			: []
-		if (failed.length > 0) {
-			// The controller's concrete commit result is a plain-result union. This generic preserves that
-			// exact return type, but TypeScript cannot prove its error branch from the `{ ok: boolean }` bound.
-			return createErr(createPluginsFailedToStartError(failed)) as unknown as TCommitResult
-		}
-
-		return result
-	}
-
-	public rollback(): void {
-		if (this.closed) return
-		this.closed = true
-		this.rollbackModules()
-		this.affectedModules.clear()
+		this.state = 'closed'
 		this.controller.rollbackDraft(this)
 	}
 
-	private recordModuleSnapshot(moduleId: string): void {
-		if (this.moduleSnapshots.has(moduleId)) return
-		this.moduleSnapshots.set(moduleId, this.controller.snapshotRuntimeModule(moduleId))
-	}
-
-	private rollbackModules(): void {
-		const entries = [...this.moduleSnapshots.entries()]
-		for (let i = entries.length - 1; i >= 0; i--) {
-			const [moduleId, items] = entries[i]!
-			this.controller.restoreRuntimeModule(moduleId, items)
-		}
-		this.moduleSnapshots.clear()
+	/** @internal Called by the prepared handle after logical commit. */
+	markCommitted(): void {
+		this.state = 'closed'
 	}
 
 	private assertOpen(): void {
-		if (this.closed) throw new Error(RUNTIME_UPDATE_ALREADY_CLOSED_MESSAGE)
+		if (this.state === 'closed') throw new Error(CLOSED_MESSAGE)
+		if (this.state === 'prepared') throw new Error(PREPARED_MESSAGE)
 	}
-}
-
-export function createPluginsFailedToStartError(failed: readonly PluginNodeSlot[]): Error {
-	return new Error(
-		`Some plugins failed to start: ${failed.map((slot) => slot.definition.exportName).join(', ')}`,
-	)
 }

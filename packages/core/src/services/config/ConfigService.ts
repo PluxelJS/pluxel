@@ -1,41 +1,58 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/context'
+import { type Context as PluxelContext, RootService } from '@pluxel/context'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import type { PluginNodeAddress, PluginNodeSlot } from '../../plugins/runtime/identity'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '../../plugins/runtime/identity'
 import { safeParseStandardSchema } from './standardSchema'
 import { ConfigValidationError, type ConfigValidationErrors } from './types'
+import { immutableConfigRecord } from './immutable'
 
 type ConfigRecord = Record<string, unknown>
+type ConfigEntry = { owner: PluginNodeAddress; config: ConfigRecord }
 const EMPTY_CONFIG: Readonly<ConfigRecord> = Object.freeze(Object.create(null))
 const serviceName = 'configService' as const
 
-type RegistryIdentity = {
-	internNodeAddress(address: PluginNodeAddress): PluginNodeSlot
-	nodeAddressOf(slot: PluginNodeSlot): PluginNodeAddress
-}
+/** Immutable candidate fact whose object identity binds one validation result. */
+export type PluginConfigValidationAuthority = Readonly<{
+	schema: StandardSchemaV1
+}>
 
 export type PluginConfigRecordSnapshot = Readonly<{
 	owner: PluginNodeAddress
 	config: Readonly<ConfigRecord>
 }>
 
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Services {
-			[serviceName]: ConfigService
-		}
+/** Opaque revision-bound candidate awaiting durable persistence confirmation. */
+export type StagedPluginConfigValidation = Readonly<{
+	owner: PluginNodeAddress
+	authority: PluginConfigValidationAuthority
+	revision: number
+	snapshot: Readonly<ConfigRecord>
+}>
+
+export class ConfigValidationPendingPersistenceError extends Error {
+	constructor() {
+		super('[ConfigService] Validated config is awaiting durable persistence confirmation.')
+		this.name = 'ConfigValidationPendingPersistenceError'
 	}
 }
 
-/** One complete object config record per Plugin node slot. */
-@Injectable({ key: serviceName })
+/** One complete object config record per canonical Plugin node address. */
+@RootService({ key: serviceName })
 export class ConfigService {
-	private readonly records = new Map<PluginNodeSlot, ConfigRecord>()
-	private readonly rawViews = new Map<PluginNodeSlot, Readonly<ConfigRecord>>()
+	private readonly records = new Map<string, ConfigEntry>()
+	private readonly rawViews = new Map<string, Readonly<ConfigRecord>>()
 	private readonly validated = new Map<
-		PluginNodeSlot,
-		{ rev: number; schema: StandardSchemaV1; snapshot: Readonly<ConfigRecord> }
+		string,
+		{
+			rev: number
+			authority: PluginConfigValidationAuthority
+			snapshot: Readonly<ConfigRecord>
+		}
 	>()
-	private readonly revisions = new Map<PluginNodeSlot, number>()
+	private readonly staged = new Map<
+		string,
+		{ ticket: StagedPluginConfigValidation; revision: number }
+	>()
+	private readonly revisions = new Map<string, number>()
 	private sequence = 0
 	private readyState = true
 	private readyTask: Promise<void> = Promise.resolve()
@@ -58,84 +75,88 @@ export class ConfigService {
 	}
 
 	protected assertConfigMutable(_action: string): void {}
-	protected onConfigChanged(_owner: PluginNodeSlot): void {}
+	protected onConfigChanged(_owner: PluginNodeAddress): void {}
 
 	protected replaceConfigRecords(next: readonly PluginConfigRecordSnapshot[]): void {
-		const registry = this.registry()
 		const remaining = new Set(this.records.keys())
 		for (const item of next) {
-			const owner = registry.internNodeAddress(item.owner)
-			remaining.delete(owner)
+			const ownerKey = pluginNodeIndexKey(item.owner)
+			remaining.delete(ownerKey)
 			const source = item.config
 			if (!source || typeof source !== 'object' || Array.isArray(source)) continue
-			const target = this.records.get(owner) ?? Object.create(null)
-			for (const key of Object.keys(target)) delete target[key]
-			Object.assign(target, source)
-			this.records.set(owner, target)
-			this.bump(owner)
+			const snapshot = immutableConfigRecord(source)
+			const target = this.records.get(ownerKey)?.config ?? Object.create(null)
+			for (const configKey of Object.keys(target)) delete target[configKey]
+			Object.assign(target, snapshot)
+			this.records.set(ownerKey, { owner: item.owner, config: target })
+			this.bump(ownerKey)
 		}
-		for (const owner of remaining) {
-			this.records.delete(owner)
-			this.rawViews.delete(owner)
-			this.revisions.delete(owner)
-			this.validated.delete(owner)
+		for (const key of remaining) {
+			this.records.delete(key)
+			this.rawViews.delete(key)
+			this.revisions.delete(key)
+			this.validated.delete(key)
+			this.staged.delete(key)
 		}
 	}
 
-	getRawConfig<T extends object = ConfigRecord>(owner?: PluginNodeSlot): Readonly<T> {
-		const resolved = owner ?? this.contextOwner()
-		if (!resolved) return EMPTY_CONFIG as T
-		const record = this.records.get(resolved)
+	getRawConfig<T extends object = ConfigRecord>(owner: PluginNodeAddress): Readonly<T> {
+		const key = pluginNodeIndexKey(owner)
+		const record = this.records.get(key)?.config
 		if (!record) return EMPTY_CONFIG as T
-		const existing = this.rawViews.get(resolved)
+		const existing = this.rawViews.get(key)
 		if (existing) return existing as T
 		const view = createReadonlyView(record)
-		this.rawViews.set(resolved, view)
+		this.rawViews.set(key, view)
 		return view as T
 	}
 
-	getConfigRevision(owner: PluginNodeSlot): number {
-		return this.revisions.get(owner) ?? 0
+	getConfigRevision(owner: PluginNodeAddress): number {
+		return this.revisions.get(pluginNodeIndexKey(owner)) ?? 0
 	}
 
-	getValidatedConfig<T extends object = ConfigRecord>(owner?: PluginNodeSlot): Readonly<T> {
-		const resolved = owner ?? this.contextOwner()
-		if (!resolved) throw new Error('[ConfigService] Missing Plugin node owner.')
-		const cached = this.validated.get(resolved)
-		if (!cached || cached.rev !== this.getConfigRevision(resolved)) {
+	getValidatedConfig<T extends object = ConfigRecord>(
+		owner: PluginNodeAddress,
+		authority: PluginConfigValidationAuthority,
+	): Readonly<T> {
+		const key = pluginNodeIndexKey(owner)
+		const cached = this.validated.get(key)
+		if (!cached || cached.rev !== this.getConfigRevision(owner) || cached.authority !== authority) {
 			throw new Error('[ConfigService] Validated config is not ready for the Plugin node.')
 		}
 		return cached.snapshot as T
 	}
 
 	tryGetValidatedConfig<T extends object = ConfigRecord>(
-		owner?: PluginNodeSlot,
+		owner: PluginNodeAddress,
+		authority: PluginConfigValidationAuthority,
 	): Readonly<T> | undefined {
-		const resolved = owner ?? this.contextOwner()
-		if (!resolved) return undefined
-		const cached = this.validated.get(resolved)
-		return cached?.rev === this.getConfigRevision(resolved) ? (cached.snapshot as T) : undefined
+		const cached = this.validated.get(pluginNodeIndexKey(owner))
+		return cached?.rev === this.getConfigRevision(owner) && cached.authority === authority
+			? (cached.snapshot as T)
+			: undefined
 	}
 
 	async ensureValidated(
-		owner: PluginNodeSlot,
-		schema: StandardSchemaV1,
+		owner: PluginNodeAddress,
+		authority: PluginConfigValidationAuthority,
 		options: { missingObjectDefault?: unknown } = {},
 	): Promise<Readonly<ConfigRecord>> {
 		await this.ready
+		const key = pluginNodeIndexKey(owner)
 		const revision = this.getConfigRevision(owner)
-		const cached = this.validated.get(owner)
-		if (cached?.rev === revision && cached.schema === schema) return cached.snapshot
+		if (this.staged.get(key)?.revision === revision) {
+			throw new ConfigValidationPendingPersistenceError()
+		}
+		const cached = this.validated.get(key)
+		if (cached?.rev === revision && cached.authority === authority) return cached.snapshot
 
 		const raw = this.getRawConfig<ConfigRecord>(owner)
-		let result = await safeParseStandardSchema(schema, raw)
-		if (
-			result.success === false &&
-			Object.keys(raw).length === 0 &&
-			options.missingObjectDefault !== undefined
-		) {
-			result = await safeParseStandardSchema(schema, options.missingObjectDefault)
-		}
+		const validationInput =
+			Object.keys(raw).length === 0 && options.missingObjectDefault !== undefined
+				? options.missingObjectDefault
+				: raw
+		const result = await safeParseStandardSchema(authority.schema, validationInput)
 		if (result.success === false) {
 			const errors = toValidationErrors(result.issues)
 			throw new ConfigValidationError('Plugin config validation failed.', errors)
@@ -143,47 +164,102 @@ export class ConfigService {
 		if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
 			throw new TypeError('[ConfigService] Plugin config schema must produce an object')
 		}
-		const snapshot = Object.freeze({ ...(result.output as ConfigRecord) })
-		if (!shallowEqual(raw, snapshot)) this.replaceRecord(owner, snapshot)
-		const nextRevision = this.getConfigRevision(owner)
-		this.validated.set(owner, { rev: nextRevision, schema, snapshot })
-		return snapshot
+		return this.installValidatedConfig({
+			owner,
+			authority,
+			expectedRevision: revision,
+			value: result.output as ConfigRecord,
+		})
+	}
+
+	/** Stage normalized desired data while keeping it unavailable to Core until flush succeeds. */
+	stageValidatedConfig(input: {
+		owner: PluginNodeAddress
+		authority: PluginConfigValidationAuthority
+		expectedRevision: number
+		value: Readonly<ConfigRecord>
+	}): StagedPluginConfigValidation {
+		this.assertConfigMutable('stageValidatedConfig')
+		const { owner, authority, expectedRevision } = input
+		if (this.getConfigRevision(owner) !== expectedRevision) {
+			throw new Error('[ConfigService] Config revision changed during validation.')
+		}
+		const snapshot = immutableConfigRecord(input.value)
+		this.replaceRecord(owner, snapshot)
+		const key = pluginNodeIndexKey(owner)
+		const ticket = Object.freeze({
+			owner,
+			authority,
+			revision: this.getConfigRevision(owner),
+			snapshot,
+		})
+		this.staged.set(key, { ticket, revision: ticket.revision })
+		return ticket
+	}
+
+	/** Publish exactly the staged snapshot after its desired record is durably confirmed. */
+	confirmValidatedConfig(ticket: StagedPluginConfigValidation): Readonly<ConfigRecord> {
+		const key = pluginNodeIndexKey(ticket.owner)
+		const staged = this.staged.get(key)
+		if (staged?.ticket !== ticket || this.getConfigRevision(ticket.owner) !== ticket.revision) {
+			throw new Error('[ConfigService] Staged config validation is stale.')
+		}
+		this.staged.delete(key)
+		this.validated.set(key, {
+			rev: ticket.revision,
+			authority: ticket.authority,
+			snapshot: ticket.snapshot,
+		})
+		return ticket.snapshot
 	}
 
 	getConfigSnapshot(): { plugins: readonly PluginConfigRecordSnapshot[] } {
-		const registry = this.registry()
 		return {
-			plugins: [...this.records].map(([owner, config]) => ({
-				owner: registry.nodeAddressOf(owner),
+			plugins: [...this.records.values()].map(({ owner, config }) => ({
+				owner,
 				config: { ...config },
 			})),
 		}
 	}
 
-	patchConfig<T extends object = ConfigRecord>(owner: PluginNodeSlot, patch: Partial<T>): void {
+	patchConfig<T extends object = ConfigRecord>(owner: PluginNodeAddress, patch: Partial<T>): void {
 		this.assertConfigMutable('patchConfig')
-		const entry = this.records.get(owner) ?? Object.assign(Object.create(null), {})
-		if (!this.records.has(owner)) this.records.set(owner, entry)
-		let changed = false
-		for (const [key, value] of Object.entries(patch as ConfigRecord)) {
-			if (entry[key] === value) continue
-			entry[key] = value
-			changed = true
-		}
-		if (changed) this.changed(owner)
+		const ownerKey = pluginNodeIndexKey(owner)
+		const current = this.records.get(ownerKey)
+		const entry = current?.config ?? Object.assign(Object.create(null), {})
+		const next = immutableConfigRecord({ ...entry, ...(patch as ConfigRecord) })
+		if (shallowEqual(entry, next)) return
+		for (const configKey of Object.keys(entry)) delete entry[configKey]
+		Object.assign(entry, next)
+		if (!current) this.records.set(ownerKey, { owner, config: entry })
+		this.changed(owner, ownerKey)
 	}
 
-	unsetConfigKeys(owner: PluginNodeSlot, keys: readonly string[]): void {
+	unsetConfigKeys(owner: PluginNodeAddress, keys: readonly string[]): void {
 		this.assertConfigMutable('unsetConfigKeys')
-		const entry = this.records.get(owner)
+		const ownerKey = pluginNodeIndexKey(owner)
+		const entry = this.records.get(ownerKey)?.config
 		if (!entry) return
 		let changed = false
-		for (const key of keys) {
-			if (!(key in entry)) continue
-			delete entry[key]
+		for (const configKey of keys) {
+			if (!(configKey in entry)) continue
+			delete entry[configKey]
 			changed = true
 		}
-		if (changed) this.changed(owner)
+		if (changed) this.changed(owner, ownerKey)
+	}
+
+	/** Delete the complete desired record for one Plugin node. */
+	deleteConfig(owner: PluginNodeAddress): boolean {
+		this.assertConfigMutable('deleteConfig')
+		const key = pluginNodeIndexKey(owner)
+		if (!this.records.delete(key)) return false
+		this.rawViews.delete(key)
+		this.validated.delete(key)
+		this.staged.delete(key)
+		this.revisions.delete(key)
+		this.onConfigChanged(owner)
+		return true
 	}
 
 	batch(run: () => void): void {
@@ -193,33 +269,47 @@ export class ConfigService {
 	/** Wait until this backend has durably persisted all queued desired Config records. */
 	async flush(_options: { force?: boolean } = {}): Promise<void> {}
 
-	private replaceRecord(owner: PluginNodeSlot, value: Readonly<ConfigRecord>): void {
-		const target = this.records.get(owner) ?? Object.create(null)
-		for (const key of Object.keys(target)) delete target[key]
+	private replaceRecord(owner: PluginNodeAddress, value: Readonly<ConfigRecord>): void {
+		const ownerKey = pluginNodeIndexKey(owner)
+		const current = this.records.get(ownerKey)
+		const target = current?.config ?? Object.create(null)
+		for (const configKey of Object.keys(target)) delete target[configKey]
 		Object.assign(target, value)
-		this.records.set(owner, target)
-		this.changed(owner)
+		if (!current) this.records.set(ownerKey, { owner, config: target })
+		this.changed(owner, ownerKey)
 	}
 
-	private changed(owner: PluginNodeSlot): void {
-		this.bump(owner)
+	private installValidatedConfig(input: {
+		owner: PluginNodeAddress
+		authority: PluginConfigValidationAuthority
+		expectedRevision: number
+		value: Readonly<ConfigRecord>
+	}): Readonly<ConfigRecord> {
+		const { owner, authority, expectedRevision, value } = input
+		if (this.getConfigRevision(owner) !== expectedRevision) {
+			throw new Error('[ConfigService] Config revision changed during validation.')
+		}
+		const snapshot = immutableConfigRecord(value)
+		const raw = this.getRawConfig<ConfigRecord>(owner)
+		if (!shallowEqual(raw, snapshot)) this.replaceRecord(owner, snapshot)
+		const key = pluginNodeIndexKey(owner)
+		this.validated.set(key, {
+			rev: this.getConfigRevision(owner),
+			authority,
+			snapshot,
+		})
+		return snapshot
+	}
+
+	private changed(owner: PluginNodeAddress, key: string): void {
+		this.bump(key)
 		this.onConfigChanged(owner)
 	}
 
-	private bump(owner: PluginNodeSlot): void {
-		this.revisions.set(owner, ++this.sequence)
-		this.validated.delete(owner)
-	}
-
-	private contextOwner(): PluginNodeSlot | undefined {
-		return (this.ctx as unknown as { pluginInfo?: { nodeSlot?: PluginNodeSlot } }).pluginInfo
-			?.nodeSlot
-	}
-
-	private registry(): RegistryIdentity {
-		const registry = (this.ctx as unknown as { registry?: RegistryIdentity }).registry
-		if (!registry) throw new Error('[ConfigService] Plugin registry is not available')
-		return registry
+	private bump(key: string): void {
+		this.revisions.set(key, ++this.sequence)
+		this.validated.delete(key)
+		this.staged.delete(key)
 	}
 }
 

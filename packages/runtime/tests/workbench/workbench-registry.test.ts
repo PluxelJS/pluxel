@@ -1,4 +1,5 @@
-import { PluginSlotRegistry, type PluginNodeAddress, type PluginNodeSlot } from '@pluxel/core'
+import { type PluginNodeAddress, type PluginNodeSlot } from '@pluxel/core'
+import { PluginSlotRegistry } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 import { workbench } from '../../src/workbench'
 import { workbenchContract } from '../../src/workbench-contract'
@@ -49,9 +50,10 @@ function fixture(edges: Array<[string, string]> = []) {
 	const ctx: any = {
 		root: { effects: { defer: () => ({ dispose() {} }) } },
 		registry: {
+			beginUpdate: () => ({}),
+			getInstance: () => undefined,
 			graph: { depsOf: (slot: PluginNodeSlot) => deps.get(slot) ?? [] },
-			internNodeAddress: (address: PluginNodeAddress) => slots.internNode(address),
-			nodeAddressOf: (slot: PluginNodeSlot) => slots.nodeAddress(slot),
+			resolvePluginNode: (address: PluginNodeAddress) => slots.lookupNode(address),
 			isRunning: (slot: PluginNodeSlot) => running.has(slot),
 			watchInstance: (_slot: PluginNodeSlot, listener: () => void) => {
 				listener()
@@ -59,6 +61,7 @@ function fixture(edges: Array<[string, string]> = []) {
 			},
 		},
 	}
+	ctx.root.registry = ctx.registry
 	const artifacts: any = {
 		subscribe: (listener: () => void) => {
 			artifactChanged = listener

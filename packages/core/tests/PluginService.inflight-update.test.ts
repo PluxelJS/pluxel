@@ -1,7 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
-import { clonePluginDefinition } from '../src/plugins/decorators/decorator/api'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { lowerTestReplacement } from './lowered-replacement'
 
 const ConfigSchema: StandardSchemaV1<unknown, { value?: number }> = {
 	'~standard': {
@@ -46,11 +46,16 @@ class InflightReplacementPlugin extends InflightUpdatePlugin {
 	}
 }
 
-describe('updates queued during an in-flight Plugin commit', () => {
-	beforeAll(() => clonePluginDefinition(InflightUpdatePlugin, InflightReplacementPlugin))
+describe('updates attempted during an in-flight Core transaction', () => {
+	beforeAll(() => {
+		lowerTestReplacement(InflightUpdatePlugin, InflightReplacementPlugin, {
+			plugin: { displayName: 'In-flight replacement' },
+			config: { fieldName: 'config', schema: ConfigSchema },
+		})
+	})
 	beforeEach(resetRace)
 
-	it('applies the latest config in a fresh generation after init settles', async () => {
+	it('rejects overlap and applies the latest config in the next generation', async () => {
 		await withCoreHost(async (host) => {
 			const config = host.cfg(InflightUpdatePlugin)
 			config.set({ value: 1 })
@@ -60,19 +65,19 @@ describe('updates queued during an in-flight Plugin commit', () => {
 			await started
 
 			config.set({ value: 2 })
-			host.restart(InflightUpdatePlugin)
-			const updateCommit = host.commit()
+			expect(() => host.restart(InflightUpdatePlugin)).toThrow(/another update is active/i)
 
 			allowInit()
 			await initialCommit
-			await updateCommit
+			host.restart(InflightUpdatePlugin)
+			await host.commit()
 
 			expect(applied).toEqual([1, 2])
 			expect(host.require(InflightUpdatePlugin).config.value).toBe(2)
 		})
 	})
 
-	it('does not lose a replacement queued while the old generation is starting', async () => {
+	it('admits replacement only after the active transaction settles', async () => {
 		await withCoreHost(async (host) => {
 			host.cfg(InflightUpdatePlugin).set({ value: 1 })
 			host.add(InflightUpdatePlugin)
@@ -80,19 +85,21 @@ describe('updates queued during an in-flight Plugin commit', () => {
 			const initialCommit = host.commit()
 			await started
 
-			host.replace(InflightUpdatePlugin, InflightReplacementPlugin)
-			const replacementCommit = host.commit()
+			expect(() => host.replace(InflightUpdatePlugin, InflightReplacementPlugin)).toThrow(
+				/another update is active/i,
+			)
 
 			allowInit()
 			await initialCommit
-			await replacementCommit
+			host.replace(InflightUpdatePlugin, InflightReplacementPlugin)
+			await host.commit()
 
 			expect(applied).toEqual([1, 20])
 			expect(host.require(InflightUpdatePlugin)).toBeInstanceOf(InflightReplacementPlugin)
 		})
 	})
 
-	it('removes a Plugin queued for unload while its generation is starting', async () => {
+	it('admits removal only after the active transaction settles', async () => {
 		await withCoreHost(async (host) => {
 			host.cfg(InflightUpdatePlugin).set({ value: 1 })
 			host.add(InflightUpdatePlugin)
@@ -100,12 +107,12 @@ describe('updates queued during an in-flight Plugin commit', () => {
 			const initialCommit = host.commit()
 			await started
 
-			host.remove(InflightUpdatePlugin)
-			const removalCommit = host.commit()
+			expect(() => host.remove(InflightUpdatePlugin)).toThrow(/another update is active/i)
 
 			allowInit()
 			await initialCommit
-			await removalCommit
+			host.remove(InflightUpdatePlugin)
+			await host.commit()
 
 			expect(applied).toEqual([1])
 			expect(host.has(InflightUpdatePlugin)).toBe(false)

@@ -35,7 +35,9 @@ async function withPersistentCache(
 ): Promise<void> {
 	await withRuntimeHost(
 		async (host) => {
-			host.add([MemoryCacheBackendPlugin, CachePlugin, PersistentCacheConsumer])
+			const plugins = [MemoryCacheBackendPlugin, CachePlugin, PersistentCacheConsumer] as const
+			host.add(plugins)
+			for (const PluginClass of plugins) host.cfg(PluginClass).enable()
 			const persistence = {
 				mode: options.mode ?? 'durable',
 				...(options.flushIntervalMs === undefined
@@ -153,6 +155,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add(MemoryCacheBackendPlugin)
+				host.cfg(MemoryCacheBackendPlugin).enable()
 				host.cfg(MemoryCacheBackendPlugin).set({
 					maxEntries: 10,
 					persistence: { mode: 'durable', flushIntervalMs: 1_000 },
@@ -188,6 +191,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add(MemoryCacheBackendPlugin)
+				host.cfg(MemoryCacheBackendPlugin).enable()
 				host.cfg(MemoryCacheBackendPlugin).set({
 					maxEntries: 10,
 					persistence: { mode: 'durable', flushIntervalMs: 1_000 },

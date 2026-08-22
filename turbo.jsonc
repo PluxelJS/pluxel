@@ -258,6 +258,25 @@
 			],
 			"outputLogs": "errors-only",
 		},
+		"@pluxel/runtime-static#test": {
+			// The real package-root lowering smoke intentionally executes the built toolchain/runtime
+			// boundary in a child Node process. Pin this test to current dist artifacts instead of
+			// allowing it to observe an older local build while workspace build/test run concurrently.
+			"dependsOn": ["build", "@pluxel/test#build"],
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/oxlint.config.ts",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+				"!bench/**",
+				"!**/bench/**",
+			],
+			"outputLogs": "errors-only",
+		},
 		"@pluxel/runtime#test": {
 			// Runtime compiler/worker fixtures cross the package export boundary. Keep declarations
 			// stable instead of testing while the runtime build cleans and replaces dist.

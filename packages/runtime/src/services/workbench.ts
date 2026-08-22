@@ -69,7 +69,7 @@ export class WorkbenchBackend {
 		const ownerDescriptor = Object.freeze({
 			address: owner.pluginInfo.nodeAddress,
 			displayName: owner.pluginInfo.displayName,
-			rootExportName: owner.pluginInfo.rootExportName,
+			rootExportName: owner.pluginInfo.definitionAddress.exportName,
 		})
 		const cleanup: Array<() => void> = []
 		const refs: Record<string, InternalModelRef> = {}

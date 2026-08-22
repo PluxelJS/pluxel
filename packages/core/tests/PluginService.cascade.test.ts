@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
 @Plugin({ displayName: 'Cascade provider' })
@@ -14,6 +15,7 @@ class CascadeConsumer extends BasePlugin {
 describe('required dependent closure', () => {
 	it('restarts required dependents exactly once', async () => {
 		await withCoreHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
 			host.add([CascadeProvider, CascadeConsumer])
 			await host.commit()
 			const firstProvider = host.require(CascadeProvider)
@@ -21,11 +23,12 @@ describe('required dependent closure', () => {
 			host.restart(CascadeProvider)
 			const summary = await host.commit()
 			expect(host.require(CascadeProvider)).not.toBe(firstProvider)
-			expect(host.require(CascadeConsumer)).not.toBe(firstConsumer)
+			const secondConsumer = host.require(CascadeConsumer)
+			expect(secondConsumer === firstConsumer).toBe(false)
 			expect(new Set(summary.pluginChanges.restarted)).toEqual(
 				new Set([
-					host.ctx.registry.resolvePluginNode(CascadeProvider),
-					host.ctx.registry.resolvePluginNode(CascadeConsumer),
+					registry.resolvePluginNode(CascadeProvider),
+					registry.resolvePluginNode(CascadeConsumer),
 				]),
 			)
 		})
@@ -35,8 +38,10 @@ describe('required dependent closure', () => {
 		await withCoreHost(async (host) => {
 			host.add([CascadeProvider, CascadeConsumer])
 			await host.commit()
-			host.ctx.registry.unregister(CascadeProvider, { cascadeDependents: false })
-			await expect(host.commit()).rejects.toThrow(/service verification failed/)
+			host.remove(CascadeProvider, { cascadeDependents: false })
+			await expect(Promise.resolve().then(() => host.commit())).rejects.toThrow(
+				/Core Plugin graph verification failed/,
+			)
 			expect(host.isRunning(CascadeProvider)).toBe(true)
 			expect(host.isRunning(CascadeConsumer)).toBe(true)
 		})

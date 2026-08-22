@@ -5,6 +5,7 @@ import {
 	type PluginDefinitionAddress,
 	type PluginEntryAddress,
 } from '@pluxel/core'
+import { PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import type { Program } from 'oxc-parser'
 import type { ViteCompatPlugin } from './compat.ts'
 import {
@@ -45,8 +46,8 @@ export type PluginSemanticsPluginOptions = {
 	sourceSpaces?: readonly Readonly<{ name: string; root: string }>[]
 	/** Enables package-root provenance and package entry/export invariants. */
 	packageJsonPath?: string
-	/** Generated helper import. Plugin packages normally use the runtime authoring entry. */
-	helperImportSource?: '@pluxel/runtime' | '@pluxel/core'
+	/** Generated helper import. Must name a dedicated toolchain subpath. */
+	helperImportSource?: '@pluxel/runtime/toolchain' | '@pluxel/core/toolchain'
 }
 
 export type PluginSemanticsCollector = {
@@ -151,7 +152,12 @@ export function createPluginSemanticsPlugin(
 	])
 	const exclude = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.*'])
 	const sourceRoot = resolve(options.root ?? process.cwd())
-	const helperImportSource = options.helperImportSource ?? '@pluxel/runtime'
+	const helperImportSource = options.helperImportSource ?? '@pluxel/runtime/toolchain'
+	if (!helperImportSource.endsWith('/toolchain')) {
+		throw new TypeError(
+			'[pluxel:plugin-semantics] helperImportSource must name a /toolchain subpath',
+		)
+	}
 	const dependencies = new Map<string, PluginDependencyMode>()
 	const collectedDefinitions = new Map<string, PluginSemanticDefinition>()
 	const requiredImports = new Map<string, Set<string>>()
@@ -276,6 +282,8 @@ export function analyzePluginSemantics(
 		throw new Error(message)
 	}
 	for (const raw of analysis.classes.values()) {
+		validateCallerViewPrivateBrand(raw, analysis, id, error)
+		validateCallerViewCallableFields(raw, analysis, id, error)
 		if (raw.marked && raw.pluginPartSubclass) {
 			error(
 				`[pluxel:plugin-part] ${id} ${raw.name} must not use @Plugin; PluginPart has no graph identity`,
@@ -336,7 +344,7 @@ async function lowerModule(options: {
 		replacements.push({
 			start,
 			end,
-			text: `__pluxelDefinePluginRef(${JSON.stringify(address)})`,
+			text: `__pluxelDefinePluginRef(${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, definition: address })})`,
 		})
 	}
 
@@ -344,6 +352,8 @@ async function lowerModule(options: {
 	const partOwners: PartOwnerFacts[] = []
 	const partOptional: PartOptionalFacts[] = []
 	for (const raw of analysis.classes.values()) {
+		validateCallerViewPrivateBrand(raw, analysis, id, options.error)
+		validateCallerViewCallableFields(raw, analysis, id, options.error)
 		if (raw.marked && raw.pluginPartSubclass) {
 			options.error(
 				`[pluxel:plugin-part] ${id} ${raw.name} must not use @Plugin; PluginPart has no graph identity`,
@@ -416,6 +426,7 @@ async function lowerModule(options: {
 		for (const definition of definitions) {
 			lines.push(
 				`__pluxelSetPluginDefinition(${definition.className}, ${JSON.stringify({
+					abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 					kind: definition.kind,
 					definition: definition.definition,
 					requires: definition.requires,
@@ -428,11 +439,13 @@ async function lowerModule(options: {
 			const occurrences = owner.occurrences
 				.map((item) => `{ fieldName: ${JSON.stringify(item.fieldName)}, Part: ${item.partName} }`)
 				.join(', ')
-			lines.push(`__pluxelSetPluginParts(${owner.className}, [${occurrences}]);`)
+			lines.push(
+				`__pluxelSetPluginParts(${owner.className}, { abiVersion: ${PLUGIN_LOWERING_ABI_VERSION}, occurrences: [${occurrences}] });`,
+			)
 		}
 		for (const part of partOptional) {
 			lines.push(
-				`__pluxelSetPluginPartOptional(${part.className}, ${JSON.stringify(part.optional)});`,
+				`__pluxelSetPluginPartOptional(${part.className}, ${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, optional: part.optional })});`,
 			)
 		}
 		transformed = `${transformed}\n${lines.join('\n')}\n`
@@ -819,6 +832,12 @@ function validateMarker(
 				error(
 					`[pluxel:plugin-marker] ${id} ${raw.name} startTimeoutMs must be a positive integer literal`,
 				)
+			}
+			continue
+		}
+		if (key === 'forkable') {
+			if (literalBoolean(property.value) !== true) {
+				error(`[pluxel:plugin-marker] ${id} ${raw.name} forkable must be the literal true`)
 			}
 			continue
 		}
@@ -1246,7 +1265,7 @@ function extendsBasePlugin(node: AstNode, imports: Map<string, ImportBinding>): 
 	return Boolean(
 		binding &&
 		!binding.namespace &&
-		(binding.imported === 'BasePlugin' || binding.imported === 'ForkablePlugin') &&
+		binding.imported === 'BasePlugin' &&
 		AUTHORING_PACKAGES.has(binding.source),
 	)
 }
@@ -1378,6 +1397,70 @@ function validatePluginPartConstructor(
 	}
 }
 
+function validateCallerViewPrivateBrand(
+	raw: RawClass,
+	analysis: ModuleAnalysis,
+	id: string,
+	error: (message: string) => never,
+): void {
+	if (!participatesInPluginInheritance(raw, analysis)) return
+	for (const value of arrayOf((raw.node.body as AstNode | undefined)?.body)) {
+		const member = value as AstNode
+		if (member.static === true) continue
+		if ((member.key as AstNode | undefined)?.type !== 'PrivateIdentifier') continue
+		error(
+			`[pluxel:plugin-caller-view] plugin_caller_view_private_brand_unsupported: ${id} ${raw.name} declares an ECMAScript instance #private member; Plugin dependency facades require closure-backed or ordinary TypeScript-private state`,
+		)
+	}
+}
+
+function validateCallerViewCallableFields(
+	raw: RawClass,
+	analysis: ModuleAnalysis,
+	id: string,
+	error: (message: string) => never,
+): void {
+	if (!participatesInPluginInheritance(raw, analysis)) return
+	for (const value of arrayOf((raw.node.body as AstNode | undefined)?.body)) {
+		const member = value as AstNode
+		if (member.static === true || member.type !== 'PropertyDefinition') continue
+		const initializer = member.value as AstNode | undefined
+		if (!initializer || !isStaticallyCallableFieldInitializer(initializer)) continue
+		const name = propertyName(member.key) ?? '<computed>'
+		error(
+			`[pluxel:plugin-caller-view] plugin_caller_view_callable_field_unsupported: ${id} ${raw.name}.${name} is a function-valued instance field; Plugin dependency callable surfaces must use prototype methods`,
+		)
+	}
+}
+
+function isStaticallyCallableFieldInitializer(initializer: AstNode): boolean {
+	if (initializer.type === 'ArrowFunctionExpression' || initializer.type === 'FunctionExpression') {
+		return true
+	}
+	if (initializer.type !== 'CallExpression') return false
+	const callee = initializer.callee as AstNode | undefined
+	return callee?.type === 'MemberExpression' && propertyName(callee.property) === 'bind'
+}
+
+function participatesInPluginInheritance(raw: RawClass, analysis: ModuleAnalysis): boolean {
+	if (raw.marked || raw.basePluginSubclass) return true
+	for (const candidate of analysis.classes.values()) {
+		if (!candidate.marked) continue
+		const seen = new Set<string>()
+		let current: RawClass | undefined = candidate
+		while (current) {
+			const baseName = readIdentifier(current.node.superClass)
+			if (!baseName || seen.has(baseName)) break
+			seen.add(baseName)
+			const base = analysis.classes.get(baseName)
+			if (!base) break
+			if (base === raw) return true
+			current = base
+		}
+	}
+	return false
+}
+
 function partsUse(value: unknown): AstNode | undefined {
 	const call = value as AstNode | undefined
 	return call?.type === 'CallExpression' && isPartsUseCall(call) ? call : undefined
@@ -1428,7 +1511,7 @@ function simpleTypeReference(value: unknown): string | undefined {
 }
 
 function semanticHint(code: string): boolean {
-	return /\b(?:Plugin|PluginPart|BasePlugin|ForkablePlugin|definePluginRef)\b|\.(?:plugins|parts)\.use\s*\(/.test(
+	return /\b(?:Plugin|PluginPart|BasePlugin|definePluginRef)\b|\.(?:plugins|parts)\.use\s*\(/.test(
 		code,
 	)
 }
@@ -1578,6 +1661,11 @@ function propertyName(value: unknown): string | undefined {
 function literalNumber(value: unknown): number | undefined {
 	const node = value as { type?: unknown; value?: unknown } | undefined
 	return node?.type === 'Literal' && typeof node.value === 'number' ? node.value : undefined
+}
+
+function literalBoolean(value: unknown): boolean | undefined {
+	const node = value as { type?: unknown; value?: unknown } | undefined
+	return node?.type === 'Literal' && typeof node.value === 'boolean' ? node.value : undefined
 }
 
 function arrayOf(value: unknown): unknown[] {

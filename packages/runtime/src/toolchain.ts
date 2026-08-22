@@ -1,2 +1,2 @@
-/** Build-generated metadata helpers. Not a plugin authoring surface. */
-export { __setPluginConfig } from '@pluxel/core'
+/** Versioned build-generated metadata ABI. Not a Plugin authoring surface. */
+export * from '@pluxel/core/toolchain'

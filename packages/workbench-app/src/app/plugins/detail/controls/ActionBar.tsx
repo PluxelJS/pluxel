@@ -3,7 +3,7 @@
 import { ActionIcon, Button, Group, Switch, Text, Tooltip } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
-import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
+import { IconRotateClockwise } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
 import { PluginStatusEntryLifecycleStage } from '../../../gqlens'
 import { useNotify } from '../../../hooks/useNotify'
@@ -21,74 +21,42 @@ export interface ActionBarProps {
 }
 
 const ACTION_LABEL: Record<PluginStatusAction, string> = {
-	start: '启动',
-	stop: '终止',
 	restart: '重启',
 	enable: '启用',
-	'enable-persisted': '持久启用',
 	disable: '禁用',
 }
 
 type ActionBarButtonProps = {
-	action: 'restart' | 'start' | 'stop'
 	busy: boolean
-	canToggle: boolean
+	canRestart: boolean
 	compact: boolean
-	isRunning: boolean
 	onAction: (action: PluginStatusAction) => void
 	prominent: boolean
 }
 
-function ActionBarButton({
-	action,
-	busy,
-	canToggle,
-	compact,
-	isRunning,
-	onAction,
-	prominent,
-}: ActionBarButtonProps) {
-	const isRestart = action === 'restart'
-	const isStart = action === 'start'
-	const disabled = !canToggle || (isStart ? isRunning : !isRunning)
-	const label = busy
-		? '同步中…'
-		: isRestart
-			? `重启 (${PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin})`
-			: ACTION_LABEL[action]
+function ActionBarButton({ busy, canRestart, compact, onAction, prominent }: ActionBarButtonProps) {
+	const action = 'restart' as const
+	const disabled = !canRestart
+	const label = busy ? '同步中…' : `重启 (${PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin})`
 	const iconSize = prominent ? 16 : compact ? 16 : 18
 	const buttonSize = compact ? 'md' : 'lg'
-	const icon =
-		action === 'start' ? (
-			<IconPlayerPlay size={iconSize} />
-		) : action === 'stop' ? (
-			<IconSquareX size={iconSize} />
-		) : (
-			<IconRotateClockwise size={iconSize} />
-		)
+	const icon = <IconRotateClockwise size={iconSize} />
 
 	if (prominent) {
 		return (
 			<Tooltip label={label}>
 				<Button
-					className={
-						isStart
-							? 'plx-pluginWorkbench__actionButton plx-pluginWorkbench__actionButton--primary'
-							: 'plx-pluginWorkbench__actionButton'
-					}
-					variant={isStart ? 'filled' : isRestart ? 'default' : 'light'}
-					color={action === 'stop' ? 'red' : undefined}
+					className="plx-pluginWorkbench__actionButton"
+					variant="default"
 					size="compact-sm"
 					leftSection={icon}
 					onClick={() => onAction(action)}
 					disabled={disabled}
 				>
 					{ACTION_LABEL[action]}
-					{isRestart ? (
-						<span className="plx-pluginWorkbench__actionKeyHint">
-							{PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin}
-						</span>
-					) : null}
+					<span className="plx-pluginWorkbench__actionKeyHint">
+						{PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin}
+					</span>
 				</Button>
 			</Tooltip>
 		)
@@ -99,7 +67,7 @@ function ActionBarButton({
 			<ActionIcon
 				variant="light"
 				size={buttonSize}
-				color={action === 'stop' ? 'red' : isRestart ? 'green' : undefined}
+				color="green"
 				onClick={() => onAction(action)}
 				disabled={disabled}
 			>
@@ -139,17 +107,9 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 			let nextEnabled = currentEnabled
 			let nextStage = lifecycleStage
 			switch (action) {
-				case 'start':
 				case 'restart':
 					nextRunning = true
-					nextEnabled = true
 					nextStage = PluginStatusEntryLifecycleStage.running
-					break
-				case 'stop':
-					nextRunning = false
-					nextStage = currentEnabled
-						? PluginStatusEntryLifecycleStage.stopped
-						: PluginStatusEntryLifecycleStage.disabled
 					break
 				case 'disable':
 					nextRunning = false
@@ -160,14 +120,6 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 					nextEnabled = true
 					nextRunning = true
 					nextStage = PluginStatusEntryLifecycleStage.running
-					break
-				case 'enable-persisted':
-					nextEnabled = true
-					nextStage = currentRunning
-						? PluginStatusEntryLifecycleStage.running
-						: PluginStatusEntryLifecycleStage.stopped
-					break
-				default:
 					break
 			}
 			setStatusOverride({
@@ -198,7 +150,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 			if (res.ok === false) {
 				notify({
 					title: '插件状态更新失败',
-					message: res.error || res.commitError || '操作失败，请稍后重试',
+					message: res.error || '操作失败，请稍后重试',
 					color: 'red',
 				})
 				// 失败直接以真实数据为准（无需手写回滚）：拉齐一次
@@ -228,7 +180,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 	}
 
 	const handleAction = (action: PluginStatusAction) => {
-		const needsDependencyCheck = action === 'start' || action === 'restart'
+		const needsDependencyCheck = action === 'enable' || action === 'restart'
 		const missing = needsDependencyCheck
 			? dependencies.filter((dependency) => !dependency.isRunning)
 			: []
@@ -258,7 +210,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 	}
 
 	const busy = isLoading || isSyncing
-	const canToggle = !busy
+	const canRestart = !busy && Boolean(isEnabled)
 	const persistDisabled = busy
 	const switchSize = compact ? 'sm' : 'md'
 
@@ -269,7 +221,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 						PLUGIN_DETAIL_HOTKEYS.restartPlugin,
 						(event: KeyboardEvent) => {
 							event.preventDefault()
-							if (!canToggle || !isRunning) return
+							if (!canRestart) return
 							handleAction('restart')
 						},
 					],
@@ -292,7 +244,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 							持久启用
 						</Text>
 						<Text size="xs" c="dimmed">
-							{busy ? '状态同步中…' : isEnabled ? '重启后继续保持启用' : '仅本次运行生效'}
+							{busy ? '状态同步中…' : isEnabled ? '重启后继续保持启用' : '当前已禁用'}
 						</Text>
 					</div>
 					<Tooltip
@@ -308,37 +260,15 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 							size="sm"
 							checked={isEnabled}
 							disabled={persistDisabled}
-							onChange={(event) =>
-								void performAction(event.currentTarget.checked ? 'enable' : 'disable')
-							}
+							onChange={(event) => handleAction(event.currentTarget.checked ? 'enable' : 'disable')}
 						/>
 					</Tooltip>
 				</div>
 
 				<ActionBarButton
-					action="start"
 					busy={busy}
-					canToggle={canToggle}
+					canRestart={canRestart}
 					compact={compact}
-					isRunning={isRunning}
-					onAction={handleAction}
-					prominent
-				/>
-				<ActionBarButton
-					action="stop"
-					busy={busy}
-					canToggle={canToggle}
-					compact={compact}
-					isRunning={isRunning}
-					onAction={handleAction}
-					prominent
-				/>
-				<ActionBarButton
-					action="restart"
-					busy={busy}
-					canToggle={canToggle}
-					compact={compact}
-					isRunning={isRunning}
 					onAction={handleAction}
 					prominent
 				/>
@@ -364,36 +294,14 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 					onLabel={compact ? '' : '启用'}
 					offLabel={compact ? '' : '禁用'}
 					disabled={persistDisabled}
-					onChange={(event) =>
-						void performAction(event.currentTarget.checked ? 'enable' : 'disable')
-					}
+					onChange={(event) => handleAction(event.currentTarget.checked ? 'enable' : 'disable')}
 				/>
 			</Tooltip>
 
 			<ActionBarButton
-				action="start"
 				busy={busy}
-				canToggle={canToggle}
+				canRestart={canRestart}
 				compact={compact}
-				isRunning={isRunning}
-				onAction={handleAction}
-				prominent={false}
-			/>
-			<ActionBarButton
-				action="stop"
-				busy={busy}
-				canToggle={canToggle}
-				compact={compact}
-				isRunning={isRunning}
-				onAction={handleAction}
-				prominent={false}
-			/>
-			<ActionBarButton
-				action="restart"
-				busy={busy}
-				canToggle={canToggle}
-				compact={compact}
-				isRunning={isRunning}
 				onAction={handleAction}
 				prominent={false}
 			/>

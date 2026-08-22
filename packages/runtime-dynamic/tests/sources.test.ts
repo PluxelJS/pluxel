@@ -1,6 +1,7 @@
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { formatPluginNodeReference, pluginNodeAddressOf } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
@@ -111,10 +112,8 @@ describe('dynamic plugin sources', () => {
 			const mutableAddress = catalogEntry!.address
 			const ctor = catalogEntry!.ctor
 			expect(ctor).toBeTypeOf('function')
-			await host.ctx.loader.api.control.enable(mutableAddress, ctor)
-			const enabled = await host.ctx.registry.commit()
-			expect(enabled.ok).toBe(true)
-			const instance = host.ctx.registry.getInstance(ctor!) as
+			await host.ctx.loader.api.control.enable(mutableAddress)
+			const instance = requirePluginService(host.ctx).getInstance(mutableAddress) as
 				| { started: boolean; cleaned: boolean }
 				| undefined
 			expect(instance).toMatchObject({ started: true, cleaned: false })
@@ -129,7 +128,7 @@ describe('dynamic plugin sources', () => {
 			expect(removed.ok).toBe(true)
 			expect(removed.pluginChanges?.removed).toContain(formatPluginNodeReference(mutableAddress))
 			expect(host.ctx.loader.api.registry.getCtor(mutableAddress)).toBeUndefined()
-			expect(host.ctx.registry.isRunning(ctor!)).toBe(false)
+			expect(host.ctx.loader.api.runtime.isRunning(mutableAddress)).toBe(false)
 			expect(instance).toMatchObject({ started: true, cleaned: true })
 		} finally {
 			await host.stop()
@@ -188,13 +187,17 @@ describe('dynamic plugin sources', () => {
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
-			expect(host.ctx.registry.isRunning(SourceProducerPlugin)).toBe(false)
+			expect(host.ctx.loader.api.runtime.isRunning(pluginNodeAddressOf(SourceProducerPlugin))).toBe(
+				false,
+			)
 			const publishedBatch = host.hmr.api.waitForBatch({ timeoutMs: 30_000 })
 
 			await host.hmr.start()
 			const published = await publishedBatch
 
-			expect(host.ctx.registry.isRunning(SourceProducerPlugin)).toBe(true)
+			expect(host.ctx.loader.api.runtime.isRunning(pluginNodeAddressOf(SourceProducerPlugin))).toBe(
+				true,
+			)
 			expectSuccessfulBatch(published)
 			expect(
 				host.ctx.loader.api.registry

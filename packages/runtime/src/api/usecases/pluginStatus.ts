@@ -1,19 +1,27 @@
-import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
-import { readStatusSnapshot } from '../features/pluginStatus/service'
-import { maybeAddForkToCatalog } from './forksCatalog'
-import { requireRouteCapability } from '../../runtime/capabilities'
+import {
+	parsePluginNodeAddress,
+	pluginNodeIndexKey,
+	type Context,
+	type PluginNodeAddress,
+} from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
+import {
+	PluginGraphRejectedError,
+	PluginRestartUnavailableError,
+	RuntimeStateMutationRejectedError,
+	RuntimeStatePersistenceError,
+	requireRuntimePluginGraphCoordinator,
+	runtimeStatePatch,
+} from '../../internal/reconciliation'
+import { runtimePluginStatusOverview } from '../../runtime/capabilities'
 import type {
 	PluginStatusAction,
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
+	PluginStatusMutationSuccess,
 	PluginStatusMutationResult,
 } from '../../web/protocol'
-
-function resolvePlugin(ctx: Context, address: PluginNodeAddress) {
-	const ctor = requireRouteCapability(ctx, 'catalog').resolve(address)
-	if (!ctor) throw new Error('Plugin node is not present in the route catalog')
-	return ctor
-}
+import { projectPluginApplyReport } from '../presenters/pluginApplyReport'
 
 async function runStatusAction(
 	ctx: Context,
@@ -21,81 +29,178 @@ async function runStatusAction(
 	action: PluginStatusAction,
 ): Promise<PluginStatusMutationResult> {
 	try {
-		const lifecycle = requireRouteCapability(ctx, 'lifecycle')
-		if (action === 'start' || action === 'restart' || action === 'enable') {
-			maybeAddForkToCatalog(ctx, address)
-		}
-		const ctor = resolvePlugin(ctx, address)
-		switch (action) {
-			case 'start':
-			case 'enable':
-				await lifecycle.enable(address, ctor)
-				break
-			case 'stop':
-				lifecycle.deactivate(address, ctor, { runtimeOnly: true })
-				break
-			case 'restart':
-				ctx.registry.restart(ctor)
-				break
-			case 'disable':
-				lifecycle.deactivate(address, ctor, { runtimeOnly: false })
-				break
-			case 'enable-persisted':
-				await lifecycle.enablePersisted(address)
-				break
-			default:
-				return { address, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }
-		}
-		return { address, ok: true }
+		const coordinator = requireRuntimePluginGraphCoordinator(ctx)
+		return await coordinator.runExclusive(`plugin-${action}`, async (session) => {
+			if (action === 'restart') {
+				const report = await session.update({
+					reason: 'plugin-restart',
+					restartNodes: [address],
+					mode: 'live',
+				})
+				const isRunning = requirePluginService(ctx).isRunning(address)
+				return {
+					address,
+					ok: true,
+					status: 'applied',
+					report: projectPluginApplyReport(ctx, report),
+					isRunning,
+					isEnabled: true,
+					lifecycleStage: isRunning ? 'running' : 'stopped',
+				}
+			}
+			if (
+				!runtimePluginStatusOverview(ctx).statuses.some(
+					(status) => pluginNodeIndexKey(status.address) === pluginNodeIndexKey(address),
+				)
+			) {
+				return {
+					address,
+					ok: false,
+					code: 'plugin_not_found',
+					state: 'unchanged',
+					error: 'Plugin node is unknown',
+				}
+			}
+			let report
+			switch (action) {
+				case 'enable':
+					report = await session.update({
+						reason: 'plugin-enable',
+						statePatch: runtimeStatePatch({
+							type: 'set-enabled',
+							node: address,
+							enabled: true,
+						}),
+						mode: 'live',
+					})
+					break
+				case 'disable':
+					report = await session.update({
+						reason: 'plugin-disable',
+						statePatch: runtimeStatePatch({
+							type: 'set-enabled',
+							node: address,
+							enabled: false,
+						}),
+						mode: 'live',
+					})
+					break
+			}
+			const snapshot = runtimePluginStatusOverview(ctx).statuses.find(
+				(status) => pluginNodeIndexKey(status.address) === pluginNodeIndexKey(address),
+			)
+			if (!snapshot) {
+				throw new Error('[runtime:status] applied Plugin node disappeared from status projection')
+			}
+			return {
+				address,
+				ok: true,
+				status: 'applied',
+				report: projectPluginApplyReport(ctx, report),
+				isRunning: snapshot.isRunning,
+				isEnabled: snapshot.isEnabled,
+				lifecycleStage: snapshot.lifecycleStage,
+			}
+		})
 	} catch (error) {
 		const text = error instanceof Error ? error.message : String(error)
-		return {
-			address,
-			ok: false,
-			code: text.includes('not present') ? 'plugin_not_found' : 'plugin_operation_failed',
-			error: text,
+		if (error instanceof RuntimeStatePersistenceError) {
+			return {
+				address,
+				ok: false,
+				code: 'persistence_failed',
+				state: error.state,
+				error: text,
+			}
 		}
+		if (error instanceof PluginGraphRejectedError) {
+			return {
+				address,
+				ok: false,
+				code: 'graph_rejected',
+				state: 'unchanged',
+				error: text,
+			}
+		}
+		if (error instanceof PluginRestartUnavailableError) {
+			return {
+				address,
+				ok: false,
+				code: error.code,
+				state: error.state,
+				error: text,
+			}
+		}
+		if (error instanceof RuntimeStateMutationRejectedError) {
+			return {
+				address,
+				ok: false,
+				code: 'state_mutation_rejected',
+				state: 'unchanged',
+				error: text,
+			}
+		}
+		throw error
 	}
 }
 
 export async function applyStatusActions(
 	ctx: Context,
-	actions: PluginStatusBatchAction[],
+	input: unknown,
 ): Promise<PluginStatusBatchResult> {
-	if (actions.length === 0) return { ok: true, results: [] }
-	const interim: PluginStatusMutationResult[] = []
-	const touched = new Map<string, PluginNodeAddress>()
-	for (const { address, action } of actions) {
-		const result = await runStatusAction(ctx, address, action)
-		interim.push(result)
-		if (result.ok) touched.set(pluginNodeIndexKey(address), address)
-	}
-	const commit = await ctx.registry.commit()
-	if (commit.err) {
-		const commitError = String(commit.err)
+	const parsed = parseStatusActions(input)
+	if (parsed.ok === false) {
 		return {
 			ok: false,
-			commitError,
-			results: interim.map((result) =>
-				result.ok
-					? Object.assign({}, result, {
-							ok: false as const,
-							code: 'commit_failed',
-							error: commitError,
-						})
-					: result,
-			),
+			status: 'rejected',
+			code: 'invalid_input',
+			state: 'unchanged',
+			error: parsed.error,
+			results: [],
 		}
 	}
-	const snapshots = new Map(
-		[...touched].map(([key, address]) => [key, readStatusSnapshot(ctx, address)]),
-	)
-	return {
-		ok: interim.every((result) => result.ok),
-		results: interim.map((result) =>
-			result.ok
-				? Object.assign({}, result, snapshots.get(pluginNodeIndexKey(result.address)))
-				: result,
-		),
+	const actions = parsed.actions
+	if (actions.length === 0) return { ok: true, status: 'applied', results: [] }
+	const results: PluginStatusMutationResult[] = []
+	for (const { address, action } of actions) {
+		const result = await runStatusAction(ctx, address, action)
+		results.push(result)
 	}
+	const successes = results.filter((result): result is PluginStatusMutationSuccess => result.ok)
+	if (successes.length === results.length) {
+		return { ok: true, status: 'applied', results: successes }
+	}
+	return {
+		ok: false,
+		status: successes.length > 0 ? 'partially-applied' : 'rejected',
+		results,
+	}
+}
+
+function parseStatusActions(
+	input: unknown,
+):
+	| Readonly<{ ok: true; actions: PluginStatusBatchAction[] }>
+	| Readonly<{ ok: false; error: string }> {
+	if (!Array.isArray(input)) {
+		return { ok: false, error: 'Plugin status actions must be an array' }
+	}
+	const actions: PluginStatusBatchAction[] = []
+	for (const [index, value] of input.entries()) {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			return { ok: false, error: `Plugin status action at index ${index} must be an object` }
+		}
+		const record = value as Record<string, unknown>
+		if (record.action !== 'enable' && record.action !== 'disable' && record.action !== 'restart') {
+			return { ok: false, error: `Plugin status action at index ${index} is invalid` }
+		}
+		let address: PluginNodeAddress
+		try {
+			address = parsePluginNodeAddress(record.address)
+		} catch {
+			return { ok: false, error: `Plugin status address at index ${index} is invalid` }
+		}
+		actions.push({ address, action: record.action })
+	}
+	return { ok: true, actions }
 }

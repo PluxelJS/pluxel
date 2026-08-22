@@ -41,24 +41,26 @@ export class PluginContributionFontManager extends BasePlugin {
 @Plugin()
 export class PluginContributionFontConsumer extends BasePlugin {
 	readonly config = this.configs.use(ConsumerAppearanceConfig)
+	private fontSetRef: FontRef | null = null
 
 	constructor(_fontManager: PluginContributionFontManager) {
 		super()
 	}
 
 	override init(): void {
+		this.fontSetRef = readFontRef(this.config.fontSetRef)
 		this.ctx.workbench.mount(FontConsumerWorkbench, {
 			commands: workbench.bind.rpc(() => new FontSettingsRpc(this)),
 		})
 	}
 
 	currentFont(): FontRef | null {
-		return readFontRef(this.config.fontSetRef)
+		return readFontRef(this.fontSetRef)
 	}
 
 	setFont(ref: FontRef | null): FontRef | null {
 		const value = ref ? toFontRef(ref) : null
-		this.ctx.configService.patchConfig(this.ctx.pluginInfo.nodeSlot, { fontSetRef: value })
+		this.fontSetRef = value
 		return value
 	}
 }

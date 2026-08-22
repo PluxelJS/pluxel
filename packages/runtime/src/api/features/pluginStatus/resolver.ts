@@ -8,21 +8,26 @@ import { readStatusSnapshot } from './service'
 export function createPluginStatusResolvers(pCtx: PlxContext): Resolver[] {
 	const pluginStatus = resolver.of(Plugin, {
 		status: field(PluginStatus).resolve((plugin) => {
-			const { isRunning, isEnabled, lifecycleStage, source } = readStatusSnapshot(
-				pCtx,
-				parsePluginNodeAddress(plugin.address),
-			)
+			const { isRunning, isEnabled, lifecycleStage, availability, issues, source } =
+				readStatusSnapshot(pCtx, parsePluginNodeAddress(plugin.address))
 			return {
 				__typename: 'PluginStatus' as const,
 				isRunning,
 				isEnabled,
 				lifecycleStage,
+				availability,
+				issues: issues.map(({ id, code, message }) => ({
+					__typename: 'PluginStatusIssue' as const,
+					id,
+					code,
+					message,
+				})),
 				source,
 			}
 		}),
 	})
 
-	// updatePluginStatus mutation 已迁移到 runtime op: plugin.start|stop|restart|enable|disable
+	// Status mutations use the runtime RPC/command control plane.
 
 	return [pluginStatus] satisfies Resolver[]
 }

@@ -1,4 +1,4 @@
-import { formatPluginNodeReference, ForkablePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin, v } from '@pluxel/runtime'
 import {
 	createClient,
 	type RedisClientType,
@@ -58,7 +58,7 @@ export class RedisConnectionError extends Error {
 }
 
 /** Raw Redis capability. Consumers depend on this token; the host selects a provider. */
-export abstract class Redis extends ForkablePlugin {
+export abstract class Redis extends BasePlugin {
 	private readonly scriptsByOwner = new WeakMap<object, RedisScripts>()
 
 	abstract get client(): RedisClient
@@ -79,7 +79,7 @@ export abstract class Redis extends ForkablePlugin {
  * Authenticated, Sentinel, Cluster, or platform-bound deployments can provide another
  * `@Plugin(Redis, ...)` implementation without changing consumers.
  */
-@Plugin(Redis)
+@Plugin(Redis, { forkable: true })
 export class RedisPlugin extends Redis {
 	private readonly config = this.configs.use(RedisConfig)
 	private readonly holder: { client?: RedisClientType } = {}

@@ -1,30 +1,29 @@
-import type { PluginIdentifier } from '../../types'
 import type { PluginNodeSlot } from '../identity'
 import type { PluginGraph } from '../PluginDefinitions'
 
 type DependentScratch = {
-	marks: Uint8Array
-	markedSlots: number[]
+	marks: number[]
+	epoch: number
 	stack: number[]
 }
 
 export class DependentClosureCollector {
 	private scratch: DependentScratch = {
-		marks: new Uint8Array(0),
-		markedSlots: [],
+		marks: [],
+		epoch: 0,
 		stack: [],
 	}
 
 	public constructor(
 		private readonly resolveGraphKey: (
 			graph: PluginGraph | undefined,
-			id: PluginIdentifier | PluginNodeSlot,
+			id: PluginNodeSlot,
 		) => PluginNodeSlot | undefined,
 	) {}
 
 	public collect(
 		graph: PluginGraph | undefined,
-		roots: Iterable<PluginIdentifier | PluginNodeSlot>,
+		roots: Iterable<PluginNodeSlot>,
 	): Set<PluginNodeSlot> {
 		return this.collectWith(graph, roots, (currentGraph, slot) =>
 			currentGraph.dependentSlotsOf(slot),
@@ -34,7 +33,7 @@ export class DependentClosureCollector {
 	/** Required + optional restart/ordering closure. */
 	public collectOrdering(
 		graph: PluginGraph | undefined,
-		roots: Iterable<PluginIdentifier | PluginNodeSlot>,
+		roots: Iterable<PluginNodeSlot>,
 	): Set<PluginNodeSlot> {
 		return this.collectWith(graph, roots, (currentGraph, slot) =>
 			currentGraph.orderDependentSlotsOf(slot),
@@ -43,7 +42,7 @@ export class DependentClosureCollector {
 
 	private collectWith(
 		graph: PluginGraph | undefined,
-		roots: Iterable<PluginIdentifier | PluginNodeSlot>,
+		roots: Iterable<PluginNodeSlot>,
 		dependentsOf: (graph: PluginGraph, slot: number) => readonly number[],
 	): Set<PluginNodeSlot> {
 		if (!graph) {
@@ -55,16 +54,14 @@ export class DependentClosureCollector {
 			return out
 		}
 
-		if (this.scratch.marks.length < graph.slotCount()) {
-			this.scratch = {
-				marks: new Uint8Array(graph.slotCount()),
-				markedSlots: [],
-				stack: [],
-			}
+		const { stack } = this.scratch
+		this.scratch.epoch += 1
+		if (this.scratch.epoch >= Number.MAX_SAFE_INTEGER) {
+			this.scratch.marks = []
+			this.scratch.epoch = 1
 		}
-
-		const { marks, markedSlots, stack } = this.scratch
-		markedSlots.length = 0
+		const epoch = this.scratch.epoch
+		const marks = this.scratch.marks
 		stack.length = 0
 		const affected = new Set<PluginNodeSlot>()
 		for (const root of roots) {
@@ -75,9 +72,8 @@ export class DependentClosureCollector {
 				affected.add(canonical)
 				continue
 			}
-			if (marks[slot] === 1) continue
-			marks[slot] = 1
-			markedSlots.push(slot)
+			if (marks[slot] === epoch) continue
+			marks[slot] = epoch
 			stack.push(slot)
 		}
 
@@ -88,16 +84,13 @@ export class DependentClosureCollector {
 			const dependents = dependentsOf(graph, current)
 			for (let i = 0; i < dependents.length; i++) {
 				const dep = dependents[i]!
-				if (!Number.isInteger(dep) || dep < 0 || dep >= marks.length) continue
-				if (marks[dep] === 1) continue
-				marks[dep] = 1
-				markedSlots.push(dep)
+				if (!Number.isInteger(dep) || dep < 0 || dep >= graph.slotCount()) continue
+				if (marks[dep] === epoch) continue
+				marks[dep] = epoch
 				stack.push(dep)
 			}
 		}
 
-		for (let i = 0; i < markedSlots.length; i++) marks[markedSlots[i]!] = 0
-		markedSlots.length = 0
 		stack.length = 0
 		return affected
 	}

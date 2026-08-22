@@ -40,6 +40,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -71,6 +72,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -100,6 +102,7 @@ describe('VaultService (shared mount runtime)', () => {
 				lowerTestPlugin(PluginA)
 
 				host.add(PluginA)
+				host.cfg(PluginA).enable()
 				await host.commit()
 
 				const plugin = host.require(PluginA)
@@ -139,8 +142,10 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			lowerTestPlugin(PluginB)
 			host.add(PluginB)
+			host.cfg(PluginB).enable()
 			await host.commit()
 
 			const a = host.require(PluginA)
@@ -166,6 +171,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -195,6 +201,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -221,6 +228,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -252,6 +260,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -280,6 +289,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -327,6 +337,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -359,6 +370,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
+			host.cfg(PluginA).enable()
 			await host.commit()
 
 			const plugin = host.require(PluginA)
@@ -401,6 +413,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
+			host.cfg(Seeder).enable()
 			await host.commit()
 
 			const seeder = host.require(Seeder)
@@ -433,6 +446,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
+			host.cfg(Seeder).enable()
 			await host.commit()
 
 			const seeder = host.require(Seeder)
@@ -473,6 +487,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
+			host.cfg(Seeder).enable()
 			await host.commit()
 
 			const seeder = host.require(Seeder)
@@ -511,6 +526,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
+			host.cfg(Seeder).enable()
 			await host.commit()
 
 			const seeder = host.require(Seeder)
@@ -522,6 +538,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(VaultConsumer)
 
 			host.add(VaultConsumer)
+			host.cfg(VaultConsumer).enable()
 			await expect(host.commitAllowFail()).rejects.toThrow(
 				'Vault mount "global" is sealed and can not be unlocked during host startup.',
 			)
@@ -541,6 +558,7 @@ describe('VaultService (shared mount runtime)', () => {
 			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
+			host.cfg(Seeder).enable()
 			await host.commit()
 
 			const seeder = host.require(Seeder)

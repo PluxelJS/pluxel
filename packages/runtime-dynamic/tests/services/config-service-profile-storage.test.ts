@@ -6,6 +6,7 @@ import {
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
+import { requireConfigService } from '@pluxel/core/internal'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR runtime persistence storage', () => {
@@ -46,9 +47,7 @@ describe('HMR runtime persistence storage', () => {
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
-			expect(
-				host.ctx.configService.getRawConfig(host.ctx.registry.internNodeAddress(owner)),
-			).toEqual({
+			expect(requireConfigService(host.ctx).getRawConfig(owner)).toEqual({
 				endpoint: 'https://api.example.test',
 			})
 		} finally {
@@ -103,7 +102,7 @@ describe('HMR runtime persistence storage', () => {
 			})
 			ctx = host.ctx
 
-			await host.ctx.root.configService.ready
+			await requireConfigService(host.ctx).ready
 			await host.ctx.root.runtimeState.ready
 
 			expect(
@@ -157,7 +156,7 @@ describe('HMR runtime persistence storage', () => {
 			})
 			ctx = host.ctx
 
-			await host.ctx.root.configService.ready
+			await requireConfigService(host.ctx).ready
 
 			expect(
 				fixture.fs.existsSync(

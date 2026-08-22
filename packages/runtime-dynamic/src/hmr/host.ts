@@ -4,11 +4,15 @@ import type { ViteDevServer } from 'vite'
 
 import '../register-services'
 import type { Context as CoreContext, PluginConstructor } from '@pluxel/core'
+import { requireConfigService } from '@pluxel/core/internal'
 import {
 	createContextPluginLogPolicyStore,
 	createNodeWorkspaceFsBackend,
 	createRuntimeLogging,
+	installRuntimeRouteCapabilities,
 	isWorkbenchEnabled,
+	readRuntimeRouteCapabilities,
+	requireRuntimeStateStore,
 	resolvePackagedWorkbenchManifest,
 	resolvePackagedNodeModule,
 	resolveRuntimeStoragePaths,
@@ -311,7 +315,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			const { installWorkbench } = await import('@pluxel/runtime/internal')
 			installWorkbench(ctx, { product: options.product ?? null })
 		}
-		await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
+		await Promise.all([requireConfigService(ctx).ready, requireRuntimeStateStore(ctx).ready])
 		await logging.initializePolicy(createContextPluginLogPolicyStore(ctx))
 		await ctx.prepareServices()
 		void ctx.loader
@@ -419,29 +423,7 @@ function createLoaderRuntimeStop(
 }
 
 async function stopRuntimePluginGraph(ctx: Context): Promise<void> {
-	ctx.registry.resetDraft()
-	const update = ctx.registry.beginUpdate({ reason: 'shutdown' })
-	try {
-		const plugins = ctx.registry.graph
-			.declarationsBySlot()
-			.map((declaration) => declaration?.meta?.class)
-			.filter((plugin): plugin is PluginConstructor => typeof plugin === 'function')
-		for (const plugin of plugins) {
-			if (ctx.registry.isRegistered(plugin)) update.unregister(plugin)
-		}
-		const result = await update.commit({ rollbackOnFailure: false })
-		if (!result.ok) {
-			update.rollback()
-			throw new Error('[loader-hmr-host] plugin shutdown commit failed', {
-				cause: result.err,
-			})
-		}
-	} catch (error) {
-		update.rollback()
-		throw error
-	} finally {
-		ctx.registry.resetDraft()
-	}
+	await ctx.loader.shutdown()
 }
 
 function mergeContextConfig(
@@ -486,33 +468,25 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	viteServer: ViteDevServer | undefined,
 	workbenchArtifactCacheDir: string | undefined,
 ): Promise<LoaderHmrService> {
-	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules) {
+	const baseRoute = readRuntimeRouteCapabilities(ctx)
+	if (ctx.config.loaderHmr || baseRoute?.modules) {
 		throw new Error('[loader-hmr-host] Context already has loader HMR runtime state')
 	}
 
 	const loaderHmr = resolveLoaderHmrConfig(plan)
 	ctx.config.loaderHmr = loaderHmr
-	const baseRoute = ctx.runtimeRoute
 	if (!baseRoute) {
 		throw new Error(
 			'[loader-hmr-host] Loader route capabilities must be registered before HMR starts',
 		)
 	}
-	ctx.runtimeRoute = {
+	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
+	const uninstallRoute = installRuntimeRouteCapabilities(ctx, {
 		...baseRoute,
 		dynamicPluginSources: createDynamicPluginSourceReader(plan.dynamicSources),
-	}
-
-	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
-
-	const routeWithSources = ctx.runtimeRoute
-	ctx.runtimeRoute = {
-		...routeWithSources,
 		modules: hmr,
-	}
-	ctx.effects.defer(() => {
-		ctx.runtimeRoute = baseRoute
 	})
+	ctx.effects.defer(uninstallRoute, { tag: 'LoaderHmrRouteCapabilities', phase: 'shutdown' })
 
 	attachPluginArtifactCompiler(ctx, {
 		cacheDir: workbenchArtifactCacheDir,

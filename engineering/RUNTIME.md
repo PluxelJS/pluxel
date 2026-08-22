@@ -16,7 +16,7 @@ drain generation effects。这个 gate 按首次执行惰性创建；从未进�
 marker，确保此前缓存的 wrapper 不能在停止后首次创建新 gate。它不是插件 API 或新的 lifecycle hook。单独调用
 registration disposer 只撤销 catalog publication，不会取消已经开始的调用。
 
-基础 `plugin.list`、`plugin.status.get`、`plugin.start`、`plugin.stop`、`plugin.restart` 由 root Commands
+基础 `plugin.list`、`plugin.status.get`、`plugin.enable`、`plugin.disable`、`plugin.restart` 由 root Commands
 服务固定提供。查询委托 `pluginsList` / `pluginStatus`，mutation 委托 `applyStatusActions`，生命周期与一次 commit
 规则仍只有 runtime use case 一个事实源。CLI、Agent、HTTP 和 Workbench 是宿主 carrier；它们负责授权、确认、过滤与
 principal 映射，不拥有 command 定义或插件生命周期。
@@ -51,6 +51,86 @@ class/constructor name 不作为 lookup、storage key 或 fallback。definition/
 Optional implementation 是否存在只由 host catalog 决定。作者的 lowered `PluginRef` 不触发 runtime loader、安装、注册、
 retry 或默认 enable；provider generation 的出现、消失和 replacement 由 Core combined graph 触发 consumer restart。dynamic
 source batch 只提交正常 catalog transaction，不维护 optional request 或 synthetic module owner。
+
+## Catalog、RuntimeState 与 reconciliation
+
+runtime 保持四个平面：route catalog 保存 candidate 与 module/source provenance，RuntimeState 保存 durable desired policy，Core
+保存已验证的 materialized graph，running projection 保存 generation 与 lifecycle facts。catalog presence 不等于 enabled；disabled
+default/fork 只参与 read model，不创建 Core record、Context、effects 或 artifact lease。
+
+static 与 dynamic route 都只向每个 host 唯一的 `RuntimePluginGraphCoordinator` 提交带 monotonic revision 的 immutable catalog
+snapshot。coordinator 是 committed catalog 的唯一 authority；snapshot 同时保存 candidate 与 route provenance。static route 不保留平行的
+committed catalog，dynamic loader/registry 只在一次 batch 内拥有 unpublished mutable draft，commit 后的 resolve、source、module 与 anchor
+查询都从 coordinator snapshot 派生。route 没有 post-commit publication callback，也不能让 reader 看到 draft。
+
+coordinator 串行化 catalog replacement、RuntimeState patch 与 config/HMR restart。前两类 policy/catalog mutation 调用同一个 pure
+reconciler；不改变 catalog/state 的 addressed restart 走同一队列内的 fast path：
+
+```text
+catalog revision + RuntimeState revision
+  -> validate roles/collisions/forkability/bindings
+  -> expand enabled nodes + infer deterministic provider defaults + blocked closure
+  -> Core prepare/verify
+  -> persist inferred/explicit RuntimeState patch
+  -> recheck both revisions
+  -> lifecycle transition + Core confirm
+```
+
+catalog ingestion 使用封闭 structural code：`plugin_definition_collision`、`plugin_definition_role_conflict` 与
+`plugin_optional_abstract_forbidden`。coordinator 另保留 host-lifetime 的 address-to-role 小型 tombstone：同一 address 一旦作为 concrete
+definition 或 abstract token 出现，在该 host 内即使经过 absent revision 也不能切换角色。role history 在 proposed catalog prepare 时复制，只有 catalog
+commit 才交换；失败 proposal 不污染 history。它不持久化到 cold boot，也不保存 candidate 或创建 Core slot/record。desired policy 导致的 blocked
+facts 使用 `PluginReconciliationIssue`；不安全 live replacement 使用稳定 `graph_rejected`，不能靠 message 或 provenance 分支。
+
+prepare 失败时不写盘、不关闭旧 generation admission；persistence 失败时丢弃 prepared overlay，Core graph 不变。持久化成功后的
+revision race 会重新 plan。所有 structural validation、route draft 构建、role-history prepare 与 durable write 都必须发生在 point of no return
+之前。Core 第一次关闭旧 generation admission 后不得再执行可能拒绝 transaction 的 route/user callback；graph-confirmation callback 本身只做
+runtime-owned、no-fail 的 coordinator catalog/applied/reconciliation field exchange。进入该阶段后的 config/init/drain failure 只进入结构化 apply report，不回退旧
+implementation。
+
+显式 provider default/dependency override 永不自动删除、fallback 或 auto-enable；fork 不能成为 global provider default。ConfigService 仍先保存
+独立 desired config record，再把 addressed restart 排入同一 coordinator，不把 config 并入 RuntimeState。
+
+catalog 或 RuntimeState policy mutation 允许 bounded full reconciliation，但必须为 `O(C + F + B + E)`：`C` 是 catalog definitions，`F` 是
+durable forks，`B` 是 enabled/default/override records，`E` 是 requirement edges。blocked propagation 使用 reverse-edge queue，不得反复扫描全部
+candidate。RuntimeState mutation admission 对 pinned snapshot 一次建 enabled/fork/binding index，再顺序应用 patch，复杂度为
+`O(S + P + affected references)`，不能对每个 patch operation clone/scan 全 state；最终 canonical serialization 可以排序。RuntimeStateStore 每个
+revision 只构建一个 deep-frozen snapshot/versioned snapshot，read 复用同一 identity。
+
+Runtime reconciliation 与 state-index 趋势探针使用：
+
+```sh
+pnpm --filter @pluxel/runtime bench:runtime-state
+```
+
+该 probe 同时覆盖 1/10/100/1000 个 disabled durable fork 的 projection，并断言不会产生 Core operation/applied node；延迟结果只用于
+观察复杂度趋势，不作为跨机器百分比 SLA。
+
+纯 addressed restart，包括 running config patch 的 apply phase，不运行 reconciler 或扫描 catalog；它以 applied-node key 做 `O(k)` admission，
+再由 Core 扩展真实 dependent closure。definition replacement 通过 `definition -> materialized nodes` index 完成
+`O(k + affected edges)`。每次 status overview 对 pinned catalog/RuntimeState revision 只构建一次 enabled/fork/issue shared index，HTTP、RPC 与 Workbench
+复用同一投影路径；单 node restart 直接使用 coordinator applied lookup 和 Core running lookup，不构建 overview。
+
+control plane 的 enable/disable、fork、provider selection 与 dependency override 只能提交 coordinator state patch。route 不拥有第二套
+fork/provider/binding policy，Core 也不保存 module/source/artifact provenance。
+
+新 enable、fork create、binding 与 provider selection 必须在 coordinator queue 内针对 pinned catalog/state admission；disable、删除或完全相同的
+既有 intent 允许清理/保留暂时 absent 的 address。所有 plugin RPC 参数在 transport boundary 先视为 `unknown`，再验证 action、structured
+address、object shape、index、field path 与 forkId。malformed input 返回封闭的 `invalid_input`/领域 result 且 `state: 'unchanged'`，query union
+必须区分 invalid input、业务 absent 与合法 empty；不得因 TypeScript 声明把旧 action 变成成功 no-op。预期 domain/persistence failure 使用稳定 literal
+code 与明确 state，未知编程或 transport exception 继续 reject，不归入 catch-all `internal_error`。status mutation 只接受
+`enable | disable | restart`；well-formed 但未 materialize 的 restart 返回 `restart_unavailable` 与 `state: 'unchanged'`。
+
+所有成功的 graph-affecting control mutation（status、config apply、dependency/provider selection、fork ensure/remove）都保留同一个
+`PluginApplyReport`。进程内 Core summary 的 slot identity 只在唯一 presenter 中转换成 canonical definition/node address；browser DTO
+不包含 slot、graph 或 mutable nested value，并保留 catalog/RuntimeState revision、reconciliation、plugin changes 与全部 lifecycle issue。
+`core: unchanged` 只表示没有 materialized graph delta，不能据此推断 durable state 没有保存。
+
+fork removal 是 coordinator `runExclusive` 内不可穿插的多资源序列：先 admission inbound override，durable disable 并停止 node/dependent closure，
+再删除该 node 作为 consumer 的 outbound override、Config record 和 logging policy 并各自 flush，最后 durable remove fork family entry。metadata 失败时
+fork 保持 addressable 且 disabled；final persistence 结果不确定时返回 `unknown` 并由调用者重读/幂等重试。drain issue 可以得到
+`removed-with-lifecycle-issues`，但不会回滚已关闭 generation。generic removal 不删除 database/Vault/object store 等业务 durable data，也不隐式改选
+provider。
 
 ## Dynamic fixed catalog
 

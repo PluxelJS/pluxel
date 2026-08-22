@@ -92,8 +92,8 @@ runner；偶发调用也可以直接使用 `redis.scripts.run(definition, call)`
 
 ## 多连接
 
-`Redis` opt-in `ForkablePlugin`，因此同一 host 可以创建 cache、queue、session 等多个 Redis connection fork，并为每个
-fork 配置不同 endpoint/database。consumer 或内置 backend 通过正常 dependency override 选择具体 fork，
+`RedisPlugin` 通过 `@Plugin(Redis, { forkable: true })` 显式允许多实例，因此同一 host 可以创建 cache、queue、session
+等多个 Redis connection fork，并为每个 fork 配置不同 endpoint/database。consumer 或内置 backend 通过正常 dependency override 选择具体 fork，
 不需要在 Redis API 中增加 connection name 参数。
 
 ## 内置 cache backend

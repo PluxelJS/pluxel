@@ -1,29 +1,11 @@
 import { statSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'pathe'
-import type { PluginNodeAddress, PluginNodeSlot } from '@pluxel/core'
 import { getOxcResolveCache } from '../services/runtime/shared/oxc-resolver'
 import {
 	getCachedResolver,
 	RESOLVE_CHECK_CONDITIONS,
 	resolveModulePath,
 } from '../services/runtime/shared/resolution'
-
-type RuntimeModuleLookupContext = {
-	registry?: {
-		internNodeAddress?: (address: PluginNodeAddress) => PluginNodeSlot
-		getRuntimeModuleId?: (id: PluginNodeSlot) => string | undefined
-	}
-}
-
-// Internal runtime ownership lookup used by HMR/worker/extension helpers.
-// Returns a module id, not a filesystem path; call resolveModuleIdBaseDir for path resolution.
-export function findRuntimeModuleId(
-	ctx: RuntimeModuleLookupContext,
-	owner: PluginNodeAddress,
-): string | null {
-	const node = ctx.registry?.internNodeAddress?.(owner)
-	return node ? (ctx.registry?.getRuntimeModuleId?.(node) ?? null) : null
-}
 
 export function resolveModuleIdPath(moduleId: string, cwd = process.cwd()): string | null {
 	const normalized = String(moduleId ?? '').trim()

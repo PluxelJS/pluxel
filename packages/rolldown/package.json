@@ -13,12 +13,7 @@
 		"!**/*.map"
 	],
 	"type": "module",
-	"types": "./dist/index.d.mts",
 	"exports": {
-		".": {
-			"@pluxel/source": "./src/index.ts",
-			"default": "./dist/index.mjs"
-		},
 		"./build": {
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
@@ -75,10 +70,6 @@
 			"@pluxel/source": "./src/workbench/artifact.ts",
 			"default": "./dist/workbench/artifact.mjs"
 		},
-		"./workspace": {
-			"@pluxel/source": "./src/workspace/index.ts",
-			"default": "./dist/workspace.mjs"
-		},
 		"./workspace/fs": {
 			"@pluxel/source": "./src/workspace/fs-entry.ts",
 			"default": "./dist/workspace/fs.mjs"
@@ -96,7 +87,6 @@
 	},
 	"publishConfig": {
 		"exports": {
-			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
@@ -111,7 +101,6 @@
 			"./vite/source-graph": "./dist/vite/source-graph.mjs",
 			"./vite/workbench-ui": "./dist/vite/workbench-ui.mjs",
 			"./workbench/artifact": "./dist/workbench/artifact.mjs",
-			"./workspace": "./dist/workspace.mjs",
 			"./workspace/fs": "./dist/workspace/fs.mjs",
 			"./workspace/info": "./dist/workspace/info.mjs",
 			"./workspace/vite": "./dist/workspace/vite.mjs",

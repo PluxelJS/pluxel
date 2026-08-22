@@ -25,8 +25,11 @@ import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watc
 export const LOADER_HMR_BRIDGE_MODULES = [
 	'@pluxel/context',
 	'@pluxel/core',
+	'@pluxel/core/internal',
+	'@pluxel/core/toolchain',
 	'@pluxel/core/services',
 	'@pluxel/runtime',
+	'@pluxel/runtime/toolchain',
 	'@pluxel/runtime/internal',
 	'@pluxel/runtime/web',
 	'@pluxel/runtime/capnweb',

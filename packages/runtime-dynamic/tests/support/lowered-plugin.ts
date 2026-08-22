@@ -1,8 +1,12 @@
-import type { PluginConstructor, PluginDefinitionAddress } from '@pluxel/core'
+import {
+	pluginDefinitionAddressOf,
+	type PluginConstructor,
+	type PluginDefinitionAddress,
+} from '@pluxel/core'
 import {
 	__setPluginDefinition,
-	getPluginDefinitionFacts,
-	hasPluginDefinitionFacts,
+	PLUGIN_LOWERING_ABI_VERSION,
+	PluginLoweringError,
 } from '@pluxel/test/unsafe'
 
 export type LowerTestPluginOptions = Readonly<{
@@ -19,9 +23,10 @@ export function lowerTestPlugin<T extends PluginConstructor>(
 	plugin: T,
 	options: LowerTestPluginOptions = {},
 ): T {
-	if (hasPluginDefinitionFacts(plugin)) return plugin
+	if (hasLoweredAddress(plugin)) return plugin
 	const exportName = options.exportName ?? plugin.name
 	__setPluginDefinition(plugin, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
 		definition: {
 			entry: {
@@ -31,11 +36,28 @@ export function lowerTestPlugin<T extends PluginConstructor>(
 			},
 			exportName,
 		},
-		requires: options.requires?.map((required) => getPluginDefinitionFacts(required).definition),
-		optional: options.optional?.map((optional) => getPluginDefinitionFacts(optional).definition),
+		requires: options.requires?.map(pluginDefinitionAddressOf),
+		optional: options.optional?.map(pluginDefinitionAddressOf),
 		provides: options.provides,
 	})
 	return plugin
+}
+
+/** Explicit HMR fixture: a new constructor generation at an existing definition address. */
+export function lowerTestReplacement<T extends PluginConstructor>(
+	previous: PluginConstructor,
+	replacement: T,
+	options: Pick<LowerTestPluginOptions, 'requires' | 'optional' | 'provides'> = {},
+): T {
+	__setPluginDefinition(replacement, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+		kind: 'plugin',
+		definition: pluginDefinitionAddressOf(previous),
+		requires: options.requires?.map(pluginDefinitionAddressOf),
+		optional: options.optional?.map(pluginDefinitionAddressOf),
+		provides: options.provides,
+	})
+	return replacement
 }
 
 /** Explicit lowering fixture for abstract dependency tokens declared inside tests. */
@@ -43,9 +65,10 @@ export function lowerTestAbstract<T extends PluginConstructor>(
 	plugin: T,
 	options: Pick<LowerTestPluginOptions, 'exportName' | 'sourceSpace' | 'path'> = {},
 ): T {
-	if (hasPluginDefinitionFacts(plugin)) return plugin
+	if (hasLoweredAddress(plugin)) return plugin
 	const exportName = options.exportName ?? plugin.name
 	__setPluginDefinition(plugin, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'abstract',
 		definition: {
 			entry: {
@@ -57,4 +80,16 @@ export function lowerTestAbstract<T extends PluginConstructor>(
 		},
 	})
 	return plugin
+}
+
+function hasLoweredAddress(plugin: PluginConstructor): boolean {
+	try {
+		pluginDefinitionAddressOf(plugin)
+		return true
+	} catch (error) {
+		if (error instanceof PluginLoweringError && error.code === 'plugin_declaration_missing') {
+			return false
+		}
+		throw error
+	}
 }

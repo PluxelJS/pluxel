@@ -4,6 +4,7 @@ import type {
 	BaseProviderInfo,
 	ConfigResult,
 	EnsureForkResult,
+	RemoveForkResult,
 	PluginDependencyRef,
 	PluginDependencyMutationResult,
 	PluginDependencyState,
@@ -56,14 +57,18 @@ export async function listPluginDependencies(
 	rpc: RuntimeRpcStub,
 	owner: PluginNodeAddress,
 ): Promise<PluginDependencyRef[]> {
-	return await rpc.pluginDependencies(owner)
+	const result = await rpc.pluginDependencies(owner)
+	if (result.ok === false) throw new Error(result.error)
+	return result.items
 }
 
 export async function inspectPluginDependencies(
 	rpc: RuntimeRpcStub,
 	owner: PluginNodeAddress,
 ): Promise<PluginDependencyState[]> {
-	return await rpc.inspectPluginDependencies(owner)
+	const result = await rpc.inspectPluginDependencies(owner)
+	if (result.ok === false) throw new Error(result.error)
+	return result.items
 }
 
 export async function setPluginDependencyTarget(
@@ -81,7 +86,9 @@ export async function inspectPluginBaseProvider(
 	rpc: RuntimeRpcStub,
 	owner: PluginNodeAddress,
 ): Promise<BaseProviderInfo | null> {
-	return await rpc.inspectPluginBaseProvider(owner)
+	const result = await rpc.inspectPluginBaseProvider(owner)
+	if (result.ok === false) throw new Error(result.error)
+	return result.value
 }
 
 export async function selectPluginBaseProvider(
@@ -101,9 +108,23 @@ export async function ensurePluginFork(
 		base: PluginNodeAddress
 		forkId: string
 		enable?: boolean
+		selectFor?: {
+			consumer: PluginNodeAddress
+			requirement: PluginDefinitionAddress
+		}
 	},
 ): Promise<EnsureForkResult> {
 	return await rpc.ensurePluginFork(input)
+}
+
+export async function removePluginFork(
+	rpc: RuntimeRpcStub,
+	input: {
+		base: PluginNodeAddress
+		forkId: string
+	},
+): Promise<RemoveForkResult> {
+	return await rpc.removePluginFork(input)
 }
 
 export async function applyPluginStatusActions(
@@ -117,18 +138,9 @@ export async function runPluginStatusAction(
 	rpc: RuntimeRpcStub,
 	address: PluginNodeAddress,
 	action: PluginStatusAction,
-): Promise<{
-	ok: boolean
-	address: PluginNodeAddress
-	error?: string
-	commitError?: string
-}> {
+): Promise<import('@pluxel/runtime/web').PluginStatusMutationResult> {
 	const result = await rpc.applyPluginStatusActions([{ address, action }])
 	const first = result.results[0]
-	return {
-		ok: Boolean(first?.ok),
-		address,
-		error: first?.error,
-		commitError: result.commitError,
-	}
+	if (!first) throw new Error('Runtime omitted the Plugin status mutation result')
+	return first
 }

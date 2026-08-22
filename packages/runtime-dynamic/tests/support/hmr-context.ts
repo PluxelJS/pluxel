@@ -1,25 +1,14 @@
 import '../../src/register-services'
 import { afterEach } from 'vitest'
 import { createHost, type Host } from '@pluxel/test'
-import type { Context, PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
+import type { Context, PluginNodeAddress } from '@pluxel/core'
+import type { RuntimeStateSnapshot } from '@pluxel/runtime/internal'
 
 export type HmrTestState = {
 	enabled?: readonly PluginNodeAddress[]
-	runtimeState?: {
-		forks?: readonly {
-			definition: PluginDefinitionAddress
-			forkIds: readonly string[]
-		}[]
-		providerDefaults?: readonly {
-			token: PluginDefinitionAddress
-			provider: PluginNodeAddress
-		}[]
-		dependencyOverrides?: readonly {
-			consumer: PluginNodeAddress
-			parameterIndex: number
-			provider: PluginNodeAddress
-		}[]
-	}
+	runtimeState?: Partial<
+		Pick<RuntimeStateSnapshot, 'forks' | 'providerDefaults' | 'dependencyOverrides'>
+	>
 }
 
 export type HmrTestContext = {
@@ -54,6 +43,7 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 		root: { loaderHmr: { normalizeId: (id: string) => id } },
 	} as Context.Config)
 	const ctx = host.ctx
+	void ctx.loader
 	const fixture: HmrTestContext = {
 		core: ctx,
 		ctx,

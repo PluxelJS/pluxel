@@ -5,7 +5,14 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
-import { BasePlugin, Plugin, pluginNodeAddressOf, withRuntimeHost } from '@pluxel/runtime/test'
+import type { PluginConstructor } from '@pluxel/runtime'
+import {
+	BasePlugin,
+	Plugin,
+	pluginNodeAddressOf,
+	type RuntimeHost,
+	withRuntimeHost,
+} from '@pluxel/runtime/test'
 import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
 import {
 	RUNTIME_INTERNAL_API_BASE,
@@ -74,14 +81,18 @@ afterAll(async () => {
 	await rm(workerBuildDir, { recursive: true, force: true })
 })
 
-function addEChartsHost(host: Parameters<Parameters<typeof withRuntimeHost>[0]>[0]): void {
+function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+	host.add(plugins)
+	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+}
+
+function addEChartsHost(host: RuntimeHost): void {
 	const detach = host.ctx.nodeModules.attachSourceBinder(async () => ({
 		url: workerUrl,
 		dispose: () => undefined,
 	}))
 	host.ctx.effects.defer(detach)
-	host.add([FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsTestConsumer])
-	host.cfg(FontsPlugin).enable()
+	addEnabled(host, [FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsTestConsumer])
 }
 
 async function verifyManagedWorkerFont(consumer: EChartsTestConsumer, path: string): Promise<void> {
@@ -188,7 +199,7 @@ describe('EChartsPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				addEChartsHost(host)
-				host.add(EChartsOtherConsumer)
+				addEnabled(host, [EChartsOtherConsumer])
 				await host.commit()
 				const capability = host.require(EChartsTestConsumer).echarts
 				const other = host.require(EChartsOtherConsumer).echarts
@@ -222,7 +233,7 @@ describe('EChartsPlugin', () => {
 					name: 'ephemeral',
 					theme: { color: ['#16a34a'] },
 				})
-				host.remove(EChartsTestConsumer)
+				host.cfg(EChartsTestConsumer).disable()
 				await host.commit()
 
 				expect(ephemeral.active).toBe(false)
@@ -237,8 +248,7 @@ describe('EChartsPlugin', () => {
 
 	it('mounts the Fonts provider Port in the ECharts target workbench', async () => {
 		await withRuntimeHost(async (host) => {
-			host.add([FontsPlugin, CanvasPlugin, EChartsPlugin])
-			host.cfg(FontsPlugin).enable()
+			addEnabled(host, [FontsPlugin, CanvasPlugin, EChartsPlugin])
 			await host.commit()
 
 			const response = await host.ctx.http.fetch(

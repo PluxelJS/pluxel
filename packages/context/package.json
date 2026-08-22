@@ -13,6 +13,11 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"import": "./dist/internal.mjs",
+			"require": "./dist/internal.cjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -20,6 +25,10 @@
 			".": {
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
+			},
+			"./internal": {
+				"import": "./dist/internal.mjs",
+				"require": "./dist/internal.cjs"
 			},
 			"./package.json": "./package.json"
 		}

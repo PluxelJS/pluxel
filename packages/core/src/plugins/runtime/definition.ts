@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { isStandardSchemaV1 } from '../../services/config/standardSchema'
-import type { PluginConstructor, PluginIdentifier } from '../types'
+import { consumePluginMarker } from '../decorators/decorator/marker'
+import type { PluginConstructor, PluginToken } from '../types'
 import {
 	parsePluginNodeAddress,
 	parsePluginDefinitionAddress,
@@ -8,19 +9,42 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from './identity'
-import { getForkId } from './fork-identity'
 import {
-	clonePluginPartOwnerFacts,
-	getPluginPartConfig,
-	getPluginPartFactsRevision,
-	getPluginPartOccurrences,
-	getPluginPartOptional,
+	assertLoweringConstructor,
+	invalidPluginDeclaration,
+	missingPluginDeclaration,
+	parsePluginLoweringPayload,
+	PluginLoweringError,
+	type PluginLoweringHeader,
+} from './lowering-abi'
+import {
+	consumePluginPartDefinitionTree,
 	type PartConfigDeclaration,
+	type PluginPartDefinitionTree,
 } from './part-definition'
 
 export type PluginDefinitionKind = 'plugin' | 'abstract'
 
-export type PluginDefinitionFacts = Readonly<{
+export type PluginDefinitionLoweringPayload = PluginLoweringHeader &
+	Readonly<{
+		readonly kind: PluginDefinitionKind
+		readonly definition: PluginDefinitionAddress
+		readonly requires?: readonly PluginDefinitionAddress[]
+		readonly optional?: readonly PluginDefinitionAddress[]
+		readonly provides?: PluginDefinitionAddress
+	}>
+
+export type PluginConfigLoweringPayload = PluginLoweringHeader &
+	Readonly<{
+		readonly fieldName: string
+		readonly schema: StandardSchemaV1
+		readonly source?: string
+	}>
+
+export type PluginRefLoweringPayload = PluginLoweringHeader &
+	Readonly<{ readonly definition: PluginDefinitionAddress }>
+
+type PluginDefinitionFacts = Readonly<{
 	readonly kind: PluginDefinitionKind
 	readonly definition: PluginDefinitionAddress
 	/** Ordered by constructor parameter index. */
@@ -29,6 +53,11 @@ export type PluginDefinitionFacts = Readonly<{
 	readonly optional: readonly PluginDefinitionAddress[]
 	/** Explicit abstract provider relation from @Plugin(AbstractToken). */
 	readonly provides?: PluginDefinitionAddress
+}>
+
+type PluginAddressProjection = Readonly<{
+	readonly kind: PluginDefinitionKind
+	readonly definition: PluginDefinitionAddress
 }>
 
 export type PluginConfigDefinition = Readonly<{
@@ -42,33 +71,62 @@ export type PluginConfigDefinition = Readonly<{
 	}>[]
 }>
 
-const factsByConstructor = new WeakMap<PluginIdentifier, PluginDefinitionFacts>()
+export type ConcretePluginDefinitionDeclaration = Readonly<{
+	readonly address: PluginDefinitionAddress
+	readonly displayName: string
+	readonly startTimeoutMs?: number
+	readonly requires: readonly PluginDefinitionAddress[]
+	readonly optional: readonly PluginDefinitionAddress[]
+	readonly provides?: PluginDefinitionAddress
+	readonly config?: PluginConfigDefinition
+	readonly parts: PluginPartDefinitionTree
+	readonly forkable: boolean
+}>
+
+export type ConcretePluginDefinitionCandidate = Readonly<{
+	readonly implementation: PluginConstructor
+	readonly declaration: ConcretePluginDefinitionDeclaration
+}>
+
+const factsByConstructor = new WeakMap<PluginToken, PluginDefinitionFacts>()
+const addressByConstructor = new WeakMap<PluginToken, PluginAddressProjection>()
 const configByConstructor = new WeakMap<PluginConstructor, PartConfigDeclaration>()
-const definitionFactsCache = new WeakMap<
-	PluginIdentifier,
-	{ revision: number; facts: PluginDefinitionFacts }
->()
-const configDefinitionCache = new WeakMap<
+const consumedCandidates = new WeakSet<PluginConstructor>()
+const candidateByImplementation = new WeakMap<
 	PluginConstructor,
-	{ revision: number; definition?: PluginConfigDefinition }
+	ConcretePluginDefinitionCandidate
 >()
+
+/** @internal Route discovery remains true after ingestion drops mutable decorator staging. */
+export function hasConsumedPluginDefinitionCandidate(ctor: Function): boolean {
+	return candidateByImplementation.has(ctor as PluginConstructor)
+}
 
 function nonEmpty(value: unknown, label: string): string {
 	if (typeof value !== 'string' || value.length === 0 || value.trim() !== value) {
-		throw new TypeError(
+		invalidPluginDeclaration(
 			`[pluxel/core] ${label} must be a non-empty string without surrounding whitespace`,
 		)
 	}
 	return value
 }
 
-function normalizeAddresses(
-	input: readonly PluginDefinitionAddress[] | undefined,
-	label: string,
-): readonly PluginDefinitionAddress[] {
+function parseAddress(value: unknown, label: string): PluginDefinitionAddress {
+	try {
+		return parsePluginDefinitionAddress(value)
+	} catch (cause) {
+		invalidPluginDeclaration(`[pluxel/core] ${label} is invalid`, { cause })
+	}
+}
+
+function normalizeAddresses(input: unknown, label: string): readonly PluginDefinitionAddress[] {
 	if (input === undefined) return Object.freeze([])
-	if (!Array.isArray(input)) throw new TypeError(`[pluxel/core] ${label} must be an array`)
-	return Object.freeze(input.map((address) => parsePluginDefinitionAddress(address)))
+	if (!Array.isArray(input)) {
+		invalidPluginDeclaration(`[pluxel/core] ${label} must be an array`)
+	}
+	const addresses = input.map((address, index) => parseAddress(address, `${label}[${index}]`))
+	assertUniqueAddresses(addresses, label)
+	return Object.freeze(addresses)
 }
 
 function assertUniqueAddresses(addresses: readonly PluginDefinitionAddress[], label: string): void {
@@ -76,7 +134,7 @@ function assertUniqueAddresses(addresses: readonly PluginDefinitionAddress[], la
 	for (let index = 0; index < addresses.length; index++) {
 		const key = pluginDefinitionIndexKey(addresses[index]!)
 		if (seen.has(key)) {
-			throw new TypeError(
+			invalidPluginDeclaration(
 				`[pluxel/core] ${label} contains a duplicate definition at index ${index}`,
 			)
 		}
@@ -84,127 +142,216 @@ function assertUniqueAddresses(addresses: readonly PluginDefinitionAddress[], la
 	}
 }
 
+/** @internal Build-generated Plugin declaration facts. */
 export function __setPluginDefinition(
-	ctor: PluginIdentifier,
-	input: {
-		readonly kind: PluginDefinitionKind
-		readonly definition: PluginDefinitionAddress
-		readonly requires?: readonly PluginDefinitionAddress[]
-		readonly optional?: readonly PluginDefinitionAddress[]
-		readonly provides?: PluginDefinitionAddress
-	},
+	ctor: PluginToken,
+	input: PluginDefinitionLoweringPayload,
 ): void {
-	if (typeof ctor !== 'function')
-		throw new TypeError('[pluxel/core] Plugin definition target must be a constructor')
-	if (input.kind !== 'plugin' && input.kind !== 'abstract') {
-		throw new TypeError('[pluxel/core] Plugin definition kind must be plugin or abstract')
+	assertLoweringConstructor(ctor, 'Plugin definition target')
+	if (consumedCandidates.has(ctor as PluginConstructor)) {
+		invalidPluginDeclaration(
+			'[pluxel/core] Plugin definition facts cannot change after candidate ingestion',
+		)
 	}
-	const requires = normalizeAddresses(input.requires, 'Plugin required definition facts')
-	assertUniqueAddresses(requires, 'Plugin required definition facts')
+	const payload = parsePluginLoweringPayload(input, 'Plugin definition', [
+		'kind',
+		'definition',
+		'requires',
+		'optional',
+		'provides',
+	])
+	if (payload.kind !== 'plugin' && payload.kind !== 'abstract') {
+		invalidPluginDeclaration('[pluxel/core] Plugin definition kind must be plugin or abstract')
+	}
+	const requires = normalizeAddresses(payload.requires, 'Plugin required definition facts')
+	const optional = normalizeAddresses(payload.optional, 'Plugin optional definition facts')
 	const facts: PluginDefinitionFacts = Object.freeze({
-		kind: input.kind,
-		definition: parsePluginDefinitionAddress(input.definition),
+		kind: payload.kind,
+		definition: parseAddress(payload.definition, 'Plugin definition address'),
 		requires,
-		optional: normalizeAddresses(input.optional, 'Plugin optional definition facts'),
-		...(input.provides === undefined
+		optional,
+		...(payload.provides === undefined
 			? {}
-			: { provides: parsePluginDefinitionAddress(input.provides) }),
+			: { provides: parseAddress(payload.provides, 'Plugin provider definition address') }),
 	})
 	if (
 		facts.kind === 'abstract' &&
 		(facts.requires.length > 0 || facts.optional.length > 0 || facts.provides)
 	) {
-		throw new TypeError('[pluxel/core] Abstract Plugin definition facts cannot declare edges')
+		invalidPluginDeclaration('[pluxel/core] Abstract Plugin declaration cannot contain edges')
 	}
-	const previous = factsByConstructor.get(ctor)
-	if (previous && previous !== facts) {
-		throw new Error('[pluxel/core] Plugin constructor already has definition facts')
+	if (factsByConstructor.has(ctor)) {
+		invalidPluginDeclaration('[pluxel/core] Plugin constructor already has declaration facts')
 	}
 	factsByConstructor.set(ctor, facts)
+	addressByConstructor.set(ctor, Object.freeze({ kind: facts.kind, definition: facts.definition }))
 }
 
-export function getPluginDefinitionFacts(ctor: PluginIdentifier): PluginDefinitionFacts {
-	const direct = factsByConstructor.get(ctor)
-	if (!direct) {
-		const name = (ctor as { readonly name?: string }).name || '<anonymous>'
-		throw new Error(
-			`[pluxel/core] Plugin definition was not lowered for ${name}. Load Plugin source through the Pluxel Vite/Rolldown semantic pass.`,
-		)
-	}
-	if (direct.kind === 'abstract') return direct
-	const revision = getPluginPartFactsRevision()
-	const cached = definitionFactsCache.get(ctor)
-	if (cached?.revision === revision) return cached.facts
-	const optional = mergeOptionalDefinitions(direct.optional, collectPartOptional(ctor))
-	const facts =
-		optional.length === direct.optional.length &&
-		optional.every((address, index) => address === direct.optional[index])
-			? direct
-			: Object.freeze({ ...direct, optional: Object.freeze(optional) })
-	definitionFactsCache.set(ctor, { revision, facts })
-	return facts
-}
-
-export function hasPluginDefinitionFacts(ctor: PluginIdentifier): boolean {
-	return factsByConstructor.has(ctor)
-}
-
-/** Host/route projection from a lowered implementation generation to its durable node address. */
-export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress {
-	const definition = getPluginDefinitionFacts(ctor).definition
-	const forkId = getForkId(ctor)
-	return parsePluginNodeAddress(
-		forkId ? { definition, variant: 'fork', forkId } : { definition, variant: 'default' },
-	)
-}
-
-export function clonePluginDefinitionFacts(from: PluginIdentifier, to: PluginIdentifier): void {
-	const facts = factsByConstructor.get(from)
-	if (!facts) throw new Error('[pluxel/core] Cannot clone missing Plugin definition facts')
-	factsByConstructor.set(to, facts)
-	const config = configByConstructor.get(from as PluginConstructor)
-	if (config) configByConstructor.set(to as PluginConstructor, config)
-	clonePluginPartOwnerFacts(from, to)
-}
-
+/** @internal Build-generated Plugin config declaration. */
 export function __setPluginConfig(
 	ctor: PluginConstructor,
-	input: {
-		readonly fieldName: string
-		readonly schema: StandardSchemaV1
-		readonly source?: string
-	},
+	input: PluginConfigLoweringPayload,
 ): void {
-	if (typeof ctor !== 'function')
-		throw new TypeError('[pluxel/core] Plugin config target must be a constructor')
-	const fieldName = nonEmpty(input.fieldName, 'Plugin config field name')
-	if (!isStandardSchemaV1(input.schema)) {
-		throw new TypeError('[pluxel/core] Plugin config must implement Standard Schema v1')
+	assertLoweringConstructor(ctor, 'Plugin config target')
+	if (consumedCandidates.has(ctor)) {
+		invalidPluginDeclaration(
+			'[pluxel/core] Plugin config facts cannot change after candidate ingestion',
+		)
 	}
+	const payload = parsePluginLoweringPayload(input, 'Plugin config', [
+		'fieldName',
+		'schema',
+		'source',
+	])
 	if (configByConstructor.has(ctor)) {
-		throw new Error('[pluxel/core] A Plugin may declare exactly one object config schema')
+		invalidPluginDeclaration('[pluxel/core] A Plugin may declare one object config schema')
+	}
+	const fieldName = nonEmpty(payload.fieldName, 'Plugin config field name')
+	if (!isStandardSchemaV1(payload.schema)) {
+		invalidPluginDeclaration('[pluxel/core] Plugin config must implement Standard Schema v1')
+	}
+	const source = payload.source
+	if (source !== undefined && typeof source !== 'string') {
+		invalidPluginDeclaration('[pluxel/core] Plugin config source must be a string')
 	}
 	configByConstructor.set(
 		ctor,
 		Object.freeze({
 			fieldName,
-			schema: input.schema,
-			...(input.source === undefined ? {} : { source: String(input.source) }),
+			schema: payload.schema,
+			...(source === undefined ? {} : { source: source as string }),
 		}),
 	)
-	configDefinitionCache.delete(ctor)
 }
 
-export function getPluginConfigDefinition(
-	ctor: PluginConstructor,
-): PluginConfigDefinition | undefined {
-	const revision = getPluginPartFactsRevision()
-	const cached = configDefinitionCache.get(ctor)
-	if (cached?.revision === revision) return cached.definition
-	const root = buildConfigNode(ctor, [], configByConstructor.get(ctor), new Set([ctor]))
-	const definition = root ? createConfigDefinition(root) : undefined
-	configDefinitionCache.set(ctor, { revision, definition })
-	return definition
+/**
+ * Atomically seals all evaluation-time staging for one concrete implementation.
+ * Repeated readers receive the same frozen candidate object; HMR evaluates a new constructor.
+ */
+export function consumePluginDefinitionCandidate(
+	implementation: PluginConstructor,
+): ConcretePluginDefinitionCandidate {
+	assertLoweringConstructor(implementation, 'Plugin candidate implementation')
+	const cached = candidateByImplementation.get(implementation)
+	if (cached) return cached
+	if (consumedCandidates.has(implementation)) {
+		invalidPluginDeclaration('[pluxel/core] Plugin candidate ingestion previously failed')
+	}
+	consumedCandidates.add(implementation)
+	const facts = factsByConstructor.get(implementation)
+	if (!facts) {
+		missingPluginDeclaration(
+			`[pluxel/core] Plugin declaration was not lowered for ${implementation.name || '<anonymous>'}. Load Plugin source through the Pluxel Vite/Rolldown semantic pass.`,
+		)
+	}
+	if (facts.kind !== 'plugin') {
+		invalidPluginDeclaration(
+			`[pluxel/core] ${implementation.name || '<anonymous>'} is an abstract Plugin token, not a concrete implementation`,
+		)
+	}
+	const marker = consumePluginMarker(implementation)
+	if (!marker) {
+		invalidPluginDeclaration(
+			`[pluxel/core] Concrete Plugin ${implementation.name || '<anonymous>'} is missing @Plugin`,
+		)
+	}
+	validateProviderMarker(marker.providerClass, facts.provides)
+	const parts = consumePluginPartDefinitionTree(implementation)
+	const optional = mergeOptionalDefinitions(facts.optional, collectPartOptional(parts))
+	const config = createPluginConfigDefinition(configByConstructor.get(implementation), parts)
+	const declaration: ConcretePluginDefinitionDeclaration = Object.freeze({
+		address: facts.definition,
+		displayName: marker.options.displayName ?? facts.definition.exportName,
+		...(marker.options.startTimeoutMs === undefined
+			? {}
+			: { startTimeoutMs: marker.options.startTimeoutMs }),
+		requires: facts.requires,
+		optional,
+		...(facts.provides === undefined ? {} : { provides: facts.provides }),
+		...(config === undefined ? {} : { config }),
+		parts,
+		forkable: marker.options.forkable === true,
+	})
+	factsByConstructor.delete(implementation)
+	configByConstructor.delete(implementation)
+	const candidate = Object.freeze({ implementation, declaration })
+	candidateByImplementation.set(implementation, candidate)
+	return candidate
+}
+
+function validateProviderMarker(
+	providerClass: PluginToken | undefined,
+	provides: PluginDefinitionAddress | undefined,
+): void {
+	if (providerClass === undefined && provides === undefined) return
+	if (providerClass === undefined || provides === undefined) {
+		invalidPluginDeclaration(
+			'[pluxel/core] @Plugin provider marker and lowered provides fact disagree',
+		)
+	}
+	const provider = addressByConstructor.get(providerClass)
+	if (!provider || provider.kind !== 'abstract') {
+		invalidPluginDeclaration(
+			'[pluxel/core] @Plugin provider target is missing an abstract lowered declaration',
+		)
+	}
+	if (pluginDefinitionIndexKey(provider.definition) !== pluginDefinitionIndexKey(provides)) {
+		invalidPluginDeclaration(
+			'[pluxel/core] @Plugin provider marker and lowered provides address disagree',
+		)
+	}
+}
+
+/** Address-only author/host projection; it never materializes a node or reads candidate metadata. */
+export function pluginDefinitionAddressOf(ctor: PluginToken): PluginDefinitionAddress {
+	const facts = addressByConstructor.get(ctor)
+	if (!facts) {
+		missingPluginDeclaration(
+			`[pluxel/core] Plugin declaration was not lowered for ${ctor.name || '<anonymous>'}`,
+		)
+	}
+	return facts.definition
+}
+
+/** Default-node projection from a lowered concrete implementation. */
+export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress {
+	const facts = addressByConstructor.get(ctor)
+	if (!facts) {
+		missingPluginDeclaration(
+			`[pluxel/core] Plugin declaration was not lowered for ${ctor.name || '<anonymous>'}`,
+		)
+	}
+	if (facts.kind !== 'plugin') {
+		invalidPluginDeclaration('[pluxel/core] Abstract Plugin tokens do not have node addresses')
+	}
+	return parsePluginNodeAddress({ definition: facts.definition, variant: 'default' })
+}
+
+function mergeOptionalDefinitions(
+	direct: readonly PluginDefinitionAddress[],
+	parts: readonly PluginDefinitionAddress[],
+): readonly PluginDefinitionAddress[] {
+	const out: PluginDefinitionAddress[] = []
+	const seen = new Set<string>()
+	for (const address of [...direct, ...parts]) {
+		const key = pluginDefinitionIndexKey(address)
+		if (seen.has(key)) continue
+		seen.add(key)
+		out.push(address)
+	}
+	return Object.freeze(out)
+}
+
+function collectPartOptional(tree: PluginPartDefinitionTree): PluginDefinitionAddress[] {
+	const out: PluginDefinitionAddress[] = []
+	const visit = (nodes: PluginPartDefinitionTree) => {
+		for (const node of nodes) {
+			out.push(...node.optional)
+			visit(node.parts)
+		}
+	}
+	visit(tree)
+	return out
 }
 
 type ConfigNode = Readonly<{
@@ -213,78 +360,19 @@ type ConfigNode = Readonly<{
 	readonly children: readonly Readonly<{ readonly key: string; readonly node: ConfigNode }>[]
 }>
 
-function definitionAddressKey(address: PluginDefinitionAddress): string {
-	return pluginDefinitionIndexKey(address)
-}
-
-function mergeOptionalDefinitions(
-	direct: readonly PluginDefinitionAddress[],
-	parts: readonly PluginDefinitionAddress[],
-): PluginDefinitionAddress[] {
-	const out: PluginDefinitionAddress[] = []
-	const seen = new Set<string>()
-	for (const address of [...direct, ...parts]) {
-		const key = definitionAddressKey(address)
-		if (seen.has(key)) continue
-		seen.add(key)
-		out.push(address)
-	}
-	return out
-}
-
-function collectPartOptional(owner: Function): PluginDefinitionAddress[] {
-	const out: PluginDefinitionAddress[] = []
-	const visit = (current: Function, ancestry: Set<Function>) => {
-		for (const occurrence of getPluginPartOccurrences(current)) {
-			if (ancestry.has(occurrence.Part)) {
-				throw new Error(
-					`[pluxel/core] PluginPart containment cycle through ${occurrence.fieldName}`,
-				)
-			}
-			out.push(...getPluginPartOptional(occurrence.Part))
-			const next = new Set([...ancestry, occurrence.Part])
-			visit(occurrence.Part, next)
-		}
-	}
-	visit(owner, new Set([owner]))
-	return out
-}
-
-function buildConfigNode(
-	owner: Function,
-	path: readonly string[],
-	own: PartConfigDeclaration | undefined,
-	ancestry: Set<Function>,
-): ConfigNode | undefined {
-	const children: Array<{ key: string; node: ConfigNode }> = []
-	for (const occurrence of getPluginPartOccurrences(owner)) {
-		if (ancestry.has(occurrence.Part)) {
-			throw new Error(
-				`[pluxel/core] PluginPart containment cycle at ${[...path, occurrence.fieldName].join('.')}`,
-			)
-		}
-		const nextAncestry = new Set([...ancestry, occurrence.Part])
-		const child = buildConfigNode(
-			occurrence.Part,
-			Object.freeze([...path, occurrence.fieldName]),
-			getPluginPartConfig(occurrence.Part),
-			nextAncestry,
-		)
-		if (child) children.push({ key: occurrence.fieldName, node: child })
-	}
-	if (!own && children.length === 0) return undefined
-	return Object.freeze({
-		path: Object.freeze([...path]),
-		...(own ? { own } : {}),
-		children: Object.freeze(children.map((child) => Object.freeze(child))),
-	})
-}
-
-function createConfigDefinition(root: ConfigNode): PluginConfigDefinition {
-	const parts: Array<{ path: readonly string[]; declaration?: PartConfigDeclaration }> = []
+function createPluginConfigDefinition(
+	rootConfig: PartConfigDeclaration | undefined,
+	parts: PluginPartDefinitionTree,
+): PluginConfigDefinition | undefined {
+	const root = buildConfigNode([], rootConfig, parts)
+	if (!root) return undefined
+	const declarations: Array<{ path: readonly string[]; declaration?: PartConfigDeclaration }> = []
 	const visit = (node: ConfigNode) => {
 		if (node.path.length > 0) {
-			parts.push({ path: node.path, ...(node.own ? { declaration: node.own } : {}) })
+			declarations.push({
+				path: node.path,
+				...(node.own === undefined ? {} : { declaration: node.own }),
+			})
 		}
 		for (const child of node.children) visit(child.node)
 	}
@@ -292,12 +380,30 @@ function createConfigDefinition(root: ConfigNode): PluginConfigDefinition {
 	const source = configNodeSource(root)
 	return Object.freeze({
 		fieldName: root.own?.fieldName ?? 'config',
-		// Preserve the existing Plugin-only schema contract, including object identity.
-		// A composite validator is only needed once a Part contributes a subtree.
 		schema: root.children.length === 0 && root.own ? root.own.schema : createConfigTreeSchema(root),
 		...(source === undefined ? {} : { source }),
-		...(root.own ? { owner: root.own } : {}),
-		parts: Object.freeze(parts.map((part) => Object.freeze(part))),
+		...(root.own === undefined ? {} : { owner: root.own }),
+		parts: Object.freeze(declarations.map((item) => Object.freeze(item))),
+	})
+}
+
+function buildConfigNode(
+	path: readonly string[],
+	own: PartConfigDeclaration | undefined,
+	parts: PluginPartDefinitionTree,
+): ConfigNode | undefined {
+	const children = parts
+		.map((part) => {
+			const childPath = Object.freeze([...path, part.fieldName])
+			const node = buildConfigNode(childPath, part.config, part.parts)
+			return node ? Object.freeze({ key: part.fieldName, node }) : undefined
+		})
+		.filter((value): value is Readonly<{ key: string; node: ConfigNode }> => value !== undefined)
+	if (!own && children.length === 0) return undefined
+	return Object.freeze({
+		path: Object.freeze([...path]),
+		...(own === undefined ? {} : { own }),
+		children: Object.freeze(children),
 	})
 }
 
@@ -386,14 +492,17 @@ export type PluginRef<T> = Readonly<{
 }>
 
 export function definePluginRef<T>(): PluginRef<T> {
-	throw new Error(
+	throw new PluginLoweringError(
+		'plugin_declaration_missing',
 		'[pluxel/core] Plugin ref was not lowered. definePluginRef<T>() must be a non-exported module-level const processed by the Pluxel semantic pass.',
 	)
 }
 
-export function __definePluginRef<T>(definition: PluginDefinitionAddress): PluginRef<T> {
+/** @internal Build-generated PluginRef value. */
+export function __definePluginRef<T>(input: PluginRefLoweringPayload): PluginRef<T> {
+	const payload = parsePluginLoweringPayload(input, 'Plugin ref', ['definition'])
 	return Object.freeze({
-		definition: parsePluginDefinitionAddress(definition),
+		definition: parseAddress(payload.definition, 'Plugin ref definition'),
 		[PLUGIN_REF]: ((value: T) => value) as (_value: T) => T,
 	})
 }

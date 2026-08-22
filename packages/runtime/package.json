@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/runtime",
 	"version": "1.0.0",
-	"description": "Pluxel runtime kernel (includes control plane, web SDK, and frozen export)",
+	"description": "Pluxel runtime kernel, control plane, and web SDK",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -134,6 +134,7 @@
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"bench:logger": "pnpm exec vitest bench bench/logger.bench.ts",
+		"bench:runtime-state": "pnpm exec vitest bench bench/runtime-state.bench.ts",
 		"bench:workers": "pnpm exec vitest bench bench/worker-task.bench.ts",
 		"build": "pnpm run build:web && pnpm run build:lib",
 		"build:lib": "tsdown",

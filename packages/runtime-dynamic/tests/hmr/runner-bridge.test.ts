@@ -17,6 +17,9 @@ import { inspectHmrRunner } from '../support/white-box'
 describe('HMR runner bridge', () => {
 	it('reuses host @pluxel/core singletons in the runner', async () => {
 		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/context')
+		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/core/internal')
+		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/core/toolchain')
+		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/runtime/toolchain')
 		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/runtime/internal')
 		expect(LOADER_HMR_BRIDGE_PROVIDERS['@pluxel/context']).toBe('@pluxel/core')
 
@@ -82,7 +85,7 @@ describe('HMR runner bridge', () => {
 				await runner.assertBridgedSingletons(LOADER_HMR_BRIDGE_MODULES)
 
 				const hostCore = runnerBox.bridgedHostExports?.get('@pluxel/core') as
-					| { BasePlugin?: unknown; checkPluginDecorator?: unknown }
+					| { BasePlugin?: unknown }
 					| undefined
 				expect(hostCore).toBeTruthy()
 
@@ -91,13 +94,14 @@ describe('HMR runner bridge', () => {
 				expect(typeof ctor).toBe('function')
 
 				const BasePlugin = hostCore?.BasePlugin as unknown
-				const checkPluginDecorator = hostCore?.checkPluginDecorator as unknown
 				expect(typeof BasePlugin).toBe('function')
-				expect(typeof checkPluginDecorator).toBe('function')
 
 				const pluginCtor = ctor as unknown as { prototype?: unknown }
 				expect(Object.getPrototypeOf(pluginCtor)).toBe(BasePlugin)
-				expect((checkPluginDecorator as (c: unknown) => boolean)(pluginCtor)).toBe(true)
+				const { consumePluginDefinitionCandidate } = await import('@pluxel/core/internal')
+				expect(consumePluginDefinitionCandidate(pluginCtor as never).implementation).toBe(
+					pluginCtor,
+				)
 			})
 		} finally {
 			await server.close()

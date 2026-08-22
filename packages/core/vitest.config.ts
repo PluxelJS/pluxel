@@ -19,11 +19,11 @@ export default defineConfig({
 	plugins: [
 		createPluginSemanticsPlugin({
 			root: import.meta.dirname,
-			helperImportSource: '@pluxel/core',
+			helperImportSource: '@pluxel/core/toolchain',
 		}).plugin,
 		lintGuardPlugin({ cwd: import.meta.dirname }),
 		configSourcePlugin({
-			metadataHelperImportSource: '@pluxel/core',
+			metadataHelperImportSource: '@pluxel/core/toolchain',
 			include: [
 				'**/src/**/*.ts',
 				'**/src/**/*.tsx',

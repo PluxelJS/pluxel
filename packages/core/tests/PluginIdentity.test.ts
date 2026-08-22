@@ -11,7 +11,7 @@ import {
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 } from '../src/plugins/runtime/identity'
-import { __setPluginDefinition } from '../src/plugins/runtime/definition'
+import { __setPluginDefinition } from '../src/toolchain'
 
 const packageDefault = parsePluginNodeAddress({
 	definition: {
@@ -79,6 +79,16 @@ describe('Plugin identity', () => {
 		expect(first.variant).toBe('default')
 	})
 
+	it('looks up canonical addresses without creating definition or node slots', () => {
+		const slots = new PluginSlotRegistry()
+		expect(slots.lookupDefinition(sourceFork.definition)).toBeUndefined()
+		expect(slots.lookupNode(sourceFork)).toBeUndefined()
+
+		const node = slots.internNode(sourceFork)
+		expect(slots.lookupDefinition(sourceFork.definition)).toBe(node.definition)
+		expect(slots.lookupNode(sourceFork)).toBe(node)
+	})
+
 	it('rejects slots from another registry', () => {
 		const first = new PluginSlotRegistry()
 		const second = new PluginSlotRegistry()
@@ -134,6 +144,7 @@ describe('Plugin identity', () => {
 
 		expect(() =>
 			__setPluginDefinition(DuplicateRequirement as never, {
+				abiVersion: 1,
 				kind: 'plugin',
 				definition: sourceFork.definition,
 				requires: [packageDefault.definition, packageDefault.definition],

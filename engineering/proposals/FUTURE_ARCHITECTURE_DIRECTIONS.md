@@ -44,17 +44,9 @@ server validation 是否保持唯一 authority、CSP/HMR 和外部实现成本�
 
 ## 3. First-class multi-instance nodes
 
-候选方向是用 `PluginInstanceSlot(definition slot, host-local instance key)` 取代 synthetic fork subclass、metadata clone 与 fork registry。
-
-尚未决定：
-
-- default `PluginRef`、required constructor 与 optional ref 指向 default instance 还是显式 instance；
-- host 如何声明 additional instance，是否需要新的 define-style ref；
-- instance config、enablement、provider selection 与 HMR 的 address contract；
-- 删除 `ForkablePlugin` 后如何证明 Plugin 支持安全多实例；
-- Redis/S3 named resource manager 是否反而是更小模型。
-
-当前重构只把 fork identity 结构化为 `PluginNodeSlot(definition, forkId)`，不改变 fork 作者语义或 synthetic implementation。
+该方向已实现并退出 research backlog。当前 definition/node/generation、forkability、fork materialization、provider default/override
+以及 static/dynamic route 共用 reconciliation 的权威约束见 [`../CORE.md`](../CORE.md)、
+[`../PLUGIN_SYSTEM.md`](../PLUGIN_SYSTEM.md) 与 [`../RUNTIME.md`](../RUNTIME.md)；历史演进由 Git 保存。
 
 ## 4. Context capability kernel
 

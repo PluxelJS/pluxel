@@ -298,8 +298,12 @@ type OwnerContext = {
 		readonly nodeSlot: object
 		readonly nodeAddress: PluginNodeAddress
 	}
-	readonly effects: { defer(cleanup: () => void, meta?: { tag?: string }): unknown }
-	readonly registry: { getInstance(identifier: unknown): unknown }
+	readonly effects: {
+		defer(
+			cleanup: () => void,
+			meta?: { tag?: string; phase?: 'shutdown' | 'runtime' | 'final' },
+		): unknown
+	}
 }
 
 type CacheOwnerState = {
@@ -649,18 +653,21 @@ export class CachePlugin extends Cache {
 		super()
 	}
 
-	protected override init(): () => void {
+	protected override init(): void {
 		this.runtime.active = true
-		return () => {
-			this.runtime.active = false
-			for (const registration of this.runtime.registrations) {
-				deactivateBucket(registration.bucket)
-				registration.lookup.delete(registration.lookupKey)
-				registration.owners.clear()
-			}
-			this.runtime.registrations.clear()
-			this.runtime.globalRegistrations.clear()
-		}
+		this.ctx.effects.defer(
+			() => {
+				this.runtime.active = false
+				for (const registration of this.runtime.registrations) {
+					deactivateBucket(registration.bucket)
+					registration.lookup.delete(registration.lookupKey)
+					registration.owners.clear()
+				}
+				this.runtime.registrations.clear()
+				this.runtime.globalRegistrations.clear()
+			},
+			{ tag: 'cache-runtime-gate', phase: 'shutdown' },
+		)
 	}
 
 	override get local(): LocalCache {
@@ -719,7 +726,10 @@ export class CachePlugin extends Cache {
 		this.runtime.owners.set(context, owner)
 		const cleanupOwner = owner
 		try {
-			context.effects.defer(() => this.releaseOwner(cleanupOwner), { tag: 'cache-bindings' })
+			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
+				tag: 'cache-bindings',
+				phase: 'shutdown',
+			})
 		} catch {
 			owner.active = false
 			throw new CacheStoppedError()
@@ -806,10 +816,13 @@ export class CachePlugin extends Cache {
 			ownerAddress: registration.ownerAddress,
 			bucket: registration.bucket,
 		}
+		const runtime = this.runtime
 		const view = new NamespaceView(
 			resolved,
 			this.backend,
-			() => this.assertHandleActive(owner),
+			() => {
+				if (!runtime.active || !owner.active) throw new CacheStoppedError()
+			},
 			(child, childOptions) => {
 				const childName = name ? `${name}/${validateScopeName(child)}` : validateScopeName(child)
 				return this.open(owner, global, childName, childOptions, namespace)
@@ -848,18 +861,6 @@ export class CachePlugin extends Cache {
 
 	private assertActive(): void {
 		if (!this.runtime.active) throw new CacheStoppedError()
-		const current = (
-			this.ctx.registry as unknown as { getInstance(identifier: unknown): unknown }
-		).getInstance(Cache) as CachePlugin | undefined
-		if (!current || current.runtime !== this.runtime) throw new CacheStoppedError()
-	}
-
-	private assertHandleActive(owner: CacheOwnerState): void {
-		this.assertOwnerActive(owner)
-		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.nodeSlot) as
-			| { ctx?: unknown }
-			| undefined
-		if (!activeOwner || activeOwner.ctx !== owner.context) throw new CacheStoppedError()
 	}
 
 	private assertOwnerActive(owner: CacheOwnerState): void {

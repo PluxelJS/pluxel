@@ -49,11 +49,8 @@ interface PluginCatalogProps {
 }
 
 const ACTION_LABEL: Record<PluginStatusAction, string> = {
-	start: '启动',
-	stop: '终止',
 	restart: '重启',
 	enable: '启用',
-	'enable-persisted': '持久启用',
 	disable: '禁用',
 }
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
@@ -275,7 +272,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	}, [])
 
 	const handleBulkStatus = useCallback(
-		async (action: Exclude<PluginStatusAction, 'start' | 'restart' | 'enable-persisted'>) => {
+		async (action: Exclude<PluginStatusAction, 'restart'>) => {
 			if (selectedIds.length === 0) return
 			const batch = selectedIds.map((id) => {
 				const status = overview.statuses[id]
@@ -303,8 +300,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 						color: 'red',
 					})
 				} else {
-					if (action === 'disable' || action === 'stop') {
-						const undoAction: PluginStatusAction = action === 'disable' ? 'enable' : 'start'
+					if (action === 'disable') {
+						const undoAction: PluginStatusAction = 'enable'
 						notify({
 							title: '批量操作成功',
 							message: (
@@ -373,7 +370,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 							color: 'green',
 						})
 					}
-					if (action === 'disable' || action === 'stop') setSelectedIds([])
+					if (action === 'disable') setSelectedIds([])
 				}
 			} catch (error: any) {
 				notify({

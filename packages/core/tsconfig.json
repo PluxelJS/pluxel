@@ -9,7 +9,6 @@
 		"emitDeclarationOnly": true,
 		"jsx": "react-jsx",
 		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true,
 		"paths": {
 			"@pluxel/context": ["../context/src"],
 			"@pluxel/context/*": ["../context/src/*"],

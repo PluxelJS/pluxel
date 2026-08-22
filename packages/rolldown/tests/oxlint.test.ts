@@ -343,45 +343,6 @@ runRule('no-direct-logtape-get-logger', pluxelRules['no-direct-logtape-get-logge
 	],
 })
 
-runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
-	valid: [
-		{
-			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
-			code: "import { crawlFilesAbs } from '@pluxel/rolldown/workspace/fs'",
-		},
-		{
-			filename: '/repo/packages/runtime/vite.config.ts',
-			code: "import { createPluxelUiChunkGroups } from '@pluxel/rolldown/workspace/vite'",
-		},
-		{
-			filename: '/repo/packages/rolldown/src/workspace/index.ts',
-			code: "export * from '@pluxel/rolldown/workspace'",
-		},
-	],
-	invalid: [
-		{
-			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
-			code: "import { crawlFilesAbs } from '@pluxel/rolldown/workspace'",
-			errors: [{ messageId: 'root' }],
-		},
-		{
-			filename: '/repo/packages/cli/src/workspace/state.ts',
-			code: "export { loadWorkspaceInfo } from '@pluxel/rolldown/workspace'",
-			errors: [{ messageId: 'root' }],
-		},
-		{
-			filename: '/repo/packages/runtime-dynamic/src/hmr/diagnose/fs.ts',
-			code: "export * from '@pluxel/rolldown/workspace'",
-			errors: [{ messageId: 'root' }],
-		},
-		{
-			filename: '/repo/packages/runtime-dynamic/src/package/PackageService.ts',
-			code: "await import('@pluxel/rolldown/workspace')",
-			errors: [{ messageId: 'root' }],
-		},
-	],
-})
-
 runRule(
 	'plugin-base-class-requires-plugin-registration',
 	pluxelRules['plugin-base-class-requires-plugin-registration'],
@@ -391,12 +352,6 @@ runRule(
 				code: `
 					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends BasePlugin {}
-				`,
-			},
-			{
-				code: `
-					@Plugin({ displayName: 'Plugin A' })
-					class PluginA extends ForkablePlugin {}
 				`,
 			},
 			{
@@ -415,12 +370,6 @@ runRule(
 			{
 				code: `
 					class PluginA extends BasePlugin {}
-				`,
-				errors: [{ messageId: 'missing' }],
-			},
-			{
-				code: `
-					class PluginA extends ForkablePlugin {}
 				`,
 				errors: [{ messageId: 'missing' }],
 			},

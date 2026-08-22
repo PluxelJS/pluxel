@@ -3,15 +3,24 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import {
-	clonePluginDefinition,
 	formatPluginNodeReference,
-	getPluginDefinitionFacts,
+	pluginDefinitionAddressOf,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 	type PluginConstructor,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { getActiveRuntimeLogging } from '@pluxel/runtime/internal'
+import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import {
+	__setPluginConfig,
+	__setPluginDefinition,
+	PLUGIN_LOWERING_ABI_VERSION,
+} from '@pluxel/test/unsafe'
+import {
+	getActiveRuntimeLogging,
+	requireRuntimePluginGraphCoordinator,
+	runtimeStatePatch,
+} from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import { defineProduct } from '@pluxel/runtime/product'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
@@ -131,15 +140,13 @@ class StaticProviderConsumer extends BasePlugin {
 
 const hotRuns: string[] = []
 
-@Plugin({ displayName: 'Hot Static' })
-class HotStaticV1 extends BasePlugin {
+const HotStaticV1 = class HotStaticV1 extends BasePlugin {
 	override init(): void {
 		hotRuns.push('v1')
 	}
 }
 
-@Plugin({ displayName: 'Hot Static Replacement' })
-class HotStaticV2 extends BasePlugin {
+const HotStaticV2 = class HotStaticV2 extends BasePlugin {
 	override init(): void {
 		hotRuns.push('v2')
 	}
@@ -147,15 +154,13 @@ class HotStaticV2 extends BasePlugin {
 
 const hotConfigRuns: string[] = []
 
-@Plugin({ displayName: 'Hot Config' })
-class HotConfigV1 extends BasePlugin {
+const HotConfigV1 = class HotConfigV1 extends BasePlugin {
 	override init(): void {
 		hotConfigRuns.push('v1')
 	}
 }
 
-@Plugin({ displayName: 'Hot Config Replacement' })
-class HotConfigV2 extends BasePlugin {
+const HotConfigV2 = class HotConfigV2 extends BasePlugin {
 	readonly config = this.configs.use(RequiredObjectSchema)
 
 	override init(): void {
@@ -163,11 +168,9 @@ class HotConfigV2 extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'Disabled Hot' })
-class DisabledHotV1 extends BasePlugin {}
+const DisabledHotV1 = class DisabledHotV1 extends BasePlugin {}
 
-@Plugin({ displayName: 'Disabled Hot Replacement' })
-class DisabledHotV2 extends BasePlugin {
+const DisabledHotV2 = class DisabledHotV2 extends BasePlugin {
 	readonly config = this.configs.use(RequiredObjectSchema)
 }
 
@@ -183,10 +186,50 @@ class ManagedWebGate extends BasePlugin {
 }
 
 beforeAll(() => {
-	clonePluginDefinition(HotStaticV1, HotStaticV2)
-	clonePluginDefinition(HotConfigV1, HotConfigV2)
-	clonePluginDefinition(DisabledHotV1, DisabledHotV2)
+	lowerReplacementPair(HotStaticV1, HotStaticV2, 'hot-static', [
+		'Hot Static',
+		'Hot Static Replacement',
+	])
+	lowerReplacementPair(HotConfigV1, HotConfigV2, 'hot-config', [
+		'Hot Config',
+		'Hot Config Replacement',
+	])
+	__setPluginConfig(HotConfigV2, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+		fieldName: 'config',
+		schema: RequiredObjectSchema,
+	})
+	lowerReplacementPair(DisabledHotV1, DisabledHotV2, 'disabled-hot', [
+		'Disabled Hot',
+		'Disabled Hot Replacement',
+	])
+	__setPluginConfig(DisabledHotV2, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+		fieldName: 'config',
+		schema: RequiredObjectSchema,
+	})
 })
+
+function lowerReplacementPair(
+	first: PluginConstructor,
+	second: PluginConstructor,
+	id: string,
+	displayNames: readonly [string, string],
+): void {
+	const definition = {
+		entry: { kind: 'source-entry' as const, sourceSpace: 'app', path: `pluxel-test:${id}` },
+		exportName: 'Plugin',
+	}
+	Plugin({ displayName: displayNames[0] })(first)
+	Plugin({ displayName: displayNames[1] })(second)
+	for (const implementation of [first, second]) {
+		__setPluginDefinition(implementation, {
+			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+			kind: 'plugin',
+			definition,
+		})
+	}
+}
 
 @Plugin({ displayName: 'Removed Static' })
 class RemovedStatic extends BasePlugin {}
@@ -362,12 +405,15 @@ describe('@pluxel/runtime-static', () => {
 			},
 		)
 		try {
-			const slot = runtime.ctx.registry.internNodeAddress(owner)
-			expect(runtime.ctx.configService.getRawConfig(slot)).toEqual({
+			expect(requireConfigService(runtime.ctx).getRawConfig(owner)).toEqual({
 				value: 'from-environment',
 			})
 			expect(configuredValue).toBe('from-environment')
-			const config = runtime.ctx.runtimeRoute?.configMetadata?.getConfig(owner)
+			const config = requireRuntimePluginGraphCoordinator(runtime.ctx)
+				.catalogSnapshot()
+				.entries.find((entry) =>
+					pluginNodeAddressEqual({ definition: entry.address, variant: 'default' }, owner),
+				)?.candidate.declaration.config
 			expect(config?.fieldName).toBe('config')
 			expect(config?.source?.length).toBeGreaterThan(0)
 		} finally {
@@ -400,8 +446,8 @@ describe('@pluxel/runtime-static', () => {
 			expect(statusOf(host, StaticA)).toBe('started')
 			expect(statusOf(host, StaticB)).toBe('disabled')
 			expect(statusOf(host, ghost)).toBe('unknown-config-entry')
-			expect(host.ctx.registry.isRunning(StaticA)).toBe(true)
-			expect(host.ctx.registry.isRunning(StaticB)).toBe(false)
+			expect(requirePluginService(host.ctx).isRunning(StaticA)).toBe(true)
+			expect(requirePluginService(host.ctx).isRunning(StaticB)).toBe(false)
 		} finally {
 			await host.stop()
 		}
@@ -421,8 +467,8 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			await host.start()
-			expect(host.ctx.registry.getInstance(SharedPluginA)?.source).toBe('a')
-			expect(host.ctx.registry.getInstance(SharedPluginB)?.source).toBe('b')
+			expect(requirePluginService(host.ctx).getInstance(SharedPluginA)?.source).toBe('a')
+			expect(requirePluginService(host.ctx).getInstance(SharedPluginB)?.source).toBe('b')
 			expect(host.describeCatalog().plugins.map((entry) => entry.displayName)).toEqual([
 				'Shared',
 				'Shared',
@@ -467,7 +513,7 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			await running.start()
-			const injected = running.ctx.registry.getInstance(RequiredConsumer)?.provider
+			const injected = requirePluginService(running.ctx).getInstance(RequiredConsumer)?.provider
 			expect(injected).toBeInstanceOf(RequiredProvider)
 			expect(injected?.source).toBe('required-provider')
 		} finally {
@@ -477,7 +523,7 @@ describe('@pluxel/runtime-static', () => {
 
 	it('selects an abstract provider from structured RuntimeState defaults', async () => {
 		const provider = addressOf(StaticProviderB)
-		const token = getPluginDefinitionFacts(StaticProviderToken).definition
+		const token = pluginDefinitionAddressOf(StaticProviderToken)
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntime({
 				name: 'provider-default',
@@ -496,8 +542,10 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			await host.start()
-			expect(host.ctx.registry.getInstance(StaticProviderConsumer)?.provider.kind).toBe('b')
-			expect(host.ctx.registry.isRunning(StaticProviderToken)).toBe(true)
+			expect(
+				requirePluginService(host.ctx).getInstance(StaticProviderConsumer)?.provider.kind,
+			).toBe('b')
+			expect(requirePluginService(host.ctx).isRunning(StaticProviderToken)).toBe(true)
 		} finally {
 			await host.stop()
 		}
@@ -520,16 +568,14 @@ describe('@pluxel/runtime-static', () => {
 		try {
 			await host.start()
 			expect(optionalRuns).toEqual(['consumer'])
-			await host.ctx.runtimeRoute!.lifecycle!.enable(provider, OptionalProvider)
-			const committed = await host.ctx.registry.commit()
-			expect(committed.ok).toBe(true)
+			await requireRuntimePluginGraphCoordinator(host.ctx).updateRuntimeState(
+				runtimeStatePatch({ type: 'set-enabled', node: provider, enabled: true }),
+			)
 			expect(optionalRuns).toEqual(['consumer', 'consumer', 'provider'])
 
-			host.ctx.runtimeRoute!.lifecycle!.deactivate(provider, OptionalProvider, {
-				runtimeOnly: true,
-			})
-			const removed = await host.ctx.registry.commit()
-			expect(removed.ok).toBe(true)
+			await requireRuntimePluginGraphCoordinator(host.ctx).updateRuntimeState(
+				runtimeStatePatch({ type: 'set-enabled', node: provider, enabled: false }),
+			)
 			expect(optionalRuns).toEqual(['consumer', 'consumer', 'provider', 'cleanup', 'consumer'])
 		} finally {
 			await host.stop()
@@ -553,7 +599,7 @@ describe('@pluxel/runtime-static', () => {
 		try {
 			await host.start()
 			expect(statusOf(host, InvalidConfigPlugin)).toBe('config-invalid')
-			expect(host.ctx.registry.isRunning(InvalidConfigPlugin)).toBe(false)
+			expect(requirePluginService(host.ctx).isRunning(InvalidConfigPlugin)).toBe(false)
 		} finally {
 			await host.stop()
 		}
@@ -585,7 +631,9 @@ describe('@pluxel/runtime-static', () => {
 			const failed = report.commit?.lifecycleReport.issues.find(
 				(issue) => issue.kind === 'start-failed',
 			)
-			expect(failed && host.ctx.registry.nodeAddressOf(failed.plugin)).toEqual(addressOf(StartFail))
+			expect(failed && requirePluginService(host.ctx).nodeAddressOf(failed.plugin)).toEqual(
+				addressOf(StartFail),
+			)
 		} finally {
 			await host.stop()
 		}
@@ -610,8 +658,7 @@ describe('@pluxel/runtime-static', () => {
 			})
 			expect(report.replaced).toEqual([stableAddress])
 			expect(hotRuns).toEqual(['v1', 'v2'])
-			expect(host.describeCatalog().plugins[0]?.generation).toBe(HotStaticV2)
-			expect(host.ctx.registry.getInstance(HotStaticV1)).toBeInstanceOf(HotStaticV2)
+			expect(requirePluginService(host.ctx).getInstance(HotStaticV1)).toBeInstanceOf(HotStaticV2)
 		} finally {
 			await host.stop()
 		}
@@ -634,7 +681,10 @@ describe('@pluxel/runtime-static', () => {
 			})
 			expect(report.removed).toEqual([address])
 			expect(statusOf(host, address)).toBe('catalog-drift')
-			expect(host.ctx.registry.isRunning(RemovedStatic)).toBe(false)
+			expect(
+				report.entries.filter((entry) => pluginNodeAddressEqual(entry.address, address)),
+			).toEqual([expect.objectContaining({ address, status: 'catalog-drift' })])
+			expect(requirePluginService(host.ctx).isRunning(RemovedStatic)).toBe(false)
 		} finally {
 			await host.stop()
 		}
@@ -664,11 +714,12 @@ describe('@pluxel/runtime-static', () => {
 			const invalid = await reloadStaticRuntime({ host, definition: nextDefinition })
 			expect(invalid.replaced).toEqual([address])
 			expect(statusOf(host, address)).toBe('config-invalid')
-			expect(host.ctx.registry.isRunning(HotConfigV2)).toBe(false)
+			expect(requirePluginService(host.ctx).isRunning(HotConfigV2)).toBe(false)
 
-			host.ctx.configService.patchConfig(host.ctx.registry.internNodeAddress(address), {
+			requireConfigService(host.ctx).patchConfig(address, {
 				value: 'ok',
 			})
+			await requireRuntimePluginGraphCoordinator(host.ctx).restartNode(address)
 			const recovered = await reloadStaticRuntime({ host, definition: nextDefinition })
 			expect(recovered.replaced).toEqual([])
 			expect(statusOf(host, address)).toBe('started')
@@ -695,7 +746,7 @@ describe('@pluxel/runtime-static', () => {
 			})
 			expect(report.replaced).toEqual([address])
 			expect(statusOf(host, address)).toBe('disabled')
-			expect(host.ctx.registry.isRunning(DisabledHotV2)).toBe(false)
+			expect(requirePluginService(host.ctx).isRunning(DisabledHotV2)).toBe(false)
 		} finally {
 			await host.stop()
 		}
@@ -794,7 +845,7 @@ describe('@pluxel/runtime-static', () => {
 			expect(runtime.ctx.workbench.enabled).toBe(true)
 			expect(getActiveRuntimeLogging()?.resolved.sinks).toHaveProperty('store')
 			expect(managedWorkbenchMounted).toBe(true)
-			expect(runtime.ctx.registry.isRunning(ManagedWebGate)).toBe(true)
+			expect(requirePluginService(runtime.ctx).isRunning(ManagedWebGate)).toBe(true)
 		} finally {
 			await runtime.stop()
 		}

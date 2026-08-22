@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { requirePluginService } from '@pluxel/core/internal'
 import {
 	BasePlugin,
 	Plugin,
@@ -53,12 +54,13 @@ describe('effects-only generation teardown', () => {
 
 	it('reports cleanup failures while continuing teardown', async () => {
 		await withCoreHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
 			host.add(DrainFailure)
 			await host.commit()
 			host.remove(DrainFailure)
 			const summary = await host.commitAllowFail()
 			expect(pluginLifecycleIssuePlugins(summary)).toEqual([
-				host.ctx.registry.internNodeAddress(host.cfg(DrainFailure).owner),
+				registry.internNodeAddress(host.cfg(DrainFailure).owner),
 			])
 			assertPluginLifecycleIssue(summary, DrainFailure, {
 				phase: 'drain',

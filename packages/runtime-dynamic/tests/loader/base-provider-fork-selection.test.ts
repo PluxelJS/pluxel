@@ -1,25 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import {
-	clonePluginDefinition,
-	getPluginDefinitionFacts,
+	pluginDefinitionAddressOf,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 } from '@pluxel/core'
-import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
+import { requirePluginService } from '@pluxel/core/internal'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import {
+	requireRuntimePluginGraphCoordinator,
+	requireRuntimeStateStore,
+	runtimeStatePatch,
+} from '@pluxel/runtime/internal'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins } from '../support/runtime-state'
 
 describe('base provider selection', () => {
 	it('rejects a fork as provider default and persists the deterministic default node', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 
-		abstract class Abs extends ForkablePlugin {}
+		abstract class Abs extends BasePlugin {}
 		lowerTestAbstract(Abs)
 
-		@Plugin(Abs, { displayName: 'Implementation' })
+		@Plugin(Abs, { displayName: 'Implementation', forkable: true })
 		class Impl extends Abs {}
-		lowerTestPlugin(Impl, { provides: getPluginDefinitionFacts(Abs).definition })
+		lowerTestPlugin(Impl, { provides: pluginDefinitionAddressOf(Abs) })
 
 		const implementation = pluginNodeAddressOf(Impl)
 		const fork = {
@@ -27,28 +32,39 @@ describe('base provider selection', () => {
 			variant: 'fork',
 			forkId: 'f1',
 		} as const
-		ctx.runtimeState.update((draft) => {
-			draft.providerDefaults = [{ token: getPluginDefinitionFacts(Abs).definition, provider: fork }]
-			draft.forks = [{ definition: implementation.definition, forkIds: ['f1'] }]
-		})
-		enablePlugins(ctx, implementation, fork)
-
 		await ctx.loader.replaceModule('A.ts', { Impl })
+		const coordinator = requireRuntimePluginGraphCoordinator(ctx)
+		await coordinator.updateRuntimeState(
+			runtimeStatePatch(
+				{ type: 'ensure-fork', definition: implementation.definition, forkId: 'f1' },
+				{ type: 'set-enabled', node: implementation, enabled: true },
+				{ type: 'set-enabled', node: fork, enabled: true },
+			),
+		)
+		await expect(
+			coordinator.updateRuntimeState(
+				runtimeStatePatch({
+					type: 'set-provider-default',
+					token: pluginDefinitionAddressOf(Abs),
+					provider: fork,
+				}),
+			),
+		).rejects.toMatchObject({ code: 'fork_default_forbidden' })
 
-		expect(core.registry.isRunning(Abs)).toBe(true)
-		expect(ctx.runtimeState.snapshot().providerDefaults).toEqual([
+		expect(requirePluginService(ctx).isRunning(implementation)).toBe(true)
+		expect(requireRuntimeStateStore(ctx).snapshot().providerDefaults).toEqual([
 			{
-				token: getPluginDefinitionFacts(Abs).definition,
+				token: pluginDefinitionAddressOf(Abs),
 				provider: implementation,
 			},
 		])
 	})
 
 	it('restarts consumers of a base token when its provider generation changes', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 		let consumerStarts = 0
 
-		abstract class Abs extends ForkablePlugin {
+		abstract class Abs extends BasePlugin {
 			abstract readonly generation: number
 		}
 		lowerTestAbstract(Abs)
@@ -57,7 +73,7 @@ describe('base provider selection', () => {
 		class Impl extends Abs {
 			readonly generation = 1
 		}
-		lowerTestPlugin(Impl, { provides: getPluginDefinitionFacts(Abs).definition })
+		lowerTestPlugin(Impl, { provides: pluginDefinitionAddressOf(Abs) })
 
 		@Plugin()
 		class Consumer extends BasePlugin {
@@ -68,33 +84,42 @@ describe('base provider selection', () => {
 		}
 		lowerTestPlugin(Consumer, { requires: [Abs] })
 
-		enablePlugins(ctx, Impl, Consumer)
 		await ctx.loader.replaceModule('Provider.ts', { Impl })
 		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
-		const firstConsumer = core.registry.getInstance(Consumer)
+		await enablePlugins(ctx, Impl, Consumer)
+		const firstConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 		expect(firstConsumer?.dep.generation).toBe(1)
 
-		class ImplNext extends Abs {
+		const ImplNext = class ImplNext extends Abs {
 			readonly generation = 2
 		}
-		clonePluginDefinition(Impl, ImplNext)
+		Plugin(Abs, { displayName: 'Provider' })(ImplNext)
+		lowerTestPlugin(ImplNext, {
+			exportName: 'Impl',
+			path: 'tests/runtime-dynamic/Impl.ts',
+			provides: pluginDefinitionAddressOf(Abs),
+		})
 		await ctx.loader.replaceModule('Provider.ts', { Impl: ImplNext })
 
-		const nextConsumer = core.registry.getInstance(Consumer)
+		const nextConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 		expect(pluginNodeAddressEqual(pluginNodeAddressOf(ImplNext), pluginNodeAddressOf(Impl))).toBe(
 			true,
 		)
 		expect(nextConsumer?.dep.generation).toBe(2)
-		expect(nextConsumer).not.toBe(firstConsumer)
+		expect(nextConsumer === firstConsumer).toBe(false)
 		expect(consumerStarts).toBe(2)
 	})
 
 	it('preserves a structured fork override across provider replacement', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 		let consumerStarts = 0
 
-		@Plugin()
-		class Worker extends ForkablePlugin {
+		@Plugin({ forkable: true })
+		class Worker extends BasePlugin {
 			readonly generation = 1
 		}
 		lowerTestPlugin(Worker)
@@ -114,31 +139,41 @@ describe('base provider selection', () => {
 			variant: 'fork',
 			forkId: 'f1',
 		} as const
-		ctx.runtimeState.update((draft) => {
-			draft.forks = [{ definition: worker.definition, forkIds: ['f1'] }]
-			draft.dependencyOverrides = [
-				{
-					consumerAddress: pluginNodeAddressOf(Consumer),
-					requirementAddress: getPluginDefinitionFacts(Worker).definition,
-					providerAddress: fork,
-				},
-			]
-		})
-		enablePlugins(ctx, fork, Consumer)
 		await ctx.loader.replaceModule('Provider.ts', { Worker })
 		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
-		const firstConsumer = core.registry.getInstance(Consumer)
+		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
+			runtimeStatePatch(
+				{ type: 'ensure-fork', definition: worker.definition, forkId: 'f1' },
+				{
+					type: 'set-dependency-override',
+					consumer: pluginNodeAddressOf(Consumer),
+					requirement: pluginDefinitionAddressOf(Worker),
+					provider: fork,
+				},
+				{ type: 'set-enabled', node: fork, enabled: true },
+				{ type: 'set-enabled', node: pluginNodeAddressOf(Consumer), enabled: true },
+			),
+		)
+		const firstConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 		expect(firstConsumer?.dep.generation).toBe(1)
 
-		class WorkerNext extends ForkablePlugin {
+		const WorkerNext = class WorkerNext extends BasePlugin {
 			readonly generation = 2
 		}
-		clonePluginDefinition(Worker, WorkerNext)
+		Plugin({ forkable: true })(WorkerNext)
+		lowerTestPlugin(WorkerNext, {
+			exportName: 'Worker',
+			path: 'tests/runtime-dynamic/Worker.ts',
+		})
 		await ctx.loader.replaceModule('Provider.ts', { Worker: WorkerNext })
 
-		const nextConsumer = core.registry.getInstance(Consumer)
+		const nextConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 		expect(nextConsumer?.dep.generation).toBe(2)
-		expect(nextConsumer).not.toBe(firstConsumer)
+		expect(nextConsumer === firstConsumer).toBe(false)
 		expect(ctx.loader.api.runtime.isRunning(fork)).toBe(true)
 		expect(consumerStarts).toBe(2)
 	})

@@ -4,7 +4,7 @@
 // identical runtime behavior.
 
 import type { Context } from '@pluxel/context'
-import { BasePlugin } from '../../composition/BasePlugin'
+import { BasePlugin, getPluginLifecycleAdapter } from '../../composition/BasePlugin'
 import {
 	formatPluginNodeReference,
 	type PluginNodeSlot,
@@ -12,8 +12,17 @@ import {
 } from '../identity'
 import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from '../PluginActor'
 
-const PLUGIN_LIFECYCLE_SLOT_KEY = 'pluxel:plugin:lifecycle'
-const PLUGIN_LIFECYCLE_SLOT = Symbol.for(PLUGIN_LIFECYCLE_SLOT_KEY)
+const lifecycles = new WeakMap<BasePlugin, PluginLifecycleActor>()
+
+export type LifecycleStartResult =
+	| Readonly<{ ok: true }>
+	| Readonly<{
+			ok: false
+			startError: Error
+			drainError?: unknown
+	  }>
+
+const LIFECYCLE_STARTED: LifecycleStartResult = Object.freeze({ ok: true })
 
 export class LifecycleManager {
 	constructor(
@@ -25,26 +34,13 @@ export class LifecycleManager {
 
 	/* ─────────────────────────── Lifecycle Slot ─────────────────────────── */
 
-	private ensureLifecycleSlot(plugin: BasePlugin): {
-		[PLUGIN_LIFECYCLE_SLOT]: PluginLifecycleActor | null
-	} {
-		if (!Object.hasOwn(plugin, PLUGIN_LIFECYCLE_SLOT)) {
-			Object.defineProperty(plugin, PLUGIN_LIFECYCLE_SLOT, {
-				value: null,
-				writable: true,
-				configurable: false,
-				enumerable: false,
-			})
-		}
-		return plugin as unknown as { [PLUGIN_LIFECYCLE_SLOT]: PluginLifecycleActor | null }
-	}
-
 	private getLifecycle(plugin: BasePlugin): PluginLifecycleActor | undefined {
-		return this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE_SLOT] ?? undefined
+		return lifecycles.get(plugin)
 	}
 
 	private setLifecycle(plugin: BasePlugin, ref?: PluginLifecycleActor) {
-		this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE_SLOT] = ref ?? null
+		if (ref) lifecycles.set(plugin, ref)
+		else lifecycles.delete(plugin)
 	}
 
 	private createLifecycle(
@@ -54,7 +50,7 @@ export class LifecycleManager {
 	): PluginLifecycleActor {
 		const ref = new PluginLifecycleActor(
 			{ autoStart: false, useErrorChannel: true, onLateError },
-			{ id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
+			{ id, runtime: getPluginLifecycleAdapter(plugin) },
 		)
 		ref.subscribe({
 			error: (err) => {
@@ -99,9 +95,9 @@ export class LifecycleManager {
 		plugin: BasePlugin,
 		timeoutMs?: number,
 		onLateError?: (error: unknown, phase: 'start' | 'drain') => void,
-	): Promise<void> {
+	): Promise<LifecycleStartResult> {
 		const ref = this.ensureLifecycle(id, plugin, onLateError)
-		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return
+		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return LIFECYCLE_STARTED
 
 		ref.send({ type: 'START' })
 
@@ -110,18 +106,20 @@ export class LifecycleManager {
 		let snapshot: LifecycleSnapshot
 		try {
 			snapshot = await ref.waitForStable(startTimeoutMs)
-		} catch (error) {
-			await this.stopLifecycle(id, plugin, { ref })
-			throw new Error(
-				`Plugin ${formatPluginNodeReference(this.slots.nodeAddress(id))} start timeout after ${startTimeoutMs}ms`,
-				{
-					cause: error,
-				},
+		} catch (cause) {
+			return await this.failedStart(
+				id,
+				plugin,
+				ref,
+				new Error(
+					`Plugin ${formatPluginNodeReference(this.slots.nodeAddress(id))} start timeout after ${startTimeoutMs}ms`,
+					{ cause },
+				),
 			)
 		}
 
 		if (lifecycleSelectors.isRunning(snapshot)) {
-			return
+			return LIFECYCLE_STARTED
 		}
 
 		const refSnap = ref.getSnapshot?.() as unknown as
@@ -131,8 +129,6 @@ export class LifecycleManager {
 		const capturedErr: unknown =
 			refSnap?.context?.err ?? stableSnap.context?.err ?? stableSnap.error
 
-		await this.stopLifecycle(id, plugin, { ref })
-
 		const err =
 			capturedErr instanceof Error
 				? capturedErr
@@ -141,7 +137,35 @@ export class LifecycleManager {
 					: new Error(
 							`Plugin ${formatPluginNodeReference(this.slots.nodeAddress(id))} failed to start`,
 						)
-		throw err
+		return await this.failedStart(id, plugin, ref, err)
+	}
+
+	/** Drain a constructed generation that failed before lifecycle start admission. */
+	async drainUnstartedGeneration(id: PluginNodeSlot, plugin: BasePlugin): Promise<unknown> {
+		const ref = this.ensureLifecycle(id, plugin)
+		const snapshot = await this.stopLifecycle(id, plugin, { ref })
+		return lifecycleDrainError(ref, snapshot)
+	}
+
+	private async failedStart(
+		id: PluginNodeSlot,
+		plugin: BasePlugin,
+		ref: PluginLifecycleActor,
+		startError: Error,
+	): Promise<LifecycleStartResult> {
+		let snapshot: LifecycleSnapshot | undefined
+		let drainError: unknown
+		try {
+			snapshot = await this.stopLifecycle(id, plugin, { ref })
+			drainError = lifecycleDrainError(ref, snapshot)
+		} catch (error) {
+			drainError = error
+		}
+		return Object.freeze({
+			ok: false,
+			startError,
+			...(drainError === undefined ? {} : { drainError }),
+		})
 	}
 
 	async stopLifecycle(
@@ -188,6 +212,19 @@ export class LifecycleManager {
 			}
 		}
 	}
+}
+
+function lifecycleDrainError(
+	ref: PluginLifecycleActor,
+	snapshot: LifecycleSnapshot | undefined,
+): unknown {
+	const drainError = ref.getDrainError()
+	if (drainError !== undefined) return drainError
+	if (snapshot?.context.failedStep !== 'drain') return undefined
+	return (
+		snapshot.context.err ??
+		new Error(`Plugin generation ${String(snapshot.context.id)} failed to drain`)
+	)
 }
 
 function normalizeTimeoutMs(value: number | undefined, fallback: number): number {

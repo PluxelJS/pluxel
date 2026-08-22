@@ -1,15 +1,21 @@
 import {
-	__setPluginConfig,
-	__setPluginDefinition,
 	BasePlugin,
 	Context,
-	getPluginDefinitionFacts,
+	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
 	Plugin,
 } from '@pluxel/core'
+import {
+	consumePluginDefinitionCandidate,
+	requirePluginService,
+	type ConcretePluginDefinitionCandidate,
+} from '@pluxel/core/internal'
+import { __setPluginConfig, __setPluginDefinition } from '@pluxel/core/toolchain'
 
 export type Ctx = InstanceType<typeof Context>
-type CommitResult = Awaited<ReturnType<Ctx['registry']['commit']>>
+type Registry = ReturnType<typeof requirePluginService>
+type Update = ReturnType<Registry['beginUpdate']>
+type CommitResult = Awaited<ReturnType<Update['commit']>>
 
 const passthroughSchema = {
 	'~standard': {
@@ -30,6 +36,7 @@ function definePlugin(name: string, deps?: PluginCtor[]): PluginCtor {
 	class P extends BasePlugin {}
 	Plugin({ displayName: name })(P)
 	__setPluginDefinition(P, {
+		abiVersion: 1,
 		kind: 'plugin',
 		definition: {
 			entry: {
@@ -39,7 +46,7 @@ function definePlugin(name: string, deps?: PluginCtor[]): PluginCtor {
 			},
 			exportName: name,
 		},
-		requires: deps?.map((dependency) => getPluginDefinitionFacts(dependency).definition),
+		requires: deps?.map(pluginDefinitionAddressOf),
 	})
 	return P
 }
@@ -95,6 +102,7 @@ function createConfigHeavy(keys: number) {
 
 	Plugin({ displayName: 'BenchConfigHeavy' })(P)
 	__setPluginDefinition(P, {
+		abiVersion: 1,
 		kind: 'plugin',
 		definition: {
 			entry: {
@@ -105,7 +113,7 @@ function createConfigHeavy(keys: number) {
 			exportName: 'BenchConfigHeavy',
 		},
 	})
-	__setPluginConfig(P, { fieldName: 'config', schema: passthroughSchema })
+	__setPluginConfig(P, { abiVersion: 1, fieldName: 'config', schema: passthroughSchema })
 
 	const record: Record<string, unknown> = Object.create(null)
 	for (let i = 0; i < keys; i++) record[`k${i}`] = i
@@ -122,6 +130,63 @@ export type ScenarioSizes = {
 
 export type Scenario = ReturnType<typeof createScenario>
 
+const candidates = new WeakMap<PluginCtor, ConcretePluginDefinitionCandidate>()
+const updates = new WeakMap<Ctx, Update>()
+
+function candidateFor(PluginClass: PluginCtor): ConcretePluginDefinitionCandidate {
+	const cached = candidates.get(PluginClass)
+	if (cached) return cached
+	const candidate = consumePluginDefinitionCandidate(PluginClass)
+	candidates.set(PluginClass, candidate)
+	return candidate
+}
+
+function currentUpdate(ctx: Ctx): Update {
+	const active = updates.get(ctx)
+	if (active) return active
+	const update = requirePluginService(ctx).beginUpdate({ reason: 'core-lifecycle-benchmark' })
+	updates.set(ctx, update)
+	return update
+}
+
+export function materialize(ctx: Ctx, PluginClass: PluginCtor): void {
+	currentUpdate(ctx).materializeNode(pluginNodeAddressOf(PluginClass), candidateFor(PluginClass))
+}
+
+export function dematerialize(
+	ctx: Ctx,
+	PluginClass: PluginCtor,
+	options?: { cascadeDependents?: boolean },
+): void {
+	currentUpdate(ctx).dematerializeNode(pluginNodeAddressOf(PluginClass), options)
+}
+
+export function restart(ctx: Ctx, PluginClass: PluginCtor): void {
+	currentUpdate(ctx).restartNode(pluginNodeAddressOf(PluginClass))
+}
+
+export function replace(ctx: Ctx, target: PluginCtor, next: PluginCtor): void {
+	const address = pluginDefinitionAddressOf(target)
+	currentUpdate(ctx).replaceDefinition(address, candidateFor(next))
+}
+
+export function isMaterialized(ctx: Ctx, PluginClass: PluginCtor): boolean {
+	return requirePluginService(ctx).isMaterialized(pluginNodeAddressOf(PluginClass))
+}
+
+export async function commit(ctx: Ctx): Promise<void> {
+	const update =
+		updates.get(ctx) ??
+		requirePluginService(ctx).beginUpdate({ reason: 'core-lifecycle-benchmark' })
+	updates.delete(ctx)
+	try {
+		ensureOk(await update.commit())
+	} catch (error) {
+		update.rollback()
+		throw error
+	}
+}
+
 export function createScenario(sizes: ScenarioSizes) {
 	const star = createStar(sizes.starLeaves)
 	const chain = createChain(sizes.chainLength)
@@ -129,29 +194,29 @@ export function createScenario(sizes: ScenarioSizes) {
 	const configHeavy = createConfigHeavy(sizes.configKeys)
 
 	const registerStar = (ctx: Ctx) => {
-		ctx.registry.register(star.rootV1)
-		for (let i = 0; i < star.leaves.length; i++) ctx.registry.register(star.leaves[i])
+		materialize(ctx, star.rootV1)
+		for (let i = 0; i < star.leaves.length; i++) materialize(ctx, star.leaves[i]!)
 	}
 
 	const registerChain = (ctx: Ctx) => {
-		for (let i = 0; i < chain.chain.length; i++) ctx.registry.register(chain.chain[i])
+		for (let i = 0; i < chain.chain.length; i++) materialize(ctx, chain.chain[i]!)
 	}
 
 	const registerBigIndependent = (ctx: Ctx) => {
-		for (let i = 0; i < bigIndependent.length; i++) ctx.registry.register(bigIndependent[i])
+		for (let i = 0; i < bigIndependent.length; i++) materialize(ctx, bigIndependent[i]!)
 	}
 
 	const setupStarGraph = async (name: string): Promise<Ctx> => {
 		const ctx = new Context({ name })
 		registerStar(ctx)
-		ensureOk(await ctx.registry.commit())
+		await commit(ctx)
 		return ctx
 	}
 
 	const setupChainGraph = async (name: string): Promise<Ctx> => {
 		const ctx = new Context({ name })
 		registerChain(ctx)
-		ensureOk(await ctx.registry.commit())
+		await commit(ctx)
 		return ctx
 	}
 
@@ -159,7 +224,7 @@ export function createScenario(sizes: ScenarioSizes) {
 		const ctx = new Context({ name })
 		registerBigIndependent(ctx)
 		registerStar(ctx)
-		ensureOk(await ctx.registry.commit())
+		await commit(ctx)
 		return ctx
 	}
 

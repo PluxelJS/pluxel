@@ -45,9 +45,9 @@ const buildFixtures = {
 				},
 				optionalDependencies: {},
 				pluxel: {
-					dependOn: {
-						required: ['pluxel-plugin-stale'],
-						optional: ['pluxel-plugin-beta'],
+					pluginPackages: {
+						'pluxel-plugin-stale': 'required',
+						'pluxel-plugin-beta': 'optional',
 					},
 				},
 			},
@@ -414,7 +414,6 @@ describe('build command', () => {
 				'pluxel-plugin-alpha': 'required',
 				'pluxel-plugin-beta': 'optional',
 			})
-			expect(pkg.pluxel?.dependOn).toBeUndefined()
 
 			const firstManifest = await readFile(runtime.packageJsonPath, 'utf8')
 			await runWithTsdown({

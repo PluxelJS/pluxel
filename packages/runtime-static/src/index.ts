@@ -1,4 +1,4 @@
-export { BasePlugin, Context, ForkablePlugin, Plugin, v } from '@pluxel/runtime'
+export { BasePlugin, Context, Plugin, v } from '@pluxel/runtime'
 
 export type {
 	StaticRuntime,

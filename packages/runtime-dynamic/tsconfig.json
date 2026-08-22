@@ -4,7 +4,6 @@
 	"compilerOptions": {
 		"jsx": "react-jsx",
 		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true,
 		"outDir": "dist",
 		"emitDeclarationOnly": true,
 		"lib": ["ES2023", "DOM"]

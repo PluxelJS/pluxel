@@ -1,30 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
-	clonePluginDefinition,
-	getPluginDefinitionFacts,
+	pluginDefinitionAddressOf,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 } from '@pluxel/core'
-import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
-import type { LoaderService } from '../../src/loader/LoaderService'
+import { requirePluginService } from '@pluxel/core/internal'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import { requireRuntimePluginGraphCoordinator, runtimeStatePatch } from '@pluxel/runtime/internal'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
-import { enablePlugins } from '../support/runtime-state'
-
-type RuntimeUpdate = ReturnType<
-	ReturnType<typeof createHmrTestContext>['core']['registry']['beginUpdate']
->
-type RuntimeBatch = ReturnType<LoaderService['beginBatch']>
-
-async function commitBatch(runtimeUpdate: RuntimeUpdate, batch: RuntimeBatch) {
-	const result = await runtimeUpdate.commit({ rollbackOnFailure: false })
-	expect(result).toMatchObject({ ok: true })
-	batch.commit()
-}
+import { enablePlugins, enablePluginsPatch } from '../support/runtime-state'
 
 describe('LoaderService HMR lifecycle', () => {
 	it('keeps the definition/node slot and restarts required dependents once', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 		let depStarts = 0
 		let consumerStarts = 0
 
@@ -48,43 +37,52 @@ describe('LoaderService HMR lifecycle', () => {
 		}
 		lowerTestPlugin(Consumer, { requires: [Dep] })
 
-		enablePlugins(ctx, Dep, Consumer)
 		await ctx.loader.replaceModule('Dep.ts', { Dep })
 		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
+		await enablePlugins(ctx, Dep, Consumer)
 
 		const originalAddress = pluginNodeAddressOf(Dep)
-		const originalSlot = core.registry.internNodeAddress(originalAddress)
-		const firstConsumer = core.registry.getInstance(Consumer)
+		const pluginService = requirePluginService(ctx)
+		const originalSlot = pluginService.resolvePluginNode(originalAddress)
+		const firstConsumer = pluginService.getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 		expect(firstConsumer?.dep.generation).toBe(1)
 		expect([depStarts, consumerStarts]).toEqual([1, 1])
 
-		class DepNext extends BasePlugin {
+		const DepNext = class DepNext extends BasePlugin {
 			readonly generation = 2
 			override init() {
 				depStarts++
 			}
 		}
-		clonePluginDefinition(Dep, DepNext)
+		Plugin({ displayName: 'Dependency' })(DepNext)
+		lowerTestPlugin(DepNext, {
+			exportName: 'Dep',
+			path: 'tests/runtime-dynamic/Dep.ts',
+		})
 
 		const result = await ctx.loader.replaceModule('Dep.ts', { Dep: DepNext })
 		const nextAddress = pluginNodeAddressOf(DepNext)
-		const nextConsumer = core.registry.getInstance(Consumer)
+		const nextConsumer = pluginService.getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 
-		expect(new Set(result.affectedModules)).toEqual(new Set(['Consumer.ts', 'Dep.ts']))
+		expect(result.affectedModules).toEqual([])
 		expect(pluginNodeAddressEqual(nextAddress, originalAddress)).toBe(true)
-		expect(core.registry.internNodeAddress(nextAddress)).toBe(originalSlot)
+		expect(pluginService.resolvePluginNode(nextAddress)).toBe(originalSlot)
 		expect(ctx.loader.api.registry.getCtor(originalAddress)).toBe(DepNext)
 		expect(nextConsumer?.dep.generation).toBe(2)
-		expect(nextConsumer).not.toBe(firstConsumer)
+		expect(nextConsumer === firstConsumer).toBe(false)
 		expect([depStarts, consumerStarts]).toEqual([2, 2])
 	})
 
 	it('replaces every running fork generation when one definition source changes', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 		const starts = new Map<string, number>()
 
-		@Plugin()
-		class Worker extends ForkablePlugin {
+		@Plugin({ forkable: true })
+		class Worker extends BasePlugin {
 			readonly generation = 1
 
 			override init() {
@@ -100,17 +98,20 @@ describe('LoaderService HMR lifecycle', () => {
 			variant: 'fork',
 			forkId: 'east',
 		} as const
-		ctx.runtimeState.update((draft) => {
-			draft.forks = [{ definition: base.definition, forkIds: ['east'] }]
-		})
-		enablePlugins(ctx, base, fork)
 		await ctx.loader.replaceModule('Worker.ts', { Worker })
+		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
+			runtimeStatePatch(
+				{ type: 'ensure-fork', definition: base.definition, forkId: 'east' },
+				{ type: 'set-enabled', node: base, enabled: true },
+				{ type: 'set-enabled', node: fork, enabled: true },
+			),
+		)
 
-		const firstDefault = core.registry.getInstance(Worker)
-		const firstForkCtor = ctx.loader.api.registry.getCtor(fork)!
-		const firstFork = core.registry.getInstance(firstForkCtor)
+		const pluginService = requirePluginService(ctx)
+		const firstDefault = pluginService.getInstance(base)
+		const firstFork = pluginService.getInstance(fork)
 
-		class WorkerNext extends ForkablePlugin {
+		const WorkerNext = class WorkerNext extends BasePlugin {
 			readonly generation = 2
 
 			override init() {
@@ -119,18 +120,21 @@ describe('LoaderService HMR lifecycle', () => {
 				starts.set(key, (starts.get(key) ?? 0) + 1)
 			}
 		}
-		clonePluginDefinition(Worker, WorkerNext)
+		Plugin({ forkable: true })(WorkerNext)
+		lowerTestPlugin(WorkerNext, {
+			exportName: 'Worker',
+			path: 'tests/runtime-dynamic/Worker.ts',
+		})
 		await ctx.loader.replaceModule('Worker.ts', { Worker: WorkerNext })
 
-		const nextDefault = core.registry.getInstance(WorkerNext)
-		const nextForkCtor = ctx.loader.api.registry.getCtor(fork)!
-		const nextFork = core.registry.getInstance(nextForkCtor) as
+		const nextDefault = pluginService.getInstance(base) as
 			| InstanceType<typeof WorkerNext>
 			| undefined
+		const nextFork = pluginService.getInstance(fork) as InstanceType<typeof WorkerNext> | undefined
 		expect(nextDefault?.generation).toBe(2)
 		expect(nextFork?.generation).toBe(2)
-		expect(nextDefault).not.toBe(firstDefault)
-		expect(nextFork).not.toBe(firstFork)
+		expect(nextDefault === firstDefault).toBe(false)
+		expect(nextFork === firstFork).toBe(false)
 		expect(starts).toEqual(
 			new Map([
 				['default', 2],
@@ -140,13 +144,13 @@ describe('LoaderService HMR lifecycle', () => {
 	})
 
 	it('rolls back catalog and constructor ownership when replacement graph build fails', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 
 		@Plugin({ displayName: 'Stable dependency' })
 		class Dep extends BasePlugin {}
 		lowerTestPlugin(Dep)
-		enablePlugins(ctx, Dep)
 		await ctx.loader.replaceModule('Dep.ts', { Dep })
+		await enablePlugins(ctx, Dep)
 
 		abstract class Missing extends BasePlugin {}
 		lowerTestAbstract(Missing)
@@ -157,7 +161,7 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
-		const original = getPluginDefinitionFacts(Dep).definition
+		const original = pluginDefinitionAddressOf(Dep)
 		lowerTestPlugin(DepBroken, {
 			exportName: original.exportName,
 			sourceSpace: original.entry.kind === 'source-entry' ? original.entry.sourceSpace : 'app',
@@ -168,76 +172,98 @@ describe('LoaderService HMR lifecycle', () => {
 			requires: [Missing],
 		})
 
-		await expect(ctx.loader.replaceModule('Dep.ts', { Dep: DepBroken })).rejects.toThrow(
-			/Dynamic source commit failed/i,
-		)
+		await expect(ctx.loader.replaceModule('Dep.ts', { Dep: DepBroken })).rejects.toMatchObject({
+			code: 'graph_rejected',
+		})
 
 		const address = pluginNodeAddressOf(Dep)
 		expect(ctx.loader.api.registry.getCtor(address)).toBe(Dep)
 		expect(ctx.loader.api.registry.findModuleId(address)).toBe('Dep.ts')
-		expect(core.registry.isRunning(Dep)).toBe(true)
+		expect(requirePluginService(ctx).isRunning(address)).toBe(true)
 	})
 
 	it('applies structured dependency overrides across replacement generations', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 		let consumerStarts = 0
 
-		@Plugin({ displayName: 'A' })
-		class DepA extends BasePlugin {
+		abstract class Dependency extends BasePlugin {
+			abstract readonly kind: string
+		}
+		lowerTestAbstract(Dependency)
+
+		@Plugin(Dependency, { displayName: 'A' })
+		class DepA extends Dependency {
 			readonly kind = 'A'
 		}
-		lowerTestPlugin(DepA)
+		lowerTestPlugin(DepA, { provides: pluginDefinitionAddressOf(Dependency) })
 
-		@Plugin({ displayName: 'B' })
-		class DepB extends BasePlugin {
+		@Plugin(Dependency, { displayName: 'B' })
+		class DepB extends Dependency {
 			readonly kind = 'B'
 			readonly generation = 1
 		}
-		lowerTestPlugin(DepB)
+		lowerTestPlugin(DepB, { provides: pluginDefinitionAddressOf(Dependency) })
 
 		@Plugin()
 		class Consumer extends BasePlugin {
-			constructor(readonly dep: DepA) {
+			constructor(readonly dep: Dependency) {
 				super()
 				consumerStarts++
 			}
 		}
-		lowerTestPlugin(Consumer, { requires: [DepA] })
+		lowerTestPlugin(Consumer, { requires: [Dependency] })
 
-		enablePlugins(ctx, DepA, DepB, Consumer)
-		ctx.runtimeState.update((draft) => {
-			draft.dependencyOverrides = [
+		const batch = ctx.loader.beginBatch()
+		await batch.replaceModule('DepA.ts', { DepA })
+		await batch.replaceModule('DepB.ts', { DepB })
+		await batch.replaceModule('Consumer.ts', { Consumer })
+		await batch.commit()
+		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
+			runtimeStatePatch(
 				{
-					consumerAddress: pluginNodeAddressOf(Consumer),
-					requirementAddress: getPluginDefinitionFacts(DepA).definition,
-					providerAddress: pluginNodeAddressOf(DepB),
+					type: 'set-dependency-override',
+					consumer: pluginNodeAddressOf(Consumer),
+					requirement: pluginDefinitionAddressOf(Dependency),
+					provider: pluginNodeAddressOf(DepB),
 				},
-			]
-		})
-		await ctx.loader.replaceModule('DepA.ts', { DepA })
-		await ctx.loader.replaceModule('DepB.ts', { DepB })
-		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
+				...([DepA, DepB, Consumer] as const).map((PluginCtor) => ({
+					type: 'set-enabled' as const,
+					node: pluginNodeAddressOf(PluginCtor),
+					enabled: true,
+				})),
+			),
+		)
 
-		const firstConsumer = core.registry.getInstance(Consumer)
+		const pluginService = requirePluginService(ctx)
+		const firstConsumer = pluginService.getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 		expect(firstConsumer?.dep.kind).toBe('B')
 		expect((firstConsumer?.dep as InstanceType<typeof DepB> | undefined)?.generation).toBe(1)
 
-		class DepBNext extends BasePlugin {
+		const DepBNext = class DepBNext extends Dependency {
 			readonly kind = 'B'
 			readonly generation = 2
 		}
-		clonePluginDefinition(DepB, DepBNext)
+		Plugin(Dependency, { displayName: 'B' })(DepBNext)
+		lowerTestPlugin(DepBNext, {
+			exportName: 'DepB',
+			path: 'tests/runtime-dynamic/DepB.ts',
+			provides: pluginDefinitionAddressOf(Dependency),
+		})
 		await ctx.loader.replaceModule('DepB.ts', { DepB: DepBNext })
 
-		const nextConsumer = core.registry.getInstance(Consumer)
+		const nextConsumer = pluginService.getInstance(pluginNodeAddressOf(Consumer)) as
+			| Consumer
+			| undefined
 		expect(nextConsumer?.dep.kind).toBe('B')
 		expect((nextConsumer?.dep as InstanceType<typeof DepBNext> | undefined)?.generation).toBe(2)
-		expect(nextConsumer).not.toBe(firstConsumer)
+		expect(nextConsumer === firstConsumer).toBe(false)
 		expect(consumerStarts).toBe(2)
 	})
 
 	it('lets Core restart an optional closure exactly once on appearance and removal', async () => {
-		const { core, ctx } = createHmrTestContext()
+		const { ctx } = createHmrTestContext()
 		let consumerStarts = 0
 
 		@Plugin({ displayName: 'Optional provider' })
@@ -252,19 +278,17 @@ describe('LoaderService HMR lifecycle', () => {
 		}
 		lowerTestPlugin(OptionalConsumer, { optional: [OptionalProvider] })
 
-		enablePlugins(ctx, OptionalConsumer, OptionalProvider)
-		await ctx.loader.replaceModule('consumer.ts', { OptionalConsumer })
+		const consumerBatch = ctx.loader.beginBatch()
+		await consumerBatch.replaceModule('consumer.ts', { OptionalConsumer })
+		await consumerBatch.commit({ statePatch: enablePluginsPatch(OptionalConsumer) })
 		expect(consumerStarts).toBe(1)
 
-		await ctx.loader.replaceModule('provider.ts', { OptionalProvider })
+		const providerBatch = ctx.loader.beginBatch()
+		await providerBatch.replaceModule('provider.ts', { OptionalProvider })
+		await providerBatch.commit({ statePatch: enablePluginsPatch(OptionalProvider) })
 		expect(consumerStarts).toBe(2)
 
-		const runtimeUpdate = core.registry.beginUpdate({ reason: 'hmr' })
-		const batch = ctx.loader.beginBatch({ runtimeUpdate })
-		batch.removeModule('provider.ts')
-		runtimeUpdate.markAffectedModules(['provider.ts', ...batch.getAffectedModules()])
-		await batch.syncModules(batch.getAffectedModules(), { exclude: ['provider.ts'] })
-		await commitBatch(runtimeUpdate, batch)
+		await ctx.loader.pruneModule('provider.ts')
 		expect(consumerStarts).toBe(3)
 	})
 
@@ -277,14 +301,14 @@ describe('LoaderService HMR lifecycle', () => {
 
 		const committed = ctx.loader.beginBatch()
 		await committed.replaceModule('Committed.ts', { Anchor })
-		committed.commit()
+		await committed.commit()
 		await expect(committed.replaceModule('Committed.ts', { Anchor })).rejects.toThrow(
 			/LoaderBatch is already closed/,
 		)
 
 		const rolledBack = ctx.loader.beginBatch()
 		rolledBack.rollback()
-		await expect(rolledBack.syncModules(['Committed.ts'])).rejects.toThrow(
+		await expect(rolledBack.replaceModule('Committed.ts', { Anchor })).rejects.toThrow(
 			/LoaderBatch is already closed/,
 		)
 	})

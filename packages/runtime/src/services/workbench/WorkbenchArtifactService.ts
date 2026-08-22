@@ -1,12 +1,8 @@
 import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
-import {
-	pluginNodeIndexKey,
-	type Context,
-	type PluginNodeAddress,
-	type PluginNodeSlot,
-} from '@pluxel/core'
+import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
+import type { RuntimeContextConfig } from '../../context-augment'
 import type {
 	WorkbenchBundleEvent,
 	WorkbenchBundle,
@@ -31,15 +27,19 @@ type WorkbenchSourceBinder = (
 	contractFingerprint: string,
 ) => () => void
 
+type WorkbenchArtifactContext = Context & {
+	readonly config: Context['config'] & RuntimeContextConfig
+}
+
 export class WorkbenchArtifactService {
 	private revision = 0
-	private readonly bundles = new Map<PluginNodeSlot, WorkbenchBundle>()
-	private readonly states = new Map<PluginNodeSlot, WorkbenchBundleState>()
+	private readonly bundles = new Map<string, WorkbenchBundle>()
+	private readonly states = new Map<string, WorkbenchBundleState>()
 	private readonly roots = new Map<string, { sourceHash: string; dir: string }>()
 	private readonly listeners = new Set<(event: WorkbenchBundleEvent) => void>()
 	private sourceBinder?: WorkbenchSourceBinder
 
-	constructor(private readonly root: Context) {}
+	constructor(private readonly root: WorkbenchArtifactContext) {}
 
 	attachSourceBinder(sourceBinder: WorkbenchSourceBinder): () => void {
 		if (this.sourceBinder) {
@@ -80,31 +80,31 @@ export class WorkbenchArtifactService {
 		}
 	}
 
-	getCompiledModule(owner: PluginNodeSlot): WorkbenchBundle | undefined {
-		return this.bundles.get(owner)
+	getCompiledModule(owner: PluginNodeAddress): WorkbenchBundle | undefined {
+		return this.bundles.get(pluginNodeIndexKey(owner))
 	}
 
 	async commitCompiledModule(
 		module: WorkbenchBundle,
 		options?: { artifactRoot?: string | null },
 	): Promise<void> {
-		const ownerSlot = this.root.registry.internNodeAddress(module.owner.address)
+		const ownerKey = pluginNodeIndexKey(module.owner.address)
 		if (options?.artifactRoot) {
 			this.roots.set(workbenchArtifactOwnerKey(module.owner.address), {
 				sourceHash: module.sourceHash,
 				dir: options.artifactRoot,
 			})
 		}
-		const previous = this.getCompiledModule(ownerSlot)
+		const previous = this.getCompiledModule(module.owner.address)
 		if (
 			previous?.sourceHash === module.sourceHash &&
 			previous.compiledAt === module.compiledAt &&
-			this.states.get(ownerSlot)?.state === 'ready'
+			this.states.get(ownerKey)?.state === 'ready'
 		) {
 			return
 		}
-		this.bundles.set(ownerSlot, module)
-		this.states.set(ownerSlot, {
+		this.bundles.set(ownerKey, module)
+		this.states.set(ownerKey, {
 			owner: module.owner,
 			state: 'ready',
 			updatedAt: module.compiledAt,
@@ -125,7 +125,7 @@ export class WorkbenchArtifactService {
 			sourceHash: options?.sourceHash,
 			compiledAt: options?.compiledAt,
 		}
-		this.states.set(this.root.registry.internNodeAddress(owner.address), state)
+		this.states.set(pluginNodeIndexKey(owner.address), state)
 		this.emit({ type: 'building', revision: this.nextRevision(), ...state })
 	}
 
@@ -142,7 +142,7 @@ export class WorkbenchArtifactService {
 			compiledAt: options?.compiledAt,
 			message: errorMessage(error),
 		}
-		this.states.set(this.root.registry.internNodeAddress(owner.address), state)
+		this.states.set(pluginNodeIndexKey(owner.address), state)
 		this.emit({
 			type: 'error',
 			revision: this.nextRevision(),
@@ -155,10 +155,10 @@ export class WorkbenchArtifactService {
 	}
 
 	async removePlugin(owner: WorkbenchPluginDescriptor): Promise<void> {
-		const ownerSlot = this.root.registry.internNodeAddress(owner.address)
+		const ownerKey = pluginNodeIndexKey(owner.address)
 		this.roots.delete(workbenchArtifactOwnerKey(owner.address))
-		this.states.delete(ownerSlot)
-		if (!this.bundles.delete(ownerSlot)) return
+		this.states.delete(ownerKey)
+		if (!this.bundles.delete(ownerKey)) return
 		this.emit({ type: 'remove', revision: this.nextRevision(), owner })
 	}
 
@@ -177,7 +177,7 @@ export class WorkbenchArtifactService {
 		const ownerDescriptor: WorkbenchPluginDescriptor = Object.freeze({
 			address: owner.pluginInfo.nodeAddress,
 			displayName: owner.pluginInfo.displayName,
-			rootExportName: owner.pluginInfo.rootExportName,
+			rootExportName: owner.pluginInfo.definitionAddress.exportName,
 		})
 		const uiEntry = readWorkbenchUiEntry(declaration)
 		let disposed = false

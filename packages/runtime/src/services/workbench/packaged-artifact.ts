@@ -6,13 +6,17 @@ import {
 } from '@pluxel/core/federation'
 import { dirname, resolve } from 'pathe'
 import { resolveModuleIdBaseDir } from '../../runtime/module-id'
+import {
+	pluginCatalogEntry,
+	requireRuntimePluginGraphCoordinator,
+} from '../../internal/reconciliation'
 
 export function resolvePackagedWorkbenchManifest(
 	root: Context,
 	owner: PluginNodeAddress,
 	artifactName: string,
 ): string | null {
-	const registryPath = root.registry.getRuntimeModuleId(root.registry.internNodeAddress(owner))
+	const registryPath = pluginModuleId(root, owner)
 	if (registryPath) {
 		const baseDir = resolveModuleIdBaseDir(registryPath)
 		if (baseDir) {
@@ -39,12 +43,20 @@ export function resolvePackagedNodeModule(
 	owner: PluginNodeAddress,
 	artifactKey: string,
 ): string | null {
-	const registryPath = root.registry.getRuntimeModuleId(root.registry.internNodeAddress(owner))
+	const registryPath = pluginModuleId(root, owner)
 	if (!registryPath) return null
 	const baseDir = resolveModuleIdBaseDir(registryPath)
 	if (!baseDir) return null
 	const packageRoot = findNearestPackageRoot(baseDir)
 	return resolve(packageRoot ?? baseDir, 'dist/artifacts/node', `${artifactKey}.mjs`)
+}
+
+function pluginModuleId(root: Context, owner: PluginNodeAddress): string | undefined {
+	const moduleId = pluginCatalogEntry(
+		requireRuntimePluginGraphCoordinator(root).catalogSnapshot(),
+		owner.definition,
+	)?.provenance.moduleId
+	return typeof moduleId === 'string' ? moduleId : undefined
 }
 
 function findNearestPackageRoot(start: string): string | null {

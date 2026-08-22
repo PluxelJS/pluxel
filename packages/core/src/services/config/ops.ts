@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { safeParseStandardSchema } from './standardSchema'
 import type { ConfigIssue, ConfigValidationErrors } from './types'
+import { immutableConfigRecord } from './immutable'
 
 type ConfigRecord = Record<string, unknown>
 
@@ -18,7 +19,7 @@ function objectOutput(value: unknown, label: string): ConfigRecord {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new TypeError(`[pluxel/core] ${label} must produce an object`)
 	}
-	return { ...(value as ConfigRecord) }
+	return immutableConfigRecord(value as ConfigRecord) as ConfigRecord
 }
 
 function validationErrors(issues: readonly ConfigIssue[]): ConfigValidationErrors {
@@ -46,12 +47,8 @@ export async function collectConfigDefaults(
 	if (cached) return await cached
 
 	const compute = (async () => {
-		const first = await safeParseStandardSchema(schema, undefined)
-		if (first.success) return objectOutput(first.output, 'Plugin config schema')
-		if (missingObjectDefault !== undefined) {
-			const second = await safeParseStandardSchema(schema, missingObjectDefault)
-			if (second.success) return objectOutput(second.output, 'Plugin config schema')
-		}
+		const result = await safeParseStandardSchema(schema, missingObjectDefault)
+		if (result.success) return objectOutput(result.output, 'Plugin config schema')
 		return {}
 	})()
 	byDefault.set(missingObjectDefault, compute)

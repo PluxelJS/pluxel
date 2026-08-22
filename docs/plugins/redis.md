@@ -57,7 +57,8 @@ host.cfg(RedisPlugin).set({
 - database 通过独立的非负整数 `database` 配置；
 - client name 自动使用 `pluxel:<Plugin node reference>`，例如 `pluxel:package:@acme/orders::OrdersPlugin`；
 - initial connect 超时或失败会让 lifecycle 失败，并抛 `RedisConnectionError`；
-- provider 未运行或已停止时读取 `client` 抛 `RedisNotRunningError`；
+- stale injected `Redis` facade 由 Core generation gate 拒绝；`RedisNotRunningError` 保护当前 provider
+  尚未发布或已经撤销的 client holder，captured node-redis client 保留 node-redis 自己的 closed-client 错误；
 - stop、replacement、rollback 和 shutdown 会关闭或销毁连接。
 
 `disableOfflineQueue` 默认为 `true`，让断线期间的 command 快速失败；`commandQueueMaxLength` 为 node-redis command queue 设置上限；`pingIntervalMs: 0` 表示不启用周期 PING。
@@ -119,7 +120,7 @@ const value = await this.redis.scripts.run(Increment, {
 
 ## 多连接与 fork
 
-`Redis` 继承 `ForkablePlugin`。同一 host 需要 cache、queue、session 等独立连接时，创建 Redis provider fork，为每个 fork 配置 endpoint/database，再用 dependency override 选择依赖。不要在 `Redis` API 上增加一个可变的 connection name，也不要让 consumer 自己维护全局 client registry。
+`Redis` 是普通 abstract capability；官方 `RedisPlugin` 通过 `@Plugin(Redis, { forkable: true })` 显式允许多实例。同一 host 需要 cache、queue、session 等独立连接时，创建 Redis provider fork，为每个 fork 配置 endpoint/database，再用 dependency override 选择依赖。不要在 `Redis` API 上增加一个可变的 connection name，也不要让 consumer 自己维护全局 client registry。
 
 ## 作为 Cache backend
 

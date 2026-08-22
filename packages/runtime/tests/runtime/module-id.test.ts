@@ -3,43 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import {
-	findRuntimeModuleId,
-	resolveModuleIdBaseDir,
-	resolveModuleIdPath,
-} from '../../src/runtime/module-id'
+import { resolveModuleIdBaseDir, resolveModuleIdPath } from '../../src/runtime/module-id'
 
 describe('runtime module id lookup', () => {
-	it('uses the Core node slot ownership index without a name fallback', () => {
-		const pluginA = {
-			definition: {
-				entry: { kind: 'package-root', packageName: '@test/a' },
-				exportName: 'Plugin',
-			},
-			variant: 'default',
-		} as const
-		const pluginB = {
-			definition: {
-				entry: { kind: 'package-root', packageName: '@test/b' },
-				exportName: 'Plugin',
-			},
-			variant: 'default',
-		} as const
-		const nodeA = { owner: pluginA }
-		const nodeB = { owner: pluginB }
-		const ctx = {
-			registry: {
-				internNodeAddress: (owner: typeof pluginA | typeof pluginB) =>
-					(owner === pluginA ? nodeA : nodeB) as never,
-				getRuntimeModuleId: (node: never) =>
-					(node as unknown) === nodeA ? '/core/PluginA.ts' : undefined,
-			},
-		}
-
-		expect(findRuntimeModuleId(ctx, pluginA)).toBe('/core/PluginA.ts')
-		expect(findRuntimeModuleId(ctx, pluginB)).toBeNull()
-	})
-
 	it('resolves runtime module ids with OXC resolver from cwd', async () => {
 		const root = join(tmpdir(), `pluxel-runtime-module-id-${process.pid}-${Date.now()}`)
 		const pkgDir = join(root, 'node_modules', 'runtime-fixture')

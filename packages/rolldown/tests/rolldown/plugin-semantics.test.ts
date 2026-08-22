@@ -42,12 +42,14 @@ describe('plugin semantic lowering', () => {
 
 		expect(result?.code).toContain('__setPluginParts as __pluxelSetPluginParts')
 		expect(result?.code).toContain(
-			'__pluxelSetPluginParts(BranchPart, [{ fieldName: "leaf", Part: LeafPart }])',
+			'__pluxelSetPluginParts(BranchPart, { abiVersion: 1, occurrences: [{ fieldName: "leaf", Part: LeafPart }] })',
 		)
 		expect(result?.code).toContain(
-			'__pluxelSetPluginParts(OwnerPlugin, [{ fieldName: "branch", Part: BranchPart }])',
+			'__pluxelSetPluginParts(OwnerPlugin, { abiVersion: 1, occurrences: [{ fieldName: "branch", Part: BranchPart }] })',
 		)
-		expect(result?.code).toContain('__pluxelSetPluginPartOptional(LeafPart, [{"entry"')
+		expect(result?.code).toContain(
+			'__pluxelSetPluginPartOptional(LeafPart, {"abiVersion":1,"optional":[{"entry"',
+		)
 	})
 
 	it('emits slot facts with ordered required provenance and type-only optional refs', async () => {
@@ -65,6 +67,10 @@ describe('plugin semantic lowering', () => {
 
 		expect(result?.code).toContain('__setPluginDefinition as __pluxelSetPluginDefinition')
 		expect(result?.code).toContain('__definePluginRef as __pluxelDefinePluginRef')
+		expect(result?.code).toContain('from "@pluxel/runtime/toolchain"')
+		expect(result?.code.split('// [pluxel-plugin-semantics] Injected facts')[1]).not.toMatch(
+			/from ["']@pluxel\/runtime["']/,
+		)
 		expect(result?.code).toContain(
 			'"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"',
 		)
@@ -73,7 +79,7 @@ describe('plugin semantic lowering', () => {
 			/"requires":\[\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"SearchPlugin"},\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"DatabasePlugin"}\]/,
 		)
 		expect(result?.code).toContain(
-			'__pluxelDefinePluginRef({"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"})',
+			'__pluxelDefinePluginRef({"abiVersion":1,"definition":{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}})',
 		)
 		expect(result?.code).toContain(
 			'"optional":[{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}]',
@@ -90,7 +96,9 @@ describe('plugin semantic lowering', () => {
 			export class MemoryDatabasePlugin extends Database {}
 		`)
 
-		expect(result?.code).toContain('__pluxelSetPluginDefinition(Database, {"kind":"abstract"')
+		expect(result?.code).toContain(
+			'__pluxelSetPluginDefinition(Database, {"abiVersion":1,"kind":"abstract"',
+		)
 		expect(result?.code).toContain(
 			'"provides":{"entry":{"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"},"exportName":"Database"}',
 		)
@@ -156,8 +164,8 @@ describe('plugin semantic lowering', () => {
 				},
 			}),
 			'src/backend.ts': `
-				import { ForkablePlugin } from '@pluxel/runtime'
-				export abstract class CacheBackend extends ForkablePlugin {}
+				import { BasePlugin } from '@pluxel/runtime'
+				export abstract class CacheBackend extends BasePlugin {}
 			`,
 			'src/index.ts': `
 				import { CacheBackend } from './backend'
@@ -315,6 +323,26 @@ describe('plugin semantic lowering', () => {
 		},
 	)
 
+	it('accepts literal concrete forkability and uses only the versioned toolchain entry', async () => {
+		const result = await transform(`
+			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			@Plugin({ forkable: true })
+			export class CachePlugin extends BasePlugin {}
+		`)
+
+		expect(result?.code).toContain('"abiVersion":1')
+		expect(result?.code).toContain('from "@pluxel/runtime/toolchain"')
+		expect(result?.code.split('// [pluxel-plugin-semantics] Injected facts')[1]).not.toMatch(
+			/from ["']@pluxel\/runtime["']/,
+		)
+	})
+
+	it('rejects a semantic helper root alias', () => {
+		expect(() =>
+			createPluginSemanticsPlugin({ helperImportSource: '@pluxel/runtime' as never }),
+		).toThrow('/toolchain subpath')
+	})
+
 	it.each([
 		{
 			name: 'abstract PluginPart',
@@ -423,6 +451,82 @@ describe('plugin semantic lowering', () => {
 				}
 			`,
 			message: 'direct statement in init',
+		},
+		{
+			name: 'false forkability',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin({ forkable: false }) export class ConsumerPlugin extends BasePlugin {}
+			`,
+			message: 'forkable must be the literal true',
+		},
+		{
+			name: 'dynamic forkability',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				const enabled = true
+				@Plugin({ forkable: enabled }) export class ConsumerPlugin extends BasePlugin {}
+			`,
+			message: 'forkable must be the literal true',
+		},
+		{
+			name: 'native private Plugin state',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin { #state = 1 }
+			`,
+			message: 'plugin_caller_view_private_brand_unsupported',
+		},
+		{
+			name: 'arrow-function Plugin field',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					status = () => this.ctx.caller
+				}
+			`,
+			message: 'plugin_caller_view_callable_field_unsupported',
+		},
+		{
+			name: 'function-expression Plugin field',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					status = function () { return this.ctx.caller }
+				}
+			`,
+			message: 'plugin_caller_view_callable_field_unsupported',
+		},
+		{
+			name: 'bound Plugin method field',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					status() { return this.ctx.caller }
+					boundStatus = this.status.bind(this)
+				}
+			`,
+			message: 'plugin_caller_view_callable_field_unsupported',
+		},
+		{
+			name: 'callable field in local Plugin base',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				abstract class ConsumerBase extends BasePlugin {
+					status = () => this.ctx.caller
+				}
+				@Plugin() export class ConsumerPlugin extends ConsumerBase {}
+			`,
+			message: 'plugin_caller_view_callable_field_unsupported',
+		},
+		{
+			name: 'native private state in local Plugin base',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				abstract class ConsumerBase extends BasePlugin { #read() {} }
+				@Plugin() export class ConsumerPlugin extends ConsumerBase {}
+			`,
+			message: 'plugin_caller_view_private_brand_unsupported',
 		},
 		{
 			name: 'legacy marker option',

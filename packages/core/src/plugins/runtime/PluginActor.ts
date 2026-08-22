@@ -4,7 +4,7 @@
 
 import { bakeMachine } from '../../internal/fsm/defineMachine.macro' with { type: 'macro' }
 import { hydrateMachine, type MachineImpl } from '../../internal/fsm/defineMachine.macro'
-import type { PluginLifecycleRuntime } from '../composition/BasePlugin'
+import type { PluginLifecycleAdapter } from '../composition/BasePlugin'
 import { LATE_INIT_CLEANUP_ERROR } from '../composition/symbols'
 
 /* ────────────────────────── 外部事件 ────────────────────────── */
@@ -18,7 +18,7 @@ export type LifecycleEvent =
 
 export interface LifecycleInput {
 	id: unknown
-	runtime: PluginLifecycleRuntime
+	runtime: PluginLifecycleAdapter
 }
 
 type FailedStep = 'start' | 'drain' | 'runtime' | undefined
@@ -94,7 +94,7 @@ const bakedLifecycle = bakeMachine({
 	init: 'idle',
 	transitions: [
 		['idle', 'start', 'starting', 'onStart'],
-		['idle', 'stop', 'stopped', 'onStop'],
+		['idle', 'stop', 'stopping', 'onStop'],
 		['starting', 'startOk', 'running'],
 		['starting', 'startErr', 'failing'],
 		['starting', 'stop', 'stopping', 'onStop'],

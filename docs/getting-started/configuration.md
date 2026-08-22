@@ -131,6 +131,10 @@ host config patch
 
 如果校验失败，Plugin 不进入 running，错误以字段 path 形式反馈给宿主。不要在 Plugin 内捕获 `ConfigValidationError` 后继续启动。
 
+normalized output 必须是无环的 plain object/array tree，leaf 使用 JSON-compatible primitive。runtime 会复制并冻结这棵树；`Date`、
+`Map`、`Set`、class instance、function、symbol、getter/setter 和 cycle 都会被拒绝。需要领域对象时，把它保存成稳定的 plain value，
+再在 Plugin `init()` 中显式构造资源；不要让 schema transform 把带 identity 或 behavior 的对象塞进 config snapshot。
+
 ## 嵌套相关设置与 Part config
 
 每个 Plugin 声明一个 object schema；不同配置域使用嵌套 object 组织，不要多次调用 `configs.use()`：
@@ -214,6 +218,11 @@ await host.commit()
 
 static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin 只读取校验后的配置。配置变化会重启 Plugin，具体清理顺序见 [Plugin 模型与生命周期](./plugin-model.md)。
 
+直接消费 runtime control-plane `ConfigResult` 时按 discriminant 处理返回值：query 返回 `config` 和 `defaults`，并标记
+`saved: false`；成功 mutation 返回已持久化的 `config`、`application` 与 apply report，不再重复返回 defaults。
+`validation_failed` 只有在 defaults 可以独立计算时才带可选 `defaults`。持久化失败不会发布 staged revision，也不会把未确认的值注入
+Plugin generation。
+
 ## 配置表单
 
 `valibot-form` metadata 可以让同一 schema 生成字段、说明、布局和控件选择。它不改变 Valibot validation，也不建立第二份 config model。
@@ -224,6 +233,7 @@ static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin �
 
 - schema 产出一个 object，且每个 Plugin/Part class 只声明一次 `configs.use()`。
 - 所有默认值和 normalization 都在 schema 中。
+- normalized output 是无环、可持久化的 plain object/array tree。
 - constructor 与 field initializer 不读取 config。
 - secret 没有进入普通 UI/config/log contract。
 - 测试覆盖默认值、边界值、非法值和 transform 后的 output。

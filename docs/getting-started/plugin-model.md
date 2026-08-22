@@ -53,6 +53,19 @@ class BillingPlugin extends BasePlugin {
 
 provider 启动失败时，consumer 不会拿到一个半可用实例：consumer 被标记为 blocked，其他无关分支仍可以继续运行。
 
+注入值是绑定 consumer caller Context 和当前 provider generation 的轻量 facade。provider replacement 后旧 facade、旧 method
+reference 与旧字段写入都会被拒绝；普通 public field 的读写仍作用于 provider 自己的实例，不会在 consumer 侧形成影子字段。
+
+因此 Plugin 及其基类不能声明 ECMAScript `#private` field、method 或 accessor：这类成员要求 receiver 持有原生 private brand，
+与 caller facade 不兼容，构建工具会报 `plugin_caller_view_private_brand_unsupported`。TypeScript `private` 普通属性可以使用；
+需要 runtime 强封装时，把状态放进 closure，或从 capability 返回带有明确 stop/replacement 失效语义的 handle。这个限制不适用于
+不会被依赖注入的 `PluginPart`。
+
+Plugin 对其他节点暴露的可调用成员应写成普通 prototype method；accessor只返回普通数据或有自身receiver与失效契约的对象handle。
+不要写 `status = () => ...`、function expression field或 `this.status.bind(this)` field。这些写法会捕获 raw provider，无法保留 consumer 的 caller Context，构建工具会报
+`plugin_caller_view_callable_field_unsupported`。普通数据 field 仍可读写；需要 callable handle 时返回有独立对象 receiver 和明确
+stop/replacement 失效语义的 capability。
+
 ## Optional integration
 
 如果最终宿主可以完全不安装 provider，使用 type-only import 和 module-level opaque ref：
@@ -262,8 +275,6 @@ const timer = setInterval(() => {
 this.ctx.effects.defer(() => clearInterval(timer))
 ```
 
-插件需要请求停止自身时使用 `this.ctx.registry.shutdownSelf()`。它调度后续 graph commit，返回 `void`；不要等待自己的 generation 被销毁。
-
 ## 公开有限事件
 
 事件集合在设计时已知时，公开命名的 `EvtChannel`，不要重新实现字符串 registry：
@@ -299,9 +310,11 @@ Pluxel 只有两个身份作用域：definition 表示 canonical entry + root ex
 运行部署。跨配置、RPC、持久化与 URL 使用结构化 `PluginDefinitionAddress` / `PluginNodeAddress`；Core 在进程内把同一 address
 intern 成 `PluginDefinitionSlot` / `PluginNodeSlot` 供 graph、DI 与 lifecycle 使用。Address 与 Slot 是值和引用两种表示，不是四种身份。
 
-fork 是同一物理源码的运行时多态：共享 constructor implementation、schema、artifact input 和 HMR 更新，但各自隔离 config、
-lifecycle、Context、effects 与资源。class name、constructor object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 pretty
-log。日志、Workbench 与默认 HTTP 路径会显示 package/source、root export 和 fork，例如
+fork 是同一 concrete definition 的运行时多态：共享 constructor implementation、schema、artifact input 和 HMR 更新，但各自隔离
+config、lifecycle、Context、effects 与资源。只有确实能安全运行多个实例的 concrete Plugin 才声明
+`@Plugin({ forkable: true })`；abstract capability 本身不承诺 forkability，每个 provider 独立作出决定。class name、constructor
+object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 pretty log。日志、Workbench 与默认 HTTP 路径会显示
+package/source、root export 和 fork，例如
 `package:@acme/orders::OrdersPlugin#fork=east`，不会把 opaque digest 当作公开 Plugin ID。
 
 Plugin source 必须经过 Pluxel Vite/Rolldown pipeline。raw TypeScript runner 不生成这些语义事实。

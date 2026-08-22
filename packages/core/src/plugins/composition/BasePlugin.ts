@@ -5,32 +5,60 @@ import {
 	type Cleanup,
 	type DisposableLike,
 } from '../../services/effects/EffectsService'
-import { CONFIGS, type ConfigHost } from './ConfigHost'
-import { PluginHost } from './PluginHost'
+import type { PluginConstructor } from '../types'
+import type { PluginPartDefinitionTree } from '../runtime/part-definition'
+import { PLUGIN_CONFIGS, type PluginConfigs } from './PluginConfigs'
+import { OptionalPluginBindings } from './OptionalPluginBindings'
 import {
-	createRootPartHost,
+	createRootPluginParts,
 	finalizePluginParts,
 	startPluginParts,
-	type PartHost,
+	type PluginParts,
 } from './PluginPart'
-import { FORK_CTX, LATE_INIT_CLEANUP_ERROR, PLUGIN_CTX } from './symbols'
+import { LATE_INIT_CLEANUP_ERROR } from './symbols'
 
-const PLUGIN_HOST = Symbol('pluxel:plugin:pluginHost')
-const INIT_ACTIVE = Symbol('pluxel:plugin:initActive')
-const PART_HOST = Symbol('pluxel:plugin:partHost')
-type RootPartHost = ReturnType<typeof createRootPartHost>
+type RootPluginParts = ReturnType<typeof createRootPluginParts>
 
-export { FORK_CTX, PLUGIN_CTX } from './symbols'
+type PluginGenerationState = {
+	readonly ctx: Context
+	readonly parts: RootPluginParts
+	initActive: boolean
+	optional?: OptionalPluginBindings
+}
+
+type ConstructionFrame = {
+	readonly expectedImplementation: PluginConstructor
+	readonly ctx: Context
+	readonly parts: PluginPartDefinitionTree
+	consumed: boolean
+}
+
+const instanceState = new WeakMap<BasePlugin, PluginGenerationState>()
+const constructionStack: ConstructionFrame[] = []
+
+function releaseConstructionFrame(frame: ConstructionFrame, cause?: unknown): void {
+	const popped = constructionStack.pop()
+	if (popped === frame) return
+	constructionStack.length = 0
+	throw new Error('[pluxel/core] Plugin construction stack was corrupted', { cause })
+}
 
 export type PluginCleanup = void | Cleanup | DisposableLike
 
-export interface PluginLifecycleRuntime<_C extends Context = Context> {
+/** @internal Core-only adapter consumed by the generation lifecycle actor. */
+export interface PluginLifecycleAdapter<_C extends Context = Context> {
 	init?: (signal: AbortSignal) => PluginCleanup | Promise<PluginCleanup>
 	drain: () => Promise<void>
 	subscribeErrors?: (cb: (err: unknown) => void) => undefined | (() => void)
 }
 
 export type PluginContextOf<P extends BasePlugin> = P extends BasePlugin<infer C> ? C : Context
+
+function stateOf(plugin: BasePlugin): PluginGenerationState {
+	const state = instanceState.get(plugin)
+	if (!state) throw new TypeError('[pluxel/core] Invalid Plugin instance')
+	return state
+}
 
 function isDisposable(value: unknown): value is DisposableLike {
 	return (
@@ -70,76 +98,122 @@ async function adoptCleanup(ctx: Context, resource: PluginCleanup): Promise<void
 	}
 }
 
+/**
+ * Plugin author base class. Construction is admitted only by Core's synchronous generation
+ * construction stack; constructors, nodes and generations are deliberately different concepts.
+ */
 export abstract class BasePlugin<C extends Context = Context> {
-	static [FORK_CTX]: () => Context
-	protected [PLUGIN_CTX]!: C
-	private [INIT_ACTIVE] = false
-	private [PLUGIN_HOST]?: PluginHost
-	private [PART_HOST]: RootPartHost
-
 	constructor() {
-		if (BasePlugin[FORK_CTX] === undefined)
-			throw new Error("Don't instantiate BasePlugin directly.")
-		this[PLUGIN_CTX] = BasePlugin[FORK_CTX]() as C
-		this[PART_HOST] = createRootPartHost(this, this[PLUGIN_CTX])
-	}
-
-	public get ctx(): C {
-		return this[PLUGIN_CTX]
-	}
-
-	public get plugins(): PluginHost {
-		return (this[PLUGIN_HOST] ??= new PluginHost(this.ctx, () => this[INIT_ACTIVE]))
-	}
-
-	public get parts(): PartHost<this> {
-		return this[PART_HOST] as unknown as PartHost<this>
-	}
-
-	public get configs(): ConfigHost {
-		return CONFIGS
-	}
-
-	protected get caller() {
-		return this.ctx.caller
-	}
-
-	protected init?(_abort: AbortSignal): PluginCleanup | Promise<PluginCleanup>
-
-	static getLifecycleRuntime<P extends BasePlugin>(
-		plugin: P,
-	): PluginLifecycleRuntime<PluginContextOf<P>> {
-		const ctx = plugin[PLUGIN_CTX] as PluginContextOf<P>
-		const extended = ctx as unknown as { onError?: (cb: (err: unknown) => void) => unknown }
-		const onError = extended.onError
-		const parts = plugin[PART_HOST]
-		finalizePluginParts(parts)
-		return {
-			init: async (signal) => {
-				plugin[INIT_ACTIVE] = true
-				try {
-					await startPluginParts(parts, signal)
-					if (typeof plugin.init === 'function') {
-						const cleanup = await plugin.init(signal)
-						await adoptCleanup(ctx, cleanup)
-					}
-				} finally {
-					plugin[INIT_ACTIVE] = false
-				}
-			},
-			drain: async () => {
-				await closeOwnerInvocations(ctx)
-				await ctx.effects.dispose()
-			},
-			subscribeErrors:
-				typeof onError === 'function'
-					? (cb) => {
-							const off = onError.call(ctx, cb)
-							return typeof off === 'function' ? (off as () => void) : undefined
-						}
-					: undefined,
+		const frame = constructionStack.at(-1)
+		if (!frame || frame.consumed || new.target !== frame.expectedImplementation) {
+			throw new Error('[pluxel/core] Plugin instances can only be constructed by Core')
 		}
+		frame.consumed = true
+		const state: PluginGenerationState = {
+			ctx: frame.ctx,
+			parts: createRootPluginParts(this, frame.ctx, frame.parts),
+			initActive: false,
+		}
+		instanceState.set(this, state)
 	}
+
+	get ctx(): C {
+		return stateOf(this).ctx as C
+	}
+
+	get plugins(): OptionalPluginBindings {
+		const state = stateOf(this)
+		return (state.optional ??= new OptionalPluginBindings(state.ctx, () => state.initActive))
+	}
+
+	get parts(): PluginParts<this> {
+		return stateOf(this).parts as unknown as PluginParts<this>
+	}
+
+	get configs(): PluginConfigs {
+		return PLUGIN_CONFIGS
+	}
+
+	protected init?(_signal: AbortSignal): PluginCleanup | Promise<PluginCleanup>
 }
 
-export abstract class ForkablePlugin<C extends Context = Context> extends BasePlugin<C> {}
+/** @internal Construct exactly one Plugin generation with the candidate implementation. */
+export function constructPluginGeneration<T extends BasePlugin>(
+	implementation: PluginConstructor,
+	ctx: Context,
+	parts: PluginPartDefinitionTree,
+	dependencies: readonly unknown[],
+): T {
+	const frame: ConstructionFrame = {
+		expectedImplementation: implementation,
+		ctx,
+		parts,
+		consumed: false,
+	}
+	constructionStack.push(frame)
+	let plugin: T
+	try {
+		plugin = Reflect.construct(implementation, dependencies, implementation) as T
+		if (!frame.consumed || !instanceState.has(plugin)) {
+			throw new TypeError('[pluxel/core] Plugin implementation must extend BasePlugin')
+		}
+		finalizePluginParts(stateOf(plugin).parts)
+	} catch (cause) {
+		releaseConstructionFrame(frame, cause)
+		throw cause
+	}
+	releaseConstructionFrame(frame)
+	return plugin
+}
+
+/** @internal Return the generation Context without exposing a public construction symbol. */
+export function getPluginGenerationContext(plugin: BasePlugin): Context {
+	return stateOf(plugin).ctx
+}
+
+/** @internal Let BasePlugin's stateful getters operate on a caller facade. */
+export function registerPluginGenerationFacade(facade: BasePlugin, provider: BasePlugin): void {
+	if (instanceState.has(facade))
+		throw new TypeError('[pluxel/core] Plugin facade is already registered')
+	instanceState.set(facade, stateOf(provider))
+}
+
+/** @internal Create the lifecycle adapter for one already-constructed generation. */
+export function getPluginLifecycleAdapter<P extends BasePlugin>(
+	plugin: P,
+): PluginLifecycleAdapter<PluginContextOf<P>> {
+	const state = stateOf(plugin)
+	const ctx = state.ctx as PluginContextOf<P>
+	const init = (
+		plugin as unknown as {
+			init?: (signal: AbortSignal) => PluginCleanup | Promise<PluginCleanup>
+		}
+	).init
+	const extended = ctx as unknown as { onError?: (cb: (err: unknown) => void) => unknown }
+	const onError = extended.onError
+	return {
+		init: async (signal) => {
+			state.initActive = true
+			try {
+				await startPluginParts(state.parts, signal)
+				if (typeof init === 'function') {
+					const cleanup = await init.call(plugin, signal)
+					await adoptCleanup(ctx, cleanup)
+				}
+			} finally {
+				state.initActive = false
+			}
+		},
+		drain: async () => {
+			await closeOwnerInvocations(ctx)
+			await ctx.effects.dispose()
+		},
+		subscribeErrors:
+			typeof onError === 'function'
+				? (cb) => {
+						const off = onError.call(ctx, cb)
+						return typeof off === 'function' ? (off as () => void) : undefined
+					}
+				: undefined,
+	}
+}

@@ -115,6 +115,28 @@ SQL 与 manifest 到 `dist/database/migrations/`。browser source graph 不包�
 Vite source adapter 在 server environment 使用相同 declaration 与 artifact 规则，并在 schema module transform 时注入当前
 artifact；reset baseline staging 在注入后立即清理，因此 HMR schema 变化会得到新 lineage，browser environment 不运行生成器。
 
+## Versioned Plugin lowering ABI
+
+Plugin semantic output 是已构建 Plugin 与 Core/runtime 之间的发布契约。generated module 只从
+`@pluxel/core/toolchain`（或显式转发它的 `@pluxel/runtime/toolchain`）导入 ABI v1 helper；默认 root 和 `/internal`
+不提供 setter alias。canonical helpers 是 `__setPluginDefinition`、`__setPluginConfig`、`__setPluginParts`、
+`__setPluginPartConfig` 与 `__setPluginPartOptional`，每个 payload 都携带同一个 numeric `abiVersion`。
+
+helper 只把 sealed immutable facts 写入 module-evaluation scoped `WeakMap` staging。canonical namespace 完成求值后，route 对每个 root
+constructor 调用 `consumePluginDefinitionCandidate()`；首次读取原子组合 decorator marker、definition、config 与 reachable Part facts，
+验证后删除 staging并缓存唯一 frozen candidate object，同一 evaluated constructor 的后续 host/route读取严格返回该对象。HMR通过新constructor
+产生新candidate，不做cache invalidation。Part facts 可跨多个 definition 复用，但没有 global facts revision、metadata clone、双读或
+candidate ingestion 后的 setter mutation。
+
+lowering trust boundary 使用三个稳定 code：ABI 不支持为 `plugin_lowering_abi_unsupported`，declaration 缺失为
+`plugin_declaration_missing`，payload/identity/Part tree 不一致为 `plugin_declaration_invalid`。Plugin inheritance chain 中的
+ECMAScript instance `#private` field/method/accessor 在 semantic pass 以
+`plugin_caller_view_private_brand_unsupported` hard diagnostic 拒绝，避免 caller facade 在运行时才触发 private brand 错误。
+Plugin inheritance chain 的 function-valued instance field（arrow、function expression、`.bind()`）同样以
+`plugin_caller_view_callable_field_unsupported` hard diagnostic 拒绝；跨节点 callable surface 必须是 prototype method，accessor只返回
+普通数据或有独立receiver/withdrawal契约的对象handle。Core 仍对无法静态证明的动态 callable field 和 accessor-returned function
+保留 runtime fail-fast 防线。
+
 ## Plugin package build
 
 `pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
@@ -126,6 +148,7 @@ output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata t
 Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named export table，并 lower：
 
 - concrete `@Plugin` definition address 与 `displayName`/`startTimeoutMs` marker facts；
+- literal `forkable: true` concrete definition fact，并与 decorator runtime marker 交叉校验；
 - constructor parameter 的 direct root value-import provenance 与 ordered required edges；
 - non-exported module-level `definePluginRef<T>()` 的 direct root type-import provenance；
 - `init()` 中 direct `plugins.use(Ref, callback)` 的 optional restart edges；

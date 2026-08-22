@@ -30,7 +30,6 @@ export default defineConfig({
 		],
 	},
 	entry: {
-		index: 'src/index.ts',
 		build: 'src/cli/index.ts',
 		database: 'src/database/index.ts',
 		distribution: 'src/distribution/index.ts',
@@ -44,7 +43,6 @@ export default defineConfig({
 		'vite/node-module': 'src/plugin-artifact/node-module.ts',
 		'vite/source-graph': 'src/vite/source-graph.ts',
 		'vite/workbench-ui': 'src/vite/workbench-ui.ts',
-		workspace: 'src/workspace/index.ts',
 		'workspace/fs': 'src/workspace/fs-entry.ts',
 		'workspace/info': 'src/workspace/info-entry.ts',
 		'workspace/vite': 'src/workspace/vite.ts',

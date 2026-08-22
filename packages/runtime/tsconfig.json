@@ -9,7 +9,6 @@
 		"types": ["vite/client"],
 		"allowArbitraryExtensions": true,
 		"emitDeclarationOnly": true,
-		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true
+		"experimentalDecorators": true
 	}
 }

@@ -1,17 +1,31 @@
+// Type-only re-exports keep the source entry's Context shape complete without installing services.
+export type { RuntimeContextConfig } from './context-augment'
+export type { RuntimeServicesContext } from './services'
+
 export * from './shared'
 export * from './plugin-catalog'
 export * from './runtime-state'
-export type * from './web/protocol'
-export { runtimeModuleRuntime } from './runtime/capabilities'
+export * from './internal/reconciliation'
+export { requireRuntimeStateStore } from './internal/runtime-state'
+export { createInternalGraphQLSchemaSDL } from './services/http/internalGraphqlSchema'
+export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
+export {
+	getPluginRoutingSnapshot,
+	type PluginRoutingSnapshot,
+	type RouteId,
+} from './services/routing/pluginGatedRoutes'
+export {
+	installRuntimeRouteCapabilities,
+	readRuntimeRouteCapabilities,
+	requireRouteCapability,
+	runtimeModuleRuntime,
+} from './runtime/capabilities'
+export type { RuntimeRouteCapabilities } from './runtime/capabilities'
 export type { RuntimeModuleCacheEntry, RuntimeModuleRuntime } from './runtime/capabilities'
 
 export type { RuntimeStorageLayout, RuntimeStoragePaths } from './runtime/paths'
 export { resolveRuntimeStoragePaths } from './runtime/paths'
-export {
-	findRuntimeModuleId,
-	resolveModuleIdBaseDir,
-	resolveModuleIdPath,
-} from './runtime/module-id'
+export { resolveModuleIdBaseDir, resolveModuleIdPath } from './runtime/module-id'
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
 export {

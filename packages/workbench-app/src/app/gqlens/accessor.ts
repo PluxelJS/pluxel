@@ -116,7 +116,16 @@ export interface PluginStatusNode {
   readonly isRunning: Types.PluginStatus["isRunning"] | undefined;
   readonly isEnabled: Types.PluginStatus["isEnabled"] | undefined;
   readonly lifecycleStage: Types.PluginStatus["lifecycleStage"] | undefined;
+  readonly availability: Types.PluginStatus["availability"] | undefined;
+  readonly issues: { readonly ids: readonly string[] | undefined };
   readonly source: PluginSourceInfoNode;
+}
+
+export interface PluginStatusIssueNode {
+  readonly __typename: string | undefined;
+  readonly id: Types.PluginStatusIssue["id"] | undefined;
+  readonly code: Types.PluginStatusIssue["code"] | undefined;
+  readonly message: Types.PluginStatusIssue["message"] | undefined;
 }
 
 export interface PluginSourceInfoNode {
@@ -276,7 +285,19 @@ export const gqlensSchema: GQLensSchemaContract = {
         "isRunning": { name: "isRunning", result: { "kind": "scalar", "cardinality": "one" } },
         "isEnabled": { name: "isEnabled", result: { "kind": "scalar", "cardinality": "one" } },
         "lifecycleStage": { name: "lifecycleStage", result: { "kind": "scalar", "cardinality": "one" } },
+        "availability": { name: "availability", result: { "kind": "scalar", "cardinality": "one" } },
+        "issues": { name: "issues", result: { "kind": "object", "cardinality": "list", "typeName": "PluginStatusIssue", "objectKind": "entity" } },
         "source": { name: "source", result: { "kind": "object", "cardinality": "one", "typeName": "PluginSourceInfo", "objectKind": "value" } },
+      },
+    },
+    "PluginStatusIssue": {
+      type: "PluginStatusIssue",
+      kind: "entity",
+      fields: {
+        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
+        "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
+        "code": { name: "code", result: { "kind": "scalar", "cardinality": "one" } },
+        "message": { name: "message", result: { "kind": "scalar", "cardinality": "one" } },
       },
     },
     "PluginSourceInfo": {

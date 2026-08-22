@@ -20,7 +20,9 @@ export const PluginStatusEntryLifecycleStage = {
 	disabled: 'disabled',
 } as const
 export type PluginStatusEntryLifecycleStage = PluginStatusLifecycleStage
-export type PluginStatusEntry = PluginStatus &
+// The overview consumes status scalars and source facts. Lifecycle issues remain a GraphQL
+// entity relation and are fetched only by views that render diagnostics.
+export type PluginStatusEntry = Omit<PluginStatus, 'issues'> &
 	Pick<Plugin, 'id' | 'reference' | 'route' | 'displayName' | 'label' | 'rootExportName'> & {
 		address: PluginNodeAddress
 	}

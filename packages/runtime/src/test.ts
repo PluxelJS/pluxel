@@ -1,22 +1,48 @@
 import './index'
 import './services/vault'
+import {
+	applyRuntimeStatePatch,
+	createPluginRouteCatalogSnapshot,
+	installRuntimePluginGraphCoordinator,
+	PluginGraphRejectedError,
+	runtimeStatePatch,
+	type PluginRouteCatalogEntryInput,
+	type RuntimeStatePatchOperation,
+} from './internal/reconciliation'
+import { requireRuntimeStateStore } from './internal/runtime-state'
 import { installWorkbench } from './services/workbench'
 import { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
 import { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
 import {
 	createCoreContext,
 	createCoreHost,
+	type CommitSummary,
 	type Context,
 	type CoreHost,
 	type CoreHostConfigHandle,
 	type CoreHostConfigPatch,
 	type CoreTestContext,
 	type PluginConstructor,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+	type PluginNodeHandle,
 } from '@pluxel/core/test'
+import {
+	collectPluginLifecycleNotStarted,
+	pluginDefinitionAddressOf,
+	pluginDefinitionIndexKey,
+} from '@pluxel/core'
+import { isPluginEnabled } from './runtime-state'
+import {
+	consumePluginDefinitionCandidate,
+	requireConfigService,
+	requirePluginService,
+	type ConcretePluginDefinitionCandidate,
+	type PluginService,
+} from '@pluxel/core/internal'
 
 export {
 	BasePlugin,
-	ForkablePlugin,
 	Plugin,
 	PluginPart,
 	assertPluginLifecycleIssue,
@@ -27,7 +53,6 @@ export {
 	collectPluginLifecycleNotStarted,
 	Context,
 	findPluginLifecycleIssue,
-	getPluginInfo,
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleDrainErrorIssue,
 	isPluginLifecycleNotStartedIssue,
@@ -42,37 +67,316 @@ export type {
 	PluginLifecycleIssuePhase,
 	PluginLifecycleIssuePredicate,
 	PluginCommitChanges,
+	PluginNodeHandle,
 	PluginReplacement,
 	RuntimeUpdateCommitSummary,
 } from '@pluxel/core/test'
 
-export type RuntimeHost = CoreHost
+type TypedTarget<T extends PluginConstructor> = T | PluginNodeHandle<T>
+type RuntimeTarget = PluginConstructor | PluginNodeAddress
+
+export interface RuntimeHost extends Omit<
+	CoreHost,
+	| 'add'
+	| 'remove'
+	| 'restart'
+	| 'replace'
+	| 'fork'
+	| 'override'
+	| 'commit'
+	| 'commitAllowFail'
+	| 'start'
+	| 'dispose'
+> {
+	add(Plugin: PluginConstructor): RuntimeHost
+	add(Plugins: readonly PluginConstructor[]): RuntimeHost
+	remove(target: RuntimeTarget): RuntimeHost
+	remove(targets: readonly RuntimeTarget[]): RuntimeHost
+	restart(target: RuntimeTarget): RuntimeHost
+	replace(target: RuntimeTarget, next: PluginConstructor): RuntimeHost
+	fork<T extends PluginConstructor>(Plugin: T, forkId: string): PluginNodeHandle<T>
+	override(
+		consumer: RuntimeTarget,
+		requirement: PluginConstructor | PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): RuntimeHost
+	commit(): Promise<CommitSummary>
+	commitAllowFail(): Promise<CommitSummary>
+	start<T extends PluginConstructor>(Plugin: T): Promise<InstanceType<T>>
+	dispose(): Promise<void>
+}
+
 export type RuntimeTestContext = CoreTestContext
 export type RuntimeHostConfigPatch<T extends PluginConstructor> = CoreHostConfigPatch<T>
 export type RuntimeHostConfigHandle<TTarget extends PluginConstructor> =
 	CoreHostConfigHandle<TTarget>
 
-export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
+function runtimeConfig(config: Context.Config): Context.Config {
 	const workbench = config.workbench ?? {
 		enabled: true,
 		access: { exposure: 'private' as const },
 	}
-	const host = createCoreHost(
-		withWorkbenchPluginContext({
-			persistence: { mode: 'memory' },
-			configService: { mode: 'memory' },
-			runtimeState: { mode: 'memory' },
-			...config,
-			workbench,
-			adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
-		}),
-		{
-			prepareCommit: async (ctx) => {
-				await ctx.prepareServices()
-			},
-		},
+	return withWorkbenchPluginContext({
+		persistence: { mode: 'memory' },
+		configService: { mode: 'memory' },
+		runtimeState: { mode: 'memory' },
+		...config,
+		workbench,
+		adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
+	})
+}
+
+function assertCoreCommit(
+	result: Awaited<ReturnType<ReturnType<PluginService['beginUpdate']>['commit']>>,
+	ctx: Context,
+): CommitSummary {
+	if (result.ok === false) {
+		throw result.err instanceof Error ? result.err : new Error(String(result.err))
+	}
+	const summary = requirePluginService(ctx).lastCommit
+	if (!summary) throw new Error('Runtime test Core commit omitted CommitSummary')
+	return summary
+}
+
+function assertCommitStarted(summary: CommitSummary): void {
+	const failed = collectPluginLifecycleNotStarted(summary.lifecycleReport).map(
+		(plugin) => plugin.definition.exportName,
 	)
-	if (isWorkbenchEnabled(workbench)) installWorkbench(host.ctx)
+	if (failed.length > 0)
+		throw new Error(`Some plugins failed to start: ${[...new Set(failed)].join(', ')}`)
+}
+
+export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
+	const core = createCoreHost(runtimeConfig(config))
+	const { ctx } = core
+	const pluginService = requirePluginService(ctx)
+	const configService = requireConfigService(ctx)
+	const runtimeStateStore = requireRuntimeStateStore(ctx)
+	const coordinator = installRuntimePluginGraphCoordinator(ctx)
+	if (isWorkbenchEnabled(ctx.config.workbench)) installWorkbench(ctx)
+
+	const addressByImplementation = new WeakMap<PluginConstructor, PluginDefinitionAddress>()
+	let committedEntries = new Map<string, PluginRouteCatalogEntryInput>()
+	let draftEntries = new Map(committedEntries)
+	let catalogDirty = false
+	let stateOperations: RuntimeStatePatchOperation[] = []
+	let restartNodes: PluginNodeAddress[] = []
+	let firstCommit = true
+	let disposed = false
+
+	const candidateFor = (Plugin: PluginConstructor) => {
+		const candidate = consumePluginDefinitionCandidate(Plugin)
+		addressByImplementation.set(Plugin, candidate.declaration.address)
+		return candidate
+	}
+	const definitionAddress = (Plugin: PluginConstructor) =>
+		addressByImplementation.get(Plugin) ?? pluginDefinitionAddressOf(Plugin)
+	const targetAddress = (target: RuntimeTarget): PluginNodeAddress =>
+		typeof target === 'function'
+			? { definition: definitionAddress(target), variant: 'default' }
+			: target
+	const stageCatalogCandidate = (candidate: ConcretePluginDefinitionCandidate) => {
+		const key = pluginDefinitionIndexKey(candidate.declaration.address)
+		const current = draftEntries.get(key)
+		if (current?.candidate === candidate) return
+		if (current && current.candidate.implementation !== candidate.implementation) {
+			throw new Error('Use host.replace() to change a Plugin definition implementation')
+		}
+		draftEntries.set(key, Object.freeze({ candidate }))
+		catalogDirty = true
+	}
+	const stagePlugin = (Plugin: PluginConstructor) => stageCatalogCandidate(candidateFor(Plugin))
+	const stageState = (...operations: readonly RuntimeStatePatchOperation[]) => {
+		stateOperations.push(...operations)
+	}
+
+	let host!: RuntimeHost
+	function add(Plugin: PluginConstructor): RuntimeHost
+	function add(Plugins: readonly PluginConstructor[]): RuntimeHost
+	function add(value: PluginConstructor | readonly PluginConstructor[]): RuntimeHost {
+		if (typeof value === 'function') stagePlugin(value)
+		else for (const Plugin of value) stagePlugin(Plugin)
+		return host
+	}
+	function remove(target: RuntimeTarget): RuntimeHost
+	function remove(targets: readonly RuntimeTarget[]): RuntimeHost
+	function remove(value: RuntimeTarget | readonly RuntimeTarget[]): RuntimeHost {
+		for (const target of Array.isArray(value) ? value : [value as RuntimeTarget]) {
+			const address = targetAddress(target)
+			if (address.variant === 'fork') {
+				stageState(
+					{ type: 'remove-node-policy', node: address },
+					{
+						type: 'remove-fork',
+						definition: address.definition,
+						forkId: address.forkId,
+					},
+				)
+				continue
+			}
+			const key = pluginDefinitionIndexKey(address.definition)
+			if (draftEntries.delete(key)) catalogDirty = true
+		}
+		return host
+	}
+
+	async function commit(allowFailure: boolean): Promise<CommitSummary> {
+		await ctx.prepareServices()
+		const currentCatalog = coordinator.catalogSnapshot()
+		const catalog = catalogDirty
+			? createPluginRouteCatalogSnapshot(currentCatalog.revision + 1, draftEntries.values())
+			: undefined
+		const coldBoot = firstCommit
+		const report = await coordinator.update({
+			...(catalog ? { catalog } : {}),
+			...(stateOperations.length > 0 ? { statePatch: runtimeStatePatch(...stateOperations) } : {}),
+			...(restartNodes.length > 0 ? { restartNodes } : {}),
+			reason: 'runtime-test',
+			mode: coldBoot ? 'cold-boot' : 'live',
+		})
+		firstCommit = false
+		committedEntries = new Map(draftEntries)
+		draftEntries = new Map(committedEntries)
+		catalogDirty = false
+		stateOperations = []
+		restartNodes = []
+		if (coldBoot && !allowFailure && report.reconciliation.length > 0) {
+			throw new PluginGraphRejectedError(report.reconciliation)
+		}
+
+		const summary =
+			report.core.status === 'committed'
+				? report.core.summary
+				: assertCoreCommit(
+						await pluginService.beginUpdate({ reason: 'runtime-test-lifecycle-retry' }).commit(),
+						ctx,
+					)
+		if (!allowFailure) assertCommitStarted(summary)
+		return summary
+	}
+
+	const get = (target: RuntimeTarget) => pluginService.getInstance(targetAddress(target))
+	const requirePlugin = (target: RuntimeTarget) => {
+		const instance = get(target)
+		if (!instance) throw new Error('Plugin instance is not running')
+		return instance
+	}
+
+	host = {
+		ctx,
+		add,
+		remove,
+		restart: (target) => {
+			restartNodes.push(targetAddress(target))
+			return host
+		},
+		replace: (target, next) => {
+			const address = targetAddress(target).definition
+			const candidate = candidateFor(next)
+			if (
+				pluginDefinitionIndexKey(candidate.declaration.address) !==
+				pluginDefinitionIndexKey(address)
+			) {
+				throw new TypeError(
+					'RuntimeHost replacement must be lowered with the target Plugin definition address',
+				)
+			}
+			draftEntries.set(pluginDefinitionIndexKey(address), Object.freeze({ candidate }))
+			catalogDirty = true
+			return host
+		},
+		fork: (Plugin, forkId) => {
+			stagePlugin(Plugin)
+			const address = Object.freeze({
+				definition: definitionAddress(Plugin),
+				variant: 'fork' as const,
+				forkId,
+			}) as PluginNodeHandle<typeof Plugin>
+			stageState({ type: 'ensure-fork', definition: address.definition, forkId })
+			return address
+		},
+		override: (consumer, requirement, provider) => {
+			stageState({
+				type: 'set-dependency-override',
+				consumer: targetAddress(consumer),
+				requirement:
+					typeof requirement === 'function' ? definitionAddress(requirement) : requirement,
+				provider,
+			})
+			return host
+		},
+		commit: () => commit(false),
+		commitAllowFail: () => commit(true),
+		isRunning: (target) => pluginService.isRunning(targetAddress(target)),
+		get: get as RuntimeHost['get'],
+		require: requirePlugin as RuntimeHost['require'],
+		cfg: (<T extends PluginConstructor>(target: TypedTarget<T>): CoreHostConfigHandle<T> => {
+			const owner = targetAddress(target)
+			return {
+				owner,
+				set: (patch) => configService.patchConfig(owner, patch),
+				unset: (...keys) => configService.unsetConfigKeys(owner, keys),
+				rev: () => configService.getConfigRevision(owner),
+				enable: () => stageState({ type: 'set-enabled', node: owner, enabled: true }),
+				disable: () => stageState({ type: 'set-enabled', node: owner, enabled: false }),
+				enabled: () =>
+					isPluginEnabled(
+						applyRuntimeStatePatch(
+							runtimeStateStore.snapshot(),
+							runtimeStatePatch(...stateOperations),
+						),
+						owner,
+					),
+			}
+		}) as RuntimeHost['cfg'],
+		start: async (Plugin) => {
+			host.add(Plugin)
+			host.cfg(Plugin).enable()
+			await host.commit()
+			return host.require(Plugin)
+		},
+		last: () => pluginService.lastCommit,
+		services: () => core.services(),
+		plugins: () => [...draftEntries.values()].map((entry) => entry.candidate.implementation),
+		has: (target) => {
+			const address = targetAddress(target)
+			if (!draftEntries.has(pluginDefinitionIndexKey(address.definition))) return false
+			if (address.variant === 'default') return true
+			const family = runtimeStateStore
+				.snapshot()
+				.forks.find(
+					(entry) =>
+						pluginDefinitionIndexKey(entry.definition) ===
+						pluginDefinitionIndexKey(address.definition),
+				)
+			return (
+				family?.forkIds.includes(address.forkId) === true ||
+				stateOperations.some(
+					(operation) =>
+						operation.type === 'ensure-fork' &&
+						operation.forkId === address.forkId &&
+						pluginDefinitionIndexKey(operation.definition) ===
+							pluginDefinitionIndexKey(address.definition),
+				)
+			)
+		},
+		dispose: async () => {
+			if (disposed) return
+			disposed = true
+			try {
+				const current = coordinator.catalogSnapshot()
+				if (current.entries.length > 0) {
+					await coordinator.update({
+						catalog: createPluginRouteCatalogSnapshot(current.revision + 1, []),
+						reason: 'runtime-test-dispose',
+						mode: 'cold-boot',
+					})
+				}
+			} finally {
+				await core.dispose()
+			}
+		},
+	}
 	return host
 }
 
@@ -89,34 +393,17 @@ export async function withRuntimeHost<T>(
 }
 
 export function createRuntimeContext(config: Context.Config = {}): RuntimeTestContext {
-	const workbench = config.workbench ?? {
-		enabled: true,
-		access: { exposure: 'private' as const },
-	}
-	const ctx = createCoreContext(
-		withWorkbenchPluginContext({
-			persistence: { mode: 'memory' },
-			configService: { mode: 'memory' },
-			runtimeState: { mode: 'memory' },
-			...config,
-			workbench,
-			adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
-		}),
-	)
-	if (isWorkbenchEnabled(workbench)) installWorkbench(ctx.ctx)
-	return ctx
+	const runtime = createCoreContext(runtimeConfig(config))
+	installRuntimePluginGraphCoordinator(runtime.ctx)
+	if (isWorkbenchEnabled(runtime.ctx.config.workbench)) installWorkbench(runtime.ctx)
+	return runtime
 }
 
 export async function withRuntimeContext<T>(
 	fn: (ctx: Context) => Promise<T> | T,
 	config: Context.Config = {},
 ): Promise<T> {
-	const runtime = createRuntimeContext({
-		persistence: { mode: 'memory' },
-		configService: { mode: 'memory' },
-		runtimeState: { mode: 'memory' },
-		...config,
-	})
+	const runtime = createRuntimeContext(config)
 	try {
 		return await fn(runtime.ctx)
 	} finally {

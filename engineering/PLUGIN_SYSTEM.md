@@ -90,6 +90,11 @@ graph、state、config、logging、Workbench 或 HMR identity。Workbench/日志
 CLI/诊断使用 node reference，不暴露 digest ID。完整 schema、source `realpath`、codec、作用域和持久化边界见
 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)。
 
+route catalog availability、RuntimeState desired policy、Core committed graph 与 running generation projection 是四个独立平面。
+static/dynamic route 只生产 immutable catalog candidate snapshot；runtime-common coordinator 统一展开 durable forks、校验 provider/default/
+override、计算 blocked closure 并提交一个 prepared Core update。disabled durable node 不进入 Core，route 不复制 reconciliation，Core
+也不吸收 module/source/artifact provenance。
+
 一个具体插件包只有一个 plugin-bearing entry：package root `"."`。根入口可以唯一 named-export 多个 Plugin；同一
 constructor 的多个根名称、plugin-bearing subpath 与跨包 Plugin re-export 都由 build 拒绝。Workbench、worker、contract
 等 plugin-free subpath 只在确有独立消费边界时保留。
@@ -105,10 +110,20 @@ Workbench mount 从 Context 推导 owner 并绑定 owner effects。contribution 
 layout；init 失败不会留下可见 View 或 resource。HMR replacement 会撤销旧 layout binding、factory、stream、
 live query 和 grant；rollback 通过重新 mount 获得新 lease。
 
-constructor 注入的 dependency 是覆盖 `ctx.caller` 的轻量 prototype view。顶层字段读取会委托 provider instance，
-但在 caller method 中直接给 `this.someField` 赋值会落到当前 view。provider-wide mutable state 因此放在 constructor
-创建的稳定 state/registry 对象中并修改其内容；caller-owned state 继续以 `Context` 为 key。不要用顶层标量赋值暗中
-表达共享 mutation，也不要依赖可变全局 current caller。
+constructor 注入的 dependency 是覆盖 `ctx.caller` 的 generation-bound facade。同一 consumer/provider generation pair
+复用一个 facade，不同 consumer 或 replacement 后的新 generation 不共享。method/getter receiver 保持 caller facade；普通作者字段的
+读写委托被 pin 的 raw provider instance，不在 facade 上形成 shadow state。stale method invocation 与字段写入都受 provider
+generation admission gate 拒绝；`ctx`、Core internal state/symbol、`defineProperty`、`deleteProperty` 与 prototype mutation fail-fast。
+caller-owned state 继续以 `Context` 为 key，不依赖可变全局 current caller。
+
+Plugin inheritance chain 不允许 ECMAScript instance `#private` field/method/accessor，因为 caller facade 无法通过 private brand check；
+semantic pass 对此发出 `plugin_caller_view_private_brand_unsupported`。需要强封装时使用 closure 或由 capability 返回具有自身 withdrawal
+语义的 handle。TypeScript `private` 普通 property 不受该限制，`PluginPart` 也不会成为 dependency facade。
+
+跨节点可调用的 Plugin surface 只使用 prototype method；accessor只返回普通数据或具有独立receiver/withdrawal契约的对象handle。
+arrow、function expression 或 `.bind()` 产生的 function-valued instance field 会捕获 raw provider receiver，无法诚实投影 consumer caller；semantic pass 以
+`plugin_caller_view_callable_field_unsupported` 拒绝，Core caller facade 对动态产生的 callable field/accessor result 同样 fail-fast。
+需要返回 callable handle 时，返回具有独立 receiver 与 withdrawal 契约的 capability object，不把裸 function 暴露为 Plugin field。
 
 第三方库只有不可撤销的进程级 registration/platform callback 时，全局部分只保存稳定且在无 active scope 时 inert 的
 路由实现；caller registration、mutable resource 与 cleanup 继续保存在以 `Context` 为 key 的 registry。并发异步调用

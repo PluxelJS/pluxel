@@ -303,9 +303,9 @@ function pluginContext(root: object, id: string) {
 			value: {
 				nodeSlot,
 				nodeAddress,
-				definition: nodeAddress.definition,
+				definitionAddress: nodeAddress.definition,
+				definitionRevision: 1,
 				displayName: id,
-				rootExportName: 'Plugin',
 			},
 			configurable: true,
 		},

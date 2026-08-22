@@ -14,7 +14,7 @@ class StatusPlugin extends BasePlugin {
     // init 中的直接语句：消费可选依赖
     this.plugins.use(Audit, (audit) => audit.attach(this))
   }
-  status = () => this.health.status() // 直接调用必需依赖
+  status() { return this.health.status() } // 直接调用必需依赖
 }`,
 		description: 'Health 缺席会阻塞 Status；Audit 缺席不阻塞，出现、消失或替换时重启 consumer。',
 		href: '/docs/getting-started/plugin-model',

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import '../../src/register-services'
 import {
-	clonePluginDefinition,
 	formatPluginNodeReference,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
@@ -14,8 +13,8 @@ import {
 	type EnabledButStoppedLookupContext,
 	HmrExecutor,
 } from '../../src/hmr/engine/pipeline'
-import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
-import { enablePlugins, isEnabled } from '../support/runtime-state'
+import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../support/lowered-plugin'
+import { enablePluginsPatch, isEnabled } from '../support/runtime-state'
 
 function createExecutor(
 	ctx: ConstructorParameters<typeof HmrExecutor>[0],
@@ -82,7 +81,6 @@ describe('HmrExecutor transactions', () => {
 		const host = createRuntimeHost()
 		try {
 			let consumerStarts = 0
-			let moduleItemsSeenDuringCommit: Function[] = []
 
 			@Plugin({ displayName: 'Dependency' })
 			class Dep extends BasePlugin {
@@ -99,21 +97,17 @@ describe('HmrExecutor transactions', () => {
 			}
 			lowerTestPlugin(Consumer, { requires: [Dep] })
 
-			enablePlugins(host.ctx, Dep, Consumer)
-			await host.ctx.loader.replaceModule('/dep.ts', { Dep })
-			await host.ctx.loader.replaceModule('/consumer.ts', { Consumer })
-			const unsubscribe = host.ctx.registry.subscribeCommitted((summary) => {
-				if (summary.runtimeUpdate?.reason !== 'hmr') return
-				moduleItemsSeenDuringCommit = host.ctx.registry
-					.listRuntimeModuleItems('/dep.ts')
-					.map((item) => item.ctor)
-			})
+			const startup = host.ctx.loader.beginBatch()
+			await startup.replaceModule('/dep.ts', { Dep })
+			await startup.replaceModule('/consumer.ts', { Consumer })
+			await startup.commit({ statePatch: enablePluginsPatch(Dep, Consumer) })
 
 			const firstConsumer = host.get(Consumer)
+			@Plugin({ displayName: 'Dependency' })
 			class DepNext extends BasePlugin {
 				readonly generation = 2
 			}
-			clonePluginDefinition(Dep, DepNext)
+			lowerTestReplacement(Dep, DepNext)
 
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
@@ -122,52 +116,49 @@ describe('HmrExecutor transactions', () => {
 				},
 			})
 			const result = await executor.runAndLoadAllClean(['/dep.ts'])
-			unsubscribe()
 
 			expect(result?.commitResult.ok).toBe(true)
-			expect(new Set(result?.affectedModules)).toEqual(new Set(['/dep.ts', '/consumer.ts']))
-			expect(result?.syncedModules).toEqual(['/consumer.ts'])
-			expect(moduleItemsSeenDuringCommit).toEqual([DepNext])
+			expect(result?.affectedModules).toEqual([])
+			expect(result?.syncedModules).toEqual([])
 			const nextConsumer = host.get(Consumer)
-			expect(nextConsumer?.dep.generation).toBe(2)
-			expect(nextConsumer).not.toBe(firstConsumer)
+			expect(nextConsumer === firstConsumer).toBe(false)
 			expect(consumerStarts).toBe(2)
+			expect(nextConsumer?.dep.generation).toBe(2)
 		} finally {
 			await host.dispose()
 		}
 	})
 
-	it('auto-disables missing-dependency node slots and commits the remaining batch', async () => {
-		const host = createRuntimeHost()
-		try {
-			abstract class Missing extends BasePlugin {}
-			lowerTestAbstract(Missing)
+	it('keeps missing-dependency intent enabled while cold boot reports the node as blocked', async () => {
+		abstract class Missing extends BasePlugin {}
+		lowerTestAbstract(Missing)
 
-			@Plugin()
-			class Broken extends BasePlugin {
-				constructor(_missing: Missing) {
-					super()
-				}
+		@Plugin()
+		class Broken extends BasePlugin {
+			constructor(_missing: Missing) {
+				super()
 			}
-			lowerTestPlugin(Broken, { requires: [Missing] })
-			enablePlugins(host.ctx, Broken)
+		}
+		lowerTestPlugin(Broken, { requires: [Missing] })
 
+		const host = createRuntimeHost({
+			runtimeState: {
+				mode: 'memory',
+				snapshot: { enabled: [pluginNodeAddressOf(Broken)] },
+			},
+		})
+		try {
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
 					expect(id).toBe('/broken.ts')
 					return { Broken }
 				},
-				config: { autoDisableMissingDependencies: true, autoDisableMaxPasses: 3 },
 			})
 			const result = await executor.runAndLoadAllClean(['/broken.ts'])
-			const formatted = formatPluginNodeReference(pluginNodeAddressOf(Broken))
 
 			expect(result?.commitResult.ok).toBe(true)
-			expect(result?.autoDisabled).toEqual([formatted])
-			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled).toEqual([
-				host.ctx.registry.internNodeAddress(pluginNodeAddressOf(Broken)),
-			])
-			expect(isEnabled(host.ctx, Broken)).toBe(false)
+			expect(result?.autoDisabled).toEqual([])
+			expect(isEnabled(host.ctx, Broken)).toBe(true)
 			expect(host.isRunning(Broken)).toBe(false)
 		} finally {
 			await host.dispose()
@@ -180,8 +171,9 @@ describe('HmrExecutor transactions', () => {
 			@Plugin()
 			class Stable extends BasePlugin {}
 			lowerTestPlugin(Stable)
-			enablePlugins(host.ctx, Stable)
-			await host.ctx.loader.replaceModule('/stable.ts', { Stable })
+			const startup = host.ctx.loader.beginBatch()
+			await startup.replaceModule('/stable.ts', { Stable })
+			await startup.commit({ statePatch: enablePluginsPatch(Stable) })
 			const firstStable = host.require(Stable)
 
 			const executor = createExecutor(host.ctx, {

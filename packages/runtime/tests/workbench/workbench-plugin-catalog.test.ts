@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { pluginNodeAddressOf } from '@pluxel/core'
+import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
+import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
+import { requireRuntimePluginGraphCoordinator } from '../../src/internal/reconciliation'
 import {
-	BasePlugin,
-	createRuntimeHost,
-	ForkablePlugin,
-	getPluginInfo,
-	Plugin,
-	type RuntimeHost,
-} from '@pluxel/runtime/test'
-import type { RuntimePluginSource } from '../../src/runtime/capabilities'
+	installRuntimeRouteCapabilities,
+	type RuntimePluginSource,
+} from '../../src/runtime/capabilities'
 import { requireWorkbench } from '../../src/services/workbench'
 import { WorkbenchPluginCatalogService } from '../../src/services/workbench/WorkbenchPluginCatalogService'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
@@ -31,49 +29,13 @@ function packageSource(packageName: string): RuntimePluginSource {
 }
 
 function installSourceMap(host: RuntimeHost, packages: Readonly<Record<string, string>>): void {
-	const key = (address: ReturnType<typeof pluginNodeAddressOf>) => JSON.stringify(address)
-	const registered = () =>
-		host.plugins().map((ctor) => {
-			const info = getPluginInfo(ctor)
-			return {
-				address: pluginNodeAddressOf(ctor),
-				ctor,
-				displayName: info.displayName,
-				rootExportName: info.rootExportName,
-			}
-		})
-	host.ctx.runtimeRoute = {
-		catalog: {
-			resolve(address) {
-				return registered().find((entry) => key(entry.address) === key(address))?.ctor
-			},
-			resolveDefinition(definition) {
-				return registered().find(
-					(entry) => JSON.stringify(entry.address.definition) === JSON.stringify(definition),
-				)?.ctor
-			},
-			require(address) {
-				const ctor = registered().find((entry) => key(entry.address) === key(address))?.ctor
-				if (!ctor) throw new Error(`missing test plugin: ${key(address)}`)
-				return ctor
-			},
-			listRegistered: registered,
-		},
-		lifecycle: {
-			isRunning(address) {
-				const ctor = registered().find((entry) => key(entry.address) === key(address))?.ctor
-				return ctor ? host.isRunning(ctor) : false
-			},
-			enable: () => undefined,
-			enablePersisted: () => undefined,
-			deactivate: () => undefined,
-			stop: () => undefined,
-		},
+	const uninstall = installRuntimeRouteCapabilities(host.ctx, {
 		source: {
 			resolveSource(address) {
-				const displayName = registered().find(
-					(entry) => key(entry.address) === key(address),
-				)?.displayName
+				const displayName = requireRuntimePluginGraphCoordinator(host.ctx)
+					.catalogSnapshot()
+					.byDefinition.get(pluginDefinitionIndexKey(address.definition))?.candidate
+					.declaration.displayName
 				const packageName = displayName ? packages[displayName] : undefined
 				return packageName
 					? packageSource(packageName)
@@ -87,7 +49,8 @@ function installSourceMap(host: RuntimeHost, packages: Readonly<Record<string, s
 						}
 			},
 		},
-	}
+	})
+	host.ctx.effects.defer(uninstall, { tag: 'test-source-map' })
 }
 
 describe('Workbench plugin catalog classification', () => {
@@ -210,9 +173,41 @@ describe('Workbench plugin catalog classification', () => {
 		await expect(catalog.ready).rejects.toThrow('preferences version must be 3')
 	})
 
+	it('does not materialize an orphan node while loading catalog preferences', async () => {
+		const host = createRuntimeHost({ workbench: { enabled: true, pluginGroups: [] } })
+		hosts.push(host)
+		const orphan = {
+			definition: {
+				entry: {
+					kind: 'source-entry',
+					sourceSpace: 'app',
+					path: 'pluxel-test:orphan-preference',
+				},
+				exportName: 'Plugin',
+			},
+			variant: 'default',
+		} as const
+		await host.ctx.root.persistence.namespace('workbench').put(
+			'plugin-catalog.json',
+			JSON.stringify({
+				version: 3,
+				assignments: [{ definition: orphan.definition, groupId: null }],
+				groupOrder: [],
+				pluginOrder: [{ groupId: 'missing', definitions: [orphan.definition] }],
+			}),
+		)
+		const pluginService = requirePluginService(host.ctx)
+		expect(pluginService.resolvePluginNode(orphan)).toBeUndefined()
+
+		const catalog = new WorkbenchPluginCatalogService(host.ctx)
+		await expect(catalog.listGroups()).resolves.toEqual([])
+
+		expect(pluginService.resolvePluginNode(orphan)).toBeUndefined()
+	})
+
 	it('loads definition preferences inherited by every fork', async () => {
-		@Plugin({ displayName: 'FamilyPlugin' })
-		class FamilyPlugin extends ForkablePlugin {}
+		@Plugin({ displayName: 'FamilyPlugin', forkable: true })
+		class FamilyPlugin extends BasePlugin {}
 		lowerTestPlugin(FamilyPlugin)
 
 		const host = createRuntimeHost({
@@ -223,7 +218,7 @@ describe('Workbench plugin catalog classification', () => {
 		})
 		hosts.push(host)
 		const East = host.fork(FamilyPlugin, 'east')
-		host.add([FamilyPlugin, East])
+		host.add(FamilyPlugin)
 		installSourceMap(host, {})
 		await host.commit()
 
@@ -244,7 +239,7 @@ describe('Workbench plugin catalog classification', () => {
 			{
 				groupId: 'family',
 				name: 'Family',
-				nodes: [pluginNodeAddressOf(FamilyPlugin), pluginNodeAddressOf(East)],
+				nodes: [pluginNodeAddressOf(FamilyPlugin), East],
 			},
 		])
 	})

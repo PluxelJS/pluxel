@@ -1,4 +1,5 @@
 import '@pluxel/runtime/services/vault'
+import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/runtime'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
@@ -55,7 +56,8 @@ describe('dynamic host eager service preflight', () => {
 			})
 			host = await bootPlannedLoaderHmrHost(plan)
 			await host.hmr.start()
-			const plugin = host.ctx.registry.getInstance(DynamicVaultConsumerPlugin)
+			const pluginService = requirePluginService(host.ctx)
+			const plugin = pluginService.getInstance(DynamicVaultConsumerPlugin)
 			expect(plugin).toMatchObject({ started: true })
 			await expect(
 				host.ctx.vault.namespace('dynamic-preflight-test').kv().get('started'),
@@ -64,7 +66,9 @@ describe('dynamic host eager service preflight', () => {
 				present: true,
 				unlocked: true,
 			})
-			expect(host.ctx.registry.isRegistered(DynamicVaultConsumerPlugin)).toBe(true)
+			expect(
+				host.ctx.loader.api.registry.getCtor(pluginNodeAddressOf(DynamicVaultConsumerPlugin)),
+			).toBe(DynamicVaultConsumerPlugin)
 			await host.stop()
 			expect(cleanupCount).toBe(1)
 			expect(liveTimers.size).toBe(0)

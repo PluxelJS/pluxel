@@ -15,7 +15,7 @@ const transformOptions = {
 
 export default defineConfig({
 	deps: {
-		onlyBundle: ['@abraham/reflection', /^option-t(\/.*)?$/],
+		onlyBundle: ['option-t'],
 		alwaysBundle: ['@pluxel/context', '@pluxel/context/*'],
 	},
 	exports: {
@@ -28,6 +28,7 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
 		test: 'src/test.ts',
+		toolchain: 'src/toolchain.ts',
 	},
 	dts: {
 		sourcemap: true,

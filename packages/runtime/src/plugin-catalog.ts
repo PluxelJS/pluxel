@@ -1,13 +1,8 @@
 export {
-	ensureForkBaseFromCatalog,
 	readRuntimePluginStatus,
 	requireRouteCapability,
 	runtimePluginStatusOverview,
 	unknownPluginSource,
-	type PluginCatalogRead,
-	type PluginConfigMetadataRead,
-	type PluginDependencyRead,
-	type PluginLifecycleControl,
 	type PluginSourceRead,
 	type RuntimeModuleCacheEntry,
 	type RuntimeModuleRuntime,

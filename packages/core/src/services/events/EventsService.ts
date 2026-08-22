@@ -1,4 +1,5 @@
-import { type Context as PluxelContext, symbols } from '@pluxel/context'
+import type { Context as PluxelContext } from '@pluxel/context'
+import { symbols } from '@pluxel/context/internal'
 import {
 	EvtChannel as BaseEvtChannel,
 	type EventDescriptor,

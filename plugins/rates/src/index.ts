@@ -82,8 +82,12 @@ type OwnerContext = {
 		readonly nodeSlot: object
 		readonly nodeAddress: PluginNodeAddress
 	}
-	readonly effects: { defer(cleanup: () => void, meta?: { tag?: string }): EffectGuard }
-	readonly registry: { getInstance(identifier: unknown): unknown }
+	readonly effects: {
+		defer(
+			cleanup: () => void,
+			meta?: { tag?: string; phase?: 'shutdown' | 'runtime' | 'final' },
+		): EffectGuard
+	}
 }
 type OwnerState = {
 	active: boolean
@@ -121,17 +125,20 @@ export class RatesPlugin extends Rates {
 		super()
 	}
 
-	protected override init(): () => void {
+	protected override init(): void {
 		this.runtime.active = true
-		return () => {
-			this.runtime.active = false
-			for (const registration of this.runtime.registrations) {
-				registration.lookup.delete(registration.lookupKey)
-				registration.owners.clear()
-			}
-			this.runtime.registrations.clear()
-			this.runtime.globalRegistrations.clear()
-		}
+		this.ctx.effects.defer(
+			() => {
+				this.runtime.active = false
+				for (const registration of this.runtime.registrations) {
+					registration.lookup.delete(registration.lookupKey)
+					registration.owners.clear()
+				}
+				this.runtime.registrations.clear()
+				this.runtime.globalRegistrations.clear()
+			},
+			{ tag: 'rates-runtime-gate', phase: 'shutdown' },
+		)
 	}
 
 	override use(name: string, policy: RatePolicy): RateLimiter {
@@ -159,7 +166,10 @@ export class RatesPlugin extends Rates {
 		this.runtime.owners.set(context, owner)
 		const cleanupOwner = owner
 		try {
-			context.effects.defer(() => this.releaseOwner(cleanupOwner), { tag: 'rates-bindings' })
+			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
+				tag: 'rates-bindings',
+				phase: 'shutdown',
+			})
 		} catch {
 			owner.active = false
 			throw new RatesStoppedError()
@@ -209,11 +219,14 @@ export class RatesPlugin extends Rates {
 		const prefix = global
 			? `rates|v3|global|${encodeString(name)}|`
 			: `rates|v3|plugin|${ownerAddressDigest(ownerAddress!)}|${encodeString(name)}|`
+		const runtime = this.runtime
 		const handle = new RateLimiterHandle(
 			policy,
 			prefix,
 			ownerAddress,
-			() => this.assertHandleActive(owner),
+			() => {
+				if (!runtime.active || !owner.active) throw new RatesStoppedError()
+			},
 			(request) => this.consumeBackend(request),
 		)
 		owner.handles.set(ownerHandleId, handle)
@@ -268,18 +281,6 @@ export class RatesPlugin extends Rates {
 
 	private assertActive(owner?: OwnerState): void {
 		if (!this.runtime.active || (owner && !owner.active)) throw new RatesStoppedError()
-		const current = (
-			this.ctx.registry as unknown as { getInstance(identifier: unknown): unknown }
-		).getInstance(Rates) as RatesPlugin | undefined
-		if (!current || current.runtime !== this.runtime) throw new RatesStoppedError()
-	}
-
-	private assertHandleActive(owner: OwnerState): void {
-		this.assertActive(owner)
-		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.nodeSlot) as
-			| { ctx?: unknown }
-			| undefined
-		if (!activeOwner || activeOwner.ctx !== owner.context) throw new RatesStoppedError()
 	}
 }
 

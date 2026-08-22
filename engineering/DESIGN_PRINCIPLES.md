@@ -56,9 +56,12 @@
 
 ## 6. 插件源码必须经过 Pluxel 工具链
 
-- `@Plugin` 只保留 `displayName`、`startTimeoutMs` 和显式 abstract provider relation；`displayName` 不参与身份。
+- `@Plugin` 只保留 `displayName`、`startTimeoutMs`、literal `forkable: true` 和显式 abstract provider relation；
+  `displayName` 不参与身份，forkability 只属于 concrete definition fact。
 - Rolldown/Vite 共用 semantic pass，在 TypeScript 擦除前生成 root export、definition address、constructor
-  required edge、optional ref/edge 与单 object config facts。
+  required edge、optional ref/edge、forkability 与单 object config facts。
+- generated declaration 只调用带 numeric ABI version 的 `@pluxel/core/toolchain` / `@pluxel/runtime/toolchain`；
+  module namespace 求值完成后，route 恰好一次消费并冻结 candidate，不从默认作者入口读取 setter。
 - raw TypeScript runner 不作为插件源码入口；缺少 lowering facts 时必须 fail-fast，不能回退 reflection、class
   name 或 constructor identity。
 - Node 原生 type stripping 只用于不依赖 decorator transform 的普通工具脚本。

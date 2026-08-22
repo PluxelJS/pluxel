@@ -1,6 +1,6 @@
 import { defineCommand } from '@pluxel/commands'
 import { obj, Type } from '@pluxel/commands/typebox'
-import { formatPluginNodeRoute, getPluginConfigDefinition, pluginNodeAddressOf } from '@pluxel/core'
+import { formatPluginNodeRoute, pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
 import { PLUGIN_HTTP_BASE } from '@pluxel/runtime'
 import { BasePlugin, Plugin, PluginPart, withRuntimeHost } from '@pluxel/runtime/test'
 import { workbench } from '@pluxel/runtime/workbench'
@@ -8,6 +8,7 @@ import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { pluginSchema } from '../../src/api/usecases/pluginConfig'
+import { requireRuntimePluginGraphCoordinator } from '../../src/internal/reconciliation'
 
 const extension = workbench.extension({ contract: workbenchContract.define({}) })
 let partCommands: unknown
@@ -102,20 +103,18 @@ describe('PluginPart runtime capabilities', () => {
 		await withRuntimeHost(
 			async (host) => {
 				await host.start(ConfiguredOwner)
-				const definition = getPluginConfigDefinition(ConfiguredOwner)
+				const address = pluginNodeAddressOf(ConfiguredOwner)
+				const definition = requireRuntimePluginGraphCoordinator(host.ctx)
+					.catalogSnapshot()
+					.byDefinition.get(pluginDefinitionIndexKey(address.definition))?.candidate
+					.declaration.config
 				expect(definition).toMatchObject({
 					owner: { fieldName: 'config' },
 					parts: [{ path: ['configured'], declaration: { fieldName: 'config' } }],
 				})
 				expect(definition?.owner?.source).toContain('v.object')
 				expect(definition?.parts[0]?.declaration?.source).toContain('v.object')
-				host.ctx.runtimeRoute = {
-					catalog: {} as never,
-					configMetadata: { getConfig: () => definition },
-				}
-				await expect(
-					pluginSchema(host.ctx, pluginNodeAddressOf(ConfiguredOwner)),
-				).resolves.toMatchObject({
+				await expect(pluginSchema(host.ctx, address)).resolves.toMatchObject({
 					ok: true,
 					defaults: { enabled: true, configured: { size: 10 } },
 					sections: [
