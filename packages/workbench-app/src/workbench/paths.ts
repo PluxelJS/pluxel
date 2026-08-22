@@ -1,5 +1,7 @@
+import { formatPluginNodeRoute, parsePluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
 export const WORKBENCH_ROUTE_PREFIX = '/workbench' as const
 export const WORKBENCH_STANDALONE_ROUTE_PREFIX = '/workbench-standalone' as const
+export const PLUGIN_DETAIL_ROUTE_PREFIX = '/plugins' as const
 
 export type WorkbenchFrame = 'shell' | 'standalone'
 export type WorkbenchRoutePrefix =
@@ -34,17 +36,38 @@ export function normalizeWorkbenchPath(path: string): string {
 }
 
 export function buildWorkbenchHref(
-	target: PluginNodeAddressSnapshot,
+	target: PluginNodeAddress,
 	path: string,
 	frame: WorkbenchFrame = 'shell',
 ): string {
 	const normalizedPath = normalizeWorkbenchPath(path)
 	const prefix = getWorkbenchRoutePrefix(frame)
-	return `${prefix}/${encodeWorkbenchNodeSegment(target)}${normalizedPath}`
+	return `${prefix}/${formatPluginNodeRoute(target)}${normalizedPath}`
+}
+
+export function buildPluginDetailHref(target: PluginNodeAddress, path = ''): string {
+	return `${PLUGIN_DETAIL_ROUTE_PREFIX}/${formatPluginNodeRoute(target)}${normalizeWorkbenchPath(path)}`
+}
+
+export function parsePluginDetailHref(
+	pathname: string,
+): Readonly<{ target: PluginNodeAddress; path: string }> | undefined {
+	const marker = `${PLUGIN_DETAIL_ROUTE_PREFIX}/`
+	if (!pathname.startsWith(marker)) return undefined
+	const rawSegments = pathname.slice(marker.length).split('/')
+	try {
+		const { nodeAddress: target, consumedSegments } = parsePluginNodeRoute(rawSegments)
+		return Object.freeze({
+			target,
+			path: normalizeWorkbenchPath(rawSegments.slice(consumedSegments).join('/')),
+		})
+	} catch {
+		return undefined
+	}
 }
 
 export type ParsedWorkbenchHref = Readonly<{
-	target: PluginNodeAddressSnapshot
+	target: PluginNodeAddress
 	path: string
 	frame: WorkbenchFrame
 }>
@@ -64,15 +87,13 @@ function parseWorkbenchHrefWithPrefix(
 	const marker = `${prefix}/`
 	if (!pathname.startsWith(marker)) return undefined
 	const tail = pathname.slice(marker.length)
-	const separator = tail.indexOf('/')
-	const encodedTarget = separator === -1 ? tail : tail.slice(0, separator)
-	if (!encodedTarget) return undefined
-	const path = separator === -1 ? '' : normalizeWorkbenchPath(tail.slice(separator))
+	if (!tail) return undefined
+	const rawSegments = tail.split('/')
 	try {
-		return Object.freeze({ target: decodeWorkbenchNodeSegment(encodedTarget), path, frame })
+		const { nodeAddress: target, consumedSegments } = parsePluginNodeRoute(rawSegments)
+		const path = normalizeWorkbenchPath(rawSegments.slice(consumedSegments).join('/'))
+		return Object.freeze({ target, path, frame })
 	} catch {
 		return undefined
 	}
 }
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
-import { decodeWorkbenchNodeSegment, encodeWorkbenchNodeSegment } from './node-address'

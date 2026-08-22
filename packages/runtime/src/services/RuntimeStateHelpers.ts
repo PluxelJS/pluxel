@@ -1,37 +1,29 @@
-import type { PluginDefinitionAddressSnapshot, PluginNodeAddressSnapshot } from '@pluxel/core'
+import {
+	pluginDefinitionAddressEqual,
+	pluginNodeAddressEqual,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import type { RuntimeStateDraft, RuntimeStateSnapshot } from './RuntimeStateStore'
 
 export function samePluginDefinitionAddress(
-	left: PluginDefinitionAddressSnapshot,
-	right: PluginDefinitionAddressSnapshot,
+	left: PluginDefinitionAddress,
+	right: PluginDefinitionAddress,
 ): boolean {
-	if (left.exportName !== right.exportName || left.entry.kind !== right.entry.kind) return false
-	return left.entry.kind === 'package-root'
-		? right.entry.kind === 'package-root' && left.entry.packageName === right.entry.packageName
-		: right.entry.kind === 'source-entry' && left.entry.source === right.entry.source
+	return pluginDefinitionAddressEqual(left, right)
 }
 
-export function samePluginNodeAddress(
-	left: PluginNodeAddressSnapshot,
-	right: PluginNodeAddressSnapshot,
-): boolean {
-	if (!samePluginDefinitionAddress(left.definition, right.definition)) return false
-	if (left.instance !== right.instance) return false
-	return left.instance === 'default'
-		? true
-		: right.instance === 'fork' && left.forkId === right.forkId
+export function samePluginNodeAddress(left: PluginNodeAddress, right: PluginNodeAddress): boolean {
+	return pluginNodeAddressEqual(left, right)
 }
 
-export function isPluginEnabled(
-	state: RuntimeStateSnapshot,
-	node: PluginNodeAddressSnapshot,
-): boolean {
+export function isPluginEnabled(state: RuntimeStateSnapshot, node: PluginNodeAddress): boolean {
 	return state.enabled.some((candidate) => samePluginNodeAddress(candidate, node))
 }
 
 export function setPluginEnabled(
 	draft: RuntimeStateDraft,
-	node: PluginNodeAddressSnapshot,
+	node: PluginNodeAddress,
 	enabled: boolean,
 ): void {
 	const index = draft.enabled.findIndex((candidate) => samePluginNodeAddress(candidate, node))
@@ -44,7 +36,7 @@ export function setPluginEnabled(
 
 export function setPluginsEnabled(
 	draft: RuntimeStateDraft,
-	nodes: Iterable<PluginNodeAddressSnapshot>,
+	nodes: Iterable<PluginNodeAddress>,
 	enabled: boolean,
 ): void {
 	for (const node of nodes) setPluginEnabled(draft, node, enabled)
@@ -52,7 +44,7 @@ export function setPluginsEnabled(
 
 export function replaceEnabledPlugins(
 	draft: RuntimeStateDraft,
-	nodes: Iterable<PluginNodeAddressSnapshot>,
+	nodes: Iterable<PluginNodeAddress>,
 ): void {
 	draft.enabled.length = 0
 	for (const node of nodes) setPluginEnabled(draft, node, true)
@@ -60,7 +52,7 @@ export function replaceEnabledPlugins(
 
 export function listForkIds(
 	state: RuntimeStateSnapshot,
-	definition: PluginDefinitionAddressSnapshot,
+	definition: PluginDefinitionAddress,
 ): readonly string[] {
 	return (
 		state.forks.find((entry) => samePluginDefinitionAddress(entry.definition, definition))

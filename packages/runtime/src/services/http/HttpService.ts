@@ -1,4 +1,9 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
+import {
+	formatPluginNodeRoute,
+	pluginNodeIndexKey,
+	type Context as PluxelContext,
+	Injectable,
+} from '@pluxel/core'
 import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
@@ -21,7 +26,6 @@ import {
 	resolveWorkbenchUiBasePath,
 } from '../../workbench-config'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
-import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 
 const serviceName = 'http' as const
 
@@ -123,7 +127,7 @@ export interface PluginHttpMountOptions extends ElysiaRouteMountOptions {
 	path?: string
 	/**
 	 * Mounts this plugin-owned boundary at a stable runtime-root path instead of the
-	 * default `/__pluxel/plugins/<opaque-owner-key>` namespace. This changes routing only;
+	 * default `/__pluxel/plugins/<v1-node-route>` namespace. This changes routing only;
 	 * authentication remains the plugin's responsibility.
 	 */
 	publicPath?: string
@@ -164,10 +168,6 @@ function normalizePluginPublicPath(path: string): string {
 		throw new Error('Plugin publicPath cannot use the reserved /__pluxel namespace')
 	}
 	return normalized
-}
-
-function encodePathSegment(input: string): string {
-	return encodeURIComponent(input)
 }
 
 function currentWorkingDirectory(): string {
@@ -332,7 +332,8 @@ export class HttpService {
 	get plugin() {
 		const pluginCtx = this.ctx
 		const owner = this.requirePluginOwner(pluginCtx)
-		const ownerKey = pluginNodePhysicalKey(owner)
+		const ownerKey = pluginNodeIndexKey(owner)
+		const ownerRoute = formatPluginNodeRoute(owner)
 		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(pluginCtx, options)
 		return {
 			owner,
@@ -340,11 +341,11 @@ export class HttpService {
 			// callers follow Elysia's chaining model and can replace mounted trees safely.
 			elysia,
 			app: elysia,
-			base: (path = '/') => this.resolvePluginBase(ownerKey, path),
+			base: (path = '/') => this.resolvePluginBase(ownerRoute, path),
 			routes: (build: ElysiaBoundaryBuilder, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginRoutes(pluginCtx, ownerKey, build, options),
+				this.mountPluginRoutes(pluginCtx, ownerKey, ownerRoute, build, options),
 			mount: (boundary: HttpBoundary, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginBoundary(pluginCtx, ownerKey, boundary, options),
+				this.mountPluginBoundary(pluginCtx, ownerKey, ownerRoute, boundary, options),
 		}
 	}
 
@@ -414,6 +415,7 @@ export class HttpService {
 	private mountPluginBoundary(
 		pluginCtx: PluxelContext,
 		ownerKey: string,
+		ownerRoute: string,
 		boundary: HttpBoundary,
 		options: PluginHttpMountOptions = {},
 	): HttpBoundaryHandle {
@@ -423,7 +425,7 @@ export class HttpService {
 		const path = normalizePluginPath(options.path)
 		const base =
 			options.publicPath === undefined
-				? this.resolvePluginBase(ownerKey, path)
+				? this.resolvePluginBase(ownerRoute, path)
 				: normalizePluginPublicPath(options.publicPath)
 		const routeId = options.id ?? this.defaultPluginBoundaryId(ownerKey, path, options.publicPath)
 		return this.mountAtPath(pluginCtx, {
@@ -436,6 +438,7 @@ export class HttpService {
 	private mountPluginRoutes(
 		pluginCtx: PluxelContext,
 		ownerKey: string,
+		ownerRoute: string,
 		build: ElysiaBoundaryBuilder,
 		options: PluginHttpMountOptions = {},
 	): ElysiaRouteHandle {
@@ -445,6 +448,7 @@ export class HttpService {
 		const handle = this.mountPluginBoundary(
 			pluginCtx,
 			ownerKey,
+			ownerRoute,
 			createBoundary(build),
 			mountOptions,
 		)
@@ -726,9 +730,9 @@ export class HttpService {
 		return owner
 	}
 
-	private resolvePluginBase(ownerKey: string, path = '/'): string {
+	private resolvePluginBase(ownerRoute: string, path = '/'): string {
 		const suffix = normalizePluginPath(path)
-		const base = `${PLUGIN_HTTP_BASE}/${encodePathSegment(ownerKey)}`
+		const base = `${PLUGIN_HTTP_BASE}/${ownerRoute}`
 		return suffix === '/' ? base : `${base}${suffix}`
 	}
 

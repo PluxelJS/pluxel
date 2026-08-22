@@ -1,5 +1,10 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import {
+	pluginDefinitionIndexKey,
+	type PluginDefinitionAddress,
+	type PluginEntryAddress,
+} from '@pluxel/core'
 import type { Program } from 'oxc-parser'
 import type { ViteCompatPlugin } from './compat.ts'
 import {
@@ -14,22 +19,15 @@ import {
 
 export type PluginDependencyMode = 'required' | 'optional'
 
-export type PluginEntryAddressSnapshot =
-	| { readonly kind: 'package-root'; readonly packageName: string }
-	| { readonly kind: 'source-entry'; readonly source: string }
-
-export type PluginDefinitionAddressSnapshot = {
-	readonly entry: PluginEntryAddressSnapshot
-	readonly exportName: string
-}
+export type { PluginDefinitionAddress, PluginEntryAddress } from '@pluxel/core'
 
 export type PluginSemanticDefinition = {
 	readonly className: string
 	readonly kind: 'plugin' | 'abstract'
-	readonly definition: PluginDefinitionAddressSnapshot
-	readonly requires: readonly PluginDefinitionAddressSnapshot[]
-	readonly optional: readonly PluginDefinitionAddressSnapshot[]
-	readonly provides?: PluginDefinitionAddressSnapshot
+	readonly definition: PluginDefinitionAddress
+	readonly requires: readonly PluginDefinitionAddress[]
+	readonly optional: readonly PluginDefinitionAddress[]
+	readonly provides?: PluginDefinitionAddress
 }
 
 export type PluginSemantics = {
@@ -41,12 +39,12 @@ export type PluginSemantics = {
 export type PluginSemanticsPluginOptions = {
 	include?: string | string[]
 	exclude?: string | string[]
-	/** Host root used to create stable, route-relative source-entry locators. */
+	/** Host root mapped to the built-in app source space. */
 	root?: string
+	/** Additional stable logical source spaces. Relative roots resolve from root. */
+	sourceSpaces?: readonly Readonly<{ name: string; root: string }>[]
 	/** Enables package-root provenance and package entry/export invariants. */
 	packageJsonPath?: string
-	/** Rejects source identities that would embed an absolute path outside the build root. */
-	rejectExternalSourceEntries?: boolean
 	/** Generated helper import. Plugin packages normally use the runtime authoring entry. */
 	helperImportSource?: '@pluxel/runtime' | '@pluxel/core'
 }
@@ -106,8 +104,14 @@ type PackagePlan = {
 	readonly packageRoot: string
 	readonly rootEntry: string
 	readonly publicEntries: ReadonlyMap<string, string>
-	readonly addresses: ReadonlyMap<string, PluginDefinitionAddressSnapshot>
+	readonly addresses: ReadonlyMap<string, PluginDefinitionAddress>
 }
+
+type ResolvedSourceSpace = Readonly<{
+	name: string
+	realRoot: string
+	depth: number
+}>
 
 type Replacement = { readonly start: number; readonly end: number; readonly text: string }
 type PartOwnerFacts = Readonly<{
@@ -116,7 +120,7 @@ type PartOwnerFacts = Readonly<{
 }>
 type PartOptionalFacts = Readonly<{
 	readonly className: string
-	readonly optional: readonly PluginDefinitionAddressSnapshot[]
+	readonly optional: readonly PluginDefinitionAddress[]
 }>
 
 const AUTHORING_PACKAGES = new Set([
@@ -153,6 +157,8 @@ export function createPluginSemanticsPlugin(
 	const requiredImports = new Map<string, Set<string>>()
 	const packageOwnerCache = new Map<string, Promise<string | undefined>>()
 	const inferredPackagePlans = new Map<string, Promise<PackagePlan | undefined>>()
+	const sourceFileRealpaths = new Map<string, Promise<string>>()
+	let resolvedSourceSpaces: Promise<readonly ResolvedSourceSpace[]> | undefined
 	let packagePlan: PackagePlan | undefined
 
 	const recordPackage = (name: string, mode: PluginDependencyMode) => {
@@ -169,6 +175,9 @@ export function createPluginSemanticsPlugin(
 			requiredImports.clear()
 			packageOwnerCache.clear()
 			inferredPackagePlans.clear()
+			sourceFileRealpaths.clear()
+			resolvedSourceSpaces = resolveSourceSpaces(sourceRoot, options.sourceSpaces)
+			await resolvedSourceSpaces
 			packagePlan = options.packageJsonPath
 				? await createPackagePlan(options.packageJsonPath, (message) => this.error(message))
 				: undefined
@@ -190,10 +199,14 @@ export function createPluginSemanticsPlugin(
 							this.error(message),
 						)
 				const activePackagePlan = packagePlan ?? inferredPackagePlan
+				resolvedSourceSpaces ??= resolveSourceSpaces(sourceRoot, options.sourceSpaces)
 				const addresses = packagePlan
 					? packagePlan.addresses
-					: mergeSourceAddresses(
-							sourceAddresses(analysis, id, sourceRoot),
+					: await sourceAddresses(
+							analysis,
+							id,
+							resolvedSourceSpaces,
+							sourceFileRealpaths,
 							inferredPackagePlan?.addresses,
 						)
 				const result = await lowerModule({
@@ -201,6 +214,8 @@ export function createPluginSemanticsPlugin(
 					code,
 					id,
 					sourceRoot,
+					sourceSpaces: resolvedSourceSpaces,
+					sourceFileRealpaths,
 					addresses,
 					packagePlan: activePackagePlan,
 					strictPackagePlan: Boolean(packagePlan),
@@ -236,15 +251,6 @@ export function createPluginSemanticsPlugin(
 						`[pluxel:plugin-package] ${definition.className} was not mapped to the package root`,
 					)
 				}
-				return
-			}
-			if (!options.rejectExternalSourceEntries) return
-			for (const definition of collectedDefinitions.values()) {
-				const entry = definition.definition.entry
-				if (entry.kind !== 'source-entry' || !isAbsolute(entry.source)) continue
-				this.error(
-					`[pluxel:static-application] ${definition.className} resolved outside the application root as ${entry.source}; expose the Plugin as one named export from its package root with an @pluxel/hmr source condition`,
-				)
 			}
 		},
 	}
@@ -264,7 +270,7 @@ export function analyzePluginSemantics(
 	const id = resolve(options.id ?? 'src/plugin.ts')
 	const root = resolve(options.root ?? dirname(id))
 	const analysis = analyzeModule(ast)
-	const addresses = sourceAddresses(analysis, id, root)
+	const addresses = lexicalSourceAddresses(analysis, id, root)
 	const definitions: PluginSemanticDefinition[] = []
 	const error = (message: string): never => {
 		throw new Error(message)
@@ -296,7 +302,9 @@ async function lowerModule(options: {
 	code: string
 	id: string
 	sourceRoot: string
-	addresses: ReadonlyMap<string, PluginDefinitionAddressSnapshot>
+	sourceSpaces: Promise<readonly ResolvedSourceSpace[]>
+	sourceFileRealpaths: Map<string, Promise<string>>
+	addresses: ReadonlyMap<string, PluginDefinitionAddress>
 	packagePlan?: PackagePlan
 	strictPackagePlan: boolean
 	helperImportSource: string
@@ -312,7 +320,7 @@ async function lowerModule(options: {
 	const packageDependencies = new Map<string, PluginDependencyMode>()
 	const requiredSources = new Set<string>()
 	const replacements: Replacement[] = []
-	const refAddresses = new Map<string, PluginDefinitionAddressSnapshot>()
+	const refAddresses = new Map<string, PluginDefinitionAddress>()
 
 	for (const ref of analysis.refs.values()) {
 		if (analysis.exportedRefs.has(ref.name)) {
@@ -576,11 +584,13 @@ function collectPluginRefs(
 	}
 }
 
-function sourceAddresses(
+async function sourceAddresses(
 	analysis: ModuleAnalysis,
 	id: string,
-	root: string,
-): Map<string, PluginDefinitionAddressSnapshot> {
+	spacesPromise: Promise<readonly ResolvedSourceSpace[]>,
+	fileRealpaths: Map<string, Promise<string>>,
+	packageAddresses: ReadonlyMap<string, PluginDefinitionAddress> | undefined,
+): Promise<Map<string, PluginDefinitionAddress>> {
 	const byLocal = new Map<string, string[]>()
 	for (const [exportName, target] of analysis.exports) {
 		if (target.kind !== 'local') continue
@@ -590,7 +600,43 @@ function sourceAddresses(
 		list.push(exportName)
 		byLocal.set(target.local, list)
 	}
-	const addresses = new Map<string, PluginDefinitionAddressSnapshot>()
+	const addresses = new Map<string, PluginDefinitionAddress>()
+	let sourceEntry: PluginEntryAddress | undefined
+	for (const raw of analysis.classes.values()) {
+		if (!raw.marked && !raw.abstract) continue
+		const origin = originKey(id, raw.name)
+		const packageAddress = packageAddresses?.get(origin)
+		if (packageAddress) {
+			addresses.set(origin, packageAddress)
+			continue
+		}
+		const names = byLocal.get(raw.name) ?? []
+		if (names.length > 1) {
+			throw new Error(
+				`[pluxel:plugin-semantics] ${id} ${raw.name} is exported by multiple root names: ${names.join(', ')}`,
+			)
+		}
+		const exportName = names[0] ?? raw.name
+		sourceEntry ??= await canonicalSourceEntry(id, await spacesPromise, fileRealpaths)
+		addresses.set(origin, { entry: sourceEntry, exportName })
+	}
+	return addresses
+}
+
+function lexicalSourceAddresses(
+	analysis: ModuleAnalysis,
+	id: string,
+	root: string,
+): Map<string, PluginDefinitionAddress> {
+	const byLocal = new Map<string, string[]>()
+	for (const [exportName, target] of analysis.exports) {
+		if (target.kind !== 'local' || analysis.imports.has(target.local)) continue
+		const list = byLocal.get(target.local) ?? []
+		list.push(exportName)
+		byLocal.set(target.local, list)
+	}
+	const path = lexicalSourcePath(root, id)
+	const addresses = new Map<string, PluginDefinitionAddress>()
 	for (const raw of analysis.classes.values()) {
 		if (!raw.marked && !raw.abstract) continue
 		const names = byLocal.get(raw.name) ?? []
@@ -599,22 +645,12 @@ function sourceAddresses(
 				`[pluxel:plugin-semantics] ${id} ${raw.name} is exported by multiple root names: ${names.join(', ')}`,
 			)
 		}
-		const exportName = names[0] ?? raw.name
 		addresses.set(originKey(id, raw.name), {
-			entry: { kind: 'source-entry', source: sourceLocator(root, id) },
-			exportName,
+			entry: { kind: 'source-entry', sourceSpace: 'app', path },
+			exportName: names[0] ?? raw.name,
 		})
 	}
 	return addresses
-}
-
-function mergeSourceAddresses(
-	local: Map<string, PluginDefinitionAddressSnapshot>,
-	packageAddresses: ReadonlyMap<string, PluginDefinitionAddressSnapshot> | undefined,
-): Map<string, PluginDefinitionAddressSnapshot> {
-	if (!packageAddresses) return local
-	for (const [origin, address] of packageAddresses) local.set(origin, address)
-	return local
 }
 
 async function constructorRequirements(
@@ -624,7 +660,7 @@ async function constructorRequirements(
 	options: Parameters<typeof lowerModule>[0],
 	packageDependencies: Map<string, PluginDependencyMode>,
 	requiredSources: Set<string>,
-): Promise<PluginDefinitionAddressSnapshot[]> {
+): Promise<PluginDefinitionAddress[]> {
 	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
 	const constructor = members.find(
 		(value) =>
@@ -632,7 +668,7 @@ async function constructorRequirements(
 	) as AstNode | undefined
 	if (!constructor) return []
 	const params = arrayOf((constructor.value as AstNode | undefined)?.params)
-	const out: PluginDefinitionAddressSnapshot[] = []
+	const out: PluginDefinitionAddress[] = []
 	for (const parameter of params) {
 		const typeName = parameterTypeName(parameter)
 		if (!typeName) {
@@ -660,17 +696,17 @@ async function constructorRequirements(
 function optionalRequirements(
 	raw: RawClass,
 	analysis: ModuleAnalysis,
-	refs: ReadonlyMap<string, PluginDefinitionAddressSnapshot>,
+	refs: ReadonlyMap<string, PluginDefinitionAddress>,
 	id: string,
 	error: (message: string) => never,
-): PluginDefinitionAddressSnapshot[] {
+): PluginDefinitionAddress[] {
 	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
 	const init = members.find(
 		(value) =>
 			(value as AstNode).type === 'MethodDefinition' &&
 			propertyName((value as AstNode).key) === 'init',
 	) as AstNode | undefined
-	const addresses: PluginDefinitionAddressSnapshot[] = []
+	const addresses: PluginDefinitionAddress[] = []
 	const seen = new Set<string>()
 	const directCalls = new Set<unknown>()
 	for (const member of members) {
@@ -721,7 +757,7 @@ async function markerProvider(
 	analysis: ModuleAnalysis,
 	id: string,
 	options: Parameters<typeof lowerModule>[0],
-): Promise<PluginDefinitionAddressSnapshot | undefined> {
+): Promise<PluginDefinitionAddress | undefined> {
 	const expression = raw.marker?.expression as AstNode | undefined
 	if (expression?.type !== 'CallExpression') return undefined
 	const args = arrayOf(expression.arguments)
@@ -799,7 +835,7 @@ async function resolveTypeAddress(
 	id: string,
 	options: Parameters<typeof lowerModule>[0],
 	typeOnly: boolean,
-): Promise<PluginDefinitionAddressSnapshot> {
+): Promise<PluginDefinitionAddress> {
 	const binding = analysis.imports.get(typeName)
 	if (!binding) {
 		const own = options.addresses.get(originKey(id, typeName))
@@ -881,9 +917,14 @@ async function resolveTypeAddress(
 			const planned = options.addresses.get(originKey(origin.id, origin.className))
 			if (planned) return planned
 			const originModule = await readModule(origin.id)
-			const address = sourceAddresses(originModule, origin.id, options.sourceRoot).get(
-				originKey(origin.id, origin.className),
+			const sourceDefinitions = await sourceAddresses(
+				originModule,
+				origin.id,
+				options.sourceSpaces,
+				options.sourceFileRealpaths,
+				options.packagePlan?.addresses,
 			)
+			const address = sourceDefinitions.get(originKey(origin.id, origin.className))
 			if (address) return address
 		}
 	}
@@ -1017,7 +1058,7 @@ async function createPackagePlan(
 			)
 		}
 	}
-	const addresses = new Map<string, PluginDefinitionAddressSnapshot>()
+	const addresses = new Map<string, PluginDefinitionAddress>()
 	const namesByOrigin = new Map<string, string[]>()
 	let concreteCount = 0
 	for (const [exportName, origin] of rootExports) {
@@ -1407,15 +1448,119 @@ function isInside(root: string, file: string): boolean {
 	return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !isAbsolute(path))
 }
 
-function sourceLocator(root: string, id: string): string {
-	const path = relative(resolve(root), resolve(id))
-	return (path.startsWith('..') ? resolve(id) : path || id).replaceAll('\\', '/')
+async function resolveSourceSpaces(
+	appRoot: string,
+	configured: PluginSemanticsPluginOptions['sourceSpaces'],
+): Promise<readonly ResolvedSourceSpace[]> {
+	const declarations = [
+		{ name: 'app', root: appRoot },
+		...(configured ?? []).map((space) => ({
+			name: space.name,
+			root: resolve(appRoot, space.root),
+		})),
+	]
+	const names = new Set<string>()
+	const physicalRoots = new Map<string, string>()
+	const spaces: ResolvedSourceSpace[] = []
+	for (const declaration of declarations) {
+		if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(declaration.name)) {
+			throw new Error(
+				`[pluxel:plugin-semantics] invalid source space ${JSON.stringify(declaration.name)}`,
+			)
+		}
+		if (names.has(declaration.name)) {
+			throw new Error(
+				`[pluxel:plugin-semantics] duplicate source space ${JSON.stringify(declaration.name)}`,
+			)
+		}
+		names.add(declaration.name)
+		let realRoot: string
+		try {
+			realRoot = await realpath(declaration.root)
+		} catch (cause) {
+			throw new Error(
+				`[pluxel:plugin-semantics] source space ${declaration.name} root does not exist: ${declaration.root}`,
+				{ cause },
+			)
+		}
+		const duplicate = physicalRoots.get(realRoot)
+		if (duplicate) {
+			throw new Error(
+				`[pluxel:plugin-semantics] source spaces ${duplicate} and ${declaration.name} resolve to the same root`,
+			)
+		}
+		physicalRoots.set(realRoot, declaration.name)
+		spaces.push({
+			name: declaration.name,
+			realRoot,
+			depth: realRoot.split(sep).filter(Boolean).length,
+		})
+	}
+	return Object.freeze(spaces.sort((left, right) => right.depth - left.depth))
 }
 
-function definitionKey(address: PluginDefinitionAddressSnapshot): string {
-	return address.entry.kind === 'package-root'
-		? `package:${address.entry.packageName}#${address.exportName}`
-		: `source:${address.entry.source}#${address.exportName}`
+async function canonicalSourceEntry(
+	id: string,
+	spaces: readonly ResolvedSourceSpace[],
+	fileRealpaths: Map<string, Promise<string>>,
+): Promise<Extract<PluginEntryAddress, { kind: 'source-entry' }>> {
+	let realFilePromise = fileRealpaths.get(id)
+	if (!realFilePromise) {
+		realFilePromise = realpath(id)
+		fileRealpaths.set(id, realFilePromise)
+	}
+	let realFile: string
+	try {
+		realFile = await realFilePromise
+	} catch (cause) {
+		fileRealpaths.delete(id)
+		throw new Error(`[pluxel:plugin-semantics] Plugin source entry does not exist: ${id}`, {
+			cause,
+		})
+	}
+	for (const space of spaces) {
+		const nativePath = relative(space.realRoot, realFile)
+		if (
+			!nativePath ||
+			isAbsolute(nativePath) ||
+			nativePath === '..' ||
+			nativePath.startsWith(`..${sep}`)
+		) {
+			continue
+		}
+		const path = nativePath.split(sep).join('/')
+		if (
+			path.includes('\\') ||
+			path.includes('?') ||
+			path.includes('#') ||
+			path.split('/').some((segment) => !segment || segment === '.' || segment === '..')
+		) {
+			throw new Error(
+				`[pluxel:plugin-semantics] Plugin source entry cannot form a canonical POSIX path: ${realFile}`,
+			)
+		}
+		return Object.freeze({ kind: 'source-entry', sourceSpace: space.name, path })
+	}
+	throw new Error(
+		`[pluxel:plugin-semantics] Plugin source entry ${realFile} is outside configured source spaces; add an explicit sourceSpaces mapping or expose it as a package-root named export`,
+	)
+}
+
+function lexicalSourcePath(root: string, id: string): string {
+	const nativePath = relative(resolve(root), resolve(id))
+	if (
+		!nativePath ||
+		isAbsolute(nativePath) ||
+		nativePath === '..' ||
+		nativePath.startsWith(`..${sep}`)
+	) {
+		throw new Error(`[pluxel:plugin-semantics] ${id} is outside source space app`)
+	}
+	return nativePath.split(sep).join('/')
+}
+
+function definitionKey(address: PluginDefinitionAddress): string {
+	return pluginDefinitionIndexKey(address)
 }
 
 function originKey(id: string, className: string): string {

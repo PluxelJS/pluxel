@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
 	type Context,
 	type NodeModuleDeclaration,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/runtime'
 import {
@@ -66,7 +66,7 @@ type PluginArtifactCompilerOptions = {
 	 * Static hosts do not have a dynamic loader anchor table, so Vite/static
 	 * integrations can provide these after loading the fixed catalog.
 	 */
-	pluginDirs?: readonly Readonly<{ owner: PluginNodeAddressSnapshot; dir: string }>[]
+	pluginDirs?: readonly Readonly<{ owner: PluginNodeAddress; dir: string }>[]
 }
 
 export type PluginArtifactCompilerViteServer = {

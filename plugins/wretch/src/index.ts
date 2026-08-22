@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
 	BasePlugin,
+	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
 	Plugin,
 	type Context,
@@ -123,7 +124,7 @@ export class WretchPlugin extends BasePlugin {
 			throw new Error('Call enableManagedSettings() before binding WretchWorkbenchPort')
 		}
 		const storage = this.requireStorage()
-		const key = this.settingsKey(owner)
+		const key = settingsKey(owner.pluginInfo.nodeAddress)
 		const assertActive = (): void => {
 			if (!this.policy || this.storage !== storage || this.managed.get(owner) !== state) {
 				throw stoppedClientError()
@@ -192,7 +193,7 @@ export class WretchPlugin extends BasePlugin {
 		const storage = this.requireStorage()
 		const state = await loadManagedSettings(
 			storage,
-			this.settingsKey(owner),
+			settingsKey(owner.pluginInfo.nodeAddress),
 			owner.pluginInfo.nodeAddress,
 		)
 		if (this.policy !== policy || this.storage !== storage) {
@@ -238,12 +239,12 @@ export class WretchPlugin extends BasePlugin {
 		if (!this.storage) throw new Error('WretchPlugin is not running')
 		return this.storage
 	}
+}
 
-	private settingsKey(owner: Context): string {
-		const canonicalOwner = JSON.stringify(parsePluginNodeAddress(owner.pluginInfo.nodeAddress))
-		const digest = createHash('sha256').update(canonicalOwner).digest('hex')
-		return `consumers/v2/${digest}.json`
-	}
+function settingsKey(owner: Context['pluginInfo']['nodeAddress']): string {
+	const address = parsePluginNodeAddress(owner)
+	const digest = createHash('sha256').update(encodePluginNodeAddressBytes(address)).digest('hex')
+	return `consumers/v3/${digest}.json`
 }
 
 class ManagedSettingsRpc extends RpcTarget implements WretchWorkbenchCommands {

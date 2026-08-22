@@ -1,15 +1,15 @@
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeTransportClient, expectData, type RuntimeFetch } from '../../src/web/client'
 
 describe('runtime transport client', () => {
 	it('carries structured Workbench targets in the query instead of a path segment', async () => {
-		const target: PluginNodeAddressSnapshot = {
+		const target: PluginNodeAddress = {
 			definition: {
 				entry: { kind: 'package-root', packageName: '@acme/orders' },
 				exportName: 'OrdersPlugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		}
 		const fetch = vi.fn<RuntimeFetch>(
 			async () =>

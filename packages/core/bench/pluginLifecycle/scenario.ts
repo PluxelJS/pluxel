@@ -32,7 +32,11 @@ function definePlugin(name: string, deps?: PluginCtor[]): PluginCtor {
 	__setPluginDefinition(P, {
 		kind: 'plugin',
 		definition: {
-			entry: { kind: 'source-entry', source: `core-bench/plugin-lifecycle/${name}` },
+			entry: {
+				kind: 'source-entry',
+				sourceSpace: 'app',
+				path: `core-bench/plugin-lifecycle/${name}`,
+			},
 			exportName: name,
 		},
 		requires: deps?.map((dependency) => getPluginDefinitionFacts(dependency).definition),
@@ -93,7 +97,11 @@ function createConfigHeavy(keys: number) {
 	__setPluginDefinition(P, {
 		kind: 'plugin',
 		definition: {
-			entry: { kind: 'source-entry', source: 'core-bench/plugin-lifecycle/BenchConfigHeavy' },
+			entry: {
+				kind: 'source-entry',
+				sourceSpace: 'app',
+				path: 'core-bench/plugin-lifecycle/BenchConfigHeavy',
+			},
 			exportName: 'BenchConfigHeavy',
 		},
 	})

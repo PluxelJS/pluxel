@@ -1,6 +1,6 @@
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { formatPluginNodeAddress, pluginNodeAddressOf } from '@pluxel/core'
+import { formatPluginNodeReference, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
@@ -11,6 +11,11 @@ import {
 } from '../src/source-producer.ts'
 import { resolveDynamicPluginSources } from '../src/sources.ts'
 import { lowerTestPlugin } from './support/lowered-plugin'
+
+function expectSuccessfulBatch(batch: { readonly ok: boolean }): void {
+	if (!batch.ok)
+		throw new Error(`Expected successful HMR batch:\n${JSON.stringify(batch, null, 2)}`)
+}
 
 describe('dynamic plugin sources', () => {
 	it('discovers current entries and retains missing directories as watch roots', async () => {
@@ -98,7 +103,7 @@ describe('dynamic plugin sources', () => {
 			await rename(temporary, entry)
 
 			const added = await addedBatch
-			expect(added.ok).toBe(true)
+			expectSuccessfulBatch(added)
 			const catalogEntry = host.ctx.loader.api.registry
 				.listRegistered()
 				.find((candidate) => candidate.rootExportName === 'MutableSourcePlugin')
@@ -122,7 +127,7 @@ describe('dynamic plugin sources', () => {
 			const removed = await removedBatch
 
 			expect(removed.ok).toBe(true)
-			expect(removed.pluginChanges?.removed).toContain(formatPluginNodeAddress(mutableAddress))
+			expect(removed.pluginChanges?.removed).toContain(formatPluginNodeReference(mutableAddress))
 			expect(host.ctx.loader.api.registry.getCtor(mutableAddress)).toBeUndefined()
 			expect(host.ctx.registry.isRunning(ctor!)).toBe(false)
 			expect(instance).toMatchObject({ started: true, cleaned: true })
@@ -190,7 +195,7 @@ describe('dynamic plugin sources', () => {
 			const published = await publishedBatch
 
 			expect(host.ctx.registry.isRunning(SourceProducerPlugin)).toBe(true)
-			expect(published.ok).toBe(true)
+			expectSuccessfulBatch(published)
 			expect(
 				host.ctx.loader.api.registry
 					.listRegistered()

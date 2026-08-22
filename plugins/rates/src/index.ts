@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
 import {
 	BasePlugin,
+	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
 	Plugin,
 	pluginNodeAddressEqual,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	v,
 } from '@pluxel/runtime'
 import { RatesBackend, type RatesBackendConsumeRequest } from './backend.ts'
@@ -79,7 +80,7 @@ type EffectGuard = { readonly active: boolean }
 type OwnerContext = {
 	readonly pluginInfo: {
 		readonly nodeSlot: object
-		readonly nodeAddress: PluginNodeAddressSnapshot
+		readonly nodeAddress: PluginNodeAddress
 	}
 	readonly effects: { defer(cleanup: () => void, meta?: { tag?: string }): EffectGuard }
 	readonly registry: { getInstance(identifier: unknown): unknown }
@@ -206,8 +207,8 @@ export class RatesPlugin extends Rates {
 
 		const ownerAddress = global ? null : normalizeOwnerAddress(owner.context.pluginInfo.nodeAddress)
 		const prefix = global
-			? `rates|v2|global|${encodeString(name)}|`
-			: `rates|v2|plugin|${ownerAddressDigest(ownerAddress!)}|${encodeString(name)}|`
+			? `rates|v3|global|${encodeString(name)}|`
+			: `rates|v3|plugin|${ownerAddressDigest(ownerAddress!)}|${encodeString(name)}|`
 		const handle = new RateLimiterHandle(
 			policy,
 			prefix,
@@ -286,7 +287,7 @@ class RateLimiterHandle implements RateLimiter {
 	constructor(
 		readonly policy: Readonly<ResolvedRatePolicy>,
 		private readonly keyPrefix: string,
-		private readonly owner: PluginNodeAddressSnapshot | null,
+		private readonly owner: PluginNodeAddress | null,
 		private readonly assertActive: () => void,
 		private readonly consumeBackend: (request: RatesBackendConsumeRequest) => Promise<RateDecision>,
 	) {}
@@ -301,7 +302,7 @@ class RateLimiterHandle implements RateLimiter {
 }
 
 type MemoryRateState = {
-	readonly owner: PluginNodeAddressSnapshot | null
+	readonly owner: PluginNodeAddress | null
 	readonly state: RateState
 }
 
@@ -381,27 +382,25 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 	}
 }
 
-function normalizeOwnerAddress(address: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
+function normalizeOwnerAddress(address: PluginNodeAddress): PluginNodeAddress {
 	return parsePluginNodeAddress(address)
 }
 
-function normalizeBackendOwner(
-	owner: PluginNodeAddressSnapshot | null,
-): PluginNodeAddressSnapshot | null {
+function normalizeBackendOwner(owner: PluginNodeAddress | null): PluginNodeAddress | null {
 	return owner === null ? null : normalizeOwnerAddress(owner)
 }
 
 function ownerAddressesEqual(
-	left: PluginNodeAddressSnapshot | null,
-	right: PluginNodeAddressSnapshot | null,
+	left: PluginNodeAddress | null,
+	right: PluginNodeAddress | null,
 ): boolean {
 	if (left === null || right === null) return left === right
 	return pluginNodeAddressEqual(left, right)
 }
 
-function ownerAddressDigest(address: PluginNodeAddressSnapshot): string {
+function ownerAddressDigest(address: PluginNodeAddress): string {
 	return createHash('sha256')
-		.update(JSON.stringify(normalizeOwnerAddress(address)))
+		.update(encodePluginNodeAddressBytes(normalizeOwnerAddress(address)))
 		.digest('hex')
 }
 

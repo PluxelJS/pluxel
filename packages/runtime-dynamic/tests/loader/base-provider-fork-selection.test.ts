@@ -24,7 +24,7 @@ describe('base provider selection', () => {
 		const implementation = pluginNodeAddressOf(Impl)
 		const fork = {
 			definition: implementation.definition,
-			instance: 'fork',
+			variant: 'fork',
 			forkId: 'f1',
 		} as const
 		ctx.runtimeState.update((draft) => {
@@ -111,13 +111,17 @@ describe('base provider selection', () => {
 		const worker = pluginNodeAddressOf(Worker)
 		const fork = {
 			definition: worker.definition,
-			instance: 'fork',
+			variant: 'fork',
 			forkId: 'f1',
 		} as const
 		ctx.runtimeState.update((draft) => {
 			draft.forks = [{ definition: worker.definition, forkIds: ['f1'] }]
 			draft.dependencyOverrides = [
-				{ consumer: pluginNodeAddressOf(Consumer), parameterIndex: 0, provider: fork },
+				{
+					consumerAddress: pluginNodeAddressOf(Consumer),
+					requirementAddress: getPluginDefinitionFacts(Worker).definition,
+					providerAddress: fork,
+				},
 			]
 		})
 		enablePlugins(ctx, fork, Consumer)

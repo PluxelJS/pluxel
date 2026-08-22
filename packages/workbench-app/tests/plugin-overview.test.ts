@@ -15,24 +15,28 @@ describe('plugin overview address materialization', () => {
 						reads.push('packageName')
 						return '@pluxel/example'
 					},
-					get source() {
-						reads.push('source')
+					get sourceSpace() {
+						reads.push('sourceSpace')
+						return null
+					},
+					get path() {
+						reads.push('path')
 						return null
 					},
 				},
 				exportName: 'ExamplePlugin',
 			},
-			instance: 'default',
+			variant: 'default',
 			forkId: null,
 		})
 
-		expect(reads).toEqual(['kind', 'packageName', 'source'])
+		expect(reads).toEqual(['kind', 'packageName', 'sourceSpace', 'path'])
 		expect(address).toEqual({
 			definition: {
 				entry: { kind: 'package-root', packageName: '@pluxel/example' },
 				exportName: 'ExamplePlugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		})
 	})
 
@@ -40,18 +44,23 @@ describe('plugin overview address materialization', () => {
 		expect(
 			materializeAddress({
 				definition: {
-					entry: { kind: 'source-entry', packageName: null, source: './plugin.ts' },
+					entry: {
+						kind: 'source-entry',
+						packageName: null,
+						sourceSpace: 'app',
+						path: 'plugins/plugin.ts',
+					},
 					exportName: 'SourcePlugin',
 				},
-				instance: 'fork',
+				variant: 'fork',
 				forkId: 'secondary',
 			}),
 		).toEqual({
 			definition: {
-				entry: { kind: 'source-entry', source: './plugin.ts' },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/plugin.ts' },
 				exportName: 'SourcePlugin',
 			},
-			instance: 'fork',
+			variant: 'fork',
 			forkId: 'secondary',
 		})
 	})
@@ -60,10 +69,10 @@ describe('plugin overview address materialization', () => {
 		expect(
 			materializeAddress({
 				definition: {
-					entry: { kind: 'package-root', source: null },
+					entry: { kind: 'package-root', sourceSpace: null, path: null },
 					exportName: 'ExamplePlugin',
 				},
-				instance: 'default',
+				variant: 'default',
 			}),
 		).toBeNull()
 	})

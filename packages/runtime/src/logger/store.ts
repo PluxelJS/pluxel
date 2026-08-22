@@ -1,3 +1,4 @@
+import { pluginNodeIndexKey } from '@pluxel/core'
 import {
 	compileLogFilter,
 	matchesLogFilterCompiled,
@@ -207,15 +208,8 @@ function chunkMayMatch(meta: ChunkMeta, f: CompiledLogFilter): boolean {
 	return true
 }
 
-function pluginKey(plugin: import('@pluxel/core').PluginNodeAddressSnapshot): string {
-	const entry = plugin.definition.entry
-	return JSON.stringify([
-		entry.kind,
-		entry.kind === 'package-root' ? entry.packageName : entry.source,
-		plugin.definition.exportName,
-		plugin.instance,
-		plugin.instance === 'fork' ? plugin.forkId : null,
-	])
+function pluginKey(plugin: import('@pluxel/core').PluginNodeAddress): string {
+	return pluginNodeIndexKey(plugin)
 }
 
 export class RuntimeLogStore {

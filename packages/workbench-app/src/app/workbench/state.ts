@@ -6,6 +6,7 @@ import {
 	sanitizePluginSectionLayout,
 	sanitizePluginWorkbenchPanelsState,
 } from './split/plugin'
+import { parsePluginDetailHref, parseWorkbenchHref } from '../../workbench/paths'
 
 export type WorkbenchTab = {
 	/** Stable identity of this concrete Tab instance. */
@@ -37,7 +38,7 @@ export type WorkbenchState = {
 }
 
 export const WORKBENCH_STORAGE_KEY = 'pluxel:workbench:ui'
-export const WORKBENCH_STORAGE_VERSION = 2 as const
+export const WORKBENCH_STORAGE_VERSION = 3 as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -107,11 +108,13 @@ function sanitizeWorkbenchTab(value: unknown): WorkbenchTab | undefined {
 	if (instanceId === '__proto__' || instanceId === 'constructor' || instanceId === 'prototype') {
 		return undefined
 	}
-	const path = typeof value.path === 'string' && value.path.startsWith('/') ? value.path : undefined
+	const storedPath =
+		typeof value.path === 'string' && value.path.startsWith('/') ? value.path : undefined
+	const path = storedPath ? sanitizeWorkbenchTabPath(storedPath) : undefined
 	if (!path) return undefined
 	const title = typeof value.title === 'string' && value.title.trim() ? value.title.trim() : '页面'
 	const explicitDocumentKey =
-		typeof value.documentKey === 'string' && value.documentKey === path ? path : undefined
+		typeof value.documentKey === 'string' && value.documentKey === storedPath ? path : undefined
 	return {
 		instanceId,
 		path,
@@ -178,6 +181,17 @@ export function restoreWorkbenchState(value: unknown): WorkbenchUiState {
 		return sanitizeWorkbenchUiState(value.state)
 	}
 	return createDefaultWorkbenchUiState()
+}
+
+function sanitizeWorkbenchTabPath(path: string): string | undefined {
+	if (path.startsWith('/plugins/') && !parsePluginDetailHref(path)) return undefined
+	if (
+		(path.startsWith('/workbench/') || path.startsWith('/workbench-standalone/')) &&
+		!parseWorkbenchHref(path)
+	) {
+		return undefined
+	}
+	return path
 }
 
 export function readWorkbenchState(): WorkbenchUiState {

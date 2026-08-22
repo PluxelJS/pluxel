@@ -9,6 +9,9 @@ Rolldown/Vite 工具链入口：
   required 与 optional provider 都保持 external；type-only optional ref 不解析、加载或合成 absent module，也没有 reflection
   metadata/name fallback。CLI 不追加并行 import tracker。
 - `@pluxel/rolldown/vite`：提供同语义的 Vite source adapter，供 static/dynamic ModuleRunner 和 HMR route 复用。
+  `pluginSourceVitePlugins()` 与 `pluxelRuntimeSourceVitePlugins()` 支持显式 `sourceSpaces` 映射；配置、`realpath`
+  containment 和 identity 边界见
+  [`../../docs/development/tooling.md`](../../docs/development/tooling.md#source-build-boundary)。
 - `@pluxel/rolldown/distribution`：static artifact-set finalizer、in-toto/DSSE helper、offline verifier 和 inert delivery
   marker；raw v1 schema 位于 `@pluxel/rolldown/distribution/schema.json`。用户流程见
   [`../../docs/development/distribution.md`](../../docs/development/distribution.md)，维护约束见

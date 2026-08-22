@@ -134,7 +134,25 @@ export default staticApplication({
 
 ## Source build boundary
 
-Static/dynamic Vite adapters 执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser graph 与 server Plugin implementation 保持分离。
+Static/dynamic Vite adapters 执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
+Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
+graph 与 server Plugin implementation 保持分离。
+
+低层 source adapter 默认把 `root` 映射为逻辑 source space `app`。需要承载不属于 package root 的额外源码树时，显式声明
+稳定的逻辑名称：
+
+```ts no-twoslash
+import { pluginSourceVitePlugins } from '@pluxel/rolldown/vite'
+
+const plugins = pluginSourceVitePlugins({
+	root: '/srv/orders-host',
+	sourceSpaces: [{ name: 'managed', root: 'plugins/managed' }],
+})
+```
+
+相对 `root` 解析物理目录；嵌套映射选择最具体的 source space。工具链对 root 和 entry 使用 native `realpath`，因此可以使用
+symlinked root，但会拒绝通过文件 symlink 逃出 root。修改 `name`、root 映射或嵌套关系会改变 Plugin address；需要跨宿主布局
+稳定的可发布 Plugin 应使用 package root named export。
 
 ## Node/worker artifact
 

@@ -7,10 +7,10 @@ import * as runtimeDynamicVite from '@pluxel/runtime-dynamic/vite'
 
 const demoAddress = {
 	definition: {
-		entry: { kind: 'source-entry', source: 'plugins/demo.ts' },
+		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/demo.ts' },
 		exportName: 'DemoPlugin',
 	},
-	instance: 'default',
+	variant: 'default',
 } as const
 
 describe('@pluxel/runtime-dynamic/vite', () => {

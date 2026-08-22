@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { pluginNodeAddressEqual, type PluginNodeAddress } from '@pluxel/core'
 import { createMemoryHistory } from '@tanstack/react-router'
 import { createAppRouter } from '../src/app/router'
 import { groupNavItems } from '../src/app/navigation/navConfig'
@@ -10,6 +11,11 @@ import {
 	matchWorkbenchRoute,
 	workbenchRoutesOverlap,
 } from '../src/workbench/routes'
+import {
+	buildPluginDetailHref,
+	buildWorkbenchHref,
+	parsePluginDetailHref,
+} from '../src/workbench/paths'
 
 vi.mock('../src/app/router/routeTree.gen', async () => {
 	const { createRootRoute } = await import('@tanstack/react-router')
@@ -18,7 +24,44 @@ vi.mock('../src/app/router/routeTree.gen', async () => {
 vi.mock('../src/app/router/screens/NotFoundScreen', () => ({ NotFoundScreen: () => null }))
 vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({ RouteErrorScreen: () => null }))
 
+const OrdersTarget: PluginNodeAddress = {
+	definition: {
+		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/orders.ts' },
+		exportName: 'OrdersPlugin',
+	},
+	variant: 'fork',
+	forkId: 'east',
+}
+
+function packageTarget(packageName: string, exportName: string): PluginNodeAddress {
+	return {
+		definition: { entry: { kind: 'package-root', packageName }, exportName },
+		variant: 'default',
+	}
+}
+
+const SandboxTarget = packageTarget('@example/sandbox', 'SandboxPlugin')
+const TelegramTarget = packageTarget('@example/telegram', 'TelegramPlugin')
+const AccessTarget = packageTarget('@example/access', 'AccessPlugin')
+const KookTarget = packageTarget('@example/kook', 'KookPlugin')
+
 describe('Workbench navigation groups', () => {
+	it('uses canonical readable Plugin node routes for detail pages', () => {
+		const href = buildPluginDetailHref(OrdersTarget, '/config')
+		expect(href).toBe('/plugins/v1/fork/east/source/OrdersPlugin/app/2/plugins/orders.ts/config')
+
+		const parsed = parsePluginDetailHref(href)
+		expect(parsed?.path).toBe('/config')
+		expect(parsed && pluginNodeAddressEqual(parsed.target, OrdersTarget)).toBe(true)
+		expect(resolveWorkbenchLocation(href)).toMatchObject({
+			title: 'OrdersPlugin',
+			meta: '配置',
+		})
+		expect(parsePluginDetailHref('/plugins/source%3Aapp%2Forders.ts%3A%3AOrdersPlugin')).toBe(
+			undefined,
+		)
+	})
+
 	it('mounts the browser router below a host-owned UI base path', () => {
 		const router = createAppRouter({
 			history: createMemoryHistory({ initialEntries: ['/__pluxel/workbench/logs'] }),
@@ -34,28 +77,31 @@ describe('Workbench navigation groups', () => {
 	})
 
 	it('collapses grouped routes into one primary section and preserves child order', () => {
+		const sandboxPath = buildWorkbenchHref(SandboxTarget, '/sandbox')
+		const telegramPath = buildWorkbenchHref(TelegramTarget, '/settings')
+		const accessPath = buildWorkbenchHref(AccessTarget, '/access')
 		const items = groupNavItems([
 			{ label: '首页', href: '/' },
 			{
 				label: 'Sandbox',
-				href: '/workbench/Sandbox/sandbox',
+				href: sandboxPath,
 				group: { id: 'bots', label: 'Bots' },
 			},
 			{
 				label: 'Telegram',
-				href: '/workbench/Telegram/settings',
+				href: telegramPath,
 				group: { id: 'bots', label: 'Bots' },
 			},
-			{ label: '用户', href: '/workbench/Access/access' },
+			{ label: '用户', href: accessPath },
 		])
 
 		expect(items).toHaveLength(3)
 		expect(items[1]).toMatchObject({
 			label: 'Bots',
-			href: '/workbench/Sandbox/sandbox',
+			href: sandboxPath,
 			children: [
-				{ label: 'Sandbox', href: '/workbench/Sandbox/sandbox' },
-				{ label: 'Telegram', href: '/workbench/Telegram/settings' },
+				{ label: 'Sandbox', href: sandboxPath },
+				{ label: 'Telegram', href: telegramPath },
 			],
 		})
 		expect(
@@ -70,7 +116,7 @@ describe('Workbench navigation groups', () => {
 describe('Workbench native document tabs', () => {
 	it('creates a clean navigation instance beside the active page', () => {
 		const workspace = new WorkspaceController()
-		const sourcePath = '/workbench/TelegramPlugin/settings'
+		const sourcePath = buildWorkbenchHref(TelegramTarget, '/settings')
 		workspace.reconcileLocation(sourcePath)
 		const sourceId = workspace.state.uiState.activeTabId
 		workspace.setActiveTabState(sourceId, 'form', { account: 'draft' })
@@ -132,7 +178,7 @@ describe('Workbench native document tabs', () => {
 
 	it('deduplicates business documents by path while retaining metadata', () => {
 		const workspace = new WorkspaceController()
-		const path = '/workbench/KookPlugin/accounts/default'
+		const path = buildWorkbenchHref(KookTarget, '/accounts/default')
 		workspace.openTab({ path, title: 'default', meta: 'KOOK Bot' })
 		workspace.openTab({ path, title: 'alerts', meta: 'Connected' })
 		const instanceId = workspace.state.uiState.tabs[0]?.instanceId
@@ -166,9 +212,9 @@ describe('Workbench native document tabs', () => {
 
 	it('preserves an explicit openTab across route reconciliation', () => {
 		const workspace = new WorkspaceController()
-		const managerPath = '/workbench/TelegramPlugin/settings'
-		const createPath = '/workbench/TelegramPlugin/create'
-		const committedPath = '/workbench/TelegramPlugin/accounts/default'
+		const managerPath = buildWorkbenchHref(TelegramTarget, '/settings')
+		const createPath = buildWorkbenchHref(TelegramTarget, '/create')
+		const committedPath = buildWorkbenchHref(TelegramTarget, '/accounts/default')
 		workspace.reconcileLocation(managerPath)
 		workspace.openTab({
 			path: createPath,
@@ -192,10 +238,10 @@ describe('Workbench native document tabs', () => {
 		expect(workspace.state.uiState.tabs[0]?.documentKey).toBeUndefined()
 	})
 
-	it('sanitizes version 2 identity and rejects aliases or duplicate documents', () => {
-		const path = '/workbench/TelegramPlugin/accounts/default'
+	it('sanitizes version 3 identity and rejects aliases or duplicate documents', () => {
+		const path = buildWorkbenchHref(TelegramTarget, '/accounts/default')
 		const restored = restoreWorkbenchState({
-			version: 2,
+			version: 3,
 			state: {
 				activeTabId: 'tab:duplicate',
 				navigationCollapsed: true,
@@ -208,9 +254,19 @@ describe('Workbench native document tabs', () => {
 				tabs: [
 					{ instanceId: 'tab:first', path, title: ' first ', documentKey: path },
 					{ instanceId: 'tab:duplicate', path, title: 'duplicate', documentKey: path },
-					{ id: 'legacy-alias', path: '/logs', title: 'legacy alias' },
+					{ id: 'obsolete-alias', path: '/logs', title: 'obsolete alias' },
 					{ instanceId: '__proto__', path: '/logs', title: 'unsafe id' },
 					{ instanceId: 'invalid-path', path: 'logs', title: 'invalid path' },
+					{
+						instanceId: 'invalid-workbench-path',
+						path: '/workbench/TelegramPlugin/settings',
+						title: 'invalid Workbench route',
+					},
+					{
+						instanceId: 'invalid-plugin-path',
+						path: '/plugins/OrdersPlugin~east',
+						title: 'invalid Plugin route',
+					},
 				],
 			},
 		})
@@ -221,5 +277,11 @@ describe('Workbench native document tabs', () => {
 		expect(restored.activeTabId).toBe('tab:first')
 		expect(restored.pluginPane.visible).toBe(true)
 		expect(restored.tabState).toEqual({ 'tab:first': { retained: true } })
+	})
+
+	it.each([1, 2])('rejects unsupported persisted version %s', (version) => {
+		expect(restoreWorkbenchState({ version, state: { tabs: [] } })).toEqual(
+			restoreWorkbenchState(undefined),
+		)
 	})
 })

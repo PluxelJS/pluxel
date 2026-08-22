@@ -1,8 +1,7 @@
-import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { isPluginEnabled as isRuntimePluginEnabled } from '../RuntimeStateStore'
-import { pluginNodeAddressKey } from '../../runtime/plugin-address'
 
-export type PluginOwner = PluginNodeAddressSnapshot
+export type PluginOwner = PluginNodeAddress
 export type RouteId = string
 
 export interface PluginGatedDef {
@@ -51,7 +50,7 @@ export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
 
 	for (const route of routes) {
 		if (!isPluginEnabled(route.plugin, ctx)) continue
-		enabledPlugins.set(pluginNodeAddressKey(route.plugin), route.plugin)
+		enabledPlugins.set(pluginNodeIndexKey(route.plugin), route.plugin)
 		enabledRouteIds.push(route.id)
 	}
 

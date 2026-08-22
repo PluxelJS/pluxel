@@ -16,8 +16,16 @@ export function serverOnlyVitePlugin(
 	plugin: PluginOption,
 	options: { enforce?: 'pre' | 'post' } = {},
 ): Plugin {
+	return serverOnlyVitePluginFactory(name, () => plugin, options)
+}
+
+export function serverOnlyVitePluginFactory(
+	name: string,
+	createPlugin: (environment: ViteEnvironment) => PluginOption,
+	options: { enforce?: 'pre' | 'post' } = {},
+): Plugin {
 	const wrapped = perEnvironmentPlugin(name, (environment) =>
-		isServerConsumerEnvironment(environment) ? plugin : false,
+		isServerConsumerEnvironment(environment) ? createPlugin(environment) : false,
 	)
 	return options.enforce ? { ...wrapped, enforce: options.enforce } : wrapped
 }

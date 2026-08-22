@@ -12,10 +12,10 @@ describe('HMR runtime persistence storage', () => {
 	it('initializes plugin config from the dynamic host environment', async () => {
 		const owner = {
 			definition: {
-				entry: { kind: 'source-entry', source: 'plugins/example.ts' },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/example.ts' },
 				exportName: 'ExamplePlugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		} as const
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
@@ -39,7 +39,7 @@ describe('HMR runtime persistence storage', () => {
 			runtimeState: { mode: 'memory' },
 			env: {
 				PLUXEL_CONFIG: JSON.stringify({
-					version: 2,
+					version: 3,
 					plugins: [{ owner, config: { endpoint: 'https://api.example.test' } }],
 				}),
 			},

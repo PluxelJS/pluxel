@@ -6,9 +6,9 @@ export { configSourcePlugin } from './plugins/configSourcePlugin.ts'
 export type { LintGuardPluginOptions } from './plugins/lintGuardPlugin.ts'
 export { lintGuardPlugin } from './plugins/lintGuardPlugin.ts'
 export type {
-	PluginDefinitionAddressSnapshot,
+	PluginDefinitionAddress,
 	PluginDependencyMode,
-	PluginEntryAddressSnapshot,
+	PluginEntryAddress,
 	PluginSemanticDefinition,
 	PluginSemanticsPluginOptions,
 } from './plugins/pluginSemanticsPlugin.ts'

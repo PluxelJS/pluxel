@@ -1,5 +1,5 @@
 // rpc/RuntimeRpcApi.ts - 主 RPC API
-import { parsePluginNodeAddress, type Context, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { parsePluginNodeAddress, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { writeGroups } from '../../features/pluginGroups/service'
 import {
@@ -69,55 +69,51 @@ export class RuntimeRpcApi extends RpcTarget {
 		)
 	}
 
-	async pluginSchema(owner: PluginNodeAddressSnapshot) {
+	async pluginSchema(owner: PluginNodeAddress) {
 		return await pluginSchema(this.ctx, owner)
 	}
 
-	async pluginConfig(owner: PluginNodeAddressSnapshot) {
+	async pluginConfig(owner: PluginNodeAddress) {
 		return await pluginConfigGet(this.ctx, owner)
 	}
 
-	async patchPluginConfig(owner: PluginNodeAddressSnapshot, patch: Record<string, unknown>) {
+	async patchPluginConfig(owner: PluginNodeAddress, patch: Record<string, unknown>) {
 		return await pluginConfigPatch(this.ctx, owner, patch)
 	}
 
-	async patchPluginConfigField(owner: PluginNodeAddressSnapshot, input: ConfigFieldMutation) {
+	async patchPluginConfigField(owner: PluginNodeAddress, input: ConfigFieldMutation) {
 		return await pluginConfigPatchField(this.ctx, owner, input)
 	}
 
-	pluginDependencies(owner: PluginNodeAddressSnapshot) {
+	pluginDependencies(owner: PluginNodeAddress) {
 		return listPluginDependencies(this.ctx, owner)
 	}
 
-	inspectPluginDependencies(owner: PluginNodeAddressSnapshot) {
+	inspectPluginDependencies(owner: PluginNodeAddress) {
 		return inspectPluginDependencies(this.ctx, owner)
 	}
 
 	async setPluginDependencyTarget(input: {
-		consumer: PluginNodeAddressSnapshot
+		consumer: PluginNodeAddress
 		index: number
-		provider: PluginNodeAddressSnapshot | null
+		provider: PluginNodeAddress | null
 	}) {
 		return await pluginDependencySetTarget(this.ctx, input.consumer, input.index, input.provider)
 	}
 
-	inspectPluginBaseProvider(owner: PluginNodeAddressSnapshot) {
+	inspectPluginBaseProvider(owner: PluginNodeAddress) {
 		return inspectPluginBaseProvider(this.ctx, owner)
 	}
 
 	async selectPluginBaseProvider(input: {
-		consumer: PluginNodeAddressSnapshot
-		token: import('@pluxel/core').PluginDefinitionAddressSnapshot
-		provider: PluginNodeAddressSnapshot | null
+		consumer: PluginNodeAddress
+		token: import('@pluxel/core').PluginDefinitionAddress
+		provider: PluginNodeAddress | null
 	}) {
 		return await pluginBaseProviderSet(this.ctx, input.consumer, input.token, input.provider)
 	}
 
-	async ensurePluginFork(input: {
-		base: PluginNodeAddressSnapshot
-		forkId: string
-		enable?: boolean
-	}) {
+	async ensurePluginFork(input: { base: PluginNodeAddress; forkId: string; enable?: boolean }) {
 		return await ensureFork(this.ctx, input.base, input.forkId, { enable: input.enable })
 	}
 

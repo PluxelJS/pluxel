@@ -13,14 +13,14 @@
 cache-aside 与进程内 single-flight。`@Cached` / `@Memoized` 只是简单 method 的便利入口，不定义第二套缓存模型。
 
 `@pluxel/cache` 是普通 Pluxel plugin。所有 caller 共享一个 local coordinator 和同一个 async backend，但默认
-namespace 在进程内按 opaque `PluginNodeSlot` 隔离。进入 backend 时，规范化 `PluginNodeAddressSnapshot` 的 canonical JSON
+namespace 在进程内按 opaque `PluginNodeSlot` 隔离。进入 backend 时，`PluginNodeAddress` 的统一 canonical bytes
 只用于计算 SHA-256 物理前缀，不形成公开 address string grammar：
 
 ```text
-cache:v2:plugin:<owner-address-sha256>:<canonical-key>
+cache:v3:plugin:<owner-address-sha256>:<canonical-key>
 ```
 
-backend value envelope 同时保存完整结构化 owner snapshot；读取时必须与当前 owner 比对。global namespace 的 owner
+backend value envelope 同时保存完整结构化 owner address；读取时必须与当前 owner 比对。global namespace 的 owner
 明确为 `null`。hash 碰撞、错接 key、旧裸 value 或损坏 envelope 都会 fail closed，不提供旧格式 reader。
 
 `cache.global` 显式移除 caller value namespace 隔离，供确认 value contract 相同的插件共享。global handle 仍绑定发起

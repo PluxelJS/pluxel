@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'pathe'
-import type { PluginNodeAddressSnapshot, PluginNodeSlot } from '@pluxel/core'
+import type { PluginNodeAddress, PluginNodeSlot } from '@pluxel/core'
 import { getOxcResolveCache } from '../services/runtime/shared/oxc-resolver'
 import {
 	getCachedResolver,
@@ -10,7 +10,7 @@ import {
 
 type RuntimeModuleLookupContext = {
 	registry?: {
-		internNodeAddress?: (address: PluginNodeAddressSnapshot) => PluginNodeSlot
+		internNodeAddress?: (address: PluginNodeAddress) => PluginNodeSlot
 		getRuntimeModuleId?: (id: PluginNodeSlot) => string | undefined
 	}
 }
@@ -19,7 +19,7 @@ type RuntimeModuleLookupContext = {
 // Returns a module id, not a filesystem path; call resolveModuleIdBaseDir for path resolution.
 export function findRuntimeModuleId(
 	ctx: RuntimeModuleLookupContext,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): string | null {
 	const node = ctx.registry?.internNodeAddress?.(owner)
 	return node ? (ctx.registry?.getRuntimeModuleId?.(node) ?? null) : null

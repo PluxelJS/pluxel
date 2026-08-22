@@ -16,6 +16,11 @@ module batch -> committed graph -> stop old owner/effects -> start new owner
              -> Workbench refetch target layouts -> lazy load new remote
 ```
 
+source/module 变化以 `PluginDefinitionSlot` 为 invalidation unit。一个 definition 的 default 与已创建 forks 在同一 graph commit plan
+中 replacement，保留各自 node address/slot 和 config；不能逐 fork 发布而留下 mixed constructor generation。artifact build input 按
+definition/declaration 共享，不含 `forkId`；node binding 与 generation lease 仍隔离。身份作用域见
+[`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md#各领域作用域)。
+
 optional ref 已被 lower 成 definition slot edge，不拥有 loader、watcher subscription 或 synthetic module owner。catalog/source
 transaction 让 provider running generation 出现、消失或 replacement 时，core 在同一 plan 中先停止 optional consumer closure、
 drain effects，再更新 provider并重启 consumer；absent 状态下重复失败不会制造 restart。

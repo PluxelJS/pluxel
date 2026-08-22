@@ -1,22 +1,34 @@
-import type { PluginNodeAddressSnapshot } from '../plugins/runtime/identity'
+import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
 export type PluxelContextLike = {
 	name: string
-	pluginInfo?: { nodeAddress?: PluginNodeAddressSnapshot } | undefined
+	pluginInfo?: { nodeAddress?: PluginNodeAddress; displayName?: string } | undefined
 	parent?: unknown
 	caller?: unknown
 }
 
-export function findPluginNodeAddress(
-	ctx: PluxelContextLike,
-): PluginNodeAddressSnapshot | undefined {
+export type PluginLogContext = Readonly<{
+	nodeAddress: PluginNodeAddress
+	displayName?: string
+}>
+
+export function findPluginLogContext(ctx: PluxelContextLike): PluginLogContext | undefined {
 	let current: PluxelContextLike | undefined = ctx
 	while (current) {
-		const address = current.pluginInfo?.nodeAddress
-		if (address) return address
+		const nodeAddress = current.pluginInfo?.nodeAddress
+		if (nodeAddress) {
+			return {
+				nodeAddress,
+				displayName: current.pluginInfo?.displayName,
+			}
+		}
 		current =
 			(current.parent as PluxelContextLike | undefined) ??
 			(current.caller as PluxelContextLike | undefined)
 	}
 	return undefined
+}
+
+export function findPluginNodeAddress(ctx: PluxelContextLike): PluginNodeAddress | undefined {
+	return findPluginLogContext(ctx)?.nodeAddress
 }

@@ -1,6 +1,7 @@
 /** Host-owned plugin search, organization, bulk actions, and group persistence. */
 
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
+import { pluginNodeIndexKey } from '@pluxel/core'
 import {
 	IconChevronLeft,
 	IconCornerUpLeft,
@@ -21,7 +22,6 @@ import { updatePluginStatuses } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
 import type { PluginStatusAction } from '../../../runtime'
 import { stringifyUnknown } from '../../../utils/unknown'
-import { workbenchNodeKey } from '../../../workbench/node-address'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -45,7 +45,7 @@ import { SearchBar } from './components/SearchBar'
 
 interface PluginCatalogProps {
 	onCollapse?: () => void
-	pluginName?: string
+	pluginRoute?: string
 }
 
 const ACTION_LABEL: Record<PluginStatusAction, string> = {
@@ -59,7 +59,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
 const PLUGIN_GROUPS_INVALIDATION = defineInvalidation((query) => query.pluginCatalog.groups.ids)
 
-export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginName }) => {
+export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginRoute }) => {
 	const updatePluginGroups = useMutation(api.pluginGroups.update)
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
@@ -283,7 +283,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				return status
 			})
 			const displayNameByAddress = new Map(
-				batch.map((status) => [workbenchNodeKey(status.address), status.name ?? status.id]),
+				batch.map((status) => [pluginNodeIndexKey(status.address), status.name ?? status.id]),
 			)
 			setBulkBusy(true)
 			try {
@@ -297,7 +297,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 						title: '操作完成但部分失败',
 						message:
 							failed
-								.map((result) => displayNameByAddress.get(workbenchNodeKey(result.address)))
+								.map((result) => displayNameByAddress.get(pluginNodeIndexKey(result.address)))
 								.filter(Boolean)
 								.join('，') || '操作失败',
 						color: 'red',
@@ -334,7 +334,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 															message:
 																undoFailed
 																	.map((result) =>
-																		displayNameByAddress.get(workbenchNodeKey(result.address)),
+																		displayNameByAddress.get(pluginNodeIndexKey(result.address)),
 																	)
 																	.filter(Boolean)
 																	.join('，') || '撤销失败',
@@ -473,7 +473,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				key={organizerResetToken}
 				statuses={overview.statuses}
 				initialGroups={groupsForView}
-				activeId={pluginName}
+				activeId={pluginRoute}
 				onGroupsChange={handleGroupsChange}
 				selectedIds={selectedIds}
 				onSelectedIdsChange={setSelectedIds}

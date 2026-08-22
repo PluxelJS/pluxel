@@ -1,13 +1,13 @@
 import type { LogLevel } from '@logtape/logtape'
-import { parsePluginNodeAddress, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { parsePluginNodeAddress, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 
 export type RuntimePluginLogLevel = LogLevel | 'off'
 export type PluginLogPolicyOverride = Readonly<{
-	owner: PluginNodeAddressSnapshot
+	owner: PluginNodeAddress
 	level: RuntimePluginLogLevel
 }>
 export type PluginLogPolicySnapshot = {
-	version: 2
+	version: 3
 	defaultLevel: RuntimePluginLogLevel
 	overrides: readonly PluginLogPolicyOverride[]
 }
@@ -59,22 +59,15 @@ function rankLevel(rank: number): RuntimePluginLogLevel {
 	if (!level) throw new Error(`Invalid compiled plugin log rank: ${rank}`)
 	return level
 }
-function ownerKey(owner: PluginNodeAddressSnapshot): string {
-	const entry = owner.definition.entry
-	return JSON.stringify([
-		entry.kind,
-		entry.kind === 'package-root' ? entry.packageName : entry.source,
-		owner.definition.exportName,
-		owner.instance,
-		owner.instance === 'fork' ? owner.forkId : null,
-	])
+function ownerKey(owner: PluginNodeAddress): string {
+	return pluginNodeIndexKey(owner)
 }
 
 export function normalizePluginLogPolicySnapshot(input: unknown): PluginLogPolicySnapshot {
 	if (!input || typeof input !== 'object' || Array.isArray(input))
 		throw new Error('Plugin log policy must be an object')
-	const raw = input as Partial<PluginLogPolicySnapshot>
-	if (raw.version !== 2)
+	const raw = input as Record<string, unknown>
+	if (raw.version !== 3)
 		throw new Error(`Unsupported plugin log policy version: ${String(raw.version)}`)
 	if (!Array.isArray(raw.overrides)) throw new Error('Plugin log policy overrides must be an array')
 	if (raw.overrides.length > MAX_PLUGIN_OVERRIDES)
@@ -83,7 +76,7 @@ export function normalizePluginLogPolicySnapshot(input: unknown): PluginLogPolic
 	const overrides = raw.overrides.map((inputOverride, index) => {
 		if (!inputOverride || typeof inputOverride !== 'object' || Array.isArray(inputOverride))
 			throw new Error(`Plugin log policy overrides[${index}] must be an object`)
-		const override = inputOverride as Partial<PluginLogPolicyOverride>
+		const override = inputOverride as Record<string, unknown>
 		const owner = parsePluginNodeAddress(override.owner)
 		const key = ownerKey(owner)
 		if (seen.has(key))
@@ -91,20 +84,21 @@ export function normalizePluginLogPolicySnapshot(input: unknown): PluginLogPolic
 		seen.add(key)
 		return { owner, level: normalizeLevel(override.level) }
 	})
-	return { version: 2, defaultLevel: normalizeLevel(raw.defaultLevel), overrides }
+	return { version: 3, defaultLevel: normalizeLevel(raw.defaultLevel), overrides }
 }
 
 export const DEFAULT_PLUGIN_LOG_POLICY: PluginLogPolicySnapshot = {
-	version: 2,
+	version: 3,
 	defaultLevel: 'info',
 	overrides: [],
 }
 
-type CompiledOverride = { owner: PluginNodeAddressSnapshot; rank: number }
+type CompiledOverride = { owner: PluginNodeAddress; rank: number }
 
 export class RuntimePluginLogPolicy {
 	private defaultRank = LEVEL_RANK.info
 	private ranks = new Map<string, CompiledOverride>()
+	private resolvedRanks = new WeakMap<PluginNodeAddress, number>()
 	private revisionValue = 0
 	private persistenceValue: PluginLogPolicyPersistence = 'none'
 	private profile = 'default'
@@ -135,14 +129,18 @@ export class RuntimePluginLogPolicy {
 		return this.lastPersistenceErrorValue
 	}
 
-	allows(owner: PluginNodeAddressSnapshot, level: LogLevel): boolean {
-		const rank = this.ranks.get(ownerKey(owner))?.rank ?? this.defaultRank
+	allows(owner: PluginNodeAddress, level: LogLevel): boolean {
+		let rank = Object.isFrozen(owner) ? this.resolvedRanks.get(owner) : undefined
+		if (rank === undefined) {
+			rank = this.ranks.get(ownerKey(owner))?.rank ?? this.defaultRank
+			if (Object.isFrozen(owner)) this.resolvedRanks.set(owner, rank)
+		}
 		return rank !== OFF_RANK && LEVEL_RANK[level] >= rank
 	}
 
 	snapshot(): PluginLogPolicySnapshot {
 		return {
-			version: 2,
+			version: 3,
 			defaultLevel: rankLevel(this.defaultRank),
 			overrides: [...this.ranks.values()].map(({ owner, rank }) => ({
 				owner,
@@ -173,7 +171,7 @@ export class RuntimePluginLogPolicy {
 		return this.commitMutation()
 	}
 	setPluginLevel(
-		ownerInput: PluginNodeAddressSnapshot,
+		ownerInput: PluginNodeAddress,
 		level: RuntimePluginLogLevel,
 	): PluginLogPolicyMutationResult {
 		const owner = parsePluginNodeAddress(ownerInput)
@@ -185,7 +183,7 @@ export class RuntimePluginLogPolicy {
 		this.ranks.set(key, { owner, rank })
 		return this.commitMutation()
 	}
-	clearPluginLevel(owner: PluginNodeAddressSnapshot): PluginLogPolicyMutationResult {
+	clearPluginLevel(owner: PluginNodeAddress): PluginLogPolicyMutationResult {
 		if (!this.ranks.delete(ownerKey(parsePluginNodeAddress(owner)))) return this.mutationResult()
 		return this.commitMutation()
 	}
@@ -220,11 +218,13 @@ export class RuntimePluginLogPolicy {
 				{ owner, rank: levelRank(level) },
 			]),
 		)
+		this.resolvedRanks = new WeakMap()
 		this.revisionValue++
 		if (persist) this.schedulePersist()
 		this.notify()
 	}
 	private commitMutation(): PluginLogPolicyMutationResult {
+		this.resolvedRanks = new WeakMap()
 		this.revisionValue++
 		this.schedulePersist()
 		const result = this.mutationResult()

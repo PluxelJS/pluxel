@@ -2,14 +2,14 @@ import { Alert, Badge, Center, Loader, Stack, Text } from '@mantine/core'
 import { ErrorState } from '../../../components'
 import type { WorkbenchTargetSnapshot } from '../../../workbench/client'
 import { useWorkbenchArtifactState } from '../../../workbench/runtime'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 
 export function WorkbenchRouteStateFallback({
 	target,
 	displayName,
 	snapshot,
 }: {
-	target: PluginNodeAddressSnapshot
+	target: PluginNodeAddress
 	displayName: string
 	snapshot: WorkbenchTargetSnapshot
 }) {
@@ -38,7 +38,7 @@ export function WorkbenchRouteStateFallback({
 	)
 }
 
-export function WorkbenchRouteStatusBanner({ target }: { target: PluginNodeAddressSnapshot }) {
+export function WorkbenchRouteStatusBanner({ target }: { target: PluginNodeAddress }) {
 	const artifact = useWorkbenchArtifactState(target)
 	if (artifact?.state !== 'building') return null
 	return (

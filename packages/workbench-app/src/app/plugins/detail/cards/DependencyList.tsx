@@ -12,12 +12,12 @@ export interface DependencyListProps {
 export function usePluginDependencyEntries() {
 	const contextDeps = usePluginDependencies()
 	return useMemo(() => {
-		const map = new Map<string, { id: string; name: string; isRunning?: boolean }>()
+		const map = new Map<string, { route: string; label: string; isRunning?: boolean }>()
 		for (const dep of contextDeps ?? []) {
-			const name = dep.name?.trim()
-			const id = dep.id?.trim()
-			if (!id || !name || map.has(id)) continue
-			map.set(id, { id, name, isRunning: dep.isRunning ?? undefined })
+			const label = dep.label?.trim()
+			const route = dep.route?.trim()
+			if (!route || !label || map.has(route)) continue
+			map.set(route, { route, label, isRunning: dep.isRunning ?? undefined })
 		}
 		return [...map.values()]
 	}, [contextDeps])
@@ -50,10 +50,10 @@ export function DependencyList({ LinkComponent }: DependencyListProps) {
 					/>
 				)
 
-				const linkTarget = LinkComponent ? dep.id : undefined
+				const linkTarget = LinkComponent ? dep.route : undefined
 				if (!LinkComponent || !linkTarget) {
 					return (
-						<Tooltip key={dep.id} label={undefined} withArrow disabled={!LinkComponent}>
+						<Tooltip key={dep.route} label={undefined} withArrow disabled={!LinkComponent}>
 							<Badge
 								variant="light"
 								color={color}
@@ -62,24 +62,24 @@ export function DependencyList({ LinkComponent }: DependencyListProps) {
 								size="sm"
 								style={{ textTransform: 'none' }}
 							>
-								{dep.name}
+								{dep.label}
 							</Badge>
 						</Tooltip>
 					)
 				}
 				return (
 					<Badge
-						key={dep.id}
+						key={dep.route}
 						variant="light"
 						color={color}
 						component={LinkComponent as any}
-						to={`/plugins/${encodeURIComponent(linkTarget)}`}
+						to={`/plugins/${linkTarget}`}
 						leftSection={dot}
 						radius="sm"
 						size="sm"
 						style={{ textDecoration: 'none', textTransform: 'none' }}
 					>
-						{dep.name}
+						{dep.label}
 					</Badge>
 				)
 			})}

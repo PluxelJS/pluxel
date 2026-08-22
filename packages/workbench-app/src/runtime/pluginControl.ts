@@ -1,5 +1,5 @@
 import type { RpcStub } from 'capnweb'
-import type { PluginDefinitionAddressSnapshot, PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type {
 	BaseProviderInfo,
 	ConfigResult,
@@ -18,21 +18,21 @@ export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
 export async function getPluginSchema(
 	rpc: RuntimeRpcStub,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): Promise<SchemaResult> {
 	return await rpc.pluginSchema(owner)
 }
 
 export async function getPluginConfig(
 	rpc: RuntimeRpcStub,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): Promise<ConfigResult> {
 	return await rpc.pluginConfig(owner)
 }
 
 export async function patchPluginConfig(
 	rpc: RuntimeRpcStub,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
 ): Promise<ConfigResult> {
 	return await rpc.patchPluginConfig(owner, patch)
@@ -41,7 +41,7 @@ export async function patchPluginConfig(
 export async function patchPluginConfigField(
 	rpc: RuntimeRpcStub,
 	input: {
-		owner: PluginNodeAddressSnapshot
+		owner: PluginNodeAddress
 		fieldPath: string
 		value: unknown
 	},
@@ -54,14 +54,14 @@ export async function patchPluginConfigField(
 
 export async function listPluginDependencies(
 	rpc: RuntimeRpcStub,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): Promise<PluginDependencyRef[]> {
 	return await rpc.pluginDependencies(owner)
 }
 
 export async function inspectPluginDependencies(
 	rpc: RuntimeRpcStub,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): Promise<PluginDependencyState[]> {
 	return await rpc.inspectPluginDependencies(owner)
 }
@@ -69,9 +69,9 @@ export async function inspectPluginDependencies(
 export async function setPluginDependencyTarget(
 	rpc: RuntimeRpcStub,
 	input: {
-		consumer: PluginNodeAddressSnapshot
+		consumer: PluginNodeAddress
 		index: number
-		provider: PluginNodeAddressSnapshot | null
+		provider: PluginNodeAddress | null
 	},
 ): Promise<PluginDependencyMutationResult> {
 	return await rpc.setPluginDependencyTarget(input)
@@ -79,7 +79,7 @@ export async function setPluginDependencyTarget(
 
 export async function inspectPluginBaseProvider(
 	rpc: RuntimeRpcStub,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): Promise<BaseProviderInfo | null> {
 	return await rpc.inspectPluginBaseProvider(owner)
 }
@@ -87,9 +87,9 @@ export async function inspectPluginBaseProvider(
 export async function selectPluginBaseProvider(
 	rpc: RuntimeRpcStub,
 	input: {
-		consumer: PluginNodeAddressSnapshot
-		token: PluginDefinitionAddressSnapshot
-		provider: PluginNodeAddressSnapshot | null
+		consumer: PluginNodeAddress
+		token: PluginDefinitionAddress
+		provider: PluginNodeAddress | null
 	},
 ): Promise<PluginDependencyMutationResult> {
 	return await rpc.selectPluginBaseProvider(input)
@@ -98,7 +98,7 @@ export async function selectPluginBaseProvider(
 export async function ensurePluginFork(
 	rpc: RuntimeRpcStub,
 	input: {
-		base: PluginNodeAddressSnapshot
+		base: PluginNodeAddress
 		forkId: string
 		enable?: boolean
 	},
@@ -115,11 +115,11 @@ export async function applyPluginStatusActions(
 
 export async function runPluginStatusAction(
 	rpc: RuntimeRpcStub,
-	address: PluginNodeAddressSnapshot,
+	address: PluginNodeAddress,
 	action: PluginStatusAction,
 ): Promise<{
 	ok: boolean
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	error?: string
 	commitError?: string
 }> {

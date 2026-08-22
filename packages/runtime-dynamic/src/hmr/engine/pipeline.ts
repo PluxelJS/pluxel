@@ -2,10 +2,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import {
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	isPluginNodeSlot,
 	type Context,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
 import { dirname, join } from 'pathe'
@@ -59,7 +59,7 @@ export type PrefetchTransformResult = {
 
 export type PluginStatusSnapshotLike = {
 	statuses?: readonly {
-		address: PluginNodeAddressSnapshot
+		address: PluginNodeAddress
 		isEnabled?: boolean
 		isRunning?: boolean
 	}[]
@@ -72,7 +72,7 @@ export type EnabledButStoppedLookupContext = {
 				snapshot: () => PluginStatusSnapshotLike
 			}
 			registry: {
-				findModuleId(address: PluginNodeAddressSnapshot): string | null
+				findModuleId(address: PluginNodeAddress): string | null
 			}
 		}
 	}
@@ -443,7 +443,7 @@ class HmrRuntimeCommitScheduler {
 		}
 
 		const endCommit = startTimer()
-		const autoDisabled = new Map<PluginNodeSlot, PluginNodeAddressSnapshot>()
+		const autoDisabled = new Map<PluginNodeSlot, PluginNodeAddress>()
 		let commitResult: RuntimeCommitResult
 		try {
 			commitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
@@ -471,7 +471,7 @@ class HmrRuntimeCommitScheduler {
 			commitMs,
 			affectedModules,
 			syncedModules: [...syncedModules],
-			autoDisabled: [...autoDisabled.values()].map(formatPluginNodeAddress).sort(),
+			autoDisabled: [...autoDisabled.values()].map(formatPluginNodeReference).sort(),
 		}
 	}
 
@@ -481,7 +481,7 @@ class HmrRuntimeCommitScheduler {
 		commitResult: RuntimeCommitResult
 		changedModules: readonly string[]
 		affectedModules: readonly string[]
-		autoDisabled: Map<PluginNodeSlot, PluginNodeAddressSnapshot>
+		autoDisabled: Map<PluginNodeSlot, PluginNodeAddress>
 		syncedModules: Set<string>
 	}): Promise<RuntimeCommitResult> {
 		let commitResult = params.commitResult
@@ -697,7 +697,7 @@ export function collectEnabledButStopped(
 		if (!status?.isEnabled || status.isRunning) continue
 		const moduleId = ctx.loader.api.registry.findModuleId(status.address)
 		if (!moduleId || !moduleIds.has(moduleId)) continue
-		out.push(formatPluginNodeAddress(status.address))
+		out.push(formatPluginNodeReference(status.address))
 	}
 	out.sort((a, b) => a.localeCompare(b))
 	return out
@@ -706,8 +706,8 @@ export function collectEnabledButStopped(
 function disablePluginsOnMissingDepsFromCommitError(
 	ctx: Context,
 	error: unknown,
-): Map<PluginNodeSlot, PluginNodeAddressSnapshot> {
-	const disabled = new Map<PluginNodeSlot, PluginNodeAddressSnapshot>()
+): Map<PluginNodeSlot, PluginNodeAddress> {
+	const disabled = new Map<PluginNodeSlot, PluginNodeAddress>()
 	const issues = findGraphBuildIssues(error)
 	for (const issue of issues) {
 		if (issue.kind !== 'MissingDependency' || !isPluginNodeSlot(issue.nodeKey)) continue
@@ -722,7 +722,7 @@ function disablePluginsOnMissingDepsFromCommitError(
 	})
 	ctx.logger.warn('auto-disabled plugins due to missing dependencies', {
 		stage: 'hmr batch commit',
-		disabled: [...disabled.values()].map(formatPluginNodeAddress).sort(),
+		disabled: [...disabled.values()].map(formatPluginNodeReference).sort(),
 		error,
 	})
 	return disabled

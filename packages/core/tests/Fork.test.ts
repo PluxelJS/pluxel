@@ -29,8 +29,8 @@ describe('fork node identity', () => {
 			const b = host.require(B)
 			expect(a).not.toBe(b)
 			expect(a.ctx).not.toBe(b.ctx)
-			expect(a.ctx.pluginInfo.nodeAddress).toMatchObject({ instance: 'fork', forkId: 'a' })
-			expect(b.ctx.pluginInfo.nodeAddress).toMatchObject({ instance: 'fork', forkId: 'b' })
+			expect(a.ctx.pluginInfo.nodeAddress).toMatchObject({ variant: 'fork', forkId: 'a' })
+			expect(b.ctx.pluginInfo.nodeAddress).toMatchObject({ variant: 'fork', forkId: 'b' })
 		})
 	})
 
@@ -42,7 +42,7 @@ describe('fork node identity', () => {
 			host.ctx.registry.replaceRuntimeDependencyOverrides(ForkConsumer, [B])
 			await host.commit()
 			expect(host.require(ForkConsumer).dependency.ctx.pluginInfo.nodeAddress).toMatchObject({
-				instance: 'fork',
+				variant: 'fork',
 				forkId: 'b',
 			})
 		})

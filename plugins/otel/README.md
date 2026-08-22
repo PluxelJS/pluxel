@@ -45,7 +45,7 @@ class CatalogPlugin extends BasePlugin {
 ```
 
 三个 getter 分别返回标准 `@opentelemetry/api` `Meter`、`Tracer` 和 `@opentelemetry/api-logs` `Logger`。
-instrumentation scope name 使用 caller 的格式化 Plugin node address；同一 caller generation 重复读取返回同一实例。原生 instrument、span、
+instrumentation scope name 使用 caller 的Plugin node reference；同一 caller generation 重复读取返回同一实例。原生 instrument、span、
 event、link、status、baggage、log body、severity、`eventName` 和 attributes 均不经过 Pluxel wrapper。active span 中直接 emit 的 log
 会带上 trace/span correlation。
 

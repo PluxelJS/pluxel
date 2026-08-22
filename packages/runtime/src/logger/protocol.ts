@@ -1,8 +1,8 @@
 import type { LogLevel } from '@logtape/logtape'
-import { pluginNodeAddressEqual, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginNodeAddressEqual, type PluginNodeAddress } from '@pluxel/core'
 
 export type LogFilter = {
-	plugin?: PluginNodeAddressSnapshot
+	plugin?: PluginNodeAddress
 	context?: string
 	displayName?: string
 	/** Category string, e.g. "pluxel.plugins" or "pluxel.runtime". Supports "prefix.*". */
@@ -11,7 +11,7 @@ export type LogFilter = {
 
 export type CompiledLogFilter = {
 	hasFilter: boolean
-	plugin?: PluginNodeAddressSnapshot
+	plugin?: PluginNodeAddress
 	context?: string
 	displayName?: string
 	categoryKey?: string
@@ -48,7 +48,9 @@ export type RuntimeLogLine = {
 
 	/** HMR-friendly origin hints (optional). */
 	name?: string
-	plugin?: PluginNodeAddressSnapshot
+	plugin?: PluginNodeAddress
+	pluginReference?: string
+	pluginLabel?: string
 	context?: string
 
 	/** Fast, single-line message for the primary list. */

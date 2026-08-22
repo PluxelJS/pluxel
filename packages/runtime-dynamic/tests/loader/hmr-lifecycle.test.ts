@@ -5,7 +5,7 @@ import {
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 } from '@pluxel/core'
-import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
 import type { LoaderService } from '../../src/loader/LoaderService'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
@@ -79,6 +79,66 @@ describe('LoaderService HMR lifecycle', () => {
 		expect([depStarts, consumerStarts]).toEqual([2, 2])
 	})
 
+	it('replaces every running fork generation when one definition source changes', async () => {
+		const { core, ctx } = createHmrTestContext()
+		const starts = new Map<string, number>()
+
+		@Plugin()
+		class Worker extends ForkablePlugin {
+			readonly generation = 1
+
+			override init() {
+				const address = this.ctx.pluginInfo.nodeAddress
+				const key = address.variant === 'fork' ? address.forkId : 'default'
+				starts.set(key, (starts.get(key) ?? 0) + 1)
+			}
+		}
+		lowerTestPlugin(Worker)
+		const base = pluginNodeAddressOf(Worker)
+		const fork = {
+			definition: base.definition,
+			variant: 'fork',
+			forkId: 'east',
+		} as const
+		ctx.runtimeState.update((draft) => {
+			draft.forks = [{ definition: base.definition, forkIds: ['east'] }]
+		})
+		enablePlugins(ctx, base, fork)
+		await ctx.loader.replaceModule('Worker.ts', { Worker })
+
+		const firstDefault = core.registry.getInstance(Worker)
+		const firstForkCtor = ctx.loader.api.registry.getCtor(fork)!
+		const firstFork = core.registry.getInstance(firstForkCtor)
+
+		class WorkerNext extends ForkablePlugin {
+			readonly generation = 2
+
+			override init() {
+				const address = this.ctx.pluginInfo.nodeAddress
+				const key = address.variant === 'fork' ? address.forkId : 'default'
+				starts.set(key, (starts.get(key) ?? 0) + 1)
+			}
+		}
+		clonePluginDefinition(Worker, WorkerNext)
+		await ctx.loader.replaceModule('Worker.ts', { Worker: WorkerNext })
+
+		const nextDefault = core.registry.getInstance(WorkerNext)
+		const nextForkCtor = ctx.loader.api.registry.getCtor(fork)!
+		const nextFork = core.registry.getInstance(nextForkCtor) as
+			| InstanceType<typeof WorkerNext>
+			| undefined
+		expect(nextDefault?.generation).toBe(2)
+		expect(nextFork?.generation).toBe(2)
+		expect(nextDefault).not.toBe(firstDefault)
+		expect(nextFork).not.toBe(firstFork)
+		expect(starts).toEqual(
+			new Map([
+				['default', 2],
+				['east', 2],
+			]),
+		)
+	})
+
 	it('rolls back catalog and constructor ownership when replacement graph build fails', async () => {
 		const { core, ctx } = createHmrTestContext()
 
@@ -100,9 +160,10 @@ describe('LoaderService HMR lifecycle', () => {
 		const original = getPluginDefinitionFacts(Dep).definition
 		lowerTestPlugin(DepBroken, {
 			exportName: original.exportName,
-			source:
+			sourceSpace: original.entry.kind === 'source-entry' ? original.entry.sourceSpace : 'app',
+			path:
 				original.entry.kind === 'source-entry'
-					? original.entry.source
+					? original.entry.path
 					: 'tests/runtime-dynamic/Dep.ts',
 			requires: [Missing],
 		})
@@ -147,9 +208,9 @@ describe('LoaderService HMR lifecycle', () => {
 		ctx.runtimeState.update((draft) => {
 			draft.dependencyOverrides = [
 				{
-					consumer: pluginNodeAddressOf(Consumer),
-					parameterIndex: 0,
-					provider: pluginNodeAddressOf(DepB),
+					consumerAddress: pluginNodeAddressOf(Consumer),
+					requirementAddress: getPluginDefinitionFacts(DepA).definition,
+					providerAddress: pluginNodeAddressOf(DepB),
 				},
 			]
 		})

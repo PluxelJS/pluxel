@@ -126,8 +126,9 @@ UI 当前统一管理：
 - HTTP(S) proxy；
 - 只能收紧宿主上限的 consumer timeout。
 
-设置按 caller 的结构化 plugin node address 隔离：文件名只使用 canonical address JSON 的 SHA-256，文件内容同时保存并
-校验完整 owner snapshot。`displayName` 相同的 plugin/fork 不会冲突，旧裸 settings 格式不会迁移。`client` 使用 Wretch `defer()` 在每次请求发送前读取当前设置，因此保存后
+设置按 caller 的结构化 Plugin node address 隔离：文件名只使用 canonical address bytes 的完整 SHA-256，文件内容同时保存并
+校验完整 owner address。`displayName` 相同的 Plugin/fork 不会冲突；只接受当前 v2 envelope，并存储在
+`consumers/v3`。`client` 使用 Wretch `defer()` 在每次请求发送前读取当前设置，因此保存后
 已经缓存的 client 也会自动生效，不需要重建。
 同一 caller 并发调用 `enableManagedSettings()` 会共享一次初始化；缓存的 settings RPC 在 caller/provider stop 或
 replacement 后会撤销，不能继续写入旧 generation。provider cleanup 也会主动释放全部 managed ProxyAgent，不依赖

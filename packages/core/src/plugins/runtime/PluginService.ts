@@ -24,7 +24,7 @@ import type {
 import { computeInitPlan, type InitPlan, startPluginsTopo, stopPluginsTopo } from './commit'
 import { forkPlugin, getForkedCtor, listForks } from './fork'
 import {
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	isPluginNodeSlot,
 	type PluginDefinitionSlot,
 	type PluginNodeSlot,
@@ -475,25 +475,23 @@ export class PluginService {
 		return key && graph.has(key) ? key : undefined
 	}
 
-	public internNodeAddress(
-		address: import('./identity').PluginNodeAddressSnapshot,
-	): PluginNodeSlot {
+	public internNodeAddress(address: import('./identity').PluginNodeAddress): PluginNodeSlot {
 		return this.definitions.slots.internNode(address)
 	}
 
 	public internDefinitionAddress(
-		address: import('./identity').PluginDefinitionAddressSnapshot,
+		address: import('./identity').PluginDefinitionAddress,
 	): PluginDefinitionSlot {
 		return this.definitions.slots.internDefinition(address)
 	}
 
 	public definitionAddressOf(
 		slot: PluginDefinitionSlot,
-	): import('./identity').PluginDefinitionAddressSnapshot {
+	): import('./identity').PluginDefinitionAddress {
 		return this.definitions.slots.definitionAddress(slot)
 	}
 
-	public nodeAddressOf(slot: PluginNodeSlot): import('./identity').PluginNodeAddressSnapshot {
+	public nodeAddressOf(slot: PluginNodeSlot): import('./identity').PluginNodeAddress {
 		return this.definitions.slots.nodeAddress(slot)
 	}
 
@@ -1309,7 +1307,7 @@ export class PluginService {
 	}
 
 	private label(node: PluginNodeSlot): string {
-		return formatPluginNodeAddress(this.definitions.slots.nodeAddress(node))
+		return formatPluginNodeReference(this.definitions.slots.nodeAddress(node))
 	}
 }
 

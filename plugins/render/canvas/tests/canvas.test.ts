@@ -11,6 +11,14 @@ import { CanvasError, CanvasPlugin, layoutWithLines, measureRichInlineStats } fr
 import { createCanvasWorkerAdapter } from '../src/worker.ts'
 import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
 
+function pluginLayoutUrl(address: unknown): URL {
+	const url = new URL(
+		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
+	)
+	url.searchParams.set('target', JSON.stringify(address))
+	return url
+}
+
 @Plugin()
 class CanvasTestConsumer extends BasePlugin {
 	constructor(readonly canvas: CanvasPlugin) {
@@ -238,9 +246,7 @@ describe('CanvasPlugin', () => {
 			await host.commit()
 
 			const response = await host.ctx.http.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(CanvasPlugin)))}`,
-				),
+				new Request(pluginLayoutUrl(pluginNodeAddressOf(CanvasPlugin))),
 			)
 			expect(response.status).toBe(200)
 			const layout = (await response.json()) as WorkbenchLayout

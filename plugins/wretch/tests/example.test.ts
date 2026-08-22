@@ -10,6 +10,14 @@ import { WretchExamplePlugin } from './fixtures/wretch-example.ts'
 
 afterEach(() => vi.unstubAllGlobals())
 
+function pluginLayoutUrl(address: unknown): URL {
+	const url = new URL(
+		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
+	)
+	url.searchParams.set('target', JSON.stringify(address))
+	return url
+}
+
 describe('WretchExamplePlugin', () => {
 	it('demonstrates native client composition, required DI, business HTTP, and headless operation', async () => {
 		vi.stubGlobal('fetch', async (input: string, options: RequestInit) =>
@@ -62,9 +70,7 @@ describe('WretchExamplePlugin', () => {
 			expect(host.isRunning(WretchExamplePlugin)).toBe(true)
 
 			const response = await host.ctx.http.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(WretchExamplePlugin)))}`,
-				),
+				new Request(pluginLayoutUrl(pluginNodeAddressOf(WretchExamplePlugin))),
 			)
 			const layout = (await response.json()) as WorkbenchLayout
 			expect(layout.items[0]).toMatchObject({

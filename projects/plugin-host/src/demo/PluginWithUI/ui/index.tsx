@@ -4,6 +4,7 @@
 // - standalone route
 
 import { Button, Group, Stack, Text } from '@mantine/core'
+import { formatPluginNodeRoute } from '@pluxel/runtime'
 import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import {
 	EventsPanel,
@@ -18,7 +19,7 @@ function standaloneRouteHref(
 	address: ReturnType<typeof useWorkbenchHost>['target']['address'],
 	path: string,
 ) {
-	return `/workbench-standalone/${encodeURIComponent(JSON.stringify(address))}${path}`
+	return `/workbench-standalone/${formatPluginNodeRoute(address)}${path}`
 }
 
 export function PluginInfo() {

@@ -3,8 +3,12 @@ import { PluginNodeAddress } from '../plugins/schema'
 
 export const PluginGroupNode = v.object({
 	__typename: v.literal('PluginGroupNode'),
+	// GQLens entity key; equal to `route`.
 	id: v.string(),
+	reference: v.string(),
+	route: v.string(),
 	displayName: v.string(),
+	label: v.string(),
 	rootExportName: v.string(),
 	address: PluginNodeAddress,
 })

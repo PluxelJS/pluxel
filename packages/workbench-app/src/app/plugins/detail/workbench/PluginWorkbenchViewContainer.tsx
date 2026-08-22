@@ -8,11 +8,7 @@ import {
 import { useActiveWorkbenchTabId, useWorkspaceController } from '../../../workbench/context'
 import { useResolvedWorkbenchTabState } from '../../../workbench/split'
 import { useCurrentPathname } from '../../../router/useCurrentRoute'
-import {
-	getPluginScopedSearchCandidates,
-	replacePluginDetailSearchParams,
-	usePluginDetailSearch,
-} from '../pluginDetailSearchState'
+import { replacePluginDetailSearchParams, usePluginDetailSearch } from '../pluginDetailSearchState'
 
 export type PluginWorkbenchView = {
 	id: string
@@ -24,12 +20,9 @@ export type PluginWorkbenchView = {
 
 type PluginWorkbenchViewSearchKey = 'dock' | 'side'
 
-function resolveVisibleViewId(value: unknown, views: PluginWorkbenchView[], pluginName?: string) {
+function resolveVisibleViewId(value: unknown, views: PluginWorkbenchView[]) {
 	if (typeof value !== 'string') return undefined
-	for (const candidate of getPluginScopedSearchCandidates(value, pluginName)) {
-		if (views.some((view) => view.id === candidate)) return candidate
-	}
-	return undefined
+	return views.some((view) => view.id === value) ? value : undefined
 }
 
 function createViewIntentSignature(
@@ -58,7 +51,6 @@ export function PluginWorkbenchViewContainer({
 	fallbackViewId,
 	className,
 	searchKey,
-	searchPluginName,
 	headerMode = 'stacked',
 }: {
 	scope: string
@@ -71,7 +63,6 @@ export function PluginWorkbenchViewContainer({
 	fallbackViewId?: string
 	className?: string
 	searchKey?: PluginWorkbenchViewSearchKey
-	searchPluginName?: string
 	headerMode?: 'stacked' | 'inline'
 }) {
 	const activeTabId = useActiveWorkbenchTabId()
@@ -87,8 +78,8 @@ export function PluginWorkbenchViewContainer({
 	const routeSearchValue = searchKey ? routeSearch[searchKey] : undefined
 	const effectiveSearchValue = localSearchValue ?? routeSearchValue
 	const routeViewId = useMemo(
-		() => resolveVisibleViewId(effectiveSearchValue, visibleViews, searchPluginName),
-		[effectiveSearchValue, searchPluginName, visibleViews],
+		() => resolveVisibleViewId(effectiveSearchValue, visibleViews),
+		[effectiveSearchValue, visibleViews],
 	)
 	const routeIntentSignature =
 		searchKey && routeViewId && effectiveSearchValue

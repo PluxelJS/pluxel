@@ -1,8 +1,9 @@
 import { ActionIcon, Badge, Box, Group, Paper, Select, Stack, Text, Tooltip } from '@mantine/core'
 import {
-	formatPluginDefinitionAddress,
-	formatPluginNodeAddress,
-	type PluginNodeAddressSnapshot,
+	formatPluginDefinitionReference,
+	formatPluginNodeReference,
+	pluginNodeIndexKey,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { IconRefresh, IconStar } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -13,13 +14,12 @@ import {
 	useRuntimeTransportClient,
 	type BaseProviderInfo,
 } from '../../../../runtime'
-import { workbenchNodeKey } from '../../../../workbench/node-address'
 import { useNotify } from '../../../hooks/useNotify'
 import { usePluginScope } from '../context'
 
 export function BaseProviderCard() {
 	const { owner, refetch } = usePluginScope()
-	const ownerKey = workbenchNodeKey(owner)
+	const ownerKey = pluginNodeIndexKey(owner)
 	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
 	const [infoByOwner, setInfoByOwner] = useState(() => new Map<string, BaseProviderInfo | null>())
@@ -70,14 +70,14 @@ export function BaseProviderCard() {
 	const providersByKey = useMemo(
 		() =>
 			new Map(
-				(info?.providers ?? []).map((provider) => [workbenchNodeKey(provider.address), provider]),
+				(info?.providers ?? []).map((provider) => [pluginNodeIndexKey(provider.address), provider]),
 			),
 		[info?.providers],
 	)
 	const selectData = useMemo(
 		() =>
 			(info?.providers ?? []).map((provider) => ({
-				value: workbenchNodeKey(provider.address),
+				value: pluginNodeIndexKey(provider.address),
 				label: provider.isEnabled ? provider.displayName : `${provider.displayName} (disabled)`,
 			})),
 		[info?.providers],
@@ -86,7 +86,7 @@ export function BaseProviderCard() {
 	const handleChange = useCallback(
 		async (value: string | null) => {
 			if (!info) return
-			const provider: PluginNodeAddressSnapshot | null = value
+			const provider: PluginNodeAddress | null = value
 				? (providersByKey.get(value)?.address ?? null)
 				: null
 			if (value && !provider) return
@@ -103,7 +103,7 @@ export function BaseProviderCard() {
 				await refetch()
 				notify({
 					title: '已更新默认实现',
-					message: `${formatPluginDefinitionAddress(info.token)} → ${provider ? formatPluginNodeAddress(provider) : '未设置'}`,
+					message: `${formatPluginDefinitionReference(info.token)} → ${provider ? formatPluginNodeReference(provider) : '未设置'}`,
 					color: 'green',
 				})
 			} catch (error) {
@@ -114,8 +114,10 @@ export function BaseProviderCard() {
 	)
 
 	if (!info) return null
-	const tokenLabel = formatPluginDefinitionAddress(info.token)
-	const currentLabel = info.currentDefault ? formatPluginNodeAddress(info.currentDefault) : '未设置'
+	const tokenLabel = formatPluginDefinitionReference(info.token)
+	const currentLabel = info.currentDefault
+		? formatPluginNodeReference(info.currentDefault)
+		: '未设置'
 
 	return (
 		<Paper
@@ -158,7 +160,7 @@ export function BaseProviderCard() {
 					size="sm"
 					label="设置默认实现（全局）"
 					data={selectData}
-					value={info.currentDefault ? workbenchNodeKey(info.currentDefault) : null}
+					value={info.currentDefault ? pluginNodeIndexKey(info.currentDefault) : null}
 					onChange={(value) => void handleChange(value)}
 					disabled={loading}
 					clearable

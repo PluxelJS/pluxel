@@ -1,8 +1,8 @@
 import {
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	type Context as PluxelContext,
 	Injectable,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 
 const serviceName = 'internalApiValidation' as const
@@ -29,11 +29,11 @@ export type InternalApiValidationResult =
 	| { allow: true }
 	| {
 			allow: false
-			owner: PluginNodeAddressSnapshot | null
+			owner: PluginNodeAddress | null
 	  }
 
 type ActiveValidator = {
-	owner: PluginNodeAddressSnapshot | null
+	owner: PluginNodeAddress | null
 	validate: InternalApiValidator
 	removeFromScope: () => void
 }
@@ -102,7 +102,7 @@ export class InternalApiValidationService {
 			} catch (error) {
 				this.logger.error('Internal API validator threw', {
 					error,
-					plugin: v.owner ? formatPluginNodeAddress(v.owner) : 'runtime',
+					plugin: v.owner ? formatPluginNodeReference(v.owner) : 'runtime',
 					path: input.path,
 					method: input.method,
 				})

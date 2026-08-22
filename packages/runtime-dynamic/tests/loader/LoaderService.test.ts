@@ -4,7 +4,7 @@ import {
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 	type PluginConstructor,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
 import { createHmrTestContext } from '../support/hmr-context'
@@ -13,10 +13,10 @@ import { enablePlugins, isEnabled } from '../support/runtime-state'
 
 const fixedOwner = 'pluxel:fixed:/workspace/pluxel.dynamic.ts'
 
-function forkAddress(plugin: PluginConstructor, forkId: string): PluginNodeAddressSnapshot {
+function forkAddress(plugin: PluginConstructor, forkId: string): PluginNodeAddress {
 	return {
 		definition: pluginNodeAddressOf(plugin).definition,
-		instance: 'fork',
+		variant: 'fork',
 		forkId,
 	}
 }

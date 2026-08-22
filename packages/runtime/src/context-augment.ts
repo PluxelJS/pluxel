@@ -24,7 +24,7 @@ declare module '@pluxel/core' {
 			/** @internal Dynamic/package hosts provide package artifact resolution explicitly. */
 			workbenchArtifactResolver?: (
 				root: import('@pluxel/core').Context,
-				owner: import('@pluxel/core').PluginNodeAddressSnapshot,
+				owner: import('@pluxel/core').PluginNodeAddress,
 				artifactName: string,
 			) => string | null | Promise<string | null>
 		}

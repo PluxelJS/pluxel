@@ -1,5 +1,5 @@
 import { ScrollArea, Tabs } from '@mantine/core'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { useRef } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { ConfigTabContent } from './ConfigTab'
@@ -17,7 +17,7 @@ export function ConfigForm({
 	onDirtyChange,
 	sections = EMPTY_CONFIG_SECTIONS,
 }: {
-	owner: PluginNodeAddressSnapshot
+	owner: PluginNodeAddress
 	displayName: string
 	schema: ObjectSchema<any, any>
 	savedConfig: Record<string, unknown>

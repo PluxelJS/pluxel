@@ -1,5 +1,5 @@
 import type { BuiltinDocContent } from './document-contracts'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 
 export const WorkbenchIcons = Object.freeze({
 	Api: 'api',
@@ -616,7 +616,7 @@ export type WorkbenchResourceRef = Readonly<{
 
 /** Immutable transport projection of a Plugin node and its human-readable title. */
 export type WorkbenchPluginDescriptor = Readonly<{
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	displayName: string
 	rootExportName: string
 }>

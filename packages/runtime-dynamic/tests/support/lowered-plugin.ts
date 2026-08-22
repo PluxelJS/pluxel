@@ -1,4 +1,4 @@
-import type { PluginConstructor, PluginDefinitionAddressSnapshot } from '@pluxel/core'
+import type { PluginConstructor, PluginDefinitionAddress } from '@pluxel/core'
 import {
 	__setPluginDefinition,
 	getPluginDefinitionFacts,
@@ -7,10 +7,11 @@ import {
 
 export type LowerTestPluginOptions = Readonly<{
 	exportName?: string
-	source?: string
+	sourceSpace?: string
+	path?: string
 	requires?: readonly PluginConstructor[]
 	optional?: readonly PluginConstructor[]
-	provides?: PluginDefinitionAddressSnapshot
+	provides?: PluginDefinitionAddress
 }>
 
 /** Explicit lowering fixture for Plugin classes declared inside test callbacks. */
@@ -25,7 +26,8 @@ export function lowerTestPlugin<T extends PluginConstructor>(
 		definition: {
 			entry: {
 				kind: 'source-entry',
-				source: options.source ?? `tests/runtime-dynamic/${exportName}.ts`,
+				sourceSpace: options.sourceSpace ?? 'app',
+				path: options.path ?? `tests/runtime-dynamic/${exportName}.ts`,
 			},
 			exportName,
 		},
@@ -39,7 +41,7 @@ export function lowerTestPlugin<T extends PluginConstructor>(
 /** Explicit lowering fixture for abstract dependency tokens declared inside tests. */
 export function lowerTestAbstract<T extends PluginConstructor>(
 	plugin: T,
-	options: Pick<LowerTestPluginOptions, 'exportName' | 'source'> = {},
+	options: Pick<LowerTestPluginOptions, 'exportName' | 'sourceSpace' | 'path'> = {},
 ): T {
 	if (hasPluginDefinitionFacts(plugin)) return plugin
 	const exportName = options.exportName ?? plugin.name
@@ -48,7 +50,8 @@ export function lowerTestAbstract<T extends PluginConstructor>(
 		definition: {
 			entry: {
 				kind: 'source-entry',
-				source: options.source ?? `tests/runtime-dynamic/${exportName}.ts`,
+				sourceSpace: options.sourceSpace ?? 'app',
+				path: options.path ?? `tests/runtime-dynamic/${exportName}.ts`,
 			},
 			exportName,
 		},

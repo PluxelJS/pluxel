@@ -20,10 +20,10 @@ const firstArtifact: Parameters<typeof loadFederatedWorkbenchModule>[0] = {
 	owner: {
 		address: {
 			definition: {
-				entry: { kind: 'source-entry', source: 'tests/Billing.ts' },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/Billing.ts' },
 				exportName: 'Billing',
 			},
-			instance: 'default',
+			variant: 'default',
 		},
 		displayName: 'Billing',
 		rootExportName: 'Billing',

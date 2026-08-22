@@ -1,10 +1,11 @@
 import { createFixture } from 'fs-fixture'
+import { symlink } from 'node:fs/promises'
 import { rolldown } from 'rolldown'
 import { describe, expect, it } from 'vitest'
 import { createPluginSemanticsPlugin } from '../../src/rolldown/plugins/pluginSemanticsPlugin'
 
-async function transform(code: string, id = '/repo/src/index.ts') {
-	const collector = createPluginSemanticsPlugin({ root: '/repo' })
+async function transform(code: string, id = import.meta.filename) {
+	const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
 	const hook = collector.plugin.transform as {
 		handler: (this: unknown, code: string, id: string) => unknown
 	}
@@ -64,7 +65,9 @@ describe('plugin semantic lowering', () => {
 
 		expect(result?.code).toContain('__setPluginDefinition as __pluxelSetPluginDefinition')
 		expect(result?.code).toContain('__definePluginRef as __pluxelDefinePluginRef')
-		expect(result?.code).toContain('"kind":"source-entry","source":"src/index.ts"')
+		expect(result?.code).toContain(
+			'"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"',
+		)
 		expect(result?.code).toContain('"exportName":"OrdersPlugin"')
 		expect(result?.code).toMatch(
 			/"requires":\[\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"SearchPlugin"},\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"DatabasePlugin"}\]/,
@@ -89,7 +92,7 @@ describe('plugin semantic lowering', () => {
 
 		expect(result?.code).toContain('__pluxelSetPluginDefinition(Database, {"kind":"abstract"')
 		expect(result?.code).toContain(
-			'"provides":{"entry":{"kind":"source-entry","source":"src/index.ts"},"exportName":"Database"}',
+			'"provides":{"entry":{"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"},"exportName":"Database"}',
 		)
 	})
 
@@ -131,7 +134,11 @@ describe('plugin semantic lowering', () => {
 			collector.definitions().map((definition) => [definition.className, definition]),
 		)
 		const providerAddress = {
-			entry: { kind: 'source-entry', source: 'tests/plugins/Provider.ts' },
+			entry: {
+				kind: 'source-entry',
+				sourceSpace: 'app',
+				path: 'tests/plugins/Provider.ts',
+			},
 			exportName: 'Provider',
 		} as const
 		expect(definitions.get('Provider')?.definition).toEqual(providerAddress)
@@ -182,7 +189,11 @@ describe('plugin semantic lowering', () => {
 		expect(definitions.get('CacheBackend')?.definition).toEqual(tokenAddress)
 		expect(definitions.get('MemoryCacheBackendPlugin')?.provides).toEqual(tokenAddress)
 		expect(definitions.get('TestCacheBackend')?.definition).toEqual({
-			entry: { kind: 'source-entry', source: 'tests/TestCacheBackend.ts' },
+			entry: {
+				kind: 'source-entry',
+				sourceSpace: 'app',
+				path: 'tests/TestCacheBackend.ts',
+			},
 			exportName: 'TestCacheBackend',
 		})
 		expect(definitions.get('TestCacheBackend')?.provides).toEqual(tokenAddress)
@@ -203,7 +214,6 @@ describe('plugin semantic lowering', () => {
 		})
 		const collector = createPluginSemanticsPlugin({
 			root: fixture.getPath('host'),
-			rejectExternalSourceEntries: true,
 		})
 
 		await expect(
@@ -212,7 +222,85 @@ describe('plugin semantic lowering', () => {
 				external: ['@pluxel/runtime'],
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
-		).rejects.toThrow('expose the Plugin as one named export from its package root')
+		).rejects.toThrow('outside configured source spaces')
+	})
+
+	it('selects the most specific configured source space', async () => {
+		await using fixture = await createFixture({
+			'host/plugins/managed/orders.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class OrdersPlugin extends BasePlugin {}
+			`,
+		})
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath('host'),
+			sourceSpaces: [{ name: 'managed', root: 'plugins/managed' }],
+		})
+		const build = await rolldown({
+			input: fixture.getPath('host/plugins/managed/orders.ts'),
+			external: ['@pluxel/runtime'],
+			plugins: [collector.plugin],
+		})
+		await build.generate({ format: 'esm' })
+
+		expect(collector.definitions()[0]?.definition).toEqual({
+			entry: { kind: 'source-entry', sourceSpace: 'managed', path: 'orders.ts' },
+			exportName: 'OrdersPlugin',
+		})
+	})
+
+	it('keeps a symlinked source-space root under its logical name', async () => {
+		await using fixture = await createFixture({
+			'host/.keep': '',
+			'physical/orders.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class OrdersPlugin extends BasePlugin {}
+			`,
+		})
+		await symlink(
+			fixture.getPath('physical'),
+			fixture.getPath('host/managed'),
+			process.platform === 'win32' ? 'junction' : 'dir',
+		)
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath('host'),
+			sourceSpaces: [{ name: 'managed', root: 'managed' }],
+		})
+		const build = await rolldown({
+			input: fixture.getPath('host/managed/orders.ts'),
+			external: ['@pluxel/runtime'],
+			plugins: [collector.plugin],
+		})
+		await build.generate({ format: 'esm' })
+
+		expect(collector.definitions()[0]?.definition).toEqual({
+			entry: { kind: 'source-entry', sourceSpace: 'managed', path: 'orders.ts' },
+			exportName: 'OrdersPlugin',
+		})
+	})
+
+	it('rejects a source-space file symlink that escapes after realpath', async () => {
+		await using fixture = await createFixture({
+			'host/plugins/.keep': '',
+			'outside/orders.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class OrdersPlugin extends BasePlugin {}
+			`,
+		})
+		await symlink(
+			fixture.getPath('outside/orders.ts'),
+			fixture.getPath('host/plugins/orders.ts'),
+			'file',
+		)
+		const collector = createPluginSemanticsPlugin({ root: fixture.getPath('host') })
+
+		await expect(
+			rolldown({
+				input: fixture.getPath('host/plugins/orders.ts'),
+				external: ['@pluxel/runtime'],
+				plugins: [collector.plugin],
+			}).then((build) => build.generate({ format: 'esm' })),
+		).rejects.toThrow('outside configured source spaces')
 	})
 
 	it.each(['@pluxel/core/test', '@pluxel/runtime/test', '@pluxel/test'])(

@@ -2,7 +2,7 @@
 // - 你需要一个 Plugin 明确拥有事件 channel
 // - 你需要通过 required constructor dependency 消费另一个 Plugin 的事件
 
-import { BasePlugin, EvtChannel, formatPluginNodeAddress, Plugin } from '@pluxel/runtime'
+import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
 
 type TickEvent = readonly [payload: { from: string; seq: number; at: number }]
 
@@ -15,7 +15,7 @@ export class PluginEventsDeclaredProducer extends BasePlugin {
 		const timer = setInterval(() => {
 			this.seq += 1
 			this.tick.emit({
-				from: formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress),
+				from: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 				seq: this.seq,
 				at: Date.now(),
 			})

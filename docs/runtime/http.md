@@ -37,10 +37,13 @@ export class OrdersPlugin extends BasePlugin {
 默认路由挂在：
 
 ```text
-/__pluxel/plugins/<opaque-owner-key>
+/__pluxel/plugins/v1/package/OrdersPlugin/@acme/orders
+/__pluxel/plugins/v1/fork/east/package/OrdersPlugin/@acme/orders
 ```
 
-opaque key 来自结构化 Plugin node address，适合 runtime 和 Workbench discovery；它不是产品调用方应该拼接或持久化的 URL。
+这段版本化 route 是结构化 Plugin node address 的可读、可逆编码，会显示 package/source、root export 和 fork；它不包含
+机器绝对路径或 digest。地址由 runtime/Workbench discovery 返回，调用方不应手工拼接。default/fork 各自拥有独立路由与
+lifecycle cleanup。
 
 需要固定 webhook、health 或产品 API 根路径时声明 `publicPath`：
 

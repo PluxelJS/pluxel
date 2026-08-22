@@ -13,7 +13,7 @@ import {
 	type PluginConstructor,
 	type PluginIdentifier,
 	type PluginPart,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 	type PluginService,
 } from './index'
@@ -41,12 +41,12 @@ export type {
 	CommitSummary,
 	ForkablePluginConstructor,
 	PluginCommitChanges,
-	PluginDefinitionAddressSnapshot,
+	PluginDefinitionAddress,
 	PluginLifecycleIssue,
 	PluginLifecycleIssueKind,
 	PluginLifecycleIssuePhase,
 	PluginLifecycleIssuePredicate,
-	PluginNodeAddressSnapshot,
+	PluginNodeAddress,
 	PluginNodeSlot,
 	PluginRef,
 	PluginReplacement,
@@ -68,7 +68,7 @@ export type CoreHostConfigPatch<T extends PluginConstructor> = Partial<{
 	Record<string, unknown>
 
 export type CoreHostConfigHandle<TTarget extends PluginConstructor> = {
-	readonly owner: PluginNodeAddressSnapshot
+	readonly owner: PluginNodeAddress
 	set: (patch: CoreHostConfigPatch<TTarget>) => void
 	unset: (...keys: string[]) => void
 	rev: () => number
@@ -115,8 +115,8 @@ export type CoreTestContext = { readonly ctx: Context; dispose: () => Promise<vo
 export type CoreHostOptions = { prepareCommit?: (ctx: Context) => Promise<void> | void }
 
 type RuntimeStateLike = {
-	snapshot(): { enabled: readonly PluginNodeAddressSnapshot[] }
-	update(run: (draft: { enabled: PluginNodeAddressSnapshot[] }) => void): void
+	snapshot(): { enabled: readonly PluginNodeAddress[] }
+	update(run: (draft: { enabled: PluginNodeAddress[] }) => void): void
 }
 
 function runtimeStateOf(ctx: Context): RuntimeStateLike | undefined {
@@ -163,13 +163,13 @@ function nodeFor(summary: CommitSummary, target: PluginConstructor): PluginNodeS
 		if (!node || typeof node !== 'object' || !('definition' in node)) continue
 		const slot = node as PluginNodeSlot
 		const entry = slot.definition.entry.address
-		const current: PluginNodeAddressSnapshot =
-			slot.instance === 'default'
-				? { definition: { entry, exportName: slot.definition.exportName }, instance: 'default' }
+		const current: PluginNodeAddress =
+			slot.variant === 'default'
+				? { definition: { entry, exportName: slot.definition.exportName }, variant: 'default' }
 				: {
 						definition: { entry, exportName: slot.definition.exportName },
-						instance: 'fork',
-						forkId: slot.forkId!,
+						variant: 'fork',
+						forkId: slot.forkId,
 					}
 		if (pluginNodeAddressEqual(current, address)) return slot
 	}
@@ -235,11 +235,11 @@ export function createCoreHost(
 	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
 	const registry = ctx.registry as PluginService
 	const configService = ctx.configService
-	const localEnabled: PluginNodeAddressSnapshot[] = []
+	const localEnabled: PluginNodeAddress[] = []
 
-	const setEnabled = (owner: PluginNodeAddressSnapshot, enabled: boolean) => {
+	const setEnabled = (owner: PluginNodeAddress, enabled: boolean) => {
 		const runtimeState = runtimeStateOf(ctx)
-		const mutate = (list: PluginNodeAddressSnapshot[]) => {
+		const mutate = (list: PluginNodeAddress[]) => {
 			const index = list.findIndex((item) => pluginNodeAddressEqual(item, owner))
 			if (enabled && index < 0) list.push(owner)
 			else if (!enabled && index >= 0) list.splice(index, 1)
@@ -247,7 +247,7 @@ export function createCoreHost(
 		if (runtimeState) runtimeState.update((draft) => mutate(draft.enabled))
 		else mutate(localEnabled)
 	}
-	const isEnabled = (owner: PluginNodeAddressSnapshot) =>
+	const isEnabled = (owner: PluginNodeAddress) =>
 		(runtimeStateOf(ctx)?.snapshot().enabled ?? localEnabled).some((item) =>
 			pluginNodeAddressEqual(item, owner),
 		)

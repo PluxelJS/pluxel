@@ -1,4 +1,4 @@
-import { parseWorkbenchHref } from '../../workbench/paths'
+import { parsePluginDetailHref, parseWorkbenchHref } from '../../workbench/paths'
 
 export type BuiltinWorkbenchIcon = 'home' | 'logs' | 'security' | 'agent-tools' | 'plugins'
 
@@ -80,30 +80,22 @@ function builtinRoute(path: string): BuiltinWorkbenchRoute {
 	return route
 }
 
-function decodeSegment(value: string) {
-	try {
-		return decodeURIComponent(value)
-	} catch {
-		return value
-	}
-}
-
 export function resolveWorkbenchLocation(pathname: string): WorkbenchLocationDescriptor {
 	const path = pathname || '/'
 	const builtin = builtinRouteByPath.get(path)
 	if (builtin) return builtin
 
-	const pluginMatch = path.match(/^\/plugins\/([^/]+)(?:\/(.*))?$/)
-	if (pluginMatch) {
-		const pluginName = decodeSegment(pluginMatch[1] ?? '')
-		const tail = pluginMatch[2] ?? ''
+	const pluginRoute = parsePluginDetailHref(path)
+	if (pluginRoute) {
+		const title = pluginRoute.target.definition.exportName
+		const tail = pluginRoute.path.slice(1)
 		return {
 			path,
-			title: pluginName,
+			title,
 			meta: tail ? (tail === 'config' ? '配置' : tail.replaceAll('/', ' / ')) : '概览',
 			header: {
 				eyebrow: 'Plugins',
-				title: pluginName,
+				title,
 				subtitle: tail === 'config' ? '配置与运行上下文' : '插件工作页',
 			},
 		}

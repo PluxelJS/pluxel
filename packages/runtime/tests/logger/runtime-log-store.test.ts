@@ -6,7 +6,7 @@ const pluginA = {
 		entry: { kind: 'package-root', packageName: '@test/a' },
 		exportName: 'Plugin',
 	},
-	instance: 'default',
+	variant: 'default',
 } as const
 
 const pluginB = {
@@ -14,7 +14,7 @@ const pluginB = {
 		entry: { kind: 'package-root', packageName: '@test/b' },
 		exportName: 'Plugin',
 	},
-	instance: 'default',
+	variant: 'default',
 } as const
 
 function lineInput(i: number, extra?: Partial<any>) {

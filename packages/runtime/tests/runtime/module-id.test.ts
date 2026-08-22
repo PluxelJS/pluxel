@@ -16,14 +16,14 @@ describe('runtime module id lookup', () => {
 				entry: { kind: 'package-root', packageName: '@test/a' },
 				exportName: 'Plugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		} as const
 		const pluginB = {
 			definition: {
 				entry: { kind: 'package-root', packageName: '@test/b' },
 				exportName: 'Plugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		} as const
 		const nodeA = { owner: pluginA }
 		const nodeB = { owner: pluginB }

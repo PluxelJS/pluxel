@@ -4,8 +4,8 @@ import {
 	Plugin,
 	PluginSlotRegistry,
 	type PluginConstructor,
-	type PluginDefinitionAddressSnapshot,
-	type PluginNodeAddressSnapshot,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import {
@@ -16,22 +16,19 @@ import {
 	readConfigSnapshot,
 } from '../src/internal/catalog'
 
-const packageDefinition = (
-	packageName: string,
-	exportName: string,
-): PluginDefinitionAddressSnapshot => ({
+const packageDefinition = (packageName: string, exportName: string): PluginDefinitionAddress => ({
 	entry: { kind: 'package-root', packageName },
 	exportName,
 })
 
 function loweredGeneration(
 	generation: PluginConstructor,
-	definition: PluginDefinitionAddressSnapshot,
+	definition: PluginDefinitionAddress,
 	options: {
 		displayName?: string
-		requires?: readonly PluginDefinitionAddressSnapshot[]
-		optional?: readonly PluginDefinitionAddressSnapshot[]
-		provides?: PluginDefinitionAddressSnapshot
+		requires?: readonly PluginDefinitionAddress[]
+		optional?: readonly PluginDefinitionAddress[]
+		provides?: PluginDefinitionAddress
 	} = {},
 ): PluginConstructor {
 	Plugin(options.displayName ? { displayName: options.displayName } : undefined)(generation)
@@ -168,9 +165,9 @@ describe('static runtime catalog identity', () => {
 			packageDefinition('@fixture/known', 'KnownPlugin'),
 		)
 		const catalog = buildCatalog({ name: 'config', plugins: [Known] }, new PluginSlotRegistry())
-		const unknown: PluginNodeAddressSnapshot = {
+		const unknown: PluginNodeAddress = {
 			definition: packageDefinition('@fixture/unknown', 'UnknownPlugin'),
-			instance: 'default',
+			variant: 'default',
 		}
 		const snapshot = readConfigSnapshot({
 			getConfigSnapshot: () => ({

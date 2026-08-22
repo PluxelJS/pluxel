@@ -1,6 +1,6 @@
 import type { WorkbenchBundle, WorkbenchPluginDescriptor } from '@pluxel/runtime/workbench'
 import type { WorkbenchLocaleService, WorkbenchUiModule } from '@pluxel/runtime/workbench/ui'
-import { workbenchNodeKey } from './node-address'
+import { pluginNodeIndexKey } from '@pluxel/core'
 
 export type WorkbenchModuleRecord = {
 	key: string
@@ -26,7 +26,7 @@ export class WorkbenchModuleStore {
 	) {}
 
 	async prepare(artifact: WorkbenchBundle): Promise<WorkbenchModuleRecord> {
-		const key = `${workbenchNodeKey(artifact.owner.address)}:${artifact.sourceHash}`
+		const key = `${pluginNodeIndexKey(artifact.owner.address)}:${artifact.sourceHash}`
 		let record = this.records.get(key)
 		if (!record) {
 			let task = this.pending.get(key)

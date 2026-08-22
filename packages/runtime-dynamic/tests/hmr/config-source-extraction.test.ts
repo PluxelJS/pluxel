@@ -58,7 +58,8 @@ async function withPluginRunner<T>(
 
 	const serverConfig = mergeConfig(
 		buildLoaderHmrViteConfig({
-			root,
+			viteRoot: root,
+			sourceRoot: root,
 			fsAllow,
 			runnerPlugin,
 			httpPlugin: { name: 'noop' },

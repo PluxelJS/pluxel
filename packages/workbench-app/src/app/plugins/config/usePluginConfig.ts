@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 
 import { getPluginConfig, getPluginSchema, invokeRpc } from '../../../runtime'
 import { stringifyUnknown } from '../../../utils/unknown'
-import { workbenchNodeKey } from '../../../workbench/node-address'
 
 export type PluginConfigData = {
 	fieldName: string
@@ -48,7 +47,7 @@ function evaluateSchemaSource(displayName: string, expr: string): ObjectSchema<a
 }
 
 async function loadPluginConfigData(
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	displayName: string,
 	forceSchemaRefresh: boolean,
 	current?: Omit<PluginConfigData, 'savedConfig'>,
@@ -96,7 +95,7 @@ class PluginConfigResource {
 	private loadedAt = 0
 
 	constructor(
-		readonly owner: PluginNodeAddressSnapshot,
+		readonly owner: PluginNodeAddress,
 		readonly displayName: string,
 	) {}
 
@@ -169,11 +168,8 @@ class PluginConfigResource {
 	}
 }
 
-function getConfigResource(
-	owner: PluginNodeAddressSnapshot,
-	displayName: string,
-): PluginConfigResource {
-	const key = workbenchNodeKey(owner)
+function getConfigResource(owner: PluginNodeAddress, displayName: string): PluginConfigResource {
+	const key = pluginNodeIndexKey(owner)
 	let resource = configResources.get(key)
 	if (!resource) {
 		resource = new PluginConfigResource(owner, displayName)
@@ -183,7 +179,7 @@ function getConfigResource(
 }
 
 export function commitPluginConfig(
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	displayName: string,
 	savedConfig: Record<string, unknown>,
 ): void {
@@ -197,7 +193,7 @@ if (import.meta.hot) {
 }
 
 export function usePluginConfig(
-	owner: PluginNodeAddressSnapshot | undefined,
+	owner: PluginNodeAddress | undefined,
 	displayName = owner?.definition.exportName ?? '',
 ): PluginConfigState {
 	const resource = useMemo(

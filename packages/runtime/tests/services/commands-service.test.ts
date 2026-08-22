@@ -1,11 +1,7 @@
 import { defineCommand } from '@pluxel/commands'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { Type, obj } from '@pluxel/commands/typebox'
-import type {
-	PluginConstructor,
-	PluginDefinitionAddressSnapshot,
-	PluginNodeAddressSnapshot,
-} from '@pluxel/runtime'
+import type { PluginConstructor, PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/runtime'
 import {
 	BasePlugin,
 	createRuntimeHost,
@@ -399,8 +395,8 @@ function installTestRoute(host: RuntimeHost, constructors: readonly PluginConstr
 			rootExportName: info.rootExportName,
 		}
 	})
-	const key = (address: PluginNodeAddressSnapshot) => JSON.stringify(address)
-	const definitionKey = (address: PluginDefinitionAddressSnapshot) => JSON.stringify(address)
+	const key = (address: PluginNodeAddress) => JSON.stringify(address)
+	const definitionKey = (address: PluginDefinitionAddress) => JSON.stringify(address)
 	const byNode = new Map(entries.map((entry) => [key(entry.address), entry]))
 	const byDefinition = new Map(
 		entries.map((entry) => [definitionKey(entry.address.definition), entry]),

@@ -2,13 +2,13 @@ import {
 	pluginNodeAddressOf,
 	type Context,
 	type PluginConstructor,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/internal'
 
-type PluginTarget = PluginConstructor | PluginNodeAddressSnapshot
+type PluginTarget = PluginConstructor | PluginNodeAddress
 
-function addressOf(target: PluginTarget): PluginNodeAddressSnapshot {
+function addressOf(target: PluginTarget): PluginNodeAddress {
 	return typeof target === 'function' ? pluginNodeAddressOf(target) : target
 }
 

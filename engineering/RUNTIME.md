@@ -44,8 +44,9 @@ transactional outbox；Workbench 只是可选消费者。
 ## Plugin identity 与 optional integration
 
 runtime capability、HTTP/config/logging/database/Vault owner、commands、Workbench 和 route protocol 全部携带
-`PluginNodeAddressSnapshot`。address 由 route/toolchain 生成并由 Core intern；`displayName` 与 root export name 只用于展示，
-class/constructor name 不作为 lookup、storage key 或 fallback。
+`PluginNodeAddress`。address 由 route/toolchain 生成并由 Core intern；`displayName` 与 root export name 只用于展示，
+class/constructor name 不作为 lookup、storage key 或 fallback。definition/node scope 与 reference/route/label 规则见
+[`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)。
 
 Optional implementation 是否存在只由 host catalog 决定。作者的 lowered `PluginRef` 不触发 runtime loader、安装、注册、
 retry 或默认 enable；provider generation 的出现、消失和 replacement 由 Core combined graph 触发 consumer restart。dynamic
@@ -55,9 +56,9 @@ source batch 只提交正常 catalog transaction，不维护 optional request �
 
 Dynamic config 使用 `plugins` 声明宿主显式 import 的固定 catalog，使用 `sources` 声明运行时可增删的文件 catalog。
 `plugins` 只提供 availability；启停、fork、dependency override 和 config validation 全部读取统一 RuntimeState。固定 constructor
-即使 disabled 也可由 catalog resolve，但不会因首次出现而自动启用。RuntimeState 写盘格式是 version 3，以结构化 node/definition
-address arrays 保存 enabled、fork、provider default 和 dependency override。任何旧版本或未知版本都 fail-fast；runtime 不从
-Plugin name、constructor 或 display title 猜测迁移。
+即使 disabled 也可由 catalog resolve，但不会因首次出现而自动启用。RuntimeState 写盘格式是 version 4，以结构化 node/definition
+address 保存 enabled、fork family、provider default 和 stable requirement-address dependency override。reader/writer 只接受 version 4；
+其他版本 fail-fast。runtime 不从 Plugin name、constructor 或 display title 猜测 identity。
 
 程序化 dynamic launcher 只接受 config module path，让 config、固定插件和 mutable source 都经由 launcher 所有的 canonical
 Vite SSR runner 求值。object config 不跨 module realm 传递 constructor。

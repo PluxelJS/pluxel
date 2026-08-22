@@ -1,5 +1,5 @@
 import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemetry/api'
-import { formatPluginNodeAddress, v } from '@pluxel/runtime'
+import { formatPluginNodeReference, v } from '@pluxel/runtime'
 import { withRuntimeHost } from '@pluxel/runtime/test'
 import { BasePlugin, Plugin } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -60,7 +60,7 @@ describe('OtelPlugin', () => {
 				expect(body).toContain('queue_depth')
 				expect(body).toContain('workers_active')
 				expect(body).toContain(
-					`otel_scope_name="${formatPluginNodeAddress(consumer.ctx.pluginInfo.nodeAddress)}"`,
+					`otel_scope_name="${formatPluginNodeReference(consumer.ctx.pluginInfo.nodeAddress)}"`,
 				)
 				expect(body).toContain('region="hk"')
 				expect(body).toContain('outcome="ok"')

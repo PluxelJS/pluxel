@@ -14,7 +14,7 @@ const pluginA = {
 		entry: { kind: 'package-root', packageName: '@test/a' },
 		exportName: 'PluginA',
 	},
-	instance: 'default',
+	variant: 'default',
 } as const
 
 const pluginB = {
@@ -22,7 +22,7 @@ const pluginB = {
 		entry: { kind: 'package-root', packageName: '@test/b' },
 		exportName: 'PluginB',
 	},
-	instance: 'default',
+	variant: 'default',
 } as const
 
 const routes: PluginGatedModuleDef[] = [

@@ -44,7 +44,7 @@ export class CatalogPlugin extends BasePlugin {
 }
 ```
 
-三个 getter 分别返回 `@opentelemetry/api` 的 `Meter`、`Tracer` 与 `@opentelemetry/api-logs` 的 `Logger`。instrumentation scope name 是 caller 的 formatted Plugin node address；同一 caller generation 重复读取同一个 getter 会返回同一实例。
+三个 getter 分别返回 `@opentelemetry/api` 的 `Meter`、`Tracer` 与 `@opentelemetry/api-logs` 的 `Logger`。instrumentation scope name 是 caller 的 Plugin node reference；同一 caller generation 重复读取同一个 getter 会返回同一实例。
 
 span、event、link、status、baggage、log body、severity、`eventName` 和 attributes 都是原生 OTel contract。在 active span 内 emit 的 log 可获得 trace/span correlation。
 

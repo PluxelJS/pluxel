@@ -1,14 +1,31 @@
 ---
 packages:
+  '@pluxel/core':
+    type: major
   '@pluxel/rolldown':
-    type: patch
+    type: major
   '@pluxel/runtime':
-    type: patch
+    type: major
+  '@pluxel/runtime-dynamic':
+    type: major
+  '@pluxel/runtime-static':
+    type: major
+  '@pluxel/wretch':
+    type: major
 ---
 
-## Keep internal Plugin address keys out of catalog routes
+## Make Plugin identity stable and readable
 
-Use readable root export names for unambiguous Workbench plugin IDs while retaining structured
-addresses for runtime control and persistence. Carry Workbench layout targets in a query parameter
-so scoped package names cannot split the HTTP route, and reject static application builds that would
-embed an absolute external source path instead of package-root Plugin provenance.
+Replace snapshot/instance identities with strict definition/node addresses and registry-interned slots.
+Canonical package roots or named source spaces now survive filesystem layout changes, while native
+realpath containment rejects symlink escapes and machine-specific absolute paths.
+
+Expose reversible, human-readable Plugin references and versioned routes across diagnostics, logs,
+Workbench, GraphQL and default HTTP namespaces. Forks share definition-scoped source, schema, artifacts
+and HMR replacement while retaining node-scoped lifecycle, config and resource ownership.
+
+Use a clean persistence break across RuntimeState, Config, logger policy, Workbench preferences and
+browser state, database owners, Vault namespaces, Wretch settings, caches and rate limits. Each reader
+accepts only its current schema; no automatic migration, dual-read, redirect or display-name fallback
+remains. Private namespaces use collision-resistant canonical address hashes without exposing digests
+as public Plugin IDs.

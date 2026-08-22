@@ -1,13 +1,12 @@
 import { defineCommand } from '@pluxel/commands'
 import { obj, Type } from '@pluxel/commands/typebox'
-import { getPluginConfigDefinition, pluginNodeAddressOf } from '@pluxel/core'
+import { formatPluginNodeRoute, getPluginConfigDefinition, pluginNodeAddressOf } from '@pluxel/core'
 import { PLUGIN_HTTP_BASE } from '@pluxel/runtime'
 import { BasePlugin, Plugin, PluginPart, withRuntimeHost } from '@pluxel/runtime/test'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
-import { pluginNodePhysicalKey } from '../../src/runtime/plugin-address'
 import { pluginSchema } from '../../src/api/usecases/pluginConfig'
 
 const extension = workbench.extension({ contract: workbenchContract.define({}) })
@@ -71,7 +70,7 @@ describe('PluginPart runtime capabilities', () => {
 		await withRuntimeHost(
 			async (host) => {
 				await host.start(CapabilityOwner)
-				const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(CapabilityOwner))
+				const ownerRoute = formatPluginNodeRoute(pluginNodeAddressOf(CapabilityOwner))
 
 				expect(partCommands).toBe(repeatedPartCommands)
 				expect(partCommands).not.toBe(ownerCommands)
@@ -83,7 +82,7 @@ describe('PluginPart runtime capabilities', () => {
 				)
 
 				const mounted = await host.ctx.http.fetch(
-					new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
+					new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
 				)
 				expect(await mounted.text()).toBe('part-route')
 
@@ -91,7 +90,7 @@ describe('PluginPart runtime capabilities', () => {
 				await host.commit()
 				expect(host.ctx.commands.get('part.capability.read')).toBeUndefined()
 				const removed = await host.ctx.http.fetch(
-					new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
+					new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
 				)
 				expect(removed.status).toBe(404)
 			},

@@ -94,7 +94,7 @@ function PluginDependencyInjectionControls() {
 }
 
 export function PluginWorkbenchSidebar() {
-	const { description, isRunning, isSyncing, pluginName } = usePluginMeta()
+	const { description, isRunning, isSyncing } = usePluginMeta()
 	const { assistVisible, setAssistHost } = usePluginWorkbenchAside()
 	const statusBadges = useMemo(
 		() => (
@@ -137,7 +137,6 @@ export function PluginWorkbenchSidebar() {
 			views={views}
 			fallbackViewId="inspect"
 			searchKey="side"
-			searchPluginName={pluginName}
 			className="plx-pluginWorkbench__contextRail"
 			headerMode="inline"
 		/>
@@ -210,7 +209,7 @@ function AssistHostMount({
 }
 
 function PluginContextSummaryCard() {
-	const { pluginName, source } = usePluginScope()
+	const { pluginLabel, source } = usePluginScope()
 	const deps = usePluginDependencyEntries()
 	const runningDependencyCount = deps.filter((dep) => dep.isRunning).length
 	const sourcePreview = useMemo(
@@ -225,7 +224,7 @@ function PluginContextSummaryCard() {
 	const sourceBadge = source.kind === 'hmr' ? 'HMR' : source.kind === 'package' ? '包' : '未知'
 	const dependencyPreview = deps
 		.slice(0, 2)
-		.map((dep) => dep.name)
+		.map((dep) => dep.label)
 		.join(' / ')
 	const copyValue = source.moduleId ?? source.packageName ?? null
 
@@ -286,7 +285,7 @@ function PluginContextSummaryCard() {
 
 				<Group gap={6} wrap="wrap">
 					<Badge size="xs" variant="light" color="gray">
-						{pluginName}
+						{pluginLabel}
 					</Badge>
 					{runningDependencyCount > 0 ? (
 						<Badge size="xs" variant="light" color="green">
@@ -300,7 +299,7 @@ function PluginContextSummaryCard() {
 }
 
 export function PluginWorkbenchPanel() {
-	const { owner, pluginName } = usePluginMeta()
+	const { owner } = usePluginMeta()
 	const views = useMemo<PluginWorkbenchView[]>(
 		() => [
 			{
@@ -332,7 +331,6 @@ export function PluginWorkbenchPanel() {
 			views={views}
 			fallbackViewId="logs"
 			searchKey="dock"
-			searchPluginName={pluginName}
 			className="plx-pluginWorkbench__dock"
 			headerMode="inline"
 		/>

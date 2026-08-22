@@ -676,10 +676,6 @@ function namespaceFrom(ctx: PluxelContext, options?: VaultNamespaceOptions): str
 	)
 }
 
-function findNamespaceState(snapshot: VaultSnapshot, namespace: string) {
-	return snapshot.namespaces[namespace]
-}
-
 async function loadMountState(
 	store: VaultStore,
 	runtime: MountRuntime,
@@ -1086,16 +1082,13 @@ export class VaultService {
 
 		const kv = (namespaceOptions?: VaultNamespaceOptions): VaultKvHandle => {
 			const namespace = namespaceFrom(ctx, namespaceOptions)
+			const stateOf = (snapshot: VaultSnapshot) => snapshot.namespaces[namespace]
 
 			return {
 				get: async <T>(key: string) =>
-					await readSnapshot(
-						(snapshot) => findNamespaceState(snapshot, namespace)?.kv[key] as T | undefined,
-					),
+					await readSnapshot((snapshot) => stateOf(snapshot)?.kv[key] as T | undefined),
 				has: async (key: string) =>
-					await readSnapshot(
-						(snapshot) => key in (findNamespaceState(snapshot, namespace)?.kv ?? {}),
-					),
+					await readSnapshot((snapshot) => key in (stateOf(snapshot)?.kv ?? {})),
 				set: async (key: string, value: unknown) => {
 					await mutateNamespace(namespace, async (namespaceState) => {
 						namespaceState.kv[key] = value
@@ -1126,15 +1119,10 @@ export class VaultService {
 					})
 				},
 				keys: async () =>
-					await readSnapshot((snapshot) =>
-						Object.keys(findNamespaceState(snapshot, namespace)?.kv ?? {}).sort(),
-					),
+					await readSnapshot((snapshot) => Object.keys(stateOf(snapshot)?.kv ?? {}).sort()),
 				entries: async <T = unknown>() =>
 					await readSnapshot(
-						(snapshot) =>
-							Object.entries(findNamespaceState(snapshot, namespace)?.kv ?? {}) as Array<
-								[string, T]
-							>,
+						(snapshot) => Object.entries(stateOf(snapshot)?.kv ?? {}) as Array<[string, T]>,
 					),
 				batch: async <T>(run: (tx: VaultKvTransaction) => T | Promise<T>) => {
 					const result = await mutateNamespace(namespace, async (namespaceState) => {
@@ -1169,6 +1157,7 @@ export class VaultService {
 
 		const docs = (namespaceOptions?: VaultNamespaceOptions): VaultDocsHandle => {
 			const namespace = namespaceFrom(ctx, namespaceOptions)
+			const stateOf = (snapshot: VaultSnapshot) => snapshot.namespaces[namespace]
 
 			return {
 				collection: <TDoc extends Record<string, unknown> = Record<string, unknown>>(
@@ -1182,9 +1171,7 @@ export class VaultService {
 							get: async () =>
 								await readSnapshot(
 									(snapshot) =>
-										findNamespaceState(snapshot, namespace)?.docs[collectionName]?.[docId] as
-											| TDoc
-											| undefined,
+										stateOf(snapshot)?.docs[collectionName]?.[docId] as TDoc | undefined,
 								),
 							set: async (value: TDoc) => {
 								await mutateNamespace(namespace, async (namespaceState) => {
@@ -1213,8 +1200,7 @@ export class VaultService {
 							},
 							exists: async () =>
 								await readSnapshot(
-									(snapshot) =>
-										docId in (findNamespaceState(snapshot, namespace)?.docs[collectionName] ?? {}),
+									(snapshot) => docId in (stateOf(snapshot)?.docs[collectionName] ?? {}),
 								),
 						}
 					}
@@ -1227,14 +1213,11 @@ export class VaultService {
 						delete: async (id: string) => await docHandle(id).delete(),
 						ids: async () =>
 							await readSnapshot((snapshot) =>
-								Object.keys(
-									findNamespaceState(snapshot, namespace)?.docs[collectionName] ?? {},
-								).sort(),
+								Object.keys(stateOf(snapshot)?.docs[collectionName] ?? {}).sort(),
 							),
 						list: async () =>
 							await readSnapshot((snapshot) => {
-								const docsState =
-									findNamespaceState(snapshot, namespace)?.docs[collectionName] ?? {}
+								const docsState = stateOf(snapshot)?.docs[collectionName] ?? {}
 								return Object.entries(docsState).map(([id, value]) => ({
 									id,
 									value: value as TDoc,
@@ -1259,7 +1242,6 @@ export class VaultService {
 					const path = blobPath(runtime, namespace, name)
 					const readBytes = async () => {
 						const dek = await readDek(false)
-						if (!(await store.exists(path))) return undefined
 						const encrypted = await store.readBytes(path)
 						return encrypted ? await aesDecrypt(dek, encrypted) : undefined
 					}
@@ -1286,8 +1268,7 @@ export class VaultService {
 							)
 						},
 						remove: async () => {
-							if (!(await store.exists(path))) return
-							await store.delete(path)
+							if (await store.exists(path)) await store.delete(path)
 						},
 						describe: () => ({ path }),
 					}
@@ -1301,9 +1282,8 @@ export class VaultService {
 							throw error
 						}
 					})
-					const namespaceDir = join(runtime.blobsDir, namespace)
-					const names = await store.listChildren(namespaceDir)
-					return names
+					const blobNames = await store.listChildren(join(runtime.blobsDir, namespace))
+					return blobNames
 						.filter((blobName) => blobName.endsWith('.blob'))
 						.map((blobName) => blobName.slice(0, -'.blob'.length))
 						.sort()
@@ -1312,7 +1292,8 @@ export class VaultService {
 		}
 
 		const namespaceHandle = (name?: string): VaultNamespace => {
-			const resolvedNamespace = namespaceFrom(ctx, { namespace: name })
+			const namespaceOptions = name === undefined ? undefined : { namespace: name }
+			const resolvedNamespace = namespaceFrom(ctx, namespaceOptions)
 			const batch = async <T>(run: (tx: VaultNamespaceTransaction) => T | Promise<T>) => {
 				const result = await mutateNamespace(resolvedNamespace, async (namespaceState) => {
 					let changed = false
@@ -1385,9 +1366,9 @@ export class VaultService {
 			}
 			return {
 				name: resolvedNamespace,
-				kv: () => kv({ namespace: resolvedNamespace }),
-				docs: () => docs({ namespace: resolvedNamespace }),
-				blobs: () => blobs({ namespace: resolvedNamespace }),
+				kv: () => kv(namespaceOptions),
+				docs: () => docs(namespaceOptions),
+				blobs: () => blobs(namespaceOptions),
 				batch,
 			}
 		}

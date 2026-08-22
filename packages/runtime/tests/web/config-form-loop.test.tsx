@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { RuntimeTransportClientProvider } from '../../src/web/react'
 import { act, useMemo, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -17,12 +17,12 @@ import {
 import { PluginWorkbenchTabActivityProvider } from '../../../workbench-app/src/app/plugins/detail/workbench/tabActivity'
 import { resolvePluginWorkbenchPanelsState } from '../../../workbench-app/src/app/workbench/split'
 
-const OWNER: PluginNodeAddressSnapshot = {
+const OWNER: PluginNodeAddress = {
 	definition: {
-		entry: { kind: 'source-entry', source: 'pluxel-test:ConfigOwner' },
+		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'pluxel-test:ConfigOwner' },
 		exportName: 'Plugin',
 	},
-	instance: 'default',
+	variant: 'default',
 }
 
 const EMPTY_CONFIG = Object.freeze({ name: '', enabled: false })

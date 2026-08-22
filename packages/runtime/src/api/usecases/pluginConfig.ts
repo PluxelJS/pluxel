@@ -1,4 +1,4 @@
-import { type Context, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { type Context, type PluginNodeAddress } from '@pluxel/core'
 import {
 	ConfigValidationError,
 	collectConfigDefaults,
@@ -6,6 +6,9 @@ import {
 } from '@pluxel/core/services'
 import type { ConfigFieldMutation } from '../../web/protocol'
 import { requireRouteCapability } from '../../runtime/capabilities'
+import { applyStatusActions } from './pluginStatus'
+
+export type PluginConfigApplication = 'not-requested' | 'applied' | 'deferred' | 'saved-not-applied'
 
 export type PluginSchemaResult =
 	| {
@@ -25,7 +28,14 @@ export type PluginSchemaSection = Readonly<{
 }>
 
 export type PluginConfigResult =
-	| { ok: true; saved: boolean; config: Record<string, unknown>; defaults: Record<string, unknown> }
+	| {
+			ok: true
+			saved: boolean
+			application: PluginConfigApplication
+			applyError?: string
+			config: Record<string, unknown>
+			defaults: Record<string, unknown>
+	  }
 	| {
 			ok: false
 			code: string
@@ -62,17 +72,17 @@ function writeNestedField(
 	return out
 }
 
-function configDefinition(ctx: Context, owner: PluginNodeAddressSnapshot) {
+function configDefinition(ctx: Context, owner: PluginNodeAddress) {
 	return requireRouteCapability(ctx, 'configMetadata').getConfig(owner)
 }
 
-function ownerSlot(ctx: Context, owner: PluginNodeAddressSnapshot) {
+function ownerSlot(ctx: Context, owner: PluginNodeAddress) {
 	return ctx.registry.internNodeAddress(owner)
 }
 
 export async function pluginSchema(
 	ctx: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): Promise<PluginSchemaResult> {
 	const config = configDefinition(ctx, owner)
 	if (!config)
@@ -127,7 +137,7 @@ export async function pluginSchema(
 
 export async function pluginConfigGet(
 	ctx: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 ): Promise<PluginConfigResult> {
 	const config = configDefinition(ctx, owner)
 	const defaults = config
@@ -136,6 +146,7 @@ export async function pluginConfigGet(
 	return {
 		ok: true,
 		saved: false,
+		application: 'not-requested',
 		config: plainRecord(ctx.configService.getRawConfig(ownerSlot(ctx, owner))),
 		defaults,
 	}
@@ -143,7 +154,7 @@ export async function pluginConfigGet(
 
 export async function pluginConfigValidate(
 	ctx: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
 	const config = configDefinition(ctx, owner)
@@ -169,12 +180,36 @@ export async function pluginConfigValidate(
 			defaults,
 		}
 	}
-	return { ok: true, saved: false, config: validation.output, defaults }
+	return {
+		ok: true,
+		saved: false,
+		application: 'not-requested',
+		config: validation.output,
+		defaults,
+	}
+}
+
+async function applyDesiredConfig(
+	ctx: Context,
+	owner: PluginNodeAddress,
+): Promise<Pick<PluginConfigResult & { ok: true }, 'application' | 'applyError'>> {
+	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
+	if (!lifecycle.isRunning(owner)) return { application: 'deferred' }
+	const result = await applyStatusActions(ctx, [{ address: owner, action: 'restart' }])
+	const mutation = result.results[0]
+	if (result.ok && mutation?.ok && mutation.isRunning) return { application: 'applied' }
+	return {
+		application: 'saved-not-applied',
+		applyError:
+			mutation?.error ??
+			result.commitError ??
+			'Plugin restart did not return the node to running state',
+	}
 }
 
 export async function pluginConfigPatch(
 	ctx: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
 	const validation = await pluginConfigValidate(ctx, owner, patch)
@@ -203,12 +238,18 @@ export async function pluginConfigPatch(
 		}
 		throw error
 	}
-	return { ...validation, saved: true, config: plainRecord(ctx.configService.getRawConfig(slot)) }
+	await ctx.configService.flush()
+	return {
+		...validation,
+		saved: true,
+		...(await applyDesiredConfig(ctx, owner)),
+		config: plainRecord(ctx.configService.getRawConfig(slot)),
+	}
 }
 
 export async function pluginConfigPatchField(
 	ctx: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	input: ConfigFieldMutation,
 ): Promise<PluginConfigResult> {
 	const fieldPath = String(input.fieldPath ?? '').trim()
@@ -219,7 +260,7 @@ export async function pluginConfigPatchField(
 
 export async function pluginConfigReset(
 	ctx: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	keys?: string[],
 ): Promise<PluginConfigResult> {
 	const config = configDefinition(ctx, owner)
@@ -247,9 +288,11 @@ export async function pluginConfigReset(
 		}
 		throw error
 	}
+	await ctx.configService.flush()
 	return {
 		ok: true,
 		saved: true,
+		...(await applyDesiredConfig(ctx, owner)),
 		config: plainRecord(ctx.configService.getRawConfig(slot)),
 		defaults,
 	}

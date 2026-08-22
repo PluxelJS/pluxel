@@ -2,9 +2,9 @@ import type {
 	Context as CoreContext,
 	CommitSummary,
 	PluginConstructor,
-	PluginDefinitionAddressSnapshot,
-	PluginEntryAddressSnapshot,
-	PluginNodeAddressSnapshot,
+	PluginDefinitionAddress,
+	PluginEntryAddress,
+	PluginNodeAddress,
 } from '@pluxel/core'
 import type {
 	ConfigServiceConfig,
@@ -160,7 +160,7 @@ export type StaticRuntimePluginStatus =
 	| 'catalog-drift'
 
 export type StaticRuntimeReportEntry = {
-	readonly address: PluginNodeAddressSnapshot
+	readonly address: PluginNodeAddress
 	readonly displayName: string
 	readonly rootExportName: string
 	readonly status: StaticRuntimePluginStatus
@@ -174,17 +174,17 @@ export type StaticRuntimeStartupReport = {
 }
 
 export type StaticRuntimeHmrReport = StaticRuntimeStartupReport & {
-	readonly added: readonly PluginNodeAddressSnapshot[]
-	readonly removed: readonly PluginNodeAddressSnapshot[]
-	readonly replaced: readonly PluginNodeAddressSnapshot[]
+	readonly added: readonly PluginNodeAddress[]
+	readonly removed: readonly PluginNodeAddress[]
+	readonly replaced: readonly PluginNodeAddress[]
 }
 
 export type StaticRuntimeCatalogEntry = {
-	readonly address: PluginNodeAddressSnapshot
-	readonly definition: PluginDefinitionAddressSnapshot
+	readonly address: PluginNodeAddress
+	readonly definition: PluginDefinitionAddress
 	readonly displayName: string
 	readonly rootExportName: string
-	readonly provenance: PluginEntryAddressSnapshot
+	readonly provenance: PluginEntryAddress
 	/** Current implementation generation for this stable Plugin node. */
 	readonly generation: PluginConstructor
 }

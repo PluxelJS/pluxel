@@ -3,6 +3,7 @@ import { pluginNodeAddressOf } from '@pluxel/core'
 import {
 	BasePlugin,
 	createRuntimeHost,
+	ForkablePlugin,
 	getPluginInfo,
 	Plugin,
 	type RuntimeHost,
@@ -119,7 +120,7 @@ describe('Workbench plugin catalog classification', () => {
 					{
 						id: 'chatbots',
 						name: 'Chatbots',
-						nodes: [pluginNodeAddressOf(FixedChatPlugin)],
+						definitions: [pluginNodeAddressOf(FixedChatPlugin).definition],
 						packages: ['@suite/chat-*'],
 					},
 				],
@@ -163,7 +164,7 @@ describe('Workbench plugin catalog classification', () => {
 					{
 						id: 'host',
 						name: 'Host',
-						nodes: [pluginNodeAddressOf(HostDefaultPlugin)],
+						definitions: [pluginNodeAddressOf(HostDefaultPlugin).definition],
 					},
 				],
 			},
@@ -196,7 +197,7 @@ describe('Workbench plugin catalog classification', () => {
 		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_GROUP_LAYOUT' })
 	})
 
-	it('rejects legacy catalog preferences instead of migrating them', async () => {
+	it('rejects unsupported catalog preference versions', async () => {
 		const host = createRuntimeHost()
 		hosts.push(host)
 		await host.ctx.root.persistence
@@ -206,7 +207,46 @@ describe('Workbench plugin catalog classification', () => {
 				JSON.stringify({ version: 1, assignments: [], groupOrder: [], pluginOrder: [] }),
 			)
 		const catalog = new WorkbenchPluginCatalogService(host.ctx)
-		await expect(catalog.ready).rejects.toThrow('preferences version must be 2')
+		await expect(catalog.ready).rejects.toThrow('preferences version must be 3')
+	})
+
+	it('loads definition preferences inherited by every fork', async () => {
+		@Plugin({ displayName: 'FamilyPlugin' })
+		class FamilyPlugin extends ForkablePlugin {}
+		lowerTestPlugin(FamilyPlugin)
+
+		const host = createRuntimeHost({
+			workbench: {
+				enabled: true,
+				pluginGroups: [{ id: 'family', name: 'Family' }],
+			},
+		})
+		hosts.push(host)
+		const East = host.fork(FamilyPlugin, 'east')
+		host.add([FamilyPlugin, East])
+		installSourceMap(host, {})
+		await host.commit()
+
+		const owner = pluginNodeAddressOf(FamilyPlugin)
+		const storage = host.ctx.root.persistence.namespace('workbench')
+		await storage.put(
+			'plugin-catalog.json',
+			JSON.stringify({
+				version: 3,
+				assignments: [{ definition: owner.definition, groupId: 'family' }],
+				groupOrder: ['family'],
+				pluginOrder: [{ groupId: 'family', definitions: [owner.definition] }],
+			}),
+		)
+
+		const catalog = new WorkbenchPluginCatalogService(host.ctx)
+		await expect(catalog.listGroups()).resolves.toEqual([
+			{
+				groupId: 'family',
+				name: 'Family',
+				nodes: [pluginNodeAddressOf(FamilyPlugin), pluginNodeAddressOf(East)],
+			},
+		])
 	})
 
 	it('rejects ambiguous host rules during Workbench installation', () => {

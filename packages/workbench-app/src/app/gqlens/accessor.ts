@@ -62,7 +62,10 @@ export interface PluginGroupNode {
 export interface PluginGroupNodeNode {
   readonly __typename: string | undefined;
   readonly id: Types.PluginGroupNode["id"] | undefined;
+  readonly reference: Types.PluginGroupNode["reference"] | undefined;
+  readonly route: Types.PluginGroupNode["route"] | undefined;
   readonly displayName: Types.PluginGroupNode["displayName"] | undefined;
+  readonly label: Types.PluginGroupNode["label"] | undefined;
   readonly rootExportName: Types.PluginGroupNode["rootExportName"] | undefined;
   readonly address: PluginAddressNode;
 }
@@ -70,7 +73,7 @@ export interface PluginGroupNodeNode {
 export interface PluginAddressNode {
   readonly __typename: string | undefined;
   readonly definition: PluginAddressDefinitionNode;
-  readonly instance: Types.PluginAddress["instance"] | undefined;
+  readonly variant: Types.PluginAddress["variant"] | undefined;
   readonly forkId: Types.PluginAddress["forkId"] | undefined;
 }
 
@@ -84,13 +87,17 @@ export interface PluginAddressDefinitionEntryNode {
   readonly __typename: string | undefined;
   readonly kind: Types.PluginAddressDefinitionEntry["kind"] | undefined;
   readonly packageName: Types.PluginAddressDefinitionEntry["packageName"] | undefined;
-  readonly source: Types.PluginAddressDefinitionEntry["source"] | undefined;
+  readonly sourceSpace: Types.PluginAddressDefinitionEntry["sourceSpace"] | undefined;
+  readonly path: Types.PluginAddressDefinitionEntry["path"] | undefined;
 }
 
 export interface PluginNode {
   readonly __typename: string | undefined;
   readonly id: Types.Plugin["id"] | undefined;
-  readonly name: Types.Plugin["name"] | undefined;
+  readonly reference: Types.Plugin["reference"] | undefined;
+  readonly route: Types.Plugin["route"] | undefined;
+  readonly displayName: Types.Plugin["displayName"] | undefined;
+  readonly label: Types.Plugin["label"] | undefined;
   readonly rootExportName: Types.Plugin["rootExportName"] | undefined;
   readonly address: PluginAddressNode;
   readonly detail: PluginDetailNode;
@@ -99,7 +106,7 @@ export interface PluginNode {
 
 export interface PluginDetailNode {
   readonly __typename: string | undefined;
-  readonly name: Types.PluginDetail["name"] | undefined;
+  readonly label: Types.PluginDetail["label"] | undefined;
   readonly desc: Types.PluginDetail["desc"] | undefined;
   readonly dependencies: { readonly ids: readonly string[] | undefined };
 }
@@ -197,7 +204,10 @@ export const gqlensSchema: GQLensSchemaContract = {
       fields: {
         "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
         "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
+        "reference": { name: "reference", result: { "kind": "scalar", "cardinality": "one" } },
+        "route": { name: "route", result: { "kind": "scalar", "cardinality": "one" } },
         "displayName": { name: "displayName", result: { "kind": "scalar", "cardinality": "one" } },
+        "label": { name: "label", result: { "kind": "scalar", "cardinality": "one" } },
         "rootExportName": { name: "rootExportName", result: { "kind": "scalar", "cardinality": "one" } },
         "address": { name: "address", result: { "kind": "object", "cardinality": "one", "typeName": "PluginAddress", "objectKind": "value" } },
       },
@@ -208,7 +218,7 @@ export const gqlensSchema: GQLensSchemaContract = {
       fields: {
         "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
         "definition": { name: "definition", result: { "kind": "object", "cardinality": "one", "typeName": "PluginAddressDefinition", "objectKind": "value" } },
-        "instance": { name: "instance", result: { "kind": "scalar", "cardinality": "one" } },
+        "variant": { name: "variant", result: { "kind": "scalar", "cardinality": "one" } },
         "forkId": { name: "forkId", result: { "kind": "scalar", "cardinality": "one" } },
       },
     },
@@ -228,7 +238,8 @@ export const gqlensSchema: GQLensSchemaContract = {
         "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
         "kind": { name: "kind", result: { "kind": "scalar", "cardinality": "one" } },
         "packageName": { name: "packageName", result: { "kind": "scalar", "cardinality": "one" } },
-        "source": { name: "source", result: { "kind": "scalar", "cardinality": "one" } },
+        "sourceSpace": { name: "sourceSpace", result: { "kind": "scalar", "cardinality": "one" } },
+        "path": { name: "path", result: { "kind": "scalar", "cardinality": "one" } },
       },
     },
     "Plugin": {
@@ -237,7 +248,10 @@ export const gqlensSchema: GQLensSchemaContract = {
       fields: {
         "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
         "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
-        "name": { name: "name", result: { "kind": "scalar", "cardinality": "one" } },
+        "reference": { name: "reference", result: { "kind": "scalar", "cardinality": "one" } },
+        "route": { name: "route", result: { "kind": "scalar", "cardinality": "one" } },
+        "displayName": { name: "displayName", result: { "kind": "scalar", "cardinality": "one" } },
+        "label": { name: "label", result: { "kind": "scalar", "cardinality": "one" } },
         "rootExportName": { name: "rootExportName", result: { "kind": "scalar", "cardinality": "one" } },
         "address": { name: "address", result: { "kind": "object", "cardinality": "one", "typeName": "PluginAddress", "objectKind": "value" } },
         "detail": { name: "detail", result: { "kind": "object", "cardinality": "one", "typeName": "PluginDetail", "objectKind": "value" } },
@@ -249,7 +263,7 @@ export const gqlensSchema: GQLensSchemaContract = {
       kind: "value",
       fields: {
         "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
-        "name": { name: "name", result: { "kind": "scalar", "cardinality": "one" } },
+        "label": { name: "label", result: { "kind": "scalar", "cardinality": "one" } },
         "desc": { name: "desc", result: { "kind": "scalar", "cardinality": "one" } },
         "dependencies": { name: "dependencies", result: { "kind": "object", "cardinality": "list", "typeName": "Plugin", "objectKind": "entity" } },
       },

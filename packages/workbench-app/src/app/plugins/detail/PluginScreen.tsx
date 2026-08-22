@@ -16,7 +16,7 @@ import { materializeAddress, usePluginOverview } from '../pluginOverview'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 import { WorkbenchTargetProvider } from '../../../workbench/runtime'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
@@ -77,14 +77,14 @@ function PluginSkeleton({ stacked }: { stacked: boolean }) {
 }
 
 export interface PluginScreenProps {
-	pluginName: string
+	pluginRoute: string
 }
 
 type PluginDetailView = {
-	id: string
-	address: PluginNodeAddressSnapshot
+	route: string
+	address: PluginNodeAddress
 	rootExportName: string
-	name: string
+	label: string
 	desc: string
 	dependencies: PluginDependency[]
 }
@@ -160,7 +160,7 @@ function resolveVisibleDependencies(params: {
 	return syncing && preferStableDeps ? stableDeps : (rawDeps ?? stableDeps)
 }
 
-function usePluginDetail(pluginName?: string) {
+function usePluginDetail(pluginRoute?: string) {
 	// Reuse the global overview snapshot to avoid duplicate status requests on plugin pages.
 	const overviewState = usePluginOverview()
 	const statusEntries = overviewState.overview?.status?.statuses ?? EMPTY_STATUS_ENTRIES
@@ -169,20 +169,20 @@ function usePluginDetail(pluginName?: string) {
 	const statusMap = useMemo(() => {
 		const map = new Map<string, PluginStatusEntry>()
 		for (const entry of statusEntries) {
-			if (entry?.id) map.set(entry.id, entry)
+			if (entry?.route) map.set(entry.route, entry)
 		}
 		return map
 	}, [statusEntries])
 
 	const statusEntry = useMemo(() => {
-		if (!pluginName) return null
-		return statusMap.get(pluginName) ?? null
-	}, [pluginName, statusMap])
+		if (!pluginRoute) return null
+		return statusMap.get(pluginRoute) ?? null
+	}, [pluginRoute, statusMap])
 
 	const listed = useMemo(() => {
-		if (!pluginName) return false
-		return statusMap.has(pluginName)
-	}, [pluginName, statusMap])
+		if (!pluginRoute) return false
+		return statusMap.has(pluginRoute)
+	}, [pluginRoute, statusMap])
 
 	// Always request detail; we handle missing plugins via stable UI decisions instead of gating.
 	const detailQuery = useQuery({
@@ -193,21 +193,26 @@ function usePluginDetail(pluginName?: string) {
 	let scope: ReturnType<(typeof detailQuery.pluginCatalog)['plugin']> | undefined
 	let dependencies: PluginDependency[] = []
 	let dependenciesReady = true
-	if (pluginName !== undefined) {
+	if (pluginRoute !== undefined) {
 		try {
 			const catalog = detailQuery.pluginCatalog
-			scope = catalog.plugin({ id: pluginName })
+			scope = catalog.plugin({ id: pluginRoute })
 			dependencies = (scope.detail.dependencies.ids ?? []).flatMap((id) => {
 				const dep = catalog.plugin({ id })
 				const address = materializeAddress(dep.address)
-				if (!address) {
+				const route = dep.route
+				const label = dep.label
+				if (!address || !route || !label) {
 					dependenciesReady = false
 					return []
 				}
 				return [
 					{
-						id: dep.id ?? id,
-						name: dep.name ?? id,
+						id: dep.id ?? route,
+						reference: dep.reference ?? '',
+						route,
+						displayName: dep.displayName ?? label,
+						label,
 						rootExportName: dep.rootExportName ?? '',
 						address,
 						isRunning: Boolean(dep.status.isRunning),
@@ -224,17 +229,17 @@ function usePluginDetail(pluginName?: string) {
 
 	const address = scope ? materializeAddress(scope.address) : null
 	const detail =
-		scope?.name && address && dependenciesReady
+		scope?.label && scope.route && address && dependenciesReady
 			? {
-					id: scope.id ?? pluginName ?? '',
+					route: scope.route,
 					address,
 					rootExportName: scope.rootExportName ?? '',
-					name: scope.name,
+					label: scope.label,
 					desc: scope.detail?.desc ?? '',
 					dependencies,
 				}
 			: undefined
-	const ready = Boolean(detail?.name)
+	const ready = Boolean(detail?.label)
 	const loading = Boolean(detailQuery.loading)
 	const error = detailQuery.error
 
@@ -255,7 +260,7 @@ function usePluginDetail(pluginName?: string) {
 	}
 }
 
-export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScreenProps) {
+export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginScreenProps) {
 	const theme = useMantineTheme()
 	// 更早进入纵向堆叠，确保右侧配置区域在窄屏下可读
 	const isStackedWide = useMediaQuery('(max-width: 1500px)', false, {
@@ -275,7 +280,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const isStacked = isStackedWide || isStackedBreak
 
 	const { detail, ready, listed, hasStatusSnapshot, statusEntry, error, loading, refetch } =
-		usePluginDetail(pluginName)
+		usePluginDetail(pluginRoute)
 	const pathname = useCurrentPathname()
 
 	// 稳定快照：refetch/同步期间，详情查询可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
@@ -283,16 +288,16 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const lastStableRef = useRef<PluginDetailView | null>(null)
 
 	useEffect(() => {
-		if (!detail?.name) {
+		if (!detail?.label) {
 			lastStableRef.current = null
 			return
 		}
 		lastStableRef.current = clonePluginDetailView(detail)
 	}, [detail])
 
-	const stable = lastStableRef.current?.id === pluginName ? lastStableRef.current : null
-	const viewReady = ready || Boolean(stable?.name)
-	const displayName = detail?.name ?? stable?.name ?? pluginName
+	const stable = lastStableRef.current?.route === pluginRoute ? lastStableRef.current : null
+	const viewReady = ready || Boolean(stable?.label)
+	const pluginLabel = detail?.label ?? stable?.label ?? pluginRoute
 	const description = detail?.desc ?? stable?.desc ?? ''
 	const statusRef = useRef<PluginStatusSnapshot | null>(null)
 	const statusEntryRef = useRef<PluginStatusEntry | null>(null)
@@ -306,7 +311,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		statusRef.current = null
 		statusEntryRef.current = null
 		setStatusOverride(null)
-	}, [pluginName])
+	}, [pluginRoute])
 
 	const resolvedStatus = useMemo(() => resolveStatusSnapshot(statusEntry), [statusEntry])
 
@@ -333,7 +338,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 
 	const owner = detail?.address ?? stable?.address ?? statusEntry?.address
-	const configState = usePluginConfig(viewReady ? owner : undefined, displayName)
+	const configState = usePluginConfig(viewReady ? owner : undefined, pluginLabel)
 	const syncing = useDebouncedFlag(loading || configState.loading, 160)
 
 	const rawDeps = detail?.dependencies
@@ -359,8 +364,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		if ((!detail && !stable) || !owner) return null
 		return {
 			owner,
-			pluginId: pluginName,
-			pluginName: displayName,
+			pluginRoute,
+			pluginLabel,
 			description,
 			dependencies,
 			status: effectiveStatusEntry,
@@ -375,9 +380,9 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	}, [
 		dependencies,
 		description,
-		displayName,
+		pluginLabel,
 		owner,
-		pluginName,
+		pluginRoute,
 		handleRefetch,
 		handleStatusOverride,
 		effectiveStatusEntry,
@@ -390,7 +395,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		syncing,
 	])
 
-	if (!pluginName) {
+	if (!pluginRoute) {
 		return (
 			<EmptyState
 				icon={<IconPuzzle size={28} stroke={1.5} />}
@@ -402,12 +407,12 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	}
 
 	// Not found: only decide when we have a status snapshot AND the detail request errored.
-	if (pluginName && hasStatusSnapshot && !listed && Boolean(error) && !loading) {
+	if (pluginRoute && hasStatusSnapshot && !listed && Boolean(error) && !loading) {
 		return (
 			<EmptyState
 				icon={<IconPuzzle size={28} stroke={1.5} />}
 				title="插件不存在"
-				description={`未找到插件：${pluginName}`}
+				description={`未找到插件：${pluginRoute}`}
 				minHeight="100%"
 			/>
 		)

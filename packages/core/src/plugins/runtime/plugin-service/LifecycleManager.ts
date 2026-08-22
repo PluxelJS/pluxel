@@ -5,7 +5,11 @@
 
 import type { Context } from '@pluxel/context'
 import { BasePlugin } from '../../composition/BasePlugin'
-import { formatPluginNodeAddress, type PluginNodeSlot, type PluginSlotRegistry } from '../identity'
+import {
+	formatPluginNodeReference,
+	type PluginNodeSlot,
+	type PluginSlotRegistry,
+} from '../identity'
 import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from '../PluginActor'
 
 const PLUGIN_LIFECYCLE_SLOT_KEY = 'pluxel:plugin:lifecycle'
@@ -54,7 +58,7 @@ export class LifecycleManager {
 		)
 		ref.subscribe({
 			error: (err) => {
-				const label = formatPluginNodeAddress(this.slots.nodeAddress(id))
+				const label = formatPluginNodeReference(this.slots.nodeAddress(id))
 				this.ctx.logger.error('actor {actor} unhandled error', {
 					actor: label,
 					error: err,
@@ -109,7 +113,7 @@ export class LifecycleManager {
 		} catch (error) {
 			await this.stopLifecycle(id, plugin, { ref })
 			throw new Error(
-				`Plugin ${formatPluginNodeAddress(this.slots.nodeAddress(id))} start timeout after ${startTimeoutMs}ms`,
+				`Plugin ${formatPluginNodeReference(this.slots.nodeAddress(id))} start timeout after ${startTimeoutMs}ms`,
 				{
 					cause: error,
 				},
@@ -135,7 +139,7 @@ export class LifecycleManager {
 				: capturedErr !== null && capturedErr !== undefined
 					? new Error(String(capturedErr), { cause: capturedErr })
 					: new Error(
-							`Plugin ${formatPluginNodeAddress(this.slots.nodeAddress(id))} failed to start`,
+							`Plugin ${formatPluginNodeReference(this.slots.nodeAddress(id))} failed to start`,
 						)
 		throw err
 	}

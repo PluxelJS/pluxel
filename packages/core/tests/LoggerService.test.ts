@@ -1,15 +1,16 @@
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LoggerService } from '../src/logger/LoggerService'
+import { readPluginLogIdentity } from '../src/logger/categories'
 import { withCoreContext } from '../src/test'
-import { createPluginNodeAddress } from '../src/plugins'
+import { parsePluginNodeAddress } from '../src/plugins'
 
-const loggerPluginAddress = createPluginNodeAddress({
+const loggerPluginAddress = parsePluginNodeAddress({
 	definition: {
 		entry: { kind: 'package-root', packageName: '@test/logger-plugin' },
 		exportName: 'PluginX',
 	},
-	instance: 'default',
+	variant: 'default',
 })
 
 describe('LoggerService', () => {
@@ -49,16 +50,34 @@ describe('LoggerService', () => {
 					'pluxel',
 					'plugins',
 					'root-test',
-					'package-root',
-					'@test/logger-plugin',
+					'v1',
+					'package',
 					'PluginX',
-					'default',
+					'@test',
+					'logger-plugin',
 				])
 				expect(record?.properties.context).toBe('plugin-test')
 				expect(record?.properties.pluginId).toBeUndefined()
 			},
 			{ name: 'plugin-test', logger: { rootId: 'root-test' } },
 		))
+
+	it('reuses the validated identity projection for one immutable category', () => {
+		const logger = new LoggerService(
+			{
+				name: 'plugin-test',
+				pluginInfo: { nodeAddress: loggerPluginAddress },
+			} as never,
+			{ rootId: 'root-test' },
+		)
+		logger.info('first')
+		logger.info('second')
+
+		const first = records.find((item) => item.rawMessage === 'first')!
+		const second = records.find((item) => item.rawMessage === 'second')!
+		expect(second.category).toBe(first.category)
+		expect(readPluginLogIdentity(second.category)).toBe(readPluginLogIdentity(first.category))
+	})
 
 	it('encodes debug topic segments and preserves plugin ownership', () =>
 		withCoreContext(
@@ -71,10 +90,11 @@ describe('LoggerService', () => {
 					'debug',
 					'root-test',
 					'plugin',
-					'package-root',
-					'@test/logger-plugin',
+					'v1',
+					'package',
 					'PluginX',
-					'default',
+					'@test',
+					'logger-plugin',
 					'hmr',
 					'cache',
 				])

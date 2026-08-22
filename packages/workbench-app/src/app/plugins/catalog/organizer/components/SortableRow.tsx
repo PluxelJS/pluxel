@@ -90,7 +90,7 @@ const SortableRowComponent = ({
 		return ''
 	}, [meta?.tag, meta?.version])
 
-	const href = `/plugins/${encodeURIComponent(pid)}`
+	const href = `/plugins/${pid}`
 
 	return (
 		<Box

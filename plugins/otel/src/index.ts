@@ -1,6 +1,6 @@
 import type { Meter, Tracer } from '@opentelemetry/api'
 import type { Logger } from '@opentelemetry/api-logs'
-import { BasePlugin, formatPluginNodeAddress, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
@@ -77,7 +77,7 @@ export class OtelPlugin extends BasePlugin {
 		const key = owner as object
 		const existing = cache.get(key)
 		if (existing) return existing
-		const value = create(runtime, formatPluginNodeAddress(owner.pluginInfo.nodeAddress))
+		const value = create(runtime, formatPluginNodeReference(owner.pluginInfo.nodeAddress))
 		cache.set(key, value)
 		return value
 	}

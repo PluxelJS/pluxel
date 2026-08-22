@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import type {
 	WorkbenchBundle,
 	WorkbenchCatalog,
@@ -10,11 +10,11 @@ import { WorkbenchClientRuntime } from '../src/workbench/client'
 
 const botAddress = {
 	definition: {
-		entry: { kind: 'source-entry', source: 'tests/BotPlugin.ts' },
+		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/BotPlugin.ts' },
 		exportName: 'BotPlugin',
 	},
-	instance: 'default',
-} as const satisfies PluginNodeAddressSnapshot
+	variant: 'default',
+} as const satisfies PluginNodeAddress
 const botDescriptor = {
 	address: botAddress,
 	displayName: 'BotPlugin',

@@ -139,6 +139,11 @@ Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named ex
 Part constructor、`@Plugin` Part 与 local containment cycle 都在 build 时失败。普通 dynamic import 不获得 Plugin 语义。
 Part source/HMR 仍通过普通静态 import graph 使所有 owner module generation 失效；Part 不是独立 replacement unit。
 
+package plan 先把可信 package root 映射为 package entry；其余 source entry 对 source-space root 和 existing file 使用 native
+`realpath()`，选择最具体的 containing root，再生成 canonical POSIX relative path。symlink escape、root 外路径、重复 physical root
+和无 source-space mapping 均失败。Core parser 不执行 filesystem I/O；纯 AST diagnostics 的 lexical address 不是 build/runtime
+identity producer。完整规则见 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md#entry-canonicalization)。
+
 `pluginPackage()` 从 semantic facts 直接把 detected required provider 和 optional provider 保持为 external peer，
 不依赖 metadata transaction 完成后的下一次构建。required edge 锚定 value import；optional ref 的实现 import 在发布 JS
 中不存在，因此 host closure 未包含 provider 时 consumer 仍可加载。static application 和 Vite source route 只从各自

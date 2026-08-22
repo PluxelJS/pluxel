@@ -2,7 +2,7 @@
 // - 你要挂最小插件级 HTTP 路由
 // - 你不需要 worker，只想看 route base、path params 和 builtin doc 说明
 
-import { BasePlugin, formatPluginNodeAddress, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
 import { workbench, workbenchDoc } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 
@@ -31,7 +31,7 @@ export class PluginHttpRoutesDemo extends BasePlugin {
 			(app) =>
 				app
 					.get('/status', () => ({
-						plugin: formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress),
+						plugin: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 						ok: true,
 						now: Date.now(),
 					}))

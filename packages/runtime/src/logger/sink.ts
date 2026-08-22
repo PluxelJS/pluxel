@@ -1,10 +1,11 @@
 import { compareLogLevel, type LogLevel, type LogRecord, type Sink } from '@logtape/logtape'
-import { formatPluginNodeAddress } from '@pluxel/core'
+import { formatPluginNodeReference } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
 import { captureCaller, formatLogName, isReservedLogProperty } from './host'
 import type { RuntimeLogError, RuntimeLogLine } from './protocol'
 import { toPlainObject } from './serialization'
 import { RuntimeLogStoreRegistry } from './store'
+import { formatPluginNodeStandaloneLabel } from '../runtime/plugin-label'
 
 type RuntimeLogSinkCaps = {
 	/** Max chars for the derived `msg` (primary list). Defaults to 4000. */
@@ -187,7 +188,12 @@ function toRuntimeLogLineInput(
 			: (Object.create(null) as Record<string, unknown>)
 
 	const plugin = readPluginLogIdentity(record.category)?.node
-	const pluginLabel = plugin ? formatPluginNodeAddress(plugin) : undefined
+	const pluginReference = plugin ? formatPluginNodeReference(plugin) : undefined
+	const pluginDisplayName = rawProps.pluginDisplayName
+	const pluginLabel =
+		plugin && typeof pluginDisplayName === 'string'
+			? formatPluginNodeStandaloneLabel(plugin, pluginDisplayName)
+			: pluginReference
 	const context = typeof rawProps.context === 'string' ? (rawProps.context as string) : undefined
 	const name =
 		typeof rawProps.name === 'string'
@@ -233,6 +239,8 @@ function toRuntimeLogLineInput(
 		category: [...record.category],
 		name,
 		plugin,
+		pluginReference,
+		pluginLabel,
 		context,
 		msg,
 		message,

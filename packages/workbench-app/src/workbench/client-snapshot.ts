@@ -3,16 +3,15 @@ import type {
 	WorkbenchLayoutItem,
 	WorkbenchPlacement,
 } from '@pluxel/runtime/workbench'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchModuleRecord } from './client-module-store'
-import { workbenchNodeKey } from './node-address'
 import {
 	compileWorkbenchRoute,
 	workbenchRoutesOverlap,
 	type CompiledWorkbenchRoute,
 } from './routes'
 
-export type WorkbenchTargetId = PluginNodeAddressSnapshot | null
+export type WorkbenchTargetId = PluginNodeAddress | null
 export type WorkbenchTargetState = 'loading' | 'ready' | 'error'
 
 export type RegisteredWorkbenchRoute = Readonly<{
@@ -112,7 +111,7 @@ function validateRemoteView(
 	item: WorkbenchLayoutItem,
 	modules: ReadonlyMap<string, WorkbenchModuleRecord>,
 ): void {
-	const ownerKey = workbenchNodeKey(item.owner.address)
+	const ownerKey = pluginNodeIndexKey(item.owner.address)
 	const record = modules.get(ownerKey)
 	if (!record) throw new Error(`[workbench-ui] UI module not found for ${item.owner.displayName}`)
 	if (record.module.contractFingerprint !== item.contractFingerprint) {

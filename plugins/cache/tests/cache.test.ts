@@ -194,9 +194,9 @@ describe('@pluxel/cache', () => {
 				name: 'shared',
 			})
 			const privateEntry = [...backend.values.entries()].find(([key]) =>
-				/^cache:v2:plugin:[a-f0-9]{64}:v1\|p\|s6:user:1$/.test(key),
+				/^cache:v3:plugin:[a-f0-9]{64}:v1\|p\|s6:user:1$/.test(key),
 			)
-			const globalEntry = backend.values.get('cache:v2:global:v1|p|s6:user:1')
+			const globalEntry = backend.values.get('cache:v3:global:v1|p|s6:user:1')
 			expect(privateEntry?.[1].value).toMatchObject({
 				format: 'pluxel-cache-entry',
 				version: 1,

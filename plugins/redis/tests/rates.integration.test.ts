@@ -226,7 +226,7 @@ type IntegrationRedisClient = {
 }
 
 function storageKey(prefix: string, logicalKey: string): string {
-	return `${prefix}v2:${createHash('sha256').update(logicalKey).digest('hex')}`
+	return `${prefix}v3:${createHash('sha256').update(logicalKey).digest('hex')}`
 }
 
 async function unlinkPrefix(client: IntegrationRedisClient, prefix: string): Promise<void> {

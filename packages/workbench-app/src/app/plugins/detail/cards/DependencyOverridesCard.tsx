@@ -13,9 +13,10 @@ import {
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import {
-	formatPluginDefinitionAddress,
-	formatPluginNodeAddress,
-	type PluginNodeAddressSnapshot,
+	formatPluginDefinitionReference,
+	formatPluginNodeReference,
+	pluginNodeIndexKey,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -27,7 +28,6 @@ import {
 	useRuntimeTransportClient,
 	type PluginDependencyState,
 } from '../../../../runtime'
-import { workbenchNodeKey } from '../../../../workbench/node-address'
 import { useNotify } from '../../../hooks/useNotify'
 import { usePluginScope } from '../context'
 
@@ -39,7 +39,7 @@ function kindLabel(kind: PluginDependencyState['kind']) {
 
 export function DependencyOverridesCard() {
 	const { owner, refetch } = usePluginScope()
-	const ownerKey = workbenchNodeKey(owner)
+	const ownerKey = pluginNodeIndexKey(owner)
 	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
 	const [stateByOwner, setStateByOwner] = useState(() => new Map<string, PluginDependencyState[]>())
@@ -97,7 +97,7 @@ export function DependencyOverridesCard() {
 	}, [load, refetch])
 
 	const setDependencyTarget = useCallback(
-		async (index: number, provider: PluginNodeAddressSnapshot | null) => {
+		async (index: number, provider: PluginNodeAddress | null) => {
 			const result = await transport.withRpc((rpc) =>
 				setPluginDependencyTarget(rpc, {
 					consumer: owner,
@@ -111,7 +111,7 @@ export function DependencyOverridesCard() {
 	)
 
 	const createFork = useCallback(
-		async (base: PluginNodeAddressSnapshot, forkId: string): Promise<PluginNodeAddressSnapshot> => {
+		async (base: PluginNodeAddress, forkId: string): Promise<PluginNodeAddress> => {
 			const result = await transport.withRpc((rpc) =>
 				ensurePluginFork(rpc, { base, forkId, enable: true }),
 			)
@@ -125,7 +125,7 @@ export function DependencyOverridesCard() {
 	const handleForkCreate = useCallback(
 		(row: PluginDependencyState) => {
 			const base =
-				row.options.find((option) => option.address.instance === 'default') ?? row.options[0]
+				row.options.find((option) => option.address.variant === 'default') ?? row.options[0]
 			if (!base) return
 			let forkId = ''
 			openConfirmModal({
@@ -161,7 +161,7 @@ export function DependencyOverridesCard() {
 							await triggerRefresh()
 							notify({
 								title: 'Fork 已创建',
-								message: formatPluginNodeAddress(fork),
+								message: formatPluginNodeReference(fork),
 								color: 'green',
 							})
 						} catch (error) {
@@ -207,16 +207,16 @@ export function DependencyOverridesCard() {
 				{rows.map((row, index) => {
 					const kind = kindLabel(row.kind)
 					const optionsByKey = new Map(
-						row.options.map((option) => [workbenchNodeKey(option.address), option]),
+						row.options.map((option) => [pluginNodeIndexKey(option.address), option]),
 					)
 					const selectData = row.options.map((option) => ({
-						value: workbenchNodeKey(option.address),
+						value: pluginNodeIndexKey(option.address),
 						label: option.isEnabled ? option.displayName : `${option.displayName} (disabled)`,
 					}))
-					const tokenLabel = formatPluginDefinitionAddress(row.token)
-					const effectiveLabel = row.effective ? formatPluginNodeAddress(row.effective) : '未解析'
+					const tokenLabel = formatPluginDefinitionReference(row.token)
+					const effectiveLabel = row.effective ? formatPluginNodeReference(row.effective) : '未解析'
 					const defaultLabel = row.providerDefault
-						? formatPluginNodeAddress(row.providerDefault)
+						? formatPluginNodeReference(row.providerDefault)
 						: '未设置'
 					return (
 						<Box key={`${row.index}:${tokenLabel}`} style={{ minWidth: 0 }}>
@@ -253,7 +253,7 @@ export function DependencyOverridesCard() {
 											label="覆盖（仅当前节点）"
 											placeholder="留空以使用运行时默认解析"
 											data={selectData}
-											value={row.selected ? workbenchNodeKey(row.selected) : null}
+											value={row.selected ? pluginNodeIndexKey(row.selected) : null}
 											onChange={(value) => {
 												const provider = value ? (optionsByKey.get(value)?.address ?? null) : null
 												void (async () => {
@@ -262,7 +262,7 @@ export function DependencyOverridesCard() {
 														await triggerRefresh()
 														notify({
 															title: '已更新覆盖',
-															message: `${tokenLabel} → ${provider ? formatPluginNodeAddress(provider) : '默认'}`,
+															message: `${tokenLabel} → ${provider ? formatPluginNodeReference(provider) : '默认'}`,
 															color: 'green',
 														})
 													} catch (error) {

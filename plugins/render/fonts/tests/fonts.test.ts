@@ -21,6 +21,14 @@ import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
 import type { FontsWorkbenchCommands } from '../src/manager-contract.ts'
 import { FontsSelectionPort } from '../src/workbench-contract.ts'
 
+function pluginLayoutUrl(address: unknown): URL {
+	const url = new URL(
+		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
+	)
+	url.searchParams.set('target', JSON.stringify(address))
+	return url
+}
+
 const ConsumerWorkbench = workbench.portOutlet({
 	id: 'Fonts',
 	port: FontsSelectionPort,
@@ -257,9 +265,7 @@ describe('FontsPlugin', () => {
 			await host.commit()
 
 			const response = await host.ctx.http.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(FontsTestConsumer)))}`,
-				),
+				new Request(pluginLayoutUrl(pluginNodeAddressOf(FontsTestConsumer))),
 			)
 			expect(response.status).toBe(200)
 			const layout = (await response.json()) as WorkbenchLayout
@@ -284,9 +290,7 @@ describe('FontsPlugin', () => {
 			])
 
 			const providerResponse = await host.ctx.http.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(FontsPlugin)))}`,
-				),
+				new Request(pluginLayoutUrl(pluginNodeAddressOf(FontsPlugin))),
 			)
 			expect(providerResponse.status).toBe(200)
 			const providerLayout = (await providerResponse.json()) as WorkbenchLayout

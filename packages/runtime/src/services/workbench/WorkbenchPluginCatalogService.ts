@@ -1,7 +1,12 @@
 import {
+	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
+	pluginDefinitionIndexKey,
+	pluginNodeIndexKey,
 	type Context,
-	type PluginNodeAddressSnapshot,
+	type PluginDefinitionAddress,
+	type PluginDefinitionSlot,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
 import type { WorkbenchConfig, WorkbenchPluginGroupConfig } from '../../workbench-config'
@@ -14,26 +19,26 @@ const PREFERENCE_KEY = 'plugin-catalog.json'
 export type WorkbenchPluginGroupLayout = Readonly<{
 	groupId: string
 	name: string
-	nodes: readonly PluginNodeAddressSnapshot[]
+	nodes: readonly PluginNodeAddress[]
 }>
 
 type PluginCatalogPreferencesSnapshot = Readonly<{
-	version: 2
+	version: 3
 	assignments: readonly Readonly<{
-		owner: PluginNodeAddressSnapshot
+		definition: PluginDefinitionAddress
 		groupId: string | null
 	}>[]
 	groupOrder: readonly string[]
 	pluginOrder: readonly Readonly<{
 		groupId: string
-		owners: readonly PluginNodeAddressSnapshot[]
+		definitions: readonly PluginDefinitionAddress[]
 	}>[]
 }>
 
 type PluginCatalogPreferences = {
-	assignments: Map<PluginNodeSlot, string | null>
+	assignments: Map<PluginDefinitionSlot, string | null>
 	groupOrder: string[]
-	pluginOrder: Map<string, PluginNodeSlot[]>
+	pluginOrder: Map<string, PluginDefinitionSlot[]>
 }
 
 type NormalizedPackagePattern = Readonly<{
@@ -45,13 +50,14 @@ type NormalizedPackagePattern = Readonly<{
 type NormalizedHostGroup = Readonly<{
 	id: string
 	name: string
-	nodes: readonly PluginNodeSlot[]
+	definitions: readonly PluginDefinitionSlot[]
 	packages: readonly NormalizedPackagePattern[]
 }>
 
 type CatalogEntry = Readonly<{
 	slot: PluginNodeSlot
-	address: PluginNodeAddressSnapshot
+	definitionSlot: PluginDefinitionSlot
+	address: PluginNodeAddress
 	packageName: string | null
 }>
 
@@ -74,7 +80,7 @@ export class WorkbenchPluginCatalogService {
 	readonly ready: Promise<void>
 
 	private readonly hostGroups: readonly NormalizedHostGroup[]
-	private readonly explicitNodeGroups = new Map<PluginNodeSlot, string>()
+	private readonly explicitDefinitionGroups = new Map<PluginDefinitionSlot, string>()
 	private readonly storage: PersistenceNamespace
 	private preferences: PluginCatalogPreferences = emptyPreferences()
 	private writeQueue: Promise<void> = Promise.resolve()
@@ -82,7 +88,9 @@ export class WorkbenchPluginCatalogService {
 	constructor(private readonly root: Context) {
 		this.hostGroups = normalizeHostGroups(root, readPluginGroups(root.config.workbench))
 		for (const group of this.hostGroups) {
-			for (const node of group.nodes) this.explicitNodeGroups.set(node, group.id)
+			for (const definition of group.definitions) {
+				this.explicitDefinitionGroups.set(definition, group.id)
+			}
 		}
 		this.storage = root.root.persistence.namespace('workbench')
 		this.ready = this.load()
@@ -107,9 +115,9 @@ export class WorkbenchPluginCatalogService {
 		const registered = current.registered
 		const entries = current.entries
 		const knownNodes = new Set(entries.map((entry) => entry.slot))
-		const desired = new Map<PluginNodeSlot, string>()
+		const desired = new Map<PluginDefinitionSlot, string>()
 		const groupOrder: string[] = []
-		const pluginOrder = new Map<string, PluginNodeSlot[]>()
+		const pluginOrder = new Map<string, PluginDefinitionSlot[]>()
 
 		for (const rawGroup of groups) {
 			if (!rawGroup || typeof rawGroup !== 'object' || Array.isArray(rawGroup)) {
@@ -126,9 +134,9 @@ export class WorkbenchPluginCatalogService {
 			if (!Array.isArray(rawGroup.nodes)) {
 				throw invalid(`group "${groupId}" nodes must be an array`)
 			}
-			const order: PluginNodeSlot[] = []
+			const order: PluginDefinitionSlot[] = []
 			for (const rawOwner of rawGroup.nodes) {
-				let owner: PluginNodeAddressSnapshot
+				let owner: PluginNodeAddress
 				try {
 					owner = parsePluginNodeAddress(rawOwner)
 				} catch (error) {
@@ -137,18 +145,24 @@ export class WorkbenchPluginCatalogService {
 				const slot = this.root.registry.internNodeAddress(owner)
 				if (!knownNodes.has(slot))
 					throw invalid(`group "${groupId}" contains an unknown Plugin node`)
-				if (desired.has(slot)) throw invalid('a Plugin node appears more than once')
-				desired.set(slot, groupId)
-				order.push(slot)
+				const definitionSlot = slot.definition
+				const previousGroup = desired.get(definitionSlot)
+				if (previousGroup && previousGroup !== groupId) {
+					throw invalid('fork variants of one Plugin definition cannot be split across groups')
+				}
+				if (!previousGroup) {
+					desired.set(definitionSlot, groupId)
+					order.push(definitionSlot)
+				}
 			}
 			pluginOrder.set(groupId, order)
 		}
 
-		const assignments = new Map<PluginNodeSlot, string | null>()
-		for (const entry of entries) {
-			const desiredGroup = desired.get(entry.slot) ?? null
+		const assignments = new Map<PluginDefinitionSlot, string | null>()
+		for (const entry of uniqueDefinitionEntries(entries)) {
+			const desiredGroup = desired.get(entry.definitionSlot) ?? null
 			const defaultGroup = this.defaultGroup(entry, registered)
-			if (desiredGroup !== defaultGroup) assignments.set(entry.slot, desiredGroup)
+			if (desiredGroup !== defaultGroup) assignments.set(entry.definitionSlot, desiredGroup)
 		}
 
 		this.preferences = { assignments, groupOrder, pluginOrder }
@@ -167,8 +181,8 @@ export class WorkbenchPluginCatalogService {
 		for (const groupId of registered.keys()) members.set(groupId, [])
 
 		for (const entry of entries) {
-			const hasOverride = this.preferences.assignments.has(entry.slot)
-			const override = this.preferences.assignments.get(entry.slot)
+			const hasOverride = this.preferences.assignments.has(entry.definitionSlot)
+			const override = this.preferences.assignments.get(entry.definitionSlot)
 			const groupId = hasOverride ? (override ?? null) : this.defaultGroup(entry, registered)
 			if (groupId && registered.has(groupId)) members.get(groupId)!.push(entry)
 		}
@@ -178,8 +192,8 @@ export class WorkbenchPluginCatalogService {
 			const rank = new Map(order.map((slot, index) => [slot, index]))
 			memberEntries.sort(
 				(a, b) =>
-					(rank.get(a.slot) ?? Number.MAX_SAFE_INTEGER) -
-						(rank.get(b.slot) ?? Number.MAX_SAFE_INTEGER) ||
+					(rank.get(a.definitionSlot) ?? Number.MAX_SAFE_INTEGER) -
+						(rank.get(b.definitionSlot) ?? Number.MAX_SAFE_INTEGER) ||
 					addressSortKey(a.address).localeCompare(addressSortKey(b.address)),
 			)
 		}
@@ -207,6 +221,7 @@ export class WorkbenchPluginCatalogService {
 	private catalogEntries(): CatalogEntry[] {
 		return runtimePluginStatusOverview(this.root).statuses.map((status) => ({
 			slot: this.root.registry.internNodeAddress(status.address),
+			definitionSlot: this.root.registry.internDefinitionAddress(status.address.definition),
 			address: status.address,
 			packageName: status.source.packageName?.trim() || null,
 		}))
@@ -229,7 +244,7 @@ export class WorkbenchPluginCatalogService {
 		entry: CatalogEntry,
 		registered: ReadonlyMap<string, RegisteredGroup>,
 	): string | null {
-		const explicit = this.explicitNodeGroups.get(entry.slot)
+		const explicit = this.explicitDefinitionGroups.get(entry.definitionSlot)
 		if (explicit) return explicit
 		if (!entry.packageName) return null
 		const hostPackage = this.matchHostPackage(entry.packageName)
@@ -255,8 +270,10 @@ export class WorkbenchPluginCatalogService {
 	private async load(): Promise<void> {
 		const raw = await this.storage.getText(PREFERENCE_KEY)
 		if (raw === undefined) return
-		const snapshot = parsePreferencesSnapshot(JSON.parse(raw) as unknown)
-		this.preferences = preferencesFromSnapshot(this.root, snapshot)
+		this.preferences = preferencesFromSnapshot(
+			this.root,
+			parsePreferencesSnapshot(JSON.parse(raw) as unknown),
+		)
 	}
 
 	private async save(): Promise<void> {
@@ -279,7 +296,7 @@ function normalizeHostGroups(
 	input: readonly WorkbenchPluginGroupConfig[],
 ): readonly NormalizedHostGroup[] {
 	const groupIds = new Set<string>()
-	const nodeOwners = new Map<PluginNodeSlot, string>()
+	const nodeOwners = new Map<PluginDefinitionSlot, string>()
 	const patternOwners = new Map<string, string>()
 	return input.map((raw, index) => {
 		const at = `workbench.pluginGroups[${index}]`
@@ -290,18 +307,23 @@ function normalizeHostGroups(
 		}
 		if (groupIds.has(id)) throw new TypeError(`${at}.id duplicates group "${id}"`)
 		groupIds.add(id)
-		const nodes = (raw.nodes ?? []).map((owner, ownerIndex) => {
-			let address: PluginNodeAddressSnapshot
+		const definitions = (raw.definitions ?? []).map((definition, definitionIndex) => {
+			let address: PluginDefinitionAddress
 			try {
-				address = parsePluginNodeAddress(owner)
+				address = parsePluginDefinitionAddress(definition)
 			} catch (error) {
-				throw new TypeError(`${at}.nodes[${ownerIndex}] is not a valid Plugin node address`, {
-					cause: error,
-				})
+				throw new TypeError(
+					`${at}.definitions[${definitionIndex}] is not a valid Plugin definition address`,
+					{
+						cause: error,
+					},
+				)
 			}
-			const slot = root.registry.internNodeAddress(address)
+			const slot = root.registry.internDefinitionAddress(address)
 			const previous = nodeOwners.get(slot)
-			if (previous) throw new TypeError(`${at}.nodes assigns one Plugin node to both groups`)
+			if (previous) {
+				throw new TypeError(`${at}.definitions assigns one Plugin definition to both groups`)
+			}
 			nodeOwners.set(slot, id)
 			return slot
 		})
@@ -320,18 +342,17 @@ function normalizeHostGroups(
 			patternOwners.set(literal, id)
 			return { groupId: id, literal, prefix: firstWildcard >= 0 }
 		})
-		return Object.freeze({ id, name, nodes: Object.freeze(nodes), packages })
+		return Object.freeze({ id, name, definitions: Object.freeze(definitions), packages })
 	})
 }
 
 function parsePreferencesSnapshot(input: unknown): PluginCatalogPreferencesSnapshot {
-	if (
-		!input ||
-		typeof input !== 'object' ||
-		Array.isArray(input) ||
-		(input as Record<string, unknown>).version !== 2
-	) {
-		throw new TypeError('[workbench.pluginCatalog] preferences version must be 2')
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError('[workbench.pluginCatalog] preferences must be an object')
+	}
+	const version = (input as Record<string, unknown>).version
+	if (version !== 3) {
+		throw new TypeError('[workbench.pluginCatalog] preferences version must be 3')
 	}
 	const raw = exactRecord(
 		input,
@@ -347,43 +368,61 @@ function parsePreferencesSnapshot(input: unknown): PluginCatalogPreferencesSnaps
 	if (!Array.isArray(raw.pluginOrder)) {
 		throw new TypeError('[workbench.pluginCatalog] pluginOrder must be an array')
 	}
-	const assignmentKeys = new Set<string>()
-	const assignments = raw.assignments.map((inputAssignment, index) => {
-		const assignment = exactRecord(inputAssignment, ['owner', 'groupId'], `assignments[${index}]`)
-		const owner = parsePluginNodeAddress(assignment.owner)
-		const key = addressSortKey(owner)
-		if (assignmentKeys.has(key)) throw new TypeError('duplicate preference assignment owner')
-		assignmentKeys.add(key)
+	const assignments: Array<{ definition: PluginDefinitionAddress; groupId: string | null }> = []
+	const assignmentByDefinition = new Map<string, string | null>()
+	for (const [index, inputAssignment] of raw.assignments.entries()) {
+		const assignment = exactRecord(
+			inputAssignment,
+			['definition', 'groupId'],
+			`assignments[${index}]`,
+		)
+		const definition = parsePluginDefinitionAddress(assignment.definition)
+		const key = definitionSortKey(definition)
 		let groupId: string | null
 		if (assignment.groupId === null) groupId = null
 		else if (typeof assignment.groupId === 'string') groupId = assignment.groupId
 		else {
 			throw new TypeError(`assignments[${index}].groupId must be string or null`)
 		}
-		return Object.freeze({ owner, groupId })
-	})
+		if (assignmentByDefinition.has(key)) {
+			if (assignmentByDefinition.get(key) !== groupId) {
+				throw new TypeError('fork variants have conflicting preference assignments')
+			}
+			continue
+		}
+		assignmentByDefinition.set(key, groupId)
+		assignments.push({ definition, groupId })
+	}
 	const groupOrder = strictUniqueStrings(raw.groupOrder, 'groupOrder')
 	const orderGroups = new Set<string>()
+	const orderedDefinitionGroups = new Map<string, string>()
 	const pluginOrder = raw.pluginOrder.map((inputOrder, index) => {
-		const order = exactRecord(inputOrder, ['groupId', 'owners'], `pluginOrder[${index}]`)
+		const order = exactRecord(inputOrder, ['groupId', 'definitions'], `pluginOrder[${index}]`)
 		const groupId = requiredText(`pluginOrder[${index}].groupId`, order.groupId)
 		if (orderGroups.has(groupId)) throw new TypeError(`duplicate pluginOrder group "${groupId}"`)
 		orderGroups.add(groupId)
-		if (!Array.isArray(order.owners)) {
-			throw new TypeError(`pluginOrder[${index}].owners must be an array`)
+		const inputDefinitions = order.definitions
+		if (!Array.isArray(inputDefinitions)) {
+			throw new TypeError(`pluginOrder[${index}].definitions must be an array`)
 		}
-		const ownerKeys = new Set<string>()
-		const owners = order.owners.map((owner) => {
-			const address = parsePluginNodeAddress(owner)
-			const key = addressSortKey(address)
-			if (ownerKeys.has(key)) throw new TypeError(`pluginOrder[${index}] has a duplicate owner`)
-			ownerKeys.add(key)
-			return address
-		})
-		return Object.freeze({ groupId, owners: Object.freeze(owners) })
+		const definitionKeys = new Set<string>()
+		const definitions: PluginDefinitionAddress[] = []
+		for (const inputDefinition of inputDefinitions) {
+			const definition = parsePluginDefinitionAddress(inputDefinition)
+			const key = definitionSortKey(definition)
+			if (definitionKeys.has(key)) continue
+			const previousGroup = orderedDefinitionGroups.get(key)
+			if (previousGroup && previousGroup !== groupId) {
+				throw new TypeError('fork variants have conflicting plugin order groups')
+			}
+			definitionKeys.add(key)
+			orderedDefinitionGroups.set(key, groupId)
+			definitions.push(definition)
+		}
+		return Object.freeze({ groupId, definitions: Object.freeze(definitions) })
 	})
 	return Object.freeze({
-		version: 2,
+		version: 3,
 		assignments: Object.freeze(assignments),
 		groupOrder: Object.freeze(groupOrder),
 		pluginOrder: Object.freeze(pluginOrder),
@@ -396,16 +435,16 @@ function preferencesFromSnapshot(
 ): PluginCatalogPreferences {
 	return {
 		assignments: new Map(
-			snapshot.assignments.map(({ owner, groupId }) => [
-				root.registry.internNodeAddress(owner),
+			snapshot.assignments.map(({ definition, groupId }) => [
+				root.registry.internDefinitionAddress(definition),
 				groupId,
 			]),
 		),
 		groupOrder: [...snapshot.groupOrder],
 		pluginOrder: new Map(
-			snapshot.pluginOrder.map(({ groupId, owners }) => [
+			snapshot.pluginOrder.map(({ groupId, definitions }) => [
 				groupId,
-				owners.map((owner) => root.registry.internNodeAddress(owner)),
+				definitions.map((definition) => root.registry.internDefinitionAddress(definition)),
 			]),
 		),
 	}
@@ -416,15 +455,15 @@ function preferencesSnapshot(
 	preferences: PluginCatalogPreferences,
 ): PluginCatalogPreferencesSnapshot {
 	return {
-		version: 2,
-		assignments: [...preferences.assignments].map(([owner, groupId]) => ({
-			owner: root.registry.nodeAddressOf(owner),
+		version: 3,
+		assignments: [...preferences.assignments].map(([definition, groupId]) => ({
+			definition: root.registry.definitionAddressOf(definition),
 			groupId,
 		})),
 		groupOrder: [...preferences.groupOrder],
-		pluginOrder: [...preferences.pluginOrder].map(([groupId, owners]) => ({
+		pluginOrder: [...preferences.pluginOrder].map(([groupId, definitions]) => ({
 			groupId,
-			owners: owners.map((owner) => root.registry.nodeAddressOf(owner)),
+			definitions: definitions.map((definition) => root.registry.definitionAddressOf(definition)),
 		})),
 	}
 }
@@ -454,15 +493,21 @@ function exactRecord(
 	return record
 }
 
-function addressSortKey(address: PluginNodeAddressSnapshot): string {
-	const entry = address.definition.entry
-	return JSON.stringify([
-		entry.kind,
-		entry.kind === 'package-root' ? entry.packageName : entry.source,
-		address.definition.exportName,
-		address.instance,
-		address.instance === 'fork' ? address.forkId : null,
-	])
+function addressSortKey(address: PluginNodeAddress): string {
+	return pluginNodeIndexKey(address)
+}
+
+function definitionSortKey(address: PluginDefinitionAddress): string {
+	return pluginDefinitionIndexKey(address)
+}
+
+function uniqueDefinitionEntries(entries: readonly CatalogEntry[]): CatalogEntry[] {
+	const seen = new Set<PluginDefinitionSlot>()
+	return entries.filter((entry) => {
+		if (seen.has(entry.definitionSlot)) return false
+		seen.add(entry.definitionSlot)
+		return true
+	})
 }
 
 function packageGroupId(packageName: string): string {

@@ -2,10 +2,11 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { isStandardSchemaV1 } from '../../services/config/standardSchema'
 import type { PluginConstructor, PluginIdentifier } from '../types'
 import {
-	createPluginNodeAddress,
+	parsePluginNodeAddress,
 	parsePluginDefinitionAddress,
-	type PluginDefinitionAddressSnapshot,
-	type PluginNodeAddressSnapshot,
+	pluginDefinitionIndexKey,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 } from './identity'
 import { getForkId } from './fork-identity'
 import {
@@ -21,13 +22,13 @@ export type PluginDefinitionKind = 'plugin' | 'abstract'
 
 export type PluginDefinitionFacts = Readonly<{
 	readonly kind: PluginDefinitionKind
-	readonly definition: PluginDefinitionAddressSnapshot
+	readonly definition: PluginDefinitionAddress
 	/** Ordered by constructor parameter index. */
-	readonly requires: readonly PluginDefinitionAddressSnapshot[]
+	readonly requires: readonly PluginDefinitionAddress[]
 	/** Static optional restart edges declared by direct init-time plugins.use() calls. */
-	readonly optional: readonly PluginDefinitionAddressSnapshot[]
+	readonly optional: readonly PluginDefinitionAddress[]
 	/** Explicit abstract provider relation from @Plugin(AbstractToken). */
-	readonly provides?: PluginDefinitionAddressSnapshot
+	readonly provides?: PluginDefinitionAddress
 }>
 
 export type PluginConfigDefinition = Readonly<{
@@ -62,22 +63,35 @@ function nonEmpty(value: unknown, label: string): string {
 }
 
 function normalizeAddresses(
-	input: readonly PluginDefinitionAddressSnapshot[] | undefined,
+	input: readonly PluginDefinitionAddress[] | undefined,
 	label: string,
-): readonly PluginDefinitionAddressSnapshot[] {
+): readonly PluginDefinitionAddress[] {
 	if (input === undefined) return Object.freeze([])
 	if (!Array.isArray(input)) throw new TypeError(`[pluxel/core] ${label} must be an array`)
 	return Object.freeze(input.map((address) => parsePluginDefinitionAddress(address)))
+}
+
+function assertUniqueAddresses(addresses: readonly PluginDefinitionAddress[], label: string): void {
+	const seen = new Set<string>()
+	for (let index = 0; index < addresses.length; index++) {
+		const key = pluginDefinitionIndexKey(addresses[index]!)
+		if (seen.has(key)) {
+			throw new TypeError(
+				`[pluxel/core] ${label} contains a duplicate definition at index ${index}`,
+			)
+		}
+		seen.add(key)
+	}
 }
 
 export function __setPluginDefinition(
 	ctor: PluginIdentifier,
 	input: {
 		readonly kind: PluginDefinitionKind
-		readonly definition: PluginDefinitionAddressSnapshot
-		readonly requires?: readonly PluginDefinitionAddressSnapshot[]
-		readonly optional?: readonly PluginDefinitionAddressSnapshot[]
-		readonly provides?: PluginDefinitionAddressSnapshot
+		readonly definition: PluginDefinitionAddress
+		readonly requires?: readonly PluginDefinitionAddress[]
+		readonly optional?: readonly PluginDefinitionAddress[]
+		readonly provides?: PluginDefinitionAddress
 	},
 ): void {
 	if (typeof ctor !== 'function')
@@ -85,10 +99,12 @@ export function __setPluginDefinition(
 	if (input.kind !== 'plugin' && input.kind !== 'abstract') {
 		throw new TypeError('[pluxel/core] Plugin definition kind must be plugin or abstract')
 	}
+	const requires = normalizeAddresses(input.requires, 'Plugin required definition facts')
+	assertUniqueAddresses(requires, 'Plugin required definition facts')
 	const facts: PluginDefinitionFacts = Object.freeze({
 		kind: input.kind,
 		definition: parsePluginDefinitionAddress(input.definition),
-		requires: normalizeAddresses(input.requires, 'Plugin required definition facts'),
+		requires,
 		optional: normalizeAddresses(input.optional, 'Plugin optional definition facts'),
 		...(input.provides === undefined
 			? {}
@@ -134,11 +150,11 @@ export function hasPluginDefinitionFacts(ctor: PluginIdentifier): boolean {
 }
 
 /** Host/route projection from a lowered implementation generation to its durable node address. */
-export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddressSnapshot {
+export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress {
 	const definition = getPluginDefinitionFacts(ctor).definition
 	const forkId = getForkId(ctor)
-	return createPluginNodeAddress(
-		forkId ? { definition, instance: 'fork', forkId } : { definition, instance: 'default' },
+	return parsePluginNodeAddress(
+		forkId ? { definition, variant: 'fork', forkId } : { definition, variant: 'default' },
 	)
 }
 
@@ -197,17 +213,15 @@ type ConfigNode = Readonly<{
 	readonly children: readonly Readonly<{ readonly key: string; readonly node: ConfigNode }>[]
 }>
 
-function definitionAddressKey(address: PluginDefinitionAddressSnapshot): string {
-	return address.entry.kind === 'package-root'
-		? `package:${address.entry.packageName}#${address.exportName}`
-		: `source:${address.entry.source}#${address.exportName}`
+function definitionAddressKey(address: PluginDefinitionAddress): string {
+	return pluginDefinitionIndexKey(address)
 }
 
 function mergeOptionalDefinitions(
-	direct: readonly PluginDefinitionAddressSnapshot[],
-	parts: readonly PluginDefinitionAddressSnapshot[],
-): PluginDefinitionAddressSnapshot[] {
-	const out: PluginDefinitionAddressSnapshot[] = []
+	direct: readonly PluginDefinitionAddress[],
+	parts: readonly PluginDefinitionAddress[],
+): PluginDefinitionAddress[] {
+	const out: PluginDefinitionAddress[] = []
 	const seen = new Set<string>()
 	for (const address of [...direct, ...parts]) {
 		const key = definitionAddressKey(address)
@@ -218,8 +232,8 @@ function mergeOptionalDefinitions(
 	return out
 }
 
-function collectPartOptional(owner: Function): PluginDefinitionAddressSnapshot[] {
-	const out: PluginDefinitionAddressSnapshot[] = []
+function collectPartOptional(owner: Function): PluginDefinitionAddress[] {
+	const out: PluginDefinitionAddress[] = []
 	const visit = (current: Function, ancestry: Set<Function>) => {
 		for (const occurrence of getPluginPartOccurrences(current)) {
 			if (ancestry.has(occurrence.Part)) {
@@ -367,7 +381,7 @@ async function validateConfigNode(
 const PLUGIN_REF = Symbol('PluginRef')
 
 export type PluginRef<T> = Readonly<{
-	readonly definition: PluginDefinitionAddressSnapshot
+	readonly definition: PluginDefinitionAddress
 	readonly [PLUGIN_REF]: (_value: T) => T
 }>
 
@@ -377,7 +391,7 @@ export function definePluginRef<T>(): PluginRef<T> {
 	)
 }
 
-export function __definePluginRef<T>(definition: PluginDefinitionAddressSnapshot): PluginRef<T> {
+export function __definePluginRef<T>(definition: PluginDefinitionAddress): PluginRef<T> {
 	return Object.freeze({
 		definition: parsePluginDefinitionAddress(definition),
 		[PLUGIN_REF]: ((value: T) => value) as (_value: T) => T,

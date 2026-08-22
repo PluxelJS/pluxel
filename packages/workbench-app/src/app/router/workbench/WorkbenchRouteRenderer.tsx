@@ -3,11 +3,10 @@ import { type ReactNode } from 'react'
 import type { WorkbenchResolvedRoute, WorkbenchTargetSnapshot } from '../../../workbench/client'
 import { WorkbenchRoute, useWorkbenchRuntime } from '../../../workbench/runtime'
 import { WorkbenchRouteStateFallback, WorkbenchRouteStatusBanner } from './WorkbenchRouteStatus'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
-import { workbenchNodeKey } from '../../../workbench/node-address'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 
 export function WorkbenchRouteRenderer(props: {
-	target: PluginNodeAddressSnapshot
+	target: PluginNodeAddress
 	displayName: string
 	displayPath: string
 	pathname: string
@@ -18,7 +17,7 @@ export function WorkbenchRouteRenderer(props: {
 }) {
 	const { target, displayName, displayPath, route, snapshot, backContent, wrapContent } = props
 	const host = useWorkbenchRuntime()
-	const pluginRunning = host.runningPluginKeys.has(workbenchNodeKey(target))
+	const pluginRunning = host.runningPluginKeys.has(pluginNodeIndexKey(target))
 
 	if (!pluginRunning && host.runningPluginsReady) {
 		return (

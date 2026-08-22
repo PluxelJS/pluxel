@@ -288,10 +288,14 @@ function pluginContext(root: object, id: string) {
 	let disposed = false
 	const nodeAddress = {
 		definition: {
-			entry: { kind: 'source-entry' as const, source: `pluxel-test:${id}` },
+			entry: {
+				kind: 'source-entry' as const,
+				sourceSpace: 'app',
+				path: `tests/workbench-${id}.ts`,
+			},
 			exportName: 'Plugin',
 		},
-		instance: 'default' as const,
+		variant: 'default' as const,
 	}
 	const nodeSlot = (root as any).registry.internNodeAddress(nodeAddress)
 	Object.defineProperties(ctx, {

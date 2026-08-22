@@ -1,15 +1,19 @@
-import type { Context as PluginContext, PluginNodeAddressSnapshot } from '@pluxel/core'
+import {
+	pluginNodeIndexKey,
+	type Context as PluginContext,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { requireRouteCapability } from '../../runtime/capabilities'
-import { pluginNodeAddressKey, pluginNodePhysicalKey } from '../../runtime/plugin-address'
+import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 import { RUNTIME_INTERNAL_API_BASE } from '../../web/paths'
 import { debugSchemaSourceQuery } from './models'
 
 const DEBUG_BASE = `${RUNTIME_INTERNAL_API_BASE}/debug`
 
 interface PluginSchemaInfo {
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	addressKey: string
 	domId: string
 	displayName: string
@@ -29,7 +33,7 @@ function getPluginSchemaInfos(ctx: PluginContext): PluginSchemaInfo[] {
 		const config = configMetadata.getConfig(entry.address)
 		result.push({
 			address: entry.address,
-			addressKey: pluginNodeAddressKey(entry.address),
+			addressKey: pluginNodeIndexKey(entry.address),
 			domId: `plugin-${pluginNodePhysicalKey(entry.address)}`,
 			displayName: entry.displayName,
 			rootExportName: entry.rootExportName,

@@ -1,6 +1,6 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import type { PluginNodeAddressSnapshot, PluginNodeSlot } from '../../plugins/runtime/identity'
+import type { PluginNodeAddress, PluginNodeSlot } from '../../plugins/runtime/identity'
 import { safeParseStandardSchema } from './standardSchema'
 import { ConfigValidationError, type ConfigValidationErrors } from './types'
 
@@ -9,12 +9,12 @@ const EMPTY_CONFIG: Readonly<ConfigRecord> = Object.freeze(Object.create(null))
 const serviceName = 'configService' as const
 
 type RegistryIdentity = {
-	internNodeAddress(address: PluginNodeAddressSnapshot): PluginNodeSlot
-	nodeAddressOf(slot: PluginNodeSlot): PluginNodeAddressSnapshot
+	internNodeAddress(address: PluginNodeAddress): PluginNodeSlot
+	nodeAddressOf(slot: PluginNodeSlot): PluginNodeAddress
 }
 
 export type PluginConfigRecordSnapshot = Readonly<{
-	owner: PluginNodeAddressSnapshot
+	owner: PluginNodeAddress
 	config: Readonly<ConfigRecord>
 }>
 
@@ -189,6 +189,9 @@ export class ConfigService {
 	batch(run: () => void): void {
 		run()
 	}
+
+	/** Wait until this backend has durably persisted all queued desired Config records. */
+	async flush(_options: { force?: boolean } = {}): Promise<void> {}
 
 	private replaceRecord(owner: PluginNodeSlot, value: Readonly<ConfigRecord>): void {
 		const target = this.records.get(owner) ?? Object.create(null)

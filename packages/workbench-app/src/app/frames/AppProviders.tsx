@@ -1,4 +1,5 @@
 import { useComputedColorScheme } from '@mantine/core'
+import { pluginNodeIndexKey } from '@pluxel/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import { Outlet } from '@tanstack/react-router'
@@ -10,7 +11,6 @@ import { NotificationCenterProvider } from '../notifications/NotificationCenterP
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { RUNTIME_SECURITY_BASE, useRuntimeTransportClient } from '../../runtime'
 import { useCurrentPathname } from '../router/useCurrentRoute'
-import { workbenchNodeKey } from '../../workbench/node-address'
 
 export function AppProviders() {
 	const pathname = useCurrentPathname()
@@ -20,7 +20,7 @@ export function AppProviders() {
 	const pluginOverview = usePluginOverview()
 	const runningPluginSignature = (pluginOverview.overview?.status.statuses ?? [])
 		.filter((plugin) => plugin.isRunning)
-		.map((plugin) => workbenchNodeKey(plugin.address))
+		.map((plugin) => pluginNodeIndexKey(plugin.address))
 		.sort((left, right) => left.localeCompare(right))
 		.join('\n')
 	const runningPluginKeys = useMemo(

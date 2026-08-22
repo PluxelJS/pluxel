@@ -37,8 +37,9 @@ private readonly config = this.configs.use(PluginConfig)
 ## Runtime adapter
 
 runtime 可以从 disk/readonly backend 或 host snapshot初始化 records。Node host 的 environment 入口是单一
-`PLUXEL_CONFIG` JSON，其中 `version: 2`、`plugins[]` 的 `owner` 是结构化 `PluginNodeAddressSnapshot`，`config` 是一个
-object record。已有 file config 是权威来源；environment 只初始化新 store。
+`PLUXEL_CONFIG` JSON，其中当前 writer 使用 `version: 3`、`plugins[]` 的 `owner` 是结构化 `PluginNodeAddress`，`config` 是一个
+object record。已有 file config 是权威来源；environment 只初始化新 store。runtime migration reader 可确定性读取 v2
+`{ source, instance }` owner，file backend 随后原子写回 v3。
 
 ## 测试策略
 

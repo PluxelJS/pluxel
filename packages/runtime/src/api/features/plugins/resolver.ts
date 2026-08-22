@@ -24,7 +24,7 @@ export function createPluginResolvers(pCtx: PlxContext): Resolver[] {
 		detail: field(PluginDetail).resolve((plugin) => {
 			return {
 				__typename: 'PluginDetail' as const,
-				name: plugin.name,
+				label: plugin.label,
 				desc: '插件示例描述',
 				dependencies: getPluginDependencies(pCtx, parsePluginNodeAddress(plugin.address)),
 			}

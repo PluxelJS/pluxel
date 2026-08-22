@@ -4,11 +4,10 @@ import {
 	Plugin,
 	withRuntimeHost,
 } from '@pluxel/runtime/test'
-import { pluginNodeAddressOf } from '@pluxel/core'
+import { formatPluginNodeRoute, pluginNodeAddressOf } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 
 import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime'
-import { pluginNodePhysicalKey } from '../../src/runtime/plugin-address'
 
 @Plugin()
 class ScopedHttpPlugin extends BasePlugin {
@@ -77,21 +76,21 @@ class InFlightRoutePlugin extends BasePlugin {
 }
 
 describe('HttpService plugin-scoped mount', () => {
-	it('mounts plugin routes under the canonical owner key and auto-disposes on unload', async () => {
+	it('mounts plugin routes under the readable owner route and auto-disposes on unload', async () => {
 		await withRuntimeHost(async (host) => {
 			host.add(ScopedHttpPlugin)
 			host.cfg(ScopedHttpPlugin).enable()
 			await host.commit()
-			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(ScopedHttpPlugin))
+			const ownerRoute = formatPluginNodeRoute(pluginNodeAddressOf(ScopedHttpPlugin))
 
 			const rootRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
 			)
 			expect(rootRes.status).toBe(200)
 			expect(await rootRes.text()).toBe('root')
 
 			const settingsRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/settings`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}/settings`),
 			)
 			expect(settingsRes.status).toBe(200)
 			expect(await settingsRes.text()).toBe('settings')
@@ -100,7 +99,7 @@ describe('HttpService plugin-scoped mount', () => {
 			await host.commit()
 
 			const removedRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
 			)
 			expect(removedRes.status).toBe(404)
 		})
@@ -111,16 +110,16 @@ describe('HttpService plugin-scoped mount', () => {
 			host.add(DynamicScopedHttpPlugin)
 			host.cfg(DynamicScopedHttpPlugin).enable()
 			await host.commit()
-			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(DynamicScopedHttpPlugin))
+			const ownerRoute = formatPluginNodeRoute(pluginNodeAddressOf(DynamicScopedHttpPlugin))
 
 			let rootRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
 			)
 			expect(rootRes.status).toBe(200)
 			expect(await rootRes.text()).toBe('v1')
 
 			let extraRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/extra`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}/extra`),
 			)
 			expect(extraRes.status).toBe(404)
 
@@ -128,13 +127,13 @@ describe('HttpService plugin-scoped mount', () => {
 			instance?.replaceRoutes()
 
 			rootRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
 			)
 			expect(rootRes.status).toBe(200)
 			expect(await rootRes.text()).toBe('v2')
 
 			extraRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/extra`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}/extra`),
 			)
 			expect(extraRes.status).toBe(200)
 			expect(await extraRes.text()).toBe('extra')
@@ -146,13 +145,13 @@ describe('HttpService plugin-scoped mount', () => {
 			host.add(PublicHttpPlugin)
 			host.cfg(PublicHttpPlugin).enable()
 			await host.commit()
-			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(PublicHttpPlugin))
+			const ownerRoute = formatPluginNodeRoute(pluginNodeAddressOf(PublicHttpPlugin))
 
 			const publicResponse = await host.ctx.http.fetch(new Request('http://local/business/health'))
 			expect(publicResponse.status).toBe(200)
 			expect(await publicResponse.text()).toBe('healthy')
 			const scopedResponse = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/health`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}/health`),
 			)
 			expect(scopedResponse.status).toBe(404)
 
@@ -182,8 +181,8 @@ describe('HttpService plugin-scoped mount', () => {
 			host.add(StaleRouteHandlePlugin)
 			host.cfg(StaleRouteHandlePlugin).enable()
 			await host.commit()
-			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(StaleRouteHandlePlugin))
-			const url = `http://local${PLUGIN_HTTP_BASE}/${ownerKey}`
+			const ownerRoute = formatPluginNodeRoute(pluginNodeAddressOf(StaleRouteHandlePlugin))
+			const url = `http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`
 
 			const mounted = await host.ctx.http.fetch(new Request(url))
 			expect(mounted.status).toBe(200)
@@ -214,8 +213,8 @@ describe('HttpService plugin-scoped mount', () => {
 				host.add(InFlightRoutePlugin)
 				host.cfg(InFlightRoutePlugin).enable()
 				await host.commit()
-				const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(InFlightRoutePlugin))
-				const url = `http://local${PLUGIN_HTTP_BASE}/${ownerKey}/slow`
+				const ownerRoute = formatPluginNodeRoute(pluginNodeAddressOf(InFlightRoutePlugin))
+				const url = `http://local${PLUGIN_HTTP_BASE}/${ownerRoute}/slow`
 				const pending = host.ctx.http.fetch(new Request(url))
 				await entered
 

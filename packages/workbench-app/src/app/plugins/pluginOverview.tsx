@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { parsePluginNodeAddress, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { parsePluginNodeAddress, type PluginNodeAddress } from '@pluxel/core'
 import {
 	PluginSourceInfoKind,
 	PluginStatusEntryLifecycleStage,
@@ -54,7 +54,10 @@ function materializePluginOverview(
 		const plugin = catalog.plugin({ id })
 		const address = materializeAddress(plugin.address)
 		const pluginId = plugin.id
-		const name = plugin.name
+		const reference = plugin.reference
+		const route = plugin.route
+		const displayName = plugin.displayName
+		const label = plugin.label
 		const rootExportName = plugin.rootExportName
 		const isRunning = plugin.status.isRunning
 		const isEnabled = plugin.status.isEnabled
@@ -64,10 +67,13 @@ function materializePluginOverview(
 		const sourcePackageName = plugin.status.source.packageName
 		const sourceVersion = plugin.status.source.version
 		const sourceTag = plugin.status.source.tag
-		return address
+		return address && route
 			? ({
-					id: pluginId ?? id,
-					name: name ?? id,
+					id: pluginId ?? route,
+					reference: reference ?? '',
+					route,
+					displayName: displayName ?? label ?? route,
+					label: label ?? displayName ?? route,
 					rootExportName: rootExportName ?? '',
 					address,
 					isRunning: Boolean(isRunning),
@@ -89,13 +95,19 @@ function materializePluginOverview(
 			const node = catalog.groupNode({ id: nodeId })
 			const address = materializeAddress(node.address)
 			const resolvedNodeId = node.id
+			const reference = node.reference
+			const route = node.route
 			const displayName = node.displayName
+			const label = node.label
 			const rootExportName = node.rootExportName
-			return address
+			return address && route
 				? {
 						__typename: 'PluginGroupNode' as const,
-						id: resolvedNodeId ?? nodeId,
-						displayName: displayName ?? nodeId,
+						id: resolvedNodeId ?? route,
+						reference: reference ?? '',
+						route,
+						displayName: displayName ?? label ?? route,
+						label: label ?? displayName ?? route,
 						rootExportName: rootExportName ?? '',
 						address,
 					}
@@ -132,38 +144,48 @@ function materializePluginOverview(
 
 export function materializeAddress(node: {
 	definition: {
-		entry: { kind?: string; packageName?: string | null; source?: string | null }
+		entry: {
+			kind?: string
+			packageName?: string | null
+			sourceSpace?: string | null
+			path?: string | null
+		}
 		exportName?: string
 	}
-	instance?: string
+	variant?: string
 	forkId?: string | null
-}): PluginNodeAddressSnapshot | null {
+}): PluginNodeAddress | null {
 	// Read both entry variants up front. GQLens records property access as field demand,
 	// so branching before these reads would fetch one address field per render cycle.
 	const kind = node.definition.entry.kind
 	const packageName = node.definition.entry.packageName
-	const source = node.definition.entry.source
+	const sourceSpace = node.definition.entry.sourceSpace
+	const path = node.definition.entry.path
 	const exportName = node.definition.exportName
-	const instance = node.instance
+	const variant = node.variant
 	const forkId = node.forkId
 	if (
 		kind === undefined ||
 		exportName === undefined ||
-		instance === undefined ||
-		(kind === 'package-root' ? packageName === undefined : source === undefined) ||
-		(instance === 'fork' && forkId === undefined)
+		variant === undefined ||
+		(kind === 'package-root'
+			? packageName === undefined
+			: sourceSpace === undefined || path === undefined) ||
+		(variant === 'fork' && forkId === undefined)
 	) {
 		return null
 	}
 
 	const definition = {
 		entry:
-			kind === 'package-root' ? { kind: 'package-root' as const, packageName } : { kind, source },
+			kind === 'package-root'
+				? { kind: 'package-root' as const, packageName }
+				: { kind, sourceSpace, path },
 		exportName,
 	}
 	return parsePluginNodeAddress({
 		definition,
-		...(instance === 'fork' ? { instance, forkId } : { instance }),
+		...(variant === 'fork' ? { variant, forkId } : { variant }),
 	})
 }
 

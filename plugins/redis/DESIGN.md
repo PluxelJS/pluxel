@@ -17,7 +17,7 @@ opaque defined value、原子返回 value + remaining TTL，并对 exact managed
 `null` 是合法 hit，adapter failure 必须 reject。
 
 Cache coordinator 的 opaque value 已包含完整结构化 owner envelope；Redis adapter 原样 round-trip。Rates adapter 的 Hash/ZSET
-metadata 直接保存 canonical owner snapshot JSON，并在 Lua transition 内校验；两者的物理 key 都只暴露 address-derived digest，
+metadata 直接保存 structured owner address，并在 Lua transition 内校验；两者的物理 key 都只暴露 address-derived digest，
 digest 不替代 payload 中的完整 owner。
 
 cache/rates `keyPrefix` 必须是 well-formed Unicode，避免不同的未配对 surrogate 在 Redis UTF-8 transport 上折叠为同一

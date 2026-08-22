@@ -4,7 +4,7 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import {
 	type CommitSummary,
 	type Context,
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	isPluginNodeSlot,
 	type PluginConstructor,
 } from '@pluxel/core'
@@ -65,6 +65,8 @@ function assertHmrExecutionOk(
 }
 
 export interface LoaderHmrConfig {
+	/** Host root for relative paths and the stable `app` plugin source space. */
+	hostRoot?: string
 	/** 业务扫描边界：HMR 只监听这些 roots（用于过滤 watcher 事件、分组报告等）。 */
 	roots: string[]
 	/** Whether to print Vite HMR server URLs on startup. Defaults to `true`. */
@@ -230,7 +232,7 @@ export class LoaderHmrService {
 	private executor!: HmrExecutor
 	private batchProcessor!: HmrBatchProcessor
 
-	private readonly cwd = process.cwd()
+	private readonly hostRoot: string
 	private readonly scanRootsAbs: string[]
 	private readonly env: HmrEnvironment
 	public readonly toolkit: HmrToolkit
@@ -290,6 +292,7 @@ export class LoaderHmrService {
 		private readonly config: LoaderHmrConfig,
 		server?: ViteDevServer,
 	) {
+		this.hostRoot = normalizePath(resolve(this.config.hostRoot ?? process.cwd()))
 		this.scanService = this.ctx.scanService
 		if (!Array.isArray(this.config.entries)) {
 			throw new TypeError(
@@ -312,12 +315,12 @@ export class LoaderHmrService {
 		})
 
 		this.scanRootsAbs = unique(
-			this.config.roots.map((dir) => normalizePath(resolve(this.cwd, dir))),
+			this.config.roots.map((dir) => normalizePath(resolve(this.hostRoot, dir))),
 		)
-		this.includeGlobs = resolveGlobPatterns(this.config.include, this.cwd)
-		this.excludeGlobs = resolveGlobPatterns(this.config.exclude, this.cwd)
+		this.includeGlobs = resolveGlobPatterns(this.config.include, this.hostRoot)
+		this.excludeGlobs = resolveGlobPatterns(this.config.exclude, this.hostRoot)
 		this.env = new HmrEnvironment({
-			cwd: this.cwd,
+			cwd: this.hostRoot,
 			scanRootsAbs: this.scanRootsAbs,
 			includeGlobs: this.includeGlobs,
 			excludeGlobs: this.excludeGlobs,
@@ -496,19 +499,20 @@ export class LoaderHmrService {
 		}
 
 		const serverFsAllow = resolveFsAllowList({
-			cwd: this.cwd,
+			cwd: this.hostRoot,
 			cwdNormalized: this.env.paths.cwdNormalizedPath,
 			scanRoots: this.scanRootsAbs,
 			configFsAllow: Array.isArray(this.config.fsAllow) ? this.config.fsAllow : undefined,
 			hmrPackageRoot,
 		})
 		const clientEntries = this.config.clientEntries?.map((entry) =>
-			normalizePath(resolve(this.cwd, entry)),
+			normalizePath(resolve(this.hostRoot, entry)),
 		)
 		const serverConfig = buildLoaderHmrViteConfig({
-			// Vite root should point at the HMR package UI, not the host cwd.
+			// Vite root should point at the HMR package UI, not the host root.
 			// Otherwise dep optimization may not crawl the correct entries and will try to update deps at runtime.
-			root: hmrPackageRoot ?? this.cwd,
+			viteRoot: hmrPackageRoot ?? this.hostRoot,
+			sourceRoot: this.hostRoot,
 			fsAllow: serverFsAllow,
 			clientEntries,
 			port: this.config.port,
@@ -629,7 +633,7 @@ export class LoaderHmrService {
 		this.runner.init(server, {
 			debug: this.ctx.logger.getDebugChannel('hmr:fetch'),
 			cacheLimit: this.config.runnerCacheLimit,
-			hostCwd: this.cwd,
+			hostCwd: this.hostRoot,
 			bridgeModules: LOADER_HMR_BRIDGE_MODULES,
 			bridgeProviders: LOADER_HMR_BRIDGE_PROVIDERS,
 			resolveCache: this.scanService.resolverCache,
@@ -820,7 +824,7 @@ export class LoaderHmrService {
 
 	private formatIdentifier(id: unknown): string {
 		if (isPluginNodeSlot(id)) {
-			return formatPluginNodeAddress(this.ctx.registry.nodeAddressOf(id))
+			return formatPluginNodeReference(this.ctx.registry.nodeAddressOf(id))
 		}
 		return String(id)
 	}
@@ -1178,7 +1182,7 @@ export class LoaderHmrService {
 
 		const report = await buildHmrOperationalReport({
 			reason,
-			cwd: this.cwd,
+			cwd: this.hostRoot,
 			anchors: scope.anchors,
 			entries: scope.entries,
 			rootsAbs: scope.rootsAbs,

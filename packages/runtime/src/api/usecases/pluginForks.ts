@@ -2,23 +2,23 @@ import {
 	pluginNodeAddressOf,
 	type Context,
 	type PluginConstructor,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { addForkToCatalog } from './forksCatalog'
 import { requireRouteCapability } from '../../runtime/capabilities'
 
 export type EnsureForkResult =
-	| { ok: true; fork: PluginNodeAddressSnapshot }
+	| { ok: true; fork: PluginNodeAddress }
 	| { ok: false; code: string; error: string }
 
 export async function ensureFork(
 	ctx: Context,
-	base: PluginNodeAddressSnapshot,
+	base: PluginNodeAddress,
 	forkId: string,
 	options?: { enable?: boolean },
 ): Promise<EnsureForkResult> {
 	try {
-		if (base.instance !== 'default')
+		if (base.variant !== 'default')
 			return { ok: false, code: 'invalid_base', error: 'Fork base must be a default Plugin node' }
 		const id = String(forkId).trim()
 		if (!id) return { ok: false, code: 'invalid_fork', error: 'forkId is required' }

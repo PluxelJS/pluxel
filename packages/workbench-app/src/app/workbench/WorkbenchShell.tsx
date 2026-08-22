@@ -2,8 +2,9 @@ import { HotkeysProvider } from '@tanstack/react-hotkeys'
 import { useStore } from '@tanstack/react-store'
 import { useNavigate } from '@tanstack/react-router'
 import { useMediaQuery } from '@mantine/hooks'
+import { formatPluginNodeRoute } from '@pluxel/core'
 import { startTransition, useCallback, useEffect, useMemo, useRef } from 'react'
-import { buildWorkbenchHref } from '../../workbench/paths'
+import { buildWorkbenchHref, parsePluginDetailHref } from '../../workbench/paths'
 import { useWorkbenchNavigationRoutes } from '../../workbench/runtime'
 import { PLUGIN_SEARCH_EVENT } from '../constants'
 import { baseNavItems, buildWorkbenchNavItems, groupNavItems } from '../navigation/navConfig'
@@ -46,16 +47,10 @@ import {
 import { WorkbenchStatePersistence } from './shell/WorkbenchStatePersistence'
 import './styles.scss'
 
-const PLUGIN_PATH_PATTERN = /^\/plugins\/([^/]+)/
 const EMPTY_TAB_STATE: Record<string, unknown> = {}
-function resolvePluginNameFromPath(pathname: string) {
-	const match = pathname.match(PLUGIN_PATH_PATTERN)
-	if (!match?.[1]) return undefined
-	try {
-		return decodeURIComponent(match[1])
-	} catch {
-		return match[1]
-	}
+function resolvePluginRouteFromPath(pathname: string) {
+	const parsed = parsePluginDetailHref(pathname)
+	return parsed ? formatPluginNodeRoute(parsed.target) : undefined
 }
 
 function dispatchPluginSearchEvent() {
@@ -75,7 +70,7 @@ export function WorkbenchShell() {
 	const pluginLayoutGroupRef = useRef<SplitViewHandle | null>(null)
 	const navigationRoutes = useWorkbenchNavigationRoutes()
 	const currentLocation = useMemo(() => resolveWorkbenchLocation(pathname), [pathname])
-	const pluginName = resolvePluginNameFromPath(pathname)
+	const pluginRoute = resolvePluginRouteFromPath(pathname)
 	const isPluginsSection = isPluginWorkbenchLocation(pathname)
 	const tabs = useStore(workspace.store, (state) => state.uiState.tabs)
 	const activeTabId = useStore(workspace.store, (state) => state.uiState.activeTabId)
@@ -143,7 +138,7 @@ export function WorkbenchShell() {
 			: EMPTY_TAB_STATE,
 	)
 	const currentPluginPane = isPluginsSection ? pluginPane : null
-	const isPluginDetail = isPluginsSection && Boolean(pluginName)
+	const isPluginDetail = isPluginsSection && Boolean(pluginRoute)
 	useSyncedLayout(
 		pluginLayoutGroupRef,
 		currentPluginPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT,
@@ -300,11 +295,11 @@ export function WorkbenchShell() {
 	useEffect(() => {
 		if (!isNarrowViewport || !isPluginDetail) return
 		const previousPlugin = previousMobilePluginRef.current
-		previousMobilePluginRef.current = pluginName
-		if (pluginName && pluginName !== previousPlugin) {
+		previousMobilePluginRef.current = pluginRoute
+		if (pluginRoute && pluginRoute !== previousPlugin) {
 			setPluginPaneVisible(false)
 		}
-	}, [isNarrowViewport, isPluginDetail, pluginName, setPluginPaneVisible])
+	}, [isNarrowViewport, isPluginDetail, pluginRoute, setPluginPaneVisible])
 
 	const handleLayoutChanged = useCallback(
 		(layout: Record<string, number>) => {
@@ -328,9 +323,9 @@ export function WorkbenchShell() {
 			snap: true,
 			visible: showPluginNav,
 			onVisibleChange: setPluginPaneVisible,
-			children: <PluginNavigationRail onCollapse={togglePluginNav} pluginName={pluginName} />,
+			children: <PluginNavigationRail onCollapse={togglePluginNav} pluginRoute={pluginRoute} />,
 		}),
-		[currentPluginPane?.layout, pluginName, setPluginPaneVisible, showPluginNav, togglePluginNav],
+		[currentPluginPane?.layout, pluginRoute, setPluginPaneVisible, showPluginNav, togglePluginNav],
 	)
 	const workspacePane = useMemo<SplitViewPane>(
 		() => ({

@@ -1,10 +1,10 @@
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 
 export type PluginStatuses = { [name: string]: PluginStatus }
 
 export interface PluginStatus {
 	id: string
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	name?: string
 	packageName?: string
 	version?: string

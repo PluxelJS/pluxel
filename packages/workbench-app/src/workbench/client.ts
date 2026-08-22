@@ -3,14 +3,13 @@ import type {
 	WorkbenchLayoutItem,
 	WorkbenchPluginDescriptor,
 } from '@pluxel/runtime/workbench'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchLocaleService } from '@pluxel/runtime/workbench/ui'
 import type { RuntimeTransportClient } from '@pluxel/runtime/web'
 import { stringifyUnknown } from '../utils/unknown'
 import { loadFederatedWorkbenchModule } from './federationRuntime'
 import { matchWorkbenchRoute } from './routes'
 import { normalizeWorkbenchPath } from './paths'
-import { workbenchNodeKey } from './node-address'
 import {
 	WorkbenchModuleStore,
 	type WorkbenchModuleLoader,
@@ -114,10 +113,7 @@ export class WorkbenchClientRuntime {
 		return this.entry(target).snapshot
 	}
 
-	resolveRoute(
-		target: PluginNodeAddressSnapshot,
-		path: string,
-	): WorkbenchResolvedRoute | undefined {
+	resolveRoute(target: PluginNodeAddress, path: string): WorkbenchResolvedRoute | undefined {
 		const snapshot = this.getSnapshot(target)
 		const normalized = normalizeWorkbenchPath(path)
 		const exact = snapshot.routes.find(
@@ -135,14 +131,14 @@ export class WorkbenchClientRuntime {
 	}
 
 	view(target: WorkbenchTargetId, item: WorkbenchLayoutItem) {
-		const record = this.getSnapshot(target).modules.get(workbenchNodeKey(item.owner.address))
+		const record = this.getSnapshot(target).modules.get(pluginNodeIndexKey(item.owner.address))
 		if (!record || record.module.contractFingerprint !== item.contractFingerprint) return undefined
 		return record.module.views[item.view.kind === 'remote' ? item.view.export : '']
 	}
 
-	artifactState(owner: PluginNodeAddressSnapshot) {
-		const key = workbenchNodeKey(owner)
-		return this.catalog.states.find((state) => workbenchNodeKey(state.owner.address) === key)
+	artifactState(owner: PluginNodeAddress) {
+		const key = pluginNodeIndexKey(owner)
+		return this.catalog.states.find((state) => pluginNodeIndexKey(state.owner.address) === key)
 	}
 
 	private invalidate(): void {
@@ -248,17 +244,17 @@ export class WorkbenchClientRuntime {
 			if (item.view.kind !== 'remote' || (target === null && item.placement === 'plugin.routes')) {
 				continue
 			}
-			owners.set(workbenchNodeKey(item.owner.address), item.owner)
+			owners.set(pluginNodeIndexKey(item.owner.address), item.owner)
 		}
 		const staged = new Map<string, WorkbenchModuleRecord>()
 		try {
 			for (const [ownerKey, owner] of owners) {
 				const artifact = catalog.bundles.find(
-					(item) => workbenchNodeKey(item.owner.address) === ownerKey,
+					(item) => pluginNodeIndexKey(item.owner.address) === ownerKey,
 				)
 				if (!artifact) {
 					const state = catalog.states.find(
-						(item) => workbenchNodeKey(item.owner.address) === ownerKey,
+						(item) => pluginNodeIndexKey(item.owner.address) === ownerKey,
 					)
 					if (state?.state === 'building') {
 						throw new Error(`Workbench UI is building: ${owner.displayName}`)
@@ -311,7 +307,7 @@ export class WorkbenchClientRuntime {
 }
 
 function targetKey(target: WorkbenchTargetId): string {
-	return target === null ? '$global' : `plugin:${workbenchNodeKey(target)}`
+	return target === null ? '$global' : `plugin:${pluginNodeIndexKey(target)}`
 }
 
 function toError(error: unknown): Error {

@@ -55,7 +55,7 @@ host.cfg(RedisPlugin).set({
 
 - `url` 只能是没有 username、password、database path、query 或 hash 的 `redis://` / `rediss://` URL；
 - database 通过独立的非负整数 `database` 配置；
-- client name 自动使用 `pluxel:<formatted-plugin-node-address>`；
+- client name 自动使用 `pluxel:<Plugin node reference>`，例如 `pluxel:package:@acme/orders::OrdersPlugin`；
 - initial connect 超时或失败会让 lifecycle 失败，并抛 `RedisConnectionError`；
 - provider 未运行或已停止时读取 `client` 抛 `RedisNotRunningError`；
 - stop、replacement、rollback 和 shutdown 会关闭或销毁连接。
@@ -156,7 +156,7 @@ host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: 'pluxel:rates:' })
 ```
 
-adapter 为四种 Rates algorithm 分别使用静态、单 key Lua script。它读取 Redis `TIME`，在一次调用内校验完整 resolved policy、owner snapshot、状态格式并更新 TTL。物理 key 使用 canonical request 的 SHA-256 digest，不暴露 raw identity；policy 不参与 key，因此同一 identity 的 policy 冲突可被检测。
+adapter 为四种 Rates algorithm 分别使用静态、单 key Lua script。它读取 Redis `TIME`，在一次调用内校验完整 resolved policy、owner address、状态格式并更新 TTL。物理 key 使用 canonical request 的 SHA-256 digest，不暴露 raw identity；policy 不参与 key，因此同一 identity 的 policy 冲突可被检测。
 
 Rates keyspace 必须由 adapter 独占，不能由其他 writer 修改。多个实例共享 Redis 后会得到同一个原子判定；这正是它与进程内 memory backend 的主要区别。
 

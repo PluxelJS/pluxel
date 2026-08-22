@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto'
 import { deserialize, serialize } from 'node:v8'
 import {
 	BasePlugin,
+	encodePluginNodeAddressBytes,
 	Plugin,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
 	pluginMethodDecorator,
 	type PersistenceNamespace,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	v,
 } from '@pluxel/runtime'
 import { CacheBackend, type CacheBackendStore, type CacheValue } from './backend.ts'
@@ -288,14 +289,14 @@ type CacheDefaults = {
 type Resolved = {
 	namespace: InternalNamespace
 	backendPrefix: string
-	ownerAddress: PluginNodeAddressSnapshot | null
+	ownerAddress: PluginNodeAddress | null
 	bucket: Bucket
 }
 
 type OwnerContext = {
 	readonly pluginInfo: {
 		readonly nodeSlot: object
-		readonly nodeAddress: PluginNodeAddressSnapshot
+		readonly nodeAddress: PluginNodeAddress
 	}
 	readonly effects: { defer(cleanup: () => void, meta?: { tag?: string }): unknown }
 	readonly registry: { getInstance(identifier: unknown): unknown }
@@ -314,7 +315,7 @@ type CacheOwnerState = {
 type CacheRegistration = {
 	readonly namespace: InternalNamespace
 	readonly backendPrefix: string
-	readonly ownerAddress: PluginNodeAddressSnapshot | null
+	readonly ownerAddress: PluginNodeAddress | null
 	readonly ownerSlot: object | null
 	readonly lookup: Map<string, CacheRegistration>
 	readonly lookupKey: string
@@ -333,7 +334,7 @@ type CacheRuntime = {
 type StoredCacheEntry<V> = {
 	readonly format: 'pluxel-cache-entry'
 	readonly version: 1
-	readonly owner: PluginNodeAddressSnapshot | null
+	readonly owner: PluginNodeAddress | null
 	readonly value: V
 }
 
@@ -773,8 +774,8 @@ export class CachePlugin extends Cache {
 				(parentPolicy ?? this.config) as CacheDefaults,
 			)
 			const backendPrefix = global
-				? `cache:v2:global:${name ? `${escapePart(name)}:` : ''}`
-				: `cache:v2:plugin:${ownerAddressDigest(owner.context.pluginInfo.nodeAddress)}:${name ? `${escapePart(name)}:` : ''}`
+				? `cache:v3:global:${name ? `${escapePart(name)}:` : ''}`
+				: `cache:v3:plugin:${ownerAddressDigest(owner.context.pluginInfo.nodeAddress)}:${name ? `${escapePart(name)}:` : ''}`
 			const bucket: Bucket = {
 				active: true,
 				entries: new Map(),
@@ -1833,21 +1834,19 @@ function assertBackendValue(value: unknown): void {
 	}
 }
 
-function normalizeOwnerAddress(address: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
+function normalizeOwnerAddress(address: PluginNodeAddress): PluginNodeAddress {
 	return parsePluginNodeAddress(address)
 }
 
-function canonicalOwnerAddress(address: PluginNodeAddressSnapshot): string {
-	return JSON.stringify(normalizeOwnerAddress(address))
-}
-
-function ownerAddressDigest(address: PluginNodeAddressSnapshot): string {
-	return createHash('sha256').update(canonicalOwnerAddress(address)).digest('hex')
+function ownerAddressDigest(address: PluginNodeAddress): string {
+	return createHash('sha256')
+		.update(encodePluginNodeAddressBytes(normalizeOwnerAddress(address)))
+		.digest('hex')
 }
 
 function readStoredCacheEntry<V>(
 	input: unknown,
-	expectedOwner: PluginNodeAddressSnapshot | null,
+	expectedOwner: PluginNodeAddress | null,
 ): StoredCacheEntry<V> {
 	if (!input || typeof input !== 'object' || Array.isArray(input)) {
 		throw new TypeError('Cache backend entry must be an object.')

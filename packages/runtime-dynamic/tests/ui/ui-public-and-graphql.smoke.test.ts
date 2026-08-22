@@ -199,10 +199,10 @@ describe('HMR UI smoke', () => {
 		const owner = {
 			address: {
 				definition: {
-					entry: { kind: 'source-entry', source: 'plugins/demo.ts' },
+					entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/demo.ts' },
 					exportName: 'DemoPlugin',
 				},
-				instance: 'default',
+				variant: 'default',
 			} as const,
 			displayName: 'Demo Plugin',
 			rootExportName: 'DemoPlugin',

@@ -3,7 +3,6 @@ import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PGlite } from '@electric-sql/pglite'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { pgTable, text } from 'drizzle-orm/pg-core'
 import { asc } from 'drizzle-orm'
@@ -23,7 +22,6 @@ import {
 	attachPostgresPoolErrorHandler,
 	subscribeDatabaseHandle,
 } from '../../src/services/DatabaseService'
-import { pluginNodeAddressKey } from '../../src/runtime/plugin-address'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const migrationSql = `
@@ -416,71 +414,6 @@ describe('DatabaseService', () => {
 			expect(host.isRunning(DefaultPersistenceDatabasePlugin)).toBe(true)
 		} finally {
 			await host.dispose()
-			await rm(root, { recursive: true, force: true })
-		}
-	}, 30_000)
-
-	it('adopts the previous owner-schema layout without losing plugin rows', async () => {
-		const definition = databaseFixture('main')
-		const ownerId = pluginNodeAddressKey({
-			definition: {
-				entry: { kind: 'source-entry', source: 'pluxel-test:LegacyDatabasePlugin' },
-				exportName: 'Plugin',
-			},
-			instance: 'default',
-		})
-		const slug = ownerId
-			.toLowerCase()
-			.replaceAll(/[^a-z0-9]+/g, '_')
-			.replaceAll(/^_+|_+$/g, '')
-		const ownerSchema = `pluxel_${slug.slice(0, 36) || 'plugin'}_${createHash('sha256').update(ownerId).digest('hex').slice(0, 16)}`
-		const ownerRole = `${ownerSchema}_r`
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-legacy-'))
-		const dataDir = join(root, 'pglite')
-		try {
-			const legacy = new PGlite(dataDir)
-			await legacy.waitReady
-			await legacy.exec(`
-				CREATE SCHEMA pluxel_system;
-				CREATE TABLE pluxel_system.plugin_migrations (
-					owner_schema text NOT NULL,
-					migration_id text NOT NULL,
-					checksum text NOT NULL,
-					applied_at timestamptz NOT NULL DEFAULT now(),
-					PRIMARY KEY (owner_schema, migration_id)
-				);
-				CREATE ROLE "${ownerRole}" NOLOGIN;
-				GRANT "${ownerRole}" TO CURRENT_USER;
-				CREATE SCHEMA "${ownerSchema}";
-				GRANT USAGE ON SCHEMA "${ownerSchema}" TO "${ownerRole}";
-				CREATE TABLE "${ownerSchema}".items (id text PRIMARY KEY, value text NOT NULL);
-				GRANT SELECT, INSERT, UPDATE, DELETE ON "${ownerSchema}".items TO "${ownerRole}";
-				INSERT INTO "${ownerSchema}".items VALUES ('legacy', 'preserved');
-				INSERT INTO pluxel_system.plugin_migrations(owner_schema, migration_id, checksum)
-				VALUES ('${ownerSchema}', '0000_initial', '${createHash('sha256').update(migrationSql).digest('hex')}');
-			`)
-			await legacy.close()
-
-			const host = createRuntimeHost({ workbench: false, database: { driver: 'pglite', dataDir } })
-			try {
-				@Plugin({ displayName: 'LegacyDatabasePlugin' })
-				class LegacyDatabasePlugin extends BasePlugin {
-					db!: PluginDatabaseHandle<typeof definition.database>
-					override async init() {
-						this.db = await this.ctx.database.use(definition.database)
-					}
-				}
-				lowerTestPlugin(LegacyDatabasePlugin)
-				host.add(LegacyDatabasePlugin)
-				host.cfg(LegacyDatabasePlugin).enable()
-				await host.commit()
-				await expect(
-					host.require(LegacyDatabasePlugin).db.read((db) => db.select().from(definition.items)),
-				).resolves.toEqual([{ id: 'legacy', value: 'preserved' }])
-			} finally {
-				await host.dispose()
-			}
-		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
 	}, 30_000)

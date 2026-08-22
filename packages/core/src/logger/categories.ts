@@ -1,7 +1,16 @@
 import {
-	createPluginNodeAddress,
-	type PluginNodeAddressSnapshot,
+	formatPluginNodeRoute,
+	parsePluginNodeRoute,
+	type PluginNodeAddress,
 } from '../plugins/runtime/identity'
+
+export type PluginLogIdentity = Readonly<{
+	rootId: string
+	node: PluginNodeAddress
+	topicOffset: number
+}>
+
+const pluginIdentityByCategory = new WeakMap<readonly string[], PluginLogIdentity | null>()
 
 export const pluxelCategoryFamilies = {
 	runtime: ['pluxel', 'runtime'],
@@ -13,36 +22,28 @@ export type PluxelCategoryFamily =
 	(typeof pluxelCategoryFamilies)[keyof typeof pluxelCategoryFamilies]
 
 export function runtimeLogCategory(rootId: string): readonly ['pluxel', 'runtime', string] {
-	return ['pluxel', 'runtime', rootId]
+	return Object.freeze(['pluxel', 'runtime', rootId])
 }
 
-function addressSegments(address: PluginNodeAddressSnapshot): string[] {
-	const entry = address.definition.entry
-	return [
-		entry.kind,
-		entry.kind === 'package-root' ? entry.packageName : entry.source,
-		address.definition.exportName,
-		address.instance,
-		...(address.instance === 'fork' ? [address.forkId] : []),
-	]
+function addressSegments(address: PluginNodeAddress): string[] {
+	return formatPluginNodeRoute(address).split('/')
 }
 
-export function pluginLogCategory(
-	rootId: string,
-	address: PluginNodeAddressSnapshot,
-): readonly string[] {
-	return ['pluxel', 'plugins', rootId, ...addressSegments(address)]
+export function pluginLogCategory(rootId: string, address: PluginNodeAddress): readonly string[] {
+	return Object.freeze(['pluxel', 'plugins', rootId, ...addressSegments(address)])
 }
 
 export function debugLogCategory(
 	rootId: string,
 	topic: string,
-	address?: PluginNodeAddressSnapshot,
+	address?: PluginNodeAddress,
 ): readonly string[] {
 	const segments = splitDebugTopic(topic)
-	return address
-		? ['pluxel', 'debug', rootId, 'plugin', ...addressSegments(address), ...segments]
-		: ['pluxel', 'debug', rootId, 'runtime', ...segments]
+	return Object.freeze(
+		address
+			? ['pluxel', 'debug', rootId, 'plugin', ...addressSegments(address), ...segments]
+			: ['pluxel', 'debug', rootId, 'runtime', ...segments],
+	)
 }
 
 export function splitDebugTopic(topic: string): string[] {
@@ -61,29 +62,31 @@ export function splitDebugTopic(topic: string): string[] {
 	return segments
 }
 
-export function readPluginLogIdentity(
-	category: readonly string[],
-): { rootId: string; node: PluginNodeAddressSnapshot; topicOffset: number } | undefined {
-	if (category[0] !== 'pluxel') return undefined
+export function readPluginLogIdentity(category: readonly string[]): PluginLogIdentity | undefined {
+	const cached = pluginIdentityByCategory.get(category)
+	if (cached !== undefined) return cached ?? undefined
+	if (category[0] !== 'pluxel') {
+		pluginIdentityByCategory.set(category, null)
+		return undefined
+	}
 	let offset: number
 	if (category[1] === 'plugins') offset = 3
 	else if (category[1] === 'debug' && category[3] === 'plugin') offset = 4
-	else return undefined
-	const kind = category[offset]
-	const locator = category[offset + 1]
-	const exportName = category[offset + 2]
-	const instance = category[offset + 3]
-	if (!locator || !exportName || (kind !== 'package-root' && kind !== 'source-entry'))
+	else {
+		pluginIdentityByCategory.set(category, null)
 		return undefined
-	if (instance !== 'default' && instance !== 'fork') return undefined
-	const definition = {
-		entry: kind === 'package-root' ? { kind, packageName: locator } : { kind, source: locator },
-		exportName,
-	} as const
-	const node = createPluginNodeAddress(
-		instance === 'default'
-			? { definition, instance }
-			: { definition, instance, forkId: category[offset + 4] ?? '' },
-	)
-	return { rootId: category[2]!, node, topicOffset: offset + (instance === 'fork' ? 5 : 4) }
+	}
+	try {
+		const parsed = parsePluginNodeRoute(category.slice(offset))
+		const identity = Object.freeze({
+			rootId: category[2]!,
+			node: parsed.nodeAddress,
+			topicOffset: offset + parsed.consumedSegments,
+		})
+		pluginIdentityByCategory.set(category, identity)
+		return identity
+	} catch {
+		pluginIdentityByCategory.set(category, null)
+		return undefined
+	}
 }

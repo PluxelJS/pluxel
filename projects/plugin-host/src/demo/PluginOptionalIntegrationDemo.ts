@@ -7,7 +7,7 @@ import {
 	BasePlugin,
 	definePluginRef,
 	EvtChannel,
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	Plugin,
 } from '@pluxel/runtime'
 
@@ -24,14 +24,14 @@ class PluginLogger {
 
 	info(message: string, extra?: Record<string, unknown>) {
 		this.plugin.ctx.logger.info(message, {
-			plugin: formatPluginNodeAddress(this.plugin.ctx.pluginInfo.nodeAddress),
+			plugin: formatPluginNodeReference(this.plugin.ctx.pluginInfo.nodeAddress),
 			...extra,
 		})
 	}
 
 	debug(message: string, extra?: Record<string, unknown>) {
 		this.plugin.ctx.logger.debug(message, {
-			plugin: formatPluginNodeAddress(this.plugin.ctx.pluginInfo.nodeAddress),
+			plugin: formatPluginNodeReference(this.plugin.ctx.pluginInfo.nodeAddress),
 			...extra,
 		})
 	}
@@ -46,7 +46,7 @@ export class PluginOptionalIntegrationProvider extends BasePlugin {
 		const timer = setInterval(() => {
 			this.seq += 1
 			this.channel.emit({
-				from: formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress),
+				from: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 				seq: this.seq,
 				at: Date.now(),
 			})
@@ -65,7 +65,7 @@ export class PluginOptionalIntegrationConsumer extends BasePlugin {
 		this.log.info('consumer init')
 		this.plugins.use(OptionalProvider, (provider) => {
 			this.log.info('optional provider attached', {
-				provider: formatPluginNodeAddress(provider.ctx.pluginInfo.nodeAddress),
+				provider: formatPluginNodeReference(provider.ctx.pluginInfo.nodeAddress),
 			})
 
 			const unsubscribe = provider.channel.on(({ from, seq }) => {
@@ -75,7 +75,7 @@ export class PluginOptionalIntegrationConsumer extends BasePlugin {
 			return () => {
 				unsubscribe()
 				this.log.info('optional provider detached', {
-					provider: formatPluginNodeAddress(provider.ctx.pluginInfo.nodeAddress),
+					provider: formatPluginNodeReference(provider.ctx.pluginInfo.nodeAddress),
 				})
 			}
 		})

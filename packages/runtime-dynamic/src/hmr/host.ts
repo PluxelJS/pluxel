@@ -566,6 +566,7 @@ function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 ): LoaderHmrConfig {
 	return applyLoaderHmrEnvOverrides({
+		hostRoot: plan.root,
 		roots: plan.snapshot.watchRoots,
 		printUrls: plan.printUrls ?? true,
 		include:

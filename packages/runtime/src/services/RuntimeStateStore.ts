@@ -3,46 +3,48 @@ import {
 	Injectable,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
-	type PluginDefinitionAddressSnapshot,
-	type PluginNodeAddressSnapshot,
+	pluginDefinitionAddressEqual,
+	pluginNodeAddressEqual,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export type RuntimeStateSnapshot = Readonly<{
-	enabled: readonly PluginNodeAddressSnapshot[]
+	enabled: readonly PluginNodeAddress[]
 	forks: readonly RuntimeForkState[]
 	providerDefaults: readonly RuntimeProviderDefaultState[]
 	dependencyOverrides: readonly RuntimeDependencyOverrideState[]
 }>
 
 export type RuntimeStateDraft = {
-	enabled: PluginNodeAddressSnapshot[]
+	enabled: PluginNodeAddress[]
 	forks: RuntimeForkState[]
 	providerDefaults: RuntimeProviderDefaultState[]
 	dependencyOverrides: RuntimeDependencyOverrideState[]
 }
 
 export type RuntimeForkState = {
-	definition: PluginDefinitionAddressSnapshot
+	definition: PluginDefinitionAddress
 	forkIds: readonly string[]
 }
 
 export type RuntimeProviderDefaultState = {
-	token: PluginDefinitionAddressSnapshot
-	provider: PluginNodeAddressSnapshot
+	token: PluginDefinitionAddress
+	provider: PluginNodeAddress
 }
 
 export type RuntimeDependencyOverrideState = {
-	consumer: PluginNodeAddressSnapshot
-	parameterIndex: number
-	provider: PluginNodeAddressSnapshot
+	consumerAddress: PluginNodeAddress
+	requirementAddress: PluginDefinitionAddress
+	providerAddress: PluginNodeAddress
 }
 
 export type RuntimeStateFile = {
-	version: 3
-	enabled: PluginNodeAddressSnapshot[]
+	version: 4
+	enabled: PluginNodeAddress[]
 	forks: RuntimeForkState[]
 	providerDefaults: RuntimeProviderDefaultState[]
 	dependencyOverrides: RuntimeDependencyOverrideState[]
@@ -53,7 +55,7 @@ export type RuntimeStateStoreMode = 'file' | 'memory' | 'readonly'
 export interface RuntimeStateStoreConfig {
 	mode?: RuntimeStateStoreMode
 	snapshot?: Partial<RuntimeStateSnapshot> & {
-		enabled?: Iterable<PluginNodeAddressSnapshot> | PluginNodeAddressSnapshot[]
+		enabled?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
 	}
 }
 
@@ -306,7 +308,7 @@ function replaceDraft(target: RuntimeStateDraft, source: RuntimeStateDraft): voi
 function applySnapshot(
 	draft: RuntimeStateDraft,
 	snapshot: Partial<RuntimeStateSnapshot> & {
-		enabled?: Iterable<PluginNodeAddressSnapshot> | PluginNodeAddressSnapshot[]
+		enabled?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
 	},
 ): void {
 	if (snapshot.enabled) {
@@ -349,9 +351,9 @@ function freezeSnapshot(draft: RuntimeStateDraft): RuntimeStateSnapshot {
 		dependencyOverrides: Object.freeze(
 			draft.dependencyOverrides.map((entry) =>
 				Object.freeze({
-					consumer: freezeNodeAddress(entry.consumer),
-					parameterIndex: entry.parameterIndex,
-					provider: freezeNodeAddress(entry.provider),
+					consumerAddress: freezeNodeAddress(entry.consumerAddress),
+					requirementAddress: freezeDefinitionAddress(entry.requirementAddress),
+					providerAddress: freezeNodeAddress(entry.providerAddress),
 				}),
 			),
 		),
@@ -360,7 +362,7 @@ function freezeSnapshot(draft: RuntimeStateDraft): RuntimeStateSnapshot {
 
 function toRuntimeStateFile(draft: RuntimeStateDraft): RuntimeStateFile {
 	return {
-		version: 3,
+		version: 4,
 		enabled: draft.enabled.map(cloneNodeAddress),
 		forks: draft.forks.map(cloneForkState),
 		providerDefaults: draft.providerDefaults.map(cloneProviderDefault),
@@ -373,7 +375,7 @@ function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 		throw invalidState('persisted state must be an object')
 	}
 	const raw = input as Record<string, unknown>
-	if (raw.version !== 3) {
+	if (raw.version !== 4) {
 		throw invalidState(`unsupported persisted state version: ${String(raw.version)}`)
 	}
 	if (!Array.isArray(raw.enabled)) throw invalidState('enabled must be an array')
@@ -392,8 +394,8 @@ function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 	}
 }
 
-function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddressSnapshot[] {
-	const out: PluginNodeAddressSnapshot[] = []
+function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddress[] {
+	const out: PluginNodeAddress[] = []
 	for (let i = 0; i < input.length; i++) {
 		const node = parseNode(input[i], `${at}[${i}]`)
 		if (out.some((candidate) => sameNode(candidate, node))) {
@@ -411,7 +413,7 @@ function parseForks(input: readonly unknown[], at: string): RuntimeForkState[] {
 		const definition = parseDefinition(raw.definition, `${at}[${i}].definition`)
 		if (!Array.isArray(raw.forkIds)) throw invalidState(`${at}[${i}].forkIds must be an array`)
 		const forkIds = raw.forkIds.map((value, index) =>
-			nonEmptyText(value, `${at}[${i}].forkIds[${index}]`),
+			parseForkId(value, definition, `${at}[${i}].forkIds[${index}]`),
 		)
 		if (new Set(forkIds).size !== forkIds.length) {
 			throw invalidState(`${at}[${i}].forkIds contains duplicates`)
@@ -448,26 +450,27 @@ function parseDependencyOverrides(
 	const out: RuntimeDependencyOverrideState[] = []
 	for (let i = 0; i < input.length; i++) {
 		const raw = record(input[i], `${at}[${i}]`)
-		const consumer = parseNode(raw.consumer, `${at}[${i}].consumer`)
-		const provider = parseNode(raw.provider, `${at}[${i}].provider`)
-		const parameterIndex = raw.parameterIndex
-		if (!Number.isSafeInteger(parameterIndex) || (parameterIndex as number) < 0) {
-			throw invalidState(`${at}[${i}].parameterIndex must be a non-negative integer`)
-		}
+		const consumerAddress = parseNode(raw.consumerAddress, `${at}[${i}].consumerAddress`)
+		const requirementAddress = parseDefinition(
+			raw.requirementAddress,
+			`${at}[${i}].requirementAddress`,
+		)
+		const providerAddress = parseNode(raw.providerAddress, `${at}[${i}].providerAddress`)
 		if (
 			out.some(
 				(candidate) =>
-					sameNode(candidate.consumer, consumer) && candidate.parameterIndex === parameterIndex,
+					sameNode(candidate.consumerAddress, consumerAddress) &&
+					sameDefinition(candidate.requirementAddress, requirementAddress),
 			)
 		) {
-			throw invalidState(`${at}[${i}] duplicates a consumer parameter`)
+			throw invalidState(`${at}[${i}] duplicates a consumer requirement`)
 		}
-		out.push({ consumer, parameterIndex: parameterIndex as number, provider })
+		out.push({ consumerAddress, requirementAddress, providerAddress })
 	}
 	return out
 }
 
-function parseDefinition(value: unknown, at: string): PluginDefinitionAddressSnapshot {
+function parseDefinition(value: unknown, at: string): PluginDefinitionAddress {
 	try {
 		return parsePluginDefinitionAddress(value)
 	} catch (error) {
@@ -475,7 +478,7 @@ function parseDefinition(value: unknown, at: string): PluginDefinitionAddressSna
 	}
 }
 
-function parseNode(value: unknown, at: string): PluginNodeAddressSnapshot {
+function parseNode(value: unknown, at: string): PluginNodeAddress {
 	try {
 		return parsePluginNodeAddress(value)
 	} catch (error) {
@@ -490,54 +493,48 @@ function record(value: unknown, at: string): Record<string, unknown> {
 	return value as Record<string, unknown>
 }
 
-function nonEmptyText(value: unknown, at: string): string {
-	if (typeof value !== 'string' || value.trim() === '') {
-		throw invalidState(`${at} must be a non-empty string`)
+function parseForkId(value: unknown, definition: PluginDefinitionAddress, at: string): string {
+	try {
+		const node = parsePluginNodeAddress({ definition, variant: 'fork', forkId: value })
+		if (node.variant !== 'fork') throw new TypeError('Plugin node must be a fork')
+		return node.forkId
+	} catch (error) {
+		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
 	}
-	return value
 }
 
 function invalidState(message: string): Error {
 	return new Error(`[RuntimeStateStore] ${message}`)
 }
 
-function sameDefinition(
-	left: PluginDefinitionAddressSnapshot,
-	right: PluginDefinitionAddressSnapshot,
-): boolean {
-	if (left.exportName !== right.exportName || left.entry.kind !== right.entry.kind) return false
-	return left.entry.kind === 'package-root'
-		? right.entry.kind === 'package-root' && left.entry.packageName === right.entry.packageName
-		: right.entry.kind === 'source-entry' && left.entry.source === right.entry.source
+function sameDefinition(left: PluginDefinitionAddress, right: PluginDefinitionAddress): boolean {
+	return pluginDefinitionAddressEqual(left, right)
 }
 
-function sameNode(left: PluginNodeAddressSnapshot, right: PluginNodeAddressSnapshot): boolean {
-	if (!sameDefinition(left.definition, right.definition) || left.instance !== right.instance) {
-		return false
-	}
-	return left.instance === 'default'
-		? true
-		: right.instance === 'fork' && left.forkId === right.forkId
+function sameNode(left: PluginNodeAddress, right: PluginNodeAddress): boolean {
+	return pluginNodeAddressEqual(left, right)
 }
 
-function cloneDefinitionAddress(
-	definition: PluginDefinitionAddressSnapshot,
-): PluginDefinitionAddressSnapshot {
+function cloneDefinitionAddress(definition: PluginDefinitionAddress): PluginDefinitionAddress {
 	return {
 		entry:
 			definition.entry.kind === 'package-root'
 				? { kind: 'package-root', packageName: definition.entry.packageName }
-				: { kind: 'source-entry', source: definition.entry.source },
+				: {
+						kind: 'source-entry',
+						sourceSpace: definition.entry.sourceSpace,
+						path: definition.entry.path,
+					},
 		exportName: definition.exportName,
 	}
 }
 
-function cloneNodeAddress(node: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
-	return node.instance === 'default'
-		? { definition: cloneDefinitionAddress(node.definition), instance: 'default' }
+function cloneNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
+	return node.variant === 'default'
+		? { definition: cloneDefinitionAddress(node.definition), variant: 'default' }
 		: {
 				definition: cloneDefinitionAddress(node.definition),
-				instance: 'fork',
+				variant: 'fork',
 				forkId: node.forkId,
 			}
 }
@@ -557,29 +554,27 @@ function cloneDependencyOverride(
 	entry: RuntimeDependencyOverrideState,
 ): RuntimeDependencyOverrideState {
 	return {
-		consumer: cloneNodeAddress(entry.consumer),
-		parameterIndex: entry.parameterIndex,
-		provider: cloneNodeAddress(entry.provider),
+		consumerAddress: cloneNodeAddress(entry.consumerAddress),
+		requirementAddress: cloneDefinitionAddress(entry.requirementAddress),
+		providerAddress: cloneNodeAddress(entry.providerAddress),
 	}
 }
 
-function freezeDefinitionAddress(
-	definition: PluginDefinitionAddressSnapshot,
-): PluginDefinitionAddressSnapshot {
+function freezeDefinitionAddress(definition: PluginDefinitionAddress): PluginDefinitionAddress {
 	const entry = Object.freeze({ ...definition.entry })
 	return Object.freeze({
 		entry,
 		exportName: definition.exportName,
-	}) as PluginDefinitionAddressSnapshot
+	}) as PluginDefinitionAddress
 }
 
-function freezeNodeAddress(node: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
+function freezeNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
 	return Object.freeze(
-		node.instance === 'default'
-			? { definition: freezeDefinitionAddress(node.definition), instance: 'default' as const }
+		node.variant === 'default'
+			? { definition: freezeDefinitionAddress(node.definition), variant: 'default' as const }
 			: {
 					definition: freezeDefinitionAddress(node.definition),
-					instance: 'fork' as const,
+					variant: 'fork' as const,
 					forkId: node.forkId,
 				},
 	)

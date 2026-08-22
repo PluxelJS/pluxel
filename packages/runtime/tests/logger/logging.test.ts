@@ -1,6 +1,6 @@
 import { configureSync, getConfig, reset } from '@logtape/logtape'
 import { LoggerService } from '@pluxel/core/logger'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import {
 	createRuntimeLogging,
 	type RuntimeLogging,
@@ -38,16 +38,16 @@ const pluginA = {
 		entry: { kind: 'package-root', packageName: '@test/plugin-a' },
 		exportName: 'PluginA',
 	},
-	instance: 'default',
-} as const satisfies PluginNodeAddressSnapshot
+	variant: 'default',
+} as const satisfies PluginNodeAddress
 
 function pluginLogger(
 	logging: RuntimeLogging,
-	address: PluginNodeAddressSnapshot,
+	address: PluginNodeAddress,
 	displayName = 'Plugin A',
 ) {
 	return new LoggerService(
-		{ name: displayName, pluginInfo: { nodeAddress: address } } as never,
+		{ name: displayName, pluginInfo: { nodeAddress: address, displayName } } as never,
 		logging.contextBinding,
 	)
 }
@@ -64,7 +64,7 @@ describe('RuntimeLogging', () => {
 	it('resolves an inspectable root plan without per-plugin logger config', () => {
 		logging = createRuntimeLogging(
 			storePlan({
-				version: 2,
+				version: 3,
 				defaultLevel: 'info',
 				overrides: [{ owner: pluginA, level: 'debug' }],
 			}),
@@ -74,7 +74,7 @@ describe('RuntimeLogging', () => {
 		expect(description.plan.root.id).toBeTruthy()
 		expect(description.plan.routes.plugins).toEqual([{ sink: 'store', minLevel: 'trace' }])
 		expect(description.root.policy).toMatchObject({
-			version: 2,
+			version: 3,
 			defaultLevel: 'info',
 			overrides: [{ owner: pluginA, level: 'debug' }],
 		})
@@ -98,6 +98,38 @@ describe('RuntimeLogging', () => {
 				.tailWindow(10)
 				.map((line) => ({ message: line.msg, plugin: line.plugin })),
 		).toEqual([{ message: 'accepted', plugin: pluginA }])
+	})
+
+	it('projects address, reference, and a readable standalone label into structured lines', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+
+		pluginLogger(logging, pluginA, 'Orders').info('started')
+
+		expect(logging.stores.getOrCreate('default').tailWindow(1)[0]).toMatchObject({
+			plugin: pluginA,
+			pluginReference: 'package:@test/plugin-a::PluginA',
+			pluginLabel: 'Orders (@test/plugin-a::PluginA)',
+		})
+	})
+
+	it('uses the stable plugin reference when display metadata is unavailable', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+		const logger = new LoggerService(
+			{ name: 'worker', pluginInfo: { nodeAddress: pluginA } } as never,
+			logging.contextBinding,
+		)
+
+		logger.info('started')
+
+		expect(logging.stores.getOrCreate('default').tailWindow(1)[0]).toMatchObject({
+			plugin: pluginA,
+			pluginReference: 'package:@test/plugin-a::PluginA',
+			pluginLabel: 'package:@test/plugin-a::PluginA',
+		})
 	})
 
 	it('preserves an error-like property in both structured log views', async () => {

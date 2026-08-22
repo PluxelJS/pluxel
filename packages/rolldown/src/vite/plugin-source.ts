@@ -5,13 +5,17 @@ import {
 	type ConfigSourcePluginOptions,
 } from '../rolldown/plugins/configSourcePlugin'
 import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugins/lintGuardPlugin'
-import { serverOnlyVitePlugin } from './environment'
-import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
+import { serverOnlyVitePlugin, serverOnlyVitePluginFactory } from './environment'
+import {
+	createPluginSemanticsPlugin,
+	type PluginSemanticsPluginOptions,
+} from '../rolldown/plugins/pluginSemanticsPlugin'
 import { databaseSourceVitePlugin } from './database-source'
 import { PLUXEL_UI_DEDUPE_PACKAGES } from '../workspace/vite'
 
 export type PluginSourceVitePluginsOptions = {
 	root?: string
+	sourceSpaces?: PluginSemanticsPluginOptions['sourceSpaces']
 	configSource?: false | ConfigSourcePluginOptions
 	lintGuard?: false | LintGuardPluginOptions
 }
@@ -70,24 +74,32 @@ export type PluxelRuntimeSourceVitePluginsOptions = PluginSourceVitePluginsOptio
 export function pluginSourceVitePlugins(
 	options: PluginSourceVitePluginsOptions = {},
 ): PluginOption[] {
-	const root = options.root ?? process.cwd()
 	const plugins: PluginOption[] = [
 		PreprocessorDirectives(),
-		serverOnlyVitePlugin('pluxel:database-source', databaseSourceVitePlugin({ root }), {
-			enforce: 'pre',
-		}),
-		serverOnlyVitePlugin('pluxel:plugin-semantics', createPluginSemanticsPlugin({ root }).plugin, {
-			enforce: 'pre',
-		}),
+		serverOnlyVitePluginFactory(
+			'pluxel:database-source',
+			(environment) => databaseSourceVitePlugin({ root: options.root ?? environment.config.root }),
+			{ enforce: 'pre' },
+		),
+		serverOnlyVitePluginFactory(
+			'pluxel:plugin-semantics',
+			(environment) =>
+				createPluginSemanticsPlugin({
+					root: options.root ?? environment.config.root,
+					sourceSpaces: options.sourceSpaces,
+				}).plugin,
+			{ enforce: 'pre' },
+		),
 	]
 	if (options.lintGuard !== false) {
 		plugins.push(
-			serverOnlyVitePlugin(
+			serverOnlyVitePluginFactory(
 				'pluxel-lint-guard',
-				lintGuardPlugin({
-					cwd: root,
-					...options.lintGuard,
-				}),
+				(environment) =>
+					lintGuardPlugin({
+						cwd: options.root ?? environment.config.root,
+						...options.lintGuard,
+					}),
 				{ enforce: 'pre' },
 			),
 		)

@@ -62,7 +62,7 @@ backend 成功判定时只有 allow 和 deny。`remaining` 是判定后可立即
 ## Caller 与 global
 
 `rates.use()` 默认按 caller 的 opaque node slot 隔离 quota；backend key 使用结构化 node address 的 SHA-256，并在 backend
-state 中保存、校验完整 owner snapshot。只有多个插件明确共享同一 quota contract 时才使用：
+state 中保存、校验完整 owner address。只有多个插件明确共享同一 quota contract 时才使用：
 
 ```ts
 this.egress = this.rates.global.use('platform.tenant-egress', policy)
@@ -93,7 +93,7 @@ host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 ```
 
 第三方 adapter 从 `@pluxel/rates` 根入口导入 `RatesBackend` 和 request contract；request 的 `owner` 是完整
-`PluginNodeAddressSnapshot`，显式 global limiter 为 `null`，adapter 持久化 state 时必须保存并校验它。返回值不是 exact、safe-integer 且
+`PluginNodeAddress`，显式 global limiter 为 `null`，adapter 持久化 state 时必须保存并校验它。返回值不是 exact、safe-integer 且
 符合 resolved policy capacity bound 的 `RateDecision` 时，coordinator 以 `RATES_UNAVAILABLE` 拒绝。Redis adapter 对 canonical key 做 SHA-256，在一个
 server-timed 单 key Lua 调用中完成 policy check、状态转移和 TTL。
 

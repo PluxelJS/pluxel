@@ -3,8 +3,8 @@ import {
 	isPluginNodeSlot,
 	pluginNodeAddressEqual,
 	type Context,
-	type PluginDefinitionAddressSnapshot,
-	type PluginNodeAddressSnapshot,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
 import { requireRouteCapability } from '../../runtime/capabilities'
@@ -25,7 +25,7 @@ function message(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
 }
 
-function resolve(ctx: Context, address: PluginNodeAddressSnapshot) {
+function resolve(ctx: Context, address: PluginNodeAddress) {
 	const ctor = requireRouteCapability(ctx, 'catalog').resolve(address)
 	if (!ctor) throw new Error('Plugin node is not present in the route catalog')
 	return ctor
@@ -33,29 +33,28 @@ function resolve(ctx: Context, address: PluginNodeAddressSnapshot) {
 
 function explicitOverride(
 	ctx: Context,
-	consumer: PluginNodeAddressSnapshot,
-	index: number,
-): PluginNodeAddressSnapshot | undefined {
+	consumerAddress: PluginNodeAddress,
+	requirementAddress: PluginDefinitionAddress,
+): PluginNodeAddress | undefined {
 	return ctx.runtimeState
 		.snapshot()
 		.dependencyOverrides.find(
-			(entry) => samePluginNodeAddress(entry.consumer, consumer) && entry.parameterIndex === index,
-		)?.provider
+			(entry) =>
+				samePluginNodeAddress(entry.consumerAddress, consumerAddress) &&
+				samePluginDefinitionAddress(entry.requirementAddress, requirementAddress),
+		)?.providerAddress
 }
 
 function providerDefault(
 	ctx: Context,
-	token: PluginDefinitionAddressSnapshot,
-): PluginNodeAddressSnapshot | undefined {
+	token: PluginDefinitionAddress,
+): PluginNodeAddress | undefined {
 	return ctx.runtimeState
 		.snapshot()
 		.providerDefaults.find((entry) => samePluginDefinitionAddress(entry.token, token))?.provider
 }
 
-function candidates(
-	ctx: Context,
-	token: PluginDefinitionAddressSnapshot,
-): PluginDependencyOption[] {
+function candidates(ctx: Context, token: PluginDefinitionAddress): PluginDependencyOption[] {
 	const state = ctx.runtimeState.snapshot()
 	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
 	return requireRouteCapability(ctx, 'catalog')
@@ -79,14 +78,14 @@ function effectiveNode(
 	ctx: Context,
 	consumer: PluginNodeSlot,
 	index: number,
-): PluginNodeAddressSnapshot | null {
+): PluginNodeAddress | null {
 	const resolved = ctx.registry.graph.depsOf(consumer)[index]
 	return isPluginNodeSlot(resolved) ? ctx.registry.nodeAddressOf(resolved) : null
 }
 
 export function listPluginDependencies(
 	ctx: Context,
-	consumer: PluginNodeAddressSnapshot,
+	consumer: PluginNodeAddress,
 ): PluginDependencyRef[] {
 	const ctor = resolve(ctx, consumer)
 	const facts = getPluginDefinitionFacts(ctor)
@@ -109,13 +108,13 @@ export function listPluginDependencies(
 
 export function inspectPluginDependencies(
 	ctx: Context,
-	consumer: PluginNodeAddressSnapshot,
+	consumer: PluginNodeAddress,
 ): PluginDependencyState[] {
 	const ctor = resolve(ctx, consumer)
 	const facts = getPluginDefinitionFacts(ctor)
 	const consumerSlot = ctx.registry.internNodeAddress(consumer)
 	return facts.requires.map((token, index) => {
-		const selected = explicitOverride(ctx, consumer, index) ?? null
+		const selected = explicitOverride(ctx, consumer, token) ?? null
 		const defaultProvider = providerDefault(ctx, token) ?? null
 		const effective = effectiveNode(ctx, consumerSlot, index)
 		return {
@@ -137,24 +136,33 @@ export function inspectPluginDependencies(
 
 function replaceExplicitOverride(
 	ctx: Context,
-	consumer: PluginNodeAddressSnapshot,
-	index: number,
-	provider: PluginNodeAddressSnapshot | null,
+	consumerAddress: PluginNodeAddress,
+	requirementAddress: PluginDefinitionAddress,
+	providerAddress: PluginNodeAddress | null,
 ): void {
 	ctx.runtimeState.update((draft) => {
 		draft.dependencyOverrides = draft.dependencyOverrides.filter(
 			(entry) =>
-				!(samePluginNodeAddress(entry.consumer, consumer) && entry.parameterIndex === index),
+				!(
+					samePluginNodeAddress(entry.consumerAddress, consumerAddress) &&
+					samePluginDefinitionAddress(entry.requirementAddress, requirementAddress)
+				),
 		)
-		if (provider) draft.dependencyOverrides.push({ consumer, parameterIndex: index, provider })
+		if (providerAddress) {
+			draft.dependencyOverrides.push({
+				consumerAddress,
+				requirementAddress,
+				providerAddress,
+			})
+		}
 	})
 }
 
-function applyRuntimeOverrides(ctx: Context, consumer: PluginNodeAddressSnapshot): void {
+function applyRuntimeOverrides(ctx: Context, consumer: PluginNodeAddress): void {
 	const ctor = resolve(ctx, consumer)
 	const facts = getPluginDefinitionFacts(ctor)
-	const overrides = facts.requires.map((token, index) => {
-		const address = explicitOverride(ctx, consumer, index) ?? providerDefault(ctx, token)
+	const overrides = facts.requires.map((token) => {
+		const address = explicitOverride(ctx, consumer, token) ?? providerDefault(ctx, token)
 		return address ? ctx.registry.internNodeAddress(address) : undefined
 	})
 	ctx.registry.replaceRuntimeDependencyOverrides(
@@ -165,9 +173,9 @@ function applyRuntimeOverrides(ctx: Context, consumer: PluginNodeAddressSnapshot
 
 export async function pluginDependencySetTarget(
 	ctx: Context,
-	consumer: PluginNodeAddressSnapshot,
+	consumer: PluginNodeAddress,
 	index: number,
-	provider: PluginNodeAddressSnapshot | null,
+	provider: PluginNodeAddress | null,
 ): Promise<PluginDependencyMutationResult> {
 	try {
 		const facts = getPluginDefinitionFacts(resolve(ctx, consumer))
@@ -178,7 +186,7 @@ export async function pluginDependencySetTarget(
 			resolve(ctx, provider)
 			await requireRouteCapability(ctx, 'lifecycle').enable(provider)
 		}
-		replaceExplicitOverride(ctx, consumer, index, provider)
+		replaceExplicitOverride(ctx, consumer, facts.requires[index]!, provider)
 		applyRuntimeOverrides(ctx, consumer)
 		const commit = await ctx.registry.commit()
 		return commit.err
@@ -191,9 +199,9 @@ export async function pluginDependencySetTarget(
 
 export async function pluginBaseProviderSet(
 	ctx: Context,
-	consumer: PluginNodeAddressSnapshot,
-	token: PluginDefinitionAddressSnapshot,
-	provider: PluginNodeAddressSnapshot | null,
+	consumer: PluginNodeAddress,
+	token: PluginDefinitionAddress,
+	provider: PluginNodeAddress | null,
 ): Promise<PluginDependencyMutationResult> {
 	try {
 		resolve(ctx, consumer)
@@ -234,7 +242,7 @@ export async function pluginBaseProviderSet(
 
 export function inspectPluginBaseProvider(
 	ctx: Context,
-	consumer: PluginNodeAddressSnapshot,
+	consumer: PluginNodeAddress,
 ): BaseProviderInfo | null {
 	const facts = getPluginDefinitionFacts(resolve(ctx, consumer))
 	const token = facts.requires.find((required) =>

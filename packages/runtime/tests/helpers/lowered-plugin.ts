@@ -23,7 +23,7 @@ export function lowerTestPlugin(
 	__setPluginDefinition(Plugin, {
 		kind: 'plugin',
 		definition: {
-			entry: { kind: 'source-entry', source: `pluxel-test:${id}` },
+			entry: { kind: 'source-entry', sourceSpace: 'app', path: `pluxel-test:${id}` },
 			exportName: 'Plugin',
 		},
 		requires: options.requires?.map((required) => getPluginDefinitionFacts(required).definition),

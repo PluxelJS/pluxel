@@ -1,7 +1,7 @@
 import { Box, Button, Group } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useMemo } from 'react'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 
@@ -30,7 +30,7 @@ export function ConfigTabContent({
 	onDirtyChange,
 	path = EMPTY_PATH,
 }: {
-	owner: PluginNodeAddressSnapshot
+	owner: PluginNodeAddress
 	displayName: string
 	schema: ObjectSchema<any, any>
 	savedValue: Record<string, unknown>
@@ -74,7 +74,22 @@ export function ConfigTabContent({
 					}
 					commitPluginConfig(owner, displayName, result.config)
 					formApi.reset(value)
-					notify({ title: '提交成功', message: '配置已保存', color: 'green' })
+					if (result.application === 'saved-not-applied') {
+						notify({
+							title: '配置已保存，但尚未应用',
+							message: result.applyError ?? '插件重启失败，可稍后重试重启。',
+							color: 'yellow',
+						})
+					} else {
+						notify({
+							title: '提交成功',
+							message:
+								result.application === 'deferred'
+									? '配置已保存，将在插件启动时应用'
+									: '配置已保存并应用',
+							color: 'green',
+						})
+					}
 				},
 			}),
 		[displayName, initialValue, notify, owner, path, transport],

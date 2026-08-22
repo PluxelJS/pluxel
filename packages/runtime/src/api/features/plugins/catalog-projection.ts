@@ -1,61 +1,109 @@
-import type { Context as PlxContext, PluginNodeAddressSnapshot } from '@pluxel/core'
+import {
+	formatPluginNodeReference,
+	formatPluginNodeRoute,
+	pluginNodeIndexKey,
+	type Context as PlxContext,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import {
 	runtimePluginStatusOverview,
 	type RuntimePluginStatusOverview,
 	type RuntimePluginStatusSnapshot,
 } from '../../../runtime/capabilities'
-import { pluginNodeAddressKey, pluginNodePhysicalKey } from '../../../runtime/plugin-address'
+import { buildPluginNodeLabels, type PluginNodeLabel } from '../../../runtime/plugin-label'
 
-export type PluginCatalogProjectionEntry = RuntimePluginStatusSnapshot & { readonly id: string }
+export { buildPluginNodeLabels, type PluginNodeLabel } from '../../../runtime/plugin-label'
+
+export type PluginCatalogProjectionEntry = RuntimePluginStatusSnapshot &
+	Readonly<{
+		nodeKey: string
+		reference: string
+		route: string
+		label: PluginNodeLabel
+	}>
 
 export type PluginCatalogProjection = Readonly<{
 	entries: readonly PluginCatalogProjectionEntry[]
 	summary: RuntimePluginStatusOverview['summary']
-	byId: ReadonlyMap<string, PluginCatalogProjectionEntry>
+	byRoute: ReadonlyMap<string, PluginCatalogProjectionEntry>
 	byAddress: ReadonlyMap<string, PluginCatalogProjectionEntry>
 }>
 
+type PluginCatalogStaticProjection = Readonly<{
+	shape: readonly Readonly<{ nodeKey: string; displayName: string }>[]
+	byAddress: ReadonlyMap<
+		string,
+		Readonly<{
+			nodeKey: string
+			reference: string
+			route: string
+			label: PluginNodeLabel
+		}>
+	>
+}>
+
+const staticProjectionByRoot = new WeakMap<PlxContext, PluginCatalogStaticProjection>()
+
 export function projectPluginCatalog(pCtx: PlxContext): PluginCatalogProjection {
 	const overview = runtimePluginStatusOverview(pCtx)
-	const ids = assignPluginPublicIds(overview.statuses)
+	const projected = staticPluginCatalogProjection(pCtx.root, overview.statuses)
 	const entries = overview.statuses.map((entry) => ({
 		...entry,
-		id: ids.get(pluginNodeAddressKey(entry.address))!,
+		...projected.byAddress.get(pluginNodeIndexKey(entry.address))!,
 	}))
 	return {
 		entries,
 		summary: overview.summary,
-		byId: new Map(entries.map((entry) => [entry.id, entry])),
-		byAddress: new Map(entries.map((entry) => [pluginNodeAddressKey(entry.address), entry])),
+		byRoute: new Map(entries.map((entry) => [entry.route, entry])),
+		byAddress: new Map(entries.map((entry) => [entry.nodeKey, entry])),
 	}
 }
 
-export function assignPluginPublicIds(
-	entries: readonly Pick<RuntimePluginStatusSnapshot, 'address' | 'rootExportName'>[],
-): ReadonlyMap<string, string> {
-	const candidates = entries.map((entry) => ({
-		address: entry.address,
-		candidate:
-			entry.address.instance === 'default'
-				? entry.rootExportName
-				: `${entry.rootExportName}~${pluginNodePhysicalKey(entry.address, 12)}`,
+function staticPluginCatalogProjection(
+	root: PlxContext,
+	statuses: readonly RuntimePluginStatusSnapshot[],
+): PluginCatalogStaticProjection {
+	const shape = statuses.map(({ address, displayName }) => ({
+		nodeKey: pluginNodeIndexKey(address),
+		displayName,
 	}))
-	const counts = new Map<string, number>()
-	for (const { candidate } of candidates) counts.set(candidate, (counts.get(candidate) ?? 0) + 1)
+	const cached = staticProjectionByRoot.get(root)
+	if (
+		cached &&
+		cached.shape.length === shape.length &&
+		cached.shape.every(
+			(entry, index) =>
+				entry.nodeKey === shape[index]!.nodeKey && entry.displayName === shape[index]!.displayName,
+		)
+	) {
+		return cached
+	}
 
-	return new Map(
-		candidates.map(({ address, candidate }) => [
-			pluginNodeAddressKey(address),
-			counts.get(candidate) === 1
-				? candidate
-				: `${candidate}~${pluginNodePhysicalKey(address, 12)}`,
-		]),
+	const labels = buildPluginNodeLabels(
+		statuses.map(({ address, displayName }) => ({ nodeAddress: address, displayName })),
 	)
+	const byAddress = new Map(
+		statuses.map(({ address }) => {
+			const nodeKey = pluginNodeIndexKey(address)
+			return [
+				nodeKey,
+				Object.freeze({
+					nodeKey,
+					reference: formatPluginNodeReference(address),
+					route: formatPluginNodeRoute(address),
+					label: labels.get(nodeKey)!,
+				}),
+			] as const
+		}),
+	)
+	const projection = Object.freeze({ shape: Object.freeze(shape), byAddress })
+	staticProjectionByRoot.set(root, projection)
+	return projection
 }
 
 export function projectedPluginByAddress(
 	projection: PluginCatalogProjection,
-	address: PluginNodeAddressSnapshot,
+	address: PluginNodeAddress,
 ): PluginCatalogProjectionEntry | undefined {
-	return projection.byAddress.get(pluginNodeAddressKey(address))
+	return projection.byAddress.get(pluginNodeIndexKey(address))
 }

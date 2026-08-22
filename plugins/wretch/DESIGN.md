@@ -43,8 +43,9 @@ provider config 使用 Pluxel 标准 Config UI。consumer 可显式调用 `enabl
 `WretchWorkbenchPort` 选择自己的 placement。provider 提供统一 renderer；consumer 只提供 caller-bound RPC
 grant，不重复实现 headers/proxy/timeout 表单。
 
-managed settings 以 caller 的 canonical `PluginNodeAddressSnapshot` JSON 的 SHA-256 作为物理文件名，并保留一个 caller Context state。
-文件 envelope 同时保存完整结构化 owner，加载时严格比对；display name 相同的 plugin/fork 不会冲突，旧裸 settings 文件不读取。
+managed settings 以 caller `PluginNodeAddress` canonical bytes 的完整 SHA-256 作为物理文件名，并保留一个 caller Context state。
+文件 envelope 同时保存完整结构化 owner，加载时严格比对；display name 相同的 Plugin/fork 不会冲突。只读取
+`consumers/v3` 下的当前 v2 envelope，其他版本直接拒绝。
 cached client 的 deferred callback 每次请求重新解析 state，所以先创建 client、后启用或保存设置都会立即生效。consumer stop 会释放
 proxy dispatcher 和内存 state；replacement 从 persistence 重新加载。同一 caller 的并发
 `enableManagedSettings()` 共享一次初始化，不会重复读取 persistence 或创建 proxy dispatcher。缓存的 settings RPC

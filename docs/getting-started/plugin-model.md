@@ -295,7 +295,14 @@ listener registration 会绑定调用方 Context effects，stop/replacement 时�
 
 具体 Plugin 必须由 package root `"."` 的唯一 named export 暴露；host-local Plugin 则来自 canonical source entry 的唯一 root export。
 
-graph identity 来自 entry provenance 和 root export definition slot，runtime node 再区分 default/fork instance。class name、constructor object 与 `displayName` 都不是持久化、配置、日志、HTTP、Workbench 或 commands identity。
+Pluxel 只有两个身份作用域：definition 表示 canonical entry + root export 的实现，node 表示该 definition 的 default 或某个 fork
+运行部署。跨配置、RPC、持久化与 URL 使用结构化 `PluginDefinitionAddress` / `PluginNodeAddress`；Core 在进程内把同一 address
+intern 成 `PluginDefinitionSlot` / `PluginNodeSlot` 供 graph、DI 与 lifecycle 使用。Address 与 Slot 是值和引用两种表示，不是四种身份。
+
+fork 是同一物理源码的运行时多态：共享 constructor implementation、schema、artifact input 和 HMR 更新，但各自隔离 config、
+lifecycle、Context、effects 与资源。class name、constructor object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 pretty
+log。日志、Workbench 与默认 HTTP 路径会显示 package/source、root export 和 fork，例如
+`package:@acme/orders::OrdersPlugin#fork=east`，不会把 opaque digest 当作公开 Plugin ID。
 
 Plugin source 必须经过 Pluxel Vite/Rolldown pipeline。raw TypeScript runner 不生成这些语义事实。
 

@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto'
 import {
 	getPluginInfo,
 	parsePluginNodeAddress,
+	pluginNodeIndexKey,
 	type Context,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
-import { pluginNodeAddressKey } from '../../runtime/plugin-address'
 import type {
 	WorkbenchCatalog,
 	WorkbenchLayout,
@@ -64,7 +64,7 @@ export class WorkbenchRegistry {
 	): () => void {
 		if (this.extensions.has(ownerSlot)) {
 			throw new Error(
-				`[workbench] Plugin node already mounted a Workbench extension: ${pluginNodeAddressKey(owner.address)}`,
+				`[workbench] Plugin node already mounted a Workbench extension: ${pluginNodeIndexKey(owner.address)}`,
 			)
 		}
 		const disposeWatch = this.ctx.registry.watchInstance(ownerSlot, () => this.bump())
@@ -95,7 +95,7 @@ export class WorkbenchRegistry {
 		return () => this.listeners.delete(listener)
 	}
 
-	getPluginLayout(targetAddress: PluginNodeAddressSnapshot): WorkbenchLayout {
+	getPluginLayout(targetAddress: PluginNodeAddress): WorkbenchLayout {
 		const targetSlot = this.ctx.registry.internNodeAddress(targetAddress)
 		const target = this.describeNode(targetSlot)
 		const items: WorkbenchLayoutItem[] = []
@@ -113,7 +113,7 @@ export class WorkbenchRegistry {
 							placement,
 							placementIndex,
 							target,
-							`plugin:${pluginNodeAddressKey(target.address)}`,
+							`plugin:${pluginNodeIndexKey(target.address)}`,
 						),
 					)
 				}
@@ -192,7 +192,7 @@ export class WorkbenchRegistry {
 		scope: string,
 		includeModel = true,
 	): WorkbenchLayoutItem {
-		const viewKey = `${pluginNodeAddressKey(mounted.owner.address)}:${viewId}`
+		const viewKey = `${pluginNodeIndexKey(mounted.owner.address)}:${viewId}`
 		const id = `${viewKey}:${placementIndex}`
 		return Object.freeze({
 			id,
@@ -231,8 +231,8 @@ export class WorkbenchRegistry {
 				}
 			}
 			candidates.sort((a, b) =>
-				pluginNodeAddressKey(a.mounted.owner.address).localeCompare(
-					pluginNodeAddressKey(b.mounted.owner.address),
+				pluginNodeIndexKey(a.mounted.owner.address).localeCompare(
+					pluginNodeIndexKey(b.mounted.owner.address),
 				),
 			)
 			if (candidates.length > 1) {
@@ -277,8 +277,8 @@ export class WorkbenchRegistry {
 				}
 				portRefs[portKey] = ref
 			}
-			const targetKey = pluginNodeAddressKey(targetDescriptor.address)
-			const ownerKey = pluginNodeAddressKey(selected.mounted.owner.address)
+			const targetKey = pluginNodeIndexKey(targetDescriptor.address)
+			const ownerKey = pluginNodeIndexKey(selected.mounted.owner.address)
 			const id = `${targetKey}:${outlet.id}<-${ownerKey}:${selected.renderer.id}`
 			items.push(
 				Object.freeze({
@@ -309,7 +309,7 @@ export class WorkbenchRegistry {
 		description: string,
 	): WorkbenchLayoutItem {
 		const targetSlot = this.ctx.registry.internNodeAddress(target.address)
-		const targetKey = pluginNodeAddressKey(target.address)
+		const targetKey = pluginNodeIndexKey(target.address)
 		return Object.freeze({
 			id: `${targetKey}:${outlet.id}:status`,
 			viewId: `${outlet.id}:status`,

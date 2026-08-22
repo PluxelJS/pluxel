@@ -42,16 +42,17 @@ runtime
 ["pluxel", "runtime", rootId]
 
 plugin
-["pluxel", "plugins", rootId, entryKind, entryLocator, rootExportName, instance, ...forkId]
+["pluxel", "plugins", rootId, ...v1NodeRouteSegments]
 
 runtime debug
 ["pluxel", "debug", rootId, "runtime", ...topicSegments]
 
 plugin debug
-["pluxel", "debug", rootId, "plugin", entryKind, entryLocator, rootExportName, instance, ...forkId, ...topicSegments]
+["pluxel", "debug", rootId, "plugin", ...v1NodeRouteSegments, ...topicSegments]
 ```
 
-`entryKind + entryLocator + rootExportName + instance/forkId` 是 `PluginNodeAddressSnapshot` 的 category 投影。
+`v1NodeRouteSegments` 是 Core `formatPluginNodeRoute()` 生成的可读、可逆 `PluginNodeAddress` 投影，例如
+`v1/fork/east/package/OrdersPlugin/@acme/orders`。它显示 root export/package/source/fork，不包含绝对路径或 opaque digest。
 `displayName` 和 `properties.context` 只用于展示和查询。root/plugin identity 与 debug topic 不允许通过 `with()` 或
 单次日志 properties 修改。
 
@@ -159,10 +160,10 @@ policy snapshot：
 
 ```ts
 type PluginLogPolicySnapshot = {
-	version: 2
+	version: 3
 	defaultLevel: LogLevel | 'off'
 	overrides: readonly {
-		owner: PluginNodeAddressSnapshot
+		owner: PluginNodeAddress
 		level: LogLevel | 'off'
 	}[]
 }
@@ -173,9 +174,9 @@ type PluginLogPolicySnapshot = {
 ```ts
 class RuntimePluginLogPolicy {
 	private defaultRank: number
-	private ranks = new Map<string, { owner: PluginNodeAddressSnapshot; rank: number }>()
+	private ranks = new Map<string, { owner: PluginNodeAddress; rank: number }>()
 
-	allows(owner: PluginNodeAddressSnapshot, level: LogLevel): boolean {
+	allows(owner: PluginNodeAddress, level: LogLevel): boolean {
 		const rank = this.ranks.get(ownerKey(owner))?.rank ?? this.defaultRank
 		return rank !== OFF_RANK && LEVEL_RANK[level] >= rank
 	}
@@ -184,6 +185,10 @@ class RuntimePluginLogPolicy {
 
 plugin filter 在 rootId 检查后执行一次 `Map.get()` 和数值比较，不读取 properties、不生成 snapshot，也不重新
 configure LogTape。
+
+category 第一次进入 filter 时严格解析 route segments；同一个 immutable logger category 的解析结果通过 `WeakMap` 复用，policy
+对 frozen address 的 rank lookup 同样弱缓存。任何 policy mutation 都替换 rank cache，因此稳定流不重复 decode/hex encoding，缓存也
+不会保活 logger、Plugin 或 category。
 
 route threshold 是宿主硬下限，plugin policy 是动态下限。要让 Workbench 能完整调整
 `trace/debug/info/...`，plugins route 必须配置为 `trace`；默认 launcher 使用这一设置。
@@ -199,7 +204,7 @@ mutation 规则：
 - `off` 使用专用 numeric rank，不在热路径使用 nullable/string comparison。
 
 policy persistence 由 active root 的 `PersistenceService.namespace('logger')` adapter 提供，不存在 module-level
-singleton。
+singleton。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
 
 ## Debug topics
 
@@ -230,7 +235,7 @@ store 是 runtime API、SSE 和 Workbench log viewer 的事实源，不是 plugi
 - 每个 store 使用 1024-line chunks 和 bounded retention window；
 - sink buffer、flush interval、retention、payload caps、hidden/redact keys 都有明确上限；
 - plugin node address 从普通/plugin-debug category 解析，不依赖 record properties；
-- structured `plugin` filter 直接接受 `PluginNodeAddressSnapshot`；只有非身份用途的 virtual
+- structured `plugin` filter 直接接受 `PluginNodeAddress`；只有非身份用途的 virtual
   `context:<name>` stream 复用 default physical store；
 - range/latest/wait/SSE 使用同一 `RuntimeLogStore`。
 

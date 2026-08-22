@@ -2,8 +2,6 @@ import {
 	type Context as PluxelContext,
 	Injectable,
 	OverrideOf,
-	parsePluginNodeAddress,
-	pluginNodeAddressEqual,
 	type PluginNodeSlot,
 } from '@pluxel/core'
 import {
@@ -13,10 +11,14 @@ import {
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
-import { configRecordsFromEnvironment, mergeConfigRecords } from './config-environment'
+import {
+	coercePluginConfigRecords,
+	configRecordsFromEnvironment,
+	mergeConfigRecords,
+} from './config-environment'
 
 export interface PluginConfigFile {
-	version: 2
+	version: 3
 	plugins: readonly PluginConfigRecordSnapshot[]
 }
 
@@ -120,6 +122,7 @@ export class ConfigService extends CoreConfigService {
 			if (!this.saveScheduled) return
 			this.saveScheduled = false
 			void this.saveToDisk().catch((error: unknown) => {
+				this.saveScheduled = true
 				this.ctx.logger.error('ConfigService background save failed', { error })
 			})
 		}, this.saveDelayMs)
@@ -133,14 +136,19 @@ export class ConfigService extends CoreConfigService {
 	}
 
 	/** Flush pending disk writes. Use force while disposing inside a batch. */
-	async flush(options: { force?: boolean } = {}): Promise<void> {
+	override async flush(options: { force?: boolean } = {}): Promise<void> {
 		if (this.mode !== 'file') return
-		const hadScheduled = this.saveScheduled || this.saveTimer !== null
-		this.cancelScheduledSave()
-		if (this.saveInFlight) await this.saveInFlight.catch((): void => undefined)
-		if (!hadScheduled && !this.pendingSave) return
-		this.pendingSave = false
-		await this.saveToDisk({ force: options.force }).catch((): void => undefined)
+		try {
+			const hadScheduled = this.saveScheduled || this.saveTimer !== null
+			this.cancelScheduledSave()
+			if (this.saveInFlight) await this.saveInFlight
+			if (!hadScheduled && !this.pendingSave) return
+			this.pendingSave = false
+			await this.saveToDisk({ force: options.force })
+		} catch (error) {
+			this.saveScheduled = true
+			throw error
+		}
 	}
 
 	private async loadFromDisk(): Promise<void> {
@@ -151,9 +159,13 @@ export class ConfigService extends CoreConfigService {
 		}
 
 		this.lastWrittenDigest = ohash(text)
-		let parsed: Partial<PluginConfigFile>
+		let parsed: Record<string, unknown>
 		try {
-			parsed = SuperJSON.parse(text) as Partial<PluginConfigFile>
+			const value = SuperJSON.parse(text) as unknown
+			if (!value || typeof value !== 'object' || Array.isArray(value)) {
+				throw new Error('persisted config must be an object')
+			}
+			parsed = value as Record<string, unknown>
 		} catch (error) {
 			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', {
 				file: this.file,
@@ -165,12 +177,12 @@ export class ConfigService extends CoreConfigService {
 			return
 		}
 
-		if (parsed.version !== 2) {
+		if (parsed.version !== 3) {
 			throw new Error(
 				`[ConfigService] Unsupported persisted config version: ${String(parsed.version)}`,
 			)
 		}
-		this.replaceConfigRecords(coercePlugins(parsed.plugins))
+		this.replaceConfigRecords(coercePluginConfigRecords(parsed.plugins))
 	}
 
 	private async isolateBrokenConfigFile(content: string): Promise<void> {
@@ -192,7 +204,7 @@ export class ConfigService extends CoreConfigService {
 
 		if (this.saveInFlight) {
 			this.saveAgain = true
-			await this.saveInFlight.catch((): void => undefined)
+			await this.saveInFlight
 			if (this.saveAgain) {
 				this.saveAgain = false
 				await this.saveToDisk(options)
@@ -201,13 +213,13 @@ export class ConfigService extends CoreConfigService {
 		}
 
 		const content = SuperJSON.stringify({
-			version: 2,
+			version: 3,
 			plugins: this.getConfigSnapshot().plugins,
 		} satisfies PluginConfigFile)
 		const nextDigest = ohash(content)
 		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(this.file))) return
 
-		const task = this.storage.put(this.file, content).then((): undefined => {
+		const task = this.storage.put(this.file, content, { atomic: true }).then((): undefined => {
 			this.lastWrittenDigest = nextDigest
 			return undefined
 		})
@@ -233,25 +245,4 @@ function defaultConfigServiceMode(
 	capability: PluxelContext.RootServices['persistence']['capability'],
 ): ConfigServiceMode {
 	return capability === 'readonly' ? 'readonly' : 'file'
-}
-
-function coercePlugins(input: unknown): PluginConfigRecordSnapshot[] {
-	if (!Array.isArray(input)) throw new Error('[ConfigService] Persisted plugins must be an array')
-	const out: PluginConfigRecordSnapshot[] = []
-	for (let index = 0; index < input.length; index++) {
-		const raw = input[index]
-		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-			throw new Error(`[ConfigService] plugins[${index}] must be an object`)
-		}
-		const record = raw as Record<string, unknown>
-		const owner = parsePluginNodeAddress(record.owner)
-		if (!record.config || typeof record.config !== 'object' || Array.isArray(record.config)) {
-			throw new Error(`[ConfigService] plugins[${index}].config must be an object`)
-		}
-		if (out.some((entry) => pluginNodeAddressEqual(entry.owner, owner))) {
-			throw new Error(`[ConfigService] plugins[${index}] duplicates a Plugin node owner`)
-		}
-		out.push({ owner, config: { ...(record.config as Record<string, unknown>) } })
-	}
-	return out
 }

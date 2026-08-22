@@ -2,14 +2,14 @@ import {
 	ForkablePlugin,
 	getPluginInfo,
 	pluginNodeAddressOf,
+	pluginNodeIndexKey,
 	type Context,
 	type PluginConfigDefinition,
 	type PluginConstructor,
-	type PluginDefinitionAddressSnapshot,
-	type PluginNodeAddressSnapshot,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { isPluginEnabled, listForkIds } from '../services/RuntimeStateStore'
-import { pluginNodeAddressKey } from './plugin-address'
 
 export type RuntimePluginSource =
 	| {
@@ -40,14 +40,14 @@ export type RuntimePluginSource =
 export type RuntimePluginLifecycleStage = 'running' | 'stopped' | 'disabled'
 
 export type RuntimePluginCatalogEntry = Readonly<{
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	ctor: PluginConstructor
 	displayName: string
 	rootExportName: string
 }>
 
 export type RuntimePluginStatusSnapshot = {
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	displayName: string
 	rootExportName: string
 	isRunning: boolean
@@ -62,41 +62,41 @@ export type RuntimePluginStatusOverview = {
 }
 
 export type RuntimePluginDependencyInfo = Array<{
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	displayName: string
 	isRunning: boolean
 }>
 
 export interface PluginCatalogRead {
-	resolve(address: PluginNodeAddressSnapshot): PluginConstructor | undefined
-	resolveDefinition(address: PluginDefinitionAddressSnapshot): PluginConstructor | undefined
-	require(address: PluginNodeAddressSnapshot): PluginConstructor
+	resolve(address: PluginNodeAddress): PluginConstructor | undefined
+	resolveDefinition(address: PluginDefinitionAddress): PluginConstructor | undefined
+	require(address: PluginNodeAddress): PluginConstructor
 	listRegistered(): readonly RuntimePluginCatalogEntry[]
 }
 
 export interface PluginLifecycleControl {
-	isRunning(address: PluginNodeAddressSnapshot): boolean
-	enable(address: PluginNodeAddressSnapshot, ctor?: PluginConstructor): Promise<void> | void
-	enablePersisted(address: PluginNodeAddressSnapshot): Promise<void> | void
+	isRunning(address: PluginNodeAddress): boolean
+	enable(address: PluginNodeAddress, ctor?: PluginConstructor): Promise<void> | void
+	enablePersisted(address: PluginNodeAddress): Promise<void> | void
 	deactivate(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		ctor: PluginConstructor,
 		options: { runtimeOnly: boolean },
 	): void
-	stop(address: PluginNodeAddressSnapshot, ctor: PluginConstructor): void
+	stop(address: PluginNodeAddress, ctor: PluginConstructor): void
 }
 
 export interface PluginConfigMetadataRead {
-	getConfig(address: PluginNodeAddressSnapshot): PluginConfigDefinition | undefined
+	getConfig(address: PluginNodeAddress): PluginConfigDefinition | undefined
 }
 
 export interface PluginDependencyRead {
-	listDependencies(address: PluginNodeAddressSnapshot): RuntimePluginDependencyInfo
-	ensureForkBase(definition: PluginDefinitionAddressSnapshot): PluginConstructor | undefined
+	listDependencies(address: PluginNodeAddress): RuntimePluginDependencyInfo
+	ensureForkBase(definition: PluginDefinitionAddress): PluginConstructor | undefined
 }
 
 export interface PluginSourceRead {
-	resolveSource(address: PluginNodeAddressSnapshot, ctor?: PluginConstructor): RuntimePluginSource
+	resolveSource(address: PluginNodeAddress, ctor?: PluginConstructor): RuntimePluginSource
 }
 
 export interface RuntimeModuleCacheEntry {
@@ -192,13 +192,13 @@ export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOv
 	const catalog = requireRouteCapability(ctx, 'catalog')
 	const entries = new Map<string, RuntimePluginCatalogEntry>()
 	for (const entry of catalog.listRegistered())
-		entries.set(pluginNodeAddressKey(entry.address), entry)
+		entries.set(pluginNodeIndexKey(entry.address), entry)
 
 	for (const base of entries.values()) {
 		for (const forkId of listForkIds(ctx.runtimeState.snapshot(), base.address.definition)) {
 			const ctor = ctx.registry.fork(base.ctor as never, forkId) as PluginConstructor
 			const address = pluginNodeAddressOf(ctor)
-			entries.set(pluginNodeAddressKey(address), {
+			entries.set(pluginNodeIndexKey(address), {
 				address,
 				ctor,
 				displayName: getPluginInfo(ctor).displayName,
@@ -207,7 +207,7 @@ export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOv
 		}
 		for (const ctor of ctx.registry.listForks(base.ctor as never)) {
 			const address = pluginNodeAddressOf(ctor)
-			entries.set(pluginNodeAddressKey(address), {
+			entries.set(pluginNodeIndexKey(address), {
 				address,
 				ctor,
 				displayName: getPluginInfo(ctor).displayName,
@@ -219,7 +219,7 @@ export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOv
 	const statuses = [...entries.values()]
 		.map((entry) => readRuntimePluginStatus(ctx, entry))
 		.sort((left, right) =>
-			pluginNodeAddressKey(left.address).localeCompare(pluginNodeAddressKey(right.address)),
+			pluginNodeIndexKey(left.address).localeCompare(pluginNodeIndexKey(right.address)),
 		)
 	let running = 0
 	let disabled = 0
@@ -240,7 +240,7 @@ export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOv
 
 export function ensureForkBaseFromCatalog(
 	ctx: Context,
-	definition: PluginDefinitionAddressSnapshot,
+	definition: PluginDefinitionAddress,
 ): PluginConstructor | undefined {
 	const baseCtor = requireRouteCapability(ctx, 'catalog').resolveDefinition(definition)
 	if (!baseCtor) return undefined

@@ -26,7 +26,7 @@ const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undef
 		snapshot[id] = {
 			id,
 			address: entry.address,
-			name: entry?.name ?? id,
+			name: entry.label ?? entry.displayName ?? id,
 			packageName: source?.packageName ?? undefined,
 			version: source?.version ?? undefined,
 			tag: source?.tag ?? undefined,

@@ -1,8 +1,8 @@
 import {
 	Context,
 	ForkablePlugin,
-	formatPluginDefinitionAddress,
-	formatPluginNodeAddress,
+	formatPluginDefinitionReference,
+	formatPluginNodeReference,
 	isPluginLifecycleNotStartedIssue,
 	pluginDefinitionAddressEqual,
 	pluginNodeAddressEqual,
@@ -11,9 +11,9 @@ import {
 	type CommitSummary,
 	type ForkablePluginConstructor,
 	type PluginConstructor,
-	type PluginDefinitionAddressSnapshot,
+	type PluginDefinitionAddress,
 	type PluginLifecycleIssue,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
@@ -64,7 +64,7 @@ type StaticRuntimePlanOptions =
 type StaticRuntimeNode = Readonly<{
 	entry: StaticRuntimeCatalogEntryInternal
 	nodeSlot: PluginNodeSlot
-	nodeAddress: PluginNodeAddressSnapshot
+	nodeAddress: PluginNodeAddress
 	generation: PluginConstructor
 }>
 
@@ -88,7 +88,7 @@ type StaticRuntimeDraftOperation =
 	| {
 			type: 'unregister'
 			nodeSlot: PluginNodeSlot
-			address: PluginNodeAddressSnapshot
+			address: PluginNodeAddress
 			binding: StaticRuntimeRegistration
 	  }
 
@@ -151,7 +151,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 					const generation = this.resolveGeneration(address)
 					if (!generation) {
 						throw new Error(
-							`Plugin node is not present in the static catalog: ${formatPluginNodeAddress(address)}`,
+							`Plugin node is not present in the static catalog: ${formatPluginNodeReference(address)}`,
 						)
 					}
 					return generation
@@ -399,7 +399,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			const proto = (base.generation as { prototype?: unknown }).prototype
 			if (!proto || !(proto instanceof ForkablePlugin)) {
 				throw new TypeError(
-					`[runtime-static] persisted fork base is not forkable: ${formatPluginDefinitionAddress(fork.definition)}`,
+					`[runtime-static] persisted fork base is not forkable: ${formatPluginDefinitionReference(fork.definition)}`,
 				)
 			}
 			for (const forkId of fork.forkIds) {
@@ -472,7 +472,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 					this.reportEntry(
 						node,
 						'dependency-missing',
-						`Missing required Plugin definition: ${formatPluginDefinitionAddress(missing.definition)}`,
+						`Missing required Plugin definition: ${formatPluginDefinitionReference(missing.definition)}`,
 					),
 				)
 				changed = true
@@ -631,11 +631,11 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 
 	private resolveGeneration(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		catalog: StaticRuntimeCatalog = this.catalog,
 	): PluginConstructor | undefined {
 		const node = catalog.slots.internNode(address)
-		if (address.instance === 'default') return catalog.byNode.get(node)?.generation
+		if (address.variant === 'default') return catalog.byNode.get(node)?.generation
 		const base = this.resolveDefinition(address.definition, catalog)?.generation
 		if (!base) return undefined
 		const proto = (base as { prototype?: unknown }).prototype
@@ -643,47 +643,44 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		return this.ctx.registry.fork(base as ForkablePluginConstructor, address.forkId)
 	}
 
-	private requireGeneration(address: PluginNodeAddressSnapshot): PluginConstructor {
+	private requireGeneration(address: PluginNodeAddress): PluginConstructor {
 		const generation = this.resolveGeneration(address)
 		if (!generation) {
 			throw new Error(
-				`Plugin node is not present in the static catalog: ${formatPluginNodeAddress(address)}`,
+				`Plugin node is not present in the static catalog: ${formatPluginNodeReference(address)}`,
 			)
 		}
 		return generation
 	}
 
-	private assertCurrentGeneration(
-		address: PluginNodeAddressSnapshot,
-		generation: PluginConstructor,
-	): void {
+	private assertCurrentGeneration(address: PluginNodeAddress, generation: PluginConstructor): void {
 		const current = this.requireGeneration(address)
 		if (
 			current !== generation ||
 			!pluginNodeAddressEqual(pluginNodeAddressOf(generation), address)
 		) {
 			throw new Error(
-				`Plugin constructor is not the current static catalog generation for ${formatPluginNodeAddress(address)}`,
+				`Plugin constructor is not the current static catalog generation for ${formatPluginNodeReference(address)}`,
 			)
 		}
 	}
 
 	private resolveDefinition(
-		address: PluginDefinitionAddressSnapshot,
+		address: PluginDefinitionAddress,
 		catalog: StaticRuntimeCatalog = this.catalog,
 	): StaticRuntimeCatalogEntryInternal | undefined {
 		return catalog.byDefinition.get(catalog.slots.internDefinition(address))
 	}
 
 	private registrationFor(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		generation: PluginConstructor,
 		enabled: ReadonlySet<PluginNodeSlot>,
 		blocked: ReadonlySet<PluginNodeSlot>,
 	): StaticRuntimeRegistration {
 		const entry = this.resolveDefinition(address.definition)
 		if (!entry?.provides) return { generation }
-		if (address.instance === 'fork') return { generation, provideBase: false }
+		if (address.variant === 'fork') return { generation, provideBase: false }
 		const selected = this.selectProvider(entry.provides, enabled, blocked)
 		return {
 			generation,
@@ -722,7 +719,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		definition: import('@pluxel/core').PluginDefinitionSlot,
 		enabled: ReadonlySet<PluginNodeSlot>,
 		blocked: ReadonlySet<PluginNodeSlot>,
-	): PluginNodeAddressSnapshot | undefined {
+	): PluginNodeAddress | undefined {
 		const candidates = (this.catalog.providersByDefinition.get(definition) ?? []).filter(
 			(entry) => enabled.has(entry.nodeSlot) && !blocked.has(entry.nodeSlot),
 		)
@@ -741,14 +738,14 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		return candidates
 			.slice()
 			.sort((left, right) =>
-				formatPluginNodeAddress(left.nodeAddress).localeCompare(
-					formatPluginNodeAddress(right.nodeAddress),
+				formatPluginNodeReference(left.nodeAddress).localeCompare(
+					formatPluginNodeReference(right.nodeAddress),
 				),
 			)[0]?.nodeAddress
 	}
 
 	private applyPersistedOverrides(
-		consumer: PluginNodeAddressSnapshot,
+		consumer: PluginNodeAddress,
 		generation: PluginConstructor,
 		enabled: ReadonlySet<PluginNodeSlot>,
 		blocked: ReadonlySet<PluginNodeSlot>,
@@ -756,12 +753,13 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		const entry = this.resolveDefinition(consumer.definition)
 		if (!entry || entry.required.length === 0) return
 		const state = this.ctx.runtimeState.snapshot()
-		const overrides = entry.required.map((definition, parameterIndex) => {
+		const overrides = entry.required.map((definition) => {
 			const definitionAddress = this.catalog.slots.definitionAddress(definition)
 			const explicit = state.dependencyOverrides.find(
 				(item) =>
-					item.parameterIndex === parameterIndex && pluginNodeAddressEqual(item.consumer, consumer),
-			)?.provider
+					pluginNodeAddressEqual(item.consumerAddress, consumer) &&
+					pluginDefinitionAddressEqual(item.requirementAddress, definitionAddress),
+			)?.providerAddress
 			const fallback = state.providerDefaults.find((item) =>
 				pluginDefinitionAddressEqual(item.token, definitionAddress),
 			)?.provider
@@ -774,7 +772,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		)
 	}
 
-	private async validateGenerationConfig(address: PluginNodeAddressSnapshot): Promise<void> {
+	private async validateGenerationConfig(address: PluginNodeAddress): Promise<void> {
 		const config = this.resolveDefinition(address.definition)?.config
 		if (!config) return
 		await this.ctx.configService.ensureValidated(
@@ -784,7 +782,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		)
 	}
 
-	private listDependencies(address: PluginNodeAddressSnapshot): RuntimePluginDependencyInfo {
+	private listDependencies(address: PluginNodeAddress): RuntimePluginDependencyInfo {
 		const consumer = this.ctx.registry.internNodeAddress(address)
 		const graphDependencies = this.ctx.registry.graph.depsOf(consumer)
 		const output: RuntimePluginDependencyInfo = []
@@ -817,7 +815,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 
 	private reportAddress(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		status: StaticRuntimeReportEntry['status'],
 		message?: string,
 		catalog: StaticRuntimeCatalog = this.catalog,
@@ -951,7 +949,7 @@ function compactReportEntries(
 	const out: StaticRuntimeReportEntry[] = []
 	const seen = new Set<string>()
 	for (const entry of entries) {
-		const key = `${formatPluginNodeAddress(entry.address)}\0${entry.status}\0${entry.message ?? ''}`
+		const key = `${formatPluginNodeReference(entry.address)}\0${entry.status}\0${entry.message ?? ''}`
 		if (seen.has(key)) continue
 		seen.add(key)
 		out.push(entry)

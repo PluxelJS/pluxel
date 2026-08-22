@@ -5,8 +5,8 @@ import {
 	type Context,
 	type PluginConfigDefinition,
 	type PluginConstructor,
-	type PluginDefinitionAddressSnapshot,
-	type PluginNodeAddressSnapshot,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
 	isPluginEnabled,
@@ -20,7 +20,7 @@ import type { PluginRegistry, PluginRegistryTransaction } from './PluginRegistry
 
 export type RemovalScope = 'runtime' | 'persisted'
 export type LoaderCatalogEntry = Readonly<{
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	ctor: PluginConstructor
 	displayName: string
 	rootExportName: string
@@ -181,15 +181,15 @@ export class RuntimeResolver {
 		private readonly registry: PluginRegistry,
 	) {}
 
-	resolve(address: PluginNodeAddressSnapshot): PluginConstructor | undefined {
+	resolve(address: PluginNodeAddress): PluginConstructor | undefined {
 		return this.registry.resolve(address)
 	}
 
-	resolveDefinition(address: PluginDefinitionAddressSnapshot): PluginConstructor | undefined {
+	resolveDefinition(address: PluginDefinitionAddress): PluginConstructor | undefined {
 		return this.registry.resolveDefinition(address)
 	}
 
-	isRunning(address: PluginNodeAddressSnapshot): boolean {
+	isRunning(address: PluginNodeAddress): boolean {
 		return this.ctx.registry.isRunning(this.ctx.registry.internNodeAddress(address))
 	}
 
@@ -247,7 +247,7 @@ export class PluginDependencyInspector {
 		private readonly registry: PluginRegistry,
 	) {}
 
-	list(address: PluginNodeAddressSnapshot): RuntimePluginDependencyInfo {
+	list(address: PluginNodeAddress): RuntimePluginDependencyInfo {
 		const ctor = this.registry.require(address)
 		const facts = getPluginDefinitionFacts(ctor)
 		const node = this.ctx.registry.internNodeAddress(address)
@@ -256,7 +256,7 @@ export class PluginDependencyInspector {
 			const dependency =
 				resolved && typeof resolved === 'object' && 'definition' in resolved
 					? this.ctx.registry.nodeAddressOf(resolved as never)
-					: ({ definition: required, instance: 'default' } as const)
+					: ({ definition: required, variant: 'default' } as const)
 			const provider = this.registry.resolve(dependency)
 			return [
 				{
@@ -297,19 +297,19 @@ export class LoaderRegistryView {
 		}))
 	}
 
-	findModuleId(address: PluginNodeAddressSnapshot): string | null {
+	findModuleId(address: PluginNodeAddress): string | null {
 		return this.registry.findModuleId(address)
 	}
 
-	getCtor(address: PluginNodeAddressSnapshot): PluginConstructor | undefined {
+	getCtor(address: PluginNodeAddress): PluginConstructor | undefined {
 		return this.registry.resolve(address)
 	}
 
-	getExportKey(address: PluginNodeAddressSnapshot): string | undefined {
+	getExportKey(address: PluginNodeAddress): string | undefined {
 		return this.registry.getExportKey(address)
 	}
 
-	getConfig(address: PluginNodeAddressSnapshot): PluginConfigDefinition | undefined {
+	getConfig(address: PluginNodeAddress): PluginConfigDefinition | undefined {
 		return this.registry.getConfig(address)
 	}
 }
@@ -337,23 +337,23 @@ export class LoaderAnchors {
 export class LoaderControl {
 	constructor(private readonly registry: PluginRegistry) {}
 
-	enable(address: PluginNodeAddressSnapshot, ctor?: PluginConstructor): Promise<void> {
+	enable(address: PluginNodeAddress, ctor?: PluginConstructor): Promise<void> {
 		return this.registry.enable(address, ctor)
 	}
 
-	enablePersisted(address: PluginNodeAddressSnapshot): void {
+	enablePersisted(address: PluginNodeAddress): void {
 		this.registry.enablePersisted(address)
 	}
 
 	deactivate(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		ctor: PluginConstructor,
 		options: { runtimeOnly: boolean },
 	): void {
 		this.registry.deactivate(address, ctor, options)
 	}
 
-	stop(address: PluginNodeAddressSnapshot, ctor: PluginConstructor): void {
+	stop(address: PluginNodeAddress, ctor: PluginConstructor): void {
 		this.registry.stopPlugin(address, ctor)
 	}
 }

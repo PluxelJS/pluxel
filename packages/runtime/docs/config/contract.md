@@ -17,7 +17,7 @@ Plugin 一个。runtime 不接受额外 namespace、binding/layout map 或 templ
 
 ## `pluginSchema()` result
 
-Host 用结构化 `PluginNodeAddressSnapshot` 查询 owner。成功结果为：
+Host 用结构化 `PluginNodeAddress` 查询 owner。成功结果为：
 
 ```ts
 {

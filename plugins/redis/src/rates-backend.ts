@@ -6,7 +6,7 @@ import {
 	type ResolvedRatePolicy,
 	RatesPolicyConflictError,
 } from '@pluxel/rates'
-import { parsePluginNodeAddress, Plugin, type PluginNodeAddressSnapshot, v } from '@pluxel/runtime'
+import { formatPluginNodeReference, Plugin, type PluginNodeAddress, v } from '@pluxel/runtime'
 import { Redis } from './client.ts'
 import { defineRedisScript, type RedisScriptDefinition, type RedisScriptRunner } from './scripts.ts'
 import { isWellFormedUnicode } from './validation.ts'
@@ -412,7 +412,7 @@ export class RedisRatesBackendPlugin extends RatesBackend {
 			this.encodedPolicies.set(policy, encodedPolicy)
 		}
 		const reply = await runner({
-			keys: [`${this.config.keyPrefix}v2:${digest}`],
+			keys: [`${this.config.keyPrefix}v3:${digest}`],
 			arguments: [...encodedPolicy, owner, String(request.cost)],
 		})
 		if (reply.kind === 'decision') return reply.decision
@@ -420,8 +420,8 @@ export class RedisRatesBackendPlugin extends RatesBackend {
 	}
 }
 
-function canonicalBackendOwner(owner: PluginNodeAddressSnapshot | null): string {
-	return owner === null ? 'null' : JSON.stringify(parsePluginNodeAddress(owner))
+function canonicalBackendOwner(owner: PluginNodeAddress | null): string {
+	return owner === null ? 'global' : formatPluginNodeReference(owner)
 }
 
 function script(algorithm: string, body: string) {

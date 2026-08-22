@@ -1,4 +1,4 @@
-import type { Context, PluginConstructor, PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { Context, PluginConstructor, PluginNodeAddress } from '@pluxel/core'
 import {
 	ensureForkBaseFromCatalog,
 	type RuntimePluginSource,
@@ -8,7 +8,7 @@ import type { LoaderApi } from '../loader/LoaderService'
 
 export function createLoaderRuntimeRoute(ctx: Context, api: LoaderApi): RuntimeRouteCapabilities {
 	const resolveSource = (
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		_ctor?: PluginConstructor,
 	): RuntimePluginSource => {
 		const moduleId = api.registry.findModuleId(address)

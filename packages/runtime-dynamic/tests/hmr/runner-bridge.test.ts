@@ -41,7 +41,8 @@ describe('HMR runner bridge', () => {
 
 		const serverConfig = mergeConfig(
 			buildLoaderHmrViteConfig({
-				root: cwd,
+				viteRoot: cwd,
+				sourceRoot: fixturesDir,
 				fsAllow,
 				runnerPlugin: { name: 'noop' },
 				httpPlugin: { name: 'noop' },

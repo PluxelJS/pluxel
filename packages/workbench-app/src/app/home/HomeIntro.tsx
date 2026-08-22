@@ -179,7 +179,7 @@ function PluginQueue({
 	empty: string
 	error?: string
 	loading: boolean
-	plugins: Array<{ name: string; isEnabled: boolean; isRunning: boolean }>
+	plugins: Array<{ route: string; label: string; isEnabled: boolean; isRunning: boolean }>
 	title: string
 }) {
 	const visiblePlugins = plugins.slice(0, 6)
@@ -197,8 +197,8 @@ function PluginQueue({
 				{visiblePlugins.length > 0 ? (
 					visiblePlugins.map((plugin) => (
 						<RouterLinkAdapter
-							key={plugin.name}
-							to={`/plugins/${encodeURIComponent(plugin.name)}`}
+							key={plugin.route}
+							to={`/plugins/${plugin.route}`}
 							className="plx-home__queueRow"
 						>
 							<span
@@ -207,7 +207,7 @@ function PluginQueue({
 									!plugin.isEnabled ? 'disabled' : plugin.isRunning ? 'running' : 'stopped'
 								}
 							/>
-							<span className="plx-home__queueName">{plugin.name}</span>
+							<span className="plx-home__queueName">{plugin.label}</span>
 							<span className="plx-home__queueStatus">
 								{!plugin.isEnabled ? '已禁用' : plugin.isRunning ? '运行中' : '已停止'}
 							</span>

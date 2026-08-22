@@ -13,7 +13,7 @@ import type {
 	WorkbenchPlacement,
 	WorkbenchViewMeta,
 } from '@pluxel/runtime/workbench'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import {
 	WorkbenchViewProvider,
 	type WorkbenchViewEnvironment,
@@ -22,7 +22,6 @@ import { InlineNotice } from '../components'
 import { BuiltinDoc } from './builtin/Doc'
 import { WorkbenchErrorBoundary } from './ErrorBoundary'
 import { buildWorkbenchHref, normalizeWorkbenchPath } from './paths'
-import { workbenchNodeKey } from './node-address'
 import {
 	useOptionalWorkspaceNavigation,
 	useWorkbenchViewState as useHostWorkbenchViewState,
@@ -49,7 +48,7 @@ type WorkbenchRuntimeContextValue = WorkbenchBrowserHost & {
 }
 
 type WorkbenchTargetContextValue = Readonly<{
-	target: PluginNodeAddressSnapshot
+	target: PluginNodeAddress
 	pathname: string
 	snapshot: WorkbenchTargetSnapshot
 }>
@@ -81,7 +80,7 @@ export function WorkbenchTargetProvider({
 	pathname,
 	children,
 }: {
-	target: PluginNodeAddressSnapshot
+	target: PluginNodeAddress
 	pathname: string
 	children: ReactNode
 }) {
@@ -112,7 +111,7 @@ export function useWorkbenchTargetSnapshot(target: WorkbenchTargetId): Workbench
 	)
 }
 
-export function useWorkbenchArtifactState(owner: PluginNodeAddressSnapshot) {
+export function useWorkbenchArtifactState(owner: PluginNodeAddress) {
 	const { runtime } = useWorkbenchRuntime()
 	useWorkbenchTargetSnapshot(null)
 	return runtime.artifactState(owner)
@@ -136,7 +135,7 @@ export function useWorkbenchSurface(
 				? EMPTY_NODES
 				: items.map((item) => (
 						<WorkbenchItem
-							key={`${target === null ? '$global' : workbenchNodeKey(target)}:${item.id}`}
+							key={`${target === null ? '$global' : pluginNodeIndexKey(target)}:${item.id}`}
 							frame="shell"
 							item={item}
 							snapshot={snapshot}
@@ -151,7 +150,7 @@ const EMPTY_NODES: ReactNode[] = []
 const EMPTY_ITEMS: readonly WorkbenchLayoutItem[] = Object.freeze([])
 const EMPTY_ROUTE_PARAMS = Object.freeze({})
 
-export function useResolvedWorkbenchRoute(target: PluginNodeAddressSnapshot, path: string) {
+export function useResolvedWorkbenchRoute(target: PluginNodeAddress, path: string) {
 	const { runtime } = useWorkbenchRuntime()
 	const snapshot = useWorkbenchTargetSnapshot(target)
 	return useMemo(
@@ -164,7 +163,7 @@ export function WorkbenchRoute({
 	target,
 	route,
 }: {
-	target: PluginNodeAddressSnapshot
+	target: PluginNodeAddress
 	route: WorkbenchResolvedRoute
 }) {
 	const snapshot = useWorkbenchTargetSnapshot(target)
@@ -302,8 +301,8 @@ function WorkbenchRemoteView({
 function workbenchViewStateIdentity(item: WorkbenchLayoutItem): string {
 	const route = item.meta?.route?.path ?? ''
 	return [
-		workbenchNodeKey(item.owner.address),
-		workbenchNodeKey(item.target.address),
+		pluginNodeIndexKey(item.owner.address),
+		pluginNodeIndexKey(item.target.address),
 		item.viewId,
 		item.placement,
 		route,

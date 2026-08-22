@@ -9,10 +9,10 @@ import {
 	useRuntimeTransportClient,
 } from '../../runtime'
 import {
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
@@ -31,7 +31,7 @@ import { type PlxLogTheme, useThemeModel } from '../../theme'
 import { stringifyUnknown } from '../../utils/unknown'
 
 interface Props {
-	owner?: PluginNodeAddressSnapshot
+	owner?: PluginNodeAddress
 	showName?: boolean
 	filter?: LogFilter
 	/**
@@ -120,7 +120,7 @@ function sameFilter(a: LogFilter, b: LogFilter): boolean {
 
 function filterSummary(filter: LogFilter): string | null {
 	const parts = [
-		filter.plugin ? `plugin=${formatPluginNodeAddress(filter.plugin)}` : null,
+		filter.plugin ? `plugin=${formatPluginNodeReference(filter.plugin)}` : null,
 		filter.context ? `context=${filter.context}` : null,
 		filter.displayName ? `display=${filter.displayName}` : null,
 		filter.category ? `category=${filter.category}` : null,

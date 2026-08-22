@@ -1,5 +1,5 @@
 import {
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	getPluginDefinitionFacts,
 	getPluginInfo,
 	pluginDefinitionAddressEqual,
@@ -9,9 +9,9 @@ import {
 	type ForkablePluginConstructor,
 	type PluginConfigDefinition,
 	type PluginConstructor,
-	type PluginDefinitionAddressSnapshot,
+	type PluginDefinitionAddress,
 	type PluginDefinitionSlot,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
 import { isPluginEnabled, listForkIds, setPluginsEnabled } from '@pluxel/runtime/internal'
@@ -22,7 +22,7 @@ export type ExportKey = string
 export type ModuleItem = Readonly<{
 	ctor: PluginConstructor
 	exportKey: ExportKey
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	nodeSlot: PluginNodeSlot
 	definitionSlot: PluginDefinitionSlot
 	displayName: string
@@ -51,11 +51,11 @@ function sameRegistration(
 	return left?.ctor === right.ctor && left.provideBase === right.provideBase
 }
 
-function compareAddress(left: PluginNodeAddressSnapshot, right: PluginNodeAddressSnapshot): number {
-	return formatPluginNodeAddress(left).localeCompare(formatPluginNodeAddress(right))
+function compareAddress(left: PluginNodeAddress, right: PluginNodeAddress): number {
+	return formatPluginNodeReference(left).localeCompare(formatPluginNodeReference(right))
 }
 
-function matchesProvider(ctor: PluginConstructor, token: PluginDefinitionAddressSnapshot): boolean {
+function matchesProvider(ctor: PluginConstructor, token: PluginDefinitionAddress): boolean {
 	const provides = getPluginDefinitionFacts(ctor).provides
 	return !!provides && pluginDefinitionAddressEqual(provides, token)
 }
@@ -91,16 +91,16 @@ export class PluginRegistry {
 		)
 	}
 
-	resolveDefinition(address: PluginDefinitionAddressSnapshot): PluginConstructor | undefined {
+	resolveDefinition(address: PluginDefinitionAddress): PluginConstructor | undefined {
 		const slot = this.ctx.registry.internDefinitionAddress(address)
 		return this.itemByDefinition.get(slot)?.ctor
 	}
 
-	resolve(address: PluginNodeAddressSnapshot): PluginConstructor | undefined {
+	resolve(address: PluginNodeAddress): PluginConstructor | undefined {
 		const base = this.resolveDefinition(address.definition)
 		if (!base) return undefined
 		const ctor =
-			address.instance === 'default'
+			address.variant === 'default'
 				? base
 				: (this.ctx.registry.fork(
 						base as unknown as ForkablePluginConstructor,
@@ -109,17 +109,17 @@ export class PluginRegistry {
 		return pluginNodeAddressEqual(pluginNodeAddressOf(ctor), address) ? ctor : undefined
 	}
 
-	require(address: PluginNodeAddressSnapshot): PluginConstructor {
+	require(address: PluginNodeAddress): PluginConstructor {
 		const ctor = this.resolve(address)
-		if (!ctor) throw new Error(`Plugin not found: ${formatPluginNodeAddress(address)}`)
+		if (!ctor) throw new Error(`Plugin not found: ${formatPluginNodeReference(address)}`)
 		return ctor
 	}
 
-	findModuleId(address: PluginNodeAddressSnapshot): string | null {
+	findModuleId(address: PluginNodeAddress): string | null {
 		const definition = this.ctx.registry.internDefinitionAddress(address.definition)
 		return (
 			this.ctx.registry.getRuntimeModuleId(
-				address.instance === 'default' ? definition : this.ctx.registry.internNodeAddress(address),
+				address.variant === 'default' ? definition : this.ctx.registry.internNodeAddress(address),
 			) ??
 			this.moduleByDefinition.get(definition) ??
 			null
@@ -134,12 +134,12 @@ export class PluginRegistry {
 		)
 	}
 
-	getExportKey(address: PluginNodeAddressSnapshot): ExportKey | undefined {
+	getExportKey(address: PluginNodeAddress): ExportKey | undefined {
 		return this.itemByDefinition.get(this.ctx.registry.internDefinitionAddress(address.definition))
 			?.exportKey
 	}
 
-	getConfig(address: PluginNodeAddressSnapshot): PluginConfigDefinition | undefined {
+	getConfig(address: PluginNodeAddress): PluginConfigDefinition | undefined {
 		return getPluginInfo(this.require(address)).config
 	}
 
@@ -203,7 +203,7 @@ export class PluginRegistry {
 		ctor: PluginConstructor,
 		exportKey: ExportKey,
 		tx?: PluginRegistryTransaction,
-	): PluginNodeAddressSnapshot {
+	): PluginNodeAddress {
 		const info = getPluginInfo(ctor)
 		const facts = getPluginDefinitionFacts(ctor)
 		if (facts.kind !== 'plugin') {
@@ -217,7 +217,7 @@ export class PluginRegistry {
 		}
 
 		const address = pluginNodeAddressOf(ctor)
-		if (address.instance !== 'default') {
+		if (address.variant !== 'default') {
 			throw new Error('[runtime-dynamic] Source modules may only declare default Plugin nodes')
 		}
 		const nodeSlot = this.ctx.registry.internNodeAddress(address)
@@ -225,7 +225,7 @@ export class PluginRegistry {
 		const owner = this.moduleByDefinition.get(definitionSlot)
 		if (owner && owner !== moduleId) {
 			throw new Error(
-				`[runtime-dynamic] Plugin definition ${formatPluginNodeAddress(address)} is already ` +
+				`[runtime-dynamic] Plugin definition ${formatPluginNodeReference(address)} is already ` +
 					`owned by ${owner}; ${moduleId} cannot claim the same package/export identity`,
 			)
 		}
@@ -247,7 +247,7 @@ export class PluginRegistry {
 			if (duplicate.ctor === ctor && duplicate.exportKey === exportKey) return address
 			throw new Error(
 				`[runtime-dynamic] Module ${moduleId} declares Plugin definition ` +
-					`${formatPluginNodeAddress(address)} more than once`,
+					`${formatPluginNodeReference(address)} more than once`,
 			)
 		}
 		this.moduleMap.set(moduleId, previous.length === 0 ? [item] : [...previous, item])
@@ -280,9 +280,9 @@ export class PluginRegistry {
 		for (const item of this.moduleMap.get(moduleId) ?? EMPTY) {
 			await this.syncNode(item.address, item.ctor, options.tx, options.forceRegistrations)
 			for (const forkId of listForkIds(state, item.address.definition)) {
-				const address: PluginNodeAddressSnapshot = {
+				const address: PluginNodeAddress = {
 					definition: item.address.definition,
-					instance: 'fork',
+					variant: 'fork',
 					forkId,
 				}
 				await this.syncNode(address, this.require(address), options.tx, options.forceRegistrations)
@@ -293,7 +293,7 @@ export class PluginRegistry {
 	}
 
 	async enable(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		ctor: PluginConstructor = this.require(address),
 	): Promise<void> {
 		this.assertConstructorAddress(address, ctor)
@@ -303,16 +303,16 @@ export class PluginRegistry {
 		await this.applyDependencyOverrides()
 	}
 
-	enablePersisted(...addresses: readonly PluginNodeAddressSnapshot[]): void {
+	enablePersisted(...addresses: readonly PluginNodeAddress[]): void {
 		this.setEnabled(addresses, true)
 	}
 
-	disablePersisted(...addresses: readonly PluginNodeAddressSnapshot[]): void {
+	disablePersisted(...addresses: readonly PluginNodeAddress[]): void {
 		this.setEnabled(addresses, false)
 	}
 
 	deactivate(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		ctor: PluginConstructor,
 		options: { runtimeOnly?: boolean } = {},
 	): void {
@@ -322,7 +322,7 @@ export class PluginRegistry {
 	}
 
 	stopPlugin(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		ctor: PluginConstructor,
 		options: { cascadeDependents?: boolean; tx?: PluginRegistryTransaction } = {},
 	): void {
@@ -349,18 +349,18 @@ export class PluginRegistry {
 
 	disablePersistedByModule(moduleId: ModuleId): void {
 		const state = this.ctx.runtimeState.snapshot()
-		const addresses: PluginNodeAddressSnapshot[] = []
+		const addresses: PluginNodeAddress[] = []
 		for (const item of this.moduleMap.get(moduleId) ?? EMPTY) {
 			addresses.push(item.address)
 			for (const forkId of listForkIds(state, item.address.definition)) {
-				addresses.push({ definition: item.address.definition, instance: 'fork', forkId })
+				addresses.push({ definition: item.address.definition, variant: 'fork', forkId })
 			}
 		}
 		this.setEnabled(addresses, false)
 	}
 
 	private async syncNode(
-		address: PluginNodeAddressSnapshot,
+		address: PluginNodeAddress,
 		ctor: PluginConstructor,
 		tx?: PluginRegistryTransaction,
 		forceRegistration = false,
@@ -375,7 +375,7 @@ export class PluginRegistry {
 		}
 		const facts = getPluginDefinitionFacts(ctor)
 		const provideBase = facts.provides
-			? address.instance === 'fork'
+			? address.variant === 'fork'
 				? false
 				: this.selectedProvider(facts.provides, address)
 			: undefined
@@ -400,7 +400,7 @@ export class PluginRegistry {
 		tx?: PluginRegistryTransaction,
 		forceRegistrations = false,
 	): Promise<void> {
-		const tokens: PluginDefinitionAddressSnapshot[] = []
+		const tokens: PluginDefinitionAddress[] = []
 		for (const item of this.itemByDefinition.values()) {
 			const token = getPluginDefinitionFacts(item.ctor).provides
 			if (!token || tokens.some((candidate) => pluginDefinitionAddressEqual(candidate, token))) {
@@ -424,23 +424,20 @@ export class PluginRegistry {
 		}
 	}
 
-	private selectedProvider(
-		token: PluginDefinitionAddressSnapshot,
-		candidate: PluginNodeAddressSnapshot,
-	): boolean {
+	private selectedProvider(token: PluginDefinitionAddress, candidate: PluginNodeAddress): boolean {
 		const selected = this.resolveSelectedProvider(token, candidate)
 		return !!selected && pluginNodeAddressEqual(selected, candidate)
 	}
 
 	private resolveSelectedProvider(
-		token: PluginDefinitionAddressSnapshot,
-		current?: PluginNodeAddressSnapshot,
-	): PluginNodeAddressSnapshot | undefined {
+		token: PluginDefinitionAddress,
+		current?: PluginNodeAddress,
+	): PluginNodeAddress | undefined {
 		const state = this.ctx.runtimeState.snapshot()
 		const selected = state.providerDefaults.find((entry) =>
 			pluginDefinitionAddressEqual(entry.token, token),
 		)?.provider
-		if (selected && selected.instance === 'default') {
+		if (selected && selected.variant === 'default') {
 			const ctor = this.resolve(selected)
 			if (
 				ctor &&
@@ -474,41 +471,41 @@ export class PluginRegistry {
 	private async applyDependencyOverrides(tx?: PluginRegistryTransaction): Promise<void> {
 		const state = this.ctx.runtimeState.snapshot()
 		for (const override of state.dependencyOverrides) {
-			if (!this.isEnabled(override.consumer)) continue
-			const consumer = this.resolve(override.consumer)
+			if (!this.isEnabled(override.consumerAddress)) continue
+			const consumer = this.resolve(override.consumerAddress)
 			if (!consumer) continue
 			const facts = getPluginDefinitionFacts(consumer)
 			if (
-				!Number.isInteger(override.parameterIndex) ||
-				override.parameterIndex < 0 ||
-				override.parameterIndex >= facts.requires.length
-			) {
+				!facts.requires.some((required) =>
+					pluginDefinitionAddressEqual(required, override.requirementAddress),
+				)
+			)
 				continue
-			}
-			const provider = this.resolve(override.provider)
+			const provider = this.resolve(override.providerAddress)
 			if (!provider) continue
-			if (!this.isEnabled(override.provider)) this.setEnabled([override.provider], true)
-			await this.syncNode(override.provider, provider, tx)
+			if (!this.isEnabled(override.providerAddress))
+				this.setEnabled([override.providerAddress], true)
+			await this.syncNode(override.providerAddress, provider, tx)
 		}
 
 		for (const item of this.itemByDefinition.values()) {
-			const addresses: PluginNodeAddressSnapshot[] = [item.address]
+			const addresses: PluginNodeAddress[] = [item.address]
 			for (const forkId of listForkIds(state, item.address.definition)) {
-				addresses.push({ definition: item.address.definition, instance: 'fork', forkId })
+				addresses.push({ definition: item.address.definition, variant: 'fork', forkId })
 			}
 			for (const address of addresses) {
 				if (!this.isEnabled(address)) continue
 				const ctor = this.resolve(address)
 				if (!ctor) continue
 				const facts = getPluginDefinitionFacts(ctor)
-				const overrides = facts.requires.map((_required, parameterIndex) => {
+				const overrides = facts.requires.map((required) => {
 					const selected = this.ctx.runtimeState
 						.snapshot()
 						.dependencyOverrides.find(
 							(entry) =>
-								pluginNodeAddressEqual(entry.consumer, address) &&
-								entry.parameterIndex === parameterIndex,
-						)?.provider
+								pluginNodeAddressEqual(entry.consumerAddress, address) &&
+								pluginDefinitionAddressEqual(entry.requirementAddress, required),
+						)?.providerAddress
 					return selected ? this.ctx.registry.internNodeAddress(selected) : undefined
 				})
 				this.ctx.registry.replaceRuntimeDependencyOverrides(
@@ -519,23 +516,20 @@ export class PluginRegistry {
 		}
 	}
 
-	private assertConstructorAddress(
-		address: PluginNodeAddressSnapshot,
-		ctor: PluginConstructor,
-	): void {
+	private assertConstructorAddress(address: PluginNodeAddress, ctor: PluginConstructor): void {
 		if (!pluginNodeAddressEqual(address, pluginNodeAddressOf(ctor))) {
 			throw new Error(
 				`[runtime-dynamic] Constructor generation does not belong to ` +
-					formatPluginNodeAddress(address),
+					formatPluginNodeReference(address),
 			)
 		}
 	}
 
-	private isEnabled(address: PluginNodeAddressSnapshot): boolean {
+	private isEnabled(address: PluginNodeAddress): boolean {
 		return isPluginEnabled(this.ctx.runtimeState.snapshot(), address)
 	}
 
-	private setEnabled(addresses: Iterable<PluginNodeAddressSnapshot>, enabled: boolean): void {
+	private setEnabled(addresses: Iterable<PluginNodeAddress>, enabled: boolean): void {
 		this.ctx.runtimeState.update((draft) => setPluginsEnabled(draft, addresses, enabled))
 	}
 

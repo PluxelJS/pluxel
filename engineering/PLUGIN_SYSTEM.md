@@ -80,14 +80,15 @@ provider availability 变化重启整个 owner。Part 不直接 mount Workbench 
 
 ## Identity 与入口
 
-具体 Plugin definition 的唯一身份是 opaque `PluginDefinitionSlot(canonical entry, root named export)`；runtime node 是
-`PluginNodeSlot(definition, default | forkId)`。class name、constructor object、package display name 和
-`@Plugin({ displayName })` 都不是 graph、state、config、logging、Workbench 或 HMR identity。
+Plugin 只有 definition 与 node 两个身份作用域。definition 由 canonical entry + root named export 构成；node 在 definition
+下区分 `variant: 'default'` 或 `{ variant: 'fork', forkId }`。跨界使用 `PluginDefinitionAddress` / `PluginNodeAddress`，Core
+intern 后使用对应 `PluginDefinitionSlot` / `PluginNodeSlot`；Address 与 Slot 是同一身份的值表示和进程内引用，不是四层协议。
 
-跨进程和持久化边界使用经过校验的结构化 address snapshot：entry 只允许 `package-root` 或 `source-entry`，definition
-增加 `exportName`，node 再增加 `instance: 'default'` 或结构化 fork。Core intern address 后只按 slot object 查图，不把
-address 拼成作者协议。不同 package/export 的同名 class 或相同 `displayName` 可以共存；Workbench 用
-`displayName ?? rootExportName` 和 package/export provenance 展示、消歧。
+fork 是同一 definition 的运行时多态：共享源码、schema、metadata、artifact input 和 HMR，隔离 lifecycle、config、dependency
+override、Context/effects 和资源。class name、constructor object、package display name 和 `@Plugin({ displayName })` 不参与
+graph、state、config、logging、Workbench 或 HMR identity。Workbench/日志使用 node label 展示，URL 使用可逆 node route，
+CLI/诊断使用 node reference，不暴露 digest ID。完整 schema、source `realpath`、codec、作用域和持久化边界见
+[`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)。
 
 一个具体插件包只有一个 plugin-bearing entry：package root `"."`。根入口可以唯一 named-export 多个 Plugin；同一
 constructor 的多个根名称、plugin-bearing subpath 与跨包 Plugin re-export 都由 build 拒绝。Workbench、worker、contract

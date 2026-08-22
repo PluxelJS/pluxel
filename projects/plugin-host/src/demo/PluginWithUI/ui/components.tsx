@@ -15,6 +15,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
+import { formatPluginNodeRoute } from '@pluxel/runtime'
 import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { useWorkbenchHost, type WorkbenchEventsClient } from '@pluxel/runtime/workbench/ui'
 import {
@@ -67,7 +68,7 @@ function pluginRouteHref(
 	address: ReturnType<typeof useWorkbenchHost>['target']['address'],
 	path: string,
 ) {
-	return `/workbench/${encodeURIComponent(JSON.stringify(address))}${path}`
+	return `/workbench/${formatPluginNodeRoute(address)}${path}`
 }
 
 function panelTitle(icon: ReactNode, title: string) {

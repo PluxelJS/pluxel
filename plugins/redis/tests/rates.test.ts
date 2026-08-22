@@ -1,5 +1,5 @@
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { v } from '@pluxel/runtime'
+import { formatPluginNodeReference, v } from '@pluxel/runtime'
 import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import {
@@ -85,13 +85,13 @@ describe('@pluxel/redis rates backend', () => {
 				expect(call.source).toContain("redis.call('PEXPIRE'")
 				if (policy.algorithm === 'sliding-window-log') slidingLogSource = call.source
 				expect(call.options.keys).toHaveLength(1)
-				expect(call.options.keys[0]).toMatch(/^pluxel:\{rates\}:v2:[a-f0-9]{64}$/)
+				expect(call.options.keys[0]).toMatch(/^pluxel:\{rates\}:v3:[a-f0-9]{64}$/)
 				expect(call.options.keys[0]).not.toContain('secret-tenant')
 				expect(call.options.arguments).toEqual([
 					String(policy.limit),
 					String(policy.windowMs),
 					String(policy.algorithm === 'token-bucket' ? policy.burst : 0),
-					JSON.stringify(consumer.ctx.pluginInfo.nodeAddress),
+					formatPluginNodeReference(consumer.ctx.pluginInfo.nodeAddress),
 					'1',
 				])
 			}

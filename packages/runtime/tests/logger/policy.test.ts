@@ -13,7 +13,7 @@ function pluginAddress(index: number) {
 			entry: { kind: 'package-root', packageName: `@test/plugin-${index}` },
 			exportName: 'Plugin',
 		},
-		instance: 'default',
+		variant: 'default',
 	} as const
 }
 
@@ -42,7 +42,7 @@ describe('RuntimePluginLogPolicy', () => {
 			owner: pluginAddress(index),
 			level: 'debug' as const,
 		}))
-		const policy = new RuntimePluginLogPolicy({ version: 2, defaultLevel: 'info', overrides })
+		const policy = new RuntimePluginLogPolicy({ version: 3, defaultLevel: 'info', overrides })
 		const result = policy.setPluginLevel(pluginAddress(9999), 'trace')
 
 		expect(result).toEqual({ revision: 1, persistence: 'none' })
@@ -60,7 +60,7 @@ describe('RuntimePluginLogPolicy', () => {
 
 	it('coalesces persistence and loads a versioned snapshot', async () => {
 		let persisted: PluginLogPolicySnapshot | undefined = {
-			version: 2,
+			version: 3,
 			defaultLevel: 'warning',
 			overrides: [{ owner: pluginA, level: 'debug' }],
 		}
@@ -94,7 +94,7 @@ describe('RuntimePluginLogPolicy', () => {
 
 	it('round-trips and validates the versioned persistence format', () => {
 		const snapshot: PluginLogPolicySnapshot = {
-			version: 2,
+			version: 3,
 			defaultLevel: 'warning',
 			overrides: [
 				{ owner: pluginA, level: 'debug' },
@@ -109,11 +109,11 @@ describe('RuntimePluginLogPolicy', () => {
 		)
 	})
 
-	it('rejects duplicate structured owners and legacy name maps', () => {
+	it('rejects duplicate structured owners and unstructured name maps', () => {
 		expect(() =>
 			parsePluginLogPolicySnapshot(
 				JSON.stringify({
-					version: 2,
+					version: 3,
 					defaultLevel: 'info',
 					overrides: [
 						{ owner: pluginA, level: 'debug' },
@@ -124,7 +124,7 @@ describe('RuntimePluginLogPolicy', () => {
 		).toThrow('duplicate owner')
 		expect(() =>
 			parsePluginLogPolicySnapshot(
-				JSON.stringify({ version: 2, defaultLevel: 'info', overrides: { PluginA: 'debug' } }),
+				JSON.stringify({ version: 3, defaultLevel: 'info', overrides: { PluginA: 'debug' } }),
 			),
 		).toThrow('overrides must be an array')
 	})

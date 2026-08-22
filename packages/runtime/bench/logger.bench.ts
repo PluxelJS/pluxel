@@ -1,18 +1,18 @@
 import { type LogRecord } from '@logtape/logtape'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { pluginLogCategory } from '@pluxel/core/logger'
 import { RuntimePluginLogPolicy } from '@pluxel/runtime/logger'
 import { bench, describe } from 'vitest'
 import { createRuntimeLogSink } from '../src/logger/sink'
 import { RuntimeLogStoreRegistry } from '../src/logger/store'
 
-function pluginAddress(index: number): PluginNodeAddressSnapshot {
+function pluginAddress(index: number): PluginNodeAddress {
 	return {
 		definition: {
 			entry: { kind: 'package-root', packageName: `@bench/plugin-${index}` },
 			exportName: 'Plugin',
 		},
-		instance: 'default',
+		variant: 'default',
 	}
 }
 
@@ -36,7 +36,7 @@ function record(input: Partial<LogRecord> = {}): LogRecord {
 
 describe('runtime logger micro-bench', () => {
 	const policy = new RuntimePluginLogPolicy({
-		version: 2,
+		version: 3,
 		defaultLevel: 'info',
 		overrides: [
 			{ owner: plugin42, level: 'debug' },
@@ -48,7 +48,7 @@ describe('runtime logger micro-bench', () => {
 	})
 
 	const largePolicy = new RuntimePluginLogPolicy({
-		version: 2,
+		version: 3,
 		defaultLevel: 'info',
 		overrides: Array.from({ length: 100_000 }, (_, index) => ({
 			owner: pluginAddress(index),

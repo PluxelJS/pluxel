@@ -1,8 +1,4 @@
-import {
-	PluginSlotRegistry,
-	type PluginNodeAddressSnapshot,
-	type PluginNodeSlot,
-} from '@pluxel/core'
+import { PluginSlotRegistry, type PluginNodeAddress, type PluginNodeSlot } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import { workbench } from '../../src/workbench'
 import { workbenchContract } from '../../src/workbench-contract'
@@ -12,10 +8,10 @@ import {
 } from '../../src/services/workbench/WorkbenchRegistry'
 
 type TestNode = Readonly<{
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	slot: PluginNodeSlot
 	descriptor: {
-		address: PluginNodeAddressSnapshot
+		address: PluginNodeAddress
 		displayName: string
 		rootExportName: string
 	}
@@ -28,12 +24,12 @@ function fixture(edges: Array<[string, string]> = []) {
 	const node = (displayName: string): TestNode => {
 		const existing = nodes.get(displayName)
 		if (existing) return existing
-		const address: PluginNodeAddressSnapshot = {
+		const address: PluginNodeAddress = {
 			definition: {
-				entry: { kind: 'source-entry', source: `pluxel-test:${displayName}` },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: `pluxel-test:${displayName}` },
 				exportName: 'Plugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		}
 		const result = {
 			address,
@@ -54,7 +50,7 @@ function fixture(edges: Array<[string, string]> = []) {
 		root: { effects: { defer: () => ({ dispose() {} }) } },
 		registry: {
 			graph: { depsOf: (slot: PluginNodeSlot) => deps.get(slot) ?? [] },
-			internNodeAddress: (address: PluginNodeAddressSnapshot) => slots.internNode(address),
+			internNodeAddress: (address: PluginNodeAddress) => slots.internNode(address),
 			nodeAddressOf: (slot: PluginNodeSlot) => slots.nodeAddress(slot),
 			isRunning: (slot: PluginNodeSlot) => running.has(slot),
 			watchInstance: (_slot: PluginNodeSlot, listener: () => void) => {

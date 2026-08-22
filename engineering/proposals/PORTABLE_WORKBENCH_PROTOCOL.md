@@ -54,7 +54,7 @@ host implementation
 
 以下现有设计直接进入候选协议，不另造平行概念：
 
-- `PluginNodeAddressSnapshot` 是跨边界 owner/target identity；display name 只用于展示。
+- `PluginNodeAddress` 是跨边界 owner/target identity；display name 只用于展示。
 - `WorkbenchContract` 声明 resource、View、placement 和 Port，Contract fingerprint 用于 artifact/layout 校验。
 - `WorkbenchLayout` 提供 target-scoped View、placement、resource grant 和 Port binding。
 - `WorkbenchCatalog` 提供按 owner 发布的 Remote artifact 与 build state。

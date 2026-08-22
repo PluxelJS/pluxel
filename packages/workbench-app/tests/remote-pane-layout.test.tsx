@@ -227,10 +227,10 @@ function Fixture({
 const ownerDescriptor = {
 	address: {
 		definition: {
-			entry: { kind: 'source-entry', source: 'tests/Owner.ts' },
+			entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/Owner.ts' },
 			exportName: 'Owner',
 		},
-		instance: 'default',
+		variant: 'default',
 	},
 	displayName: 'Owner',
 	rootExportName: 'Owner',
@@ -239,10 +239,10 @@ const ownerDescriptor = {
 const targetDescriptor = {
 	address: {
 		definition: {
-			entry: { kind: 'source-entry', source: 'tests/Target.ts' },
+			entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/Target.ts' },
 			exportName: 'Target',
 		},
-		instance: 'default',
+		variant: 'default',
 	},
 	displayName: 'Target',
 	rootExportName: 'Target',

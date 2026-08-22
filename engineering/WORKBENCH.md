@@ -153,13 +153,28 @@ sidecar 推导它，也不创建 product service、额外 HTTP route、polling �
 ## Plugin catalog classification
 
 插件目录分类属于 Workbench host layout，不进入 `@Plugin`、PluginInfo、Extension 或 Contract。宿主通过
-`workbench.pluginGroups` 注册产品分类；未命中宿主规则且拥有可信 `packageName` 的动态插件按精确包名自动分类。
+`workbench.pluginGroups[].definitions` 注册 definition family 分类；未命中宿主规则且拥有可信 `packageName` 的动态插件按精确包名自动分类。
 用户只能在已注册分类与未分组区之间移动、排序插件，不能创建、重命名或删除分类。
 
 Workbench backend 持久化相对默认分类的 assignment 与排序偏好；它与 RuntimeState 各自拥有独立文件。
 disabled/stopped Plugin 仍按 catalog source 分类；Workbench disabled 时不创建分类 service 或偏好文件。宿主 exact 规则和
-偏好都使用结构化 node address，不使用 class/display name。完整身份、匹配和持久化规则见
+偏好使用结构化 definition address，目录展示的 variants 和 extension/resource owner 仍使用 node address；不使用 class/display name。
+新 fork 自动继承 family 分类，同一 definition 的 variants 不能拆到不同 group。完整身份、匹配和持久化规则见
 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。
+
+## Plugin identity 与可读路径
+
+Workbench 不定义自己的 Plugin ID codec。catalog DTO 同时投影 Core node `address`、可复制 `reference`、相对 `route` 和
+catalog-scoped `label`；内部 Map/React key 使用 Core canonical index key。Plugin 详情和 View 路径直接嵌入 v1 route：
+
+```text
+/plugins/v1/package/OrdersPlugin/@acme/orders
+/workbench/v1/fork/east/package/OrdersPlugin/@acme/orders/settings
+```
+
+route parser 返回 consumed segment count，后续 View path 不依赖 JSON segment 或 magic delimiter。browser state reader/writer
+只接受 v3，并用当前 route parser 校验持久化的 Plugin/Workbench path；非法 path 丢弃，其他 snapshot version 恢复默认状态。
+不提供旧 URL redirect，也不按 label、顺序或 class name 猜测。identity 规范见 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)。
 
 ## Route navigation groups
 

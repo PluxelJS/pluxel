@@ -39,7 +39,7 @@ entry 加载失败。Vite 与 production bootstrap 都从同一个 ESM module na
 
 `plugins` 是 build-time fixed code graph。`configure()` 的代码会进入 bundle，但会在每次宿主启动时重新读取 env、bindings 和 deployment；plugin config records、runtime enabled state、persistence、logging 与 HTTP 配置仍是运行时数据。
 
-Static catalog、RuntimeState、config owner 与 HMR 都使用 lowering 生成的结构化 Plugin node address；class name 和 `displayName` 只用于展示。`configure()` 在 canonical entry 完成求值后执行，因此可以在回调中通过 `pluginNodeAddressOf()` 取得 address。源码移动或 root export 重命名会产生新的 identity，不读取或迁移旧 name-key state。
+Static catalog、RuntimeState、config owner 与 HMR 都使用 lowering 生成的结构化 Plugin node address；class name 和 `displayName` 只用于展示。`configure()` 在 canonical entry 完成求值后执行，因此可以在回调中通过 `pluginNodeAddressOf()` 取得 address。源码移动或 root export 重命名会产生新的 identity，并使用对应的当前格式持久化 owner。
 
 ## Vite development
 

@@ -1,27 +1,23 @@
 import '../../src/register-services'
 import { afterEach } from 'vitest'
 import { createHost, type Host } from '@pluxel/test'
-import type {
-	Context,
-	PluginDefinitionAddressSnapshot,
-	PluginNodeAddressSnapshot,
-} from '@pluxel/core'
+import type { Context, PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 
 export type HmrTestState = {
-	enabled?: readonly PluginNodeAddressSnapshot[]
+	enabled?: readonly PluginNodeAddress[]
 	runtimeState?: {
 		forks?: readonly {
-			definition: PluginDefinitionAddressSnapshot
+			definition: PluginDefinitionAddress
 			forkIds: readonly string[]
 		}[]
 		providerDefaults?: readonly {
-			token: PluginDefinitionAddressSnapshot
-			provider: PluginNodeAddressSnapshot
+			token: PluginDefinitionAddress
+			provider: PluginNodeAddress
 		}[]
 		dependencyOverrides?: readonly {
-			consumer: PluginNodeAddressSnapshot
+			consumer: PluginNodeAddress
 			parameterIndex: number
-			provider: PluginNodeAddressSnapshot
+			provider: PluginNodeAddress
 		}[]
 	}
 }

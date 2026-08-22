@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import type { PluginDefinitionAddressSnapshot } from './identity'
+import type { PluginDefinitionAddress } from './identity'
 
 export type PluginPartClass<T extends object = object> = Function & {
 	readonly prototype: T
@@ -18,9 +18,9 @@ export type PluginPartOccurrence = Readonly<{
 
 const occurrencesByOwner = new WeakMap<Function, readonly PluginPartOccurrence[]>()
 const configByPart = new WeakMap<Function, PartConfigDeclaration>()
-const optionalByPart = new WeakMap<Function, readonly PluginDefinitionAddressSnapshot[]>()
+const optionalByPart = new WeakMap<Function, readonly PluginDefinitionAddress[]>()
 const EMPTY_OCCURRENCES: readonly PluginPartOccurrence[] = Object.freeze([])
-const EMPTY_OPTIONAL: readonly PluginDefinitionAddressSnapshot[] = Object.freeze([])
+const EMPTY_OPTIONAL: readonly PluginDefinitionAddress[] = Object.freeze([])
 
 let factsRevision = 0
 
@@ -87,7 +87,7 @@ export function __setPluginPartConfig(Part: Function, input: PartConfigDeclarati
 /** @internal Build-generated optional Plugin edges declared by a Part. */
 export function __setPluginPartOptional(
 	Part: Function,
-	optional: readonly PluginDefinitionAddressSnapshot[],
+	optional: readonly PluginDefinitionAddress[],
 ): void {
 	assertConstructor(Part, 'PluginPart optional target')
 	if (!Array.isArray(optional)) {
@@ -108,7 +108,7 @@ export function getPluginPartConfig(Part: Function): PartConfigDeclaration | und
 	return configByPart.get(Part)
 }
 
-export function getPluginPartOptional(Part: Function): readonly PluginDefinitionAddressSnapshot[] {
+export function getPluginPartOptional(Part: Function): readonly PluginDefinitionAddress[] {
 	return optionalByPart.get(Part) ?? EMPTY_OPTIONAL
 }
 

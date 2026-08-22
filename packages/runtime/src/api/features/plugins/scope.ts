@@ -2,7 +2,7 @@ import {
 	parsePluginNodeAddress,
 	type PluginConstructor,
 	type Context as PlxContext,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { GraphQLError } from 'graphql'
 import type { PluginOutput } from './schema'
@@ -16,18 +16,19 @@ import {
 const PLUGIN_CTOR = Symbol('pluginCtor')
 type InternalPlugin = PluginOutput & { [PLUGIN_CTOR]?: PluginConstructor }
 
-export function ensurePlugin(
-	pCtx: PlxContext,
-	address: PluginNodeAddressSnapshot,
-): PluginConstructor {
+export function ensurePlugin(pCtx: PlxContext, address: PluginNodeAddress): PluginConstructor {
 	const ctor = requireRouteCapability(pCtx, 'catalog').resolve(address)
 	if (ctor) return ctor
 	throw new GraphQLError('Plugin not found', { extensions: { code: 'NOT_FOUND', address } })
 }
 
-export function createPlugin(pCtx: PlxContext, id: string): PluginOutput {
-	const entry = projectPluginCatalog(pCtx).byId.get(id)
-	if (!entry) throw new GraphQLError('Plugin not found', { extensions: { code: 'NOT_FOUND', id } })
+export function createPlugin(pCtx: PlxContext, route: string): PluginOutput {
+	const entry = projectPluginCatalog(pCtx).byRoute.get(route)
+	if (!entry) {
+		throw new GraphQLError('Plugin not found', {
+			extensions: { code: 'NOT_FOUND', route },
+		})
+	}
 	return pluginOutput(pCtx, entry)
 }
 
@@ -42,10 +43,7 @@ export function listPlugins(pCtx: PlxContext): PluginOutput[] {
 	return projectPluginCatalog(pCtx).entries.map((entry) => pluginOutput(pCtx, entry))
 }
 
-export function getPluginDependencies(
-	pCtx: PlxContext,
-	owner: PluginNodeAddressSnapshot,
-): PluginOutput[] {
+export function getPluginDependencies(pCtx: PlxContext, owner: PluginNodeAddress): PluginOutput[] {
 	const projection = projectPluginCatalog(pCtx)
 	return requireRouteCapability(pCtx, 'dependencies')
 		.listDependencies(owner)
@@ -63,8 +61,11 @@ export function getPluginDependencies(
 function pluginOutput(pCtx: PlxContext, entry: PluginCatalogProjectionEntry): PluginOutput {
 	return {
 		__typename: 'Plugin',
-		id: entry.id,
-		name: entry.displayName,
+		id: entry.route,
+		reference: entry.reference,
+		route: entry.route,
+		displayName: entry.displayName,
+		label: entry.label.text,
 		rootExportName: entry.rootExportName,
 		address: entry.address,
 		[PLUGIN_CTOR]: ensurePlugin(pCtx, entry.address),

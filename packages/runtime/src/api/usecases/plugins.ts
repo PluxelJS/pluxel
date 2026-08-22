@@ -1,12 +1,15 @@
-import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { Context, PluginNodeAddress } from '@pluxel/core'
 import { readStatusSnapshot, resolvePluginSource } from '../features/pluginStatus/service'
 import {
 	requireRouteCapability,
-	runtimePluginStatusOverview,
 	type RuntimePluginSource,
 	type RuntimePluginStatusSnapshot,
 } from '../../runtime/capabilities'
-import { pluginNodeAddressKey } from '../../runtime/plugin-address'
+import {
+	projectedPluginByAddress,
+	projectPluginCatalog,
+	type PluginNodeLabel,
+} from '../features/plugins/catalog-projection'
 
 type PluginSourceSnapshot = RuntimePluginSource extends infer Source
 	? Source extends RuntimePluginSource
@@ -15,7 +18,9 @@ type PluginSourceSnapshot = RuntimePluginSource extends infer Source
 	: never
 
 export type PluginStatusSnapshot = Omit<RuntimePluginStatusSnapshot, 'source'> & {
-	id: string
+	reference: string
+	route: string
+	label: PluginNodeLabel
 	source: PluginSourceSnapshot
 }
 
@@ -31,30 +36,35 @@ function plainSource(source: RuntimePluginSource): PluginSourceSnapshot {
 
 export function pluginStatus(
 	ctx: Context,
-	address: PluginNodeAddressSnapshot,
+	address: PluginNodeAddress,
 ): PluginStatusSnapshot | null {
 	if (!requireRouteCapability(ctx, 'catalog').resolve(address)) return null
 	const snapshot = readStatusSnapshot(ctx, address)
+	const projected = projectedPluginByAddress(projectPluginCatalog(ctx), address)
+	if (!projected) {
+		throw new Error('Plugin node is missing from the catalog projection')
+	}
 	return {
 		...snapshot,
-		id: pluginNodeAddressKey(address),
+		reference: projected.reference,
+		route: projected.route,
+		label: projected.label,
 		source: plainSource(snapshot.source as RuntimePluginSource),
 	}
 }
 
 export function pluginsList(ctx: Context): PluginsListOutput {
-	const overview = runtimePluginStatusOverview(ctx)
+	const overview = projectPluginCatalog(ctx)
 	return {
-		plugins: overview.statuses.map((snapshot) => ({
+		plugins: overview.entries.map(({ nodeKey: _nodeKey, source, ...snapshot }) => ({
 			...snapshot,
-			id: pluginNodeAddressKey(snapshot.address),
-			source: plainSource(snapshot.source),
+			source: plainSource(source),
 		})),
 		summary: overview.summary,
 	}
 }
 
-export function pluginSource(ctx: Context, address: PluginNodeAddressSnapshot) {
+export function pluginSource(ctx: Context, address: PluginNodeAddress) {
 	const source = resolvePluginSource(ctx, address)
 	const { __typename: _type, ...rest } = source
 	return rest

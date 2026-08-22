@@ -20,6 +20,14 @@ import {
 	type EChartsThemeRegistration,
 } from '../src/index.ts'
 
+function pluginLayoutUrl(address: unknown): URL {
+	const url = new URL(
+		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
+	)
+	url.searchParams.set('target', JSON.stringify(address))
+	return url
+}
+
 @Plugin()
 class EChartsTestConsumer extends BasePlugin {
 	constructor(
@@ -234,9 +242,7 @@ describe('EChartsPlugin', () => {
 			await host.commit()
 
 			const response = await host.ctx.http.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(EChartsPlugin)))}`,
-				),
+				new Request(pluginLayoutUrl(pluginNodeAddressOf(EChartsPlugin))),
 			)
 			expect(response.status).toBe(200)
 			const layout = (await response.json()) as WorkbenchLayout

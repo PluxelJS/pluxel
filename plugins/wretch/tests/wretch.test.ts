@@ -1,7 +1,7 @@
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 	v,
 } from '@pluxel/runtime'
 import { assertPluginLifecycleIssue, withRuntimeHost } from '@pluxel/runtime/test'
@@ -114,11 +114,11 @@ describe('WretchPlugin', () => {
 
 				expect([...persistence.writes.keys()]).toHaveLength(2)
 				for (const [key, text] of persistence.writes) {
-					expect(key).toMatch(/^consumers\/v2\/[a-f0-9]{64}\.json$/)
+					expect(key).toMatch(/^consumers\/v3\/[a-f0-9]{64}\.json$/)
 					const stored = JSON.parse(text) as Record<string, unknown>
 					expect(stored).toMatchObject({
 						format: 'pluxel-wretch-managed-settings',
-						version: 1,
+						version: 2,
 					})
 					expect([a.ctx.pluginInfo.nodeAddress, late.ctx.pluginInfo.nodeAddress]).toContainEqual(
 						stored.owner,
@@ -132,7 +132,7 @@ describe('WretchPlugin', () => {
 	it('rejects persisted settings whose owner does not match the hashed filename', async () => {
 		const persistence = trackedSettingsPersistence()
 		let key = ''
-		let expectedOwner!: PluginNodeAddressSnapshot
+		let expectedOwner!: PluginNodeAddress
 		let wrongOwner: unknown
 		await withRuntimeHost(
 			async (host) => {

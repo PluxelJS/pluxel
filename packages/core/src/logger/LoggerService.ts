@@ -1,11 +1,11 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 import { debugLogCategory, pluginLogCategory, runtimeLogCategory } from './categories'
-import { findPluginNodeAddress } from './context'
-import type { PluginNodeAddressSnapshot } from '../plugins/runtime/identity'
+import { findPluginLogContext } from './context'
+import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
 const serviceName = 'logger' as const
-const RESERVED_CONTEXT_PROPERTY = 'context'
+const RESERVED_PROPERTY_KEYS = new Set(['context', 'pluginDisplayName'])
 const unmanagedRootIds = new WeakMap<object, string>()
 let unmanagedRootIdSequence = 0
 
@@ -27,7 +27,8 @@ declare module '@pluxel/context' {
 
 type ContextLoggerIdentity = Readonly<{
 	rootId: string
-	plugin?: PluginNodeAddressSnapshot
+	plugin?: PluginNodeAddress
+	pluginDisplayName?: string
 	context: string
 	debugTopic?: string
 }>
@@ -54,9 +55,9 @@ function rootIdFor(ctx: PluxelContext, config?: LoggerServiceConfig): string {
 }
 
 function stripReservedProperties(value: Record<string, unknown>): Record<string, unknown> {
-	if (!Object.hasOwn(value, RESERVED_CONTEXT_PROPERTY)) return value
-	const { [RESERVED_CONTEXT_PROPERTY]: reservedContext, ...out } = value
-	void reservedContext
+	if (![...RESERVED_PROPERTY_KEYS].some((key) => Object.hasOwn(value, key))) return value
+	const out = { ...value }
+	for (const key of RESERVED_PROPERTY_KEYS) delete out[key]
 	return out
 }
 
@@ -126,6 +127,7 @@ export class ContextLogger {
 		this.logtape = getLogger(category as string[]).with({
 			...properties,
 			context: identity.context,
+			...(identity.pluginDisplayName ? { pluginDisplayName: identity.pluginDisplayName } : {}),
 		})
 	}
 
@@ -157,10 +159,11 @@ export class LoggerService extends ContextLogger {
 	public readonly ctx: PluxelContext
 
 	constructor(ctx: PluxelContext, config?: LoggerServiceConfig) {
-		const plugin = findPluginNodeAddress(ctx)
+		const plugin = findPluginLogContext(ctx)
 		super({
 			rootId: rootIdFor(ctx, config),
-			plugin,
+			plugin: plugin?.nodeAddress,
+			pluginDisplayName: plugin?.displayName,
 			context: ctx.name,
 		})
 		this.ctx = ctx

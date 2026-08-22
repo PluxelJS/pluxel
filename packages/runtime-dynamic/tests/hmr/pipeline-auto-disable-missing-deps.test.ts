@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import '../../src/register-services'
 import {
 	clonePluginDefinition,
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 
@@ -160,7 +160,7 @@ describe('HmrExecutor transactions', () => {
 				config: { autoDisableMissingDependencies: true, autoDisableMaxPasses: 3 },
 			})
 			const result = await executor.runAndLoadAllClean(['/broken.ts'])
-			const formatted = formatPluginNodeAddress(pluginNodeAddressOf(Broken))
+			const formatted = formatPluginNodeReference(pluginNodeAddressOf(Broken))
 
 			expect(result?.commitResult.ok).toBe(true)
 			expect(result?.autoDisabled).toEqual([formatted])
@@ -206,21 +206,21 @@ describe('HmrExecutor transactions', () => {
 
 describe('collectEnabledButStopped', () => {
 	it('reports only address-owned stopped nodes in the batch module set', () => {
-		const inBatch: PluginNodeAddressSnapshot = {
+		const inBatch: PluginNodeAddress = {
 			definition: {
-				entry: { kind: 'source-entry', source: 'consumer.ts' },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'consumer.ts' },
 				exportName: 'StoppedInBatch',
 			},
-			instance: 'default',
+			variant: 'default',
 		}
-		const elsewhere: PluginNodeAddressSnapshot = {
+		const elsewhere: PluginNodeAddress = {
 			definition: {
-				entry: { kind: 'source-entry', source: 'other.ts' },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'other.ts' },
 				exportName: 'StoppedElsewhere',
 			},
-			instance: 'default',
+			variant: 'default',
 		}
-		const findModuleId = vi.fn((address: PluginNodeAddressSnapshot) =>
+		const findModuleId = vi.fn((address: PluginNodeAddress) =>
 			pluginNodeAddressEqual(address, inBatch) ? '/consumer.ts' : '/other.ts',
 		)
 		const ctx: EnabledButStoppedLookupContext = {
@@ -240,7 +240,7 @@ describe('collectEnabledButStopped', () => {
 		}
 
 		expect(collectEnabledButStopped(ctx, new Set(['/consumer.ts']))).toEqual([
-			formatPluginNodeAddress(inBatch),
+			formatPluginNodeReference(inBatch),
 		])
 		expect(findModuleId).toHaveBeenCalledTimes(2)
 	})

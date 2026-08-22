@@ -1,19 +1,18 @@
-import { Outlet, createFileRoute, useParams } from '@tanstack/react-router'
+import { formatPluginNodeRoute } from '@pluxel/core'
+import { Outlet, createFileRoute } from '@tanstack/react-router'
 import { PluginScreen } from '../../plugins/detail/PluginScreen'
 import { validatePluginDetailSearch } from '../pluginDetailSearch'
+import { parsePluginDetailHref } from '../../../workbench/paths'
+import { useCurrentPathname } from '../useCurrentRoute'
 
 function PluginDetailRoute() {
-	const { name: rawName } = useParams({ strict: false })
-	let pluginName = rawName
-	try {
-		pluginName = decodeURIComponent(rawName)
-	} catch {
-		pluginName = rawName
-	}
+	const pathname = useCurrentPathname()
+	const parsed = parsePluginDetailHref(pathname)
+	const pluginRoute = parsed ? formatPluginNodeRoute(parsed.target) : ''
 
 	return (
 		<>
-			<PluginScreen pluginName={pluginName} />
+			<PluginScreen pluginRoute={pluginRoute} />
 			<div style={{ display: 'none' }}>
 				<Outlet />
 			</div>

@@ -52,7 +52,7 @@ function toOutput(
 	group: {
 		groupId: string
 		name: string
-		nodes: readonly import('@pluxel/core').PluginNodeAddressSnapshot[]
+		nodes: readonly import('@pluxel/core').PluginNodeAddress[]
 	},
 	projection: PluginCatalogProjection,
 ): PluginGroupOutput {
@@ -70,7 +70,7 @@ function toOutput(
 }
 
 export function readGroupNode(pCtx: PlxContext, id: string): PluginGroupOutput['nodes'][number] {
-	const status = projectPluginCatalog(pCtx).byId.get(id)
+	const status = projectPluginCatalog(pCtx).byRoute.get(id)
 	if (!status) throw new GraphQLError('Plugin group node not found')
 	return groupNodeOutput(status)
 }
@@ -80,8 +80,11 @@ function groupNodeOutput(
 ): PluginGroupOutput['nodes'][number] {
 	return {
 		__typename: 'PluginGroupNode' as const,
-		id: status.id,
+		id: status.route,
+		reference: status.reference,
+		route: status.route,
 		displayName: status.displayName,
+		label: status.label.text,
 		rootExportName: status.rootExportName,
 		address: status.address,
 	}

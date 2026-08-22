@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { defineNodeModule, type PluginNodeAddressSnapshot } from '@pluxel/runtime'
+import { defineNodeModule, type PluginNodeAddress } from '@pluxel/runtime'
 import { dirname, join } from 'pathe'
 import { createHost, type Context, type Host } from '@pluxel/test'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
@@ -50,8 +50,8 @@ function createPluginContext(
 	host: Host,
 	displayName: string,
 	overrides: Record<string, unknown> = {},
+	owner: PluginNodeAddress = pluginAddress(displayName),
 ): Context {
-	const owner = pluginAddress(displayName)
 	const nodeSlot = host.ctx.registry.internNodeAddress(owner)
 	const ctx = host.ctx.extend({ name: displayName }) as Context
 	defineTestProperty(ctx, 'pluginInfo', {
@@ -65,13 +65,13 @@ function createPluginContext(
 	return ctx
 }
 
-function pluginAddress(displayName: string): PluginNodeAddressSnapshot {
+function pluginAddress(displayName: string): PluginNodeAddress {
 	return {
 		definition: {
-			entry: { kind: 'source-entry', source: `pluxel-test:${displayName}` },
+			entry: { kind: 'source-entry', sourceSpace: 'app', path: `pluxel-test:${displayName}` },
 			exportName: 'Plugin',
 		},
-		instance: 'default',
+		variant: 'default',
 	}
 }
 
@@ -226,6 +226,76 @@ describe('PluginArtifactCompiler', () => {
 		await host.dispose()
 	})
 
+	it('builds one definition artifact and binds it to each fork node independently', async () => {
+		await using fixture = await createFixture({
+			'plugin/package.json': JSON.stringify({ name: 'shared-fork-plugin', type: 'module' }),
+			'plugin/src/ui.tsx': 'export default {}\n',
+		})
+		const host = createHost()
+		const modules = new Map<
+			string,
+			Parameters<PluginArtifactCompilerWorkbenchStore['commitCompiledModule']>[0]
+		>()
+		const keyOf = (owner: PluginNodeAddress) => JSON.stringify(owner)
+		const store: PluginArtifactCompilerWorkbenchStore = {
+			...noopWorkbenchStore,
+			getCompiledModule(slot) {
+				return modules.get(keyOf(host.ctx.registry.nodeAddressOf(slot)))
+			},
+			async commitCompiledModule(module) {
+				modules.set(keyOf(module.owner.address), module)
+			},
+			async removePlugin(owner) {
+				modules.delete(keyOf(owner.address))
+			},
+		}
+		const base = pluginAddress('SharedForkPlugin')
+		const fork = {
+			definition: base.definition,
+			variant: 'fork',
+			forkId: 'east',
+		} as const satisfies PluginNodeAddress
+		const service = new PluginArtifactCompiler(
+			host.ctx,
+			{ store },
+			{
+				cacheDir: fixture.getPath('.pluxel/workbench'),
+				pluginDirs: [{ owner: base, dir: fixture.getPath('plugin') }],
+			},
+		)
+		const declaration = {
+			entryPath: fixture.getPath('plugin/src/ui.tsx'),
+			declarationKey: 'shared-fork-ui',
+		}
+		const disposeBase = service.bindDeclaration(
+			createPluginContext(host, 'Shared fork', {}, base),
+			declaration,
+		)
+		const disposeFork = service.bindDeclaration(
+			createPluginContext(host, 'Shared fork', {}, fork),
+			declaration,
+		)
+
+		await Promise.all([
+			service.requestCompile(declaration.declarationKey),
+			service.requestCompile(declaration.declarationKey),
+		])
+
+		const baseModule = modules.get(keyOf(base))
+		const forkModule = modules.get(keyOf(fork))
+		expect(pluginBuildMocks.buildWorkbenchUiRemote).toHaveBeenCalledTimes(1)
+		expect(modules.size).toBe(2)
+		expect(baseModule?.sourceHash).toBe(forkModule?.sourceHash)
+		expect(baseModule?.remoteEntryUrl).not.toBe(forkModule?.remoteEntryUrl)
+
+		disposeBase()
+		expect(modules.has(keyOf(base))).toBe(false)
+		expect(modules.has(keyOf(fork))).toBe(true)
+		disposeFork()
+		service.dispose()
+		await host.dispose()
+	})
+
 	it('builds an absolute UI declaration from its package instead of a dynamic wrapper package', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: '@example/dynamic-host', private: true }),
@@ -372,7 +442,7 @@ describe('PluginArtifactCompiler', () => {
 			'plugin/src/new.tsx': 'export default {}\n',
 		})
 		const host = createHost()
-		const removed: PluginNodeAddressSnapshot[] = []
+		const removed: PluginNodeAddress[] = []
 		const store: PluginArtifactCompilerWorkbenchStore = {
 			...noopWorkbenchStore,
 			async removePlugin(owner) {

@@ -1,15 +1,15 @@
 import {
-	formatPluginDefinitionAddress,
-	formatPluginNodeAddress,
+	formatPluginDefinitionReference,
+	formatPluginNodeReference,
 	getPluginDeclaration,
 	getPluginDefinitionFacts,
 	pluginNodeAddressOf,
 	type PluginConfigDefinition,
 	type PluginConstructor,
-	type PluginDefinitionAddressSnapshot,
+	type PluginDefinitionAddress,
 	type PluginDefinitionSlot,
-	type PluginEntryAddressSnapshot,
-	type PluginNodeAddressSnapshot,
+	type PluginEntryAddress,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 	PluginSlotRegistry,
 } from '@pluxel/core'
@@ -17,7 +17,7 @@ import type { StaticRuntimeDefinition } from '../types'
 
 type ConfigShape = Readonly<{
 	plugins: readonly Readonly<{
-		owner: PluginNodeAddressSnapshot
+		owner: PluginNodeAddress
 		config: Readonly<Record<string, unknown>>
 	}>[]
 }>
@@ -31,12 +31,12 @@ type ConfigShape = Readonly<{
 export type StaticRuntimeCatalogEntryInternal = Readonly<{
 	readonly definitionSlot: PluginDefinitionSlot
 	readonly nodeSlot: PluginNodeSlot
-	readonly definitionAddress: PluginDefinitionAddressSnapshot
-	readonly nodeAddress: PluginNodeAddressSnapshot
+	readonly definitionAddress: PluginDefinitionAddress
+	readonly nodeAddress: PluginNodeAddress
 	readonly generation: PluginConstructor
 	readonly displayName: string
 	readonly rootExport: string
-	readonly provenance: PluginEntryAddressSnapshot
+	readonly provenance: PluginEntryAddress
 	readonly required: readonly PluginDefinitionSlot[]
 	readonly optional: readonly PluginDefinitionSlot[]
 	readonly provides?: PluginDefinitionSlot
@@ -58,14 +58,14 @@ export type StaticRuntimeCatalog = Readonly<{
 }>
 
 export type StaticRuntimeCatalogDiff = Readonly<{
-	readonly added: readonly PluginNodeAddressSnapshot[]
-	readonly removed: readonly PluginNodeAddressSnapshot[]
-	readonly replaced: readonly PluginNodeAddressSnapshot[]
+	readonly added: readonly PluginNodeAddress[]
+	readonly removed: readonly PluginNodeAddress[]
+	readonly replaced: readonly PluginNodeAddress[]
 }>
 
 export type StaticRuntimeMissingDependency = Readonly<{
-	readonly definition: PluginDefinitionAddressSnapshot
-	readonly candidates: readonly PluginNodeAddressSnapshot[]
+	readonly definition: PluginDefinitionAddress
+	readonly candidates: readonly PluginNodeAddress[]
 }>
 
 /**
@@ -86,26 +86,26 @@ export function buildCatalog(
 		const facts = getPluginDefinitionFacts(generation)
 		if (facts.kind !== 'plugin') {
 			throw new TypeError(
-				`[runtime-static:catalog] ${formatPluginDefinitionAddress(facts.definition)} is not a concrete Plugin definition`,
+				`[runtime-static:catalog] ${formatPluginDefinitionReference(facts.definition)} is not a concrete Plugin definition`,
 			)
 		}
 		const declaration = getPluginDeclaration(generation)
 		const definitionSlot = slots.internDefinition(facts.definition)
 		const nodeAddress = pluginNodeAddressOf(generation)
-		if (nodeAddress.instance !== 'default') {
+		if (nodeAddress.variant !== 'default') {
 			throw new TypeError(
-				`[runtime-static:catalog] root catalog entry ${formatPluginNodeAddress(nodeAddress)} must be a default Plugin definition`,
+				`[runtime-static:catalog] root catalog entry ${formatPluginNodeReference(nodeAddress)} must be a default Plugin definition`,
 			)
 		}
 		const nodeSlot = slots.internNode(nodeAddress)
 		if (byDefinition.has(definitionSlot) || byNode.has(nodeSlot)) {
 			throw new TypeError(
-				`[runtime-static:catalog] duplicate Plugin definition ${formatPluginDefinitionAddress(facts.definition)}`,
+				`[runtime-static:catalog] duplicate Plugin definition ${formatPluginDefinitionReference(facts.definition)}`,
 			)
 		}
 		if (byGeneration.has(generation)) {
 			throw new TypeError(
-				`[runtime-static:catalog] duplicate Plugin generation for ${formatPluginDefinitionAddress(facts.definition)}`,
+				`[runtime-static:catalog] duplicate Plugin generation for ${formatPluginDefinitionReference(facts.definition)}`,
 			)
 		}
 
@@ -162,9 +162,9 @@ export function diffCatalog(
 		)
 	}
 
-	const added: PluginNodeAddressSnapshot[] = []
-	const removed: PluginNodeAddressSnapshot[] = []
-	const replaced: PluginNodeAddressSnapshot[] = []
+	const added: PluginNodeAddress[] = []
+	const removed: PluginNodeAddress[] = []
+	const replaced: PluginNodeAddress[] = []
 
 	for (const [node, entry] of next.byNode) {
 		const prior = previous.byNode.get(node)
@@ -216,13 +216,13 @@ export function readConfigSnapshot(configService: ConfigSnapshotReader): ConfigS
 export function collectUnknownConfigEntries(
 	snapshot: ConfigShape,
 	catalog: StaticRuntimeCatalog,
-	enabled: Iterable<PluginNodeAddressSnapshot> = [],
-): PluginNodeAddressSnapshot[] {
-	const unknown = new Map<PluginNodeSlot, PluginNodeAddressSnapshot>()
+	enabled: Iterable<PluginNodeAddress> = [],
+): PluginNodeAddress[] {
+	const unknown = new Map<PluginNodeSlot, PluginNodeAddress>()
 	for (const address of enabled) collectUnknownNode(address, catalog, unknown)
 	for (const record of snapshot.plugins) collectUnknownNode(record.owner, catalog, unknown)
 	return [...unknown.values()].sort((left, right) =>
-		formatPluginNodeAddress(left).localeCompare(formatPluginNodeAddress(right)),
+		formatPluginNodeReference(left).localeCompare(formatPluginNodeReference(right)),
 	)
 }
 
@@ -237,13 +237,13 @@ function addProvider(
 }
 
 function collectUnknownNode(
-	address: PluginNodeAddressSnapshot,
+	address: PluginNodeAddress,
 	catalog: StaticRuntimeCatalog,
-	unknown: Map<PluginNodeSlot, PluginNodeAddressSnapshot>,
+	unknown: Map<PluginNodeSlot, PluginNodeAddress>,
 ): void {
 	const node = catalog.slots.internNode(address)
 	const known =
 		catalog.byNode.has(node) ||
-		(address.instance === 'fork' && catalog.byDefinition.has(node.definition))
+		(address.variant === 'fork' && catalog.byDefinition.has(node.definition))
 	if (!known) unknown.set(node, catalog.slots.nodeAddress(node))
 }

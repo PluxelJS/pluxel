@@ -7,7 +7,7 @@ import type {
 	PluginStatusEntry,
 	PluginStatusEntryLifecycleStage,
 } from '../../gqlens'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 
 export type PluginSourceKind = PluginSourceInfoKind
 
@@ -16,9 +16,9 @@ export type PluginSourceInfo = Omit<GqlPluginSourceInfo, '__typename' | 'kind'> 
 }
 
 export interface PluginScopeContextValue {
-	owner: PluginNodeAddressSnapshot
-	pluginId: string
-	pluginName: string
+	owner: PluginNodeAddress
+	pluginRoute: string
+	pluginLabel: string
 	description: string
 	dependencies: readonly PluginDependency[]
 	status: PluginStatusEntry | null
@@ -57,8 +57,8 @@ export function usePluginMeta() {
 	const ctx = usePluginScope()
 	return {
 		owner: ctx.owner,
-		pluginId: ctx.pluginId,
-		pluginName: ctx.pluginName,
+		pluginRoute: ctx.pluginRoute,
+		pluginLabel: ctx.pluginLabel,
 		description: ctx.description,
 		status: ctx.status,
 		isRunning: ctx.isRunning,

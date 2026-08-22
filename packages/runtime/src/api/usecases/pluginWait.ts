@@ -1,9 +1,9 @@
-import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { Context, PluginNodeAddress } from '@pluxel/core'
 
 import { type PluginStatusSnapshot, pluginStatus } from './plugins'
 
 export type PluginWaitForStageInput = {
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	stage: string
 	/** Timeout in milliseconds. Defaults to 30_000. */
 	timeoutMs?: number
@@ -13,10 +13,10 @@ export type PluginWaitForStageInput = {
 }
 
 export type PluginWaitForStageOutput =
-	| { ok: true; address: PluginNodeAddressSnapshot; stage: string; status: PluginStatusSnapshot }
+	| { ok: true; address: PluginNodeAddress; stage: string; status: PluginStatusSnapshot }
 	| {
 			ok: false
-			address: PluginNodeAddressSnapshot
+			address: PluginNodeAddress
 			stage: string
 			code: string
 			message: string

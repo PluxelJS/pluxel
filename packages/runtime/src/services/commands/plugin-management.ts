@@ -1,6 +1,6 @@
 import { CommandError, defineCommand, type AnyCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { formatPluginNodeAddress, type Context, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { formatPluginNodeReference, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { applyStatusActions } from '../../api/usecases/pluginStatus'
 import { pluginStatus, pluginsList, type PluginStatusSnapshot } from '../../api/usecases/plugins'
 import type { PluginStatusAction } from '../../web/protocol'
@@ -12,7 +12,8 @@ const pluginEntryAddress = Type.Union([
 	}),
 	obj({
 		kind: Type.Literal('source-entry'),
-		source: Type.String({ minLength: 1 }),
+		sourceSpace: Type.String({ minLength: 1 }),
+		path: Type.String({ minLength: 1 }),
 	}),
 ])
 
@@ -24,11 +25,11 @@ const pluginDefinitionAddress = obj({
 const pluginNodeAddress = Type.Union([
 	obj({
 		definition: pluginDefinitionAddress,
-		instance: Type.Literal('default'),
+		variant: Type.Literal('default'),
 	}),
 	obj({
 		definition: pluginDefinitionAddress,
-		instance: Type.Literal('fork'),
+		variant: Type.Literal('fork'),
 		forkId: Type.String({ minLength: 1 }),
 	}),
 ])
@@ -63,7 +64,13 @@ const pluginSource = Type.Union([
 
 const pluginSnapshot = obj({
 	address: pluginNodeAddress,
-	id: Type.String(),
+	reference: Type.String(),
+	route: Type.String(),
+	label: obj({
+		title: Type.String(),
+		qualifier: Type.Optional(Type.String()),
+		text: Type.String(),
+	}),
 	displayName: Type.String(),
 	rootExportName: Type.String(),
 	isRunning: Type.Boolean(),
@@ -86,11 +93,11 @@ const pluginsOutput = obj({
 	}),
 })
 
-function requirePlugin(ctx: Context, address: PluginNodeAddressSnapshot): PluginStatusSnapshot {
+function requirePlugin(ctx: Context, address: PluginNodeAddress): PluginStatusSnapshot {
 	const snapshot = pluginStatus(ctx, address)
 	if (snapshot) return snapshot
 	throw new CommandError('INPUT_VALIDATION', 'Plugin was not found', {
-		message: `Plugin not found: ${formatPluginNodeAddress(address)}`,
+		message: `Plugin not found: ${formatPluginNodeReference(address)}`,
 		details: {
 			issues: [{ path: ['address'], code: 'plugin_not_found', message: 'Plugin was not found' }],
 		},
@@ -99,7 +106,7 @@ function requirePlugin(ctx: Context, address: PluginNodeAddressSnapshot): Plugin
 
 async function mutatePlugin(
 	ctx: Context,
-	address: PluginNodeAddressSnapshot,
+	address: PluginNodeAddress,
 	action: PluginStatusAction,
 ): Promise<PluginStatusSnapshot> {
 	const result = await applyStatusActions(ctx, [{ address, action }])
@@ -113,7 +120,7 @@ async function mutatePlugin(
 		message:
 			mutation?.error ??
 			result.commitError ??
-			`Plugin ${action} failed: ${formatPluginNodeAddress(address)}`,
+			`Plugin ${action} failed: ${formatPluginNodeReference(address)}`,
 		details: {
 			service: 'pluginLifecycle',
 			command: `plugin.${action}`,

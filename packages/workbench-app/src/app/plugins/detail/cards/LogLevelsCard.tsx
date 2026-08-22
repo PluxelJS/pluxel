@@ -1,8 +1,9 @@
 import { Badge, Button, Code, Group, ScrollArea, Select, Stack, Text, Title } from '@mantine/core'
 import {
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	pluginNodeAddressEqual,
-	type PluginNodeAddressSnapshot,
+	pluginNodeIndexKey,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -12,7 +13,6 @@ import {
 	type RuntimePluginLogLevel,
 	type VersionedPluginLogPolicySnapshot,
 } from '../../../../runtime'
-import { workbenchNodeKey } from '../../../../workbench/node-address'
 
 type Snapshot = VersionedPluginLogPolicySnapshot
 
@@ -36,7 +36,7 @@ export function LogLevelsCard({
 	owner,
 	compact = false,
 }: {
-	owner: PluginNodeAddressSnapshot
+	owner: PluginNodeAddress
 	compact?: boolean
 }) {
 	const transport = useRuntimeTransportClient()
@@ -105,7 +105,7 @@ export function LogLevelsCard({
 	)
 
 	const deleteRule = useCallback(
-		async (ruleOwner: PluginNodeAddressSnapshot) => {
+		async (ruleOwner: PluginNodeAddress) => {
 			setSaving(true)
 			setError(null)
 			try {
@@ -163,12 +163,12 @@ export function LogLevelsCard({
 		const levels = snapshot?.overrides
 		if (!levels) return []
 		const out: Array<{
-			owner: PluginNodeAddressSnapshot
+			owner: PluginNodeAddress
 			label: string
 			level: RuntimePluginLogLevel
 		}> = levels.map((entry) => ({
 			owner: entry.owner,
-			label: formatPluginNodeAddress(entry.owner),
+			label: formatPluginNodeReference(entry.owner),
 			level: entry.level,
 		}))
 		out.sort((a, b) => a.label.localeCompare(b.label))
@@ -224,7 +224,7 @@ export function LogLevelsCard({
 			{compact ? null : (
 				<Text size="sm" c="dimmed">
 					per-plugin level 由 HMR 面板管理并持久化；不会为每个插件创建 category/logger config（只做
-					pluginId 查表过滤）。
+					插件节点地址查表过滤）。
 				</Text>
 			)}
 
@@ -254,7 +254,7 @@ export function LogLevelsCard({
 							当前插件
 						</Text>
 						<Badge variant="light" color="gray">
-							<Code>{formatPluginNodeAddress(owner)}</Code>
+							<Code>{formatPluginNodeReference(owner)}</Code>
 						</Badge>
 					</Group>
 					<Select
@@ -291,7 +291,7 @@ export function LogLevelsCard({
 						<Stack gap={4} p={2}>
 							{overrides.map((r) => (
 								<Group
-									key={workbenchNodeKey(r.owner)}
+									key={pluginNodeIndexKey(r.owner)}
 									gap="xs"
 									justify="space-between"
 									wrap="nowrap"

@@ -113,7 +113,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 	const transport = useRuntimeTransportClient()
 	const {
 		owner,
-		pluginName,
+		pluginLabel,
 		dependencies,
 		isRunning,
 		isEnabled,
@@ -131,7 +131,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 
 	const applyOptimistic = useCallback(
 		(action: PluginStatusAction) => {
-			if (!pluginName) return
+			if (!pluginLabel) return
 			if (!setStatusOverride) return
 			const currentEnabled = Boolean(isEnabled)
 			const currentRunning = Boolean(isRunning)
@@ -176,7 +176,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 				lifecycleStage: nextStage,
 			})
 		},
-		[pluginName, setStatusOverride, isEnabled, isRunning, lifecycleStage],
+		[pluginLabel, setStatusOverride, isEnabled, isRunning, lifecycleStage],
 	)
 
 	const syncAfterSuccess = useCallback(async () => {
@@ -184,7 +184,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 	}, [refetch])
 
 	const performAction = async (action: PluginStatusAction) => {
-		if (!pluginName) return
+		if (!pluginLabel) return
 		const mySeq = ++seqRef.current
 
 		// ① 全局乐观：立即写入运行/同步态
@@ -211,7 +211,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 
 			notify({
 				title: '插件状态已更新',
-				message: `${pluginName} ${ACTION_LABEL[action]}成功`,
+				message: `${pluginLabel} ${ACTION_LABEL[action]}成功`,
 				color: 'green',
 			})
 		} catch (e: any) {
@@ -244,7 +244,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 					<div>
 						<div>启动当前插件时，运行时会按结构化依赖图启动所需节点。</div>
 						<div style={{ marginTop: 10 }}>
-							以下依赖尚未运行：{missing.map((item) => item.name).join('，')}
+							以下依赖尚未运行：{missing.map((item) => item.label).join('，')}
 						</div>
 					</div>
 				),

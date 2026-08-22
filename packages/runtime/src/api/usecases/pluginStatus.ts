@@ -1,8 +1,7 @@
-import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { readStatusSnapshot } from '../features/pluginStatus/service'
 import { maybeAddForkToCatalog } from './forksCatalog'
 import { requireRouteCapability } from '../../runtime/capabilities'
-import { pluginNodeAddressKey } from '../../runtime/plugin-address'
 import type {
 	PluginStatusAction,
 	PluginStatusBatchAction,
@@ -10,7 +9,7 @@ import type {
 	PluginStatusMutationResult,
 } from '../../web/protocol'
 
-function resolvePlugin(ctx: Context, address: PluginNodeAddressSnapshot) {
+function resolvePlugin(ctx: Context, address: PluginNodeAddress) {
 	const ctor = requireRouteCapability(ctx, 'catalog').resolve(address)
 	if (!ctor) throw new Error('Plugin node is not present in the route catalog')
 	return ctor
@@ -18,7 +17,7 @@ function resolvePlugin(ctx: Context, address: PluginNodeAddressSnapshot) {
 
 async function runStatusAction(
 	ctx: Context,
-	address: PluginNodeAddressSnapshot,
+	address: PluginNodeAddress,
 	action: PluginStatusAction,
 ): Promise<PluginStatusMutationResult> {
 	try {
@@ -65,11 +64,11 @@ export async function applyStatusActions(
 ): Promise<PluginStatusBatchResult> {
 	if (actions.length === 0) return { ok: true, results: [] }
 	const interim: PluginStatusMutationResult[] = []
-	const touched = new Map<string, PluginNodeAddressSnapshot>()
+	const touched = new Map<string, PluginNodeAddress>()
 	for (const { address, action } of actions) {
 		const result = await runStatusAction(ctx, address, action)
 		interim.push(result)
-		if (result.ok) touched.set(pluginNodeAddressKey(address), address)
+		if (result.ok) touched.set(pluginNodeIndexKey(address), address)
 	}
 	const commit = await ctx.registry.commit()
 	if (commit.err) {
@@ -95,7 +94,7 @@ export async function applyStatusActions(
 		ok: interim.every((result) => result.ok),
 		results: interim.map((result) =>
 			result.ok
-				? Object.assign({}, result, snapshots.get(pluginNodeAddressKey(result.address)))
+				? Object.assign({}, result, snapshots.get(pluginNodeIndexKey(result.address)))
 				: result,
 		),
 	}

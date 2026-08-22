@@ -9,7 +9,7 @@ import type {
 	PluginSourceInfoKind as PluginSourceInfoKindType,
 	PluginStatusLifecycleStage,
 } from './types'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 
 import { getRuntimeTransportClient } from '../../runtime'
 import { stringifyUnknown } from '../../utils/unknown'
@@ -21,14 +21,17 @@ export const PluginStatusEntryLifecycleStage = {
 } as const
 export type PluginStatusEntryLifecycleStage = PluginStatusLifecycleStage
 export type PluginStatusEntry = PluginStatus &
-	Pick<Plugin, 'id' | 'name' | 'rootExportName'> & {
-		address: PluginNodeAddressSnapshot
+	Pick<Plugin, 'id' | 'reference' | 'route' | 'displayName' | 'label' | 'rootExportName'> & {
+		address: PluginNodeAddress
 	}
 export type PluginGroupEntry = Omit<PluginGroup, 'nodes'> & {
-	nodes: Array<Omit<PluginGroupNode, 'address'> & { address: PluginNodeAddressSnapshot }>
+	nodes: Array<Omit<PluginGroupNode, 'address'> & { address: PluginNodeAddress }>
 }
-export type PluginDependency = Pick<Plugin, 'id' | 'name' | 'rootExportName'> & {
-	address: PluginNodeAddressSnapshot
+export type PluginDependency = Pick<
+	Plugin,
+	'id' | 'reference' | 'route' | 'displayName' | 'label' | 'rootExportName'
+> & {
+	address: PluginNodeAddress
 	isRunning: boolean
 }
 

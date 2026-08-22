@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { resolve } from 'pathe'
 import { normalizePath } from 'vite'
 import { DRIVE_PATH_RE, fsPathFromViteFsId, resolveCacheLimit } from '@pluxel/runtime/internal'
@@ -16,9 +16,9 @@ import type {
 
 export type RegistryViewLike = {
 	listRegistered: () => readonly {
-		address: PluginNodeAddressSnapshot
+		address: PluginNodeAddress
 	}[]
-	findModuleId: (address: PluginNodeAddressSnapshot) => string | null
+	findModuleId: (address: PluginNodeAddress) => string | null
 }
 
 const FILE_EXT_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|json)$/i
@@ -57,8 +57,8 @@ function normalizeModuleIdToFsPath(cwd: string, moduleId: string) {
 
 export function collectPluginTotals(params: {
 	registryView: RegistryViewLike
-	isPluginEnabled: (address: PluginNodeAddressSnapshot) => boolean
-	isRunning: (address: PluginNodeAddressSnapshot) => boolean
+	isPluginEnabled: (address: PluginNodeAddress) => boolean
+	isRunning: (address: PluginNodeAddress) => boolean
 }): PluginTotals {
 	const plugins: PluginTotals = { loaded: 0, enabled: 0, running: 0 }
 
@@ -82,8 +82,8 @@ export async function buildHmrOperationalReport(params: {
 	rootsPretty: readonly string[]
 	entriesByRoot: readonly number[]
 	registryView: RegistryViewLike
-	isPluginEnabled: (address: PluginNodeAddressSnapshot) => boolean
-	isRunning: (address: PluginNodeAddressSnapshot) => boolean
+	isPluginEnabled: (address: PluginNodeAddress) => boolean
+	isRunning: (address: PluginNodeAddress) => boolean
 	resolveBareWorkspaceEntry: (specifier: string) => Promise<string | null>
 	resolveLimit?: number
 	hotspots?: Array<{ id: string; ms: number }>

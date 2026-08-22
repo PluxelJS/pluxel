@@ -331,15 +331,15 @@ export function EditorTabStrip({
 
 export function PluginNavigationRail({
 	onCollapse,
-	pluginName,
+	pluginRoute,
 }: {
 	onCollapse: () => void
-	pluginName?: string
+	pluginRoute?: string
 }) {
 	return (
 		<div className="plx-workbench__navigationRail">
 			<div className="plx-workbench__navigationBody">
-				<PluginCatalog pluginName={pluginName} onCollapse={onCollapse} />
+				<PluginCatalog pluginRoute={pluginRoute} onCollapse={onCollapse} />
 			</div>
 		</div>
 	)

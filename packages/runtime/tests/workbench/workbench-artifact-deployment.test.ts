@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { sanitizeWorkbenchOwnerName } from '@pluxel/core/federation'
-import { PluginSlotRegistry, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { PluginSlotRegistry, type PluginNodeAddress } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import { workbench } from '@pluxel/runtime/workbench'
 
@@ -25,19 +25,19 @@ describe('packaged Workbench artifact deployment paths', () => {
 			resolveManifest = resolvePromise
 		})
 		const slots = new PluginSlotRegistry()
-		const nodeAddress: PluginNodeAddressSnapshot = {
+		const nodeAddress: PluginNodeAddress = {
 			definition: {
-				entry: { kind: 'source-entry', source: 'pluxel-test:DisposedPlugin' },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'pluxel-test:DisposedPlugin' },
 				exportName: 'Plugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		}
 		const nodeSlot = slots.internNode(nodeAddress)
 		const root = {
 			config: { workbenchArtifactResolver: () => manifest },
 			logger: { error: () => {} },
 			registry: {
-				internNodeAddress: (address: PluginNodeAddressSnapshot) => slots.internNode(address),
+				internNodeAddress: (address: PluginNodeAddress) => slots.internNode(address),
 				nodeAddressOf: (slot: typeof nodeSlot) => slots.nodeAddress(slot),
 			},
 		}

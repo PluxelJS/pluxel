@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'pathe'
 
-const RESERVED_PROPERTY_KEYS = new Set(['plugin', 'context', 'name', 'caller'])
+const RESERVED_PROPERTY_KEYS = new Set(['plugin', 'pluginDisplayName', 'context', 'name', 'caller'])
 const CALLER_SKIP_MARKERS = [
 	'/node_modules/@logtape/',
 	'\\node_modules\\@logtape\\',

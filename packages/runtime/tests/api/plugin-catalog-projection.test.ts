@@ -1,44 +1,59 @@
-import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
-import { assignPluginPublicIds } from '../../src/api/features/plugins/catalog-projection'
-import { pluginNodeAddressKey } from '../../src/runtime/plugin-address'
+import { buildPluginNodeLabels } from '../../src/api/features/plugins/catalog-projection'
 
-function owner(
-	packageName: string,
-	exportName: string,
-	instance: 'default' | { forkId: string } = 'default',
-): PluginNodeAddressSnapshot {
+function packageNode(packageName: string, exportName: string, forkId?: string): PluginNodeAddress {
 	const definition = {
 		entry: { kind: 'package-root' as const, packageName },
 		exportName,
 	}
-	return instance === 'default'
-		? { definition, instance }
-		: { definition, instance: 'fork', forkId: instance.forkId }
+	return forkId ? { definition, variant: 'fork', forkId } : { definition, variant: 'default' }
 }
 
-describe('Plugin catalog public IDs', () => {
-	it('keeps an unambiguous default Plugin on its ordinary root export name', () => {
-		const address = owner('@acme/orders', 'OrdersPlugin')
-		const ids = assignPluginPublicIds([{ address, rootExportName: 'OrdersPlugin' }])
+describe('Plugin catalog labels', () => {
+	it('keeps a unique display name short', () => {
+		const address = packageNode('@acme/orders', 'OrdersPlugin')
+		const labels = buildPluginNodeLabels([{ nodeAddress: address, displayName: 'Orders' }])
 
-		expect(ids.get(pluginNodeAddressKey(address))).toBe('OrdersPlugin')
+		expect([...labels.values()]).toEqual([{ title: 'Orders', text: 'Orders' }])
 	})
 
-	it('adds short stable suffixes only for collisions and forks', () => {
-		const first = owner('@acme/first', 'CachePlugin')
-		const second = owner('@acme/second', 'CachePlugin')
-		const fork = owner('@acme/first', 'CachePlugin', { forkId: 'tenant-a' })
-		const entries = [first, second, fork].map((address) => ({
-			address,
-			rootExportName: 'CachePlugin',
-		}))
-		const ids = assignPluginPublicIds(entries)
-		const values = entries.map(({ address }) => ids.get(pluginNodeAddressKey(address)))
+	it('qualifies only colliding names and keeps forks visible', () => {
+		const first = packageNode('@acme/first', 'CachePlugin')
+		const second = packageNode('@acme/second', 'CachePlugin')
+		const fork = packageNode('@acme/first', 'CachePlugin', 'tenant-a')
+		const labels = buildPluginNodeLabels(
+			[first, second, fork].map((nodeAddress) => ({ nodeAddress, displayName: 'Cache' })),
+		)
 
-		expect(new Set(values).size).toBe(3)
-		expect(values[0]).toMatch(/^CachePlugin~[a-f0-9]{12}$/)
-		expect(values[1]).toMatch(/^CachePlugin~[a-f0-9]{12}$/)
-		expect(values[2]).toMatch(/^CachePlugin~[a-f0-9]{12}$/)
+		expect([...labels.values()].map(({ text }) => text)).toEqual([
+			'Cache (@acme/first)',
+			'Cache (@acme/second)',
+			'Cache / tenant-a',
+		])
+	})
+
+	it('adds the export when colliding definitions share provenance', () => {
+		const first = packageNode('@acme/cache', 'MemoryCachePlugin')
+		const second = packageNode('@acme/cache', 'DiskCachePlugin')
+		const labels = buildPluginNodeLabels([
+			{ nodeAddress: first, displayName: 'Cache' },
+			{ nodeAddress: second, displayName: 'Cache' },
+		])
+
+		expect([...labels.values()].map(({ text }) => text)).toEqual([
+			'Cache (@acme/cache::MemoryCachePlugin)',
+			'Cache (@acme/cache::DiskCachePlugin)',
+		])
+	})
+
+	it('rejects duplicate node addresses as a catalog invariant violation', () => {
+		const address = packageNode('@acme/orders', 'OrdersPlugin')
+		expect(() =>
+			buildPluginNodeLabels([
+				{ nodeAddress: address, displayName: 'Orders' },
+				{ nodeAddress: address, displayName: 'Other name' },
+			]),
+		).toThrow(/duplicate address/i)
 	})
 })

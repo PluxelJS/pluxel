@@ -48,7 +48,7 @@ declare module '@pluxel/core' {
 			/** @internal Dynamic hosts resolve Node module artifacts from plugin packages. */
 			nodeModuleArtifactResolver?: (
 				root: import('@pluxel/core').Context,
-				owner: import('@pluxel/core').PluginNodeAddressSnapshot,
+				owner: import('@pluxel/core').PluginNodeAddress,
 				artifactKey: string,
 			) => string | null | Promise<string | null>
 		}

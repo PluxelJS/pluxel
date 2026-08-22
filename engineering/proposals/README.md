@@ -11,9 +11,6 @@
 
 当前进行中的提案：
 
-- [`PLUGIN_IDENTITY_AND_LOCATORS.md`](PLUGIN_IDENTITY_AND_LOCATORS.md)：保留结构化 Plugin address 与 interned slot，
-  收紧 host-local source 的 filesystem canonicalization，并为 URL、CLI、日志和 catalog 增加只由 canonical address
-  决定的稳定 locator，避免完整路径泄漏和 catalog-dependent 短 ID 漂移。
 - [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)：把现有 Contract、layout、artifact、grant 与
   resource 事实收敛为可由第三方实现的版本化 Workbench 协议，覆盖非 Mantine management host、现有 React View adapter、
   通用配置投影与未来 renderer 边界。
@@ -31,6 +28,9 @@ OpenTelemetry 的当前设计、非目标与上游阻塞见 [`../../plugins/otel
 
 Command 默认 CLI projection 与 owner-bound invocation 的已实施约束见 [`../COMMANDS.md`](../COMMANDS.md) 与
 [`../RUNTIME.md`](../RUNTIME.md)。
+
+Plugin definition/node identity、source canonicalization 和人类可读投影的已实施约束见
+[`../PLUGIN_IDENTITY.md`](../PLUGIN_IDENTITY.md)。
 
 数据库与 Workbench 的已实施结论见 [`../DATABASE.md`](../DATABASE.md) 与
 [`../WORKBENCH.md`](../WORKBENCH.md)。

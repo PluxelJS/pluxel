@@ -97,8 +97,8 @@ export function recordLifecycleIssue(
 		? JSON.stringify({
 				entry: issue.blockedBy.definition.entry.address,
 				exportName: issue.blockedBy.definition.exportName,
-				instance: issue.blockedBy.instance,
-				forkId: issue.blockedBy.forkId,
+				variant: issue.blockedBy.variant,
+				...(issue.blockedBy.variant === 'fork' ? { forkId: issue.blockedBy.forkId } : {}),
 			})
 		: ''
 	const key = `${issue.kind}\0${blockedBy}\0${issue.message}`

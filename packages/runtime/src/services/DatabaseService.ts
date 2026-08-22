@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { formatPluginNodeAddress, Injectable, type Context as CoreContext } from '@pluxel/core'
+import { formatPluginNodeReference, Injectable, type Context as CoreContext } from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
@@ -10,7 +10,6 @@ import {
 	type DatabaseMigration,
 } from '../database-internal'
 import type { DatabaseDefinition, PluginDatabaseHandle } from '../database'
-import { pluginNodeAddressKey } from '../runtime/plugin-address'
 
 const serviceName = 'database' as const
 const SYSTEM_SCHEMA = 'pluxel_system'
@@ -199,11 +198,11 @@ class DatabaseCoordinator {
 		if (!address) throw new Error('[pluxel/database] database use requires a plugin Context')
 		if (this.root.config.database === false) {
 			throw new Error(
-				`[pluxel/database] database capability is disabled for plugin "${formatPluginNodeAddress(address)}"`,
+				`[pluxel/database] database capability is disabled for plugin "${formatPluginNodeReference(address)}"`,
 			)
 		}
 		const artifact = readDatabaseDefinition(definition)
-		const ownerId = pluginNodeAddressKey(address)
+		const ownerId = formatPluginNodeReference(address)
 		const instance = await this.prepare(ownerId, definition, artifact)
 		return new OwnerDatabaseHandle(this, owner, definition, instance)
 	}
@@ -336,9 +335,8 @@ class DatabaseCoordinator {
 						`SELECT set_config('pluxel.transaction_id', ${quoteLiteral(randomUUID())}, true)`,
 					),
 				)
-				let active = await readActiveInstance(tx, ownerId)
+				const active = await readActiveInstance(tx, ownerId)
 				if (active && instanceMatches(active, artifact.lineage, fingerprint)) return active
-				if (!active) active = await this.adoptLegacyInstance(tx, ownerId)
 				if (active?.lineage === artifact.lineage) {
 					return await this.upgradeInstance(tx, active, definition, artifact, fingerprint, tables)
 				}
@@ -465,41 +463,6 @@ class DatabaseCoordinator {
 				`INSERT INTO ${SYSTEM_SCHEMA}.database_migrations (instance_id, migration_id, checksum) VALUES (${quoteLiteral(instance.instanceId)}, ${quoteLiteral(migration.id)}, ${quoteLiteral(migration.checksum)})`,
 			),
 		)
-	}
-
-	private async adoptLegacyInstance(
-		tx: AnyDatabase,
-		ownerId: string,
-	): Promise<PreparedDatabaseInstance | undefined> {
-		const lineage = 'main'
-		const ownerSchema = legacyPhysicalSchemaFor(ownerId)
-		if (!(await databaseSchemaExists(tx, ownerSchema))) return undefined
-		const instanceId = randomUUID()
-		const ownerRole = physicalRoleForArtifact(ownerSchema)
-		await tx.execute(
-			sql.raw(
-				`INSERT INTO ${SYSTEM_SCHEMA}.database_instances (instance_id, owner_id, lineage, physical_schema, physical_role, artifact_fingerprint, runtime_version, state, activated_at) VALUES (${quoteLiteral(instanceId)}, ${quoteLiteral(ownerId)}, ${quoteLiteral(lineage)}, ${quoteLiteral(ownerSchema)}, ${quoteLiteral(ownerRole)}, '', 0, 'active', now())`,
-			),
-		)
-		const legacyTable = await tx.execute(
-			sql.raw(`SELECT to_regclass('${SYSTEM_SCHEMA}.plugin_migrations') AS name`),
-		)
-		if (resultRows(legacyTable)[0]?.name) {
-			await tx.execute(
-				sql.raw(
-					`INSERT INTO ${SYSTEM_SCHEMA}.database_migrations (instance_id, migration_id, checksum, applied_at) SELECT ${quoteLiteral(instanceId)}, migration_id, checksum, applied_at FROM ${SYSTEM_SCHEMA}.plugin_migrations WHERE owner_schema = ${quoteLiteral(ownerSchema)} ON CONFLICT DO NOTHING`,
-				),
-			)
-		}
-		return {
-			instanceId,
-			ownerId,
-			lineage,
-			ownerSchema,
-			ownerRole,
-			artifactFingerprint: '',
-			runtimeVersion: 0,
-		}
 	}
 
 	private ensureSystem(): Promise<void> {
@@ -839,15 +802,6 @@ async function installOutboxTrigger(db: AnyDatabase, ownerSchema: string, table:
 	)
 }
 
-function legacyPhysicalSchemaFor(ownerId: string): string {
-	const slug = ownerId
-		.toLowerCase()
-		.replaceAll(/[^a-z0-9]+/g, '_')
-		.replaceAll(/^_+|_+$/g, '')
-	const hash = createHash('sha256').update(ownerId).digest('hex').slice(0, 16)
-	return `pluxel_${slug.slice(0, 36) || 'plugin'}_${hash}`
-}
-
 function physicalSchemaForInstance(ownerId: string, instanceId: string): string {
 	const slug = ownerId
 		.toLowerCase()
@@ -1014,15 +968,6 @@ function assertMigrationHistory(
 			)
 		}
 	}
-}
-
-async function databaseSchemaExists(db: AnyDatabase, schema: string): Promise<boolean> {
-	const result = await db.execute(
-		sql.raw(
-			`SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = ${quoteLiteral(schema)} LIMIT 1`,
-		),
-	)
-	return resultRows(result).length > 0
 }
 
 async function grantOwnerTables(

@@ -352,9 +352,16 @@ describe('runtime-dev Vite plugin stack', () => {
 			},
 			async (server) => {
 				const mod = await importViteSsrModule<{
-					providerDefinition(): unknown
+					providerDefinition(): {
+						entry: { kind: string; sourceSpace: string; path: string }
+						exportName: string
+					}
 					consumerRequires(): unknown[]
 				}>(server, modulePath)
+				expect(mod.providerDefinition()).toEqual({
+					entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugin.ts' },
+					exportName: 'Provider',
+				})
 				expect(mod.consumerRequires()).toEqual([mod.providerDefinition()])
 			},
 		)

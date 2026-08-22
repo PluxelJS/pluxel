@@ -33,7 +33,8 @@ export function createContextPluginLogPolicyStore(ctx: Context): PluginLogPolicy
 	return {
 		async load(profile) {
 			const raw = await namespace.getText(policyKey(profile))
-			return raw === undefined ? undefined : parsePluginLogPolicySnapshot(raw)
+			if (raw === undefined) return undefined
+			return parsePluginLogPolicySnapshot(raw)
 		},
 		async save(profile, snapshot) {
 			await namespace.put(policyKey(profile), serializePluginLogPolicySnapshot(snapshot), {

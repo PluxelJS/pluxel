@@ -31,7 +31,7 @@ import {
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { UI_PUBLIC_BASE } from '@pluxel/runtime/web/paths'
-import { formatPluginNodeAddress, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import { formatPluginNodeReference, type PluginNodeAddress } from '@pluxel/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
@@ -328,12 +328,12 @@ function formatStaticRuntimeReport(
 ): StaticRuntimeReportSummary {
 	const catalog = host.describeCatalog().plugins
 	const catalogLabels = catalog.map(
-		({ address, displayName }) => `${displayName} (${formatPluginNodeAddress(address)})`,
+		({ address, displayName }) => `${displayName} (${formatPluginNodeReference(address)})`,
 	)
 	const entries = report.entries.map(({ address, displayName, status, message }) =>
 		message
-			? `${displayName} [${formatPluginNodeAddress(address)}]:${status} (${message})`
-			: `${displayName} [${formatPluginNodeAddress(address)}]:${status}`,
+			? `${displayName} [${formatPluginNodeReference(address)}]:${status} (${message})`
+			: `${displayName} [${formatPluginNodeReference(address)}]:${status}`,
 	)
 	const status = countStatuses(report.entries)
 	const runtimeState = host.ctx.runtimeState.snapshot()
@@ -351,17 +351,17 @@ function formatStaticRuntimeReport(
 		commit: commit
 			? {
 					added: commit.pluginChanges.added.map((slot) =>
-						formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)),
+						formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)),
 					),
 					removed: commit.pluginChanges.removed.map((slot) =>
-						formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)),
+						formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)),
 					),
 					replaced: commit.pluginChanges.replaced.map(
 						({ from, to }) =>
-							`${formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(from))} -> ${formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(to))}`,
+							`${formatPluginNodeReference(host.ctx.registry.nodeAddressOf(from))} -> ${formatPluginNodeReference(host.ctx.registry.nodeAddressOf(to))}`,
 					),
 					restarted: commit.pluginChanges.restarted.map((slot) =>
-						formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)),
+						formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)),
 					),
 					lifecycleOk: commit.lifecycleReport.ok,
 				}
@@ -410,10 +410,10 @@ function affectedStaticRuntimePlugins(
 ): number {
 	const affected = new Set<string>()
 	for (const address of [...report.added, ...report.removed, ...report.replaced]) {
-		affected.add(formatPluginNodeAddress(address))
+		affected.add(formatPluginNodeReference(address))
 	}
 	for (const slot of report.commit?.pluginChanges.restarted ?? []) {
-		affected.add(formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)))
+		affected.add(formatPluginNodeReference(host.ctx.registry.nodeAddressOf(slot)))
 	}
 	return affected.size
 }
@@ -508,7 +508,7 @@ async function resolveViteBindings(
 async function configureStaticRuntimeDevRuntime(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
-	pluginDirs: readonly { owner: PluginNodeAddressSnapshot; dir: string }[] | undefined,
+	pluginDirs: readonly { owner: PluginNodeAddress; dir: string }[] | undefined,
 ): Promise<void> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
@@ -582,11 +582,11 @@ type ViteSsrModuleLike = {
 function resolveStaticRuntimePluginDirs(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
-): readonly { owner: PluginNodeAddressSnapshot; dir: string }[] | undefined {
+): readonly { owner: PluginNodeAddress; dir: string }[] | undefined {
 	const modules = moduleGraphEntries(server)
 	if (modules.length === 0) return undefined
 
-	const pluginDirs: Array<{ owner: PluginNodeAddressSnapshot; dir: string }> = []
+	const pluginDirs: Array<{ owner: PluginNodeAddress; dir: string }> = []
 	for (const { address, generation } of host.describeCatalog().plugins) {
 		const pluginDir = findSsrExportDir(modules, generation)
 		if (pluginDir) pluginDirs.push({ owner: address, dir: pluginDir })

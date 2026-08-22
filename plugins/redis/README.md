@@ -118,7 +118,7 @@ memory-only host 仍不会安装 node-redis。
 
 - cache caller/scope prefix 继续由 `CachePlugin` 生成，`keyPrefix` 只隔离 Redis cache keyspace；
 - cache opaque value 保留 `CachePlugin` 写入的完整结构化 owner envelope，Redis adapter 不解释或删除它；
-- rates state metadata 保存完整 owner snapshot 并由 Lua 校验，Redis 物理 key 只保留 canonical request digest；
+- rates state metadata 保存完整 owner address 并由 Lua 校验，Redis 物理 key 只保留 canonical request digest；
 - cache/rates `keyPrefix` 必须是 well-formed Unicode，不接受未配对 surrogate；
 - Cache canonical key 直接追加到 managed prefix，不再 URI 二次转义，保持 byte bound 与 Redis key 紧凑；
 - `ttlMs: 0` 表示无 expiry，正 TTL 使用 millisecond PX；

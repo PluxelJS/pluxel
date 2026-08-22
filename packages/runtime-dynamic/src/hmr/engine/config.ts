@@ -132,7 +132,10 @@ export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 }
 
 export interface HmrViteConfigOptions {
-	root: string
+	/** Vite's browser/UI project root. */
+	viteRoot: string
+	/** Host root mapped to the stable `app` plugin source space. */
+	sourceRoot: string
 	fsAllow: string[]
 	clientEntries?: string[]
 	runnerPlugin: Plugin
@@ -154,7 +157,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 	// Keep the condition order identical in both HMR environments. Package exports remain responsible
 	// for exposing only browser-safe source entries to the client environment.
 	const clientConditions = ssrConditions
-	const clientEntries = resolveClientEntries(opts.root, opts.clientEntries)
+	const clientEntries = resolveClientEntries(opts.viteRoot, opts.clientEntries)
 	const hasClientEntries = clientEntries.length > 0
 	const dedupePackages = [...new Set([...REQUIRED_DEDUPE_PACKAGES, ...DEFAULT_CLIENT_DEDUPE])]
 
@@ -168,7 +171,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		: []
 
 	const internalConfig: InlineConfig = {
-		root: opts.root,
+		root: opts.viteRoot,
 		server: {
 			port: opts.port ?? 3000,
 			middlewareMode: false,
@@ -208,7 +211,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 			clientNodeImportGuardPlugin(),
 			...pluxelRuntimeSourceVitePlugins({
 				name: 'pluxel:dynamic-runtime-source',
-				root: opts.root,
+				root: opts.sourceRoot,
 			}),
 			opts.runnerPlugin,
 			opts.httpPlugin,

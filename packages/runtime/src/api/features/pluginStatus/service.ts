@@ -1,8 +1,9 @@
 import {
 	getPluginInfo,
 	pluginDefinitionAddressEqual,
+	pluginNodeIndexKey,
 	type Context as PlxContext,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import type { InferOutput } from 'valibot'
 import type {
@@ -11,28 +12,24 @@ import type {
 	PluginStatusOverview,
 } from './schema'
 import { readRuntimePluginStatus, unknownPluginSource } from '../../../runtime/capabilities'
-import { pluginNodeAddressKey } from '../../../runtime/plugin-address'
 import { projectPluginCatalog } from '../plugins/catalog-projection'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>
 
-export function resolvePluginSource(
-	pCtx: PlxContext,
-	address: PluginNodeAddressSnapshot,
-): SourceOutput {
+export function resolvePluginSource(pCtx: PlxContext, address: PluginNodeAddress): SourceOutput {
 	const ctor = pCtx.runtimeRoute?.catalog.resolve(address)
 	return (pCtx.runtimeRoute?.source?.resolveSource(address, ctor) ??
 		unknownPluginSource()) as SourceOutput
 }
 
-export function readStatusSnapshot(pCtx: PlxContext, address: PluginNodeAddressSnapshot) {
+export function readStatusSnapshot(pCtx: PlxContext, address: PluginNodeAddress) {
 	const catalog = pCtx.runtimeRoute?.catalog
 	const registered = catalog?.listRegistered() ?? []
 	let entry = registered.find(
-		(candidate) => pluginNodeAddressKey(candidate.address) === pluginNodeAddressKey(address),
+		(candidate) => pluginNodeIndexKey(candidate.address) === pluginNodeIndexKey(address),
 	)
-	if (!entry && address.instance === 'fork') {
+	if (!entry && address.variant === 'fork') {
 		const ctor = catalog?.resolve(address)
 		const base = registered.find((candidate) =>
 			pluginDefinitionAddressEqual(candidate.address.definition, address.definition),
@@ -48,7 +45,7 @@ export function readStatusSnapshot(pCtx: PlxContext, address: PluginNodeAddressS
 	}
 	if (!entry) throw new Error('Plugin node is not present in the route catalog')
 	return readRuntimePluginStatus(pCtx, entry) as {
-		address: PluginNodeAddressSnapshot
+		address: PluginNodeAddress
 		displayName: string
 		rootExportName: string
 		isRunning: boolean
@@ -63,18 +60,24 @@ export function getStatusOverview(pCtx: PlxContext) {
 	const plugins: Array<InferOutput<typeof PluginStatusOverview>['plugins'][number]> = []
 	const statuses = []
 	for (const snapshot of overview.entries) {
-		const id = snapshot.id
+		const id = snapshot.route
 		plugins.push({
 			__typename: 'Plugin',
 			id,
-			name: snapshot.displayName,
+			reference: snapshot.reference,
+			route: snapshot.route,
+			displayName: snapshot.displayName,
+			label: snapshot.label.text,
 			rootExportName: snapshot.rootExportName,
 			address: snapshot.address,
 		})
 		statuses.push({
 			__typename: 'PluginStatusEntry' as const,
 			id,
-			name: snapshot.displayName,
+			reference: snapshot.reference,
+			route: snapshot.route,
+			displayName: snapshot.displayName,
+			label: snapshot.label.text,
 			address: snapshot.address,
 			isRunning: snapshot.isRunning,
 			isEnabled: snapshot.isEnabled,

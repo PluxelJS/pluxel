@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
-import type { Context, PluginNodeAddressSnapshot, PluginNodeSlot } from '@pluxel/core'
+import {
+	pluginNodeIndexKey,
+	type Context,
+	type PluginNodeAddress,
+	type PluginNodeSlot,
+} from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
 import type {
 	WorkbenchBundleEvent,
@@ -18,7 +23,7 @@ import {
 	workbenchFederationRemoteName,
 } from '@pluxel/core/federation'
 import { RUNTIME_INTERNAL_API_BASE, runtimeWorkbenchArtifactPath } from '../../web/paths'
-import { pluginNodeAddressKey, pluginNodePhysicalKey } from '../../runtime/plugin-address'
+import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 
 type WorkbenchSourceBinder = (
 	owner: Context,
@@ -240,7 +245,7 @@ export class WorkbenchArtifactService {
 	}
 
 	private async resolvePackagedManifestPath(
-		owner: PluginNodeAddressSnapshot,
+		owner: PluginNodeAddress,
 		artifactName: string,
 	): Promise<string | null> {
 		const deploymentRoot = String(this.root.config.workbenchArtifactRoot ?? '').trim()
@@ -353,16 +358,16 @@ export function createCompiledWorkbenchArtifact(input: {
 }
 
 /** Opaque physical URL index. Workbench identity remains the structured address in its DTO. */
-export function workbenchArtifactOwnerKey(owner: PluginNodeAddressSnapshot): string {
-	return pluginNodePhysicalKey(owner, 64)
+export function workbenchArtifactOwnerKey(owner: PluginNodeAddress): string {
+	return pluginNodePhysicalKey(owner)
 }
 
 function compareBundleOwner(
 	left: { owner: WorkbenchPluginDescriptor },
 	right: { owner: WorkbenchPluginDescriptor },
 ): number {
-	return pluginNodeAddressKey(left.owner.address).localeCompare(
-		pluginNodeAddressKey(right.owner.address),
+	return pluginNodeIndexKey(left.owner.address).localeCompare(
+		pluginNodeIndexKey(right.owner.address),
 	)
 }
 

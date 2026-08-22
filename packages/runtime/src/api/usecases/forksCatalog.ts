@@ -1,13 +1,9 @@
-import type {
-	Context,
-	PluginDefinitionAddressSnapshot,
-	PluginNodeAddressSnapshot,
-} from '@pluxel/core'
+import type { Context, PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import { samePluginDefinitionAddress } from '../../services/RuntimeStateHelpers'
 
 export function addForkToCatalog(
 	ctx: Context,
-	definition: PluginDefinitionAddressSnapshot,
+	definition: PluginDefinitionAddress,
 	forkId: string,
 ): void {
 	const id = String(forkId).trim()
@@ -24,6 +20,6 @@ export function addForkToCatalog(
 	})
 }
 
-export function maybeAddForkToCatalog(ctx: Context, node: PluginNodeAddressSnapshot): void {
-	if (node.instance === 'fork') addForkToCatalog(ctx, node.definition, node.forkId)
+export function maybeAddForkToCatalog(ctx: Context, node: PluginNodeAddress): void {
+	if (node.variant === 'fork') addForkToCatalog(ctx, node.definition, node.forkId)
 }

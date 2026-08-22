@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { Context, PluginNodeAddress } from '@pluxel/core'
 import {
 	workbenchFederationBuildManifestPath,
 	workbenchFederationManifestPath,
@@ -9,7 +9,7 @@ import { resolveModuleIdBaseDir } from '../../runtime/module-id'
 
 export function resolvePackagedWorkbenchManifest(
 	root: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	artifactName: string,
 ): string | null {
 	const registryPath = root.registry.getRuntimeModuleId(root.registry.internNodeAddress(owner))
@@ -36,7 +36,7 @@ export function resolvePackagedWorkbenchManifest(
 
 export function resolvePackagedNodeModule(
 	root: Context,
-	owner: PluginNodeAddressSnapshot,
+	owner: PluginNodeAddress,
 	artifactKey: string,
 ): string | null {
 	const registryPath = root.registry.getRuntimeModuleId(root.registry.internNodeAddress(owner))

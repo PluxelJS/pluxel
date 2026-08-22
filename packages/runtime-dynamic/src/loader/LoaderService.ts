@@ -3,7 +3,7 @@ import {
 	Injectable,
 	type Context as PluxelContext,
 	type PluginConstructor,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { createLoaderRuntimeRoute } from '../catalog/LoaderRuntimeRoute'
 import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
@@ -74,7 +74,7 @@ export class LoaderService {
 	async registerFixedPlugins(
 		plugins: readonly PluginConstructor[],
 		options: { moduleId: string },
-	): Promise<readonly PluginNodeAddressSnapshot[]> {
+	): Promise<readonly PluginNodeAddress[]> {
 		if (plugins.length === 0) return []
 		if (!options.moduleId.startsWith('pluxel:fixed:')) {
 			throw new Error(
@@ -85,7 +85,7 @@ export class LoaderService {
 		const runtimeUpdate = this.ctx.registry.beginUpdate({ reason: 'startup' })
 		const tx = this.registry.beginTransaction({ runtimeUpdate })
 		const seen = new Set<PluginConstructor>()
-		const declared: PluginNodeAddressSnapshot[] = []
+		const declared: PluginNodeAddress[] = []
 
 		try {
 			for (const ctor of plugins) {

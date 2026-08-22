@@ -15,8 +15,10 @@ ref 与 `plugins.use()` 由 semantic pass lower 成 optional definition edge。r
 provider absent/disabled/start-failed 不阻塞 consumer，running generation 出现、消失或 replacement 时 Core 用正常 graph plan
 重启 consumer closure。`plugins.use()` 只允许在 `init()` 中直接调用，callback 必须同步，返回资源进入 generation effects。
 
-所有 runtime plugin owner protocol 使用结构化 `PluginNodeAddressSnapshot`。class name、constructor 与 `displayName` 只用于
+所有 runtime plugin owner protocol 使用结构化 `PluginNodeAddress`。class name、constructor 与 `displayName` 只用于
 代码或展示，不作为 RuntimeState、config、logging、HTTP、Workbench、commands 或 persistence identity。
+definition address 标识源码实现，node address 再区分 default/fork 部署；对应 Slot 只是同一 address 在 Core registry 内的
+引用 key。公开诊断/CLI 使用可逆 reference，HTTP/Workbench 使用可读 v1 route，短 label 只在当前 catalog revision 内用于展示。
 
 单独构建的 Node ESM entry 使用 `defineNodeModule(import.meta.url, literal)` 声明，并通过
 `ctx.nodeModules.use(declaration, setup)` 消费。首次 load/setup 会阻塞插件启动；开发期 staged replacement 与 owner

@@ -1,4 +1,4 @@
-import { formatPluginNodeAddress, ForkablePlugin, Plugin, v } from '@pluxel/runtime'
+import { formatPluginNodeReference, ForkablePlugin, Plugin, v } from '@pluxel/runtime'
 import {
 	createClient,
 	type RedisClientType,
@@ -94,7 +94,7 @@ export class RedisPlugin extends Redis {
 		const client = createClient({
 			url: this.config.url,
 			database: this.config.database,
-			name: `pluxel:${formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress)}`,
+			name: `pluxel:${formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress)}`,
 			commandsQueueMaxLength: this.config.commandQueueMaxLength,
 			disableOfflineQueue: this.config.disableOfflineQueue,
 			pingInterval: this.config.pingIntervalMs || undefined,

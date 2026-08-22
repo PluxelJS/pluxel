@@ -8,11 +8,11 @@ const exampleAddress = {
 		entry: { kind: 'package-root', packageName: '@test/example' },
 		exportName: 'ExamplePlugin',
 	},
-	instance: 'default',
+	variant: 'default',
 } as const
 
 const environmentSnapshot = (config: Record<string, unknown>) =>
-	JSON.stringify({ version: 2, plugins: [{ owner: exampleAddress, config }] })
+	JSON.stringify({ version: 3, plugins: [{ owner: exampleAddress, config }] })
 
 describe('@pluxel/runtime Context bootstrap', () => {
 	it('boots core runtime services without any loader/HMR layer', async () => {
@@ -110,7 +110,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 						environment: { PLUXEL_CONFIG: '{"version":1,"plugins":[]}' },
 					},
 				}).ctx.configService,
-		).toThrow('config snapshot version 2')
+		).toThrow('config snapshot version 3')
 	})
 
 	it('keeps persisted plugin config authoritative on later starts', async () => {

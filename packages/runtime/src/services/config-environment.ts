@@ -1,6 +1,6 @@
 import { parsePluginNodeAddress, pluginNodeAddressEqual } from '@pluxel/core'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
-import type { ConfigServiceConfig, PluginConfigFile } from './ConfigService'
+import type { ConfigServiceConfig } from './ConfigService'
 
 const PLUGIN_CONFIG_ENV = 'PLUXEL_CONFIG'
 
@@ -30,23 +30,11 @@ export function configRecordsFromEnvironment(
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
 		throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV} must contain an object snapshot`)
 	}
-	const file = raw as Partial<PluginConfigFile>
-	if (file.version !== 2 || !Array.isArray(file.plugins)) {
-		throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV} must contain config snapshot version 2`)
+	const file = raw as Record<string, unknown>
+	if (file.version !== 3 || !Array.isArray(file.plugins)) {
+		throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV} must contain config snapshot version 3`)
 	}
-	return file.plugins.map((entry, index) => {
-		if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-			throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV}.plugins[${index}] must be an object`)
-		}
-		const owner = parsePluginNodeAddress((entry as PluginConfigRecordSnapshot).owner)
-		const config = (entry as PluginConfigRecordSnapshot).config
-		if (!config || typeof config !== 'object' || Array.isArray(config)) {
-			throw new Error(
-				`[ConfigService] ${PLUGIN_CONFIG_ENV}.plugins[${index}].config must be an object`,
-			)
-		}
-		return { owner, config: { ...config } }
-	})
+	return coercePluginConfigRecords(file.plugins)
 }
 
 export function mergeConfigRecords(
@@ -57,6 +45,27 @@ export function mergeConfigRecords(
 	for (const entry of base ?? []) upsert(merged, entry)
 	for (const entry of override ?? []) upsert(merged, entry)
 	return merged
+}
+
+export function coercePluginConfigRecords(input: unknown): PluginConfigRecordSnapshot[] {
+	if (!Array.isArray(input)) throw new Error('[ConfigService] Persisted plugins must be an array')
+	const out: PluginConfigRecordSnapshot[] = []
+	for (let index = 0; index < input.length; index++) {
+		const raw = input[index]
+		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+			throw new Error(`[ConfigService] plugins[${index}] must be an object`)
+		}
+		const record = raw as Record<string, unknown>
+		const owner = parsePluginNodeAddress(record.owner)
+		if (!record.config || typeof record.config !== 'object' || Array.isArray(record.config)) {
+			throw new Error(`[ConfigService] plugins[${index}].config must be an object`)
+		}
+		if (out.some((entry) => pluginNodeAddressEqual(entry.owner, owner))) {
+			throw new Error(`[ConfigService] plugins[${index}] duplicates a Plugin node owner`)
+		}
+		out.push({ owner, config: { ...(record.config as Record<string, unknown>) } })
+	}
+	return out
 }
 
 function upsert(target: PluginConfigRecordSnapshot[], input: PluginConfigRecordSnapshot): void {

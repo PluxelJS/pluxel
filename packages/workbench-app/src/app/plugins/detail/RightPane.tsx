@@ -38,18 +38,18 @@ function PaneTabPanel({ children, value }: { children: ReactNode; value: string 
 }
 
 export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
-	const { owner, pluginId, pluginName, source } = usePluginMeta()
+	const { owner, pluginRoute, pluginLabel, source } = usePluginMeta()
 	const { nodes: tabNodes, items: tabItems } = useWorkbenchSurface('plugin.tabs')
 	const tabGroups = useMemo(
-		() => buildRightPaneTabGroups(pluginName, tabItems, tabNodes as ReactNode[]),
-		[pluginName, tabItems, tabNodes],
+		() => buildRightPaneTabGroups(pluginLabel, tabItems, tabNodes as ReactNode[]),
+		[pluginLabel, tabItems, tabNodes],
 	)
 	const pathname = useCurrentPathname()
 	const restPath = useMemo(() => {
-		const prefix = `/plugins/${encodeURIComponent(pluginId)}`
+		const prefix = `/plugins/${pluginRoute}`
 		if (!pathname.startsWith(prefix)) return ''
 		return normalizeRestPath(pathname.slice(prefix.length))
-	}, [pathname, pluginId])
+	}, [pathname, pluginRoute])
 	const showRouteTab = Boolean(restPath && restPath !== '/config')
 	const [activeTab, setActiveTab] = useState(showRouteTab ? 'route' : 'config')
 	useEffect(() => {
@@ -72,7 +72,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 					<div className="plx-pluginWorkbench__toolbar">
 						<div className="plx-pluginWorkbench__commandBar">
 							<div className="plx-pluginWorkbench__commandTitle">
-								<span className="plx-pluginWorkbench__commandName">{pluginName}</span>
+								<span className="plx-pluginWorkbench__commandName">{pluginLabel}</span>
 								<Badge size="sm" variant="light">
 									{sourceLabel}
 								</Badge>
@@ -105,7 +105,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						<PaneTabPanel value="route">
 							<RouteContent
 								target={owner}
-								displayName={pluginName}
+								displayName={pluginLabel}
 								displayPath={pathname}
 								restPath={restPath}
 							/>
@@ -115,7 +115,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						<ConfigContent
 							config={config}
 							owner={owner}
-							displayName={pluginName}
+							displayName={pluginLabel}
 							active={activeTab === 'config'}
 						/>
 					</PaneTabPanel>
@@ -148,7 +148,7 @@ function ConfigContent({
 	active,
 }: {
 	config: PluginConfigState
-	owner: import('@pluxel/core').PluginNodeAddressSnapshot
+	owner: import('@pluxel/core').PluginNodeAddress
 	displayName: string
 	active: boolean
 }) {
@@ -196,7 +196,7 @@ function RouteContent({
 	displayPath,
 	restPath,
 }: {
-	target: import('@pluxel/core').PluginNodeAddressSnapshot
+	target: import('@pluxel/core').PluginNodeAddress
 	displayName: string
 	displayPath: string
 	restPath: string

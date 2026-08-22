@@ -1,9 +1,9 @@
 import type { PluginConstructor, PluginIdentifier } from '../../types'
 import type { PluginConfigDefinition } from '../../runtime/definition'
 import type {
-	PluginDefinitionAddressSnapshot,
+	PluginDefinitionAddress,
 	PluginDefinitionSlot,
-	PluginNodeAddressSnapshot,
+	PluginNodeAddress,
 	PluginNodeSlot,
 } from '../../runtime/identity'
 
@@ -14,11 +14,11 @@ export interface PluginOptions {
 
 export interface PluginDeclarationInfo {
 	readonly class: PluginConstructor
-	readonly definition: PluginDefinitionAddressSnapshot
+	readonly definition: PluginDefinitionAddress
 	readonly rootExportName: string
 	readonly displayName: string
 	readonly startTimeoutMs?: number
-	readonly provider?: PluginDefinitionAddressSnapshot
+	readonly provider?: PluginDefinitionAddress
 	readonly config?: PluginConfigDefinition
 }
 
@@ -26,7 +26,7 @@ export interface PluginDeclarationInfo {
 export interface PluginInfo extends PluginDeclarationInfo {
 	readonly definitionSlot: PluginDefinitionSlot
 	readonly nodeSlot: PluginNodeSlot
-	readonly nodeAddress: PluginNodeAddressSnapshot
+	readonly nodeAddress: PluginNodeAddress
 }
 
 export interface PluginMarker {

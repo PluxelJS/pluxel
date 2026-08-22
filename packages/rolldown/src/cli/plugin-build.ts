@@ -62,7 +62,6 @@ export function createPluginBuildPipeline(
 		options,
 		createPluginSemanticsPlugin({
 			root: options.root,
-			rejectExternalSourceEntries: true,
 		}).plugin,
 	)
 }

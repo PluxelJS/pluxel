@@ -4,12 +4,12 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import {
 	clonePluginDefinition,
-	formatPluginNodeAddress,
+	formatPluginNodeReference,
 	getPluginDefinitionFacts,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 	type PluginConstructor,
-	type PluginNodeAddressSnapshot,
+	type PluginNodeAddress,
 } from '@pluxel/core'
 import { getActiveRuntimeLogging } from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
@@ -234,17 +234,17 @@ class StreamingDisconnect extends BasePlugin {
 	}
 }
 
-function addressOf(plugin: PluginConstructor): PluginNodeAddressSnapshot {
+function addressOf(plugin: PluginConstructor): PluginNodeAddress {
 	return pluginNodeAddressOf(plugin)
 }
 
-function enabled(...plugins: PluginConstructor[]): PluginNodeAddressSnapshot[] {
+function enabled(...plugins: PluginConstructor[]): PluginNodeAddress[] {
 	return plugins.map(addressOf)
 }
 
 function statusOf(
 	host: StaticRuntimeHost,
-	target: PluginConstructor | PluginNodeAddressSnapshot,
+	target: PluginConstructor | PluginNodeAddress,
 ): StaticRuntimePluginStatus | undefined {
 	const address = typeof target === 'function' ? addressOf(target) : target
 	return host.lastReport()?.entries.find((entry) => pluginNodeAddressEqual(entry.address, address))
@@ -253,7 +253,7 @@ function statusOf(
 
 function messageOf(
 	host: StaticRuntimeHost,
-	target: PluginConstructor | PluginNodeAddressSnapshot,
+	target: PluginConstructor | PluginNodeAddress,
 ): string | undefined {
 	const address = typeof target === 'function' ? addressOf(target) : target
 	return host.lastReport()?.entries.find((entry) => pluginNodeAddressEqual(entry.address, address))
@@ -340,7 +340,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('uses config snapshot v2 from the reserved environment and exposes lowered schema source', async () => {
+	it('uses config snapshot v3 from the reserved environment and exposes lowered schema source', async () => {
 		configuredValue = undefined
 		const owner = addressOf(ConfiguredPlugin)
 		const runtime = await createStaticRuntimeTestHost(
@@ -355,7 +355,7 @@ describe('@pluxel/runtime-static', () => {
 			{
 				env: {
 					PLUXEL_CONFIG: JSON.stringify({
-						version: 2,
+						version: 3,
 						plugins: [{ owner, config: { value: 'from-environment' } }],
 					}),
 				},
@@ -377,12 +377,12 @@ describe('@pluxel/runtime-static', () => {
 
 	it('starts enabled address slots and reports unknown config owners structurally', async () => {
 		started.length = 0
-		const ghost: PluginNodeAddressSnapshot = {
+		const ghost: PluginNodeAddress = {
 			definition: {
-				entry: { kind: 'source-entry', source: 'tests/Ghost.ts' },
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/Ghost.ts' },
 				exportName: 'GhostPlugin',
 			},
-			instance: 'default',
+			variant: 'default',
 		}
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntime({ name: 'static-test', plugins: [StaticA, StaticB] }),
@@ -946,6 +946,6 @@ describe('@pluxel/runtime-static', () => {
 
 	it('uses address-formatted diagnostics without class/display identity keys', () => {
 		const address = addressOf(StaticA)
-		expect(formatPluginNodeAddress(address)).toContain(address.definition.exportName)
+		expect(formatPluginNodeReference(address)).toContain(address.definition.exportName)
 	})
 })

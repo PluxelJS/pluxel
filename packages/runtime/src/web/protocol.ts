@@ -5,7 +5,7 @@
  * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
 import type { AgentToolsAdminSnapshot, AgentToolsPolicyInput } from '../agent-tools'
-import type { PluginDefinitionAddressSnapshot, PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 export type { VaultKeyPair } from '../services/vault/types'
 export type {
 	AgentToolAssignment,
@@ -40,6 +40,8 @@ export type ConfigResultOk = {
 	config: Record<string, unknown>
 	defaults: Record<string, unknown>
 	saved?: boolean
+	application: 'not-requested' | 'applied' | 'deferred' | 'saved-not-applied'
+	applyError?: string
 }
 
 export type ConfigResultErr = {
@@ -74,11 +76,11 @@ export type SchemaResultErr = {
 export type SchemaResult = SchemaResultOk | SchemaResultErr
 
 export type PluginStatusBatchAction = {
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	action: PluginStatusAction
 }
 export type PluginStatusMutationResult = {
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	ok: boolean
 	code?: string
 	error?: string
@@ -99,7 +101,7 @@ export type PluginDependencyKind = 'plugin' | 'abstract'
 export type PluginGroupInput = {
 	groupId: string
 	name: string
-	nodes: PluginNodeAddressSnapshot[]
+	nodes: PluginNodeAddress[]
 }
 
 export type PluginGroup = {
@@ -112,31 +114,31 @@ export type PluginGroup = {
 		id: string
 		displayName: string
 		rootExportName: string
-		address: PluginNodeAddressSnapshot
+		address: PluginNodeAddress
 	}>
 }
 
 export type PluginDependencyOption = {
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	displayName: string
 	isRunning: boolean
 	isEnabled: boolean
 }
 
 export type PluginDependencyRef = {
-	address: PluginNodeAddressSnapshot
+	address: PluginNodeAddress
 	displayName: string
 	isRunning?: boolean
 }
 
 export type PluginDependencyState = {
 	index: number
-	token: PluginDefinitionAddressSnapshot
+	token: PluginDefinitionAddress
 	kind: PluginDependencyKind
-	effective: PluginNodeAddressSnapshot | null
+	effective: PluginNodeAddress | null
 	isRunning: boolean
-	selected: PluginNodeAddressSnapshot | null
-	providerDefault: PluginNodeAddressSnapshot | null
+	selected: PluginNodeAddress | null
+	providerDefault: PluginNodeAddress | null
 	options: PluginDependencyOption[]
 }
 
@@ -148,14 +150,14 @@ export type PluginDependencyMutationResult = {
 
 export type EnsureForkResult = {
 	ok: boolean
-	fork?: PluginNodeAddressSnapshot
+	fork?: PluginNodeAddress
 	code?: string
 	error?: string
 }
 
 export type BaseProviderInfo = {
-	token: PluginDefinitionAddressSnapshot
-	currentDefault: PluginNodeAddressSnapshot | null
+	token: PluginDefinitionAddress
+	currentDefault: PluginNodeAddress | null
 	isDefault: boolean
 	providers: PluginDependencyOption[]
 }
@@ -166,7 +168,7 @@ export type RuntimePluginLogLevel = LogLevel | 'off'
 export type PluginLogPolicySnapshot = {
 	version: 2
 	defaultLevel: RuntimePluginLogLevel
-	overrides: Array<{ owner: PluginNodeAddressSnapshot; level: RuntimePluginLogLevel }>
+	overrides: Array<{ owner: PluginNodeAddress; level: RuntimePluginLogLevel }>
 }
 
 export type VersionedPluginLogPolicySnapshot = PluginLogPolicySnapshot & {
@@ -191,12 +193,12 @@ export type LoggingHandleApi = {
 	) => Promise<PluginLogPolicyMutationResult>
 	setPluginLevel: (
 		expectedRevision: number,
-		owner: PluginNodeAddressSnapshot,
+		owner: PluginNodeAddress,
 		level: RuntimePluginLogLevel,
 	) => Promise<PluginLogPolicyMutationResult>
 	clearPluginLevel: (
 		expectedRevision: number,
-		owner: PluginNodeAddressSnapshot,
+		owner: PluginNodeAddress,
 	) => Promise<PluginLogPolicyMutationResult>
 	resetPolicy: (expectedRevision: number) => Promise<VersionedPluginLogPolicySnapshot>
 }
@@ -215,31 +217,31 @@ type RuntimeRpcApiContract = {
 	agentTools: () => AgentToolsHandleApi
 	workbenchRpc: (grantId: string) => WorkbenchRpcView
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
-	pluginSchema: (owner: PluginNodeAddressSnapshot) => Promise<SchemaResult>
-	pluginConfig: (owner: PluginNodeAddressSnapshot) => Promise<ConfigResult>
+	pluginSchema: (owner: PluginNodeAddress) => Promise<SchemaResult>
+	pluginConfig: (owner: PluginNodeAddress) => Promise<ConfigResult>
 	patchPluginConfig: (
-		owner: PluginNodeAddressSnapshot,
+		owner: PluginNodeAddress,
 		patch: Record<string, unknown>,
 	) => Promise<ConfigResult>
 	patchPluginConfigField: (
-		owner: PluginNodeAddressSnapshot,
+		owner: PluginNodeAddress,
 		input: ConfigFieldMutation,
 	) => Promise<ConfigResult>
-	pluginDependencies: (owner: PluginNodeAddressSnapshot) => Promise<PluginDependencyRef[]>
-	inspectPluginDependencies: (owner: PluginNodeAddressSnapshot) => Promise<PluginDependencyState[]>
+	pluginDependencies: (owner: PluginNodeAddress) => Promise<PluginDependencyRef[]>
+	inspectPluginDependencies: (owner: PluginNodeAddress) => Promise<PluginDependencyState[]>
 	setPluginDependencyTarget: (input: {
-		consumer: PluginNodeAddressSnapshot
+		consumer: PluginNodeAddress
 		index: number
-		provider: PluginNodeAddressSnapshot | null
+		provider: PluginNodeAddress | null
 	}) => Promise<PluginDependencyMutationResult>
-	inspectPluginBaseProvider: (owner: PluginNodeAddressSnapshot) => Promise<BaseProviderInfo | null>
+	inspectPluginBaseProvider: (owner: PluginNodeAddress) => Promise<BaseProviderInfo | null>
 	selectPluginBaseProvider: (input: {
-		consumer: PluginNodeAddressSnapshot
-		token: PluginDefinitionAddressSnapshot
-		provider: PluginNodeAddressSnapshot | null
+		consumer: PluginNodeAddress
+		token: PluginDefinitionAddress
+		provider: PluginNodeAddress | null
 	}) => Promise<PluginDependencyMutationResult>
 	ensurePluginFork: (input: {
-		base: PluginNodeAddressSnapshot
+		base: PluginNodeAddress
 		forkId: string
 		enable?: boolean
 	}) => Promise<EnsureForkResult>
