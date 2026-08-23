@@ -4,7 +4,9 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { parseSync } from 'oxc-parser'
 import { describe, expect, it } from 'vitest'
+import { collectImportSpecifiers } from '../src/rolldown/plugins/importCollector.ts'
 import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
 
 type PackageJson = {
@@ -75,6 +77,14 @@ async function collectPackageManifests(dir: string): Promise<string[]> {
 
 function quotedModuleSpecifiers(code: string): string[] {
 	return [...code.matchAll(/(['"])([^'"\r\n]+)\1/g)].map((match) => match[2]!)
+}
+
+function importedModuleSpecifiers(file: string, code: string): string[] {
+	const program = parseSync(file, code, {
+		sourceType: 'module',
+		lang: file.endsWith('.tsx') ? 'tsx' : 'ts',
+	}).program
+	return program ? collectImportSpecifiers(program).map(({ specifier }) => specifier) : []
 }
 
 type CoreContextPublicEntry = Readonly<{
@@ -187,7 +197,16 @@ describe('toolchain package boundaries', () => {
 		for (const file of sourceFiles) {
 			if (file.startsWith(`${coreRoot}/`) || file.startsWith(`${contextRoot}/`)) continue
 			const source = await readFile(file, 'utf8')
-			const specifiers = quotedModuleSpecifiers(source)
+			const quoted = quotedModuleSpecifiers(source)
+			if (
+				!quoted.some(
+					(specifier) =>
+						specifier === contextPackageName || specifier.startsWith(`${contextPackageName}/`),
+				)
+			) {
+				continue
+			}
+			const specifiers = importedModuleSpecifiers(file, source)
 			if (
 				specifiers.some(
 					(specifier) =>
