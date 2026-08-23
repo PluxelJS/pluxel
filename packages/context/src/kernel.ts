@@ -5,6 +5,7 @@ const CONTEXT_INSTALLATION_TYPE: unique symbol = Symbol('pluxel.context.installa
 const CONTEXT_TYPE: unique symbol = Symbol('pluxel.context.type')
 const ROOT_CONTEXT_TYPE: unique symbol = Symbol('pluxel.context.root-type')
 const CONSTRUCTING = Symbol('pluxel.context.constructing')
+const EMPTY_OWNER_VALUES: unknown[] = Object.freeze([]) as unknown[]
 
 type CapabilityScope = 'root' | 'scope' | 'owner-view'
 
@@ -182,6 +183,7 @@ type CompiledInstallation = Readonly<{
 }>
 
 type ContextResolver = (ctx: Context) => unknown
+type ContextGetter = (this: Context) => unknown
 
 /** @internal Opaque compiled plan. Its representation is not an extension contract. */
 export type ContextPlan = Readonly<{
@@ -190,13 +192,9 @@ export type ContextPlan = Readonly<{
 
 type CompiledContextPlan = Readonly<{
 	name: string
-	contextPrototype: object
-	rootPrototype: object
 	ContextConstructor: new () => ContextImpl
 	RootContextConstructor: new () => ContextImpl
-	installations: readonly CompiledInstallation[]
-	resolvers: readonly ContextResolver[]
-	indexByCapability: ReadonlyMap<AnyCapability, number>
+	resolverByCapability: ReadonlyMap<AnyCapability, ContextResolver>
 }>
 
 type ContextState = {
@@ -207,7 +205,7 @@ type ContextState = {
 	readonly name: string
 	readonly rootValues: unknown[]
 	readonly scopeValues: unknown[]
-	ownerValues?: unknown[]
+	ownerValues: unknown[]
 }
 
 const CAPABILITIES = new WeakSet<object>()
@@ -216,6 +214,23 @@ const PLAN_RECORDS = new WeakMap<object, CompiledContextPlan>()
 
 let initializeContextState!: (ctx: Context, state: ContextState) => void
 let readContextState!: (ctx: Context) => ContextState
+let createRootProjectedGetter!: (
+	index: number,
+	capability: AnyCapability,
+	create: (ctx: RootContext) => unknown,
+) => ContextGetter
+let createScopeProjectedGetter!: (
+	index: number,
+	capability: AnyCapability,
+	create: (ctx: Context) => unknown,
+) => ContextGetter
+let createOwnerProjectedGetter!: (
+	viewIndex: number,
+	rootIndex: number,
+	capability: AnyCapability,
+	createRoot: (root: RootContext) => unknown,
+	createView: (rootValue: unknown, owner: Context) => unknown,
+) => ContextGetter
 
 // Deliberately does not implement Context: consumers may extend the public interface while this
 // plan-neutral implementation only owns the structural fields.
@@ -241,6 +256,45 @@ class ContextImpl {
 			}
 			throw invalidContextError(ctx)
 		}
+		// Projected getters only exist on private frozen prototypes compiled by this kernel. Compile
+		// them here so their hot path reads #state directly; explicit resolve retains boundary checks.
+		createRootProjectedGetter = (index, capability, create) =>
+			function (this: Context) {
+				const implementation = this as unknown as ContextImpl
+				const state = implementation.#state!
+				const values = state.rootValues
+				const current = values[index]
+				if (current === CONSTRUCTING) throw constructionCycleError(capability)
+				if (current !== undefined) return current
+				return constructCached(values, index, capability, create, state.root)
+			}
+		createScopeProjectedGetter = (index, capability, create) =>
+			function (this: Context) {
+				const implementation = this as unknown as ContextImpl
+				const state = implementation.#state!
+				const values = state.scopeValues
+				const current = values[index]
+				if (current === CONSTRUCTING) throw constructionCycleError(capability)
+				if (current !== undefined) return current
+				return constructCached(values, index, capability, create, state.scope)
+			}
+		createOwnerProjectedGetter = (viewIndex, rootIndex, capability, createRoot, createView) =>
+			function (this: Context) {
+				const implementation = this as unknown as ContextImpl
+				const state = implementation.#state!
+				const current = state.ownerValues[viewIndex]
+				if (current === CONSTRUCTING) throw constructionCycleError(capability)
+				if (current !== undefined) return current
+				return resolveOwnerViewMiss(
+					state,
+					this,
+					viewIndex,
+					rootIndex,
+					capability,
+					createRoot,
+					createView,
+				)
+			}
 	}
 
 	get [Symbol.toStringTag](): 'PluxelContext' {
@@ -363,14 +417,14 @@ export function createContextHost<
 
 export function resolveContextCapability<T>(ctx: Context, capability: ContextCapability<T>): T {
 	const state = stateOf(ctx)
-	const index = state.plan.indexByCapability.get(capability as AnyCapability)
-	if (index === undefined) {
+	const resolver = state.plan.resolverByCapability.get(capability as AnyCapability)
+	if (resolver === undefined) {
 		assertCapability(capability)
 		throw new Error(
 			`[pluxel/context] Context host ${state.plan.name} does not install ${capability.description}`,
 		)
 	}
-	return state.plan.resolvers[index]!(ctx) as T
+	return resolver(ctx) as T
 }
 
 /** @internal Compile an immutable installation set into slot resolvers and a private prototype. */
@@ -381,10 +435,11 @@ export function createContextPlan(
 	if (typeof name !== 'string' || name.length === 0) {
 		throw new TypeError('[pluxel/context] Context host name is required')
 	}
-	const indexByCapability = new Map<AnyCapability, number>()
+	const resolverByCapability = new Map<AnyCapability, ContextResolver>()
 	const properties = new Set<PropertyKey>()
-	const compiledInstallations: CompiledInstallation[] = []
-	const resolvers: ContextResolver[] = []
+	let rootValueCount = 0
+	let scopeValueCount = 0
+	let ownerValueCount = 0
 	const ContextConstructor = class extends ContextImpl {}
 	const RootContextConstructor = class extends ContextConstructor {}
 	const contextPrototype = ContextConstructor.prototype
@@ -393,17 +448,23 @@ export function createContextPlan(
 	for (const source of installations) {
 		const sourceRecord = installationRecord(source, name)
 		const capability = sourceRecord.capability
-		if (indexByCapability.has(capability)) {
+		if (resolverByCapability.has(capability)) {
 			throw new Error(
 				`[pluxel/context] Context host ${name} installs ${capability.description} more than once`,
 			)
 		}
-		const index = compiledInstallations.length
-		indexByCapability.set(capability, index)
 		const installation = sourceRecord
-		compiledInstallations.push(installation)
-		const resolver = compileResolver(installation, index)
-		resolvers.push(resolver)
+		let valueIndex: number
+		let rootIndex: number | undefined
+		if (installation.scope === 'root') {
+			valueIndex = rootValueCount++
+		} else if (installation.scope === 'scope') {
+			valueIndex = scopeValueCount++
+		} else {
+			valueIndex = ownerValueCount++
+			rootIndex = rootValueCount++
+		}
+		resolverByCapability.set(capability, compileResolver(installation, valueIndex, rootIndex))
 		if (installation.property === undefined) continue
 		if (properties.has(installation.property) || installation.property in ContextImpl.prototype) {
 			throw new Error(
@@ -417,9 +478,7 @@ export function createContextPlan(
 			{
 				configurable: false,
 				enumerable: false,
-				get(this: Context) {
-					return resolver(this)
-				},
+				get: compileProjectedGetter(installation, valueIndex, rootIndex),
 			},
 		)
 	}
@@ -432,13 +491,9 @@ export function createContextPlan(
 	Object.freeze(RootContextConstructor)
 	const compiledPlanRecord = Object.freeze({
 		name,
-		contextPrototype,
-		rootPrototype,
 		ContextConstructor,
 		RootContextConstructor,
-		installations: Object.freeze(compiledInstallations),
-		resolvers: Object.freeze(resolvers),
-		indexByCapability,
+		resolverByCapability,
 	})
 	const plan = Object.freeze({}) as ContextPlan
 	PLAN_RECORDS.set(plan, compiledPlanRecord)
@@ -457,6 +512,7 @@ export function createRootContext(plan: ContextPlan, name = 'root'): RootContext
 		name,
 		rootValues: values,
 		scopeValues: [],
+		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return root
 }
@@ -474,6 +530,7 @@ export function createScopeContext(root: RootContext, name: string): Context {
 		name,
 		rootValues: rootState.rootValues,
 		scopeValues: [],
+		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return ctx
 }
@@ -490,6 +547,7 @@ export function createChildContext(parent: Context, name: string): Context {
 		name,
 		rootValues: parentState.rootValues,
 		scopeValues: parentState.scopeValues,
+		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return ctx
 }
@@ -506,6 +564,7 @@ export function createContextView(source: Context): Context {
 		name: sourceState.name,
 		rootValues: sourceState.rootValues,
 		scopeValues: sourceState.scopeValues,
+		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return ctx
 }
@@ -685,24 +744,30 @@ function isObject(value: unknown): value is object {
 	return (typeof value === 'object' && value !== null) || typeof value === 'function'
 }
 
-function compileResolver(installation: CompiledInstallation, index: number): ContextResolver {
+function compileResolver(
+	installation: CompiledInstallation,
+	valueIndex: number,
+	rootIndex: number | undefined,
+): ContextResolver {
 	const capability = installation.capability
 	if (installation.scope === 'root') {
 		const create = installation.create!
 		return (ctx) => {
 			const state = stateOf(ctx)
-			const current = state.rootValues[index]
+			const values = state.rootValues
+			const current = values[valueIndex]
 			if (current !== undefined) return readCached(current, capability)
-			return constructCached(state.rootValues, index, capability, create, state.root)
+			return constructCached(values, valueIndex, capability, create, state.root)
 		}
 	}
 	if (installation.scope === 'scope') {
 		const create = installation.create!
 		return (ctx) => {
 			const state = stateOf(ctx)
-			const current = state.scopeValues[index]
+			const values = state.scopeValues
+			const current = values[valueIndex]
 			if (current !== undefined) return readCached(current, capability)
-			return constructCached(state.scopeValues, index, capability, create, state.scope)
+			return constructCached(values, valueIndex, capability, create, state.scope)
 		}
 	}
 
@@ -710,26 +775,70 @@ function compileResolver(installation: CompiledInstallation, index: number): Con
 	const createView = installation.createView!
 	return (ctx) => {
 		const state = stateOf(ctx)
-		const ownerValues = (state.ownerValues ??= [])
-		const current = ownerValues[index]
+		const current = state.ownerValues[valueIndex]
 		if (current !== undefined) return readCached(current, capability)
-
-		const rootCurrent = state.rootValues[index]
-		const rootValue =
-			rootCurrent === undefined
-				? constructCached(state.rootValues, index, capability, createRoot, state.root)
-				: readCached(rootCurrent, capability)
-		return constructOwnerView(ownerValues, index, capability, createView, rootValue, ctx)
+		return resolveOwnerViewMiss(
+			state,
+			ctx,
+			valueIndex,
+			rootIndex!,
+			capability,
+			createRoot,
+			createView,
+		)
 	}
 }
 
-function readCached(current: unknown, capability: AnyCapability): unknown {
-	if (current === CONSTRUCTING) {
-		throw new Error(
-			`[pluxel/context] Context capability construction cycle at ${capability.description}`,
-		)
+function compileProjectedGetter(
+	installation: CompiledInstallation,
+	valueIndex: number,
+	rootIndex: number | undefined,
+): ContextGetter {
+	const capability = installation.capability
+	if (installation.scope === 'root') {
+		return createRootProjectedGetter(valueIndex, capability, installation.create!)
 	}
+	if (installation.scope === 'scope') {
+		return createScopeProjectedGetter(valueIndex, capability, installation.create!)
+	}
+	return createOwnerProjectedGetter(
+		valueIndex,
+		rootIndex!,
+		capability,
+		installation.createRoot!,
+		installation.createView!,
+	)
+}
+
+function readCached(current: unknown, capability: AnyCapability): unknown {
+	if (current === CONSTRUCTING) throw constructionCycleError(capability)
 	return current
+}
+
+function constructionCycleError(capability: AnyCapability): Error {
+	return new Error(
+		`[pluxel/context] Context capability construction cycle at ${capability.description}`,
+	)
+}
+
+function resolveOwnerViewMiss(
+	state: ContextState,
+	owner: Context,
+	viewIndex: number,
+	rootIndex: number,
+	capability: AnyCapability,
+	createRoot: (root: RootContext) => unknown,
+	createView: (rootValue: unknown, owner: Context) => unknown,
+): unknown {
+	let ownerValues = state.ownerValues
+	if (ownerValues === EMPTY_OWNER_VALUES) state.ownerValues = ownerValues = []
+	const rootValues = state.rootValues
+	const rootCurrent = rootValues[rootIndex]
+	const rootValue =
+		rootCurrent === undefined
+			? constructCached(rootValues, rootIndex, capability, createRoot, state.root)
+			: readCached(rootCurrent, capability)
+	return constructOwnerView(ownerValues, viewIndex, capability, createView, rootValue, owner)
 }
 
 function constructCached<TContext extends Context>(

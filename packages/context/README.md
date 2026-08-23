@@ -51,4 +51,5 @@ void handler.cache
 - `@pluxel/context`：descriptor、scoped installation、Context host、projection types 与显式 resolve；
 - `@pluxel/context/internal`：供 Pluxel framework packages 使用的 raw plan/context construction，不是稳定第三方 API。
 
-完整用法与作用域选择见[组合 Context host](../../docs/reference/context-hosts.md)。
+完整用法与作用域选择见[组合 Context host](../../docs/reference/context-hosts.md)。旧 Service registry 的 mapping overlay、当前
+kernel 的重构原因与性能取舍见 [Context kernel 设计取舍](./DESIGN.md)。

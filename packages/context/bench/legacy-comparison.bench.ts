@@ -97,6 +97,7 @@ const creationBatch = 100
 const bench = new Bench({ time: 750, warmupTime: 250 })
 const legacyIsolatedServices = [asLegacyServiceClass(LegacyScopedService)] as const
 let sink: unknown
+let alternateSink: unknown
 
 bench.add('legacy cached root getter', () => {
 	for (let index = 0; index < getterBatch; index += 1) {
@@ -114,16 +115,24 @@ bench.add('legacy cached isolated getter', () => {
 bench.add('current cached scope getter', () => {
 	for (let index = 0; index < getterBatch; index += 1) sink = currentScope.scopeValue
 })
+bench.add('legacy cached owner getter without owner switching', () => {
+	for (let index = 0; index < getterBatch; index += 1) {
+		sink = legacyChildProjection.comparisonOwner
+	}
+})
+bench.add('current cached stable owner-view getter', () => {
+	for (let index = 0; index < getterBatch; index += 1) sink = currentChild.ownerValue
+})
 bench.add('legacy alternating owner getter + mutable ctx rebind', () => {
 	for (let index = 0; index < getterBatch; index += 1) {
 		sink = legacyRootProjection.comparisonOwner
-		sink = legacyChildProjection.comparisonOwner
+		alternateSink = legacyChildProjection.comparisonOwner
 	}
 })
 bench.add('current alternating stable owner-view getter', () => {
 	for (let index = 0; index < getterBatch; index += 1) {
 		sink = currentRoot.ownerValue
-		sink = currentChild.ownerValue
+		alternateSink = currentChild.ownerValue
 	}
 })
 bench.add('legacy extend child creation', () => {
@@ -160,6 +169,9 @@ console.table(
 		return {
 			Path: task.name,
 			'mean ns/op': ((task.result.latency.mean * 1_000_000) / operationBatch(task.name)).toFixed(2),
+			'median ns/op': ((task.result.latency.p50 * 1_000_000) / operationBatch(task.name)).toFixed(
+				2,
+			),
 		}
 	}),
 )
@@ -170,3 +182,4 @@ console.log(
 	'Creation rows compare the historical public operation with its current public host operation. Benchmarks are trend evidence and carry no release threshold.',
 )
 void sink
+void alternateSink

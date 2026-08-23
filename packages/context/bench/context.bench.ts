@@ -110,11 +110,14 @@ console.table(
 		return {
 			Path: task.name,
 			'mean ns/op': ((task.result.latency.mean * 1_000_000) / operationBatch(task.name)).toFixed(2),
+			'median ns/op': ((task.result.latency.p50 * 1_000_000) / operationBatch(task.name)).toFixed(
+				2,
+			),
 		}
 	}),
 )
 console.log(
-	'Cached ctx.foo uses one scope-specialized resolver and a direct dense-array slot read. Explicit resolve uses Map only to compile a capability object identity into that numeric slot; the null-prototype string baseline is not a semantic substitute.',
+	'Cached ctx.foo uses a scope-specialized projected getter and a direct dense-array slot read. Explicit resolve retains receiver validation and maps capability identity directly to its resolver; the null-prototype string baseline is not a semantic substitute.',
 )
 console.log('Host compilation is a cold root-construction cost and is reported separately.')
 void sink
