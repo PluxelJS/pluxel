@@ -20,7 +20,7 @@
 
 - HTTP、config、logger、effects、commands、persistence/database 是常驻 runtime 能力；公开事件用具名
   `EvtChannel` 属性表达，不提供 Context global event bus。
-- Workbench extension 和资源只能通过 `ctx.workbench.mount()` 挂载。
+- Workbench extension 和资源只能通过可选的 `ctx.workbench?.mount()` 挂载。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选Workbench。
 
@@ -28,7 +28,7 @@
 
 ## 3. 可选能力关闭时不得产生隐式成本
 
-- disabled capability 不创建 backend、compiler、watcher、route、transport 或持久状态。
+- disabled capability 不安装 Context property，也不创建 backend、compiler、watcher、route、transport 或持久状态。
 - optional callback 不执行时，插件仍能完成核心生命周期。
 - 不使用 null stateful service 模拟成功注册。
 

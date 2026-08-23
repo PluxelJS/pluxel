@@ -29,10 +29,7 @@ export default defineStaticRuntime({
 			runtimeState: {
 				snapshot: { enabled: staticDemoEnabledPlugins },
 			},
-			workbench:
-				env.PLUXEL_WORKBENCH === 'false'
-					? false
-					: { enabled: true, access: { exposure: 'private' } },
+			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
 			persistence: resolve(staticDataRoot, 'persistence'),
 		}
 	},

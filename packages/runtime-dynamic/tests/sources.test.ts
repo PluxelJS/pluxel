@@ -5,6 +5,7 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
+import { requireLoaderService } from '../src/context-plan.ts'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '../src/hmr/host.ts'
 import {
 	DynamicPluginSourceRequirementError,
@@ -105,14 +106,14 @@ describe('dynamic plugin sources', () => {
 
 			const added = await addedBatch
 			expectSuccessfulBatch(added)
-			const catalogEntry = host.ctx.loader.api.registry
-				.listRegistered()
+			const catalogEntry = requireLoaderService(host.ctx)
+				.api.registry.listRegistered()
 				.find((candidate) => candidate.rootExportName === 'MutableSourcePlugin')
 			expect(catalogEntry).toBeDefined()
 			const mutableAddress = catalogEntry!.address
 			const ctor = catalogEntry!.ctor
 			expect(ctor).toBeTypeOf('function')
-			await host.ctx.loader.api.control.enable(mutableAddress)
+			await requireLoaderService(host.ctx).api.control.enable(mutableAddress)
 			const instance = requirePluginService(host.ctx).getInstance(mutableAddress) as
 				| { started: boolean; cleaned: boolean }
 				| undefined
@@ -127,8 +128,8 @@ describe('dynamic plugin sources', () => {
 
 			expect(removed.ok).toBe(true)
 			expect(removed.pluginChanges?.removed).toContain(formatPluginNodeReference(mutableAddress))
-			expect(host.ctx.loader.api.registry.getCtor(mutableAddress)).toBeUndefined()
-			expect(host.ctx.loader.api.runtime.isRunning(mutableAddress)).toBe(false)
+			expect(requireLoaderService(host.ctx).api.registry.getCtor(mutableAddress)).toBeUndefined()
+			expect(requireLoaderService(host.ctx).api.runtime.isRunning(mutableAddress)).toBe(false)
 			expect(instance).toMatchObject({ started: true, cleaned: true })
 		} finally {
 			await host.stop()
@@ -187,21 +188,25 @@ describe('dynamic plugin sources', () => {
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
-			expect(host.ctx.loader.api.runtime.isRunning(pluginNodeAddressOf(SourceProducerPlugin))).toBe(
-				false,
-			)
+			expect(
+				requireLoaderService(host.ctx).api.runtime.isRunning(
+					pluginNodeAddressOf(SourceProducerPlugin),
+				),
+			).toBe(false)
 			const publishedBatch = host.hmr.api.waitForBatch({ timeoutMs: 30_000 })
 
 			await host.hmr.start()
 			const published = await publishedBatch
 
-			expect(host.ctx.loader.api.runtime.isRunning(pluginNodeAddressOf(SourceProducerPlugin))).toBe(
-				true,
-			)
+			expect(
+				requireLoaderService(host.ctx).api.runtime.isRunning(
+					pluginNodeAddressOf(SourceProducerPlugin),
+				),
+			).toBe(true)
 			expectSuccessfulBatch(published)
 			expect(
-				host.ctx.loader.api.registry
-					.listRegistered()
+				requireLoaderService(host.ctx)
+					.api.registry.listRegistered()
 					.some((entry) => entry.rootExportName === 'PublishedByFixedPlugin'),
 			).toBe(true)
 		} finally {

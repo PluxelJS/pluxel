@@ -14,7 +14,9 @@ import {
 	findNearestPackageRoot,
 	readNodeModuleDeclaration,
 	readRuntimeRouteCapabilities,
+	RUNTIME_INTERNAL_API_BASE,
 	resolveModuleIdBaseDir,
+	runtimeWorkbenchArtifactBasePath,
 	type NodeModuleSourceSubscription,
 	type WorkbenchArtifactService,
 } from '@pluxel/runtime/internal'
@@ -27,10 +29,6 @@ import {
 	workbenchFederationSharedPackages,
 	sanitizeWorkbenchOwnerName,
 } from '@pluxel/core/federation'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	runtimeWorkbenchArtifactBasePath,
-} from '@pluxel/runtime/web/paths'
 import { validateWorkbenchUiArtifact } from '@pluxel/rolldown/workbench/artifact'
 import type { ViteDevServer } from 'vite'
 import {

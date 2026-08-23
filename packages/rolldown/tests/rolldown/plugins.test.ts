@@ -198,36 +198,12 @@ describe('configSourcePlugin', () => {
 			`,
 			message: 'must use a valibot ObjectSchema',
 		},
-		{
-			name: '@Config decorator',
-			code: `
-				import { Config } from '@pluxel/runtime'
-				class P { @Config(Schema) config: unknown }
-			`,
-			message: 'removed Config authoring DSL',
-		},
-		{
-			name: 'cfg layout',
-			code: `
-				import { cfg } from '@pluxel/runtime'
-				const schema = cfg({ a: A })
-			`,
-			message: 'removed cfg authoring DSL',
-		},
 	])('rejects $name', async ({ code, message }) => {
 		await expect(transform(code)).rejects.toThrow(message)
 	})
 
-	it('does not confuse test-host config handles with the removed cfg authoring helper', async () => {
-		const result = await transform('host.cfg(PluginA).set({ enabled: true })')
-		expect(result).toBeNull()
-	})
-
-	it('ignores unrelated cfg parameters and comments', async () => {
-		const result = await transform(
-			'/** `cfg` is a service constructor parameter. */\n' +
-				'type ServiceCtor = new (ctx: unknown, cfg?: unknown) => unknown',
-		)
+	it('ignores modules without Plugin config declarations', async () => {
+		const result = await transform('type ServiceCtor = new (ctx: unknown) => unknown')
 		expect(result).toBeNull()
 	})
 })

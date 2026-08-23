@@ -1,22 +1,10 @@
 import { pluginNodeAddressOf, withRuntimeHost } from '@pluxel/runtime/test'
-import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
-} from '@pluxel/runtime/web/paths'
+import { requireWorkbench } from '@pluxel/runtime/internal'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchExamplePlugin } from './fixtures/wretch-example.ts'
 
 afterEach(() => vi.unstubAllGlobals())
-
-function pluginLayoutUrl(address: unknown): URL {
-	const url = new URL(
-		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
-	)
-	url.searchParams.set('target', JSON.stringify(address))
-	return url
-}
 
 describe('WretchExamplePlugin', () => {
 	it('demonstrates native client composition, required DI, business HTTP, and headless operation', async () => {
@@ -60,33 +48,35 @@ describe('WretchExamplePlugin', () => {
 	})
 
 	it('mounts the shared HTTP settings renderer in a Workbench-enabled runtime', async () => {
-		await withRuntimeHost(async (host) => {
-			host.add([WretchPlugin, WretchExamplePlugin])
-			host.cfg(WretchPlugin).enable()
-			host.cfg(WretchExamplePlugin).enable()
-			await host.commit()
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, WretchExamplePlugin])
+				host.cfg(WretchPlugin).enable()
+				host.cfg(WretchExamplePlugin).enable()
+				await host.commit()
 
-			expect(host.isRunning(WretchPlugin)).toBe(true)
-			expect(host.isRunning(WretchExamplePlugin)).toBe(true)
+				expect(host.isRunning(WretchPlugin)).toBe(true)
+				expect(host.isRunning(WretchExamplePlugin)).toBe(true)
 
-			const response = await host.ctx.http.fetch(
-				new Request(pluginLayoutUrl(pluginNodeAddressOf(WretchExamplePlugin))),
-			)
-			const layout = (await response.json()) as WorkbenchLayout
-			expect(layout.items[0]).toMatchObject({
-				owner: {
-					address: pluginNodeAddressOf(WretchPlugin),
-					displayName: 'WretchPlugin',
-					rootExportName: 'WretchPlugin',
-				},
-				target: {
-					address: pluginNodeAddressOf(WretchExamplePlugin),
-					displayName: 'WretchExamplePlugin',
-					rootExportName: 'WretchExamplePlugin',
-				},
-				viewId: 'HttpSettings',
-				port: { id: '@pluxel/wretch.settings' },
-			})
-		})
+				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(
+					pluginNodeAddressOf(WretchExamplePlugin),
+				)
+				expect(layout.items[0]).toMatchObject({
+					owner: {
+						address: pluginNodeAddressOf(WretchPlugin),
+						displayName: 'WretchPlugin',
+						rootExportName: 'WretchPlugin',
+					},
+					target: {
+						address: pluginNodeAddressOf(WretchExamplePlugin),
+						displayName: 'WretchExamplePlugin',
+						rootExportName: 'WretchExamplePlugin',
+					},
+					viewId: 'HttpSettings',
+					port: { id: '@pluxel/wretch.settings' },
+				})
+			},
+			{ workbench: { enabled: true } },
+		)
 	})
 })

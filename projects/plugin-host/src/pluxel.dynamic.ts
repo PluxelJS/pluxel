@@ -24,5 +24,5 @@ export default defineDynamicRuntimeConfig({
 	runtimeState: {
 		mode: 'memory',
 	},
-	workbench: { enabled: true, access: { exposure: 'private' } },
+	workbench: { enabled: true },
 })

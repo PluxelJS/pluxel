@@ -220,7 +220,9 @@ export class S3Plugin extends S3 {
 		if (config.type === 'anonymous') return undefined
 		let value: unknown
 		try {
-			const credentials: VaultKvHandle = this.ctx.vault.kv(
+			const vault = this.ctx.vault
+			if (!vault) throw new Error('S3 Vault credentials require host config vault: {}')
+			const credentials: VaultKvHandle = vault.kv(
 				config.namespace ? { namespace: config.namespace } : undefined,
 			)
 			value = await credentials.get(config.key)

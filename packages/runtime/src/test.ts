@@ -10,14 +10,13 @@ import {
 	type RuntimeStatePatchOperation,
 } from './internal/reconciliation'
 import { requireRuntimeStateStore } from './internal/runtime-state'
-import { installWorkbench } from './services/workbench'
-import { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
-import { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
+import { createRuntimeRootContext, type RuntimeRootContextOptions } from './context/runtime-plan'
+import type { RuntimeHostConfig } from './context/runtime-contract'
+import { createWorkbenchBackend } from './services/workbench'
 import {
 	createCoreContext,
 	createCoreHost,
 	type CommitSummary,
-	type Context,
 	type CoreHost,
 	type CoreHostConfigHandle,
 	type CoreHostConfigPatch,
@@ -31,10 +30,13 @@ import {
 	collectPluginLifecycleNotStarted,
 	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
+	type Context,
+	type RootContext,
 } from '@pluxel/core'
 import { isPluginEnabled } from './runtime-state'
 import {
 	consumePluginDefinitionCandidate,
+	prepareContextCapabilities,
 	requireConfigService,
 	requirePluginService,
 	type ConcretePluginDefinitionCandidate,
@@ -51,7 +53,6 @@ export {
 	collectPluginLifecycleDrainErrors,
 	collectPluginLifecycleIssuePlugins,
 	collectPluginLifecycleNotStarted,
-	Context,
 	findPluginLifecycleIssue,
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleDrainErrorIssue,
@@ -71,6 +72,7 @@ export type {
 	PluginReplacement,
 	RuntimeUpdateCommitSummary,
 } from '@pluxel/core/test'
+export type { Context } from '@pluxel/core'
 
 type TypedTarget<T extends PluginConstructor> = T | PluginNodeHandle<T>
 type RuntimeTarget = PluginConstructor | PluginNodeAddress
@@ -111,18 +113,28 @@ export type RuntimeHostConfigPatch<T extends PluginConstructor> = CoreHostConfig
 export type RuntimeHostConfigHandle<TTarget extends PluginConstructor> =
 	CoreHostConfigHandle<TTarget>
 
-function runtimeConfig(config: Context.Config): Context.Config {
+function runtimeConfig(config: RuntimeHostConfig): RuntimeHostConfig {
 	const workbench = config.workbench ?? {
 		enabled: true,
-		access: { exposure: 'private' as const },
 	}
-	return withWorkbenchPluginContext({
+	return {
 		persistence: { mode: 'memory' },
 		configService: { mode: 'memory' },
 		runtimeState: { mode: 'memory' },
 		...config,
 		workbench,
-		adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
+	}
+}
+
+export type RuntimeTestHostOptions = Pick<RuntimeRootContextOptions, 'installations' | 'logging'>
+
+function createRuntimeTestRoot(
+	config: RuntimeHostConfig,
+	options: RuntimeTestHostOptions = {},
+): RootContext {
+	return createRuntimeRootContext(config, {
+		workbench: { createBackend: createWorkbenchBackend },
+		...options,
 	})
 }
 
@@ -146,14 +158,18 @@ function assertCommitStarted(summary: CommitSummary): void {
 		throw new Error(`Some plugins failed to start: ${[...new Set(failed)].join(', ')}`)
 }
 
-export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
-	const core = createCoreHost(runtimeConfig(config))
+export function createRuntimeHost(
+	config: RuntimeHostConfig = {},
+	options: RuntimeTestHostOptions = {},
+): RuntimeHost {
+	const core = createCoreHost(runtimeConfig(config), {
+		createRootContext: (rootConfig) => createRuntimeTestRoot(rootConfig, options),
+	})
 	const { ctx } = core
 	const pluginService = requirePluginService(ctx)
 	const configService = requireConfigService(ctx)
 	const runtimeStateStore = requireRuntimeStateStore(ctx)
 	const coordinator = installRuntimePluginGraphCoordinator(ctx)
-	if (isWorkbenchEnabled(ctx.config.workbench)) installWorkbench(ctx)
 
 	const addressByImplementation = new WeakMap<PluginConstructor, PluginDefinitionAddress>()
 	let committedEntries = new Map<string, PluginRouteCatalogEntryInput>()
@@ -221,7 +237,7 @@ export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
 	}
 
 	async function commit(allowFailure: boolean): Promise<CommitSummary> {
-		await ctx.prepareServices()
+		await prepareContextCapabilities(ctx)
 		const currentCatalog = coordinator.catalogSnapshot()
 		const catalog = catalogDirty
 			? createPluginRouteCatalogSnapshot(currentCatalog.revision + 1, draftEntries.values())
@@ -382,7 +398,7 @@ export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
 
 export async function withRuntimeHost<T>(
 	fn: (host: RuntimeHost) => Promise<T> | T,
-	config: Context.Config = {},
+	config: RuntimeHostConfig = {},
 ): Promise<T> {
 	const host = createRuntimeHost(config)
 	try {
@@ -392,16 +408,17 @@ export async function withRuntimeHost<T>(
 	}
 }
 
-export function createRuntimeContext(config: Context.Config = {}): RuntimeTestContext {
-	const runtime = createCoreContext(runtimeConfig(config))
+export function createRuntimeContext(config: RuntimeHostConfig = {}): RuntimeTestContext {
+	const runtime = createCoreContext(runtimeConfig(config), {
+		createRootContext: createRuntimeTestRoot,
+	})
 	installRuntimePluginGraphCoordinator(runtime.ctx)
-	if (isWorkbenchEnabled(runtime.ctx.config.workbench)) installWorkbench(runtime.ctx)
 	return runtime
 }
 
 export async function withRuntimeContext<T>(
-	fn: (ctx: Context) => Promise<T> | T,
-	config: Context.Config = {},
+	fn: (ctx: RootContext) => Promise<T> | T,
+	config: RuntimeHostConfig = {},
 ): Promise<T> {
 	const runtime = createRuntimeContext(config)
 	try {

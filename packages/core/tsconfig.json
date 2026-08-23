@@ -1,8 +1,8 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "../context/src", "../context/tests"],
+	"include": ["src", "tests"],
 	"compilerOptions": {
-		"rootDir": "..",
+		"rootDir": ".",
 		"baseUrl": ".",
 		"outDir": "dist",
 		"noEmit": false,
@@ -10,8 +10,6 @@
 		"jsx": "react-jsx",
 		"experimentalDecorators": true,
 		"paths": {
-			"@pluxel/context": ["../context/src"],
-			"@pluxel/context/*": ["../context/src/*"],
 			"@pluxel/core": ["./src"],
 			"@pluxel/core/*": ["./src/*"]
 		}

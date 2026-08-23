@@ -49,11 +49,12 @@ export class PluginWithUI extends BasePlugin {
 		this.startedAt = Date.now()
 
 		this.initState()
-		if (this.ctx.workbench.enabled) {
+		const workbenchCapability = this.ctx.workbench
+		if (workbenchCapability) {
 			const database = await this.ctx.database.use(demoDatabase)
 			this.projections = new DemoProjectionStore(database)
 			await this.syncProjection()
-			this.ctx.workbench.mount(PluginWithUIWorkbench, {
+			workbenchCapability.mount(PluginWithUIWorkbench, {
 				commands: workbench.bind.rpc(() => new PluginWithUIRpc(this)),
 				status: workbench.bind.liveQuery({
 					database,

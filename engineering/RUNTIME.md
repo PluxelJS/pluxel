@@ -1,8 +1,19 @@
 # Runtime Architecture
 
-`@pluxel/runtime` 在 core 之上提供 HTTP、config、persistence、runtime state 和可选 Workbench
-Plane。主入口注册全部常驻服务；Vault 只由 `@pluxel/runtime/services/vault` 显式启用，Workbench由宿主
-launcher 显式安装。
+`@pluxel/runtime` 在 core 之上提供 HTTP、config、persistence、runtime state 和可选 Workbench/Vault 能力。
+宿主为每个 root 编译一份封闭 Context plan；不存在 import-side-effect service registration 或 post-root installation。
+
+## Runtime Context plan
+
+Runtime 在一个集中 contract 中声明 Context 的 public property type，并在 plan composition 时安装固定能力：root scope
+承载 persistence、runtime state、admin/agent control backing，generation scope 承载 database，owner-view scope 承载
+commands、HTTP、Workbench gate、Node module、worker 与 internal validation。owner-view 为每个 Plugin/Part/caller edge 保留
+owner identity，同时共享 root backend；热 getter 只读取预编译 numeric slot。
+
+Context 不暴露完整 host config。launcher 先解析配置，plan factory closure 再捕获各 capability 专属的冻结输入，因此延迟创建
+不会观察调用方之后的 mutation。Workbench disabled 时不创建 backend、registry、route 或 transport。Vault 只有在
+`vault` 为配置对象时才进入 plan；omitted/`false` 时 `ctx.vault` 与 `ctx.root.vaultAdmin` 均 absent，且不创建 mount/runtime。
+宿主在 Plugin lifecycle 前统一构造显式 eager backing 并运行真实 leaf prepare hook；prepare 失败阻止启动，下一次 startup attempt 可以重试。
 
 ## Commands capability
 
@@ -181,10 +192,23 @@ Node declaration、artifact consumer、worker specialization 与共享 pool 实�
 `packages/runtime/src/node-artifact/`。这是一个 runtime 领域目录，不包含 Vite/Rolldown compiler；build-time lowering 继续属于
 `@pluxel/rolldown`，避免 runtime graph 反向依赖工具链。
 
+## Optional management plane
+
+launcher 在 Context plan 编译前一次解析 Management/Workbench plane。顶层 `management` object 的存在显式安装 headless
+management；`management.access` 省略时使用 private policy，public exposure 必须同时提供有效 OIDC。`workbench: { enabled: true }`
+在 `management` 省略时隐式安装 private management；两者都省略时不安装 access gate、runtime discovery、internal validation、
+Plugin catalog layout 或 management HTTP/RPC route。
+
+公开 browser authority 是 `@pluxel/runtime/web`：version 1 discovery、严格验证的 management DTO 和 stateless domain client。
+client 不暴露 raw Cap'n Web stub、server class、React/Mantine 或 Workbench session。official View-host 尚未标准化的 layout/catalog/grant/SSE
+transport 只位于 `@pluxel/runtime/web/internal`；React Context adapter 位于 `/web/react`。server 上每个 carrier 都委托同一个 runtime use case，
+不维护 official-App-only read model。
+
+Management Plane 通过 `PluginCatalogLayoutService` 解析宿主/package 分类并持有用户偏好；该 service 不进入 Workbench backend。
+
 Workbench backend 由以下部分组成：
 
 - `WorkbenchService`：每个 plugin Context 隔离的 optional gate；
-- `WorkbenchPluginCatalogService`：宿主/package 分类解析与 Workbench-owned 用户偏好；
 - `WorkbenchRegistry`：module、关系、target layout、opaque grant 和统一 revision；
 - `WorkbenchArtifactService`：dev/package artifact 与 build state；
 - resource services：request-scoped API、live-query snapshot/patch、stream；
@@ -193,8 +217,8 @@ Workbench backend 由以下部分组成：
 资源 namespace 只存在于服务端。浏览器收到 binding token，服务端在请求时解析 token、校验 kind，并在
 revision 变化时撤销 grant。Workbench API 不暴露全局资源字典。
 
-安装入口是 `@pluxel/runtime/internal`，只供 static、dynamic 和 production static launcher 使用。插件不得
-直接安装或 require backend。
+backend factory 由 static、dynamic 和 production static launcher 在 immutable runtime plan 构造时提供。插件不得
+直接安装或 require backend，也不存在 post-root installer。
 
 ## Host application metadata
 

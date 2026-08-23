@@ -1,12 +1,11 @@
 import {
-	getRuntimeSecurityClient,
 	type LogFilter,
 	type LogRangeOk,
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
 	resolveAdminAccessLandingPath,
-	useRuntimeTransportClient,
+	useRuntimeManagementClient,
 } from '../../runtime'
 import {
 	formatPluginNodeReference,
@@ -719,7 +718,7 @@ const LogList = memo(function LogList(props: {
 })
 
 export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Props) {
-	const transport = useRuntimeTransportClient()
+	const management = useRuntimeManagementClient()
 	const plxScheme = useThemeModel()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
 	const [connected, setConnected] = useState(false)
@@ -798,14 +797,14 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 
 	const refreshStreams = useCallback(async () => {
 		try {
-			const payload = await transport.http.logs.streams()
+			const payload = await management.logs.streams()
 			const ids = payload.streams.map((stream) => stream.streamId).filter(Boolean)
 			ids.sort((a: string, b: string) => a.localeCompare(b))
 			if (ids.length > 0) setStreams(ids)
 		} catch {
 			// ignore
 		}
-	}, [transport.http.logs])
+	}, [management.logs])
 
 	useEffect(() => {
 		if (variant !== 'full') return
@@ -839,7 +838,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 			if (now - lastAdminAccessProbeAtRef.current < 1500) return false
 			lastAdminAccessProbeAtRef.current = now
 			try {
-				const payload = await getRuntimeSecurityClient().readOverview()
+				const payload = await management.security.readOverview()
 				if (payload.adminAccess.allow === true) return false
 				if (typeof window !== 'undefined') {
 					const next = resolveAdminAccessLandingPath(payload.adminAccess.reason)
@@ -852,7 +851,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 		}
 
 		const fetchMeta = async (): Promise<LogStreamMeta> => {
-			return transport.http.logs.meta(streamId, { signal: ac.signal })
+			return management.logs.meta(streamId, { signal: ac.signal })
 		}
 
 		const fetchRange = async (
@@ -860,7 +859,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 			fromSeq: string,
 			limit: number,
 		): Promise<LogRangeOk> => {
-			const payload = await transport.http.logs.range(
+			const payload = await management.logs.range(
 				streamId,
 				{
 					epoch: m.epoch,
@@ -898,7 +897,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 			const params = new URLSearchParams(filterQuery)
 			params.set('epoch', String(m.epoch))
 			params.set('from', fromSeq)
-			const url = transport.http.logs.followUrl(streamId, params)
+			const url = management.logs.followUrl(streamId, params)
 			const es = new EventSource(url)
 
 			es.onopen = () => setConnected(true)
@@ -999,7 +998,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 			rafRef.current = null
 			es?.close()
 		}
-	}, [activeFilter, filterQuery, transport, streamId])
+	}, [activeFilter, filterQuery, management, streamId])
 
 	useEffect(() => {
 		followRef.current = follow

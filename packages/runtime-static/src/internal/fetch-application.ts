@@ -1,7 +1,7 @@
 import type { PluginConstructor } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { startStaticRuntimeApplication } from './application'
-import type { StaticRuntimeWorkbenchInstaller } from './host'
+import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import type {
 	StaticRuntime,
 	StaticRuntimeApplication,
@@ -16,7 +16,7 @@ export type StaticFetchApplicationOptions<
 	env?: StaticRuntimeEnvironment
 	bindings?: TBindings
 	deployment: StaticRuntimeDeployment
-	installWorkbench?: StaticRuntimeWorkbenchInstaller
+	createWorkbenchBackend?: WorkbenchBackendFactory
 	product?: ProductDescriptor | null
 }
 
@@ -46,7 +46,7 @@ export function runStaticFetchApplication<
 					}
 				: {}),
 		},
-		installWorkbench: options.installWorkbench,
+		createWorkbenchBackend: options.createWorkbenchBackend,
 		product: options.product ?? null,
 	})
 }

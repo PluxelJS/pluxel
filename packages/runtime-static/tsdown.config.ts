@@ -18,7 +18,6 @@ export default defineConfig({
 			'@pluxel/runtime',
 			'@pluxel/runtime/*',
 			'@pluxel/runtime/internal',
-			'@pluxel/runtime/web/paths',
 			'vite',
 			'vite/*',
 		],

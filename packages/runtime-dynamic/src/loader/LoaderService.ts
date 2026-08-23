@@ -1,5 +1,4 @@
 import {
-	Injectable,
 	type Context as PluxelContext,
 	type PluginConstructor,
 	type PluginNodeAddress,
@@ -27,17 +26,6 @@ import {
 export type { ReplaceModuleResult } from './module-replacer'
 export type { LoaderApi, LoaderBatch, LoaderBatchCommitOptions } from './support'
 
-const serviceName = 'loader' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: LoaderService
-		}
-	}
-}
-
-@Injectable({ key: serviceName })
 export class LoaderService {
 	private readonly moduleReplacer = new ModuleReplacer()
 	public readonly api: LoaderApi

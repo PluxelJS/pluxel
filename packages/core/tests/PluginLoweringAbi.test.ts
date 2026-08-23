@@ -150,6 +150,22 @@ describe('Plugin lowering ABI v1', () => {
 		).toBe('plugin_declaration_invalid')
 	})
 
+	it('rejects duplicate required definitions at the lowering ABI boundary', () => {
+		class DuplicateRequirements extends BasePlugin {}
+		const requirement = address('Requirement')
+		const error = captureLoweringError(() =>
+			__setPluginDefinition(DuplicateRequirements, {
+				abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+				kind: 'plugin',
+				definition: address('DuplicateRequirements'),
+				requires: [requirement, requirement],
+			}),
+		)
+
+		expect(error.code).toBe('plugin_declaration_invalid')
+		expect(error.message).toContain('duplicate definition at index 1')
+	})
+
 	it('seals reusable Part facts without a process-wide revision or clone path', () => {
 		class SharedPart {}
 		class FirstPlugin extends BasePlugin {}

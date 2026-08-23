@@ -77,17 +77,15 @@ function fixture() {
 	const close = vi.fn()
 	const pluginLayout = vi.fn(async () => layout(revision, fingerprint))
 	const transport = {
-		links: { workbenchEvents: () => '/events' },
-		http: {
-			workbench: {
-				pluginLayout,
-				globalLayout: async () => ({ revision, target: null, items: [] }),
-				catalog: async (): Promise<WorkbenchCatalog> => ({
-					revision,
-					bundles: [bundle(`hash-${revision}`)],
-					states: [],
-				}),
-			},
+		workbench: {
+			layoutEventsUrl: () => '/events',
+			pluginLayout,
+			globalLayout: async () => ({ revision, target: null, items: [] }),
+			catalog: async (): Promise<WorkbenchCatalog> => ({
+				revision,
+				bundles: [bundle(`hash-${revision}`)],
+				states: [],
+			}),
 		},
 		createSse: () => ({
 			onOpen: () => () => {},

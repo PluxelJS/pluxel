@@ -1,8 +1,8 @@
-import '../../src/register-services'
 import { afterEach } from 'vitest'
-import { createHost, type Host } from '@pluxel/test'
 import type { Context, PluginNodeAddress } from '@pluxel/core'
 import type { RuntimeStateSnapshot } from '@pluxel/runtime/internal'
+import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import { createDynamicContextInstallations, requireLoaderService } from '../../src/context-plan'
 
 export type HmrTestState = {
 	enabled?: readonly PluginNodeAddress[]
@@ -14,7 +14,7 @@ export type HmrTestState = {
 export type HmrTestContext = {
 	core: Context
 	ctx: Context
-	host: Host
+	host: RuntimeHost
 	dispose: () => Promise<void>
 }
 
@@ -28,22 +28,25 @@ afterEach(async () => {
 
 export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 	const persisted = state.runtimeState ?? {}
-	const host = createHost({
-		persistence: { mode: 'memory' },
-		configService: { mode: 'memory' },
-		runtimeState: {
-			mode: 'memory',
-			snapshot: {
-				enabled: state.enabled ?? [],
-				forks: persisted.forks ?? [],
-				providerDefaults: persisted.providerDefaults ?? [],
-				dependencyOverrides: persisted.dependencyOverrides ?? [],
+	const host = createRuntimeHost(
+		{
+			workbench: false,
+			persistence: { mode: 'memory' },
+			configService: { mode: 'memory' },
+			runtimeState: {
+				mode: 'memory',
+				snapshot: {
+					enabled: state.enabled ?? [],
+					forks: persisted.forks ?? [],
+					providerDefaults: persisted.providerDefaults ?? [],
+					dependencyOverrides: persisted.dependencyOverrides ?? [],
+				},
 			},
 		},
-		root: { loaderHmr: { normalizeId: (id: string) => id } },
-	} as Context.Config)
+		{ installations: createDynamicContextInstallations() },
+	)
 	const ctx = host.ctx
-	void ctx.loader
+	void requireLoaderService(ctx)
 	const fixture: HmrTestContext = {
 		core: ctx,
 		ctx,

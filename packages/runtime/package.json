@@ -81,9 +81,13 @@
 			"@pluxel/source": "./src/web.ts",
 			"default": "./dist/web.mjs"
 		},
-		"./web/paths": {
-			"@pluxel/source": "./src/web/paths.ts",
-			"default": "./dist/web/paths.mjs"
+		"./web/internal": {
+			"@pluxel/source": "./src/web-internal.ts",
+			"default": "./dist/web/internal.mjs"
+		},
+		"./web/react": {
+			"@pluxel/source": "./src/web-react.ts",
+			"default": "./dist/web/react.mjs"
 		},
 		"./workbench": {
 			"@pluxel/source": "./src/workbench.ts",
@@ -123,7 +127,8 @@
 			"./test": "./dist/test.mjs",
 			"./toolchain": "./dist/toolchain.mjs",
 			"./web": "./dist/web.mjs",
-			"./web/paths": "./dist/web/paths.mjs",
+			"./web/internal": "./dist/web/internal.mjs",
+			"./web/react": "./dist/web/react.mjs",
 			"./workbench": "./dist/workbench.mjs",
 			"./workbench/contract": "./dist/workbench/contract.mjs",
 			"./workbench/ui": "./dist/workbench/ui.mjs",
@@ -144,8 +149,6 @@
 	"dependencies": {
 		"@electric-sql/pglite": "^0.5.4",
 		"@elysiajs/eden": "^1.4.8",
-		"@gqloom/core": "^0.16.1",
-		"@gqloom/valibot": "^0.15.1",
 		"@logtape/file": "^2.0.2",
 		"@logtape/logtape": "^2.0.2",
 		"@logtape/pretty": "^2.0.2",
@@ -157,8 +160,6 @@
 		"capnweb": "^0.5.0",
 		"drizzle-orm": "catalog:",
 		"elysia": "^1.4.27",
-		"graphql": "^16.13.0",
-		"graphql-yoga": "^5.18.0",
 		"jose": "^6.2.3",
 		"ohash": "^2.0.11",
 		"oxc-resolver": "^11.21.3",
@@ -170,7 +171,6 @@
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
-		"@gqlens/vite": "workspace:*",
 		"@mantine/core": "catalog:",
 		"@mantine/notifications": "catalog:",
 		"@pluxel/rolldown": "workspace:*",
@@ -189,7 +189,12 @@
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
-		"@tabler/icons-react": "catalog:"
+		"react": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"react": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"workbenchContractProtocol": 2

@@ -139,9 +139,6 @@ route 用于 Workbench 和默认 Plugin HTTP namespace，稳定、可逆、带 c
 字段和 decoded byte 长度，并拒绝 dot segment、encoded separator、重复/非 canonical encoding。正常 lookup parse 后使用 index Map，
 不按 label 扫描 catalog。
 
-GraphQL `Plugin.id` 等于 `route`，只用于满足 GQLens transport entity-key 约束；它不是第四种 Plugin ID。GraphQL 同时返回
-`address`、`reference`、`route` 和 `label`。
-
 ### Plugin node label
 
 label 只用于 Workbench 和 pretty log。runtime 先使用 `displayName`，fork 追加 ` / <forkId>`；发生冲突时依次追加 package/source
@@ -150,20 +147,20 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 
 ## 各领域作用域
 
-| 领域              | definition scope                               | node scope                                  | 领域私有 identity                  |
-| ----------------- | ---------------------------------------------- | ------------------------------------------- | ---------------------------------- |
-| Core graph/DI     | required/optional edge target                  | slot、lifecycle owner                       | generation                         |
-| HMR               | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot           | module revision                    |
-| Config            | schema、defaults、declaration path             | value、revision、apply/restart              | config record revision             |
-| RuntimeState      | fork family、required token                    | enabled、provider target、consumer override | file revision                      |
-| Logging           | 无 policy owner                                | category、filter、policy、reference/label   | rootId、bootId、stream epoch/seq   |
-| Workbench catalog | host classification、user ordering/assignment  | displayed variants、target layout           | tab id、layout revision、grant     |
-| HTTP              | 无                                             | `{ owner, localRouteId }` registration      | generation-bound route handle      |
-| Artifact          | declaration/source/build input，不含 forkId    | node-to-artifact binding                    | fingerprint、publication revision  |
-| Database          | schema/migration declaration                   | data owner                                  | physical schema/role/instance      |
-| Vault             | 无                                             | default namespace owner                     | explicit shared namespace、blob id |
-| Cache/Rates       | 无                                             | caller namespace owner                      | canonical key、TTL state           |
-| Wretch settings   | 无                                             | consumer settings owner                     | settings revision/file key         |
+| 领域               | definition scope                               | node scope                                  | 领域私有 identity                  |
+| ------------------ | ---------------------------------------------- | ------------------------------------------- | ---------------------------------- |
+| Core graph/DI      | required/optional edge target                  | slot、lifecycle owner                       | generation                         |
+| HMR                | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot           | module revision                    |
+| Config             | schema、defaults、declaration path             | value、revision、apply/restart              | config record revision             |
+| RuntimeState       | fork family、required token                    | enabled、provider target、consumer override | file revision                      |
+| Logging            | 无 policy owner                                | category、filter、policy、reference/label   | rootId、bootId、stream epoch/seq   |
+| Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping         | group id、preference revision      |
+| HTTP               | 无                                             | `{ owner, localRouteId }` registration      | generation-bound route handle      |
+| Artifact           | declaration/source/build input，不含 forkId    | node-to-artifact binding                    | fingerprint、publication revision  |
+| Database           | schema/migration declaration                   | data owner                                  | physical schema/role/instance      |
+| Vault              | 无                                             | default namespace owner                     | explicit shared namespace、blob id |
+| Cache/Rates        | 无                                             | caller namespace owner                      | canonical key、TTL state           |
+| Wretch settings    | 无                                             | consumer settings owner                     | settings revision/file key         |
 
 HMR 对一个 definition 的 default/forks 生成一次 commit plan，不能让部分 fork 使用新源码、部分 fork 使用旧源码。
 artifact build cache 不含 `forkId`，相同输入只编译一次；node binding 和 generation lease 仍各自隔离。
@@ -171,7 +168,7 @@ artifact build cache 不含 `forkId`，相同输入只编译一次；node bindin
 config patch 顺序是 validate -> 保存 desired record -> restart addressed node/真实 dependent closure -> 报告 apply 结果。
 restart 失败返回 `saved-not-applied`，desired config 保留供显式 restart 或下次 boot 重试。修改一个 fork 不重启 sibling/default。
 
-Workbench 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。extension/resource owner
+Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench extension/resource owner
 仍按 node，grant 按 generation。默认 Plugin HTTP path 是 `/__pluxel/plugins/<v1-node-route>`；作者稳定产品 API 继续使用显式 `publicPath`。
 
 ## 持久化版本
@@ -179,17 +176,17 @@ Workbench 分类偏好按 definition family 保存，新 fork 自动继承；一
 每个边界只读取和写入当前 schema。版本不匹配、address 非法或 owner envelope 不一致时 fail-fast；浏览器本地 UI 状态则丢弃
 无效 snapshot 并恢复默认值。实现不提供双读、自动转换、URL redirect、physical namespace 领养或 display-name fallback。
 
-| 领域                         | 当前版本/编码                | 当前 owner 契约                     |
-| ---------------------------- | ---------------------------- | ----------------------------------- |
-| RuntimeState                 | v4                           | structured definition/node address  |
-| Config file/env              | v3                           | structured node address             |
-| Logger policy                | v3                           | structured node address             |
-| Workbench catalog preference | v3                           | structured definition address       |
-| Workbench browser state      | v3                           | current versioned Plugin route      |
-| Database owner registry      | node reference               | exact current node reference        |
-| Vault                        | full canonical SHA-256       | exact current node address bytes    |
-| Wretch settings              | `consumers/v3` + envelope v2 | exact current node address envelope |
-| Cache/Rates                  | v3 canonical-byte namespace  | exact current node address bytes    |
+| 领域                          | 当前版本/编码                | 当前 owner 契约                     |
+| ----------------------------- | ---------------------------- | ----------------------------------- |
+| RuntimeState                  | v4                           | structured definition/node address  |
+| Config file/env               | v3                           | structured node address             |
+| Logger policy                 | v3                           | structured node address             |
+| Management catalog preference | v3                           | structured definition address       |
+| Workbench browser state       | v3                           | current versioned Plugin route      |
+| Database owner registry       | node reference               | exact current node reference        |
+| Vault                         | full canonical SHA-256       | exact current node address bytes    |
+| Wretch settings               | `consumers/v3` + envelope v2 | exact current node address envelope |
+| Cache/Rates                   | v3 canonical-byte namespace  | exact current node address bytes    |
 
 不能从 display name、class name、catalog 顺序、物理路径或 opaque catalog key 猜测 identity。需要保留数据的部署必须在升级前由
 宿主拥有的显式离线工具转换；runtime 正常启动路径始终只有一个当前契约。

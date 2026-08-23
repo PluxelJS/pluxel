@@ -32,8 +32,3 @@ export {
 	type WorkbenchPaneRole,
 	type WorkbenchPaneSize,
 } from './workbench/ui-pane'
-export {
-	RuntimeTransportClientProvider,
-	type RuntimeTransportClientProviderProps,
-	useRuntimeTransportClient,
-} from './web/react'

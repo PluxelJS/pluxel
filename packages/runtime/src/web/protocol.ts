@@ -1,9 +1,4 @@
-/**
- * Runtime transport protocol types (client/server shared).
- *
- * Keep protocol contracts and UI extension augmentation in one place so
- * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
- */
+/** Versioned, framework-neutral management protocol types shared by clients and servers. */
 import type { AgentToolsAdminSnapshot, AgentToolsPolicyInput } from '../agent-tools'
 import type {
 	PluginDefinitionAddress,
@@ -11,6 +6,7 @@ import type {
 	PluginLifecycleIssuePhase,
 	PluginNodeAddress,
 } from '@pluxel/core'
+import type { HostApplicationMeta } from '../product-contract'
 export type { VaultKeyPair } from '../services/vault/types'
 export type {
 	AgentToolAssignment,
@@ -21,17 +17,118 @@ export type {
 	CommandToolset,
 } from '../agent-tools'
 
-export type WorkbenchRpcView = Record<string, unknown>
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 1 as const
+export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
+	'plugins.list',
+	'plugins.status',
+	'plugins.lifecycle',
+	'plugins.config',
+	'plugins.dependencies',
+	'plugins.forks',
+	'plugin-groups',
+	'logging',
+	'agent-tools',
+	'security',
+	'vault',
+] as const)
+
+export type RuntimeManagementCapability = (typeof RUNTIME_MANAGEMENT_CAPABILITIES)[number]
+
+export type RuntimeMetaV1 = Readonly<{
+	service: 'pluxel-runtime'
+	ready: true
+	protocol: Readonly<{
+		name: 'pluxel.management'
+		major: 1
+		capabilities: readonly RuntimeManagementCapability[]
+	}>
+	application: HostApplicationMeta
+	workbench: Readonly<{ enabled: boolean }>
+	transport: Readonly<{
+		rpc: '/rpc'
+	}>
+}>
+
+export type PluginSourceSnapshot =
+	| Readonly<{
+			kind: 'package'
+			moduleId: string
+			packageName: string
+			version: string | null
+			tag: string | null
+	  }>
+	| Readonly<{
+			kind: 'hmr'
+			moduleId: string
+			packageName: null
+			version: null
+			tag: null
+	  }>
+	| Readonly<{
+			kind: 'unknown'
+			moduleId: null
+			packageName: null
+			version: null
+			tag: null
+	  }>
+
+export type PluginStatusIssue = Readonly<{
+	id: string
+	code:
+		| 'consumer_unavailable'
+		| 'requirement_removed'
+		| 'provider_unavailable'
+		| 'provider_disabled'
+		| 'provider_incompatible'
+		| 'fork_not_allowed'
+		| 'fork_default_forbidden'
+		| 'provider_default_requires_abstract'
+		| 'explicit_binding_invalid'
+		| 'missing_required_provider'
+		| 'definition_unavailable'
+	message: string
+}>
+
+export type PluginStatusSnapshot = Readonly<{
+	address: PluginNodeAddress
+	reference: string
+	route: string
+	displayName: string
+	label: Readonly<{ title: string; qualifier?: string; text: string }>
+	rootExportName: string
+	isRunning: boolean
+	isEnabled: boolean
+	lifecycleStage: 'running' | 'stopped' | 'disabled'
+	availability: 'available' | 'unavailable'
+	issues: readonly PluginStatusIssue[]
+	source: PluginSourceSnapshot
+}>
+
+export type PluginsListOutput = Readonly<{
+	plugins: readonly PluginStatusSnapshot[]
+	summary: Readonly<{ total: number; running: number; stopped: number; disabled: number }>
+}>
+
+export type PluginStatusQueryResult =
+	| Readonly<{ ok: true; value: PluginStatusSnapshot | null }>
+	| Readonly<{
+			ok: false
+			code: 'invalid_input'
+			state: 'unchanged'
+			error: string
+	  }>
 
 export type PluginStatusAction = 'enable' | 'disable' | 'restart'
 export type ConfigPatch = Record<string, unknown>
-export type ConfigFieldMutation = {
+export type ConfigFieldMutation = Readonly<{
 	fieldPath: string
 	value: unknown
-}
-export type ConfigValidationErrors = Record<
-	string,
-	Record<string, { message: string; path: string[] }[]>
+}>
+export type ConfigValidationErrors = Readonly<
+	Record<
+		string,
+		Readonly<Record<string, readonly Readonly<{ message: string; path: readonly string[] }>[]>>
+	>
 >
 
 export type PluginReconciliationIssue =
@@ -124,53 +221,60 @@ export type PluginApplyReport = Readonly<{
 		| Readonly<{ status: 'committed'; summary: PluginApplyCommitSummary }>
 }>
 
-type ConfigSnapshotResult = {
-	config: Record<string, unknown>
-	defaults: Record<string, unknown>
-}
+type ConfigSnapshotResult = Readonly<{
+	config: Readonly<Record<string, unknown>>
+	defaults: Readonly<Record<string, unknown>>
+}>
 
-type ConfigValueResult = {
-	config: Record<string, unknown>
-}
+type ConfigValueResult = Readonly<{ config: Readonly<Record<string, unknown>> }>
 
 export type ConfigResultOk =
-	| (ConfigSnapshotResult & {
-			ok: true
-			saved: false
-			application: 'not-requested'
-	  })
-	| (ConfigValueResult & {
-			ok: true
-			saved: true
-			application: 'applied' | 'deferred'
-			report: PluginApplyReport
-	  })
-	| (ConfigValueResult & {
-			ok: true
-			saved: true
-			application: 'saved-not-applied'
-			report: PluginApplyReport
-			applyFailure: {
-				code: 'plugin_not_running_after_restart'
-				message: string
-			}
-	  })
+	| (ConfigSnapshotResult &
+			Readonly<{
+				ok: true
+				saved: false
+				application: 'applied' | 'deferred' | 'saved-not-applied'
+				desiredRevision: number
+				appliedRevision: number | null
+			}>)
+	| (ConfigValueResult &
+			Readonly<{
+				ok: true
+				saved: true
+				application: 'applied' | 'deferred'
+				desiredRevision: number
+				appliedRevision: number | null
+				report: PluginApplyReport
+			}>)
+	| (ConfigValueResult &
+			Readonly<{
+				ok: true
+				saved: true
+				application: 'saved-not-applied'
+				desiredRevision: number
+				appliedRevision: number | null
+				report: PluginApplyReport
+				applyFailure: Readonly<{
+					code: 'plugin_not_running_after_restart'
+					message: string
+				}>
+			}>)
 
 export type ConfigResultErr =
-	| {
+	| Readonly<{
 			ok: false
 			code: 'validation_failed'
 			state: 'unchanged'
 			message: string
 			errors: ConfigValidationErrors
 			defaults?: Record<string, unknown>
-	  }
-	| {
+	  }>
+	| Readonly<{
 			ok: false
 			code: 'invalid_input' | 'node_unavailable' | 'config_not_found' | 'mutation_rejected'
 			state: 'unchanged'
 			message: string
-	  }
+	  }>
 	| (ConfigValueResult & {
 			ok: false
 			code: 'persistence_failed'
@@ -180,38 +284,208 @@ export type ConfigResultErr =
 
 export type ConfigResult = ConfigResultOk | ConfigResultErr
 
-export type SchemaResultOk = {
-	ok: true
+export type RuntimeJsonValue =
+	| null
+	| string
+	| number
+	| boolean
+	| readonly RuntimeJsonValue[]
+	| { readonly [key: string]: RuntimeJsonValue }
+export type RuntimeJsonObject = Readonly<{ [key: string]: RuntimeJsonValue }>
+
+export type ConfigPresentationFieldMetaV1 = Readonly<{
+	label: string
+	description?: string
+	help?: string
+	hint?: string
+	badge?: string | Readonly<{ label: string; color?: string }>
+	section?: Readonly<{
+		id: string
+		title?: string
+		description?: string
+		order?: number
+		columns?: number
+	}>
+	layout?: Readonly<{
+		full?: boolean
+		span?: number
+		align?: 'start' | 'center' | 'end'
+	}>
+	hideLabel?: boolean
+	hideRequired?: boolean
+	disabled?: boolean
+	readOnly?: boolean
+	hidden?: boolean
+}>
+
+type ConfigPresentationFieldBaseV1 = Readonly<{
+	name?: string
+	path: string
+	depth: number
+	meta: ConfigPresentationFieldMetaV1
+	required: boolean
+}>
+
+export type ConfigPresentationBranchFieldV1 = Readonly<{
+	key: string
+	node: ConfigPresentationFieldV1
+	replaceValue?: boolean
+}>
+
+export type ConfigPresentationFieldV1 =
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'string'
+				control: 'text' | 'textarea' | 'password' | 'code'
+				placeholder?: string
+				rows?: number
+				minLength?: number
+				maxLength?: number
+				format?: string
+			}>)
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'number'
+				min?: number
+				max?: number
+				step?: number
+				integer?: boolean
+				placeholder?: string
+			}>)
+	| (ConfigPresentationFieldBaseV1 & Readonly<{ kind: 'boolean'; control: 'switch' }>)
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'picklist'
+				control: 'select' | 'segmented' | 'radio'
+				options?: readonly (string | number)[]
+				entries?: readonly Readonly<{
+					value: string | number
+					label?: string
+					description?: string
+					group?: string
+					disabled?: boolean
+					accentColor?: string
+				}>[]
+				labels?: Readonly<Record<string, string>>
+				disabled?: readonly (string | number)[]
+				placeholder?: string
+				searchable?: boolean
+				clearable?: boolean
+				max?: number
+				create?: boolean
+				emptyLabel?: string
+			}>)
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'array'
+				item?: ConfigPresentationFieldV1 | null
+				layout?: 'list' | 'grid' | 'picker'
+				columns?: number
+				disableAutoGrid?: boolean
+				min?: number
+				max?: number
+				addable?: boolean
+				removable?: boolean
+				reorderable?: boolean
+				itemLabel?: string
+				addLabel?: string
+				emptyHint?: string
+				defaultItem?: RuntimeJsonValue
+			}>)
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'record'
+				value?: ConfigPresentationFieldV1 | null
+				layout?: 'table' | 'list'
+				min?: number
+				max?: number
+				addable?: boolean
+				removable?: boolean
+				reorderable?: boolean
+				editableKey?: boolean
+				key?: Readonly<{ label?: string; placeholder?: string; width?: number | string }>
+				valueMeta?: Readonly<{
+					label?: string
+					placeholder?: string
+					width?: number | string
+				}>
+				addLabel?: string
+				emptyHint?: string
+			}>)
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'object'
+				fields: readonly ConfigPresentationFieldV1[]
+				variant?: 'card' | 'stack'
+				columns?: number
+				gap?: number | string
+				collapsible?: boolean
+				collapsed?: boolean
+			}>)
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'union'
+				branches: readonly Readonly<{
+					key: string
+					discriminatorValue?: string | number | boolean | null
+					fields: readonly ConfigPresentationBranchFieldV1[]
+				}>[]
+				sharedFields: readonly ConfigPresentationBranchFieldV1[]
+				discriminator?: string
+				discriminatorField?: ConfigPresentationBranchFieldV1
+				control: 'select' | 'segmented' | 'radio' | 'switch'
+				labels?: Readonly<Record<string, string>>
+				descriptions?: Readonly<Record<string, string>>
+				placeholder?: string
+				searchable?: boolean
+				expose?: 'auto' | 'always' | 'never'
+				preserve?: boolean
+				compact?: boolean
+			}>)
+	| (ConfigPresentationFieldBaseV1 &
+			Readonly<{
+				kind: 'unsupported'
+				readOnly: true
+				reason: string
+			}>)
+
+export type ConfigPresentationPlanV1 = Readonly<{
+	version: 1
 	fieldName: string
-	schemaSource: string
-	defaults: Record<string, unknown>
-	sections: readonly {
+	defaults: RuntimeJsonObject
+	fields: readonly ConfigPresentationFieldV1[]
+	sections: readonly Readonly<{
 		path: readonly string[]
 		fieldName: string
-		schemaSource: string
-		defaults: Record<string, unknown>
-	}[]
-}
+		defaults: RuntimeJsonObject
+		fields: readonly ConfigPresentationFieldV1[]
+	}>[]
+}>
 
-export type SchemaResultErr = {
+export type ConfigPresentationResultOk = Readonly<{
+	ok: true
+	plan: ConfigPresentationPlanV1
+}>
+
+export type ConfigPresentationResultErr = Readonly<{
 	ok: false
-	code: 'invalid_input' | 'node_unavailable' | 'schema_not_found' | 'schema_source_missing'
+	code: 'invalid_input' | 'node_unavailable' | 'presentation_not_found'
 	message: string
-}
+}>
 
-export type SchemaResult = SchemaResultOk | SchemaResultErr
+export type ConfigPresentationResult = ConfigPresentationResultOk | ConfigPresentationResultErr
 
-export type PluginStatusBatchAction = {
+export type PluginStatusBatchAction = Readonly<{
 	address: PluginNodeAddress
 	action: PluginStatusAction
-}
+}>
 export type PluginStatusMutationErrorCode =
 	| 'plugin_not_found'
 	| 'restart_unavailable'
 	| 'graph_rejected'
 	| 'persistence_failed'
 	| 'state_mutation_rejected'
-export type PluginStatusMutationSuccess = {
+export type PluginStatusMutationSuccess = Readonly<{
 	address: PluginNodeAddress
 	ok: true
 	status: 'applied'
@@ -219,9 +493,9 @@ export type PluginStatusMutationSuccess = {
 	isRunning: boolean
 	isEnabled: boolean
 	lifecycleStage: PluginStatusEntryLifecycleStage
-}
+}>
 export type PluginStatusMutationFailure =
-	| {
+	| Readonly<{
 			address: PluginNodeAddress
 			ok: false
 			code:
@@ -231,31 +505,31 @@ export type PluginStatusMutationFailure =
 				| 'state_mutation_rejected'
 			state: 'unchanged'
 			error: string
-	  }
-	| {
+	  }>
+	| Readonly<{
 			address: PluginNodeAddress
 			ok: false
 			code: 'persistence_failed'
 			state: 'unknown'
 			error: string
-	  }
+	  }>
 export type PluginStatusMutationResult = PluginStatusMutationSuccess | PluginStatusMutationFailure
 /** Actions are serialized and may partially apply before a later item fails. */
 export type PluginStatusBatchResult =
-	| { ok: true; status: 'applied'; results: PluginStatusMutationSuccess[] }
-	| {
+	| Readonly<{ ok: true; status: 'applied'; results: readonly PluginStatusMutationSuccess[] }>
+	| Readonly<{
 			ok: false
 			status: 'partially-applied' | 'rejected'
-			results: PluginStatusMutationResult[]
-	  }
-	| {
+			results: readonly PluginStatusMutationResult[]
+	  }>
+	| Readonly<{
 			ok: false
 			status: 'rejected'
 			code: 'invalid_input'
 			state: 'unchanged'
 			error: string
-			results: []
-	  }
+			results: readonly []
+	  }>
 
 export type PluginStatusEntryLifecycleStage = 'running' | 'stopped' | 'disabled'
 
@@ -264,50 +538,62 @@ export type PluginDependencyKind = 'plugin' | 'abstract'
 export type PluginGroupInput = {
 	groupId: string
 	name: string
-	nodes: PluginNodeAddress[]
+	nodes: readonly PluginNodeAddress[]
 }
 
-export type PluginGroup = {
-	__typename?: 'PluginGroup'
-	id: string
+export type PluginGroup = Readonly<{
 	groupId: string
 	name: string
-	nodes: Array<{
-		__typename?: 'PluginGroupNode'
-		id: string
+	nodes: readonly Readonly<{
+		reference: string
+		route: string
 		displayName: string
+		label: string
 		rootExportName: string
 		address: PluginNodeAddress
-	}>
-}
+	}>[]
+}>
 
-export type PluginDependencyOption = {
+export type PluginGroupsMutationResult =
+	| Readonly<{ ok: true; groups: readonly PluginGroup[] }>
+	| Readonly<{
+			ok: false
+			code: 'invalid_input' | 'mutation_rejected'
+			state: 'unchanged'
+			error: string
+	  }>
+	| Readonly<{
+			ok: false
+			code: 'persistence_failed'
+			state: 'unknown'
+			error: string
+	  }>
+
+export type PluginDependencyOption = Readonly<{
 	address: PluginNodeAddress
 	displayName: string
 	isRunning: boolean
 	isEnabled: boolean
-}
+}>
 
-export type PluginDependencyRef = {
+export type PluginDependencyRef = Readonly<{
 	address: PluginNodeAddress
 	displayName: string
 	isRunning?: boolean
-}
+}>
 
-export type PluginDependencyState = {
-	index: number
-	token: PluginDefinitionAddress
+export type PluginDependencyState = Readonly<{
+	requirement: PluginDefinitionAddress
 	kind: PluginDependencyKind
 	effective: PluginNodeAddress | null
 	isRunning: boolean
 	selected: PluginNodeAddress | null
 	providerDefault: PluginNodeAddress | null
-	options: PluginDependencyOption[]
-}
+	options: readonly PluginDependencyOption[]
+}>
 
 export type PluginDependencyMutationErrorCode =
 	| 'invalid_input'
-	| 'invalid_index'
 	| 'consumer_unavailable'
 	| 'provider_unavailable'
 	| 'not_forkable'
@@ -318,53 +604,53 @@ export type PluginDependencyMutationErrorCode =
 	| 'graph_rejected'
 	| 'persistence_failed'
 export type PluginDependencyMutationResult =
-	| { ok: true; status: 'applied'; report: PluginApplyReport }
-	| {
+	| Readonly<{ ok: true; status: 'applied'; report: PluginApplyReport }>
+	| Readonly<{
 			ok: false
 			code: Exclude<PluginDependencyMutationErrorCode, 'persistence_failed'>
 			state: 'unchanged'
 			error: string
-	  }
-	| {
+	  }>
+	| Readonly<{
 			ok: false
 			code: 'persistence_failed'
 			state: 'unknown'
 			error: string
-	  }
+	  }>
 
-export type PluginDependencyQueryFailure = {
+export type PluginDependencyQueryFailure = Readonly<{
 	ok: false
 	code: 'invalid_input' | 'consumer_unavailable'
 	state: 'unchanged'
 	error: string
-}
+}>
 
 export type PluginDependencyListResult =
-	| { ok: true; items: PluginDependencyRef[] }
+	| Readonly<{ ok: true; items: readonly PluginDependencyRef[] }>
 	| PluginDependencyQueryFailure
 
 export type PluginDependencyInspectionResult =
-	| { ok: true; items: PluginDependencyState[] }
+	| Readonly<{ ok: true; items: readonly PluginDependencyState[] }>
 	| PluginDependencyQueryFailure
 
 export type EnsureForkResult =
-	| {
+	| Readonly<{
 			ok: true
 			status: 'applied' | 'deferred'
 			fork: PluginNodeAddress
 			report: PluginApplyReport
-	  }
-	| {
+	  }>
+	| Readonly<{
 			ok: true
 			status: 'saved-not-applied'
 			fork: PluginNodeAddress
 			report: PluginApplyReport
-			applicationFailure: {
+			applicationFailure: Readonly<{
 				code: 'plugin_not_running_after_enable'
 				message: string
-			}
-	  }
-	| {
+			}>
+	  }>
+	| Readonly<{
 			ok: false
 			code:
 				| 'invalid_input'
@@ -378,75 +664,78 @@ export type EnsureForkResult =
 				| 'graph_rejected'
 			state: 'unchanged'
 			error: string
-	  }
-	| {
+	  }>
+	| Readonly<{
 			ok: false
 			code: 'persistence_failed'
 			state: 'unknown'
 			error: string
-	  }
+	  }>
 
 export type RemoveForkResult =
-	| {
+	| Readonly<{
 			ok: true
 			status: 'removed' | 'removed-with-lifecycle-issues'
 			fork: PluginNodeAddress
 			report: PluginApplyReport
-	  }
-	| {
+	  }>
+	| Readonly<{
 			ok: true
 			status: 'already-absent'
 			fork: PluginNodeAddress
-	  }
-	| {
-			ok: false
-			code: 'invalid_input' | 'invalid_fork_id' | 'graph_rejected'
-			state: 'unchanged'
-			error: string
-	  }
-	| {
-			ok: false
-			code: 'fork_referenced'
-			state: 'unchanged'
-			references: readonly Readonly<{
-				consumer: PluginNodeAddress
-				requirement: PluginDefinitionAddress
-			}>[]
-			error: string
-	  }
-	| {
+	  }>
+	| Readonly<
+			| {
+					ok: false
+					code: 'invalid_input' | 'invalid_fork_id' | 'graph_rejected'
+					state: 'unchanged'
+					error: string
+			  }
+			| {
+					ok: false
+					code: 'fork_referenced'
+					state: 'unchanged'
+					references: readonly Readonly<{
+						consumer: PluginNodeAddress
+						requirement: PluginDefinitionAddress
+					}>[]
+					error: string
+			  }
+	  >
+	| Readonly<{
 			ok: false
 			code: 'persistence_failed'
 			state: 'retained' | 'disabled-retained' | 'unknown'
 			fork: PluginNodeAddress
 			report?: PluginApplyReport
 			error: string
-	  }
+	  }>
 
-export type BaseProviderInfo = {
+export type BaseProviderInfo = Readonly<{
 	token: PluginDefinitionAddress
 	currentDefault: PluginNodeAddress | null
 	isDefault: boolean
-	providers: PluginDependencyOption[]
-}
+	providers: readonly PluginDependencyOption[]
+}>
 
 export type BaseProviderInspectionResult =
-	| { ok: true; value: BaseProviderInfo | null }
+	| Readonly<{ ok: true; value: BaseProviderInfo | null }>
 	| PluginDependencyQueryFailure
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
-export type PluginLogPolicySnapshot = {
+export type PluginLogPolicySnapshot = Readonly<{
 	version: 2
 	defaultLevel: RuntimePluginLogLevel
-	overrides: Array<{ owner: PluginNodeAddress; level: RuntimePluginLogLevel }>
-}
+	overrides: readonly Readonly<{ owner: PluginNodeAddress; level: RuntimePluginLogLevel }>[]
+}>
 
-export type VersionedPluginLogPolicySnapshot = PluginLogPolicySnapshot & {
-	revision: number
-	persistence: 'none' | 'clean' | 'dirty' | 'failed'
-}
+export type VersionedPluginLogPolicySnapshot = PluginLogPolicySnapshot &
+	Readonly<{
+		revision: number
+		persistence: 'none' | 'clean' | 'dirty' | 'failed'
+	}>
 
 export type PluginLogPolicyMutationResult = Pick<
 	VersionedPluginLogPolicySnapshot,
@@ -482,50 +771,3 @@ export type AgentToolsHandleApi = {
 		policy: AgentToolsPolicyInput,
 	) => Promise<AgentToolsAdminSnapshot>
 }
-
-type RuntimeRpcApiContract = {
-	ping: () => string
-	logging: () => LoggingHandleApi
-	agentTools: () => AgentToolsHandleApi
-	workbenchRpc: (grantId: string) => WorkbenchRpcView
-	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
-	pluginSchema: (owner: PluginNodeAddress) => Promise<SchemaResult>
-	pluginConfig: (owner: PluginNodeAddress) => Promise<ConfigResult>
-	patchPluginConfig: (
-		owner: PluginNodeAddress,
-		patch: Record<string, unknown>,
-	) => Promise<ConfigResult>
-	patchPluginConfigField: (
-		owner: PluginNodeAddress,
-		input: ConfigFieldMutation,
-	) => Promise<ConfigResult>
-	pluginDependencies: (owner: PluginNodeAddress) => Promise<PluginDependencyListResult>
-	inspectPluginDependencies: (owner: PluginNodeAddress) => Promise<PluginDependencyInspectionResult>
-	setPluginDependencyTarget: (input: {
-		consumer: PluginNodeAddress
-		index: number
-		provider: PluginNodeAddress | null
-	}) => Promise<PluginDependencyMutationResult>
-	inspectPluginBaseProvider: (owner: PluginNodeAddress) => Promise<BaseProviderInspectionResult>
-	selectPluginBaseProvider: (input: {
-		consumer: PluginNodeAddress
-		token: PluginDefinitionAddress
-		provider: PluginNodeAddress | null
-	}) => Promise<PluginDependencyMutationResult>
-	ensurePluginFork: (input: {
-		base: PluginNodeAddress
-		forkId: string
-		enable?: boolean
-		selectFor?: {
-			consumer: PluginNodeAddress
-			requirement: PluginDefinitionAddress
-		}
-	}) => Promise<EnsureForkResult>
-	removePluginFork: (input: {
-		base: PluginNodeAddress
-		forkId: string
-	}) => Promise<RemoveForkResult>
-	applyPluginStatusActions: (actions: PluginStatusBatchAction[]) => Promise<PluginStatusBatchResult>
-}
-
-export type RuntimeRpcApi = RuntimeRpcApiContract

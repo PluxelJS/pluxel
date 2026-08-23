@@ -66,7 +66,7 @@ export class WretchExamplePlugin extends BasePlugin {
 			publicPath: '/wretch-example',
 			id: 'wretch-example',
 		})
-		this.ctx.workbench.mount(WretchExampleWorkbench, {
+		this.ctx.workbench?.mount(WretchExampleWorkbench, {
 			settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
 		})
 	}

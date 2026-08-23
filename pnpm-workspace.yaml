@@ -2,10 +2,6 @@ packages:
   - packages/*
   - plugins/*
   - plugins/*/*
-  - vendor/gqlens/packages/codegen
-  - vendor/gqlens/packages/core
-  - vendor/gqlens/packages/react
-  - vendor/gqlens/packages/vite
   - vendor/split-like-vscode/packages/core
   - vendor/split-like-vscode/packages/react
   - projects/*
@@ -70,10 +66,6 @@ allowBuilds:
   protobufjs: false
 
 minimumReleaseAgeExclude:
-  - '@gqlens/codegen@0.2.0'
-  - '@gqlens/core@0.2.0'
-  - '@gqlens/react@0.2.0'
-  - '@gqlens/vite@0.2.0'
   - '@pnpm/napi.darwin-arm64@12.0.0-rc.0'
   - '@pnpm/napi.darwin-x64@12.0.0-rc.0'
   - '@pnpm/napi.linux-arm64-musl@12.0.0-rc.0'

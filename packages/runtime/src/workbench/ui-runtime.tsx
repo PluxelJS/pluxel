@@ -20,7 +20,7 @@ import type {
 	WorkbenchRpcClient,
 	WorkbenchRpcOf,
 } from './contracts'
-import type { RuntimeTransportClient } from '../web/client'
+import type { RuntimeTransportClient } from '../web/transport-client'
 import type { SseClientWithNamespaces } from '../web/sse'
 import { createLiveQueryClient, type WorkbenchLiveQueryClient } from './ui-live-query'
 import { createEventsClient, type WorkbenchEventsClient } from './ui-events'

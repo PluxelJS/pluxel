@@ -50,6 +50,9 @@ import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from
 import { WorkspaceEntryResolver } from './workspace-entry-resolver'
 import { createFetchHmrServerPlugin } from '../vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from '../runtime-route-request'
+import { requireLoaderService, requireScanService } from '../../context-plan'
+import type { LoaderService } from '../../loader/LoaderService'
+import type { ScanService } from '../../scan/ScanService'
 
 function assertHmrExecutionOk(
 	result: HmrExecutionResult | undefined,
@@ -218,7 +221,8 @@ export class LoaderHmrService {
 
 	private ssrEnv!: DevEnvironment
 	private readonly runner = new HmrRunner()
-	private readonly scanService: Context['scanService']
+	private readonly loader: LoaderService
+	private readonly scanService: ScanService
 	private executor!: HmrExecutor
 	private batchProcessor!: HmrBatchProcessor
 
@@ -283,7 +287,8 @@ export class LoaderHmrService {
 		server?: ViteDevServer,
 	) {
 		this.hostRoot = normalizePath(resolve(this.config.hostRoot ?? process.cwd()))
-		this.scanService = this.ctx.scanService
+		this.loader = requireLoaderService(this.ctx)
+		this.scanService = requireScanService(this.ctx)
 		if (!Array.isArray(this.config.entries)) {
 			throw new TypeError(
 				'[hmr] loaderHmr.entries must be string[] (explicit cold-start entry list)',
@@ -710,7 +715,7 @@ export class LoaderHmrService {
 		if (plugins.length === 0) return
 
 		try {
-			const declared = await this.ctx.loader.registerFixedPlugins(plugins, {
+			const declared = await this.loader.registerFixedPlugins(plugins, {
 				moduleId: this.config.fixedModuleId,
 			})
 			this.ctx.logger.info('Fixed plugin catalog ready', { plugins: declared })
@@ -784,7 +789,7 @@ export class LoaderHmrService {
 	}
 
 	private isAnchorClean(clean: string): boolean {
-		return this.ctx.loader.api.anchors.has(clean)
+		return this.loader.api.anchors.has(clean)
 	}
 
 	private attachCommitTracker() {
@@ -1091,7 +1096,7 @@ export class LoaderHmrService {
 	}
 
 	private getAnchorsCleanSnapshot(): ReadonlySet<string> {
-		return this.ctx.loader.api.anchors.snapshot()
+		return this.loader.api.anchors.snapshot()
 	}
 
 	private isBridgeModule(specifier: string) {
@@ -1162,7 +1167,7 @@ export class LoaderHmrService {
 	private async logOperationalReport(reason: HmrReportReason) {
 		if (!this.shouldLogOperationalReport()) return
 
-		const registryView = this.ctx.loader.api.registry
+		const registryView = this.loader.api.registry
 
 		const scope = await this.ensureStartupScope()
 		const hotspots =

@@ -82,17 +82,18 @@ reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它�
 - toolchain helper 只能从 toolchain/internal subpath 使用。
 
 `@pluxel/core` 与 `@pluxel/runtime` 默认入口使用逐项 allowlist；runtime 可以逐项转发同一 core 作者面，不能使用
-`export * from '@pluxel/core'`。默认入口只承诺 Plugin 作者模型、Context/capability contracts、结构化 address codec 与 host 确实消费的
+`export * from '@pluxel/core'`。默认入口只承诺 Plugin 作者模型、type-only Context contract、结构化 address codec 与 host 确实消费的
 lifecycle result。`PluginService`、slot registry、record reader、construction/lifecycle adapter、coordinator、lowering setter 和 test host
 不得从默认入口可达；opaque slot 最多以 type-only contract 出现。Federation build contract 只从 `@pluxel/core/federation` 消费。
 
-Core 的 `Context` 是唯一开放 module-augmentation contract。由于 TypeScript 对 re-exported class augmentation 的限制，Core root 保留对
-private `@pluxel/context` facade 的直接 star re-export；该 private facade 自身必须逐项导出，不能包含 internal symbols 或无意新增的名字。
-除此以外默认 root 不使用 star barrel 扩张 surface。
+Context capability descriptor、plan、slot 和 construction helper 只从 internal entry 使用。Runtime 在一个集中 contract 中声明固定的
+内建属性；业务 package 不扩展 Context，也不注册第三方 capability。默认 root 不使用 star barrel 扩张 surface。
 
 runtime route wiring、RuntimeState draft helper、resolver/cache/Vite helper 和 control-plane server DTO 统一从
 `@pluxel/runtime/internal` 供 workspace runtime packages 使用，不创建 `shared`、`plugin-catalog`、`runtime-state`、
-`protocol` 等 public-looking 作者入口。browser contract 的公开权威入口是 `@pluxel/runtime/web`。
+`protocol` 等 public-looking 作者入口。browser management contract 的公开权威入口是 `@pluxel/runtime/web`；它只能导出 versioned DTO、
+discovery 和 framework-neutral domain client，不导出 raw transport stub。React provider 位于 `/web/react`，official Workbench 未标准化的
+View-host transport 位于明确不稳定的 `/web/internal`。
 
 Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/runtime-dynamic/source-producer` 的声明校验；它不得导入
 Vite、watcher、workspace scanner 或 package manager。固定 catalog 只从 dynamic config 的 `plugins` 进入，不提供 package、

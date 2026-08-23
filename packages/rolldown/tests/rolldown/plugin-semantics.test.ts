@@ -412,6 +412,17 @@ describe('plugin semantic lowering', () => {
 			message: 'must use a value import',
 		},
 		{
+			name: 'duplicate required dependency definition',
+			code: `
+				import { DatabasePlugin } from '@acme/database'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					constructor(readonly primary: DatabasePlugin, readonly replica: DatabasePlugin) { super() }
+				}
+			`,
+			message: 'plugin_dependency_requirement_duplicate',
+		},
+		{
 			name: 'package subpath dependency',
 			code: `
 				import { DatabasePlugin } from '@acme/database/backend'

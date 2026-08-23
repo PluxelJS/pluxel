@@ -1,5 +1,6 @@
 import { createRuntimeContext } from '@pluxel/runtime/test'
 import { requireWorkbench } from '@pluxel/runtime/internal'
+import { createOwnerContext } from '@pluxel/core/internal'
 import { describe, expect, it, vi } from 'vitest'
 
 import { attachPluginArtifactCompiler } from '../src/workbench'
@@ -16,7 +17,9 @@ describe('attachPluginArtifactCompiler', () => {
 		expect(attachSourceBinder).toHaveBeenCalledOnce()
 		expect(() => attachPluginArtifactCompiler(ctx)).toThrow(/already attached/)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(1)
-		expect(() => attachPluginArtifactCompiler(ctx.extend())).toThrow(/root Context/)
+		expect(() => attachPluginArtifactCompiler(createOwnerContext(ctx, 'nested'))).toThrow(
+			/root Context/,
+		)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(1)
 
 		await dispose()

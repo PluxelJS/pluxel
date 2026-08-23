@@ -36,6 +36,7 @@ import { captureCaller } from './host'
 import { createRuntimePrettyConsoleSink } from './pretty'
 
 const ACTIVE_RUNTIME_LOGGING = Symbol.for('pluxel:runtime:active-logging')
+const CONTEXT_RUNTIME_LOGGING = new WeakMap<object, RuntimeLogging>()
 const MAX_DEBUG_PATTERNS = 256
 const MAX_DIAGNOSTIC_COUNT = Number.MAX_SAFE_INTEGER
 
@@ -656,11 +657,29 @@ export function requireActiveRuntimeLogging(): RuntimeLogging {
 	return logging
 }
 
+/** @internal Bind one immutable root identity to its launcher-owned logging manager. */
+export function bindContextRuntimeLogging(ctx: Context, logging: RuntimeLogging): () => void {
+	const root = ctx.root
+	const active = getActiveRuntimeLogging()
+	if (active !== logging) {
+		throw new Error('Cannot bind Context to a RuntimeLogging manager that is not active')
+	}
+	const previous = CONTEXT_RUNTIME_LOGGING.get(root)
+	if (previous && previous !== logging) {
+		throw new Error('Context root is already bound to a different RuntimeLogging manager')
+	}
+	CONTEXT_RUNTIME_LOGGING.set(root, logging)
+	let bound = true
+	return () => {
+		if (!bound) return
+		bound = false
+		if (CONTEXT_RUNTIME_LOGGING.get(root) === logging) CONTEXT_RUNTIME_LOGGING.delete(root)
+	}
+}
+
 export function getContextRuntimeLogging(ctx: Context): RuntimeLogging | undefined {
-	const logging = getActiveRuntimeLogging()
-	if (!logging) return undefined
-	const rootId = (ctx.root.config.logger as LoggerServiceConfig | undefined)?.rootId
-	return rootId === logging.resolved.root.id ? logging : undefined
+	const logging = CONTEXT_RUNTIME_LOGGING.get(ctx.root)
+	return logging && logging === getActiveRuntimeLogging() ? logging : undefined
 }
 
 export function requireContextRuntimeLogging(ctx: Context): RuntimeLogging {

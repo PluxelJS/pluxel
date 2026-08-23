@@ -2,8 +2,8 @@
 
 ## Runtime entry
 
-- `src/index.ts`：唯一插件作者入口，并加载常驻 runtime services；
-- `src/services/index.ts`：常驻 service 注册清单；
+- `src/index.ts`：唯一插件作者入口，并加载封闭的 Runtime Context contract；
+- `src/context/runtime-plan.ts`：immutable capability plan 与常驻/可选能力安装；
 - `src/services/vault.ts`：显式启用的 optional Vault capability；
 - `src/services/workbench.ts`：宿主显式安装的 optional Workbench backend。
 
@@ -38,8 +38,9 @@
 
 ## Browser
 
-- `src/web/client.ts`：HTTP/RPC/SSE transport；
-- `src/web/rpc.ts`：request-scoped Cap'n Web proxy；
+- `src/web/client.ts`：Level 1 discovery 与 stateless Management domain client；
+- `src/web/transport-client.ts`：internal View-host layout、SSE、grant session 与清理；
+- `src/web/rpc.ts`：internal request-scoped Cap'n Web proxy；
 - `src/workbench/ui-runtime.tsx`：Remote View environment、host capabilities 与 resource clients；
 - `../workbench-app/src/app/workbench/RemotePaneLayout.tsx`：host-owned Pane Kit geometry、responsive drawer 与 state adapter；
 - `../workbench-app/src/workbench/client.ts`：browser catalog、target snapshot、route index 与 staged module lease；

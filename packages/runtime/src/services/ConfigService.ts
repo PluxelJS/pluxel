@@ -1,9 +1,4 @@
-import {
-	type Context as PluxelContext,
-	Injectable,
-	OverrideOf,
-	type PluginNodeAddress,
-} from '@pluxel/core'
+import { type Context as PluxelContext, type PluginNodeAddress } from '@pluxel/core'
 import {
 	ConfigService as CoreConfigService,
 	type PluginConfigRecordSnapshot,
@@ -48,17 +43,7 @@ export class ConfigMutationRejectedError extends Error {
 	}
 }
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Config {
-			configService?: ConfigServiceConfig
-		}
-	}
-}
-
 /** Persistent runtime adapter over core's single config state and validation engine. */
-@Injectable
-@OverrideOf(CoreConfigService)
 export class ConfigService extends CoreConfigService {
 	private readonly file = 'config.json'
 	private readonly saveDelayMs = 200
@@ -256,7 +241,7 @@ export class ConfigService extends CoreConfigService {
 }
 
 function defaultConfigServiceMode(
-	capability: PluxelContext.RootServices['persistence']['capability'],
+	capability: PluxelContext['root']['persistence']['capability'],
 ): ConfigServiceMode {
 	return capability === 'readonly' ? 'readonly' : 'file'
 }

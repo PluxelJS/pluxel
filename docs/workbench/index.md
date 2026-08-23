@@ -102,7 +102,7 @@ export class OrdersPlugin extends BasePlugin {
 	close(_orderId: string): void {}
 
 	override init() {
-		this.ctx.workbench.mount(OrdersWorkbench, {
+		this.ctx.workbench?.mount(OrdersWorkbench, {
 			commands: workbench.bind.rpc(() => new OrdersRpc(this)),
 			activity: workbench.bind.events<OrderEvents>(({ emit }) => {
 				const timer = setInterval(() => emit('refreshed', { at: Date.now() }), 30_000)
@@ -145,7 +145,7 @@ Contract 只描述 browser-safe resource shape 和 View placement；Extension �
 
 RPC generic 引用独立 browser-safe interface，不引用实现 class。这个 generic 只生成浏览器与服务端之间的 TypeScript 方法类型；运行时 Contract 只记录 resource kind，不携带参数或结果 schema。opaque grant、host access 和 Contract fingerprint 控制资源访问，RPC 方法仍必须自行校验不可信输入并执行领域权限检查。
 
-`workbench.entry()` 必须使用 module URL 和 literal relative path，build pipeline 才能提取并生成 browser remote。Extension 不写 owner address；owner 从最终 `ctx.workbench.mount()` 的 Context 推导。`liveQuery` 需要 database handle、完整 `dependsOn` 和显式 browser DTO；下面的 Resource contract 章节给出该变体。
+`workbench.entry()` 必须使用 module URL 和 literal relative path，build pipeline 才能提取并生成 browser remote。Extension 不写 owner address；owner 从最终 `ctx.workbench?.mount()` 的 Context 推导。`liveQuery` 需要 database handle、完整 `dependsOn` 和显式 browser DTO；下面的 Resource contract 章节给出该变体。
 
 ## Resource contract
 
@@ -232,7 +232,7 @@ const ConsumerWorkbench = workbench.portOutlet({
 	placement: workbenchContract.tab({ label: 'Fetch' }),
 })
 
-this.ctx.workbench.mount(ConsumerWorkbench, {
+this.ctx.workbench?.mount(ConsumerWorkbench, {
 	settings: workbench.bind.rpc(() => new FetchSettingsRpc(this)),
 })
 ```
@@ -325,9 +325,12 @@ function OrdersWorkspace() {
 
 ### Disabled 与 replacement 语义
 
-`workbench: false` 或 `{ enabled: false }` 表示零 backend 初始化：不创建 registry、compiler、watcher、route、transport 或 UI persistence。
+`workbench: false` 或省略配置表示零 backend 初始化：不创建 registry、compiler、watcher、route、transport 或 UI persistence。启用时只使用 `{ enabled: true, ... }`，不保留另一种 disabled object。
 
-`ctx.workbench.mount()` 在 disabled 时仍是安全 no-op author gate。Plugin 不先判断 enabled 再执行一套不同业务逻辑。
+Workbench disabled 时 `ctx.workbench` 不存在，`ctx.workbench?.mount()` 会跳过调用和 bindings 参数求值。Plugin
+不先判断 enabled 再执行一套不同业务逻辑，也不会为 disabled Plane 创建 null service。
+
+Management Plane 与 Remote View Plane 分离。`@pluxel/runtime/web` 的 framework-neutral client 可以发现 runtime、查询和变更 Plugin/config/dependency/fork/group/logging/agent/security；它不加载 React、Mantine、layout、artifact 或 Workbench session。Workbench enabled 时 management 自动以 private policy 安装；headless host 通过顶层 `management` object 单独安装，两个字段都省略时没有管理 route。访问策略与宿主 Plugin 分类分别配置在 `management.access`、`management.pluginGroups`。
 
 HMR replacement 会撤销旧 layout binding、RPC factory、events/live query 和 grant，再以新 generation mount。浏览器只能访问当前 target 获得的 opaque grant，不能按 Plugin namespace 读取其他 resource。events producer 的 cleanup 由 owner 撤销和浏览器断连共享同一资源归属路径；两者交错时 cleanup 只执行一次，detached channel 的迟到 send/emit 会被忽略。
 

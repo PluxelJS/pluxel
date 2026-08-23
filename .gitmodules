@@ -1,6 +1,3 @@
 [submodule "vendor/split-like-vscode"]
 	path = vendor/split-like-vscode
 	url = https://github.com/PluxelJS/split-like-vscode.git
-[submodule "vendor/gqlens"]
-	path = vendor/gqlens
-	url = https://github.com/PluxelJS/GQLens.git

@@ -1,38 +1,26 @@
 import type { Context, PluginNodeAddress } from '@pluxel/core'
-import { resolvePluginSource } from '../features/pluginStatus/service'
 import {
+	readRuntimeRouteCapabilities,
 	type RuntimePluginSource,
-	type RuntimePluginStatusIssue,
-	type RuntimePluginStatusSnapshot,
+	unknownPluginSource,
 } from '../../runtime/capabilities'
+import type {
+	PluginSourceSnapshot,
+	PluginStatusSnapshot,
+	PluginsListOutput,
+} from '../../web/protocol'
 import {
 	projectedPluginByAddress,
 	projectPluginCatalog,
-	type PluginNodeLabel,
 } from '../features/plugins/catalog-projection'
-
-type PluginSourceSnapshot = RuntimePluginSource extends infer Source
-	? Source extends RuntimePluginSource
-		? Omit<Source, '__typename'>
-		: never
-	: never
-
-export type PluginStatusSnapshot = Omit<RuntimePluginStatusSnapshot, 'source' | 'issues'> & {
-	reference: string
-	route: string
-	label: PluginNodeLabel
-	issues: RuntimePluginStatusIssue[]
-	source: PluginSourceSnapshot
-}
-
-export type PluginsListOutput = {
-	plugins: PluginStatusSnapshot[]
-	summary: { total: number; running: number; stopped: number; disabled: number }
-}
 
 function plainSource(source: RuntimePluginSource): PluginSourceSnapshot {
 	const { __typename: _type, ...rest } = source
 	return rest as PluginSourceSnapshot
+}
+
+function resolvePluginSource(ctx: Context, address: PluginNodeAddress): RuntimePluginSource {
+	return readRuntimeRouteCapabilities(ctx)?.source?.resolveSource(address) ?? unknownPluginSource()
 }
 
 export function pluginStatus(

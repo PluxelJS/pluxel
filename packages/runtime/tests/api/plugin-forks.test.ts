@@ -185,7 +185,11 @@ describe('Plugin fork control plane', () => {
 		expect(host.isRunning(ensured.fork)).toBe(true)
 
 		await expect(
-			rpc.setPluginDependencyTarget({ consumer, index: 0, provider: null }),
+			rpc.setPluginDependencyTarget({
+				consumer,
+				requirement: pluginDefinitionAddressOf(ForkProvider),
+				provider: null,
+			}),
 		).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
 		const business = host.ctx.root.persistence.namespace('plugin-business')
 		await business.put('referenced/data.json', '{"retained":true}')
@@ -328,7 +332,11 @@ describe('Plugin fork control plane', () => {
 		const logging = createRuntimeLogging(loggingPlan())
 		await logging.install()
 		await logging.initializePolicy(loggingStore)
-		const host = runtimeHost({ logger: logging.contextBinding })
+		const host = createRuntimeHost(
+			{ workbench: false, logger: logging.contextBinding },
+			{ logging },
+		)
+		hosts.push(host)
 		try {
 			host.add(ForkProvider)
 			await host.commit()

@@ -7,12 +7,14 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
-import { writeGroups } from '../../features/pluginGroups/service'
+import { readGroups, writeGroups } from '../../features/pluginGroups/service'
+import { PluginCatalogLayoutError } from '../../../services/management/PluginCatalogLayoutService'
+import { PersistenceError } from '../../../services/persistence/PersistenceService'
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
 	pluginConfigPatchField,
-	pluginSchema,
+	pluginConfigPresentation,
 } from '../../usecases/pluginConfig'
 import {
 	inspectPluginBaseProvider,
@@ -24,6 +26,10 @@ import {
 } from '../../usecases/pluginDependencies'
 import { ensureFork, removeFork } from '../../usecases/pluginForks'
 import { applyStatusActions } from '../../usecases/pluginStatus'
+import {
+	pluginStatus as readPluginStatus,
+	pluginsList as readPluginsList,
+} from '../../usecases/plugins'
 import { projectPluginApplyReport } from '../../presenters/pluginApplyReport'
 import { LoggingHandle } from './LoggingHandle'
 import { AgentToolsHandle } from './AgentToolsHandle'
@@ -36,10 +42,13 @@ import type {
 	PluginDependencyInspectionResult,
 	PluginDependencyListResult,
 	PluginDependencyMutationResult,
-	WorkbenchRpcView,
 	PluginGroup,
 	PluginGroupInput,
+	PluginGroupsMutationResult,
+	PluginStatusQueryResult,
+	PluginsListOutput,
 } from '../../../web/protocol'
+import type { WorkbenchRpcView } from '../../../web/internal-protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
 	private readonly ctx: Context
@@ -51,6 +60,27 @@ export class RuntimeRpcApi extends RpcTarget {
 
 	ping() {
 		return 'runtime-rpc:ok'
+	}
+
+	async pluginsList(): Promise<PluginsListOutput> {
+		return readPluginsList(this.ctx)
+	}
+
+	async pluginStatus(owner: unknown): Promise<PluginStatusQueryResult> {
+		const address = parseRpcNode(owner)
+		if (!address) {
+			return {
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				error: 'Invalid Plugin node address',
+			}
+		}
+		return { ok: true, value: readPluginStatus(this.ctx, address) }
+	}
+
+	async pluginGroups(): Promise<readonly PluginGroup[]> {
+		return await readGroups(this.ctx)
 	}
 
 	/** Logging settings (host-level, persisted). */
@@ -69,20 +99,40 @@ export class RuntimeRpcApi extends RpcTarget {
 		return workbench.rpc.resolve(this.ctx, ref.resourceId) as unknown as WorkbenchRpcView
 	}
 
-	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
-		const safe = Array.isArray(groups) ? groups : []
-		const output = await writeGroups(this.ctx, safe)
-		return output.map((group) =>
-			Object.assign({}, group, {
-				nodes: group.nodes.map((node) => ({
-					...node,
-					address: parsePluginNodeAddress(node.address),
-				})),
-			}),
-		)
+	async updatePluginGroups(input: unknown): Promise<PluginGroupsMutationResult> {
+		const parsed = parseRpcPluginGroups(input)
+		if (parsed.ok === false) {
+			return {
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				error: parsed.error,
+			}
+		}
+		try {
+			return { ok: true, groups: await writeGroups(this.ctx, parsed.value) }
+		} catch (error) {
+			if (error instanceof PluginCatalogLayoutError) {
+				return {
+					ok: false,
+					code: 'mutation_rejected',
+					state: 'unchanged',
+					error: error.message,
+				}
+			}
+			if (error instanceof PersistenceError) {
+				return {
+					ok: false,
+					code: 'persistence_failed',
+					state: 'unknown',
+					error: error.message,
+				}
+			}
+			throw error
+		}
 	}
 
-	async pluginSchema(owner: unknown) {
+	async pluginConfigPresentation(owner: unknown) {
 		const address = parseRpcNode(owner)
 		if (!address) {
 			return {
@@ -91,7 +141,7 @@ export class RuntimeRpcApi extends RpcTarget {
 				message: 'Invalid Plugin node address',
 			}
 		}
-		return await pluginSchema(this.ctx, address)
+		return await pluginConfigPresentation(this.ctx, address)
 	}
 
 	async pluginConfig(owner: unknown): Promise<ConfigResult> {
@@ -138,16 +188,18 @@ export class RuntimeRpcApi extends RpcTarget {
 	async setPluginDependencyTarget(input: unknown): Promise<PluginDependencyMutationResult> {
 		const record = readRpcRecord(input)
 		const consumer = parseRpcNode(record?.consumer)
+		const requirement = parseRpcDefinition(record?.requirement)
 		const provider = parseRpcNullableNode(record?.provider)
-		if (!record || !consumer || !provider.ok || !Number.isInteger(record.index)) {
+		if (
+			!record ||
+			!hasExactKeys(record, ['consumer', 'requirement', 'provider']) ||
+			!consumer ||
+			!requirement ||
+			!provider.ok
+		) {
 			return invalidDependencyInput('Invalid dependency target input')
 		}
-		return await pluginDependencySetTarget(
-			this.ctx,
-			consumer,
-			record.index as number,
-			provider.value,
-		)
+		return await pluginDependencySetTarget(this.ctx, consumer, requirement, provider.value)
 	}
 
 	async inspectPluginBaseProvider(owner: unknown): Promise<BaseProviderInspectionResult> {
@@ -296,6 +348,65 @@ function readRpcRecord(input: unknown): Record<string, unknown> | undefined {
 	return input && typeof input === 'object' && !Array.isArray(input)
 		? (input as Record<string, unknown>)
 		: undefined
+}
+
+const MAX_PLUGIN_GROUPS = 10_000
+const MAX_PLUGIN_GROUP_NODES = 10_000
+const MAX_PLUGIN_GROUP_TEXT = 256
+
+function parseRpcPluginGroups(
+	input: unknown,
+):
+	| Readonly<{ ok: true; value: readonly PluginGroupInput[] }>
+	| Readonly<{ ok: false; error: string }> {
+	if (!Array.isArray(input)) return { ok: false, error: 'Plugin groups must be an array' }
+	if (input.length > MAX_PLUGIN_GROUPS) {
+		return { ok: false, error: `Plugin groups exceed ${MAX_PLUGIN_GROUPS} items` }
+	}
+	let totalNodes = 0
+	const groups: PluginGroupInput[] = []
+	for (const [index, value] of input.entries()) {
+		const group = readRpcRecord(value)
+		if (!group || !hasExactKeys(group, ['groupId', 'name', 'nodes'])) {
+			return { ok: false, error: `Plugin groups[${index}] must be a closed group object` }
+		}
+		const groupId = boundedRpcText(group.groupId)
+		const name = boundedRpcText(group.name)
+		if (!groupId || !name || !Array.isArray(group.nodes)) {
+			return { ok: false, error: `Plugin groups[${index}] has invalid fields` }
+		}
+		totalNodes += group.nodes.length
+		if (totalNodes > MAX_PLUGIN_GROUP_NODES) {
+			return {
+				ok: false,
+				error: `Plugin groups exceed ${MAX_PLUGIN_GROUP_NODES} total nodes`,
+			}
+		}
+		const nodes: PluginNodeAddress[] = []
+		for (const [nodeIndex, rawNode] of group.nodes.entries()) {
+			const node = parseRpcNode(rawNode)
+			if (!node) {
+				return {
+					ok: false,
+					error: `Plugin groups[${index}].nodes[${nodeIndex}] is invalid`,
+				}
+			}
+			nodes.push(node)
+		}
+		groups.push(Object.freeze({ groupId, name, nodes: Object.freeze(nodes) }))
+	}
+	return { ok: true, value: Object.freeze(groups) }
+}
+
+function hasExactKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
+	const keys = Object.keys(record)
+	return keys.length === expected.length && expected.every((key) => Object.hasOwn(record, key))
+}
+
+function boundedRpcText(input: unknown): string | undefined {
+	if (typeof input !== 'string') return undefined
+	const value = input.trim()
+	return value && value.length <= MAX_PLUGIN_GROUP_TEXT ? value : undefined
 }
 
 function parseRpcNode(input: unknown): PluginNodeAddress | undefined {

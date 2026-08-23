@@ -18,8 +18,6 @@ This folder contains the Pluxel runtime UI application shell.
   Notification bridge and provider wiring.
 - `hooks/`
   App-level hooks only. Keep domain-specific hooks in their domain folder.
-- `gqlens/`
-  Generated GQLens accessors, type bindings, and runtime fetcher wiring.
 - `bootstrap.ts`
   Global runtime bootstrap for schema vendors and app startup side effects.
 
@@ -40,8 +38,8 @@ This folder contains the Pluxel runtime UI application shell.
 5. Public barrels are intentional; internal detours are not.
    Keep a barrel only for real package exports. Avoid internal `index.ts` files that only forward one file for one caller.
 
-6. Keep server state in GQLens.
-   Domain hooks may derive renderable projections from a shared GQLens session, but must not mirror GraphQL data into another writable store. Keep local optimistic drafts local and invalidate the owning GQLens selection after a successful write. RPC-only data stays in a domain resource only when it has multiple consumers; do not add global topic-based invalidation or non-reactive TTL caches.
+6. Keep server state behind the public management client.
+   Domain hooks may retain the last immutable snapshot while a refresh is in flight, but must not mirror it into another writable global store. Keep local optimistic drafts local and refresh the owning management domain after a successful write.
 
 ## LLM Edit Protocol
 

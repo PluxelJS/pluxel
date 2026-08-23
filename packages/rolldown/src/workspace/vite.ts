@@ -69,11 +69,6 @@ export function createPluxelUiChunkGroups() {
 			priority: 28,
 		},
 		{
-			name: 'graphql',
-			test: /[\\/]node_modules[\\/](@gqlens|graphql)[\\/]/,
-			priority: 26,
-		},
-		{
 			name: 'mf-runtime',
 			test: /[\\/]node_modules[\\/]@module-federation[\\/]/,
 			priority: 24,

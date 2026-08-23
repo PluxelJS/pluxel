@@ -54,7 +54,7 @@ interface SecurityToolbarProps {
 	onRefresh: () => void
 	refreshing: boolean
 	totalNamespaces: number
-	vault: VaultAdminState
+	vault: VaultAdminState | null
 }
 
 export function SecurityToolbar({
@@ -76,15 +76,23 @@ export function SecurityToolbar({
 					>
 						访问 {labelForAccessState(adminAccess)}
 					</Badge>
-					<Badge
-						color={vault.unlocked ? 'green' : vault.lastError ? 'red' : 'blue'}
-						variant="light"
-					>
-						Vault {labelForVaultState(vault)}
-					</Badge>
-					<Badge color="gray" variant="light">
-						Namespace {namespaceCount} / {totalNamespaces}
-					</Badge>
+					{vault ? (
+						<>
+							<Badge
+								color={vault.unlocked ? 'green' : vault.lastError ? 'red' : 'blue'}
+								variant="light"
+							>
+								Vault {labelForVaultState(vault)}
+							</Badge>
+							<Badge color="gray" variant="light">
+								Namespace {namespaceCount} / {totalNamespaces}
+							</Badge>
+						</>
+					) : (
+						<Badge color="gray" variant="light">
+							Vault disabled
+						</Badge>
+					)}
 					<Badge color={failedEvents > 0 ? 'red' : 'gray'} variant="light">
 						审计失败 {failedEvents}
 					</Badge>

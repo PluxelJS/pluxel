@@ -9,7 +9,10 @@ import {
 	type WorkbenchPaneLayoutControls,
 	type WorkbenchRpcClient,
 } from '@pluxel/runtime/workbench/ui'
+import * as workbenchUi from '@pluxel/runtime/workbench/ui'
 import { createRuntimeContext } from '@pluxel/runtime/test'
+import type { Context } from '@pluxel/core'
+import { createGenerationContext, requirePluginService } from '@pluxel/core/internal'
 import { requireWorkbench } from '../../src/services/workbench'
 
 describe('Workbench authoring API', () => {
@@ -199,6 +202,14 @@ describe('Workbench authoring API', () => {
 		expectTypeOf<WorkbenchHost>().not.toHaveProperty('splitView')
 	})
 
+	it('keeps View-host assembly behind the internal entry', () => {
+		expect(workbenchUi).not.toHaveProperty('RuntimeTransportClientProvider')
+		expect(workbenchUi).not.toHaveProperty('useRuntimeTransportClient')
+		expect(workbenchUi).not.toHaveProperty('WorkbenchViewProvider')
+		expect(workbenchUi).not.toHaveProperty('createLiveQueryClient')
+		expect(workbenchUi).not.toHaveProperty('WorkbenchPaneLayoutControlsProvider')
+	})
+
 	it('exposes exactly the declared UI views', () => {
 		const contract = workbenchContract.define({
 			views: {
@@ -257,9 +268,8 @@ describe('Workbench authoring API', () => {
 	it('keeps the optional capability inert when disabled', async () => {
 		const runtime = createRuntimeContext({ workbench: false })
 		try {
-			expect(runtime.ctx.workbench.enabled).toBe(false)
-			const extension = workbench.extension({ contract: workbenchContract.define({}) })
-			expect(runtime.ctx.workbench.mount(extension, {})).toBeUndefined()
+			expect(runtime.ctx.workbench).toBeUndefined()
+			expect('workbench' in runtime.ctx).toBe(false)
 		} finally {
 			await runtime.dispose()
 		}
@@ -276,16 +286,15 @@ describe('Workbench authoring API', () => {
 			backend.forContext(first.ctx).mount(extension, {})
 			expect(() => backend.forContext(first.ctx).mount(extension, {})).toThrow('already mounted')
 			expect(() => backend.forContext(second.ctx).mount(extension, {})).not.toThrow()
-			expect(first.disposed()).toBe(true)
+			await Promise.all([first.ctx.effects.dispose(), second.ctx.effects.dispose()])
 		} finally {
 			await runtime.dispose()
 		}
 	})
 })
 
-function pluginContext(root: object, id: string) {
-	const ctx = Object.create(root) as any
-	let disposed = false
+function pluginContext(root: Context, id: string) {
+	const ctx = createGenerationContext(root.root, id)
 	const nodeAddress = {
 		definition: {
 			entry: {
@@ -297,34 +306,17 @@ function pluginContext(root: object, id: string) {
 		},
 		variant: 'default' as const,
 	}
-	const nodeSlot = (root as any).registry.internNodeAddress(nodeAddress)
-	Object.defineProperties(ctx, {
-		pluginInfo: {
-			value: {
-				nodeSlot,
-				nodeAddress,
-				definitionAddress: nodeAddress.definition,
-				definitionRevision: 1,
-				displayName: id,
-			},
-			configurable: true,
-		},
-		effects: {
-			value: {
-				defer(cleanup: () => void) {
-					let active = true
-					return {
-						dispose() {
-							if (!active) return
-							active = false
-							disposed = true
-							cleanup()
-						},
-					}
-				},
-			},
-			configurable: true,
-		},
+	const nodeSlot = requirePluginService(root).internNodeAddress(nodeAddress)
+	Object.defineProperty(ctx, 'pluginInfo', {
+		value: Object.freeze({
+			nodeSlot,
+			nodeAddress,
+			definitionAddress: nodeAddress.definition,
+			definitionRevision: 1,
+			displayName: id,
+		}),
+		writable: false,
+		configurable: false,
 	})
-	return { ctx, disposed: () => disposed }
+	return { ctx }
 }

@@ -61,10 +61,6 @@ function markRedirecting(): void {
 	redirectingAt = Date.now()
 }
 
-export function resetRedirectingState(): void {
-	redirectingAt = null
-}
-
 export function defaultOnAdminAccessBlocked(info: AdminAccessBlockedInfo) {
 	if (typeof window === 'undefined') return
 	if (!info.redirectPath) return
@@ -133,37 +129,4 @@ export function createAdminAccessAwareFetch(
 	;(wrapped as any)[ADMIN_ACCESS_AWARE_FETCH] = true
 	wrapped.preconnect = resolvePreconnect(baseFetch)
 	return wrapped
-}
-
-type InstallGlobalAdminAccessFetchOptions = AdminAccessAwareFetchOptions & {
-	enabled?: boolean
-}
-
-let installCount = 0
-let originalFetch: RuntimeFetch | null = null
-
-export function installGlobalAdminAccessFetch(
-	options: InstallGlobalAdminAccessFetchOptions = {},
-): () => void {
-	if (options.enabled === false) return () => {}
-	if (typeof globalThis.fetch !== 'function') return () => {}
-
-	if (installCount === 0) {
-		const nativeFetch = globalThis.fetch as typeof globalThis.fetch
-		originalFetch = nativeFetch.bind(globalThis) as RuntimeFetch
-		originalFetch.preconnect =
-			'preconnect' in nativeFetch
-				? (nativeFetch.preconnect as RuntimeFetchPreconnect)
-				: noopPreconnect
-		globalThis.fetch = toGlobalFetch(createAdminAccessAwareFetch(originalFetch, options))
-	}
-	installCount++
-
-	return () => {
-		installCount = Math.max(0, installCount - 1)
-		if (installCount !== 0) return
-		if (originalFetch) globalThis.fetch = originalFetch
-		originalFetch = null
-		resetRedirectingState()
-	}
 }

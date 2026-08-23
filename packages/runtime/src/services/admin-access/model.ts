@@ -10,7 +10,6 @@ export const DEFAULT_OIDC_TOKEN_HEADER = 'authorization' as const
 
 type AdminAccessConfigLike =
 	| {
-			enabled?: unknown
 			exposure?: unknown
 			oidc?: unknown
 	  }
@@ -96,18 +95,10 @@ function normalizeOidcConfig(value: unknown): AdminAccessOidcConfig | undefined 
 }
 
 export function resolveAdminAccessConfig(input?: AdminAccessConfigLike): ResolvedAdminAccessConfig {
-	const enabled = input?.enabled === true
 	const exposure: AdminAccessExposure =
 		input?.exposure === 'public' ? 'public' : DEFAULT_ADMIN_ACCESS_EXPOSURE
 	const oidc = normalizeOidcConfig(input?.oidc)
-	if (!enabled) {
-		return {
-			enabled: false,
-			exposure: 'private',
-		}
-	}
 	return {
-		enabled,
 		exposure,
 		...(oidc ? { oidc } : {}),
 	}

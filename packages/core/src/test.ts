@@ -1,5 +1,6 @@
 import './services/index'
-import { Context } from '@pluxel/context'
+import { createCoreRootContext } from './context/core-plan'
+import type { CoreHostConfig, RootContext } from './context/Context'
 import {
 	BasePlugin,
 	pluginDefinitionAddressEqual,
@@ -40,7 +41,6 @@ export {
 	pluginNodeAddressOf,
 } from './index'
 export { checkPluginDecorator }
-export { Context } from './index'
 export type {
 	CommitSummary,
 	PluginCommitChanges,
@@ -89,7 +89,7 @@ type TypedTarget<T extends PluginConstructor> = T | PluginNodeHandle<T>
 type AnyTarget = PluginConstructor | PluginNodeAddress
 
 export interface CoreHost {
-	readonly ctx: Context
+	readonly ctx: RootContext
 	add(Plugin: PluginConstructor): CoreHost
 	add(Plugins: readonly PluginConstructor[]): CoreHost
 	remove(target: AnyTarget, options?: { cascadeDependents?: boolean }): CoreHost
@@ -122,8 +122,12 @@ export interface CoreHost {
 	dispose(): Promise<void>
 }
 
-export type CoreTestContext = { readonly ctx: Context; dispose: () => Promise<void> }
-export type CoreHostOptions = { prepareCommit?: (ctx: Context) => Promise<void> | void }
+export type CoreTestContext = { readonly ctx: RootContext; dispose: () => Promise<void> }
+export type CoreHostOptions = {
+	prepareCommit?: (ctx: RootContext) => Promise<void> | void
+	/** @internal Allows higher-level package tests to supply their explicit Context plan. */
+	createRootContext?: (config: CoreHostConfig) => RootContext
+}
 
 export type CoreHostLifecycleIssueExpectation = {
 	phase?: PluginLifecycleIssuePhase
@@ -132,11 +136,8 @@ export type CoreHostLifecycleIssueExpectation = {
 	message?: string | RegExp
 }
 
-function normalizeConfig(config: Context.Config): Context.Config {
-	return Object.assign({}, config, {
-		root: config.root ?? {},
-		fs: Object.assign({ mode: 'memory' }, config.fs),
-	}) as Context.Config
+function normalizeConfig(config: CoreHostConfig): CoreHostConfig {
+	return { ...config }
 }
 
 function targetAddress(target: AnyTarget): PluginNodeAddress {
@@ -237,11 +238,12 @@ export function assertPluginLifecycleIssue(
 }
 
 export function createCoreHost(
-	config: Context.Config = {},
+	config: CoreHostConfig = {},
 	options: CoreHostOptions = {},
 ): CoreHost {
 	let host!: CoreHost
-	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
+	const resolvedConfig = { name: 'test', ...normalizeConfig(config) }
+	const ctx = options.createRootContext?.(resolvedConfig) ?? createCoreRootContext(resolvedConfig)
 	const registry = requirePluginService(ctx)
 	const configService = requireConfigService(ctx)
 	const localEnabled: PluginNodeAddress[] = []
@@ -403,7 +405,7 @@ function isNodeSlot(value: unknown): value is PluginNodeSlot {
 
 export async function withCoreHost<T>(
 	fn: (host: CoreHost) => Promise<T> | T,
-	config: Context.Config = {},
+	config: CoreHostConfig = {},
 	options: CoreHostOptions = {},
 ): Promise<T> {
 	const host = createCoreHost(config, options)
@@ -414,8 +416,12 @@ export async function withCoreHost<T>(
 	}
 }
 
-export function createCoreContext(config: Context.Config = {}): CoreTestContext {
-	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
+export function createCoreContext(
+	config: CoreHostConfig = {},
+	options: Pick<CoreHostOptions, 'createRootContext'> = {},
+): CoreTestContext {
+	const resolvedConfig = { name: 'test', ...normalizeConfig(config) }
+	const ctx = options.createRootContext?.(resolvedConfig) ?? createCoreRootContext(resolvedConfig)
 	return {
 		ctx,
 		dispose: async () => {
@@ -426,8 +432,8 @@ export function createCoreContext(config: Context.Config = {}): CoreTestContext 
 }
 
 export async function withCoreContext<T>(
-	fn: (ctx: Context) => Promise<T> | T,
-	config: Context.Config = {},
+	fn: (ctx: RootContext) => Promise<T> | T,
+	config: CoreHostConfig = {},
 ): Promise<T> {
 	const value = createCoreContext(config)
 	try {

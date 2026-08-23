@@ -6,7 +6,6 @@ export const RUNTIME_ADMIN_ACCESS_BASE = '/__pluxel/admin-access' as const
 export const RUNTIME_SECURITY_BASE = '/security' as const
 export const RUNTIME_TRANSPORT_PATHS = {
 	rpc: '/rpc',
-	graphql: '/graphql',
 	sse: '/sse',
 } as const
 

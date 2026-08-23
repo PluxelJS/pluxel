@@ -1,7 +1,6 @@
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { Injectable, type Context as CoreContext } from '@pluxel/core'
-import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
+import type { Context as CoreContext } from '@pluxel/core'
 import { Tinypool } from 'tinypool'
 import type { NodeModuleDeclaration } from './node-module'
 import {
@@ -10,8 +9,6 @@ import {
 	type WorkersConfig,
 	type WorkerTaskDeclaration,
 } from './worker-task'
-
-const serviceName = 'workers' as const
 
 const DEFAULT_MAX_QUEUED_TASKS = 128
 const DEFAULT_MAX_QUEUED_TASKS_PER_PLUGIN = 32
@@ -74,19 +71,6 @@ type TinypoolTransferList = NonNullable<TinypoolRunOptions['transferList']>
 
 const rootStates = new WeakMap<WorkerTaskService, RootState>()
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: WorkerTaskService
-		}
-		interface Config {
-			/** Root-owned shared pool for cloneable CPU/native worker tasks. */
-			workers?: WorkersConfig
-		}
-	}
-}
-
-@Injectable({ key: serviceName })
 export class WorkerTaskService {
 	private readonly routes = new WeakMap<object, TaskRoute>()
 	private state?: RootState
@@ -110,11 +94,6 @@ export class WorkerTaskService {
 				phase: 'shutdown',
 			})
 		}
-	}
-
-	/** @internal Bind scheduling admission to an owner without creating another worker pool. */
-	[OWNER_CONTEXT_BIND](owner: CoreContext): WorkerTaskService {
-		return new WorkerTaskService(owner, undefined)
 	}
 
 	/** Run a cloneable task within the host's shared worker-thread budget. */
@@ -477,25 +456,6 @@ function asTinypoolTransferList(transferList: ArrayBuffer[]): TinypoolTransferLi
 
 function firstSetValue<T>(values: ReadonlySet<T>): T | undefined {
 	return values.values().next().value
-}
-
-/** @internal Keep owner-bearing worker task views isolated per plugin Context. */
-export function withWorkerTaskPluginContext<T extends CoreContext.Config>(config: T): T {
-	const registry =
-		config.registry && typeof config.registry === 'object'
-			? (config.registry as Record<string, unknown>)
-			: {}
-	const current = Array.isArray(registry.pluginCTXIsolate)
-		? (registry.pluginCTXIsolate as unknown[])
-		: []
-	if (current.includes(WorkerTaskService)) return config
-	return {
-		...config,
-		registry: {
-			...registry,
-			pluginCTXIsolate: [...current, WorkerTaskService],
-		},
-	} as T
 }
 
 function createPool(config: ResolvedWorkersConfig): Tinypool {

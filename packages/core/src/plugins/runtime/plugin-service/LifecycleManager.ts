@@ -3,7 +3,7 @@
 // Extracted from PluginService to keep commit logic readable while preserving
 // identical runtime behavior.
 
-import type { Context } from '@pluxel/context'
+import type { Context } from '../../../context/Context'
 import { BasePlugin, getPluginLifecycleAdapter } from '../../composition/BasePlugin'
 import {
 	formatPluginNodeReference,

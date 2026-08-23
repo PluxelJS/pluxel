@@ -1,8 +1,6 @@
-import { RootService, type Context as PluxelContext, type ServiceClass } from '@pluxel/context'
+import { createGenerationContext, type Context as PluxelContext } from '../../context/Context'
 import { createErr, createOk } from 'option-t/plain_result'
 import { requireConfigService } from '../../internal/config-service'
-import { LoggerService } from '../../logger/LoggerService'
-import { EffectsService } from '../../services/effects/EffectsService'
 import type { BasePlugin } from '../composition/BasePlugin'
 import { createCallerGenerationView } from '../composition/caller-view'
 import type { PluginToken } from '../types'
@@ -76,15 +74,13 @@ export type {
 	RuntimeUpdateCommitSummary,
 } from './plugin-service/CommitPlan'
 
-type PluginServiceConfig = {
-	pluginCTXIsolate?: AnyServiceClass[]
+export type PluginServiceConfig = {
 	startTimeoutMs?: number
 	drainTimeoutMs?: number
 	startConcurrency?: number
 	stopConcurrency?: number
 }
 
-type AnyServiceClass = ServiceClass<new (ctx: PluxelContext, cfg?: unknown) => unknown>
 type RuntimeUpdateCommitResult =
 	| { ok: true; val: { graph: PluginGraph; delta: CommitExecutionDelta } }
 	| { ok: false; err: unknown }
@@ -110,16 +106,6 @@ function ensureError(error: unknown): Error {
 	return error instanceof Error ? error : new Error(String(error), { cause: error })
 }
 
-const serviceName = 'registry' as const
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Config {
-			[serviceName]?: PluginServiceConfig
-		}
-	}
-}
-
-@RootService({ key: serviceName })
 export class PluginService {
 	private readonly definitions: PluginDefinitions
 	private _commitLock: Promise<unknown> = Promise.resolve()
@@ -165,8 +151,7 @@ export class PluginService {
 		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS
 		this.startConcurrency = config.startConcurrency ?? DEFAULT_START_CONCURRENCY
 		this.stopConcurrency = config.stopConcurrency ?? DEFAULT_STOP_CONCURRENCY
-		const isolated = this.resolvePluginIsolatedServices(config)
-		this.definitions = new PluginDefinitions(() => this.createPluginContext(isolated))
+		this.definitions = new PluginDefinitions(() => this.createPluginContext())
 		this.lifecycleManager = new LifecycleManager(
 			this.ctx,
 			this.definitions.slots,
@@ -480,35 +465,8 @@ export class PluginService {
 		if (this.activeRuntimeUpdate === tx) this.activeRuntimeUpdate = undefined
 	}
 
-	private resolvePluginIsolatedServices(config: PluginServiceConfig): AnyServiceClass[] {
-		const isolated: AnyServiceClass[] = []
-		const seen = new Set<AnyServiceClass>()
-		for (const service of config.pluginCTXIsolate ?? []) {
-			if (seen.has(service)) continue
-			seen.add(service)
-			isolated.push(service)
-		}
-		for (const service of [EffectsService, LoggerService] as unknown as AnyServiceClass[]) {
-			if (seen.has(service)) continue
-			seen.add(service)
-			isolated.push(service)
-		}
-		return isolated
-	}
-
-	private createPluginContext(isolated: readonly AnyServiceClass[]): PluxelContext {
-		const pluginContext = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
-		try {
-			Object.defineProperty(pluginContext, 'effects', {
-				value: pluginContext.effects,
-				writable: false,
-				enumerable: false,
-				configurable: true,
-			})
-		} catch {
-			// A custom Context without Effects pinning still follows the normal service getter path.
-		}
-		return pluginContext
+	private createPluginContext(): PluxelContext {
+		return createGenerationContext(this.ctx.root, `${this.order++}`)
 	}
 
 	private resolveGraphKey(
@@ -563,20 +521,26 @@ export class PluginService {
 		return instance && this.lifecycleManager.isRunning(instance) ? instance : undefined
 	}
 
-	private async injectConfig(plugin: BasePlugin): Promise<void> {
+	private async injectConfig(plugin: BasePlugin): Promise<number | null> {
 		const info = requirePluginGenerationInfo(plugin.ctx)
-		if (!info.config) return
-		const value = await requireConfigService(plugin.ctx).ensureValidated(
+		if (!info.config) return null
+		const configService = requireConfigService(plugin.ctx)
+		const value = await configService.ensureValidated(
 			plugin.ctx.pluginInfo.nodeAddress,
 			info.config,
 			{ missingObjectDefault: {} },
 		)
 		assignValidatedPluginConfig(plugin, info.config, value)
+		return configService.getConfigRevision(plugin.ctx.pluginInfo.nodeAddress)
 	}
 
 	private async stopPlugin(node: PluginNodeSlot, report: MutableLifecycleReport): Promise<void> {
 		const plugin = this.getRuntimeInstance(node)
-		if (!plugin) return
+		const owner = this.nodeAddressOf(node)
+		if (!plugin) {
+			requireConfigService(this.ctx).clearConfigApplied(owner)
+			return
+		}
 		try {
 			const snapshot = await this.lifecycleManager.stopLifecycle(node, plugin)
 			const context = snapshot?.context as { failedStep?: string; err?: unknown } | undefined
@@ -598,6 +562,8 @@ export class PluginService {
 				message: errorMessage(error),
 				error: serializeLifecycleError(error),
 			})
+		} finally {
+			requireConfigService(this.ctx).clearConfigApplied(owner)
 		}
 	}
 
@@ -625,8 +591,13 @@ export class PluginService {
 	): Promise<boolean> {
 		const instance = await this.resolveGeneration(runtime, node, report)
 		if (!instance) return false
-		if (!(await this.injectPluginConfig(runtime, node, instance, report))) return false
-		return this.startGeneration(runtime, node, instance, report)
+		const configRevision = await this.injectPluginConfig(runtime, node, instance, report)
+		if (configRevision === undefined) return false
+		const started = await this.startGeneration(runtime, node, instance, report)
+		if (started && configRevision !== null) {
+			requireConfigService(this.ctx).markConfigApplied(this.nodeAddressOf(node), configRevision)
+		}
+		return started
 	}
 
 	private recordDrainFailure(
@@ -694,10 +665,9 @@ export class PluginService {
 		node: PluginNodeSlot,
 		instance: BasePlugin,
 		report: MutableLifecycleReport,
-	): Promise<boolean> {
+	): Promise<number | null | undefined> {
 		try {
-			await this.injectConfig(instance)
-			return true
+			return await this.injectConfig(instance)
 		} catch (error) {
 			const err = ensureError(error)
 			recordLifecycleIssue(report, {
@@ -709,7 +679,7 @@ export class PluginService {
 			})
 			await this.drainFailedGeneration(node, instance, report)
 			runtime.delete(node)
-			return false
+			return undefined
 		}
 	}
 

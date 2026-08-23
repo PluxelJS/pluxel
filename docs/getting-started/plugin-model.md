@@ -51,6 +51,9 @@ class BillingPlugin extends BasePlugin {
 
 真实项目应从 `@acme/accounts` package root 的 named export 导入 `AccountsPlugin`。构建工具从这个 value import 和 constructor 参数生成 required edge；`@Plugin()` 不再重复声明依赖。
 
+同一个 Plugin definition 不能在一个 constructor 中重复声明。dependency override 按 requirement definition 识别依赖，参数名和位置不会成为
+持久配置；如果需要 primary/replica 这类双角色，应先定义具有不同语义身份的 Plugin token，而不是重复同一个参数类型。
+
 provider 启动失败时，consumer 不会拿到一个半可用实例：consumer 被标记为 blocked，其他无关分支仍可以继续运行。
 
 注入值是绑定 consumer caller Context 和当前 provider generation 的轻量 facade。provider replacement 后旧 facade、旧 method
@@ -139,7 +142,7 @@ Part 在每个 owner generation 中都会构造并调用 `init()`，因此 field
 
 ### 理解 Part Context 的隔离边界
 
-Part 得到的不是 owning Plugin 的同一个 Context，也不是新的 isolated root：
+Part 得到的不是 owning Plugin 的同一个 Context，也不是新的 root：
 
 ```ts no-twoslash
 part.ctx !== part.plugin.ctx
@@ -159,7 +162,7 @@ service handle，因此 Part Context 不是安全 sandbox，也不会为每个 P
 | Node module/worker | module-level `defineNodeModule()` / `defineWorkerTask()` + `ctx` capability | consumer 属于 Part，compiler/pool 共享                     |
 | database           | owning Plugin 的 `ctx.database` capability                                  | database definition、migration 和 handle owner 仍是 Plugin |
 | required Plugin    | owning Plugin constructor 声明，Part 通过类型化 `this.host` 使用            | 不给 Part 建 required graph edge                           |
-| Workbench          | Part 可以准备普通 binding 数据                                              | 只能由 owning Plugin 调用 `ctx.workbench.mount()`          |
+| Workbench          | Part 可以准备普通 binding 数据                                              | 只能由 owning Plugin 调用 `ctx.workbench?.mount()`         |
 
 nested Part 的 `host` 是 immediate parent Part，`plugin` 始终指向 root owning Plugin。需要 sibling 完全不可见的业务状态时，状态由
 Part 自己的普通对象持有；不要依赖 child Context 自动复制 service instance。

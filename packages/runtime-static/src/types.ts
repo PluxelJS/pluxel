@@ -1,5 +1,4 @@
 import type {
-	Context as CoreContext,
 	CommitSummary,
 	PluginConstructor,
 	PluginDefinitionAddress,
@@ -10,30 +9,13 @@ import type {
 	ConfigServiceConfig,
 	Context,
 	HttpHandler,
-	HttpServiceConfig,
 	PersistenceServiceConfig,
 	DatabaseConfig,
 	RuntimeStateStoreConfig,
 	WorkbenchConfig,
 } from '@pluxel/runtime'
+import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
-
-export type StaticRuntimeContextConfig = Omit<
-	CoreContext.Config,
-	| 'configService'
-	| 'runtimeState'
-	| 'persistence'
-	| 'database'
-	| 'http'
-	| 'workbench'
-	| 'logger'
-	| 'profile'
-	| 'adminAccess'
-	| 'workbenchArtifactRoot'
-	| 'workbenchArtifactResolver'
-	| 'nodeModuleArtifactRoot'
-	| 'nodeModuleArtifactResolver'
->
 
 export type StaticRuntimeEnvironment = Readonly<Record<string, string | undefined>>
 export type StaticRuntimeBindings = Readonly<Record<string, unknown>>
@@ -83,7 +65,17 @@ export type StaticRuntimeApplication<
 	}) => void | Promise<void>
 }
 
-export type StaticRuntimeHostOptions = {
+export type StaticRuntimeHostOptions = Omit<
+	RuntimeHostConfig,
+	| 'name'
+	| 'logger'
+	| 'plugins'
+	| 'http'
+	| 'workbenchArtifactRoot'
+	| 'workbenchArtifactResolver'
+	| 'nodeModuleArtifactRoot'
+	| 'nodeModuleArtifactResolver'
+> & {
 	/**
 	 * Runtime config source used for plugin enablement and plugin config records.
 	 *
@@ -105,31 +97,18 @@ export type StaticRuntimeHostOptions = {
 	persistence?: PersistenceServiceConfig
 	/** Shared lazy PostgreSQL capability. Omit for persistent local PGlite. */
 	database?: DatabaseConfig
-	/**
-	 * HTTP runtime settings. Workbench UI/RPC/SSE are controlled by the top-level
-	 * Workbench config.
-	 */
-	http?: HttpServiceConfig
-	/** Optional Workbench Plane resources, UI artifacts, and access policy. @default false */
+	/** Optional Workbench Plane resources and UI artifacts. @default false */
 	workbench?: WorkbenchConfig
 	/** Host-owned logging plan. `false` installs a silent root. */
 	logging?: false | RuntimeLoggingInput
 	/**
 	 * Runtime profile used for diagnostics.
 	 */
-	profile?: CoreContext.Config['profile']
-	/**
-	 * Additional low-level runtime context config. Prefer top-level static runtime config
-	 * fields for common runtime options.
-	 *
-	 * @default {}
-	 */
-	context?: StaticRuntimeContextConfig
+	profile?: string
 }
 
 export type StaticRuntimeHost = {
 	readonly ctx: Context
-	readonly options: StaticRuntimeHostOptions
 	readonly hmr: StaticRuntimeHmrController
 	readonly definition: StaticRuntimeDefinition
 	start(): Promise<StaticRuntimeStartupReport>

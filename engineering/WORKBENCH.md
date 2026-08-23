@@ -2,6 +2,23 @@
 
 Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 API，也不拥有插件数据库生命周期。
 
+## Management 与 Remote View 边界
+
+`@pluxel/runtime/web` 是 framework-neutral Level 1 Management Client：先通过 version 1 discovery 取得 capability set，再按
+`plugins/config/dependencies/forks/groups/logging/agentTools/logs/security` domain 调用。它不导出 root RPC stub、`withRpc`、
+layout/artifact API 或虚假的 `dispose()`；每次 RPC/HTTP 调用是短生命周期请求。所有响应在 browser boundary 从 `unknown`
+严格校验、clone 并 deep-freeze，unknown field、危险 key、非法 address 和超预算数据都拒绝。
+
+官方 Workbench App 也消费这一个 client，并在 App 内维护带 TTL、in-flight dedupe 和 last-known-good 的只读 overview resource；
+server state 只来自同一 management use case，不存在第二份 writable Plugin state。`@pluxel/runtime/web/react` 只提供 Management Client Context。
+尚未标准化的 layout/session/artifact/grant transport 只从 `@pluxel/runtime/web/internal` 供官方 View host 使用，不能被当成第三方
+兼容承诺。
+
+Workbench Plane 与 Management Plane 分开安装。`workbench: { enabled: true }` 同时得到默认 private management；Workbench
+disabled 时只有顶层 `management` object 才安装 headless management。两者都省略时没有管理 route、validation backend、catalog
+layout state、Workbench backend 或 browser transport。访问策略和宿主分类分别属于 `management.access` 与
+`management.pluginGroups`，不属于 Workbench 配置。
+
 宿主内置的 `/agent-tools` 页面管理 runtime-owned Toolset 与 Agent assignment。页面不是 command registry，也不拥有
 命令生命周期；它通过宿主 RPC 编辑持久化策略并投影当前动态 catalog。Workbench 关闭后，Agent carrier 继续使用
 `ctx.root.agentTools.catalog(agentId)` 解析相同策略。
@@ -15,7 +32,7 @@ Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 A
 | Binding   | `@pluxel/runtime/workbench`          | RPC factory、database query、events producer |
 
 Contract 不包含 Plugin node address、Context、Drizzle table、provider 或 Node API。Extension 不重复 owner；
-`ctx.workbench.mount()` 从 immutable plugin Context 推导 owner，并把 registration 与 cleanup 绑定到 owner effects。
+`ctx.workbench?.mount()` 从 immutable plugin Context 推导 owner，并把 registration 与 cleanup 绑定到 owner effects。
 `PluginPart` Context 共享 owning Plugin 的 Workbench authority，但不能直接 mount Extension；父 Plugin 必须聚合唯一 contribution，
 因此一个 Plugin node 始终只有一个 layout/grant owner。
 
@@ -56,7 +73,7 @@ export const NotesUi = workbenchContract.define({
 Drizzle row 等 server value 必须先投影成可序列化数据。
 
 ```ts
-ctx.workbench.mount(NotesWorkbench, {
+ctx.workbench?.mount(NotesWorkbench, {
 	commands: workbench.bind.rpc(() => new NotesRpc(this)),
 	notes: workbench.bind.liveQuery({
 		database: this.db,
@@ -157,31 +174,31 @@ sidecar 推导它，也不创建 product service、额外 HTTP route、polling �
 
 ## Plugin catalog classification
 
-插件目录分类属于 Workbench host layout，不进入 `@Plugin`、`PluginNodeInfo`、Extension 或 Contract。宿主通过
-`workbench.pluginGroups[].definitions` 注册 definition family 分类；未命中宿主规则且拥有可信 `packageName` 的动态插件按精确包名自动分类。
+插件目录分类属于 Management catalog layout，不进入 `@Plugin`、`PluginNodeInfo`、Extension 或 Contract。宿主通过
+`management.pluginGroups[].definitions` 注册 definition family 分类；未命中宿主规则且拥有可信 `packageName` 的动态插件按精确包名自动分类。
 用户只能在已注册分类与未分组区之间移动、排序插件，不能创建、重命名或删除分类。
 
-Workbench backend 持久化相对默认分类的 assignment 与排序偏好；它与 RuntimeState 各自拥有独立文件。
-disabled/stopped Plugin 仍按 catalog source 分类；Workbench disabled 时不创建分类 service 或偏好文件。宿主 exact 规则和
+Management plane 在 `management` namespace 持久化相对默认分类的 assignment 与排序偏好；它与 RuntimeState、Workbench
+各自拥有独立状态。disabled/stopped Plugin 仍按 catalog source 分类；management 未安装时不创建分类 service 或偏好文件。宿主 exact 规则和
 偏好使用结构化 definition address，目录展示的 variants 和 extension/resource owner 仍使用 node address；不使用 class/display name。
 新 fork 自动继承 family 分类，同一 definition 的 variants 不能拆到不同 group。完整身份、匹配和持久化规则见
 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。
 
 ## Address-keyed non-materializing read model
 
-Workbench catalog、config、status、preference、bundle 与 artifact 查询只接收 canonical `PluginDefinitionAddress`/
+Management catalog layout、config、status、preference 与 Workbench bundle/artifact 查询只接收 canonical `PluginDefinitionAddress`/
 `PluginNodeAddress`，内部 Map 使用 Core canonical index key。它们不保存 Core slot，也不为 read 调用 `internDefinition`/`internNode`。disabled
 definition、durable disabled/orphan fork 和 invalid lookup 不会创建 Core definition/node record、Context、effects、Workbench mount 或 artifact
-lease；只有 Core materialization 和 running owner 的显式 `ctx.workbench.mount()` 可以创建对应生命周期状态。
+lease；只有 Core materialization 和 running owner 的显式 `ctx.workbench?.mount()` 可以创建对应生命周期状态。
 
-runtime-common status overview 是 HTTP、RPC、Workbench 目录与分类的 shared projection path。每次 projection 对 pinned catalog/RuntimeState 只建立一次
-enabled/fork/issue 索引，再按 address 投影 running/source facts；Workbench service 不得各自扫描并 intern 同一 node。持久化、跨边界 descriptor、
+runtime-common status overview 是 management RPC、Workbench 目录与分类的 shared projection path。每次 projection 对 pinned catalog/RuntimeState 只建立一次
+enabled/fork/issue 索引，再按 address 投影 running/source facts；management/Workbench service 不得各自扫描并 intern 同一 node。持久化、跨边界 descriptor、
 artifact bundle 与 directory lookup 始终按 canonical node key 索引。WorkbenchRegistry 和 dev compiler 仅可在已经 running/materialized 的 mount lease
 内部持有现成 slot，用于 generation watch 与 Core graph relation；不得由 read lookup 创建 slot，并须在 owner withdrawal 时释放 slot、grant、bundle 与 lease。
 
-Plugin RPC 是 untrusted transport boundary：server 方法接收 `unknown` 并验证 structured address、action、object/index/forkId/field input。status、
+Management RPC 是 untrusted transport boundary：server 方法接收 `unknown` 并验证 structured address、action、object/index/forkId/field input。status、
 config、dependency/provider、fork 与 dependency query 使用封闭 discriminated union；malformed payload 返回 `invalid_input` 和明确的 `unchanged`
-state，合法 empty 与 invalid query 不可混为 `[]`/`null`。Workbench browser wrapper 只在这一边界解包 query union；unexpected programming/
+state，合法 empty 与 invalid query 不可混为 `[]`/`null`。public Management Client 只在这一边界解包 query union；unexpected programming/
 transport exception 保持 reject，不存在 `internal_error` 或按 message 猜测 code 的 catch-all。
 
 成功的 status、config、dependency/provider 与 fork mutation 都返回同一 address-only、deep-frozen `PluginApplyReport`。Workbench 可以按
@@ -275,7 +292,7 @@ owner 的数据时组合多个获授权 resource snapshot，不建立跨插件 S
 - events producer cleanup 在 owner withdrawal 与 browser disconnect 交错时至多执行一次；detached channel 标记为 closed，
   迟到 send/emit 被丢弃；
 - rollback 重新 mount 并签发新 lease，不复活旧 lease；
-- disabled Workbench 不执行 query、不订阅 outbox，也不创建 browser cache、route 或 transport；
+- disabled Workbench 不安装 Context capability，不执行 query、不订阅 outbox，也不创建 browser cache、route 或 transport；
 - active variants、rows 与 serialized bytes 受 server quota 限制；idle variant 按 LRU 回收，并发 invalidation 合并重跑；
 - RPC、live query、events、bundle 和 Port 错误进入明确状态或 View error boundary。
 

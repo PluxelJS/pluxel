@@ -7,7 +7,6 @@ import {
 	PLUXEL_UI_DEDUPE_PACKAGES,
 	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
 } from '@pluxel/rolldown/workspace/vite'
-import { gqlens } from '@gqlens/vite'
 import react from '@vitejs/plugin-react'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
@@ -39,19 +38,6 @@ export default defineConfig(({ mode }) => {
 		},
 
 		plugins: [
-			gqlens({
-				output: 'src/app/gqlens',
-				entry: '/src/app/gqlens/graphql-entry.ts',
-				endpoint: '/graphql',
-				include: [
-					/packages\/runtime\/src\/api\//,
-					/packages\/runtime\/src\/services\/http\/internalGraphqlSchema\.ts$/,
-					/packages\/runtime-dynamic\/src\/api\//,
-					/packages\/workbench-app\/src\/app\/gqlens\/graphql-entry\.ts$/,
-				],
-				framework: 'react',
-				middleware: false,
-			}),
 			tanstackRouter({
 				target: 'react',
 				autoCodeSplitting: true,

@@ -1,7 +1,11 @@
 import { Badge, Button, Group, Loader, Paper, Stack, Table, Text } from '@mantine/core'
 import { IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useState } from 'react'
-import { getRuntimeSecurityClient, type SecurityAuditEvent, rpcErrorMessage } from '../../runtime'
+import {
+	type SecurityAuditEvent,
+	runtimeErrorMessage,
+	useRuntimeManagementClient,
+} from '../../runtime'
 import { EmptyState, ErrorState } from '../../components'
 
 const eventTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -25,8 +29,8 @@ function toneForEventStatus(status: SecurityAuditEvent['status']): string {
 }
 
 export function SecurityAuditScreen() {
-	const security = getRuntimeSecurityClient()
-	const [events, setEvents] = useState<SecurityAuditEvent[]>([])
+	const security = useRuntimeManagementClient().security
+	const [events, setEvents] = useState<readonly SecurityAuditEvent[]>([])
 	const [loading, setLoading] = useState(true)
 	const [refreshing, setRefreshing] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -37,7 +41,7 @@ export function SecurityAuditScreen() {
 		try {
 			setEvents(await security.listEvents())
 		} catch (cause) {
-			setError(rpcErrorMessage(cause, 'Failed to load security audit events'))
+			setError(runtimeErrorMessage(cause, 'Failed to load security audit events'))
 		} finally {
 			setLoading(false)
 			setRefreshing(false)

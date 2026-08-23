@@ -1,7 +1,7 @@
 import { ScrollArea, Tabs } from '@mantine/core'
 import type { PluginNodeAddress } from '@pluxel/core'
 import { useRef } from 'react'
-import type { ObjectSchema } from 'valibot'
+import type { FieldNode } from 'valibot-form'
 import { ConfigTabContent } from './ConfigTab'
 import type { PluginConfigSection } from './usePluginConfig'
 
@@ -10,7 +10,7 @@ const EMPTY_CONFIG_SECTIONS: readonly PluginConfigSection[] = []
 export function ConfigForm({
 	owner,
 	displayName,
-	schema,
+	fields,
 	savedConfig,
 	defaults,
 	active = true,
@@ -19,7 +19,7 @@ export function ConfigForm({
 }: {
 	owner: PluginNodeAddress
 	displayName: string
-	schema: ObjectSchema<any, any>
+	fields: readonly FieldNode[]
 	savedConfig: Record<string, unknown>
 	defaults: Record<string, unknown>
 	active?: boolean
@@ -27,7 +27,7 @@ export function ConfigForm({
 	sections?: readonly PluginConfigSection[]
 }) {
 	const visibleSections =
-		sections.length > 0 ? sections : [{ path: [], schema, defaults, fieldName: '' }]
+		sections.length > 0 ? sections : [{ path: [], fields, defaults, fieldName: '' }]
 	const formIdentity = `${JSON.stringify(owner)}\0${visibleSections
 		.map((section) => section.path.join('.'))
 		.join('\0')}`
@@ -62,7 +62,7 @@ export function ConfigForm({
 			<ConfigTabContent
 				owner={owner}
 				displayName={displayName}
-				schema={section.schema}
+				fields={section.fields}
 				savedValue={sectionValue(savedConfig, section.path)}
 				defaultValue={section.defaults}
 				path={section.path}

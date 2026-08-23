@@ -19,12 +19,12 @@ import {
 import {
 	getActiveRuntimeLogging,
 	requireRuntimePluginGraphCoordinator,
+	RUNTIME_INTERNAL_API_BASE,
 	runtimeStatePatch,
 } from '@pluxel/runtime/internal'
-import { installWorkbench } from '@pluxel/runtime/internal/static'
+import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import { defineProduct } from '@pluxel/runtime/product'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { defineStaticRuntime, type StaticRuntimePluginStatus } from '@pluxel/runtime-static'
@@ -752,7 +752,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('serves explicit Plugin HTTP and internal GraphQL routes', async () => {
+	it('serves explicit Plugin HTTP when Workbench is disabled', async () => {
 		const runtime = await createStaticRuntimeTestHost(
 			defineStaticRuntime({
 				name: 'static-http',
@@ -766,18 +766,7 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			const response = await runtime.fetch(new Request('http://local.test/direct-http/ping'))
-			const graphql = await runtime.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_TRANSPORT_PATHS.graphql}`,
-					{
-						method: 'POST',
-						headers: { 'content-type': 'application/json' },
-						body: JSON.stringify({ query: '{ _empty }' }),
-					},
-				),
-			)
 			expect(await response.text()).toBe('pong')
-			expect(graphql.status).toBe(200)
 		} finally {
 			await runtime.stop()
 		}
@@ -817,8 +806,8 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			expect(runtime.ctx.root.persistence.capability).toBe('ephemeral')
-			expect(runtime.ctx.config.database).toBe(false)
-			expect(runtime.ctx.config.logger?.rootId).toEqual(expect.any(String))
+			expect(runtime.ctx.workbench).toBeUndefined()
+			expect(getActiveRuntimeLogging()?.resolved.root.id).toEqual(expect.any(String))
 			expect(getActiveRuntimeLogging()?.resolved.sinks).not.toHaveProperty('store')
 		} finally {
 			await runtime.stop()
@@ -837,12 +826,12 @@ describe('@pluxel/runtime-static', () => {
 						mode: 'memory',
 						snapshot: { enabled: enabled(ManagedWebGate) },
 					},
-					workbench: { enabled: true, access: { exposure: 'private' } },
+					workbench: { enabled: true },
 				}),
 			}),
 		)
 		try {
-			expect(runtime.ctx.workbench.enabled).toBe(true)
+			expect(runtime.ctx.workbench).toBeDefined()
 			expect(getActiveRuntimeLogging()?.resolved.sinks).toHaveProperty('store')
 			expect(managedWorkbenchMounted).toBe(true)
 			expect(requirePluginService(runtime.ctx).isRunning(ManagedWebGate)).toBe(true)
@@ -862,9 +851,9 @@ describe('@pluxel/runtime-static', () => {
 			{
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				workbench: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true },
 			},
-			{ installWorkbench, product },
+			{ createWorkbenchBackend, product },
 		)
 		try {
 			await host.start()
@@ -888,6 +877,7 @@ describe('@pluxel/runtime-static', () => {
 					configService: { mode: 'memory' },
 					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
 					persistence: { mode: 'memory' },
+					vault: {},
 				}),
 			}),
 		)
@@ -984,7 +974,7 @@ describe('@pluxel/runtime-static', () => {
 					name: 'headless-workbench',
 					plugins: [],
 					configure: () => ({
-						workbench: { enabled: true, access: { exposure: 'private' } },
+						workbench: { enabled: true },
 					}),
 				}),
 				{

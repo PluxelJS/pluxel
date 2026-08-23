@@ -175,7 +175,7 @@ export class EChartsPlugin extends BasePlugin {
 			},
 			{ tag: 'echarts-generation' },
 		)
-		this.ctx.workbench.mount(EChartsWorkbench, {
+		this.ctx.workbench?.mount(EChartsWorkbench, {
 			selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
 		})
 	}

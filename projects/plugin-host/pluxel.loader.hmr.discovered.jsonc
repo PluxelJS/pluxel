@@ -11,7 +11,6 @@
 		"rootsExpanded": [
 			"packages/cli",
 			"packages/workbench-app",
-			"packages/context",
 			"packages/core",
 			"packages/diod",
 			"packages/ops",

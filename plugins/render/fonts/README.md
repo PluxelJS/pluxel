@@ -53,7 +53,7 @@ const FontsTab = workbench.portOutlet({
 })
 
 override init() {
-	this.ctx.workbench.mount(FontsTab, {
+	this.ctx.workbench?.mount(FontsTab, {
 		selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
 	})
 }

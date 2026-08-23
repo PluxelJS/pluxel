@@ -12,7 +12,7 @@ function getCallerCtx(self: unknown) {
 	if (!ctx || typeof ctx !== 'object') {
 		throw new Error('[pluxel/core] Decorator runtime requires a BasePlugin instance with ctx')
 	}
-	return ctx as import('@pluxel/context').Context
+	return ctx as import('../../context/Context').Context
 }
 
 /**

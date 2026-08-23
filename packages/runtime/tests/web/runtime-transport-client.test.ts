@@ -1,6 +1,8 @@
 import type { PluginNodeAddress } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
-import { createRuntimeTransportClient, expectData, type RuntimeFetch } from '../../src/web/client'
+import type { RuntimeFetch } from '../../src/web/admin-access'
+import { expectData } from '../../src/web/eden'
+import { createRuntimeTransportClient } from '../../src/web/transport-client'
 
 describe('runtime transport client', () => {
 	it('carries structured Workbench targets in the query instead of a path segment', async () => {
@@ -20,11 +22,11 @@ describe('runtime transport client', () => {
 		const client = createRuntimeTransportClient({
 			origin: 'https://runtime.test',
 			fetch,
-			adminAccess: { enabled: false },
+			adminAccess: false,
 		})
 
 		try {
-			await client.http.workbench.pluginLayout(target)
+			await client.workbench.pluginLayout(target)
 			const input = fetch.mock.calls[0]?.[0]
 			const url = new URL(input instanceof Request ? input.url : String(input))
 			expect(url.pathname).toBe('/__pluxel/runtime/workbench/layout/plugin')

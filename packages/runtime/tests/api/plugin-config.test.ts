@@ -10,7 +10,11 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 import { SuperJSON } from 'superjson'
 import { v } from '../../src/config'
-import { pluginConfigPatch, pluginConfigPatchField } from '../../src/api/usecases/pluginConfig'
+import {
+	pluginConfigGet,
+	pluginConfigPatch,
+	pluginConfigPatchField,
+} from '../../src/api/usecases/pluginConfig'
 import { removeFork } from '../../src/api/usecases/pluginForks'
 import {
 	createMemoryPersistenceBackend,
@@ -167,14 +171,29 @@ describe('Plugin config application scope', () => {
 		await host.commit()
 
 		const owner = pluginNodeAddressOf(ConfigOwner)
-		await expect(pluginConfigPatch(host.ctx, owner, { value: 'changed' })).resolves.toMatchObject({
+		const result = await pluginConfigPatch(host.ctx, owner, { value: 'changed' })
+		expect(result).toMatchObject({
 			ok: true,
 			saved: true,
 			application: 'applied',
 			report: { core: { status: 'committed' } },
 			config: { value: 'changed' },
 		})
+		if (!result.ok) throw new Error(result.message)
+		expect(result.appliedRevision).toBe(result.desiredRevision)
 		expect(defaultStarts).toEqual(['initial', 'changed'])
+	})
+
+	it('reports a successfully started generation as the applied desired revision', async () => {
+		const host = runtimeHost()
+		host.add(ConfigOwner)
+		host.cfg(ConfigOwner).enable()
+		await host.commit()
+
+		const result = await pluginConfigGet(host.ctx, pluginNodeAddressOf(ConfigOwner))
+		expect(result).toMatchObject({ ok: true, saved: false, application: 'applied' })
+		if (!result.ok) throw new Error(result.message)
+		expect(result.appliedRevision).toBe(result.desiredRevision)
 	})
 
 	it('restarts only the addressed fork and keeps sibling config isolated', async () => {
@@ -213,6 +232,7 @@ describe('Plugin config application scope', () => {
 			ok: true,
 			saved: true,
 			application: 'deferred',
+			appliedRevision: null,
 			report: {},
 			config: { value: 'later' },
 		})
@@ -230,6 +250,7 @@ describe('Plugin config application scope', () => {
 			ok: true,
 			saved: true,
 			application: 'saved-not-applied',
+			appliedRevision: null,
 			report: {
 				core: { status: 'committed', summary: { lifecycleReport: { ok: false } } },
 			},

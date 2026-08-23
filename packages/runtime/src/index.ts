@@ -1,18 +1,12 @@
-import './context-augment'
-import './services'
-import './services/debug'
+import './context/runtime-contract'
 
 export {
 	BasePlugin,
-	Context,
 	EvtChannel,
-	Injectable,
 	OptionalPluginBindings,
-	OverrideOf,
 	Plugin,
 	PluginConfigs,
 	PluginPart,
-	RootService,
 	collectPluginLifecycleBlocked,
 	collectPluginLifecycleDrainErrors,
 	collectPluginLifecycleIssuePlugins,
@@ -45,6 +39,7 @@ export {
 export type {
 	Cleanup,
 	CommitSummary,
+	Context,
 	DisposableLike,
 	Effects,
 	EffectsScope,
@@ -74,17 +69,7 @@ export type {
 	PluginRef,
 	PluginReplacement,
 	PluginToken,
-	RootServiceOptions,
 	RuntimeUpdateCommitSummary,
-	ServiceCfg,
-	ServiceClass,
-	ServiceContext,
-	ServiceContractInst,
-	ServiceCtor,
-	ServiceInst,
-	ServiceOptions,
-	ServiceOverrideCtor,
-	ServiceWithCtx,
 } from '@pluxel/core'
 export {
 	defineWorkerTask,
@@ -129,7 +114,6 @@ export {
 export {
 	PLUGIN_HTTP_BASE,
 	type ElysiaRouteHandle,
-	type HttpServiceConfig,
 	type HttpHandler,
 } from './services/http/HttpService'
 export {
@@ -137,7 +121,15 @@ export {
 	type AnyElysiaApp,
 	type CreateElysiaAppOptions,
 } from './services/http/elysia'
-export type { WorkbenchConfig, WorkbenchPluginGroupConfig } from './workbench-config'
+export type {
+	AdminAccessClaimRequirement,
+	AdminAccessConfig,
+	AdminAccessExposure,
+	AdminAccessOidcConfig,
+	ManagementConfig,
+	PluginGroupConfig,
+} from './management-config'
+export type { WorkbenchConfig } from './workbench-config'
 export type {
 	RuntimeDependencyOverrideState,
 	RuntimeForkState,

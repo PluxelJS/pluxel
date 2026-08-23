@@ -4,7 +4,6 @@ import {
 	getStaticPropertyName,
 	isNodeLike,
 	unwrapExpression,
-	walkNode,
 } from '../shared/ast.ts'
 import { createRule, report } from '../shared/rule.ts'
 import type { OxNode, OxRule } from '../types.ts'
@@ -214,39 +213,8 @@ const pluginNoProcessExit = createRule(
 	}),
 )
 
-const pluginNoRemovedFeatureApi = createRule(
-	{
-		type: 'problem',
-		docs: { description: 'Reject removed Pluxel Feature lifecycle APIs' },
-		messages: {
-			removed:
-				'Pluxel Feature lifecycle APIs were removed. Use a normal owner-managed object or a catalog Plugin.',
-		},
-	},
-	(context) => ({
-		Program(node) {
-			walkNode(node, context.sourceCode.visitorKeys, (candidate) => {
-				if (
-					candidate.type === 'Identifier' &&
-					(candidate.name === 'BaseFeature' || candidate.name === 'defineLazyFeature')
-				) {
-					report(context, candidate, 'removed')
-				}
-				if (
-					candidate.type === 'MemberExpression' &&
-					getStaticPropertyName(candidate.property, Boolean(candidate.computed)) === 'features'
-				) {
-					report(context, candidate, 'removed')
-				}
-				return undefined
-			})
-		},
-	}),
-)
-
 export const pluginsRules: Record<string, OxRule> = {
 	'plugin-no-process-exit': pluginNoProcessExit,
 	'plugin-base-class-requires-plugin-registration': pluginBaseClassRequiresPluginRegistration,
 	'plugin-constructor-canonical-dependencies': pluginConstructorCanonicalDependencies,
-	'plugin-no-removed-feature-api': pluginNoRemovedFeatureApi,
 }

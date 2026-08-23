@@ -27,7 +27,7 @@ export default defineDynamicRuntimeConfig({
 	runtimeState: {
 		snapshot: { enabled: [pluginNodeAddressOf(PackageManagerPlugin)] },
 	},
-	workbench: { enabled: true, access: { exposure: 'private' } },
+	workbench: { enabled: true },
 })
 ```
 

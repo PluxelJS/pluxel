@@ -41,7 +41,6 @@ export default defineDynamicRuntimeConfig({
 	logsDir: 'logs',
 	workbench: {
 		enabled: true,
-		access: { exposure: 'private' },
 	},
 })
 ```
@@ -50,7 +49,7 @@ export default defineDynamicRuntimeConfig({
 `defineDynamicRuntimeConfig()`；缺失时为 `null`，非法值使 canonical module 加载失败。产品定义可以从普通 browser-safe
 module 标准 re-export，不需要 JSON 或独立 watcher。
 
-React、GraphQL 和业务 alias 属于 host `vite.config.ts`；loader/runtime 配置属于 dynamic config。不要用 raw TypeScript
+React 和业务 alias 属于 host `vite.config.ts`；loader/runtime 配置属于 dynamic config。不要用 raw TypeScript
 runner 绕开 route plugin，也不要复制 Pluxel 的 resolve、SSR、optimizer 或 host-module 配置。static/dynamic route 使用同一个
 package classifier，让 CommonJS 与 native package 自动留在 Node host 执行；项目不维护 package 名单。
 

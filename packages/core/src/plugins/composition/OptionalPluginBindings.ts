@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/context'
+import type { Context } from '../../context/Context'
 import { requirePluginService } from '../../internal/plugin-service'
 import type { Cleanup, DisposableLike } from '../../services/effects/EffectsService'
 import { isPluginRef, type PluginRef } from '../runtime/definition'

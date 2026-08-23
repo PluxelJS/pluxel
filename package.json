@@ -38,14 +38,11 @@
 		"verify": "pnpm run governance:check && pnpm run lint && pnpm run format:check && pnpm exec turbo run typecheck build test --concurrency=50%",
 		"tegami": "node scripts/tegami.mts",
 		"source:local": "node scripts/source-local-project.mjs",
-		"build:gqlens": "turbo run build --filter=@gqlens/core --filter=@gqlens/react --filter=@gqlens/codegen --filter=@gqlens/vite",
-		"generate:gqlens": "pnpm run build:gqlens && node scripts/generate-gqlens.ts",
 		"plugin-host:dynamic": "pnpm --filter @pluxel/plugins-host dynamic",
 		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static"
 	},
 	"devDependencies": {
 		"@fumapress/tegami": "1.0.0",
-		"@gqlens/vite": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",

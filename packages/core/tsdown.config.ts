@@ -1,8 +1,5 @@
 import { defineConfig } from 'tsdown'
 import Macros from 'unplugin-macros/rolldown'
-import { rewriteCoreDtsModuleAugmentations } from './tools/rewriteDtsModuleAugmentations.ts'
-
-const createModuleRewritePlugin = () => rewriteCoreDtsModuleAugmentations()
 
 const transformOptions = {
 	assumptions: {
@@ -16,7 +13,6 @@ const transformOptions = {
 export default defineConfig({
 	deps: {
 		onlyBundle: ['option-t'],
-		alwaysBundle: ['@pluxel/context', '@pluxel/context/*'],
 	},
 	exports: {
 		devExports: '@pluxel/source',
@@ -34,26 +30,15 @@ export default defineConfig({
 		sourcemap: true,
 	},
 	format: ['esm', 'cjs'],
-	plugins: [Macros(), createModuleRewritePlugin()],
+	plugins: [Macros()],
 	sourcemap: true,
 	clean: true,
 	minify: true,
 	treeshake: true,
-	inputOptions(options, _format, context) {
+	inputOptions(options) {
 		options.transform = {
 			...options.transform,
 			...transformOptions,
 		}
-
-		if (!context.cjsDts) return
-
-		const basePlugins = options.plugins
-			? Array.isArray(options.plugins)
-				? options.plugins
-				: [options.plugins]
-			: []
-
-		options.plugins = [...basePlugins, createModuleRewritePlugin()]
-		return options
 	},
 })

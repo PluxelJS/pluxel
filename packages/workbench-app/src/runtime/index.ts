@@ -1,110 +1,50 @@
+import { createRuntimeManagementClient, resolveAdminAccessLandingPath } from '@pluxel/runtime/web'
 import {
-	createAdminAccessAwareFetch,
+	RuntimeManagementClientProvider,
+	useRuntimeManagementClient,
+} from '@pluxel/runtime/web/react'
+import {
 	createRuntimeTransportClient,
-	createRuntimeSecurityClient,
 	RUNTIME_SECURITY_BASE,
-	RUNTIME_ADMIN_ACCESS_BASE,
-	invokeRpc,
-	rpcErrorMessage,
-	resolveAdminAccessLandingPath,
+	type RuntimeTransportClient,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
-} from '@pluxel/runtime/web'
-export * from './pluginControl'
+} from '@pluxel/runtime/web/internal'
 
+export type * from '@pluxel/runtime/web'
 export {
-	createAdminAccessAwareFetch,
-	createRuntimeSecurityClient,
-	RUNTIME_SECURITY_BASE,
-	RUNTIME_ADMIN_ACCESS_BASE,
-	invokeRpc,
-	rpcErrorMessage,
 	resolveAdminAccessLandingPath,
+	RUNTIME_SECURITY_BASE,
+	RuntimeManagementClientProvider,
 	RuntimeTransportClientProvider,
+	useRuntimeManagementClient,
 	useRuntimeTransportClient,
 }
 
-export type {
-	AgentToolAssignment,
-	AgentToolsAdminSnapshot,
-	AgentToolsHandleApi,
-	AgentToolsPolicy,
-	AgentToolsPolicyInput,
-	BaseProviderInfo,
-	BaseProviderInspectionResult,
-	ConfigResult,
-	ConfigResultErr,
-	ConfigResultOk,
-	CommandInventoryItem,
-	CommandToolset,
-	EnsureForkResult,
-	PluginApplyReport,
-	LogFilter,
-	LogLevel,
-	LogRangeOk,
-	LogSseEvent,
-	LogStreamMeta,
-	AdminAccessAwareFetchOptions,
-	AdminAccessBlockedInfo,
-	PluginDependencyInspectionResult,
-	PluginDependencyListResult,
-	PluginDependencyQueryFailure,
-	PluginDependencyRef,
-	PluginDependencyMutationResult,
-	PluginDependencyState,
-	PluginGroup,
-	PluginGroupInput,
-	PluginLogPolicySnapshot,
-	PluginLogPolicyMutationResult,
-	VersionedPluginLogPolicySnapshot,
-	PluginStatusAction,
-	PluginStatusBatchAction,
-	PluginStatusBatchResult,
-	PluginStatusMutationResult,
-	RuntimePluginLogLevel,
-	RemoveForkResult,
-	SecurityAuditEvent,
-	SecurityOverview,
-	AdminAccessOverview,
-	RuntimeLogLine,
-	RuntimeRpcApi,
-	RuntimeTransportClient,
-	RuntimeSecurityClient,
-	VaultAdminState,
-	VaultKeyPair,
-	OnAdminAccessBlocked,
-	SchemaResult,
-	SchemaResultErr,
-	SchemaResultOk,
-} from '@pluxel/runtime/web'
+let management: ReturnType<typeof createRuntimeManagementClient> | null = null
+let transport: RuntimeTransportClient | null = null
 
-let transport: ReturnType<typeof createRuntimeTransportClient> | null = null
-let security: ReturnType<typeof createRuntimeSecurityClient> | null = null
+export function getRuntimeManagementClient() {
+	if (!management) {
+		management = createRuntimeManagementClient({
+			fetch: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
+		})
+	}
+	return management
+}
 
-/**
- * Host-wide runtime transport singleton.
- *
- * Non-React code and the root provider must share the same client instance so
- * SSE connections, admin access probing, and transport caches stay deterministic.
- */
-export function getRuntimeTransportClient() {
+/** @internal Official React View-host transport pending the Level 2 protocol. */
+export function getRuntimeTransportClient(): RuntimeTransportClient {
 	if (!transport) {
 		transport = createRuntimeTransportClient({
 			fetch: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
 		})
 	}
-
 	return transport
 }
 
-export function getRuntimeSecurityClient() {
-	if (!security) {
-		const runtime = getRuntimeTransportClient()
-		security = createRuntimeSecurityClient({
-			apiBase: runtime.links.apiBase,
-			fetch: runtime.fetch,
-		})
-	}
-
-	return security
+export function runtimeErrorMessage(error: unknown, fallback = '请求失败'): string {
+	if (error instanceof Error) return error.message || fallback
+	if (typeof error === 'string') return error
+	return fallback
 }

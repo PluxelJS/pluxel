@@ -4,9 +4,17 @@
 
 ## Server/browser boundary
 
+- `@pluxel/runtime/web`：framework-neutral discovery、Management Client 和严格校验的 DTO；
+- `@pluxel/runtime/web/react`：Management Client 的可选 React Context adapter；
 - `@pluxel/runtime/workbench/contract`：browser-safe Contract value；
 - `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：browser resource facade、React hooks 和 exact View exports。
+
+默认 `/web` 不求值 React 或 Mantine，也不导出 raw RPC stub、layout transport 或 session lifecycle。官方 Workbench 尚未标准化的
+View-host transport 位于 `/web/internal`，只能由 workspace App 使用。Management Client 是 stateless request facade，不拥有 SSE/session，
+因此不提供 `dispose()`；持有 layout SSE、grant 和 module lease 的 internal transport 才必须显式清理。
+实现上 `web/client.ts` 只包含 Level 1 discovery/domains，`web/transport-client.ts` 独立拥有 layout、SSE、raw session 与清理；
+两者仅复用不含领域 DTO 的 connection/auth resolver，默认 `/web` 的声明和 bundle 不得引用 internal transport symbol。
 
 UI source graph 必须导入 Contract value，不能导入 Extension。Contract module 不能引用 Plugin、Context、provider、
 Node builtin 或 server-only package。toolchain 独立构建每个 UI entry，并验证这条反向依赖边界。

@@ -8,6 +8,7 @@ import {
 import { requirePluginService } from '@pluxel/core/internal'
 import { requireRuntimePluginGraphCoordinator, runtimeStatePatch } from '@pluxel/runtime/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins, isEnabled } from '../support/runtime-state'
@@ -32,13 +33,13 @@ describe('LoaderService', () => {
 
 		const address = pluginNodeAddressOf(Fixed)
 		await expect(
-			ctx.loader.registerFixedPlugins([Fixed], { moduleId: fixedOwner }),
+			requireLoaderService(ctx).registerFixedPlugins([Fixed], { moduleId: fixedOwner }),
 		).resolves.toEqual([address])
 
 		expect(isEnabled(ctx, address)).toBe(false)
-		expect(ctx.loader.api.registry.getCtor(address)).toBe(Fixed)
-		expect(ctx.loader.api.registry.findModuleId(address)).toBe(fixedOwner)
-		expect(ctx.loader.api.anchors.has(fixedOwner)).toBe(false)
+		expect(requireLoaderService(ctx).api.registry.getCtor(address)).toBe(Fixed)
+		expect(requireLoaderService(ctx).api.registry.findModuleId(address)).toBe(fixedOwner)
+		expect(requireLoaderService(ctx).api.anchors.has(fixedOwner)).toBe(false)
 		expect(requirePluginService(ctx).isRunning(address)).toBe(false)
 	})
 
@@ -65,7 +66,9 @@ describe('LoaderService', () => {
 		}
 		lowerTestPlugin(Consumer, { requires: [Provider] })
 
-		await ctx.loader.registerFixedPlugins([Consumer, Provider], { moduleId: fixedOwner })
+		await requireLoaderService(ctx).registerFixedPlugins([Consumer, Provider], {
+			moduleId: fixedOwner,
+		})
 		await enablePlugins(ctx, Provider, Consumer)
 
 		expect(started).toEqual(['provider', 'consumer'])
@@ -86,10 +89,10 @@ describe('LoaderService', () => {
 		class SecondAddress extends BasePlugin {}
 		lowerTestPlugin(SecondAddress)
 
-		await ctx.loader.replaceModule('first.ts', { FirstAddress })
-		await ctx.loader.replaceModule('second.ts', { SecondAddress })
+		await requireLoaderService(ctx).replaceModule('first.ts', { FirstAddress })
+		await requireLoaderService(ctx).replaceModule('second.ts', { SecondAddress })
 
-		const entries = ctx.loader.api.registry.listRegistered()
+		const entries = requireLoaderService(ctx).api.registry.listRegistered()
 		expect(entries).toHaveLength(2)
 		expect(entries.map((entry) => entry.displayName)).toEqual(['Shared label', 'Shared label'])
 		expect(pluginNodeAddressEqual(entries[0]!.address, entries[1]!.address)).toBe(false)
@@ -109,13 +112,13 @@ describe('LoaderService', () => {
 			exportName: 'Original',
 		})
 		const address = pluginNodeAddressOf(Original)
-		await ctx.loader.replaceModule('first.ts', { Original })
+		await requireLoaderService(ctx).replaceModule('first.ts', { Original })
 
-		await expect(ctx.loader.replaceModule('second.ts', { Original: Replacement })).rejects.toThrow(
-			/already owned by first\.ts/i,
-		)
-		expect(ctx.loader.api.registry.getCtor(address)).toBe(Original)
-		expect(ctx.loader.api.registry.findModuleId(address)).toBe('first.ts')
+		await expect(
+			requireLoaderService(ctx).replaceModule('second.ts', { Original: Replacement }),
+		).rejects.toThrow(/already owned by first\.ts/i)
+		expect(requireLoaderService(ctx).api.registry.getCtor(address)).toBe(Original)
+		expect(requireLoaderService(ctx).api.registry.findModuleId(address)).toBe('first.ts')
 	})
 
 	it('rolls back the complete source transaction on root export mismatch', async () => {
@@ -126,11 +129,11 @@ describe('LoaderService', () => {
 		lowerTestPlugin(RootExport)
 
 		const address = pluginNodeAddressOf(RootExport)
-		await expect(ctx.loader.replaceModule('bad-export.ts', { Alias: RootExport })).rejects.toThrow(
-			/must be loaded from root export "RootExport"/i,
-		)
-		expect(ctx.loader.api.registry.getCtor(address)).toBeUndefined()
-		expect(ctx.loader.api.anchors.has('bad-export.ts')).toBe(false)
+		await expect(
+			requireLoaderService(ctx).replaceModule('bad-export.ts', { Alias: RootExport }),
+		).rejects.toThrow(/must be loaded from root export "RootExport"/i)
+		expect(requireLoaderService(ctx).api.registry.getCtor(address)).toBeUndefined()
+		expect(requireLoaderService(ctx).api.anchors.has('bad-export.ts')).toBe(false)
 	})
 
 	it('rolls back a source with a marked constructor missing lowering facts', async () => {
@@ -138,11 +141,11 @@ describe('LoaderService', () => {
 		const Unlowered = class extends BasePlugin {}
 		Plugin()(Unlowered)
 
-		await expect(ctx.loader.replaceModule('unlowered.ts', { Unlowered })).rejects.toThrow(
-			/Plugin declaration was not lowered/i,
-		)
-		expect(ctx.loader.api.registry.listRegistered()).toEqual([])
-		expect(ctx.loader.api.anchors.has('unlowered.ts')).toBe(false)
+		await expect(
+			requireLoaderService(ctx).replaceModule('unlowered.ts', { Unlowered }),
+		).rejects.toThrow(/Plugin declaration was not lowered/i)
+		expect(requireLoaderService(ctx).api.registry.listRegistered()).toEqual([])
+		expect(requireLoaderService(ctx).api.anchors.has('unlowered.ts')).toBe(false)
 	})
 
 	it('derives enabled fork nodes exclusively from RuntimeState v3', async () => {
@@ -154,7 +157,7 @@ describe('LoaderService', () => {
 
 		const base = pluginNodeAddressOf(FixedForkable)
 		const worker = forkAddress(FixedForkable, 'worker')
-		await ctx.loader.registerFixedPlugins([FixedForkable], { moduleId: fixedOwner })
+		await requireLoaderService(ctx).registerFixedPlugins([FixedForkable], { moduleId: fixedOwner })
 		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: base.definition, forkId: 'worker' },
@@ -162,8 +165,8 @@ describe('LoaderService', () => {
 			),
 		)
 		expect(requirePluginService(ctx).isRunning(base)).toBe(false)
-		expect(ctx.loader.api.runtime.isRunning(worker)).toBe(true)
-		expect(ctx.loader.api.registry.findModuleId(worker)).toBe(fixedOwner)
+		expect(requireLoaderService(ctx).api.runtime.isRunning(worker)).toBe(true)
+		expect(requireLoaderService(ctx).api.registry.findModuleId(worker)).toBe(fixedOwner)
 	})
 
 	it('keeps module provenance in the route catalog and out of Core identity', async () => {
@@ -173,11 +176,11 @@ describe('LoaderService', () => {
 		class CatalogEntry extends BasePlugin {}
 		lowerTestPlugin(CatalogEntry)
 
-		await ctx.loader.replaceModule('catalog.ts', { CatalogEntry })
+		await requireLoaderService(ctx).replaceModule('catalog.ts', { CatalogEntry })
 		const address = pluginNodeAddressOf(CatalogEntry)
 
-		expect(ctx.loader.api.registry.findModuleId(address)).toBe('catalog.ts')
-		expect(ctx.loader.api.registry.getExportKey(address)).toBe('CatalogEntry')
+		expect(requireLoaderService(ctx).api.registry.findModuleId(address)).toBe('catalog.ts')
+		expect(requireLoaderService(ctx).api.registry.getExportKey(address)).toBe('CatalogEntry')
 		expect(
 			requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot().entries[0]?.provenance,
 		).toEqual({
@@ -196,13 +199,13 @@ describe('LoaderService', () => {
 		class SecondAnchor extends BasePlugin {}
 		lowerTestPlugin(SecondAnchor)
 
-		await ctx.loader.replaceModule('first-anchor.ts', { FirstAnchor })
-		const first = ctx.loader.api.anchors.snapshot()
-		expect(ctx.loader.api.anchors.snapshot()).toBe(first)
+		await requireLoaderService(ctx).replaceModule('first-anchor.ts', { FirstAnchor })
+		const first = requireLoaderService(ctx).api.anchors.snapshot()
+		expect(requireLoaderService(ctx).api.anchors.snapshot()).toBe(first)
 		expect(first).toEqual(new Set(['first-anchor.ts']))
 
-		await ctx.loader.replaceModule('second-anchor.ts', { SecondAnchor })
-		const second = ctx.loader.api.anchors.snapshot()
+		await requireLoaderService(ctx).replaceModule('second-anchor.ts', { SecondAnchor })
+		const second = requireLoaderService(ctx).api.anchors.snapshot()
 		expect(second).not.toBe(first)
 		expect(second).toEqual(new Set(['first-anchor.ts', 'second-anchor.ts']))
 	})
@@ -214,11 +217,13 @@ describe('LoaderService', () => {
 		class RolledBack extends BasePlugin {}
 		lowerTestPlugin(RolledBack)
 
-		const batch = ctx.loader.beginBatch()
+		const batch = requireLoaderService(ctx).beginBatch()
 		await batch.replaceModule('rolled-back.ts', { RolledBack })
 		batch.rollback()
 
-		expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(RolledBack))).toBeUndefined()
+		expect(
+			requireLoaderService(ctx).api.registry.getCtor(pluginNodeAddressOf(RolledBack)),
+		).toBeUndefined()
 		expect(requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot().entries).toEqual([])
 	})
 
@@ -233,8 +238,8 @@ describe('LoaderService', () => {
 		class Stale extends BasePlugin {}
 		lowerTestPlugin(Stale)
 
-		const first = ctx.loader.beginBatch()
-		const stale = ctx.loader.beginBatch()
+		const first = requireLoaderService(ctx).beginBatch()
+		const stale = requireLoaderService(ctx).beginBatch()
 		await first.replaceModule('first.ts', { First })
 		await stale.replaceModule('stale.ts', { Stale })
 		await first.commit({
@@ -246,8 +251,10 @@ describe('LoaderService', () => {
 		})
 
 		await expect(stale.commit()).rejects.toThrow(/catalog revision must advance/)
-		expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(First))).toBe(First)
-		expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(Stale))).toBeUndefined()
+		expect(requireLoaderService(ctx).api.registry.getCtor(pluginNodeAddressOf(First))).toBe(First)
+		expect(
+			requireLoaderService(ctx).api.registry.getCtor(pluginNodeAddressOf(Stale)),
+		).toBeUndefined()
 		expect(requirePluginService(ctx).isRunning(pluginNodeAddressOf(First))).toBe(true)
 		expect(requirePluginService(ctx).isRunning(pluginNodeAddressOf(Stale))).toBe(false)
 		expect(

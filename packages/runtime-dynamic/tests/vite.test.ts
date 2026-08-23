@@ -70,7 +70,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 				root: '/repo',
 				http: { controlPlane: { rpc: true } },
 			} as never),
-		).toThrow(/http must not include "controlPlane"/i)
+		).toThrow(/includes unsupported "http"/i)
 	})
 
 	it('keeps runtime context config at the same top level as static route config', () => {
@@ -81,7 +81,6 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			runtimeState: { snapshot: { enabled: [demoAddress] } },
 			workbench: {
 				enabled: true,
-				access: { exposure: 'private' },
 				uiBasePath: '/__pluxel/workbench',
 			},
 			logging: false,
@@ -90,7 +89,6 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(config.runtimeState?.snapshot?.enabled).toEqual([demoAddress])
 		expect(config.workbench).toEqual({
 			enabled: true,
-			access: { exposure: 'private' },
 			uiBasePath: '/__pluxel/workbench',
 		})
 		expect(config.context).toBeUndefined()

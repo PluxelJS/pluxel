@@ -201,7 +201,7 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	const smoke = [
 		'const app = await import(process.argv[1])',
 		'try {',
-		"\tif (app.ctx.workbench.enabled) throw new Error('Workbench should be disabled by default')",
+		"\tif (app.ctx.workbench !== undefined) throw new Error('Workbench should be disabled by default')",
 		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
 		'\tconst initial = await fetch(`${origin}/api/example/todos`)',
 		"\tif (!initial.ok || (await initial.json()).items[0]?.title !== 'Trace a Todo from React to a Plugin') throw new Error(`Frozen Todo route returned ${initial.status}`)",

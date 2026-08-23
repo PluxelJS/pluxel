@@ -126,16 +126,15 @@ export function inspectPluginDependencies(
 	const declaration = candidate(ctx, consumer).declaration
 	const pluginService = requirePluginService(ctx)
 	const effective = pluginService.resolvedDependencies(consumer)
-	return declaration.requires.map((token, index) => {
-		const selected = explicitOverride(ctx, consumer, token) ?? null
-		const defaultProvider = providerDefault(ctx, token) ?? null
+	return declaration.requires.map((requirement, index) => {
+		const selected = explicitOverride(ctx, consumer, requirement) ?? null
+		const defaultProvider = providerDefault(ctx, requirement) ?? null
 		const resolved = effective[index] ?? null
-		const options = candidates(ctx, token)
+		const options = candidates(ctx, requirement)
 		return {
-			index,
-			token,
+			requirement,
 			kind: options.some(
-				(option) => !pluginDefinitionAddressEqual(option.address.definition, token),
+				(option) => !pluginDefinitionAddressEqual(option.address.definition, requirement),
 			)
 				? 'abstract'
 				: 'plugin',
@@ -151,32 +150,9 @@ export function inspectPluginDependencies(
 export async function pluginDependencySetTarget(
 	ctx: Context,
 	consumer: PluginNodeAddress,
-	index: number,
+	requirement: PluginDefinitionAddress,
 	provider: PluginNodeAddress | null,
 ): Promise<PluginDependencyMutationResult> {
-	let declaration: ReturnType<typeof candidate>['declaration']
-	try {
-		declaration = candidate(ctx, consumer).declaration
-	} catch (error) {
-		if (error instanceof PluginNodeUnavailableError) {
-			return {
-				ok: false,
-				code: 'consumer_unavailable',
-				state: 'unchanged',
-				error: error.message,
-			}
-		}
-		throw error
-	}
-	if (!Number.isInteger(index) || index < 0 || index >= declaration.requires.length) {
-		return {
-			ok: false,
-			code: 'invalid_index',
-			state: 'unchanged',
-			error: `Invalid dependency index: ${index}`,
-		}
-	}
-	const requirement = declaration.requires[index]!
 	try {
 		const report = await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
 			runtimeStatePatch({

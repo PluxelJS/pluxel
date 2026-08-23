@@ -1,11 +1,6 @@
-import {
-	BasePlugin,
-	Context,
-	Plugin,
-	pluginNodeAddressOf,
-	type PluginDefinitionAddress,
-} from '@pluxel/core'
+import { BasePlugin, Plugin, pluginNodeAddressOf, type PluginDefinitionAddress } from '@pluxel/core'
 import { consumePluginDefinitionCandidate, requirePluginService } from '@pluxel/core/internal'
+import { createCoreContext } from '@pluxel/core/test'
 import { __definePluginRef, __setPluginDefinition } from '@pluxel/core/toolchain'
 import { Bench } from 'tinybench'
 
@@ -81,7 +76,8 @@ const providerRef = __definePluginRef<CallerViewBenchProvider>({
 	definition: providerDefinition,
 })
 
-const ctx = new Context({ name: 'caller-view-benchmark' })
+const benchmarkContext = createCoreContext({ name: 'caller-view-benchmark' })
+const ctx = benchmarkContext.ctx
 const registry = requirePluginService(ctx)
 const update = registry.beginUpdate({ reason: 'core-caller-view-benchmark' })
 update.materializeNode(
@@ -102,6 +98,8 @@ const consumer = registry.getInstance(
 	pluginNodeAddressOf(CallerViewBenchConsumer),
 ) as CallerViewBenchConsumer
 const facade = consumer.provider
+const rawBoundRead = raw.read.bind(raw)
+const cachedFacadeRead = facade.read
 const optionalFacade = registry.resolvePluginRef(providerRef, consumer.ctx)
 if (optionalFacade !== facade) {
 	throw new Error('Required and optional edges did not reuse the stable caller facade')
@@ -130,6 +128,12 @@ bench.add('raw method call', () => {
 })
 bench.add('caller facade method call', () => {
 	for (let i = 0; i < syncBatch; i++) sink += facade.read()
+})
+bench.add('raw cached method call', () => {
+	for (let i = 0; i < syncBatch; i++) sink += rawBoundRead()
+})
+bench.add('caller facade cached method call', () => {
+	for (let i = 0; i < syncBatch; i++) sink += cachedFacadeRead()
 })
 bench.add('raw async method call', async () => {
 	for (let i = 0; i < asyncBatch; i++) sink += await raw.readAsync()
@@ -160,6 +164,11 @@ try {
 			facade: latencyUs('caller facade method call', syncBatch),
 		},
 		{
+			path: 'cached method call',
+			raw: latencyUs('raw cached method call', syncBatch),
+			facade: latencyUs('caller facade cached method call', syncBatch),
+		},
+		{
 			path: 'async method call',
 			raw: latencyUs('raw async method call', asyncBatch),
 			facade: latencyUs('caller facade async method call', asyncBatch),
@@ -186,5 +195,5 @@ try {
 	const shutdown = registry.beginUpdate({ reason: 'core-caller-view-benchmark-shutdown' })
 	shutdown.dematerializeNode(pluginNodeAddressOf(CallerViewBenchProvider))
 	await shutdown.commit()
-	await ctx.effects.dispose()
+	await benchmarkContext.dispose()
 }

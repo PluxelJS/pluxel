@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/context'
+import type { Context, PluginContext } from '../../context/Context'
 import { createErr, createOk } from 'option-t/plain_result'
 import {
 	DraftGraph,
@@ -759,7 +759,10 @@ const EMPTY_BINDINGS: ReadonlyMap<PluginDefinitionSlot, DependencyBinding> = new
 const EMPTY_INBOUND: ReadonlySet<DependencyBinding> = new Set()
 const EMPTY_DEFINITION_SET: ReadonlySet<PluginDefinitionSlot> = new Set()
 
-function installPluginGenerationInfo(ctx: Context, node: PluginNodeRecord): void {
+function installPluginGenerationInfo(
+	ctx: Context,
+	node: PluginNodeRecord,
+): asserts ctx is PluginContext {
 	const definition = node.definition
 	pinContextValue(
 		ctx,
@@ -809,13 +812,5 @@ function assertPluginGraphDelta(delta: GraphDelta): asserts delta is PluginGraph
 function assertNode(value: unknown): asserts value is PluginNodeSlot {
 	if (!isPluginNodeSlot(value)) {
 		throw new TypeError('[pluxel/core] Plugin graph produced a non-slot key')
-	}
-}
-
-declare module '@pluxel/context' {
-	interface Context {
-		readonly pluginInfo: PluginNodeInfo
-		parent?: Context
-		caller?: Context
 	}
 }

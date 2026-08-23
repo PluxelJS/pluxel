@@ -35,6 +35,10 @@ const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs',
 
 @Plugin()
 class WorkerTaskConsumerA extends BasePlugin {
+	workerView() {
+		return this.ctx.workers
+	}
+
 	run(input: TaskInput, signal?: AbortSignal): Promise<TaskOutput> {
 		return this.ctx.workers.run(declaration, input, { signal })
 	}
@@ -49,6 +53,10 @@ class WorkerTaskConsumerA extends BasePlugin {
 
 @Plugin()
 class WorkerTaskConsumerB extends BasePlugin {
+	workerView() {
+		return this.ctx.workers
+	}
+
 	run(input: TaskInput): Promise<TaskOutput> {
 		return this.ctx.workers.run(declaration, input)
 	}
@@ -79,6 +87,33 @@ describe('WorkerTaskService', () => {
 	})
 
 	afterAll(() => workerHost.dispose())
+
+	it('creates cold owner views per consumer while sharing one root coordinator', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
+			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerB).enable()
+			await host.commit()
+
+			const rootView = host.ctx.workers
+			const a = host.require(WorkerTaskConsumerA)
+			const b = host.require(WorkerTaskConsumerB)
+			const aView = a.workerView()
+			const bView = b.workerView()
+
+			expect(aView).not.toBe(rootView)
+			expect(bView).not.toBe(rootView)
+			expect(aView).not.toBe(bView)
+			expect(a.workerView()).toBe(aView)
+			expect(b.workerView()).toBe(bView)
+			expect(aView.ctx).toBe(a.ctx)
+			expect(bView.ctx).toBe(b.ctx)
+			expect((rootView as unknown as { state?: { pool?: unknown } }).state?.pool).toBeUndefined()
+		} finally {
+			await host.dispose()
+		}
+	})
 
 	it('lazily runs cloneable task data in a worker thread', async () => {
 		const host = createWorkerHost({ maxThreads: 1 })

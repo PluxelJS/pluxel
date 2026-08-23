@@ -5,7 +5,7 @@ import {
 	type CommandDescriptor,
 	type CommandResult,
 } from '@pluxel/commands'
-import { type Context as CoreContext, RootService } from '@pluxel/core'
+import type { Context as CoreContext } from '@pluxel/core'
 import type {
 	AgentCommandCatalog,
 	AgentCommandCatalogSnapshot,
@@ -19,7 +19,6 @@ import type {
 import type { CommandsService } from '../CommandsService'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
 
-const serviceName = 'agentTools' as const
 const storageKey = 'policy.json'
 const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
 const commandNamePattern = /^[A-Za-z0-9_.-]{1,128}$/
@@ -31,15 +30,6 @@ const maxCommandMemberships = 100_000
 const maxAgentToolsetMemberships = 100_000
 const emptyCommandNames: ReadonlySet<string> = new Set()
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface RootServices {
-			[serviceName]: AgentToolsService
-		}
-	}
-}
-
-@RootService({ key: serviceName })
 export class AgentToolsService {
 	readonly ready: Promise<void>
 

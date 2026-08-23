@@ -5,7 +5,7 @@
 ## 审查目标
 
 - `adminAccess` 只回答一件事：
-  当前 host workbench admin surface 是否允许访问
+  当前 host management surface 是否允许访问
 - `vault` 只回答一件事：
   敏感数据是否被正确加密存储，并且当前 host 是否具备可用解锁材料
 - host 在插件激活前完成 vault preflight；vault 不可用时不进入后续运行流程
@@ -14,12 +14,12 @@
 
 - `ctx.root.adminAccess`
   host-only access gate
-- `workbench: false` 不挂载 Workbench Plane，不要求 OIDC
+- `workbench: false` 不挂载 Workbench Plane；只有顶层 `management` object 存在时才安装 headless Management Plane
 - private admin access 下不做任何认证，直接 allow
 - public admin access 下必须配置 OIDC，否则 HTTP 服务初始化 fail fast
 - public exposure 使用 issuer discovery + JWKS 校验 bearer JWT
 - Pluxel 没有 workbench 非 admin 用户模型；满足 OIDC access policy 的请求就是 admin 请求
-- `adminAccess.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略
+- `management.access.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略
 - Pluxel 不保存本地 admin access users、password hash、OTP secret、passkey credential 或 admin access session
 - `data/security/identity.json` 只保存 vault host identity 和 deploy recipients
 - `ctx.vault`
@@ -45,7 +45,7 @@
 ## 当前接口语义
 
 - `ctx.root.adminAccess.authorize()`
-  纯读；输出 `allow/reason/principal`；`allow=true` 表示允许进入 workbench admin surface
+  纯读；输出 `allow/reason/principal`；`allow=true` 表示允许进入 management surface
 - `ctx.root.adminAccess.describe()`
   纯读；输出 access policy 概览和当前状态
 - `ctx.root.vaultAdmin.describe()`
@@ -81,19 +81,17 @@
 
 ## Host 启动约束
 
-- Vault 只有一个启用入口：显式 import `@pluxel/runtime/services/vault`。
-- host 在插件运行前调用 `ctx.prepareServices()`；vaultAdmin 是 eager root service，会在
-  自己的 `prepare()` 里完成 vault bootstrap。其他 host 如果启用 vault，也必须在插件运行前
-  完成同一 service prepare。
-- 需要 vault 的插件/host 必须显式 import `@pluxel/runtime/services/vault`。
+- Vault 只有一个启用入口：host `vault` 为配置对象；omitted/`false` 时 capability 和 backend 都 absent。
+- host 在插件运行前统一 prepare Context plan；vaultAdmin backing 的 eager leaf hook 完成 vault bootstrap。
+  其他 host 如果启用 vault，也必须在首个 Plugin lifecycle 前完成同一 plan prepare。
+- 需要 Vault 的 Plugin 必须检查 `ctx.vault` absence；module import 不改变 host plan。
 - vaultAdmin `prepare()` 的顺序必须保持：
   `describe()` -> 仅在 mount 缺失且 host identity 缺失时 `ensureHostKey()` -> `preflight()`
 - mount 不存在时，启动期初始化空 mount 并保持 ready
 - mount 已存在且可解锁时，允许继续启动
 - mount 已存在但当前材料无法解锁时，必须终止启动
 - `ctx.vault` kv/docs/blobs API 不做运行期 auto-unlock；如果启动后仍未 ready，直接 fail fast。
-- 错误不做插件级消费者归因；用户用
-  `rg "@pluxel/runtime/services/vault|ctx\\.vault" .` 排查。
+- 错误不做插件级消费者归因；用户用 `rg "vault:|ctx\\.vault" .` 排查。
 
 ## 红线
 

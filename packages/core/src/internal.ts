@@ -4,9 +4,6 @@ export {
 	type OwnerInvocationLease,
 } from './internal/owner-invocations'
 
-/** @internal Optional service hook for immutable owner-bound Context capability views. */
-export const OWNER_CONTEXT_BIND = Symbol.for('pluxel:ctx.owner-context-bind')
-
 export { PluginSlotRegistry } from './plugins/runtime/identity'
 export { PluginService } from './plugins/runtime/PluginService'
 export type { PreparedRuntimeUpdateCommitOptions } from './plugins/runtime/plugin-service/RuntimeUpdateTransaction'
@@ -16,6 +13,31 @@ export {
 } from './plugins/runtime/PluginDefinitions'
 export { requireConfigService } from './internal/config-service'
 export { requirePluginService } from './internal/plugin-service'
+export {
+	createContextPlan,
+	createGenerationContext,
+	createOwnerContext,
+	createRootContext,
+	defineContextCapability,
+	installGenerationCapability,
+	installOwnerViewCapability,
+	installRootCapability,
+	prepareContextCapabilities,
+	resolveContextCapability,
+	type ContextCapability,
+	type ContextCapabilityInstallation,
+	type ContextPlan,
+} from './context/Context'
+export {
+	CONFIG_SERVICE_CAPABILITY,
+	createCoreContextInstallations,
+	createCoreRootContext,
+	resolveCoreRootInputs,
+	EFFECTS_CAPABILITY,
+	LOGGER_CAPABILITY,
+	PLUGIN_SERVICE_CAPABILITY,
+	type CoreRootInputs,
+} from './context/core-plan'
 export { checkPluginDecorator } from './plugins/decorators/decorator/api'
 export {
 	consumePluginDefinitionCandidate,

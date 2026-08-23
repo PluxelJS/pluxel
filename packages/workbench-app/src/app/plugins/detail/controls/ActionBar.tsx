@@ -5,13 +5,14 @@ import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
 import { IconRotateClockwise } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
-import { PluginStatusEntryLifecycleStage } from '../../../gqlens'
+import { PluginStatusEntryLifecycleStage } from '../../pluginOverview'
 import { useNotify } from '../../../hooks/useNotify'
 import {
-	runPluginStatusAction,
-	useRuntimeTransportClient,
+	runtimeErrorMessage,
 	type PluginStatusAction,
+	useRuntimeManagementClient,
 } from '../../../../runtime'
+import { updatePluginStatus } from '../../pluginStatusActions'
 import { usePluginScope } from '../context'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 
@@ -78,7 +79,7 @@ function ActionBarButton({ busy, canRestart, compact, onAction, prominent }: Act
 }
 
 export function ActionBar({ compact = false, prominent = false }: ActionBarProps) {
-	const transport = useRuntimeTransportClient()
+	const management = useRuntimeManagementClient()
 	const {
 		owner,
 		pluginLabel,
@@ -144,7 +145,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 		setIsLoading(true)
 
 		try {
-			const res = await transport.withRpc((rpc) => runPluginStatusAction(rpc, owner, action))
+			const res = await updatePluginStatus(management, owner, action)
 			if (mySeq !== seqRef.current) return
 
 			if (res.ok === false) {
@@ -166,11 +167,11 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 				message: `${pluginLabel} ${ACTION_LABEL[action]}成功`,
 				color: 'green',
 			})
-		} catch (e: any) {
+		} catch (error: unknown) {
 			if (mySeq !== seqRef.current) return
 			notify({
 				title: '插件状态更新失败',
-				message: e?.message ?? '操作失败，请稍后重试',
+				message: runtimeErrorMessage(error, '操作失败，请稍后重试'),
 				color: 'red',
 			})
 			await refetch()

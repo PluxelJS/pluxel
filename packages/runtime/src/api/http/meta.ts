@@ -1,37 +1,17 @@
 import type { Context as PluginContext } from '@pluxel/core'
 import { type AnyElysiaApp } from '../../services/http/elysia'
-import { RUNTIME_META_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
-import { requireWorkbench } from '../../services/workbench'
+import { RUNTIME_META_BASE } from '../../web/paths'
 
 function readInternalMeta(pluginCtx: PluginContext) {
-	const workbench = requireWorkbench(pluginCtx)
-	const catalog = workbench.registry.getCatalog()
-	const bundles = catalog.bundles.length
-	return {
-		service: 'pluxel-runtime' as const,
-		ready: true as const,
-		application: workbench.application,
-		sse: {
-			namespaces: workbench.events.listNamespaces(),
-		},
-		workbench: {
-			version: catalog.revision,
-			bundles,
-		},
-		transport: RUNTIME_TRANSPORT_PATHS,
-	}
+	const management = pluginCtx.root.runtimeManagement
+	if (!management) throw new Error('[pluxel/runtime] Management discovery is not installed')
+	return management.describe()
 }
 
 export const metaRoutes = (app: AnyElysiaApp) =>
 	app.get('/', 'Pluxel runtime RPC ready').group(RUNTIME_META_BASE, (meta) =>
-		meta
-			.get('/', async ({ set, pluginCtx, request }) => {
-				set.headers['cache-control'] = 'no-store'
-				void request
-				return readInternalMeta(pluginCtx)
-			})
-			.get('/sse', ({ set, pluginCtx }) => {
-				set.headers['cache-control'] = 'no-store'
-				return { namespaces: requireWorkbench(pluginCtx).events.listNamespaces() }
-			}),
+		meta.get('/', ({ set, pluginCtx }) => {
+			set.headers['cache-control'] = 'no-store'
+			return readInternalMeta(pluginCtx)
+		}),
 	)

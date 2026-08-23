@@ -8,10 +8,8 @@ import {
 import { IconRefresh, IconStar } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-	inspectPluginBaseProvider,
-	rpcErrorMessage,
-	selectPluginBaseProvider,
-	useRuntimeTransportClient,
+	runtimeErrorMessage,
+	useRuntimeManagementClient,
 	type BaseProviderInfo,
 } from '../../../../runtime'
 import { useNotify } from '../../../hooks/useNotify'
@@ -20,7 +18,7 @@ import { usePluginScope } from '../context'
 export function BaseProviderCard() {
 	const { owner, refetch } = usePluginScope()
 	const ownerKey = pluginNodeIndexKey(owner)
-	const transport = useRuntimeTransportClient()
+	const management = useRuntimeManagementClient()
 	const notify = useNotify()
 	const [infoByOwner, setInfoByOwner] = useState(() => new Map<string, BaseProviderInfo | null>())
 	const [loadingOwners, setLoadingOwners] = useState(() => new Set<string>())
@@ -41,15 +39,16 @@ export function BaseProviderCard() {
 		requestIdsRef.current.set(ownerKey, requestId)
 		setLoadingOwners((previous) => new Set(previous).add(ownerKey))
 		try {
-			const result = await transport.withRpc((rpc) => inspectPluginBaseProvider(rpc, owner))
+			const result = await management.dependencies.inspectBaseProvider(owner)
+			if (result.ok === false) throw new Error(result.error)
 			if (!mountedRef.current || requestIdsRef.current.get(ownerKey) !== requestId) return
-			setInfoByOwner((previous) => new Map(previous).set(ownerKey, result ?? null))
+			setInfoByOwner((previous) => new Map(previous).set(ownerKey, result.value))
 		} catch (error) {
 			if (!mountedRef.current || requestIdsRef.current.get(ownerKey) !== requestId) return
 			setInfoByOwner((previous) => new Map(previous).set(ownerKey, null))
 			notify({
 				title: '读取提供者信息失败',
-				message: rpcErrorMessage(error, '无法读取 provider 信息'),
+				message: runtimeErrorMessage(error, '无法读取 provider 信息'),
 				color: 'red',
 			})
 		} finally {
@@ -61,7 +60,7 @@ export function BaseProviderCard() {
 				})
 			}
 		}
-	}, [notify, owner, ownerKey, transport])
+	}, [management.dependencies, notify, owner, ownerKey])
 
 	useEffect(() => {
 		void load()
@@ -91,14 +90,18 @@ export function BaseProviderCard() {
 				: null
 			if (value && !provider) return
 			try {
-				const result = await transport.withRpc((rpc) =>
-					selectPluginBaseProvider(rpc, {
-						consumer: owner,
-						token: info.token,
-						provider,
-					}),
-				)
-				if (result.ok === false) throw new Error(result.error || result.code || '操作失败')
+				const result = await management.dependencies.selectBaseProvider({
+					consumer: owner,
+					token: info.token,
+					provider,
+				})
+				if (result.ok === false) {
+					if (result.state === 'unknown') {
+						await load()
+						await refetch()
+					}
+					throw new Error(result.error || result.code || '操作失败')
+				}
 				await load()
 				await refetch()
 				notify({
@@ -107,10 +110,14 @@ export function BaseProviderCard() {
 					color: 'green',
 				})
 			} catch (error) {
-				notify({ title: '更新失败', message: rpcErrorMessage(error, '操作失败'), color: 'red' })
+				notify({
+					title: '更新失败',
+					message: runtimeErrorMessage(error, '操作失败'),
+					color: 'red',
+				})
 			}
 		},
-		[info, load, notify, owner, providersByKey, refetch, transport],
+		[info, load, management.dependencies, notify, owner, providersByKey, refetch],
 	)
 
 	if (!info) return null

@@ -37,6 +37,23 @@ describe('ConfigService', () => {
 			await host.start(P)
 			const plugin = host.require(P)
 			expect(plugin.config.answer).toBe(42)
+			const configService = requireConfigService(host.ctx)
+			expect(configService.getAppliedConfigRevision(host.cfg(P).owner)).toBe(
+				configService.getConfigRevision(host.cfg(P).owner),
+			)
+		})
+	})
+
+	it('clears the applied revision when the running generation stops', async () => {
+		await withCoreHost(async (host) => {
+			host.cfg(P).set({ answer: 42 })
+			await host.start(P)
+			const owner = host.cfg(P).owner
+			const configService = requireConfigService(host.ctx)
+			expect(configService.getAppliedConfigRevision(owner)).not.toBeNull()
+			host.remove(P)
+			await host.commit()
+			expect(configService.getAppliedConfigRevision(owner)).toBeNull()
 		})
 	})
 

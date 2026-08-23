@@ -1,8 +1,8 @@
 import './setup'
 
-export { Context } from '@pluxel/core'
 export type {
 	CommitSummary,
+	Context,
 	PluginLifecycleErrorInfo,
 	PluginLifecycleIssue,
 	PluginLifecycleIssueKind,

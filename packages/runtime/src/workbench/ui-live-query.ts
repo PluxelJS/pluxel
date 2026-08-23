@@ -4,7 +4,7 @@ import type {
 	WorkbenchLiveQueryResource,
 	WorkbenchLiveQuerySnapshot,
 } from './contracts'
-import type { RuntimeTransportClient } from '../web/client'
+import type { RuntimeTransportClient } from '../web/transport-client'
 import type { SseClientWithNamespaces } from '../web/sse'
 
 export type WorkbenchLiveQueryResult<Row> =
@@ -60,7 +60,7 @@ class BrowserLiveQueryVariant<Row> {
 
 	async refresh(): Promise<void> {
 		const response = await this.transport.fetch(
-			this.transport.links.workbenchLiveQuery(this.grantId, this.params),
+			this.transport.workbench.liveQueryUrl(this.grantId, this.params),
 			{ method: 'GET' },
 		)
 		if (!response.ok) {
@@ -73,7 +73,7 @@ class BrowserLiveQueryVariant<Row> {
 	private start(): void {
 		const params = new URLSearchParams()
 		if (this.params !== undefined) params.set('params', JSON.stringify(this.params))
-		const base = this.transport.links.workbenchModelEvents(this.grantId)
+		const base = this.transport.workbench.modelEventsUrl(this.grantId)
 		const url = params.size > 0 ? `${base}?${params}` : base
 		this.stream = this.transport.createSse({ url })
 		this.stream.onAny((message) => {

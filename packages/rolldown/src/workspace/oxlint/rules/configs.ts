@@ -271,38 +271,10 @@ const configsUseSingleObjectSchema = createRule(
 	}),
 )
 
-const configsNoRemovedDsl = createRule(
-	{
-		type: 'problem',
-		docs: { description: 'Reject removed @Config and cfg/layout authoring DSL' },
-		messages: {
-			removed:
-				'`{{name}}` was removed. Declare one class field with `this.configs.use(ObjectSchema)`.',
-		},
-	},
-	(context) => ({
-		CallExpression(node) {
-			const callee = unwrapExpression(node.callee)
-			const name =
-				callee?.type === 'Identifier'
-					? typeof callee.name === 'string'
-						? callee.name
-						: null
-					: callee?.type === 'MemberExpression'
-						? getStaticPropertyName(callee.property, Boolean(callee.computed))
-						: null
-			if (name === 'Config' || (name === 'cfg' && callee?.type === 'Identifier')) {
-				report(context, node, 'removed', { name })
-			}
-		},
-	}),
-)
-
 export const configsRules: Record<string, OxRule> = {
 	'configs-use-top-level-class': configsUseTopLevelClass,
 	'configs-use-no-private-field': configsUseNoPrivateField,
 	'configs-use-no-early-read': configsUseNoEarlyRead,
 	'configs-use-no-redefault': configsUseNoRedefault,
 	'configs-use-single-object-schema': configsUseSingleObjectSchema,
-	'configs-no-removed-dsl': configsNoRemovedDsl,
 }

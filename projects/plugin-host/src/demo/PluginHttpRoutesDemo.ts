@@ -45,6 +45,6 @@ export class PluginHttpRoutesDemo extends BasePlugin {
 			},
 		)
 
-		this.ctx.workbench.mount(HttpRoutesWorkbench, {})
+		this.ctx.workbench?.mount(HttpRoutesWorkbench, {})
 	}
 }

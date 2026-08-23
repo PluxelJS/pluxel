@@ -63,6 +63,9 @@ describe('dynamic fixed plugin module identity', () => {
 		const viteEntry = pathToFileURL(
 			resolve(workspaceRoot, 'packages/runtime-dynamic/src/vite.ts'),
 		).href
+		const contextPlanEntry = pathToFileURL(
+			resolve(workspaceRoot, 'packages/runtime-dynamic/src/context-plan.ts'),
+		).href
 		await fixture.writeFile(
 			'verify.mts',
 			[
@@ -71,6 +74,7 @@ describe('dynamic fixed plugin module identity', () => {
 				"import { requirePluginService } from '@pluxel/core/internal'",
 				"import { requireRuntimePluginGraphCoordinator } from '@pluxel/runtime/internal'",
 				"import { createServer } from 'vite'",
+				`import { requireLoaderService } from ${JSON.stringify(contextPlanEntry)}`,
 				`import { dynamicRuntimeVitePlugin } from ${JSON.stringify(viteEntry)}`,
 				`const root = ${JSON.stringify(root)}`,
 				`const workspaceRoot = ${JSON.stringify(workspaceRoot)}`,
@@ -85,9 +89,10 @@ describe('dynamic fixed plugin module identity', () => {
 				'try {',
 				"  const controller = server[Symbol.for('pluxel.dynamicRuntimeController')]",
 				'  assert.ok(controller)',
+				'  const loader = requireLoaderService(controller.booted.ctx)',
 				'  const fixedPlugins = controller.booted.hmr.config?.fixedPlugins',
 				'  assert.equal(fixedPlugins?.length, 1, `unexpected fixed plugin count ${fixedPlugins?.length}`)',
-				'  const catalog = controller.booted.ctx.loader.api.registry.listRegistered()',
+				'  const catalog = loader.api.registry.listRegistered()',
 				'  const commonCatalog = requireRuntimePluginGraphCoordinator(controller.booted.ctx).catalogSnapshot().entries',
 				"  assert.ok(commonCatalog.length > 0, 'common coordinator catalog is empty')",
 				"  const fixedEntry = catalog.find(entry => entry.rootExportName === 'FixedProvider')",
@@ -98,8 +103,8 @@ describe('dynamic fixed plugin module identity', () => {
 				'  const consumer = consumerEntry.ctor',
 				"  assert.equal(typeof fixed, 'function')",
 				"  assert.equal(typeof consumer, 'function')",
-				'  await controller.booted.ctx.loader.api.control.enable(fixedEntry.address)',
-				'  await controller.booted.ctx.loader.api.control.enable(consumerEntry.address)',
+				'  await loader.api.control.enable(fixedEntry.address)',
+				'  await loader.api.control.enable(consumerEntry.address)',
 				'  const instance = requirePluginService(controller.booted.ctx).getInstance(consumerEntry.address)',
 				'  assert.ok(instance)',
 				'  assert.ok(instance.provider instanceof fixed)',

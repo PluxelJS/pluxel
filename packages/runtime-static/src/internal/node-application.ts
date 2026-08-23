@@ -7,7 +7,7 @@ import type { PluginConstructor } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { runStaticFetchApplication, type StaticFetchApplicationOptions } from './fetch-application'
 import { createNodeFetchRequest, writeNodeFetchResponse } from './node-http'
-import type { StaticRuntimeWorkbenchInstaller } from './host'
+import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import type {
 	StaticRuntime,
 	StaticRuntimeApplication,
@@ -24,7 +24,7 @@ export async function runStaticNodeApplication<
 >(
 	application: StaticRuntimeApplication<readonly PluginConstructor[], TBindings>,
 	options: StaticFetchApplicationOptions<TBindings> & {
-		installWorkbench?: StaticRuntimeWorkbenchInstaller
+		createWorkbenchBackend?: WorkbenchBackendFactory
 		product?: ProductDescriptor | null
 	},
 ): Promise<StaticNodeApplication> {
@@ -37,7 +37,7 @@ export async function runStaticNodeApplication<
 			applicationPublicDir: `${options.deployment.root}/public`,
 			serveApplicationPublic:
 				options.deployment.variant === 'headless' ||
-				!workbenchOwnsRootNavigation(runtime.ctx.config.workbench),
+				!runtime.ctx.http.workbenchOwnsRootNavigation(),
 		})
 	})
 	try {
@@ -103,10 +103,6 @@ export async function runStaticNodeApplication<
 		address: { host, port: actualPort },
 		stop,
 	}
-}
-
-function workbenchOwnsRootNavigation(config: StaticRuntime['ctx']['config']['workbench']): boolean {
-	return config !== false && config?.enabled === true && (config.uiBasePath ?? '/') === '/'
 }
 
 async function dispatch(

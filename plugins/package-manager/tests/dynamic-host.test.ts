@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { requirePluginService } from '@pluxel/core/internal'
 import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '@pluxel/runtime-dynamic/hmr'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -50,9 +51,9 @@ describe('PackageManagerPlugin dynamic host', () => {
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
 			await host.hmr.start()
-			expect(host.ctx.loader.api.runtime.isRunning(pluginNodeAddressOf(PackageManagerPlugin))).toBe(
-				true,
-			)
+			expect(
+				requirePluginService(host.ctx).isRunning(pluginNodeAddressOf(PackageManagerPlugin)),
+			).toBe(true)
 			expect(existsSync(resolve(managedRoot, 'entries'))).toBe(true)
 			expect(host.ctx.commands.get('package.install')).toBeDefined()
 		} finally {

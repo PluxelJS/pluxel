@@ -2,11 +2,8 @@ import type { PluginConstructor } from '@pluxel/core'
 import { isWorkbenchEnabled } from '@pluxel/runtime/internal/static-host'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from '../application'
-import {
-	createStaticRuntimeHost,
-	type StaticRuntimeHostDeployment,
-	type StaticRuntimeWorkbenchInstaller,
-} from './host'
+import { createStaticRuntimeHost, type StaticRuntimeHostDeployment } from './host'
+import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import type {
 	StaticRuntime,
 	StaticRuntimeApplication,
@@ -20,7 +17,7 @@ export type StartStaticRuntimeApplicationOptions<
 > = {
 	startup: StaticRuntimeStartupContext<TBindings>
 	deployment?: StaticRuntimeHostDeployment
-	installWorkbench?: StaticRuntimeWorkbenchInstaller
+	createWorkbenchBackend?: WorkbenchBackendFactory
 	product?: ProductDescriptor | null
 }
 
@@ -46,7 +43,7 @@ export async function startStaticRuntimeApplication<
 	}
 	const host = await createStaticRuntimeHost(toStaticRuntimeDefinition(application), hostOptions, {
 		deployment: options.deployment,
-		installWorkbench: options.installWorkbench,
+		createWorkbenchBackend: options.createWorkbenchBackend,
 		product: options.product ?? null,
 	})
 	try {

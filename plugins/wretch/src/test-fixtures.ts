@@ -38,7 +38,7 @@ export class ConsumerA extends BasePlugin {
 			.url('https://a.example/api', true)
 			.headers({ Authorization: 'Bearer secret-a', 'X-Consumer': 'a' })
 			.fetchPolyfill(fetchA)
-		this.ctx.workbench.mount(ConsumerWorkbench, {
+		this.ctx.workbench?.mount(ConsumerWorkbench, {
 			settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
 		})
 	}

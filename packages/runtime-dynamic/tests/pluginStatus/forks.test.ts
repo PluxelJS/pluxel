@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { pluginNodeAddressEqual, pluginNodeAddressOf, type PluginNodeAddress } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
-import { requireRuntimePluginGraphCoordinator, runtimeStatePatch } from '@pluxel/runtime/internal'
-import { getStatusOverview } from '../../../runtime/src/api/features/pluginStatus/service'
+import {
+	requireRuntimePluginGraphCoordinator,
+	runtimePluginStatusOverview,
+	runtimeStatePatch,
+} from '@pluxel/runtime/internal'
+import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestPlugin } from '../support/lowered-plugin'
 
@@ -19,7 +23,7 @@ describe('pluginStatus forks', () => {
 		class DemoWorker extends BasePlugin {}
 		lowerTestPlugin(DemoWorker)
 
-		await ctx.loader.replaceModule('A.ts', { DemoWorker })
+		await requireLoaderService(ctx).replaceModule('A.ts', { DemoWorker })
 		const base = pluginNodeAddressOf(DemoWorker)
 		const runtimeFork = { definition: base.definition, variant: 'fork', forkId: 'aaa' } as const
 		const persistedFork = { definition: base.definition, variant: 'fork', forkId: 'bbb' } as const
@@ -31,7 +35,7 @@ describe('pluginStatus forks', () => {
 			),
 		)
 
-		const addresses = getStatusOverview(ctx).statuses.map((status) => status.address)
+		const addresses = runtimePluginStatusOverview(ctx).statuses.map((status) => status.address)
 		expect(hasAddress(addresses, base)).toBe(true)
 		expect(hasAddress(addresses, runtimeFork)).toBe(true)
 		expect(hasAddress(addresses, persistedFork)).toBe(true)
@@ -44,10 +48,10 @@ describe('pluginStatus forks', () => {
 		class Alpha extends BasePlugin {}
 		lowerTestPlugin(Alpha)
 
-		await ctx.loader.replaceModule('A.ts', { Alpha })
+		await requireLoaderService(ctx).replaceModule('A.ts', { Alpha })
 		const address = pluginNodeAddressOf(Alpha)
-		await ctx.loader.api.control.enable(address)
-		await ctx.loader.api.control.enable(address)
+		await requireLoaderService(ctx).api.control.enable(address)
+		await requireLoaderService(ctx).api.control.enable(address)
 		expect(requirePluginService(ctx).isRunning(address)).toBe(true)
 	})
 })

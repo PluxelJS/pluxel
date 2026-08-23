@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
-import type { RuntimeContextConfig } from '../../context-augment'
 import type {
 	WorkbenchBundleEvent,
 	WorkbenchBundle,
@@ -27,9 +26,14 @@ type WorkbenchSourceBinder = (
 	contractFingerprint: string,
 ) => () => void
 
-type WorkbenchArtifactContext = Context & {
-	readonly config: Context['config'] & RuntimeContextConfig
-}
+export type WorkbenchArtifactHostOptions = Readonly<{
+	root?: string
+	resolve?: (
+		root: Context,
+		owner: PluginNodeAddress,
+		artifactName: string,
+	) => string | null | Promise<string | null>
+}>
 
 export class WorkbenchArtifactService {
 	private revision = 0
@@ -39,7 +43,10 @@ export class WorkbenchArtifactService {
 	private readonly listeners = new Set<(event: WorkbenchBundleEvent) => void>()
 	private sourceBinder?: WorkbenchSourceBinder
 
-	constructor(private readonly root: WorkbenchArtifactContext) {}
+	constructor(
+		private readonly root: Context,
+		private readonly host: WorkbenchArtifactHostOptions = Object.freeze({}),
+	) {}
 
 	attachSourceBinder(sourceBinder: WorkbenchSourceBinder): () => void {
 		if (this.sourceBinder) {
@@ -248,13 +255,11 @@ export class WorkbenchArtifactService {
 		owner: PluginNodeAddress,
 		artifactName: string,
 	): Promise<string | null> {
-		const deploymentRoot = String(this.root.config.workbenchArtifactRoot ?? '').trim()
+		const deploymentRoot = this.host.root ?? ''
 		if (deploymentRoot) {
 			return resolveDeploymentWorkbenchManifestPath(deploymentRoot, artifactName)
 		}
-		return (
-			(await this.root.config.workbenchArtifactResolver?.(this.root, owner, artifactName)) ?? null
-		)
+		return (await this.host.resolve?.(this.root, owner, artifactName)) ?? null
 	}
 
 	private nextRevision(): number {

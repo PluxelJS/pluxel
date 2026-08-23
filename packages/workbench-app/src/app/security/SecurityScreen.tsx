@@ -1,13 +1,13 @@
 import { Group, Loader, Stack, Text } from '@mantine/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-	getRuntimeSecurityClient,
 	type SecurityAuditEvent,
 	type SecurityOverview,
 	type VaultKeyPair,
-	rpcErrorMessage,
+	runtimeErrorMessage,
+	useRuntimeManagementClient,
 } from '../../runtime'
-import { ErrorState } from '../../components'
+import { EmptyState, ErrorState } from '../../components'
 import { useNotify } from '../hooks/useNotify'
 import { useStoredSplitLayout, WorkbenchSplitView } from '../workbench/split'
 import {
@@ -26,10 +26,10 @@ import { NamespaceInventoryPanel, SecurityControlsPane, SecurityToolbar } from '
 
 export function SecurityScreen() {
 	const notify = useNotify()
-	const security = getRuntimeSecurityClient()
+	const security = useRuntimeManagementClient().security
 	const vaultApi = security.vault
 	const [overview, setOverview] = useState<SecurityOverview | null>(null)
-	const [events, setEvents] = useState<SecurityAuditEvent[]>([])
+	const [events, setEvents] = useState<readonly SecurityAuditEvent[]>([])
 	const [loading, setLoading] = useState(true)
 	const [refreshing, setRefreshing] = useState(false)
 	const [busy, setBusy] = useState<SecurityBusyKey | null>(null)
@@ -38,7 +38,7 @@ export function SecurityScreen() {
 	const [namespaceSearch, setNamespaceSearch] = useState('')
 	const [generatedKeyPair, setGeneratedKeyPair] = useState<VaultKeyPair | null>(null)
 	const adminAccess = overview?.adminAccess ?? null
-	const vault = overview?.vault ?? null
+	const vault = overview?.vault.enabled === true ? overview.vault.state : null
 	const deployRecipients = useMemo(
 		() => parseRecipientsDraft(deployRecipientsDraft),
 		[deployRecipientsDraft],
@@ -60,8 +60,13 @@ export function SecurityScreen() {
 	const applyOverview = useCallback(
 		(nextOverview: SecurityOverview, options: RefreshOptions = {}) => {
 			setOverview(nextOverview)
+			if (!nextOverview.vault.enabled) {
+				setDeployRecipientsDraft('')
+				setGeneratedKeyPair(null)
+				return
+			}
 			if (options.syncDeployRecipientsDraft) {
-				setDeployRecipientsDraft(formatRecipientsDraft(nextOverview.vault.deploy.recipients))
+				setDeployRecipientsDraft(formatRecipientsDraft(nextOverview.vault.state.deploy.recipients))
 			}
 		},
 		[],
@@ -79,7 +84,7 @@ export function SecurityScreen() {
 				applyOverview(nextOverview, options)
 				setEvents(nextEvents)
 			} catch (cause) {
-				setError(rpcErrorMessage(cause, 'Failed to load security state'))
+				setError(runtimeErrorMessage(cause, 'Failed to load security state'))
 			} finally {
 				setLoading(false)
 				setRefreshing(false)
@@ -93,6 +98,7 @@ export function SecurityScreen() {
 	}, [refresh])
 
 	async function generateDeployKey() {
+		if (!vault) return
 		setBusy('vault-deploy-generate')
 		try {
 			const result = await vaultApi.generateDeployKey()
@@ -100,13 +106,17 @@ export function SecurityScreen() {
 			await refresh()
 			notify({ color: 'green', message: 'Deploy key generated' })
 		} catch (cause) {
-			notify({ color: 'red', message: rpcErrorMessage(cause, 'Failed to generate deploy key') })
+			notify({
+				color: 'red',
+				message: runtimeErrorMessage(cause, 'Failed to generate deploy key'),
+			})
 		} finally {
 			setBusy(null)
 		}
 	}
 
 	async function saveDeployRecipients() {
+		if (!vault) return
 		setBusy('vault-deploy-save')
 		try {
 			const recipients = parseRecipientsDraft(deployRecipientsDraft)
@@ -114,7 +124,10 @@ export function SecurityScreen() {
 			await refresh({ syncDeployRecipientsDraft: true })
 			notify({ color: 'green', message: 'Deploy recipients saved' })
 		} catch (cause) {
-			notify({ color: 'red', message: rpcErrorMessage(cause, 'Failed to save deploy recipients') })
+			notify({
+				color: 'red',
+				message: runtimeErrorMessage(cause, 'Failed to save deploy recipients'),
+			})
 		} finally {
 			setBusy(null)
 		}
@@ -129,7 +142,7 @@ export function SecurityScreen() {
 		)
 	}
 
-	if (error || !overview || !adminAccess || !vault) {
+	if (error || !overview || !adminAccess) {
 		return (
 			<ErrorState
 				title="Security state unavailable"
@@ -139,10 +152,31 @@ export function SecurityScreen() {
 		)
 	}
 
+	const failedEvents = events.filter((event) => event.status === 'failure').length
+	if (!vault) {
+		return (
+			<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
+				<SecurityToolbar
+					adminAccess={adminAccess}
+					failedEvents={failedEvents}
+					namespaceCount={0}
+					onRefresh={() => void refresh()}
+					refreshing={refreshing}
+					totalNamespaces={0}
+					vault={null}
+				/>
+				<EmptyState
+					title="Vault 未启用"
+					description="当前 Runtime 未安装 Vault capability；管理访问与安全审计仍可使用。"
+					minHeight="100%"
+				/>
+			</Stack>
+		)
+	}
+
 	const inventory = summarizeInventory(vault)
 	const deployRecipientsSaved = formatRecipientsDraft(vault.deploy.recipients)
 	const deployRecipientsDirty = deployRecipientsDraft !== deployRecipientsSaved
-	const failedEvents = events.filter((event) => event.status === 'failure').length
 	const totalNamespaces = vault.namespaces?.length ?? 0
 	return (
 		<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>

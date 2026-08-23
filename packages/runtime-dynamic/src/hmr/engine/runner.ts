@@ -366,7 +366,7 @@ export class HmrRunner {
 	private async maybePatchFetchModuleResult(_data: unknown[], result: unknown): Promise<unknown> {
 		// For "bridge packages", we intentionally prime runner exports to preserve host singleton identity.
 		// Vite can mark modules as `invalidate: true` during fetch (even when cached=false), which would
-		// wipe our primed `promise/exports` and force re-evaluation (leading to duplicate @pluxel/context).
+		// wipe our primed `promise/exports` and force re-evaluation of a bridged singleton package.
 		if (!result || typeof result !== 'object') return result
 		if ('externalize' in (result as Record<string, unknown>)) return result
 
@@ -411,12 +411,6 @@ export class HmrRunner {
 
 		const rawId = unwrapViteId(url)
 		const canonicalId = cleanUrl(rawId)
-		if (
-			process.env.PLUXEL_HMR_DEBUG_FETCH === '1' &&
-			(canonicalId.includes('/packages/context/') || canonicalId.includes('packages/context/'))
-		) {
-			console.error('[hmr:runner] fetchModule', { url, canonicalId, importer })
-		}
 		if (isBarePackageSpecifier(canonicalId)) {
 			const decision = await this._hostModules?.classifySpecifier(canonicalId, importer)
 			return decision ? await this.externalizeHostModule(decision) : null

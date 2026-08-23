@@ -1,79 +1,113 @@
 import { describe, expect, it } from 'vitest'
-import { materializeAddress } from '../src/app/plugins/pluginOverview'
+import type { PluginGroup, PluginsListOutput, RuntimeManagementClient } from '@pluxel/runtime/web'
+import {
+	buildPluginOverview,
+	PluginOverviewResource,
+} from '../src/app/plugins/pluginOverviewResource'
 
-describe('plugin overview address materialization', () => {
-	it('demands both entry variants before materializing a package-root address', () => {
-		const reads: string[] = []
-		const address = materializeAddress({
-			definition: {
-				entry: {
-					get kind() {
-						reads.push('kind')
-						return 'package-root'
-					},
-					get packageName() {
-						reads.push('packageName')
-						return '@pluxel/example'
-					},
-					get sourceSpace() {
-						reads.push('sourceSpace')
-						return null
-					},
-					get path() {
-						reads.push('path')
-						return null
-					},
-				},
-				exportName: 'ExamplePlugin',
-			},
-			variant: 'default',
-			forkId: null,
-		})
+const address = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@pluxel/example' },
+		exportName: 'ExamplePlugin',
+	},
+	variant: 'default',
+} as const
 
-		expect(reads).toEqual(['kind', 'packageName', 'sourceSpace', 'path'])
-		expect(address).toEqual({
-			definition: {
-				entry: { kind: 'package-root', packageName: '@pluxel/example' },
-				exportName: 'ExamplePlugin',
+const plugins = {
+	plugins: [
+		{
+			address,
+			reference: '@pluxel/example#ExamplePlugin',
+			route: 'v1/package/ExamplePlugin/@pluxel/example',
+			displayName: 'ExamplePlugin',
+			label: { title: 'Example', qualifier: '@pluxel/example', text: 'Example' },
+			rootExportName: 'ExamplePlugin',
+			isRunning: true,
+			isEnabled: true,
+			lifecycleStage: 'running',
+			availability: 'available',
+			issues: [],
+			source: {
+				kind: 'package',
+				moduleId: '@pluxel/example',
+				packageName: '@pluxel/example',
+				version: '1.0.0',
+				tag: null,
 			},
-			variant: 'default',
+		},
+	],
+	summary: { total: 1, running: 1, stopped: 0, disabled: 0 },
+} satisfies PluginsListOutput
+
+const groups = [
+	{
+		groupId: 'examples',
+		name: 'Examples',
+		nodes: [
+			{
+				address,
+				reference: '@pluxel/example#ExamplePlugin',
+				route: 'v1/package/ExamplePlugin/@pluxel/example',
+				displayName: 'ExamplePlugin',
+				label: 'Example',
+				rootExportName: 'ExamplePlugin',
+			},
+		],
+	},
+] satisfies readonly PluginGroup[]
+
+describe('plugin overview resource', () => {
+	it('uses canonical routes as ids and catalog labels as display text', () => {
+		const overview = buildPluginOverview(plugins, groups)
+
+		expect(overview.status.statuses[0]).toMatchObject({
+			id: 'v1/package/ExamplePlugin/@pluxel/example',
+			label: 'Example',
+			address,
 		})
+		expect(overview.groups).toEqual(groups)
+		expect(Object.isFrozen(overview)).toBe(true)
+		expect(Object.isFrozen(overview.status.statuses)).toBe(true)
 	})
 
-	it('materializes a forked source-entry address', () => {
-		expect(
-			materializeAddress({
-				definition: {
-					entry: {
-						kind: 'source-entry',
-						packageName: null,
-						sourceSpace: 'app',
-						path: 'plugins/plugin.ts',
-					},
-					exportName: 'SourcePlugin',
+	it('deduplicates in-flight reads, honors TTL, and keeps the last good snapshot', async () => {
+		let now = 1_000
+		let pluginReads = 0
+		let groupReads = 0
+		let fail = false
+		const client = {
+			plugins: {
+				list: async () => {
+					pluginReads += 1
+					if (fail) throw new Error('offline')
+					return plugins
 				},
-				variant: 'fork',
-				forkId: 'secondary',
-			}),
-		).toEqual({
-			definition: {
-				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/plugin.ts' },
-				exportName: 'SourcePlugin',
 			},
-			variant: 'fork',
-			forkId: 'secondary',
-		})
-	})
-
-	it('waits for the selected entry field instead of parsing a partial response', () => {
-		expect(
-			materializeAddress({
-				definition: {
-					entry: { kind: 'package-root', sourceSpace: null, path: null },
-					exportName: 'ExamplePlugin',
+			groups: {
+				list: async () => {
+					groupReads += 1
+					return groups
 				},
-				variant: 'default',
-			}),
-		).toBeNull()
+			},
+		} as unknown as RuntimeManagementClient
+		const resource = new PluginOverviewResource(client, () => now)
+
+		const first = resource.load()
+		const duplicate = resource.load()
+		expect(duplicate).toBe(first)
+		await first
+		expect([pluginReads, groupReads]).toEqual([1, 1])
+
+		now += 10_000
+		await resource.load()
+		expect([pluginReads, groupReads]).toEqual([1, 1])
+
+		fail = true
+		await resource.load(true)
+		expect(resource.getSnapshot()).toMatchObject({
+			overview: expect.any(Object),
+			isLoading: false,
+			error: 'offline',
+		})
 	})
 })

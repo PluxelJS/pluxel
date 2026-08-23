@@ -275,12 +275,6 @@ function validateOperation(
 		}
 		case 'set-dependency-override': {
 			const key = overrideKey(operation.consumer, operation.requirement)
-			if (!operation.provider) {
-				removeOverride(state, key)
-				return
-			}
-			const existing = state.dependencyOverrides.get(key)?.providerAddress
-			if (existing && pluginNodeAddressEqual(existing, operation.provider)) return
 			const consumer = requireAvailableNode(
 				catalog,
 				state,
@@ -299,6 +293,12 @@ function validateOperation(
 					message: 'Dependency requirement does not exist on the consumer',
 				})
 			}
+			if (!operation.provider) {
+				removeOverride(state, key)
+				return
+			}
+			const existing = state.dependencyOverrides.get(key)?.providerAddress
+			if (existing && pluginNodeAddressEqual(existing, operation.provider)) return
 			const provider = requireAvailableNode(
 				catalog,
 				state,

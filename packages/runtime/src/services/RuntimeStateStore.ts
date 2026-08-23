@@ -1,6 +1,5 @@
 import {
 	type Context as PluxelContext,
-	RootService,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
 	pluginDefinitionIndexKey,
@@ -83,15 +82,6 @@ export {
 	setPluginsEnabled,
 } from './RuntimeStateHelpers'
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Config {
-			runtimeState?: RuntimeStateStoreConfig
-		}
-	}
-}
-
-@RootService({ key: 'runtimeState' })
 export class RuntimeStateStore {
 	public readonly ready: Promise<void>
 	public isReady = false
@@ -607,7 +597,7 @@ function freezeNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
 }
 
 function defaultRuntimeStateStoreMode(
-	capability: PluxelContext.RootServices['persistence']['capability'],
+	capability: PluxelContext['root']['persistence']['capability'],
 ): RuntimeStateStoreMode {
 	if (capability === 'readonly') return 'readonly'
 	return 'file'

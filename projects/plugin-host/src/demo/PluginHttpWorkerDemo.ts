@@ -62,7 +62,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			},
 		)
 
-		this.ctx.workbench.mount(HttpWorkerWorkbench, {})
+		this.ctx.workbench?.mount(HttpWorkerWorkbench, {})
 	}
 
 	// Public route behavior.

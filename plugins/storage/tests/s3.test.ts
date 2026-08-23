@@ -77,31 +77,34 @@ describe('S3Plugin remote backend', () => {
 	})
 
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
-		await withRuntimeHost(async (host) => {
-			addEnabled(host, [S3VaultSeeder])
-			await host.commit()
-			await host
-				.require(S3VaultSeeder)
-				.ctx.vault.kv({ namespace: 'shared-secrets' })
-				.set('assets.s3', {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [S3VaultSeeder])
+				await host.commit()
+				await host
+					.require(S3VaultSeeder)
+					.ctx.vault!.kv({ namespace: 'shared-secrets' })
+					.set('assets.s3', {
+						accessKeyId: 'access-id',
+						secretAccessKey: 'secret-value',
+					})
+
+				addEnabled(host, [S3Plugin, S3Consumer])
+				host.cfg(S3Plugin).set({
+					...remoteConfig({
+						type: 'vault',
+						key: 'assets.s3',
+						namespace: 'shared-secrets',
+					}),
+				})
+				await host.commit()
+				expect(s3Mock.configs.at(-1)).toMatchObject({
 					accessKeyId: 'access-id',
 					secretAccessKey: 'secret-value',
 				})
-
-			addEnabled(host, [S3Plugin, S3Consumer])
-			host.cfg(S3Plugin).set({
-				...remoteConfig({
-					type: 'vault',
-					key: 'assets.s3',
-					namespace: 'shared-secrets',
-				}),
-			})
-			await host.commit()
-			expect(s3Mock.configs.at(-1)).toMatchObject({
-				accessKeyId: 'access-id',
-				secretAccessKey: 'secret-value',
-			})
-		})
+			},
+			{ vault: {} },
+		)
 	})
 
 	it('isolates config, clients, and lifecycle across two forks of one provider', async () => {

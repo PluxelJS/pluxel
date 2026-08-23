@@ -5,10 +5,10 @@ import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+	RUNTIME_ADMIN_ACCESS_BASE,
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_TRANSPORT_PATHS,
-	RUNTIME_ADMIN_ACCESS_BASE,
-} from '@pluxel/runtime/web/paths'
+} from '../../src/web/paths'
 
 function req(url: string, init?: RequestInit) {
 	return new Request(url, init)
@@ -28,9 +28,9 @@ function jsonResponse(body: unknown, status = 200): Response {
 function createAdminHost(config: Parameters<typeof createRuntimeHost>[0] = {}): RuntimeHost {
 	return createRuntimeHost({
 		...config,
-		adminAccess: {
-			...config.adminAccess,
-			enabled: true,
+		management: {
+			...config.management,
+			access: config.management?.access ?? { exposure: 'private' },
 		},
 	})
 }
@@ -98,49 +98,13 @@ describe('Host adminAccess gate', () => {
 	})
 
 	it('fails fast when public admin access has no OIDC config', async () => {
-		host = createRuntimeHost({
-			adminAccess: {
-				enabled: true,
-				exposure: 'public',
-			},
-		})
-
-		expect(() => host!.ctx.http).toThrow('Public admin access requires adminAccess.oidc.')
-	})
-
-	it('treats disabled admin access as private even when public OIDC is staged', async () => {
-		const oidc = await installOidcIssuer('future')
-		host = createRuntimeHost({
-			adminAccess: {
-				enabled: false,
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
+		expect(() =>
+			createRuntimeHost({
+				management: {
+					access: { exposure: 'public' } as any,
 				},
-			},
-		})
-
-		expect(await host.ctx.adminAccess.describe()).toMatchObject({
-			exposure: 'private',
-			provider: 'none',
-			allow: true,
-		})
-	})
-
-	it('does not require OIDC while public access is only staged for disabled admin access', async () => {
-		host = createRuntimeHost({
-			adminAccess: {
-				enabled: false,
-				exposure: 'public',
-			},
-		})
-
-		expect(await host.ctx.adminAccess.describe()).toMatchObject({
-			exposure: 'private',
-			provider: 'none',
-			allow: true,
-		})
+			}),
+		).toThrow('Public management access requires management.access.oidc.')
 	})
 
 	it('does not permanently cache failed OIDC discovery', async () => {
@@ -158,12 +122,13 @@ describe('Host adminAccess gate', () => {
 			}),
 		)
 		host = createRuntimeHost({
-			adminAccess: {
-				enabled: true,
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
+			management: {
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+					},
 				},
 			},
 		})
@@ -183,12 +148,14 @@ describe('Host adminAccess gate', () => {
 	it('allows public admin requests with a valid OIDC bearer token', async () => {
 		const oidc = await installOidcIssuer('valid')
 		host = createAdminHost({
-			adminAccess: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
-					requiredClaims: { groups: 'admins' },
+			management: {
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+						requiredClaims: { groups: 'admins' },
+					},
 				},
 			},
 		})
@@ -225,26 +192,26 @@ describe('Host adminAccess gate', () => {
 	it('rejects valid OIDC tokens that miss required claims', async () => {
 		const oidc = await installOidcIssuer('claims')
 		host = createAdminHost({
-			adminAccess: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
-					requiredClaims: { groups: 'admins' },
+			management: {
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+						requiredClaims: { groups: 'admins' },
+					},
 				},
 			},
 		})
 		const bearer = await oidc.token({ groups: ['readers'] })
 
 		const res = await host.ctx.http.fetch(
-			req(internalUrl(RUNTIME_TRANSPORT_PATHS.graphql), {
+			req(internalUrl(RUNTIME_TRANSPORT_PATHS.rpc), {
 				method: 'POST',
 				headers: {
 					accept: 'application/json',
 					authorization: `Bearer ${bearer}`,
-					'content-type': 'application/json',
 				},
-				body: JSON.stringify({ query: '{ _empty }' }),
 			}),
 		)
 		expect(res.status).toBe(401)
@@ -254,11 +221,13 @@ describe('Host adminAccess gate', () => {
 	it('renders a static OIDC admin access page instead of a local login form', async () => {
 		const oidc = await installOidcIssuer('page')
 		host = createAdminHost({
-			adminAccess: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
+			management: {
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+					},
 				},
 			},
 		})

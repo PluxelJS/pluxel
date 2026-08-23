@@ -327,8 +327,8 @@ Guard 只保存：
 
 ## 6. 与 Context/DI 的集成（落地方式）
 
-- `@Injectable({ key: "effects", methods: [...] })`
-- 每个 `Context` 持有一个 `EffectsService` 实例（由于 isolate，天然每插件隔离）
+- Core Context plan 把 effects 安装为 generation-scoped capability
+- 每个 Plugin generation 持有一个 `EffectsService`；PluginPart 从它建立 owner-bound child scope
 - Host 卸载流程在合适时机调用 `await ctx.effects.dispose()`
 
 > 重要：effects 不负责 Plugin graph transaction。

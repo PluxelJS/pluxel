@@ -1,112 +1,48 @@
-import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
-import { RUNTIME_INTERNAL_API_BASE } from './paths'
-import type { WorkbenchRpcView, RuntimeRpcApi } from './protocol'
+import type { RpcStub } from 'capnweb'
+import type { RuntimeRpcApi, WorkbenchRpcView } from './internal-protocol'
+import {
+	createRpcClient as createGenericRpcClient,
+	createRpcClientFactory as createGenericRpcClientFactory,
+	createRpcTimeout,
+	disposeRpcClient,
+	invokeRpc as invokeGenericRpc,
+	rpcErrorMessage,
+	type RpcClientCreateOptions,
+	type RpcClientFactory as GenericRpcClientFactory,
+} from './rpc-session'
+
+export { rpcErrorMessage }
+export type { RpcClientCreateOptions }
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
-export type RpcClientCreateOptions = {
-	signal?: AbortSignal
-	/** Ensure cookies are sent (browser); defaults to `same-origin`. */
-	credentials?: RequestCredentials
-}
-
 export function createRpcClient(
-	rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`,
+	rpcBase?: string,
 	options: RpcClientCreateOptions = {},
 ): RuntimeRpcStub {
-	const signal = options.signal
-	const credentials = options.credentials
-
-	// When passing a Request, capnweb will reuse its signal/headers/credentials.
-	// It still overrides method/body in its internal fetch() call.
-	const urlOrRequest =
-		signal || credentials !== undefined
-			? new Request(rpcBase, {
-					signal,
-					credentials: credentials ?? 'same-origin',
-					headers: {
-						// Helps servers/proxies treat this as a non-JSON RPC payload.
-						'Content-Type': 'text/plain; charset=utf-8',
-					},
-				})
-			: rpcBase
-	return newHttpBatchRpcSession<RuntimeRpcApi>(urlOrRequest as any)
+	return createGenericRpcClient<RuntimeRpcApi>(rpcBase, options)
 }
 
 export type RpcClientFactory = (options?: RpcClientCreateOptions) => RuntimeRpcStub
 
-export function createRpcClientFactory(
-	rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`,
-): RpcClientFactory {
-	// Capnweb batch RPC sessions must be short-lived per call; reusing a closed
-	// session will surface "Batch RPC request ended." errors in consumers.
-	return (options) => createRpcClient(rpcBase, options)
-}
-
-function disposeRpcClient(client: RuntimeRpcStub) {
-	const disposer =
-		(client as any)[Symbol.dispose] ??
-		(client as any)[Symbol.asyncDispose] ??
-		(client as any).dispose
-	if (typeof disposer === 'function') {
-		try {
-			disposer.call(client)
-		} catch {}
-	}
-}
-
-const DEFAULT_RPC_TIMEOUT_MS = 20_000
-
-function createTimeout(timeoutMs: number) {
-	if (timeoutMs <= 0) return { signal: undefined as AbortSignal | undefined, clear: () => {} }
-	if (typeof AbortController === 'undefined')
-		return { signal: undefined as AbortSignal | undefined, clear: () => {} }
-
-	const ctrl = new AbortController()
-	const timer = setTimeout(() => {
-		try {
-			ctrl.abort(new Error(`[runtime RPC] timeout after ${timeoutMs}ms`))
-		} catch {
-			try {
-				ctrl.abort()
-			} catch {}
-		}
-	}, timeoutMs)
-
-	return {
-		signal: ctrl.signal,
-		clear: () => clearTimeout(timer),
-	}
+export function createRpcClientFactory(rpcBase?: string): RpcClientFactory {
+	return createGenericRpcClientFactory<RuntimeRpcApi>(
+		rpcBase,
+	) as GenericRpcClientFactory<RuntimeRpcApi>
 }
 
 export async function invokeRpc<T>(
 	runner: (client: RuntimeRpcStub) => Promise<T>,
 	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
 ): Promise<T> {
-	const base = options?.rpcBase ?? `${RUNTIME_INTERNAL_API_BASE}/rpc`
-	const { signal, clear } = createTimeout(options?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
-	const client = createRpcClient(base, { signal, credentials: options?.credentials })
-	try {
-		return await runner(client)
-	} catch (error) {
-		console.error('[runtime RPC] 调用失败', error)
-		throw error
-	} finally {
-		clear()
-		disposeRpcClient(client)
-	}
-}
-
-export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): string {
-	if (error instanceof Error) return error.message || fallback
-	if (typeof error === 'string') return error
-	return fallback
+	return await invokeGenericRpc<RuntimeRpcApi, T>(runner, options)
 }
 
 export function createWorkbenchRpcView(
 	raw: RpcClientFactory,
-	defaults: RpcClientCreateOptions = {},
+	options: RpcClientCreateOptions & { assertActive?: () => void } = {},
 ): WorkbenchRpcView {
+	const { assertActive, ...defaults } = options
 	// Important: capnweb http-batch sessions are short-lived. If we return the raw
 	// stub object and users memoize it (e.g. `const rpc = transport.extensions.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
@@ -130,7 +66,8 @@ export function createWorkbenchRpcView(
 					if (cached) return cached
 
 					const fn = (...args: any[]) => {
-						const { signal, clear } = createTimeout(DEFAULT_RPC_TIMEOUT_MS)
+						assertActive?.()
+						const { signal, clear } = createRpcTimeout()
 						const client = raw({ ...defaults, signal })
 						// IMPORTANT: preserve `this` grantId for capnweb stubs.
 						// Optional-chaining call like `obj?.[method]?.()` can lose the receiver,

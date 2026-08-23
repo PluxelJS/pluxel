@@ -1,14 +1,14 @@
 import { useForm } from '@tanstack/react-form'
 import { useMemo } from 'react'
 import type { ObjectLikeSchema } from '../../../core'
-import { getDefaults, type InferOutput } from 'valibot'
+import { getDefaults } from 'valibot'
 
-export function useAppForm<S extends ObjectLikeSchema, TValues = InferOutput<S>>(
-	schema: S,
+export function useAppForm<TValues>(
+	schema: ObjectLikeSchema | undefined,
 	formOpts?: { defaultValues?: TValues } & Record<string, unknown>,
 ) {
 	const defaultValues = useMemo(
-		() => (formOpts?.defaultValues ?? getDefaults(schema)) as TValues,
+		() => (formOpts?.defaultValues ?? (schema === undefined ? {} : getDefaults(schema))) as TValues,
 		[schema, formOpts?.defaultValues],
 	)
 
@@ -20,5 +20,5 @@ export function useAppForm<S extends ObjectLikeSchema, TValues = InferOutput<S>>
 		[defaultValues, formOpts],
 	)
 
-	return useForm(opts as any)
+	return useForm(opts)
 }

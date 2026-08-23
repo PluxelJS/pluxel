@@ -1,4 +1,4 @@
-import { Context } from '@pluxel/context'
+import { createCoreRootContext } from '../src/context/core-plan'
 import { describe, expect, it } from 'vitest'
 import { BasePlugin } from '../src/plugins/composition/BasePlugin'
 import type { PluginConstructor } from '../src/plugins/types'
@@ -91,7 +91,7 @@ function candidate(
 
 describe('Plugin definition cost model', () => {
 	it('records 1,000 fork additions and removals as one O(k) family delta', () => {
-		const definitions = new PluginDefinitions(() => new Context({ name: 'family-delta' }))
+		const definitions = new PluginDefinitions(() => createCoreRootContext({ name: 'family-delta' }))
 		const targetAddress = definition('LargeFamily')
 		const definitionSlot = definitions.internDefinition(targetAddress)
 		class Target extends BasePlugin {}
@@ -141,7 +141,7 @@ describe('Plugin definition cost model', () => {
 	})
 
 	it('replaces one definition through its O(k) materialized-node index without scanning families', () => {
-		const definitions = new PluginDefinitions(() => new Context({ name: 'cost-model' }))
+		const definitions = new PluginDefinitions(() => createCoreRootContext({ name: 'cost-model' }))
 		const targetAddress = definition('Target')
 		class Target extends BasePlugin {}
 		class TargetReplacement extends BasePlugin {}

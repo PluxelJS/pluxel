@@ -3,6 +3,7 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/runtime'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
+import { requireLoaderService } from '../../src/context-plan.ts'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '../../src/hmr/host.ts'
 
 let cleanupCount = 0
@@ -53,6 +54,7 @@ describe('dynamic host eager service preflight', () => {
 					snapshot: { enabled: [pluginNodeAddressOf(DynamicVaultConsumerPlugin)] },
 				},
 				plugins: [DynamicVaultConsumerPlugin],
+				vault: {},
 			})
 			host = await bootPlannedLoaderHmrHost(plan)
 			await host.hmr.start()
@@ -67,7 +69,9 @@ describe('dynamic host eager service preflight', () => {
 				unlocked: true,
 			})
 			expect(
-				host.ctx.loader.api.registry.getCtor(pluginNodeAddressOf(DynamicVaultConsumerPlugin)),
+				requireLoaderService(host.ctx).api.registry.getCtor(
+					pluginNodeAddressOf(DynamicVaultConsumerPlugin),
+				),
 			).toBe(DynamicVaultConsumerPlugin)
 			await host.stop()
 			expect(cleanupCount).toBe(1)

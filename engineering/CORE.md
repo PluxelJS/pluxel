@@ -6,7 +6,7 @@
 
 - `PluginDefinitionSlot`、`PluginNodeSlot` 与结构化 entry/definition/node address；
 - 每个 evaluated constructor 唯一且可重复读取的 frozen lowered candidate、immutable definition/node record 与 monotonic definition revision；
-- `Context`、service registry、caller-bound dependency view 与 DI；
+- immutable Context capability plan、owner projection、caller-bound dependency view 与 DI；
 - node materialize/dematerialize/restart、definition-wide replacement、provider default、dependency override 与原子 commit；
 - provider-first start、consumer-first stop、failure propagation 与 `CommitSummary`；
 - per-generation effects、owner invocation gate 与 late `init()` cleanup；
@@ -21,6 +21,33 @@
 - workspace scan、package install、Vite、HMR；
 - optional package import、安装、retry 或 absent-module protocol；
 - 进程退出、健康检查和部署策略。
+
+## Context capability kernel
+
+Context 是由宿主在 root construction 时编译的封闭能力投影，不是业务 DI registry。descriptor、installation、plan 与
+construction helper 只存在于 Core internal 入口；Runtime 集中组合官方能力，业务 package 继续通过 Plugin graph 表达依赖，
+不能在 module evaluation 时扩展 Context。
+
+plan 为每项 descriptor 分配 numeric slot，并按 scope 预编译 resolver：
+
+| Scope      | backing identity            | view identity                       |
+| ---------- | --------------------------- | ----------------------------------- |
+| root       | 每个 host root 一份         | 全部 Context 共享                   |
+| generation | 每次 Plugin generation 一份 | PluginPart 与 dependency view 共享  |
+| owner-view | root backend 一份           | 每个 Plugin、Part、caller edge 独立 |
+
+plan-local prototype getter 直接调用预编译 resolver，再读取 dense array slot；cached getter 不做 Map/string lookup、scope branch
+或闭包分配。descriptor identity 的 `Map` 只服务显式 internal resolve，将 object identity 编译为 numeric slot。
+`Object.create(null)` 只能提供 string-key lookup，不能替代 descriptor object identity；当前趋势探针位于
+`packages/core/bench/contextCapability.bench.ts`。
+
+每个 host 的 capability factory closure 只捕获自身已解析、冻结的输入。Context 不暴露 host config，也不持有可被冷 factory
+稍后观察到的 mutable config object。caller-derived view 共享 provider root/generation backing，但拥有独立 owner-view cache 和
+readonly caller pin；它不是 containment parent，因此 caller A/B 并发冷访问不会互相污染 owner attribution。
+
+带 `eager: true` 或 `prepare` 的 installation 在 Plugin lifecycle 前由宿主聚合：前者只诚实表达需要提前构造 root backing，
+后者再运行真实 leaf startup hook。同一成功 attempt 并发共享，失败清除 task 后允许下一次 host startup attempt 重试。
+`prepare` 不得重入聚合器；能力依赖必须在 factory 中通过 slot resolve 表达，不使用空 hook 模拟 eager construction。
 
 ## Identity 与 DI 不变量
 
@@ -63,6 +90,7 @@ closure 与 dependent traversal 使用可复用 epoch marks 和 sparse work queu
 ```sh
 pnpm --filter @pluxel/core bench:caller-view
 pnpm --filter @pluxel/core bench:fork-cost
+pnpm --filter @pluxel/core bench:context
 ```
 
 benchmark 不承诺跨机器延迟阈值；架构契约是 absent read 零物化、definition family 枚举 O(k)、固定 k update 不扫描/复制无关 graph，

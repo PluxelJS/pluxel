@@ -1,15 +1,12 @@
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { Injectable, type Context as CoreContext } from '@pluxel/core'
-import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
+import type { Context as CoreContext } from '@pluxel/core'
 import {
 	readNodeModuleDeclaration,
 	type NodeModuleCleanup,
 	type NodeModuleDeclaration,
 	type NodeModuleSetup,
 } from './node-module'
-
-const serviceName = 'nodeModules' as const
 
 export type NodeModuleSourceSubscription = Readonly<{
 	url: URL
@@ -24,7 +21,17 @@ export type NodeModuleSourceBinder = (
 
 type RootState = {
 	sourceBinder?: NodeModuleSourceBinder
+	readonly artifacts: NodeModuleArtifactHostOptions
 }
+
+export type NodeModuleArtifactHostOptions = Readonly<{
+	root?: string
+	resolve?: (
+		root: CoreContext,
+		owner: import('@pluxel/core').PluginNodeAddress,
+		artifactKey: string,
+	) => string | null | Promise<string | null>
+}>
 
 type ConsumerLease = {
 	active: boolean
@@ -37,34 +44,14 @@ type ConsumerLease = {
 
 const rootStates = new WeakMap<NodeModuleService, RootState>()
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: NodeModuleService
-		}
-		interface Config {
-			/** @internal Deployment root containing frozen Node module artifacts. */
-			nodeModuleArtifactRoot?: string
-			/** @internal Dynamic hosts resolve Node module artifacts from plugin packages. */
-			nodeModuleArtifactResolver?: (
-				root: import('@pluxel/core').Context,
-				owner: import('@pluxel/core').PluginNodeAddress,
-				artifactKey: string,
-			) => string | null | Promise<string | null>
-		}
-	}
-}
-
-@Injectable({ key: serviceName })
 export class NodeModuleService {
 	constructor(
 		public readonly ctx: CoreContext,
-		_cfg: unknown,
-	) {}
-
-	/** @internal Bind consumer effects while retaining the root source/build state. */
-	[OWNER_CONTEXT_BIND](owner: CoreContext): NodeModuleService {
-		return new NodeModuleService(owner, undefined)
+		options?: NodeModuleArtifactHostOptions,
+	) {
+		if (ctx === ctx.root) {
+			rootStates.set(this, { artifacts: options ?? Object.freeze({}) })
+		}
 	}
 
 	async use(declaration: NodeModuleDeclaration, setup: NodeModuleSetup): Promise<void> {
@@ -120,11 +107,8 @@ export class NodeModuleService {
 
 	private rootState(): RootState {
 		const rootService = this.ctx.root.nodeModules as NodeModuleService
-		let state = rootStates.get(rootService)
-		if (!state) {
-			state = {}
-			rootStates.set(rootService, state)
-		}
+		const state = rootStates.get(rootService)
+		if (!state) throw new Error('[pluxel/runtime] Node module root capability is unavailable')
 		return state
 	}
 
@@ -136,14 +120,11 @@ export class NodeModuleService {
 			)
 		}
 		const root = this.ctx.root
-		const configuredRoot = String(root.config.nodeModuleArtifactRoot ?? '').trim()
+		const artifacts = this.rootState().artifacts
+		const configuredRoot = artifacts.root ?? ''
 		const file = configuredRoot
 			? `${configuredRoot.replace(/[\\/]$/, '')}/${descriptor.artifactKey}.mjs`
-			: await root.config.nodeModuleArtifactResolver?.(
-					root,
-					this.ctx.pluginInfo.nodeAddress,
-					descriptor.artifactKey,
-				)
+			: await artifacts.resolve?.(root, this.ctx.pluginInfo.nodeAddress, descriptor.artifactKey)
 		if (!file) {
 			throw new Error(
 				`[pluxel/runtime] packaged Node module artifact not found: ${descriptor.artifactKey}`,
@@ -213,23 +194,4 @@ export class NodeModuleService {
 	private reportUpdateError(error: unknown): void {
 		this.ctx.logger.error('failed to update Node module consumer', { error })
 	}
-}
-
-/** @internal Keep the owner-bearing Node module view isolated per plugin Context. */
-export function withNodeModulePluginContext<T extends CoreContext.Config>(config: T): T {
-	const registry =
-		config.registry && typeof config.registry === 'object'
-			? (config.registry as Record<string, unknown>)
-			: {}
-	const current = Array.isArray(registry.pluginCTXIsolate)
-		? (registry.pluginCTXIsolate as unknown[])
-		: []
-	if (current.includes(NodeModuleService)) return config
-	return {
-		...config,
-		registry: {
-			...registry,
-			pluginCTXIsolate: [...current, NodeModuleService],
-		},
-	} as T
 }

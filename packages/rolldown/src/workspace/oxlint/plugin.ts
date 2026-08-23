@@ -53,11 +53,6 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'configs-no-removed-dsl': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
 	'no-direct-logtape-get-logger': {
 		category: 'logging',
 		buildCritical: false,
@@ -74,11 +69,6 @@ export const pluxelRulePolicy = {
 		remediation: 'diagnostic',
 	},
 	'plugin-constructor-canonical-dependencies': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'plugin-no-removed-feature-api': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',

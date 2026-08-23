@@ -9,11 +9,7 @@ import { runCli } from 'tegami/cli'
 import { github } from 'tegami/plugins/github'
 import { repositoryPackages, tegamiIgnoredPackageNames } from './repository-packages.mjs'
 
-const ignoredPackages = [
-	...tegamiIgnoredPackageNames(repositoryPackages),
-	/^@gqlens\//,
-	/^@worksplit\//,
-]
+const ignoredPackages = [...tegamiIgnoredPackageNames(repositoryPackages), /^@worksplit\//]
 const execFileAsync = promisify(execFile)
 
 export const paper = tegami({

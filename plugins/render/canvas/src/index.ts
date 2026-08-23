@@ -131,7 +131,7 @@ export class CanvasPlugin extends BasePlugin {
 			},
 			{ tag: 'canvas-generation' },
 		)
-		this.ctx.workbench.mount(CanvasWorkbench, {
+		this.ctx.workbench?.mount(CanvasWorkbench, {
 			selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
 		})
 	}

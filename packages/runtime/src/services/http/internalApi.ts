@@ -26,15 +26,7 @@ import { createElysiaApp } from './elysia'
 
 type BaseElysiaApp = any
 type InternalApiOptions = {
-	web?: boolean
-	rpc?: boolean
-	sse?: boolean
-	graphql?: boolean
-}
-
-function resolveRequestKind(path: string): 'api' | 'graphql' {
-	const internalPath = toInternalApiPath(path)
-	return internalPath === RUNTIME_TRANSPORT_PATHS.graphql ? 'graphql' : 'api'
+	workbench: boolean
 }
 
 function isSecurityApiPath(path: string): boolean {
@@ -68,7 +60,11 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 	return app.onBeforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
-		const state = await pluginCtx.root.adminAccess.authorize({ request })
+		const adminAccess = pluginCtx.root.adminAccess
+		if (!adminAccess) {
+			throw new Error('[pluxel/runtime] Internal management API requires adminAccess')
+		}
+		const state = await adminAccess.authorize({ request })
 
 		if (isSecurityApiPath(path)) {
 			if (canAccessSecurityAdmin(state)) return undefined
@@ -113,17 +109,16 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 			}
 		}
 
-		const kind = resolveRequestKind(path)
 		if (state.allow) return undefined
 
 		const redirectPath = resolveAdminAccessRedirectPath(
 			buildAdminAccessRedirectPath,
 			request,
-			kind,
+			'api',
 			state.reason,
 		)
 		pluginCtx.logger.warn('Blocked admin access gate', {
-			kind,
+			kind: 'api',
 			path,
 			method,
 			reason: state.reason,
@@ -132,24 +127,46 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 		Object.assign(set.headers, createAdminAccessBlockedHeaders(redirectPath, state.reason))
 		return status(
 			401,
-			createAdminAccessBlockedPayload(path, method, kind, redirectPath, state.reason),
+			createAdminAccessBlockedPayload(path, method, 'api', redirectPath, state.reason),
 		)
 	}) as BaseElysiaApp
 }
 
 function createInternalTransportPlugins(
 	ctx: PluginContext,
-	options: InternalApiOptions = {},
+	options: InternalApiOptions,
 ): BaseElysiaApp[] {
-	const web = options.web !== false
-	const rpc = options.rpc !== false
-	const sse = options.sse !== false
-	const graphql = options.graphql !== false
 	const plugins: BaseElysiaApp[] = [
 		createInternalPlugin(ctx, 'root', (app) => app.get('/', 'Pluxel runtime RPC ready')),
+		createInternalPlugin(ctx, 'rpc', (app) =>
+			app.all(
+				RUNTIME_TRANSPORT_PATHS.rpc,
+				async ({ pluginCtx, request, status }: any) => {
+					try {
+						return await newHttpBatchRpcResponse(request, new RuntimeRpcApi(pluginCtx))
+					} catch (error) {
+						pluginCtx.logger.error('RPC request failed', { error })
+						return status(500, 'Internal RPC error')
+					}
+				},
+				{ parse: 'none' },
+			),
+		),
+		createInternalPlugin(ctx, 'meta', (app) =>
+			metaRoutes(app as unknown as Parameters<typeof metaRoutes>[0]),
+		),
+		createInternalPlugin(ctx, 'security', (app) =>
+			securityRoutes(app as unknown as Parameters<typeof securityRoutes>[0]),
+		),
+		createInternalPlugin(ctx, 'debug', (app) =>
+			debugRoutes(app as unknown as Parameters<typeof debugRoutes>[0]),
+		),
+		createInternalPlugin(ctx, 'logs', (app) =>
+			logRoutes(app as unknown as Parameters<typeof logRoutes>[0]),
+		),
 	]
 
-	if (sse) {
+	if (options.workbench) {
 		plugins.push(
 			createInternalPlugin(ctx, 'sse', (app) =>
 				app.get(RUNTIME_TRANSPORT_PATHS.sse, (context: any) =>
@@ -157,29 +174,6 @@ function createInternalTransportPlugins(
 				),
 			),
 		)
-	}
-	if (rpc) {
-		plugins.push(
-			createInternalPlugin(ctx, 'rpc', (app) =>
-				app.all(
-					RUNTIME_TRANSPORT_PATHS.rpc,
-					async ({ pluginCtx, request, status }: any) => {
-						try {
-							return await newHttpBatchRpcResponse(request, new RuntimeRpcApi(pluginCtx))
-						} catch (error) {
-							pluginCtx.logger.error('RPC request failed', { error })
-							return status(500, 'Internal RPC error')
-						}
-					},
-					{ parse: 'none' },
-				),
-			),
-		)
-	}
-	if (graphql) {
-		plugins.push(ctx.internalGraphql.plugin())
-	}
-	if (web || rpc || sse) {
 		plugins.push(createInternalPlugin(ctx, 'workbench', workbenchRoutes))
 		plugins.push(
 			createInternalPlugin(ctx, 'workbench-resources', (app) =>
@@ -205,18 +199,6 @@ function createInternalTransportPlugins(
 					},
 				),
 			),
-			createInternalPlugin(ctx, 'meta', (app) =>
-				metaRoutes(app as unknown as Parameters<typeof metaRoutes>[0]),
-			),
-			createInternalPlugin(ctx, 'security', (app) =>
-				securityRoutes(app as unknown as Parameters<typeof securityRoutes>[0]),
-			),
-			createInternalPlugin(ctx, 'debug', (app) =>
-				debugRoutes(app as unknown as Parameters<typeof debugRoutes>[0]),
-			),
-			createInternalPlugin(ctx, 'logs', (app) =>
-				logRoutes(app as unknown as Parameters<typeof logRoutes>[0]),
-			),
 		)
 	}
 	return plugins
@@ -224,7 +206,7 @@ function createInternalTransportPlugins(
 
 export function createInternalApiPlugin(
 	ctx: PluginContext,
-	options: InternalApiOptions = {},
+	options: InternalApiOptions,
 ): BaseElysiaApp {
 	let app = applyInternalApiGuard(
 		createElysiaApp(ctx, {
@@ -241,7 +223,7 @@ export function createInternalApiPlugin(
 
 export function createInternalApiRoutes(
 	ctx: PluginContext,
-	options: InternalApiOptions = {},
+	options: InternalApiOptions,
 ): ElysiaBoundaryBuilder {
 	return () => createInternalApiPlugin(ctx, options)
 }

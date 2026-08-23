@@ -6,13 +6,13 @@ import { applyStatusActions } from '../../src/api/usecases/pluginStatus'
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import type {
 	ConfigResult,
+	ConfigPresentationResult,
 	EnsureForkResult,
 	PluginDependencyMutationResult,
 	PluginApplyReport,
 	PluginStatusAction,
 	PluginStatusMutationResult,
 	RemoveForkResult,
-	SchemaResult,
 } from '../../src/web/protocol'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
 
@@ -105,6 +105,43 @@ describe('runtime web control protocol', () => {
 		}
 	})
 
+	it('addresses dependency inspection and mutation by stable requirement identity', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			host.add([ManagedPlugin, ManagedProvider, ManagedProviderConsumer])
+			await host.commit()
+			const rpc = new RuntimeRpcApi(host.ctx)
+			const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
+			const requirement = pluginDefinitionAddressOf(ManagedProviderToken)
+
+			const inspection = await rpc.inspectPluginDependencies(consumer)
+			expect(inspection).toMatchObject({ ok: true, items: [{ requirement }] })
+			if (!inspection.ok) throw new Error(inspection.error)
+			expect(inspection.items[0]).not.toHaveProperty('index')
+			expect(inspection.items[0]).not.toHaveProperty('token')
+
+			await expect(
+				rpc.setPluginDependencyTarget({ consumer, index: 0, provider: null }),
+			).resolves.toMatchObject({ ok: false, code: 'invalid_input', state: 'unchanged' })
+			await expect(
+				rpc.setPluginDependencyTarget({
+					consumer,
+					requirement: pluginDefinitionAddressOf(ManagedPlugin),
+					provider: null,
+				}),
+			).resolves.toMatchObject({
+				ok: false,
+				code: 'requirement_not_found',
+				state: 'unchanged',
+			})
+			await expect(
+				rpc.setPluginDependencyTarget({ consumer, requirement, provider: null }),
+			).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('rejects unexpected programming failures instead of classifying their message', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
@@ -180,7 +217,7 @@ describe('runtime web control protocol', () => {
 		try {
 			const rpc = new RuntimeRpcApi(host.ctx)
 			const invalidNode = { variant: 'default' }
-			await expect(rpc.pluginSchema(invalidNode)).resolves.toMatchObject({
+			await expect(rpc.pluginConfigPresentation(invalidNode)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 			})
@@ -285,7 +322,10 @@ describe('runtime web control protocol', () => {
 
 	it('does not expose an internal-error catch-all in any control result', () => {
 		type ConfigInternal = Extract<ConfigResult, { ok: false; code: 'internal_error' }>
-		type SchemaInternal = Extract<SchemaResult, { ok: false; code: 'internal_error' }>
+		type PresentationInternal = Extract<
+			ConfigPresentationResult,
+			{ ok: false; code: 'internal_error' }
+		>
 		type DependencyInternal = Extract<
 			PluginDependencyMutationResult,
 			{ ok: false; code: 'internal_error' }
@@ -295,7 +335,7 @@ describe('runtime web control protocol', () => {
 		type StatusInternal = Extract<PluginStatusMutationResult, { ok: false; code: 'internal_error' }>
 
 		expectTypeOf<ConfigInternal>().toEqualTypeOf<never>()
-		expectTypeOf<SchemaInternal>().toEqualTypeOf<never>()
+		expectTypeOf<PresentationInternal>().toEqualTypeOf<never>()
 		expectTypeOf<DependencyInternal>().toEqualTypeOf<never>()
 		expectTypeOf<ForkInternal>().toEqualTypeOf<never>()
 		expectTypeOf<ForkRemoveInternal>().toEqualTypeOf<never>()

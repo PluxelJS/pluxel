@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/context'
+import type { Context } from '../../context/Context'
 
 export function pinContextValue(target: object, key: PropertyKey, value: unknown): void {
 	Object.defineProperty(target, key, {

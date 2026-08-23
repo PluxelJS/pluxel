@@ -86,19 +86,21 @@ serialized config bytes；当前契约不宣称适合无界 fork/config 基数�
 ## Toolchain metadata
 
 `configSourcePlugin()` 在 TypeScript class field lowering 前验证具体 `@Plugin`/`PluginPart` 各自最多一个非 `#private`
-`configs.use(ObjectSchema)` declaration，并写入 owner metadata：field name、schema 对象和可选 schema source。Plugin
+`configs.use(ObjectSchema)` declaration，并写入 owner metadata：field name、schema 对象和可选的诊断 source。Plugin
 semantic pass 同时 lower Part occurrence field path；这些 build helper 不是作者 API。
 
 core 按 path partition raw input，分别执行 owner/Part schema default、transform 与校验，再冻结 aggregate output。Plugin field
-只注入 root owner slice，每个 Part field只注入自己的 slice。runtime API 额外返回每个 declaration 的 path/source/defaults；
-Workbench 以 General/Part tabs 编辑这些 section，但提交、持久化和 server validation 仍指向同一个 Plugin node owner。
+只注入 root owner slice，每个 Part field只注入自己的 slice。runtime management API 把每个 declaration 编译成带 path、defaults
+和可移植 field node 的 version 1 presentation plan；无法表达的 node 显式成为 read-only `unsupported`，浏览器不执行 schema source。
+Workbench 可以按 General/Part sections 编辑，但提交、持久化和 server validation 仍指向同一个 Plugin node owner。
 Workbench Plane 不拥有配置事实，也不恢复 layout/template DSL。
 
 schema normalized output 必须是可持久化、无环的 plain object/array tree；leaf 只允许 JSON-compatible primitive。Core 在接受 snapshot
 前 deep clone 并 deep freeze，拒绝 `Date`、`Map`、`Set`、class instance、function、symbol、accessor、cycle 与其他带隐藏 identity/behavior 的
 value。这样 config revision 才能安全跨 persistence、RPC、Workbench 与 generation boundary，不把 schema library 的临时对象变成运行时权威。
 
-control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: false`、`application: 'not-requested'` 标记无 mutation。成功 mutation
+control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: false` 和当前 `applied | deferred | saved-not-applied` application
+状态表达 desired/applied revision 关系。成功 mutation
 只返回已确认持久化的 `config`、application 状态与 apply report，不重复携带 defaults；`validation_failed.defaults` 仅在 defaults 能独立安全
 计算时出现。调用者必须按 discriminant 分支，不能假设所有 `ConfigResult` 都有 defaults。
 

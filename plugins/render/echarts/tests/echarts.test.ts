@@ -13,11 +13,7 @@ import {
 	type RuntimeHost,
 	withRuntimeHost,
 } from '@pluxel/runtime/test'
-import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
-} from '@pluxel/runtime/web/paths'
+import { requireWorkbench } from '@pluxel/runtime/internal'
 import { buildNodeModule } from '@pluxel/rolldown/vite/node-module'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -26,14 +22,6 @@ import {
 	type EChartsOption,
 	type EChartsThemeRegistration,
 } from '../src/index.ts'
-
-function pluginLayoutUrl(address: unknown): URL {
-	const url = new URL(
-		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
-	)
-	url.searchParams.set('target', JSON.stringify(address))
-	return url
-}
 
 @Plugin()
 class EChartsTestConsumer extends BasePlugin {
@@ -113,7 +101,8 @@ describe('EChartsPlugin', () => {
 				await host.commit()
 				const consumer = host.require(EChartsTestConsumer)
 				expect(consumer.echarts.defaultFont.family.length).toBeGreaterThan(0)
-				expect(host.ctx.workbench.enabled).toBe(false)
+				expect('workbench' in host.ctx).toBe(false)
+				expect(host.ctx.workbench).toBeUndefined()
 
 				const source = consumer.canvas.createCanvas(4, 4)
 				source.getContext('2d').fillRect(0, 0, 4, 4)
@@ -247,32 +236,33 @@ describe('EChartsPlugin', () => {
 	})
 
 	it('mounts the Fonts provider Port in the ECharts target workbench', async () => {
-		await withRuntimeHost(async (host) => {
-			addEnabled(host, [FontsPlugin, CanvasPlugin, EChartsPlugin])
-			await host.commit()
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, CanvasPlugin, EChartsPlugin])
+				await host.commit()
 
-			const response = await host.ctx.http.fetch(
-				new Request(pluginLayoutUrl(pluginNodeAddressOf(EChartsPlugin))),
-			)
-			expect(response.status).toBe(200)
-			const layout = (await response.json()) as WorkbenchLayout
-			expect(layout.items).toEqual([
-				expect.objectContaining({
-					owner: {
-						address: pluginNodeAddressOf(FontsPlugin),
-						displayName: 'FontsPlugin',
-						rootExportName: 'FontsPlugin',
-					},
-					target: {
-						address: pluginNodeAddressOf(EChartsPlugin),
-						displayName: 'EChartsPlugin',
-						rootExportName: 'EChartsPlugin',
-					},
-					viewId: 'FontSelection',
-					port: expect.objectContaining({ id: '@pluxel/fonts.selection' }),
-				}),
-			])
-		})
+				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(
+					pluginNodeAddressOf(EChartsPlugin),
+				)
+				expect(layout.items).toEqual([
+					expect.objectContaining({
+						owner: {
+							address: pluginNodeAddressOf(FontsPlugin),
+							displayName: 'FontsPlugin',
+							rootExportName: 'FontsPlugin',
+						},
+						target: {
+							address: pluginNodeAddressOf(EChartsPlugin),
+							displayName: 'EChartsPlugin',
+							rootExportName: 'EChartsPlugin',
+						},
+						viewId: 'FontSelection',
+						port: expect.objectContaining({ id: '@pluxel/fonts.selection' }),
+					}),
+				])
+			},
+			{ workbench: { enabled: true } },
+		)
 	})
 })
 

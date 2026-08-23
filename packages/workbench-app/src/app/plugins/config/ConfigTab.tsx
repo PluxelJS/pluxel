@@ -2,26 +2,22 @@ import { Box, Button, Group } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useMemo } from 'react'
 import type { PluginNodeAddress } from '@pluxel/core'
-import type { ObjectSchema } from 'valibot'
+import type { FieldNode } from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 
-import {
-	patchPluginConfig,
-	patchPluginConfigField,
-	useRuntimeTransportClient,
-	type ConfigResult,
-} from '../../../runtime'
+import { useRuntimeManagementClient } from '../../../runtime'
 import { useNotify } from '../../hooks/useNotify'
-import { commitPluginConfig } from './usePluginConfig'
+import { commitPluginConfig, refreshPluginConfig } from './usePluginConfig'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
+import { buildEditableConfigPatch } from './presentationAdapter'
 
 const EMPTY_PATH: readonly string[] = []
 
 export function ConfigTabContent({
 	owner,
 	displayName,
-	schema,
+	fields,
 	savedValue,
 	defaultValue,
 	showToc = true,
@@ -32,7 +28,7 @@ export function ConfigTabContent({
 }: {
 	owner: PluginNodeAddress
 	displayName: string
-	schema: ObjectSchema<any, any>
+	fields: readonly FieldNode[]
 	savedValue: Record<string, unknown>
 	defaultValue: Record<string, unknown>
 	showToc?: boolean
@@ -42,7 +38,7 @@ export function ConfigTabContent({
 	path?: readonly string[]
 }) {
 	const notify = useNotify()
-	const transport = useRuntimeTransportClient()
+	const management = useRuntimeManagementClient()
 	const initialValue = useMemo(
 		() => ({ ...defaultValue, ...savedValue }),
 		[defaultValue, savedValue],
@@ -55,16 +51,17 @@ export function ConfigTabContent({
 			formOptions({
 				defaultValues: initialValue,
 				onSubmit: async ({ value, formApi }) => {
-					const result = (await transport.withRpc((rpc) =>
-						path.length === 0
-							? patchPluginConfig(rpc, owner, value)
-							: patchPluginConfigField(rpc, {
-									owner,
-									fieldPath: path.join('.'),
-									value,
-								}),
-					)) as ConfigResult
+					const patch = buildEditableConfigPatch(fields, value, savedValue)
+					const result = await (path.length === 0
+						? management.config.patch(owner, patch)
+						: management.config.patchField(owner, {
+								fieldPath: path.join('.'),
+								value: { ...savedValue, ...patch },
+							}))
 					if (result.ok === false) {
+						if (result.state === 'unknown') {
+							await refreshPluginConfig(management, owner)
+						}
 						notify({
 							title: '提交失败',
 							message: result.message ?? result.code ?? '未知错误',
@@ -72,12 +69,15 @@ export function ConfigTabContent({
 						})
 						return
 					}
-					commitPluginConfig(owner, displayName, result.config)
+					commitPluginConfig(management, owner, result.config)
 					formApi.reset(value)
 					if (result.application === 'saved-not-applied') {
 						notify({
 							title: '配置已保存，但尚未应用',
-							message: result.applyFailure.message,
+							message:
+								result.saved === true
+									? result.applyFailure.message
+									: '运行中的插件尚未应用当前配置。',
 							color: 'yellow',
 						})
 					} else {
@@ -92,11 +92,11 @@ export function ConfigTabContent({
 					}
 				},
 			}),
-		[displayName, initialValue, notify, owner, path, transport],
+		[fields, initialValue, management, notify, owner, path, savedValue],
 	)
 
 	return (
-		<AutoForm schema={schema as any} formOpts={opts}>
+		<AutoForm fields={fields} formOpts={opts}>
 			{onDirtyChange ? <DirtyReporter onDirtyChange={onDirtyChange} /> : null}
 			<Box px="xs" pb={24}>
 				<AutoForm.Fields sectionIdPrefix={sectionIdPrefix} fieldIdPrefix={fieldIdPrefix} />
@@ -110,7 +110,7 @@ export function ConfigTabContent({
 				/>
 			) : null}
 			{showActions && active ? (
-				<ConfigActions initialValue={initialValue} defaultValue={defaultValue} />
+				<ConfigActions fields={fields} initialValue={initialValue} defaultValue={defaultValue} />
 			) : null}
 		</AutoForm>
 	)
@@ -129,16 +129,19 @@ function DirtyReporter({ onDirtyChange }: { onDirtyChange(dirty: boolean): void 
 }
 
 function ConfigActions({
+	fields,
 	initialValue,
 	defaultValue,
 }: {
+	fields: readonly FieldNode[]
 	initialValue: Record<string, unknown>
 	defaultValue: Record<string, unknown>
 }) {
 	const { form, reset, submit } = useAutoFormCtx<any>()
 	const restoreDefaults = () => {
-		for (const key of new Set([...Object.keys(initialValue), ...Object.keys(defaultValue)])) {
-			form.setFieldValue(key, defaultValue[key])
+		const editableDefaults = buildEditableConfigPatch(fields, defaultValue, initialValue)
+		for (const [key, value] of Object.entries(editableDefaults)) {
+			form.setFieldValue(key, value)
 		}
 	}
 	return (

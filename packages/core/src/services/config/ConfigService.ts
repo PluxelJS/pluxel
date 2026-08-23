@@ -1,4 +1,4 @@
-import { type Context as PluxelContext, RootService } from '@pluxel/context'
+import type { Context as PluxelContext } from '../../context/Context'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '../../plugins/runtime/identity'
 import { safeParseStandardSchema } from './standardSchema'
@@ -8,7 +8,6 @@ import { immutableConfigRecord } from './immutable'
 type ConfigRecord = Record<string, unknown>
 type ConfigEntry = { owner: PluginNodeAddress; config: ConfigRecord }
 const EMPTY_CONFIG: Readonly<ConfigRecord> = Object.freeze(Object.create(null))
-const serviceName = 'configService' as const
 
 /** Immutable candidate fact whose object identity binds one validation result. */
 export type PluginConfigValidationAuthority = Readonly<{
@@ -36,7 +35,6 @@ export class ConfigValidationPendingPersistenceError extends Error {
 }
 
 /** One complete object config record per canonical Plugin node address. */
-@RootService({ key: serviceName })
 export class ConfigService {
 	private readonly records = new Map<string, ConfigEntry>()
 	private readonly rawViews = new Map<string, Readonly<ConfigRecord>>()
@@ -53,6 +51,7 @@ export class ConfigService {
 		{ ticket: StagedPluginConfigValidation; revision: number }
 	>()
 	private readonly revisions = new Map<string, number>()
+	private readonly appliedRevisions = new Map<string, number>()
 	private sequence = 0
 	private readyState = true
 	private readyTask: Promise<void> = Promise.resolve()
@@ -95,6 +94,7 @@ export class ConfigService {
 			this.records.delete(key)
 			this.rawViews.delete(key)
 			this.revisions.delete(key)
+			this.appliedRevisions.delete(key)
 			this.validated.delete(key)
 			this.staged.delete(key)
 		}
@@ -113,6 +113,24 @@ export class ConfigService {
 
 	getConfigRevision(owner: PluginNodeAddress): number {
 		return this.revisions.get(pluginNodeIndexKey(owner)) ?? 0
+	}
+
+	/** @internal Revision injected into the currently running Plugin generation. */
+	getAppliedConfigRevision(owner: PluginNodeAddress): number | null {
+		return this.appliedRevisions.get(pluginNodeIndexKey(owner)) ?? null
+	}
+
+	/** @internal Publish the exact desired revision used by a successfully started generation. */
+	markConfigApplied(owner: PluginNodeAddress, revision: number): void {
+		if (!Number.isSafeInteger(revision) || revision < 0) {
+			throw new TypeError('[ConfigService] Applied config revision must be a non-negative integer.')
+		}
+		this.appliedRevisions.set(pluginNodeIndexKey(owner), revision)
+	}
+
+	/** @internal Clear applied state when no running generation owns it. */
+	clearConfigApplied(owner: PluginNodeAddress): void {
+		this.appliedRevisions.delete(pluginNodeIndexKey(owner))
 	}
 
 	getValidatedConfig<T extends object = ConfigRecord>(
@@ -258,6 +276,7 @@ export class ConfigService {
 		this.validated.delete(key)
 		this.staged.delete(key)
 		this.revisions.delete(key)
+		this.appliedRevisions.delete(key)
 		this.onConfigChanged(owner)
 		return true
 	}

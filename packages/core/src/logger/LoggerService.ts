@@ -1,10 +1,9 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context as PluxelContext, Injectable } from '@pluxel/context'
+import type { Context as PluxelContext } from '../context/Context'
 import { debugLogCategory, pluginLogCategory, runtimeLogCategory } from './categories'
 import { findPluginLogContext } from './context'
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
-const serviceName = 'logger' as const
 const RESERVED_PROPERTY_KEYS = new Set(['context', 'pluginDisplayName'])
 const unmanagedRootIds = new WeakMap<object, string>()
 let unmanagedRootIdSequence = 0
@@ -13,17 +12,6 @@ export type LoggerServiceConfig = Readonly<{
 	/** @internal Runtime launchers install the single active root identity. */
 	rootId: string
 }>
-
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Config {
-			[serviceName]?: LoggerServiceConfig
-		}
-		interface Services {
-			[serviceName]: LoggerService
-		}
-	}
-}
 
 type ContextLoggerIdentity = Readonly<{
 	rootId: string
@@ -44,13 +32,7 @@ function fallbackRootId(ctx: PluxelContext): string {
 }
 
 function rootIdFor(ctx: PluxelContext, config?: LoggerServiceConfig): string {
-	const value =
-		config?.rootId ??
-		(
-			(ctx.root?.config as Record<string, unknown> | undefined)?.logger as
-				| LoggerServiceConfig
-				| undefined
-		)?.rootId
+	const value = config?.rootId
 	return typeof value === 'string' && value ? value : fallbackRootId(ctx)
 }
 
@@ -154,7 +136,6 @@ for (const level of ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as cons
 	})
 }
 
-@Injectable({ key: serviceName })
 export class LoggerService extends ContextLogger {
 	public readonly ctx: PluxelContext
 

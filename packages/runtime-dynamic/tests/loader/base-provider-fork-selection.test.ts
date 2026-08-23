@@ -11,6 +11,7 @@ import {
 	requireRuntimeStateStore,
 	runtimeStatePatch,
 } from '@pluxel/runtime/internal'
+import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins } from '../support/runtime-state'
@@ -32,7 +33,7 @@ describe('base provider selection', () => {
 			variant: 'fork',
 			forkId: 'f1',
 		} as const
-		await ctx.loader.replaceModule('A.ts', { Impl })
+		await requireLoaderService(ctx).replaceModule('A.ts', { Impl })
 		const coordinator = requireRuntimePluginGraphCoordinator(ctx)
 		await coordinator.updateRuntimeState(
 			runtimeStatePatch(
@@ -84,8 +85,8 @@ describe('base provider selection', () => {
 		}
 		lowerTestPlugin(Consumer, { requires: [Abs] })
 
-		await ctx.loader.replaceModule('Provider.ts', { Impl })
-		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
+		await requireLoaderService(ctx).replaceModule('Provider.ts', { Impl })
+		await requireLoaderService(ctx).replaceModule('Consumer.ts', { Consumer })
 		await enablePlugins(ctx, Impl, Consumer)
 		const firstConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
 			| Consumer
@@ -101,7 +102,7 @@ describe('base provider selection', () => {
 			path: 'tests/runtime-dynamic/Impl.ts',
 			provides: pluginDefinitionAddressOf(Abs),
 		})
-		await ctx.loader.replaceModule('Provider.ts', { Impl: ImplNext })
+		await requireLoaderService(ctx).replaceModule('Provider.ts', { Impl: ImplNext })
 
 		const nextConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
 			| Consumer
@@ -139,8 +140,8 @@ describe('base provider selection', () => {
 			variant: 'fork',
 			forkId: 'f1',
 		} as const
-		await ctx.loader.replaceModule('Provider.ts', { Worker })
-		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
+		await requireLoaderService(ctx).replaceModule('Provider.ts', { Worker })
+		await requireLoaderService(ctx).replaceModule('Consumer.ts', { Consumer })
 		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: worker.definition, forkId: 'f1' },
@@ -167,14 +168,14 @@ describe('base provider selection', () => {
 			exportName: 'Worker',
 			path: 'tests/runtime-dynamic/Worker.ts',
 		})
-		await ctx.loader.replaceModule('Provider.ts', { Worker: WorkerNext })
+		await requireLoaderService(ctx).replaceModule('Provider.ts', { Worker: WorkerNext })
 
 		const nextConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
 			| Consumer
 			| undefined
 		expect(nextConsumer?.dep.generation).toBe(2)
 		expect(nextConsumer === firstConsumer).toBe(false)
-		expect(ctx.loader.api.runtime.isRunning(fork)).toBe(true)
+		expect(requireLoaderService(ctx).api.runtime.isRunning(fork)).toBe(true)
 		expect(consumerStarts).toBe(2)
 	})
 })

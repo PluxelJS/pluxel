@@ -11,7 +11,6 @@ export default defineConfig({
 			'@pluxel/rolldown/*',
 			'@pluxel/runtime',
 			'@pluxel/runtime/internal',
-			'@pluxel/runtime/web/paths',
 			'vite',
 			'vite/*',
 		],

@@ -7,6 +7,7 @@ import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { requireConfigService } from '@pluxel/core/internal'
+import { requireRuntimeStateStore } from '@pluxel/runtime/internal'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR runtime persistence storage', () => {
@@ -103,7 +104,7 @@ describe('HMR runtime persistence storage', () => {
 			ctx = host.ctx
 
 			await requireConfigService(host.ctx).ready
-			await host.ctx.root.runtimeState.ready
+			await requireRuntimeStateStore(host.ctx).ready
 
 			expect(
 				fixture.fs.existsSync(resolve(fixture.path, '.pluxel/persistence/config/config.json')),

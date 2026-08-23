@@ -7,7 +7,7 @@ This directory is the frontend surface for plugin browsing, detail, config, and 
 - `catalog/`
   Plugin navigation, search/filter tokens, grouped drag/drop organization, and navigation chrome.
 - `pluginOverview.tsx`
-  Shared-scope GQLens overview projection consumed across plugin/package screens; it does not own a second cache.
+  Shared management-client overview snapshot consumed across plugin screens; it does not own a second writable store.
 - `pluginStatusActions.ts`
   RPC-backed plugin status and start-plan operations.
 - `detail/`

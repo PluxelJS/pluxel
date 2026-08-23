@@ -1,7 +1,7 @@
 import { type CommitSummary, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import { collectConfigDefaults, validateConfigRecord } from '@pluxel/core/services'
-import type { ConfigResult, PluginApplyReport, SchemaResult } from '../../web/protocol'
+import type { ConfigPresentationResult, ConfigResult, PluginApplyReport } from '../../web/protocol'
 import {
 	pluginCatalogEntry,
 	requireRuntimePluginGraphCoordinator,
@@ -13,13 +13,15 @@ import { listForkIds } from '../../services/RuntimeStateHelpers'
 import type { RuntimeStateSnapshot } from '../../services/RuntimeStateStore'
 import { ConfigMutationRejectedError } from '../../services/ConfigService'
 import { projectPluginApplyReport } from '../presenters/pluginApplyReport'
+import { compileConfigPresentationPlanV1 } from '../presenters/configPresentation'
+import { parseConfigFieldPathSegments } from '../../web/validation'
 
-export type PluginSchemaResult = SchemaResult
+export type PluginConfigPresentationResult = ConfigPresentationResult
 
-export type PluginSchemaSection = Readonly<{
+export type PluginConfigPresentationSection = Readonly<{
 	path: readonly string[]
 	fieldName: string
-	schemaSource: string
+	schema: Parameters<typeof compileConfigPresentationPlanV1>[0]['schema']
 	defaults: Record<string, unknown>
 }>
 
@@ -101,48 +103,32 @@ function currentConfigLookup(ctx: Context, owner: PluginNodeAddress): ConfigLook
 	)
 }
 
-export async function pluginSchema(
+export async function pluginConfigPresentation(
 	ctx: Context,
 	owner: PluginNodeAddress,
-): Promise<PluginSchemaResult> {
+): Promise<PluginConfigPresentationResult> {
 	const lookup = currentConfigLookup(ctx, owner)
 	if (lookup.ok === false) {
 		return {
 			ok: false,
-			code: lookup.code === 'config_not_found' ? 'schema_not_found' : lookup.code,
+			code: lookup.code === 'config_not_found' ? 'presentation_not_found' : lookup.code,
 			message: lookup.message,
 		}
 	}
 	const config = lookup.config
-	if (!config.source) {
-		return {
-			ok: false,
-			code: 'schema_source_missing',
-			message:
-				'Schema source is unavailable. Ensure configSourcePlugin processes the single configs.use(ObjectSchema) declaration.',
-		}
-	}
 	const declarations = [
 		...(config.owner ? [{ path: Object.freeze([] as string[]), declaration: config.owner }] : []),
 		...config.parts.flatMap((part) =>
 			part.declaration ? [{ path: part.path, declaration: part.declaration }] : [],
 		),
 	]
-	if (declarations.some((item) => item.declaration.source === undefined)) {
-		return {
-			ok: false,
-			code: 'schema_source_missing',
-			message:
-				'Schema source is unavailable for a PluginPart. Ensure configSourcePlugin processes every configs.use(ObjectSchema) declaration.',
-		}
-	}
 	const sections = await Promise.all(
 		declarations.map(
-			async ({ path, declaration }): Promise<PluginSchemaSection> =>
+			async ({ path, declaration }): Promise<PluginConfigPresentationSection> =>
 				Object.freeze({
 					path: Object.freeze([...path]),
 					fieldName: declaration.fieldName,
-					schemaSource: declaration.source!,
+					schema: declaration.schema,
 					defaults: await collectConfigDefaults(declaration.schema, {
 						missingObjectDefault: {},
 					}),
@@ -151,10 +137,27 @@ export async function pluginSchema(
 	)
 	return {
 		ok: true,
-		fieldName: config.fieldName,
-		schemaSource: config.source,
-		defaults: await collectConfigDefaults(config.schema, { missingObjectDefault: {} }),
-		sections: Object.freeze(sections),
+		plan: compileConfigPresentationPlanV1({
+			fieldName: config.fieldName,
+			schema: config.schema,
+			defaults: await collectConfigDefaults(config.schema, { missingObjectDefault: {} }),
+			sections,
+		}),
+	}
+}
+
+function configApplicationState(ctx: Context, owner: PluginNodeAddress) {
+	const configService = requireConfigService(ctx)
+	const desiredRevision = configService.getConfigRevision(owner)
+	const appliedRevision = configService.getAppliedConfigRevision(owner)
+	return {
+		desiredRevision,
+		appliedRevision,
+		application: !requirePluginService(ctx).isRunning(owner)
+			? ('deferred' as const)
+			: appliedRevision === desiredRevision
+				? ('applied' as const)
+				: ('saved-not-applied' as const),
 	}
 }
 
@@ -168,7 +171,7 @@ export async function pluginConfigGet(
 	return {
 		ok: true,
 		saved: false,
-		application: 'not-requested',
+		...configApplicationState(ctx, owner),
 		config: plainRecord(configService.getRawConfig(owner)),
 		defaults: await collectConfigDefaults(lookup.config.schema, {
 			missingObjectDefault: {},
@@ -203,7 +206,7 @@ export async function pluginConfigValidate(
 	return {
 		ok: true,
 		saved: false,
-		application: 'not-requested',
+		...configApplicationState(ctx, owner),
 		config: validation.output,
 		defaults,
 	}
@@ -309,10 +312,13 @@ async function mutatePluginConfig(
 			}
 		}
 		configService.confirmValidatedConfig(staged)
+		const applied = await applyDesiredConfig(ctx, owner, session)
 		return {
 			ok: true,
 			saved: true,
-			...(await applyDesiredConfig(ctx, owner, session)),
+			...applied,
+			desiredRevision: configService.getConfigRevision(owner),
+			appliedRevision: configService.getAppliedConfigRevision(owner),
 			config: plainRecord(configService.getRawConfig(owner)),
 		}
 	})
@@ -360,22 +366,15 @@ function parseConfigFieldMutation(
 	if (typeof record.fieldPath !== 'string') {
 		return { ok: false, message: 'fieldPath is required.' }
 	}
-	const fieldPath = record.fieldPath.trim()
-	if (!fieldPath || fieldPath.length > 512) {
-		return { ok: false, message: 'fieldPath must contain between 1 and 512 characters.' }
+	try {
+		return {
+			ok: true,
+			segments: parseConfigFieldPathSegments(record.fieldPath),
+			value: record.value,
+		}
+	} catch (error) {
+		return { ok: false, message: error instanceof Error ? error.message : 'Invalid fieldPath.' }
 	}
-	const segments = fieldPath.split('.').map((segment) => segment.trim())
-	if (segments.length > 32 || segments.some((segment) => !segment || segment.length > 128)) {
-		return { ok: false, message: 'fieldPath contains an empty or oversized segment.' }
-	}
-	if (
-		segments.some(
-			(segment) => segment === '__proto__' || segment === 'prototype' || segment === 'constructor',
-		)
-	) {
-		return { ok: false, message: 'fieldPath contains a reserved segment.' }
-	}
-	return { ok: true, segments: Object.freeze(segments), value: record.value }
 }
 
 export async function pluginConfigReset(

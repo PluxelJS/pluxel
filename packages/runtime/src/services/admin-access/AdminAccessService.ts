@@ -1,7 +1,7 @@
-import { type Context as PluxelContext, RootService } from '@pluxel/core'
+import type { Context as PluxelContext } from '@pluxel/core'
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import { recordSecurityEvent } from '../security/audit'
-import { DEFAULT_OIDC_TOKEN_HEADER, resolveAdminAccessConfig } from './model'
+import { DEFAULT_OIDC_TOKEN_HEADER } from './model'
 import type {
 	AdminAccessAuthorizeInput,
 	AdminAccessClaimRequirement,
@@ -11,8 +11,6 @@ import type {
 	ResolvedAdminAccessConfig,
 } from './types'
 
-const serviceName = 'adminAccess' as const
-
 type OidcDiscovery = {
 	issuer: string
 	jwks_uri: string
@@ -20,14 +18,6 @@ type OidcDiscovery = {
 
 const discoveryCache = new Map<string, Promise<OidcDiscovery>>()
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface RootServices {
-			[serviceName]: AdminAccessService
-		}
-	}
-}
 
 function readHeaders(input: AdminAccessAuthorizeInput): Headers {
 	return input.headers ?? input.request?.headers ?? new Headers()
@@ -103,9 +93,11 @@ async function resolveJwks(issuer: string): Promise<ReturnType<typeof createRemo
 	return jwks
 }
 
-@RootService({ key: serviceName })
 export class AdminAccessService {
-	constructor(public ctx: PluxelContext) {}
+	constructor(
+		public ctx: PluxelContext,
+		private readonly config: ResolvedAdminAccessConfig,
+	) {}
 
 	async authorize(input: AdminAccessAuthorizeInput = {}): Promise<AdminAccessState> {
 		const config = this.readConfig()
@@ -184,7 +176,6 @@ export class AdminAccessService {
 	}
 
 	private readConfig(): ResolvedAdminAccessConfig {
-		const config = this.ctx.config as { adminAccess?: unknown }
-		return resolveAdminAccessConfig(config.adminAccess)
+		return this.config
 	}
 }

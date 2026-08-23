@@ -12,13 +12,15 @@ import type {
 	WorkbenchMount,
 	PluginWorkbench,
 } from '../workbench/runtime'
-import { WorkbenchArtifactService } from './workbench/WorkbenchArtifactService'
+import {
+	WorkbenchArtifactService,
+	type WorkbenchArtifactHostOptions,
+} from './workbench/WorkbenchArtifactService'
 import { WorkbenchRpcService } from './workbench/resources/WorkbenchRpcService'
 import { WorkbenchEventsService } from './workbench/resources/WorkbenchEventsService'
 import { WorkbenchLiveQueryService } from './workbench/resources/WorkbenchLiveQueryService'
 import { WorkbenchRegistry, type InternalModelRef } from './workbench/WorkbenchRegistry'
-import { WorkbenchPluginCatalogService } from './workbench/WorkbenchPluginCatalogService'
-import { installWorkbenchForRoot, requireInstalledWorkbench } from './workbench/WorkbenchService'
+import { WorkbenchService } from './workbench/WorkbenchService'
 
 export class WorkbenchBackend {
 	readonly application: HostApplicationMeta
@@ -27,23 +29,21 @@ export class WorkbenchBackend {
 	readonly events: WorkbenchEventsService
 	readonly liveQueries: WorkbenchLiveQueryService
 	readonly registry: WorkbenchRegistry
-	readonly pluginCatalog: WorkbenchPluginCatalogService
 	private readonly views = new WeakMap<Context, PluginWorkbench>()
 	private readonly mounts = new Map<PluginNodeSlot, { owner: Context; dispose: () => void }>()
 
-	constructor(root: Context, options: WorkbenchInstallOptions = {}) {
+	constructor(root: Context, options: WorkbenchInstallOptions) {
 		this.application = Object.freeze({
 			product:
 				options.product === undefined || options.product === null
 					? null
 					: readProductDescriptor(options.product, '[workbench] product'),
 		})
-		this.artifacts = new WorkbenchArtifactService(root)
+		this.artifacts = new WorkbenchArtifactService(root, options.artifacts)
 		this.rpc = new WorkbenchRpcService(root, undefined)
 		this.events = new WorkbenchEventsService(root, undefined)
 		this.liveQueries = new WorkbenchLiveQueryService(this.events)
 		this.registry = new WorkbenchRegistry(root, this.artifacts)
-		this.pluginCatalog = new WorkbenchPluginCatalogService(root)
 		this.events.registerResourceFor(root, 'workbench.layouts', (channel) => {
 			const emit = () => channel.emit('revision', this.registry.getCatalog().revision)
 			emit()
@@ -154,18 +154,27 @@ export class WorkbenchBackend {
 
 export type WorkbenchInstallOptions = Readonly<{
 	product?: ProductDescriptor | null
+	artifacts?: WorkbenchArtifactHostOptions
 }>
 
-export function installWorkbench(ctx: Context, options: WorkbenchInstallOptions = {}): () => void {
-	const backend = new WorkbenchBackend(ctx.root, options)
-	const dispose = installWorkbenchForRoot(ctx, backend)
-	const guard = ctx.root.effects.defer(dispose)
-	return () => guard.dispose()
-}
+export type WorkbenchBackendFactory = (
+	root: Context,
+	options: WorkbenchInstallOptions,
+) => WorkbenchBackend
+
+export const createWorkbenchBackend: WorkbenchBackendFactory = (root, options) =>
+	new WorkbenchBackend(root, options)
 
 /** @internal */
 export function requireWorkbench(ctx: Context): WorkbenchBackend {
-	return requireInstalledWorkbench(ctx)
+	const service = ctx.workbench
+	if (service === undefined) {
+		throw new TypeError('[pluxel/runtime] Workbench is not enabled.')
+	}
+	if (!(service instanceof WorkbenchService)) {
+		throw new TypeError('[pluxel/runtime] Invalid Workbench Context capability.')
+	}
+	return service.requireBackend()
 }
 
 export type { SseChannel } from './workbench/resources/WorkbenchEventsService'

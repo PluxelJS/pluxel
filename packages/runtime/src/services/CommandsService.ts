@@ -7,15 +7,9 @@ import {
 	type CommandResult,
 	type Registration,
 } from '@pluxel/commands'
-import { type Context as CoreContext, Injectable } from '@pluxel/core'
-import {
-	closeOwnerInvocations,
-	enterOwnerInvocation,
-	OWNER_CONTEXT_BIND,
-} from '@pluxel/core/internal'
+import type { Context as CoreContext } from '@pluxel/core'
+import { closeOwnerInvocations, enterOwnerInvocation } from '@pluxel/core/internal'
 import { createPluginManagementCommands } from './commands/plugin-management'
-
-const serviceName = 'commands' as const
 
 type RootState = {
 	registry: ReturnType<typeof createCommandRegistry<CommandContext>>
@@ -28,15 +22,6 @@ export type CommandCatalogSnapshot = Readonly<{
 	descriptors: readonly CommandDescriptor[]
 }>
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: CommandsService
-		}
-	}
-}
-
-@Injectable({ key: serviceName })
 export class CommandsService {
 	private state?: RootState
 	private ownsInvocationCleanup = false
@@ -45,11 +30,6 @@ export class CommandsService {
 		public ctx: CoreContext,
 		_cfg: unknown,
 	) {}
-
-	/** @internal Bind registration ownership without duplicating the root command catalog. */
-	[OWNER_CONTEXT_BIND](owner: CoreContext): CommandsService {
-		return new CommandsService(owner, undefined)
-	}
 
 	/** Register a command until its owner Context stops or the returned handle is disposed. */
 	register(command: AnyCommand): Registration {
@@ -232,23 +212,4 @@ function cancellationError(error: unknown): CommandError {
 	return error instanceof CommandError
 		? error
 		: new CommandError('ABORTED', 'Command cancelled', { cause: error })
-}
-
-/** @internal Keep the owner-bearing Commands view isolated per plugin Context. */
-export function withCommandsPluginContext<T extends CoreContext.Config>(config: T): T {
-	const registry =
-		config.registry && typeof config.registry === 'object'
-			? (config.registry as Record<string, unknown>)
-			: {}
-	const current = Array.isArray(registry.pluginCTXIsolate)
-		? (registry.pluginCTXIsolate as unknown[])
-		: []
-	if (current.includes(CommandsService)) return config
-	return {
-		...config,
-		registry: {
-			...registry,
-			pluginCTXIsolate: [...current, CommandsService],
-		},
-	} as T
 }

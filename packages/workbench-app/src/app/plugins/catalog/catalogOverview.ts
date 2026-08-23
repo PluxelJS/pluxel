@@ -1,4 +1,5 @@
-import type { PluginGroup, PluginStatusEntry } from '../../gqlens'
+import type { PluginGroup } from '../../../runtime'
+import type { PluginStatusEntry } from '../pluginOverview'
 import type { GroupConfig, PluginStatuses } from './organizer/types'
 
 export type OverviewSnapshot = {
@@ -17,7 +18,7 @@ export const EMPTY_OVERVIEW: OverviewSnapshot = {
 	disabled: 0,
 }
 
-const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undefined) => {
+const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] | undefined) => {
 	const snapshot: PluginStatuses = {}
 	for (const entry of entries ?? []) {
 		const id = entry?.id
@@ -39,17 +40,17 @@ const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undef
 	return snapshot
 }
 
-const toGroups = (groups: Array<PluginGroup | null | undefined> | undefined) => {
+const toGroups = (groups: readonly (PluginGroup | null | undefined)[] | undefined) => {
 	return (groups ?? []).map((group) => ({
 		groupId: group?.groupId ?? '',
 		name: group?.name ?? '',
-		pluginIds: (group?.nodes ?? []).map((node) => node.id),
+		pluginIds: (group?.nodes ?? []).map((node) => node.route),
 	}))
 }
 
 export const buildOverview = (args: {
-	statuses: Array<PluginStatusEntry | null | undefined> | undefined
-	groups: Array<PluginGroup | null | undefined> | undefined
+	statuses: readonly (PluginStatusEntry | null | undefined)[] | undefined
+	groups: readonly (PluginGroup | null | undefined)[] | undefined
 	summary?: { total?: number | null; running?: number | null; disabled?: number | null } | null
 }): OverviewSnapshot => {
 	const { statuses, groups, summary } = args

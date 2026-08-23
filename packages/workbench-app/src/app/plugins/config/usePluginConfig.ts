@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
-import type { ObjectSchema } from 'valibot'
-import * as v from 'valibot'
-import * as f from 'valibot-form'
+import type { FieldNode } from 'valibot-form'
 
-import { getPluginConfig, getPluginSchema, invokeRpc } from '../../../runtime'
-import { stringifyUnknown } from '../../../utils/unknown'
+import { type RuntimeManagementClient, useRuntimeManagementClient } from '../../../runtime'
+import { adaptConfigPresentationFields } from './presentationAdapter'
 
 export type PluginConfigData = {
 	fieldName: string
-	schema?: ObjectSchema<any, any>
+	fields: readonly FieldNode[]
 	defaults: Record<string, unknown>
 	savedConfig: Record<string, unknown>
 	sections: readonly PluginConfigSection[]
@@ -18,7 +16,7 @@ export type PluginConfigData = {
 export type PluginConfigSection = Readonly<{
 	path: readonly string[]
 	fieldName: string
-	schema: ObjectSchema<any, any>
+	fields: readonly FieldNode[]
 	defaults: Record<string, unknown>
 }>
 
@@ -33,58 +31,44 @@ type PluginConfigSnapshot = Omit<PluginConfigState, 'refetch'>
 
 const EMPTY_CONFIG_SNAPSHOT: PluginConfigSnapshot = { loading: false }
 const PLUGIN_CONFIG_TTL = 30_000
-const configResources = new Map<string, PluginConfigResource>()
-
-function evaluateSchemaSource(displayName: string, expr: string): ObjectSchema<any, any> {
-	try {
-		return new Function('v', 'f', `return ${expr}`)(v, f) as ObjectSchema<any, any>
-	} catch (error) {
-		throw new Error(
-			`配置 schema 加载失败：${displayName} 无法还原（${stringifyUnknown(error, 'Unknown error')}）。schemaSource 只能引用运行时注入的 v/f。`,
-			{ cause: error },
-		)
-	}
-}
+const configResources = new WeakMap<RuntimeManagementClient, Map<string, PluginConfigResource>>()
+const allConfigResources = new Set<PluginConfigResource>()
 
 async function loadPluginConfigData(
+	client: RuntimeManagementClient,
 	owner: PluginNodeAddress,
-	displayName: string,
-	forceSchemaRefresh: boolean,
+	forcePresentationRefresh: boolean,
 	current?: Omit<PluginConfigData, 'savedConfig'>,
 ): Promise<PluginConfigData> {
-	return invokeRpc(async (rpc) => {
-		const [schemaResult, configResult] = await Promise.all([
-			forceSchemaRefresh || !current ? getPluginSchema(rpc, owner) : null,
-			getPluginConfig(rpc, owner),
-		])
-		if (configResult.ok === false) {
-			throw new Error(configResult.message ?? configResult.code ?? '配置加载失败')
+	const [presentationResult, configResult] = await Promise.all([
+		forcePresentationRefresh || !current ? client.config.presentation(owner) : null,
+		client.config.get(owner),
+	])
+	if (configResult.ok === false) {
+		throw new Error(configResult.message ?? configResult.code ?? '配置加载失败')
+	}
+	const savedConfig = configResult.config ?? {}
+	if (current) return { ...current, savedConfig }
+	if (!presentationResult) throw new Error('配置展示计划加载失败')
+	if (presentationResult.ok === false) {
+		if (presentationResult.code === 'presentation_not_found') {
+			return { fieldName: '', fields: [], defaults: {}, savedConfig, sections: [] }
 		}
-		const savedConfig = configResult.config ?? {}
-		if (current) return { ...current, savedConfig }
-		if (!schemaResult) throw new Error('schema 加载失败')
-		if (schemaResult.ok === false) {
-			if (schemaResult.code === 'schema_not_found') {
-				return { fieldName: '', defaults: {}, savedConfig, sections: [] }
-			}
-			throw new Error(schemaResult.message ?? schemaResult.code)
-		}
-		return {
-			fieldName: schemaResult.fieldName,
-			schema: evaluateSchemaSource(displayName, schemaResult.schemaSource),
-			defaults: schemaResult.defaults ?? {},
-			savedConfig,
-			sections: (schemaResult.sections ?? []).map((section) => ({
-				path: section.path,
-				fieldName: section.fieldName,
-				schema: evaluateSchemaSource(
-					`${displayName}:${section.path.join('.') || 'general'}`,
-					section.schemaSource,
-				),
-				defaults: section.defaults ?? {},
-			})),
-		}
-	})
+		throw new Error(presentationResult.message ?? presentationResult.code)
+	}
+	const presentation = presentationResult.plan
+	return {
+		fieldName: presentation.fieldName,
+		fields: adaptConfigPresentationFields(presentation.fields),
+		defaults: { ...presentation.defaults },
+		savedConfig,
+		sections: presentation.sections.map((section) => ({
+			path: section.path,
+			fieldName: section.fieldName,
+			fields: adaptConfigPresentationFields(section.fields),
+			defaults: { ...section.defaults },
+		})),
+	}
 }
 
 class PluginConfigResource {
@@ -95,8 +79,8 @@ class PluginConfigResource {
 	private loadedAt = 0
 
 	constructor(
+		private readonly client: RuntimeManagementClient,
 		readonly owner: PluginNodeAddress,
-		readonly displayName: string,
 	) {}
 
 	readonly subscribe = (listener: () => void): (() => void) => {
@@ -106,10 +90,10 @@ class PluginConfigResource {
 
 	readonly getSnapshot = (): PluginConfigSnapshot => this.snapshot
 
-	load(forceSchemaRefresh = false): Promise<void> {
+	load(forcePresentationRefresh = false): Promise<void> {
 		if (this.inflight !== null) return this.inflight
 		if (
-			!forceSchemaRefresh &&
+			!forcePresentationRefresh &&
 			this.snapshot.data &&
 			Date.now() - this.loadedAt < PLUGIN_CONFIG_TTL
 		) {
@@ -120,12 +104,12 @@ class PluginConfigResource {
 		const current = this.snapshot.data
 			? {
 					fieldName: this.snapshot.data.fieldName,
-					schema: this.snapshot.data.schema,
+					fields: this.snapshot.data.fields,
 					defaults: this.snapshot.data.defaults,
 					sections: this.snapshot.data.sections,
 				}
 			: undefined
-		const task = loadPluginConfigData(this.owner, this.displayName, forceSchemaRefresh, current)
+		const task = loadPluginConfigData(this.client, this.owner, forcePresentationRefresh, current)
 			.then((data): undefined => {
 				if (version !== this.requestVersion) return undefined
 				this.loadedAt = Date.now()
@@ -154,7 +138,12 @@ class PluginConfigResource {
 		this.setSnapshot({ data: { ...this.snapshot.data, savedConfig }, loading: false })
 	}
 
-	invalidateSchema(): void {
+	refreshSavedConfig(): Promise<void> {
+		this.loadedAt = 0
+		return this.load(false)
+	}
+
+	invalidatePresentation(): void {
 		this.requestVersion += 1
 		this.loadedAt = 0
 		this.inflight = null
@@ -168,38 +157,49 @@ class PluginConfigResource {
 	}
 }
 
-function getConfigResource(owner: PluginNodeAddress, displayName: string): PluginConfigResource {
+function getConfigResource(
+	client: RuntimeManagementClient,
+	owner: PluginNodeAddress,
+): PluginConfigResource {
 	const key = pluginNodeIndexKey(owner)
-	let resource = configResources.get(key)
+	let resources = configResources.get(client)
+	if (!resources) {
+		resources = new Map()
+		configResources.set(client, resources)
+	}
+	let resource = resources.get(key)
 	if (!resource) {
-		resource = new PluginConfigResource(owner, displayName)
-		configResources.set(key, resource)
+		resource = new PluginConfigResource(client, owner)
+		resources.set(key, resource)
+		allConfigResources.add(resource)
 	}
 	return resource
 }
 
 export function commitPluginConfig(
+	client: RuntimeManagementClient,
 	owner: PluginNodeAddress,
-	displayName: string,
 	savedConfig: Record<string, unknown>,
 ): void {
-	getConfigResource(owner, displayName).commit(savedConfig)
+	getConfigResource(client, owner).commit(savedConfig)
+}
+
+export async function refreshPluginConfig(
+	client: RuntimeManagementClient,
+	owner: PluginNodeAddress,
+): Promise<void> {
+	await getConfigResource(client, owner).refreshSavedConfig()
 }
 
 if (import.meta.hot) {
 	import.meta.hot.on('vite:beforeUpdate', () => {
-		for (const resource of configResources.values()) resource.invalidateSchema()
+		for (const resource of allConfigResources) resource.invalidatePresentation()
 	})
 }
 
-export function usePluginConfig(
-	owner: PluginNodeAddress | undefined,
-	displayName = owner?.definition.exportName ?? '',
-): PluginConfigState {
-	const resource = useMemo(
-		() => (owner ? getConfigResource(owner, displayName) : null),
-		[owner, displayName],
-	)
+export function usePluginConfig(owner: PluginNodeAddress | undefined): PluginConfigState {
+	const client = useRuntimeManagementClient()
+	const resource = useMemo(() => (owner ? getConfigResource(client, owner) : null), [client, owner])
 	const snapshot = useSyncExternalStore(
 		resource?.subscribe ?? noopSubscribe,
 		resource?.getSnapshot ?? getEmptySnapshot,

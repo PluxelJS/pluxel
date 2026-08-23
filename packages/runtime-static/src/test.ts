@@ -1,5 +1,5 @@
 import type { PluginConstructor } from '@pluxel/core'
-import { installWorkbench } from '@pluxel/runtime/internal/static'
+import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import { startStaticRuntimeApplication } from './internal/application'
 import type {
 	StaticRuntime,
@@ -23,6 +23,6 @@ export function createStaticRuntimeTestHost<
 			env: options.env ?? {},
 			bindings: options.bindings ?? ({} as TBindings),
 		},
-		installWorkbench,
+		createWorkbenchBackend,
 	})
 }

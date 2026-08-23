@@ -2,9 +2,7 @@ import {
 	formatPluginNodeRoute,
 	pluginNodeIndexKey,
 	type Context as PluxelContext,
-	Injectable,
 } from '@pluxel/core'
-import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
@@ -19,23 +17,8 @@ import {
 import type { RenderHandler } from '../../server/types'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
 import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
-import { resolveAdminAccessConfig } from '../admin-access/model'
-import {
-	matchesWorkbenchUiBasePath,
-	normalizeWorkbenchUiBasePath,
-	resolveWorkbenchUiBasePath,
-} from '../../workbench-config'
+import { matchesWorkbenchUiBasePath, normalizeWorkbenchUiBasePath } from '../../workbench-config'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
-
-const serviceName = 'http' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: HttpService
-		}
-	}
-}
 
 export type HttpHandler = (
 	req: Request,
@@ -51,29 +34,27 @@ export type HttpHandler = (
  */
 export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 
-export interface HttpServiceConfig {
-	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from workbench RPC/SSE/UI. */
-	graphql?: boolean
-}
-
 type RuntimeHttpUiAssetMode = 'dev-server' | 'static-built' | 'disabled'
 
-type RuntimeHttpServiceConfig = HttpServiceConfig & {
-	controlPlane?: {
-		web?: boolean
-		rpc?: boolean
-		sse?: boolean
-	}
+/** @internal Workbench distribution inputs resolved by static/dynamic launchers. */
+export type RuntimeHttpAssetConfig = Readonly<{
 	uiAssets?: RuntimeHttpUiAssetMode
-	/**
-	 * Directory for serving built UI assets (mounted under `UI_PUBLIC_BASE` when `uiAssets=static-built`).
-	 *
-	 * Defaults to the package's `dist/public` (when present).
-	 */
 	uiPublicDir?: string
-	/** Browser path owned by the Workbench shell. Route launchers derive it from WorkbenchConfig. */
-	uiBasePath?: string
-}
+}>
+
+export type RuntimeHttpHostConfig = RuntimeHttpAssetConfig &
+	Readonly<{
+		management: boolean
+		workbench: boolean
+		/**
+		 * Directory for serving built UI assets (mounted under `UI_PUBLIC_BASE` when `uiAssets=static-built`).
+		 *
+		 * Defaults to the package's `dist/public` (when present).
+		 */
+		uiPublicDir?: string
+		/** Browser path owned by the Workbench shell. Route launchers derive it from WorkbenchConfig. */
+		uiBasePath: string
+	}>
 
 interface MountedBoundarySpec {
 	id: string
@@ -90,18 +71,11 @@ type BaseElysiaApp = AnyElysiaApp
 
 type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
 type InternalApiOptions = {
-	web?: boolean
-	rpc?: boolean
-	sse?: boolean
-	graphql?: boolean
+	workbench: boolean
 }
 type ResolvedHttpServiceConfig = {
-	controlPlane: {
-		web: boolean
-		rpc: boolean
-		sse: boolean
-	}
-	graphql: boolean
+	management: boolean
+	workbench: boolean
 	uiAssets: RuntimeHttpUiAssetMode
 	uiPublicDir: string
 	uiBasePath: string
@@ -175,7 +149,6 @@ function currentWorkingDirectory(): string {
 	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
 }
 
-@Injectable({ key: serviceName })
 export class HttpService {
 	private fullReloadRequested = false
 	private readonly mounted = new Map<string, MountedBoundary>()
@@ -191,39 +164,18 @@ export class HttpService {
 
 	constructor(
 		public ctx: PluxelContext,
-		config: HttpServiceConfig = {},
+		config: RuntimeHttpHostConfig,
 	) {
-		const runtimeConfig = config as RuntimeHttpServiceConfig
 		this.hostCtx = ctx.root
 		this.logger = this.hostCtx.logger!
-		const adminAccessConfig = resolveAdminAccessConfig(this.hostCtx.config.adminAccess)
-		const adminAccessEnabled = adminAccessConfig.enabled
-		if (adminAccessEnabled && adminAccessConfig.exposure === 'public' && !adminAccessConfig.oidc) {
-			throw new Error('Public admin access requires adminAccess.oidc.')
-		}
-		const useDefaultControlPlane = adminAccessEnabled && runtimeConfig.controlPlane === undefined
-		const graphql = config.graphql !== false
 		this.config = {
-			controlPlane: {
-				web:
-					adminAccessEnabled &&
-					(useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
-				rpc:
-					adminAccessEnabled &&
-					(useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
-				sse:
-					adminAccessEnabled &&
-					(useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
-			},
-			graphql,
-			uiAssets: adminAccessEnabled ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
-			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
-			uiBasePath:
-				runtimeConfig.uiBasePath === undefined
-					? resolveWorkbenchUiBasePath(this.hostCtx.config.workbench)
-					: normalizeWorkbenchUiBasePath(runtimeConfig.uiBasePath),
+			management: config.management,
+			workbench: config.workbench,
+			uiAssets: config.workbench ? (config.uiAssets ?? 'static-built') : 'disabled',
+			uiPublicDir: config.uiPublicDir ?? '',
+			uiBasePath: normalizeWorkbenchUiBasePath(config.uiBasePath),
 		}
-		if (adminAccessEnabled) {
+		if (config.management) {
 			this.mountHostBoundary({
 				id: 'pluxel:admin-access',
 				path: ADMIN_ACCESS_PAGE_PATH,
@@ -231,30 +183,18 @@ export class HttpService {
 			})
 		}
 		this.rebuildRootApp()
-		const controlPlaneEnabled =
-			this.config.controlPlane.web || this.config.controlPlane.rpc || this.config.controlPlane.sse
-		if (controlPlaneEnabled) {
+		if (config.management) {
 			this.mountHostBoundary({
 				id: 'hmr:internal-api',
 				path: RUNTIME_INTERNAL_API_BASE,
-				boundary: this.createLazyInternalApiBoundary({
-					web: this.config.controlPlane.web,
-					rpc: this.config.controlPlane.rpc,
-					sse: this.config.controlPlane.sse,
-					graphql: this.config.graphql,
-				}),
-			})
-		} else if (this.config.graphql) {
-			this.mountHostBoundary({
-				id: 'pluxel:internal-graphql',
-				path: RUNTIME_INTERNAL_API_BASE,
-				boundary: this.createLazyGraphqlBoundary(),
+				boundary: this.createLazyInternalApiBoundary({ workbench: config.workbench }),
 			})
 		}
 	}
 
 	/** @internal Bind plugin-facing closures to an owner without constructing another HTTP backend. */
-	[OWNER_CONTEXT_BIND](owner: PluxelContext): HttpService {
+	/** @internal Create one stable owner facade over this root HTTP runtime. */
+	forOwner(owner: PluxelContext): HttpService {
 		const methods = new Map<PropertyKey, (...args: unknown[]) => unknown>()
 		let view: HttpService
 		view = new Proxy(this, {
@@ -329,6 +269,16 @@ export class HttpService {
 		})
 	}
 
+	/** @internal Route launchers use the resolved host snapshot instead of reading Context config. */
+	matchesWorkbenchUiRoute(pathname: string): boolean {
+		return this.config.workbench && matchesWorkbenchUiBasePath(pathname, this.config.uiBasePath)
+	}
+
+	/** @internal Node static hosts use this to arbitrate the application root fallback. */
+	workbenchOwnsRootNavigation(): boolean {
+		return this.config.workbench && this.config.uiBasePath === '/'
+	}
+
 	get plugin() {
 		const pluginCtx = this.ctx
 		const owner = this.requirePluginOwner(pluginCtx)
@@ -398,15 +348,6 @@ export class HttpService {
 					}),
 				)
 			})
-			const boundary = await boundaryPromise
-			return this.toFetch(boundary)(request)
-		}
-	}
-
-	private createLazyGraphqlBoundary(): HttpHandler {
-		let boundaryPromise: Promise<HttpBoundary> | undefined
-		return async (request) => {
-			boundaryPromise ??= Promise.resolve(this.hostCtx.internalGraphql.plugin())
 			const boundary = await boundaryPromise
 			return this.toFetch(boundary)(request)
 		}
@@ -577,7 +518,11 @@ export class HttpService {
 		method: string,
 		kind: AdminAccessBlockedKind,
 	): Promise<Response | undefined> {
-		const state = await this.hostCtx.root.adminAccess.authorize({
+		const adminAccess = this.hostCtx.root.adminAccess
+		if (!adminAccess) {
+			throw new Error('[pluxel/runtime] Workbench UI requires the management plane')
+		}
+		const state = await adminAccess.authorize({
 			headers: request.headers,
 			request,
 			url: request.url,

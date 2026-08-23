@@ -44,6 +44,7 @@
 		"@mantine/core": "catalog:",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",

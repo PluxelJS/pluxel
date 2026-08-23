@@ -1,4 +1,5 @@
-export { BasePlugin, Context, Plugin, v } from '@pluxel/runtime'
+export { BasePlugin, Plugin, v } from '@pluxel/runtime'
+export type { Context } from '@pluxel/runtime'
 
 export type {
 	StaticRuntime,
@@ -6,7 +7,6 @@ export type {
 	StaticRuntimeBindings,
 	StaticRuntimeCatalogEntry,
 	StaticRuntimeCatalogSnapshot,
-	StaticRuntimeContextConfig,
 	StaticRuntimeDeployment,
 	StaticRuntimeDefinition,
 	StaticRuntimeEnvironment,

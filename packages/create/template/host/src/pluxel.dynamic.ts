@@ -26,7 +26,6 @@ export default defineDynamicRuntimeConfig({
 		process.env.PLUXEL_WORKBENCH === 'true'
 			? {
 					enabled: true,
-					access: { exposure: 'private' },
 					uiBasePath: '/__pluxel/workbench',
 				}
 			: false,

@@ -1,6 +1,11 @@
-import '../../src/register-services'
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import type { LoaderBatch } from '../../src/loader/support'
+import type { ScanService } from '../../src/scan/ScanService'
+import {
+	createDynamicContextInstallations,
+	requireLoaderService,
+	requireScanService,
+} from '../../src/context-plan'
 
 export type ErrorLog = { msg: string; obj: unknown }
 export type LoaderModuleCapture = {
@@ -15,10 +20,13 @@ export function createHmrTestHost(options?: {
 	errorLogs?: ErrorLog[]
 	scanService?: ScanServiceOverride
 }) {
-	const host = createRuntimeHost()
+	const host = createRuntimeHost(
+		{ workbench: false },
+		{ installations: createDynamicContextInstallations() },
+	)
 	if (options?.errorLogs) captureLoggerErrors(host, options.errorLogs)
 	if (options?.scanService) {
-		;(host.ctx.scanService as typeof host.ctx.scanService & ScanServiceOverride).resolveEntry =
+		;(requireScanService(host.ctx) as ScanService & ScanServiceOverride).resolveEntry =
 			options.scanService.resolveEntry
 	}
 	return host
@@ -40,7 +48,7 @@ export function captureLoggerErrors(host: RuntimeHost, errorLogs: ErrorLog[]) {
 }
 
 export function captureLoaderModules(host: RuntimeHost, capture: LoaderModuleCapture) {
-	const loader = host.ctx.loader as typeof host.ctx.loader & {
+	const loader = requireLoaderService(host.ctx) as ReturnType<typeof requireLoaderService> & {
 		beginBatch: () => LoaderBatch
 	}
 	const originalBeginBatch = loader.beginBatch.bind(loader)

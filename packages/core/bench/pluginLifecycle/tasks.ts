@@ -1,5 +1,8 @@
-import { Context } from '@pluxel/core'
-import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import {
+	createCoreRootContext,
+	requireConfigService,
+	requirePluginService,
+} from '@pluxel/core/internal'
 import type { Bench, FnOptions } from 'tinybench'
 import { TASK, type TaskName } from './catalog.ts'
 import {
@@ -80,7 +83,7 @@ function coldTask(bench: Bench, name: TaskName, run: (ctx: Ctx) => Promise<void>
 		let ctx: Ctx | undefined
 		const start = bench.now()
 		try {
-			ctx = new Context({ name: `bench-${name}` })
+			ctx = createCoreRootContext({ name: `bench-${name}` })
 			await run(ctx)
 			await commit(ctx)
 			return { overriddenDuration: bench.now() - start }
@@ -91,7 +94,7 @@ function coldTask(bench: Bench, name: TaskName, run: (ctx: Ctx) => Promise<void>
 }
 
 async function setupConfigHeavy(scenario: Scenario) {
-	const ctx = new Context({ name: 'bench-config-heavy' })
+	const ctx = createCoreRootContext({ name: 'bench-config-heavy' })
 	requireConfigService(ctx).patchConfig(scenario.configHeavy.address, scenario.configHeavy.record)
 	materialize(ctx, scenario.configHeavy.ctor)
 	await commit(ctx)

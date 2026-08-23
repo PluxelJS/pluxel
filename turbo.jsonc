@@ -191,8 +191,6 @@
 		},
 		"@pluxel/workbench-app#build": {
 			"dependsOn": [
-				"@gqlens/react#build",
-				"@gqlens/vite#build",
 				"@pluxel/runtime#build",
 				"@pluxel/runtime-dynamic#build",
 				"@worksplit/react#build",
@@ -258,25 +256,6 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"@pluxel/runtime-static#test": {
-			// The real package-root lowering smoke intentionally executes the built toolchain/runtime
-			// boundary in a child Node process. Pin this test to current dist artifacts instead of
-			// allowing it to observe an older local build while workspace build/test run concurrently.
-			"dependsOn": ["build", "@pluxel/test#build"],
-			"outputs": [],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/oxlint.config.ts",
-				"$TURBO_ROOT$/tsconfig*.json",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-			],
-			"outputLogs": "errors-only",
-		},
 		"@pluxel/runtime#test": {
 			// Runtime compiler/worker fixtures cross the package export boundary. Keep declarations
 			// stable instead of testing while the runtime build cleans and replaces dist.
@@ -293,8 +272,10 @@
 			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@pluxel/runtime-dynamic#build"],
 		},
 		"@pluxel/runtime-static#test": {
-			// Static host integration exercises Node-facing runtime package exports.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+			// Static host integration exercises Node-facing runtime package exports, and its real
+			// package-root lowering smoke imports this package's built Vite entry in a child process.
+			// Serialize the test after its own build so a concurrent clean cannot invalidate chunks.
+			"dependsOn": ["build", "@pluxel/test#build"],
 		},
 		"@pluxel/echarts#test": {
 			// The render contract builds and executes a real worker module.
@@ -321,20 +302,6 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"@gqlens/codegen#test": {
-			"dependsOn": ["@gqlens/core#build", "@pluxel/test#build", "@pluxel/runtime#build"],
-		},
-		"@gqlens/react#test": {
-			"dependsOn": ["@gqlens/core#build", "@pluxel/test#build", "@pluxel/runtime#build"],
-		},
-		"@gqlens/vite#test": {
-			"dependsOn": [
-				"@gqlens/codegen#build",
-				"@gqlens/core#build",
-				"@pluxel/test#build",
-				"@pluxel/runtime#build",
-			],
-		},
 		"@worksplit/react#test": {
 			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@worksplit/core#build"],
 		},
@@ -354,20 +321,6 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"@gqlens/codegen#typecheck": {
-			"dependsOn": ["@gqlens/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
-		},
-		"@gqlens/react#typecheck": {
-			"dependsOn": ["@gqlens/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
-		},
-		"@gqlens/vite#typecheck": {
-			"dependsOn": [
-				"@gqlens/codegen#build",
-				"@gqlens/core#build",
-				"@pluxel/runtime#build",
-				"@pluxel/runtime-dev#build",
-			],
-		},
 		"@worksplit/react#typecheck": {
 			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build", "@worksplit/core#build"],
 		},
@@ -377,15 +330,7 @@
 			"dependsOn": ["@pluxel/runtime-dynamic#build"],
 		},
 		"@pluxel/workbench-app#typecheck": {
-			// Vendored UI packages expose their built declarations by default. A clean checkout has
-			// no dist files, so typecheck must not race those declaration builds.
-			"dependsOn": [
-				"@gqlens/react#build",
-				"@gqlens/vite#build",
-				"@pluxel/runtime#build",
-				"@pluxel/runtime-dev#build",
-				"@worksplit/react#build",
-			],
+			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build", "@worksplit/react#build"],
 		},
 		"@pluxel/plugins-host#typecheck": {
 			// The maintainer host is the explicit dist-boundary smoke check.

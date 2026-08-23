@@ -682,6 +682,7 @@ async function constructorRequirements(
 	if (!constructor) return []
 	const params = arrayOf((constructor.value as AstNode | undefined)?.params)
 	const out: PluginDefinitionAddress[] = []
+	const seen = new Map<string, Readonly<{ index: number; typeName: string }>>()
 	for (const parameter of params) {
 		const typeName = parameterTypeName(parameter)
 		if (!typeName) {
@@ -696,6 +697,14 @@ async function constructorRequirements(
 			)
 		}
 		const address = await resolveTypeAddress(typeName, analysis, id, options, false)
+		const key = pluginDefinitionIndexKey(address)
+		const previous = seen.get(key)
+		if (previous) {
+			options.error(
+				`[pluxel:plugin-di] plugin_dependency_requirement_duplicate: ${id} ${raw.name} constructor parameters ${previous.index} (${previous.typeName}) and ${out.length} (${typeName}) resolve to the same Plugin definition; repeated requirements need an explicit stable role and are not supported`,
+			)
+		}
+		seen.set(key, { index: out.length, typeName })
 		out.push(address)
 		if (binding && isBareSpecifier(binding.source)) {
 			const packageName = packageNameOf(binding.source)

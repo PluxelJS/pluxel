@@ -23,7 +23,6 @@ import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watc
  * second Context/runtime implementation inside the runner.
  */
 export const LOADER_HMR_BRIDGE_MODULES = [
-	'@pluxel/context',
 	'@pluxel/core',
 	'@pluxel/core/internal',
 	'@pluxel/core/toolchain',
@@ -35,9 +34,7 @@ export const LOADER_HMR_BRIDGE_MODULES = [
 	'@pluxel/runtime/capnweb',
 ] as const
 
-export const LOADER_HMR_BRIDGE_PROVIDERS = Object.freeze({
-	'@pluxel/context': '@pluxel/core',
-} satisfies Record<string, string>)
+export const LOADER_HMR_BRIDGE_PROVIDERS = Object.freeze({} satisfies Record<string, string>)
 
 const REQUIRED_DEDUPE_PACKAGES = [
 	...new Set([...LOADER_HMR_BRIDGE_MODULES.map(toBasePackage), '@pluxel/rolldown']),

@@ -25,10 +25,11 @@ const FontConsumerWorkbench = workbench.extension({ contract: FontConsumerUi })
 @Plugin()
 export class PluginContributionFontManager extends BasePlugin {
 	override async init(): Promise<void> {
-		if (!this.ctx.workbench.enabled) return
+		const workbenchCapability = this.ctx.workbench
+		if (!workbenchCapability) return
 		const database = await this.ctx.database.use(demoDatabase)
 		await new DemoProjectionStore(database).replaceAll('fontSets', FONT_SETS)
-		this.ctx.workbench.mount(FontManagerWorkbench, {
+		workbenchCapability.mount(FontManagerWorkbench, {
 			fontSets: workbench.bind.liveQuery({
 				database,
 				dependsOn: [demoProjections],
@@ -49,7 +50,7 @@ export class PluginContributionFontConsumer extends BasePlugin {
 
 	override init(): void {
 		this.fontSetRef = readFontRef(this.config.fontSetRef)
-		this.ctx.workbench.mount(FontConsumerWorkbench, {
+		this.ctx.workbench?.mount(FontConsumerWorkbench, {
 			commands: workbench.bind.rpc(() => new FontSettingsRpc(this)),
 		})
 	}

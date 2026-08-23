@@ -1,5 +1,5 @@
-import type { Context as CoreContext, PluginConstructor } from '@pluxel/core'
-import type { WorkbenchConfig } from '@pluxel/runtime'
+import type { PluginConstructor } from '@pluxel/core'
+import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import { assertDynamicPluginSources, type DynamicPluginSource } from './sources'
 
@@ -20,8 +20,11 @@ const DYNAMIC_RUNTIME_CONFIG_FIELDS = new Set([
 	'runtimeState',
 	'persistence',
 	'database',
-	'http',
+	'workers',
+	'management',
 	'workbench',
+	'vault',
+	'debug',
 	'logging',
 ])
 const DYNAMIC_RUNTIME_STORAGE_FIELDS = new Set(['persistenceDir'])
@@ -48,12 +51,15 @@ export type DynamicRuntimeConfig = {
 	 * When omitted, only entries selected by the workspace HMR profile are loaded.
 	 */
 	sources?: readonly DynamicPluginSource[]
-	configService?: CoreContext.Config['configService']
-	runtimeState?: CoreContext.Config['runtimeState']
-	persistence?: CoreContext.Config['persistence']
-	database?: CoreContext.Config['database']
-	http?: CoreContext.Config['http']
-	workbench?: WorkbenchConfig
+	configService?: RuntimeHostConfig['configService']
+	runtimeState?: RuntimeHostConfig['runtimeState']
+	persistence?: RuntimeHostConfig['persistence']
+	database?: RuntimeHostConfig['database']
+	workers?: RuntimeHostConfig['workers']
+	management?: RuntimeHostConfig['management']
+	workbench?: RuntimeHostConfig['workbench']
+	vault?: RuntimeHostConfig['vault']
+	debug?: RuntimeHostConfig['debug']
 	logging?: false | RuntimeLoggingInput
 }
 
@@ -103,7 +109,6 @@ export function assertDynamicRuntimeConfig(
 		'[runtime-dynamic] Dynamic runtime config',
 	)
 	const runtimeConfig = config as DynamicRuntimeConfig
-	assertPublicHttpConfig(runtimeConfig.http, '[runtime-dynamic] Dynamic runtime config')
 	assertStorageConfig(runtimeConfig.storage)
 	assertFixedPlugins(runtimeConfig.plugins)
 	assertDynamicPluginSources(runtimeConfig.sources)
@@ -127,17 +132,6 @@ export function isDynamicRuntimeConfig(value: unknown): value is DynamicRuntimeC
 		value &&
 		typeof value === 'object' &&
 		(value as MarkedDynamicRuntimeConfig)[DYNAMIC_RUNTIME_CONFIG_MARKER] === true,
-	)
-}
-
-function assertPublicHttpConfig(http: unknown, label: string): void {
-	if (!http || typeof http !== 'object') return
-	const forbidden = ['workbench', 'controlPlane', 'uiAssets', 'uiPublicDir'].filter(
-		(key) => key in http,
-	)
-	if (forbidden.length === 0) return
-	throw new Error(
-		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "workbench" and let the route launcher own workbench internals.`,
 	)
 }
 

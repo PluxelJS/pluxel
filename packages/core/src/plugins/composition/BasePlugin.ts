@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/context'
+import type { Context, PluginContext } from '../../context/Context'
 import { closeOwnerInvocations } from '../../internal/owner-invocations'
 import {
 	EffectsDisposedError,
@@ -20,7 +20,7 @@ import { LATE_INIT_CLEANUP_ERROR } from './symbols'
 type RootPluginParts = ReturnType<typeof createRootPluginParts>
 
 type PluginGenerationState = {
-	readonly ctx: Context
+	readonly ctx: PluginContext
 	readonly parts: RootPluginParts
 	initActive: boolean
 	optional?: OptionalPluginBindings
@@ -28,7 +28,7 @@ type PluginGenerationState = {
 
 type ConstructionFrame = {
 	readonly expectedImplementation: PluginConstructor
-	readonly ctx: Context
+	readonly ctx: PluginContext
 	readonly parts: PluginPartDefinitionTree
 	consumed: boolean
 }
@@ -52,7 +52,8 @@ export interface PluginLifecycleAdapter<_C extends Context = Context> {
 	subscribeErrors?: (cb: (err: unknown) => void) => undefined | (() => void)
 }
 
-export type PluginContextOf<P extends BasePlugin> = P extends BasePlugin<infer C> ? C : Context
+export type PluginContextOf<P extends BasePlugin> =
+	P extends BasePlugin<infer C> ? C : PluginContext
 
 function stateOf(plugin: BasePlugin): PluginGenerationState {
 	const state = instanceState.get(plugin)
@@ -102,7 +103,7 @@ async function adoptCleanup(ctx: Context, resource: PluginCleanup): Promise<void
  * Plugin author base class. Construction is admitted only by Core's synchronous generation
  * construction stack; constructors, nodes and generations are deliberately different concepts.
  */
-export abstract class BasePlugin<C extends Context = Context> {
+export abstract class BasePlugin<C extends PluginContext = PluginContext> {
 	constructor() {
 		const frame = constructionStack.at(-1)
 		if (!frame || frame.consumed || new.target !== frame.expectedImplementation) {
@@ -140,7 +141,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 /** @internal Construct exactly one Plugin generation with the candidate implementation. */
 export function constructPluginGeneration<T extends BasePlugin>(
 	implementation: PluginConstructor,
-	ctx: Context,
+	ctx: PluginContext,
 	parts: PluginPartDefinitionTree,
 	dependencies: readonly unknown[],
 ): T {

@@ -15,18 +15,16 @@ import { openConfirmModal } from '@mantine/modals'
 import {
 	formatPluginDefinitionReference,
 	formatPluginNodeReference,
+	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
+	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-	ensurePluginFork,
-	inspectPluginDependencies,
-	removePluginFork,
-	rpcErrorMessage,
-	setPluginDependencyTarget,
-	useRuntimeTransportClient,
+	runtimeErrorMessage,
+	useRuntimeManagementClient,
 	type PluginDependencyState,
 } from '../../../../runtime'
 import { useNotify } from '../../../hooks/useNotify'
@@ -41,7 +39,7 @@ function kindLabel(kind: PluginDependencyState['kind']) {
 export function DependencyOverridesCard() {
 	const { owner, refetch } = usePluginScope()
 	const ownerKey = pluginNodeIndexKey(owner)
-	const transport = useRuntimeTransportClient()
+	const management = useRuntimeManagementClient()
 	const notify = useNotify()
 	const [stateByOwner, setStateByOwner] = useState(() => new Map<string, PluginDependencyState[]>())
 	const [loadingOwners, setLoadingOwners] = useState(() => new Set<string>())
@@ -62,9 +60,10 @@ export function DependencyOverridesCard() {
 		requestIdsRef.current.set(ownerKey, requestId)
 		setLoadingOwners((previous) => new Set(previous).add(ownerKey))
 		try {
-			const dependencies = await transport.withRpc((rpc) => inspectPluginDependencies(rpc, owner))
+			const result = await management.dependencies.inspect(owner)
+			if (result.ok === false) throw new Error(result.error)
 			if (!mountedRef.current || requestIdsRef.current.get(ownerKey) !== requestId) return
-			const rows = dependencies.filter(
+			const rows = result.items.filter(
 				(row) => row.kind === 'abstract' || row.options.length > 1 || row.selected !== null,
 			)
 			setStateByOwner((previous) => new Map(previous).set(ownerKey, rows))
@@ -73,7 +72,7 @@ export function DependencyOverridesCard() {
 			setStateByOwner((previous) => new Map(previous).set(ownerKey, []))
 			notify({
 				title: '读取依赖失败',
-				message: rpcErrorMessage(error, '无法读取依赖状态'),
+				message: runtimeErrorMessage(error, '无法读取依赖状态'),
 				color: 'red',
 			})
 		} finally {
@@ -85,7 +84,7 @@ export function DependencyOverridesCard() {
 				})
 			}
 		}
-	}, [notify, owner, ownerKey, transport])
+	}, [management.dependencies, notify, owner, ownerKey])
 
 	useEffect(() => {
 		void load()
@@ -98,37 +97,39 @@ export function DependencyOverridesCard() {
 	}, [load, refetch])
 
 	const setDependencyTarget = useCallback(
-		async (index: number, provider: PluginNodeAddress | null) => {
-			const result = await transport.withRpc((rpc) =>
-				setPluginDependencyTarget(rpc, {
-					consumer: owner,
-					index,
-					provider,
-				}),
-			)
-			if (result.ok === false) throw new Error(result.error || result.code || '操作失败')
+		async (requirement: PluginDefinitionAddress, provider: PluginNodeAddress | null) => {
+			const result = await management.dependencies.setTarget({
+				consumer: owner,
+				requirement,
+				provider,
+			})
+			if (result.ok === false) {
+				if (result.state === 'unknown') await triggerRefresh()
+				throw new Error(result.error || result.code || '操作失败')
+			}
 		},
-		[owner, transport],
+		[management.dependencies, owner, triggerRefresh],
 	)
 
 	const createFork = useCallback(
 		async (
 			base: PluginNodeAddress,
 			forkId: string,
-			requirement: PluginDependencyState['token'],
+			requirement: PluginDependencyState['requirement'],
 		): Promise<PluginNodeAddress> => {
-			const result = await transport.withRpc((rpc) =>
-				ensurePluginFork(rpc, {
-					base,
-					forkId,
-					enable: true,
-					selectFor: { consumer: owner, requirement },
-				}),
-			)
-			if (result.ok === false) throw new Error(result.error || result.code || '创建 fork 失败')
+			const result = await management.forks.ensure({
+				base,
+				forkId,
+				enable: true,
+				selectFor: { consumer: owner, requirement },
+			})
+			if (result.ok === false) {
+				if (result.state === 'unknown') await triggerRefresh()
+				throw new Error(result.error || result.code || '创建 fork 失败')
+			}
 			return result.fork
 		},
-		[owner, transport],
+		[management.forks, owner, triggerRefresh],
 	)
 
 	const handleForkCreate = useCallback(
@@ -165,7 +166,7 @@ export function DependencyOverridesCard() {
 						try {
 							const normalizedForkId = forkId.trim()
 							if (!normalizedForkId) throw new Error('forkId 不能为空')
-							const fork = await createFork(base.address, normalizedForkId, row.token)
+							const fork = await createFork(base.address, normalizedForkId, row.requirement)
 							await triggerRefresh()
 							notify({
 								title: 'Fork 已创建',
@@ -175,7 +176,7 @@ export function DependencyOverridesCard() {
 						} catch (error) {
 							notify({
 								title: '创建 Fork 失败',
-								message: rpcErrorMessage(error, '操作失败'),
+								message: runtimeErrorMessage(error, '操作失败'),
 								color: 'red',
 							})
 						}
@@ -201,12 +202,10 @@ export function DependencyOverridesCard() {
 				onConfirm: () => {
 					void (async () => {
 						try {
-							const result = await transport.withRpc((rpc) =>
-								removePluginFork(rpc, {
-									base: { definition: fork.definition, variant: 'default' },
-									forkId: fork.forkId,
-								}),
-							)
+							const result = await management.forks.remove({
+								base: { definition: fork.definition, variant: 'default' },
+								forkId: fork.forkId,
+							})
 							await triggerRefresh()
 							if (result.ok === false) {
 								const detail =
@@ -231,7 +230,7 @@ export function DependencyOverridesCard() {
 						} catch (error) {
 							notify({
 								title: '删除 Fork 失败',
-								message: rpcErrorMessage(error, '操作失败'),
+								message: runtimeErrorMessage(error, '操作失败'),
 								color: 'red',
 							})
 						}
@@ -239,7 +238,7 @@ export function DependencyOverridesCard() {
 				},
 			})
 		},
-		[notify, transport, triggerRefresh],
+		[management.forks, notify, triggerRefresh],
 	)
 
 	if (state === null || rows.length === 0) return null
@@ -277,7 +276,7 @@ export function DependencyOverridesCard() {
 						value: pluginNodeIndexKey(option.address),
 						label: option.isEnabled ? option.displayName : `${option.displayName} (disabled)`,
 					}))
-					const tokenLabel = formatPluginDefinitionReference(row.token)
+					const requirementLabel = formatPluginDefinitionReference(row.requirement)
 					const effectiveLabel = row.effective ? formatPluginNodeReference(row.effective) : '未解析'
 					const defaultLabel = row.providerDefault
 						? formatPluginNodeReference(row.providerDefault)
@@ -290,7 +289,7 @@ export function DependencyOverridesCard() {
 						} => option.address.variant === 'fork',
 					)
 					return (
-						<Box key={`${row.index}:${tokenLabel}`} style={{ minWidth: 0 }}>
+						<Box key={pluginDefinitionIndexKey(row.requirement)} style={{ minWidth: 0 }}>
 							<Stack gap={6}>
 								<Group gap="xs" align="center" wrap="wrap">
 									<Badge variant="light" color={kind.color} radius="sm" size="sm">
@@ -303,7 +302,7 @@ export function DependencyOverridesCard() {
 										style={{ flex: 1, minWidth: 220 }}
 										lineClamp={1}
 									>
-										{tokenLabel}
+										{requirementLabel}
 									</Text>
 									<Badge
 										variant="light"
@@ -329,17 +328,17 @@ export function DependencyOverridesCard() {
 												const provider = value ? (optionsByKey.get(value)?.address ?? null) : null
 												void (async () => {
 													try {
-														await setDependencyTarget(row.index, provider)
+														await setDependencyTarget(row.requirement, provider)
 														await triggerRefresh()
 														notify({
 															title: '已更新覆盖',
-															message: `${tokenLabel} → ${provider ? formatPluginNodeReference(provider) : '默认'}`,
+															message: `${requirementLabel} → ${provider ? formatPluginNodeReference(provider) : '默认'}`,
 															color: 'green',
 														})
 													} catch (error) {
 														notify({
 															title: '更新失败',
-															message: rpcErrorMessage(error, '操作失败'),
+															message: runtimeErrorMessage(error, '操作失败'),
 															color: 'red',
 														})
 													}

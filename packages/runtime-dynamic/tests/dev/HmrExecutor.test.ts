@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createRuntimeHost } from '@pluxel/runtime/test'
 
+import { createDynamicContextInstallations, requireLoaderService } from '../../src/context-plan'
 import { HmrExecutor, prefetchTransforms } from '../../src/hmr/engine/pipeline'
 
 type ExecutorOptions = {
@@ -10,20 +12,24 @@ type ExecutorOptions = {
 }
 
 function createExecutor(options: ExecutorOptions) {
-	return new HmrExecutor(
-		{
-			logger: {
-				error: (message: string, props?: unknown) => options.errorLogs.push({ message, props }),
-			},
-			loader: {
-				beginBatch: () => ({
-					replaceModule: options.replaceModule ?? vi.fn(async () => ({})),
-					removeModule: vi.fn(),
-					rollback: options.batchRollback,
-					commit: vi.fn(),
-				}),
-			},
-		} as ConstructorParameters<typeof HmrExecutor>[0],
+	const host = createRuntimeHost(
+		{ workbench: false },
+		{ installations: createDynamicContextInstallations() },
+	)
+	const logger = host.ctx.logger as typeof host.ctx.logger & {
+		error(message: string, props?: unknown): void
+	}
+	logger.error = (message: string, props?: unknown) => options.errorLogs.push({ message, props })
+	const loader = requireLoaderService(host.ctx)
+	loader.beginBatch = () =>
+		({
+			replaceModule: options.replaceModule ?? vi.fn(async () => ({})),
+			removeModule: vi.fn(),
+			rollback: options.batchRollback,
+			commit: vi.fn(),
+		}) as ReturnType<typeof loader.beginBatch>
+	const executor = new HmrExecutor(
+		host.ctx,
 		{ import: options.importModule } as ConstructorParameters<typeof HmrExecutor>[1],
 		{
 			variants: (id: string) => [id],
@@ -35,6 +41,7 @@ function createExecutor(options: ExecutorOptions) {
 		{ start: () => () => 1 },
 		{ useRequireShims: false, dbgModules: null },
 	)
+	return { executor, dispose: () => host.dispose() }
 }
 
 describe('HmrExecutor', () => {
@@ -44,7 +51,7 @@ describe('HmrExecutor', () => {
 		const replaceModule = vi.fn()
 		const syntaxError = new SyntaxError('Unexpected token')
 
-		const executor = createExecutor({
+		const fixture = createExecutor({
 			errorLogs,
 			batchRollback,
 			replaceModule,
@@ -53,18 +60,22 @@ describe('HmrExecutor', () => {
 			}),
 		})
 
-		const result = await executor.runAndLoadAllClean(['/repo/plugin.ts'])
+		try {
+			const result = await fixture.executor.runAndLoadAllClean(['/repo/plugin.ts'])
 
-		expect(result?.commitResult.ok).toBe(false)
-		expect(result?.executeError).toBe('Unexpected token')
-		expect(batchRollback).toHaveBeenCalledTimes(1)
-		expect(replaceModule).not.toHaveBeenCalled()
-		expect(errorLogs).toEqual([
-			{
-				message: 'execute failed for {file}',
-				props: { file: '/repo/plugin.ts', error: syntaxError },
-			},
-		])
+			expect(result?.commitResult.ok).toBe(false)
+			expect(result?.executeError).toBe('Unexpected token')
+			expect(batchRollback).toHaveBeenCalledTimes(1)
+			expect(replaceModule).not.toHaveBeenCalled()
+			expect(errorLogs).toEqual([
+				{
+					message: 'execute failed for {file}',
+					props: { file: '/repo/plugin.ts', error: syntaxError },
+				},
+			])
+		} finally {
+			await fixture.dispose()
+		}
 	})
 
 	it('marks plugin injection failures as failed batch results', async () => {
@@ -72,7 +83,7 @@ describe('HmrExecutor', () => {
 		const batchRollback = vi.fn()
 		const injectError = new Error('invalid plugin export')
 
-		const executor = createExecutor({
+		const fixture = createExecutor({
 			errorLogs,
 			batchRollback,
 			importModule: vi.fn(async () => ({ Plugin: class Plugin {} })),
@@ -81,17 +92,21 @@ describe('HmrExecutor', () => {
 			}),
 		})
 
-		const result = await executor.runAndLoadAllClean(['/repo/plugin.ts'])
+		try {
+			const result = await fixture.executor.runAndLoadAllClean(['/repo/plugin.ts'])
 
-		expect(result?.commitResult.ok).toBe(false)
-		expect(result?.injectError).toBe('invalid plugin export')
-		expect(batchRollback).toHaveBeenCalledTimes(1)
-		expect(errorLogs).toEqual([
-			{
-				message: 'replaceModule failed for {file}',
-				props: { file: '/repo/plugin.ts', error: injectError },
-			},
-		])
+			expect(result?.commitResult.ok).toBe(false)
+			expect(result?.injectError).toBe('invalid plugin export')
+			expect(batchRollback).toHaveBeenCalledTimes(1)
+			expect(errorLogs).toEqual([
+				{
+					message: 'replaceModule failed for {file}',
+					props: { file: '/repo/plugin.ts', error: injectError },
+				},
+			])
+		} finally {
+			await fixture.dispose()
+		}
 	})
 
 	it('counts transform prefetch failures without failing the caller', async () => {

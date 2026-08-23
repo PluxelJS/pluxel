@@ -21,8 +21,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	type AgentToolsAdminSnapshot,
 	type AgentToolsPolicyInput,
-	getRuntimeTransportClient,
-	rpcErrorMessage,
+	runtimeErrorMessage,
+	useRuntimeManagementClient,
 } from '../../runtime'
 import { EmptyState, ErrorState } from '../../components'
 import { useNotify } from '../hooks/useNotify'
@@ -46,7 +46,7 @@ const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
 
 export function AgentToolsScreen() {
 	const notify = useNotify()
-	const transport = getRuntimeTransportClient()
+	const management = useRuntimeManagementClient()
 	const [snapshot, setSnapshot] = useState<AgentToolsAdminSnapshot | null>(null)
 	const [draft, setDraft] = useState<MutablePolicy>({ toolsets: [], agents: [] })
 	const [loading, setLoading] = useState(true)
@@ -77,14 +77,14 @@ export function AgentToolsScreen() {
 	const refresh = useCallback(async () => {
 		setError(null)
 		try {
-			const next = await transport.withRpc((rpc) => rpc.agentTools().snapshot())
+			const next = await management.agentTools.snapshot()
 			applySnapshot(next)
 		} catch (cause) {
-			setError(rpcErrorMessage(cause, '无法读取 Agent 工具策略'))
+			setError(runtimeErrorMessage(cause, '无法读取 Agent 工具策略'))
 		} finally {
 			setLoading(false)
 		}
-	}, [applySnapshot, transport])
+	}, [applySnapshot, management.agentTools])
 
 	useEffect(() => {
 		void refresh()
@@ -116,13 +116,17 @@ export function AgentToolsScreen() {
 		if (!snapshot || !dirty) return
 		setSaving(true)
 		try {
-			const next = await transport.withRpc((rpc) =>
-				rpc.agentTools().replacePolicy(snapshot.revision, draft as AgentToolsPolicyInput),
+			const next = await management.agentTools.replacePolicy(
+				snapshot.revision,
+				draft as AgentToolsPolicyInput,
 			)
 			applySnapshot(next)
 			notify({ color: 'green', message: 'Agent 工具策略已保存' })
 		} catch (cause) {
-			notify({ color: 'red', message: rpcErrorMessage(cause, '保存 Agent 工具策略失败') })
+			notify({
+				color: 'red',
+				message: runtimeErrorMessage(cause, '保存 Agent 工具策略失败'),
+			})
 		} finally {
 			setSaving(false)
 		}

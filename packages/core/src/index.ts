@@ -1,10 +1,5 @@
-import './logger'
-import './services'
-
-// Context owns an open module-augmentation contract. TypeScript only merges downstream
-// `declare module '@pluxel/core'` declarations through the direct star re-export; the Plugin,
-// lifecycle and service surfaces below remain explicit allowlists.
-export * from '@pluxel/context'
+export type { Context, CoreHostConfig, PluginContext, RootContext } from './context/Context'
+export type { ContextLogger } from './logger/LoggerService'
 
 export { BasePlugin, OptionalPluginBindings, PluginConfigs, PluginPart } from './plugins'
 export type {

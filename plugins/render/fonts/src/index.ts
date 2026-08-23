@@ -165,7 +165,7 @@ export class FontsPlugin extends BasePlugin {
 			{ tag: 'fonts-registry' },
 		)
 		this.managed = await this.initializeManagedFonts(storage)
-		this.ctx.workbench.mount(FontsWorkbench, {
+		this.ctx.workbench?.mount(FontsWorkbench, {
 			fonts: workbench.bind.rpc(() => this.createWorkbenchManager()),
 		})
 	}

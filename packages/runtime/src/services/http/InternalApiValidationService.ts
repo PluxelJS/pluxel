@@ -1,19 +1,8 @@
 import {
 	formatPluginNodeReference,
 	type Context as PluxelContext,
-	Injectable,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-
-const serviceName = 'internalApiValidation' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: InternalApiValidationService
-		}
-	}
-}
 
 export type InternalApiValidationContext = {
 	path: string
@@ -38,13 +27,21 @@ type ActiveValidator = {
 	removeFromScope: () => void
 }
 
-@Injectable({ key: serviceName })
 export class InternalApiValidationService {
-	private readonly validators = new Set<ActiveValidator>()
+	private readonly validators: Set<ActiveValidator>
 	private readonly logger: NonNullable<PluxelContext['logger']>
 
-	constructor(public ctx: PluxelContext) {
-		this.logger = ctx.logger!
+	constructor(
+		public readonly ctx: PluxelContext,
+		root?: InternalApiValidationService,
+	) {
+		if (root) {
+			this.validators = root.validators
+			this.logger = root.logger
+			return
+		}
+		this.validators = new Set()
+		this.logger = ctx.logger
 		this.validators.add({
 			owner: null,
 			removeFromScope: () => {},
@@ -63,6 +60,11 @@ export class InternalApiValidationService {
 				}
 			},
 		})
+	}
+
+	/** @internal Bind registration ownership while sharing the root validator set. */
+	forOwner(owner: PluxelContext): InternalApiValidationService {
+		return new InternalApiValidationService(owner, this)
 	}
 
 	hasValidators(): boolean {

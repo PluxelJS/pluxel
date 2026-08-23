@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { BasePlugin, Plugin } from '@pluxel/test'
 import { join } from 'pathe'
+import { requireLoaderService, requireScanService } from '../../src/context-plan'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 import { withTestDynamicContext } from '../support/context'
 import { lowerTestPlugin } from '../support/lowered-plugin'
@@ -22,7 +23,7 @@ describe('LoaderHmrService anchors', () => {
 		lowerTestPlugin(EntryPlugin)
 
 		await withTestDynamicContext(async (ctx) => {
-			await ctx.loader.replaceModule(entry, { EntryPlugin })
+			await requireLoaderService(ctx).replaceModule(entry, { EntryPlugin })
 
 			const hmr = new LoaderHmrService(ctx, {
 				roots: [root],
@@ -51,19 +52,21 @@ describe('LoaderHmrService anchors', () => {
 		lowerTestPlugin(AnchorB)
 
 		await withTestDynamicContext(async (ctx) => {
-			await ctx.loader.replaceModule(a, { AnchorA })
+			const loader = requireLoaderService(ctx)
+			const scanService = requireScanService(ctx)
+			await loader.replaceModule(a, { AnchorA })
 			const hmr = new LoaderHmrService(ctx, { roots: [fixture.path], entries: [entry] })
 			const hmrBox = inspectLoaderHmr(hmr)
 			const before = hmrBox.getAnchorsCleanSnapshot()
-			await ctx.loader.replaceModule(b, { AnchorB })
+			await loader.replaceModule(b, { AnchorB })
 
 			expect([...before]).toEqual([a])
 			expect([...hmrBox.getAnchorsCleanSnapshot()]).toEqual([a, b])
 
-			ctx.scanService.listWorkspaceEntries = () => {
+			scanService.listWorkspaceEntries = () => {
 				throw new Error('explicit entries must bypass workspace scanning')
 			}
-			ctx.scanService.resolveEntry = async () => {
+			scanService.resolveEntry = async () => {
 				throw new Error('explicit entries must bypass entry resolution')
 			}
 			const startup = await hmrBox.ensureStartupScope()

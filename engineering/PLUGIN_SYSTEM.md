@@ -20,6 +20,17 @@ static or dynamic route: catalog / Vite / HMR / host policy
 optional Workbench Plane: target layout / artifacts / bound resources
 ```
 
+## Context 与宿主能力
+
+Context 只投影宿主编译进 immutable plan 的官方能力和当前 owner identity，不是可扩展 service registry，也不暴露 host
+configuration。Core/Runtime 的 descriptor、installation 和 slot helper 只从 internal entry 使用；业务 package 不注册 Context
+capability，业务依赖始终进入 Plugin graph。
+
+内建能力明确选择 root、generation 或 owner-view scope。owner-view 共享 root backend，但 Plugin、PluginPart 与每条 dependency
+caller edge 各有惰性 view/cache；generation backing 跟随 provider generation。这样 `ctx.commands`、`ctx.http`、`ctx.workers` 等
+保留调用者注册和 cleanup ownership，同时 registry/pool/server 等 backend 仍按 root 共享。可选能力 disabled 时不安装其
+backend installation，不能通过 null stateful service 模拟启用。
+
 ## 依赖与组成
 
 | 意图              | API                                      | 生命周期含义                       |
@@ -32,6 +43,11 @@ optional Workbench Plane: target layout / artifacts / bound resources
 constructor 是 required dependency 的唯一作者声明。required 使用目标 package 根入口的 value import；optional 使用
 目标 Plugin 的 type-only root import 和 non-exported module-level ref。两者都由 semantic pass lower 成 definition slot edge。
 static/dynamic route 必须读取同一 committed core graph；Workbench resolver 不依赖 loader 私有图。
+
+同一 constructor 中每个 required definition 最多出现一次。RuntimeState override 使用 stable requirement address，而不是把 parameter
+index 持久化为 edge identity；因此两个参数若解析到同一 definition，会由 semantic pass 以
+`plugin_dependency_requirement_duplicate` 拒绝。只有真实的同 token 多角色用例成立后，才研究显式 role declaration；参数名和位置都不是
+持久 identity。
 
 宿主修改 runtime dependency override 时，commit 必须重启被修改 plugin 与其 dependent closure。只重建 provider
 而保留 dependent 的旧 caller-bound view 会破坏 Context isolation，并让 Workbench 中的实现选择表面成功、实际继续
@@ -71,7 +87,7 @@ generation 构造后，core 注入 Plugin/Part composite config，再按 childre
 `init()`。每个 Part 得到结构化 child Context、由父 effects 持有的 child scope、`partPath` logger 和惰性 owner-bound
 capability view；HTTP、commands、worker、Node module 等共享 root/backend 状态，但 registration 与 cleanup 绑定 Part scope。
 Part `init()` 失败会让 owning Plugin start 失败，lifecycle error 携带 `partPath`，rollback 仍只 drain Plugin generation effects。
-child Context 不是新的 root 或完整 `isolate()`；未声明 owner binding 的 service 继续使用 owning Plugin view，database definition、
+child Context 不是新的 root；未声明 owner binding 的 capability 继续使用 owning Plugin view，database definition、
 migration 与 handle ownership 也保持 Plugin 级。Part 只隔离资源所有权，不作为 trust boundary 或 service-instance sandbox。
 
 Part 可以在自己的 `init()` 中使用 `plugins.use()`；semantic pass 把 reachable Part optional refs 合并到 owning Plugin node，
@@ -144,11 +160,12 @@ runtime use case，不复制 graph 或 commit 逻辑。
 
 ## Optional Workbench Plane
 
-插件只看到 `ctx.workbench.enabled` 和 `ctx.workbench.mount()`。宿主通过顶层 `workbench` 配置安装
-backend。disabled 时不创建 registry、compiler、watcher、route 或 transport，mount 返回 `undefined`。
+插件只通过 `ctx.workbench?.mount()` 发布可选 Extension。宿主通过顶层 `workbench` 配置安装
+capability 与 backend；disabled 时 Context 没有 `workbench` property，也不创建 registry、compiler、watcher、route 或
+transport。optional chaining 同时避免构造 bindings，不需要 null facade 或 `enabled` 分支。
 
 browser-safe `WorkbenchContract` 声明 resource、View、placement 和 Port；server-only `WorkbenchExtension`
-只绑定 Contract 与 UI entry。`workbench.mount(extension, bindings)` 是唯一发布动作，owner 不在 Extension 重复
+只绑定 Contract 与 UI entry。`workbench?.mount(extension, bindings)` 是唯一发布动作，owner 不在 Extension 重复
 声明。registry
 生成 target-specific layout，并把每个 resource 转成 resource-graph-revision-scoped opaque grant。
 artifact 状态更新可以复用相同 grant；module、实例或依赖图变化会立即撤销旧 grant。浏览器不能按插件

@@ -6,7 +6,7 @@ export const ADMIN_ACCESS_BLOCKED_HEADER = 'X-Pluxel-Admin-Access-Blocked'
 export const ADMIN_ACCESS_REDIRECT_HEADER = 'X-Pluxel-Admin-Access-Redirect'
 export const ADMIN_ACCESS_REASON_HEADER = 'X-Pluxel-Admin-Access-Reason'
 
-export type AdminAccessBlockedKind = 'ui' | 'api' | 'graphql'
+export type AdminAccessBlockedKind = 'ui' | 'api'
 export type AdminAccessBlockedCode = 'admin_access_blocked'
 
 export type AdminAccessBlockedPayload = {

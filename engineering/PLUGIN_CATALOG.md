@@ -1,20 +1,20 @@
 # Plugin Catalog Classification
 
-本文定义 Workbench 插件目录的分类所有权、身份、默认解析和用户偏好。这里的 group 是宿主管理界面的
+本文定义 Management Plugin catalog 的分类所有权、身份、默认解析和用户偏好。这里的 group 是宿主管理界面的
 catalog layout，不是插件能力、依赖、生命周期或 Workbench Extension placement。
 
 ## Ownership
 
 - `@Plugin`、`PluginNodeInfo`、插件包 manifest 和 Workbench Contract 不声明 catalog group。
-- Workbench backend 在启用时拥有分类解析与偏好持久化；Workbench disabled 时不创建分类 service、文件或 route 成本。
-- 宿主只能通过顶层 `workbench.pluginGroups` 注册产品分类；插件作者不能在运行时创建、重命名或锁定分类。
+- Management Plane 在启用时拥有分类解析与偏好持久化；management 未安装时不创建分类 service、文件或 route 成本。
+- 宿主只能通过顶层 `management.pluginGroups` 注册产品分类；插件作者不能在运行时创建、重命名或锁定分类。
 - 用户可以在已注册分类之间移动和排序插件，也可以明确放回未分组区，但不能创建、重命名或删除分类。
 
 这保持 core host-free，并避免把 UI 布局误当成插件身份。route `navigation.group`、tab group 和插件目录分类是
 三个独立契约，不能共享 ID 或状态语义。
 
 分类的唯一 Plugin 事实源是 runtime coordinator 的 committed immutable catalog/status projection。dynamic loader 只拥有当前 batch 的 unpublished
-draft，Workbench 不能读取它或维护第二份 committed registry。source/package provenance 从 catalog entry 读取；running 状态不决定 classification。
+draft，management layout service 不能读取它或维护第二份 committed registry。source/package provenance 从 catalog entry 读取；running 状态不决定 classification。
 
 catalog、偏好与布局全部以 canonical definition/node address 及其 index key 建 Map。读取 disabled、stopped、durable orphan 或 invalid address 只能做
 non-creating lookup/decode，不得调用 Core intern、创建 definition/node slot、materialized record、Context、effects 或 artifact lease。Workbench registry
@@ -25,8 +25,7 @@ non-creating lookup/decode，不得调用 Core intern、创建 definition/node s
 在 canonical host module 中从 `@pluxel/runtime` 导入 `pluginNodeAddressOf`，并对已 lower 的 catalog constructor 取 definition address：
 
 ```ts
-workbench: {
-	enabled: true,
+management: {
 	pluginGroups: [
 		{
 			id: 'observability',
@@ -61,7 +60,7 @@ file source 不推断 npm 身份；官方 package-manager 在自己的 Workbench
 
 ## User preferences
 
-Workbench 持久化的是相对于当前默认分类的偏好，不是分类定义：
+Management Plane 持久化的是相对于当前默认分类的偏好，不是分类定义：
 
 ```ts
 type PluginCatalogPreferences = {
@@ -89,8 +88,8 @@ catalog 扫描。
 
 ## Persistence
 
-偏好使用 Workbench-owned persistence namespace，不进入 RuntimeState。这样固定 enablement 的 memory RuntimeState 与
-durable Workbench 布局可以独立选择，Workbench disabled 也没有隐式状态成本。
+偏好使用 `management` persistence namespace，不进入 RuntimeState 或 Workbench backend。这样固定 enablement 的 memory
+RuntimeState 与 durable management layout 可以独立选择；management 未安装也没有隐式状态成本。
 
 reader/writer 只接受 version 3 definition address。其他版本、非法 address、同一 family 的冲突 assignment 或 order group
 直接拒绝，不从名称或 node 布局猜测转换。
@@ -99,7 +98,7 @@ reader/writer 只接受 version 3 definition address。其他版本、非法 add
 
 变更必须覆盖：
 
-- Workbench disabled 零分类 service/持久化写入；
+- management disabled 零分类 service/持久化写入；
 - static definition address 规则、dynamic exact package、最长 prefix 与冲突拒绝；
 - disabled/stopped catalog entry 仍分类；
 - disabled/orphan read 和无效 mutation 不创建 Core slot/record 或 Workbench artifact owner；

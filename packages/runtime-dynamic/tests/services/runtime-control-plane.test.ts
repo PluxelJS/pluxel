@@ -4,7 +4,7 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import type { PluginApplyReport } from '@pluxel/runtime/web'
 import { RuntimeRpcApi } from '../../../runtime/src/api/http/rpc/RuntimeRpcApi'
-import { installWorkbench } from '../../../runtime/src/services/workbench'
+import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 
@@ -13,12 +13,11 @@ async function loadModule(
 	moduleId: string,
 	exports: Record<string, unknown>,
 ) {
-	await fixture.ctx.loader.replaceModule(moduleId, exports)
+	await requireLoaderService(fixture.ctx).replaceModule(moduleId, exports)
 }
 
 function createRpcFixture() {
 	const fixture = createHmrTestContext()
-	installWorkbench(fixture.ctx)
 	return { ...fixture, rpc: new RuntimeRpcApi(fixture.ctx) }
 }
 
@@ -105,8 +104,7 @@ describe('runtime control-plane RPC', () => {
 			ok: true,
 			items: [
 				{
-					index: 0,
-					token: providerToken,
+					requirement: providerToken,
 					kind: 'abstract',
 					effective: provider,
 				},
@@ -115,7 +113,7 @@ describe('runtime control-plane RPC', () => {
 
 		const dependencySelection = await fixture.rpc.setPluginDependencyTarget({
 			consumer,
-			index: 0,
+			requirement: providerToken,
 			provider: providerAlt,
 		})
 		expect(dependencySelection).toMatchObject({
@@ -133,8 +131,7 @@ describe('runtime control-plane RPC', () => {
 			ok: true,
 			items: [
 				{
-					index: 0,
-					token: providerToken,
+					requirement: providerToken,
 					kind: 'abstract',
 					selected: providerAlt,
 					effective: providerAlt,

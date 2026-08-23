@@ -1,7 +1,6 @@
 import { Badge, Box, Center, Loader, Stack, Tabs, Text } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { ObjectSchema } from 'valibot'
 
 import { EmptyState, ErrorState } from '../../../components'
 import { useResolvedWorkbenchRoute, useWorkbenchSurface } from '../../../workbench/runtime'
@@ -168,12 +167,12 @@ function ConfigContent({
 				<Text c="dimmed">加载配置中…</Text>
 			</Center>
 		)
-	if (!config.data?.schema)
+	if (!config.data || config.data.fields.length === 0)
 		return (
 			<EmptyState
 				icon={<IconSettingsOff size={28} />}
 				title="暂无可配置项"
-				description="该插件未提供配置 schema。"
+				description="该插件未提供配置展示计划。"
 				minHeight={200}
 			/>
 		)
@@ -181,7 +180,7 @@ function ConfigContent({
 		<ConfigForm
 			owner={owner}
 			displayName={displayName}
-			schema={config.data.schema as ObjectSchema<any, any>}
+			fields={config.data.fields}
 			savedConfig={config.data.savedConfig}
 			defaults={config.data.defaults}
 			sections={config.data.sections}

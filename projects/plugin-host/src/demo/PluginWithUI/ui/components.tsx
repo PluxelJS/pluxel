@@ -16,7 +16,6 @@ import {
 	Title,
 } from '@mantine/core'
 import { formatPluginNodeRoute } from '@pluxel/runtime'
-import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { useWorkbenchHost, type WorkbenchEventsClient } from '@pluxel/runtime/workbench/ui'
 import {
 	IconActivity,
@@ -34,6 +33,12 @@ type PluginWithUIEventsClient = WorkbenchEventsClient<PluginWithUIEvents>
 type RpcAction = () => Promise<unknown>
 type SsePayloadWithType = { type: unknown }
 
+function errorMessage(error: unknown, fallback: string): string {
+	if (error instanceof Error) return error.message || fallback
+	if (typeof error === 'string') return error
+	return fallback
+}
+
 function useRpcError() {
 	const [error, setError] = useState<string | null>(null)
 
@@ -42,7 +47,7 @@ function useRpcError() {
 			await action()
 			setError(null)
 		} catch (caught) {
-			setError(rpcErrorMessage(caught, fallbackMessage))
+			setError(errorMessage(caught, fallbackMessage))
 		}
 	}
 

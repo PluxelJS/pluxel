@@ -6,25 +6,13 @@ import {
 	type RuntimeHost,
 	withRuntimeHost,
 } from '@pluxel/runtime/test'
-import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
-} from '@pluxel/runtime/web/paths'
+import { requireWorkbench } from '@pluxel/runtime/internal'
 import { describe, expect, it } from 'vitest'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import { CanvasError, CanvasPlugin, layoutWithLines, measureRichInlineStats } from '../src/index.ts'
 import { createCanvasWorkerAdapter } from '../src/worker.ts'
 import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
-
-function pluginLayoutUrl(address: unknown): URL {
-	const url = new URL(
-		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
-	)
-	url.searchParams.set('target', JSON.stringify(address))
-	return url
-}
 
 @Plugin()
 class CanvasTestConsumer extends BasePlugin {
@@ -68,7 +56,8 @@ describe('CanvasPlugin', () => {
 
 				expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
 				expect(svg.getContent().toString()).toContain('<svg')
-				expect(host.ctx.workbench.enabled).toBe(false)
+				expect('workbench' in host.ctx).toBe(false)
+				expect(host.ctx.workbench).toBeUndefined()
 			},
 			{ workbench: false },
 		)
@@ -245,34 +234,35 @@ describe('CanvasPlugin', () => {
 	})
 
 	it('uses FontsPlugin as its direct Port renderer and resource owner', async () => {
-		await withRuntimeHost(async (host) => {
-			addEnabled(host, [FontsPlugin, CanvasPlugin])
-			await host.commit()
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, CanvasPlugin])
+				await host.commit()
 
-			const response = await host.ctx.http.fetch(
-				new Request(pluginLayoutUrl(pluginNodeAddressOf(CanvasPlugin))),
-			)
-			expect(response.status).toBe(200)
-			const layout = (await response.json()) as WorkbenchLayout
-			expect(layout.items).toEqual([
-				expect.objectContaining({
-					owner: {
-						address: pluginNodeAddressOf(FontsPlugin),
-						displayName: 'FontsPlugin',
-						rootExportName: 'FontsPlugin',
-					},
-					target: {
-						address: pluginNodeAddressOf(CanvasPlugin),
-						displayName: 'CanvasPlugin',
-						rootExportName: 'CanvasPlugin',
-					},
-					viewId: 'FontSelection',
-					port: expect.objectContaining({
-						id: '@pluxel/fonts.selection',
-						model: { selection: expect.objectContaining({ kind: 'rpc' }) },
+				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(
+					pluginNodeAddressOf(CanvasPlugin),
+				)
+				expect(layout.items).toEqual([
+					expect.objectContaining({
+						owner: {
+							address: pluginNodeAddressOf(FontsPlugin),
+							displayName: 'FontsPlugin',
+							rootExportName: 'FontsPlugin',
+						},
+						target: {
+							address: pluginNodeAddressOf(CanvasPlugin),
+							displayName: 'CanvasPlugin',
+							rootExportName: 'CanvasPlugin',
+						},
+						viewId: 'FontSelection',
+						port: expect.objectContaining({
+							id: '@pluxel/fonts.selection',
+							model: { selection: expect.objectContaining({ kind: 'rpc' }) },
+						}),
 					}),
-				}),
-			])
-		})
+				])
+			},
+			{ workbench: { enabled: true } },
+		)
 	})
 })

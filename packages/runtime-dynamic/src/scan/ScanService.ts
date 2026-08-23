@@ -1,4 +1,4 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext } from '@pluxel/core'
 import { dirname, normalize, resolve as r } from 'pathe'
 import {
 	clearOxcResolveCache,
@@ -29,19 +29,6 @@ import {
 	type ScanOptionsInput,
 	type WorkspaceEntryInfo,
 } from './types'
-
-const serviceName = 'scanService' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: ScanService
-		}
-		interface Config {
-			[serviceName]?: ScanServiceConfig
-		}
-	}
-}
 
 export type { PackageSelector } from './selectors'
 export type { ScanSnapshot } from './snapshot'
@@ -81,7 +68,6 @@ export type ResolverCacheInvalidatedDetail = Readonly<{
  * - 内置缓存，避免重复构建扫描图，提高 CLI 与服务常驻模式的性能。
  * - 支持按需聚焦特定包、条件导出和 TS 回退文件收集。
  */
-@Injectable({ key: serviceName })
 export class ScanService {
 	public ctx: PluxelContext
 	private defaults: ResolvedScanOptions

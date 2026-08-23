@@ -1,4 +1,5 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/context'
+import type { Context as PluxelContext } from '../../context/Context'
+import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
 
 export type Cleanup = () => void | Promise<void>
 /** A resource handle whose async disposal settles only after its owned work has stopped. */
@@ -25,15 +26,6 @@ export class EffectsFrozenError extends Error {
 	}
 }
 
-const serviceName = 'effects' as const
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Services {
-			[serviceName]: EffectsService
-		}
-	}
-}
-
 const ServiceState = {
 	LIVE: 0,
 	DISPOSING: 1,
@@ -57,8 +49,6 @@ type EntryState = (typeof EntryState)[keyof typeof EntryState]
 
 const PHASES: readonly Phase[] = ['shutdown', 'runtime', 'final'] as const
 const DEFAULT_PHASE: Phase = 'runtime'
-const EFFECTS_CHILD_SCOPE = Symbol.for('pluxel:effects:child-scope')
-
 // Stack stores a "handle" = token * HANDLE_STRIDE + id, so id reuse is safe.
 const HANDLE_ID_BITS = 20
 const HANDLE_STRIDE = 2 ** HANDLE_ID_BITS
@@ -530,7 +520,6 @@ class EffectsScopeImpl implements EffectsScope {
 	}
 }
 
-@Injectable({ key: serviceName })
 export class EffectsService extends EffectsScopeImpl {
 	constructor(ctx: PluxelContext, _cfg: unknown) {
 		super(ctx)

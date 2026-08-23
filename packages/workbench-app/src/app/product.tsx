@@ -1,16 +1,16 @@
 import { createContext, type ReactNode, useContext, useEffect, useState } from 'react'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 
-import type { RuntimeTransportClient } from '../runtime'
+import type { RuntimeManagementClient } from '../runtime'
 
 const ProductContext = createContext<ProductDescriptor | null | undefined>(undefined)
 
 export function ProductProvider({
 	children,
-	transport,
+	client,
 }: {
 	children: ReactNode
-	transport: RuntimeTransportClient
+	client: RuntimeManagementClient
 }) {
 	const [product, setProduct] = useState<ProductDescriptor | null>(null)
 
@@ -18,7 +18,7 @@ export function ProductProvider({
 		let active = true
 		async function loadProduct(): Promise<void> {
 			try {
-				const meta = await transport.http.meta.info()
+				const meta = await client.discover()
 				if (active) setProduct(meta.application.product)
 			} catch (error: unknown) {
 				console.error('[workbench] failed to load host product metadata', error)
@@ -28,7 +28,7 @@ export function ProductProvider({
 		return () => {
 			active = false
 		}
-	}, [transport])
+	}, [client])
 
 	useEffect(() => {
 		document.title = product ? `${product.displayName} Workbench` : 'Pluxel Workbench'

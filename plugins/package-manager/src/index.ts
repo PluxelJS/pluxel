@@ -115,7 +115,7 @@ export class PackageManagerPlugin extends BasePlugin implements PackageManagerCo
 				execute: async ({ specs }) => toCommandMutation(await store.remove(specs)),
 			}),
 		)
-		this.ctx.workbench.mount(PackageManagerWorkbench, {
+		this.ctx.workbench?.mount(PackageManagerWorkbench, {
 			manager: workbench.bind.rpc(() => new PackageManagerRpc(store)),
 		})
 	}

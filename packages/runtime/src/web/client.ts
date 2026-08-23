@@ -1,82 +1,67 @@
-import type { RpcStub } from 'capnweb'
 import { treaty } from '@elysiajs/eden'
 
-import {
-	type AdminAccessAwareFetchOptions,
-	createAdminAccessAwareFetch,
-	defaultOnAdminAccessBlocked,
-	type RuntimeFetch,
-	toGlobalFetch,
-} from './admin-access'
+import { toGlobalFetch, type RuntimeFetch } from './admin-access'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
-import type { WorkbenchCatalog, WorkbenchLayout } from '../workbench/contracts'
-import type { PluginNodeAddress } from '@pluxel/core'
-import type { HostApplicationMeta } from '../product-contract'
-import type { RuntimeRpcApi } from './protocol'
-import { createWorkbenchRpcView, createRpcClientFactory, invokeRpc } from './rpc'
-import { type SseClientOptions, type SseClientWithNamespaces, sseWithLifecycle } from './sse'
-import { createRuntimeSecurityClient } from './security'
-import { runRuntimeTransportCleanups } from './client-lifecycle'
+import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
+import type {
+	AgentToolsHandleApi,
+	BaseProviderInspectionResult,
+	ConfigFieldMutation,
+	ConfigPresentationResult,
+	ConfigResult,
+	EnsureForkResult,
+	LoggingHandleApi,
+	PluginDependencyInspectionResult,
+	PluginDependencyListResult,
+	PluginDependencyMutationResult,
+	PluginGroup,
+	PluginGroupInput,
+	PluginGroupsMutationResult,
+	PluginStatusBatchAction,
+	PluginStatusBatchResult,
+	PluginStatusQueryResult,
+	PluginsListOutput,
+	RemoveForkResult,
+	RuntimeMetaV1,
+} from './protocol'
+import type { RuntimeManagementRpcApi } from './management-rpc-protocol'
+import { parseRuntimeMetaV1 } from './validation'
 import {
-	RUNTIME_WORKBENCH_EVENTS_PATH,
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_TRANSPORT_PATHS,
-	runtimeWorkbenchModelEventsPath,
-	runtimeWorkbenchLiveQueryPath,
-	runtimeLogStreamPath,
-	joinPath,
-} from './paths'
-import { mergeNamespaces } from './utils'
+	parseAgentToolsAdminSnapshot,
+	parseBaseProviderInspectionResult,
+	parseConfigPresentationResult,
+	parseConfigResult,
+	parseEnsureForkResult,
+	parseLogRangeResult,
+	parseLogStreamMeta,
+	parsePluginDependencyInspectionResult,
+	parsePluginDependencyListResult,
+	parsePluginDependencyMutationResult,
+	parsePluginGroups,
+	parsePluginGroupsMutationResult,
+	parsePluginLogPolicyMutationResult,
+	parsePluginsListOutput,
+	parsePluginStatusBatchResult,
+	parsePluginStatusQueryResult,
+	parseRemoveForkResult,
+	parseRuntimeLogStreamsIndex,
+	parseVersionedPluginLogPolicySnapshot,
+} from './management-validation'
+import { invokeRpc } from './rpc-session'
+import { createRuntimeSecurityClient, type RuntimeSecurityClient } from './security'
+import { runtimeLogStreamPath, joinPath } from './paths'
 import { resolveClientUrl } from './http-utils'
-
-export interface RuntimeMeta {
-	service: 'pluxel-runtime'
-	ready: true
-	application: HostApplicationMeta
-	sse: {
-		namespaces: string[]
-	}
-	workbench: {
-		version: number
-		bundles: number
-	}
-	transport: {
-		rpc: string
-		graphql: string
-		sse: string
-	}
-}
+import { resolveRuntimeClientConnection, type RuntimeClientConnectionOptions } from './connection'
+import { expectData, type RuntimeTreatyGet } from './eden'
 
 export interface RuntimeLogStreamsIndex {
-	streams: LogStreamMeta[]
+	readonly streams: readonly LogStreamMeta[]
 }
 
 export type RuntimeLogRangeQuery = LogFilter & {
 	epoch?: number
 	from?: string
 	limit?: number
-}
-
-export type EdenResultLike<T = unknown> = {
-	data: T | null
-	error: unknown
-	response?: Response
-}
-
-type RuntimeTreatyFetchOptions = {
-	fetch?: RequestInit
-}
-
-type RuntimeTreatyQueryOptions<TQuery> = RuntimeTreatyFetchOptions & {
-	query?: TQuery
-}
-
-type RuntimeTreatyGet<TData, TQuery = never> = {
-	get(
-		options?: [TQuery] extends [never]
-			? RuntimeTreatyFetchOptions
-			: RuntimeTreatyQueryOptions<TQuery>,
-	): Promise<EdenResultLike<TData>>
 }
 
 type RuntimeTreatyStreamRoute = {
@@ -87,15 +72,8 @@ type RuntimeTreatyStreamRoute = {
 type RuntimeTreatyStreamsRoute = RuntimeTreatyGet<RuntimeLogStreamsIndex> &
 	((params: { streamId: string }) => RuntimeTreatyStreamRoute)
 
-interface RuntimeTreatyClient {
-	meta: RuntimeTreatyGet<RuntimeMeta>
-	workbench: {
-		catalog: RuntimeTreatyGet<WorkbenchCatalog>
-		layout: {
-			global: RuntimeTreatyGet<WorkbenchLayout>
-			plugin: RuntimeTreatyGet<WorkbenchLayout, { target: string }>
-		}
-	}
+interface RuntimeManagementTreatyClient {
+	meta: RuntimeTreatyGet<RuntimeMetaV1>
 	logs: {
 		v1: {
 			streams: RuntimeTreatyStreamsRoute
@@ -103,29 +81,13 @@ interface RuntimeTreatyClient {
 	}
 }
 
-export type RuntimeTransportClientOptions = {
-	origin?: string
-	apiBase?: string
-	rpcBase?: string
-	sse?: SseClientOptions
-	defaultNamespace?: string
-	credentials?: RequestCredentials
-	fetch?: RuntimeFetch
-	adminAccess?: AdminAccessAwareFetchOptions & {
-		enabled?: boolean
-	}
-}
+export type RuntimeManagementClientOptions = RuntimeClientConnectionOptions
 
-type RuntimeTransportHttp = {
+type RuntimeManagementHttp = Readonly<{
 	meta: {
-		info(init?: RequestInit): Promise<RuntimeMeta>
+		info(init?: RequestInit): Promise<RuntimeMetaV1>
 	}
-	workbench: {
-		catalog(init?: RequestInit): Promise<WorkbenchCatalog>
-		globalLayout(init?: RequestInit): Promise<WorkbenchLayout>
-		pluginLayout(target: PluginNodeAddress, init?: RequestInit): Promise<WorkbenchLayout>
-	}
-	logs: {
+	logs: Readonly<{
 		streams(init?: RequestInit): Promise<RuntimeLogStreamsIndex>
 		meta(streamId: string, init?: RequestInit): Promise<LogStreamMeta>
 		range(
@@ -134,258 +96,242 @@ type RuntimeTransportHttp = {
 			init?: RequestInit,
 		): Promise<LogRangeResult>
 		followUrl(streamId: string, query?: URLSearchParams | string): string
-	}
-}
+	}>
+}>
 
-type RuntimeTransportLinks = {
-	apiBase: string
-	rpc: string
-	graphql: string
-	sse: string
-	workbenchLiveQuery(grantId: string, params?: unknown): string
-	workbenchModelEvents(grantId: string): string
-	logsFollow(streamId: string, query?: URLSearchParams | string): string
-	workbenchEvents(): string
-}
+/** Framework-neutral Level 1 management client. No root RPC stub is exposed. */
+export type RuntimeManagementClient = Readonly<{
+	discover(init?: RequestInit): Promise<RuntimeMetaV1>
+	plugins: Readonly<{
+		list(): Promise<PluginsListOutput>
+		status(owner: PluginNodeAddress): Promise<PluginStatusQueryResult>
+		applyStatusActions(
+			actions: readonly PluginStatusBatchAction[],
+		): Promise<PluginStatusBatchResult>
+	}>
+	config: Readonly<{
+		presentation(owner: PluginNodeAddress): Promise<ConfigPresentationResult>
+		get(owner: PluginNodeAddress): Promise<ConfigResult>
+		patch(owner: PluginNodeAddress, patch: Record<string, unknown>): Promise<ConfigResult>
+		patchField(owner: PluginNodeAddress, input: ConfigFieldMutation): Promise<ConfigResult>
+	}>
+	dependencies: Readonly<{
+		list(owner: PluginNodeAddress): Promise<PluginDependencyListResult>
+		inspect(owner: PluginNodeAddress): Promise<PluginDependencyInspectionResult>
+		setTarget(input: {
+			consumer: PluginNodeAddress
+			requirement: PluginDefinitionAddress
+			provider: PluginNodeAddress | null
+		}): Promise<PluginDependencyMutationResult>
+		inspectBaseProvider(owner: PluginNodeAddress): Promise<BaseProviderInspectionResult>
+		selectBaseProvider(input: {
+			consumer: PluginNodeAddress
+			token: PluginDefinitionAddress
+			provider: PluginNodeAddress | null
+		}): Promise<PluginDependencyMutationResult>
+	}>
+	forks: Readonly<{
+		ensure(input: {
+			base: PluginNodeAddress
+			forkId: string
+			enable?: boolean
+			selectFor?: {
+				consumer: PluginNodeAddress
+				requirement: PluginDefinitionAddress
+			}
+		}): Promise<EnsureForkResult>
+		remove(input: { base: PluginNodeAddress; forkId: string }): Promise<RemoveForkResult>
+	}>
+	groups: Readonly<{
+		list(): Promise<readonly PluginGroup[]>
+		update(groups: readonly PluginGroupInput[]): Promise<PluginGroupsMutationResult>
+	}>
+	logging: Readonly<LoggingHandleApi>
+	agentTools: Readonly<AgentToolsHandleApi>
+	logs: RuntimeManagementHttp['logs']
+	security: RuntimeSecurityClient
+}>
 
-export interface RuntimeTransportClient {
-	fetch: RuntimeFetch
-	http: RuntimeTransportHttp
-	links: RuntimeTransportLinks
-	workbench: {
-		rpc<TRpc>(grantId: string): TRpc
-		events<TEvent = unknown>(
-			grantId: string,
-		): SseClientWithNamespaces & { readonly __event?: TEvent }
-	}
-	withRpc: <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) => Promise<T>
-	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
-	sse: SseClientWithNamespaces
-	dispose: () => void
-}
-
-function createRuntimeTreatyClient(
-	links: RuntimeTransportLinks,
+function createRuntimeManagementTreatyClient(
+	apiBase: string,
 	fetch: RuntimeFetch,
-): RuntimeTreatyClient {
+): RuntimeManagementTreatyClient {
 	// Keep the Treaty surface locally typed.
 	// The internal Elysia app is assembled from dynamically mounted runtime plugins,
 	// so end-to-end route inference currently collapses before it reaches this client.
 	// Re-exporting that unstable server-side type here would couple browser code to
 	// internal assembly details without improving the public plugin/UI contract.
-	return treaty(links.apiBase, {
+	return treaty(apiBase, {
 		fetcher: toGlobalFetch(fetch),
-	}) as unknown as RuntimeTreatyClient
+	}) as unknown as RuntimeManagementTreatyClient
 }
 
-function createRuntimeTransportHttp(
-	http: RuntimeTreatyClient,
-	links: RuntimeTransportLinks,
-): RuntimeTransportHttp {
-	return {
-		meta: {
-			info: (init) => expectData<RuntimeMeta>(http.meta.get({ fetch: init })),
-		},
-		workbench: {
-			catalog: (init) => expectData<WorkbenchCatalog>(http.workbench.catalog.get({ fetch: init })),
-			globalLayout: (init) =>
-				expectData<WorkbenchLayout>(http.workbench.layout.global.get({ fetch: init })),
-			pluginLayout: (target, init) =>
-				expectData<WorkbenchLayout>(
-					http.workbench.layout.plugin.get({
-						query: { target: JSON.stringify(target) },
-						fetch: init,
-					}),
+function createRuntimeManagementHttp(
+	http: RuntimeManagementTreatyClient,
+	apiBase: string,
+): RuntimeManagementHttp {
+	return Object.freeze({
+		meta: Object.freeze({
+			info: async (init?: RequestInit) =>
+				parseRuntimeMetaV1(await expectData<RuntimeMetaV1>(http.meta.get({ fetch: init }))),
+		}),
+		logs: Object.freeze({
+			streams: async (init?: RequestInit) =>
+				parseRuntimeLogStreamsIndex(
+					await expectData<RuntimeLogStreamsIndex>(http.logs.v1.streams.get({ fetch: init })),
 				),
-		},
-		logs: {
-			streams: (init) =>
-				expectData<RuntimeLogStreamsIndex>(http.logs.v1.streams.get({ fetch: init })),
-			meta: (streamId, init) =>
-				expectData<LogStreamMeta>(http.logs.v1.streams({ streamId }).meta.get({ fetch: init })),
-			range: (streamId, query, init) =>
-				expectData<LogRangeResult>(
-					http.logs.v1.streams({ streamId }).range.get({
-						query,
-						fetch: init,
-					}),
+			meta: async (streamId: string, init?: RequestInit) =>
+				parseLogStreamMeta(
+					await expectData<LogStreamMeta>(
+						http.logs.v1.streams({ streamId }).meta.get({ fetch: init }),
+					),
 				),
-			followUrl: (streamId, query) => links.logsFollow(streamId, query),
-		},
-	}
-}
-
-function resolveApiBase(options: RuntimeTransportClientOptions): string {
-	return resolveClientUrl(
-		options.apiBase ??
-			(typeof options.origin === 'string' && options.origin
-				? joinPath(options.origin, RUNTIME_INTERNAL_API_BASE)
-				: RUNTIME_INTERNAL_API_BASE),
-	)
-}
-
-function resolveBaseFetch(options: RuntimeTransportClientOptions): RuntimeFetch {
-	const fetchImpl =
-		options.fetch ??
-		(typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined)
-	if (!fetchImpl) {
-		throw new Error('[runtime-web] global fetch is unavailable; pass `options.fetch` explicitly.')
-	}
-	return fetchImpl
-}
-
-function withDefaultCredentials(
-	baseFetch: RuntimeFetch,
-	credentials: RequestCredentials,
-): RuntimeFetch {
-	return (input: RequestInfo | URL, init?: RequestInit) => {
-		if (init?.credentials !== undefined) return baseFetch(input as any, init as any)
-		const isRequest = typeof Request === 'function' && input instanceof Request
-		if (!init && isRequest) return baseFetch(input as any, init as any)
-		return baseFetch(input as any, { ...init, credentials } as any)
-	}
-}
-
-export function createRuntimeTransportFetch(
-	options: RuntimeTransportClientOptions = {},
-): RuntimeFetch {
-	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
-	const baseFetch = withDefaultCredentials(resolveBaseFetch(options), credentials)
-	if (options.adminAccess?.enabled === false) return baseFetch
-	return createAdminAccessAwareFetch(baseFetch, {
-		onBlocked: options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked,
+			range: async (streamId: string, query?: RuntimeLogRangeQuery, init?: RequestInit) =>
+				parseLogRangeResult(
+					await expectData<LogRangeResult>(
+						http.logs.v1.streams({ streamId }).range.get({
+							query,
+							fetch: init,
+						}),
+					),
+				),
+			followUrl: (streamId: string, query?: URLSearchParams | string) => {
+				const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
+				const suffix =
+					query instanceof URLSearchParams
+						? query.toString()
+						: typeof query === 'string'
+							? query
+							: ''
+				return suffix ? `${base}?${suffix}` : base
+			},
+		}),
 	})
 }
 
-export function createRuntimeTransportLinks(
-	options: RuntimeTransportClientOptions = {},
-): RuntimeTransportLinks {
-	const apiBase = resolveApiBase(options)
-	const transport = {
+/** Discover one runtime without constructing a long-lived client or opening streams. */
+export async function discoverRuntime(
+	options: RuntimeManagementClientOptions = {},
+	init?: RequestInit,
+): Promise<RuntimeMetaV1> {
+	const { apiBase, fetch } = resolveRuntimeClientConnection(options)
+	return await createRuntimeManagementHttp(
+		createRuntimeManagementTreatyClient(apiBase, fetch),
 		apiBase,
-		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.rpc)),
-		graphql: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.graphql)),
-		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
-		workbenchLiveQuery: (grantId: string, params?: unknown) => {
-			const url = resolveClientUrl(joinPath(apiBase, runtimeWorkbenchLiveQueryPath(grantId)))
-			if (params === undefined) return url
-			const query = new URLSearchParams({ params: JSON.stringify(params) })
-			return `${url}?${query}`
-		},
-		workbenchModelEvents: (grantId: string) =>
-			resolveClientUrl(joinPath(apiBase, runtimeWorkbenchModelEventsPath(grantId))),
-		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
-			const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
-			const suffix =
-				query instanceof URLSearchParams ? query.toString() : typeof query === 'string' ? query : ''
-			return suffix ? `${base}?${suffix}` : base
-		},
-		workbenchEvents: () => resolveClientUrl(joinPath(apiBase, RUNTIME_WORKBENCH_EVENTS_PATH)),
-	}
-	return transport
+	).meta.info(init)
 }
 
-export async function expectData<T>(promise: Promise<EdenResultLike<T>>): Promise<T> {
-	const result = await promise
-	const status = result.response?.status
-	if (status !== undefined && status >= 400) throw new Error(`HTTP ${status}`)
-	if (result.error) {
-		if (result.error instanceof Error) throw result.error
-		throw new Error(status ? `HTTP ${status}` : 'Request failed')
-	}
-	if (result.data === null || result.data === undefined) {
-		throw new Error(status ? `HTTP ${status}` : 'Empty response')
-	}
-	return result.data
-}
-
-export function createRuntimeTransportClient(
-	options: RuntimeTransportClientOptions = {},
-): RuntimeTransportClient {
-	const fetch = createRuntimeTransportFetch(options)
-	const links = createRuntimeTransportLinks(options)
-	const httpClient = createRuntimeTreatyClient(links, fetch)
-	const http = createRuntimeTransportHttp(httpClient, links)
-	const baseSseOptions = options.sse ?? {}
-	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
-	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
-	const adminAccessEnabled = options.adminAccess?.enabled !== false
-	const security = createRuntimeSecurityClient({
-		apiBase: links.apiBase,
-		fetch,
-	})
-	const rawRpc = createRpcClientFactory(links.rpc)
-	const workbenchRpcs = createWorkbenchRpcView(rawRpc, { credentials })
-	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) =>
-		invokeRpc(runner, { rpcBase: links.rpc, credentials })
-
-	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
-
-	const buildSseOptions = (opts?: SseClientOptions, inheritNamespaces = true): SseClientOptions => {
-		const params = { ...baseSseOptions.params, ...opts?.params }
-		const namespaces = inheritNamespaces
-			? mergeNamespaces(baseNamespaces, opts?.namespaces)
-			: mergeNamespaces(opts?.namespaces)
-		const withCredentials =
-			opts?.withCredentials ??
-			baseSseOptions.withCredentials ??
-			(credentials === 'include' ? true : undefined)
-
-		return {
-			...baseSseOptions,
-			...opts,
-			url: opts?.url ?? baseSseOptions.url ?? links.sse,
-			withCredentials,
-			adminAccess: adminAccessEnabled
-				? {
-						readState: async () => {
-							const overview = await security.readOverview()
-							return overview.adminAccess
-						},
-						onBlocked: options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked,
-					}
-				: undefined,
-			params,
-			namespaces: namespaces.length > 0 ? namespaces : undefined,
-		}
-	}
-
-	const managedSse = new Set<SseClientWithNamespaces>()
-	const createSse = (opts?: SseClientOptions) => {
-		let client: SseClientWithNamespaces
-		client = sseWithLifecycle(buildSseOptions(opts), () => managedSse.delete(client))
-		managedSse.add(client)
-		return client
-	}
-
-	let memoSse: SseClientWithNamespaces | null = null
-	const getSse = () => {
-		if (!memoSse) memoSse = createSse()
-		return memoSse
-	}
-
-	const client: RuntimeTransportClient = {
-		fetch,
-		http,
-		links,
-		workbench: {
-			rpc: <TRpc>(grantId: string) => (workbenchRpcs as Record<string, unknown>)[grantId] as TRpc,
-			events: <TEvent = unknown>(grantId: string) =>
-				createSse({ url: links.workbenchModelEvents(grantId) }) as SseClientWithNamespaces & {
-					readonly __event?: TEvent
+export function createRuntimeManagementClient(
+	options: RuntimeManagementClientOptions = {},
+): RuntimeManagementClient {
+	const { apiBase, rpcBase, credentials, fetch } = resolveRuntimeClientConnection(options)
+	const managementHttp = createRuntimeManagementHttp(
+		createRuntimeManagementTreatyClient(apiBase, fetch),
+		apiBase,
+	)
+	const rpc = async <T>(
+		run: (client: RuntimeManagementRpcApi) => PromiseLike<unknown> | unknown,
+		parse: (input: unknown) => T,
+	): Promise<T> =>
+		parse(
+			await invokeRpc<RuntimeManagementRpcApi, unknown>(
+				async (raw) => await Promise.resolve(run(raw as unknown as RuntimeManagementRpcApi)),
+				{
+					rpcBase,
+					credentials,
 				},
-		},
-		withRpc,
-		createSse,
-		get sse() {
-			return getSse()
-		},
-		dispose: () => {
-			runRuntimeTransportCleanups(client)
-			for (const stream of managedSse) stream.close()
-			managedSse.clear()
-			memoSse = null
-		},
+			),
+		)
+
+	const client: RuntimeManagementClient = {
+		discover: (init) => managementHttp.meta.info(init),
+		plugins: Object.freeze({
+			list: () => rpc((root) => root.pluginsList(), parsePluginsListOutput),
+			status: (owner) => rpc((root) => root.pluginStatus(owner), parsePluginStatusQueryResult),
+			applyStatusActions: (actions) =>
+				rpc((root) => root.applyPluginStatusActions([...actions]), parsePluginStatusBatchResult),
+		}),
+		config: Object.freeze({
+			presentation: (owner) =>
+				rpc((root) => root.pluginConfigPresentation(owner), parseConfigPresentationResult),
+			get: (owner) => rpc((root) => root.pluginConfig(owner), parseConfigResult),
+			patch: (owner, patch) =>
+				rpc((root) => root.patchPluginConfig(owner, patch), parseConfigResult),
+			patchField: (owner, input) =>
+				rpc((root) => root.patchPluginConfigField(owner, input), parseConfigResult),
+		}),
+		dependencies: Object.freeze({
+			list: (owner) =>
+				rpc((root) => root.pluginDependencies(owner), parsePluginDependencyListResult),
+			inspect: (owner) =>
+				rpc((root) => root.inspectPluginDependencies(owner), parsePluginDependencyInspectionResult),
+			setTarget: (input) =>
+				rpc((root) => root.setPluginDependencyTarget(input), parsePluginDependencyMutationResult),
+			inspectBaseProvider: (owner) =>
+				rpc((root) => root.inspectPluginBaseProvider(owner), parseBaseProviderInspectionResult),
+			selectBaseProvider: (input) =>
+				rpc((root) => root.selectPluginBaseProvider(input), parsePluginDependencyMutationResult),
+		}),
+		forks: Object.freeze({
+			ensure: (input) => rpc((root) => root.ensurePluginFork(input), parseEnsureForkResult),
+			remove: (input) => rpc((root) => root.removePluginFork(input), parseRemoveForkResult),
+		}),
+		groups: Object.freeze({
+			list: () => rpc((root) => root.pluginGroups(), parsePluginGroups),
+			update: (groups) =>
+				rpc(
+					(root) =>
+						root.updatePluginGroups(groups.map((group) => ({ ...group, nodes: [...group.nodes] }))),
+					parsePluginGroupsMutationResult,
+				),
+		}),
+		logging: Object.freeze({
+			getPolicy: () =>
+				rpc((root) => root.logging().getPolicy(), parseVersionedPluginLogPolicySnapshot),
+			replacePolicy: (expectedRevision, snapshot) =>
+				rpc(
+					(root) => root.logging().replacePolicy(expectedRevision, snapshot),
+					parsePluginLogPolicyMutationResult,
+				),
+			setDefaultLevel: (expectedRevision, level) =>
+				rpc(
+					(root) => root.logging().setDefaultLevel(expectedRevision, level),
+					parsePluginLogPolicyMutationResult,
+				),
+			setPluginLevel: (expectedRevision, owner, level) =>
+				rpc(
+					(root) => root.logging().setPluginLevel(expectedRevision, owner, level),
+					parsePluginLogPolicyMutationResult,
+				),
+			clearPluginLevel: (expectedRevision, owner) =>
+				rpc(
+					(root) => root.logging().clearPluginLevel(expectedRevision, owner),
+					parsePluginLogPolicyMutationResult,
+				),
+			resetPolicy: (expectedRevision) =>
+				rpc(
+					(root) => root.logging().resetPolicy(expectedRevision),
+					parseVersionedPluginLogPolicySnapshot,
+				),
+		}),
+		agentTools: Object.freeze({
+			snapshot: () => rpc((root) => root.agentTools().snapshot(), parseAgentToolsAdminSnapshot),
+			replacePolicy: (expectedRevision, policy) =>
+				rpc(
+					(root) => root.agentTools().replacePolicy(expectedRevision, policy),
+					parseAgentToolsAdminSnapshot,
+				),
+		}),
+		logs: Object.freeze({
+			streams: (init) => managementHttp.logs.streams(init),
+			meta: (streamId, init) => managementHttp.logs.meta(streamId, init),
+			range: (streamId, query, init) => managementHttp.logs.range(streamId, query, init),
+			followUrl: (streamId, query) => managementHttp.logs.followUrl(streamId, query),
+		}),
+		security: createRuntimeSecurityClient({
+			apiBase,
+			fetch,
+		}),
 	}
-	return client
+	return Object.freeze(client)
 }

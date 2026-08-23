@@ -1,5 +1,10 @@
-import type { Context } from '@pluxel/context'
-import { enterOwnerInvocation } from '../../internal/owner-invocations'
+import { createCallerContextView, type Context } from '../../context/Context'
+import {
+	admitOwnerInvocation,
+	assertOwnerInvocationOpen,
+	releaseOwnerInvocation,
+	type OwnerInvocationAdmission,
+} from '../../internal/owner-invocations'
 import {
 	BasePlugin,
 	getPluginGenerationContext,
@@ -19,34 +24,28 @@ type MethodCacheEntry = {
 
 const viewsByConsumer = new WeakMap<Context, WeakMap<BasePlugin, BasePlugin>>()
 
-function withProviderAdmission<T>(provider: Context, run: () => T): T {
-	const lease = enterOwnerInvocation(provider)
+function retainProviderAdmission<T>(provider: Context, value: T): T {
+	if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+		assertOwnerInvocationOpen(provider)
+		return value
+	}
+
+	const admission = admitOwnerInvocation(provider)
 	try {
-		const result = run()
-		if (
-			result &&
-			(typeof result === 'object' || typeof result === 'function') &&
-			typeof (result as { then?: unknown }).then === 'function'
-		) {
-			return Promise.resolve(result).finally(() => lease.dispose()) as T
+		if (typeof (value as { then?: unknown }).then === 'function') {
+			return Promise.resolve(value).finally(() => releaseOwnerInvocation(admission)) as T
 		}
-		lease.dispose()
-		return result
+		releaseOwnerInvocation(admission)
+		return value
 	} catch (error) {
-		lease.dispose()
+		releaseOwnerInvocation(admission)
 		throw error
 	}
 }
 
 function createCallerContext(provider: Context, consumer: Context): Context {
-	const view = Object.create(provider) as Context
+	const view = createCallerContextView(provider, consumer)
 	inheritPinnedPluginInfo(view, provider)
-	Object.defineProperty(view, 'caller', {
-		value: consumer,
-		writable: false,
-		enumerable: false,
-		configurable: false,
-	})
 	return view
 }
 
@@ -62,29 +61,34 @@ function assertMutableAuthorField(property: PropertyKey): void {
 	}
 }
 
-function findPropertyDescriptor(
-	target: object,
-	property: PropertyKey,
-): PropertyDescriptor | undefined {
-	return findPropertyDescriptorEntry(target, property)?.descriptor
-}
-
 type PropertyDescriptorEntry = {
 	readonly owner: object
 	readonly descriptor: PropertyDescriptor
 }
 
-function findPropertyDescriptorEntry(
-	target: object,
-	property: PropertyKey,
-): PropertyDescriptorEntry | undefined {
-	let current: object | null = target
-	while (current) {
-		const descriptor = Reflect.getOwnPropertyDescriptor(current, property)
-		if (descriptor) return { owner: current, descriptor }
-		current = Reflect.getPrototypeOf(current)
+class PropertyDescriptorResolver {
+	private readonly prototypeEntries = new Map<PropertyKey, PropertyDescriptorEntry | undefined>()
+
+	constructor(private readonly target: object) {}
+
+	find(property: PropertyKey): PropertyDescriptorEntry | undefined {
+		const ownDescriptor = Reflect.getOwnPropertyDescriptor(this.target, property)
+		if (ownDescriptor) return { owner: this.target, descriptor: ownDescriptor }
+		if (this.prototypeEntries.has(property)) return this.prototypeEntries.get(property)
+
+		let current = Reflect.getPrototypeOf(this.target)
+		while (current) {
+			const descriptor = Reflect.getOwnPropertyDescriptor(current, property)
+			if (descriptor) {
+				const entry = { owner: current, descriptor }
+				this.prototypeEntries.set(property, entry)
+				return entry
+			}
+			current = Reflect.getPrototypeOf(current)
+		}
+		this.prototypeEntries.set(property, undefined)
+		return undefined
 	}
-	return undefined
 }
 
 function rejectUnsupportedCallableProperty(property: PropertyKey): never {
@@ -108,16 +112,45 @@ function assertSupportedCallableProperty(
 function writeProviderProperty<T extends BasePlugin>(
 	target: T,
 	accessorReceiver: T,
+	descriptors: PropertyDescriptorResolver,
 	property: PropertyKey,
 	value: unknown,
 ): boolean {
-	const descriptor = findPropertyDescriptor(target, property)
+	const descriptor = descriptors.find(property)?.descriptor
 	if (descriptor && !('value' in descriptor)) {
 		if (!descriptor.set) return false
 		Reflect.apply(descriptor.set, accessorReceiver, [value])
 		return true
 	}
 	return Reflect.set(target, property, value, target)
+}
+
+function writeAdmittedProviderProperty<T extends BasePlugin>(
+	providerContext: Context,
+	target: T,
+	accessorReceiver: T,
+	descriptors: PropertyDescriptorResolver,
+	property: PropertyKey,
+	value: unknown,
+): boolean {
+	const admission = admitOwnerInvocation(providerContext)
+	try {
+		return writeProviderProperty(target, accessorReceiver, descriptors, property, value)
+	} finally {
+		releaseOwnerInvocation(admission)
+	}
+}
+
+function readProviderProperty<T extends BasePlugin>(
+	receiver: T,
+	entry: PropertyDescriptorEntry | undefined,
+): unknown {
+	// The resolver already exhausted the complete ordinary Plugin prototype chain.
+	// Avoid a second lookup that could only reproduce the same `undefined` result.
+	if (!entry) return undefined
+	const descriptor = entry.descriptor
+	if ('value' in descriptor) return descriptor.value
+	return descriptor.get ? Reflect.apply(descriptor.get, receiver, []) : undefined
 }
 
 function rejectDefineProperty(): never {
@@ -136,6 +169,68 @@ function rejectPreventExtensions(): never {
 	throw new TypeError('[pluxel/core] Plugin caller facade cannot be sealed or frozen')
 }
 
+class ProviderCallReceiver<T extends BasePlugin> implements ProxyHandler<T> {
+	active = true
+	facade!: T
+
+	constructor(
+		readonly stableFacade: T,
+		private readonly callerContext: Context,
+		private readonly consumer: Context,
+		private readonly descriptors: PropertyDescriptorResolver,
+		private readonly admission: OwnerInvocationAdmission,
+	) {}
+
+	get(target: T, property: PropertyKey, receiver: T): unknown {
+		if (!this.active) return Reflect.get(this.stableFacade, property, this.stableFacade)
+		if (property === 'ctx') return this.callerContext
+		const entry = this.descriptors.find(property)
+		const value = readProviderProperty(receiver, entry)
+		assertSupportedCallableProperty(target, property, entry, value)
+		return bindCallerCapability(value, this.consumer)
+	}
+
+	set(target: T, property: PropertyKey, value: unknown): boolean {
+		if (!this.active) return Reflect.set(this.stableFacade, property, value, this.stableFacade)
+		assertMutableAuthorField(property)
+		return writeProviderProperty(target, this.facade, this.descriptors, property, value)
+	}
+
+	defineProperty(): never {
+		return rejectDefineProperty()
+	}
+
+	deleteProperty(): never {
+		return rejectDeleteProperty()
+	}
+
+	setPrototypeOf(): never {
+		return rejectPrototypeMutation()
+	}
+
+	preventExtensions(): never {
+		return rejectPreventExtensions()
+	}
+
+	finish(): void {
+		if (!this.active) return
+		this.active = false
+		releaseOwnerInvocation(this.admission)
+	}
+}
+
+async function settleProviderInvocation<T extends BasePlugin>(
+	result: PromiseLike<unknown>,
+	receiver: ProviderCallReceiver<T>,
+): Promise<unknown> {
+	try {
+		const value = await result
+		return value === receiver.facade ? receiver.stableFacade : value
+	} finally {
+		receiver.finish()
+	}
+}
+
 /**
  * Invoke one method with a call-scoped receiver covered by the already acquired lease.
  * Nested `this` reads/writes must not attempt a second admission after teardown has begun:
@@ -147,39 +242,22 @@ function invokeProviderMethod<T extends BasePlugin>(
 	providerContext: Context,
 	callerContext: Context,
 	consumer: Context,
+	descriptors: PropertyDescriptorResolver,
 	method: Function,
 	args: readonly unknown[],
 ): unknown {
-	const lease = enterOwnerInvocation(providerContext)
-	let active = true
-	let callFacade!: T
-	const fallback = () => stableFacade
-	const handler: ProxyHandler<T> = {
-		get(innerTarget, property, receiver) {
-			if (!active) return Reflect.get(fallback(), property, fallback())
-			if (property === 'ctx') return callerContext
-			const entry = findPropertyDescriptorEntry(innerTarget, property)
-			const value = Reflect.get(innerTarget, property, receiver)
-			assertSupportedCallableProperty(innerTarget, property, entry, value)
-			return bindCallerCapability(value, consumer)
-		},
-		set(innerTarget, property, value) {
-			if (!active) return Reflect.set(fallback(), property, value, fallback())
-			assertMutableAuthorField(property)
-			return writeProviderProperty(innerTarget, callFacade, property, value)
-		},
-		defineProperty: rejectDefineProperty,
-		deleteProperty: rejectDeleteProperty,
-		setPrototypeOf: rejectPrototypeMutation,
-		preventExtensions: rejectPreventExtensions,
-	}
-	callFacade = new Proxy(target, handler)
+	const admission: OwnerInvocationAdmission = admitOwnerInvocation(providerContext)
+	const receiver = new ProviderCallReceiver(
+		stableFacade,
+		callerContext,
+		consumer,
+		descriptors,
+		admission,
+	)
+	const callFacade = new Proxy(target, receiver)
+	receiver.facade = callFacade
 	registerPluginGenerationFacade(callFacade, target)
 
-	const finish = () => {
-		active = false
-		lease.dispose()
-	}
 	try {
 		const result = Reflect.apply(method, callFacade, args)
 		if (
@@ -187,14 +265,12 @@ function invokeProviderMethod<T extends BasePlugin>(
 			(typeof result === 'object' || typeof result === 'function') &&
 			typeof (result as { then?: unknown }).then === 'function'
 		) {
-			return Promise.resolve(result)
-				.then((value) => (value === callFacade ? stableFacade : value))
-				.finally(finish)
+			return settleProviderInvocation(Promise.resolve(result), receiver)
 		}
-		finish()
+		receiver.finish()
 		return result === callFacade ? stableFacade : result
 	} catch (error) {
-		finish()
+		receiver.finish()
 		throw error
 	}
 }
@@ -217,14 +293,21 @@ export function createCallerGenerationView<T extends BasePlugin>(
 
 	const providerContext = getPluginGenerationContext(provider)
 	const callerContext = createCallerContext(providerContext, consumer)
+	const descriptors = new PropertyDescriptorResolver(provider)
 	const methods = new Map<PropertyKey, MethodCacheEntry>()
 	let facade!: T
 	const handler: ProxyHandler<T> = {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === 'ctx') {
-				return withProviderAdmission(providerContext, () => callerContext)
+				assertOwnerInvocationOpen(providerContext)
+				return callerContext
 			}
-			const entry = findPropertyDescriptorEntry(target, property)
+			const cachedMethod = methods.get(property)
+			if (cachedMethod && !Reflect.getOwnPropertyDescriptor(target, property)) {
+				assertOwnerInvocationOpen(providerContext)
+				return cachedMethod.bound
+			}
+			const entry = descriptors.find(property)
 			const descriptor = entry?.descriptor
 			const rawValue =
 				descriptor && !('value' in descriptor) && descriptor.get
@@ -234,24 +317,35 @@ export function createCallerGenerationView<T extends BasePlugin>(
 							providerContext,
 							callerContext,
 							consumer,
+							descriptors,
 							descriptor.get,
 							[],
 						)
-					: withProviderAdmission(providerContext, () => Reflect.get(target, property, receiver))
+					: descriptor && 'value' in descriptor && typeof descriptor.value === 'function'
+						? (assertOwnerInvocationOpen(providerContext), descriptor.value)
+						: retainProviderAdmission(providerContext, readProviderProperty(facade, entry))
 			assertSupportedCallableProperty(target, property, entry, rawValue)
 			const value = bindCallerCapability(rawValue, consumer)
 			if (!value || (typeof value !== 'object' && typeof value !== 'function')) return value
 			if (typeof value !== 'function') return value
-			const existing = methods.get(property)
-			if (existing?.source === value) return existing.bound
+			if (cachedMethod?.source === value) return cachedMethod.bound
 			const bound = (...args: unknown[]) =>
-				invokeProviderMethod(target, facade, providerContext, callerContext, consumer, value, args)
+				invokeProviderMethod(
+					target,
+					facade,
+					providerContext,
+					callerContext,
+					consumer,
+					descriptors,
+					value,
+					args,
+				)
 			methods.set(property, { source: value, bound })
 			return bound
 		},
 		set(target, property, value) {
 			assertMutableAuthorField(property)
-			const descriptor = findPropertyDescriptor(target, property)
+			const descriptor = descriptors.find(property)?.descriptor
 			if (descriptor && !('value' in descriptor) && descriptor.set) {
 				invokeProviderMethod(
 					target,
@@ -259,13 +353,19 @@ export function createCallerGenerationView<T extends BasePlugin>(
 					providerContext,
 					callerContext,
 					consumer,
+					descriptors,
 					descriptor.set,
 					[value],
 				)
 				return true
 			}
-			return withProviderAdmission(providerContext, () =>
-				writeProviderProperty(target, facade, property, value),
+			return writeAdmittedProviderProperty(
+				providerContext,
+				target,
+				facade,
+				descriptors,
+				property,
+				value,
 			)
 		},
 		defineProperty: rejectDefineProperty,

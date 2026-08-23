@@ -21,7 +21,6 @@ export default defineStaticRuntime({
 				env.PLUXEL_WORKBENCH === 'true'
 					? {
 							enabled: true,
-							access: { exposure: 'private' },
 							uiBasePath: '/__pluxel/workbench',
 						}
 					: false,

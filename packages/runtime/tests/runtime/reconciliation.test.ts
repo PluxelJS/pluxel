@@ -6,7 +6,7 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
+import { createOwnerContext, type ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
 import {
 	applyRuntimeStatePatch,
 	catalogTransitionRejections,
@@ -966,7 +966,7 @@ describe('runtime host-owned graph state', () => {
 		const first = createRuntimeHost()
 		const second = createRuntimeHost()
 		const firstCoordinator = requireRuntimePluginGraphCoordinator(first.ctx)
-		const child = first.ctx.extend({ name: 'child' })
+		const child = createOwnerContext(first.ctx, 'child')
 		try {
 			expect(requireRuntimePluginGraphCoordinator(child)).toBe(firstCoordinator)
 			expect(requireRuntimePluginGraphCoordinator(second.ctx)).not.toBe(firstCoordinator)
@@ -982,7 +982,7 @@ describe('runtime host-owned graph state', () => {
 	it('isolates immutable route snapshots and skips disposed lower installations', async () => {
 		const first = createRuntimeHost()
 		const second = createRuntimeHost()
-		const child = first.ctx.extend({ name: 'child' })
+		const child = createOwnerContext(first.ctx, 'child')
 		const base = {
 			dynamicPluginSources: { hasFile: () => true, hasDirectory: () => true },
 		}

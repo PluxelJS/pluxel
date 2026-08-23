@@ -39,9 +39,9 @@ describe('browser liveQuery runtime', () => {
 		const client = createLiveQueryClient(
 			{
 				fetch,
-				links: {
-					workbenchLiveQuery: () => '/snapshot',
-					workbenchModelEvents: () => '/events',
+				workbench: {
+					liveQueryUrl: () => '/snapshot',
+					modelEventsUrl: () => '/events',
 				},
 				createSse: () => ({
 					onAny(listener: typeof emit) {

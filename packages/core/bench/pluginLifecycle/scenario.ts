@@ -1,18 +1,19 @@
 import {
 	BasePlugin,
-	Context,
 	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
 	Plugin,
+	type RootContext,
 } from '@pluxel/core'
 import {
 	consumePluginDefinitionCandidate,
+	createCoreRootContext,
 	requirePluginService,
 	type ConcretePluginDefinitionCandidate,
 } from '@pluxel/core/internal'
 import { __setPluginConfig, __setPluginDefinition } from '@pluxel/core/toolchain'
 
-export type Ctx = InstanceType<typeof Context>
+export type Ctx = RootContext
 type Registry = ReturnType<typeof requirePluginService>
 type Update = ReturnType<Registry['beginUpdate']>
 type CommitResult = Awaited<ReturnType<Update['commit']>>
@@ -207,21 +208,21 @@ export function createScenario(sizes: ScenarioSizes) {
 	}
 
 	const setupStarGraph = async (name: string): Promise<Ctx> => {
-		const ctx = new Context({ name })
+		const ctx = createCoreRootContext({ name })
 		registerStar(ctx)
 		await commit(ctx)
 		return ctx
 	}
 
 	const setupChainGraph = async (name: string): Promise<Ctx> => {
-		const ctx = new Context({ name })
+		const ctx = createCoreRootContext({ name })
 		registerChain(ctx)
 		await commit(ctx)
 		return ctx
 	}
 
 	const setupBigStarGraph = async (name: string): Promise<Ctx> => {
-		const ctx = new Context({ name })
+		const ctx = createCoreRootContext({ name })
 		registerBigIndependent(ctx)
 		registerStar(ctx)
 		await commit(ctx)

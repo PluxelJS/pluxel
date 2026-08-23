@@ -11,24 +11,13 @@ import {
 	type RuntimeHost,
 	withRuntimeHost,
 } from '@pluxel/runtime/test'
-import { workbench, type WorkbenchLayout } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
-} from '@pluxel/runtime/web/paths'
+import { requireWorkbench } from '@pluxel/runtime/internal'
 import { describe, expect, it } from 'vitest'
 import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
 import type { FontsWorkbenchCommands } from '../src/manager-contract.ts'
 import { FontsSelectionPort } from '../src/workbench-contract.ts'
-
-function pluginLayoutUrl(address: unknown): URL {
-	const url = new URL(
-		`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}`,
-	)
-	url.searchParams.set('target', JSON.stringify(address))
-	return url
-}
 
 const ConsumerWorkbench = workbench.portOutlet({
 	id: 'Fonts',
@@ -46,7 +35,7 @@ class FontsTestConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.workbench.mount(ConsumerWorkbench, {
+		this.ctx.workbench?.mount(ConsumerWorkbench, {
 			selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
 		})
 	}
@@ -83,7 +72,8 @@ describe('FontsPlugin', () => {
 						fonts.families.some(({ family }) => family === fonts.defaultFont.family),
 				).toBe(true)
 				expect(host.isRunning(FontsPlugin)).toBe(true)
-				expect(host.ctx.workbench.enabled).toBe(false)
+				expect('workbench' in host.ctx).toBe(false)
+				expect(host.ctx.workbench).toBeUndefined()
 			},
 			{ workbench: false },
 		)
@@ -259,57 +249,53 @@ describe('FontsPlugin', () => {
 	})
 
 	it('renders direct consumer and provider-owned Workbench views', async () => {
-		await withRuntimeHost(async (host) => {
-			addEnabled(host, [FontsPlugin, FontsTestConsumer])
-			await host.commit()
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, FontsTestConsumer])
+				await host.commit()
 
-			const response = await host.ctx.http.fetch(
-				new Request(pluginLayoutUrl(pluginNodeAddressOf(FontsTestConsumer))),
-			)
-			expect(response.status).toBe(200)
-			const layout = (await response.json()) as WorkbenchLayout
-			expect(layout.items).toEqual([
-				expect.objectContaining({
-					owner: {
-						address: pluginNodeAddressOf(FontsPlugin),
-						displayName: 'FontsPlugin',
-						rootExportName: 'FontsPlugin',
-					},
-					target: {
-						address: pluginNodeAddressOf(FontsTestConsumer),
-						displayName: 'FontsTestConsumer',
-						rootExportName: 'FontsTestConsumer',
-					},
-					viewId: 'FontSelection',
-					port: expect.objectContaining({
-						id: '@pluxel/fonts.selection',
-						model: { selection: expect.objectContaining({ kind: 'rpc' }) },
+				const registry = requireWorkbench(host.ctx).registry
+				const layout = registry.getPluginLayout(pluginNodeAddressOf(FontsTestConsumer))
+				expect(layout.items).toEqual([
+					expect.objectContaining({
+						owner: {
+							address: pluginNodeAddressOf(FontsPlugin),
+							displayName: 'FontsPlugin',
+							rootExportName: 'FontsPlugin',
+						},
+						target: {
+							address: pluginNodeAddressOf(FontsTestConsumer),
+							displayName: 'FontsTestConsumer',
+							rootExportName: 'FontsTestConsumer',
+						},
+						viewId: 'FontSelection',
+						port: expect.objectContaining({
+							id: '@pluxel/fonts.selection',
+							model: { selection: expect.objectContaining({ kind: 'rpc' }) },
+						}),
 					}),
-				}),
-			])
+				])
 
-			const providerResponse = await host.ctx.http.fetch(
-				new Request(pluginLayoutUrl(pluginNodeAddressOf(FontsPlugin))),
-			)
-			expect(providerResponse.status).toBe(200)
-			const providerLayout = (await providerResponse.json()) as WorkbenchLayout
-			expect(providerLayout.items).toEqual([
-				expect.objectContaining({
-					owner: {
-						address: pluginNodeAddressOf(FontsPlugin),
-						displayName: 'FontsPlugin',
-						rootExportName: 'FontsPlugin',
-					},
-					target: {
-						address: pluginNodeAddressOf(FontsPlugin),
-						displayName: 'FontsPlugin',
-						rootExportName: 'FontsPlugin',
-					},
-					viewId: 'Fonts',
-					model: { fonts: expect.objectContaining({ kind: 'rpc' }) },
-				}),
-			])
-		})
+				const providerLayout = registry.getPluginLayout(pluginNodeAddressOf(FontsPlugin))
+				expect(providerLayout.items).toEqual([
+					expect.objectContaining({
+						owner: {
+							address: pluginNodeAddressOf(FontsPlugin),
+							displayName: 'FontsPlugin',
+							rootExportName: 'FontsPlugin',
+						},
+						target: {
+							address: pluginNodeAddressOf(FontsPlugin),
+							displayName: 'FontsPlugin',
+							rootExportName: 'FontsPlugin',
+						},
+						viewId: 'Fonts',
+						model: { fonts: expect.objectContaining({ kind: 'rpc' }) },
+					}),
+				])
+			},
+			{ workbench: { enabled: true } },
+		)
 	})
 })
 

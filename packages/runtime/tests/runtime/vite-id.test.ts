@@ -13,7 +13,7 @@ describe('runtime/shared vite-id', () => {
 	})
 
 	it('unwrapViteId decodes /@id/ ids', () => {
-		expect(unwrapViteId('/@id/%40pluxel%2Fcontext')).toBe('@pluxel/context')
+		expect(unwrapViteId('/@id/%40scope%2Fpackage')).toBe('@scope/package')
 		// Invalid encoding should not throw.
 		expect(unwrapViteId('/@id/%E0%A4%A')).toBe('%E0%A4%A')
 	})

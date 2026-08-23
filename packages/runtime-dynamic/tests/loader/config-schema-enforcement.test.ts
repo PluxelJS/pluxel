@@ -5,6 +5,7 @@ import { runtimeStatePatch } from '@pluxel/runtime/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import * as v from 'valibot'
 
+import { requireLoaderService } from '../../src/context-plan'
 import { withTestDynamicContext } from '../support/context'
 
 const ConfigSchema = v.object({ value: v.optional(v.string(), 'default') })
@@ -17,9 +18,11 @@ class ConfiguredPlugin extends BasePlugin {
 describe('coordinator catalog config schema enforcement', () => {
 	test('publishes exactly one lowered object config definition', async () => {
 		await withTestDynamicContext(async (ctx) => {
-			await ctx.loader.replaceModule('ConfiguredPlugin.ts', { ConfiguredPlugin })
+			await requireLoaderService(ctx).replaceModule('ConfiguredPlugin.ts', { ConfiguredPlugin })
 
-			const config = ctx.loader.api.registry.getConfig(pluginNodeAddressOf(ConfiguredPlugin))
+			const config = requireLoaderService(ctx).api.registry.getConfig(
+				pluginNodeAddressOf(ConfiguredPlugin),
+			)
 			expect(config).toMatchObject({ fieldName: 'config' })
 			expect(config?.schema).toBe(ConfigSchema)
 		})
@@ -27,7 +30,7 @@ describe('coordinator catalog config schema enforcement', () => {
 
 	test('commits the catalog while Core reports invalid config as a lifecycle issue', async () => {
 		await withTestDynamicContext(async (ctx) => {
-			const loader = ctx.loader
+			const loader = requireLoaderService(ctx)
 			const ownerAddress = pluginNodeAddressOf(ConfiguredPlugin)
 			const registry = requirePluginService(ctx)
 			requireConfigService(ctx).patchConfig(ownerAddress, { value: 42 })
@@ -48,9 +51,9 @@ describe('coordinator catalog config schema enforcement', () => {
 			const owner = registry.resolvePluginNode(ownerAddress)
 			expect(owner).toBeDefined()
 
-			expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(ConfiguredPlugin))).toBe(
-				ConfiguredPlugin,
-			)
+			expect(
+				requireLoaderService(ctx).api.registry.getCtor(pluginNodeAddressOf(ConfiguredPlugin)),
+			).toBe(ConfiguredPlugin)
 			expect(registry.isRunning(ConfiguredPlugin)).toBe(false)
 			expect(registry.lastCommit?.lifecycleReport.issues).toEqual([
 				expect.objectContaining({

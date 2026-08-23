@@ -7,6 +7,7 @@ import { dirname, join } from 'pathe'
 import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
 import { isPluginEnabled, requireRuntimeStateStore, startTimer } from '@pluxel/runtime/internal'
 import type { LoaderBatch } from '../../loader/support'
+import type { LoaderService } from '../../loader/LoaderService'
 import {
 	HMR_CHANGED_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -23,6 +24,7 @@ import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker
 import { collectPluginTotals } from './operational-report'
 import type { HmrRunner } from './runner'
 import { runWithRequireShims } from './runtime-shims'
+import { requireLoaderService } from '../../context-plan'
 
 export type PrefetchOrder = 'near' | 'all'
 
@@ -61,15 +63,13 @@ export type PluginStatusSnapshotLike = {
 	}[]
 }
 
-export type EnabledButStoppedLookupContext = {
-	loader: {
-		api: {
-			status: {
-				snapshot: () => PluginStatusSnapshotLike
-			}
-			registry: {
-				findModuleId(address: PluginNodeAddress): string | null
-			}
+export type EnabledButStoppedLookup = {
+	api: {
+		status: {
+			snapshot: () => PluginStatusSnapshotLike
+		}
+		registry: {
+			findModuleId(address: PluginNodeAddress): string | null
 		}
 	}
 }
@@ -412,6 +412,7 @@ class HmrRuntimeCommitScheduler {
 
 export class HmrExecutor {
 	private readonly commitScheduler: HmrRuntimeCommitScheduler
+	private readonly loader: LoaderService
 
 	constructor(
 		private readonly ctx: Context,
@@ -421,6 +422,7 @@ export class HmrExecutor {
 		private readonly cfg: HmrExecutorConfig,
 	) {
 		this.commitScheduler = new HmrRuntimeCommitScheduler()
+		this.loader = requireLoaderService(ctx)
 	}
 
 	private pickRunnerImportId(cleanId: string): string {
@@ -445,7 +447,7 @@ export class HmrExecutor {
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
 		const ordered = dedupeIds(cleanIds)
 
-		const batch = this.ctx.loader.beginBatch()
+		const batch = this.loader.beginBatch()
 		const dbg = this.cfg.dbgModules
 		const debugModules = dbg ? isLogEnabled(dbg, 'debug') : false
 
@@ -536,16 +538,16 @@ export class HmrExecutor {
 }
 
 export function collectEnabledButStopped(
-	ctx: EnabledButStoppedLookupContext,
+	loader: EnabledButStoppedLookup,
 	moduleIds: ReadonlySet<string>,
 ): readonly string[] {
 	if (moduleIds.size === 0) return []
-	const snapshot = ctx.loader.api.status.snapshot()
+	const snapshot = loader.api.status.snapshot()
 	const statuses = snapshot.statuses ?? []
 	const out: string[] = []
 	for (const status of statuses) {
 		if (!status?.isEnabled || status.isRunning) continue
-		const moduleId = ctx.loader.api.registry.findModuleId(status.address)
+		const moduleId = loader.api.registry.findModuleId(status.address)
 		if (!moduleId || !moduleIds.has(moduleId)) continue
 		out.push(formatPluginNodeReference(status.address))
 	}
@@ -871,8 +873,9 @@ export class HmrBatchProcessor {
 
 		const pluginService = requirePluginService(this.ctx)
 		const activeServices = pluginService.graph.activeCount()
+		const loader = requireLoaderService(this.ctx)
 		const pluginTotals = collectPluginTotals({
-			registryView: this.ctx.loader.api.registry,
+			registryView: loader.api.registry,
 			isPluginEnabled: (address) =>
 				isPluginEnabled(requireRuntimeStateStore(this.ctx).snapshot(), address),
 			isRunning: (address) => pluginService.isRunning(address),
@@ -890,7 +893,7 @@ export class HmrBatchProcessor {
 			...syncedModules,
 			...graph.affectedIds,
 		])
-		const enabledButStopped = collectEnabledButStopped(this.ctx, relatedModules)
+		const enabledButStopped = collectEnabledButStopped(loader, relatedModules)
 
 		const changedPretty = [...new Set(changed.map((id) => this.path.pretty(id)))].sort()
 		const logProps = {

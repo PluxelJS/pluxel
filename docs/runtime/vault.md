@@ -14,28 +14,32 @@ Vault 是一项需要宿主显式启用的运行时能力，为每个 Plugin 提
 | 大文件、用户上传和远端对象                      | [S3 存储](../plugins/storage.md) |
 | 进程内/跨实例短期加速                           | [缓存](../plugins/cache.md)      |
 
-Vault 只在 host 明确导入服务入口时注册，未启用时没有 backend、preflight 或管理成本。
+Vault 只在 host 把 `vault` 配置为对象时安装；omitted 或 `false` 时没有 capability property、backend、preflight 或管理成本。
 
 ## 启用入口
 
-需要使用 Vault 的应用或固定插件闭包导入一次：
+需要使用 Vault 的宿主在启动配置中显式启用：
 
 ```ts no-twoslash
-import '@pluxel/runtime/services/vault'
+configure: () => ({
+	vault: {},
+})
 ```
 
-如果你发布一个可以在无 Vault 宿主中运行的通用插件，不要悄悄用 side-effect import 强迫 host 启用它；把 Vault 需求写进应用闭包或明确的 provider package。
+配置对象承载 Vault 的 lifecycle 输入；导入某个 module 不会修改 Context plan。可以在无 Vault 宿主中运行的通用 Plugin
+必须处理 capability absence；强依赖 Vault 的 Plugin 应在 `init()` 入口给出明确错误。
 
 ## 一个 namespace，三种视图
 
 ```ts twoslash
-import '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin({ displayName: 'Connector' })
 export class ConnectorPlugin extends BasePlugin {
 	override async init() {
-		const space = this.ctx.vault.namespace()
+		const vault = this.ctx.vault
+		if (!vault) throw new Error('ConnectorPlugin requires host config vault: {}')
+		const space = vault.namespace()
 		const kv = space.kv()
 		const cursors = space.docs().collection<{ sequence: number; updatedAt: number }>('cursors')
 		const certificate = space.blobs().open('client-certificate')
@@ -46,7 +50,7 @@ export class ConnectorPlugin extends BasePlugin {
 			updatedAt: Date.now(),
 		})
 		await certificate.writeText('certificate text')
-		await this.ctx.vault.flush()
+		await vault.flush()
 	}
 }
 ```
@@ -58,7 +62,9 @@ export class ConnectorPlugin extends BasePlugin {
 ## KV
 
 ```ts no-twoslash
-const kv = this.ctx.vault.kv()
+const vault = this.ctx.vault
+if (!vault) throw new Error('This Plugin requires host config vault: {}')
+const kv = vault.kv()
 
 await kv.set('token', token)
 const current = await kv.get<string>('token')
@@ -80,7 +86,9 @@ batch callback 操作内存中的 copy-on-write transaction，不在其中执行
 ## Documents
 
 ```ts no-twoslash
-const profiles = this.ctx.vault.docs().collection<{ enabled: boolean; label?: string }>('profiles')
+const vault = this.ctx.vault
+if (!vault) throw new Error('This Plugin requires host config vault: {}')
+const profiles = vault.docs().collection<{ enabled: boolean; label?: string }>('profiles')
 
 await profiles.set('default', { enabled: true })
 await profiles.patch('default', { label: 'Primary' })
@@ -93,7 +101,9 @@ documents 是按 ID 读取的小型 JSON records，没有 query planner、second
 ## Blobs
 
 ```ts no-twoslash
-const blob = this.ctx.vault.blobs().open('oauth-state')
+const vault = this.ctx.vault
+if (!vault) throw new Error('This Plugin requires host config vault: {}')
+const blob = vault.blobs().open('oauth-state')
 
 await blob.writeText(serialized)
 const restored = await blob.readText()
@@ -109,7 +119,9 @@ blobs 保存在 Vault snapshot 管理的文件区域，适合小型加密字节�
 稳定 namespace facade 支持一次更新 KV 和 documents：
 
 ```ts no-twoslash
-const space = this.ctx.vault.namespace()
+const vault = this.ctx.vault
+if (!vault) throw new Error('This Plugin requires host config vault: {}')
+const space = vault.namespace()
 
 await space.batch((tx) => {
 	tx.kv.set('cursor', 43)
@@ -127,14 +139,17 @@ Vault 不在普通 Plugin 调用时偷偷 auto-unlock。host 在启动/preflight
 
 默认部署 identity 环境变量是 `PLUXEL_VAULT_DEPLOY_IDENTITY`，host 可通过 `vault.deployIdentityEnv` 改名。私钥不得写进普通 Plugin config、日志、Workbench resource 或发行物。
 
-`vaultAdmin` 是 root-owned 宿主管理 API，用于 preflight、unlock、rekey 和 deploy recipient 管理。业务 Plugin 只使用 `ctx.vault`，不调用 root admin API。
+`vaultAdmin` 是仅在 Vault enabled 时存在的 root-owned 宿主管理 API，用于 preflight、unlock、rekey 和 deploy recipient
+管理。宿主读取前也必须检查 absence；业务 Plugin 只使用已检查的 `ctx.vault`，不调用 root admin API。
 
 ## Flush 与 durability
 
 写入会进入内存状态并按 host debounce 策略持久化。需要在关键边界确认 snapshot 已落盘时调用：
 
 ```ts no-twoslash
-await this.ctx.vault.flush()
+const vault = this.ctx.vault
+if (!vault) throw new Error('This Plugin requires host config vault: {}')
+await vault.flush()
 ```
 
 不要在每次高频状态变化后强制 flush；批量 checkpoint 或 shutdown 边界更合适。host 可通过 `vault.flushDebounceMs` 控制后台合并窗口。

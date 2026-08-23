@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../support/lowered-plugin'
 import { enablePluginsPatch } from '../support/runtime-state'
@@ -8,7 +9,7 @@ import { enablePluginsPatch } from '../support/runtime-state'
 describe('monorepo plugin dependencies', () => {
 	it('commits successfully when dependent plugin modules are both loaded (separate moduleIds)', async () => {
 		const { host, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+		const loader = requireLoaderService(ctx)
 
 		@Plugin()
 		class Provider extends BasePlugin {}
@@ -44,7 +45,7 @@ describe('monorepo plugin dependencies', () => {
 		}
 		lowerTestPlugin(Consumer, { requires: [Provider] })
 		const { ctx } = createHmrTestContext({ enabled: [pluginNodeAddressOf(Consumer)] })
-		const loader = ctx.loader
+		const loader = requireLoaderService(ctx)
 
 		// Simulate: profile selected Consumer's package entry, but not Provider's package entry.
 		// Cold-boot state retains the absent Consumer intent; live catalog admission must reject a
@@ -62,7 +63,7 @@ describe('monorepo plugin dependencies', () => {
 
 	it('supports project-local packages where a consumer depends on an abstract base provider', async () => {
 		const { host, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+		const loader = requireLoaderService(ctx)
 		let billingSeq = 0
 		let providerSeq = 0
 

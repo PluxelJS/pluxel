@@ -17,11 +17,13 @@ import { EmptyState, ErrorState } from '../../../components'
 import { useNotify } from '../../hooks/useNotify'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
-import { api, defineInvalidation, useMutation } from '../../gqlens'
 import { updatePluginStatuses } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
-import type { PluginStatusAction } from '../../../runtime'
-import { stringifyUnknown } from '../../../utils/unknown'
+import {
+	runtimeErrorMessage,
+	type PluginStatusAction,
+	useRuntimeManagementClient,
+} from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -54,10 +56,11 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	disable: '禁用',
 }
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
-const PLUGIN_GROUPS_INVALIDATION = defineInvalidation((query) => query.pluginCatalog.groups.ids)
+
+class PluginGroupPersistenceUnknownError extends Error {}
 
 export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginRoute }) => {
-	const updatePluginGroups = useMutation(api.pluginGroups.update)
+	const management = useRuntimeManagementClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
 			return DEFAULT_STATUS_FILTER
@@ -211,9 +214,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return
 		}
 		pendingCommitRef.current = null
-		const task = updatePluginGroups(
-			{
-				groups: pending.map((group) => ({
+		const task = management.groups
+			.update(
+				pending.map((group) => ({
 					groupId: group.groupId,
 					name: group.name,
 					nodes: group.pluginIds.map((id) => {
@@ -222,22 +225,29 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 						return status.address
 					}),
 				})),
-			},
-			{ invalidates: [PLUGIN_GROUPS_INVALIDATION] },
-		)
-			.then((): undefined => {
+			)
+			.then((result): undefined => {
+				if (result.ok === false) {
+					if (result.code === 'persistence_failed') {
+						throw new PluginGroupPersistenceUnknownError(result.error)
+					}
+					throw new Error(result.error)
+				}
 				lastSyncedRef.current = cloneGroups(pending)
+				void refetchOverview()
 				return undefined
 			})
-			.catch((error: unknown): void => {
-				const message =
-					error && typeof error === 'object' && 'message' in error
-						? stringifyUnknown(
-								(error as { message?: unknown }).message,
-								'分组同步失败，请稍后重试。',
-							)
-						: '分组同步失败，请稍后重试。'
+			.catch(async (error: unknown): Promise<void> => {
+				const message = runtimeErrorMessage(error, '分组同步失败，请稍后重试。')
 				notify({ title: '同步失败', message, color: 'red' })
+				if (error instanceof PluginGroupPersistenceUnknownError) {
+					await refetchOverview()
+					if (!pendingCommitRef.current) {
+						setDraftGroups(null)
+						setOrganizerResetToken((n) => n + 1)
+					}
+					return
+				}
 				if (!pendingCommitRef.current) {
 					const rollback = cloneGroups(lastSyncedRef.current)
 					setDraftGroups(rollback)
@@ -252,7 +262,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				}
 			})
 		inflightCommitRef.current = task
-	}, [notify, overview.statuses, updatePluginGroups])
+	}, [management.groups, notify, overview.statuses, refetchOverview])
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {
@@ -285,9 +295,12 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			setBulkBusy(true)
 			try {
 				const results = await updatePluginStatuses(
+					management,
 					batch.map(({ address }) => ({ address, action })),
 				)
-				if (results.some((result) => result.ok)) refetchOverview()
+				if (results.some((result) => result.ok === true || result.state === 'unknown')) {
+					void refetchOverview()
+				}
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notify({
@@ -319,10 +332,15 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 												setBulkBusy(true)
 												try {
 													const undoResults = await updatePluginStatuses(
+														management,
 														batch.map(({ address }) => ({ address, action: undoAction })),
 													)
-													if (undoResults.some((result) => result.ok)) {
-														refetchOverview()
+													if (
+														undoResults.some(
+															(result) => result.ok === true || result.state === 'unknown',
+														)
+													) {
+														void refetchOverview()
 													}
 													const undoFailed = undoResults.filter((r) => !r.ok)
 													if (undoFailed.length > 0) {
@@ -382,7 +400,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setBulkBusy(false)
 			}
 		},
-		[selectedIds, notify, overview.statuses, refetchOverview],
+		[management, selectedIds, notify, overview.statuses, refetchOverview],
 	)
 
 	const handleBulkAction = useCallback(

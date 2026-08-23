@@ -320,7 +320,7 @@ describe('PluginService lifecycle model traces', () => {
 				await vi.waitFor(() => expect(lateCleanupRuns).toBe(1))
 				expect(host.isRunning(LifecycleModelLateInit)).toBe(false)
 			},
-			{ registry: { drainTimeoutMs: 20 } },
+			{ plugins: { drainTimeoutMs: 20 } },
 		)
 	})
 })

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { defineNodeModule, type PluginNodeAddress } from '@pluxel/runtime'
-import { requirePluginService } from '@pluxel/core/internal'
+import { createGenerationContext, requirePluginService } from '@pluxel/core/internal'
 import { dirname, join } from 'pathe'
 import { createHost, type Context, type Host } from '@pluxel/test'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
@@ -55,7 +55,7 @@ function createPluginContext(
 ): Context {
 	const pluginService = requirePluginService(host.ctx)
 	const nodeSlot = pluginService.internNodeAddress(owner)
-	const ctx = host.ctx.extend({ name: displayName }) as Context
+	const ctx = createGenerationContext(host.ctx.root, displayName) as Context
 	defineTestProperty(ctx, 'pluginInfo', {
 		nodeSlot,
 		nodeAddress: owner,

@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/context'
+import { createOwnerContext, type Context, type PluginContext } from '../../context/Context'
 import type { BasePlugin, PluginCleanup } from './BasePlugin'
 import { PLUGIN_CONFIGS, type PluginConfigs } from './PluginConfigs'
 import { OptionalPluginBindings } from './OptionalPluginBindings'
@@ -13,13 +13,11 @@ import {
 	type EffectsScope,
 } from '../../services/effects/EffectsService'
 import { inheritPinnedPluginInfo, pinContextValue } from './context-projection'
+import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
 
 const PART_CONSTRUCTION = Symbol('pluxel:part:construction')
 const PART_HOST = Symbol('pluxel:part:host')
 const PART_INIT_ACTIVE = Symbol('pluxel:part:init-active')
-const EFFECTS_CHILD_SCOPE = Symbol.for('pluxel:effects:child-scope')
-const OWNER_CONTEXT_VIEW = Symbol.for('pluxel:ctx.owner-context-view')
-
 type PartPath = readonly string[]
 
 export type PluginPartInfo = Readonly<{
@@ -27,7 +25,7 @@ export type PluginPartInfo = Readonly<{
 	readonly key: string
 }>
 
-export type PluginPartContext<C extends Context = Context> = C & {
+export type PluginPartContext<C extends Context = PluginContext> = C & {
 	readonly partInfo: PluginPartInfo
 }
 
@@ -49,10 +47,6 @@ type ChildScopeFactory = {
 	[EFFECTS_CHILD_SCOPE](ctx: Context, meta?: EffectsMeta): EffectsScope
 }
 
-type OwnerContextFactory = {
-	[OWNER_CONTEXT_VIEW](opts: { name: string }): Context
-}
-
 type PartEntry = Readonly<{
 	readonly fieldName: string
 	readonly instance: PluginPart<any, any>
@@ -62,9 +56,7 @@ type PartEntry = Readonly<{
 
 function createPartContext(parent: Context, path: PartPath): PluginPartContext {
 	const key = path.at(-1)!
-	const ctx = (parent as unknown as OwnerContextFactory)[OWNER_CONTEXT_VIEW]({
-		name: `${parent.name}.${key}`,
-	}) as PluginPartContext
+	const ctx = createOwnerContext(parent, `${parent.name}.${key}`) as PluginPartContext
 	inheritPinnedPluginInfo(ctx, parent)
 	const info = Object.freeze({ path: Object.freeze([...path]), key })
 	pinContextValue(ctx, 'partInfo', info)
@@ -221,7 +213,7 @@ class PluginPartsRuntime<Host extends PluginPartOwner> implements PluginParts<Ho
 
 export abstract class PluginPart<
 	Host extends PluginPartOwner = BasePlugin,
-	C extends Context = Context,
+	C extends Context = PluginContext,
 > {
 	readonly #ctx: PluginPartContext<C>
 	readonly #host: Host

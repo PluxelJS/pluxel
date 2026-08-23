@@ -24,7 +24,7 @@ export function attachPluginArtifactCompiler(
 		throw new Error('[runtime-dev] Workbench compiler must be attached to the root Context')
 	}
 
-	const artifacts = ctx.workbench.enabled ? requireWorkbench(ctx).artifacts : undefined
+	const artifacts = ctx.workbench ? requireWorkbench(ctx).artifacts : undefined
 	let compiler: PluginArtifactCompiler | undefined
 	const getCompiler = () =>
 		(compiler ??= new PluginArtifactCompiler(

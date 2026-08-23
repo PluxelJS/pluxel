@@ -4,6 +4,7 @@ import {
 	runtimeRouteConformance,
 	type RuntimeRouteConformanceAdapter,
 } from '../../runtime/tests/support/runtime-route-conformance'
+import { requireLoaderService } from '../src/context-plan'
 import { createHmrTestContext } from './support/hmr-context'
 
 const FIXED_CATALOG_OWNER = 'pluxel:fixed:route-conformance'
@@ -21,18 +22,18 @@ const adapter: RuntimeRouteConformanceAdapter = {
 		})
 		const config = requireConfigService(host.ctx)
 		for (const record of fixture.configs) config.patchConfig(record.owner, record.config)
-		await host.ctx.loader.registerFixedPlugins(fixture.initialPlugins, {
+		await requireLoaderService(host.ctx).registerFixedPlugins(fixture.initialPlugins, {
 			moduleId: FIXED_CATALOG_OWNER,
 		})
 		return {
 			ctx: host.ctx,
 			removeWorker: async (next) => {
-				await host.ctx.loader.registerFixedPlugins(next.withoutWorkerPlugins, {
+				await requireLoaderService(host.ctx).registerFixedPlugins(next.withoutWorkerPlugins, {
 					moduleId: FIXED_CATALOG_OWNER,
 				})
 			},
 			replaceWorker: async (next) => {
-				await host.ctx.loader.registerFixedPlugins(next.replacementPlugins, {
+				await requireLoaderService(host.ctx).registerFixedPlugins(next.replacementPlugins, {
 					moduleId: FIXED_CATALOG_OWNER,
 				})
 			},

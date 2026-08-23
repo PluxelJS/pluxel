@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { formatPluginNodeReference, Injectable, type Context as CoreContext } from '@pluxel/core'
+import { formatPluginNodeReference, type Context as CoreContext } from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
@@ -10,8 +10,8 @@ import {
 	type DatabaseMigration,
 } from '../database-internal'
 import type { DatabaseDefinition, PluginDatabaseHandle } from '../database'
+import type { PersistenceServiceConfig } from './persistence/PersistenceService'
 
-const serviceName = 'database' as const
 const SYSTEM_SCHEMA = 'pluxel_system'
 
 export type DatabaseConfig =
@@ -27,6 +27,12 @@ export type DatabaseConfig =
 			}>
 			tls?: 'require' | 'verify-full'
 	  }>
+
+/** @internal Immutable host inputs shared by all owner views of one database coordinator. */
+export type DatabaseServiceHostOptions = Readonly<{
+	database?: DatabaseConfig
+	persistence?: PersistenceServiceConfig
+}>
 
 type AnyDatabase = PgDatabase<PgQueryResultHKT, any>
 
@@ -186,7 +192,10 @@ class DatabaseCoordinator {
 	private checkpoint = 0
 	private disposed = false
 
-	constructor(private readonly root: CoreContext) {
+	constructor(
+		private readonly root: CoreContext,
+		private readonly options: DatabaseServiceHostOptions,
+	) {
 		root.effects.defer(() => this.dispose(), { tag: 'DatabaseCoordinator' })
 	}
 
@@ -196,7 +205,7 @@ class DatabaseCoordinator {
 	): Promise<PluginDatabaseHandle<Definition>> {
 		const address = owner.pluginInfo?.nodeAddress
 		if (!address) throw new Error('[pluxel/database] database use requires a plugin Context')
-		if (this.root.config.database === false) {
+		if (this.options.database === false) {
 			throw new Error(
 				`[pluxel/database] database capability is disabled for plugin "${formatPluginNodeReference(address)}"`,
 			)
@@ -583,13 +592,9 @@ class DatabaseCoordinator {
 	}
 
 	private adapter(): Promise<DatabaseAdapter> {
-		this.adapterTask ??= createAdapter(
-			this.root.config.database,
-			this.root.config.persistence,
-			(error) => {
-				this.root.logger.error('database PostgreSQL pool connection failed', { error })
-			},
-		)
+		this.adapterTask ??= createAdapter(this.options.database, this.options.persistence, (error) => {
+			this.root.logger.error('database PostgreSQL pool connection failed', { error })
+		})
 		return this.adapterTask
 	}
 
@@ -682,25 +687,13 @@ class OwnerDatabaseHandle<
 
 const coordinators = new WeakMap<CoreContext, DatabaseCoordinator>()
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Config {
-			database?: DatabaseConfig
-		}
-		interface Services {
-			[serviceName]: DatabaseService
-		}
-	}
-}
-
-@Injectable({ key: serviceName })
 export class DatabaseService {
 	private handle?: PluginDatabaseHandle
 	private definition?: DatabaseDefinition
 
 	constructor(
 		public readonly ctx: CoreContext,
-		_cfg: unknown,
+		private readonly options: DatabaseServiceHostOptions,
 	) {}
 
 	async use<Definition extends DatabaseDefinition>(
@@ -714,7 +707,7 @@ export class DatabaseService {
 		}
 		this.definition = definition
 		try {
-			this.handle = await coordinatorFor(this.ctx).acquire(this.ctx, definition)
+			this.handle = await coordinatorFor(this.ctx, this.options).acquire(this.ctx, definition)
 			return this.handle as PluginDatabaseHandle<Definition>
 		} catch (error) {
 			this.definition = undefined
@@ -723,29 +716,17 @@ export class DatabaseService {
 	}
 }
 
-function coordinatorFor(ctx: CoreContext): DatabaseCoordinator {
+function coordinatorFor(
+	ctx: CoreContext,
+	options: DatabaseServiceHostOptions,
+): DatabaseCoordinator {
 	const root = ctx.root
 	let coordinator = coordinators.get(root)
 	if (!coordinator) {
-		coordinator = new DatabaseCoordinator(root)
+		coordinator = new DatabaseCoordinator(root, options)
 		coordinators.set(root, coordinator)
 	}
 	return coordinator
-}
-
-export function withDatabasePluginContext<T extends CoreContext.Config>(config: T): T {
-	const registry =
-		config.registry && typeof config.registry === 'object'
-			? (config.registry as Record<string, unknown>)
-			: {}
-	const current = Array.isArray(registry.pluginCTXIsolate)
-		? (registry.pluginCTXIsolate as unknown[])
-		: []
-	if (current.includes(DatabaseService)) return config
-	return {
-		...config,
-		registry: { ...registry, pluginCTXIsolate: [...current, DatabaseService] },
-	} as T
 }
 
 /** @internal Workbench live-query bridge. */
@@ -986,7 +967,7 @@ async function grantOwnerTables(
 
 async function createAdapter(
 	config: DatabaseConfig | undefined,
-	persistence: CoreContext.Config['persistence'],
+	persistence: PersistenceServiceConfig | undefined,
 	onPostgresPoolError: (error: Error) => void,
 ): Promise<DatabaseAdapter> {
 	if (config && config.driver === 'postgres') {

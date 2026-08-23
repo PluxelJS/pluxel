@@ -122,21 +122,16 @@ export class BillingPlugin extends BasePlugin {
 
 HTTP、config、logger、effects、commands、persistence/database 等由宿主统一提供，仍然通过 Context 暴露：
 
-```ts
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Services {
-			effects: EffectsService
-		}
-	}
-}
-```
+这些内建能力由宿主在创建 root Context 时一次性编译进固定 plan。业务 Plugin 不注册 Context service，
+也不能在 module evaluation 阶段修改其他 host 的能力集合。
 
-这里的 declaration merging 只声明宿主提供的 Context service，不表示业务 Plugin 之间的依赖。
+Context 只暴露能力和当前 owner identity，不暴露完整宿主配置。每项能力显式选择 root、Plugin generation 或 owner-view
+作用域；`ctx.foo` 的缓存访问直接读取预编译 numeric slot，descriptor lookup 不在 getter 热路径。
 
-每个 Plugin 仍使用自己的 Context。logger、effects 和其他注册项归当前 Plugin 所有，并在 replacement、rollback 或 shutdown 时随 generation 回收。
+每个 Plugin、Part 和 dependency caller edge 都使用自己的 owner view。logger、effects 和其他注册项归当前 owner 所有，
+并在 replacement、rollback 或 shutdown 时随 generation 回收；共享 backend 不依赖可变的“当前 ctx”。
 
-普通业务 Plugin 不使用 declaration merging 声明依赖。Module augmentation 只用于 host-owned、稳定且跨 Plugin 可用的 Context contract。
+普通业务 Plugin 不使用 declaration merging 声明依赖；第三方业务能力继续通过 Plugin graph 组合。
 
 ### Proxy 只适配局部动态语义
 

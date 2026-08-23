@@ -7,14 +7,15 @@ import {
 } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-	rpcErrorMessage,
-	useRuntimeTransportClient,
+	runtimeErrorMessage,
+	useRuntimeManagementClient,
 	type LogLevel,
 	type RuntimePluginLogLevel,
 	type VersionedPluginLogPolicySnapshot,
 } from '../../../../runtime'
 
 type Snapshot = VersionedPluginLogPolicySnapshot
+type Mutation = Pick<Snapshot, 'revision' | 'persistence'>
 
 const LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const
 const LEVEL_SET = new Set<string>(LEVELS)
@@ -39,7 +40,7 @@ export function LogLevelsCard({
 	owner: PluginNodeAddress
 	compact?: boolean
 }) {
-	const transport = useRuntimeTransportClient()
+	const management = useRuntimeManagementClient()
 	const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
 	const [loading, setLoading] = useState(false)
 	const [saving, setSaving] = useState(false)
@@ -49,16 +50,14 @@ export function LogLevelsCard({
 		setLoading(true)
 		setError(null)
 		try {
-			const res: VersionedPluginLogPolicySnapshot = await transport.withRpc((rpc) =>
-				rpc.logging().getPolicy(),
-			)
+			const res = await management.logging.getPolicy()
 			setSnapshot(res)
 		} catch (e) {
-			setError(rpcErrorMessage(e))
+			setError(runtimeErrorMessage(e))
 		} finally {
 			setLoading(false)
 		}
-	}, [transport])
+	}, [management.logging])
 
 	useEffect(() => {
 		void refresh()
@@ -77,14 +76,16 @@ export function LogLevelsCard({
 			setSaving(true)
 			setError(null)
 			try {
-				const updated = await transport.withRpc(async (rpc) => {
-					const api = rpc.logging()
-					if (!snapshot) throw new Error('Plugin log policy is not loaded')
-					if (next === '__inherit__') return await api.clearPluginLevel(snapshot.revision, owner)
-					if (next === '__off__') return await api.setPluginLevel(snapshot.revision, owner, 'off')
+				if (!snapshot) throw new Error('Plugin log policy is not loaded')
+				let updated: Mutation
+				if (next === '__inherit__') {
+					updated = await management.logging.clearPluginLevel(snapshot.revision, owner)
+				} else if (next === '__off__') {
+					updated = await management.logging.setPluginLevel(snapshot.revision, owner, 'off')
+				} else {
 					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					return await api.setPluginLevel(snapshot.revision, owner, next)
-				})
+					updated = await management.logging.setPluginLevel(snapshot.revision, owner, next)
+				}
 				setSnapshot((previous) => {
 					if (!previous) return previous
 					const overrides = previous.overrides.filter(
@@ -96,12 +97,12 @@ export function LogLevelsCard({
 					return { ...previous, ...updated, overrides }
 				})
 			} catch (e) {
-				setError(rpcErrorMessage(e))
+				setError(runtimeErrorMessage(e))
 			} finally {
 				setSaving(false)
 			}
 		},
-		[transport, owner, snapshot],
+		[management.logging, owner, snapshot],
 	)
 
 	const deleteRule = useCallback(
@@ -110,9 +111,7 @@ export function LogLevelsCard({
 			setError(null)
 			try {
 				if (!snapshot) throw new Error('Plugin log policy is not loaded')
-				const updated = await transport.withRpc((rpc) =>
-					rpc.logging().clearPluginLevel(snapshot.revision, ruleOwner),
-				)
+				const updated = await management.logging.clearPluginLevel(snapshot.revision, ruleOwner)
 				setSnapshot((previous) => {
 					if (!previous) return previous
 					const overrides = previous.overrides.filter(
@@ -121,12 +120,12 @@ export function LogLevelsCard({
 					return { ...previous, ...updated, overrides }
 				})
 			} catch (e) {
-				setError(rpcErrorMessage(e))
+				setError(runtimeErrorMessage(e))
 			} finally {
 				setSaving(false)
 			}
 		},
-		[transport, snapshot],
+		[management.logging, snapshot],
 	)
 
 	const setDefaultLevel = useCallback(
@@ -134,13 +133,14 @@ export function LogLevelsCard({
 			setSaving(true)
 			setError(null)
 			try {
-				const updated = await transport.withRpc(async (rpc) => {
-					const api = rpc.logging()
-					if (!snapshot) throw new Error('Plugin log policy is not loaded')
-					if (next === '__off__') return await api.setDefaultLevel(snapshot.revision, 'off')
+				if (!snapshot) throw new Error('Plugin log policy is not loaded')
+				let updated: Mutation
+				if (next === '__off__') {
+					updated = await management.logging.setDefaultLevel(snapshot.revision, 'off')
+				} else {
 					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					return await api.setDefaultLevel(snapshot.revision, next)
-				})
+					updated = await management.logging.setDefaultLevel(snapshot.revision, next)
+				}
 				setSnapshot((previous) =>
 					previous
 						? {
@@ -151,12 +151,12 @@ export function LogLevelsCard({
 						: previous,
 				)
 			} catch (e) {
-				setError(rpcErrorMessage(e))
+				setError(runtimeErrorMessage(e))
 			} finally {
 				setSaving(false)
 			}
 		},
-		[transport, snapshot],
+		[management.logging, snapshot],
 	)
 
 	const overrides = useMemo(() => {
@@ -180,14 +180,14 @@ export function LogLevelsCard({
 		setError(null)
 		try {
 			if (!snapshot) throw new Error('Plugin log policy is not loaded')
-			const next = await transport.withRpc((rpc) => rpc.logging().resetPolicy(snapshot.revision))
+			const next = await management.logging.resetPolicy(snapshot.revision)
 			setSnapshot(next)
 		} catch (e) {
-			setError(rpcErrorMessage(e))
+			setError(runtimeErrorMessage(e))
 		} finally {
 			setSaving(false)
 		}
-	}, [transport, snapshot])
+	}, [management.logging, snapshot])
 
 	return (
 		<Stack gap={compact ? 'xs' : 'sm'} style={compact ? { minHeight: 0 } : undefined}>

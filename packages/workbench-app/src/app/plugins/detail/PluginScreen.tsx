@@ -8,15 +8,15 @@ import {
 	type PluginDependency,
 	type PluginStatusEntry,
 	PluginStatusEntryLifecycleStage,
-	useQuery,
-} from '../../gqlens'
+	usePluginOverview,
+} from '../pluginOverview'
 import { usePluginConfig } from '../config/usePluginConfig'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { materializeAddress, usePluginOverview } from '../pluginOverview'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 import { WorkbenchTargetProvider } from '../../../workbench/runtime'
-import type { PluginNodeAddress } from '@pluxel/core'
+import { formatPluginNodeReference, pluginNodeIndexKey } from '@pluxel/core'
+import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
@@ -80,15 +80,6 @@ export interface PluginScreenProps {
 	pluginRoute: string
 }
 
-type PluginDetailView = {
-	route: string
-	address: PluginNodeAddress
-	rootExportName: string
-	label: string
-	desc: string
-	dependencies: PluginDependency[]
-}
-
 type PluginStatusSnapshot = {
 	isRunning: boolean
 	isEnabled: boolean
@@ -96,14 +87,8 @@ type PluginStatusSnapshot = {
 	source: NonNullable<PluginStatusEntry['source']> | null
 }
 
-const EMPTY_STATUS_ENTRIES: PluginStatusEntry[] = []
-
-function clonePluginDetailView(detail: PluginDetailView): PluginDetailView {
-	return {
-		...detail,
-		dependencies: Array.isArray(detail.dependencies) ? [...detail.dependencies] : [],
-	}
-}
+const EMPTY_STATUS_ENTRIES: readonly PluginStatusEntry[] = Object.freeze([])
+const EMPTY_DEPENDENCIES: readonly PluginDependency[] = Object.freeze([])
 
 function resolveLifecycleStage(
 	isEnabled: boolean,
@@ -148,20 +133,8 @@ function resolvePluginSource(snapshot: PluginStatusSnapshot | null): {
 	}
 }
 
-function resolveVisibleDependencies(params: {
-	rawDeps?: PluginDependency[]
-	stableDeps: PluginDependency[]
-	syncing: boolean
-}) {
-	const { rawDeps, stableDeps, syncing } = params
-	const preferStableDeps = Boolean(
-		rawDeps && Array.isArray(rawDeps) && rawDeps.length === 0 && stableDeps.length > 0,
-	)
-	return syncing && preferStableDeps ? stableDeps : (rawDeps ?? stableDeps)
-}
-
 function usePluginDetail(pluginRoute?: string) {
-	// Reuse the global overview snapshot to avoid duplicate status requests on plugin pages.
+	const management = useRuntimeManagementClient()
 	const overviewState = usePluginOverview()
 	const statusEntries = overviewState.overview?.status?.statuses ?? EMPTY_STATUS_ENTRIES
 	const refetchOverview = overviewState.refetch
@@ -171,6 +144,11 @@ function usePluginDetail(pluginRoute?: string) {
 		for (const entry of statusEntries) {
 			if (entry?.route) map.set(entry.route, entry)
 		}
+		return map
+	}, [statusEntries])
+	const statusByAddress = useMemo(() => {
+		const map = new Map<string, PluginStatusEntry>()
+		for (const entry of statusEntries) map.set(pluginNodeIndexKey(entry.address), entry)
 		return map
 	}, [statusEntries])
 
@@ -184,69 +162,82 @@ function usePluginDetail(pluginRoute?: string) {
 		return statusMap.has(pluginRoute)
 	}, [pluginRoute, statusMap])
 
-	// Always request detail; we handle missing plugins via stable UI decisions instead of gating.
-	const detailQuery = useQuery({
-		policy: 'cache-first',
-		ttl: 30_000,
-	})
+	const owner = statusEntry?.address
+	const ownerKey = owner ? pluginNodeIndexKey(owner) : null
+	const requestVersionRef = useRef(0)
+	const [dependencySnapshot, setDependencySnapshot] = useState<{
+		ownerKey: string
+		items: readonly PluginDependency[]
+	} | null>(null)
+	const [dependencyLoading, setDependencyLoading] = useState(false)
+	const [dependencyError, setDependencyError] = useState<Error | null>(null)
 
-	let scope: ReturnType<(typeof detailQuery.pluginCatalog)['plugin']> | undefined
-	let dependencies: PluginDependency[] = []
-	let dependenciesReady = true
-	if (pluginRoute !== undefined) {
+	const loadDependencies = useCallback(async () => {
+		if (!owner || !ownerKey) return
+		const requestVersion = ++requestVersionRef.current
+		setDependencyLoading(true)
+		setDependencyError(null)
 		try {
-			const catalog = detailQuery.pluginCatalog
-			scope = catalog.plugin({ id: pluginRoute })
-			dependencies = (scope.detail.dependencies.ids ?? []).flatMap((id) => {
-				const dep = catalog.plugin({ id })
-				const address = materializeAddress(dep.address)
-				const route = dep.route
-				const label = dep.label
-				if (!address || !route || !label) {
-					dependenciesReady = false
-					return []
-				}
-				return [
-					{
-						id: dep.id ?? route,
-						reference: dep.reference ?? '',
-						route,
-						displayName: dep.displayName ?? label,
-						label,
-						rootExportName: dep.rootExportName ?? '',
-						address,
-						isRunning: Boolean(dep.status.isRunning),
-					},
-				]
-			})
-		} catch (error) {
-			if (process.env.NODE_ENV !== 'production') {
-				console.warn('[PluginScreen] Failed to read plugin scope', error)
-			}
-			scope = undefined
+			const result = await management.dependencies.list(owner)
+			if (result.ok === false) throw new Error(result.error)
+			const items = Object.freeze(
+				result.items.map((dependency): PluginDependency => {
+					const known = statusByAddress.get(pluginNodeIndexKey(dependency.address))
+					return Object.freeze({
+						id: known?.id ?? dependency.displayName,
+						reference: known?.reference ?? formatPluginNodeReference(dependency.address),
+						route: known?.route ?? '',
+						displayName: known?.displayName ?? dependency.displayName,
+						label: known?.label ?? dependency.displayName,
+						rootExportName: known?.rootExportName ?? dependency.address.definition.exportName,
+						address: dependency.address,
+						isRunning: dependency.isRunning ?? known?.isRunning,
+					})
+				}),
+			)
+			if (requestVersion !== requestVersionRef.current) return
+			setDependencySnapshot({ ownerKey, items })
+		} catch (error: unknown) {
+			if (requestVersion !== requestVersionRef.current) return
+			setDependencyError(new Error(runtimeErrorMessage(error, '无法读取插件依赖')))
+		} finally {
+			if (requestVersion === requestVersionRef.current) setDependencyLoading(false)
 		}
-	}
+	}, [management.dependencies, owner, ownerKey, statusByAddress])
 
-	const address = scope ? materializeAddress(scope.address) : null
-	const detail =
-		scope?.label && scope.route && address && dependenciesReady
-			? {
-					route: scope.route,
-					address,
-					rootExportName: scope.rootExportName ?? '',
-					label: scope.label,
-					desc: scope.detail?.desc ?? '',
-					dependencies,
-				}
-			: undefined
-	const ready = Boolean(detail?.label)
-	const loading = Boolean(detailQuery.loading)
-	const error = detailQuery.error
+	useEffect(() => {
+		if (!ownerKey) {
+			requestVersionRef.current += 1
+			setDependencySnapshot(null)
+			setDependencyLoading(false)
+			setDependencyError(null)
+			return
+		}
+		void loadDependencies()
+	}, [loadDependencies, ownerKey])
+
+	const dependencies =
+		dependencySnapshot?.ownerKey === ownerKey ? dependencySnapshot.items : EMPTY_DEPENDENCIES
+	const detail = statusEntry
+		? {
+				route: statusEntry.route,
+				address: statusEntry.address,
+				rootExportName: statusEntry.rootExportName,
+				label: statusEntry.label,
+				desc: '',
+				dependencies,
+			}
+		: undefined
+	const ready = detail !== undefined
+	const loading = overviewState.isLoading || dependencyLoading
+	const error =
+		!overviewState.hasSnapshot && overviewState.error
+			? new Error(overviewState.error)
+			: dependencyError
 
 	const refetch = useCallback(async () => {
-		detailQuery.refetch()
-		refetchOverview()
-	}, [detailQuery, refetchOverview])
+		await refetchOverview()
+	}, [refetchOverview])
 
 	return {
 		detail,
@@ -282,25 +273,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 	const { detail, ready, listed, hasStatusSnapshot, statusEntry, error, loading, refetch } =
 		usePluginDetail(pluginRoute)
 	const pathname = useCurrentPathname()
-
-	// 稳定快照：refetch/同步期间，详情查询可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
-	// 这里缓存上一份成功读取到的 detail，用于过渡期展示。
-	const lastStableRef = useRef<PluginDetailView | null>(null)
-
-	useEffect(() => {
-		if (!detail?.label) {
-			lastStableRef.current = null
-			return
-		}
-		lastStableRef.current = clonePluginDetailView(detail)
-	}, [detail])
-
-	const stable = lastStableRef.current?.route === pluginRoute ? lastStableRef.current : null
-	const viewReady = ready || Boolean(stable?.label)
-	const pluginLabel = detail?.label ?? stable?.label ?? pluginRoute
-	const description = detail?.desc ?? stable?.desc ?? ''
-	const statusRef = useRef<PluginStatusSnapshot | null>(null)
-	const statusEntryRef = useRef<PluginStatusEntry | null>(null)
+	const pluginLabel = detail?.label ?? pluginRoute
+	const description = detail?.desc ?? ''
 	const [statusOverride, setStatusOverride] = useState<{
 		isRunning: boolean
 		isEnabled: boolean
@@ -308,27 +282,16 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 	} | null>(null)
 
 	useEffect(() => {
-		statusRef.current = null
-		statusEntryRef.current = null
 		setStatusOverride(null)
 	}, [pluginRoute])
 
 	const resolvedStatus = useMemo(() => resolveStatusSnapshot(statusEntry), [statusEntry])
 
 	useEffect(() => {
-		if (resolvedStatus) statusRef.current = resolvedStatus
-	}, [resolvedStatus])
-
-	useEffect(() => {
-		if (statusEntry) statusEntryRef.current = statusEntry
-	}, [statusEntry])
-
-	useEffect(() => {
 		if (resolvedStatus) setStatusOverride(null)
 	}, [resolvedStatus])
 
-	const effectiveStatus = statusOverride ?? resolvedStatus ?? statusRef.current
-	const effectiveStatusEntry = statusEntry ?? statusEntryRef.current ?? null
+	const effectiveStatus = statusOverride ?? resolvedStatus
 	const isRunning = Boolean(effectiveStatus?.isRunning)
 	const isEnabled = effectiveStatus?.isEnabled ?? true
 	const lifecycleStage = resolveLifecycleStage(
@@ -337,13 +300,10 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 		effectiveStatus?.lifecycleStage,
 	)
 
-	const owner = detail?.address ?? stable?.address ?? statusEntry?.address
-	const configState = usePluginConfig(viewReady ? owner : undefined, pluginLabel)
+	const owner = detail?.address
+	const configState = usePluginConfig(ready ? owner : undefined)
 	const syncing = useDebouncedFlag(loading || configState.loading, 160)
-
-	const rawDeps = detail?.dependencies
-	const stableDeps = stable?.dependencies ?? []
-	const dependencies = resolveVisibleDependencies({ rawDeps, stableDeps, syncing })
+	const dependencies = detail?.dependencies ?? EMPTY_DEPENDENCIES
 
 	const handleRefetch = useCallback(async () => {
 		await refetch()
@@ -361,19 +321,19 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 	)
 
 	const contextValue = useMemo(() => {
-		if ((!detail && !stable) || !owner) return null
+		if (!detail || !owner) return null
 		return {
 			owner,
 			pluginRoute,
 			pluginLabel,
 			description,
 			dependencies,
-			status: effectiveStatusEntry,
+			status: statusEntry,
 			isRunning,
 			isSyncing: syncing,
 			isEnabled,
 			lifecycleStage,
-			source: resolvePluginSource(resolvedStatus ?? statusRef.current),
+			source: resolvePluginSource(resolvedStatus),
 			refetch: handleRefetch,
 			setStatusOverride: handleStatusOverride,
 		}
@@ -385,13 +345,12 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 		pluginRoute,
 		handleRefetch,
 		handleStatusOverride,
-		effectiveStatusEntry,
+		statusEntry,
 		isRunning,
 		isEnabled,
 		lifecycleStage,
 		detail,
 		resolvedStatus,
-		stable,
 		syncing,
 	])
 
@@ -406,8 +365,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 		)
 	}
 
-	// Not found: only decide when we have a status snapshot AND the detail request errored.
-	if (pluginRoute && hasStatusSnapshot && !listed && Boolean(error) && !loading) {
+	if (pluginRoute && hasStatusSnapshot && !listed && !loading) {
 		return (
 			<EmptyState
 				icon={<IconPuzzle size={28} stroke={1.5} />}
@@ -429,7 +387,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 		)
 	}
 
-	if (!viewReady) return <PluginSkeleton stacked={Boolean(isStacked)} />
+	if (!ready) return <PluginSkeleton stacked={Boolean(isStacked)} />
 	if (!contextValue) return null
 
 	return (

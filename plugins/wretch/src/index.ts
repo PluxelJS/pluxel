@@ -61,7 +61,7 @@ export class WretchPlugin extends BasePlugin {
 			},
 			{ tag: 'wretch-policy' },
 		)
-		this.ctx.workbench.mount(WretchWorkbench, {})
+		this.ctx.workbench?.mount(WretchWorkbench, {})
 	}
 
 	/**

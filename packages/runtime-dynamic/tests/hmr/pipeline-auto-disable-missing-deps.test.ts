@@ -1,20 +1,32 @@
 import { describe, expect, it, vi } from 'vitest'
-import '../../src/register-services'
 import {
 	formatPluginNodeReference,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import {
+	BasePlugin,
+	createRuntimeHost as createBaseRuntimeHost,
+	Plugin,
+} from '@pluxel/runtime/test'
+import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
+import { createDynamicContextInstallations, requireLoaderService } from '../../src/context-plan'
 
 import {
 	collectEnabledButStopped,
-	type EnabledButStoppedLookupContext,
+	type EnabledButStoppedLookup,
 	HmrExecutor,
 } from '../../src/hmr/engine/pipeline'
 import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../support/lowered-plugin'
 import { enablePluginsPatch, isEnabled } from '../support/runtime-state'
+
+function createRuntimeHost(config: RuntimeHostConfig = {}) {
+	return createBaseRuntimeHost(
+		{ workbench: false, ...config },
+		{ installations: createDynamicContextInstallations() },
+	)
+}
 
 function createExecutor(
 	ctx: ConstructorParameters<typeof HmrExecutor>[0],
@@ -70,8 +82,10 @@ describe('HmrExecutor transactions', () => {
 			const result = await executor.runAndLoadAllClean([cleanId])
 			expect(result?.commitResult.ok).toBe(true)
 			expect(calls).toEqual([`/@fs${cleanId}`])
-			expect(host.ctx.loader.api.anchors.has(cleanId)).toBe(true)
-			expect(host.ctx.loader.api.registry.findModuleId(pluginNodeAddressOf(Anchor))).toBe(cleanId)
+			expect(requireLoaderService(host.ctx).api.anchors.has(cleanId)).toBe(true)
+			expect(
+				requireLoaderService(host.ctx).api.registry.findModuleId(pluginNodeAddressOf(Anchor)),
+			).toBe(cleanId)
 		} finally {
 			await host.dispose()
 		}
@@ -97,7 +111,7 @@ describe('HmrExecutor transactions', () => {
 			}
 			lowerTestPlugin(Consumer, { requires: [Dep] })
 
-			const startup = host.ctx.loader.beginBatch()
+			const startup = requireLoaderService(host.ctx).beginBatch()
 			await startup.replaceModule('/dep.ts', { Dep })
 			await startup.replaceModule('/consumer.ts', { Consumer })
 			await startup.commit({ statePatch: enablePluginsPatch(Dep, Consumer) })
@@ -171,7 +185,7 @@ describe('HmrExecutor transactions', () => {
 			@Plugin()
 			class Stable extends BasePlugin {}
 			lowerTestPlugin(Stable)
-			const startup = host.ctx.loader.beginBatch()
+			const startup = requireLoaderService(host.ctx).beginBatch()
 			await startup.replaceModule('/stable.ts', { Stable })
 			await startup.commit({ statePatch: enablePluginsPatch(Stable) })
 			const firstStable = host.require(Stable)
@@ -189,7 +203,9 @@ describe('HmrExecutor transactions', () => {
 			expect(result?.syncedModules).toEqual([])
 			expect(result?.autoDisabled).toEqual([])
 			expect(host.require(Stable)).toBe(firstStable)
-			expect(host.ctx.loader.api.registry.getCtor(pluginNodeAddressOf(Stable))).toBe(Stable)
+			expect(requireLoaderService(host.ctx).api.registry.getCtor(pluginNodeAddressOf(Stable))).toBe(
+				Stable,
+			)
 		} finally {
 			await host.dispose()
 		}
@@ -215,23 +231,21 @@ describe('collectEnabledButStopped', () => {
 		const findModuleId = vi.fn((address: PluginNodeAddress) =>
 			pluginNodeAddressEqual(address, inBatch) ? '/consumer.ts' : '/other.ts',
 		)
-		const ctx: EnabledButStoppedLookupContext = {
-			loader: {
-				api: {
-					registry: { findModuleId },
-					status: {
-						snapshot: () => ({
-							statuses: [
-								{ address: inBatch, isEnabled: true, isRunning: false },
-								{ address: elsewhere, isEnabled: true, isRunning: false },
-							],
-						}),
-					},
+		const loader: EnabledButStoppedLookup = {
+			api: {
+				registry: { findModuleId },
+				status: {
+					snapshot: () => ({
+						statuses: [
+							{ address: inBatch, isEnabled: true, isRunning: false },
+							{ address: elsewhere, isEnabled: true, isRunning: false },
+						],
+					}),
 				},
 			},
 		}
 
-		expect(collectEnabledButStopped(ctx, new Set(['/consumer.ts']))).toEqual([
+		expect(collectEnabledButStopped(loader, new Set(['/consumer.ts']))).toEqual([
 			formatPluginNodeReference(inBatch),
 		])
 		expect(findModuleId).toHaveBeenCalledTimes(2)

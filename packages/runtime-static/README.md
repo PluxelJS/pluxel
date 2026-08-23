@@ -25,10 +25,7 @@ export default defineStaticRuntime({
 				snapshot: { enabled: [pluginNodeAddressOf(DemoPlugin)] },
 			},
 			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
-			workbench:
-				env.PLUXEL_WORKBENCH === 'false'
-					? false
-					: { enabled: true, access: { exposure: 'private' } },
+			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
 		}
 	},
 })

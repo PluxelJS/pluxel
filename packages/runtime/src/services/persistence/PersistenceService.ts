@@ -1,18 +1,5 @@
-import { type Context as PluxelContext, RootService } from '@pluxel/core'
+import type { Context as PluxelContext } from '@pluxel/core'
 import { basename, isAbsolute, join, resolve } from 'pathe'
-
-const serviceName = 'persistence' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Config {
-			[serviceName]?: PersistenceServiceConfig
-		}
-		interface RootServices {
-			[serviceName]: PersistenceService
-		}
-	}
-}
 
 export type PersistenceCapability = 'durable' | 'ephemeral' | 'readonly'
 
@@ -390,7 +377,6 @@ export function createWorkspacePersistenceBackend(
 	}
 }
 
-@RootService({ key: serviceName })
 export class PersistenceService {
 	private readonly backend: PersistenceBackend
 

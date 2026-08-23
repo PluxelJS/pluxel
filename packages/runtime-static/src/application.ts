@@ -19,11 +19,13 @@ const HOST_OPTION_FIELDS = new Set([
 	'runtimeState',
 	'persistence',
 	'database',
-	'http',
+	'workers',
+	'management',
 	'workbench',
+	'vault',
+	'debug',
 	'logging',
 	'profile',
-	'context',
 ])
 
 export function defineStaticRuntime<
@@ -70,8 +72,6 @@ export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRu
 		throw new TypeError('[runtime-static] Static application configure() must return an object')
 	}
 	assertKnownFields(options, HOST_OPTION_FIELDS, '[runtime-static] configure() result')
-	assertPublicHttpConfig(options.http, '[runtime-static] configure() result')
-	assertPublicContextConfig(options.context, '[runtime-static] configure() result')
 	const configService = withPluginConfigEnvironment(options.configService, startup.env)
 	return configService === options.configService ? options : { ...options, configService }
 }
@@ -80,39 +80,4 @@ function assertKnownFields(value: object, allowed: ReadonlySet<string>, label: s
 	const unknown = Object.keys(value).filter((key) => !allowed.has(key))
 	if (unknown.length === 0) return
 	throw new Error(`${label} includes unsupported ${unknown.map((key) => `"${key}"`).join(', ')}`)
-}
-
-function assertPublicHttpConfig(http: unknown, label: string): void {
-	if (!http || typeof http !== 'object') return
-	const forbidden = ['workbench', 'controlPlane', 'uiAssets', 'uiPublicDir'].filter(
-		(key) => key in http,
-	)
-	if (forbidden.length === 0) return
-	throw new Error(
-		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "workbench" and let the route launcher own workbench internals.`,
-	)
-}
-
-function assertPublicContextConfig(context: unknown, label: string): void {
-	if (!context || typeof context !== 'object') return
-	const forbidden = [
-		'configService',
-		'runtimeState',
-		'persistence',
-		'database',
-		'http',
-		'workbench',
-		'logger',
-		'profile',
-		'adminAccess',
-		'workbenchArtifactRoot',
-		'workbenchArtifactResolver',
-		'nodeModuleArtifactRoot',
-		'nodeModuleArtifactResolver',
-	].filter((key) => key in context)
-	if (forbidden.length > 0) {
-		throw new Error(
-			`${label} context must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use the corresponding top-level runtime option and let the route launcher own deployment internals.`,
-		)
-	}
 }

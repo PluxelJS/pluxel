@@ -24,7 +24,7 @@ export type FieldKind =
 	| 'record'
 	| 'object'
 	| 'union'
-	| 'unknown'
+	| 'unsupported'
 
 export interface NormalizedSectionMeta {
 	id: string
@@ -141,7 +141,6 @@ export interface UnionBranchField {
 
 export interface UnionBranch {
 	key: string
-	schema: Schema
 	discriminatorValue?: DiscriminatorValue
 	fields: UnionBranchField[]
 }
@@ -162,8 +161,10 @@ export interface UnionFieldNode extends FieldNodeBase {
 	compact?: boolean
 }
 
-export interface UnknownFieldNode extends FieldNodeBase {
-	kind: 'unknown'
+export interface UnsupportedFieldNode extends FieldNodeBase {
+	kind: 'unsupported'
+	readOnly: true
+	reason: string
 }
 
 export type FieldNode =
@@ -175,7 +176,7 @@ export type FieldNode =
 	| RecordFieldNode
 	| ObjectFieldNode
 	| UnionFieldNode
-	| UnknownFieldNode
+	| UnsupportedFieldNode
 
 type ExtractCtx = {
 	fieldName?: string
@@ -287,7 +288,7 @@ function resolveKind(schema: Schema): FieldKind {
 		case 'union':
 			return schema.type
 		default:
-			return 'unknown'
+			return 'unsupported'
 	}
 }
 
@@ -600,7 +601,7 @@ function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta):
 				})
 				if (node) fields.push({ key: entry.name, node })
 			}
-			return { key: branchKey, schema: branchSchema, discriminatorValue, fields }
+			return { key: branchKey, discriminatorValue, fields }
 		}
 
 		const fallbackKey =
@@ -613,7 +614,7 @@ function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta):
 			depth: (ctx.depth ?? 0) + 1,
 		})
 		const fields = node ? [{ key: fallbackKey, node, replaceValue: true }] : []
-		return { key: branchKey, schema: branchSchema, discriminatorValue, fields }
+		return { key: branchKey, discriminatorValue, fields }
 	})
 
 	return {
@@ -816,12 +817,14 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 				console.warn(DEFAULT_TEXTS.errors.extractionFailed(unwrapped.type))
 			}
 			return {
-				kind: 'unknown',
+				kind: 'unsupported',
 				name: ctx.fieldName,
 				path,
 				depth,
-				meta: resolvedMeta,
+				meta: { ...resolvedMeta, readOnly: true },
 				required: resolvedMeta.required ?? required,
+				readOnly: true,
+				reason: `Unsupported schema type: ${unwrapped.type}`,
 			}
 	}
 }

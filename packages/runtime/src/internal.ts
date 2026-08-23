@@ -1,13 +1,11 @@
 // Type-only re-exports keep the source entry's Context shape complete without installing services.
-export type { RuntimeContextConfig } from './context-augment'
-export type { RuntimeServicesContext } from './services'
+export type { RuntimeHostConfig } from './context/runtime-contract'
 
 export * from './shared'
 export * from './plugin-catalog'
 export * from './runtime-state'
 export * from './internal/reconciliation'
 export { requireRuntimeStateStore } from './internal/runtime-state'
-export { createInternalGraphQLSchemaSDL } from './services/http/internalGraphqlSchema'
 export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
 export {
 	getPluginRoutingSnapshot,
@@ -32,25 +30,21 @@ export {
 	isWorkbenchEnabled,
 	matchesWorkbenchUiBasePath,
 	resolveWorkbenchUiBasePath,
-	workbenchAdminAccess,
 } from './workbench-config'
-export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
+export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './management-config'
 export { withPluginConfigEnvironment } from './services/config-environment'
-export { CommandsService, withCommandsPluginContext } from './services/CommandsService'
+export { CommandsService } from './services/CommandsService'
 export {
 	NodeModuleService,
-	withNodeModulePluginContext,
 	type NodeModuleSourceBinder,
 	type NodeModuleSourceSubscription,
 } from './node-artifact/NodeModuleService'
-export { WorkerTaskService, withWorkerTaskPluginContext } from './node-artifact/WorkerTaskService'
+export { WorkerTaskService } from './node-artifact/WorkerTaskService'
 export { readNodeModuleDeclaration } from './node-artifact/node-module'
 export { readHostProduct, sameProduct } from './product-internal'
-export {
-	withDatabasePluginContext,
-	subscribeDatabaseHandle,
-	databaseHandleOwnsTables,
-} from './services/DatabaseService'
+export { subscribeDatabaseHandle, databaseHandleOwnsTables } from './services/DatabaseService'
+export { createRuntimeRootContext, type RuntimeRootContextOptions } from './context/runtime-plan'
+export { prepareContextCapabilities } from '@pluxel/core/internal'
 export {
 	readDatabaseDefinition,
 	type DatabaseArtifact,
@@ -58,6 +52,11 @@ export {
 } from './database-internal'
 export { readWorkbenchUiEntry } from './workbench/ui-entry'
 export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
+export {
+	RUNTIME_INTERNAL_API_BASE,
+	UI_PUBLIC_BASE,
+	runtimeWorkbenchArtifactBasePath,
+} from './web/paths'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { WorkbenchArtifactService } from './services/workbench/WorkbenchArtifactService'
@@ -67,12 +66,14 @@ export {
 	resolvePackagedWorkbenchManifest,
 } from './services/workbench/packaged-artifact'
 export {
-	installWorkbench,
+	createWorkbenchBackend,
 	requireWorkbench,
+	type WorkbenchBackendFactory,
 	type WorkbenchInstallOptions,
 } from './services/workbench'
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export {
+	bindContextRuntimeLogging,
 	createRuntimeLogging,
 	getActiveRuntimeLogging,
 	requireActiveRuntimeLogging,

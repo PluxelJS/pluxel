@@ -21,18 +21,15 @@ import {
 } from '../../runtime-dev/src/hmr-log.ts'
 import {
 	isPluginEnabled,
-	isWorkbenchEnabled,
-	matchesWorkbenchUiBasePath,
 	readHostProduct,
 	readRuntimeRouteCapabilities,
 	requireRuntimeStateStore,
 	resolveDevWorkbenchClientEntryUrl,
-	resolveWorkbenchUiBasePath,
 	sameProduct,
+	UI_PUBLIC_BASE,
 } from '@pluxel/runtime/internal'
-import { installWorkbench } from '@pluxel/runtime/internal/static'
+import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-import { UI_PUBLIC_BASE } from '@pluxel/runtime/web/paths'
 import { formatPluginNodeReference, type PluginNodeAddress } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -107,17 +104,13 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			bindings: await resolveViteBindings(options.bindings),
 		}
 		const config = await resolveStaticRuntimeHostOptions(application, startup)
-		const host = await createStaticRuntimeHost(
-			toStaticRuntimeDefinition(application),
-			{
-				...config,
-				http:
-					config.workbench !== false && config.workbench?.enabled === true
-						? withDevWorkbenchHttpConfig(config.http)
-						: config.http,
-			},
-			{ installWorkbench, product },
-		)
+		const host = await createStaticRuntimeHost(toStaticRuntimeDefinition(application), config, {
+			createWorkbenchBackend,
+			product,
+			...(config.workbench !== false && config.workbench?.enabled === true
+				? { http: { uiAssets: 'dev-server' } }
+				: {}),
+		})
 		try {
 			const workbenchEnabled = config.workbench !== false && config.workbench?.enabled === true
 			const pluginDirs = workbenchEnabled ? resolveStaticRuntimePluginDirs(server, host) : undefined
@@ -519,17 +512,6 @@ async function configureStaticRuntimeDevRuntime(
 	})
 }
 
-function withDevWorkbenchHttpConfig(
-	config: StaticRuntimeHost['options']['http'] | undefined,
-): StaticRuntimeHost['options']['http'] {
-	const next = {
-		...config,
-		controlPlane: { web: true, rpc: true, sse: true },
-		uiAssets: 'dev-server',
-	}
-	return next
-}
-
 async function loadStaticRuntimeDevModule(
 	server: ViteDevServer,
 ): Promise<typeof import('@pluxel/runtime-dev')> {
@@ -547,10 +529,9 @@ function isStaticRuntimeRouteRequest(
 	const url = request.url ?? '/'
 	const pathname = requestPathname(url)
 	if (url.startsWith('/__pluxel/')) return true
-	const workbenchEnabled = isWorkbenchEnabled(host.ctx.config.workbench)
+	const workbenchEnabled = host.ctx.workbench !== undefined
 	if (workbenchEnabled && pathname.startsWith(`${UI_PUBLIC_BASE}/`)) return true
-	const http = host.ctx.http as unknown as { matchesMountedRoute?: (pathname: string) => boolean }
-	if (http.matchesMountedRoute?.(pathname)) return true
+	if (host.ctx.http.matchesMountedRoute(pathname)) return true
 
 	const method = (request.method ?? 'GET').toUpperCase()
 	if (method !== 'GET' && method !== 'HEAD') return false
@@ -558,10 +539,7 @@ function isStaticRuntimeRouteRequest(
 	if (!workbenchEnabled) return false
 
 	const accept = String(request.headers.accept ?? '').toLowerCase()
-	return (
-		accept.includes('text/html') &&
-		matchesWorkbenchUiBasePath(pathname, resolveWorkbenchUiBasePath(host.ctx.config.workbench))
-	)
+	return accept.includes('text/html') && host.ctx.http.matchesWorkbenchUiRoute(pathname)
 }
 
 function requestPathname(url: string): string {

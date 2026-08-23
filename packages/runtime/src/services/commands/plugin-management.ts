@@ -2,8 +2,12 @@ import { CommandError, defineCommand, type AnyCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { formatPluginNodeReference, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { applyStatusActions } from '../../api/usecases/pluginStatus'
-import { pluginStatus, pluginsList, type PluginStatusSnapshot } from '../../api/usecases/plugins'
-import type { PluginStatusAction } from '../../web/protocol'
+import { pluginStatus, pluginsList } from '../../api/usecases/plugins'
+import type {
+	PluginsListOutput,
+	PluginStatusAction,
+	PluginStatusSnapshot,
+} from '../../web/protocol'
 
 const pluginEntryAddress = Type.Union([
 	obj({
@@ -78,6 +82,7 @@ const pluginSnapshot = obj({
 	availability: Type.Union([Type.Literal('available'), Type.Literal('unavailable')]),
 	issues: Type.Array(
 		obj({
+			id: Type.String(),
 			code: Type.Union([
 				Type.Literal('consumer_unavailable'),
 				Type.Literal('requirement_removed'),
@@ -112,6 +117,20 @@ const pluginsOutput = obj({
 	}),
 })
 
+function mutablePluginSnapshot(snapshot: PluginStatusSnapshot) {
+	return {
+		...snapshot,
+		issues: snapshot.issues.map((issue) => ({ ...issue })),
+	}
+}
+
+function mutablePluginsOutput(output: PluginsListOutput) {
+	return {
+		plugins: output.plugins.map(mutablePluginSnapshot),
+		summary: { ...output.summary },
+	}
+}
+
 function requirePlugin(ctx: Context, address: PluginNodeAddress): PluginStatusSnapshot {
 	const snapshot = pluginStatus(ctx, address)
 	if (snapshot) return snapshot
@@ -127,15 +146,17 @@ async function mutatePlugin(
 	ctx: Context,
 	address: PluginNodeAddress,
 	action: PluginStatusAction,
-): Promise<PluginStatusSnapshot> {
+): Promise<ReturnType<typeof mutablePluginSnapshot>> {
 	const result = await applyStatusActions(ctx, [{ address, action }])
 	const mutation = result.results[0]
 	if (!mutation) {
 		throw new Error('[runtime:commands] status mutation omitted its result')
 	}
-	if (mutation?.ok === true) return requirePlugin(ctx, address)
+	if (mutation?.ok === true) return mutablePluginSnapshot(requirePlugin(ctx, address))
 
-	if (mutation?.code === 'plugin_not_found') return requirePlugin(ctx, address)
+	if (mutation?.code === 'plugin_not_found') {
+		return mutablePluginSnapshot(requirePlugin(ctx, address))
+	}
 	throw new CommandError('DEPENDENCY', 'Plugin operation failed', {
 		message: mutation.error ?? `Plugin ${action} failed: ${formatPluginNodeReference(address)}`,
 		details: {
@@ -174,7 +195,7 @@ export function createPluginManagementCommands(ctx: Context): readonly AnyComman
 			behavior: { kind: 'query', world: 'closed' },
 			input: obj({}),
 			output: pluginsOutput,
-			execute: () => pluginsList(ctx),
+			execute: () => mutablePluginsOutput(pluginsList(ctx)),
 		}),
 		defineCommand({
 			name: 'plugin.status.get',
@@ -183,7 +204,7 @@ export function createPluginManagementCommands(ctx: Context): readonly AnyComman
 			behavior: { kind: 'query', world: 'closed' },
 			input: pluginAddressInput,
 			output: pluginSnapshot,
-			execute: ({ address }) => requirePlugin(ctx, address),
+			execute: ({ address }) => mutablePluginSnapshot(requirePlugin(ctx, address)),
 		}),
 		mutationCommand(ctx, 'enable'),
 		mutationCommand(ctx, 'disable'),

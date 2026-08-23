@@ -7,7 +7,7 @@ import { PicklistField } from '../renders/picklist'
 import { RecordField } from '../renders/record'
 import { StringField } from '../renders/string'
 import { UnionField } from '../renders/union'
-import { UnknownField } from '../renders/unknown'
+import { UnsupportedField } from '../renders/unsupported'
 import type { RendererProps } from '../renders/types'
 
 export function FieldRenderer(props: RendererProps) {
@@ -29,8 +29,8 @@ export function FieldRenderer(props: RendererProps) {
 			return <ObjectField {...props} />
 		case 'union':
 			return <UnionField {...props} />
-		default:
-			return <UnknownField {...props} />
+		case 'unsupported':
+			return <UnsupportedField {...props} />
 	}
 }
 

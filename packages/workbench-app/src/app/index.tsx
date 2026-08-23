@@ -1,11 +1,15 @@
 import { localStorageColorSchemeManager, MantineProvider } from '@mantine/core'
 import { type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { useState } from 'react'
-import { getRuntimeTransportClient, RuntimeTransportClientProvider } from '../runtime'
+import {
+	getRuntimeManagementClient,
+	getRuntimeTransportClient,
+	RuntimeManagementClientProvider,
+	RuntimeTransportClientProvider,
+} from '../runtime'
 import './bootstrap'
 import '../styles/index.scss'
 import { appCssVariablesResolver, useAppTheme } from '../theme'
-import { PluxelGQLensProvider } from './gqlens'
 import { ProductProvider } from './product'
 import { createAppRouter } from './router'
 import { WorkspaceControllerProvider } from './workbench/context'
@@ -18,6 +22,7 @@ export interface AppProps {
 export function App({ history }: AppProps = {}) {
 	const [router] = useState(() => createAppRouter({ history }))
 	const [transportClient] = useState(() => getRuntimeTransportClient())
+	const [managementClient] = useState(() => getRuntimeManagementClient())
 	const [workspace] = useState(() => new WorkspaceController(router.state.location.pathname))
 	const { theme } = useAppTheme()
 	return (
@@ -29,13 +34,13 @@ export function App({ history }: AppProps = {}) {
 			cssVariablesResolver={appCssVariablesResolver}
 		>
 			<RuntimeTransportClientProvider client={transportClient}>
-				<ProductProvider transport={transportClient}>
-					<PluxelGQLensProvider>
+				<RuntimeManagementClientProvider client={managementClient}>
+					<ProductProvider client={managementClient}>
 						<WorkspaceControllerProvider controller={workspace}>
 							<RouterProvider router={router} />
 						</WorkspaceControllerProvider>
-					</PluxelGQLensProvider>
-				</ProductProvider>
+					</ProductProvider>
+				</RuntimeManagementClientProvider>
 			</RuntimeTransportClientProvider>
 		</MantineProvider>
 	)

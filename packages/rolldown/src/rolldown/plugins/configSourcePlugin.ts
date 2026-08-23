@@ -5,7 +5,7 @@
  * one non-#private class field initialized by `this.configs.use(ObjectSchema)`. A PluginPart uses
  * the same authoring shape and lowers to Part-owned metadata. The runtime helper
  * performs the final Standard Schema/ObjectSchema validation while this pass owns declaration
- * shape, cardinality and source capture. There is no Config decorator or cfg/layout protocol.
+ * shape, cardinality and source capture.
  */
 import { readFile } from 'node:fs/promises'
 import type { Program } from 'oxc-parser'
@@ -94,17 +94,11 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 			filter: { id: { include, exclude } },
 			async handler(this: TransformPluginContext, code, id) {
 				if (code.includes('// [pluxel-config] Injected definition')) return null
-				if (!/\.configs\.use\s*\(|\b(?:Config|cfg)\b/.test(code)) {
+				if (!/\.configs\.use\s*\(/.test(code)) {
 					return null
 				}
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[pluxel-config] failed to parse ${id}`)
-				const removed = removedConfigDsl(ast)
-				if (removed) {
-					this.error(
-						`[pluxel-config] ${id} uses removed ${removed} authoring DSL; use one Plugin field initialized with this.configs.use(ObjectSchema)`,
-					)
-				}
 				const declarations = await extractDeclarations(
 					ast,
 					code,
@@ -135,62 +129,6 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 				return { code: `${code}\n${lines.join('\n')}\n`, map: null }
 			},
 		},
-	}
-}
-
-function removedConfigDsl(ast: Program): 'Config' | 'cfg' | undefined {
-	const imports = collectImports(ast)
-	let removed: 'Config' | 'cfg' | undefined
-	walkAst(ast as unknown as AstNode, (node) => {
-		if (removed) return
-		const expression =
-			node.type === 'CallExpression'
-				? (node.callee as AstNode | undefined)
-				: node.type === 'TaggedTemplateExpression'
-					? (node.tag as AstNode | undefined)
-					: node.type === 'Decorator'
-						? (node.expression as AstNode | undefined)
-						: undefined
-		const helper = authoringHelperName(expression, imports)
-		if (helper === 'Config' || helper === 'cfg') removed = helper
-	})
-	return removed
-}
-
-function authoringHelperName(
-	expression: AstNode | undefined,
-	imports: ReadonlyMap<string, ImportBinding>,
-): string | undefined {
-	if (!expression) return undefined
-	const target =
-		expression.type === 'CallExpression' ? (expression.callee as AstNode | undefined) : expression
-	if (target?.type === 'Identifier') {
-		const binding = imports.get(readIdentifier(target) ?? '')
-		return binding && !binding.namespace && AUTHORING_PACKAGES.has(binding.source)
-			? binding.imported
-			: undefined
-	}
-	if (target?.type !== 'MemberExpression') return undefined
-	const binding = imports.get(readIdentifier(target.object) ?? '')
-	return binding?.namespace && AUTHORING_PACKAGES.has(binding.source)
-		? propertyName(target.property)
-		: undefined
-}
-
-function walkAst(node: AstNode, visit: (node: AstNode) => void): void {
-	visit(node)
-	for (const value of Object.values(node)) {
-		if (Array.isArray(value)) {
-			for (const item of value) {
-				if (item && typeof item === 'object' && typeof (item as AstNode).type === 'string') {
-					walkAst(item as AstNode, visit)
-				}
-			}
-			continue
-		}
-		if (value && typeof value === 'object' && typeof (value as AstNode).type === 'string') {
-			walkAst(value as AstNode, visit)
-		}
 	}
 }
 

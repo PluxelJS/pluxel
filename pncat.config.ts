@@ -14,16 +14,6 @@ const BACKEND_PACKAGES: (string | RegExp)[] = [
 	'@hono/node-server',
 	'@hono/valibot-validator',
 ]
-const GRAPHQL_PACKAGES: (string | RegExp)[] = [
-	'@gqlens/codegen',
-	'@gqlens/core',
-	'@gqlens/react',
-	'@gqloom/core',
-	'@gqloom/valibot',
-	'graphql',
-	'graphql-scalars',
-	'graphql-yoga',
-]
 const VALIDATION_PACKAGES: (string | RegExp)[] = [
 	'valibot',
 	'option-t',
@@ -59,11 +49,6 @@ export default defineConfig({
 			name: 'backend',
 			match: BACKEND_PACKAGES,
 			priority: 40,
-		},
-		{
-			name: 'graphql',
-			match: GRAPHQL_PACKAGES,
-			priority: 32,
 		},
 		{
 			name: 'validation',

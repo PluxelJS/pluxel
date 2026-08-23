@@ -7,7 +7,7 @@ import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
-import { pluginSchema } from '../../src/api/usecases/pluginConfig'
+import { pluginConfigPresentation } from '../../src/api/usecases/pluginConfig'
 import { requireRuntimePluginGraphCoordinator } from '../../src/internal/reconciliation'
 
 const extension = workbench.extension({ contract: workbenchContract.define({}) })
@@ -95,7 +95,7 @@ describe('PluginPart runtime capabilities', () => {
 				)
 				expect(removed.status).toBe(404)
 			},
-			{ workbench: false },
+			{ workbench: { enabled: true } },
 		)
 	})
 
@@ -114,13 +114,15 @@ describe('PluginPart runtime capabilities', () => {
 				})
 				expect(definition?.owner?.source).toContain('v.object')
 				expect(definition?.parts[0]?.declaration?.source).toContain('v.object')
-				await expect(pluginSchema(host.ctx, address)).resolves.toMatchObject({
+				await expect(pluginConfigPresentation(host.ctx, address)).resolves.toMatchObject({
 					ok: true,
-					defaults: { enabled: true, configured: { size: 10 } },
-					sections: [
-						{ path: [], defaults: { enabled: true } },
-						{ path: ['configured'], defaults: { size: 10 } },
-					],
+					plan: {
+						defaults: { enabled: true, configured: { size: 10 } },
+						sections: [
+							{ path: [], defaults: { enabled: true } },
+							{ path: ['configured'], defaults: { size: 10 } },
+						],
+					},
 				})
 			},
 			{ workbench: false },

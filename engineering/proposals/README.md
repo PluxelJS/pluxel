@@ -11,13 +11,12 @@
 
 当前进行中的提案：
 
-- [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)：把现有 Contract、layout、artifact、grant 与
-  resource 事实收敛为可由第三方实现的版本化 Workbench 协议，覆盖非 Mantine management host、现有 React View adapter、
-  通用配置投影与未来 renderer 边界。
+- [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)：Level 1 management 落地后，仅研究可替代 Remote View host
+  所需的 browser runtime、React renderer/delivery ABI、最小 singleton 和 CSS asset ownership。
 - [`CLI_SCAFFOLDING_REFACTOR.md`](CLI_SCAFFOLDING_REFACTOR.md)：bundled/local scaffold 重构落地后的
   remote Plugin template / giget adapter 后续决策。
-- [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含已否决的
-  decoratorless Plugin 与 catalog exact-only 简化，以及仍可升级为 proposal 的 Context kernel 与 binding 稳定性研究。
+- [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
+  decoratorless Plugin declaration。
 
 CLI 分发、local-first delegation 与官方能力按需加载的已实施约束见 [`../TOOLCHAIN.md`](../TOOLCHAIN.md) 和
 [`../../docs/development/tooling.md`](../../docs/development/tooling.md)。

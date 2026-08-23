@@ -1,18 +1,21 @@
 // context.tsx
 import { createContext, useContext, type ReactNode } from 'react'
+import type { PluginSourceSnapshot } from '../../../runtime'
 import type {
 	PluginDependency,
-	PluginSourceInfo as GqlPluginSourceInfo,
-	PluginSourceInfoKind,
 	PluginStatusEntry,
 	PluginStatusEntryLifecycleStage,
-} from '../../gqlens'
+} from '../pluginOverview'
 import type { PluginNodeAddress } from '@pluxel/core'
 
-export type PluginSourceKind = PluginSourceInfoKind
+export type PluginSourceKind = PluginSourceSnapshot['kind']
 
-export type PluginSourceInfo = Omit<GqlPluginSourceInfo, '__typename' | 'kind'> & {
+export type PluginSourceInfo = {
 	kind: PluginSourceKind
+	moduleId: string | null
+	packageName: string | null
+	version: string | null
+	tag: string | null
 }
 
 export interface PluginScopeContextValue {

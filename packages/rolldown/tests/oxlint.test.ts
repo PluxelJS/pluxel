@@ -536,32 +536,6 @@ runRule(
 	},
 )
 
-runRule('plugin-no-removed-feature-api', pluxelRules['plugin-no-removed-feature-api'], {
-	valid: [
-		{
-			code: `
-				class CacheCatalog {
-					load() {}
-				}
-			`,
-		},
-	],
-	invalid: [
-		{
-			code: 'class CacheFeature extends BaseFeature {}',
-			errors: [{ messageId: 'removed' }],
-		},
-		{
-			code: "const lazy = defineLazyFeature({ load: () => import('./cache') })",
-			errors: [{ messageId: 'removed' }],
-		},
-		{
-			code: 'this.features.use(CacheFeature)',
-			errors: [{ messageId: 'removed' }],
-		},
-	],
-})
-
 runRule('plugin-part-static-occurrences', pluxelRules['plugin-part-static-occurrences'], {
 	valid: [
 		{
@@ -672,26 +646,6 @@ runRule('configs-use-single-object-schema', pluxelRules['configs-use-single-obje
 				}
 			`,
 			errors: [{ messageId: 'nonObject' }],
-		},
-	],
-})
-
-runRule('configs-no-removed-dsl', pluxelRules['configs-no-removed-dsl'], {
-	valid: [
-		{ code: 'const config = this.configs.use(ConfigSchema)' },
-		{ code: 'host.cfg(PluginA).set({ enabled: true })' },
-	],
-	invalid: [
-		{
-			code: `
-				@Config({ key: 'enabled' })
-				class PluginConfig {}
-			`,
-			errors: [{ messageId: 'removed' }],
-		},
-		{
-			code: "const schema = cfg('PluginA', { enabled: true })",
-			errors: [{ messageId: 'removed' }],
 		},
 	],
 })

@@ -50,10 +50,7 @@ export default defineStaticRuntime({
 				snapshot: { enabled: [pluginNodeAddressOf(OrdersPlugin)] },
 			},
 			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
-			workbench:
-				env.PLUXEL_WORKBENCH === 'false'
-					? false
-					: { enabled: true, access: { exposure: 'private' } },
+			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
 		}
 	},
 })
@@ -161,7 +158,6 @@ export default defineDynamicRuntimeConfig({
 	logsDir: 'logs',
 	workbench: {
 		enabled: true,
-		access: { exposure: 'private' },
 	},
 })
 ```
@@ -222,7 +218,7 @@ Host 的两类状态不要混淆：
 
 Static `configure()` 或 dynamic config 提供初始值，file/memory/readonly backend 决定持久化方式；`readonly` 会读取同一 durable file source，但拒绝 mutation，文件缺失时保留 startup snapshot 且不创建文件。Plugin 只看到已经 normalized 的 `this.config`；详细 contract 见 [配置模型](./configuration.md)。
 
-### Workbench 与 admin access
+### Workbench 与 management access
 
 Workbench 是可选 host capability：
 
@@ -234,12 +230,24 @@ workbench: false
 
 ```ts no-twoslash
 workbench: {
-	enabled: true,
-	access: { exposure: 'private' },
+	enabled: true
 }
 ```
 
-disabled 时不创建 registry、compiler、watcher、artifact route、RPC/SSE transport 或 Workbench persistence。Plugin business HTTP、database、commands 和 lifecycle 不受影响。
+`workbench: false` 或省略该字段时不创建 registry、compiler、watcher、artifact route、resource transport 或 Workbench persistence。Plugin business HTTP、database、commands 和 lifecycle 不受影响。启用 Workbench 会同时启用默认 private 的 management plane。
+
+不加载 Workbench UI、但需要通过 `@pluxel/runtime/web` 管理宿主时，只配置访问策略：
+
+```ts no-twoslash
+workbench: false,
+management: {}
+```
+
+`management` object 的存在会启用 headless management；省略时，关闭 Workbench 的宿主没有 management route 或 backend。
+省略 `management.access` 使用 private policy。公网管理面使用
+`management: { access: { exposure: 'public', oidc: { ... } } }`；public access 必须在同一 access object 中提供 OIDC。
+没有独立的 `enabled` flag，也不存在同时“启用 Workbench、禁用 management”的矛盾状态。宿主产品分类放在
+`management.pluginGroups`，不要求安装 Workbench UI。
 
 公网管理面必须由 host 明确配置 admin access/OIDC。`publicPath` 的业务 HTTP 和 Workbench exposure 是不同边界；开启固定业务 route 不等于开放管理权限。
 

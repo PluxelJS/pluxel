@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import type { PluginNodeAddress } from '@pluxel/core'
-import { RuntimeTransportClientProvider } from '../../src/web/react'
+import { RuntimeManagementClientProvider } from '../../src/web/react'
 import { act, useMemo, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -35,47 +35,48 @@ const schema = v.object({
 	),
 	enabled: v.pipe(v.boolean(), f.formMeta({ label: '启用' }), f.booleanMeta({})),
 })
+const fields = f.extractFormFields(schema)
 
-function createFakeTransportClient(
+function createFakeManagementClient(
 	patchPluginConfig = vi.fn(async () => ({
 		ok: true as const,
 		config: { name: 'saved', enabled: false },
-		defaults: { name: 'default', enabled: false },
+		application: 'applied' as const,
 	})),
 ) {
-	const rpc = { patchPluginConfig }
 	return {
-		withRpc: <T,>(run: (stub: typeof rpc) => T) => Promise.resolve(run(rpc)),
-		sse: { ns: vi.fn(() => ({ on: vi.fn(), onAny: vi.fn() })) },
-		dispose: vi.fn(),
+		config: {
+			patch: patchPluginConfig,
+			patchField: vi.fn(),
+		},
 	} as any
 }
 
 function ConfigHarness({
-	client = createFakeTransportClient(),
+	client = createFakeManagementClient(),
 	savedConfig = EMPTY_CONFIG,
 	defaults = EMPTY_CONFIG,
 }: {
-	client?: ReturnType<typeof createFakeTransportClient>
+	client?: ReturnType<typeof createFakeManagementClient>
 	savedConfig?: Record<string, unknown>
 	defaults?: Record<string, unknown>
 }) {
 	const [dirty, setDirty] = useState(false)
 	return (
-		<RuntimeTransportClientProvider client={client}>
+		<RuntimeManagementClientProvider client={client}>
 			<MantineProvider>
 				<div data-dirty={dirty ? 'true' : 'false'}>
 					<ConfigForm
 						owner={OWNER}
 						displayName="Config owner"
-						schema={schema}
+						fields={fields}
 						savedConfig={savedConfig}
 						defaults={defaults}
 						onDirtyChange={setDirty}
 					/>
 				</div>
 			</MantineProvider>
-		</RuntimeTransportClientProvider>
+		</RuntimeManagementClientProvider>
 	)
 }
 
@@ -227,10 +228,10 @@ describe('single-schema ConfigForm safety', () => {
 		const patchPluginConfig = vi.fn(async () => ({
 			ok: true as const,
 			config: { name: 'changed', enabled: false },
-			defaults: { name: 'default', enabled: false },
+			application: 'applied' as const,
 		}))
 		const { container, root } = await mount(
-			<ConfigHarness client={createFakeTransportClient(patchPluginConfig)} />,
+			<ConfigHarness client={createFakeManagementClient(patchPluginConfig)} />,
 		)
 		try {
 			const input = container.querySelector('input[name="name"]') as HTMLInputElement

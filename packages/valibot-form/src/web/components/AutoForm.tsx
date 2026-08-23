@@ -9,39 +9,44 @@ import React, {
 	useEffect,
 	useMemo,
 } from 'react'
-import { getDefaults } from 'valibot'
+import { getDefaults, type InferOutput } from 'valibot'
 import type { ObjectLikeSchema } from '../../core'
+import type { FieldNode } from '../../core/fields'
 import { DEFAULT_SECTION_ID, DEFAULT_TEXTS } from '../../core/constants'
 import { isDevelopmentEnvironment } from '../../core/utils/environment'
-import { type PlannedField, planSchemaFields, type SectionPlan } from './internal/fieldPlanner'
+import {
+	type PlannedField,
+	planFieldSections,
+	planSchemaFields,
+	type SectionPlan,
+} from './internal/fieldPlanner'
 import { useAppForm } from './internal/formContext'
 import { alignToCss, resolveFieldSpan } from './internal/layout'
 import { FieldRenderer } from './internal/FieldRenderer'
 import { FieldRendererProvider } from './internal/fieldRendererContext'
 
 // -------- Context（暴露同一表单实例与渲染数据） ----------
-interface Ctx<S extends ObjectLikeSchema> {
-	form: ReturnType<typeof useAppForm<S>>
+interface Ctx<TValues extends Record<string, unknown>> {
+	form: ReturnType<typeof useAppForm<TValues>>
 	sections: SectionPlan[]
 	hiddenFields: PlannedField[]
 	defaultValues: Record<string, unknown>
 	submit: () => void
-	reset: (values?: Record<string, any>) => void
+	reset: (values?: Record<string, unknown>) => void
 }
-const AutoFormCtx = createContext<Ctx<ObjectLikeSchema> | null>(null)
+const AutoFormCtx = createContext<Ctx<Record<string, unknown>> | null>(null)
 
-export function useAutoFormCtx<S extends ObjectLikeSchema>() {
+export function useAutoFormCtx<
+	TValues extends Record<string, unknown> = Record<string, unknown>,
+>() {
 	const ctx = useContext(AutoFormCtx)
 	if (!ctx) {
 		throw new Error(DEFAULT_TEXTS.errors.autoFormContextMissing)
 	}
-	return ctx as Ctx<S>
+	return ctx as Ctx<TValues>
 }
 
-export interface AutoFormProps<S extends ObjectLikeSchema> {
-	schema: S
-	/** 建议用 useMemo 包装后传入 */
-	formOpts?: Parameters<typeof useAppForm<S>>[1]
+type AutoFormSharedProps = {
 	/** 你自由摆放内容：标题/按钮/字段/调试等 */
 	children: React.ReactNode
 	/** 外部决定何时重置表单（比如 schema 切换） */
@@ -50,36 +55,66 @@ export interface AutoFormProps<S extends ObjectLikeSchema> {
 	formProps?: Omit<React.ComponentPropsWithoutRef<'form'>, 'onSubmit'>
 }
 
-export function AutoForm<S extends ObjectLikeSchema>({
-	schema,
-	formOpts,
-	children,
-	resetKey,
-	formProps,
-}: AutoFormProps<S>) {
-	const form = useAppForm(schema, formOpts)
+export type AutoFormSchemaProps<S extends ObjectLikeSchema> = AutoFormSharedProps & {
+	schema: S
+	fields?: never
+	/** 建议用 useMemo 包装后传入 */
+	formOpts?: Parameters<typeof useAppForm<InferOutput<S>>>[1]
+}
+
+export type AutoFormPlanProps<TValues extends Record<string, unknown>> = AutoFormSharedProps & {
+	schema?: never
+	/** Browser-safe renderer plan; plan mode never claims schema-derived output inference. */
+	fields: readonly FieldNode[]
+	formOpts: { defaultValues: TValues } & Record<string, unknown>
+}
+
+export type AutoFormProps<
+	S extends ObjectLikeSchema,
+	TValues extends Record<string, unknown> = InferOutput<S> & Record<string, unknown>,
+> = AutoFormSchemaProps<S> | AutoFormPlanProps<TValues>
+
+export function AutoForm<S extends ObjectLikeSchema>(
+	props: AutoFormSchemaProps<S>,
+): React.ReactElement
+export function AutoForm<TValues extends Record<string, unknown>>(
+	props: AutoFormPlanProps<TValues>,
+): React.ReactElement
+export function AutoForm<
+	S extends ObjectLikeSchema,
+	TValues extends Record<string, unknown> = InferOutput<S> & Record<string, unknown>,
+>({ schema, fields, formOpts, children, resetKey, formProps }: AutoFormProps<S, TValues>) {
+	const form = useAppForm<Record<string, unknown>>(schema, formOpts)
 	const defaultValues = useMemo(
-		() => (formOpts?.defaultValues ?? getDefaults(schema)) as Record<string, unknown>,
+		() =>
+			(formOpts?.defaultValues ?? (schema === undefined ? {} : getDefaults(schema))) as Record<
+				string,
+				unknown
+			>,
 		[schema, formOpts?.defaultValues],
 	)
 
-	const fieldPlan = useMemo(() => planSchemaFields(schema), [schema])
+	const fieldPlan = useMemo(() => {
+		if (fields) return planFieldSections([...fields])
+		if (schema) return planSchemaFields(schema)
+		throw new Error('AutoForm requires either schema or fields')
+	}, [fields, schema])
 
-	const ctx = useMemo<Ctx<S>>(
+	const ctx = useMemo<Ctx<Record<string, unknown>>>(
 		() => ({
 			form,
 			sections: fieldPlan.sections,
 			hiddenFields: fieldPlan.hiddenFields,
 			defaultValues,
 			submit: () => void form.handleSubmit(),
-			reset: (values?: Record<string, any>) => form.reset(values as any),
+			reset: (values?: Record<string, unknown>) => form.reset(values),
 		}),
 		[form, fieldPlan, defaultValues],
 	)
 
 	useEffect(() => {
 		if (resetKey === undefined) return
-		form.reset(defaultValues as any)
+		form.reset(defaultValues)
 	}, [form, resetKey, defaultValues])
 
 	const onSubmit = useCallback(

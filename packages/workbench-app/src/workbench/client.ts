@@ -5,7 +5,7 @@ import type {
 } from '@pluxel/runtime/workbench'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchLocaleService } from '@pluxel/runtime/workbench/ui'
-import type { RuntimeTransportClient } from '@pluxel/runtime/web'
+import type { RuntimeTransportClient } from '@pluxel/runtime/web/internal'
 import { stringifyUnknown } from '../utils/unknown'
 import { loadFederatedWorkbenchModule } from './federationRuntime'
 import { matchWorkbenchRoute } from './routes'
@@ -66,7 +66,7 @@ export class WorkbenchClientRuntime {
 	private startStream(): void {
 		if (this.stream) return
 		const stream = this.transport.createSse({
-			url: this.transport.links.workbenchEvents(),
+			url: this.transport.workbench.layoutEventsUrl(),
 			namespaces: ['workbench.layouts'],
 		})
 		this.stream = stream
@@ -236,8 +236,8 @@ export class WorkbenchClientRuntime {
 		invalidation: number,
 	): Promise<WorkbenchTargetSnapshot> {
 		const layout = target
-			? await this.transport.http.workbench.pluginLayout(target)
-			: await this.transport.http.workbench.globalLayout()
+			? await this.transport.workbench.pluginLayout(target)
+			: await this.transport.workbench.globalLayout()
 		const catalog = await this.ensureCatalog(layout.revision, invalidation)
 		const owners = new Map<string, WorkbenchPluginDescriptor>()
 		for (const item of layout.items) {
@@ -279,7 +279,7 @@ export class WorkbenchClientRuntime {
 			await this.catalogRequest
 			if (this.catalogCurrent(minimumRevision, invalidation)) return this.catalog
 		}
-		const request = this.transport.http.workbench.catalog().then((catalog) => {
+		const request = this.transport.workbench.catalog().then((catalog) => {
 			if (!this.catalogLoaded || invalidation >= this.catalogInvalidation) {
 				this.catalog = catalog
 				this.catalogLoaded = true

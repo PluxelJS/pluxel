@@ -20,18 +20,15 @@ export type AdminAccessOidcConfig = {
 
 export type AdminAccessConfig =
 	| {
-			enabled?: boolean
 			exposure?: 'private'
 			oidc?: AdminAccessOidcConfig
 	  }
 	| {
-			enabled?: boolean
 			exposure: 'public'
-			oidc?: AdminAccessOidcConfig
+			oidc: AdminAccessOidcConfig
 	  }
 
 export type ResolvedAdminAccessConfig = {
-	enabled: boolean
 	exposure: AdminAccessExposure
 	oidc?: AdminAccessOidcConfig
 }

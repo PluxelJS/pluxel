@@ -1,5 +1,4 @@
-import type { Context as PluxelContext } from '@pluxel/context'
-import { symbols } from '@pluxel/context/internal'
+import type { Context as PluxelContext } from '../../context/Context'
 import {
 	EvtChannel as BaseEvtChannel,
 	type EventDescriptor,
@@ -44,7 +43,6 @@ export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
 		prepend?: boolean,
 	): Unsubscribe {
 		const ctx = this.ctx
-		;(listener as unknown as { [symbols.ATTACH]?: PluxelContext })[symbols.ATTACH] = ctx
 		const unsubscribe = super._register(listener, opts, prepend)
 		;(this.registrationOwner?.effects ?? ctx.caller?.effects ?? ctx.effects).defer(
 			unsubscribe as unknown as () => void,

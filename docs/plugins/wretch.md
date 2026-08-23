@@ -160,7 +160,7 @@ override async init(): Promise<void> {
 	await this.http.enableManagedSettings()
 	this.api = this.http.client.url(this.config.baseUrl, true)
 
-	this.ctx.workbench.mount(CustomerWorkbench, {
+	this.ctx.workbench?.mount(CustomerWorkbench, {
 		settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
 	})
 }

@@ -14,6 +14,8 @@ packages:
     type: major
   '@pluxel/wretch':
     type: patch
+  valibot-form:
+    type: major
 ---
 
 ## Converge Plugin definitions, nodes, and generations
@@ -33,12 +35,38 @@ only lowered declaration facts and no longer installs a global `Reflect` polyfil
 `@pluxel/rolldown` root and `./workspace` umbrella exports; tooling consumers must import the explicit
 capability subpath they use.
 
+Move Context into Core as a host-compiled capability plan with explicit root, generation, and
+owner-view scopes. Remove `@pluxel/context`, global service registration and Context service decorators, mutable
+`Context.config`, runtime overrides, and compatibility aliases. Static, dynamic, and test hosts now
+capture resolved immutable inputs in their own plans, while caller-edge views isolate ownership and
+share only the provider root/generation state declared by each capability.
+
+Separate the runtime management plane from the optional Workbench extension plane. Publish one
+framework-neutral browser contract/client for management snapshots and mutations, make the official
+Workbench consume that same path, and keep its not-yet-standardized View-host session transport behind
+an explicit internal entry and physical module boundary. Management connection options no longer carry
+SSE/session fields or the legacy `adminAccess.enabled` shape. Level 1 discovery reports only whether
+Workbench is enabled; renderer, catalog and session facts remain outside the Management protocol until
+the View-host ABI is standardized. Remove the internal GraphQL endpoint,
+GQLens code-generation stack, workspace submodule, generated clients, and duplicated GraphQL read
+model.
+Headless hosts can explicitly enable management without creating layout, artifact, grant, remote-view,
+or UI routing state; omitting both planes has zero management/Workbench backend cost.
+Management access and host-owned Plugin classification now live under the single public
+`management.access` / `management.pluginGroups` contract. Workbench configuration only owns its UI
+plane, while the neutral catalog layout service and persistence namespace belong to management.
+
+Project unsupported config field structures as explicit read-only presentation nodes and remove the
+fallback renderer that accepted unknown structures without an honest editing contract.
+
 Update test hosts to return typed node-address handles and retain type inference without inventing a
 runtime handle identity. Existing tests and host integrations must address fork nodes directly.
 
 Unify graph-affecting browser control results around one address-only apply report. Fork creation and
 dependency selection now commit atomically, while explicit fork removal rejects inbound references,
 retains disabled intent after metadata failures, and never purges plugin business persistence.
+Dependency inspection and override mutation identify constructor requirements by stable definition
+address rather than parameter position.
 
 Make config mutation authority transactional: validate once, stage one immutable normalized tree,
 flush persistence, then confirm its revision before Core can apply it. Schema output must be a

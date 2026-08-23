@@ -1,5 +1,5 @@
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
-import { type Context as PluxelContext, Injectable, RootService } from '@pluxel/core'
+import type { Context as PluxelContext } from '@pluxel/core'
 import { basename, join } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
@@ -23,9 +23,6 @@ import type {
 	VaultStatusError,
 	VaultUnlockSource,
 } from './types'
-
-const serviceName = 'vault' as const
-const adminServiceName = 'vaultAdmin' as const
 
 export class VaultError extends Error {
 	public readonly code:
@@ -56,7 +53,6 @@ type VaultStore = {
 }
 
 type MountRuntime = {
-	cacheKey: string
 	dir: string
 	keysPath: string
 	statePath: string
@@ -136,6 +132,12 @@ type MountCacheEntry = {
 	}
 }
 
+type VaultRootBacking = Readonly<{
+	store: VaultStore
+	runtime: MountRuntime
+	entry: MountCacheEntry
+}>
+
 function isUnlockedState(
 	state: MountCacheState,
 ): state is Extract<MountCacheState, { status: 'unlocked' }> {
@@ -158,8 +160,6 @@ class AsyncLock {
 	}
 }
 
-const CACHE_SYMBOL = Symbol.for('pluxel:vault:mount-cache')
-const CACHE_IDS_SYMBOL = Symbol.for('pluxel:vault:mount-cache-ids')
 const STATE_MAGIC = textEncode('PVLT2')
 const NONCE_BYTES = 12
 const SHARED_MOUNT = 'global'
@@ -340,21 +340,15 @@ function splitMaterialLines(raw: string): string[] {
 		.filter((line) => line.length > 0 && !line.startsWith('#'))
 }
 
-function getConfig(ctx: PluxelContext): VaultServiceConfig {
-	return ctx.config.vault ?? {}
-}
-
-function resolveRuntime(ctx: PluxelContext): MountRuntime {
-	const cfg = getConfig(ctx)
+function resolveRuntime(config: VaultServiceConfig = {}): MountRuntime {
 	const dir = SHARED_MOUNT
 	return {
-		cacheKey: getMountCacheKey(ctx),
 		dir,
 		keysPath: join(dir, 'keys.age'),
 		statePath: join(dir, 'state.enc'),
 		blobsDir: join(dir, 'blobs'),
-		flushDebounceMs: cfg.flushDebounceMs ?? DEFAULT_FLUSH_DEBOUNCE_MS,
-		deployIdentityEnv: cfg.deployIdentityEnv?.trim() || DEFAULT_DEPLOY_IDENTITY_ENV,
+		flushDebounceMs: config.flushDebounceMs ?? DEFAULT_FLUSH_DEBOUNCE_MS,
+		deployIdentityEnv: config.deployIdentityEnv?.trim() || DEFAULT_DEPLOY_IDENTITY_ENV,
 	}
 }
 
@@ -566,42 +560,12 @@ async function decryptDek(
 	}
 }
 
-function getMountCache(): Map<string, MountCacheEntry> {
-	const g = globalThis as Record<symbol, unknown>
-	const existing = g[CACHE_SYMBOL]
-	if (existing instanceof Map) return existing as Map<string, MountCacheEntry>
-	const created = new Map<string, MountCacheEntry>()
-	g[CACHE_SYMBOL] = created
-	return created
-}
-
-function getMountCacheKey(ctx: PluxelContext): string {
-	const g = globalThis as Record<symbol, unknown> & { __pluxelVaultMountCacheSeq?: number }
-	let ids = g[CACHE_IDS_SYMBOL] as WeakMap<object, string> | undefined
-	if (!(ids instanceof WeakMap)) {
-		ids = new WeakMap<object, string>()
-		g[CACHE_IDS_SYMBOL] = ids
-	}
-	const owner = ctx.root.persistence as unknown as object
-	const existing = ids.get(owner)
-	if (existing) return existing
-	g.__pluxelVaultMountCacheSeq = (g.__pluxelVaultMountCacheSeq ?? 0) + 1
-	const next = `persistence:${g.__pluxelVaultMountCacheSeq}`
-	ids.set(owner, next)
-	return next
-}
-
-function getOrCreateMountCache(key: string): MountCacheEntry {
-	const cache = getMountCache()
-	const existing = cache.get(key)
-	if (existing) return existing
-	const created: MountCacheEntry = {
+function createMountCacheEntry(): MountCacheEntry {
+	return {
 		lock: new AsyncLock(),
 		state: { status: 'locked' },
 		status: { phase: 'sealed', dirty: false },
 	}
-	cache.set(key, created)
-	return created
 }
 
 async function isMountPresent(store: VaultStore, runtime: MountRuntime): Promise<boolean> {
@@ -715,8 +679,7 @@ async function createMountKey(
 	return dek
 }
 
-async function createDeployKeyPair(ctx: PluxelContext): Promise<VaultKeyPair> {
-	const runtime = resolveRuntime(ctx)
+async function createDeployKeyPair(runtime: MountRuntime): Promise<VaultKeyPair> {
 	const envName = runtime.deployIdentityEnv
 	const privateKey = await generateIdentity()
 	return {
@@ -789,15 +752,24 @@ function blobPath(runtime: MountRuntime, namespace: string, name: string): strin
  * - hot data (`kv` + `docs`) stays in memory and flushes to a symmetric snapshot
  * - blobs are separate symmetric files keyed by the same DEK
  */
-@Injectable({ key: serviceName })
 export class VaultService {
-	constructor(public ctx: PluxelContext) {}
+	private managed?: ManagedVault
+
+	constructor(
+		public readonly ctx: PluxelContext,
+		config: VaultServiceConfig = {},
+		private readonly backing: VaultRootBacking = createVaultRootBacking(ctx, config),
+	) {}
+
+	/** @internal Create an owner projection over the root-owned mount state. */
+	forOwner(owner: PluxelContext): VaultService {
+		return owner === this.ctx ? this : new VaultService(owner, {}, this.backing)
+	}
 
 	managedVault(): ManagedVault {
+		if (this.managed) return this.managed
 		const ctx = this.ctx
-		const store = createVaultStore(ctx.root.persistence.namespace('vault'))
-		const runtime = resolveRuntime(ctx)
-		const entry = getOrCreateMountCache(runtime.cacheKey)
+		const { store, runtime, entry } = this.backing
 
 		const currentStatus = () => toRuntimeStatus(store, runtime, entry)
 
@@ -904,7 +876,7 @@ export class VaultService {
 			if (isUnlockedState(entry.state)) return entry.state
 			throw new VaultError(
 				'ACCESS_DENIED',
-				`Vault mount "${SHARED_MOUNT}" is not prepared. Call ctx.root.vaultAdmin.preflight() before plugin startup.`,
+				`Vault mount "${SHARED_MOUNT}" is not prepared; the host must complete Context capability preparation before plugin startup.`,
 			)
 		}
 
@@ -1592,6 +1564,7 @@ export class VaultService {
 			},
 			describe,
 		}
+		this.managed = vault
 		return vault
 	}
 
@@ -1615,17 +1588,24 @@ export class VaultService {
 		return this.managedVault().flush()
 	}
 
+	/** @internal Root admin projection reuses the immutable mount runtime inputs. */
+	generateDeployKey(): Promise<VaultKeyPair> {
+		return createDeployKeyPair(this.backing.runtime)
+	}
+
 	private async sealMountForTesting(): Promise<void> {
 		await this.managedVault().sealForRuntime()
 	}
 }
 
-@RootService({ key: adminServiceName, eager: true })
 export class VaultAdminService {
-	constructor(public ctx: PluxelContext) {}
+	constructor(
+		public readonly ctx: PluxelContext,
+		private readonly vault: VaultService,
+	) {}
 
 	private managedVault(): ManagedVault {
-		return (this.ctx.root.vault as unknown as VaultService).managedVault()
+		return this.vault.managedVault()
 	}
 
 	preflight(): Promise<VaultAdminState> {
@@ -1642,7 +1622,7 @@ export class VaultAdminService {
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error)
 			throw new Error(
-				`[runtime:vault] Vault is enabled but not ready. The runtime imported @pluxel/runtime/services/vault, so vault must be unlocked before plugins start. Reason: ${reason}. To find vault consumers, run: rg "@pluxel/runtime/services/vault|ctx\\\\.vault" .`,
+				`[runtime:vault] Vault is enabled but not ready. It must be unlocked before plugins start. Reason: ${reason}.`,
 				{ cause: error },
 			)
 		}
@@ -1669,6 +1649,17 @@ export class VaultAdminService {
 	}
 
 	generateDeployKey(): Promise<VaultKeyPair> {
-		return createDeployKeyPair(this.ctx)
+		return this.vault.generateDeployKey()
 	}
+}
+
+function createVaultRootBacking(ctx: PluxelContext, config: VaultServiceConfig): VaultRootBacking {
+	if (ctx !== ctx.root) {
+		throw new TypeError('[runtime:vault] Vault root backing requires the root Context')
+	}
+	return Object.freeze({
+		store: createVaultStore(ctx.root.persistence.namespace('vault')),
+		runtime: resolveRuntime(config),
+		entry: createMountCacheEntry(),
+	})
 }

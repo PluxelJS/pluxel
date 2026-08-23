@@ -11,6 +11,7 @@ let getterWait: Promise<void> = Promise.resolve()
 class CallerViewProvider extends BasePlugin {
 	value = 0
 	callableField: unknown = undefined
+	promiseField: Promise<unknown> = Promise.resolve()
 
 	set callerScopedValue(value: number) {
 		setterCallers.push(this.ctx.caller)
@@ -57,6 +58,12 @@ class CallerViewProvider extends BasePlugin {
 
 	captureInvocationReceiver(): void {
 		invocationReceivers.push(this)
+	}
+
+	async captureInvocationReceiverAcross(wait: Promise<unknown>) {
+		const receiver = () => this
+		await wait
+		return [receiver(), this] as const
 	}
 
 	async callerAfter(wait: Promise<unknown>) {
@@ -211,6 +218,27 @@ describe('generation-bound Plugin caller facade', () => {
 		})
 	})
 
+	it('isolates call receivers for overlapping invocations on one generation edge', async () => {
+		await withCoreHost(async (host) => {
+			host.add([CallerViewProvider, CallerViewConsumer])
+			await host.commit()
+
+			const stable = host.require(CallerViewConsumer).provider
+			const firstRelease = Promise.withResolvers<void>()
+			const secondRelease = Promise.withResolvers<void>()
+			const first = stable.captureInvocationReceiverAcross(firstRelease.promise)
+			const second = stable.captureInvocationReceiverAcross(secondRelease.promise)
+
+			firstRelease.resolve()
+			secondRelease.resolve()
+			const [firstReceivers, secondReceivers] = await Promise.all([first, second])
+			expect(firstReceivers[0]).toBe(firstReceivers[1])
+			expect(secondReceivers[0]).toBe(secondReceivers[1])
+			expect(firstReceivers[0]).not.toBe(secondReceivers[0])
+			expect(firstReceivers[0]).not.toBe(stable)
+		})
+	})
+
 	it('rejects reserved reflection mutations without changing the raw provider', async () => {
 		await withCoreHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
@@ -246,6 +274,10 @@ describe('generation-bound Plugin caller facade', () => {
 			expect(() => view.invokeCallableField()).toThrow(
 				/plugin_caller_view_callable_field_unsupported/,
 			)
+
+			void view.increment
+			raw.increment = (() => 42) as typeof raw.increment
+			expect(() => view.increment).toThrow(/plugin_caller_view_callable_field_unsupported/)
 		})
 	})
 
@@ -315,6 +347,33 @@ describe('generation-bound Plugin caller facade', () => {
 			await removal
 			expect(providerCleanups).toBe(1)
 			expect(() => consumer.provider.callerAfterGetter).toThrow(/owner stopped/i)
+		})
+	})
+
+	it('keeps a Promise-valued data field admitted through settlement', async () => {
+		await withCoreHost(async (host) => {
+			host.add([CallerViewProvider, CallerViewConsumer])
+			await host.commit()
+			const raw = host.require(CallerViewProvider)
+			const view = host.require(CallerViewConsumer).provider
+			const release = Promise.withResolvers<void>()
+			raw.promiseField = release.promise
+			const observed = view.promiseField
+
+			host.remove(CallerViewProvider)
+			let committed = false
+			const removal = (async (): Promise<void> => {
+				await host.commit()
+				committed = true
+			})()
+			await new Promise<void>((resolve) => setTimeout(resolve, 0))
+			expect(committed).toBe(false)
+			expect(providerCleanups).toBe(0)
+
+			release.resolve()
+			await observed
+			await removal
+			expect(providerCleanups).toBe(1)
 		})
 	})
 

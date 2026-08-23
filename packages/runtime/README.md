@@ -49,7 +49,7 @@ const extension = workbench.extension({
 	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 
-this.ctx.workbench.mount(extension, {
+this.ctx.workbench?.mount(extension, {
 	commands: workbench.bind.rpc(() => new ExampleRpc(this)),
 })
 ```
@@ -62,7 +62,7 @@ const settings = workbench.portOutlet({
 	placement: workbenchContract.tab(),
 })
 
-this.ctx.workbench.mount(settings, {
+this.ctx.workbench?.mount(settings, {
 	settings: workbench.bind.rpc(() => new SettingsRpc(this)),
 })
 ```
@@ -72,11 +72,23 @@ this.ctx.workbench.mount(settings, {
 公开入口：
 
 - `@pluxel/runtime`：唯一作者入口，原样转发 core API，并注册配置、HTTP、persistence 等常驻能力；
-- `@pluxel/runtime/services/vault`：宿主显式启用 Vault；未导入时不注册 Vault backend 或 eager preflight；
+- `@pluxel/runtime/services/vault`：Vault 的公开 type-only contract；backend 只由 host 顶层 `vault` object 安装；
 - `@pluxel/runtime/workbench/contract`：browser-safe resource、View、placement 和 Port Contract；
 - `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks、受限 host capability 与 declarative Pane Kit；
-- `@pluxel/runtime/web`：host browser transport 与 Workbench Context。
+- `@pluxel/runtime/web`：framework-neutral discovery、Management Client 与版本化 wire DTO；
+- `@pluxel/runtime/web/react`：只负责把 Management Client 注入 React，不包含官方 Workbench transport。
 
-宿主只通过顶层 `workbench` 配置启用整套能力。关闭后不创建 registry、compiler、watcher、artifact route 或
-resource transport，插件业务 HTTP 和生命周期不受影响。
+默认 `/web` discovery 只报告 `workbench.enabled`；catalog revision、renderer、resource 和 session endpoint
+属于尚未标准化的 View-host protocol，不进入 Management v1。使用 `/web/react` 或 `/workbench/ui` 时，宿主必须提供
+`react` peer；headless 与默认 `/web` 消费者不会加载它。
+
+`RuntimeManagementClientOptions` 只配置 Level 1 connection/auth：`origin`、HTTP/RPC base、
+`credentials`、`fetch` 与 `adminAccess: false | { onBlocked }`。SSE namespace、layout session 和
+transport lifecycle 只属于内部 `@pluxel/runtime/web/internal` client。
+
+宿主只通过顶层 `workbench: { enabled: true }` 安装 Workbench Plane。关闭后不创建 registry、compiler、watcher、artifact route 或
+resource transport，插件业务 HTTP 和生命周期不受影响。Workbench 启用时 Management Plane 使用默认 private access；关闭 Workbench
+后只有显式提供顶层 `management` object 才安装 headless management route。`management.access` 省略时为 private，
+`management.pluginGroups` 定义与 UI 无关的宿主 catalog layout。尚未标准化的官方 View-host transport 只存在于
+`@pluxel/runtime/web/internal`，不是第三方 host 的兼容承诺。
