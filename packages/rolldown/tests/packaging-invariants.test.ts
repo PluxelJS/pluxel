@@ -10,6 +10,7 @@ import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
 type PackageJson = {
 	private?: boolean
 	types?: string
+	files?: readonly string[]
 	exports?: Record<string, unknown>
 	publishConfig?: { exports?: Record<string, unknown> }
 	scripts?: Record<string, string>
@@ -113,12 +114,34 @@ describe('toolchain package boundaries', () => {
 		const coreRoot = `${root}/packages/core`
 		const contextManifest = await readJson(`${contextRoot}/package.json`)
 		const coreManifest = await readJson(`${coreRoot}/package.json`)
+		const contextBuildConfig = await readFile(`${contextRoot}/tsdown.config.ts`, 'utf8')
 		const coreBuildConfig = await readFile(`${coreRoot}/tsdown.config.ts`, 'utf8')
 
 		expect(contextManifest.private).not.toBe(true)
 		expect(contextManifest).toHaveProperty('license', 'AGPL-3.0-only')
 		expect(contextManifest).toHaveProperty('files')
 		expect(contextManifest.scripts).toHaveProperty('typecheck')
+		expect(
+			contextManifest.files?.filter((entry) => !entry.startsWith('!')),
+			'Context history must remain outside the published package roots',
+		).toEqual(['dist', 'README.md'])
+		expect(contextManifest.exports).not.toHaveProperty('./legacy')
+		expect(contextManifest.publishConfig.exports).not.toHaveProperty('./legacy')
+		expect(contextBuildConfig).not.toContain('legacy')
+
+		const contextProductionFiles = await collectSourceFiles(`${contextRoot}/src`)
+		const contextLegacyImports: string[] = []
+		for (const file of contextProductionFiles) {
+			const specifiers = quotedModuleSpecifiers(await readFile(file, 'utf8'))
+			if (specifiers.some((specifier) => /(?:^|\/)legacy(?:\/|$)/.test(specifier))) {
+				contextLegacyImports.push(file)
+			}
+		}
+		expect(
+			contextLegacyImports,
+			'Production Context source must not depend on executable architecture history',
+		).toEqual([])
+
 		expect(coreManifest.devDependencies).toHaveProperty(contextPackageName, 'workspace:*')
 		for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'] as const) {
 			expect(coreManifest[field] ?? {}).not.toHaveProperty(contextPackageName)
