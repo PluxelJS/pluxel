@@ -1,6 +1,6 @@
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import { createCoreHost, withCoreContext } from '@pluxel/core/test'
-import { createOwnerContext } from '../src/context/Context'
+import { createOwnerContext } from '../src/context/context-factory'
 import type { RootContext } from '@pluxel/core'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 

@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
-import { createOwnerContext } from '../src/context/Context'
+import { createOwnerContext } from '../src/context/context-factory'
 import { closeOwnerInvocations, enterOwnerInvocation } from '../src/internal'
 import { describe, expect, it } from 'vitest'
 

@@ -12,7 +12,8 @@
 - `@Plugin({ displayName })` 只提供展示默认值；definition/node identity 来自 canonical entry + root export。
 - plugin 内部组成使用普通对象或函数；需要子资源边界时使用 owner effects scope，需要独立治理时成为 Plugin。
 - 同一语义只保留一个公开入口，不新增兼容 alias 或平行 contract。
-- internal、toolchain 和 host installation helper 不进入默认作者入口。
+- raw Context construction、toolchain 和 runtime installation helper 不进入默认 Plugin 作者入口；
+  `@pluxel/context` 的公开 installation helper 只用于 root 创建前的 host composition。
 
 收益：作者代码保持单一、可推导，内部实现可以重构而不扩大兼容面。
 
@@ -20,6 +21,8 @@
 
 - HTTP、config、logger、effects、commands、persistence/database 是常驻 runtime 能力；公开事件用具名
   `EvtChannel` 属性表达，不提供 Context global event bus。
+- standalone host 可以用 `@pluxel/context` 组合自己的封闭能力集合；Runtime Context 只由 launcher 在 root
+  创建前组合，Plugin 不能追加、替换或运行时安装 capability。
 - Workbench extension 和资源只能通过可选的 `ctx.workbench?.mount()` 挂载。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选Workbench。
@@ -36,10 +39,12 @@
 
 ## 4. Context 必须并发隔离
 
+- Context host 在创建时一次编译固定 shape；root、scope、child 和 owner view 都不能在创建后修改 plan。
 - plugin-owned gate、logger、effects 和 registration 必须保留 owner Context。
 - host 可以共享 registry，但共享对象不得通过可变“当前 ctx”识别调用者。
 - 缓存 service handle、并发初始化和异步 callback 都不得造成 plugin node address 或 cleanup scope 串线。
-- 优先复用现有 Context isolation 和轻量绑定视图，不引入新的全局上下文协议。
+- Core 把一个 kernel scope 映射为一次 Plugin generation，Part child 与 dependency caller view 共享 scope backing，
+  但分别持有 owner-view cache；不引入新的全局上下文协议。
 
 收益：并发与 HMR replacement 下的注册、日志和资源回收保持确定性。
 
@@ -72,14 +77,17 @@
 ## 7. 保持依赖方向
 
 ```text
-@pluxel/core     <-\
-                   @pluxel/runtime <- runtime route <- host
-@pluxel/commands <-/         ^
-                             |
-                       build-time tooling
+@pluxel/context <- @pluxel/core ------\
+                                        @pluxel/runtime <- runtime route <- host
+@pluxel/commands ---------------------/         ^
+                                                |
+                                          build-time tooling
 ```
 
+- context 是同步、host-neutral 的 Context kernel，不依赖 Core、Runtime、IO 或生命周期服务。
 - core 不依赖 HTTP、持久化、Vite 或宿主策略。
+- core 源码直接复用 context；发布的 Core JS 与 declarations 完全内联该 kernel，不产生
+  `@pluxel/context` production dependency。
 - core 与 commands 彼此独立；runtime 组合两者，但不把 command 变成插件内部生命周期协议。
 - runtime common 不依赖 dynamic loader。
 - static/dynamic route 不复制 core lifecycle。

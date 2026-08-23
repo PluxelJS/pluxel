@@ -10,7 +10,11 @@ import {
 	type RuntimeStatePatchOperation,
 } from './internal/reconciliation'
 import { requireRuntimeStateStore } from './internal/runtime-state'
-import { createRuntimeRootContext, type RuntimeRootContextOptions } from './context/runtime-plan'
+import {
+	createRuntimeRootContext,
+	prepareRuntimeRootContext,
+	type RuntimeRootContextOptions,
+} from './context/runtime-plan'
 import type { RuntimeHostConfig } from './context/runtime-contract'
 import { createWorkbenchBackend } from './services/workbench'
 import {
@@ -36,7 +40,6 @@ import {
 import { isPluginEnabled } from './runtime-state'
 import {
 	consumePluginDefinitionCandidate,
-	prepareContextCapabilities,
 	requireConfigService,
 	requirePluginService,
 	type ConcretePluginDefinitionCandidate,
@@ -126,7 +129,10 @@ function runtimeConfig(config: RuntimeHostConfig): RuntimeHostConfig {
 	}
 }
 
-export type RuntimeTestHostOptions = Pick<RuntimeRootContextOptions, 'installations' | 'logging'>
+export type RuntimeTestHostOptions = Pick<
+	RuntimeRootContextOptions,
+	'logging' | 'routeContextCapabilities'
+>
 
 function createRuntimeTestRoot(
 	config: RuntimeHostConfig,
@@ -237,7 +243,7 @@ export function createRuntimeHost(
 	}
 
 	async function commit(allowFailure: boolean): Promise<CommitSummary> {
-		await prepareContextCapabilities(ctx)
+		await prepareRuntimeRootContext(ctx)
 		const currentCatalog = coordinator.catalogSnapshot()
 		const catalog = catalogDirty
 			? createPluginRouteCatalogSnapshot(currentCatalog.revision + 1, draftEntries.values())

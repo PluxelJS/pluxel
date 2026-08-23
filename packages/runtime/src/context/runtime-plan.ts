@@ -1,13 +1,16 @@
-import type { RootContext } from '@pluxel/core'
+import {
+	createContextHost,
+	type Context,
+	type RootCapabilityInstallation,
+	type RootContext,
+} from '@pluxel/core'
 import {
 	CONFIG_SERVICE_CAPABILITY,
-	createContextPlan,
 	createCoreContextInstallations,
-	createRootContext,
 	defineContextCapability,
-	installGenerationCapability,
 	installOwnerViewCapability,
 	installRootCapability,
+	installScopeCapability,
 	resolveContextCapability,
 	resolveCoreRootInputs,
 	type ContextCapabilityInstallation,
@@ -73,12 +76,13 @@ const PLUGIN_CATALOG_LAYOUT_CAPABILITY = defineContextCapability<PluginCatalogLa
 )
 const VAULT_CAPABILITY = defineContextCapability<VaultService>('runtime.vault')
 const VAULT_ADMIN_CAPABILITY = defineContextCapability<VaultAdminService>('runtime.vault-admin')
+const PREPARATION_BY_ROOT = new WeakMap<RootContext, Promise<void>>()
 
 export type RuntimeRootContextOptions = Readonly<{
 	logging?: RuntimeLogging
 	product?: WorkbenchInstallOptions['product']
-	/** @internal Route packages may add package-owned capabilities before the root is created. */
-	installations?: readonly ContextCapabilityInstallation[]
+	/** @internal Trusted route packages may add package-private capabilities before root creation. */
+	routeContextCapabilities?: readonly RootCapabilityInstallation<unknown, undefined>[]
 	workbench?: Readonly<{
 		createBackend: WorkbenchBackendFactory
 	}>
@@ -111,19 +115,45 @@ export function createRuntimeRootContext(
 	const coreInputs = resolveCoreRootInputs(config)
 	const inputs = resolveRuntimeRootInputs(config, options)
 	const installations = createRuntimeContextInstallations(inputs)
-	const plan = createContextPlan('runtime', [
-		...createCoreContextInstallations(coreInputs).filter(
-			(installation) => installation.capability !== CONFIG_SERVICE_CAPABILITY,
-		),
-		...installations,
-		...(options.installations ?? []),
-	])
-	const root = createRootContext(plan, inputs.name)
+	const host = createContextHost({
+		name: 'runtime',
+		capabilities: [
+			...createCoreContextInstallations(coreInputs),
+			...installations,
+			...(options.routeContextCapabilities ?? []),
+		],
+		overrides: [
+			installRootCapability(CONFIG_SERVICE_CAPABILITY, {
+				create: (ctx) => new ConfigService(ctx as RootContext, inputs.configService),
+			}),
+		],
+	})
+	const root = host.createRoot(inputs.name) as RootContext
 	if (options.logging) {
 		const unbind = bindContextRuntimeLogging(root, options.logging)
 		root.effects.defer(unbind, { tag: 'RuntimeLoggingBinding', phase: 'shutdown' })
 	}
 	return root
+}
+
+/** @internal Prepare the Runtime-owned startup capabilities exactly once per successful root. */
+export function prepareRuntimeRootContext(root: RootContext): Promise<void> {
+	const existing = PREPARATION_BY_ROOT.get(root)
+	if (existing) return existing
+	let task!: Promise<void>
+	task = Promise.resolve()
+		.then(async (): Promise<void> => {
+			// Enabling Workbench is an explicit startup decision, so materialize its backend here.
+			void root.workbench
+			await root.vaultAdmin?.prepare()
+			return undefined
+		})
+		.catch((error: unknown) => {
+			if (PREPARATION_BY_ROOT.get(root) === task) PREPARATION_BY_ROOT.delete(root)
+			throw error
+		})
+	PREPARATION_BY_ROOT.set(root, task)
+	return task
 }
 
 function createRuntimeContextInstallations(
@@ -132,45 +162,42 @@ function createRuntimeContextInstallations(
 	const installations: ContextCapabilityInstallation[] = [
 		installRootCapability(PERSISTENCE_CAPABILITY, {
 			property: 'persistence',
-			create: (ctx) => new PersistenceService(ctx, inputs.persistence),
-		}),
-		installRootCapability(CONFIG_SERVICE_CAPABILITY, {
-			create: (ctx) => new ConfigService(ctx, inputs.configService),
+			create: (ctx) => new PersistenceService(ctx as RootContext, inputs.persistence),
 		}),
 		installRootCapability(RUNTIME_STATE_CAPABILITY, {
-			create: (ctx) => new RuntimeStateStore(ctx, inputs.runtimeState),
+			create: (ctx) => new RuntimeStateStore(ctx as RootContext, inputs.runtimeState),
 		}),
 		installRootCapability(AGENT_TOOLS_CAPABILITY, {
 			property: 'agentTools',
-			create: (ctx) => new AgentToolsService(ctx),
+			create: (ctx) => new AgentToolsService(ctx as RootContext),
 		}),
-		installGenerationCapability(DATABASE_CAPABILITY, {
+		installScopeCapability(DATABASE_CAPABILITY, {
 			property: 'database',
-			create: (ctx) => new DatabaseService(ctx, inputs.database),
+			create: (ctx) => new DatabaseService(ctx as Context, inputs.database),
 		}),
 		installOwnerViewCapability(COMMANDS_CAPABILITY, {
 			property: 'commands',
-			createRoot: (root) => new CommandsService(root, undefined),
+			createRoot: (root) => new CommandsService(root as RootContext, undefined),
 			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : new CommandsService(owner, undefined),
+				owner === owner.root ? rootService : new CommandsService(owner as Context, undefined),
 		}),
 		installOwnerViewCapability(HTTP_CAPABILITY, {
 			property: 'http',
-			createRoot: (root) => new HttpService(root, inputs.http),
+			createRoot: (root) => new HttpService(root as RootContext, inputs.http),
 			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : rootService.forOwner(owner),
+				owner === owner.root ? rootService : rootService.forOwner(owner as Context),
 		}),
 		installOwnerViewCapability(NODE_MODULES_CAPABILITY, {
 			property: 'nodeModules',
-			createRoot: (root) => new NodeModuleService(root, inputs.nodeArtifacts),
+			createRoot: (root) => new NodeModuleService(root as RootContext, inputs.nodeArtifacts),
 			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : new NodeModuleService(owner),
+				owner === owner.root ? rootService : new NodeModuleService(owner as Context),
 		}),
 		installOwnerViewCapability(WORKERS_CAPABILITY, {
 			property: 'workers',
-			createRoot: (root) => new WorkerTaskService(root, inputs.workers),
+			createRoot: (root) => new WorkerTaskService(root as RootContext, inputs.workers),
 			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : new WorkerTaskService(owner, undefined),
+				owner === owner.root ? rootService : new WorkerTaskService(owner as Context, undefined),
 		}),
 	]
 
@@ -178,21 +205,21 @@ function createRuntimeContextInstallations(
 		installations.push(
 			installRootCapability(ADMIN_ACCESS_CAPABILITY, {
 				property: 'adminAccess',
-				create: (ctx) => new AdminAccessService(ctx, inputs.managementAccess!),
+				create: (ctx) => new AdminAccessService(ctx as RootContext, inputs.managementAccess!),
 			}),
 			installRootCapability(RUNTIME_MANAGEMENT_CAPABILITY, {
 				property: 'runtimeManagement',
-				create: (root) => new RuntimeManagementService(root, inputs.application),
+				create: (root) => new RuntimeManagementService(root as RootContext, inputs.application),
 			}),
 			installOwnerViewCapability(INTERNAL_API_VALIDATION_CAPABILITY, {
 				property: 'internalApiValidation',
-				createRoot: (root) => new InternalApiValidationService(root),
+				createRoot: (root) => new InternalApiValidationService(root as RootContext),
 				createView: (rootService, owner) =>
-					owner === owner.root ? rootService : rootService.forOwner(owner),
+					owner === owner.root ? rootService : rootService.forOwner(owner as Context),
 			}),
 			installRootCapability(PLUGIN_CATALOG_LAYOUT_CAPABILITY, {
 				property: 'pluginCatalogLayout',
-				create: (root) => new PluginCatalogLayoutService(root, inputs.pluginGroups),
+				create: (root) => new PluginCatalogLayoutService(root as RootContext, inputs.pluginGroups),
 			}),
 		)
 	}
@@ -203,17 +230,17 @@ function createRuntimeContextInstallations(
 		installations.push(
 			installOwnerViewCapability(VAULT_CAPABILITY, {
 				property: 'vault',
-				createRoot: (root) => new VaultService(root, inputs.vault),
+				createRoot: (root) => new VaultService(root as RootContext, inputs.vault),
 				createView: (rootService, owner) =>
-					owner === owner.root ? rootService : rootService.forOwner(owner),
+					owner === owner.root ? rootService : rootService.forOwner(owner as Context),
 			}),
 			installRootCapability(VAULT_ADMIN_CAPABILITY, {
 				property: 'vaultAdmin',
 				create: (root) =>
-					new VaultAdminService(root, resolveContextCapability(root, VAULT_CAPABILITY)),
-				prepare: async (service): Promise<void> => {
-					await service.prepare()
-				},
+					new VaultAdminService(
+						root as RootContext,
+						resolveContextCapability(root, VAULT_CAPABILITY),
+					),
 			}),
 		)
 	}
@@ -233,13 +260,15 @@ function installWorkbenchCapability(
 		WORKBENCH_CAPABILITY,
 		{
 			property: 'workbench',
-			eager: true,
 			createRoot: (root) => {
-				const backend = input.createBackend(root, input.options)
-				return Object.freeze({ backend, view: new WorkbenchService(root, backend) })
+				const runtimeRoot = root as RootContext
+				const backend = input.createBackend(runtimeRoot, input.options)
+				return Object.freeze({ backend, view: new WorkbenchService(runtimeRoot, backend) })
 			},
 			createView: (rootValue, owner) =>
-				owner === owner.root ? rootValue.view : new WorkbenchService(owner, rootValue.backend),
+				owner === owner.root
+					? rootValue.view
+					: new WorkbenchService(owner as Context, rootValue.backend),
 		},
 	)
 }

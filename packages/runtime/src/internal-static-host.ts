@@ -4,9 +4,8 @@ export {
 	resolveWorkbenchUiBasePath,
 } from './workbench-config'
 export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './management-config'
-export { createRuntimeRootContext } from './context/runtime-plan'
+export { createRuntimeRootContext, prepareRuntimeRootContext } from './context/runtime-plan'
 export type { RuntimeHostConfig } from './context/runtime-contract'
-export { prepareContextCapabilities } from '@pluxel/core/internal'
 export { isPluginEnabled, setPluginEnabled } from './services/RuntimeStateHelpers'
 export type {
 	RuntimePluginDependencyInfo,

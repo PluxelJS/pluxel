@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeHost } from '@pluxel/runtime/test'
 
-import { createDynamicContextInstallations, requireLoaderService } from '../../src/context-plan'
+import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 import { HmrExecutor, prefetchTransforms } from '../../src/hmr/engine/pipeline'
 
 type ExecutorOptions = {
@@ -14,7 +14,7 @@ type ExecutorOptions = {
 function createExecutor(options: ExecutorOptions) {
 	const host = createRuntimeHost(
 		{ workbench: false },
-		{ installations: createDynamicContextInstallations() },
+		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)
 	const logger = host.ctx.logger as typeof host.ctx.logger & {
 		error(message: string, props?: unknown): void

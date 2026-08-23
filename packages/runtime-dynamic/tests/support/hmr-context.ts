@@ -2,7 +2,7 @@ import { afterEach } from 'vitest'
 import type { Context, PluginNodeAddress } from '@pluxel/core'
 import type { RuntimeStateSnapshot } from '@pluxel/runtime/internal'
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
-import { createDynamicContextInstallations, requireLoaderService } from '../../src/context-plan'
+import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 
 export type HmrTestState = {
 	enabled?: readonly PluginNodeAddress[]
@@ -43,7 +43,7 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 				},
 			},
 		},
-		{ installations: createDynamicContextInstallations() },
+		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)
 	const ctx = host.ctx
 	void requireLoaderService(ctx)

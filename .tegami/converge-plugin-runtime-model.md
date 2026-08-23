@@ -1,5 +1,7 @@
 ---
 packages:
+  '@pluxel/context':
+    type: major
   '@pluxel/core':
     type: major
   '@pluxel/rolldown':
@@ -35,11 +37,18 @@ only lowered declaration facts and no longer installs a global `Reflect` polyfil
 `@pluxel/rolldown` root and `./workspace` umbrella exports; tooling consumers must import the explicit
 capability subpath they use.
 
-Move Context into Core as a host-compiled capability plan with explicit root, generation, and
-owner-view scopes. Remove `@pluxel/context`, global service registration and Context service decorators, mutable
-`Context.config`, runtime overrides, and compatibility aliases. Static, dynamic, and test hosts now
-capture resolved immutable inputs in their own plans, while caller-edge views isolate ownership and
-share only the provider root/generation state declared by each capability.
+Publish `@pluxel/context` as a host-neutral immutable Context kernel with explicit root, scope, and
+owner-view capabilities, strict lazy construction, inferred host projections, and constrained
+pre-root overrides. The kernel has no prepare, dispose, IO, Plugin, or Runtime lifecycle contract;
+Core maps scopes to Plugin generations and caller ownership, while Runtime performs its own explicit
+service preparation before Plugin startup. Core consumes the package as a workspace development
+dependency and completely inlines its JavaScript and declarations, so published Core artifacts have
+no production dependency on `@pluxel/context`.
+
+Remove global service registration, Context service decorators, mutable `Context.config`, legacy
+mutable Runtime Context overrides, and compatibility aliases. Static, dynamic, and test hosts capture resolved immutable
+inputs before root creation; standalone hosts may compose their own shape, but Plugins cannot add to or mutate the Runtime
+Context.
 
 Separate the runtime management plane from the optional Workbench extension plane. Publish one
 framework-neutral browser contract/client for management snapshots and mutations, make the official

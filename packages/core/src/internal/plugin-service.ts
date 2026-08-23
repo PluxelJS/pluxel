@@ -1,4 +1,5 @@
-import { resolveContextCapability, type Context } from '../context/Context'
+import { resolveContextCapability } from '@pluxel/context'
+import type { Context } from '../context/Context'
 import { PLUGIN_SERVICE_CAPABILITY_IDENTITY } from '../context/core-capabilities'
 import type { PluginService } from '../plugins/runtime/PluginService'
 

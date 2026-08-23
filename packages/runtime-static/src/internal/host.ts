@@ -21,7 +21,7 @@ import {
 	createRuntimeRootContext,
 	createRuntimeLogging,
 	isWorkbenchEnabled,
-	prepareContextCapabilities,
+	prepareRuntimeRootContext,
 	type RuntimeHostConfig,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
@@ -117,7 +117,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			requireRuntimeStateStore(this.ctx).ready,
 		])
 		await this.logging.initializePolicy(createContextPluginLogPolicyStore(this.ctx))
-		await prepareContextCapabilities(this.ctx)
+		await prepareRuntimeRootContext(this.ctx.root)
 	}
 
 	describeCatalog(): StaticRuntimeCatalogSnapshot {

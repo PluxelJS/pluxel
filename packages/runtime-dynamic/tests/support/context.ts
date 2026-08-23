@@ -2,7 +2,7 @@ import '@pluxel/runtime'
 import type { Context } from '@pluxel/core'
 import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
-import { createDynamicContextInstallations } from '../../src/context-plan'
+import { createDynamicRouteContextCapabilities } from '../../src/context-plan'
 
 export function createTestDynamicHost(config: RuntimeHostConfig = {}): RuntimeHost {
 	return createRuntimeHost(
@@ -13,7 +13,7 @@ export function createTestDynamicHost(config: RuntimeHostConfig = {}): RuntimeHo
 			runtimeState: { mode: 'memory' },
 			...config,
 		},
-		{ installations: createDynamicContextInstallations() },
+		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)
 }
 

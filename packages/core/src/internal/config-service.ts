@@ -1,4 +1,5 @@
-import { resolveContextCapability, type Context } from '../context/Context'
+import { resolveContextCapability } from '@pluxel/context'
+import type { Context } from '../context/Context'
 import { CONFIG_SERVICE_CAPABILITY } from '../context/core-capabilities'
 import type { ConfigService } from '../services/config/ConfigService'
 

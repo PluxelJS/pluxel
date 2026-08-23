@@ -37,7 +37,7 @@ headless Management Plane；没有第二个 `enabled` flag。`management.access`
 - `ctx.root.vaultAdmin`
   `preflight()` / `describe()` / `unlock()` / `rekey()` / `ensureHostKey()` / `generateDeployKey()` / `setDeployRecipients()`
 - host 启动引导
-  在 Plugin lifecycle 前统一 prepare immutable Context plan 的 eager leaf capabilities
+  在 Plugin lifecycle 前显式调用 `prepareRuntimeRootContext()` 准备已启用的 Runtime capabilities
 - `/security`
   对应专用 security client
   `readOverview()` / `listEvents()`
@@ -62,8 +62,9 @@ admin access 下，OIDC JWT 满足 issuer/audience/requiredClaims 后即视为 a
 
 - public admin access 必须在 HTTP 服务初始化时通过 OIDC 配置校验
 - Vault 只有一个启用入口：host `vault` 为配置对象；omitted/`false` 时 capability 和 backend 都 absent
-- host 在插件运行前 prepare Context plan；vaultAdmin backing 的 eager leaf hook 完成 vault bootstrap。
-  dynamic/HMR 不做插件级归因，也必须在首个 Plugin lifecycle 前完成同一 plan prepare
+- host 在插件运行前调用 `prepareRuntimeRootContext()`，由它显式执行 `vaultAdmin.prepare()` 完成
+  bootstrap。dynamic/HMR 不做插件级归因，也必须在首个 Plugin lifecycle 前完成同一 Runtime
+  preflight
 - vaultAdmin `prepare()` 的顺序必须保持：
   `describe()` -> 仅在 mount 缺失且 host identity 缺失时 `ensureHostKey()` -> `preflight()`
 - mount 不存在时在启动期初始化一个空 mount 并保持已解锁

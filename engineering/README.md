@@ -8,6 +8,7 @@
 1. [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md)：维护者和 coding agent 必须遵守的工程不变量。
 2. [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)：插件、runtime、route、toolchain 和 Workbench Plane 的总边界。
 3. 按改动领域阅读：
+   - [`../docs/reference/context-hosts.md`](../docs/reference/context-hosts.md)：公开 Context host kernel、root/scope/owner-view 语义与 standalone host 组合边界。
    - [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)：definition/node address 与 slot、source canonicalization、reference/route/label、作用域和持久化边界。
    - [`CORE.md`](CORE.md)：slot identity、DI graph、optional restart、generation lifecycle 与 effects。
    - [`CORE_LIFECYCLE_SEMANTICS.md`](CORE_LIFECYCLE_SEMANTICS.md)：Core lifecycle 抽象状态、不变量和测试证据矩阵。

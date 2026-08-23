@@ -1,12 +1,13 @@
 # Core
 
-`@pluxel/core` 定义 Plugin definition/node、DI graph、Context 和 generation lifecycle，不拥有宿主能力。
+`@pluxel/core` 定义 Plugin definition/node、DI graph、Plugin Context projection 和 generation lifecycle，不拥有宿主能力。
+通用 Context host kernel 由公开的 `@pluxel/context` 提供；Core 源码直接复用它，并在发布产物中完整内联。
 
 ## 负责
 
 - `PluginDefinitionSlot`、`PluginNodeSlot` 与结构化 entry/definition/node address；
 - 每个 evaluated constructor 唯一且可重复读取的 frozen lowered candidate、immutable definition/node record 与 monotonic definition revision；
-- immutable Context capability plan、owner projection、caller-bound dependency view 与 DI；
+- 基于 `@pluxel/context` immutable host 的 generation scope、owner projection、caller-bound dependency view 与 DI；
 - node materialize/dematerialize/restart、definition-wide replacement、provider default、dependency override 与原子 commit；
 - provider-first start、consumer-first stop、failure propagation 与 `CommitSummary`；
 - per-generation effects、owner invocation gate 与 late `init()` cleanup；
@@ -24,30 +25,41 @@
 
 ## Context capability kernel
 
-Context 是由宿主在 root construction 时编译的封闭能力投影，不是业务 DI registry。descriptor、installation、plan 与
-construction helper 只存在于 Core internal 入口；Runtime 集中组合官方能力，业务 package 继续通过 Plugin graph 表达依赖，
-不能在 module evaluation 时扩展 Context。
+`@pluxel/context` 是公开、同步且 host-neutral 的 Context kernel。它在 `createContextHost()` 时把 opaque capability
+installation 编译成固定 shape；standalone host 可以在 root 创建前组合自己的能力，或用 `overrides` 替换基础集合中的同一
+descriptor。override 必须保持原 scope 与 projected property，host 编译完成后没有 install/mutate API。
 
-plan 为每项 descriptor 分配 numeric slot，并按 scope 预编译 resolver：
+Core 只把这个通用 kernel 映射到 Plugin 生命周期。Runtime 与受信任 framework route 在 root 创建前组合固定 capabilities；
+业务 Plugin 继续通过 Plugin graph 表达依赖，不能借助 module evaluation、Plugin `init()` 或 route side effect 修改既有
+Runtime Context。
 
-| Scope      | backing identity            | view identity                       |
-| ---------- | --------------------------- | ----------------------------------- |
-| root       | 每个 host root 一份         | 全部 Context 共享                   |
-| generation | 每次 Plugin generation 一份 | PluginPart 与 dependency view 共享  |
-| owner-view | root backend 一份           | 每个 Plugin、Part、caller edge 独立 |
+kernel 使用三个作用域，Core 对它们作如下映射：
+
+| Kernel scope | Core 中的 backing identity         | Core 中的投影                          |
+| ------------ | ---------------------------------- | -------------------------------------- |
+| root         | 每个 root 一份                     | root property；显式 resolve 可共享     |
+| scope        | 每次 Plugin generation 一份        | Plugin、Part 与 caller view 共享       |
+| owner-view   | root backend 一份、owner view 多份 | Plugin、Part、caller edge 各自惰性缓存 |
+
+Context host、root、scope、child 的创建都不会调用 capability factory。第一次读取 projected property 或调用
+`resolveContextCapability()` 才构造对应值，成功值按其 scope 缓存；这就是 strict lazy，不存在隐式 eager 分支。
+`@pluxel/context` 没有 `prepare()`、`dispose()` 或异步生命周期协议，资源预热与回收始终由上层 host/framework 明确拥有。
 
 plan-local prototype getter 直接调用预编译 resolver，再读取 dense array slot；cached getter 不做 Map/string lookup、scope branch
-或闭包分配。descriptor identity 的 `Map` 只服务显式 internal resolve，将 object identity 编译为 numeric slot。
-`Object.create(null)` 只能提供 string-key lookup，不能替代 descriptor object identity；当前趋势探针位于
-`packages/core/bench/contextCapability.bench.ts`。
+或闭包分配。descriptor identity 的 `Map` 只在 host compile 和显式 resolve 时把 capability object identity 映射到 numeric slot。
+`Object.create(null)` 只适合 string/symbol property lookup，不能替代 object identity；趋势探针位于
+`packages/context/bench/context.bench.ts`。
 
 每个 host 的 capability factory closure 只捕获自身已解析、冻结的输入。Context 不暴露 host config，也不持有可被冷 factory
 稍后观察到的 mutable config object。caller-derived view 共享 provider root/generation backing，但拥有独立 owner-view cache 和
 readonly caller pin；它不是 containment parent，因此 caller A/B 并发冷访问不会互相污染 owner attribution。
 
-带 `eager: true` 或 `prepare` 的 installation 在 Plugin lifecycle 前由宿主聚合：前者只诚实表达需要提前构造 root backing，
-后者再运行真实 leaf startup hook。同一成功 attempt 并发共享，失败清除 task 后允许下一次 host startup attempt 重试。
-`prepare` 不得重入聚合器；能力依赖必须在 factory 中通过 slot resolve 表达，不使用空 hook 模拟 eager construction。
+Core 不给 capability installation 增加第二套生命周期。Runtime 若需要在 Plugin lifecycle 前确认 IO/backend readiness，使用
+自己的显式 prepare 阶段主动读取所需 lazy capability，再调用该 service 的领域启动 API；失败与重试语义由 Runtime host 拥有。
+
+Core workspace 在源码层把 `@pluxel/context` 声明为 `devDependencies: workspace:*`，并由 tsdown 的 `alwaysBundle` 同时内联
+JavaScript 与 declarations。发布的 `@pluxel/core` 不要求消费者安装 `@pluxel/context`，也不留下对它的生产 import；需要直接
+创建 standalone Context host 的消费者才单独依赖 `@pluxel/context`。
 
 ## Identity 与 DI 不变量
 
@@ -90,7 +102,7 @@ closure 与 dependent traversal 使用可复用 epoch marks 和 sparse work queu
 ```sh
 pnpm --filter @pluxel/core bench:caller-view
 pnpm --filter @pluxel/core bench:fork-cost
-pnpm --filter @pluxel/core bench:context
+pnpm --filter @pluxel/context bench
 ```
 
 benchmark 不承诺跨机器延迟阈值；架构契约是 absent read 零物化、definition family 枚举 O(k)、固定 k update 不扫描/复制无关 graph，

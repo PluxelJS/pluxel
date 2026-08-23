@@ -1,8 +1,8 @@
 import { BasePlugin, createRuntimeContext, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { prepareContextCapabilities } from '@pluxel/runtime/internal'
+import { prepareRuntimeRootContext } from '@pluxel/runtime/internal'
 import { env as stdEnv } from 'std-env'
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { pluginNodePhysicalKey } from '../../src/runtime/plugin-address'
 import { requireWorkbench } from '../../src/services/workbench'
 import type { VaultAdminService } from '../../src/services/vault/VaultService'
@@ -54,7 +54,7 @@ describe('VaultService (shared mount runtime)', () => {
 
 		const enabled = createRuntimeContext({ workbench: false, vault: {} })
 		try {
-			await prepareContextCapabilities(enabled.ctx)
+			await prepareRuntimeRootContext(enabled.ctx)
 			if (!enabled.ctx.vault || !enabled.ctx.vaultAdmin) {
 				throw new Error('Explicit Vault configuration did not install its capabilities')
 			}
@@ -64,6 +64,50 @@ describe('VaultService (shared mount runtime)', () => {
 			expect(enabled.ctx.vaultAdmin).toBeDefined()
 		} finally {
 			await enabled.dispose()
+		}
+	})
+
+	it('deduplicates concurrent Runtime preparation and retries a failed attempt', async () => {
+		const concurrent = createRuntimeContext({ workbench: false, vault: {} })
+		try {
+			const admin = concurrent.ctx.vaultAdmin
+			if (!admin) throw new Error('Vault capability was not installed')
+			let release!: () => void
+			const gate = new Promise<void>((resolve) => {
+				release = resolve
+			})
+			const prepare = vi.spyOn(admin, 'prepare').mockImplementationOnce(async () => {
+				await gate
+				return await admin.describe()
+			})
+
+			const first = prepareRuntimeRootContext(concurrent.ctx)
+			const second = prepareRuntimeRootContext(concurrent.ctx)
+			expect(first).toBe(second)
+			await Promise.resolve()
+			expect(prepare).toHaveBeenCalledTimes(1)
+			release()
+			await first
+			expect(prepareRuntimeRootContext(concurrent.ctx)).toBe(first)
+			expect(prepare).toHaveBeenCalledTimes(1)
+		} finally {
+			await concurrent.dispose()
+		}
+
+		const retry = createRuntimeContext({ workbench: false, vault: {} })
+		try {
+			const admin = retry.ctx.vaultAdmin
+			if (!admin) throw new Error('Vault capability was not installed')
+			const prepare = vi
+				.spyOn(admin, 'prepare')
+				.mockRejectedValueOnce(new Error('preflight failed'))
+				.mockImplementationOnce(() => admin.describe())
+
+			await expect(prepareRuntimeRootContext(retry.ctx)).rejects.toThrow('preflight failed')
+			await expect(prepareRuntimeRootContext(retry.ctx)).resolves.toBeUndefined()
+			expect(prepare).toHaveBeenCalledTimes(2)
+		} finally {
+			await retry.dispose()
 		}
 	})
 

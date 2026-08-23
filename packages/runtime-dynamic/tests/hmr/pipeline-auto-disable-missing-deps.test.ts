@@ -11,7 +11,7 @@ import {
 	Plugin,
 } from '@pluxel/runtime/test'
 import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
-import { createDynamicContextInstallations, requireLoaderService } from '../../src/context-plan'
+import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 
 import {
 	collectEnabledButStopped,
@@ -24,7 +24,7 @@ import { enablePluginsPatch, isEnabled } from '../support/runtime-state'
 function createRuntimeHost(config: RuntimeHostConfig = {}) {
 	return createBaseRuntimeHost(
 		{ workbench: false, ...config },
-		{ installations: createDynamicContextInstallations() },
+		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)
 }
 

@@ -1,4 +1,5 @@
-import { createGenerationContext, type Context as PluxelContext } from '../../context/Context'
+import type { Context as PluxelContext } from '../../context/Context'
+import { createGenerationContext } from '../../context/context-factory'
 import { createErr, createOk } from 'option-t/plain_result'
 import { requireConfigService } from '../../internal/config-service'
 import type { BasePlugin } from '../composition/BasePlugin'

@@ -4,6 +4,7 @@ import { LoggerService } from '../src/logger/LoggerService'
 import { readPluginLogIdentity } from '../src/logger/categories'
 import { withCoreContext } from '../src/test'
 import { parsePluginNodeAddress } from '../src/plugins'
+import { createGenerationContext } from '../src/context/context-factory'
 
 const loggerPluginAddress = parsePluginNodeAddress({
 	definition: {
@@ -50,7 +51,8 @@ describe('LoggerService', () => {
 
 	it('encodes plugin identity in the category instead of record properties', () =>
 		withCoreContext(
-			(ctx) => {
+			(root) => {
+				const ctx = createGenerationContext(root, 'plugin-test')
 				installLoggerTestPluginInfo(ctx)
 				ctx.logger.warn('warn message')
 				const record = records.find((item) => item.rawMessage === 'warn message')
@@ -89,7 +91,8 @@ describe('LoggerService', () => {
 
 	it('encodes debug topic segments and preserves plugin ownership', () =>
 		withCoreContext(
-			(ctx) => {
+			(root) => {
+				const ctx = createGenerationContext(root, 'plugin-test')
 				installLoggerTestPluginInfo(ctx)
 				ctx.logger.getDebugChannel('hmr:cache').debug('cache probe')
 				const record = records.find((item) => item.rawMessage === 'cache probe')

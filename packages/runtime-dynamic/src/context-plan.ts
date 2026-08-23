@@ -2,9 +2,8 @@ import {
 	defineContextCapability,
 	installRootCapability,
 	resolveContextCapability,
-	type ContextCapabilityInstallation,
 } from '@pluxel/core/internal'
-import type { Context } from '@pluxel/core'
+import type { Context, RootCapabilityInstallation, RootContext } from '@pluxel/core'
 import { LoaderService } from './loader/LoaderService'
 import { ScanService } from './scan/ScanService'
 
@@ -22,13 +21,16 @@ export function requireScanService(ctx: Context): ScanService {
 }
 
 /** Compile dynamic-route capabilities into the immutable host plan before root creation. */
-export function createDynamicContextInstallations(): readonly ContextCapabilityInstallation[] {
+export function createDynamicRouteContextCapabilities(): readonly RootCapabilityInstallation<
+	unknown,
+	undefined
+>[] {
 	return Object.freeze([
 		installRootCapability(LOADER_CAPABILITY, {
-			create: (root) => new LoaderService(root),
+			create: (root) => new LoaderService(root as RootContext),
 		}),
 		installRootCapability(SCAN_CAPABILITY, {
-			create: (root) => new ScanService(root),
+			create: (root) => new ScanService(root as RootContext),
 		}),
 	])
 }

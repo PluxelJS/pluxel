@@ -1,6 +1,26 @@
 export type { Context, CoreHostConfig, PluginContext, RootContext } from './context/Context'
 export type { ContextLogger } from './logger/LoggerService'
 
+export {
+	createContextHost,
+	defineContextCapability,
+	installOwnerViewCapability,
+	installRootCapability,
+	installScopeCapability,
+	resolveContextCapability,
+	type ContextCapability,
+	type ContextCapabilityInstallation,
+	type ContextHost,
+	type ContextHostOptions,
+	type ContextOf,
+	type ContextProjection,
+	type OwnerViewCapabilityInstallation,
+	type RootCapabilityInstallation,
+	type RootContextOf,
+	type RootContextProjection,
+	type ScopeCapabilityInstallation,
+} from '@pluxel/context'
+
 export { BasePlugin, OptionalPluginBindings, PluginConfigs, PluginPart } from './plugins'
 export type {
 	PluginCleanup,

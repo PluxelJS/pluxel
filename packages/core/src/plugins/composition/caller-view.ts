@@ -1,4 +1,5 @@
-import { createCallerContextView, type Context } from '../../context/Context'
+import type { Context } from '../../context/Context'
+import { createCallerContextView } from '../../context/context-factory'
 import {
 	admitOwnerInvocation,
 	assertOwnerInvocationOpen,

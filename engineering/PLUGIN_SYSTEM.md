@@ -22,23 +22,28 @@ optional Workbench Plane: target layout / artifacts / bound resources
 
 ## Context 与宿主能力
 
-Context 只投影宿主编译进 immutable plan 的官方能力和当前 owner identity，不是可扩展 service registry，也不暴露 host
-configuration。Core/Runtime 的 descriptor、installation 和 slot helper 只从 internal entry 使用；业务 package 不注册 Context
-capability，业务依赖始终进入 Plugin graph。
+`@pluxel/context` 提供公开、host-neutral 的 immutable Context host kernel。standalone host 可以在创建 root 前用 opaque
+descriptor 和 root/scope/owner-view installation 组合固定 shape；`overrides` 只允许替换基础集合中相同 descriptor，并保持
+scope/property。host 编译完成后没有 install/mutate API，kernel 也不拥有 `prepare()`、`dispose()` 或资源生命周期。
 
-内建能力明确选择 root、generation 或 owner-view scope。owner-view 共享 root backend，但 Plugin、PluginPart 与每条 dependency
-caller edge 各有惰性 view/cache；generation backing 跟随 provider generation。这样 `ctx.commands`、`ctx.http`、`ctx.workers` 等
-保留调用者注册和 cleanup ownership，同时 registry/pool/server 等 backend 仍按 root 共享。可选能力 disabled 时不安装其
-backend installation，不能通过 null stateful service 模拟启用。
+Pluxel Runtime 使用同一 kernel 组合官方能力和当前 owner identity，但它的能力集合属于 launcher 与受信任 framework route，
+而不是 Plugin extension point。route package 只能在 root 创建前通过 package-private authority 安装自身 descriptor；当前 dynamic
+route 用它组合 Loader/Scan。业务 Plugin 不能在 module evaluation 或 `init()` 中追加、替换 Runtime capability；业务依赖始终
+进入 Plugin graph。Context 也不暴露 host configuration。
+
+Runtime 内建能力明确选择 root、scope 或 owner-view。Core 把 scope 映射为 Plugin generation：PluginPart 与 dependency caller
+view 共享 generation backing；owner-view 共享 root backend，但 Plugin、Part 与每条 caller edge 各有严格惰性的 view/cache。
+这样 `ctx.commands`、`ctx.http`、`ctx.workers` 等保留调用者注册和 cleanup ownership，同时 registry/pool/server 等 backend
+仍按 root 共享。可选能力 disabled 时不进入 host shape，不能通过 null stateful service 模拟启用。
 
 ## 依赖与组成
 
-| 意图              | API                                      | 生命周期含义                       |
-| ----------------- | ---------------------------------------- | ---------------------------------- |
-| required plugin   | constructor parameter                    | provider 失败会阻塞 consumer       |
-| optional plugin   | `definePluginRef<T>()` + `plugins.use()` | provider 变化时重启 consumer       |
-| owned composition | `this.parts.use(PluginPartClass)`        | 子 scope，随 owner generation 回收 |
-| trivial helper    | 普通 class/function + owner effects      | 作者显式管理                       |
+| 意图              | API                                      | 生命周期含义                                  |
+| ----------------- | ---------------------------------------- | --------------------------------------------- |
+| required plugin   | constructor parameter                    | provider 失败会阻塞 consumer                  |
+| optional plugin   | `definePluginRef<T>()` + `plugins.use()` | provider 变化时重启 consumer                  |
+| owned composition | `this.parts.use(PluginPartClass)`        | child owner/effects scope，随 generation 回收 |
+| trivial helper    | 普通 class/function + owner effects      | 作者显式管理                                  |
 
 constructor 是 required dependency 的唯一作者声明。required 使用目标 package 根入口的 value import；optional 使用
 目标 Plugin 的 type-only root import 和 non-exported module-level ref。两者都由 semantic pass lower 成 definition slot edge。
@@ -197,7 +202,8 @@ ownership。artifact 首次解析中的任务与 ready queue 使用同一 global
 
 ## 包边界
 
-- `@pluxel/core`：Context、graph、DI、lifecycle、effects；
+- `@pluxel/context`：公开、同步、严格惰性的 standalone Context host kernel；
+- `@pluxel/core`：Plugin Context 投影、graph、DI、lifecycle、effects；源码复用并在发布产物中内联 Context kernel；
 - `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
 - `@pluxel/runtime/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；

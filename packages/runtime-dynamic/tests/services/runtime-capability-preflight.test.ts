@@ -27,8 +27,8 @@ class DynamicVaultConsumerPlugin extends BasePlugin {
 	}
 }
 
-describe('dynamic host eager service preflight', () => {
-	it('prepares eager services before the initial plugin graph starts', async () => {
+describe('dynamic host Runtime capability preflight', () => {
+	it('prepares explicitly enabled Runtime capabilities before the initial Plugin graph starts', async () => {
 		cleanupCount = 0
 		await using fixture = await createDiskFixture({
 			'pnpm-workspace.yaml': 'packages: []\n',

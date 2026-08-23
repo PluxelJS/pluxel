@@ -1,0 +1,57 @@
+{
+	"name": "@pluxel/context",
+	"version": "1.0.0",
+	"description": "Immutable, lazy Context capability hosts for Pluxel",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/context"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"!**/*.map",
+		"!**/*.tsbuildinfo"
+	],
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"import": "./dist/internal.mjs",
+			"require": "./dist/internal.cjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
+			},
+			"./internal": {
+				"import": "./dist/internal.mjs",
+				"require": "./dist/internal.cjs"
+			},
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"test": "pnpm exec vitest run",
+		"bench": "node --experimental-strip-types bench/context.bench.ts",
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.3",
+		"tinybench": "^6.0.0"
+	}
+}

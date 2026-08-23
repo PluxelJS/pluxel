@@ -11,7 +11,7 @@ import {
 	createRuntimeLogging,
 	installRuntimeRouteCapabilities,
 	isWorkbenchEnabled,
-	prepareContextCapabilities,
+	prepareRuntimeRootContext,
 	readRuntimeRouteCapabilities,
 	requireRuntimeStateStore,
 	resolvePackagedWorkbenchManifest,
@@ -39,7 +39,7 @@ import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrServic
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 import { resolveDynamicPluginSources, type DynamicPluginSource } from '../sources'
-import { createDynamicContextInstallations, requireLoaderService } from '../context-plan'
+import { createDynamicRouteContextCapabilities, requireLoaderService } from '../context-plan'
 
 const nodeHostFs = nodeLoaderHmrWorkspaceFs
 
@@ -303,7 +303,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		ctx = createRuntimeRootContext(runtimeConfig, {
 			logging,
 			product: options.product ?? null,
-			installations: createDynamicContextInstallations(),
+			routeContextCapabilities: createDynamicRouteContextCapabilities(),
 			...(workbench ? { workbench } : {}),
 		})
 		ctx.effects.defer(() => logging.dispose(), {
@@ -312,7 +312,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		})
 		await Promise.all([requireConfigService(ctx).ready, requireRuntimeStateStore(ctx).ready])
 		await logging.initializePolicy(createContextPluginLogPolicyStore(ctx))
-		await prepareContextCapabilities(ctx)
+		await prepareRuntimeRootContext(ctx.root)
 		void requireLoaderService(ctx)
 
 		const hmr = await startLoaderHmr(

@@ -1,19 +1,30 @@
 # Runtime Architecture
 
 `@pluxel/runtime` 在 core 之上提供 HTTP、config、persistence、runtime state 和可选 Workbench/Vault 能力。
-宿主为每个 root 编译一份封闭 Context plan；不存在 import-side-effect service registration 或 post-root installation。
+launcher 与受信任的 framework route 使用 `@pluxel/context` kernel 为每个 root 编译一份封闭 Context host；不存在
+import-side-effect service registration、public capability append 或 post-root installation。standalone host 可以独立使用 Context
+kernel，但 Plugin 不能修改 Runtime 拥有的 Context shape。
 
-## Runtime Context plan
+## Runtime Context host
 
-Runtime 在一个集中 contract 中声明 Context 的 public property type，并在 plan composition 时安装固定能力：root scope
-承载 persistence、runtime state、admin/agent control backing，generation scope 承载 database，owner-view scope 承载
-commands、HTTP、Workbench gate、Node module、worker 与 internal validation。owner-view 为每个 Plugin/Part/caller edge 保留
-owner identity，同时共享 root backend；热 getter 只读取预编译 numeric slot。
+Runtime 在一个集中 contract 中声明 Context 的 public property type，并在 host composition 时安装固定能力：root scope
+承载 persistence、runtime state、admin/agent control backing，kernel scope 承载 database，owner-view scope 承载 commands、
+HTTP、Workbench gate、Node module、worker 与 internal validation。Core 为每次 Plugin generation 创建一个 scope；Part child 与
+dependency caller view 共享 scope backing，owner-view 则为每个 Plugin/Part/caller edge 保留 owner identity，同时共享 root
+backend。热 getter 只读取预编译 numeric slot。
 
-Context 不暴露完整 host config。launcher 先解析配置，plan factory closure 再捕获各 capability 专属的冻结输入，因此延迟创建
+`RuntimeRootContextOptions.routeContextCapabilities` 是 package-private 的 pre-root host-authority seam，只允许受信任 route 安装自身
+descriptor；当前 dynamic route 用它组合 Loader/Scan。它不是 Runtime public config、第三方 host SPI 或 Plugin capability
+registration。route 必须在 root 创建前提供完整集合，不能在 Plugin 求值、启动或 HMR 后修改 shape。
+
+Context 不暴露完整 host config。launcher 先解析配置，capability factory closure 再捕获各自的冻结输入，因此延迟创建
 不会观察调用方之后的 mutation。Workbench disabled 时不创建 backend、registry、route 或 transport。Vault 只有在
-`vault` 为配置对象时才进入 plan；omitted/`false` 时 `ctx.vault` 与 `ctx.root.vaultAdmin` 均 absent，且不创建 mount/runtime。
-宿主在 Plugin lifecycle 前统一构造显式 eager backing 并运行真实 leaf prepare hook；prepare 失败阻止启动，下一次 startup attempt 可以重试。
+`vault` 为配置对象时才进入 host shape；omitted/`false` 时 `ctx.vault` 与 `ctx.root.vaultAdmin` 均 absent，且不创建 mount/runtime。
+
+`@pluxel/context` 保持 strict lazy：编译 host 和创建 Context 都不运行 factory，也没有通用 `prepare()`/`dispose()` hook。
+Runtime 在 Plugin lifecycle 前显式调用 `prepareRuntimeRootContext(root)`，主动读取需要预热的 Runtime-owned lazy capability，并调用
+Vault 等 leaf service 的领域 `prepare()`。同一成功 attempt 共享 task；失败会清除 task，下一次 host startup attempt 可重试。
+资源关闭仍通过 root/generation effects 或 launcher `stop()`，不回流到 Context kernel。
 
 ## Commands capability
 
@@ -217,7 +228,7 @@ Workbench backend 由以下部分组成：
 资源 namespace 只存在于服务端。浏览器收到 binding token，服务端在请求时解析 token、校验 kind，并在
 revision 变化时撤销 grant。Workbench API 不暴露全局资源字典。
 
-backend factory 由 static、dynamic 和 production static launcher 在 immutable runtime plan 构造时提供。插件不得
+backend factory 由 static、dynamic 和 production static launcher 在 immutable Runtime Context host 构造时提供。插件不得
 直接安装或 require backend，也不存在 post-root installer。
 
 ## Host application metadata

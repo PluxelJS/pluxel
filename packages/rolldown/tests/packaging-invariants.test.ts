@@ -1,18 +1,22 @@
 import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
 
 type PackageJson = {
+	private?: boolean
 	types?: string
 	exports?: Record<string, unknown>
 	publishConfig?: { exports?: Record<string, unknown> }
+	scripts?: Record<string, string>
 	compilerOptions?: Record<string, unknown>
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
+	optionalDependencies?: Record<string, string>
 	peerDependencies?: Record<string, string>
 	peerDependenciesMeta?: Record<string, { optional?: boolean }>
 	inlinedDependencies?: Record<string, string>
@@ -45,7 +49,169 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 	return out.sort()
 }
 
+async function collectPackageManifests(dir: string): Promise<string[]> {
+	const out: string[] = []
+	const walk = async (current: string) => {
+		let entries
+		try {
+			entries = await readdir(current, { withFileTypes: true, encoding: 'utf8' })
+		} catch {
+			return
+		}
+		for (const ent of entries) {
+			if (ent.name === 'node_modules' || ent.name === 'dist' || ent.name === '.turbo') continue
+			const next = join(current, ent.name)
+			if (ent.isDirectory()) {
+				await walk(next)
+				continue
+			}
+			if (ent.name === 'package.json') out.push(next)
+		}
+	}
+	await walk(dir)
+	return out.sort()
+}
+
+function quotedModuleSpecifiers(code: string): string[] {
+	return [...code.matchAll(/(['"])([^'"\r\n]+)\1/g)].map((match) => match[2]!)
+}
+
+type CoreContextPublicEntry = Readonly<{
+	createContextHost(
+		options: Readonly<{ name: string; capabilities: readonly unknown[] }>,
+	): Readonly<{
+		createRoot(): unknown
+	}>
+}>
+
+type CoreContextInternalEntry = Readonly<{
+	defineContextCapability(description: string): unknown
+	installRootCapability(capability: unknown, options: Readonly<{ create(): unknown }>): unknown
+	resolveContextCapability(ctx: unknown, capability: unknown): unknown
+}>
+
+function expectCoreContextEntriesToShareOneKernel(
+	publicEntry: CoreContextPublicEntry,
+	internalEntry: CoreContextInternalEntry,
+): void {
+	const capability = internalEntry.defineContextCapability('packaging.shared-context-kernel')
+	const installation = internalEntry.installRootCapability(capability, {
+		create: () => 'shared',
+	})
+	const host = publicEntry.createContextHost({
+		name: 'packaging-shared-kernel',
+		capabilities: [installation],
+	})
+	expect(internalEntry.resolveContextCapability(host.createRoot(), capability)).toBe('shared')
+}
+
 describe('toolchain package boundaries', () => {
+	it('publishes Context independently while keeping Core self-contained', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\\/]$/, '')
+		const contextPackageName = ['@pluxel', 'context'].join('/')
+		const contextRoot = `${root}/packages/context`
+		const coreRoot = `${root}/packages/core`
+		const contextManifest = await readJson(`${contextRoot}/package.json`)
+		const coreManifest = await readJson(`${coreRoot}/package.json`)
+		const coreBuildConfig = await readFile(`${coreRoot}/tsdown.config.ts`, 'utf8')
+
+		expect(contextManifest.private).not.toBe(true)
+		expect(contextManifest).toHaveProperty('license', 'AGPL-3.0-only')
+		expect(contextManifest).toHaveProperty('files')
+		expect(contextManifest.scripts).toHaveProperty('typecheck')
+		expect(coreManifest.devDependencies).toHaveProperty(contextPackageName, 'workspace:*')
+		for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'] as const) {
+			expect(coreManifest[field] ?? {}).not.toHaveProperty(contextPackageName)
+		}
+		expect(coreManifest.inlinedDependencies).not.toHaveProperty(contextPackageName)
+		expect(coreBuildConfig).toContain(
+			`alwaysBundle: ['${contextPackageName}', '${contextPackageName}/*']`,
+		)
+		expect(coreBuildConfig).toContain(
+			`conditionNames: ['@pluxel/source', 'import', 'node', 'default']`,
+		)
+		expect(coreBuildConfig).toMatch(/dts:\s*\{[^}]*eager:\s*true/s)
+		expect(coreBuildConfig).not.toMatch(
+			new RegExp(`neverBundle:\\s*\\[[^\\]]*${contextPackageName}`),
+		)
+
+		const manifestGroups = await Promise.all(
+			['packages', 'plugins', 'projects'].map((dir) => collectPackageManifests(`${root}/${dir}`)),
+		)
+		const manifests = manifestGroups.flat()
+		for (const manifestPath of manifests) {
+			if (manifestPath === `${contextRoot}/package.json`) continue
+			const manifest = await readJson(manifestPath)
+			for (const field of [
+				'dependencies',
+				'devDependencies',
+				'peerDependencies',
+				'optionalDependencies',
+			] as const) {
+				if (manifestPath === `${coreRoot}/package.json` && field === 'devDependencies') continue
+				expect(
+					manifest[field] ?? {},
+					`${manifestPath} must not couple to Context unless it owns a Context host`,
+				).not.toHaveProperty(contextPackageName)
+			}
+		}
+
+		const sourceFileGroups = await Promise.all(
+			['packages', 'plugins', 'projects'].map((dir) => collectSourceFiles(`${root}/${dir}`)),
+		)
+		const sourceFiles = sourceFileGroups.flat()
+		const sourceLeaks: string[] = []
+		for (const file of sourceFiles) {
+			if (file.startsWith(`${coreRoot}/`) || file.startsWith(`${contextRoot}/`)) continue
+			const source = await readFile(file, 'utf8')
+			const specifiers = quotedModuleSpecifiers(source)
+			if (
+				specifiers.some(
+					(specifier) =>
+						specifier === contextPackageName || specifier.startsWith(`${contextPackageName}/`),
+				)
+			) {
+				sourceLeaks.push(file)
+			}
+		}
+		expect(sourceLeaks).toEqual([])
+
+		const coreDist = `${coreRoot}/dist`
+		if (!existsSync(coreDist)) return
+		const distEntries = await readdir(coreDist, { withFileTypes: true, encoding: 'utf8' })
+		const distFiles = distEntries
+			.filter((entry) => entry.isFile() && /(?:\.mjs|\.cjs|\.d\.mts|\.d\.cts)$/.test(entry.name))
+			.map((entry) => join(coreDist, entry.name))
+		const distLeaks: string[] = []
+		for (const file of distFiles) {
+			const specifiers = quotedModuleSpecifiers(await readFile(file, 'utf8'))
+			if (
+				specifiers.some(
+					(specifier) =>
+						specifier === contextPackageName || specifier.startsWith(`${contextPackageName}/`),
+				)
+			) {
+				distLeaks.push(file)
+			}
+		}
+		expect(distLeaks, 'Core JS and declarations must inline the Context kernel').toEqual([])
+
+		const esmPublic = (await import(pathToFileURL(`${coreDist}/index.mjs`).href)) as unknown
+		const esmInternal = (await import(pathToFileURL(`${coreDist}/internal.mjs`).href)) as unknown
+		expectCoreContextEntriesToShareOneKernel(
+			esmPublic as CoreContextPublicEntry,
+			esmInternal as CoreContextInternalEntry,
+		)
+
+		const require = createRequire(import.meta.url)
+		const cjsPublic = require(`${coreDist}/index.cjs`) as unknown
+		const cjsInternal = require(`${coreDist}/internal.cjs`) as unknown
+		expectCoreContextEntriesToShareOneKernel(
+			cjsPublic as CoreContextPublicEntry,
+			cjsInternal as CoreContextInternalEntry,
+		)
+	}, 15_000)
+
 	it('prefers community development entries before framework source entries in frontend graphs', () => {
 		expect(buildPluxelFrontendResolveConditions('development').slice(0, 2)).toEqual([
 			'development',

@@ -1,16 +1,16 @@
+import { Bench } from 'tinybench'
 import {
+	createChildContext,
 	createContextPlan,
-	createGenerationContext,
-	createOwnerContext,
 	createRootContext,
+	createScopeContext,
 	defineContextCapability,
-	installGenerationCapability,
 	installOwnerViewCapability,
 	installRootCapability,
+	installScopeCapability,
 	resolveContextCapability,
 	type ContextCapabilityInstallation,
-} from '@pluxel/core/internal'
-import { Bench } from 'tinybench'
+} from '../src/kernel.ts'
 
 const batch = 1_000
 const coldPlanBatch = 20
@@ -18,14 +18,11 @@ const bench = new Bench({ time: 750, warmupTime: 250 })
 let sink: unknown
 
 const rootCapability = defineContextCapability<object>('bench.root')
-const generationCapability = defineContextCapability<object>('bench.generation')
+const scopeCapability = defineContextCapability<object>('bench.scope')
 const ownerCapability = defineContextCapability<object>('bench.owner')
 const hotPlan = createContextPlan('context-hot', [
 	installRootCapability(rootCapability, { property: 'rootValue', create: () => ({}) }),
-	installGenerationCapability(generationCapability, {
-		property: 'generationValue',
-		create: () => ({}),
-	}),
+	installScopeCapability(scopeCapability, { property: 'scopeValue', create: () => ({}) }),
 	installOwnerViewCapability(ownerCapability, {
 		property: 'ownerValue',
 		createRoot: () => ({}),
@@ -33,12 +30,14 @@ const hotPlan = createContextPlan('context-hot', [
 	}),
 ])
 const root = createRootContext(hotPlan)
-const generation = createGenerationContext(root, 'generation')
-const owner = createOwnerContext(generation, 'owner')
-type HotProjection = { rootValue: object; generationValue: object; ownerValue: object }
-const hot = owner as unknown as HotProjection
-void hot.rootValue
-void hot.generationValue
+const scope = createScopeContext(root, 'scope')
+const owner = createChildContext(scope, 'owner')
+type RootProjection = { rootValue: object }
+type ContextProjection = { scopeValue: object; ownerValue: object }
+const hotRoot = root as unknown as RootProjection
+const hot = owner as unknown as ContextProjection
+void hotRoot.rootValue
+void hot.scopeValue
 void hot.ownerValue
 
 const nullRecord = Object.create(null) as Record<string, object>
@@ -47,10 +46,10 @@ const descriptorKey = defineContextCapability<object>('bench.descriptor-key')
 const descriptorMap = new Map([[descriptorKey, {}]])
 
 bench.add('cached root getter', () => {
-	for (let index = 0; index < batch; index += 1) sink = hot.rootValue
+	for (let index = 0; index < batch; index += 1) sink = hotRoot.rootValue
 })
-bench.add('cached generation getter', () => {
-	for (let index = 0; index < batch; index += 1) sink = hot.generationValue
+bench.add('cached scope getter', () => {
+	for (let index = 0; index < batch; index += 1) sink = hot.scopeValue
 })
 bench.add('cached owner-view getter', () => {
 	for (let index = 0; index < batch; index += 1) sink = hot.ownerValue
@@ -66,15 +65,15 @@ bench.add('null-prototype string lookup baseline (not descriptor-safe)', () => {
 bench.add('Map capability-identity lookup baseline', () => {
 	for (let index = 0; index < batch; index += 1) sink = descriptorMap.get(descriptorKey)
 })
-bench.add('owner-view first miss + owner creation', () => {
+bench.add('owner-view first miss + child creation', () => {
 	for (let index = 0; index < 100; index += 1) {
-		const cold = createOwnerContext(generation, `cold-${index}`) as unknown as HotProjection
+		const cold = createChildContext(scope, `cold-${index}`) as unknown as ContextProjection
 		sink = cold.ownerValue
 	}
 })
-bench.add('generation Context creation', () => {
+bench.add('scope Context creation', () => {
 	for (let index = 0; index < 100; index += 1) {
-		sink = createGenerationContext(root, `generation-${index}`)
+		sink = createScopeContext(root, `scope-${index}`)
 	}
 })
 
@@ -115,7 +114,7 @@ console.table(
 	}),
 )
 console.log(
-	'Cached ctx.foo uses one scope-specialized plan resolver and a direct dense-array slot read. Explicit resolve uses Map only to compile a capability object identity into that numeric slot; the null-prototype string baseline is not a semantic substitute.',
+	'Cached ctx.foo uses one scope-specialized resolver and a direct dense-array slot read. Explicit resolve uses Map only to compile a capability object identity into that numeric slot; the null-prototype string baseline is not a semantic substitute.',
 )
-console.log('Host plan compilation is a cold root-construction cost and is reported separately.')
+console.log('Host compilation is a cold root-construction cost and is reported separately.')
 void sink

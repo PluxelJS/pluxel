@@ -14,20 +14,15 @@ export {
 export { requireConfigService } from './internal/config-service'
 export { requirePluginService } from './internal/plugin-service'
 export {
-	createContextPlan,
-	createGenerationContext,
-	createOwnerContext,
-	createRootContext,
 	defineContextCapability,
-	installGenerationCapability,
 	installOwnerViewCapability,
 	installRootCapability,
-	prepareContextCapabilities,
+	installScopeCapability,
 	resolveContextCapability,
 	type ContextCapability,
 	type ContextCapabilityInstallation,
-	type ContextPlan,
-} from './context/Context'
+} from '@pluxel/context'
+export { createGenerationContext, createOwnerContext } from './context/context-factory'
 export {
 	CONFIG_SERVICE_CAPABILITY,
 	createCoreContextInstallations,

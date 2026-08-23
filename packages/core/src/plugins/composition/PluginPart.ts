@@ -1,4 +1,5 @@
-import { createOwnerContext, type Context, type PluginContext } from '../../context/Context'
+import type { Context, PluginContext } from '../../context/Context'
+import { createOwnerContext } from '../../context/context-factory'
 import type { BasePlugin, PluginCleanup } from './BasePlugin'
 import { PLUGIN_CONFIGS, type PluginConfigs } from './PluginConfigs'
 import { OptionalPluginBindings } from './OptionalPluginBindings'

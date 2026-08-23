@@ -90,12 +90,12 @@ Pluxel 为此增加了编译约束：required dependency 只写在 constructor �
 
 Pluxel 先判断一项能力属于业务组成、宿主公共设施，还是局部动态适配，再为它选择对应的表达方式和生命周期。
 
-| 能力关系        | 标准表达                                | 身份与生命周期                                 |
-| --------------- | --------------------------------------- | ---------------------------------------------- |
-| Required Plugin | constructor value import                | definition slot、DI graph、provider generation |
-| Optional Plugin | type-only opaque ref + `plugins.use()`  | optional graph edge、consumer restart plan     |
-| Host capability | plugin-owned `Context` 上的稳定 service | runtime 安装、调用与注册绑定 owner Context     |
-| Plugin 内部组成 | 普通 class/function + effects scope     | 随 owner generation 回收                       |
+| 能力关系        | 标准表达                               | 身份与生命周期                                 |
+| --------------- | -------------------------------------- | ---------------------------------------------- |
+| Required Plugin | constructor value import               | definition slot、DI graph、provider generation |
+| Optional Plugin | type-only opaque ref + `plugins.use()` | optional graph edge、consumer restart plan     |
+| Host capability | root 创建前固定的 `Context` 投影       | host 组合、调用与注册绑定 owner Context        |
+| Plugin 内部组成 | 普通 class/function + effects scope    | 随 owner generation 回收                       |
 
 ### 业务依赖进入 Plugin graph
 
@@ -122,8 +122,12 @@ export class BillingPlugin extends BasePlugin {
 
 HTTP、config、logger、effects、commands、persistence/database 等由宿主统一提供，仍然通过 Context 暴露：
 
-这些内建能力由宿主在创建 root Context 时一次性编译进固定 plan。业务 Plugin 不注册 Context service，
-也不能在 module evaluation 阶段修改其他 host 的能力集合。
+公开的 `@pluxel/context` 是一套独立于 Plugin Runtime 的 host kernel。需要构建 standalone host 的应用可以在创建 root 前组合
+root、scope 和 owner-view capability；能力集合编译后不可修改。它只负责同步、严格惰性的 Context 投影，不负责资源启动、
+`prepare()` 或 `dispose()`。
+
+Pluxel Runtime 用同一个 kernel 在创建 root Context 时一次性编译官方能力。业务 Plugin 不注册 Context service，也不能在
+module evaluation 或 `init()` 阶段修改 Runtime 的能力集合；Plugin 间的业务能力仍通过 Plugin graph 表达。
 
 Context 只暴露能力和当前 owner identity，不暴露完整宿主配置。每项能力显式选择 root、Plugin generation 或 owner-view
 作用域；`ctx.foo` 的缓存访问直接读取预编译 numeric slot，descriptor lookup 不在 getter 热路径。
@@ -159,6 +163,11 @@ Pluxel 所说的 typed，不只是给 runtime API 增加泛型。TypeScript 源�
 ## 性能取舍
 
 Pluxel 与 Cordis v4 目前没有同场、同语义的 benchmark，现有数据不能说明谁更快。Pluxel 把一部分依赖解析移到构建期，但 runtime 中仍有 graph commit、caller binding 和局部 Proxy。这项设计首先服务于依赖检查和身份一致性，不作性能承诺。
+
+Context 本身会把 capability object identity 在 host compile 时映射成 numeric slot，成功构造的值按 root/scope/owner-view
+缓存；常规 `ctx.foo` 热访问不做字符串或 `Map` 查找。这里使用 `Map` 是为了保持 descriptor 的 object identity，
+`Object.create(null)` 的字符串/symbol key 语义不能直接替代。具体取舍由 `@pluxel/context` benchmark 持续验证，不把趋势数据
+表述成跨机器 SLA。
 
 ## 选择与代价
 

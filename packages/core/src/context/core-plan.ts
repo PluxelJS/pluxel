@@ -3,16 +3,13 @@ import { EffectsService } from '../services/effects/EffectsService'
 import { LoggerService, type LoggerServiceConfig } from '../logger/LoggerService'
 import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
 import {
-	createContextPlan,
-	createRootContext,
-	installGenerationCapability,
+	createContextHost,
 	installRootCapability,
-	type CoreHostConfig,
+	installScopeCapability,
 	type ContextCapability,
 	type ContextCapabilityInstallation,
-	type ContextPlan,
-	type RootContext,
-} from './Context'
+} from '@pluxel/context'
+import { type CoreHostConfig, type Context, type RootContext } from './Context'
 import {
 	CONFIG_SERVICE_CAPABILITY,
 	EFFECTS_CAPABILITY,
@@ -43,25 +40,28 @@ export function createCoreContextInstallations(
 	inputs: CoreRootInputs,
 ): readonly ContextCapabilityInstallation[] {
 	return Object.freeze([
-		installGenerationCapability(LOGGER_CAPABILITY, {
+		installScopeCapability(LOGGER_CAPABILITY, {
 			property: 'logger',
-			create: (ctx) => new LoggerService(ctx, inputs.logger),
+			create: (ctx) => new LoggerService(ctx as Context, inputs.logger),
 		}),
-		installGenerationCapability(EFFECTS_CAPABILITY, {
+		installScopeCapability(EFFECTS_CAPABILITY, {
 			property: 'effects',
-			create: (ctx) => new EffectsService(ctx, undefined),
+			create: (ctx) => new EffectsService(ctx as Context, undefined),
 		}),
 		installRootCapability(CONFIG_SERVICE_CAPABILITY, {
-			create: (ctx) => new ConfigService(ctx),
+			create: (ctx) => new ConfigService(ctx as RootContext),
 		}),
 		installRootCapability(PLUGIN_SERVICE_CAPABILITY, {
-			create: (ctx) => new PluginService(ctx, inputs.plugins),
+			create: (ctx) => new PluginService(ctx as RootContext, inputs.plugins),
 		}),
 	])
 }
 
 export function createCoreRootContext(config: CoreHostConfig = {}): RootContext {
 	const inputs = resolveCoreRootInputs(config)
-	const plan: ContextPlan = createContextPlan('core', createCoreContextInstallations(inputs))
-	return createRootContext(plan, inputs.name)
+	const host = createContextHost({
+		name: 'core',
+		capabilities: createCoreContextInstallations(inputs),
+	})
+	return host.createRoot(inputs.name) as RootContext
 }

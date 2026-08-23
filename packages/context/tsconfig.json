@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.src.json",
+	"include": ["src", "tests", "bench"],
+	"compilerOptions": {
+		"outDir": "dist",
+		"emitDeclarationOnly": true,
+		"types": ["node"]
+	}
+}

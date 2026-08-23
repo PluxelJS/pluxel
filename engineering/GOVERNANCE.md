@@ -3,8 +3,8 @@
 ## 依赖方向
 
 ```text
-@pluxel/core <- @pluxel/runtime <- @pluxel/runtime-dynamic
-                           └──── @pluxel/runtime-static
+@pluxel/context <- @pluxel/core <- @pluxel/runtime <- @pluxel/runtime-dynamic
+                                              └──── @pluxel/runtime-static
 
 @pluxel/cli --optional--> @pluxel/rolldown
             --optional--> @pluxel/runtime-dynamic/hmr/diagnose
@@ -12,7 +12,8 @@
 
 `@pluxel/rolldown` 是 build-time tooling，不进入 runtime graph。
 
-必须保持：core host-free、runtime 不依赖 dynamic、route 不复制 lifecycle、config persistence 不进入 core。CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
+必须保持：context 不依赖 Core/Runtime/IO/lifecycle、core host-free、runtime 不依赖 dynamic、route 不复制 lifecycle、config
+persistence 不进入 core。CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
 
 ## Workspace 与目录
 
@@ -55,6 +56,10 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
   副本同时以 `workspace:*` 放入 `devDependencies`，不得把 provider 放入普通 dependencies 形成第二份
   Plugin identity。
 
+`@pluxel/core` 源码对 `@pluxel/context` 的复用是构建时源码边界：Core 将其声明为 `devDependencies: workspace:*`，并用
+tsdown `alwaysBundle` 内联所有 JavaScript 与 declarations。发布 tarball 不得含外部 `@pluxel/context` import，也不得把它加入
+Core 的 dependencies/peerDependencies/optionalDependencies；直接使用 standalone kernel 的应用才显式安装 `@pluxel/context`。
+
 Mantine/React 等 Workbench singleton 由 host 直接安装；插件 UI 把自己 import 的 singleton 声明为
 peer，并在需要独立开发时声明 dev 副本。导入 Drizzle schema/query API 的每个 package 都直接声明
 `drizzle-orm`；它与 Pluxel 高度集成并不意味着能从根或 `@pluxel/runtime` 隐式继承。只有确实要求宿主
@@ -81,13 +86,19 @@ reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它�
 - 不为已删除设计保留兼容 alias；
 - toolchain helper 只能从 toolchain/internal subpath 使用。
 
+`@pluxel/context` 默认入口公开 host composition 所需的 opaque descriptor、scoped installation、`createContextHost()`、
+projection types 与显式 resolve；raw plan/context construction 只从 `/internal` 提供给框架实现，不是稳定第三方入口。
+`ContextHost` 编译后没有 capability mutator，公开 `overrides` 也只能在编译前替换相同 descriptor 且保持 scope/property。
+
 `@pluxel/core` 与 `@pluxel/runtime` 默认入口使用逐项 allowlist；runtime 可以逐项转发同一 core 作者面，不能使用
-`export * from '@pluxel/core'`。默认入口只承诺 Plugin 作者模型、type-only Context contract、结构化 address codec 与 host 确实消费的
-lifecycle result。`PluginService`、slot registry、record reader、construction/lifecycle adapter、coordinator、lowering setter 和 test host
+`export * from '@pluxel/core'`。默认入口只承诺 Plugin 作者模型、逐项转发的公开 Context host API、结构化 address codec 与 host
+确实消费的 lifecycle result。`PluginService`、slot registry、record reader、construction/lifecycle adapter、coordinator、lowering setter 和 test host
 不得从默认入口可达；opaque slot 最多以 type-only contract 出现。Federation build contract 只从 `@pluxel/core/federation` 消费。
 
-Context capability descriptor、plan、slot 和 construction helper 只从 internal entry 使用。Runtime 在一个集中 contract 中声明固定的
-内建属性；业务 package 不扩展 Context，也不注册第三方 capability。默认 root 不使用 star barrel 扩张 surface。
+Core 可以逐项转发 `@pluxel/context` 的公开 host API，但不转发它的 `/internal` construction surface。Runtime 在一个集中 contract
+中声明并安装固定内建属性；受信任 framework route 只可通过 package-private `routeContextCapabilities` 在 root 创建前安装自身
+descriptor。该 authority 不进入 public config，route 与业务 Plugin 都不能向已创建的 Runtime Context 追加或替换 capability。
+默认 root 不使用 star barrel 扩张 surface。
 
 runtime route wiring、RuntimeState draft helper、resolver/cache/Vite helper 和 control-plane server DTO 统一从
 `@pluxel/runtime/internal` 供 workspace runtime packages 使用，不创建 `shared`、`plugin-catalog`、`runtime-state`、

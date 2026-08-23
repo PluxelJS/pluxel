@@ -13,6 +13,7 @@ const transformOptions = {
 export default defineConfig({
 	deps: {
 		onlyBundle: ['option-t'],
+		alwaysBundle: ['@pluxel/context', '@pluxel/context/*'],
 	},
 	exports: {
 		devExports: '@pluxel/source',
@@ -27,6 +28,8 @@ export default defineConfig({
 		toolchain: 'src/toolchain.ts',
 	},
 	dts: {
+		// Context declarations are bundled from workspace source outside Core's tsconfig root.
+		eager: true,
 		sourcemap: true,
 	},
 	format: ['esm', 'cjs'],
@@ -36,6 +39,11 @@ export default defineConfig({
 	minify: true,
 	treeshake: true,
 	inputOptions(options) {
+		// Keep direct Core builds independent of a pre-existing @pluxel/context dist directory.
+		options.resolve = {
+			...options.resolve,
+			conditionNames: ['@pluxel/source', 'import', 'node', 'default'],
+		}
 		options.transform = {
 			...options.transform,
 			...transformOptions,

@@ -43,8 +43,11 @@ export { WorkerTaskService } from './node-artifact/WorkerTaskService'
 export { readNodeModuleDeclaration } from './node-artifact/node-module'
 export { readHostProduct, sameProduct } from './product-internal'
 export { subscribeDatabaseHandle, databaseHandleOwnsTables } from './services/DatabaseService'
-export { createRuntimeRootContext, type RuntimeRootContextOptions } from './context/runtime-plan'
-export { prepareContextCapabilities } from '@pluxel/core/internal'
+export {
+	createRuntimeRootContext,
+	prepareRuntimeRootContext,
+	type RuntimeRootContextOptions,
+} from './context/runtime-plan'
 export {
 	readDatabaseDefinition,
 	type DatabaseArtifact,

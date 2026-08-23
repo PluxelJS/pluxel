@@ -2,7 +2,7 @@ import type { Context } from '@pluxel/core'
 import { createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
-	createDynamicContextInstallations,
+	createDynamicRouteContextCapabilities,
 	requireLoaderService,
 	requireScanService,
 } from '../src/context-plan'
@@ -29,7 +29,7 @@ describe('dynamic route Context capabilities', () => {
 	it('resolves installed services through stable internal descriptors', async () => {
 		const host = createRuntimeHost(
 			{ workbench: false },
-			{ installations: createDynamicContextInstallations() },
+			{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 		)
 		try {
 			const loader = requireLoaderService(host.ctx)

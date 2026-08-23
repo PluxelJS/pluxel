@@ -82,8 +82,9 @@
 ## Host 启动约束
 
 - Vault 只有一个启用入口：host `vault` 为配置对象；omitted/`false` 时 capability 和 backend 都 absent。
-- host 在插件运行前统一 prepare Context plan；vaultAdmin backing 的 eager leaf hook 完成 vault bootstrap。
-  其他 host 如果启用 vault，也必须在首个 Plugin lifecycle 前完成同一 plan prepare。
+- host 在插件运行前显式调用 `prepareRuntimeRootContext()`；它只对已启用的 Vault 调用
+  `vaultAdmin.prepare()` 完成 bootstrap。其他 host 如果启用 Vault，也必须在首个 Plugin lifecycle
+  前完成同一 Runtime preflight。
 - 需要 Vault 的 Plugin 必须检查 `ctx.vault` absence；module import 不改变 host plan。
 - vaultAdmin `prepare()` 的顺序必须保持：
   `describe()` -> 仅在 mount 缺失且 host identity 缺失时 `ensureHostKey()` -> `preflight()`

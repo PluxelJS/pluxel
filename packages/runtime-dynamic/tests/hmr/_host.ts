@@ -2,7 +2,7 @@ import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import type { LoaderBatch } from '../../src/loader/support'
 import type { ScanService } from '../../src/scan/ScanService'
 import {
-	createDynamicContextInstallations,
+	createDynamicRouteContextCapabilities,
 	requireLoaderService,
 	requireScanService,
 } from '../../src/context-plan'
@@ -22,7 +22,7 @@ export function createHmrTestHost(options?: {
 }) {
 	const host = createRuntimeHost(
 		{ workbench: false },
-		{ installations: createDynamicContextInstallations() },
+		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)
 	if (options?.errorLogs) captureLoggerErrors(host, options.errorLogs)
 	if (options?.scanService) {
