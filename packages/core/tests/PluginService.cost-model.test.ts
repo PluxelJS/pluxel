@@ -1,5 +1,18 @@
-import { pluginNodeAddressOf, type PluginNodeAddress } from '@pluxel/core'
-import { PluginSlotRegistry, requirePluginService } from '@pluxel/core/internal'
+import {
+	createContextHost,
+	installRootCapability,
+	pluginNodeAddressOf,
+	type PluginNodeAddress,
+	type RootContext,
+} from '@pluxel/core'
+import {
+	CONFIG_SERVICE_CAPABILITY,
+	consumePluginDefinitionCandidate,
+	createCoreContextInstallations,
+	PluginSlotRegistry,
+	requirePluginService,
+	resolveCoreRootInputs,
+} from '@pluxel/core/internal'
 import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 import { describe, expect, it, vi } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
@@ -9,6 +22,9 @@ class QueryTarget extends BasePlugin {}
 
 @Plugin()
 class PendingDraftMarker extends BasePlugin {}
+
+@Plugin()
+class ConfiglessTeardown extends BasePlugin {}
 
 function slotsOf(registry: object): PluginSlotRegistry {
 	return (
@@ -34,6 +50,41 @@ function definitionInternalsOf(registry: object) {
 }
 
 describe('PluginService read cost model', () => {
+	it('keeps ConfigService lazy across configless lifecycle and teardown', async () => {
+		const inputs = resolveCoreRootInputs({ name: 'configless-cost-model' })
+		let configServiceCreations = 0
+		const host = createContextHost({
+			name: 'configless-cost-model',
+			capabilities: createCoreContextInstallations(inputs),
+			overrides: [
+				installRootCapability(CONFIG_SERVICE_CAPABILITY, {
+					create: () => {
+						configServiceCreations += 1
+						throw new Error('ConfigService must remain lazy for configless Plugins')
+					},
+				}),
+			],
+		})
+		const root = host.createRoot(inputs.name) as RootContext
+		try {
+			const plugins = requirePluginService(root)
+			const address = pluginNodeAddressOf(ConfiglessTeardown)
+			const candidate = consumePluginDefinitionCandidate(ConfiglessTeardown)
+			const add = plugins.beginUpdate({ reason: 'configless-cost-model-add' })
+			add.materializeNode(address, candidate)
+			const added = await add.commit()
+			expect(added.ok).toBe(true)
+
+			const remove = plugins.beginUpdate({ reason: 'configless-cost-model-remove' })
+			remove.dematerializeNode(address)
+			const removed = await remove.commit()
+			expect(removed.ok).toBe(true)
+			expect(configServiceCreations).toBe(0)
+		} finally {
+			await root.effects.dispose()
+		}
+	})
+
 	it.each(['committed', 'pending'] as const)(
 		'replaces a definition family through one %s multi-root closure traversal',
 		async (mode) => {
@@ -74,6 +125,45 @@ describe('PluginService read cost model', () => {
 			})
 		},
 	)
+
+	it('unions every provider-default consumer into one closure traversal', async () => {
+		await withCoreHost(async (host) => {
+			const plugins = requirePluginService(host.ctx)
+			host.add(QueryTarget)
+			const first = host.fork(QueryTarget, 'provider-default-consumer-1')
+			const second = host.fork(QueryTarget, 'provider-default-consumer-2')
+			await host.commit()
+			const consumers = [plugins.resolvePluginNode(first)!, plugins.resolvePluginNode(second)!]
+			let collectedRoots: unknown[] = []
+			const internals = plugins as unknown as {
+				definitions: {
+					setProviderDefault: (token: unknown, provider: unknown) => void
+				}
+				currentPlanningGraph: () => { consumers: (token: unknown) => unknown[] }
+				collectPlanningCascadeTargets: (
+					roots: Iterable<unknown>,
+					cascadeDependents: boolean,
+				) => Set<unknown>
+				setProviderDefault: (token: unknown, provider: unknown) => void
+			}
+			vi.spyOn(internals, 'currentPlanningGraph').mockReturnValue({
+				consumers: () => consumers,
+			})
+			vi.spyOn(internals.definitions, 'setProviderDefault').mockImplementation(() => undefined)
+			const collect = vi
+				.spyOn(internals, 'collectPlanningCascadeTargets')
+				.mockImplementation((roots) => {
+					collectedRoots = Array.from(roots)
+					return new Set()
+				})
+
+			internals.setProviderDefault(pluginNodeAddressOf(QueryTarget).definition, null)
+
+			expect(collect).toHaveBeenCalledOnce()
+			expect(collect.mock.calls[0]![1]).toBe(true)
+			expect(collectedRoots).toEqual(consumers)
+		})
+	})
 
 	it('does not create slots, records, or generations for disabled and orphan projections', async () => {
 		await withCoreHost(async (host) => {

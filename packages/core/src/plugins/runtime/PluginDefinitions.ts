@@ -232,10 +232,11 @@ export class PluginDefinitions {
 		inputAddress: PluginNodeAddress,
 		candidate: ConcretePluginDefinitionCandidate,
 	): PluginNodeSlot {
-		const address = parsePluginNodeAddress(inputAddress)
-		this.assertCandidateAddress(candidate, address.definition)
-		const definition = this.slots.internDefinition(address.definition)
-		const node = this.slots.internNode(address)
+		const parsedAddress = parsePluginNodeAddress(inputAddress)
+		this.assertCandidateAddress(candidate, parsedAddress.definition)
+		const node = this.slots.internNode(parsedAddress)
+		const definition = node.definition
+		const address = this.slots.nodeAddress(node)
 		let record = this.definitionRecord(definition)
 		if (record) {
 			if (this.candidateByRecord.get(record) !== candidate) {
@@ -268,8 +269,7 @@ export class PluginDefinitions {
 	}
 
 	dematerializeNode(inputAddress: PluginNodeAddress): PluginNodeSlot | undefined {
-		const address = parsePluginNodeAddress(inputAddress)
-		const node = this.slots.lookupNode(address)
+		const node = this.slots.lookupNode(inputAddress)
 		if (!node) return undefined
 		const current = this.nodeRecord(node)
 		if (!current) return undefined
@@ -321,8 +321,7 @@ export class PluginDefinitions {
 	}
 
 	restartNode(inputAddress: PluginNodeAddress): PluginNodeSlot {
-		const address = parsePluginNodeAddress(inputAddress)
-		const node = this.slots.lookupNode(address)
+		const node = this.slots.lookupNode(inputAddress)
 		if (!node || !this.nodeRecord(node))
 			throw new Error('[pluxel/core] Cannot restart an absent Plugin node')
 		return node
@@ -430,7 +429,7 @@ export class PluginDefinitions {
 		const revision = (this.nextRevision.get(slot) ?? 0) + 1
 		this.nextRevision.set(slot, revision)
 		const record: ConcretePluginDefinitionRecord = Object.freeze({
-			address: declaration.address,
+			address: this.slots.definitionAddress(slot),
 			slot,
 			implementation: candidate.implementation,
 			revision,

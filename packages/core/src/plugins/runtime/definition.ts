@@ -55,10 +55,16 @@ type PluginDefinitionFacts = Readonly<{
 	readonly provides?: PluginDefinitionAddress
 }>
 
-type PluginAddressProjection = Readonly<{
-	readonly kind: PluginDefinitionKind
-	readonly definition: PluginDefinitionAddress
-}>
+type PluginAddressProjection =
+	| Readonly<{
+			readonly kind: 'abstract'
+			readonly definition: PluginDefinitionAddress
+	  }>
+	| Readonly<{
+			readonly kind: 'plugin'
+			readonly definition: PluginDefinitionAddress
+			readonly defaultNode: PluginNodeAddress
+	  }>
 
 export type PluginConfigDefinition = Readonly<{
 	readonly fieldName: string
@@ -184,7 +190,19 @@ export function __setPluginDefinition(
 		invalidPluginDeclaration('[pluxel/core] Plugin constructor already has declaration facts')
 	}
 	factsByConstructor.set(ctor, facts)
-	addressByConstructor.set(ctor, Object.freeze({ kind: facts.kind, definition: facts.definition }))
+	addressByConstructor.set(
+		ctor,
+		facts.kind === 'plugin'
+			? Object.freeze({
+					kind: facts.kind,
+					definition: facts.definition,
+					defaultNode: parsePluginNodeAddress({
+						definition: facts.definition,
+						variant: 'default',
+					}),
+				})
+			: Object.freeze({ kind: facts.kind, definition: facts.definition }),
+	)
 }
 
 /** @internal Build-generated Plugin config declaration. */
@@ -324,7 +342,7 @@ export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress 
 	if (facts.kind !== 'plugin') {
 		invalidPluginDeclaration('[pluxel/core] Abstract Plugin tokens do not have node addresses')
 	}
-	return parsePluginNodeAddress({ definition: facts.definition, variant: 'default' })
+	return facts.defaultNode
 }
 
 function mergeOptionalDefinitions(

@@ -1,9 +1,14 @@
-import { TASK, TASK_NAMES, selectTaskNames } from './catalog'
+import { TASK, TASK_METADATA, TASK_NAMES, WORKLOAD_ID, selectTaskNames } from './catalog'
 import {
+	assessReferenceCompatibility,
 	buildComparison,
 	buildDecisionSignals,
+	isLatencyRegression,
+	renderMarkdown,
 	selectReferenceTasks,
+	toMainReport,
 	type BenchRow,
+	type ReferenceReport,
 } from './report'
 import { describe, expect, it } from 'vitest'
 
@@ -15,6 +20,16 @@ const row = (name: string, latencyMeanMs: number, latencyRmePct = 1): BenchRow =
 	latencyMeanMs,
 	latencyP99Ms: latencyMeanMs,
 	latencyRmePct,
+})
+
+const scenario = { starLeaves: 200, chainLength: 200, bigIndependent: 800 }
+
+const compatibleReference = (overrides: Partial<ReferenceReport> = {}): ReferenceReport => ({
+	recordedAt: '2026-08-23T00:00:00.000Z',
+	workload: { id: WORKLOAD_ID },
+	scenario,
+	tasks: [row(TASK.restartRootStar, 4)],
+	...overrides,
 })
 
 describe('plugin lifecycle benchmark selection', () => {
@@ -49,30 +64,127 @@ describe('plugin lifecycle benchmark selection', () => {
 	})
 })
 
+describe('plugin lifecycle benchmark reference compatibility', () => {
+	it('accepts only the same workload and scenario', () => {
+		const compatibility = assessReferenceCompatibility(compatibleReference(), {
+			id: WORKLOAD_ID,
+			scenario,
+		})
+
+		expect(compatibility).toMatchObject({ status: 'compatible', reason: null })
+		expect(compatibility.report?.tasks).toHaveLength(1)
+	})
+
+	it.each([
+		[
+			'missing workload identity',
+			compatibleReference({ workload: undefined }),
+			'reference workload identity is missing',
+		],
+		[
+			'different workload identity',
+			compatibleReference({ workload: { id: 'legacy-core-lifecycle' } }),
+			'workload id differs',
+		],
+		[
+			'missing scenario',
+			compatibleReference({ scenario: undefined }),
+			'reference scenario is missing',
+		],
+		[
+			'different scenario',
+			compatibleReference({ scenario: { ...scenario, starLeaves: 201 } }),
+			'scenario differs',
+		],
+	] as const)('rejects a reference with %s', (_label, candidate, reason) => {
+		const compatibility = assessReferenceCompatibility(candidate, {
+			id: WORKLOAD_ID,
+			scenario,
+		})
+
+		expect(compatibility).toMatchObject({ status: 'incompatible' })
+		expect(compatibility.reason).toContain(reason)
+		expect(compatibility.report).toBeNull()
+	})
+
+	it('does not compare matching task names from an incompatible reference and reports why', () => {
+		const current = [row(TASK.restartRootStar, 8)]
+		const compatibility = assessReferenceCompatibility(
+			compatibleReference({ workload: undefined }),
+			{
+				id: WORKLOAD_ID,
+				scenario,
+			},
+		)
+		const comparison = buildComparison(current, compatibility.report)
+		const report = toMainReport({
+			recordedAt: '2026-08-23T01:00:00.000Z',
+			runtime: { name: 'node', version: '24.0.0' },
+			workloadId: WORKLOAD_ID,
+			options: {
+				scenario,
+				selectedTasks: [TASK.restartRootStar],
+				timeMs: 5_000,
+				warmupTimeMs: 1_000,
+				warmupIterations: 60,
+				minIterations: null,
+			},
+			taskMetadata: TASK_METADATA,
+			tasks: current,
+			comparison,
+			referenceCompatibility: compatibility,
+		})
+		const markdown = renderMarkdown({
+			report,
+			taskMetadata: TASK_METADATA,
+			regressionTolerancePct: 5,
+		})
+
+		expect(comparison).toMatchObject([{ name: TASK.restartRootStar, status: 'new' }])
+		expect(markdown).toContain(`Workload: ${WORKLOAD_ID}`)
+		expect(markdown).toContain('Reference: incompatible (reference workload identity is missing)')
+		expect(markdown).toContain('baseline reset (incompatible reference)')
+	})
+
+	it('keeps diagnostic tasks out of the latency regression gate', () => {
+		const comparison = buildComparison(
+			[row(TASK.noopStar, 0.03), row(TASK.restartLeafStar, 0.03)],
+			{
+				tasks: [row(TASK.noopStar, 0.01), row(TASK.restartLeafStar, 0.01)],
+			},
+		)
+		const noop = comparison.find((item) => item.name === TASK.noopStar)!
+		const restart = comparison.find((item) => item.name === TASK.restartLeafStar)!
+
+		expect(isLatencyRegression(noop, 5, TASK_METADATA[TASK.noopStar])).toBe(false)
+		expect(isLatencyRegression(restart, 5, TASK_METADATA[TASK.restartLeafStar])).toBe(true)
+	})
+})
+
 describe('plugin lifecycle benchmark decision signals', () => {
 	it('keeps a complete current-only topology signal without a reference', () => {
-		const current = [row(TASK.replaceRootStar, 4), row(TASK.replaceLeafStar, 0.1)]
+		const current = [row(TASK.replaceRootLarge, 4), row(TASK.replaceRootStar, 2)]
 		const comparison = buildComparison(current, null)
 		const signal = buildDecisionSignals(current, comparison).find(
-			(item) => item.name === 'cascade tax: root HMR',
+			(item) => item.name === 'disconnected background tax: root definition replacement',
 		)
 
-		expect(signal).toMatchObject({ current: 40, reference: null, status: 'watch' })
+		expect(signal).toMatchObject({ current: 2, reference: null, status: 'watch' })
 	})
 
 	it('shows when denominator acceleration is driving a larger topology ratio', () => {
-		const current = [row(TASK.replaceRootStar, 4), row(TASK.replaceLeafStar, 0.05)]
+		const current = [row(TASK.replaceRootLarge, 4), row(TASK.replaceRootStar, 1)]
 		const reference = {
-			tasks: [row(TASK.replaceRootStar, 4), row(TASK.replaceLeafStar, 0.1)],
+			tasks: [row(TASK.replaceRootLarge, 4), row(TASK.replaceRootStar, 2)],
 		}
 		const comparison = buildComparison(current, reference)
 		const signal = buildDecisionSignals(current, comparison).find(
-			(item) => item.name === 'cascade tax: root HMR',
+			(item) => item.name === 'disconnected background tax: root definition replacement',
 		)
 
 		expect(signal).toMatchObject({
-			current: 80,
-			reference: 40,
+			current: 4,
+			reference: 2,
 			deltaPct: 100,
 			numeratorDeltaPct: 0,
 			denominatorDeltaPct: -50,
@@ -81,13 +193,13 @@ describe('plugin lifecycle benchmark decision signals', () => {
 	})
 
 	it('marks a ratio directional when either source is noisy', () => {
-		const current = [row(TASK.replaceRootStar, 4, 11), row(TASK.replaceLeafStar, 0.1)]
+		const current = [row(TASK.replaceRootLarge, 4, 11), row(TASK.replaceRootStar, 2)]
 		const reference = {
-			tasks: [row(TASK.replaceRootStar, 4), row(TASK.replaceLeafStar, 0.1)],
+			tasks: [row(TASK.replaceRootLarge, 4), row(TASK.replaceRootStar, 2)],
 		}
 		const comparison = buildComparison(current, reference)
 		const signal = buildDecisionSignals(current, comparison).find(
-			(item) => item.name === 'cascade tax: root HMR',
+			(item) => item.name === 'disconnected background tax: root definition replacement',
 		)
 
 		expect(signal?.reliable).toBe(false)

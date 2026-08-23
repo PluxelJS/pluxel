@@ -12,7 +12,7 @@ const numberFromEnvInt = (key: string, fallback: number) =>
 
 export const benchOptions = {
 	// Stable defaults; override env vars for quick local probes.
-	timeMs: numberFromEnv('PLUXEL_BENCH_TIME', 2_000),
+	timeMs: numberFromEnv('PLUXEL_BENCH_TIME', 5_000),
 	warmupTimeMs: numberFromEnv('PLUXEL_BENCH_WARMUP_TIME', 1_000),
 	warmupIterations: numberFromEnv('PLUXEL_BENCH_WARMUP_ITERATIONS', 60),
 	iterations: numberFromEnv('PLUXEL_BENCH_ITERATIONS', Number.NaN),
@@ -28,8 +28,6 @@ export const scenarioSizes = {
 	chainLength: numberFromEnvInt('PLUXEL_BENCH_CHAIN_LENGTH', 200),
 	// Background plugins for large-app scaling.
 	bigIndependent: numberFromEnvInt('PLUXEL_BENCH_BIG_INDEPENDENT', 800),
-	// Declared config fields.
-	configKeys: numberFromEnvInt('PLUXEL_BENCH_CONFIG_KEYS', 200),
 }
 
 export const referenceEnvPath = process.env.PLUXEL_BENCH_REFERENCE

@@ -15,7 +15,6 @@ import {
 	formatPluginNodeReference,
 	isPluginNodeSlot,
 	parsePluginDefinitionAddress,
-	parsePluginNodeAddress,
 	type PluginDefinitionAddress,
 	type PluginDefinitionSlot,
 	type PluginNodeAddress,
@@ -304,7 +303,7 @@ export class PluginService {
 	}
 
 	private dematerializeNode(address: PluginNodeAddress, options?: CascadeOptions): void {
-		const node = this.definitions.resolvePlanningNode(parsePluginNodeAddress(address))
+		const node = this.definitions.resolvePlanningNode(address)
 		if (!node) return
 		const targets =
 			options?.cascadeDependents === false
@@ -325,9 +324,10 @@ export class PluginService {
 		candidate: ConcretePluginDefinitionCandidate,
 		options?: ReplaceDefinitionOptions,
 	): void {
-		const roots = this.definitions.materializedNodes(parsePluginDefinitionAddress(address))
+		const canonicalAddress = parsePluginDefinitionAddress(address)
+		const roots = this.definitions.materializedNodes(canonicalAddress)
 		const targets = this.collectPlanningCascadeTargets(roots, options?.cascadeDependents ?? true)
-		this.definitions.replaceDefinition(address, candidate)
+		this.definitions.replaceDefinition(canonicalAddress, candidate)
 		for (const target of targets) this._pendingRestart.add(target)
 	}
 
@@ -340,10 +340,9 @@ export class PluginService {
 		const graph = this.currentPlanningGraph()
 		const consumers = token ? (graph?.consumers(token).filter(isPluginNodeSlot) ?? []) : []
 		this.definitions.setProviderDefault(tokenAddress, provider)
-		for (const consumer of consumers) {
-			for (const target of this.collectPlanningCascadeTargets([consumer], true)) {
-				this._pendingRestart.add(target)
-			}
+		if (consumers.length === 0) return
+		for (const target of this.collectPlanningCascadeTargets(consumers, true)) {
+			this._pendingRestart.add(target)
 		}
 	}
 
@@ -537,11 +536,10 @@ export class PluginService {
 
 	private async stopPlugin(node: PluginNodeSlot, report: MutableLifecycleReport): Promise<void> {
 		const plugin = this.getRuntimeInstance(node)
-		const owner = this.nodeAddressOf(node)
-		if (!plugin) {
-			requireConfigService(this.ctx).clearConfigApplied(owner)
-			return
-		}
+		if (!plugin) return
+		const configOwner = requirePluginGenerationInfo(plugin.ctx).config
+			? plugin.ctx.pluginInfo.nodeAddress
+			: undefined
 		try {
 			const snapshot = await this.lifecycleManager.stopLifecycle(node, plugin)
 			const context = snapshot?.context as { failedStep?: string; err?: unknown } | undefined
@@ -564,7 +562,7 @@ export class PluginService {
 				error: serializeLifecycleError(error),
 			})
 		} finally {
-			requireConfigService(this.ctx).clearConfigApplied(owner)
+			if (configOwner) requireConfigService(this.ctx).clearConfigApplied(configOwner)
 		}
 	}
 

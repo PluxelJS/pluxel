@@ -17,6 +17,11 @@ const FORK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const CONTROL_RE = /\p{Cc}/u
 const ENCODED_SEPARATOR_RE = /%2f|%5c/i
 const textEncoder = new TextEncoder()
+const canonicalEntryAddresses = new WeakSet<object>()
+const canonicalDefinitionAddresses = new WeakSet<object>()
+const canonicalNodeAddresses = new WeakSet<object>()
+const canonicalDefinitionIndexKeys = new WeakMap<PluginDefinitionAddress, string>()
+const canonicalNodeIndexKeys = new WeakMap<PluginNodeAddress, string>()
 
 export type PluginEntryAddress =
 	| Readonly<{ kind: 'package-root'; packageName: string }>
@@ -56,6 +61,41 @@ export type ParsedPluginNodeRoute = Readonly<{
 	nodeAddress: PluginNodeAddress
 	consumedSegments: number
 }>
+
+function canonicalAddress<T extends object>(addresses: WeakSet<object>, value: T): Readonly<T> {
+	const canonical = Object.freeze(value)
+	addresses.add(canonical)
+	return canonical
+}
+
+function isCanonicalAddress<T extends object>(
+	addresses: WeakSet<object>,
+	value: unknown,
+): value is T {
+	return typeof value === 'object' && value !== null && addresses.has(value)
+}
+
+function canonicalDefinitionAddress(
+	entry: PluginEntryAddress,
+	exportName: string,
+): PluginDefinitionAddress {
+	return canonicalAddress(canonicalDefinitionAddresses, { entry, exportName })
+}
+
+function canonicalDefaultNodeAddress(definition: PluginDefinitionAddress): PluginNodeAddress {
+	return canonicalAddress(canonicalNodeAddresses, { definition, variant: 'default' as const })
+}
+
+function canonicalForkNodeAddress(
+	definition: PluginDefinitionAddress,
+	forkId: string,
+): PluginNodeAddress {
+	return canonicalAddress(canonicalNodeAddresses, {
+		definition,
+		variant: 'fork' as const,
+		forkId,
+	})
+}
 
 function readRecord(input: unknown, label: string): Record<string, unknown> {
 	if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -143,20 +183,26 @@ function assertExactKeys(record: Record<string, unknown>, keys: readonly string[
 		if (!expected.has(key)) throw new TypeError(`[pluxel/core] ${label} has unknown field ${key}`)
 	}
 	for (const key of keys) {
-		if (!(key in record)) throw new TypeError(`[pluxel/core] ${label} is missing field ${key}`)
+		if (!Object.hasOwn(record, key)) {
+			throw new TypeError(`[pluxel/core] ${label} is missing field ${key}`)
+		}
 	}
 }
 
 export function parsePluginEntryAddress(input: unknown): PluginEntryAddress {
+	if (isCanonicalAddress<PluginEntryAddress>(canonicalEntryAddresses, input)) return input
 	const record = readRecord(input, 'Plugin entry address')
 	if (record.kind === 'package-root') {
 		assertExactKeys(record, ['kind', 'packageName'], 'Plugin package-root address')
-		return Object.freeze({ kind: 'package-root', packageName: readPackageName(record.packageName) })
+		return canonicalAddress(canonicalEntryAddresses, {
+			kind: 'package-root' as const,
+			packageName: readPackageName(record.packageName),
+		})
 	}
 	if (record.kind === 'source-entry') {
 		assertExactKeys(record, ['kind', 'sourceSpace', 'path'], 'Plugin source-entry address')
-		return Object.freeze({
-			kind: 'source-entry',
+		return canonicalAddress(canonicalEntryAddresses, {
+			kind: 'source-entry' as const,
 			sourceSpace: readSourceSpace(record.sourceSpace),
 			path: readSourcePath(record.path),
 		})
@@ -167,30 +213,28 @@ export function parsePluginEntryAddress(input: unknown): PluginEntryAddress {
 }
 
 export function parsePluginDefinitionAddress(input: unknown): PluginDefinitionAddress {
+	if (isCanonicalAddress<PluginDefinitionAddress>(canonicalDefinitionAddresses, input)) return input
 	const record = readRecord(input, 'Plugin definition address')
 	assertExactKeys(record, ['entry', 'exportName'], 'Plugin definition address')
-	return Object.freeze({
-		entry: parsePluginEntryAddress(record.entry),
-		exportName: readExportName(record.exportName),
-	})
+	return canonicalDefinitionAddress(
+		parsePluginEntryAddress(record.entry),
+		readExportName(record.exportName),
+	)
 }
 
 export function parsePluginNodeAddress(input: unknown): PluginNodeAddress {
+	if (isCanonicalAddress<PluginNodeAddress>(canonicalNodeAddresses, input)) return input
 	const record = readRecord(input, 'Plugin node address')
 	if (record.variant === 'default') {
 		assertExactKeys(record, ['definition', 'variant'], 'Default Plugin node address')
-		return Object.freeze({
-			definition: parsePluginDefinitionAddress(record.definition),
-			variant: 'default',
-		})
+		return canonicalDefaultNodeAddress(parsePluginDefinitionAddress(record.definition))
 	}
 	if (record.variant === 'fork') {
 		assertExactKeys(record, ['definition', 'variant', 'forkId'], 'Fork Plugin node address')
-		return Object.freeze({
-			definition: parsePluginDefinitionAddress(record.definition),
-			variant: 'fork',
-			forkId: readForkId(record.forkId),
-		})
+		return canonicalForkNodeAddress(
+			parsePluginDefinitionAddress(record.definition),
+			readForkId(record.forkId),
+		)
 	}
 	throw new TypeError('[pluxel/core] Plugin node variant must be default or fork')
 }
@@ -203,6 +247,11 @@ export class PluginSlotRegistry {
 	private readonly forkNodes = new WeakMap<PluginDefinitionSlot, Map<string, PluginNodeSlot>>()
 	private readonly ownedDefinitions = new WeakSet<PluginDefinitionSlot>()
 	private readonly ownedNodes = new WeakSet<PluginNodeSlot>()
+	private readonly definitionAddresses = new WeakMap<
+		PluginDefinitionSlot,
+		PluginDefinitionAddress
+	>()
+	private readonly nodeAddresses = new WeakMap<PluginNodeSlot, PluginNodeAddress>()
 
 	internDefinition(input: PluginDefinitionAddress): PluginDefinitionSlot {
 		const address = parsePluginDefinitionAddress(input)
@@ -218,7 +267,7 @@ export class PluginSlotRegistry {
 		const definition = this.internParsedDefinition(address.definition)
 		return address.variant === 'default'
 			? this.defaultNode(definition)
-			: this.forkNode(definition, address.forkId)
+			: this.forkParsedNode(definition, address.forkId)
 	}
 
 	lookupNode(input: PluginNodeAddress): PluginNodeSlot | undefined {
@@ -241,43 +290,48 @@ export class PluginSlotRegistry {
 		})
 		this.defaultNodes.set(definition, slot)
 		this.ownedNodes.add(slot)
+		this.nodeAddresses.set(slot, canonicalDefaultNodeAddress(this.definitionAddress(definition)))
 		return slot
 	}
 
 	forkNode(definition: PluginDefinitionSlot, forkId: string): PluginNodeSlot {
 		this.assertOwnedDefinition(definition)
-		const normalized = readForkId(forkId)
+		return this.forkParsedNode(definition, readForkId(forkId))
+	}
+
+	private forkParsedNode(definition: PluginDefinitionSlot, forkId: string): PluginNodeSlot {
 		let byId = this.forkNodes.get(definition)
 		if (!byId) {
 			byId = new Map()
 			this.forkNodes.set(definition, byId)
 		}
-		const existing = byId.get(normalized)
+		const existing = byId.get(forkId)
 		if (existing) return existing
 		const slot = Object.freeze({
 			definition,
 			variant: 'fork' as const,
-			forkId: normalized,
+			forkId,
 			[NODE_SLOT]: true as const,
 		})
-		byId.set(normalized, slot)
+		byId.set(forkId, slot)
 		this.ownedNodes.add(slot)
+		this.nodeAddresses.set(
+			slot,
+			canonicalForkNodeAddress(this.definitionAddress(definition), forkId),
+		)
 		return slot
 	}
 
 	definitionAddress(slot: PluginDefinitionSlot): PluginDefinitionAddress {
 		this.assertOwnedDefinition(slot)
-		return Object.freeze({ entry: slot.entry.address, exportName: slot.exportName })
+		return this.definitionAddresses.get(slot)!
 	}
 
 	nodeAddress(slot: PluginNodeSlot): PluginNodeAddress {
 		if (!this.ownedNodes.has(slot)) {
 			throw new TypeError('[pluxel/core] Plugin node slot belongs to another registry')
 		}
-		const definition = this.definitionAddress(slot.definition)
-		return slot.variant === 'default'
-			? Object.freeze({ definition, variant: 'default' as const })
-			: Object.freeze({ definition, variant: 'fork' as const, forkId: slot.forkId })
+		return this.nodeAddresses.get(slot)!
 	}
 
 	private internParsedDefinition(address: PluginDefinitionAddress): PluginDefinitionSlot {
@@ -296,6 +350,7 @@ export class PluginSlotRegistry {
 		})
 		byExport.set(address.exportName, slot)
 		this.ownedDefinitions.add(slot)
+		this.definitionAddresses.set(slot, address)
 		return slot
 	}
 
@@ -427,11 +482,21 @@ export function encodePluginNodeAddressBytes(nodeAddress: PluginNodeAddress): Ui
 }
 
 export function pluginDefinitionIndexKey(definitionAddress: PluginDefinitionAddress): string {
-	return bytesToHex(encodePluginDefinitionAddressBytes(definitionAddress))
+	const cached = canonicalDefinitionIndexKeys.get(definitionAddress)
+	if (cached !== undefined) return cached
+	const key = bytesToHex(encodePluginDefinitionAddressBytes(definitionAddress))
+	if (canonicalDefinitionAddresses.has(definitionAddress)) {
+		canonicalDefinitionIndexKeys.set(definitionAddress, key)
+	}
+	return key
 }
 
 export function pluginNodeIndexKey(nodeAddress: PluginNodeAddress): string {
-	return bytesToHex(encodePluginNodeAddressBytes(nodeAddress))
+	const cached = canonicalNodeIndexKeys.get(nodeAddress)
+	if (cached !== undefined) return cached
+	const key = bytesToHex(encodePluginNodeAddressBytes(nodeAddress))
+	if (canonicalNodeAddresses.has(nodeAddress)) canonicalNodeIndexKeys.set(nodeAddress, key)
+	return key
 }
 
 export function formatPluginDefinitionReference(
@@ -465,10 +530,7 @@ export function parsePluginNodeReference(input: string): PluginNodeAddress {
 	const forkMarker = '#fork='
 	const forkOffset = value.indexOf(forkMarker)
 	if (forkOffset === -1) {
-		return Object.freeze({
-			definition: parseDefinitionReferenceBody(value),
-			variant: 'default',
-		})
+		return canonicalDefaultNodeAddress(parseDefinitionReferenceBody(value))
 	}
 	if (forkOffset !== value.lastIndexOf(forkMarker)) {
 		throw new TypeError('[pluxel/core] Plugin node reference contains multiple fork markers')

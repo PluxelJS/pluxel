@@ -106,8 +106,22 @@ export function printRowsTable(rows: BenchRow[], options: { detailed?: boolean }
 
 export type ReferenceReport = {
 	recordedAt?: string
+	workload?: { id: string }
+	scenario?: Record<string, unknown>
 	tasks: BenchRow[]
 }
+
+export type WorkloadDescriptor = Readonly<{
+	id: string
+	scenario: Readonly<Record<string, unknown>>
+}>
+
+export type ReferenceCompatibility = Readonly<{
+	status: 'none' | 'compatible' | 'incompatible'
+	reason: string | null
+	recordedAt: string | null
+	report: ReferenceReport | null
+}>
 
 export const resolveReferencePath = (input: string): string | null => {
 	if (path.isAbsolute(input)) return input
@@ -129,14 +143,83 @@ export function loadReferenceReport(
 	try {
 		const parsed = JSON.parse(readFileSync(referencePath, 'utf8'))
 		if (!Array.isArray(parsed?.tasks)) return null
+		const workloadId =
+			typeof parsed.workload?.id === 'string' && parsed.workload.id.length > 0
+				? parsed.workload.id
+				: undefined
+		const scenario =
+			parsed.options?.scenario &&
+			typeof parsed.options.scenario === 'object' &&
+			!Array.isArray(parsed.options.scenario)
+				? (parsed.options.scenario as Record<string, unknown>)
+				: undefined
 		return {
 			recordedAt: typeof parsed.recordedAt === 'string' ? parsed.recordedAt : undefined,
+			...(workloadId === undefined ? {} : { workload: { id: workloadId } }),
+			...(scenario === undefined ? {} : { scenario }),
 			tasks: parsed.tasks as BenchRow[],
 		}
 	} catch (err) {
 		console.warn('[bench] Failed to parse reference report:', err)
 		return null
 	}
+}
+
+const scenariosEqual = (
+	left: Readonly<Record<string, unknown>>,
+	right: Readonly<Record<string, unknown>>,
+) => {
+	const leftKeys = Object.keys(left).sort()
+	const rightKeys = Object.keys(right).sort()
+	if (leftKeys.length !== rightKeys.length) return false
+	for (let i = 0; i < leftKeys.length; i++) {
+		const key = leftKeys[i]!
+		if (key !== rightKeys[i] || !Object.is(left[key], right[key])) return false
+	}
+	return true
+}
+
+export function assessReferenceCompatibility(
+	report: ReferenceReport | null,
+	workload: WorkloadDescriptor,
+): ReferenceCompatibility {
+	if (!report) {
+		return { status: 'none', reason: 'no reference report', recordedAt: null, report: null }
+	}
+	const recordedAt = report.recordedAt ?? null
+	if (!report.workload) {
+		return {
+			status: 'incompatible',
+			reason: 'reference workload identity is missing',
+			recordedAt,
+			report: null,
+		}
+	}
+	if (report.workload.id !== workload.id) {
+		return {
+			status: 'incompatible',
+			reason: `workload id differs (${report.workload.id} != ${workload.id})`,
+			recordedAt,
+			report: null,
+		}
+	}
+	if (!report.scenario) {
+		return {
+			status: 'incompatible',
+			reason: 'reference scenario is missing',
+			recordedAt,
+			report: null,
+		}
+	}
+	if (!scenariosEqual(report.scenario, workload.scenario)) {
+		return {
+			status: 'incompatible',
+			reason: 'scenario differs',
+			recordedAt,
+			report: null,
+		}
+	}
+	return { status: 'compatible', reason: null, recordedAt, report }
 }
 
 export function selectReferenceTasks(
@@ -285,6 +368,7 @@ export function buildDecisionSignals(rows: BenchRow[], comparison: ComparisonRow
 export type MainReport = {
 	recordedAt: string
 	runtime: { name: string; version: string }
+	workload: { id: string }
 	options: {
 		scenario: Record<string, unknown>
 		selectedTasks: readonly string[]
@@ -297,35 +381,49 @@ export type MainReport = {
 	tasks: BenchRow[]
 	decisionSignals: DecisionSignal[]
 	comparison: ComparisonRow[]
-	reference?: { recordedAt: string | null }
+	reference: {
+		status: ReferenceCompatibility['status']
+		reason: string | null
+		recordedAt: string | null
+	}
 }
 
 export function toMainReport(input: {
 	recordedAt: string
 	runtime: MainReport['runtime']
+	workloadId: string
 	options: MainReport['options']
 	taskMetadata: Record<string, TaskMetadata>
 	tasks: BenchRow[]
 	comparison: ComparisonRow[]
-	referenceRecordedAt: string | null
+	referenceCompatibility: ReferenceCompatibility
 }): MainReport {
 	return {
 		recordedAt: input.recordedAt,
 		runtime: input.runtime,
+		workload: { id: input.workloadId },
 		options: input.options,
 		taskMetadata: input.taskMetadata,
 		tasks: input.tasks,
 		decisionSignals: buildDecisionSignals(input.tasks, input.comparison),
 		comparison: input.comparison,
-		reference:
-			input.referenceRecordedAt != null ? { recordedAt: input.referenceRecordedAt } : undefined,
+		reference: {
+			status: input.referenceCompatibility.status,
+			reason: input.referenceCompatibility.reason,
+			recordedAt: input.referenceCompatibility.recordedAt,
+		},
 	}
 }
 
 const regressionScore = (row: ComparisonRow) =>
 	row.reliable ? Math.max(0, row.latencyDeltaPct ?? 0) : 0
 
-export const isLatencyRegression = (row: ComparisonRow, tolerancePct: number) =>
+export const isLatencyRegression = (
+	row: ComparisonRow,
+	tolerancePct: number,
+	metadata?: TaskMetadata,
+) =>
+	metadata?.regressionGate !== 'diagnostic' &&
 	row.status === 'measured' &&
 	row.reliable &&
 	row.latencyDeltaPct != null &&
@@ -353,7 +451,10 @@ export function renderMarkdown(input: {
 }) {
 	const { report, taskMetadata, regressionTolerancePct } = input
 	const tracked = report.comparison.filter((row) => row.status === 'measured')
-	const regressions = tracked.filter((row) => isLatencyRegression(row, regressionTolerancePct))
+	const gated = tracked.filter((row) => taskMetadata[row.name]?.regressionGate !== 'diagnostic')
+	const regressions = gated.filter((row) =>
+		isLatencyRegression(row, regressionTolerancePct, taskMetadata[row.name]),
+	)
 	const regressionRows = regressions.slice().sort((a, b) => regressionScore(b) - regressionScore(a))
 	const hotspotRows = report.tasks
 		.slice()
@@ -362,13 +463,28 @@ export function renderMarkdown(input: {
 	const noisyCount = noisyLatencyRows(report.tasks).length
 	const taskByName = byName(report.tasks)
 	const decisionSignals = report.decisionSignals.filter((signal) => signal.current != null)
+	const referenceSummary =
+		report.reference.status === 'compatible'
+			? `compatible${report.reference.recordedAt ? ` (${report.reference.recordedAt})` : ''}`
+			: report.reference.status === 'incompatible'
+				? `incompatible (${report.reference.reason ?? 'unknown reason'})`
+				: 'none'
+	const resultSummary =
+		regressions.length > 0
+			? `${regressions.length} regression(s)`
+			: report.reference.status === 'incompatible'
+				? 'baseline reset (incompatible reference)'
+				: report.reference.status === 'none'
+					? 'baseline pending (no reference)'
+					: 'pass'
 
 	const lines = [
 		'# Plugin lifecycle benchmark',
 		'',
 		`Runtime: ${report.runtime.name} ${report.runtime.version} · Time: ${report.options.timeMs}ms · Warmup: ${report.options.warmupTimeMs}ms`,
-		`Gate: latency > ${regressionTolerancePct}% and +${minRegressionDeltaMs}ms · RME <= ${noisyLatencyRmePct}% · Ref: ${report.reference?.recordedAt ?? 'none'}`,
-		`Result: ${regressions.length > 0 ? `${regressions.length} regression(s)` : 'pass'} · Tracked: ${tracked.length} · New: ${
+		`Workload: ${report.workload.id} · Reference: ${referenceSummary}`,
+		`Gate: latency > ${regressionTolerancePct}% and +${minRegressionDeltaMs}ms · RME <= ${noisyLatencyRmePct}% · diagnostic tasks excluded`,
+		`Result: ${resultSummary} · Compared: ${tracked.length} · Gated: ${gated.length} · New: ${
 			report.comparison.filter((row) => row.status === 'new').length
 		} · Missing: ${report.comparison.filter((row) => row.status === 'missing').length}`,
 		...(noisyCount > 0

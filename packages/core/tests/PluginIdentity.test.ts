@@ -3,6 +3,8 @@ import {
 	encodePluginNodeAddressBytes,
 	formatPluginNodeReference,
 	formatPluginNodeRoute,
+	parsePluginDefinitionAddress,
+	parsePluginEntryAddress,
 	parsePluginNodeAddress,
 	parsePluginNodeReference,
 	parsePluginNodeRoute,
@@ -11,6 +13,7 @@ import {
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 } from '../src/plugins/runtime/identity'
+import { pluginNodeAddressOf } from '../src/plugins/runtime/definition'
 import { __setPluginDefinition } from '../src/toolchain'
 
 const packageDefault = parsePluginNodeAddress({
@@ -56,6 +59,43 @@ describe('Plugin identity', () => {
 		).toThrow(/source/)
 	})
 
+	it('reuses only addresses canonicalized by this evaluated kernel', () => {
+		expect(parsePluginEntryAddress(packageDefault.definition.entry)).toBe(
+			packageDefault.definition.entry,
+		)
+		expect(parsePluginDefinitionAddress(packageDefault.definition)).toBe(packageDefault.definition)
+		expect(parsePluginNodeAddress(packageDefault)).toBe(packageDefault)
+
+		const merelyFrozen = Object.freeze({
+			definition: packageDefault.definition,
+			variant: 'default' as const,
+		})
+		const canonical = parsePluginNodeAddress(merelyFrozen)
+		expect(canonical).not.toBe(merelyFrozen)
+		expect(parsePluginNodeAddress(canonical)).toBe(canonical)
+
+		const mutable = {
+			definition: {
+				entry: { kind: 'package-root' as const, packageName: '@acme/first' },
+				exportName: 'MutablePlugin',
+			},
+			variant: 'default' as const,
+		}
+		const first = parsePluginNodeAddress(mutable)
+		mutable.definition.entry.packageName = '@acme/second'
+		const second = parsePluginNodeAddress(mutable)
+		expect(second).not.toBe(first)
+		expect(second.definition.entry).toMatchObject({ packageName: '@acme/second' })
+	})
+
+	it('requires every address field to be an own property', () => {
+		const inherited = Object.create({
+			definition: packageDefault.definition,
+			variant: 'default',
+		})
+		expect(() => parsePluginNodeAddress(inherited)).toThrow(/missing field definition/)
+	})
+
 	it('rejects non-canonical source paths and fork ids', () => {
 		for (const path of ['/plugins/orders.ts', '../orders.ts', 'plugins\\orders.ts']) {
 			expect(() => sourceAddress(path)).toThrow(/source path/)
@@ -79,6 +119,23 @@ describe('Plugin identity', () => {
 		expect(first.variant).toBe('default')
 	})
 
+	it('keeps constructor and slot address projections referentially stable', () => {
+		class StableProjection {}
+		__setPluginDefinition(StableProjection as never, {
+			abiVersion: 1,
+			kind: 'plugin',
+			definition: sourceFork.definition,
+		})
+
+		const projected = pluginNodeAddressOf(StableProjection as never)
+		expect(pluginNodeAddressOf(StableProjection as never)).toBe(projected)
+		const slots = new PluginSlotRegistry()
+		const node = slots.internNode(projected)
+		expect(slots.definitionAddress(node.definition)).toBe(slots.definitionAddress(node.definition))
+		expect(slots.nodeAddress(node)).toBe(slots.nodeAddress(node))
+		expect(parsePluginNodeAddress(slots.nodeAddress(node))).toBe(slots.nodeAddress(node))
+	})
+
 	it('looks up canonical addresses without creating definition or node slots', () => {
 		const slots = new PluginSlotRegistry()
 		expect(slots.lookupDefinition(sourceFork.definition)).toBeUndefined()
@@ -98,6 +155,7 @@ describe('Plugin identity', () => {
 		expect(() => second.defaultNode(definition)).toThrow(/another registry/)
 		expect(() => second.definitionAddress(definition)).toThrow(/another registry/)
 		expect(() => second.nodeAddress(node)).toThrow(/another registry/)
+		expect(() => first.forkNode(definition, 'bad/id')).toThrow(/fork id/)
 	})
 
 	it('keeps versioned canonical bytes and index keys stable', () => {
@@ -115,12 +173,11 @@ describe('Plugin identity', () => {
 		expect(formatPluginNodeReference(sourceFork)).toBe(
 			'source:app/plugins/orders.ts::OrdersPlugin#fork=east',
 		)
-		expect(
-			pluginNodeAddressEqual(
-				parsePluginNodeReference(formatPluginNodeReference(sourceFork)),
-				sourceFork,
-			),
-		).toBe(true)
+		const parsedSourceFork = parsePluginNodeReference(formatPluginNodeReference(sourceFork))
+		expect(pluginNodeAddressEqual(parsedSourceFork, sourceFork)).toBe(true)
+		expect(parsePluginNodeAddress(parsedSourceFork)).toBe(parsedSourceFork)
+		const parsedPackageDefault = parsePluginNodeReference(formatPluginNodeReference(packageDefault))
+		expect(parsePluginNodeAddress(parsedPackageDefault)).toBe(parsedPackageDefault)
 		expect(() => parsePluginNodeReference('package:%40acme/orders::OrdersPlugin')).toThrow(
 			/canonical/,
 		)

@@ -1,35 +1,37 @@
-import {
-	createCoreRootContext,
-	requireConfigService,
-	requirePluginService,
-} from '@pluxel/core/internal'
+import { requireConfigService } from '@pluxel/core/internal'
 import type { Bench, FnOptions } from 'tinybench'
 import { TASK, type TaskName } from './catalog.ts'
 import {
+	beginUpdate,
 	commit,
+	createBenchHost,
 	dematerialize,
 	isMaterialized,
 	materialize,
 	replace,
 	restart,
-	type Ctx,
+	type BenchHost,
+	type PluginFixture,
 	type Scenario,
+	type Update,
 } from './scenario.ts'
 
-const isContext = (value: unknown): value is Ctx =>
+const isBenchHost = (value: unknown): value is BenchHost =>
 	typeof value === 'object' &&
 	value != null &&
-	typeof (value as any).effects?.dispose === 'function'
+	typeof (value as any).ctx?.effects?.dispose === 'function'
 
-async function assertRunning(ctx: Ctx, id: unknown) {
-	if (!requirePluginService(ctx).isRunning(id as never)) {
-		throw new Error(`Expected plugin to be running: ${String(id)}`)
+async function assertRunning(host: BenchHost, plugin: PluginFixture) {
+	if (!host.plugins.isRunning(plugin.nodeAddress)) {
+		throw new Error(`Expected plugin to be running: ${plugin.candidate.declaration.displayName}`)
 	}
 }
 
-async function assertNotRegistered(ctx: Ctx, id: unknown) {
-	if (isMaterialized(ctx, id as never)) {
-		throw new Error(`Expected plugin to be unregistered: ${String(id)}`)
+async function assertNotMaterialized(host: BenchHost, plugin: PluginFixture) {
+	if (isMaterialized(host, plugin)) {
+		throw new Error(
+			`Expected plugin to be dematerialized: ${plugin.candidate.declaration.displayName}`,
+		)
 	}
 }
 
@@ -37,19 +39,20 @@ function steadyTask(
 	bench: Bench,
 	cleanups: Array<() => void>,
 	name: TaskName,
-	setup: () => Promise<Ctx>,
-	run: (state: Ctx) => Promise<void>,
-	restore?: (state: Ctx) => Promise<void>,
+	setup: () => Promise<BenchHost>,
+	run: (state: BenchHost) => Promise<void>,
+	validate?: (state: BenchHost) => Promise<void>,
+	restore?: (state: BenchHost) => Promise<void>,
 ) {
-	let state: Ctx | undefined
+	let state: BenchHost | undefined
 	let disposed = false
 	const dispose = () => {
 		if (disposed) return
 		disposed = true
 		const current = state
 		state = undefined
-		if (!isContext(current)) return
-		void current.effects.dispose().catch(() => {
+		if (!isBenchHost(current)) return
+		void current.ctx.effects.dispose().catch(() => {
 			/* best-effort cleanup */
 		})
 	}
@@ -61,7 +64,12 @@ function steadyTask(
 			state = await setup()
 		},
 		async afterEach() {
-			if (state && restore) await restore(state)
+			if (!state) return
+			try {
+				if (validate) await validate(state)
+			} finally {
+				if (restore) await restore(state)
+			}
 		},
 		afterAll() {
 			dispose()
@@ -78,82 +86,91 @@ function steadyTask(
 	)
 }
 
-function coldTask(bench: Bench, name: TaskName, run: (ctx: Ctx) => Promise<void> | void) {
+function coldTask(bench: Bench, name: TaskName, run: (update: Update) => void) {
 	return bench.add(name, async () => {
-		let ctx: Ctx | undefined
+		let host: BenchHost | undefined
+		let update: Update | undefined
 		const start = bench.now()
 		try {
-			ctx = createCoreRootContext({ name: `bench-${name}` })
-			await run(ctx)
-			await commit(ctx)
+			host = createBenchHost(`bench-${name}`)
+			update = beginUpdate(host, `core-lifecycle-benchmark-${name}`)
+			run(update)
+			await commit(update)
 			return { overriddenDuration: bench.now() - start }
+		} catch (error) {
+			update?.rollback()
+			throw error
 		} finally {
-			await ctx?.effects.dispose()
+			await host?.ctx.effects.dispose()
 		}
 	})
 }
 
-async function setupConfigHeavy(scenario: Scenario) {
-	const ctx = createCoreRootContext({ name: 'bench-config-heavy' })
-	requireConfigService(ctx).patchConfig(scenario.configHeavy.address, scenario.configHeavy.record)
-	materialize(ctx, scenario.configHeavy.ctor)
-	await commit(ctx)
-	return ctx
+async function setupConfigured(scenario: Scenario) {
+	const host = createBenchHost('bench-config-cached-object')
+	requireConfigService(host.ctx).patchConfig(
+		scenario.configured.plugin.nodeAddress,
+		scenario.configured.record,
+	)
+	const update = beginUpdate(host, 'core-lifecycle-benchmark-setup-configured')
+	materialize(update, scenario.configured.plugin)
+	await commit(update)
+	return host
 }
 
-async function restoreAddLeaf(ctx: Ctx, scenario: Scenario) {
-	if (!isMaterialized(ctx, scenario.star.addLeaf)) return
-	dematerialize(ctx, scenario.star.addLeaf, { cascadeDependents: false })
-	await commit(ctx)
-	await assertNotRegistered(ctx, scenario.star.addLeaf)
+async function restoreAddLeaf(host: BenchHost, scenario: Scenario) {
+	if (!isMaterialized(host, scenario.star.addLeaf)) return
+	const update = beginUpdate(host, 'core-lifecycle-benchmark-restore-added-leaf')
+	dematerialize(update, scenario.star.addLeaf, { cascadeDependents: false })
+	await commit(update)
+	await assertNotMaterialized(host, scenario.star.addLeaf)
 }
 
-async function restoreStarLeaf(ctx: Ctx, scenario: Scenario) {
-	if (!isMaterialized(ctx, scenario.star.hotLeafV1)) {
-		materialize(ctx, scenario.star.hotLeafV1)
+async function restoreStarLeaf(host: BenchHost, scenario: Scenario) {
+	if (!isMaterialized(host, scenario.star.hotLeafV1)) {
+		const update = beginUpdate(host, 'core-lifecycle-benchmark-restore-star-leaf')
+		materialize(update, scenario.star.hotLeafV1)
+		await commit(update)
 	}
-	await commit(ctx)
-	await assertRunning(ctx, scenario.star.hotLeafV1)
+	await assertRunning(host, scenario.star.hotLeafV1)
 }
 
-async function restoreStarRoot(ctx: Ctx, scenario: Scenario) {
-	if (!isMaterialized(ctx, scenario.star.rootV1)) {
-		scenario.registerStar(ctx)
+async function restoreStarRoot(host: BenchHost, scenario: Scenario) {
+	if (!isMaterialized(host, scenario.star.rootV1)) {
+		const update = beginUpdate(host, 'core-lifecycle-benchmark-restore-star-root')
+		scenario.registerStar(update)
+		await commit(update)
 	}
-	await commit(ctx)
-	await assertRunning(ctx, scenario.star.hotLeafV1)
+	await assertRunning(host, scenario.star.hotLeafV1)
 }
 
-async function restoreChainMiddle(ctx: Ctx, scenario: Scenario) {
-	if (isMaterialized(ctx, scenario.chain.middle)) return
-	const start = scenario.chain.chain.indexOf(scenario.chain.middle)
-	for (let i = start; i < scenario.chain.chain.length; i++) {
-		materialize(ctx, scenario.chain.chain[i]!)
+async function restoreChainMiddle(host: BenchHost, scenario: Scenario) {
+	if (!isMaterialized(host, scenario.chain.middle)) {
+		const update = beginUpdate(host, 'core-lifecycle-benchmark-restore-chain-middle')
+		const start = scenario.chain.chain.indexOf(scenario.chain.middle)
+		for (let i = start; i < scenario.chain.chain.length; i++) {
+			materialize(update, scenario.chain.chain[i]!)
+		}
+		await commit(update)
 	}
-	await commit(ctx)
-	await assertRunning(ctx, scenario.chain.leaf)
+	await assertRunning(host, scenario.chain.leaf)
 }
 
-async function revertReplace(ctx: Ctx, plugin: Scenario['star']['rootV1']) {
-	replace(ctx, plugin, plugin)
-	await commit(ctx)
-	await assertRunning(ctx, plugin)
+async function revertReplace(host: BenchHost, plugin: PluginFixture) {
+	const update = beginUpdate(host, 'core-lifecycle-benchmark-revert-replacement')
+	replace(update, plugin, plugin)
+	await commit(update)
+	await assertRunning(host, plugin)
 }
 
 export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenario) {
 	const cleanups: Array<() => void> = []
 
-	coldTask(bench, TASK.coldStar, (ctx) => {
-		scenario.registerStar(ctx)
-	})
-
-	coldTask(bench, TASK.coldChain, (ctx) => {
-		scenario.registerChain(ctx)
-	})
-
-	coldTask(bench, TASK.coldLarge, (ctx) => {
-		scenario.registerBigIndependent(ctx)
-		scenario.registerStar(ctx)
+	coldTask(bench, TASK.coldStar, scenario.registerStar)
+	coldTask(bench, TASK.coldChain, scenario.registerChain)
+	coldTask(bench, TASK.coldLarge, (update) => {
+		scenario.registerBigIndependent(update)
+		scenario.registerStar(update)
 	})
 
 	steadyTask(
@@ -161,8 +178,9 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.noopStar,
 		() => scenario.setupStarGraph('bench-star-noop'),
-		async (ctx) => {
-			await commit(ctx)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-empty-star')
+			await commit(update)
 		},
 	)
 
@@ -171,12 +189,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.addLeafStar,
 		() => scenario.setupStarGraph('bench-star-add'),
-		async (ctx) => {
-			materialize(ctx, scenario.star.addLeaf)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.addLeaf)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-add-leaf-star')
+			materialize(update, scenario.star.addLeaf)
+			await commit(update)
 		},
-		(ctx) => restoreAddLeaf(ctx, scenario),
+		(host) => assertRunning(host, scenario.star.addLeaf),
+		(host) => restoreAddLeaf(host, scenario),
 	)
 
 	steadyTask(
@@ -184,11 +203,12 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.restartLeafStar,
 		() => scenario.setupStarGraph('bench-star-restart-leaf'),
-		async (ctx) => {
-			restart(ctx, scenario.star.hotLeafV1)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.hotLeafV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-restart-leaf-star')
+			restart(update, scenario.star.hotLeafV1)
+			await commit(update)
 		},
+		(host) => assertRunning(host, scenario.star.hotLeafV1),
 	)
 
 	steadyTask(
@@ -196,11 +216,12 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.restartRootStar,
 		() => scenario.setupStarGraph('bench-star-restart-root'),
-		async (ctx) => {
-			restart(ctx, scenario.star.rootV1)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.hotLeafV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-restart-root-star')
+			restart(update, scenario.star.rootV1)
+			await commit(update)
 		},
+		(host) => assertRunning(host, scenario.star.hotLeafV1),
 	)
 
 	steadyTask(
@@ -208,12 +229,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.replaceLeafStar,
 		() => scenario.setupStarGraph('bench-star-replace-leaf'),
-		async (ctx) => {
-			replace(ctx, scenario.star.hotLeafV1, scenario.star.hotLeafV2)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.hotLeafV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-replace-leaf-star')
+			replace(update, scenario.star.hotLeafV1, scenario.star.hotLeafV2)
+			await commit(update)
 		},
-		(ctx) => revertReplace(ctx, scenario.star.hotLeafV1),
+		(host) => assertRunning(host, scenario.star.hotLeafV1),
+		(host) => revertReplace(host, scenario.star.hotLeafV1),
 	)
 
 	steadyTask(
@@ -221,12 +243,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.replaceRootStar,
 		() => scenario.setupStarGraph('bench-star-replace-root'),
-		async (ctx) => {
-			replace(ctx, scenario.star.rootV1, scenario.star.rootV2)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.hotLeafV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-replace-root-star')
+			replace(update, scenario.star.rootV1, scenario.star.rootV2)
+			await commit(update)
 		},
-		(ctx) => revertReplace(ctx, scenario.star.rootV1),
+		(host) => assertRunning(host, scenario.star.hotLeafV1),
+		(host) => revertReplace(host, scenario.star.rootV1),
 	)
 
 	steadyTask(
@@ -234,12 +257,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.unregisterLeafStar,
 		() => scenario.setupStarGraph('bench-star-unreg-leaf'),
-		async (ctx) => {
-			dematerialize(ctx, scenario.star.hotLeafV1)
-			await commit(ctx)
-			await assertNotRegistered(ctx, scenario.star.hotLeafV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-remove-leaf-star')
+			dematerialize(update, scenario.star.hotLeafV1)
+			await commit(update)
 		},
-		(ctx) => restoreStarLeaf(ctx, scenario),
+		(host) => assertNotMaterialized(host, scenario.star.hotLeafV1),
+		(host) => restoreStarLeaf(host, scenario),
 	)
 
 	steadyTask(
@@ -247,12 +271,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.unregisterRootStar,
 		() => scenario.setupStarGraph('bench-star-unreg-root'),
-		async (ctx) => {
-			dematerialize(ctx, scenario.star.rootV1)
-			await commit(ctx)
-			await assertNotRegistered(ctx, scenario.star.rootV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-remove-root-star')
+			dematerialize(update, scenario.star.rootV1)
+			await commit(update)
 		},
-		(ctx) => restoreStarRoot(ctx, scenario),
+		(host) => assertNotMaterialized(host, scenario.star.rootV1),
+		(host) => restoreStarRoot(host, scenario),
 	)
 
 	steadyTask(
@@ -260,11 +285,12 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.restartChainMiddle,
 		() => scenario.setupChainGraph('bench-chain-restart-middle'),
-		async (ctx) => {
-			restart(ctx, scenario.chain.middle)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.chain.leaf)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-restart-chain-middle')
+			restart(update, scenario.chain.middle)
+			await commit(update)
 		},
+		(host) => assertRunning(host, scenario.chain.leaf),
 	)
 
 	steadyTask(
@@ -272,11 +298,12 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.restartChainLeaf,
 		() => scenario.setupChainGraph('bench-chain-restart-leaf'),
-		async (ctx) => {
-			restart(ctx, scenario.chain.leaf)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.chain.leaf)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-restart-chain-leaf')
+			restart(update, scenario.chain.leaf)
+			await commit(update)
 		},
+		(host) => assertRunning(host, scenario.chain.leaf),
 	)
 
 	steadyTask(
@@ -284,24 +311,26 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.unregisterChainMiddle,
 		() => scenario.setupChainGraph('bench-chain-unreg-middle'),
-		async (ctx) => {
-			dematerialize(ctx, scenario.chain.middle)
-			await commit(ctx)
-			await assertNotRegistered(ctx, scenario.chain.middle)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-remove-chain-middle')
+			dematerialize(update, scenario.chain.middle)
+			await commit(update)
 		},
-		(ctx) => restoreChainMiddle(ctx, scenario),
+		(host) => assertNotMaterialized(host, scenario.chain.middle),
+		(host) => restoreChainMiddle(host, scenario),
 	)
 
 	steadyTask(
 		bench,
 		cleanups,
 		TASK.configRestart,
-		() => setupConfigHeavy(scenario),
-		async (ctx) => {
-			restart(ctx, scenario.configHeavy.ctor)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.configHeavy.ctor)
+		() => setupConfigured(scenario),
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-restart-configured')
+			restart(update, scenario.configured.plugin)
+			await commit(update)
 		},
+		(host) => assertRunning(host, scenario.configured.plugin),
 	)
 
 	steadyTask(
@@ -309,8 +338,9 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.noopLarge,
 		() => scenario.setupBigStarGraph('bench-large-noop'),
-		async (ctx) => {
-			await commit(ctx)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-empty-large')
+			await commit(update)
 		},
 	)
 
@@ -319,12 +349,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.addLeafLarge,
 		() => scenario.setupBigStarGraph('bench-large-add'),
-		async (ctx) => {
-			materialize(ctx, scenario.star.addLeaf)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.addLeaf)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-add-leaf-large')
+			materialize(update, scenario.star.addLeaf)
+			await commit(update)
 		},
-		(ctx) => restoreAddLeaf(ctx, scenario),
+		(host) => assertRunning(host, scenario.star.addLeaf),
+		(host) => restoreAddLeaf(host, scenario),
 	)
 
 	steadyTask(
@@ -332,12 +363,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.replaceLeafLarge,
 		() => scenario.setupBigStarGraph('bench-large-replace-leaf'),
-		async (ctx) => {
-			replace(ctx, scenario.star.hotLeafV1, scenario.star.hotLeafV2)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.hotLeafV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-replace-leaf-large')
+			replace(update, scenario.star.hotLeafV1, scenario.star.hotLeafV2)
+			await commit(update)
 		},
-		(ctx) => revertReplace(ctx, scenario.star.hotLeafV1),
+		(host) => assertRunning(host, scenario.star.hotLeafV1),
+		(host) => revertReplace(host, scenario.star.hotLeafV1),
 	)
 
 	steadyTask(
@@ -345,12 +377,13 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		cleanups,
 		TASK.replaceRootLarge,
 		() => scenario.setupBigStarGraph('bench-large-replace-root'),
-		async (ctx) => {
-			replace(ctx, scenario.star.rootV1, scenario.star.rootV2)
-			await commit(ctx)
-			await assertRunning(ctx, scenario.star.hotLeafV1)
+		async (host) => {
+			const update = beginUpdate(host, 'core-lifecycle-benchmark-replace-root-large')
+			replace(update, scenario.star.rootV1, scenario.star.rootV2)
+			await commit(update)
 		},
-		(ctx) => revertReplace(ctx, scenario.star.rootV1),
+		(host) => assertRunning(host, scenario.star.hotLeafV1),
+		(host) => revertReplace(host, scenario.star.rootV1),
 	)
 
 	return () => {
