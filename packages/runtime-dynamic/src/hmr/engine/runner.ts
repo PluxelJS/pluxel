@@ -33,6 +33,7 @@ import {
 } from '../../../../runtime-dev/src/vite.ts'
 import type { HmrPathApi } from './environment'
 import { matchesSpecifierPattern } from './internals'
+import { isPackageInstalledFrom } from '../../host-package'
 
 export type PrimeModuleCacheEntryParams = {
 	id: string
@@ -54,6 +55,8 @@ export type HmrRunnerInitOptions = {
 	hostCwd?: string
 	/** Modules that must be shared as host singletons (loaded by host and runner). */
 	bridgeModules?: readonly string[]
+	/** Bridge modules whose base package is skipped when it is not installed by the host. */
+	optionalBridgeModules?: readonly string[]
 	/** Optional bridge specifier → provider specifier mapping. */
 	bridgeProviders?: Readonly<Record<string, string>>
 	/** Optional shared OXC resolver cache map (recommended: share with ScanService). */
@@ -62,8 +65,8 @@ export type HmrRunnerInitOptions = {
 	workspaceConditions?: readonly string[]
 }
 
-const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/runtime'] as const
-const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/runtime/'] as const
+const HARD_BRIDGE_IDS = ['@pluxel/context', '@pluxel/core', '@pluxel/runtime'] as const
+const HARD_BRIDGE_PREFIXES = ['@pluxel/context/', '@pluxel/core/', '@pluxel/runtime/'] as const
 const HARD_BRIDGE_ID_SET = new Set<string>(HARD_BRIDGE_IDS)
 type ExternalizeHint = {
 	externalize: string
@@ -77,6 +80,7 @@ export class HmrRunner {
 	private _hostCwdAbs: string | null = null
 	private _hostModules: HostModuleClassifier | null = null
 	private _bridgeModules: readonly string[] = []
+	private _optionalBridgeModules = new Set<string>()
 	private _bridgeProviders: Readonly<Record<string, string>> = Object.freeze({})
 	private _workspaceSourceConditions: string[] = []
 	private _workspaceDistConditions: string[] = []
@@ -119,6 +123,7 @@ export class HmrRunner {
 			cacheLimit: this._cacheLimit,
 		})
 		this._bridgeProviders = opts.bridgeProviders ?? Object.freeze({})
+		this._optionalBridgeModules = new Set(opts.optionalBridgeModules)
 		const baseBridgeModules = opts.bridgeModules ?? []
 		const providerModules = Object.values(this._bridgeProviders).filter(
 			(v): v is string => typeof v === 'string' && v.length > 0,
@@ -219,6 +224,10 @@ export class HmrRunner {
 		await Promise.all(
 			specifiers.map(async (specifier) => {
 				if (specifier.endsWith('/*')) return
+				if (this._optionalBridgeModules.has(specifier) && !this.hasHostPackage(specifier)) {
+					this.dbg?.debug('skip unavailable optional host bridge {specifier}', { specifier })
+					return
+				}
 				// Prefer using `env.fetchModule()` for ids, because in some Vite 8 beta flows
 				// `pluginContainer.resolveId()` can return null for workspace packages even though the
 				// module is otherwise resolvable during transform/evaluation.
@@ -564,6 +573,10 @@ export class HmrRunner {
 				})
 			}
 		}
+	}
+
+	private hasHostPackage(specifier: string): boolean {
+		return this._hostCwdAbs ? isPackageInstalledFrom(this._hostCwdAbs, specifier) : false
 	}
 }
 

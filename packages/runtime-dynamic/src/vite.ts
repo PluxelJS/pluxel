@@ -1,5 +1,4 @@
-import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
@@ -11,7 +10,15 @@ import {
 	invalidateViteModuleGraphFiles,
 } from '../../runtime-dev/src/vite.ts'
 import { resolveDevWorkbenchClientEntryUrl } from '../../runtime/src/server/assets.ts'
-import { readHostProduct, sameProduct } from '@pluxel/runtime/internal'
+import {
+	getCachedResolver,
+	getOxcResolveCache,
+	PLUXEL_DIST_EXPORT_CONDITIONS,
+	readHostProduct,
+	resolveModulePath,
+	sameProduct,
+	type OxcResolver,
+} from '@pluxel/runtime/internal'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
@@ -23,16 +30,30 @@ import {
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
 import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './hmr/vite-watch'
+import { isPackageInstalledFrom } from './host-package'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
 const DYNAMIC_RUNTIME_CONTROLLER_KEY = Symbol.for('pluxel.dynamicRuntimeController')
 const DYNAMIC_RUNTIME_CACHE_DIR = '.pluxel/vite/dynamic-runtime-v2'
-const requireFromRuntimeDynamic = createRequire(import.meta.url)
+const HOST_SINGLETON_VIRTUAL_PREFIX = '\0pluxel:dynamic-host-singleton:'
+const moduleDir = dirname(fileURLToPath(import.meta.url))
 const RUNTIME_SOURCE_ROOT = normalizePath(
 	resolve(fileURLToPath(new URL('../../runtime/src/', import.meta.url))),
 )
+const RUNTIME_DIST_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../runtime/dist/', import.meta.url))),
+)
 const CORE_SOURCE_ROOT = normalizePath(
 	resolve(fileURLToPath(new URL('../../core/src/', import.meta.url))),
+)
+const CORE_DIST_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../core/dist/', import.meta.url))),
+)
+const CONTEXT_SOURCE_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../context/src/', import.meta.url))),
+)
+const CONTEXT_DIST_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../context/dist/', import.meta.url))),
 )
 
 export type DynamicRuntimeVitePluginOptions = {
@@ -57,6 +78,9 @@ type DynamicRuntimeController = {
 
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
 	const mode = options.mode ?? 'development'
+	let singletonHostRoot: string | null = null
+	let singletonHostResolver: OxcResolver | null = null
+	let contextHostHasContext: boolean | undefined
 	const state: {
 		server?: ViteDevServer
 		configPath?: string
@@ -205,14 +229,44 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	const singletonBridgePlugin: Plugin = {
 		name: 'pluxel:dynamic-singleton-bridge',
 		enforce: 'pre',
+		config() {
+			return {
+				ssr: {
+					external: ['@pluxel/context', '@pluxel/core', '@pluxel/runtime'],
+				},
+			}
+		},
 		applyToEnvironment(environment) {
 			return environment.name === 'ssr' || environment.config.consumer === 'server'
 		},
+		configResolved(config) {
+			singletonHostRoot = config.root
+			contextHostHasContext = undefined
+			singletonHostResolver = null
+		},
 		resolveId(id, _importer, hookOptions) {
 			if (!hookOptions?.ssr) return null
-			const specifier = resolveSingletonBridgeSpecifier(id)
-			if (specifier) return { id: requireFromRuntimeDynamic.resolve(specifier), external: true }
-			return null
+			if (!singletonHostRoot) return null
+			const getResolver = () =>
+				(singletonHostResolver ??= getCachedResolver(
+					getOxcResolveCache(),
+					'dynamic:host-singleton-bridge',
+					[singletonHostRoot!, moduleDir],
+					{ limit: 8 },
+				))
+			const specifier = resolveSingletonBridgeSpecifier(id, getResolver)
+			if (!specifier) return null
+			if (isContextBridgeSpecifier(specifier)) {
+				contextHostHasContext ??= isPackageInstalledFrom(singletonHostRoot, '@pluxel/context')
+				if (!contextHostHasContext) return null
+			}
+			if (id === specifier) return null
+			return `${HOST_SINGLETON_VIRTUAL_PREFIX}${specifier}`
+		},
+		load(id) {
+			if (!id.startsWith(HOST_SINGLETON_VIRTUAL_PREFIX)) return null
+			const specifier = id.slice(HOST_SINGLETON_VIRTUAL_PREFIX.length)
+			return `export * from ${JSON.stringify(specifier)}`
 		},
 	}
 
@@ -227,8 +281,12 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	]
 }
 
-function resolveSingletonBridgeSpecifier(id: string): string | null {
+function resolveSingletonBridgeSpecifier(
+	id: string,
+	getResolver: () => OxcResolver,
+): string | null {
 	if (
+		isContextBridgeSpecifier(id) ||
 		id === '@pluxel/core' ||
 		id.startsWith('@pluxel/core/') ||
 		id === '@pluxel/runtime' ||
@@ -236,28 +294,69 @@ function resolveSingletonBridgeSpecifier(id: string): string | null {
 	) {
 		return id
 	}
-	const clean = normalizePath(id.split('?', 1)[0]!)
+	const clean = cleanSingletonBridgeId(id)
 	return (
-		sourcePathToPublicSpecifier(clean, RUNTIME_SOURCE_ROOT, '@pluxel/runtime') ??
-		sourcePathToPublicSpecifier(clean, CORE_SOURCE_ROOT, '@pluxel/core')
+		sourcePathToPublicSpecifier(
+			clean,
+			CONTEXT_SOURCE_ROOT,
+			'@pluxel/context',
+			isContextBridgeSpecifier,
+		) ??
+		sourcePathToPublicSpecifier(
+			clean,
+			CONTEXT_DIST_ROOT,
+			'@pluxel/context',
+			isContextBridgeSpecifier,
+		) ??
+		sourcePathToPublicSpecifier(clean, RUNTIME_SOURCE_ROOT, '@pluxel/runtime', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		) ??
+		sourcePathToPublicSpecifier(clean, RUNTIME_DIST_ROOT, '@pluxel/runtime', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		) ??
+		sourcePathToPublicSpecifier(clean, CORE_SOURCE_ROOT, '@pluxel/core', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		) ??
+		sourcePathToPublicSpecifier(clean, CORE_DIST_ROOT, '@pluxel/core', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		)
 	)
+}
+
+function cleanSingletonBridgeId(id: string): string {
+	const raw = id.split('?', 1)[0]!
+	if (raw.startsWith('file://')) {
+		try {
+			return normalizePath(fileURLToPath(raw))
+		} catch {
+			return normalizePath(raw)
+		}
+	}
+	return normalizePath(raw.startsWith('/@fs/') ? raw.slice('/@fs'.length) : raw)
+}
+
+function isContextBridgeSpecifier(specifier: string): boolean {
+	return specifier === '@pluxel/context' || specifier === '@pluxel/context/internal'
+}
+
+function resolveSingletonHostEntry(resolver: OxcResolver, specifier: string): string | null {
+	return resolveModulePath(resolver, specifier, {
+		mode: 'distPreferEsm',
+		conditions: ['node', ...PLUXEL_DIST_EXPORT_CONDITIONS],
+	})
 }
 
 function sourcePathToPublicSpecifier(
 	id: string,
 	sourceRoot: string,
 	packageName: string,
+	accept: (specifier: string) => boolean,
 ): string | null {
 	const prefix = sourceRoot.endsWith('/') ? sourceRoot : `${sourceRoot}/`
 	if (!id.startsWith(prefix)) return null
-	const relative = id.slice(prefix.length).replace(/\.(?:[cm]?ts|tsx)$/, '')
+	const relative = id.slice(prefix.length).replace(/\.(?:[cm]?[jt]s|tsx)$/, '')
 	const specifier = relative === 'index' ? packageName : `${packageName}/${relative}`
-	try {
-		requireFromRuntimeDynamic.resolve(specifier)
-		return specifier
-	} catch {
-		return null
-	}
+	return accept(specifier) ? specifier : null
 }
 
 async function loadDynamicHmrHostModule(

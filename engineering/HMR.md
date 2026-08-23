@@ -72,6 +72,12 @@ runtime-dev 共享 classifier 将 CommonJS/native package 留在 Node host；其
 和 HMR graph。dynamic runner 在 bare specifier 与 Vite 已解析的 `/@fs/` 边界调用同一个 classifier，因此 workspace alias
 不会绕过分类，也不需要 package 名单。
 
+Core 与 Runtime 的 host bridge 是必需身份边界；standalone `@pluxel/context` 只在 host 直接安装该 package 时
+加入同一 bridge，未安装时不导入、不求值，也不改变 Core 内联 kernel 与 standalone kernel 的隔离。
+public、`/internal` 和 workspace source path 都映射到 host 的 ESM distribution entry；解析必须使用 import
+conditions，不能用 `require.resolve()` 把 conditional export 选到 CJS 后再冒充 ESM singleton。Context package namespace
+的开发期预加载不会创建 host、Context 或 capability backend，strict-lazy factory 不变。
+
 dynamic source 只接受精确文件和带显式、相对、正向 include glob 的目录；glob 不允许越过 source directory，解析结果有
 10,000 entry 的内核上限。启动 discovery 与 watcher add/change/unlink 共用同一入口语义；暂时不存在的目录仍保留为 watch root。
 初始 entries 必须完成 graph commit 后 host 才报告 ready，不存在可跳过正确性的 optional warmup。source entry 已进入 module graph

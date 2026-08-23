@@ -30,6 +30,7 @@ import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
 import {
 	buildLoaderHmrViteConfig,
 	LOADER_HMR_BRIDGE_MODULES,
+	LOADER_HMR_OPTIONAL_BRIDGE_MODULES,
 	LOADER_HMR_BRIDGE_PROVIDERS,
 	resolveFsAllowList,
 } from './config'
@@ -630,6 +631,7 @@ export class LoaderHmrService {
 			cacheLimit: this.config.runnerCacheLimit,
 			hostCwd: this.hostRoot,
 			bridgeModules: LOADER_HMR_BRIDGE_MODULES,
+			optionalBridgeModules: LOADER_HMR_OPTIONAL_BRIDGE_MODULES,
 			bridgeProviders: LOADER_HMR_BRIDGE_PROVIDERS,
 			resolveCache: this.scanService.resolverCache,
 			workspaceConditions: this.workspaceConditions,

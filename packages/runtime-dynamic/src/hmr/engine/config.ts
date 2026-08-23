@@ -22,7 +22,7 @@ import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watc
  * These are internal invariants rather than host configuration: changing the set can evaluate a
  * second Context/runtime implementation inside the runner.
  */
-export const LOADER_HMR_BRIDGE_MODULES = [
+const REQUIRED_LOADER_HMR_BRIDGE_MODULES = [
 	'@pluxel/core',
 	'@pluxel/core/internal',
 	'@pluxel/core/toolchain',
@@ -32,6 +32,21 @@ export const LOADER_HMR_BRIDGE_MODULES = [
 	'@pluxel/runtime/internal',
 	'@pluxel/runtime/web',
 	'@pluxel/runtime/capnweb',
+] as const
+
+/**
+ * Standalone Context is progressive: Core embeds its own kernel, so route consumers do not need to
+ * install `@pluxel/context`. When the host application does install it, however, config and plugin
+ * modules must observe the same evaluated public/internal entries.
+ */
+export const LOADER_HMR_OPTIONAL_BRIDGE_MODULES = [
+	'@pluxel/context',
+	'@pluxel/context/internal',
+] as const
+
+export const LOADER_HMR_BRIDGE_MODULES = [
+	...REQUIRED_LOADER_HMR_BRIDGE_MODULES,
+	...LOADER_HMR_OPTIONAL_BRIDGE_MODULES,
 ] as const
 
 export const LOADER_HMR_BRIDGE_PROVIDERS = Object.freeze({} satisfies Record<string, string>)

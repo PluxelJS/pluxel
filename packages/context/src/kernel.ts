@@ -224,22 +224,22 @@ class ContextImpl {
 
 	static {
 		initializeContextState = (ctx, state) => {
-			if (!isObject(ctx)) throw invalidContextError()
+			if (!isObject(ctx)) throw invalidContextError(ctx)
 			const implementation = ctx as unknown as ContextImpl
-			if (!(#state in implementation)) throw invalidContextError()
+			if (!(#state in implementation)) throw invalidContextError(ctx)
 			if (implementation.#state) {
 				throw new TypeError('[pluxel/context] Context is already initialized')
 			}
 			implementation.#state = state
 		}
 		readContextState = (ctx) => {
-			if (!isObject(ctx)) throw invalidContextError()
+			if (!isObject(ctx)) throw invalidContextError(ctx)
 			const implementation = ctx as unknown as ContextImpl
 			if (#state in implementation) {
 				const state = implementation.#state
 				if (state) return state
 			}
-			throw invalidContextError()
+			throw invalidContextError(ctx)
 		}
 	}
 
@@ -564,6 +564,9 @@ function applyOverrides(
 
 function assertCapability(capability: AnyCapability): void {
 	if (!isObject(capability) || !CAPABILITIES.has(capability)) {
+		if (isObject(capability) && looksLikeContextCapability(capability)) {
+			throw foreignKernelError('Context capability descriptor')
+		}
 		throw new TypeError('[pluxel/context] Invalid Context capability descriptor')
 	}
 }
@@ -635,8 +638,47 @@ function hidePrototypeConstructor(prototype: object): void {
 	})
 }
 
-function invalidContextError(): TypeError {
+function invalidContextError(value: unknown): TypeError {
+	if (isObject(value) && hasPluxelContextTag(value)) {
+		return foreignKernelError('Context')
+	}
 	return new TypeError('[pluxel/context] Invalid Context implementation')
+}
+
+function foreignKernelError(subject: 'Context' | 'Context capability descriptor'): TypeError {
+	return new TypeError(
+		[
+			`[pluxel/context] ${subject} belongs to a different evaluated Context kernel.`,
+			'Use Context values, capability descriptors, installations, and plans from the same evaluated kernel instance.',
+			'This usually means @pluxel/context and @pluxel/core values were mixed, or one package was evaluated more than once through HMR or workspace resolution.',
+		].join('\n'),
+	)
+}
+
+function hasPluxelContextTag(value: object): boolean {
+	try {
+		return Object.prototype.toString.call(value) === '[object PluxelContext]'
+	} catch {
+		return false
+	}
+}
+
+function looksLikeContextCapability(value: object): boolean {
+	try {
+		const keys = Reflect.ownKeys(value)
+		if (keys.length !== 1 || keys[0] !== 'description' || !Object.isFrozen(value)) return false
+		const description = Object.getOwnPropertyDescriptor(value, 'description')
+		return (
+			description !== undefined &&
+			typeof description.value === 'string' &&
+			description.value.length > 0 &&
+			description.enumerable === true &&
+			description.configurable === false &&
+			description.writable === false
+		)
+	} catch {
+		return false
+	}
 }
 
 function isObject(value: unknown): value is object {

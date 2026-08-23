@@ -145,6 +145,17 @@ const testContextHost = createContextHost({
 - Plugin 不能向现有 Runtime Context 安装、替换或删除 capability；
 - Plugin 间业务依赖使用 constructor 或 optional Plugin ref，不使用 Context descriptor 模拟第二张依赖图。
 
+## 保持同一 kernel identity
+
+`ContextCapability`、installation 和 Context 都是基于对象身份的 opaque value。组合一个 host 时，
+这些值必须来自同一个 evaluated `@pluxel/context` kernel instance；不要在 ESM/CJS、两份 workspace
+resolution 或 HMR host/runner 副本之间混用。
+
+`@pluxel/core` 中内联的 kernel 与 standalone `@pluxel/context` 是有意隔离的两个 instance：它们可以在
+同一进程中分别创建 host，但不能把一边创建的 descriptor、installation 或 Context 交给另一边。
+跨 kernel 传值会立即失败并指向 package dedupe/HMR resolution，而不会把一份 host 的私有状态当作另一份
+host 的状态。
+
 Context 的 descriptor 使用 object identity。host compile 与显式 resolve 会用 `Map` 把 descriptor 映射到 numeric slot，常规
 `ctx.foo` 缓存访问直接读取预编译 slot。null-prototype object 的字符串/symbol key 语义不能替代 descriptor object identity；
 具体性能取舍由 package benchmark 验证。

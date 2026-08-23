@@ -61,6 +61,11 @@ Core workspace 在源码层把 `@pluxel/context` 声明为 `devDependencies: wor
 JavaScript 与 declarations。发布的 `@pluxel/core` 不要求消费者安装 `@pluxel/context`，也不留下对它的生产 import；需要直接
 创建 standalone Context host 的消费者才单独依赖 `@pluxel/context`。
 
+kernel registry 属于每个 evaluated module instance，不放入 `globalThis`。因此 Core 内联 kernel 与 standalone
+`@pluxel/context` 可以在同一 realm 合法共存，但 capability descriptor、installation、plan 和 Context 不能跨
+kernel 传递。该编程错误在边界校验时诊断；开发期 host/runner 的同一 package identity 由 HMR bridge 保持，
+不通过恢复全局 fatal singleton 实现。
+
 ## Identity 与 DI 不变量
 
 - graph identity 来自 canonical entry + root named export；class name、constructor 和 `displayName` 都不是 key。
