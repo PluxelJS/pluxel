@@ -7,7 +7,7 @@ import {
 import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { projectRawInput, type Schema } from 'valibot-form'
+import { projectRawInput, type RawInputProjectionResult, type Schema } from 'valibot-form'
 import type {
 	ConfigEnvironmentBinding,
 	ConfigEnvironmentMapping,
@@ -31,6 +31,8 @@ type ConfigEnvironmentBindingPayload = Readonly<{
 	plugin: PluginConstructor
 	schema: ConfigEnvironmentSchema
 	mapping: FrozenMapping
+	/** Added without changing ABI; older HMR generations are projected lazily. */
+	targets?: readonly ProjectedMappingTarget[]
 }>
 
 type RuntimeBinding = Readonly<{
@@ -38,6 +40,12 @@ type RuntimeBinding = Readonly<{
 }>
 
 type DerivedTransport = 'string' | 'number' | 'boolean' | 'json'
+
+type ProjectedMappingTarget = Readonly<{
+	environmentName: string
+	path: readonly string[]
+	projection: RawInputProjectionResult
+}>
 
 type ResolvedTarget = Readonly<{
 	environmentName: string
@@ -64,11 +72,14 @@ export function bindConfigEnvironment<
 			'[runtime-static] Config environment binding schema must be a Valibot schema',
 		)
 	}
+	const frozenMapping = freezeMapping(mapping)
+	const targets = projectMappingTargets(schema, frozenMapping)
 	const payload = Object.freeze({
 		abiVersion: 1 as const,
 		plugin,
 		schema,
-		mapping: freezeMapping(mapping),
+		mapping: frozenMapping,
+		targets,
 	})
 	const binding = Object.create(null) as RuntimeBinding
 	Object.defineProperty(binding, CONFIG_ENVIRONMENT_BINDING, {
@@ -118,18 +129,20 @@ export function resolveConfigEnvironmentBootstrap(
 			)
 		}
 
-		for (const leaf of collectMappingLeaves(binding.mapping)) {
-			const projection = projectRawInput(binding.schema as unknown as Schema, leaf.path)
+		const projectedTargets =
+			binding.targets ?? projectMappingTargets(binding.schema, binding.mapping)
+		for (const target of projectedTargets) {
+			const projection = target.projection
 			if (projection.ok === false) {
 				throw new Error(
-					`[runtime-static] Cannot bind ${leaf.environmentName} to ${formatPluginNodeReference(owner)} config path ${formatPath(leaf.path)}: ${projection.reason}`,
+					`[runtime-static] Cannot bind ${target.environmentName} to ${formatPluginNodeReference(owner)} config path ${formatPath(target.path)}: ${projection.reason}`,
 				)
 			}
 			targets.push(
 				Object.freeze({
-					environmentName: leaf.environmentName,
+					environmentName: target.environmentName,
 					owner,
-					path: leaf.path,
+					path: target.path,
 					transport: projection.transport,
 					expectsPlainObject: projection.expectsPlainObject,
 				}),
@@ -152,7 +165,8 @@ function readBinding(value: ConfigEnvironmentBinding): ConfigEnvironmentBindingP
 		!payload ||
 		payload.abiVersion !== 1 ||
 		typeof payload.plugin !== 'function' ||
-		!isConfigEnvironmentSchema(payload.schema)
+		!isConfigEnvironmentSchema(payload.schema) ||
+		(payload.targets !== undefined && !Array.isArray(payload.targets))
 	) {
 		throw new TypeError(
 			'[runtime-static] configEnvironmentBootstrap entries must be created with bindConfigEnvironment(...)',
@@ -225,6 +239,20 @@ function collectMappingLeaves(
 	}
 	return Object.entries(mapping).flatMap(([key, child]) =>
 		collectMappingLeaves(child, [...path, key]),
+	)
+}
+
+function projectMappingTargets(
+	schema: ConfigEnvironmentSchema,
+	mapping: FrozenMapping,
+): readonly ProjectedMappingTarget[] {
+	return Object.freeze(
+		collectMappingLeaves(mapping).map((leaf) =>
+			Object.freeze({
+				...leaf,
+				projection: projectRawInput(schema as unknown as Schema, leaf.path),
+			}),
+		),
 	)
 }
 

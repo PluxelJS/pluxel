@@ -36,10 +36,11 @@ Static application 可以另外声明 `configEnvironmentBootstrap`。每个 dire
 JSON subtree leaf，array/tuple/record/scalar 只能作为 leaf。Binding 位于 product host，不进入 Plugin metadata、decorator 或
 schema，也不扩展到 Part、fork 或 dynamic source。
 
-Startup 在 graph construction 前读取 canonical candidate，用 `valibot-form` raw-input projector 从真实 schema node 推导唯一
-`string | number | boolean | json` transport。它不执行 validation、transform、lazy/default getter，也不复制默认值、requiredness
-或 custom validator。环境缺失不生成 raw path；string 空值保留，number/boolean/JSON 空值失败，JSON `null` 保持显式值。
-Malformed value 的诊断只包含 environment name 和 target，不包含原始 value。
+`bindConfigEnvironment()` 在 canonical module evaluation 时用 `valibot-form` raw-input projector 从真实 schema node 冻结唯一
+`string | number | boolean | json` transport；startup 在 graph construction 前读取 canonical candidate、断言同一 schema identity，
+再解码当前 environment。Projector 不执行 validation、transform、lazy/default getter，也不复制默认值、requiredness 或 custom
+validator。环境缺失不生成 raw path；string 空值保留，number/boolean/JSON 空值失败，JSON `null` 保持显式值。Malformed value
+的诊断只包含 environment name 和 target，不包含原始 value。
 
 新 store 的 merge authority 固定为：
 
@@ -118,6 +119,10 @@ core 按 path partition raw input，分别执行 owner/Part schema default、tra
 和可移植 field node 的 version 1 presentation plan；无法表达的 node 显式成为 read-only `unsupported`，浏览器不执行 schema source。
 Workbench 可以按 General/Part sections 编辑，但提交、持久化和 server validation 仍指向同一个 Plugin node owner。
 Workbench Plane 不拥有配置事实，也不恢复 layout/template DSL。
+
+字段 kind、requiredness、choices、format 与 range 都来自 Valibot schema。`formMeta({ title, description })` 将字段文案写入
+Valibot 标准 metadata，并在同一 action 中补充 section、layout、help、placeholder 和 control variant 等 presentation
+preference；这些偏好不能覆盖 schema 的类型或 validation 语义。
 
 schema normalized output 必须是可持久化、无环的 plain object/array tree；leaf 只允许 JSON-compatible primitive。Core 在接受 snapshot
 前 deep clone 并 deep freeze，拒绝 `Date`、`Map`、`Set`、class instance、function、symbol、accessor、cycle 与其他带隐藏 identity/behavior 的

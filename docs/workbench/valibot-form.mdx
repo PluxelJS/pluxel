@@ -5,7 +5,8 @@ description: 用一个 Valibot object schema 同时驱动 Plugin 配置、字段
 
 Pluxel 的配置只需要一份 Valibot object schema，Plugin 通过 `private readonly config = this.configs.use(Config)` 注册它。
 
-这份 schema 同时提供 TypeScript 类型、默认值、运行时校验，以及配置界面需要的字段结构。`valibot-form` 只附加标签、控件和布局信息，不会创建第二套配置语言。
+这份 schema 同时提供 TypeScript 类型、默认值、运行时校验，以及配置界面需要的字段结构。`formMeta()` 把标题、说明和
+表单展示偏好集中在一次声明中；底层仍是 Valibot 标准 metadata，不会创建第二套配置语言。
 
 ## 最小配置与渲染结果
 
@@ -25,18 +26,17 @@ const Config = v.object({
 		v.pipe(
 			v.boolean(),
 			f.formMeta({
-				label: '启用插件',
+				title: '启用插件',
 				description: 'schema 默认值会进入 normalized config',
 				section: { id: 'runtime', title: '运行时' },
 			}),
-			f.booleanMeta({}),
 		),
 		true,
 	),
 	mode: v.optional(
 		v.pipe(
 			v.picklist(['development', 'production'] as const),
-			f.formMeta({ label: '运行环境', section: 'runtime' }),
+			f.formMeta({ title: '运行环境', section: 'runtime' }),
 			f.picklistMeta({
 				control: 'segmented',
 				labels: { development: '开发', production: '生产' },
@@ -49,7 +49,7 @@ const Config = v.object({
 			v.string(),
 			v.url(),
 			f.formMeta({
-				label: '上游地址',
+				title: '上游地址',
 				description: 'URL 约束来自 schema；表单只负责编辑。',
 				section: { id: 'network', title: '网络与重试' },
 			}),
@@ -63,8 +63,8 @@ const Config = v.object({
 			v.integer(),
 			v.minValue(1),
 			v.maxValue(65535),
-			f.formMeta({ label: '监听端口', section: 'network' }),
-			f.numberMeta({ min: 1, max: 65535, step: 1 }),
+			f.formMeta({ title: '监听端口', section: 'network' }),
+			f.numberMeta({ step: 1 }),
 		),
 		8787,
 	),
@@ -76,8 +76,9 @@ const Config = v.object({
 						v.number(),
 						v.integer(),
 						v.minValue(1),
-						f.formMeta({ label: '最大次数' }),
-						f.numberMeta({ min: 1, max: 10, step: 1 }),
+						v.maxValue(10),
+						f.formMeta({ title: '最大次数' }),
+						f.numberMeta({ step: 1 }),
 					),
 					3,
 				),
@@ -86,13 +87,13 @@ const Config = v.object({
 						v.number(),
 						v.integer(),
 						v.minValue(100),
-						f.formMeta({ label: '退避时间（毫秒）' }),
-						f.numberMeta({ min: 100, step: 100 }),
+						f.formMeta({ title: '退避时间（毫秒）' }),
+						f.numberMeta({ step: 100 }),
 					),
 					250,
 				),
 			}),
-			f.formMeta({ label: '重试策略', section: 'network' }),
+			f.formMeta({ title: '重试策略', section: 'network' }),
 			f.objectMeta({ variant: 'card', columns: 2 }),
 		),
 		{
@@ -103,7 +104,7 @@ const Config = v.object({
 	allowedOrigins: v.optional(
 		v.pipe(
 			v.array(v.pipe(v.string(), v.url())),
-			f.formMeta({ label: '允许的 Origin', section: 'network' }),
+			f.formMeta({ title: '允许的 Origin', section: 'network' }),
 			f.arrayMeta({
 				layout: 'list',
 				itemLabel: 'Origin',
@@ -144,7 +145,7 @@ import * as f from 'valibot-form'
 const Config = v.object({
 	mode: v.pipe(
 		v.picklist(['development', 'production'] as const),
-		f.formMeta({ label: '运行环境' }),
+		f.formMeta({ title: '运行环境' }),
 		f.picklistMeta({
 			control: 'segmented',
 			labels: { development: '开发', production: '生产' },
@@ -161,7 +162,7 @@ const fields = f.extractFormFields(Config)
 | --------------------- | -------------- | ---------------- |
 | `v.string()`          | `stringMeta`   | TextInput        |
 | `v.number()`          | `numberMeta`   | NumberInput      |
-| `v.boolean()`         | `booleanMeta`  | Switch           |
+| `v.boolean()`         | —              | Switch           |
 | `v.picklist()`        | `picklistMeta` | Select           |
 | `v.array()`           | `arrayMeta`    | List             |
 | `v.record()`          | `recordMeta`   | Table            |
@@ -183,7 +184,10 @@ type FormProps = keyof AutoFormProps<ObjectLikeSchema>
 //   ^?
 ```
 
-`formMeta()` 负责 label、description、help、section、layout、disabled、readOnly 和 hidden；类型对应的 `*Meta()` 负责控件偏好。字段约束仍来自 Valibot，例如 `v.minValue()`、`v.maxValue()` 和 `v.integer()`。
+`formMeta()` 的 `title` / `description` 使用 Valibot 标准 metadata，help、section、layout、disabled、readOnly 和 hidden
+仍是表单展示偏好；类型对应的 `*Meta()` 只负责控件偏好。requiredness、选项、格式和范围仍来自 Valibot schema，例如
+`v.optional()`、`v.url()`、`v.minValue()`、`v.maxValue()` 和 `v.integer()`。原生 `v.title()`、`v.description()` 与
+`v.metadata({ title, description })` 也会按 pipe 顺序互操作，但标准示例使用一次 `formMeta()` 集中声明。
 
 需要编辑 schema 或查看类型补全时，打开独立的[配置 Playground](./configuration-playground.md)。
 

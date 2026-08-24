@@ -42,18 +42,14 @@ const Config = v.object({
   enabled: v.optional(
     v.pipe(
       v.boolean(),
-      f.formMeta({
-        label: '启用插件',
-        section: { id: 'runtime', title: '运行时' },
-      }),
-      f.booleanMeta({}),
+      f.formMeta({ title: '启用插件', section: { id: 'runtime', title: '运行时' } }),
     ),
     true,
   ),
   mode: v.optional(
     v.pipe(
       v.picklist(['development', 'production'] as const),
-      f.formMeta({ label: '运行环境', section: 'runtime' }),
+      f.formMeta({ title: '运行环境', section: 'runtime' }),
       f.picklistMeta({
         control: 'segmented',
         labels: { development: '开发', production: '生产' },
@@ -65,11 +61,7 @@ const Config = v.object({
     v.pipe(
       v.string(),
       v.url(),
-      f.formMeta({
-        label: '上游地址',
-        description: 'URL 约束来自 schema；表单只负责编辑。',
-        section: { id: 'network', title: '网络与重试' },
-      }),
+      f.formMeta({ title: '上游地址', description: 'URL 约束来自 schema；表单只负责编辑。', section: { id: 'network', title: '网络与重试' } }),
       f.stringMeta({ placeholder: 'https://api.example.com' }),
     ),
     'https://api.example.com',
@@ -80,8 +72,8 @@ const Config = v.object({
       v.integer(),
       v.minValue(1),
       v.maxValue(65535),
-      f.formMeta({ label: '监听端口', section: 'network' }),
-      f.numberMeta({ min: 1, max: 65535, step: 1 }),
+      f.formMeta({ title: '监听端口', section: 'network' }),
+      f.numberMeta({ step: 1 }),
     ),
     8787,
   ),
@@ -93,8 +85,9 @@ const Config = v.object({
             v.number(),
             v.integer(),
             v.minValue(1),
-            f.formMeta({ label: '最大次数' }),
-            f.numberMeta({ min: 1, max: 10, step: 1 }),
+            v.maxValue(10),
+            f.formMeta({ title: '最大次数' }),
+            f.numberMeta({ step: 1 }),
           ),
           3,
         ),
@@ -103,13 +96,13 @@ const Config = v.object({
             v.number(),
             v.integer(),
             v.minValue(100),
-            f.formMeta({ label: '退避时间（毫秒）' }),
-            f.numberMeta({ min: 100, step: 100 }),
+            f.formMeta({ title: '退避时间（毫秒）' }),
+            f.numberMeta({ step: 100 }),
           ),
           250,
         ),
       }),
-      f.formMeta({ label: '重试策略', section: 'network' }),
+      f.formMeta({ title: '重试策略', section: 'network' }),
       f.objectMeta({ variant: 'card', columns: 2 }),
     ),
     { attempts: 3, backoffMs: 250 },
@@ -117,7 +110,7 @@ const Config = v.object({
   allowedOrigins: v.optional(
     v.pipe(
       v.array(v.pipe(v.string(), v.url())),
-      f.formMeta({ label: '允许的 Origin', section: 'network' }),
+      f.formMeta({ title: '允许的 Origin', section: 'network' }),
       f.arrayMeta({
         layout: 'list',
         itemLabel: 'Origin',
@@ -138,7 +131,7 @@ const Config = v.object({
   backend: v.optional(
     v.pipe(
       v.picklist(['memory', 'redis'] as const),
-      f.formMeta({ label: '缓存后端' }),
+      f.formMeta({ title: '缓存后端' }),
       f.picklistMeta({
         control: 'segmented',
         labels: { memory: '内存', redis: 'Redis' },
@@ -149,7 +142,7 @@ const Config = v.object({
   namespace: v.optional(
     v.pipe(
       v.string(),
-      f.formMeta({ label: '命名空间' }),
+      f.formMeta({ title: '命名空间' }),
       f.stringMeta({ placeholder: 'pluxel' }),
     ),
     'pluxel',
@@ -159,8 +152,8 @@ const Config = v.object({
       v.number(),
       v.integer(),
       v.minValue(1),
-      f.formMeta({ label: 'TTL（秒）' }),
-      f.numberMeta({ min: 1, step: 60 }),
+      f.formMeta({ title: 'TTL（秒）' }),
+      f.numberMeta({ step: 60 }),
     ),
     3600,
   ),
@@ -175,7 +168,7 @@ const Config = v.object({
   channel: v.optional(
     v.pipe(
       v.picklist(['canary', 'stable'] as const),
-      f.formMeta({ label: '发布通道' }),
+      f.formMeta({ title: '发布通道' }),
       f.picklistMeta({
         control: 'segmented',
         labels: { canary: 'Canary', stable: 'Stable' },
@@ -186,15 +179,14 @@ const Config = v.object({
   dryRun: v.optional(
     v.pipe(
       v.boolean(),
-      f.formMeta({ label: '仅生成计划' }),
-      f.booleanMeta({}),
+      f.formMeta({ title: '仅生成计划' }),
     ),
     true,
   ),
   targets: v.optional(
     v.pipe(
       v.array(v.string()),
-      f.formMeta({ label: '目标环境' }),
+      f.formMeta({ title: '目标环境' }),
       f.arrayMeta({
         layout: 'list',
         itemLabel: '环境',

@@ -108,16 +108,16 @@ describe('configSourcePlugin', () => {
 	it('canonicalizes named Valibot and valibot-form imports for the Workbench renderer', async () => {
 		const result = await transform(`
 			import { object, pipe, string } from 'valibot'
-			import { stringMeta as meta } from 'valibot-form'
+			import { formMeta as meta, stringMeta } from 'valibot-form'
 			import { BasePlugin, Plugin } from '@pluxel/runtime'
-			const Schema = object({ name: pipe(string(), meta({ label: 'Name' })) })
+			const Schema = object({ name: pipe(string(), meta({ title: 'Name' }), stringMeta({ placeholder: 'Your name' })) })
 			@Plugin() export class P extends BasePlugin {
 				config = this.configs.use(Schema)
 			}
 		`)
 
 		expect(result?.code).toContain(
-			'source: "v.object({name:v.pipe(v.string(),f.stringMeta({label:\'Name\'}))})"',
+			"source: \"v.object({name:v.pipe(v.string(),f.formMeta({title:'Name'}),f.stringMeta({placeholder:'Your name'}))})\"",
 		)
 	})
 

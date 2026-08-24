@@ -18,28 +18,28 @@ export const PackageManagerConfig = v.object({
 	rootDir: v.pipe(
 		v.optional(v.string(), '.pluxel/managed-plugins'),
 		f.formMeta({
-			label: 'Managed package root',
+			title: 'Managed package root',
 			description: 'Dedicated pnpm project used to materialize dynamically loaded plugin packages.',
 		}),
 	),
 	ignoreScripts: v.pipe(
 		v.optional(v.boolean(), true),
 		f.formMeta({
-			label: 'Ignore dependency scripts',
+			title: 'Ignore dependency scripts',
 			description: 'Safe by default. Disable only together with an explicit build allow-list.',
 		}),
 	),
 	allowBuilds: v.pipe(
 		v.optional(v.array(v.string()), []),
 		f.formMeta({
-			label: 'Allowed build packages',
+			title: 'Allowed build packages',
 			description: 'Exact package names allowed to execute dependency build scripts.',
 		}),
 	),
 	minimumReleaseAgeMinutes: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 1_440),
 		f.formMeta({
-			label: 'Minimum release age',
+			title: 'Minimum release age',
 			description: 'Reject package releases newer than this many minutes.',
 		}),
 	),

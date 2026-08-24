@@ -25,7 +25,7 @@ const fontsSelectorSchema = v.objectAsync({
 		v.optionalAsync(font, async () => ['SourceHans', 'Inter', 'Maple Mono NF CN']),
 
 		f.formMeta({
-			label: '动态选项（defaults-picker）',
+			title: '动态选项（defaults-picker）',
 			description: '选项列表来自 tanstack form 的 defaultValues',
 		}),
 	),

@@ -68,9 +68,9 @@ describe('static config environment production watch', () => {
 function schemaSource(description: string): string {
 	return `
 		import * as v from 'valibot'
-		import { formMeta } from 'valibot-form'
+		import * as f from 'valibot-form'
 		export const DemoConfig = v.object({
-			endpoint: v.pipe(v.string(), formMeta({ description: ${JSON.stringify(description)} })),
+			endpoint: v.pipe(v.string(), f.formMeta({ description: ${JSON.stringify(description)} })),
 		})
 	`
 }

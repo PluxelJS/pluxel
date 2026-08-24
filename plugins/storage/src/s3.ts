@@ -59,15 +59,15 @@ const LocalBackendConfig = v.object({
 	rootDir: v.pipe(
 		v.optional(LocalRootDir, '.pluxel/s3'),
 		f.formMeta({
-			label: 'Local S3 root',
+			title: 'Local S3 root',
 			description: 'Root for locally emulated buckets. Production should place it outside dist/.',
 		}),
 	),
-	bucketName: v.pipe(v.optional(LocalBucketName, 'local'), f.formMeta({ label: 'Bucket name' })),
+	bucketName: v.pipe(v.optional(LocalBucketName, 'local'), f.formMeta({ title: 'Bucket name' })),
 	syncWrites: v.pipe(
 		v.optional(v.boolean(), true),
 		f.formMeta({
-			label: 'Flush writes',
+			title: 'Flush writes',
 			description: 'fsync completed object files and directory entries where supported.',
 		}),
 	),
@@ -77,11 +77,11 @@ const RemoteCredentialsConfig = v.variant('type', [
 	v.object({ type: v.literal('anonymous') }),
 	v.object({
 		type: v.literal('vault'),
-		key: v.pipe(v.optional(VaultReference, 's3.credentials'), f.formMeta({ label: 'Vault key' })),
+		key: v.pipe(v.optional(VaultReference, 's3.credentials'), f.formMeta({ title: 'Vault key' })),
 		namespace: v.pipe(
 			v.optional(VaultReference),
 			f.formMeta({
-				label: 'Vault namespace',
+				title: 'Vault namespace',
 				description: 'When omitted, use this S3Plugin instance namespace.',
 			}),
 		),
@@ -93,27 +93,27 @@ const RemoteBackendConfig = v.object({
 	endpoint: v.pipe(
 		S3Endpoint,
 		f.formMeta({
-			label: 'S3 endpoint',
+			title: 'S3 endpoint',
 			description:
 				'Bucket endpoint in path-style or virtual-hosted-style form. Credentials are separate.',
 		}),
 	),
 	region: v.pipe(
 		v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(128)), 'auto'),
-		f.formMeta({ label: 'S3 region' }),
+		f.formMeta({ title: 'S3 region' }),
 	),
 	credentials: RemoteCredentialsConfig,
 	requestSizeInBytes: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 8 * MEBIBYTE),
 		f.formMeta({
-			label: 'Read request size',
+			title: 'Read request size',
 			description: 'Default byte range used by s3mini for ranged reads.',
 		}),
 	),
 	requestAbortTimeout: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 30_000),
 		f.formMeta({
-			label: 'Request timeout',
+			title: 'Request timeout',
 			description: 'Timeout for each underlying S3 request.',
 		}),
 	),
@@ -123,7 +123,7 @@ const RemoteBackendConfig = v.object({
 			8 * MEBIBYTE,
 		),
 		f.formMeta({
-			label: 'Multipart part size',
+			title: 'Multipart part size',
 			description: 'Minimum part size used by s3mini multipart uploads.',
 		}),
 	),

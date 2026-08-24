@@ -3,7 +3,7 @@
 ## Goals
 
 - Practical first: configuration forms with moderate data size, fast interaction, clear defaults.
-- Metadata-driven: keep schema as the single source of truth via `f.*` meta actions.
+- Schema-driven: keep Valibot types, validation, and standard metadata as the single source of truth.
 - Minimal UX friction: reduce steps, keep layout readable, avoid unnecessary UI variants.
 
 ## Non-goals
@@ -16,7 +16,7 @@
 
 - **Core**
   - `fields.ts` extracts renderable nodes from Valibot schemas.
-  - `meta.ts` defines UI meta contracts (layout, labels, help, picklist configs).
+  - `meta.ts` groups standard title/description metadata with UI-only presentation preferences.
   - `schema.ts` reads metadata from schema pipe.
 - **Web**
   - `AutoForm` orchestrates form context and section planning.
@@ -26,10 +26,14 @@
   - Organized by intent (core, arrays, records, unions, real-world).
   - Playground is opt-in to avoid accidental state resets.
 
-## Metadata Strategy (`f.*`)
+## Metadata Strategy
 
-- `formMeta` controls label, help, hint, badge, visibility, layout, section.
-- Type meta (`stringMeta`, `numberMeta`, `picklistMeta`, etc.) describes input behavior.
+- `formMeta` writes `title` and `description` through Valibot's standard `metadata` action and groups
+  help, hint, badge, visibility, layout, and section in the same declaration.
+- Valibot optional wrappers, choices, formats, and validation actions own validation semantics.
+- Native `title`, `description`, and generic `metadata` actions interoperate by pipe order.
+- Type meta (`stringMeta`, `numberMeta`, `picklistMeta`, etc.) only describes renderer preferences.
+- Metadata never changes the field kind inferred from the schema.
 - Section meta is normalized; fields can self-assign a section without extra config.
 
 ## Rendering Principles

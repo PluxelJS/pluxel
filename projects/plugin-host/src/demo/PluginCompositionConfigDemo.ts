@@ -7,39 +7,36 @@ import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 const PluginConfig = v.object({
 	enabled: v.pipe(
 		v.optional(v.boolean(), true),
-		f.formMeta({ label: '启用插件', description: '用于演示插件级配置' }),
-		f.booleanMeta({}),
+		f.formMeta({ title: '启用插件', description: '用于演示插件级配置' }),
 	),
 	cache: v.object({
 		enabled: v.pipe(
 			v.optional(v.boolean(), true),
 			f.formMeta({
-				label: '启用缓存',
+				title: '启用缓存',
 				description: '缓存属于 Plugin 的内部组成，配置由 owner Plugin 统一声明',
 			}),
-			f.booleanMeta({}),
 		),
 		ttlMs: v.pipe(
-			v.optional(v.number(), 5_000),
-			f.formMeta({ label: 'TTL (ms)', description: '缓存条目的存活时间' }),
-			f.numberMeta({ min: 0, max: 60_000, step: 250 }),
+			v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(60_000)), 5_000),
+			f.formMeta({ title: 'TTL (ms)', description: '缓存条目的存活时间' }),
+			f.numberMeta({ step: 250 }),
 		),
 		maxKeys: v.pipe(
-			v.optional(v.number(), 1_000),
-			f.formMeta({ label: '最大键数', description: '缓存可保留的最大条目数' }),
-			f.numberMeta({ min: 0, max: 100_000, step: 100 }),
+			v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(100_000)), 1_000),
+			f.formMeta({ title: '最大键数', description: '缓存可保留的最大条目数' }),
+			f.numberMeta({ step: 100 }),
 		),
 	}),
 	telemetry: v.object({
 		enabled: v.pipe(
 			v.optional(v.boolean(), false),
-			f.formMeta({ label: '启用 Telemetry', description: '启用内部遥测模块' }),
-			f.booleanMeta({}),
+			f.formMeta({ title: '启用 Telemetry', description: '启用内部遥测模块' }),
 		),
 		sampleRate: v.pipe(
-			v.optional(v.number(), 1),
-			f.formMeta({ label: '采样率', description: '0~1' }),
-			f.numberMeta({ min: 0, max: 1, step: 0.05 }),
+			v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(1)), 1),
+			f.formMeta({ title: '采样率', description: '0~1' }),
+			f.numberMeta({ step: 0.05 }),
 		),
 	}),
 })

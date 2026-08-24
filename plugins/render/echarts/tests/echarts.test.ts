@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { CanvasPlugin } from '@pluxel/canvas'
@@ -54,7 +55,7 @@ let workerBuildDir: string
 let workerUrl: URL
 
 beforeAll(async () => {
-	workerBuildDir = await mkdtemp(join(packageRoot, '.pluxel-echarts-worker-test-'))
+	workerBuildDir = await mkdtemp(join(tmpdir(), 'pluxel-echarts-worker-test-'))
 	const outFile = join(workerBuildDir, 'worker.mjs')
 	await buildNodeModule({
 		root: packageRoot,

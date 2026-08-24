@@ -29,17 +29,14 @@ tests/status.test.ts
 import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 
 export const StatusConfig = v.object({
-	label: v.optional(
-		v.pipe(v.string(), f.formMeta({ label: '状态标签' }), f.stringMeta({})),
-		'ready',
-	),
+	label: v.optional(v.pipe(v.string(), f.formMeta({ title: '状态标签' })), 'ready'),
 	intervalMs: v.optional(
 		v.pipe(
 			v.number(),
 			v.integer(),
 			v.minValue(1_000),
-			f.formMeta({ label: '采样间隔' }),
-			f.numberMeta({ min: 1_000, step: 1_000 }),
+			f.formMeta({ title: '采样间隔' }),
+			f.numberMeta({ step: 1_000 }),
 		),
 		30_000,
 	),

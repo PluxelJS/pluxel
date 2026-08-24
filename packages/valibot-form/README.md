@@ -1,6 +1,6 @@
 # valibot-form
 
-Valibot schema metadata for software configuration forms.
+Valibot schema-driven field planning for software configuration forms.
 
 The package is split into a lightweight core entry and optional UI adapters:
 
@@ -18,12 +18,12 @@ export const configSchema = v.object({
 		v.number(),
 		v.minValue(1),
 		v.maxValue(65535),
-		f.formMeta({ label: 'Port', description: 'HTTP listen port' }),
+		f.formMeta({ title: 'Port', description: 'HTTP listen port' }),
 		f.numberMeta({ step: 1 }),
 	),
 	mode: v.pipe(
 		v.picklist(['development', 'production'] as const),
-		f.formMeta({ label: 'Mode' }),
+		f.formMeta({ title: 'Mode' }),
 		f.picklistMeta({
 			control: 'segmented',
 			labels: {
@@ -34,6 +34,12 @@ export const configSchema = v.object({
 	),
 })
 ```
+
+`formMeta()` groups `title` and `description` with form presentation preferences. It emits a standard
+Valibot `metadata()` action, so schema tooling and the form planner read the same title and description.
+Requiredness, choices, formats, and validation bounds still come directly from Valibot schemas and
+validation actions. Type-specific metadata factories only add presentation choices such as layout,
+placeholders, and control variants.
 
 For renderers or tools, inspect the schema without importing React or Mantine:
 

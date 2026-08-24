@@ -3,7 +3,6 @@ import {
 	META_TYPES,
 	type ArrayMeta,
 	type FormMeta,
-	type MetaType,
 	type NumberMeta,
 	type ObjectMeta,
 	type PicklistMeta,
@@ -12,6 +11,7 @@ import {
 	type UnionMeta,
 } from './meta'
 import { readMeta, type Schema } from './schema'
+import { readStandardSchemaMetadata, type StandardSchemaMetadata } from './schemaMetadata'
 import { isDevelopmentEnvironment } from './utils/environment'
 import { collectObjectEntries } from './utils/objectEntries'
 
@@ -34,8 +34,9 @@ export interface NormalizedSectionMeta {
 	columns?: number
 }
 
-export type FieldMeta = Omit<FormMeta, 'section' | 'label'> & {
+export type FieldMeta = Omit<FormMeta, 'title' | 'description' | 'section'> & {
 	label: string
+	description?: string
 	section?: NormalizedSectionMeta
 }
 
@@ -75,7 +76,7 @@ export interface BooleanFieldNode extends FieldNodeBase {
 
 export interface PicklistFieldNode extends FieldNodeBase {
 	kind: 'picklist'
-	options?: PicklistMeta['options']
+	options?: readonly (string | number)[]
 	entries?: PicklistMeta['entries']
 	labels?: PicklistMeta['labels']
 	disabled?: PicklistMeta['disabled']
@@ -209,19 +210,24 @@ function fieldNameToLabel(fieldName: string): string {
 
 function normalizeBaseMeta(
 	meta: FormMeta | undefined,
+	standard: StandardSchemaMetadata,
 	fieldName?: string,
-	required = true,
 ): FieldMeta {
 	const merged: FormMeta = { ...meta }
 	const section = normalizeSection(merged.section)
-	const label = merged.label || (fieldName ? fieldNameToLabel(fieldName) : '未命名字段')
-	const { section: _omitSection, ...rest } = merged
+	const label = standard.title ?? (fieldName ? fieldNameToLabel(fieldName) : '未命名字段')
+	const {
+		title: _omitTitle,
+		description: _omitDescription,
+		section: _omitSection,
+		...rest
+	} = merged
 
 	return {
 		...rest,
 		label,
+		...(standard.description !== undefined ? { description: standard.description } : {}),
 		...(section ? { section } : {}),
-		required: rest.required ?? required,
 	}
 }
 
@@ -240,32 +246,7 @@ function unwrapOptional(schema: Schema): { schema: Schema; required: boolean } {
 	return { schema: current as Schema, required }
 }
 
-function findExplicitKind(schema: Schema): FieldKind | undefined {
-	if (!('pipe' in schema)) return undefined
-	for (let i = schema.pipe.length - 1; i >= 0; i--) {
-		const item = schema.pipe[i] as { kind?: string; type?: MetaType }
-		if (item?.kind === 'metadata' && item.type && item.type !== META_TYPES.FORM) {
-			switch (item.type) {
-				case META_TYPES.STRING:
-				case META_TYPES.NUMBER:
-				case META_TYPES.BOOLEAN:
-				case META_TYPES.PICKLIST:
-				case META_TYPES.ARRAY:
-				case META_TYPES.RECORD:
-				case META_TYPES.OBJECT:
-				case META_TYPES.UNION:
-					return item.type
-				default:
-					break
-			}
-		}
-	}
-	return undefined
-}
-
 function resolveKind(schema: Schema): FieldKind {
-	const explicit = findExplicitKind(schema)
-	if (explicit) return explicit
 	if (schema.type === 'literal') {
 		const literalValue = (schema as any).literal
 		if (typeof literalValue === 'string') return 'string'
@@ -292,14 +273,21 @@ function resolveKind(schema: Schema): FieldKind {
 	}
 }
 
-function extractStringMeta(schema: Schema): StringMeta {
-	const meta: StringMeta = { control: 'text' }
+type ExtractedStringMeta = StringMeta & {
+	minLength?: number
+	maxLength?: number
+	format?: string
+}
+
+function extractStringMeta(schema: Schema, metadataSource: Schema): ExtractedStringMeta {
+	const meta: ExtractedStringMeta = {
+		control: 'text',
+		...readMeta(metadataSource, META_TYPES.STRING),
+	}
 	if (!('pipe' in schema)) return meta
 	const validationMap = {
 		min_length: 'minLength',
-		min_value: 'minLength',
 		max_length: 'maxLength',
-		max_value: 'maxLength',
 	} as const
 	const fmtMap = {
 		url: 'url',
@@ -311,10 +299,6 @@ function extractStringMeta(schema: Schema): StringMeta {
 	} as const
 	for (let i = schema.pipe.length - 1; i > 0; i--) {
 		const item = schema.pipe[i] as any
-		if (item.kind === 'metadata' && item.type === META_TYPES.STRING) {
-			Object.assign(meta, item.metadata)
-			continue
-		}
 		if (item.kind !== 'validation') continue
 		if (item.type in validationMap) {
 			const key = validationMap[item.type as keyof typeof validationMap]
@@ -326,8 +310,14 @@ function extractStringMeta(schema: Schema): StringMeta {
 	return meta
 }
 
-function extractNumberMeta(schema: Schema): NumberMeta {
-	const meta: NumberMeta = {}
+type ExtractedNumberMeta = NumberMeta & {
+	min?: number
+	max?: number
+	integer?: boolean
+}
+
+function extractNumberMeta(schema: Schema, metadataSource: Schema): ExtractedNumberMeta {
+	const meta: ExtractedNumberMeta = { ...readMeta(metadataSource, META_TYPES.NUMBER) }
 	if (!('pipe' in schema)) return meta
 	const validationKey = {
 		min_value: 'min',
@@ -335,10 +325,6 @@ function extractNumberMeta(schema: Schema): NumberMeta {
 	} as const
 	for (let i = schema.pipe.length - 1; i > 0; i--) {
 		const item = schema.pipe[i] as any
-		if (item.kind === 'metadata' && item.type === META_TYPES.NUMBER) {
-			Object.assign(meta, item.metadata)
-			continue
-		}
 		if (item.kind !== 'validation') continue
 		if (item.type === 'integer') {
 			if (meta.integer === undefined) meta.integer = true
@@ -352,72 +338,65 @@ function extractNumberMeta(schema: Schema): NumberMeta {
 	return meta
 }
 
-function extractPicklistMeta(schema: Schema): PicklistMeta {
-	const meta: PicklistMeta = { control: 'select' }
+type ExtractedPicklistMeta = PicklistMeta & { options?: readonly (string | number)[] }
+
+function extractPicklistMeta(schema: Schema, metadataSource: Schema): ExtractedPicklistMeta {
+	const meta: ExtractedPicklistMeta = {
+		control: 'select',
+		...readMeta(metadataSource, META_TYPES.PICKLIST),
+	}
 	if (schema.type === 'picklist') {
 		const picklist = schema as Schema & { options?: readonly (string | number)[] }
 		if (picklist.options?.length) meta.options = picklist.options
 	}
+	return meta
+}
+
+type ExtractedArrayMeta = ArrayMeta & { min?: number; max?: number }
+
+function extractArrayMeta(schema: Schema, metadataSource: Schema): ExtractedArrayMeta {
+	const meta: ExtractedArrayMeta = { ...readMeta(metadataSource, META_TYPES.ARRAY) }
 	if (!('pipe' in schema)) return meta
 	for (let i = schema.pipe.length - 1; i > 0; i--) {
 		const item = schema.pipe[i] as any
-		if (item.kind === 'metadata' && item.type === META_TYPES.PICKLIST) {
-			Object.assign(meta, item.metadata)
+		if (item.kind !== 'validation' || typeof item.requirement !== 'number') continue
+		if (item.type === 'length') meta.min = meta.max = item.requirement
+		else if (item.type === 'min_length') meta.min = Math.max(meta.min ?? 0, item.requirement)
+		else if (item.type === 'max_length') {
+			meta.max = Math.min(meta.max ?? Number.POSITIVE_INFINITY, item.requirement)
 		}
 	}
 	return meta
 }
 
-function extractArrayMeta(schema: Schema): ArrayMeta {
-	const meta: ArrayMeta = {}
+type ExtractedRecordMeta = RecordMeta & { min?: number; max?: number }
+
+function extractRecordMeta(schema: Schema, metadataSource: Schema): ExtractedRecordMeta {
+	const meta: ExtractedRecordMeta = { ...readMeta(metadataSource, META_TYPES.RECORD) }
 	if (!('pipe' in schema)) return meta
 	for (let i = schema.pipe.length - 1; i > 0; i--) {
 		const item = schema.pipe[i] as any
-		if (item.kind === 'metadata' && item.type === META_TYPES.ARRAY) {
-			Object.assign(meta, item.metadata)
-			break
+		if (item.kind !== 'validation' || typeof item.requirement !== 'number') continue
+		if (item.type === 'entries') meta.min = meta.max = item.requirement
+		else if (item.type === 'min_entries') meta.min = Math.max(meta.min ?? 0, item.requirement)
+		else if (item.type === 'max_entries') {
+			meta.max = Math.min(meta.max ?? Number.POSITIVE_INFINITY, item.requirement)
 		}
 	}
 	return meta
 }
 
-function extractRecordMeta(schema: Schema): RecordMeta {
-	const meta: RecordMeta = {}
-	if (!('pipe' in schema)) return meta
-	for (let i = schema.pipe.length - 1; i > 0; i--) {
-		const item = schema.pipe[i] as any
-		if (item.kind === 'metadata' && item.type === META_TYPES.RECORD) {
-			Object.assign(meta, item.metadata)
-			break
-		}
-	}
-	return meta
+function extractObjectMeta(metadataSource: Schema): ObjectMeta {
+	return { ...readMeta(metadataSource, META_TYPES.OBJECT) }
 }
 
-function extractObjectMeta(schema: Schema): ObjectMeta {
-	const meta: ObjectMeta = {}
-	if (!('pipe' in schema)) return meta
-	for (let i = schema.pipe.length - 1; i > 0; i--) {
-		const item = schema.pipe[i] as any
-		if (item.kind === 'metadata' && item.type === META_TYPES.OBJECT) {
-			Object.assign(meta, item.metadata)
-			break
-		}
+function extractUnionMeta(metadataSource: Schema): UnionMeta {
+	return {
+		control: 'select',
+		expose: 'auto',
+		preserve: true,
+		...readMeta(metadataSource, META_TYPES.UNION),
 	}
-	return meta
-}
-
-function extractUnionMeta(schema: Schema): UnionMeta {
-	const meta: UnionMeta = { control: 'select', expose: 'auto', preserve: true }
-	if (!('pipe' in schema)) return meta
-	for (let i = schema.pipe.length - 1; i > 0; i--) {
-		const item = schema.pipe[i] as any
-		if (item.kind === 'metadata' && item.type === META_TYPES.UNION) {
-			Object.assign(meta, item.metadata)
-			break
-		}
-	}
-	return meta
 }
 
 type UnionSchema = Schema & { type: 'union'; options: readonly Schema[]; pipe?: readonly unknown[] }
@@ -549,8 +528,14 @@ function normalizeBranchKey(value: DiscriminatorValue | undefined, index: number
 	return String(value)
 }
 
-function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta): UnionFieldNode {
-	const meta = extractUnionMeta(schema)
+function extractUnionNode(
+	schema: Schema,
+	metadataSource: Schema,
+	ctx: ExtractCtx,
+	baseMeta: FieldMeta,
+	required: boolean,
+): UnionFieldNode {
+	const meta = extractUnionMeta(metadataSource)
 	const { unionSchema, sharedObjects } = gatherUnionParts(schema as any)
 	const branchesSource = unionSchema?.options ?? []
 	const discriminator =
@@ -623,7 +608,7 @@ function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta):
 		path: ctx.path ?? '',
 		depth: ctx.depth ?? 0,
 		meta: baseMeta,
-		required: baseMeta.required ?? true,
+		required,
 		branches,
 		sharedFields,
 		discriminator,
@@ -641,7 +626,11 @@ function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta):
 
 export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | null {
 	const { schema: unwrapped, required } = unwrapOptional(schema)
-	const baseMeta = normalizeBaseMeta(readMeta(unwrapped, META_TYPES.FORM), ctx.fieldName, required)
+	const baseMeta = normalizeBaseMeta(
+		readMeta(schema, META_TYPES.FORM),
+		readStandardSchemaMetadata(schema),
+		ctx.fieldName,
+	)
 	const resolvedMeta =
 		unwrapped.type === 'literal' &&
 		baseMeta.readOnly === undefined &&
@@ -654,14 +643,14 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 
 	switch (kind) {
 		case 'string': {
-			const meta = extractStringMeta(unwrapped)
+			const meta = extractStringMeta(unwrapped, schema)
 			return {
 				kind: 'string',
 				name: ctx.fieldName,
 				path,
 				depth,
 				meta: resolvedMeta,
-				required: resolvedMeta.required ?? required,
+				required,
 				control: meta.control ?? 'text',
 				placeholder: meta.placeholder,
 				rows: meta.rows,
@@ -671,14 +660,14 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 			}
 		}
 		case 'number': {
-			const meta = extractNumberMeta(unwrapped)
+			const meta = extractNumberMeta(unwrapped, schema)
 			return {
 				kind: 'number',
 				name: ctx.fieldName,
 				path,
 				depth,
 				meta: resolvedMeta,
-				required: resolvedMeta.required ?? required,
+				required,
 				min: meta.min,
 				max: meta.max,
 				step: meta.step,
@@ -694,19 +683,19 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 				path,
 				depth,
 				meta: resolvedMeta,
-				required: resolvedMeta.required ?? required,
+				required,
 				control: 'switch',
 			}
 		}
 		case 'picklist': {
-			const meta = extractPicklistMeta(unwrapped)
+			const meta = extractPicklistMeta(unwrapped, schema)
 			return {
 				kind: 'picklist',
 				name: ctx.fieldName,
 				path,
 				depth,
 				meta: resolvedMeta,
-				required: resolvedMeta.required ?? required,
+				required,
 				options: meta.options,
 				entries: meta.entries,
 				labels: meta.labels,
@@ -721,7 +710,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 			}
 		}
 		case 'array': {
-			const meta = extractArrayMeta(unwrapped)
+			const meta = extractArrayMeta(unwrapped, schema)
 			const itemSchema = (unwrapped as any).item as Schema | undefined
 			const itemNode = itemSchema
 				? extractField(itemSchema, {
@@ -736,7 +725,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 				path,
 				depth,
 				meta: resolvedMeta,
-				required: resolvedMeta.required ?? required,
+				required,
 				item: itemNode,
 				layout: meta.layout,
 				columns: meta.columns,
@@ -753,7 +742,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 			}
 		}
 		case 'record': {
-			const meta = extractRecordMeta(unwrapped)
+			const meta = extractRecordMeta(unwrapped, schema)
 			const valueSchema = (unwrapped as any).value as Schema | undefined
 			const valueNode = valueSchema
 				? extractField(valueSchema, {
@@ -768,7 +757,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 				path,
 				depth,
 				meta: resolvedMeta,
-				required: resolvedMeta.required ?? required,
+				required,
 				value: valueNode,
 				layout: meta.layout,
 				min: meta.min,
@@ -784,7 +773,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 			}
 		}
 		case 'object': {
-			const meta = extractObjectMeta(unwrapped)
+			const meta = extractObjectMeta(schema)
 			const entries = collectObjectEntries(unwrapped) ?? []
 			const fields = entries
 				.map((entry) =>
@@ -801,7 +790,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 				path,
 				depth,
 				meta: resolvedMeta,
-				required: resolvedMeta.required ?? required,
+				required,
 				fields,
 				variant: meta.variant,
 				columns: meta.columns,
@@ -811,7 +800,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 			}
 		}
 		case 'union':
-			return extractUnionNode(unwrapped, { ...ctx, path, depth }, resolvedMeta)
+			return extractUnionNode(unwrapped, schema, { ...ctx, path, depth }, resolvedMeta, required)
 		default:
 			if (isDevelopmentEnvironment()) {
 				console.warn(DEFAULT_TEXTS.errors.extractionFailed(unwrapped.type))
@@ -822,7 +811,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 				path,
 				depth,
 				meta: { ...resolvedMeta, readOnly: true },
-				required: resolvedMeta.required ?? required,
+				required,
 				readOnly: true,
 				reason: `Unsupported schema type: ${unwrapped.type}`,
 			}

@@ -23,13 +23,13 @@ async function parseFixture(code: string) {
 	await using fixture = await createFixture({
 		'schemas.ts': `
 			import * as v from 'valibot'
-			import { formMeta } from 'valibot-form'
+			import * as f from 'valibot-form'
 			export const AlphaConfig = v.object({
-				endpoint: v.pipe(v.string(), v.url(), formMeta({ description: 'Zulu endpoint.' })),
+				endpoint: v.pipe(v.string(), v.url(), f.formMeta({ description: 'Zulu endpoint.' })),
 				count: v.pipe(v.number(), v.integer(), v.minValue(1)),
 			})
 			export const BetaConfig = v.object({
-				endpoint: v.pipe(v.string(), formMeta({ description: 'Alpha endpoint.' })),
+				endpoint: v.pipe(v.string(), v.description('Alpha endpoint.')),
 				unknown: v.unknown(),
 			})
 		`,
@@ -318,5 +318,44 @@ describe('static config environment declaration lowering', () => {
 				},
 			}),
 		).rejects.toThrow('only direct Valibot and valibot-form factory calls are allowed')
+	})
+
+	it('allows only an explicit inert Valibot factory set', async () => {
+		await using fixture = await createFixture({
+			'schema.ts': `
+				import * as v from 'valibot'
+				export const UnsafeConfig = v.getDescription(v.object({ endpoint: v.string() }))
+				export class UnsafePlugin {
+					readonly settings = this.configs.use(UnsafeConfig)
+				}
+			`,
+			'entry.ts': `
+				import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+				import { UnsafeConfig, UnsafePlugin } from './schema'
+				export default defineStaticRuntime({
+					name: 'unsafe-valibot-method',
+					plugins: [UnsafePlugin],
+					configEnvironmentBootstrap: [bindConfigEnvironment(UnsafePlugin, UnsafeConfig, 'APP_CONFIG')],
+				})
+			`,
+		})
+		const id = fixture.getPath('entry.ts')
+		const code = await readFile(id, 'utf8')
+		const ast = parseStandaloneWithLang(code, id)!
+		await expect(
+			parseStaticRuntimeDeclaration({
+				ast,
+				code,
+				id,
+				sourceResolver: createConfigSchemaSourceResolver({
+					async resolve(source: string) {
+						return source === './schema' ? { id: fixture.getPath('schema.ts') } : null
+					},
+				} as never),
+				error(message): never {
+					throw new Error(message)
+				},
+			}),
+		).rejects.toThrow('Valibot method v.getDescription is not an allowed inert schema factory')
 	})
 })

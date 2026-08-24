@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as v from 'valibot'
-import { extractField, formMeta, unionMeta } from '../core'
+import { extractField, unionMeta } from '../core'
 
 describe('union extraction', () => {
 	it('infers discriminator and branches', () => {
@@ -22,7 +22,7 @@ describe('union extraction', () => {
 				v.object({ type: v.literal('b'), count: v.number() }),
 			]),
 			unionMeta({ control: 'segmented' }),
-			formMeta({ label: '配置类型' }),
+			v.title('配置类型'),
 		)
 		const node = extractField(schema, { fieldName: 'config', path: 'config' })
 		expect(node?.kind).toBe('union')

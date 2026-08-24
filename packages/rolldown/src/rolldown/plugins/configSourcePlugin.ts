@@ -64,6 +64,8 @@ export type ConfigSourceSymbol = {
 }
 
 export type ConfigSchemaSourceResolver = {
+	/** Resolve local/imported schema references without normalizing or evaluating source. */
+	renderResolved(module: ConfigSchemaModule, expression: AstNode): Promise<string>
 	render(module: ConfigSchemaModule, expression: AstNode): Promise<string>
 	resolveSymbol(
 		module: ConfigSchemaModule,
@@ -111,11 +113,12 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 		enforce: 'pre',
 		transform: {
 			filter: { id: { include, exclude } },
-			async handler(this: TransformPluginContext, code, id) {
+			async handler(this: TransformPluginContext, code, rawId) {
 				if (code.includes('// [pluxel-config] Injected definition')) return null
 				if (!/\.configs\.use\s*\(/.test(code)) {
 					return null
 				}
+				const id = stripQuery(rawId)
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[pluxel-config] failed to parse ${id}`)
 				const declarations = await extractConfigDeclarations(
@@ -158,8 +161,8 @@ export async function extractConfigDeclarations(
 	sourceResolver: ConfigSchemaSourceResolver,
 	error: (message: string) => never,
 ): Promise<ConfigDeclaration[]> {
-	const imports = collectImports(ast)
 	const module = collectConfigSchemaModule(ast, code, id)
+	const imports = module.imports
 	const out: ConfigDeclaration[] = []
 	for (const statement of ast.body ?? []) {
 		const top = statement as unknown as AstNode
@@ -245,6 +248,7 @@ export function collectConfigSchemaModule(
 	const classes = new Map<string, AstNode>()
 	const declarations = new Map<string, AstNode>()
 	const locals = new Set<string>()
+	const imports = new Map<string, ConfigImportBinding>()
 	const exports = new Map<string, SourceExport>()
 	const exportAll: string[] = []
 	const collectVariables = (declaration: AstNode | undefined, exported: boolean) => {
@@ -273,6 +277,24 @@ export function collectConfigSchemaModule(
 
 	for (const statement of ast.body ?? []) {
 		const node = statement as unknown as AstNode
+		if (node.type === 'ImportDeclaration') {
+			const source = readLiteralString(node.source)
+			if (!source) continue
+			for (const rawSpecifier of arrayOf(node.specifiers)) {
+				const specifier = rawSpecifier as AstNode
+				const local = readIdentifier(specifier.local)
+				if (!local) continue
+				imports.set(local, {
+					source,
+					imported:
+						specifier.type === 'ImportDefaultSpecifier'
+							? 'default'
+							: (readIdentifier(specifier.imported) ?? local),
+					namespace: specifier.type === 'ImportNamespaceSpecifier',
+				})
+			}
+			continue
+		}
 		if (node.type === 'ExportAllDeclaration') {
 			const source = readLiteralString(node.source)
 			if (source) exportAll.push(source)
@@ -316,7 +338,7 @@ export function collectConfigSchemaModule(
 	return {
 		id,
 		code,
-		imports: collectImports(ast),
+		imports,
 		classes,
 		declarations,
 		locals,
@@ -620,6 +642,9 @@ export function createConfigSchemaSourceResolver(
 	}
 
 	return {
+		renderResolved(module, expression) {
+			return renderExpression(module, expression)
+		},
 		async render(module, expression) {
 			const source = await renderExpression(module, expression)
 			return normalizeSchemaSource(
@@ -663,31 +688,10 @@ function stripQuery(id: string): string {
 	return id.replace(/[?#].*$/, '')
 }
 
-function collectImports(ast: Program): Map<string, ConfigImportBinding> {
-	const imports = new Map<string, ConfigImportBinding>()
-	for (const statement of ast.body ?? []) {
-		const node = statement as unknown as AstNode
-		if (node.type !== 'ImportDeclaration') continue
-		const source = readLiteralString(node.source)
-		if (!source) continue
-		for (const rawSpecifier of arrayOf(node.specifiers)) {
-			const specifier = rawSpecifier as AstNode
-			const local = readIdentifier(specifier.local)
-			if (!local) continue
-			imports.set(local, {
-				source,
-				imported:
-					specifier.type === 'ImportDefaultSpecifier'
-						? 'default'
-						: (readIdentifier(specifier.imported) ?? local),
-				namespace: specifier.type === 'ImportNamespaceSpecifier',
-			})
-		}
-	}
-	return imports
-}
-
-function hasPluginMarker(node: AstNode, imports: Map<string, ConfigImportBinding>): boolean {
+function hasPluginMarker(
+	node: AstNode,
+	imports: ReadonlyMap<string, ConfigImportBinding>,
+): boolean {
 	for (const rawDecorator of arrayOf(node.decorators)) {
 		const expression = (rawDecorator as AstNode).expression as AstNode | undefined
 		const callee =

@@ -1,48 +1,20 @@
 import type { Program } from 'oxc-parser'
-import * as v from 'valibot'
-import * as f from 'valibot-form'
 import { projectRawInput, type RawInputProjection } from 'valibot-form'
 import {
 	collectConfigSchemaModule,
 	type ConfigSchemaSourceResolver,
 	type ConfigSourceSymbol,
 } from './configSourcePlugin.ts'
+import { type AstNode, readIdentifier, readLiteralString } from './pluginUtils.ts'
 import {
-	type AstNode,
-	parseStandaloneWithLang,
-	readIdentifier,
-	readLiteralString,
-} from './pluginUtils.ts'
+	renderStaticConfigEnvironmentExample,
+	type StaticConfigEnvironmentTarget,
+} from './staticConfigEnvironmentExample.ts'
+import { restoreStaticConfigSchema } from './staticConfigEnvironmentSchema.ts'
 
 const ENVIRONMENT_NAME = /^[A-Z_][A-Z0-9_]*$/
 const RESERVED_ENVIRONMENT_PREFIX = 'PLUXEL_'
 const STATIC_RUNTIME_PACKAGE = '@pluxel/runtime-static'
-const FORM_META_FACTORIES = new Set([
-	'formMeta',
-	'stringMeta',
-	'numberMeta',
-	'booleanMeta',
-	'picklistMeta',
-	'arrayMeta',
-	'recordMeta',
-	'objectMeta',
-	'unionMeta',
-])
-const VALIBOT_EXECUTION_METHODS = new Set([
-	'assert',
-	'getDefault',
-	'getDefaults',
-	'getDefaultsAsync',
-	'is',
-	'parse',
-	'parseAsync',
-	'parser',
-	'parserAsync',
-	'safeParse',
-	'safeParseAsync',
-	'safeParser',
-	'safeParserAsync',
-])
 
 type MappingLeaf = Readonly<{
 	environmentName: string
@@ -58,13 +30,8 @@ type DirectBinding = Readonly<{
 	leaves: readonly MappingLeaf[]
 }>
 
-export type StaticConfigEnvironmentTarget = Readonly<{
-	environmentName: string
-	pluginName: string
-	schemaName: string
-	path: readonly string[]
-	projection: RawInputProjection
-}>
+export type { StaticConfigEnvironmentTarget } from './staticConfigEnvironmentExample.ts'
+export { renderStaticConfigEnvironmentExample } from './staticConfigEnvironmentExample.ts'
 
 export type StaticRuntimeDeclarationFacts = Readonly<{
 	name?: string
@@ -84,8 +51,8 @@ export type StaticRuntimeDeclarationParserOptions = {
  * Parses the canonical static entry without importing or evaluating it.
  *
  * Both production and Vite call this exact parser. The only evaluated values are a
- * closed, inert subset of the normalized Valibot schema source produced by the existing
- * config source resolver; author callbacks are replaced with inert functions.
+ * closed, inert subset of the resolved Valibot schema source produced by the existing config
+ * source resolver; author callbacks are replaced with inert functions.
  */
 export async function parseStaticRuntimeDeclaration(
 	options: StaticRuntimeDeclarationParserOptions,
@@ -250,18 +217,19 @@ export async function parseStaticRuntimeDeclaration(
 	const schemaCache = new Map<string, unknown>()
 	const targets: StaticConfigEnvironmentTarget[] = []
 	for (const binding of bindings) {
-		let schema = schemaCache.get(binding.schemaName)
+		const schemaKey = sourceSymbolKey(binding.schemaSymbol)
+		let schema = schemaCache.get(schemaKey)
 		if (schema === undefined) {
 			let source: string
 			try {
-				source = await sourceResolver.render(module, binding.schemaNode)
+				source = await sourceResolver.renderResolved(module, binding.schemaNode)
 			} catch (cause) {
 				error(
 					`[static-application] ${id} cannot statically restore schema ${binding.schemaName}: ${errorMessage(cause)}`,
 				)
 			}
-			schema = restoreSchemaSource(source!, id, binding.schemaName, error)
-			schemaCache.set(binding.schemaName, schema)
+			schema = restoreStaticConfigSchema(source!, { id, schemaName: binding.schemaName, error })
+			schemaCache.set(schemaKey, schema)
 		}
 		for (const leaf of binding.leaves) {
 			const projection = projectRawInput(schema as never, leaf.path)
@@ -306,38 +274,6 @@ async function resolveStaticCatalogPluginSymbols(
 		)
 	}
 	return new Set(symbols!.map(sourceSymbolKey))
-}
-
-export function renderStaticConfigEnvironmentExample(
-	targets: readonly StaticConfigEnvironmentTarget[],
-): string | undefined {
-	if (targets.length === 0) return undefined
-	const grouped = new Map<string, StaticConfigEnvironmentTarget[]>()
-	for (const target of targets) {
-		const group = grouped.get(target.environmentName)
-		if (group) group.push(target)
-		else grouped.set(target.environmentName, [target])
-	}
-	const lines = [
-		'# Generated Pluxel static config bootstrap variables.',
-		'# Existing persisted config remains authoritative.',
-		'',
-	]
-	for (const environmentName of [...grouped.keys()].sort(compareUtf8)) {
-		const group = grouped.get(environmentName)!
-		const descriptions = new Set<string>()
-		const inputs = new Set<string>()
-		for (const target of group) {
-			for (const description of target.projection.descriptions) descriptions.add(description)
-			inputs.add(target.projection.inputDescription)
-		}
-		for (const description of [...descriptions].sort(compareUtf8)) {
-			for (const line of commentLines(description)) lines.push(`# ${line}`)
-		}
-		for (const input of [...inputs].sort(compareUtf8)) lines.push(`# Input: ${input}`)
-		lines.push(`# ${environmentName}=`, '')
-	}
-	return `${lines.slice(0, -1).join('\n')}\n`
 }
 
 function parseDirectMapping(
@@ -465,162 +401,8 @@ function assertCompatibleFanout(
 	}
 }
 
-function restoreSchemaSource(
-	source: string,
-	id: string,
-	schemaName: string,
-	error: (message: string) => never,
-): unknown {
-	const wrapped = `const __pluxel_schema__ = ${source};`
-	const ast = parseStandaloneWithLang(wrapped, `${id}.config-environment.ts`)
-	const statement = ast?.body[0] as unknown as AstNode | undefined
-	const declaration = arrayOf(statement?.declarations)[0] as AstNode | undefined
-	const expression = declaration?.init as AstNode | undefined
-	if (!expression) {
-		error(
-			`[static-application] ${id} cannot statically restore schema ${schemaName}: invalid normalized schema source`,
-		)
-	}
-	let schema: unknown
-	try {
-		schema = evaluateSchemaNode(expression, 0)
-	} catch (cause) {
-		error(
-			`[static-application] ${id} cannot statically restore schema ${schemaName}: ${errorMessage(cause)}`,
-		)
-	}
-	if (!isValibotItem(schema) || schema.kind !== 'schema') {
-		error(
-			`[static-application] ${id} cannot statically restore schema ${schemaName}: expression did not produce a Valibot schema`,
-		)
-	}
-	return schema
-}
-
-function evaluateSchemaNode(node: AstNode, depth: number): unknown {
-	if (depth > 128) throw new Error('schema expression exceeds the maximum static depth')
-	if (node.type === 'Literal') {
-		const regex = node.regex as { pattern?: unknown; flags?: unknown } | undefined
-		if (regex && typeof regex.pattern === 'string' && typeof regex.flags === 'string') {
-			return new RegExp(regex.pattern, regex.flags)
-		}
-		return node.value
-	}
-	if (node.type === 'Identifier') {
-		const name = readIdentifier(node)
-		if (name === 'undefined') return undefined
-		if (name === 'Infinity') return Infinity
-		if (name === 'NaN') return NaN
-		throw new Error(`unresolved identifier ${String(name ?? '<unknown>')}`)
-	}
-	if (node.type === 'UnaryExpression') {
-		const value = evaluateSchemaNode(node.argument as AstNode, depth + 1)
-		if (node.operator === '+' && typeof value === 'number') return value
-		if (node.operator === '-' && typeof value === 'number') return -value
-		if (node.operator === '!' && typeof value === 'boolean') return !value
-		throw new Error(`unsupported unary operator ${String(node.operator)}`)
-	}
-	if (node.type === 'ArrayExpression') {
-		return arrayOf(node.elements).map((rawElement) => {
-			const element = rawElement as AstNode | null
-			if (!element || element.type === 'SpreadElement') {
-				throw new Error('array holes and spreads are not statically restorable')
-			}
-			return evaluateSchemaNode(element, depth + 1)
-		})
-	}
-	if (node.type === 'ObjectExpression') {
-		const result: Record<string, unknown> = Object.create(null)
-		const keys = new Set<string>()
-		for (const rawProperty of arrayOf(node.properties)) {
-			const property = rawProperty as AstNode
-			if (property.type !== 'Property' || property.computed === true) {
-				throw new Error('schema objects must use direct properties without spreads')
-			}
-			const key = directPropertyName(property.key)
-			if (!key || key === '__proto__' || keys.has(key)) {
-				throw new Error('schema objects must use unique direct data keys')
-			}
-			keys.add(key)
-			result[key] = evaluateSchemaNode(property.value as AstNode, depth + 1)
-		}
-		return result
-	}
-	if (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') {
-		return (): undefined => undefined
-	}
-	if (node.type === 'TemplateLiteral') {
-		if (arrayOf(node.expressions).length > 0) {
-			throw new Error('template expressions are not statically restorable')
-		}
-		return arrayOf(node.quasis)
-			.map((quasi) => {
-				const value = (quasi as AstNode).value as { cooked?: unknown; raw?: unknown } | undefined
-				return typeof value?.cooked === 'string'
-					? value.cooked
-					: typeof value?.raw === 'string'
-						? value.raw
-						: ''
-			})
-			.join('')
-	}
-	if (node.type === 'CallExpression') {
-		const callee = node.callee as AstNode | undefined
-		if (callee?.type !== 'MemberExpression' || callee.computed === true) {
-			throw new Error('only direct Valibot and valibot-form factory calls are allowed')
-		}
-		const namespace = readIdentifier(callee.object)
-		const method = readIdentifier(callee.property)
-		if (!namespace || !method) {
-			throw new Error('schema factory call must use a direct namespace member')
-		}
-		if (namespace === 'v' && VALIBOT_EXECUTION_METHODS.has(method)) {
-			throw new Error(`Valibot execution method v.${method} is not allowed in static schema source`)
-		}
-		if (namespace === 'f' && !FORM_META_FACTORIES.has(method)) {
-			throw new Error(`valibot-form method f.${method} is not a schema metadata factory`)
-		}
-		if (namespace !== 'v' && namespace !== 'f') {
-			throw new Error(`unsupported schema factory namespace ${namespace}`)
-		}
-		const namespaceObject = namespace === 'v' ? v : f
-		const factory = (namespaceObject as Record<string, unknown>)[method]
-		if (typeof factory !== 'function')
-			throw new Error(`unknown schema factory ${namespace}.${method}`)
-		const args = arrayOf(node.arguments).map((rawArgument) => {
-			const argument = rawArgument as AstNode
-			if (argument.type === 'SpreadElement') {
-				throw new Error('schema factory spread arguments are not statically restorable')
-			}
-			return evaluateSchemaNode(argument, depth + 1)
-		})
-		const value = Reflect.apply(factory, namespaceObject, args)
-		if (!isValibotItem(value)) {
-			throw new Error(`schema factory ${namespace}.${method} did not produce an inert schema item`)
-		}
-		return value
-	}
-	throw new Error(`unsupported schema syntax ${String(node.type ?? '<unknown>')}`)
-}
-
-function isValibotItem(value: unknown): value is { kind: string } {
-	if (!value || typeof value !== 'object') return false
-	const kind = (value as { kind?: unknown }).kind
-	return (
-		kind === 'schema' || kind === 'validation' || kind === 'transformation' || kind === 'metadata'
-	)
-}
-
 function arrayOf(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : []
-}
-
-function commentLines(value: string): string[] {
-	return value.replaceAll(/\r\n?/g, '\n').split('\n')
-}
-
-function compareUtf8(left: string, right: string): number {
-	return Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'))
 }
 
 function formatPath(path: readonly string[]): string {

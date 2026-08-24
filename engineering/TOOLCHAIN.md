@@ -279,6 +279,9 @@ Production projector 复用 config source resolver，把 exported schema 还原�
 `valibot-form` 的同一个 raw-input projector；它不执行 canonical application、`configure()`、Plugin module side effect、validation、
 transform 或 default getter。无法安全静态还原或无法推导 transport 的 target 使 build 失败，不回退 string/JSON heuristic。
 
+Plugin semantics、config source 与 route-specific validator 都只读 AST，并通过 `pluginUtils` 的 exact-source 有界缓存复用同一
+module parse。Vite/watch source bytes 变化会自然替换该 id 的缓存项；各 pass 仍独立拥有自己的 semantic facts，不能修改共享 AST。
+
 Binding 非空时 assembly 在 distribution finalization 前写 root `.env.example`。Environment name 按 UTF-8 bytes 排序并去重，
 fan-out target 的 description/input facts 稳定聚合；placeholder 保持注释状态。文件编码为 UTF-8 + LF，不读取 build environment，
 不输出 schema default/secret，不生成或加载 `.env`。该路径是 generated asset 保留路径；已有 assembly input 冲突时失败，文件作为

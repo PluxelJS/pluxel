@@ -14,19 +14,16 @@ TypeScript 类型、默认值、归一化、运行时校验和 Workbench 表单�
 import { f, v } from '@pluxel/runtime'
 
 export const WorkerConfig = v.object({
-	enabled: v.optional(
-		v.pipe(v.boolean(), f.formMeta({ label: '启用同步' }), f.booleanMeta({})),
-		true,
-	),
-	endpoint: v.pipe(v.string(), v.url(), f.formMeta({ label: '上游地址' })),
+	enabled: v.optional(v.pipe(v.boolean(), f.formMeta({ title: '启用同步' })), true),
+	endpoint: v.pipe(v.string(), v.url(), f.formMeta({ title: '上游地址' })),
 	concurrency: v.optional(
 		v.pipe(
 			v.number(),
 			v.integer(),
 			v.minValue(1),
 			v.maxValue(32),
-			f.formMeta({ label: '并发数' }),
-			f.numberMeta({ min: 1, max: 32, step: 1 }),
+			f.formMeta({ title: '并发数' }),
+			f.numberMeta({ step: 1 }),
 		),
 		4,
 	),
@@ -88,6 +85,8 @@ class WorkerPlugin extends BasePlugin {
 ```
 
 同样，trim、枚举映射、范围限制和 cross-field validation 应在 schema 中表达。这样 CLI、runtime、测试和配置 UI 看到的是同一个 contract。
+字段标题、说明和展示偏好集中写入 `f.formMeta({ title, description, ... })`。它产生 Valibot 标准 metadata；requiredness、
+格式和范围仍由 `v.optional()`、`v.url()`、`v.minValue()` 等 schema/validation action 表达。
 
 ## 何时可以读取配置
 

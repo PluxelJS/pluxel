@@ -30,10 +30,10 @@ const EMPTY_CONFIG = Object.freeze({ name: '', enabled: false })
 const schema = v.object({
 	name: v.pipe(
 		v.string(),
-		f.formMeta({ label: '名称' }),
+		f.formMeta({ title: '名称' }),
 		f.stringMeta({ placeholder: '输入名称' }),
 	),
-	enabled: v.pipe(v.boolean(), f.formMeta({ label: '启用' }), f.booleanMeta({})),
+	enabled: v.pipe(v.boolean(), f.formMeta({ title: '启用' })),
 })
 const fields = f.extractFormFields(schema)
 

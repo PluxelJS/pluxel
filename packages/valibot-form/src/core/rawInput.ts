@@ -1,5 +1,5 @@
-import { META_TYPES, type FormMeta, type StringMeta } from './meta'
-import { readMeta, type Schema } from './schema'
+import type { Schema } from './schema'
+import { readStandardSchemaMetadata } from './schemaMetadata'
 
 /** The only string transports a host needs in order to produce Valibot raw input. */
 export type RawInputTransport = 'string' | 'number' | 'boolean' | 'json'
@@ -42,7 +42,7 @@ export interface RawInputProjection {
 	/** A complete, portable phrase such as `number (finite integer, >= 1)`. */
 	readonly inputDescription: string
 	/**
-	 * Schema descriptions or labels, deduplicated and sorted. When neither is
+	 * Schema descriptions or titles, deduplicated and sorted. When neither is
 	 * present, the raw path is the single fallback description.
 	 */
 	readonly descriptions: readonly string[]
@@ -328,30 +328,6 @@ function collectRawValidationActions(
 	return { actions: bucket, transformed: false }
 }
 
-function readWrappedMeta<T extends typeof META_TYPES.FORM | typeof META_TYPES.STRING>(
-	schema: Schema,
-	type: T,
-): T extends typeof META_TYPES.FORM ? FormMeta | undefined : StringMeta | undefined {
-	let current = schema as SchemaRecord
-	const seen = new Set<Schema>()
-	while (!seen.has(current)) {
-		seen.add(current)
-		const metadata = readMeta(current, type)
-		if (metadata !== undefined) return metadata as never
-		const root = pipeRoot(current)
-		if (root !== current) {
-			current = root
-			continue
-		}
-		if (current.wrapped && isSchema(current.wrapped)) {
-			current = current.wrapped as SchemaRecord
-			continue
-		}
-		break
-	}
-	return undefined as never
-}
-
 function finiteNumber(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value)
 }
@@ -368,7 +344,7 @@ function applyStaticFacts(schema: Schema, shape: PortableShape): PortableShape {
 	const { actions } = collectRawValidationActions(schema)
 	if (shape.kind === 'string') {
 		const range: MutableRawInputRange = { ...shape.range }
-		let format = readWrappedMeta(schema, META_TYPES.STRING)?.format ?? shape.format
+		let format = shape.format
 		for (const action of actions) {
 			const type = typeof action.type === 'string' ? action.type : ''
 			if (!format && PORTABLE_FORMATS[type]) format = PORTABLE_FORMATS[type]
@@ -750,8 +726,8 @@ function describeShape(shape: PortableShape): string {
 }
 
 function describeTarget(schema: Schema, path: readonly string[]): string {
-	const meta = readWrappedMeta(schema, META_TYPES.FORM)
-	return meta?.description ?? meta?.label ?? (path.length > 0 ? path.join('.') : 'root')
+	const metadata = readStandardSchemaMetadata(schema)
+	return metadata.description ?? metadata.title ?? (path.length > 0 ? path.join('.') : 'root')
 }
 
 function freezeProjection(projection: RawInputProjection): RawInputProjection {

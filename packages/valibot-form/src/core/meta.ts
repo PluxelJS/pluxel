@@ -1,5 +1,6 @@
-import type { BaseMetadata } from 'valibot'
+import { metadata, type BaseMetadata, type MetadataAction as ValibotMetadataAction } from 'valibot'
 import type { Schema } from './schema'
+import { FORM_METADATA_KEY } from './schemaMetadata'
 
 export type BadgeMeta = string | { label: string; color?: string }
 
@@ -20,7 +21,7 @@ export type SectionMeta =
 	  }
 
 export interface FormMeta {
-	label?: string
+	title?: string
 	description?: string
 	help?: string
 	hint?: string
@@ -32,33 +33,21 @@ export interface FormMeta {
 	disabled?: boolean
 	readOnly?: boolean
 	hidden?: boolean
-	required?: boolean
 }
 
 export interface StringMeta {
 	control?: 'text' | 'textarea' | 'password' | 'code'
 	placeholder?: string
 	rows?: number
-	minLength?: number
-	maxLength?: number
-	format?: string
 }
 
 export interface NumberMeta {
 	placeholder?: string
-	min?: number
-	max?: number
 	step?: number
-	integer?: boolean
 	format?: Intl.NumberFormatOptions
 }
 
-export interface BooleanMeta {
-	control?: 'switch'
-}
-
 export interface PicklistMeta {
-	options?: readonly (string | number)[]
 	entries?: readonly {
 		value: string | number
 		label?: string
@@ -82,8 +71,6 @@ export interface ArrayMeta {
 	layout?: 'list' | 'grid' | 'picker'
 	columns?: number
 	disableAutoGrid?: boolean
-	min?: number
-	max?: number
 	addable?: boolean
 	removable?: boolean
 	reorderable?: boolean
@@ -95,8 +82,6 @@ export interface ArrayMeta {
 
 export interface RecordMeta {
 	layout?: 'table' | 'list'
-	min?: number
-	max?: number
 	addable?: boolean
 	removable?: boolean
 	reorderable?: boolean
@@ -139,7 +124,6 @@ export const META_TYPES = {
 	FORM: 'form',
 	STRING: 'string',
 	NUMBER: 'number',
-	BOOLEAN: 'boolean',
 	PICKLIST: 'picklist',
 	ARRAY: 'array',
 	RECORD: 'record',
@@ -148,12 +132,12 @@ export const META_TYPES = {
 } as const
 
 export type MetaType = (typeof META_TYPES)[keyof typeof META_TYPES]
+type TypedMetaType = Exclude<MetaType, typeof META_TYPES.FORM>
 
 export interface MetaValueMap {
 	form: FormMeta
 	string: StringMeta
 	number: NumberMeta
-	boolean: BooleanMeta
 	picklist: PicklistMeta
 	array: ArrayMeta
 	record: RecordMeta
@@ -170,7 +154,7 @@ export interface MetaValueMap {
  *
  * Runtime-wise this is still a plain object; Valibot does not execute metadata items.
  */
-export type MetadataAction<TType extends MetaType, TInput = unknown> = Omit<
+export type MetadataAction<TType extends TypedMetaType, TInput = unknown> = Omit<
 	BaseMetadata<TInput>,
 	'type' | 'reference'
 > & {
@@ -179,7 +163,7 @@ export type MetadataAction<TType extends MetaType, TInput = unknown> = Omit<
 	readonly reference: (...args: any[]) => MetadataAction<TType, TInput>
 }
 
-export function createMetaFactory<TType extends MetaType>(type: TType) {
+export function createMetaFactory<TType extends TypedMetaType>(type: TType) {
 	// Use a variadic signature to stay assignable to Valibot's `BaseMetadata["reference"]`,
 	// which is typed as `(...args: any[]) => BaseMetadata<any>`.
 	const factory = <TInput = any>(
@@ -193,18 +177,34 @@ export function createMetaFactory<TType extends MetaType>(type: TType) {
 	return factory
 }
 
-export const formMeta = createMetaFactory<'form'>('form')
+type FormMetadataAction<TInput> = ValibotMetadataAction<
+	TInput,
+	Readonly<{
+		title?: string
+		description?: string
+		[FORM_METADATA_KEY]: Omit<FormMeta, 'title' | 'description'>
+	}>
+>
+
+/**
+ * Groups field text and presentation preferences in one action while storing title and
+ * description in Valibot's standard metadata channel.
+ */
+export function formMeta<TInput = any>(value: FormMeta): FormMetadataAction<TInput> {
+	const { title, description, ...presentation } = value
+	return metadata({
+		...(title !== undefined ? { title } : {}),
+		...(description !== undefined ? { description } : {}),
+		[FORM_METADATA_KEY]: presentation,
+	}) as FormMetadataAction<TInput>
+}
+
 export const stringMeta = createMetaFactory<'string'>('string') as <TInput extends string = string>(
 	metadata: StringMeta,
 ) => MetadataAction<'string', TInput>
 export const numberMeta = createMetaFactory<'number'>('number') as <TInput extends number = number>(
 	metadata: NumberMeta,
 ) => MetadataAction<'number', TInput>
-export const booleanMeta = createMetaFactory<'boolean'>('boolean') as <
-	TInput extends boolean = boolean,
->(
-	metadata: BooleanMeta,
-) => MetadataAction<'boolean', TInput>
 export const picklistMeta = createMetaFactory<'picklist'>('picklist') as <
 	TInput extends string | number = string | number,
 >(
@@ -229,7 +229,6 @@ export const f = {
 	formMeta,
 	stringMeta,
 	numberMeta,
-	booleanMeta,
 	picklistMeta,
 	arrayMeta,
 	recordMeta,

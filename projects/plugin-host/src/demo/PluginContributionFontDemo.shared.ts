@@ -15,10 +15,10 @@ export {
 } from './PluginContributionFontDemo.contract'
 
 const FontSetRefSchema = v.object({
-	provider: v.pipe(v.optional(v.string(), FONT_MANAGER_PLUGIN_NAME), f.stringMeta({})),
-	kind: v.pipe(v.optional(v.string(), FONT_KIND), f.stringMeta({})),
-	id: v.pipe(v.optional(v.string(), 'neo-grotesk'), f.stringMeta({})),
-	label: v.pipe(v.optional(v.string(), 'Neo Grotesk'), f.stringMeta({})),
+	provider: v.optional(v.string(), FONT_MANAGER_PLUGIN_NAME),
+	kind: v.optional(v.string(), FONT_KIND),
+	id: v.optional(v.string(), 'neo-grotesk'),
+	label: v.optional(v.string(), 'Neo Grotesk'),
 })
 
 export const ConsumerAppearanceConfig = v.object({
@@ -30,7 +30,7 @@ export const ConsumerAppearanceConfig = v.object({
 			label: 'Neo Grotesk',
 		}),
 		f.formMeta({
-			label: '字体集引用',
+			title: '字体集引用',
 			description: '配置归 consumer 所有；provider 只提供 renderer 和候选字体集合。',
 		}),
 	),

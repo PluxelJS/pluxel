@@ -97,7 +97,7 @@ describe('projectRawInput', () => {
 			nested: v.optional(
 				v.nullable(
 					v.object({
-						name: v.pipe(v.string(), formMeta({ label: 'Nested name' })),
+						name: v.pipe(v.string(), v.title('Nested name')),
 					}),
 				),
 			),
@@ -156,7 +156,7 @@ describe('projectRawInput', () => {
 
 	it('resolves paths shared by present union branches while ignoring nullish branches', () => {
 		const schema = v.union([
-			v.object({ nested: v.pipe(v.string(), formMeta({ label: 'Nested value' })) }),
+			v.object({ nested: v.pipe(v.string(), v.title('Nested value')) }),
 			v.null(),
 			v.undefined(),
 		])
@@ -236,9 +236,9 @@ describe('projectRawInput', () => {
 
 	it('aggregates union branch descriptions deterministically', () => {
 		const schema = v.union([
-			v.object({ value: v.pipe(v.string(), formMeta({ description: 'Zulu description' })) }),
-			v.object({ value: v.pipe(v.string(), formMeta({ label: 'Alpha label' })) }),
-			v.object({ value: v.pipe(v.string(), formMeta({ description: 'Zulu description' })) }),
+			v.object({ value: v.pipe(v.string(), v.description('Zulu description')) }),
+			v.object({ value: v.pipe(v.string(), v.title('Alpha label')) }),
+			v.object({ value: v.pipe(v.string(), v.description('Zulu description')) }),
 		])
 
 		expect(projectRawInput(schema, ['value'])).toMatchObject({

@@ -71,7 +71,7 @@ describe('ConfigPresentationPlanV1 compiler', () => {
 
 	it('turns unsupported schemas and non-portable renderer defaults into read-only fields', () => {
 		const schema = v.object({
-			createdAt: v.pipe(v.date(), formMeta({ label: 'Created at' })),
+			createdAt: v.pipe(v.date(), formMeta({ title: 'Created at' })),
 			items: v.pipe(v.array(v.string()), arrayMeta({ defaultItem: () => 'not portable' })),
 		})
 		const output = compileConfigPresentationPlanV1({
