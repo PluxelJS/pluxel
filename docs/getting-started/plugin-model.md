@@ -282,7 +282,36 @@ const timer = setInterval(() => {
 this.ctx.effects.defer(() => clearInterval(timer))
 ```
 
-## 公开有限事件
+## 在 ambient 广播和公开协议之间选择
+
+事件不要求 provider 存在、启动顺序或 replacement 传播，只用于 host 内松耦合广播时，扩展 Core 的 `Events` map，随后通过
+`ctx.events` 订阅和发布：
+
+```ts twoslash
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+
+declare module '@pluxel/core' {
+	interface Events {
+		'catalog:invalidated': [catalogId: string]
+	}
+}
+
+@Plugin({ displayName: 'Catalog observer' })
+export class CatalogObserverPlugin extends BasePlugin {
+	override init() {
+		this.ctx.events.on('catalog:invalidated', (catalogId) => {
+			this.ctx.logger.info('catalog invalidated', { catalogId })
+		})
+	}
+}
+```
+
+module augmentation 只合并 TypeScript 事件词汇，不会 import、启用或连接两个 Plugin，也不提供启动顺序保证。每个 root
+共享一个 emitter backend，但每个 Plugin、Part 和 caller Context 得到固定 owner 的普通 `EventsService` view；订阅自动进入
+该 owner effects，stop、replacement 和 init rollback 都会取消订阅。事件名应使用带领域前缀的稳定字面量，避免无归属的通用名称。
+
+如果事件属于某个 provider 的公开能力，consumer 必须依赖该 provider，或者 availability 会影响 consumer lifecycle，则公开
+具名 `EvtChannel`，不要把依赖伪装成 ambient 广播：
 
 事件集合在设计时已知时，公开命名的 `EvtChannel`，不要重新实现字符串 registry：
 

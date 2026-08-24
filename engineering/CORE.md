@@ -145,8 +145,9 @@ composition 或 owner-bound capability registration 时使用 `PluginPart`；它
 Part child Context 的 service view 惰性缓存，不回灌共享 service 的 mutable `ctx`；未声明 owner binding 的 service 保持
 owning Plugin view，root service 原样共享。需要独立失败传播、启停、replacement 或治理的组成成为 Plugin。
 
-公开的固定事件集合使用具名 `EvtChannel` 属性；Core lifecycle 和 route invalidation 使用明确的 internal subscription，
-不共享 Context global event bus。
+跨 Plugin dependency edge 公开的固定事件集合使用具名 `EvtChannel` 属性；无需 graph dependency 的 host 广播使用
+module-augmented `ctx.events`，其订阅绑定 owner effects。Core lifecycle 和 route invalidation 使用明确的 internal subscription，
+不进入作者可扩展的 ambient event vocabulary。
 
 ## 实现入口
 

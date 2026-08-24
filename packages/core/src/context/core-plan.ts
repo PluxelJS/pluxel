@@ -1,10 +1,12 @@
 import { ConfigService } from '../services/config/ConfigService'
 import { EffectsService } from '../services/effects/EffectsService'
+import { createEventsServiceView, createRootEventsService } from '../services/events/EventsService'
 import { LoggerService, type LoggerServiceConfig } from '../logger/LoggerService'
 import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
 import {
 	createContextHost,
 	installRootCapability,
+	installOwnerViewCapability,
 	installScopeCapability,
 	type ContextCapability,
 	type ContextCapabilityInstallation,
@@ -13,6 +15,7 @@ import { type CoreHostConfig, type Context, type RootContext } from './Context'
 import {
 	CONFIG_SERVICE_CAPABILITY,
 	EFFECTS_CAPABILITY,
+	EVENTS_CAPABILITY,
 	LOGGER_CAPABILITY,
 	PLUGIN_SERVICE_CAPABILITY_IDENTITY,
 } from './core-capabilities'
@@ -20,11 +23,12 @@ import {
 export const PLUGIN_SERVICE_CAPABILITY =
 	PLUGIN_SERVICE_CAPABILITY_IDENTITY as ContextCapability<PluginService>
 
-export { CONFIG_SERVICE_CAPABILITY, EFFECTS_CAPABILITY, LOGGER_CAPABILITY }
+export { CONFIG_SERVICE_CAPABILITY, EFFECTS_CAPABILITY, EVENTS_CAPABILITY, LOGGER_CAPABILITY }
 
 export type CoreRootInputs = Readonly<{
 	name: string
 	logger?: Readonly<LoggerServiceConfig>
+	events?: Readonly<import('../services/events/EventsService').EventsServiceConfig>
 	plugins?: Readonly<PluginServiceConfig>
 }>
 
@@ -32,6 +36,14 @@ export function resolveCoreRootInputs(config: CoreHostConfig = {}): CoreRootInpu
 	return Object.freeze({
 		name: config.name ?? 'root',
 		...(config.logger ? { logger: Object.freeze({ ...config.logger }) } : {}),
+		...(config.events
+			? {
+					events: Object.freeze({
+						...config.events,
+						...(config.events.events ? { events: Object.freeze([...config.events.events]) } : {}),
+					}),
+				}
+			: {}),
 		...(config.plugins ? { plugins: Object.freeze({ ...config.plugins }) } : {}),
 	})
 }
@@ -47,6 +59,12 @@ export function createCoreContextInstallations(
 		installScopeCapability(EFFECTS_CAPABILITY, {
 			property: 'effects',
 			create: (ctx) => new EffectsService(ctx as Context, undefined),
+		}),
+		installOwnerViewCapability(EVENTS_CAPABILITY, {
+			property: 'events',
+			createRoot: (root) => createRootEventsService(root as RootContext, inputs.events),
+			createView: (rootService, owner) =>
+				owner === owner.root ? rootService : createEventsServiceView(rootService, owner as Context),
 		}),
 		installRootCapability(CONFIG_SERVICE_CAPABILITY, {
 			create: (ctx) => new ConfigService(ctx as RootContext),

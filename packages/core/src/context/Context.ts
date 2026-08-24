@@ -3,11 +3,13 @@ import type { LoggerServiceConfig, ContextLogger } from '../logger/LoggerService
 import type { PluginNodeInfo } from '../plugins/runtime/PluginDefinitions'
 import type { PluginServiceConfig } from '../plugins/runtime/PluginService'
 import type { EffectsScope } from '../services/effects/EffectsService'
+import type { EventsService, EventsServiceConfig } from '../services/events/EventsService'
 
 /** Plugin-facing owner and capability projection. Construction remains host-owned. */
 export interface Context extends BaseContext<RootContext> {
 	readonly logger: ContextLogger
 	readonly effects: EffectsScope
+	readonly events: EventsService
 	readonly pluginInfo?: PluginNodeInfo
 	readonly caller?: Context
 }
@@ -24,5 +26,6 @@ export interface PluginContext extends Context {
 export interface CoreHostConfig {
 	name?: string
 	logger?: LoggerServiceConfig
+	events?: EventsServiceConfig
 	plugins?: PluginServiceConfig
 }

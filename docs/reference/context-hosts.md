@@ -108,7 +108,7 @@ function createAppContext(config: AppHostConfig = {}) {
 
 因此 IDE 在 `createAppContext({ ... })` 提示的是 `AppHostConfig`，在 `ctx.clock` 提示的是 installation 推导结果；两条类型链
 各自只有一个 authority。Pluxel Runtime 同样由集中 `RuntimeHostConfig`/`CoreHostConfig` 提供创建参数提示，再由 root plan
-解析和分发给 HTTP、database、workers 等 service；完整 host config 不存进 Context，也不交给每个 Plugin。
+解析和分发给 events、HTTP、database、workers 等 service；完整 host config 不存进 Context，也不交给每个 Plugin。
 
 ## 选择作用域
 

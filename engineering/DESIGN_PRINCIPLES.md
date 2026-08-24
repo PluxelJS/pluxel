@@ -19,8 +19,9 @@
 
 ## 2. 保持能力所有权清晰
 
-- HTTP、config、logger、effects、commands、persistence/database 是常驻 runtime 能力；公开事件用具名
-  `EvtChannel` 属性表达，不提供 Context global event bus。
+- HTTP、config、logger、effects、events、commands、persistence/database 是常驻 runtime 能力。`ctx.events` 提供通过
+  module augmentation 扩展的松耦合 host 广播；具名 `EvtChannel` 属性表达沿 Plugin dependency edge 暴露的显式协议。
+  ambient event 类型声明不建立、加载或替代 Plugin graph dependency。
 - standalone host 可以用 `@pluxel/context` 组合自己的封闭能力集合；Runtime Context 只由 launcher 在 root
   创建前组合，Plugin 不能追加、替换或运行时安装 capability。
 - Workbench extension 和资源只能通过可选的 `ctx.workbench?.mount()` 挂载。

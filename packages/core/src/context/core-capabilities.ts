@@ -1,12 +1,15 @@
 import type { ContextLogger } from '../logger/LoggerService'
 import type { ConfigService } from '../services/config/ConfigService'
 import type { EffectsScope } from '../services/effects/EffectsService'
+import type { EventsService } from '../services/events/EventsService'
 import { defineContextCapability, type ContextCapability } from '@pluxel/context'
 
 export const LOGGER_CAPABILITY: ContextCapability<ContextLogger> =
 	defineContextCapability('core.logger')
 export const EFFECTS_CAPABILITY: ContextCapability<EffectsScope> =
 	defineContextCapability('core.effects')
+export const EVENTS_CAPABILITY: ContextCapability<EventsService> =
+	defineContextCapability('core.events')
 export const CONFIG_SERVICE_CAPABILITY: ContextCapability<ConfigService> =
 	defineContextCapability('core.plugin-config')
 

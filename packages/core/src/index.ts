@@ -92,4 +92,5 @@ export type {
 } from './plugins'
 
 export { EvtChannel } from './services'
+export type { Events, EventsService, EventsServiceConfig, EventsWhenGuard } from './services'
 export type { Cleanup, DisposableLike, Effects, EffectsScope } from './services'

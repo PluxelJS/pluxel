@@ -37,6 +37,10 @@ view 是带 immutable owner Context 的普通 class/object，不通过 `Proxy` �
 `ctx.commands`、`ctx.http`、`ctx.workers` 等保留调用者注册和 cleanup ownership，同时 registry/pool/server 等 backend
 仍按 root 共享。可选能力 disabled 时不进入 host shape，不能通过 null stateful service 模拟启用。
 
+Core events 同样使用 owner-view：每个 root 只有一个 emitter backend，每个 Context owner 得到带固定 `ctx` 的普通
+`EventsService` view，订阅进入该 owner effects。`ctx.events` 的 module augmentation 只是共享 ambient event vocabulary，适合
+不需要 Plugin graph ordering 或 availability 保证的广播；具名 `EvtChannel` 才是依赖 provider 对 consumer 暴露的协议。
+
 ## 依赖与组成
 
 | 意图              | API                                      | 生命周期含义                                  |

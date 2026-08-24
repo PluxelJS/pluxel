@@ -139,12 +139,13 @@ Context 只暴露能力和当前 owner identity，不暴露完整宿主配置。
 
 ### 本地能力优先保持 Proxy-free
 
-Context projected getter、owner view、Plugin dependency caller facade、具名 `EvtChannel` 与 config snapshot 都使用普通对象、
+Context projected getter、owner view、Plugin dependency caller facade、ambient `ctx.events`、具名 `EvtChannel` 与 config snapshot 都使用普通对象、
 class 或一次编译的 property descriptor：
 
 - `ctx.http` 是普通 owner view；所有 view 共享一个 root HTTP backend；
 - caller facade 在 provider construction 后固定 surface，每次 accepted invocation 使用独立普通 receiver；
 - `EvtChannel` 直接接收 owner Context，consumer subscription 通过缓存的普通 facade 绑定 effects；
+- `ctx.events` 共享 root emitter backend，但每个 owner 使用固定 Context 的普通 service view，subscription 进入 owner effects；
 - raw config 每个 revision 返回一个深冻结普通 snapshot，`configs.use()` 初始化 sentinel 是冻结 identity token；提前读取由工具链拒绝。
 
 这是一项设计偏好，不是全面禁令：当普通对象或预编译 shape 能得到更明确的 identity、反射和生命周期语义时，不用 `Proxy`
