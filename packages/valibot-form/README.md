@@ -89,16 +89,3 @@ export function ConfigEditor() {
 	)
 }
 ```
-
-## TUI Adapter Direction
-
-A terminal UI should be a separate adapter rather than a replacement for `valibot-form/web`.
-
-Recommended shape:
-
-- Keep `valibot-form` as the shared schema metadata and field planning layer.
-- Add a separate package or subpath, for example `valibot-form/tui`.
-- Depend on a terminal renderer there, such as Ink for React-style TUIs or a prompt library for simple sequential setup flows.
-- Reuse `extractFormFields()` so web, TUI, CLI, and config-file tooling interpret schemas the same way.
-
-This keeps startup configuration lightweight while still allowing richer web configuration screens where Mantine already exists in the host app.
