@@ -32,6 +32,8 @@ type ClientLease = {
 	readonly controller: AbortController
 }
 
+type PluginContext = Context & { pluginInfo: NonNullable<Context['pluginInfo']> }
+
 function stoppedClientError(): Error {
 	return new Error('Wretch client belongs to a stopped or replaced plugin generation')
 }
@@ -183,7 +185,7 @@ export class WretchPlugin extends BasePlugin {
 		return lease
 	}
 
-	private async initializeManagedSettings(owner: Context): Promise<ManagedSettingsState> {
+	private async initializeManagedSettings(owner: PluginContext): Promise<ManagedSettingsState> {
 		const policy = this.requirePolicy()
 		const storage = this.requireStorage()
 		const managed = this.managed
@@ -212,10 +214,11 @@ export class WretchPlugin extends BasePlugin {
 		return state
 	}
 
-	private requireCaller(): Context {
+	private requireCaller(): PluginContext {
 		const caller = this.ctx.caller
 		if (!caller) throw new Error('Managed Wretch settings require a consumer plugin Context')
-		return caller
+		if (!caller.pluginInfo) throw new Error('Managed Wretch settings require a Plugin owner')
+		return caller as PluginContext
 	}
 
 	private requirePolicy(): OutboundPolicy {
@@ -235,7 +238,7 @@ function effectiveTimeout(hostTimeoutMs: number, consumerTimeout?: number): numb
 	return Math.min(hostTimeoutMs, consumerTimeout)
 }
 
-function settingsKey(owner: Context['pluginInfo']['nodeAddress']): string {
+function settingsKey(owner: PluginContext['pluginInfo']['nodeAddress']): string {
 	const address = parsePluginNodeAddress(owner)
 	const digest = createHash('sha256').update(encodePluginNodeAddressBytes(address)).digest('hex')
 	return `consumers/v3/${digest}.json`
