@@ -11,9 +11,11 @@ owner、完成 migration prepare，并返回只暴露 `read(callback)` 与 `tran
 结构，不共享数据、handle 或 transaction。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
 
 以上边界只约束 Pluxel-managed plugin database。同一作者控制 fixed catalog、schema 与部署的 static application 可以完全绕过
-该 capability，用普通 application module scope 自己的 Drizzle client、pool 与统一 migration。默认使用无参数 lazy `use()`；
-`prepare()` 只在数据库失败必须阻止任何 plugin 启动时调用同一入口做 eager preflight。runtime 不为这种数据库提供 per-plugin
-role/instance、lineage、outbox 或 `liveQuery`。
+该 capability，用 application-private package 统一拥有 Drizzle client、pool 与 migration。数据库是整个应用的硬前提时，它是
+host-owned root resource：static `prepare()` 在 Plugin graph 前打开并迁移，实例按 root Context 绑定，关闭登记到 root effects；
+Plugin 通过接收 Context 的 typed accessor 显式取得实例。它不读取 host config、不从 PersistenceService 反推路径，也不投影为
+Runtime Context property。只有部分 Plugin 依赖时才改成 constructor-injected provider Plugin，让 graph 隔离失败和拥有 cleanup。
+runtime 不为 application-private database 提供 per-plugin role/instance、lineage、outbox 或 `liveQuery`。
 
 每个插件最多一个 definition。runtime 为 owner 下的每个 immutable database instance 分配独立 physical schema 与
 NOLOGIN role；system registry 只把一个 instance 标为 active。handle 固定绑定取得时的 instance，每次 operation 都在

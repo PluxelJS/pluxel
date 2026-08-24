@@ -10,6 +10,8 @@ description: 根据数据归属选择 Plugin 数据库或应用数据库，并�
 | Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin               | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
 | 需要 Plugin 独立 lineage、旧 generation handle 撤销或 Workbench 查询 | `defineDatabase()` + `ctx.database.use()`                           |
 | fixed catalog、schema 和部署由同一个应用团队控制                     | application-private database package                                |
+| 没有共享数据库，整个 static application 就无法成立                   | host `prepare()` + root-bound typed accessor                        |
+| 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行           | application-private provider Plugin + constructor dependency        |
 | 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务       | application-private database package                                |
 
 Managed Plugin database 统一使用 PostgreSQL dialect 和 Drizzle。Plugin 作者只依赖 `drizzle-orm`，不选择 driver；部署宿主在 native PostgreSQL 与 PGlite 之间选择，同一份 schema、migration 和 query 不编写 driver 分支。
@@ -144,63 +146,97 @@ Static application 应在 `configure()` 返回 `database: false`，使误用 `ct
 
 内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
 
-自然入口是无参数 lazy `use()`：
+### 整个应用依赖数据库
+
+如果没有数据库，整个 static application 就没有可运行的核心功能，数据库是 host-owned root resource：static `prepare()` 必须在 Plugin graph 启动前完成连接、migration 和必要 preflight；失败直接终止本次 host startup。成功实例按 root Context 绑定，关闭登记到 root effects，不能归属任一 consumer Plugin。
+
+Application package 导出接收 Context 的 typed accessor，不把数据库投影成 `ctx.database`，也不使用进程级 module singleton：
 
 ```ts no-twoslash
 // @app/database — application-private server module
-import { openAndMigrate, type AppDatabase } from './internal.js'
+import type { Context } from '@pluxel/runtime'
+import { openDatabase, migrate, type AppDatabase, type DatabaseOptions } from './internal.js'
 
-let active: Promise<AppDatabase> | undefined
+const active = new WeakMap<object, AppDatabase>()
 
-export function useAppDatabase(): Promise<AppDatabase> {
-	if (active) return active
-	const task = openAndMigrate()
-	active = task
-	void task.catch(() => {
-		if (active === task) active = undefined
-	})
-	return task
+export async function prepareAppDatabase(ctx: Context, options: DatabaseOptions): Promise<void> {
+	const root = ctx.root
+	if (active.has(root)) return
+	const database = await openDatabase(options)
+
+	try {
+		await migrate(database)
+		active.set(root, database)
+		root.effects.defer(
+			async () => {
+				if (active.get(root) === database) active.delete(root)
+				await database.close()
+			},
+			{ tag: 'AppDatabase', phase: 'shutdown' },
+		)
+	} catch (error) {
+		if (active.get(root) === database) active.delete(root)
+		await database.close()
+		throw error
+	}
 }
 
-export async function prepareAppDatabase(): Promise<void> {
-	await useAppDatabase()
-}
-
-export async function closeAppDatabase(): Promise<void> {
-	const task = active
-	active = undefined
-	if (!task) return
-	const database = await task.catch(() => undefined)
-	await database?.close()
+export function appDatabaseFor(ctx: Context): AppDatabase {
+	const database = active.get(ctx.root)
+	if (!database) throw new Error('Application database has not been prepared')
+	return database
 }
 ```
 
-只有部分 Plugin 依赖数据库时保持 lazy，失败只阻止真正依赖数据库的 Plugin：
+`appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；static application 的泛型不能反向改变独立编译 Plugin 的 Context shape。
+
+Static entry 对部署路径保持唯一 authority，同时供 Runtime persistence 和 application database 使用：
 
 ```ts no-twoslash
-override async init() {
-	this.database = await useAppDatabase()
-}
-```
-
-不要在 module import 时创建 pool，也不要把全局 pool 绑定第一个调用它的 Plugin effects，否则该 Plugin replacement 会关闭其他 consumer 的数据库。
-
-如果数据库是整个应用的 readiness 前提，在 static application 的 `prepare()` 中显式 preflight：
-
-```ts no-twoslash
+import { resolve } from 'node:path'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
 import { prepareAppDatabase } from '@app/database'
 
+function storagePaths({ env, deployment }) {
+	const root = resolve(env.APP_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`)
+	return {
+		runtimePersistence: resolve(root, 'runtime'),
+		applicationDatabase: resolve(root, 'application.sqlite'),
+	}
+}
+
 export default defineStaticRuntime({
-	name: 'rhythm',
+	name: 'application',
 	plugins: [BillingPlugin, AuditPlugin],
-	prepare: async () => {
-		await prepareAppDatabase()
+	configure(startup) {
+		return {
+			persistence: storagePaths(startup).runtimePersistence,
+			database: false,
+		}
+	},
+	async prepare({ host, startup }) {
+		await prepareAppDatabase(host.ctx, {
+			filename: storagePaths(startup).applicationDatabase,
+		})
 	},
 })
 ```
 
-`prepare()` 在 runtime services ready 后、Plugin graph 启动前运行。它抛错会终止本次 host startup，不会留下半启动的 Plugin。`closeAppDatabase()` 由 application/deployment shutdown 调用，不绑定任何一个 consumer Plugin 的 effects。
+Plugin 在 `init()` 或之后同步取得已准备实例：
+
+```ts no-twoslash
+override init() {
+	this.database = appDatabaseFor(this.ctx)
+}
+```
+
+不要读取已移除的 `ctx.config.persistence`，也不要从 `ctx.root.persistence` 猜 filesystem path。前者会把 host config 泄露给 Plugin；后者是 `namespace/get/put` 操作抽象，backend 可能是 memory、readonly 或 custom，并不保证存在 SQLite 可以打开的目录。SQLite path、DSN、TLS 和 pool options 都从 static `startup` 的 env、bindings 或 deployment facts 解析。
+
+`prepare()` 不是通用 service lifecycle：这里只表达“数据库是整个应用的硬 readiness 前提”。数据库 package 负责领域初始化，root effects 负责 acquisition rollback、正常 stop 和 shutdown；consumer replacement 不能关闭共享实例。
+
+### 只有部分 Plugin 依赖数据库
+
+如果数据库失败时无关 Plugin 仍应运行，把数据库建模为 application-private provider Plugin，并让 consumer 通过 constructor 声明 required dependency。provider 在 `init()` 打开和迁移数据库，并立即把关闭登记到自己的 effects；provider failure 只阻塞 dependents。不要同时保留 root `prepare()` 和 provider Plugin 两套所有权。
 
 这条路径可以使用 SQLite 或其他数据库，但应用必须自行负责 migration 并发、连接恢复、备份、durability 和 shutdown。不要把 application client 包装成 `ctx.database`，否则会让调用者误以为它具备 managed Plugin database 的 owner isolation 与 replacement 语义。
 

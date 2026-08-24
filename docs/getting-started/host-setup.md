@@ -58,7 +58,7 @@ export default defineStaticRuntime({
 
 `plugins` 定义 build-time fixed catalog 和 code closure；运行时依赖图由 enabled state、fork 和 provider override 形成。`workbench`、persistence、logging、HTTP、Plugin config records 和 enabled state 是 `configure()` 返回的 startup data。
 
-`prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。应用共享数据库可以在这里 eager migrate/preflight，只有部分 Plugin 使用的数据库则保持 lazy。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
+`prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。没有应用数据库就无法运行的 static application 在这里打开、迁移并把关闭登记到 root effects；只有部分 Plugin 使用的数据库应成为 provider Plugin，由 graph 隔离失败。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
 
 不要把 `root` 或 `workbench` 直接写进 static application 顶层。`configure()` 每次宿主启动都会重新读取 env、bindings 与 deployment。
 
