@@ -1,6 +1,6 @@
 import { ConfigService } from '../services/config/ConfigService'
 import { EffectsService } from '../services/effects/EffectsService'
-import { createEventsServiceView, createRootEventsService } from '../services/events/EventsService'
+import { createEventsBackend, createEventsServiceView } from '../services/events/EventsService'
 import { LoggerService, type LoggerServiceConfig } from '../logger/LoggerService'
 import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
 import {
@@ -62,9 +62,8 @@ export function createCoreContextInstallations(
 		}),
 		installOwnerViewCapability(EVENTS_CAPABILITY, {
 			property: 'events',
-			createRoot: (root) => createRootEventsService(root as RootContext, inputs.events),
-			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : createEventsServiceView(rootService, owner as Context),
+			createRoot: (root) => createEventsBackend(root as RootContext, inputs.events),
+			createView: (backend, owner) => createEventsServiceView(backend, owner as Context),
 		}),
 		installRootCapability(CONFIG_SERVICE_CAPABILITY, {
 			create: (ctx) => new ConfigService(ctx as RootContext),

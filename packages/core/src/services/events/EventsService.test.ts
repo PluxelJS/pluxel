@@ -4,8 +4,10 @@ import {
 	EvtChannel,
 	Plugin,
 	type CoreHostConfig,
+	type Events,
 	type EventsService,
 } from '@pluxel/core'
+import { resolveCoreRootInputs } from '@pluxel/core/internal'
 import { withCoreHost } from '@pluxel/core/test'
 
 declare module '@pluxel/core' {
@@ -113,11 +115,22 @@ describe('event boundaries', () => {
 	it('keeps augmented ambient events loose-coupled and owner-scoped', async () => {
 		await withCoreHost(async (host) => {
 			expect(ambientHostConfig.events.events).toEqual(['test:ambient-changed'])
+			const configuredEvents: (keyof Events)[] = ['test:ambient-changed']
+			const inputs = resolveCoreRootInputs({
+				events: { events: configuredEvents, errorPolicy: 'throw' },
+			})
+			configuredEvents.length = 0
+			expect(inputs.events?.events).toEqual(['test:ambient-changed'])
+			expect(Object.isFrozen(inputs.events)).toBe(true)
+			expect(Object.isFrozen(inputs.events?.events)).toBe(true)
+
 			host.add([ChannelOwner, AmbientListener])
 			await host.commit()
 			const publisher = host.require(ChannelOwner)
 			const listener = host.require(AmbientListener)
 
+			expect(host.ctx.events).not.toBe(publisher.ctx.events)
+			expect(host.ctx.events.ctx).toBe(host.ctx)
 			expect(listener.boundEvents).toBe(listener.ctx.events)
 			expect(listener.ctx.events).not.toBe(publisher.ctx.events)
 			expect(listener.ctx.events.ctx).toBe(listener.ctx)
@@ -126,15 +139,34 @@ describe('event boundaries', () => {
 			expect(listener.seen).toEqual(['a'])
 			expect(listener.seenOnce).toEqual(['a'])
 			expect(listener.seenAt).toEqual(['a'])
+			const manuallyRemoved: string[] = []
+			const unsubscribe = listener.ctx.events.on('test:ambient-changed', (value) =>
+				manuallyRemoved.push(value),
+			)
+			unsubscribe()
+			publisher.ctx.events.emit('test:ambient-changed', 'after-unsubscribe')
+			expect(manuallyRemoved).toEqual([])
+
+			const pending = listener.ctx.events.waitFor('test:ambient-changed')
+			const cancelled = pending.then(
+				() => {
+					throw new Error('waitFor should be cancelled when its owner stops')
+				},
+				(error: unknown) =>
+					expect(error).toEqual(
+						expect.objectContaining({ message: "waitFor 'test:ambient-changed' cancelled" }),
+					),
+			)
 
 			host.remove(AmbientListener)
 			await host.commit()
+			await cancelled
 			expect(() => listener.boundEvents!.on('test:ambient-changed', (): void => undefined)).toThrow(
 				/disposed/i,
 			)
 			publisher.ctx.events.emit('test:ambient-changed', 'b')
-			expect(listener.seen).toEqual(['a'])
-			expect(listener.seenAt).toEqual(['a'])
+			expect(listener.seen).toEqual(['a', 'after-unsubscribe'])
+			expect(listener.seenAt).toEqual(['a', 'after-unsubscribe'])
 		})
 	})
 })
