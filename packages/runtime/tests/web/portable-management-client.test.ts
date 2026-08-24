@@ -80,6 +80,7 @@ afterEach(() => {
 
 describe('portable runtime management client', () => {
 	it('discovers and manages a runtime from a framework-neutral entry', async () => {
+		const disposeStatusResult = vi.fn()
 		const statusFailure = {
 			ok: false,
 			status: 'rejected',
@@ -104,7 +105,9 @@ describe('portable runtime management client', () => {
 				state: 'unchanged',
 				error: 'Invalid Plugin node address',
 			})),
-			applyPluginStatusActions: vi.fn(async () => statusFailure),
+			applyPluginStatusActions: vi.fn(async () =>
+				Object.assign({ ...statusFailure }, { [Symbol.dispose]: disposeStatusResult }),
+			),
 			pluginGroups: vi.fn(async () => [
 				{
 					groupId: 'fixture',
@@ -203,5 +206,6 @@ describe('portable runtime management client', () => {
 		await expect(
 			client.plugins.applyStatusActions([{ address, action: 'disable' }]),
 		).resolves.toEqual(statusFailure)
+		expect(disposeStatusResult).toHaveBeenCalledOnce()
 	})
 })

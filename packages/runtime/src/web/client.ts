@@ -232,16 +232,33 @@ export function createRuntimeManagementClient(
 	const rpc = async <T>(
 		run: (client: RuntimeManagementRpcApi) => PromiseLike<unknown> | unknown,
 		parse: (input: unknown) => T,
-	): Promise<T> =>
-		parse(
-			await invokeRpc<RuntimeManagementRpcApi, unknown>(
-				async (raw) => await Promise.resolve(run(raw as unknown as RuntimeManagementRpcApi)),
-				{
-					rpcBase,
-					credentials,
-				},
-			),
+	): Promise<T> => {
+		const result = await invokeRpc<RuntimeManagementRpcApi, unknown>(
+			async (raw) => await Promise.resolve(run(raw as unknown as RuntimeManagementRpcApi)),
+			{
+				rpcBase,
+				credentials,
+			},
 		)
+		const dispose =
+			result && typeof result === 'object'
+				? (result as { [Symbol.dispose]?: () => void })[Symbol.dispose]
+				: undefined
+		try {
+			// Cap'n Web owns the root result lease with Symbol.dispose. Management parsers
+			// intentionally accept portable data only, so materialize that root container
+			// before validation while preserving its already-plain nested values.
+			const portable =
+				typeof dispose === 'function'
+					? Array.isArray(result)
+						? [...result]
+						: Object.fromEntries(Object.entries(result))
+					: result
+			return parse(portable)
+		} finally {
+			dispose?.call(result)
+		}
+	}
 
 	const client: RuntimeManagementClient = {
 		discover: (init) => managementHttp.meta.info(init),
