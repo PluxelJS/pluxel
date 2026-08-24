@@ -231,6 +231,23 @@ let createOwnerProjectedGetter!: (
 	createRoot: (root: RootContext) => unknown,
 	createView: (rootValue: unknown, owner: Context) => unknown,
 ) => ContextGetter
+let createRootDirectResolver!: (
+	index: number,
+	capability: AnyCapability,
+	create: (ctx: RootContext) => unknown,
+) => ContextResolver
+let createScopeDirectResolver!: (
+	index: number,
+	capability: AnyCapability,
+	create: (ctx: Context) => unknown,
+) => ContextResolver
+let createOwnerDirectResolver!: (
+	viewIndex: number,
+	rootIndex: number,
+	capability: AnyCapability,
+	createRoot: (root: RootContext) => unknown,
+	createView: (rootValue: unknown, owner: Context) => unknown,
+) => ContextResolver
 
 // Deliberately does not implement Context: consumers may extend the public interface while this
 // plan-neutral implementation only owns the structural fields.
@@ -288,6 +305,43 @@ class ContextImpl {
 				return resolveOwnerViewMiss(
 					state,
 					this,
+					viewIndex,
+					rootIndex,
+					capability,
+					createRoot,
+					createView,
+				)
+			}
+		// Explicit resolution validates the receiver and selects this plan before invoking its private
+		// resolver. Read #state directly here so the hot resolver does not repeat boundary validation.
+		createRootDirectResolver = (index, capability, create) => (ctx) => {
+			const implementation = ctx as unknown as ContextImpl
+			const state = implementation.#state!
+			const values = state.rootValues
+			const current = values[index]
+			if (current === CONSTRUCTING) throw constructionCycleError(capability)
+			if (current !== undefined) return current
+			return constructCached(values, index, capability, create, state.root)
+		}
+		createScopeDirectResolver = (index, capability, create) => (ctx) => {
+			const implementation = ctx as unknown as ContextImpl
+			const state = implementation.#state!
+			const values = state.scopeValues
+			const current = values[index]
+			if (current === CONSTRUCTING) throw constructionCycleError(capability)
+			if (current !== undefined) return current
+			return constructCached(values, index, capability, create, state.scope)
+		}
+		createOwnerDirectResolver =
+			(viewIndex, rootIndex, capability, createRoot, createView) => (ctx) => {
+				const implementation = ctx as unknown as ContextImpl
+				const state = implementation.#state!
+				const current = state.ownerValues[viewIndex]
+				if (current === CONSTRUCTING) throw constructionCycleError(capability)
+				if (current !== undefined) return current
+				return resolveOwnerViewMiss(
+					state,
+					ctx,
 					viewIndex,
 					rootIndex,
 					capability,
@@ -751,42 +805,18 @@ function compileResolver(
 ): ContextResolver {
 	const capability = installation.capability
 	if (installation.scope === 'root') {
-		const create = installation.create!
-		return (ctx) => {
-			const state = stateOf(ctx)
-			const values = state.rootValues
-			const current = values[valueIndex]
-			if (current !== undefined) return readCached(current, capability)
-			return constructCached(values, valueIndex, capability, create, state.root)
-		}
+		return createRootDirectResolver(valueIndex, capability, installation.create!)
 	}
 	if (installation.scope === 'scope') {
-		const create = installation.create!
-		return (ctx) => {
-			const state = stateOf(ctx)
-			const values = state.scopeValues
-			const current = values[valueIndex]
-			if (current !== undefined) return readCached(current, capability)
-			return constructCached(values, valueIndex, capability, create, state.scope)
-		}
+		return createScopeDirectResolver(valueIndex, capability, installation.create!)
 	}
-
-	const createRoot = installation.createRoot!
-	const createView = installation.createView!
-	return (ctx) => {
-		const state = stateOf(ctx)
-		const current = state.ownerValues[valueIndex]
-		if (current !== undefined) return readCached(current, capability)
-		return resolveOwnerViewMiss(
-			state,
-			ctx,
-			valueIndex,
-			rootIndex!,
-			capability,
-			createRoot,
-			createView,
-		)
-	}
+	return createOwnerDirectResolver(
+		valueIndex,
+		rootIndex!,
+		capability,
+		installation.createRoot!,
+		installation.createView!,
+	)
 }
 
 function compileProjectedGetter(

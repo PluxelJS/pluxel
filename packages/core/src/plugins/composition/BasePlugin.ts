@@ -34,7 +34,23 @@ type ConstructionFrame = {
 }
 
 const instanceState = new WeakMap<BasePlugin, PluginGenerationState>()
+const callerSurfaceByInstance = new WeakMap<BasePlugin, readonly PropertyKey[]>()
 const constructionStack: ConstructionFrame[] = []
+
+function captureCallerSurface(plugin: BasePlugin): readonly PropertyKey[] {
+	const properties: PropertyKey[] = []
+	const seen = new Set<PropertyKey>()
+	let current: object | null = plugin
+	while (current && current !== Object.prototype) {
+		for (const property of Reflect.ownKeys(current)) {
+			if (property === 'constructor' || seen.has(property)) continue
+			seen.add(property)
+			properties.push(property)
+		}
+		current = Reflect.getPrototypeOf(current) as object | null
+	}
+	return Object.freeze(properties)
+}
 
 function releaseConstructionFrame(frame: ConstructionFrame, cause?: unknown): void {
 	const popped = constructionStack.pop()
@@ -159,6 +175,7 @@ export function constructPluginGeneration<T extends BasePlugin>(
 			throw new TypeError('[pluxel/core] Plugin implementation must extend BasePlugin')
 		}
 		finalizePluginParts(stateOf(plugin).parts)
+		callerSurfaceByInstance.set(plugin, captureCallerSurface(plugin))
 	} catch (cause) {
 		releaseConstructionFrame(frame, cause)
 		throw cause
@@ -170,6 +187,14 @@ export function constructPluginGeneration<T extends BasePlugin>(
 /** @internal Return the generation Context without exposing a public construction symbol. */
 export function getPluginGenerationContext(plugin: BasePlugin): Context {
 	return stateOf(plugin).ctx
+}
+
+/** @internal Return the ordinary property keys captured when generation construction completed. */
+export function getPluginGenerationCallerSurface(plugin: BasePlugin): readonly PropertyKey[] {
+	stateOf(plugin)
+	const surface = callerSurfaceByInstance.get(plugin)
+	if (!surface) throw new TypeError('[pluxel/core] Plugin generation caller surface is not ready')
+	return surface
 }
 
 /** @internal Let BasePlugin's stateful getters operate on a caller facade. */

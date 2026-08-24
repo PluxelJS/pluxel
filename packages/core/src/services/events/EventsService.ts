@@ -10,8 +10,6 @@ import {
 } from 'eventure'
 import { CALLER_CONTEXT_BIND } from '../../plugins/composition/symbols'
 
-type ContextProvider = PluxelContext | (() => PluxelContext)
-
 const REGISTRATION_METHODS = new Set<PropertyKey>([
 	'on',
 	'onFront',
@@ -20,21 +18,24 @@ const REGISTRATION_METHODS = new Set<PropertyKey>([
 	'onceFront',
 	'many',
 	'manyFront',
-	'when',
 	'waitFor',
-	'limit',
 ])
+
+type InvokeWithOwner = (method: Function, receiver: unknown, args: readonly unknown[]) => unknown
 
 /** Named, capability-owned event channel for explicit public protocols. */
 export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
-	private readonly getCtx: () => PluxelContext
+	readonly #ownerContext: PluxelContext
 	private readonly callerViews = new WeakMap<PluxelContext, EvtChannel<D>>()
 	private registrationOwner?: PluxelContext
 
-	constructor(ctx: ContextProvider, config?: EventEmitterOptions<Record<string, D>>) {
-		const getCtx = typeof ctx === 'function' ? ctx : () => ctx
-		super(withEventLogger<Record<string, D>>(getCtx(), config))
-		this.getCtx = getCtx
+	constructor(ctx: PluxelContext, config?: EventEmitterOptions<Record<string, D>>) {
+		super(withEventLogger<Record<string, D>>(ctx, config))
+		this.#ownerContext = ctx
+	}
+
+	get ctx(): PluxelContext {
+		return this.#ownerContext
 	}
 
 	protected override _register(
@@ -42,47 +43,104 @@ export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
 		opts?: OnOptions,
 		prepend?: boolean,
 	): Unsubscribe {
-		const ctx = this.ctx
-		const unsubscribe = super._register(listener, opts, prepend)
-		;(this.registrationOwner?.effects ?? ctx.caller?.effects ?? ctx.effects).defer(
-			unsubscribe as unknown as () => void,
-		)
-		return unsubscribe
+		return this.ownSubscription(super._register(listener, opts, prepend))
+	}
+
+	override onAt(
+		options: { at: number | ((ctx: { count: number }) => number); signal?: AbortSignal },
+		listener: EventListener<D>,
+	): Unsubscribe {
+		return this.ownSubscription(super.onAt(options, listener))
 	}
 
 	/** @internal Used by injected Plugin caller views; not an author-facing event API. */
 	[CALLER_CONTEXT_BIND](caller: PluxelContext): EvtChannel<D> {
 		const existing = this.callerViews.get(caller)
 		if (existing) return existing
-		const methods = new Map<PropertyKey, (...args: unknown[]) => unknown>()
-		const view = new Proxy(this, {
-			get: (target, property) => {
-				const value = Reflect.get(target, property, target) as unknown
-				if (typeof value !== 'function') return value
-				const cached = methods.get(property)
-				if (cached) return cached
-				const invoke = REGISTRATION_METHODS.has(property)
-					? (...args: unknown[]) => {
-							const previous = this.registrationOwner
-							this.registrationOwner = caller
-							try {
-								return Reflect.apply(value, this, args)
-							} finally {
-								this.registrationOwner = previous
-							}
-						}
-					: (...args: unknown[]) => Reflect.apply(value, this, args)
-				methods.set(property, invoke)
-				return invoke
-			},
-		})
+		const invokeWithOwner: InvokeWithOwner = (method, receiver, args) => {
+			const previous = this.registrationOwner
+			this.registrationOwner = caller
+			try {
+				return Reflect.apply(method, receiver, args)
+			} finally {
+				this.registrationOwner = previous
+			}
+		}
+		const view = createCallerChannelView(this, invokeWithOwner)
 		this.callerViews.set(caller, view)
 		return view
 	}
 
-	get ctx(): PluxelContext {
-		return this.getCtx()
+	private ownSubscription(unsubscribe: Unsubscribe): Unsubscribe {
+		const ctx = this.ctx
+		try {
+			;(this.registrationOwner?.effects ?? ctx.caller?.effects ?? ctx.effects).defer(
+				unsubscribe as unknown as () => void,
+			)
+			return unsubscribe
+		} catch (error) {
+			try {
+				unsubscribe()
+			} catch {
+				// Preserve the ownership failure; the subscription cleanup is best-effort rollback.
+			}
+			throw error
+		}
 	}
+}
+
+/** Compile one ordinary, cached facade so hot channel operations remain Proxy-free. */
+function createCallerChannelView<D extends EventDescriptor>(
+	source: EvtChannel<D>,
+	invokeWithOwner: InvokeWithOwner,
+): EvtChannel<D> {
+	const view = Object.create(Object.getPrototypeOf(source)) as EvtChannel<D>
+	const defined = new Set<PropertyKey>()
+	let prototype = Object.getPrototypeOf(source) as object | null
+	while (prototype && prototype !== Object.prototype) {
+		for (const property of Reflect.ownKeys(prototype)) {
+			if (property === 'constructor' || defined.has(property)) continue
+			defined.add(property)
+			const descriptor = Reflect.getOwnPropertyDescriptor(prototype, property)
+			if (!descriptor) continue
+			if ('value' in descriptor && typeof descriptor.value === 'function') {
+				const method = descriptor.value as Function
+				const value =
+					property === 'when'
+						? (...args: unknown[]) =>
+								bindWhenGuard(Reflect.apply(method, source, args), invokeWithOwner)
+						: REGISTRATION_METHODS.has(property)
+							? (...args: unknown[]) => invokeWithOwner(method, source, args)
+							: (...args: unknown[]) => Reflect.apply(method, source, args)
+				Object.defineProperty(view, property, {
+					value,
+					writable: false,
+					configurable: false,
+				})
+				continue
+			}
+			Object.defineProperty(view, property, {
+				get: descriptor.get ? () => Reflect.apply(descriptor.get!, source, []) : undefined,
+				set: descriptor.set
+					? (value: unknown) => Reflect.apply(descriptor.set!, source, [value])
+					: undefined,
+				configurable: false,
+			})
+		}
+		prototype = Object.getPrototypeOf(prototype) as object | null
+	}
+	return Object.preventExtensions(view)
+}
+
+function bindWhenGuard(value: unknown, invokeWithOwner: InvokeWithOwner): unknown {
+	if (!value || typeof value !== 'object') return value
+	const guard = value as Record<'once' | 'onceFront' | 'many' | 'manyFront', Function>
+	return Object.freeze({
+		once: (...args: unknown[]) => invokeWithOwner(guard.once, guard, args),
+		onceFront: (...args: unknown[]) => invokeWithOwner(guard.onceFront, guard, args),
+		many: (...args: unknown[]) => invokeWithOwner(guard.many, guard, args),
+		manyFront: (...args: unknown[]) => invokeWithOwner(guard.manyFront, guard, args),
+	})
 }
 
 function withEventLogger<T extends IEventMap<T>>(

@@ -1,12 +1,15 @@
 import type { Context as CoreContext } from '@pluxel/core'
 import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '../../workbench'
 import type { WorkbenchBackend } from '../workbench'
+import { pinOwnerContext } from '../../context/owner-view'
 
 export class WorkbenchService {
 	constructor(
 		public readonly ctx: CoreContext,
 		private readonly backend: WorkbenchBackend,
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	mount<
 		Extension extends AnyWorkbenchExtension,

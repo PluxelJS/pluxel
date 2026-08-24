@@ -4,9 +4,10 @@ import { pluginNodeIndexKey, type PluginNodeAddress } from '../../plugins/runtim
 import { safeParseStandardSchema } from './standardSchema'
 import { ConfigValidationError, type ConfigValidationErrors } from './types'
 import { immutableConfigRecord } from './immutable'
+import { pinOwnerContext } from '../../context/owner-view'
 
 type ConfigRecord = Record<string, unknown>
-type ConfigEntry = { owner: PluginNodeAddress; config: ConfigRecord }
+type ConfigEntry = { owner: PluginNodeAddress; config: Readonly<ConfigRecord> }
 const EMPTY_CONFIG: Readonly<ConfigRecord> = Object.freeze(Object.create(null))
 
 /** Immutable candidate fact whose object identity binds one validation result. */
@@ -37,7 +38,6 @@ export class ConfigValidationPendingPersistenceError extends Error {
 /** One complete object config record per canonical Plugin node address. */
 export class ConfigService {
 	private readonly records = new Map<string, ConfigEntry>()
-	private readonly rawViews = new Map<string, Readonly<ConfigRecord>>()
 	private readonly validated = new Map<
 		string,
 		{
@@ -56,7 +56,9 @@ export class ConfigService {
 	private readyState = true
 	private readyTask: Promise<void> = Promise.resolve()
 
-	constructor(public ctx: PluxelContext) {}
+	constructor(public readonly ctx: PluxelContext) {
+		pinOwnerContext(this, ctx)
+	}
 
 	get isReady(): boolean {
 		return this.readyState
@@ -84,15 +86,11 @@ export class ConfigService {
 			const source = item.config
 			if (!source || typeof source !== 'object' || Array.isArray(source)) continue
 			const snapshot = immutableConfigRecord(source)
-			const target = this.records.get(ownerKey)?.config ?? Object.create(null)
-			for (const configKey of Object.keys(target)) delete target[configKey]
-			Object.assign(target, snapshot)
-			this.records.set(ownerKey, { owner: item.owner, config: target })
+			this.records.set(ownerKey, { owner: item.owner, config: snapshot })
 			this.bump(ownerKey)
 		}
 		for (const key of remaining) {
 			this.records.delete(key)
-			this.rawViews.delete(key)
 			this.revisions.delete(key)
 			this.appliedRevisions.delete(key)
 			this.validated.delete(key)
@@ -104,11 +102,7 @@ export class ConfigService {
 		const key = pluginNodeIndexKey(owner)
 		const record = this.records.get(key)?.config
 		if (!record) return EMPTY_CONFIG as T
-		const existing = this.rawViews.get(key)
-		if (existing) return existing as T
-		const view = createReadonlyView(record)
-		this.rawViews.set(key, view)
-		return view as T
+		return record as T
 	}
 
 	getConfigRevision(owner: PluginNodeAddress): number {
@@ -244,27 +238,31 @@ export class ConfigService {
 		this.assertConfigMutable('patchConfig')
 		const ownerKey = pluginNodeIndexKey(owner)
 		const current = this.records.get(ownerKey)
-		const entry = current?.config ?? Object.assign(Object.create(null), {})
-		const next = immutableConfigRecord({ ...entry, ...(patch as ConfigRecord) })
+		const entry = current?.config ?? EMPTY_CONFIG
+		const patchSnapshot = immutableConfigRecord(patch as ConfigRecord)
+		const next = immutableConfigRecord({ ...entry, ...patchSnapshot })
 		if (shallowEqual(entry, next)) return
-		for (const configKey of Object.keys(entry)) delete entry[configKey]
-		Object.assign(entry, next)
-		if (!current) this.records.set(ownerKey, { owner, config: entry })
+		this.records.set(ownerKey, { owner, config: next })
 		this.changed(owner, ownerKey)
 	}
 
 	unsetConfigKeys(owner: PluginNodeAddress, keys: readonly string[]): void {
 		this.assertConfigMutable('unsetConfigKeys')
 		const ownerKey = pluginNodeIndexKey(owner)
-		const entry = this.records.get(ownerKey)?.config
+		const current = this.records.get(ownerKey)
+		const entry = current?.config
 		if (!entry) return
+		const next: ConfigRecord = { ...entry }
 		let changed = false
 		for (const configKey of keys) {
-			if (!(configKey in entry)) continue
-			delete entry[configKey]
+			if (!Object.hasOwn(next, configKey)) continue
+			delete next[configKey]
 			changed = true
 		}
-		if (changed) this.changed(owner, ownerKey)
+		if (changed) {
+			this.records.set(ownerKey, { owner: current.owner, config: immutableConfigRecord(next) })
+			this.changed(owner, ownerKey)
+		}
 	}
 
 	/** Delete the complete desired record for one Plugin node. */
@@ -272,7 +270,6 @@ export class ConfigService {
 		this.assertConfigMutable('deleteConfig')
 		const key = pluginNodeIndexKey(owner)
 		if (!this.records.delete(key)) return false
-		this.rawViews.delete(key)
 		this.validated.delete(key)
 		this.staged.delete(key)
 		this.revisions.delete(key)
@@ -290,11 +287,7 @@ export class ConfigService {
 
 	private replaceRecord(owner: PluginNodeAddress, value: Readonly<ConfigRecord>): void {
 		const ownerKey = pluginNodeIndexKey(owner)
-		const current = this.records.get(ownerKey)
-		const target = current?.config ?? Object.create(null)
-		for (const configKey of Object.keys(target)) delete target[configKey]
-		Object.assign(target, value)
-		if (!current) this.records.set(ownerKey, { owner, config: target })
+		this.records.set(ownerKey, { owner, config: value })
 		this.changed(owner, ownerKey)
 	}
 
@@ -350,16 +343,4 @@ function shallowEqual(left: Readonly<ConfigRecord>, right: Readonly<ConfigRecord
 	if (leftKeys.length !== rightKeys.length) return false
 	for (const key of leftKeys) if (left[key] !== right[key]) return false
 	return true
-}
-
-function createReadonlyView<T extends ConfigRecord>(target: T): Readonly<T> {
-	return new Proxy(target, {
-		set: rejectMutation,
-		defineProperty: rejectMutation,
-		deleteProperty: rejectMutation,
-	}) as Readonly<T>
-}
-
-function rejectMutation(): never {
-	throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
 }

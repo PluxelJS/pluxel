@@ -128,7 +128,9 @@ this.ctx.http.plugin.mount(
 )
 ```
 
-仍然通过 `ctx.http.plugin` 挂载，保留 owner cleanup。Plugin 不调用 `ctx.http.host.routes()`；host API 用于 route launcher 和宿主自有边界，会绕过插件 ownership。
+仍然通过 `ctx.http.plugin` 挂载，保留 owner cleanup。Plugin 不调用 `ctx.http.host.routes()`；host API 只接受 root Context，用于
+route launcher 和宿主自有边界，Plugin/PluginPart owner view 读取它会直接失败。这里约束的是普通 API 与 cleanup ownership，
+不是恶意代码 sandbox；Plugin 本来就持有 `ctx.root`，部署方仍应只加载受信任的后端 Plugin。
 
 ## 动态替换 route tree
 

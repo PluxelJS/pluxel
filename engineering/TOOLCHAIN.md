@@ -135,7 +135,8 @@ ECMAScript instance `#private` field/method/accessor 在 semantic pass 以
 Plugin inheritance chain 的 function-valued instance field（arrow、function expression、`.bind()`）同样以
 `plugin_caller_view_callable_field_unsupported` hard diagnostic 拒绝；跨节点 callable surface 必须是 prototype method，accessor只返回
 普通数据或有独立receiver/withdrawal契约的对象handle。Core 仍对无法静态证明的动态 callable field 和 accessor-returned function
-保留 runtime fail-fast 防线。
+保留 runtime fail-fast 防线。type-only `declare` instance field 不产生 caller facade 的 construction-time descriptor，以
+`plugin_caller_view_declared_field_unsupported` hard diagnostic 拒绝。
 
 ## Plugin package build
 

@@ -1,6 +1,7 @@
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Context as CoreContext } from '@pluxel/core'
+import { pinOwnerContext } from '../context/owner-view'
 import { Tinypool } from 'tinypool'
 import type { NodeModuleDeclaration } from './node-module'
 import {
@@ -79,6 +80,7 @@ export class WorkerTaskService {
 		public readonly ctx: CoreContext,
 		config: WorkersConfig | undefined,
 	) {
+		pinOwnerContext(this, ctx)
 		if (ctx === ctx.root) {
 			this.state = {
 				config: resolveWorkersConfig(config),

@@ -7,11 +7,13 @@ kernel，但 Plugin 不能修改 Runtime 拥有的 Context shape。
 
 ## Runtime Context host
 
-Runtime 在一个集中 contract 中声明 Context 的 public property type，并在 host composition 时安装固定能力：root scope
+Runtime 在一个集中 contract 中声明 Context 的 public property type，并由 `RuntimeHostConfig extends CoreHostConfig` 集中声明
+host 创建输入；service constructor 参数不是 public config schema，也不用于反推配置类型。`resolveRuntimeRootInputs()` 在 root
+创建前归一化并冻结输入，再由 capability factory closure 分发。host composition 安装固定能力：root scope
 承载 persistence、runtime state、admin/agent control backing，kernel scope 承载 database，owner-view scope 承载 commands、
 HTTP、Workbench gate、Node module、worker 与 internal validation。Core 为每次 Plugin generation 创建一个 scope；Part child 与
 dependency caller view 共享 scope backing，owner-view 则为每个 Plugin/Part/caller edge 保留 owner identity，同时共享 root
-backend。热 getter 只读取预编译 numeric slot。
+backend。热 getter 只读取预编译 numeric slot，owner view 使用普通对象，不用 `Proxy` 动态替换共享 service receiver。
 
 `RuntimeRootContextOptions.routeContextCapabilities` 是 package-private 的 pre-root host-authority seam，只允许受信任 route 安装自身
 descriptor；当前 dynamic route 用它组合 Loader/Scan。它不是 Runtime public config、第三方 host SPI 或 Plugin capability
@@ -25,6 +27,12 @@ Context 不暴露完整 host config。launcher 先解析配置，capability fact
 Runtime 在 Plugin lifecycle 前显式调用 `prepareRuntimeRootContext(root)`，主动读取需要预热的 Runtime-owned lazy capability，并调用
 Vault 等 leaf service 的领域 `prepare()`。同一成功 attempt 共享 task；失败会清除 task，下一次 host startup attempt 可重试。
 资源关闭仍通过 root/generation effects 或 launcher `stop()`，不回流到 Context kernel。
+
+HTTP 使用每个 root 一个 backend、每个 owner 一个普通 `HttpService` view。view 只保存 owner Context 与 backend reference；
+route table、Elysia root、renderer 和 reload state 不复制。Plugin route registration 把 disposer 直接登记到 owner effects，
+generation stop 会撤销后续 route lookup，已经进入的 fetch 按 HTTP capability 自己的 in-flight 语义完成。
+所有 Runtime owner-view service 的 `ctx` 都是 non-writable、non-configurable 普通属性；view 自身需要维护的 cache/lease 可以继续
+变化，但不能在取得后被重新绑定到另一个 cleanup owner。
 
 ## Commands capability
 

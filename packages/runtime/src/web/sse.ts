@@ -26,11 +26,7 @@ export type SseNamespaceClient<Ns extends string> = {
 	onAny(handler: (msg: SseMessage<Ns>) => void): () => void
 }
 
-export type SseClientWithNamespaces = SseClient & {
-	ns<Ns extends string>(name: Ns): SseNamespaceClient<Ns>
-} & {
-	[K in keyof ResolvedSseEvents]: SseNamespaceClient<K & string>
-}
+export type SseClientWithNamespaces = SseClient
 
 export interface SseClientOptions {
 	/** 想要订阅的命名空间，默认全量 */
@@ -292,12 +288,5 @@ export function sseWithLifecycle(
 	options: SseClientOptions,
 	onClose?: () => void,
 ): SseClientWithNamespaces {
-	const client = new SseClient(options, onClose) as SseClientWithNamespaces
-	return new Proxy(client, {
-		get(target, prop, receiver) {
-			if (prop === 'ns') return target.ns.bind(target)
-			if (typeof prop === 'string' && !(prop in target)) return target.ns(prop)
-			return Reflect.get(target, prop, receiver)
-		},
-	})
+	return new SseClient(options, onClose)
 }

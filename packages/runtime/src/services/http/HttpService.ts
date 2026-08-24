@@ -149,7 +149,7 @@ function currentWorkingDirectory(): string {
 	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
 }
 
-export class HttpService {
+class HttpBackend {
 	private fullReloadRequested = false
 	private readonly mounted = new Map<string, MountedBoundary>()
 	private mountedIndex: MountedBoundary[] = []
@@ -162,10 +162,7 @@ export class HttpService {
 	private renderer: Promise<RenderHandler> | null = null
 	private readonly config: ResolvedHttpServiceConfig
 
-	constructor(
-		public ctx: PluxelContext,
-		config: RuntimeHttpHostConfig,
-	) {
+	constructor(ctx: PluxelContext, config: RuntimeHttpHostConfig) {
 		this.hostCtx = ctx.root
 		this.logger = this.hostCtx.logger!
 		this.config = {
@@ -190,26 +187,6 @@ export class HttpService {
 				boundary: this.createLazyInternalApiBoundary({ workbench: config.workbench }),
 			})
 		}
-	}
-
-	/** @internal Bind plugin-facing closures to an owner without constructing another HTTP backend. */
-	/** @internal Create one stable owner facade over this root HTTP runtime. */
-	forOwner(owner: PluxelContext): HttpService {
-		const methods = new Map<PropertyKey, (...args: unknown[]) => unknown>()
-		let view: HttpService
-		view = new Proxy(this, {
-			get: (target, property) => {
-				if (property === 'ctx') return owner
-				const value = Reflect.get(target, property, view) as unknown
-				if (typeof value !== 'function') return value
-				const cached = methods.get(property)
-				if (cached) return cached
-				const bound = (...args: unknown[]) => Reflect.apply(value, view, args)
-				methods.set(property, bound)
-				return bound
-			},
-		})
-		return view
 	}
 
 	get fetch() {
@@ -279,8 +256,7 @@ export class HttpService {
 		return this.config.workbench && this.config.uiBasePath === '/'
 	}
 
-	get plugin() {
-		const pluginCtx = this.ctx
+	pluginFor(pluginCtx: PluxelContext) {
 		const owner = this.requirePluginOwner(pluginCtx)
 		const ownerKey = pluginNodeIndexKey(owner)
 		const ownerRoute = formatPluginNodeRoute(owner)
@@ -724,5 +700,72 @@ export class HttpService {
 	private async render(request: Request) {
 		const handler = await (this.renderer ??= this.createRenderer())
 		return handler(request)
+	}
+}
+
+/**
+ * Immutable owner view over the root HTTP backend.
+ *
+ * Every Context caches one ordinary view object. Server state, route indexes and rendering state
+ * remain in the single root backend; the view only carries the Context that owns registrations.
+ */
+export class HttpService {
+	readonly #backend: HttpBackend
+
+	private constructor(
+		public readonly ctx: PluxelContext,
+		backend: HttpBackend,
+	) {
+		this.#backend = backend
+		Object.freeze(this)
+	}
+
+	/** @internal Runtime host composition creates the sole HTTP backend. */
+	static createRoot(ctx: PluxelContext, config: RuntimeHttpHostConfig): HttpService {
+		return new HttpService(ctx, new HttpBackend(ctx, config))
+	}
+
+	/** @internal Create one proxy-free owner view without constructing another HTTP backend. */
+	forOwner(owner: PluxelContext): HttpService {
+		return new HttpService(owner, this.#backend)
+	}
+
+	get fetch(): HttpHandler {
+		return this.#backend.fetch
+	}
+
+	reconfigureUiAssets(config: {
+		uiAssets?: RuntimeHttpUiAssetMode
+		uiPublicDir?: string
+		uiBasePath?: string
+	}): void {
+		this.#backend.reconfigureUiAssets(config)
+	}
+
+	consumeFullReloadRequest(): boolean {
+		return this.#backend.consumeFullReloadRequest()
+	}
+
+	matchesMountedRoute(pathname: string): boolean {
+		return this.#backend.matchesMountedRoute(pathname)
+	}
+
+	matchesWorkbenchUiRoute(pathname: string): boolean {
+		return this.#backend.matchesWorkbenchUiRoute(pathname)
+	}
+
+	workbenchOwnsRootNavigation(): boolean {
+		return this.#backend.workbenchOwnsRootNavigation()
+	}
+
+	get plugin(): ReturnType<HttpBackend['pluginFor']> {
+		return this.#backend.pluginFor(this.ctx)
+	}
+
+	get host(): HttpBackend['host'] {
+		if (this.ctx !== this.ctx.root) {
+			throw new Error('[pluxel/http] HTTP host API requires the root Context')
+		}
+		return this.#backend.host
 	}
 }

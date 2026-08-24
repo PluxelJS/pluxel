@@ -183,7 +183,7 @@ function createRuntimeContextInstallations(
 		}),
 		installOwnerViewCapability(HTTP_CAPABILITY, {
 			property: 'http',
-			createRoot: (root) => new HttpService(root as RootContext, inputs.http),
+			createRoot: (root) => HttpService.createRoot(root as RootContext, inputs.http),
 			createView: (rootService, owner) =>
 				owner === owner.root ? rootService : rootService.forOwner(owner as Context),
 		}),

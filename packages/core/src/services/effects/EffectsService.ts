@@ -1,4 +1,5 @@
 import type { Context as PluxelContext } from '../../context/Context'
+import { pinOwnerContext } from '../../context/owner-view'
 import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
 
 export type Cleanup = () => void | Promise<void>
@@ -488,6 +489,7 @@ class EffectsScopeImpl implements EffectsScope {
 		public readonly ctx: PluxelContext,
 		opts?: { parent?: EffectsImpl; meta?: EffectsMeta; registerOpts?: RegisterOpts },
 	) {
+		pinOwnerContext(this, ctx)
 		this.impl = new EffectsImpl(ctx, opts)
 	}
 

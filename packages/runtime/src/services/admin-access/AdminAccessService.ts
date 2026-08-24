@@ -1,5 +1,6 @@
 import type { Context as PluxelContext } from '@pluxel/core'
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
+import { pinOwnerContext } from '../../context/owner-view'
 import { recordSecurityEvent } from '../security/audit'
 import { DEFAULT_OIDC_TOKEN_HEADER } from './model'
 import type {
@@ -95,9 +96,11 @@ async function resolveJwks(issuer: string): Promise<ReturnType<typeof createRemo
 
 export class AdminAccessService {
 	constructor(
-		public ctx: PluxelContext,
+		public readonly ctx: PluxelContext,
 		private readonly config: ResolvedAdminAccessConfig,
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	async authorize(input: AdminAccessAuthorizeInput = {}): Promise<AdminAccessState> {
 		const config = this.readConfig()

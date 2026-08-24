@@ -40,6 +40,12 @@
 ## 4. Context 必须并发隔离
 
 - Context host 在创建时一次编译固定 shape；root、scope、child 和 owner view 都不能在创建后修改 plan。
+- 已知成员集合和 owner 语义能由普通对象、class 或预编译 property descriptor 清晰表达时，Context projected getter、owner
+  view、Plugin caller facade 与本地 capability handle 优先保持 Proxy-free。不要用 `Proxy` 隐式改写共享对象的 `ctx`、caller
+  或 cleanup owner；这会破坏 cached handle 和异步并发的归属稳定性。
+- Proxy 不是禁用项。若成员集合确实开放，或 Proxy 比 codegen、显式 `invoke(name)`、预编译 descriptor 更清晰且不牺牲反射、
+  identity、调试与生命周期语义，可以在明确边界使用并记录取舍。浏览器 type-erased RPC stub 是当前实例；后端 owner-aware
+  capability 路径没有这种需要。
 - plugin-owned gate、logger、effects 和 registration 必须保留 owner Context。
 - host 可以共享 registry，但共享对象不得通过可变“当前 ctx”识别调用者。
 - 缓存 service handle、并发初始化和异步 callback 都不得造成 plugin node address 或 cleanup scope 串线。

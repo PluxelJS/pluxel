@@ -8,6 +8,7 @@ import {
 } from '../../internal/owner-invocations'
 import {
 	BasePlugin,
+	getPluginGenerationCallerSurface,
 	getPluginGenerationContext,
 	registerPluginGenerationFacade,
 } from './BasePlugin'
@@ -23,7 +24,35 @@ type MethodCacheEntry = {
 	readonly bound: (...args: unknown[]) => unknown
 }
 
+type PropertyDescriptorEntry = {
+	readonly owner: object
+	readonly descriptor: PropertyDescriptor
+}
+
+type StableFacadeState<T extends BasePlugin> = {
+	readonly kind: 'stable'
+	readonly target: T
+	readonly facade: T
+	readonly providerContext: Context
+	readonly callerContext: Context
+	readonly consumer: Context
+	readonly descriptors: PropertyDescriptorResolver
+	readonly methods: Map<PropertyKey, MethodCacheEntry>
+	readonly callPrototype: object
+}
+
+type CallFacadeState<T extends BasePlugin> = {
+	readonly kind: 'call'
+	readonly stable: StableFacadeState<T>
+	readonly facade: T
+	readonly admission: OwnerInvocationAdmission
+	active: boolean
+}
+
+type FacadeState<T extends BasePlugin = BasePlugin> = StableFacadeState<T> | CallFacadeState<T>
+
 const viewsByConsumer = new WeakMap<Context, WeakMap<BasePlugin, BasePlugin>>()
+const facadeStates = new WeakMap<BasePlugin, FacadeState>()
 
 function retainProviderAdmission<T>(provider: Context, value: T): T {
 	if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
@@ -60,11 +89,6 @@ function assertMutableAuthorField(property: PropertyKey): void {
 	if (property === 'ctx' || typeof property === 'symbol') {
 		throw new TypeError('[pluxel/core] Plugin caller internal state is read-only')
 	}
-}
-
-type PropertyDescriptorEntry = {
-	readonly owner: object
-	readonly descriptor: PropertyDescriptor
 }
 
 class PropertyDescriptorResolver {
@@ -146,139 +170,179 @@ function readProviderProperty<T extends BasePlugin>(
 	receiver: T,
 	entry: PropertyDescriptorEntry | undefined,
 ): unknown {
-	// The resolver already exhausted the complete ordinary Plugin prototype chain.
-	// Avoid a second lookup that could only reproduce the same `undefined` result.
 	if (!entry) return undefined
 	const descriptor = entry.descriptor
 	if ('value' in descriptor) return descriptor.value
 	return descriptor.get ? Reflect.apply(descriptor.get, receiver, []) : undefined
 }
 
-function rejectDefineProperty(): never {
-	throw new TypeError('[pluxel/core] Plugin caller facade does not allow defineProperty')
+function requireFacadeState<T extends BasePlugin>(facade: T): FacadeState<T> {
+	const state = facadeStates.get(facade) as FacadeState<T> | undefined
+	if (!state) throw new TypeError('[pluxel/core] Invalid Plugin caller facade')
+	return state
 }
 
-function rejectDeleteProperty(): never {
-	throw new TypeError('[pluxel/core] Plugin caller facade does not allow deleteProperty')
+function readFacadeProperty<T extends BasePlugin>(
+	state: FacadeState<T>,
+	property: PropertyKey,
+): unknown {
+	if (state.kind === 'call' && !state.active) {
+		return readFacadeProperty(state.stable, property)
+	}
+	const stable = state.kind === 'stable' ? state : state.stable
+	if (property === 'ctx') {
+		if (state.kind === 'stable') assertOwnerInvocationOpen(stable.providerContext)
+		return stable.callerContext
+	}
+
+	const entry = stable.descriptors.find(property)
+	const descriptor = entry?.descriptor
+	if (state.kind === 'call') {
+		const value = readProviderProperty(state.facade, entry)
+		assertSupportedCallableProperty(stable.target, property, entry, value)
+		return bindCallerCapability(value, stable.consumer)
+	}
+
+	const rawValue =
+		descriptor && !('value' in descriptor) && descriptor.get
+			? invokeProviderMethod(stable, descriptor.get, [])
+			: descriptor && 'value' in descriptor && typeof descriptor.value === 'function'
+				? (assertOwnerInvocationOpen(stable.providerContext), descriptor.value)
+				: retainProviderAdmission(
+						stable.providerContext,
+						readProviderProperty(stable.facade, entry),
+					)
+	assertSupportedCallableProperty(stable.target, property, entry, rawValue)
+	const value = bindCallerCapability(rawValue, stable.consumer)
+	if (typeof value !== 'function') return value
+	const cached = stable.methods.get(property)
+	if (cached?.source === value) return cached.bound
+	const bound = (...args: unknown[]) => invokeProviderMethod(stable, value, args)
+	stable.methods.set(property, { source: value, bound })
+	return bound
 }
 
-function rejectPrototypeMutation(): never {
-	throw new TypeError('[pluxel/core] Plugin caller facade does not allow prototype mutation')
+function writeFacadeProperty<T extends BasePlugin>(
+	state: FacadeState<T>,
+	property: PropertyKey,
+	value: unknown,
+): boolean {
+	if (state.kind === 'call' && !state.active) {
+		return writeFacadeProperty(state.stable, property, value)
+	}
+	assertMutableAuthorField(property)
+	const stable = state.kind === 'stable' ? state : state.stable
+	const descriptor = stable.descriptors.find(property)?.descriptor
+	if (descriptor && !('value' in descriptor) && descriptor.set) {
+		if (state.kind === 'stable') invokeProviderMethod(stable, descriptor.set, [value])
+		else Reflect.apply(descriptor.set, state.facade, [value])
+		return true
+	}
+	return state.kind === 'stable'
+		? writeAdmittedProviderProperty(
+				stable.providerContext,
+				stable.target,
+				stable.facade,
+				stable.descriptors,
+				property,
+				value,
+			)
+		: writeProviderProperty(stable.target, state.facade, stable.descriptors, property, value)
 }
 
-function rejectPreventExtensions(): never {
-	throw new TypeError('[pluxel/core] Plugin caller facade cannot be sealed or frozen')
+function projectedDescriptor<T extends BasePlugin>(
+	property: PropertyKey,
+	enumerable: boolean,
+): PropertyDescriptor {
+	return {
+		get(this: T) {
+			return readFacadeProperty(requireFacadeState(this), property)
+		},
+		set(this: T, value: unknown) {
+			if (!writeFacadeProperty(requireFacadeState(this), property, value)) {
+				throw new TypeError(`[pluxel/core] Plugin caller property ${String(property)} is read-only`)
+			}
+		},
+		enumerable,
+		configurable: false,
+	}
 }
 
-class ProviderCallReceiver<T extends BasePlugin> implements ProxyHandler<T> {
-	active = true
-	facade!: T
-
-	constructor(
-		readonly stableFacade: T,
-		private readonly callerContext: Context,
-		private readonly consumer: Context,
-		private readonly descriptors: PropertyDescriptorResolver,
-		private readonly admission: OwnerInvocationAdmission,
-	) {}
-
-	get(target: T, property: PropertyKey, receiver: T): unknown {
-		if (!this.active) return Reflect.get(this.stableFacade, property, this.stableFacade)
-		if (property === 'ctx') return this.callerContext
-		const entry = this.descriptors.find(property)
-		const value = readProviderProperty(receiver, entry)
-		assertSupportedCallableProperty(target, property, entry, value)
-		return bindCallerCapability(value, this.consumer)
+function compileFacadeShape<T extends BasePlugin>(
+	target: T,
+	descriptors: PropertyDescriptorResolver,
+	properties: readonly PropertyKey[],
+): { readonly facade: T; readonly callPrototype: object } {
+	const providerPrototype = Object.getPrototypeOf(target) as object
+	const callPrototype = Object.create(providerPrototype) as object
+	const facade = Object.create(providerPrototype) as T
+	for (const property of properties) {
+		const enumerable = descriptors.find(property)?.descriptor.enumerable ?? false
+		const descriptor = projectedDescriptor<T>(property, enumerable)
+		Object.defineProperty(callPrototype, property, descriptor)
+		Object.defineProperty(facade, property, descriptor)
 	}
+	Object.preventExtensions(callPrototype)
+	return { facade, callPrototype }
+}
 
-	set(target: T, property: PropertyKey, value: unknown): boolean {
-		if (!this.active) return Reflect.set(this.stableFacade, property, value, this.stableFacade)
-		assertMutableAuthorField(property)
-		return writeProviderProperty(target, this.facade, this.descriptors, property, value)
-	}
-
-	defineProperty(): never {
-		return rejectDefineProperty()
-	}
-
-	deleteProperty(): never {
-		return rejectDeleteProperty()
-	}
-
-	setPrototypeOf(): never {
-		return rejectPrototypeMutation()
-	}
-
-	preventExtensions(): never {
-		return rejectPreventExtensions()
-	}
-
-	finish(): void {
-		if (!this.active) return
-		this.active = false
-		releaseOwnerInvocation(this.admission)
-	}
+function finishCall<T extends BasePlugin>(state: CallFacadeState<T>): void {
+	if (!state.active) return
+	state.active = false
+	releaseOwnerInvocation(state.admission)
 }
 
 async function settleProviderInvocation<T extends BasePlugin>(
 	result: PromiseLike<unknown>,
-	receiver: ProviderCallReceiver<T>,
+	state: CallFacadeState<T>,
 ): Promise<unknown> {
 	try {
 		const value = await result
-		return value === receiver.facade ? receiver.stableFacade : value
+		return value === state.facade ? state.stable.facade : value
 	} finally {
-		receiver.finish()
+		finishCall(state)
 	}
 }
 
-/**
- * Invoke one method with a call-scoped receiver covered by the already acquired lease.
- * Nested `this` reads/writes must not attempt a second admission after teardown has begun:
- * the outer lease is precisely the authority that lets this accepted async call settle.
- */
+/** Invoke one method with a fresh, ordinary receiver covered by one owner admission lease. */
 function invokeProviderMethod<T extends BasePlugin>(
-	target: T,
-	stableFacade: T,
-	providerContext: Context,
-	callerContext: Context,
-	consumer: Context,
-	descriptors: PropertyDescriptorResolver,
+	stable: StableFacadeState<T>,
 	method: Function,
 	args: readonly unknown[],
 ): unknown {
-	const admission: OwnerInvocationAdmission = admitOwnerInvocation(providerContext)
-	const receiver = new ProviderCallReceiver(
-		stableFacade,
-		callerContext,
-		consumer,
-		descriptors,
+	const admission = admitOwnerInvocation(stable.providerContext)
+	const facade = Object.create(stable.callPrototype) as T
+	const state: CallFacadeState<T> = {
+		kind: 'call',
+		stable,
+		facade,
 		admission,
-	)
-	const callFacade = new Proxy(target, receiver)
-	receiver.facade = callFacade
-	registerPluginGenerationFacade(callFacade, target)
+		active: true,
+	}
+	facadeStates.set(facade, state)
+	registerPluginGenerationFacade(facade, stable.target)
+	Object.preventExtensions(facade)
 
 	try {
-		const result = Reflect.apply(method, callFacade, args)
+		const result = Reflect.apply(method, facade, args)
 		if (
 			result &&
 			(typeof result === 'object' || typeof result === 'function') &&
 			typeof (result as { then?: unknown }).then === 'function'
 		) {
-			return settleProviderInvocation(Promise.resolve(result), receiver)
+			return settleProviderInvocation(Promise.resolve(result), state)
 		}
-		receiver.finish()
-		return result === callFacade ? stableFacade : result
+		finishCall(state)
+		return result === facade ? stable.facade : result
 	} catch (error) {
-		receiver.finish()
+		finishCall(state)
 		throw error
 	}
 }
 
 /**
- * @internal Live facade for one consumer-generation -> provider-generation edge.
- * The cache is generation-bounded because both keys are generation objects.
+ * @internal Live, proxy-free facade for one consumer-generation -> provider-generation edge.
+ * The provider's construction-time public shape is compiled once into ordinary accessors.
  */
 export function createCallerGenerationView<T extends BasePlugin>(
 	provider: T,
@@ -295,87 +359,25 @@ export function createCallerGenerationView<T extends BasePlugin>(
 	const providerContext = getPluginGenerationContext(provider)
 	const callerContext = createCallerContext(providerContext, consumer)
 	const descriptors = new PropertyDescriptorResolver(provider)
-	const methods = new Map<PropertyKey, MethodCacheEntry>()
-	let facade!: T
-	const handler: ProxyHandler<T> = {
-		get(target, property) {
-			if (property === 'ctx') {
-				assertOwnerInvocationOpen(providerContext)
-				return callerContext
-			}
-			const cachedMethod = methods.get(property)
-			if (cachedMethod && !Reflect.getOwnPropertyDescriptor(target, property)) {
-				assertOwnerInvocationOpen(providerContext)
-				return cachedMethod.bound
-			}
-			const entry = descriptors.find(property)
-			const descriptor = entry?.descriptor
-			const rawValue =
-				descriptor && !('value' in descriptor) && descriptor.get
-					? invokeProviderMethod(
-							target,
-							facade,
-							providerContext,
-							callerContext,
-							consumer,
-							descriptors,
-							descriptor.get,
-							[],
-						)
-					: descriptor && 'value' in descriptor && typeof descriptor.value === 'function'
-						? (assertOwnerInvocationOpen(providerContext), descriptor.value)
-						: retainProviderAdmission(providerContext, readProviderProperty(facade, entry))
-			assertSupportedCallableProperty(target, property, entry, rawValue)
-			const value = bindCallerCapability(rawValue, consumer)
-			if (!value || (typeof value !== 'object' && typeof value !== 'function')) return value
-			if (typeof value !== 'function') return value
-			if (cachedMethod?.source === value) return cachedMethod.bound
-			const bound = (...args: unknown[]) =>
-				invokeProviderMethod(
-					target,
-					facade,
-					providerContext,
-					callerContext,
-					consumer,
-					descriptors,
-					value,
-					args,
-				)
-			methods.set(property, { source: value, bound })
-			return bound
-		},
-		set(target, property, value) {
-			assertMutableAuthorField(property)
-			const descriptor = descriptors.find(property)?.descriptor
-			if (descriptor && !('value' in descriptor) && descriptor.set) {
-				invokeProviderMethod(
-					target,
-					facade,
-					providerContext,
-					callerContext,
-					consumer,
-					descriptors,
-					descriptor.set,
-					[value],
-				)
-				return true
-			}
-			return writeAdmittedProviderProperty(
-				providerContext,
-				target,
-				facade,
-				descriptors,
-				property,
-				value,
-			)
-		},
-		defineProperty: rejectDefineProperty,
-		deleteProperty: rejectDeleteProperty,
-		setPrototypeOf: rejectPrototypeMutation,
-		preventExtensions: rejectPreventExtensions,
+	const shape = compileFacadeShape(
+		provider,
+		descriptors,
+		getPluginGenerationCallerSurface(provider),
+	)
+	const state: StableFacadeState<T> = {
+		kind: 'stable',
+		target: provider,
+		facade: shape.facade,
+		providerContext,
+		callerContext,
+		consumer,
+		descriptors,
+		methods: new Map(),
+		callPrototype: shape.callPrototype,
 	}
-	facade = new Proxy(provider, handler)
-	registerPluginGenerationFacade(facade, provider)
-	byProvider.set(provider, facade)
-	return facade
+	facadeStates.set(shape.facade, state)
+	registerPluginGenerationFacade(shape.facade, provider)
+	Object.preventExtensions(shape.facade)
+	byProvider.set(provider, shape.facade)
+	return shape.facade
 }

@@ -1,4 +1,5 @@
 import type { Context as PluxelContext } from '../../context/Context'
+import { pinOwnerContext } from '../../context/owner-view'
 import { createGenerationContext } from '../../context/context-factory'
 import { createErr, createOk } from 'option-t/plain_result'
 import { requireConfigService } from '../../internal/config-service'
@@ -147,6 +148,7 @@ export class PluginService {
 		public readonly ctx: PluxelContext,
 		config: PluginServiceConfig = {},
 	) {
+		pinOwnerContext(this, ctx)
 		this.startTimeoutMs = config.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
 		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS
 		this.startConcurrency = config.startConcurrency ?? DEFAULT_START_CONCURRENCY

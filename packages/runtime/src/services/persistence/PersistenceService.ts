@@ -1,5 +1,6 @@
 import type { Context as PluxelContext } from '@pluxel/core'
 import { basename, isAbsolute, join, resolve } from 'pathe'
+import { pinOwnerContext } from '../../context/owner-view'
 
 export type PersistenceCapability = 'durable' | 'ephemeral' | 'readonly'
 
@@ -381,9 +382,10 @@ export class PersistenceService {
 	private readonly backend: PersistenceBackend
 
 	constructor(
-		public ctx: PluxelContext,
+		public readonly ctx: PluxelContext,
 		config?: PersistenceServiceConfig,
 	) {
+		pinOwnerContext(this, ctx)
 		this.backend = resolvePersistenceBackend(config)
 	}
 

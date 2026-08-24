@@ -21,6 +21,7 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
   也不使用 Plugin name/schema key。
 - core validation 不依赖文件系统或 Workbench Plane。
 - raw record、revision 与 validation cache 只有 core `ConfigService` 一份；runtime 子类只增加持久化策略。
+- `getRawConfig()` 对同一 revision 复用一个深冻结普通 snapshot；revision 改变后返回新 identity，旧引用不变，不使用 live `Proxy` view。
 - 任意 Part config patch 都重新验证 composite record，并重启整个 owning Plugin；没有 Part config revision 或独立 persistence owner。
 - static application build 固定的是 Plugin code graph 和 `configure()` resolver code，不是 resolver 的启动返回值。
 

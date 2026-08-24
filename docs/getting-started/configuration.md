@@ -55,6 +55,10 @@ export class WorkerPlugin extends BasePlugin {
 - 每个 Plugin/Part class 各自最多一次，并且 schema 必须产出 object；
 - schema expression 要能由 semantic pass 追踪，不用动态 runtime 分支拼接。
 
+`configs.use()` 的 field 在 generation construction 时先得到一个冻结的 identity sentinel，再由 Core 注入已验证 snapshot；sentinel
+不是动态属性 `Proxy`。因此 constructor/其他 field initializer 的提前读取由 Pluxel semantic/lint pass 直接拒绝，不依赖运行时
+任意属性 trap。
+
 TypeScript 的 `private`/`protected` 可以使用；限制针对真正的 `#private` runtime slot。
 
 ## 默认值只写一次

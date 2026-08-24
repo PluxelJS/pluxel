@@ -69,6 +69,10 @@ Plugin 对其他节点暴露的可调用成员应写成普通 prototype method�
 `plugin_caller_view_callable_field_unsupported`。普通数据 field 仍可读写；需要 callable handle 时返回有独立对象 receiver 和明确
 stop/replacement 失效语义的 capability。
 
+dependency facade 在 provider construction 完成后固定 ordinary field/prototype surface，因此不要用 type-only
+`declare field` 或在 `init()`/method 中动态增加跨 Plugin 字段；前者会得到
+`plugin_caller_view_declared_field_unsupported`。需要暴露的数据使用真实 class field，需要行为使用 prototype method。
+
 ## Optional integration
 
 如果最终宿主可以完全不安装 provider，使用 type-only import 和 module-level opaque ref：
@@ -304,6 +308,7 @@ billing.events.invoicePaid.on(async (invoice, signal) => {
 ```
 
 listener registration 会绑定调用方 Context effects，stop/replacement 时自动取消；仍可以使用返回的 disposer 提前移除。生产者需要等待所有异步 listener 并隔离单项失败时，使用 `emitSettled()`。
+`EvtChannel` 直接接收 `this.ctx`；不要传 `() => this.ctx`。调用方归属由 dependency caller facade 显式绑定，不通过动态 Context provider 推断。
 
 ## Identity 不等于 class name
 

@@ -11,6 +11,7 @@ import {
 } from '../database-internal'
 import type { DatabaseDefinition, PluginDatabaseHandle } from '../database'
 import type { PersistenceServiceConfig } from './persistence/PersistenceService'
+import { pinOwnerContext } from '../context/owner-view'
 
 const SYSTEM_SCHEMA = 'pluxel_system'
 
@@ -694,7 +695,9 @@ export class DatabaseService {
 	constructor(
 		public readonly ctx: CoreContext,
 		private readonly options: DatabaseServiceHostOptions,
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	async use<Definition extends DatabaseDefinition>(
 		definition: Definition,

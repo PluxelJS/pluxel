@@ -1,5 +1,6 @@
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
 import type { Context as PluxelContext } from '@pluxel/core'
+import { pinOwnerContext } from '../../context/owner-view'
 import { basename, join } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
@@ -759,7 +760,9 @@ export class VaultService {
 		public readonly ctx: PluxelContext,
 		config: VaultServiceConfig = {},
 		private readonly backing: VaultRootBacking = createVaultRootBacking(ctx, config),
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	/** @internal Create an owner projection over the root-owned mount state. */
 	forOwner(owner: PluxelContext): VaultService {
@@ -1602,7 +1605,9 @@ export class VaultAdminService {
 	constructor(
 		public readonly ctx: PluxelContext,
 		private readonly vault: VaultService,
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	private managedVault(): ManagedVault {
 		return this.vault.managedVault()

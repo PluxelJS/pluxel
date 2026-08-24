@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createWorkbenchRpcView } from '../../src/web/rpc'
+import { createWorkbenchRpcClient } from '../../src/web/rpc'
 
-describe('createWorkbenchRpcView', () => {
-	it('caches grant and method wrappers', async () => {
+describe('createWorkbenchRpcClient', () => {
+	it('caches method wrappers', async () => {
 		let disposeCalls = 0
 		const raw = () =>
 			({
@@ -21,12 +21,13 @@ describe('createWorkbenchRpcView', () => {
 				},
 			}) as any
 
-		const rpc = createWorkbenchRpcView(raw as any) as any
+		const rpc = createWorkbenchRpcClient(raw as any, 'demo-grant') as any
 
-		expect(rpc['demo-grant']).toBe(rpc['demo-grant'])
-		expect(rpc['demo-grant'].hello).toBe(rpc['demo-grant'].hello)
+		expect(rpc.hello).toBe(rpc.hello)
+		expect(rpc.then).toBeUndefined()
+		await expect(Promise.resolve(rpc)).resolves.toBe(rpc)
 
-		const value = await rpc['demo-grant'].hello()
+		const value = await rpc.hello()
 		expect(value).toBe('ok')
 		expect(disposeCalls).toBe(1)
 	})
@@ -46,8 +47,25 @@ describe('createWorkbenchRpcView', () => {
 				},
 			}) as any
 
-		const rpc = createWorkbenchRpcView(raw as any) as any
-		expect(rpc['demo-grant'].ping()).toBe(123)
+		const rpc = createWorkbenchRpcClient(raw as any, 'demo-grant') as any
+		expect(rpc.ping()).toBe(123)
+		expect(disposeCalls).toBe(1)
+	})
+
+	it('disposes a session when dynamic namespace lookup throws', () => {
+		let disposeCalls = 0
+		const raw = () =>
+			({
+				workbenchRpc: () => {
+					throw new Error('namespace failed')
+				},
+				dispose: () => {
+					disposeCalls++
+				},
+			}) as any
+		const rpc = createWorkbenchRpcClient(raw as any, 'demo-grant') as any
+
+		expect(() => rpc.ping()).toThrow('namespace failed')
 		expect(disposeCalls).toBe(1)
 	})
 })

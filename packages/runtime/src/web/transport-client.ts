@@ -14,7 +14,7 @@ import {
 	runtimeWorkbenchLiveQueryPath,
 	runtimeWorkbenchModelEventsPath,
 } from './paths'
-import { createRpcClientFactory, createWorkbenchRpcView, invokeRpc } from './rpc'
+import { createRpcClientFactory, createWorkbenchRpcClient, invokeRpc } from './rpc'
 import { createRuntimeSecurityClient } from './security'
 import { sseWithLifecycle, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { mergeNamespaces } from './utils'
@@ -85,7 +85,14 @@ export function createRuntimeTransportClient(
 			: (options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked)
 	const security = createRuntimeSecurityClient({ apiBase, fetch })
 	const rawRpc = createRpcClientFactory(rpcBase)
-	const workbenchRpcs = createWorkbenchRpcView(rawRpc, { credentials, assertActive })
+	const workbenchRpcs = new Map<string, unknown>()
+	const workbenchRpc = <TRpc>(grantId: string): TRpc => {
+		const existing = workbenchRpcs.get(grantId)
+		if (existing) return existing as TRpc
+		const client = createWorkbenchRpcClient(rawRpc, grantId, { credentials, assertActive })
+		workbenchRpcs.set(grantId, client)
+		return client as TRpc
+	}
 	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) => {
 		assertActive()
 		return invokeRpc(runner, { rpcBase, credentials })
@@ -147,7 +154,7 @@ export function createRuntimeTransportClient(
 					fetch: init,
 				}),
 			),
-		rpc: <TRpc>(grantId: string) => (workbenchRpcs as Record<string, unknown>)[grantId] as TRpc,
+		rpc: workbenchRpc,
 		events: <TEvent = unknown>(grantId: string) =>
 			createSse({
 				url: resolveClientUrl(joinPath(apiBase, runtimeWorkbenchModelEventsPath(grantId))),
@@ -173,6 +180,7 @@ export function createRuntimeTransportClient(
 		dispose: () => {
 			if (disposed) return
 			disposed = true
+			workbenchRpcs.clear()
 			for (const stream of managedSse) stream.close()
 			managedSse.clear()
 			memoSse = null

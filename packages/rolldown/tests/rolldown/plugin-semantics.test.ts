@@ -520,6 +520,16 @@ describe('plugin semantic lowering', () => {
 			message: 'plugin_caller_view_callable_field_unsupported',
 		},
 		{
+			name: 'type-only declared Plugin field',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					declare status: string
+				}
+			`,
+			message: 'plugin_caller_view_declared_field_unsupported',
+		},
+		{
 			name: 'callable field in local Plugin base',
 			code: `
 				import { BasePlugin, Plugin } from '@pluxel/runtime'

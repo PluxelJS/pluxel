@@ -1,5 +1,6 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import type { Context as PluxelContext } from '../context/Context'
+import { pinOwnerContext } from '../context/owner-view'
 import { debugLogCategory, pluginLogCategory, runtimeLogCategory } from './categories'
 import { findPluginLogContext } from './context'
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
@@ -148,5 +149,6 @@ export class LoggerService extends ContextLogger {
 			context: ctx.name,
 		})
 		this.ctx = ctx
+		pinOwnerContext(this, ctx)
 	}
 }

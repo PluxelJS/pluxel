@@ -10,6 +10,7 @@ import {
 import type { Context as CoreContext } from '@pluxel/core'
 import { closeOwnerInvocations, enterOwnerInvocation } from '@pluxel/core/internal'
 import { createPluginManagementCommands } from './commands/plugin-management'
+import { pinOwnerContext } from '../context/owner-view'
 
 type RootState = {
 	registry: ReturnType<typeof createCommandRegistry<CommandContext>>
@@ -27,9 +28,11 @@ export class CommandsService {
 	private ownsInvocationCleanup = false
 
 	constructor(
-		public ctx: CoreContext,
+		public readonly ctx: CoreContext,
 		_cfg: unknown,
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	/** Register a command until its owner Context stops or the returned handle is disposed. */
 	register(command: AnyCommand): Registration {

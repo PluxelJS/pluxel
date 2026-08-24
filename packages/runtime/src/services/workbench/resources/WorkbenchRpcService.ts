@@ -1,6 +1,7 @@
 // Request-scoped Workbench API resources over Cap'n Web.
 import { type Context } from '@pluxel/core'
 import type { RpcTarget } from 'capnweb'
+import { pinOwnerContext } from '../../../context/owner-view'
 
 /** Request-scoped Workbench API resource factory. */
 export type WorkbenchRpcFactory<T extends RpcTarget = RpcTarget> = (ctx: Context) => T
@@ -9,9 +10,11 @@ export class WorkbenchRpcService {
 	private readonly resources = new Map<string, WorkbenchRpcFactory>()
 
 	constructor(
-		public ctx: Context,
+		public readonly ctx: Context,
 		_cfg: unknown,
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	/** @internal Register against an immutable owner Context. */
 	registerResourceFor<T extends RpcTarget>(

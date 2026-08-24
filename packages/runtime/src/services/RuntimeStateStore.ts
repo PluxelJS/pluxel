@@ -8,6 +8,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { SuperJSON } from 'superjson'
+import { pinOwnerContext } from '../context/owner-view'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export type RuntimeStateSnapshot = Readonly<{
@@ -101,6 +102,7 @@ export class RuntimeStateStore {
 		public readonly ctx: PluxelContext,
 		cfg: RuntimeStateStoreConfig = {},
 	) {
+		pinOwnerContext(this, ctx)
 		const implicitMode = defaultRuntimeStateStoreMode(ctx.root.persistence.capability)
 		this.mode = cfg.mode ?? implicitMode
 		this.readonlyMode = this.mode === 'readonly'

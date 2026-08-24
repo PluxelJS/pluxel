@@ -18,6 +18,7 @@ import type {
 } from '../../agent-tools'
 import type { CommandsService } from '../CommandsService'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
+import { pinOwnerContext } from '../../context/owner-view'
 
 const storageKey = 'policy.json'
 const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
@@ -45,6 +46,7 @@ export class AgentToolsService {
 	private mutationTail: Promise<void> = Promise.resolve()
 
 	constructor(public readonly ctx: CoreContext) {
+		pinOwnerContext(this, ctx)
 		this.storage = ctx.root.persistence.namespace('agent-tools')
 		this.ready = this.load()
 	}

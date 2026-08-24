@@ -33,7 +33,8 @@ route 用它组合 Loader/Scan。业务 Plugin 不能在 module evaluation 或 `
 
 Runtime 内建能力明确选择 root、scope 或 owner-view。Core 把 scope 映射为 Plugin generation：PluginPart 与 dependency caller
 view 共享 generation backing；owner-view 共享 root backend，但 Plugin、Part 与每条 caller edge 各有严格惰性的 view/cache。
-这样 `ctx.commands`、`ctx.http`、`ctx.workers` 等保留调用者注册和 cleanup ownership，同时 registry/pool/server 等 backend
+view 是带 immutable owner Context 的普通 class/object，不通过 `Proxy` 改写共享 service 的 `this.ctx`。这样
+`ctx.commands`、`ctx.http`、`ctx.workers` 等保留调用者注册和 cleanup ownership，同时 registry/pool/server 等 backend
 仍按 root 共享。可选能力 disabled 时不进入 host shape，不能通过 null stateful service 模拟启用。
 
 ## 依赖与组成
@@ -132,9 +133,12 @@ layout；init 失败不会留下可见 View 或 resource。HMR replacement 会�
 live query 和 grant；rollback 通过重新 mount 获得新 lease。
 
 constructor 注入的 dependency 是覆盖 `ctx.caller` 的 generation-bound facade。同一 consumer/provider generation pair
-复用一个 facade，不同 consumer 或 replacement 后的新 generation 不共享。method/getter receiver 保持 caller facade；普通作者字段的
-读写委托被 pin 的 raw provider instance，不在 facade 上形成 shadow state。stale method invocation 与字段写入都受 provider
-generation admission gate 拒绝；`ctx`、Core internal state/symbol、`defineProperty`、`deleteProperty` 与 prototype mutation fail-fast。
+复用一个 facade，不同 consumer 或 replacement 后的新 generation 不共享。Core 在 provider construction 完成后把普通 field 和
+prototype surface 一次编译成 non-extensible property-descriptor facade；每个 accepted method/getter invocation 使用一个独立普通
+receiver，因此并发异步调用保持各自 `ctx.caller`，不依赖 `Proxy` 或 mutable current caller。普通作者字段读写委托被 pin 的 raw
+provider instance，不在 facade 上形成 shadow state。stale method invocation 与字段写入都受 provider generation admission gate
+拒绝；未在 construction-time shape 中出现的动态字段不能通过 dependency surface 新增，reflection mutation 由 non-extensible、
+non-configurable descriptor 拒绝。
 caller-owned state 继续以 `Context` 为 key，不依赖可变全局 current caller。
 
 Plugin inheritance chain 不允许 ECMAScript instance `#private` field/method/accessor，因为 caller facade 无法通过 private brand check；
@@ -144,6 +148,8 @@ semantic pass 对此发出 `plugin_caller_view_private_brand_unsupported`。需�
 跨节点可调用的 Plugin surface 只使用 prototype method；accessor只返回普通数据或具有独立receiver/withdrawal契约的对象handle。
 arrow、function expression 或 `.bind()` 产生的 function-valued instance field 会捕获 raw provider receiver，无法诚实投影 consumer caller；semantic pass 以
 `plugin_caller_view_callable_field_unsupported` 拒绝，Core caller facade 对动态产生的 callable field/accessor result 同样 fail-fast。
+type-only `declare` instance field 不产生 construction-time shape，以 `plugin_caller_view_declared_field_unsupported` 拒绝；需要跨节点
+暴露的 data field 必须是实际 class field，行为继续使用 prototype method。
 需要返回 callable handle 时，返回具有独立 receiver 与 withdrawal 契约的 capability object，不把裸 function 暴露为 Plugin field。
 
 第三方库只有不可撤销的进程级 registration/platform callback 时，全局部分只保存稳定且在无 active scope 时 inert 的

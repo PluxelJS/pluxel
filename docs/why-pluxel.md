@@ -137,16 +137,20 @@ Context 只暴露能力和当前 owner identity，不暴露完整宿主配置。
 
 普通业务 Plugin 不使用 declaration merging 声明依赖；第三方业务能力继续通过 Plugin graph 组合。
 
-### Proxy 只适配局部动态语义
+### 本地能力优先保持 Proxy-free
 
-Pluxel 不用 Context-wide Proxy 定义 dependency identity 或 service graph，但会在需要动态调用的局部接口使用 Proxy，例如：
+Context projected getter、owner view、Plugin dependency caller facade、具名 `EvtChannel` 与 config snapshot 都使用普通对象、
+class 或一次编译的 property descriptor：
 
-- constructor 注入的 caller-aware Plugin view；
-- `EvtChannel` 的 caller-bound method view；
-- readonly config 与未初始化 sentinel；
-- RPC/SSE 等动态 namespace。
+- `ctx.http` 是普通 owner view；所有 view 共享一个 root HTTP backend；
+- caller facade 在 provider construction 后固定 surface，每次 accepted invocation 使用独立普通 receiver；
+- `EvtChannel` 直接接收 owner Context，consumer subscription 通过缓存的普通 facade 绑定 effects；
+- raw config 每个 revision 返回一个深冻结普通 snapshot，`configs.use()` 初始化 sentinel 是冻结 identity token；提前读取由工具链拒绝。
 
-这些 view 只处理调用者绑定或动态成员。provider identity、graph edge 和 lifecycle ordering 来自构建 metadata，不由 Proxy 决定。
+这是一项设计偏好，不是全面禁令：当普通对象或预编译 shape 能得到更明确的 identity、反射和生命周期语义时，不用 `Proxy`
+隐藏动态 rebinding。浏览器 Workbench 的 Cap’n Web RPC stub 仍使用 `Proxy`，因为 RPC method 名称来自 type-erased remote contract，
+本地没有可编译的 runtime method schema；这个边界不参与后端 provider identity、graph edge、Context owner、effects 或 lifecycle
+ordering。SSE namespace 使用显式 `ns(name)`，不再通过任意属性读取推断 namespace。
 
 ## 为什么称为 typed meta-framework
 
@@ -162,7 +166,9 @@ Pluxel 所说的 typed，不只是给 runtime API 增加泛型。TypeScript 源�
 
 ## 性能取舍
 
-Pluxel 与 Cordis v4 目前没有同场、同语义的 benchmark，现有数据不能说明谁更快。Pluxel 把一部分依赖解析移到构建期，但 runtime 中仍有 graph commit、caller binding 和局部 Proxy。这项设计首先服务于依赖检查和身份一致性，不作性能承诺。
+Pluxel 与 Cordis v4 目前没有同场、同语义的 benchmark，现有数据不能说明谁更快。Pluxel 把一部分依赖解析和 caller surface
+编译移到构建或 generation construction 阶段；runtime 仍有 graph commit、caller admission 与 per-invocation receiver 分配。
+这项设计首先服务于依赖检查、身份一致性和可撤销调用，不作未经同场测试的性能承诺。
 
 Context 本身会把 capability object identity 在 host compile 时映射成 numeric slot，成功构造的值按 root/scope/owner-view
 缓存；常规 `ctx.foo` 热访问不做字符串或 `Map` 查找。这里使用 `Map` 是为了保持 descriptor 的 object identity，

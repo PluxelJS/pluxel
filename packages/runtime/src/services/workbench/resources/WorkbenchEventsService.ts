@@ -2,6 +2,7 @@ import type { Context } from '@pluxel/core'
 import { createResponse, type Session } from 'better-sse'
 import type { InferContext } from 'elysia'
 
+import { pinOwnerContext } from '../../../context/owner-view'
 import { createElysiaApp } from '../../http/elysia'
 
 type SseHttpContext = InferContext<ReturnType<typeof createElysiaApp>>
@@ -80,9 +81,11 @@ export class WorkbenchEventsService {
 	private static readonly RETRY_MS = 2_000
 
 	constructor(
-		public ctx: Context,
+		public readonly ctx: Context,
 		_cfg: unknown,
-	) {}
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	/** @internal Register against an immutable owner Context. */
 	registerResourceFor(owner: Context, namespace: string, handler: SseHandler): () => void {

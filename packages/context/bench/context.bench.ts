@@ -59,6 +59,23 @@ bench.add('explicit resolve (descriptor identity + cached root slot)', () => {
 		sink = resolveContextCapability(owner, rootCapability)
 	}
 })
+bench.add('explicit resolve (descriptor identity + cached scope slot)', () => {
+	for (let index = 0; index < batch; index += 1) {
+		sink = resolveContextCapability(owner, scopeCapability)
+	}
+})
+bench.add('explicit resolve (descriptor identity + cached owner slot)', () => {
+	for (let index = 0; index < batch; index += 1) {
+		sink = resolveContextCapability(owner, ownerCapability)
+	}
+})
+bench.add('explicit resolve mixed root/scope/owner', () => {
+	for (let index = 0; index < batch; index += 1) {
+		sink = resolveContextCapability(owner, rootCapability)
+		sink = resolveContextCapability(owner, scopeCapability)
+		sink = resolveContextCapability(owner, ownerCapability)
+	}
+})
 bench.add('null-prototype string lookup baseline (not descriptor-safe)', () => {
 	for (let index = 0; index < batch; index += 1) sink = nullRecord.value
 })
@@ -102,6 +119,7 @@ await bench.run()
 
 const operationBatch = (name: string): number => {
 	if (name.includes('plan compilation')) return coldPlanBatch
+	if (name.includes('mixed')) return batch * 3
 	return name.includes('first miss') || name.includes('creation') ? 100 : batch
 }
 console.table(
@@ -117,7 +135,7 @@ console.table(
 	}),
 )
 console.log(
-	'Cached ctx.foo uses a scope-specialized projected getter and a direct dense-array slot read. Explicit resolve retains receiver validation and maps capability identity directly to its resolver; the null-prototype string baseline is not a semantic substitute.',
+	'Cached ctx.foo uses a scope-specialized projected getter and a direct dense-array slot read. Explicit resolve validates the receiver once, maps capability identity to a plan-private resolver, and then reads private state directly; the null-prototype string baseline is not a semantic substitute.',
 )
 console.log('Host compilation is a cold root-construction cost and is reported separately.')
 void sink

@@ -66,6 +66,8 @@ describe('ConfigService', () => {
 			expect(handle.rev()).toBe(first)
 			handle.unset('_missing')
 			expect(handle.rev()).toBe(first)
+			handle.unset('toString')
+			expect(handle.rev()).toBe(first)
 			handle.unset('answer')
 			expect(handle.rev()).toBeGreaterThan(first)
 		})
@@ -83,9 +85,68 @@ describe('ConfigService', () => {
 				nested: { values: string[] }
 			}>(handle.owner)
 			expect(raw.nested.values).toEqual(['first'])
+			expect(Object.isFrozen(raw)).toBe(true)
 			expect(Object.isFrozen(raw.nested)).toBe(true)
 			expect(Object.isFrozen(raw.nested.values)).toBe(true)
 			expect(handle.rev()).toBe(revision)
+
+			handle.set({ nested: { values: ['second'] } })
+			const next = requireConfigService(host.ctx).getRawConfig<{
+				nested: { values: string[] }
+			}>(handle.owner)
+			expect(next).not.toBe(raw)
+			expect(raw.nested.values).toEqual(['first'])
+			expect(next.nested.values).toEqual(['second'])
+		})
+	})
+
+	it('rejects executable, hidden and non-portable patch data without invoking accessors', async () => {
+		await withCoreHost(async (host) => {
+			const owner = host.cfg(P).owner
+			const configService = requireConfigService(host.ctx)
+			let reads = 0
+			const accessor = Object.defineProperty({}, 'answer', {
+				enumerable: true,
+				get: () => {
+					reads++
+					return 42
+				},
+			})
+			expect(() => configService.patchConfig(owner, accessor)).toThrow(/data property/i)
+			expect(reads).toBe(0)
+
+			const hidden = Object.defineProperty({}, 'answer', { value: 42 })
+			expect(() => configService.patchConfig(owner, hidden)).toThrow(/data property/i)
+			expect(() =>
+				configService.patchConfig(owner, { [Symbol('answer')]: 42 } as Record<string, unknown>),
+			).toThrow(/symbol key/i)
+			expect(() => configService.patchConfig(owner, { answer: undefined })).toThrow(
+				/portable data/i,
+			)
+			expect(() => configService.patchConfig(owner, { answer: Number.POSITIVE_INFINITY })).toThrow(
+				/portable data/i,
+			)
+			expect(() => configService.patchConfig(owner, null as never)).toThrow(/plain object/i)
+			expect(() => configService.patchConfig(owner, [] as never)).toThrow(/plain object/i)
+			const arrayAccessor = Object.defineProperty([0], '0', {
+				enumerable: true,
+				get: () => {
+					reads++
+					return 1
+				},
+			})
+			expect(() => configService.patchConfig(owner, { values: arrayAccessor })).toThrow(
+				/data property/i,
+			)
+			expect(reads).toBe(0)
+
+			const prototypeKey = JSON.parse('{"__proto__":{"polluted":true}}') as Record<string, unknown>
+			configService.patchConfig(owner, prototypeKey)
+			const snapshot = configService.getRawConfig(owner)
+			expect(Object.getPrototypeOf(snapshot)).toBe(Object.prototype)
+			expect(Object.hasOwn(snapshot, '__proto__')).toBe(true)
+			expect(snapshot.__proto__).toEqual({ polluted: true })
+			expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
 		})
 	})
 

@@ -83,6 +83,33 @@ void handler.actions
 有 `property` 的 capability 会出现在推导出的 Context 类型上。若能力不适合成为属性，可以省略 `property`，再通过
 `resolveContextCapability(ctx, descriptor)` 显式读取。
 
+Context 的输出类型由 installation tuple 推导；host 的输入配置则由组合层显式定义，不从 service constructor 的第二参数反推。
+一个 service 可能消费多个配置域、共享已归一化的 host policy，或根本没有一一对应的配置 key，因此自动反推会把构造细节误当成
+public config contract。组合层应声明一个 `AppHostConfig`，先把它解析成 immutable inputs，再由 capability factory closure 消费：
+
+```ts
+interface AppHostConfig {
+	clock?: { fixedNow?: number }
+}
+
+function createAppContext(config: AppHostConfig = {}) {
+	const clock = Object.freeze({ fixedNow: config.clock?.fixedNow })
+	return createContextHost({
+		name: 'app',
+		capabilities: [
+			installRootCapability(clockCapability, {
+				property: 'clock',
+				create: () => ({ now: () => clock.fixedNow ?? Date.now() }),
+			}),
+		] as const,
+	}).createRoot()
+}
+```
+
+因此 IDE 在 `createAppContext({ ... })` 提示的是 `AppHostConfig`，在 `ctx.clock` 提示的是 installation 推导结果；两条类型链
+各自只有一个 authority。Pluxel Runtime 同样由集中 `RuntimeHostConfig`/`CoreHostConfig` 提供创建参数提示，再由 root plan
+解析和分发给 HTTP、database、workers 等 service；完整 host config 不存进 Context，也不交给每个 Plugin。
+
 ## 选择作用域
 
 | 作用域     | 构造与共享方式                                                  | 适合                         |
@@ -93,6 +120,8 @@ void handler.actions
 
 `createChild(parent, name)` 建立 containment parent，并共享 parent 的 scope backing；它不会创建新 scope。owner-view 的
 `createView()` 收到当前 Context，因此共享 backend 可以把注册、日志或 cleanup 归属到正确 owner。
+`createView()` 应返回带 immutable owner reference 的普通 object/class；不要用 `Proxy` 动态替换共享 backend 的 `ctx`。
+共享状态留在 root backing，view 只保留 owner 和调用 backing 所需的最小引用。
 
 ## Strict lazy
 

@@ -85,6 +85,10 @@ class CallerViewProvider extends BasePlugin {
 	invokeCallableField(): unknown {
 		return (this.callableField as () => unknown)()
 	}
+
+	addDynamicField(): void {
+		;(this as unknown as { dynamic?: number }).dynamic = 1
+	}
 }
 
 const CallerViewProviderRef = definePluginRef<CallerViewProvider>()
@@ -239,7 +243,7 @@ describe('generation-bound Plugin caller facade', () => {
 		})
 	})
 
-	it('rejects reserved reflection mutations without changing the raw provider', async () => {
+	it('uses a non-extensible descriptor facade without changing the raw provider', async () => {
 		await withCoreHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
@@ -247,12 +251,15 @@ describe('generation-bound Plugin caller facade', () => {
 			const raw = host.require(CallerViewProvider)
 			const view = host.require(CallerViewConsumer).provider
 			const prototype = Object.getPrototypeOf(raw)
-			expect(() => Object.defineProperty(view, 'value', { value: 10 })).toThrow(/defineProperty/)
-			expect(() => Reflect.deleteProperty(view, 'value')).toThrow(/deleteProperty/)
-			expect(() => Object.setPrototypeOf(view, {})).toThrow(/prototype mutation/)
-			expect(() => Object.preventExtensions(view)).toThrow(/sealed or frozen/)
-			expect(() => Object.freeze(view)).toThrow(/sealed or frozen/)
-			expect(() => Reflect.set(view, Symbol('internal'), true)).toThrow(/read-only/)
+			expect(() => Object.defineProperty(view, 'value', { value: 10 })).toThrow(TypeError)
+			expect(Reflect.deleteProperty(view, 'value')).toBe(false)
+			expect(() => Object.setPrototypeOf(view, {})).toThrow(TypeError)
+			expect(Object.isExtensible(view)).toBe(false)
+			expect(Object.preventExtensions(view)).toBe(view)
+			expect(Reflect.set(view, Symbol('internal'), true)).toBe(false)
+			expect(Object.getOwnPropertyDescriptor(view, 'value')).toMatchObject({
+				configurable: false,
+			})
 
 			expect(Object.isExtensible(raw)).toBe(true)
 			expect(Object.getPrototypeOf(raw)).toBe(prototype)
@@ -278,6 +285,25 @@ describe('generation-bound Plugin caller facade', () => {
 			void view.increment
 			raw.increment = (() => 42) as typeof raw.increment
 			expect(() => view.increment).toThrow(/plugin_caller_view_callable_field_unsupported/)
+		})
+	})
+
+	it('keeps the dependency surface fixed to construction-time fields and prototype methods', async () => {
+		await withCoreHost(async (host) => {
+			await host.start(CallerViewProvider)
+			const raw = host.require(CallerViewProvider) as CallerViewProvider & { dynamic?: number }
+			raw.addDynamicField()
+			expect(raw.dynamic).toBe(1)
+
+			host.add(CallerViewConsumer)
+			await host.commit()
+
+			const view = host.require(CallerViewConsumer).provider as CallerViewProvider & {
+				dynamic?: number
+			}
+			expect(view.dynamic).toBeUndefined()
+			expect(() => view.addDynamicField()).toThrow(TypeError)
+			expect(raw.dynamic).toBe(1)
 		})
 	})
 

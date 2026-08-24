@@ -284,6 +284,7 @@ export function analyzePluginSemantics(
 	for (const raw of analysis.classes.values()) {
 		validateCallerViewPrivateBrand(raw, analysis, id, error)
 		validateCallerViewCallableFields(raw, analysis, id, error)
+		validateCallerViewDeclaredFields(raw, analysis, id, error)
 		if (raw.marked && raw.pluginPartSubclass) {
 			error(
 				`[pluxel:plugin-part] ${id} ${raw.name} must not use @Plugin; PluginPart has no graph identity`,
@@ -354,6 +355,7 @@ async function lowerModule(options: {
 	for (const raw of analysis.classes.values()) {
 		validateCallerViewPrivateBrand(raw, analysis, id, options.error)
 		validateCallerViewCallableFields(raw, analysis, id, options.error)
+		validateCallerViewDeclaredFields(raw, analysis, id, options.error)
 		if (raw.marked && raw.pluginPartSubclass) {
 			options.error(
 				`[pluxel:plugin-part] ${id} ${raw.name} must not use @Plugin; PluginPart has no graph identity`,
@@ -1438,6 +1440,25 @@ function validateCallerViewCallableFields(
 		const name = propertyName(member.key) ?? '<computed>'
 		error(
 			`[pluxel:plugin-caller-view] plugin_caller_view_callable_field_unsupported: ${id} ${raw.name}.${name} is a function-valued instance field; Plugin dependency callable surfaces must use prototype methods`,
+		)
+	}
+}
+
+function validateCallerViewDeclaredFields(
+	raw: RawClass,
+	analysis: ModuleAnalysis,
+	id: string,
+	error: (message: string) => never,
+): void {
+	if (!participatesInPluginInheritance(raw, analysis)) return
+	for (const value of arrayOf((raw.node.body as AstNode | undefined)?.body)) {
+		const member = value as AstNode
+		if (member.static === true || member.type !== 'PropertyDefinition' || member.declare !== true) {
+			continue
+		}
+		const name = propertyName(member.key) ?? '<computed>'
+		error(
+			`[pluxel:plugin-caller-view] plugin_caller_view_declared_field_unsupported: ${id} ${raw.name}.${name} is a type-only declared instance field; Plugin dependency facades require construction-time fields or prototype methods`,
 		)
 	}
 }

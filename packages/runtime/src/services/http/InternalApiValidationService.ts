@@ -3,6 +3,7 @@ import {
 	type Context as PluxelContext,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import { pinOwnerContext } from '../../context/owner-view'
 
 export type InternalApiValidationContext = {
 	path: string
@@ -35,6 +36,7 @@ export class InternalApiValidationService {
 		public readonly ctx: PluxelContext,
 		root?: InternalApiValidationService,
 	) {
+		pinOwnerContext(this, ctx)
 		if (root) {
 			this.validators = root.validators
 			this.logger = root.logger

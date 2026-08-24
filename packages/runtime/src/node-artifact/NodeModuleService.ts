@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import type { Context as CoreContext } from '@pluxel/core'
+import { pinOwnerContext } from '../context/owner-view'
 import {
 	readNodeModuleDeclaration,
 	type NodeModuleCleanup,
@@ -49,6 +50,7 @@ export class NodeModuleService {
 		public readonly ctx: CoreContext,
 		options?: NodeModuleArtifactHostOptions,
 	) {
+		pinOwnerContext(this, ctx)
 		if (ctx === ctx.root) {
 			rootStates.set(this, { artifacts: options ?? Object.freeze({}) })
 		}

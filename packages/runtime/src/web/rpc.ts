@@ -38,8 +38,9 @@ export async function invokeRpc<T>(
 	return await invokeGenericRpc<RuntimeRpcApi, T>(runner, options)
 }
 
-export function createWorkbenchRpcView(
+export function createWorkbenchRpcClient(
 	raw: RpcClientFactory,
+	grantId: string,
 	options: RpcClientCreateOptions & { assertActive?: () => void } = {},
 ): WorkbenchRpcView {
 	const { assertActive, ...defaults } = options
@@ -47,76 +48,52 @@ export function createWorkbenchRpcView(
 	// stub object and users memoize it (e.g. `const rpc = transport.extensions.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
 	//
-	// To make this ergonomic and safe, we return a stable proxy where each method
-	// call creates a fresh session.
-	const namespaceCache = new Map<string, unknown>()
-
-	const getNamespaceProxy = (grantId: string) => {
-		const existing = namespaceCache.get(grantId)
-		if (existing) return existing
-
-		const methodCache = new Map<string, unknown>()
-		const nsProxy = new Proxy(
-			{},
-			{
-				get(_nsTarget, method) {
-					if (typeof method !== 'string') return undefined
-
-					const cached = methodCache.get(method)
-					if (cached) return cached
-
-					const fn = (...args: any[]) => {
-						assertActive?.()
-						const { signal, clear } = createRpcTimeout()
-						const client = raw({ ...defaults, signal })
-						// IMPORTANT: preserve `this` grantId for capnweb stubs.
-						// Optional-chaining call like `obj?.[method]?.()` can lose the receiver,
-						// which may break capnweb's dynamic dispatch.
+	// Browser RPC method names are type-erased and supplied by the remote target. A Proxy keeps the
+	// typed property-call API at this open-ended transport boundary without affecting backend owner
+	// or lifecycle projection.
+	const methodCache = new Map<string, unknown>()
+	return new Proxy(
+		{},
+		{
+			get(_target, method) {
+				if (typeof method !== 'string' || method === 'then') return undefined
+				const cached = methodCache.get(method)
+				if (cached) return cached
+				const fn = (...args: any[]) => {
+					assertActive?.()
+					const { signal, clear } = createRpcTimeout()
+					let client: RuntimeRpcStub
+					try {
+						client = raw({ ...defaults, signal })
+					} catch (error) {
+						clear()
+						throw error
+					}
+					let result: unknown
+					try {
 						const nsTarget = (client as any).workbenchRpc(grantId)
 						const targetFn = nsTarget?.[method]
-						// Use Reflect.apply() instead of `fn.apply()` because capnweb stubs are
-						// Proxy-based and may intercept the "apply" property access.
-						let result: unknown
-						try {
-							result =
-								typeof targetFn === 'function'
-									? Reflect.apply(targetFn as any, nsTarget, args)
-									: undefined
-						} catch (e) {
-							clear()
-							disposeRpcClient(client)
-							throw e
-						}
-
+						result =
+							typeof targetFn === 'function'
+								? Reflect.apply(targetFn as any, nsTarget, args)
+								: undefined
 						if (result && typeof (result as any).then === 'function') {
-							// Normalize to a native promise so we can always attach `finally`,
-							// even if the returned thenable doesn't implement `.finally()`.
 							return Promise.resolve(result).finally(() => {
 								clear()
 								disposeRpcClient(client)
 							})
 						}
+					} catch (error) {
 						clear()
 						disposeRpcClient(client)
-						return result
+						throw error
 					}
-
-					methodCache.set(method, fn)
-					return fn
-				},
-			},
-		)
-
-		namespaceCache.set(grantId, nsProxy)
-		return nsProxy
-	}
-
-	return new Proxy(
-		{},
-		{
-			get(_target, grantId) {
-				if (typeof grantId !== 'string') return undefined
-				return getNamespaceProxy(grantId)
+					clear()
+					disposeRpcClient(client)
+					return result
+				}
+				methodCache.set(method, fn)
+				return fn
 			},
 		},
 	) as WorkbenchRpcView
