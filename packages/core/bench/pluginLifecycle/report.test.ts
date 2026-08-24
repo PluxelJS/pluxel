@@ -75,6 +75,46 @@ describe('plugin lifecycle benchmark reference compatibility', () => {
 		expect(compatibility.report?.tasks).toHaveLength(1)
 	})
 
+	it('preserves and explains a workload-bridge reference', () => {
+		const compatibility = assessReferenceCompatibility(
+			compatibleReference({
+				provenance: {
+					method: 'chained-workload-bridge',
+					description: 'Legacy and current workloads were calibrated on one runtime.',
+				},
+			}),
+			{ id: WORKLOAD_ID, scenario },
+		)
+		const current = [row(TASK.restartRootStar, 4)]
+		const report = toMainReport({
+			recordedAt: '2026-08-23T01:00:00.000Z',
+			runtime: { name: 'node', version: '24.0.0' },
+			workloadId: WORKLOAD_ID,
+			options: {
+				scenario,
+				selectedTasks: [TASK.restartRootStar],
+				timeMs: 5_000,
+				warmupTimeMs: 1_000,
+				warmupIterations: 60,
+				minIterations: null,
+			},
+			taskMetadata: TASK_METADATA,
+			tasks: current,
+			comparison: buildComparison(current, compatibility.report),
+			referenceCompatibility: compatibility,
+		})
+		const markdown = renderMarkdown({
+			report,
+			taskMetadata: TASK_METADATA,
+			regressionTolerancePct: 5,
+		})
+
+		expect(markdown).toContain('Reference: compatible via chained-workload-bridge')
+		expect(markdown).toContain(
+			'Reference method: Legacy and current workloads were calibrated on one runtime.',
+		)
+	})
+
 	it.each([
 		[
 			'missing workload identity',

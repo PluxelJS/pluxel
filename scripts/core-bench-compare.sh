@@ -33,21 +33,42 @@ WORK_ROOT="${PLUXEL_BENCH_WORKDIR:-${TMPDIR:-/tmp}/pluxel-core-bench-${USER:-use
 BASE_DIR="${WORK_ROOT}/core-base"
 HEAD_DIR="$ROOT"
 HEAD_WORKTREE_DIR="${WORK_ROOT}/core-head"
+BRIDGE_DIR="${WORK_ROOT}/core-workload-bridge"
 RESULT_ROOT="${PLUXEL_BENCH_RESULT_DIR:-${ROOT}/.bench-results/core}"
 BASE_RESULT_DIR="${RESULT_ROOT}/base"
 HEAD_RESULT_DIR="${RESULT_ROOT}/head"
+BRIDGE_LEGACY_RESULT_DIR="${RESULT_ROOT}/bridge-legacy"
+BRIDGE_CURRENT_RESULT_DIR="${RESULT_ROOT}/bridge-current"
 REFERENCE_REPORT="${BASE_RESULT_DIR}/plugin-lifecycle.json"
+BRIDGED_REFERENCE_REPORT="${BASE_RESULT_DIR}/plugin-lifecycle.bridged.json"
+# v1->v2 benchmark migration. Both harnesses run against the runtime immediately before the
+# migration commit; callers can override these refs for a future workload transition.
+WORKLOAD_BRIDGE_RUNTIME_REF="${PLUXEL_BENCH_BRIDGE_RUNTIME_REF:-3535fbbdd0e871fff5585859a53fcc809522d739}"
+WORKLOAD_BRIDGE_SWITCH_REF="${PLUXEL_BENCH_BRIDGE_SWITCH_REF:-9c41605d023e2684938850857b7459268dabe9c9}"
 
 cleanup() {
 	if [ "${PLUXEL_BENCH_KEEP_WORKTREES:-0}" != "1" ]; then
 		git -C "$ROOT" worktree remove --force "$BASE_DIR" >/dev/null 2>&1 || true
 		git -C "$ROOT" worktree remove --force "$HEAD_WORKTREE_DIR" >/dev/null 2>&1 || true
+		git -C "$ROOT" worktree remove --force "$BRIDGE_DIR" >/dev/null 2>&1 || true
 	fi
 }
 trap cleanup EXIT
 
-rm -rf "$BASE_DIR" "$HEAD_WORKTREE_DIR" "$BASE_RESULT_DIR" "$HEAD_RESULT_DIR"
-mkdir -p "$WORK_ROOT" "$BASE_RESULT_DIR" "$HEAD_RESULT_DIR"
+rm -rf \
+	"$BASE_DIR" \
+	"$HEAD_WORKTREE_DIR" \
+	"$BRIDGE_DIR" \
+	"$BASE_RESULT_DIR" \
+	"$HEAD_RESULT_DIR" \
+	"$BRIDGE_LEGACY_RESULT_DIR" \
+	"$BRIDGE_CURRENT_RESULT_DIR"
+mkdir -p \
+	"$WORK_ROOT" \
+	"$BASE_RESULT_DIR" \
+	"$HEAD_RESULT_DIR" \
+	"$BRIDGE_LEGACY_RESULT_DIR" \
+	"$BRIDGE_CURRENT_RESULT_DIR"
 
 echo "[bench] base: $BASE_SHA"
 echo "[bench] head: $HEAD_SHA"
@@ -118,6 +139,55 @@ run_bench() {
 }
 
 run_bench "base" "$BASE_DIR" "$BASE_RESULT_DIR"
-run_bench "head" "$HEAD_DIR" "$HEAD_RESULT_DIR" "$REFERENCE_REPORT"
+
+REFERENCE_FOR_HEAD="$REFERENCE_REPORT"
+BASE_WORKLOAD_ID="$(
+	node -e '
+		const report = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))
+		process.stdout.write(typeof report.workload?.id === "string" ? report.workload.id : "")
+	' "$REFERENCE_REPORT"
+)"
+
+if [ -z "$BASE_WORKLOAD_ID" ] && \
+	git rev-parse --verify --quiet "$WORKLOAD_BRIDGE_RUNTIME_REF" >/dev/null && \
+	git rev-parse --verify --quiet "$WORKLOAD_BRIDGE_SWITCH_REF" >/dev/null; then
+	BRIDGE_RUNTIME_SHA="$(git rev-parse "$WORKLOAD_BRIDGE_RUNTIME_REF")"
+	BRIDGE_SWITCH_SHA="$(git rev-parse "$WORKLOAD_BRIDGE_SWITCH_REF")"
+	if git merge-base --is-ancestor "$BASE_SHA" "$BRIDGE_RUNTIME_SHA" && \
+		git merge-base --is-ancestor "$BRIDGE_SWITCH_SHA" "$HEAD_SHA"; then
+		echo "[bench] bridging legacy workload through runtime: $BRIDGE_RUNTIME_SHA"
+		git worktree add --detach "$BRIDGE_DIR" "$BRIDGE_RUNTIME_SHA" >/dev/null
+		run_bench "bridge legacy workload" "$BRIDGE_DIR" "$BRIDGE_LEGACY_RESULT_DIR"
+
+		# Run the head workload against the exact same bridge runtime. Only benchmark sources are
+		# overlaid; the already checked-out and built runtime remains unchanged.
+		cp "$HEAD_DIR/packages/core/bench/pluginLifecycle.bench.ts" \
+			"$BRIDGE_DIR/packages/core/bench/pluginLifecycle.bench.ts"
+		cp "$HEAD_DIR"/packages/core/bench/pluginLifecycle/*.ts \
+			"$BRIDGE_DIR/packages/core/bench/pluginLifecycle/"
+		run_bench "bridge current workload" "$BRIDGE_DIR" "$BRIDGE_CURRENT_RESULT_DIR"
+
+		node "$ROOT/scripts/core-bench-reference-bridge.mjs" \
+			"$REFERENCE_REPORT" \
+			"$BRIDGE_LEGACY_RESULT_DIR/plugin-lifecycle.json" \
+			"$BRIDGE_CURRENT_RESULT_DIR/plugin-lifecycle.json" \
+			"$BRIDGED_REFERENCE_REPORT"
+		REFERENCE_FOR_HEAD="$BRIDGED_REFERENCE_REPORT"
+		echo "[bench] bridged reference: $BRIDGED_REFERENCE_REPORT"
+	fi
+fi
+
+run_bench "head" "$HEAD_DIR" "$HEAD_RESULT_DIR" "$REFERENCE_FOR_HEAD"
 
 echo "[bench] report: ${HEAD_RESULT_DIR}/plugin-lifecycle.md"
+
+REFERENCE_STATUS="$(
+	node -e '
+		const report = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))
+		process.stdout.write(report.reference?.status ?? "none")
+	' "$HEAD_RESULT_DIR/plugin-lifecycle.json"
+)"
+if [ "$REFERENCE_STATUS" != "compatible" ]; then
+	echo "[bench] No compatible base/head reference was produced; performance deltas are unavailable." >&2
+	exit 2
+fi

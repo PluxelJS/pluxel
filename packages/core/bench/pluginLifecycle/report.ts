@@ -108,6 +108,7 @@ export type ReferenceReport = {
 	recordedAt?: string
 	workload?: { id: string }
 	scenario?: Record<string, unknown>
+	provenance?: { method: string; description?: string }
 	tasks: BenchRow[]
 }
 
@@ -120,6 +121,7 @@ export type ReferenceCompatibility = Readonly<{
 	status: 'none' | 'compatible' | 'incompatible'
 	reason: string | null
 	recordedAt: string | null
+	provenance: ReferenceReport['provenance'] | null
 	report: ReferenceReport | null
 }>
 
@@ -153,10 +155,20 @@ export function loadReferenceReport(
 			!Array.isArray(parsed.options.scenario)
 				? (parsed.options.scenario as Record<string, unknown>)
 				: undefined
+		const provenance =
+			typeof parsed.provenance?.method === 'string'
+				? {
+						method: parsed.provenance.method,
+						...(typeof parsed.provenance.description === 'string'
+							? { description: parsed.provenance.description }
+							: {}),
+					}
+				: undefined
 		return {
 			recordedAt: typeof parsed.recordedAt === 'string' ? parsed.recordedAt : undefined,
 			...(workloadId === undefined ? {} : { workload: { id: workloadId } }),
 			...(scenario === undefined ? {} : { scenario }),
+			...(provenance === undefined ? {} : { provenance }),
 			tasks: parsed.tasks as BenchRow[],
 		}
 	} catch (err) {
@@ -184,14 +196,22 @@ export function assessReferenceCompatibility(
 	workload: WorkloadDescriptor,
 ): ReferenceCompatibility {
 	if (!report) {
-		return { status: 'none', reason: 'no reference report', recordedAt: null, report: null }
+		return {
+			status: 'none',
+			reason: 'no reference report',
+			recordedAt: null,
+			provenance: null,
+			report: null,
+		}
 	}
 	const recordedAt = report.recordedAt ?? null
+	const provenance = report.provenance ?? null
 	if (!report.workload) {
 		return {
 			status: 'incompatible',
 			reason: 'reference workload identity is missing',
 			recordedAt,
+			provenance,
 			report: null,
 		}
 	}
@@ -200,6 +220,7 @@ export function assessReferenceCompatibility(
 			status: 'incompatible',
 			reason: `workload id differs (${report.workload.id} != ${workload.id})`,
 			recordedAt,
+			provenance,
 			report: null,
 		}
 	}
@@ -208,6 +229,7 @@ export function assessReferenceCompatibility(
 			status: 'incompatible',
 			reason: 'reference scenario is missing',
 			recordedAt,
+			provenance,
 			report: null,
 		}
 	}
@@ -216,10 +238,11 @@ export function assessReferenceCompatibility(
 			status: 'incompatible',
 			reason: 'scenario differs',
 			recordedAt,
+			provenance,
 			report: null,
 		}
 	}
-	return { status: 'compatible', reason: null, recordedAt, report }
+	return { status: 'compatible', reason: null, recordedAt, provenance, report }
 }
 
 export function selectReferenceTasks(
@@ -385,6 +408,7 @@ export type MainReport = {
 		status: ReferenceCompatibility['status']
 		reason: string | null
 		recordedAt: string | null
+		provenance: ReferenceReport['provenance'] | null
 	}
 }
 
@@ -411,6 +435,7 @@ export function toMainReport(input: {
 			status: input.referenceCompatibility.status,
 			reason: input.referenceCompatibility.reason,
 			recordedAt: input.referenceCompatibility.recordedAt,
+			provenance: input.referenceCompatibility.provenance,
 		},
 	}
 }
@@ -465,7 +490,9 @@ export function renderMarkdown(input: {
 	const decisionSignals = report.decisionSignals.filter((signal) => signal.current != null)
 	const referenceSummary =
 		report.reference.status === 'compatible'
-			? `compatible${report.reference.recordedAt ? ` (${report.reference.recordedAt})` : ''}`
+			? `compatible${
+					report.reference.provenance ? ` via ${report.reference.provenance.method}` : ''
+				}${report.reference.recordedAt ? ` (${report.reference.recordedAt})` : ''}`
 			: report.reference.status === 'incompatible'
 				? `incompatible (${report.reference.reason ?? 'unknown reason'})`
 				: 'none'
@@ -483,6 +510,9 @@ export function renderMarkdown(input: {
 		'',
 		`Runtime: ${report.runtime.name} ${report.runtime.version} · Time: ${report.options.timeMs}ms · Warmup: ${report.options.warmupTimeMs}ms`,
 		`Workload: ${report.workload.id} · Reference: ${referenceSummary}`,
+		...(report.reference.provenance?.description
+			? [`Reference method: ${report.reference.provenance.description}`]
+			: []),
 		`Gate: latency > ${regressionTolerancePct}% and +${minRegressionDeltaMs}ms · RME <= ${noisyLatencyRmePct}% · diagnostic tasks excluded`,
 		`Result: ${resultSummary} · Compared: ${tracked.length} · Gated: ${gated.length} · New: ${
 			report.comparison.filter((row) => row.status === 'new').length
