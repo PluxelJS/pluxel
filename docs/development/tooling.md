@@ -74,6 +74,43 @@ npx nypm add -D @pluxel/market
 
 确切参数通过 `pluxel <command> --help` 查看。
 
+## 自定义本地 Plugin 模板
+
+只是创建标准 Plugin package 时使用 CLI 内置的 `plugin` 模板。团队需要固定自己的目录、文档或工具配置时，
+可以从明确的本地路径生成：
+
+```sh
+pluxel new --template ./templates/company-plugin --name @acme/orders --no-install
+```
+
+`./`、`../`、absolute path 和 `file:` URL 才会选择本地模板；bare name 始终只解析 CLI 内置模板。
+当前不支持 remote Git source 或 registry fallback，因此同名的本地目录、repository 或 package 不会改变 source kind。
+
+每个 template root 包含一个严格的 `pluxel-template.jsonc`：
+
+```jsonc
+{
+	"schemaVersion": 1,
+	"id": "company-plugin",
+	"packageManager": { "name": "pnpm" },
+	"prompts": [
+		{
+			"name": "description",
+			"type": "text",
+			"message": "Package description",
+			"default": "Pluxel plugin: {{ className }}Plugin",
+		},
+	],
+}
+```
+
+普通文件按字节复制。只有 `.tpl` 文件会在输出时去掉扩展名，并解析 `{{ key }}` 与
+`{{ json key }}`；文件名也可以使用同样的 token。模板不支持 condition、loop、partial、dynamic helper、
+JavaScript hook 或 post-create command，也不接受 symlink。
+
+CLI 在首次写入前完成 manifest、UTF-8 token、path containment、portable collision 和已有目标检查。
+local template 默认不运行 package manager；审查模板内容后显式传入 `--install` 才会执行安装及 lifecycle scripts。
+
 ## `pluxel build`
 
 命令以当前 package root 为边界：

@@ -13,27 +13,8 @@
 
 - [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)：Level 1 management 落地后，仅研究可替代 Remote View host
   所需的 browser runtime、React renderer/delivery ABI、最小 singleton 和 CSS asset ownership。
-- [`CLI_SCAFFOLDING_REFACTOR.md`](CLI_SCAFFOLDING_REFACTOR.md)：bundled/local scaffold 重构落地后的
-  remote Plugin template / giget adapter 后续决策。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
   decoratorless Plugin declaration。
 
-CLI 分发、local-first delegation 与官方能力按需加载的已实施约束见 [`../TOOLCHAIN.md`](../TOOLCHAIN.md) 和
-[`../../docs/development/tooling.md`](../../docs/development/tooling.md)。
-
-OpenTelemetry 的当前设计、非目标与上游阻塞见 [`../../plugins/otel/DESIGN.md`](../../plugins/otel/DESIGN.md) 和
-[`../../docs/plugins/otel.md`](../../docs/plugins/otel.md)。
-
-Command 默认 CLI projection 与 owner-bound invocation 的已实施约束见 [`../COMMANDS.md`](../COMMANDS.md) 与
-[`../RUNTIME.md`](../RUNTIME.md)。
-
-Plugin definition/node identity、source canonicalization 和人类可读投影的已实施约束见
-[`../PLUGIN_IDENTITY.md`](../PLUGIN_IDENTITY.md)。
-
-数据库与 Workbench 的已实施结论见 [`../DATABASE.md`](../DATABASE.md) 与
-[`../WORKBENCH.md`](../WORKBENCH.md)。
-
-时空可组合性研究中已经落地的维护者思考见
-[`../SPATIOTEMPORAL_COMPOSABILITY_NOTES.md`](../SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)。
-
-Static distribution 的已实施结论见 [`../DISTRIBUTION.md`](../DISTRIBUTION.md)。
+已实施的架构与用户行为不在本目录建立索引；分别从 [`../README.md`](../README.md) 与
+[`../../docs/index.md`](../../docs/index.md) 进入当前文档。

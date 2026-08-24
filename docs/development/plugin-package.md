@@ -14,7 +14,7 @@ pnpm verify
 ```
 
 官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。local template 则默认不执行安装，必须显式传入
-`--install` 才会运行 package manager。
+`--install` 才会运行 package manager。编写 manifest 与 `.tpl` 文件前先阅读[自定义本地 Plugin 模板](./tooling.md#自定义本地-plugin-模板)。
 
 ## 标准目录
 
