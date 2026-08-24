@@ -330,7 +330,7 @@ function OrdersWorkspace() {
 Workbench disabled 时 `ctx.workbench` 不存在，`ctx.workbench?.mount()` 会跳过调用和 bindings 参数求值。Plugin
 不先判断 enabled 再执行一套不同业务逻辑，也不会为 disabled Plane 创建 null service。
 
-Management Plane 与 Remote View Plane 分离。`@pluxel/runtime/web` 的 framework-neutral client 可以发现 runtime、查询和变更 Plugin/config/dependency/fork/group/logging/agent/security；它不加载 React、Mantine、layout、artifact 或 Workbench session。Workbench enabled 时 management 自动以 private policy 安装；headless host 通过顶层 `management` object 单独安装，两个字段都省略时没有管理 route。访问策略与宿主 Plugin 分类分别配置在 `management.access`、`management.pluginGroups`。
+Management Plane 与 Remote View Plane 分离。`@pluxel/runtime/web` 的 framework-neutral client 可以发现 runtime、查询和变更 Plugin/config/dependency/fork/group/logging/agent/security；它不加载 React、Mantine、layout、artifact 或 Workbench session。UI 需要把未知 RPC failure 投影成人类可读文案时可使用 `rpcErrorMessage(error, fallback)`；它只选择 `Error.message`、string 或 fallback，不提供可分支的稳定错误码。Workbench enabled 时 management 自动以 private policy 安装；headless host 通过顶层 `management` object 单独安装，两个字段都省略时没有管理 route。访问策略与宿主 Plugin 分类分别配置在 `management.access`、`management.pluginGroups`。
 
 HMR replacement 会撤销旧 layout binding、RPC factory、events/live query 和 grant，再以新 generation mount。浏览器只能访问当前 target 获得的 opaque grant，不能按 Plugin namespace 读取其他 resource。events producer 的 cleanup 由 owner 撤销和浏览器断连共享同一资源归属路径；两者交错时 cleanup 只执行一次，detached channel 的迟到 send/emit 会被忽略。
 

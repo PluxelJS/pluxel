@@ -23,6 +23,8 @@ describe('@pluxel/runtime/web framework boundary', () => {
 
 		expect(web.discoverRuntime).toEqual(expect.any(Function))
 		expect(web.createRuntimeManagementClient).toEqual(expect.any(Function))
+		expect(web.rpcErrorMessage(new Error('denied'), 'fallback')).toBe('denied')
+		expect(web.rpcErrorMessage(undefined, 'fallback')).toBe('fallback')
 		expect(web).not.toHaveProperty('createRuntimeTransportClient')
 		expect(web).not.toHaveProperty('RuntimeTransportClientProvider')
 		expect(web).not.toHaveProperty('useRuntimeTransportClient')

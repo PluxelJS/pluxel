@@ -50,3 +50,4 @@ export {
 	parseRuntimePortableData,
 	RuntimeProtocolValidationError,
 } from './web/validation'
+export { rpcErrorMessage } from './web/rpc-session'
