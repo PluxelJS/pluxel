@@ -31,7 +31,7 @@ function getWorker`,
 
 export default defineConfig({
 	optimizeDeps: {
-		exclude: ['modern-monaco/lsp/typescript/setup'],
+		exclude: ['lucide-react', 'modern-monaco/lsp/typescript/setup'],
 		include: ['typescript'],
 	},
 	plugins: [bundleModernMonacoTypeScriptWorker(), press(), fumadocsMdx(), tailwindcss()],

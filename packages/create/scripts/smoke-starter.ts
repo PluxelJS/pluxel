@@ -196,6 +196,13 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 		readFile(resolve(dist, 'workbench/public/.vite/manifest.json')),
 		readFile(resolve(dist, 'public/index.html')),
 	])
+	const environmentExample = await readFile(resolve(dist, '.env.example'), 'utf8')
+	if (
+		!environmentExample.includes('# EXAMPLE_TODO_MAX_ITEMS=') ||
+		!environmentExample.includes('# Input: number')
+	) {
+		throw new Error(`Created application .env.example is incomplete: ${environmentExample}`)
+	}
 
 	const entry = pathToFileURL(resolve(dist, 'app.mjs')).href
 	const smoke = [

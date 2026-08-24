@@ -2,6 +2,7 @@ export { BasePlugin, Plugin, v } from '@pluxel/runtime'
 export type { Context } from '@pluxel/runtime'
 
 export type {
+	ConfigEnvironmentBinding,
 	StaticRuntime,
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
@@ -18,4 +19,5 @@ export type {
 	StaticRuntimeStartupContext,
 	StaticRuntimeStartupReport,
 } from './types'
+export { bindConfigEnvironment } from './config-environment'
 export { defineStaticRuntime } from './application'

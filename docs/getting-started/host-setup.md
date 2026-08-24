@@ -64,6 +64,33 @@ export default defineStaticRuntime({
 
 `product` 是 canonical module 的可选 named export，不放进 `defineStaticRuntime()`。Static 与 dynamic 使用同一个 `defineProduct()` contract。
 
+### 初始化 Plugin config 的部署变量
+
+少量部署变量需要初始化 Plugin config 时，在 canonical entry 使用 `configEnvironmentBootstrap`，并把 Plugin 实际交给 `configs.use()` 的同一个 exported schema 传给 `bindConfigEnvironment()`：
+
+```ts no-twoslash
+import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+import { OrdersConfig, OrdersPlugin } from '@acme/orders'
+
+export default defineStaticRuntime({
+	name: 'orders',
+	plugins: [OrdersPlugin],
+	configEnvironmentBootstrap: [
+		bindConfigEnvironment(OrdersPlugin, OrdersConfig, {
+			endpoint: 'ORDERS_ENDPOINT',
+			concurrency: 'ORDERS_CONCURRENCY',
+		}),
+	],
+	configure({ env, deployment }) {
+		return {
+			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
+		}
+	},
+})
+```
+
+这里的 environment 是 config store 的一次性 bootstrap transport；已有 persisted config 始终优先。Host-only 的 persistence、Workbench、logging 或 platform policy 仍在 `configure()` 读取自己的环境值。完整的 decoder、缺失值、优先级和 secret 边界见[配置模型](./configuration.md#用部署环境初始化-static-config)。
+
 ### Vite development
 
 ```ts twoslash
@@ -99,6 +126,8 @@ export default staticApplication({
 - `workbench`：artifact 包含 UI，startup config 仍可关闭它。
 
 生产产物包含 Node server entry、fixed Plugin closure、deployment manifest 和所需 Node dependencies。目标机不再安装 Pluxel packages。
+
+`configEnvironmentBootstrap` 非空时，构建还会生成 root `.env.example`。它是 distribution inventory 中的普通 immutable asset；不会包含构建机 value，也不会生成或加载 `.env`。如果其他 assembly input 已占用该保留路径，构建会失败而不是覆盖。
 
 freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使 `configure()` 可以在启动时选择任一 backend。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
 

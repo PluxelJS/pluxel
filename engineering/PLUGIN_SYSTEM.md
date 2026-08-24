@@ -215,6 +215,7 @@ ownership。artifact 首次解析中的任务与 ready queue 使用同一 global
 - `@pluxel/runtime/workbench/ui`：浏览器 resource client；
 - `@pluxel/core/federation`：Workbench bundle build contract；
 - `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
+- `valibot-form`：Config schema 的 portable presentation 与 raw-input transport projector；
 - `@pluxel/runtime-dev`：共享 UI/Node source graph、watch、cache 与 publication lifecycle 的 artifact compiler；
 - `@pluxel/rolldown/vite/workbench-ui`：remote build primitive。
 - `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound RPC 和 Workbench 页面。

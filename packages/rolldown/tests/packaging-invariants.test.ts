@@ -39,7 +39,13 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 			return
 		}
 		for (const ent of entries) {
-			if (ent.name === 'node_modules' || ent.name === 'dist' || ent.name === '.turbo') continue
+			if (
+				ent.name === 'node_modules' ||
+				ent.name === 'dist' ||
+				ent.name === '.turbo' ||
+				ent.name.startsWith('fs-fixture-')
+			)
+				continue
 			const next = join(current, ent.name)
 			if (ent.isDirectory()) {
 				await walk(next)
@@ -62,7 +68,13 @@ async function collectPackageManifests(dir: string): Promise<string[]> {
 			return
 		}
 		for (const ent of entries) {
-			if (ent.name === 'node_modules' || ent.name === 'dist' || ent.name === '.turbo') continue
+			if (
+				ent.name === 'node_modules' ||
+				ent.name === 'dist' ||
+				ent.name === '.turbo' ||
+				ent.name.startsWith('fs-fixture-')
+			)
+				continue
 			const next = join(current, ent.name)
 			if (ent.isDirectory()) {
 				await walk(next)
@@ -308,6 +320,20 @@ describe('toolchain package boundaries', () => {
 		}
 	})
 
+	it('keeps static declaration validation on a narrow route-to-toolchain boundary', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const rolldownManifest = await readJson(`${root}/packages/rolldown/package.json`)
+		const viteBarrel = await readFile(`${root}/packages/rolldown/src/vite/index.ts`, 'utf8')
+		const staticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
+		const subpath = './internal/static-config-environment-vite'
+
+		expect(rolldownManifest.exports).toHaveProperty(subpath)
+		expect(rolldownManifest.publishConfig?.exports).toHaveProperty(subpath)
+		expect(viteBarrel).not.toContain('static-config-environment')
+		expect(staticVite).toContain("from '@pluxel/rolldown/internal/static-config-environment-vite'")
+		expect(staticVite).not.toContain('../../rolldown/src/')
+	})
+
 	it('keeps Vite and Module Federation lazy behind Workbench UI declarations', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const pluginCode = await readFile(
@@ -502,6 +528,10 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/rolldown/src/cli/static-application.ts`,
 			'utf8',
 		)
+		const staticDeclaration = await readFile(
+			`${root}/packages/rolldown/src/rolldown/plugins/staticConfigEnvironment.ts`,
+			'utf8',
+		)
 		const pluginBuild = await readFile(`${root}/packages/rolldown/src/cli/plugin-build.ts`, 'utf8')
 		const cliBuild = await readFile(`${root}/packages/cli/src/commands/build.ts`, 'utf8')
 		const runtimeDevVite = await readFile(`${root}/packages/runtime-dev/src/vite.ts`, 'utf8')
@@ -537,7 +567,8 @@ describe('toolchain package boundaries', () => {
 		expect(freezer).not.toContain('pluginArtifactBuildPlugin(')
 		expect(freezer).not.toContain('configSourcePlugin()')
 		expect(freezer).not.toContain('lintGuardPlugin(')
-		expect(freezer).toContain('entry must default-export defineStaticRuntime(...) directly')
+		expect(freezer).toContain('staticConfigEnvironmentDeclarationPlugin')
+		expect(staticDeclaration).toContain('must default-export defineStaticRuntime(...) directly')
 		expect(pluginBuild).toContain('export function pluginPackage(')
 		expect(pluginBuild).toContain('export function createPluginBuildPipeline(')
 		expect(pluginBuild).toContain("from 'unplugin-macros/rolldown'")

@@ -11,10 +11,11 @@ import type { ExternalsTraceOptions } from 'nf3'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import type { OutputBundle, OutputChunk, Plugin } from 'rolldown'
 import type { UserConfig } from 'tsdown'
-import { parseWithLang } from '../rolldown/plugins/pluginUtils'
 import { createDistributionManifest } from '../distribution'
+import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/staticConfigEnvironmentPlugin'
 import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
+import { writeStaticConfigEnvironmentExample } from './static-config-environment-output'
 
 export type StaticApplicationBuildOptions = {
 	entry: string
@@ -43,6 +44,8 @@ export type StaticApplicationResidualDependencies = {
 
 type StaticApplicationBuildState = {
 	name?: string
+	environmentExample?: string
+	environmentExampleOwned: boolean
 	residualPackages: string[]
 }
 
@@ -94,7 +97,10 @@ export function staticApplication(
 	const omittedManagedDatabaseDrivers = ManagedDatabaseDrivers.filter(
 		(driver) => !managedDatabaseDrivers.includes(driver),
 	)
-	const state: StaticApplicationBuildState = { residualPackages: [] }
+	const state: StaticApplicationBuildState = {
+		environmentExampleOwned: false,
+		residualPackages: [],
+	}
 	const artifactNativeResiduals = new Map<string, Set<string>>()
 	const buildDir = relative(cwd, outDir) || '.'
 	const sourcePipeline = createPluginBuildPipeline({
@@ -141,6 +147,13 @@ export function staticApplication(
 			onlyBundle: false,
 		},
 		plugins: [
+			staticConfigEnvironmentDeclarationPlugin({
+				entry,
+				onDeclaration(facts) {
+					state.name = facts.name
+					state.environmentExample = facts.environmentExample
+				},
+			}),
 			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({
 				cwd,
@@ -475,42 +488,6 @@ function staticApplicationEntryPlugin(options: {
 			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
 			return buildBootstrap(options.entry, options.variant, options.launcher)
 		},
-		transform(code, rawId) {
-			const id = rawId.split('?', 1)[0]
-			if (resolve(id) !== options.entry) return null
-			const ast = parseWithLang(this, code, id)
-			if (!ast) this.error(`[static-application] failed to parse entry: ${id}`)
-			const defaults = ast.body.filter((node) => node.type === 'ExportDefaultDeclaration')
-			if (defaults.length !== 1) {
-				this.error('[static-application] entry must contain exactly one default export')
-			}
-			const declaration = defaults[0] as unknown as {
-				start: number
-				end: number
-				declaration?: {
-					type?: string
-					start?: number
-					end?: number
-					callee?: { type?: string; name?: string }
-					arguments?: unknown[]
-				}
-			}
-			const expression = declaration.declaration
-			if (
-				expression?.type !== 'CallExpression' ||
-				expression.callee?.type !== 'Identifier' ||
-				expression.callee.name !== 'defineStaticRuntime'
-			) {
-				this.error(
-					'[static-application] entry must default-export defineStaticRuntime(...) directly',
-				)
-			}
-			if (typeof expression.start !== 'number' || typeof expression.end !== 'number') {
-				this.error('[static-application] cannot locate defineStaticRuntime(...) source range')
-			}
-			options.state.name = readApplicationName(expression.arguments?.[0])
-			return null
-		},
 	}
 }
 
@@ -553,33 +530,6 @@ ${launcher === 'node' ? 'export const address = __pluxelStaticRuntime.address' :
 `
 }
 
-function readApplicationName(value: unknown): string | undefined {
-	if (!value || typeof value !== 'object') return undefined
-	const object = value as {
-		type?: string
-		properties?: Array<{
-			type?: string
-			key?: { type?: string; name?: string; value?: unknown }
-			value?: { type?: string; value?: unknown }
-		}>
-	}
-	if (object.type !== 'ObjectExpression') return undefined
-	for (const property of object.properties ?? []) {
-		if (property.type !== 'Property') continue
-		const key =
-			property.key?.type === 'Identifier'
-				? property.key.name
-				: property.key?.type === 'Literal'
-					? property.key.value
-					: undefined
-		if (key !== 'name') continue
-		return property.value?.type === 'Literal' && typeof property.value.value === 'string'
-			? property.value.value
-			: undefined
-	}
-	return undefined
-}
-
 function staticApplicationAssemblyPlugin(options: {
 	cwd: string
 	outDir: string
@@ -593,6 +543,12 @@ function staticApplicationAssemblyPlugin(options: {
 			async handler(_, bundle) {
 				assertBundledPluxelClosure(bundle)
 				await mkdir(options.outDir, { recursive: true })
+				options.state.environmentExampleOwned = await writeStaticConfigEnvironmentExample({
+					outDir: options.outDir,
+					bundle,
+					content: options.state.environmentExample,
+					ownedExisting: options.state.environmentExampleOwned,
+				})
 				if (options.variant === 'workbench') {
 					const runtime = resolveRuntimeWorkbenchDistribution(options.cwd)
 					await assertWorkbenchShellContractProtocol(runtime.publicDir, runtime.contractProtocol)

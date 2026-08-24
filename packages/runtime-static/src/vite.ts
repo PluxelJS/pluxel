@@ -8,7 +8,8 @@ import {
 	importViteSsrModule,
 	invalidateViteSsrModule,
 } from '../../runtime-dev/src/vite.ts'
-import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
+import { staticConfigEnvironmentVitePlugin } from '@pluxel/rolldown/internal/static-config-environment-vite'
+import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 import {
 	HMR_PATH_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -250,7 +251,12 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 	}
 
-	return [...createStaticRuntimeSourcePlugins(), createHostModuleVitePlugin(), routePlugin]
+	return [
+		staticConfigEnvironmentVitePlugin({ entry: options.entry }),
+		...createStaticRuntimeSourcePlugins(),
+		createHostModuleVitePlugin(),
+		routePlugin,
+	]
 }
 
 type StaticRuntimeReportSummary = {

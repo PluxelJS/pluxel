@@ -48,6 +48,10 @@ const capturedHost = host
 assert.ok(capturedHost, 'static host was not captured')
 const address = capturedHost.describeCatalog().plugins[0]?.address
 assert.ok(address, 'startup catalog is empty')
+const configuredAddress = capturedHost
+	.describeCatalog()
+	.plugins.find((plugin) => plugin.address.definition.exportName === 'ConfiguredPlugin')?.address
+assert.ok(configuredAddress, 'configured plugin is absent from the startup catalog')
 assert.deepEqual(address.definition.entry, {
 	kind: 'package-root',
 	packageName: '@fixture/vite-static',
@@ -58,9 +62,14 @@ const pluginService = requirePluginService(capturedHost.ctx)
 
 try {
 	const startupInstances = [address, east, west].map((node) => pluginService.getInstance(node))
+	assert.ok(startupInstances[0], JSON.stringify(capturedHost.lastReport()))
 	assert.deepEqual(
 		startupInstances.map((instance) => Reflect.get(instance ?? {}, 'version')),
 		['v1', 'v1', 'v1'],
+	)
+	assert.equal(
+		Reflect.get(pluginService.getInstance(configuredAddress) ?? {}, 'configuredLabel'),
+		'configured-through-vite',
 	)
 	for (const instance of startupInstances) {
 		assert.equal(instance?.constructor, startupImplementation)
@@ -68,7 +77,7 @@ try {
 
 	await writeFile(pluginPath, pluginSource('v2', true))
 	await invokeHotUpdate(routePlugin, pluginPath)
-	assert.deepEqual(capturedHost.lastReport()?.replaced, [address])
+	assert.deepEqual(capturedHost.lastReport()?.replaced, [address, configuredAddress])
 	const replacementInstances = [address, east, west].map((node) => pluginService.getInstance(node))
 	assert.deepEqual(
 		replacementInstances.map((instance) => Reflect.get(instance ?? {}, 'version')),
@@ -126,12 +135,23 @@ function requiredEnv(name: string): string {
 
 function pluginSource(version: string, available: boolean): string {
 	return [
-		"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+		"import { BasePlugin, Plugin, v } from '@pluxel/runtime'",
+		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		"@Plugin({ displayName: 'Vite static', forkable: true })",
 		'export class ViteStatic extends BasePlugin {',
+		'  private readonly settings = this.configs.use(ViteStaticConfig)',
 		`  readonly version = ${JSON.stringify(version)}`,
+		"  configuredLabel = ''",
+		'  override init() { this.configuredLabel = this.settings.label }',
 		'}',
-		`export const runtimePlugins = ${available ? '[ViteStatic]' : '[]'}`,
+		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
+		'@Plugin()',
+		'export class ConfiguredPlugin extends BasePlugin {',
+		'  private readonly settings = this.configs.use(ConfiguredPluginConfig)',
+		"  configuredLabel = ''",
+		'  override init() { this.configuredLabel = this.settings.label }',
+		'}',
+		`export const runtimePlugins = ${available ? '[ViteStatic, ConfiguredPlugin]' : '[ConfiguredPlugin]'}`,
 		'',
 	].join('\n')
 }

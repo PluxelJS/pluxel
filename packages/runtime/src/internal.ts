@@ -32,7 +32,7 @@ export {
 	resolveWorkbenchUiBasePath,
 } from './workbench-config'
 export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './management-config'
-export { withPluginConfigEnvironment } from './services/config-environment'
+export { mergeConfigRecords, withPluginConfigEnvironment } from './services/config-environment'
 export { CommandsService } from './services/CommandsService'
 export {
 	NodeModuleService,

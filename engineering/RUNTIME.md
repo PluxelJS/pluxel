@@ -252,6 +252,7 @@ Workbench backend 安装时接收 nullable snapshot，并通过既有 runtime me
 ```text
 defineStaticRuntime entry
   ├─ name + fixed plugin constructors     build-time catalog
+	├─ configEnvironmentBootstrap            typed Plugin config bootstrap bindings
   ├─ configure(startup)                   bundled resolver, startup-time values
   └─ prepare({ host, startup })            host-owned startup policy
 ```
@@ -264,6 +265,11 @@ default export 的 application authoring boundary，不求值 product，也不�
 fixed catalog 只限制可用插件代码集合，不移除运行时启停。ConfigService 与 RuntimeState 仍在每次启动时加载 plugin
 config records、enabled state、dependency overrides 和 persistence state。`configure()` 的返回值同样在每次 host startup
 重新解析，不是构建时序列化常量。
+
+`configEnvironmentBootstrap` 只把当前 startup environment 解码成 ConfigService initial snapshot。Binding 必须指向同一 fixed
+catalog 中 implementation 的 default node，并与该 Plugin 实际 root config schema 做 object identity 断言；同一 implementation
+最多一个 binding，同一 environment 可以 fan-out 到 transport 相同的多个 target。它不改变 file-backed config authority，
+也不建立 env provenance、readonly field 或第二个 config service。Host-only environment 继续由 `configure()` 直接读取。
 
 static build 可解析的 optional candidate 进入固定 code-split closure；不可解析 candidate 被 lowering 成明确 absent
 module，产物不留下目标 external import。目标机安装新包不能改变该 closure。

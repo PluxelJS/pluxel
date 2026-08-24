@@ -270,6 +270,20 @@ runtime/core 默认属于 application bundle closure；code splitting 允许，�
 optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
 缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
 
+同一个 static entry validator 还 lower optional `configEnvironmentBootstrap`。该字段只能是 direct array literal；每项必须是
+direct `bindConfigEnvironment()` call，mapping 只能由 direct string literal 或 direct object tree 组成。Identifier indirection、
+spread、computed/duplicate property、runtime branch、非 portable/reserved name 在 Vite 与 production 使用同一 diagnostic 拒绝。
+Lowering 只产生 Plugin/schema export、raw path 和 environment name facts；startup decoder 仍读取 runtime canonical candidate。
+
+Production projector 复用 config source resolver，把 exported schema 还原为封闭的 Valibot schema DSL，再调用
+`valibot-form` 的同一个 raw-input projector；它不执行 canonical application、`configure()`、Plugin module side effect、validation、
+transform 或 default getter。无法安全静态还原或无法推导 transport 的 target 使 build 失败，不回退 string/JSON heuristic。
+
+Binding 非空时 assembly 在 distribution finalization 前写 root `.env.example`。Environment name 按 UTF-8 bytes 排序并去重，
+fan-out target 的 description/input facts 稳定聚合；placeholder 保持注释状态。文件编码为 UTF-8 + LF，不读取 build environment，
+不输出 schema default/secret，不生成或加载 `.env`。该路径是 generated asset 保留路径；已有 assembly input 冲突时失败，文件作为
+普通 asset 自然进入 distribution inventory，不修改 deployment/distribution manifest schema。
+
 Node target 用 `nf3` externalize 并追踪 native/non-bundleable 或无法安全跨 CommonJS/ESM 边界内联的 residual packages，
 复制到 distribution 自己的 `node_modules`。PostgreSQL `pg` 属于后一类：freezer 保留它的 Node package boundary，避免改变
 `pg-pool` 的 CommonJS 构造器语义。这只是 bundler 无法安全内联部分的 fallback，不是部署端 package install 模式。当前

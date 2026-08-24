@@ -11,6 +11,12 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	deps: {
+		alwaysBundle: [
+			'@pluxel/runtime-dev',
+			'@pluxel/runtime-dev/*',
+			'valibot-form',
+			'valibot-form/*',
+		],
 		neverBundle: [
 			'@pluxel/core',
 			'@pluxel/rolldown',
@@ -21,7 +27,6 @@ export default defineConfig({
 			'vite',
 			'vite/*',
 		],
-		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*'],
 	},
 	alias: {
 		'@pluxel/runtime-dev': runtimeDevEntry,

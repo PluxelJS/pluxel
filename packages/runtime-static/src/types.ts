@@ -16,6 +16,41 @@ import type {
 } from '@pluxel/runtime'
 import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
+
+declare const CONFIG_ENVIRONMENT_BINDING_BRAND: unique symbol
+
+type NonNullish<T> = Exclude<T, null | undefined>
+
+type ConfigEnvironmentObjectMapping<T> = [NonNullish<T>] extends [readonly unknown[]]
+	? never
+	: NonNullish<T> extends (...args: never[]) => unknown
+		? never
+		: string extends keyof NonNullish<T>
+			? never
+			: [NonNullish<T>] extends [object]
+				? {
+						readonly [K in keyof NonNullish<T>]?: ConfigEnvironmentMapping<NonNullish<T>[K]>
+					}
+				: never
+
+/**
+ * Recursively maps a Plugin schema's raw input fields to environment names.
+ * Objects may be mapped as a whole or traversed; arrays, tuples, and scalar values are leaves.
+ */
+export type ConfigEnvironmentMapping<TInput> = string | ConfigEnvironmentObjectMapping<TInput>
+
+/** Opaque config bootstrap declaration created by bindConfigEnvironment(). */
+export type ConfigEnvironmentBinding = Readonly<{
+	readonly [CONFIG_ENVIRONMENT_BINDING_BRAND]: true
+}>
+
+/** Schema accepted by bindConfigEnvironment(). */
+export type ConfigEnvironmentSchema = StandardSchemaV1 &
+	Readonly<{
+		kind: 'schema'
+		type: string
+	}>
 
 export type StaticRuntimeEnvironment = Readonly<Record<string, string | undefined>>
 export type StaticRuntimeBindings = Readonly<Record<string, unknown>>
@@ -54,6 +89,11 @@ export type StaticRuntimeApplication<
 	name: string
 	/** Fixed production catalog. Development Vite hosts may replace this graph through HMR. */
 	plugins: TPlugins
+	/**
+	 * Environment names used only to initialize a new Plugin config store.
+	 * Existing persisted config remains authoritative.
+	 */
+	configEnvironmentBootstrap?: readonly ConfigEnvironmentBinding[]
 	/** Bundled resolver code. Returned values are resolved again for every host startup. */
 	configure?: (
 		startup: StaticRuntimeStartupContext<TBindings>,

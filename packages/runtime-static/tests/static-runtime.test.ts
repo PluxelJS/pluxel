@@ -340,6 +340,7 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'static-hmr-rejected', plugins: [], hmr: {} } as never),
 		).toThrow(/unsupported "hmr"/i)
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'pluxel:static-application-declaration',
 			'unplugin-preprocessor-directives',
 			'pluxel:database-source',
 			'pluxel:plugin-semantics',

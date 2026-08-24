@@ -218,6 +218,68 @@ await host.commit()
 
 static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin 只读取校验后的配置。配置变化会重启 Plugin，具体清理顺序见 [Plugin 模型与生命周期](./plugin-model.md)。
 
+## 用部署环境初始化 static config
+
+Static application 可以把少量部署环境变量绑定到固定 Plugin 的 raw config path。这个能力只初始化新的 config store；它不是每次启动都覆盖管理员配置的 environment overlay。
+
+Plugin 需要导出传给 `configs.use()` 的同一个 schema：
+
+```ts no-twoslash
+// WorkerPlugin.ts
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+
+export const WorkerConfig = v.object({
+	endpoint: v.pipe(v.string(), v.url()),
+	http: v.object({
+		enabled: v.optional(v.boolean(), true),
+		timeoutMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 5_000),
+	}),
+})
+
+@Plugin()
+export class WorkerPlugin extends BasePlugin {
+	private readonly config = this.configs.use(WorkerConfig)
+}
+```
+
+Canonical static entry 直接声明部署名称；不要在 `configure()` 中重复解析类型或拼装 Plugin address：
+
+```ts no-twoslash
+import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+import { WorkerConfig, WorkerPlugin } from './WorkerPlugin.ts'
+
+export default defineStaticRuntime({
+	name: 'worker-app',
+	plugins: [WorkerPlugin],
+	configEnvironmentBootstrap: [
+		bindConfigEnvironment(WorkerPlugin, WorkerConfig, {
+			endpoint: 'WORKER_ENDPOINT',
+			http: {
+				enabled: 'WORKER_HTTP_ENABLED',
+				timeoutMs: 'WORKER_HTTP_TIMEOUT_MS',
+			},
+		}),
+	],
+})
+```
+
+Mapping 从 schema raw input 递归推导：object 可以继续展开，也可以直接绑定一个 JSON environment；array、tuple、record 和 scalar 是 leaf。根 mapping 也可以直接写一个 environment name，用 JSON object 初始化完整 raw record。环境名称必须匹配 `[A-Z_][A-Z0-9_]*`；`PLUXEL_*` 保留给 framework。
+
+Transport 只负责把 string 送入原 schema：raw string 保留原文，number 要求 finite JSON number，boolean 只接受 JSON `true`/`false`，compound/nullable/mixed union 使用 JSON。环境缺失不产生对应 raw path；空 string 对 string 是显式值，对 number、boolean、JSON 是 decode error；JSON `null` 也是显式值。默认值、URL/range/refinement、transform 和最终 validation 仍只由 `WorkerConfig` 决定。
+
+新 store 的优先级固定为：
+
+```text
+configure() config snapshot
+  < configEnvironmentBootstrap
+  < PLUXEL_CONFIG complete snapshot
+  < existing persisted config file
+```
+
+Writable file mode 会保存第一次合成的 seed；后续修改环境不会覆盖该文件。Memory mode 在每个新 host 上重新初始化；readonly mode 在无文件时只在本次 host 使用 seed。长期 credential 不要经过这条路径写入普通 config store，继续使用 Vault、secret provider 或部署平台的 secret capability。
+
+Static production build 会从同一 declaration 和 schema facts 生成 root `.env.example`。文件只包含注释说明与注释状态的空 placeholder，不读取构建机环境、不生成或加载真实 `.env`，也不复制 schema default。为了让 Vite 与 production 都能确定地检查声明，`configEnvironmentBootstrap` 必须是 direct array literal；元素必须是 direct `bindConfigEnvironment()` call，mapping 只使用 direct object tree 和 string literal，不使用 identifier、spread、computed property 或 runtime branch。
+
 直接消费 runtime control-plane `ConfigResult` 时按 discriminant 处理返回值：query 返回 `config` 和 `defaults`，并标记
 `saved: false`；成功 mutation 返回已持久化的 `config`、`application` 与 apply report，不再重复返回 defaults。
 `validation_failed` 只有在 defaults 可以独立计算时才带可选 `defaults`。持久化失败不会发布 staged revision，也不会把未确认的值注入

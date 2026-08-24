@@ -43,6 +43,20 @@ import { extractFormFields } from 'valibot-form'
 const fields = extractFormFields(configSchema)
 ```
 
+Host/build tooling that needs to transport one raw input path can use the same core entry without running validation or defaults:
+
+```ts
+import { projectRawInput } from 'valibot-form'
+
+const projection = projectRawInput(configSchema, ['port'])
+if (projection.ok) {
+	console.log(projection.transport) // number
+	console.log(projection.inputDescription) // number (finite, >= 1, <= 65535)
+}
+```
+
+`projectRawInput()` stays on the pre-transform side of a Valibot schema. It structurally derives `string`, `number`, `boolean`, or `json` transport plus portable descriptions/constraints; it never calls validation, transforms, lazy getters, or default getters. Missing, ambiguous, custom, `unknown`, and otherwise non-unique scalar targets return a discriminated failure instead of guessing a codec.
+
 ## Web Adapter
 
 `valibot-form/web` is intentionally optional. It depends on React, Mantine, TanStack Form, Tabler Icons, and dnd-kit through optional peer dependencies.

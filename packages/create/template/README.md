@@ -44,7 +44,9 @@ Both modes use the same Plugin classes and runtime state. Dynamic mode additiona
 ## What the example demonstrates
 
 - `packages/domain` provides framework-neutral Todo value rules with ordinary Vitest tests.
-- `plugins/todo` owns Todo state and one Valibot config schema.
+- `plugins/todo` owns Todo state and one exported Valibot config schema. The static host reuses that
+  exact schema to bind `EXAMPLE_TODO_MAX_ITEMS` as a first-start config seed; production builds derive
+  `host/dist/.env.example` from the same declaration.
 - `plugins/http` declares `TodoPlugin` as a required constructor dependency and validates HTTP input.
 - `plugins/todo` observes `AuditPlugin` through `definePluginRef()` as an optional integration.
 - Plugin tests use the Pluxel Vitest preset and the smallest matching core/runtime test host.

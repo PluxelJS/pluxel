@@ -2,7 +2,7 @@ import { normalizeTodoTitle, withTodoCompletion, type TodoItem } from '@example/
 import type { AuditPlugin } from '@example/audit-plugin'
 import { BasePlugin, definePluginRef, Plugin, v } from '@pluxel/runtime'
 
-const TodoConfig = v.object({
+export const TodoConfig = v.object({
 	maxItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)), 20),
 	seedTitle: v.optional(v.string(), 'Explore the Pluxel starter'),
 })

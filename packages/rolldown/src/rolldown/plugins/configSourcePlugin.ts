@@ -29,13 +29,13 @@ export interface ConfigSourcePluginOptions {
 	metadataHelperImportSource?: string
 }
 
-type ImportBinding = {
+export type ConfigImportBinding = {
 	readonly source: string
 	readonly imported: string
 	readonly namespace: boolean
 }
 
-type ConfigDeclaration = {
+export type ConfigDeclaration = {
 	readonly className: string
 	readonly fieldName: string
 	readonly schemaExpression: string
@@ -47,16 +47,35 @@ type SourceExport =
 	| { readonly kind: 'local'; readonly local: string }
 	| { readonly kind: 'reexport'; readonly source: string; readonly imported: string }
 
-type SchemaModule = {
+export type ConfigSchemaModule = {
 	readonly id: string
 	readonly code: string
-	readonly imports: ReadonlyMap<string, ImportBinding>
+	readonly imports: ReadonlyMap<string, ConfigImportBinding>
+	readonly classes: ReadonlyMap<string, AstNode>
 	readonly declarations: ReadonlyMap<string, AstNode>
+	readonly locals: ReadonlySet<string>
 	readonly exports: ReadonlyMap<string, SourceExport>
+	readonly exportAll: readonly string[]
 }
 
-type SchemaSourceResolver = {
-	render(module: SchemaModule, expression: AstNode): Promise<string>
+export type ConfigSourceSymbol = {
+	readonly moduleId: string
+	readonly local: string
+}
+
+export type ConfigSchemaSourceResolver = {
+	render(module: ConfigSchemaModule, expression: AstNode): Promise<string>
+	resolveSymbol(
+		module: ConfigSchemaModule,
+		expression: AstNode,
+	): Promise<ConfigSourceSymbol | undefined>
+	resolveArraySymbols(
+		module: ConfigSchemaModule,
+		expression: AstNode,
+	): Promise<readonly ConfigSourceSymbol[] | undefined>
+	resolvePluginConfigSchemaSymbol(
+		plugin: ConfigSourceSymbol,
+	): Promise<ConfigSourceSymbol | undefined>
 }
 
 const AUTHORING_PACKAGES = new Set([
@@ -99,11 +118,11 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 				}
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[pluxel-config] failed to parse ${id}`)
-				const declarations = await extractDeclarations(
+				const declarations = await extractConfigDeclarations(
 					ast,
 					code,
 					id,
-					createSchemaSourceResolver(this),
+					createConfigSchemaSourceResolver(this),
 					(message) => this.error(message),
 				)
 				if (declarations.length === 0) return null
@@ -132,15 +151,15 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 	}
 }
 
-async function extractDeclarations(
+export async function extractConfigDeclarations(
 	ast: Program,
 	code: string,
 	id: string,
-	sourceResolver: SchemaSourceResolver,
+	sourceResolver: ConfigSchemaSourceResolver,
 	error: (message: string) => never,
 ): Promise<ConfigDeclaration[]> {
 	const imports = collectImports(ast)
-	const module = collectSchemaModule(ast, code, id)
+	const module = collectConfigSchemaModule(ast, code, id)
 	const out: ConfigDeclaration[] = []
 	for (const statement of ast.body ?? []) {
 		const top = statement as unknown as AstNode
@@ -203,7 +222,10 @@ async function extractDeclarations(
 	return out
 }
 
-function extendsPluginPart(node: AstNode, imports: ReadonlyMap<string, ImportBinding>): boolean {
+function extendsPluginPart(
+	node: AstNode,
+	imports: ReadonlyMap<string, ConfigImportBinding>,
+): boolean {
 	const name = readIdentifier(node.superClass)
 	if (!name) return false
 	const binding = imports.get(name)
@@ -215,9 +237,16 @@ function extendsPluginPart(node: AstNode, imports: ReadonlyMap<string, ImportBin
 	)
 }
 
-function collectSchemaModule(ast: Program, code: string, id: string): SchemaModule {
+export function collectConfigSchemaModule(
+	ast: Program,
+	code: string,
+	id: string,
+): ConfigSchemaModule {
+	const classes = new Map<string, AstNode>()
 	const declarations = new Map<string, AstNode>()
+	const locals = new Set<string>()
 	const exports = new Map<string, SourceExport>()
+	const exportAll: string[] = []
 	const collectVariables = (declaration: AstNode | undefined, exported: boolean) => {
 		if (declaration?.type !== 'VariableDeclaration') return
 		for (const rawItem of arrayOf(declaration.declarations)) {
@@ -225,15 +254,36 @@ function collectSchemaModule(ast: Program, code: string, id: string): SchemaModu
 			const name = readIdentifier(item.id)
 			const init = item.init as AstNode | undefined
 			if (!name || !init) continue
+			locals.add(name)
 			declarations.set(name, init)
 			if (exported) exports.set(name, { kind: 'local', local: name })
 		}
 	}
+	const collectNamedDeclaration = (declaration: AstNode | undefined, exported: boolean) => {
+		collectVariables(declaration, exported)
+		if (declaration?.type !== 'ClassDeclaration' && declaration?.type !== 'FunctionDeclaration') {
+			return
+		}
+		const name = readIdentifier(declaration.id)
+		if (!name) return
+		locals.add(name)
+		if (declaration.type === 'ClassDeclaration') classes.set(name, declaration)
+		if (exported) exports.set(name, { kind: 'local', local: name })
+	}
 
 	for (const statement of ast.body ?? []) {
 		const node = statement as unknown as AstNode
+		if (node.type === 'ExportAllDeclaration') {
+			const source = readLiteralString(node.source)
+			if (source) exportAll.push(source)
+			continue
+		}
 		if (node.type === 'VariableDeclaration') {
-			collectVariables(node, false)
+			collectNamedDeclaration(node, false)
+			continue
+		}
+		if (node.type === 'ClassDeclaration' || node.type === 'FunctionDeclaration') {
+			collectNamedDeclaration(node, false)
 			continue
 		}
 		if (node.type === 'ExportDefaultDeclaration') {
@@ -249,7 +299,7 @@ function collectSchemaModule(ast: Program, code: string, id: string): SchemaModu
 			continue
 		}
 		if (node.type !== 'ExportNamedDeclaration') continue
-		collectVariables(node.declaration as AstNode | undefined, true)
+		collectNamedDeclaration(node.declaration as AstNode | undefined, true)
 		const source = readLiteralString(node.source)
 		for (const rawSpecifier of arrayOf(node.specifiers)) {
 			const specifier = rawSpecifier as AstNode
@@ -263,21 +313,32 @@ function collectSchemaModule(ast: Program, code: string, id: string): SchemaModu
 		}
 	}
 
-	return { id, code, imports: collectImports(ast), declarations, exports }
+	return {
+		id,
+		code,
+		imports: collectImports(ast),
+		classes,
+		declarations,
+		locals,
+		exports,
+		exportAll,
+	}
 }
 
-function createSchemaSourceResolver(context: TransformPluginContext): SchemaSourceResolver {
-	const modules = new Map<string, Promise<SchemaModule | undefined>>()
+export function createConfigSchemaSourceResolver(
+	context: Pick<TransformPluginContext, 'resolve'>,
+): ConfigSchemaSourceResolver {
+	const modules = new Map<string, Promise<ConfigSchemaModule | undefined>>()
 	const pending = new Set<string>()
 
-	const loadModule = (id: string): Promise<SchemaModule | undefined> => {
+	const loadModule = (id: string): Promise<ConfigSchemaModule | undefined> => {
 		const clean = stripQuery(id)
 		let result = modules.get(clean)
 		if (!result) {
 			result = readFile(clean, 'utf8')
 				.then((code) => {
 					const ast = parseStandaloneWithLang(code, clean)
-					return ast ? collectSchemaModule(ast, code, clean) : undefined
+					return ast ? collectConfigSchemaModule(ast, code, clean) : undefined
 				})
 				.catch((): undefined => undefined)
 			modules.set(clean, result)
@@ -288,21 +349,183 @@ function createSchemaSourceResolver(context: TransformPluginContext): SchemaSour
 	const resolveModule = async (
 		source: string,
 		importer: string,
-	): Promise<SchemaModule | undefined> => {
+	): Promise<ConfigSchemaModule | undefined> => {
 		if (typeof context.resolve !== 'function') return undefined
 		const resolved = await context.resolve(source, importer, { skipSelf: true })
 		return resolved?.id ? loadModule(resolved.id) : undefined
 	}
 
-	const renderExport = async (module: SchemaModule, name: string): Promise<string | undefined> => {
-		const target = module.exports.get(name)
-		if (!target) return undefined
-		if (target.kind === 'local') return renderIdentifier(module, target.local)
-		const next = await resolveModule(target.source, module.id)
-		return next ? renderExport(next, target.imported) : undefined
+	const symbolKey = (symbol: ConfigSourceSymbol): string => `${symbol.moduleId}\0${symbol.local}`
+
+	const resolveExportSymbol = async (
+		module: ConfigSchemaModule,
+		name: string,
+		seen: Set<string>,
+	): Promise<ConfigSourceSymbol | undefined> => {
+		const key = `${module.id}#symbol-export:${name}`
+		if (seen.has(key)) return undefined
+		seen.add(key)
+		try {
+			const target = module.exports.get(name)
+			if (target) {
+				if (target.kind === 'local') return resolveLocalSymbol(module, target.local, seen)
+				const next = await resolveModule(target.source, module.id)
+				return next ? resolveExportSymbol(next, target.imported, seen) : undefined
+			}
+			let found: ConfigSourceSymbol | undefined
+			for (const source of module.exportAll) {
+				const next = await resolveModule(source, module.id)
+				const candidate = next ? await resolveExportSymbol(next, name, seen) : undefined
+				if (!candidate) continue
+				if (found && symbolKey(found) !== symbolKey(candidate)) return undefined
+				found = candidate
+			}
+			return found
+		} finally {
+			seen.delete(key)
+		}
 	}
 
-	const renderIdentifier = async (module: SchemaModule, name: string): Promise<string> => {
+	const resolveLocalSymbol = async (
+		module: ConfigSchemaModule,
+		name: string,
+		seen: Set<string>,
+	): Promise<ConfigSourceSymbol | undefined> => {
+		const binding = module.imports.get(name)
+		if (binding) {
+			if (binding.namespace) return undefined
+			const target = await resolveModule(binding.source, module.id)
+			return target ? resolveExportSymbol(target, binding.imported, seen) : undefined
+		}
+		return module.locals.has(name) ? { moduleId: module.id, local: name } : undefined
+	}
+
+	const sameSymbolArrays = (
+		left: readonly ConfigSourceSymbol[],
+		right: readonly ConfigSourceSymbol[],
+	): boolean =>
+		left.length === right.length &&
+		left.every((symbol, index) => symbolKey(symbol) === symbolKey(right[index]!))
+
+	const resolveExportArraySymbols = async (
+		module: ConfigSchemaModule,
+		name: string,
+		seen: Set<string>,
+	): Promise<readonly ConfigSourceSymbol[] | undefined> => {
+		const key = `${module.id}#array-export:${name}`
+		if (seen.has(key)) return undefined
+		seen.add(key)
+		try {
+			const target = module.exports.get(name)
+			if (target) {
+				if (target.kind === 'local') {
+					return resolveLocalArraySymbols(module, target.local, seen)
+				}
+				const next = await resolveModule(target.source, module.id)
+				return next ? resolveExportArraySymbols(next, target.imported, seen) : undefined
+			}
+			let found: readonly ConfigSourceSymbol[] | undefined
+			for (const source of module.exportAll) {
+				const next = await resolveModule(source, module.id)
+				const candidate = next ? await resolveExportArraySymbols(next, name, seen) : undefined
+				if (!candidate) continue
+				if (found && !sameSymbolArrays(found, candidate)) return undefined
+				found = candidate
+			}
+			return found
+		} finally {
+			seen.delete(key)
+		}
+	}
+
+	const resolveLocalArraySymbols = async (
+		module: ConfigSchemaModule,
+		name: string,
+		seen: Set<string>,
+	): Promise<readonly ConfigSourceSymbol[] | undefined> => {
+		const declaration = module.declarations.get(name)
+		if (declaration) return resolveArrayExpressionSymbols(module, declaration, seen)
+		const binding = module.imports.get(name)
+		if (!binding || binding.namespace) return undefined
+		const target = await resolveModule(binding.source, module.id)
+		return target ? resolveExportArraySymbols(target, binding.imported, seen) : undefined
+	}
+
+	const resolveArrayExpressionSymbols = async (
+		module: ConfigSchemaModule,
+		expression: AstNode,
+		seen: Set<string>,
+	): Promise<readonly ConfigSourceSymbol[] | undefined> => {
+		const node = unwrapStaticExpression(expression)
+		if (node.type === 'Identifier') {
+			const name = readIdentifier(node)
+			return name ? resolveLocalArraySymbols(module, name, seen) : undefined
+		}
+		if (node.type !== 'ArrayExpression') return undefined
+		const symbols: ConfigSourceSymbol[] = []
+		for (const rawElement of arrayOf(node.elements)) {
+			const element = rawElement as AstNode | null
+			if (!element || element.type !== 'Identifier') return undefined
+			const name = readIdentifier(element)
+			const symbol = name ? await resolveLocalSymbol(module, name, seen) : undefined
+			if (!symbol) return undefined
+			symbols.push(symbol)
+		}
+		return symbols
+	}
+
+	const resolvePluginConfigSchemaSymbol = async (
+		plugin: ConfigSourceSymbol,
+	): Promise<ConfigSourceSymbol | undefined> => {
+		const module = await loadModule(plugin.moduleId)
+		const declaration = module?.classes.get(plugin.local)
+		if (!module || !declaration) return undefined
+		const schemas: AstNode[] = []
+		for (const rawMember of arrayOf((declaration.body as AstNode | undefined)?.body)) {
+			const member = rawMember as AstNode
+			if (member.type !== 'PropertyDefinition') continue
+			const use = configsUse(member.value)
+			if (!use) continue
+			const args = arrayOf(use.arguments)
+			if (args.length !== 1 || (args[0] as AstNode).type === 'SpreadElement') return undefined
+			schemas.push(args[0] as AstNode)
+		}
+		if (schemas.length !== 1) return undefined
+		const schema = unwrapStaticExpression(schemas[0]!)
+		if (schema.type !== 'Identifier') return undefined
+		const name = readIdentifier(schema)
+		return name ? resolveLocalSymbol(module, name, new Set()) : undefined
+	}
+
+	const renderExport = async (
+		module: ConfigSchemaModule,
+		name: string,
+	): Promise<string | undefined> => {
+		const key = `${module.id}#export:${name}`
+		if (pending.has(key)) return undefined
+		pending.add(key)
+		try {
+			const target = module.exports.get(name)
+			if (target) {
+				if (target.kind === 'local') return renderIdentifier(module, target.local)
+				const next = await resolveModule(target.source, module.id)
+				return next ? renderExport(next, target.imported) : undefined
+			}
+			let found: string | undefined
+			for (const source of module.exportAll) {
+				const next = await resolveModule(source, module.id)
+				const candidate = next ? await renderExport(next, name) : undefined
+				if (candidate === undefined) continue
+				if (found !== undefined && found !== candidate) return undefined
+				found = candidate
+			}
+			return found
+		} finally {
+			pending.delete(key)
+		}
+	}
+
+	const renderIdentifier = async (module: ConfigSchemaModule, name: string): Promise<string> => {
 		const declaration = module.declarations.get(name)
 		if (declaration) {
 			const key = `${module.id}#${name}`
@@ -327,7 +550,7 @@ function createSchemaSourceResolver(context: TransformPluginContext): SchemaSour
 		return (target && (await renderExport(target, binding.imported))) ?? name
 	}
 
-	const renderExpression = async (module: SchemaModule, node: AstNode): Promise<string> => {
+	const renderExpression = async (module: ConfigSchemaModule, node: AstNode): Promise<string> => {
 		if (node.type === 'Identifier') return renderIdentifier(module, readIdentifier(node) ?? '')
 		const start = typeof node.start === 'number' ? node.start : undefined
 		const end = typeof node.end === 'number' ? node.end : undefined
@@ -409,15 +632,39 @@ function createSchemaSourceResolver(context: TransformPluginContext): SchemaSour
 				module.id,
 			)
 		},
+		async resolveSymbol(module, expression) {
+			if (expression.type !== 'Identifier') return undefined
+			const name = readIdentifier(expression)
+			return name ? resolveLocalSymbol(module, name, new Set()) : undefined
+		},
+		async resolveArraySymbols(module, expression) {
+			return resolveArrayExpressionSymbols(module, expression, new Set())
+		},
+		resolvePluginConfigSchemaSymbol,
 	}
+}
+
+function unwrapStaticExpression(node: AstNode): AstNode {
+	let current = node
+	while (
+		current.type === 'TSAsExpression' ||
+		current.type === 'TSSatisfiesExpression' ||
+		current.type === 'TSNonNullExpression' ||
+		current.type === 'ParenthesizedExpression'
+	) {
+		const expression = current.expression as AstNode | undefined
+		if (!expression) break
+		current = expression
+	}
+	return current
 }
 
 function stripQuery(id: string): string {
 	return id.replace(/[?#].*$/, '')
 }
 
-function collectImports(ast: Program): Map<string, ImportBinding> {
-	const imports = new Map<string, ImportBinding>()
+function collectImports(ast: Program): Map<string, ConfigImportBinding> {
+	const imports = new Map<string, ConfigImportBinding>()
 	for (const statement of ast.body ?? []) {
 		const node = statement as unknown as AstNode
 		if (node.type !== 'ImportDeclaration') continue
@@ -440,7 +687,7 @@ function collectImports(ast: Program): Map<string, ImportBinding> {
 	return imports
 }
 
-function hasPluginMarker(node: AstNode, imports: Map<string, ImportBinding>): boolean {
+function hasPluginMarker(node: AstNode, imports: Map<string, ConfigImportBinding>): boolean {
 	for (const rawDecorator of arrayOf(node.decorators)) {
 		const expression = (rawDecorator as AstNode).expression as AstNode | undefined
 		const callee =
@@ -479,7 +726,7 @@ function configsUse(value: unknown): AstNode | undefined {
 
 function isClearlyNonObjectSchema(
 	schema: AstNode,
-	imports: ReadonlyMap<string, ImportBinding>,
+	imports: ReadonlyMap<string, ConfigImportBinding>,
 ): boolean {
 	if (schema.type !== 'CallExpression') return false
 	const callee = schema.callee as AstNode | undefined

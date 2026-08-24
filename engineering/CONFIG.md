@@ -30,6 +30,30 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
 和 deployment facts；resolver 每次 host startup 重新执行，可选择 persistence、ConfigService、RuntimeState、HTTP、
 logging、profile 和 Workbench policy。
 
+Static application 可以另外声明 `configEnvironmentBootstrap`。每个 direct `bindConfigEnvironment(Plugin, Schema, mapping)`
+把 portable environment name 绑定到该 Plugin default node 的 raw config path；`Schema` 必须与 Plugin root
+`configs.use()` 的实际对象 identity 相同。Mapping 由 `StandardSchemaV1.InferInput<Schema>` 递归推导，object 可展开或作为
+JSON subtree leaf，array/tuple/record/scalar 只能作为 leaf。Binding 位于 product host，不进入 Plugin metadata、decorator 或
+schema，也不扩展到 Part、fork 或 dynamic source。
+
+Startup 在 graph construction 前读取 canonical candidate，用 `valibot-form` raw-input projector 从真实 schema node 推导唯一
+`string | number | boolean | json` transport。它不执行 validation、transform、lazy/default getter，也不复制默认值、requiredness
+或 custom validator。环境缺失不生成 raw path；string 空值保留，number/boolean/JSON 空值失败，JSON `null` 保持显式值。
+Malformed value 的诊断只包含 environment name 和 target，不包含原始 value。
+
+新 store 的 merge authority 固定为：
+
+```text
+configure() configService.snapshot
+  < configEnvironmentBootstrap decoded seed
+  < PLUXEL_CONFIG bootstrap snapshot
+  < existing persisted file
+```
+
+最后一层继续由既有 `ConfigService.loadFromDisk()` 实现。Writable file 首次保存合成 seed；memory 每个新 host 重建；readonly
+在没有 file 时只在当前 host 使用 seed。Binding 不是 permanent overlay，不改变 revision、patch/reset、persistence format、
+Workbench presentation 或 restart graph。普通 config 仍不承载长期 secret。
+
 Plugin config records 与 enabled state 继续由 ConfigService/RuntimeState 管理，可以在 fixed catalog 范围内修改并跨启动
 持久化。production bundle 不把这些 records 烘焙成不可变常量。
 
@@ -111,8 +135,12 @@ control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: fa
 - `packages/core/src/plugins/runtime/definition.ts`
 - `packages/runtime/src/services/ConfigService.ts`
 - `packages/runtime/src/services/config-environment.ts`
+- `packages/runtime-static/src/config-environment.ts`
+- `packages/valibot-form/src/core/rawInput.ts`
 - `packages/runtime/src/api/usecases/pluginConfig.ts`
 - `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
+- `packages/rolldown/src/rolldown/plugins/staticConfigEnvironment.ts`
+- `packages/rolldown/src/cli/static-config-environment-output.ts`
 - `packages/runtime/docs/config/contract.md`
 
 作者用法见 [`docs/getting-started/configuration.md`](../docs/getting-started/configuration.md#声明规则)。

@@ -28,6 +28,8 @@ export default defineConfig({
 							noStaticSemanticInfo: development,
 						},
 						compilerOptions: {
+							allowImportingTsExtensions: true,
+							noEmit: true,
 							customConditions: ['@pluxel/source'],
 							jsx: ts.JsxEmit.ReactJSX,
 							module: ts.ModuleKind.ESNext,

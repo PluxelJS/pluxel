@@ -26,6 +26,10 @@
 			"@pluxel/source": "./src/distribution/index.ts",
 			"default": "./dist/distribution.mjs"
 		},
+		"./internal/static-config-environment-vite": {
+			"@pluxel/source": "./src/vite/static-config-environment.ts",
+			"default": "./dist/internal/static-config-environment-vite.mjs"
+		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"
@@ -90,6 +94,7 @@
 			"./build": "./dist/build.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
+			"./internal/static-config-environment-vite": "./dist/internal/static-config-environment-vite.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
@@ -122,7 +127,9 @@
 		"oxc-parser": "^0.115.0",
 		"oxc-resolver": "^11.21.3",
 		"unplugin-macros": "^0.20.2",
-		"unplugin-preprocessor-directives": "^1.2.0"
+		"unplugin-preprocessor-directives": "^1.2.0",
+		"valibot": "^1.2.0",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@rolldown/pluginutils": "^1.0.0-rc.5",
