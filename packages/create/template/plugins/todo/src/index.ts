@@ -21,12 +21,12 @@ export type AddTodoResult =
 
 @Plugin({ displayName: 'Example todos' })
 export class TodoPlugin extends BasePlugin {
-	readonly config = this.configs.use(TodoConfig)
+	private readonly config = this.configs.use(TodoConfig)
 	private readonly items = new Map<string, TodoItem>()
 	private audit: AuditPlugin | undefined
 	private nextId = 1
 
-	override init(): void {
+	protected override init(): void {
 		this.plugins.use(Audit, (audit) => {
 			this.audit = audit
 			return () => {

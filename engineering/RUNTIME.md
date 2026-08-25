@@ -82,6 +82,16 @@ Optional implementation 是否存在只由 host catalog 决定。作者的 lower
 retry 或默认 enable；provider generation 的出现、消失和 replacement 由 Core combined graph 触发 consumer restart。dynamic
 source batch 只提交正常 catalog transaction，不维护 optional request 或 synthetic module owner。
 
+Runtime reconciliation 只消费 candidate 上已经聚合的 owning Plugin requirements。root constructor、reachable Part constructor 与
+Part optional ref 的来源差异属于 lowering/diagnostic facts，不会创建 Part catalog entry、RuntimeState record 或持久 address。一个
+dependency override 继续以 consumer node + requirement definition 为 key，同时作用于 root 和全部 Part occurrence；provider selection、
+blocked closure、cycle ordering 与 restart 都只面对 owning Plugin node。Part dependency facade 传播 child Context 的 registration/
+cleanup scope，但 owner admission、abort 和 generation replacement 仍由同一个 Plugin lifecycle 统一治理。
+
+Runtime root 只转导 `PluginPart` 与 lowering 所需的 `PluginPartClass`，不恢复 Core 已移除的 Part Context/info/owner/parts helper types。
+Workbench 等 owner-only capability 通过 Core internal occurrence membership 判断拒绝 Part 调用；该判定只返回 boolean，不把 `partPath`
+重新放入 public Context shape，也不建立 Runtime 自己的 Part identity registry。
+
 ## Catalog、RuntimeState 与 reconciliation
 
 runtime 保持四个平面：route catalog 保存 candidate 与 module/source provenance，RuntimeState 保存 durable desired policy，Core

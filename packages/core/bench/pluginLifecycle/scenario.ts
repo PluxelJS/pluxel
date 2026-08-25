@@ -51,7 +51,7 @@ function definePlugin(name: string, deps?: readonly PluginFixture[]): PluginFixt
 	class P extends BasePlugin {}
 	Plugin({ displayName: name })(P)
 	__setPluginDefinition(P, {
-		abiVersion: 1,
+		abiVersion: 2,
 		kind: 'plugin',
 		definition: {
 			entry: {
@@ -61,7 +61,7 @@ function definePlugin(name: string, deps?: readonly PluginFixture[]): PluginFixt
 			},
 			exportName: name,
 		},
-		requires: deps?.map((dependency) => dependency.definitionAddress),
+		constructorRequires: deps?.map((dependency) => dependency.definitionAddress),
 	})
 	return pluginFixture(P)
 }
@@ -128,7 +128,7 @@ function createConfiguredPlugin() {
 
 	Plugin({ displayName: 'BenchConfigured' })(P)
 	__setPluginDefinition(P, {
-		abiVersion: 1,
+		abiVersion: 2,
 		kind: 'plugin',
 		definition: {
 			entry: {
@@ -139,7 +139,7 @@ function createConfiguredPlugin() {
 			exportName: 'BenchConfigured',
 		},
 	})
-	__setPluginConfig(P, { abiVersion: 1, fieldName: 'config', schema: passthroughSchema })
+	__setPluginConfig(P, { abiVersion: 2, fieldName: 'config', schema: passthroughSchema })
 
 	return {
 		plugin: pluginFixture(P),

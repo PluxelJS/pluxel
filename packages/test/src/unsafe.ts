@@ -17,7 +17,7 @@ import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core
 export type LowerTestReplacementOptions = Readonly<{
 	/** Marker facts owned by this replacement evaluation. */
 	plugin?: PluginOptions
-	/** Required edges owned by this replacement evaluation. */
+	/** Direct constructor requirements; aggregate graph edges are derived during ingestion. */
 	requires?: readonly PluginToken[]
 	/** Optional edges owned by this replacement evaluation. */
 	optional?: readonly PluginToken[]
@@ -43,7 +43,7 @@ export function lowerTestReplacement<T extends PluginConstructor>(
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
 		definition: pluginDefinitionAddressOf(previous),
-		requires: options.requires?.map(pluginDefinitionAddressOf),
+		constructorRequires: options.requires?.map(pluginDefinitionAddressOf),
 		optional: options.optional?.map(pluginDefinitionAddressOf),
 		...(options.provides === undefined
 			? {}
@@ -58,6 +58,7 @@ export {
 	__setPluginDefinition,
 	__setPluginPartConfig,
 	__setPluginPartOptional,
+	__setPluginPartRequires,
 	__setPluginParts,
 	PLUGIN_LOWERING_ABI_VERSION,
 	PluginLoweringError,

@@ -10,7 +10,7 @@ const Audit = definePluginRef<AuditPlugin>() // 模块级引用：声明可选�
 @Plugin()
 class StatusPlugin extends BasePlugin {
   constructor(readonly health: HealthPlugin) { super() } // 构造器参数：注入必需依赖
-  init() {
+  protected override init() {
     // init 中的直接语句：消费可选依赖
     this.plugins.use(Audit, (audit) => audit.attach(this))
   }
@@ -24,9 +24,30 @@ class StatusPlugin extends BasePlugin {
 		twoslash: false,
 	},
 	{
+		code: `class CachePart extends PluginPart<SearchPlugin> {
+  constructor(private readonly backend: CachePlugin) { super() }
+  protected override init() {
+    const cache = this.backend.createCache()
+    return () => cache.dispose()
+  }
+}
+@Plugin()
+class SearchPlugin extends BasePlugin {
+  // 静态 owner-bound composition，不建立第二个 Plugin node
+  private readonly cache = this.parts.use(CachePart)
+}`,
+		description:
+			'Part 隔离 config、registration 和 cleanup，但始终跟随 owning Plugin 一起启动、失败和重启。',
+		href: '/docs/getting-started/plugin-parts',
+		label: '内部组成',
+		packageName: 'src/search.ts',
+		status: 'Part → owner generation',
+		twoslash: false,
+	},
+	{
 		code: `@Plugin()
 class SamplerPlugin extends BasePlugin {
-  init() {
+  protected override init() {
     const timer = setInterval(() => this.sample(), 1_000)
 
     // 登记到当前 generation：停止、回滚或 HMR 时统一回收

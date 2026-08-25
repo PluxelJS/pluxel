@@ -6,9 +6,9 @@ const MessageConfig = v.object({
 
 @Plugin()
 export class {{className}}Plugin extends BasePlugin {
-	readonly config = this.configs.use(MessageConfig)
+	private readonly config = this.configs.use(MessageConfig)
 
-	override init(): void {
+	protected override init(): void {
 		this.ctx.logger.info('{{className}}Plugin ready', { message: this.config.message })
 	}
 }

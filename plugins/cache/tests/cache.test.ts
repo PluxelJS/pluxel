@@ -402,7 +402,7 @@ describe('@pluxel/cache', () => {
 
 			await expect(local.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
 			await expect(global.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
-			await expect(consumer.user('1')).rejects.toBeInstanceOf(CacheStoppedError)
+			expect(() => consumer.user('1')).toThrow('Plugin owner stopped')
 		})
 	})
 

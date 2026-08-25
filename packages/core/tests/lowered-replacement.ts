@@ -36,7 +36,7 @@ export function lowerTestReplacement<T extends PluginConstructor>(
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
 		definition: pluginDefinitionAddressOf(previous),
-		requires: options.requires?.map(pluginDefinitionAddressOf),
+		constructorRequires: options.requires?.map(pluginDefinitionAddressOf),
 		optional: options.optional?.map(pluginDefinitionAddressOf),
 	})
 	if (options.config) {

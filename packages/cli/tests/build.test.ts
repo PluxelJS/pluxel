@@ -81,14 +81,21 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/runtime'",
 			"import { AlphaPlugin } from 'pluxel-plugin-alpha'",
+			"import type { AlphaPlugin as OptionalAlphaPlugin } from 'pluxel-plugin-alpha'",
 			"import type { BetaPlugin } from 'pluxel-plugin-beta'",
 			'',
+			'const Alpha = definePluginRef<OptionalAlphaPlugin>()',
 			'const Beta = definePluginRef<BetaPlugin>()',
+			'class AlphaPart extends PluginPart<FixturePlugin> {',
+			'  constructor(readonly alpha: AlphaPlugin) { super() }',
+			'  init() { this.plugins.use(Alpha, () => undefined) }',
+			'}',
 			"@Plugin({ displayName: 'FixturePlugin' })",
 			'export class FixturePlugin extends BasePlugin {',
-			'  constructor(readonly alpha: AlphaPlugin) { super() }',
+			'  readonly first = this.parts.use(AlphaPart)',
+			'  readonly second = this.parts.use(AlphaPart)',
 			'  init() { this.plugins.use(Beta, () => undefined) }',
 			'}',
 			'',
@@ -386,7 +393,7 @@ async function withBuildFixture<T>(
 }
 
 describe('build command', () => {
-	it('synchronizes detected pluxel imports into package.json metadata', async () => {
+	it('dedupes repeated Part requirements and keeps required metadata over optional use', async () => {
 		await withBuildFixture('basic', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 			expect(runtime.projectRoot).toBe(fixtureDir)

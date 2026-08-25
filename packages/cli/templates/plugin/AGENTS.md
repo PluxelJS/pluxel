@@ -6,10 +6,14 @@ focused on this package instead of forking Pluxel's API guidance.
 
 Keep these boundaries intact:
 
-- required plugin dependencies belong in constructors; optional integrations use a non-exported
+- required plugin dependencies belong in the consuming Plugin or PluginPart constructor; optional integrations use a non-exported
   module-level `definePluginRef<T>()` and a direct `plugins.use(ref, setup)` statement in `init()`;
 - each Plugin and PluginPart class declares at most one complete object schema with
-  `configs.use(schema)`; owner-contained resources use field-only `parts.use(PartClass)` composition;
+  `configs.use(schema)`; owner-contained resources use static field-owned `parts.use(PartClass)` composition,
+  and Part requirements are lifted to the owning Plugin without being repeated there;
+- use Part `ctx`, `host`, `parts`, `plugins`, and `configs`, plus Plugin `parts`, `plugins`, and `configs`,
+  only inside the declaring subclass; `BasePlugin.ctx` remains public;
+- keep Part fields private by default and expose explicit business methods instead of Context, root-owner, or path accessors;
 - return generation cleanup from `init()` or register resources immediately with `ctx.effects`;
 - `tsdown.config.ts` only describes package input/output; `pluxel build` owns compiler semantics and
   generated plugin dependency metadata;

@@ -29,7 +29,7 @@ export type PluginDefinitionLoweringPayload = PluginLoweringHeader &
 	Readonly<{
 		readonly kind: PluginDefinitionKind
 		readonly definition: PluginDefinitionAddress
-		readonly requires?: readonly PluginDefinitionAddress[]
+		readonly constructorRequires?: readonly PluginDefinitionAddress[]
 		readonly optional?: readonly PluginDefinitionAddress[]
 		readonly provides?: PluginDefinitionAddress
 	}>
@@ -48,11 +48,18 @@ type PluginDefinitionFacts = Readonly<{
 	readonly kind: PluginDefinitionKind
 	readonly definition: PluginDefinitionAddress
 	/** Ordered by constructor parameter index. */
-	readonly requires: readonly PluginDefinitionAddress[]
+	readonly constructorRequires: readonly PluginDefinitionAddress[]
 	/** Static optional restart edges declared by direct init-time plugins.use() calls. */
 	readonly optional: readonly PluginDefinitionAddress[]
 	/** Explicit abstract provider relation from @Plugin(AbstractToken). */
 	readonly provides?: PluginDefinitionAddress
+}>
+
+export type PluginDependencyRequest = Readonly<{
+	readonly definition: PluginDefinitionAddress
+	readonly mode: 'required' | 'optional'
+	/** Empty for a root Plugin request; otherwise the definition-local Part occurrence path. */
+	readonly partPath: readonly string[]
 }>
 
 type PluginAddressProjection =
@@ -81,8 +88,13 @@ export type ConcretePluginDefinitionDeclaration = Readonly<{
 	readonly address: PluginDefinitionAddress
 	readonly displayName: string
 	readonly startTimeoutMs?: number
+	/** Direct requirements in owning Plugin constructor parameter order. */
+	readonly constructorRequires: readonly PluginDefinitionAddress[]
+	/** Root plus reachable Part requirements, deduplicated for graph planning. */
 	readonly requires: readonly PluginDefinitionAddress[]
 	readonly optional: readonly PluginDefinitionAddress[]
+	/** All root/Part request sources, including optional requests shadowed by required ones. */
+	readonly dependencyRequests: readonly PluginDependencyRequest[]
 	readonly provides?: PluginDefinitionAddress
 	readonly config?: PluginConfigDefinition
 	readonly parts: PluginPartDefinitionTree
@@ -162,19 +174,22 @@ export function __setPluginDefinition(
 	const payload = parsePluginLoweringPayload(input, 'Plugin definition', [
 		'kind',
 		'definition',
-		'requires',
+		'constructorRequires',
 		'optional',
 		'provides',
 	])
 	if (payload.kind !== 'plugin' && payload.kind !== 'abstract') {
 		invalidPluginDeclaration('[pluxel/core] Plugin definition kind must be plugin or abstract')
 	}
-	const requires = normalizeAddresses(payload.requires, 'Plugin required definition facts')
+	const constructorRequires = normalizeAddresses(
+		payload.constructorRequires,
+		'Plugin constructor required definition facts',
+	)
 	const optional = normalizeAddresses(payload.optional, 'Plugin optional definition facts')
 	const facts: PluginDefinitionFacts = Object.freeze({
 		kind: payload.kind,
 		definition: parseAddress(payload.definition, 'Plugin definition address'),
-		requires,
+		constructorRequires,
 		optional,
 		...(payload.provides === undefined
 			? {}
@@ -182,7 +197,7 @@ export function __setPluginDefinition(
 	})
 	if (
 		facts.kind === 'abstract' &&
-		(facts.requires.length > 0 || facts.optional.length > 0 || facts.provides)
+		(facts.constructorRequires.length > 0 || facts.optional.length > 0 || facts.provides)
 	) {
 		invalidPluginDeclaration('[pluxel/core] Abstract Plugin declaration cannot contain edges')
 	}
@@ -275,7 +290,9 @@ export function consumePluginDefinitionCandidate(
 	}
 	validateProviderMarker(marker.providerClass, facts.provides)
 	const parts = consumePluginPartDefinitionTree(implementation)
-	const optional = mergeOptionalDefinitions(facts.optional, collectPartOptional(parts))
+	const requires = mergeRequiredDefinitions(facts.constructorRequires, collectPartRequired(parts))
+	const optional = mergeOptionalDefinitions(facts.optional, collectPartOptional(parts), requires)
+	const dependencyRequests = collectDependencyRequests(facts, parts)
 	const config = createPluginConfigDefinition(configByConstructor.get(implementation), parts)
 	const declaration: ConcretePluginDefinitionDeclaration = Object.freeze({
 		address: facts.definition,
@@ -283,8 +300,10 @@ export function consumePluginDefinitionCandidate(
 		...(marker.options.startTimeoutMs === undefined
 			? {}
 			: { startTimeoutMs: marker.options.startTimeoutMs }),
-		requires: facts.requires,
+		constructorRequires: facts.constructorRequires,
+		requires,
 		optional,
+		dependencyRequests,
 		...(facts.provides === undefined ? {} : { provides: facts.provides }),
 		...(config === undefined ? {} : { config }),
 		parts,
@@ -348,6 +367,22 @@ export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress 
 function mergeOptionalDefinitions(
 	direct: readonly PluginDefinitionAddress[],
 	parts: readonly PluginDefinitionAddress[],
+	required: readonly PluginDefinitionAddress[],
+): readonly PluginDefinitionAddress[] {
+	const out: PluginDefinitionAddress[] = []
+	const seen = new Set(required.map(pluginDefinitionIndexKey))
+	for (const address of [...direct, ...parts]) {
+		const key = pluginDefinitionIndexKey(address)
+		if (seen.has(key)) continue
+		seen.add(key)
+		out.push(address)
+	}
+	return Object.freeze(out)
+}
+
+function mergeRequiredDefinitions(
+	direct: readonly PluginDefinitionAddress[],
+	parts: readonly PluginDefinitionAddress[],
 ): readonly PluginDefinitionAddress[] {
 	const out: PluginDefinitionAddress[] = []
 	const seen = new Set<string>()
@@ -360,6 +395,18 @@ function mergeOptionalDefinitions(
 	return Object.freeze(out)
 }
 
+function collectPartRequired(tree: PluginPartDefinitionTree): PluginDefinitionAddress[] {
+	const out: PluginDefinitionAddress[] = []
+	const visit = (nodes: PluginPartDefinitionTree) => {
+		for (const node of nodes) {
+			out.push(...node.requires)
+			visit(node.parts)
+		}
+	}
+	visit(tree)
+	return out
+}
+
 function collectPartOptional(tree: PluginPartDefinitionTree): PluginDefinitionAddress[] {
 	const out: PluginDefinitionAddress[] = []
 	const visit = (nodes: PluginPartDefinitionTree) => {
@@ -370,6 +417,35 @@ function collectPartOptional(tree: PluginPartDefinitionTree): PluginDefinitionAd
 	}
 	visit(tree)
 	return out
+}
+
+function collectDependencyRequests(
+	facts: PluginDefinitionFacts,
+	tree: PluginPartDefinitionTree,
+): readonly PluginDependencyRequest[] {
+	const requests: PluginDependencyRequest[] = []
+	const rootPath = Object.freeze([]) as readonly string[]
+	const add = (
+		definitions: readonly PluginDefinitionAddress[],
+		mode: PluginDependencyRequest['mode'],
+		partPath: readonly string[],
+	) => {
+		for (const definition of definitions) {
+			requests.push(Object.freeze({ definition, mode, partPath }))
+		}
+	}
+	add(facts.constructorRequires, 'required', rootPath)
+	add(facts.optional, 'optional', rootPath)
+	const visit = (nodes: PluginPartDefinitionTree, parentPath: readonly string[]) => {
+		for (const node of nodes) {
+			const partPath = Object.freeze([...parentPath, node.fieldName])
+			add(node.requires, 'required', partPath)
+			add(node.optional, 'optional', partPath)
+			visit(node.parts, partPath)
+		}
+	}
+	visit(tree, rootPath)
+	return Object.freeze(requests)
 }
 
 type ConfigNode = Readonly<{

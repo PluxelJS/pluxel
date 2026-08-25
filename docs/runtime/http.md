@@ -16,7 +16,7 @@ type Order = { id: string }
 
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
-	override init() {
+	protected override init() {
 		this.ctx.http.plugin.routes((app) =>
 			app
 				.get('/health', () => ({ ok: true }))
@@ -48,7 +48,7 @@ lifecycle cleanup。
 需要固定 webhook、health 或产品 API 根路径时声明 `publicPath`：
 
 ```ts no-twoslash
-override init() {
+protected override init() {
 	this.ctx.http.plugin.routes(
 		(app) =>
 			app
@@ -141,7 +141,7 @@ import type { ElysiaRouteHandle } from '@pluxel/runtime'
 
 private routes?: ElysiaRouteHandle
 
-override init() {
+protected override init() {
 	this.routes = this.ctx.http.plugin.routes((app) => app.get('/', () => 'v1'))
 }
 

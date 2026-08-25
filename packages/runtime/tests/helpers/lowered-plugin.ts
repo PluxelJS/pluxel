@@ -34,7 +34,7 @@ export function lowerTestPlugin(
 			entry: { kind: 'source-entry', sourceSpace: 'app', path: `pluxel-test:${id}` },
 			exportName: 'Plugin',
 		},
-		requires: options.requires?.map(pluginDefinitionAddressOf),
+		constructorRequires: options.requires?.map(pluginDefinitionAddressOf),
 	})
 	return Plugin
 }

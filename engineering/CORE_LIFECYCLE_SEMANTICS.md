@@ -37,6 +37,9 @@ draft records/graph -> verify -> prepare stop/start plan -> stop old generations
 - generation stop 先关闭 owner admission，再 abort generation，再 drain effects；
 - construction/finalize/config injection/init 失败会淘汰该 generation 的 runtime cache；rollback cleanup 失败不会覆盖 primary cause，
   而是作为独立 `drain-failed` fact 进入同一 report；
+- reachable PluginPart 的 required provider 在 owner graph 上统一调度；Part constructor/init/cleanup 失败结束整个 owner generation，
+  report 保留 definition-local `partPath`，但不产生 Part lifecycle 状态；
+- Part occurrence attribution 由 Core internal state 与 effects metadata 持有；Context 不公开 attribution 或等价 identity accessor；
 - `init()` abort 或 timeout 后的 late fulfillment 不会发布 running generation；late cleanup 会立即进入同一 drain/report 边界；
 - `CommitSummary` 描述 Core 已观察到的 lifecycle facts；宿主负责把这些事实解释为退出、告警、降级或重试策略。
 
@@ -55,6 +58,7 @@ draft records/graph -> verify -> prepare stop/start plan -> stop old generations
 | L9  | optional absent -> absent 不产生 consumer restart；真实 availability transition 对同一 consumer 每个 plan 最多重启一次。 | `PluginService.optional.test.ts`, `PluginService.lifecycle-model.test.ts`                                           | optional callback 必须是 lowered direct `plugins.use()`。                                            |
 | L10 | 系统静止后，running projection 与最新成功验证的 desired graph 及 lifecycle failure facts 一致。                          | `PluginService.lifecycle-model.test.ts`, `PluginService.registration.test.ts`, `PluginService.failures.test.ts`     | 这是 bounded convergence 断言；timeout、外部 emission 和显式宿主 retry policy 仍可能让历史影响结果。 |
 | L11 | generation admission 的 primary failure 与 rollback drain failure 是独立事实；失败 instance 不留在 runtime cache。       | `PluginService.failures.test.ts`, `PluginService.late-init.test.ts`                                                 | late settlement 在初次 summary 发布后通过 immutable successor 增补，不回写历史对象。                 |
+| L12 | PluginPart dependency、construction、init 与 cleanup 共享 owning Plugin 的 graph/generation 边界。                       | `PluginPart.test.ts`, `PluginLoweringAbi.test.ts`                                                                   | `partPath` 只用于 config/diagnostic attribution，不是可治理 identity。                               |
 
 ## Model-Style 测试要求
 

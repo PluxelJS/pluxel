@@ -55,7 +55,7 @@ import { notes, NotesDatabase } from './database.ts'
 export class NotesPlugin extends BasePlugin {
 	private database!: PluginDatabaseHandle<typeof NotesDatabase>
 
-	override async init() {
+	protected override async init() {
 		this.database = await this.ctx.database.use(NotesDatabase)
 	}
 
@@ -225,7 +225,7 @@ export default defineStaticRuntime({
 Plugin 在 `init()` 或之后同步取得已准备实例：
 
 ```ts no-twoslash
-override init() {
+protected override init() {
 	this.database = appDatabaseFor(this.ctx)
 }
 ```

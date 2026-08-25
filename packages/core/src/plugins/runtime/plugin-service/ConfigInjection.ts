@@ -1,5 +1,5 @@
 import type { PluginConfigDefinition } from '../definition'
-import { assignPluginPartConfig } from '../../composition/PluginPart'
+import { assignPluginGenerationPartConfig, type BasePlugin } from '../../composition/BasePlugin'
 
 /** Install the one validated object value produced for configs.use(schema). */
 export function assignValidatedPluginConfig(
@@ -22,8 +22,5 @@ export function assignValidatedPluginConfig(
 		}
 		;(target as Record<string, unknown>)[definition.owner.fieldName] = Object.freeze(own)
 	}
-	assignPluginPartConfig(
-		(target as import('../../composition/BasePlugin').BasePlugin).parts,
-		record,
-	)
+	assignPluginGenerationPartConfig(target as BasePlugin, record)
 }

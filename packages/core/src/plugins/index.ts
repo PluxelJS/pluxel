@@ -10,14 +10,7 @@
 
 export * from './composition/PluginConfigs'
 export * from './composition/OptionalPluginBindings'
-export {
-	PluginPart,
-	type PluginParts,
-	type PluginPartClass,
-	type PluginPartContext,
-	type PluginPartInfo,
-	type PluginPartOwner,
-} from './composition/PluginPart'
+export { PluginPart, type PluginPartClass } from './composition/PluginPart'
 export * from './composition/BasePlugin'
 export * from './types'
 export * from './decorators/PluginDecorator'

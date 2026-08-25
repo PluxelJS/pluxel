@@ -101,7 +101,7 @@ export class OrdersPlugin extends BasePlugin {
 
 	close(_orderId: string): void {}
 
-	override init() {
+	protected override init() {
 		this.ctx.workbench?.mount(OrdersWorkbench, {
 			commands: workbench.bind.rpc(() => new OrdersRpc(this)),
 			activity: workbench.bind.events<OrderEvents>(({ emit }) => {

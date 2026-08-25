@@ -44,10 +44,10 @@ export const StatusConfig = v.object({
 
 @Plugin({ displayName: 'Status' })
 export class StatusPlugin extends BasePlugin {
-	readonly config = this.configs.use(StatusConfig)
+	private readonly config = this.configs.use(StatusConfig)
 	private samples = 0
 
-	override init(): void {
+	protected override init(): void {
 		this.ctx.http.plugin.routes((app) =>
 			app.get('/status', () => ({
 				label: this.config.label,
@@ -116,6 +116,7 @@ pnpm verify
 ## 接下来
 
 - 添加 required 或 optional dependency：[Plugin 模型与生命周期](./plugin-model.md)
+- 拆分 owner 内部的 config、registration 和 cleanup：[使用 PluginPart](./plugin-parts.md)
 - 增加配置字段和表单 metadata：[配置模型](./configuration.md)
 - 把 Plugin 放进应用宿主：[配置插件宿主](./host-setup.md)
 - 覆盖失败、replacement 和 rollback：[测试 Pluxel 插件](../development/testing.md)

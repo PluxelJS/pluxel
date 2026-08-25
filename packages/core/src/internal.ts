@@ -23,6 +23,7 @@ export {
 	type ContextCapabilityInstallation,
 } from '@pluxel/context'
 export { createGenerationContext, createOwnerContext } from './context/context-factory'
+export { isPluginPartContext } from './plugins/composition/PluginPart'
 export {
 	CONFIG_SERVICE_CAPABILITY,
 	createCoreContextInstallations,

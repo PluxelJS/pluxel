@@ -454,7 +454,7 @@ function setDefinition(
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
 		definition,
-		requires,
+		constructorRequires: requires,
 	})
 }
 

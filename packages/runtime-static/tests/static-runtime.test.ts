@@ -152,6 +152,12 @@ const HotStaticV2 = class HotStaticV2 extends BasePlugin {
 	}
 }
 
+const HotStaticV3 = class HotStaticV3 extends BasePlugin {
+	override init(): void {
+		hotRuns.push('v3')
+	}
+}
+
 const hotConfigRuns: string[] = []
 
 const HotConfigV1 = class HotConfigV1 extends BasePlugin {
@@ -190,6 +196,12 @@ beforeAll(() => {
 		'Hot Static',
 		'Hot Static Replacement',
 	])
+	Plugin({ displayName: 'Hot Static Final' })(HotStaticV3)
+	__setPluginDefinition(HotStaticV3, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+		kind: 'plugin',
+		definition: pluginDefinitionAddressOf(HotStaticV1),
+	})
 	lowerReplacementPair(HotConfigV1, HotConfigV2, 'hot-config', [
 		'Hot Config',
 		'Hot Config Replacement',
@@ -660,6 +672,44 @@ describe('@pluxel/runtime-static', () => {
 			expect(report.replaced).toEqual([stableAddress])
 			expect(hotRuns).toEqual(['v1', 'v2'])
 			expect(requirePluginService(host.ctx).getInstance(HotStaticV1)).toBeInstanceOf(HotStaticV2)
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('serializes concurrent HMR definitions before deriving catalog revisions', async () => {
+		hotRuns.length = 0
+		const stableAddress = addressOf(HotStaticV1)
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-hmr-queue', plugins: [HotStaticV1] }),
+			{
+				configService: { mode: 'memory' },
+				runtimeState: { mode: 'memory', snapshot: { enabled: [stableAddress] } },
+			},
+		)
+		try {
+			await host.start()
+			const [second, third] = await Promise.all([
+				reloadStaticRuntime({
+					host,
+					definition: defineStaticRuntime({
+						name: 'static-hmr-queue',
+						plugins: [HotStaticV2],
+					}),
+				}),
+				reloadStaticRuntime({
+					host,
+					definition: defineStaticRuntime({
+						name: 'static-hmr-queue',
+						plugins: [HotStaticV3],
+					}),
+				}),
+			])
+
+			expect(second.replaced).toEqual([stableAddress])
+			expect(third.replaced).toEqual([stableAddress])
+			expect(hotRuns).toEqual(['v1', 'v2', 'v3'])
+			expect(requirePluginService(host.ctx).getInstance(stableAddress)).toBeInstanceOf(HotStaticV3)
 		} finally {
 			await host.stop()
 		}

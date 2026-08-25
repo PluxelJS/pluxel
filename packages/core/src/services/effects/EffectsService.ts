@@ -1,6 +1,7 @@
 import type { Context as PluxelContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
+import { attachErrorPartPath, EFFECTS_PART_PATH } from '../../internal/effects-part-path'
 
 export type Cleanup = () => void | Promise<void>
 /** A resource handle whose async disposal settles only after its owned work has stopped. */
@@ -462,7 +463,14 @@ class EffectsImpl implements Effects, EffectGuardHost {
 						try {
 							await this.runAsync(id, token)
 						} catch (error) {
-							errors.push(error)
+							const partPath = (
+								meta as
+									| (EffectsMeta & {
+											[EFFECTS_PART_PATH]?: readonly string[]
+									  })
+									| null
+							)?.[EFFECTS_PART_PATH]
+							errors.push(partPath ? attachErrorPartPath(error, partPath) : error)
 							this.ctx.logger.error('effects dispose error', {
 								error,
 								tag: meta?.tag,

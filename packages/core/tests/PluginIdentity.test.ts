@@ -122,7 +122,7 @@ describe('Plugin identity', () => {
 	it('keeps constructor and slot address projections referentially stable', () => {
 		class StableProjection {}
 		__setPluginDefinition(StableProjection as never, {
-			abiVersion: 1,
+			abiVersion: 2,
 			kind: 'plugin',
 			definition: sourceFork.definition,
 		})
@@ -201,10 +201,10 @@ describe('Plugin identity', () => {
 
 		expect(() =>
 			__setPluginDefinition(DuplicateRequirement as never, {
-				abiVersion: 1,
+				abiVersion: 2,
 				kind: 'plugin',
 				definition: sourceFork.definition,
-				requires: [packageDefault.definition, packageDefault.definition],
+				constructorRequires: [packageDefault.definition, packageDefault.definition],
 			}),
 		).toThrow(/required definition facts.*duplicate/i)
 	})

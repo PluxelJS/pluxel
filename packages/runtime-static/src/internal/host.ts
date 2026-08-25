@@ -51,6 +51,9 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	private runtimeName: string
 	private started = false
 	private disposed = false
+	private stopRequested = false
+	private operationTail: Promise<void> = Promise.resolve()
+	private stopPromise: Promise<void> | undefined
 	private report: StaticRuntimeStartupReport | undefined
 	private readonly coordinator
 
@@ -138,8 +141,14 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		return this.report
 	}
 
-	async start(): Promise<StaticRuntimeStartupReport> {
-		if (this.disposed) throw new Error('[runtime-static] cannot start a disposed host')
+	start(): Promise<StaticRuntimeStartupReport> {
+		if (this.stopRequested || this.disposed) {
+			return Promise.reject(new Error('[runtime-static] cannot start a disposed host'))
+		}
+		return this.enqueueOperation(() => this.startExclusive())
+	}
+
+	private async startExclusive(): Promise<StaticRuntimeStartupReport> {
 		if (this.started) return this.report ?? this.currentReport()
 		const applied = await this.coordinator.reconcileStartup(this.startupCatalog)
 		this.started = true
@@ -147,7 +156,16 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		return this.report
 	}
 
-	async stop(): Promise<void> {
+	stop(): Promise<void> {
+		if (this.stopPromise) return this.stopPromise
+		if (this.disposed) return Promise.resolve()
+		this.stopRequested = true
+		const stopped = this.enqueueOperation(() => this.stopExclusive())
+		this.stopPromise = stopped
+		return stopped
+	}
+
+	private async stopExclusive(): Promise<void> {
 		if (this.disposed) return
 		this.disposed = true
 		try {
@@ -169,8 +187,16 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		}
 	}
 
-	private async reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeHmrReport> {
-		if (this.disposed) throw new Error('[runtime-static] cannot reload a disposed host')
+	private reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeHmrReport> {
+		if (this.stopRequested || this.disposed) {
+			return Promise.reject(new Error('[runtime-static] cannot reload a disposed host'))
+		}
+		return this.enqueueOperation(() => this.reloadExclusive(definition))
+	}
+
+	private async reloadExclusive(
+		definition: StaticRuntimeDefinition,
+	): Promise<StaticRuntimeHmrReport> {
 		const previous = this.coordinator.catalogSnapshot()
 		const next = buildCatalog(definition, previous.revision + 1)
 		const diff = diffCatalog(previous, next)
@@ -190,6 +216,15 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		}
 		this.report = report
 		return report
+	}
+
+	private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.operationTail.then(operation)
+		this.operationTail = result.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return result
 	}
 
 	private currentReport(

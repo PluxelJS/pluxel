@@ -10,8 +10,8 @@ export type ReloadStaticRuntimeOptions = {
  *
  * The caller owns how the definition was imported (for example Vite SSR import).
  * This function compares the fixed catalog by lowered Plugin node address, revalidates
- * enabled plugins through the host config service, and delegates lifecycle
- * changes to core commit.
+ * enabled plugins through the host config service, and delegates lifecycle changes to core commit.
+ * Concurrent reloads are committed serially in call order.
  */
 export function reloadStaticRuntime(
 	options: ReloadStaticRuntimeOptions,

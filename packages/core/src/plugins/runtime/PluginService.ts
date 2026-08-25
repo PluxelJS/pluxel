@@ -368,7 +368,9 @@ export class PluginService {
 		if (this.activeRuntimeUpdate !== tx) throw new Error(STALE_PREPARED_UPDATE_MESSAGE)
 		const action = this.definitions.build()
 		if (!action.ok) {
-			throw new Error('Core Plugin graph verification failed', { cause: action.err.err })
+			throw new Error(`Core Plugin graph verification failed:\n${action.err.err.format()}`, {
+				cause: action.err.err,
+			})
 		}
 		const expectedRevision = this.commitRevision
 		let state: 'prepared' | 'committing' | 'closed' = 'prepared'

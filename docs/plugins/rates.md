@@ -23,7 +23,7 @@ export class MessagingPlugin extends BasePlugin {
 		super()
 	}
 
-	override init(): void {
+	protected override init(): void {
 		this.messages = this.rates.use('send-message', {
 			algorithm: 'sliding-window-counter',
 			limit: 100,

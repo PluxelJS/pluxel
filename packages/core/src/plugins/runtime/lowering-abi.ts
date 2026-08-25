@@ -1,4 +1,4 @@
-export const PLUGIN_LOWERING_ABI_VERSION = 1 as const
+export const PLUGIN_LOWERING_ABI_VERSION = 2 as const
 
 export type PluginLoweringHeader = Readonly<{
 	readonly abiVersion: typeof PLUGIN_LOWERING_ABI_VERSION

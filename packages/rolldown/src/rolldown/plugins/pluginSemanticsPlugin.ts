@@ -123,6 +123,17 @@ type PartOptionalFacts = Readonly<{
 	readonly className: string
 	readonly optional: readonly PluginDefinitionAddress[]
 }>
+type PartRequiredFacts = Readonly<{
+	readonly className: string
+	readonly requires: readonly PluginDefinitionAddress[]
+}>
+type DependencyInventoryNode = Readonly<{
+	readonly key: string
+	readonly kind: 'plugin' | 'part'
+	readonly requires: readonly PluginDefinitionAddress[]
+	readonly optional: readonly PluginDefinitionAddress[]
+	readonly parts: readonly string[]
+}>
 
 const AUTHORING_PACKAGES = new Set([
 	'@pluxel/core',
@@ -158,8 +169,8 @@ export function createPluginSemanticsPlugin(
 			'[pluxel:plugin-semantics] helperImportSource must name a /toolchain subpath',
 		)
 	}
-	const dependencies = new Map<string, PluginDependencyMode>()
 	const collectedDefinitions = new Map<string, PluginSemanticDefinition>()
+	const dependencyInventory = new Map<string, DependencyInventoryNode>()
 	const requiredImports = new Map<string, Set<string>>()
 	const packageOwnerCache = new Map<string, Promise<string | undefined>>()
 	const inferredPackagePlans = new Map<string, Promise<PackagePlan | undefined>>()
@@ -167,17 +178,12 @@ export function createPluginSemanticsPlugin(
 	let resolvedSourceSpaces: Promise<readonly ResolvedSourceSpace[]> | undefined
 	let packagePlan: PackagePlan | undefined
 
-	const recordPackage = (name: string, mode: PluginDependencyMode) => {
-		if (AUTHORING_PACKAGES.has(name)) return
-		if (mode === 'required' || !dependencies.has(name)) dependencies.set(name, mode)
-	}
-
 	const plugin: ViteCompatPlugin = {
 		name: 'pluxel:plugin-semantics',
 		enforce: 'pre',
 		async buildStart() {
-			dependencies.clear()
 			collectedDefinitions.clear()
+			dependencyInventory.clear()
 			requiredImports.clear()
 			packageOwnerCache.clear()
 			inferredPackagePlans.clear()
@@ -233,9 +239,11 @@ export function createPluginSemanticsPlugin(
 					},
 				})
 
-				for (const [name, mode] of result.packageDependencies) recordPackage(name, mode)
 				for (const definition of result.definitions) {
 					collectedDefinitions.set(definitionKey(definition.definition), definition)
+				}
+				for (const node of result.dependencyInventory) {
+					dependencyInventory.set(node.key, node)
 				}
 				if (result.requiredSources.size > 0) {
 					requiredImports.set(id, result.requiredSources)
@@ -263,7 +271,8 @@ export function createPluginSemanticsPlugin(
 
 	return {
 		plugin,
-		snapshot: () => new Map(dependencies),
+		snapshot: () =>
+			collectReachablePackageDependencies(dependencyInventory, packagePlan?.packageName),
 		definitions: () => [...collectedDefinitions.values()],
 	}
 }
@@ -322,11 +331,10 @@ async function lowerModule(options: {
 }): Promise<{
 	code: string
 	definitions: PluginSemanticDefinition[]
-	packageDependencies: Map<string, PluginDependencyMode>
+	dependencyInventory: DependencyInventoryNode[]
 	requiredSources: Set<string>
 }> {
 	const { analysis, id } = options
-	const packageDependencies = new Map<string, PluginDependencyMode>()
 	const requiredSources = new Set<string>()
 	const replacements: Replacement[] = []
 	const refAddresses = new Map<string, PluginDefinitionAddress>()
@@ -337,9 +345,6 @@ async function lowerModule(options: {
 		}
 		const address = await resolveTypeAddress(ref.targetType, analysis, id, options, true)
 		refAddresses.set(ref.name, address)
-		if (address.entry.kind === 'package-root') {
-			packageDependencies.set(address.entry.packageName, 'optional')
-		}
 		const start = numberPosition(ref.call.start, options.error, `${id} ref start`)
 		const end = numberPosition(ref.call.end, options.error, `${id} ref end`)
 		replacements.push({
@@ -350,7 +355,9 @@ async function lowerModule(options: {
 	}
 
 	const definitions: PluginSemanticDefinition[] = []
+	const dependencyInventory: DependencyInventoryNode[] = []
 	const partOwners: PartOwnerFacts[] = []
+	const partRequired: PartRequiredFacts[] = []
 	const partOptional: PartOptionalFacts[] = []
 	for (const raw of analysis.classes.values()) {
 		validateCallerViewPrivateBrand(raw, analysis, id, options.error)
@@ -362,13 +369,23 @@ async function lowerModule(options: {
 			)
 		}
 		const occurrences = partOccurrences(raw, analysis, id, options.error)
+		const partTargets = await resolvePartTargets(occurrences, analysis, id, options)
 		if (occurrences.length > 0) {
 			partOwners.push({ className: raw.name, occurrences })
 		}
 		if (raw.pluginPartSubclass) {
 			validatePluginPartConstructor(raw, id, options.error)
+			const requires = await constructorRequirements(raw, analysis, id, options, requiredSources)
+			if (requires.length > 0) partRequired.push({ className: raw.name, requires })
 			const optional = optionalRequirements(raw, analysis, refAddresses, id, options.error)
 			if (optional.length > 0) partOptional.push({ className: raw.name, optional })
+			dependencyInventory.push({
+				key: originKey(id, raw.name),
+				kind: 'part',
+				requires,
+				optional,
+				parts: partTargets,
+			})
 		}
 		if (!raw.marked && !raw.abstract) continue
 		const address = options.addresses.get(originKey(id, raw.name))
@@ -382,14 +399,7 @@ async function lowerModule(options: {
 		}
 		if (raw.marked) validateMarker(raw, id, analysis, options.error)
 		const requires = raw.marked
-			? await constructorRequirements(
-					raw,
-					analysis,
-					id,
-					options,
-					packageDependencies,
-					requiredSources,
-				)
+			? await constructorRequirements(raw, analysis, id, options, requiredSources)
 			: []
 		const optional = raw.marked
 			? optionalRequirements(raw, analysis, refAddresses, id, options.error)
@@ -403,6 +413,15 @@ async function lowerModule(options: {
 			optional,
 			...(provides ? { provides } : {}),
 		})
+		if (raw.marked) {
+			dependencyInventory.push({
+				key: originKey(id, raw.name),
+				kind: 'plugin',
+				requires,
+				optional,
+				parts: partTargets,
+			})
+		}
 	}
 	validateLocalPartContainment(partOwners, analysis, id, options.error)
 
@@ -411,12 +430,16 @@ async function lowerModule(options: {
 		definitions.length > 0 ||
 		replacements.length > 0 ||
 		partOwners.length > 0 ||
+		partRequired.length > 0 ||
 		partOptional.length > 0
 	) {
 		const imports = [
 			definitions.length > 0 ? '__setPluginDefinition as __pluxelSetPluginDefinition' : undefined,
 			replacements.length > 0 ? '__definePluginRef as __pluxelDefinePluginRef' : undefined,
 			partOwners.length > 0 ? '__setPluginParts as __pluxelSetPluginParts' : undefined,
+			partRequired.length > 0
+				? '__setPluginPartRequires as __pluxelSetPluginPartRequires'
+				: undefined,
 			partOptional.length > 0
 				? '__setPluginPartOptional as __pluxelSetPluginPartOptional'
 				: undefined,
@@ -431,7 +454,7 @@ async function lowerModule(options: {
 					abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 					kind: definition.kind,
 					definition: definition.definition,
-					requires: definition.requires,
+					constructorRequires: definition.requires,
 					optional: definition.optional,
 					...(definition.provides ? { provides: definition.provides } : {}),
 				})});`,
@@ -445,6 +468,11 @@ async function lowerModule(options: {
 				`__pluxelSetPluginParts(${owner.className}, { abiVersion: ${PLUGIN_LOWERING_ABI_VERSION}, occurrences: [${occurrences}] });`,
 			)
 		}
+		for (const part of partRequired) {
+			lines.push(
+				`__pluxelSetPluginPartRequires(${part.className}, ${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, requires: part.requires })});`,
+			)
+		}
 		for (const part of partOptional) {
 			lines.push(
 				`__pluxelSetPluginPartOptional(${part.className}, ${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, optional: part.optional })});`,
@@ -452,7 +480,90 @@ async function lowerModule(options: {
 		}
 		transformed = `${transformed}\n${lines.join('\n')}\n`
 	}
-	return { code: transformed, definitions, packageDependencies, requiredSources }
+	return { code: transformed, definitions, dependencyInventory, requiredSources }
+}
+
+function collectReachablePackageDependencies(
+	inventory: ReadonlyMap<string, DependencyInventoryNode>,
+	ownerPackage: string | undefined,
+): Map<string, PluginDependencyMode> {
+	const dependencies = new Map<string, PluginDependencyMode>()
+	const visited = new Set<string>()
+	const record = (address: PluginDefinitionAddress, mode: PluginDependencyMode) => {
+		if (address.entry.kind !== 'package-root') return
+		const packageName = address.entry.packageName
+		if (packageName === ownerPackage || AUTHORING_PACKAGES.has(packageName)) return
+		if (mode === 'required' || !dependencies.has(packageName)) {
+			dependencies.set(packageName, mode)
+		}
+	}
+	const visit = (key: string) => {
+		if (visited.has(key)) return
+		visited.add(key)
+		const node = inventory.get(key)
+		if (!node) return
+		for (const address of node.optional) record(address, 'optional')
+		for (const address of node.requires) record(address, 'required')
+		for (const part of node.parts) visit(part)
+	}
+	for (const node of inventory.values()) {
+		if (node.kind === 'plugin') visit(node.key)
+	}
+	return dependencies
+}
+
+async function resolvePartTargets(
+	occurrences: readonly Readonly<{ fieldName: string; partName: string }>[],
+	analysis: ModuleAnalysis,
+	id: string,
+	options: Parameters<typeof lowerModule>[0],
+): Promise<readonly string[]> {
+	const targets: string[] = []
+	for (const occurrence of occurrences) {
+		if (analysis.classes.has(occurrence.partName)) {
+			targets.push(originKey(id, occurrence.partName))
+			continue
+		}
+		const binding = analysis.imports.get(occurrence.partName)
+		if (!binding || isBareSpecifier(binding.source)) continue
+		const resolved = await options.resolve(binding.source)
+		if (!resolved) {
+			options.error(
+				`[pluxel:plugin-part] ${id} could not resolve local Part import ${binding.source}`,
+			)
+		}
+		const clean = resolve(stripQuery(resolved))
+		const modules = new Map<string, Promise<ModuleAnalysis>>()
+		const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
+			const moduleKey = resolve(stripQuery(moduleId))
+			let pending = modules.get(moduleKey)
+			if (!pending) {
+				pending = readFile(moduleKey, 'utf8').then((source) => {
+					const ast = parseStandaloneWithLang(source, moduleKey)
+					if (!ast) {
+						options.error(`[pluxel:plugin-part] ${id} could not inspect ${moduleKey}`)
+					}
+					return analyzeModule(ast)
+				})
+				modules.set(moduleKey, pending)
+			}
+			return pending
+		}
+		const origin = await resolveExportOrigin(
+			clean,
+			binding.imported,
+			readModule,
+			new Set(),
+			options.error,
+		)
+		if (!origin?.raw.pluginPartSubclass) {
+			options.error(
+				`[pluxel:plugin-part] ${id} ${occurrence.partName} must resolve to one direct PluginPart subclass`,
+			)
+		}
+		targets.push(originKey(origin.id, origin.className))
+	}
+	return Object.freeze(targets)
 }
 
 function analyzeModule(ast: Program): ModuleAnalysis {
@@ -673,7 +784,6 @@ async function constructorRequirements(
 	analysis: ModuleAnalysis,
 	id: string,
 	options: Parameters<typeof lowerModule>[0],
-	packageDependencies: Map<string, PluginDependencyMode>,
 	requiredSources: Set<string>,
 ): Promise<PluginDefinitionAddress[]> {
 	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
@@ -709,8 +819,6 @@ async function constructorRequirements(
 		seen.set(key, { index: out.length, typeName })
 		out.push(address)
 		if (binding && isBareSpecifier(binding.source)) {
-			const packageName = packageNameOf(binding.source)
-			packageDependencies.set(packageName, 'required')
 			requiredSources.add(binding.source)
 		}
 	}
@@ -917,46 +1025,44 @@ async function resolveTypeAddress(
 		options.error(`[pluxel:plugin-provenance] ${id} could not inspect ${resolved}`)
 	}
 	const target = analyzeModule(ast)
-	const targetExport = target.exports.get(binding.imported)
-	if (targetExport) {
-		const moduleCache = new Map<string, Promise<ModuleAnalysis>>([
-			[resolve(resolved), Promise.resolve(target)],
-		])
-		const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
-			const clean = resolve(moduleId)
-			let pending = moduleCache.get(clean)
-			if (!pending) {
-				pending = readFile(clean, 'utf8').then((moduleCode) => {
-					const moduleAst = parseStandaloneWithLang(moduleCode, clean)
-					if (!moduleAst) {
-						options.error(`[pluxel:plugin-provenance] ${id} could not inspect ${clean}`)
-					}
-					return analyzeModule(moduleAst)
-				})
-				moduleCache.set(clean, pending)
-			}
-			return pending
+	const moduleCache = new Map<string, Promise<ModuleAnalysis>>([
+		[resolve(resolved), Promise.resolve(target)],
+	])
+	const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
+		const clean = resolve(moduleId)
+		let pending = moduleCache.get(clean)
+		if (!pending) {
+			pending = readFile(clean, 'utf8').then((moduleCode) => {
+				const moduleAst = parseStandaloneWithLang(moduleCode, clean)
+				if (!moduleAst) {
+					options.error(`[pluxel:plugin-provenance] ${id} could not inspect ${clean}`)
+				}
+				return analyzeModule(moduleAst)
+			})
+			moduleCache.set(clean, pending)
 		}
-		const origin = await resolveExportOrigin(
-			resolved,
-			targetExport,
-			readModule,
-			new Set([`${resolve(resolved)}#${binding.imported}`]),
+		return pending
+	}
+	const origin = await resolveExportOrigin(
+		resolved,
+		binding.imported,
+		readModule,
+		new Set(),
+		options.error,
+	)
+	if (origin) {
+		const planned = options.addresses.get(originKey(origin.id, origin.className))
+		if (planned) return planned
+		const originModule = await readModule(origin.id)
+		const sourceDefinitions = await sourceAddresses(
+			originModule,
+			origin.id,
+			options.sourceSpaces,
+			options.sourceFileRealpaths,
+			options.packagePlan?.addresses,
 		)
-		if (origin) {
-			const planned = options.addresses.get(originKey(origin.id, origin.className))
-			if (planned) return planned
-			const originModule = await readModule(origin.id)
-			const sourceDefinitions = await sourceAddresses(
-				originModule,
-				origin.id,
-				options.sourceSpaces,
-				options.sourceFileRealpaths,
-				options.packagePlan?.addresses,
-			)
-			const address = sourceDefinitions.get(originKey(origin.id, origin.className))
-			if (address) return address
-		}
+		const address = sourceDefinitions.get(originKey(origin.id, origin.className))
+		if (address) return address
 	}
 	options.error(
 		`[pluxel:plugin-provenance] ${id} ${binding.source}#${binding.imported} is not one unique Plugin export`,
@@ -1062,8 +1168,8 @@ async function createPackagePlan(
 		seen.add(clean)
 		const module = await readModule(clean)
 		const out = new Map<string, ClassOrigin>()
-		for (const [exportName, target] of module.exports) {
-			const origin = await resolveExportOrigin(clean, target, readModule, seen)
+		for (const exportName of module.exports.keys()) {
+			const origin = await resolveExportOrigin(clean, exportName, readModule, seen, error)
 			if (origin) out.set(exportName, origin)
 		}
 		for (const source of module.exportAll) {
@@ -1142,36 +1248,57 @@ async function createPackagePlan(
 
 async function resolveExportOrigin(
 	id: string,
-	target: LocalExport,
+	exportName: string,
 	readModule: (id: string) => Promise<ModuleAnalysis>,
 	seen: Set<string>,
+	error: (message: string) => never,
 ): Promise<ClassOrigin | undefined> {
-	const module = await readModule(id)
-	if (target.kind === 'reexport') {
-		if (isBareSpecifier(target.source)) return undefined
-		const targetId = await resolveLocalFile(target.source, id)
-		if (!targetId || seen.has(`${targetId}#${target.imported}`)) return undefined
-		seen.add(`${targetId}#${target.imported}`)
-		const targetModule = await readModule(targetId)
-		const nested = targetModule.exports.get(target.imported)
-		if (!nested) {
-			const raw = targetModule.classes.get(target.imported)
-			return raw ? { id: targetId, className: target.imported, raw } : undefined
+	const clean = resolve(stripQuery(id))
+	const key = `${clean}#${exportName}`
+	if (seen.has(key)) return undefined
+	seen.add(key)
+	try {
+		const module = await readModule(clean)
+		const target = module.exports.get(exportName)
+		if (target) {
+			if (target.kind === 'reexport') {
+				if (isBareSpecifier(target.source)) return undefined
+				const targetId = await resolveLocalFile(target.source, clean)
+				return targetId
+					? resolveExportOrigin(targetId, target.imported, readModule, seen, error)
+					: undefined
+			}
+			const raw = module.classes.get(target.local)
+			if (raw) return { id: clean, className: target.local, raw }
+			const binding = module.imports.get(target.local)
+			if (!binding || isBareSpecifier(binding.source)) return undefined
+			const targetId = await resolveLocalFile(binding.source, clean)
+			return targetId
+				? resolveExportOrigin(targetId, binding.imported, readModule, seen, error)
+				: undefined
 		}
-		return resolveExportOrigin(targetId, nested, readModule, seen)
+		if (exportName === 'default') return undefined
+		let found: ClassOrigin | undefined
+		for (const source of module.exportAll) {
+			if (isBareSpecifier(source)) continue
+			const targetId = await resolveLocalFile(source, clean)
+			if (!targetId) continue
+			const candidate = await resolveExportOrigin(targetId, exportName, readModule, seen, error)
+			if (!candidate) continue
+			if (
+				found &&
+				originKey(found.id, found.className) !== originKey(candidate.id, candidate.className)
+			) {
+				error(
+					`[pluxel:plugin-provenance] ${clean} export ${exportName} is ambiguous across local export-star branches`,
+				)
+			}
+			found = candidate
+		}
+		return found
+	} finally {
+		seen.delete(key)
 	}
-	const raw = module.classes.get(target.local)
-	if (raw) return { id, className: target.local, raw }
-	const binding = module.imports.get(target.local)
-	if (!binding || isBareSpecifier(binding.source)) return undefined
-	const targetId = await resolveLocalFile(binding.source, id)
-	if (!targetId || seen.has(`${targetId}#${binding.imported}`)) return undefined
-	seen.add(`${targetId}#${binding.imported}`)
-	const targetModule = await readModule(targetId)
-	const nested = targetModule.exports.get(binding.imported)
-	if (nested) return resolveExportOrigin(targetId, nested, readModule, seen)
-	const importedRaw = targetModule.classes.get(binding.imported)
-	return importedRaw ? { id: targetId, className: binding.imported, raw: importedRaw } : undefined
 }
 
 function readSourceExportEntries(
@@ -1394,17 +1521,6 @@ function validatePluginPartConstructor(
 ): void {
 	if (raw.abstract) {
 		error(`[pluxel:plugin-part] ${id} ${raw.name} must be concrete`)
-	}
-	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
-	if (
-		members.some(
-			(value) =>
-				(value as AstNode).type === 'MethodDefinition' && (value as AstNode).kind === 'constructor',
-		)
-	) {
-		error(
-			`[pluxel:plugin-part] ${id} ${raw.name} must not declare a constructor; use class fields or init()`,
-		)
 	}
 }
 

@@ -17,12 +17,7 @@ import {
 import { requireWorkbench } from '@pluxel/runtime/internal'
 import { buildNodeModule } from '@pluxel/rolldown/vite/node-module'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import {
-	EChartsError,
-	EChartsPlugin,
-	type EChartsOption,
-	type EChartsThemeRegistration,
-} from '../src/index.ts'
+import { EChartsPlugin, type EChartsOption, type EChartsThemeRegistration } from '../src/index.ts'
 
 @Plugin()
 class EChartsTestConsumer extends BasePlugin {
@@ -227,9 +222,7 @@ describe('EChartsPlugin', () => {
 				await host.commit()
 
 				expect(ephemeral.active).toBe(false)
-				expect(() => capability.themes).toThrow(
-					expect.objectContaining<Partial<EChartsError>>({ code: 'NOT_RUNNING' }),
-				)
+				expect(() => capability.themes).toThrow('Plugin owner stopped')
 				expect(otherRegistration.active).toBe(true)
 			},
 			{ workbench: false },

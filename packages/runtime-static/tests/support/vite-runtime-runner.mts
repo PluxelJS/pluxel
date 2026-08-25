@@ -46,12 +46,18 @@ const server = await createServer({
 
 const capturedHost = host
 assert.ok(capturedHost, 'static host was not captured')
-const address = capturedHost.describeCatalog().plugins[0]?.address
+const address = capturedHost
+	.describeCatalog()
+	.plugins.find((plugin) => plugin.address.definition.exportName === 'ViteStatic')?.address
 assert.ok(address, 'startup catalog is empty')
 const configuredAddress = capturedHost
 	.describeCatalog()
 	.plugins.find((plugin) => plugin.address.definition.exportName === 'ConfiguredPlugin')?.address
 assert.ok(configuredAddress, 'configured plugin is absent from the startup catalog')
+const partOwnerAddress = capturedHost
+	.describeCatalog()
+	.plugins.find((plugin) => plugin.address.definition.exportName === 'PartOwner')?.address
+assert.ok(partOwnerAddress, 'Part owner is absent from the startup catalog')
 assert.deepEqual(address.definition.entry, {
 	kind: 'package-root',
 	packageName: '@fixture/vite-static',
@@ -71,13 +77,23 @@ try {
 		Reflect.get(pluginService.getInstance(configuredAddress) ?? {}, 'configuredLabel'),
 		'configured-through-vite',
 	)
+	assert.equal(
+		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
+		'part-provider-v1',
+	)
 	for (const instance of startupInstances) {
 		assert.equal(instance?.constructor, startupImplementation)
 	}
 
 	await writeFile(pluginPath, pluginSource('v2', true))
 	await invokeHotUpdate(routePlugin, pluginPath)
-	assert.deepEqual(capturedHost.lastReport()?.replaced, [address, configuredAddress])
+	assert.deepEqual(
+		capturedHost
+			.lastReport()
+			?.replaced.map((node) => node.definition.exportName)
+			.sort(),
+		['ConfiguredPlugin', 'PartOwner', 'PartProvider', 'ViteStatic'],
+	)
 	const replacementInstances = [address, east, west].map((node) => pluginService.getInstance(node))
 	assert.deepEqual(
 		replacementInstances.map((instance) => Reflect.get(instance ?? {}, 'version')),
@@ -88,6 +104,10 @@ try {
 	for (const instance of replacementInstances) {
 		assert.equal(instance?.constructor, replacementImplementation)
 	}
+	assert.equal(
+		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
+		'part-provider-v2',
+	)
 
 	await writeFile(pluginPath, pluginSource('removed', false))
 	await invokeHotUpdate(routePlugin, pluginPath)
@@ -135,23 +155,37 @@ function requiredEnv(name: string): string {
 
 function pluginSource(version: string, available: boolean): string {
 	return [
-		"import { BasePlugin, Plugin, v } from '@pluxel/runtime'",
+		"import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		"@Plugin({ displayName: 'Vite static', forkable: true })",
 		'export class ViteStatic extends BasePlugin {',
 		'  private readonly settings = this.configs.use(ViteStaticConfig)',
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
-		'  override init() { this.configuredLabel = this.settings.label }',
+		'  protected override init() { this.configuredLabel = this.settings.label }',
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',
 		'export class ConfiguredPlugin extends BasePlugin {',
 		'  private readonly settings = this.configs.use(ConfiguredPluginConfig)',
 		"  configuredLabel = ''",
-		'  override init() { this.configuredLabel = this.settings.label }',
+		'  protected override init() { this.configuredLabel = this.settings.label }',
 		'}',
-		`export const runtimePlugins = ${available ? '[ViteStatic, ConfiguredPlugin]' : '[ConfiguredPlugin]'}`,
+		'@Plugin()',
+		'export class PartProvider extends BasePlugin {',
+		`  readonly marker = ${JSON.stringify(`part-provider-${version}`)}`,
+		'}',
+		'class RequiredPart extends PluginPart<PartOwner> {',
+		'  constructor(private readonly provider: PartProvider) { super() }',
+		'  marker() { return this.provider.marker }',
+		'}',
+		'@Plugin()',
+		'export class PartOwner extends BasePlugin {',
+		'  private readonly required = this.parts.use(RequiredPart)',
+		"  injected = ''",
+		'  protected override init() { this.injected = this.required.marker() }',
+		'}',
+		`export const runtimePlugins = ${available ? '[ViteStatic, ConfiguredPlugin, PartProvider, PartOwner]' : '[ConfiguredPlugin, PartProvider, PartOwner]'}`,
 		'',
 	].join('\n')
 }

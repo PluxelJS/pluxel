@@ -36,7 +36,7 @@ import { WorkerConfig } from './config.ts'
 export class WorkerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(WorkerConfig)
 
-	override init() {
+	protected override init() {
 		this.ctx.logger.info('worker configured', {
 			endpoint: this.config.endpoint,
 			concurrency: this.config.concurrency,
@@ -60,6 +60,8 @@ export class WorkerPlugin extends BasePlugin {
 任意属性 trap。
 
 TypeScript 的 `private`/`protected` 可以使用；限制针对真正的 `#private` runtime slot。
+`configs` 本身是 Plugin/Part subclass 内的 protected declaration DSL；宿主与测试通过 config handle 和显式业务 projection 操作配置，
+不从实例外调用它。
 
 ## 默认值只写一次
 
@@ -109,7 +111,7 @@ export class ReportsPlugin extends BasePlugin {
 	// 错误：field initializer 运行时尚未完成 config injection。
 	// private readonly client = createClient(this.config.endpoint)
 
-	override init() {
+	protected override init() {
 		const client = createClient(this.config.endpoint)
 		this.ctx.effects.defer(() => client.close())
 	}
@@ -171,7 +173,7 @@ class CachePart extends PluginPart<SearchPlugin> {
 
 @Plugin()
 class SearchPlugin extends BasePlugin {
-	readonly cache = this.parts.use(CachePart)
+	private readonly cache = this.parts.use(CachePart)
 	private readonly config = this.configs.use(SearchConfig)
 }
 ```
@@ -187,12 +189,15 @@ class SearchPlugin extends BasePlugin {
 
 父 schema 仍占 root，Part schema 只接收 `cache` subtree；两边分别执行 default/transform，随后合成冻结 snapshot。父 schema
 output 不能使用与 direct Part field 相同的 key。Part field rename 会改变公开配置 path，应按配置 contract 变更处理。
+这个 path 是静态配置坐标，不会同时作为 Part Context 上可读的 runtime identity。
 Part config 属于静态 owner schema：即使 optional provider absent、对应 Part 没有产生业务 effects，这个 subtree 仍会执行
 default、transform 和 validation。需要“未启用时不要求凭据”等语义时，在 schema 中使用带 `enabled` discriminator 的 object
 明确表达，不根据 runtime catalog 动态改变配置契约。
 
 Workbench 把父 schema 显示为 General tab，把 Part schema 按 nested path 显示为独立 tab。所有 tab 编辑同一个 Plugin config
 owner；提交任意 tab 都会在 server 重新验证完整 composite record，并重启整个 Plugin，而不是单独重启 Part。
+
+Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./plugin-parts.md)。
 
 ## 敏感信息
 

@@ -21,7 +21,7 @@ let workbenchError: unknown
 let httpHostError: unknown
 
 class CapabilityPart extends PluginPart<CapabilityOwner> {
-	override init() {
+	protected override init() {
 		partCommands = this.ctx.commands
 		repeatedPartCommands = this.ctx.commands
 		partHttp = this.ctx.http

@@ -10,8 +10,9 @@ Pluxel 把业务能力及其依赖、配置和生命周期组织成 Plugin。构
 
 1. [编写第一个插件](./getting-started/index.md)：从 CLI 模板完成配置、HTTP 接口和生命周期测试。
 2. [Plugin 模型与生命周期](./getting-started/plugin-model.md)：理解必需依赖、可选集成、版本代际、资源回收和失败传播。
-3. [配置模型](./getting-started/configuration.md)：用一份 Valibot schema 提供类型、默认值、校验和管理界面。
-4. [配置插件宿主](./getting-started/host-setup.md)：选择 static 或 dynamic host。
+3. [使用 PluginPart 组织内部资源](./getting-started/plugin-parts.md)：隔离 owner 内部配置、注册和清理，不制造第二个治理节点。
+4. [配置模型](./getting-started/configuration.md)：用一份 Valibot schema 提供类型、默认值、校验和管理界面。
+5. [配置插件宿主](./getting-started/host-setup.md)：选择 static 或 dynamic host。
 
 项目来源和依赖模型的取舍见[为什么是 Pluxel](./why-pluxel.md)。HTTP、数据库等宿主能力按需查阅；HTTP client、缓存和服务端渲染等独立 package 见[官方 Plugin](./plugins/index.md)。
 
@@ -19,6 +20,7 @@ Pluxel 把业务能力及其依赖、配置和生命周期组织成 Plugin。构
 
 | 当前任务                               | 只读这一页                                                                                     |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 拆分一个 Plugin 内部的配置与资源       | [使用 PluginPart](./getting-started/plugin-parts.md)                                           |
 | 完整验证生命周期、HTTP、配置与资源清理 | [测试插件](./development/testing.md)                                                           |
 | 暴露业务 API 或 webhook                | [插件 HTTP](./runtime/http.md)                                                                 |
 | 数据库或加密小数据                     | [数据库](./runtime/database.md)、[Vault](./runtime/vault.md)                                   |

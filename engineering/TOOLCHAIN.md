@@ -118,9 +118,11 @@ artifact；reset baseline staging 在注入后立即清理，因此 HMR schema �
 ## Versioned Plugin lowering ABI
 
 Plugin semantic output 是已构建 Plugin 与 Core/runtime 之间的发布契约。generated module 只从
-`@pluxel/core/toolchain`（或显式转发它的 `@pluxel/runtime/toolchain`）导入 ABI v1 helper；默认 root 和 `/internal`
+`@pluxel/core/toolchain`（或显式转发它的 `@pluxel/runtime/toolchain`）导入 ABI v2 helper；默认 root 和 `/internal`
 不提供 setter alias。canonical helpers 是 `__setPluginDefinition`、`__setPluginConfig`、`__setPluginParts`、
-`__setPluginPartConfig` 与 `__setPluginPartOptional`，每个 payload 都携带同一个 numeric `abiVersion`。
+`__setPluginPartConfig`、`__setPluginPartRequires` 与 `__setPluginPartOptional`，每个 payload 都携带同一个 numeric
+`abiVersion`。v1 artifact 没有 Part constructor requirement facts，当前 Core 不提供隐式兼容窗口；Core、Runtime 与 Rolldown
+必须成套升级并重新构建 Plugin，版本不匹配以 `plugin_lowering_abi_unsupported` fail-fast。
 
 helper 只把 sealed immutable facts 写入 module-evaluation scoped `WeakMap` staging。canonical namespace 完成求值后，route 对每个 root
 constructor 调用 `consumePluginDefinitionCandidate()`；首次读取原子组合 decorator marker、definition、config 与 reachable Part facts，
@@ -138,6 +140,11 @@ Plugin inheritance chain 的 function-valued instance field（arrow、function e
 保留 runtime fail-fast 防线。type-only `declare` instance field 不产生 caller facade 的 construction-time descriptor，以
 `plugin_caller_view_declared_field_unsupported` hard diagnostic 拒绝。
 
+ABI v2 把 root constructor injection order 与 owner graph requirements 分开：definition payload 的 `constructorRequires` 只保存
+owning Plugin constructor 的 direct ordered 参数；candidate 的 `requires` 是 root 后接 reachable Part tree depth-first first-seen、按
+definition identity 去重的 graph 全集；每个 `PluginPartDefinitionNode.requires` 保存该 Part constructor 的 direct ordered 参数。
+Part facts 服务 occurrence construction 与来源诊断，不建立第二张 graph，也不产生 per-Part override。
+
 ## Plugin package build
 
 `pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
@@ -150,17 +157,19 @@ Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named ex
 
 - concrete `@Plugin` definition address 与 `displayName`/`startTimeoutMs` marker facts；
 - literal `forkable: true` concrete definition fact，并与 decorator runtime marker 交叉校验；
-- constructor parameter 的 direct root value-import provenance 与 ordered required edges；
+- Plugin 与 concrete direct PluginPart constructor parameter 的 direct root value-import provenance 与 ordered required facts；
 - non-exported module-level `definePluginRef<T>()` 的 direct root type-import provenance；
 - `init()` 中 direct `plugins.use(Ref, callback)` 的 optional restart edges；
 - concrete Plugin/PluginPart 普通 field 中 direct `parts.use(PartClass)` 的 ordered containment facts；
-- Part `init()` optional edges，并将 reachable edges 合并到 owning Plugin definition；
+- Part direct required 与 `init()` optional facts，并将完整 reachable Part tree 的 edges 合并到 owning Plugin definition；
 - Plugin 与 Part 各自唯一的 object config declaration/source，以及 Part config path；
 - abstract token/provider relation。
 
-同一 pass 由 plugin package、static application 和 Vite source route 复用。未能证明 root provenance、同一 constructor
-经多个根名称导出、plugin-bearing subpath、跨包 Plugin re-export、async/间接 optional setup、动态 Part occurrence、
-Part constructor、`@Plugin` Part 与 local containment cycle 都在 build 时失败。普通 dynamic import 不获得 Plugin 语义。
+同一 pass 由 plugin package、static application 和 Vite source route 复用。Part constructor 使用与 Plugin constructor 相同的
+simple Plugin type reference、package-root value import、参数顺序和 duplicate definition 规则；root 与不同 Part constructor 或多个
+Part occurrence 请求同一 definition 则是合法共享。未能证明 root provenance、同一 constructor 经多个根名称导出、plugin-bearing
+subpath、跨包 Plugin re-export、async/间接 optional setup、动态 Part occurrence、abstract/inherited Part、`@Plugin` Part 与 local
+containment cycle 都在 build 时失败。普通 dynamic import 不获得 Plugin 语义。
 Part source/HMR 仍通过普通静态 import graph 使所有 owner module generation 失效；Part 不是独立 replacement unit。
 
 package plan 先把可信 package root 映射为 package entry；其余 source entry 对 source-space root 和 existing file 使用 native
@@ -186,7 +195,11 @@ identity producer。完整规则见 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md#en
 }
 ```
 
-constructor concrete package usage 是 `required`，`definePluginRef<T>()` 的 direct type import 是 `optional`，required 胜出。
+root 或 reachable Part constructor 的 concrete package usage 是 `required`，`definePluginRef<T>()` 的 direct type import 是
+`optional`；同一 provider package 被多个 occurrence 请求时只输出一次，任一 required 来源都会让 required 胜出。runtime lowering
+facts 仍保留 optional request，以便对应 callback、caller Context 与 cleanup 正常运行。package inventory 从 concrete Plugin root
+沿本地 containment edge 遍历；被构建模块加载但不被任何 owner containment 使用的 Part 不进入 metadata。外部/预构建 Part 的
+provider peers 由定义该 Part 的 package 持有，consumer package 不反射其 runtime facts，也不重复传递 inventory。
 版本范围只来自 peer/dev/dependency authoring metadata；发布边界统一写入 `peerDependencies`，optional 同步
 `peerDependenciesMeta.optional = true`。同一 build 的多格式 output 读取同一 facts snapshot，下一次 `buildStart` 才重置；
 连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时，上一版生成的 peer、optional peer metadata 与 manifest

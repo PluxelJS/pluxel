@@ -24,12 +24,14 @@ async function transform(code: string, id = import.meta.filename) {
 }
 
 describe('plugin semantic lowering', () => {
-	it('lowers nested PluginPart occurrences and Part-owned optional edges', async () => {
+	it('lowers nested PluginPart occurrences with required and optional edges', async () => {
 		const result = await transform(`
 			import type { AuditPlugin } from '@acme/audit'
+			import { SearchPlugin } from '@acme/search'
 			import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/runtime'
 			const Audit = definePluginRef<AuditPlugin>()
 			class LeafPart extends PluginPart<BranchPart> {
+				constructor(readonly search: SearchPlugin) { super() }
 				override init() { this.plugins.use(Audit, audit => void audit) }
 			}
 			class BranchPart extends PluginPart<OwnerPlugin> {
@@ -42,13 +44,16 @@ describe('plugin semantic lowering', () => {
 
 		expect(result?.code).toContain('__setPluginParts as __pluxelSetPluginParts')
 		expect(result?.code).toContain(
-			'__pluxelSetPluginParts(BranchPart, { abiVersion: 1, occurrences: [{ fieldName: "leaf", Part: LeafPart }] })',
+			'__pluxelSetPluginParts(BranchPart, { abiVersion: 2, occurrences: [{ fieldName: "leaf", Part: LeafPart }] })',
 		)
 		expect(result?.code).toContain(
-			'__pluxelSetPluginParts(OwnerPlugin, { abiVersion: 1, occurrences: [{ fieldName: "branch", Part: BranchPart }] })',
+			'__pluxelSetPluginParts(OwnerPlugin, { abiVersion: 2, occurrences: [{ fieldName: "branch", Part: BranchPart }] })',
 		)
 		expect(result?.code).toContain(
-			'__pluxelSetPluginPartOptional(LeafPart, {"abiVersion":1,"optional":[{"entry"',
+			'__pluxelSetPluginPartOptional(LeafPart, {"abiVersion":2,"optional":[{"entry"',
+		)
+		expect(result?.code).toContain(
+			'__pluxelSetPluginPartRequires(LeafPart, {"abiVersion":2,"requires":[{"entry":{"kind":"package-root","packageName":"@acme/search"},"exportName":"SearchPlugin"}]})',
 		)
 	})
 
@@ -76,10 +81,10 @@ describe('plugin semantic lowering', () => {
 		)
 		expect(result?.code).toContain('"exportName":"OrdersPlugin"')
 		expect(result?.code).toMatch(
-			/"requires":\[\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"SearchPlugin"},\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"DatabasePlugin"}\]/,
+			/"constructorRequires":\[\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"SearchPlugin"},\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"DatabasePlugin"}\]/,
 		)
 		expect(result?.code).toContain(
-			'__pluxelDefinePluginRef({"abiVersion":1,"definition":{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}})',
+			'__pluxelDefinePluginRef({"abiVersion":2,"definition":{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}})',
 		)
 		expect(result?.code).toContain(
 			'"optional":[{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}]',
@@ -97,7 +102,7 @@ describe('plugin semantic lowering', () => {
 		`)
 
 		expect(result?.code).toContain(
-			'__pluxelSetPluginDefinition(Database, {"abiVersion":1,"kind":"abstract"',
+			'__pluxelSetPluginDefinition(Database, {"abiVersion":2,"kind":"abstract"',
 		)
 		expect(result?.code).toContain(
 			'"provides":{"entry":{"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"},"exportName":"Database"}',
@@ -330,7 +335,7 @@ describe('plugin semantic lowering', () => {
 			export class CachePlugin extends BasePlugin {}
 		`)
 
-		expect(result?.code).toContain('"abiVersion":1')
+		expect(result?.code).toContain('"abiVersion":2')
 		expect(result?.code).toContain('from "@pluxel/runtime/toolchain"')
 		expect(result?.code.split('// [pluxel-plugin-semantics] Injected facts')[1]).not.toMatch(
 			/from ["']@pluxel\/runtime["']/,
@@ -351,14 +356,6 @@ describe('plugin semantic lowering', () => {
 				abstract class BadPart extends PluginPart {}
 			`,
 			message: 'must be concrete',
-		},
-		{
-			name: 'PluginPart constructor',
-			code: `
-				import { PluginPart } from '@pluxel/runtime'
-				class BadPart extends PluginPart { constructor() { super() } }
-			`,
-			message: 'must not declare a constructor',
 		},
 		{
 			name: 'marked PluginPart',
@@ -412,6 +409,28 @@ describe('plugin semantic lowering', () => {
 			message: 'must use a value import',
 		},
 		{
+			name: 'type-only PluginPart required dependency',
+			code: `
+				import type { DatabasePlugin } from '@acme/database'
+				import { PluginPart } from '@pluxel/runtime'
+				class ConsumerPart extends PluginPart {
+					constructor(readonly database: DatabasePlugin) { super() }
+				}
+			`,
+			message: 'must use a value import',
+		},
+		{
+			name: 'optional PluginPart constructor parameter',
+			code: `
+				import { DatabasePlugin } from '@acme/database'
+				import { PluginPart } from '@pluxel/runtime'
+				class ConsumerPart extends PluginPart {
+					constructor(readonly database: DatabasePlugin | undefined) { super() }
+				}
+			`,
+			message: 'must be simple Plugin type references',
+		},
+		{
 			name: 'duplicate required dependency definition',
 			code: `
 				import { DatabasePlugin } from '@acme/database'
@@ -423,11 +442,33 @@ describe('plugin semantic lowering', () => {
 			message: 'plugin_dependency_requirement_duplicate',
 		},
 		{
+			name: 'duplicate PluginPart required dependency definition',
+			code: `
+				import { DatabasePlugin } from '@acme/database'
+				import { PluginPart } from '@pluxel/runtime'
+				class ConsumerPart extends PluginPart {
+					constructor(readonly primary: DatabasePlugin, readonly replica: DatabasePlugin) { super() }
+				}
+			`,
+			message: 'plugin_dependency_requirement_duplicate',
+		},
+		{
 			name: 'package subpath dependency',
 			code: `
 				import { DatabasePlugin } from '@acme/database/backend'
 				import { BasePlugin, Plugin } from '@pluxel/runtime'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					constructor(readonly database: DatabasePlugin) { super() }
+				}
+			`,
+			message: 'must come from package root',
+		},
+		{
+			name: 'PluginPart package subpath dependency',
+			code: `
+				import { DatabasePlugin } from '@acme/database/backend'
+				import { PluginPart } from '@pluxel/runtime'
+				class ConsumerPart extends PluginPart {
 					constructor(readonly database: DatabasePlugin) { super() }
 				}
 			`,
@@ -592,6 +633,118 @@ describe('plugin semantic lowering', () => {
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
 		).rejects.toThrow('is plugin-bearing')
+	})
+
+	it('collects package metadata only from owner-reachable local Parts across modules', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({
+				name: '@acme/orders',
+				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
+			}),
+			'src/index.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { UsedPart } from './parts'
+				@Plugin() export class OrdersPlugin extends BasePlugin {
+					readonly used = this.parts.use(UsedPart)
+				}
+			`,
+			'src/parts.ts': `
+				export * from './used'
+				export * from './unused'
+			`,
+			'src/used.ts': `
+				import { UsedProvider } from '@acme/used'
+				import { PluginPart } from '@pluxel/runtime'
+				export class UsedPart extends PluginPart {
+					constructor(readonly provider: UsedProvider) { super() }
+				}
+			`,
+			'src/unused.ts': `
+				import { UnusedProvider } from '@acme/unused'
+				import { PluginPart } from '@pluxel/runtime'
+				export class UnusedPart extends PluginPart {
+					constructor(readonly provider: UnusedProvider) { super() }
+				}
+			`,
+		})
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath(),
+			packageJsonPath: fixture.getPath('package.json'),
+		})
+		const build = await rolldown({
+			input: fixture.getPath('src/index.ts'),
+			external: ['@pluxel/runtime', '@acme/used', '@acme/unused'],
+			plugins: [collector.plugin],
+		})
+		await build.generate({ format: 'esm' })
+
+		expect(collector.snapshot()).toEqual(new Map([['@acme/used', 'required']]))
+	})
+
+	it.each([
+		{
+			name: 'ordinary class',
+			parts: 'export class UsedPart {}',
+			message: 'must resolve to one direct PluginPart subclass',
+		},
+		{
+			name: 'inherited Part',
+			parts: `
+				import { PluginPart } from '@pluxel/runtime'
+				class BasePart extends PluginPart {}
+				export class UsedPart extends BasePart {}
+			`,
+			message: 'must resolve to one direct PluginPart subclass',
+		},
+		{
+			name: 'ambiguous export-star Part',
+			parts: "export * from './first'; export * from './second'",
+			extra: {
+				'src/first.ts': `
+					import { PluginPart } from '@pluxel/runtime'
+					export class UsedPart extends PluginPart {}
+				`,
+				'src/second.ts': `
+					import { PluginPart } from '@pluxel/runtime'
+					export class UsedPart extends PluginPart {}
+				`,
+			},
+			message: 'is ambiguous across local export-star branches',
+		},
+	])('rejects an imported $name as a Part target', async ({ parts, extra, message }) => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({
+				name: '@acme/orders',
+				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
+			}),
+			'src/index.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { UsedPart } from './parts'
+				@Plugin() export class OrdersPlugin extends BasePlugin {
+					private readonly used = this.parts.use(UsedPart)
+				}
+			`,
+			'src/parts.ts': parts,
+			...extra,
+		})
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath(),
+			packageJsonPath: fixture.getPath('package.json'),
+		})
+
+		await expect(
+			rolldown({
+				input: fixture.getPath('src/index.ts'),
+				external: ['@pluxel/runtime'],
+				plugins: [collector.plugin],
+			}).then((build) => build.generate({ format: 'esm' })),
+		).rejects.toThrow(message)
 	})
 
 	it('rejects one constructor exported by two package-root names', async () => {

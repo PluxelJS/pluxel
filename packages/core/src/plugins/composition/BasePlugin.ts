@@ -1,18 +1,22 @@
 import type { Context, PluginContext } from '../../context/Context'
-import { closeOwnerInvocations } from '../../internal/owner-invocations'
+import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import {
 	EffectsDisposedError,
 	type Cleanup,
 	type DisposableLike,
 } from '../../services/effects/EffectsService'
 import type { PluginConstructor } from '../types'
+import type { PluginDefinitionAddress } from '../runtime/identity'
 import type { PluginPartDefinitionTree } from '../runtime/part-definition'
 import { PLUGIN_CONFIGS, type PluginConfigs } from './PluginConfigs'
 import { OptionalPluginBindings } from './OptionalPluginBindings'
 import {
 	createRootPluginParts,
+	closePluginPartConsumerInvocations,
+	closePluginPartInvocations,
 	finalizePluginParts,
 	startPluginParts,
+	assignPluginPartConfig,
 	type PluginParts,
 } from './PluginPart'
 import { LATE_INIT_CLEANUP_ERROR } from './symbols'
@@ -30,8 +34,16 @@ type ConstructionFrame = {
 	readonly expectedImplementation: PluginConstructor
 	readonly ctx: PluginContext
 	readonly parts: PluginPartDefinitionTree
+	readonly resolveRequirement: PluginRequirementResolver
+	readonly partContexts: Set<Context>
 	consumed: boolean
 }
+
+/** @internal Resolve only providers already admitted by the owning Plugin graph. */
+export type PluginRequirementResolver = (
+	requirement: PluginDefinitionAddress,
+	consumer: Context,
+) => BasePlugin
 
 const instanceState = new WeakMap<BasePlugin, PluginGenerationState>()
 const callerSurfaceByInstance = new WeakMap<BasePlugin, readonly PropertyKey[]>()
@@ -128,7 +140,13 @@ export abstract class BasePlugin<C extends PluginContext = PluginContext> {
 		frame.consumed = true
 		const state: PluginGenerationState = {
 			ctx: frame.ctx,
-			parts: createRootPluginParts(this, frame.ctx, frame.parts),
+			parts: createRootPluginParts(
+				this,
+				frame.ctx,
+				frame.parts,
+				frame.resolveRequirement,
+				frame.partContexts,
+			),
 			initActive: false,
 		}
 		instanceState.set(this, state)
@@ -138,16 +156,16 @@ export abstract class BasePlugin<C extends PluginContext = PluginContext> {
 		return stateOf(this).ctx as C
 	}
 
-	get plugins(): OptionalPluginBindings {
+	protected get plugins(): OptionalPluginBindings {
 		const state = stateOf(this)
 		return (state.optional ??= new OptionalPluginBindings(state.ctx, () => state.initActive))
 	}
 
-	get parts(): PluginParts<this> {
+	protected get parts(): PluginParts<this> {
 		return stateOf(this).parts as unknown as PluginParts<this>
 	}
 
-	get configs(): PluginConfigs {
+	protected get configs(): PluginConfigs {
 		return PLUGIN_CONFIGS
 	}
 
@@ -159,17 +177,24 @@ export function constructPluginGeneration<T extends BasePlugin>(
 	implementation: PluginConstructor,
 	ctx: PluginContext,
 	parts: PluginPartDefinitionTree,
-	dependencies: readonly unknown[],
+	constructorRequires: readonly PluginDefinitionAddress[],
+	resolveRequirement: PluginRequirementResolver,
+	partContexts: Set<Context>,
 ): T {
 	const frame: ConstructionFrame = {
 		expectedImplementation: implementation,
 		ctx,
 		parts,
+		resolveRequirement,
+		partContexts,
 		consumed: false,
 	}
 	constructionStack.push(frame)
 	let plugin: T
 	try {
+		const dependencies = constructorRequires.map((requirement) =>
+			resolveRequirement(requirement, ctx),
+		)
 		plugin = Reflect.construct(implementation, dependencies, implementation) as T
 		if (!frame.consumed || !instanceState.has(plugin)) {
 			throw new TypeError('[pluxel/core] Plugin implementation must extend BasePlugin')
@@ -187,6 +212,11 @@ export function constructPluginGeneration<T extends BasePlugin>(
 /** @internal Return the generation Context without exposing a public construction symbol. */
 export function getPluginGenerationContext(plugin: BasePlugin): Context {
 	return stateOf(plugin).ctx
+}
+
+/** @internal Project a validated composite config into one Plugin generation and its Parts. */
+export function assignPluginGenerationPartConfig(plugin: BasePlugin, value: unknown): void {
+	assignPluginPartConfig(stateOf(plugin).parts, value)
 }
 
 /** @internal Return the ordinary property keys captured when generation construction completed. */
@@ -231,8 +261,15 @@ export function getPluginLifecycleAdapter<P extends BasePlugin>(
 			}
 		},
 		drain: async () => {
-			await closeOwnerInvocations(ctx)
-			await ctx.effects.dispose()
+			await Promise.all([closeOwnerInvocations(ctx), closePluginPartInvocations(state.parts)])
+			try {
+				await ctx.effects.dispose()
+			} finally {
+				await Promise.all([
+					closeConsumerInvocations(ctx),
+					closePluginPartConsumerInvocations(state.parts),
+				])
+			}
 		},
 		subscribeErrors:
 			typeof onError === 'function'

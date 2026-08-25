@@ -60,19 +60,19 @@ class CallerViewBenchConsumer extends BasePlugin {
 Plugin()(CallerViewBenchProvider)
 Plugin()(CallerViewBenchConsumer)
 __setPluginDefinition(CallerViewBenchProvider, {
-	abiVersion: 1,
+	abiVersion: 2,
 	kind: 'plugin',
 	definition: providerDefinition,
 })
 __setPluginDefinition(CallerViewBenchConsumer, {
-	abiVersion: 1,
+	abiVersion: 2,
 	kind: 'plugin',
 	definition: consumerDefinition,
-	requires: [providerDefinition],
+	constructorRequires: [providerDefinition],
 	optional: [providerDefinition],
 })
 const providerRef = __definePluginRef<CallerViewBenchProvider>({
-	abiVersion: 1,
+	abiVersion: 2,
 	definition: providerDefinition,
 })
 

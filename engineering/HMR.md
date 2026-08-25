@@ -54,7 +54,8 @@ disabled Workbench Plane，以及 Node module 的合并 rebuild、staged setup �
 module 变化会失效精确 module/importer graph，并通过 core replacement lifecycle 更新 fixed catalog；entry 本身或
 只改变 `configure()` 结果的依赖变化会重建 host。single-active logging root 要求重建时先停止旧 host；新 application
 启动失败时 route 会用上一次成功的 application 重新创建 host，使后续 HMR 仍可重试。Vite plugin teardown 会等待
-active static host 完整停止；host lifecycle 与 ModuleRunner 都关闭后 `ViteDevServer.close()` 才完成。
+active static host 完整停止；host lifecycle 与 ModuleRunner 都关闭后 `ViteDevServer.close()` 才完成。单个 host 的
+start、catalog reload 与 stop 按调用顺序串行，catalog revision 只能在前一项提交后从唯一 committed snapshot 派生。
 
 Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此 static route 在开发期具备与 dynamic route
 相同的 artifact HMR contract。两者的差别是 catalog policy：static 只有 application import 的 fixed catalog；dynamic 先提交

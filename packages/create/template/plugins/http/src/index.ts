@@ -9,7 +9,7 @@ export class HttpPlugin extends BasePlugin {
 		super()
 	}
 
-	override init(): void {
+	protected override init(): void {
 		this.ctx.http.plugin.routes(
 			(app) =>
 				app

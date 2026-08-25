@@ -43,7 +43,7 @@ export class CatalogPlugin extends BasePlugin {
 		super()
 	}
 
-	override init() {
+	protected override init() {
 		this.catalog = this.cache.scope('catalog', {
 			ttlMs: 10 * 60_000,
 			maxEntries: 5_000,

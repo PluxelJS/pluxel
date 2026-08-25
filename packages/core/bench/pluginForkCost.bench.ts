@@ -57,7 +57,7 @@ class ForkCostProviderV2 extends BasePlugin {
 for (const implementation of [ForkCostProviderV1, ForkCostProviderV2]) {
 	Plugin({ forkable: true })(implementation)
 	__setPluginDefinition(implementation, {
-		abiVersion: 1,
+		abiVersion: 2,
 		kind: 'plugin',
 		definition,
 	})
@@ -81,7 +81,7 @@ function createIndependent(index: number): {
 	}) satisfies PluginDefinitionAddress
 	Plugin()(Independent)
 	__setPluginDefinition(Independent, {
-		abiVersion: 1,
+		abiVersion: 2,
 		kind: 'plugin',
 		definition: independentDefinition,
 	})

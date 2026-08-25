@@ -34,7 +34,7 @@ function loweredImplementation(
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
 		definition,
-		...(options.requires ? { requires: options.requires } : {}),
+		...(options.requires ? { constructorRequires: options.requires } : {}),
 		...(options.optional ? { optional: options.optional } : {}),
 		...(options.provides ? { provides: options.provides } : {}),
 	})

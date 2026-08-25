@@ -11,7 +11,7 @@
 - node materialize/dematerialize/restart、definition-wide replacement、provider default、dependency override 与原子 commit；
 - provider-first start、consumer-first stop、failure propagation 与 `CommitSummary`；
 - per-generation effects、owner invocation gate 与 late `init()` cleanup；
-- PluginPart containment tree、owner-bound child Context/effects 与 children-before-owner startup；
+- PluginPart containment tree、Part constructor requirement lifting、owner-bound child Context/effects 与 children-before-owner startup；
 - Plugin/Part composite object config declaration、校验与 normalized aggregate snapshot；
 - init-time `PluginRef` optional resolution、slot-aware runtime reads 和明确的 internal commit subscription。
 
@@ -70,7 +70,8 @@ kernel 传递。该编程错误在边界校验时诊断；开发期 host/runner 
 
 - graph identity 来自 canonical entry + root named export；class name、constructor 和 `displayName` 都不是 key。
 - package Plugin 只从 package root 的唯一 named export 进入 catalog；source Plugin 使用 route 规范化的 source entry。
-- required dependency 只来自 semantic pass lower 的 constructor value-import provenance。
+- required dependency 只来自 semantic pass lower 的 Plugin/PluginPart constructor value-import provenance。Core 把 root direct requirements
+  与 reachable Part requirements 按 definition identity 聚合到 owning Plugin graph，不给 Part 创建 node。
 - optional dependency只来自 lower 后的 non-exported module-level `definePluginRef<T>()`；Part optional edge 合并到 owning Plugin，不执行 runtime import。
 - Core intern 结构化 address 后只按 slot object 查图；持久化 snapshot 不被 stringify 成作者协议。
 - `isRunning/getInstance/resolvedDependencies/resolvePluginNode/isMaterialized/watch` 等只读入口只做 non-creating lookup；不存在的
@@ -81,8 +82,8 @@ kernel 传递。该编程错误在边界校验时诊断；开发期 host/runner 
 
 Core 对三个不同生命周期对象使用不同记录：
 
-- `ConcretePluginDefinitionRecord` 固定一个 candidate revision 的 implementation、schema、required/optional edge、provider relation 与
-  `forkable` fact；abstract token 没有 record；
+- `ConcretePluginDefinitionRecord` 固定一个 candidate revision 的 implementation、schema、root ordered constructor requirements、
+  aggregated required/optional edge、Part tree、provider relation 与 `forkable` fact；abstract token 没有 record；
 - `PluginNodeRecord` 固定 default/fork node address，并引用该 definition record；未 materialize 的 durable fork 不产生 Core node record；
 - generation 是 node 的一次 Context、instance、caller facade、admission gate 与 effects 生命周期，不进入 address，也不复用 constructor 充当 identity。
 
@@ -133,17 +134,29 @@ draft graph -> verify combined required/optional graph -> stop plan -> start pla
 - lifecycle report 是事实源，宿主基于它制定退出、告警或降级策略。
 
 generation construction 通过同步 construction stack 把 node Context 注入原始 implementation；default 与 fork 都以同一个
-implementation 作为 `new.target`，不创建 subclass。required 与 optional dependency 共用 consumer/provider generation pair cache 的
-caller facade；普通作者字段读写委托 raw provider，method/getter receiver 保持 caller Context。旧 facade 的 method/getter/write 都经过
-provider admission gate，replacement 后不能调用旧 generation。Core internal state mutation fail-fast；Plugin inheritance 中的 ECMAScript
+implementation 作为 `new.target`，不创建 subclass。root constructor 只消费自己有序的 direct requirements；provider factory 按
+aggregated graph requirements 建立只读 requirement-to-running-provider map。Part construction frame 创建 child Context 后，按当前 Part
+definition 的 direct requirements 从该 map 取得 scoped facade；resolver 不能查询 catalog、动态加载或绕过 committed override。
+
+required 与 optional dependency 共用 scoped consumer Context/provider generation pair cache 的 caller facade；root 与不同 Part occurrence
+因此得到不同 facade，但委托同一个 raw provider generation，同一 occurrence 的 required/optional request 可以复用。普通作者字段读写
+委托 raw provider，method/getter receiver 保持 caller Context。旧 facade 的 method/getter/write 都经过 provider 与 consumer generation
+admission gate，任一侧 replacement 后不能调用旧 generation。Core internal state mutation fail-fast；Plugin inheritance 中的 ECMAScript
 `#private` 由 semantic pass 拒绝。
 
 ## 内部组成与事件
 
 简单内部拆分使用普通 class/function 与 `ctx.effects.scope()`。同时需要自己的 config slice、effects scope、nested
 composition 或 owner-bound capability registration 时使用 `PluginPart`；它是 generation-local containment，不是第二张 graph。
-Part child Context 的 service view 惰性缓存，不回灌共享 service 的 mutable `ctx`；未声明 owner binding 的 service 保持
-owning Plugin view，root service 原样共享。需要独立失败传播、启停、replacement 或治理的组成成为 Plugin。
+Part constructor 可以就地声明 required Plugin；definition facts 保留每个 Part 的参数顺序，owner graph 则对 root + reachable Part
+requirements 去重。一个 provider override 作用于该 owner 的全部消费 occurrence；Part 没有独立 selection、blocked 或 running 状态。
+Core 用 module-private occurrence state 保存 Part 的 child Context、immediate host、`partPath` 与 author DSL runtime；Context shape 不包含
+occurrence attribution，也没有可供业务代码读取的替代 path/id。`PluginPart.ctx/host/parts/plugins/configs` 与
+`BasePlugin.parts/plugins/configs` 只对 subclass 可见，`BasePlugin.ctx` 仍是 provider 的 public caller/inspection contract。
+Part child Context 的 service view 惰性缓存，不回灌共享 service 的 mutable `ctx`；Part dependency facade 把 caller scope 与 `partPath`
+传播给 provider，未声明 owner binding 的 service 保持 owning Plugin view，root service 原样共享。Part constructor、`init()` 或 cleanup
+失败都归入 owning Plugin lifecycle report 并携带 `partPath`；owner teardown 统一关闭所有 Part admission 并 drain generation effects。
+需要独立失败传播、启停、replacement 或治理的组成成为 Plugin。
 
 跨 Plugin dependency edge 公开的固定事件集合使用具名 `EvtChannel` 属性；无需 graph dependency 的 host 广播使用
 module-augmented `ctx.events`，其订阅绑定 owner effects。Core lifecycle 和 route invalidation 使用明确的 internal subscription，

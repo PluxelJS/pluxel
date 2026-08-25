@@ -1,4 +1,5 @@
 import type { Context, PluginContext } from '../../context/Context'
+import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import { createErr, createOk } from 'option-t/plain_result'
 import {
 	DraftGraph,
@@ -9,7 +10,11 @@ import {
 	type GraphSnapshot,
 	Runtime,
 } from '../../internal/di'
-import { BasePlugin, constructPluginGeneration } from '../composition/BasePlugin'
+import {
+	BasePlugin,
+	constructPluginGeneration,
+	type PluginRequirementResolver,
+} from '../composition/BasePlugin'
 import { createCallerGenerationView } from '../composition/caller-view'
 import { pinContextValue } from '../composition/context-projection'
 import type { PluginConstructor } from '../types'
@@ -19,6 +24,7 @@ import {
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
 	pluginDefinitionAddressEqual,
+	pluginDefinitionIndexKey,
 	type PluginDefinitionAddress,
 	type PluginDefinitionSlot,
 	type PluginNodeAddress,
@@ -34,8 +40,14 @@ export type ConcretePluginDefinitionRecord = Readonly<{
 	revision: number
 	displayName: string
 	startTimeoutMs?: number
+	constructorRequires: readonly PluginDefinitionSlot[]
 	requires: readonly PluginDefinitionSlot[]
 	optional: readonly PluginDefinitionSlot[]
+	dependencyRequests: readonly Readonly<{
+		definition: PluginDefinitionSlot
+		mode: 'required' | 'optional'
+		partPath: readonly string[]
+	}>[]
 	provides?: PluginDefinitionSlot
 	config?: PluginConfigDefinition
 	parts: PluginPartDefinitionTree
@@ -399,7 +411,10 @@ export class PluginDefinitions {
 		}
 		const built = this.draft.build()
 		if (built.ok === false) {
-			return createErr({ err: built.err as GraphBuildErrorType, reset: () => this.resetDraft() })
+			return createErr({
+				err: this.enrichGraphBuildError(built.err as GraphBuildErrorType),
+				reset: () => this.resetDraft(),
+			})
 		}
 		assertPluginGraphDelta(built.val.delta)
 		const graph = built.val.graph
@@ -437,11 +452,23 @@ export class PluginDefinitions {
 			...(declaration.startTimeoutMs === undefined
 				? {}
 				: { startTimeoutMs: declaration.startTimeoutMs }),
+			constructorRequires: Object.freeze(
+				declaration.constructorRequires.map((address) => this.slots.internDefinition(address)),
+			),
 			requires: Object.freeze(
 				declaration.requires.map((address) => this.slots.internDefinition(address)),
 			),
 			optional: Object.freeze(
 				declaration.optional.map((address) => this.slots.internDefinition(address)),
+			),
+			dependencyRequests: Object.freeze(
+				declaration.dependencyRequests.map((request) =>
+					Object.freeze({
+						definition: this.slots.internDefinition(request.definition),
+						mode: request.mode,
+						partPath: request.partPath,
+					}),
+				),
 			),
 			...(declaration.provides === undefined
 				? {}
@@ -482,19 +509,54 @@ export class PluginDefinitions {
 		resolvedDependencies: readonly unknown[],
 	): BasePlugin {
 		const pluginContext = this.createPluginContext()
+		const partContexts = new Set<Context>()
 		installPluginGenerationInfo(pluginContext, node)
 		try {
-			const dependencies = resolvedDependencies.map((dependency) =>
-				createCallerGenerationView(dependency as BasePlugin, pluginContext),
-			)
+			if (resolvedDependencies.length !== node.definition.requires.length) {
+				throw new Error('[pluxel/core] Resolved Plugin requirements do not match graph facts')
+			}
+			const resolvedByRequirement = new Map<string, BasePlugin>()
+			for (let index = 0; index < node.definition.requires.length; index++) {
+				const requirement = node.definition.requires[index]!
+				resolvedByRequirement.set(
+					pluginDefinitionIndexKey(this.slots.definitionAddress(requirement)),
+					resolvedDependencies[index] as BasePlugin,
+				)
+			}
+			const resolveRequirement: PluginRequirementResolver = (requirement, consumer) => {
+				const provider = resolvedByRequirement.get(pluginDefinitionIndexKey(requirement))
+				if (!provider) {
+					throw new Error(
+						`[pluxel/core] Requirement ${requirement.exportName} was not aggregated onto the owning Plugin graph`,
+					)
+				}
+				return createCallerGenerationView(provider, consumer)
+			}
 			return constructPluginGeneration(
 				node.definition.implementation,
 				pluginContext,
 				node.definition.parts,
-				dependencies,
+				node.definition.constructorRequires.map((requirement) =>
+					this.slots.definitionAddress(requirement),
+				),
+				resolveRequirement,
+				partContexts,
 			)
 		} catch (cause) {
-			const cleanup = pluginContext.effects.dispose()
+			const cleanup = (async () => {
+				await Promise.all([
+					closeOwnerInvocations(pluginContext),
+					...[...partContexts].map((ctx) => closeOwnerInvocations(ctx)),
+				])
+				try {
+					await pluginContext.effects.dispose()
+				} finally {
+					await Promise.all([
+						closeConsumerInvocations(pluginContext),
+						...[...partContexts].map((ctx) => closeConsumerInvocations(ctx)),
+					])
+				}
+			})()
 			throw new PluginGenerationConstructionError(cause, cleanup)
 		}
 	}
@@ -547,6 +609,63 @@ export class PluginDefinitions {
 			}
 		}
 		return undefined
+	}
+
+	private enrichGraphBuildError(error: GraphBuildErrorType): GraphBuildErrorType {
+		const diagnostics: Array<{
+			kind: 'InvalidDeclaration'
+			nodeKey: PluginNodeSlot
+			message: string
+		}> = []
+		for (const issue of error.issues) {
+			if (issue.kind !== 'CircularDependency') continue
+			for (let index = 0; index + 1 < issue.chain.length; index++) {
+				const consumer = issue.chain[index]
+				const provider = issue.chain[index + 1]
+				if (!isPluginNodeSlot(consumer) || !isPluginNodeSlot(provider)) continue
+				const record = this.nodeRecord(consumer)
+				const providerRecord = this.nodeRecord(provider)
+				if (!record || !providerRecord) continue
+				const requests = record.definition.dependencyRequests.filter((request) =>
+					this.requestTargetsProvider(consumer, request.definition, provider),
+				)
+				if (requests.length === 0) continue
+				const sources = requests.map((request) => {
+					const location = request.mode === 'required' ? 'constructor' : 'init plugins.use()'
+					const source =
+						request.partPath.length === 0
+							? `owner ${location}`
+							: `Part ${request.partPath.join('.')} ${location}`
+					const effective = record.definition.requires.includes(request.definition)
+						? 'required'
+						: 'optional'
+					return `${source} (${request.mode}${request.mode === effective ? '' : `; effective ${effective}`})`
+				})
+				diagnostics.push({
+					kind: 'InvalidDeclaration',
+					nodeKey: consumer,
+					message: `Plugin dependency cycle edge to ${providerRecord.definition.address.exportName} was requested by ${sources.join(', ')}`,
+				})
+			}
+		}
+		return diagnostics.length === 0 ? error : new GraphBuildError([...error.issues, ...diagnostics])
+	}
+
+	private requestTargetsProvider(
+		consumer: PluginNodeSlot,
+		requirement: PluginDefinitionSlot,
+		provider: PluginNodeSlot,
+	): boolean {
+		const binding = this.consumerBindings(consumer).get(requirement)
+		if (binding) return binding.provider === provider
+		if (provider.variant !== 'default') return false
+		const providerRecord = this.nodeRecord(provider)
+		if (!providerRecord) return false
+		if (providerRecord.definition.slot === requirement) return true
+		return (
+			providerRecord.definition.provides === requirement &&
+			this.providerDefault(requirement) === provider
+		)
 	}
 
 	private validateBinding(binding: DependencyBinding): GraphBuildError | undefined {

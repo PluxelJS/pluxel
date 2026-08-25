@@ -22,7 +22,7 @@ const rulesModule = defineNodeModule(import.meta.url, './rules-entry.ts')
 
 @Plugin({ displayName: 'Rules' })
 export class RulesPlugin extends BasePlugin {
-	override async init() {
+	protected override async init() {
 		await this.ctx.nodeModules.use(rulesModule, async (url) => {
 			const module = await import(url.href)
 			return module.setup({ logger: this.ctx.logger })

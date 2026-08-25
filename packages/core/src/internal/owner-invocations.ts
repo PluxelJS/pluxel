@@ -11,6 +11,9 @@ export type OwnerInvocationLease = {
  */
 export type OwnerInvocationAdmission = OwnerInvocationGate
 
+/** Internal admission token for calls initiated by one consumer generation. */
+export type ConsumerInvocationAdmission = OwnerInvocationGate
+
 class OwnerInvocationGate {
 	private readonly lifetime = new AbortController()
 	private active = 0
@@ -78,7 +81,10 @@ class OwnerInvocationLeaseImpl implements OwnerInvocationLease {
 
 const ownerInvocations = new WeakMap<Context, OwnerInvocationGate>()
 const closedOwners = new WeakMap<Context, unknown>()
+const consumerInvocations = new WeakMap<Context, OwnerInvocationGate>()
+const closedConsumers = new WeakMap<Context, unknown>()
 const DEFAULT_CLOSE_REASON = Symbol('default owner invocation close reason')
+const DEFAULT_CONSUMER_CLOSE_REASON = Symbol('default consumer invocation close reason')
 
 function assertOwnerNotClosed(owner: Context): void {
 	const gate = ownerInvocations.get(owner)
@@ -129,6 +135,54 @@ export function closeOwnerInvocations(owner: Context, reason?: unknown): void | 
 	const gate = ownerInvocations.get(owner)
 	if (gate) return gate.close(reason)
 	closedOwners.set(owner, reason === undefined ? DEFAULT_CLOSE_REASON : reason)
+}
+
+function assertConsumerNotClosed(consumer: Context): void {
+	const gate = consumerInvocations.get(consumer)
+	if (gate) {
+		gate.assertOpen()
+		return
+	}
+	const closedReason = closedConsumers.get(consumer)
+	if (closedReason !== undefined) {
+		throw closedReason === DEFAULT_CONSUMER_CLOSE_REASON
+			? new Error('Plugin owner stopped')
+			: closedReason
+	}
+}
+
+function requireConsumerInvocationGate(consumer: Context): OwnerInvocationGate {
+	let gate = consumerInvocations.get(consumer)
+	if (gate) return gate
+	assertConsumerNotClosed(consumer)
+	gate = new OwnerInvocationGate()
+	consumerInvocations.set(consumer, gate)
+	return gate
+}
+
+/** @internal Reject a dependency facade retained past its consumer generation. */
+export function assertConsumerInvocationOpen(consumer: Context): void {
+	assertConsumerNotClosed(consumer)
+}
+
+/** @internal Track a dependency call initiated by one consumer generation. */
+export function admitConsumerInvocation(consumer: Context): ConsumerInvocationAdmission {
+	return requireConsumerInvocationGate(consumer).admit()
+}
+
+/** @internal Release one consumer admission. */
+export function releaseConsumerInvocation(admission: ConsumerInvocationAdmission): void {
+	admission.release()
+}
+
+/** @internal Invalidate outgoing dependency facades after generation cleanup and drain calls. */
+export function closeConsumerInvocations(
+	consumer: Context,
+	reason?: unknown,
+): void | Promise<void> {
+	const gate = consumerInvocations.get(consumer)
+	if (gate) return gate.close(reason ?? new Error('Plugin owner stopped'))
+	closedConsumers.set(consumer, reason === undefined ? DEFAULT_CONSUMER_CLOSE_REASON : reason)
 }
 
 function abortReason(signal: AbortSignal): unknown {

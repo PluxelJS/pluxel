@@ -1,4 +1,5 @@
 import type { PluginNodeSlot } from '../identity'
+import { findErrorPartPath } from '../../../internal/effects-part-path'
 
 export type PluginLifecycleIssuePhase = 'resolve' | 'config' | 'start' | 'dependency' | 'drain'
 
@@ -18,7 +19,7 @@ export type PluginLifecycleErrorInfo = Readonly<{
 	message: string
 	stack?: string
 	cause?: string
-	/** Present when startup failed inside an owner-contained PluginPart. */
+	/** Present when construction, startup, or cleanup failed inside a PluginPart occurrence. */
 	partPath?: readonly string[]
 }>
 
@@ -57,15 +58,13 @@ export const createLifecycleReport = (): MutableLifecycleReport => ({
 export function serializeLifecycleError(error: unknown): PluginLifecycleErrorInfo {
 	if (error instanceof Error) {
 		const cause = (error as Error & { cause?: unknown }).cause
-		const partPath = (error as Error & { partPath?: unknown }).partPath
+		const partPath = findErrorPartPath(error)
 		return {
 			name: error.name || 'Error',
 			message: error.message,
 			...(error.stack ? { stack: error.stack } : {}),
 			...(cause !== null && cause !== undefined ? { cause: errorMessage(cause) } : {}),
-			...(Array.isArray(partPath) && partPath.every((item) => typeof item === 'string')
-				? { partPath: Object.freeze([...partPath]) as readonly string[] }
-				: {}),
+			...(partPath ? { partPath: Object.freeze([...partPath]) as readonly string[] } : {}),
 		}
 	}
 	return {

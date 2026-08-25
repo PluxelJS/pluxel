@@ -26,6 +26,8 @@ export type PluginPartDefinitionNode = Readonly<{
 	readonly fieldName: string
 	readonly Part: PluginPartClass
 	readonly config?: PartConfigDeclaration
+	/** Ordered by this Part constructor's parameter index. */
+	readonly requires: readonly PluginDefinitionAddress[]
 	readonly optional: readonly PluginDefinitionAddress[]
 	readonly parts: PluginPartDefinitionTree
 }>
@@ -45,6 +47,9 @@ export type PluginPartConfigLoweringPayload = PluginLoweringHeader & PartConfigD
 export type PluginPartOptionalLoweringPayload = PluginLoweringHeader &
 	Readonly<{ readonly optional: readonly PluginDefinitionAddress[] }>
 
+export type PluginPartRequiresLoweringPayload = PluginLoweringHeader &
+	Readonly<{ readonly requires: readonly PluginDefinitionAddress[] }>
+
 type PluginPartOccurrence = Readonly<{
 	readonly fieldName: string
 	readonly Part: PluginPartClass
@@ -52,10 +57,12 @@ type PluginPartOccurrence = Readonly<{
 
 const occurrencesByOwner = new WeakMap<Function, readonly PluginPartOccurrence[]>()
 const configByPart = new WeakMap<Function, PartConfigDeclaration>()
+const requiresByPart = new WeakMap<Function, readonly PluginDefinitionAddress[]>()
 const optionalByPart = new WeakMap<Function, readonly PluginDefinitionAddress[]>()
 const sealedOwners = new WeakSet<Function>()
 const sealedParts = new WeakSet<Function>()
 const EMPTY_OCCURRENCES: readonly PluginPartOccurrence[] = Object.freeze([])
+const EMPTY_REQUIRES: readonly PluginDefinitionAddress[] = Object.freeze([])
 const EMPTY_OPTIONAL: readonly PluginDefinitionAddress[] = Object.freeze([])
 
 function nonEmpty(value: unknown, label: string): string {
@@ -141,6 +148,26 @@ export function __setPluginPartConfig(
 	)
 }
 
+/** @internal Build-generated required Plugin edges declared by a Part constructor. */
+export function __setPluginPartRequires(
+	Part: Function,
+	input: PluginPartRequiresLoweringPayload,
+): void {
+	assertLoweringConstructor(Part, 'PluginPart required target')
+	rejectSealed(Part, 'PluginPart required', sealedParts)
+	const payload = parsePluginLoweringPayload(input, 'PluginPart required facts', ['requires'])
+	if (!Array.isArray(payload.requires)) {
+		invalidPluginDeclaration('[pluxel/core] PluginPart required facts.requires must be an array')
+	}
+	if (requiresByPart.has(Part)) {
+		invalidPluginDeclaration('[pluxel/core] PluginPart already has lowered required facts')
+	}
+	requiresByPart.set(
+		Part,
+		normalizePartAddresses(payload.requires, 'PluginPart required facts.requires'),
+	)
+}
+
 /** @internal Build-generated optional Plugin edges declared by a Part. */
 export function __setPluginPartOptional(
 	Part: Function,
@@ -155,27 +182,29 @@ export function __setPluginPartOptional(
 	if (optionalByPart.has(Part)) {
 		invalidPluginDeclaration('[pluxel/core] PluginPart already has lowered optional facts')
 	}
+	optionalByPart.set(
+		Part,
+		normalizePartAddresses(payload.optional, 'PluginPart optional facts.optional'),
+	)
+}
+
+function normalizePartAddresses(input: readonly unknown[], label: string) {
 	const seen = new Set<string>()
-	const optional = payload.optional.map((value, index) => {
+	const addresses = input.map((value, index) => {
 		let address: PluginDefinitionAddress
 		try {
 			address = parsePluginDefinitionAddress(value)
 		} catch (cause) {
-			invalidPluginDeclaration(
-				`[pluxel/core] PluginPart optional facts.optional[${index}] is invalid`,
-				{ cause },
-			)
+			invalidPluginDeclaration(`[pluxel/core] ${label}[${index}] is invalid`, { cause })
 		}
 		const key = pluginDefinitionIndexKey(address)
 		if (seen.has(key)) {
-			invalidPluginDeclaration(
-				`[pluxel/core] PluginPart optional facts contains a duplicate at index ${index}`,
-			)
+			invalidPluginDeclaration(`[pluxel/core] ${label} contains a duplicate at index ${index}`)
 		}
 		seen.add(key)
 		return address
 	})
-	optionalByPart.set(Part, Object.freeze(optional))
+	return Object.freeze(addresses)
 }
 
 /**
@@ -207,11 +236,13 @@ function buildTree(
 		sealedParts.add(Part)
 		const parts = buildTree(Part, new Set([...ancestry, Part]), nextPath, memo)
 		const config = configByPart.get(Part)
+		const requires = requiresByPart.get(Part) ?? EMPTY_REQUIRES
 		const optional = optionalByPart.get(Part) ?? EMPTY_OPTIONAL
 		return Object.freeze({
 			fieldName: occurrence.fieldName,
 			Part,
 			...(config === undefined ? {} : { config }),
+			requires,
 			optional,
 			parts,
 		})

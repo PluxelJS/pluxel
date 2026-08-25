@@ -1,4 +1,5 @@
 import type { Context as CoreContext } from '@pluxel/core'
+import { isPluginPartContext } from '@pluxel/core/internal'
 import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '../../workbench'
 import type { WorkbenchBackend } from '../workbench'
 import { pinOwnerContext } from '../../context/owner-view'
@@ -15,7 +16,7 @@ export class WorkbenchService {
 		Extension extends AnyWorkbenchExtension,
 		const Bindings extends WorkbenchBindings<Extension>,
 	>(extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> {
-		if ('partInfo' in this.ctx) {
+		if (isPluginPartContext(this.ctx)) {
 			throw new Error(
 				'[pluxel/runtime] PluginPart cannot mount a Workbench extension directly; aggregate it in the owning Plugin mount.',
 			)

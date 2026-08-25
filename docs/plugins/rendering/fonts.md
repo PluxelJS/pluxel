@@ -69,7 +69,7 @@ export class ReportsPlugin extends BasePlugin {
 		super()
 	}
 
-	override init() {
+	protected override init() {
 		this.fonts.registerFromPath({
 			path: fileURLToPath(new URL('../assets/ReportSans.woff2', import.meta.url)),
 			family: 'Report Sans',
@@ -142,7 +142,7 @@ const FontsTab = workbench.portOutlet({
 	placement: workbenchContract.tab({ label: 'Fonts' }),
 })
 
-override init() {
+protected override init() {
 	this.ctx.workbench?.mount(FontsTab, {
 		selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
 	})

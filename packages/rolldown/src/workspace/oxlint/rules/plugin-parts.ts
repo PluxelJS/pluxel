@@ -95,10 +95,9 @@ const pluginPartStaticOccurrences = createRule(
 const pluginPartClassContract = createRule(
 	{
 		type: 'problem',
-		docs: { description: 'Keep PluginPart classes out of Plugin graph and constructor DI' },
+		docs: { description: 'Keep PluginPart classes concrete and out of the Plugin graph' },
 		messages: {
 			abstract: 'PluginPart must be concrete; composition does not support Part inheritance.',
-			constructor: 'PluginPart must not declare a constructor; use class fields or init().',
 			marked: 'PluginPart must not use @Plugin; it is owned by a Plugin and has no graph identity.',
 		},
 	},
@@ -107,16 +106,6 @@ const pluginPartClassContract = createRule(
 			if (!isPluginPartClass(node)) return
 			if (node.abstract === true) report(context, node, 'abstract')
 			if (isPluginOwner(node)) report(context, node, 'marked')
-			const body = getNodeField(node, 'body')
-			for (const member of body && Array.isArray(body.body) ? body.body : []) {
-				if (
-					isNodeLike(member) &&
-					member.type === 'MethodDefinition' &&
-					member.kind === 'constructor'
-				) {
-					report(context, member, 'constructor')
-				}
-			}
 		},
 	}),
 )

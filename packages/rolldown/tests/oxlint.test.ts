@@ -595,15 +595,16 @@ runRule('plugin-part-static-occurrences', pluxelRules['plugin-part-static-occurr
 })
 
 runRule('plugin-part-class-contract', pluxelRules['plugin-part-class-contract'], {
-	valid: [{ code: 'class CachePart extends PluginPart { override init() {} }' }],
+	valid: [
+		{ code: 'class CachePart extends PluginPart { override init() {} }' },
+		{
+			code: 'class CachePart extends PluginPart { constructor(readonly cache: CachePlugin) { super() } }',
+		},
+	],
 	invalid: [
 		{
 			code: 'abstract class CachePart extends PluginPart {}',
 			errors: [{ messageId: 'abstract' }],
-		},
-		{
-			code: 'class CachePart extends PluginPart { constructor() { super() } }',
-			errors: [{ messageId: 'constructor' }],
 		},
 		{
 			code: '@Plugin() class CachePart extends PluginPart {}',

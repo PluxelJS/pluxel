@@ -23,7 +23,7 @@ export class CatalogPlugin extends BasePlugin {
 		super()
 	}
 
-	override init(): void {
+	protected override init(): void {
 		this.refreshed = this.otel.meter.createCounter('catalog.refreshes')
 	}
 

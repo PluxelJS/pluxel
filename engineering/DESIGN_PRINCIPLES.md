@@ -10,7 +10,10 @@
   `plugins.use(Ref, callback)`；ref 只观察 host catalog，不加载、安装或默认启用实现包。
 - 具体 Plugin package 只有 package root `"."` 可以承载 Plugin；每个 constructor 只有一个 root named export。
 - `@Plugin({ displayName })` 只提供展示默认值；definition/node identity 来自 canonical entry + root export。
-- plugin 内部组成使用普通对象或函数；需要子资源边界时使用 owner effects scope，需要独立治理时成为 Plugin。
+- plugin 内部纯逻辑使用普通对象或函数；只需 cleanup 分组时使用 owner effects scope；需要自动派生 config、Context、effects 或 nested
+  composition 时使用 `PluginPart`；需要独立治理时成为 Plugin。
+- Plugin/Part composition declaration 只在 subclass 内使用 protected DSL；Part 对外只暴露自己声明的业务 API，不提供 root owner、
+  Context attribution path 或 service locator escape hatch。
 - 同一语义只保留一个公开入口，不新增兼容 alias 或平行 contract。
 - raw Context construction、toolchain 和 runtime installation helper 不进入默认 Plugin 作者入口；
   `@pluxel/context` 的公开 installation helper 只用于 root 创建前的 host composition。

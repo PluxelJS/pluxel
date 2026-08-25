@@ -32,7 +32,7 @@ export class CustomerPlugin extends BasePlugin {
 		super()
 	}
 
-	override init(): void {
+	protected override init(): void {
 		this.api = this.http.client.url(this.config.baseUrl, true)
 	}
 
@@ -108,7 +108,7 @@ retry、dedupe、缓存、认证刷新和业务错误解析不属于 host policy
 默认情况下，consumer 只受 host policy 管理。若希望操作者在 Workbench 为某个 consumer 配置普通 headers、HTTP(S) proxy 和更短 timeout，consumer 必须显式调用：
 
 ```ts no-twoslash
-override async init(): Promise<void> {
+protected override async init(): Promise<void> {
 	await this.http.enableManagedSettings()
 	this.api = this.http.client.url(this.config.baseUrl, true)
 }
@@ -156,7 +156,7 @@ export const CustomerWorkbench = workbench.portOutlet({
 然后在 consumer 启动时启用设置并绑定 caller-owned RPC：
 
 ```ts no-twoslash
-override async init(): Promise<void> {
+protected override async init(): Promise<void> {
 	await this.http.enableManagedSettings()
 	this.api = this.http.client.url(this.config.baseUrl, true)
 

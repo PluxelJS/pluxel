@@ -117,7 +117,7 @@ local template 默认不运行 package manager；审查模板内容后显式传�
 
 1. 读取 `package.json` 与 tsdown config；
 2. 合并标准 Plugin build pipeline；
-3. 运行 preprocessor、decorator/config semantic extraction；
+3. 运行 preprocessor、decorator/config semantic extraction，并聚合 PluginPart dependency facts；
 4. 生成 server ESM 与 declarations；
 5. 按 declaration 生成 Workbench、Node module、worker、database artifact；
 6. 成功后事务性同步 generated package metadata。
@@ -135,6 +135,13 @@ package script 传参时：
 ```sh
 pnpm build -- --watch
 ```
+
+Plugin 与 concrete direct `PluginPart` subclass 都可以在 constructor 声明 required dependency。工具链保留每个 constructor 的参数
+顺序，再把 reachable Part requirements 提升、去重到 owning Plugin graph。生成 package metadata 时，同一 provider package 只出现
+一次，任一 constructor 来源为 required 都会覆盖 optional classification；作者不要在 owner constructor 或 `package.json` 复制一份
+Part dependency allowlist。metadata collector 从 package 的 concrete Plugin roots 遍历本地 Part containment；仅被 transform、但没有被
+任何 owner 使用的 Part 不进入清单。外部 package 提供的预构建 Part 由其所属 package 声明自己的 provider peers，consumer package
+不会反查或复制它的传递 inventory。
 
 ## `pluginPackage()` 与 CLI build
 
@@ -174,6 +181,10 @@ export default staticApplication({
 Static/dynamic Vite adapters 执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
 Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
 graph 与 server Plugin implementation 保持分离。
+
+当前生成产物使用 Plugin lowering ABI v2，其中 root constructor arguments、Part constructor arguments 与 owner aggregate graph facts
+是分离字段。旧 ABI artifact 不会被当成“没有 Part dependency”继续加载；看到 `plugin_lowering_abi_unsupported` 时，应配套升级
+Core/Runtime/Rolldown 并重建 Plugin，而不是手写 `@pluxel/core/toolchain` helper。
 
 低层 source adapter 默认把 `root` 映射为逻辑 source space `app`。需要承载不属于 package root 的额外源码树时，显式声明
 稳定的逻辑名称：
@@ -222,7 +233,7 @@ pnpm build
 遇到 build-time error 时先按作者边界判断：
 
 - root export 是否唯一可追溯；
-- constructor dependency 是否从 provider root value-import；
+- Plugin/PluginPart constructor dependency 是否从 provider root value-import，同一 constructor 是否重复 definition；
 - Plugin/PluginPart 的 `configs.use()` 是否各自是唯一的 object schema class field；
 - `parts.use()` 是否完整占据普通 class field，并引用 direct `PluginPart` subclass；
 - optional ref/use 是否符合 direct-call shape；

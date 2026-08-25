@@ -36,7 +36,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin({ displayName: 'Connector' })
 export class ConnectorPlugin extends BasePlugin {
-	override async init() {
+	protected override async init() {
 		const vault = this.ctx.vault
 		if (!vault) throw new Error('ConnectorPlugin requires host config vault: {}')
 		const space = vault.namespace()

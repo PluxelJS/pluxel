@@ -5,7 +5,7 @@
 
 ```text
 plugin source
-	├─ constructor dependencies
+	├─ Plugin / PluginPart constructor dependencies
 	├─ optional Plugin refs and one object config declaration
 	├─ statically owned PluginPart containment tree
 	├─ separately-built Node module / worker task declarations
@@ -43,25 +43,30 @@ Core events 同样使用 owner-view：每个 root 只有一个 emitter backend�
 
 ## 依赖与组成
 
-| 意图              | API                                      | 生命周期含义                                  |
-| ----------------- | ---------------------------------------- | --------------------------------------------- |
-| required plugin   | constructor parameter                    | provider 失败会阻塞 consumer                  |
-| optional plugin   | `definePluginRef<T>()` + `plugins.use()` | provider 变化时重启 consumer                  |
-| owned composition | `this.parts.use(PluginPartClass)`        | child owner/effects scope，随 generation 回收 |
-| trivial helper    | 普通 class/function + owner effects      | 作者显式管理                                  |
+| 意图              | API                                      | 生命周期含义                                    |
+| ----------------- | ---------------------------------------- | ----------------------------------------------- |
+| required plugin   | Plugin 或 reachable Part constructor     | 聚合为 owner edge；provider 失败阻塞整个 owner  |
+| optional plugin   | `definePluginRef<T>()` + `plugins.use()` | provider 变化时重启 consumer                    |
+| owned composition | `this.parts.use(PluginPartClass)`        | child Context/effects scope，随 generation 回收 |
+| trivial helper    | 普通 class/function + owner effects      | 作者显式管理                                    |
 
 constructor 是 required dependency 的唯一作者声明。required 使用目标 package 根入口的 value import；optional 使用
-目标 Plugin 的 type-only root import 和 non-exported module-level ref。两者都由 semantic pass lower 成 definition slot edge。
-static/dynamic route 必须读取同一 committed core graph；Workbench resolver 不依赖 loader 私有图。
+目标 Plugin 的 type-only root import 和 non-exported module-level ref。semantic pass 保留 root Plugin 与每个 Part constructor
+各自有序的 direct requirements，再把完整 reachable Part tree 的 required/optional facts 提升、按 definition identity 去重到
+owning Plugin node。static/dynamic route 必须读取同一 committed core graph；Workbench resolver 不依赖 loader 私有图。
+
+owner graph requirements 的稳定顺序是 root direct requirements 在前，再按 Part containment tree 深度优先的 first-seen 顺序追加。
+同一 provider 被 root、不同 Part、nested Part 或同一 Part class 的多个 field occurrence 请求时只形成一条 owner edge；任一来源为
+required 时 graph 与 package metadata 的 effective mode 都是 required，但各 optional callback 与 cleanup facts 仍保留。
 
 同一 constructor 中每个 required definition 最多出现一次。RuntimeState override 使用 stable requirement address，而不是把 parameter
-index 持久化为 edge identity；因此两个参数若解析到同一 definition，会由 semantic pass 以
-`plugin_dependency_requirement_duplicate` 拒绝。只有真实的同 token 多角色用例成立后，才研究显式 role declaration；参数名和位置都不是
-持久 identity。
+index 持久化为 edge identity；因此同一个 Plugin 或 Part constructor 的两个参数若解析到同一 definition，会由 semantic pass 以
+`plugin_dependency_requirement_duplicate` 拒绝。跨 root/Part constructor 的重复是合法共享，不表示同 token 多角色；参数名、位置和
+`partPath` 都不是持久 identity。
 
-宿主修改 runtime dependency override 时，commit 必须重启被修改 plugin 与其 dependent closure。只重建 provider
-而保留 dependent 的旧 caller-bound view 会破坏 Context isolation，并让 Workbench 中的实现选择表面成功、实际继续
-调用旧 provider。
+宿主修改 runtime dependency override 时，只修改 owning Plugin node 上的 requirement，并同时作用于它的 root 与全部 Part
+occurrence；没有 per-Part override。commit 必须重启被修改 Plugin 与其 dependent closure。只重建 provider 而保留 dependent 的旧
+caller-bound view 会破坏 Context isolation，并让 Workbench 中的实现选择表面成功、实际继续调用旧 provider。
 
 `PluginRef<T>` 是 opaque author declaration，只能由工具链从目标 root named export 的 type provenance lower。ref 不
 import、安装、注册或默认启用 package。`plugins.use(Ref, callback)` 只允许作为 `init()` 中的直接语句，callback 必须
@@ -75,33 +80,49 @@ import、安装、注册或默认启用 package。`plugins.use(Ref, callback)` �
 
 ```ts
 class CachePart extends PluginPart<SearchPlugin> {
+	constructor(private readonly redis: RedisPlugin) {
+		super()
+	}
+
 	private readonly config = this.configs.use(CacheConfig)
 
-	override init() {
+	protected override async init() {
+		await this.redis.warm()
 		this.ctx.commands.register(createCacheCommand(this.config))
 	}
 }
 
 @Plugin()
 class SearchPlugin extends BasePlugin {
-	readonly cache = this.parts.use(CachePart)
+	private readonly cache = this.parts.use(CachePart)
 }
 ```
 
-`parts.use()` 只能是 concrete `@Plugin` 或 direct `PluginPart` subclass 的普通 class field initializer。Part 不声明
-constructor，不使用 `@Plugin`，也没有 node address、catalog、fork、独立 enable/restart、RuntimeState 或 Workbench owner。
-同一 Part class 的每个 field occurrence 都产生独立实例；Part 可以递归拥有 Part，local containment cycle 在 build 时拒绝，
-跨模块防线由 runtime 在 generation 构造阶段 fail-fast。
+`parts.use()` 只能是 concrete `@Plugin` 或 direct `PluginPart` subclass 的普通 class field initializer。concrete direct Part
+可以用 constructor 参数声明 required Plugin；参数采用与 Plugin 相同的 package-root value-import provenance 和重复检查。Part 不使用
+`@Plugin`，也没有 node address、catalog、fork、独立 enable/restart、RuntimeState 或 Workbench owner。同一 Part class 的每个 field
+occurrence 都产生独立实例；Part 可以递归拥有 Part，local containment cycle 在 build 时拒绝，跨模块防线由 runtime 在 generation
+构造阶段 fail-fast。
 
-generation 构造后，core 注入 Plugin/Part composite config，再按 children-before-owner 深度优先启动 Part，最后调用 Plugin
-`init()`。每个 Part 得到结构化 child Context、由父 effects 持有的 child scope、`partPath` logger 和惰性 owner-bound
-capability view；HTTP、commands、worker、Node module 等共享 root/backend 状态，但 registration 与 cleanup 绑定 Part scope。
-Part `init()` 失败会让 owning Plugin start 失败，lifecycle error 携带 `partPath`，rollback 仍只 drain Plugin generation effects。
-child Context 不是新的 root；未声明 owner binding 的 capability 继续使用 owning Plugin view，database definition、
-migration 与 handle ownership 也保持 Plugin 级。Part 只隔离资源所有权，不作为 trust boundary 或 service-instance sandbox。
+`PluginPart.ctx/host/parts/plugins/configs` 与 `BasePlugin.parts/plugins/configs` 是 protected author DSL；只有 `BasePlugin.ctx` 保持 public。
+Part 没有 root Plugin getter，外部取得 Part instance 时只能看到 subclass 有意声明的 public 业务 surface。Part occurrence Context 不 pin
+attribution path/identity，Core/Runtime root 也不导出 Part Context/info/owner/parts helper types。nested Part 的 `host` 泛型始终表示 immediate parent；
+framework 内部以 occurrence state 保存 Context 与 `partPath`，不得用新的 public path/id/locator 代替。
+
+全部 aggregated required provider running 后，Core 才构造 owner generation。root Plugin 按自己的 direct requirements 注入 root-scoped
+facade；每个 Part occurrence 创建 child Context 后，按该 Part definition 的 direct requirements 注入 occurrence-scoped facade。随后 Core
+注入 Plugin/Part composite config，再按 children-before-owner 深度优先启动 Part，最后调用 Plugin `init()`。constructor dependency
+不保证能被其他 field initializer 提前读取；资源访问继续留在 `init()` 或普通 method。
+
+每个 Part 得到结构化 child Context、由父 effects 持有的 child scope、`partPath` logger 和惰性 owner-bound capability view；HTTP、
+commands、worker、Node module 等共享 root/backend 状态，但 registration 与 cleanup 绑定 Part scope。Part constructor 或 `init()`
+失败都会让 owning Plugin start 失败，lifecycle error 携带 `partPath`，rollback 仍只 drain Plugin generation effects。child Context
+不是新的 root；未声明 owner binding 的 capability 继续使用 owning Plugin view，database definition、migration 与 handle ownership
+也保持 Plugin 级。Part 只隔离资源所有权，不作为 trust boundary 或 service-instance sandbox。
 
 Part 可以在自己的 `init()` 中使用 `plugins.use()`；semantic pass 把 reachable Part optional refs 合并到 owning Plugin node，
-provider availability 变化重启整个 owner。Part 不直接 mount Workbench Extension；唯一 owning Plugin 负责聚合贡献。
+provider availability 变化重启整个 owner。同一 Part occurrence 对同一 provider 同时 required 与 optional 时复用同一 caller facade，
+optional setup 仍保留自己的 callback 与 cleanup。Part 不直接 mount Workbench Extension；唯一 owning Plugin 负责聚合贡献。
 需要独立启停、失败状态、provider selection、配置 revision、HMR identity 或跨 owner 共享状态时，应升级为真正 Plugin。
 
 ## Identity 与入口
@@ -136,14 +157,17 @@ Workbench mount 从 Context 推导 owner 并绑定 owner effects。contribution 
 layout；init 失败不会留下可见 View 或 resource。HMR replacement 会撤销旧 layout binding、factory、stream、
 live query 和 grant；rollback 通过重新 mount 获得新 lease。
 
-constructor 注入的 dependency 是覆盖 `ctx.caller` 的 generation-bound facade。同一 consumer/provider generation pair
-复用一个 facade，不同 consumer 或 replacement 后的新 generation 不共享。Core 在 provider construction 完成后把普通 field 和
+constructor 注入的 dependency 是覆盖 `ctx.caller` 的 generation-bound facade。同一 scoped consumer Context/provider generation pair
+复用一个 facade；root Plugin 与每个 Part occurrence 是不同 scoped consumer，同一 Part class 的多个 occurrence 也不共享 facade，
+但都委托同一个 provider generation。不同 consumer 或 replacement 后的新 generation 不共享。Core 在 provider construction 完成后把普通 field 和
 prototype surface 一次编译成 non-extensible property-descriptor facade；每个 accepted method/getter invocation 使用一个独立普通
 receiver，因此并发异步调用保持各自 `ctx.caller`，不依赖 `Proxy` 或 mutable current caller。普通作者字段读写委托被 pin 的 raw
 provider instance，不在 facade 上形成 shadow state。stale method invocation 与字段写入都受 provider generation admission gate
 拒绝；未在 construction-time shape 中出现的动态字段不能通过 dependency surface 新增，reflection mutation 由 non-extensible、
 non-configurable descriptor 拒绝。
-caller-owned state 继续以 `Context` 为 key，不依赖可变全局 current caller。
+caller-owned state 继续以 `Context` 为 key，不依赖可变全局 current caller。Part facade 调用时 provider 观察到的
+`ctx.caller` 是该 Part child Context；owner generation 停止会统一关闭 root 与所有已构造 Part 的 admission，再 drain 一棵 effects tree，
+不产生可单独治理的 Part lifecycle。
 
 Plugin inheritance chain 不允许 ECMAScript instance `#private` field/method/accessor，因为 caller facade 无法通过 private brand check；
 semantic pass 对此发出 `plugin_caller_view_private_brand_unsupported`。需要强封装时使用 closure 或由 capability 返回具有自身 withdrawal

@@ -43,10 +43,10 @@ describe('configSourcePlugin', () => {
 
 		expect(result?.code).toContain('__setPluginPartConfig as __pluxelSetPluginPartConfig')
 		expect(result?.code).toContain(
-			'__pluxelSetPluginPartConfig(CachePart, { abiVersion: 1, fieldName: "config"',
+			'__pluxelSetPluginPartConfig(CachePart, { abiVersion: 2, fieldName: "config"',
 		)
 		expect(result?.code).toContain(
-			'__pluxelSetPluginConfig(OwnerPlugin, { abiVersion: 1, fieldName: "config"',
+			'__pluxelSetPluginConfig(OwnerPlugin, { abiVersion: 2, fieldName: "config"',
 		)
 	})
 
@@ -72,7 +72,7 @@ describe('configSourcePlugin', () => {
 			'import { __setPluginConfig as __pluxelSetPluginConfig } from "@pluxel/runtime/toolchain"',
 		)
 		expect(result?.code).toContain(
-			'__pluxelSetPluginConfig(OrdersPlugin, { abiVersion: 1, fieldName: "config", schema: OrdersConfig, source: "v.object({batchSize:v.optional(v.number(),10)})" })',
+			'__pluxelSetPluginConfig(OrdersPlugin, { abiVersion: 2, fieldName: "config", schema: OrdersConfig, source: "v.object({batchSize:v.optional(v.number(),10)})" })',
 		)
 		expect(result?.code).not.toContain('__registerConfigBinding__')
 		expect(result?.code).not.toContain('__setConfigLayout__')

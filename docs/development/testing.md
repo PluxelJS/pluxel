@@ -59,7 +59,7 @@ const cleanup = vi.fn()
 
 @Plugin()
 class ProviderPlugin extends BasePlugin {
-	override init() {
+	protected override init() {
 		return cleanup
 	}
 }
@@ -100,7 +100,7 @@ import { withRuntimeHost } from '@pluxel/runtime/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 
 class TestInngestPlugin extends InngestPlugin {
-	override async init() {}
+	protected override async init() {}
 }
 
 lowerTestReplacement(InngestPlugin, TestInngestPlugin)
@@ -125,7 +125,7 @@ import { expect, it } from 'vitest'
 
 @Plugin()
 class HealthPlugin extends BasePlugin {
-	override init() {
+	protected override init() {
 		this.ctx.http.plugin.routes((app) => app.get('/health', () => ({ ok: true })))
 	}
 }
@@ -172,6 +172,17 @@ config handle 接受 Plugin constructor/address，不接受 display name。覆�
 - replacement 后读取新 snapshot，旧 generation 被清理。
 
 不要直接给实例 private field 赋值，那会绕过 runtime validation 和作者 contract。
+
+### PluginPart business surface
+
+`PluginPart` 的 Context、immediate host 和 composition DSL 是 protected。测试不要通过类型断言或额外 accessor 泄露这些
+framework-owned occurrence facts。通过 Part/owner 明确声明的最小 public 查询验证业务状态，通过真实 capability catalog 验证
+registration 与回收，通过 `PluginLifecycleErrorInfo.partPath` 验证 construction/init/cleanup 归因。
+
+只有 Core 自身的白盒测试可以使用未从 package entry 导出的 occurrence helper。Plugin package 不应为测试恢复通用 Context/path
+getter；如果一个 projection 对业务也没有意义，优先断言外部效果。
+
+标准 Part 写法和不应暴露的 surface 见[使用 PluginPart 组织内部资源](../getting-started/plugin-parts.md#测试正确边界)。
 
 ## Failure 与 cleanup
 

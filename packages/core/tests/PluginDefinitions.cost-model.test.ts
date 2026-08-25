@@ -81,8 +81,10 @@ function candidate(
 		declaration: Object.freeze({
 			address,
 			displayName: address.exportName,
+			constructorRequires: Object.freeze([]),
 			requires: Object.freeze([]),
 			optional: Object.freeze([]),
+			dependencyRequests: Object.freeze([]),
 			parts: Object.freeze([]),
 			forkable,
 		}),

@@ -1,9 +1,13 @@
 import type { Context } from '../../context/Context'
 import { createCallerContextView } from '../../context/context-factory'
 import {
+	admitConsumerInvocation,
 	admitOwnerInvocation,
+	assertConsumerInvocationOpen,
 	assertOwnerInvocationOpen,
+	releaseConsumerInvocation,
 	releaseOwnerInvocation,
+	type ConsumerInvocationAdmission,
 	type OwnerInvocationAdmission,
 } from '../../internal/owner-invocations'
 import {
@@ -46,6 +50,7 @@ type CallFacadeState<T extends BasePlugin> = {
 	readonly stable: StableFacadeState<T>
 	readonly facade: T
 	readonly admission: OwnerInvocationAdmission
+	readonly consumerAdmission: ConsumerInvocationAdmission
 	active: boolean
 }
 
@@ -190,6 +195,7 @@ function readFacadeProperty<T extends BasePlugin>(
 		return readFacadeProperty(state.stable, property)
 	}
 	const stable = state.kind === 'stable' ? state : state.stable
+	if (state.kind === 'stable') assertConsumerInvocationOpen(stable.consumer)
 	if (property === 'ctx') {
 		if (state.kind === 'stable') assertOwnerInvocationOpen(stable.providerContext)
 		return stable.callerContext
@@ -232,6 +238,7 @@ function writeFacadeProperty<T extends BasePlugin>(
 	}
 	assertMutableAuthorField(property)
 	const stable = state.kind === 'stable' ? state : state.stable
+	if (state.kind === 'stable') assertConsumerInvocationOpen(stable.consumer)
 	const descriptor = stable.descriptors.find(property)?.descriptor
 	if (descriptor && !('value' in descriptor) && descriptor.set) {
 		if (state.kind === 'stable') invokeProviderMethod(stable, descriptor.set, [value])
@@ -289,7 +296,11 @@ function compileFacadeShape<T extends BasePlugin>(
 function finishCall<T extends BasePlugin>(state: CallFacadeState<T>): void {
 	if (!state.active) return
 	state.active = false
-	releaseOwnerInvocation(state.admission)
+	try {
+		releaseOwnerInvocation(state.admission)
+	} finally {
+		releaseConsumerInvocation(state.consumerAdmission)
+	}
 }
 
 async function settleProviderInvocation<T extends BasePlugin>(
@@ -310,13 +321,21 @@ function invokeProviderMethod<T extends BasePlugin>(
 	method: Function,
 	args: readonly unknown[],
 ): unknown {
-	const admission = admitOwnerInvocation(stable.providerContext)
+	const consumerAdmission = admitConsumerInvocation(stable.consumer)
+	let admission: OwnerInvocationAdmission
+	try {
+		admission = admitOwnerInvocation(stable.providerContext)
+	} catch (error) {
+		releaseConsumerInvocation(consumerAdmission)
+		throw error
+	}
 	const facade = Object.create(stable.callPrototype) as T
 	const state: CallFacadeState<T> = {
 		kind: 'call',
 		stable,
 		facade,
 		admission,
+		consumerAdmission,
 		active: true,
 	}
 	facadeStates.set(facade, state)
@@ -348,6 +367,7 @@ export function createCallerGenerationView<T extends BasePlugin>(
 	provider: T,
 	consumer: Context,
 ): T {
+	assertConsumerInvocationOpen(consumer)
 	let byProvider = viewsByConsumer.get(consumer)
 	if (!byProvider) {
 		byProvider = new WeakMap()

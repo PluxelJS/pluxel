@@ -14,6 +14,7 @@ import {
 	__setPluginDefinition,
 	__setPluginPartConfig,
 	__setPluginPartOptional,
+	__setPluginPartRequires,
 	__setPluginParts,
 	PLUGIN_LOWERING_ABI_VERSION,
 	PluginLoweringError,
@@ -44,7 +45,7 @@ function captureLoweringError(action: () => unknown): PluginLoweringError {
 	throw new Error('Expected PluginLoweringError')
 }
 
-describe('Plugin lowering ABI v1', () => {
+describe('Plugin lowering ABI v2', () => {
 	it('ingests one immutable candidate with forkability and a definition-local Part tree', () => {
 		abstract class CacheToken extends BasePlugin {}
 		class CachePart {}
@@ -60,12 +61,16 @@ describe('Plugin lowering ABI v1', () => {
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 			kind: 'plugin',
 			definition: address('CachePlugin'),
-			optional: [address('DirectOptional')],
+			constructorRequires: [address('SharedRequired')],
+			optional: [address('SharedRequired'), address('DirectOptional')],
 			provides: address('CacheToken'),
 		})
 		__setPluginParts(CachePlugin, {
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
-			occurrences: [{ fieldName: 'cache', Part: CachePart }],
+			occurrences: [
+				{ fieldName: 'cache', Part: CachePart },
+				{ fieldName: 'cacheAgain', Part: CachePart },
+			],
 		})
 		__setPluginPartConfig(CachePart, {
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
@@ -74,7 +79,11 @@ describe('Plugin lowering ABI v1', () => {
 		})
 		__setPluginPartOptional(CachePart, {
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
-			optional: [address('PartOptional')],
+			optional: [address('PartRequired'), address('PartOptional')],
+		})
+		__setPluginPartRequires(CachePart, {
+			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+			requires: [address('SharedRequired'), address('PartRequired')],
 		})
 		__setPluginConfig(CachePlugin, {
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
@@ -95,10 +104,41 @@ describe('Plugin lowering ABI v1', () => {
 			'DirectOptional',
 			'PartOptional',
 		])
+		expect(candidate.declaration.constructorRequires.map((item) => item.exportName)).toEqual([
+			'SharedRequired',
+		])
+		expect(candidate.declaration.requires.map((item) => item.exportName)).toEqual([
+			'SharedRequired',
+			'PartRequired',
+		])
+		expect(
+			candidate.declaration.dependencyRequests.map((request) => ({
+				definition: request.definition.exportName,
+				mode: request.mode,
+				partPath: request.partPath,
+			})),
+		).toEqual([
+			{ definition: 'SharedRequired', mode: 'required', partPath: [] },
+			{ definition: 'SharedRequired', mode: 'optional', partPath: [] },
+			{ definition: 'DirectOptional', mode: 'optional', partPath: [] },
+			{ definition: 'SharedRequired', mode: 'required', partPath: ['cache'] },
+			{ definition: 'PartRequired', mode: 'required', partPath: ['cache'] },
+			{ definition: 'PartRequired', mode: 'optional', partPath: ['cache'] },
+			{ definition: 'PartOptional', mode: 'optional', partPath: ['cache'] },
+			{ definition: 'SharedRequired', mode: 'required', partPath: ['cacheAgain'] },
+			{ definition: 'PartRequired', mode: 'required', partPath: ['cacheAgain'] },
+			{ definition: 'PartRequired', mode: 'optional', partPath: ['cacheAgain'] },
+			{ definition: 'PartOptional', mode: 'optional', partPath: ['cacheAgain'] },
+		])
 		expect(candidate.declaration.parts[0]).toMatchObject({
 			fieldName: 'cache',
 			Part: CachePart,
 			config: { fieldName: 'config' },
+			requires: [address('SharedRequired'), address('PartRequired')],
+		})
+		expect(candidate.declaration.parts[1]).toMatchObject({
+			fieldName: 'cacheAgain',
+			Part: CachePart,
 		})
 		expect(Object.isFrozen(candidate)).toBe(true)
 		expect(Object.isFrozen(candidate.declaration)).toBe(true)
@@ -125,7 +165,7 @@ describe('Plugin lowering ABI v1', () => {
 		expect(
 			captureLoweringError(() =>
 				__setPluginDefinition(Unsupported, {
-					abiVersion: 2,
+					abiVersion: 1,
 					kind: 'plugin',
 					definition: address('Unsupported'),
 				} as unknown as PluginDefinitionLoweringPayload),
@@ -158,7 +198,7 @@ describe('Plugin lowering ABI v1', () => {
 				abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 				kind: 'plugin',
 				definition: address('DuplicateRequirements'),
-				requires: [requirement, requirement],
+				constructorRequires: [requirement, requirement],
 			}),
 		)
 

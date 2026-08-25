@@ -89,15 +89,26 @@ describe('dynamic plugin sources', () => {
 			await writeFile(
 				temporary,
 				[
-					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-					"@Plugin({ displayName: 'Mutable source' })",
-					'export class MutableSourcePlugin extends BasePlugin {',
+					"import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'",
+					'class MutableSourcePart extends PluginPart<MutableSourcePlugin> {',
 					'  started = false',
 					'  cleaned = false',
-					'  init() {',
+					'  protected override init() {',
 					'    this.started = true',
 					'    this.ctx.effects.defer(() => { this.cleaned = true })',
 					'  }',
+					'  snapshot() { return { started: this.started, cleaned: this.cleaned } }',
+					'}',
+					"@Plugin({ displayName: 'Mutable source' })",
+					'export class MutableSourcePlugin extends BasePlugin {',
+					'  private readonly part = this.parts.use(MutableSourcePart)',
+					'  started = false',
+					'  cleaned = false',
+					'  protected override init() {',
+					'    this.started = true',
+					'    this.ctx.effects.defer(() => { this.cleaned = true })',
+					'  }',
+					'  partSnapshot() { return this.part.snapshot() }',
 					'}',
 					'',
 				].join('\n'),
@@ -115,9 +126,14 @@ describe('dynamic plugin sources', () => {
 			expect(ctor).toBeTypeOf('function')
 			await requireLoaderService(host.ctx).api.control.enable(mutableAddress)
 			const instance = requirePluginService(host.ctx).getInstance(mutableAddress) as
-				| { started: boolean; cleaned: boolean }
+				| {
+						started: boolean
+						cleaned: boolean
+						partSnapshot(): { started: boolean; cleaned: boolean }
+				  }
 				| undefined
 			expect(instance).toMatchObject({ started: true, cleaned: false })
+			expect(instance?.partSnapshot()).toEqual({ started: true, cleaned: false })
 
 			const removedBatch = host.hmr.api.waitForBatch({
 				afterEpoch: added.epoch,
@@ -131,6 +147,7 @@ describe('dynamic plugin sources', () => {
 			expect(requireLoaderService(host.ctx).api.registry.getCtor(mutableAddress)).toBeUndefined()
 			expect(requireLoaderService(host.ctx).api.runtime.isRunning(mutableAddress)).toBe(false)
 			expect(instance).toMatchObject({ started: true, cleaned: true })
+			expect(instance?.partSnapshot()).toEqual({ started: true, cleaned: true })
 		} finally {
 			await host.stop()
 		}

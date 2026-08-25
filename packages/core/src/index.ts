@@ -27,10 +27,6 @@ export type {
 	PluginConstructor,
 	PluginContextOf,
 	PluginPartClass,
-	PluginPartContext,
-	PluginPartInfo,
-	PluginPartOwner,
-	PluginParts,
 	PluginToken,
 } from './plugins'
 
