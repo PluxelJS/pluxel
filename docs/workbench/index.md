@@ -295,6 +295,11 @@ host.navigation?.openTab({
 
 普通页面切换使用 `navigate(path)`；只有独立业务对象才 `openTab()`。standalone View 的 navigation 是 `null`。route 只能指向当前 Workbench target 已注册路径，不能导航任意宿主 URL。
 
+Shell 的中央 editor 支持递归拆分。用户可以拖拽 Tab 在当前组排序、移到其他组，或投放到编辑区四边创建新 split；空组会自动
+收拢。每个 pane 独立渲染自己的 Tab path 和 tab-scoped state，地址栏只跟随当前聚焦 pane。`openTab()` 的完整路径 identity
+仍在整个 workspace 内唯一，因此同一业务文档已在其他 pane 打开时会直接聚焦原 Tab，而不会创建冲突副本。插件不需要也不能
+感知 group、拖拽或底层 Worksplit。
+
 ### Pane layout
 
 需要 navigation/primary/inspector 三栏时使用宿主 Pane Kit，不自行安装 Worksplit 或维护第二套 breakpoint/localStorage：

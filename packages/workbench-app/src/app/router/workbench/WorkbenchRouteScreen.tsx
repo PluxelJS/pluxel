@@ -11,8 +11,15 @@ import { WorkbenchTargetProvider, useResolvedWorkbenchRoute } from '../../../wor
 import { useCurrentPathname } from '../useCurrentRoute'
 import { WorkbenchRouteRenderer } from './WorkbenchRouteRenderer'
 
-export function WorkbenchRouteScreen({ prefix }: { prefix: WorkbenchRoutePrefix }) {
-	const locationPath = useCurrentPathname()
+export function WorkbenchRouteScreen({
+	prefix,
+	pathname,
+}: {
+	prefix: WorkbenchRoutePrefix
+	pathname?: string
+}) {
+	const routerPathname = useCurrentPathname()
+	const locationPath = pathname ?? routerPathname
 	const parsed = useMemo(() => {
 		if (!locationPath) return undefined
 		const result = parseWorkbenchHref(locationPath)

@@ -1,14 +1,10 @@
 import { useHotkey } from '@tanstack/react-hotkeys'
-import { Outlet } from '@tanstack/react-router'
 import {
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
 	IconLayoutSidebarLeftExpand,
-	IconPlus,
 	IconSearch,
-	IconX,
 } from '@tabler/icons-react'
-import { Fragment } from 'react'
 import { ColorSchemeToggle } from '../../../theme'
 import { useProduct } from '../../product'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
@@ -18,7 +14,6 @@ import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { WorkbenchActionButton } from '../LayoutControls'
 import { isWorkbenchActivityActive } from '../location'
 import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS } from '../shortcuts'
-import type { WorkbenchTab } from '../state'
 
 export function WorkbenchHotkeys({
 	canTogglePluginRail,
@@ -228,107 +223,6 @@ export function PluginTopbarActions({
 	)
 }
 
-export function EditorTabStrip({
-	activeTabId,
-	dirtyTabs,
-	onActivateTab,
-	onAddTab,
-	onCloseTab,
-	tabs,
-}: {
-	activeTabId: string | null
-	dirtyTabs: Record<string, boolean>
-	onActivateTab: (tab: WorkbenchTab) => void
-	onAddTab: () => void
-	onCloseTab: (tabId: string) => void
-	tabs: WorkbenchTab[]
-}) {
-	const addTabButton = (
-		<button
-			type="button"
-			className="plx-workbench__editorTabAdd"
-			aria-label="在新工作标签打开当前页面"
-			title="在新工作标签打开当前页面"
-			onClick={onAddTab}
-		>
-			<IconPlus size={15} stroke={1.9} />
-		</button>
-	)
-	const hasActiveTab = tabs.some((tab) => tab.instanceId === activeTabId)
-	return (
-		<div className="plx-workbench__editorTabStrip" role="tablist" aria-label="工作标签页">
-			{tabs.map((tab, tabIndex) => {
-				const isActive = tab.instanceId === activeTabId
-				const isDirty = Boolean(dirtyTabs[tab.instanceId])
-				return (
-					<Fragment key={tab.instanceId}>
-						<div
-							className="plx-workbench__editorTabButton"
-							data-active={isActive ? 'true' : 'false'}
-							role="tab"
-							aria-selected={isActive}
-							tabIndex={isActive ? 0 : -1}
-							onClick={() => onActivateTab(tab)}
-							onKeyDown={(event) => {
-								if (event.target !== event.currentTarget) return
-								if (event.key === 'Enter' || event.key === ' ') {
-									event.preventDefault()
-									onActivateTab(tab)
-									return
-								}
-								const nextIndex =
-									event.key === 'Home'
-										? 0
-										: event.key === 'End'
-											? tabs.length - 1
-											: event.key === 'ArrowLeft'
-												? (tabIndex - 1 + tabs.length) % tabs.length
-												: event.key === 'ArrowRight'
-													? (tabIndex + 1) % tabs.length
-													: -1
-								if (nextIndex === -1) return
-								event.preventDefault()
-								const nextTab = tabs[nextIndex]
-								if (!nextTab) return
-								onActivateTab(nextTab)
-								const tabElements =
-									event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')
-								tabElements?.[nextIndex]?.focus()
-							}}
-						>
-							<div className="plx-workbench__editorTabBody">
-								<span className="plx-workbench__editorTabTitle">{tab.title}</span>
-								{isDirty ? (
-									<span
-										className="plx-workbench__editorTabDirtyDot"
-										title="未保存更改"
-										aria-hidden="true"
-									/>
-								) : null}
-								{tab.meta ? <span className="plx-workbench__editorTabMeta">{tab.meta}</span> : null}
-							</div>
-							<button
-								type="button"
-								className="plx-workbench__iconButton"
-								aria-label={`关闭 ${tab.title}`}
-								tabIndex={isActive ? 0 : -1}
-								onClick={(event) => {
-									event.stopPropagation()
-									onCloseTab(tab.instanceId)
-								}}
-							>
-								<IconX size={14} stroke={1.8} />
-							</button>
-						</div>
-						{isActive ? addTabButton : null}
-					</Fragment>
-				)
-			})}
-			{hasActiveTab ? null : addTabButton}
-		</div>
-	)
-}
-
 export function PluginNavigationRail({
 	onCollapse,
 	pluginRoute,
@@ -340,16 +234,6 @@ export function PluginNavigationRail({
 		<div className="plx-workbench__navigationRail">
 			<div className="plx-workbench__navigationBody">
 				<PluginCatalog pluginRoute={pluginRoute} onCollapse={onCollapse} />
-			</div>
-		</div>
-	)
-}
-
-export function WorkspacePaneContent({ tabId }: { tabId: string | null }) {
-	return (
-		<div key={tabId ?? 'route'} className="plx-workbench__workspace">
-			<div className="plx-workbench__workspaceContent">
-				<Outlet />
 			</div>
 		</div>
 	)

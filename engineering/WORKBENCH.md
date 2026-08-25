@@ -263,10 +263,11 @@ const accountId = host.routeParams.accountId
 两种操作的 path 都是插件相对路径，不是任意宿主 URL。`host.navigation` 只在 shell 中可用，standalone View 得到
 `null`；宿主只接受当前 target route table 中的 shell route，未注册路径会失败，`openTab()` 还会拒绝空标题。`navigate()` 使用当前 Tab，并遵循 dirty-state
 自动保留策略。规范化后的完整宿主路径是 `openTab()` document target 的唯一 identity：再次
-打开同一路径会聚焦并更新原 Tab，不会复制；`title`、`meta` 和 Tab 集合随 Workbench 状态持久化恢复。
+打开同一路径会跨全部 editor group 聚焦并更新原 Tab，不会复制；`title`、`meta`、Tab 归属和 editor grid 随
+Workbench 状态持久化恢复。
 `routeParams` 只包含当前 route 的解码后整段参数，静态 route 和非 route placement 得到空对象。
 
-Tab strip 在当前 Tab 后提供统一的 `+`。它创建一个沿用当前 path、title 和 meta 的宿主本地 navigation instance，
+每个 editor group 的 Tab strip 在当前 Tab 后提供统一的 `+`。它创建一个沿用当前 path、title 和 meta 的宿主本地 navigation instance，
 但不复制 dirty flag 或 tab-scoped state；随后点击普通导航会替换这个干净 instance，从而保留原 Tab。这个操作不进入
 plugin host facade，也不改变 `navigate()` / `openTab()` 的职责边界。分组 route 和插件目录因此只提供普通导航，不为每个条目
 重复渲染“在新工作标签打开”按钮；集合页打开具体业务对象仍使用显式 `host.navigation.openTab()`。
@@ -274,7 +275,15 @@ plugin host facade，也不改变 `navigate()` / `openTab()` 的职责边界。�
 Workbench 至少有一个原生 Tab 时显示 Tab strip；单个 Tab 也可以被关闭并回到首页。普通导航遵循当前工作区的
 `auto` 策略（未保存的当前 Tab 会保留并打开新 Tab）。
 
-Workspace Controller 由 Router 之上的 App 根 Provider 持有，不由会随 route tree 重建的 Shell 或 route provider 持有。`openTab()` 必须先原子写入
+Tab 可以在组内拖拽排序、跨组移动，或投放到任一 editor group 的四边以创建横向/纵向递归 split；最后一个 Tab
+移出或关闭后，空 group 从布局树自动收拢。拖拽和 resize 都不改变 Remote View contract，Tab catalog、dirty state、
+tab-scoped state、group 归属、browser history 镜像和持久化仍由 Workspace Controller 原子管理。浏览器 URL 只镜像当前
+聚焦 group 的 active Tab；host-owned document renderer 按各 Tab path 独立渲染，因此多个 pane 可以同时显示不同内置页或
+Remote View。窄屏只临时最大化当前 group，并提供 group 切换入口，不卸载或改写其余布局。
+
+Workspace Controller 由 Router 之上的 App 根 Provider 持有，不由会随 route tree 重建的 Shell 或 route provider 持有。持久化 v4
+使用 `tabs + editor.groups + editor.layout`，每个 Tab 恰好属于一个 group，每个 layout leaf 恰好引用一个 group；v3 的扁平 Tab
+状态恢复为单 group，而不是丢弃用户文档。`openTab()` 必须先原子写入
 document tab 和 navigation intent，route commit 再在同一 Controller 中消费 intent；连续 navigation intent 按提交顺序消费，
 命中已有 document instance 时只聚焦，不把它重写成普通 navigation instance。
 

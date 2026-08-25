@@ -6,7 +6,7 @@ import {
 	type ReactNode,
 } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { useWorkbenchNavigation } from './workbench/context'
+import { useWorkbenchDocumentPathname, useWorkbenchNavigation } from './workbench/context'
 
 export type RouterLinkAdapterProps = {
 	to: string
@@ -17,6 +17,7 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 	({ to, children, onClick, target, rel, ...rest }, ref) => {
 		const router = useRouter()
 		const { navigate } = useWorkbenchNavigation()
+		const documentPathname = useWorkbenchDocumentPathname()
 
 		let href = to
 		try {
@@ -43,10 +44,7 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 				const targetIsCurrent = (() => {
 					try {
 						const targetUrl = new URL(href, window.location.origin)
-						return (
-							targetUrl.pathname === window.location.pathname &&
-							targetUrl.search === window.location.search
-						)
+						return targetUrl.pathname === documentPathname
 					} catch {
 						return false
 					}
@@ -58,7 +56,7 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 				event.preventDefault()
 				navigate(to)
 			},
-			[href, navigate, onClick, target, to],
+			[documentPathname, href, navigate, onClick, target, to],
 		)
 
 		return (

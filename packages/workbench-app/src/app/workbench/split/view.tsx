@@ -1,9 +1,16 @@
 import {
 	Pane,
 	SplitView,
+	Workbench as WorksplitWorkbench,
 	type PaneSizeValue,
 	type SplitViewHandle as WorksplitHandle,
 	type SplitViewLayoutEvent,
+	type WorkbenchEditorGroup as WorksplitEditorGroup,
+	type WorkbenchEditorGroupMoveOptions,
+	type WorkbenchEditorLayout,
+	type WorkbenchHandle as WorksplitWorkbenchHandle,
+	type WorkbenchLayout as WorksplitWorkbenchLayout,
+	type WorkbenchValue,
 } from '@worksplit/react'
 import '@worksplit/react/style.css'
 import {
@@ -14,6 +21,8 @@ import {
 	useRef,
 	useState,
 	type CSSProperties,
+	type FocusEvent,
+	type PointerEvent,
 	type ReactNode,
 	type RefObject,
 } from 'react'
@@ -255,3 +264,181 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 )
 
 WorkbenchSplitView.displayName = 'WorkbenchSplitView'
+
+export type EditorGridLayout = WorkbenchEditorLayout
+export type EditorGridDirection = WorkbenchEditorGroupMoveOptions['position']
+
+export type EditorGridTab = {
+	id: string
+	title: string
+	className?: string
+	renderLabel: (active: boolean) => ReactNode
+	renderContent: () => ReactNode
+}
+
+export type EditorGridGroup = {
+	id: string
+	activeTabId: string
+	tabs: readonly EditorGridTab[]
+}
+
+export type EditorGridHandle = {
+	equalize: () => void
+	maximize: (groupId: string) => void
+	moveGroup: (options: WorkbenchEditorGroupMoveOptions) => void
+	restore: () => void
+	restoreLayout: (layout: EditorGridLayout | undefined) => void
+}
+
+export type WorkbenchEditorGridProps = {
+	groups: readonly EditorGridGroup[]
+	layout: EditorGridLayout | undefined
+	minGroupSize?: number
+	onActiveTabsChange: (activeTabs: Readonly<Record<string, string>>) => void
+	onFocusGroup: (groupId: string, reason: 'action' | 'content' | 'tab') => void
+	onLayoutCommit: (layout: EditorGridLayout | undefined) => void
+	className?: string
+}
+
+const EMPTY_WORKBENCH_COMMANDS: readonly [] = Object.freeze([])
+const HIDDEN_WORKBENCH_PARTS = {
+	panel: false,
+	primary: false,
+	secondary: false,
+} as const
+
+/**
+ * Private Pluxel adapter for Worksplit's recursive editor grid.
+ *
+ * The application owns groups, tabs, focus, drag/drop and persistence. Worksplit owns only the
+ * recursive split topology, resize behavior and temporary maximization.
+ */
+export const WorkbenchEditorGrid = forwardRef<EditorGridHandle, WorkbenchEditorGridProps>(
+	(
+		{
+			className,
+			groups,
+			layout,
+			minGroupSize = 280,
+			onActiveTabsChange,
+			onFocusGroup,
+			onLayoutCommit,
+		},
+		ref,
+	) => {
+		const workbenchRef = useRef<WorksplitWorkbenchHandle | null>(null)
+		const activeEditorTabs = useMemo(
+			() => Object.fromEntries(groups.map((group) => [group.id, group.activeTabId])),
+			[groups],
+		)
+		const value = useMemo<WorkbenchValue>(
+			() => ({
+				activeByPart: {},
+				activeEditorTabs,
+				version: 1,
+				visibleParts: { ...HIDDEN_WORKBENCH_PARTS },
+			}),
+			[activeEditorTabs],
+		)
+		const defaultLayoutRef = useRef<WorksplitWorkbenchLayout | null>(null)
+		defaultLayoutRef.current ??= {
+			editorLayout: layout,
+			panelPosition: 'bottom',
+			value: { activeEditorTabs, version: 1 },
+			version: 1,
+		}
+		// Worksplit treats defaultLayout as a startup snapshot. Later application-driven topology
+		// changes go through the imperative handle so mounted sibling content is retained.
+		const defaultLayout = defaultLayoutRef.current
+		const workbenchGroups = useMemo<WorksplitEditorGroup[]>(
+			() =>
+				groups.map((group) => ({
+					defaultActiveTabId: group.activeTabId,
+					id: group.id,
+					tabs: group.tabs.map((tab) => ({
+						className: tab.className,
+						id: tab.id,
+						renderContent: () => (
+							<div
+								className="plx-workbench__editorGroupContent"
+								data-editor-grid-group-id={group.id}
+							>
+								{tab.renderContent()}
+							</div>
+						),
+						title: tab.title,
+					})),
+				})),
+			[groups],
+		)
+
+		useImperativeHandle(
+			ref,
+			() => ({
+				equalize: () => workbenchRef.current?.equalizeEditorGroups(),
+				maximize: (groupId) => workbenchRef.current?.maximizeEditorGroup(groupId),
+				moveGroup: (options) => workbenchRef.current?.moveEditorGroup(options),
+				restore: () => workbenchRef.current?.restoreEditorGroups(),
+				restoreLayout: (nextLayout) => {
+					const handle = workbenchRef.current
+					if (!handle) return
+					const current = handle.getLayout()
+					handle.restoreLayout({ ...current, editorLayout: nextLayout })
+				},
+			}),
+			[],
+		)
+
+		const focusGroupFromTarget = (target: EventTarget | null) => {
+			if (!(target instanceof Element)) return
+			const groupId = target.closest<HTMLElement>('[data-editor-grid-group-id]')?.dataset
+				.editorGridGroupId
+			if (!groupId) return
+			const reason = target.closest('.plx-workbench__editorTabAction')
+				? 'action'
+				: target.closest('.plx-workbench__editorTabLabelHost')
+					? 'tab'
+					: 'content'
+			onFocusGroup(groupId, reason)
+		}
+		const handleFocusCapture = (event: FocusEvent<HTMLDivElement>) => {
+			focusGroupFromTarget(event.target)
+		}
+		const handlePointerDownCapture = (event: PointerEvent<HTMLDivElement>) => {
+			focusGroupFromTarget(event.target)
+		}
+
+		return (
+			<WorksplitWorkbench
+				centerMinSize={minGroupSize}
+				className={joinClasses('plx-workbench__editorGrid', className)}
+				commands={EMPTY_WORKBENCH_COMMANDS}
+				defaultLayout={defaultLayout}
+				editorGroupMinSize={minGroupSize}
+				editorGroups={workbenchGroups}
+				onFocusCapture={handleFocusCapture}
+				onLayout={(nextLayout) => onLayoutCommit(nextLayout.editorLayout)}
+				onPointerDownCapture={handlePointerDownCapture}
+				onValueChange={(nextValue) => onActiveTabsChange(nextValue.activeEditorTabs)}
+				ref={workbenchRef}
+				renderEditorTabLabel={({ active, group, tab }) => {
+					const source = groups
+						.find((item) => item.id === group.id)
+						?.tabs.find((item) => item.id === tab.id)
+					return (
+						<span
+							className="plx-workbench__editorTabLabelHost"
+							data-editor-grid-group-id={group.id}
+						>
+							{source?.renderLabel(active)}
+						</span>
+					)
+				}}
+				showActivityBar={false}
+				value={value}
+			/>
+		)
+	},
+)
+
+WorkbenchEditorGrid.displayName = 'WorkbenchEditorGrid'

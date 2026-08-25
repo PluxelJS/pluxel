@@ -52,8 +52,10 @@ snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。Re
 不重复请求 layout、加载 Remote 或终止唯一 runtime。Provider cleanup 不把 render-stable runtime 标记为永久 disposed，
 真正的 SSE、module setup 和 target snapshot 清理由引用 lease 完成。Workspace tabs、router intent 和持久化由独立
 `WorkspaceController` 实例拥有；该实例位于 Router 之上的稳定根 Provider，不随 Shell 或 route tree 重建，也不使用 module-level store。
-显式 `openTab()` mutation、navigation intent 和随后 route reconciliation 必须落在同一个 Controller 上。Tab strip 的
-`+` 只创建 host-owned clean navigation instance；它不扩大 Remote View capability，也不复制 dirty 或 tab-scoped state。
+显式 `openTab()` mutation、navigation intent 和随后 route reconciliation 必须落在同一个 Controller 上。Controller 同时拥有
+Tab catalog、editor group 归属、聚焦 group 和递归 grid snapshot；浏览器 URL 只镜像聚焦 group，pane 内容由 host-owned
+document renderer 按各 Tab path 独立渲染。每组 Tab strip 的 `+` 只创建 host-owned clean navigation instance；它不扩大
+Remote View capability，也不复制 dirty 或 tab-scoped state。Tab 拖拽支持组内排序、跨组移动和四边 split，空组自动收拢。
 
 ## Worksplit adapter boundary
 
@@ -62,8 +64,9 @@ snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。Re
 不为它增加 Vite plugin、codegen、virtual module 或 Pluxel-specific library API。
 
 所有直接 Worksplit import 和 pixel/percentage 转换收敛在
-`packages/workbench-app/src/app/workbench/split/view.tsx`。Workbench App 以百分比保存布局，只在 pointer、keyboard、显式
-visibility 或 reset commit 后写入 `WorkspaceController`；实时拖动和响应式 drawer 开关不产生持久化。Remote layout state
+`packages/workbench-app/src/app/workbench/split/view.tsx`。Section 与 Remote Pane Kit 布局以百分比保存；递归 editor grid 保存
+Worksplit 的 topology 和最后 commit 的 CSS pixel size，并在容器变化时按比例调整。两者都只在 pointer、keyboard、显式
+visibility、拓扑变化或 reset commit 后写入 `WorkspaceController`；实时拖动和响应式临时最大化不产生持久化。Remote layout state
 按当前原生 Tab、owner、target、View、placement/route 与公开 layout ID 隔离；standalone 使用当前挂载期内存 fallback。
 Remote plugin UI 只能使用公开 host capability 和 Pane Kit，不能依赖 Worksplit、宿主 router、split adapter 或 workspace store。具体文件职责和修改路由见该目录的
 [`README.md`](../packages/workbench-app/src/app/workbench/split/README.md)。

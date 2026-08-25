@@ -118,7 +118,7 @@ describe('Workbench native document tabs', () => {
 		const workspace = new WorkspaceController()
 		const sourcePath = buildWorkbenchHref(TelegramTarget, '/settings')
 		workspace.reconcileLocation(sourcePath)
-		const sourceId = workspace.state.uiState.activeTabId
+		const sourceId = workspace.activeTab?.instanceId
 		workspace.setActiveTabState(sourceId, 'form', { account: 'draft' })
 		workspace.setTabDirty(sourceId, true)
 
@@ -126,7 +126,7 @@ describe('Workbench native document tabs', () => {
 		workspace.reconcileLocation(sourcePath)
 
 		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual([sourcePath, sourcePath])
-		expect(workspace.state.uiState.activeTabId).toBe(adjacent?.instanceId)
+		expect(workspace.activeTab?.instanceId).toBe(adjacent?.instanceId)
 		expect(adjacent).toMatchObject({ path: sourcePath })
 		expect(adjacent?.instanceId).not.toBe(sourceId)
 		expect(adjacent?.documentKey).toBeUndefined()
@@ -146,7 +146,7 @@ describe('Workbench native document tabs', () => {
 	it('closes the final instance back to a clean home Tab', () => {
 		const workspace = new WorkspaceController()
 		workspace.reconcileLocation('/logs')
-		const tabId = workspace.state.uiState.activeTabId
+		const tabId = workspace.activeTab?.instanceId
 		workspace.setActiveTabState(tabId, 'filters', { level: 'error' })
 		workspace.setTabDirty(tabId, true)
 
@@ -192,7 +192,7 @@ describe('Workbench native document tabs', () => {
 				meta: 'Connected',
 			}),
 		])
-		expect(workspace.state.uiState.activeTabId).toBe(instanceId)
+		expect(workspace.activeTab?.instanceId).toBe(instanceId)
 	})
 
 	it('does not deduplicate ordinary navigation instances by path', () => {
@@ -202,12 +202,76 @@ describe('Workbench native document tabs', () => {
 		workspace.createAdjacentTab()
 		workspace.requestNavigation('/security')
 		workspace.reconcileLocation('/security')
-		workspace.setActiveTabId(first.instanceId)
+		const groupId = workspace.state.uiState.editor.activeGroupId
+		workspace.activateTab(groupId!, first.instanceId)
 		workspace.requestNavigation('/security')
 		workspace.reconcileLocation('/security')
 
 		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual(['/security', '/security'])
 		expect(workspace.state.uiState.tabs.every((tab) => tab.documentKey === undefined)).toBe(true)
+	})
+
+	it('reorders Tabs within one editor group', () => {
+		const workspace = new WorkspaceController('/logs')
+		const firstTabId = workspace.activeTab!.instanceId
+		const secondTab = workspace.createAdjacentTab()!
+		const groupId = workspace.state.uiState.editor.activeGroupId!
+
+		workspace.moveTab({ tabId: secondTab.instanceId, targetGroupId: groupId, targetIndex: 0 })
+
+		expect(workspace.state.uiState.editor.groups).toEqual([
+			expect.objectContaining({
+				id: groupId,
+				activeTabId: secondTab.instanceId,
+				tabIds: [secondTab.instanceId, firstTabId],
+			}),
+		])
+	})
+
+	it('splits a Tab into a new group and collapses an emptied source group', () => {
+		const workspace = new WorkspaceController('/logs')
+		const firstTabId = workspace.activeTab!.instanceId
+		const secondTabId = workspace.createAdjacentTab()!.instanceId
+		const sourceGroupId = workspace.state.uiState.editor.activeGroupId!
+
+		const splitGroupId = workspace.splitTab(secondTabId)
+
+		expect(splitGroupId).toMatch(/^group:/)
+		expect(workspace.state.uiState.editor.groups).toEqual([
+			expect.objectContaining({ id: sourceGroupId, tabIds: [firstTabId] }),
+			expect.objectContaining({ id: splitGroupId, tabIds: [secondTabId] }),
+		])
+		expect(JSON.stringify(workspace.state.uiState.editor.layout)).toContain(splitGroupId)
+
+		workspace.moveTab({ tabId: firstTabId, targetGroupId: splitGroupId!, targetIndex: 1 })
+
+		expect(workspace.state.uiState.editor.groups).toEqual([
+			expect.objectContaining({
+				id: splitGroupId,
+				activeTabId: firstTabId,
+				tabIds: [secondTabId, firstTabId],
+			}),
+		])
+		expect(workspace.state.uiState.editor.layout).toEqual({
+			type: 'group',
+			groupId: splitGroupId,
+		})
+	})
+
+	it('focuses an already-open business document in its existing editor group', () => {
+		const workspace = new WorkspaceController('/logs')
+		const documentPath = buildWorkbenchHref(KookTarget, '/accounts/default')
+		const document = workspace.openTab({ path: documentPath, title: 'default' })!
+		workspace.createAdjacentTab()
+		const secondGroupId = workspace.splitTab(workspace.activeTab!.instanceId)!
+
+		workspace.openTab({ path: documentPath, title: 'renamed' }, secondGroupId)
+
+		expect(workspace.activeTab?.instanceId).toBe(document.instanceId)
+		expect(workspace.state.uiState.editor.activeGroupId).not.toBe(secondGroupId)
+		expect(
+			workspace.state.uiState.tabs.filter((tab) => tab.documentKey === documentPath),
+		).toHaveLength(1)
 	})
 
 	it('preserves an explicit openTab across route reconciliation', () => {
@@ -274,9 +338,66 @@ describe('Workbench native document tabs', () => {
 		expect(restored.tabs).toEqual([
 			{ instanceId: 'tab:first', path, title: 'first', meta: undefined, documentKey: path },
 		])
-		expect(restored.activeTabId).toBe('tab:first')
+		expect(restored.editor).toMatchObject({
+			activeGroupId: 'group:main',
+			groups: [
+				{
+					id: 'group:main',
+					activeTabId: 'tab:first',
+					tabIds: ['tab:first'],
+				},
+			],
+		})
 		expect(restored.pluginPane.visible).toBe(true)
 		expect(restored.tabState).toEqual({ 'tab:first': { retained: true } })
+	})
+
+	it('sanitizes version 4 group ownership and reconciles its layout leaves', () => {
+		const restored = restoreWorkbenchState({
+			version: 4,
+			state: {
+				editor: {
+					activeGroupId: 'group:right',
+					groups: [
+						{
+							id: 'group:left',
+							activeTabId: 'tab:left',
+							tabIds: ['tab:left', 'tab:right'],
+						},
+						{
+							id: 'group:right',
+							activeTabId: 'tab:right',
+							tabIds: ['tab:right'],
+						},
+					],
+					layout: {
+						type: 'split',
+						id: 'root',
+						orientation: 'horizontal',
+						children: [
+							{ node: { type: 'group', groupId: 'group:left' } },
+							{ node: { type: 'group', groupId: 'group:unknown' } },
+						],
+					},
+				},
+				navigationCollapsed: false,
+				pluginPane: { visible: true, layout: {} },
+				tabs: [
+					{ instanceId: 'tab:left', path: '/logs', title: 'Logs' },
+					{ instanceId: 'tab:right', path: '/security', title: 'Security' },
+				],
+			},
+		})
+
+		expect(restored.editor.groups).toEqual([
+			{
+				id: 'group:left',
+				activeTabId: 'tab:left',
+				tabIds: ['tab:left', 'tab:right'],
+			},
+		])
+		expect(restored.editor.activeGroupId).toBe('group:left')
+		expect(restored.editor.layout).toEqual({ type: 'group', groupId: 'group:left' })
 	})
 
 	it.each([1, 2])('rejects unsupported persisted version %s', (version) => {

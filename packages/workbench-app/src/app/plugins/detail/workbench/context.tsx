@@ -1,6 +1,19 @@
-import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
+import { useStore } from '@tanstack/react-store'
+import {
+	createContext,
+	startTransition,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	type ReactNode,
+} from 'react'
+import { useActiveWorkbenchTabId, useWorkspaceController } from '../../../workbench/context'
 import {
 	DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE,
+	PLUGIN_WORKBENCH_PANELS_SCOPE,
+	resolvePluginWorkbenchPanelsState,
 	type ResolvedPluginWorkbenchPanelsState,
 } from '../../../workbench/split'
 
@@ -52,13 +65,42 @@ export function PluginWorkbenchAsideProvider({
 	)
 }
 
-export function PluginWorkbenchLayoutProvider({
-	value,
-	children,
-}: {
-	value: PluginWorkbenchLayoutContextValue
-	children: ReactNode
-}) {
+export function PluginWorkbenchLayoutProvider({ children }: { children: ReactNode }) {
+	const workspace = useWorkspaceController()
+	const activeTabId = useActiveWorkbenchTabId()
+	const storedState = useStore(workspace.store, (state) =>
+		activeTabId ? state.uiState.tabState[activeTabId]?.[PLUGIN_WORKBENCH_PANELS_SCOPE] : undefined,
+	)
+	const panels = useMemo(() => resolvePluginWorkbenchPanelsState(storedState), [storedState])
+	const patchPanels = useCallback(
+		(patch: Partial<ResolvedPluginWorkbenchPanelsState>) => {
+			if (!activeTabId) return
+			const current = resolvePluginWorkbenchPanelsState(
+				workspace.state.uiState.tabState[activeTabId]?.[PLUGIN_WORKBENCH_PANELS_SCOPE],
+			)
+			const next = { ...current, ...patch }
+			if (
+				next.dockVisible === current.dockVisible &&
+				next.rightPaneVisible === current.rightPaneVisible
+			) {
+				return
+			}
+			startTransition(() => {
+				workspace.setActiveTabState(activeTabId, PLUGIN_WORKBENCH_PANELS_SCOPE, next)
+			})
+		},
+		[activeTabId, workspace],
+	)
+	const value = useMemo<PluginWorkbenchLayoutContextValue>(
+		() => ({
+			...panels,
+			setDockVisible: (visible) => patchPanels({ dockVisible: visible }),
+			setRightPaneVisible: (visible) => patchPanels({ rightPaneVisible: visible }),
+			toggleDock: () => patchPanels({ dockVisible: !panels.dockVisible }),
+			toggleRightPane: () => patchPanels({ rightPaneVisible: !panels.rightPaneVisible }),
+		}),
+		[panels, patchPanels],
+	)
 	return (
 		<PluginWorkbenchLayoutContext.Provider value={value}>
 			{children}

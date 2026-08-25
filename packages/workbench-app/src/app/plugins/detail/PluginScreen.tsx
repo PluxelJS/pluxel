@@ -11,7 +11,7 @@ import {
 	usePluginOverview,
 } from '../pluginOverview'
 import { usePluginConfig } from '../config/usePluginConfig'
-import { useCurrentPathname } from '../../router/useCurrentRoute'
+import { useWorkbenchDocumentPathname } from '../../workbench/context'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 import { WorkbenchTargetProvider } from '../../../workbench/runtime'
@@ -272,7 +272,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 
 	const { detail, ready, listed, hasStatusSnapshot, statusEntry, error, loading, refetch } =
 		usePluginDetail(pluginRoute)
-	const pathname = useCurrentPathname()
+	const pathname = useWorkbenchDocumentPathname()
 	const pluginLabel = detail?.label ?? pluginRoute
 	const description = detail?.desc ?? ''
 	const [statusOverride, setStatusOverride] = useState<{

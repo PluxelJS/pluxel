@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { EmptyState, ErrorState } from '../../../components'
 import { useResolvedWorkbenchRoute, useWorkbenchSurface } from '../../../workbench/runtime'
-import { useCurrentPathname } from '../../router/useCurrentRoute'
+import { useWorkbenchDocumentPathname } from '../../workbench/context'
 import { WorkbenchRouteRenderer } from '../../router/workbench/WorkbenchRouteRenderer'
 import { PANE_TABS_PROPS, PaneTabLabel, getPaneTabsRootClassName } from '../../workbench/PaneTabs'
 import type { PluginConfigState } from '../config/usePluginConfig'
@@ -43,7 +43,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		() => buildRightPaneTabGroups(pluginLabel, tabItems, tabNodes as ReactNode[]),
 		[pluginLabel, tabItems, tabNodes],
 	)
-	const pathname = useCurrentPathname()
+	const pathname = useWorkbenchDocumentPathname()
 	const restPath = useMemo(() => {
 		const prefix = `/plugins/${pluginRoute}`
 		if (!pathname.startsWith(prefix)) return ''

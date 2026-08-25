@@ -5,10 +5,14 @@ import {
 	PaneTabLabel,
 	getPaneTabsRootClassName,
 } from '../../../workbench/PaneTabs'
-import { useActiveWorkbenchTabId, useWorkspaceController } from '../../../workbench/context'
+import {
+	useActiveWorkbenchTabId,
+	useWorkbenchDocumentPathname,
+	useWorkspaceController,
+} from '../../../workbench/context'
 import { useResolvedWorkbenchTabState } from '../../../workbench/split'
-import { useCurrentPathname } from '../../../router/useCurrentRoute'
 import { replacePluginDetailSearchParams, usePluginDetailSearch } from '../pluginDetailSearchState'
+import { useCurrentPathname } from '../../../router/useCurrentRoute'
 
 export type PluginWorkbenchView = {
 	id: string
@@ -19,6 +23,7 @@ export type PluginWorkbenchView = {
 }
 
 type PluginWorkbenchViewSearchKey = 'dock' | 'side'
+const EMPTY_ROUTE_SEARCH = Object.freeze({})
 
 function resolveVisibleViewId(value: unknown, views: PluginWorkbenchView[]) {
 	if (typeof value !== 'string') return undefined
@@ -67,8 +72,10 @@ export function PluginWorkbenchViewContainer({
 }) {
 	const activeTabId = useActiveWorkbenchTabId()
 	const workspace = useWorkspaceController()
-	const pathname = useCurrentPathname()
-	const routeSearch = usePluginDetailSearch()
+	const pathname = useWorkbenchDocumentPathname()
+	const browserPathname = useCurrentPathname()
+	const browserRouteSearch = usePluginDetailSearch()
+	const routeSearch = pathname === browserPathname ? browserRouteSearch : EMPTY_ROUTE_SEARCH
 	const [localSearchValue, setLocalSearchValue] = useState<string | undefined>()
 	const appliedRouteIntentSignatureRef = useRef<string | null>(null)
 	const storedViewId = useResolvedWorkbenchTabState(scope, (value) =>
