@@ -136,6 +136,11 @@ describe('FontsPlugin', () => {
 					path: fontPath!,
 					family,
 				})
+				const portableSelection = await host
+					.require(FontsLazyConsumer)
+					.fonts.selectionManager('portable')
+					.snapshot()
+				expect(portableSelection.families.map((font) => font.family)).toEqual([family])
 				expect(registration.active).toBe(true)
 				expect(registration.families).toContain(family)
 				expect(GlobalFonts.has(family)).toBe(true)
@@ -148,6 +153,28 @@ describe('FontsPlugin', () => {
 				expect(registration.active).toBe(false)
 				expect(GlobalFonts.has(family)).toBe(false)
 				registration.dispose()
+			},
+			{ workbench: false },
+		)
+	})
+
+	it.skipIf(!fontPath)('reference-counts duplicate portable resources by content ID', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				await host.commit()
+				const fonts = host.require(FontsLazyConsumer).fonts
+				const family = `Pluxel Portable ${crypto.randomUUID()}`
+				const first = fonts.registerFromPath({ path: fontPath!, family })
+				const second = fonts.registerFromPath({ path: fontPath!, family })
+
+				const attached = fonts.portableFonts
+				expect(attached.fonts).toHaveLength(1)
+				first.dispose()
+				expect(fonts.portableFonts).toBe(attached)
+				second.dispose()
+				expect(fonts.portableFonts.fonts).toEqual([])
+				expect(fonts.portableFonts.revision).toBeGreaterThan(attached.revision)
 			},
 			{ workbench: false },
 		)
@@ -216,6 +243,22 @@ describe('FontsPlugin', () => {
 					expect.objectContaining<Partial<FontsError>>({ code: 'INVALID_FONT' }),
 				)
 				expect(() => fonts.register({ data: new Uint8Array(5) })).toThrow(
+					expect.objectContaining<Partial<FontsError>>({ code: 'FONT_TOO_LARGE' }),
+				)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it.skipIf(!fontPath)('rejects oversized font files before reading their contents', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				host.cfg(FontsPlugin).set({ maxFontBytes: 4 })
+				await host.commit()
+				const fonts = host.require(FontsLazyConsumer).fonts
+
+				expect(() => fonts.registerFromPath({ path: fontPath! })).toThrow(
 					expect.objectContaining<Partial<FontsError>>({ code: 'FONT_TOO_LARGE' }),
 				)
 			},

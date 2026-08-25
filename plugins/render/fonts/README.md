@@ -1,7 +1,8 @@
 # @pluxel/fonts
 
 `@pluxel/fonts` 是 Pluxel 官方服务端字体 capability。它统一负责系统字体发现、provider-owned 上传集合、
-默认字体选择、持久化、容量边界和原生资源回收；Canvas、ECharts 等 renderer 只消费字体快照。
+默认字体选择、持久化、容量边界和原生资源回收；Canvas/ECharts 消费 native snapshot，Takumi 等独立
+renderer 消费内容寻址的可移植资源。
 
 Windows、macOS 与 Linux 字体由 `@napi-rs/canvas` 的 platform font manager 自动发现。`fonts.families` 标出
 `system` / `registered` 来源，`fonts.defaultFont` 按 Workbench → host config → 系统自动选择 → generic 顺序解析。
@@ -76,5 +77,10 @@ host.cfg(FontsPlugin).set({
 selection 的进程内 signal；Canvas 等 measurement cache 在它变化时丢弃旧宽度。绕过本插件直接修改
 `GlobalFonts` 不属于该信号契约。重复读取的 frozen default/families snapshot 按 revision 复用，字体注册或选择变化后
 下一次读取会生成新 snapshot。
+
+`fonts.portableFonts` 是 managed 与 caller registration 的 frozen metadata snapshot；system fonts 没有
+FontsPlugin-owned bytes，因此不在其中。renderer 先比较 `portableFonts.revision`，只在变化时调用
+`readPortableFont(id)` 取得 detached byte copy并重建/更新自己的 registry，避免每次 render 复制全部字体。
+`selectionManager('portable')` 复用同一 Fonts Selection Port，但只投影这些真正可加载的 candidate。
 
 完整用户路径见 [`docs/plugins/rendering/fonts.md`](../../../docs/plugins/rendering/fonts.md)，设计不变量见 [`DESIGN.md`](DESIGN.md)。

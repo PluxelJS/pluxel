@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
 import { BasePlugin, Plugin, type Context, type PersistenceNamespace } from '@pluxel/runtime'
@@ -42,7 +42,7 @@ export type FontRegistrationInput = Readonly<{
 }>
 
 export type FontPathRegistrationInput = Readonly<{
-	/** Absolute server path. The file is read synchronously by the native font registry. */
+	/** Absolute server path. FontsPlugin synchronously snapshots the file before registration. */
 	path: string
 	/** Optional family alias used by CSS canvas font strings. */
 	family?: string
@@ -55,6 +55,27 @@ export interface FontRegistration {
 	/** Removes this registration. Repeated calls are harmless. */
 	dispose(): void
 }
+
+/** Metadata for font bytes that can be replayed into a renderer-local registry. */
+export type PortableFontResourceSnapshot = Readonly<{
+	/** Content-addressed identity for the bytes and optional family override. */
+	id: string
+	/** Requested family override. Omitted when the font's embedded metadata is authoritative. */
+	family?: string
+	/** Families observed when the resource entered the native Canvas registry. */
+	resolvedFamilies: readonly string[]
+	byteLength: number
+}>
+
+/** Frozen metadata snapshot; resource bytes are read separately to avoid copying on every poll. */
+export type PortableFontsSnapshot = Readonly<{
+	/** Changes only when the replayable resource set changes. */
+	revision: number
+	fonts: readonly PortableFontResourceSnapshot[]
+}>
+
+/** Candidate projection used by a Fonts Selection Port outlet. */
+export type FontSelectionScope = 'all' | 'portable'
 
 export type FontsErrorCode =
 	| 'NOT_RUNNING'
@@ -81,11 +102,71 @@ type OwnedRegistration = Readonly<{
 	key: FontKey
 	owner: Context
 	handle: FontRegistrationHandle
+	source: PortableFontSource
 }>
+
+type PortableFontSource = Readonly<{
+	id: string
+	family?: string
+	data: Uint8Array
+}>
+
+type PortableFontEntry = {
+	readonly source: PortableFontSource
+	resolvedFamilies: readonly string[]
+	registrations: number
+}
+
+type PortableFontsState = {
+	readonly entries: Map<string, PortableFontEntry>
+	revision: number
+	cached?: PortableFontsSnapshot
+}
+
+function attachPortableFont(
+	state: PortableFontsState,
+	source: PortableFontSource,
+	resolvedFamilies: readonly string[],
+): void {
+	const existing = state.entries.get(source.id)
+	if (existing) {
+		existing.registrations += 1
+		const merged = Object.freeze(
+			[...new Set([...existing.resolvedFamilies, ...resolvedFamilies])].toSorted(),
+		)
+		if (
+			merged.length !== existing.resolvedFamilies.length ||
+			merged.some((family, index) => family !== existing.resolvedFamilies[index])
+		) {
+			existing.resolvedFamilies = merged
+			state.revision += 1
+			state.cached = undefined
+		}
+		return
+	}
+	state.entries.set(source.id, {
+		source,
+		resolvedFamilies: Object.freeze([...resolvedFamilies]),
+		registrations: 1,
+	})
+	state.revision += 1
+	state.cached = undefined
+}
+
+function detachPortableFont(state: PortableFontsState, id: string): void {
+	const existing = state.entries.get(id)
+	if (!existing) return
+	existing.registrations -= 1
+	if (existing.registrations > 0) return
+	state.entries.delete(id)
+	state.revision += 1
+	state.cached = undefined
+}
 
 function releaseOwnedRegistration(
 	registrations: Set<OwnedRegistration>,
 	registrationsByOwner: WeakMap<Context, Set<OwnedRegistration>>,
+	portableFonts: PortableFontsState,
 	registration: OwnedRegistration,
 ): void {
 	if (!registration.handle.active) return
@@ -93,6 +174,7 @@ function releaseOwnedRegistration(
 	registrations.delete(registration)
 	registrationsByOwner.get(registration.owner)?.delete(registration)
 	GlobalFonts.remove(registration.key)
+	detachPortableFont(portableFonts, registration.source.id)
 	nativeRegistryRevision += 1
 }
 
@@ -126,6 +208,10 @@ export class FontsPlugin extends BasePlugin {
 	private readonly config = this.configs.use(FontsConfig)
 	private readonly registrations = new Set<OwnedRegistration>()
 	private readonly registrationsByOwner = new WeakMap<Context, Set<OwnedRegistration>>()
+	private readonly portableFontsState: PortableFontsState = {
+		entries: new Map(),
+		revision: 0,
+	}
 	private readonly defaults: DefaultFontState = {
 		systemFamilies: new Set(),
 		tail: Promise.resolve(),
@@ -174,6 +260,11 @@ export class FontsPlugin extends BasePlugin {
 					GlobalFonts.removeBatch(active.map(({ key }) => key))
 					nativeRegistryRevision += 1
 				}
+				if (this.portableFontsState.entries.size > 0) {
+					this.portableFontsState.entries.clear()
+					this.portableFontsState.revision += 1
+					this.portableFontsState.cached = undefined
+				}
 			},
 			{ tag: 'fonts-registry' },
 		)
@@ -192,7 +283,8 @@ export class FontsPlugin extends BasePlugin {
 		const family = normalizeFamily(input.family)
 		this.assertFontSize(input.data.byteLength)
 		const owner = this.ctx.caller ?? this.ctx
-		return this.registerBytes(owner, input.data, family).handle
+		this.assertOwnerCapacity(owner)
+		return this.registerBytes(owner, Uint8Array.from(input.data), family, false).handle
 	}
 
 	/** Registers one font from an absolute server path for the current caller generation. */
@@ -213,18 +305,14 @@ export class FontsPlugin extends BasePlugin {
 		this.assertFontSize(size)
 		const owner = this.ctx.caller ?? this.ctx
 		this.assertOwnerCapacity(owner)
-		const before = familySignatures()
-		let key: FontKey | null
+		let data: Buffer
 		try {
-			key = GlobalFonts.registerFromPath(input.path, family)
+			data = readFileSync(input.path)
 		} catch (cause) {
-			throw new FontsError('INVALID_FONT', `Native font registration failed for ${input.path}`, {
-				cause,
-			})
+			throw new FontsError('INVALID_INPUT', `Cannot read font file at ${input.path}`, { cause })
 		}
-		if (!key)
-			throw new FontsError('INVALID_FONT', `Native font registration failed for ${input.path}`)
-		return this.ownNativeRegistration(owner, key, changedFamilies(before)).handle
+		this.assertFontSize(data.byteLength)
+		return this.registerBytes(owner, data, family, false).handle
 	}
 
 	/** Returns a detached snapshot of every family visible to the native renderer. */
@@ -245,6 +333,44 @@ export class FontsPlugin extends BasePlugin {
 		return nativeRegistryRevision
 	}
 
+	/**
+	 * Returns frozen metadata for managed and caller-registered font bytes. Platform-discovered
+	 * system fonts are intentionally absent because their files are not owned by FontsPlugin.
+	 */
+	get portableFonts(): PortableFontsSnapshot {
+		this.assertRunning()
+		const state = this.portableFontsState
+		if (state.cached?.revision === state.revision) return state.cached
+		const snapshot = Object.freeze({
+			revision: state.revision,
+			fonts: Object.freeze(
+				[...state.entries.values()]
+					.map(({ source, resolvedFamilies }) =>
+						Object.freeze({
+							id: source.id,
+							...(source.family ? { family: source.family } : {}),
+							resolvedFamilies,
+							byteLength: source.data.byteLength,
+						}),
+					)
+					.toSorted((left, right) => left.id.localeCompare(right.id)),
+			),
+		})
+		state.cached = snapshot
+		return snapshot
+	}
+
+	/** Returns a detached byte copy for one ID from the current `portableFonts` snapshot. */
+	readPortableFont(id: string): Uint8Array {
+		this.assertRunning()
+		if (typeof id !== 'string' || !MANAGED_ID.test(id)) {
+			throw new FontsError('INVALID_INPUT', 'Portable font ID is invalid')
+		}
+		const source = this.portableFontsState.entries.get(id)?.source
+		if (!source) throw new FontsError('FONT_NOT_FOUND', `Portable font ${id} does not exist`)
+		return Uint8Array.from(source.data)
+	}
+
 	private createWorkbenchManager(): RpcTarget & FontsWorkbenchCommands {
 		this.assertRunning()
 		const state = this.managed
@@ -260,15 +386,36 @@ export class FontsPlugin extends BasePlugin {
 	}
 
 	/** Returns the provider-owned default selector used by `FontsSelectionPort` outlets. */
-	selectionManager(): RpcTarget & FontSelectionCommands {
+	selectionManager(scope: FontSelectionScope = 'all'): RpcTarget & FontSelectionCommands {
 		this.assertRunning()
+		if (scope !== 'all' && scope !== 'portable') {
+			throw new FontsError('INVALID_INPUT', 'Font selection scope must be all or portable')
+		}
 		const state = this.managed
 		if (!state?.active) {
 			throw new FontsError('NOT_RUNNING', 'Managed font collection is not available')
 		}
+		const portable = scope === 'portable'
 		return new FontSelectionRpc(
-			async () => toSelectionSnapshot(await this.readManagedSnapshot(state)),
-			async (family) => toSelectionSnapshot(await this.setWorkbenchDefaultFamily(state, family)),
+			async () =>
+				toSelectionSnapshot(
+					await this.readManagedSnapshot(state),
+					portable ? portableFamilyKeys(this.portableFontsState) : undefined,
+				),
+			async (family) =>
+				toSelectionSnapshot(
+					await this.setWorkbenchDefaultFamily(
+						state,
+						family,
+						portable
+							? (selected) =>
+									portableFamilyKeys(this.portableFontsState).has(
+										selected.toLocaleLowerCase('en-US'),
+									)
+							: undefined,
+					),
+					portable ? portableFamilyKeys(this.portableFontsState) : undefined,
+				),
 		)
 	}
 
@@ -329,6 +476,7 @@ export class FontsPlugin extends BasePlugin {
 	private setWorkbenchDefaultFamily(
 		state: ManagedState,
 		family: string | null,
+		isAllowed?: (selectedFamily: string) => boolean,
 	): Promise<FontsManagerSnapshot> {
 		return this.enqueueManaged(state, async () => {
 			if (family !== null && typeof family !== 'string') {
@@ -336,7 +484,7 @@ export class FontsPlugin extends BasePlugin {
 			}
 			const requested = family === null ? undefined : normalizeFamily(family)
 			const selected = requested ? findAvailableFamily(requested) : undefined
-			if (requested && !selected) {
+			if (requested && (!selected || (isAllowed && !isAllowed(selected)))) {
 				throw new FontsError('FONT_NOT_FOUND', `Font family "${requested}" is not available`)
 			}
 			await this.enqueueDefault(async () => {
@@ -518,22 +666,30 @@ export class FontsPlugin extends BasePlugin {
 		}
 		if (!key)
 			throw new FontsError('INVALID_FONT', 'Native font registration rejected the font data')
-		return this.ownNativeRegistration(owner, key, changedFamilies(before))
+		const source = Object.freeze({
+			id: managedFontId(data, family),
+			...(family ? { family } : {}),
+			data,
+		})
+		return this.ownNativeRegistration(owner, key, changedFamilies(before), source)
 	}
 
 	private ownNativeRegistration(
 		owner: Context,
 		key: FontKey,
 		families: readonly string[],
+		source: PortableFontSource,
 	): OwnedRegistration {
 		const registrations = this.registrations
 		const registrationsByOwner = this.registrationsByOwner
+		const portableFonts = this.portableFontsState
 		let registration!: OwnedRegistration
 		const release = () =>
-			releaseOwnedRegistration(registrations, registrationsByOwner, registration)
+			releaseOwnedRegistration(registrations, registrationsByOwner, portableFonts, registration)
 		const handle = new FontRegistrationHandle(families, release)
-		registration = Object.freeze({ key, owner, handle })
+		registration = Object.freeze({ key, owner, handle, source })
 		registrations.add(registration)
+		attachPortableFont(portableFonts, source, families)
 		let ownerRegistrations = registrationsByOwner.get(owner)
 		if (!ownerRegistrations) {
 			ownerRegistrations = new Set()
@@ -553,7 +709,12 @@ export class FontsPlugin extends BasePlugin {
 	}
 
 	private releaseRegistration(registration: OwnedRegistration): void {
-		releaseOwnedRegistration(this.registrations, this.registrationsByOwner, registration)
+		releaseOwnedRegistration(
+			this.registrations,
+			this.registrationsByOwner,
+			this.portableFontsState,
+			registration,
+		)
 	}
 
 	private assertOwnerCapacity(owner: Context): void {
@@ -661,11 +822,33 @@ class FontSelectionRpc extends RpcTarget implements FontSelectionCommands {
 	}
 }
 
-function toSelectionSnapshot(snapshot: FontsManagerSnapshot): FontSelectionSnapshot {
+function toSelectionSnapshot(
+	snapshot: FontsManagerSnapshot,
+	allowedFamilies?: ReadonlySet<string>,
+): FontSelectionSnapshot {
 	return Object.freeze({
 		defaultFont: snapshot.defaultFont,
-		families: snapshot.families,
+		families:
+			allowedFamilies === undefined
+				? snapshot.families
+				: Object.freeze(
+						snapshot.families.filter((font) =>
+							allowedFamilies.has(font.family.toLocaleLowerCase('en-US')),
+						),
+					),
 	})
+}
+
+function portableFamilyKeys(state: PortableFontsState): ReadonlySet<string> {
+	const families = new Set<string>()
+	for (const { source, resolvedFamilies } of state.entries.values()) {
+		if (source.family) {
+			families.add(source.family.toLocaleLowerCase('en-US'))
+			continue
+		}
+		for (const family of resolvedFamilies) families.add(family.toLocaleLowerCase('en-US'))
+	}
+	return families
 }
 
 function normalizeManagedInput(

@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
 
-import { isPublishablePackage, tegamiIgnoredPackageNames } from './repository-packages.mjs'
+import {
+	isPublishablePackage,
+	packagesRequiringInitialMajor,
+	tegamiIgnoredPackageNames,
+} from './repository-packages.mjs'
 
-const packageRecord = (kind, name, isPrivate) => ({
+const packageRecord = (kind, name, isPrivate, version) => ({
 	kind,
-	manifest: { name, ...(isPrivate === undefined ? {} : { private: isPrivate }) },
+	manifest: {
+		name,
+		...(isPrivate === undefined ? {} : { private: isPrivate }),
+		...(version === undefined ? {} : { version }),
+	},
 })
 
 describe('repository package policy', () => {
@@ -30,5 +38,23 @@ describe('repository package policy', () => {
 			'@scope/internal',
 			'workspace',
 		])
+	})
+
+	it('requires an atomic first major, then only majors newly added pre-1 packages', () => {
+		const firstRelease = [
+			packageRecord('package', '@scope/a', undefined, '0.1.0'),
+			packageRecord('plugin', '@scope/b', undefined, '0.8.0'),
+		]
+		assert.deepEqual(packagesRequiringInitialMajor(firstRelease), firstRelease)
+
+		const laterAddition = [
+			packageRecord('package', '@scope/a', undefined, '1.2.0'),
+			packageRecord('plugin', '@scope/new', undefined, '0.1.0'),
+		]
+		assert.deepEqual(packagesRequiringInitialMajor(laterAddition), [laterAddition[1]])
+		assert.deepEqual(
+			packagesRequiringInitialMajor([packageRecord('package', '@scope/a', undefined, '1.2.0')]),
+			[],
+		)
 	})
 })

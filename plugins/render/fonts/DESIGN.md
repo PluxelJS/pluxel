@@ -1,7 +1,7 @@
 # Fonts 插件设计
 
-`@pluxel/fonts` 是服务端渲染进程中字体事实与管理状态的唯一 owner。当前 native backend 是
-`@napi-rs/canvas` 的进程级 `GlobalFonts`。
+`@pluxel/fonts` 是服务端渲染进程中字体事实与管理状态的唯一 owner。Canvas native backend 是
+`@napi-rs/canvas` 的进程级 `GlobalFonts`；managed/caller sources 另外投影成 renderer-neutral portable bytes。
 
 ## 两类资源所有权
 
@@ -33,18 +33,31 @@ caller-local shadow。`revision` 跟随 FontsPlugin 管理的 native registratio
 `defaultFont` 与 detached `families` snapshot 按该 revision 缓存并冻结；重复 renderer 调用不再扫描 native registry，
 registration/selection 变化仍会在下一次读取时原子生成新 snapshot。
 
+## 可移植 renderer 资源
+
+managed record 和 caller registration 保存内容寻址 source；同一 bytes + family alias 共享 portable ID/refcount。
+`portableFonts` 只返回按 resource revision 缓存的 frozen metadata，`readPortableFont(id)` 才复制 bytes，避免 renderer
+轮询 revision 时复制整个 collection。最后一个 registration 释放时撤销 source；provider stop 清除当前 generation
+全部 source。System discovery 不暴露可信 file path/bytes，因此 system-only family 不进入 portable snapshot。
+
+这条 contract 服务所有拥有独立 font registry 的 renderer，不暴露 `GlobalFonts` 或 Takumi type。没有为字体创建
+Runtime Context special case：Fonts 仍是正常 Plugin capability，consumer 通过 required edge、caller facade 与 lifecycle
+使用它。
+
 ## Workbench 与 Port
 
 FontsPlugin 的正常 Workbench View 持有内部 manager RPC，只有这里提供上传和删除；完整 manager contract 不从包的
 Workbench 子入口导出。`FontsSelectionPort` 是复用同一 renderer bundle 的窄投影：Canvas、ECharts 或第三方 consumer
 选择 placement，绑定 `selectionManager()`，Port UI 只列出 FontsPlugin 的候选并修改统一默认值。
+`selectionManager('portable')` 使用同一 contract，但只投影/接受真正拥有 portable source 的 family，供 Takumi 等
+不能读取 Canvas system registry 的 renderer 使用。
 
 因此 Port outlet 的 resource grant/placement 属于 consumer，字体集合与 mutation 实现仍属于 provider；关闭
 Workbench 只消除 UI artifact、resource 和 transport，不影响 managed collection、默认选择或服务端渲染。
 
 ## 有意不包含
 
-- per-renderer 上传集合或按 consumer 复制字体 bytes；
+- per-renderer 上传集合；portable bytes 只在 consumer 明确 read 时生成 detached copy；
 - Workbench 服务端路径选择、URL 下载或浏览器字体分发；
 - `GlobalFonts`、`FontKey`、`removeAll()` 或可变 registry 的公开逃生口；
 - 为单个 native backend 增加 runtime/core 特例。

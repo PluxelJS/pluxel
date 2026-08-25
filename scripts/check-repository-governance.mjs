@@ -2,7 +2,11 @@ import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parse } from 'yaml'
 
-import { isPublishablePackage, repositoryPackages } from './repository-packages.mjs'
+import {
+	isPublishablePackage,
+	packagesRequiringInitialMajor,
+	repositoryPackages,
+} from './repository-packages.mjs'
 import { paper } from './tegami.mts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -121,15 +125,9 @@ for (const [id, draft] of releaseDraft.getPackageDrafts()) {
 	if (!publicVersions.has(name)) errors.push(`Tegami planned non-public package ${name}`)
 }
 
-const preOnePackages = publicPackages.filter(({ manifest }) => manifest.version.startsWith('0.'))
-if (preOnePackages.length > 0) {
-	if (preOnePackages.length !== publicPackages.length) {
-		errors.push('initial public release must move every public package to 1.0.0 atomically')
-	}
-	for (const { manifest } of publicPackages) {
-		if (plannedTypes.get(manifest.name) !== 'major') {
-			errors.push(`${manifest.name} must have a major Tegami intent for the initial 1.0.0 release`)
-		}
+for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
+	if (plannedTypes.get(manifest.name) !== 'major') {
+		errors.push(`${manifest.name} must have a major Tegami intent before its initial 1.0.0 release`)
 	}
 }
 

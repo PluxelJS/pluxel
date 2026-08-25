@@ -15,6 +15,11 @@ export function tegamiIgnoredPackageNames(packages) {
 		.toSorted()
 }
 
+export function packagesRequiringInitialMajor(packages) {
+	const preOnePackages = packages.filter(({ manifest }) => manifest.version?.startsWith('0.'))
+	return preOnePackages.length === packages.length ? packages : preOnePackages
+}
+
 export async function readRepositoryPackages(root = repositoryRoot) {
 	const packagesDirectory = resolve(root, 'packages')
 	const pluginsDirectory = resolve(root, 'plugins')

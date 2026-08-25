@@ -6,15 +6,14 @@
 当前依赖方向为：
 
 ```text
-@pluxel/fonts
-      ↓
-@pluxel/canvas
-      ↓
-@pluxel/echarts
+                  ┌─> @pluxel/canvas -> @pluxel/echarts
+@pluxel/fonts ----┤
+                  └─> @pluxel/takumi
 ```
 
 - [`@pluxel/fonts`](fonts/README.md) 拥有进程内字体发现、注册、持久化和默认选择。
 - [`@pluxel/canvas`](canvas/README.md) 提供有资源预算的原生 Canvas、SVG、图片和文字布局能力。
 - [`@pluxel/echarts`](echarts/README.md) 将 Apache ECharts SSR 接入 Canvas、Fonts 和共享 worker lifecycle。
+- [`@pluxel/takumi`](takumi/README.md) 消费 Fonts 的可移植资源，以有界 native async task 渲染 HTML/node tree。
 
-业务插件只注入自己直接使用的最高层能力；required dependency 继续由各插件 constructor 唯一声明。
+业务插件只注入自己直接使用的 renderer 能力；required dependency 继续由各插件 constructor 唯一声明。

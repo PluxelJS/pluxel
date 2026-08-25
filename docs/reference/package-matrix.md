@@ -23,6 +23,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/fonts`           | 服务端字体注册与 provider                                | [字体](../plugins/rendering/fonts.md)                |
 | `@pluxel/canvas`          | 有预算约束的服务端 Canvas                                | [Canvas](../plugins/rendering/canvas.md)             |
 | `@pluxel/echarts`         | 服务端 ECharts 渲染                                      | [ECharts](../plugins/rendering/echarts.md)           |
+| `@pluxel/takumi`          | 有预算约束的 HTML/node-tree 图片渲染                     | [Takumi](../plugins/rendering/takumi.md)             |
 
 这些 package 未标记为 private，并声明了面向消费者的入口。消费者只从 package `exports` 导入；版本可用性以 registry 和 release metadata 为准。
 

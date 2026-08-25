@@ -1,0 +1,59 @@
+# @pluxel/takumi
+
+`@pluxel/takumi` 基于 [Takumi](https://github.com/kane50613/takumi) 的 Node 原生 renderer，
+把 HTML 或 Takumi node tree 渲染为 PNG、JPEG、WebP 或 SVG。Plugin 统一应用物理像素、输入资源、
+输出、cache、并发和队列预算，并将 `@pluxel/fonts` 作为 required dependency。
+
+```ts
+import { TakumiPlugin } from '@pluxel/takumi'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+
+@Plugin()
+export class CardsPlugin extends BasePlugin {
+	constructor(private readonly takumi: TakumiPlugin) {
+		super()
+	}
+
+	render(title: string) {
+		return this.takumi.render({
+			content: `<main class="card"><h1>${escapeHtml(title)}</h1></main>`,
+			stylesheets: [
+				'.card{display:flex;width:100%;height:100%;align-items:center;justify-content:center;background:#0f172a;color:white}',
+			],
+			width: 1200,
+			height: 630,
+		})
+	}
+}
+```
+
+Host catalog 包含 `[FontsPlugin, TakumiPlugin, CardsPlugin]`，业务 Plugin 只注入自己直接使用的
+`TakumiPlugin`。`render()` 返回 caller-owned `Buffer`；`renderSvg()` 返回 SVG 字符串。Raster 默认输出 PNG，
+JPEG/WebP 的 quality 与 WebP lossless 通过互斥 `output` variant 表达。
+
+## 字体
+
+FontsPlugin 的 managed upload 与 `register()` / `registerFromPath()` 字体会进入内容寻址的
+`portableFonts` 投影。Takumi 为每个字体 revision 创建 renderer-local registry，复制每个资源一次并复用
+Takumi 自己的 parsed resource cache；字体删除或替换后新 revision 不会继续看见旧 registry。
+
+平台自动发现的系统字体只有 Canvas native registry 能看到，FontsPlugin 不拥有其文件 bytes，因此不会伪装成
+Takumi 可移植资源。Takumi 的 Fonts tab 只列 managed/programmatic portable families；如果 provider-wide default
+仍指向不可移植的系统 family，Takumi 依次使用可移植 families，再回落到上游内嵌 Geist last-resort font。
+
+## 图片、取消和调度
+
+TakumiPlugin 不执行隐式网络请求。HTML/CSS/node tree 引用的 HTTP(S) 图片必须在 `images` 中按相同 `src`
+提供 bytes；下载、认证、redirect、retry 与 origin policy 由 Wretch 或业务 HTTP capability 负责。传入图片 bytes
+在排队前复制，remote URL 缺少匹配资源会以 `INVALID_IMAGE` 失败。
+
+Takumi 的 N-API render 已经是真异步任务，因此 Plugin 不再把它套进 `ctx.workers`。Plugin 自己只做 caller-aware
+有界 admission 和 owner round-robin；`AbortSignal` 会取消排队与上游 native render。Takumi 发布包装器的字体注册当前不接受
+signal，而且相同 revision 的准备工作由多个调用共享；取消发生在字体准备期间时会在 registration 之间或完成后的
+checkpoint 生效，旧 build 不能回写下一 generation。
+
+配置默认限制 8192×8192 physical dimensions、16,777,216 pixels、32 MiB image inputs、128 MiB portable
+fonts、64 MiB output、30 秒 wall-clock deadline、4 个 concurrent renders 和 32 个 queued renders。完整配置与行为见
+[`docs/plugins/rendering/takumi.md`](../../../docs/plugins/rendering/takumi.md)，设计边界见 [`DESIGN.md`](DESIGN.md)。
+
+示例中的 `escapeHtml()` 代表业务自己的可信模板编码；Takumi 渲染 HTML/CSS，不执行浏览器脚本。
