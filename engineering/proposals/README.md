@@ -11,8 +11,6 @@
 
 当前进行中的提案：
 
-- [`PLUGIN_CONFIG_UPDATE_LISTENERS.md`](PLUGIN_CONFIG_UPDATE_LISTENERS.md)：研究将配置保存与 Plugin restart 分离，并由运行中的
-  Plugin/PluginPart 显式注册 config listener 原地应用 desired config；没有 listener 时只保存、不应用也不重启。
 - [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)：Level 1 management 落地后，仅研究可替代 Remote View host
   所需的 browser runtime、React renderer/delivery ABI、最小 singleton 和 CSS asset ownership。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的

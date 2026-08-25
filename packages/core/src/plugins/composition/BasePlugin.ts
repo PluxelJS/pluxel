@@ -8,7 +8,11 @@ import {
 import type { PluginConstructor } from '../types'
 import type { PluginDefinitionAddress } from '../runtime/identity'
 import type { PluginPartDefinitionTree } from '../runtime/part-definition'
-import { PLUGIN_CONFIGS, type PluginConfigs } from './PluginConfigs'
+import { createPluginConfigs, type PluginConfigs } from './PluginConfigs'
+import {
+	closeConfigUpdateRegistrationWindow,
+	openConfigUpdateRegistrationWindow,
+} from './ConfigUpdate'
 import { OptionalPluginBindings } from './OptionalPluginBindings'
 import {
 	createRootPluginParts,
@@ -28,6 +32,7 @@ type PluginGenerationState = {
 	readonly parts: RootPluginParts
 	initActive: boolean
 	optional?: OptionalPluginBindings
+	configs?: PluginConfigs
 }
 
 type ConstructionFrame = {
@@ -166,7 +171,8 @@ export abstract class BasePlugin<C extends PluginContext = PluginContext> {
 	}
 
 	protected get configs(): PluginConfigs {
-		return PLUGIN_CONFIGS
+		const state = stateOf(this)
+		return (state.configs ??= createPluginConfigs(state.ctx))
 	}
 
 	protected init?(_signal: AbortSignal): PluginCleanup | Promise<PluginCleanup>
@@ -253,10 +259,12 @@ export function getPluginLifecycleAdapter<P extends BasePlugin>(
 			try {
 				await startPluginParts(state.parts, signal)
 				if (typeof init === 'function') {
+					openConfigUpdateRegistrationWindow(ctx)
 					const cleanup = await init.call(plugin, signal)
 					await adoptCleanup(ctx, cleanup)
 				}
 			} finally {
+				closeConfigUpdateRegistrationWindow(ctx)
 				state.initActive = false
 			}
 		},

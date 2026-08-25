@@ -151,7 +151,7 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 | ------------------ | ---------------------------------------------- | ------------------------------------------- | ---------------------------------- |
 | Core graph/DI      | required/optional edge target                  | slot、lifecycle owner                       | generation                         |
 | HMR                | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot           | module revision                    |
-| Config             | schema、defaults、declaration path             | value、revision、apply/restart              | config record revision             |
+| Config             | schema、defaults、declaration path             | value、revision、update notification        | config record revision             |
 | RuntimeState       | fork family、required token                    | enabled、provider target、consumer override | file revision                      |
 | Logging            | 无 policy owner                                | category、filter、policy、reference/label   | rootId、bootId、stream epoch/seq   |
 | Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping         | group id、preference revision      |
@@ -165,8 +165,8 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 HMR 对一个 definition 的 default/forks 生成一次 commit plan，不能让部分 fork 使用新源码、部分 fork 使用旧源码。
 artifact build cache 不含 `forkId`，相同输入只编译一次；node binding 和 generation lease 仍各自隔离。
 
-config patch 顺序是 validate -> 保存 desired record -> restart addressed node/真实 dependent closure -> 报告 apply 结果。
-restart 失败返回 `saved-not-applied`，desired config 保留供显式 restart 或下次 boot 重试。修改一个 fork 不重启 sibling/default。
+config patch 顺序是 validate -> 保存 desired record -> 通知 addressed running generation -> 报告 apply 结果。listener 缺失或失败返回
+`saved-not-applied`，desired config 保留供后续 mutation、显式 restart 或下次 boot 重试。修改一个 fork 不通知 sibling/default。
 
 Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench extension/resource owner
 仍按 node，grant 按 generation。默认 Plugin HTTP path 是 `/__pluxel/plugins/<v1-node-route>`；作者稳定产品 API 继续使用显式 `publicPath`。

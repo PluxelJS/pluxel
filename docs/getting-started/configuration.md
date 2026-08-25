@@ -120,6 +120,54 @@ export class ReportsPlugin extends BasePlugin {
 
 constructor 只声明 required Plugin dependency，不读取 config，也不创建依赖 config 的资源。
 
+## 让运行中的 Plugin 接收配置更新
+
+保存配置默认只推进 durable desired config，不会隐式 restart 运行中的 Plugin。能够原地更新的 Plugin 在 `init()` 中为自己的 config field
+注册一次 listener：
+
+```ts twoslash
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+
+const GatewayConfig = v.object({
+	timeoutMs: v.optional(v.number(), 5_000),
+	concurrency: v.optional(v.number(), 4),
+})
+
+@Plugin()
+export class GatewayPlugin extends BasePlugin {
+	private readonly config = this.configs.use(GatewayConfig)
+	private options = { timeoutMs: 0, concurrency: 0 }
+
+	protected override init() {
+		this.options = { ...this.config }
+		this.configs.onUpdate(this.config, ({ desired }) => {
+			this.options = {
+				timeoutMs: desired.timeoutMs,
+				concurrency: desired.concurrency,
+			}
+		})
+	}
+
+	currentOptions() {
+		return this.options
+	}
+}
+```
+
+listener 收到两个 deep-frozen snapshot 和一个 generation cancellation signal：
+
+- `applied` 是最后一次被当前 generation 全部相关 listener 确认的 declaration slice；
+- `desired` 是本次已经持久化、等待处理的 slice；
+- `signal` 在 generation stop、restart 或 replacement 时 abort。
+
+listener resolve 表示 Plugin 确认自己已经处理更新。框架随后更新 config field 与 applied revision，但不会检查 Plugin 的普通字段、连接或
+外部系统，也不会回滚 listener 已经产生的副作用。需要并发一致读取时，先构造完整 runtime object，再像示例一样一次替换引用。
+
+注册只允许发生在声明该 field 的 Plugin/Part `init()` 中，每个 declaration、每个 generation 一次。Listener 应保持幂等，并能从当前
+真实 runtime state 收敛到最新 `desired`。如果只能通过完整重建安全应用配置，就不要注册 listener；保存结果会是
+`saved-not-applied`，由用户或宿主显式 restart。Listener 内不要等待另一个 config mutation、restart 或 graph operation，因为这些操作
+与当前通知使用同一个 coordinator queue。
+
 ## 缺失值、显式值和归一化
 
 host 提供的是 raw config record，schema 负责把它变成冻结的 normalized snapshot：
@@ -195,7 +243,8 @@ default、transform 和 validation。需要“未启用时不要求凭据”等�
 明确表达，不根据 runtime catalog 动态改变配置契约。
 
 Workbench 把父 schema 显示为 General tab，把 Part schema 按 nested path 显示为独立 tab。所有 tab 编辑同一个 Plugin config
-owner；提交任意 tab 都会在 server 重新验证完整 composite record，并重启整个 Plugin，而不是单独重启 Part。
+owner；提交任意 tab 都会在 server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前
+generation；否则只保存 desired config，不会单独更新 Part 或隐式 restart。
 
 Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./plugin-parts.md)。
 
@@ -224,7 +273,8 @@ host.cfg(WorkerPlugin).enable()
 await host.commit()
 ```
 
-static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin 只读取校验后的配置。配置变化会重启 Plugin，具体清理顺序见 [Plugin 模型与生命周期](./plugin-model.md)。
+static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存与显式 restart 是两个独立操作；运行中的
+原地更新只通过 `configs.onUpdate()` 通知。
 
 ## 用部署环境初始化 static config
 

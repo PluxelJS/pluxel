@@ -39,6 +39,9 @@ export {
 export type {
 	Cleanup,
 	CommitSummary,
+	ConfigUpdate,
+	ConfigUpdateListener,
+	ConfigSnapshot,
 	Context,
 	DisposableLike,
 	Effects,

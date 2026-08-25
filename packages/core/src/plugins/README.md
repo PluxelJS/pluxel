@@ -13,6 +13,7 @@
 - `@Plugin` 是薄 marker，只携带 `displayName`、`startTimeoutMs` 和显式 abstract provider relation。
 - constructor required dependency 和 `definePluginRef<T>()` optional dependency 都来自 toolchain lowering facts。
 - `plugins.use(Ref, callback)` 只允许在 `init()` 中直接调用；callback 同步返回的资源进入 consumer effects。
+- `configs.onUpdate(this.config, listener)` 绑定声明者 Context 与 generation；配置保存只通知，不隐式 restart。
 - `init()` cleanup 与显式 effects 是唯一 generation teardown；没有并行 lifecycle cleanup hook。
 - Plugin/PluginPart class 各自最多声明一个 `this.configs.use(ObjectSchema)` class field；runtime 仍只有一个 owner record。
 - `this.parts.use(PartClass)` lower 静态 containment；Part 自动得到 child Context/effects/config，并先于 owner 启动。
@@ -41,7 +42,8 @@ reflection 或 name fallback。
 
 - `BasePlugin.ts`：Context、init cleanup adoption 与 generation drain；
 - `OptionalPluginBindings.ts`：init-only optional callback facade；
-- `PluginConfigs.ts`：Plugin/PluginPart object config sentinel；
+- `PluginConfigs.ts`：Plugin/PluginPart object config sentinel、owner-bound update facade 与公开 listener 类型；
+- `ConfigUpdate.ts`：generation field binding、listener registration、children-before-owner notification 与确认；
 - `PluginPart.ts`：owner-bound Part authoring、containment construction 与 lifecycle；
 - `symbols.ts`：内部 Context/generation symbols。
 

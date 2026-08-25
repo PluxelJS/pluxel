@@ -95,7 +95,7 @@ O(1) membership lookup。draft/snapshot publication 允许 O(C) 构建成本，
 
 catalog/source batch 可以触发 `O(C + F + B + E)` 的 bounded reconciliation；blocked closure 必须通过 reverse-edge queue 线性传播。
 definition replacement 继续由 Core 的 definition-to-materialized-node index 枚举 `k` 个 variants，复杂度为 `O(k + affected edges)`，不能扫描完整
-Core graph。纯 addressed restart 与 running config apply 不属于 catalog HMR，不得进入 full reconciler。static route 同样只读取 coordinator
+Core graph。纯 addressed restart 与 running config notification 不属于 catalog HMR，不得进入 full reconciler。static route 同样只读取 coordinator
 committed snapshot，不能为 fixed catalog 保留例外 authority。
 
 source watcher 和 resolved source declaration reader 在 fixed baseline commit 前安装。producer 可通过隔离的

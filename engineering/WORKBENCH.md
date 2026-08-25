@@ -37,7 +37,7 @@ Contract 不包含 Plugin node address、Context、Drizzle table、provider 或 
 因此一个 Plugin node 始终只有一个 layout/grant owner。
 
 Plugin config projection 可以包含 General 与多个 PluginPart path section。Workbench 把 section 渲染为 tabs，并把 nested
-field patch 提交给同一个 Plugin node config owner；server 每次重新校验完整 composite record，revision、persistence 与 restart
+field patch 提交给同一个 Plugin node config owner；server 每次重新校验完整 composite record，revision、persistence 与 update notification
 都不按 tab/Part 分裂。Workbench disabled 时 Part config validation 不创建 backend、route 或 browser state。
 
 ## Host-owned dependency selection

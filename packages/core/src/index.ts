@@ -23,6 +23,9 @@ export {
 
 export { BasePlugin, OptionalPluginBindings, PluginConfigs, PluginPart } from './plugins'
 export type {
+	ConfigUpdate,
+	ConfigUpdateListener,
+	ConfigSnapshot,
 	PluginCleanup,
 	PluginConstructor,
 	PluginContextOf,

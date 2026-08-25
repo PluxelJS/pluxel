@@ -255,7 +255,7 @@ export type ConfigResultOk =
 				appliedRevision: number | null
 				report: PluginApplyReport
 				applyFailure: Readonly<{
-					code: 'plugin_not_running_after_restart'
+					code: 'listener_not_registered' | 'listener_failed' | 'generation_changed'
 					message: string
 				}>
 			}>)

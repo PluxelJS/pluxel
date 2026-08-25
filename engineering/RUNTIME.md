@@ -103,7 +103,7 @@ snapshot。coordinator 是 committed catalog 的唯一 authority；snapshot 同�
 committed catalog，dynamic loader/registry 只在一次 batch 内拥有 unpublished mutable draft，commit 后的 resolve、source、module 与 anchor
 查询都从 coordinator snapshot 派生。route 没有 post-commit publication callback，也不能让 reader 看到 draft。
 
-coordinator 串行化 catalog replacement、RuntimeState patch 与 config/HMR restart。前两类 policy/catalog mutation 调用同一个 pure
+coordinator 串行化 catalog replacement、RuntimeState patch、config notification 与 HMR restart。前两类 policy/catalog mutation 调用同一个 pure
 reconciler；不改变 catalog/state 的 addressed restart 走同一队列内的 fast path：
 
 ```text
@@ -129,7 +129,7 @@ runtime-owned、no-fail 的 coordinator catalog/applied/reconciliation field exc
 implementation。
 
 显式 provider default/dependency override 永不自动删除、fallback 或 auto-enable；fork 不能成为 global provider default。ConfigService 仍先保存
-独立 desired config record，再把 addressed restart 排入同一 coordinator，不把 config 并入 RuntimeState。
+独立 desired config record，再在同一 coordinator operation 中通知 addressed running generation，不把 config 并入 RuntimeState，也不隐式 restart。
 
 catalog 或 RuntimeState policy mutation 允许 bounded full reconciliation，但必须为 `O(C + F + B + E)`：`C` 是 catalog definitions，`F` 是
 durable forks，`B` 是 enabled/default/override records，`E` 是 requirement edges。blocked propagation 使用 reverse-edge queue，不得反复扫描全部
@@ -146,8 +146,9 @@ pnpm --filter @pluxel/runtime bench:runtime-state
 该 probe 同时覆盖 1/10/100/1000 个 disabled durable fork 的 projection，并断言不会产生 Core operation/applied node；延迟结果只用于
 观察复杂度趋势，不作为跨机器百分比 SLA。
 
-纯 addressed restart，包括 running config patch 的 apply phase，不运行 reconciler 或扫描 catalog；它以 applied-node key 做 `O(k)` admission，
-再由 Core 扩展真实 dependent closure。definition replacement 通过 `definition -> materialized nodes` index 完成
+纯 addressed restart 不运行 reconciler 或扫描 catalog；它以 applied-node key 做 `O(k)` admission，再由 Core 扩展真实 dependent closure。
+running config patch 直接查找 addressed generation config binding 并通知变化 declaration，不进入 restart path。definition replacement 通过
+`definition -> materialized nodes` index 完成
 `O(k + affected edges)`。每次 status overview 对 pinned catalog/RuntimeState revision 只构建一次 enabled/fork/issue shared index，HTTP、RPC 与 Workbench
 复用同一投影路径；单 node restart 直接使用 coordinator applied lookup 和 Core running lookup，不构建 overview。
 

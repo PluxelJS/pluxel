@@ -1,10 +1,15 @@
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { requireConfigService } from '@pluxel/core/internal'
+import {
+	notifyRunningPluginConfigUpdate,
+	requireConfigService,
+	requirePluginService,
+} from '@pluxel/core/internal'
 import {
 	BasePlugin,
 	createRuntimeContext,
 	createRuntimeHost,
 	Plugin,
+	PluginPart,
 	type RuntimeHost,
 } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -28,9 +33,18 @@ const ConfigSchema = v.object({
 
 let defaultStarts: string[] = []
 let forkStarts = new Map<string, string[]>()
+let defaultUpdates: Array<{ applied: string; desired: string }> = []
+let forkUpdates = new Map<string, string[]>()
 let failingStarts = 0
 let singleValidationRuns = 0
 let singleValidationStarts: string[] = []
+let retryAttempts: Array<{ applied: string; desired: string }> = []
+let concurrentOwnerConfig: Readonly<{ value: string }> | undefined
+let concurrentOwnerReady = deferred<void>()
+let concurrentBorrowerDone = deferred<void>()
+let crossOwnerRegistrationError: unknown
+let withdrawalListenerEntered = deferred<void>()
+let withdrawalListenerAborted = deferred<void>()
 
 const SingleValidationSchema = v.object({
 	value: v.pipe(
@@ -43,12 +57,101 @@ const SingleValidationSchema = v.object({
 	),
 })
 
+const PartSchema = v.object({ value: v.optional(v.string(), 'part-initial') })
+const PartOwnerSchema = v.object({ value: v.optional(v.string(), 'root-initial') })
+
+let partUpdateOrder: string[] = []
+
+class ConfigUpdatePart extends PluginPart<ConfigPartOwner> {
+	readonly config = this.configs.use(PartSchema)
+	runtimeValue = ''
+
+	override init() {
+		this.runtimeValue = this.config.value
+		this.configs.onUpdate(this.config, ({ desired }) => {
+			partUpdateOrder.push('part')
+			this.runtimeValue = desired.value
+		})
+	}
+}
+
+@Plugin()
+class ConfigPartOwner extends BasePlugin {
+	readonly part = this.parts.use(ConfigUpdatePart)
+	readonly config = this.configs.use(PartOwnerSchema)
+	runtimeValue = ''
+
+	override init() {
+		this.runtimeValue = this.config.value
+		this.configs.onUpdate(this.config, ({ desired }) => {
+			partUpdateOrder.push('root')
+			this.runtimeValue = desired.value
+		})
+	}
+}
+
+let incompleteRootNotifications = 0
+
+class ConfigWithoutPartListener extends PluginPart<IncompleteConfigOwner> {
+	readonly config = this.configs.use(PartSchema)
+}
+
+@Plugin()
+class IncompleteConfigOwner extends BasePlugin {
+	readonly part = this.parts.use(ConfigWithoutPartListener)
+	readonly config = this.configs.use(PartOwnerSchema)
+
+	override init() {
+		this.configs.onUpdate(this.config, () => {
+			incompleteRootNotifications++
+		})
+	}
+}
+
+let partialPartRuntimeValue = 'part-initial'
+
+class PartiallyAppliedPart extends PluginPart<PartiallyAppliedOwner> {
+	readonly config = this.configs.use(PartSchema)
+
+	override init() {
+		this.configs.onUpdate(this.config, ({ desired }) => {
+			partialPartRuntimeValue = desired.value
+		})
+	}
+}
+
+@Plugin()
+class PartiallyAppliedOwner extends BasePlugin {
+	readonly part = this.parts.use(PartiallyAppliedPart)
+	readonly config = this.configs.use(PartOwnerSchema)
+
+	override init() {
+		this.configs.onUpdate(this.config, () => {
+			throw new Error('root listener rejected')
+		})
+	}
+}
+
 @Plugin()
 class ConfigOwner extends BasePlugin {
 	readonly config = this.configs.use(ConfigSchema)
+	runtimeValue = ''
 
 	override init() {
 		defaultStarts.push(this.config.value)
+		this.runtimeValue = this.config.value
+		this.configs.onUpdate(this.config, ({ applied, desired }) => {
+			defaultUpdates.push({ applied: applied.value, desired: desired.value })
+			this.runtimeValue = desired.value
+		})
+	}
+
+	registerLate() {
+		this.configs.onUpdate(this.config, () => {})
+	}
+
+	registerForged() {
+		this.configs.onUpdate({ value: this.config.value }, () => {})
 	}
 }
 
@@ -62,6 +165,11 @@ class ConfigFork extends BasePlugin {
 		const values = forkStarts.get(key) ?? []
 		values.push(this.config.value)
 		forkStarts.set(key, values)
+		this.configs.onUpdate(this.config, ({ desired }) => {
+			const updates = forkUpdates.get(key) ?? []
+			updates.push(desired.value)
+			forkUpdates.set(key, updates)
+		})
 	}
 }
 
@@ -71,12 +179,19 @@ class StoppedConfigOwner extends BasePlugin {
 }
 
 @Plugin()
+class ConfigWithoutListener extends BasePlugin {
+	readonly config = this.configs.use(ConfigSchema)
+}
+
+@Plugin()
 class FailingConfigOwner extends BasePlugin {
 	readonly config = this.configs.use(ConfigSchema)
 
 	override init() {
 		failingStarts++
-		if (failingStarts > 1) throw new Error('restart rejected')
+		this.configs.onUpdate(this.config, () => {
+			throw new Error('listener rejected')
+		})
 	}
 }
 
@@ -86,6 +201,77 @@ class SingleValidationOwner extends BasePlugin {
 
 	override init() {
 		singleValidationStarts.push(this.config.value)
+		this.configs.onUpdate(this.config, ({ desired }) => {
+			singleValidationStarts.push(desired.value)
+		})
+	}
+}
+
+@Plugin()
+class RetryConfigOwner extends BasePlugin {
+	readonly config = this.configs.use(ConfigSchema)
+
+	override init() {
+		this.configs.onUpdate(this.config, ({ applied, desired }) => {
+			retryAttempts.push({ applied: applied.value, desired: desired.value })
+			if (desired.value === 'reject') throw new Error('reject this revision')
+		})
+	}
+}
+
+@Plugin()
+class DuplicateConfigListenerOwner extends BasePlugin {
+	readonly config = this.configs.use(ConfigSchema)
+
+	override init() {
+		this.configs.onUpdate(this.config, () => {})
+		this.configs.onUpdate(this.config, () => {})
+	}
+}
+
+@Plugin()
+class ConcurrentConfigOwner extends BasePlugin {
+	readonly config = this.configs.use(ConfigSchema)
+
+	override async init() {
+		concurrentOwnerConfig = this.config
+		concurrentOwnerReady.resolve()
+		await concurrentBorrowerDone.promise
+		this.configs.onUpdate(this.config, () => {})
+	}
+}
+
+@Plugin()
+class ConcurrentConfigBorrower extends BasePlugin {
+	readonly config = this.configs.use(ConfigSchema)
+
+	override async init() {
+		await concurrentOwnerReady.promise
+		try {
+			this.configs.onUpdate(concurrentOwnerConfig!, () => {})
+		} catch (error) {
+			crossOwnerRegistrationError = error
+		} finally {
+			concurrentBorrowerDone.resolve()
+		}
+		this.configs.onUpdate(this.config, () => {})
+	}
+}
+
+@Plugin()
+class WithdrawnConfigOwner extends BasePlugin {
+	readonly config = this.configs.use(ConfigSchema)
+
+	override init() {
+		this.configs.onUpdate(this.config, async ({ signal }) => {
+			withdrawalListenerEntered.resolve()
+			if (!signal.aborted) {
+				await new Promise<void>((resolve) => {
+					signal.addEventListener('abort', () => resolve(), { once: true })
+				})
+			}
+			withdrawalListenerAborted.resolve()
+		})
 	}
 }
 
@@ -95,9 +281,21 @@ afterEach(async () => {
 	for (const host of hosts.splice(0)) await host.dispose()
 	defaultStarts = []
 	forkStarts = new Map()
+	defaultUpdates = []
+	forkUpdates = new Map()
 	failingStarts = 0
 	singleValidationRuns = 0
 	singleValidationStarts = []
+	partUpdateOrder = []
+	incompleteRootNotifications = 0
+	partialPartRuntimeValue = 'part-initial'
+	retryAttempts = []
+	concurrentOwnerConfig = undefined
+	concurrentOwnerReady = deferred<void>()
+	concurrentBorrowerDone = deferred<void>()
+	crossOwnerRegistrationError = undefined
+	withdrawalListenerEntered = deferred<void>()
+	withdrawalListenerAborted = deferred<void>()
 })
 
 describe('Plugin config application scope', () => {
@@ -164,24 +362,29 @@ describe('Plugin config application scope', () => {
 		expect(configService.getRawConfig(owner)).toEqual({ value: 'before-unlink' })
 	})
 
-	it('durably saves and restarts one running default node', async () => {
+	it('durably saves and notifies one running default generation', async () => {
 		const host = runtimeHost()
 		host.add(ConfigOwner)
 		host.cfg(ConfigOwner).enable()
 		await host.commit()
 
 		const owner = pluginNodeAddressOf(ConfigOwner)
+		const generation = host.require(ConfigOwner)
 		const result = await pluginConfigPatch(host.ctx, owner, { value: 'changed' })
 		expect(result).toMatchObject({
 			ok: true,
 			saved: true,
 			application: 'applied',
-			report: { core: { status: 'committed' } },
+			report: { core: { status: 'unchanged' } },
 			config: { value: 'changed' },
 		})
 		if (!result.ok) throw new Error(result.message)
 		expect(result.appliedRevision).toBe(result.desiredRevision)
-		expect(defaultStarts).toEqual(['initial', 'changed'])
+		expect(host.require(ConfigOwner)).toBe(generation)
+		expect(defaultStarts).toEqual(['initial'])
+		expect(defaultUpdates).toEqual([{ applied: 'initial', desired: 'changed' }])
+		expect(generation.runtimeValue).toBe('changed')
+		expect(generation.config.value).toBe('changed')
 	})
 
 	it('reports a successfully started generation as the applied desired revision', async () => {
@@ -196,7 +399,7 @@ describe('Plugin config application scope', () => {
 		expect(result.appliedRevision).toBe(result.desiredRevision)
 	})
 
-	it('restarts only the addressed fork and keeps sibling config isolated', async () => {
+	it('notifies only the addressed fork and keeps sibling config isolated', async () => {
 		const host = runtimeHost()
 		const East = host.fork(ConfigFork, 'east')
 		const West = host.fork(ConfigFork, 'west')
@@ -211,8 +414,10 @@ describe('Plugin config application scope', () => {
 			application: 'applied',
 		})
 
-		expect(forkStarts.get('east')).toEqual(['initial', 'east-only'])
+		expect(forkStarts.get('east')).toEqual(['initial'])
 		expect(forkStarts.get('west')).toEqual(['initial'])
+		expect(forkUpdates.get('east')).toEqual(['east-only'])
+		expect(forkUpdates.get('west')).toBeUndefined()
 		const configService = requireConfigService(host.ctx)
 		expect(configService.getRawConfig(east)).toEqual({
 			value: 'east-only',
@@ -239,31 +444,236 @@ describe('Plugin config application scope', () => {
 		expect(host.isRunning(StoppedConfigOwner)).toBe(false)
 	})
 
-	it('keeps desired config after a restart failure and reports it as not applied', async () => {
+	it('keeps desired config after a listener failure and reports it as not applied', async () => {
 		const host = runtimeHost()
 		host.add(FailingConfigOwner)
 		host.cfg(FailingConfigOwner).enable()
 		await host.commit()
 
 		const owner = pluginNodeAddressOf(FailingConfigOwner)
+		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
 		await expect(pluginConfigPatch(host.ctx, owner, { value: 'desired' })).resolves.toMatchObject({
 			ok: true,
 			saved: true,
 			application: 'saved-not-applied',
-			appliedRevision: null,
-			report: {
-				core: { status: 'committed', summary: { lifecycleReport: { ok: false } } },
-			},
-			applyFailure: { code: 'plugin_not_running_after_restart' },
+			appliedRevision: appliedBefore,
+			report: { core: { status: 'unchanged' } },
+			applyFailure: { code: 'listener_failed' },
 			config: { value: 'desired' },
 		})
 		expect(requireConfigService(host.ctx).getRawConfig(owner)).toEqual({
 			value: 'desired',
 		})
-		expect(host.isRunning(FailingConfigOwner)).toBe(false)
+		expect(host.isRunning(FailingConfigOwner)).toBe(true)
+		expect(failingStarts).toBe(1)
 	})
 
-	it('reuses one pre-persistence validation output when restarting a running node', async () => {
+	it('saves without notifying when a running declaration has no listener', async () => {
+		const host = runtimeHost()
+		host.add(ConfigWithoutListener)
+		host.cfg(ConfigWithoutListener).enable()
+		await host.commit()
+		const owner = pluginNodeAddressOf(ConfigWithoutListener)
+		const generation = host.require(ConfigWithoutListener)
+		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
+
+		await expect(pluginConfigPatch(host.ctx, owner, { value: 'desired' })).resolves.toMatchObject({
+			ok: true,
+			saved: true,
+			application: 'saved-not-applied',
+			appliedRevision: appliedBefore,
+			applyFailure: { code: 'listener_not_registered' },
+		})
+		expect(host.require(ConfigWithoutListener)).toBe(generation)
+		expect(generation.config.value).toBe('initial')
+		expect(host.isRunning(ConfigWithoutListener)).toBe(true)
+	})
+
+	it('notifies nested Part declarations before the owner and advances one revision', async () => {
+		const host = runtimeHost()
+		host.add(ConfigPartOwner)
+		host.cfg(ConfigPartOwner).enable()
+		await host.commit()
+		const owner = pluginNodeAddressOf(ConfigPartOwner)
+		const generation = host.require(ConfigPartOwner)
+
+		const result = await pluginConfigPatch(host.ctx, owner, {
+			value: 'root-desired',
+			part: { value: 'part-desired' },
+		})
+		expect(result).toMatchObject({ ok: true, application: 'applied' })
+		if (!result.ok) throw new Error(result.message)
+		expect(result.appliedRevision).toBe(result.desiredRevision)
+		expect(host.require(ConfigPartOwner)).toBe(generation)
+		expect(partUpdateOrder).toEqual(['part', 'root'])
+		expect(generation.runtimeValue).toBe('root-desired')
+		expect(generation.part.runtimeValue).toBe('part-desired')
+		expect(generation.config.value).toBe('root-desired')
+		expect(generation.part.config.value).toBe('part-desired')
+	})
+
+	it('does not notify any declaration when one changed Part has no listener', async () => {
+		const host = runtimeHost()
+		host.add(IncompleteConfigOwner)
+		host.cfg(IncompleteConfigOwner).enable()
+		await host.commit()
+		const owner = pluginNodeAddressOf(IncompleteConfigOwner)
+		const generation = host.require(IncompleteConfigOwner)
+
+		await expect(
+			pluginConfigPatch(host.ctx, owner, {
+				value: 'root-desired',
+				part: { value: 'part-desired' },
+			}),
+		).resolves.toMatchObject({
+			ok: true,
+			application: 'saved-not-applied',
+			applyFailure: { code: 'listener_not_registered' },
+		})
+		expect(incompleteRootNotifications).toBe(0)
+		expect(generation.config.value).toBe('root-initial')
+		expect(generation.part.config.value).toBe('part-initial')
+	})
+
+	it('keeps framework fields unconfirmed while allowing earlier listener side effects', async () => {
+		const host = runtimeHost()
+		host.add(PartiallyAppliedOwner)
+		host.cfg(PartiallyAppliedOwner).enable()
+		await host.commit()
+		const owner = pluginNodeAddressOf(PartiallyAppliedOwner)
+		const generation = host.require(PartiallyAppliedOwner)
+		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
+
+		await expect(
+			pluginConfigPatch(host.ctx, owner, {
+				value: 'root-desired',
+				part: { value: 'part-desired' },
+			}),
+		).resolves.toMatchObject({
+			ok: true,
+			application: 'saved-not-applied',
+			appliedRevision: appliedBefore,
+			applyFailure: { code: 'listener_failed' },
+		})
+		expect(partialPartRuntimeValue).toBe('part-desired')
+		expect(generation.config.value).toBe('root-initial')
+		expect(generation.part.config.value).toBe('part-initial')
+	})
+
+	it('rejects update listener registration outside init or with a forged object', async () => {
+		const host = runtimeHost()
+		host.add(ConfigOwner)
+		host.cfg(ConfigOwner).enable()
+		await host.commit()
+		const generation = host.require(ConfigOwner)
+
+		expect(() => generation.registerLate()).toThrow(/only available during the owner init/i)
+		expect(() => generation.registerForged()).toThrow(/injected config field/i)
+	})
+
+	it('rejects cross-owner registration while independent init windows overlap', async () => {
+		const host = runtimeHost({ plugins: { startConcurrency: 2 } })
+		host.add([ConcurrentConfigOwner, ConcurrentConfigBorrower])
+		host.cfg(ConcurrentConfigOwner).enable()
+		host.cfg(ConcurrentConfigBorrower).enable()
+		await host.commit()
+
+		expect(crossOwnerRegistrationError).toBeInstanceOf(Error)
+		expect((crossOwnerRegistrationError as Error).message).toMatch(/another Plugin\/Part owner/i)
+		expect(host.isRunning(ConcurrentConfigOwner)).toBe(true)
+		expect(host.isRunning(ConcurrentConfigBorrower)).toBe(true)
+		await expect(
+			pluginConfigPatch(host.ctx, pluginNodeAddressOf(ConcurrentConfigOwner), {
+				value: 'owner-update',
+			}),
+		).resolves.toMatchObject({ ok: true, application: 'applied' })
+	})
+
+	it('aborts an admitted listener and rejects its acknowledgement after replacement', async () => {
+		const host = runtimeHost()
+		host.add(WithdrawnConfigOwner)
+		host.cfg(WithdrawnConfigOwner).enable()
+		await host.commit()
+		const owner = pluginNodeAddressOf(WithdrawnConfigOwner)
+		const generation = host.require(WithdrawnConfigOwner)
+		const configService = requireConfigService(host.ctx)
+
+		const notification = notifyRunningPluginConfigUpdate(
+			requirePluginService(host.ctx),
+			owner,
+			Object.freeze({ value: 'unconfirmed' }),
+			configService.getConfigRevision(owner),
+		)
+		await withdrawalListenerEntered.promise
+		host.restart(WithdrawnConfigOwner)
+		const replacement = host.commit()
+
+		await withdrawalListenerAborted.promise
+		await expect(notification).resolves.toEqual({ status: 'generation_changed' })
+		await replacement
+		expect(host.require(WithdrawnConfigOwner)).not.toBe(generation)
+		expect(host.require(WithdrawnConfigOwner).config.value).toBe('initial')
+		expect(configService.getAppliedConfigRevision(owner)).toBe(
+			configService.getConfigRevision(owner),
+		)
+	})
+
+	it('fails generation init on duplicate listener registration', async () => {
+		const host = runtimeHost()
+		host.add(DuplicateConfigListenerOwner)
+		host.cfg(DuplicateConfigListenerOwner).enable()
+		const summary = await host.commitAllowFail()
+
+		expect(host.isRunning(DuplicateConfigListenerOwner)).toBe(false)
+		expect(summary.lifecycleReport.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					phase: 'start',
+					message: expect.stringMatching(/already registered/i),
+				}),
+			]),
+		)
+	})
+
+	it('retries from the last confirmed snapshot after an earlier listener failure', async () => {
+		const host = runtimeHost()
+		host.add(RetryConfigOwner)
+		host.cfg(RetryConfigOwner).enable()
+		await host.commit()
+		const owner = pluginNodeAddressOf(RetryConfigOwner)
+		const generation = host.require(RetryConfigOwner)
+
+		await expect(pluginConfigPatch(host.ctx, owner, { value: 'reject' })).resolves.toMatchObject({
+			ok: true,
+			application: 'saved-not-applied',
+			applyFailure: { code: 'listener_failed' },
+		})
+		await expect(pluginConfigPatch(host.ctx, owner, { value: 'accepted' })).resolves.toMatchObject({
+			ok: true,
+			application: 'applied',
+		})
+		expect(retryAttempts).toEqual([
+			{ applied: 'initial', desired: 'reject' },
+			{ applied: 'initial', desired: 'accepted' },
+		])
+		expect(generation.config.value).toBe('accepted')
+	})
+
+	it('confirms an equivalent normalized snapshot without invoking the listener', async () => {
+		const host = runtimeHost()
+		host.add(ConfigOwner)
+		host.cfg(ConfigOwner).enable()
+		await host.commit()
+		const owner = pluginNodeAddressOf(ConfigOwner)
+
+		const result = await pluginConfigPatch(host.ctx, owner, { value: 'initial' })
+		expect(result).toMatchObject({ ok: true, application: 'applied' })
+		if (!result.ok) throw new Error(result.message)
+		expect(result.appliedRevision).toBe(result.desiredRevision)
+		expect(defaultUpdates).toEqual([])
+	})
+
+	it('reuses one pre-persistence validation output when notifying a running node', async () => {
 		const host = runtimeHost()
 		host.add(SingleValidationOwner)
 		host.cfg(SingleValidationOwner).set({ value: 'initial' })

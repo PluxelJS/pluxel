@@ -1,5 +1,9 @@
 import { type CommitSummary, type Context, type PluginNodeAddress } from '@pluxel/core'
-import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import {
+	notifyRunningPluginConfigUpdate,
+	requireConfigService,
+	requirePluginService,
+} from '@pluxel/core/internal'
 import { collectConfigDefaults, validateConfigRecord } from '@pluxel/core/services'
 import type { ConfigPresentationResult, ConfigResult, PluginApplyReport } from '../../web/protocol'
 import {
@@ -216,6 +220,8 @@ async function applyDesiredConfig(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	session: RuntimePluginGraphExclusiveSession<CommitSummary>,
+	desired: Readonly<Record<string, unknown>>,
+	desiredRevision: number,
 ): Promise<
 	| {
 			application: 'applied' | 'deferred'
@@ -225,30 +231,35 @@ async function applyDesiredConfig(
 			application: 'saved-not-applied'
 			report: PluginApplyReport
 			applyFailure: {
-				code: 'plugin_not_running_after_restart'
+				code: 'listener_not_registered' | 'listener_failed' | 'generation_changed'
 				message: string
 			}
 	  }
 > {
 	if (!requirePluginService(ctx).isRunning(owner)) {
-		const report = await session.update({ reason: 'plugin-config-deferred', mode: 'live' })
-		return { application: 'deferred', report: projectPluginApplyReport(ctx, report) }
+		return { application: 'deferred', report: projectPluginApplyReport(ctx, session.report()) }
 	}
-	const report = await session.update({
-		reason: 'plugin-config-restart',
-		restartNodes: [owner],
-		mode: 'live',
-	})
-	const projected = projectPluginApplyReport(ctx, report)
-	if (requirePluginService(ctx).isRunning(owner)) {
+	const notification = await notifyRunningPluginConfigUpdate(
+		requirePluginService(ctx),
+		owner,
+		desired,
+		desiredRevision,
+	)
+	const projected = projectPluginApplyReport(ctx, session.report())
+	if (notification.status === 'applied') {
 		return { application: 'applied', report: projected }
 	}
+	const messages = {
+		listener_not_registered: 'A changed config declaration has no update listener.',
+		listener_failed: 'A Plugin config update listener failed.',
+		generation_changed: 'The Plugin generation changed before the config update was confirmed.',
+	} as const
 	return {
 		application: 'saved-not-applied',
 		report: projected,
 		applyFailure: {
-			code: 'plugin_not_running_after_restart',
-			message: 'Plugin restart did not return the node to running state.',
+			code: notification.status,
+			message: messages[notification.status],
 		},
 	}
 }
@@ -311,8 +322,8 @@ async function mutatePluginConfig(
 				config: plainRecord(configService.getRawConfig(owner)),
 			}
 		}
-		configService.confirmValidatedConfig(staged)
-		const applied = await applyDesiredConfig(ctx, owner, session)
+		const desired = configService.confirmValidatedConfig(staged)
+		const applied = await applyDesiredConfig(ctx, owner, session, desired, staged.revision)
 		return {
 			ok: true,
 			saved: true,

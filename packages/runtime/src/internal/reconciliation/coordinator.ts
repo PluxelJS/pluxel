@@ -115,6 +115,7 @@ export type RuntimePluginGraphUpdate = Readonly<{
 export interface RuntimePluginGraphExclusiveSession<TSummary = unknown> {
 	runtimeStateSnapshot(): RuntimeStateSnapshot
 	validateRuntimeStatePatch(patch: RuntimeStatePatch): void
+	report(): PluginApplyReport<TSummary>
 	update(update: RuntimePluginGraphUpdate): Promise<PluginApplyReport<TSummary>>
 }
 
@@ -212,6 +213,7 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 						this.runtimeState.versionedSnapshot().state,
 						patch,
 					),
+				report: () => this.currentReport(),
 				update: (update: RuntimePluginGraphUpdate) =>
 					this.applyUpdate(
 						Object.freeze({
@@ -247,6 +249,16 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 			(): void => undefined,
 		)
 		return run
+	}
+
+	private currentReport(): PluginApplyReport<TSummary> {
+		const state = this.runtimeState.versionedSnapshot()
+		return Object.freeze({
+			catalogRevision: this.catalog.revision,
+			runtimeStateRevision: state.revision,
+			reconciliation: this.reconciliation,
+			core: Object.freeze({ status: 'unchanged' as const }),
+		})
 	}
 
 	private async applyUpdate(

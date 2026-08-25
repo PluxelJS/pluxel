@@ -12,8 +12,13 @@
 private readonly config = this.configs.use(PluginConfig)
 ```
 
-参数必须是完整 object schema。Part config 位于 occurrence field path；raw/config revision/persistence/restart owner 仍只有 owning
+参数必须是完整 object schema。Part config 位于 occurrence field path；raw/config revision/persistence/application owner 仍只有 owning
 Plugin 一个。runtime 不接受额外 namespace、binding/layout map 或 template DSL。
+
+Plugin/Part 可以在自己的 `init()` 中用 `this.configs.onUpdate(this.config, listener)` 注册一次 generation-bound update listener。
+Control-plane mutation 先验证并持久化 desired composite；running generation 只有在所有变化 declaration 都有 listener 时才按
+children-before-owner 顺序收到通知。全部 listener resolve 后 Core 更新 config fields 与 applied revision；listener 缺失或失败不隐式
+restart，也不回滚 Plugin 已经产生的普通字段、资源或外部副作用。
 
 ## Presentation result
 
@@ -43,7 +48,7 @@ normalized JSON snapshot。Host 不执行 schema source、`new Function()` 或�
 投影为显式 read-only `unsupported` field；server schema 仍是 validation/default/transform 的唯一权威。
 
 `sections` 包含 root owner（空 path）和拥有 config declaration 的 Part path。宿主可以选择 tabs 或其他布局，但所有 patch、
-persistence、revision 和 restart 仍指向同一个 Plugin node owner。
+persistence、revision 和 application confirmation 仍指向同一个 Plugin node owner。
 
 ## Build metadata flow
 

@@ -741,7 +741,11 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 	}
 	const failure = object(value.applyFailure, 'config result.applyFailure')
 	shape(failure, ['code', 'message'], [], 'config result.applyFailure')
-	literal(failure.code, ['plugin_not_running_after_restart'], 'config result.applyFailure.code')
+	const failureCode = literal(
+		failure.code,
+		['listener_not_registered', 'listener_failed', 'generation_changed'],
+		'config result.applyFailure.code',
+	)
 	return Object.freeze({
 		ok: true,
 		saved: true,
@@ -751,7 +755,7 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 		config,
 		report,
 		applyFailure: Object.freeze({
-			code: 'plugin_not_running_after_restart',
+			code: failureCode,
 			message: text(failure.message, 'config result.applyFailure.message'),
 		}),
 	})

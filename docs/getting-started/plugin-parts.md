@@ -179,7 +179,8 @@ required providers running
 ```
 
 停止和 rollback 通过 effects tree 反向清理。任一 Part constructor、config 或 `init()` 失败都会让整个 Plugin start 失败；provider
-replacement、optional availability 或 config patch 也会重启整个 owner。Part 不提供单独 restart、running 或 failure 状态。
+replacement 与 optional availability 会重启整个 owner。Config patch 只通知显式注册 `configs.onUpdate()` 的当前 Part/Plugin generation，
+不会隐式 restart。Part 不提供单独 restart、running 或 failure 状态。
 
 Part Context 是资源归属边界，不是安全 sandbox，也不会复制完整 service graph。部分 capability 仍以 owning Plugin 为最终治理单位；
 Workbench Extension 只能由 owning Plugin 聚合并 mount。
@@ -194,8 +195,9 @@ Part 的 schema 位于 occurrence field path。假设 owner field 为 `cache`，
 }
 ```
 
-所有 Part config 都属于同一个 Plugin config record、持久化 owner 和 revision。修改任意 Part config 会重新校验完整 composite record 并
-重启整个 Plugin。重命名 Part field 会改变公开配置 path，应按配置 contract 变更处理。
+所有 Part config 都属于同一个 Plugin config record、持久化 owner 和 revision。修改任意 Part config 会重新校验完整 composite record，并在
+所有变化 declaration 都注册 listener 时按 nested children-before-owner 顺序通知；缺少任一 listener 就只保存 desired config。重命名 Part
+field 会改变公开配置 path，应按配置 contract 变更处理。
 
 完整 schema、default 和 Workbench form 规则见[配置模型](./configuration.md#嵌套相关设置与-part-config)。
 

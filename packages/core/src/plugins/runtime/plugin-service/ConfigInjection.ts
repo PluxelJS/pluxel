@@ -1,5 +1,11 @@
 import type { PluginConfigDefinition } from '../definition'
 import { assignPluginGenerationPartConfig, type BasePlugin } from '../../composition/BasePlugin'
+import {
+	abortPluginConfigGeneration,
+	assignPluginConfigField,
+	beginPluginConfigGeneration,
+	finishPluginConfigGeneration,
+} from '../../composition/ConfigUpdate'
 
 /** Install the one validated object value produced for configs.use(schema). */
 export function assignValidatedPluginConfig(
@@ -7,20 +13,44 @@ export function assignValidatedPluginConfig(
 	definition: PluginConfigDefinition,
 	value: unknown,
 ): void {
-	if (definition.parts.length === 0) {
-		;(target as Record<string, unknown>)[definition.fieldName] = value
-		return
-	}
+	const plugin = target as BasePlugin
 	const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-	const rootPartKeys = new Set(
-		definition.parts.filter((part) => part.path.length === 1).map((part) => part.path[0]!),
-	)
-	if (definition.owner) {
-		const own: Record<string, unknown> = {}
-		for (const [key, item] of Object.entries(record)) {
-			if (!rootPartKeys.has(key)) own[key] = item
+	const frame = beginPluginConfigGeneration(plugin)
+	try {
+		if (definition.parts.length === 0) {
+			assignPluginConfigField({
+				target,
+				fieldName: definition.fieldName,
+				value: Object.freeze({ ...record }),
+				ctx: plugin.ctx,
+				path: Object.freeze([]),
+				childKeys: Object.freeze([]),
+			})
+			finishPluginConfigGeneration(frame)
+			return
 		}
-		;(target as Record<string, unknown>)[definition.owner.fieldName] = Object.freeze(own)
+		assignPluginGenerationPartConfig(plugin, record)
+		if (definition.owner) {
+			const rootPartKeys = definition.parts
+				.filter((part) => part.path.length === 1)
+				.map((part) => part.path[0]!)
+			const rootPartKeySet = new Set(rootPartKeys)
+			const own: Record<string, unknown> = {}
+			for (const [key, item] of Object.entries(record)) {
+				if (!rootPartKeySet.has(key)) own[key] = item
+			}
+			assignPluginConfigField({
+				target,
+				fieldName: definition.owner.fieldName,
+				value: Object.freeze(own),
+				ctx: plugin.ctx,
+				path: Object.freeze([]),
+				childKeys: rootPartKeys,
+			})
+		}
+		finishPluginConfigGeneration(frame)
+	} catch (error) {
+		abortPluginConfigGeneration(frame)
+		throw error
 	}
-	assignPluginGenerationPartConfig(target as BasePlugin, record)
 }

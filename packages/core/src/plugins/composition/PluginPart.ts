@@ -2,7 +2,12 @@ import type { Context, PluginContext } from '../../context/Context'
 import { createOwnerContext } from '../../context/context-factory'
 import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import type { BasePlugin, PluginCleanup, PluginRequirementResolver } from './BasePlugin'
-import { PLUGIN_CONFIGS, type PluginConfigs } from './PluginConfigs'
+import { createPluginConfigs, type PluginConfigs } from './PluginConfigs'
+import {
+	assignPluginConfigField,
+	closeConfigUpdateRegistrationWindow,
+	openConfigUpdateRegistrationWindow,
+} from './ConfigUpdate'
 import { OptionalPluginBindings } from './OptionalPluginBindings'
 import type {
 	PluginPartClass,
@@ -228,16 +233,22 @@ class PluginPartsRuntime<Host extends PluginPartHost> implements PluginParts<Hos
 					? (childValue as Record<string, unknown>)
 					: Object.freeze({})
 			const childKeys = new Set(entry.definition.parts.map((x) => x.fieldName))
+			entry.host.assignConfig(childRecord)
 			const declaration = entry.definition.config
 			if (declaration) {
 				const own: Record<string, unknown> = {}
 				for (const [key, item] of Object.entries(childRecord)) {
 					if (!childKeys.has(key)) own[key] = item
 				}
-				;(entry.instance as unknown as Record<string, unknown>)[declaration.fieldName] =
-					Object.freeze(own)
+				assignPluginConfigField({
+					target: entry.instance,
+					fieldName: declaration.fieldName,
+					value: Object.freeze(own),
+					ctx: pluginPartStateOf(entry.instance).ctx,
+					path: pluginPartStateOf(entry.instance).path,
+					childKeys: entry.definition.parts.map((part) => part.fieldName),
+				})
 			}
-			entry.host.assignConfig(childRecord)
 		}
 	}
 }
@@ -249,6 +260,7 @@ type PluginPartState = {
 	readonly parts: PluginPartsRuntime<any>
 	initActive: boolean
 	optional?: OptionalPluginBindings
+	configs?: PluginConfigs
 }
 
 const pluginPartState = new WeakMap<PluginPart<any, any>, PluginPartState>()
@@ -305,7 +317,8 @@ export abstract class PluginPart<
 	}
 
 	protected get configs(): PluginConfigs {
-		return PLUGIN_CONFIGS
+		const state = pluginPartStateOf(this)
+		return (state.configs ??= createPluginConfigs(state.ctx))
 	}
 
 	protected init?(_signal: AbortSignal): PluginCleanup | Promise<PluginCleanup>
@@ -318,6 +331,7 @@ async function startPluginPart(part: PluginPart<any, any>, signal: AbortSignal):
 	).init
 	if (typeof init !== 'function') return
 	state.initActive = true
+	openConfigUpdateRegistrationWindow(state.ctx)
 	try {
 		try {
 			await adoptPartCleanup(state.ctx.effects, await init.call(part, signal))
@@ -326,6 +340,7 @@ async function startPluginPart(part: PluginPart<any, any>, signal: AbortSignal):
 			throw new PluginPartInitError(state.path, error)
 		}
 	} finally {
+		closeConfigUpdateRegistrationWindow(state.ctx)
 		state.initActive = false
 	}
 }

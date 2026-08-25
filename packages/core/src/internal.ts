@@ -6,6 +6,10 @@ export {
 
 export { PluginSlotRegistry } from './plugins/runtime/identity'
 export { PluginService } from './plugins/runtime/PluginService'
+export {
+	notifyRunningPluginConfigUpdate,
+	type PluginConfigNotificationResult,
+} from './plugins/runtime/plugin-service/ConfigUpdate'
 export type { PreparedRuntimeUpdateCommitOptions } from './plugins/runtime/plugin-service/RuntimeUpdateTransaction'
 export {
 	requirePluginGenerationInfo,
