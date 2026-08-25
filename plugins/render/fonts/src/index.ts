@@ -83,6 +83,19 @@ type OwnedRegistration = Readonly<{
 	handle: FontRegistrationHandle
 }>
 
+function releaseOwnedRegistration(
+	registrations: Set<OwnedRegistration>,
+	registrationsByOwner: WeakMap<Context, Set<OwnedRegistration>>,
+	registration: OwnedRegistration,
+): void {
+	if (!registration.handle.active) return
+	registration.handle.deactivate()
+	registrations.delete(registration)
+	registrationsByOwner.get(registration.owner)?.delete(registration)
+	GlobalFonts.remove(registration.key)
+	nativeRegistryRevision += 1
+}
+
 type ManagedRuntimeFont = Readonly<{
 	stored: StoredManagedFont
 	snapshot: ManagedFontSnapshot
@@ -513,24 +526,26 @@ export class FontsPlugin extends BasePlugin {
 		key: FontKey,
 		families: readonly string[],
 	): OwnedRegistration {
+		const registrations = this.registrations
+		const registrationsByOwner = this.registrationsByOwner
 		let registration!: OwnedRegistration
-		const handle = new FontRegistrationHandle(families, () =>
-			this.releaseRegistration(registration),
-		)
+		const release = () =>
+			releaseOwnedRegistration(registrations, registrationsByOwner, registration)
+		const handle = new FontRegistrationHandle(families, release)
 		registration = Object.freeze({ key, owner, handle })
-		this.registrations.add(registration)
-		let ownerRegistrations = this.registrationsByOwner.get(owner)
+		registrations.add(registration)
+		let ownerRegistrations = registrationsByOwner.get(owner)
 		if (!ownerRegistrations) {
 			ownerRegistrations = new Set()
-			this.registrationsByOwner.set(owner, ownerRegistrations)
+			registrationsByOwner.set(owner, ownerRegistrations)
 		}
 		ownerRegistrations.add(registration)
 		try {
-			owner.effects.defer(() => this.releaseRegistration(registration), {
+			owner.effects.defer(release, {
 				tag: 'font-registration',
 			})
 		} catch (cause) {
-			this.releaseRegistration(registration)
+			release()
 			throw new FontsError('NOT_RUNNING', 'Font owner is stopped or being replaced', { cause })
 		}
 		nativeRegistryRevision += 1
@@ -538,12 +553,7 @@ export class FontsPlugin extends BasePlugin {
 	}
 
 	private releaseRegistration(registration: OwnedRegistration): void {
-		if (!registration.handle.active) return
-		registration.handle.deactivate()
-		this.registrations.delete(registration)
-		this.registrationsByOwner.get(registration.owner)?.delete(registration)
-		GlobalFonts.remove(registration.key)
-		nativeRegistryRevision += 1
+		releaseOwnedRegistration(this.registrations, this.registrationsByOwner, registration)
 	}
 
 	private assertOwnerCapacity(owner: Context): void {
