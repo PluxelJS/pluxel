@@ -8,7 +8,6 @@ import {
 	type CommandContext,
 	type CommandContextArgs,
 	type CommandErrorCode,
-	type CommandResult,
 	type DefineCommandConfig,
 	type Infer,
 	type ObjectSchema,
@@ -192,7 +191,7 @@ export function defineCommand<
 	const name = config.name
 	const implementation = config.execute
 
-	async function executeOrThrow(
+	async function execute(
 		candidate: unknown,
 		...context: CommandContextArgs<Ctx>
 	): Promise<WireOutput> {
@@ -222,17 +221,7 @@ export function defineCommand<
 	return {
 		name,
 		descriptor,
-		executeOrThrow,
-		async execute(
-			candidate: unknown,
-			...context: CommandContextArgs<Ctx>
-		): Promise<CommandResult<WireOutput>> {
-			try {
-				return { ok: true, value: await executeOrThrow(candidate, ...context) }
-			} catch (error) {
-				return { ok: false, error: normalizeFailure(error) }
-			}
-		},
+		execute,
 	}
 }
 

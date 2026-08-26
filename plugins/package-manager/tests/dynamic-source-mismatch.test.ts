@@ -55,7 +55,7 @@ describe('PackageManagerPlugin dynamic source contract', () => {
 				requirePluginService(host.ctx).isRunning(pluginNodeAddressOf(PackageManagerPlugin)),
 			).toBe(false)
 			expect(existsSync(managedRoot)).toBe(false)
-			expect(host.ctx.commands.get('package.install')).toBeUndefined()
+			expect(host.ctx.commands.list().some(({ name }) => name === 'package.install')).toBe(false)
 		} finally {
 			await host.stop()
 			process.chdir(previousCwd)

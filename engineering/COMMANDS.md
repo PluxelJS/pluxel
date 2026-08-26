@@ -28,9 +28,9 @@ stable command names, and one Agent receives the union of its assigned Toolsets.
 receives no commands. Missing command names remain in policy and become available again when a plugin
 publishes the same stable name.
 
-`await ctx.root.agentTools.catalog(agentId)` returns a live constrained catalog. Its `list()` and `get()`
-only expose currently registered commands assigned to that Agent; `execute()` and `executeOrThrow()` enforce
-the same assignment again before dispatching through the root command catalog. Carriers must use this bound
+`await ctx.root.agentTools.catalog(agentId)` returns a live constrained catalog. Its `list()` only exposes
+currently registered commands assigned to that Agent; its single throwing `execute()` checks the current
+assignment again before dispatching through the root command catalog. Carriers must use this bound
 catalog for both publication and execution. Calling `ctx.root.commands.execute()` directly would bypass the
 Agent assignment and is only appropriate for a separately authorized host control path.
 
@@ -39,25 +39,22 @@ registration, withdrawal, replacement, or Toolset edits therefore invalidate car
 creating a second registry. A policy edit does not cancel calls already admitted before the edit; it prevents
 subsequent calls, matching command publication withdrawal semantics.
 
-`@pluxel/runtime` installs one root catalog behind `ctx.commands`. `register()` binds the returned
-registry registration to the calling plugin Context's effects, so stop, replacement, failed startup,
-and shutdown remove future discovery and lookup automatically. Runtime registration also wraps execution
-in the owner's internal invocation gate. Leaving the running generation closes admission, aborts the
-combined call/owner signal, and waits for admitted invocations before generation effects drain. A manually
-disposed runtime registration withdraws publication, rejects later calls through previously cached runtime
-wrappers with `COMMAND_NOT_FOUND`, and does not cancel work that already entered execution or close owner
-admission for sibling registrations.
+`@pluxel/runtime` installs one root registry behind `ctx.commands`. Its list, snapshot, subscription, and
+execution methods delegate to that registry, so runtime does not maintain another revision or listener set.
+`register()` returns the registry's typed installed command plus disposer and binds disposal to the calling
+Plugin Context's effects. Runtime wraps execution in the owner's internal invocation gate; Core closes and
+drains that gate once per generation before effects drain. A manually disposed registration withdraws
+publication and does not cancel work that already entered execution or close sibling admission.
 
 The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers
 consume `ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or
 handlers; Agent carriers with a persisted assignment consume their bound `agentTools.catalog()` view.
 
-`createCommandArgv(catalog)` is the conservative default argv projection for an installed CLI carrier.
-Its first token is the exact command name, scalar input fields become generated named options, and complex
-fields use the existing field-level JSON format. It resolves one current command handle, lazily caches one
-single-command router by handle identity, then dispatches back through `catalog.executeOrThrow()`. It does
-not build a mirrored registry or catalog-wide route trie. The workspace `@pluxel/cli` executable is a
-build/development tool and is not implicitly connected to a running runtime.
+An argv/message carrier explicitly binds its allowed commands to `createArgvRouter()`. The router owns only
+route grammar and candidate construction: after `resolve()`, the carrier performs authorization, constructs
+the invocation Context, and calls the returned command's throwing `execute()`. It does not own a mirrored
+command catalog or carrier policy. The workspace `@pluxel/cli` executable remains a build/development tool
+and is not implicitly connected to a running runtime.
 
 The runtime catalog accepts commands requiring the common `CommandContext`. A carrier that constructs
 additional invocation facts owns a registry/router parameterized by its extended context. Common commands
@@ -70,12 +67,10 @@ Implementation entry points:
 - `packages/commands/src/schema.ts`: single schema projection, validation, and codec compiler;
 - `packages/commands/src/compile.ts`: final command plan, descriptor, and example compilation;
 - `packages/commands/src/define.ts`: validated call-time execution boundary;
-- `packages/commands/src/registry.ts`: lookup and lifecycle-neutral registration;
-- `packages/commands/src/tool/project.ts`: Agent-neutral tool projection;
+- `packages/commands/src/registry.ts`: lifecycle-neutral registration, discovery, and dynamic dispatch;
 - `packages/commands/src/argv/compile.ts`: schema-derived argv binding and help compilation;
 - `packages/commands/src/argv/parse.ts`: option coercion and untrusted candidate construction;
-- `packages/commands/src/argv/router.ts`: trie registration, routing, and dispatch;
-- `packages/commands/src/argv/catalog.ts`: lazy default argv projection over a live catalog;
+- `packages/commands/src/argv/router.ts`: trie registration, routing, and resolution;
 - `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
 - `packages/runtime/src/services/commands/AgentToolsService.ts`: persisted Toolsets, Agent assignments,
   constrained catalog projection, and call-time enforcement.

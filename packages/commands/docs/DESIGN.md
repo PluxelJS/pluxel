@@ -53,9 +53,11 @@ Descriptors and projections are immutable snapshots in both their types and runt
 Compilation clones author-owned metadata before freezing, so defining a command never freezes the
 caller's configuration objects.
 
-Runtime freezing is limited to descriptor and catalog snapshots whose stable identity backs caches.
-The executable `Command`, caller configuration, errors, and registration handles remain ordinary
-objects; they do not need snapshot semantics.
+Runtime freezing covers descriptor/catalog snapshots whose stable identity backs caches and the
+registry's returned capability handle. The executable `Command`, caller configuration, and errors
+remain ordinary objects. A `CommandRegistration` is frozen so callers cannot replace its
+name/execute/dispose surface; `dispose()` changes catalog state, while its compatible live target is
+resolved by the registry rather than mutable handle fields.
 
 There is no `id`/`doc`/`schemas` nesting because those containers add traversal without expressing a
 domain boundary.
@@ -88,9 +90,18 @@ invocations have materially different authorization or confirmation requirements
 
 ## Execution boundary
 
-`execute()` is result-shaped; `executeOrThrow()` runs the identical validated pipeline and throws a
-structured error. The author callback is captured and never exposed. This prevents internal
-adapters from turning a typed implementation function into an accidental unvalidated public API.
+`execute()` is the single execution boundary. It resolves the validated wire output and rejects
+with a structured `CommandError`; there is no parallel result wrapper or second throwing method.
+The author callback is captured and never exposed. This prevents internal adapters from turning a
+typed implementation function into an accidental unvalidated public API.
+
+Promise rejection is already the natural failure channel for validators, codecs, handlers, abort,
+and timeout. Returning `Promise<Result<T, E>>` would not remove rejection from JavaScript; it would
+either leave two failure channels or require every layer to catch and re-box programming faults.
+The kernel therefore reserves resolved values for completed business outcomes and uses
+`CommandError.code` / `kind` for execution failures. A legitimate negative business outcome belongs
+in the declared output schema. A carrier or application may locally convert the expected errors it
+understands into its own Result type, without making that presentation policy part of every command.
 
 Context is passed per call. No registry or adapter stores mutable current Context, principal, or
 owner identity.
@@ -102,39 +113,36 @@ than erase it with `AnyCommand<any>` or an optional-field union of every carrier
 
 ## One registry
 
-`CommandRegistry` is the only stateful catalog. Tool conversion is a cached pure function over its
-descriptor list. This avoids duplicate registration, cleanup, revision, naming, and conflict rules.
+`CommandRegistry` is the only stateful catalog and owns registration, revision, immutable snapshots,
+and publication subscriptions. `snapshot()` is identity-stable until a successful mutation;
+`list()` delegates to its descriptor list. Subscriptions observe later mutations without an eager
+initial emission, and their disposers are idempotent. Notification is synchronous after mutation;
+each revision snapshots the current listeners, isolates callback failures, and queues reentrant
+mutations so every observer sees monotonically increasing revisions. This avoids duplicate catalog
+state, cleanup, revision, naming, and conflict rules across carriers.
 
 The public package uses factories rather than public constructors. `createCommandRegistry()` and
-`createArgvRouter()` construct the stateful catalog and custom router primitives;
-`createCommandArgv()` constructs the lazy catalog adapter. Class names remain type-only exports.
-This preserves useful annotations without offering parallel `new` and factory styles or implying
-subclass extension points.
+`createArgvRouter()` construct the stateful catalog and custom router primitives. Class names remain
+type-only exports. This preserves useful annotations without offering parallel `new` and factory
+styles or implying subclass extension points.
+
+`register()` returns a typed, branded live `CommandRegistration` as well as an idempotent `dispose()`.
+The handle re-resolves its command name on every call, so a schema-compatible replacement follows
+the new implementation. Withdrawal or an incompatible replacement fails closed with
+`COMMAND_NOT_FOUND`. Compatibility includes only the name and input/output schemas, with recursive
+object-key canonicalization; presentation, behavior, and examples do not invalidate a typed handle.
+Calls already admitted continue independently of later disposal.
 
 Carrier-specific names require an adapter-owned reversible map. They do not rename the underlying
 command.
 
-## Default catalog argv projection
-
-`createCommandArgv(catalog)` provides conservative CLI availability without requiring each command
-owner to repeat `bind()` metadata. The exact first token selects `CommandDescriptor.name`; remaining
-schema fields use generated named options, with complex fields opting into the existing field-level
-JSON parser. It does not guess positionals, aliases, tails, or a whole-input JSON protocol.
-
-The adapter looks up only the selected current command and compiles one single-command router lazily.
-A `WeakMap` keyed by executable command identity retains that router while the handle is current;
-replacement naturally receives a new parser without catalog revisions, subscriptions, a mirrored
-registry, or a catalog-wide route trie. Parsed candidates dispatch back through
-`catalog.executeOrThrow(name, ...)`, so cached handles never bypass current ownership or replacement
-policy. Hosts remain responsible for filtering, authorization, confirmation, rendering, and process
-behavior.
-
 ## JSON Schema and argv
 
 Commands require an object-root input schema and, when output is declared, an object-root output
-schema. Every structured contract can therefore become an Agent tool without a wrapper convention.
-A command with no business result returns `CommandResult<void>` and omits `outputSchema`. This uses
-the existing result and carrier error channel instead of duplicating success as a payload object.
+schema. A carrier can therefore project every structured contract into its provider format without
+a wrapper convention. A command with no business result resolves `undefined` and omits
+`outputSchema`. The existing promise rejection and carrier error channel represent failure, so
+success does not need a duplicate payload object.
 
 The public `Type` helper is TypeBox's JSON builder, not its JavaScript builder. Definition rejects
 JavaScript-only wire schemas at runtime. A JSON-backed TypeBox Transform is a private codec:
@@ -144,8 +152,8 @@ wire input -> validate -> Decode -> handler -> Encode -> validate -> wire output
 ```
 
 Handler validators and implementations use `StaticDecode<S>` values; examples, descriptors,
-command results, and carriers use `StaticEncode<S>` values. Transform symbols and functions are
-removed from the JSON descriptor. Definition validates examples without executing codecs.
+command inputs/outputs, and carriers use `StaticEncode<S>` values. Transform symbols and functions
+are removed from the JSON descriptor. Definition validates examples without executing codecs.
 
 A stable domain DSL follows the same codec rule: its wire value is one annotated string, a
 ParseBox-backed Transform decodes it once, and the handler receives the mapping product. Agent,
@@ -200,12 +208,13 @@ Defaults are schema-checked at definition time because the runtime actively appl
 default is therefore author configuration failure, not caller input failure.
 
 JSON Schema does not define argv syntax. Nested objects, unions, tuples, and references have no
-honest automatic positional representation. The argv adapter handles a closed scalar subset and
+honest automatic positional representation. The argv router handles a closed scalar subset and
 requires explicit positional or JSON bindings for everything else. Unsupported mappings fail during
-binding. Help exposes one canonical kebab-case option name, while input matching is case-insensitive
-and treats underscores as hyphens. Explicit aliases are reserved for short names and genuinely
-different spellings rather than cosmetic variants. Help derives closed string choices and strict
-JSON defaults from the same field schemas instead of maintaining parallel metadata.
+binding. Listed descriptors expose one canonical kebab-case option name, while input matching is
+case-insensitive and treats underscores as hyphens. Explicit aliases are reserved for short names
+and genuinely different spellings rather than cosmetic variants. Descriptor listing derives closed
+string choices and strict JSON defaults from the same field schemas instead of maintaining parallel
+metadata.
 
 The router accepts either raw command text or argv tokens already split by a shell/runtime. Text is
 tokenized once; token arrays retain argument boundaries directly, including one argument containing
@@ -230,10 +239,10 @@ keeps natural grammars deterministic and `--` available when a hyphen-leading po
 Long-option parsing checks an exact name before treating `no-` as boolean negation, so a genuine
 `no-cache` field and the `cache=false` shorthand remain deterministic.
 
-Unknown option, route, and closed-choice suggestions are deterministic facts over the current argv
-binding. They are computed only on failed input, capped at three close values, and never affect the
-successful parse path. Core registry lookup does not suggest names because authorization-aware
-catalog filtering belongs to the host.
+Unknown-option and closed-choice suggestions are deterministic facts over the matched argv binding.
+They are computed only on failed parsing, capped at three close values, and never affect the
+successful path. An unmatched route resolves `undefined`; authorization-aware catalog filtering and
+route feedback belong to the host. Core dynamic registry dispatch likewise does not suggest names.
 
 Text tails assign the remaining source to one string field without interpreting it. A shared domain
 DSL can decode that string through its application-owned Transform; ungrammatical prose stays plain
@@ -257,21 +266,20 @@ the same wire string and enter the same Transform exactly once.
 - The complete `CompiledSchema` projection, validators, and codec compile once per schema identity.
 - Final command descriptors and examples are normalized and frozen once by `compileCommand()`.
 - Registry lookup is `Map`-based; locale-independent sorted descriptor lists are revision-cached.
-- Tool projections cache frozen command descriptor/list identities. Mutable external descriptors
-  are cloned and are never frozen or cached by the projection.
-- Argv routes compile into a trie and dispatch tokenizes once. Shared DSL Transforms decode once
+- Registry snapshot identity changes only with its revision; listeners reuse that canonical value.
+- Argv routes compile into a trie and resolution tokenizes once. Shared DSL Transforms decode once
   inside normal command validation.
-- Argv help resolves command names by `Map` and exact routes by the same trie; catalog size does not
-  change successful lookup complexity.
+- Argv descriptor lists are revision-cached; successful route lookup depends on route depth rather
+  than catalog size.
 - Argv binding checks every new route before mutating the trie; disposal removes its routes and
   prunes empty nodes without rebuilding unrelated entries.
-- Approximate suggestions run only after an unknown route, option, or closed choice.
+- Approximate suggestions run only after an unknown option or closed choice.
 - JSON wire checks are linear in payload size and do not run during route matching or discovery.
 
-`pnpm --filter @pluxel/commands bench` measures definition, text and pre-tokenized execution, cached
-discovery, shared ParseBox DSL decoding, route and help scaling, and catalog construction at 10,
-100, and 1,000 commands through Vitest's Tinybench integration. Benchmark results are same-machine
-evidence, not portable correctness thresholds.
+`pnpm --filter @pluxel/commands bench` measures definition, validated direct and registry execution,
+payload scaling, cached catalog reads, shared ParseBox DSL decoding, argv resolution, and registry /
+argv construction at 10, 100, and 1,000 commands through Vitest's Tinybench integration. Benchmark
+results are same-machine evidence, not portable correctness thresholds.
 
 Ordinary route matching stays in JavaScript. A native matcher is justified only by measured large
 multi-pattern workloads and should batch raw UTF-8 data rather than callback across N-API per match.
@@ -289,16 +297,18 @@ commands, and command mounting are host facts. `CommandBehavior` can conservativ
 [`args-tokens`](https://github.com/kazupon/args-tokens) tokenizes argv arrays and resolves a separate
 option schema. It does not replace raw message tokenization with source spans, route matching,
 schema-derived bindings, text/JSON tails, or the shared Command validation pipeline. Successful argv
-dispatch is already measured in the low-microsecond range, so adding it to core currently has no
-demonstrated correctness or performance benefit.
+resolution is already a small direct path, so adding it to core currently has no demonstrated
+correctness or performance benefit.
 
 [`gunshi`](https://github.com/kazupon/gunshi) is a complete CLI framework with its own command,
 argument, context, plugin, and rendering model. It may be used by a host that deliberately adapts a
 filtered commands catalog, but core must not depend on it or recreate command definitions in it.
 
-Argv internals follow these ownership boundaries: `compile.ts` derives immutable bindings and help,
-`parse.ts` constructs an untrusted candidate, `tokenize.ts` preserves raw text spans, and `router.ts`
-owns trie registration and dispatch.
+Argv internals follow these ownership boundaries: `compile.ts` derives immutable bindings and
+descriptors, `parse.ts` constructs an untrusted candidate, `tokenize.ts` preserves raw text spans,
+and `router.ts` owns trie registration, listing, and resolution. Resolution returns `unknown` output
+by default because one router may bind heterogeneous commands; a carrier with one shared output
+contract can state it through the router's output type parameter, which is enforced at `bind()`.
 
 ## Non-goals
 

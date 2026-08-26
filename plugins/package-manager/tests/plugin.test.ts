@@ -36,8 +36,8 @@ describe('PackageManagerPlugin', () => {
 				})
 				expect(host.isRunning(PackageManagerPlugin)).toBe(false)
 				expect(existsSync(managedRoot)).toBe(false)
-				expect(host.ctx.commands.get('package.install')).toBeUndefined()
-				expect(host.ctx.commands.get('package.remove')).toBeUndefined()
+				expect(host.ctx.commands.list().some(({ name }) => name === 'package.install')).toBe(false)
+				expect(host.ctx.commands.list().some(({ name }) => name === 'package.remove')).toBe(false)
 			},
 			{ workbench: false },
 		)

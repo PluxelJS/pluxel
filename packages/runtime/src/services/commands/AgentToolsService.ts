@@ -1,10 +1,4 @@
-import {
-	CommandError,
-	type AnyCommand,
-	type CommandContext,
-	type CommandDescriptor,
-	type CommandResult,
-} from '@pluxel/commands'
+import { CommandError, type CommandContext, type CommandDescriptor } from '@pluxel/commands'
 import type { Context as CoreContext } from '@pluxel/core'
 import type {
 	AgentCommandCatalog,
@@ -53,7 +47,7 @@ export class AgentToolsService {
 
 	async snapshot(): Promise<AgentToolsAdminSnapshot> {
 		await this.ready
-		const catalog = this.commands.catalogSnapshot()
+		const catalog = this.commands.snapshot()
 		return Object.freeze({
 			revision: this.revisionValue,
 			catalogRevision: catalog.revision,
@@ -79,11 +73,21 @@ export class AgentToolsService {
 	/** Create a live allowlisted catalog for one stable Agent identity. */
 	async catalog(agentId: string): Promise<AgentCommandCatalog> {
 		await this.ready
-		return new BoundAgentCommandCatalog(this, normalizeMachineId(agentId, 'agentId'))
+		const normalizedAgentId = normalizeMachineId(agentId, 'agentId')
+		return new BoundAgentCommandCatalog({
+			agentId: normalizedAgentId,
+			commands: this.commands,
+			policyRevision: () => this.revisionValue,
+			filter: (source) => {
+				const allowed = this.#resolveCommandNames(normalizedAgentId)
+				return Object.freeze(source.filter((descriptor) => allowed.has(descriptor.name)))
+			},
+			isAllowed: (name) => this.#resolveCommandNames(normalizedAgentId).has(name),
+			subscribe: (listener) => this.#subscribePolicy(listener),
+		})
 	}
 
-	/** Resolve the currently assigned command names, including commands that are temporarily absent. */
-	resolveCommandNames(agentId: string): ReadonlySet<string> {
+	#resolveCommandNames(agentId: string): ReadonlySet<string> {
 		const cached = this.resolvedNamesCache.get(agentId)
 		if (cached?.revision === this.revisionValue) return cached.names
 		const assignment = this.policyValue.agents.find((item) => item.agentId === agentId)
@@ -98,11 +102,7 @@ export class AgentToolsService {
 		return names
 	}
 
-	get revision(): number {
-		return this.revisionValue
-	}
-
-	subscribe(listener: () => void): () => void {
+	#subscribePolicy(listener: () => void): () => void {
 		this.listeners.add(listener)
 		let active = true
 		return () => {
@@ -160,7 +160,7 @@ export class AgentToolsService {
 	}
 
 	private notify(): void {
-		for (const listener of this.listeners) {
+		for (const listener of [...this.listeners]) {
 			try {
 				listener()
 			} catch (error) {
@@ -170,61 +170,55 @@ export class AgentToolsService {
 	}
 }
 
+type BoundAgentCommandCatalogOptions = Readonly<{
+	agentId: string
+	commands: CommandsService
+	policyRevision(): number
+	filter(source: readonly CommandDescriptor[]): readonly CommandDescriptor[]
+	isAllowed(name: string): boolean
+	subscribe(listener: () => void): () => void
+}>
+
 class BoundAgentCommandCatalog implements AgentCommandCatalog {
 	private listSource?: readonly CommandDescriptor[]
 	private listPolicyRevision = -1
 	private listCache: readonly CommandDescriptor[] = Object.freeze([])
-	private readonly handles = new Map<string, { source: AnyCommand; bound: AnyCommand }>()
 
-	constructor(
-		private readonly service: AgentToolsService,
-		readonly agentId: string,
-	) {}
+	readonly agentId: string
 
-	get(name: string): AnyCommand | undefined {
-		if (!this.isAllowed(name)) return undefined
-		const source = this.commands.get(name)
-		if (!source) return undefined
-		const cached = this.handles.get(name)
-		if (cached?.source === source) return cached.bound
-		const bound = Object.freeze({
-			name: source.name,
-			descriptor: source.descriptor,
-			execute: (candidate: unknown, context?: CommandContext) =>
-				this.execute(name, candidate, context),
-			executeOrThrow: (candidate: unknown, context?: CommandContext) =>
-				this.executeOrThrow(name, candidate, context),
-		})
-		this.handles.set(name, { source, bound })
-		return bound
+	constructor(private readonly options: BoundAgentCommandCatalogOptions) {
+		this.agentId = options.agentId
 	}
 
 	list(): readonly CommandDescriptor[] {
-		const source = this.commands.list()
-		if (source === this.listSource && this.listPolicyRevision === this.service.revision) {
+		return this.filtered(this.commands.snapshot().descriptors)
+	}
+
+	private filtered(source: readonly CommandDescriptor[]): readonly CommandDescriptor[] {
+		const policyRevision = this.options.policyRevision()
+		if (source === this.listSource && this.listPolicyRevision === policyRevision) {
 			return this.listCache
 		}
-		const allowed = this.service.resolveCommandNames(this.agentId)
 		this.listSource = source
-		this.listPolicyRevision = this.service.revision
-		this.listCache = Object.freeze(source.filter((descriptor) => allowed.has(descriptor.name)))
+		this.listPolicyRevision = policyRevision
+		this.listCache = this.options.filter(source)
 		return this.listCache
 	}
 
 	snapshot(): AgentCommandCatalogSnapshot {
-		const catalog = this.commands.catalogSnapshot()
+		const catalog = this.commands.snapshot()
 		return Object.freeze({
 			agentId: this.agentId,
-			policyRevision: this.service.revision,
+			policyRevision: this.options.policyRevision(),
 			catalogRevision: catalog.revision,
-			descriptors: this.list(),
+			descriptors: this.filtered(catalog.descriptors),
 		})
 	}
 
 	subscribe(listener: (snapshot: AgentCommandCatalogSnapshot) => void): () => void {
 		const notify = () => listener(this.snapshot())
 		const disposeCatalog = this.commands.subscribe(notify)
-		const disposePolicy = this.service.subscribe(notify)
+		const disposePolicy = this.options.subscribe(notify)
 		let active = true
 		return () => {
 			if (!active) return
@@ -234,29 +228,7 @@ class BoundAgentCommandCatalog implements AgentCommandCatalog {
 		}
 	}
 
-	async execute(
-		name: string,
-		candidate: unknown,
-		context?: CommandContext,
-	): Promise<CommandResult<unknown>> {
-		try {
-			return { ok: true, value: await this.executeOrThrow(name, candidate, context) }
-		} catch (error) {
-			return {
-				ok: false,
-				error:
-					error instanceof CommandError
-						? error
-						: new CommandError('INTERNAL', 'Command failed', { cause: error }),
-			}
-		}
-	}
-
-	async executeOrThrow(
-		name: string,
-		candidate: unknown,
-		context?: CommandContext,
-	): Promise<unknown> {
+	async execute(name: string, candidate: unknown, context?: CommandContext): Promise<unknown> {
 		if (!this.isAllowed(name)) {
 			throw new CommandError('FORBIDDEN', 'Command is not assigned to this Agent', {
 				message: `Command "${name}" is not assigned to Agent "${this.agentId}"`,
@@ -266,15 +238,15 @@ class BoundAgentCommandCatalog implements AgentCommandCatalog {
 				},
 			})
 		}
-		return await this.commands.executeOrThrow(name, candidate, context)
+		return await this.commands.execute(name, candidate, context)
 	}
 
 	private isAllowed(name: string): boolean {
-		return this.service.resolveCommandNames(this.agentId).has(name)
+		return this.options.isAllowed(name)
 	}
 
 	private get commands(): CommandsService {
-		return this.service.ctx.commands as CommandsService
+		return this.options.commands
 	}
 }
 

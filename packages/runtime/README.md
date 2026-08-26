@@ -20,6 +20,16 @@ provider absent/disabled/start-failed 不阻塞 consumer，running generation �
 definition address 标识源码实现，node address 再区分 default/fork 部署；对应 Slot 只是同一 address 在 Core registry 内的
 引用 key。公开诊断/CLI 使用可逆 reference，HTTP/Workbench 使用可读 v1 route，短 label 只在当前 catalog revision 内用于展示。
 
+插件通过 owner-bound `ctx.commands.register(command)` 发布命令。返回值同时是保留精确 input/output 类型的 executable
+registration 与幂等 disposer；registration 自动进入当前 generation effects，也可手动撤销。每个 root 只有一个 command
+registry，Runtime 的 `list()`、`snapshot()`、`subscribe()` 和 throwing `execute()` 直接委托它，不复制 catalog 状态。
+CommandsService 只增加 owner execution gate；generation stop 时由 Core 统一关闭 admission、abort 并等待已接纳调用，再
+drain effects。
+
+需要持久化 Agent allowlist 的宿主使用 `await ctx.root.agentTools.catalog(agentId)`。这个 bound catalog 只公开过滤后的
+`list()`/`snapshot()`/`subscribe()` 与单一 `execute()`，并在每次调用时重新检查当前 Toolset assignment；发布工具和执行
+工具必须使用同一个 catalog，不能绕过它直接调用 root registry。
+
 单独构建的 Node ESM entry 使用 `defineNodeModule(import.meta.url, literal)` 声明，并通过
 `ctx.nodeModules.use(declaration, setup)` 消费。首次 load/setup 会阻塞插件启动；开发期 staged replacement 与 owner
 cleanup 由 runtime 管理。artifact 不定义 worker 或任务协议。

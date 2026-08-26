@@ -1,31 +1,21 @@
 import {
 	CommandError,
 	createCommandRegistry,
-	type AnyCommand,
+	type Command,
+	type CommandCatalogSnapshot as RegistryCommandCatalogSnapshot,
 	type CommandContext,
 	type CommandDescriptor,
-	type CommandResult,
-	type Registration,
+	type CommandRegistration,
 } from '@pluxel/commands'
 import type { Context as CoreContext } from '@pluxel/core'
-import { closeOwnerInvocations, enterOwnerInvocation } from '@pluxel/core/internal'
+import { enterOwnerInvocation } from '@pluxel/core/internal'
 import { createPluginManagementCommands } from './commands/plugin-management'
 import { pinOwnerContext } from '../context/owner-view'
 
-type RootState = {
-	registry: ReturnType<typeof createCommandRegistry<CommandContext>>
-	revision: number
-	listeners: Set<(snapshot: CommandCatalogSnapshot) => void>
-}
-
-export type CommandCatalogSnapshot = Readonly<{
-	revision: number
-	descriptors: readonly CommandDescriptor[]
-}>
+export type CommandCatalogSnapshot = RegistryCommandCatalogSnapshot
 
 export class CommandsService {
-	private state?: RootState
-	private ownsInvocationCleanup = false
+	private registry?: ReturnType<typeof createCommandRegistry<CommandContext>>
 
 	constructor(
 		public readonly ctx: CoreContext,
@@ -35,180 +25,104 @@ export class CommandsService {
 	}
 
 	/** Register a command until its owner Context stops or the returned handle is disposed. */
-	register(command: AnyCommand): Registration {
+	register<I, O>(command: Command<I, O>): CommandRegistration<I, O> {
 		return this.registerFor(this.ctx, command)
 	}
 
-	get(name: string): AnyCommand | undefined {
-		return this.rootState().registry.get(name)
-	}
-
 	list(): readonly CommandDescriptor[] {
-		return this.rootState().registry.list()
+		return this.rootRegistry().list()
 	}
 
-	/** Return the current live catalog revision and its immutable descriptor snapshot. */
-	catalogSnapshot(): CommandCatalogSnapshot {
-		const state = this.rootState()
-		return Object.freeze({ revision: state.revision, descriptors: state.registry.list() })
+	/** Return the registry's current immutable catalog snapshot. */
+	snapshot(): CommandCatalogSnapshot {
+		return this.rootRegistry().snapshot()
 	}
 
 	/** Subscribe to command publication changes. The caller owns the returned disposer. */
 	subscribe(listener: (snapshot: CommandCatalogSnapshot) => void): () => void {
-		const state = this.rootState()
-		state.listeners.add(listener)
-		let active = true
-		return () => {
-			if (!active) return
-			active = false
-			state.listeners.delete(listener)
-		}
+		return this.rootRegistry().subscribe(listener)
 	}
 
-	execute(
-		name: string,
-		candidate: unknown,
-		context?: CommandContext,
-	): Promise<CommandResult<unknown>> {
-		return this.rootState().registry.execute(name, candidate, context)
+	execute(name: string, candidate: unknown, context?: CommandContext): Promise<unknown> {
+		return this.rootRegistry().execute(name, candidate, context)
 	}
 
-	executeOrThrow(name: string, candidate: unknown, context?: CommandContext): Promise<unknown> {
-		return this.rootState().registry.executeOrThrow(name, candidate, context)
-	}
-
-	private rootState(): RootState {
+	private rootRegistry(): ReturnType<typeof createCommandRegistry<CommandContext>> {
 		const rootService =
 			this.ctx === this.ctx.root ? this : (this.ctx.root.commands as CommandsService)
-		let state = rootService.state
-		if (state) return state
+		let registry = rootService.registry
+		if (registry) return registry
 
 		const managementCommands = createPluginManagementCommands(this.ctx.root)
-		state = { registry: createCommandRegistry(), revision: 0, listeners: new Set() }
-		rootService.state = state
-		const registrations: Registration[] = []
+		registry = createCommandRegistry()
+		rootService.registry = registry
+		const registrations: CommandRegistration[] = []
 		try {
 			for (const command of managementCommands) {
-				registrations.push(rootService.registerFor(this.ctx.root, command, state))
+				registrations.push(rootService.registerFor(this.ctx.root, command, registry))
 			}
 		} catch (error) {
 			for (const registration of registrations.toReversed()) registration.dispose()
-			rootService.state = undefined
+			rootService.registry = undefined
 			throw error
 		}
-		return state
+		return registry
 	}
 
-	private registerFor(
+	private registerFor<I, O>(
 		owner: CoreContext,
-		command: AnyCommand,
-		state = this.rootState(),
-	): Registration {
-		let manuallyDisposed = false
-		const registration = state.registry.register(
-			bindCommandOwner(owner, command, () => !manuallyDisposed),
-		)
-		this.bumpCatalog(state)
+		command: Command<I, O>,
+		registry = this.rootRegistry(),
+	): CommandRegistration<I, O> {
+		const registration = registry.register(bindCommandOwner(owner, command))
 		let active = true
 		const cleanup = () => {
 			if (!active) return
 			active = false
 			registration.dispose()
-			this.bumpCatalog(state)
 		}
 
 		let guard: { cancel(): void }
 		try {
-			this.ownInvocationCleanup(owner)
 			guard = owner.effects.defer(cleanup, { tag: `Command:${registration.name}` })
 		} catch (error) {
 			cleanup()
 			throw error
 		}
 
-		return Object.freeze({
-			name: registration.name,
-			dispose() {
-				manuallyDisposed = true
+		const ownedRegistration = Object.create(registration) as CommandRegistration<I, O>
+		Object.defineProperty(ownedRegistration, 'dispose', {
+			value() {
 				guard.cancel()
 				cleanup()
 			},
+			enumerable: true,
 		})
-	}
-
-	private ownInvocationCleanup(owner: CoreContext): void {
-		if (this.ownsInvocationCleanup) return
-		owner.effects.defer(() => closeOwnerInvocations(owner), {
-			tag: 'CommandInvocations',
-			phase: 'shutdown',
-		})
-		this.ownsInvocationCleanup = true
-	}
-
-	private bumpCatalog(state: RootState): void {
-		state.revision += 1
-		const snapshot = Object.freeze({
-			revision: state.revision,
-			descriptors: state.registry.list(),
-		})
-		for (const listener of state.listeners) {
-			try {
-				listener(snapshot)
-			} catch (error) {
-				this.ctx.root.logger.error('Command catalog listener failed', { error })
-			}
-		}
+		return Object.freeze(ownedRegistration)
 	}
 }
 
-function bindCommandOwner(
-	owner: CoreContext,
-	command: AnyCommand,
-	isRegistrationActive: () => boolean,
-): AnyCommand {
-	const executeOrThrow = async (candidate: unknown, context?: CommandContext): Promise<unknown> => {
-		if (!isRegistrationActive()) throw commandNotFound(command.name)
-		let lease
-		try {
-			lease = enterOwnerInvocation(owner, context?.signal)
-		} catch (error) {
-			throw cancellationError(error)
-		}
-		try {
-			return await command.executeOrThrow(candidate, {
-				...context,
-				signal: lease.signal,
-			})
-		} finally {
-			lease.dispose()
-		}
-	}
-
+function bindCommandOwner<I, O>(owner: CoreContext, command: Command<I, O>): Command<I, O> {
 	return {
 		name: command.name,
 		descriptor: command.descriptor,
-		executeOrThrow,
-		async execute(candidate: unknown, context?: CommandContext): Promise<CommandResult<unknown>> {
+		async execute(candidate: unknown, context?: CommandContext): Promise<O> {
+			let lease
 			try {
-				return { ok: true, value: await executeOrThrow(candidate, context) }
+				lease = enterOwnerInvocation(owner, context?.signal)
 			} catch (error) {
-				return {
-					ok: false,
-					error:
-						error instanceof CommandError
-							? error
-							: new CommandError('INTERNAL', 'Command failed', { cause: error }),
-				}
+				throw cancellationError(error)
+			}
+			try {
+				return await command.execute(candidate, {
+					...context,
+					signal: lease.signal,
+				})
+			} finally {
+				lease.dispose()
 			}
 		},
 	}
-}
-
-function commandNotFound(name: string): CommandError<'COMMAND_NOT_FOUND'> {
-	return new CommandError('COMMAND_NOT_FOUND', 'Command not found', {
-		message: `Command "${name}" is not registered`,
-		details: { name },
-	})
 }
 
 function cancellationError(error: unknown): CommandError {

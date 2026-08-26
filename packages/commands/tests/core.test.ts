@@ -73,7 +73,7 @@ describe('@pluxel/commands core', () => {
 		expect(Object.isFrozen(behavior)).toBe(false)
 		expect(Object.isFrozen(command.descriptor.behavior)).toBe(true)
 		expect(JSON.parse(JSON.stringify(command.descriptor))).toEqual(command.descriptor)
-		await expect(command.executeOrThrow({ value: 2 })).resolves.toEqual({ value: 3 })
+		await expect(command.execute({ value: 2 })).resolves.toEqual({ value: 3 })
 	})
 
 	it('applies defaults before custom validation and validates output', async () => {
@@ -91,7 +91,7 @@ describe('@pluxel/commands core', () => {
 				return { value: input.value! }
 			},
 		})
-		await expect(command.executeOrThrow({})).resolves.toEqual({ value: 4 })
+		await expect(command.execute({})).resolves.toEqual({ value: 4 })
 		expect(seen).toEqual([4])
 	})
 
@@ -113,7 +113,7 @@ describe('@pluxel/commands core', () => {
 		expect(JSON.parse(JSON.stringify(command.descriptor))).toEqual(command.descriptor)
 	})
 
-	it('uses CommandResult<void> when no structured output is declared', async () => {
+	it('resolves undefined when no structured output is declared', async () => {
 		const seen: string[] = []
 		const command = defineCommand({
 			name: 'cache.clear',
@@ -132,11 +132,8 @@ describe('@pluxel/commands core', () => {
 		})
 
 		expect(command.descriptor).not.toHaveProperty('outputSchema')
-		await expect(command.executeOrThrow({ name: 'build' })).resolves.toBeUndefined()
-		await expect(command.execute({ name: 'assets' })).resolves.toEqual({
-			ok: true,
-			value: undefined,
-		})
+		await expect(command.execute({ name: 'build' })).resolves.toBeUndefined()
+		await expect(command.execute({ name: 'assets' })).resolves.toBeUndefined()
 		expect(seen).toEqual(['build', 'assets'])
 	})
 
@@ -154,7 +151,7 @@ describe('@pluxel/commands core', () => {
 			execute: () => ({ cleared: true }),
 		} as never)
 
-		await expect(command.executeOrThrow({})).rejects.toMatchObject({
+		await expect(command.execute({})).rejects.toMatchObject({
 			code: 'OUTPUT_VALIDATION',
 			details: { issues: [{ code: 'unexpected_output' }] },
 		})
@@ -198,14 +195,14 @@ describe('@pluxel/commands core', () => {
 			output: obj({ accepted: Type.Boolean() }),
 			execute: () => ({ accepted: true }),
 		})
-		await expect(inputCommand.executeOrThrow({ value: () => true })).rejects.toMatchObject({
+		await expect(inputCommand.execute({ value: () => true })).rejects.toMatchObject({
 			code: 'INPUT_VALIDATION',
 			details: { issues: [{ path: ['value'], code: 'non_json_value' }] },
 		})
 
 		const cyclic: Record<string, unknown> = {}
 		cyclic.self = cyclic
-		await expect(inputCommand.executeOrThrow({ value: cyclic })).rejects.toMatchObject({
+		await expect(inputCommand.execute({ value: cyclic })).rejects.toMatchObject({
 			code: 'INPUT_VALIDATION',
 			details: { issues: [{ code: 'non_json_value' }] },
 		})
@@ -218,7 +215,7 @@ describe('@pluxel/commands core', () => {
 			output: obj({ value: Type.Any() }),
 			execute: () => ({ value: 1n }),
 		})
-		await expect(outputCommand.executeOrThrow({})).rejects.toMatchObject({
+		await expect(outputCommand.execute({})).rejects.toMatchObject({
 			code: 'OUTPUT_VALIDATION',
 			kind: 'fault',
 			details: { issues: [{ path: ['value'], code: 'non_json_value' }] },
@@ -283,24 +280,23 @@ describe('@pluxel/commands core', () => {
 				return input
 			},
 		})
-		const result = await command.execute({ value: 0 })
-		expect(result).toMatchObject({
-			ok: false,
-			error: {
-				code: 'INPUT_VALIDATION',
-				details: { issues: [{ path: ['value'], message: 'Must be positive', code: 'positive' }] },
-			},
+		await expect(command.execute({ value: 0 })).rejects.toMatchObject({
+			code: 'INPUT_VALIDATION',
+			kind: 'expected',
+			details: { issues: [{ path: ['value'], message: 'Must be positive', code: 'positive' }] },
 		})
-		if (result.ok !== false) throw new Error('expected validation failure')
-		expect(result.error).toBeInstanceOf(CommandError)
-		expect(result.error.kind).toBe('expected')
 	})
 
 	it('does not expose TypeBox numeric error identifiers as command error codes', async () => {
-		const result = await incrementCommand().execute({})
-		expect(result).toMatchObject({ ok: false, error: { code: 'INPUT_VALIDATION' } })
-		if (result.ok !== false) throw new Error('expected validation failure')
-		const details = result.error.details
+		let failure: unknown
+		try {
+			await incrementCommand().execute({})
+		} catch (error) {
+			failure = error
+		}
+		expect(failure).toBeInstanceOf(CommandError)
+		expect(failure).toMatchObject({ code: 'INPUT_VALIDATION' })
+		const details = (failure as CommandError).details
 		if (!details || !('issues' in details)) throw new Error('expected validation issues')
 		if (!Array.isArray(details.issues)) throw new Error('expected validation issue array')
 		const issues = details.issues as ValidationIssue[]
@@ -318,10 +314,10 @@ describe('@pluxel/commands core', () => {
 			output: obj({ value: Type.Number() }),
 			execute: () => ({ value: 'invalid' }) as never,
 		})
-		const result = await command.execute({})
-		expect(result).toMatchObject({
-			ok: false,
-			error: { code: 'OUTPUT_VALIDATION', kind: 'fault', publicMessage: 'Command failed' },
+		await expect(command.execute({})).rejects.toMatchObject({
+			code: 'OUTPUT_VALIDATION',
+			kind: 'fault',
+			publicMessage: 'Command failed',
 		})
 	})
 
@@ -370,13 +366,13 @@ describe('@pluxel/commands core', () => {
 			},
 		})
 		await expect(
-			command.executeOrThrow({
+			command.execute({
 				closed: { known: 'value' },
 				open: { known: 'value', extension: true },
 			}),
 		).resolves.toBeUndefined()
 		await expect(
-			command.executeOrThrow({
+			command.execute({
 				closed: { known: 'value', extension: true },
 				open: { known: 'value' },
 			}),
@@ -430,7 +426,7 @@ describe('@pluxel/commands core', () => {
 			execute() {},
 		})
 		expect(command.descriptor.inputSchema).toHaveProperty('properties.value.$defs.Value')
-		await expect(command.executeOrThrow({ value: { id: 'value-1' } })).resolves.toBeUndefined()
+		await expect(command.execute({ value: { id: 'value-1' } })).resolves.toBeUndefined()
 	})
 
 	it('reports compiler failures from the unified schema compilation stage', () => {
@@ -480,9 +476,9 @@ describe('@pluxel/commands core', () => {
 			properties: { at: { type: 'string' }, value: { type: 'string' } },
 		})
 		expect(JSON.parse(JSON.stringify(command.descriptor))).toEqual(command.descriptor)
-		await expect(
-			command.executeOrThrow({ at: '2026-07-27T00:00:00.000Z', value: '41' }),
-		).resolves.toEqual({ at: '2026-07-27T00:00:00.000Z', value: '42' })
+		await expect(command.execute({ at: '2026-07-27T00:00:00.000Z', value: '41' })).resolves.toEqual(
+			{ at: '2026-07-27T00:00:00.000Z', value: '42' },
+		)
 	})
 
 	it('maps transform failures to the relevant validation boundary', async () => {
@@ -501,7 +497,7 @@ describe('@pluxel/commands core', () => {
 			output: obj({ value: date }),
 			execute: ({ value }) => ({ value }),
 		})
-		await expect(echo.executeOrThrow({ value: 'not-a-date' })).rejects.toMatchObject({
+		await expect(echo.execute({ value: 'not-a-date' })).rejects.toMatchObject({
 			code: 'INPUT_VALIDATION',
 			details: { issues: [{ code: 'codec_decode' }] },
 		})
@@ -514,7 +510,7 @@ describe('@pluxel/commands core', () => {
 			output: obj({ value: date }),
 			execute: () => ({ value: new Date(Number.NaN) }),
 		})
-		await expect(broken.executeOrThrow({})).rejects.toMatchObject({
+		await expect(broken.execute({})).rejects.toMatchObject({
 			code: 'OUTPUT_VALIDATION',
 			kind: 'fault',
 			details: { issues: [{ code: 'codec_encode' }] },
@@ -526,17 +522,21 @@ describe('@pluxel/commands core', () => {
 		const controller = new AbortController()
 		const abortReason = new Error('stopped')
 		controller.abort(abortReason)
-		const aborted = await command.execute({ value: 1 }, { signal: controller.signal })
-		expect(aborted).toMatchObject({ ok: false, error: { code: 'ABORTED' } })
-		if (aborted.ok !== false) throw new Error('expected cancellation')
-		expect(aborted.error.cause).toBe(abortReason)
-		expect(aborted.error.details).toBeUndefined()
+		let aborted: unknown
+		try {
+			await command.execute({ value: 1 }, { signal: controller.signal })
+		} catch (error) {
+			aborted = error
+		}
+		expect(aborted).toBeInstanceOf(CommandError)
+		expect(aborted).toMatchObject({ code: 'ABORTED', cause: abortReason })
+		expect((aborted as CommandError).details).toBeUndefined()
 		await expect(
-			command.executeOrThrow({ value: 1 }, { deadlineMs: Date.now() - 1 }),
+			command.execute({ value: 1 }, { deadlineMs: Date.now() - 1 }),
 		).rejects.toMatchObject({ code: 'TIMEOUT' })
-		await expect(
-			command.executeOrThrow({ value: 1 }, { deadlineMs: Number.NaN }),
-		).rejects.toMatchObject({ code: 'INTERNAL' })
+		await expect(command.execute({ value: 1 }, { deadlineMs: Number.NaN })).rejects.toMatchObject({
+			code: 'INTERNAL',
+		})
 	})
 
 	it('observes cancellation that occurs during asynchronous output validation', async () => {
@@ -561,7 +561,7 @@ describe('@pluxel/commands core', () => {
 			execute: () => ({ ok: true }),
 		})
 		const controller = new AbortController()
-		const pending = command.executeOrThrow({}, { signal: controller.signal })
+		const pending = command.execute({}, { signal: controller.signal })
 
 		await validating
 		controller.abort('stopped')
@@ -592,11 +592,11 @@ describe('@pluxel/commands core', () => {
 		})
 		const registry = createCommandRegistry()
 		const registration = registry.register(command)
-		const pending = registry.executeOrThrow('registry.inflight', {})
+		const pending = registry.execute('registry.inflight', {})
 
 		await started
 		registration.dispose()
-		expect(registry.get('registry.inflight')).toBeUndefined()
+		expect(registry.list().some(({ name }) => name === 'registry.inflight')).toBe(false)
 		release()
 		await expect(pending).resolves.toEqual({ completed: true })
 	})

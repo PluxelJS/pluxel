@@ -29,11 +29,6 @@
 			"import": "./dist/argv.mjs",
 			"require": "./dist/argv.cjs"
 		},
-		"./tool": {
-			"@pluxel/source": "./src/tool.ts",
-			"import": "./dist/tool.mjs",
-			"require": "./dist/tool.cjs"
-		},
 		"./typebox": {
 			"@pluxel/source": "./src/typebox.ts",
 			"import": "./dist/typebox.mjs",
@@ -50,10 +45,6 @@
 			"./argv": {
 				"import": "./dist/argv.mjs",
 				"require": "./dist/argv.cjs"
-			},
-			"./tool": {
-				"import": "./dist/tool.mjs",
-				"require": "./dist/tool.cjs"
 			},
 			"./typebox": {
 				"import": "./dist/typebox.mjs",

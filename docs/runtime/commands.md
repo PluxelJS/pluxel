@@ -15,7 +15,7 @@ untrusted JSON / argv
   -> defaults + Decode + validate
   -> execute(decoded input, context)
   -> Encode + output validation
-  -> structured result or CommandError
+  -> wire output or CommandError
 ```
 
 ## 1. 定义一个 command
@@ -86,28 +86,23 @@ const input = obj({
 
 字段级 `description`/`examples` 用于解释单个值；command `examples` 表达完整、transport-neutral 的 input/output。不要把 argv 拼写或大段 JSON 塞进 command description。
 
-## 3. 直接执行与错误契约
+## 3. 执行与错误契约
 
 ```ts no-twoslash
-const result = await jobStatus.execute(
-	{ jobId: 'cache-refresh' },
-	{
-		signal,
-		deadlineMs: Date.now() + 5_000,
-		meta: { principalId: 'operator-42' },
-	},
-)
+import { CommandError } from '@pluxel/commands'
 
-if (result.ok) {
-	console.log(result.value.status)
-} else {
-	console.error(result.error.code, result.error.publicMessage)
+try {
+	const value = await jobStatus.execute(
+		{ jobId: 'cache-refresh' },
+		{ signal, deadlineMs: Date.now() + 5_000 },
+	)
+	console.log(value.status)
+} catch (error) {
+	if (error instanceof CommandError) console.error(error.code, error.publicMessage)
 }
-
-const value = await jobStatus.executeOrThrow({ jobId: 'cache-refresh' })
 ```
 
-两种调用都会经过完整验证。`executeOrThrow()` 将相同的失败结果转换为 throw。`deadlineMs` 在 pipeline 阶段之间检查；IO 取消要求实现观察 `context.signal`。
+`execute()` 是唯一执行入口：它完整执行 wire JSON 检查、schema validation、Decode、自定义 validation、handler、Encode 和 output validation，失败统一抛 `CommandError`。`deadlineMs` 在 pipeline 阶段之间检查；IO 取消要求实现观察 `context.signal`。
 
 需要向 carrier 暴露可预期失败时抛 `CommandError`：
 
@@ -133,62 +128,45 @@ import { createCommandRegistry } from '@pluxel/commands'
 const commands = createCommandRegistry()
 const registration = commands.register(jobStatus)
 
-commands.get('job.status.get')
 commands.list() // 冻结、按名称排序的 descriptor
+commands.snapshot() // { revision, descriptors }
 await commands.execute('job.status.get', { jobId: 'cache-refresh' })
-await commands.executeOrThrow('job.status.get', { jobId: 'cache-refresh' })
+await registration.execute({ jobId: 'cache-refresh' }) // 保留精确 output 类型
 
 registration.dispose() // 幂等撤销后续查找与发现
 ```
 
-不要 `new CommandRegistry()` 或 subclass；需要注解时只 `import type`。动态 name 查找无法推导具体 output，因此 registry dispatch 返回 `unknown`；应用内需要静态 output 类型时直接调用原 command object。
+不要 `new CommandRegistry()` 或 subclass；需要注解时只 `import type`。`register()` 返回可执行的 typed installed command 与 `dispose()`；动态 name dispatch 无法推导具体 output，因此 `commands.execute()` 返回 `unknown`。`snapshot()` 在 catalog 未变时复用同一 immutable identity，`list()` 就是其 `descriptors`；`subscribe()` 只通知之后成功的 publication/withdrawal。
 
-Pluxel Plugin 应使用 `this.ctx.commands.register(jobStatus)`。Runtime 把 registration 绑定到 Plugin generation effects：stop、replacement、rollback 和 shutdown 会撤销 publication，并在 owner 离开 running generation 时关闭新 invocation、组合 call/owner signal、等待已接纳调用退出。手动 dispose 会撤销未来发现，并让此前缓存到的 runtime command wrapper 在后续新调用中返回 `COMMAND_NOT_FOUND`；它不会取消已经进入执行的调用，也不会关闭同 owner 其他 command 的 admission。
+Pluxel Plugin 应使用 `this.ctx.commands.register(jobStatus)`。Runtime 原样委托 registry 的 list/snapshot/subscribe/execute，只在 registration 上增加 Plugin owner gate 与 generation effects ownership。stop、replacement、rollback 和 shutdown 会撤销 publication；Core 在 owner 离开 running generation 时统一关闭新 invocation、abort call/owner 组合 signal，并等待已接纳调用退出。手动 dispose 只撤销未来 publication，不取消已经进入执行的调用，也不关闭同 owner 其他 command 的 admission。
 
 ## 5. Agent tool 投影与 allowlist
 
-普通 host 可从同一 descriptor snapshot 生成 provider-neutral tool 描述：
+普通 host 从同一 descriptor snapshot 生成 provider 自己的 tool 描述：
 
 ```ts no-twoslash
-import { toToolDescriptors } from '@pluxel/commands/tool'
-
 const visible = commands.list().filter((descriptor) => policy.allows(descriptor.name))
-const tools = toToolDescriptors(visible)
+const tools = visible.map((descriptor) => provider.projectCommand(descriptor))
 ```
 
-投影保留 name、title、description、input/output JSON Schema，并从 `behavior` 生成 `readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`。单次 awaited execution 声明 `taskSupport: 'forbidden'`。provider 重命名 tool 时必须保留反向 name mapping，并把执行派回原 catalog。
+provider adapter 自己映射 name、title、description、input/output JSON Schema 和 `behavior`。MCP annotation、task support、provider 重命名与反向 name mapping 都是 carrier 契约，不是 command kernel 的公开概念。
 
 Runtime host 需要持久化 Agent policy 时使用 `ctx.root.agentTools`：Toolset 保存稳定 command names，Agent assignment 保存 Toolset IDs。没有 assignment 的 Agent 默认看不到任何命令；暂时不存在的 name 会保留在 policy，之后同名 command 发布时重新生效。
 
 ```ts no-twoslash
 const catalog = await ctx.root.agentTools.catalog(agentId)
-const tools = toToolDescriptors(catalog.list())
+const tools = catalog.list().map((descriptor) => provider.projectCommand(descriptor))
 const result = await catalog.execute(toolName, candidate, invocationContext)
 ```
 
 发布和执行必须使用同一个 bound catalog。它会在调用时再次检查 assignment，并提供包含 `catalogRevision`/`policyRevision` 的 snapshot 与订阅能力。Agent carrier 不应在收到 tool call 后绕过它调用 `ctx.root.commands.execute()`。
 
-## 6. 默认 argv projection
-
-已安装的 CLI carrier 可直接投影 live catalog：
-
-```ts no-twoslash
-import { createCommandArgv } from '@pluxel/commands/argv'
-
-const argv = createCommandArgv(commands)
-await argv.dispatchOrThrow(['job.status.get', '--job-id', 'cache-refresh'])
-```
-
-`createCommandArgv()` 使用精确 command name 作为首 token，标量字段生成 named options，复杂字段使用 field-level JSON。它每次从 live catalog 解析当前 command，按 command handle 惰性缓存单命令 router，不复制第二份 registry。
-
-这个 adapter 不创建 executable、不授权、不确认 destructive action，也不决定 stdout 或 exit code。仓库中的 `pluxel` CLI 是构建/开发工具，并不会自动连接某个运行中 host。
-
-## 7. 自定义 argv/message grammar
+## 6. argv/message grammar
 
 只有确实需要人类友好的 route、alias、positionals 或 tail 时才使用自定义 router：
 
 ```ts no-twoslash
-import { createArgvRouter, tail } from '@pluxel/commands/argv'
+import { createArgvRouter } from '@pluxel/commands/argv'
 
 const argv = createArgvRouter()
 argv.bind(jobStatus, {
@@ -196,7 +174,10 @@ argv.bind(jobStatus, {
 	positionals: ['jobId'],
 })
 
-await argv.dispatchOrThrow(process.argv.slice(2))
+const resolution = argv.resolve(process.argv.slice(2))
+if (resolution) {
+	await resolution.command.execute(resolution.candidate)
+}
 ```
 
 把 shell 已 tokenized 的 `string[]` 原样传入；不要先 `join(' ')`，否则会丢失 quoting 边界。raw chat/message 文本可以直接传 string，由 router tokenize 一次。
@@ -220,7 +201,7 @@ argv.bind(patchConfig, {
 })
 ```
 
-`resolve()` 只返回 route、candidate 和 raw args；`dispatch()` 返回 `CommandResult`；`dispatchOrThrow()` 抛 `CommandError`；`list()`/`help()` 提供 frozen metadata 给 host 自己的 help renderer。默认大小写不敏感、文本上限 16 KiB，unknown route/option 和 enum typo 会给出稳定 suggestions。
+`resolve()` 只负责 route match 与 candidate 构造；carrier 再完成授权、context 组装、`command.execute()` 与结果呈现。`list()` 提供 frozen metadata 给 host 自己的 help/completion renderer。默认大小写不敏感、文本上限 16 KiB，unknown option 和 enum typo 会给出稳定 suggestions；unknown route 不会在 policy 过滤前泄漏其他 command。
 
 ## 公开入口
 
@@ -228,9 +209,7 @@ argv.bind(patchConfig, {
 | ----------------------------- | -------------------------------------- |
 | Plugin 发布能力               | `this.ctx.commands.register(command)`  |
 | 独立 host 建 catalog          | `createCommandRegistry()`              |
-| Agent/MCP descriptor          | `toToolDescriptors(catalog.list())`    |
 | Runtime Agent allowlist       | `ctx.root.agentTools.catalog(agentId)` |
-| catalog 的保守 CLI 投影       | `createCommandArgv(catalog)`           |
 | 自定义 route/positionals/tail | `createArgvRouter().bind()`            |
 
 carrier 负责授权、确认、principal 映射、输出格式和进程退出码；command definition 与 runtime registry 不承担这些宿主策略。

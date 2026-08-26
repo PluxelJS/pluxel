@@ -55,7 +55,7 @@ describe('PackageManagerPlugin dynamic host', () => {
 				requirePluginService(host.ctx).isRunning(pluginNodeAddressOf(PackageManagerPlugin)),
 			).toBe(true)
 			expect(existsSync(resolve(managedRoot, 'entries'))).toBe(true)
-			expect(host.ctx.commands.get('package.install')).toBeDefined()
+			expect(host.ctx.commands.list().some(({ name }) => name === 'package.install')).toBe(true)
 		} finally {
 			await host.stop()
 			process.chdir(previousCwd)

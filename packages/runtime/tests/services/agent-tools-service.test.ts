@@ -37,7 +37,7 @@ describe('AgentToolsService', () => {
 			await host.commit()
 
 			const initial = await host.ctx.agentTools.snapshot()
-			await host.ctx.agentTools.replacePolicy(initial.revision, {
+			const configured = await host.ctx.agentTools.replacePolicy(initial.revision, {
 				toolsets: [
 					{
 						id: 'notes-reader',
@@ -62,14 +62,24 @@ describe('AgentToolsService', () => {
 
 			const catalog = await host.ctx.agentTools.catalog('researcher')
 			expect(catalog.list().map(({ name }) => name)).toEqual(['notes.read'])
-			await expect(catalog.executeOrThrow('notes.read', {})).resolves.toBeUndefined()
-			await expect(catalog.executeOrThrow('notes.delete', {})).rejects.toMatchObject({
+			await expect(catalog.execute('notes.read', {})).resolves.toBeUndefined()
+			await expect(catalog.execute('notes.delete', {})).rejects.toMatchObject({
 				code: 'FORBIDDEN',
 				details: { reason: 'command_not_assigned' },
 			})
 			const operator = await host.ctx.agentTools.catalog('operator')
 			expect(operator.list().map(({ name }) => name)).toEqual(['notes.delete', 'notes.read'])
-			await expect(operator.executeOrThrow('notes.delete', {})).resolves.toBeUndefined()
+			await expect(operator.execute('notes.delete', {})).resolves.toBeUndefined()
+
+			await host.ctx.agentTools.replacePolicy(configured.revision, {
+				toolsets: configured.policy.toolsets,
+				agents: configured.policy.agents.filter(({ agentId }) => agentId !== 'researcher'),
+			})
+			expect(catalog.list()).toEqual([])
+			await expect(catalog.execute('notes.read', {})).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+				details: { reason: 'command_not_assigned' },
+			})
 
 			host.remove(NotesCommands)
 			await host.commit()

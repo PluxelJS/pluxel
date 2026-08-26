@@ -2,7 +2,7 @@ import { constraint, issue } from './types'
 
 export { defineCommand } from './define'
 export { createCommandRegistry } from './registry'
-export type { CommandRegistry } from './registry'
+export type { CommandCatalogSnapshot, CommandRegistry } from './registry'
 export { CommandError } from './types'
 
 export type {
@@ -12,15 +12,14 @@ export type {
 	CommandBehavior,
 	CommandContext,
 	CommandDescriptor,
-	CommandErr,
 	CommandExample,
 	CommandErrorCode,
 	CommandErrorDetails,
 	CommandErrorKind,
-	CommandOk,
-	CommandResult,
+	CommandRegistration,
 	DefineCommandConfig,
 	Infer,
+	InstalledCommand,
 	ObjectSchema,
 	Registration,
 	Schema,

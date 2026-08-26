@@ -17,7 +17,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/cli`             | 脚手架、构建、数据库、发行物、HMR 与源码工作区命令       | [CLI 与工具链](../development/tooling.md)            |
 | `@pluxel/rolldown`        | Plugin package 与 static application 构建集成            | [开发和发布插件包](../development/plugin-package.md) |
 | `@pluxel/test`            | 经过真实语义转换的 Plugin 测试 harness                   | [测试 Plugin](../development/testing.md)             |
-| `@pluxel/commands`        | command registry、CLI/Agent 投影与参数路由               | [Commands](../runtime/commands.md)                   |
+| `@pluxel/commands`        | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../runtime/commands.md)                   |
 | `valibot-form`            | Valibot 表单 metadata 与可选 Web adapter                 | [Valibot 配置表单](../workbench/valibot-form.mdx)    |
 | `@pluxel/wretch`          | Plugin-owned HTTP client                                 | [Wretch HTTP client](../plugins/wretch.md)           |
 | `@pluxel/fonts`           | 服务端字体注册与 provider                                | [字体](../plugins/rendering/fonts.md)                |

@@ -7,7 +7,6 @@ export default defineConfig({
 	entry: {
 		index: './src/index.ts',
 		argv: './src/argv.ts',
-		tool: './src/tool.ts',
 		typebox: './src/typebox.ts',
 	},
 	dts: {

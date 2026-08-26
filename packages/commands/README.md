@@ -173,17 +173,12 @@ pnpm add @pluxel/commands
 ## Execute safely
 
 ```ts
-const result = await jobStatus.execute({ jobId: 'cache-refresh' }, context)
-if (result.ok) console.log(result.value.status)
-else console.error(result.error.code, result.error.publicMessage)
-
-// For a carrier that already maps CommandError exceptions:
-const output = await jobStatus.executeOrThrow({ jobId: 'cache-refresh' }, context)
+const output = await jobStatus.execute({ jobId: 'cache-refresh' }, context)
 ```
 
-Both methods validate and normalize input, run custom validation, execute the typed handler, and
-validate declared output. `executeOrThrow` means “same pipeline, throwing result”; it does not bypass
-schema validation.
+`execute()` is the only execution contract. It validates and normalizes input, runs custom
+validation, executes the typed handler, validates declared output, and throws `CommandError` on
+failure. Carriers catch that error once at their transport boundary.
 
 The original typed `execute` callback is not exposed on the returned object, so an adapter cannot
 accidentally call it with untrusted input.
@@ -212,9 +207,9 @@ const clearCache = defineCommand({
 })
 ```
 
-`clearCache.execute()` returns `CommandResult<void>` and `executeOrThrow()` resolves `undefined`.
-The descriptor and tool projection omit `outputSchema`. Errors already use `CommandResult` and the
-carrier's error channel, so the package does not add a redundant `{ ok: true }` payload. If callers
+`clearCache.execute()` resolves `undefined`, and the descriptor omits `outputSchema`. The carrier's
+error channel already represents failure, so the package does not add a redundant `{ ok: true }`
+payload. If callers
 need facts such as `changed`, `status`, or an identifier, declare `output` explicitly. Returning an
 undeclared value is an `OUTPUT_VALIDATION` fault rather than being silently discarded.
 
@@ -257,8 +252,8 @@ import { createCommandRegistry } from '@pluxel/commands'
 const commands = createCommandRegistry()
 const registration = commands.register(jobStatus)
 
-commands.get('job.status.get')
-commands.list() // frozen, revision-cached CommandDescriptor[]
+commands.list() // the current snapshot's frozen CommandDescriptor[]
+commands.snapshot() // { revision, descriptors }, identity-stable until the next mutation
 await commands.execute('job.status.get', { jobId: 'cache-refresh' }, context)
 
 registration.dispose() // idempotent
@@ -268,86 +263,34 @@ registration.dispose() // idempotent
 `import type` when an annotation is needed; the implementation class is not a public constructor or
 subclassing surface.
 
-The registry is the only command catalog. Agent, HTTP, Workbench, and message adapters filter or
-project `commands.list()`; they do not maintain parallel command registries.
+The registry is the only command catalog and the only authority for revision, snapshots, and
+publication subscriptions. `subscribe(listener)` observes later successful registrations and
+withdrawals; it does not emit an initial snapshot, and its returned disposer is idempotent.
+Notifications run synchronously in revision order, including reentrant mutations, and one listener
+failure cannot fail the mutation or skip other listeners.
 
-Lookup by a runtime string cannot infer a particular output type, so registry and argv dispatch
-return `unknown`. Call the original `Command` object when application code needs statically inferred
-output; validate or narrow dynamic dispatch output in a carrier.
+Lookup by a runtime string cannot infer a particular output type, so registry execution and the
+command returned by argv resolution produce `unknown`. Call the original `Command` object when
+application code needs statically inferred output; validate or narrow dynamic output in a carrier.
 
-The owner that registers a command owns the disposer. In a standalone `CommandRegistry`, disposal removes
-future lookup and discovery; command objects already held by application code remain ordinary executable
-objects, and disposal does not cancel calls that already started. Abort in-flight work through its
-call-scoped `signal` when the host requires that policy.
+`register()` returns a typed `CommandRegistration`: it is both the idempotent disposer and a branded
+live `InstalledCommand`. The installed handle resolves its name on every call. After a compatible
+replacement it invokes the new implementation; after withdrawal or an incompatible replacement it
+fails closed with `COMMAND_NOT_FOUND`. Compatibility contains only `name`, `inputSchema`, and
+`outputSchema`, serialized with canonical object-key order. Presentation, behavior, and examples may
+change without invalidating a typed handle. Disposal does not cancel calls that already started.
 
 `@pluxel/runtime` provides this ownership binding through `ctx.commands.register(command)`. Runtime
-plugins should use that service; it also closes owner admission, aborts the combined owner/call signal,
-and drains admitted invocations before the plugin stops. Direct registry construction remains
-lifecycle-neutral for standalone hosts and carrier implementations. Manually disposing one runtime
-registration withdraws publication, makes cached runtime command wrappers reject later calls with
-`COMMAND_NOT_FOUND`, and does not cancel a call that already started.
+plugins should use that service. Runtime binds execution to the immutable owner Context; Core closes
+the generation's shared admission gate, aborts the combined owner/call signal, and drains admitted
+invocations before effects cleanup. Direct registry construction remains lifecycle-neutral for
+standalone hosts and carrier implementations. Manually disposing one runtime registration withdraws
+publication, makes its retained installed handle reject later calls with `COMMAND_NOT_FOUND`, and
+does not cancel a call that already started or close sibling command admission.
 
-## Project Agent/MCP tool information
-
-```ts
-import { toToolDescriptors } from '@pluxel/commands/tool'
-
-const tools = toToolDescriptors(commands.list())
-```
-
-Each projected descriptor contains:
-
-```ts
-{
-	name,
-	title,
-	description,
-	inputSchema,
-	outputSchema, // present only when declared
-	annotations: {
-		readOnlyHint,
-		destructiveHint,
-		idempotentHint,
-		openWorldHint,
-	},
-	execution: { taskSupport: 'forbidden' },
-}
-```
-
-The projection is pure. Frozen descriptors produced by commands are cached by identity; mutable
-caller-owned descriptors are cloned and projected without caching. A provider adapter may rename a
-tool or rewrite its JSON Schema dialect, but it must retain a reverse name mapping when dispatching
-back to the registry.
-
-The core invocation model is a single awaited operation, so task-augmented execution is reported as
-`forbidden`. A future task carrier can advertise different execution semantics only when it really
-implements task ownership, polling, cancellation, and retention.
-
-Permissions, user confirmation, rate limits, credentials, audit, icons, provider `_meta`, and tool
-selection remain carrier/host concerns. Filter descriptors before sending them to a model.
-
-## Project a catalog to default argv
-
-```ts
-import { createCommandArgv } from '@pluxel/commands/argv'
-
-const argv = createCommandArgv(commands)
-await argv.dispatchOrThrow(['job.status.get', '--job-id', 'cache-refresh'])
-```
-
-`createCommandArgv()` is the default catalog projection for a CLI carrier. It uses the exact command
-name as the first token, generated named options for scalar fields, and field-level JSON for complex
-fields. It resolves the current command on every call and dispatches through the catalog, so
-registration replacement is observed without rebuilding a mirrored registry. Routers are compiled
-lazily and cached by the current command handle.
-
-The adapter does not install a process entry, authorize commands, confirm destructive work, render
-output, or select exit codes. In Pluxel, the workspace `@pluxel/cli` executable is not implicitly
-attached to a runtime; an installed host carrier passes its allowed catalog to this adapter.
-
-Use this default unless the carrier has a real human-facing syntax requirement. Plugin registration
-does not attach CLI metadata to the shared runtime catalog. A custom grammar remains available, but
-the host or carrier installs it explicitly with `createArgvRouter().bind()`.
+Agent/MCP, HTTP, and other protocol projections belong to the carrier. They consume filtered command
+descriptors, map the current provider protocol, retain any reverse name mapping, and dispatch back
+through the authorized catalog. The kernel does not freeze one provider's tool shape or task model.
 
 ## Add custom argv or message syntax
 
@@ -361,27 +304,31 @@ argv.bind(jobStatus, {
 })
 
 const resolution = argv.resolve('job status cache-refresh')
-// { command, route: 'job status', candidate: { jobId: 'cache-refresh' }, rawArgs: 'cache-refresh' }
-
-await argv.dispatchOrThrow('job status cache-refresh', context)
+// { command, route: 'job status', candidate: { jobId: 'cache-refresh' } }
+if (resolution) await resolution.command.execute(resolution.candidate, context)
 
 // A real CLI already has token boundaries. Pass them through without joining them back into text.
-await argv.dispatchOrThrow(process.argv.slice(2), context)
+const shellResolution = argv.resolve(process.argv.slice(2))
+if (shellResolution) await shellResolution.command.execute(shellResolution.candidate, context)
 ```
 
 `createArgvRouter()` is likewise the only runtime construction entry. `ArgvRouter` remains available
 as a type, not as a second `new ArgvRouter()` construction style.
 
+A router is heterogeneous by default, so a dynamically resolved command returns `unknown`. When a
+carrier deliberately binds only commands with one shared output contract, preserve that fact with
+`createArgvRouter<MyContext, MyOutput>()`; `bind()` then rejects commands with incompatible outputs.
+
 The first route is canonical; the rest are aliases. Binding compiles routes into a longest-prefix
-trie. Dispatch tokenizes once, constructs an untrusted candidate object, then enters the same command
-validation pipeline.
+trie. Resolution tokenizes once and constructs an untrusted candidate object. The host then decides
+whether and when to execute the resolved command through its normal validated boundary.
 
 ```text
 Command input schema + explicit ArgvBinding
   -> compiled route, positionals, scalar options, choices, and defaults
   -> tokenize and longest-route match
   -> coerce argv values into an untrusted candidate object
-  -> Command.executeOrThrow(candidate, context)
+  -> Command.execute(candidate, context)
   -> the same defaults, Decode, validation, handler, Encode, and output validation as every carrier
 ```
 
@@ -441,7 +388,10 @@ argv.bind(patchConfig, {
 	},
 })
 
-await argv.dispatchOrThrow(`settings patch cache --patch '{"enabled":true}'`, context)
+const patchResolution = argv.resolve(`settings patch cache --patch '{"enabled":true}'`)
+if (patchResolution) {
+	await patchResolution.command.execute(patchResolution.candidate, context)
+}
 ```
 
 Unsupported automatic mappings fail at bind time instead of being guessed.
@@ -467,14 +417,15 @@ than silently choosing a winner; repeated array options accumulate. A hyphen-lea
 as `-5` should follow `--`. Once all positionals are filled and tail input begins, the remainder
 belongs to the tail field, so router options intended for that call must appear before the tail.
 
-`argv.help(nameOrRoute)` returns frozen data for a host-owned help renderer. Parameter descriptors
+`argv.list()` returns frozen data for a host-owned help renderer. Parameter descriptors
 include scalar type, required state, aliases, description, closed string `choices`, and the schema's
 strict JSON `defaultValue` when present. Generated usage uses typed placeholders such as `<integer>`
 and `<json>` without exposing the full schema.
 
-Unknown options and unmatched routes include up to three deterministic `suggestions`. Invalid
-string-enum values report `allowedValues` and a close value when one exists. Suggestions are
-computed only after a failure; successful dispatch does no fuzzy matching.
+Unknown options include up to three deterministic `suggestions`. Invalid string-enum values report
+`allowedValues` and a close value when one exists. Suggestions are computed only after a parse
+failure; successful resolution does no fuzzy matching. An unmatched route simply resolves
+`undefined`, leaving carrier-specific feedback and catalog filtering to the host.
 
 ### Prefer ordinary CLI syntax for ordinary inputs
 
@@ -514,7 +465,8 @@ argv.bind(banMember, {
 	tail: tail.text('reason', '[reason]'),
 })
 
-await argv.dispatchOrThrow('ban xewx -t 30 -- flooding and repeated abuse')
+const ban = argv.resolve('ban xewx -t 30 -- flooding and repeated abuse')
+if (ban) await ban.command.execute(ban.candidate)
 // The command receives:
 // { member: 'xewx', durationMinutes: 30, permanent: false, silent: false,
 //   reason: 'flooding and repeated abuse' }
@@ -614,11 +566,12 @@ cli.bind(searchPlayers, {
 	},
 })
 
-// Agent tool, HTTP, registry, or direct call: the public value is the DSL string.
-await searchPlayers.executeOrThrow({ query: 'warnings >= 3', limit: 25 })
+// Agent, HTTP, registry, or direct call: the public value is the DSL string.
+await searchPlayers.execute({ query: 'warnings >= 3', limit: 25 })
 
 // A named CLI option carries one quoted shell token into the same Transform.
-await cli.dispatchOrThrow('players search --query "warnings >= 3" --limit 25')
+const cliResolution = cli.resolve('players search --query "warnings >= 3" --limit 25')
+if (cliResolution) await cliResolution.command.execute(cliResolution.candidate)
 
 // A message-oriented host may instead make the DSL its unquoted text tail.
 const messages = createArgvRouter()
@@ -627,19 +580,20 @@ messages.bind(searchPlayers, {
 	options: { limit: { aliases: ['l'] } },
 	tail: tail.text('query', '<filter-expression>'),
 })
-await messages.dispatchOrThrow('players search --limit 25 -- warnings >= 3')
+const messageResolution = messages.resolve('players search --limit 25 -- warnings >= 3')
+if (messageResolution) await messageResolution.command.execute(messageResolution.candidate)
 
 // All executions receive:
 // query = { source: 'warnings >= 3',
 //           expression: { field: 'warnings', operator: '>=', threshold: 3 } }
 ```
 
-The JSON descriptor and Agent tool schema expose `query` as the annotated string, including its
-grammar description and examples. Transform functions stay private. The normal command pipeline
-validates the wire string, decodes it exactly once, and turns a parser throw or trailing input into
-`INPUT_VALIDATION` before `execute()` runs. A Decode callback may deliberately throw a structured
-`CommandError('INPUT_VALIDATION', ...)`; commands preserves its issue path, stable code, and safe
-message for Agent self-correction.
+The JSON descriptor exposes `query` as the annotated string, including its grammar description and
+examples; Agent providers can project the same schema into their own tool format. Transform
+functions stay private. The normal command pipeline validates the wire string, decodes it exactly
+once, and turns a parser throw or trailing input into `INPUT_VALIDATION` before `execute()` runs. A
+Decode callback may deliberately throw a structured `CommandError('INPUT_VALIDATION', ...)`;
+commands preserves its issue path, stable code, and safe message for Agent self-correction.
 
 The decoded value retains the original `source`, so the required `Encode` direction can return it
 without forcing a parser-only DSL to implement a second formatter. If the domain already owns a
@@ -717,9 +671,8 @@ keeps the arbitrary `AbortSignal.reason` as `cause` rather than placing it in pu
 
 - `@pluxel/commands`: definition, execution, validation, errors, and registry;
 - `@pluxel/commands/typebox`: JSON-only TypeBox builder and strict object helpers;
-- `@pluxel/commands/tool`: cached provider-neutral tool projection;
-- `@pluxel/commands/argv`: default catalog projection, custom route binding, argv parsing, help
-  data, and text/JSON tails.
+- `@pluxel/commands/argv`: custom route binding, argv resolution, descriptor listing, and text/JSON
+  tails.
 
 Repository integration constraints are in [`engineering/COMMANDS.md`](../../engineering/COMMANDS.md); package
 implementation invariants and CLI ecosystem decisions are in [`docs/DESIGN.md`](docs/DESIGN.md).

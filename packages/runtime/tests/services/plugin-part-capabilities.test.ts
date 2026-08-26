@@ -106,9 +106,9 @@ describe('PluginPart runtime capabilities', () => {
 				expect(httpHostError).toMatchObject({
 					message: expect.stringContaining('root Context'),
 				})
-				await expect(host.ctx.commands.executeOrThrow('part.capability.read', {})).resolves.toEqual(
-					{ value: 'part' },
-				)
+				await expect(host.ctx.commands.execute('part.capability.read', {})).resolves.toEqual({
+					value: 'part',
+				})
 
 				const mounted = await host.ctx.http.fetch(
 					new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
@@ -117,7 +117,9 @@ describe('PluginPart runtime capabilities', () => {
 
 				host.remove(CapabilityOwner)
 				await host.commit()
-				expect(host.ctx.commands.get('part.capability.read')).toBeUndefined()
+				expect(host.ctx.commands.list().some(({ name }) => name === 'part.capability.read')).toBe(
+					false,
+				)
 				const removed = await host.ctx.http.fetch(
 					new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerRoute}`),
 				)

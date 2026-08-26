@@ -206,10 +206,6 @@ export type CommandDescriptor = {
 	readonly examples?: readonly CommandExample[]
 }
 
-export type CommandOk<T> = { ok: true; value: T }
-export type CommandErr = { ok: false; error: CommandError }
-export type CommandResult<T> = CommandOk<T> | CommandErr
-
 type CommandDefinitionBase<
 	SIn extends ObjectSchema,
 	Ctx extends CommandContext = CommandContext,
@@ -264,22 +260,36 @@ export type DefineCommandConfig<
 	: VoidCommandDefinition<SIn, Ctx>
 
 declare const commandInputType: unique symbol
+declare const installedCommandBrand: unique symbol
 
 export interface Command<I = unknown, O = unknown, Ctx extends CommandContext = CommandContext> {
 	readonly name: string
 	readonly descriptor: CommandDescriptor
 	/** @internal Keeps the argv input type invariant without exposing an unchecked input method. */
 	readonly [commandInputType]?: (input: I) => I
-	readonly execute: (
-		candidate: unknown,
-		...context: CommandContextArgs<Ctx>
-	) => Promise<CommandResult<O>>
-	readonly executeOrThrow: (candidate: unknown, ...context: CommandContextArgs<Ctx>) => Promise<O>
+	readonly execute: (candidate: unknown, ...context: CommandContextArgs<Ctx>) => Promise<O>
 }
 
-export type AnyCommand<Ctx extends CommandContext = CommandContext> = Command<any, any, Ctx>
+/** A command whose input identity is erased and whose dynamically selected output must be narrowed. */
+export type AnyCommand<Ctx extends CommandContext = CommandContext> = Command<any, unknown, Ctx>
+
+/** A catalog-bound command that resolves the current compatible implementation on every call. */
+export interface InstalledCommand<
+	I = unknown,
+	O = unknown,
+	Ctx extends CommandContext = CommandContext,
+> extends Command<I, O, Ctx> {
+	readonly [installedCommandBrand]: true
+}
 
 export type Registration = {
 	readonly name: string
-	dispose(): void
+	readonly dispose: () => void
 }
+
+/** Registration ownership and the live, schema-compatible installed command handle. */
+export type CommandRegistration<
+	I = unknown,
+	O = unknown,
+	Ctx extends CommandContext = CommandContext,
+> = InstalledCommand<I, O, Ctx> & Registration

@@ -64,11 +64,11 @@ host.cfg(PackageManagerPlugin).set({
 Plugin running 后发布两个 runtime command：
 
 ```ts no-twoslash
-await ctx.root.commands.executeOrThrow('package.install', {
+await ctx.root.commands.execute('package.install', {
 	specs: ['@acme/example-plugin@^2.0.0'],
 })
 
-await ctx.root.commands.executeOrThrow('package.remove', {
+await ctx.root.commands.execute('package.remove', {
 	specs: ['@acme/example-plugin'],
 })
 ```

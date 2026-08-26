@@ -1,10 +1,4 @@
-import type {
-	AnyCommand,
-	CommandBehavior,
-	CommandContext,
-	CommandDescriptor,
-	CommandResult,
-} from '@pluxel/commands'
+import type { CommandBehavior, CommandContext, CommandDescriptor } from '@pluxel/commands'
 
 export type CommandToolset = Readonly<{
 	id: string
@@ -56,14 +50,8 @@ export type AgentCommandCatalogSnapshot = Readonly<{
 /** A live command catalog constrained to one persisted Agent assignment. */
 export interface AgentCommandCatalog {
 	readonly agentId: string
-	get(name: string): AnyCommand | undefined
 	list(): readonly CommandDescriptor[]
 	snapshot(): AgentCommandCatalogSnapshot
 	subscribe(listener: (snapshot: AgentCommandCatalogSnapshot) => void): () => void
-	execute(
-		name: string,
-		candidate: unknown,
-		context?: CommandContext,
-	): Promise<CommandResult<unknown>>
-	executeOrThrow(name: string, candidate: unknown, context?: CommandContext): Promise<unknown>
+	execute(name: string, candidate: unknown, context?: CommandContext): Promise<unknown>
 }
