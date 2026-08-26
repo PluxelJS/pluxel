@@ -18,6 +18,10 @@ Make Worker task input ownership explicit with snapshot-by-default and opt-in bo
 reject borrowed transfers whose ownership contract would be ambiguous. Add admission-gated cooperative
 input preparation so queue rejection occurs before domain graph walks and snapshots.
 
+Clarify that Takumi raster/SVG tasks consume the process-shared libuv pool rather than an owned
+static-render pool, reserve default libuv capacity for other Node work, and discard results after
+late cancellation when an already-running N-API task cannot be preempted.
+
 Run ECharts exclusively in the shared Worker pool, require bounded declarative option graphs, and
 remove the host-thread fallback. Mark Canvas host-thread allocation and text preparation primitives
 with `Sync` names, remove the unbudgeted root Image placeholder factory, and retain the concise API on

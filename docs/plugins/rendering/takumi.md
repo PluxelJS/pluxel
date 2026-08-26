@@ -119,12 +119,15 @@ DPR 与实际使用的 portable font revision。公开失败可按 `TakumiError.
 `PIXELS_EXCEEDED`、`IMAGE_BYTES_EXCEEDED`、`FONT_COUNT_EXCEEDED`、`FONT_BYTES_EXCEEDED`、
 `RENDER_TIMEOUT`、`RENDER_BUSY` 与 `OUTPUT_TOO_LARGE`。
 
-Takumi native render 是异步且接受 signal；Plugin stop/replacement 和 consumer stop/replacement 也会取消其已接纳任务。
-字体 registration 是同一 revision 的共享准备工作，且 Takumi 发布包装器的注册入口当前不接受 signal；单个 caller 或
-provider stop 会在 registration 之间或完成后的 checkpoint 停止后续 render。
+Takumi raster/SVG 通过 N-API async work 在进程共享的 libuv worker pool 中执行，不是仅把同步计算包装成 Promise。
+`signal`、Plugin stop/replacement 和 consumer stop/replacement 会立即撤销 Plugin queue、cooperative preparation，以及尚未
+开始的 native work。已经进入 native `compute()` 的任务无法抢占；Plugin 会继续占住自己的 admission slot，等它完成后
+丢弃结果并拒绝 caller。字体 registration 是同一 revision 的共享准备工作，且 Takumi 发布包装器的注册入口当前不接受
+signal；单个 caller 或 provider stop 会在 registration 之间或完成后的 checkpoint 停止后续 render。
 
-这里没有为了“render 都很重”而重复套 Worker：Takumi raster/SVG 已由 N-API 提交异步 native task，再套一层会同时占用
-runtime Worker 与 Takumi/libuv slot，并复制输入和字体。剩余风险是上游同步 `fromHtml()` parser；它在 scheduler admission
+这里没有为了“render 都很重”而重复套 Worker：Takumi raster/SVG 已由 N-API 提交到共享 libuv pool，再套一层仍占同一
+libuv slot，同时额外占用 runtime Worker，并复制输入和字体。剩余风险是上游同步 `fromHtml()` parser，以及 N-API 提交前
+的 JS-to-Rust node/options 反序列化和 stylesheet cache parse；它们在 scheduler admission
 后运行并受默认 1 MiB content ceiling 约束，但单次调用不能被 signal 抢占。结构 walk 与大 byte copy 会 cooperative yield。
 大 HTML/node/stylesheet 与 SVG output 的 UTF-8 byte 计量也按 64 Ki characters 分片，可在 checkpoint 取消。
 
@@ -149,7 +152,7 @@ host.cfg(TakumiPlugin).set({
 	maxOutputBytes: 64 * 1024 * 1024,
 	cacheMaxBytes: 16 * 1024 * 1024,
 	maxRenderDurationMs: 30_000,
-	maxConcurrentRenders: 4,
+	maxConcurrentRenders: 2,
 	maxQueuedRenders: 32,
 	maxQueuedRendersPerConsumer: 8,
 })
@@ -157,8 +160,10 @@ host.cfg(TakumiPlugin).set({
 
 `maxContentBytes` 同时约束 HTML UTF-8 bytes，以及 structured node 的字符串与结构负载；explicit/content-referenced image
 source 由 `maxImages/maxImageBytes` 约束，explicit 与 HTML-extracted stylesheet 共同受 count/bytes 约束。
-`maxRenderDurationMs` 覆盖 queue、snapshot、
-字体/图片准备与 native task。
+`maxRenderDurationMs` 从 queue admission 开始计时，覆盖 snapshot、字体/图片准备与 native result 的有效期；已经开始的
+native work 不能强制终止，可能在 deadline 后才完成并被丢弃。每个 concurrent render 占用一个进程共享的 libuv slot；
+高吞吐部署应结合启动时的 `UV_THREADPOOL_SIZE` 调整 `maxConcurrentRenders`，同时给 filesystem、crypto、DNS 和其他 N-API
+work 留出容量。
 width/height budget 检查应用 DPR 后的 physical dimensions。font count 在任何 portable byte copy 前检查；image/font byte
 limits 是输入 bytes 预算，不能把 native renderer
 变成安全 sandbox；decoded image 与 glyph 内存还受 Takumi 实现影响。`maxOutputBytes` 在编码完成后检查，用于限制返回值，

@@ -13,16 +13,17 @@ FontsPlugin (process resource owner)
    └─ TakumiPlugin (bounded/cooperative JS preparation + async native renderer)
 ```
 
-| 能力        | 宿主线程                                                                                     | Worker/native 边界                                                       | Admission owner                  |
-| ----------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------- |
-| Fonts       | lifecycle、metadata、最终 native registry mutation                                           | bounded 文件 IO 与大 byte snapshot/hash/record copy 是 async/cooperative | Fonts generation fair scheduler  |
-| Canvas root | 名称带 `Sync` 的 allocation/drawing/text primitive                                           | `decodeImage()` native async；`./worker` adapter 供独立 task 使用        | Canvas generation fair scheduler |
-| ECharts     | 小型 contract validation、含大字符串的 cooperative option walk、有界 transport serialization | layout、ZRender、image decode、encode 全部在共享 Worker                  | Runtime root worker pool         |
-| Takumi      | borrowed graph validation、cooperative byte/string preparation，受 scheduler admission       | raster/SVG/font registration 使用 Takumi async native task               | Takumi generation fair scheduler |
+| 能力        | 宿主线程                                                                                          | Worker/native 边界                                                       | Admission owner                  |
+| ----------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------- |
+| Fonts       | lifecycle、metadata、最终 native registry mutation                                                | bounded 文件 IO 与大 byte snapshot/hash/record copy 是 async/cooperative | Fonts generation fair scheduler  |
+| Canvas root | 名称带 `Sync` 的 allocation/drawing/text primitive                                                | `decodeImage()` native async；`./worker` adapter 供独立 task 使用        | Canvas generation fair scheduler |
+| ECharts     | 小型 contract validation、含大字符串的 cooperative option walk、有界 transport serialization      | layout、ZRender、image decode、encode 全部在共享 Worker                  | Runtime root worker pool         |
+| Takumi      | `fromHtml()`、borrowed graph validation、cooperative preparation、N-API input/stylesheet lowering | raster/SVG/font registration 使用共享 libuv pool 的 N-API async work     | Takumi generation fair scheduler |
 
 Worker 是 event-loop isolation 和统一 thread admission，不是安全边界。native crash、内存分配和 CPU 饱和仍可影响
 整个进程。反过来，返回 Promise 也不证明工作离开 event loop；同步 native 调用和 Promise 第一次 `await` 前的 JS
-必须单独审计。
+必须单独审计。Takumi 的静态 raster/SVG 核心计算确实位于 N-API `AsyncTask.compute()`，每个任务占一个进程共享的
+libuv worker slot；上游另有 lazy owned Rayon pool，但只供本 Plugin 未暴露的 animation 帧并行，不是静态 render 的执行池。
 
 ## 输入所有权
 
@@ -56,19 +57,21 @@ Bytes 预算不能代替 count/depth 预算：大量空数组、空 stylesheet �
 - queue 中的任务可以立即撤销，不开始 snapshot/native work；
 - cooperative copy/walk 在 yield checkpoint 观察 signal；
 - Runtime Worker cancellation 终止执行该 task 的线程；
-- Takumi 把 signal 交给 native renderer；shared font build 只接受 generation cancellation，不绑定任一 caller；
+- Takumi 把 signal 交给 native renderer；尚未开始的 N-API work 可撤销，已经进入 `compute()` 的 work 不可抢占，Plugin
+  保留 admission slot，等待它结束后丢弃结果；shared font build 只接受 generation cancellation，不绑定任一 caller；
 - Canvas native image decode 已提交后不能真正取消，abort 只停止等待并丢弃迟到结果；
 - Fonts native registry mutation 是短小、有 byte ceiling、不可取消的 commit 段。
 
-deadline 覆盖 queue、prepare 和 render，但不能抢占上游单次同步函数。Takumi `fromHtml()`、Canvas `*Sync()` 和 Fonts
-最终 `GlobalFonts.register()` 因此必须继续受输入上限与基准监控。
+deadline 从 queue 开始计时并覆盖 prepare/render 的结果有效期，但不能抢占已经运行的 native work 或上游单次同步函数。
+Takumi `fromHtml()`、Canvas `*Sync()` 和 Fonts 最终 `GlobalFonts.register()` 因此必须继续受输入上限与基准监控。
 
 ## 并发与容量
 
 ECharts 使用 host-wide `workers.maxThreads/maxQueuedTasks/maxQueuedTasksPerPlugin`，不同 Worker consumer 共享公平预算。
-Takumi 不占用 Worker slot；其 `maxConcurrentRenders/maxQueuedRenders/maxQueuedRendersPerConsumer` 约束真正的 native
-task。两者使用不同执行后端，host 应按机器 CPU、内存和 native library 行为联合配置，不能把两个 maximum 分别当作
-整机最大值。
+Takumi 不占用 Worker slot；其 `maxConcurrentRenders/maxQueuedRenders/maxQueuedRendersPerConsumer` 约束占用进程共享
+libuv pool 的 native work。默认并发为 2，给 Node 的 filesystem、crypto、DNS 和其他 N-API work 留出默认 pool 容量；
+高吞吐 host 应联合设置启动时的 `UV_THREADPOOL_SIZE` 与 Plugin 并发，而不是只提高一个上限。把 Takumi 再套进 Worker
+仍会占用同一 libuv slot，并额外占住 Runtime Worker，因此不解决这种竞争。
 
 Canvas 不创建 thread pool；root native decode 只用 package-local fair admission，并在不可取消 work 真正 settle 前保留
 slot。worker adapter 从 snapshot 建立独立 decode admission；ECharts 用 `decodeImageInto()` 把 bytes 直接写入同步 placeholder，

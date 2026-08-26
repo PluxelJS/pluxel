@@ -67,7 +67,10 @@ export type TakumiRenderInput = Readonly<{
 	images?: readonly TakumiImageInput[]
 	/** Omission produces PNG. */
 	output?: TakumiRasterOutput
-	/** Cancels queue waiting and Takumi's native render task. Shared font preparation is checkpointed. */
+	/**
+	 * Cancels queue/preparation and requests native cancellation. Work already running in libuv finishes
+	 * before its result is discarded. Shared font preparation is checkpointed.
+	 */
 	signal?: AbortSignal
 }>
 
@@ -278,6 +281,7 @@ export class TakumiPlugin extends BasePlugin {
 				...(prepared.fontFamilies ? { fontFamilies: prepared.fontFamilies } : {}),
 				signal,
 			})
+			signal.throwIfAborted()
 		} catch (cause) {
 			if (signal.aborted) throw abortReason(signal)
 			throw new TakumiError('RENDER_FAILED', 'Takumi native raster rendering failed', { cause })

@@ -36,10 +36,12 @@ Takumi 自己的 embedded last-resort 保持最终 fallback。Workbench outlet �
 
 ## 执行、队列与取消
 
-Takumi N-API 使用真正异步的 native task。按照 Pluxel worker 边界，它继续使用原 API，不进入只为长时间阻塞 JS
-event loop 的 `ctx.workers`；否则会同时占用 Pluxel worker 与 Takumi/libuv native slot，增加一次 clone/dispatch 和两层
-线程预算。package-local scheduler 只负责 admission：固定并发、global/per-owner queue 上限和 owner round-robin；
-generation config 的 wall-clock deadline 覆盖 queue、准备与 native render，避免卡住的任务永久占用 slot。
+Takumi 的 raster/SVG/font N-API 方法返回 napi-rs `AsyncTask`：JS-to-Rust 输入反序列化、stylesheet cache parse 与 task
+建立仍在宿主线程，`Task.compute()` 则通过 `napi_queue_async_work` 占用进程共享的 libuv pool。Takumi 另有 lazy owned Rayon pool，但只在
+本 Plugin 未暴露的 animation `compute()` 内并行帧渲染/编码，静态 raster/SVG 不使用它。按照 Pluxel worker 边界，
+本 Plugin 继续使用原 API，不进入 `ctx.workers`；否则仍占一个共享 libuv slot，同时额外占用 Runtime Worker，并增加
+一次 clone/dispatch。package-local scheduler 只负责 admission：默认并发 2、global/per-owner queue 上限和 owner
+round-robin；默认不吃满 Node 的 4-slot libuv pool，host 可以结合启动时的 `UV_THREADPOOL_SIZE` 调整吞吐。
 provider cleanup 会 abort generation/caller signals、拒绝 queued render，并等待所有已接纳 Promise settle 后才完成
 generation 交接。
 
@@ -48,7 +50,9 @@ content、stylesheets 和 image bytes 在 render settle 前按 borrowed contract
 node image 只接受 string source，所有 byte source 统一进入有 count/bytes ceiling 的 `images` 路径，避免
 同步复制 inline buffer。结构化 node 在 admission 后验证 declarative shape/预算，但继续按 borrowed contract 直接使用，
 不再额外执行一次同步 `structuredClone()`。caller/explicit
-signals 合成为一次 signal；queued item 取消会 O(1) 释放 owner slot，running task 把 signal 交给 Takumi。Fonts
+signals 合成为一次 signal；queued item 取消会 O(1) 释放 owner slot。尚未执行的 N-API async work 可以取消；一旦
+`Task.compute()` 已运行，Node N-API 不提供抢占，Plugin 会保留 admission slot，等 native work settle 后拒绝 caller 并
+丢弃结果。deadline 表示从 queue 开始的结果有效期，不承诺强制终止 native CPU work。Fonts
 registration 按 revision 在 generation 内共享，不能安全地绑定任一 caller signal，而且 Takumi 发布包装器的注册入口当前
 不接受 signal。generation signal 会在 registration 之间或完成后的 checkpoint 停止 build；generation-local cache 保证旧
 build 不能回写下一代 renderer state。

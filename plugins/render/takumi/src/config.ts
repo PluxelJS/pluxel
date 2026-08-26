@@ -119,15 +119,17 @@ export const TakumiConfig = v.object({
 	maxRenderDurationMs: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(300_000)), 30_000),
 		f.formMeta({
-			title: 'Maximum render duration',
-			description: 'Wall-clock deadline in milliseconds, including queue and preparation time.',
+			title: 'Render deadline',
+			description:
+				'Request deadline in milliseconds, including queue and preparation. A running native task may finish before its result is discarded.',
 		}),
 	),
 	maxConcurrentRenders: v.pipe(
-		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(64)), 4),
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(64)), 2),
 		f.formMeta({
 			title: 'Concurrent renders',
-			description: 'Maximum Takumi native renders admitted at once by this Plugin node.',
+			description:
+				'Maximum Takumi native renders admitted at once. Each render occupies a process-shared libuv worker slot.',
 		}),
 	),
 	maxQueuedRenders: v.pipe(

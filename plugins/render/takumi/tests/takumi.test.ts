@@ -338,6 +338,40 @@ describe('TakumiPlugin', () => {
 		}
 	})
 
+	it('discards raster output when cancellation cannot preempt running native work', async () => {
+		let releaseNative!: () => void
+		const nativeRender = vi.spyOn(Renderer.prototype, 'render').mockImplementation(async () => {
+			await new Promise<void>((resolve) => {
+				releaseNative = resolve
+			})
+			return Buffer.from([1, 2, 3])
+		})
+		try {
+			await withRuntimeHost(
+				async (host) => {
+					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					await host.commit()
+					const controller = new AbortController()
+					const rendering = host.require(TakumiTestConsumer).takumi.render({
+						content: '<div>already running</div>',
+						width: 100,
+						height: 100,
+						signal: controller.signal,
+					})
+
+					await vi.waitFor(() => expect(nativeRender).toHaveBeenCalledOnce())
+					const reason = new DOMException('discard late output', 'AbortError')
+					controller.abort(reason)
+					releaseNative()
+					await expect(rendering).rejects.toBe(reason)
+				},
+				{ workbench: false },
+			)
+		} finally {
+			nativeRender.mockRestore()
+		}
+	})
+
 	it('cancels cooperative image snapshotting before native rendering', async () => {
 		const nativeRender = vi.spyOn(Renderer.prototype, 'render')
 		try {

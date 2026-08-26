@@ -49,17 +49,19 @@ TakumiPlugin 不执行隐式网络请求。HTML/CSS/node tree 的 image source �
 snapshot 图片 bytes。结构化 node 使用 borrowed graph，不再做第二次同步 clone；大字符串 UTF-8 计量与 byte copy 都会
 分片。remote URL 缺少匹配资源会以 `INVALID_IMAGE` 失败。
 
-Takumi 的 N-API render 已经是真异步任务，因此 Plugin 不再把它套进 `ctx.workers`。Plugin 自己只做 caller-aware
-有界 admission 和 owner round-robin；`AbortSignal` 会取消排队与上游 native render。Takumi 发布包装器的字体注册当前不接受
-signal，而且相同 revision 的准备工作由多个调用共享；取消发生在字体准备期间时会在 registration 之间或完成后的
-checkpoint 生效，旧 build 不能回写下一 generation。
+Takumi 的 raster/SVG 核心计算通过 N-API async work 运行在进程共享的 libuv pool，因此 Plugin 不再把它套进
+`ctx.workers`。那样仍会占用同一个 libuv slot，并额外占住 Runtime Worker。Plugin 自己做 caller-aware 有界 admission
+和 owner round-robin；默认只并发两个 native render，给 Node 的其他 libuv work 留出容量。尚未开始的 native work 可由
+`AbortSignal` 撤销；已经运行的 work 不能抢占，Plugin 会保留 slot，完成后丢弃结果。Takumi 发布包装器的字体注册当前
+不接受 signal，而且相同 revision 的准备工作由多个调用共享；取消发生在字体准备期间时会在 registration 之间或
+完成后的 checkpoint 生效，旧 build 不能回写下一 generation。
 
 HTML 的 `fromHtml()` 仍是上游同步 parser；它在 scheduler admission 后运行，但单次 parser 调用不能被抢占。默认 1 MiB
 content ceiling 与 node/text/stylesheet/image-source 上限约束这段剩余主线程风险，node walk 和大 byte copy 则会分段让出
 event loop；SVG output 的 UTF-8 byte check 同样 cooperative。
 
 配置默认限制 8192×8192 physical dimensions、16,777,216 pixels、64 total stylesheets、256 distinct image sources、
-32 MiB image inputs、256 个 / 128 MiB portable fonts、64 MiB output、30 秒 wall-clock deadline、4 个 concurrent
+32 MiB image inputs、256 个 / 128 MiB portable fonts、64 MiB output、30 秒 request deadline、2 个 concurrent
 renders 和 32 个 queued renders。完整配置与行为见
 [`docs/plugins/rendering/takumi.md`](../../../docs/plugins/rendering/takumi.md)，设计边界见 [`DESIGN.md`](DESIGN.md)。
 
