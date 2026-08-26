@@ -205,7 +205,7 @@ owner stop/replacement 使 pending generation 失效，迟到 setup 返回的 cl
 
 `ctx.workers` 是 Node module artifact 之上的 root-owned CPU/native task coordinator。作者用 module-level
 `defineWorkerTask(import.meta.url, literal)` 声明默认导出 handler，再用 `workers.run(declaration, input, { signal })`
-提交 structured-clone-compatible 数据；Tinypool 是 runtime implementation detail，插件不创建自己的线程预算。
+提交 structured-clone-compatible 数据；runtime 直接管理持久化 `node:worker_threads`，插件不创建自己的线程预算。
 
 `run()` 默认同步 snapshot 输入，保证任务等待 artifact 或排队期间不读取 caller 的后续 mutation。明确
 `inputOwnership: 'borrowed'` 时 runtime 保留 caller graph 到 dispatch，只执行 worker transport clone；caller 必须在
@@ -218,12 +218,15 @@ root/global/per-owner admission，取得 execution slot 后才在 host 执行 co
 queue full 不运行 callback；prepare 期间 slot 仍计入 active budget，owner stop 会 abort 并等待它。prepare error 保留领域
 类型。prepared value 默认 snapshot，也可选择 borrowed；此 API 不接受 transfer，因为 admission 时尚无可同步移交的 buffer。
 
-root pool lazy 创建，`minThreads = 0`，默认最多使用 `min(4, available CPUs - 1)` 个 worker thread，空闲 30 秒后回收。
-runtime 在 Tinypool 之前维护 bounded global/per-owner queue，并在 ready owner 间 round-robin；每个 worker 同时只执行一个
-task。等待首次 artifact route 的 job 也进入同一 admission 上界；ready owner/task 使用 O(1) insertion-ordered queue，取消不扫描或
-滞留大队列。插件 Context stop 会拒绝 queued task、abort running task 并等待已接纳 promise，root shutdown 最后销毁 pool。
-取消 running task 会终止承载它的 worker，因此该 capability 只适合独立、CPU-bound、可重试的计算或 thread-safe native
-调用，不用于普通 HTTP/数据库 I/O，也不是自动包装所有 N-API 调用的透明代理。
+root pool lazy 创建，默认提供 `min(4, available CPUs - 1)` 个 concurrent worker-task execution slot；空闲 worker 不保活
+进程并在 30 秒后回收。idle teardown 已经不承载任务，因此可与 replacement startup 短暂重叠；`maxThreads` 限制的是同时
+执行的重任务，而不是这种生命周期交接瞬间的物理 thread object 数。
+runtime 在 pool 之前维护 bounded global/per-owner queue，并在 ready owner 间 round-robin；每个 worker 同时只执行一个 task。
+等待首次 artifact route 的 job 也进入同一 admission 上界；ready owner/task 使用 O(1) insertion-ordered queue，取消不扫描或
+滞留大队列。取消 running task 会立即 settle caller-facing Promise 并终止承载它的 worker，但 active slot 只有在该 worker
+真正退出后才归还；owner stop/replacement 和 root shutdown 同时等待已接纳 Promise 与这些真实资源 settlement。因此该能力
+只适合独立、CPU-bound、可重试的计算或 thread-safe native 调用，不用于普通 HTTP/数据库 I/O，也不是自动包装所有 N-API
+调用的透明代理。
 
 Worker task 只接受 structured clone 边界；Canvas、Image、数据库 handle、函数和闭包不能跨线程。worker thread 也不是
 security boundary，native crash 仍可能终止进程。开发 HMR 让新任务读取 content-addressed 新 URL，已运行任务继续使用旧

@@ -227,8 +227,9 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 
 `defineWorkerTask()` 是同一 artifact primitive 上的 typed specialization。`ctx.workers` 把不同插件的 cloneable CPU/native
 任务提交到 root 共享线程预算，执行 owner-aware bounded admission、round-robin、公用 cancellation 和 shutdown drain。
-插件不 direct-depend Tinypool，也不各自按 CPU 数创建 pool。该能力不替代异步 I/O：网络、数据库和已经真正异步的 native API
-继续使用原 capability；只有会长时间占用 JS event loop 且能用纯数据描述的工作才进入 worker task。
+插件不依赖具体 pool implementation，也不各自按 CPU 数创建 pool。该能力不替代异步 I/O：网络、数据库和已经真正异步的
+native API 继续使用原 capability；只有会长时间占用 JS event loop 且能用纯数据描述的工作才进入 worker task。取消 running
+task 会终止对应 worker，runtime 只在 worker 真正退出后归还线程 slot，避免 replacement work 与尚未释放的 native work 重叠。
 
 `workers.run()` 默认在返回前同步取得输入 snapshot，因此 caller 随后的 mutation 不会影响排队任务。调用方已有明确
 borrow-until-settle contract 时可选择 `inputOwnership: 'borrowed'`，省略 admission clone，只保留 transport clone；它不能

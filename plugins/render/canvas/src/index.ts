@@ -138,8 +138,8 @@ export class CanvasPlugin extends BasePlugin {
 			maxTextCacheCharacters: this.config.maxTextCacheCharacters,
 		})
 		this.workerDecodeLimitsSnapshot = Object.freeze({
-			maxConcurrent: this.config.maxConcurrentDecodes,
-			maxQueued: this.config.maxQueuedDecodes,
+			maxConcurrent: this.config.maxConcurrentDecodesPerWorkerAdapter,
+			maxQueued: this.config.maxQueuedDecodesPerWorkerAdapter,
 		})
 		this.workerPolicy = undefined
 		this.generation = generation

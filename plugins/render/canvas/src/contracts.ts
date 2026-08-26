@@ -127,10 +127,16 @@ export class CanvasError extends Error {
 	}
 }
 
-/** Thread-local native adapter created from one immutable host policy snapshot. */
+/** Caller-owned native adapter created from one immutable host policy snapshot. */
 export interface CanvasWorkerAdapter {
 	/** Normalized, nested-frozen policy used by every operation on this adapter. */
 	readonly snapshot: CanvasWorkerSnapshot
+	/**
+	 * Stops accepting new work, rejects queued decodes, and waits for already-submitted native
+	 * decodes to settle. Repeated calls are harmless; previously returned native surfaces remain
+	 * caller-owned.
+	 */
+	close(): Promise<void>
 	/** Creates a caller-owned native surface after checking its initial allocation budget. */
 	createCanvas(width: number, height: number): Canvas
 	/** Creates a caller-owned native SVG surface after checking its initial allocation budget. */

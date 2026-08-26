@@ -343,7 +343,6 @@ export class EChartsPlugin extends BasePlugin {
 			theme: resolvedTheme.value,
 			injectOptionFont: resolvedTheme.injectOptionFont,
 			defaultFontCssFamily,
-			fontRevision,
 			...(input.locale === undefined ? {} : { locale: input.locale }),
 			...(input.setOption === undefined ? {} : { setOption: input.setOption }),
 			output: input.output,

@@ -25,7 +25,7 @@ runtime special case: the plugin declares a typed worker artifact and submits cl
 
 ## Pool and artifact ownership
 
-ECharts does not depend on Tinypool. Its module-level `defineWorkerTask()` is lowered by the same
+ECharts does not own or depend on a pool implementation. Its module-level `defineWorkerTask()` is lowered by the same
 content-addressed Node artifact compiler used in development and production. The artifact bundles
 ECharts/engine and the Canvas worker facade. Its native residual metadata records Canvas's directly
 declared `@napi-rs/canvas`; an owner-aware bridge locates the Canvas package before loading the
@@ -61,10 +61,17 @@ per JavaScript realm and resolves the active adapter through `AsyncLocalStorage`
 inside a worker realm cannot use a mutable global “current render”. The ECharts
 instance is always disposed and never returned.
 
-The realm caches the validated platform state, current Canvas worker adapter, and default-font theme
-projection. Image maps remain lazy for charts without images; repeated use of one render-local source
-shares a single owned native decode. Encoded worker bytes are wrapped as a zero-copy Buffer view after
-transport instead of being copied a second time.
+The worker realm caches the validated platform state and most recent normalized Canvas snapshot; the main
+Plugin caches default-font theme projection. Image maps remain lazy for charts without images; repeated use
+of one render-local source shares a single owned native decode. Encoded worker bytes are wrapped as a
+zero-copy Buffer view after transport instead of being copied a second time.
+
+Each job owns its Canvas worker adapter. A render-local controller stops queued image work after the first
+failure and prevents a late decode from mutating aggregate accounting or invoking ZRender callbacks. The
+render engine waits those caller-facing image tasks; the worker handler then closes the adapter and waits
+its held native decode promises before returning. This second fence is required because aborting a caller
+Promise cannot preempt an already-submitted N-API task. A new job or Fonts revision therefore cannot create
+a fresh scheduler while old native work is still consuming the same process capacity.
 
 Named themes are caller-owned frozen JSON snapshots and are passed directly to `echarts.init()`;
 their clone checks bytes, value count, depth and accessors before allocation can grow without bound.
@@ -73,7 +80,9 @@ accumulating without bound; dispose/caller/provider cleanup reconcile the genera
 They never enter ECharts' irreversible global theme registry. Encoded output is checked in the worker
 before transport (after unavoidable encoding). Data URL images are rewritten to short
 render-local keys, bounded by distinct-source/aggregate-byte/aggregate-pixel policy, and decoded exactly
-once into the ZRender placeholder under Canvas decode admission. They never trigger implicit network/file I/O.
+once into the ZRender placeholder under Canvas decode admission. The default aggregate is 16,777,216 pixels
+(64 MiB raw RGBA), matching one default maximum Canvas surface instead of retaining four such images per
+render. They never trigger implicit network/file I/O.
 
 Worker threads are an event-loop isolation and resource-admission mechanism, not a security boundary.
 A native crash can still terminate the process.

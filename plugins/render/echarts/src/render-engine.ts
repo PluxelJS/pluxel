@@ -4,7 +4,7 @@ import type { EChartsOption, EChartsType, SetOptionOpts } from 'echarts'
 import { EChartsError } from './errors.ts'
 import type { EChartsTheme } from './index.ts'
 
-const PLATFORM_STATE_KEY = Symbol.for('@pluxel/echarts.render-engine.v2')
+const PLATFORM_STATE_KEY = Symbol.for('@pluxel/echarts.render-engine.v3')
 
 export type RenderOutput = Readonly<{
 	format: 'png' | 'jpeg' | 'webp'
@@ -19,7 +19,6 @@ export type RenderEngineInput = Readonly<{
 	theme: string | EChartsTheme
 	injectOptionFont: boolean
 	defaultFontCssFamily: string
-	fontRevision: number
 	locale?: string
 	setOption?: Readonly<SetOptionOpts>
 	output: RenderOutput
@@ -86,7 +85,7 @@ type RenderScope = {
 }
 
 type PlatformState = {
-	readonly version: 2
+	readonly version: 3
 	readonly storage: AsyncLocalStorage<RenderScope>
 	nextRenderId: number
 }
@@ -110,10 +109,14 @@ export async function renderECharts(
 	assertEChartsVersion()
 	if (signal.aborted) throw abortReason(signal)
 	const platformState = getPlatformState()
+	const renderController = new AbortController()
+	const forwardAbort = () => renderController.abort(signal.reason)
+	signal.addEventListener('abort', forwardAbort, { once: true })
+	const renderSignal = renderController.signal
 	const scope: RenderScope = {
 		canvas,
 		defaultFontCssFamily: input.defaultFontCssFamily,
-		signal,
+		signal: renderSignal,
 		maxDataUrlBytes: input.maxDataUrlBytes,
 		maxImages: input.maxImages,
 		maxTotalImageBytes: input.maxTotalImageBytes,
@@ -150,7 +153,7 @@ export async function renderECharts(
 				input.output.format === 'png'
 					? root.encode('png')
 					: root.encode(input.output.format, input.output.quality)
-			return waitForSignal(encoded, signal)
+			return waitForSignal(encoded, renderSignal)
 		})
 		if (data.byteLength > input.maxOutputBytes) {
 			throw new EChartsError(
@@ -167,9 +170,12 @@ export async function renderECharts(
 		})
 	} catch (cause) {
 		if (cause instanceof EChartsError) throw cause
-		if (signal.aborted) throw abortReason(signal)
+		if (renderSignal.aborted) throw abortReason(renderSignal)
 		throw new EChartsError('RENDER_FAILED', 'Apache ECharts server rendering failed', { cause })
 	} finally {
+		renderController.abort(new DOMException('ECharts render scope settled', 'AbortError'))
+		signal.removeEventListener('abort', forwardAbort)
+		await Promise.allSettled(scope.pendingImages)
 		chart?.dispose()
 	}
 }
@@ -182,7 +188,7 @@ function getPlatformState(): PlatformState {
 		if (
 			!existing ||
 			typeof existing !== 'object' ||
-			(existing as Partial<PlatformState>).version !== 2 ||
+			(existing as Partial<PlatformState>).version !== 3 ||
 			!((existing as Partial<PlatformState>).storage instanceof AsyncLocalStorage) ||
 			typeof (existing as Partial<PlatformState>).nextRenderId !== 'number' ||
 			!Number.isSafeInteger((existing as Partial<PlatformState>).nextRenderId)
@@ -196,7 +202,7 @@ function getPlatformState(): PlatformState {
 		return cachedPlatformState
 	}
 	const state: PlatformState = Object.seal({
-		version: 2,
+		version: 3,
 		storage: new AsyncLocalStorage<RenderScope>(),
 		nextRenderId: 0,
 	})
@@ -260,10 +266,12 @@ async function loadPlatformImage(
 			signal: scope.signal,
 			dataOwnership: 'owned',
 		})
+		if (scope.signal.aborted) throw abortReason(scope.signal)
 		recordDecodedImage(scope, image)
 		callbackInvoked = true
 		onload.call(image)
 	} catch (cause) {
+		if (scope.signal.aborted) throw abortReason(scope.signal)
 		if (!callbackInvoked) {
 			try {
 				onerror.call(image)

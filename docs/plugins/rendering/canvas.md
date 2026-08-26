@@ -155,8 +155,12 @@ import { createCanvasWorkerAdapter } from '@pluxel/canvas/worker'
 
 export default async ({ canvas: snapshot }: Input) => {
 	const canvas = createCanvasWorkerAdapter(snapshot)
-	const surface = canvas.createCanvas(640, 320)
-	return surface.encode('png')
+	try {
+		const surface = canvas.createCanvas(640, 320)
+		return await surface.encode('png')
+	} finally {
+		await canvas.close()
+	}
 }
 ```
 
@@ -164,7 +168,9 @@ adapter 提供 `createCanvas()`、`createSvgCanvas()`、`createImage()`、`decod
 `createImage()` 只满足 ECharts 一类必须同步返回 placeholder 的受信任 platform contract；随后应把同一个 placeholder 与
 bytes 交给 `decodeImageInto()`，它只执行一次 native decode，并在 Promise settle 前独占该 placeholder。普通调用方直接用
 `decodeImage()`。直接写 native `src` 无法受 budget 约束。allocation/decode 会重新执行 host budget，decode concurrency/
-queue 来自 snapshot；具体 family 若在线程 native registry 中不存在，会以 `FONT_UNAVAILABLE` 失败。
+queue 来自 snapshot；具体 family 若在线程 native registry 中不存在，会以 `FONT_UNAVAILABLE` 失败。adapter 拥有自己的
+decode scheduler；任务结束时必须 `await close()`。close 会拒绝 queued decode、等待 already-submitted native decode
+真正 settle，且不会回收已经返回给 caller 的 Canvas/Image/SVG。
 
 只有 worker 需要 Pretext 时再引入额外子入口：
 
@@ -185,32 +191,40 @@ host.cfg(CanvasPlugin).set({
 	maxHeight: 8192,
 	maxPixels: 16_777_216,
 	maxImageBytes: 32 * 1024 * 1024,
-	maxConcurrentDecodes: 4,
+	maxConcurrentDecodes: 2,
 	maxQueuedDecodes: 32,
 	maxQueuedDecodesPerConsumer: 8,
+	maxConcurrentDecodesPerWorkerAdapter: 1,
+	maxQueuedDecodesPerWorkerAdapter: 32,
 	maxTextCharacters: 100_000,
 	maxRichTextItems: 2_048,
 	maxTextCacheCharacters: 1_000_000,
 })
 ```
 
-| 字段                          |       默认值 | 检查对象                                    |
-| ----------------------------- | -----------: | ------------------------------------------- |
-| `maxWidth`                    |       `8192` | factory 分配和 decoded image 的宽度         |
-| `maxHeight`                   |       `8192` | factory 分配和 decoded image 的高度         |
-| `maxPixels`                   | `16,777,216` | width × height；默认相当于 64 MiB raw RGBA  |
-| `maxImageBytes`               |     `32 MiB` | `decodeImage()` 接受的 encoded bytes        |
-| `maxConcurrentDecodes`        |          `4` | root 或单个 worker adapter 的在途 decode 数 |
-| `maxQueuedDecodes`            |         `32` | root 合计或单个 worker adapter 的等待数     |
-| `maxQueuedDecodesPerConsumer` |          `8` | 单个 caller 等待的 root decode 数           |
-| `maxTextCharacters`           |    `100,000` | 单次 Pretext preparation 的 UTF-16 长度     |
-| `maxRichTextItems`            |      `2,048` | 单次 rich-inline preparation 的 item 数     |
-| `maxTextCacheCharacters`      |  `1,000,000` | 清空共享 measurement cache 前的累计字符预算 |
+| 字段                                   |       默认值 | 检查对象                                      |
+| -------------------------------------- | -----------: | --------------------------------------------- |
+| `maxWidth`                             |       `8192` | factory 分配和 decoded image 的宽度           |
+| `maxHeight`                            |       `8192` | factory 分配和 decoded image 的高度           |
+| `maxPixels`                            | `16,777,216` | width × height；默认相当于 64 MiB raw RGBA    |
+| `maxImageBytes`                        |     `32 MiB` | `decodeImage()` 接受的 encoded bytes          |
+| `maxConcurrentDecodes`                 |          `2` | CanvasPlugin root 的在途 decode 数            |
+| `maxQueuedDecodes`                     |         `32` | CanvasPlugin root 的合计等待数                |
+| `maxQueuedDecodesPerConsumer`          |          `8` | 单个 caller 等待的 root decode 数             |
+| `maxConcurrentDecodesPerWorkerAdapter` |          `1` | 每个 detached worker adapter 的在途 decode 数 |
+| `maxQueuedDecodesPerWorkerAdapter`     |         `32` | 每个 detached worker adapter 的等待数         |
+| `maxTextCharacters`                    |    `100,000` | 单次 Pretext preparation 的 UTF-16 长度       |
+| `maxRichTextItems`                     |      `2,048` | 单次 rich-inline preparation 的 item 数       |
+| `maxTextCacheCharacters`               |  `1,000,000` | 清空共享 measurement cache 前的累计字符预算   |
 
-CanvasConfig 配置 Canvas root 与 worker adapter 的 native decode admission，不配置通用 worker task queue、render timeout、
+CanvasConfig 分开配置 Canvas root 与每个 worker adapter 的 native decode admission，不配置通用 worker task queue、render timeout、
 output bytes、DPR 或主题：
 
-- worker 并发与队列由 runtime 的 root-owned `ctx.workers` 配置。
+- Worker task 的线程并发与队列由 runtime 的 root-owned `ctx.workers` 配置。
+- `maxConcurrentDecodesPerWorkerAdapter` 是每个 adapter 的局部上限；ECharts 每 job 创建一个 adapter，默认 4 个
+  Runtime workers × 1 个 decode，仍不是可接管 libuv 的进程级线程池。提高它会按 active worker 数产生乘法，应与
+  `UV_THREADPOOL_SIZE`、其他 native work 和 RSS
+  基准一起调整。
 - encoded output 的格式与大小由调用方和上游 encoder 决定。
 - 图表 DPR、主题与 data URL 上限由 EChartsPlugin 配置。
 

@@ -35,8 +35,9 @@ drain effects。
 cleanup 由 runtime 管理。artifact 不定义 worker 或任务协议。
 
 CPU-bound / thread-safe native 工作使用 `defineWorkerTask<Input, Output>()` 和 `ctx.workers.run()`。所有插件共享一个
-root-owned、lazy、bounded、owner-fair 的 worker-thread pool；Tinypool 不进入插件 API。输入输出必须可 structured clone，
-插件 stop 会取消并等待已接纳工作。`run(..., { transfer: [buffer] })` 可把大型 `ArrayBuffer` ownership 立即转入已接纳任务，
+root-owned、lazy、bounded、owner-fair 的 worker-thread pool；插件不依赖具体 pool 实现。输入输出必须可 structured clone，
+插件 stop 会取消并等待已接纳工作及 running worker 的真实退出。caller cancellation 可以先结束公开 Promise，但对应 active slot
+只在 worker termination settle 后归还。`run(..., { transfer: [buffer] })` 可把大型 `ArrayBuffer` ownership 立即转入已接纳任务，
 避免第二次字节复制；buffer 会同步 detach，后续失败不回滚。默认 admission snapshot 也可显式改成
 `inputOwnership: 'borrowed'`，由 caller 保持输入到 Promise settle 并省略重复 clone。普通异步 I/O 与短小 native 调用不应
 为了“统一”而额外跨线程。

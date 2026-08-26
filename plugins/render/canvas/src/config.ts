@@ -32,24 +32,38 @@ export const CanvasConfig = v.object({
 		}),
 	),
 	maxConcurrentDecodes: v.pipe(
-		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(64)), 4),
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(64)), 2),
 		f.formMeta({
-			title: 'Concurrent image decodes',
+			title: 'Concurrent root image decodes',
 			description: 'Maximum native image decodes admitted at once by this Plugin node.',
 		}),
 	),
 	maxQueuedDecodes: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4_096)), 32),
 		f.formMeta({
-			title: 'Queued image decodes',
+			title: 'Queued root image decodes',
 			description: 'Maximum waiting image decodes across all caller Plugins.',
 		}),
 	),
 	maxQueuedDecodesPerConsumer: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_024)), 8),
 		f.formMeta({
-			title: 'Queued decodes per consumer',
+			title: 'Queued root decodes per consumer',
 			description: 'Maximum waiting image decodes owned by one caller Plugin generation.',
+		}),
+	),
+	maxConcurrentDecodesPerWorkerAdapter: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(64)), 1),
+		f.formMeta({
+			title: 'Concurrent worker image decodes',
+			description: 'Maximum native image decodes admitted at once by each detached worker adapter.',
+		}),
+	),
+	maxQueuedDecodesPerWorkerAdapter: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4_096)), 32),
+		f.formMeta({
+			title: 'Queued worker image decodes',
+			description: 'Maximum waiting image decodes retained by each detached worker adapter.',
 		}),
 	),
 	maxTextCharacters: v.pipe(

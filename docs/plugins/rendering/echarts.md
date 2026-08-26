@@ -92,9 +92,11 @@ snapshot，真正 dispatch 时仍由 worker transport 建立私有 graph：
 1. worker 从 snapshot 构造 bounded Canvas adapter。
 2. ECharts 以 SSR mode 初始化。
 3. 等待受支持的 render-local 图片、flush 并编码。
-4. 在 `finally` 中 dispose ECharts instance。
+4. 在 `finally` 中撤销 render-local image scope、等待其 JS task settle、dispose ECharts instance，并关闭 Canvas adapter；
+   adapter close 会等 already-submitted native decode 真正 settle 后才让 worker handler 返回。
 
-worker concurrency、每 owner 队列和 host 总队列均由 runtime workers 配置，不是 EChartsConfig 或 CanvasConfig 字段。队列满时抛出 `EChartsError`，code 为 `RENDER_BUSY`。
+Worker task concurrency、每 owner 队列和 host 总队列均由 runtime workers 配置，不是 EChartsConfig 或 CanvasConfig 字段；
+每个 adapter 内的 image decode admission 则来自 CanvasConfig。队列满时抛出 `EChartsError`，code 为 `RENDER_BUSY`。
 
 option 必须由 plain object、array、typed array 和 scalar data 组成。formatter function、accessor、native/class object 和
 SharedArrayBuffer 都会以 `WORKER_INPUT_UNSUPPORTED` 拒绝，不存在 inline fallback。admission 后、worker transport 前会同时检查 option 的
@@ -157,6 +159,11 @@ data URL 在 ZRender 前被替换为 render-local key，并通过 Canvas worker 
 ECharts 的同步 placeholder 会直接交给 Canvas `decodeImageInto()`；每个 distinct source 只做一次 native decode，不会先生成
 第二个 Image 再触发 `src` setter 重复解码。Canvas decode queue 满时映射为 ECharts `RENDER_BUSY`。
 
+Canvas worker adapter 默认每次只提交 1 个 native decode；Runtime 默认最多运行 4 个 worker，因此 ECharts 默认最多贡献
+4 个同时在途的 Canvas decode，而不是形成 4 × 4 的嵌套并行。这个 admission 只协调 Pluxel 自己提交的工作，不能接管
+进程共享 libuv pool。图片失败会中止同一次 render 尚未开始的 decode；已提交的 native work 不可抢占，worker handler
+会等待它真实完成，再把线程用于下一 job。
+
 HTTP(S) URL 与服务端文件路径会被拒绝。ECharts/Canvas 不应隐式拥有网络、认证、redirect、proxy 或文件读取权限。
 先通过业务 outbound HTTP capability 获取 bytes，再转换成受支持的 data URL；native Image 不能进入 declarative option。
 
@@ -175,7 +182,7 @@ host.cfg(EChartsPlugin).set({
 	maxDataUrlBytes: 32 * 1024 * 1024,
 	maxImages: 32,
 	maxTotalImageBytes: 32 * 1024 * 1024,
-	maxTotalImagePixels: 67_108_864,
+	maxTotalImagePixels: 16_777_216,
 	maxOptionBytes: 8 * 1024 * 1024,
 	maxOptionNodes: 100_000,
 	maxOptionDepth: 64,
@@ -196,7 +203,7 @@ host.cfg(EChartsPlugin).set({
 | `maxDataUrlBytes`         |  `32 MiB` | 单张 data URL decoded source bytes 上限            |
 | `maxImages`               |      `32` | 单次 render 的 distinct image source 数            |
 | `maxTotalImageBytes`      |  `32 MiB` | 单次 render 的 decoded image source bytes 总量     |
-| `maxTotalImagePixels`     |  `67.1 M` | 单次 render 的 decoded image pixels 总量           |
+| `maxTotalImagePixels`     |  `16.8 M` | 单次 render decoded pixels；约 64 MiB raw RGBA     |
 | `maxOptionBytes`          |   `8 MiB` | option structured-clone payload 的估算上限         |
 | `maxOptionNodes`          | `100,000` | option 遍历的 value 数上限                         |
 | `maxOptionDepth`          |      `64` | option object/array nesting 上限                   |
@@ -205,6 +212,11 @@ host.cfg(EChartsPlugin).set({
 `defaultDevicePixelRatio` 不能高于 `maxDevicePixelRatio`。字体由 FontsPlugin 配置，单张图片的 native dimensions/pixels 与
 encoded bytes 由 CanvasPlugin 配置，worker 并发与队列由 runtime `ctx.workers` 配置，网络访问策略由业务 HTTP capability
 配置。EChartsConfig 拥有 DPR、theme、option/data URL transport、每次 render 的图片累计预算与 output 限制。
+
+默认单次 render 的 root surface 与 decoded images 各最多约 64 MiB raw RGBA。encoded source、output、ECharts/Skia
+结构和解码时的临时 allocation 仍会增加 RSS；聚合像素检查也只能发生在一张图片 decode 完成后，不能撤销已发生的 native
+allocation。高并发 host 应联合测量 `workers.maxThreads`、Canvas per-worker decode admission、`UV_THREADPOOL_SIZE` 与 peak RSS，
+不要把任一局部上限当成进程总内存保证。
 
 ## 错误处理
 

@@ -66,7 +66,7 @@ export type WorkerPreparedRunOptions = Readonly<{
 export type WorkerInputPreparation<Input> = (signal: AbortSignal) => Input | Promise<Input>
 
 export type WorkersConfig = Readonly<{
-	/** Shared root thread budget. Defaults to min(4, available CPUs minus one). */
+	/** Shared root concurrent worker-task execution slots. Defaults to min(4, available CPUs minus one). */
 	maxThreads?: number
 	/** Waiting jobs across all plugin owners. Running jobs do not count. @defaultValue 128 */
 	maxQueuedTasks?: number

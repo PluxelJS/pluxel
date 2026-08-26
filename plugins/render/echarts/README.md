@@ -35,7 +35,9 @@ The host catalog contains `[FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlu
 worker-only and uses the host-wide `ctx.workers` thread/queue budget. The worker
 reconstructs the bounded `@pluxel/canvas/worker` adapter from `canvas.workerSnapshot`, initializes
 ECharts in SSR mode, waits for tracked images, flushes, encodes, and disposes the instance in
-`finally`. ECharts does not initialize another CanvasPlugin or directly depend on the native binding.
+`finally`. It then closes the caller-owned Canvas adapter, which cancels queued image work and waits
+already-submitted native decodes before the handler releases its Worker. ECharts does not initialize
+another CanvasPlugin or directly depend on the native binding.
 The option graph is borrowed without mutation until the render settles. Bytes/value/depth budgets
 run only after shared fair admission, so queue rejection does not first walk the graph; they bound
 dispatch serialization, including cooperative chunks for one large string, and the worker rewrites only its private transport clone. PNG
@@ -76,6 +78,9 @@ render-local keys before they reach ZRender, decoded through the Canvas worker a
 to per-source bytes, distinct-source count, aggregate source bytes, aggregate decoded pixels, and Canvas
 byte/dimension budgets. The trusted placeholder is decoded in place once; a source is not decoded into a
 temporary Image and then decoded again through `src`. Ordinary text beginning with `data:` is left untouched.
+A render-local failure aborts the other image tasks and suppresses late callbacks. Canvas worker decode
+admission defaults to one per adapter, while the Runtime worker pool supplies outer parallelism; the two
+limits are local admission rather than ownership of the process-wide libuv pool.
 A native Image, formatter function, accessor, class instance or shared mutable buffer cannot cross the
 declarative worker boundary and is rejected without an inline fallback.
 

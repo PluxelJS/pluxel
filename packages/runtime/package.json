@@ -167,7 +167,6 @@
 		"pg": "^8.22.0",
 		"std-env": "^4.0.0-rc.1",
 		"superjson": "^2.2.6",
-		"tinypool": "catalog:",
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {

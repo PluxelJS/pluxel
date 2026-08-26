@@ -16,28 +16,40 @@ import {
 	resolveImageDataOwnership,
 } from './worker-internal.ts'
 
-let lastAdapter: CanvasWorkerAdapter | undefined
 const neverAbortSignal = new AbortController().signal
 
-/** Create a thread-local native Canvas adapter from a detached host policy snapshot. */
+/** Create a caller-owned native Canvas adapter from a detached host policy snapshot. */
 export function createCanvasWorkerAdapter(snapshot: CanvasWorkerSnapshot): CanvasWorkerAdapter {
 	const normalized = normalizeCanvasWorkerSnapshot(snapshot)
-	if (lastAdapter?.snapshot === normalized) return lastAdapter
 	const scheduler = new DecodeScheduler(
 		normalized.decodeLimits.maxConcurrent,
 		normalized.decodeLimits.maxQueued,
 		normalized.decodeLimits.maxQueued,
 	)
 	const schedulerOwner = scheduler.createOwner()
+	let active = true
+	const requireActive = (): void => {
+		if (!active) throw new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed')
+	}
 	const adapter: CanvasWorkerAdapter = {
 		snapshot: normalized,
+		async close() {
+			if (!active) {
+				await scheduler.close(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+				return
+			}
+			active = false
+			await scheduler.close(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+		},
 		createCanvas(width, height) {
+			requireActive()
 			assertCanvasDimensions(width, height, normalized.limits)
 			const canvas = createNativeCanvas(width, height)
 			canvas.getContext('2d').font = `10px ${normalized.font.cssFamily}`
 			return canvas
 		},
 		createSvgCanvas(width, height, options = {}) {
+			requireActive()
 			assertCanvasDimensions(width, height, normalized.limits)
 			const flags =
 				options.mode === 'text-to-paths'
@@ -50,9 +62,13 @@ export function createCanvasWorkerAdapter(snapshot: CanvasWorkerSnapshot): Canva
 			return canvas
 		},
 		createImage() {
+			requireActive()
 			return new NativeImage()
 		},
 		decodeImageInto(image, data, options = {}) {
+			if (!active) {
+				return Promise.reject(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+			}
 			if (!(image instanceof NativeImage)) {
 				return Promise.reject(
 					new CanvasError(
@@ -64,11 +80,13 @@ export function createCanvasWorkerAdapter(snapshot: CanvasWorkerSnapshot): Canva
 			return decodeImage(image, data, normalized, scheduler, schedulerOwner, options)
 		},
 		decodeImage(data, options = {}) {
+			if (!active) {
+				return Promise.reject(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+			}
 			return decodeImage(new NativeImage(), data, normalized, scheduler, schedulerOwner, options)
 		},
 	}
-	lastAdapter = Object.freeze(adapter)
-	return lastAdapter
+	return Object.freeze(adapter)
 }
 
 async function decodeImage(

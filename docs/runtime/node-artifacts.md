@@ -78,7 +78,9 @@ const run: WorkerTaskHandler<SumInput, SumOutput> = ({ values }) => ({
 export default run
 ```
 
-所有 Plugin 共享 root-owned、lazy、bounded、owner-fair 的 worker pool。host 统一配置线程数、全局和每 Plugin queue limit、idle timeout；Plugin 不创建私有 Tinypool，也不自行扩大进程预算。
+所有 Plugin 共享 root-owned、lazy、bounded、owner-fair 的 worker pool。host 统一配置 concurrent execution slots、全局和每
+Plugin queue limit、idle timeout；Plugin 不创建私有线程池，也不自行扩大进程预算。取消 running task 会终止对应 worker；
+caller Promise 可以立即结束，但 runtime 会等 worker 真正退出后才归还 active slot，避免 replacement task 穿透执行上限。
 
 ## 什么可以跨线程
 

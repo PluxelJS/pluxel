@@ -83,11 +83,12 @@ export const EChartsConfig = v.object({
 	maxTotalImagePixels: v.pipe(
 		v.optional(
 			v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1_073_741_824)),
-			67_108_864,
+			16_777_216,
 		),
 		f.formMeta({
 			title: 'Total decoded image pixels',
-			description: 'Maximum combined decoded pixels retained by one render.',
+			description:
+				'Maximum combined decoded pixels retained by one render. The default is 64 MiB of raw RGBA pixels.',
 		}),
 	),
 	maxOptionBytes: v.pipe(

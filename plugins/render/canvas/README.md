@@ -45,8 +45,9 @@ decode 默认在 Promise settle 前借用 bytes，并用 cooperative chunk 复�
 
 默认 factory 限制为 8192×8192、16,777,216 pixels 和 32 MiB encoded image。返回的原生 Canvas 仍允许调用方自行
 resize，因此这些限制只保证通过插件 factory 发生的初始分配。native decode 无法中止；abort 会停止等待并丢弃迟到
-结果，底层 decode 可能继续到完成。root decode 使用 owner-fair admission，默认最多 4 个在途、32 个全局等待、
-每 caller 8 个等待；不可取消的 native work 真正 settle 前不会提前归还槽位。
+结果，底层 decode 可能继续到完成。root decode 使用 owner-fair admission，默认最多 2 个在途、32 个全局等待、
+每 caller 8 个等待；不可取消的 native work 真正 settle 前不会提前归还槽位。worker adapter 使用独立的
+per-adapter admission，默认每个 adapter 1 个在途、32 个等待，不能把它理解成进程级 libuv 上限。
 
 `canvas.assertDimensions()` 可在分配前复用同一校验；`canvas.workerSnapshot` 返回包含 native/text/decode limits 和当前
 FontsPlugin family/revision 的纯数据快照。worker entry 不启动第二个 CanvasPlugin：
@@ -55,16 +56,22 @@ FontsPlugin family/revision 的纯数据快照。worker entry 不启动第二个
 import { createCanvasWorkerAdapter } from '@pluxel/canvas/worker'
 
 export default async ({ canvas: snapshot }: Input) => {
-	const canvas = createCanvasWorkerAdapter(snapshot).createCanvas(640, 320)
-	return canvas.encode('png')
+	const adapter = createCanvasWorkerAdapter(snapshot)
+	try {
+		const canvas = adapter.createCanvas(640, 320)
+		return await canvas.encode('png')
+	} finally {
+		await adapter.close()
+	}
 }
 ```
 
 adapter 在线程内创建原生 Canvas/Image/SVG、解码图片并重新执行 host budget；具体选择的已安装 family 也会在 native
 registry 中验证。需要 Pretext 时单独从 `@pluxel/canvas/worker/pretext` 导入 `createCanvasWorkerTextLayout()`，避免 ECharts
 等不使用 Pretext 的 artifact 承担其代码和 cache 成本。两个子入口都没有 Plugin、Context、Workbench 或字体 mutation。
-同一线程内连续使用相同 limits/font revision 时，normalized snapshot 和无状态 adapter 会复用；每次绘制的原生 surface
-仍由当前任务独立创建和拥有。
+同一线程内连续使用相同 limits/font revision 时会复用 normalized snapshot；每次调用仍创建 caller-owned adapter，
+任务结束时必须 `await adapter.close()`，以拒绝排队 decode 并等待不可取消的 native decode 真正 settle。已经返回的
+原生 surface 仍由调用方持有，不会被 adapter close 隐式销毁。
 
 worker-only `createImage()` 是同步 platform adapter placeholder，不是 decode 资源边界；需要保留 placeholder identity 的
 受信任 artifact 应立即调用 `decodeImageInto(image, bytes)`。它在 worker snapshot 的 concurrency/queue 内只 decode 一次，

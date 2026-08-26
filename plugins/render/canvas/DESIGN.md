@@ -26,16 +26,19 @@ revision，以及具体默认 family 存在时的验证名。它不包含字体�
 `@pluxel/canvas/worker` 是无 Pluxel runtime dependency 的 Node-only adapter。每个 task 用 snapshot 创建轻量 adapter；
 `@napi-rs/canvas` module 和 ESM cache 仍按 worker lifetime 复用，只有 caller-owned Canvas/Image/ECharts surface 按任务创建。
 adapter 在 native allocation/decode 前后执行与主插件相同的 limit contract，并在 worker registry 中验证具体默认字体。
-每个线程只保留最近一个按值匹配的 normalized snapshot/adapter；相同 Fonts revision 与 limits 的连续任务跳过重复 freeze、
-font registry lookup 和 closure 创建。CanvasPlugin 同样在 generation init 后缓存 config-derived limit snapshot。
+每个线程只保留最近一个按值匹配的 normalized snapshot；相同 Fonts revision 与 limits 的连续任务跳过重复 freeze 和
+font registry lookup。adapter 本身是 caller-owned scheduler lifecycle，任务结束时 `close()` 会拒绝 queued decode，并等待
+已经提交且不可取消的 native decode 真正 settle，之后不再接受新操作；此前返回的 native surface 仍由 caller 持有。
+CanvasPlugin 同样在 generation init 后缓存 config-derived limit snapshot。
 `decodeImage()` 默认 snapshot borrowed bytes；明确的 `dataOwnership: 'owned'` 永久移交 storage，允许 ECharts 等已经拥有
 render-local bytes 的调用方直接提交 native decoder。
 
 worker adapter 的 `createImage()` 只为 ECharts 一类必须同步返回 placeholder 的 platform contract 保留；它返回上游裸
 Image，直接写 `src` 不受 adapter byte budget 约束。`decodeImageInto()` 把 bounded bytes 写入并返回同一个 trusted
 placeholder，直到 Promise settle 前都独占该对象，避免“先 decode、再写 src”造成双重 native decode。worker snapshot
-携带 adapter-local concurrency/queue，多个图片 decode 不会绕过 admission。该入口不是面向不可信输入的资源边界，Worker
-本身也不是安全 sandbox。
+携带 adapter-local concurrency/queue，多个图片 decode 不会绕过 admission。root decode 默认并发 2；每个 worker adapter
+默认并发 1，因为 Runtime worker pool 已经提供外层并行，避免默认 4 workers 再各提交 4 个 libuv work。该入口不是面向
+不可信输入的资源边界，Worker 本身也不是安全 sandbox。
 
 `@pluxel/canvas/worker/pretext` 单独提供 `createCanvasWorkerTextLayout()` 和纯 layout/walker exports。它与主 CanvasPlugin
 复用同一个输入校验、font revision invalidation、字符预算和 1×1 measurement shim；拆分子入口确保只做 Canvas raster 的

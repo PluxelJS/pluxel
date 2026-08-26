@@ -2,8 +2,8 @@ import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Context as CoreContext } from '@pluxel/core'
 import { pinOwnerContext } from '../context/owner-view'
-import { Tinypool } from 'tinypool'
 import type { NodeModuleDeclaration } from './node-module'
+import { WorkerThreadPool } from './WorkerThreadPool'
 import {
 	WorkerTaskError,
 	type WorkerInputPreparation,
@@ -34,6 +34,7 @@ type OwnerLease = {
 	readonly owner: CoreContext
 	readonly controller: AbortController
 	readonly accepted: Set<Promise<unknown>>
+	readonly settling: Set<Promise<void>>
 	readonly queue: Set<ScheduledTask>
 	queued: number
 	active: boolean
@@ -59,7 +60,7 @@ type RootState = {
 	readonly config: ResolvedWorkersConfig
 	readonly owners: Map<CoreContext, OwnerLease>
 	readonly readyOwners: Set<OwnerLease>
-	pool?: Tinypool
+	pool?: WorkerThreadPool
 	activeTasks: number
 	queuedTasks: number
 	lastOwner?: OwnerLease
@@ -75,9 +76,6 @@ type PreparedWorkerInput = Readonly<{
 	prepare: WorkerInputPreparation<unknown>
 	inputOwnership: 'snapshot' | 'borrowed'
 }>
-
-type TinypoolRunOptions = NonNullable<Parameters<Tinypool['run']>[1]>
-type TinypoolTransferList = NonNullable<TinypoolRunOptions['transferList']>
 
 const rootStates = new WeakMap<WorkerTaskService, RootState>()
 
@@ -280,6 +278,7 @@ export class WorkerTaskService {
 			owner,
 			controller: new AbortController(),
 			accepted: new Set(),
+			settling: new Set(),
 			queue: new Set(),
 			queued: 0,
 			active: true,
@@ -470,17 +469,10 @@ export class WorkerTaskService {
 	}
 
 	private runInPool(state: RootState, task: ScheduledTask): void {
-		let execution: Promise<unknown>
+		let execution: ReturnType<WorkerThreadPool['run']>
 		try {
 			const pool = (state.pool ??= createPool(state.config))
-			execution = pool.run(task.input, {
-				filename: task.filename!,
-				name: 'default',
-				signal: task.signal,
-				...(task.transferList === undefined
-					? {}
-					: { transferList: asTinypoolTransferList(task.transferList) }),
-			})
+			execution = pool.run(task.filename!, task.input, task.transferList, task.signal)
 			task.input = undefined
 			task.transferList = undefined
 			task.filename = undefined
@@ -490,21 +482,33 @@ export class WorkerTaskService {
 			this.drain(state)
 			return
 		}
-		void execution.then(
+		void execution.result.then(
 			(value): undefined => {
-				state.activeTasks--
 				this.settle(task, undefined, value)
-				this.drain(state)
 				return undefined
 			},
 			(cause): undefined => {
 				const error = task.signal.aborted ? abortReason(task.signal) : workerExecutionError(cause)
-				state.activeTasks--
 				this.settle(task, error)
-				this.drain(state)
 				return undefined
 			},
 		)
+		let resourceSettlement!: Promise<void>
+		resourceSettlement = execution.settled
+			.then(
+				(): void => undefined,
+				(cause: unknown): never => {
+					this.settle(task, workerExecutionError(cause))
+					throw cause
+				},
+			)
+			.finally(() => {
+				task.owner.settling.delete(resourceSettlement)
+				state.activeTasks--
+				this.drain(state)
+			})
+		task.owner.settling.add(resourceSettlement)
+		void resourceSettlement.catch((): undefined => undefined)
 	}
 
 	private failRunning(state: RootState, task: ScheduledTask, error: unknown): void {
@@ -565,6 +569,7 @@ export class WorkerTaskService {
 		this.removeReadyOwner(state, lease)
 		lease.queue.clear()
 		await Promise.allSettled(lease.accepted)
+		await Promise.allSettled(lease.settling)
 		state.owners.delete(lease.owner)
 	}
 
@@ -587,10 +592,13 @@ export class WorkerTaskService {
 			)
 		}
 		const accepted: Promise<unknown>[] = []
+		const settling: Promise<void>[] = []
 		for (const lease of state.owners.values()) {
 			for (const task of lease.accepted) accepted.push(task)
+			for (const task of lease.settling) settling.push(task)
 		}
 		await Promise.allSettled(accepted)
+		await Promise.allSettled(settling)
 		state.owners.clear()
 		state.readyOwners.clear()
 		await state.pool?.destroy()
@@ -598,26 +606,14 @@ export class WorkerTaskService {
 	}
 }
 
-function asTinypoolTransferList(transferList: ArrayBuffer[]): TinypoolTransferList {
-	// Tinypool accepts Node's transfer-list array at runtime. Under @types/node 26 its
-	// conditional type selects the newer postMessage options overload instead.
-	return transferList as unknown as TinypoolTransferList
-}
-
 function firstSetValue<T>(values: ReadonlySet<T>): T | undefined {
 	return values.values().next().value
 }
 
-function createPool(config: ResolvedWorkersConfig): Tinypool {
-	return new Tinypool({
-		minThreads: 0,
+function createPool(config: ResolvedWorkersConfig): WorkerThreadPool {
+	return new WorkerThreadPool({
 		maxThreads: config.maxThreads,
-		// Only one startup/handoff wave is allowed below the owner-fair public queue.
-		maxQueue: config.maxThreads,
-		concurrentTasksPerWorker: 1,
-		idleTimeout: config.idleTimeoutMs,
-		isolateWorkers: false,
-		runtime: 'worker_threads',
+		idleTimeoutMs: config.idleTimeoutMs,
 	})
 }
 

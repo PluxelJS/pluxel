@@ -74,14 +74,24 @@ libuv pool 的 native work。默认并发为 2，给 Node 的 filesystem、crypt
 仍会占用同一 libuv slot，并额外占住 Runtime Worker，因此不解决这种竞争。
 
 Canvas 不创建 thread pool；root native decode 只用 package-local fair admission，并在不可取消 work 真正 settle 前保留
-slot。worker adapter 从 snapshot 建立独立 decode admission；ECharts 用 `decodeImageInto()` 把 bytes 直接写入同步 placeholder，
-避免同一 source native decode 两次。Fonts 同样用 fair scheduler 约束 caller copy/read/hash，用 pending ceiling 约束
-managed serialized tail，并用 provider native registration count/bytes ceiling 约束累计 key。
+slot，默认并发 2。worker adapter 从 snapshot 建立独立 decode admission，默认每 adapter 并发 1；默认 4 个 Runtime workers
+因而最多由 ECharts 同时提交 4 个 decode，而不是形成 4 × 4 的内层乘法。adapter 是 caller-owned resource，`close()` 拒绝
+queued decode 并等待 held native work settle。ECharts 用 `decodeImageInto()` 把 bytes 直接写入同步 placeholder，避免同一
+source native decode 两次；普通 image failure 会撤销 render-local scope，并在 worker handler 返回前完成上述 adapter close。
+这些局部 admission 不能控制进程共享 libuv，也不能覆盖 raw Canvas surface 上直接调用的 encoder。Fonts 同样用 fair scheduler
+约束 caller copy/read/hash，用 pending ceiling 约束 managed serialized tail，并用 provider native registration count/bytes
+ceiling 约束累计 key。
 需要任意 Canvas drawing 的业务 Plugin 应声明一个 worker task，在 artifact 内使用
 `@pluxel/canvas/worker`；root `*Sync()` surface 只服务明确接受同步执行的小型 primitive 调用。
 
 累计资源与单项资源必须同时有界：ECharts named themes 有 provider count/bytes ceiling，Fonts 有 native key ceiling，Takumi
-portable fonts 有 count/bytes ceiling。ECharts/Takumi encoded output 都在返回前检查，且明确该检查不能撤销已发生的编码成本。
+portable fonts 有 count/bytes ceiling。ECharts 默认 root surface 与累计 decoded images 分别最多约 64 MiB raw RGBA；默认
+4 个 active Worker 仍可能合计约 512 MiB raw pixels，且不含 encoded bytes、Skia 和 transient allocation。ECharts/Takumi
+encoded output 都在返回前检查，且明确该检查不能撤销已发生的编码成本；decoded-pixel 检查同样不能撤销当前图片的 decode。
+
+Canvas native capacity probe 使用 `pnpm --filter @pluxel/canvas bench:native-capacity`；可再分别设置
+`PLUXEL_CANVAS_BENCH_DECODE_CONCURRENCY=1` 与 `UV_THREADPOOL_SIZE=1`，观察 Promise 返回前同步耗时、event-loop timer gap、
+filesystem queue delay 和 RSS delta。它是可重复诊断，不是跨机器固定阈值。
 
 ## 验证要求
 

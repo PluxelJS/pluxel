@@ -1,5 +1,5 @@
 import { createCanvasWorkerAdapter, type CanvasWorkerSnapshot } from '@pluxel/canvas/worker'
-import { bench, describe } from 'vitest'
+import { afterAll, bench, describe } from 'vitest'
 import {
 	renderECharts,
 	type RenderCanvasAdapter,
@@ -18,7 +18,7 @@ const canvas = createCanvasWorkerAdapter({
 		maxRichTextItems: 2_048,
 		maxTextCacheCharacters: 1_000_000,
 	},
-	decodeLimits: { maxConcurrent: 4, maxQueued: 8 },
+	decodeLimits: { maxConcurrent: 1, maxQueued: 8 },
 	font: { cssFamily: 'sans-serif', revision: 0 },
 } satisfies CanvasWorkerSnapshot)
 const signal = new AbortController().signal
@@ -34,14 +34,15 @@ const input = {
 	theme: { textStyle: { fontFamily: 'sans-serif' } },
 	injectOptionFont: false,
 	defaultFontCssFamily: 'sans-serif',
-	fontRevision: 0,
 	output: { format: 'png' },
 	maxDataUrlBytes: 32 * 1024 * 1024,
 	maxImages: 32,
 	maxTotalImageBytes: 32 * 1024 * 1024,
-	maxTotalImagePixels: 67_108_864,
+	maxTotalImagePixels: 16_777_216,
 	maxOutputBytes: 64 * 1024 * 1024,
 } satisfies RenderEngineInput
+
+afterAll(async () => canvas.close())
 
 describe('ECharts worker render engine', () => {
 	bench('owned option traversal', async () => {

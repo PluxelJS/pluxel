@@ -99,6 +99,30 @@ async function resetWorkerHost(host: RuntimeHost): Promise<void> {
 	await host.commit()
 }
 
+type WorkerTaskRootStateProbe = {
+	activeTasks: number
+	queuedTasks: number
+	pool: {
+		slots: Set<{ worker: { terminate(): Promise<number> } }>
+	}
+}
+
+function holdCurrentWorkerTermination(host: RuntimeHost): Readonly<{
+	state: WorkerTaskRootStateProbe
+	release(): void
+}> {
+	const state = (host.ctx.workers as unknown as { state: WorkerTaskRootStateProbe }).state
+	const worker = [...state.pool.slots][0]!.worker
+	const terminate = worker.terminate.bind(worker)
+	let release!: () => void
+	const gate = new Promise<void>((resolve) => void (release = resolve))
+	worker.terminate = async () => {
+		await gate
+		return terminate()
+	}
+	return { state, release }
+}
+
 describe('WorkerTaskService', () => {
 	let workerHost: RuntimeHost
 
@@ -467,19 +491,66 @@ describe('WorkerTaskService', () => {
 		}
 	})
 
-	it('aborts accepted work and waits for it when its plugin owner stops', async () => {
+	it('retains an active slot until the aborted worker has actually terminated', async () => {
 		const host = workerHost
+		let releaseTermination = (): void => undefined
 		try {
 			host.add(WorkerTaskConsumerA)
 			host.cfg(WorkerTaskConsumerA).enable()
 			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			await consumer.run({ label: 'warm', delay: 0 })
+			const held = holdCurrentWorkerTermination(host)
+			releaseTermination = held.release
+			const controller = new AbortController()
+			const reason = new Error('cancel active')
+			const active = consumer.run({ label: 'active', delay: 10_000 }, controller.signal)
+			controller.abort(reason)
+
+			await expect(active).rejects.toBe(reason)
+			let nextSettled = false
+			const next = consumer
+				.run({ label: 'after-termination', delay: 0 })
+				.finally(() => void (nextSettled = true))
+			await Promise.resolve()
+			expect(nextSettled).toBe(false)
+			expect(held.state.activeTasks).toBe(1)
+			expect(held.state.queuedTasks).toBe(1)
+
+			releaseTermination()
+			await expect(next).resolves.toMatchObject({
+				label: 'after-termination',
+			})
+		} finally {
+			releaseTermination()
+			await resetWorkerHost(host)
+		}
+	})
+
+	it('aborts accepted work and waits for it when its plugin owner stops', async () => {
+		const host = workerHost
+		let releaseTermination = (): void => undefined
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			await host.require(WorkerTaskConsumerA).run({ label: 'warm', delay: 0 })
+			const held = holdCurrentWorkerTermination(host)
+			releaseTermination = held.release
 			const task = host.require(WorkerTaskConsumerA).run({ label: 'long', delay: 10_000 })
 			host.remove(WorkerTaskConsumerA)
-			await host.commit()
+			let commitSettled = false
+			const committing = host.commit().finally(() => void (commitSettled = true))
 			await expect(task).rejects.toMatchObject<Partial<WorkerTaskError>>({
 				code: 'NOT_RUNNING',
 			})
+			await Promise.resolve()
+			expect(commitSettled).toBe(false)
+
+			releaseTermination()
+			await committing
 		} finally {
+			releaseTermination()
 			await resetWorkerHost(host)
 		}
 	})

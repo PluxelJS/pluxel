@@ -1,4 +1,4 @@
-import type { PluginConstructor } from '@pluxel/runtime'
+import { v, type PluginConstructor } from '@pluxel/runtime'
 import {
 	BasePlugin,
 	Plugin,
@@ -10,7 +10,13 @@ import { requireWorkbench } from '@pluxel/runtime/internal'
 import { describe, expect, it } from 'vitest'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
-import { CanvasError, CanvasPlugin, layoutWithLines, measureRichInlineStats } from '../src/index.ts'
+import {
+	CanvasConfig,
+	CanvasError,
+	CanvasPlugin,
+	layoutWithLines,
+	measureRichInlineStats,
+} from '../src/index.ts'
 import { createCanvasWorkerAdapter } from '../src/worker.ts'
 import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
 
@@ -39,6 +45,16 @@ function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): v
 const discoveredFamily = GlobalFonts.families[0]?.family
 
 describe('CanvasPlugin', () => {
+	it('keeps root and per-worker native decode defaults separate', () => {
+		expect(v.parse(CanvasConfig, {})).toMatchObject({
+			maxConcurrentDecodes: 2,
+			maxQueuedDecodes: 32,
+			maxQueuedDecodesPerConsumer: 8,
+			maxConcurrentDecodesPerWorkerAdapter: 1,
+			maxQueuedDecodesPerWorkerAdapter: 32,
+		})
+	})
+
 	it('creates native raster and SVG canvases in a headless host', async () => {
 		await withRuntimeHost(
 			async (host) => {
@@ -70,6 +86,7 @@ describe('CanvasPlugin', () => {
 				await host.commit()
 				const capability = host.require(CanvasTestConsumer).canvas
 				const snapshot = capability.workerSnapshot
+				expect(snapshot.decodeLimits).toEqual({ maxConcurrent: 1, maxQueued: 32 })
 				const workerCanvas = createCanvasWorkerAdapter(structuredClone(snapshot))
 				const canvas = workerCanvas.createCanvas(24, 12)
 				canvas.getContext('2d').fillRect(0, 0, 24, 12)
@@ -107,6 +124,22 @@ describe('CanvasPlugin', () => {
 					code: 'DECODE_BUSY',
 				})
 				await expect(activeDecode).resolves.toMatchObject({ width: 24, height: 12 })
+				await singleDecode.close()
+				await singleDecode.close()
+				await expect(singleDecode.decodeImage(encoded)).rejects.toMatchObject({
+					code: 'NOT_RUNNING',
+				})
+				let finalDecodeSettled = false
+				const finalDecode = workerCanvas.decodeImage(encoded)
+				void finalDecode.finally((): void => {
+					finalDecodeSettled = true
+				})
+				await workerCanvas.close()
+				expect(finalDecodeSettled).toBe(true)
+				await expect(finalDecode).resolves.toMatchObject({ width: 24, height: 12 })
+				expect(() => workerCanvas.createCanvas(1, 1)).toThrowError(
+					expect.objectContaining({ code: 'NOT_RUNNING' }),
+				)
 			},
 			{ workbench: false },
 		)
@@ -134,9 +167,12 @@ describe('CanvasPlugin', () => {
 						'10px monospace',
 					)
 					expect(consumer.canvas.workerSnapshot.font.requiredFamily).toBeUndefined()
-					expect(() =>
-						createCanvasWorkerAdapter(consumer.canvas.workerSnapshot).createCanvas(2, 2),
-					).not.toThrow()
+					const workerCanvas = createCanvasWorkerAdapter(consumer.canvas.workerSnapshot)
+					try {
+						expect(() => workerCanvas.createCanvas(2, 2)).not.toThrow()
+					} finally {
+						await workerCanvas.close()
+					}
 				},
 				{ workbench: false },
 			)
