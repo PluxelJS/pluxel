@@ -11,8 +11,22 @@
 - caller-owned programmatic registration：业务包随代码携带的字体可调用 `register()` / `registerFromPath()`，但
   native key 仍封装在 FontsPlugin 内。caller stop/replacement 自动删除，handle 只提供幂等提前 `dispose()`。
 
-两类资源分别使用 `maxManagedFonts` 和 `maxRegistrationsPerConsumer`，不会让某个 renderer 的代码字体挤占统一上传
-集合，也不会因 Canvas/ECharts stop 卸载所有 renderer 正在使用的 managed font。
+两类资源分别使用 `maxManagedFonts` 和 `maxRegistrationsPerConsumer`，并共同受 provider node 的
+`maxNativeRegistrations` 与 `maxTotalFontBytes` 约束；某个 renderer 的代码字体不会挤占统一上传集合，也不会因 Canvas/ECharts stop 卸载
+其他 renderer 正在使用的 managed font。
+
+程序化 `register()` / `registerFromPath()` 和 `readPortableFont()` 是可取消 async contract：路径用 opened handle 先检查
+file type/size，再按 1 MiB chunk 读入固定上限 Buffer，并检测读取期间的 truncate/grow；不使用 stat 后无界 `readFile()`。
+大 byte snapshot、内容寻址 hash 和 managed record 编解码分片让出 event loop，并在真正 registry mutation 前再次检查
+caller/provider generation 与 capacity。最终
+`GlobalFonts.register()`/remove 是进程 registry 的有界同步 commit，不伪装成可取消 native task。
+
+caller-triggered register/path-read/portable-read 在任何 copy、文件 IO 或 hash 前进入 generation-local owner-fair scheduler，
+同时约束 active、global queue 与 per-owner queue。caller stop 会 abort active cooperative task 并 O(1) 撤销 queued item；
+provider stop 拒绝 queue、等待 active task 与 managed/default serialization tail，再清理 native keys，避免新旧 generation
+的 registry mutation 重叠。
+Managed Workbench mutation 继续使用单独的 serialized tail，以保持 storage/registry transaction 顺序；该 tail 的 accepted
+operation 数受 `maxPendingManagedTasks` 限制，queue full 不先 snapshot upload bytes。
 
 provider restart、rollback 或 shutdown 会批量移除仍存活的 key，但绝不调用 `GlobalFonts.removeAll()`，因此不会破坏
 系统字体或进程中不属于 Pluxel 的注册。`families` 是 detached snapshot，不是可修改 native registry。
@@ -35,7 +49,9 @@ registration/selection 变化仍会在下一次读取时原子生成新 snapshot
 
 ## 可移植 renderer 资源
 
-managed record 和 caller registration 保存内容寻址 source；同一 bytes + family alias 共享 portable ID/refcount。
+managed record 和 caller registration 保存内容寻址 source；同一 bytes + family alias 共享 portable ID/refcount。持久化恢复先按
+`maxFontBytes + envelope overhead` 拒绝过大 record，decoder 再在分配/copy/hash payload 前验证 key ID、声明长度与
+`installedAt`，使损坏数据快速失败。
 `portableFonts` 只返回按 resource revision 缓存的 frozen metadata，`readPortableFont(id)` 才复制 bytes，避免 renderer
 轮询 revision 时复制整个 collection。最后一个 registration 释放时撤销 source；provider stop 清除当前 generation
 全部 source。System discovery 不暴露可信 file path/bytes，因此 system-only family 不进入 portable snapshot。

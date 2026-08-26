@@ -37,7 +37,14 @@ cleanup 由 runtime 管理。artifact 不定义 worker 或任务协议。
 CPU-bound / thread-safe native 工作使用 `defineWorkerTask<Input, Output>()` 和 `ctx.workers.run()`。所有插件共享一个
 root-owned、lazy、bounded、owner-fair 的 worker-thread pool；Tinypool 不进入插件 API。输入输出必须可 structured clone，
 插件 stop 会取消并等待已接纳工作。`run(..., { transfer: [buffer] })` 可把大型 `ArrayBuffer` ownership 立即转入已接纳任务，
-避免第二次字节复制；buffer 会同步 detach，后续失败不回滚。普通异步 I/O 与短小 native 调用不应为了“统一”而额外跨线程。
+避免第二次字节复制；buffer 会同步 detach，后续失败不回滚。默认 admission snapshot 也可显式改成
+`inputOwnership: 'borrowed'`，由 caller 保持输入到 Promise settle 并省略重复 clone。普通异步 I/O 与短小 native 调用不应
+为了“统一”而额外跨线程。
+
+如果输入预算 walk/snapshot 本身较重，使用 `ctx.workers.runPrepared(task, prepare, options)`：runtime 先完成同一
+global/per-owner fair admission 并保留一个 execution slot，之后才在 host 调用 cooperative `prepare(signal)`，再 dispatch
+其 cloneable 返回值。queue full 不会执行 prepare；callback error 保留领域类型。它不支持 transfer，默认 snapshot prepared
+value；明确 borrow-until-settle 时可选 `inputOwnership: 'borrowed'`。
 
 Runtime 保持业务 HTTP 与 optional Workbench 正交。Workbench 分为 browser-safe Contract、server Extension 和
 owner-bound Binding：

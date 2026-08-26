@@ -132,7 +132,7 @@ describe('FontsPlugin', () => {
 				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
 				await host.commit()
 
-				registration = host.require(FontsLazyConsumer).fonts.registerFromPath({
+				registration = await host.require(FontsLazyConsumer).fonts.registerFromPath({
 					path: fontPath!,
 					family,
 				})
@@ -165,8 +165,8 @@ describe('FontsPlugin', () => {
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
 				const family = `Pluxel Portable ${crypto.randomUUID()}`
-				const first = fonts.registerFromPath({ path: fontPath!, family })
-				const second = fonts.registerFromPath({ path: fontPath!, family })
+				const first = await fonts.registerFromPath({ path: fontPath!, family })
+				const second = await fonts.registerFromPath({ path: fontPath!, family })
 
 				const attached = fonts.portableFonts
 				expect(attached.fonts).toHaveLength(1)
@@ -179,6 +179,69 @@ describe('FontsPlugin', () => {
 			{ workbench: false },
 		)
 	})
+
+	it.skipIf(!fontPath)('bounds native registrations across managed and caller fonts', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				host.cfg(FontsPlugin).set({ maxNativeRegistrations: 1 })
+				await host.commit()
+				const fonts = host.require(FontsLazyConsumer).fonts
+				const first = await fonts.registerFromPath({
+					path: fontPath!,
+					family: `Pluxel Native Limit ${crypto.randomUUID()}`,
+				})
+
+				await expect(
+					fonts.registerFromPath({
+						path: fontPath!,
+						family: `Pluxel Native Overflow ${crypto.randomUUID()}`,
+					}),
+				).rejects.toMatchObject({ code: 'FONT_LIMIT_EXCEEDED' })
+				first.dispose()
+				const replacement = await fonts.registerFromPath({
+					path: fontPath!,
+					family: `Pluxel Native Replacement ${crypto.randomUUID()}`,
+				})
+				replacement.dispose()
+			},
+			{ workbench: false },
+		)
+	})
+
+	it.skipIf(!fontPath)(
+		'bounds aggregate native font bytes and returns capacity on dispose',
+		async () => {
+			const fontData = await readFile(fontPath!)
+			const byteLength = fontData.byteLength
+			await withRuntimeHost(
+				async (host) => {
+					addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+					host.cfg(FontsPlugin).set({ maxTotalFontBytes: byteLength })
+					await host.commit()
+					const fonts = host.require(FontsLazyConsumer).fonts
+					const first = await fonts.registerFromPath({
+						path: fontPath!,
+						family: `Pluxel Byte Limit ${crypto.randomUUID()}`,
+					})
+
+					await expect(
+						fonts.registerFromPath({
+							path: fontPath!,
+							family: `Pluxel Byte Overflow ${crypto.randomUUID()}`,
+						}),
+					).rejects.toMatchObject({ code: 'FONT_LIMIT_EXCEEDED' })
+					first.dispose()
+					const replacement = await fonts.registerFromPath({
+						path: fontPath!,
+						family: `Pluxel Byte Replacement ${crypto.randomUUID()}`,
+					})
+					replacement.dispose()
+				},
+				{ workbench: false },
+			)
+		},
+	)
 
 	it.skipIf(!fontPath)(
 		'keeps one provider-owned managed collection across consumer lifecycles and reloads',
@@ -239,12 +302,75 @@ describe('FontsPlugin', () => {
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
 
-				expect(() => fonts.register({ data: new Uint8Array([1, 2, 3]) })).toThrow(
-					expect.objectContaining<Partial<FontsError>>({ code: 'INVALID_FONT' }),
+				await expect(fonts.register({ data: new Uint8Array([1, 2, 3]) })).rejects.toMatchObject({
+					code: 'INVALID_FONT',
+				} satisfies Partial<FontsError>)
+				await expect(fonts.register({ data: new Uint8Array(5) })).rejects.toMatchObject({
+					code: 'FONT_TOO_LARGE',
+				} satisfies Partial<FontsError>)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('cooperatively snapshots registration bytes and observes cancellation', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				await host.commit()
+				const controller = new AbortController()
+				const registration = host.require(FontsLazyConsumer).fonts.register({
+					data: new Uint8Array(2 * 1024 * 1024),
+					signal: controller.signal,
+				})
+				queueMicrotask(() => controller.abort())
+				await expect(registration).rejects.toMatchObject({ name: 'AbortError' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('bounds the serialized managed Workbench queue before snapshotting upload bytes', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, FontsTestConsumer])
+				host.cfg(FontsPlugin).set({
+					maxFontBytes: 2 * 1024 * 1024,
+					maxPendingManagedTasks: 1,
+				})
+				await host.commit()
+				const commands = managerForTest(host.require(FontsPlugin))
+				const active = commands.install({
+					fileName: 'invalid.ttf',
+					data: new Uint8Array(2 * 1024 * 1024),
+				})
+
+				await expect(commands.snapshot()).rejects.toMatchObject({ code: 'FONT_BUSY' })
+				await expect(active).rejects.toMatchObject({ code: 'INVALID_FONT' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('does not commit an async registration after its caller generation stops', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				await host.commit()
+				const registration = host.require(FontsLazyConsumer).fonts.register({
+					data: new Uint8Array(2 * 1024 * 1024),
+				})
+				const result = registration.then(
+					() => Object.freeze({ status: 'fulfilled' as const }),
+					(error: unknown) => Object.freeze({ status: 'rejected' as const, error }),
 				)
-				expect(() => fonts.register({ data: new Uint8Array(5) })).toThrow(
-					expect.objectContaining<Partial<FontsError>>({ code: 'FONT_TOO_LARGE' }),
-				)
+
+				host.cfg(FontsLazyConsumer).disable()
+				await host.commit()
+				await expect(result).resolves.toMatchObject({
+					status: 'rejected',
+					error: { code: 'NOT_RUNNING' },
+				})
 			},
 			{ workbench: false },
 		)
@@ -258,9 +384,9 @@ describe('FontsPlugin', () => {
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
 
-				expect(() => fonts.registerFromPath({ path: fontPath! })).toThrow(
-					expect.objectContaining<Partial<FontsError>>({ code: 'FONT_TOO_LARGE' }),
-				)
+				await expect(fonts.registerFromPath({ path: fontPath! })).rejects.toMatchObject({
+					code: 'FONT_TOO_LARGE',
+				} satisfies Partial<FontsError>)
 			},
 			{ workbench: false },
 		)

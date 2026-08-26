@@ -207,9 +207,16 @@ owner stop/replacement 使 pending generation 失效，迟到 setup 返回的 cl
 `defineWorkerTask(import.meta.url, literal)` 声明默认导出 handler，再用 `workers.run(declaration, input, { signal })`
 提交 structured-clone-compatible 数据；Tinypool 是 runtime implementation detail，插件不创建自己的线程预算。
 
-`run()` 同步 snapshot 输入，保证任务等待 artifact 或排队期间不读取 caller 的后续 mutation。`transfer` 可列出 input 中
+`run()` 默认同步 snapshot 输入，保证任务等待 artifact 或排队期间不读取 caller 的后续 mutation。明确
+`inputOwnership: 'borrowed'` 时 runtime 保留 caller graph 到 dispatch，只执行 worker transport clone；caller 必须在
+Promise settle 前不修改完整 graph，该模式不能与 `transfer` 组合。`transfer` 可列出 input 中
 caller 愿意移交的 `ArrayBuffer`：runtime 先把 ownership 转入内部 snapshot，再在 dispatch 时零拷贝移交 worker；接纳后
 caller buffer 立即 detach，即使 artifact 或任务稍后失败也不会恢复。未列出的数据继续使用 structured clone copy。
+
+领域 input 的有界 walk/snapshot 本身也可能昂贵时，`workers.runPrepared(declaration, prepare, options)` 先进入相同
+root/global/per-owner admission，取得 execution slot 后才在 host 执行 cooperative `prepare(signal)` 并 dispatch 返回值。
+queue full 不运行 callback；prepare 期间 slot 仍计入 active budget，owner stop 会 abort 并等待它。prepare error 保留领域
+类型。prepared value 默认 snapshot，也可选择 borrowed；此 API 不接受 transfer，因为 admission 时尚无可同步移交的 buffer。
 
 root pool lazy 创建，`minThreads = 0`，默认最多使用 `min(4, available CPUs - 1)` 个 worker thread，空闲 30 秒后回收。
 runtime 在 Tinypool 之前维护 bounded global/per-owner queue，并在 ready owner 间 round-robin；每个 worker 同时只执行一个

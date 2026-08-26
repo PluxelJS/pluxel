@@ -6,6 +6,8 @@ import { Tinypool } from 'tinypool'
 import type { NodeModuleDeclaration } from './node-module'
 import {
 	WorkerTaskError,
+	type WorkerInputPreparation,
+	type WorkerPreparedRunOptions,
 	type WorkerRunOptions,
 	type WorkersConfig,
 	type WorkerTaskDeclaration,
@@ -43,6 +45,8 @@ type ScheduledTask = {
 	filename?: string
 	input?: unknown
 	transferList?: ArrayBuffer[]
+	prepare?: WorkerInputPreparation<unknown>
+	inputOwnership?: 'snapshot' | 'borrowed'
 	readonly signal: AbortSignal
 	readonly disposeSignal: () => void
 	readonly resolve: (value: unknown) => void
@@ -65,6 +69,11 @@ type RootState = {
 type WorkerInputSnapshot = Readonly<{
 	input: unknown
 	transferList?: ArrayBuffer[]
+}>
+
+type PreparedWorkerInput = Readonly<{
+	prepare: WorkerInputPreparation<unknown>
+	inputOwnership: 'snapshot' | 'borrowed'
 }>
 
 type TinypoolRunOptions = NonNullable<Parameters<Tinypool['run']>[1]>
@@ -114,7 +123,26 @@ export class WorkerTaskService {
 				new WorkerTaskError('INVALID_INPUT', 'workers.run() options must be an object'),
 			)
 		}
-
+		if (
+			options.inputOwnership !== undefined &&
+			options.inputOwnership !== 'snapshot' &&
+			options.inputOwnership !== 'borrowed'
+		) {
+			return Promise.reject(
+				new WorkerTaskError(
+					'INVALID_INPUT',
+					'workers.run() inputOwnership must be snapshot or borrowed',
+				),
+			)
+		}
+		if (options.inputOwnership === 'borrowed' && options.transfer !== undefined) {
+			return Promise.reject(
+				new WorkerTaskError(
+					'INVALID_INPUT',
+					'workers.run() borrowed input cannot also transfer buffers',
+				),
+			)
+		}
 		let lease: OwnerLease
 		let route: TaskRoute
 		let state: RootState
@@ -132,11 +160,87 @@ export class WorkerTaskService {
 
 		let snapshot: WorkerInputSnapshot
 		try {
-			snapshot = snapshotWorkerInput(input, options.transfer)
+			snapshot = snapshotWorkerInput(input, options.transfer, options.inputOwnership ?? 'snapshot')
 		} catch (cause) {
 			return Promise.reject(invalidWorkerInput(cause))
 		}
 		const task = this.submit(state, lease, route, snapshot, options.signal)
+		lease.accepted.add(task)
+		void task.then(
+			() => lease.accepted.delete(task),
+			() => lease.accepted.delete(task),
+		)
+		return task as Promise<Output>
+	}
+
+	/** Reserve bounded capacity before running cooperative host-side input preparation. */
+	runPrepared<Input, Output>(
+		declaration: WorkerTaskDeclaration<Input, Output>,
+		prepare: WorkerInputPreparation<Input>,
+		options: WorkerPreparedRunOptions = {},
+	): Promise<Output> {
+		if (!declaration || typeof declaration !== 'object') {
+			return Promise.reject(
+				new WorkerTaskError(
+					'TASK_UNAVAILABLE',
+					'workers.runPrepared() requires a worker task declaration',
+				),
+			)
+		}
+		if (typeof prepare !== 'function') {
+			return Promise.reject(
+				new WorkerTaskError(
+					'INVALID_INPUT',
+					'workers.runPrepared() requires an input preparation function',
+				),
+			)
+		}
+		if (!options || typeof options !== 'object') {
+			return Promise.reject(
+				new WorkerTaskError('INVALID_INPUT', 'workers.runPrepared() options must be an object'),
+			)
+		}
+		if (
+			options.inputOwnership !== undefined &&
+			options.inputOwnership !== 'snapshot' &&
+			options.inputOwnership !== 'borrowed'
+		) {
+			return Promise.reject(
+				new WorkerTaskError(
+					'INVALID_INPUT',
+					'workers.runPrepared() inputOwnership must be snapshot or borrowed',
+				),
+			)
+		}
+		if ('transfer' in options) {
+			return Promise.reject(
+				new WorkerTaskError(
+					'INVALID_INPUT',
+					'workers.runPrepared() does not support transfer buffers',
+				),
+			)
+		}
+
+		let lease: OwnerLease
+		let route: TaskRoute
+		let state: RootState
+		try {
+			lease = this.ownerLease()
+			state = this.rootState()
+			if (options.signal?.aborted) throw abortReason(options.signal)
+			route = this.taskRoute(declaration)
+			if (route.failure) throw taskUnavailable(route.failure.cause)
+			const mustWait = route.url === undefined || state.activeTasks >= state.config.maxThreads
+			if (mustWait) this.assertQueueCapacity(state, lease)
+		} catch (cause) {
+			return Promise.reject(cause)
+		}
+
+		const source: PreparedWorkerInput = Object.freeze({
+			prepare: prepare as WorkerInputPreparation<unknown>,
+			inputOwnership: options.inputOwnership ?? 'snapshot',
+		})
+		const task = this.submit(state, lease, route, source, options.signal)
 		lease.accepted.add(task)
 		void task.then(
 			() => lease.accepted.delete(task),
@@ -215,7 +319,7 @@ export class WorkerTaskService {
 		state: RootState,
 		owner: OwnerLease,
 		route: TaskRoute,
-		snapshot: WorkerInputSnapshot,
+		source: WorkerInputSnapshot | PreparedWorkerInput,
 		signal: AbortSignal | undefined,
 	): Promise<unknown> {
 		if (!owner.active || state.shuttingDown) {
@@ -230,8 +334,12 @@ export class WorkerTaskService {
 		return new Promise<unknown>((resolve, reject) => {
 			const task: ScheduledTask = {
 				owner,
-				input: snapshot.input,
-				...(snapshot.transferList === undefined ? {} : { transferList: snapshot.transferList }),
+				...('prepare' in source
+					? { prepare: source.prepare, inputOwnership: source.inputOwnership }
+					: {
+							input: source.input,
+							...(source.transferList === undefined ? {} : { transferList: source.transferList }),
+						}),
 				signal: linked.signal,
 				disposeSignal: linked.dispose,
 				resolve,
@@ -330,6 +438,38 @@ export class WorkerTaskService {
 		task.state = 'running'
 		state.activeTasks++
 		state.lastOwner = task.owner
+		if (task.prepare) {
+			void this.prepareAndRun(state, task)
+			return
+		}
+		this.runInPool(state, task)
+	}
+
+	private async prepareAndRun(state: RootState, task: ScheduledTask): Promise<void> {
+		const prepare = task.prepare!
+		const inputOwnership = task.inputOwnership!
+		let prepared: unknown
+		try {
+			prepared = await prepare(task.signal)
+			if (task.signal.aborted) throw abortReason(task.signal)
+		} catch (cause) {
+			this.failRunning(state, task, task.signal.aborted ? abortReason(task.signal) : cause)
+			return
+		}
+		let snapshot: WorkerInputSnapshot
+		try {
+			snapshot = snapshotWorkerInput(prepared, undefined, inputOwnership)
+		} catch (cause) {
+			this.failRunning(state, task, invalidWorkerInput(cause))
+			return
+		}
+		task.prepare = undefined
+		task.inputOwnership = undefined
+		task.input = snapshot.input
+		this.runInPool(state, task)
+	}
+
+	private runInPool(state: RootState, task: ScheduledTask): void {
 		let execution: Promise<unknown>
 		try {
 			const pool = (state.pool ??= createPool(state.config))
@@ -365,6 +505,12 @@ export class WorkerTaskService {
 				return undefined
 			},
 		)
+	}
+
+	private failRunning(state: RootState, task: ScheduledTask, error: unknown): void {
+		state.activeTasks--
+		this.settle(task, error)
+		this.drain(state)
 	}
 
 	private cancelWaiting(state: RootState, task: ScheduledTask): void {
@@ -403,6 +549,8 @@ export class WorkerTaskService {
 		task.disposeSignal()
 		task.input = undefined
 		task.transferList = undefined
+		task.prepare = undefined
+		task.inputOwnership = undefined
 		task.filename = undefined
 		if (error === undefined) task.resolve(value)
 		else task.reject(error)
@@ -476,7 +624,9 @@ function createPool(config: ResolvedWorkersConfig): Tinypool {
 function snapshotWorkerInput(
 	input: unknown,
 	transfer: readonly ArrayBuffer[] | undefined,
+	inputOwnership: 'snapshot' | 'borrowed',
 ): WorkerInputSnapshot {
+	if (inputOwnership === 'borrowed') return Object.freeze({ input })
 	if (transfer === undefined) return Object.freeze({ input: structuredClone(input) })
 	if (!Array.isArray(transfer)) throw new TypeError('workers.run() transfer must be an array')
 	const transferList = [...transfer]

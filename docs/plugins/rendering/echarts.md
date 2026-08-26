@@ -3,7 +3,7 @@ title: 服务端 Apache ECharts
 description: 通过 Fonts、Canvas 和共享 Worker 在服务端渲染 Apache ECharts 6 图片。
 ---
 
-`@pluxel/echarts` 使用 Apache ECharts 6 在服务端生成 PNG、JPEG 或 WebP 图片，适合报表、分享图、邮件附件和预生成图表。它依赖 `CanvasPlugin` 与 `FontsPlugin`，默认在线程池中完成布局、文字测量、ZRender 刷新和图片编码，避免阻塞主线程。
+`@pluxel/echarts` 使用 Apache ECharts 6 在服务端生成 PNG、JPEG 或 WebP 图片，适合报表、分享图、邮件附件和预生成图表。它依赖 `CanvasPlugin` 与 `FontsPlugin`，只在线程池中完成布局、文字测量、ZRender 刷新和图片编码，避免把同步 ECharts 渲染放到主线程。
 
 ## 安装与 catalog
 
@@ -57,13 +57,12 @@ await host.commit()
 `render()` 的核心输入是：
 
 - `width`、`height`：正整数逻辑尺寸。
-- `option`：Apache ECharts `EChartsOption`；插件只读，不修改 caller graph。
+- `option`：declarative Apache ECharts `EChartsOption`；render settle 前不得修改 caller graph。
 - `theme`：caller 注册的名称、内置 `default`/`dark`，或 inline JSON theme。
 - `devicePixelRatio`：可选，省略时使用 ECharts config 默认值。
 - `locale`、`setOption`：透传给 ECharts 的 locale 和 `setOption()` 配置。
 - `output`：PNG，或带可选 quality 的 JPEG/WebP。
-- `execution`：默认 `worker`，必要时显式选择 `inline`。
-- `signal`：取消排队、worker execution 或 inline checkpoint。
+- `signal`：取消排队或 worker execution。
 
 ```ts no-twoslash
 const result = await this.charts.render({
@@ -84,9 +83,11 @@ result.devicePixelRatio // 2
 
 PNG 是默认格式且不接受 `quality`；JPEG/WebP quality 必须在 0 到 100。返回尺寸是逻辑尺寸，实际 surface 按 `ceil(width × DPR)` 与 `ceil(height × DPR)` 创建，因此仍受 Canvas 尺寸和总像素预算约束。
 
-## worker 与 inline execution
+## Worker-only execution
 
-默认 `execution: 'worker'`。EChartsPlugin 将只读 option 的 structured clone、Canvas `workerSnapshot` 和 render policy 交给 root-owned `ctx.workers`：
+EChartsPlugin 先用 `ctx.workers.runPrepared()` 取得 root-owned shared queue 的 fair execution slot，再 cooperative 检查
+borrowed option 并组装 Canvas `workerSnapshot` 与 render policy。queue full 不先遍历 graph；borrowed input 省略重复
+snapshot，真正 dispatch 时仍由 worker transport 建立私有 graph：
 
 1. worker 从 snapshot 构造 bounded Canvas adapter。
 2. ECharts 以 SSR mode 初始化。
@@ -95,18 +96,12 @@ PNG 是默认格式且不接受 `quality`；JPEG/WebP quality 必须在 0 到 10
 
 worker concurrency、每 owner 队列和 host 总队列均由 runtime workers 配置，不是 EChartsConfig 或 CanvasConfig 字段。队列满时抛出 `EChartsError`，code 为 `RENDER_BUSY`。
 
-worker option 必须可 structured clone。formatter function、native Image 等对象无法穿过边界；确有需要时显式使用：
-
-```ts no-twoslash
-await this.charts.render({
-	width: 800,
-	height: 400,
-	option: optionWithFormatterFunction,
-	execution: 'inline',
-})
-```
-
-inline mode 支持 function 与 native object，但会占用主事件循环，且仍执行 Canvas dimensions/image budgets。不要把 inline 当作默认性能路径。
+option 必须由 plain object、array、typed array 和 scalar data 组成。formatter function、accessor、native/class object 和
+SharedArrayBuffer 都会以 `WORKER_INPUT_UNSUPPORTED` 拒绝，不存在 inline fallback。admission 后、worker transport 前会同时检查 option 的
+estimated bytes、value count 与 nesting depth；遍历每 2,048 个 value 让出一次 event loop，单个大字符串也按 64 Ki
+characters 分片计量。真正的 worker transport
+serialization 仍发生在宿主线程，因此 Worker-only 表示重 layout/render 已隔离，不表示主线程成本为零。三项预算把这段
+不可避免的 serialization 成本限制在 host 可配置上界内；`setOption` policy 也计入同一预算并使用相同 declarative contract。
 
 ## caller-owned theme
 
@@ -154,10 +149,16 @@ worker mode 支持 ECharts image 字段中的 data URL。插件只重写明确�
 
 data URL 在 ZRender 前被替换为 render-local key，并通过 Canvas worker adapter 解码，因此同时受到两层限制：
 
-- ECharts `maxDataUrlBytes`：base64 解码前的 source 上限。
+- ECharts `maxDataUrlBytes`：单张图片 base64/percent decode 后的 source bytes 上限。
+- ECharts `maxImages` / `maxTotalImageBytes`：单次 render 的 distinct source 数与 decoded source bytes 总量。
+- ECharts `maxTotalImagePixels`：所有图片完成 native decode 后的总像素数。
 - Canvas `maxImageBytes`、width、height 与 pixels：实际图片解码上限。
 
-HTTP(S) URL 与服务端文件路径会被拒绝。ECharts/Canvas 不应隐式拥有网络、认证、redirect、proxy 或文件读取权限。先通过业务 outbound HTTP capability 获取 bytes；若需要把 native Image 放进 option，则用 `CanvasPlugin.decodeImage()` 解码并选择 `execution: 'inline'`。
+ECharts 的同步 placeholder 会直接交给 Canvas `decodeImageInto()`；每个 distinct source 只做一次 native decode，不会先生成
+第二个 Image 再触发 `src` setter 重复解码。Canvas decode queue 满时映射为 ECharts `RENDER_BUSY`。
+
+HTTP(S) URL 与服务端文件路径会被拒绝。ECharts/Canvas 不应隐式拥有网络、认证、redirect、proxy 或文件读取权限。
+先通过业务 outbound HTTP capability 获取 bytes，再转换成受支持的 data URL；native Image 不能进入 declarative option。
 
 ## 配置与职责
 
@@ -166,28 +167,52 @@ host.cfg(EChartsPlugin).set({
 	defaultDevicePixelRatio: 1,
 	maxDevicePixelRatio: 4,
 	maxThemesPerConsumer: 32,
+	maxTotalThemes: 256,
+	maxTotalThemeBytes: 16 * 1024 * 1024,
 	maxThemeBytes: 1024 * 1024,
+	maxThemeNodes: 20_000,
+	maxThemeDepth: 64,
 	maxDataUrlBytes: 32 * 1024 * 1024,
+	maxImages: 32,
+	maxTotalImageBytes: 32 * 1024 * 1024,
+	maxTotalImagePixels: 67_108_864,
+	maxOptionBytes: 8 * 1024 * 1024,
+	maxOptionNodes: 100_000,
+	maxOptionDepth: 64,
+	maxOutputBytes: 64 * 1024 * 1024,
 })
 ```
 
-| 字段                      |   默认值 | 职责                                               |
-| ------------------------- | -------: | -------------------------------------------------- |
-| `defaultDevicePixelRatio` |      `1` | render 未传 DPR 时使用的值                         |
-| `maxDevicePixelRatio`     |      `4` | 单次 render 可请求的 DPR 上限                      |
-| `maxThemesPerConsumer`    |     `32` | 一个 caller 同时注册的 named theme 数              |
-| `maxThemeBytes`           |  `1 MiB` | 一个 registered 或 inline JSON theme 的 UTF-8 上限 |
-| `maxDataUrlBytes`         | `32 MiB` | ECharts image data URL 的 pre-decode 上限          |
+| 字段                      |    默认值 | 职责                                               |
+| ------------------------- | --------: | -------------------------------------------------- |
+| `defaultDevicePixelRatio` |       `1` | render 未传 DPR 时使用的值                         |
+| `maxDevicePixelRatio`     |       `4` | 单次 render 可请求的 DPR 上限                      |
+| `maxThemesPerConsumer`    |      `32` | 一个 caller 同时注册的 named theme 数              |
+| `maxTotalThemes`          |     `256` | 此 Plugin node 保留的 named theme 总数             |
+| `maxTotalThemeBytes`      |  `16 MiB` | 所有 retained named theme 的合计 JSON bytes        |
+| `maxThemeBytes`           |   `1 MiB` | 一个 registered 或 inline JSON theme 的 UTF-8 上限 |
+| `maxThemeNodes`           |  `20,000` | 一个 theme 的 value 数上限                         |
+| `maxThemeDepth`           |      `64` | 一个 theme 的 object/array nesting 上限            |
+| `maxDataUrlBytes`         |  `32 MiB` | 单张 data URL decoded source bytes 上限            |
+| `maxImages`               |      `32` | 单次 render 的 distinct image source 数            |
+| `maxTotalImageBytes`      |  `32 MiB` | 单次 render 的 decoded image source bytes 总量     |
+| `maxTotalImagePixels`     |  `67.1 M` | 单次 render 的 decoded image pixels 总量           |
+| `maxOptionBytes`          |   `8 MiB` | option structured-clone payload 的估算上限         |
+| `maxOptionNodes`          | `100,000` | option 遍历的 value 数上限                         |
+| `maxOptionDepth`          |      `64` | option object/array nesting 上限                   |
+| `maxOutputBytes`          |  `64 MiB` | worker 返回前的 encoded raster 上限                |
 
-`defaultDevicePixelRatio` 不能高于 `maxDevicePixelRatio`。字体由 FontsPlugin 配置，尺寸、总像素和 decoded image bytes 由 CanvasPlugin 配置，worker 并发与队列由 runtime `ctx.workers` 配置，网络访问策略由业务 HTTP capability 配置。EChartsConfig 只拥有 DPR、theme 和 ECharts data URL 限制。
+`defaultDevicePixelRatio` 不能高于 `maxDevicePixelRatio`。字体由 FontsPlugin 配置，单张图片的 native dimensions/pixels 与
+encoded bytes 由 CanvasPlugin 配置，worker 并发与队列由 runtime `ctx.workers` 配置，网络访问策略由业务 HTTP capability
+配置。EChartsConfig 拥有 DPR、theme、option/data URL transport、每次 render 的图片累计预算与 output 限制。
 
 ## 错误处理
 
 `render()`、theme registration 与 lifecycle 错误使用 `EChartsError`。稳定 code 包括：
 
-- lifecycle/input：`NOT_RUNNING`、`INVALID_INPUT`。
+- lifecycle/input：`NOT_RUNNING`、`INVALID_INPUT`、`OPTION_TOO_LARGE`。
 - theme：`INVALID_THEME`、`THEME_TOO_LARGE`、`THEME_LIMIT_EXCEEDED`、`THEME_CONFLICT`、`THEME_NOT_FOUND`。
 - image：`INVALID_IMAGE_SOURCE`、`IMAGE_SOURCE_TOO_LARGE`、`UNSUPPORTED_IMAGE_SOURCE`、`IMAGE_LOAD_FAILED`。
-- execution：`WORKER_INPUT_UNSUPPORTED`、`RENDER_BUSY`、`RENDER_FAILED`。
+- execution：`WORKER_INPUT_UNSUPPORTED`、`OUTPUT_TOO_LARGE`、`RENDER_BUSY`、`RENDER_FAILED`。
 
-Canvas dimensions/pixels 校验发生在 render 前；底层 Canvas failure 最终作为带 cause 的 render failure 暴露。业务层应按 code 决定拒绝、降级或重试，不要解析 message，也不要通过切换 inline 绕过资源预算。
+Canvas dimensions/pixels 校验发生在 render 前；底层 Canvas failure 最终作为带 cause 的 render failure 暴露。业务层应按 code 决定拒绝、降级或重试，不要解析 message。

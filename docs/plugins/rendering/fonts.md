@@ -74,8 +74,8 @@ export class ReportsPlugin extends BasePlugin {
 		super()
 	}
 
-	protected override init() {
-		this.fonts.registerFromPath({
+	protected override async init() {
+		await this.fonts.registerFromPath({
 			path: fileURLToPath(new URL('../assets/ReportSans.woff2', import.meta.url)),
 			family: 'Report Sans',
 		})
@@ -83,21 +83,28 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-`registerFromPath()` 只接受绝对路径。`family` 是可选 alias；省略时使用字体内嵌的 family metadata。
+`registerFromPath()` 只接受绝对路径，并使用异步、1 MiB 分块的 bounded 文件 IO。打开 handle 后会先检查 file type/size，
+只分配不超过 `maxFontBytes` 的固定 Buffer；读取期间发生 truncate 或 grow 会拒绝，而不是使用无界 `readFile()`。
+`family` 是可选 alias；省略时使用字体内嵌的 family metadata。
 
 已经取得字节时使用 `register()`：
 
 ```ts no-twoslash
-const registration = this.fonts.register({
+const registration = await this.fonts.register({
 	data: fontBytes,
 	family: 'Report Sans',
+	signal,
 })
 
 console.log(registration.families)
 registration.dispose()
 ```
 
-`data` 必须是非空 `Uint8Array`。返回的 `FontRegistration` 包含：
+`data` 必须是非空 `Uint8Array`，并在 Promise settle 前保持不变；snapshot 与内容 hash 会按 1 MiB chunk 让出 event
+loop。managed record 的大 byte 编解码也使用相同 checkpoint，并在 payload copy/hash 前预检 envelope、声明长度、ID 与
+时间字段。文件读取、snapshot 和 hash 可取消，最终
+`GlobalFonts.register()` 是有单字体 byte ceiling、不可取消的同步 commit。返回的
+`FontRegistration` 包含：
 
 - `families`：本次注册新增或改变的 family。
 - `active`：registration 是否仍有效。
@@ -136,13 +143,13 @@ const revision = this.fonts.revision
 const snapshot = this.fonts.portableFonts
 
 for (const font of snapshot.fonts) {
-	const detachedBytes = this.fonts.readPortableFont(font.id)
+	const detachedBytes = await this.fonts.readPortableFont(font.id, { signal })
 	// 注册进 renderer-local registry；按 snapshot.revision 复用结果。
 }
 ```
 
 `portableFonts` 只包含 Workbench managed uploads 和 `register()` / `registerFromPath()` 资源。metadata snapshot 会缓存，
-不因轮询复制 font bytes；`readPortableFont(id)` 才返回 detached `Uint8Array`。相同 bytes + family alias 使用同一
+不因轮询复制 font bytes；`readPortableFont(id, { signal })` 才 cooperative 返回 detached `Uint8Array`。相同 bytes + family alias 使用同一
 content ID，最后一个 registration 释放后才从集合移除。平台自动发现的 system font 没有 FontsPlugin-owned 文件，
 因此诚实地不进入可移植集合。
 
@@ -186,17 +193,29 @@ host 通过 Plugin config 配置 FontsPlugin：
 host.cfg(FontsPlugin).set({
 	defaultFamily: 'Noto Sans',
 	maxRegistrationsPerConsumer: 32,
+	maxNativeRegistrations: 512,
+	maxTotalFontBytes: 256 * 1024 * 1024,
+	maxConcurrentFontTasks: 4,
+	maxQueuedFontTasks: 32,
+	maxQueuedFontTasksPerConsumer: 8,
+	maxPendingManagedTasks: 32,
 	maxManagedFonts: 64,
 	maxFontBytes: 16 * 1024 * 1024,
 })
 ```
 
-| 字段                          |   默认值 | 职责                                           |
-| ----------------------------- | -------: | ---------------------------------------------- |
-| `defaultFamily`               | 自动选择 | Workbench 没有 override 时优先使用的系统字体   |
-| `maxRegistrationsPerConsumer` |     `32` | 一个 caller 同时持有的程序化 registration 上限 |
-| `maxManagedFonts`             |     `64` | provider-owned 持久化集合的字体数上限          |
-| `maxFontBytes`                | `16 MiB` | 单个注册或上传字体文件的字节上限               |
+| 字段                            |    默认值 | 职责                                           |
+| ------------------------------- | --------: | ---------------------------------------------- |
+| `defaultFamily`                 |  自动选择 | Workbench 没有 override 时优先使用的系统字体   |
+| `maxRegistrationsPerConsumer`   |      `32` | 一个 caller 同时持有的程序化 registration 上限 |
+| `maxNativeRegistrations`        |     `512` | 此 FontsPlugin node 持有的 native key 总上限   |
+| `maxTotalFontBytes`             | `256 MiB` | active native registrations 的合计 bytes       |
+| `maxConcurrentFontTasks`        |       `4` | 同时进行的 caller copy/read/hash 数            |
+| `maxQueuedFontTasks`            |      `32` | 所有 caller 合计等待的字体任务数               |
+| `maxQueuedFontTasksPerConsumer` |       `8` | 单个 caller 等待的字体任务数                   |
+| `maxPendingManagedTasks`        |      `32` | 已接纳的串行 Workbench 操作数（含 active）     |
+| `maxManagedFonts`               |      `64` | provider-owned 持久化集合的字体数上限          |
+| `maxFontBytes`                  |  `16 MiB` | 单个注册或上传字体文件的字节上限               |
 
 系统字体不计入 `maxManagedFonts`，也不会被 FontsPlugin cleanup。尺寸、像素、图片解码和 DPR 都不属于 Fonts 配置：它们分别由 Canvas 与 ECharts 负责。
 
@@ -207,7 +226,8 @@ host.cfg(FontsPlugin).set({
 - `NOT_RUNNING`：provider 或 caller generation 已停止。
 - `INVALID_INPUT`：路径、字节、文件名或 family alias 无效。
 - `INVALID_FONT`：native registry 拒绝字体。
-- `FONT_TOO_LARGE`、`FONT_LIMIT_EXCEEDED`：触发 host 配额。
+- `FONT_TOO_LARGE`、`FONT_LIMIT_EXCEEDED`：触发 byte/count 配额。
+- `FONT_BUSY`：全局或 caller 字体任务队列已满。
 - `FONT_NOT_FOUND`：选择或删除的字体不存在。
 - `CORRUPT_FONT_STORAGE`：持久化 managed font 或默认选择损坏。
 

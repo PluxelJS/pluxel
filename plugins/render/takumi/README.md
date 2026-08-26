@@ -43,17 +43,24 @@ Takumi 可移植资源。Takumi 的 Fonts tab 只列 managed/programmatic portab
 
 ## 图片、取消和调度
 
-TakumiPlugin 不执行隐式网络请求。HTML/CSS/node tree 引用的 HTTP(S) 图片必须在 `images` 中按相同 `src`
-提供 bytes；下载、认证、redirect、retry 与 origin policy 由 Wretch 或业务 HTTP capability 负责。传入图片 bytes
-在排队前复制，remote URL 缺少匹配资源会以 `INVALID_IMAGE` 失败。
+TakumiPlugin 不执行隐式网络请求。HTML/CSS/node tree 的 image source 必须是 string；对应 HTTP(S) 或内存命名图片必须在
+`images` 中按相同 `src` 提供 bytes；下载、认证、redirect、retry 与 origin policy 由 Wretch 或业务 HTTP capability
+负责。content、stylesheets 和 images 在 render settle 前不得修改；任务先完成 fair queue admission，再 cooperative
+snapshot 图片 bytes。结构化 node 使用 borrowed graph，不再做第二次同步 clone；大字符串 UTF-8 计量与 byte copy 都会
+分片。remote URL 缺少匹配资源会以 `INVALID_IMAGE` 失败。
 
 Takumi 的 N-API render 已经是真异步任务，因此 Plugin 不再把它套进 `ctx.workers`。Plugin 自己只做 caller-aware
 有界 admission 和 owner round-robin；`AbortSignal` 会取消排队与上游 native render。Takumi 发布包装器的字体注册当前不接受
 signal，而且相同 revision 的准备工作由多个调用共享；取消发生在字体准备期间时会在 registration 之间或完成后的
 checkpoint 生效，旧 build 不能回写下一 generation。
 
-配置默认限制 8192×8192 physical dimensions、16,777,216 pixels、32 MiB image inputs、128 MiB portable
-fonts、64 MiB output、30 秒 wall-clock deadline、4 个 concurrent renders 和 32 个 queued renders。完整配置与行为见
+HTML 的 `fromHtml()` 仍是上游同步 parser；它在 scheduler admission 后运行，但单次 parser 调用不能被抢占。默认 1 MiB
+content ceiling 与 node/text/stylesheet/image-source 上限约束这段剩余主线程风险，node walk 和大 byte copy 则会分段让出
+event loop；SVG output 的 UTF-8 byte check 同样 cooperative。
+
+配置默认限制 8192×8192 physical dimensions、16,777,216 pixels、64 total stylesheets、256 distinct image sources、
+32 MiB image inputs、256 个 / 128 MiB portable fonts、64 MiB output、30 秒 wall-clock deadline、4 个 concurrent
+renders 和 32 个 queued renders。完整配置与行为见
 [`docs/plugins/rendering/takumi.md`](../../../docs/plugins/rendering/takumi.md)，设计边界见 [`DESIGN.md`](DESIGN.md)。
 
 示例中的 `escapeHtml()` 代表业务自己的可信模板编码；Takumi 渲染 HTML/CSS，不执行浏览器脚本。

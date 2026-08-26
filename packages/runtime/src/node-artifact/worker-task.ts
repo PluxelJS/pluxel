@@ -31,16 +31,39 @@ export class WorkerTaskError extends Error {
 	}
 }
 
-export type WorkerRunOptions = Readonly<{
-	/** Cancels queued work or terminates the worker executing this task. */
+export type WorkerRunOptions =
+	| Readonly<{
+			/** Cancels queued work or terminates the worker executing this task. */
+			signal?: AbortSignal
+			/** Snapshots the complete input after capacity preflight and before task submission. @defaultValue 'snapshot' */
+			inputOwnership?: 'snapshot'
+			/**
+			 * Moves these input `ArrayBuffer`s into the task snapshot instead of copying their bytes.
+			 * Accepted buffers are detached synchronously and ownership is not restored when later work fails.
+			 */
+			transfer?: readonly ArrayBuffer[]
+	  }>
+	| Readonly<{
+			/** Cancels queued work or terminates the worker executing this task. */
+			signal?: AbortSignal
+			/**
+			 * Retains the caller input until dispatch and performs only the worker transport clone. The
+			 * caller must not mutate the complete input graph until the returned promise settles.
+			 */
+			inputOwnership: 'borrowed'
+			transfer?: never
+	  }>
+
+/** Options for host-side input preparation that begins only after a worker execution slot is reserved. */
+export type WorkerPreparedRunOptions = Readonly<{
+	/** Cancels queue waiting, host preparation, or worker execution. */
 	signal?: AbortSignal
-	/**
-	 * Moves these input `ArrayBuffer`s into the task snapshot instead of copying their bytes.
-	 * Accepted buffers are detached synchronously and ownership is not restored when later work fails.
-	 * Omission snapshots the complete input with the structured clone algorithm.
-	 */
-	transfer?: readonly ArrayBuffer[]
+	/** Snapshots the prepared value before transport; borrowed skips that extra clone. @defaultValue 'snapshot' */
+	inputOwnership?: 'snapshot' | 'borrowed'
 }>
+
+/** Creates one task input after bounded worker admission. Errors remain in the caller domain. */
+export type WorkerInputPreparation<Input> = (signal: AbortSignal) => Input | Promise<Input>
 
 export type WorkersConfig = Readonly<{
 	/** Shared root thread budget. Defaults to min(4, available CPUs minus one). */

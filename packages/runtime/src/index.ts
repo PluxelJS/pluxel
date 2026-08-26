@@ -79,6 +79,8 @@ export {
 	WorkerTaskError,
 	type WorkerTaskDeclaration,
 	type WorkerTaskHandler,
+	type WorkerInputPreparation,
+	type WorkerPreparedRunOptions,
 	type WorkerRunOptions,
 	type WorkersConfig,
 	type WorkerTaskErrorCode,

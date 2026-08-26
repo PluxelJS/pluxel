@@ -66,11 +66,25 @@ export const TakumiConfig = v.object({
 			description: 'Maximum combined UTF-8 bytes of explicit and HTML-extracted stylesheets.',
 		}),
 	),
+	maxStylesheets: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_024)), 64),
+		f.formMeta({
+			title: 'Maximum stylesheets',
+			description: 'Maximum number of explicit and HTML-extracted stylesheets in one render.',
+		}),
+	),
 	maxImageBytes: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(256 * MIB)), 32 * MIB),
 		f.formMeta({
 			title: 'Maximum image bytes',
 			description: 'Maximum combined bytes of preloaded and inline image sources per render.',
+		}),
+	),
+	maxImages: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4_096)), 256),
+		f.formMeta({
+			title: 'Maximum image sources',
+			description: 'Maximum number of explicit or content-referenced image sources in one render.',
 		}),
 	),
 	maxFontBytes: v.pipe(
@@ -79,6 +93,13 @@ export const TakumiConfig = v.object({
 			title: 'Maximum portable font bytes',
 			description:
 				'Maximum FontsPlugin byte snapshot replayed into one Takumi renderer generation.',
+		}),
+	),
+	maxFonts: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4_096)), 256),
+		f.formMeta({
+			title: 'Maximum portable fonts',
+			description: 'Maximum FontsPlugin resources replayed into one Takumi renderer generation.',
 		}),
 	),
 	maxOutputBytes: v.pipe(

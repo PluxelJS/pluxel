@@ -5,13 +5,15 @@ import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { prepareImages } from 'takumi-js/helpers'
 import { fromHtml } from 'takumi-js/helpers/html'
-import { Renderer, type Node as TakumiNode, type RgbaImage } from 'takumi-js/node'
+import { Renderer, type Node as TakumiNode } from 'takumi-js/node'
 import { TakumiConfig, type TakumiPluginConfig } from './config.ts'
 import { TakumiError, type TakumiErrorCode } from './errors.ts'
 import { RenderScheduler, type RenderSchedulerOwner } from './render-scheduler.ts'
 
 const MAX_CONTENT_DEPTH = 256
+const MAX_STRUCTURED_CONTENT_DEPTH = MAX_CONTENT_DEPTH * 2 + 2
 const MAX_IMAGE_SOURCE_LENGTH = 4_096
+const UTF8_MEASURE_CHUNK_CHARACTERS = 64 * 1024
 
 const TakumiWorkbench = workbench.portOutlet({
 	id: 'Fonts',
@@ -27,7 +29,7 @@ export type TakumiContent = string | TakumiNode
 export type TakumiImageInput = Readonly<{
 	/** Exact `src` used by the Takumi node tree. Remote URLs are never fetched implicitly. */
 	src: string
-	/** Borrowed bytes copied before queue admission. */
+	/** Borrowed until render settles; copied cooperatively after scheduler admission. */
 	data: Uint8Array
 }>
 
@@ -53,13 +55,13 @@ export type TakumiRasterOutput =
 	  }>
 
 export type TakumiRenderInput = Readonly<{
-	/** HTML markup or an already-normalized Takumi node tree. */
+	/** HTML markup or a node tree borrowed without mutation until the render settles. */
 	content: TakumiContent
 	width: number
 	height: number
 	/** Uses the Plugin config default when omitted. */
 	devicePixelRatio?: number
-	/** Additional CSS applied after stylesheets extracted from HTML. */
+	/** Borrowed without mutation until render settles; applied after stylesheets extracted from HTML. */
 	stylesheets?: readonly string[]
 	/** Preloaded encoded sources. Every remote URL referenced by content must have a matching entry. */
 	images?: readonly TakumiImageInput[]
@@ -133,7 +135,15 @@ type NormalizedRenderInput = Readonly<{
 	>
 }>
 
-type NodeStats = Readonly<{ nodes: number; textCharacters: number; imageBytes: number }>
+type RenderRequest = Readonly<{
+	content: TakumiContent
+	width: number
+	height: number
+	devicePixelRatio: number
+	stylesheets: unknown
+	images: unknown
+	output: NormalizedRenderInput['output']
+}>
 
 @Plugin()
 export class TakumiPlugin extends BasePlugin {
@@ -171,7 +181,7 @@ export class TakumiPlugin extends BasePlugin {
 		})
 		this.generation = generation
 		this.ctx.effects.defer(
-			() => {
+			async () => {
 				if (this.generation === generation) this.generation = undefined
 				const reason = new TakumiError(
 					'NOT_RUNNING',
@@ -179,7 +189,7 @@ export class TakumiPlugin extends BasePlugin {
 				)
 				generation.controller.abort(reason)
 				for (const lease of this.leases) this.closeLease(lease, reason)
-				generation.scheduler.close(reason)
+				await generation.scheduler.close(reason)
 				generation.rendererBuilds.clear()
 				generation.state.renderer = undefined
 			},
@@ -199,14 +209,19 @@ export class TakumiPlugin extends BasePlugin {
 	/** Renders bounded HTML or a Takumi node tree to PNG, JPEG or WebP. */
 	async render(input: TakumiRenderInput): Promise<TakumiRenderResult> {
 		const lease = this.requireLease()
-		const normalized = this.normalizeRenderInput(input)
+		const request = this.normalizeRenderRequest(input)
 		const deadline = createRenderDeadline(this.config.maxRenderDurationMs)
 		const abortLink = linkAbortSignals([lease.controller.signal, input.signal, deadline.signal])
 		try {
 			return await lease.generation.scheduler.run(
 				lease.schedulerOwner,
 				abortLink.signal,
-				async () => this.executeRaster(normalized, abortLink.signal, lease.generation),
+				async () =>
+					this.executeRaster(
+						await this.snapshotRenderInput(request, abortLink.signal),
+						abortLink.signal,
+						lease.generation,
+					),
 			)
 		} catch (cause) {
 			if (cause instanceof TakumiError) throw cause
@@ -221,14 +236,19 @@ export class TakumiPlugin extends BasePlugin {
 	/** Renders bounded HTML or a Takumi node tree to a vector SVG document. */
 	async renderSvg(input: TakumiSvgRenderInput): Promise<TakumiSvgRenderResult> {
 		const lease = this.requireLease()
-		const normalized = this.normalizeRenderInput({ ...input, devicePixelRatio: 1 })
+		const request = this.normalizeRenderRequest(input, 1)
 		const deadline = createRenderDeadline(this.config.maxRenderDurationMs)
 		const abortLink = linkAbortSignals([lease.controller.signal, input.signal, deadline.signal])
 		try {
 			return await lease.generation.scheduler.run(
 				lease.schedulerOwner,
 				abortLink.signal,
-				async () => this.executeSvg(normalized, abortLink.signal, lease.generation),
+				async () =>
+					this.executeSvg(
+						await this.snapshotRenderInput(request, abortLink.signal),
+						abortLink.signal,
+						lease.generation,
+					),
 			)
 		} catch (cause) {
 			if (cause instanceof TakumiError) throw cause
@@ -293,7 +313,7 @@ export class TakumiPlugin extends BasePlugin {
 			if (signal.aborted) throw abortReason(signal)
 			throw new TakumiError('RENDER_FAILED', 'Takumi native SVG rendering failed', { cause })
 		}
-		this.assertOutputBytes(Buffer.byteLength(data, 'utf8'))
+		await this.assertSvgOutputBytes(data, signal)
 		return Object.freeze({
 			data,
 			mediaType: 'image/svg+xml',
@@ -309,24 +329,33 @@ export class TakumiPlugin extends BasePlugin {
 		generation: TakumiGeneration,
 	) {
 		signal.throwIfAborted()
-		const content =
-			input.content.kind === 'html'
-				? fromHtml(input.content.value)
-				: { node: input.content.value, stylesheets: [] }
-		const stats = inspectNode(content.node, {
-			maxContentBytes: this.config.maxContentBytes,
-			maxContentNodes: this.config.maxContentNodes!,
-			maxTextCharacters: this.config.maxTextCharacters!,
-		})
-		const suppliedImageBytes = input.images.reduce((sum, image) => sum + image.data.byteLength, 0)
-		if (stats.imageBytes + suppliedImageBytes > this.config.maxImageBytes) {
+		let content: ReturnType<typeof fromHtml> | { node: TakumiNode; stylesheets: never[] }
+		if (input.content.kind === 'html') {
+			await yieldToEventLoop(signal)
+			content = fromHtml(input.content.value)
+		} else {
+			content = { node: input.content.value, stylesheets: [] }
+		}
+		if (input.content.kind === 'html') {
+			await assertStructuredContentBytes(content.node, this.config.maxContentBytes, signal)
+		}
+		await inspectNode(
+			content.node,
+			{
+				maxContentNodes: this.config.maxContentNodes!,
+				maxTextCharacters: this.config.maxTextCharacters!,
+				maxImages: this.config.maxImages,
+			},
+			signal,
+		)
+		const stylesheets = Object.freeze([...content.stylesheets, ...input.stylesheets])
+		if (stylesheets.length > this.config.maxStylesheets) {
 			throw new TakumiError(
-				'IMAGE_BYTES_EXCEEDED',
-				`Render image sources exceed the configured ${this.config.maxImageBytes} byte limit`,
+				'STYLESHEET_TOO_LARGE',
+				`Render contains ${stylesheets.length} stylesheets; the configured limit is ${this.config.maxStylesheets}`,
 			)
 		}
-		const stylesheets = Object.freeze([...content.stylesheets, ...input.stylesheets])
-		this.assertStylesheetBytes(stylesheets)
+		await this.assertStylesheetBytes(stylesheets, signal)
 		let images: Awaited<ReturnType<typeof prepareImages<NormalizedImage>>>
 		try {
 			images = await prepareImages<NormalizedImage>({
@@ -367,6 +396,14 @@ export class TakumiPlugin extends BasePlugin {
 		}
 		const existing = generation.rendererBuilds.get(snapshot.revision)
 		if (existing) return existing
+		if (snapshot.fonts.length > this.config.maxFonts) {
+			return Promise.reject(
+				new TakumiError(
+					'FONT_COUNT_EXCEEDED',
+					`Portable fonts contain ${snapshot.fonts.length} resources; the configured limit is ${this.config.maxFonts}`,
+				),
+			)
+		}
 		const totalBytes = snapshot.fonts.reduce((sum, font) => sum + font.byteLength, 0)
 		if (totalBytes > this.config.maxFontBytes) {
 			return Promise.reject(
@@ -376,11 +413,7 @@ export class TakumiPlugin extends BasePlugin {
 				),
 			)
 		}
-		const resources = snapshot.fonts.map((font) => ({
-			font,
-			data: this.fonts.readPortableFont(font.id),
-		}))
-		const build = this.buildRenderer(snapshot.revision, resources, generation.controller.signal)
+		const build = this.buildRendererFromSnapshot(snapshot, generation.controller.signal)
 		generation.rendererBuilds.set(snapshot.revision, build)
 		void build.then(
 			(state): undefined => {
@@ -399,6 +432,27 @@ export class TakumiPlugin extends BasePlugin {
 			},
 		)
 		return build
+	}
+
+	private async buildRendererFromSnapshot(
+		snapshot: PortableFontsSnapshot,
+		signal: AbortSignal,
+	): Promise<PreparedRenderer> {
+		const resources: Array<
+			Readonly<{
+				font: PortableFontsSnapshot['fonts'][number]
+				data: Uint8Array
+			}>
+		> = []
+		for (const font of snapshot.fonts) {
+			resources.push({
+				font,
+				data: await this.fonts.readPortableFont(font.id, {
+					signal,
+				}),
+			})
+		}
+		return this.buildRenderer(snapshot.revision, resources, signal)
 	}
 
 	private async buildRenderer(
@@ -431,7 +485,10 @@ export class TakumiPlugin extends BasePlugin {
 		return Object.freeze({ revision, renderer, families: Object.freeze(families) })
 	}
 
-	private normalizeRenderInput(input: TakumiRenderInput): NormalizedRenderInput {
+	private normalizeRenderRequest(
+		input: TakumiRenderInput | TakumiSvgRenderInput,
+		devicePixelRatioOverride?: number,
+	): RenderRequest {
 		if (!input || typeof input !== 'object' || Array.isArray(input)) {
 			throw new TakumiError('INVALID_INPUT', 'Takumi render input must be an object')
 		}
@@ -444,7 +501,11 @@ export class TakumiPlugin extends BasePlugin {
 		if (input.width <= 0 || input.height <= 0) {
 			throw new TakumiError('INVALID_INPUT', 'Render width and height must be positive')
 		}
-		const devicePixelRatio = input.devicePixelRatio ?? this.config.defaultDevicePixelRatio
+		const devicePixelRatio =
+			devicePixelRatioOverride ??
+			('devicePixelRatio' in input
+				? (input.devicePixelRatio ?? this.config.defaultDevicePixelRatio)
+				: this.config.defaultDevicePixelRatio)
 		if (
 			!Number.isFinite(devicePixelRatio) ||
 			devicePixelRatio <= 0 ||
@@ -469,39 +530,53 @@ export class TakumiPlugin extends BasePlugin {
 				`Physical dimensions require ${physicalWidth * physicalHeight} pixels; the configured limit is ${this.config.maxPixels}`,
 			)
 		}
-		const content = snapshotContent(input.content, this.config.maxContentBytes)
-		if (content.kind === 'node') {
-			inspectNode(content.value, {
-				maxContentBytes: this.config.maxContentBytes,
-				maxContentNodes: this.config.maxContentNodes!,
-				maxTextCharacters: this.config.maxTextCharacters!,
-			})
-		}
-		const stylesheets = normalizeStylesheets(input.stylesheets)
-		this.assertStylesheetBytes(stylesheets)
-		const images = normalizeImages(input.images, this.config.maxImageBytes)
 		const output = normalizeOutput('output' in input ? input.output : undefined)
 		return Object.freeze({
-			content,
+			content: input.content,
 			width: input.width,
 			height: input.height,
 			devicePixelRatio,
-			stylesheets,
-			images,
+			stylesheets: input.stylesheets,
+			images: input.images,
 			output,
 		})
 	}
 
-	private assertStylesheetBytes(stylesheets: readonly string[]): void {
-		const byteLength = stylesheets.reduce(
-			(sum, stylesheet) => sum + Buffer.byteLength(stylesheet, 'utf8'),
-			0,
+	private async snapshotRenderInput(
+		request: RenderRequest,
+		signal: AbortSignal,
+	): Promise<NormalizedRenderInput> {
+		signal.throwIfAborted()
+		const content = await snapshotContent(request.content, this.config.maxContentBytes, signal)
+		const stylesheets = normalizeStylesheets(request.stylesheets, this.config.maxStylesheets)
+		await this.assertStylesheetBytes(stylesheets, signal)
+		const images = await normalizeImages(
+			request.images,
+			this.config.maxImages,
+			this.config.maxImageBytes,
+			signal,
 		)
-		if (byteLength > this.config.maxStylesheetBytes) {
-			throw new TakumiError(
-				'STYLESHEET_TOO_LARGE',
-				`Stylesheets require ${byteLength} bytes; the configured limit is ${this.config.maxStylesheetBytes}`,
+		return Object.freeze({ ...request, content, stylesheets, images })
+	}
+
+	private async assertStylesheetBytes(
+		stylesheets: readonly string[],
+		signal: AbortSignal,
+	): Promise<void> {
+		let byteLength = 0
+		for (const stylesheet of stylesheets) {
+			const measured = measureUtf8UpTo(
+				stylesheet,
+				this.config.maxStylesheetBytes - byteLength,
+				signal,
 			)
+			byteLength += typeof measured === 'number' ? measured : await measured
+			if (byteLength > this.config.maxStylesheetBytes) {
+				throw new TakumiError(
+					'STYLESHEET_TOO_LARGE',
+					`Stylesheets exceed the configured ${this.config.maxStylesheetBytes} byte limit`,
+				)
+			}
 		}
 	}
 
@@ -512,6 +587,11 @@ export class TakumiPlugin extends BasePlugin {
 				`Takumi output is ${byteLength} bytes; the configured limit is ${this.config.maxOutputBytes}`,
 			)
 		}
+	}
+
+	private async assertSvgOutputBytes(data: string, signal: AbortSignal): Promise<void> {
+		const byteLength = await measureUtf8UpTo(data, this.config.maxOutputBytes, signal)
+		this.assertOutputBytes(byteLength)
 	}
 
 	private requireLease(): TakumiLease {
@@ -561,43 +641,42 @@ export class TakumiPlugin extends BasePlugin {
 	}
 }
 
-function snapshotContent(content: unknown, maxContentBytes: number): ContentSnapshot {
+async function snapshotContent(
+	content: unknown,
+	maxContentBytes: number,
+	signal: AbortSignal,
+): Promise<ContentSnapshot> {
 	if (typeof content === 'string') {
-		const byteLength = Buffer.byteLength(content, 'utf8')
+		const measured = measureUtf8UpTo(content, maxContentBytes, signal)
+		const byteLength = typeof measured === 'number' ? measured : await measured
 		if (byteLength > maxContentBytes) {
 			throw new TakumiError(
 				'CONTENT_TOO_LARGE',
-				`HTML content is ${byteLength} bytes; the configured limit is ${maxContentBytes}`,
+				`HTML content exceeds the configured ${maxContentBytes} byte limit`,
 			)
 		}
 		return Object.freeze({ kind: 'html', value: content })
 	}
-	try {
-		return Object.freeze({ kind: 'node', value: structuredClone(content) as TakumiNode })
-	} catch (cause) {
-		throw new TakumiError(
-			'INVALID_INPUT',
-			'content must be HTML text or a structured-clone-compatible Takumi node tree',
-			{ cause },
-		)
-	}
+	await assertStructuredContentBytes(content, maxContentBytes, signal)
+	return Object.freeze({ kind: 'node', value: content as TakumiNode })
 }
 
-function inspectNode(
+async function inspectNode(
 	root: TakumiNode,
 	limits: Readonly<{
-		maxContentBytes: number
 		maxContentNodes: number
 		maxTextCharacters: number
+		maxImages: number
 	}>,
-): NodeStats {
-	assertStructuredContentBytes(root, limits.maxContentBytes)
+	signal: AbortSignal,
+): Promise<void> {
 	const stack: Array<Readonly<{ value: unknown; depth: number }>> = [{ value: root, depth: 0 }]
 	const seen = new WeakSet<object>()
 	let nodes = 0
 	let textCharacters = 0
-	let imageBytes = 0
+	const imageSources = new Set<string>()
 	while (stack.length > 0) {
+		if (nodes > 0 && nodes % 512 === 0) await yieldToEventLoop(signal)
 		const current = stack.pop()!
 		if (current.depth > MAX_CONTENT_DEPTH) {
 			throw new TakumiError(
@@ -644,18 +723,34 @@ function inspectNode(
 			continue
 		}
 		if (current.value.type === 'image') {
-			imageBytes += imageSourceBytes(current.value.src)
+			if (typeof current.value.src !== 'string') {
+				throw new TakumiError(
+					'INVALID_IMAGE',
+					'Takumi node image bytes must use a named preloaded images entry',
+				)
+			}
+			imageSources.add(current.value.src)
+			if (imageSources.size > limits.maxImages) {
+				throw new TakumiError(
+					'INVALID_IMAGE',
+					`Takumi content exceeds the configured ${limits.maxImages} distinct image source limit`,
+				)
+			}
 			continue
 		}
 		throw new TakumiError('INVALID_INPUT', 'Takumi node type must be container, text or image')
 	}
-	return Object.freeze({ nodes, textCharacters, imageBytes })
 }
 
-function assertStructuredContentBytes(root: unknown, maxBytes: number): void {
-	const stack: unknown[] = [root]
+async function assertStructuredContentBytes(
+	root: unknown,
+	maxBytes: number,
+	signal: AbortSignal,
+): Promise<void> {
+	const stack: Array<Readonly<{ value: unknown; depth: number }>> = [{ value: root, depth: 0 }]
 	const seen = new WeakSet<object>()
 	let byteLength = 0
+	let visited = 0
 	const add = (bytes: number) => {
 		byteLength += bytes
 		if (byteLength > maxBytes) {
@@ -666,64 +761,115 @@ function assertStructuredContentBytes(root: unknown, maxBytes: number): void {
 		}
 	}
 	while (stack.length > 0) {
-		const value = stack.pop()
+		if (++visited % 2_048 === 0) await yieldToEventLoop(signal)
+		const current = stack.pop()!
+		if (current.depth > MAX_STRUCTURED_CONTENT_DEPTH) {
+			throw new TakumiError(
+				'CONTENT_TOO_LARGE',
+				`Structured content nesting exceeds ${MAX_STRUCTURED_CONTENT_DEPTH} levels`,
+			)
+		}
+		const value = current.value
 		if (typeof value === 'string') {
-			add(Buffer.byteLength(value, 'utf8'))
+			const measured = measureUtf8UpTo(value, maxBytes - byteLength, signal)
+			add(typeof measured === 'number' ? measured : await measured)
 			continue
 		}
-		if (
-			value === null ||
-			value === undefined ||
-			typeof value === 'symbol' ||
-			typeof value === 'function'
-		) {
+		if (value === null || value === undefined) {
 			continue
+		}
+		if (typeof value === 'symbol' || typeof value === 'function') {
+			throw new TakumiError(
+				'INVALID_INPUT',
+				'Takumi structured content must contain only declarative data',
+			)
 		}
 		if (typeof value !== 'object') {
 			add(8)
 			continue
 		}
-		if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) continue
+		if (
+			value instanceof SharedArrayBuffer ||
+			value instanceof ArrayBuffer ||
+			ArrayBuffer.isView(value)
+		) {
+			throw new TakumiError(
+				'INVALID_IMAGE',
+				'Takumi node image bytes must use a named preloaded images entry',
+			)
+		}
 		if (seen.has(value)) continue
 		seen.add(value)
 		if (Array.isArray(value)) {
 			add(value.length * 4)
-			for (const item of value) stack.push(item)
-			continue
+		} else if (!isPlainRecord(value)) {
+			throw new TakumiError(
+				'INVALID_INPUT',
+				'Takumi structured content must use plain objects and arrays',
+			)
 		}
-		for (const [key, item] of Object.entries(value)) {
-			add(Buffer.byteLength(key, 'utf8') + 4)
-			stack.push(item)
+		for (const symbol of Object.getOwnPropertySymbols(value)) {
+			if (Object.getOwnPropertyDescriptor(value, symbol)?.enumerable) {
+				throw new TakumiError(
+					'INVALID_INPUT',
+					'Takumi structured content must not contain enumerable symbol properties',
+				)
+			}
+		}
+		for (const key of Object.keys(value)) {
+			const descriptor = Object.getOwnPropertyDescriptor(value, key)!
+			if (!('value' in descriptor)) {
+				throw new TakumiError(
+					'INVALID_INPUT',
+					'Takumi structured content must not contain accessor properties',
+				)
+			}
+			const measured = measureUtf8UpTo(key, maxBytes - byteLength, signal)
+			add((typeof measured === 'number' ? measured : await measured) + 4)
+			stack.push({ value: descriptor.value, depth: current.depth + 1 })
 		}
 	}
 }
 
-function imageSourceBytes(value: unknown): number {
-	if (typeof value === 'string') return 0
-	if (value instanceof Uint8Array) {
-		assertUnsharedBytes(value)
-		return value.byteLength
+function measureUtf8UpTo(
+	value: string,
+	maxBytes: number,
+	signal: AbortSignal,
+): number | Promise<number> {
+	signal.throwIfAborted()
+	if (value.length <= UTF8_MEASURE_CHUNK_CHARACTERS) return Buffer.byteLength(value, 'utf8')
+	return measureLargeUtf8UpTo(value, maxBytes, signal)
+}
+
+async function measureLargeUtf8UpTo(
+	value: string,
+	maxBytes: number,
+	signal: AbortSignal,
+): Promise<number> {
+	let byteLength = 0
+	for (let offset = 0; offset < value.length;) {
+		let end = Math.min(offset + UTF8_MEASURE_CHUNK_CHARACTERS, value.length)
+		if (
+			end < value.length &&
+			isHighSurrogate(value.charCodeAt(end - 1)) &&
+			isLowSurrogate(value.charCodeAt(end))
+		) {
+			end += 1
+		}
+		byteLength += Buffer.byteLength(value.slice(offset, end), 'utf8')
+		if (byteLength > maxBytes) return byteLength
+		offset = end
+		if (offset < value.length) await yieldToEventLoop(signal)
 	}
-	if (value instanceof ArrayBuffer) return value.byteLength
-	if (!isRecord(value)) {
-		throw new TakumiError('INVALID_IMAGE', 'Takumi image source is invalid')
-	}
-	const rgba = value as RgbaImage
-	if (
-		!Number.isSafeInteger(rgba.width) ||
-		!Number.isSafeInteger(rgba.height) ||
-		rgba.width <= 0 ||
-		rgba.height <= 0 ||
-		!(rgba.data instanceof Uint8Array || rgba.data instanceof ArrayBuffer)
-	) {
-		throw new TakumiError('INVALID_IMAGE', 'Takumi RGBA image source is invalid')
-	}
-	const required = rgba.width * rgba.height * 4
-	if (!Number.isSafeInteger(required) || rgba.data.byteLength !== required) {
-		throw new TakumiError('INVALID_IMAGE', 'Takumi RGBA image byte length is invalid')
-	}
-	if (rgba.data instanceof Uint8Array) assertUnsharedBytes(rgba.data)
-	return required
+	return byteLength
+}
+
+function isHighSurrogate(value: number): boolean {
+	return value >= 0xd800 && value <= 0xdbff
+}
+
+function isLowSurrogate(value: number): boolean {
+	return value >= 0xdc00 && value <= 0xdfff
 }
 
 function assertUnsharedBytes(value: Uint8Array): void {
@@ -732,18 +878,32 @@ function assertUnsharedBytes(value: Uint8Array): void {
 	}
 }
 
-function normalizeStylesheets(value: unknown): readonly string[] {
+function normalizeStylesheets(value: unknown, maxStylesheets: number): readonly string[] {
 	if (value === undefined) return Object.freeze([])
-	if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+	if (!Array.isArray(value) || value.length > maxStylesheets) {
+		throw new TakumiError(
+			'INVALID_INPUT',
+			`stylesheets must be an array with at most ${maxStylesheets} entries`,
+		)
+	}
+	if (value.some((item) => typeof item !== 'string')) {
 		throw new TakumiError('INVALID_INPUT', 'stylesheets must be an array of strings')
 	}
 	return Object.freeze([...value])
 }
 
-function normalizeImages(value: unknown, maxBytes: number): readonly NormalizedImage[] {
+async function normalizeImages(
+	value: unknown,
+	maxImages: number,
+	maxBytes: number,
+	signal: AbortSignal,
+): Promise<readonly NormalizedImage[]> {
 	if (value === undefined) return Object.freeze([])
-	if (!Array.isArray(value)) {
-		throw new TakumiError('INVALID_IMAGE', 'images must be an array')
+	if (!Array.isArray(value) || value.length > maxImages) {
+		throw new TakumiError(
+			'INVALID_IMAGE',
+			`images must be an array with at most ${maxImages} entries`,
+		)
 	}
 	const seen = new Set<string>()
 	const images: NormalizedImage[] = []
@@ -767,6 +927,7 @@ function normalizeImages(value: unknown, maxBytes: number): readonly NormalizedI
 		}
 		if (seen.has(src)) throw new TakumiError('INVALID_IMAGE', `Duplicate image src: ${src}`)
 		seen.add(src)
+		assertUnsharedBytes(item.data)
 		totalBytes += item.data.byteLength
 		if (totalBytes > maxBytes) {
 			throw new TakumiError(
@@ -774,9 +935,25 @@ function normalizeImages(value: unknown, maxBytes: number): readonly NormalizedI
 				`Preloaded images exceed the configured ${maxBytes} byte limit`,
 			)
 		}
-		images.push(Object.freeze({ src, data: Uint8Array.from(item.data) }))
+		images.push(Object.freeze({ src, data: await snapshotBytes(item.data, signal) }))
 	}
 	return Object.freeze(images)
+}
+
+async function snapshotBytes(data: Uint8Array, signal: AbortSignal): Promise<Uint8Array> {
+	signal.throwIfAborted()
+	const snapshot = new Uint8Array(data.byteLength)
+	const chunkBytes = 1024 * 1024
+	for (let offset = 0; offset < data.byteLength; offset += chunkBytes) {
+		if (offset > 0) await yieldToEventLoop(signal)
+		snapshot.set(data.subarray(offset, Math.min(offset + chunkBytes, data.byteLength)), offset)
+	}
+	return snapshot
+}
+
+async function yieldToEventLoop(signal: AbortSignal): Promise<void> {
+	await new Promise<void>((resolve) => setImmediate(resolve))
+	signal.throwIfAborted()
 }
 
 function normalizeOutput(output: TakumiRasterOutput | undefined): NormalizedRenderInput['output'] {
@@ -891,6 +1068,12 @@ function abortReason(signal: AbortSignal): Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	if (!isRecord(value)) return false
+	const prototype = Object.getPrototypeOf(value) as unknown
+	return prototype === Object.prototype || prototype === null
 }
 
 function isAbortSignal(value: unknown): value is AbortSignal {

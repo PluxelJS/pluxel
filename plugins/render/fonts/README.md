@@ -22,8 +22,8 @@ export class ReportsPlugin extends BasePlugin {
 		super()
 	}
 
-	override init() {
-		this.fonts.registerFromPath({
+	override async init() {
+		await this.fonts.registerFromPath({
 			path: fileURLToPath(new URL('../assets/ReportSans.woff2', import.meta.url)),
 			family: 'Report Sans',
 		})
@@ -31,7 +31,11 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-路径必须是服务端绝对路径。也可以用 `fonts.register({ data, family })` 注册 `Uint8Array`。这类代码资源绑定
+路径必须是服务端绝对路径并使用异步的 bounded 分块文件 IO：打开后先检查 size，只按允许的大小分配，并拒绝读取期间
+truncate/grow 的文件。也可以 `await fonts.register({ data, family, signal })` 注册
+`Uint8Array`；bytes 在 Promise settle 前保持不变，copy 与内容 hash 会 cooperative yield。managed record 的大 byte
+编解码也使用相同 checkpoint，恢复时会在 payload copy/hash 前先检查 envelope 大小与 metadata。最终 native registry commit
+有单字体 byte ceiling，但上游不提供可取消入口。这类代码资源绑定
 caller generation；consumer stop/replacement 时 FontsPlugin 移除对应 `FontKey`。返回 handle 的 `dispose()` 只用于
 提前删除，重复调用无副作用。
 
@@ -68,10 +72,21 @@ selector 只读取 FontsPlugin 提供的系统/上传 family 选项并修改统�
 host.cfg(FontsPlugin).set({
 	defaultFamily: 'Noto Sans',
 	maxRegistrationsPerConsumer: 32,
+	maxNativeRegistrations: 512,
+	maxTotalFontBytes: 256 * 1024 * 1024,
+	maxConcurrentFontTasks: 4,
+	maxQueuedFontTasks: 32,
+	maxQueuedFontTasksPerConsumer: 8,
+	maxPendingManagedTasks: 32,
 	maxManagedFonts: 64,
 	maxFontBytes: 16 * 1024 * 1024,
 })
 ```
+
+caller-triggered register/path-read/portable-read 在 copy、文件 IO 与 hash 前进入 generation-local owner-fair scheduler；
+queue 满时以 `FONT_BUSY` 拒绝。provider cleanup 会 abort active cooperative work、拒绝 queued work 并等待 drain。
+Workbench managed 操作保持串行并受独立 pending ceiling 约束。managed 与 programmatic key 合计还受
+`maxNativeRegistrations` / `maxTotalFontBytes` 约束。
 
 系统字体不计入 limit，也不会被 cleanup 删除。`fonts.revision` 是 FontsPlugin-managed native registration/default
 selection 的进程内 signal；Canvas 等 measurement cache 在它变化时丢弃旧宽度。绕过本插件直接修改
@@ -80,7 +95,7 @@ selection 的进程内 signal；Canvas 等 measurement cache 在它变化时丢�
 
 `fonts.portableFonts` 是 managed 与 caller registration 的 frozen metadata snapshot；system fonts 没有
 FontsPlugin-owned bytes，因此不在其中。renderer 先比较 `portableFonts.revision`，只在变化时调用
-`readPortableFont(id)` 取得 detached byte copy并重建/更新自己的 registry，避免每次 render 复制全部字体。
+`await readPortableFont(id, { signal })` cooperative 取得 detached byte copy并重建/更新自己的 registry，避免每次 render 复制全部字体。
 `selectionManager('portable')` 复用同一 Fonts Selection Port，但只投影这些真正可加载的 candidate。
 
 完整用户路径见 [`docs/plugins/rendering/fonts.md`](../../../docs/plugins/rendering/fonts.md)，设计不变量见 [`DESIGN.md`](DESIGN.md)。

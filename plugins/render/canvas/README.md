@@ -14,7 +14,7 @@ export class BadgePlugin extends BasePlugin {
 	}
 
 	async render(): Promise<Buffer> {
-		const canvas = this.canvas.createCanvas(640, 320)
+		const canvas = this.canvas.createCanvasSync(640, 320)
 		const context = canvas.getContext('2d')
 		context.fillStyle = '#111827'
 		context.fillRect(0, 0, canvas.width, canvas.height)
@@ -35,20 +35,20 @@ Host catalog 至少包含 `[FontsPlugin, CanvasPlugin, BadgePlugin]`。FontsPlug
 绘制或编码。selector 修改 provider 默认字体后，后续创建的 raster/SVG context 会自动使用新 family；已有 context
 保持不变。上传和删除字体统一在 FontsPlugin 页面完成。
 
-`createCanvas()` 返回上游原生 Canvas；2D context、measure、encode 和 stream API 不做二次包装。
-`createImage()` 返回未加载的原生 Image，供 ECharts 这类必须同步返回 placeholder 的 platform adapter 使用；普通
-图片输入仍优先使用会执行 byte/dimension budget 的 `decodeImage()`。
-`createSvgCanvas()` 返回原生 SVG Canvas，`mode` 是上游三个互斥 enum variant，默认 `compact`。
+`createCanvasSync()` 返回上游原生 Canvas；`Sync` 表示 allocation 和后续 2D drawing 直接占用调用线程，context、
+measure、encode 和 stream API 不做二次包装。重 drawing 应在业务 worker task 中使用 `@pluxel/canvas/worker`。
+`createSvgCanvasSync()` 返回原生 SVG Canvas，`mode` 是上游三个互斥 enum variant，默认 `compact`。
 `decodeImage(bytes, { signal })` 只接受已经取得的 bytes；远程下载应先通过
 `@pluxel/wretch` 或领域 HTTP client 完成。
-decode 默认复制 borrowed bytes；render-local buffer 不再复用时可传 `dataOwnership: 'owned'` 永久移交 storage，避免输入
-copy。owned 数据在 abort 或 decode failure 后也不会返还，调用方不得再次读取或修改。
+decode 默认在 Promise settle 前借用 bytes，并用 cooperative chunk 复制；render-local buffer 不再复用时可传
+`dataOwnership: 'owned'` 永久移交 storage，避免输入 copy。owned 数据在 abort 或 decode failure 后也不会返还。
 
 默认 factory 限制为 8192×8192、16,777,216 pixels 和 32 MiB encoded image。返回的原生 Canvas 仍允许调用方自行
 resize，因此这些限制只保证通过插件 factory 发生的初始分配。native decode 无法中止；abort 会停止等待并丢弃迟到
-结果，底层 decode 可能继续到完成。
+结果，底层 decode 可能继续到完成。root decode 使用 owner-fair admission，默认最多 4 个在途、32 个全局等待、
+每 caller 8 个等待；不可取消的 native work 真正 settle 前不会提前归还槽位。
 
-`canvas.assertDimensions()` 可在分配前复用同一校验；`canvas.workerSnapshot` 返回包含 native/text limits 和当前
+`canvas.assertDimensions()` 可在分配前复用同一校验；`canvas.workerSnapshot` 返回包含 native/text/decode limits 和当前
 FontsPlugin family/revision 的纯数据快照。worker entry 不启动第二个 CanvasPlugin：
 
 ```ts
@@ -66,8 +66,13 @@ registry 中验证。需要 Pretext 时单独从 `@pluxel/canvas/worker/pretext`
 同一线程内连续使用相同 limits/font revision 时，normalized snapshot 和无状态 adapter 会复用；每次绘制的原生 surface
 仍由当前任务独立创建和拥有。
 
-Canvas 同时集成 `@chenglou/pretext` 的服务端测量桥。`prepareText()` / `prepareTextWithSegments()` /
-`prepareRichInline()` 负责选择 Pluxel 默认 family、检查输入预算并在 Node 上提供 native measurement context；
+worker-only `createImage()` 是同步 platform adapter placeholder，不是 decode 资源边界；需要保留 placeholder identity 的
+受信任 artifact 应立即调用 `decodeImageInto(image, bytes)`。它在 worker snapshot 的 concurrency/queue 内只 decode 一次，
+并要求 settle 前不复用或修改 placeholder；其他调用方直接使用 `decodeImage()`。root CanvasPlugin 不暴露这个可绕过
+budget 的裸 Image factory。
+
+Canvas 同时集成 `@chenglou/pretext` 的服务端测量桥。`prepareTextSync()` / `prepareTextWithSegmentsSync()` /
+`prepareRichInlineSync()` 负责选择 Pluxel 默认 family、检查输入预算并在 Node 上提供 native measurement context；
 `layoutWithLines()`、`measureLineStats()`、rich-inline walkers 等纯 arithmetic helper 从本包直接导出。Pretext 的共享
 cache 会在字体 registry revision 改变或累计字符达到配置预算时清空，避免动态字体替换后继续复用旧宽度。
 

@@ -81,7 +81,7 @@ function addEChartsHost(host: RuntimeHost): void {
 
 async function verifyManagedWorkerFont(consumer: EChartsTestConsumer, path: string): Promise<void> {
 	const family = `ECharts Worker ${randomUUID()}`
-	consumer.fonts.registerFromPath({ path, family })
+	await consumer.fonts.registerFromPath({ path, family })
 	await consumer.fonts.selectionManager().setDefaultFamily(family)
 	expect(consumer.echarts.defaultFont.family).toBe(family)
 	await expect(
@@ -100,7 +100,7 @@ describe('EChartsPlugin', () => {
 				expect('workbench' in host.ctx).toBe(false)
 				expect(host.ctx.workbench).toBeUndefined()
 
-				const source = consumer.canvas.createCanvas(4, 4)
+				const source = consumer.canvas.createCanvasSync(4, 4)
 				source.getContext('2d').fillRect(0, 0, 4, 4)
 				const sourceBytes = await source.encode('png')
 				const dataUrl = `data:image/png;base64,${sourceBytes.toString('base64')}`
@@ -143,16 +143,116 @@ describe('EChartsPlugin', () => {
 				await expect(
 					consumer.echarts.render({ width: 240, height: 120, option: formatterOption }),
 				).rejects.toMatchObject({ code: 'WORKER_INPUT_UNSUPPORTED' })
-				await expect(
-					consumer.echarts.render({
-						width: 240,
-						height: 120,
-						option: formatterOption,
-						execution: 'inline',
-					}),
-				).resolves.toMatchObject({ mediaType: 'image/png' })
 
 				if (fontPath) await verifyManagedWorkerFont(consumer, fontPath)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('rejects oversized or imperative options before worker admission', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				host.cfg(EChartsPlugin).set({ maxOptionNodes: 8, maxThemeNodes: 2 })
+				await host.commit()
+				const echarts = host.require(EChartsTestConsumer).echarts
+				await expect(
+					echarts.render({
+						width: 32,
+						height: 32,
+						option: { series: [{ type: 'line', data: [1, 2, 3, 4, 5, 6, 7, 8] }] },
+					}),
+				).rejects.toMatchObject({ code: 'OPTION_TOO_LARGE' })
+
+				let getterCalled = false
+				const option = Object.defineProperty({}, 'series', {
+					enumerable: true,
+					get() {
+						getterCalled = true
+						return []
+					},
+				}) as EChartsOption
+				await expect(echarts.render({ width: 32, height: 32, option })).rejects.toMatchObject({
+					code: 'WORKER_INPUT_UNSUPPORTED',
+				})
+				expect(getterCalled).toBe(false)
+				await expect(
+					echarts.render({
+						width: 32,
+						height: 32,
+						option: {},
+						setOption: { transition: ((): void => undefined) as never },
+					}),
+				).rejects.toMatchObject({ code: 'WORKER_INPUT_UNSUPPORTED' })
+
+				expect(() =>
+					echarts.registerTheme({ name: 'too-many-values', theme: { color: ['red'] } }),
+				).toThrow(expect.objectContaining({ code: 'THEME_TOO_LARGE' }))
+				let themeGetterCalled = false
+				const theme = Object.defineProperty({}, 'color', {
+					enumerable: true,
+					get() {
+						themeGetterCalled = true
+						return ['red']
+					},
+				})
+				expect(() => echarts.registerTheme({ name: 'accessor', theme })).toThrow(
+					expect.objectContaining({ code: 'INVALID_THEME' }),
+				)
+				expect(themeGetterCalled).toBe(false)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('rejects a full worker queue before walking the option graph', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				await host.commit()
+				const echarts = host.require(EChartsTestConsumer).echarts
+				await echarts.render({ width: 16, height: 16, option: {} })
+				const running = echarts.render({ width: 640, height: 360, option: barOption })
+				const queued = echarts.render({ width: 320, height: 180, option: barOption })
+				let getterCalled = false
+				const rejectedOption = Object.defineProperty({}, 'series', {
+					enumerable: true,
+					get() {
+						getterCalled = true
+						return []
+					},
+				}) as EChartsOption
+
+				await expect(
+					echarts.render({ width: 16, height: 16, option: rejectedOption }),
+				).rejects.toMatchObject({ code: 'RENDER_BUSY' })
+				expect(getterCalled).toBe(false)
+				await Promise.all([running, queued])
+			},
+			{
+				workbench: false,
+				workers: { maxThreads: 1, maxQueuedTasks: 1, maxQueuedTasksPerPlugin: 1 },
+			},
+		)
+	})
+
+	it('cancels cooperative measurement of a large option string', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				host.cfg(EChartsPlugin).set({ maxOptionBytes: 4 * 1024 * 1024 })
+				await host.commit()
+				const controller = new AbortController()
+				const reason = new DOMException('cancel option measurement', 'AbortError')
+				const rendering = host.require(EChartsTestConsumer).echarts.render({
+					width: 16,
+					height: 16,
+					option: { title: { text: '界'.repeat(1024 * 1024) } },
+					signal: controller.signal,
+				})
+				setImmediate(() => controller.abort(reason))
+				await expect(rendering).rejects.toBe(reason)
 			},
 			{ workbench: false },
 		)
@@ -175,6 +275,141 @@ describe('EChartsPlugin', () => {
 						},
 					}),
 				).resolves.toMatchObject({ mediaType: 'image/png' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('bounds distinct image sources and aggregate decoded pixels per render', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				host.cfg(EChartsPlugin).set({ maxImages: 2, maxTotalImagePixels: 20 })
+				await host.commit()
+				const echarts = host.require(EChartsTestConsumer).echarts
+				const sources = ['#ef4444', '#22c55e', '#3b82f6'].map(
+					(color) =>
+						`data:image/svg+xml,${encodeURIComponent(
+							`<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="${color}"/></svg>`,
+						)}`,
+				)
+				const imageOption = (images: readonly string[]): EChartsOption => ({
+					graphic: {
+						elements: images.map((image, index) => ({
+							type: 'image',
+							left: index * 4,
+							top: 0,
+							style: { image, width: 4, height: 4 },
+						})),
+					},
+				})
+
+				await expect(
+					echarts.render({ width: 16, height: 8, option: imageOption(sources) }),
+				).rejects.toMatchObject({ code: 'IMAGE_SOURCE_TOO_LARGE' })
+				await expect(
+					echarts.render({ width: 16, height: 8, option: imageOption(sources.slice(0, 2)) }),
+				).rejects.toMatchObject({ code: 'IMAGE_SOURCE_TOO_LARGE' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('bounds aggregate decoded image source bytes before native decode', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				host.cfg(EChartsPlugin).set({ maxImages: 2, maxTotalImageBytes: 1 })
+				await host.commit()
+				const images = [
+					'data:application/octet-stream;base64,AA==',
+					'data:application/octet-stream;base64,AQ==',
+				]
+				await expect(
+					host.require(EChartsTestConsumer).echarts.render({
+						width: 16,
+						height: 8,
+						option: {
+							graphic: {
+								elements: images.map((image, index) => ({
+									type: 'image',
+									left: index,
+									top: 0,
+									style: { image, width: 1, height: 1 },
+								})),
+							},
+						},
+					}),
+				).rejects.toMatchObject({ code: 'IMAGE_SOURCE_TOO_LARGE' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('rejects encoded output before it crosses the worker boundary', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				host.cfg(EChartsPlugin).set({ maxOutputBytes: 8 })
+				await host.commit()
+
+				await expect(
+					host
+						.require(EChartsTestConsumer)
+						.echarts.render({ width: 32, height: 32, option: barOption }),
+				).rejects.toMatchObject({ code: 'OUTPUT_TOO_LARGE' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('bounds provider-wide retained theme count and returns capacity on dispose', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				addEnabled(host, [EChartsOtherConsumer])
+				host.cfg(EChartsPlugin).set({ maxTotalThemes: 1 })
+				await host.commit()
+				const first = host.require(EChartsTestConsumer).echarts
+				const second = host.require(EChartsOtherConsumer).echarts
+				const registration = first.registerTheme({ name: 'first', theme: {} })
+
+				expect(() => second.registerTheme({ name: 'second', theme: {} })).toThrow(
+					expect.objectContaining({ code: 'THEME_LIMIT_EXCEEDED' }),
+				)
+				registration.dispose()
+				const replacement = second.registerTheme({ name: 'second', theme: {} })
+				expect(replacement.active).toBe(true)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('bounds aggregate retained theme bytes and reconciles caller cleanup', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				addEnabled(host, [EChartsOtherConsumer])
+				host.cfg(EChartsPlugin).set({ maxTotalThemes: 2, maxTotalThemeBytes: 20 })
+				await host.commit()
+				const first = host.require(EChartsTestConsumer).echarts
+				const second = host.require(EChartsOtherConsumer).echarts
+				const registration = first.registerTheme({
+					name: 'first',
+					theme: { a: '1234567890' },
+				})
+
+				expect(() => second.registerTheme({ name: 'second', theme: { a: '1234567890' } })).toThrow(
+					expect.objectContaining({ code: 'THEME_LIMIT_EXCEEDED' }),
+				)
+				host.cfg(EChartsTestConsumer).disable()
+				await host.commit()
+				expect(registration.active).toBe(false)
+				const replacement = second.registerTheme({
+					name: 'second',
+					theme: { a: '1234567890' },
+				})
+				expect(replacement.active).toBe(true)
 			},
 			{ workbench: false },
 		)

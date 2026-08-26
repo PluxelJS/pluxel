@@ -91,16 +91,17 @@ describe('TakumiPlugin', () => {
 				await host.commit()
 				const consumer = host.require(TakumiTestConsumer)
 				const family = `Pluxel Takumi ${crypto.randomUUID()}`
-				const registration = consumer.fonts.registerFromPath({ path: fontPath!, family })
+				const registration = await consumer.fonts.registerFromPath({ path: fontPath!, family })
 				const snapshot = consumer.fonts.portableFonts
 				expect(snapshot.fonts).toEqual([
 					expect.objectContaining({ family, byteLength: expect.any(Number) }),
 				])
 				const id = snapshot.fonts[0]!.id
-				const firstRead = consumer.fonts.readPortableFont(id)
+				const firstRead = await consumer.fonts.readPortableFont(id)
 				const firstByte = firstRead[0]
 				firstRead[0] = firstByte === 0 ? 1 : 0
-				expect(consumer.fonts.readPortableFont(id)[0]).toBe(firstByte)
+				const secondRead = await consumer.fonts.readPortableFont(id)
+				expect(secondRead[0]).toBe(firstByte)
 
 				const rendered = await consumer.takumi.render({
 					content: `<div style="font-family:'${family}';font-size:28px">Portable font</div>`,
@@ -115,6 +116,29 @@ describe('TakumiPlugin', () => {
 			{ workbench: false },
 		)
 	})
+
+	it.skipIf(!fontPath)(
+		'rejects portable font collections over the resource-count ceiling',
+		async () => {
+			await withRuntimeHost(
+				async (host) => {
+					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					host.cfg(TakumiPlugin).set({ maxFonts: 0 })
+					await host.commit()
+					const consumer = host.require(TakumiTestConsumer)
+					const registration = await consumer.fonts.registerFromPath({
+						path: fontPath!,
+						family: `Pluxel Takumi Count ${crypto.randomUUID()}`,
+					})
+					await expect(
+						consumer.takumi.render({ content: '<div>font limit</div>', width: 10, height: 10 }),
+					).rejects.toMatchObject({ code: 'FONT_COUNT_EXCEEDED' })
+					registration.dispose()
+				},
+				{ workbench: false },
+			)
+		},
+	)
 
 	it('rejects over-budget pixels and blocks implicit remote image fetches', async () => {
 		await withRuntimeHost(
@@ -187,7 +211,68 @@ describe('TakumiPlugin', () => {
 		)
 	})
 
-	it('rejects shared-memory node images that cannot be snapshotted', async () => {
+	it('bounds extracted stylesheets and distinct content image sources by count', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				host.cfg(TakumiPlugin).set({ maxStylesheets: 1, maxImages: 1 })
+				await host.commit()
+				const takumi = host.require(TakumiTestConsumer).takumi
+
+				await expect(
+					takumi.render({
+						content: '<style>.a{color:red}</style><style>.b{color:blue}</style><div>x</div>',
+						width: 10,
+						height: 10,
+					}),
+				).rejects.toMatchObject({ code: 'STYLESHEET_TOO_LARGE' })
+
+				await expect(
+					takumi.render({
+						content: {
+							type: 'container',
+							children: [
+								{ type: 'image', src: 'memory://one', width: 1, height: 1 },
+								{ type: 'image', src: 'memory://two', width: 1, height: 1 },
+							],
+						},
+						width: 10,
+						height: 10,
+					}),
+				).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('rejects structured accessors without invoking caller code', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				await host.commit()
+				let getterCalled = false
+				const content = Object.defineProperty({ type: 'container' }, 'children', {
+					enumerable: true,
+					get() {
+						getterCalled = true
+						return []
+					},
+				})
+
+				await expect(
+					host.require(TakumiTestConsumer).takumi.render({
+						content: content as never,
+						width: 10,
+						height: 10,
+					}),
+				).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+				expect(getterCalled).toBe(false)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('requires node image bytes to use the bounded preloaded-images path', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
@@ -245,6 +330,60 @@ describe('TakumiPlugin', () => {
 					controller.abort(reason)
 					expect(nativeSignal?.aborted).toBe(true)
 					await expect(rendering).rejects.toBe(reason)
+				},
+				{ workbench: false },
+			)
+		} finally {
+			nativeRender.mockRestore()
+		}
+	})
+
+	it('cancels cooperative image snapshotting before native rendering', async () => {
+		const nativeRender = vi.spyOn(Renderer.prototype, 'render')
+		try {
+			await withRuntimeHost(
+				async (host) => {
+					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					await host.commit()
+					const controller = new AbortController()
+					const rendered = host.require(TakumiTestConsumer).takumi.render({
+						content: '<img src="memory://image">',
+						images: [{ src: 'memory://image', data: new Uint8Array(2 * 1024 * 1024) }],
+						width: 10,
+						height: 10,
+						signal: controller.signal,
+					})
+					queueMicrotask(() => controller.abort())
+					await expect(rendered).rejects.toMatchObject({ name: 'AbortError' })
+					expect(nativeRender).not.toHaveBeenCalled()
+				},
+				{ workbench: false },
+			)
+		} finally {
+			nativeRender.mockRestore()
+		}
+	})
+
+	it('cancels cooperative SVG output measurement', async () => {
+		const controller = new AbortController()
+		const reason = new DOMException('cancel SVG measurement', 'AbortError')
+		const nativeRender = vi.spyOn(Renderer.prototype, 'renderSvg').mockImplementation(async () => {
+			setImmediate(() => controller.abort(reason))
+			return `<svg>${'界'.repeat(1024 * 1024)}</svg>`
+		})
+		try {
+			await withRuntimeHost(
+				async (host) => {
+					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					await host.commit()
+					await expect(
+						host.require(TakumiTestConsumer).takumi.renderSvg({
+							content: { type: 'text', text: 'SVG' },
+							width: 10,
+							height: 10,
+							signal: controller.signal,
+						}),
+					).rejects.toBe(reason)
 				},
 				{ workbench: false },
 			)
@@ -363,6 +502,34 @@ describe('RenderScheduler', () => {
 			'other',
 		])
 		expect(order).toEqual(['first', 'second', 'other', 'third'])
+		await scheduler.close(new Error('test complete'))
+	})
+
+	it('rejects queued work and waits for active work when closed', async () => {
+		const scheduler = new RenderScheduler(1, 1, 1)
+		const owner = scheduler.createOwner()
+		let finish!: () => void
+		const active = scheduler.run(owner, new AbortController().signal, async () => {
+			await new Promise<void>((resolve) => {
+				finish = resolve
+			})
+		})
+		const queued = scheduler.run(owner, new AbortController().signal, async (): Promise<void> => {})
+		await Promise.resolve()
+		const close = scheduler.close(new Error('scheduler stopped'))
+		let closed = false
+		void close.then((): undefined => {
+			closed = true
+			return undefined
+		})
+
+		await expect(queued).rejects.toThrow('scheduler stopped')
+		await Promise.resolve()
+		expect(closed).toBe(false)
+		finish()
+		await active
+		await close
+		expect(closed).toBe(true)
 	})
 })
 

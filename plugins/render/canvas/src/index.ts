@@ -34,7 +34,6 @@ import {
 	DOMPoint,
 	DOMRect,
 	FillType,
-	Image as NativeImage,
 	Path2D,
 	PathOp,
 	StrokeCap,
@@ -62,6 +61,7 @@ import {
 	type CanvasTextPreparationOptions,
 	type CanvasTextResourceLimits,
 	type CanvasWorkerAdapter,
+	type CanvasWorkerDecodeLimits,
 	type CanvasWorkerFontSnapshot,
 	type CanvasWorkerSnapshot,
 	type CanvasWorkerTextLayout,
@@ -70,6 +70,7 @@ import {
 	type SvgCanvasOptions,
 } from './contracts.ts'
 import { CanvasTextLayoutController } from './text-layout.ts'
+import { DecodeScheduler, type DecodeSchedulerOwner } from './decode-scheduler.ts'
 import { assertCanvasDimensions, resolveImageDataOwnership } from './worker-internal.ts'
 
 const GENERIC_FONT_FAMILIES = new Set(['serif', 'sans-serif', 'monospace'])
@@ -83,10 +84,15 @@ const CanvasWorkbench = workbench.portOutlet({
 	}),
 })
 
+type CanvasGeneration = Readonly<{
+	scheduler: DecodeScheduler
+}>
+
 type CanvasLease = {
 	readonly owner: Context
-	readonly generation: object
+	readonly generation: CanvasGeneration
 	readonly controller: AbortController
+	readonly schedulerOwner: DecodeSchedulerOwner
 	active: boolean
 }
 
@@ -98,15 +104,28 @@ export class CanvasPlugin extends BasePlugin {
 	private readonly textLayout = new CanvasTextLayoutController()
 	private limitsSnapshot?: CanvasResourceLimits
 	private textLimitsSnapshot?: CanvasTextResourceLimits
+	private workerDecodeLimitsSnapshot?: CanvasWorkerDecodeLimits
 	private workerPolicy?: Readonly<{ revision: number; snapshot: CanvasWorkerSnapshot }>
-	private generation?: object
+	private generation?: CanvasGeneration
 
 	constructor(private readonly fonts: FontsPlugin) {
 		super()
 	}
 
 	override async init(): Promise<void> {
-		const generation = Object.freeze({})
+		if (this.config.maxQueuedDecodesPerConsumer > this.config.maxQueuedDecodes) {
+			throw new CanvasError(
+				'INVALID_IMAGE',
+				'maxQueuedDecodesPerConsumer must not exceed maxQueuedDecodes',
+			)
+		}
+		const generation: CanvasGeneration = Object.freeze({
+			scheduler: new DecodeScheduler(
+				this.config.maxConcurrentDecodes,
+				this.config.maxQueuedDecodes,
+				this.config.maxQueuedDecodesPerConsumer,
+			),
+		})
 		this.limitsSnapshot = Object.freeze({
 			maxWidth: this.config.maxWidth,
 			maxHeight: this.config.maxHeight,
@@ -118,16 +137,26 @@ export class CanvasPlugin extends BasePlugin {
 			maxRichTextItems: this.config.maxRichTextItems,
 			maxTextCacheCharacters: this.config.maxTextCacheCharacters,
 		})
+		this.workerDecodeLimitsSnapshot = Object.freeze({
+			maxConcurrent: this.config.maxConcurrentDecodes,
+			maxQueued: this.config.maxQueuedDecodes,
+		})
 		this.workerPolicy = undefined
 		this.generation = generation
 		this.ctx.effects.defer(
-			() => {
+			async () => {
+				const reason = new CanvasError(
+					'NOT_RUNNING',
+					'Canvas capability belongs to a stopped plugin generation',
+				)
 				if (this.generation === generation) {
 					this.generation = undefined
 					this.limitsSnapshot = undefined
 					this.textLimitsSnapshot = undefined
+					this.workerDecodeLimitsSnapshot = undefined
 				}
-				for (const lease of this.leases) this.closeLease(lease)
+				for (const lease of this.leases) this.closeLease(lease, reason)
+				await generation.scheduler.close(reason)
 			},
 			{ tag: 'canvas-generation' },
 		)
@@ -160,6 +189,7 @@ export class CanvasPlugin extends BasePlugin {
 		const snapshot = Object.freeze({
 			limits: this.resourceLimits(),
 			textLimits: this.textResourceLimits(),
+			decodeLimits: this.workerDecodeLimits(),
 			font: Object.freeze({
 				cssFamily: defaultFont.cssFamily,
 				revision,
@@ -174,21 +204,15 @@ export class CanvasPlugin extends BasePlugin {
 	 * Creates a native raster Canvas after enforcing the host's initial allocation budget.
 	 * The returned native object is caller-owned and may be resized independently afterwards.
 	 */
-	createCanvas(width: number, height: number): Canvas {
+	createCanvasSync(width: number, height: number): Canvas {
 		this.assertDimensions(width, height)
 		const canvas = createNativeCanvas(width, height)
 		this.applyDefaultFont(canvas)
 		return canvas
 	}
 
-	/** Creates an unloaded native Image for synchronous platform adapter contracts. */
-	createImage(): Image {
-		this.requireLease()
-		return new NativeImage()
-	}
-
 	/** Creates a native SVG Canvas after enforcing the same dimension and pixel budget. */
-	createSvgCanvas(width: number, height: number, options: SvgCanvasOptions = {}): SvgCanvas {
+	createSvgCanvasSync(width: number, height: number, options: SvgCanvasOptions = {}): SvgCanvas {
 		this.assertDimensions(width, height)
 		const flags =
 			options.mode === 'text-to-paths'
@@ -217,18 +241,33 @@ export class CanvasPlugin extends BasePlugin {
 			)
 		}
 		const dataOwnership = resolveImageDataOwnership(options)
-		if (options.signal?.aborted) throw abortReason(options.signal)
-		const source = dataOwnership === 'owned' ? data : Buffer.from(data)
-		const task = decodeNativeImage(source)
-		const image = await waitForDecode(task, [lease.controller.signal, options.signal])
-		if (!lease.active || this.generation !== lease.generation) {
-			throw new CanvasError(
-				'NOT_RUNNING',
-				'Canvas capability belongs to a stopped plugin generation',
-			)
+		if (options.signal !== undefined && !isAbortSignal(options.signal)) {
+			throw new CanvasError('INVALID_IMAGE', 'signal must be an AbortSignal')
 		}
-		this.assertDimensions(image.width, image.height)
-		return image
+		const abortLink = linkAbortSignals([lease.controller.signal, options.signal])
+		try {
+			return await lease.generation.scheduler.run(
+				lease.schedulerOwner,
+				abortLink.signal,
+				async (hold) => {
+					const source =
+						dataOwnership === 'owned' ? data : await snapshotBytes(data, [abortLink.signal])
+					const task = decodeNativeImage(source)
+					hold(task)
+					const image = await waitForDecode(task, [abortLink.signal])
+					if (!lease.active || this.generation !== lease.generation) {
+						throw new CanvasError(
+							'NOT_RUNNING',
+							'Canvas capability belongs to a stopped plugin generation',
+						)
+					}
+					this.assertDimensions(image.width, image.height)
+					return image
+				},
+			)
+		} finally {
+			abortLink.dispose()
+		}
 	}
 
 	/**
@@ -236,17 +275,17 @@ export class CanvasPlugin extends BasePlugin {
 	 * family at `fontSize` (16px by default). Existing prepared values remain immutable when the
 	 * default font changes.
 	 */
-	prepareText(input: PrepareTextInput): PreparedText {
+	prepareTextSync(input: PrepareTextInput): PreparedText {
 		return this.textLayout.prepareText(input, this.workerSnapshot)
 	}
 
 	/** Prepares the richer Pretext representation required for manual Canvas line rendering. */
-	prepareTextWithSegments(input: PrepareTextInput): PreparedTextWithSegments {
+	prepareTextWithSegmentsSync(input: PrepareTextInput): PreparedTextWithSegments {
 		return this.textLayout.prepareTextWithSegments(input, this.workerSnapshot)
 	}
 
 	/** Prepares inline fragments while applying the Pluxel default family to items without `font`. */
-	prepareRichInline(items: readonly CanvasRichInlineItem[]): PreparedRichInline {
+	prepareRichInlineSync(items: readonly CanvasRichInlineItem[]): PreparedRichInline {
 		return this.textLayout.prepareRichInline(items, this.workerSnapshot)
 	}
 
@@ -268,6 +307,7 @@ export class CanvasPlugin extends BasePlugin {
 			owner,
 			generation,
 			controller: new AbortController(),
+			schedulerOwner: generation.scheduler.createOwner(),
 			active: true,
 		}
 		this.leases.add(lease)
@@ -281,12 +321,14 @@ export class CanvasPlugin extends BasePlugin {
 		return lease
 	}
 
-	private closeLease(lease: CanvasLease): void {
+	private closeLease(lease: CanvasLease, reason?: Error): void {
 		if (!lease.active) return
 		lease.active = false
-		lease.controller.abort(
-			new CanvasError('NOT_RUNNING', 'Canvas capability belongs to a stopped plugin generation'),
-		)
+		const stopped =
+			reason ??
+			new CanvasError('NOT_RUNNING', 'Canvas capability belongs to a stopped plugin generation')
+		lease.controller.abort(stopped)
+		lease.generation.scheduler.closeOwner(lease.schedulerOwner, stopped)
 		this.leases.delete(lease)
 		if (this.leasesByOwner.get(lease.owner) === lease) this.leasesByOwner.delete(lease.owner)
 	}
@@ -312,6 +354,67 @@ export class CanvasPlugin extends BasePlugin {
 		}
 		return this.textLimitsSnapshot
 	}
+
+	private workerDecodeLimits(): CanvasWorkerDecodeLimits {
+		if (!this.workerDecodeLimitsSnapshot) {
+			throw new CanvasError('NOT_RUNNING', 'CanvasPlugin is not running')
+		}
+		return this.workerDecodeLimitsSnapshot
+	}
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+	return Boolean(
+		value &&
+		typeof value === 'object' &&
+		typeof (value as AbortSignal).aborted === 'boolean' &&
+		typeof (value as AbortSignal).addEventListener === 'function' &&
+		typeof (value as AbortSignal).removeEventListener === 'function',
+	)
+}
+
+function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readonly<{
+	signal: AbortSignal
+	dispose(): void
+}> {
+	const controller = new AbortController()
+	const listeners: Array<Readonly<{ signal: AbortSignal; listener: () => void }>> = []
+	for (const signal of signals) {
+		if (!signal) continue
+		if (signal.aborted) {
+			controller.abort(signal.reason)
+			break
+		}
+		const listener = () => controller.abort(signal.reason)
+		signal.addEventListener('abort', listener, { once: true })
+		listeners.push({ signal, listener })
+	}
+	return Object.freeze({
+		signal: controller.signal,
+		dispose() {
+			for (const { signal, listener } of listeners) signal.removeEventListener('abort', listener)
+		},
+	})
+}
+
+async function snapshotBytes(
+	data: Uint8Array,
+	signals: readonly (AbortSignal | undefined)[],
+): Promise<Uint8Array> {
+	const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal))
+	for (const signal of activeSignals) {
+		if (signal.aborted) throw abortReason(signal)
+	}
+	const snapshot = new Uint8Array(data.byteLength)
+	const chunkBytes = 1024 * 1024
+	for (let offset = 0; offset < data.byteLength; offset += chunkBytes) {
+		if (offset > 0) await new Promise<void>((resolve) => setImmediate(resolve))
+		for (const signal of activeSignals) {
+			if (signal.aborted) throw abortReason(signal)
+		}
+		snapshot.set(data.subarray(offset, Math.min(offset + chunkBytes, data.byteLength)), offset)
+	}
+	return snapshot
 }
 
 async function waitForDecode<T>(
@@ -393,6 +496,7 @@ export type {
 	CanvasTextPreparationOptions,
 	CanvasTextResourceLimits,
 	CanvasWorkerAdapter,
+	CanvasWorkerDecodeLimits,
 	CanvasWorkerFontSnapshot,
 	CanvasWorkerSnapshot,
 	CanvasWorkerTextLayout,

@@ -24,6 +24,10 @@ export type RenderEngineInput = Readonly<{
 	setOption?: Readonly<SetOptionOpts>
 	output: RenderOutput
 	maxDataUrlBytes: number
+	maxImages: number
+	maxTotalImageBytes: number
+	maxTotalImagePixels: number
+	maxOutputBytes: number
 }>
 
 export type RenderEngineResult = Readonly<{
@@ -38,6 +42,8 @@ export interface RenderImage {
 	onload: null | (() => void)
 	onerror: null | ((cause: unknown) => void)
 	src: unknown
+	readonly width: number
+	readonly height: number
 }
 
 export interface RenderContext2D {
@@ -54,7 +60,8 @@ export interface RenderCanvas {
 export interface RenderCanvasAdapter {
 	createCanvas(width: number, height: number): RenderCanvas
 	createImage(): RenderImage
-	decodeImage(
+	decodeImageInto(
+		image: RenderImage,
 		data: Uint8Array,
 		options: { signal: AbortSignal; dataOwnership: 'owned' },
 	): Promise<RenderImage>
@@ -65,11 +72,15 @@ type RenderScope = {
 	readonly defaultFontCssFamily: string
 	readonly signal: AbortSignal
 	readonly maxDataUrlBytes: number
+	readonly maxImages: number
+	readonly maxTotalImageBytes: number
+	readonly maxTotalImagePixels: number
 	imageSources?: Map<string, Uint8Array>
 	imageKeys?: Map<string, string>
-	decodedImages?: Map<string, Promise<RenderImage>>
 	readonly pendingImages: Set<Promise<void>>
 	readonly renderId: number
+	imageBytes: number
+	imagePixels: number
 	nextImageId: number
 	measureContext?: RenderContext2D
 }
@@ -79,8 +90,6 @@ type PlatformState = {
 	readonly storage: AsyncLocalStorage<RenderScope>
 	nextRenderId: number
 }
-
-export type RenderInputOwnership = 'borrowed' | 'owned'
 
 let cachedPlatformState: PlatformState | undefined
 
@@ -97,7 +106,6 @@ export async function renderECharts(
 	input: RenderEngineInput,
 	canvas: RenderCanvasAdapter,
 	signal: AbortSignal,
-	inputOwnership: RenderInputOwnership = 'borrowed',
 ): Promise<RenderEngineResult> {
 	assertEChartsVersion()
 	if (signal.aborted) throw abortReason(signal)
@@ -107,20 +115,22 @@ export async function renderECharts(
 		defaultFontCssFamily: input.defaultFontCssFamily,
 		signal,
 		maxDataUrlBytes: input.maxDataUrlBytes,
+		maxImages: input.maxImages,
+		maxTotalImageBytes: input.maxTotalImageBytes,
+		maxTotalImagePixels: input.maxTotalImagePixels,
 		pendingImages: new Set(),
 		renderId: platformState.nextRenderId++,
+		imageBytes: 0,
+		imagePixels: 0,
 		nextImageId: 0,
 	}
 	let chart: EChartsType | undefined
 	try {
-		const option =
-			inputOwnership === 'owned'
-				? rewriteDataUrlsInPlace(input.option, scope)
-				: rewriteDataUrls(input.option, scope)
+		const option = rewriteDataUrlsInPlace(input.option, scope)
 		// Rewriting is complete; keep decoded bytes, but do not retain large source strings during render.
 		scope.imageKeys = undefined
 		const optionWithFont = input.injectOptionFont
-			? applyOptionDefaultFont(option, input.defaultFontCssFamily, inputOwnership)
+			? applyOptionDefaultFont(option, input.defaultFontCssFamily)
 			: option
 		const physicalWidth = Math.ceil(input.width * input.devicePixelRatio)
 		const physicalHeight = Math.ceil(input.height * input.devicePixelRatio)
@@ -142,6 +152,12 @@ export async function renderECharts(
 					: root.encode(input.output.format, input.output.quality)
 			return waitForSignal(encoded, signal)
 		})
+		if (data.byteLength > input.maxOutputBytes) {
+			throw new EChartsError(
+				'OUTPUT_TOO_LARGE',
+				`ECharts output is ${data.byteLength} bytes; the configured limit is ${input.maxOutputBytes}`,
+			)
+		}
 		return Object.freeze({
 			data,
 			mediaType: mediaTypeFor(input.output.format),
@@ -239,37 +255,14 @@ async function loadPlatformImage(
 ): Promise<void> {
 	let callbackInvoked = false
 	try {
-		const decoded = await decodePlatformImage(scope, src)
-		await new Promise<void>((resolve, reject) => {
-			image.onload = () => {
-				callbackInvoked = true
-				try {
-					onload.call(image)
-					resolve()
-				} catch (cause) {
-					reject(
-						cause instanceof Error
-							? cause
-							: new EChartsError('IMAGE_LOAD_FAILED', 'ECharts image callback failed', {
-									cause,
-								}),
-					)
-				}
-			}
-			image.onerror = (cause) => {
-				callbackInvoked = true
-				try {
-					onerror.call(image)
-				} finally {
-					reject(
-						new EChartsError('IMAGE_LOAD_FAILED', 'Native image adapter rejected decoded bytes', {
-							cause,
-						}),
-					)
-				}
-			}
-			image.src = decoded.src
+		const bytes = resolveImageSource(scope, src)
+		await scope.canvas.decodeImageInto(image, bytes, {
+			signal: scope.signal,
+			dataOwnership: 'owned',
 		})
+		recordDecodedImage(scope, image)
+		callbackInvoked = true
+		onload.call(image)
 	} catch (cause) {
 		if (!callbackInvoked) {
 			try {
@@ -279,22 +272,13 @@ async function loadPlatformImage(
 			}
 		}
 		if (cause instanceof EChartsError) throw cause
+		if (hasErrorCode(cause, 'DECODE_BUSY')) {
+			throw new EChartsError('RENDER_BUSY', 'Canvas worker image decode queue is full', {
+				cause,
+			})
+		}
 		throw new EChartsError('IMAGE_LOAD_FAILED', 'ECharts image loading failed', { cause })
 	}
-}
-
-function decodePlatformImage(scope: RenderScope, source: string): Promise<RenderImage> {
-	const decodedImages = (scope.decodedImages ??= new Map())
-	const existing = decodedImages.get(source)
-	if (existing) return existing
-	const bytes = resolveImageSource(scope, source)
-	scope.imageSources?.delete(source)
-	const task = scope.canvas.decodeImage(bytes, {
-		signal: scope.signal,
-		dataOwnership: 'owned',
-	})
-	decodedImages.set(source, task)
-	return task
 }
 
 async function flushWithImages(chart: EChartsType, scope: RenderScope): Promise<void> {
@@ -305,11 +289,6 @@ async function flushWithImages(chart: EChartsType, scope: RenderScope): Promise<
 		await waitForSignal(Promise.all(scope.pendingImages), scope.signal)
 	}
 	throw new EChartsError('RENDER_FAILED', 'ECharts image loading did not settle after 100 passes')
-}
-
-function rewriteDataUrls(option: EChartsOption, scope: RenderScope): EChartsOption {
-	const seen = new WeakMap<object, unknown>()
-	return rewriteValue(option, scope, seen) as EChartsOption
 }
 
 function rewriteDataUrlsInPlace(option: EChartsOption, scope: RenderScope): EChartsOption {
@@ -344,41 +323,6 @@ function rewriteOwnedValue(
 	return value
 }
 
-function rewriteValue(
-	value: unknown,
-	scope: RenderScope,
-	seen: WeakMap<object, unknown>,
-	property?: string,
-): unknown {
-	if (typeof value === 'string') {
-		if (value.startsWith('image://data:')) return rewriteDataUrlString(value, scope)
-		return property === 'image' && value.startsWith('data:')
-			? rewriteDataUrlString(value, scope)
-			: value
-	}
-	if (!value || typeof value !== 'object') return value
-	const existing = seen.get(value)
-	if (existing !== undefined) return existing
-	if (Array.isArray(value)) {
-		const result: unknown[] = []
-		seen.set(value, result)
-		for (const item of value) result.push(rewriteValue(item, scope, seen, property))
-		return result
-	}
-	if (!isPlainRecord(value)) return value
-	const result: Record<string, unknown> = {}
-	seen.set(value, result)
-	for (const [key, item] of Object.entries(value)) {
-		Object.defineProperty(result, key, {
-			configurable: true,
-			enumerable: true,
-			value: rewriteValue(item, scope, seen, key),
-			writable: true,
-		})
-	}
-	return result
-}
-
 function rewriteDataUrlString(value: string, scope: RenderScope): string {
 	if (value.startsWith('data:')) return registerImageSource(scope, value)
 	if (value.startsWith('image://data:')) {
@@ -391,22 +335,56 @@ function registerImageSource(scope: RenderScope, source: string): string {
 	const imageKeys = (scope.imageKeys ??= new Map())
 	const existing = imageKeys.get(source)
 	if (existing) return existing
+	if (imageKeys.size >= scope.maxImages) {
+		throw new EChartsError(
+			'IMAGE_SOURCE_TOO_LARGE',
+			`ECharts render exceeds the configured ${scope.maxImages} distinct image source limit`,
+		)
+	}
 	const bytes = decodeDataUrl(source, scope.maxDataUrlBytes)
+	if (bytes.byteLength > scope.maxTotalImageBytes - scope.imageBytes) {
+		throw new EChartsError(
+			'IMAGE_SOURCE_TOO_LARGE',
+			`ECharts image sources exceed the configured ${scope.maxTotalImageBytes} aggregate byte limit`,
+		)
+	}
 	const key = `pluxel-image:${scope.renderId}:${scope.nextImageId++}`
 	imageKeys.set(source, key)
 	const imageSources = (scope.imageSources ??= new Map())
 	imageSources.set(key, bytes)
+	scope.imageBytes += bytes.byteLength
 	return key
 }
 
 function resolveImageSource(scope: RenderScope, source: string): Uint8Array {
 	const registered = scope.imageSources?.get(source)
 	if (registered) return registered
-	if (source.startsWith('data:')) return decodeDataUrl(source, scope.maxDataUrlBytes)
+	if (source.startsWith('data:')) {
+		const key = registerImageSource(scope, source)
+		return scope.imageSources!.get(key)!
+	}
 	throw new EChartsError(
 		'UNSUPPORTED_IMAGE_SOURCE',
 		'ECharts server rendering accepts data URL strings; fetch remote images before render()',
 	)
+}
+
+function recordDecodedImage(scope: RenderScope, image: RenderImage): void {
+	const pixels = image.width * image.height
+	if (!Number.isSafeInteger(pixels) || pixels <= 0) {
+		throw new EChartsError('IMAGE_LOAD_FAILED', 'Decoded ECharts image dimensions are invalid')
+	}
+	if (pixels > scope.maxTotalImagePixels - scope.imagePixels) {
+		throw new EChartsError(
+			'IMAGE_SOURCE_TOO_LARGE',
+			`Decoded ECharts images exceed the configured ${scope.maxTotalImagePixels} aggregate pixel limit`,
+		)
+	}
+	scope.imagePixels += pixels
+}
+
+function hasErrorCode(value: unknown, code: string): boolean {
+	return Boolean(value && typeof value === 'object' && (value as { code?: unknown }).code === code)
 }
 
 function decodeDataUrl(source: string, maxBytes: number): Uint8Array {
@@ -478,19 +456,12 @@ function hexValue(byte: number): number {
 	return -1
 }
 
-function applyOptionDefaultFont(
-	option: EChartsOption,
-	cssFamily: string,
-	inputOwnership: RenderInputOwnership,
-): EChartsOption {
+function applyOptionDefaultFont(option: EChartsOption, cssFamily: string): EChartsOption {
 	const record = option as unknown as Record<string, unknown>
 	const textStyle = isPlainRecord(record.textStyle) ? record.textStyle : {}
 	if (typeof textStyle.fontFamily === 'string' && textStyle.fontFamily.trim()) return option
-	if (inputOwnership === 'owned') {
-		record.textStyle = { fontFamily: cssFamily, ...textStyle }
-		return option
-	}
-	return { ...option, textStyle: { fontFamily: cssFamily, ...textStyle } }
+	record.textStyle = { fontFamily: cssFamily, ...textStyle }
+	return option
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

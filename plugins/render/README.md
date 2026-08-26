@@ -17,3 +17,4 @@
 - [`@pluxel/takumi`](takumi/README.md) 消费 Fonts 的可移植资源，以有界 native async task 渲染 HTML/node tree。
 
 业务插件只注入自己直接使用的 renderer 能力；required dependency 继续由各插件 constructor 唯一声明。
+整体执行、输入所有权、预算、取消和并发规则见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。

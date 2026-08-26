@@ -18,6 +18,7 @@ const canvas = createCanvasWorkerAdapter({
 		maxRichTextItems: 2_048,
 		maxTextCacheCharacters: 1_000_000,
 	},
+	decodeLimits: { maxConcurrent: 4, maxQueued: 8 },
 	font: { cssFamily: 'sans-serif', revision: 0 },
 } satisfies CanvasWorkerSnapshot)
 const signal = new AbortController().signal
@@ -36,14 +37,14 @@ const input = {
 	fontRevision: 0,
 	output: { format: 'png' },
 	maxDataUrlBytes: 32 * 1024 * 1024,
+	maxImages: 32,
+	maxTotalImageBytes: 32 * 1024 * 1024,
+	maxTotalImagePixels: 67_108_864,
+	maxOutputBytes: 64 * 1024 * 1024,
 } satisfies RenderEngineInput
 
-describe('ECharts render engine ownership', () => {
-	bench('borrowed option clone', async () => {
-		await renderECharts(input, canvas as unknown as RenderCanvasAdapter, signal, 'borrowed')
-	})
-
-	bench('worker-owned option traversal', async () => {
-		await renderECharts(input, canvas as unknown as RenderCanvasAdapter, signal, 'owned')
+describe('ECharts worker render engine', () => {
+	bench('owned option traversal', async () => {
+		await renderECharts(input, canvas as unknown as RenderCanvasAdapter, signal)
 	})
 })

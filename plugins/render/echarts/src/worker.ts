@@ -32,7 +32,6 @@ const handler = async (input: EChartsWorkerInput): Promise<EChartsWorkerOutput> 
 			input.render,
 			canvas as unknown as RenderCanvasAdapter,
 			workerSignal,
-			'owned',
 		)
 		return { ok: true, result }
 	} catch (cause) {

@@ -43,6 +43,26 @@ class WorkerTaskConsumerA extends BasePlugin {
 		return this.ctx.workers.run(declaration, input, { signal })
 	}
 
+	borrow(input: TaskInput): Promise<TaskOutput> {
+		return this.ctx.workers.run(declaration, input, { inputOwnership: 'borrowed' })
+	}
+
+	prepare(
+		prepare: (signal: AbortSignal) => TaskInput | Promise<TaskInput>,
+		signal?: AbortSignal,
+	): Promise<TaskOutput> {
+		return this.ctx.workers.runPrepared(declaration, prepare, {
+			signal,
+			inputOwnership: 'borrowed',
+		})
+	}
+
+	prepareWithTransfer(): Promise<TaskOutput> {
+		return this.ctx.workers.runPrepared(declaration, async () => ({ label: 'invalid', delay: 0 }), {
+			transfer: [],
+		} as never)
+	}
+
 	transfer(
 		input: TransferTaskInput,
 		transfer: readonly ArrayBuffer[],
@@ -162,6 +182,43 @@ describe('WorkerTaskService', () => {
 			})
 		} finally {
 			await resetWorkerHost(host)
+		}
+	})
+
+	it('distinguishes admission snapshots from explicitly borrowed input', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			const occupied = consumer.run({ label: 'occupied', delay: 50 })
+			const snapshotInput = { label: 'snapshot', delay: 0 }
+			const borrowedInput = { label: 'borrowed', delay: 0 }
+			const snapshot = consumer.run(snapshotInput)
+			const borrowed = consumer.borrow(borrowedInput)
+			snapshotInput.label = 'mutated snapshot'
+			borrowedInput.label = 'mutated borrowed'
+
+			await occupied
+			await expect(snapshot).resolves.toMatchObject({ label: 'snapshot' })
+			await expect(borrowed).resolves.toMatchObject({ label: 'mutated borrowed' })
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('rejects transfer ownership on deferred input preparation', async () => {
+		const host = createWorkerHost()
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			await expect(host.require(WorkerTaskConsumerA).prepareWithTransfer()).rejects.toMatchObject<
+				Partial<WorkerTaskError>
+			>({ code: 'INVALID_INPUT' })
+		} finally {
+			await host.dispose()
 		}
 	})
 
@@ -320,6 +377,69 @@ describe('WorkerTaskService', () => {
 			>({ code: 'QUEUE_FULL' })
 			expect(bytes.byteLength).toBe(16)
 			await Promise.all([running, queued])
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('starts deferred input preparation only after fair queue admission and dispatch', async () => {
+		const host = createWorkerHost({
+			maxThreads: 1,
+			maxQueuedTasks: 1,
+			maxQueuedTasksPerPlugin: 8,
+		})
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			await consumer.run({ label: 'warm', delay: 0 })
+			const running = consumer.run({ label: 'running', delay: 30 })
+			let preparations = 0
+			const prepared = consumer.prepare(async (signal) => {
+				preparations += 1
+				signal.throwIfAborted()
+				return { label: 'prepared', delay: 0 }
+			})
+			await expect(
+				consumer.prepare(async () => {
+					preparations += 1
+					return { label: 'rejected', delay: 0 }
+				}),
+			).rejects.toMatchObject<Partial<WorkerTaskError>>({ code: 'QUEUE_FULL' })
+
+			await Promise.resolve()
+			expect(preparations).toBe(0)
+			await running
+			await expect(prepared).resolves.toMatchObject({ label: 'prepared' })
+			expect(preparations).toBe(1)
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('aborts active deferred preparation and drains it when the owner stops', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			let entered!: () => void
+			const prepared = new Promise<void>((resolve) => {
+				entered = resolve
+			})
+			const task = host.require(WorkerTaskConsumerA).prepare(async (signal) => {
+				entered()
+				await new Promise<never>((_resolve, reject) => {
+					signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+				})
+				return { label: 'unreachable', delay: 0 }
+			})
+			await prepared
+
+			host.remove(WorkerTaskConsumerA)
+			await host.commit()
+			await expect(task).rejects.toMatchObject<Partial<WorkerTaskError>>({ code: 'NOT_RUNNING' })
 		} finally {
 			await host.dispose()
 		}

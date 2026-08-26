@@ -31,6 +31,27 @@ export const CanvasConfig = v.object({
 			description: 'Maximum byte length accepted by decodeImage().',
 		}),
 	),
+	maxConcurrentDecodes: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(64)), 4),
+		f.formMeta({
+			title: 'Concurrent image decodes',
+			description: 'Maximum native image decodes admitted at once by this Plugin node.',
+		}),
+	),
+	maxQueuedDecodes: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4_096)), 32),
+		f.formMeta({
+			title: 'Queued image decodes',
+			description: 'Maximum waiting image decodes across all caller Plugins.',
+		}),
+	),
+	maxQueuedDecodesPerConsumer: v.pipe(
+		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_024)), 8),
+		f.formMeta({
+			title: 'Queued decodes per consumer',
+			description: 'Maximum waiting image decodes owned by one caller Plugin generation.',
+		}),
+	),
 	maxTextCharacters: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1_000_000)), 100_000),
 		f.formMeta({

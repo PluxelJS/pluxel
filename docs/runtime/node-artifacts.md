@@ -117,6 +117,46 @@ transfer 规则：
 - queue 已满、任务未接纳时 runtime 不 detach；
 - `SharedArrayBuffer` 本来就是共享内存，不进入 transfer，调用方自行负责同步协议。
 
+## Borrowed admission
+
+默认 snapshot 适合调用后立即复用或修改 input。若领域 API 已经要求 input 在 Promise settle 前保持不变，可以省略
+排队 snapshot，只保留真正 dispatch 的 transport clone：
+
+```ts no-twoslash
+return this.ctx.workers.run(renderTask, input, {
+	signal,
+	inputOwnership: 'borrowed',
+})
+```
+
+borrowed 模式在 queue 中保留 caller graph，因此 mutation 会改变尚未 dispatch 的任务；它不能与 `transfer` 同时使用。
+该模式减少一次 clone，不会让 `postMessage` serialization 离开主线程，领域仍必须对超大 object graph 设置 bytes/count/depth
+预算。
+
+## Admission 后准备输入
+
+如果 domain budget walk 或 snapshot 本身较重，先用共享 queue admission，再准备输入：
+
+```ts no-twoslash
+return this.ctx.workers.runPrepared(
+	renderTask,
+	async (signal) => {
+		await assertBoundedDeclarativeGraph(option, signal)
+		return { option, policy }
+	},
+	{ signal, inputOwnership: 'borrowed' },
+)
+```
+
+`prepare(signal)` 只在 artifact route 可用、任务轮到 fair execution slot 后执行；queue full 不调用它。准备期间该 slot
+保持 active，因此 host-side preflight 数也受 `maxThreads` 限制。callback 应分段让出 event loop 并观察 signal；runtime
+不能抢占一个同步 callback。callback error 原样返回，prepared value 的 structured-clone error 仍归类为
+`WorkerTaskError('INVALID_INPUT')`。
+
+默认会 snapshot prepared value；只有领域 API 已要求 caller 到最终 Promise settle 前保持 captured/returned graph 不变时
+才使用 borrowed。`runPrepared()` 不支持 transfer，因为 admission 时 buffer 尚未产生，无法提供“接纳成功即同步 detach”
+的 ownership contract。
+
 ## 取消与 Plugin stop
 
 `run(task, input, { signal })` 的 signal 取消 admission 或运行中任务。Plugin stop/replacement 也会取消并等待该 owner 已接纳任务，不让旧 generation 在后台继续写结果。
@@ -134,7 +174,7 @@ void this.ctx.workers.run(task, input)
 
 native Canvas/Image 不能 structured clone。官方 [Canvas Plugin](../plugins/rendering/canvas.md) 提供纯数据 `workerSnapshot` 和 `@pluxel/canvas/worker` adapter，让 worker 在自己的线程内创建 native surface；业务插件不直接传 native handle。
 
-`@pluxel/echarts` 默认已经使用 runtime shared worker pool。调用方只需调用 `render()`，不要再套一层自建 worker。
+`@pluxel/echarts` 始终使用 runtime shared worker pool。调用方只需调用 `render()`，不要再套一层自建 worker。
 
 ## 构建与验证
 

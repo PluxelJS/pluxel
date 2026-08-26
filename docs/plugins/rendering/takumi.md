@@ -63,8 +63,10 @@ await this.takumi.render({
 })
 ```
 
-Node 在 queue admission 前通过 structured clone snapshot。React/Preact component 会执行用户代码，不能提供相同的
-snapshot 与取消语义，因此不直接属于 Plugin input；先用 `takumi-js` helper 转成 node，再调用本 Plugin。
+Node graph 在 render settle 前按 borrowed contract 保持不变。任务先通过 fair queue admission，再检查 declarative shape
+与结构预算；验证后的 borrowed graph 直接交给准备流程，不额外执行一次同步 clone。binary image 不允许内嵌在 node `src`，
+统一使用下方有 count/bytes ceiling 的 `images` 路径。React/Preact
+component 会执行用户代码，因此不直接属于 Plugin input；先用 `takumi-js` helper 转成 declarative node。
 
 ## 使用 FontsPlugin 字体
 
@@ -73,7 +75,7 @@ snapshot 与取消语义，因此不直接属于 Plugin input；先用 `takumi-j
 删除或替换后创建新 registry。
 
 ```ts
-this.fonts.registerFromPath({
+await this.fonts.registerFromPath({
 	path: fileURLToPath(new URL('../assets/BrandSans.woff2', import.meta.url)),
 	family: 'Brand Sans',
 })
@@ -107,18 +109,24 @@ await this.takumi.render({
 ```
 
 缺少匹配项时返回 `TakumiError` 的 `INVALID_IMAGE`。redirect、认证、retry、SSRF allowlist 和 HTTP cache 都留在
-下载能力中；Takumi 只消费已经取得的 bytes。传入 bytes 会复制，调用返回后可以继续使用原数组。
+下载能力中；Takumi 只消费已经取得的 bytes。content、stylesheets 和 image bytes 在 render settle 前不得修改；
+图片 copy 在 scheduler admission 后分片进行，可在 checkpoint 取消。
 
 ## 输出、取消与错误
 
 `render()` 支持 PNG、JPEG、WebP；`renderSvg()` 返回 SVG string。Raster result 给出 media type、logical dimensions、
 DPR 与实际使用的 portable font revision。公开失败可按 `TakumiError.code` 分支，例如
-`PIXELS_EXCEEDED`、`IMAGE_BYTES_EXCEEDED`、`FONT_BYTES_EXCEEDED`、`RENDER_TIMEOUT`、`RENDER_BUSY` 与
-`OUTPUT_TOO_LARGE`。
+`PIXELS_EXCEEDED`、`IMAGE_BYTES_EXCEEDED`、`FONT_COUNT_EXCEEDED`、`FONT_BYTES_EXCEEDED`、
+`RENDER_TIMEOUT`、`RENDER_BUSY` 与 `OUTPUT_TOO_LARGE`。
 
 Takumi native render 是异步且接受 signal；Plugin stop/replacement 和 consumer stop/replacement 也会取消其已接纳任务。
 字体 registration 是同一 revision 的共享准备工作，且 Takumi 发布包装器的注册入口当前不接受 signal；单个 caller 或
 provider stop 会在 registration 之间或完成后的 checkpoint 停止后续 render。
+
+这里没有为了“render 都很重”而重复套 Worker：Takumi raster/SVG 已由 N-API 提交异步 native task，再套一层会同时占用
+runtime Worker 与 Takumi/libuv slot，并复制输入和字体。剩余风险是上游同步 `fromHtml()` parser；它在 scheduler admission
+后运行并受默认 1 MiB content ceiling 约束，但单次调用不能被 signal 抢占。结构 walk 与大 byte copy 会 cooperative yield。
+大 HTML/node/stylesheet 与 SVG output 的 UTF-8 byte 计量也按 64 Ki characters 分片，可在 checkpoint 取消。
 
 ## 配置边界
 
@@ -132,8 +140,11 @@ host.cfg(TakumiPlugin).set({
 	maxContentBytes: 1024 * 1024,
 	maxContentNodes: 10_000,
 	maxTextCharacters: 1_000_000,
+	maxStylesheets: 64,
 	maxStylesheetBytes: 1024 * 1024,
+	maxImages: 256,
 	maxImageBytes: 32 * 1024 * 1024,
+	maxFonts: 256,
 	maxFontBytes: 128 * 1024 * 1024,
 	maxOutputBytes: 64 * 1024 * 1024,
 	cacheMaxBytes: 16 * 1024 * 1024,
@@ -144,8 +155,11 @@ host.cfg(TakumiPlugin).set({
 })
 ```
 
-`maxContentBytes` 同时约束 HTML UTF-8 bytes，以及 structured node 的字符串与结构负载；binary image 另由
-`maxImageBytes` 约束。`maxRenderDurationMs` 从完成同步输入 snapshot 后覆盖 queue、字体/图片准备与 native task。
-width/height budget 检查应用 DPR 后的 physical dimensions。image/font limits 是输入 bytes 预算，不能把 native renderer
+`maxContentBytes` 同时约束 HTML UTF-8 bytes，以及 structured node 的字符串与结构负载；explicit/content-referenced image
+source 由 `maxImages/maxImageBytes` 约束，explicit 与 HTML-extracted stylesheet 共同受 count/bytes 约束。
+`maxRenderDurationMs` 覆盖 queue、snapshot、
+字体/图片准备与 native task。
+width/height budget 检查应用 DPR 后的 physical dimensions。font count 在任何 portable byte copy 前检查；image/font byte
+limits 是输入 bytes 预算，不能把 native renderer
 变成安全 sandbox；decoded image 与 glyph 内存还受 Takumi 实现影响。`maxOutputBytes` 在编码完成后检查，用于限制返回值，
 不能撤销已经发生的编码成本。

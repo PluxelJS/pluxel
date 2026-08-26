@@ -18,6 +18,7 @@ export type RenderSchedulerOwner = {
 export class RenderScheduler {
 	private readonly readyOwners: RenderSchedulerOwner[] = []
 	private readonly owners = new Set<RenderSchedulerOwner>()
+	private readonly activeCompletions = new Set<Promise<void>>()
 	private activeRenders = 0
 	private queuedRenders = 0
 	private active = true
@@ -59,16 +60,23 @@ export class RenderScheduler {
 					render.state = 'running'
 					signal.removeEventListener('abort', render.onAbort)
 					this.activeRenders += 1
-					void Promise.resolve()
-						.then(task)
+					const execution = Promise.resolve().then(task)
+					void execution.then(
+						(value) => settle(() => resolve(value)),
+						(error: unknown) => settle(() => reject(error)),
+					)
+					let completion!: Promise<void>
+					completion = execution
 						.then(
-							(value) => settle(() => resolve(value)),
-							(error: unknown) => settle(() => reject(error)),
+							(): void => undefined,
+							(): void => undefined,
 						)
-						.finally(() => {
+						.finally((): void => {
+							this.activeCompletions.delete(completion)
 							this.activeRenders -= 1
 							this.dispatch()
 						})
+					this.activeCompletions.add(completion)
 				},
 				reject: (reason) => settle(() => reject(reason)),
 			}
@@ -100,11 +108,15 @@ export class RenderScheduler {
 		for (const render of owner.queue) this.cancelQueued(render, reason)
 	}
 
-	close(reason: Error): void {
-		if (!this.active) return
+	async close(reason: Error): Promise<void> {
+		if (!this.active) {
+			await Promise.allSettled(this.activeCompletions)
+			return
+		}
 		this.active = false
 		for (const owner of this.owners) this.closeOwner(owner, reason)
 		this.readyOwners.length = 0
+		await Promise.allSettled(this.activeCompletions)
 	}
 
 	private dispatch(): void {

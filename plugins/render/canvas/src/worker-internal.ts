@@ -3,6 +3,7 @@ import {
 	CanvasError,
 	type CanvasResourceLimits,
 	type CanvasTextResourceLimits,
+	type CanvasWorkerDecodeLimits,
 	type CanvasWorkerFontSnapshot,
 	type CanvasWorkerSnapshot,
 	type DecodeImageOptions,
@@ -33,6 +34,7 @@ export function normalizeCanvasWorkerSnapshot(value: CanvasWorkerSnapshot): Canv
 	}
 	const limits = normalizeResourceLimits(value.limits)
 	const textLimits = normalizeTextLimits(value.textLimits)
+	const decodeLimits = normalizeDecodeLimits(value.decodeLimits)
 	const font = normalizeFontSnapshot(value.font)
 	if (font.requiredFamily && !GlobalFonts.has(font.requiredFamily)) {
 		throw new CanvasError(
@@ -40,7 +42,7 @@ export function normalizeCanvasWorkerSnapshot(value: CanvasWorkerSnapshot): Canv
 			`Selected font family "${font.requiredFamily}" is unavailable in the Canvas worker`,
 		)
 	}
-	const normalized = Object.freeze({ limits, textLimits, font })
+	const normalized = Object.freeze({ limits, textLimits, decodeLimits, font })
 	lastNormalizedSnapshot = normalized
 	return normalized
 }
@@ -51,7 +53,7 @@ function matchesNormalizedSnapshot(
 ): boolean {
 	if (value === normalized) return true
 	if (!value || typeof value !== 'object') return false
-	const { limits, textLimits, font } = value
+	const { limits, textLimits, decodeLimits, font } = value
 	return Boolean(
 		limits &&
 		typeof limits === 'object' &&
@@ -64,6 +66,10 @@ function matchesNormalizedSnapshot(
 		textLimits.maxTextCharacters === normalized.textLimits.maxTextCharacters &&
 		textLimits.maxRichTextItems === normalized.textLimits.maxRichTextItems &&
 		textLimits.maxTextCacheCharacters === normalized.textLimits.maxTextCacheCharacters &&
+		decodeLimits &&
+		typeof decodeLimits === 'object' &&
+		decodeLimits.maxConcurrent === normalized.decodeLimits.maxConcurrent &&
+		decodeLimits.maxQueued === normalized.decodeLimits.maxQueued &&
 		font &&
 		typeof font === 'object' &&
 		font.cssFamily === normalized.font.cssFamily &&
@@ -117,6 +123,14 @@ function normalizeTextLimits(value: CanvasTextResourceLimits): CanvasTextResourc
 	})
 }
 
+function normalizeDecodeLimits(value: CanvasWorkerDecodeLimits): CanvasWorkerDecodeLimits {
+	if (!value || typeof value !== 'object') invalidSnapshot('decodeLimits must be an object')
+	return Object.freeze({
+		maxConcurrent: positiveInteger(value.maxConcurrent, 'decodeLimits.maxConcurrent'),
+		maxQueued: nonNegativeInteger(value.maxQueued, 'decodeLimits.maxQueued'),
+	})
+}
+
 function normalizeFontSnapshot(value: CanvasWorkerFontSnapshot): CanvasWorkerFontSnapshot {
 	if (!value || typeof value !== 'object') invalidSnapshot('font must be an object')
 	const cssFamily = boundedText(value.cssFamily, 'font.cssFamily', 1_024)
@@ -138,6 +152,13 @@ function normalizeFontSnapshot(value: CanvasWorkerFontSnapshot): CanvasWorkerFon
 function positiveInteger(value: number, name: string): number {
 	if (!Number.isSafeInteger(value) || value <= 0)
 		invalidSnapshot(`${name} must be a positive integer`)
+	return value
+}
+
+function nonNegativeInteger(value: number, name: string): number {
+	if (!Number.isSafeInteger(value) || value < 0) {
+		invalidSnapshot(`${name} must be a non-negative integer`)
+	}
 	return value
 }
 
