@@ -34,8 +34,32 @@ route 用它组合 Loader/Scan。业务 Plugin 不能在 module evaluation 或 `
 Runtime 内建能力明确选择 root、scope 或 owner-view。Core 把 scope 映射为 Plugin generation：PluginPart 与 dependency caller
 view 共享 generation backing；owner-view 共享 root backend，但 Plugin、Part 与每条 caller edge 各有严格惰性的 view/cache。
 view 是带 immutable owner Context 的普通 class/object，不通过 `Proxy` 改写共享 service 的 `this.ctx`。这样
-`ctx.commands`、`ctx.http`、`ctx.workers` 等保留调用者注册和 cleanup ownership，同时 registry/pool/server 等 backend
-仍按 root 共享。可选能力 disabled 时不进入 host shape，不能通过 null stateful service 模拟启用。
+`ctx.commands`、`ctx.workers` 等保留调用者注册和 cleanup ownership，同时 registry/pool 等 backend 仍按 root 共享。
+`ctx.elysia` 是 generation scope capability：root Plugin 与全部 Part 共享一个严格惰性的原生 Elysia application，Runtime 的
+HTTP carrier 与 immutable directory 只存在于 root host authority。可选能力 disabled 时不进入 host shape，不能通过 null stateful
+service 模拟启用。
+
+### Generation-scoped Elysia application
+
+`ctx.elysia` 是真实的 host-owned Elysia `2.0.0-beta.7` instance，不是 Plugin service view、Proxy 或 Pluxel HTTP facade。
+Plugin/Part 在 construction 与 `init()` 中直接使用上游 API；route path 就是最终 product path，没有 Plugin
+namespace、`publicPath`、mount id 或 route handle。可复用组合应写成普通 Elysia function plugin，而不是新的 Pluxel
+HTTP extension point。
+
+generation 是最小可撤回 application owner。Plugin 与其 Part 共享 app identity，但 Part 不获得独立 route owner、
+publication 或 WebSocket lifecycle。Plugin/Part init 全部成功后，Runtime finalizer 等待 lazy modules、读 public route
+inventory、attach owner Server view 并调用 Elysia native `compile()`/seal。Core 随后在同一 operation 中 settlement，构建完整
+immutable directory，再与 running projection 同步交换 ready pointer。start failure 和 rollback 不发布部分 route/socket。
+
+跨 owner route 冲突当前只拒绝 `kind + method + declared path` 完全相同的 inventory fact。canonical-equivalent
+pattern 不在已证明 contract 中，因为 Runtime 不复制 Elysia matcher grammar。HTTP/stream/WS 请求取得 owner generation
+lease；Node production 与 Node-backed Vite 已通过 srvx/crossws carrier 运行真实 WS，但 Bun/Deno 第二 carrier 与 portable
+WS conformance 尚未完成。
+
+Plugin 不拥有物理 listener：`listen()` / `stop()` 与 Server view 的 physical controls 明确 fail-fast。beta.7 也没有
+external application attach/detach public epoch，因此 `setup()` / `cleanup()` 当前在调用点 fail-fast；不读 `~ext` 私有
+callback 来伪装支持。dynamic loader 已统一 Elysia runtime identity，但 published Plugin 的 Elysia peer-range admission 尚未
+进入 static/dynamic 共享 catalog contract。
 
 Core events 同样使用 owner-view：每个 root 只有一个 emitter backend，每个 Context owner 得到带固定 `ctx` 的普通
 `EventsService` view，订阅进入该 owner effects。`ctx.events` 的 module augmentation 只是共享 ambient event vocabulary，适合
@@ -114,8 +138,9 @@ facade；每个 Part occurrence 创建 child Context 后，按该 Part definitio
 注入 Plugin/Part composite config，再按 children-before-owner 深度优先启动 Part，最后调用 Plugin `init()`。constructor dependency
 不保证能被其他 field initializer 提前读取；资源访问继续留在 `init()` 或普通 method。
 
-每个 Part 得到结构化 child Context、由父 effects 持有的 child scope、`partPath` logger 和惰性 owner-bound capability view；HTTP、
-commands、worker、Node module 等共享 root/backend 状态，但 registration 与 cleanup 绑定 Part scope。Part constructor 或 `init()`
+每个 Part 得到结构化 child Context、由父 effects 持有的 child scope、`partPath` logger 和惰性 owner-bound capability view；Elysia
+application 共享 owning generation，commands、worker、Node module 等共享 root/backend 状态，但 registration 与 cleanup 绑定
+Part scope。Part constructor 或 `init()`
 失败都会让 owning Plugin start 失败，lifecycle error 携带 `partPath`，rollback 仍只 drain Plugin generation effects。child Context
 不是新的 root；未声明 owner binding 的 capability 继续使用 owning Plugin view，database definition、migration 与 handle ownership
 也保持 Plugin 级。Part 只隔离资源所有权，不作为 trust boundary 或 service-instance sandbox。

@@ -8,7 +8,6 @@ import type {
 import type {
 	ConfigServiceConfig,
 	Context,
-	HttpHandler,
 	PersistenceServiceConfig,
 	DatabaseConfig,
 	RuntimeStateStoreConfig,
@@ -21,6 +20,8 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 declare const CONFIG_ENVIRONMENT_BINDING_BRAND: unique symbol
 
 type NonNullish<T> = Exclude<T, null | undefined>
+
+type RuntimeFetch = (request: Request, env?: unknown, ctx?: unknown) => Response | Promise<Response>
 
 type ConfigEnvironmentObjectMapping<T> = [NonNullish<T>] extends [readonly unknown[]]
 	? never
@@ -151,6 +152,7 @@ export type StaticRuntimeHost = {
 	readonly ctx: Context
 	readonly hmr: StaticRuntimeHmrController
 	readonly definition: StaticRuntimeDefinition
+	fetch: RuntimeFetch
 	start(): Promise<StaticRuntimeStartupReport>
 	stop(): Promise<void>
 	describeCatalog(): StaticRuntimeCatalogSnapshot
@@ -159,7 +161,7 @@ export type StaticRuntimeHost = {
 
 export type StaticRuntime = {
 	readonly ctx: Context
-	fetch: HttpHandler
+	fetch: RuntimeFetch
 	start(): Promise<StaticRuntimeStartupReport>
 	stop(): Promise<void>
 }

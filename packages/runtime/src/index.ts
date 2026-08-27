@@ -116,16 +116,6 @@ export {
 	type CommandInventoryItem,
 	type CommandToolset,
 } from './agent-tools'
-export {
-	PLUGIN_HTTP_BASE,
-	type ElysiaRouteHandle,
-	type HttpHandler,
-} from './services/http/HttpService'
-export {
-	createElysiaApp,
-	type AnyElysiaApp,
-	type CreateElysiaAppOptions,
-} from './services/http/elysia'
 export type {
 	AdminAccessClaimRequirement,
 	AdminAccessConfig,

@@ -1,8 +1,4 @@
-import {
-	formatPluginNodeRoute,
-	pluginNodeIndexKey,
-	type Context as PluxelContext,
-} from '@pluxel/core'
+import type { Context as PluxelContext } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
@@ -18,13 +14,15 @@ import type { RenderHandler } from '../../server/types'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
 import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
 import { matchesWorkbenchUiBasePath, normalizeWorkbenchUiBasePath } from '../../workbench-config'
-import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
+import {
+	createHostElysiaApp,
+	type AnyHostElysiaApp,
+	type CreateHostElysiaAppOptions,
+} from './elysia'
+import type { ElysiaApplicationDirectory } from './ElysiaApplicationDirectory'
+import type { ElysiaApplicationCarrier } from './elysia-application-carrier'
 
-export type HttpHandler = (
-	req: Request,
-	env?: unknown,
-	ctx?: unknown,
-) => Response | Promise<Response>
+type HttpHandler = (req: Request, env?: unknown, ctx?: unknown) => Response | Promise<Response>
 
 /**
  * Any WinterTC-style fetch boundary.
@@ -32,7 +30,7 @@ export type HttpHandler = (
  * Elysia is the preferred authoring model for plugin routes, but mounting stays framework-agnostic
  * so plugin integrations can still provide any fetch-compatible boundary.
  */
-export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
+type MountedFetchBoundary = HttpHandler | { fetch: HttpHandler }
 
 type RuntimeHttpUiAssetMode = 'dev-server' | 'static-built' | 'disabled'
 
@@ -59,15 +57,15 @@ export type RuntimeHttpHostConfig = RuntimeHttpAssetConfig &
 interface MountedBoundarySpec {
 	id: string
 	base: string
-	boundary: HttpBoundary
+	boundary: MountedFetchBoundary
 }
 
-export interface HttpBoundaryHandle {
-	replace(boundary: HttpBoundary): void
+interface MountedFetchBoundaryHandle {
+	replace(boundary: MountedFetchBoundary): void
 	dispose(): void
 }
 
-type BaseElysiaApp = AnyElysiaApp
+type BaseElysiaApp = AnyHostElysiaApp
 
 type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
 type InternalApiOptions = {
@@ -81,36 +79,12 @@ type ResolvedHttpServiceConfig = {
 	uiBasePath: string
 }
 
-export type ElysiaBoundaryBuilder = (app: BaseElysiaApp) => HttpBoundary
+export type HostElysiaBuilder = (app: BaseElysiaApp) => MountedFetchBoundary
 
-export interface ElysiaRouteMountOptions {
-	app?: CreateElysiaAppOptions
-}
-
-export interface ElysiaRouteHandle extends HttpBoundaryHandle {
-	replaceRoutes(build: ElysiaBoundaryBuilder): void
-}
-
-export interface HostHttpMountSpec {
+interface HostHttpMountSpec {
 	id: string
 	path: string
-	boundary: HttpBoundary
-}
-
-export interface PluginHttpMountOptions extends ElysiaRouteMountOptions {
-	path?: string
-	/**
-	 * Mounts this plugin-owned boundary at a stable runtime-root path instead of the
-	 * default `/__pluxel/plugins/<v1-node-route>` namespace. This changes routing only;
-	 * authentication remains the plugin's responsibility.
-	 */
-	publicPath?: string
-	id?: string
-}
-
-export interface HostHttpRouteOptions extends ElysiaRouteMountOptions {
-	id: string
-	path: string
+	boundary: MountedFetchBoundary
 }
 
 type MountedBoundary = {
@@ -119,29 +93,10 @@ type MountedBoundary = {
 	install: (app: BaseElysiaApp) => BaseElysiaApp
 }
 
-export const PLUGIN_HTTP_BASE = '/__pluxel/plugins'
-
 function normalizeMountBase(base: string): string {
 	const raw = base.trim()
 	if (!raw || raw === '/') return '/'
 	return raw.startsWith('/') ? raw.replace(/\/+$/, '') || '/' : `/${raw.replace(/\/+$/, '')}`
-}
-
-function normalizePluginPath(path = '/'): string {
-	const raw = path.trim()
-	if (!raw || raw === '/') return '/'
-	return raw.startsWith('/') ? raw.replace(/\/+$/, '') || '/' : `/${raw.replace(/\/+$/, '')}`
-}
-
-function normalizePluginPublicPath(path: string): string {
-	const raw = path.trim()
-	if (!raw.startsWith('/')) throw new Error('Plugin publicPath must be an absolute path')
-	const normalized = normalizeMountBase(raw)
-	if (normalized === '/') throw new Error('Plugin publicPath cannot own the runtime root')
-	if (normalized === '/__pluxel' || normalized.startsWith('/__pluxel/')) {
-		throw new Error('Plugin publicPath cannot use the reserved /__pluxel namespace')
-	}
-	return normalized
 }
 
 function currentWorkingDirectory(): string {
@@ -161,9 +116,15 @@ class HttpBackend {
 	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
 	private readonly config: ResolvedHttpServiceConfig
+	private readonly applications: ElysiaApplicationDirectory
 
-	constructor(ctx: PluxelContext, config: RuntimeHttpHostConfig) {
+	constructor(
+		ctx: PluxelContext,
+		config: RuntimeHttpHostConfig,
+		applications: ElysiaApplicationDirectory,
+	) {
 		this.hostCtx = ctx.root
+		this.applications = applications
 		this.logger = this.hostCtx.logger!
 		this.config = {
 			management: config.management,
@@ -240,10 +201,13 @@ class HttpBackend {
 
 	matchesMountedRoute(pathname: string): boolean {
 		const path = normalizeMountBase(pathname)
-		return this.mountedIndex.some((slot) => {
-			if (slot.base === '/') return true
-			return path === slot.base || path.startsWith(`${slot.base}/`)
-		})
+		return (
+			this.applications.matchesHttpRoute(pathname) ||
+			this.mountedIndex.some((slot) => {
+				if (slot.base === '/') return true
+				return path === slot.base || path.startsWith(`${slot.base}/`)
+			})
+		)
 	}
 
 	/** @internal Route launchers use the resolved host snapshot instead of reading Context config. */
@@ -256,38 +220,15 @@ class HttpBackend {
 		return this.config.workbench && this.config.uiBasePath === '/'
 	}
 
-	pluginFor(pluginCtx: PluxelContext) {
-		const owner = this.requirePluginOwner(pluginCtx)
-		const ownerKey = pluginNodeIndexKey(owner)
-		const ownerRoute = formatPluginNodeRoute(owner)
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(pluginCtx, options)
-		return {
-			owner,
-			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees so
-			// callers follow Elysia's chaining model and can replace mounted trees safely.
-			elysia,
-			app: elysia,
-			base: (path = '/') => this.resolvePluginBase(ownerRoute, path),
-			routes: (build: ElysiaBoundaryBuilder, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginRoutes(pluginCtx, ownerKey, ownerRoute, build, options),
-			mount: (boundary: HttpBoundary, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginBoundary(pluginCtx, ownerKey, ownerRoute, boundary, options),
-		}
+	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void {
+		return this.applications.attachApplicationCarrier(carrier)
 	}
 
-	get host() {
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(this.hostCtx, options)
-		return {
-			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees.
-			elysia,
-			app: elysia,
-			routes: (build: ElysiaBoundaryBuilder, options: HostHttpRouteOptions) =>
-				this.mountHostRoutes(build, options),
-			mount: (spec: HostHttpMountSpec) => this.mountHostBoundary(spec),
-		}
+	matchesWebSocketRoute(request: Request): boolean {
+		return this.applications.matchesWebSocketRoute(request)
 	}
 
-	private mountHostBoundary(spec: HostHttpMountSpec): HttpBoundaryHandle {
+	private mountHostBoundary(spec: HostHttpMountSpec): MountedFetchBoundaryHandle {
 		return this.mountAtPath(this.hostCtx, {
 			id: spec.id,
 			base: spec.path,
@@ -302,7 +243,7 @@ class HttpBackend {
 				createAdminAccessRoutes(
 					this.hostCtx,
 					this.createApp(this.hostCtx, {
-						aot: true,
+						precompile: true,
 						name: 'pluxel.http.admin-access',
 					}),
 				),
@@ -313,13 +254,13 @@ class HttpBackend {
 	}
 
 	private createLazyInternalApiBoundary(options: InternalApiOptions): HttpHandler {
-		let boundaryPromise: Promise<HttpBoundary> | undefined
+		let boundaryPromise: Promise<MountedFetchBoundary> | undefined
 		return async (request) => {
 			boundaryPromise ??= import('./internalApi').then(({ createInternalApiRoutes }) => {
 				const build = createInternalApiRoutes(this.hostCtx, options)
 				return build(
 					this.createApp(this.hostCtx, {
-						aot: true,
+						precompile: true,
 						name: 'pluxel.http.internal',
 					}),
 				)
@@ -329,72 +270,10 @@ class HttpBackend {
 		}
 	}
 
-	private mountPluginBoundary(
-		pluginCtx: PluxelContext,
-		ownerKey: string,
-		ownerRoute: string,
-		boundary: HttpBoundary,
-		options: PluginHttpMountOptions = {},
-	): HttpBoundaryHandle {
-		if (options.path !== undefined && options.publicPath !== undefined) {
-			throw new Error('Plugin HTTP mount cannot combine path and publicPath')
-		}
-		const path = normalizePluginPath(options.path)
-		const base =
-			options.publicPath === undefined
-				? this.resolvePluginBase(ownerRoute, path)
-				: normalizePluginPublicPath(options.publicPath)
-		const routeId = options.id ?? this.defaultPluginBoundaryId(ownerKey, path, options.publicPath)
-		return this.mountAtPath(pluginCtx, {
-			id: routeId,
-			base,
-			boundary,
-		})
-	}
-
-	private mountPluginRoutes(
-		pluginCtx: PluxelContext,
-		ownerKey: string,
-		ownerRoute: string,
-		build: ElysiaBoundaryBuilder,
-		options: PluginHttpMountOptions = {},
-	): ElysiaRouteHandle {
-		const { app: appOptions, ...mountOptions } = options
-		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(pluginCtx, appOptions))
-		const handle = this.mountPluginBoundary(
-			pluginCtx,
-			ownerKey,
-			ownerRoute,
-			createBoundary(build),
-			mountOptions,
-		)
-
-		return {
-			...handle,
-			replaceRoutes: (nextBuild) => handle.replace(createBoundary(nextBuild)),
-		}
-	}
-
-	private mountHostRoutes(
-		build: ElysiaBoundaryBuilder,
-		options: HostHttpRouteOptions,
-	): ElysiaRouteHandle {
-		const { app: appOptions, ...mountSpec } = options
-		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(this.hostCtx, appOptions))
-		const handle = this.mountHostBoundary({
-			...mountSpec,
-			boundary: createBoundary(build),
-		})
-
-		return {
-			...handle,
-			replaceRoutes: (nextBuild) => handle.replace(createBoundary(nextBuild)),
-		}
-	}
-
-	private mountAtPath(ownerCtx: PluxelContext, spec: MountedBoundarySpec): HttpBoundaryHandle {
+	private mountAtPath(
+		ownerCtx: PluxelContext,
+		spec: MountedBoundarySpec,
+	): MountedFetchBoundaryHandle {
 		let slot: MountedBoundary | undefined
 		let active = true
 		const dispose = () => {
@@ -449,8 +328,8 @@ class HttpBackend {
 	}
 
 	private rebuildRootApp() {
-		const root = createElysiaApp(this.hostCtx, {
-			aot: true,
+		const root = createHostElysiaApp(this.hostCtx, {
+			precompile: true,
 			name: 'pluxel.http.root',
 		})
 
@@ -460,6 +339,8 @@ class HttpBackend {
 			const url = new URL(request.url)
 			const path = url.pathname
 			const method = (request.method ?? 'GET').toUpperCase()
+			const business = await this.applications.dispatch(request)
+			if (business) return business
 
 			if (path.startsWith(`${UI_PUBLIC_BASE}/`)) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
@@ -613,7 +494,7 @@ class HttpBackend {
 		}
 	}
 
-	private toInstaller(id: string, base: string, boundary: HttpBoundary) {
+	private toInstaller(id: string, base: string, boundary: MountedFetchBoundary) {
 		if (this.isElysiaBoundary(boundary)) {
 			const plugin = this.wrapMountedPlugin(id, base, boundary)
 			return (app: BaseElysiaApp) => app.use(plugin)
@@ -629,45 +510,20 @@ class HttpBackend {
 
 	private wrapMountedPlugin(id: string, base: string, boundary: BaseElysiaApp): BaseElysiaApp {
 		const prefix = base === '/' ? undefined : base
-		return createElysiaApp(this.hostCtx, {
-			aot: true,
+		return createHostElysiaApp(this.hostCtx, {
+			precompile: true,
 			name: `pluxel.http.boundary.${id}`,
 			prefix,
 		}).use(boundary)
 	}
 
-	private toFetch(boundary: HttpBoundary): HttpHandler {
+	private toFetch(boundary: MountedFetchBoundary): HttpHandler {
 		if (typeof boundary === 'function') return boundary
 		return boundary.fetch.bind(boundary)
 	}
 
-	private isElysiaBoundary(boundary: HttpBoundary): boundary is BaseElysiaApp {
+	private isElysiaBoundary(boundary: MountedFetchBoundary): boundary is BaseElysiaApp {
 		return boundary instanceof Elysia
-	}
-
-	private requirePluginOwner(ctx: PluxelContext) {
-		const owner = ctx.pluginInfo?.nodeAddress
-		if (!owner) throw new Error('Plugin-scoped HTTP routes require a Plugin node owner')
-		return owner
-	}
-
-	private resolvePluginBase(ownerRoute: string, path = '/'): string {
-		const suffix = normalizePluginPath(path)
-		const base = `${PLUGIN_HTTP_BASE}/${ownerRoute}`
-		return suffix === '/' ? base : `${base}${suffix}`
-	}
-
-	private defaultPluginBoundaryId(
-		ownerKey: string,
-		path: string,
-		publicPath: string | undefined,
-	): string {
-		if (publicPath !== undefined) {
-			return `${ownerKey}:http:public:${normalizePluginPublicPath(publicPath).slice(1).replaceAll('/', ':')}`
-		}
-		return path === '/'
-			? `${ownerKey}:http`
-			: `${ownerKey}:http:${path.slice(1).replaceAll('/', ':')}`
 	}
 
 	private requestFullReload() {
@@ -678,8 +534,8 @@ class HttpBackend {
 		this.mountedIndex = [...this.mounted.values()].sort((a, b) => b.base.length - a.base.length)
 	}
 
-	private createApp(ctx: PluxelContext, options?: CreateElysiaAppOptions) {
-		return createElysiaApp(ctx, options)
+	private createApp(ctx: PluxelContext, options?: CreateHostElysiaAppOptions) {
+		return createHostElysiaApp(ctx, options)
 	}
 
 	private async createRenderer(): Promise<RenderHandler> {
@@ -721,13 +577,12 @@ export class HttpService {
 	}
 
 	/** @internal Runtime host composition creates the sole HTTP backend. */
-	static createRoot(ctx: PluxelContext, config: RuntimeHttpHostConfig): HttpService {
-		return new HttpService(ctx, new HttpBackend(ctx, config))
-	}
-
-	/** @internal Create one proxy-free owner view without constructing another HTTP backend. */
-	forOwner(owner: PluxelContext): HttpService {
-		return new HttpService(owner, this.#backend)
+	static createRoot(
+		ctx: PluxelContext,
+		config: RuntimeHttpHostConfig,
+		applications: ElysiaApplicationDirectory,
+	): HttpService {
+		return new HttpService(ctx, new HttpBackend(ctx, config, applications))
 	}
 
 	get fetch(): HttpHandler {
@@ -758,14 +613,13 @@ export class HttpService {
 		return this.#backend.workbenchOwnsRootNavigation()
 	}
 
-	get plugin(): ReturnType<HttpBackend['pluginFor']> {
-		return this.#backend.pluginFor(this.ctx)
+	/** @internal Launchers attach the physical platform bridge after creating the root. */
+	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void {
+		return this.#backend.attachApplicationCarrier(carrier)
 	}
 
-	get host(): HttpBackend['host'] {
-		if (this.ctx !== this.ctx.root) {
-			throw new Error('[pluxel/http] HTTP host API requires the root Context')
-		}
-		return this.#backend.host
+	/** @internal Vite/Node upgrade arbiters use the native Elysia directory matcher. */
+	matchesWebSocketRoute(request: Request): boolean {
+		return this.#backend.matchesWebSocketRoute(request)
 	}
 }

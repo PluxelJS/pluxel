@@ -91,9 +91,7 @@ describe('Host adminAccess gate', () => {
 			reason: 'private',
 		})
 
-		const res = await host.ctx.http.fetch(
-			req(internalUrl(), { headers: { accept: 'application/json' } }),
-		)
+		const res = await host.fetch(req(internalUrl(), { headers: { accept: 'application/json' } }))
 		expect(res.status).toBe(200)
 	})
 
@@ -161,14 +159,14 @@ describe('Host adminAccess gate', () => {
 		})
 		const bearer = await oidc.token({ groups: ['admins'] })
 
-		const blocked = await host.ctx.http.fetch(
+		const blocked = await host.fetch(
 			req(internalUrl(), { headers: { accept: 'application/json' } }),
 		)
 		expect(blocked.status).toBe(401)
 		const blockedBody = (await blocked.json()) as any
 		expect(blockedBody.reason).toBe('unauthenticated')
 
-		const allowed = await host.ctx.http.fetch(
+		const allowed = await host.fetch(
 			req(internalUrl(), {
 				headers: {
 					accept: 'application/json',
@@ -205,7 +203,7 @@ describe('Host adminAccess gate', () => {
 		})
 		const bearer = await oidc.token({ groups: ['readers'] })
 
-		const res = await host.ctx.http.fetch(
+		const res = await host.fetch(
 			req(internalUrl(RUNTIME_TRANSPORT_PATHS.rpc), {
 				method: 'POST',
 				headers: {
@@ -232,7 +230,7 @@ describe('Host adminAccess gate', () => {
 			},
 		})
 
-		const page = await host.ctx.http.fetch(
+		const page = await host.fetch(
 			req(`http://local${RUNTIME_ADMIN_ACCESS_BASE}?returnTo=%2Flogs`, {
 				headers: { accept: 'text/html' },
 			}),

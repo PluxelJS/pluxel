@@ -2,11 +2,14 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+	attachSrvxViteNodeCarrier,
 	collectViteSsrImportFiles,
 	createHostModuleVitePlugin,
+	createViteNodeElysiaApplicationCarrier,
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteSsrModule,
+	type SrvxViteNodeCarrierAttachment,
 } from '../../runtime-dev/src/vite.ts'
 import { staticConfigEnvironmentVitePlugin } from '@pluxel/rolldown/internal/static-config-environment-vite'
 import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
@@ -24,6 +27,7 @@ import {
 	isPluginEnabled,
 	readHostProduct,
 	readRuntimeRouteCapabilities,
+	requireRuntimeHttpService,
 	requireRuntimeStateStore,
 	resolveDevWorkbenchClientEntryUrl,
 	sameProduct,
@@ -33,14 +37,13 @@ import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { formatPluginNodeReference, type PluginNodeAddress } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
 import { reloadStaticRuntime } from './hmr'
 import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application'
 import { toStaticRuntimeDefinition } from './internal/application'
 import { createStaticRuntimeHost, readStaticRuntimeImplementations } from './internal/host'
-import { createNodeFetchRequest, writeNodeFetchResponse } from './internal/node-http'
 import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
@@ -53,6 +56,8 @@ import type {
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
 const STATIC_RUNTIME_CACHE_DIR = '.pluxel/vite/static-runtime-v2'
+
+type StaticViteApplicationCarrier = ReturnType<typeof createViteNodeElysiaApplicationCarrier>
 
 export type StaticRuntimeVitePluginOptions = {
 	entry: string
@@ -67,6 +72,9 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		application?: StaticRuntimeApplication
 		product?: ProductDescriptor | null
 		host?: StaticRuntimeHost
+		carrier?: SrvxViteNodeCarrierAttachment
+		applicationCarrier?: StaticViteApplicationCarrier
+		detachApplicationCarrier?: () => void
 	} = {
 		configFiles: new Set(),
 	}
@@ -132,13 +140,26 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		const previousApplication = state.application
 		const previousProduct = state.product ?? null
 		if (previousHost) {
-			await previousHost.stop()
-			state.host = undefined
+			try {
+				await previousHost.stop()
+			} finally {
+				state.detachApplicationCarrier?.()
+				state.detachApplicationCarrier = undefined
+				state.host = undefined
+			}
 		}
 
 		let next: StaticRuntimeHost | undefined
 		try {
 			next = await createHost(application, product)
+			const applicationCarrier = state.applicationCarrier
+			if (!applicationCarrier) {
+				throw new Error('[runtime-static/vite] Elysia application carrier is not configured')
+			}
+			const detachApplicationCarrier = requireRuntimeHttpService(next.ctx).attachApplicationCarrier(
+				applicationCarrier,
+			)
+			state.detachApplicationCarrier = detachApplicationCarrier
 			const startup = await next.start()
 			state.host = next
 			state.application = application
@@ -146,14 +167,29 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			return startup
 		} catch (error) {
 			await next?.stop().catch((): undefined => undefined)
+			state.detachApplicationCarrier?.()
+			state.detachApplicationCarrier = undefined
 			if (previousHost && previousApplication) {
+				let restored: StaticRuntimeHost | undefined
 				try {
-					const restored = await createHost(previousApplication, previousProduct)
+					restored = await createHost(previousApplication, previousProduct)
+					const applicationCarrier = state.applicationCarrier
+					if (!applicationCarrier) {
+						throw new Error('[runtime-static/vite] Elysia application carrier is not configured', {
+							cause: error,
+						})
+					}
+					state.detachApplicationCarrier = requireRuntimeHttpService(
+						restored.ctx,
+					).attachApplicationCarrier(applicationCarrier)
 					await restored.start()
 					state.host = restored
 					state.application = previousApplication
 					state.product = previousProduct
 				} catch (rollbackError) {
+					await restored?.stop().catch((): undefined => undefined)
+					state.detachApplicationCarrier?.()
+					state.detachApplicationCarrier = undefined
 					const replacementError = new Error(
 						'[runtime-static/vite] host replacement and rollback both failed',
 						{
@@ -184,38 +220,115 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			}
 			marked[STATIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
-			const loaded = await loadApplication(true)
-			const startup = await replaceHost(loaded.application, loaded.product)
-			state.configFiles = loaded.configFiles
-			const host = state.host!
-			logStaticRuntimeStarted(host, startup, state.configFiles)
-
-			server.middlewares.use((req, res, next) => {
-				const activeHost = state.host
-				if (!activeHost) {
-					next()
-					return
-				}
-				if (!isStaticRuntimeRouteRequest(req, activeHost)) {
-					next()
-					return
-				}
-				void proxyToStaticRuntime(req, res, server, activeHost, next)
+			state.applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
+				fetch: (request) => {
+					const activeHost = state.host
+					if (!activeHost) return new Response('Static runtime is not ready', { status: 503 })
+					return activeHost.fetch(request)
+				},
+				matches: (request) => {
+					const activeHost = state.host
+					return Boolean(
+						activeHost && requireRuntimeHttpService(activeHost.ctx).matchesWebSocketRoute(request),
+					)
+				},
 			})
+			try {
+				const loaded = await loadApplication(true)
+				const startup = await replaceHost(loaded.application, loaded.product)
+				state.configFiles = loaded.configFiles
+				const host = state.host!
+				logStaticRuntimeStarted(host, startup, state.configFiles)
+
+				state.carrier = attachSrvxViteNodeCarrier(server, {
+					fetch(request) {
+						const activeHost = state.host
+						if (!activeHost) {
+							return Promise.resolve(new Response('Static runtime is not ready', { status: 503 }))
+						}
+						return activeHost.fetch(request)
+					},
+					shouldHandle(request) {
+						const activeHost = state.host
+						return Boolean(activeHost && isStaticRuntimeRouteRequest(request, activeHost))
+					},
+					...(server.httpServer
+						? {
+								businessWebSocket: {
+									matches: (request: IncomingMessage) =>
+										state.applicationCarrier?.matchesUpgrade(request) ?? false,
+									handle: (
+										request: IncomingMessage,
+										socket: import('node:stream').Duplex,
+										head: Buffer,
+									) => state.applicationCarrier?.handleUpgrade(request, socket, head),
+								},
+							}
+						: {}),
+				})
+			} catch (error) {
+				state.applicationCarrier.stopAccepting()
+				await state.host?.stop().catch((): undefined => undefined)
+				state.detachApplicationCarrier?.()
+				state.detachApplicationCarrier = undefined
+				state.host = undefined
+				await state.applicationCarrier.close().catch((): undefined => undefined)
+				state.applicationCarrier = undefined
+				throw error
+			}
 		},
 		async closeBundle() {
+			const applicationCarrier = state.applicationCarrier
+			applicationCarrier?.stopAccepting()
 			const active = state.host
 			state.host = undefined
-			if (active) await active.stop()
+			const carrier = state.carrier
+			state.carrier = undefined
+			let hostError: unknown
+			try {
+				if (active) await active.stop()
+			} catch (error) {
+				hostError = error
+			}
+			state.detachApplicationCarrier?.()
+			state.detachApplicationCarrier = undefined
+			let httpError: unknown
+			try {
+				await carrier?.close()
+			} catch (error) {
+				httpError = error
+			}
+			state.applicationCarrier = undefined
+			let applicationCarrierError: unknown
+			try {
+				await applicationCarrier?.close()
+			} catch (error) {
+				applicationCarrierError = error
+			}
+			const errors = [hostError, httpError, applicationCarrierError].filter(
+				(error) => error !== undefined,
+			)
+			if (errors.length === 1) throw errors[0]
+			if (errors.length > 1) {
+				throw new AggregateError(errors, '[runtime-static/vite] carrier shutdown failed')
+			}
 		},
 		async handleHotUpdate(ctx) {
 			const host = state.host
 			if (!state.configFiles.has(ctx.file)) return undefined
 			const server = state.server ?? ctx.server
 			state.server = server
-			const viteInvalidated = invalidateStaticRuntimeChangedModules(server, ctx.file)
+			const viteInvalidated = invalidateStaticRuntimeChangedModules(
+				server,
+				ctx.file,
+				state.configFiles,
+			)
 			invalidateViteSsrModule(server, ctx.file)
-			const loaded = await loadApplication(false)
+			// The canonical application is a configuration boundary, not an independently retained
+			// module. Clear the single SSR runner's evaluated namespace after Vite transform-graph
+			// invalidation so consecutive edits cannot reuse an importer namespace that still points at
+			// the previous package-root implementation.
+			const loaded = await loadApplication(true)
 			const application = loaded.application
 			const productChanged = !sameProduct(state.product ?? null, loaded.product)
 			const start = performance.now()
@@ -415,7 +528,11 @@ function affectedStaticRuntimePlugins(
 	return affected.size
 }
 
-function invalidateStaticRuntimeChangedModules(server: ViteDevServer, changedFile: string): number {
+function invalidateStaticRuntimeChangedModules(
+	server: ViteDevServer,
+	changedFile: string,
+	applicationFiles: ReadonlySet<string>,
+): number {
 	type ModuleLike = {
 		file?: string | null
 		importers?: Set<ModuleLike>
@@ -423,8 +540,19 @@ function invalidateStaticRuntimeChangedModules(server: ViteDevServer, changedFil
 
 	const queue: ModuleLike[] = []
 	const seen = new Set<ModuleLike>()
-	for (const mod of server.moduleGraph.getModulesByFile(changedFile) ?? []) {
+	const graph = server.environments.ssr.moduleGraph
+	for (const mod of graph.getModulesByFile(changedFile) ?? []) {
 		queue.push(mod as ModuleLike)
+	}
+	// Package-root imports may be indexed by a resolved symlink target while Vite reports the
+	// physical watcher path (or vice versa). If that exact lookup misses, invalidate only the known
+	// canonical application graph so the fresh SSR evaluation cannot consume a stale transform.
+	if (queue.length === 0) {
+		for (const file of applicationFiles) {
+			for (const mod of graph.getModulesByFile(file) ?? []) {
+				queue.push(mod as ModuleLike)
+			}
+		}
 	}
 
 	let invalidated = 0
@@ -432,9 +560,7 @@ function invalidateStaticRuntimeChangedModules(server: ViteDevServer, changedFil
 		const mod = queue.shift()!
 		if (seen.has(mod)) continue
 		seen.add(mod)
-		server.moduleGraph.invalidateModule(
-			mod as Parameters<typeof server.moduleGraph.invalidateModule>[0],
-		)
+		graph.invalidateModule(mod as Parameters<typeof graph.invalidateModule>[0])
 		invalidated++
 		for (const importer of mod.importers ?? []) queue.push(importer)
 	}
@@ -537,7 +663,7 @@ function isStaticRuntimeRouteRequest(
 	if (url.startsWith('/__pluxel/')) return true
 	const workbenchEnabled = host.ctx.workbench !== undefined
 	if (workbenchEnabled && pathname.startsWith(`${UI_PUBLIC_BASE}/`)) return true
-	if (host.ctx.http.matchesMountedRoute(pathname)) return true
+	if (requireRuntimeHttpService(host.ctx).matchesMountedRoute(pathname)) return true
 
 	const method = (request.method ?? 'GET').toUpperCase()
 	if (method !== 'GET' && method !== 'HEAD') return false
@@ -545,7 +671,10 @@ function isStaticRuntimeRouteRequest(
 	if (!workbenchEnabled) return false
 
 	const accept = String(request.headers.accept ?? '').toLowerCase()
-	return accept.includes('text/html') && host.ctx.http.matchesWorkbenchUiRoute(pathname)
+	return (
+		accept.includes('text/html') &&
+		requireRuntimeHttpService(host.ctx).matchesWorkbenchUiRoute(pathname)
+	)
 }
 
 function requestPathname(url: string): string {
@@ -595,29 +724,4 @@ function findSsrExportDir(
 		}
 	}
 	return undefined
-}
-
-async function proxyToStaticRuntime(
-	req: IncomingMessage,
-	res: ServerResponse,
-	server: ViteDevServer,
-	host: StaticRuntimeHost,
-	next: (error?: unknown) => void,
-): Promise<void> {
-	const exchange = createNodeFetchRequest(req, res, resolveViteOrigin(server))
-	try {
-		const response = await host.ctx.http.fetch(exchange.request)
-		await writeNodeFetchResponse(res, response, exchange.signal)
-	} catch (error) {
-		if (!exchange.signal.aborted && !res.destroyed) next(error)
-	} finally {
-		exchange.dispose()
-	}
-}
-
-function resolveViteOrigin(server: ViteDevServer): string {
-	const address = server.httpServer?.address()
-	const port =
-		typeof address === 'object' && address ? address.port : (server.config.server.port ?? 5173)
-	return `http://127.0.0.1:${port}`
 }

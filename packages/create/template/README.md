@@ -51,7 +51,7 @@ Both modes use the same Plugin classes and runtime state. Dynamic mode additiona
 - `plugins/todo` observes `AuditPlugin` through `definePluginRef()` as an optional integration.
 - Plugin tests use the Pluxel Vitest preset and the smallest matching core/runtime test host.
 - `host/web` is the `@example/web` workspace package and declares its frontend-only dependencies.
-- `host/vite.config.ts` serves that source and lets Plugin-mounted routes claim `/api` before SPA fallback.
+- `host/vite.config.ts` serves that source and lets generation-scoped Elysia routes claim `/api` before SPA fallback.
 - `host` records `@example/web` as a build input, installs the workspace Plugins and switches static/dynamic route policy by Vite mode.
 
 Open `http://127.0.0.1:3310` after `pnpm dev`. The Todo UI calls the same-origin Plugin-owned

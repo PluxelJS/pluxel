@@ -43,7 +43,7 @@ preset 在 TypeScript 擦除前运行 Pluxel semantic lowering，并执行 build
 | dynamic source discovery、Vite loader 与 HMR               | dynamic route test host/真实 Vite |
 | package metadata、Workbench/worker/database artifact       | `pluxel build` integration        |
 
-`@pluxel/test` 是 public dev-only core test surface，不会注册 runtime services。需要 `ctx.http` 或 `ctx.database` 时使用 runtime test entry。
+`@pluxel/test` 是 public dev-only core test surface，不会注册 runtime services。需要 `ctx.elysia` 或 `ctx.database` 时使用 runtime test entry。
 普通 Core/Runtime test host 只提供 `add`、`remove`、`restart`、`replace`、`fork`、`override`、`commit` 与只读查询，不暴露
 `PluginService`、graph 或 transaction internals；Core 自身的白盒测试显式从 `@pluxel/core/internal` 取得内部 authority。
 
@@ -126,32 +126,37 @@ import { expect, it } from 'vitest'
 @Plugin()
 class HealthPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.http.plugin.routes((app) => app.get('/health', () => ({ ok: true })))
+		this.ctx.elysia.get('/health', () => ({ ok: true }))
 	}
 }
 
-it('mounts and removes owner HTTP routes', async () => {
+it('publishes and removes its Elysia application', async () => {
 	await withRuntimeHost(
 		async (host) => {
 			host.add(HealthPlugin)
 			host.cfg(HealthPlugin).enable()
 			await host.commit()
 
-			const plugin = host.require(HealthPlugin)
-			const url = `http://local${plugin.ctx.http.plugin.base('/health')}`
-			const response = await host.ctx.http.fetch(new Request(url))
+			const url = 'http://local.test/health'
+			const response = await host.fetch(new Request(url))
 			expect(await response.json()).toEqual({ ok: true })
 
 			host.remove(HealthPlugin)
 			await host.commit()
-			expect((await host.ctx.http.fetch(new Request(url))).status).toBe(404)
+			expect((await host.fetch(new Request(url))).status).toBe(404)
 		},
 		{ workbench: false },
 	)
 })
 ```
 
+`host.fetch()` 经过真实 immutable route directory、generation admission 和已经 seal 的 Elysia app，但不打开物理端口。
 `withRuntimeHost()` 在 callback 结束后自动 `dispose()`；需要手动控制 host lifetime 时使用 `createRuntimeHost()`。
+
+`host.fetch()` 不执行 HTTP Upgrade，因此不能据此推断 WebSocket、disconnect、close code、backpressure 或 HMR arbitration。
+Node production、static Vite 与 dynamic Vite 的基础业务 WebSocket 已通过各自的 ephemeral real-listener test；其他 carrier 与完整
+socket parity 仍需独立 conformance。Elysia 2 beta 的 external `setup()` / `cleanup()` attach seam 也尚未完成；完整边界见
+[插件 HTTP](../runtime/http.md)。
 
 ### Config
 

@@ -80,7 +80,7 @@ host.cfg(OtelPlugin).set({
 
 至少要保留一个输出；`otlp: []` 与 `prometheus: false` 会在配置校验时失败。关闭的 signal 不加载对应 exporter，读取它的 getter 会立即报错，例如未启用 traces 时访问 `otel.tracer` 会抛出 `OpenTelemetry traces signal is disabled`。
 
-Prometheus 默认挂载 `GET /metrics`，复用 Pluxel HTTP service，不启动第二个 listener。自定义 path 必须是非根、无 trailing slash、query、hash、反斜杠或空 segment 的绝对 Plugin route。并发 scrape 会合并为同一次 collection；失败返回 503，成功使用 Prometheus text format。
+Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.elysia` 上声明 `GET /metrics`，由宿主现有 carrier 提供服务，不启动第二个 listener。自定义 path 必须是非根、无 trailing slash、query、hash、反斜杠或空 segment 的最终绝对 Elysia path。并发 scrape 会合并为同一次 collection；失败返回 503，成功使用 Prometheus text format。
 
 ## 配置 OTLP endpoint
 

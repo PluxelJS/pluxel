@@ -10,12 +10,9 @@ packages:
 
 ## Prefer proxy-free owner and caller views
 
-Keep Context capability access, HTTP owner views, Plugin dependency caller facades, named event
-channels, config snapshots, and SSE namespace clients on ordinary objects and precompiled property
-descriptors. HTTP now separates its single root backend from small owner views while preserving
-owner-effects route cleanup and existing `ctx.http` usage. The host HTTP mount API now rejects
-non-root owner views, preventing accidental host mounts from bypassing `ctx.http.plugin` cleanup;
-the root Context remains host authority rather than an adversarial Plugin sandbox.
+Keep Context capability access, Plugin dependency caller facades, named event channels, config
+snapshots, and SSE namespace clients on ordinary objects and precompiled property descriptors.
+The root Context remains host authority rather than an adversarial Plugin sandbox.
 Core and Runtime service views pin `ctx` as a non-writable ordinary property so cached handles
 cannot be rebound to another cleanup owner.
 

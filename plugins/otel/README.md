@@ -75,8 +75,9 @@ host.cfg(OtelPlugin).set({
 只做 Prometheus pull 时使用 `{ otlp: [], prometheus: {} }`。配置至少保留一个输出；被关闭的 signal 不加载 exporter、不读取它的
 endpoint，也不会返回一个看似工作的 no-op API。访问关闭 signal 的 getter 会立即报错。
 
-默认 pull URL 是显式产品协议 `GET /metrics`。它复用 Pluxel HTTP service，不启动第二个 listener。并发 scrape
-合并为同一次 collection；OTLP periodic reader 与 Prometheus reader 相互独立。
+默认 pull URL 是显式产品协议 `GET /metrics`。`OtelPlugin` 直接在自己的 generation-scoped `ctx.elysia`
+上声明该 route，由宿主现有 carrier 提供服务，不启动第二个 listener。并发 scrape 合并为同一次 collection；OTLP periodic
+reader 与 Prometheus reader 相互独立。
 
 ## OTLP transports 与环境变量
 
@@ -124,8 +125,8 @@ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://victoriametrics:8428/opentelemetry/v1
 OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://victorialogs:9428/insert/opentelemetry/v1/logs
 ```
 
-VictoriaMetrics 的 Prometheus scrape 也可直接抓取 plugin-scoped `/metrics` route。生产部署仍需按 Victoria 版本启用相应 OTLP ingest
-功能并配置租户/auth headers。
+VictoriaMetrics 的 Prometheus scrape 也可直接抓取 `OtelPlugin` generation 声明的最终 `/metrics` Elysia route。生产部署仍需按
+Victoria 版本启用相应 OTLP ingest 功能并配置租户/auth headers。
 
 ## 边界
 

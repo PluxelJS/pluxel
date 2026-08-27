@@ -77,6 +77,43 @@ describe('dynamic config host singleton bridge', () => {
 			resolveId('@pluxel/context/internal', fixture.getPath('entry.ts'), { ssr: true }),
 		).toBeNull()
 	})
+
+	it('bridges every host-exported Elysia subpath without accepting private dist paths', () => {
+		const bridge = singletonBridgePlugin()
+		const bridgeConfig = (
+			bridge.config as () => {
+				resolve?: { dedupe?: string[] }
+				ssr?: { external?: string[] }
+			}
+		)()
+		expect(bridgeConfig.resolve?.dedupe).toContain('elysia')
+		expect(bridgeConfig.ssr?.external).toEqual(
+			expect.arrayContaining([
+				'elysia',
+				'elysia/adapter',
+				'elysia/adapter/web-standard',
+				'elysia/websocket',
+				'elysia/ws',
+			]),
+		)
+		const configResolved = bridge.configResolved as (config: { root: string }) => void
+		configResolved({ root: runtimeDynamicRoot })
+		const resolveId = bridge.resolveId as (
+			id: string,
+			importer: string,
+			options: { ssr: boolean },
+		) => unknown
+		const importer = resolve(runtimeDynamicRoot, 'src/vite.ts')
+
+		for (const specifier of ['elysia', 'elysia/websocket', 'elysia/type']) {
+			expect(resolveId(specifier, importer, { ssr: true })).toMatchObject({
+				external: true,
+				id: expect.stringMatching(/^file:.*\/elysia\/dist\//),
+			})
+		}
+		expect(resolveId('elysia/package.json', importer, { ssr: true })).toBeNull()
+		expect(resolveId('elysia/dist/private', importer, { ssr: true })).toBeNull()
+	})
 })
 
 function singletonBridgePlugin(): Plugin {

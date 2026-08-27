@@ -1,5 +1,5 @@
 import type { Context as PluxelContext } from '@pluxel/core'
-import type { AnyElysiaApp } from '../http/elysia'
+import type { AnyHostElysiaApp } from '../http/elysia'
 import { buildAdminAccessRedirectPath } from './transport'
 
 function escapeHtml(input: string): string {
@@ -76,7 +76,10 @@ async function renderAdminAccessPage(ctx: PluxelContext, request: Request): Prom
 </html>`
 }
 
-export function createAdminAccessRoutes(ctx: PluxelContext, app: AnyElysiaApp): AnyElysiaApp {
+export function createAdminAccessRoutes(
+	ctx: PluxelContext,
+	app: AnyHostElysiaApp,
+): AnyHostElysiaApp {
 	return app.get('/', async ({ request, set }) => {
 		const adminAccess = await ctx.root.adminAccess.describe({ request })
 		if (adminAccess.allow) {

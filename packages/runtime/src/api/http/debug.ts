@@ -4,7 +4,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 
-import { type AnyElysiaApp } from '../../services/http/elysia'
+import { type AnyHostElysiaApp } from '../../services/http/elysia'
 import { requireRuntimePluginGraphCoordinator } from '../../internal/reconciliation'
 import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 import { RUNTIME_INTERNAL_API_BASE } from '../../web/paths'
@@ -340,7 +340,7 @@ function renderPluginCard(plugin: PluginSchemaInfo, expanded = false) {
 	`
 }
 
-export const debugRoutes = (app: AnyElysiaApp) =>
+export const debugRoutes = (app: AnyHostElysiaApp) =>
 	app.group('/debug', (debug) =>
 		debug
 			.get('', ({ pluginCtx, set }) => {
@@ -405,6 +405,9 @@ export const debugRoutes = (app: AnyElysiaApp) =>
 			})
 			.get(
 				'/schema-source',
+				{
+					query: debugSchemaSourceQuery,
+				},
 				({ pluginCtx, query, set }) => {
 					const plugins = getPluginSchemaInfos(pluginCtx)
 					const filter = query.filter
@@ -453,9 +456,6 @@ export const debugRoutes = (app: AnyElysiaApp) =>
 		`
 					set.headers['content-type'] = 'text/html; charset=utf-8'
 					return layout('Schema Source', content, 'schema-source')
-				},
-				{
-					query: debugSchemaSourceQuery,
 				},
 			)
 			.get('/json/schemas', ({ pluginCtx }) => {

@@ -251,8 +251,8 @@ function createFederationPlugin(payload: WorkbenchUiBuildPayload): PluginOption[
 	}
 }
 
-function toPluginArray(input: PluginOption | undefined): PluginOption[] {
+function toPluginArray(input: unknown): PluginOption[] {
 	if (Array.isArray(input)) return input.flatMap((item) => toPluginArray(item))
 	if (!input) return []
-	return [input]
+	return [input as PluginOption]
 }

@@ -18,6 +18,15 @@ import { inspectHmrRunner } from '../support/white-box'
 
 describe('HMR runner bridge', () => {
 	it('reuses host Core and installed standalone Context entries in the runner', async () => {
+		expect(LOADER_HMR_BRIDGE_MODULES).toEqual(
+			expect.arrayContaining([
+				'elysia',
+				'elysia/adapter',
+				'elysia/adapter/web-standard',
+				'elysia/websocket',
+				'elysia/ws',
+			]),
+		)
 		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/core/internal')
 		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/core/toolchain')
 		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/runtime/toolchain')

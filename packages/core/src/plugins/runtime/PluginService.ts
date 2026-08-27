@@ -1,9 +1,10 @@
-import type { Context as PluxelContext } from '../../context/Context'
+import type { Context as PluxelContext, PluginContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { createGenerationContext } from '../../context/context-factory'
 import { createErr, createOk } from 'option-t/plain_result'
 import { requireConfigService } from '../../internal/config-service'
 import type { BasePlugin } from '../composition/BasePlugin'
+import { getPluginGenerationContext } from '../composition/BasePlugin'
 import { createCallerGenerationView } from '../composition/caller-view'
 import type { PluginToken } from '../types'
 import { computeInitPlan, type InitPlan, startPluginsTopo, stopPluginsTopo } from './commit'
@@ -13,6 +14,7 @@ import {
 	type PluginRef,
 } from './definition'
 import {
+	comparePluginNodeAddress,
 	formatPluginNodeReference,
 	isPluginNodeSlot,
 	parsePluginDefinitionAddress,
@@ -44,6 +46,13 @@ import { assignValidatedPluginConfig } from './plugin-service/ConfigInjection'
 import { DependentClosureCollector } from './plugin-service/DependentClosureCollector'
 import { InstanceWatcherRegistry } from './plugin-service/InstanceWatcherRegistry'
 import { LifecycleManager } from './plugin-service/LifecycleManager'
+import {
+	EMPTY_CORE_PLUGIN_LIFECYCLE_HOOKS,
+	freezeCorePluginLifecycleHooks,
+	type CoreCommitPublication,
+	type CorePluginLifecycleHooks,
+	type CorePluginLifecycleOperation,
+} from './plugin-service/HostLifecycle'
 import {
 	collectPluginLifecycleNotStarted,
 	createLifecycleReport,
@@ -130,6 +139,10 @@ export class PluginService {
 	private readonly lifecycleManager: LifecycleManager
 	private readonly watcherRegistry: InstanceWatcherRegistry
 	private readonly dependentClosure: DependentClosureCollector
+	private readonly lifecycleHooks: CorePluginLifecycleHooks
+	private hostInvariantFailed = false
+	private hostInvariantFailure: unknown
+	private publishingHostCommit = false
 
 	private readonly runtimeUpdateController: RuntimeUpdateController<RuntimeUpdateCommitResult> = {
 		materializeNode: (address, candidate) => this.materializeNode(address, candidate),
@@ -147,12 +160,14 @@ export class PluginService {
 	constructor(
 		public readonly ctx: PluxelContext,
 		config: PluginServiceConfig = {},
+		lifecycleHooks: CorePluginLifecycleHooks = EMPTY_CORE_PLUGIN_LIFECYCLE_HOOKS,
 	) {
 		pinOwnerContext(this, ctx)
 		this.startTimeoutMs = config.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
 		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS
 		this.startConcurrency = config.startConcurrency ?? DEFAULT_START_CONCURRENCY
 		this.stopConcurrency = config.stopConcurrency ?? DEFAULT_STOP_CONCURRENCY
+		this.lifecycleHooks = freezeCorePluginLifecycleHooks(lifecycleHooks)
 		this.definitions = new PluginDefinitions(() => this.createPluginContext())
 		this.lifecycleManager = new LifecycleManager(
 			this.ctx,
@@ -181,6 +196,11 @@ export class PluginService {
 	beginUpdate(
 		options: RuntimeUpdateOptions = {},
 	): RuntimeUpdateTransaction<RuntimeUpdateCommitResult> {
+		if (this.hostInvariantFailed) {
+			throw new Error('Cannot update a Core Plugin root after host commit publication failed', {
+				cause: this.hostInvariantFailure,
+			})
+		}
 		if (this.activeRuntimeUpdate) throw new Error(RUNTIME_UPDATE_ALREADY_ACTIVE_MESSAGE)
 		if (this.definitions.hasPendingChanges()) throw new Error(RUNTIME_UPDATE_PENDING_DRAFT_MESSAGE)
 		const tx = new PluginRuntimeUpdateTransaction(this.runtimeUpdateController, options)
@@ -512,6 +532,324 @@ export class PluginService {
 		}
 	}
 
+	private createLifecycleOperation(meta: RuntimeUpdateCommitMeta): CorePluginLifecycleOperation {
+		return Object.freeze({
+			revision: this.commitRevision + 1,
+			reason: meta.reason,
+		})
+	}
+
+	private captureRunningGenerationContexts(
+		runtime: PluginRuntime,
+		nodes: Iterable<PluginNodeSlot>,
+		out: Set<PluginContext>,
+	): void {
+		for (const node of nodes) {
+			const instance = runtime.peekByKey<BasePlugin>(node)
+			if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+			out.add(getPluginGenerationContext(instance) as PluginContext)
+		}
+	}
+
+	private stableNodeOrder(graph: PluginGraph, nodes: Iterable<PluginNodeSlot>): PluginNodeSlot[] {
+		const unique = new Set<PluginNodeSlot>()
+		for (const node of nodes) {
+			if (graph.has(node)) unique.add(node)
+		}
+		return [...unique].sort((left, right) =>
+			comparePluginNodeAddress(this.nodeAddressOf(left), this.nodeAddressOf(right)),
+		)
+	}
+
+	private stableStartOrder(graph: PluginGraph, nodes: Iterable<PluginNodeSlot>): PluginNodeSlot[] {
+		const orderedNodes = this.stableNodeOrder(graph, nodes)
+		const included = new Set(orderedNodes)
+		const remaining = new Map<PluginNodeSlot, number>()
+		const dependents = new Map<PluginNodeSlot, PluginNodeSlot[]>()
+		for (const node of orderedNodes) {
+			remaining.set(node, 0)
+			dependents.set(node, [])
+		}
+		for (const node of orderedNodes) {
+			const slot = graph.slotOf(node)
+			if (slot === undefined) continue
+			for (const dependencySlot of graph.orderDepSlotsOf(slot)) {
+				const dependency = graph.keyOf(dependencySlot)
+				if (!isPluginNodeSlot(dependency) || !included.has(dependency)) continue
+				remaining.set(node, remaining.get(node)! + 1)
+				dependents.get(dependency)!.push(node)
+			}
+		}
+
+		const compare = (left: PluginNodeSlot, right: PluginNodeSlot) =>
+			comparePluginNodeAddress(this.nodeAddressOf(left), this.nodeAddressOf(right))
+		let frontier = orderedNodes.filter((node) => remaining.get(node) === 0)
+		const out: PluginNodeSlot[] = []
+		while (frontier.length > 0) {
+			frontier.sort(compare)
+			const next = new Set<PluginNodeSlot>()
+			for (const node of frontier) {
+				out.push(node)
+				for (const dependent of dependents.get(node)!) {
+					const count = remaining.get(dependent)! - 1
+					remaining.set(dependent, count)
+					if (count === 0) next.add(dependent)
+				}
+			}
+			frontier = [...next]
+		}
+		const emitted = new Set(out)
+		const leftovers = orderedNodes.filter((node) => !emitted.has(node)).sort(compare)
+		out.push(...leftovers)
+		return out
+	}
+
+	private collectStartedGenerationContexts(
+		graph: PluginGraph,
+		runtime: PluginRuntime,
+		nodes: Iterable<PluginNodeSlot>,
+		failed: ReadonlySet<PluginNodeSlot>,
+	): readonly PluginContext[] {
+		const started = new Set<PluginContext>()
+		for (const node of this.stableStartOrder(graph, nodes)) {
+			if (failed.has(node)) continue
+			const instance = runtime.peekByKey<BasePlugin>(node)
+			if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+			started.add(getPluginGenerationContext(instance) as PluginContext)
+		}
+		return Object.freeze([...started])
+	}
+
+	private collectFailedNodes(
+		graph: PluginGraph,
+		nodes: Iterable<PluginNodeSlot>,
+		failed: ReadonlySet<PluginNodeSlot>,
+	): readonly PluginNodeSlot[] {
+		return Object.freeze(this.stableStartOrder(graph, nodes).filter((node) => failed.has(node)))
+	}
+
+	private stableContextOrder(contexts: Iterable<PluginContext>): readonly PluginContext[] {
+		return Object.freeze(
+			[...new Set(contexts)].sort((left, right) =>
+				comparePluginNodeAddress(left.pluginInfo.nodeAddress, right.pluginInfo.nodeAddress),
+			),
+		)
+	}
+
+	private collectRequiredFailureClosure(
+		graph: PluginGraph,
+		roots: readonly PluginNodeSlot[],
+	): Readonly<{
+		nodes: Set<PluginNodeSlot>
+		blockedBy: Map<PluginNodeSlot, PluginNodeSlot>
+	}> {
+		const nodes = new Set<PluginNodeSlot>()
+		const blockedBy = new Map<PluginNodeSlot, PluginNodeSlot>()
+		const queue: Array<Readonly<{ node: PluginNodeSlot; root: PluginNodeSlot }>> = []
+		for (const root of roots) {
+			if (nodes.has(root)) continue
+			nodes.add(root)
+			queue.push({ node: root, root })
+		}
+		for (let cursor = 0; cursor < queue.length; cursor++) {
+			const current = queue[cursor]!
+			const slot = graph.slotOf(current.node)
+			if (slot === undefined) continue
+			for (const dependentSlot of graph.dependentSlotsOf(slot)) {
+				const dependent = graph.keyOf(dependentSlot)
+				if (!isPluginNodeSlot(dependent) || nodes.has(dependent)) continue
+				nodes.add(dependent)
+				blockedBy.set(dependent, current.root)
+				queue.push({ node: dependent, root: current.root })
+			}
+		}
+		return { nodes, blockedBy }
+	}
+
+	private async settleHostGenerations(args: {
+		operation: CorePluginLifecycleOperation
+		graph: PluginGraph
+		runtime: PluginRuntime
+		plan: CommitExecutionPlan
+		failed: Set<PluginNodeSlot>
+		report: MutableLifecycleReport
+		stopped: Set<PluginContext>
+	}): Promise<void> {
+		const settle = this.lifecycleHooks.settleGenerations
+		if (!settle) return
+		const { operation, graph, runtime, plan, failed, report, stopped } = args
+		const settled = new Set<PluginContext>()
+
+		while (true) {
+			const candidates: PluginContext[] = []
+			const nodeByContext = new Map<PluginContext, PluginNodeSlot>()
+			for (const node of this.stableStartOrder(graph, plan.toStart)) {
+				if (failed.has(node)) continue
+				const instance = runtime.peekByKey<BasePlugin>(node)
+				if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+				const ctx = getPluginGenerationContext(instance) as PluginContext
+				if (settled.has(ctx)) continue
+				settled.add(ctx)
+				candidates.push(ctx)
+				nodeByContext.set(ctx, node)
+			}
+			if (candidates.length === 0) return
+
+			let returned: unknown
+			try {
+				returned = await settle(
+					Object.freeze({
+						operation,
+						started: Object.freeze(candidates),
+						stopped: this.stableContextOrder(stopped),
+					}),
+				)
+			} catch (error) {
+				this.poisonHost(error)
+			}
+			if (returned === undefined) continue
+			if (!Array.isArray(returned)) {
+				this.poisonHost(
+					new TypeError('[pluxel/core] settleGenerations must return an array of rejections'),
+				)
+			}
+			if (returned.length === 0) continue
+
+			const rejectionByNode = new Map<PluginNodeSlot, unknown>()
+			for (const rejection of returned) {
+				if (!rejection || typeof rejection !== 'object') {
+					this.poisonHost(
+						new TypeError('[pluxel/core] settleGenerations returned an invalid rejection'),
+					)
+				}
+				const node = nodeByContext.get(rejection.ctx)
+				if (!node || rejectionByNode.has(node)) {
+					this.poisonHost(
+						new TypeError(
+							'[pluxel/core] settleGenerations must reject each current candidate at most once',
+						),
+					)
+				}
+				rejectionByNode.set(node, rejection.error)
+			}
+
+			const rejected = this.stableStartOrder(graph, rejectionByNode.keys())
+			const rejectedSet = new Set(rejected)
+			for (const node of rejected) {
+				const error = ensureError(rejectionByNode.get(node))
+				recordLifecycleIssue(report, {
+					plugin: node,
+					phase: 'start',
+					kind: PLUGIN_LIFECYCLE_ISSUE_KIND.StartFailed,
+					message: error.message,
+					error: serializeLifecycleError(error),
+				})
+			}
+
+			const requiredFailure = this.collectRequiredFailureClosure(graph, rejected)
+			const requiredClosure = requiredFailure.nodes
+			const requiredInOrder = this.stableStartOrder(graph, requiredClosure)
+			for (const node of requiredInOrder) {
+				if (rejectedSet.has(node) || failed.has(node)) continue
+				const blockedBy = requiredFailure.blockedBy.get(node)!
+				recordLifecycleIssue(report, {
+					plugin: node,
+					phase: 'dependency',
+					kind: PLUGIN_LIFECYCLE_ISSUE_KIND.DependencyBlocked,
+					blockedBy,
+					message: `Plugin ${this.label(node)} was withdrawn because dependency ${this.label(blockedBy)} failed host settlement.`,
+				})
+			}
+			for (const node of requiredClosure) failed.add(node)
+			for (const node of requiredClosure) {
+				plan.toStop.add(node)
+				plan.toStart.add(node)
+			}
+
+			const requiredStopSlots = new Set<number>()
+			for (const node of requiredInOrder) {
+				const instance = runtime.peekByKey<BasePlugin>(node)
+				if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+				const slot = graph.slotOf(node)
+				if (slot !== undefined) requiredStopSlots.add(slot)
+			}
+			this.captureRunningGenerationContexts(runtime, requiredInOrder, stopped)
+			await this.applyTeardown(graph, requiredStopSlots, report)
+			runtime.deleteMany(requiredClosure)
+
+			const optionalRestart = this.stableStartOrder(
+				graph,
+				this.dependentClosure.collectOrdering(graph, rejected),
+			).filter((node) => {
+				if (requiredClosure.has(node) || failed.has(node)) return false
+				return this.isRunningInRuntime(runtime, node)
+			})
+			if (optionalRestart.length === 0) continue
+
+			const restartSlots = new Set<number>()
+			for (const node of optionalRestart) {
+				const instance = runtime.peekByKey<BasePlugin>(node)
+				if (instance) {
+					const ctx = getPluginGenerationContext(instance) as PluginContext
+					stopped.add(ctx)
+				}
+				const slot = graph.slotOf(node)
+				if (slot !== undefined) restartSlots.add(slot)
+				plan.toStop.add(node)
+				plan.toStart.add(node)
+			}
+			await this.applyTeardown(graph, restartSlots, report)
+			runtime.deleteMany(optionalRestart)
+			for (const node of await this.startSlotSet(runtime, graph, restartSlots, report, operation)) {
+				failed.add(node)
+			}
+		}
+	}
+
+	private poisonHost(error: unknown): never {
+		this.hostInvariantFailed = true
+		this.hostInvariantFailure = error
+		throw error
+	}
+
+	private async prepareHostCommit(publication: CoreCommitPublication): Promise<void> {
+		const prepare = this.lifecycleHooks.prepareCommit
+		if (!prepare) return
+		try {
+			await prepare(publication)
+		} catch (error) {
+			this.poisonHost(error)
+		}
+	}
+
+	private publishHostCommit(publication: CoreCommitPublication): void {
+		const publish = this.lifecycleHooks.publishCommit
+		if (!publish) return
+		if (this.publishingHostCommit) {
+			this.poisonHost(new Error('[pluxel/core] Host commit publication cannot be reentrant'))
+		}
+		this.publishingHostCommit = true
+		try {
+			const result: unknown = publish(publication)
+			if (result !== undefined) {
+				if (
+					result !== null &&
+					(typeof result === 'object' || typeof result === 'function') &&
+					typeof (result as { then?: unknown }).then === 'function'
+				) {
+					void Promise.resolve(result).catch((): undefined => undefined)
+				}
+				throw new TypeError(
+					'[pluxel/core] Host commit publication must be synchronous and return undefined',
+				)
+			}
+		} catch (error) {
+			this.poisonHost(error)
+		} finally {
+			this.publishingHostCommit = false
+		}
+	}
+
 	private activeRuntime(): PluginRuntime {
 		return this._activeRuntime ?? this.definitions.runtime
 	}
@@ -591,12 +929,13 @@ export class PluginService {
 		runtime: PluginRuntime,
 		node: PluginNodeSlot,
 		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
 	): Promise<boolean> {
 		const instance = await this.resolveGeneration(runtime, node, report)
 		if (!instance) return false
 		const configRevision = await this.injectPluginConfig(runtime, node, instance, report)
 		if (configRevision === undefined) return false
-		const started = await this.startGeneration(runtime, node, instance, report)
+		const started = await this.startGeneration(runtime, node, instance, report, operation)
 		if (started && configRevision !== null) {
 			requireConfigService(this.ctx).markConfigApplied(this.nodeAddressOf(node), configRevision)
 		}
@@ -691,13 +1030,20 @@ export class PluginService {
 		node: PluginNodeSlot,
 		instance: BasePlugin,
 		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
 	): Promise<boolean> {
 		try {
-			const result = await this.lifecycleManager.startLifecycle(
-				node,
-				instance,
-				requirePluginGenerationInfo(instance.ctx).startTimeoutMs,
-				(error, phase) =>
+			const result = await this.lifecycleManager.startLifecycle(node, instance, {
+				timeoutMs: requirePluginGenerationInfo(instance.ctx).startTimeoutMs,
+				finalizeGeneration: this.lifecycleHooks.finalizeGeneration
+					? (signal) =>
+							this.lifecycleHooks.finalizeGeneration!({
+								operation,
+								ctx: getPluginGenerationContext(instance) as PluginContext,
+								signal,
+							})
+					: undefined,
+				onLateError: (error, phase) =>
 					recordLifecycleIssue(report, {
 						plugin: node,
 						phase,
@@ -708,7 +1054,7 @@ export class PluginService {
 						message: errorMessage(error),
 						error: serializeLifecycleError(error),
 					}),
-			)
+			})
 			if (result.ok === true) return true
 			recordLifecycleIssue(report, {
 				plugin: node,
@@ -739,6 +1085,7 @@ export class PluginService {
 		graph: PluginGraph,
 		plan: InitPlan<number>,
 		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
 	): Promise<Set<number>> {
 		for (const slot of plan.leftovers) {
 			const node = graph.keyOf(slot)
@@ -755,7 +1102,7 @@ export class PluginService {
 			(slot) => {
 				const node = graph.keyOf(slot)
 				return isPluginNodeSlot(node)
-					? this.instantiateAndStart(runtime, node, report)
+					? this.instantiateAndStart(runtime, node, report, operation)
 					: Promise.resolve(false)
 			},
 			{
@@ -783,11 +1130,12 @@ export class PluginService {
 		graph: PluginGraph,
 		slots: Set<number>,
 		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
 	): Promise<Set<PluginNodeSlot>> {
 		const failed = new Set<PluginNodeSlot>()
 		if (slots.size === 0) return failed
 		const plan = computeInitPlan(slots, (slot) => graph.orderDepSlotsOf(slot))
-		for (const slot of await this.startPlugins(runtime, graph, plan, report)) {
+		for (const slot of await this.startPlugins(runtime, graph, plan, report, operation)) {
 			const node = graph.keyOf(slot)
 			if (isPluginNodeSlot(node)) failed.add(node)
 		}
@@ -881,6 +1229,7 @@ export class PluginService {
 		const oldGraph = this.graph
 		const oldRuntime = this.definitions.runtime
 		const { delta, graph, runtime } = action
+		const operation = this.createLifecycleOperation(meta)
 		this._activeGraph = graph
 		this._activeRuntime = runtime
 		try {
@@ -891,6 +1240,14 @@ export class PluginService {
 				onPointOfNoReturn()
 				confirmGraph()
 				this.replacePendingStarts([])
+				const publication: CoreCommitPublication = Object.freeze({
+					operation,
+					started: Object.freeze([]),
+					stopped: Object.freeze([]),
+					failed: Object.freeze([]),
+				})
+				await this.prepareHostCommit(publication)
+				this.publishHostCommit(publication)
 				this.publishCommitSummary(this.graph, {
 					runtimeUpdate: createRuntimeUpdateSummary(meta),
 					pluginChanges: EMPTY_PLUGIN_COMMIT_CHANGES,
@@ -901,12 +1258,14 @@ export class PluginService {
 
 			this.capturePostStartAvailabilityState(plan, graph, oldRuntime, oldRunning)
 			const report = createLifecycleReport()
+			const stopped = new Set<PluginContext>()
+			this.captureRunningGenerationContexts(oldRuntime, plan.toStop, stopped)
 			onPointOfNoReturn()
 			await this.applyTeardown(oldGraph, plan.toStopSlots, report)
 			// Point of no return: every structural check completed in prepare().
 			confirmGraph()
 			runtime.deleteMany(collectRuntimeEvictions(plan))
-			const failed = await this.startSlotSet(runtime, graph, plan.toStartSlots, report)
+			const failed = await this.startSlotSet(runtime, graph, plan.toStartSlots, report, operation)
 			if (failed.size > 0) runtime.deleteMany(failed)
 
 			const postStart = this.collectPostStartAvailabilityClosure(plan, graph, oldRunning, failed)
@@ -918,19 +1277,40 @@ export class PluginService {
 					plan.toStop.add(node)
 					plan.toStart.add(node)
 				}
+				this.captureRunningGenerationContexts(runtime, postStart, stopped)
 				await this.applyTeardown(graph, slots, report)
 				runtime.deleteMany(postStart)
-				for (const node of await this.startSlotSet(runtime, graph, slots, report)) failed.add(node)
+				for (const node of await this.startSlotSet(runtime, graph, slots, report, operation)) {
+					failed.add(node)
+				}
 			}
+			await this.settleHostGenerations({
+				operation,
+				graph,
+				runtime,
+				plan,
+				failed,
+				report,
+				stopped,
+			})
 
 			const lifecycleReport = finalizeLifecycleReport(report)
+			const pluginChanges = createPluginCommitChanges(plan, failed)
+			this.replacePendingStarts(failed)
+			const publication: CoreCommitPublication = Object.freeze({
+				operation,
+				started: this.collectStartedGenerationContexts(graph, runtime, plan.toStart, failed),
+				stopped: this.stableContextOrder(stopped),
+				failed: this.collectFailedNodes(graph, plan.toStart, failed),
+			})
+			await this.prepareHostCommit(publication)
+			this.publishHostCommit(publication)
 			const summary = this.publishCommitSummary(this.graph, {
 				runtimeUpdate: createRuntimeUpdateSummary(meta),
-				pluginChanges: createPluginCommitChanges(plan, failed),
+				pluginChanges,
 				lifecycleReport,
 			})
 			this.observeLateLifecycleIssues(report, summary)
-			this.replacePendingStarts(failed)
 			return createOk({ graph: this.graph, delta })
 		} finally {
 			this._activeGraph = undefined

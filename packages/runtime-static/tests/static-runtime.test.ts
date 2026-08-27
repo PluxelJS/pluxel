@@ -25,6 +25,7 @@ import {
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import { defineProduct } from '@pluxel/runtime/product'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { websocket } from 'elysia/websocket'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { defineStaticRuntime, type StaticRuntimePluginStatus } from '@pluxel/runtime-static'
@@ -249,10 +250,44 @@ class RemovedStatic extends BasePlugin {}
 @Plugin({ displayName: 'Direct HTTP' })
 class DirectHttp extends BasePlugin {
 	override init(): void {
-		this.ctx.http.plugin.routes((app) => app.get('/ping', 'pong'), {
-			id: 'direct-http',
-			publicPath: '/direct-http',
-		})
+		this.ctx.elysia
+			.get('/direct-http/ping', 'pong')
+			.post('/direct-http/body', ({ request }) => request.text())
+			.get('/direct-http/server', ({ request, server }) => ({
+				id: server?.id,
+				url: server?.url.toString(),
+				port: server?.port,
+				hostname: server?.hostname,
+				development: server?.development,
+				ip: server?.requestIP(request),
+			}))
+	}
+}
+
+function installOwnerWebSocket(app: BasePlugin['ctx']['elysia'], owner: 'a' | 'b'): void {
+	app.use(websocket()).ws(`/owner-${owner}/socket`, {
+		open(socket) {
+			socket.subscribe('shared')
+			socket.send(`open:${owner}`)
+		},
+		message(socket, message) {
+			socket.publish('shared', `${owner}:topic:${message}`)
+			socket.send(`${owner}:echo:${message}`)
+		},
+	})
+}
+
+@Plugin({ displayName: 'Static WebSocket A' })
+class StaticWebSocketA extends BasePlugin {
+	override init(): void {
+		installOwnerWebSocket(this.ctx.elysia, 'a')
+	}
+}
+
+@Plugin({ displayName: 'Static WebSocket B' })
+class StaticWebSocketB extends BasePlugin {
+	override init(): void {
+		installOwnerWebSocket(this.ctx.elysia, 'b')
 	}
 }
 
@@ -262,30 +297,26 @@ let responseCancelled = false
 @Plugin({ displayName: 'Streaming Disconnect' })
 class StreamingDisconnect extends BasePlugin {
 	override init(): void {
-		this.ctx.http.plugin.routes(
-			(app) =>
-				app.get('/events', ({ request }) => {
-					request.signal.addEventListener(
-						'abort',
-						() => {
-							requestAborted = true
-						},
-						{ once: true },
-					)
-					return new Response(
-						new ReadableStream<Uint8Array>({
-							start(controller) {
-								controller.enqueue(new TextEncoder().encode('ready\n'))
-							},
-							cancel() {
-								responseCancelled = true
-							},
-						}),
-						{ headers: { 'content-type': 'text/event-stream' } },
-					)
+		this.ctx.elysia.get('/streaming-disconnect/events', ({ request }) => {
+			request.signal.addEventListener(
+				'abort',
+				() => {
+					requestAborted = true
+				},
+				{ once: true },
+			)
+			return new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode('ready\n'))
+					},
+					cancel() {
+						responseCancelled = true
+					},
 				}),
-			{ publicPath: '/streaming-disconnect', id: 'streaming-disconnect' },
-		)
+				{ headers: { 'content-type': 'text/event-stream' } },
+			)
+		})
 	}
 }
 
@@ -317,6 +348,42 @@ function messageOf(
 
 function configRecord(plugin: PluginConstructor, config: Record<string, unknown>) {
 	return { owner: addressOf(plugin), config }
+}
+
+type TestWebSocket = Readonly<{
+	socket: WebSocket
+	messages: string[]
+	nextMessage(): Promise<string>
+	closed: Promise<CloseEvent>
+}>
+
+async function openTestWebSocket(url: string): Promise<TestWebSocket> {
+	const socket = new WebSocket(url)
+	const messages: string[] = []
+	const messageWaiters: Array<(value: string) => void> = []
+	const opened = Promise.withResolvers<void>()
+	const closed = Promise.withResolvers<CloseEvent>()
+	socket.addEventListener('open', () => opened.resolve())
+	socket.addEventListener('message', (event) => {
+		const value = String(event.data)
+		const waiter = messageWaiters.shift()
+		if (waiter) waiter(value)
+		else messages.push(value)
+	})
+	socket.addEventListener('close', (event) => closed.resolve(event))
+	socket.addEventListener('error', () => opened.reject(new Error(`WebSocket failed: ${url}`)))
+	await opened.promise
+	return {
+		socket,
+		messages,
+		nextMessage: () => {
+			const value = messages.shift()
+			return value === undefined
+				? new Promise<string>((resolve) => messageWaiters.push(resolve))
+				: Promise.resolve(value)
+		},
+		closed: closed.promise,
+	}
 }
 
 describe('@pluxel/runtime-static', () => {
@@ -908,7 +975,7 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			await host.start()
-			const response = await host.ctx.http.fetch(
+			const response = await host.fetch(
 				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}/meta`),
 			)
 			expect(response.status).toBe(200)
@@ -974,6 +1041,122 @@ describe('@pluxel/runtime-static', () => {
 			expect(await page.text()).toContain('Static App')
 		} finally {
 			await Promise.all([runtime.stop(), runtime.stop()])
+		}
+	})
+
+	it('round-trips a POST body through the real srvx Node listener', async () => {
+		await using fixture = await createDiskFixture()
+		const runtime = await runStaticNodeApplication(
+			defineStaticRuntime({
+				name: 'static-node-post-body',
+				plugins: [DirectHttp],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: enabled(DirectHttp) } },
+					workbench: false,
+				}),
+			}),
+			{
+				env: { PLUXEL_HOST_PORT: '0' },
+				deployment: { root: fixture.path, target: 'node', variant: 'headless' },
+			},
+		)
+		try {
+			const origin = `http://${runtime.address.host}:${runtime.address.port}`
+			const response = await fetch(`${origin}/direct-http/body`, {
+				method: 'POST',
+				headers: { 'content-type': 'text/plain' },
+				body: 'body-through-srvx-and-elysia',
+			})
+			expect(response.status).toBe(200)
+			expect(await response.text()).toBe('body-through-srvx-and-elysia')
+			const server = await fetch(`${origin}/direct-http/server`)
+			await expect(server.json()).resolves.toMatchObject({
+				url: new URL(origin).toString(),
+				port: runtime.address.port,
+				hostname: runtime.address.host,
+				development: false,
+				ip: {
+					address: runtime.address.host,
+					family: 'IPv4',
+				},
+			})
+		} finally {
+			await runtime.stop()
+		}
+	})
+
+	it('serves native Elysia WebSockets per owner and drains only the stopped owner with 1012', async () => {
+		await using fixture = await createDiskFixture()
+		const runtime = await runStaticNodeApplication(
+			defineStaticRuntime({
+				name: 'static-node-websocket',
+				plugins: [StaticWebSocketA, StaticWebSocketB],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: {
+						mode: 'memory',
+						snapshot: { enabled: enabled(StaticWebSocketA, StaticWebSocketB) },
+					},
+					workbench: false,
+				}),
+			}),
+			{
+				env: { PLUXEL_HOST_PORT: '0' },
+				deployment: { root: fixture.path, target: 'node', variant: 'headless' },
+			},
+		)
+		let ownerA1: TestWebSocket | undefined
+		let ownerA2: TestWebSocket | undefined
+		let ownerB: TestWebSocket | undefined
+		try {
+			const websocketOrigin = `ws://${runtime.address.host}:${runtime.address.port}`
+			;[ownerA1, ownerA2, ownerB] = await Promise.all([
+				openTestWebSocket(`${websocketOrigin}/owner-a/socket`),
+				openTestWebSocket(`${websocketOrigin}/owner-a/socket`),
+				openTestWebSocket(`${websocketOrigin}/owner-b/socket`),
+			])
+			await expect(ownerA1.nextMessage()).resolves.toBe('open:a')
+			await expect(ownerA2.nextMessage()).resolves.toBe('open:a')
+			await expect(ownerB.nextMessage()).resolves.toBe('open:b')
+
+			const ownEcho = ownerA1.nextMessage()
+			const sameOwnerTopic = ownerA2.nextMessage()
+			ownerA1.socket.send('hello')
+			await expect(ownEcho).resolves.toBe('a:echo:hello')
+			await expect(sameOwnerTopic).resolves.toBe('a:topic:hello')
+			await new Promise((resolve) => setTimeout(resolve, 50))
+			expect(ownerB.messages).toEqual([])
+
+			const ownerA1Closed = ownerA1.closed
+			const ownerA2Closed = ownerA2.closed
+			await requireRuntimePluginGraphCoordinator(runtime.ctx).updateRuntimeState(
+				runtimeStatePatch({
+					type: 'set-enabled',
+					node: addressOf(StaticWebSocketA),
+					enabled: false,
+				}),
+			)
+			await expect(ownerA1Closed).resolves.toMatchObject({
+				code: 1012,
+				reason: 'Service Restart',
+			})
+			await expect(ownerA2Closed).resolves.toMatchObject({
+				code: 1012,
+				reason: 'Service Restart',
+			})
+
+			const ownerBEcho = ownerB.nextMessage()
+			ownerB.socket.send('still-running')
+			await expect(ownerBEcho).resolves.toBe('b:echo:still-running')
+			expect(ownerB.socket.readyState).toBe(WebSocket.OPEN)
+			ownerB.socket.close()
+			await ownerB.closed
+		} finally {
+			for (const connection of [ownerA1, ownerA2, ownerB]) {
+				if (connection?.socket.readyState === WebSocket.OPEN) connection.socket.close()
+			}
+			await runtime.stop()
 		}
 	})
 

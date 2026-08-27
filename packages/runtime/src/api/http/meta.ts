@@ -1,5 +1,5 @@
 import type { Context as PluginContext } from '@pluxel/core'
-import { type AnyElysiaApp } from '../../services/http/elysia'
+import { type AnyHostElysiaApp } from '../../services/http/elysia'
 import { RUNTIME_META_BASE } from '../../web/paths'
 
 function readInternalMeta(pluginCtx: PluginContext) {
@@ -8,7 +8,7 @@ function readInternalMeta(pluginCtx: PluginContext) {
 	return management.describe()
 }
 
-export const metaRoutes = (app: AnyElysiaApp) =>
+export const metaRoutes = (app: AnyHostElysiaApp) =>
 	app.get('/', 'Pluxel runtime RPC ready').group(RUNTIME_META_BASE, (meta) =>
 		meta.get('/', ({ set, pluginCtx }) => {
 			set.headers['cache-control'] = 'no-store'

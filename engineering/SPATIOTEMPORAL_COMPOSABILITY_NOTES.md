@@ -16,7 +16,7 @@ Pluxel 已经拥有的动态组成模型。
   reentrant cleanup、optional availability 和 required failure locality。
 - owner-bound runtime capability 的 provider withdrawal、cached handle 与 in-flight 边界已经整理到
   [`PROVIDER_WITHDRAWAL_AUDIT.md`](PROVIDER_WITHDRAWAL_AUDIT.md)。
-- commands manual dispose、HTTP stale route handle/disposer、database cached handle、Node module pending update、Workbench
+- commands manual dispose、Elysia contribution withdrawal/in-flight lease、database cached handle、Node module pending update、Workbench
   RPC/events lifecycle 和 rates cached limiter lifecycle 都已有回归证据。
 - 当前没有足够证据抽取统一 `GenerationLease`。capability 之间的 owner/admission/cleanup 语义仍然有真实差异。
 
@@ -83,7 +83,8 @@ Pluxel 的动态组成仍然由三条边界共同承担：
 
 - commands stop 会关闭 owner invocation gate，abort 已接纳调用，并等待 invocation release；manual registration dispose
   只撤销 publication，让缓存 wrapper 后续返回 `COMMAND_NOT_FOUND`。
-- HTTP route withdrawal 只撤销未来 route lookup；已进入 handler 的 request 不被自动取消。
+- Elysia contribution withdrawal 撤销未来 directory lookup、关闭 owner admission 并 abort 已接纳 request 的合成
+  `request.signal`；Runtime 等待 handler 与 streaming response body settle，但不声称能强制终止忽略 signal 的任意 JavaScript。
 - database stop 拒绝新 operation，并等待已经接纳的运行中和排队 operation 排空；transaction 不被 runtime 强行 abort。
 - worker task 可以用 owner signal 取消 resolving/queued/running task，并等待已接纳 promise settle。
 - Workbench grant revocation 是 publication/authorization 失效；它不取消已经进入的业务 RPC method。events channel 在 owner

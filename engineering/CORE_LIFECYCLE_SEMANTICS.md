@@ -23,7 +23,8 @@ Core commit 的当前顺序是：
 
 ```text
 draft records/graph -> verify -> prepare stop/start plan -> stop old generations
-                    -> confirm records/graph -> start new generations -> publish CommitSummary
+                    -> confirm records/graph -> start new generations
+                    -> host publication -> publish CommitSummary
 ```
 
 关键边界：
@@ -37,6 +38,15 @@ draft records/graph -> verify -> prepare stop/start plan -> stop old generations
 - generation stop 先关闭 owner admission，再 abort generation，再 drain effects；
 - construction/finalize/config injection/init 失败会淘汰该 generation 的 runtime cache；rollback cleanup 失败不会覆盖 primary cause，
   而是作为独立 `drain-failed` fact 进入同一 report；
+- root 创建前固定的 package-private generation finalizer 在 Part 与 Plugin init 成功后、running transition 前执行；finalizer throw 仍是
+  `start-failed`，并进入同一 rollback/drain 边界。init 已因 abort/timeout 失效时不再调用 finalizer；
+- 独立 generation finalizer 可以并发，跨 generation validation 不在 completion-order-sensitive finalizer 中 first-wins。Core 在 start wave
+  结束后以 provider-first、同 frontier canonical node address 顺序调用 async host settlement；settlement rejection 作为对应 generation
+  `start-failed`，required closure 被 drain/block，optional ordering closure 重启，新 generation 继续在同一 operation 内 settlement；
+- 同一 operation 的全部 start outcome 确定后，package-private async host preparation 先消费最终 frozen publication fact，再由同步
+  publication callback 消费同一 object identity。两者都位于 `_lastCommit`、instance watcher、commit listener 与返回值可见前；
+  publication 只允许 no-fail/no-return pointer exchange。任一 callback 违反契约会原样拒绝 commit、阻止 summary publication并把 root
+  标记为不可继续提交，不回滚已经确认的 graph；
 - reachable PluginPart 的 required provider 在 owner graph 上统一调度；Part constructor/init/cleanup 失败结束整个 owner generation，
   report 保留 definition-local `partPath`，但不产生 Part lifecycle 状态；
 - Part occurrence attribution 由 Core internal state 与 effects metadata 持有；Context 不公开 attribution 或等价 identity accessor；
@@ -45,20 +55,21 @@ draft records/graph -> verify -> prepare stop/start plan -> stop old generations
 
 ## 不变量矩阵
 
-| ID  | 不变量                                                                                                                   | 当前测试证据                                                                                                        | 边界                                                                                                 |
-| --- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| L1  | running consumer 的每个 required dependency 都解析到 running provider generation。                                       | `PluginService.lifecycle-model.test.ts`, `PluginService.failures.test.ts`, `PluginService.cascade.test.ts`          | 只覆盖 lowered graph dependency；任意 runtime lookup 不会被提升为 required edge。                    |
-| L2  | 同一 Plugin node 在稳定点最多有一个可对外使用的 generation。                                                             | `PluginService.lifecycle-model.test.ts`, `PluginService.inflight-update.test.ts`                                    | 稳定点指 awaited commit 后；不声明 rolling update 零停机。                                           |
-| L3  | generation 离开 running 后不再接受新的 owner invocation。                                                                | `OwnerInvocations.test.ts`                                                                                          | 只覆盖通过 owner invocation gate 接纳的调用。                                                        |
-| L4  | consumer cleanup 完成前，其 graph provider 不进入最终 drain。                                                            | `PluginService.teardown.test.ts`, `PluginService.optional.test.ts`, `PluginService.lifecycle-model.test.ts`         | graph ordering 不能证明隐藏外部 effect 可交换。                                                      |
-| L5  | 已失效的 `init()` settlement 不得重新发布 generation。                                                                   | `PluginService.late-init.test.ts`, `PluginService.inflight-update.test.ts`, `PluginService.lifecycle-model.test.ts` | late returned cleanup 会被执行并进入 report；无法接管脱离 signal/effects 的后台任务。                |
-| L6  | 每个 effects cleanup entry 至多执行一次。                                                                                | `EffectsService.test.ts`, `EffectsService.scope.test.ts`, `PluginService.lifecycle-model.test.ts`                   | cleanup 是否真是原操作的逆由领域代码负责。                                                           |
-| L7  | drain 中 reentrant 登记的 cleanup 也在该 drain 边界内到达 terminal。                                                     | `EffectsService.test.ts`, `EffectsService.scope.test.ts`, `PluginService.lifecycle-model.test.ts`                   | 仅限通过同一 effects service 注册的 entry。                                                          |
-| L8  | required provider failure 只阻塞 dependent closure，不破坏无关 running branch。                                          | `PluginService.failures.test.ts`, `PluginService.lifecycle-model.test.ts`                                           | 宿主进程级故障和外部系统故障不在 Core graph failure propagation 内。                                 |
-| L9  | optional absent -> absent 不产生 consumer restart；真实 availability transition 对同一 consumer 每个 plan 最多重启一次。 | `PluginService.optional.test.ts`, `PluginService.lifecycle-model.test.ts`                                           | optional callback 必须是 lowered direct `plugins.use()`。                                            |
-| L10 | 系统静止后，running projection 与最新成功验证的 desired graph 及 lifecycle failure facts 一致。                          | `PluginService.lifecycle-model.test.ts`, `PluginService.registration.test.ts`, `PluginService.failures.test.ts`     | 这是 bounded convergence 断言；timeout、外部 emission 和显式宿主 retry policy 仍可能让历史影响结果。 |
-| L11 | generation admission 的 primary failure 与 rollback drain failure 是独立事实；失败 instance 不留在 runtime cache。       | `PluginService.failures.test.ts`, `PluginService.late-init.test.ts`                                                 | late settlement 在初次 summary 发布后通过 immutable successor 增补，不回写历史对象。                 |
-| L12 | PluginPart dependency、construction、init 与 cleanup 共享 owning Plugin 的 graph/generation 边界。                       | `PluginPart.test.ts`, `PluginLoweringAbi.test.ts`                                                                   | `partPath` 只用于 config/diagnostic attribution，不是可治理 identity。                               |
+| ID  | 不变量                                                                                                                      | 当前测试证据                                                                                                        | 边界                                                                                                 |
+| --- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| L1  | running consumer 的每个 required dependency 都解析到 running provider generation。                                          | `PluginService.lifecycle-model.test.ts`, `PluginService.failures.test.ts`, `PluginService.cascade.test.ts`          | 只覆盖 lowered graph dependency；任意 runtime lookup 不会被提升为 required edge。                    |
+| L2  | 同一 Plugin node 在稳定点最多有一个可对外使用的 generation。                                                                | `PluginService.lifecycle-model.test.ts`, `PluginService.inflight-update.test.ts`                                    | 稳定点指 awaited commit 后；不声明 rolling update 零停机。                                           |
+| L3  | generation 离开 running 后不再接受新的 owner invocation。                                                                   | `OwnerInvocations.test.ts`                                                                                          | 只覆盖通过 owner invocation gate 接纳的调用。                                                        |
+| L4  | consumer cleanup 完成前，其 graph provider 不进入最终 drain。                                                               | `PluginService.teardown.test.ts`, `PluginService.optional.test.ts`, `PluginService.lifecycle-model.test.ts`         | graph ordering 不能证明隐藏外部 effect 可交换。                                                      |
+| L5  | 已失效的 `init()` settlement 不得重新发布 generation。                                                                      | `PluginService.late-init.test.ts`, `PluginService.inflight-update.test.ts`, `PluginService.lifecycle-model.test.ts` | late returned cleanup 会被执行并进入 report；无法接管脱离 signal/effects 的后台任务。                |
+| L6  | 每个 effects cleanup entry 至多执行一次。                                                                                   | `EffectsService.test.ts`, `EffectsService.scope.test.ts`, `PluginService.lifecycle-model.test.ts`                   | cleanup 是否真是原操作的逆由领域代码负责。                                                           |
+| L7  | drain 中 reentrant 登记的 cleanup 也在该 drain 边界内到达 terminal。                                                        | `EffectsService.test.ts`, `EffectsService.scope.test.ts`, `PluginService.lifecycle-model.test.ts`                   | 仅限通过同一 effects service 注册的 entry。                                                          |
+| L8  | required provider failure 只阻塞 dependent closure，不破坏无关 running branch。                                             | `PluginService.failures.test.ts`, `PluginService.lifecycle-model.test.ts`                                           | 宿主进程级故障和外部系统故障不在 Core graph failure propagation 内。                                 |
+| L9  | optional absent -> absent 不产生 consumer restart；真实 availability transition 对同一 consumer 每个 plan 最多重启一次。    | `PluginService.optional.test.ts`, `PluginService.lifecycle-model.test.ts`                                           | optional callback 必须是 lowered direct `plugins.use()`。                                            |
+| L10 | 系统静止后，running projection 与最新成功验证的 desired graph 及 lifecycle failure facts 一致。                             | `PluginService.lifecycle-model.test.ts`, `PluginService.registration.test.ts`, `PluginService.failures.test.ts`     | 这是 bounded convergence 断言；timeout、外部 emission 和显式宿主 retry policy 仍可能让历史影响结果。 |
+| L11 | generation admission 的 primary failure 与 rollback drain failure 是独立事实；失败 instance 不留在 runtime cache。          | `PluginService.failures.test.ts`, `PluginService.late-init.test.ts`                                                 | late settlement 在初次 summary 发布后通过 immutable successor 增补，不回写历史对象。                 |
+| L12 | PluginPart dependency、construction、init 与 cleanup 共享 owning Plugin 的 graph/generation 边界。                          | `PluginPart.test.ts`, `PluginLoweringAbi.test.ts`                                                                   | `partPath` 只用于 config/diagnostic attribution，不是可治理 identity。                               |
+| L13 | host finalizer 位于 author init 与 running 之间；commit publication 位于全部 start outcome 与任何稳定 summary reader 之间。 | `PluginService.host-lifecycle.test.ts`                                                                              | 两者只通过 pre-root package-private authority安装；publication callback 不允许异步工作或用户代码。   |
 
 ## Model-Style 测试要求
 

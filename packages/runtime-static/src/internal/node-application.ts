@@ -1,19 +1,22 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
+import type { IncomingMessage, Server as NodeHttpServer } from 'node:http'
 import { extname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, type Duplex } from 'node:stream'
+import { serve } from 'srvx/node'
+import type { ServerRequest } from 'srvx'
 import type { PluginConstructor } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { runStaticFetchApplication, type StaticFetchApplicationOptions } from './fetch-application'
-import { createNodeFetchRequest, writeNodeFetchResponse } from './node-http'
 import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
+import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
 import type {
 	StaticRuntime,
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
 	StaticRuntimeEnvironment,
 } from '../types'
+import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
 
 export type StaticNodeApplication = StaticRuntime & {
 	readonly address: { host: string; port: number }
@@ -30,62 +33,96 @@ export async function runStaticNodeApplication<
 ): Promise<StaticNodeApplication> {
 	const env = options.env ?? readProcessEnvironment()
 	const runtime = await runStaticFetchApplication(application, { ...options, env })
+	const http = requireRuntimeHttpService(runtime.ctx)
 	const host = env.PLUXEL_HOST_BIND?.trim() || '127.0.0.1'
 	const port = parsePort(env.PLUXEL_HOST_PORT, 3000)
-	const server = createServer((request, response) => {
-		void dispatch(runtime, request, response, {
-			applicationPublicDir: `${options.deployment.root}/public`,
-			serveApplicationPublic:
-				options.deployment.variant === 'headless' ||
-				!runtime.ctx.http.workbenchOwnsRootNavigation(),
-		})
-	})
-	try {
-		await new Promise<void>((resolve, reject) => {
-			server.once('error', reject)
-			server.listen(port, host, () => {
-				server.off('error', reject)
-				resolve()
+	let carrier!: ReturnType<typeof serve>
+	const applicationCarrier = new NodeElysiaApplicationCarrier({
+		fetch: (request) => runtime.fetch(request),
+		matches: (request) => http.matchesWebSocketRoute(request),
+		metadata: () => {
+			if (!carrier.url) {
+				throw new Error('[runtime-static] srvx Node carrier metadata is unavailable before ready')
+			}
+			const url = new URL(carrier.url)
+			return Object.freeze({
+				url,
+				port: Number(url.port || (url.protocol === 'https:' ? 443 : 80)),
+				hostname: url.hostname,
+				development: false,
 			})
-		})
+		},
+	})
+	const detachApplicationCarrier = http.attachApplicationCarrier(applicationCarrier)
+	carrier = serve({
+		manual: true,
+		hostname: host,
+		port,
+		silent: true,
+		gracefulShutdown: false,
+		fetch: (request) =>
+			dispatch(runtime, request, {
+				applicationPublicDir: `${options.deployment.root}/public`,
+				serveApplicationPublic:
+					options.deployment.variant === 'headless' || !http.workbenchOwnsRootNavigation(),
+				applicationCarrier,
+			}),
+	})
+	const nodeServer = carrier.node?.server as NodeHttpServer | undefined
+	if (!nodeServer) {
+		detachApplicationCarrier()
+		await applicationCarrier.close().catch((): undefined => undefined)
+		await runtime.stop().catch((): undefined => undefined)
+		throw new Error('[runtime-static] srvx Node carrier did not expose an upgrade listener')
+	}
+	const onUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) =>
+		applicationCarrier.handleUpgrade(request, socket, head)
+	nodeServer.on('upgrade', onUpgrade)
+	try {
+		await carrier.serve()
+		await carrier.ready()
 	} catch (error) {
+		nodeServer.off('upgrade', onUpgrade)
+		detachApplicationCarrier()
+		await applicationCarrier.close().catch((): undefined => undefined)
+		await carrier.close(true).catch((): undefined => undefined)
 		await runtime.stop().catch((): undefined => undefined)
 		throw error
 	}
-	const address = server.address()
-	const actualPort = typeof address === 'object' && address ? address.port : port
+	const actualPort = Number(new URL(carrier.url).port || port)
 	let stopPromise: Promise<void> | undefined
 	const stop = () => {
 		stopPromise ??= (async () => {
 			process.off('SIGINT', onSignal)
 			process.off('SIGTERM', onSignal)
-			let closeError: unknown
-			try {
-				await new Promise<void>((resolve, reject) => {
-					server.close((error) => {
-						if (error) reject(error)
-						else resolve()
-					})
-				})
-			} catch (error) {
-				closeError = error
-			}
+			applicationCarrier.stopAccepting()
+			let runtimeError: unknown
 			try {
 				await runtime.stop()
-			} catch (runtimeError) {
-				if (closeError) {
-					const shutdownError = new Error(
-						'[runtime-static] Node listener and runtime shutdown both failed',
-						{
-							cause: runtimeError,
-						},
-					)
-					Object.defineProperty(shutdownError, 'listenerCloseError', { value: closeError })
-					throw shutdownError
-				}
-				throw runtimeError
+			} catch (error) {
+				runtimeError = error
 			}
-			if (closeError) throw closeError
+			detachApplicationCarrier()
+			nodeServer.off('upgrade', onUpgrade)
+			let websocketError: unknown
+			try {
+				await applicationCarrier.close()
+			} catch (error) {
+				websocketError = error
+			}
+			let listenerError: unknown
+			try {
+				await carrier.close(true)
+			} catch (error) {
+				listenerError = error
+			}
+			const errors = [runtimeError, websocketError, listenerError].filter(
+				(error) => error !== undefined,
+			)
+			if (errors.length === 1) throw errors[0]
+			if (errors.length > 1) {
+				throw new AggregateError(errors, '[runtime-static] Node carrier shutdown failed')
+			}
 		})()
 		return stopPromise
 	}
@@ -107,34 +144,57 @@ export async function runStaticNodeApplication<
 
 async function dispatch(
 	runtime: StaticRuntime,
-	request: IncomingMessage,
-	response: ServerResponse,
-	options: { applicationPublicDir: string; serveApplicationPublic: boolean },
-): Promise<void> {
-	const exchange = createNodeFetchRequest(
-		request,
-		response,
-		`http://${request.headers.host ?? 'localhost'}`,
-	)
+	request: Request,
+	options: {
+		applicationPublicDir: string
+		serveApplicationPublic: boolean
+		applicationCarrier: NodeElysiaApplicationCarrier
+	},
+): Promise<Response> {
+	const client = new AbortController()
+	bindClientDisconnect(request, client)
+	const signal = AbortSignal.any([request.signal, client.signal])
+	const input = requestWithSignal(request, signal)
+	options.applicationCarrier.bindRequest(input, request)
 	try {
-		const input = exchange.request
 		const result = await runtime.fetch(input)
 		const applicationAsset =
 			result.status === 404 && options.serveApplicationPublic
 				? await resolveApplicationAsset(input, options.applicationPublicDir)
 				: null
-		await writeNodeFetchResponse(response, applicationAsset ?? result, exchange.signal)
+		return applicationAsset ?? result
 	} catch (error) {
-		if (exchange.signal.aborted || response.destroyed) return
-		if (response.headersSent)
-			response.destroy(error instanceof Error ? error : new Error(String(error)))
-		else {
-			response.statusCode = 500
-			response.end(error instanceof Error ? error.message : String(error))
-		}
-	} finally {
-		exchange.dispose()
+		if (signal.aborted) throw error
+		return new Response('Internal server error', { status: 500 })
 	}
+}
+
+function requestWithSignal(request: Request, signal: AbortSignal): Request {
+	const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
+	return new Request(request.url, {
+		method: request.method,
+		headers: request.headers,
+		signal,
+		body: hasBody ? request.body : undefined,
+		...(hasBody && request.body ? { duplex: 'half' } : {}),
+	} as RequestInit)
+}
+
+function bindClientDisconnect(request: Request, client: AbortController): void {
+	const response = (request as ServerRequest).runtime?.node?.res
+	if (!response) return
+	const cleanup = () => {
+		response.off('close', onClose)
+		response.off('finish', cleanup)
+	}
+	const onClose = () => {
+		if (!response.writableEnded) {
+			client.abort(new DOMException('Client disconnected', 'AbortError'))
+		}
+		cleanup()
+	}
+	response.once('close', onClose)
+	response.once('finish', cleanup)
 }
 
 async function resolveApplicationAsset(

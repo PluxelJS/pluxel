@@ -34,7 +34,7 @@ describe('runtime management and Workbench planes', () => {
 			expect(host.ctx.root.runtimeManagement).toBeDefined()
 			expect(host.ctx.root.pluginCatalogLayout).toBeDefined()
 
-			const metaResponse = await host.ctx.http.fetch(request('/meta'))
+			const metaResponse = await host.fetch(request('/meta'))
 			expect(metaResponse.status).toBe(200)
 			const meta = await metaResponse.json()
 			expect(meta).toMatchObject({
@@ -46,12 +46,12 @@ describe('runtime management and Workbench planes', () => {
 				(meta as { protocol: { capabilities: string[] } }).protocol.capabilities,
 			).not.toContain('vault')
 
-			const security = await host.ctx.http.fetch(request('/security'))
+			const security = await host.fetch(request('/security'))
 			expect(security.status).toBe(200)
 			await expect(security.json()).resolves.toMatchObject({ vault: { enabled: false } })
-			const workbenchCatalog = await host.ctx.http.fetch(request('/workbench/catalog'))
+			const workbenchCatalog = await host.fetch(request('/workbench/catalog'))
 			expect(workbenchCatalog.status).toBe(404)
-			const vaultUnlock = await host.ctx.http.fetch(
+			const vaultUnlock = await host.fetch(
 				new Request(`http://runtime.test${RUNTIME_INTERNAL_API_BASE}/security/vault/unlock`, {
 					method: 'POST',
 				}),
@@ -76,8 +76,8 @@ describe('runtime management and Workbench planes', () => {
 			expect(host.ctx.root.adminAccess).toBeUndefined()
 			expect(host.ctx.root.runtimeManagement).toBeUndefined()
 			expect(host.ctx.root.pluginCatalogLayout).toBeUndefined()
-			const meta = await host.ctx.http.fetch(request('/meta'))
-			const unknown = await host.ctx.http.fetch(request('/unknown'))
+			const meta = await host.fetch(request('/meta'))
+			const unknown = await host.fetch(request('/unknown'))
 			expect(meta.status).toBe(404)
 			expect(unknown.status).toBe(404)
 		} finally {
@@ -98,7 +98,7 @@ describe('runtime management and Workbench planes', () => {
 				allow: true,
 			})
 			await expect(
-				host.ctx.http.fetch(request('/meta')).then((response) => response.json()),
+				host.fetch(request('/meta')).then((response) => response.json()),
 			).resolves.toMatchObject({
 				workbench: { enabled: true },
 				transport: { rpc: '/rpc' },
@@ -108,9 +108,9 @@ describe('runtime management and Workbench planes', () => {
 			const pluginLayoutUrl = new URL(request('/workbench/layout/plugin').url)
 			pluginLayoutUrl.searchParams.set('target', JSON.stringify(target))
 			const [catalog, globalLayout, pluginLayout] = await Promise.all([
-				host.ctx.http.fetch(request('/workbench/catalog')),
-				host.ctx.http.fetch(request('/workbench/layout/global')),
-				host.ctx.http.fetch(new Request(pluginLayoutUrl)),
+				host.fetch(request('/workbench/catalog')),
+				host.fetch(request('/workbench/layout/global')),
+				host.fetch(new Request(pluginLayoutUrl)),
 			])
 
 			for (const response of [catalog, globalLayout, pluginLayout]) {
@@ -180,9 +180,9 @@ describe('runtime management and Workbench planes', () => {
 			vault: {},
 		})
 		try {
-			const meta = (await host.ctx.http
-				.fetch(request('/meta'))
-				.then((response) => response.json())) as { protocol: { capabilities: string[] } }
+			const meta = (await host.fetch(request('/meta')).then((response) => response.json())) as {
+				protocol: { capabilities: string[] }
+			}
 			expect(meta.protocol.capabilities).toContain('vault')
 		} finally {
 			await host.dispose()

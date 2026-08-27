@@ -61,8 +61,8 @@ export function isParaglideGeneratedFile(
 	)
 }
 
-function toPluginArray(input: PluginOption): PluginOption[] {
+function toPluginArray(input: unknown): PluginOption[] {
 	if (Array.isArray(input)) return input.flatMap((item) => toPluginArray(item))
 	if (!input) return []
-	return [input]
+	return [input as PluginOption]
 }

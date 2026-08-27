@@ -75,6 +75,7 @@ minimumReleaseAgeExclude:
   - '@pnpm/napi.win32-arm64@12.0.0-rc.0'
   - '@pnpm/napi.win32-x64@12.0.0-rc.0'
   - '@pnpm/napi@12.0.0-rc.0'
+  - elysia@2.0.0-beta.7
 
 onlyBuiltDependencies:
   - esbuild
@@ -93,4 +94,9 @@ public-hoist-pattern:
 trustPolicy: no-downgrade
 trustPolicyExclude:
   - '@pnpm/napi@12.0.0-rc.0'
+  # Elysia 2 beta.7 is signed by npm but was not published through the trusted-publisher path.
+  # Keep this exact and remove it once the Elysia 2 release line restores publisher evidence.
+  - 'elysia@2.0.0-beta.7'
+  # Required Elysia 2 peer from the same maintainer and publishing path.
+  - 'exact-mirror@1.2.4'
 trustPolicyIgnoreAfter: 43200

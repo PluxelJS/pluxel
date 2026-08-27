@@ -89,15 +89,16 @@ describe('static Vite runtime', () => {
 					PLUXEL_VITE_SMOKE_CACHE: fixture.getPath('.vite-cache'),
 					VITE_STATIC_LABEL: 'configured-through-vite',
 				},
-				timeout: 45_000,
+				timeout: 30_000,
 			}),
 		).resolves.toBeDefined()
-	}, 60_000)
+	}, 45_000)
 })
 
 function pluginSource(version: string, available: boolean): string {
 	return [
 		"import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'",
+		"import { websocket } from 'elysia/websocket'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		"@Plugin({ displayName: 'Vite static', forkable: true })",
 		'export class ViteStatic extends BasePlugin {',
@@ -111,7 +112,7 @@ function pluginSource(version: string, available: boolean): string {
 		'export class ConfiguredPlugin extends BasePlugin {',
 		'  private readonly settings = this.configs.use(ConfiguredPluginConfig)',
 		"  configuredLabel = ''",
-		'  protected override init() { this.configuredLabel = this.settings.label }',
+		`  protected override init() { this.configuredLabel = this.settings.label; this.ctx.elysia.use(websocket()).get('/configured/version', () => ${JSON.stringify(version)}).ws('/configured/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		'@Plugin()',
 		'export class PartProvider extends BasePlugin {',

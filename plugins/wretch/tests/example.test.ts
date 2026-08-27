@@ -35,9 +35,7 @@ describe('WretchExamplePlugin', () => {
 					},
 				})
 
-				const response = await host.ctx.http.fetch(
-					new Request('http://local.test/wretch-example/inspect'),
-				)
+				const response = await host.fetch(new Request('http://local.test/wretch-example/inspect'))
 				expect(response.status).toBe(200)
 				expect(await response.json()).toMatchObject({
 					url: 'https://example.test/api/inspect-me',

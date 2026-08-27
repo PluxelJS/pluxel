@@ -1,0 +1,14 @@
+{
+	"name": "@pluxel-internal/elysia2-srvx-spike",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "node --test spike.test.mjs",
+		"test:bun": "bun spike.bun.mjs"
+	},
+	"dependencies": {
+		"crossws": "0.4.12",
+		"elysia": "2.0.0-beta.7",
+		"srvx": "0.12.7"
+	}
+}

@@ -10,8 +10,9 @@ kernel，但 Plugin 不能修改 Runtime 拥有的 Context shape。
 Runtime 在一个集中 contract 中声明 Context 的 public property type，并由 `RuntimeHostConfig extends CoreHostConfig` 集中声明
 host 创建输入；service constructor 参数不是 public config schema，也不用于反推配置类型。`resolveRuntimeRootInputs()` 在 root
 创建前归一化并冻结输入，再由 capability factory closure 分发。host composition 安装固定能力：root scope
-承载 persistence、runtime state、admin/agent control backing，kernel scope 承载 database，owner-view scope 承载 commands、
-HTTP、Workbench gate、Node module、worker 与 internal validation。Core 为每次 Plugin generation 创建一个 scope；Part child 与
+承载 persistence、runtime state、admin/agent control backing 与 host-only HTTP backend，generation scope capability 承载 database 和
+Elysia application，owner-view scope 承载 commands、Workbench gate、Node module、worker 与 internal
+validation。Core 为每次 Plugin generation 创建一个 scope；Part child 与
 dependency caller view 共享 scope backing，owner-view 则为每个 Plugin/Part/caller edge 保留 owner identity，同时共享 root
 backend。热 getter 只读取预编译 numeric slot，owner view 使用普通对象，不用 `Proxy` 动态替换共享 service receiver。
 
@@ -28,11 +29,53 @@ Runtime 在 Plugin lifecycle 前显式调用 `prepareRuntimeRootContext(root)`�
 Vault 等 leaf service 的领域 `prepare()`。同一成功 attempt 共享 task；失败会清除 task，下一次 host startup attempt 可重试。
 资源关闭仍通过 root/generation effects 或 launcher `stop()`，不回流到 Context kernel。
 
-HTTP 使用每个 root 一个 backend、每个 owner 一个普通 `HttpService` view。view 只保存 owner Context 与 backend reference；
-route table、Elysia root、renderer 和 reload state 不复制。Plugin route registration 把 disposer 直接登记到 owner effects，
-generation stop 会撤销后续 route lookup，已经进入的 fetch 按 HTTP capability 自己的 in-flight 语义完成。
+业务 HTTP 使用每个 generation 一个严格惰性的原生 Elysia application；root Plugin 与全部 Part 共享同一 scope identity。
+finalizer 在 init 后等待 modules、检查 inventory 并 compile/seal，同一次 Core operation 在 settlement 后构造 immutable directory，
+publication 只同步交换 ready pointer。每个 root 仍只有一个 host-only carrier/backend，用于 control plane、UI assets 与 business
+dispatcher；其中 Runtime backend 拥有组合策略，launcher 只 attach 一个 physical carrier。Plugin Context 不暴露这两者。
+generation stop 会关闭 owner admission、abort 已接纳 request，并等待 handler 与
+streaming response body settle。
 所有 Runtime owner-view service 的 `ctx` 都是 non-writable、non-configurable 普通属性；view 自身需要维护的 cache/lease 可以继续
 变化，但不能在取得后被重新绑定到另一个 cleanup owner。
+
+## Native Elysia application 与 carrier
+
+Plugin 作者面只有 `ctx.elysia`。它是 host-owned Elysia `2.0.0-beta.7` singleton 创建的真实 instance，不是
+facade、Proxy 或 Pluxel route builder。Plugin 与其全部 Part 取得同一 generation app，直接使用 Elysia route、
+group/guard、schema/model/macro、hook、derive/resolve、mount、stream 和 `elysia/websocket`。path 是最终 product path；
+Runtime 不添加 Plugin namespace、`publicPath` 或第二套 mount identity。
+
+Core lifecycle 只向 Runtime 提供 package-private hooks：
+
+```text
+Plugin + Parts init
+  -> await app.modules; read public app.routes; attach owner Server view; app.compile()
+  -> settle successful generations against current immutable directory
+  -> prepare the complete next dispatcher
+  -> synchronously publish one ready pointer before CommitSummary becomes visible
+```
+
+finalization failure 进入普通 Plugin start-failed/rollback 语义；Core 不识别 Elysia 类型。当前跨 owner collision 只使用
+`route kind + exact declared method + exact declared path` key。canonical-equivalent pattern 尚无 Elysia public compiled signature，Runtime
+不复制上游 grammar 做不完整推断。
+
+`ElysiaApplicationDirectory` 保留 sealed owner app、route selector、owner request/stream/connection admission 与 immutable snapshot。
+`HttpService` 是 root-only host backend，只组合 control plane、business dispatcher 与 UI fallback，不投影到 Plugin Context。
+launcher 安装 runtime-private `ElysiaApplicationCarrier`，负责 physical metadata、request IP、WebSocket upgrade/pub-sub/close；
+Node production 由 `@pluxel/runtime-node` 通过 srvx Node listener 与 crossws 实现，Vite binding 复用同一 Node carrier 并保留
+Vite HMR upgrade 的优先权。
+
+已接纳 request 取得 generation lease；返回 streaming `Response` 时 lease 延伸到 body close/cancel/error。WebSocket
+upgrade 把 immutable owner token 与 lease 转移给 carrier，owner stop/replacement 只关闭该 owner socket 并使用 1012 drain，
+不关闭共享 listener 或其他 owner。
+
+当前能力边界必须保持可见：
+
+- beta.7 没有 public external application attach/detach epoch；Plugin app 的 `setup()` / `cleanup()` 在调用点 fail-fast，
+  依赖它们的 Elysia plugin 尚不受支持；
+- `listen()` / `stop()` 与 Server view 的 physical `stop/reload/ref/unref` 同样 fail-fast；
+- Node HTTP/WS 和 Node-backed Vite 已验证，但 Bun/Deno 第二 carrier 和跨 runtime portable WS conformance 尚未完成；
+- dynamic Elysia singleton identity 已受控，Plugin manifest 的 Elysia peer-range admission 尚未进入 static/dynamic 共享 catalog。
 
 ## Commands capability
 

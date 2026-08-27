@@ -4,6 +4,10 @@ import { createEventsBackend, createEventsServiceView } from '../services/events
 import { LoggerService, type LoggerServiceConfig } from '../logger/LoggerService'
 import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
 import {
+	freezeCorePluginLifecycleHooks,
+	type CorePluginLifecycleHooks,
+} from '../plugins/runtime/plugin-service/HostLifecycle'
+import {
 	createContextHost,
 	installRootCapability,
 	installOwnerViewCapability,
@@ -50,7 +54,9 @@ export function resolveCoreRootInputs(config: CoreHostConfig = {}): CoreRootInpu
 
 export function createCoreContextInstallations(
 	inputs: CoreRootInputs,
+	lifecycleHooks: CorePluginLifecycleHooks = {},
 ): readonly ContextCapabilityInstallation[] {
+	const fixedLifecycleHooks = freezeCorePluginLifecycleHooks(lifecycleHooks)
 	return Object.freeze([
 		installScopeCapability(LOGGER_CAPABILITY, {
 			property: 'logger',
@@ -69,7 +75,7 @@ export function createCoreContextInstallations(
 			create: (ctx) => new ConfigService(ctx as RootContext),
 		}),
 		installRootCapability(PLUGIN_SERVICE_CAPABILITY, {
-			create: (ctx) => new PluginService(ctx as RootContext, inputs.plugins),
+			create: (ctx) => new PluginService(ctx as RootContext, inputs.plugins, fixedLifecycleHooks),
 		}),
 	])
 }

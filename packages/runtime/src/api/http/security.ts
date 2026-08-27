@@ -1,9 +1,11 @@
-import type { AnyElysiaApp } from '../../services/http/elysia'
+import type { HTTPHeaders } from 'elysia'
+
+import type { AnyHostElysiaApp } from '../../services/http/elysia'
 import { listSecurityEvents } from '../../services/security/audit'
 import type { VaultAdminApi } from '../../services/vault/types'
 import { RUNTIME_SECURITY_BASE } from '../../web/paths'
 
-function setNoStore(set: { headers: Record<string, string | number> }) {
+function setNoStore(set: { headers: HTTPHeaders }) {
 	set.headers['cache-control'] = 'no-store'
 }
 
@@ -51,7 +53,7 @@ function vaultUnavailable(status: (code: number, body: unknown) => unknown) {
 	})
 }
 
-export const securityRoutes = (app: AnyElysiaApp) =>
+export const securityRoutes = (app: AnyHostElysiaApp) =>
 	app.group(RUNTIME_SECURITY_BASE, (security) =>
 		security
 			.get('/', async ({ set, pluginCtx, request }) => {

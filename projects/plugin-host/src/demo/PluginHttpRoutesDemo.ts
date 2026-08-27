@@ -27,22 +27,17 @@ const HttpRoutesWorkbench = workbench.extension({ contract: HttpRoutesUi })
 @Plugin()
 export class PluginHttpRoutesDemo extends BasePlugin {
 	override init(): void {
-		this.ctx.http.plugin.routes(
-			(app) =>
-				app
-					.get('/status', () => ({
-						plugin: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
-						ok: true,
-						now: Date.now(),
-					}))
-					.get('/echo/:value', ({ params }) => ({
-						value: params.value,
-						length: params.value.length,
-					})),
-			{
-				publicPath: ROUTE_BASE,
-				id: 'http-demo',
-			},
+		this.ctx.elysia.group(ROUTE_BASE, (app) =>
+			app
+				.get('/status', () => ({
+					plugin: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
+					ok: true,
+					now: Date.now(),
+				}))
+				.get('/echo/:value', ({ params }) => ({
+					value: params.value,
+					length: params.value.length,
+				})),
 		)
 
 		this.ctx.workbench?.mount(HttpRoutesWorkbench, {})

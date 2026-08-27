@@ -48,12 +48,10 @@ export class StatusPlugin extends BasePlugin {
 	private samples = 0
 
 	protected override init(): void {
-		this.ctx.http.plugin.routes((app) =>
-			app.get('/status', () => ({
-				label: this.config.label,
-				samples: this.samples,
-			})),
-		)
+		this.ctx.elysia.get('/status', () => ({
+			label: this.config.label,
+			samples: this.samples,
+		}))
 
 		const timer = setInterval(() => {
 			this.samples += 1
@@ -69,7 +67,7 @@ export class StatusPlugin extends BasePlugin {
 | ------------------------ | -------------------------------------- |
 | identity 和展示 metadata | module-level `@Plugin()` class         |
 | config contract          | class-level `this.configs.use()` field |
-| 路由和长期资源           | `init()`                               |
+| Elysia 路由和长期资源    | `init()`                               |
 | 资源释放                 | 当前 Context 的 `effects`              |
 
 默认值和范围只写在 schema 中。constructor 只用于 required Plugin dependency；当前 Plugin 没有依赖，所以省略。
@@ -92,9 +90,7 @@ describe('StatusPlugin', () => {
 				host.cfg(StatusPlugin).enable()
 				await host.commit()
 
-				const plugin = host.require(StatusPlugin)
-				const statusUrl = `http://local${plugin.ctx.http.plugin.base('/status')}`
-				const response = await host.ctx.http.fetch(new Request(statusUrl))
+				const response = await host.fetch(new Request('http://local.test/status'))
 
 				expect(response.status).toBe(200)
 				expect(await response.json()).toMatchObject({ label: 'healthy', samples: 0 })
@@ -105,7 +101,9 @@ describe('StatusPlugin', () => {
 })
 ```
 
-`withRuntimeHost()` 使用真实配置校验、依赖图和 lifecycle，并在 callback 结束后关闭 host。路由和 timer 都属于当前 Plugin generation；shutdown 时由 runtime 清理。
+`withRuntimeHost()` 使用真实配置校验、依赖图和 lifecycle，并在 callback 结束后关闭 host。`ctx.elysia` 是当前
+generation 的真实 Elysia 2 application，`/status` 就是最终产品路径。Plugin 与它的 Part 完成 `init()` 后，Runtime
+会 compile/seal app 并原子发布；路由和 timer 都随该 generation 在 shutdown、replacement 或 rollback 时清理。
 
 运行完整检查：
 

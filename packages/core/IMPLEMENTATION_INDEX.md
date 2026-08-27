@@ -30,7 +30,9 @@
 
 - `packages/core/src/internal/di/`：plugin-specialized incremental dependency graph；
 - `packages/core/src/internal/fsm/`：PluginActor 使用的 baked lifecycle state machine；
-- 两者都属于 core 实现，不是 package subpath 或作者 API。
+- `packages/core/src/plugins/runtime/plugin-service/HostLifecycle.ts`：pre-root package-private generation
+  finalization、stable settlement、commit preparation 与原子 publication authority；
+- 这些都属于 core 实现，不是 Plugin 作者 API。
 
 ## Services
 

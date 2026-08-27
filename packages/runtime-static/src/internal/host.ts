@@ -11,6 +11,7 @@ import {
 	createPluginRouteCatalogSnapshot,
 	installRuntimePluginGraphCoordinator,
 	installRuntimeRouteCapabilities,
+	requireRuntimeHttpService,
 	requireRuntimeStateStore,
 	runtimePluginStatusOverview,
 	type PluginApplyReport,
@@ -60,6 +61,9 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public readonly hmr: StaticRuntimeHmrController = {
 		reload: (definition) => this.reload(definition),
 	}
+
+	readonly fetch = (request: Request, env?: unknown, fetchContext?: unknown) =>
+		requireRuntimeHttpService(this.ctx).fetch(request, env, fetchContext)
 
 	constructor(
 		definition: StaticRuntimeDefinition,

@@ -297,9 +297,12 @@ intern 成 `PluginDefinitionSlot` / `PluginNodeSlot` 供 graph、DI 与 lifecycl
 fork 是同一 concrete definition 的运行时多态：共享 constructor implementation、schema、artifact input 和 HMR 更新，但各自隔离
 config、lifecycle、Context、effects 与资源。只有确实能安全运行多个实例的 concrete Plugin 才声明
 `@Plugin({ forkable: true })`；abstract capability 本身不承诺 forkability，每个 provider 独立作出决定。class name、constructor
-object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 pretty log。日志、Workbench 与默认 HTTP 路径会显示
-package/source、root export 和 fork，例如
+object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 pretty log。日志与 Workbench 会显示 package/source、
+root export 和 fork，例如
 `package:@acme/orders::OrdersPlugin#fork=east`，不会把 opaque digest 当作公开 Plugin ID。
+
+HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.elysia` 中声明的 path 就是最终产品 contract；fork 若要
+同时提供 HTTP，必须从已校验业务 config 得到彼此不冲突的显式 namespace，或由唯一 gateway Plugin 统一承载入口。
 
 Plugin source 必须经过 Pluxel Vite/Rolldown pipeline。raw TypeScript runner 不生成这些语义事实。
 

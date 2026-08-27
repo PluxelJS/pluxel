@@ -7,6 +7,14 @@ export {
 	type HostModuleClassifier,
 	type HostModuleDecision,
 } from './host-modules'
+export {
+	attachSrvxViteNodeCarrier,
+	createViteNodeElysiaApplicationCarrier,
+	type SrvxViteNodeCarrierAttachment,
+	type SrvxViteNodeCarrierOptions,
+	type ViteBusinessWebSocketUpgrade,
+	type ViteNodeElysiaApplicationCarrierOptions,
+} from './vite-node-carrier'
 
 const pluxelSsrModuleRunners = new WeakMap<ViteDevServer, ModuleRunner>()
 const pluxelSsrModuleRunnerClosePatched = new WeakSet<ViteDevServer>()
@@ -62,7 +70,9 @@ type ViteSsrModuleGraphEntry = {
 
 export function collectViteSsrImportFiles(server: ViteDevServer, entry: string): Set<string> {
 	const files = new Set<string>([normalizePath(entry)])
-	const queue = [...(server.moduleGraph.getModulesByFile(entry) ?? [])] as ViteSsrModuleGraphEntry[]
+	const queue = [
+		...(server.environments.ssr.moduleGraph.getModulesByFile(entry) ?? []),
+	] as ViteSsrModuleGraphEntry[]
 
 	while (queue.length > 0) {
 		const module = queue.shift()!
@@ -78,10 +88,11 @@ export function invalidateViteModuleGraphFiles(
 	server: ViteDevServer,
 	files: Iterable<string>,
 ): number {
+	const graph = server.environments.ssr.moduleGraph
 	let invalidated = 0
 	for (const file of files) {
-		for (const module of server.moduleGraph.getModulesByFile(file) ?? []) {
-			server.moduleGraph.invalidateModule(module)
+		for (const module of graph.getModulesByFile(file) ?? []) {
+			graph.invalidateModule(module)
 			invalidated++
 		}
 	}

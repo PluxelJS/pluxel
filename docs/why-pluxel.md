@@ -135,6 +135,11 @@ Context 只暴露能力和当前 owner identity，不暴露完整宿主配置。
 每个 Plugin、Part 和 dependency caller edge 都使用自己的 owner view。logger、effects 和其他注册项归当前 owner 所有，
 并在 replacement、rollback 或 shutdown 时随 generation 回收；共享 backend 不依赖可变的“当前 ctx”。
 
+入站 Web application 直接暴露 generation-scoped `ctx.elysia`。它是严格惰性创建的真实 Elysia 2 instance，不是 Pluxel
+facade 或 Proxy；同一 generation 的 Plugin 与全部 Part 共享它，Elysia path 就是最终产品 path。Runtime 只补 Elysia 本身
+无法表达的 graph ownership：在 `init()` 后 compile/seal、随 generation 原子发布和撤销，并把请求与流式 response body 纳入
+owner admission/drain。listener 与以 srvx 为目标的 carrier 接入由宿主拥有，Plugin 不需要学习第二套 HTTP framework。
+
 普通业务 Plugin 不使用 declaration merging 声明依赖；第三方业务能力继续通过 Plugin graph 组合。
 
 ### 本地能力优先保持 Proxy-free
@@ -142,7 +147,7 @@ Context 只暴露能力和当前 owner identity，不暴露完整宿主配置。
 Context projected getter、owner view、Plugin dependency caller facade、ambient `ctx.events`、具名 `EvtChannel` 与 config snapshot 都使用普通对象、
 class 或一次编译的 property descriptor：
 
-- `ctx.http` 是普通 owner view；所有 view 共享一个 root HTTP backend；
+- `ctx.elysia` 是真实上游 instance；一个 Plugin generation 一个 app，Part 共享该 app；
 - caller facade 在 provider construction 后固定 surface，每次 accepted invocation 使用独立普通 receiver；
 - `EvtChannel` 直接接收 owner Context，consumer subscription 通过缓存的普通 facade 绑定 effects；
 - `ctx.events` 共享 root emitter backend，但每个 owner 使用固定 Context 的普通 service view，subscription 进入 owner effects；

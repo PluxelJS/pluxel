@@ -3,15 +3,18 @@ import { withRuntimeContext } from '@pluxel/runtime/test'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
-import { createCompiledWorkbenchArtifact } from '@pluxel/runtime/internal'
+import {
+	createCompiledWorkbenchArtifact,
+	requireRuntimeHttpService,
+} from '@pluxel/runtime/internal'
 import { requireWorkbench } from '../../../runtime/src/services/workbench'
 
 describe('HMR UI smoke', () => {
 	it('renders dev UI with a Vite-accessible source entry and rejects stale /dist/public asset requests', async () => {
 		await withRuntimeContext(
 			async (ctx) => {
-				ctx.http.reconfigureUiAssets({ uiAssets: 'dev-server' })
-				const htmlRes = await ctx.http.fetch(
+				requireRuntimeHttpService(ctx).reconfigureUiAssets({ uiAssets: 'dev-server' })
+				const htmlRes = await requireRuntimeHttpService(ctx).fetch(
 					new Request('http://local/', {
 						headers: { accept: 'text/html' },
 					}),
@@ -21,7 +24,7 @@ describe('HMR UI smoke', () => {
 				expect(html).toContain('<script type="module" src="/@fs/')
 				expect(html).not.toContain('/dist/public/assets/')
 
-				const staleAsset = await ctx.http.fetch(
+				const staleAsset = await requireRuntimeHttpService(ctx).fetch(
 					new Request('http://local/dist/public/assets/mf-runtime-stale.js'),
 				)
 				expect(staleAsset.status).toBe(404)
@@ -57,19 +60,24 @@ describe('HMR UI smoke', () => {
 		const publicDir = resolve(fixture.path, 'dist/public')
 		await withRuntimeContext(
 			async (ctx) => {
-				ctx.http.reconfigureUiAssets({ uiAssets: 'static-built', uiPublicDir: publicDir })
-				const asset = await ctx.http.fetch(new Request('http://local/dist/public/assets/hello.js'))
+				requireRuntimeHttpService(ctx).reconfigureUiAssets({
+					uiAssets: 'static-built',
+					uiPublicDir: publicDir,
+				})
+				const asset = await requireRuntimeHttpService(ctx).fetch(
+					new Request('http://local/dist/public/assets/hello.js'),
+				)
 				expect(asset.status).toBe(200)
 				expect(asset.headers.get('content-type')).toContain('application/javascript')
 
 				// Regression: missing assets must not fall through to an HTML SPA fallback.
-				const missingAsset = await ctx.http.fetch(
+				const missingAsset = await requireRuntimeHttpService(ctx).fetch(
 					new Request('http://local/dist/public/assets/missing.css'),
 				)
 				expect(missingAsset.status).toBe(404)
 				expect(await missingAsset.text()).toContain('Not Found')
 
-				const firstHtml = await ctx.http
+				const firstHtml = await requireRuntimeHttpService(ctx)
 					.fetch(new Request('http://local/', { headers: { accept: 'text/html' } }))
 					.then((res) => res.text())
 				expect(firstHtml).toContain('/dist/public/assets/client-old.js')
@@ -91,7 +99,7 @@ describe('HMR UI smoke', () => {
 					'utf8',
 				)
 
-				const secondHtml = await ctx.http
+				const secondHtml = await requireRuntimeHttpService(ctx)
 					.fetch(new Request('http://local/', { headers: { accept: 'text/html' } }))
 					.then((res) => res.text())
 				expect(secondHtml).toContain('/dist/public/assets/client-new.js')
@@ -108,16 +116,16 @@ describe('HMR UI smoke', () => {
 	it('limits Workbench navigation to the configured UI base path', async () => {
 		await withRuntimeContext(
 			async (ctx) => {
-				ctx.http.reconfigureUiAssets({
+				requireRuntimeHttpService(ctx).reconfigureUiAssets({
 					uiAssets: 'dev-server',
 					uiBasePath: '/__pluxel/workbench',
 				})
-				const dashboard = await ctx.http.fetch(
+				const dashboard = await requireRuntimeHttpService(ctx).fetch(
 					new Request('http://local/', { headers: { accept: 'text/html' } }),
 				)
 				expect(dashboard.status).toBe(404)
 
-				const workbench = await ctx.http.fetch(
+				const workbench = await requireRuntimeHttpService(ctx).fetch(
 					new Request('http://local/__pluxel/workbench/', {
 						headers: { accept: 'text/html' },
 					}),
@@ -177,7 +185,9 @@ describe('HMR UI smoke', () => {
 				expect(remoteEntryUrl).toBeTruthy()
 				const manifestUrl = remoteEntryUrl?.replace(/remoteEntry\.js$/, 'mf-manifest.json')
 
-				const manifestRes = await ctx.http.fetch(new Request(`http://local${manifestUrl}`))
+				const manifestRes = await requireRuntimeHttpService(ctx).fetch(
+					new Request(`http://local${manifestUrl}`),
+				)
 				expect(manifestRes.status).toBe(200)
 				expect(manifestRes.headers.get('content-type')).toContain('application/json')
 				const manifest = (await manifestRes.json()) as {
@@ -185,7 +195,9 @@ describe('HMR UI smoke', () => {
 				}
 				expect(manifest.metaData?.publicPath).toBe(remoteEntryUrl?.replace(/remoteEntry\.js$/, ''))
 
-				const assetRes = await ctx.http.fetch(new Request(`http://local${remoteEntryUrl}`))
+				const assetRes = await requireRuntimeHttpService(ctx).fetch(
+					new Request(`http://local${remoteEntryUrl}`),
+				)
 				expect(assetRes.status).toBe(200)
 				expect(assetRes.headers.get('content-type')).toContain('application/javascript')
 				expect(await assetRes.text()).toContain('export const ok = 1')

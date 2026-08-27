@@ -247,6 +247,21 @@ Host 的两类状态不要混淆：
 
 Static `configure()` 或 dynamic config 提供初始值，file/memory/readonly backend 决定持久化方式；`readonly` 会读取同一 durable file source，但拒绝 mutation，文件缺失时保留 startup snapshot 且不创建文件。Plugin 只看到已经 normalized 的 `this.config`；详细 contract 见 [配置模型](./configuration.md)。
 
+### 业务 Elysia application 与 carrier
+
+Plugin 直接在 generation-scoped `ctx.elysia` 中声明最终业务 path。宿主不为 Plugin 生成 URL，也不把 route options 塞进 static
+或 dynamic config；需要 `/orders` namespace 时由 Plugin 使用 Elysia `group('/orders', ...)` 明确表达。`/__pluxel` 始终由宿主
+control plane 保留。
+
+launcher 拥有 listener、port、TLS、shutdown、srvx/runtime adapter 和跨业务 API 的外层 policy。Plugin 拥有自己 contribution
+内部的 Elysia hook、schema、error 与业务授权。不要让 Plugin 调用物理 server 的 `listen()` / `stop()`，也不要依赖不同 Plugin
+app 的组合顺序取得“全局”CORS 或 auth。
+
+当前锁定的 Elysia 2 beta 已支持 Fetch HTTP contribution、stream、generation publication，以及 Node production、static Vite 与
+dynamic Vite 的基础业务 WebSocket。external setup/cleanup attach、第二个非 Node carrier、完整 socket parity 与
+canonical-equivalent route collision 仍缺少稳定 seam。需要这些能力时先查看 [Plugin HTTP 的当前边界](../runtime/http.md)，
+不要把 Node 已验证范围外的 Elysia server API 当作所有 carrier 都已完成 conformance。
+
 ### Workbench 与 management access
 
 Workbench 是可选 host capability：
@@ -278,7 +293,8 @@ management: {}
 没有独立的 `enabled` flag，也不存在同时“启用 Workbench、禁用 management”的矛盾状态。宿主产品分类放在
 `management.pluginGroups`，不要求安装 Workbench UI。
 
-公网管理面必须由 host 明确配置 admin access/OIDC。`publicPath` 的业务 HTTP 和 Workbench exposure 是不同边界；开启固定业务 route 不等于开放管理权限。
+公网管理面必须由 host 明确配置 admin access/OIDC。最终业务 Elysia path 和 Workbench exposure 是不同边界；声明固定业务 route
+不等于开放管理权限。
 
 ### Logging root
 

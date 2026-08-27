@@ -22,11 +22,13 @@ import {
 	findNearestPackageRoot,
 	isPluginEnabled,
 	requireRuntimeStateStore,
+	requireRuntimeHttpService,
 	resolveGlobPatterns,
 	setPkgrootCacheLimit,
 	startTimer,
 } from '@pluxel/runtime/internal'
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
+import { createViteNodeElysiaApplicationCarrier } from '@pluxel/runtime-dev/vite'
 import {
 	buildLoaderHmrViteConfig,
 	LOADER_HMR_BRIDGE_MODULES,
@@ -54,6 +56,8 @@ import { isRuntimeHttpRouteRequest } from '../runtime-route-request'
 import { requireLoaderService, requireScanService } from '../../context-plan'
 import type { LoaderService } from '../../loader/LoaderService'
 import type { ScanService } from '../../scan/ScanService'
+
+type OwnedElysiaApplicationCarrier = ReturnType<typeof createViteNodeElysiaApplicationCarrier>
 
 function assertHmrExecutionOk(
 	result: HmrExecutionResult | undefined,
@@ -256,6 +260,8 @@ export class LoaderHmrService {
 
 	private debouncer!: BatchDebouncer
 	private readonly watcherDisposers: Array<() => void> = []
+	private ownedApplicationCarrier?: OwnedElysiaApplicationCarrier
+	private detachOwnedApplicationCarrier?: () => void
 
 	private readonly dbg: {
 		modules: LogtapeLogger
@@ -477,7 +483,31 @@ export class LoaderHmrService {
 				waiter.reject(closedError)
 			}
 
-			if (server && this.ownsViteServer) await server.close()
+			const applicationCarrier = this.ownedApplicationCarrier
+			applicationCarrier?.stopAccepting()
+			let serverError: unknown
+			try {
+				if (server && this.ownsViteServer) await server.close()
+			} catch (error) {
+				serverError = error
+			}
+			this.detachOwnedApplicationCarrier?.()
+			this.detachOwnedApplicationCarrier = undefined
+			this.ownedApplicationCarrier = undefined
+			let carrierError: unknown
+			try {
+				await applicationCarrier?.close()
+			} catch (error) {
+				carrierError = error
+			}
+			if (serverError !== undefined && carrierError !== undefined) {
+				throw new AggregateError(
+					[serverError, carrierError],
+					'[hmr] Vite and Elysia application carrier shutdown failed',
+				)
+			}
+			if (serverError !== undefined) throw serverError
+			if (carrierError !== undefined) throw carrierError
 			this.startPromise = undefined
 		})()
 		return this.closePromise
@@ -504,6 +534,7 @@ export class LoaderHmrService {
 		const clientEntries = this.config.clientEntries?.map((entry) =>
 			normalizePath(resolve(this.hostRoot, entry)),
 		)
+		let applicationCarrier: OwnedElysiaApplicationCarrier | undefined
 		const serverConfig = buildLoaderHmrViteConfig({
 			// Vite root should point at the HMR package UI, not the host root.
 			// Otherwise dep optimization may not crawl the correct entries and will try to update deps at runtime.
@@ -522,10 +553,15 @@ export class LoaderHmrService {
 					/^\/static\/.+/,
 					/\?t=\d+$/,
 				],
-				fetch: (req) => this.ctx.http.fetch(req),
+				fetch: (req) => requireRuntimeHttpService(this.ctx).fetch(req),
 				shouldHandle: (req) => isRuntimeHttpRouteRequest(req, this.ctx),
+				businessWebSocket: {
+					matches: (request) => applicationCarrier?.matchesUpgrade(request) ?? false,
+					handle: (request, socket, head) =>
+						applicationCarrier?.handleUpgrade(request, socket, head),
+				},
 				handleHotUpdate: ({ server }) => {
-					if (this.ctx.http.consumeFullReloadRequest()) {
+					if (requireRuntimeHttpService(this.ctx).consumeFullReloadRequest()) {
 						server.ws.send({ type: 'full-reload' })
 					}
 					return []
@@ -534,6 +570,14 @@ export class LoaderHmrService {
 		})
 		const server = await createServer(serverConfig)
 		this.ownsViteServer = true
+		applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
+			fetch: (request) => requireRuntimeHttpService(this.ctx).fetch(request),
+			matches: (request) => requireRuntimeHttpService(this.ctx).matchesWebSocketRoute(request),
+		})
+		this.ownedApplicationCarrier = applicationCarrier
+		this.detachOwnedApplicationCarrier = requireRuntimeHttpService(
+			this.ctx,
+		).attachApplicationCarrier(applicationCarrier)
 		try {
 			// Parallelize Vite listen and fixed-baseline establishment.
 			// so overall startup latency is closer to the slower of the two.
@@ -544,7 +588,12 @@ export class LoaderHmrService {
 				this.ensureBaseline(),
 			])
 		} catch (error) {
+			applicationCarrier.stopAccepting()
 			await server.close().catch((): undefined => undefined)
+			this.detachOwnedApplicationCarrier?.()
+			this.detachOwnedApplicationCarrier = undefined
+			this.ownedApplicationCarrier = undefined
+			await applicationCarrier.close().catch((): undefined => undefined)
 			throw error
 		}
 		await this.loadInitialEntries()

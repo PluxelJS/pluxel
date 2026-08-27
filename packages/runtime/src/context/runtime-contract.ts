@@ -9,7 +9,8 @@ import type { RuntimeStateStoreConfig } from '../services/RuntimeStateStore'
 import type { RuntimeManagementService } from '../services/RuntimeManagementService'
 import type { AdminAccessService } from '../services/admin-access/AdminAccessService'
 import type { AgentToolsService } from '../services/commands/AgentToolsService'
-import type { HttpService, RuntimeHttpAssetConfig } from '../services/http/HttpService'
+import type { RuntimeHttpAssetConfig } from '../services/http/HttpService'
+import type { Elysia } from 'elysia'
 import type { InternalApiValidationService } from '../services/http/InternalApiValidationService'
 import type {
 	PersistenceService,
@@ -60,10 +61,13 @@ export interface RuntimeHostConfig extends CoreHostConfig {
 }
 
 declare module '@pluxel/core' {
+	interface PluginContext {
+		/** The native Elysia 2 application shared by one Plugin generation and all of its Parts. */
+		readonly elysia: Elysia
+	}
 	interface Context {
 		readonly commands: CommandsService
 		readonly database: DatabaseService
-		readonly http: HttpService
 		/** Present only when the host installed the optional Workbench Plane. */
 		readonly workbench?: WorkbenchService
 		readonly nodeModules: NodeModuleService

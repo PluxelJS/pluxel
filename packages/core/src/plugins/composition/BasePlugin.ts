@@ -81,6 +81,7 @@ export type PluginCleanup = void | Cleanup | DisposableLike
 /** @internal Core-only adapter consumed by the generation lifecycle actor. */
 export interface PluginLifecycleAdapter<_C extends Context = Context> {
 	init?: (signal: AbortSignal) => PluginCleanup | Promise<PluginCleanup>
+	finalize?: (signal: AbortSignal) => void | Promise<void>
 	drain: () => Promise<void>
 	subscribeErrors?: (cb: (err: unknown) => void) => undefined | (() => void)
 }

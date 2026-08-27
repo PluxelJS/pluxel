@@ -73,7 +73,9 @@ runtime-dev 共享 classifier 将 CommonJS/native package 留在 Node host；其
 和 HMR graph。dynamic runner 在 bare specifier 与 Vite 已解析的 `/@fs/` 边界调用同一个 classifier，因此 workspace alias
 不会绕过分类，也不需要 package 名单。
 
-Core 与 Runtime 的 host bridge 是必需身份边界；standalone `@pluxel/context` 只在 host 直接安装该 package 时
+Core、Runtime 与 Elysia 的 host bridge 是必需身份边界；Elysia package root、adapter 与 WebSocket 等公开
+subpath 都解析到 host 安装的同一份 Elysia 2 runtime，其他 subpath 只有在 host package exports 明确公开时才加入 bridge，
+不能用 `elysia/*` wildcard 放行 private dist path。standalone `@pluxel/context` 只在 host 直接安装该 package 时
 加入同一 bridge，未安装时不导入、不求值，也不改变 Core 内联 kernel 与 standalone kernel 的隔离。
 public、`/internal` 和 workspace source path 都映射到 host 的 ESM distribution entry；解析必须使用 import
 conditions，不能用 `require.resolve()` 把 conditional export 选到 CJS 后再冒充 ESM singleton。Context package namespace

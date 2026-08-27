@@ -10,6 +10,7 @@ import {
 	type RuntimeStatePatchOperation,
 } from './internal/reconciliation'
 import { requireRuntimeStateStore } from './internal/runtime-state'
+import { requireRuntimeHttpService } from './context/runtime-http-capability'
 import {
 	createRuntimeRootContext,
 	prepareRuntimeRootContext,
@@ -93,6 +94,7 @@ export interface RuntimeHost extends Omit<
 	| 'start'
 	| 'dispose'
 > {
+	fetch(request: Request, env?: unknown, ctx?: unknown): Response | Promise<Response>
 	add(Plugin: PluginConstructor): RuntimeHost
 	add(Plugins: readonly PluginConstructor[]): RuntimeHost
 	remove(target: RuntimeTarget): RuntimeHost
@@ -286,6 +288,8 @@ export function createRuntimeHost(
 
 	host = {
 		ctx,
+		fetch: (request, env, fetchContext) =>
+			requireRuntimeHttpService(ctx).fetch(request, env, fetchContext),
 		add,
 		remove,
 		restart: (target) => {

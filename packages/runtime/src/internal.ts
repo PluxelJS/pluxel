@@ -6,6 +6,13 @@ export * from './plugin-catalog'
 export * from './runtime-state'
 export * from './internal/reconciliation'
 export { requireRuntimeStateStore } from './internal/runtime-state'
+export { requireRuntimeHttpService } from './context/runtime-http-capability'
+export type {
+	ElysiaCarrierMetadata,
+	ElysiaCarrierRequestAddress,
+	ElysiaApplicationCarrier,
+	ElysiaWebSocketUpgrade,
+} from './services/http/elysia-application-carrier'
 export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
 export {
 	getPluginRoutingSnapshot,

@@ -11,6 +11,7 @@
 - node materialize/dematerialize/restart、definition-wide replacement、provider default、dependency override 与原子 commit；
 - provider-first start、consumer-first stop、failure propagation 与 `CommitSummary`；
 - per-generation effects、owner invocation gate 与 late `init()` cleanup；
+- pre-root、package-private generation finalization 与 commit publication authority；
 - PluginPart containment tree、Part constructor requirement lifting、owner-bound child Context/effects 与 children-before-owner startup；
 - Plugin/Part composite object config declaration、校验与 normalized aggregate snapshot；
 - init-time `PluginRef` optional resolution、slot-aware runtime reads 和明确的 internal commit subscription。
@@ -121,7 +122,8 @@ failure 只进入结构化 lifecycle report，不把旧 generation 冒充成已�
 ## 生命周期不变量
 
 ```text
-draft graph -> verify combined required/optional graph -> stop plan -> start plan -> CommitSummary
+draft graph -> verify combined required/optional graph -> stop plan -> start plan
+            -> host publication -> CommitSummary
 ```
 
 - provider 启动失败只阻塞 required dependents；optional consumer 走 absent 路径。
@@ -130,6 +132,19 @@ draft graph -> verify combined required/optional graph -> stop plan -> start pla
 - generation 停止时先关闭 owner invocation gate、abort generation，再 drain effects。
 - `init()` 返回的 cleanup/disposable 自动进入当前 effects；正常停止、rollback、replacement、optional restart 与 shutdown
   不调用第二套 teardown hook。
+- host 可以在 root 创建前固定提供一个 package-private generation finalizer。它在全部 Part 与 Plugin `init()` 成功后、generation
+  进入 running 前执行；它与最终同步 publication callback 共享一个 immutable operation token。finalizer failure 使用普通 start failure、
+  dependent blocking 与 effects rollback，不成为新的 Plugin teardown contract。独立 generation 的 finalizer 可以并发，只产出自己的
+  host candidate，不能依赖异步完成顺序做跨 owner first-wins 仲裁。
+- initial 与 optional availability start wave settle 后，Core 把本 operation 的新 generation 按 provider-first、同 frontier canonical
+  node address 的稳定全序交给 package-private async settlement callback，同时提供将撤下的旧 generation Context。host 可以按 Context
+  返回 rejection；Core 把它记录为 `start-failed`、drain/delete required dependent closure，并重启 optional ordering closure。重启产生的
+  candidate 会再次 settlement，直到没有未 settle generation；普通 collision 不得推迟到最终 publication callback。
+- 全部 start outcome 确定后，Core 在 `_lastCommit`、instance watcher、commit listener 与 `CommitSummary` 可见前调用一次 package-private
+  async commit preparation，再把同一个 frozen publication fact 交给同步 publication callback。输入只包含本次 `started`、`stopped` 与
+  未进入 running 的 `failed` generation facts；preparation 构造最终 immutable host state，publication 只交换已准备好的 pointer 并返回
+  `undefined`。任一 callback throw 都是 post-point-of-no-return host invariant failure：原错误向 commit 返回，不伪装成 lifecycle issue、
+  不发布 summary，并禁止该 root 继续提交。
 - abort/timeout 后迟到的 `init()` fulfillment 不会重新发布 running；迟到返回的 cleanup 会立即执行。
 - lifecycle report 是事实源，宿主基于它制定退出、告警或降级策略。
 

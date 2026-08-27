@@ -2,6 +2,7 @@ import { withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { HttpPlugin } from '@example/http-plugin'
 import { TodoPlugin } from '@example/todo-plugin'
+import { Elysia } from 'elysia'
 
 describe('HttpPlugin', () => {
 	it('exposes a validated Todo API backed by a required Plugin dependency', async () => {
@@ -13,14 +14,25 @@ describe('HttpPlugin', () => {
 				host.cfg(HttpPlugin).enable()
 				await host.commit()
 
-				const list = await host.ctx.http.fetch(new Request('http://local.test/api/example/todos'))
+				expect(host.require(HttpPlugin).ctx.elysia).toBeInstanceOf(Elysia)
+
+				const list = await host.fetch(new Request('http://local.test/api/example/todos'))
 				expect(list.status).toBe(200)
 				expect(await list.json()).toMatchObject({
 					items: [{ id: 'todo-1', title: 'First task', completed: false }],
 					maxItems: 2,
 				})
 
-				const created = await host.ctx.http.fetch(
+				const invalid = await host.fetch(
+					new Request('http://local.test/api/example/todos', {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ title: '' }),
+					}),
+				)
+				expect(invalid.status).toBe(422)
+
+				const created = await host.fetch(
 					new Request('http://local.test/api/example/todos', {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
@@ -31,7 +43,7 @@ describe('HttpPlugin', () => {
 				const createdBody = await created.json()
 				expect(createdBody.items).toHaveLength(2)
 
-				const limited = await host.ctx.http.fetch(
+				const limited = await host.fetch(
 					new Request('http://local.test/api/example/todos', {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
@@ -41,7 +53,7 @@ describe('HttpPlugin', () => {
 				expect(limited.status).toBe(409)
 				expect(await limited.json()).toEqual({ error: 'limit-reached' })
 
-				const completed = await host.ctx.http.fetch(
+				const completed = await host.fetch(
 					new Request('http://local.test/api/example/todos/todo-1', {
 						method: 'PATCH',
 						headers: { 'content-type': 'application/json' },
@@ -51,6 +63,11 @@ describe('HttpPlugin', () => {
 				expect(completed.status).toBe(200)
 				const completedBody = await completed.json()
 				expect(completedBody.items[0].completed).toBe(true)
+
+				host.remove(HttpPlugin)
+				await host.commit()
+				const removed = await host.fetch(new Request('http://local.test/api/example/todos'))
+				expect(removed.status).toBe(404)
 			},
 			{ workbench: false },
 		)

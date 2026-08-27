@@ -91,7 +91,7 @@ PLUXEL_WORKBENCH=true pnpm dev
 ```
 
 开发时只有 `host/vite.config.ts` 启动一个 `3310` server。它把 Vite `root` 指向 `host/web/`；Pluxel middleware 先认领
-Plugin-mounted `/api/example/todos`，其余 browser module、asset 和 navigation 继续交给 Vite SPA。没有 alias、proxy、CORS
+generation-scoped Elysia route `/api/example/todos`，其余 browser module、asset 和 navigation 继续交给 Vite SPA。没有 alias、proxy、CORS
 或第二套 HMR graph。production 则由 frozen host 从同一 origin 提供 `public/` fallback，调用相同 Plugin routes。
 
 Workbench 启用时使用 `/__pluxel/workbench`，不会与产品 SPA 的 `/` fallback 竞争。

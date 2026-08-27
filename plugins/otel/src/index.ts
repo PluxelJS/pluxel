@@ -83,10 +83,7 @@ export class OtelPlugin extends BasePlugin {
 	}
 
 	private mountPrometheus(reader: PrometheusPullReader, path: string): void {
-		this.ctx.http.plugin.routes((app) => app.get('/', () => this.scrapePrometheus(reader)), {
-			publicPath: path,
-			id: 'prometheus',
-		})
+		this.ctx.elysia.get(path, () => this.scrapePrometheus(reader))
 	}
 
 	private async scrapePrometheus(reader: PrometheusPullReader): Promise<Response> {

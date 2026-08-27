@@ -7,23 +7,23 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 ## 公开包
 
-| Package                   | 用途                                                     | 从哪里开始                                           |
-| ------------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
-| `@pluxel/context`         | standalone host 的 immutable、strict-lazy Context kernel | [组合 Context host](./context-hosts.md)              |
-| `@pluxel/core`            | Plugin 图、DI、generation lifecycle 与 Context 投影      | [Plugin 模型](../getting-started/plugin-model.md)    |
-| `@pluxel/runtime`         | Plugin、生命周期、配置、HTTP、日志和宿主共享契约         | [第一个 Plugin](../getting-started/index.md)         |
-| `@pluxel/runtime-static`  | 使用固定 Plugin catalog 的宿主                           | [配置插件宿主](../getting-started/host-setup.md)     |
-| `@pluxel/runtime-dynamic` | 组合固定 catalog 与 mutable file sources 的宿主          | [配置插件宿主](../getting-started/host-setup.md)     |
-| `@pluxel/cli`             | 脚手架、构建、数据库、发行物、HMR 与源码工作区命令       | [CLI 与工具链](../development/tooling.md)            |
-| `@pluxel/rolldown`        | Plugin package 与 static application 构建集成            | [开发和发布插件包](../development/plugin-package.md) |
-| `@pluxel/test`            | 经过真实语义转换的 Plugin 测试 harness                   | [测试 Plugin](../development/testing.md)             |
+| Package                   | 用途                                                       | 从哪里开始                                           |
+| ------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
+| `@pluxel/context`         | standalone host 的 immutable、strict-lazy Context kernel   | [组合 Context host](./context-hosts.md)              |
+| `@pluxel/core`            | Plugin 图、DI、generation lifecycle 与 Context 投影        | [Plugin 模型](../getting-started/plugin-model.md)    |
+| `@pluxel/runtime`         | Plugin、生命周期、配置、HTTP、日志和宿主共享契约           | [第一个 Plugin](../getting-started/index.md)         |
+| `@pluxel/runtime-static`  | 使用固定 Plugin catalog 的宿主                             | [配置插件宿主](../getting-started/host-setup.md)     |
+| `@pluxel/runtime-dynamic` | 组合固定 catalog 与 mutable file sources 的宿主            | [配置插件宿主](../getting-started/host-setup.md)     |
+| `@pluxel/cli`             | 脚手架、构建、数据库、发行物、HMR 与源码工作区命令         | [CLI 与工具链](../development/tooling.md)            |
+| `@pluxel/rolldown`        | Plugin package 与 static application 构建集成              | [开发和发布插件包](../development/plugin-package.md) |
+| `@pluxel/test`            | 经过真实语义转换的 Plugin 测试 harness                     | [测试 Plugin](../development/testing.md)             |
 | `@pluxel/commands`        | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../runtime/commands.md)                   |
-| `valibot-form`            | Valibot 表单 metadata 与可选 Web adapter                 | [Valibot 配置表单](../workbench/valibot-form.mdx)    |
-| `@pluxel/wretch`          | Plugin-owned HTTP client                                 | [Wretch HTTP client](../plugins/wretch.md)           |
-| `@pluxel/fonts`           | 服务端字体注册与 provider                                | [字体](../plugins/rendering/fonts.md)                |
-| `@pluxel/canvas`          | 有预算约束的服务端 Canvas                                | [Canvas](../plugins/rendering/canvas.md)             |
-| `@pluxel/echarts`         | 服务端 ECharts 渲染                                      | [ECharts](../plugins/rendering/echarts.md)           |
-| `@pluxel/takumi`          | 有预算约束的 HTML/node-tree 图片渲染                     | [Takumi](../plugins/rendering/takumi.md)             |
+| `valibot-form`            | Valibot 表单 metadata 与可选 Web adapter                   | [Valibot 配置表单](../workbench/valibot-form.mdx)    |
+| `@pluxel/wretch`          | Plugin-owned HTTP client                                   | [Wretch HTTP client](../plugins/wretch.md)           |
+| `@pluxel/fonts`           | 服务端字体注册与 provider                                  | [字体](../plugins/rendering/fonts.md)                |
+| `@pluxel/canvas`          | 有预算约束的服务端 Canvas                                  | [Canvas](../plugins/rendering/canvas.md)             |
+| `@pluxel/echarts`         | 服务端 ECharts 渲染                                        | [ECharts](../plugins/rendering/echarts.md)           |
+| `@pluxel/takumi`          | 有预算约束的 HTML/node-tree 图片渲染                       | [Takumi](../plugins/rendering/takumi.md)             |
 
 这些 package 未标记为 private，并声明了面向消费者的入口。消费者只从 package `exports` 导入；版本可用性以 registry 和 release metadata 为准。
 
@@ -47,6 +47,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 ## 不应成为用户入口的 package
 
 - `@pluxel/runtime-dev` 是开发支持层。
+- `@pluxel/runtime-node` 是 static/dynamic launcher 共用的 Node srvx/crossws platform carrier，不是 Plugin API 或自定义 carrier SPI。
 - `@pluxel/workbench-app` 是组装后的应用，不是 Plugin UI SDK。
 - `@pluxel/runtime/internal*` 等带 `internal` 的 export 由框架自身使用，不承诺作者兼容性。
 

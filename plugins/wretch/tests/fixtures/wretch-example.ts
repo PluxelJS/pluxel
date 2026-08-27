@@ -65,10 +65,7 @@ export class WretchExamplePlugin extends BasePlugin {
 		}
 		this.api = api
 
-		this.ctx.http.plugin.routes((app) => app.get('/inspect', () => this.inspect()), {
-			publicPath: '/wretch-example',
-			id: 'wretch-example',
-		})
+		this.ctx.elysia.get('/wretch-example/inspect', () => this.inspect())
 		this.ctx.workbench?.mount(WretchExampleWorkbench, {
 			settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
 		})

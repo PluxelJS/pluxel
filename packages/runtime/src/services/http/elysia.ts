@@ -1,15 +1,17 @@
 import type { Context as PluginContext } from '@pluxel/core'
-import { Elysia, type ElysiaConfig } from 'elysia'
+import { Elysia } from 'elysia'
+import type { ElysiaConfig } from 'elysia/types'
 
-export type CreateElysiaAppOptions<BasePath extends string = ''> = ElysiaConfig<BasePath>
+export type CreateHostElysiaAppOptions<BasePath extends string = ''> = ElysiaConfig<
+	BasePath,
+	'local'
+>
 
-export function createElysiaApp<const BasePath extends string = ''>(
+export function createHostElysiaApp<const BasePath extends string = ''>(
 	ctx: PluginContext,
-	options: CreateElysiaAppOptions<BasePath> = {},
+	options: CreateHostElysiaAppOptions<BasePath> = {},
 ) {
-	// Default to non-AOT so plugin-side route trees stay compatible with HMR-driven mount/replace flows.
-	// Callers can still opt into `aot: true` for stable internal trees that are built once.
-	return new Elysia<BasePath>({ aot: false, ...options }).decorate({ pluginCtx: ctx })
+	return new Elysia<BasePath>({ precompile: false, ...options }).decorate({ pluginCtx: ctx })
 }
 
-export type AnyElysiaApp = ReturnType<typeof createElysiaApp<any>>
+export type AnyHostElysiaApp = ReturnType<typeof createHostElysiaApp<any>>

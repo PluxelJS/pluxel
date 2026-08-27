@@ -1,13 +1,8 @@
 import type { IncomingMessage } from 'node:http'
-import { UI_PUBLIC_BASE } from '@pluxel/runtime/internal'
+import type { Context } from '@pluxel/core'
+import { requireRuntimeHttpService, UI_PUBLIC_BASE } from '@pluxel/runtime/internal'
 
-export type RuntimeHttpRouteContext = {
-	workbench?: unknown
-	http: {
-		matchesMountedRoute?: (pathname: string) => boolean
-		matchesWorkbenchUiRoute?: (pathname: string) => boolean
-	}
-}
+export type RuntimeHttpRouteContext = Context
 
 export function isRuntimeHttpRouteRequest(
 	request: IncomingMessage,
@@ -15,10 +10,11 @@ export function isRuntimeHttpRouteRequest(
 ): boolean {
 	const url = request.url ?? '/'
 	const pathname = requestPathname(url)
+	const http = requireRuntimeHttpService(ctx)
 	if (url.startsWith('/__pluxel/')) return true
 	const workbenchEnabled = ctx.workbench !== undefined
 	if (workbenchEnabled && pathname.startsWith(`${UI_PUBLIC_BASE}/`)) return true
-	if (ctx.http.matchesMountedRoute?.(pathname)) return true
+	if (http.matchesMountedRoute(pathname)) return true
 
 	const method = (request.method ?? 'GET').toUpperCase()
 	if (method !== 'GET' && method !== 'HEAD') return false
@@ -26,7 +22,7 @@ export function isRuntimeHttpRouteRequest(
 	if (!workbenchEnabled) return false
 
 	const accept = String(request.headers.accept ?? '').toLowerCase()
-	return accept.includes('text/html') && ctx.http.matchesWorkbenchUiRoute?.(pathname) === true
+	return accept.includes('text/html') && http.matchesWorkbenchUiRoute(pathname) === true
 }
 
 function requestPathname(url: string): string {

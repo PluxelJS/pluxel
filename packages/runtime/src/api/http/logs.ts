@@ -15,7 +15,7 @@ import {
 	type RuntimeLogStoreReset,
 	type RuntimeLogStore,
 } from '../../logger/store'
-import { type AnyElysiaApp } from '../../services/http/elysia'
+import { type AnyHostElysiaApp } from '../../services/http/elysia'
 import { createSseResponse } from '../../services/http/sse'
 import { RUNTIME_LOG_STREAMS_BASE } from '../../web/paths'
 import { logFollowQuery, logRangeQuery, logStreamParams } from './models'
@@ -105,7 +105,7 @@ function mergeResolvedFilter(url: URL, resolved: ResolvedLogStream): LogFilter |
 	return mergeFilters(parseLogFilter(url.searchParams), resolved.derivedFilter)
 }
 
-export const logRoutes = (app: AnyElysiaApp) =>
+export const logRoutes = (app: AnyHostElysiaApp) =>
 	app.group(RUNTIME_LOG_STREAMS_BASE, (streams) =>
 		streams
 			.get('', () => ({
@@ -115,18 +115,21 @@ export const logRoutes = (app: AnyElysiaApp) =>
 			}))
 			.get(
 				'/:streamId/meta',
+				{
+					params: logStreamParams,
+				},
 				(c) =>
 					withResolvedStream(
 						c.params.streamId,
 						() => c.status(404, 'Stream not found'),
 						(resolved) => buildResolvedStreamMeta(resolved),
 					),
-				{
-					params: logStreamParams,
-				},
 			)
 			.get(
 				'/:streamId/stats',
+				{
+					params: logStreamParams,
+				},
 				(c) =>
 					withResolvedStream(
 						c.params.streamId,
@@ -136,12 +139,13 @@ export const logRoutes = (app: AnyElysiaApp) =>
 							subscribers: resolved.store.subscriberCount,
 						}),
 					),
-				{
-					params: logStreamParams,
-				},
 			)
 			.get(
 				'/:streamId/range',
+				{
+					params: logStreamParams,
+					query: logRangeQuery,
+				},
 				(c) =>
 					withResolvedStream(
 						c.params.streamId,
@@ -181,13 +185,13 @@ export const logRoutes = (app: AnyElysiaApp) =>
 							return c.status(416, err)
 						},
 					),
-				{
-					params: logStreamParams,
-					query: logRangeQuery,
-				},
 			)
 			.get(
 				'/:streamId/follow',
+				{
+					params: logStreamParams,
+					query: logFollowQuery,
+				},
 				(c) => {
 					const resolved = resolveRequestedStream(c.params.streamId)
 					if (!resolved) return c.status(404, 'Stream not found')
@@ -556,10 +560,6 @@ export const logRoutes = (app: AnyElysiaApp) =>
 						},
 						{ 'X-Accel-Buffering': 'no' },
 					)
-				},
-				{
-					params: logStreamParams,
-					query: logFollowQuery,
 				},
 			),
 	)

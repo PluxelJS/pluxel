@@ -40,11 +40,11 @@ describe('@pluxel/commands registry', () => {
 		const registry = createCommandRegistry()
 		registry.register(versionedCommand('v1'))
 		// @ts-expect-error A runtime name cannot recover one command's output type.
-		const output: Promise<{ value: number; version: string }> = registry.execute(
+		const dynamicOutput: Promise<{ value: number; version: string }> = registry.execute(
 			'math.versioned',
 			{ value: 1 },
 		)
-		void output
+		void dynamicOutput
 	}
 	void assertDynamicLookupOutput
 
@@ -179,9 +179,9 @@ describe('@pluxel/commands registry', () => {
 function reverseObjectKeys(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(reverseObjectKeys)
 	if (!value || typeof value !== 'object') return value
-	const output: Record<string, unknown> = {}
-	for (const [key, child] of Object.entries(value).reverse()) {
-		output[key] = reverseObjectKeys(child)
+	const reversed: Record<string, unknown> = {}
+	for (const [key, child] of Object.entries(value).toReversed()) {
+		reversed[key] = reverseObjectKeys(child)
 	}
-	return output
+	return reversed
 }

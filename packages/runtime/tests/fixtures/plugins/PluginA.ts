@@ -27,14 +27,10 @@ export class PluginA extends BasePlugin {
 			this.ctx.logger.info('PluginA optional dep', { pluginC: true })
 		})
 
-		this.ctx.http.plugin.routes(
-			(app) =>
-				app.get('/', ({ set }) => {
-					set.headers['content-type'] = 'text/html; charset=utf-8'
-					return 'text'
-				}),
-			{ path: '/a', id: 'PluginA:page' },
-		)
+		this.ctx.elysia.get('/a', ({ set }) => {
+			set.headers['content-type'] = 'text/html; charset=utf-8'
+			return 'text'
+		})
 	}
 	doSomething(): void {
 		this.ctx.logger.info('PluginA doing somethinga...')

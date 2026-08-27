@@ -11,6 +11,14 @@ export {
 	type PluginConfigNotificationResult,
 } from './plugins/runtime/plugin-service/ConfigUpdate'
 export type { PreparedRuntimeUpdateCommitOptions } from './plugins/runtime/plugin-service/RuntimeUpdateTransaction'
+export type {
+	CoreCommitPublication,
+	CoreGenerationFinalization,
+	CoreGenerationRejection,
+	CoreGenerationSettlement,
+	CorePluginLifecycleHooks,
+	CorePluginLifecycleOperation,
+} from './plugins/runtime/plugin-service/HostLifecycle'
 export {
 	requirePluginGenerationInfo,
 	type PluginGenerationInfo,

@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import { extname } from 'pathe'
-import type { AnyElysiaApp } from '../../services/http/elysia'
+import type { AnyHostElysiaApp } from '../../services/http/elysia'
 import { requireWorkbench } from '../../services/workbench'
 import { WORKBENCH_FEDERATION_MANIFEST_FILE } from '@pluxel/core/federation'
 import { parsePluginNodeAddress } from '@pluxel/core'
@@ -10,7 +10,7 @@ import {
 	runtimeWorkbenchArtifactBasePath,
 } from '../../web/paths'
 
-export const workbenchRoutes = (app: AnyElysiaApp) =>
+export const workbenchRoutes = (app: AnyHostElysiaApp) =>
 	app.group(RUNTIME_WORKBENCH_BASE, (workbench) =>
 		workbench
 			.get('/catalog', ({ pluginCtx, set }) => {

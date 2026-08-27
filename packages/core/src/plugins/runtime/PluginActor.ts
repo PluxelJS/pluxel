@@ -157,6 +157,8 @@ export class PluginLifecycleActor {
 						}
 						if (runtime.init) await runtime.init(this.startAbort.signal)
 						if (this.startAbort.signal.aborted || this.pendingStop) return
+						if (runtime.finalize) await runtime.finalize(this.startAbort.signal)
+						if (this.startAbort.signal.aborted || this.pendingStop) return
 						if (!this.ctx.startedAt) this.ctx.startedAt = Date.now()
 						this.ctx.err = undefined
 						this.ctx.attempt = 0

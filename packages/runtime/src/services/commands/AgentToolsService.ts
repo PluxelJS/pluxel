@@ -160,7 +160,7 @@ export class AgentToolsService {
 	}
 
 	private notify(): void {
-		for (const listener of [...this.listeners]) {
+		for (const listener of new Set(this.listeners)) {
 			try {
 				listener()
 			} catch (error) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { Elysia } from 'elysia'
 
 import { withRuntimeContext } from '@pluxel/runtime/test'
-import { createElysiaApp } from '@pluxel/runtime'
 import {
 	createPluginGatedRouter,
 	getPluginRoutingSnapshot,
@@ -42,8 +42,8 @@ describe('plugin gated routes', () => {
 		await withRuntimeContext(
 			async (ctx) => {
 				const api = createPluginGatedRouter(ctx, routes)
-				const app = createElysiaApp(ctx, { aot: true })
-				app.mount('/api', api)
+				const app = new Elysia({ precompile: true })
+				app.mount('/api', api.fetch)
 
 				const res = await app.fetch(new Request('http://test/api/ok'))
 				expect(res.status).toBe(404)
@@ -56,8 +56,8 @@ describe('plugin gated routes', () => {
 		await withRuntimeContext(
 			async (ctx) => {
 				const api = createPluginGatedRouter(ctx, routes)
-				const app = createElysiaApp(ctx, { aot: true })
-				app.mount('/api', api)
+				const app = new Elysia({ precompile: true })
+				app.mount('/api', api.fetch)
 
 				const res = await app.fetch(new Request('http://test/api/ok'))
 				expect(res.status).toBe(200)

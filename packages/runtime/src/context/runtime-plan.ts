@@ -34,6 +34,9 @@ import { RuntimeManagementService } from '../services/RuntimeManagementService'
 import { AdminAccessService } from '../services/admin-access/AdminAccessService'
 import { AgentToolsService } from '../services/commands/AgentToolsService'
 import { HttpService, type RuntimeHttpHostConfig } from '../services/http/HttpService'
+import { ElysiaApplicationDirectory } from '../services/http/ElysiaApplicationDirectory'
+import type { Elysia } from 'elysia'
+import { RUNTIME_HTTP_CAPABILITY } from './runtime-http-capability'
 import { InternalApiValidationService } from '../services/http/InternalApiValidationService'
 import {
 	PersistenceService,
@@ -64,7 +67,7 @@ const RUNTIME_MANAGEMENT_CAPABILITY =
 const AGENT_TOOLS_CAPABILITY = defineContextCapability<AgentToolsService>('runtime.agent-tools')
 const DATABASE_CAPABILITY = defineContextCapability<DatabaseService>('runtime.database')
 const COMMANDS_CAPABILITY = defineContextCapability<CommandsService>('runtime.commands')
-const HTTP_CAPABILITY = defineContextCapability<HttpService>('runtime.http')
+const ELYSIA_CAPABILITY = defineContextCapability<Elysia>('runtime.elysia')
 const WORKBENCH_CAPABILITY = defineContextCapability<WorkbenchService>('runtime.workbench')
 const NODE_MODULES_CAPABILITY = defineContextCapability<NodeModuleService>('runtime.node-modules')
 const WORKERS_CAPABILITY = defineContextCapability<WorkerTaskService>('runtime.workers')
@@ -114,11 +117,12 @@ export function createRuntimeRootContext(
 ): RootContext {
 	const coreInputs = resolveCoreRootInputs(config)
 	const inputs = resolveRuntimeRootInputs(config, options)
-	const installations = createRuntimeContextInstallations(inputs)
+	const applications = new ElysiaApplicationDirectory()
+	const installations = createRuntimeContextInstallations(inputs, applications)
 	const host = createContextHost({
 		name: 'runtime',
 		capabilities: [
-			...createCoreContextInstallations(coreInputs),
+			...createCoreContextInstallations(coreInputs, applications.lifecycleHooks),
 			...installations,
 			...(options.routeContextCapabilities ?? []),
 		],
@@ -158,6 +162,7 @@ export function prepareRuntimeRootContext(root: RootContext): Promise<void> {
 
 function createRuntimeContextInstallations(
 	inputs: RuntimeRootInputs,
+	applications: ElysiaApplicationDirectory,
 ): readonly ContextCapabilityInstallation[] {
 	const installations: ContextCapabilityInstallation[] = [
 		installRootCapability(PERSISTENCE_CAPABILITY, {
@@ -175,17 +180,18 @@ function createRuntimeContextInstallations(
 			property: 'database',
 			create: (ctx) => new DatabaseService(ctx as Context, inputs.database),
 		}),
+		installScopeCapability(ELYSIA_CAPABILITY, {
+			property: 'elysia',
+			create: (ctx) => applications.applicationFor(ctx as Context),
+		}),
 		installOwnerViewCapability(COMMANDS_CAPABILITY, {
 			property: 'commands',
 			createRoot: (root) => new CommandsService(root as RootContext, undefined),
 			createView: (rootService, owner) =>
 				owner === owner.root ? rootService : new CommandsService(owner as Context, undefined),
 		}),
-		installOwnerViewCapability(HTTP_CAPABILITY, {
-			property: 'http',
-			createRoot: (root) => HttpService.createRoot(root as RootContext, inputs.http),
-			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : rootService.forOwner(owner as Context),
+		installRootCapability(RUNTIME_HTTP_CAPABILITY, {
+			create: (root) => HttpService.createRoot(root as RootContext, inputs.http, applications),
 		}),
 		installOwnerViewCapability(NODE_MODULES_CAPABILITY, {
 			property: 'nodeModules',

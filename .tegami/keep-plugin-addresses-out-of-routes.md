@@ -21,7 +21,8 @@ Canonical package roots or named source spaces now survive filesystem layout cha
 realpath containment rejects symlink escapes and machine-specific absolute paths.
 
 Expose reversible, human-readable Plugin references and versioned routes across diagnostics, logs,
-Workbench, GraphQL and default HTTP namespaces. Forks share definition-scoped source, schema, artifacts
+Workbench and management projections. Business Elysia paths do not derive a default Plugin HTTP namespace.
+Forks share definition-scoped source, schema, artifacts
 and HMR replacement while retaining node-scoped lifecycle, config and resource ownership.
 
 Use a clean persistence break across RuntimeState, Config, logger policy, Workbench preferences and

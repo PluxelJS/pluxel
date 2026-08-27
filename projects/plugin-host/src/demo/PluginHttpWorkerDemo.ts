@@ -42,24 +42,19 @@ const HttpWorkerWorkbench = workbench.extension({ contract: HttpWorkerUi })
 @Plugin()
 export class PluginHttpWorkerDemo extends BasePlugin {
 	override async init(): Promise<void> {
-		this.ctx.http.plugin.routes(
-			(app) =>
-				app
-					.get('/status', async () => this.getWorkerStatus())
-					.get('/square/:value', async ({ params, set }) => {
-						const value = Number(params.value)
-						if (!Number.isFinite(value)) {
-							set.status = 400
-							return {
-								error: 'value must be a finite number',
-							}
+		this.ctx.elysia.group('/demo/worker', (app) =>
+			app
+				.get('/status', async () => this.getWorkerStatus())
+				.get('/square/:value', async ({ params, set }) => {
+					const value = Number(params.value)
+					if (!Number.isFinite(value)) {
+						set.status = 400
+						return {
+							error: 'value must be a finite number',
 						}
-						return this.square(value)
-					}),
-			{
-				publicPath: '/demo/worker',
-				id: 'worker-demo',
-			},
+					}
+					return this.square(value)
+				}),
 		)
 
 		this.ctx.workbench?.mount(HttpWorkerWorkbench, {})

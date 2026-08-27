@@ -125,7 +125,8 @@ source:managed/orders.mjs::OrdersPlugin#fork=tenant-a
 
 ### Plugin node route
 
-route 用于 Workbench 和默认 Plugin HTTP namespace，稳定、可逆、带 codec version且不依赖 catalog：
+route 用于 Workbench navigation、management catalog projection 和 logger category 等 host-owned addressing，
+稳定、可逆、带 codec version且不依赖 catalog。它不是业务 HTTP namespace；Plugin 的 Elysia path 不从 node route 派生：
 
 ```text
 /plugins/v1/package/OrdersPlugin/@acme/orders
@@ -155,7 +156,7 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 | RuntimeState       | fork family、required token                    | enabled、provider target、consumer override | file revision                      |
 | Logging            | 无 policy owner                                | category、filter、policy、reference/label   | rootId、bootId、stream epoch/seq   |
 | Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping         | group id、preference revision      |
-| HTTP               | 无                                             | `{ owner, localRouteId }` registration      | generation-bound route handle      |
+| HTTP               | 无                                             | final Elysia path 的 contribution owner     | sealed application generation      |
 | Artifact           | declaration/source/build input，不含 forkId    | node-to-artifact binding                    | fingerprint、publication revision  |
 | Database           | schema/migration declaration                   | data owner                                  | physical schema/role/instance      |
 | Vault              | 无                                             | default namespace owner                     | explicit shared namespace、blob id |
@@ -169,7 +170,8 @@ config patch 顺序是 validate -> 保存 desired record -> 通知 addressed run
 `saved-not-applied`，desired config 保留供后续 mutation、显式 restart 或下次 boot 重试。修改一个 fork 不通知 sibling/default。
 
 Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench extension/resource owner
-仍按 node，grant 按 generation。默认 Plugin HTTP path 是 `/__pluxel/plugins/<v1-node-route>`；作者稳定产品 API 继续使用显式 `publicPath`。
+仍按 node，grant 按 generation。Plugin 在 `ctx.elysia` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
+也不提供另一份 `publicPath` 映射。多个 node 需要同时暴露 HTTP 时，业务 config 或唯一 gateway 必须让最终 path 保持不冲突。
 
 ## 持久化版本
 

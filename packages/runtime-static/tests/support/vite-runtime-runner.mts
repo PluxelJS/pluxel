@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import type { PluginConstructor } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
+import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
 import type { StaticRuntimeHost } from '@pluxel/runtime-static'
 import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
 import { createServer, normalizePath, type HmrContext, type Plugin as VitePlugin } from 'vite'
@@ -33,16 +34,15 @@ const server = await createServer({
 	cacheDir,
 	logLevel: 'silent',
 	optimizeDeps: { noDiscovery: true, include: [] },
-	plugins: [
-		...plugins,
-		{
-			name: 'test:disable-watch',
-			enforce: 'post',
-			config: () => ({ server: { watch: null } }),
-		},
-	],
-	server: { middlewareMode: true },
+	plugins,
+	server: { host: '127.0.0.1', port: 0, strictPort: true },
 })
+
+await server.listen()
+// This runner invokes the route hook directly so each write has one deterministic HMR operation.
+// A real listener is still required for the HTTP/WebSocket assertions, but its watcher must not
+// race the explicit hook and process the same file event a second time.
+await server.watcher.close()
 
 const capturedHost = host
 assert.ok(capturedHost, 'static host was not captured')
@@ -65,6 +65,10 @@ assert.deepEqual(address.definition.entry, {
 const east = { definition: address.definition, variant: 'fork' as const, forkId: 'east' }
 const west = { definition: address.definition, variant: 'fork' as const, forkId: 'west' }
 const pluginService = requirePluginService(capturedHost.ctx)
+const listenerAddress = server.httpServer?.address()
+assert.ok(listenerAddress && typeof listenerAddress !== 'string')
+const runtimeUrl = `http://127.0.0.1:${listenerAddress.port}`
+const sockets: WebSocket[] = []
 
 try {
 	const startupInstances = [address, east, west].map((node) => pluginService.getInstance(node))
@@ -77,6 +81,20 @@ try {
 		Reflect.get(pluginService.getInstance(configuredAddress) ?? {}, 'configuredLabel'),
 		'configured-through-vite',
 	)
+	const firstVersionResponse = await fetch(`${runtimeUrl}/configured/version`)
+	assert.equal(await firstVersionResponse.text(), 'v1')
+	assert.equal(
+		requireRuntimeHttpService(capturedHost.ctx).matchesWebSocketRoute(
+			new Request(`${runtimeUrl}/configured/socket`, {
+				headers: { connection: 'Upgrade', upgrade: 'websocket' },
+			}),
+		),
+		true,
+	)
+	const firstSocket = await openWebSocket(`${runtimeUrl.replace(/^http/, 'ws')}/configured/socket`)
+	sockets.push(firstSocket.socket)
+	assert.equal(await firstSocket.nextMessage(), 'v1')
+	const firstSocketClosed = firstSocket.closed
 	assert.equal(
 		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
 		'part-provider-v1',
@@ -108,6 +126,16 @@ try {
 		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
 		'part-provider-v2',
 	)
+	const replacementVersionResponse = await fetch(`${runtimeUrl}/configured/version`)
+	assert.equal(await replacementVersionResponse.text(), 'v2')
+	assert.deepEqual(await firstSocketClosed, { code: 1012, reason: 'Service Restart' })
+	const replacementSocket = await openWebSocket(
+		`${runtimeUrl.replace(/^http/, 'ws')}/configured/socket`,
+	)
+	sockets.push(replacementSocket.socket)
+	assert.equal(await replacementSocket.nextMessage(), 'v2')
+	replacementSocket.socket.close()
+	await replacementSocket.closed
 
 	await writeFile(pluginPath, pluginSource('removed', false))
 	await invokeHotUpdate(routePlugin, pluginPath)
@@ -131,6 +159,9 @@ try {
 	await invokeHotUpdate(routePlugin, pluginPath)
 	assert.equal(pluginService.isRunning(address), true)
 } finally {
+	for (const socket of sockets) {
+		if (socket.readyState === WebSocket.OPEN) socket.close()
+	}
 	await server.close()
 }
 assert.equal(pluginService.isRunning(address), false)
@@ -153,9 +184,44 @@ function requiredEnv(name: string): string {
 	return value
 }
 
+async function openWebSocket(url: string): Promise<{
+	socket: WebSocket
+	nextMessage(): Promise<string>
+	closed: Promise<{ code: number; reason: string }>
+}> {
+	const socket = new WebSocket(url)
+	const messages: string[] = []
+	const waiters: Array<(value: string) => void> = []
+	const opened = Promise.withResolvers<void>()
+	const closed = Promise.withResolvers<{ code: number; reason: string }>()
+	socket.addEventListener('open', () => opened.resolve())
+	socket.addEventListener('message', (event) => {
+		const value = String(event.data)
+		const waiter = waiters.shift()
+		if (waiter) waiter(value)
+		else messages.push(value)
+	})
+	socket.addEventListener('close', (event) =>
+		closed.resolve({ code: event.code, reason: event.reason }),
+	)
+	socket.addEventListener('error', () => opened.reject(new Error(`WebSocket failed: ${url}`)))
+	await opened.promise
+	return {
+		socket,
+		nextMessage: () => {
+			const message = messages.shift()
+			return message === undefined
+				? new Promise<string>((resolve) => waiters.push(resolve))
+				: Promise.resolve(message)
+		},
+		closed: closed.promise,
+	}
+}
+
 function pluginSource(version: string, available: boolean): string {
 	return [
 		"import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'",
+		"import { websocket } from 'elysia/websocket'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		"@Plugin({ displayName: 'Vite static', forkable: true })",
 		'export class ViteStatic extends BasePlugin {',
@@ -169,7 +235,7 @@ function pluginSource(version: string, available: boolean): string {
 		'export class ConfiguredPlugin extends BasePlugin {',
 		'  private readonly settings = this.configs.use(ConfiguredPluginConfig)',
 		"  configuredLabel = ''",
-		'  protected override init() { this.configuredLabel = this.settings.label }',
+		`  protected override init() { this.configuredLabel = this.settings.label; this.ctx.elysia.use(websocket()).get('/configured/version', () => ${JSON.stringify(version)}).ws('/configured/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		'@Plugin()',
 		'export class PartProvider extends BasePlugin {',

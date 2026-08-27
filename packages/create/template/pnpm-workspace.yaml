@@ -10,7 +10,7 @@ allowBuilds:
 managePackageManagerVersions: false
 catalogs:
   backend:
-    elysia: ^1.4.29
+    elysia: 2.0.0-beta.7
   frontend:
     '@mantine/core': ^9.4.1
     '@tabler/icons-react': ^3.37.1

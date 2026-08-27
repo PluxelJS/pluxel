@@ -1,11 +1,9 @@
 import type { Context } from '@pluxel/core'
 import { createResponse, type Session } from 'better-sse'
-import type { InferContext } from 'elysia'
+import type { Context as ElysiaContext } from 'elysia'
 
 import { pinOwnerContext } from '../../../context/owner-view'
-import { createElysiaApp } from '../../http/elysia'
-
-type SseHttpContext = InferContext<ReturnType<typeof createElysiaApp>>
+type SseHttpContext = ElysiaContext & { pluginCtx: Context }
 
 export interface SseEventPayload {
 	event?: string

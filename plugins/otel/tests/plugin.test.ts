@@ -51,7 +51,7 @@ describe('OtelPlugin', () => {
 				expect(consumer.meters[0]).toBe(consumer.meters[1])
 				consumer.record()
 
-				const response = await host.ctx.http.fetch(new Request('http://local.test/metrics'))
+				const response = await host.fetch(new Request('http://local.test/metrics'))
 				expect(response.status).toBe(200)
 				expect(response.headers.get('content-type')).toContain('text/plain')
 				const body = await response.text()

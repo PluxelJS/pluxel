@@ -57,13 +57,17 @@
 		"@pluxel/core": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/runtime": "workspace:^",
+		"crossws": "0.4.12",
+		"elysia": "2.0.0-beta.7",
 		"jsonc-parser": "^3.3.1",
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.3",
+		"srvx": "0.12.7",
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
 		"@pluxel/runtime-dev": "workspace:*",
+		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"superjson": "^2.2.6",
 		"tsx": "^4.23.0",

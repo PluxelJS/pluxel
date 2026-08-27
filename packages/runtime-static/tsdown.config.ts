@@ -5,6 +5,7 @@ import { pluxelViteSourceBridgeExternal } from '../runtime-dev/tsdown-source-bri
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
 const runtimeDevHmrLog = fileURLToPath(new URL('../runtime-dev/src/hmr-log.ts', import.meta.url))
 const runtimeDevViteEntry = fileURLToPath(new URL('../runtime-dev/src/vite.ts', import.meta.url))
+const runtimeNodeEntry = fileURLToPath(new URL('../runtime-node/src/index.ts', import.meta.url))
 
 export default defineConfig({
 	exports: {
@@ -14,6 +15,7 @@ export default defineConfig({
 		alwaysBundle: [
 			'@pluxel/runtime-dev',
 			'@pluxel/runtime-dev/*',
+			'@pluxel/runtime-node',
 			'valibot-form',
 			'valibot-form/*',
 		],
@@ -32,6 +34,7 @@ export default defineConfig({
 		'@pluxel/runtime-dev': runtimeDevEntry,
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevViteEntry,
+		'@pluxel/runtime-node': runtimeNodeEntry,
 	},
 	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {

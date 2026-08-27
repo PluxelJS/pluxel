@@ -1,10 +1,11 @@
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
 import {
 	collectViteSsrImportFiles,
 	createHostModuleVitePlugin,
+	createViteNodeElysiaApplicationCarrier,
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteModuleGraphFiles,
@@ -15,6 +16,7 @@ import {
 	getOxcResolveCache,
 	PLUXEL_DIST_EXPORT_CONDITIONS,
 	readHostProduct,
+	requireRuntimeHttpService,
 	resolveModulePath,
 	sameProduct,
 	type OxcResolver,
@@ -31,6 +33,10 @@ import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
 import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './hmr/vite-watch'
 import { isPackageInstalledFrom } from './host-package'
+import {
+	ELYSIA_SINGLETON_BRIDGE_MODULES,
+	isPublicElysiaSingletonSpecifier,
+} from './elysia-singleton'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
 const DYNAMIC_RUNTIME_CONTROLLER_KEY = Symbol.for('pluxel.dynamicRuntimeController')
@@ -76,6 +82,8 @@ type DynamicRuntimeController = {
 	stop(): Promise<void>
 }
 
+type DynamicViteApplicationCarrier = ReturnType<typeof createViteNodeElysiaApplicationCarrier>
+
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
 	const mode = options.mode ?? 'development'
 	let singletonHostRoot: string | null = null
@@ -87,6 +95,8 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		configFiles?: Set<string>
 		controller?: DynamicRuntimeController
 		httpInstalled?: boolean
+		applicationCarrier?: DynamicViteApplicationCarrier
+		closeHttp?: () => Promise<void>
 	} = {}
 
 	const loadConfig = async (): Promise<{
@@ -134,13 +144,23 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					? resolve(plan.runtimeStorage.persistenceDir, '..', 'workbench-artifacts')
 					: undefined,
 		})
+		const applicationCarrier = state.applicationCarrier
+		if (!applicationCarrier) {
+			await booted.stop()
+			throw new Error('[runtime-dynamic/vite] Elysia application carrier is not configured')
+		}
+		const detachApplicationCarrier = requireRuntimeHttpService(booted.ctx).attachApplicationCarrier(
+			applicationCarrier,
+		)
+		let stopPromise: Promise<void> | undefined
 		try {
 			await options.prepareHost?.(booted)
 			const controller: DynamicRuntimeController = {
 				booted,
 				product: loaded.product,
-				stop: async () => {
-					await booted.stop()
+				stop: () => {
+					stopPromise ??= booted.stop().finally(detachApplicationCarrier)
+					return stopPromise
 				},
 			}
 			state.controller = controller
@@ -151,7 +171,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		} catch (error) {
 			state.controller = undefined
 			delete (server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY]
-			await booted.stop()
+			await booted.stop().finally(detachApplicationCarrier)
 			throw error
 		}
 	}
@@ -182,8 +202,25 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			}
 			marked[DYNAMIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
-			await startController(server)
-			installDynamicHttpMiddleware(state, server, mode === 'development')
+			state.applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
+				fetch: (request) => {
+					const ctx = state.controller?.booted.ctx
+					if (!ctx) return new Response('Dynamic runtime is not ready', { status: 503 })
+					return requireRuntimeHttpService(ctx).fetch(request)
+				},
+				matches: (request) => {
+					const ctx = state.controller?.booted.ctx
+					return Boolean(ctx && requireRuntimeHttpService(ctx).matchesWebSocketRoute(request))
+				},
+			})
+			try {
+				await startController(server)
+				installDynamicHttpMiddleware(state, server, mode === 'development')
+			} catch (error) {
+				await state.applicationCarrier.close().catch((): undefined => undefined)
+				state.applicationCarrier = undefined
+				throw error
+			}
 		},
 		async handleHotUpdate(ctx) {
 			if (state.configFiles?.has(normalizePath(ctx.file))) {
@@ -198,7 +235,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			}
 			const controller = state.controller
 			if (!controller) return
-			if (controller.booted.ctx.http.consumeFullReloadRequest()) {
+			if (requireRuntimeHttpService(controller.booted.ctx).consumeFullReloadRequest()) {
 				ctx.server.ws.send({ type: 'full-reload' })
 				return []
 			}
@@ -216,6 +253,8 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			return callViteHook(state.controller?.booted.hmr.vitePlugin.load, id, hookOptions)
 		},
 		async closeBundle() {
+			const applicationCarrier = state.applicationCarrier
+			applicationCarrier?.stopAccepting()
 			const controller = state.controller
 			state.controller = undefined
 			if (state.server) {
@@ -223,7 +262,33 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					DYNAMIC_RUNTIME_CONTROLLER_KEY
 				]
 			}
-			await controller?.stop()
+			let controllerError: unknown
+			try {
+				await controller?.stop()
+			} catch (error) {
+				controllerError = error
+			}
+			let httpError: unknown
+			try {
+				await state.closeHttp?.()
+			} catch (error) {
+				httpError = error
+			}
+			state.closeHttp = undefined
+			state.applicationCarrier = undefined
+			let carrierError: unknown
+			try {
+				await applicationCarrier?.close()
+			} catch (error) {
+				carrierError = error
+			}
+			const errors = [controllerError, httpError, carrierError].filter(
+				(error) => error !== undefined,
+			)
+			if (errors.length === 1) throw errors[0]
+			if (errors.length > 1) {
+				throw new AggregateError(errors, '[runtime-dynamic/vite] carrier shutdown failed')
+			}
 		},
 	}
 	const singletonBridgePlugin: Plugin = {
@@ -231,8 +296,16 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		enforce: 'pre',
 		config() {
 			return {
+				resolve: {
+					dedupe: ['elysia'],
+				},
 				ssr: {
-					external: ['@pluxel/context', '@pluxel/core', '@pluxel/runtime'],
+					external: [
+						...ELYSIA_SINGLETON_BRIDGE_MODULES,
+						'@pluxel/context',
+						'@pluxel/core',
+						'@pluxel/runtime',
+					],
 				},
 			}
 		},
@@ -254,6 +327,15 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					[singletonHostRoot!, moduleDir],
 					{ limit: 8 },
 				))
+			if (
+				isPublicElysiaSingletonSpecifier(id, (specifier) =>
+					Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+				)
+			) {
+				const hostEntry = resolveSingletonHostEntry(getResolver(), id)
+				if (!hostEntry) return null
+				return { id: pathToFileURL(hostEntry).href, external: true }
+			}
 			const specifier = resolveSingletonBridgeSpecifier(id, getResolver)
 			if (!specifier) return null
 			if (isContextBridgeSpecifier(specifier)) {
@@ -403,7 +485,12 @@ function validateDynamicRuntimeConfigModule(
 }
 
 function installDynamicHttpMiddleware(
-	state: { controller?: DynamicRuntimeController; httpInstalled?: boolean },
+	state: {
+		controller?: DynamicRuntimeController
+		httpInstalled?: boolean
+		applicationCarrier?: DynamicViteApplicationCarrier
+		closeHttp?: () => Promise<void>
+	},
 	server: ViteDevServer,
 	injectClientScript: boolean,
 ): void {
@@ -422,16 +509,32 @@ function installDynamicHttpMiddleware(
 			const ctx = state.controller?.booted.ctx
 			if (!ctx)
 				return Promise.resolve(new Response('Dynamic runtime is not ready', { status: 503 }))
-			return ctx.http.fetch(req)
+			return requireRuntimeHttpService(ctx).fetch(req)
 		},
 		shouldHandle: (req) => {
 			const ctx = state.controller?.booted.ctx
 			return Boolean(ctx && isRuntimeHttpRouteRequest(req, ctx))
 		},
+		...(server.httpServer && state.applicationCarrier
+			? {
+					businessWebSocket: {
+						matches: (request: import('node:http').IncomingMessage) =>
+							state.applicationCarrier?.matchesUpgrade(request) ?? false,
+						handle: (
+							request: import('node:http').IncomingMessage,
+							socket: import('node:stream').Duplex,
+							head: Buffer,
+						) => state.applicationCarrier?.handleUpgrade(request, socket, head),
+					},
+				}
+			: {}),
 		injectClientScript,
 	})
 	callViteHook(plugin.configResolved, server.config)
 	callViteHook(plugin.configureServer, server)
+	state.closeHttp = async () => {
+		await callViteHook<[], void | Promise<void>>(plugin.closeBundle)
+	}
 }
 
 function callViteHook<TArgs extends unknown[], TResult>(

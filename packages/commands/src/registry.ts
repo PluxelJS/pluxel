@@ -58,15 +58,16 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 		const compatibilityKey = commandCompatibilityKey(descriptor)
 		let active = true
 		let entry!: RegistryEntry<Ctx>
-		const registry = this
+		const entries = this.entries
+		const bumpRevision = () => this.bumpRevision()
 		const installed = Object.freeze({
 			name,
 			get descriptor(): CommandDescriptor {
-				const current = registry.entries.get(name)
+				const current = entries.get(name)
 				return current?.compatibilityKey === compatibilityKey ? current.descriptor : descriptor
 			},
 			execute: async (candidate: unknown, ...context: CommandContextArgs<Ctx>): Promise<O> => {
-				const current = registry.entries.get(name)
+				const current = entries.get(name)
 				if (!current) throw commandNotFound(name)
 				if (current.compatibilityKey !== compatibilityKey) throw incompatibleInstalledCommand(name)
 				return (await current.command.execute(candidate, ...context)) as O
@@ -74,9 +75,9 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 			dispose: () => {
 				if (!active) return
 				active = false
-				if (registry.entries.get(name) !== entry) return
-				registry.entries.delete(name)
-				registry.bumpRevision()
+				if (entries.get(name) !== entry) return
+				entries.delete(name)
+				bumpRevision()
 			},
 		}) as CommandRegistration<I, O, Ctx>
 

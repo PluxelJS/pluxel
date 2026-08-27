@@ -12,6 +12,12 @@ import {
 } from '../identity'
 import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from '../PluginActor'
 
+export type LifecycleStartOptions = Readonly<{
+	timeoutMs?: number
+	onLateError?: (error: unknown, phase: 'start' | 'drain') => void
+	finalizeGeneration?: (signal: AbortSignal) => void | Promise<void>
+}>
+
 const lifecycles = new WeakMap<BasePlugin, PluginLifecycleActor>()
 
 export type LifecycleStartResult =
@@ -46,11 +52,17 @@ export class LifecycleManager {
 	private createLifecycle(
 		id: PluginNodeSlot,
 		plugin: BasePlugin,
-		onLateError?: (error: unknown, phase: 'start' | 'drain') => void,
+		options: LifecycleStartOptions = {},
 	): PluginLifecycleActor {
+		const runtime = getPluginLifecycleAdapter(plugin)
 		const ref = new PluginLifecycleActor(
-			{ autoStart: false, useErrorChannel: true, onLateError },
-			{ id, runtime: getPluginLifecycleAdapter(plugin) },
+			{ autoStart: false, useErrorChannel: true, onLateError: options.onLateError },
+			{
+				id,
+				runtime: options.finalizeGeneration
+					? { ...runtime, finalize: options.finalizeGeneration }
+					: runtime,
+			},
 		)
 		ref.subscribe({
 			error: (err) => {
@@ -69,14 +81,14 @@ export class LifecycleManager {
 	private ensureLifecycle(
 		id: PluginNodeSlot,
 		plugin: BasePlugin,
-		onLateError?: (error: unknown, phase: 'start' | 'drain') => void,
+		options: LifecycleStartOptions = {},
 	): PluginLifecycleActor {
 		const existing = this.getLifecycle(plugin)
 		if (existing) {
 			if (!lifecycleSelectors.isStopped(existing.getSnapshot?.())) return existing
 			this.setLifecycle(plugin)
 		}
-		return this.createLifecycle(id, plugin, onLateError)
+		return this.createLifecycle(id, plugin, options)
 	}
 
 	getSnapshot(plugin: BasePlugin): LifecycleSnapshot | undefined {
@@ -93,15 +105,14 @@ export class LifecycleManager {
 	async startLifecycle(
 		id: PluginNodeSlot,
 		plugin: BasePlugin,
-		timeoutMs?: number,
-		onLateError?: (error: unknown, phase: 'start' | 'drain') => void,
+		options: LifecycleStartOptions = {},
 	): Promise<LifecycleStartResult> {
-		const ref = this.ensureLifecycle(id, plugin, onLateError)
+		const ref = this.ensureLifecycle(id, plugin, options)
 		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return LIFECYCLE_STARTED
 
 		ref.send({ type: 'START' })
 
-		const startTimeoutMs = normalizeTimeoutMs(timeoutMs, this.startTimeoutMs)
+		const startTimeoutMs = normalizeTimeoutMs(options.timeoutMs, this.startTimeoutMs)
 
 		let snapshot: LifecycleSnapshot
 		try {

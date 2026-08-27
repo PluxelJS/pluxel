@@ -56,7 +56,7 @@ export async function startStaticRuntimeApplication<
 
 	return {
 		ctx: host.ctx,
-		fetch: (request, env, ctx) => host.ctx.http.fetch(request, env, ctx),
+		fetch: (request, env, ctx) => host.fetch(request, env, ctx),
 		start: () => host.start(),
 		stop: () => host.stop(),
 	}

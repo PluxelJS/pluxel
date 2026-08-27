@@ -15,6 +15,7 @@ import {
 } from '@pluxel/runtime/internal'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watch'
+import { ELYSIA_SINGLETON_BRIDGE_MODULES } from '../../elysia-singleton'
 
 /**
  * Modules that are required to be singletons between the host process and the runner.
@@ -23,6 +24,7 @@ import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watc
  * second Context/runtime implementation inside the runner.
  */
 const REQUIRED_LOADER_HMR_BRIDGE_MODULES = [
+	...ELYSIA_SINGLETON_BRIDGE_MODULES,
 	'@pluxel/core',
 	'@pluxel/core/internal',
 	'@pluxel/core/toolchain',

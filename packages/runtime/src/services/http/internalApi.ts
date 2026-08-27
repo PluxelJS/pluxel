@@ -21,8 +21,8 @@ import { debugRoutes } from '../../api/http/debug'
 import { logRoutes } from '../../api/http/logs'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { requireWorkbench } from '../workbench'
-import type { ElysiaBoundaryBuilder } from './HttpService'
-import { createElysiaApp } from './elysia'
+import type { HostElysiaBuilder } from './HttpService'
+import { createHostElysiaApp } from './elysia'
 
 type BaseElysiaApp = any
 type InternalApiOptions = {
@@ -49,15 +49,15 @@ function createInternalPlugin(
 	name: string,
 	build: (app: BaseElysiaApp) => unknown,
 ): BaseElysiaApp {
-	const app = createElysiaApp(ctx, {
-		aot: true,
+	const app = createHostElysiaApp(ctx, {
+		precompile: true,
 		name: `pluxel.http.internal.${name}`,
 	}) as unknown as BaseElysiaApp
 	return build(app) as unknown as BaseElysiaApp
 }
 
 function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
-	return app.onBeforeHandle(async ({ pluginCtx, request, set, status }: any) => {
+	return app.beforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
 		const adminAccess = pluginCtx.root.adminAccess
@@ -141,6 +141,7 @@ function createInternalTransportPlugins(
 		createInternalPlugin(ctx, 'rpc', (app) =>
 			app.all(
 				RUNTIME_TRANSPORT_PATHS.rpc,
+				{ parse: 'none' },
 				async ({ pluginCtx, request, status }: any) => {
 					try {
 						return await newHttpBatchRpcResponse(request, new RuntimeRpcApi(pluginCtx))
@@ -149,7 +150,6 @@ function createInternalTransportPlugins(
 						return status(500, 'Internal RPC error')
 					}
 				},
-				{ parse: 'none' },
 			),
 		),
 		createInternalPlugin(ctx, 'meta', (app) =>
@@ -209,8 +209,8 @@ export function createInternalApiPlugin(
 	options: InternalApiOptions,
 ): BaseElysiaApp {
 	let app = applyInternalApiGuard(
-		createElysiaApp(ctx, {
-			aot: true,
+		createHostElysiaApp(ctx, {
+			precompile: true,
 			name: 'pluxel.http.internal',
 		}) as unknown as BaseElysiaApp,
 	)
@@ -224,7 +224,7 @@ export function createInternalApiPlugin(
 export function createInternalApiRoutes(
 	ctx: PluginContext,
 	options: InternalApiOptions,
-): ElysiaBoundaryBuilder {
+): HostElysiaBuilder {
 	return () => createInternalApiPlugin(ctx, options)
 }
 
