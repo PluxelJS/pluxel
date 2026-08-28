@@ -284,6 +284,11 @@ runtime/core 默认属于 application bundle closure；code splitting 允许，�
 optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
 缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
 
+bootstrap 在 host namespace 求值前先加载 static Elysia wiring。freezer 从 Runtime-owned Elysia manifest 读取全部显式 public
+exports，并把 Elysia subpath、TypeBox 的 type/system/value/schema/compile namespace 与 `exact-mirror` 固定到同一 bundle identity；
+随后调用 Elysia 公开 `setupTypebox()`。因此 source-linked Plugin 不能带入第二份 Elysia，搬离 workspace 的 schema-backed
+distribution 也不依赖相对生成 chunk 的同步 module lookup。resolve hook 使用原生 id filter，非相关 graph import 不进入该插件。
+
 同一个 static entry validator 还 lower optional `configEnvironmentBootstrap`。该字段只能是 direct array literal；每项必须是
 direct `bindConfigEnvironment()` call，mapping 只能由 direct string literal 或 direct object tree 组成。Identifier indirection、
 spread、computed/duplicate property、runtime branch、非 portable/reserved name 在 Vite 与 production 使用同一 diagnostic 拒绝。

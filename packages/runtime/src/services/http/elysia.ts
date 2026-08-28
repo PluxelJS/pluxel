@@ -1,4 +1,7 @@
 import type { Context as PluginContext } from '@pluxel/core'
+// Preload Elysia's public type-side wiring before Plugin schema construction.
+// Frozen builds install the remaining value/compile namespaces at bootstrap.
+import 'elysia/type'
 import { Elysia } from 'elysia'
 import type { ElysiaConfig } from 'elysia/types'
 

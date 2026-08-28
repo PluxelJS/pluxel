@@ -134,8 +134,33 @@ try {
 	)
 	sockets.push(replacementSocket.socket)
 	assert.equal(await replacementSocket.nextMessage(), 'v2')
+	const replacementSocketClosed = replacementSocket.closed
+
+	await writeFile(pluginPath, 'export const invalidReplacement =')
+	await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
+	const lastKnownGoodResponse = await fetch(`${runtimeUrl}/configured/version`)
+	assert.equal(await lastKnownGoodResponse.text(), 'v2')
+	assert.equal(replacementSocket.socket.readyState, WebSocket.OPEN)
+	const lastKnownGoodSocket = await openWebSocket(
+		`${runtimeUrl.replace(/^http/, 'ws')}/configured/socket`,
+	)
+	sockets.push(lastKnownGoodSocket.socket)
+	assert.equal(await lastKnownGoodSocket.nextMessage(), 'v2')
+	lastKnownGoodSocket.socket.close()
+	await lastKnownGoodSocket.closed
 	replacementSocket.socket.close()
-	await replacementSocket.closed
+	await replacementSocketClosed
+
+	assert.equal(
+		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
+		'v2',
+	)
+	const removableSocket = await openWebSocket(
+		`${runtimeUrl.replace(/^http/, 'ws')}/vite-static/socket`,
+	)
+	sockets.push(removableSocket.socket)
+	assert.equal(await removableSocket.nextMessage(), 'v2')
+	const removableSocketClosed = removableSocket.closed
 
 	await writeFile(pluginPath, pluginSource('removed', false))
 	await invokeHotUpdate(routePlugin, pluginPath)
@@ -154,10 +179,32 @@ try {
 		[address, east, west].map((node) => pluginService.getInstance(node)),
 		[undefined, undefined, undefined],
 	)
+	const removedResponse = await fetch(`${runtimeUrl}/vite-static/version`)
+	assert.equal(removedResponse.status, 404)
+	assert.equal(
+		requireRuntimeHttpService(capturedHost.ctx).matchesWebSocketRoute(
+			new Request(`${runtimeUrl}/vite-static/socket`, {
+				headers: { connection: 'Upgrade', upgrade: 'websocket' },
+			}),
+		),
+		false,
+	)
+	assert.deepEqual(await removableSocketClosed, { code: 1012, reason: 'Service Restart' })
 
 	await writeFile(pluginPath, pluginSource('v3', true))
 	await invokeHotUpdate(routePlugin, pluginPath)
 	assert.equal(pluginService.isRunning(address), true)
+	assert.equal(
+		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
+		'v3',
+	)
+	const restoredSocket = await openWebSocket(
+		`${runtimeUrl.replace(/^http/, 'ws')}/vite-static/socket`,
+	)
+	sockets.push(restoredSocket.socket)
+	assert.equal(await restoredSocket.nextMessage(), 'v3')
+	restoredSocket.socket.close()
+	await restoredSocket.closed
 } finally {
 	for (const socket of sockets) {
 		if (socket.readyState === WebSocket.OPEN) socket.close()
@@ -228,7 +275,7 @@ function pluginSource(version: string, available: boolean): string {
 		'  private readonly settings = this.configs.use(ViteStaticConfig)',
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
-		'  protected override init() { this.configuredLabel = this.settings.label }',
+		`  protected override init() { this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.elysia.use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',

@@ -105,7 +105,7 @@ function pluginSource(version: string, available: boolean): string {
 		'  private readonly settings = this.configs.use(ViteStaticConfig)',
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
-		'  protected override init() { this.configuredLabel = this.settings.label }',
+		`  protected override init() { this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.elysia.use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',

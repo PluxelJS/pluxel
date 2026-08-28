@@ -3,6 +3,14 @@ import { TodoPlugin } from '@example/todo-plugin'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { t } from 'elysia'
 
+const todoBody = t.Object({
+	title: t.String({
+		minLength: 1,
+		maxLength: TODO_TITLE_MAX_LENGTH,
+		pattern: '.*\\S.*',
+	}),
+})
+
 @Plugin({ displayName: 'Example HTTP API' })
 export class HttpPlugin extends BasePlugin {
 	constructor(private readonly todos: TodoPlugin) {
@@ -16,13 +24,7 @@ export class HttpPlugin extends BasePlugin {
 				.post(
 					'/todos',
 					{
-						body: t.Object({
-							title: t.String({
-								minLength: 1,
-								maxLength: TODO_TITLE_MAX_LENGTH,
-								pattern: '.*\\S.*',
-							}),
-						}),
+						body: todoBody,
 					},
 					({ body, set }) => {
 						const result = this.todos.add(body.title)

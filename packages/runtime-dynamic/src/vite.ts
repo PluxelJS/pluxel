@@ -9,6 +9,7 @@ import {
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteModuleGraphFiles,
+	registerViteSsrExternalModuleUrls,
 } from '../../runtime-dev/src/vite.ts'
 import { resolveDevWorkbenchClientEntryUrl } from '../../runtime/src/server/assets.ts'
 import {
@@ -33,10 +34,7 @@ import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
 import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './hmr/vite-watch'
 import { isPackageInstalledFrom } from './host-package'
-import {
-	ELYSIA_SINGLETON_BRIDGE_MODULES,
-	isPublicElysiaSingletonSpecifier,
-} from './elysia-singleton'
+import { isPublicElysiaSingletonSpecifier } from './elysia-singleton'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
 const DYNAMIC_RUNTIME_CONTROLLER_KEY = Symbol.for('pluxel.dynamicRuntimeController')
@@ -89,6 +87,8 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	let singletonHostRoot: string | null = null
 	let singletonHostResolver: OxcResolver | null = null
 	let contextHostHasContext: boolean | undefined
+	const canonicalElysiaUrls = new Map<string, string>()
+	let unregisterElysiaExternalModules: (() => void) | undefined
 	const state: {
 		server?: ViteDevServer
 		configPath?: string
@@ -300,22 +300,22 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					dedupe: ['elysia'],
 				},
 				ssr: {
-					external: [
-						...ELYSIA_SINGLETON_BRIDGE_MODULES,
-						'@pluxel/context',
-						'@pluxel/core',
-						'@pluxel/runtime',
-					],
+					external: ['@pluxel/context', '@pluxel/core', '@pluxel/runtime'],
 				},
 			}
-		},
-		applyToEnvironment(environment) {
-			return environment.name === 'ssr' || environment.config.consumer === 'server'
 		},
 		configResolved(config) {
 			singletonHostRoot = config.root
 			contextHostHasContext = undefined
 			singletonHostResolver = null
+			canonicalElysiaUrls.clear()
+		},
+		configureServer(server) {
+			unregisterElysiaExternalModules?.()
+			unregisterElysiaExternalModules = registerViteSsrExternalModuleUrls(
+				server,
+				canonicalElysiaUrls,
+			)
 		},
 		resolveId(id, _importer, hookOptions) {
 			if (!hookOptions?.ssr) return null
@@ -334,7 +334,9 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			) {
 				const hostEntry = resolveSingletonHostEntry(getResolver(), id)
 				if (!hostEntry) return null
-				return { id: pathToFileURL(hostEntry).href, external: true }
+				const hostUrl = pathToFileURL(hostEntry).href
+				canonicalElysiaUrls.set(hostUrl, hostUrl)
+				return { id: hostUrl, external: true }
 			}
 			const specifier = resolveSingletonBridgeSpecifier(id, getResolver)
 			if (!specifier) return null
@@ -349,6 +351,10 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			if (!id.startsWith(HOST_SINGLETON_VIRTUAL_PREFIX)) return null
 			const specifier = id.slice(HOST_SINGLETON_VIRTUAL_PREFIX.length)
 			return `export * from ${JSON.stringify(specifier)}`
+		},
+		closeBundle() {
+			unregisterElysiaExternalModules?.()
+			unregisterElysiaExternalModules = undefined
 		},
 	}
 

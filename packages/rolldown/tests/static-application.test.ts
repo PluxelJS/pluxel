@@ -13,6 +13,7 @@ import {
 	assertWorkbenchShellContractProtocol,
 	staticApplication,
 } from '../src/cli/static-application.ts'
+import { readPublicElysiaSpecifiers } from '../src/cli/elysia-singleton.ts'
 
 vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
 
@@ -91,6 +92,9 @@ describe('staticApplication', () => {
 		expect(config.target).toBe('node24')
 		expect(pluginNames(config)).toContain('pluxel:nf3-externals')
 		expect(pluginNames(config)).toContain('pluxel:decorator-output-guard')
+		expect(pluginNames(config).indexOf('pluxel:static-elysia-singleton')).toBeLessThan(
+			pluginNames(config).indexOf('unplugin-preprocessor-directives'),
+		)
 		expect(config.inputOptions?.transform?.decorator).toEqual({
 			legacy: true,
 			emitDecoratorMetadata: false,
@@ -98,6 +102,96 @@ describe('staticApplication', () => {
 		expect(config.entry).toEqual({ app: 'pluxel:static-application-bootstrap' })
 		expect(config.sourcemap).toBe(true)
 		expect(config.outputOptions).toMatchObject({ sourcemapExcludeSources: true })
+	})
+
+	it('bridges every explicit public Elysia runtime export except package data', () => {
+		expect([
+			...readPublicElysiaSpecifiers({
+				exports: {
+					'.': './dist/index.mjs',
+					'./type': './dist/type.mjs',
+					'./websocket': './dist/websocket.mjs',
+					'./package.json': './package.json',
+					'./private/*': './dist/private/*.mjs',
+				},
+			}),
+		]).toEqual(['elysia', 'elysia/type', 'elysia/websocket'])
+	})
+
+	it('resolves Elysia public entries through the Runtime-owned package', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-static-elysia-'))
+		const runtimeManifest = join(root, 'runtime/package.json')
+		const elysiaManifest = join(root, 'runtime/node_modules/elysia/package.json')
+		const typeEntry = join(root, 'runtime/node_modules/elysia/dist/type/exports.mjs')
+		const typeboxValueEntry = join(root, 'runtime/node_modules/typebox/build/value/index.mjs')
+		const exactMirrorEntry = join(root, 'runtime/node_modules/exact-mirror/dist/index.mjs')
+		try {
+			await mkdir(dirname(elysiaManifest), { recursive: true })
+			await writeFile(
+				elysiaManifest,
+				JSON.stringify({ exports: { '.': './dist/index.mjs', './type': './dist/type.mjs' } }),
+			)
+			const config = staticApplication({
+				cwd: root,
+				entry: './src/pluxel.static.ts',
+				lint: false,
+			})
+			const plugin = (
+				config.plugins as Array<{
+					name?: string
+					buildStart?: unknown
+					resolveId?: unknown
+				}>
+			).find((candidate) => candidate?.name === 'pluxel:static-elysia-singleton')
+			const resolve = vi.fn(async (id: string, importer: string | undefined) => {
+				if (id === '@pluxel/runtime/package.json') return { id: runtimeManifest }
+				if (id === 'elysia/package.json') return { id: elysiaManifest }
+				if (id === 'elysia/type') return { id: typeEntry, external: true }
+				if (id === 'typebox/value') return { id: typeboxValueEntry, external: true }
+				if (id === 'exact-mirror') return { id: exactMirrorEntry, external: true }
+				throw new Error(`Unexpected resolution: ${id} from ${importer}`)
+			})
+			const context = {
+				resolve,
+				error(message: string): never {
+					throw new Error(message)
+				},
+			}
+			await (plugin?.buildStart as ((this: typeof context) => Promise<void>) | undefined)?.call(
+				context,
+			)
+			const resolveId = (plugin?.resolveId as { handler?: unknown } | undefined)?.handler as
+				| ((
+						this: typeof context,
+						id: string,
+						importer: string,
+						options: object,
+				  ) => Promise<unknown> | null)
+				| undefined
+			await expect(
+				resolveId?.call(context, 'elysia/type', join(root, 'plugin.ts'), {}),
+			).resolves.toEqual({ id: typeEntry, external: false })
+			expect(
+				resolveId?.call(context, 'elysia/package.json', join(root, 'plugin.ts'), {}),
+			).toBeNull()
+			await expect(
+				resolveId?.call(context, 'typebox/value', join(root, 'plugin.ts'), {}),
+			).resolves.toEqual({ id: typeboxValueEntry, external: false })
+			await expect(
+				resolveId?.call(context, 'exact-mirror', join(root, 'plugin.ts'), {}),
+			).resolves.toEqual({ id: exactMirrorEntry, external: false })
+			expect(resolve).toHaveBeenCalledWith('elysia/type', runtimeManifest, {
+				skipSelf: true,
+			})
+			expect(resolve).toHaveBeenCalledWith('typebox/value', elysiaManifest, {
+				skipSelf: true,
+			})
+			expect(resolve).toHaveBeenCalledWith('exact-mirror', elysiaManifest, {
+				skipSelf: true,
+			})
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 
 	it('rejects an unknown launcher instead of silently opening a listener', () => {
@@ -125,14 +219,52 @@ describe('staticApplication', () => {
 			}>
 		).find((candidate) => candidate?.name === 'pluxel-static-application-entry')
 		const resolved = plugin?.resolveId?.('pluxel:static-application-bootstrap')
-		const source = await plugin?.load?.(String(resolved))
+		const source = String(await plugin?.load?.(String(resolved)))
 
 		expect(resolved).toBe('\0pluxel:static-application-bootstrap')
 		expect(source).toContain('import * as __pluxelHostModule')
 		expect(source).toContain('/tmp/pluxel-static-node/src/pluxel.static.ts')
 		expect(source).toContain('readHostProduct as __readHostProduct')
+		expect(source.indexOf("import 'pluxel:static-elysia-wiring'")).toBeLessThan(
+			source.indexOf("from '@pluxel/runtime/internal/static-host'"),
+		)
+		expect(source.indexOf("from '@pluxel/runtime/internal/static-host'")).toBeLessThan(
+			source.indexOf('import * as __pluxelHostModule'),
+		)
 		expect(source).toContain('__pluxelHostModule.default')
 		expect(source).toContain('product: __pluxelProduct')
+	})
+
+	it('statically wires every Elysia TypeBox runtime namespace before the user module', async () => {
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-node',
+			entry: './src/pluxel.static.ts',
+			lint: false,
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				resolveId?: (id: string) => unknown
+				load?: (id: string) => unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel:static-elysia-singleton')
+		const resolveId = (plugin?.resolveId as { handler?: (id: string) => unknown } | undefined)
+			?.handler
+		const resolved = await resolveId?.('pluxel:static-elysia-wiring')
+		const source = String(await plugin?.load?.(String(resolved)))
+
+		expect(resolved).toBe('\0pluxel:static-elysia-wiring')
+		expect(source).toContain("from 'exact-mirror'")
+		for (const specifier of [
+			'typebox/compile',
+			'typebox/schema',
+			'typebox/system',
+			'typebox/type',
+			'typebox/value',
+		]) {
+			expect(source).toContain(`from '${specifier}'`)
+		}
+		expect(source).toContain('__setupTypebox({')
 	})
 
 	it('emits a fetch-only production bootstrap without a listener address', async () => {

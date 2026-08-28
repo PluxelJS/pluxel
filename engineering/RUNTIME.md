@@ -75,7 +75,12 @@ upgrade 把 immutable owner token 与 lease 转移给 carrier，owner stop/repla
   依赖它们的 Elysia plugin 尚不受支持；
 - `listen()` / `stop()` 与 Server view 的 physical `stop/reload/ref/unref` 同样 fail-fast；
 - Node HTTP/WS 和 Node-backed Vite 已验证，但 Bun/Deno 第二 carrier 和跨 runtime portable WS conformance 尚未完成；
-- dynamic Elysia singleton identity 已受控，Plugin manifest 的 Elysia peer-range admission 尚未进入 static/dynamic 共享 catalog。
+- static freezer 与 dynamic Vite/ModuleRunner 的 Elysia singleton identity 已受控，Plugin manifest 的 Elysia peer-range admission
+  尚未进入 static/dynamic 共享 catalog。
+
+static freezer 在用户 module 求值前调用 Elysia 公开 `setupTypebox()`，静态注入完整 TypeBox runtime namespace；dynamic Vite 则让
+outer config 与 loader HMR 通过 server-owned ModuleRunner state 复用同一 evaluated namespace，并只 externalize 已由 host package
+exports 授权的精确 Elysia URL。两者都不重导出或代理 Elysia API。
 
 ## Commands capability
 

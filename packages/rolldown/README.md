@@ -9,7 +9,9 @@ Rolldown/Vite 工具链入口：
   Workbench source transform 和输出检查。`pluginPackage()` 的单次 semantic pass 验证 package-root named export，提取
   constructor required edge 与 `definePluginRef<T>()` optional edge，并生成幂等的 `pluxel.pluginPackages` / peer metadata。
   required 与 optional provider 都保持 external；type-only optional ref 不解析、加载或合成 absent module，也没有 reflection
-  metadata/name fallback。CLI 不追加并行 import tracker。
+  metadata/name fallback。CLI 不追加并行 import tracker。`staticApplication()` 还把 Elysia 当前全部公开 subpath 解析到
+  Runtime-owned singleton，并在用户 module 求值前通过 Elysia 的公开 `setupTypebox()` 安装完整 TypeBox runtime namespace，
+  使 schema-backed frozen distribution 搬离 source workspace 后仍可编译。
 - `@pluxel/rolldown/vite`：提供同语义的 Vite source adapter，供 static/dynamic ModuleRunner 和 HMR route 复用。
   `pluginSourceVitePlugins()` 与 `pluxelRuntimeSourceVitePlugins()` 支持显式 `sourceSpaces` 映射；配置、`realpath`
   containment 和 identity 边界见

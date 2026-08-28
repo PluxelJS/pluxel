@@ -14,9 +14,8 @@ const contextPackageRoot = process.env.PLUXEL_CONTEXT_PACKAGE_ROOT
 if (!fixtureRoot || !contextPackageRoot)
 	throw new Error('Context bridge fixture environment is missing')
 
-const bridge = (dynamicRuntimeVitePlugin({ config: './unused.ts' }) as Plugin[]).find(
-	(plugin) => plugin.name === 'pluxel:dynamic-singleton-bridge',
-)
+const dynamicPlugins = dynamicRuntimeVitePlugin({ config: './unused.ts' }) as Plugin[]
+const bridge = dynamicPlugins.find((plugin) => plugin.name === 'pluxel:dynamic-singleton-bridge')
 if (!bridge) throw new Error('dynamic singleton bridge plugin is missing')
 
 const server = await createServer({
@@ -40,6 +39,7 @@ try {
 		'@pluxel/context',
 		importer,
 	)) as { externalize?: string }
+	const pluginImporter = resolve(fixtureRoot, 'plugin/entry.ts')
 	assert.equal(fetchedCore.externalize, import.meta.resolve('@pluxel/core'))
 	assert.equal(
 		fetchedContext.externalize,
@@ -58,6 +58,12 @@ try {
 		server,
 		importer,
 	)
+	const loadedPlugin = await importViteSsrModule<Record<string, Record<string, unknown>>>(
+		server,
+		pluginImporter,
+	)
+	const hostElysia = await import('elysia')
+	const hostWebSocket = await import('elysia/websocket')
 
 	assert.equal(loaded.core.BasePlugin, hostCore.BasePlugin)
 	assert.equal(loaded.coreSource.BasePlugin, hostCore.BasePlugin)
@@ -76,6 +82,8 @@ try {
 		loaded.contextInternalSource.createRootContext,
 		hostContextInternal.createRootContext,
 	)
+	assert.equal(loadedPlugin.elysia.Elysia, hostElysia.Elysia)
+	assert.equal(loadedPlugin.websocket.websocket, hostWebSocket.websocket)
 
 	const bridgeSpecifiers = [
 		'@pluxel/core',

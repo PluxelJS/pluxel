@@ -8,6 +8,8 @@ packages:
     type: major
   '@pluxel/runtime-static':
     type: major
+  '@pluxel/rolldown':
+    type: patch
   '@pluxel/create':
     type: minor
 ---
@@ -53,6 +55,17 @@ of this release's completed baseline.
 The starter now generates direct Elysia 2 route composition and uses the matching Elysia 2
 dependency. Existing projects should declare their final route prefix with Elysia `group()` or full
 paths instead of a Pluxel `publicPath` option.
+
+Static applications now install Elysia's public static TypeBox wiring at the host application
+boundary. Schema-backed routes therefore remain compilable after the bundled distribution is moved
+away from the source workspace, without relying on a `createRequire()` lookup relative to a generated
+chunk. The freezer also resolves every public Elysia subpath through the Runtime-owned package so a
+source-linked Plugin cannot bundle a second physical Elysia identity.
+
+Dynamic Vite hosts now keep outer config evaluation and loader HMR on one server-owned ModuleRunner
+namespace. Public Elysia imports, including WebSocket and other exported subpaths, are resolved from
+the Runtime-owned package and externalized by exact canonical URL, so a nested Plugin dependency
+cannot create a second Elysia instance when the Vite root itself has no Elysia dependency.
 
 Core adds package-internal generation-finalization, settlement, commit-preparation, and synchronous
 publication hooks so Runtime can integrate application lifecycle without exposing HTTP concepts or a

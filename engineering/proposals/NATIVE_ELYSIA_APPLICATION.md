@@ -60,7 +60,7 @@ Request/Response + Elysia Server view 边界；srvx 提供 Node、Bun、Deno 等
 
 ### 当前实现基线
 
-| 能力             | 2026-08-27 共享树状态                                                                                                              |
+| 能力             | 2026-08-28 共享树状态                                                                                                              |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | 作者 API         | `ctx.elysia` 是真实 Elysia `2.0.0-beta.7` instance；旧 `ctx.http.plugin`/`publicPath` 作者协议已移除                               |
 | generation       | lazy app、Part 共享、`app.modules`、native `compile()`/seal、owner admission、stream drain 已接入 Core lifecycle                   |
@@ -70,7 +70,8 @@ Request/Response + Elysia Server view 边界；srvx 提供 Node、Bun、Deno 等
 | Node/Vite WS     | Node/crossws bridge、owner topic 隔离、1012 replacement drain 与 Vite upgrade arbitration 已有实现；这仍只是 Node 证明             |
 | portable WS      | srvx application/carrier seam 已分层，但 Bun/Deno 第二 carrier 和共享 conformance suite 尚未完成                                   |
 | Elysia lifecycle | beta.7 没有 public external attach/detach epoch；`app.setup()` / `app.cleanup()` 在 Plugin app 上立即 fail-fast                    |
-| package contract | dynamic singleton bridge 已实现；Plugin `elysia` peer-range admission 尚未接入 static/dynamic 共享 catalog seam                    |
+| package contract | static freezer 与 dynamic singleton bridge 已实现；Plugin `elysia` peer-range admission 尚未接入共享 catalog seam                  |
+| frozen schema    | freezer 在用户 module 前以公开 `setupTypebox()` 注入完整 runtime namespace，可搬移产物的 schema 惰性编译已验证                     |
 
 因此“原生 Elysia”已是当前作者 contract，但不等于“Elysia 和 srvx 在所有 runtime 上的每个 server 扩展已验收”。
 
@@ -660,9 +661,14 @@ Elysia 2 是 host-owned authoring/runtime singleton，而不是每个 Plugin 可
 
 ### 当前实现边界
 
-当前实现只完成 runtime identity：host 固定 `2.0.0-beta.7`，dynamic Vite/ModuleRunner 将 Elysia 公开入口导向 host
-singleton。它**尚未**实现 Plugin manifest 的 semver admission，不得将“实际只加载一份实例”表述为“已证明作者
+当前实现只完成 runtime identity：host 固定 `2.0.0-beta.7`，static freezer 与 dynamic Vite/ModuleRunner 都将 Elysia
+公开入口导向 host singleton。它**尚未**实现 Plugin manifest 的 semver admission，不得将“实际只加载一份实例”表述为“已证明作者
 依赖兼容”。
+
+static freezer 在 host/Plugin module 求值前以 Elysia 公开 `setupTypebox()` 注入完整 TypeBox runtime namespace，避免 frozen
+distribution 搬离 workspace 后从生成 chunk 旁同步查找依赖。dynamic route 的 outer config 与 loader HMR 复用 server-owned
+ModuleRunner state；只有经 host package exports 解析的精确 canonical Elysia URL 才会 externalize，private dist path 与语义 query
+不会被桥接。
 
 现有 ingestion 没有可以正确加检查的共享 seam：
 

@@ -71,6 +71,16 @@ Plugin 自带另一份 runtime copy。当前 Runtime 锁定 `2.0.0-beta.7`，对
 应用仓库内的 private Plugin 也必须通过 workspace catalog 解析到同一个版本；不能用宽范围产生第二份 Elysia。这个约束同时覆盖
 `elysia` 根入口和 `elysia/websocket` 等 subpath。
 
+`staticApplication()` freezer 会把 Elysia package 当前公开的全部 subpath 解析到 Runtime-owned singleton；dynamic Vite/ModuleRunner
+使用同一 host singleton bridge。这样 source-linked checkout 即使出现不同的 pnpm 物理路径，Plugin 的 `elysia`、
+`elysia/type`、`elysia/websocket` 和官方 plugin 仍与 `ctx.elysia` 属于同一份上游 runtime。当前还没有在 catalog ingestion
+阶段校验 Plugin manifest 的 Elysia version range，因此 exact peer/dev dependency 仍是作者必须遵守的 package contract。
+
+freezer 还会在宿主与 Plugin module 求值前，通过 Elysia 公开的 `setupTypebox()` 一次性安装 TypeBox 的 type、system、value、
+schema、compile namespace 与 `exact-mirror`。因此 schema 可以在已经搬离 source workspace 的 frozen distribution 中惰性编译；
+产物不依赖相对生成 chunk 的同步 `createRequire()` 查找。这个 wiring 只是补齐上游公开 runtime dependency，不替换 `t`、schema
+或 validator，也不增加 Pluxel schema facade。
+
 Elysia 2 的 route schema 位于 handler 之前：
 
 ```ts no-twoslash

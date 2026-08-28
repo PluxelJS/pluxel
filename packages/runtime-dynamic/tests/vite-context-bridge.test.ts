@@ -15,6 +15,7 @@ const runnerScript = resolve(import.meta.dirname, 'support/vite-context-bridge-r
 const contextPackageRoot = resolve(workspaceRoot, 'packages/context')
 const corePackageRoot = resolve(workspaceRoot, 'packages/core')
 const runtimePackageRoot = resolve(workspaceRoot, 'packages/runtime')
+const elysiaPackageRoot = resolve(runtimeDynamicRoot, 'node_modules/elysia')
 const contextSource = normalizePath(resolve(contextPackageRoot, 'src/index.ts'))
 const contextInternalSource = normalizePath(resolve(contextPackageRoot, 'src/internal.ts'))
 const coreSource = normalizePath(resolve(corePackageRoot, 'src/index.ts'))
@@ -36,11 +37,24 @@ describe('dynamic config host singleton bridge', () => {
 				'export { core, coreInternal, coreSource, coreInternalSource, context, contextInternal, contextSource, contextInternalSource }',
 				'',
 			].join('\n'),
+			'plugin/package.json': JSON.stringify({
+				name: '@fixture/elysia-plugin',
+				private: true,
+				dependencies: { elysia: '2.0.0-beta.7' },
+			}),
+			'plugin/entry.ts': [
+				"import * as elysia from 'elysia'",
+				"import * as websocket from 'elysia/websocket'",
+				'export { elysia, websocket }',
+				'',
+			].join('\n'),
 		})
 		await mkdir(fixture.getPath('node_modules/@pluxel'), { recursive: true })
+		await mkdir(fixture.getPath('plugin/node_modules'), { recursive: true })
 		await symlink(contextPackageRoot, fixture.getPath('node_modules/@pluxel/context'), 'dir')
 		await symlink(corePackageRoot, fixture.getPath('node_modules/@pluxel/core'), 'dir')
 		await symlink(runtimePackageRoot, fixture.getPath('node_modules/@pluxel/runtime'), 'dir')
+		await symlink(elysiaPackageRoot, fixture.getPath('plugin/node_modules/elysia'), 'dir')
 
 		await expect(
 			execFileAsync(process.execPath, ['--import', 'tsx', runnerScript], {
@@ -88,14 +102,9 @@ describe('dynamic config host singleton bridge', () => {
 		)()
 		expect(bridgeConfig.resolve?.dedupe).toContain('elysia')
 		expect(bridgeConfig.ssr?.external).toEqual(
-			expect.arrayContaining([
-				'elysia',
-				'elysia/adapter',
-				'elysia/adapter/web-standard',
-				'elysia/websocket',
-				'elysia/ws',
-			]),
+			expect.arrayContaining(['@pluxel/context', '@pluxel/core', '@pluxel/runtime']),
 		)
+		expect(bridgeConfig.ssr?.external).not.toContain('elysia')
 		const configResolved = bridge.configResolved as (config: { root: string }) => void
 		configResolved({ root: runtimeDynamicRoot })
 		const resolveId = bridge.resolveId as (

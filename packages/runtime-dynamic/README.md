@@ -64,6 +64,10 @@ package classifier，让 CommonJS 与 native package 自动留在 Node host 执�
 mutable source 插件都由同一个 Vite SSR ModuleRunner 求值，并统一读取 RuntimeState、constructor dependency、graph commit
 和 effects lifecycle。固定插件 import graph 变化会重建整个 dynamic host；mutable source 变化只处理受影响的 entry。
 
+outer config 与 loader HMR 共用一个 host-owned ModuleRunner namespace。Elysia root、WebSocket 和其他公开 package subpath 先经
+host package exports 校验，再以精确 canonical ESM URL externalize；即使 Vite root 没有安装 Elysia、Plugin 有自己的 nested
+dependency 路径，Plugin import 仍与 `ctx.elysia` 保持引用相等。private `elysia/dist/*` 和带语义 query 的 URL 不进入该桥接。
+
 `path` 相对 `root` 解析，也可以显式使用绝对路径。`include` 不接受 absolute、negation、`.` 或 `..` segment，避免 watcher
 越过声明目录。一次配置最多解析 10,000 个 entry；达到上限应收窄 glob，而不是把源码仓库或 `node_modules` 整体当作 entry
 目录。source entry 的普通 import dependency 不受 entry glob 限制：已进入 Vite graph 后，它的变化会沿 importer graph 回到

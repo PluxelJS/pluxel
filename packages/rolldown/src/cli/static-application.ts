@@ -15,6 +15,7 @@ import { createDistributionManifest } from '../distribution'
 import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/staticConfigEnvironmentPlugin'
 import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
+import { staticElysiaSingletonPlugin } from './elysia-singleton'
 import { writeStaticConfigEnvironmentExample } from './static-config-environment-output'
 
 export type StaticApplicationBuildOptions = {
@@ -154,6 +155,7 @@ export function staticApplication(
 					state.environmentExample = facts.environmentExample
 				},
 			}),
+			staticElysiaSingletonPlugin(cwd),
 			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({
 				cwd,
@@ -513,8 +515,9 @@ function buildBootstrap(
 					]
 				: ['@pluxel/runtime-static/internal/node-application', 'runStaticNodeApplication']
 	return `
-import * as __pluxelHostModule from ${JSON.stringify(entry)}
+import 'pluxel:static-elysia-wiring'
 import { readHostProduct as __readHostProduct } from '@pluxel/runtime/internal/static-host'
+import * as __pluxelHostModule from ${JSON.stringify(entry)}
 import { ${runner} as __runStaticApplication } from ${JSON.stringify(runnerModule)}
 const __pluxelProduct = __readHostProduct(__pluxelHostModule, ${JSON.stringify(`[static-application] ${entry}`)})
 const __pluxelStaticRuntime = await __runStaticApplication(__pluxelHostModule.default, {
