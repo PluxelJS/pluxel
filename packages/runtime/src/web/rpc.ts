@@ -25,15 +25,19 @@ export function createRpcClient(
 
 export type RpcClientFactory = (options?: RpcClientCreateOptions) => RuntimeRpcStub
 
-export function createRpcClientFactory(rpcBase?: string): RpcClientFactory {
+export function createRpcClientFactory(
+	rpcBase?: string,
+	defaults: RpcClientCreateOptions = {},
+): RpcClientFactory {
 	return createGenericRpcClientFactory<RuntimeRpcApi>(
 		rpcBase,
+		defaults,
 	) as GenericRpcClientFactory<RuntimeRpcApi>
 }
 
 export async function invokeRpc<T>(
 	runner: (client: RuntimeRpcStub) => Promise<T>,
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+	options?: RpcClientCreateOptions & { rpcBase?: string; timeoutMs?: number },
 ): Promise<T> {
 	return await invokeGenericRpc<RuntimeRpcApi, T>(runner, options)
 }

@@ -1,17 +1,5 @@
 import type { Context as PluginContext } from '@pluxel/core'
-import {
-	canAccessSecurityAdmin,
-	createAdminAccessBlockedHeaders,
-	createAdminAccessBlockedPayload,
-	resolveAdminAccessRedirectPath,
-} from '../../shared/admin-access-http'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_MODELS_BASE,
-	RUNTIME_SECURITY_BASE,
-	RUNTIME_TRANSPORT_PATHS,
-} from '../../web/paths'
-import { buildAdminAccessRedirectPath } from '../admin-access/transport'
+import { RUNTIME_WORKBENCH_MODELS_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
 import { workbenchRoutes } from '../../api/http/workbench'
@@ -27,21 +15,6 @@ import { createHostElysiaApp } from './elysia'
 type BaseElysiaApp = any
 type InternalApiOptions = {
 	workbench: boolean
-}
-
-function isSecurityApiPath(path: string): boolean {
-	const internalPath = toInternalApiPath(path)
-	return (
-		internalPath === RUNTIME_SECURITY_BASE || internalPath.startsWith(`${RUNTIME_SECURITY_BASE}/`)
-	)
-}
-
-function toInternalApiPath(path: string): string {
-	if (path === RUNTIME_INTERNAL_API_BASE) return '/'
-	if (path.startsWith(`${RUNTIME_INTERNAL_API_BASE}/`)) {
-		return path.slice(RUNTIME_INTERNAL_API_BASE.length) || '/'
-	}
-	return path
 }
 
 function createInternalPlugin(
@@ -60,27 +33,6 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 	return app.beforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
-		const adminAccess = pluginCtx.root.adminAccess
-		if (!adminAccess) {
-			throw new Error('[pluxel/runtime] Internal management API requires adminAccess')
-		}
-		const state = await adminAccess.authorize({ request })
-
-		if (isSecurityApiPath(path)) {
-			if (canAccessSecurityAdmin(state)) return undefined
-			const redirectPath = resolveAdminAccessRedirectPath(
-				buildAdminAccessRedirectPath,
-				request,
-				'api',
-				state.reason,
-			)
-			Object.assign(set.headers, createAdminAccessBlockedHeaders(redirectPath, state.reason))
-			return status(
-				401,
-				createAdminAccessBlockedPayload(path, method, 'api', redirectPath, state.reason),
-			)
-		}
-
 		const validation = pluginCtx.internalApiValidation
 		if (validation?.hasValidators()) {
 			const result = await validation.check({
@@ -108,27 +60,7 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 				})
 			}
 		}
-
-		if (state.allow) return undefined
-
-		const redirectPath = resolveAdminAccessRedirectPath(
-			buildAdminAccessRedirectPath,
-			request,
-			'api',
-			state.reason,
-		)
-		pluginCtx.logger.warn('Blocked admin access gate', {
-			kind: 'api',
-			path,
-			method,
-			reason: state.reason,
-		})
-
-		Object.assign(set.headers, createAdminAccessBlockedHeaders(redirectPath, state.reason))
-		return status(
-			401,
-			createAdminAccessBlockedPayload(path, method, 'api', redirectPath, state.reason),
-		)
+		return undefined
 	}) as BaseElysiaApp
 }
 

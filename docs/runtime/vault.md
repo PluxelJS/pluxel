@@ -142,6 +142,11 @@ Vault 不在普通 Plugin 调用时偷偷 auto-unlock。host 在启动/preflight
 `vaultAdmin` 是仅在 Vault enabled 时存在的 root-owned 宿主管理 API，用于 preflight、unlock、rekey 和 deploy recipient
 管理。宿主读取前也必须检查 absence；业务 Plugin 只使用已检查的 `ctx.vault`，不调用 root admin API。
 
+官方 `@pluxel/auth` 也是普通 Vault consumer。它只保存 password verifier、TOTP secret/last accepted counter，以及 confidential
+OIDC client secret；plaintext password、生成的 OTP、session token、OIDC state/nonce/PKCE 和 rate-limit state 都只存在于请求或有界的
+generation memory。凭据更新会在 provider ready snapshot 切换前显式 `flush()`。因此使用 local account 或 confidential OIDC client 的
+host 必须配置 `vault: {}` 并在 Plugin lifecycle 前完成正常 preflight。
+
 ## Flush 与 durability
 
 写入会进入内存状态并按 host debounce 策略持久化。需要在关键边界确认 snapshot 已落盘时调用：

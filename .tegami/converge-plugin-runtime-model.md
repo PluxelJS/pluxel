@@ -61,9 +61,10 @@ GQLens code-generation stack, workspace submodule, generated clients, and duplic
 model.
 Headless hosts can explicitly enable management without creating layout, artifact, grant, remote-view,
 or UI routing state; omitting both planes has zero management/Workbench backend cost.
-Management access and host-owned Plugin classification now live under the single public
-`management.access` / `management.pluginGroups` contract. Workbench configuration only owns its UI
-plane, while the neutral catalog layout service and persistence namespace belong to management.
+`management.pluginGroups` remains the host-owned Plugin classification contract. Management access
+is determined by physical-peer recovery and the unique committed, running authentication provider;
+there is no `management.access` configuration. Workbench configuration only owns its UI plane, while
+the neutral catalog layout service and persistence namespace belong to management.
 
 Project unsupported config field structures as explicit read-only presentation nodes and remove the
 fallback renderer that accepted unknown structures without an honest editing contract.

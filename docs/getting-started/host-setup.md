@@ -278,7 +278,7 @@ workbench: {
 }
 ```
 
-`workbench: false` 或省略该字段时不创建 registry、compiler、watcher、artifact route、resource transport 或 Workbench persistence。Plugin business HTTP、database、commands 和 lifecycle 不受影响。启用 Workbench 会同时启用默认 private 的 management plane。
+`workbench: false` 或省略该字段时不创建 registry、compiler、watcher、artifact route、resource transport 或 Workbench persistence。Plugin business HTTP、database、commands 和 lifecycle 不受影响。启用 Workbench 会同时启用 management plane。
 
 不加载 Workbench UI、但需要通过 `@pluxel/runtime/web` 管理宿主时，只配置访问策略：
 
@@ -287,14 +287,45 @@ workbench: false,
 management: {}
 ```
 
-`management` object 的存在会启用 headless management；省略时，关闭 Workbench 的宿主没有 management route 或 backend。
-省略 `management.access` 使用 private policy。公网管理面使用
-`management: { access: { exposure: 'public', oidc: { ... } } }`；public access 必须在同一 access object 中提供 OIDC。
-没有独立的 `enabled` flag，也不存在同时“启用 Workbench、禁用 management”的矛盾状态。宿主产品分类放在
-`management.pluginGroups`，不要求安装 Workbench UI。
+`management` object 的存在会启用 headless management；省略时，关闭 Workbench 的宿主没有 management route 或 backend。该配置只承载
+`management.pluginGroups` 宿主产品分类；认证策略和 OIDC secret 属于认证 Plugin。没有独立 `enabled` flag，也不存在同时“启用
+Workbench、禁用 management”的矛盾状态。
 
-公网管理面必须由 host 明确配置 admin access/OIDC。最终业务 Elysia path 和 Workbench exposure 是不同边界；声明固定业务 route
-不等于开放管理权限。
+生产 Node launcher 默认监听 `0.0.0.0`。Runtime 从物理 socket peer 和认证 provider 状态决定 Management 访问：当前 committed、running
+provider 为 ready 时，所有来源（包括 loopback）都必须通过 provider；provider 不存在或尚未 ready 时，只有 loopback 可以进入恢复与配置流程，
+remote/unknown 一律 fail closed，只能从 `/__pluxel/admin-access` 取得最小 SSH 指引。Workbench、全部 Management API 与 `/security` 没有绕过入口。
+`Host`、`Forwarded` 和 `X-Forwarded-For` 不参与判断。
+
+自定义认证 Plugin 通过 owner-bound `ctx.managementAccess.provide()` 发布唯一 provider。`authorize()` 收到保留 URL、method、headers 与
+owner cancellation signal、但明确不含 operation body 的 `Request`；认证层不能读取或消费 Config、Vault、RPC 等 Management payload。
+provider registration、回调和 streaming response body 都随 Plugin generation 撤销并参与 drain。
+
+生产 static Node listener 可以直接终止 TLS。`PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 必须同时配置，值可以是内联 PEM 内容或 PEM 文件路径；
+加密 private key 可另设可选的 `PLUXEL_TLS_PASSPHRASE`。两项都省略时 listener 使用 HTTP。
+
+官方 `@pluxel/auth` 在一个插件里提供三种互斥模式：`oidc`、`password`、`password-totp`。本地账号的 password verifier、TOTP
+secret/counter 和 confidential OIDC client secret 使用 owner Vault，因此这些模式需要宿主同时启用：
+
+```ts no-twoslash
+vault: {},
+workbench: { enabled: true }
+```
+
+`clientKind: 'public'` 的 OIDC 没有 client secret，不需要 Vault。
+
+首次配置不需要 bootstrap token。先建立 tunnel：
+
+```sh
+ssh -L 3000:127.0.0.1:3000 user@host
+```
+
+再打开 `http://127.0.0.1:3000`，启用 Auth Plugin、选择 mode，并进入
+`/__pluxel/admin-access/setup` 保存首个账号/TOTP 或 confidential client secret。远程 password/OIDC 登录要求物理 carrier 是 HTTPS；
+不安全的远程请求会在调用 provider 前被拒绝。Runtime 不信任代理头，因此不要让同机 reverse proxy 经 loopback 回源 Management，改用
+非 loopback 私网/容器地址或在 Pluxel carrier 直接终止 TLS。
+
+最终业务 Elysia path 与 Workbench exposure 是不同边界；声明固定业务 route 不等于开放管理权限，Management provider 也不会自动保护
+业务插件 API。
 
 ### Logging root
 
@@ -335,6 +366,6 @@ import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
 - canonical entry/config 通过 Vite route plugin 加载，不用 raw TS runner。
 - static `plugins` 与 dynamic `sources` 没有重复表示同一 definition。
 - fixed Plugin 是否 enabled 由 runtime state 明确决定。
-- Workbench/admin exposure 与业务 HTTP auth 分开配置。
+- Management provider 与业务 HTTP auth 保持独立；公网前确认 provider ready 且 TLS 可用。
 - persistence、logs、dynamic artifact cache 指向可写 state，不写 immutable deployment root。
 - production build 与真实 Node/PostgreSQL/native 环境做过 smoke test。

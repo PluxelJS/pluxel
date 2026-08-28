@@ -1,0 +1,7 @@
+{
+	"extends": "../../tsconfig.plugin.json",
+	"include": ["src", "tests", "vitest.config.ts"],
+	"compilerOptions": {
+		"experimentalDecorators": true
+	}
+}

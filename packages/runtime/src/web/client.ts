@@ -238,6 +238,7 @@ export function createRuntimeManagementClient(
 			{
 				rpcBase,
 				credentials,
+				fetch,
 			},
 		)
 		const dispose =

@@ -287,9 +287,17 @@ Node declaration、artifact consumer、worker specialization 与共享 pool 实�
 ## Optional management plane
 
 launcher 在 Context plan 编译前一次解析 Management/Workbench plane。顶层 `management` object 的存在显式安装 headless
-management；`management.access` 省略时使用 private policy，public exposure 必须同时提供有效 OIDC。`workbench: { enabled: true }`
-在 `management` 省略时隐式安装 private management；两者都省略时不安装 access gate、runtime discovery、internal validation、
-Plugin catalog layout 或 management HTTP/RPC route。
+management；`workbench: { enabled: true }` 在 `management` 省略时也安装 management。两者都省略时不安装 access gate、runtime
+discovery、internal validation、Plugin catalog layout 或 management HTTP/RPC route。生产 Node launcher 默认监听 `0.0.0.0`，
+Runtime 在物理 carrier ingress 用 socket peer 实施访问边界：当前 committed、running provider ready 时，所有 peer（包括 loopback）都经过
+provider；provider absent/unready 时，只有 loopback 进入本地恢复，remote/unknown 除最小 `/__pluxel/admin-access` SSH 指引外全部 fail closed。
+不安全的 remote 请求在 provider callback 前拒绝。生产 static Node listener 用成对的 `PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 接收内联 PEM
+内容或 PEM 文件路径并直接终止 TLS；加密 private key 可另设 `PLUXEL_TLS_PASSPHRASE`。
+
+Management host 同时预安装 owner-bound `ctx.managementAccess`。认证 Plugin 通过 `provide()` 注册唯一 provider，registration 与精确
+generation effects 绑定；provider callback 在 owner admission 下执行，认证成功后的 lease 持有到 Management response body settle。
+Runtime 不从 Host/Forwarded headers 推导 locality，也不把 Management auth 应用于业务 Plugin HTTP。官方 `@pluxel/auth` 用正常 Plugin
+lifecycle 提供 OIDC、password、password+TOTP；秘密进入 owner Vault，session/OIDC state/rate limit 留在有界 generation memory。
 
 公开 browser authority 是 `@pluxel/runtime/web`：version 1 discovery、严格验证的 management DTO 和 stateless domain client。
 client 不暴露 raw Cap'n Web stub、server class、React/Mantine 或 Workbench session。official View-host 尚未标准化的 layout/catalog/grant/SSE

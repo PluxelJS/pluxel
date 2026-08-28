@@ -133,8 +133,11 @@ function runtimeConfig(config: RuntimeHostConfig): RuntimeHostConfig {
 
 export type RuntimeTestHostOptions = Pick<
 	RuntimeRootContextOptions,
-	'logging' | 'routeContextCapabilities'
+	'logging' | 'routeContextCapabilities' | 'requestAddress'
 >
+
+const TEST_LOOPBACK_REQUEST_ADDRESS: NonNullable<RuntimeTestHostOptions['requestAddress']> = () =>
+	Object.freeze({ address: '127.0.0.1', port: 1, family: 'IPv4' as const })
 
 function createRuntimeTestRoot(
 	config: RuntimeHostConfig,
@@ -142,6 +145,7 @@ function createRuntimeTestRoot(
 ): RootContext {
 	return createRuntimeRootContext(config, {
 		workbench: { createBackend: createWorkbenchBackend },
+		requestAddress: options.requestAddress ?? TEST_LOOPBACK_REQUEST_ADDRESS,
 		...options,
 	})
 }

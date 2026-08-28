@@ -1,28 +1,70 @@
-import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
+import { RpcSession, type RpcStub, type RpcTransport } from 'capnweb'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
+import type { RuntimeFetch } from './admin-access'
 
 export type RpcClientCreateOptions = Readonly<{
 	signal?: AbortSignal
 	/** Ensure cookies are sent (browser); defaults to `same-origin`. */
 	credentials?: RequestCredentials
+	/** Fetch implementation used for the actual HTTP batch request. */
+	fetch?: RuntimeFetch
 }>
+
+class HttpBatchTransport implements RpcTransport {
+	private readonly task: Promise<void>
+	private outgoing: string[] | null = []
+	private incoming: string[] | null = null
+	private aborted: unknown
+
+	constructor(private readonly sendBatch: (messages: readonly string[]) => Promise<string[]>) {
+		this.task = this.schedule()
+	}
+
+	async send(message: string): Promise<void> {
+		this.outgoing?.push(message)
+	}
+
+	async receive(): Promise<string> {
+		if (!this.incoming) await this.task
+		const message = this.incoming?.shift()
+		if (message !== undefined) return message
+		throw new Error('Batch RPC request ended.')
+	}
+
+	abort(reason: unknown): void {
+		this.aborted = reason
+	}
+
+	private async schedule(): Promise<void> {
+		await new Promise<void>((resolve) => setTimeout(resolve, 0))
+		if (this.aborted !== undefined) throw this.aborted
+		const batch = this.outgoing ?? []
+		this.outgoing = null
+		this.incoming = await this.sendBatch(batch)
+	}
+}
 
 export function createRpcClient<TApi extends object>(
 	rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`,
 	options: RpcClientCreateOptions = {},
 ): RpcStub<TApi> {
-	const { signal, credentials } = options
-	const urlOrRequest =
-		signal || credentials !== undefined
-			? new Request(rpcBase, {
-					signal,
-					credentials: credentials ?? 'same-origin',
-					headers: {
-						'Content-Type': 'text/plain; charset=utf-8',
-					},
-				})
-			: rpcBase
-	return newHttpBatchRpcSession<TApi>(urlOrRequest as any)
+	const { signal, credentials, fetch = globalThis.fetch.bind(globalThis) } = options
+	const transport = new HttpBatchTransport(async (batch) => {
+		const response = await fetch(rpcBase, {
+			method: 'POST',
+			body: batch.join('\n'),
+			signal,
+			credentials: credentials ?? 'same-origin',
+			headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+		})
+		if (!response.ok) {
+			await response.body?.cancel().catch((): undefined => undefined)
+			throw new Error(`RPC request failed: ${response.status} ${response.statusText}`)
+		}
+		const body = await response.text()
+		return body ? body.split('\n') : []
+	})
+	return new RpcSession<TApi>(transport).getRemoteMain()
 }
 
 export type RpcClientFactory<TApi extends object> = (
@@ -31,8 +73,9 @@ export type RpcClientFactory<TApi extends object> = (
 
 export function createRpcClientFactory<TApi extends object>(
 	rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`,
+	defaults: RpcClientCreateOptions = {},
 ): RpcClientFactory<TApi> {
-	return (options) => createRpcClient<TApi>(rpcBase, options)
+	return (options) => createRpcClient<TApi>(rpcBase, { ...defaults, ...options })
 }
 
 export function disposeRpcClient(client: object): void {
@@ -77,6 +120,7 @@ export async function invokeRpc<TApi extends object, TResult>(
 		rpcBase?: string
 		timeoutMs?: number
 		credentials?: RequestCredentials
+		fetch?: RuntimeFetch
 	}>,
 ): Promise<TResult> {
 	const rpcBase = options?.rpcBase ?? `${RUNTIME_INTERNAL_API_BASE}/rpc`
@@ -84,6 +128,7 @@ export async function invokeRpc<TApi extends object, TResult>(
 	const client = createRpcClient<TApi>(rpcBase, {
 		signal: timeout.signal,
 		credentials: options?.credentials,
+		fetch: options?.fetch,
 	})
 	try {
 		return await runner(client)

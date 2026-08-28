@@ -14,10 +14,11 @@ server state 只来自同一 management use case，不存在第二份 writable P
 尚未标准化的 layout/session/artifact/grant transport 只从 `@pluxel/runtime/web/internal` 供官方 View host 使用，不能被当成第三方
 兼容承诺。
 
-Workbench Plane 与 Management Plane 分开安装。`workbench: { enabled: true }` 同时得到默认 private management；Workbench
-disabled 时只有顶层 `management` object 才安装 headless management。两者都省略时没有管理 route、validation backend、catalog
-layout state、Workbench backend 或 browser transport。访问策略和宿主分类分别属于 `management.access` 与
-`management.pluginGroups`，不属于 Workbench 配置。
+Workbench Plane 与 Management Plane 分开安装。`workbench: { enabled: true }` 同时安装 management；Workbench disabled 时只有顶层
+`management` object 才安装 headless management。两者都省略时没有管理 route、validation backend、catalog layout state、Workbench
+backend 或 browser transport。宿主分类属于 `management.pluginGroups`；访问不再是 host config，而由 Runtime 的 physical-peer gate 与
+唯一 running authentication provider 决定。未认证入口是独立 server-rendered `/__pluxel/admin-access` document，不进入 React router，
+因此认证前不会启动 discovery、RPC、SSE、layout 或 remote bundle。
 
 宿主内置的 `/agent-tools` 页面管理 runtime-owned Toolset 与 Agent assignment。页面不是 command registry，也不拥有
 命令生命周期；它通过宿主 RPC 编辑持久化策略并投影当前动态 catalog。Workbench 关闭后，Agent carrier 继续使用

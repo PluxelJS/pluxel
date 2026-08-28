@@ -32,6 +32,7 @@ import {
 import { RuntimeStateStore, type RuntimeStateStoreConfig } from '../services/RuntimeStateStore'
 import { RuntimeManagementService } from '../services/RuntimeManagementService'
 import { AdminAccessService } from '../services/admin-access/AdminAccessService'
+import { ManagementAccessService } from '../services/admin-access/ManagementAccessService'
 import { AgentToolsService } from '../services/commands/AgentToolsService'
 import { HttpService, type RuntimeHttpHostConfig } from '../services/http/HttpService'
 import { ElysiaApplicationDirectory } from '../services/http/ElysiaApplicationDirectory'
@@ -62,6 +63,9 @@ import './runtime-contract'
 
 const PERSISTENCE_CAPABILITY = defineContextCapability<PersistenceService>('runtime.persistence')
 const ADMIN_ACCESS_CAPABILITY = defineContextCapability<AdminAccessService>('runtime.admin-access')
+const MANAGEMENT_ACCESS_CAPABILITY = defineContextCapability<ManagementAccessService>(
+	'runtime.management-access',
+)
 const RUNTIME_MANAGEMENT_CAPABILITY =
 	defineContextCapability<RuntimeManagementService>('runtime.management')
 const AGENT_TOOLS_CAPABILITY = defineContextCapability<AgentToolsService>('runtime.agent-tools')
@@ -89,6 +93,8 @@ export type RuntimeRootContextOptions = Readonly<{
 	workbench?: Readonly<{
 		createBackend: WorkbenchBackendFactory
 	}>
+	/** @internal Test hosts may model a physical peer without attaching a carrier. */
+	requestAddress?: RuntimeHttpHostConfig['requestAddress']
 }>
 
 type RuntimeRootInputs = Readonly<{
@@ -102,7 +108,7 @@ type RuntimeRootInputs = Readonly<{
 	nodeArtifacts: NodeModuleArtifactHostOptions
 	vault?: VaultServiceConfig
 	application: HostApplicationMeta
-	managementAccess?: NonNullable<ReturnType<typeof resolveRuntimePlanePlan>['access']>
+	management: boolean
 	pluginGroups: readonly PluginGroupConfig[]
 	workbench?: Readonly<{
 		createBackend: WorkbenchBackendFactory
@@ -207,11 +213,26 @@ function createRuntimeContextInstallations(
 		}),
 	]
 
-	if (inputs.managementAccess) {
+	if (inputs.management) {
 		installations.push(
 			installRootCapability(ADMIN_ACCESS_CAPABILITY, {
 				property: 'adminAccess',
-				create: (ctx) => new AdminAccessService(ctx as RootContext, inputs.managementAccess!),
+				create: (ctx) => new AdminAccessService(ctx as RootContext),
+			}),
+			installOwnerViewCapability(MANAGEMENT_ACCESS_CAPABILITY, {
+				property: 'managementAccess',
+				createRoot: (root) =>
+					new ManagementAccessService(
+						root as RootContext,
+						resolveContextCapability(root, ADMIN_ACCESS_CAPABILITY),
+					),
+				createView: (rootService, owner) =>
+					owner === owner.root
+						? rootService
+						: new ManagementAccessService(
+								owner as Context,
+								resolveContextCapability(owner.root, ADMIN_ACCESS_CAPABILITY),
+							),
 			}),
 			installRootCapability(RUNTIME_MANAGEMENT_CAPABILITY, {
 				property: 'runtimeManagement',
@@ -322,6 +343,7 @@ function resolveRuntimeRootInputs(
 		uiBasePath: resolveWorkbenchUiBasePath(config.workbench),
 		...(httpConfig.uiAssets ? { uiAssets: httpConfig.uiAssets } : {}),
 		...(httpConfig.uiPublicDir ? { uiPublicDir: httpConfig.uiPublicDir } : {}),
+		...(options.requestAddress ? { requestAddress: options.requestAddress } : {}),
 	})
 	const database = Object.freeze({
 		database: snapshotDatabase(config.database),
@@ -346,7 +368,7 @@ function resolveRuntimeRootInputs(
 		nodeArtifacts,
 		vault,
 		application,
-		managementAccess: planes.access,
+		management: planes.management,
 		pluginGroups,
 		...(planes.workbench && options.workbench
 			? {

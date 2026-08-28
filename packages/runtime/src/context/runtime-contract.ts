@@ -8,6 +8,7 @@ import type { DatabaseConfig, DatabaseService } from '../services/DatabaseServic
 import type { RuntimeStateStoreConfig } from '../services/RuntimeStateStore'
 import type { RuntimeManagementService } from '../services/RuntimeManagementService'
 import type { AdminAccessService } from '../services/admin-access/AdminAccessService'
+import type { ManagementAccessService } from '../services/admin-access/ManagementAccessService'
 import type { AgentToolsService } from '../services/commands/AgentToolsService'
 import type { RuntimeHttpAssetConfig } from '../services/http/HttpService'
 import type { Elysia } from 'elysia'
@@ -34,7 +35,7 @@ export interface RuntimeHostConfig extends CoreHostConfig {
 	http?: RuntimeHttpAssetConfig
 	/**
 	 * Optional management plane. Object presence enables headless management;
-	 * Workbench also enables private management when this field is omitted.
+	 * Workbench also enables management when this field is omitted.
 	 */
 	management?: ManagementConfig
 	workbench?: WorkbenchConfig
@@ -72,6 +73,8 @@ declare module '@pluxel/core' {
 		readonly workbench?: WorkbenchService
 		readonly nodeModules: NodeModuleService
 		readonly workers: WorkerTaskService
+		/** Present only with Management; Plugins use it to provide remote admin authentication. */
+		readonly managementAccess?: ManagementAccessService
 		/** Present only when the host explicitly enables `vault` with a configuration object. */
 		readonly vault?: VaultStorageApi
 		/** @internal Runtime control-plane request validation. */

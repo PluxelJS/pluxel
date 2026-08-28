@@ -9,13 +9,13 @@ import { resolveClientUrl } from './http-utils'
 import type { RuntimeRpcApi } from './internal-protocol'
 import {
 	joinPath,
+	RUNTIME_ADMIN_ACCESS_BASE,
 	RUNTIME_TRANSPORT_PATHS,
 	RUNTIME_WORKBENCH_EVENTS_PATH,
 	runtimeWorkbenchLiveQueryPath,
 	runtimeWorkbenchModelEventsPath,
 } from './paths'
 import { createRpcClientFactory, createWorkbenchRpcClient, invokeRpc } from './rpc'
-import { createRuntimeSecurityClient } from './security'
 import { sseWithLifecycle, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { mergeNamespaces } from './utils'
 
@@ -83,8 +83,7 @@ export function createRuntimeTransportClient(
 		options.adminAccess === false
 			? defaultOnAdminAccessBlocked
 			: (options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked)
-	const security = createRuntimeSecurityClient({ apiBase, fetch })
-	const rawRpc = createRpcClientFactory(rpcBase)
+	const rawRpc = createRpcClientFactory(rpcBase, { credentials, fetch })
 	const workbenchRpcs = new Map<string, unknown>()
 	const workbenchRpc = <TRpc>(grantId: string): TRpc => {
 		const existing = workbenchRpcs.get(grantId)
@@ -95,7 +94,7 @@ export function createRuntimeTransportClient(
 	}
 	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) => {
 		assertActive()
-		return invokeRpc(runner, { rpcBase, credentials })
+		return invokeRpc(runner, { rpcBase, credentials, fetch })
 	}
 
 	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
@@ -115,8 +114,33 @@ export function createRuntimeTransportClient(
 			adminAccess: adminAccessEnabled
 				? {
 						readState: async () => {
-							const overview = await security.readOverview()
-							return overview.adminAccess
+							const response = await fetch(resolveClientUrl(`${RUNTIME_ADMIN_ACCESS_BASE}/state`), {
+								credentials,
+							})
+							if (!response.ok) throw new Error('Failed to read Management access state')
+							const state = (await response.json()) as {
+								state?: unknown
+								method?: unknown
+							}
+							if (state.state === 'allowed') return { state: 'allowed' as const }
+							if (state.state === 'local_setup_required') {
+								return { state: 'local_setup_required' as const }
+							}
+							if (state.state === 'authentication_unavailable') {
+								return { state: 'authentication_unavailable' as const }
+							}
+							if (state.state === 'secure_transport_required') {
+								return { state: 'secure_transport_required' as const }
+							}
+							if (
+								state.state === 'login_required' &&
+								(state.method === 'oidc' ||
+									state.method === 'password' ||
+									state.method === 'password-totp')
+							) {
+								return { state: 'login_required' as const, method: state.method }
+							}
+							throw new Error('Invalid Management access state')
 						},
 						onBlocked: onAdminAccessBlocked,
 					}

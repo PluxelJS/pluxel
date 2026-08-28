@@ -1,3 +1,5 @@
+import { get as httpsGet } from 'node:https'
+import { fileURLToPath } from 'node:url'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
@@ -41,6 +43,9 @@ import { RequiredConsumer } from './plugins/RequiredConsumer'
 import { RequiredProvider } from './plugins/RequiredProvider'
 import { SharedPlugin as SharedPluginA } from './plugins/SharedA'
 import { SharedPlugin as SharedPluginB } from './plugins/SharedB'
+
+const TEST_TLS_CERT = fileURLToPath(new URL('./fixtures/tls-cert.pem', import.meta.url))
+const TEST_TLS_KEY = fileURLToPath(new URL('./fixtures/tls-key.pem', import.meta.url))
 
 const RequiredObjectSchema: StandardSchemaV1<unknown, { value: string }> = {
 	'~standard': {
@@ -264,6 +269,18 @@ class DirectHttp extends BasePlugin {
 	}
 }
 
+let failedNodeLauncherActive = 0
+
+@Plugin({ displayName: 'Failed Node launcher lifetime' })
+class FailedNodeLauncherLifetime extends BasePlugin {
+	override init(): () => void {
+		failedNodeLauncherActive += 1
+		return () => {
+			failedNodeLauncherActive -= 1
+		}
+	}
+}
+
 function installOwnerWebSocket(app: BasePlugin['ctx']['elysia'], owner: 'a' | 'b'): void {
 	app.use(websocket()).ws(`/owner-${owner}/socket`, {
 		open(socket) {
@@ -356,6 +373,32 @@ type TestWebSocket = Readonly<{
 	nextMessage(): Promise<string>
 	closed: Promise<CloseEvent>
 }>
+
+function getUntrustedHttpsJson(
+	url: string,
+): Promise<Readonly<{ status: number; body: Record<string, unknown> }>> {
+	return new Promise((resolve, reject) => {
+		const request = httpsGet(url, { rejectUnauthorized: false }, (response) => {
+			let body = ''
+			response.setEncoding('utf8')
+			response.on('data', (chunk: string) => {
+				body += chunk
+			})
+			response.once('error', reject)
+			response.once('end', () => {
+				let parsed: Record<string, unknown>
+				try {
+					parsed = JSON.parse(body) as Record<string, unknown>
+				} catch (error) {
+					reject(error)
+					return
+				}
+				resolve({ status: response.statusCode ?? 0, body: parsed })
+			})
+		})
+		request.once('error', reject)
+	})
+}
 
 async function openTestWebSocket(url: string): Promise<TestWebSocket> {
 	const socket = new WebSocket(url)
@@ -971,7 +1014,11 @@ describe('@pluxel/runtime-static', () => {
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
 				workbench: { enabled: true },
 			},
-			{ createWorkbenchBackend, product },
+			{
+				createWorkbenchBackend,
+				product,
+				requestAddress: () => ({ address: '127.0.0.1', port: 1, family: 'IPv4' }),
+			},
 		)
 		try {
 			await host.start()
@@ -1062,6 +1109,7 @@ describe('@pluxel/runtime-static', () => {
 			},
 		)
 		try {
+			expect(runtime.address.host).toBe('0.0.0.0')
 			const origin = `http://${runtime.address.host}:${runtime.address.port}`
 			const response = await fetch(`${origin}/direct-http/body`, {
 				method: 'POST',
@@ -1077,13 +1125,89 @@ describe('@pluxel/runtime-static', () => {
 				hostname: runtime.address.host,
 				development: false,
 				ip: {
-					address: runtime.address.host,
+					address: '127.0.0.1',
 					family: 'IPv4',
 				},
 			})
 		} finally {
 			await runtime.stop()
 		}
+	})
+
+	it('serves direct HTTPS when a certificate and key are configured', async () => {
+		await using fixture = await createDiskFixture()
+		const runtime = await runStaticNodeApplication(
+			defineStaticRuntime({
+				name: 'static-node-tls',
+				plugins: [DirectHttp],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: enabled(DirectHttp) } },
+					workbench: false,
+				}),
+			}),
+			{
+				env: {
+					PLUXEL_HOST_BIND: '127.0.0.1',
+					PLUXEL_HOST_PORT: '0',
+					PLUXEL_TLS_CERT: TEST_TLS_CERT,
+					PLUXEL_TLS_KEY: TEST_TLS_KEY,
+				},
+				deployment: { root: fixture.path, target: 'node', variant: 'headless' },
+			},
+		)
+		try {
+			const origin = `https://${runtime.address.host}:${runtime.address.port}`
+			const response = await getUntrustedHttpsJson(`${origin}/direct-http/server`)
+			expect(response.status).toBe(200)
+			expect(response.body).toMatchObject({
+				url: new URL(origin).toString(),
+				port: runtime.address.port,
+				hostname: runtime.address.host,
+				development: false,
+			})
+		} finally {
+			await runtime.stop()
+		}
+	})
+
+	it('rejects partial TLS listener configuration before starting the Runtime', async () => {
+		await expect(
+			runStaticNodeApplication(defineStaticRuntime({ name: 'partial-tls', plugins: [] }), {
+				env: { PLUXEL_HOST_PORT: '0', PLUXEL_TLS_CERT: TEST_TLS_CERT },
+				deployment: { root: '.', target: 'node', variant: 'headless' },
+			}),
+		).rejects.toThrow('PLUXEL_TLS_CERT and PLUXEL_TLS_KEY must be configured together')
+	})
+
+	it('stops an already-created Runtime when TLS listener construction fails', async () => {
+		await using fixture = await createDiskFixture()
+		failedNodeLauncherActive = 0
+		await expect(
+			runStaticNodeApplication(
+				defineStaticRuntime({
+					name: 'invalid-node-tls',
+					plugins: [FailedNodeLauncherLifetime],
+					configure: () => ({
+						configService: { mode: 'memory' },
+						runtimeState: {
+							mode: 'memory',
+							snapshot: { enabled: enabled(FailedNodeLauncherLifetime) },
+						},
+						workbench: false,
+					}),
+				}),
+				{
+					env: {
+						PLUXEL_HOST_PORT: '0',
+						PLUXEL_TLS_CERT: `${fixture.path}/missing-cert.pem`,
+						PLUXEL_TLS_KEY: TEST_TLS_KEY,
+					},
+					deployment: { root: fixture.path, target: 'node', variant: 'headless' },
+				},
+			),
+		).rejects.toThrow('missing-cert.pem')
+		expect(failedNodeLauncherActive).toBe(0)
 	})
 
 	it('serves native Elysia WebSockets per owner and drains only the stopped owner with 1012', async () => {

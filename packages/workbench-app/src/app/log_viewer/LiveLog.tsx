@@ -4,7 +4,6 @@ import {
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
-	resolveAdminAccessLandingPath,
 	useRuntimeManagementClient,
 } from '../../runtime'
 import {
@@ -838,11 +837,15 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 			if (now - lastAdminAccessProbeAtRef.current < 1500) return false
 			lastAdminAccessProbeAtRef.current = now
 			try {
-				const payload = await management.security.readOverview()
-				if (payload.adminAccess.allow === true) return false
+				const response = await fetch('/__pluxel/admin-access/state', {
+					credentials: 'same-origin',
+					cache: 'no-store',
+				})
+				if (!response.ok) return false
+				const payload = (await response.json()) as { state?: unknown }
+				if (payload.state === 'allowed') return false
 				if (typeof window !== 'undefined') {
-					const next = resolveAdminAccessLandingPath(payload.adminAccess.reason)
-					window.location.assign(next)
+					window.location.assign('/__pluxel/admin-access')
 				}
 				return true
 			} catch {

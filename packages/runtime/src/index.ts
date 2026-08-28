@@ -116,14 +116,16 @@ export {
 	type CommandInventoryItem,
 	type CommandToolset,
 } from './agent-tools'
+export type { ManagementConfig, PluginGroupConfig } from './management-config'
 export type {
-	AdminAccessClaimRequirement,
-	AdminAccessConfig,
-	AdminAccessExposure,
-	AdminAccessOidcConfig,
-	ManagementConfig,
-	PluginGroupConfig,
-} from './management-config'
+	ManagementAccessMethod,
+	ManagementAccessPrincipal,
+	ManagementAccessProvider,
+	ManagementAccessProviderDecision,
+	ManagementAccessProviderStatus,
+	ManagementAccessRegistration,
+	ManagementAccessRequestContext,
+} from './services/admin-access/types'
 export type { WorkbenchConfig } from './workbench-config'
 export type {
 	RuntimeDependencyOverrideState,

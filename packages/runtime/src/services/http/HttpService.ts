@@ -3,16 +3,15 @@ import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
 import {
-	canAccessSecurityAdmin,
 	createAdminAccessBlockedHeaders,
 	createAdminAccessBlockedPayload,
-	resolveAdminAccessRedirectPath,
 	type AdminAccessBlockedKind,
 	type AdminAccessReason,
 } from '../../shared/admin-access-http'
 import type { RenderHandler } from '../../server/types'
-import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
-import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
+import { RUNTIME_INTERNAL_API_BASE, UI_PUBLIC_BASE } from '../../web/paths'
+import { ADMIN_ACCESS_PAGE_PATH, buildAdminAccessRedirectPath } from '../admin-access/transport'
+import { responseWithLease } from '../admin-access/response-lifetime'
 import { matchesWorkbenchUiBasePath, normalizeWorkbenchUiBasePath } from '../../workbench-config'
 import {
 	createHostElysiaApp,
@@ -20,7 +19,10 @@ import {
 	type CreateHostElysiaAppOptions,
 } from './elysia'
 import type { ElysiaApplicationDirectory } from './ElysiaApplicationDirectory'
-import type { ElysiaApplicationCarrier } from './elysia-application-carrier'
+import type {
+	ElysiaApplicationCarrier,
+	ElysiaCarrierRequestAddress,
+} from './elysia-application-carrier'
 
 type HttpHandler = (req: Request, env?: unknown, ctx?: unknown) => Response | Promise<Response>
 
@@ -52,6 +54,8 @@ export type RuntimeHttpHostConfig = RuntimeHttpAssetConfig &
 		uiPublicDir?: string
 		/** Browser path owned by the Workbench shell. Route launchers derive it from WorkbenchConfig. */
 		uiBasePath: string
+		/** @internal Test-only peer seam used only when no physical carrier is attached. */
+		requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 	}>
 
 interface MountedBoundarySpec {
@@ -117,6 +121,8 @@ class HttpBackend {
 	private renderer: Promise<RenderHandler> | null = null
 	private readonly config: ResolvedHttpServiceConfig
 	private readonly applications: ElysiaApplicationDirectory
+	private readonly requestAddress?: RuntimeHttpHostConfig['requestAddress']
+	private applicationCarrier?: ElysiaApplicationCarrier
 
 	constructor(
 		ctx: PluxelContext,
@@ -125,6 +131,7 @@ class HttpBackend {
 	) {
 		this.hostCtx = ctx.root
 		this.applications = applications
+		this.requestAddress = config.requestAddress
 		this.logger = this.hostCtx.logger!
 		this.config = {
 			management: config.management,
@@ -132,13 +139,6 @@ class HttpBackend {
 			uiAssets: config.workbench ? (config.uiAssets ?? 'static-built') : 'disabled',
 			uiPublicDir: config.uiPublicDir ?? '',
 			uiBasePath: normalizeWorkbenchUiBasePath(config.uiBasePath),
-		}
-		if (config.management) {
-			this.mountHostBoundary({
-				id: 'pluxel:admin-access',
-				path: ADMIN_ACCESS_PAGE_PATH,
-				boundary: this.createLazyAdminAccessBoundary(),
-			})
 		}
 		this.rebuildRootApp()
 		if (config.management) {
@@ -151,7 +151,7 @@ class HttpBackend {
 	}
 
 	get fetch() {
-		return this.fetchPtr
+		return (request: Request, env?: unknown, ctx?: unknown) => this.fetchIngress(request, env, ctx)
 	}
 
 	/**
@@ -221,7 +221,18 @@ class HttpBackend {
 	}
 
 	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void {
-		return this.applications.attachApplicationCarrier(carrier)
+		if (this.applicationCarrier) {
+			throw new Error('[pluxel/runtime] An Elysia application carrier is already attached')
+		}
+		this.applicationCarrier = carrier
+		const detachDirectory = this.applications.attachApplicationCarrier(carrier)
+		let active = true
+		return () => {
+			if (!active) return
+			active = false
+			detachDirectory()
+			if (this.applicationCarrier === carrier) this.applicationCarrier = undefined
+		}
 	}
 
 	matchesWebSocketRoute(request: Request): boolean {
@@ -234,23 +245,6 @@ class HttpBackend {
 			base: spec.path,
 			boundary: spec.boundary,
 		})
-	}
-
-	private createLazyAdminAccessBoundary(): HttpHandler {
-		let appPromise: Promise<BaseElysiaApp> | undefined
-		return async (request) => {
-			appPromise ??= import('../admin-access/http').then(({ createAdminAccessRoutes }) =>
-				createAdminAccessRoutes(
-					this.hostCtx,
-					this.createApp(this.hostCtx, {
-						precompile: true,
-						name: 'pluxel.http.admin-access',
-					}),
-				),
-			)
-			const app = await appPromise
-			return app.fetch(request)
-		}
 	}
 
 	private createLazyInternalApiBoundary(options: InternalApiOptions): HttpHandler {
@@ -327,6 +321,102 @@ class HttpBackend {
 		return this.uiPublicHandler
 	}
 
+	private async fetchIngress(request: Request, env?: unknown, ctx?: unknown): Promise<Response> {
+		const url = new URL(request.url)
+		const path = url.pathname
+		const method = request.method.toUpperCase()
+		const facts = this.requestFacts(request)
+
+		if (
+			this.config.management &&
+			(path === ADMIN_ACCESS_PAGE_PATH || path.startsWith(`${ADMIN_ACCESS_PAGE_PATH}/`))
+		) {
+			const adminAccess = this.hostCtx.root.adminAccess
+			if (!adminAccess) throw new Error('[pluxel/runtime] Management entry requires adminAccess')
+			return await adminAccess.handleEntryRequest(request, facts.local, facts.secure, facts.port)
+		}
+
+		const kind = this.protectedRequestKind(request, path, method)
+		if (!kind) return await this.fetchPtr(request, env, ctx)
+		const adminAccess = this.hostCtx.root.adminAccess
+		if (!adminAccess) throw new Error('[pluxel/runtime] Management request requires adminAccess')
+		const admission = await adminAccess.admit(request, facts.local, facts.secure)
+		if (admission.state.allow === false) {
+			return this.buildAdminAccessDeniedResponse(
+				request,
+				path,
+				method,
+				kind,
+				admission.state.reason,
+			)
+		}
+
+		const admittedRequest = requestWithSignal(request, admission.signal)
+		try {
+			const response = await this.fetchPtr(admittedRequest, env, ctx)
+			return admission.state.method === 'provider'
+				? responseWithLease(response, {
+						signal: admission.signal,
+						dispose: admission.release,
+					})
+				: response
+		} catch (error) {
+			admission.release()
+			throw error
+		}
+	}
+
+	private protectedRequestKind(
+		request: Request,
+		path: string,
+		method: string,
+	): AdminAccessBlockedKind | undefined {
+		if (!this.config.management) return undefined
+		if (path === RUNTIME_INTERNAL_API_BASE || path.startsWith(`${RUNTIME_INTERNAL_API_BASE}/`)) {
+			return 'api'
+		}
+		if (!this.config.workbench) return undefined
+		// Business Plugin routes retain priority over Workbench navigation fallbacks.
+		if (this.applications.matchesHttpRoute(path, method)) return undefined
+		if (path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)) return 'ui'
+		if (
+			this.isHtmlNavigation(request) &&
+			matchesWorkbenchUiBasePath(path, this.config.uiBasePath)
+		) {
+			return 'ui'
+		}
+		return undefined
+	}
+
+	private requestFacts(
+		request: Request,
+	): Readonly<{ local: boolean; secure: boolean; port: number }> {
+		let address: ElysiaCarrierRequestAddress | null = null
+		try {
+			address = this.applicationCarrier
+				? this.applicationCarrier.requestIP(request)
+				: (this.requestAddress?.(request) ?? null)
+		} catch {
+			address = null
+		}
+		let secure = false
+		let port = 3_000
+		try {
+			if (this.applicationCarrier) {
+				const metadata = this.applicationCarrier.metadata
+				secure = metadata.url.protocol === 'https:'
+				port = metadata.port
+			} else {
+				const url = new URL(request.url)
+				secure = url.protocol === 'https:'
+				port = Number(url.port || (secure ? 443 : 80))
+			}
+		} catch {
+			secure = false
+		}
+		return Object.freeze({ local: isLoopbackAddress(address?.address), secure, port })
+	}
+
 	private rebuildRootApp() {
 		const root = createHostElysiaApp(this.hostCtx, {
 			precompile: true,
@@ -338,14 +428,11 @@ class HttpBackend {
 		const fallback = async ({ request }: { request: Request }) => {
 			const url = new URL(request.url)
 			const path = url.pathname
-			const method = (request.method ?? 'GET').toUpperCase()
 			const business = await this.applications.dispatch(request)
 			if (business) return business
 
 			if (path.startsWith(`${UI_PUBLIC_BASE}/`)) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
-				const denied = await this.guardUiRequest(request, path, method, 'ui')
-				if (denied) return denied
 				const uiPublic = await this.uiPublic()
 				if (!uiPublic) return new Response('Not Found', { status: 404 })
 				return (await uiPublic(request)) ?? new Response('Not Found', { status: 404 })
@@ -356,8 +443,6 @@ class HttpBackend {
 				matchesWorkbenchUiBasePath(path, this.config.uiBasePath)
 			) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
-				const denied = await this.guardUiRequest(request, path, method, 'ui')
-				if (denied) return denied
 				return this.render(request)
 			}
 
@@ -369,59 +454,19 @@ class HttpBackend {
 		this.fetchPtr = (request) => root.fetch(request)
 	}
 
-	private async guardUiRequest(
-		request: Request,
-		path: string,
-		method: string,
-		kind: AdminAccessBlockedKind,
-	): Promise<Response | undefined> {
-		const adminAccess = this.hostCtx.root.adminAccess
-		if (!adminAccess) {
-			throw new Error('[pluxel/runtime] Workbench UI requires the management plane')
-		}
-		const state = await adminAccess.authorize({
-			headers: request.headers,
-			request,
-			url: request.url,
-		})
-		const isSecurityRoute =
-			path === RUNTIME_SECURITY_BASE || path.startsWith(`${RUNTIME_SECURITY_BASE}/`)
-		const isSecurityCarrier = path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
-		if ((isSecurityRoute || isSecurityCarrier) && canAccessSecurityAdmin(state)) return undefined
-		if (isSecurityRoute) {
-			this.logger.warn('Blocked host security admin route', {
-				kind,
-				path,
-				method,
-				reason: state.reason,
-			})
-			return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
-		}
-		if (state.allow) return undefined
-
-		this.logger.warn('Blocked admin access gate', {
-			kind,
-			path,
-			method,
-			reason: state.reason,
-		})
-
-		return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
-	}
-
 	private buildAdminAccessDeniedResponse(
 		request: Request,
 		path: string,
 		method: string,
 		kind: AdminAccessBlockedKind,
-		reason?: AdminAccessReason,
+		reason: AdminAccessReason,
 	): Response {
-		const redirectPath = resolveAdminAccessRedirectPath(
-			buildAdminAccessRedirectPath,
-			request,
-			kind,
-			reason,
-		)
+		const url = new URL(request.url)
+		const redirectPath =
+			kind === 'ui'
+				? buildAdminAccessRedirectPath(`${url.pathname}${url.search}${url.hash}`)
+				: ADMIN_ACCESS_PAGE_PATH
+		this.logger.warn('Blocked Management access', { kind, path, method, reason })
 		if (kind === 'ui') {
 			return new Response(null, {
 				status: 302,
@@ -432,13 +477,11 @@ class HttpBackend {
 			})
 		}
 
-		return Response.json(
-			createAdminAccessBlockedPayload(path, method, kind, redirectPath, reason),
-			{
-				status: 401,
-				headers: createAdminAccessBlockedHeaders(redirectPath, reason),
-			},
-		)
+		const payload = createAdminAccessBlockedPayload(path, method, kind, redirectPath, reason)
+		return Response.json(payload, {
+			status: payload.status,
+			headers: createAdminAccessBlockedHeaders(redirectPath, reason),
+		})
 	}
 
 	private isHtmlNavigation(req: Request): boolean {
@@ -557,6 +600,40 @@ class HttpBackend {
 		const handler = await (this.renderer ??= this.createRenderer())
 		return handler(request)
 	}
+}
+
+function requestWithSignal(request: Request, signal: AbortSignal): Request {
+	if (request.signal === signal) return request
+	const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
+	return new Request(request.url, {
+		method: request.method,
+		headers: request.headers,
+		body: hasBody ? request.body : undefined,
+		signal,
+		...(hasBody && request.body ? { duplex: 'half' } : {}),
+	} as RequestInit)
+}
+
+/** Socket-peer loopback check. Host and forwarding headers are deliberately irrelevant. */
+export function isLoopbackAddress(input: string | undefined): boolean {
+	if (!input) return false
+	let address = input.trim().toLowerCase()
+	if (!address) return false
+	if (address.startsWith('[') && address.endsWith(']')) address = address.slice(1, -1)
+	address = address.split('%', 1)[0] ?? ''
+	const ipv4 = address.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+	if (ipv4) {
+		const octets = ipv4.slice(1).map(Number)
+		return octets.every((octet) => octet >= 0 && octet <= 255) && octets[0] === 127
+	}
+	if (address === '::1' || address === '0:0:0:0:0:0:0:1') return true
+	const mappedIpv4 = address.match(/^(?:::ffff:|0:0:0:0:0:ffff:)(\d+\.\d+\.\d+\.\d+)$/)
+	if (mappedIpv4) return isLoopbackAddress(mappedIpv4[1])
+	const mappedHex = address.match(/^(?:::ffff:|0:0:0:0:0:ffff:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+	if (!mappedHex) return false
+	const high = Number.parseInt(mappedHex[1]!, 16)
+	const low = Number.parseInt(mappedHex[2]!, 16)
+	return high >= 0 && high <= 0xffff && low >= 0 && low <= 0xffff && high >>> 8 === 0x7f
 }
 
 /**

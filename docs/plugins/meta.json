@@ -3,6 +3,7 @@
 	"pages": [
 		"index",
 		"---公开 Plugin---",
+		"auth",
 		"wretch",
 		"rendering",
 		"---Workspace 预览（不可安装）---",

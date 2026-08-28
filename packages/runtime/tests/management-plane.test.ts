@@ -85,7 +85,7 @@ describe('runtime management and Workbench planes', () => {
 		}
 	})
 
-	it('derives private management access and serves Workbench transport routes', async () => {
+	it('derives loopback recovery access and serves Workbench transport routes', async () => {
 		const host = createRuntimeHost({ workbench: { enabled: true } })
 		try {
 			host.add(WorkbenchHttpSmokePlugin)
@@ -94,8 +94,8 @@ describe('runtime management and Workbench planes', () => {
 
 			expect(host.ctx.workbench).toBeDefined()
 			await expect(host.ctx.root.adminAccess?.describe()).resolves.toMatchObject({
-				exposure: 'private',
-				allow: true,
+				policy: 'provider-or-local-recovery',
+				provider: null,
 			})
 			await expect(
 				host.fetch(request('/meta')).then((response) => response.json()),
@@ -151,12 +151,6 @@ describe('runtime management and Workbench planes', () => {
 				management: { unknownField: true },
 			} as never),
 		).toThrow(/management includes unsupported "unknownField"/)
-		expect(() =>
-			createRuntimeHost({
-				workbench: false,
-				management: { access: { unknownField: true } },
-			} as never),
-		).toThrow(/management\.access includes unsupported "unknownField"/)
 		expect(() =>
 			createRuntimeHost({
 				workbench: false,

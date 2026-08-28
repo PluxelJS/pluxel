@@ -32,10 +32,11 @@ export async function runStaticNodeApplication<
 	},
 ): Promise<StaticNodeApplication> {
 	const env = options.env ?? readProcessEnvironment()
+	const host = env.PLUXEL_HOST_BIND?.trim() || '0.0.0.0'
+	const port = parsePort(env.PLUXEL_HOST_PORT, 3000)
+	const tls = resolveTlsOptions(env)
 	const runtime = await runStaticFetchApplication(application, { ...options, env })
 	const http = requireRuntimeHttpService(runtime.ctx)
-	const host = env.PLUXEL_HOST_BIND?.trim() || '127.0.0.1'
-	const port = parsePort(env.PLUXEL_HOST_PORT, 3000)
 	let carrier!: ReturnType<typeof serve>
 	const applicationCarrier = new NodeElysiaApplicationCarrier({
 		fetch: (request) => runtime.fetch(request),
@@ -53,21 +54,30 @@ export async function runStaticNodeApplication<
 			})
 		},
 	})
-	const detachApplicationCarrier = http.attachApplicationCarrier(applicationCarrier)
-	carrier = serve({
-		manual: true,
-		hostname: host,
-		port,
-		silent: true,
-		gracefulShutdown: false,
-		fetch: (request) =>
-			dispatch(runtime, request, {
-				applicationPublicDir: `${options.deployment.root}/public`,
-				serveApplicationPublic:
-					options.deployment.variant === 'headless' || !http.workbenchOwnsRootNavigation(),
-				applicationCarrier,
-			}),
-	})
+	let detachApplicationCarrier: (() => void) | undefined
+	try {
+		detachApplicationCarrier = http.attachApplicationCarrier(applicationCarrier)
+		carrier = serve({
+			manual: true,
+			hostname: host,
+			port,
+			...(tls ? { tls } : {}),
+			silent: true,
+			gracefulShutdown: false,
+			fetch: (request) =>
+				dispatch(runtime, request, {
+					applicationPublicDir: `${options.deployment.root}/public`,
+					serveApplicationPublic:
+						options.deployment.variant === 'headless' || !http.workbenchOwnsRootNavigation(),
+					applicationCarrier,
+				}),
+		})
+	} catch (error) {
+		detachApplicationCarrier?.()
+		await applicationCarrier.close().catch((): undefined => undefined)
+		await runtime.stop().catch((): undefined => undefined)
+		throw error
+	}
 	const nodeServer = carrier.node?.server as NodeHttpServer | undefined
 	if (!nodeServer) {
 		detachApplicationCarrier()
@@ -140,6 +150,21 @@ export async function runStaticNodeApplication<
 		address: { host, port: actualPort },
 		stop,
 	}
+}
+
+function resolveTlsOptions(
+	env: StaticRuntimeEnvironment,
+): { cert: string; key: string; passphrase?: string } | undefined {
+	const cert = env.PLUXEL_TLS_CERT?.trim()
+	const key = env.PLUXEL_TLS_KEY?.trim()
+	if (!cert && !key) return undefined
+	if (!cert || !key) {
+		throw new TypeError(
+			'[runtime-static] PLUXEL_TLS_CERT and PLUXEL_TLS_KEY must be configured together',
+		)
+	}
+	const passphrase = env.PLUXEL_TLS_PASSPHRASE
+	return Object.freeze({ cert, key, ...(passphrase ? { passphrase } : {}) })
 }
 
 async function dispatch(

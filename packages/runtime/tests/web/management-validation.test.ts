@@ -367,10 +367,8 @@ describe('management HTTP payload validation', () => {
 		} as const
 		const overview = parseSecurityOverview({
 			adminAccess: {
-				exposure: 'private',
-				provider: 'none',
-				allow: true,
-				reason: 'private',
+				policy: 'provider-or-local-recovery',
+				provider: null,
 			},
 			vault: { enabled: true, state: vault },
 		})
@@ -378,10 +376,13 @@ describe('management HTTP payload validation', () => {
 		expect(
 			parseSecurityOverview({
 				adminAccess: {
-					exposure: 'private',
-					provider: 'none',
-					allow: true,
-					reason: 'private',
+					policy: 'provider-or-local-recovery',
+					provider: {
+						id: '@pluxel/auth',
+						label: 'Pluxel Auth',
+						method: 'password-totp',
+						ready: true,
+					},
 				},
 				vault: { enabled: false },
 			}).vault,

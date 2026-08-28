@@ -14,6 +14,7 @@ import {
 	requireRuntimeHttpService,
 	requireRuntimeStateStore,
 	runtimePluginStatusOverview,
+	type ElysiaCarrierRequestAddress,
 	type PluginApplyReport,
 	type RuntimeRouteCapabilities,
 } from '@pluxel/runtime/internal'
@@ -78,6 +79,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			{
 				logging,
 				product: internal.product ?? null,
+				...(internal.requestAddress ? { requestAddress: internal.requestAddress } : {}),
 				...(internal.createWorkbenchBackend
 					? { workbench: { createBackend: internal.createWorkbenchBackend } }
 					: {}),
@@ -354,6 +356,8 @@ export async function createStaticRuntimeHost(
 		createWorkbenchBackend?: WorkbenchBackendFactory
 		product?: ProductDescriptor | null
 		http?: RuntimeHostConfig['http']
+		/** @internal Test-only physical peer seam. */
+		requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 	} = {},
 ): Promise<StaticRuntimeHost> {
 	const logging = createRuntimeLogging(resolveStaticRuntimeLoggingInput(definition, options))
@@ -383,6 +387,7 @@ type StaticRuntimeHostInternalOptions = Readonly<{
 	createWorkbenchBackend?: WorkbenchBackendFactory
 	product?: ProductDescriptor | null
 	http?: RuntimeHostConfig['http']
+	requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 }>
 
 function resolveStaticRuntimeLoggingInput(

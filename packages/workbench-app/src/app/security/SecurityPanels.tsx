@@ -7,7 +7,6 @@ import {
 	labelForAccessState,
 	labelForUnlockSource,
 	labelForVaultState,
-	toneForReason,
 	type SecurityBusyKey,
 } from './securityModel'
 
@@ -70,10 +69,7 @@ export function SecurityToolbar({
 		<Paper withBorder p="xs" radius="sm">
 			<Group justify="space-between" align="center" wrap="wrap" gap="xs">
 				<Group gap={6} wrap="wrap">
-					<Badge
-						color={adminAccess.allow ? 'green' : toneForReason(adminAccess.reason)}
-						variant="light"
-					>
+					<Badge color={adminAccess.provider?.ready ? 'green' : 'orange'} variant="light">
 						访问 {labelForAccessState(adminAccess)}
 					</Badge>
 					{vault ? (
@@ -276,26 +272,26 @@ function AccessStatusPanel({ adminAccess, vault }: AccessStatusPanelProps) {
 					<Table verticalSpacing={3}>
 						<Table.Tbody>
 							<Table.Tr>
-								<Table.Td>暴露级别</Table.Td>
-								<Table.Td>{adminAccess.exposure}</Table.Td>
+								<Table.Td>访问策略</Table.Td>
+								<Table.Td>{adminAccess.policy}</Table.Td>
 							</Table.Tr>
 							<Table.Tr>
 								<Table.Td>Provider</Table.Td>
-								<Table.Td>{adminAccess.provider}</Table.Td>
+								<Table.Td>{adminAccess.provider?.label ?? 'none'}</Table.Td>
 							</Table.Tr>
 							<Table.Tr>
-								<Table.Td>Issuer</Table.Td>
+								<Table.Td>认证模式</Table.Td>
 								<Table.Td>
 									<Text size="sm" style={monoTextStyle}>
-										{adminAccess.issuer ?? '-'}
+										{adminAccess.provider?.method ?? '-'}
 									</Text>
 								</Table.Td>
 							</Table.Tr>
 							<Table.Tr>
-								<Table.Td>Token Header</Table.Td>
+								<Table.Td>远程状态</Table.Td>
 								<Table.Td>
 									<Text size="sm" style={monoTextStyle}>
-										{adminAccess.tokenHeader ?? '-'}
+										{adminAccess.provider?.ready ? 'ready' : 'local setup required'}
 									</Text>
 								</Table.Td>
 							</Table.Tr>
@@ -310,11 +306,6 @@ function AccessStatusPanel({ adminAccess, vault }: AccessStatusPanelProps) {
 						</Table.Tbody>
 					</Table>
 				</div>
-				{adminAccess.requiredClaims ? (
-					<Text size="xs" c="dimmed" style={monoTextStyle}>
-						Claims: {JSON.stringify(adminAccess.requiredClaims)}
-					</Text>
-				) : null}
 				{vault.lastError ? (
 					<Text size="sm" c="red">
 						{vault.lastError.message}

@@ -222,6 +222,12 @@ owner effects，因此 generation stop、replacement、start rollback 和 shutdo
 publication，不取消已经开始的调用。runtime 自身固定注册基础插件查询与生命周期命令，这些 handler 只调用既有
 runtime use case，不复制 graph 或 commit 逻辑。
 
+Management-enabled host 预安装 owner-bound `ctx.managementAccess`。认证 Plugin 可调用一次 `provide()` 发布唯一 provider；candidate
+registration 不因 `init()` 成功前或 commit publication 前而开放，Runtime 只选择当前 running generation。回调进入 owner invocation
+admission，成功的 remote Management request 将 lease 延长到 response body settle，因此 replacement/stop 能取消 SSE/长请求并等待 drain。
+provider 只负责 Management，不能成为业务 HTTP 的隐式全局 auth。官方 `@pluxel/auth` 也只消费这项公开能力，不获得 runtime internal
+route 或 lifecycle 特例。
+
 ## Optional Workbench Plane
 
 插件只通过 `ctx.workbench?.mount()` 发布可选 Extension。宿主通过顶层 `workbench` 配置安装

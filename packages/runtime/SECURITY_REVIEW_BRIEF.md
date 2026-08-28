@@ -1,104 +1,100 @@
 # Security Review Brief
 
-请只按当前实现审查，不要按历史版本、兼容层或可能的未来扩展审查。
+Review the current implementation, not the former host-configured OIDC model.
 
-## 审查目标
+## Assets and boundaries
 
-- `adminAccess` 只回答一件事：
-  当前 host management surface 是否允许访问
-- `vault` 只回答一件事：
-  敏感数据是否被正确加密存储，并且当前 host 是否具备可用解锁材料
-- host 在插件激活前完成 vault preflight；vault 不可用时不进入后续运行流程
+- `ctx.root.adminAccess` is Runtime's host-only Management gate.
+- `ctx.managementAccess` is the narrow owner-bound registration surface for one authentication
+  provider Plugin.
+- `ctx.vault` is encrypted, owner-namespaced Plugin storage. It does not authenticate requests.
+- `ctx.root.vaultAdmin` is host-only Vault lifecycle administration and is itself behind the
+  Management gate when reached over HTTP.
+- Workbench HTML/assets, Management RPC/SSE/HTTP, `/security`, and every Vault admin mutation are one
+  protected surface.
+- Plugin business HTTP routes are not protected by Management auth and must own business auth.
 
-## 当前模型
+## Required invariants
 
-- `ctx.root.adminAccess`
-  host-only access gate
-- `workbench: false` 不挂载 Workbench Plane；只有顶层 `management` object 存在时才安装 headless Management Plane
-- private admin access 下不做任何认证，直接 allow
-- public admin access 下必须配置 OIDC，否则 HTTP 服务初始化 fail fast
-- public exposure 使用 issuer discovery + JWKS 校验 bearer JWT
-- Pluxel 没有 workbench 非 admin 用户模型；满足 OIDC access policy 的请求就是 admin 请求
-- `management.access.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略
-- Pluxel 不保存本地 admin access users、password hash、OTP secret、passkey credential 或 admin access session
-- `data/security/identity.json` 只保存 vault host identity 和 deploy recipients
-- `ctx.vault`
-  插件与 runtime 共享的 ready 加密存储面，只负责数据读写，不负责运行期解锁
-- `ctx.root.vaultAdmin`
-  host-only vault Workbench
-- `/security`
-  浏览器Workbench；只读展示 access policy，写操作只面向 vault
+- Local recovery exists only while the provider is absent/unready, and is granted only from the
+  physical socket peer: IPv4 `127/8`, IPv6 `::1`, or an IPv4-mapped loopback address.
+- A committed, running, ready provider authenticates every peer, including loopback.
+- `Host`, `Forwarded`, `X-Forwarded-For`, and URL hostname never establish locality.
+- A missing carrier, null peer, malformed peer, or carrier exception fails closed.
+- Remote/unknown access without a committed, running, ready provider reaches only the minimal
+  `/__pluxel/admin-access` document/state endpoint; it cannot load Workbench assets or Security APIs.
+- `/security` has no missing-provider exception.
+- Provider registration is tied to the exact Plugin generation. An initializing replacement is not
+  active before commit, and stale cleanup cannot remove the committed replacement.
+- Provider callbacks run under owner admission. Successful authorization retains its lease through
+  the full Management response body, so stop/replacement cancels streams and drains calls.
+- A provider error, malformed status/decision, or withdrawal race maps to a closed generic failure;
+  it never falls back to allow.
+- An insecure remote request is rejected before the ready provider is called.
+- While no provider is ready, local recovery bypasses Management authentication only. It does not
+  become an identity returned by the official Auth Plugin's reusable `authenticate(request)` method.
 
-## 必须成立的事实
+## Official authentication provider
 
-- admin access 与 vault 解耦
-- admin access 不参与 vault 解锁
-- vault 不继承 admin access session
-- admin access 不做业务校验、schema 校验、插件私有规则
-- vault 不自建第二套认证体系
-- namespace 只是存储分区，不表达权限
-- transport 只承载和展示结果，不反向定义安全语义
-- security 管理不进入 plugin control-plane
-- security 管理不进入未来外部 tool surface
-- 插件只使用 `ctx.vault` 存储面，不越过 host 边界管理 security
+`@pluxel/auth` supports exactly one configured mode per generation:
 
-## 当前接口语义
+- OIDC Authorization Code + PKCE for browsers, with optional validated Bearer JWTs;
+- local username/password;
+- local username/password plus TOTP (never TOTP-only).
 
-- `ctx.root.adminAccess.authorize()`
-  纯读；输出 `allow/reason/principal`；`allow=true` 表示允许进入 management surface
-- `ctx.root.adminAccess.describe()`
-  纯读；输出 access policy 概览和当前状态
-- `ctx.root.vaultAdmin.describe()`
-  纯读；只做 mount/material/status 概览，不触发解锁
-- `ctx.root.vaultAdmin.preflight()`
-  检查 host 当前是否具备可用解锁条件
-- `ctx.root.vaultAdmin.unlock()`
-  执行显式解锁
-- `ctx.root.vaultAdmin.rekey()`
-  重写受管 envelope
-- `ctx.root.vaultAdmin.ensureHostKey()`
-  准备 host 长期身份
-- `ctx.root.vaultAdmin.generateDeployKey()`
-  生成 deploy keypair
-- `ctx.root.vaultAdmin.setDeployRecipients()`
-  更新 deploy recipients
+All authenticated identities are Management admins; Runtime has no second role model.
 
-## 状态约束
+Vault may contain only the provider's password verifier/salt/parameters, TOTP secret and last
+accepted counter, and confidential OIDC client secret. It must not contain plaintext passwords,
+generated OTPs, opaque session tokens, OIDC authorization codes, state, nonce, PKCE verifiers, or
+rate-limit state. Provider Vault writes are flushed before the in-memory ready snapshot changes.
+Public OIDC has no client secret and does not require Vault.
 
-- admin access 状态只表达：
-  `exposure`
-  `provider`
-  `state.allow`
-  `state.reason`
-  `principal`
-- vault 状态只表达：
-  mount 是否存在
-  当前是否解锁
-  解锁来源
-  当前材料状态
-  数据概览
-- 任何只为 UI 展示、transport 跳转、缓存命中、调试方便存在的字段，都不应回流成核心安全语义
+Sessions, pending OIDC flows, enrollment state, rate limits, and caches are bounded and owned by one
+generation. External sessions use an opaque, `HttpOnly`, `Secure`, `SameSite=Lax`, root-scoped
+`__Host-` cookie. Loopback HTTP sessions use a distinct host-only, non-Secure cookie which is accepted
+only with trusted `context.local`; stored session keys are token digests. Restart/stop clears every
+session. Ordinary Management requests are O(1) memory lookups with no Vault read, password hash, or
+OIDC discovery.
 
-## Host 启动约束
+Password verification is asynchronous scrypt with fixed validated parameters, a bounded global
+work queue, constant-time digest comparison, and bounded failure throttling. Unknown usernames still
+execute the sole stored account's real scrypt verifier and receive the same generic credential error.
+TOTP accepts a narrow time window and persists a strictly increasing counter before issuing a session.
 
-- Vault 只有一个启用入口：host `vault` 为配置对象；omitted/`false` 时 capability 和 backend 都 absent。
-- host 在插件运行前显式调用 `prepareRuntimeRootContext()`；它只对已启用的 Vault 调用
-  `vaultAdmin.prepare()` 完成 bootstrap。其他 host 如果启用 Vault，也必须在首个 Plugin lifecycle
-  前完成同一 Runtime preflight。
-- 需要 Vault 的 Plugin 必须检查 `ctx.vault` absence；module import 不改变 host plan。
-- vaultAdmin `prepare()` 的顺序必须保持：
-  `describe()` -> 仅在 mount 缺失且 host identity 缺失时 `ensureHostKey()` -> `preflight()`
-- mount 不存在时，启动期初始化空 mount 并保持 ready
-- mount 已存在且可解锁时，允许继续启动
-- mount 已存在但当前材料无法解锁时，必须终止启动
-- `ctx.vault` kv/docs/blobs API 不做运行期 auto-unlock；如果启动后仍未 ready，直接 fail fast。
-- 错误不做插件级消费者归因；用户用 `rg "vault:|ctx\\.vault" .` 排查。
+OIDC discovery/endpoints require HTTPS. Browser flow verifies issuer, audience, nonce, state, and
+PKCE. `returnTo` is same-origin and local-path only. External login/callback requires the physical
+carrier to be HTTPS; forwarding headers do not upgrade transport trust.
 
-## 红线
+## Entry document
 
-- 不要重新引入本地 admin access users
-- 不要重新引入 password / OTP / passkey credential 存储
-- 不要把 admin access session 带入 vault
-- 不要把 vault 可用性绑定到 adminAccess allow
-- 不要让 `/security` 之外的 carrier 持有自己的安全真相
-- 不要让 plugin API 或未来外部 tool surface 暴露 security 管理动作
+The auth document is server-rendered outside the Workbench shell. It uses no-store, a restrictive
+CSP, no referrer, nosniff, frame denial, strict bounded form parsing, same-origin/Fetch-Metadata
+checks, and a short-lived CSRF cookie/value for POSTs. Credential failures do not distinguish an
+unknown user, bad password, or bad OTP. Secrets and session values never enter URLs, logs, public
+DTOs, audit messages, or changelogs.
+
+The CSRF value is a browser form defense, not a bootstrap token. Host setup needs no printed token:
+the operator creates an SSH loopback tunnel and configures the provider locally.
+
+## Deployment caveat
+
+An on-host reverse proxy connected to Pluxel over loopback is indistinguishable from an SSH tunnel
+and would receive local recovery trust while no provider is ready. This release intentionally has no
+trusted-proxy mode. Use a non-loopback private/container upstream or direct TLS termination at the
+Pluxel carrier, and never attempt to repair the distinction with forwarding headers.
+
+The production static Node listener accepts either inline PEM data or PEM file paths through paired
+`PLUXEL_TLS_CERT` and `PLUXEL_TLS_KEY`; neither variable may be configured alone.
+`PLUXEL_TLS_PASSPHRASE` is optional for an encrypted private key.
+
+## Review red lines
+
+- no header- or hostname-derived local trust;
+- no local recovery bypass while a ready provider exists;
+- no unauthenticated Workbench/Security asset or API exemption;
+- no provider publication before the owning generation is committed and running;
+- no release of provider admission before a streaming response settles;
+- no auth secret in Plugin config, browser DTO, log, or ordinary persistence;
+- no global protection of business Plugin routes;
+- no second authentication truth in Workbench React state, Vault, or transport clients.

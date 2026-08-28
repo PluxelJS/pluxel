@@ -1,6 +1,7 @@
 import { defaultOnAdminAccessBlocked, type OnAdminAccessBlocked } from './admin-access'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
 import { resolveAdminAccessLandingPath, type AdminAccessReason } from '../shared/admin-access-http'
+import type { AdminAccessEntryState } from '../services/admin-access/types'
 
 export interface BuiltinSseEvents {
 	'workbench.layouts': { revision?: number } | number
@@ -42,7 +43,7 @@ export interface SseClientOptions {
 	 * instead of reconnecting forever.
 	 */
 	adminAccess?: {
-		readState: () => Promise<{ allow: boolean; reason?: AdminAccessReason }>
+		readState: () => Promise<AdminAccessEntryState>
 		onBlocked?: OnAdminAccessBlocked
 	}
 }
@@ -100,14 +101,27 @@ class SseClient {
 
 		try {
 			const state = await adminAccess.readState()
-			if (!state || state.allow === true) return false
+			if (!state || state.state === 'allowed') return false
+			const reason: AdminAccessReason =
+				state.state === 'local_setup_required'
+					? 'local_setup_required'
+					: state.state === 'secure_transport_required'
+						? 'secure_transport_required'
+						: state.state === 'authentication_unavailable'
+							? 'authentication_unavailable'
+							: 'authentication_required'
 
 			const onBlocked = adminAccess.onBlocked ?? defaultOnAdminAccessBlocked
 			onBlocked({
-				status: 401,
+				status:
+					reason === 'authentication_unavailable'
+						? 503
+						: reason === 'local_setup_required'
+							? 403
+							: 401,
 				url: this.url,
-				redirectPath: resolveAdminAccessLandingPath(state.reason),
-				reason: state.reason,
+				redirectPath: resolveAdminAccessLandingPath(reason),
+				reason,
 			})
 			return true
 		} catch {

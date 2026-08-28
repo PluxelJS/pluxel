@@ -4,6 +4,7 @@ import {
 	ADMIN_ACCESS_REDIRECT_HEADER,
 	type AdminAccessReason,
 } from '../shared/admin-access-http'
+import { RUNTIME_ADMIN_ACCESS_BASE } from './paths'
 
 type RuntimeFetchPreconnect = typeof globalThis.fetch extends { preconnect: infer T }
 	? T
@@ -64,13 +65,15 @@ function markRedirecting(): void {
 export function defaultOnAdminAccessBlocked(info: AdminAccessBlockedInfo) {
 	if (typeof window === 'undefined') return
 	if (!info.redirectPath) return
+	const redirectPath = safeRedirectPath(info.redirectPath, window.location.href)
+	if (!redirectPath) return
 	if (isRedirecting()) return
 	markRedirecting()
-	window.location.assign(info.redirectPath)
+	window.location.assign(redirectPath)
 }
 
 export function isAdminAccessBlockedResponse(res: Response): boolean {
-	const statusBlocked = res.status === 401 || res.status === 403
+	const statusBlocked = res.status === 401 || res.status === 403 || res.status === 503
 	if (!statusBlocked) return false
 	return res.headers.get(ADMIN_ACCESS_BLOCKED_HEADER) === '1'
 }
@@ -78,9 +81,8 @@ export function isAdminAccessBlockedResponse(res: Response): boolean {
 export async function extractBlockedInfo(
 	res: Response,
 ): Promise<Pick<AdminAccessBlockedInfo, 'redirectPath' | 'reason'>> {
-	const header = res.headers.get(ADMIN_ACCESS_REDIRECT_HEADER)
-	const reason =
-		(res.headers.get(ADMIN_ACCESS_REASON_HEADER) as AdminAccessReason | null) ?? undefined
+	const reason = parseReason(res.headers.get(ADMIN_ACCESS_REASON_HEADER))
+	const header = safeRedirectPath(res.headers.get(ADMIN_ACCESS_REDIRECT_HEADER), res.url)
 	if (header) return { redirectPath: header, reason }
 
 	const ct = (res.headers.get('content-type') ?? '').toLowerCase()
@@ -89,11 +91,38 @@ export async function extractBlockedInfo(
 	try {
 		const payload = (await res.clone().json()) as any
 		return {
-			redirectPath: payload?.redirectPath,
-			reason: payload?.reason,
+			redirectPath: safeRedirectPath(payload?.redirectPath, res.url),
+			reason: parseReason(payload?.reason) ?? reason,
 		}
 	} catch {
 		return { redirectPath: undefined, reason }
+	}
+}
+
+function parseReason(value: unknown): AdminAccessReason | undefined {
+	return value === 'local_setup_required' ||
+		value === 'authentication_required' ||
+		value === 'invalid_credentials' ||
+		value === 'forbidden' ||
+		value === 'secure_transport_required' ||
+		value === 'authentication_unavailable'
+		? value
+		: undefined
+}
+
+function safeRedirectPath(value: unknown, base: string): string | undefined {
+	if (typeof value !== 'string' || !value.startsWith('/') || value.includes('\\')) return undefined
+	try {
+		const fallback =
+			base || (typeof window !== 'undefined' ? window.location.href : 'http://pluxel.invalid/')
+		const origin = new URL(fallback).origin
+		const resolved = new URL(value, fallback)
+		if (resolved.origin !== origin || resolved.pathname !== RUNTIME_ADMIN_ACCESS_BASE) {
+			return undefined
+		}
+		return `${resolved.pathname}${resolved.search}`
+	} catch {
+		return undefined
 	}
 }
 

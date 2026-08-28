@@ -106,7 +106,13 @@ this.ctx.workbench?.mount(settings, {
 transport lifecycle 只属于内部 `@pluxel/runtime/web/internal` client。
 
 宿主只通过顶层 `workbench: { enabled: true }` 安装 Workbench Plane。关闭后不创建 registry、compiler、watcher、artifact route 或
-resource transport，插件业务 HTTP 和生命周期不受影响。Workbench 启用时 Management Plane 使用默认 private access；关闭 Workbench
-后只有显式提供顶层 `management` object 才安装 headless management route。`management.access` 省略时为 private，
-`management.pluginGroups` 定义与 UI 无关的宿主 catalog layout。尚未标准化的官方 View-host transport 只存在于
-`@pluxel/runtime/web/internal`，不是第三方 host 的兼容承诺。
+resource transport，插件业务 HTTP 和生命周期不受影响。Workbench 启用时同时安装 Management Plane；关闭 Workbench 后只有显式
+提供顶层 `management` object 才安装 headless management route。`management.pluginGroups` 定义与 UI 无关的宿主 catalog layout。
+Management 访问由真实 socket peer 和 `ctx.managementAccess` 上唯一 running provider 决定：provider ready 时认证所有 peer（包括
+loopback）；provider absent/unready 时仅 loopback 可恢复，remote/unknown fail closed。官方 `@pluxel/auth` 提供 OIDC、password 与
+password+TOTP；认证策略不进入 host config，public OIDC 不要求 Vault。自定义 provider 的 `authorize()` 只取得 URL、method、
+headers 与 owner-bound signal，不取得或消费 Management operation body。
+
+生产 static Node listener 默认监听 `0.0.0.0`，可用成对的 `PLUXEL_TLS_CERT`/`PLUXEL_TLS_KEY` 接收内联 PEM 内容或 PEM 文件路径并直接
+终止 TLS；加密 private key 可另设 `PLUXEL_TLS_PASSPHRASE`。不安全的 remote Management 请求会在 provider callback 前拒绝。
+尚未标准化的官方 View-host transport 只存在于 `@pluxel/runtime/web/internal`，不是第三方 host 的兼容承诺。

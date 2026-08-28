@@ -1561,65 +1561,27 @@ function runtimeLogError(input: unknown, label: string): RuntimeLogError {
 
 function adminAccessOverview(input: unknown, label: string): AdminAccessOverview {
 	const value = object(input, label)
-	shape(
-		value,
-		['exposure', 'provider', 'allow'],
-		['issuer', 'audience', 'requiredClaims', 'tokenHeader', 'reason', 'principal'],
-		label,
-	)
-	const audience = value.audience
-	const parsedAudience =
-		audience === undefined
-			? undefined
-			: typeof audience === 'string'
-				? audience
-				: (Object.freeze(
-						array(audience, `${label}.audience`).map((item, index) =>
-							text(item, `${label}.audience[${index}]`),
+	shape(value, ['policy', 'provider'], [], label)
+	const provider =
+		value.provider === null
+			? null
+			: (() => {
+					const item = object(value.provider, `${label}.provider`)
+					shape(item, ['id', 'label', 'method', 'ready'], [], `${label}.provider`)
+					return Object.freeze({
+						id: text(item.id, `${label}.provider.id`),
+						label: text(item.label, `${label}.provider.label`),
+						method: literal(
+							item.method,
+							['oidc', 'password', 'password-totp'],
+							`${label}.provider.method`,
 						),
-					) as string[])
-	const requiredClaims =
-		value.requiredClaims === undefined
-			? undefined
-			: stringOrStringArrayRecord(value.requiredClaims, `${label}.requiredClaims`)
-	const principal =
-		value.principal === undefined
-			? undefined
-			: adminAccessPrincipal(value.principal, `${label}.principal`)
+						ready: boolean(item.ready, `${label}.provider.ready`),
+					})
+				})()
 	return Object.freeze({
-		exposure: literal(value.exposure, ['private', 'public'], `${label}.exposure`),
-		provider: literal(value.provider, ['none', 'oidc'], `${label}.provider`),
-		...(value.issuer === undefined ? {} : { issuer: text(value.issuer, `${label}.issuer`) }),
-		...(parsedAudience === undefined ? {} : { audience: parsedAudience }),
-		...(requiredClaims === undefined ? {} : { requiredClaims }),
-		...(value.tokenHeader === undefined
-			? {}
-			: { tokenHeader: text(value.tokenHeader, `${label}.tokenHeader`) }),
-		allow: boolean(value.allow, `${label}.allow`),
-		...(value.reason === undefined
-			? {}
-			: {
-					reason: literal(
-						value.reason,
-						['private', 'missing_oidc', 'unauthenticated', 'invalid_token', 'forbidden'],
-						`${label}.reason`,
-					),
-				}),
-		...(principal === undefined ? {} : { principal }),
-	})
-}
-
-function adminAccessPrincipal(
-	input: unknown,
-	label: string,
-): NonNullable<AdminAccessOverview['principal']> {
-	const value = object(input, label)
-	shape(value, ['provider', 'subject', 'claims'], [], label)
-	literal(value.provider, ['oidc'], `${label}.provider`)
-	return Object.freeze({
-		provider: 'oidc',
-		subject: text(value.subject, `${label}.subject`),
-		claims: portableRecord(value.claims, `${label}.claims`),
+		policy: literal(value.policy, ['provider-or-local-recovery'], `${label}.policy`),
+		provider,
 	})
 }
 
@@ -1846,25 +1808,6 @@ function addressArray(input: unknown, label: string): readonly PluginNodeAddress
 
 function runtimeLogLevel(input: unknown, label: string): RuntimePluginLogLevel {
 	return literal(input, RUNTIME_LOG_LEVELS, label)
-}
-
-function stringOrStringArrayRecord(
-	input: unknown,
-	label: string,
-): Record<string, string | string[]> {
-	const value = object(input, label)
-	const output: Record<string, string | string[]> = Object.create(null)
-	for (const [key, item] of Object.entries(value)) {
-		output[key] =
-			typeof item === 'string'
-				? item
-				: (Object.freeze(
-						array(item, `${label}.${key}`).map((entry, index) =>
-							text(entry, `${label}.${key}[${index}]`),
-						),
-					) as string[])
-	}
-	return Object.freeze(output)
 }
 
 function errorMessage(error: unknown): string {

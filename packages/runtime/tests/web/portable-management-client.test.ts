@@ -143,7 +143,11 @@ describe('portable runtime management client', () => {
 			[Symbol.dispose]: vi.fn(),
 		}
 		vi.doMock('capnweb', () => ({
-			newHttpBatchRpcSession: vi.fn(() => rpc),
+			RpcSession: class {
+				getRemoteMain() {
+					return rpc
+				}
+			},
 		}))
 
 		const fetch = vi.fn<RuntimeFetch>(

@@ -46,7 +46,7 @@ describe('runtime/web SSE adminAccess probe', () => {
 
 	it('does not treat an allowed security snapshot as blocked', async () => {
 		const onBlocked = vi.fn()
-		const readState = vi.fn(async () => ({ allow: true as const }))
+		const readState = vi.fn(async () => ({ state: 'allowed' as const }))
 		vi.stubGlobal('EventSource', FakeEventSource)
 
 		const client = sse({
@@ -68,11 +68,10 @@ describe('runtime/web SSE adminAccess probe', () => {
 		client.close()
 	})
 
-	it('closes SSE and redirects to /security when public OIDC is missing', async () => {
+	it('closes SSE and redirects to local setup when no provider is active', async () => {
 		const onBlocked = vi.fn()
 		const readState = vi.fn(async () => ({
-			allow: false as const,
-			reason: 'missing_oidc' as const,
+			state: 'local_setup_required' as const,
 		}))
 		vi.stubGlobal('EventSource', FakeEventSource)
 
@@ -91,8 +90,8 @@ describe('runtime/web SSE adminAccess probe', () => {
 
 		expect(onBlocked).toHaveBeenCalledWith(
 			expect.objectContaining({
-				status: 401,
-				redirectPath: '/security',
+				redirectPath: RUNTIME_ADMIN_ACCESS_BASE,
+				status: 403,
 			}),
 		)
 		expect(source!.closed).toBe(true)
@@ -103,8 +102,8 @@ describe('runtime/web SSE adminAccess probe', () => {
 	it('redirects blocked SSE clients to the adminAccess page when external auth is required', async () => {
 		const onBlocked = vi.fn()
 		const readState = vi.fn(async () => ({
-			allow: false as const,
-			reason: 'unauthenticated' as const,
+			state: 'login_required' as const,
+			method: 'oidc' as const,
 		}))
 		vi.stubGlobal('EventSource', FakeEventSource)
 
