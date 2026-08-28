@@ -19,6 +19,9 @@
 
 尚在研究、未采纳的提案：
 
+- [`PLUGIN_DEPENDENCY_GRAPH.md`](PLUGIN_DEPENDENCY_GRAPH.md)：为 Level 1 Management 增加最小的 Plugin dependency graph
+  read model，并让官方 Workbench 复用同一 snapshot 展示 required、optional、incoming dependent 与有效 DAG；不公开 Core graph，
+  不引入 mutation preview 或通用 graph 平台。
 - [`WORKBENCH_VNEXT.md`](WORKBENCH_VNEXT.md)：基于 Wretch、Fonts 与 chatbot BotManager 的真实调用面，从零研究
   以 Module Federation 2.0 为核心的 Plugin 微前端架构，以及其上的 Model、define-time Feature、exact dependency
   Attachment 与 lazy ViewSession；若采纳，将替代下面两个 Workbench 局部提案。
