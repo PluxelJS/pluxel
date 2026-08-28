@@ -121,6 +121,139 @@ protected override init() {
 }
 ```
 
+## 按所有权组织大型路由
+
+URL 层级是产品协议，Plugin 依赖图是生命周期协议；两者可以长得相似，但不能互相代替。先决定谁应当随谁启动、失败、替换和撤销，
+再决定 path。按下面的信号选择 route owner：
+
+| 需求                                                   | 组织方式                                                             |
+| ------------------------------------------------------ | -------------------------------------------------------------------- |
+| 一组 route 共享发布版本、鉴权、hook 和撤销边界         | 一个 Plugin 拥有 Elysia app，内部用普通 function plugin 拆模块       |
+| webhook、WebSocket 或 API 需要独立启停、失败隔离或 HMR | 对应能力成为独立 Plugin，直接使用自己的 `ctx.elysia`                 |
+| provider、adapter 等动态集合只贡献状态或处理器数据     | 一个 Plugin 拥有固定 ingress，其他 Plugin 向 typed registry 注册数据 |
+| Plugin 只有领域能力，没有入站 HTTP                     | 不读取 `ctx.elysia`，保持 Elysia application 严格惰性                |
+
+### 固定产品 API 由 ingress 依赖领域能力
+
+对于已知且需要一起发布的 route tree，让 HTTP ingress Plugin 通过 constructor 依赖领域 Plugin，再在自己的 app 中组合普通
+Elysia function plugin。不要让领域 Plugin 反向依赖 ingress，也不要把 ingress 的 app 暴露给其他 Plugin 修改：
+
+```ts no-twoslash
+function roomRoutes(rooms: Rooms) {
+	return (app: Elysia) =>
+		app.get('/rooms', () => rooms.list()).get('/rooms/:id', ({ params }) => rooms.get(params.id))
+}
+
+function queueRoutes(queue: Queue) {
+	return (app: Elysia) =>
+		app
+			.get('/queues/:id', ({ params }) => queue.list(params.id))
+			.post('/queues/:id/items', ({ params, body }) => queue.add(params.id, body))
+}
+
+@Plugin()
+export class MusicApiPlugin extends BasePlugin {
+	constructor(
+		private readonly rooms: Rooms,
+		private readonly queue: Queue,
+	) {
+		super()
+	}
+
+	protected override init() {
+		this.ctx.elysia.group('/music/api', (app) =>
+			app.use(roomRoutes(this.rooms)).use(queueRoutes(this.queue)),
+		)
+	}
+}
+```
+
+这些 function plugin 没有独立 Plugin identity、config 或 lifecycle；它们只是同一个 Elysia owner 内的代码组织。修改任一模块会建立新的
+`MusicApiPlugin` generation，并原子替换完整 route tree。不要为拆文件而创建更多 Pluxel Plugin。
+
+### 动态扩展使用固定 ingress 与 registry
+
+当 provider 集合可以动态出现、消失或 HMR replacement 时，不要让它们向一个已经运行的 app 追加 route。Elysia app 会在 Plugin
+初始化后 compile/seal，跨 Plugin 修改还会失去 route ownership。让一个 Plugin 声明固定 route，动态 Plugin 只注册有明确清理语义的数据：
+
+```ts no-twoslash
+type DiagnosticSource = Readonly<{
+	id: string
+	snapshot(): Readonly<{
+		status: 'healthy' | 'degraded' | 'unavailable'
+		metrics: Readonly<Record<string, string | number>>
+	}>
+}>
+
+@Plugin()
+export class DiagnosticsPlugin extends BasePlugin {
+	private readonly sources = new DiagnosticSourceRegistry()
+
+	registerSource(source: DiagnosticSource): () => void {
+		return this.sources.register(source)
+	}
+
+	protected override init() {
+		this.ctx.elysia.group('/music', (app) => app.get('/diagnostics', () => this.sources.snapshot()))
+	}
+}
+```
+
+贡献者通过普通 Plugin 依赖或可选 `definePluginRef()` 调用 `registerSource()`，并把返回的 disposer 交给当前 generation effects：
+
+```ts no-twoslash
+this.plugins.use(Diagnostics, (diagnostics) =>
+	diagnostics.registerSource({
+		id: 'platform.voice',
+		snapshot: () => this.currentDiagnostics(),
+	}),
+)
+```
+
+`plugins.use()` 同时建立 lifecycle edge：Diagnostics provider 出现、消失或 replacement 时，调用它的 consumer 会重启。若
+consumer 本身拥有不应被诊断系统 HMR 打断的长连接、播放器或其他昂贵资源，把 contribution 放在已有的产品集成 Plugin；没有合适
+集成层时，再建立一个只拥有这条跨域集成 lifecycle 的小 Plugin。它通过 constructor 依赖业务能力，并可选依赖 ingress：
+
+```ts no-twoslash
+const Diagnostics = definePluginRef<DiagnosticsPlugin>()
+
+@Plugin()
+export class VoiceProductIntegrationPlugin extends BasePlugin {
+	constructor(private readonly voice: VoiceGatewayPlugin) {
+		super()
+	}
+
+	protected override init() {
+		this.plugins.use(Diagnostics, (diagnostics) =>
+			diagnostics.registerSource(voiceDiagnosticSource(this.voice)),
+		)
+	}
+}
+```
+
+这样 Diagnostics replacement 只重启轻量集成层，不会反向重启 `VoiceGatewayPlugin`。只有当重启业务 Plugin 本来就是正确语义时，
+才在业务 Plugin 本体声明 optional integration；该业务 Plugin 自己拥有的 command registration、临时状态和其他 effects 也会一起重建。
+如果这些资源同样不能中断，就使用示例中的专用小型集成 Plugin。不要用 ambient event handshake 隐藏这条真实依赖。
+
+这样 contributor replacement 只撤销旧 source 并注册新 source；固定 ingress、鉴权和 schema 不发生 late mutation。source ID、重复注册、
+snapshot 上限、错误隔离与 disposer 幂等性属于 registry contract。请求期 snapshot 应读取已经拥有的有界内存状态，不执行平台探测；
+需要异步采集时由 owner 调度并缓存 snapshot。聚合层必须按公开 DTO 逐字段投影并运行时校验，不用对象 spread 把 contributor 的额外字段
+带到 HTTP 边界；TypeScript 类型不能阻止 token、连接地址、内部 Error 或第三方 SDK 对象意外进入运行时对象。固定 ingress 还应直接用
+Elysia 原生 `response` schema 声明完整 HTTP DTO，让运行时响应校验、序列化和 OpenAPI 继续只有一个上游契约。
+
+异步聚合还要单独记录 source-set revision：采集中发生注册或撤销时，丢弃已失效结果，再从最新 source set 重算；普通领域事件和周期采样
+应合并 refresh demand，不能持续使正在进行的有效采集失效。要求 source 集合精确的 endpoint 只等待当前 refresh barrier；普通领域事实
+采用事件触发与周期采样的最终一致语义，纯读取本身不标记新变化或重新采样。事件订阅可以稍后收到新 snapshot，但不能在撤销后重新发布
+旧 generation 的 contribution。
+
+以下模式会破坏边界，应改用上面的 owner 或 registry：
+
+- `featurePlugin -> apiPlugin.elysia.get(...)`：依赖方向倒置，route 无法随 contributor 精确撤销；
+- 自定义 `registerRoute()` / `mountRoute()`：重新制造一套弱于 Elysia 的作者 API；
+- 运行中向 app 追加 route：越过 native compile/seal 与 generation publication；
+- 用 standalone `new Elysia()` 拼接 Pluxel Plugin：server lifecycle、hook 和 WebSocket owner 可能分裂；
+- 只为共享 path prefix 建立核心 Plugin：`group()` 或普通常量已经能表达 namespace，prefix 本身不是 lifecycle。
+
 宿主拥有 listener、port、TLS、process shutdown 和物理 server policy。Plugin 调用 application 的 `listen()` / `stop()` 会立即
 失败；`setup()` / `cleanup()` 也会立即失败，因为 Elysia 2 beta.7 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
 调用 Server view 的 `stop()`、`reload()`、`ref()` 或 `unref()`，不选择 srvx/runtime adapter。srvx 的接入属于宿主 carrier 工作，
