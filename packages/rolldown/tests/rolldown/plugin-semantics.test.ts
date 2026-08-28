@@ -4,12 +4,12 @@ import { rolldown } from 'rolldown'
 import { describe, expect, it } from 'vitest'
 import { createPluginSemanticsPlugin } from '../../src/rolldown/plugins/pluginSemanticsPlugin'
 
-async function transform(code: string, id = import.meta.filename) {
+async function transformWithCollector(code: string, id = import.meta.filename) {
 	const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
 	const hook = collector.plugin.transform as {
 		handler: (this: unknown, code: string, id: string) => unknown
 	}
-	return (await hook.handler.call(
+	const result = (await hook.handler.call(
 		{
 			error(message: string): never {
 				throw new Error(message)
@@ -21,6 +21,12 @@ async function transform(code: string, id = import.meta.filename) {
 		code,
 		id,
 	)) as { code: string; map: null } | null
+	return { collector, result }
+}
+
+async function transform(code: string, id = import.meta.filename) {
+	const transformed = await transformWithCollector(code, id)
+	return transformed.result
 }
 
 describe('plugin semantic lowering', () => {
@@ -57,18 +63,31 @@ describe('plugin semantic lowering', () => {
 		)
 	})
 
-	it('emits slot facts with ordered required provenance and type-only optional refs', async () => {
-		const result = await transform(`
-			import type { AuditPlugin as AuditImplementation } from '@acme/audit'
-			import { DatabasePlugin as Database, SearchPlugin } from '@acme/database'
+	it('keeps mixed package-root imports distinct while required package metadata wins', async () => {
+		const { collector, result } = await transformWithCollector(`
+			import { MainPlugin as Main, SecondaryPlugin as Secondary, type AnotherPlugin as Another } from '@acme/multiple'
 			import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
-			const Audit = definePluginRef<AuditImplementation>()
+			const OptionalAnother = definePluginRef<Another>()
 			@Plugin({ displayName: 'Orders', startTimeoutMs: 5000 })
 			export class OrdersPlugin extends BasePlugin {
-				constructor(readonly search: SearchPlugin, readonly database: Database) { super() }
-				override init() { this.plugins.use(Audit, audit => audit.registerSource(this)) }
+				constructor(readonly main: Main, readonly secondary: Secondary) { super() }
+				override init() {
+					this.plugins.use(OptionalAnother, another => another.registerSource(this))
+				}
 			}
 		`)
+		const mainAddress = {
+			entry: { kind: 'package-root', packageName: '@acme/multiple' },
+			exportName: 'MainPlugin',
+		} as const
+		const secondaryAddress = {
+			entry: { kind: 'package-root', packageName: '@acme/multiple' },
+			exportName: 'SecondaryPlugin',
+		} as const
+		const anotherAddress = {
+			entry: { kind: 'package-root', packageName: '@acme/multiple' },
+			exportName: 'AnotherPlugin',
+		} as const
 
 		expect(result?.code).toContain('__setPluginDefinition as __pluxelSetPluginDefinition')
 		expect(result?.code).toContain('__definePluginRef as __pluxelDefinePluginRef')
@@ -80,17 +99,102 @@ describe('plugin semantic lowering', () => {
 			'"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"',
 		)
 		expect(result?.code).toContain('"exportName":"OrdersPlugin"')
-		expect(result?.code).toMatch(
-			/"constructorRequires":\[\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"SearchPlugin"},\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"DatabasePlugin"}\]/,
-		)
+		const orders = collector
+			.definitions()
+			.find((definition) => definition.className === 'OrdersPlugin')
+		expect(orders?.requires).toEqual([mainAddress, secondaryAddress])
+		expect(orders?.optional).toEqual([anotherAddress])
+		expect(collector.snapshot()).toEqual(new Map([['@acme/multiple', 'required']]))
 		expect(result?.code).toContain(
-			'__pluxelDefinePluginRef({"abiVersion":2,"definition":{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}})',
-		)
-		expect(result?.code).toContain(
-			'"optional":[{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}]',
+			'__pluxelDefinePluginRef({"abiVersion":2,"definition":{"entry":{"kind":"package-root","packageName":"@acme/multiple"},"exportName":"AnotherPlugin"}})',
 		)
 		expect(result?.code).not.toContain('optionalPlugin')
 		expect(result?.code).not.toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
+	})
+
+	describe('optional Plugin ref authoring boundaries', () => {
+		it.each([
+			{
+				name: 'runtime argument',
+				code: `
+					import type { AuditPlugin } from '@acme/audit'
+					import { definePluginRef } from '@pluxel/runtime'
+					const Audit = definePluginRef<AuditPlugin>({})
+				`,
+				message: 'with no runtime arguments',
+			},
+			{
+				name: 'value-imported optional type',
+				code: `
+					import { AuditPlugin } from '@acme/audit'
+					import { definePluginRef } from '@pluxel/runtime'
+					const Audit = definePluginRef<AuditPlugin>()
+				`,
+				message: 'must use a direct type-only import',
+			},
+			{
+				name: 'package subpath',
+				code: `
+					import type { AuditPlugin } from '@acme/audit/plugin'
+					import { definePluginRef } from '@pluxel/runtime'
+					const Audit = definePluginRef<AuditPlugin>()
+				`,
+				message: 'must come from package root',
+			},
+			{
+				name: 'namespace-qualified type',
+				code: `
+					import type * as AuditPlugins from '@acme/audit'
+					import { definePluginRef } from '@pluxel/runtime'
+					const Audit = definePluginRef<AuditPlugins.AuditPlugin>()
+				`,
+				message: 'one simple Plugin type from a direct type-only named import',
+			},
+			{
+				name: 'exported ref',
+				code: `
+					import type { AuditPlugin } from '@acme/audit'
+					import { definePluginRef } from '@pluxel/runtime'
+					export const Audit = definePluginRef<AuditPlugin>()
+				`,
+				message: 'must not be exported',
+			},
+			{
+				name: 'inline ref',
+				code: `
+					import type { AuditPlugin } from '@acme/audit'
+					import { definePluginRef } from '@pluxel/runtime'
+					export function make() { return definePluginRef<AuditPlugin>() }
+				`,
+				message: 'module-level const',
+			},
+			{
+				name: 'conditional use',
+				code: `
+					import type { AuditPlugin } from '@acme/audit'
+					import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+					const Audit = definePluginRef<AuditPlugin>()
+					@Plugin() export class ConsumerPlugin extends BasePlugin {
+						init() { if (true) this.plugins.use(Audit, audit => void audit) }
+					}
+				`,
+				message: 'direct statement in init',
+			},
+			{
+				name: 'async setup callback',
+				code: `
+					import type { AuditPlugin } from '@acme/audit'
+					import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+					const Audit = definePluginRef<AuditPlugin>()
+					@Plugin() export class ConsumerPlugin extends BasePlugin {
+						init() { this.plugins.use(Audit, async audit => void audit) }
+					}
+				`,
+				message: 'callback must be synchronous',
+			},
+		])('rejects $name with actionable guidance', async ({ code, message }) => {
+			await expect(transform(code)).rejects.toThrow(message)
+		})
 	})
 
 	it('emits abstract provider facts and a concrete provides edge', async () => {
@@ -475,36 +579,6 @@ describe('plugin semantic lowering', () => {
 			message: 'must come from package root',
 		},
 		{
-			name: 'exported ref',
-			code: `
-				import type { AuditPlugin } from '@acme/audit'
-				import { definePluginRef } from '@pluxel/runtime'
-				export const Audit = definePluginRef<AuditPlugin>()
-			`,
-			message: 'must not be exported',
-		},
-		{
-			name: 'inline ref',
-			code: `
-				import type { AuditPlugin } from '@acme/audit'
-				import { definePluginRef } from '@pluxel/runtime'
-				export function make() { return definePluginRef<AuditPlugin>() }
-			`,
-			message: 'module-level const',
-		},
-		{
-			name: 'conditional optional edge',
-			code: `
-				import type { AuditPlugin } from '@acme/audit'
-				import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
-				const Audit = definePluginRef<AuditPlugin>()
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					init() { if (true) this.plugins.use(Audit, audit => void audit) }
-				}
-			`,
-			message: 'direct statement in init',
-		},
-		{
 			name: 'false forkability',
 			code: `
 				import { BasePlugin, Plugin } from '@pluxel/runtime'
@@ -745,6 +819,46 @@ describe('plugin semantic lowering', () => {
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
 		).rejects.toThrow(message)
+	})
+
+	it('assigns distinct package-root identities to different Plugin constructors', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({
+				name: '@acme/multiple',
+				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
+			}),
+			'src/index.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class MainPlugin extends BasePlugin {}
+				@Plugin() export class AnotherPlugin extends BasePlugin {}
+			`,
+		})
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath(),
+			packageJsonPath: fixture.getPath('package.json'),
+		})
+		const build = await rolldown({
+			input: fixture.getPath('src/index.ts'),
+			external: ['@pluxel/runtime'],
+			plugins: [collector.plugin],
+		})
+		await build.generate({ format: 'esm' })
+
+		const definitions = new Map(
+			collector.definitions().map(({ className, definition }) => [className, definition]),
+		)
+		expect(definitions.size).toBe(2)
+		expect(definitions.get('MainPlugin')).toEqual({
+			entry: { kind: 'package-root', packageName: '@acme/multiple' },
+			exportName: 'MainPlugin',
+		})
+		expect(definitions.get('AnotherPlugin')).toEqual({
+			entry: { kind: 'package-root', packageName: '@acme/multiple' },
+			exportName: 'AnotherPlugin',
+		})
 	})
 
 	it('rejects one constructor exported by two package-root names', async () => {

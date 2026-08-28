@@ -701,9 +701,14 @@ function collectPluginRefs(
 		const typeArguments = (call.typeArguments as AstNode | undefined)?.params
 		const params = arrayOf(typeArguments)
 		const targetType = params.length === 1 ? simpleTypeReference(params[0]) : undefined
-		if (args.length > 0 || !targetType) {
+		if (args.length > 0) {
 			throw new Error(
 				`[pluxel:plugin-ref] ${name} expects definePluginRef<RootPluginType>() with no runtime arguments`,
+			)
+		}
+		if (!targetType) {
+			throw new Error(
+				`[pluxel:plugin-ref] ${name} expects one simple Plugin type from a direct type-only named import, for example definePluginRef<AuditPlugin>()`,
 			)
 		}
 		refs.set(name, { name, call, targetType })
