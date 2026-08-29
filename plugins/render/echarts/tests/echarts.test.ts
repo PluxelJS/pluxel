@@ -65,9 +65,9 @@ afterAll(async () => {
 	await rm(workerBuildDir, { recursive: true, force: true })
 })
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
 function addEChartsHost(host: RuntimeHost): void {
@@ -76,7 +76,7 @@ function addEChartsHost(host: RuntimeHost): void {
 		dispose: () => undefined,
 	}))
 	host.ctx.effects.defer(detach)
-	addEnabled(host, [FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsTestConsumer])
+	addStarted(host, [FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsTestConsumer])
 }
 
 async function verifyManagedWorkerFont(consumer: EChartsTestConsumer, path: string): Promise<void> {
@@ -367,7 +367,7 @@ describe('EChartsPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				addEChartsHost(host)
-				addEnabled(host, [EChartsOtherConsumer])
+				addStarted(host, [EChartsOtherConsumer])
 				host.cfg(EChartsPlugin).set({ maxTotalThemes: 1 })
 				await host.commit()
 				const first = host.require(EChartsTestConsumer).echarts
@@ -389,7 +389,7 @@ describe('EChartsPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				addEChartsHost(host)
-				addEnabled(host, [EChartsOtherConsumer])
+				addStarted(host, [EChartsOtherConsumer])
 				host.cfg(EChartsPlugin).set({ maxTotalThemes: 2, maxTotalThemeBytes: 20 })
 				await host.commit()
 				const first = host.require(EChartsTestConsumer).echarts
@@ -402,7 +402,7 @@ describe('EChartsPlugin', () => {
 				expect(() => second.registerTheme({ name: 'second', theme: { a: '1234567890' } })).toThrow(
 					expect.objectContaining({ code: 'THEME_LIMIT_EXCEEDED' }),
 				)
-				host.cfg(EChartsTestConsumer).disable()
+				host.stop(EChartsTestConsumer)
 				await host.commit()
 				expect(registration.active).toBe(false)
 				const replacement = second.registerTheme({
@@ -419,7 +419,7 @@ describe('EChartsPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				addEChartsHost(host)
-				addEnabled(host, [EChartsOtherConsumer])
+				addStarted(host, [EChartsOtherConsumer])
 				await host.commit()
 				const capability = host.require(EChartsTestConsumer).echarts
 				const other = host.require(EChartsOtherConsumer).echarts
@@ -453,7 +453,7 @@ describe('EChartsPlugin', () => {
 					name: 'ephemeral',
 					theme: { color: ['#16a34a'] },
 				})
-				host.cfg(EChartsTestConsumer).disable()
+				host.stop(EChartsTestConsumer)
 				await host.commit()
 
 				expect(ephemeral.active).toBe(false)
@@ -467,7 +467,7 @@ describe('EChartsPlugin', () => {
 	it('mounts the Fonts provider Port in the ECharts target workbench', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, CanvasPlugin, EChartsPlugin])
+				addStarted(host, [FontsPlugin, CanvasPlugin, EChartsPlugin])
 				await host.commit()
 
 				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(

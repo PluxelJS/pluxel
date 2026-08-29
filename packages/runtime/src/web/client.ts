@@ -5,20 +5,21 @@ import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type {
 	AgentToolsHandleApi,
-	BaseProviderInspectionResult,
 	ConfigFieldMutation,
 	ConfigPresentationResult,
 	ConfigResult,
 	EnsureForkResult,
 	LoggingHandleApi,
-	PluginDependencyInspectionResult,
-	PluginDependencyListResult,
+	PluginDependencyGraphSnapshot,
+	PluginConsumerRequirementsInspectionResult,
 	PluginDependencyMutationResult,
+	PluginProviderPolicyInspectionResult,
 	PluginGroup,
 	PluginGroupInput,
 	PluginGroupsMutationResult,
-	PluginStatusBatchAction,
-	PluginStatusBatchResult,
+	PluginAutoStartBatchItem,
+	PluginControlBatchResult,
+	PluginLifecycleCommandBatchItem,
 	PluginStatusQueryResult,
 	PluginsListOutput,
 	RemoveForkResult,
@@ -28,20 +29,20 @@ import type { RuntimeManagementRpcApi } from './management-rpc-protocol'
 import { parseRuntimeMetaV1 } from './validation'
 import {
 	parseAgentToolsAdminSnapshot,
-	parseBaseProviderInspectionResult,
 	parseConfigPresentationResult,
 	parseConfigResult,
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
-	parsePluginDependencyInspectionResult,
-	parsePluginDependencyListResult,
+	parsePluginDependencyGraphSnapshot,
+	parsePluginConsumerRequirementsInspectionResult,
 	parsePluginDependencyMutationResult,
+	parsePluginProviderPolicyInspectionResult,
 	parsePluginGroups,
 	parsePluginGroupsMutationResult,
 	parsePluginLogPolicyMutationResult,
+	parsePluginControlBatchResult,
 	parsePluginsListOutput,
-	parsePluginStatusBatchResult,
 	parsePluginStatusQueryResult,
 	parseRemoveForkResult,
 	parseRuntimeLogStreamsIndex,
@@ -105,9 +106,10 @@ export type RuntimeManagementClient = Readonly<{
 	plugins: Readonly<{
 		list(): Promise<PluginsListOutput>
 		status(owner: PluginNodeAddress): Promise<PluginStatusQueryResult>
-		applyStatusActions(
-			actions: readonly PluginStatusBatchAction[],
-		): Promise<PluginStatusBatchResult>
+		setAutoStart(items: readonly PluginAutoStartBatchItem[]): Promise<PluginControlBatchResult>
+		applyLifecycleCommands(
+			items: readonly PluginLifecycleCommandBatchItem[],
+		): Promise<PluginControlBatchResult>
 	}>
 	config: Readonly<{
 		presentation(owner: PluginNodeAddress): Promise<ConfigPresentationResult>
@@ -116,17 +118,20 @@ export type RuntimeManagementClient = Readonly<{
 		patchField(owner: PluginNodeAddress, input: ConfigFieldMutation): Promise<ConfigResult>
 	}>
 	dependencies: Readonly<{
-		list(owner: PluginNodeAddress): Promise<PluginDependencyListResult>
-		inspect(owner: PluginNodeAddress): Promise<PluginDependencyInspectionResult>
-		setTarget(input: {
+		graph(): Promise<PluginDependencyGraphSnapshot>
+		inspectConsumerRequirements(
+			consumer: PluginNodeAddress,
+		): Promise<PluginConsumerRequirementsInspectionResult>
+		setConsumerOverride(input: {
 			consumer: PluginNodeAddress
 			requirement: PluginDefinitionAddress
 			provider: PluginNodeAddress | null
 		}): Promise<PluginDependencyMutationResult>
-		inspectBaseProvider(owner: PluginNodeAddress): Promise<BaseProviderInspectionResult>
-		selectBaseProvider(input: {
-			consumer: PluginNodeAddress
-			token: PluginDefinitionAddress
+		inspectProviderPolicy(
+			policyOwner: PluginNodeAddress,
+		): Promise<PluginProviderPolicyInspectionResult>
+		setProviderPolicyDefault(input: {
+			policyOwner: PluginNodeAddress
 			provider: PluginNodeAddress | null
 		}): Promise<PluginDependencyMutationResult>
 	}>
@@ -134,7 +139,8 @@ export type RuntimeManagementClient = Readonly<{
 		ensure(input: {
 			base: PluginNodeAddress
 			forkId: string
-			enable?: boolean
+			/** Whether the fork should start on cold boot. Omission disables auto-start. */
+			autoStart?: boolean
 			selectFor?: {
 				consumer: PluginNodeAddress
 				requirement: PluginDefinitionAddress
@@ -266,8 +272,10 @@ export function createRuntimeManagementClient(
 		plugins: Object.freeze({
 			list: () => rpc((root) => root.pluginsList(), parsePluginsListOutput),
 			status: (owner) => rpc((root) => root.pluginStatus(owner), parsePluginStatusQueryResult),
-			applyStatusActions: (actions) =>
-				rpc((root) => root.applyPluginStatusActions([...actions]), parsePluginStatusBatchResult),
+			setAutoStart: (items) =>
+				rpc((root) => root.setPluginAutoStart([...items]), parsePluginControlBatchResult),
+			applyLifecycleCommands: (items) =>
+				rpc((root) => root.applyPluginLifecycleCommands([...items]), parsePluginControlBatchResult),
 		}),
 		config: Object.freeze({
 			presentation: (owner) =>
@@ -279,16 +287,24 @@ export function createRuntimeManagementClient(
 				rpc((root) => root.patchPluginConfigField(owner, input), parseConfigResult),
 		}),
 		dependencies: Object.freeze({
-			list: (owner) =>
-				rpc((root) => root.pluginDependencies(owner), parsePluginDependencyListResult),
-			inspect: (owner) =>
-				rpc((root) => root.inspectPluginDependencies(owner), parsePluginDependencyInspectionResult),
-			setTarget: (input) =>
-				rpc((root) => root.setPluginDependencyTarget(input), parsePluginDependencyMutationResult),
-			inspectBaseProvider: (owner) =>
-				rpc((root) => root.inspectPluginBaseProvider(owner), parseBaseProviderInspectionResult),
-			selectBaseProvider: (input) =>
-				rpc((root) => root.selectPluginBaseProvider(input), parsePluginDependencyMutationResult),
+			graph: () => rpc((root) => root.pluginDependencyGraph(), parsePluginDependencyGraphSnapshot),
+			inspectConsumerRequirements: (consumer) =>
+				rpc(
+					(root) => root.inspectPluginConsumerRequirements(consumer),
+					parsePluginConsumerRequirementsInspectionResult,
+				),
+			setConsumerOverride: (input) =>
+				rpc((root) => root.setPluginConsumerOverride(input), parsePluginDependencyMutationResult),
+			inspectProviderPolicy: (policyOwner) =>
+				rpc(
+					(root) => root.inspectPluginProviderPolicy(policyOwner),
+					parsePluginProviderPolicyInspectionResult,
+				),
+			setProviderPolicyDefault: (input) =>
+				rpc(
+					(root) => root.setPluginProviderPolicyDefault(input),
+					parsePluginDependencyMutationResult,
+				),
 		}),
 		forks: Object.freeze({
 			ensure: (input) => rpc((root) => root.ensurePluginFork(input), parseEnsureForkResult),

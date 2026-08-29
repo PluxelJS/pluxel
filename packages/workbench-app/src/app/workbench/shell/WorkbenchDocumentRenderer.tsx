@@ -3,6 +3,7 @@ import { AgentToolsScreen } from '../../agent-tools/AgentToolsScreen'
 import { LiveLog } from '../../log_viewer/LiveLog'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 import { PluginScreen } from '../../plugins/detail/PluginScreen'
+import { LazyPluginGraphScreen } from '../../plugin-graph/LazyPluginGraphScreen'
 import { NotFoundScreen } from '../../router/screens/NotFoundScreen'
 import { HomeScreen } from '../../router/screens/HomeScreen'
 import { WorkbenchRouteScreen } from '../../router/workbench/WorkbenchRouteScreen'
@@ -21,6 +22,9 @@ export function WorkbenchDocumentRenderer({ pathname }: { pathname: string }) {
 	if (pathname === '/security') return <SecurityScreen />
 	if (pathname === '/security/audit') return <SecurityAuditScreen />
 	if (pathname === '/agent-tools') return <AgentToolsScreen />
+	if (pathname === '/plugin-graph' || pathname.startsWith('/plugin-graph/')) {
+		return <LazyPluginGraphScreen pathname={pathname} />
+	}
 	if (pathname === '/plugins' || pathname === '/plugins/') {
 		return (
 			<div className="plx-pluginCatalogPage">

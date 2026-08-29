@@ -101,7 +101,7 @@ declare class StatusPlugin {
 }
 declare interface RuntimeHost {
   add<T>(plugin: PluginClass<T>): void
-  cfg<T>(plugin: PluginClass<T>): { enable(): void }
+  start<T>(plugin: PluginClass<T>): void
   commit(): Promise<void>
   require<T>(plugin: PluginClass<T>): T
 }
@@ -112,7 +112,7 @@ import { expect, it } from 'vitest'
 it('运行完整的 Plugin graph', async () => {
   await withRuntimeHost(async (host) => {
     host.add(StatusPlugin)
-    host.cfg(StatusPlugin).enable()
+    host.start(StatusPlugin)
     await host.commit()
     const status = host.require(StatusPlugin).status()
     //    ^?

@@ -386,7 +386,7 @@ describe('scaffold template rendering', () => {
 		expect(source).not.toContain('export default')
 		expect(pluginTest).toContain('await host.commit()')
 		expect(pluginTest).toContain('workbench: false')
-		expect(pluginTest).not.toContain('host.start(')
+		expect(pluginTest).toContain('host.start(HelloWorldPlugin)')
 		const tsconfigSource = String(
 			fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.json'), 'utf8'),
 		)

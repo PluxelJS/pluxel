@@ -252,24 +252,13 @@ describe('ConfigService', () => {
 		expect(Object.isFrozen(first.nested)).toBe(true)
 	})
 
-	it('stores structured enable preferences without interpreting them', async () => {
-		await withCoreHost(async (host) => {
-			const handle = host.cfg(P)
-			expect(handle.enabled()).toBe(false)
-			handle.enable()
-			expect(handle.enabled()).toBe(true)
-			handle.disable()
-			expect(handle.enabled()).toBe(false)
-		})
-	})
-
-	it('stores disabled fork config by canonical address without interning a Core node slot', async () => {
+	it('stores unmaterialized fork config by canonical address without interning a Core node slot', async () => {
 		await withCoreHost(async (host) => {
 			const definition = host.cfg(P).owner.definition
 			const owner = Object.freeze({
 				definition,
 				variant: 'fork' as const,
-				forkId: 'durable-disabled',
+				forkId: 'durable-unmaterialized',
 			}) satisfies PluginNodeAddress
 			const intern = vi.spyOn(requirePluginService(host.ctx), 'internNodeAddress')
 			const configService = requireConfigService(host.ctx)

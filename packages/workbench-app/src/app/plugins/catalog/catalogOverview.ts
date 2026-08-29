@@ -7,7 +7,7 @@ export type OverviewSnapshot = {
 	groups: GroupConfig[]
 	total: number
 	running: number
-	disabled: number
+	autoStart: number
 }
 
 export const EMPTY_OVERVIEW: OverviewSnapshot = {
@@ -15,7 +15,7 @@ export const EMPTY_OVERVIEW: OverviewSnapshot = {
 	groups: [],
 	total: 0,
 	running: 0,
-	disabled: 0,
+	autoStart: 0,
 }
 
 const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] | undefined) => {
@@ -33,8 +33,10 @@ const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] |
 			tag: source?.tag ?? undefined,
 			sourceKind: source?.kind ?? 'unknown',
 			moduleId: source?.moduleId ?? null,
-			isRunning: Boolean(entry?.isRunning),
-			isEnabled: entry?.isEnabled !== false,
+			availability: entry.availability,
+			autoStart: entry.autoStart,
+			desiredState: entry.desiredState,
+			lifecycleState: entry.lifecycleState,
 		}
 	}
 	return snapshot
@@ -51,28 +53,28 @@ const toGroups = (groups: readonly (PluginGroup | null | undefined)[] | undefine
 export const buildOverview = (args: {
 	statuses: readonly (PluginStatusEntry | null | undefined)[] | undefined
 	groups: readonly (PluginGroup | null | undefined)[] | undefined
-	summary?: { total?: number | null; running?: number | null; disabled?: number | null } | null
+	summary?: { total?: number | null; running?: number | null; autoStart?: number | null } | null
 }): OverviewSnapshot => {
 	const { statuses, groups, summary } = args
 	const summaryStatuses = toStatuses(statuses)
 	let computedRunning = 0
-	let computedDisabled = 0
+	let computedAutoStart = 0
 	for (const entry of Object.values(summaryStatuses)) {
-		if (entry?.isRunning) computedRunning += 1
-		if (entry?.isEnabled === false) computedDisabled += 1
+		if (entry?.lifecycleState === 'running') computedRunning += 1
+		if (entry?.autoStart) computedAutoStart += 1
 	}
 
 	const total =
 		typeof summary?.total === 'number' ? summary.total : Object.keys(summaryStatuses).length
 	const running = typeof summary?.running === 'number' ? summary.running : computedRunning
-	const disabled = typeof summary?.disabled === 'number' ? summary.disabled : computedDisabled
+	const autoStart = typeof summary?.autoStart === 'number' ? summary.autoStart : computedAutoStart
 
 	return {
 		statuses: summaryStatuses,
 		groups: toGroups(groups),
 		total,
 		running,
-		disabled,
+		autoStart,
 	}
 }
 

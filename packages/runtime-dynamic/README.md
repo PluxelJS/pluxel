@@ -31,7 +31,7 @@ export const product = defineProduct({
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
 	plugins: [HostOperationsPlugin],
-	runtimeState: { snapshot: { enabled: [pluginNodeAddressOf(HostOperationsPlugin)] } },
+	runtimeState: { snapshot: { autoStart: [pluginNodeAddressOf(HostOperationsPlugin)] } },
 	configPath: 'pluxel.loader.hmr.jsonc',
 	profile: 'dev',
 	sources: [
@@ -60,7 +60,8 @@ package classifier，让 CommonJS 与 native package 自动留在 Node host 执�
 - 启动时存在的匹配文件必须完成初始 graph commit 后 runtime 才报告 ready，之后的 add/change/unlink 进入同一 HMR batch；
 - source producer 只需原子发布或删除普通 ESM 文件，不需要调用 loader、RPC 或 package API。
 
-`plugins` 是宿主显式 import 的固定 catalog；省略时为空。它只声明代码 availability，不会隐式启用插件。固定插件和
+`plugins` 是宿主显式 import 的固定 catalog；省略时为空。它只声明代码 availability，不会写入 `autoStart` 或创建本次进程的
+`run` intent。固定插件和
 mutable source 插件都由同一个 Vite SSR ModuleRunner 求值，并统一读取 RuntimeState、constructor dependency、graph commit
 和 effects lifecycle。固定插件 import graph 变化会重建整个 dynamic host；mutable source 变化只处理受影响的 entry。
 

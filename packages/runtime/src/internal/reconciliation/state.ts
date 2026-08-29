@@ -13,7 +13,7 @@ import {
 } from '../../services/RuntimeStateStore'
 
 export type RuntimeStatePatchOperation =
-	| Readonly<{ type: 'set-enabled'; node: PluginNodeAddress; enabled: boolean }>
+	| Readonly<{ type: 'set-auto-start'; node: PluginNodeAddress; autoStart: boolean }>
 	| Readonly<{
 			type: 'ensure-fork'
 			definition: PluginDefinitionAddress
@@ -66,7 +66,7 @@ export function applyRuntimeStatePatch(
 ): RuntimeStateSnapshot {
 	if (!patch || patch.operations.length === 0) return state
 
-	const enabled = new Map(state.enabled.map((node) => [pluginNodeIndexKey(node), node]))
+	const autoStart = new Map(state.autoStart.map((node) => [pluginNodeIndexKey(node), node]))
 	const forks = new Map(
 		state.forks.map((entry) => [
 			pluginDefinitionIndexKey(entry.definition),
@@ -92,10 +92,10 @@ export function applyRuntimeStatePatch(
 
 	for (const operation of patch.operations) {
 		switch (operation.type) {
-			case 'set-enabled': {
+			case 'set-auto-start': {
 				const key = pluginNodeIndexKey(operation.node)
-				if (operation.enabled) enabled.set(key, operation.node)
-				else enabled.delete(key)
+				if (operation.autoStart) autoStart.set(key, operation.node)
+				else autoStart.delete(key)
 				break
 			}
 			case 'ensure-fork': {
@@ -148,7 +148,7 @@ export function applyRuntimeStatePatch(
 			}
 			case 'remove-node-policy': {
 				const nodeKey = pluginNodeIndexKey(operation.node)
-				enabled.delete(nodeKey)
+				autoStart.delete(nodeKey)
 				for (const key of overrideKeysByConsumer.get(nodeKey) ?? []) {
 					deleteOverride(key)
 				}
@@ -158,7 +158,7 @@ export function applyRuntimeStatePatch(
 	}
 
 	return freezeTrustedRuntimeStateSnapshot({
-		enabled: [...enabled.values()],
+		autoStart: [...autoStart.values()],
 		forks: [...forks.values()].map(({ definition, forkIds }) => ({
 			definition,
 			forkIds: [...forkIds],
@@ -173,7 +173,10 @@ export function runtimeStateEqual(
 	right: RuntimeStateSnapshot,
 ): boolean {
 	return (
-		orderedKeysEqual(left.enabled.map(pluginNodeIndexKey), right.enabled.map(pluginNodeIndexKey)) &&
+		orderedKeysEqual(
+			left.autoStart.map(pluginNodeIndexKey),
+			right.autoStart.map(pluginNodeIndexKey),
+		) &&
 		orderedKeysEqual(left.forks.map(forkKey), right.forks.map(forkKey)) &&
 		orderedKeysEqual(
 			left.providerDefaults.map(providerKey),

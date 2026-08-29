@@ -77,10 +77,10 @@ export function readConfigSnapshot(configService: ConfigSnapshotReader): ConfigS
 export function collectUnknownConfigEntries(
 	snapshot: ConfigShape,
 	catalog: StaticRuntimeCatalog,
-	enabled: Iterable<PluginNodeAddress> = [],
+	knownControlNodes: Iterable<PluginNodeAddress> = [],
 ): PluginNodeAddress[] {
 	const unknown = new Map<string, PluginNodeAddress>()
-	for (const address of enabled) collectUnknownNode(address, catalog, unknown)
+	for (const address of knownControlNodes) collectUnknownNode(address, catalog, unknown)
 	for (const record of snapshot.plugins) collectUnknownNode(record.owner, catalog, unknown)
 	return [...unknown.values()].sort((left, right) =>
 		formatPluginNodeReference(left).localeCompare(formatPluginNodeReference(right)),

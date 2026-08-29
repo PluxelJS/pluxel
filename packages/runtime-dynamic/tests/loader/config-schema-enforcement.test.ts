@@ -42,9 +42,9 @@ describe('coordinator catalog config schema enforcement', () => {
 			await expect(
 				batch.commit({
 					statePatch: runtimeStatePatch({
-						type: 'set-enabled',
+						type: 'set-auto-start',
 						node: ownerAddress,
-						enabled: true,
+						autoStart: true,
 					}),
 				}),
 			).resolves.toMatchObject({ core: { status: 'committed' } })

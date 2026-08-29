@@ -5,7 +5,12 @@ export {
 } from './internal/owner-invocations'
 
 export { PluginSlotRegistry } from './plugins/runtime/identity'
-export { PluginService } from './plugins/runtime/PluginService'
+export {
+	CorePluginGraphVerificationError,
+	PluginService,
+	type CommittedPluginDependencyAdjacency,
+	type CommittedPluginDependencyEdge,
+} from './plugins/runtime/PluginService'
 export {
 	notifyRunningPluginConfigUpdate,
 	type PluginConfigNotificationResult,

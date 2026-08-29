@@ -18,13 +18,13 @@ describe('WretchExamplePlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, WretchExamplePlugin])
-				host.cfg(WretchPlugin).enable()
+				host.start(WretchPlugin)
 				host.cfg(WretchExamplePlugin).set({
 					baseUrl: 'https://example.test/api',
 					inspectPath: '/inspect-me',
 					retryAttempts: 0,
 				})
-				host.cfg(WretchExamplePlugin).enable()
+				host.start(WretchExamplePlugin)
 				await host.commit()
 
 				await expect(host.require(WretchExamplePlugin).inspect()).resolves.toMatchObject({
@@ -49,8 +49,8 @@ describe('WretchExamplePlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, WretchExamplePlugin])
-				host.cfg(WretchPlugin).enable()
-				host.cfg(WretchExamplePlugin).enable()
+				host.start(WretchPlugin)
+				host.start(WretchExamplePlugin)
 				await host.commit()
 
 				expect(host.isRunning(WretchPlugin)).toBe(true)

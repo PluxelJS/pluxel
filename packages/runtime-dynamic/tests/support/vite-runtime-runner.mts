@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { rm, writeFile } from 'node:fs/promises'
 import { formatPluginNodeReference } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
 import { createServer } from 'vite'
 
@@ -51,8 +52,8 @@ const socketUrl = `${runtimeUrl.replace(/^http/, 'ws')}/dynamic/socket`
 const sockets: WebSocket[] = []
 
 try {
-	await loader.api.control.enable(address)
-	assert.equal(loader.api.runtime.isRunning(address), true)
+	await loader.api.control.start(address)
+	assert.equal(requirePluginService(ctx).isRunning(address), true)
 	assert.equal(await readVersion(runtimeUrl), 'v1')
 	const v1Socket = await openWebSocket(socketUrl)
 	sockets.push(v1Socket.socket)
@@ -76,7 +77,7 @@ try {
 	assert.equal(await v2Socket.nextMessage(), 'v2')
 	const v2SocketClosed = v2Socket.closed
 
-	const invalidBatch = hmr.api.waitForBatch({
+	const invalidBatch = hmr.api.waitForStable({
 		afterEpoch: replacement.epoch,
 		timeoutMs: 15_000,
 	})
@@ -88,13 +89,30 @@ try {
 	assert.equal(v2Socket.socket.readyState, WebSocket.OPEN)
 	v2Socket.socket.send('rollback-retained')
 	assert.equal(await v2Socket.nextMessage(), 'v2:rollback-retained')
+
+	// A polling watcher may report consecutive batches while the source remains invalid. Prove that
+	// another real file edit still preserves the last-known-good generation, then use the settled
+	// epoch as the boundary for the following unlink.
+	const repeatedInvalidBatch = hmr.api.waitForStable({
+		afterEpoch: invalid.epoch,
+		timeoutMs: 15_000,
+	})
+	await writeFile(pluginPath, 'export const invalidReplacement =\n')
+	const repeatedInvalid = await repeatedInvalidBatch
+	assert.equal(repeatedInvalid.ok, false)
+	assert.ok(repeatedInvalid.executeError)
+	assert.equal(await readVersion(runtimeUrl), 'v2')
+	assert.equal(v2Socket.socket.readyState, WebSocket.OPEN)
+	v2Socket.socket.send('repeated-failure-retained')
+	assert.equal(await v2Socket.nextMessage(), 'v2:repeated-failure-retained')
+
 	const rollbackSocket = await openWebSocket(socketUrl)
 	sockets.push(rollbackSocket.socket)
 	assert.equal(await rollbackSocket.nextMessage(), 'v2')
 	const rollbackSocketClosed = rollbackSocket.closed
 
-	const removalBatch = hmr.api.waitForBatch({
-		afterEpoch: invalid.epoch,
+	const removalBatch = hmr.api.waitForStable({
+		afterEpoch: repeatedInvalid.epoch,
 		timeoutMs: 15_000,
 	})
 	await rm(pluginPath)
@@ -102,7 +120,7 @@ try {
 	assert.equal(removal.ok, true, JSON.stringify(removal, null, 2))
 	assert.ok(removal.pluginChanges?.removed.includes(addressReference))
 	assert.equal(loader.api.registry.getCtor(address), undefined)
-	assert.equal(loader.api.runtime.isRunning(address), false)
+	assert.equal(requirePluginService(ctx).isRunning(address), false)
 	const removedResponse = await fetch(`${runtimeUrl}/dynamic/version`)
 	assert.equal(removedResponse.status, 404)
 	assert.equal(
@@ -112,7 +130,7 @@ try {
 	assert.deepEqual(await v2SocketClosed, { code: 1012, reason: 'Service Restart' })
 	assert.deepEqual(await rollbackSocketClosed, { code: 1012, reason: 'Service Restart' })
 
-	const restoredBatch = hmr.api.waitForBatch({
+	const restoredBatch = hmr.api.waitForStable({
 		afterEpoch: removal.epoch,
 		timeoutMs: 15_000,
 	})
@@ -120,7 +138,7 @@ try {
 	const restored = await restoredBatch
 	assert.equal(restored.ok, true, JSON.stringify(restored, null, 2))
 	assert.ok(restored.pluginChanges?.added.includes(addressReference))
-	assert.equal(loader.api.runtime.isRunning(address), true)
+	assert.equal(requirePluginService(ctx).isRunning(address), true)
 	assert.equal(await readVersion(runtimeUrl), 'v3')
 	assert.equal(
 		requireRuntimeHttpService(ctx).matchesWebSocketRoute(upgradeRequest(runtimeUrl)),

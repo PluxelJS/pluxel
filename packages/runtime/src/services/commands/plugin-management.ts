@@ -1,11 +1,11 @@
 import { CommandError, defineCommand, type AnyCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { formatPluginNodeReference, type Context, type PluginNodeAddress } from '@pluxel/core'
-import { applyStatusActions } from '../../api/usecases/pluginStatus'
+import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
 import { pluginStatus, pluginsList } from '../../api/usecases/plugins'
 import type {
 	PluginsListOutput,
-	PluginStatusAction,
+	PluginLifecycleCommand,
 	PluginStatusSnapshot,
 } from '../../web/protocol'
 
@@ -77,8 +77,16 @@ const pluginSnapshot = obj({
 	}),
 	displayName: Type.String(),
 	rootExportName: Type.String(),
-	isRunning: Type.Boolean(),
-	isEnabled: Type.Boolean(),
+	autoStart: Type.Boolean(),
+	sessionIntent: Type.Union([Type.Literal('inherit'), Type.Literal('run'), Type.Literal('stop')]),
+	desiredState: Type.Union([Type.Literal('running'), Type.Literal('stopped')]),
+	activationReason: Type.Union([
+		Type.Literal('auto-start'),
+		Type.Literal('session'),
+		Type.Literal('dependency'),
+		Type.Null(),
+	]),
+	lifecycleState: Type.Union([Type.Literal('running'), Type.Literal('stopped')]),
 	availability: Type.Union([Type.Literal('available'), Type.Literal('unavailable')]),
 	issues: Type.Array(
 		obj({
@@ -87,7 +95,6 @@ const pluginSnapshot = obj({
 				Type.Literal('consumer_unavailable'),
 				Type.Literal('requirement_removed'),
 				Type.Literal('provider_unavailable'),
-				Type.Literal('provider_disabled'),
 				Type.Literal('provider_incompatible'),
 				Type.Literal('fork_not_allowed'),
 				Type.Literal('fork_default_forbidden'),
@@ -99,11 +106,6 @@ const pluginSnapshot = obj({
 			message: Type.String(),
 		}),
 	),
-	lifecycleStage: Type.Union([
-		Type.Literal('running'),
-		Type.Literal('stopped'),
-		Type.Literal('disabled'),
-	]),
 	source: pluginSource,
 })
 
@@ -113,7 +115,7 @@ const pluginsOutput = obj({
 		total: Type.Integer({ minimum: 0 }),
 		running: Type.Integer({ minimum: 0 }),
 		stopped: Type.Integer({ minimum: 0 }),
-		disabled: Type.Integer({ minimum: 0 }),
+		autoStart: Type.Integer({ minimum: 0 }),
 	}),
 })
 
@@ -131,8 +133,11 @@ function mutablePluginsOutput(output: PluginsListOutput) {
 	}
 }
 
-function requirePlugin(ctx: Context, address: PluginNodeAddress): PluginStatusSnapshot {
-	const snapshot = pluginStatus(ctx, address)
+async function requirePlugin(
+	ctx: Context,
+	address: PluginNodeAddress,
+): Promise<PluginStatusSnapshot> {
+	const snapshot = await pluginStatus(ctx, address)
 	if (snapshot) return snapshot
 	throw new CommandError('INPUT_VALIDATION', 'Plugin was not found', {
 		message: `Plugin not found: ${formatPluginNodeReference(address)}`,
@@ -145,30 +150,30 @@ function requirePlugin(ctx: Context, address: PluginNodeAddress): PluginStatusSn
 async function mutatePlugin(
 	ctx: Context,
 	address: PluginNodeAddress,
-	action: PluginStatusAction,
+	action: PluginLifecycleCommand,
 ): Promise<ReturnType<typeof mutablePluginSnapshot>> {
-	const result = await applyStatusActions(ctx, [{ address, action }])
+	const result = await applyLifecycleCommands(ctx, [{ address, command: action }])
 	const mutation = result.results[0]
 	if (!mutation) {
 		throw new Error('[runtime:commands] status mutation omitted its result')
 	}
-	if (mutation?.ok === true) return mutablePluginSnapshot(requirePlugin(ctx, address))
+	if (mutation?.ok === true) return mutablePluginSnapshot(await requirePlugin(ctx, address))
 
 	if (mutation?.code === 'plugin_not_found') {
-		return mutablePluginSnapshot(requirePlugin(ctx, address))
+		return mutablePluginSnapshot(await requirePlugin(ctx, address))
 	}
 	throw new CommandError('DEPENDENCY', 'Plugin operation failed', {
 		message: mutation.error ?? `Plugin ${action} failed: ${formatPluginNodeReference(address)}`,
 		details: {
 			service: 'pluginLifecycle',
 			command: `plugin.${action}`,
-			retryable: action !== 'disable',
+			retryable: action !== 'stop',
 			causeCode: mutation.code,
 		},
 	})
 }
 
-function mutationCommand(ctx: Context, action: PluginStatusAction): AnyCommand {
+function lifecycleCommand(ctx: Context, action: PluginLifecycleCommand): AnyCommand {
 	const label = action[0]!.toUpperCase() + action.slice(1)
 	return defineCommand({
 		name: `plugin.${action}`,
@@ -186,6 +191,41 @@ function mutationCommand(ctx: Context, action: PluginStatusAction): AnyCommand {
 	})
 }
 
+function autoStartCommand(ctx: Context): AnyCommand {
+	return defineCommand({
+		name: 'plugin.auto-start.set',
+		title: 'Set plugin auto-start',
+		description: 'Set durable cold-boot policy without changing this process session.',
+		behavior: {
+			kind: 'mutation',
+			destructive: false,
+			idempotent: true,
+			world: 'open',
+		},
+		input: obj({ address: pluginNodeAddress, autoStart: Type.Boolean() }),
+		output: pluginSnapshot,
+		async execute({ address, autoStart }) {
+			const result = await setAutoStart(ctx, [{ address, autoStart }])
+			const mutation = result.results[0]
+			if (mutation?.ok === true) return mutablePluginSnapshot(await requirePlugin(ctx, address))
+			if (mutation?.code === 'plugin_not_found') {
+				return mutablePluginSnapshot(await requirePlugin(ctx, address))
+			}
+			throw new CommandError('DEPENDENCY', 'Plugin auto-start update failed', {
+				message:
+					mutation?.error ??
+					`Plugin auto-start update failed: ${formatPluginNodeReference(address)}`,
+				details: {
+					service: 'pluginLifecycle',
+					command: 'plugin.auto-start.set',
+					retryable: true,
+					causeCode: mutation?.code,
+				},
+			})
+		},
+	})
+}
+
 export function createPluginManagementCommands(ctx: Context): readonly AnyCommand[] {
 	return [
 		defineCommand({
@@ -195,7 +235,7 @@ export function createPluginManagementCommands(ctx: Context): readonly AnyComman
 			behavior: { kind: 'query', world: 'closed' },
 			input: obj({}),
 			output: pluginsOutput,
-			execute: () => mutablePluginsOutput(pluginsList(ctx)),
+			execute: async () => mutablePluginsOutput(await pluginsList(ctx)),
 		}),
 		defineCommand({
 			name: 'plugin.status.get',
@@ -204,10 +244,11 @@ export function createPluginManagementCommands(ctx: Context): readonly AnyComman
 			behavior: { kind: 'query', world: 'closed' },
 			input: pluginAddressInput,
 			output: pluginSnapshot,
-			execute: ({ address }) => mutablePluginSnapshot(requirePlugin(ctx, address)),
+			execute: async ({ address }) => mutablePluginSnapshot(await requirePlugin(ctx, address)),
 		}),
-		mutationCommand(ctx, 'enable'),
-		mutationCommand(ctx, 'disable'),
-		mutationCommand(ctx, 'restart'),
+		autoStartCommand(ctx),
+		lifecycleCommand(ctx, 'start'),
+		lifecycleCommand(ctx, 'stop'),
+		lifecycleCommand(ctx, 'restart'),
 	]
 }

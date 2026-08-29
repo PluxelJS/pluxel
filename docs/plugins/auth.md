@@ -20,7 +20,7 @@ configure: () => ({
 
 Public OIDC 不保存 client secret，可以省略 `vault`。
 
-然后把 `AuthPlugin` 加入正常 Plugin catalog 并 enable。它没有 runtime 特例；停止或替换 generation 会立即撤销远程准入和全部内存 session。
+然后把 `AuthPlugin` 加入正常 Plugin catalog，并按部署需要打开自动启动策略或在当前进程显式启动。它没有 runtime 特例；停止或替换 generation 会立即撤销远程准入和全部内存 session。
 
 生产 Node launcher 默认监听 `0.0.0.0`。Auth Plugin ready 后，remote 与 loopback 都进入相同认证流程。在 provider 缺席或 Auth Plugin
 尚未 ready 时，remote/unknown peer 只能看到 SSH tunnel 指引；真实 loopback 可以进入 Workbench 完成恢复。首次设置不需要 bootstrap token：

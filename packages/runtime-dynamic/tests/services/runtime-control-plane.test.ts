@@ -68,9 +68,8 @@ describe('runtime control-plane RPC', () => {
 			ok: false,
 			code: 'config_not_found',
 		})
-		const providerSelection = await fixture.rpc.selectPluginBaseProvider({
-			consumer,
-			token: providerToken,
+		const providerSelection = await fixture.rpc.setPluginProviderPolicyDefault({
+			policyOwner: provider,
 			provider,
 		})
 		expect(providerSelection).toMatchObject({
@@ -80,13 +79,19 @@ describe('runtime control-plane RPC', () => {
 		})
 		if (providerSelection.ok) expectBrowserSafeReport(providerSelection.report)
 
-		const status = await fixture.rpc.applyPluginStatusActions([
-			{ address: provider, action: 'enable' },
-			{ address: providerAlt, action: 'enable' },
-			{ address: consumer, action: 'enable' },
+		const status = await fixture.rpc.applyPluginLifecycleCommands([
+			{ address: provider, command: 'start' },
+			{ address: providerAlt, command: 'start' },
+			{ address: consumer, command: 'start' },
 		])
 		expect(status.ok).toBe(true)
-		expect(status.results.map((entry) => [entry.address, entry.ok, entry.lifecycleStage])).toEqual([
+		expect(
+			status.results.map((entry) => [
+				entry.address,
+				entry.ok,
+				entry.ok ? entry.control.lifecycleState : undefined,
+			]),
+		).toEqual([
 			[provider, true, 'running'],
 			[providerAlt, true, 'running'],
 			[consumer, true, 'running'],
@@ -96,22 +101,19 @@ describe('runtime control-plane RPC', () => {
 			(requirePluginService(fixture.ctx).getInstance(consumer) as Consumer | undefined)?.provider
 				.kind,
 		).toBe('primary')
-		expect(await fixture.rpc.pluginDependencies(consumer)).toMatchObject({
-			ok: true,
-			items: [{ address: provider, displayName: 'Provider' }],
-		})
-		expect(await fixture.rpc.inspectPluginDependencies(consumer)).toMatchObject({
+		expect(await fixture.rpc.inspectPluginConsumerRequirements(consumer)).toMatchObject({
 			ok: true,
 			items: [
 				{
 					requirement: providerToken,
 					kind: 'abstract',
-					effective: provider,
+					consumerOverride: null,
+					inheritedProvider: provider,
 				},
 			],
 		})
 
-		const dependencySelection = await fixture.rpc.setPluginDependencyTarget({
+		const dependencySelection = await fixture.rpc.setPluginConsumerOverride({
 			consumer,
 			requirement: providerToken,
 			provider: providerAlt,
@@ -127,14 +129,14 @@ describe('runtime control-plane RPC', () => {
 			(requirePluginService(fixture.ctx).getInstance(consumer) as Consumer | undefined)?.provider
 				.kind,
 		).toBe('alt')
-		expect(await fixture.rpc.inspectPluginDependencies(consumer)).toMatchObject({
+		expect(await fixture.rpc.inspectPluginConsumerRequirements(consumer)).toMatchObject({
 			ok: true,
 			items: [
 				{
 					requirement: providerToken,
 					kind: 'abstract',
-					selected: providerAlt,
-					effective: providerAlt,
+					consumerOverride: providerAlt,
+					inheritedProvider: provider,
 				},
 			],
 		})

@@ -3,6 +3,7 @@ import {
 	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
 	pluginNodeAddressEqual,
+	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
@@ -15,7 +16,7 @@ import {
 	readRuntimeRouteCapabilities,
 	reconcilePluginGraph,
 	requireRuntimePluginGraphCoordinator,
-	runtimePluginStatusOverview,
+	readRuntimePluginStatusOverview,
 	RuntimePluginGraphCoordinator,
 	RuntimeStateMutationRejectedError,
 	runtimeStatePatch,
@@ -64,7 +65,7 @@ function candidate(
 
 function state(input: Partial<RuntimeStateSnapshot> = {}): RuntimeStateSnapshot {
 	return Object.freeze({
-		enabled: Object.freeze([...(input.enabled ?? [])]),
+		autoStart: Object.freeze([...(input.autoStart ?? [])]),
 		forks: Object.freeze([...(input.forks ?? [])]),
 		providerDefaults: Object.freeze([...(input.providerDefaults ?? [])]),
 		dependencyOverrides: Object.freeze([...(input.dependencyOverrides ?? [])]),
@@ -89,7 +90,7 @@ describe('runtime-common Plugin reconciliation', () => {
 			}),
 		)
 		const snapshot = state({
-			enabled: consumers,
+			autoStart: consumers,
 			dependencyOverrides: consumers.map((consumerAddress) => ({
 				consumerAddress,
 				requirementAddress: Requirement,
@@ -107,7 +108,7 @@ describe('runtime-common Plugin reconciliation', () => {
 			),
 		)
 
-		expect(next.enabled).toEqual([])
+		expect(next.autoStart).toEqual([])
 		expect(next.dependencyOverrides).toEqual([])
 		// A full scan per removal would read ~count² consumer addresses.
 		expect(addressReads).toBeLessThan(count * 20)
@@ -128,7 +129,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		])
 		const plan = reconcilePluginGraph({
 			catalog,
-			runtimeState: state({ enabled: [b, consumer, a] }),
+			runtimeState: state({ autoStart: [b, consumer, a] }),
 			runtimeStateRevision: 7,
 		})
 
@@ -144,7 +145,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		).toHaveLength(3)
 	})
 
-	it('preserves an explicit disabled provider and blocks instead of enabling or falling back', () => {
+	it('activates an auto-start-off default provider through the required dependency closure', () => {
 		const Token = definition('Token')
 		const ProviderA = definition('ProviderA')
 		const ProviderB = definition('ProviderB')
@@ -160,16 +161,59 @@ describe('runtime-common Plugin reconciliation', () => {
 		const plan = reconcilePluginGraph({
 			catalog,
 			runtimeState: state({
-				enabled: [a, consumer],
+				autoStart: [a, consumer],
 				providerDefaults: [{ token: Token, provider: b }],
 			}),
 			runtimeStateRevision: 1,
 		})
 
 		expect(plan.statePatch).toBeUndefined()
-		expect(plan.blocked.map((issue) => issue.kind)).toContain('provider_disabled')
-		expect(plan.blocked.map((issue) => issue.kind)).toContain('missing_required_provider')
-		expect([...plan.applied.nodes.values()].map((entry) => entry.address)).toEqual([a])
+		expect(plan.blocked).toEqual([])
+		expect([...plan.applied.nodes.values()].map((entry) => entry.address)).toEqual(
+			expect.arrayContaining([a, b, consumer]),
+		)
+		expect(plan.desiredControl.get(pluginNodeIndexKey(b))).toMatchObject({
+			address: b,
+			activationReason: 'dependency',
+		})
+	})
+
+	it('blocks an incompatible selected provider without making it desired or materializing it', () => {
+		const Requirement = definition('SelectedRequirement')
+		const IncompatibleProvider = definition('SelectedIncompatibleProvider')
+		const Consumer = definition('SelectedConsumer')
+		const provider = node(IncompatibleProvider)
+		const consumer = node(Consumer)
+		const catalog = createPluginRouteCatalogSnapshot(1, [
+			{ candidate: candidate(IncompatibleProvider) },
+			{ candidate: candidate(Consumer, { requires: [Requirement] }) },
+		])
+		const plan = reconcilePluginGraph({
+			catalog,
+			runtimeState: state({
+				autoStart: [consumer],
+				dependencyOverrides: [
+					{
+						consumerAddress: consumer,
+						requirementAddress: Requirement,
+						providerAddress: provider,
+					},
+				],
+			}),
+			runtimeStateRevision: 1,
+		})
+
+		expect(plan.blocked.map((issue) => issue.kind)).toContain('provider_incompatible')
+		expect(plan.applied.nodes.has(pluginNodeIndexKey(consumer))).toBe(false)
+		expect(plan.desiredControl.has(pluginNodeIndexKey(provider))).toBe(false)
+		expect(plan.applied.nodes.has(pluginNodeIndexKey(provider))).toBe(false)
+		expect(
+			plan.coreOperations.some(
+				(operation) =>
+					operation.type === 'materialize-node' &&
+					pluginNodeAddressEqual(operation.address, provider),
+			),
+		).toBe(false)
 	})
 
 	it('allows a durable fork only as an explicit consumer override', () => {
@@ -184,7 +228,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		const plan = reconcilePluginGraph({
 			catalog,
 			runtimeState: state({
-				enabled: [fork, consumer],
+				autoStart: [fork, consumer],
 				forks: [{ definition: Provider, forkIds: ['queue'] }],
 				dependencyOverrides: [
 					{
@@ -208,7 +252,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		).toBe(true)
 	})
 
-	it('does not materialize a disabled durable fork', () => {
+	it('does not materialize a stopped durable fork', () => {
 		const Provider = definition('Provider')
 		const catalog = createPluginRouteCatalogSnapshot(1, [
 			{ candidate: candidate(Provider, { forkable: true }) },
@@ -246,7 +290,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		const first = candidate(Provider, { forkable: true })
 		const next = candidate(Provider, { forkable: true })
 		const runtimeState = state({
-			enabled: [node(Provider), node(Provider, 'east')],
+			autoStart: [node(Provider), node(Provider, 'east')],
 			forks: [{ definition: Provider, forkIds: ['east'] }],
 		})
 		const firstCatalog = createPluginRouteCatalogSnapshot(1, [{ candidate: first }])
@@ -290,7 +334,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		expect(catalogTransitionRejections({ previous, next, plan })).toEqual(plan.blocked)
 	})
 
-	it('rejects abstract-provider contraction even when the explicit provider is disabled', () => {
+	it('rejects abstract-provider contraction even when the explicit provider is stopped', () => {
 		const Token = definition('Token')
 		const Provider = definition('Provider')
 		const Consumer = definition('Consumer')
@@ -305,7 +349,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		const plan = reconcilePluginGraph({
 			catalog: next,
 			runtimeState: state({
-				enabled: [node(Consumer)],
+				autoStart: [node(Consumer)],
 				providerDefaults: [{ token: Token, provider: node(Provider) }],
 			}),
 			runtimeStateRevision: 1,
@@ -317,7 +361,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		).toContain('provider_default_requires_abstract')
 	})
 
-	it('rejects disabled explicit fork contraction before reporting availability', () => {
+	it('rejects stopped explicit fork contraction before reporting availability', () => {
 		const Provider = definition('Provider')
 		const Consumer = definition('Consumer')
 		const fork = node(Provider, 'cold')
@@ -333,7 +377,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		const plan = reconcilePluginGraph({
 			catalog: next,
 			runtimeState: state({
-				enabled: [consumer],
+				autoStart: [consumer],
 				forks: [{ definition: Provider, forkIds: ['cold'] }],
 				dependencyOverrides: [
 					{
@@ -349,10 +393,9 @@ describe('runtime-common Plugin reconciliation', () => {
 		const kinds = catalogTransitionRejections({ previous, next, plan }).map((issue) => issue.kind)
 		expect(kinds).toContain('fork_not_allowed')
 		expect(kinds).toContain('explicit_binding_invalid')
-		expect(plan.blocked.map((issue) => issue.kind)).not.toContain('provider_disabled')
 	})
 
-	it('validates requirement removal for a disabled override consumer', () => {
+	it('validates requirement removal for a non-auto-start override consumer', () => {
 		const Provider = definition('Provider')
 		const Consumer = definition('Consumer')
 		const providerCandidate = candidate(Provider)
@@ -365,7 +408,7 @@ describe('runtime-common Plugin reconciliation', () => {
 			{ candidate: candidate(Consumer) },
 		])
 		const runtimeState = state({
-			enabled: [node(Provider)],
+			autoStart: [node(Provider)],
 			dependencyOverrides: [
 				{
 					consumerAddress: node(Consumer),
@@ -393,7 +436,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		const plan = reconcilePluginGraph({
 			catalog,
 			runtimeState: state({
-				enabled: [provider],
+				autoStart: [provider],
 				providerDefaults: [{ token: Provider, provider }],
 			}),
 			runtimeStateRevision: 1,
@@ -412,7 +455,7 @@ describe('runtime-common Plugin reconciliation', () => {
 		const provider = node(Provider)
 		const consumer = node(Consumer)
 		const runtimeState = state({
-			enabled: [provider, consumer],
+			autoStart: [provider, consumer],
 			providerDefaults: [{ token: Token, provider }],
 			dependencyOverrides: [
 				{
@@ -499,7 +542,7 @@ describe('runtime-common Plugin reconciliation', () => {
 
 		const plan = reconcilePluginGraph({
 			catalog,
-			runtimeState: state({ enabled: definitions.map((address) => node(address)) }),
+			runtimeState: state({ autoStart: definitions.map((address) => node(address)) }),
 			runtimeStateRevision: 1,
 		})
 
@@ -513,6 +556,31 @@ function pluginDefinitionKey(address: PluginDefinitionAddress): string {
 }
 
 describe('runtime-common Plugin graph publication', () => {
+	it('clears process-local session intent when reconciling a cold boot', async () => {
+		const Plugin = definition('ColdBootSessionReset')
+		const address = node(Plugin)
+		const catalog = createPluginRouteCatalogSnapshot(1, [{ candidate: candidate(Plugin) }])
+		const coordinator = new RuntimePluginGraphCoordinator(
+			memoryStateStore(state()),
+			coreDriver(async ({ onGraphCommitted }) => {
+				onGraphCommitted()
+				return 'committed'
+			}),
+		)
+		await coordinator.reconcileStartup(catalog)
+		await coordinator.startNode(address)
+		expect(coordinator.sessionIntentsSnapshot().get(pluginNodeIndexKey(address))?.intent).toBe(
+			'run',
+		)
+		expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(address))).toBe(true)
+
+		await coordinator.reconcileStartup(catalog)
+
+		expect(coordinator.sessionIntentsSnapshot().has(pluginNodeIndexKey(address))).toBe(false)
+		expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(address))).toBe(false)
+		await coordinator.dispose()
+	})
+
 	it('publishes an incomplete cold-boot catalog with an explicit blocked report', async () => {
 		const MissingProvider = definition('ColdBootMissingProvider')
 		const Consumer = definition('ColdBootBlockedConsumer')
@@ -521,7 +589,7 @@ describe('runtime-common Plugin graph publication', () => {
 			{ candidate: candidate(Consumer, { requires: [MissingProvider] }) },
 		])
 		const coordinator = new RuntimePluginGraphCoordinator(
-			memoryStateStore(state({ enabled: [consumer] })),
+			memoryStateStore(state({ autoStart: [consumer] })),
 			coreDriver(async () => 'unexpected-core-commit'),
 		)
 
@@ -553,7 +621,7 @@ describe('runtime-common Plugin graph publication', () => {
 			{ candidate: previous.entries[0]!.candidate },
 			{ candidate: candidate(Consumer, { requires: [MissingProvider] }) },
 		])
-		const store = memoryStateStore(state({ enabled: [provider] }))
+		const store = memoryStateStore(state({ autoStart: [provider] }))
 		const coordinator = new RuntimePluginGraphCoordinator(
 			store,
 			coreDriver(async ({ onGraphCommitted }) => {
@@ -567,10 +635,11 @@ describe('runtime-common Plugin graph publication', () => {
 			coordinator.update({
 				catalog: next,
 				statePatch: runtimeStatePatch({
-					type: 'set-enabled',
+					type: 'set-auto-start',
 					node: consumer,
-					enabled: true,
+					autoStart: true,
 				}),
+				lifecycleCommands: [{ address: consumer, desiredState: 'running' }],
 				mode: 'live',
 			}),
 		).rejects.toMatchObject({
@@ -586,13 +655,13 @@ describe('runtime-common Plugin graph publication', () => {
 		})
 		expect(coordinator.catalogSnapshot()).toBe(previous)
 		expect(coordinator.reconciliationIssues()).toEqual([])
-		expect(store.versionedSnapshot().state.enabled).toEqual([provider])
+		expect(store.versionedSnapshot().state.autoStart).toEqual([provider])
 	})
 
 	it('publishes the coordinator catalog in the graph-confirmation stack', async () => {
 		const Plugin = definition('Published')
 		const catalog = createPluginRouteCatalogSnapshot(1, [{ candidate: candidate(Plugin) }])
-		const store = memoryStateStore(state({ enabled: [node(Plugin)] }))
+		const store = memoryStateStore(state({ autoStart: [node(Plugin)] }))
 		const events: string[] = []
 		let coordinator: RuntimePluginGraphCoordinator<string>
 		const driver = coreDriver(async ({ onGraphCommitted }) => {
@@ -613,7 +682,7 @@ describe('runtime-common Plugin graph publication', () => {
 	it('keeps the coordinator catalog published after a post-PONR Core failure', async () => {
 		const Plugin = definition('PointOfNoReturn')
 		const firstCatalog = createPluginRouteCatalogSnapshot(1, [{ candidate: candidate(Plugin) }])
-		const runtimeState = state({ enabled: [node(Plugin)] })
+		const runtimeState = state({ autoStart: [node(Plugin)] })
 		const afterPonr = new RuntimePluginGraphCoordinator(
 			memoryStateStore(runtimeState),
 			coreDriver(async ({ onGraphCommitted }) => {
@@ -680,11 +749,14 @@ describe('runtime-common Plugin graph publication', () => {
 			}),
 		})
 		const coordinator = new RuntimePluginGraphCoordinator(
-			memoryStateStore(state({ enabled: [node(Plugin)] })),
-			coreDriver(async ({ onGraphCommitted }) => {
-				onGraphCommitted()
-				return 'committed'
-			}),
+			memoryStateStore(state({ autoStart: [node(Plugin)] })),
+			coreDriver(
+				async ({ onGraphCommitted }) => {
+					onGraphCommitted()
+					return 'committed'
+				},
+				() => true,
+			),
 		)
 		await coordinator.reconcileStartup(guardedCatalog)
 		rejectCatalogScan = true
@@ -715,8 +787,8 @@ describe('runtime-common Plugin graph publication', () => {
 })
 
 describe('runtime-common pinned mutation admission', () => {
-	it('rejects a queued first enable after the catalog definition is unlinked', async () => {
-		const Plugin = definition('QueuedEnable')
+	it('rejects a queued first auto-start mutation after the catalog definition is unlinked', async () => {
+		const Plugin = definition('QueuedAutoStart')
 		const address = node(Plugin)
 		const store = memoryStateStore(state())
 		const coordinator = new RuntimePluginGraphCoordinator(
@@ -728,12 +800,12 @@ describe('runtime-common pinned mutation admission', () => {
 		)
 
 		const unlink = coordinator.updateCatalog(createPluginRouteCatalogSnapshot(2, []))
-		const enable = coordinator.updateRuntimeState(
-			runtimeStatePatch({ type: 'set-enabled', node: address, enabled: true }),
+		const autoStart = coordinator.updateRuntimeState(
+			runtimeStatePatch({ type: 'set-auto-start', node: address, autoStart: true }),
 		)
 		await unlink
-		await expect(enable).rejects.toMatchObject({ code: 'node_unavailable' })
-		expect(store.versionedSnapshot().state.enabled).toEqual([])
+		await expect(autoStart).rejects.toMatchObject({ code: 'node_unavailable' })
+		expect(store.versionedSnapshot().state.autoStart).toEqual([])
 	})
 
 	it('admits a bulk patch from one indexed prospective-state build', () => {
@@ -757,9 +829,9 @@ describe('runtime-common pinned mutation admission', () => {
 			}
 		})
 		const operations = Array.from({ length: 80 }, (_, index) => ({
-			type: 'set-enabled' as const,
+			type: 'set-auto-start' as const,
 			node: node(definition(`Absent${String(index).padStart(3, '0')}`)),
-			enabled: false,
+			autoStart: false,
 		}))
 
 		validateRuntimeStateMutation(
@@ -863,7 +935,7 @@ describe('runtime-common pinned mutation admission', () => {
 		const consumer = node(Consumer)
 		const store = memoryStateStore(
 			state({
-				enabled: [fork],
+				autoStart: [fork],
 				forks: [{ definition: Provider, forkIds: ['exclusive'] }],
 			}),
 		)
@@ -893,7 +965,7 @@ describe('runtime-common pinned mutation admission', () => {
 			)
 			session.validateRuntimeStatePatch(removalPatch)
 			await session.update({
-				statePatch: runtimeStatePatch({ type: 'set-enabled', node: fork, enabled: false }),
+				statePatch: runtimeStatePatch({ type: 'set-auto-start', node: fork, autoStart: false }),
 			})
 			metadataCleanups++
 			enteredMetadata()
@@ -917,7 +989,7 @@ describe('runtime-common pinned mutation admission', () => {
 		expect(store.versionedSnapshot().state.dependencyOverrides).toEqual([])
 	})
 
-	it('admits disabled structural bindings but rejects new invalid intent at serialization', async () => {
+	it('admits stopped structural bindings but rejects new invalid intent at serialization', async () => {
 		const Token = definition('AdmissionToken')
 		const Provider = definition('AdmissionProvider')
 		const Consumer = definition('AdmissionConsumer')
@@ -1009,38 +1081,44 @@ describe('runtime host-owned graph state', () => {
 		}
 	})
 
-	it('keeps enabled and disabled durable orphan nodes visible after source unlink', async () => {
+	it('keeps auto-start and stopped durable orphan nodes visible after source unlink', async () => {
 		@PluginDecorator({ forkable: true })
 		class Orphan extends BasePlugin {}
 		lowerTestPlugin(Orphan)
 		const host = createRuntimeHost()
 		const base = node(pluginDefinitionAddressOf(Orphan))
-		const fork = host.fork(Orphan, 'disabled')
+		const fork = host.fork(Orphan, 'stopped')
 		try {
-			host.cfg(Orphan).enable()
+			host.cfg(Orphan).setAutoStart(true)
+			host.start(Orphan)
 			await host.commit()
 			host.remove(Orphan)
 			await host.commit()
 
-			const statuses = runtimePluginStatusOverview(host.ctx).statuses
-			const enabled = statuses.find((status) => pluginNodeAddressEqual(status.address, base))
-			const disabled = statuses.find((status) => pluginNodeAddressEqual(status.address, fork))
-			expect(enabled).toMatchObject({
-				isEnabled: true,
-				isRunning: false,
-				lifecycleStage: 'stopped',
+			const statusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const statuses = statusOverview.statuses
+			const autoStart = statuses.find((status) => pluginNodeAddressEqual(status.address, base))
+			const stopped = statuses.find((status) => pluginNodeAddressEqual(status.address, fork))
+			expect(autoStart).toMatchObject({
+				autoStart: true,
+				sessionIntent: 'inherit',
+				desiredState: 'running',
+				activationReason: 'auto-start',
+				lifecycleState: 'stopped',
 				availability: 'unavailable',
 			})
-			expect(enabled?.issues.map((issue) => issue.code)).toContain('consumer_unavailable')
-			expect(enabled?.issues.every((issue) => issue.id.length > 0)).toBe(true)
-			expect(disabled).toMatchObject({
-				isEnabled: false,
-				isRunning: false,
-				lifecycleStage: 'disabled',
+			expect(autoStart?.issues.map((issue) => issue.code)).toContain('consumer_unavailable')
+			expect(autoStart?.issues.every((issue) => issue.id.length > 0)).toBe(true)
+			expect(stopped).toMatchObject({
+				autoStart: false,
+				sessionIntent: 'inherit',
+				desiredState: 'stopped',
+				activationReason: null,
+				lifecycleState: 'stopped',
 				availability: 'unavailable',
 			})
-			expect(disabled?.issues.map((issue) => issue.code)).toContain('definition_unavailable')
-			expect(disabled?.issues[0]?.id).toContain('definition_unavailable:')
+			expect(stopped?.issues.map((issue) => issue.code)).toContain('definition_unavailable')
+			expect(stopped?.issues[0]?.id).toContain('definition_unavailable:')
 		} finally {
 			await host.dispose()
 		}
@@ -1062,8 +1140,11 @@ function memoryStateStore(initial: RuntimeStateSnapshot): RuntimeStateCoordinato
 
 function coreDriver(
 	commit: (options: { onGraphCommitted: () => void }) => Promise<string>,
+	isRunning: (address: PluginNodeAddress) => boolean = () => false,
 ): CorePluginGraphDriver<string> {
 	return {
+		readCommittedDependencyAdjacency: () => ({ nodes: [], required: [], optional: [] }),
+		isRunning,
 		beginUpdate: () => ({
 			materializeNode() {},
 			dematerializeNode() {},

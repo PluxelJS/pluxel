@@ -1,11 +1,15 @@
 import {
 	formatPluginNodeReference,
+	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type CommitSummary,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
+import {
+	CorePluginGraphVerificationError,
+	type ConcretePluginDefinitionCandidate,
+} from '@pluxel/core/internal'
 import {
 	RuntimeStateRevisionConflictError,
 	type RuntimeStateSnapshot,
@@ -25,7 +29,10 @@ import {
 	reconcilePluginGraph,
 	type AppliedPluginGraphSnapshot,
 	type CorePluginOperation,
+	type PluginSessionIntent,
 	type PluginReconciliationIssue,
+	type RuntimePluginDesiredControl,
+	type RuntimePluginSessionEntry,
 } from './reconcile'
 
 export interface CorePluginPreparedUpdate<TSummary = unknown> {
@@ -54,7 +61,20 @@ export interface CorePluginUpdateDraft<TSummary = unknown> {
 
 export interface CorePluginGraphDriver<TSummary = unknown> {
 	beginUpdate(options: { reason: string }): CorePluginUpdateDraft<TSummary>
+	readCommittedDependencyAdjacency(): CorePluginDependencyAdjacency
+	isRunning(address: PluginNodeAddress): boolean
 }
+
+export type CorePluginDependencyAdjacencyEdge = Readonly<{
+	consumer: PluginNodeAddress
+	provider: PluginNodeAddress
+}>
+
+export type CorePluginDependencyAdjacency = Readonly<{
+	nodes: readonly PluginNodeAddress[]
+	required: readonly CorePluginDependencyAdjacencyEdge[]
+	optional: readonly CorePluginDependencyAdjacencyEdge[]
+}>
 
 export interface RuntimeStateCoordinatorStore {
 	readonly ready: Promise<void>
@@ -75,8 +95,13 @@ export type PluginApplyReport<TSummary = CommitSummary> = Readonly<{
 export class PluginGraphRejectedError extends Error {
 	public readonly code = 'graph_rejected' as const
 
-	constructor(public readonly issues: readonly PluginReconciliationIssue[]) {
-		super('[runtime:reconciliation] catalog update would invalidate committed graph policy')
+	constructor(
+		public readonly issues: readonly PluginReconciliationIssue[],
+		cause?: unknown,
+	) {
+		super('[runtime:reconciliation] update would invalidate committed Plugin graph policy', {
+			cause,
+		})
 		this.name = 'PluginGraphRejectedError'
 	}
 }
@@ -103,12 +128,33 @@ export class PluginRestartUnavailableError extends Error {
 	}
 }
 
+export class PluginStartUnavailableError extends Error {
+	public readonly code = 'start_unavailable' as const
+	public readonly state = 'unchanged' as const
+
+	constructor(public readonly address: PluginNodeAddress) {
+		super(
+			`[runtime:reconciliation] cannot start an unavailable Plugin node: ${formatPluginNodeReference(address)}`,
+		)
+		this.name = 'PluginStartUnavailableError'
+	}
+}
+
 export type RuntimePluginGraphUpdate = Readonly<{
 	reason?: string
 	catalog?: PluginRouteCatalogSnapshot
 	statePatch?: RuntimeStatePatch
 	/** Cold boot has no last-known-good catalog and therefore projects structural issues as blocked. */
 	mode?: 'cold-boot' | 'live'
+	sessionPatch?: readonly Readonly<{
+		address: PluginNodeAddress
+		intent: PluginSessionIntent
+	}>[]
+	lifecycleCommands?: readonly Readonly<{
+		address: PluginNodeAddress
+		desiredState: 'running' | 'stopped'
+	}>[]
+	retryStartNodes?: readonly PluginNodeAddress[]
 	restartNodes?: readonly PluginNodeAddress[]
 }>
 
@@ -118,6 +164,18 @@ export interface RuntimePluginGraphExclusiveSession<TSummary = unknown> {
 	report(): PluginApplyReport<TSummary>
 	update(update: RuntimePluginGraphUpdate): Promise<PluginApplyReport<TSummary>>
 }
+
+/** Fixed process-local facts captured after all earlier graph transactions have settled. */
+export type RuntimePluginGraphCommittedView = Readonly<{
+	catalog: PluginRouteCatalogSnapshot
+	runtimeState: RuntimeStateVersionedSnapshot
+	reconciliation: readonly PluginReconciliationIssue[]
+	sessionIntents: ReadonlyMap<string, RuntimePluginSessionEntry>
+	desiredControl: ReadonlyMap<string, RuntimePluginDesiredControl>
+	applied: AppliedPluginGraphSnapshot
+	coreAdjacency: CorePluginDependencyAdjacency
+	runningNodes: readonly PluginNodeAddress[]
+}>
 
 type QueuedRuntimePluginGraphUpdate = RuntimePluginGraphUpdate & Readonly<{ reason: string }>
 
@@ -132,6 +190,8 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 	private definitionRoles: PluginDefinitionRoleHistory = new Map()
 	private applied: AppliedPluginGraphSnapshot = emptyAppliedPluginGraphSnapshot()
 	private reconciliation: readonly PluginReconciliationIssue[] = Object.freeze([])
+	private sessionIntents: ReadonlyMap<string, RuntimePluginSessionEntry> = new Map()
+	private desiredControl: ReadonlyMap<string, RuntimePluginDesiredControl> = new Map()
 	private tail: Promise<void> = Promise.resolve()
 	private disposed = false
 
@@ -148,6 +208,26 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 		return this.reconciliation
 	}
 
+	sessionIntentsSnapshot(): ReadonlyMap<string, RuntimePluginSessionEntry> {
+		return this.sessionIntents
+	}
+
+	desiredControlSnapshot(): ReadonlyMap<string, RuntimePluginDesiredControl> {
+		return this.desiredControl
+	}
+
+	coreDependencyAdjacencySnapshot(): CorePluginDependencyAdjacency {
+		return this.core.readCommittedDependencyAdjacency()
+	}
+
+	runningNodesSnapshot(): readonly PluginNodeAddress[] {
+		return Object.freeze(
+			this.core
+				.readCommittedDependencyAdjacency()
+				.nodes.filter((address) => this.core.isRunning(address)),
+		)
+	}
+
 	/**
 	 * Atomically reconcile one host-owned desired-state change. This is the composition boundary
 	 * used when a caller must publish a catalog revision, a RuntimeState patch, and explicit
@@ -158,6 +238,13 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 			Object.freeze({
 				...update,
 				reason: update.reason ?? 'runtime-graph-update',
+				...(update.sessionPatch ? { sessionPatch: Object.freeze([...update.sessionPatch]) } : {}),
+				...(update.lifecycleCommands
+					? { lifecycleCommands: Object.freeze([...update.lifecycleCommands]) }
+					: {}),
+				...(update.retryStartNodes
+					? { retryStartNodes: Object.freeze([...update.retryStartNodes]) }
+					: {}),
 				...(update.restartNodes ? { restartNodes: Object.freeze([...update.restartNodes]) } : {}),
 			}),
 		)
@@ -195,6 +282,70 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 		return this.enqueue({ reason, mode: 'live', restartNodes: Object.freeze([address]) })
 	}
 
+	startNode(
+		address: PluginNodeAddress,
+		reason = 'plugin-start',
+	): Promise<PluginApplyReport<TSummary>> {
+		return this.enqueue({
+			reason,
+			mode: 'live',
+			lifecycleCommands: Object.freeze([{ address, desiredState: 'running' as const }]),
+			retryStartNodes: Object.freeze([address]),
+		})
+	}
+
+	stopNode(
+		address: PluginNodeAddress,
+		reason = 'plugin-stop',
+	): Promise<PluginApplyReport<TSummary>> {
+		return this.enqueue({
+			reason,
+			mode: 'live',
+			lifecycleCommands: Object.freeze([{ address, desiredState: 'stopped' as const }]),
+		})
+	}
+
+	/**
+	 * Runs one synchronous read after all previously queued graph transactions have settled.
+	 * The callback participates in the same queue so a later mutation cannot interleave while
+	 * process-local Core and Runtime facts are being projected.
+	 */
+	readCommitted<T>(read: (view: RuntimePluginGraphCommittedView) => T): Promise<T> {
+		if (this.disposed) {
+			return Promise.reject(new Error('[runtime:reconciliation] coordinator is disposed'))
+		}
+		const execute = this.tail.then(async () => {
+			await this.runtimeState.ready
+			const coreAdjacency = this.core.readCommittedDependencyAdjacency()
+			const runningNodes = Object.freeze(
+				coreAdjacency.nodes.filter((address) => this.core.isRunning(address)),
+			)
+			const view: RuntimePluginGraphCommittedView = Object.freeze({
+				catalog: this.catalog,
+				runtimeState: this.runtimeState.versionedSnapshot(),
+				reconciliation: this.reconciliation,
+				sessionIntents: this.sessionIntents,
+				desiredControl: this.desiredControl,
+				applied: this.applied,
+				coreAdjacency,
+				runningNodes,
+			})
+			const value = read(view)
+			if (isPromiseLike(value)) {
+				void Promise.resolve(value).catch((): undefined => undefined)
+				throw new TypeError(
+					'[runtime:reconciliation] readCommitted callback must return synchronously',
+				)
+			}
+			return value
+		})
+		this.tail = execute.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return execute
+	}
+
 	/** @internal Bounded multi-resource sequence on this host's graph mutation queue. */
 	runExclusive<T>(
 		reason: string,
@@ -219,6 +370,15 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 						Object.freeze({
 							...update,
 							reason: update.reason ?? reason,
+							...(update.sessionPatch
+								? { sessionPatch: Object.freeze([...update.sessionPatch]) }
+								: {}),
+							...(update.lifecycleCommands
+								? { lifecycleCommands: Object.freeze([...update.lifecycleCommands]) }
+								: {}),
+							...(update.retryStartNodes
+								? { retryStartNodes: Object.freeze([...update.retryStartNodes]) }
+								: {}),
 							...(update.restartNodes
 								? { restartNodes: Object.freeze([...update.restartNodes]) }
 								: {}),
@@ -265,7 +425,14 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 		update: QueuedRuntimePluginGraphUpdate,
 	): Promise<PluginApplyReport<TSummary>> {
 		await this.runtimeState.ready
-		if (!update.catalog && !update.statePatch && update.restartNodes !== undefined) {
+		if (
+			!update.catalog &&
+			!update.statePatch &&
+			!update.sessionPatch &&
+			!update.lifecycleCommands &&
+			!update.retryStartNodes &&
+			update.restartNodes !== undefined
+		) {
 			return this.applyRestartOnly(update.reason, update.restartNodes)
 		}
 		for (;;) {
@@ -283,10 +450,34 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 				pinnedState.state,
 				update.statePatch,
 			)
+			assertLifecycleCommandAdmission(proposedCatalog, prospectiveState, update.lifecycleCommands)
+			const baseSession =
+				update.mode === 'cold-boot'
+					? new Map<string, RuntimePluginSessionEntry>()
+					: this.sessionIntents
+			const rebasedSession =
+				update.mode === 'cold-boot'
+					? baseSession
+					: update.statePatch?.operations.some((operation) => operation.type === 'set-auto-start')
+						? rebaseSessionForPolicyPatch(
+								baseSession,
+								this.desiredControl,
+								pinnedState.state,
+								prospectiveState,
+							)
+						: baseSession
+			const commandedSession = applyCanonicalLifecycleCommands(
+				applySessionPatch(rebasedSession, update.sessionPatch),
+				proposedCatalog,
+				prospectiveState,
+				update.lifecycleCommands,
+			)
+			const prospectiveSession = cleanupRemovedSessionIntents(commandedSession, update.statePatch)
 			const initialPlan = reconcilePluginGraph({
 				catalog: proposedCatalog,
 				runtimeState: prospectiveState,
 				runtimeStateRevision: pinnedState.revision,
+				sessionIntents: prospectiveSession,
 				applied: this.applied,
 			})
 			const nextState = applyRuntimeStatePatch(prospectiveState, initialPlan.statePatch)
@@ -295,6 +486,7 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 						catalog: proposedCatalog,
 						runtimeState: nextState,
 						runtimeStateRevision: pinnedState.revision,
+						sessionIntents: prospectiveSession,
 						applied: this.applied,
 					})
 				: initialPlan
@@ -310,8 +502,22 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 
 			if (!this.revisionsMatch(committedCatalog, pinnedState)) continue
 			const operations: CorePluginOperation[] = [...plan.coreOperations]
+			for (const address of update.retryStartNodes ?? []) {
+				const key = pluginNodeKey(address)
+				if (
+					!plan.applied.nodes.has(key) ||
+					this.core.isRunning(address) ||
+					operations.some(
+						(operation) =>
+							operation.type === 'materialize-node' && pluginNodeKey(operation.address) === key,
+					)
+				) {
+					continue
+				}
+				operations.push({ type: 'restart-node', address, cascadeDependents: true })
+			}
 			for (const address of update.restartNodes ?? []) {
-				if (!plan.applied.nodes.has(pluginNodeKey(address))) {
+				if (!plan.applied.nodes.has(pluginNodeKey(address)) || !this.core.isRunning(address)) {
 					throw new PluginRestartUnavailableError(address)
 				}
 				operations.push({
@@ -352,6 +558,8 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 				graphPublished = true
 				this.catalog = proposedCatalog
 				this.definitionRoles = preparedDefinitionRoles
+				this.sessionIntents = prospectiveSession
+				this.desiredControl = plan.desiredControl
 				this.applied = plan.applied
 				this.reconciliation = plan.blocked
 			}
@@ -388,7 +596,9 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 				const key = pluginNodeKey(address)
 				if (seen.has(key)) continue
 				seen.add(key)
-				if (!this.applied.nodes.has(key)) throw new PluginRestartUnavailableError(address)
+				if (!this.applied.nodes.has(key) || !this.core.isRunning(address)) {
+					throw new PluginRestartUnavailableError(address)
+				}
 				operations.push({ type: 'restart-node', address, cascadeDependents: true })
 			}
 
@@ -427,6 +637,9 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 			return await draft.prepare()
 		} catch (error) {
 			draft.rollback()
+			if (error instanceof CorePluginGraphVerificationError) {
+				throw new PluginGraphRejectedError(Object.freeze([]), error)
+			}
 			throw error
 		}
 	}
@@ -455,6 +668,168 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 }
 
 const NOOP_GRAPH_COMMIT = (): void => undefined
+
+function assertLifecycleCommandAdmission(
+	catalog: PluginRouteCatalogSnapshot,
+	state: RuntimeStateSnapshot,
+	commands:
+		| readonly Readonly<{
+				address: PluginNodeAddress
+				desiredState: 'running' | 'stopped'
+		  }>[]
+		| undefined,
+): void {
+	if (!commands || commands.length === 0) return
+	const forkNodeKeys = new Set<string>()
+	for (const family of state.forks) {
+		for (const forkId of family.forkIds) {
+			forkNodeKeys.add(
+				pluginNodeIndexKey({ definition: family.definition, variant: 'fork', forkId }),
+			)
+		}
+	}
+	for (const command of commands) {
+		if (command.desiredState === 'stopped') continue
+		if (isPluginNodeAvailable(catalog, forkNodeKeys, command.address)) continue
+		throw new PluginStartUnavailableError(command.address)
+	}
+}
+
+function isPluginNodeAvailable(
+	catalog: PluginRouteCatalogSnapshot,
+	forkNodeKeys: ReadonlySet<string>,
+	address: PluginNodeAddress,
+): boolean {
+	const definition = catalog.byDefinition.get(pluginDefinitionIndexKey(address.definition))
+	if (!definition) return false
+	if (address.variant === 'default') return true
+	if (!definition.candidate.declaration.forkable) return false
+	return forkNodeKeys.has(pluginNodeIndexKey(address))
+}
+
+function applySessionPatch(
+	current: ReadonlyMap<string, RuntimePluginSessionEntry>,
+	patch:
+		| readonly Readonly<{ address: PluginNodeAddress; intent: PluginSessionIntent }>[]
+		| undefined,
+): ReadonlyMap<string, RuntimePluginSessionEntry> {
+	if (!patch || patch.length === 0) return current
+	const next = new Map(current)
+	for (const operation of patch) {
+		const key = pluginNodeKey(operation.address)
+		if (operation.intent === 'inherit') next.delete(key)
+		else next.set(key, Object.freeze({ address: operation.address, intent: operation.intent }))
+	}
+	return next
+}
+
+function applyCanonicalLifecycleCommands(
+	current: ReadonlyMap<string, RuntimePluginSessionEntry>,
+	catalog: PluginRouteCatalogSnapshot,
+	state: RuntimeStateSnapshot,
+	commands:
+		| readonly Readonly<{
+				address: PluginNodeAddress
+				desiredState: 'running' | 'stopped'
+		  }>[]
+		| undefined,
+): ReadonlyMap<string, RuntimePluginSessionEntry> {
+	if (!commands || commands.length === 0) return current
+	const next = new Map(current)
+	for (const command of commands) {
+		const key = pluginNodeKey(command.address)
+		next.delete(key)
+		const inherited = reconcilePluginGraph({
+			catalog,
+			runtimeState: state,
+			runtimeStateRevision: 0,
+			sessionIntents: next,
+		})
+		const inheritedState = inherited.desiredControl.has(key) ? 'running' : 'stopped'
+		if (command.desiredState === inheritedState) {
+			continue
+		}
+		next.set(
+			key,
+			Object.freeze({
+				address: command.address,
+				intent: command.desiredState === 'running' ? ('run' as const) : ('stop' as const),
+			}),
+		)
+	}
+	return next
+}
+
+/** Keeps the already-requested process state stable while durable cold-boot policy changes. */
+function rebaseSessionForPolicyPatch(
+	current: ReadonlyMap<string, RuntimePluginSessionEntry>,
+	desired: ReadonlyMap<string, RuntimePluginDesiredControl>,
+	before: RuntimeStateSnapshot,
+	after: RuntimeStateSnapshot,
+): ReadonlyMap<string, RuntimePluginSessionEntry> {
+	const beforeByKey = new Map(before.autoStart.map((address) => [pluginNodeKey(address), address]))
+	const afterByKey = new Map(after.autoStart.map((address) => [pluginNodeKey(address), address]))
+	const changed = new Set([...beforeByKey.keys(), ...afterByKey.keys()])
+	const next = new Map(current)
+	let didChange = false
+	for (const key of changed) {
+		const wasAutoStart = beforeByKey.has(key)
+		const autoStart = afterByKey.has(key)
+		if (wasAutoStart === autoStart) continue
+		didChange = true
+		const keepRunning = desired.has(key)
+		if (keepRunning === autoStart) {
+			next.delete(key)
+			continue
+		}
+		const address = afterByKey.get(key) ?? beforeByKey.get(key)
+		if (!address) throw new Error('[runtime:reconciliation] changed auto-start node is missing')
+		next.set(
+			key,
+			Object.freeze({
+				address,
+				intent: keepRunning ? ('run' as const) : ('stop' as const),
+			}),
+		)
+	}
+	return didChange ? next : current
+}
+
+function cleanupRemovedSessionIntents(
+	current: ReadonlyMap<string, RuntimePluginSessionEntry>,
+	patch: RuntimeStatePatch | undefined,
+): ReadonlyMap<string, RuntimePluginSessionEntry> {
+	if (
+		!patch?.operations.some(
+			(operation) => operation.type === 'remove-node-policy' || operation.type === 'remove-fork',
+		)
+	) {
+		return current
+	}
+	const next = new Map(current)
+	for (const operation of patch.operations) {
+		if (operation.type === 'remove-node-policy') {
+			next.delete(pluginNodeKey(operation.node))
+		} else if (operation.type === 'remove-fork') {
+			next.delete(
+				pluginNodeKey({
+					definition: operation.definition,
+					variant: 'fork',
+					forkId: operation.forkId,
+				}),
+			)
+		}
+	}
+	return next
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+	return (
+		value !== null &&
+		(typeof value === 'object' || typeof value === 'function') &&
+		typeof (value as { then?: unknown }).then === 'function'
+	)
+}
 
 function pluginNodeKey(address: PluginNodeAddress): string {
 	return pluginNodeIndexKey(address)

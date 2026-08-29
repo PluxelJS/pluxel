@@ -317,7 +317,7 @@ Plugin 和所有 Part 的 `init()` 成功后，Runtime 会等待 lazy Elysia mod
 会由 Elysia 2 fail-fast。
 
 作者不需要保存 publication handle。配置或源码变化建立新 generation；不要在 running generation 内原地改 route tree。finalization
-失败不会发布部分路由；成功 contribution 与 Core running projection 一起提交。Plugin stop、replacement、rollback 或 disable 后，
+失败不会发布部分路由；成功 contribution 与 Core running projection 一起提交。Plugin stop、replacement 或 rollback 后，
 旧 generation 不再接收新请求。
 
 请求进入 app 前会取得 owner generation lease。返回 streaming `Response` 时，lease 延伸到 body close、cancel 或 error；generation

@@ -11,8 +11,10 @@ export interface PluginStatus {
 	tag?: string
 	sourceKind?: 'hmr' | 'package' | 'unknown'
 	moduleId?: string | null
-	isRunning: boolean
-	isEnabled?: boolean
+	availability: 'available' | 'unavailable'
+	autoStart: boolean
+	desiredState: 'running' | 'stopped'
+	lifecycleState: 'running' | 'stopped'
 }
 
 export interface GroupConfig {

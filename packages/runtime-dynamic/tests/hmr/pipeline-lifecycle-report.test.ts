@@ -14,12 +14,12 @@ import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
 import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 
 import {
-	collectEnabledButStopped,
-	type EnabledButStoppedLookup,
+	collectDesiredButStopped,
+	type DesiredButStoppedLookup,
 	HmrExecutor,
 } from '../../src/hmr/engine/pipeline'
 import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../support/lowered-plugin'
-import { enablePluginsPatch, isEnabled } from '../support/runtime-state'
+import { pluginsAutoStartPatch, isAutoStartEnabled } from '../support/runtime-state'
 
 function createRuntimeHost(config: RuntimeHostConfig = {}) {
 	return createBaseRuntimeHost(
@@ -114,7 +114,7 @@ describe('HmrExecutor transactions', () => {
 			const startup = requireLoaderService(host.ctx).beginBatch()
 			await startup.replaceModule('/dep.ts', { Dep })
 			await startup.replaceModule('/consumer.ts', { Consumer })
-			await startup.commit({ statePatch: enablePluginsPatch(Dep, Consumer) })
+			await startup.commit({ statePatch: pluginsAutoStartPatch(true, Dep, Consumer) })
 
 			const firstConsumer = host.get(Consumer)
 			@Plugin({ displayName: 'Dependency' })
@@ -143,7 +143,7 @@ describe('HmrExecutor transactions', () => {
 		}
 	})
 
-	it('keeps missing-dependency intent enabled while cold boot reports the node as blocked', async () => {
+	it('keeps missing-dependency auto-start policy while reporting the node as desired but stopped', async () => {
 		abstract class Missing extends BasePlugin {}
 		lowerTestAbstract(Missing)
 
@@ -158,7 +158,7 @@ describe('HmrExecutor transactions', () => {
 		const host = createRuntimeHost({
 			runtimeState: {
 				mode: 'memory',
-				snapshot: { enabled: [pluginNodeAddressOf(Broken)] },
+				snapshot: { autoStart: [pluginNodeAddressOf(Broken)] },
 			},
 		})
 		try {
@@ -171,8 +171,7 @@ describe('HmrExecutor transactions', () => {
 			const result = await executor.runAndLoadAllClean(['/broken.ts'])
 
 			expect(result?.commitResult.ok).toBe(true)
-			expect(result?.autoDisabled).toEqual([])
-			expect(isEnabled(host.ctx, Broken)).toBe(true)
+			expect(isAutoStartEnabled(host.ctx, Broken)).toBe(true)
 			expect(host.isRunning(Broken)).toBe(false)
 		} finally {
 			await host.dispose()
@@ -187,7 +186,7 @@ describe('HmrExecutor transactions', () => {
 			lowerTestPlugin(Stable)
 			const startup = requireLoaderService(host.ctx).beginBatch()
 			await startup.replaceModule('/stable.ts', { Stable })
-			await startup.commit({ statePatch: enablePluginsPatch(Stable) })
+			await startup.commit({ statePatch: pluginsAutoStartPatch(true, Stable) })
 			const firstStable = host.require(Stable)
 
 			const executor = createExecutor(host.ctx, {
@@ -201,7 +200,6 @@ describe('HmrExecutor transactions', () => {
 			expect(result?.commitResult.ok).toBe(false)
 			expect(result?.executeError).toBe('syntax error')
 			expect(result?.syncedModules).toEqual([])
-			expect(result?.autoDisabled).toEqual([])
 			expect(host.require(Stable)).toBe(firstStable)
 			expect(requireLoaderService(host.ctx).api.registry.getCtor(pluginNodeAddressOf(Stable))).toBe(
 				Stable,
@@ -212,8 +210,8 @@ describe('HmrExecutor transactions', () => {
 	})
 })
 
-describe('collectEnabledButStopped', () => {
-	it('reports only address-owned stopped nodes in the batch module set', () => {
+describe('collectDesiredButStopped', () => {
+	it('reports only address-owned stopped nodes in the batch module set', async () => {
 		const inBatch: PluginNodeAddress = {
 			definition: {
 				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'consumer.ts' },
@@ -231,21 +229,21 @@ describe('collectEnabledButStopped', () => {
 		const findModuleId = vi.fn((address: PluginNodeAddress) =>
 			pluginNodeAddressEqual(address, inBatch) ? '/consumer.ts' : '/other.ts',
 		)
-		const loader: EnabledButStoppedLookup = {
+		const loader: DesiredButStoppedLookup = {
 			api: {
 				registry: { findModuleId },
 				status: {
-					snapshot: () => ({
+					snapshot: async () => ({
 						statuses: [
-							{ address: inBatch, isEnabled: true, isRunning: false },
-							{ address: elsewhere, isEnabled: true, isRunning: false },
+							{ address: inBatch, desiredState: 'running', lifecycleState: 'stopped' },
+							{ address: elsewhere, desiredState: 'running', lifecycleState: 'stopped' },
 						],
 					}),
 				},
 			},
 		}
 
-		expect(collectEnabledButStopped(loader, new Set(['/consumer.ts']))).toEqual([
+		await expect(collectDesiredButStopped(loader, new Set(['/consumer.ts']))).resolves.toEqual([
 			formatPluginNodeReference(inBatch),
 		])
 		expect(findModuleId).toHaveBeenCalledTimes(2)

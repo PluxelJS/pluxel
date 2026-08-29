@@ -107,14 +107,6 @@ export function WorkspaceEditorGrid({
 		gridRef.current?.moveGroup(pending)
 	}, [editor.groups])
 
-	useEffect(() => {
-		if (!isNarrowViewport) {
-			gridRef.current?.restore()
-			return
-		}
-		if (editor.activeGroupId) gridRef.current?.maximize(editor.activeGroupId)
-	}, [editor.activeGroupId, isNarrowViewport])
-
 	const closeTab = useCallback(
 		(tabId: string) => {
 			if (dirtyTabs[tabId]) {
@@ -259,6 +251,7 @@ export function WorkspaceEditorGrid({
 			<WorkbenchEditorGrid
 				groups={gridGroups}
 				layout={editor.layout}
+				maximizedGroupId={isNarrowViewport ? (editor.activeGroupId ?? undefined) : undefined}
 				onActiveTabsChange={(activeTabs) => {
 					workspace.setActiveTabs(activeTabs)
 					navigateToActiveTab()

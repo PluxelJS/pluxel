@@ -33,7 +33,8 @@ describe('AgentToolsService', () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
 			host.add(NotesCommands)
-			host.cfg(NotesCommands).enable()
+			host.cfg(NotesCommands).setAutoStart(true)
+			host.start(NotesCommands)
 			await host.commit()
 
 			const initial = await host.ctx.agentTools.snapshot()
@@ -113,7 +114,8 @@ describe('AgentToolsService', () => {
 			})
 
 			host.add(NotesCommands)
-			host.cfg(NotesCommands).enable()
+			host.cfg(NotesCommands).setAutoStart(true)
+			host.start(NotesCommands)
 			await host.commit()
 			expect(catalog.list().map(({ name }) => name)).toEqual(['notes.read'])
 			expect(published).toEqual(['notes.read'])

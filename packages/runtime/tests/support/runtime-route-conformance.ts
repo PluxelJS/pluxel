@@ -46,14 +46,14 @@ export type RuntimeRouteConformanceFixture = Readonly<{
 	replacementPlugins: readonly PluginConstructor[]
 	WorkerV2: PluginConstructor
 	addresses: Readonly<{
-		disabled: PluginNodeAddress
+		stopped: PluginNodeAddress
 		worker: PluginNodeAddress
 		east: PluginNodeAddress
 		west: PluginNodeAddress
 		consumer: PluginNodeAddress
 	}>
 	runtimeState: Readonly<{
-		enabled: readonly PluginNodeAddress[]
+		autoStart: readonly PluginNodeAddress[]
 		forks: readonly Readonly<{
 			definition: PluginNodeAddress['definition']
 			forkIds: readonly string[]
@@ -103,7 +103,7 @@ const RouteConfigSchema = {
 /** Register the same black-box graph contract against one real route catalog adapter. */
 export function runtimeRouteConformance(adapter: RuntimeRouteConformanceAdapter): void {
 	describe(`${adapter.name} runtime route conformance`, () => {
-		it('keeps disabled catalog definitions unmaterialized', async () => {
+		it('keeps stopped catalog definitions unmaterialized', async () => {
 			const fixture = createFixture()
 			const host = await adapter.create(fixture)
 			try {
@@ -115,13 +115,13 @@ export function runtimeRouteConformance(adapter: RuntimeRouteConformanceAdapter)
 						.entries.some((entry) =>
 							pluginNodeAddressEqual(
 								{ definition: entry.address, variant: 'default' },
-								fixture.addresses.disabled,
+								fixture.addresses.stopped,
 							),
 						),
 				).toBe(true)
-				expect(registry.isMaterialized(fixture.addresses.disabled)).toBe(false)
-				expect(registry.isRunning(fixture.addresses.disabled)).toBe(false)
-				expect(registry.getInstance(fixture.addresses.disabled)).toBeUndefined()
+				expect(registry.isMaterialized(fixture.addresses.stopped)).toBe(false)
+				expect(registry.isRunning(fixture.addresses.stopped)).toBe(false)
+				expect(registry.getInstance(fixture.addresses.stopped)).toBeUndefined()
 			} finally {
 				await host.dispose()
 			}
@@ -145,7 +145,7 @@ export function runtimeRouteConformance(adapter: RuntimeRouteConformanceAdapter)
 
 				await coordinator.updateRuntimeState(
 					runtimeStatePatch(
-						{ type: 'set-enabled', node: fixture.addresses.east, enabled: false },
+						{ type: 'set-auto-start', node: fixture.addresses.east, autoStart: false },
 						{
 							type: 'remove-fork',
 							definition: fixture.addresses.worker.definition,
@@ -295,10 +295,10 @@ export function runtimeRouteConformance(adapter: RuntimeRouteConformanceAdapter)
 					expect(registry.isRunning(address)).toBe(false)
 				}
 				const retainedState = state.snapshot()
-				expect(retainedState.enabled).toHaveLength(fixture.runtimeState.enabled.length)
-				for (const address of fixture.runtimeState.enabled) {
+				expect(retainedState.autoStart).toHaveLength(fixture.runtimeState.autoStart.length)
+				for (const address of fixture.runtimeState.autoStart) {
 					expect(
-						retainedState.enabled.some((candidate) => pluginNodeAddressEqual(candidate, address)),
+						retainedState.autoStart.some((candidate) => pluginNodeAddressEqual(candidate, address)),
 					).toBe(true)
 				}
 				expect(retainedState.forks).toEqual(fixture.runtimeState.forks)
@@ -383,18 +383,18 @@ function createFixture(): RuntimeRouteConformanceFixture {
 		}
 	}
 
-	class Disabled extends BasePlugin {}
+	class Stopped extends BasePlugin {}
 
 	Plugin({ displayName: 'Route Worker', forkable: true })(WorkerV1)
 	Plugin({ displayName: 'Route Worker v2', forkable: true })(WorkerV2)
 	Plugin({ displayName: 'Route Consumer' })(Consumer)
-	Plugin({ displayName: 'Route Disabled' })(Disabled)
+	Plugin({ displayName: 'Route Stopped' })(Stopped)
 
 	const workerDefinition = definitionAddress('Worker')
 	setDefinition(WorkerV1, workerDefinition)
 	setDefinition(WorkerV2, workerDefinition)
 	setDefinition(Consumer, definitionAddress('Consumer'), [workerDefinition])
-	setDefinition(Disabled, definitionAddress('Disabled'))
+	setDefinition(Stopped, definitionAddress('Stopped'))
 	for (const Worker of [WorkerV1, WorkerV2]) {
 		__setPluginConfig(Worker, {
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
@@ -407,15 +407,15 @@ function createFixture(): RuntimeRouteConformanceFixture {
 	const east = forkAddress(worker, 'east')
 	const west = forkAddress(worker, 'west')
 	const consumer = pluginNodeAddressOf(Consumer)
-	const disabled = pluginNodeAddressOf(Disabled)
+	const stopped = pluginNodeAddressOf(Stopped)
 	return {
-		initialPlugins: Object.freeze([Disabled, WorkerV1, Consumer]),
-		withoutWorkerPlugins: Object.freeze([Disabled, Consumer]),
-		replacementPlugins: Object.freeze([Disabled, WorkerV2, Consumer]),
+		initialPlugins: Object.freeze([Stopped, WorkerV1, Consumer]),
+		withoutWorkerPlugins: Object.freeze([Stopped, Consumer]),
+		replacementPlugins: Object.freeze([Stopped, WorkerV2, Consumer]),
 		WorkerV2,
-		addresses: Object.freeze({ disabled, worker, east, west, consumer }),
+		addresses: Object.freeze({ stopped, worker, east, west, consumer }),
 		runtimeState: Object.freeze({
-			enabled: Object.freeze([worker, east, west, consumer]),
+			autoStart: Object.freeze([worker, east, west, consumer]),
 			forks: Object.freeze([
 				Object.freeze({
 					definition: worker.definition,

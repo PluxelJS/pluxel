@@ -97,8 +97,10 @@ function buildStatuses(count: number): PluginStatuses {
 		const pluginId = `plugin-${String(index).padStart(3, '0')}`
 		statuses[pluginId] = {
 			name: `Plugin ${String(index).padStart(3, '0')}`,
-			isRunning: index % 3 === 0,
-			isEnabled: index % 7 !== 0,
+			availability: index % 7 === 0 ? 'unavailable' : 'available',
+			autoStart: index % 2 === 0,
+			desiredState: index % 3 === 0 ? 'running' : 'stopped',
+			lifecycleState: index % 3 === 0 ? 'running' : 'stopped',
 			sourceKind: index % 5 === 0 ? 'hmr' : 'package',
 			moduleId: index % 5 === 0 ? `/workspace/demo-${Math.floor(index / 5)}/index.ts` : undefined,
 			tag: index % 2 === 0 ? 'stable' : 'beta',

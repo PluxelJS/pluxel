@@ -302,7 +302,8 @@ describe('Plugin config application scope', () => {
 	it('serializes a config patch requested during fork removal after final durable removal', async () => {
 		const host = runtimeHost()
 		const fork = host.fork(ConfigFork, 'exclusive-remove')
-		host.cfg(fork).enable()
+		host.cfg(fork).setAutoStart(true)
+		host.start(fork)
 		await host.commit()
 		const configService = requireConfigService(host.ctx)
 		const originalFlush = configService.flush.bind(configService)
@@ -334,7 +335,8 @@ describe('Plugin config application scope', () => {
 	it('keeps catalog replacement outside config validation, persistence, and restart', async () => {
 		const host = runtimeHost()
 		host.add(ConfigOwner)
-		host.cfg(ConfigOwner).enable()
+		host.cfg(ConfigOwner).setAutoStart(true)
+		host.start(ConfigOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(ConfigOwner)
 		const configService = requireConfigService(host.ctx)
@@ -365,7 +367,8 @@ describe('Plugin config application scope', () => {
 	it('durably saves and notifies one running default generation', async () => {
 		const host = runtimeHost()
 		host.add(ConfigOwner)
-		host.cfg(ConfigOwner).enable()
+		host.cfg(ConfigOwner).setAutoStart(true)
+		host.start(ConfigOwner)
 		await host.commit()
 
 		const owner = pluginNodeAddressOf(ConfigOwner)
@@ -390,7 +393,8 @@ describe('Plugin config application scope', () => {
 	it('reports a successfully started generation as the applied desired revision', async () => {
 		const host = runtimeHost()
 		host.add(ConfigOwner)
-		host.cfg(ConfigOwner).enable()
+		host.cfg(ConfigOwner).setAutoStart(true)
+		host.start(ConfigOwner)
 		await host.commit()
 
 		const result = await pluginConfigGet(host.ctx, pluginNodeAddressOf(ConfigOwner))
@@ -403,8 +407,10 @@ describe('Plugin config application scope', () => {
 		const host = runtimeHost()
 		const East = host.fork(ConfigFork, 'east')
 		const West = host.fork(ConfigFork, 'west')
-		host.cfg(East).enable()
-		host.cfg(West).enable()
+		host.cfg(East).setAutoStart(true)
+		host.start(East)
+		host.cfg(West).setAutoStart(true)
+		host.start(West)
 		await host.commit()
 
 		const east = East
@@ -447,7 +453,8 @@ describe('Plugin config application scope', () => {
 	it('keeps desired config after a listener failure and reports it as not applied', async () => {
 		const host = runtimeHost()
 		host.add(FailingConfigOwner)
-		host.cfg(FailingConfigOwner).enable()
+		host.cfg(FailingConfigOwner).setAutoStart(true)
+		host.start(FailingConfigOwner)
 		await host.commit()
 
 		const owner = pluginNodeAddressOf(FailingConfigOwner)
@@ -471,7 +478,8 @@ describe('Plugin config application scope', () => {
 	it('saves without notifying when a running declaration has no listener', async () => {
 		const host = runtimeHost()
 		host.add(ConfigWithoutListener)
-		host.cfg(ConfigWithoutListener).enable()
+		host.cfg(ConfigWithoutListener).setAutoStart(true)
+		host.start(ConfigWithoutListener)
 		await host.commit()
 		const owner = pluginNodeAddressOf(ConfigWithoutListener)
 		const generation = host.require(ConfigWithoutListener)
@@ -492,7 +500,8 @@ describe('Plugin config application scope', () => {
 	it('notifies nested Part declarations before the owner and advances one revision', async () => {
 		const host = runtimeHost()
 		host.add(ConfigPartOwner)
-		host.cfg(ConfigPartOwner).enable()
+		host.cfg(ConfigPartOwner).setAutoStart(true)
+		host.start(ConfigPartOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(ConfigPartOwner)
 		const generation = host.require(ConfigPartOwner)
@@ -515,7 +524,8 @@ describe('Plugin config application scope', () => {
 	it('does not notify any declaration when one changed Part has no listener', async () => {
 		const host = runtimeHost()
 		host.add(IncompleteConfigOwner)
-		host.cfg(IncompleteConfigOwner).enable()
+		host.cfg(IncompleteConfigOwner).setAutoStart(true)
+		host.start(IncompleteConfigOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(IncompleteConfigOwner)
 		const generation = host.require(IncompleteConfigOwner)
@@ -538,7 +548,8 @@ describe('Plugin config application scope', () => {
 	it('keeps framework fields unconfirmed while allowing earlier listener side effects', async () => {
 		const host = runtimeHost()
 		host.add(PartiallyAppliedOwner)
-		host.cfg(PartiallyAppliedOwner).enable()
+		host.cfg(PartiallyAppliedOwner).setAutoStart(true)
+		host.start(PartiallyAppliedOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(PartiallyAppliedOwner)
 		const generation = host.require(PartiallyAppliedOwner)
@@ -563,7 +574,8 @@ describe('Plugin config application scope', () => {
 	it('rejects update listener registration outside init or with a forged object', async () => {
 		const host = runtimeHost()
 		host.add(ConfigOwner)
-		host.cfg(ConfigOwner).enable()
+		host.cfg(ConfigOwner).setAutoStart(true)
+		host.start(ConfigOwner)
 		await host.commit()
 		const generation = host.require(ConfigOwner)
 
@@ -574,8 +586,10 @@ describe('Plugin config application scope', () => {
 	it('rejects cross-owner registration while independent init windows overlap', async () => {
 		const host = runtimeHost({ plugins: { startConcurrency: 2 } })
 		host.add([ConcurrentConfigOwner, ConcurrentConfigBorrower])
-		host.cfg(ConcurrentConfigOwner).enable()
-		host.cfg(ConcurrentConfigBorrower).enable()
+		host.cfg(ConcurrentConfigOwner).setAutoStart(true)
+		host.start(ConcurrentConfigOwner)
+		host.cfg(ConcurrentConfigBorrower).setAutoStart(true)
+		host.start(ConcurrentConfigBorrower)
 		await host.commit()
 
 		expect(crossOwnerRegistrationError).toBeInstanceOf(Error)
@@ -592,7 +606,8 @@ describe('Plugin config application scope', () => {
 	it('aborts an admitted listener and rejects its acknowledgement after replacement', async () => {
 		const host = runtimeHost()
 		host.add(WithdrawnConfigOwner)
-		host.cfg(WithdrawnConfigOwner).enable()
+		host.cfg(WithdrawnConfigOwner).setAutoStart(true)
+		host.start(WithdrawnConfigOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(WithdrawnConfigOwner)
 		const generation = host.require(WithdrawnConfigOwner)
@@ -621,7 +636,8 @@ describe('Plugin config application scope', () => {
 	it('fails generation init on duplicate listener registration', async () => {
 		const host = runtimeHost()
 		host.add(DuplicateConfigListenerOwner)
-		host.cfg(DuplicateConfigListenerOwner).enable()
+		host.cfg(DuplicateConfigListenerOwner).setAutoStart(true)
+		host.start(DuplicateConfigListenerOwner)
 		const summary = await host.commitAllowFail()
 
 		expect(host.isRunning(DuplicateConfigListenerOwner)).toBe(false)
@@ -638,7 +654,8 @@ describe('Plugin config application scope', () => {
 	it('retries from the last confirmed snapshot after an earlier listener failure', async () => {
 		const host = runtimeHost()
 		host.add(RetryConfigOwner)
-		host.cfg(RetryConfigOwner).enable()
+		host.cfg(RetryConfigOwner).setAutoStart(true)
+		host.start(RetryConfigOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(RetryConfigOwner)
 		const generation = host.require(RetryConfigOwner)
@@ -662,7 +679,8 @@ describe('Plugin config application scope', () => {
 	it('confirms an equivalent normalized snapshot without invoking the listener', async () => {
 		const host = runtimeHost()
 		host.add(ConfigOwner)
-		host.cfg(ConfigOwner).enable()
+		host.cfg(ConfigOwner).setAutoStart(true)
+		host.start(ConfigOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(ConfigOwner)
 
@@ -677,7 +695,8 @@ describe('Plugin config application scope', () => {
 		const host = runtimeHost()
 		host.add(SingleValidationOwner)
 		host.cfg(SingleValidationOwner).set({ value: 'initial' })
-		host.cfg(SingleValidationOwner).enable()
+		host.cfg(SingleValidationOwner).setAutoStart(true)
+		host.start(SingleValidationOwner)
 		await host.commit()
 		expect(host.isRunning(SingleValidationOwner)).toBe(true)
 		expect(singleValidationStarts).toEqual(['initial:validated'])
@@ -755,7 +774,8 @@ describe('ConfigService persistence', () => {
 			state: 'unknown',
 			config: { value: 'desired' },
 		})
-		host.cfg(ConfigOwner).enable()
+		host.cfg(ConfigOwner).setAutoStart(true)
+		host.start(ConfigOwner)
 		const unconfirmed = await host.commitAllowFail()
 		expect(unconfirmed.lifecycleReport.issues).toEqual(
 			expect.arrayContaining([

@@ -291,6 +291,7 @@ export const logRoutes = (app: AnyHostElysiaApp) =>
 							let pendingLines = 0
 							let pendingBytes = 0
 							let draining = false
+							let drainFailure: Error | undefined
 							let cursorN = parseSeq(cursor) ?? parseSeq(meta.nextSeq) ?? 1n
 							let lastPingAt = Date.now()
 
@@ -447,6 +448,15 @@ export const logRoutes = (app: AnyHostElysiaApp) =>
 									draining = false
 								}
 							}
+							const scheduleDrain = () => {
+								void drain().catch((cause: unknown) => {
+									drainFailure =
+										cause instanceof Error
+											? cause
+											: new Error('[runtime:logs] SSE drain failed', { cause })
+									aborted = true
+								})
+							}
 
 							// During connect/catch-up, buffer appends to avoid advancing the cursor out-of-order.
 							// The catch-up loop replays authoritative history from the store; buffered appends
@@ -481,7 +491,7 @@ export const logRoutes = (app: AnyHostElysiaApp) =>
 									pushMsg({ kind: 'reset', json, bytes: json.length })
 									const next = parseSeq(event.nextSeq)
 									if (next !== null) cursorN = next
-									void drain()
+									scheduleDrain()
 									return
 								}
 
@@ -492,13 +502,13 @@ export const logRoutes = (app: AnyHostElysiaApp) =>
 									if (bufferedAppendLines > maxBufferedAppendLines) {
 										clearBufferedAppends()
 										overflowToGap()
-										void drain()
+										scheduleDrain()
 									}
 									return
 								}
 
 								enqueueAppendLines(event.fromSeq, event.nextSeq, event.lines)
-								void drain()
+								scheduleDrain()
 							}
 
 							const unsubscribe = store.subscribe(onStoreEvent)
@@ -551,9 +561,10 @@ export const logRoutes = (app: AnyHostElysiaApp) =>
 
 								while (!aborted) {
 									enqueuePing()
-									void drain()
+									scheduleDrain()
 									await sse.sleep(1000)
 								}
+								if (drainFailure) throw drainFailure
 							} finally {
 								unsubscribe()
 							}

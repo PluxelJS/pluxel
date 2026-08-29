@@ -7,7 +7,7 @@ import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 const PluginConfig = v.object({
 	enabled: v.pipe(
 		v.optional(v.boolean(), true),
-		f.formMeta({ title: '启用插件', description: '用于演示插件级配置' }),
+		f.formMeta({ title: '启用示例服务', description: '用于演示 Plugin 内部业务开关' }),
 	),
 	cache: v.object({
 		enabled: v.pipe(

@@ -38,7 +38,15 @@ export default defineConfig({
 			input: resolve(__dirname, '../workbench-app/src/client.tsx'),
 			output: {
 				codeSplitting: {
-					groups: createPluxelUiChunkGroups(),
+					groups: [
+						{
+							name: 'plugin-graph-vendor',
+							test: /[\\/]node_modules[\\/](@xyflow|@dagrejs)[\\/]/,
+							priority: 100,
+							entriesAware: true,
+						},
+						...createPluxelUiChunkGroups(),
+					],
 				},
 			},
 		},

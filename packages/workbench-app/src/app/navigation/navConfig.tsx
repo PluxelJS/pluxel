@@ -6,6 +6,7 @@ import {
 	IconBrandTelegram,
 	IconBuilding,
 	IconChartBar,
+	IconChartDots3,
 	IconCloudUpload,
 	IconHistory,
 	IconHome2,
@@ -49,6 +50,7 @@ const builtinWorkbenchIconMap = {
 	security: IconShieldLock,
 	'agent-tools': IconRobot,
 	plugins: IconPuzzle,
+	'plugin-graph': IconChartDots3,
 } satisfies Record<BuiltinWorkbenchIcon, Icon>
 
 export const baseNavItems: NavItem[] = BUILTIN_WORKBENCH_ROUTES.filter(

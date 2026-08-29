@@ -150,7 +150,8 @@ describe('host Management access boundary', () => {
 	it('publishes a ready provider only after its Plugin generation is running', async () => {
 		host = createRemoteHost()
 		host.add(FixtureManagementAuthPlugin)
-		host.cfg(FixtureManagementAuthPlugin).enable()
+		host.cfg(FixtureManagementAuthPlugin).setAutoStart(true)
+		host.start(FixtureManagementAuthPlugin)
 
 		const beforeCommit = await host.fetch(request(`${RUNTIME_INTERNAL_API_BASE}/meta`))
 		expect(beforeCommit.status).toBe(403)
@@ -177,7 +178,8 @@ describe('host Management access boundary', () => {
 			principal: { subject: 'account-1', displayName: 'Admin' },
 		}
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 
 		const [management, business] = await Promise.all([
 			host.fetch(request(`${RUNTIME_INTERNAL_API_BASE}/meta`)),
@@ -194,7 +196,8 @@ describe('host Management access boundary', () => {
 			{ management: {}, workbench: { enabled: true }, vault: {} },
 			{ requestAddress: peer('127.0.0.1') },
 		)
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 
 		const challenged = await host.fetch(request(`${RUNTIME_INTERNAL_API_BASE}/meta`))
 		expect(challenged.status).toBe(401)
@@ -220,7 +223,8 @@ describe('host Management access boundary', () => {
 	it('rejects an insecure remote Management request before invoking a ready provider', async () => {
 		providerDecision = { allow: true, principal: { subject: 'admin' } }
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 
 		const response = await host.fetch(insecureRequest(`${RUNTIME_INTERNAL_API_BASE}/meta`))
 		expect(response.status).toBe(403)
@@ -233,7 +237,8 @@ describe('host Management access boundary', () => {
 
 	it('rejects an insecure remote authentication entry before invoking a ready provider', async () => {
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 
 		const [landing, state] = await Promise.all([
 			host.fetch(insecureRequest(RUNTIME_ADMIN_ACCESS_BASE)),
@@ -253,7 +258,8 @@ describe('host Management access boundary', () => {
 			return { allow: true, principal: { subject: 'admin' } }
 		}
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 
 		const response = await host.fetch(
 			request(`${RUNTIME_INTERNAL_API_BASE}/security/vault/unlock`, {
@@ -281,7 +287,8 @@ describe('host Management access boundary', () => {
 			return { allow: false, reason: 'unavailable' }
 		}
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 		const controller = new AbortController()
 		const pending = host.fetch(
 			request(`${RUNTIME_INTERNAL_API_BASE}/meta`, { signal: controller.signal }),
@@ -305,7 +312,8 @@ describe('host Management access boundary', () => {
 			return response.promise
 		}
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 		const pendingEntry = host.fetch(request(`${RUNTIME_ADMIN_ACCESS_BASE}/login`))
 		await entered.promise
 		host.remove(FixtureManagementAuthPlugin)
@@ -331,7 +339,8 @@ describe('host Management access boundary', () => {
 			return response
 		}
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 
 		const entry = await host.fetch(request(`${RUNTIME_ADMIN_ACCESS_BASE}/login`))
 		expect(entry.status).toBe(503)
@@ -342,7 +351,8 @@ describe('host Management access boundary', () => {
 
 	it('reports a broken provider as unavailable instead of suggesting local setup', async () => {
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 		providerStatusError = new Error('status failed')
 
 		const [entry, state, api] = await Promise.all([
@@ -359,7 +369,8 @@ describe('host Management access boundary', () => {
 	it('treats a running but unready provider as local setup required and revokes on stop', async () => {
 		providerReady = false
 		host = createRemoteHost()
-		await host.start(FixtureManagementAuthPlugin)
+		host.add(FixtureManagementAuthPlugin).start(FixtureManagementAuthPlugin)
+		await host.commit()
 		const unavailable = await host.fetch(request(`${RUNTIME_INTERNAL_API_BASE}/meta`))
 		expect(unavailable.status).toBe(403)
 		expect(authorizeCalls).toBe(0)

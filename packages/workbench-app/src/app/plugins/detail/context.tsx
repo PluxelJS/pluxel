@@ -1,12 +1,9 @@
 // context.tsx
 import { createContext, useContext, type ReactNode } from 'react'
 import type { PluginSourceSnapshot } from '../../../runtime'
-import type {
-	PluginDependency,
-	PluginStatusEntry,
-	PluginStatusEntryLifecycleStage,
-} from '../pluginOverview'
+import type { PluginStatusEntry } from '../pluginOverview'
 import type { PluginNodeAddress } from '@pluxel/core'
+import type { PluginDependencyDetail } from '../pluginDependencyGraphSelectors'
 
 export type PluginSourceKind = PluginSourceSnapshot['kind']
 
@@ -23,19 +20,15 @@ export interface PluginScopeContextValue {
 	pluginRoute: string
 	pluginLabel: string
 	description: string
-	dependencies: readonly PluginDependency[]
-	status: PluginStatusEntry | null
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: PluginStatusEntryLifecycleStage
-	isSyncing: boolean
+	dependencyGraph: Readonly<{
+		detail: PluginDependencyDetail | null
+		isLoading: boolean
+		isStale: boolean
+		error?: string
+	}>
+	status: PluginStatusEntry
 	source: PluginSourceInfo
 	refetch: () => Promise<void>
-	setStatusOverride?: (next: {
-		isRunning: boolean
-		isEnabled: boolean
-		lifecycleStage: PluginStatusEntryLifecycleStage
-	}) => void
 }
 
 const Ctx = createContext<PluginScopeContextValue | null>(null)
@@ -64,25 +57,10 @@ export function usePluginMeta() {
 		pluginLabel: ctx.pluginLabel,
 		description: ctx.description,
 		status: ctx.status,
-		isRunning: ctx.isRunning,
-		isEnabled: ctx.isEnabled,
-		lifecycleStage: ctx.lifecycleStage,
-		isSyncing: ctx.isSyncing,
 		source: ctx.source,
 	}
 }
 
-export function usePluginStatus() {
-	const ctx = usePluginScope()
-	return {
-		status: ctx.status,
-		isRunning: ctx.isRunning,
-		isEnabled: ctx.isEnabled,
-		lifecycleStage: ctx.lifecycleStage,
-		source: ctx.source,
-	}
-}
-
-export function usePluginDependencies() {
-	return usePluginScope().dependencies
+export function usePluginDependencyDetail() {
+	return usePluginScope().dependencyGraph
 }

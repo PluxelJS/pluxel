@@ -254,7 +254,6 @@ function sanitizeEditorState(
 	value: unknown,
 	tabs: readonly WorkbenchTab[],
 	duplicateTabIds: ReadonlyMap<string, string>,
-	legacyActiveTabId?: string,
 ): WorkbenchEditorState {
 	if (tabs.length === 0) return { activeGroupId: null, groups: [], layout: undefined }
 	const tabIds = new Set(tabs.map((tab) => tab.instanceId))
@@ -295,24 +294,19 @@ function sanitizeEditorState(
 		.map((tab) => tab.instanceId)
 		.filter((tabId) => !assignedTabIds.has(tabId))
 	if (groups.length === 0) {
-		const preferred = duplicateTabIds.get(legacyActiveTabId ?? '') ?? legacyActiveTabId
 		groups.push({
 			id: DEFAULT_EDITOR_GROUP_ID,
 			tabIds: unassignedTabIds,
-			activeTabId: unassignedTabIds.includes(preferred ?? '') ? preferred! : unassignedTabIds[0]!,
+			activeTabId: unassignedTabIds[0]!,
 		})
 	} else if (unassignedTabIds.length > 0) {
 		groups[0] = { ...groups[0]!, tabIds: [...groups[0]!.tabIds, ...unassignedTabIds] }
 	}
 	const requestedActiveGroupId =
 		typeof editorRecord.activeGroupId === 'string' ? editorRecord.activeGroupId : undefined
-	const legacyResolvedTabId = duplicateTabIds.get(legacyActiveTabId ?? '') ?? legacyActiveTabId
-	const legacyGroup = legacyResolvedTabId
-		? groups.find((group) => group.tabIds.includes(legacyResolvedTabId))
-		: undefined
 	const activeGroupId = groups.some((group) => group.id === requestedActiveGroupId)
 		? requestedActiveGroupId!
-		: (legacyGroup?.id ?? groups[0]!.id)
+		: groups[0]!.id
 	return {
 		activeGroupId,
 		groups,
@@ -323,21 +317,12 @@ function sanitizeEditorState(
 	}
 }
 
-function sanitizeWorkbenchUiState(value: unknown, legacy = false): WorkbenchUiState {
+function sanitizeWorkbenchUiState(value: unknown): WorkbenchUiState {
 	if (!isRecord(value)) return createDefaultWorkbenchUiState()
 	const { duplicateTabIds, tabs } = sanitizeTabs(value.tabs)
-	const legacyActiveTabId =
-		typeof value.activeTabId === 'string'
-			? (duplicateTabIds.get(value.activeTabId) ?? value.activeTabId)
-			: undefined
 	const retainedInstanceIds = new Set(tabs.map((tab) => tab.instanceId))
 	return {
-		editor: sanitizeEditorState(
-			legacy ? undefined : value.editor,
-			tabs,
-			duplicateTabIds,
-			legacyActiveTabId,
-		),
+		editor: sanitizeEditorState(value.editor, tabs, duplicateTabIds),
 		navigationCollapsed: value.navigationCollapsed !== false,
 		pluginPane: sanitizePluginPaneState(value.pluginPane),
 		tabState: sanitizeWorkbenchTabState(value.tabState, retainedInstanceIds),
@@ -360,7 +345,6 @@ export function createPersistedWorkbenchState(state: WorkbenchUiState) {
 export function restoreWorkbenchState(value: unknown): WorkbenchUiState {
 	if (!isRecord(value)) return createDefaultWorkbenchUiState()
 	if (value.version === WORKBENCH_STORAGE_VERSION) return sanitizeWorkbenchUiState(value.state)
-	if (value.version === 3) return sanitizeWorkbenchUiState(value.state, true)
 	return createDefaultWorkbenchUiState()
 }
 

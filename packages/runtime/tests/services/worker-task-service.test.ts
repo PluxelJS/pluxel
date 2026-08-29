@@ -136,8 +136,10 @@ describe('WorkerTaskService', () => {
 		const host = createWorkerHost({ maxThreads: 1 })
 		try {
 			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
-			host.cfg(WorkerTaskConsumerA).enable()
-			host.cfg(WorkerTaskConsumerB).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerB).setAutoStart(true)
+			host.start(WorkerTaskConsumerB)
 			await host.commit()
 
 			const rootView = host.ctx.workers
@@ -167,7 +169,8 @@ describe('WorkerTaskService', () => {
 			}
 			expect(rootWorkers.state?.pool).toBeUndefined()
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 
 			const result = await host.require(WorkerTaskConsumerA).run({ label: 'worker', delay: 0 })
@@ -189,7 +192,8 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const bytes = new Uint8Array(64 * 1024)
 			bytes[0] = 17
@@ -213,7 +217,8 @@ describe('WorkerTaskService', () => {
 		const host = createWorkerHost({ maxThreads: 1 })
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const occupied = consumer.run({ label: 'occupied', delay: 50 })
@@ -236,7 +241,8 @@ describe('WorkerTaskService', () => {
 		const host = createWorkerHost()
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			await expect(host.require(WorkerTaskConsumerA).prepareWithTransfer()).rejects.toMatchObject<
 				Partial<WorkerTaskError>
@@ -250,7 +256,8 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const bytes = new Uint8Array(16)
 			const buffer = bytes.buffer
@@ -268,8 +275,10 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
-			host.cfg(WorkerTaskConsumerA).enable()
-			host.cfg(WorkerTaskConsumerB).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerB).setAutoStart(true)
+			host.start(WorkerTaskConsumerB)
 			await host.commit()
 			const a = host.require(WorkerTaskConsumerA)
 			const b = host.require(WorkerTaskConsumerB)
@@ -305,7 +314,8 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const running = consumer.run({ label: 'running', delay: 20 })
@@ -337,7 +347,8 @@ describe('WorkerTaskService', () => {
 		})
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const reserved = consumer.run({ label: 'reserved', delay: 0 })
@@ -363,7 +374,8 @@ describe('WorkerTaskService', () => {
 		})
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const running = consumer.run({ label: 'running', delay: 20 })
@@ -385,8 +397,10 @@ describe('WorkerTaskService', () => {
 		})
 		try {
 			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
-			host.cfg(WorkerTaskConsumerA).enable()
-			host.cfg(WorkerTaskConsumerB).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerB).setAutoStart(true)
+			host.start(WorkerTaskConsumerB)
 			await host.commit()
 			const a = host.require(WorkerTaskConsumerA)
 			const b = host.require(WorkerTaskConsumerB)
@@ -414,7 +428,8 @@ describe('WorkerTaskService', () => {
 		})
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			await consumer.run({ label: 'warm', delay: 0 })
@@ -446,7 +461,8 @@ describe('WorkerTaskService', () => {
 		const host = createWorkerHost({ maxThreads: 1 })
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			let entered!: () => void
 			const prepared = new Promise<void>((resolve) => {
@@ -473,7 +489,8 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const running = consumer.run({ label: 'running', delay: 20 })
@@ -496,7 +513,8 @@ describe('WorkerTaskService', () => {
 		let releaseTermination = (): void => undefined
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			await consumer.run({ label: 'warm', delay: 0 })
@@ -532,7 +550,8 @@ describe('WorkerTaskService', () => {
 		let releaseTermination = (): void => undefined
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			await host.require(WorkerTaskConsumerA).run({ label: 'warm', delay: 0 })
 			const held = holdCurrentWorkerTermination(host)

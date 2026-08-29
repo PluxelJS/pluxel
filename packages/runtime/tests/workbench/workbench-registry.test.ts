@@ -54,7 +54,8 @@ async function fixture(): Promise<{
 	const host = createRuntimeHost({ workbench: false })
 	for (const PluginCtor of Object.values(TEST_PLUGINS)) {
 		host.add(PluginCtor)
-		host.cfg(PluginCtor).enable()
+		host.cfg(PluginCtor).setAutoStart(true)
+		host.start(PluginCtor)
 	}
 	await host.commit()
 	const pluginService = requirePluginService(host.ctx)

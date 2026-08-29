@@ -32,7 +32,8 @@ export type SortableRowProps = {
 	pid: string
 	name: string
 	running?: boolean
-	enabled?: boolean
+	available?: boolean
+	desiredRunning?: boolean
 	selected: boolean
 	active: boolean
 	focused: boolean
@@ -48,7 +49,8 @@ const SortableRowComponent = ({
 	pid,
 	name,
 	running,
-	enabled,
+	available,
+	desiredRunning,
 	selected,
 	active,
 	focused,
@@ -74,6 +76,17 @@ const SortableRowComponent = ({
 	const rowColorValue = 'var(--plx-text)'
 	const metaColorValue = active ? 'var(--plx-accent-strong)' : 'var(--plx-text-muted)'
 	const separatorColor = 'color-mix(in srgb, var(--plx-panel-border) 84%, transparent)'
+	const statusLabel =
+		available === false ? '不可用' : running ? '运行中' : desiredRunning ? '等待运行' : '已停止'
+	const statusColor = running
+		? isDark
+			? rgba(theme.colors.teal[4], 0.85)
+			: rgba(theme.colors.teal[6], 0.8)
+		: available === false
+			? rgba(theme.colors.red[6], 0.8)
+			: desiredRunning
+				? rgba(theme.colors.yellow[6], 0.8)
+				: 'color-mix(in srgb, var(--plx-text-muted) 88%, transparent)'
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: sortableId,
@@ -269,13 +282,9 @@ const SortableRowComponent = ({
 			</Box>
 
 			{typeof running === 'boolean' && (
-				<Group
-					gap={showStatusLabel ? 6 : 4}
-					wrap="nowrap"
-					aria-label={running ? '运行' : enabled === false ? '禁用' : '停止'}
-				>
+				<Group gap={showStatusLabel ? 6 : 4} wrap="nowrap" aria-label={statusLabel}>
 					<Tooltip
-						label={running ? '运行' : enabled === false ? '禁用' : '停止'}
+						label={statusLabel}
 						withinPortal
 						withArrow
 						disabled={showStatusLabel}
@@ -288,17 +297,13 @@ const SortableRowComponent = ({
 								width: 6,
 								height: 6,
 								borderRadius: 6,
-								background: running
-									? isDark
-										? rgba(theme.colors.teal[4], 0.85)
-										: rgba(theme.colors.teal[6], 0.8)
-									: 'color-mix(in srgb, var(--plx-text-muted) 88%, transparent)',
+								background: statusColor,
 							}}
 						/>
 					</Tooltip>
 					{showStatusLabel && (
 						<Text size="xs" style={{ color: rowColorValue }}>
-							{running ? '运行' : enabled === false ? '禁用' : '停止'}
+							{statusLabel}
 						</Text>
 					)}
 				</Group>
@@ -311,7 +316,8 @@ const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
 	if (prev.pid !== next.pid) return false
 	if (prev.name !== next.name) return false
 	if (prev.running !== next.running) return false
-	if (prev.enabled !== next.enabled) return false
+	if (prev.available !== next.available) return false
+	if (prev.desiredRunning !== next.desiredRunning) return false
 	if (prev.selected !== next.selected) return false
 	if (prev.active !== next.active) return false
 	if (prev.focused !== next.focused) return false

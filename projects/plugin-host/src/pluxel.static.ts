@@ -16,7 +16,12 @@ export const staticDemoPlugins = [
 	PluginHttpRoutesDemo,
 ] as const
 
-export const staticDemoEnabledPlugins = staticDemoPlugins.map(pluginNodeAddressOf)
+export const staticDemoAutoStartPlugins = [
+	PluginEventsDeclaredConsumer,
+	PluginOptionalIntegrationProvider,
+	PluginOptionalIntegrationConsumer,
+	PluginHttpRoutesDemo,
+].map(pluginNodeAddressOf)
 
 export default defineStaticRuntime({
 	name: 'plugins-host-static',
@@ -27,7 +32,7 @@ export default defineStaticRuntime({
 			: resolve(deployment?.root ?? resolve(import.meta.dirname, '..'), '.pluxel/static')
 		return {
 			runtimeState: {
-				snapshot: { enabled: staticDemoEnabledPlugins },
+				snapshot: { autoStart: staticDemoAutoStartPlugins },
 			},
 			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
 			persistence: resolve(staticDataRoot, 'persistence'),

@@ -48,9 +48,9 @@ class FontsLazyConsumer extends BasePlugin {
 	}
 }
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
 const fontPath = findTestFont()
@@ -60,7 +60,7 @@ describe('FontsPlugin', () => {
 	it('classifies fonts discovered from the host system and resolves an automatic default', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
 
@@ -85,7 +85,7 @@ describe('FontsPlugin', () => {
 			const backend = createMemoryPersistenceBackend()
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, FontsTestConsumer])
+					addStarted(host, [FontsPlugin, FontsTestConsumer])
 					host.cfg(FontsPlugin).set({ defaultFamily: 'serif' })
 					await host.commit()
 
@@ -129,7 +129,7 @@ describe('FontsPlugin', () => {
 		let registration: FontRegistration | undefined
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				await host.commit()
 
 				registration = await host.require(FontsLazyConsumer).fonts.registerFromPath({
@@ -148,7 +148,7 @@ describe('FontsPlugin', () => {
 					host.require(FontsLazyConsumer).fonts.families.find((item) => item.family === family),
 				).toMatchObject({ source: 'registered' })
 
-				host.cfg(FontsLazyConsumer).disable()
+				host.stop(FontsLazyConsumer)
 				await host.commit()
 				expect(registration.active).toBe(false)
 				expect(GlobalFonts.has(family)).toBe(false)
@@ -161,7 +161,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('reference-counts duplicate portable resources by content ID', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
 				const family = `Pluxel Portable ${crypto.randomUUID()}`
@@ -183,7 +183,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('bounds native registrations across managed and caller fonts', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				host.cfg(FontsPlugin).set({ maxNativeRegistrations: 1 })
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
@@ -216,7 +216,7 @@ describe('FontsPlugin', () => {
 			const byteLength = fontData.byteLength
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+					addStarted(host, [FontsPlugin, FontsLazyConsumer])
 					host.cfg(FontsPlugin).set({ maxTotalFontBytes: byteLength })
 					await host.commit()
 					const fonts = host.require(FontsLazyConsumer).fonts
@@ -252,7 +252,7 @@ describe('FontsPlugin', () => {
 
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, FontsTestConsumer])
+					addStarted(host, [FontsPlugin, FontsTestConsumer])
 					await host.commit()
 
 					const commands = managerForTest(host.require(FontsPlugin))
@@ -265,11 +265,11 @@ describe('FontsPlugin', () => {
 					expect(GlobalFonts.has(family)).toBe(true)
 					const id = first.managedFonts[0]!.id
 
-					host.cfg(FontsTestConsumer).disable()
+					host.stop(FontsTestConsumer)
 					await host.commit()
 					expect(GlobalFonts.has(family)).toBe(true)
 
-					host.cfg(FontsTestConsumer).enable()
+					host.start(FontsTestConsumer)
 					await host.commit()
 					const restored = await managerForTest(host.require(FontsPlugin)).snapshot()
 					expect(restored.managedFonts).toEqual([
@@ -297,7 +297,7 @@ describe('FontsPlugin', () => {
 	it('rejects invalid bytes and enforces the configured byte budget', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				host.cfg(FontsPlugin).set({ maxFontBytes: 4 })
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
@@ -316,7 +316,7 @@ describe('FontsPlugin', () => {
 	it('cooperatively snapshots registration bytes and observes cancellation', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				await host.commit()
 				const controller = new AbortController()
 				const registration = host.require(FontsLazyConsumer).fonts.register({
@@ -333,7 +333,7 @@ describe('FontsPlugin', () => {
 	it('bounds the serialized managed Workbench queue before snapshotting upload bytes', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsTestConsumer])
+				addStarted(host, [FontsPlugin, FontsTestConsumer])
 				host.cfg(FontsPlugin).set({
 					maxFontBytes: 2 * 1024 * 1024,
 					maxPendingManagedTasks: 1,
@@ -355,7 +355,7 @@ describe('FontsPlugin', () => {
 	it('does not commit an async registration after its caller generation stops', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				await host.commit()
 				const registration = host.require(FontsLazyConsumer).fonts.register({
 					data: new Uint8Array(2 * 1024 * 1024),
@@ -365,7 +365,7 @@ describe('FontsPlugin', () => {
 					(error: unknown) => Object.freeze({ status: 'rejected' as const, error }),
 				)
 
-				host.cfg(FontsLazyConsumer).disable()
+				host.stop(FontsLazyConsumer)
 				await host.commit()
 				await expect(result).resolves.toMatchObject({
 					status: 'rejected',
@@ -379,7 +379,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('rejects oversized font files before reading their contents', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+				addStarted(host, [FontsPlugin, FontsLazyConsumer])
 				host.cfg(FontsPlugin).set({ maxFontBytes: 4 })
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
@@ -406,7 +406,7 @@ describe('FontsPlugin', () => {
 		] as const) {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, FontsLazyConsumer])
+					addStarted(host, [FontsPlugin, FontsLazyConsumer])
 					const summary = await host.commitAllowFail()
 					assertPluginLifecycleIssue(summary, FontsPlugin, { kind: 'start-failed', message })
 					expect(host.isRunning(FontsPlugin)).toBe(false)
@@ -420,7 +420,7 @@ describe('FontsPlugin', () => {
 	it('renders direct consumer and provider-owned Workbench views', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, FontsTestConsumer])
+				addStarted(host, [FontsPlugin, FontsTestConsumer])
 				await host.commit()
 
 				const registry = requireWorkbench(host.ctx).registry

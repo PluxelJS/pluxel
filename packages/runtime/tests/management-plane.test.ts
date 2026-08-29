@@ -89,7 +89,8 @@ describe('runtime management and Workbench planes', () => {
 		const host = createRuntimeHost({ workbench: { enabled: true } })
 		try {
 			host.add(WorkbenchHttpSmokePlugin)
-			host.cfg(WorkbenchHttpSmokePlugin).enable()
+			host.cfg(WorkbenchHttpSmokePlugin).setAutoStart(true)
+			host.start(WorkbenchHttpSmokePlugin)
 			await host.commit()
 
 			expect(host.ctx.workbench).toBeDefined()

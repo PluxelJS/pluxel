@@ -65,7 +65,15 @@ export default defineConfig(({ mode }) => {
 			rolldownOptions: {
 				output: {
 					codeSplitting: {
-						groups: createPluxelUiChunkGroups(),
+						groups: [
+							{
+								name: 'plugin-graph-layout',
+								test: /[\\/]node_modules[\\/]@dagrejs[\\/]/,
+								priority: 100,
+								entriesAware: true,
+							},
+							...createPluxelUiChunkGroups(),
+						],
 					},
 				},
 			},

@@ -25,7 +25,8 @@ describe('NodeModuleService', () => {
 
 			lowerTestPlugin(NodeModuleFailure)
 			host.add(NodeModuleFailure)
-			host.cfg(NodeModuleFailure).enable()
+			host.cfg(NodeModuleFailure).setAutoStart(true)
+			host.start(NodeModuleFailure)
 			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
 			expect(host.isRunning(NodeModuleFailure)).toBe(false)
 		} finally {
@@ -60,7 +61,8 @@ describe('NodeModuleService', () => {
 
 			lowerTestPlugin(NodeModuleConsumer)
 			host.add(NodeModuleConsumer)
-			host.cfg(NodeModuleConsumer).enable()
+			host.cfg(NodeModuleConsumer).setAutoStart(true)
+			host.start(NodeModuleConsumer)
 			await host.commit()
 			expect(host.isRunning(NodeModuleConsumer)).toBe(true)
 			await publish(new URL('file:///cache/task-b.mjs'))
@@ -119,7 +121,8 @@ describe('NodeModuleService', () => {
 
 			lowerTestPlugin(PendingNodeModuleConsumer)
 			host.add(PendingNodeModuleConsumer)
-			host.cfg(PendingNodeModuleConsumer).enable()
+			host.cfg(PendingNodeModuleConsumer).setAutoStart(true)
+			host.start(PendingNodeModuleConsumer)
 			await host.commit()
 			const pendingUpdate = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
 			await didStartSetup
@@ -172,7 +175,8 @@ describe('NodeModuleService', () => {
 			}
 			lowerTestPlugin(PackagedNodeModule)
 			host.add(PackagedNodeModule)
-			host.cfg(PackagedNodeModule).enable()
+			host.cfg(PackagedNodeModule).setAutoStart(true)
+			host.start(PackagedNodeModule)
 			await host.commit()
 			expect(host.isRunning(PackagedNodeModule)).toBe(true)
 			expect(received?.href).toBe(

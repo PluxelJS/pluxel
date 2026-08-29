@@ -283,16 +283,13 @@ export type EditorGridGroup = {
 }
 
 export type EditorGridHandle = {
-	equalize: () => void
-	maximize: (groupId: string) => void
 	moveGroup: (options: WorkbenchEditorGroupMoveOptions) => void
-	restore: () => void
-	restoreLayout: (layout: EditorGridLayout | undefined) => void
 }
 
 export type WorkbenchEditorGridProps = {
 	groups: readonly EditorGridGroup[]
 	layout: EditorGridLayout | undefined
+	maximizedGroupId?: string
 	minGroupSize?: number
 	onActiveTabsChange: (activeTabs: Readonly<Record<string, string>>) => void
 	onFocusGroup: (groupId: string, reason: 'action' | 'content' | 'tab') => void
@@ -314,18 +311,19 @@ const HIDDEN_WORKBENCH_PARTS = {
  * recursive split topology, resize behavior and temporary maximization.
  */
 export const WorkbenchEditorGrid = forwardRef<EditorGridHandle, WorkbenchEditorGridProps>(
-	(
+	function WorkbenchEditorGrid(
 		{
 			className,
 			groups,
 			layout,
+			maximizedGroupId,
 			minGroupSize = 280,
 			onActiveTabsChange,
 			onFocusGroup,
 			onLayoutCommit,
 		},
 		ref,
-	) => {
+	) {
 		const workbenchRef = useRef<WorksplitWorkbenchHandle | null>(null)
 		const activeEditorTabs = useMemo(
 			() => Object.fromEntries(groups.map((group) => [group.id, group.activeTabId])),
@@ -343,6 +341,7 @@ export const WorkbenchEditorGrid = forwardRef<EditorGridHandle, WorkbenchEditorG
 		const defaultLayoutRef = useRef<WorksplitWorkbenchLayout | null>(null)
 		defaultLayoutRef.current ??= {
 			editorLayout: layout,
+			maximizedEditorGroupId: maximizedGroupId,
 			panelPosition: 'bottom',
 			value: { activeEditorTabs, version: 1 },
 			version: 1,
@@ -375,19 +374,30 @@ export const WorkbenchEditorGrid = forwardRef<EditorGridHandle, WorkbenchEditorG
 		useImperativeHandle(
 			ref,
 			() => ({
-				equalize: () => workbenchRef.current?.equalizeEditorGroups(),
-				maximize: (groupId) => workbenchRef.current?.maximizeEditorGroup(groupId),
 				moveGroup: (options) => workbenchRef.current?.moveEditorGroup(options),
-				restore: () => workbenchRef.current?.restoreEditorGroups(),
-				restoreLayout: (nextLayout) => {
-					const handle = workbenchRef.current
-					if (!handle) return
-					const current = handle.getLayout()
-					handle.restoreLayout({ ...current, editorLayout: nextLayout })
-				},
 			}),
 			[],
 		)
+
+		useLayoutEffect(() => {
+			const handle = workbenchRef.current
+			if (!handle) return
+			const current = handle.getLayout()
+			const nextMaximizedGroupId = groups.some((group) => group.id === maximizedGroupId)
+				? maximizedGroupId
+				: undefined
+			if (
+				current.maximizedEditorGroupId === nextMaximizedGroupId &&
+				editorGridLayoutEqual(current.editorLayout, layout)
+			) {
+				return
+			}
+			handle.restoreLayout({
+				...current,
+				editorLayout: layout,
+				maximizedEditorGroupId: nextMaximizedGroupId,
+			})
+		}, [groups, layout, maximizedGroupId])
 
 		const focusGroupFromTarget = (target: EventTarget | null) => {
 			if (!(target instanceof Element)) return
@@ -442,3 +452,27 @@ export const WorkbenchEditorGrid = forwardRef<EditorGridHandle, WorkbenchEditorG
 )
 
 WorkbenchEditorGrid.displayName = 'WorkbenchEditorGrid'
+
+function editorGridLayoutEqual(
+	left: EditorGridLayout | undefined,
+	right: EditorGridLayout | undefined,
+): boolean {
+	if (left === right) return true
+	if (!left || !right || left.type !== right.type) return false
+	if (left.type === 'group' || right.type === 'group') {
+		return left.type === 'group' && right.type === 'group' && left.groupId === right.groupId
+	}
+	return (
+		left.id === right.id &&
+		left.orientation === right.orientation &&
+		left.children.length === right.children.length &&
+		left.children.every((child, index) => {
+			const other = right.children[index]
+			return (
+				other !== undefined &&
+				child.size === other.size &&
+				editorGridLayoutEqual(child.node, other.node)
+			)
+		})
+	)
+}

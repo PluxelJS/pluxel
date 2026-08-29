@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { PluginGroup, PluginsListOutput, RuntimeManagementClient } from '@pluxel/runtime/web'
 import {
 	buildPluginOverview,
@@ -22,9 +22,11 @@ const plugins = {
 			displayName: 'ExamplePlugin',
 			label: { title: 'Example', qualifier: '@pluxel/example', text: 'Example' },
 			rootExportName: 'ExamplePlugin',
-			isRunning: true,
-			isEnabled: true,
-			lifecycleStage: 'running',
+			autoStart: true,
+			sessionIntent: 'inherit',
+			desiredState: 'running',
+			activationReason: 'auto-start',
+			lifecycleState: 'running',
 			availability: 'available',
 			issues: [],
 			source: {
@@ -36,7 +38,7 @@ const plugins = {
 			},
 		},
 	],
-	summary: { total: 1, running: 1, stopped: 0, disabled: 0 },
+	summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 } satisfies PluginsListOutput
 
 const groups = [
@@ -108,6 +110,65 @@ describe('plugin overview resource', () => {
 			overview: expect.any(Object),
 			isLoading: false,
 			error: 'offline',
+		})
+	})
+
+	it('queues a fresh read when invalidated during an in-flight overview request', async () => {
+		let release!: (value: PluginsListOutput) => void
+		const firstPlugins = new Promise<PluginsListOutput>((resolve) => {
+			release = resolve
+		})
+		const pluginList = vi
+			.fn<() => Promise<PluginsListOutput>>()
+			.mockReturnValueOnce(firstPlugins)
+			.mockResolvedValueOnce(plugins)
+		const groupList = vi.fn().mockResolvedValue(groups)
+		const resource = new PluginOverviewResource({
+			plugins: { list: pluginList },
+			groups: { list: groupList },
+		} as unknown as RuntimeManagementClient)
+		const unsubscribe = resource.subscribe(() => undefined)
+
+		void resource.load()
+		resource.markStale()
+		const refreshed = resource.load(true)
+		release(plugins)
+		await refreshed
+		unsubscribe()
+
+		expect(pluginList).toHaveBeenCalledTimes(2)
+		expect(groupList).toHaveBeenCalledTimes(2)
+		expect(resource.getSnapshot()).toMatchObject({ isLoading: false, isStale: false })
+	})
+
+	it('does not lose an invalidation when the old overview request rejects', async () => {
+		let rejectOld!: (reason: Error) => void
+		const firstPlugins = new Promise<PluginsListOutput>((_resolve, reject) => {
+			rejectOld = reject
+		})
+		const pluginList = vi
+			.fn<() => Promise<PluginsListOutput>>()
+			.mockReturnValueOnce(firstPlugins)
+			.mockResolvedValueOnce(plugins)
+		const groupList = vi.fn().mockResolvedValue(groups)
+		const resource = new PluginOverviewResource({
+			plugins: { list: pluginList },
+			groups: { list: groupList },
+		} as unknown as RuntimeManagementClient)
+		const unsubscribe = resource.subscribe(() => undefined)
+
+		void resource.load()
+		resource.markStale()
+		const refreshed = resource.load(true)
+		rejectOld(new Error('old request failed'))
+		await refreshed
+		unsubscribe()
+
+		expect(pluginList).toHaveBeenCalledTimes(2)
+		expect(resource.getSnapshot()).toMatchObject({
+			overview: expect.any(Object),
+			isLoading: false,
+			isStale: false,
 		})
 	})
 })

@@ -63,7 +63,7 @@ describe('static Vite runtime', () => {
 				'      logging: false,',
 				"      configService: { mode: 'memory' },",
 				"      runtimeState: { mode: 'memory', snapshot: {",
-				'        enabled: defaultNode && east && west ? [defaultNode, east, west, configuredNode, partProviderNode, partOwnerNode] : [configuredNode, partProviderNode, partOwnerNode],',
+				'        autoStart: defaultNode && east && west ? [defaultNode, east, west, configuredNode, partProviderNode, partOwnerNode] : [configuredNode, partProviderNode, partOwnerNode],',
 				"        forks: definition ? [{ definition, forkIds: ['east', 'west'] }] : [],",
 				'      } },',
 				'    }',

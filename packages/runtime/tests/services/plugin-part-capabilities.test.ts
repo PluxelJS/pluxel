@@ -79,7 +79,8 @@ describe('PluginPart runtime capabilities', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				await host.start(CapabilityOwner)
+				host.add(CapabilityOwner).start(CapabilityOwner)
+				await host.commit()
 				expect(partCommands).toBe(repeatedPartCommands)
 				expect(partCommands).not.toBe(ownerCommands)
 				expect(partElysia).toBe(repeatedPartElysia)
@@ -113,7 +114,8 @@ describe('PluginPart runtime capabilities', () => {
 	it('projects owner and Part schemas as Workbench sections under one config owner', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				await host.start(ConfiguredOwner)
+				host.add(ConfiguredOwner).start(ConfiguredOwner)
+				await host.commit()
 				const address = pluginNodeAddressOf(ConfiguredOwner)
 				const definition = requireRuntimePluginGraphCoordinator(host.ctx)
 					.catalogSnapshot()

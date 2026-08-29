@@ -45,10 +45,7 @@ import { FontsPlugin } from '@pluxel/fonts'
 import { ReportsPlugin } from '@acme/reports'
 
 host.add([FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlugin])
-host.cfg(FontsPlugin).enable()
-host.cfg(CanvasPlugin).enable()
-host.cfg(EChartsPlugin).enable()
-host.cfg(ReportsPlugin).enable()
+host.start(ReportsPlugin)
 await host.commit()
 ```
 

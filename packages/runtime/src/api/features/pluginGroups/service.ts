@@ -7,8 +7,13 @@ import {
 } from '../plugins/catalog-projection'
 
 export async function readGroups(ctx: Context): Promise<PluginGroup[]> {
-	const groups = await requirePluginCatalogLayout(ctx).listGroups()
-	const projection = projectPluginCatalog(ctx)
+	const projection = await projectPluginCatalog(ctx)
+	const groups = await requirePluginCatalogLayout(ctx).listGroups(
+		projection.entries.map((entry) => ({
+			address: entry.address,
+			packageName: entry.source.packageName,
+		})),
+	)
 	return groups.map((group) => toOutput(group, projection))
 }
 
@@ -16,13 +21,17 @@ export async function writeGroups(
 	ctx: Context,
 	groups: readonly PluginGroupInput[],
 ): Promise<PluginGroup[]> {
+	const projection = await projectPluginCatalog(ctx)
 	const result = await requirePluginCatalogLayout(ctx).updateGroups(
 		groups.map((group) => ({
 			...group,
 			nodes: group.nodes.map((owner) => parsePluginNodeAddress(owner)),
 		})),
+		projection.entries.map((entry) => ({
+			address: entry.address,
+			packageName: entry.source.packageName,
+		})),
 	)
-	const projection = projectPluginCatalog(ctx)
 	return result.map((group) => toOutput(group, projection))
 }
 

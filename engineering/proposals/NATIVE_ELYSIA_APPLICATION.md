@@ -135,7 +135,7 @@ srvx 公开 contract 已覆盖 Fetch、streaming、runtime request context 与 s
 - 一个普通 Elysia function plugin 可以不经 adapter wrapper 直接 `.use()`。
 - HTTP、WebSocket、stream 和 request cancellation 在 static、dynamic、Vite 与 production carrier 使用同一语义。
 - application/dispatcher package 不导入 `node:*`、Bun 或 Deno API；runtime 差异只存在于 srvx carrier binding。
-- route publication 与 Plugin generation 原子绑定；start failure、replacement、rollback、disable 与 shutdown 不留下旧 route 或
+- route publication 与 Plugin generation 原子绑定；start failure、replacement、rollback、stop 与 shutdown 不留下旧 route 或
   connection。
 - PluginPart 可以使用同一个 generation application，不产生 Part server、Part route identity 或第二条 lifecycle。
 - Workbench disabled/headless 不影响业务 application，也不引入业务 Elysia backend 之外的可选成本。
@@ -186,7 +186,7 @@ interface RuntimeContext {
 ```
 
 第一次读取才创建 authoring app；未使用 Web application 的 Plugin 不创建 Elysia instance、route inventory 或 transport lease。
-同一 Plugin generation 的 root Plugin 与全部 PluginPart occurrence 取得同一个 app identity。Part 没有独立 enable、restart 或
+同一 Plugin generation 的 root Plugin 与全部 PluginPart occurrence 取得同一个 app identity。Part 没有独立 auto-start policy、session lifecycle 或
 withdrawal，因此为 Part 再建 owner app 只会引入虚假的 runtime 边界。Part handler 的日志与错误仍可由闭包中的 Part Context
 保留 attribution，但 publication、admission 和 drain 都属于 owning generation。
 
@@ -548,7 +548,7 @@ generation stop/replacement：
 5. 到期后 terminate socket；
 6. 等待 connection lease settlement，再 drain generation effects。
 
-Plugin disable/shutdown 可以使用不同 close reason，但 code/reason 必须是小型、无敏感信息的 host contract。第一版不公开 per-Plugin
+Plugin stop 与 host shutdown 可以使用不同 close reason，但 code/reason 必须是小型、无敏感信息的 host contract。第一版不公开 per-Plugin
 WebSocket drain timeout；真实调优需求出现前由 host 使用一个有界 policy。
 
 topic/pub-sub backend 可以按 root 共享，但每个 owner Server view 必须把 Elysia logical topic 映射到 owner-scoped physical key；
@@ -848,7 +848,7 @@ public 作者面只进行了一次不兼容切换，没有保留两套并行 con
 
 - Plugin start failure、Part init failure 和 rollback 不发布 route/socket；
 - replacement 后新 request 只进入新 generation；
-- disabled/stopped owner 稳定返回 404；
+- stopped owner 稳定返回 404；
 - 旧 snapshot 命中已关闭 gate 时不执行 handler；
 - stream lease 延伸到 body settle，client disconnect 与 generation abort 都可见；
 - route conflict 只使冲突 generation start 失败，不破坏无关 branch；

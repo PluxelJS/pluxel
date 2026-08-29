@@ -37,7 +37,7 @@ describe('PackageManagerPlugin dynamic host', () => {
 			configService: { mode: 'memory' },
 			runtimeState: {
 				mode: 'memory',
-				snapshot: { enabled: [pluginNodeAddressOf(PackageManagerPlugin)] },
+				snapshot: { autoStart: [pluginNodeAddressOf(PackageManagerPlugin)] },
 			},
 			plugins: [PackageManagerPlugin],
 			sources: [

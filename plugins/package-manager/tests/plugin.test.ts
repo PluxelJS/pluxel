@@ -27,7 +27,7 @@ describe('PackageManagerPlugin', () => {
 					allowBuilds: [],
 					minimumReleaseAgeMinutes: 0,
 				})
-				host.cfg(PackageManagerPlugin).enable()
+				host.start(PackageManagerPlugin)
 				const summary = await host.commitAllowFail()
 
 				assertPluginLifecycleIssue(summary, PackageManagerPlugin, {

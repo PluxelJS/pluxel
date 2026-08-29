@@ -19,6 +19,49 @@ Binding（RPC / events / live query implementation）
 Workbench host（layout / grants / transport / lifecycle）
 ```
 
+## 查看 Plugin 依赖与影响范围
+
+宿主启用 Workbench 后，Plugin 详情页以当前 Plugin 为中心，把关系分成“必须依赖”“可选集成”和“被依赖”。必须依赖决定当前
+Plugin 能否启动；可选集成不阻塞启动，但 provider 进入、离开或替换当前有效图时，当前 generation 仍会由 Core 重新建立。
+每行只显示对端 Plugin 的 `displayName`；缺失、未解析、未生效、停止等需要处理的状态留作紧凑标记，正常运行与直接解析不重复占用空间。
+“被依赖”标题汇总当前生效与尚未生效的 incoming relation，并在同一列表中用“必须 / 可选”区分类型。完整 canonical identity
+保留在悬停提示和依赖图定位链接中；缺少 status node 时以 requirement export name 代替展示名，只有存在 status node 的对端才可进入
+Plugin 详情。
+
+存在多个兼容实现、抽象 provider 或当前节点覆盖时，“必须依赖”行内直接提供实现选择。“跟随默认”是显式选项，不是不可修改的结果；
+选择具体实现只覆盖当前 Plugin，重新选择“跟随默认”会清除该覆盖。候选项只在详情区域实际显示时读取，不会扩大依赖图 snapshot。
+当前 Plugin 若本身可以提供抽象依赖，另以“提供方默认”设置供其他 consumer 跟随的全局默认，两种方向不会混在同一个控件中。
+
+详情页把三类状态严格分开：
+
+- “自动启动”是持久策略，只决定宿主下次启动时是否主动运行 Plugin；修改它不会偷偷启动或停止当前进程中的 generation；
+- “启动 / 停止 / 重启”是本次进程的运行操作，不改自动启动策略；宿主重启后，本次运行意图会清空；
+- “运行中 / 已停止”是 Runtime 提交后的只读事实。操作进行中只显示协调状态，不会在响应前乐观伪造运行结果。
+
+Runtime 会在同一 coordinator 中保存本次进程意图，因此 HMR、配置变化和依赖切换不会把明确停止的 Plugin 意外拉起。启动 consumer
+会为本次进程自动激活它的 required provider closure，但不会替 provider 打开自动启动；明确停止 provider 会阻断并停止依赖它的
+consumer。关闭自动启动不会停止当前 generation，停止当前 generation 也不会关闭自动启动。自动启动策略与本次运行状态因而可以独立审计。
+Headless 管理客户端使用 `client.plugins.setAutoStart()` 修改持久策略，使用 `client.plugins.applyLifecycleCommands()` 执行本次进程的
+`start | stop | restart`；两者都返回协调后的 control snapshot 与同一结构化 apply report。
+
+内置“依赖图”页面位于 `/plugin-graph`，提供两个视图：
+
+- “有效图”只显示当前 committed graph 的 node 和 edge；没有可见关系的 Plugin 通过画布中的数量入口按需查看；
+- “声明关系”同时显示未请求运行、unavailable、尚未生效的关系，以及缺失 provider/未解析 requirement 的空心占位节点。
+
+关系图方向固定为 provider → consumer，便于沿箭头查看 downstream 影响。只对存在 edge 的连通分量执行分层布局，彼此无关的
+关系组独立排布；没有可见 incoming/outgoing relation 的 Plugin 不参与缩放，避免少量真实关系因孤立状态节点而不可读。Required 使用实线，Optional 使用虚线；未生效关系降低
+透明度，协调问题同时显示图标和边框，不能只靠颜色判断。自动启动关闭、当前停止和代码不可用是彼此独立的事实；页面不会把停止状态
+猜成失败。可按 Plugin 名称或 canonical reference 搜索，切换 Required/Optional filter，点击 node/edge 在不压缩关系图的浮层中查看
+inspector，并从有 status 的 endpoint 返回 Plugin 详情。关系组按二维画布宽高比紧凑排布，默认完整适配；拖动画布平移、滚轮以指针
+位置为中心缩放，方向键平移，`0` 或适应按钮恢复全图。选择 node/edge 后只突出直接相关的 endpoint 和 relation，降低无关关系的视觉
+权重；当前筛选未显示的 Plugin 不常驻占用画布高度，而是在与 inspector 互斥的浮层中按状态优先级查看和搜索。关系图是只读审计视图，
+不提供节点拖动、手动连线或图编辑能力。
+
+依赖 snapshot 按需加载。刷新失败但已有成功数据时，页面保留 last-known-good 并显示 stale 提示；没有任何 snapshot 时显示错误页，
+可手动重试。Headless 管理界面或自定义 browser client 也可通过 `RuntimeManagementClient.dependencies.graph()` 取得同一只读 snapshot；
+provider selection、fork、自动启动策略与本次生命周期操作继续使用各自的 Management mutation，不通过 graph snapshot 修改。
+
 ## 最小完整路径
 
 ### 四个文件边界

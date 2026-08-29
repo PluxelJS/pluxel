@@ -343,8 +343,8 @@ Guard 只保存：
 3. `await ctx.effects.dispose()`（drain；包含 `init()` 返回的 cleanup/disposable）
 4. 提交已验证 graph，并由 coordinator 同步 desired/applied/catalog projection
 
-Plugin generation 不直接改写 Core graph。若未来提供 self-disable，应由 runtime host-policy capability
-更新 desired state 后统一 reconcile；effects 仍只负责当前 generation 的资源释放。
+Plugin generation 不直接改写 Core graph。若未来提供 owner 发起的 lifecycle command，应由 runtime host-policy capability
+更新 session intent 后统一 reconcile；effects 仍只负责当前 generation 的资源释放。
 
 ---
 

@@ -35,16 +35,6 @@ export type ForkEnsureResult =
 			report: PluginApplyReport
 	  }
 	| {
-			ok: true
-			status: 'saved-not-applied'
-			node: PluginNodeAddress
-			report: PluginApplyReport
-			applicationFailure: {
-				code: 'plugin_not_running_after_enable'
-				message: string
-			}
-	  }
-	| {
 			ok: false
 			code:
 				| 'invalid_fork_id'
@@ -92,7 +82,7 @@ export type ForkRemoveResult =
 	| {
 			ok: false
 			code: 'persistence_failed'
-			state: 'retained' | 'disabled-retained' | 'unknown'
+			state: 'retained' | 'stopped-retained' | 'unknown'
 			node: PluginNodeAddress
 			report?: PluginApplyReport
 			message: string
@@ -103,7 +93,7 @@ export async function ensureFork(
 	base: PluginNodeAddress,
 	forkId: string,
 	options: {
-		enable?: boolean
+		autoStart?: boolean
 		selectFor?: Readonly<{
 			consumer: PluginNodeAddress
 			requirement: PluginDefinitionAddress
@@ -114,11 +104,11 @@ export async function ensureFork(
 	if (!node) return invalidFork('Fork base or forkId is invalid')
 	const coordinator = requireRuntimePluginGraphCoordinator(ctx)
 	try {
-		const enabled = options.enable !== false
+		const autoStart = options.autoStart === true
 		const report = await coordinator.updateRuntimeState(
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: node.definition, forkId: node.forkId },
-				{ type: 'set-enabled', node, enabled },
+				{ type: 'set-auto-start', node, autoStart },
 				...(options.selectFor
 					? [
 							{
@@ -132,20 +122,10 @@ export async function ensureFork(
 			),
 			'fork-ensure',
 		)
-		if (!enabled) return { ok: true, status: 'deferred', node, report }
 		if (requirePluginService(ctx).isRunning(node)) {
 			return { ok: true, status: 'applied', node, report }
 		}
-		return {
-			ok: true,
-			status: 'saved-not-applied',
-			node,
-			report,
-			applicationFailure: {
-				code: 'plugin_not_running_after_enable',
-				message: 'Fork was saved and enabled, but its Plugin generation is not running.',
-			},
-		}
+		return { ok: true, status: 'deferred', node, report }
 	} catch (error) {
 		return forkMutationFailure(error)
 	}
@@ -159,8 +139,8 @@ export async function removeFork(
 	const node = parseForkAddress(base, forkId)
 	if (!node) return invalidFork('Fork base or forkId is invalid')
 	const coordinator = requireRuntimePluginGraphCoordinator(ctx)
-	let disableReport: PluginApplyReport | undefined
-	let phase: 'admission' | 'disable' | 'metadata' | 'remove' = 'admission'
+	let stopReport: PluginApplyReport | undefined
+	let phase: 'admission' | 'stop' | 'metadata' | 'remove' = 'admission'
 	try {
 		return await coordinator.runExclusive('fork-remove', async (session) => {
 			const state = session.runtimeStateSnapshot()
@@ -172,10 +152,10 @@ export async function removeFork(
 				{ type: 'remove-fork', definition: node.definition, forkId: node.forkId },
 			)
 			session.validateRuntimeStatePatch(removalPatch)
-			phase = 'disable'
-			disableReport = await session.update({
-				statePatch: runtimeStatePatch({ type: 'set-enabled', node, enabled: false }),
-				reason: 'fork-remove-disable',
+			phase = 'stop'
+			stopReport = await session.update({
+				lifecycleCommands: [{ address: node, desiredState: 'stopped' }],
+				reason: 'fork-remove-stop',
 				mode: 'live',
 			})
 			phase = 'metadata'
@@ -187,10 +167,10 @@ export async function removeFork(
 				reason: 'fork-remove-metadata',
 				mode: 'live',
 			})
-			const report = combineRemovalReports(disableReport, finalReport)
+			const report = combineRemovalReports(stopReport, finalReport)
 			return {
 				ok: true,
-				status: hasDrainIssues(disableReport) ? 'removed-with-lifecycle-issues' : 'removed',
+				status: hasDrainIssues(stopReport) ? 'removed-with-lifecycle-issues' : 'removed',
 				node,
 				report,
 			}
@@ -199,8 +179,8 @@ export async function removeFork(
 		return removeFailure(
 			error,
 			node,
-			phase === 'admission' ? 'retained' : phase === 'metadata' ? 'disabled-retained' : 'unknown',
-			disableReport,
+			phase === 'admission' ? 'retained' : phase === 'metadata' ? 'stopped-retained' : 'unknown',
+			stopReport,
 		)
 	}
 }
@@ -265,7 +245,7 @@ function forkMutationFailure(error: unknown): ForkEnsureResult {
 function removeFailure(
 	error: unknown,
 	node: PluginNodeAddress,
-	state: 'retained' | 'disabled-retained' | 'unknown',
+	state: 'retained' | 'stopped-retained' | 'unknown',
 	report?: PluginApplyReport,
 ): ForkRemoveResult {
 	if (
@@ -352,14 +332,14 @@ async function deleteForkLoggingPolicy(ctx: Context, node: PluginNodeAddress): P
 }
 
 function combineRemovalReports(
-	disableReport: PluginApplyReport | undefined,
+	stopReport: PluginApplyReport | undefined,
 	finalReport: PluginApplyReport,
 ): PluginApplyReport {
-	if (!disableReport || finalReport.core.status === 'committed') return finalReport
+	if (!stopReport || finalReport.core.status === 'committed') return finalReport
 	return Object.freeze({
 		catalogRevision: finalReport.catalogRevision,
 		runtimeStateRevision: finalReport.runtimeStateRevision,
 		reconciliation: finalReport.reconciliation,
-		core: disableReport.core,
+		core: stopReport.core,
 	})
 }

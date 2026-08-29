@@ -23,7 +23,6 @@ import {
 	createCoreHost,
 	type CommitSummary,
 	type CoreHost,
-	type CoreHostConfigHandle,
 	type CoreHostConfigPatch,
 	type CoreTestContext,
 	type PluginConstructor,
@@ -38,7 +37,7 @@ import {
 	type Context,
 	type RootContext,
 } from '@pluxel/core'
-import { isPluginEnabled } from './runtime-state'
+import { isPluginAutoStartEnabled } from './runtime-state'
 import {
 	consumePluginDefinitionCandidate,
 	requireConfigService,
@@ -89,9 +88,11 @@ export interface RuntimeHost extends Omit<
 	| 'replace'
 	| 'fork'
 	| 'override'
+	| 'cfg'
 	| 'commit'
 	| 'commitAllowFail'
 	| 'start'
+	| 'stop'
 	| 'dispose'
 > {
 	fetch(request: Request, env?: unknown, ctx?: unknown): Response | Promise<Response>
@@ -99,6 +100,8 @@ export interface RuntimeHost extends Omit<
 	add(Plugins: readonly PluginConstructor[]): RuntimeHost
 	remove(target: RuntimeTarget): RuntimeHost
 	remove(targets: readonly RuntimeTarget[]): RuntimeHost
+	start(target: RuntimeTarget): RuntimeHost
+	stop(target: RuntimeTarget): RuntimeHost
 	restart(target: RuntimeTarget): RuntimeHost
 	replace(target: RuntimeTarget, next: PluginConstructor): RuntimeHost
 	fork<T extends PluginConstructor>(Plugin: T, forkId: string): PluginNodeHandle<T>
@@ -109,14 +112,20 @@ export interface RuntimeHost extends Omit<
 	): RuntimeHost
 	commit(): Promise<CommitSummary>
 	commitAllowFail(): Promise<CommitSummary>
-	start<T extends PluginConstructor>(Plugin: T): Promise<InstanceType<T>>
+	cfg<T extends PluginConstructor>(target: TypedTarget<T>): RuntimeHostConfigHandle<T>
 	dispose(): Promise<void>
 }
 
 export type RuntimeTestContext = CoreTestContext
 export type RuntimeHostConfigPatch<T extends PluginConstructor> = CoreHostConfigPatch<T>
-export type RuntimeHostConfigHandle<TTarget extends PluginConstructor> =
-	CoreHostConfigHandle<TTarget>
+export type RuntimeHostConfigHandle<TTarget extends PluginConstructor> = {
+	readonly owner: PluginNodeAddress
+	set(patch: RuntimeHostConfigPatch<TTarget>): void
+	unset(...keys: string[]): void
+	rev(): number
+	setAutoStart(autoStart: boolean): void
+	autoStart(): boolean
+}
 
 function runtimeConfig(config: RuntimeHostConfig): RuntimeHostConfig {
 	const workbench = config.workbench ?? {
@@ -188,6 +197,11 @@ export function createRuntimeHost(
 	let draftEntries = new Map(committedEntries)
 	let catalogDirty = false
 	let stateOperations: RuntimeStatePatchOperation[] = []
+	let lifecycleCommands: Array<{
+		address: PluginNodeAddress
+		desiredState: 'running' | 'stopped'
+	}> = []
+	let retryStartNodes: PluginNodeAddress[] = []
 	let restartNodes: PluginNodeAddress[] = []
 	let firstCommit = true
 	let disposed = false
@@ -258,6 +272,8 @@ export function createRuntimeHost(
 		const report = await coordinator.update({
 			...(catalog ? { catalog } : {}),
 			...(stateOperations.length > 0 ? { statePatch: runtimeStatePatch(...stateOperations) } : {}),
+			...(lifecycleCommands.length > 0 ? { lifecycleCommands } : {}),
+			...(retryStartNodes.length > 0 ? { retryStartNodes } : {}),
 			...(restartNodes.length > 0 ? { restartNodes } : {}),
 			reason: 'runtime-test',
 			mode: coldBoot ? 'cold-boot' : 'live',
@@ -267,6 +283,8 @@ export function createRuntimeHost(
 		draftEntries = new Map(committedEntries)
 		catalogDirty = false
 		stateOperations = []
+		lifecycleCommands = []
+		retryStartNodes = []
 		restartNodes = []
 		if (coldBoot && !allowFailure && report.reconciliation.length > 0) {
 			throw new PluginGraphRejectedError(report.reconciliation)
@@ -296,6 +314,16 @@ export function createRuntimeHost(
 			requireRuntimeHttpService(ctx).fetch(request, env, fetchContext),
 		add,
 		remove,
+		start: (target) => {
+			const address = targetAddress(target)
+			lifecycleCommands.push({ address, desiredState: 'running' })
+			retryStartNodes.push(address)
+			return host
+		},
+		stop: (target) => {
+			lifecycleCommands.push({ address: targetAddress(target), desiredState: 'stopped' })
+			return host
+		},
 		restart: (target) => {
 			restartNodes.push(targetAddress(target))
 			return host
@@ -340,17 +368,16 @@ export function createRuntimeHost(
 		isRunning: (target) => pluginService.isRunning(targetAddress(target)),
 		get: get as RuntimeHost['get'],
 		require: requirePlugin as RuntimeHost['require'],
-		cfg: (<T extends PluginConstructor>(target: TypedTarget<T>): CoreHostConfigHandle<T> => {
+		cfg: (<T extends PluginConstructor>(target: TypedTarget<T>): RuntimeHostConfigHandle<T> => {
 			const owner = targetAddress(target)
 			return {
 				owner,
 				set: (patch) => configService.patchConfig(owner, patch),
 				unset: (...keys) => configService.unsetConfigKeys(owner, keys),
 				rev: () => configService.getConfigRevision(owner),
-				enable: () => stageState({ type: 'set-enabled', node: owner, enabled: true }),
-				disable: () => stageState({ type: 'set-enabled', node: owner, enabled: false }),
-				enabled: () =>
-					isPluginEnabled(
+				setAutoStart: (autoStart) => stageState({ type: 'set-auto-start', node: owner, autoStart }),
+				autoStart: () =>
+					isPluginAutoStartEnabled(
 						applyRuntimeStatePatch(
 							runtimeStateStore.snapshot(),
 							runtimeStatePatch(...stateOperations),
@@ -359,12 +386,6 @@ export function createRuntimeHost(
 					),
 			}
 		}) as RuntimeHost['cfg'],
-		start: async (Plugin) => {
-			host.add(Plugin)
-			host.cfg(Plugin).enable()
-			await host.commit()
-			return host.require(Plugin)
-		},
 		last: () => pluginService.lastCommit,
 		services: () => core.services(),
 		plugins: () => [...draftEntries.values()].map((entry) => entry.candidate.implementation),

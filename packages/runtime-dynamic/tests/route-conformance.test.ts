@@ -13,7 +13,7 @@ const adapter: RuntimeRouteConformanceAdapter = {
 	name: 'dynamic',
 	async create(fixture) {
 		const host = createHmrTestContext({
-			enabled: fixture.runtimeState.enabled,
+			autoStart: fixture.runtimeState.autoStart,
 			runtimeState: {
 				forks: fixture.runtimeState.forks,
 				providerDefaults: fixture.runtimeState.providerDefaults,

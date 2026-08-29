@@ -229,7 +229,7 @@ describe('static config environment bootstrap', () => {
 				configService: { mode: 'memory' },
 				runtimeState: {
 					mode: 'memory',
-					snapshot: { enabled: [environmentOwner, rootOwner, fanoutOwner] },
+					snapshot: { autoStart: [environmentOwner, rootOwner, fanoutOwner] },
 				},
 			}),
 		})
@@ -279,7 +279,7 @@ describe('static config environment bootstrap', () => {
 				],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [owner] } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [owner] } },
 				}),
 			}),
 			{ env: { APP_AMOUNT: '21' } },
@@ -401,7 +401,7 @@ describe('static config environment bootstrap', () => {
 						],
 					},
 				},
-				runtimeState: { mode: 'memory', snapshot: { enabled: [owner] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [owner] } },
 			}),
 		})
 		const runtime = await createStaticRuntimeTestHost(application, {
@@ -467,7 +467,7 @@ describe('static config environment bootstrap', () => {
 				],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [owner] } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [owner] } },
 				}),
 			}),
 			{ env: { APP_TEXT: 'bootstrap', APP_LEFT: 'left' } },

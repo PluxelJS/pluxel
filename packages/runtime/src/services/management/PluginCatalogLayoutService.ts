@@ -8,7 +8,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import type { PluginGroupConfig } from '../../management-config'
-import { runtimePluginStatusOverview } from '../../runtime/capabilities'
+import { readRuntimePluginStatusOverview } from '../../runtime/capabilities'
 import { PersistenceError, type PersistenceNamespace } from '../persistence/PersistenceService'
 
 const PACKAGE_GROUP_PREFIX = 'package:'
@@ -63,6 +63,11 @@ type CatalogEntry = Readonly<{
 	packageName: string | null
 }>
 
+export type PluginCatalogLayoutEntry = Readonly<{
+	address: PluginNodeAddress
+	packageName: string | null
+}>
+
 type RegisteredGroup = Readonly<{
 	id: string
 	name: string
@@ -101,9 +106,12 @@ export class PluginCatalogLayoutService {
 		this.ready = this.load()
 	}
 
-	async listGroups(): Promise<readonly PluginGroupLayout[]> {
+	async listGroups(
+		catalogEntries?: readonly PluginCatalogLayoutEntry[],
+	): Promise<readonly PluginGroupLayout[]> {
 		await this.ready
-		return this.resolveLayout().groups
+		const entries = await this.catalogEntries(catalogEntries)
+		return this.resolveLayout(entries).groups
 	}
 
 	async getGroup(id: string): Promise<PluginGroupLayout | undefined> {
@@ -111,12 +119,15 @@ export class PluginCatalogLayoutService {
 		return groups.find((group) => group.groupId === id)
 	}
 
-	async updateGroups(groups: readonly PluginGroupLayout[]): Promise<readonly PluginGroupLayout[]> {
+	async updateGroups(
+		groups: readonly PluginGroupLayout[],
+		catalogEntries?: readonly PluginCatalogLayoutEntry[],
+	): Promise<readonly PluginGroupLayout[]> {
 		if (!Array.isArray(groups)) throw invalid('groups must be an array')
 		await this.ready
-		const current = this.resolveLayout()
+		const entries = await this.catalogEntries(catalogEntries)
+		const current = this.resolveLayout(entries)
 		const registered = current.registered
-		const entries = current.entries
 		const knownNodes = new Set(entries.map((entry) => entry.nodeKey))
 		const desired = new Map<string, string>()
 		const groupOrder: string[] = []
@@ -175,15 +186,14 @@ export class PluginCatalogLayoutService {
 
 		this.preferences = { assignments, groupOrder, pluginOrder }
 		await this.save()
-		return this.resolveLayout().groups
+		return this.resolveLayout(entries).groups
 	}
 
-	private resolveLayout(): {
+	private resolveLayout(entries: CatalogEntry[]): {
 		groups: readonly PluginGroupLayout[]
 		registered: Map<string, RegisteredGroup>
 		entries: CatalogEntry[]
 	} {
-		const entries = this.catalogEntries()
 		const registered = this.registeredGroups(entries)
 		const members = new Map<string, CatalogEntry[]>()
 		for (const groupId of registered.keys()) members.set(groupId, [])
@@ -231,13 +241,23 @@ export class PluginCatalogLayoutService {
 		return { groups, registered, entries }
 	}
 
-	private catalogEntries(): CatalogEntry[] {
-		return runtimePluginStatusOverview(this.root).statuses.map((status) => ({
-			address: status.address,
-			nodeKey: pluginNodeIndexKey(status.address),
-			definition: status.address.definition,
-			definitionKey: pluginDefinitionIndexKey(status.address.definition),
-			packageName: status.source.packageName?.trim() || null,
+	private async catalogEntries(
+		input?: readonly PluginCatalogLayoutEntry[],
+	): Promise<CatalogEntry[]> {
+		let entries = input
+		if (!entries) {
+			const statusOverview = await readRuntimePluginStatusOverview(this.root)
+			entries = statusOverview.statuses.map((status) => ({
+				address: status.address,
+				packageName: status.source.packageName,
+			}))
+		}
+		return entries.map((entry) => ({
+			address: entry.address,
+			nodeKey: pluginNodeIndexKey(entry.address),
+			definition: entry.address.definition,
+			definitionKey: pluginDefinitionIndexKey(entry.address.definition),
+			packageName: entry.packageName?.trim() || null,
 		}))
 	}
 

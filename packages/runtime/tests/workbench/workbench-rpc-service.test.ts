@@ -47,7 +47,8 @@ describe('WorkbenchRpcService', () => {
 		await withRuntimeHost(async (host) => {
 			lowerTestPlugin(RpcWorkbenchPlugin)
 			host.add(RpcWorkbenchPlugin)
-			host.cfg(RpcWorkbenchPlugin).enable()
+			host.cfg(RpcWorkbenchPlugin).setAutoStart(true)
+			host.start(RpcWorkbenchPlugin)
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
 			const grantId = backend.registry.getPluginLayout(pluginNodeAddressOf(RpcWorkbenchPlugin))

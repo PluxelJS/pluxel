@@ -23,7 +23,8 @@ type FlatPluginListProps = {
 	ids: string[]
 	virtualize: boolean
 	runningSet: Set<string>
-	enabledSet: Set<string>
+	availableSet: Set<string>
+	desiredRunningSet: Set<string>
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	focusedId: string | null
@@ -40,7 +41,8 @@ export function FlatPluginList({
 	ids,
 	virtualize,
 	runningSet,
-	enabledSet,
+	availableSet,
+	desiredRunningSet,
 	selectedSet,
 	activeSet,
 	focusedId,
@@ -128,7 +130,8 @@ export function FlatPluginList({
 								pid={item.id}
 								name={getName(item.id)}
 								running={runningSet.has(item.id)}
-								enabled={enabledSet.has(item.id)}
+								available={availableSet.has(item.id)}
+								desiredRunning={desiredRunningSet.has(item.id)}
 								selected={selectedSet.has(item.id)}
 								active={activeSet.has(item.id)}
 								onSelect={onSelect}
@@ -188,7 +191,8 @@ export function FlatPluginList({
 									pid={item.id}
 									name={getName(item.id)}
 									running={runningSet.has(item.id)}
-									enabled={enabledSet.has(item.id)}
+									available={availableSet.has(item.id)}
+									desiredRunning={desiredRunningSet.has(item.id)}
 									selected={selectedSet.has(item.id)}
 									active={activeSet.has(item.id)}
 									onSelect={onSelect}

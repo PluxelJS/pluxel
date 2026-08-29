@@ -11,8 +11,8 @@ const Audit = definePluginRef<AuditPlugin>()
 this.plugins.use(Audit, (audit) => audit.registerSource(this))
 ```
 
-ref 与 `plugins.use()` 由 semantic pass lower 成 optional definition edge。ref 不 import、安装、注册或默认启用 package；
-provider absent/disabled/start-failed 不阻塞 consumer，running generation 出现、消失或 replacement 时 Core 用正常 graph plan
+ref 与 `plugins.use()` 由 semantic pass lower 成 optional definition edge。ref 不 import、安装、注册或默认运行 package；
+provider absent、当前未运行或 start-failed 不阻塞 consumer，running generation 出现、消失或 replacement 时 Core 用正常 graph plan
 重启 consumer closure。`plugins.use()` 只允许在 `init()` 中直接调用，callback 必须同步，返回资源进入 generation effects。
 
 所有 runtime plugin owner protocol 使用结构化 `PluginNodeAddress`。class name、constructor 与 `displayName` 只用于
@@ -96,6 +96,10 @@ this.ctx.workbench?.mount(settings, {
 - `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks、受限 host capability 与 declarative Pane Kit；
 - `@pluxel/runtime/web`：framework-neutral discovery、Management Client 与版本化 wire DTO；
 - `@pluxel/runtime/web/react`：只负责把 Management Client 注入 React，不包含官方 Workbench transport。
+
+Management control 把持久策略与本次进程生命周期分开：`client.plugins.setAutoStart()` 只修改 RuntimeState v5 的 `autoStart`，
+`client.plugins.applyLifecycleCommands()` 只执行 `start | stop | restart`。公开状态分别返回 `autoStart`、process-local
+`sessionIntent`、`desiredState`、`activationReason` 和 observed `lifecycleState`；调用方不能用 auto-start policy 猜测 Plugin 是否正在运行。
 
 默认 `/web` discovery 只报告 `workbench.enabled`；catalog revision、renderer、resource 和 session endpoint
 属于尚未标准化的 View-host protocol，不进入 Management v1。使用 `/web/react` 或 `/workbench/ui` 时，宿主必须提供

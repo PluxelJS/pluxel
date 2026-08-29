@@ -87,7 +87,7 @@ describe('StatusPlugin', () => {
 			async (host) => {
 				host.add(StatusPlugin)
 				host.cfg(StatusPlugin).set({ label: 'healthy', intervalMs: 1_000 })
-				host.cfg(StatusPlugin).enable()
+				host.start(StatusPlugin)
 				await host.commit()
 
 				const response = await host.fetch(new Request('http://local.test/status'))

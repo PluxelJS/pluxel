@@ -34,20 +34,30 @@ export function createSseResponse(
 	headers?: HeadersInit,
 ): Response {
 	const encoder = new TextEncoder()
+	let cancelStream: (() => void) | undefined
 
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
 			let closed = false
 			const abortHandlers = new Set<() => void>()
 
-			const close = () => {
+			const terminate = (closeController: boolean) => {
 				if (closed) return
 				closed = true
-				for (const cb of abortHandlers) cb()
-				controller.close()
+				for (const cb of abortHandlers) {
+					try {
+						cb()
+					} catch {
+						// Cancellation is the terminal resource boundary. One faulty cleanup must not
+						// prevent the remaining handlers from running or leak through stream.cancel().
+					}
+				}
+				abortHandlers.clear()
+				if (closeController) controller.close()
 			}
 
-			const abort = () => close()
+			const abort = () => terminate(true)
+			cancelStream = () => terminate(false)
 			if (request.signal.aborted) {
 				abort()
 				return
@@ -75,17 +85,22 @@ export function createSseResponse(
 				},
 			}
 
-			queueMicrotask(async () => {
-				try {
-					await handler(writer)
-				} catch (error) {
-					if (!closed) controller.error(error)
-					return
-				} finally {
-					request.signal.removeEventListener('abort', abort)
-					close()
-				}
+			queueMicrotask(() => {
+				void (async () => {
+					try {
+						await handler(writer)
+					} catch (error) {
+						if (!closed) controller.error(normalizeSseHandlerError(error))
+						return
+					} finally {
+						request.signal.removeEventListener('abort', abort)
+						terminate(true)
+					}
+				})().catch((): undefined => undefined)
 			})
+		},
+		cancel() {
+			cancelStream?.()
 		},
 	})
 
@@ -98,4 +113,10 @@ export function createSseResponse(
 			...(headers ? Object.fromEntries(new Headers(headers).entries()) : {}),
 		},
 	})
+}
+
+function normalizeSseHandlerError(cause: unknown): Error {
+	if (cause instanceof Error) return cause
+	const detail = cause === undefined ? 'without a rejection reason' : `with ${String(cause)}`
+	return new Error(`[runtime:sse] stream handler failed ${detail}`, { cause })
 }

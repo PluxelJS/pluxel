@@ -76,7 +76,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 									{sourceLabel}
 								</Badge>
 							</div>
-							<ActionBar prominent />
+							<ActionBar />
 						</div>
 						<Tabs.List className="plx-paneTabs__list" aria-label="插件工作台标签页">
 							{showRouteTab ? (

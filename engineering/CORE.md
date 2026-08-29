@@ -89,7 +89,7 @@ Core 对三个不同生命周期对象使用不同记录：
 - generation 是 node 的一次 Context、instance、caller facade、admission gate 与 effects 生命周期，不进入 address，也不复用 constructor 充当 identity。
 
 definition slot 与 node slot 在进程内稳定；replacement 原子创建新 definition record，并通过 definition-to-materialized-node index
-以 O(k) 枚举该 definition 的全部 node record。zero-fork 且 disabled 的 definition 不创建 node/fork table 或 synthetic subclass。
+以 O(k) 枚举该 definition 的全部 node record。zero-fork 且不在 effective desired graph 中的 definition 不创建 node/fork table 或 synthetic subclass。
 
 ### Graph snapshot 与成本模型
 

@@ -31,7 +31,7 @@ generation 只读取这份 immutable snapshot。
 ## 关键语义
 
 - owner 是 `ctx.pluginInfo.nodeAddress` 或 control plane 提交的 canonical `PluginNodeAddress`；ConfigService 不 intern Core slot，
-  因此 disabled definition/fork 的 durable config 不会创建 Core tombstone。
+  因此 unmaterialized definition/fork 的 durable config 不会创建 Core tombstone。
 - `getValidatedConfig(address, authority)` 不回退 raw；revision 或 candidate authority 不匹配、或未先完成 validation 时抛错。
 - `getRawConfig(address)` 返回持久层 raw snapshot，用于 runtime control plane。
 - `ensureValidated(address, authority)` 只在 raw revision 与 immutable candidate authority 都未变化时复用 cache。

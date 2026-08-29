@@ -78,7 +78,6 @@ export type PluginStatusIssue = Readonly<{
 		| 'consumer_unavailable'
 		| 'requirement_removed'
 		| 'provider_unavailable'
-		| 'provider_disabled'
 		| 'provider_incompatible'
 		| 'fork_not_allowed'
 		| 'fork_default_forbidden'
@@ -89,24 +88,30 @@ export type PluginStatusIssue = Readonly<{
 	message: string
 }>
 
-export type PluginStatusSnapshot = Readonly<{
-	address: PluginNodeAddress
-	reference: string
-	route: string
-	displayName: string
-	label: Readonly<{ title: string; qualifier?: string; text: string }>
-	rootExportName: string
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: 'running' | 'stopped' | 'disabled'
-	availability: 'available' | 'unavailable'
-	issues: readonly PluginStatusIssue[]
-	source: PluginSourceSnapshot
+export type PluginControlSnapshot = Readonly<{
+	autoStart: boolean
+	sessionIntent: 'inherit' | 'run' | 'stop'
+	desiredState: 'running' | 'stopped'
+	activationReason: 'auto-start' | 'session' | 'dependency' | null
+	lifecycleState: 'running' | 'stopped'
 }>
+
+export type PluginStatusSnapshot = PluginControlSnapshot &
+	Readonly<{
+		address: PluginNodeAddress
+		reference: string
+		route: string
+		displayName: string
+		label: Readonly<{ title: string; qualifier?: string; text: string }>
+		rootExportName: string
+		availability: 'available' | 'unavailable'
+		issues: readonly PluginStatusIssue[]
+		source: PluginSourceSnapshot
+	}>
 
 export type PluginsListOutput = Readonly<{
 	plugins: readonly PluginStatusSnapshot[]
-	summary: Readonly<{ total: number; running: number; stopped: number; disabled: number }>
+	summary: Readonly<{ total: number; running: number; stopped: number; autoStart: number }>
 }>
 
 export type PluginStatusQueryResult =
@@ -118,7 +123,6 @@ export type PluginStatusQueryResult =
 			error: string
 	  }>
 
-export type PluginStatusAction = 'enable' | 'disable' | 'restart'
 export type ConfigPatch = Record<string, unknown>
 export type ConfigFieldMutation = Readonly<{
 	fieldPath: string
@@ -146,7 +150,7 @@ export type PluginReconciliationIssue =
 			message: string
 	  }>
 	| Readonly<{
-			kind: 'provider_unavailable' | 'provider_disabled' | 'provider_incompatible'
+			kind: 'provider_unavailable' | 'provider_incompatible'
 			binding: 'provider-default' | 'dependency-override'
 			consumer?: PluginNodeAddress
 			requirement: PluginDefinitionAddress
@@ -475,34 +479,41 @@ export type ConfigPresentationResultErr = Readonly<{
 
 export type ConfigPresentationResult = ConfigPresentationResultOk | ConfigPresentationResultErr
 
-export type PluginStatusBatchAction = Readonly<{
+export type PluginAutoStartBatchItem = Readonly<{
 	address: PluginNodeAddress
-	action: PluginStatusAction
+	autoStart: boolean
 }>
-export type PluginStatusMutationErrorCode =
+
+export type PluginLifecycleCommand = 'start' | 'stop' | 'restart'
+export type PluginLifecycleCommandBatchItem = Readonly<{
+	address: PluginNodeAddress
+	command: PluginLifecycleCommand
+}>
+
+export type PluginControlMutationErrorCode =
 	| 'plugin_not_found'
+	| 'start_unavailable'
 	| 'restart_unavailable'
+	| 'node_unavailable'
 	| 'graph_rejected'
 	| 'persistence_failed'
-	| 'state_mutation_rejected'
-export type PluginStatusMutationSuccess = Readonly<{
+export type PluginControlMutationSuccess = Readonly<{
 	address: PluginNodeAddress
 	ok: true
 	status: 'applied'
 	report: PluginApplyReport
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: PluginStatusEntryLifecycleStage
+	control: PluginControlSnapshot
 }>
-export type PluginStatusMutationFailure =
+export type PluginControlMutationFailure =
 	| Readonly<{
 			address: PluginNodeAddress
 			ok: false
 			code:
 				| 'plugin_not_found'
+				| 'start_unavailable'
 				| 'restart_unavailable'
+				| 'node_unavailable'
 				| 'graph_rejected'
-				| 'state_mutation_rejected'
 			state: 'unchanged'
 			error: string
 	  }>
@@ -513,14 +524,16 @@ export type PluginStatusMutationFailure =
 			state: 'unknown'
 			error: string
 	  }>
-export type PluginStatusMutationResult = PluginStatusMutationSuccess | PluginStatusMutationFailure
+export type PluginControlMutationResult =
+	| PluginControlMutationSuccess
+	| PluginControlMutationFailure
 /** Actions are serialized and may partially apply before a later item fails. */
-export type PluginStatusBatchResult =
-	| Readonly<{ ok: true; status: 'applied'; results: readonly PluginStatusMutationSuccess[] }>
+export type PluginControlBatchResult =
+	| Readonly<{ ok: true; status: 'applied'; results: readonly PluginControlMutationSuccess[] }>
 	| Readonly<{
 			ok: false
 			status: 'partially-applied' | 'rejected'
-			results: readonly PluginStatusMutationResult[]
+			results: readonly PluginControlMutationResult[]
 	  }>
 	| Readonly<{
 			ok: false
@@ -530,9 +543,6 @@ export type PluginStatusBatchResult =
 			error: string
 			results: readonly []
 	  }>
-
-export type PluginStatusEntryLifecycleStage = 'running' | 'stopped' | 'disabled'
-
 export type PluginDependencyKind = 'plugin' | 'abstract'
 
 export type PluginGroupInput = {
@@ -569,27 +579,60 @@ export type PluginGroupsMutationResult =
 			error: string
 	  }>
 
-export type PluginDependencyOption = Readonly<{
-	address: PluginNodeAddress
-	displayName: string
-	isRunning: boolean
-	isEnabled: boolean
+export type PluginDependencyGraphSnapshot = Readonly<{
+	nodes: readonly PluginDependencyGraphNode[]
+	edges: readonly PluginDependencyGraphEdge[]
 }>
 
-export type PluginDependencyRef = Readonly<{
-	address: PluginNodeAddress
-	displayName: string
-	isRunning?: boolean
+export type PluginDependencyGraphNode = Readonly<{
+	status: PluginStatusSnapshot
+	effective: boolean
 }>
 
-export type PluginDependencyState = Readonly<{
+type PluginDependencyGraphEdgeIdentity = Readonly<{
+	consumer: PluginNodeAddress
+	requirement: PluginDefinitionAddress
+}>
+
+export type PluginDependencyGraphEdge = PluginDependencyGraphEdgeIdentity &
+	(
+		| Readonly<{
+				mode: 'required'
+				resolution: Readonly<{
+					state: 'resolved'
+					provider: PluginNodeAddress
+					via: 'direct' | 'provider-default' | 'dependency-override'
+				}>
+				effective: boolean
+		  }>
+		| Readonly<{
+				mode: 'required'
+				resolution: Readonly<{ state: 'unresolved' }>
+				effective: false
+		  }>
+		| Readonly<{
+				mode: 'optional'
+				resolution: Readonly<{
+					state: 'resolved'
+					provider: PluginNodeAddress
+					via: 'direct'
+				}>
+				effective: boolean
+		  }>
+	)
+
+export type PluginProviderOption = Readonly<{
+	address: PluginNodeAddress
+	displayName: string
+	availability: 'available' | 'unavailable'
+}>
+
+export type PluginConsumerRequirementState = Readonly<{
 	requirement: PluginDefinitionAddress
 	kind: PluginDependencyKind
-	effective: PluginNodeAddress | null
-	isRunning: boolean
-	selected: PluginNodeAddress | null
-	providerDefault: PluginNodeAddress | null
-	options: readonly PluginDependencyOption[]
+	consumerOverride: PluginNodeAddress | null
+	inheritedProvider: PluginNodeAddress | null
+	options: readonly PluginProviderOption[]
 }>
 
 export type PluginDependencyMutationErrorCode =
@@ -601,6 +644,7 @@ export type PluginDependencyMutationErrorCode =
 	| 'provider_incompatible'
 	| 'fork_default_forbidden'
 	| 'provider_default_requires_abstract'
+	| 'provider_policy_unavailable'
 	| 'graph_rejected'
 	| 'persistence_failed'
 export type PluginDependencyMutationResult =
@@ -618,20 +662,16 @@ export type PluginDependencyMutationResult =
 			error: string
 	  }>
 
-export type PluginDependencyQueryFailure = Readonly<{
+export type PluginConsumerRequirementsQueryFailure = Readonly<{
 	ok: false
 	code: 'invalid_input' | 'consumer_unavailable'
 	state: 'unchanged'
 	error: string
 }>
 
-export type PluginDependencyListResult =
-	| Readonly<{ ok: true; items: readonly PluginDependencyRef[] }>
-	| PluginDependencyQueryFailure
-
-export type PluginDependencyInspectionResult =
-	| Readonly<{ ok: true; items: readonly PluginDependencyState[] }>
-	| PluginDependencyQueryFailure
+export type PluginConsumerRequirementsInspectionResult =
+	| Readonly<{ ok: true; items: readonly PluginConsumerRequirementState[] }>
+	| PluginConsumerRequirementsQueryFailure
 
 export type EnsureForkResult =
 	| Readonly<{
@@ -639,16 +679,6 @@ export type EnsureForkResult =
 			status: 'applied' | 'deferred'
 			fork: PluginNodeAddress
 			report: PluginApplyReport
-	  }>
-	| Readonly<{
-			ok: true
-			status: 'saved-not-applied'
-			fork: PluginNodeAddress
-			report: PluginApplyReport
-			applicationFailure: Readonly<{
-				code: 'plugin_not_running_after_enable'
-				message: string
-			}>
 	  }>
 	| Readonly<{
 			ok: false
@@ -705,22 +735,27 @@ export type RemoveForkResult =
 	| Readonly<{
 			ok: false
 			code: 'persistence_failed'
-			state: 'retained' | 'disabled-retained' | 'unknown'
+			state: 'retained' | 'stopped-retained' | 'unknown'
 			fork: PluginNodeAddress
 			report?: PluginApplyReport
 			error: string
 	  }>
 
-export type BaseProviderInfo = Readonly<{
+export type PluginProviderPolicyInfo = Readonly<{
 	token: PluginDefinitionAddress
-	currentDefault: PluginNodeAddress | null
-	isDefault: boolean
-	providers: readonly PluginDependencyOption[]
+	defaultProvider: PluginNodeAddress | null
+	policyOwnerIsDefault: boolean
+	options: readonly PluginProviderOption[]
 }>
 
-export type BaseProviderInspectionResult =
-	| Readonly<{ ok: true; value: BaseProviderInfo | null }>
-	| PluginDependencyQueryFailure
+export type PluginProviderPolicyInspectionResult =
+	| Readonly<{ ok: true; value: PluginProviderPolicyInfo | null }>
+	| Readonly<{
+			ok: false
+			code: 'invalid_input' | 'provider_policy_unavailable'
+			state: 'unchanged'
+			error: string
+	  }>
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
 export type RuntimePluginLogLevel = LogLevel | 'off'

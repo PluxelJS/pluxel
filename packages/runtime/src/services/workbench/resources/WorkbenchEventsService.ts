@@ -1,8 +1,9 @@
 import type { Context } from '@pluxel/core'
-import { createResponse, type Session } from 'better-sse'
 import type { Context as ElysiaContext } from 'elysia'
 
 import { pinOwnerContext } from '../../../context/owner-view'
+import { createSseResponse, type SseStreamWriter } from '../../http/sse'
+
 type SseHttpContext = ElysiaContext & { pluginCtx: Context }
 
 export interface SseEventPayload {
@@ -71,10 +72,90 @@ type SessionState = {
 	httpCtx?: SseHttpContext
 }
 
+class WorkbenchEventSession {
+	readonly state: SessionState
+	isConnected = true
+
+	private readonly disconnected = new Set<() => void>()
+	private readonly disconnectedPromise: Promise<void>
+	private resolveDisconnected!: () => void
+
+	constructor(
+		private readonly request: Request,
+		private readonly writer: SseStreamWriter,
+		state: SessionState,
+		private readonly onFailure: (operation: 'write' | 'disconnect', cause: unknown) => void,
+	) {
+		this.state = state
+		this.disconnectedPromise = new Promise<void>((resolve) => {
+			this.resolveDisconnected = resolve
+		})
+	}
+
+	onDisconnected(callback: () => void): () => void {
+		if (!this.isConnected) {
+			callback()
+			return () => undefined
+		}
+		this.disconnected.add(callback)
+		return () => this.disconnected.delete(callback)
+	}
+
+	disconnect(): void {
+		if (!this.isConnected) return
+		this.isConnected = false
+		const callbacks = [...this.disconnected]
+		this.disconnected.clear()
+		this.resolveDisconnected()
+		for (const callback of callbacks) {
+			try {
+				callback()
+			} catch (cause) {
+				this.reportFailure('disconnect', cause)
+			}
+		}
+	}
+
+	whenDisconnected(): Promise<void> {
+		return this.disconnectedPromise
+	}
+
+	getRequest(): Request {
+		return this.request
+	}
+
+	push(data: string, event = 'message', id: string = crypto.randomUUID()): void {
+		if (!this.isConnected) {
+			throw new Error('[workbench] cannot push to a disconnected event stream')
+		}
+		this.observeWrite(this.writer.writeSSE({ data, event, id }))
+	}
+
+	keepAlive(): void {
+		if (!this.isConnected) return
+		this.observeWrite(this.writer.write(':\n\n'))
+	}
+
+	private observeWrite(write: Promise<void>): void {
+		void write.catch((cause: unknown) => {
+			this.reportFailure('write', cause)
+			this.disconnect()
+		})
+	}
+
+	private reportFailure(operation: 'write' | 'disconnect', cause: unknown): void {
+		try {
+			this.onFailure(operation, cause)
+		} catch {
+			// This is the terminal observation boundary for stream and cleanup failures.
+		}
+	}
+}
+
 export class WorkbenchEventsService {
 	private resources = new Map<string, RegisteredWorkbenchEvents>()
-	private readonly sessions = new Set<Session<SessionState>>()
-	private readonly pendingByNamespace = new Map<string, Map<Session<SessionState>, Set<string>>>()
+	private readonly sessions = new Set<WorkbenchEventSession>()
+	private readonly pendingByNamespace = new Map<string, Map<WorkbenchEventSession, Set<string>>>()
 	private static readonly KEEPALIVE_MS = 25_000
 	private static readonly RETRY_MS = 2_000
 
@@ -152,18 +233,44 @@ export class WorkbenchEventsService {
 			c.pluginCtx.logger.warn('namespaces missing, fallback', { missing })
 		}
 
-		return createResponse<SessionState>(
+		return createSseResponse(
 			c.request,
-			{
-				keepAlive: WorkbenchEventsService.KEEPALIVE_MS,
-				retry: WorkbenchEventsService.RETRY_MS,
-				serializer: (value) => this.stringify(value),
-				state: {
-					requested: new Map(requested.map(({ key, namespace }) => [key, namespace] as const)),
-					handlers: new Map(),
-				},
+			async (writer) => {
+				await writer.writeSSE({ retry: WorkbenchEventsService.RETRY_MS })
+				const session = new WorkbenchEventSession(
+					c.request,
+					writer,
+					{
+						requested: new Map(requested.map(({ key, namespace }) => [key, namespace] as const)),
+						handlers: new Map(),
+					},
+					(operation, cause) => {
+						c.pluginCtx.logger.warn('Workbench event stream lifecycle failed', {
+							operation,
+							error: this.normalizeStreamFailure(operation, cause),
+						})
+					},
+				)
+				writer.onAbort(() => session.disconnect())
+				if (!session.isConnected) return
+
+				this.attachSession(session, c, params)
+				const keepAliveTimer = setInterval(
+					() => session.keepAlive(),
+					WorkbenchEventsService.KEEPALIVE_MS,
+				)
+				try {
+					await session.whenDisconnected()
+				} finally {
+					clearInterval(keepAliveTimer)
+					session.disconnect()
+				}
 			},
-			(session) => this.attachSession(session, c, params),
+			{
+				'Cache-Control': 'private, no-cache, no-store, no-transform, must-revalidate, max-age=0',
+				Pragma: 'no-cache',
+				'X-Accel-Buffering': 'no',
+			},
 		)
 	}
 
@@ -176,13 +283,13 @@ export class WorkbenchEventsService {
 	}
 
 	private attachSession(
-		session: Session<SessionState>,
+		session: WorkbenchEventSession,
 		httpCtx: SseHttpContext,
 		query: URLSearchParams,
 	) {
 		this.sessions.add(session)
 		const clean = () => this.cleanupSession(session)
-		session.once('disconnected', clean)
+		session.onDisconnected(clean)
 
 		session.state.httpCtx = httpCtx
 		session.state.query = query
@@ -193,7 +300,7 @@ export class WorkbenchEventsService {
 	}
 
 	private createChannelBase(
-		session: Session<SessionState>,
+		session: WorkbenchEventSession,
 		httpCtx: SseHttpContext,
 		query: URLSearchParams,
 		owner: Context,
@@ -211,7 +318,7 @@ export class WorkbenchEventsService {
 		}
 	}
 
-	private async attachSubscriptionToSession(session: Session<SessionState>, key: string) {
+	private async attachSubscriptionToSession(session: WorkbenchEventSession, key: string) {
 		const state = session.state
 		if (state.handlers.has(key)) return
 		const namespace = state.requested.get(key)
@@ -275,7 +382,12 @@ export class WorkbenchEventsService {
 					return
 				}
 				abortCallbacks.add(run)
-				session.once('disconnected', run)
+				let unsubscribe: () => void = () => undefined
+				const onDisconnected = () => {
+					unsubscribe()
+					run()
+				}
+				unsubscribe = session.onDisconnected(onDisconnected)
 			},
 		)
 		state.handlers.set(key, attachment)
@@ -297,7 +409,7 @@ export class WorkbenchEventsService {
 
 	private createChannel(
 		namespace: string,
-		session: Session<SessionState>,
+		session: WorkbenchEventSession,
 		base: Omit<SseChannel, 'namespace' | 'send' | 'emit'>,
 	): SseChannel {
 		const send = (payload: SsePayload) => {
@@ -408,7 +520,7 @@ export class WorkbenchEventsService {
 		return [...normalized].map(([key, namespace]) => ({ key, namespace }))
 	}
 
-	private markPending(namespace: string, session: Session<SessionState>, key: string) {
+	private markPending(namespace: string, session: WorkbenchEventSession, key: string) {
 		let sessions = this.pendingByNamespace.get(namespace)
 		if (!sessions) {
 			sessions = new Map()
@@ -422,7 +534,7 @@ export class WorkbenchEventsService {
 		keys.add(key)
 	}
 
-	private unmarkPending(namespace: string, session: Session<SessionState>, key: string) {
+	private unmarkPending(namespace: string, session: WorkbenchEventSession, key: string) {
 		const sessions = this.pendingByNamespace.get(namespace)
 		const keys = sessions?.get(session)
 		if (!sessions || !keys) return
@@ -445,7 +557,7 @@ export class WorkbenchEventsService {
 		if (waiters.size === 0) this.pendingByNamespace.delete(namespace)
 	}
 
-	private cleanupSession(session: Session<SessionState>) {
+	private cleanupSession(session: WorkbenchEventSession) {
 		this.sessions.delete(session)
 		for (const [namespace, sessions] of this.pendingByNamespace) {
 			if (!sessions.delete(session)) continue
@@ -489,7 +601,7 @@ export class WorkbenchEventsService {
 		}
 	}
 
-	private scheduleSubscriptionAttachment(session: Session<SessionState>, key: string): void {
+	private scheduleSubscriptionAttachment(session: WorkbenchEventSession, key: string): void {
 		void this.attachSubscriptionToSession(session, key).catch((error: unknown) => {
 			this.ctx.logger.error('Workbench stream subscription attach failed', { error, key })
 		})
@@ -503,6 +615,12 @@ export class WorkbenchEventsService {
 				this.scheduleSubscriptionAttachment(session, key)
 			}
 		}
+	}
+
+	private normalizeStreamFailure(operation: 'write' | 'disconnect', cause: unknown): Error {
+		if (cause instanceof Error) return cause
+		const detail = cause === undefined ? 'without a reason' : `with ${String(cause)}`
+		return new Error(`[workbench] event stream ${operation} failed ${detail}`, { cause })
 	}
 }
 

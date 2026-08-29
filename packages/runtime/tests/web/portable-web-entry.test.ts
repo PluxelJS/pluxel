@@ -2,6 +2,9 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import {
 	parseRuntimeMetaV1,
 	type OnAdminAccessBlocked,
+	type PluginDependencyGraphEdge,
+	type PluginDependencyGraphSnapshot,
+	type RuntimeManagementClient,
 	type RuntimeManagementClientOptions,
 	type RuntimeMetaV1,
 } from '../../src/web'
@@ -39,6 +42,22 @@ describe('@pluxel/runtime/web framework boundary', () => {
 		expectTypeOf<RuntimeManagementClientOptions['adminAccess']>().toEqualTypeOf<
 			false | { onBlocked?: OnAdminAccessBlocked } | undefined
 		>()
+	})
+
+	it('exports the closed dependency graph DTO through the Level 1 client', () => {
+		expectTypeOf<ReturnType<RuntimeManagementClient['dependencies']['graph']>>().toEqualTypeOf<
+			Promise<PluginDependencyGraphSnapshot>
+		>()
+		type OptionalUnresolved = Extract<
+			PluginDependencyGraphEdge,
+			{ mode: 'optional'; resolution: { state: 'unresolved' } }
+		>
+		type EffectiveUnresolved = Extract<
+			PluginDependencyGraphEdge,
+			{ resolution: { state: 'unresolved' }; effective: true }
+		>
+		expectTypeOf<OptionalUnresolved>().toEqualTypeOf<never>()
+		expectTypeOf<EffectiveUnresolved>().toEqualTypeOf<never>()
 	})
 
 	it('keeps Level 1 discovery free of View-host protocol facts', () => {

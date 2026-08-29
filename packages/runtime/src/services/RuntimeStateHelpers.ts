@@ -9,7 +9,7 @@ import {
 import type { RuntimeStateDraft, RuntimeStateSnapshot } from './RuntimeStateStore'
 
 export type RuntimeStateReadIndex = Readonly<{
-	enabledKeys: ReadonlySet<string>
+	autoStartKeys: ReadonlySet<string>
 	forkIdsByDefinition: ReadonlyMap<string, readonly string[]>
 	forkNodeKeys: ReadonlySet<string>
 }>
@@ -21,7 +21,7 @@ export function runtimeStateReadIndex(state: RuntimeStateSnapshot): RuntimeState
 	const cached = readIndexes.get(state)
 	if (cached) return cached
 	const index: RuntimeStateReadIndex = Object.freeze({
-		enabledKeys: new Set(state.enabled.map(pluginNodeIndexKey)),
+		autoStartKeys: new Set(state.autoStart.map(pluginNodeIndexKey)),
 		forkIdsByDefinition: new Map(
 			state.forks.map((entry) => [pluginDefinitionIndexKey(entry.definition), entry.forkIds]),
 		),
@@ -48,37 +48,40 @@ export function samePluginNodeAddress(left: PluginNodeAddress, right: PluginNode
 	return pluginNodeAddressEqual(left, right)
 }
 
-export function isPluginEnabled(state: RuntimeStateSnapshot, node: PluginNodeAddress): boolean {
-	return runtimeStateReadIndex(state).enabledKeys.has(pluginNodeIndexKey(node))
+export function isPluginAutoStartEnabled(
+	state: RuntimeStateSnapshot,
+	node: PluginNodeAddress,
+): boolean {
+	return runtimeStateReadIndex(state).autoStartKeys.has(pluginNodeIndexKey(node))
 }
 
-export function setPluginEnabled(
+export function setPluginAutoStart(
 	draft: RuntimeStateDraft,
 	node: PluginNodeAddress,
-	enabled: boolean,
+	autoStart: boolean,
 ): void {
-	const index = draft.enabled.findIndex((candidate) => samePluginNodeAddress(candidate, node))
-	if (enabled) {
-		if (index < 0) draft.enabled.push(node)
+	const index = draft.autoStart.findIndex((candidate) => samePluginNodeAddress(candidate, node))
+	if (autoStart) {
+		if (index < 0) draft.autoStart.push(node)
 		return
 	}
-	if (index >= 0) draft.enabled.splice(index, 1)
+	if (index >= 0) draft.autoStart.splice(index, 1)
 }
 
-export function setPluginsEnabled(
+export function setPluginsAutoStart(
 	draft: RuntimeStateDraft,
 	nodes: Iterable<PluginNodeAddress>,
-	enabled: boolean,
+	autoStart: boolean,
 ): void {
-	for (const node of nodes) setPluginEnabled(draft, node, enabled)
+	for (const node of nodes) setPluginAutoStart(draft, node, autoStart)
 }
 
-export function replaceEnabledPlugins(
+export function replaceAutoStartPlugins(
 	draft: RuntimeStateDraft,
 	nodes: Iterable<PluginNodeAddress>,
 ): void {
-	draft.enabled.length = 0
-	for (const node of nodes) setPluginEnabled(draft, node, true)
+	draft.autoStart.length = 0
+	for (const node of nodes) setPluginAutoStart(draft, node, true)
 }
 
 export function listForkIds(

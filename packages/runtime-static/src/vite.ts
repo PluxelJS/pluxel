@@ -23,15 +23,14 @@ import {
 	type HmrReportLogProps,
 	type HmrUpdatedLogProps,
 } from '../../runtime-dev/src/hmr-log.ts'
+import { shouldHandleRuntimeViteRequest } from '../../runtime-dev/src/internal/vite-route-request.ts'
 import {
-	isPluginEnabled,
 	readHostProduct,
+	readRuntimePluginStatusOverview,
 	readRuntimeRouteCapabilities,
 	requireRuntimeHttpService,
-	requireRuntimeStateStore,
 	resolveDevWorkbenchClientEntryUrl,
 	sameProduct,
-	UI_PUBLIC_BASE,
 } from '@pluxel/runtime/internal'
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
@@ -238,7 +237,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				const startup = await replaceHost(loaded.application, loaded.product)
 				state.configFiles = loaded.configFiles
 				const host = state.host!
-				logStaticRuntimeStarted(host, startup, state.configFiles)
+				await logStaticRuntimeStarted(host, startup, state.configFiles)
 
 				state.carrier = attachSrvxViteNodeCarrier(server, {
 					fetch(request) {
@@ -341,7 +340,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			) {
 				const startup = await replaceHost(application, loaded.product)
 				state.configFiles = loaded.configFiles
-				logStaticRuntimeStarted(state.host!, startup, state.configFiles)
+				await logStaticRuntimeStarted(state.host!, startup, state.configFiles)
 				if (productChanged) ctx.server.ws.send({ type: 'full-reload' })
 				return []
 			}
@@ -352,7 +351,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			state.application = application
 			state.product = loaded.product
 			state.configFiles = loaded.configFiles
-			logStaticRuntimeHmrUpdated(
+			await logStaticRuntimeHmrUpdated(
 				host,
 				report,
 				ctx.file,
@@ -375,9 +374,9 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 type StaticRuntimeReportSummary = {
 	plugins: {
 		catalog: number
-		enabled: number
-		started: number
-		disabled: number
+		desired: number
+		running: number
+		stopped: number
 		blocked: number
 	}
 	loaded: string[]
@@ -391,24 +390,24 @@ type StaticRuntimeReportSummary = {
 	}
 }
 
-function logStaticRuntimeStarted(
+async function logStaticRuntimeStarted(
 	host: StaticRuntimeHost,
 	startup: StaticRuntimeStartupReport,
 	configFiles: ReadonlySet<string>,
-): void {
-	const summary = formatStaticRuntimeReport(host, startup)
+): Promise<void> {
+	const summary = await formatStaticRuntimeReport(host, startup)
 	host.ctx.logger.info('HMR report', formatStaticRuntimeHmrReport('startup', summary, configFiles))
 }
 
-function logStaticRuntimeHmrUpdated(
+async function logStaticRuntimeHmrUpdated(
 	host: StaticRuntimeHost,
 	report: StaticRuntimeHmrReport,
 	changedFile: string,
 	configFiles: ReadonlySet<string>,
 	commitMs: number,
 	viteInvalidated: number,
-): void {
-	const summary = formatStaticRuntimeReport(host, report)
+): Promise<void> {
+	const summary = await formatStaticRuntimeReport(host, report)
 	const ok = report.commit?.lifecycleReport.ok ?? false
 	const props = {
 		ok,
@@ -419,7 +418,7 @@ function logStaticRuntimeHmrUpdated(
 		),
 		targets: summary.plugins.catalog,
 		affected: affectedStaticRuntimePlugins(host, report),
-		activeServices: summary.plugins.started,
+		activeServices: summary.plugins.running,
 		fallbackRoots: configFiles.size,
 		plugins: toHmrPluginTotals(summary),
 		invalidated: hmrInvalidated(viteInvalidated),
@@ -430,10 +429,10 @@ function logStaticRuntimeHmrUpdated(
 	host.ctx.logger.info('HMR report', formatStaticRuntimeHmrReport('update', summary, configFiles))
 }
 
-function formatStaticRuntimeReport(
+async function formatStaticRuntimeReport(
 	host: StaticRuntimeHost,
 	report: StaticRuntimeStartupReport,
-): StaticRuntimeReportSummary {
+): Promise<StaticRuntimeReportSummary> {
 	const catalog = host.describeCatalog().plugins
 	const catalogLabels = catalog.map(
 		({ address, displayName }) => `${displayName} (${formatPluginNodeReference(address)})`,
@@ -444,15 +443,15 @@ function formatStaticRuntimeReport(
 			: `${displayName} [${formatPluginNodeReference(address)}]:${status}`,
 	)
 	const status = countStatuses(report.entries)
-	const runtimeState = requireRuntimeStateStore(host.ctx).snapshot()
+	const overview = await readRuntimePluginStatusOverview(host.ctx)
 	const pluginService = requirePluginService(host.ctx)
 	const commit = report.commit
 	return {
 		plugins: {
 			catalog: catalogLabels.length,
-			enabled: catalog.filter(({ address }) => isPluginEnabled(runtimeState, address)).length,
-			started: catalog.filter(({ address }) => pluginService.isRunning(address)).length,
-			disabled: status.disabled,
+			desired: overview.statuses.filter((entry) => entry.desiredState === 'running').length,
+			running: overview.statuses.filter((entry) => entry.lifecycleState === 'running').length,
+			stopped: status.stopped,
 			blocked: status.blocked,
 		},
 		loaded: catalogLabels,
@@ -508,8 +507,8 @@ function formatStaticRuntimeHmrReport(
 function toHmrPluginTotals(summary: StaticRuntimeReportSummary): HmrPluginTotals {
 	return {
 		loaded: summary.plugins.catalog,
-		enabled: summary.plugins.enabled,
-		running: summary.plugins.started,
+		desired: summary.plugins.desired,
+		running: summary.plugins.running,
 	}
 }
 
@@ -569,18 +568,18 @@ function invalidateStaticRuntimeChangedModules(
 
 function countStatuses(entries: readonly StaticRuntimeStartupReport['entries'][number][]): {
 	started: number
-	disabled: number
+	stopped: number
 	blocked: number
 } {
 	let started = 0
-	let disabled = 0
+	let stopped = 0
 	let blocked = 0
 	for (const entry of entries) {
 		if (entry.status === 'started') started++
-		else if (entry.status === 'disabled') disabled++
+		else if (entry.status === 'stopped') stopped++
 		else blocked++
 	}
-	return { started, disabled, blocked }
+	return { started, stopped, blocked }
 }
 
 function createStaticRuntimeSourcePlugins(): PluginOption[] {
@@ -659,30 +658,16 @@ function isStaticRuntimeRouteRequest(
 	host: Pick<StaticRuntimeHost, 'ctx'>,
 ): boolean {
 	const url = request.url ?? '/'
-	const pathname = requestPathname(url)
-	if (url.startsWith('/__pluxel/')) return true
 	const workbenchEnabled = host.ctx.workbench !== undefined
-	if (workbenchEnabled && pathname.startsWith(`${UI_PUBLIC_BASE}/`)) return true
-	if (requireRuntimeHttpService(host.ctx).matchesMountedRoute(pathname)) return true
-
-	const method = (request.method ?? 'GET').toUpperCase()
-	if (method !== 'GET' && method !== 'HEAD') return false
-	if (url.startsWith('/@') || url.startsWith('/node_modules/') || url.includes('.')) return false
-	if (!workbenchEnabled) return false
-
-	const accept = String(request.headers.accept ?? '').toLowerCase()
-	return (
-		accept.includes('text/html') &&
-		requireRuntimeHttpService(host.ctx).matchesWorkbenchUiRoute(pathname)
-	)
-}
-
-function requestPathname(url: string): string {
-	try {
-		return new URL(url, 'http://local').pathname
-	} catch {
-		return url.split(/[?#]/, 1)[0] || '/'
-	}
+	const http = requireRuntimeHttpService(host.ctx)
+	return shouldHandleRuntimeViteRequest({
+		url,
+		method: request.method,
+		accept: String(request.headers.accept ?? ''),
+		workbenchEnabled,
+		matchesMountedRoute: (pathname) => http.matchesMountedRoute(pathname),
+		matchesWorkbenchUiRoute: (pathname) => http.matchesWorkbenchUiRoute(pathname),
+	})
 }
 
 type ViteSsrModuleLike = {

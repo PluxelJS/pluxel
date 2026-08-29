@@ -35,7 +35,7 @@ plugins/http/               constructor required TodoPlugin + validated HTTP rou
 host/
   src/pluxel.static.ts      默认与 production runtime authority
   src/pluxel.dynamic.ts     相同 fixed catalog/config + mutable file source
-  src/runtime-state.ts      两种 host 共用的 enabled/config snapshot
+  src/runtime-state.ts      两种 host 共用的 auto-start/config snapshot
   vite.config.ts            指向 web/ 的唯一 Vite config；mode 选择 runtime route
   tsdown.config.ts          staticApplication() + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
@@ -67,7 +67,7 @@ pnpm start
 ```
 
 `host/src/pluxel.static.ts` 的 default export 同时交给 `staticRuntimeVitePlugin()` 和 `staticApplication()`。fixed catalog、
-结构化 enabled addresses 与 Todo config snapshot 都是显式数据。Workbench artifact 会进入 production distribution，
+结构化 auto-start addresses 与 Todo config snapshot 都是显式数据。Workbench artifact 会进入 production distribution，
 但启动时默认关闭；需要管理 UI 时使用：
 
 `host/web/` 是独立 private workspace package，直接声明 React 与以后新增的纯前端依赖，但不 import Pluxel。
@@ -103,7 +103,7 @@ pnpm dev:dynamic
 ```
 
 `pnpm dev:dynamic` 仍读取同一个 `host/vite.config.ts`，只用 Vite `dynamic` mode 把 static route plugin 替换成 dynamic
-route plugin。`host/src/pluxel.dynamic.ts` 复用同一组 fixed plugins、enabled state 和 config snapshot，并额外观察：
+route plugin。`host/src/pluxel.dynamic.ts` 复用同一组 fixed plugins、auto-start policy 和 config snapshot，并额外观察：
 
 ```text
 .pluxel/managed-plugins/*.mjs

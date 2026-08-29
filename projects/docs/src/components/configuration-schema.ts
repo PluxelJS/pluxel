@@ -6,7 +6,7 @@ export const configurationSchema = v.object({
 		v.pipe(
 			v.boolean(),
 			f.formMeta({
-				title: '启用插件',
+				title: '启用示例服务',
 				section: { id: 'runtime', title: '运行时' },
 			}),
 		),

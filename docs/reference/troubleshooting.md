@@ -24,7 +24,7 @@ Core、Runtime 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payl
 4. 配置是否通过 schema 校验；
 5. `init()` 是否抛错，或在 signal 取消后仍继续工作。
 
-required dependency 失败会阻止消费者启动。optional provider absent、disabled 或 start-failed 时 callback 不执行，但不会阻止消费者启动。参见 [Plugin 模型](../getting-started/plugin-model.md)。
+required dependency 失败会阻止消费者启动。optional provider absent、当前未运行或 start-failed 时 callback 不执行，但不会阻止消费者启动。参见 [Plugin 模型](../getting-started/plugin-model.md)。
 
 Part constructor 的 required dependency 会提升到 owning Plugin graph。它缺失或启动失败时，整个 owner blocked；Part 不会被跳过，
 也没有单独的 blocked/running 状态。dependency override 同样设置在 owning Plugin requirement 上，而不是 `partPath`。

@@ -16,7 +16,7 @@ catalog layout，不是插件能力、依赖、生命周期或 Workbench Extensi
 分类的唯一 Plugin 事实源是 runtime coordinator 的 committed immutable catalog/status projection。dynamic loader 只拥有当前 batch 的 unpublished
 draft，management layout service 不能读取它或维护第二份 committed registry。source/package provenance 从 catalog entry 读取；running 状态不决定 classification。
 
-catalog、偏好与布局全部以 canonical definition/node address 及其 index key 建 Map。读取 disabled、stopped、durable orphan 或 invalid address 只能做
+catalog、偏好与布局全部以 canonical definition/node address 及其 index key 建 Map。读取 auto-start off、stopped、durable orphan 或 invalid address 只能做
 non-creating lookup/decode，不得调用 Core intern、创建 definition/node slot、materialized record、Context、effects 或 artifact lease。Workbench registry
 只为真正 running 且 mount contribution 的 owner 持有资源；catalog read model 不能借用该 registry 表示 availability。
 
@@ -82,13 +82,13 @@ definition assignment 可以保留，以便相同 address 重新出现时恢复�
 未知 node、重复 membership 和 split-family 输入，不能把无效输入静默保存。
 
 有效布局由一次 shared status/catalog projection 扫描和偏好覆盖得到；每次 projection 对 pinned revision 只建立一次 node/definition key 索引，分类
-实现不得按插件启动状态建立第二份分组图。disabled/stopped 插件仍在 catalog 中分类，HMR 和 dynamic source add/remove 只使 catalog projection
+实现不得按插件启动状态建立第二份分组图。auto-start-off/stopped 插件仍在 catalog 中分类，HMR 和 dynamic source add/remove 只使 catalog projection
 重新计算，不参与 plugin lifecycle transaction。复杂度为 catalog/status records 加偏好 records 的线性构建与输出排序，不得为每个 group 重复全
 catalog 扫描。
 
 ## Persistence
 
-偏好使用 `management` persistence namespace，不进入 RuntimeState 或 Workbench backend。这样固定 enablement 的 memory
+偏好使用 `management` persistence namespace，不进入 RuntimeState 或 Workbench backend。这样固定 auto-start policy 的 memory
 RuntimeState 与 durable management layout 可以独立选择；management 未安装也没有隐式状态成本。
 
 reader/writer 只接受 version 3 definition address。其他版本、非法 address、同一 family 的冲突 assignment 或 order group
@@ -100,8 +100,8 @@ reader/writer 只接受 version 3 definition address。其他版本、非法 add
 
 - management disabled 零分类 service/持久化写入；
 - static definition address 规则、dynamic exact package、最长 prefix 与冲突拒绝；
-- disabled/stopped catalog entry 仍分类；
-- disabled/orphan read 和无效 mutation 不创建 Core slot/record 或 Workbench artifact owner；
+- auto-start-off/stopped catalog entry 仍分类；
+- inactive/orphan read 和无效 mutation 不创建 Core slot/record 或 Workbench artifact owner；
 - 用户移动、明确未分组、恢复默认、排序和无效 mutation 拒绝；
 - 新 fork 继承 family 分类、同 definition variants 不可拆组；
 - 新安装 package 自动出现、卸载消失、同 address 重装恢复偏好；

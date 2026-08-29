@@ -45,13 +45,13 @@ export function HomeIntro() {
 	const overview = usePluginOverview()
 	const summary = overview.overview?.status.summary
 	const statuses = overview.overview?.status.statuses ?? []
-	const runningPlugins = statuses.filter((plugin) => plugin.isRunning)
-	const attentionPlugins = statuses.filter((plugin) => !plugin.isRunning || !plugin.isEnabled)
+	const runningPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'running')
+	const stoppedPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'stopped')
 	const metrics = [
 		{ label: '插件总数', value: summary?.total },
 		{ label: '正在运行', value: summary?.running, tone: 'running' },
 		{ label: '已停止', value: summary?.stopped },
-		{ label: '已禁用', value: summary?.disabled, tone: 'disabled' },
+		{ label: '自动启动', value: summary?.autoStart, tone: 'auto-start' },
 	]
 
 	return (
@@ -133,9 +133,9 @@ export function HomeIntro() {
 						error={overview.error}
 					/>
 					<PluginQueue
-						title="需要处理"
-						plugins={attentionPlugins}
-						empty="当前没有停止或禁用的插件"
+						title="当前未运行"
+						plugins={stoppedPlugins}
+						empty="当前没有已停止的插件"
 						loading={!overview.hasSnapshot && overview.isLoading}
 						error={overview.error}
 					/>
@@ -179,7 +179,13 @@ function PluginQueue({
 	empty: string
 	error?: string
 	loading: boolean
-	plugins: Array<{ route: string; label: string; isEnabled: boolean; isRunning: boolean }>
+	plugins: Array<{
+		route: string
+		label: string
+		availability: 'available' | 'unavailable'
+		desiredState: 'running' | 'stopped'
+		lifecycleState: 'running' | 'stopped'
+	}>
 	title: string
 }) {
 	const visiblePlugins = plugins.slice(0, 6)
@@ -204,12 +210,24 @@ function PluginQueue({
 							<span
 								className="plx-home__statusDot"
 								data-status={
-									!plugin.isEnabled ? 'disabled' : plugin.isRunning ? 'running' : 'stopped'
+									plugin.availability === 'unavailable'
+										? 'unavailable'
+										: plugin.lifecycleState === 'running'
+											? 'running'
+											: plugin.desiredState === 'running'
+												? 'pending'
+												: 'stopped'
 								}
 							/>
 							<span className="plx-home__queueName">{plugin.label}</span>
 							<span className="plx-home__queueStatus">
-								{!plugin.isEnabled ? '已禁用' : plugin.isRunning ? '运行中' : '已停止'}
+								{plugin.availability === 'unavailable'
+									? '不可用'
+									: plugin.lifecycleState === 'running'
+										? '运行中'
+										: plugin.desiredState === 'running'
+											? '等待运行'
+											: '已停止'}
 							</span>
 							<IconArrowRight size={15} aria-hidden="true" />
 						</RouterLinkAdapter>

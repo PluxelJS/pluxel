@@ -15,7 +15,7 @@ exceptional platform lifecycle -> custom @Plugin(S3, ...)
 ```
 
 官方 concrete provider 只有 `S3Plugin`。local/remote 是同一资源角色的互斥启动配置，anonymous/vault 是 remote authentication
-配置；它们都随 config replacement 使用同一 graph lifecycle，不需要独立 enablement、依赖选择或插件 identity。
+配置；它们都随 config replacement 使用同一 graph lifecycle，不需要独立 auto-start policy、session lifecycle、依赖选择或插件 identity。
 
 `S3` 是普通 abstract capability token，只发布 `client: S3Client`；`S3Plugin` 通过
 `@Plugin(S3, { forkable: true })` 显式允许多实例。`S3Client` 从 `S3mini` 自动取得除下划线 transport internals 外的完整作者面，

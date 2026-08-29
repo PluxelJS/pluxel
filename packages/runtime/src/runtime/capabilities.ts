@@ -4,13 +4,18 @@ import {
 	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { requirePluginService } from '@pluxel/core/internal'
 import {
 	pluginReconciliationIssueKey,
 	requireRuntimePluginGraphCoordinator,
+	type PluginActivationReason,
+	type PluginReconciliationIssue,
+	type PluginRouteCatalogSnapshot,
+	type PluginSessionIntent,
+	type RuntimePluginDesiredControl,
+	type RuntimePluginSessionEntry,
 } from '../internal/reconciliation'
-import { requireRuntimeStateStore } from '../internal/runtime-state'
 import { runtimeStateReadIndex } from '../services/RuntimeStateHelpers'
+import type { RuntimeStateSnapshot } from '../services/RuntimeStateStore'
 
 export type RuntimePluginSource =
 	| {
@@ -38,13 +43,11 @@ export type RuntimePluginSource =
 			tag: null
 	  }
 
-export type RuntimePluginLifecycleStage = 'running' | 'stopped' | 'disabled'
 export type RuntimePluginAvailability = 'available' | 'unavailable'
 export type RuntimePluginReconciliationCode =
 	| 'consumer_unavailable'
 	| 'requirement_removed'
 	| 'provider_unavailable'
-	| 'provider_disabled'
 	| 'provider_incompatible'
 	| 'fork_not_allowed'
 	| 'fork_default_forbidden'
@@ -65,9 +68,11 @@ export type RuntimePluginCatalogEntry = Readonly<{
 }>
 
 export type RuntimePluginStatusSnapshot = RuntimePluginCatalogEntry & {
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: RuntimePluginLifecycleStage
+	autoStart: boolean
+	sessionIntent: PluginSessionIntent
+	desiredState: 'running' | 'stopped'
+	activationReason: PluginActivationReason | null
+	lifecycleState: 'running' | 'stopped'
 	availability: RuntimePluginAvailability
 	issues: readonly RuntimePluginStatusIssue[]
 	source: RuntimePluginSource
@@ -75,18 +80,24 @@ export type RuntimePluginStatusSnapshot = RuntimePluginCatalogEntry & {
 
 export type RuntimePluginStatusOverview = {
 	statuses: RuntimePluginStatusSnapshot[]
-	summary: { total: number; running: number; stopped: number; disabled: number }
+	summary: { total: number; running: number; stopped: number; autoStart: number }
 }
-
-export type RuntimePluginDependencyInfo = Array<{
-	address: PluginNodeAddress
-	displayName: string
-	isRunning: boolean
-}>
 
 export interface PluginSourceRead {
 	resolveSource(address: PluginNodeAddress): RuntimePluginSource
 }
+
+/** @internal Fixed inputs shared by status and dependency-graph projection. */
+export type RuntimePluginStatusProjectionView = Readonly<{
+	catalog: PluginRouteCatalogSnapshot
+	state: RuntimeStateSnapshot
+	reconciliation: readonly PluginReconciliationIssue[]
+	sessionIntents: ReadonlyMap<string, RuntimePluginSessionEntry>
+	desiredControl: ReadonlyMap<string, RuntimePluginDesiredControl>
+	coreNodes: readonly PluginNodeAddress[]
+	runningNodeKeys: ReadonlySet<string>
+	source: PluginSourceRead | undefined
+}>
 
 export interface RuntimeModuleCacheEntry {
 	id: string
@@ -179,20 +190,12 @@ export function unknownPluginSource(): RuntimePluginSource {
 	}
 }
 
-export function readRuntimePluginStatus(
-	ctx: Context,
-	entry: RuntimePluginCatalogEntry,
-): RuntimePluginStatusSnapshot {
-	return projectRuntimePluginStatus(entry, createRuntimePluginStatusProjection(ctx))
-}
-
-function createRuntimePluginStatusProjection(ctx: Context) {
-	const coordinator = requireRuntimePluginGraphCoordinator(ctx)
-	const catalog = coordinator.catalogSnapshot()
-	const state = requireRuntimeStateStore(ctx).snapshot()
+function createRuntimePluginStatusProjectionFromView(view: RuntimePluginStatusProjectionView) {
+	const catalog = view.catalog
+	const state = view.state
 	const stateIndex = runtimeStateReadIndex(state)
 	const issuesByNode = new Map<string, RuntimePluginStatusIssue[]>()
-	for (const issue of coordinator.reconciliationIssues()) {
+	for (const issue of view.reconciliation) {
 		const projected = Object.freeze({
 			id: pluginReconciliationIssueKey(issue),
 			code: issue.kind,
@@ -219,21 +222,26 @@ function createRuntimePluginStatusProjection(ctx: Context) {
 		issuesByNode: new Map(
 			[...issuesByNode].map(([key, issues]) => [key, Object.freeze(issues)] as const),
 		),
-		pluginService: requirePluginService(ctx),
-		source: readRuntimeRouteCapabilities(ctx)?.source,
+		runningNodeKeys: view.runningNodeKeys,
+		sessionIntents: view.sessionIntents,
+		desiredControl: view.desiredControl,
+		coreNodes: view.coreNodes,
+		source: view.source,
 	}
 }
 
 function projectRuntimePluginStatus(
 	entry: RuntimePluginCatalogEntry,
-	projection: ReturnType<typeof createRuntimePluginStatusProjection>,
+	projection: ReturnType<typeof createRuntimePluginStatusProjectionFromView>,
 ): RuntimePluginStatusSnapshot {
 	const definition = projection.catalog.byDefinition.get(
 		pluginDefinitionIndexKey(entry.address.definition),
 	)
 	const nodeKey = pluginNodeIndexKey(entry.address)
-	const isRunning = projection.pluginService.isRunning(entry.address)
-	const isEnabled = projection.stateIndex.enabledKeys.has(nodeKey)
+	const autoStart = projection.stateIndex.autoStartKeys.has(nodeKey)
+	const sessionIntent = projection.sessionIntents.get(nodeKey)?.intent ?? 'inherit'
+	const activationReason = projection.desiredControl.get(nodeKey)?.activationReason ?? null
+	const lifecycleState = projection.runningNodeKeys.has(nodeKey) ? 'running' : 'stopped'
 	const available =
 		!!definition &&
 		(entry.address.variant === 'default' ||
@@ -252,17 +260,39 @@ function projectRuntimePluginStatus(
 	}
 	return {
 		...entry,
-		isRunning,
-		isEnabled,
-		lifecycleStage: !isEnabled ? 'disabled' : isRunning ? 'running' : 'stopped',
+		autoStart,
+		sessionIntent,
+		desiredState: activationReason === null ? 'stopped' : 'running',
+		activationReason,
+		lifecycleState,
 		availability: available ? 'available' : 'unavailable',
 		issues: Object.freeze(issues),
 		source: projection.source?.resolveSource(entry.address) ?? unknownPluginSource(),
 	}
 }
 
-export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOverview {
-	const projection = createRuntimePluginStatusProjection(ctx)
+export async function readRuntimePluginStatusOverview(
+	ctx: Context,
+): Promise<RuntimePluginStatusOverview> {
+	return await requireRuntimePluginGraphCoordinator(ctx).readCommitted((view) =>
+		runtimePluginStatusOverviewFromView({
+			catalog: view.catalog,
+			state: view.runtimeState.state,
+			reconciliation: view.reconciliation,
+			sessionIntents: view.sessionIntents,
+			desiredControl: view.desiredControl,
+			coreNodes: view.coreAdjacency.nodes,
+			runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
+			source: readRuntimeRouteCapabilities(ctx)?.source,
+		}),
+	)
+}
+
+/** @internal Projects status exclusively from one coordinator-pinned committed view. */
+export function runtimePluginStatusOverviewFromView(
+	view: RuntimePluginStatusProjectionView,
+): RuntimePluginStatusOverview {
+	const projection = createRuntimePluginStatusProjectionFromView(view)
 	const catalog = projection.catalog
 	const state = projection.state
 	const entries = new Map<string, RuntimePluginCatalogEntry>()
@@ -288,7 +318,10 @@ export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOv
 		for (const forkId of family.forkIds)
 			add({ definition: family.definition, variant: 'fork', forkId })
 	}
-	for (const address of state.enabled) add(address)
+	for (const address of state.autoStart) add(address)
+	for (const entry of projection.sessionIntents.values()) add(entry.address)
+	for (const entry of projection.desiredControl.values()) add(entry.address)
+	for (const address of projection.coreNodes) add(address)
 	for (const binding of state.providerDefaults) add(binding.provider)
 	for (const binding of state.dependencyOverrides) {
 		add(binding.consumerAddress)
@@ -301,18 +334,18 @@ export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOv
 			pluginNodeIndexKey(left.address).localeCompare(pluginNodeIndexKey(right.address)),
 		)
 	let running = 0
-	let disabled = 0
+	let autoStart = 0
 	for (const status of statuses) {
-		if (status.isRunning) running++
-		if (!status.isEnabled) disabled++
+		if (status.lifecycleState === 'running') running++
+		if (status.autoStart) autoStart++
 	}
 	return {
 		statuses,
 		summary: {
 			total: statuses.length,
 			running,
-			disabled,
-			stopped: statuses.length - running - disabled,
+			autoStart,
+			stopped: statuses.length - running,
 		},
 	}
 }

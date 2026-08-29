@@ -66,7 +66,8 @@ class NativeElysiaIsolationB extends BasePlugin {
 describe('native Elysia authoring capability', () => {
 	it('preserves function plugins, async modules, context, schemas, errors and mounts', async () => {
 		await withRuntimeHost(async (host) => {
-			await host.start(NativeElysiaCapabilities)
+			host.add(NativeElysiaCapabilities).start(NativeElysiaCapabilities)
+			await host.commit()
 
 			await expect(
 				host
@@ -122,8 +123,10 @@ describe('native Elysia authoring capability', () => {
 	it('keeps decorators and hooks local to each generation application', async () => {
 		await withRuntimeHost(async (host) => {
 			host.add([NativeElysiaIsolationA, NativeElysiaIsolationB])
-			host.cfg(NativeElysiaIsolationA).enable()
-			host.cfg(NativeElysiaIsolationB).enable()
+			host.cfg(NativeElysiaIsolationA).setAutoStart(true)
+			host.start(NativeElysiaIsolationA)
+			host.cfg(NativeElysiaIsolationB).setAutoStart(true)
+			host.start(NativeElysiaIsolationB)
 			await host.commit()
 
 			await expect(

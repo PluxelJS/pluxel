@@ -3,13 +3,13 @@ import type { SearchTokens } from './searchTokens'
 export type StatusFilterState = {
 	running: boolean
 	stopped: boolean
-	disabled: boolean
+	unavailable: boolean
 }
 
 export const DEFAULT_STATUS_FILTER: StatusFilterState = {
 	running: true,
 	stopped: true,
-	disabled: true,
+	unavailable: true,
 }
 
 type SearchablePluginStatus = {
@@ -17,8 +17,8 @@ type SearchablePluginStatus = {
 	packageName?: string
 	tag?: string
 	version?: string
-	isRunning?: boolean
-	isEnabled?: boolean
+	availability?: 'available' | 'unavailable'
+	lifecycleState?: 'running' | 'stopped'
 }
 
 export function hasActiveSearchTokens(tokens: SearchTokens): boolean {
@@ -32,7 +32,7 @@ export function hasActiveSearchTokens(tokens: SearchTokens): boolean {
 }
 
 export function hasActiveStatusFilter(filter: StatusFilterState): boolean {
-	return !filter.running || !filter.stopped || !filter.disabled
+	return !filter.running || !filter.stopped || !filter.unavailable
 }
 
 export function matchesGroupSearch(name: string, tokens: SearchTokens): boolean {
@@ -51,12 +51,14 @@ export function matchesPluginSearch(
 	const version = (status?.version || '').toLowerCase()
 	const idValue = pluginId.toLowerCase()
 
-	const running = !!status?.isRunning
-	const enabled = status?.isEnabled !== false
-	const disabled = !enabled
-	const stopped = enabled && !running
+	const available = status?.availability !== 'unavailable'
+	const running = available && status?.lifecycleState === 'running'
+	const stopped = available && status?.lifecycleState !== 'running'
+	const unavailable = !available
 	const statusOk =
-		(filter.running && running) || (filter.stopped && stopped) || (filter.disabled && disabled)
+		(filter.running && running) ||
+		(filter.stopped && stopped) ||
+		(filter.unavailable && unavailable)
 	if (!statusOk) return false
 
 	const plainOk = tokens.plain.every((term) =>

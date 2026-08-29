@@ -44,8 +44,10 @@ preset 在 TypeScript 擦除前运行 Pluxel semantic lowering，并执行 build
 | package metadata、Workbench/worker/database artifact       | `pluxel build` integration        |
 
 `@pluxel/test` 是 public dev-only core test surface，不会注册 runtime services。需要 `ctx.elysia` 或 `ctx.database` 时使用 runtime test entry。
-普通 Core/Runtime test host 只提供 `add`、`remove`、`restart`、`replace`、`fork`、`override`、`commit` 与只读查询，不暴露
-`PluginService`、graph 或 transaction internals；Core 自身的白盒测试显式从 `@pluxel/core/internal` 取得内部 authority。
+两种 test host 都只公开面向 Plugin 的 graph 操作与只读查询，不暴露 `PluginService`、graph 或 transaction internals；Core 自身的白盒
+测试显式从 `@pluxel/core/internal` 取得内部 authority。Core host 通过 `add/remove/restart/replace/fork/override/commit` 直接测试目标 graph，
+其中 `start(Plugin)` 只是 `add + commit + require` 的一次性便利方法，不是 Runtime 生命周期命令。Runtime host 额外提供 staged
+`start/stop/restart`，其会话语义见下文。
 
 ## 常用测试
 
@@ -74,8 +76,6 @@ class ConsumerPlugin extends BasePlugin {
 it('starts dependency order and drains effects', async () => {
 	await withHost(async (host) => {
 		host.add([ProviderPlugin, ConsumerPlugin])
-		host.cfg(ProviderPlugin).enable()
-		host.cfg(ConsumerPlugin).enable()
 
 		await host.commit()
 		expect(host.isRunning(ConsumerPlugin)).toBe(true)
@@ -87,8 +87,8 @@ it('starts dependency order and drains effects', async () => {
 })
 ```
 
-`host.add/remove` 只修改 catalog availability，`cfg(...).enable()/disable()` 修改 desired state；`add()` 不会隐式启用
-Plugin，`remove()` 也不会暗中清除其 desired state。`await host.commit()` 才统一应用新的 graph plan。`commit()` 是 strict：
+Core test host 没有 Runtime policy 或 session intent：`host.add/remove` 直接修改待提交的 Core graph，config handle 只修改配置。
+`await host.commit()` 才统一应用新的 graph plan。`commit()` 是 strict：
 有 start failure 时抛出；预期失败并需要 summary 时使用 `commitAllowFail()`。
 
 测试 HMR/replacement 时，replacement 必须像真实模块求值一样拥有目标 canonical definition facts，test host 不会把任意
@@ -108,7 +108,6 @@ lowerTestReplacement(InngestPlugin, TestInngestPlugin)
 await withRuntimeHost(async (host) => {
 	host.add(InngestPlugin)
 	host.replace(InngestPlugin, TestInngestPlugin)
-	host.cfg(InngestPlugin).enable()
 	await host.commit()
 })
 ```
@@ -134,7 +133,7 @@ it('publishes and removes its Elysia application', async () => {
 	await withRuntimeHost(
 		async (host) => {
 			host.add(HealthPlugin)
-			host.cfg(HealthPlugin).enable()
+			host.start(HealthPlugin)
 			await host.commit()
 
 			const url = 'http://local.test/health'
@@ -152,6 +151,9 @@ it('publishes and removes its Elysia application', async () => {
 
 `host.fetch()` 经过真实 immutable route directory、generation admission 和已经 seal 的 Elysia app，但不打开物理端口。
 `withRuntimeHost()` 在 callback 结束后自动 `dispose()`；需要手动控制 host lifetime 时使用 `createRuntimeHost()`。
+Runtime test host 的 `start/stop/restart` 都只暂存本进程生命周期命令，由下一次 `commit()` 与 catalog、config 和 RuntimeState
+变更一起提交；它们不修改 `autoStart`。需要验证冷启动策略时才调用 `host.cfg(Plugin).setAutoStart(...)`，并明确断言修改策略不会
+改变当前进程的 desired state。
 
 `host.fetch()` 不执行 HTTP Upgrade，因此不能据此推断 WebSocket、disconnect、close code、backpressure 或 HMR arbitration。
 Node production、static Vite 与 dynamic Vite 的基础业务 WebSocket 已通过各自的 ephemeral real-listener test；其他 carrier 与完整
@@ -163,7 +165,7 @@ socket parity 仍需独立 conformance。Elysia 2 beta 的 external `setup()` / 
 ```ts no-twoslash
 host.add(WorkerPlugin)
 host.cfg(WorkerPlugin).set({ concurrency: 8 })
-host.cfg(WorkerPlugin).enable()
+host.start(WorkerPlugin)
 await host.commit()
 
 expect(host.require(WorkerPlugin).observedConcurrency).toBe(8)
@@ -247,7 +249,7 @@ cleanup test 要等待 host commit/dispose Promise，不能只检查是否调用
 
 ### Forks
 
-Core host 支持按 fork address 配置多个实例；示例中的 concrete `ConnectorPlugin` 必须用
+Runtime test host 支持按 fork address 配置多个实例；示例中的 concrete `ConnectorPlugin` 必须用
 `@Plugin({ forkable: true })` 显式声明它能够安全地同时运行多个 node：
 
 ```ts no-twoslash
@@ -255,9 +257,9 @@ const East = host.fork(ConnectorPlugin, 'east')
 const West = host.fork(ConnectorPlugin, 'west')
 
 host.cfg(East).set({ region: 'east' })
-host.cfg(East).enable()
 host.cfg(West).set({ region: 'west' })
-host.cfg(West).enable()
+host.start(East)
+host.start(West)
 await host.commit()
 ```
 

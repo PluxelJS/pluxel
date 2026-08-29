@@ -52,9 +52,8 @@ host.cfg(WretchPlugin).set({
 	maxQueuedRequests: 256,
 	allowedOrigins: ['https://catalog.example'],
 })
-host.cfg(WretchPlugin).enable()
 host.cfg(CustomerPlugin).set({ baseUrl: 'https://catalog.example' })
-host.cfg(CustomerPlugin).enable()
+host.start(CustomerPlugin)
 await host.commit()
 ```
 

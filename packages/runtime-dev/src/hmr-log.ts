@@ -1,6 +1,6 @@
 export type HmrPluginTotals = {
 	loaded: number
-	enabled: number
+	desired: number
 	running: number
 }
 
@@ -22,8 +22,7 @@ export type HmrUpdatedLogProps = {
 	targets: number
 	affectedModules?: number
 	syncedModules?: number
-	autoDisabled?: readonly string[]
-	enabledButStopped?: readonly string[]
+	desiredButStopped?: readonly string[]
 	affected: number
 	fallbackRoots: number
 	activeServices: number

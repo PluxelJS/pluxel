@@ -23,9 +23,9 @@ import {
 let fetchA: FetchLike
 let fetchB: FetchLike
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const Plugin of plugins) host.cfg(Plugin).enable()
+	for (const Plugin of plugins) host.start(Plugin)
 }
 
 function jsonResponse(value: unknown, status = 200): Response {
@@ -110,7 +110,7 @@ describe('WretchPlugin', () => {
 		const persistence = trackedSettingsPersistence()
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
+				addStarted(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 				await host.commit()
 				const a = host.require(ConsumerA)
 				const late = host.require(ConsumerLateSettings)
@@ -141,7 +141,7 @@ describe('WretchPlugin', () => {
 		let wrongOwner: unknown
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
+				addStarted(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 				await host.commit()
 				await host.require(ConsumerA).http.workbenchSettings().update({ headers: {} })
 				key = [...persistence.writes.keys()][0]!
@@ -163,7 +163,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				const summary = await host.commitAllowFail()
 				assertPluginLifecycleIssue(summary, ConsumerA, {
 					kind: 'start-failed',
@@ -177,7 +177,7 @@ describe('WretchPlugin', () => {
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA, ConsumerB])
+				addStarted(host, [WretchPlugin, ConsumerA, ConsumerB])
 				await host.commit()
 
 				const a = await host.require(ConsumerA).client.get('/users').json<{
@@ -209,7 +209,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				await host.commit()
 				const consumer = host.require(ConsumerA)
 				const client = consumer.client
@@ -227,9 +227,9 @@ describe('WretchPlugin', () => {
 					hasProxyDispatcher: true,
 				})
 
-				host.cfg(ConsumerA).disable()
+				host.stop(ConsumerA)
 				await host.commit()
-				host.cfg(ConsumerA).enable()
+				host.start(ConsumerA)
 				await host.commit()
 
 				expect(host.require(ConsumerA).http.workbenchSettings().get().settings).toMatchObject({
@@ -245,7 +245,7 @@ describe('WretchPlugin', () => {
 	it('rejects unsafe proxy, header, and timeout settings', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				host.cfg(WretchPlugin).set({ timeoutMs: 1_000 })
 				await host.commit()
 				const commands = host.require(ConsumerA).http.workbenchSettings()
@@ -286,7 +286,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerLateSettings])
+				addStarted(host, [WretchPlugin, ConsumerLateSettings])
 				await host.commit()
 
 				const consumer = host.require(ConsumerLateSettings)
@@ -307,7 +307,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerB])
+				addStarted(host, [WretchPlugin, ConsumerB])
 				await host.commit()
 
 				const http = host.require(ConsumerB).http
@@ -328,7 +328,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerB])
+				addStarted(host, [WretchPlugin, ConsumerB])
 				await host.commit()
 
 				const http = host.require(ConsumerB).http
@@ -359,7 +359,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				host.cfg(WretchPlugin).set({ allowedOrigins: ['https://allowed.example'] })
 				await host.commit()
 
@@ -382,7 +382,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				host.cfg(WretchPlugin).set({ maxConcurrentRequests: 1, maxQueuedRequests: 1 })
 				await host.commit()
 
@@ -412,17 +412,17 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerB])
+				addStarted(host, [WretchPlugin, ConsumerB])
 				await host.commit()
 
 				const callerClient = host.require(ConsumerB).client
-				host.cfg(ConsumerB).disable()
+				host.stop(ConsumerB)
 				await host.commit()
 				await expect(
 					Promise.resolve().then(() => callerClient.get('/stale-caller').json()),
 				).rejects.toThrow('stopped or replaced plugin generation')
 
-				host.cfg(ConsumerB).enable()
+				host.start(ConsumerB)
 				await host.commit()
 				const providerClient = host.require(ConsumerB).client
 				host.restart(WretchPlugin)
@@ -442,11 +442,11 @@ describe('WretchPlugin', () => {
 	it('revokes cached managed-settings RPC with its caller generation', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				await host.commit()
 
 				const commands = host.require(ConsumerA).http.workbenchSettings()
-				host.cfg(ConsumerA).disable()
+				host.stop(ConsumerA)
 				await host.commit()
 
 				expect(() => commands.get()).toThrow('stopped or replaced plugin generation')
@@ -463,7 +463,7 @@ describe('WretchPlugin', () => {
 		try {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [WretchPlugin, ConsumerA])
+					addStarted(host, [WretchPlugin, ConsumerA])
 					await host.commit()
 
 					await host.require(ConsumerA).http.workbenchSettings().update({
@@ -496,7 +496,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				host.cfg(WretchPlugin).set({ maxConcurrentRequests: 1, maxQueuedRequests: 1 })
 				await host.commit()
 
@@ -517,7 +517,7 @@ describe('WretchPlugin', () => {
 						(error: unknown) => error,
 					)
 
-				host.cfg(WretchPlugin).disable()
+				host.stop(WretchPlugin)
 				await host.commit()
 				const [activeError, queuedError] = await Promise.all([first, queued])
 				expect(activeError).toMatchObject({
@@ -565,7 +565,7 @@ describe('WretchPlugin', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [WretchPlugin, ConsumerA])
+				addStarted(host, [WretchPlugin, ConsumerA])
 				host.cfg(WretchPlugin).set({ timeoutMs: 5 })
 				await host.commit()
 

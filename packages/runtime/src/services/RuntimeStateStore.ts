@@ -12,7 +12,7 @@ import { pinOwnerContext } from '../context/owner-view'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export type RuntimeStateSnapshot = Readonly<{
-	enabled: readonly PluginNodeAddress[]
+	autoStart: readonly PluginNodeAddress[]
 	forks: readonly RuntimeForkState[]
 	providerDefaults: readonly RuntimeProviderDefaultState[]
 	dependencyOverrides: readonly RuntimeDependencyOverrideState[]
@@ -36,7 +36,7 @@ export class RuntimeStateRevisionConflictError extends Error {
 }
 
 export type RuntimeStateDraft = {
-	enabled: PluginNodeAddress[]
+	autoStart: PluginNodeAddress[]
 	forks: RuntimeForkState[]
 	providerDefaults: RuntimeProviderDefaultState[]
 	dependencyOverrides: RuntimeDependencyOverrideState[]
@@ -59,8 +59,8 @@ export type RuntimeDependencyOverrideState = {
 }
 
 export type RuntimeStateFile = {
-	version: 4
-	enabled: PluginNodeAddress[]
+	version: 5
+	autoStart: PluginNodeAddress[]
 	forks: RuntimeForkState[]
 	providerDefaults: RuntimeProviderDefaultState[]
 	dependencyOverrides: RuntimeDependencyOverrideState[]
@@ -71,16 +71,16 @@ export type RuntimeStateStoreMode = 'file' | 'memory' | 'readonly'
 export interface RuntimeStateStoreConfig {
 	mode?: RuntimeStateStoreMode
 	snapshot?: Partial<RuntimeStateSnapshot> & {
-		enabled?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
+		autoStart?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
 	}
 }
 
 export {
-	isPluginEnabled,
+	isPluginAutoStartEnabled,
 	listForkIds,
-	replaceEnabledPlugins,
-	setPluginEnabled,
-	setPluginsEnabled,
+	replaceAutoStartPlugins,
+	setPluginAutoStart,
+	setPluginsAutoStart,
 } from './RuntimeStateHelpers'
 
 export class RuntimeStateStore {
@@ -242,7 +242,7 @@ export class RuntimeStateStore {
 
 function createDefaultDraft(): RuntimeStateDraft {
 	return {
-		enabled: [],
+		autoStart: [],
 		forks: [],
 		providerDefaults: [],
 		dependencyOverrides: [],
@@ -251,7 +251,7 @@ function createDefaultDraft(): RuntimeStateDraft {
 
 function cloneSnapshot(snapshot: RuntimeStateSnapshot): RuntimeStateDraft {
 	return {
-		enabled: snapshot.enabled.map(cloneNodeAddress),
+		autoStart: snapshot.autoStart.map(cloneNodeAddress),
 		forks: snapshot.forks.map(cloneForkState),
 		providerDefaults: snapshot.providerDefaults.map(cloneProviderDefault),
 		dependencyOverrides: snapshot.dependencyOverrides.map(cloneDependencyOverride),
@@ -260,7 +260,7 @@ function cloneSnapshot(snapshot: RuntimeStateSnapshot): RuntimeStateDraft {
 
 function normalizeDraft(draft: RuntimeStateDraft): RuntimeStateDraft {
 	return {
-		enabled: parseUniqueNodes(draft.enabled, 'enabled'),
+		autoStart: parseUniqueNodes(draft.autoStart, 'autoStart'),
 		forks: parseForks(draft.forks, 'forks'),
 		providerDefaults: parseProviderDefaults(draft.providerDefaults, 'providerDefaults'),
 		dependencyOverrides: parseDependencyOverrides(draft.dependencyOverrides, 'dependencyOverrides'),
@@ -279,7 +279,7 @@ function replaceDraft(
 	target: RuntimeStateDraft,
 	source: RuntimeStateDraft | RuntimeStateSnapshot,
 ): void {
-	target.enabled = source.enabled.map(cloneNodeAddress)
+	target.autoStart = source.autoStart.map(cloneNodeAddress)
 	target.forks = source.forks.map(cloneForkState)
 	target.providerDefaults = source.providerDefaults.map(cloneProviderDefault)
 	target.dependencyOverrides = source.dependencyOverrides.map(cloneDependencyOverride)
@@ -288,11 +288,17 @@ function replaceDraft(
 function applySnapshot(
 	draft: RuntimeStateDraft,
 	snapshot: Partial<RuntimeStateSnapshot> & {
-		enabled?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
+		autoStart?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
 	},
 ): void {
-	if (snapshot.enabled) {
-		draft.enabled = parseUniqueNodes([...snapshot.enabled], 'runtimeState.snapshot.enabled')
+	assertClosedRecord(
+		snapshot,
+		['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
+		'runtimeState.snapshot',
+		false,
+	)
+	if (snapshot.autoStart) {
+		draft.autoStart = parseUniqueNodes([...snapshot.autoStart], 'runtimeState.snapshot.autoStart')
 	}
 	if (snapshot.forks) draft.forks = parseForks(snapshot.forks, 'runtimeState.snapshot.forks')
 	if (snapshot.providerDefaults) {
@@ -314,7 +320,7 @@ export function freezeTrustedRuntimeStateSnapshot(
 	draft: RuntimeStateDraft | RuntimeStateSnapshot,
 ): RuntimeStateSnapshot {
 	const snapshot: RuntimeStateSnapshot = Object.freeze({
-		enabled: Object.freeze(sortByKey(draft.enabled.map(freezeNodeAddress), pluginNodeIndexKey)),
+		autoStart: Object.freeze(sortByKey(draft.autoStart.map(freezeNodeAddress), pluginNodeIndexKey)),
 		forks: Object.freeze(
 			sortByKey(
 				draft.forks.map((entry) =>
@@ -370,8 +376,8 @@ function sortByKey<T>(values: T[], keyOf: (value: T) => string): T[] {
 
 function toRuntimeStateFile(draft: RuntimeStateDraft | RuntimeStateSnapshot): RuntimeStateFile {
 	return {
-		version: 4,
-		enabled: draft.enabled.map(cloneNodeAddress),
+		version: 5,
+		autoStart: draft.autoStart.map(cloneNodeAddress),
 		forks: draft.forks.map(cloneForkState),
 		providerDefaults: draft.providerDefaults.map(cloneProviderDefault),
 		dependencyOverrides: draft.dependencyOverrides.map(cloneDependencyOverride),
@@ -383,10 +389,15 @@ function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 		throw invalidState('persisted state must be an object')
 	}
 	const raw = input as Record<string, unknown>
-	if (raw.version !== 4) {
+	if (raw.version !== 5) {
 		throw invalidState(`unsupported persisted state version: ${String(raw.version)}`)
 	}
-	if (!Array.isArray(raw.enabled)) throw invalidState('enabled must be an array')
+	assertClosedRecord(
+		raw,
+		['version', 'autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
+		'persisted state',
+	)
+	if (!Array.isArray(raw.autoStart)) throw invalidState('autoStart must be an array')
 	if (!Array.isArray(raw.forks)) throw invalidState('forks must be an array')
 	if (!Array.isArray(raw.providerDefaults)) {
 		throw invalidState('providerDefaults must be an array')
@@ -395,7 +406,7 @@ function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 		throw invalidState('dependencyOverrides must be an array')
 	}
 	return {
-		enabled: parseUniqueNodes(raw.enabled, 'enabled'),
+		autoStart: parseUniqueNodes(raw.autoStart, 'autoStart'),
 		forks: parseForks(raw.forks, 'forks'),
 		providerDefaults: parseProviderDefaults(raw.providerDefaults, 'providerDefaults'),
 		dependencyOverrides: parseDependencyOverrides(raw.dependencyOverrides, 'dependencyOverrides'),
@@ -423,7 +434,7 @@ function parseForks(input: readonly unknown[], at: string): RuntimeForkState[] {
 	const out: RuntimeForkState[] = []
 	const seen = new Set<string>()
 	for (let i = 0; i < input.length; i++) {
-		const raw = record(input[i], `${at}[${i}]`)
+		const raw = closedRecord(input[i], `${at}[${i}]`, ['definition', 'forkIds'])
 		const definition = parseDefinition(raw.definition, `${at}[${i}].definition`)
 		if (!Array.isArray(raw.forkIds)) throw invalidState(`${at}[${i}].forkIds must be an array`)
 		const forkIds = raw.forkIds.map((value, index) =>
@@ -453,7 +464,7 @@ function parseProviderDefaults(
 	const out: RuntimeProviderDefaultState[] = []
 	const seen = new Set<string>()
 	for (let i = 0; i < input.length; i++) {
-		const raw = record(input[i], `${at}[${i}]`)
+		const raw = closedRecord(input[i], `${at}[${i}]`, ['token', 'provider'])
 		const token = parseDefinition(raw.token, `${at}[${i}].token`)
 		const provider = parseNode(raw.provider, `${at}[${i}].provider`)
 		const key = pluginDefinitionIndexKey(token)
@@ -475,7 +486,11 @@ function parseDependencyOverrides(
 	const out: RuntimeDependencyOverrideState[] = []
 	const seen = new Set<string>()
 	for (let i = 0; i < input.length; i++) {
-		const raw = record(input[i], `${at}[${i}]`)
+		const raw = closedRecord(input[i], `${at}[${i}]`, [
+			'consumerAddress',
+			'requirementAddress',
+			'providerAddress',
+		])
 		const consumerAddress = parseNode(raw.consumerAddress, `${at}[${i}].consumerAddress`)
 		const requirementAddress = parseDefinition(
 			raw.requirementAddress,
@@ -512,11 +527,33 @@ function parseNode(value: unknown, at: string): PluginNodeAddress {
 	}
 }
 
-function record(value: unknown, at: string): Record<string, unknown> {
+function closedRecord(
+	value: unknown,
+	at: string,
+	keys: readonly string[],
+): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw invalidState(`${at} must be an object`)
 	}
-	return value as Record<string, unknown>
+	const record = value as Record<string, unknown>
+	assertClosedRecord(record, keys, at)
+	return record
+}
+
+function assertClosedRecord(
+	record: object,
+	keys: readonly string[],
+	at: string,
+	requireAll = true,
+): void {
+	const expected = new Set(keys)
+	for (const key of Object.keys(record)) {
+		if (!expected.has(key)) throw invalidState(`${at} has unknown field ${key}`)
+	}
+	if (!requireAll) return
+	for (const key of keys) {
+		if (!Object.hasOwn(record, key)) throw invalidState(`${at} is missing field ${key}`)
+	}
 }
 
 function parseForkId(value: unknown, definition: PluginDefinitionAddress, at: string): string {

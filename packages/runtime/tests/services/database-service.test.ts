@@ -209,7 +209,8 @@ describe('DatabaseService', () => {
 
 			lowerTestPlugin(QueuedDatabasePlugin)
 			host.add(QueuedDatabasePlugin)
-			host.cfg(QueuedDatabasePlugin).enable()
+			host.cfg(QueuedDatabasePlugin).setAutoStart(true)
+			host.start(QueuedDatabasePlugin)
 			await host.commit()
 			const database = host.require(QueuedDatabasePlugin).db
 			let markRunning!: () => void
@@ -254,7 +255,8 @@ describe('DatabaseService', () => {
 
 			lowerTestPlugin(CachedDatabaseHandlePlugin)
 			host.add(CachedDatabaseHandlePlugin)
-			host.cfg(CachedDatabaseHandlePlugin).enable()
+			host.cfg(CachedDatabaseHandlePlugin).setAutoStart(true)
+			host.start(CachedDatabaseHandlePlugin)
 			await host.commit()
 			const database = host.require(CachedDatabaseHandlePlugin).db
 
@@ -301,8 +303,10 @@ describe('DatabaseService', () => {
 			lowerTestPlugin(DatabaseLeft)
 			lowerTestPlugin(DatabaseRight)
 			host.add([DatabaseLeft, DatabaseRight])
-			host.cfg(DatabaseLeft).enable()
-			host.cfg(DatabaseRight).enable()
+			host.cfg(DatabaseLeft).setAutoStart(true)
+			host.start(DatabaseLeft)
+			host.cfg(DatabaseRight).setAutoStart(true)
+			host.start(DatabaseRight)
 			await host.commit()
 
 			await expect(
@@ -328,7 +332,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(DisabledDatabasePlugin)
 			host.add(DisabledDatabasePlugin)
-			host.cfg(DisabledDatabasePlugin).enable()
+			host.cfg(DisabledDatabasePlugin).setAutoStart(true)
+			host.start(DisabledDatabasePlugin)
 			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
 			expect(host.isRunning(DisabledDatabasePlugin)).toBe(false)
 		} finally {
@@ -359,7 +364,8 @@ describe('DatabaseService', () => {
 				}
 				lowerTestPlugin(FirstProcessPlugin, { id: 'PersistentDatabasePlugin' })
 				firstHost.add(FirstProcessPlugin)
-				firstHost.cfg(FirstProcessPlugin).enable()
+				firstHost.cfg(FirstProcessPlugin).setAutoStart(true)
+				firstHost.start(FirstProcessPlugin)
 				await firstHost.commit()
 				instanceId = (firstHost.require(FirstProcessPlugin).db as any).instance.instanceId
 			} finally {
@@ -380,7 +386,8 @@ describe('DatabaseService', () => {
 				}
 				lowerTestPlugin(SecondProcessPlugin, { id: 'PersistentDatabasePlugin' })
 				secondHost.add(SecondProcessPlugin)
-				secondHost.cfg(SecondProcessPlugin).enable()
+				secondHost.cfg(SecondProcessPlugin).setAutoStart(true)
+				secondHost.start(SecondProcessPlugin)
 				await secondHost.commit()
 				const database = secondHost.require(SecondProcessPlugin).db
 				expect((database as any).instance.instanceId).toBe(instanceId!)
@@ -409,7 +416,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(DefaultPersistenceDatabasePlugin)
 			host.add(DefaultPersistenceDatabasePlugin)
-			host.cfg(DefaultPersistenceDatabasePlugin).enable()
+			host.cfg(DefaultPersistenceDatabasePlugin).setAutoStart(true)
+			host.start(DefaultPersistenceDatabasePlugin)
 			await host.commit()
 			expect(host.isRunning(DefaultPersistenceDatabasePlugin)).toBe(true)
 		} finally {
@@ -435,7 +443,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(InitialPlugin, { id: 'IncrementalDatabasePlugin' })
 			host.add(InitialPlugin)
-			host.cfg(InitialPlugin).enable()
+			host.cfg(InitialPlugin).setAutoStart(true)
+			host.start(InitialPlugin)
 			await host.commit()
 			const initialInstance = (host.require(InitialPlugin).db as any).instance.instanceId
 			host.remove(InitialPlugin)
@@ -450,7 +459,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(UpgradedPlugin, { id: 'IncrementalDatabasePlugin' })
 			host.add(UpgradedPlugin)
-			host.cfg(UpgradedPlugin).enable()
+			host.cfg(UpgradedPlugin).setAutoStart(true)
+			host.start(UpgradedPlugin)
 			await host.commit()
 			const next = host.require(UpgradedPlugin).db
 			expect((next as any).instance.instanceId).toBe(initialInstance)
@@ -479,7 +489,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(FirstRelease, { id: 'RebasedDatabasePlugin' })
 			host.add(FirstRelease)
-			host.cfg(FirstRelease).enable()
+			host.cfg(FirstRelease).setAutoStart(true)
+			host.start(FirstRelease)
 			await host.commit()
 			const firstInstance = (host.require(FirstRelease).db as any).instance.instanceId
 			host.remove(FirstRelease)
@@ -494,7 +505,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(SecondRelease, { id: 'RebasedDatabasePlugin' })
 			host.add(SecondRelease)
-			host.cfg(SecondRelease).enable()
+			host.cfg(SecondRelease).setAutoStart(true)
+			host.start(SecondRelease)
 			await host.commit()
 			const next = host.require(SecondRelease).db
 			expect((next as any).instance.instanceId).not.toBe(firstInstance)
@@ -524,7 +536,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(InitialPlugin, { id: 'ResetDatabasePlugin' })
 			host.add(InitialPlugin)
-			host.cfg(InitialPlugin).enable()
+			host.cfg(InitialPlugin).setAutoStart(true)
+			host.start(InitialPlugin)
 			await host.commit()
 			const initialInstance = (host.require(InitialPlugin).db as any).instance.instanceId
 			host.remove(InitialPlugin)
@@ -539,7 +552,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(RebuiltPlugin, { id: 'ResetDatabasePlugin' })
 			host.add(RebuiltPlugin)
-			host.cfg(RebuiltPlugin).enable()
+			host.cfg(RebuiltPlugin).setAutoStart(true)
+			host.start(RebuiltPlugin)
 			await host.commit()
 			const next = host.require(RebuiltPlugin).db
 			expect((next as any).instance.instanceId).toBe(initialInstance)
@@ -568,7 +582,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(StableRelease, { id: 'AtomicReplacementPlugin' })
 			host.add(StableRelease)
-			host.cfg(StableRelease).enable()
+			host.cfg(StableRelease).setAutoStart(true)
+			host.start(StableRelease)
 			await host.commit()
 			const stableInstance = (host.require(StableRelease).db as any).instance.instanceId
 			host.remove(StableRelease)
@@ -582,7 +597,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(BrokenRelease, { id: 'AtomicReplacementPlugin' })
 			host.add(BrokenRelease)
-			host.cfg(BrokenRelease).enable()
+			host.cfg(BrokenRelease).setAutoStart(true)
+			host.start(BrokenRelease)
 			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
 			host.remove(BrokenRelease)
 			await host.commit()
@@ -596,7 +612,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(RecoveredRelease, { id: 'AtomicReplacementPlugin' })
 			host.add(RecoveredRelease)
-			host.cfg(RecoveredRelease).enable()
+			host.cfg(RecoveredRelease).setAutoStart(true)
+			host.start(RecoveredRelease)
 			await host.commit()
 			const recovered = host.require(RecoveredRelease).db
 			expect((recovered as any).instance.instanceId).toBe(stableInstance)
@@ -644,7 +661,8 @@ describe('DatabaseService', () => {
 
 			lowerTestPlugin(LiveQueryDatabasePlugin)
 			host.add(LiveQueryDatabasePlugin)
-			host.cfg(LiveQueryDatabasePlugin).enable()
+			host.cfg(LiveQueryDatabasePlugin).setAutoStart(true)
+			host.start(LiveQueryDatabasePlugin)
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
 			const grantId = backend.registry.getPluginLayout(pluginNodeAddressOf(LiveQueryDatabasePlugin))
@@ -718,7 +736,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(ValidatedLiveQueryPlugin)
 			host.add(ValidatedLiveQueryPlugin)
-			host.cfg(ValidatedLiveQueryPlugin).enable()
+			host.cfg(ValidatedLiveQueryPlugin).setAutoStart(true)
+			host.start(ValidatedLiveQueryPlugin)
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
 			const grantId = backend.registry.getPluginLayout(
@@ -749,7 +768,8 @@ describe('DatabaseService', () => {
 			}
 			lowerTestPlugin(RollbackDatabasePlugin)
 			host.add(RollbackDatabasePlugin)
-			host.cfg(RollbackDatabasePlugin).enable()
+			host.cfg(RollbackDatabasePlugin).setAutoStart(true)
+			host.start(RollbackDatabasePlugin)
 			await host.commit()
 			const database = host.require(RollbackDatabasePlugin).db
 			const listener = vi.fn()

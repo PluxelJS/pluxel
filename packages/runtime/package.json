@@ -156,7 +156,6 @@
 		"@pluxel/core": "workspace:^",
 		"@sinclair/typebox": "^0.34.48",
 		"age-encryption": "^0.3.0",
-		"better-sse": "^0.16.1",
 		"capnweb": "^0.5.0",
 		"drizzle-orm": "catalog:",
 		"elysia": "2.0.0-beta.7",

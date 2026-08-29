@@ -1,20 +1,21 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type {
 	AgentToolsHandleApi,
-	BaseProviderInspectionResult,
 	ConfigFieldMutation,
 	ConfigPresentationResult,
 	ConfigResult,
 	EnsureForkResult,
 	LoggingHandleApi,
-	PluginDependencyInspectionResult,
-	PluginDependencyListResult,
+	PluginDependencyGraphSnapshot,
+	PluginConsumerRequirementsInspectionResult,
 	PluginDependencyMutationResult,
+	PluginProviderPolicyInspectionResult,
 	PluginGroup,
 	PluginGroupInput,
 	PluginGroupsMutationResult,
-	PluginStatusBatchAction,
-	PluginStatusBatchResult,
+	PluginAutoStartBatchItem,
+	PluginControlBatchResult,
+	PluginLifecycleCommandBatchItem,
 	PluginStatusQueryResult,
 	PluginsListOutput,
 	RemoveForkResult,
@@ -38,23 +39,26 @@ export type RuntimeManagementRpcApi = {
 		owner: PluginNodeAddress,
 		input: ConfigFieldMutation,
 	) => Promise<ConfigResult>
-	pluginDependencies: (owner: PluginNodeAddress) => Promise<PluginDependencyListResult>
-	inspectPluginDependencies: (owner: PluginNodeAddress) => Promise<PluginDependencyInspectionResult>
-	setPluginDependencyTarget: (input: {
+	pluginDependencyGraph: () => Promise<PluginDependencyGraphSnapshot>
+	inspectPluginConsumerRequirements: (
+		consumer: PluginNodeAddress,
+	) => Promise<PluginConsumerRequirementsInspectionResult>
+	setPluginConsumerOverride: (input: {
 		consumer: PluginNodeAddress
 		requirement: PluginDefinitionAddress
 		provider: PluginNodeAddress | null
 	}) => Promise<PluginDependencyMutationResult>
-	inspectPluginBaseProvider: (owner: PluginNodeAddress) => Promise<BaseProviderInspectionResult>
-	selectPluginBaseProvider: (input: {
-		consumer: PluginNodeAddress
-		token: PluginDefinitionAddress
+	inspectPluginProviderPolicy: (
+		policyOwner: PluginNodeAddress,
+	) => Promise<PluginProviderPolicyInspectionResult>
+	setPluginProviderPolicyDefault: (input: {
+		policyOwner: PluginNodeAddress
 		provider: PluginNodeAddress | null
 	}) => Promise<PluginDependencyMutationResult>
 	ensurePluginFork: (input: {
 		base: PluginNodeAddress
 		forkId: string
-		enable?: boolean
+		autoStart?: boolean
 		selectFor?: {
 			consumer: PluginNodeAddress
 			requirement: PluginDefinitionAddress
@@ -64,5 +68,8 @@ export type RuntimeManagementRpcApi = {
 		base: PluginNodeAddress
 		forkId: string
 	}) => Promise<RemoveForkResult>
-	applyPluginStatusActions: (actions: PluginStatusBatchAction[]) => Promise<PluginStatusBatchResult>
+	setPluginAutoStart: (items: PluginAutoStartBatchItem[]) => Promise<PluginControlBatchResult>
+	applyPluginLifecycleCommands: (
+		items: PluginLifecycleCommandBatchItem[],
+	) => Promise<PluginControlBatchResult>
 }

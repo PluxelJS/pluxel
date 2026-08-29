@@ -430,9 +430,11 @@ function snapshotRuntimeState(
 			? {
 					snapshot: Object.freeze({
 						...clonePlainData(snapshot),
-						...(snapshot.enabled
+						...(snapshot.autoStart
 							? {
-									enabled: Object.freeze([...snapshot.enabled].map((item) => clonePlainData(item))),
+									autoStart: Object.freeze(
+										[...snapshot.autoStart].map((item) => clonePlainData(item)),
+									),
 								}
 							: {}),
 					}),

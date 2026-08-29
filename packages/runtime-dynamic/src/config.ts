@@ -44,7 +44,7 @@ export type DynamicRuntimeConfig = {
 	logFile?: string
 	storage?: DynamicRuntimeStorageOptions
 	printUrls?: boolean
-	/** Fixed catalog constructors. Availability does not implicitly enable a plugin. */
+	/** Fixed catalog constructors. Availability does not create auto-start policy or session intent. */
 	plugins?: readonly PluginConstructor[]
 	/**
 	 * Exact files or explicitly filtered directories whose entries form the mutable catalog.

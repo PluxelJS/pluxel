@@ -78,8 +78,8 @@
 	border-color: color-mix(in srgb, var(--mantine-color-teal-6) 42%, var(--plx-border));
 }
 
-.plx-home__metric[data-tone='disabled'] {
-	border-color: color-mix(in srgb, var(--mantine-color-orange-6) 36%, var(--plx-border));
+.plx-home__metric[data-tone='auto-start'] {
+	border-color: color-mix(in srgb, var(--mantine-color-blue-6) 36%, var(--plx-border));
 }
 
 .plx-home__metricLabel {
@@ -249,8 +249,12 @@
 	background: var(--mantine-color-teal-6);
 }
 
-.plx-home__statusDot[data-status='disabled'] {
-	background: var(--mantine-color-orange-6);
+.plx-home__statusDot[data-status='pending'] {
+	background: var(--mantine-color-yellow-6);
+}
+
+.plx-home__statusDot[data-status='unavailable'] {
+	background: var(--mantine-color-red-6);
 }
 
 .plx-home__queueName {

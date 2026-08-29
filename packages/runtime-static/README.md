@@ -22,7 +22,7 @@ export default defineStaticRuntime({
 	configure({ env, deployment }) {
 		return {
 			runtimeState: {
-				snapshot: { enabled: [pluginNodeAddressOf(DemoPlugin)] },
+				snapshot: { autoStart: [pluginNodeAddressOf(DemoPlugin)] },
 			},
 			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
 			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
@@ -34,7 +34,7 @@ export default defineStaticRuntime({
 可选 named export `product` 是 route-neutral 的应用展示信息。它不进入 `defineStaticRuntime()`；缺失时为 `null`，非法值会使
 entry 加载失败。Vite 与 production bootstrap 都从同一个 ESM module namespace 读取它，标准 re-export 也有效。
 
-`plugins` 是 build-time fixed code graph。`configure()` 的代码会进入 bundle，但会在每次宿主启动时重新读取 env、bindings 和 deployment；plugin config records、runtime enabled state、persistence、logging 与 HTTP 配置仍是运行时数据。
+`plugins` 是 build-time fixed code graph。`configure()` 的代码会进入 bundle，但会在每次宿主启动时重新读取 env、bindings 和 deployment；Plugin config records、RuntimeState 自动启动策略、persistence、logging 与 HTTP 配置仍是运行时数据。
 
 需要用部署变量初始化 Plugin config 时，导出 Plugin 实际使用的 schema，并在 canonical entry 直接声明 binding：
 

@@ -14,9 +14,9 @@ class IntegrationConsumer extends BasePlugin {
 	}
 }
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
 const algorithms = [
@@ -30,7 +30,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		await withRuntimeHost(async (host) => {
-			addEnabled(host, [RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, IntegrationConsumer])
+			addStarted(host, [RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, IntegrationConsumer])
 			host.cfg(RedisPlugin).set({ url: redisUrl! })
 			host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: prefix })
 			await host.commit()

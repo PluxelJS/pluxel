@@ -11,15 +11,14 @@ import {
 	Text,
 	Tooltip,
 } from '@mantine/core'
-import { IconChevronDown } from '@tabler/icons-react'
+import { IconAlertTriangle, IconChevronDown } from '@tabler/icons-react'
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta, usePluginScope } from '../context'
-import { BaseProviderCard } from '../cards/BaseProviderCard'
-import { DependencyList, usePluginDependencyEntries } from '../cards/DependencyList'
-import { DependencyOverridesCard } from '../cards/DependencyOverridesCard'
+import { ProviderPolicyCard } from '../cards/ProviderPolicyCard'
+import { PluginDependencyDetailCard } from '../cards/PluginDependencyDetailCard'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
+import { describePluginControl } from '../controls/pluginControlModel'
 import { formatCompactSource } from '../rightPaneState'
 import {
 	type PluginWorkbenchView,
@@ -83,34 +82,9 @@ function PluginDescriptionCard({ description }: { description?: string | null })
 	)
 }
 
-// Host-owned DI controls: these manage runtime injection policy, not plugin-authored UI.
-function PluginDependencyInjectionControls() {
-	return (
-		<Stack gap="sm">
-			<BaseProviderCard />
-			<DependencyOverridesCard />
-		</Stack>
-	)
-}
-
 export function PluginWorkbenchSidebar() {
-	const { description, isRunning, isSyncing } = usePluginMeta()
+	const { description } = usePluginMeta()
 	const { assistVisible, setAssistHost } = usePluginWorkbenchAside()
-	const statusBadges = useMemo(
-		() => (
-			<Group gap="xs" wrap="nowrap">
-				<Badge variant="light" color={isRunning ? 'green' : 'gray'} radius="sm">
-					{isRunning ? '运行中' : '已停止'}
-				</Badge>
-				{isSyncing ? (
-					<Badge variant="dot" color="brand" radius="sm">
-						同步中…
-					</Badge>
-				) : null}
-			</Group>
-		),
-		[isRunning, isSyncing],
-	)
 	const views = useMemo<PluginWorkbenchView[]>(
 		() => [
 			{
@@ -120,7 +94,8 @@ export function PluginWorkbenchSidebar() {
 					<WorkbenchScrollPane>
 						<PluginDescriptionCard description={description} />
 						<PluginContextSummaryCard />
-						<PluginDependencyInjectionControls />
+						<PluginDependencyDetailCard />
+						<ProviderPolicyCard />
 						<SidebarOutlineSection visible={assistVisible} onHostChange={setAssistHost} />
 					</WorkbenchScrollPane>
 				),
@@ -133,7 +108,6 @@ export function PluginWorkbenchSidebar() {
 		<PluginWorkbenchViewContainer
 			scope={SIDEBAR_VIEW_SCOPE}
 			label="插件右侧视图"
-			rightMeta={statusBadges}
 			views={views}
 			fallbackViewId="inspect"
 			searchKey="side"
@@ -209,9 +183,8 @@ function AssistHostMount({
 }
 
 function PluginContextSummaryCard() {
-	const { pluginLabel, source } = usePluginScope()
-	const deps = usePluginDependencyEntries()
-	const runningDependencyCount = deps.filter((dep) => dep.isRunning).length
+	const { pluginLabel, source, status } = usePluginScope()
+	const control = describePluginControl(status)
 	const sourcePreview = useMemo(
 		() =>
 			formatCompactSource(
@@ -222,15 +195,37 @@ function PluginContextSummaryCard() {
 		[source.moduleId, source.packageName, source.version],
 	)
 	const sourceBadge = source.kind === 'hmr' ? 'HMR' : source.kind === 'package' ? '包' : '未知'
-	const dependencyPreview = deps
-		.slice(0, 2)
-		.map((dep) => dep.label)
-		.join(' / ')
 	const copyValue = source.moduleId ?? source.packageName ?? null
 
 	return (
 		<Paper withBorder radius="sm" p="sm" shadow="none">
 			<Stack gap={8}>
+				<div className="plx-pluginWorkbench__summaryRow">
+					<span className="plx-pluginWorkbench__summaryLabel">运行</span>
+					<div className="plx-pluginWorkbench__summaryValue">
+						<Badge size="xs" variant="light" color={control.statusTone}>
+							{control.statusLabel}
+						</Badge>
+						<Badge size="xs" variant="outline" color="gray">
+							{control.desiredStateLabel}
+						</Badge>
+					</div>
+				</div>
+
+				<div className="plx-pluginWorkbench__summaryRow">
+					<span className="plx-pluginWorkbench__summaryLabel">会话</span>
+					<Text className="plx-pluginWorkbench__summaryText" size="sm">
+						{control.sessionIntentLabel} · 激活来源：{control.activationReasonLabel}
+					</Text>
+				</div>
+
+				<div className="plx-pluginWorkbench__summaryRow">
+					<span className="plx-pluginWorkbench__summaryLabel">策略</span>
+					<Text className="plx-pluginWorkbench__summaryText" size="sm">
+						自动启动{status.autoStart ? '已开启' : '已关闭'}
+					</Text>
+				</div>
+
 				<div className="plx-pluginWorkbench__summaryRow">
 					<span className="plx-pluginWorkbench__summaryLabel">来源</span>
 					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
@@ -267,32 +262,27 @@ function PluginContextSummaryCard() {
 					</div>
 				</div>
 
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">依赖</span>
-					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
-						<Badge size="xs" variant="light" color="gray">
-							{deps.length}
-						</Badge>
-						{deps.length > 0 ? (
-							<DependencyList LinkComponent={RouterLinkAdapter} />
-						) : (
-							<Text className="plx-pluginWorkbench__summaryText" size="sm">
-								{dependencyPreview || '暂无依赖项'}
-							</Text>
-						)}
-					</div>
-				</div>
-
 				<Group gap={6} wrap="wrap">
 					<Badge size="xs" variant="light" color="gray">
 						{pluginLabel}
 					</Badge>
-					{runningDependencyCount > 0 ? (
-						<Badge size="xs" variant="light" color="green">
-							{runningDependencyCount} 运行中依赖
-						</Badge>
-					) : null}
 				</Group>
+
+				{status.issues.length > 0 ? (
+					<Stack gap={4} className="plx-pluginWorkbench__statusIssues">
+						<Group gap={5} wrap="nowrap">
+							<IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" />
+							<Text size="xs" fw={650}>
+								{status.issues.length} 项协调问题
+							</Text>
+						</Group>
+						{status.issues.map((issue) => (
+							<Text key={issue.id} size="xs" c="dimmed">
+								{issue.message}
+							</Text>
+						))}
+					</Stack>
+				) : null}
 			</Stack>
 		</Paper>
 	)

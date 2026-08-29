@@ -127,7 +127,6 @@ function projectReconciliationIssue(
 				message: issue.message,
 			})
 		case 'provider_unavailable':
-		case 'provider_disabled':
 		case 'provider_incompatible':
 		case 'explicit_binding_invalid':
 			return Object.freeze({

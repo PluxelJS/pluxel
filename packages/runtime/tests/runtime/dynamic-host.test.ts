@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { createRuntimeContext } from '@pluxel/runtime/test'
-import { isPluginEnabled, requireRuntimeStateStore } from '@pluxel/runtime/internal'
+import { isPluginAutoStartEnabled, requireRuntimeStateStore } from '@pluxel/runtime/internal'
 import { requireConfigService } from '@pluxel/core/internal'
 
 const exampleAddress = {
@@ -51,13 +51,15 @@ describe('@pluxel/runtime Context bootstrap', () => {
 				},
 				runtimeState: {
 					mode: 'readonly',
-					snapshot: { enabled: [exampleAddress] },
+					snapshot: { autoStart: [exampleAddress] },
 				},
 			})
 			const ctx = runtime.ctx
 
 			const configService = requireConfigService(ctx)
-			expect(isPluginEnabled(requireRuntimeStateStore(ctx).snapshot(), exampleAddress)).toBe(true)
+			expect(
+				isPluginAutoStartEnabled(requireRuntimeStateStore(ctx).snapshot(), exampleAddress),
+			).toBe(true)
 			expect(configService.getRawConfig(exampleAddress)).toEqual({ answer: 42 })
 			expect(() => configService.patchConfig(exampleAddress, { answer: 7 })).toThrow(
 				/readonly mode/i,
@@ -83,7 +85,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 				environment: {
 					PLUXEL_CONFIG: environmentSnapshot({
 						allowedOrigins: ['https://app.example.test'],
-						enabled: true,
+						autoStart: true,
 						limit: 12,
 						overridden: 'environment',
 					}),
@@ -93,7 +95,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		try {
 			expect(requireConfigService(runtime.ctx).getRawConfig(exampleAddress)).toEqual({
 				allowedOrigins: ['https://app.example.test'],
-				enabled: true,
+				autoStart: true,
 				limit: 12,
 				overridden: 'environment',
 				preserved: 'snapshot',

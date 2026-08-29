@@ -20,7 +20,6 @@ import {
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	findNearestPackageRoot,
-	isPluginEnabled,
 	requireRuntimeStateStore,
 	requireRuntimeHttpService,
 	resolveGlobPatterns,
@@ -887,7 +886,6 @@ export class LoaderHmrService {
 			this.formatIdentifier(id),
 		)
 		const restarted = commit.pluginChanges.restarted.map((id) => this.formatIdentifier(id))
-		const autoDisabled: readonly string[] = []
 		const pluginChanges = { added, replaced, removed, availabilityChanged, restarted }
 		const pluginLifecycleReport = {
 			ok: commit.lifecycleReport.ok,
@@ -907,7 +905,6 @@ export class LoaderHmrService {
 
 		return {
 			...summary,
-			autoDisabled,
 			pluginChanges,
 			pluginLifecycleReport,
 		}
@@ -1225,6 +1222,13 @@ export class LoaderHmrService {
 			reason === 'update' ? collectHotspots(this.timing, (id) => this.path.pretty(id)) : []
 
 		const pluginService = requirePluginService(this.ctx)
+		const statusSnapshot = await this.loader.api.status.snapshot()
+		const statusByAddress = new Map(
+			(statusSnapshot.statuses ?? []).map((status) => [
+				formatPluginNodeReference(status.address),
+				status,
+			]),
+		)
 		const report = await buildHmrOperationalReport({
 			reason,
 			cwd: this.hostRoot,
@@ -1234,8 +1238,8 @@ export class LoaderHmrService {
 			rootsPretty: scope.rootsPretty,
 			entriesByRoot: scope.entriesByRoot,
 			registryView,
-			isPluginEnabled: (address) =>
-				isPluginEnabled(requireRuntimeStateStore(this.ctx).snapshot(), address),
+			isPluginDesired: (address) =>
+				statusByAddress.get(formatPluginNodeReference(address))?.desiredState === 'running',
 			isRunning: (address) => pluginService.isRunning(address),
 			resolveBareWorkspaceEntry: (specifier) =>
 				this.workspaceEntryResolver.resolveBareWorkspaceEntry(specifier),

@@ -19,7 +19,8 @@ type Props = {
 	g: GroupConfig
 	visibleIds: string[]
 	runningSet: Set<string>
-	enabledSet: Set<string>
+	availableSet: Set<string>
+	desiredRunningSet: Set<string>
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	focusedId: string | null
@@ -47,7 +48,8 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 		g,
 		visibleIds,
 		runningSet,
-		enabledSet,
+		availableSet,
+		desiredRunningSet,
 		selectedSet,
 		activeSet,
 		focusedId,
@@ -180,7 +182,8 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 									pid={id}
 									name={getName(id)}
 									running={runningSet.has(id)}
-									enabled={enabledSet.has(id)}
+									available={availableSet.has(id)}
+									desiredRunning={desiredRunningSet.has(id)}
 									selected={selectedSet.has(id)}
 									active={activeSet.has(id)}
 									focused={focusedId === id}

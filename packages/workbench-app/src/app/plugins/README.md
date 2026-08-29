@@ -9,7 +9,7 @@ This directory is the frontend surface for plugin browsing, detail, config, and 
 - `pluginOverview.tsx`
   Shared management-client overview snapshot consumed across plugin screens; it does not own a second writable store.
 - `pluginStatusActions.ts`
-  RPC-backed plugin status and start-plan operations.
+  RPC-backed auto-start policy and process-session lifecycle operations.
 - `detail/`
   Single-plugin screen, workbench composition, scoped context, and detail-only `cards/controls`.
 - `config/`

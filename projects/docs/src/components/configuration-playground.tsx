@@ -42,7 +42,7 @@ const Config = v.object({
   enabled: v.optional(
     v.pipe(
       v.boolean(),
-      f.formMeta({ title: '启用插件', section: { id: 'runtime', title: '运行时' } }),
+      f.formMeta({ title: '启用示例服务', section: { id: 'runtime', title: '运行时' } }),
     ),
     true,
   ),

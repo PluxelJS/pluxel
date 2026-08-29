@@ -57,7 +57,7 @@ configure() configService.snapshot
 在没有 file 时只在当前 host 使用 seed。Binding 不是 permanent overlay，不改变 revision、patch/reset、persistence format、
 Workbench presentation 或 update notification。普通 config 仍不承载长期 secret。
 
-Plugin config records 与 enabled state 继续由 ConfigService/RuntimeState 管理，可以在 fixed catalog 范围内修改并跨启动
+Plugin config records 与 auto-start policy 继续由 ConfigService/RuntimeState 管理，可以在 fixed catalog 范围内修改并跨启动
 持久化。production bundle 不把这些 records 烘焙成不可变常量。
 
 Static 与 dynamic Node host 读取单一 `PLUXEL_CONFIG` 环境变量。它必须是 ConfigService v3 的完整 JSON snapshot，owner

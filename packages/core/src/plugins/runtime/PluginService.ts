@@ -1,6 +1,7 @@
 import type { Context as PluxelContext, PluginContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { createGenerationContext } from '../../context/context-factory'
+import type { GraphBuildError } from '../../internal/di'
 import { createErr, createOk } from 'option-t/plain_result'
 import { requireConfigService } from '../../internal/config-service'
 import type { BasePlugin } from '../composition/BasePlugin'
@@ -102,6 +103,17 @@ type RuntimeUpdateCheckpoint = {
 
 type PreparedDefinitionBuild = Extract<ReturnType<PluginDefinitions['build']>, { ok: true }>['val']
 
+export type CommittedPluginDependencyEdge = Readonly<{
+	consumer: PluginNodeAddress
+	provider: PluginNodeAddress
+}>
+
+export type CommittedPluginDependencyAdjacency = Readonly<{
+	nodes: readonly PluginNodeAddress[]
+	required: readonly CommittedPluginDependencyEdge[]
+	optional: readonly CommittedPluginDependencyEdge[]
+}>
+
 const DEFAULT_START_TIMEOUT_MS = 1_500
 const DEFAULT_DRAIN_TIMEOUT_MS = 3_000
 const DEFAULT_START_CONCURRENCY = 8
@@ -114,6 +126,30 @@ const STALE_PREPARED_UPDATE_MESSAGE = 'Prepared Core Plugin update is stale'
 
 function ensureError(error: unknown): Error {
 	return error instanceof Error ? error : new Error(String(error), { cause: error })
+}
+
+function compareCommittedDependencyEdges(
+	left: CommittedPluginDependencyEdge,
+	right: CommittedPluginDependencyEdge,
+): number {
+	return (
+		comparePluginNodeAddress(left.consumer, right.consumer) ||
+		comparePluginNodeAddress(left.provider, right.provider)
+	)
+}
+
+/** @internal Stable package-private signal for a rejected Core Plugin graph update. */
+export class CorePluginGraphVerificationError extends Error {
+	override readonly cause: GraphBuildError
+	readonly issues: GraphBuildError['issues']
+
+	constructor(cause: GraphBuildError) {
+		super(`Core Plugin graph verification failed:\n${cause.format()}`, { cause })
+		this.name = 'CorePluginGraphVerificationError'
+		this.cause = cause
+		this.issues = cause.issues
+		Object.setPrototypeOf(this, CorePluginGraphVerificationError.prototype)
+	}
 }
 
 export class PluginService {
@@ -241,6 +277,53 @@ export class PluginService {
 				.filter(isPluginNodeSlot)
 				.map((dependency) => this.definitions.slots.nodeAddress(dependency)),
 		)
+	}
+
+	/**
+	 * @internal Read the address-level adjacency of the last committed graph.
+	 *
+	 * This deliberately has no address input: iteration starts from existing graph slots and only
+	 * projects their canonical addresses, so an observation cannot intern or materialize an absent
+	 * Plugin. The returned node set includes committed nodes without dependencies.
+	 */
+	readCommittedDependencyAdjacency(): CommittedPluginDependencyAdjacency {
+		const graph = this.graph
+		const nodes: PluginNodeAddress[] = []
+		const required: CommittedPluginDependencyEdge[] = []
+		const optional: CommittedPluginDependencyEdge[] = []
+		for (const key of graph.keys()) {
+			if (!isPluginNodeSlot(key)) {
+				throw new Error('[pluxel/core] Committed Plugin graph contains a non-Plugin node')
+			}
+			const slot = graph.slotOf(key)
+			if (slot === undefined) {
+				throw new Error('[pluxel/core] Committed Plugin graph node has no active slot')
+			}
+			const consumer = this.nodeAddressOf(key)
+			nodes.push(consumer)
+			for (const dependencySlot of graph.depSlotsOf(slot)) {
+				const provider = graph.keyOf(dependencySlot)
+				if (!isPluginNodeSlot(provider)) {
+					throw new Error('[pluxel/core] Committed required Plugin dependency has no provider node')
+				}
+				required.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
+			}
+			for (const dependencySlot of graph.optionalDepSlotsOf(slot)) {
+				const provider = graph.keyOf(dependencySlot)
+				if (!isPluginNodeSlot(provider)) {
+					throw new Error('[pluxel/core] Committed optional Plugin dependency has no provider node')
+				}
+				optional.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
+			}
+		}
+		nodes.sort(comparePluginNodeAddress)
+		required.sort(compareCommittedDependencyEdges)
+		optional.sort(compareCommittedDependencyEdges)
+		return Object.freeze({
+			nodes: Object.freeze(nodes),
+			required: Object.freeze(required),
+			optional: Object.freeze(optional),
+		})
 	}
 
 	resolvePluginNode(
@@ -388,9 +471,7 @@ export class PluginService {
 		if (this.activeRuntimeUpdate !== tx) throw new Error(STALE_PREPARED_UPDATE_MESSAGE)
 		const action = this.definitions.build()
 		if (!action.ok) {
-			throw new Error(`Core Plugin graph verification failed:\n${action.err.err.format()}`, {
-				cause: action.err.err,
-			})
+			throw new CorePluginGraphVerificationError(action.err.err)
 		}
 		const expectedRevision = this.commitRevision
 		let state: 'prepared' | 'committing' | 'closed' = 'prepared'

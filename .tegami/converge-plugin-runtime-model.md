@@ -55,8 +55,9 @@ framework-neutral browser contract/client for management snapshots and mutations
 Workbench consume that same path, and keep its not-yet-standardized View-host session transport behind
 an explicit internal entry and physical module boundary. Management connection options no longer carry
 SSE/session fields or the legacy `adminAccess.enabled` shape. Level 1 discovery reports only whether
-Workbench is enabled; renderer, catalog and session facts remain outside the Management protocol until
-the View-host ABI is standardized. Remove the internal GraphQL endpoint,
+Workbench is enabled; renderer, layout, artifact, grant and View-host session transport remain internal
+until the View-host ABI is standardized, while catalog and Plugin session lifecycle facts use the public
+Management protocol. Remove the internal GraphQL endpoint,
 GQLens code-generation stack, workspace submodule, generated clients, and duplicated GraphQL read
 model.
 Headless hosts can explicitly enable management without creating layout, artifact, grant, remote-view,
@@ -74,7 +75,7 @@ runtime handle identity. Existing tests and host integrations must address fork 
 
 Unify graph-affecting browser control results around one address-only apply report. Fork creation and
 dependency selection now commit atomically, while explicit fork removal rejects inbound references,
-retains disabled intent after metadata failures, and never purges plugin business persistence.
+retains the stopped fork record after metadata failures, and never purges plugin business persistence.
 Dependency inspection and override mutation identify constructor requirements by stable definition
 address rather than parameter position.
 

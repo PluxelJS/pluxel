@@ -90,11 +90,7 @@ describe('PluginService read cost model', () => {
 		async (mode) => {
 			await withCoreHost(async (host) => {
 				host.add(QueryTarget)
-				host.cfg(QueryTarget).enable()
-				const forks = Array.from({ length: 32 }, (_, index) =>
-					host.fork(QueryTarget, `cost-${index}`),
-				)
-				for (const fork of forks) host.cfg(fork).enable()
+				for (let index = 0; index < 32; index++) host.fork(QueryTarget, `cost-${index}`)
 				await host.commit()
 
 				class QueryTargetReplacement extends BasePlugin {}
@@ -165,13 +161,13 @@ describe('PluginService read cost model', () => {
 		})
 	})
 
-	it('does not create slots, records, or generations for disabled and orphan projections', async () => {
+	it('does not create slots, records, or generations for unmaterialized orphan reads', async () => {
 		await withCoreHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			const orphan = Object.freeze({
 				definition: pluginNodeAddressOf(QueryTarget).definition,
 				variant: 'fork' as const,
-				forkId: 'disabled-orphan',
+				forkId: 'unmaterialized-orphan',
 			}) satisfies PluginNodeAddress
 			const definitions = definitionInternalsOf(registry)
 			const createPluginContext = definitions.createPluginContext
@@ -181,8 +177,11 @@ describe('PluginService read cost model', () => {
 				return createPluginContext()
 			}
 
-			host.cfg(QueryTarget).disable()
-			expect(host.cfg(QueryTarget).enabled()).toBe(false)
+			expect(registry.readCommittedDependencyAdjacency()).toEqual({
+				nodes: [],
+				required: [],
+				optional: [],
+			})
 			expect(registry.isMaterialized(orphan)).toBe(false)
 			expect(registry.isRunning(orphan)).toBe(false)
 			expect(registry.getInstance(orphan)).toBeUndefined()

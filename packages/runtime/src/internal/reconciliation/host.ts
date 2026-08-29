@@ -46,6 +46,8 @@ export function requireRuntimePluginGraphCoordinator(
 function corePluginGraphDriver(ctx: Context): CorePluginGraphDriver<CommitSummary> {
 	const registry = requirePluginService(ctx)
 	return {
+		readCommittedDependencyAdjacency: () => registry.readCommittedDependencyAdjacency(),
+		isRunning: (address) => registry.isRunning(address),
 		beginUpdate(options) {
 			const update = registry.beginUpdate(options)
 			return {

@@ -38,45 +38,40 @@ const routes: PluginGatedModuleDef[] = [
 ]
 
 describe('plugin gated routes', () => {
-	it('returns 404 when plugin is disabled', async () => {
-		await withRuntimeContext(
-			async (ctx) => {
-				const api = createPluginGatedRouter(ctx, routes)
-				const app = new Elysia({ precompile: true })
-				app.mount('/api', api.fetch)
+	it('returns 404 when plugin is stopped', async () => {
+		await withRuntimeContext(async (ctx) => {
+			const api = createPluginGatedRouter(ctx, routes, { isPluginRunning: () => false })
+			const app = new Elysia({ precompile: true })
+			app.mount('/api', api.fetch)
 
-				const res = await app.fetch(new Request('http://test/api/ok'))
-				expect(res.status).toBe(404)
-			},
-			{ runtimeState: { mode: 'memory', snapshot: { enabled: [pluginA] } } },
-		)
+			const res = await app.fetch(new Request('http://test/api/ok'))
+			expect(res.status).toBe(404)
+		}, {})
 	})
 
-	it('handles request when plugin is enabled', async () => {
-		await withRuntimeContext(
-			async (ctx) => {
-				const api = createPluginGatedRouter(ctx, routes)
-				const app = new Elysia({ precompile: true })
-				app.mount('/api', api.fetch)
+	it('handles request when plugin is running', async () => {
+		await withRuntimeContext(async (ctx) => {
+			const api = createPluginGatedRouter(ctx, routes, {
+				isPluginRunning: (plugin) => plugin === pluginB,
+			})
+			const app = new Elysia({ precompile: true })
+			app.mount('/api', api.fetch)
 
-				const res = await app.fetch(new Request('http://test/api/ok'))
-				expect(res.status).toBe(200)
-				expect(await res.text()).toBe('ok')
-			},
-			{ runtimeState: { mode: 'memory', snapshot: { enabled: [pluginB] } } },
-		)
+			const res = await app.fetch(new Request('http://test/api/ok'))
+			expect(res.status).toBe(200)
+			expect(await res.text()).toBe('ok')
+		}, {})
 	})
 
-	it('computes a runtime snapshot of enabled plugins/routes', () => {
-		return withRuntimeContext(
-			(ctx) => {
-				const snap = getPluginRoutingSnapshot(ctx, routes)
-				expect(snap).toEqual({
-					enabledPlugins: [pluginA],
-					enabledRouteIds: ['a.hello'],
-				})
-			},
-			{ runtimeState: { mode: 'memory', snapshot: { enabled: [pluginA] } } },
-		)
+	it('computes a runtime snapshot of running plugins/routes', () => {
+		return withRuntimeContext((ctx) => {
+			const snap = getPluginRoutingSnapshot(ctx, routes, {
+				isPluginRunning: (plugin) => plugin === pluginA,
+			})
+			expect(snap).toEqual({
+				runningPlugins: [pluginA],
+				runningRouteIds: ['a.hello'],
+			})
+		}, {})
 	})
 })

@@ -1,16 +1,14 @@
 import {
-	formatPluginNodeReference,
 	type CommitSummary,
 	type Context,
 	type PluginConstructor,
-	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { requirePluginService, type PluginConfigDefinition } from '@pluxel/core/internal'
+import type { PluginConfigDefinition } from '@pluxel/core/internal'
 import {
 	pluginCatalogEntry,
+	readRuntimePluginStatusOverview,
 	requireRuntimePluginGraphCoordinator,
-	runtimePluginStatusOverview,
 	runtimeStatePatch,
 	type PluginApplyReport,
 	type PluginRouteCatalogSnapshot,
@@ -96,49 +94,11 @@ export class LoaderBatchSession implements LoaderBatch {
 	}
 }
 
-export class RuntimeResolver {
-	constructor(private readonly ctx: Context) {}
-
-	resolve(address: PluginNodeAddress): PluginConstructor | undefined {
-		return this.resolveDefinition(address.definition)
-	}
-
-	resolveDefinition(address: PluginDefinitionAddress): PluginConstructor | undefined {
-		return pluginCatalogEntry(
-			requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot(),
-			address,
-		)?.candidate.implementation
-	}
-
-	isRunning(address: PluginNodeAddress): boolean {
-		return requirePluginService(this.ctx).isRunning(address)
-	}
-}
-
 export class PluginStatusReporter {
 	constructor(private readonly ctx: Context) {}
 
 	snapshot() {
-		return runtimePluginStatusOverview(this.ctx)
-	}
-}
-
-export class PluginDependencyInspector {
-	constructor(private readonly ctx: Context) {}
-
-	list(address: PluginNodeAddress) {
-		const catalog = requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot()
-		if (!pluginCatalogEntry(catalog, address.definition)) {
-			throw new Error(`Plugin not found: ${formatPluginNodeReference(address)}`)
-		}
-		const pluginService = requirePluginService(this.ctx)
-		return pluginService.resolvedDependencies(address).map((dependency) => ({
-			address: dependency,
-			displayName:
-				pluginCatalogEntry(catalog, dependency.definition)?.candidate.declaration.displayName ??
-				dependency.definition.exportName,
-			isRunning: pluginService.isRunning(dependency),
-		}))
+		return readRuntimePluginStatusOverview(this.ctx)
 	}
 }
 
@@ -232,18 +192,19 @@ export class LoaderAnchors {
 export class LoaderControl {
 	constructor(private readonly ctx: Context) {}
 
-	async enable(address: PluginNodeAddress): Promise<void> {
+	async setAutoStart(address: PluginNodeAddress, autoStart: boolean): Promise<void> {
 		await requireRuntimePluginGraphCoordinator(this.ctx).updateRuntimeState(
-			runtimeStatePatch({ type: 'set-enabled', node: address, enabled: true }),
-			'plugin-enable',
+			runtimeStatePatch({ type: 'set-auto-start', node: address, autoStart }),
+			'plugin-auto-start-set',
 		)
 	}
 
-	async disable(address: PluginNodeAddress): Promise<void> {
-		await requireRuntimePluginGraphCoordinator(this.ctx).updateRuntimeState(
-			runtimeStatePatch({ type: 'set-enabled', node: address, enabled: false }),
-			'plugin-disable',
-		)
+	async start(address: PluginNodeAddress): Promise<void> {
+		await requireRuntimePluginGraphCoordinator(this.ctx).startNode(address)
+	}
+
+	async stop(address: PluginNodeAddress): Promise<void> {
+		await requireRuntimePluginGraphCoordinator(this.ctx).stopNode(address)
 	}
 
 	async restart(address: PluginNodeAddress): Promise<void> {
@@ -252,9 +213,7 @@ export class LoaderControl {
 }
 
 export type LoaderApi = {
-	runtime: RuntimeResolver
 	status: PluginStatusReporter
-	deps: PluginDependencyInspector
 	registry: LoaderRegistryView
 	anchors: LoaderAnchors
 	control: LoaderControl

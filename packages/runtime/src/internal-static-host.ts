@@ -6,12 +6,8 @@ export {
 export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './management-config'
 export { createRuntimeRootContext, prepareRuntimeRootContext } from './context/runtime-plan'
 export type { RuntimeHostConfig } from './context/runtime-contract'
-export { isPluginEnabled, setPluginEnabled } from './services/RuntimeStateHelpers'
-export type {
-	RuntimePluginDependencyInfo,
-	RuntimePluginSource,
-	RuntimeRouteCapabilities,
-} from './runtime/capabilities'
+export { isPluginAutoStartEnabled, setPluginAutoStart } from './services/RuntimeStateHelpers'
+export type { RuntimePluginSource, RuntimeRouteCapabilities } from './runtime/capabilities'
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export { readHostProduct } from './product-internal'
 export {

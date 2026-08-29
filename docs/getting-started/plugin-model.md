@@ -108,9 +108,9 @@ export class OrdersPlugin extends BasePlugin {
 - type 必须能唯一追溯到具体 Plugin 的 package-root named export；
 - `plugins.use()` 是 `init()` 中的直接语句；
 - callback 同步执行，可以返回 cleanup 或 disposable；
-- ref 不会 import、安装、注册或自动启用 provider package。
+- ref 不会 import、安装、注册 provider package，也不会改变其自动启动策略。
 
-provider absent、disabled 或 start-failed 时 callback 不执行，也不阻塞 consumer。provider generation 出现、消失或 replacement 时，Core 会重启 consumer 及其 required dependent closure，使 optional integration 不会持有旧 provider。
+provider absent、当前未运行或 start-failed 时 callback 不执行，也不阻塞 consumer。provider generation 出现、消失或 replacement 时，Core 会重启 consumer 及其 required dependent closure，使 optional integration 不会持有旧 provider。
 
 不要用动态 `import()`、轮询 availability 或缓存裸实例模拟 optional edge。高频变化的业务对象也不适合建模为 Plugin graph edge。
 
@@ -253,7 +253,7 @@ export class CatalogObserverPlugin extends BasePlugin {
 }
 ```
 
-module augmentation 只合并 TypeScript 事件词汇，不会 import、启用或连接两个 Plugin，也不提供启动顺序保证。每个 root
+module augmentation 只合并 TypeScript 事件词汇，不会 import、安装、打开 auto-start policy 或连接两个 Plugin，也不提供启动顺序保证。每个 root
 共享一个 emitter backend，但每个 Plugin、Part 和 caller Context 得到固定 owner 的普通 `EventsService` view；订阅自动进入
 该 owner effects，stop、replacement 和 init rollback 都会取消订阅。事件名应使用带领域前缀的稳定字面量，避免无归属的通用名称。
 

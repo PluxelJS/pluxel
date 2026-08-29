@@ -105,7 +105,7 @@ describe('static runtime catalog identity', () => {
 		expect(() => buildCatalog({ name: 'raw', plugins: [Raw] }, 1)).toThrow(/not lowered/)
 	})
 
-	it('finds unknown config and enablement owners by structured node address', () => {
+	it('finds unknown config and control-state owners by structured node address', () => {
 		const definition = packageDefinition('@fixture/known', 'KnownPlugin')
 		const Known = loweredImplementation(class KnownPlugin extends BasePlugin {}, definition)
 		const catalog = buildCatalog({ name: 'config', plugins: [Known] }, 1)

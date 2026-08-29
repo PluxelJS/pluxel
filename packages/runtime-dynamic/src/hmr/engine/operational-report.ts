@@ -57,16 +57,16 @@ function normalizeModuleIdToFsPath(cwd: string, moduleId: string) {
 
 export function collectPluginTotals(params: {
 	registryView: RegistryViewLike
-	isPluginEnabled: (address: PluginNodeAddress) => boolean
+	isPluginDesired: (address: PluginNodeAddress) => boolean
 	isRunning: (address: PluginNodeAddress) => boolean
 }): PluginTotals {
-	const plugins: PluginTotals = { loaded: 0, enabled: 0, running: 0 }
+	const plugins: PluginTotals = { loaded: 0, desired: 0, running: 0 }
 
 	for (const entry of params.registryView.listRegistered()) {
-		const enabled = params.isPluginEnabled(entry.address)
+		const desired = params.isPluginDesired(entry.address)
 		const running = params.isRunning(entry.address)
 		plugins.loaded++
-		if (enabled) plugins.enabled++
+		if (desired) plugins.desired++
 		if (running) plugins.running++
 	}
 
@@ -82,7 +82,7 @@ export async function buildHmrOperationalReport(params: {
 	rootsPretty: readonly string[]
 	entriesByRoot: readonly number[]
 	registryView: RegistryViewLike
-	isPluginEnabled: (address: PluginNodeAddress) => boolean
+	isPluginDesired: (address: PluginNodeAddress) => boolean
 	isRunning: (address: PluginNodeAddress) => boolean
 	resolveBareWorkspaceEntry: (specifier: string) => Promise<string | null>
 	resolveLimit?: number
@@ -98,12 +98,12 @@ export async function buildHmrOperationalReport(params: {
 		child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
 
 	const loadedByRoot = Array<number>(rootsAbs.length).fill(0)
-	const enabledByRoot = Array<number>(rootsAbs.length).fill(0)
+	const desiredByRoot = Array<number>(rootsAbs.length).fill(0)
 	const runningByRoot = Array<number>(rootsAbs.length).fill(0)
 
 	const pluginTotals = collectPluginTotals({
 		registryView: params.registryView,
-		isPluginEnabled: params.isPluginEnabled,
+		isPluginDesired: params.isPluginDesired,
 		isRunning: params.isRunning,
 	})
 
@@ -143,7 +143,7 @@ export async function buildHmrOperationalReport(params: {
 		const moduleId = params.registryView.findModuleId(entry.address)
 		if (!moduleId) continue
 
-		const enabled = params.isPluginEnabled(entry.address)
+		const desired = params.isPluginDesired(entry.address)
 		const running = params.isRunning(entry.address)
 
 		const clean = await resolveModuleIdForRootGrouping(moduleId)
@@ -156,7 +156,7 @@ export async function buildHmrOperationalReport(params: {
 		for (let i = 0; i < rootsAbs.length; i++) {
 			if (!isUnder(clean, rootsAbs[i]!)) continue
 			loadedByRoot[i] = (loadedByRoot[i] ?? 0) + 1
-			if (enabled) enabledByRoot[i] = (enabledByRoot[i] ?? 0) + 1
+			if (desired) desiredByRoot[i] = (desiredByRoot[i] ?? 0) + 1
 			if (running) runningByRoot[i] = (runningByRoot[i] ?? 0) + 1
 			matched = true
 			break
@@ -199,7 +199,7 @@ export async function buildHmrOperationalReport(params: {
 			...base,
 			plugins: {
 				loaded: loadedByRoot[i] ?? 0,
-				enabled: enabledByRoot[i] ?? 0,
+				desired: desiredByRoot[i] ?? 0,
 				running: runningByRoot[i] ?? 0,
 			},
 		}

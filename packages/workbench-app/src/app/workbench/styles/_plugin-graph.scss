@@ -1,0 +1,757 @@
+.plx-pluginGraphPage {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 10px;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	padding: 10px;
+}
+
+.plx-pluginGraphState {
+	align-items: center;
+	display: flex;
+	justify-content: center;
+	min-height: 240px;
+	padding: 24px;
+}
+
+.plx-pluginGraphToolbar {
+	background: color-mix(in srgb, var(--mantine-color-body) 97%, var(--mantine-color-blue-0));
+	flex: 0 0 auto;
+}
+
+.plx-pluginGraphSearch {
+	margin-top: 8px;
+	max-width: 520px;
+	position: relative;
+}
+
+.plx-pluginGraphSearch__results {
+	left: 0;
+	max-height: 280px;
+	overflow-y: auto;
+	padding: 4px;
+	position: absolute;
+	right: 0;
+	top: calc(100% + 4px);
+	z-index: 40;
+}
+
+.plx-pluginGraphSearch__results .mantine-Button-label {
+	display: flex;
+	gap: 12px;
+	justify-content: space-between;
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginGraphWorkspace {
+	flex: 1;
+	min-height: clamp(420px, 56dvh, 760px);
+	min-width: 0;
+	overflow: hidden;
+	position: relative;
+}
+
+.plx-pluginGraphRenderer {
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	position: relative;
+}
+
+.plx-pluginGraphRelations {
+	background: var(--plx-surface-canvas, var(--mantine-color-body));
+	border: 1px solid var(--plx-border, var(--mantine-color-default-border));
+	border-radius: 8px;
+	height: 100%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.plx-pluginGraphRelations__header {
+	align-items: center;
+	background: color-mix(in srgb, var(--mantine-color-body) 96%, var(--mantine-color-gray-1));
+	border-bottom: 1px solid var(--mantine-color-default-border);
+	display: flex;
+	gap: 12px;
+	justify-content: space-between;
+	min-height: 46px;
+	padding: 8px 12px;
+}
+
+.plx-pluginGraphRelations__header > div:first-child {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.plx-pluginGraphRelations__header strong {
+	font-size: var(--mantine-font-size-sm);
+	line-height: 1.25;
+}
+
+.plx-pluginGraphRelations__header span {
+	color: var(--mantine-color-dimmed);
+	font-size: 10px;
+}
+
+.plx-pluginGraphHeaderActions {
+	align-items: center;
+	display: flex;
+	flex: 0 0 auto;
+	gap: 7px;
+}
+
+.plx-pluginGraphLegend {
+	align-items: center;
+	display: flex;
+	gap: 12px;
+}
+
+.plx-pluginGraphLegend > span {
+	align-items: center;
+	display: inline-flex;
+	font-size: 10px;
+	gap: 5px;
+	white-space: nowrap;
+}
+
+.plx-pluginGraphLegend i {
+	border-top: 2px solid var(--mantine-color-gray-6);
+	display: inline-block;
+	width: 18px;
+}
+
+.plx-pluginGraphLegend [data-mode='optional'] i {
+	border-top-style: dashed;
+}
+
+.plx-pluginGraphUnconnectedToggle {
+	align-items: center;
+	appearance: none;
+	background: var(--mantine-color-body);
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: 6px;
+	color: var(--mantine-color-dimmed);
+	cursor: pointer;
+	display: inline-flex;
+	font-family: inherit;
+	font-size: 11px;
+	font-weight: 600;
+	gap: 6px;
+	height: 30px;
+	padding: 0 9px;
+}
+
+.plx-pluginGraphUnconnectedToggle:hover,
+.plx-pluginGraphUnconnectedToggle[data-active='true'] {
+	background: var(--mantine-color-default-hover);
+	color: var(--mantine-color-blue-text);
+}
+
+.plx-pluginGraphUnconnectedToggle:focus-visible {
+	outline: 2px solid var(--mantine-color-blue-6);
+	outline-offset: 1px;
+}
+
+.plx-pluginGraphRelations__header .plx-pluginGraphUnconnectedToggle span {
+	color: inherit;
+	font-size: inherit;
+}
+
+.plx-pluginGraphZoom {
+	align-items: center;
+	background: var(--mantine-color-body);
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: 6px;
+	display: flex;
+	flex: 0 0 auto;
+	height: 30px;
+	overflow: hidden;
+}
+
+.plx-pluginGraphZoom button {
+	align-items: center;
+	appearance: none;
+	background: transparent;
+	border: 0;
+	color: var(--mantine-color-text);
+	cursor: pointer;
+	display: inline-flex;
+	height: 100%;
+	justify-content: center;
+	padding: 0;
+	width: 30px;
+}
+
+.plx-pluginGraphZoom button:hover:not(:disabled),
+.plx-pluginGraphZoom button[data-active='true'] {
+	background: var(--mantine-color-default-hover);
+	color: var(--mantine-color-blue-text);
+}
+
+.plx-pluginGraphZoom button:focus-visible {
+	box-shadow: inset 0 0 0 2px var(--mantine-color-blue-6);
+	outline: none;
+}
+
+.plx-pluginGraphZoom button:disabled {
+	cursor: default;
+	opacity: 0.35;
+}
+
+.plx-pluginGraphZoom > span {
+	border-left: 1px solid var(--mantine-color-default-border);
+	border-right: 1px solid var(--mantine-color-default-border);
+	color: var(--mantine-color-dimmed);
+	font-variant-numeric: tabular-nums;
+	line-height: 28px;
+	text-align: center;
+	width: 48px;
+}
+
+.plx-pluginGraphRelations__empty {
+	align-items: center;
+	color: var(--mantine-color-dimmed);
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 5px;
+	justify-content: center;
+	min-height: 180px;
+	padding: 24px;
+	text-align: center;
+}
+
+.plx-pluginGraphRelations__empty strong {
+	color: var(--mantine-color-text);
+	font-size: var(--mantine-font-size-sm);
+}
+
+.plx-pluginGraphRelations__empty span {
+	font-size: var(--mantine-font-size-xs);
+}
+
+.plx-pluginGraphViewport {
+	background-color: var(--plx-surface-canvas, var(--mantine-color-body));
+	background-image: radial-gradient(
+		circle,
+		color-mix(in srgb, var(--mantine-color-dimmed) 24%, transparent) 0.8px,
+		transparent 0.9px
+	);
+	background-size: 20px 20px;
+	cursor: grab;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+	overscroll-behavior: contain;
+	position: relative;
+	touch-action: none;
+	user-select: none;
+}
+
+.plx-pluginGraphViewport[data-panning='true'] {
+	cursor: grabbing;
+}
+
+.plx-pluginGraphViewport:focus-visible {
+	box-shadow: inset 0 0 0 2px var(--mantine-color-blue-6);
+	outline: none;
+}
+
+.plx-pluginGraphStage {
+	height: var(--plx-plugin-graph-height);
+	left: 0;
+	position: absolute;
+	top: 0;
+	transform-origin: left top;
+	will-change: transform;
+	width: var(--plx-plugin-graph-width);
+}
+
+.plx-pluginGraphComponent {
+	background: color-mix(in srgb, var(--mantine-color-gray-0) 22%, transparent);
+	border: 1px dashed color-mix(in srgb, var(--mantine-color-default-border) 68%, transparent);
+	border-radius: 12px;
+	box-sizing: border-box;
+	pointer-events: none;
+	position: absolute;
+	transition: opacity 140ms ease;
+}
+
+.plx-pluginGraphComponent[data-muted='true'] {
+	opacity: 0.2;
+}
+
+.plx-pluginGraphComponent > span {
+	background: var(--mantine-color-body);
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: 999px;
+	color: var(--mantine-color-dimmed);
+	font-size: 10px;
+	font-weight: 600;
+	left: 14px;
+	line-height: 20px;
+	padding: 0 9px;
+	position: absolute;
+	top: -10px;
+}
+
+.plx-pluginGraphEdges {
+	left: 0;
+	overflow: visible;
+	position: absolute;
+	top: 0;
+}
+
+.plx-pluginGraphEdges marker path {
+	fill: var(--mantine-color-gray-6);
+}
+
+.plx-pluginGraphEdges marker[id$='arrow-selected'] path {
+	fill: var(--mantine-color-blue-6);
+}
+
+.plx-pluginGraphEdge {
+	cursor: pointer;
+	outline: none;
+	transition: opacity 140ms ease;
+}
+
+.plx-pluginGraphEdge__hit,
+.plx-pluginGraphEdge__line {
+	fill: none;
+}
+
+.plx-pluginGraphEdge__hit {
+	pointer-events: stroke;
+	stroke: transparent;
+	stroke-width: 18;
+}
+
+.plx-pluginGraphEdge__line {
+	pointer-events: none;
+	stroke: var(--mantine-color-gray-6);
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.7;
+}
+
+.plx-pluginGraphEdge[data-mode='optional'] .plx-pluginGraphEdge__line {
+	stroke-dasharray: 6 6;
+	stroke-width: 1.5;
+}
+
+.plx-pluginGraphEdge[data-effective='false'] {
+	opacity: 0.48;
+}
+
+.plx-pluginGraphEdge[data-muted='true'] {
+	opacity: 0.12;
+}
+
+.plx-pluginGraphEdge[data-selected='true'],
+.plx-pluginGraphEdge:focus-visible {
+	opacity: 1;
+}
+
+.plx-pluginGraphEdge[data-selected='true'] .plx-pluginGraphEdge__line,
+.plx-pluginGraphEdge:focus-visible .plx-pluginGraphEdge__line {
+	stroke: var(--mantine-color-blue-6);
+	stroke-width: 3;
+}
+
+.plx-pluginGraphEdge__labelBackground {
+	fill: var(--mantine-color-body);
+	opacity: 0;
+	pointer-events: all;
+	stroke: var(--mantine-color-default-border);
+	transition: opacity 120ms ease;
+}
+
+.plx-pluginGraphEdge__label {
+	fill: var(--mantine-color-dimmed);
+	font-family: var(--mantine-font-family);
+	font-size: 10px;
+	font-weight: 650;
+	opacity: 0;
+	pointer-events: none;
+	text-anchor: middle;
+	transition: opacity 120ms ease;
+}
+
+.plx-pluginGraphEdge:hover .plx-pluginGraphEdge__labelBackground,
+.plx-pluginGraphEdge:hover .plx-pluginGraphEdge__label,
+.plx-pluginGraphEdge:focus-visible .plx-pluginGraphEdge__labelBackground,
+.plx-pluginGraphEdge:focus-visible .plx-pluginGraphEdge__label,
+.plx-pluginGraphEdge[data-selected='true'] .plx-pluginGraphEdge__labelBackground,
+.plx-pluginGraphEdge[data-selected='true'] .plx-pluginGraphEdge__label,
+.plx-pluginGraphEdge[data-unresolved='true'] .plx-pluginGraphEdge__labelBackground,
+.plx-pluginGraphEdge[data-unresolved='true'] .plx-pluginGraphEdge__label {
+	opacity: 1;
+}
+
+.plx-pluginGraphEdge[data-unresolved='true'] .plx-pluginGraphEdge__labelBackground {
+	stroke: var(--mantine-color-red-5);
+}
+
+.plx-pluginGraphEdge[data-unresolved='true'] .plx-pluginGraphEdge__label {
+	fill: var(--mantine-color-red-text);
+}
+
+.plx-pluginGraphNode {
+	appearance: none;
+	background: var(--mantine-color-body);
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: 10px;
+	box-sizing: border-box;
+	color: var(--mantine-color-text);
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	font-family: inherit;
+	gap: 6px;
+	height: 84px;
+	justify-content: center;
+	padding: 10px 12px 10px 15px;
+	position: absolute;
+	text-align: left;
+	transition:
+		border-color 120ms ease,
+		box-shadow 120ms ease,
+		opacity 140ms ease;
+	width: 220px;
+}
+
+.plx-pluginGraphNode::before {
+	background: var(--mantine-color-gray-5);
+	border-radius: 999px;
+	bottom: 10px;
+	content: '';
+	left: 5px;
+	position: absolute;
+	top: 10px;
+	width: 3px;
+}
+
+.plx-pluginGraphNode:hover {
+	border-color: color-mix(
+		in srgb,
+		var(--mantine-color-blue-6) 48%,
+		var(--mantine-color-default-border)
+	);
+	box-shadow: var(--mantine-shadow-xs);
+}
+
+.plx-pluginGraphNode:focus-visible {
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--mantine-color-blue-6) 30%, transparent);
+	outline: 2px solid var(--mantine-color-blue-6);
+	outline-offset: 1px;
+}
+
+.plx-pluginGraphNode[data-effective='false'] {
+	opacity: 0.72;
+}
+
+.plx-pluginGraphNode[data-muted='true'] {
+	opacity: 0.2;
+}
+
+.plx-pluginGraphNode[data-muted='true']:hover,
+.plx-pluginGraphNode[data-muted='true']:focus-visible {
+	opacity: 0.78;
+}
+
+.plx-pluginGraphNode[data-kind='absent-provider'],
+.plx-pluginGraphNode[data-kind='unresolved-requirement'] {
+	background: color-mix(in srgb, var(--mantine-color-body) 70%, transparent);
+	border-style: dashed;
+	border-width: 2px;
+}
+
+.plx-pluginGraphNode[data-has-issue='true'] {
+	border-color: var(--mantine-color-yellow-6);
+}
+
+.plx-pluginGraphNode[data-selected='true'] {
+	border-color: var(--mantine-color-blue-6);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--mantine-color-blue-6) 24%, transparent);
+}
+
+.plx-pluginGraphNode__heading,
+.plx-pluginGraphNode__state,
+.plx-pluginGraphNode__state > span:first-child {
+	align-items: center;
+	display: flex;
+}
+
+.plx-pluginGraphNode__heading,
+.plx-pluginGraphNode__state {
+	gap: 7px;
+	justify-content: space-between;
+	min-width: 0;
+}
+
+.plx-pluginGraphNode__label {
+	font-size: 13px;
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginGraphNode__icons {
+	align-items: center;
+	display: inline-flex;
+	flex: 0 0 auto;
+	gap: 4px;
+}
+
+.plx-pluginGraphNode__reference {
+	color: var(--mantine-color-dimmed);
+	font-family: var(--mantine-font-family-monospace);
+	font-size: 10px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginGraphNode__state {
+	color: var(--mantine-color-dimmed);
+	font-size: 10px;
+}
+
+.plx-pluginGraphNode__state > span:first-child {
+	gap: 5px;
+}
+
+.plx-pluginGraphNode__state i {
+	background: var(--mantine-color-gray-5);
+	border-radius: 50%;
+	display: inline-block;
+	height: 7px;
+	width: 7px;
+}
+
+.plx-pluginGraphNode[data-state='running'] .plx-pluginGraphNode__state i {
+	background: var(--mantine-color-green-6);
+}
+
+.plx-pluginGraphNode[data-state='running']::before {
+	background: var(--mantine-color-green-6);
+}
+
+.plx-pluginGraphNode[data-state='attention'] .plx-pluginGraphNode__state i {
+	background: var(--mantine-color-yellow-6);
+}
+
+.plx-pluginGraphNode[data-state='attention']::before {
+	background: var(--mantine-color-yellow-6);
+}
+
+.plx-pluginGraphNode[data-state='stopped']::before {
+	background: var(--mantine-color-gray-5);
+}
+
+.plx-pluginGraphNode[data-state='unavailable'] .plx-pluginGraphNode__state i,
+.plx-pluginGraphNode[data-state='missing'] .plx-pluginGraphNode__state i {
+	background: var(--mantine-color-red-6);
+}
+
+.plx-pluginGraphNode[data-state='unavailable']::before,
+.plx-pluginGraphNode[data-state='missing']::before {
+	background: var(--mantine-color-red-6);
+}
+
+.plx-pluginGraphNode[data-compact='true'] {
+	gap: 5px;
+	height: 68px;
+	min-width: 0;
+	position: relative;
+	width: 100%;
+}
+
+.plx-pluginGraphUnconnectedPanel {
+	background: var(--mantine-color-body);
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: 8px;
+	bottom: 12px;
+	box-shadow: var(--mantine-shadow-lg);
+	display: flex;
+	flex-direction: column;
+	max-width: calc(100% - 24px);
+	min-height: 0;
+	position: absolute;
+	right: 12px;
+	top: 60px;
+	width: 360px;
+	z-index: 20;
+}
+
+.plx-pluginGraphUnconnectedPanel__heading {
+	align-items: flex-start;
+	border-bottom: 1px solid var(--mantine-color-default-border);
+	display: flex;
+	gap: 12px;
+	justify-content: space-between;
+	padding: 12px;
+}
+
+.plx-pluginGraphUnconnectedPanel__heading > div {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.plx-pluginGraphUnconnectedPanel__heading strong {
+	font-size: var(--mantine-font-size-sm);
+}
+
+.plx-pluginGraphUnconnectedPanel__heading span {
+	color: var(--mantine-color-dimmed);
+	font-size: 10px;
+}
+
+.plx-pluginGraphUnconnectedPanel__heading button {
+	align-items: center;
+	appearance: none;
+	background: transparent;
+	border: 0;
+	border-radius: 5px;
+	color: var(--mantine-color-dimmed);
+	cursor: pointer;
+	display: inline-flex;
+	height: 28px;
+	justify-content: center;
+	padding: 0;
+	width: 28px;
+}
+
+.plx-pluginGraphUnconnectedPanel__heading button:hover {
+	background: var(--mantine-color-default-hover);
+	color: var(--mantine-color-text);
+}
+
+.plx-pluginGraphUnconnectedPanel__heading button:focus-visible {
+	outline: 2px solid var(--mantine-color-blue-6);
+}
+
+.plx-pluginGraphUnconnectedPanel__search {
+	align-items: center;
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: 6px;
+	color: var(--mantine-color-dimmed);
+	display: flex;
+	flex: 0 0 auto;
+	gap: 7px;
+	margin: 10px 10px 3px;
+	padding: 0 9px;
+}
+
+.plx-pluginGraphUnconnectedPanel__search:focus-within {
+	border-color: var(--mantine-color-blue-6);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--mantine-color-blue-6) 18%, transparent);
+}
+
+.plx-pluginGraphUnconnectedPanel__search input {
+	background: transparent;
+	border: 0;
+	color: var(--mantine-color-text);
+	font-family: inherit;
+	font-size: 11px;
+	height: 34px;
+	min-width: 0;
+	outline: none;
+	width: 100%;
+}
+
+.plx-pluginGraphUnconnectedPanel__list {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 7px;
+	min-height: 0;
+	overflow: auto;
+	padding: 7px 10px 10px;
+}
+
+.plx-pluginGraphUnconnectedPanel__empty {
+	align-items: center;
+	color: var(--mantine-color-dimmed);
+	display: flex;
+	font-size: var(--mantine-font-size-xs);
+	justify-content: center;
+	min-height: 120px;
+}
+
+.plx-pluginGraphInspector {
+	bottom: 12px;
+	box-shadow: var(--mantine-shadow-lg);
+	max-width: calc(100% - 24px);
+	min-height: 0;
+	overflow: auto;
+	position: absolute;
+	right: 12px;
+	top: 12px;
+	width: 340px;
+	z-index: 20;
+}
+
+.plx-pluginGraphInspector__detailLink {
+	color: var(--mantine-color-blue-text);
+	font-size: var(--mantine-font-size-xs);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.plx-pluginGraphInspector__detailLink:hover,
+.plx-pluginGraphInspector__detailLink:focus-visible {
+	text-decoration: underline;
+}
+
+@media (max-width: 47.99em) {
+	.plx-pluginGraphPage {
+		height: auto;
+		overflow: auto;
+	}
+
+	.plx-pluginGraphWorkspace {
+		flex: none;
+		height: 72dvh;
+		min-height: 560px;
+	}
+
+	.plx-pluginGraphRelations__header > div:first-child > span {
+		display: none;
+	}
+
+	.plx-pluginGraphLegend {
+		display: none;
+	}
+
+	.plx-pluginGraphInspector,
+	.plx-pluginGraphUnconnectedPanel {
+		bottom: 8px;
+		left: 8px;
+		max-height: 58%;
+		max-width: none;
+		right: 8px;
+		top: auto;
+		width: auto;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.plx-pluginGraphNode {
+		transition: none;
+	}
+}

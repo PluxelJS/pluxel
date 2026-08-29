@@ -46,13 +46,14 @@ function sessionFixture(namespace = 'resource') {
 			requested: new Map([['stream', namespace]]),
 			handlers: new Map(),
 		},
-		once: vi.fn((event: string, cb: Listener) => {
-			let callbacks = listeners.get(event)
+		onDisconnected: vi.fn((cb: Listener) => {
+			let callbacks = listeners.get('disconnected')
 			if (!callbacks) {
 				callbacks = new Set()
-				listeners.set(event, callbacks)
+				listeners.set('disconnected', callbacks)
 			}
 			callbacks.add(cb)
+			return () => callbacks?.delete(cb)
 		}),
 		getRequest: () => new Request('http://local.test/events'),
 		push: vi.fn(),
@@ -75,7 +76,7 @@ describe('WorkbenchEventsService failure containment', () => {
 		vi.spyOn(service as never, 'attachSubscriptionToSession').mockRejectedValue(failure)
 		const session = {
 			state: { requested: new Map([['stream', 'resource']]), handlers: new Map() },
-			once: vi.fn(),
+			onDisconnected: vi.fn(),
 		}
 
 		;(service as any).attachSession(session, {}, new URLSearchParams())
@@ -129,6 +130,37 @@ describe('WorkbenchEventsService failure containment', () => {
 			namespace: 'resource',
 			error: failure,
 		})
+	})
+})
+
+describe('WorkbenchEventsService response lifecycle', () => {
+	it('disconnects and clears keepalive work when the response consumer cancels', async () => {
+		vi.useFakeTimers()
+		try {
+			const { service } = fixture()
+			const { owner } = ownerFixture()
+			const cleanup = vi.fn()
+			service.registerResourceFor(owner as never, 'resource', () => cleanup)
+
+			const response = service.stream({
+				request: new Request('http://runtime.test/events?ns=resource'),
+				pluginCtx: (service as any).ctx,
+				status: vi.fn(),
+			} as never) as Response
+			const reader = response.body!.getReader()
+			const initial = await reader.read()
+			expect(new TextDecoder().decode(initial.value)).toBe('retry: 2000\n\n')
+			await vi.waitFor(() => expect(cleanup).not.toHaveBeenCalled())
+
+			await reader.cancel()
+			await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce())
+			expect((service as any).sessions.size).toBe(0)
+
+			await vi.advanceTimersByTimeAsync(30_000)
+			expect(cleanup).toHaveBeenCalledOnce()
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 })
 

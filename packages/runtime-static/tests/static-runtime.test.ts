@@ -22,7 +22,6 @@ import {
 	getActiveRuntimeLogging,
 	requireRuntimePluginGraphCoordinator,
 	RUNTIME_INTERNAL_API_BASE,
-	runtimeStatePatch,
 } from '@pluxel/runtime/internal'
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import { defineProduct } from '@pluxel/runtime/product'
@@ -180,9 +179,9 @@ const HotConfigV2 = class HotConfigV2 extends BasePlugin {
 	}
 }
 
-const DisabledHotV1 = class DisabledHotV1 extends BasePlugin {}
+const InactiveHotV1 = class InactiveHotV1 extends BasePlugin {}
 
-const DisabledHotV2 = class DisabledHotV2 extends BasePlugin {
+const InactiveHotV2 = class InactiveHotV2 extends BasePlugin {
 	readonly config = this.configs.use(RequiredObjectSchema)
 }
 
@@ -217,11 +216,11 @@ beforeAll(() => {
 		fieldName: 'config',
 		schema: RequiredObjectSchema,
 	})
-	lowerReplacementPair(DisabledHotV1, DisabledHotV2, 'disabled-hot', [
-		'Disabled Hot',
-		'Disabled Hot Replacement',
+	lowerReplacementPair(InactiveHotV1, InactiveHotV2, 'inactive-hot', [
+		'Inactive Hot',
+		'Inactive Hot Replacement',
 	])
-	__setPluginConfig(DisabledHotV2, {
+	__setPluginConfig(InactiveHotV2, {
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		fieldName: 'config',
 		schema: RequiredObjectSchema,
@@ -341,7 +340,7 @@ function addressOf(plugin: PluginConstructor): PluginNodeAddress {
 	return pluginNodeAddressOf(plugin)
 }
 
-function enabled(...plugins: PluginConstructor[]): PluginNodeAddress[] {
+function autoStart(...plugins: PluginConstructor[]): PluginNodeAddress[] {
 	return plugins.map(addressOf)
 }
 
@@ -436,7 +435,7 @@ describe('@pluxel/runtime-static', () => {
 			plugins: [],
 			configure: () => ({
 				profile: 'test',
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
 			}),
 		})
 		const plugins = runtimeStaticVite.staticRuntimeVitePlugin({
@@ -493,7 +492,7 @@ describe('@pluxel/runtime-static', () => {
 					bindingValue = bindings.serviceUrl
 					return {
 						configService: { mode: 'memory' },
-						runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+						runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
 					}
 				},
 			}),
@@ -515,7 +514,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [ConfiguredPlugin],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [owner] } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [owner] } },
 				}),
 			}),
 			{
@@ -544,7 +543,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('starts enabled address slots and reports unknown config owners structurally', async () => {
+	it('starts autoStart address slots and reports unknown config owners structurally', async () => {
 		started.length = 0
 		const ghost: PluginNodeAddress = {
 			definition: {
@@ -560,14 +559,14 @@ describe('@pluxel/runtime-static', () => {
 					mode: 'memory',
 					snapshot: { plugins: [{ owner: ghost, config: {} }] },
 				},
-				runtimeState: { mode: 'memory', snapshot: { enabled: [addressOf(StaticA)] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [addressOf(StaticA)] } },
 			},
 		)
 		try {
 			await host.start()
 			expect(started).toEqual(['A'])
 			expect(statusOf(host, StaticA)).toBe('started')
-			expect(statusOf(host, StaticB)).toBe('disabled')
+			expect(statusOf(host, StaticB)).toBe('stopped')
 			expect(statusOf(host, ghost)).toBe('unknown-config-entry')
 			expect(requirePluginService(host.ctx).isRunning(StaticA)).toBe(true)
 			expect(requirePluginService(host.ctx).isRunning(StaticB)).toBe(false)
@@ -585,7 +584,7 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'same-display', plugins: [SharedPluginA, SharedPluginB] }),
 			{
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [first, second] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [first, second] } },
 			},
 		)
 		try {
@@ -601,7 +600,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('uses lowered required import provenance for preflight and injection', async () => {
+	it('uses lowered required import provenance for dependency activation and injection', async () => {
 		const consumer = addressOf(RequiredConsumer)
 		const missing = await createStaticRuntimeHost(
 			defineStaticRuntime({
@@ -610,13 +609,16 @@ describe('@pluxel/runtime-static', () => {
 			}),
 			{
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [consumer] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [consumer] } },
 			},
 		)
 		try {
 			await missing.start()
-			expect(statusOf(missing, RequiredProvider)).toBe('disabled')
-			expect(statusOf(missing, RequiredConsumer)).toBe('dependency-missing')
+			expect(statusOf(missing, RequiredProvider)).toBe('started')
+			expect(statusOf(missing, RequiredConsumer)).toBe('started')
+			expect(
+				requirePluginService(missing.ctx).getInstance(RequiredConsumer)?.provider,
+			).toBeInstanceOf(RequiredProvider)
 		} finally {
 			await missing.stop()
 		}
@@ -630,7 +632,7 @@ describe('@pluxel/runtime-static', () => {
 				configService: { mode: 'memory' },
 				runtimeState: {
 					mode: 'memory',
-					snapshot: { enabled: enabled(RequiredProvider, RequiredConsumer) },
+					snapshot: { autoStart: autoStart(RequiredProvider, RequiredConsumer) },
 				},
 			},
 		)
@@ -657,7 +659,7 @@ describe('@pluxel/runtime-static', () => {
 				runtimeState: {
 					mode: 'memory',
 					snapshot: {
-						enabled: enabled(StaticProviderA, StaticProviderB, StaticProviderConsumer),
+						autoStart: autoStart(StaticProviderA, StaticProviderB, StaticProviderConsumer),
 						providerDefaults: [{ token, provider }],
 					},
 				},
@@ -674,7 +676,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('keeps a lowered optional edge absent-safe and restarts the consumer when enabled', async () => {
+	it('keeps a lowered optional edge absent-safe and restarts the consumer on provider lifecycle', async () => {
 		optionalRuns.length = 0
 		const consumer = addressOf(OptionalConsumer)
 		const provider = addressOf(OptionalProvider)
@@ -685,20 +687,16 @@ describe('@pluxel/runtime-static', () => {
 			}),
 			{
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [consumer] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [consumer] } },
 			},
 		)
 		try {
 			await host.start()
 			expect(optionalRuns).toEqual(['consumer'])
-			await requireRuntimePluginGraphCoordinator(host.ctx).updateRuntimeState(
-				runtimeStatePatch({ type: 'set-enabled', node: provider, enabled: true }),
-			)
+			await requireRuntimePluginGraphCoordinator(host.ctx).startNode(provider)
 			expect(optionalRuns).toEqual(['consumer', 'consumer', 'provider'])
 
-			await requireRuntimePluginGraphCoordinator(host.ctx).updateRuntimeState(
-				runtimeStatePatch({ type: 'set-enabled', node: provider, enabled: false }),
-			)
+			await requireRuntimePluginGraphCoordinator(host.ctx).stopNode(provider)
 			expect(optionalRuns).toEqual(['consumer', 'consumer', 'provider', 'cleanup', 'consumer'])
 		} finally {
 			await host.stop()
@@ -715,7 +713,7 @@ describe('@pluxel/runtime-static', () => {
 				},
 				runtimeState: {
 					mode: 'memory',
-					snapshot: { enabled: enabled(InvalidConfigPlugin) },
+					snapshot: { autoStart: autoStart(InvalidConfigPlugin) },
 				},
 			},
 		)
@@ -739,7 +737,7 @@ describe('@pluxel/runtime-static', () => {
 				runtimeState: {
 					mode: 'memory',
 					snapshot: {
-						enabled: enabled(StartFail, StartOk, ProviderFail, ConsumerBlocked),
+						autoStart: autoStart(StartFail, StartOk, ProviderFail, ConsumerBlocked),
 					},
 				},
 			},
@@ -770,7 +768,7 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'static-hmr', plugins: [HotStaticV1] }),
 			{
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [stableAddress] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [stableAddress] } },
 			},
 		)
 		try {
@@ -794,7 +792,7 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'static-hmr-queue', plugins: [HotStaticV1] }),
 			{
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [stableAddress] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [stableAddress] } },
 			},
 		)
 		try {
@@ -825,13 +823,13 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('removes an enabled slot through the static HMR transaction', async () => {
+	it('removes an autoStart slot through the static HMR transaction', async () => {
 		const address = addressOf(RemovedStatic)
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntime({ name: 'hmr-remove', plugins: [RemovedStatic] }),
 			{
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [address] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [address] } },
 			},
 		)
 		try {
@@ -865,7 +863,7 @@ describe('@pluxel/runtime-static', () => {
 					mode: 'memory',
 					snapshot: { plugins: [{ owner: address, config: {} }] },
 				},
-				runtimeState: { mode: 'memory', snapshot: { enabled: [address] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [address] } },
 			},
 		)
 		try {
@@ -880,7 +878,7 @@ describe('@pluxel/runtime-static', () => {
 			requireConfigService(host.ctx).patchConfig(address, {
 				value: 'ok',
 			})
-			await requireRuntimePluginGraphCoordinator(host.ctx).restartNode(address)
+			await requireRuntimePluginGraphCoordinator(host.ctx).startNode(address)
 			const recovered = await reloadStaticRuntime({ host, definition: nextDefinition })
 			expect(recovered.replaced).toEqual([])
 			expect(statusOf(host, address)).toBe('started')
@@ -890,10 +888,10 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('does not validate a disabled replacement generation during HMR', async () => {
-		const address = addressOf(DisabledHotV1)
+	it('does not validate a stopped replacement generation during HMR', async () => {
+		const address = addressOf(InactiveHotV1)
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntime({ name: 'hmr-disabled', plugins: [DisabledHotV1] }),
+			defineStaticRuntime({ name: 'hmr-inactive', plugins: [InactiveHotV1] }),
 			{ configService: { mode: 'memory' }, runtimeState: { mode: 'memory' } },
 		)
 		try {
@@ -901,13 +899,13 @@ describe('@pluxel/runtime-static', () => {
 			const report = await reloadStaticRuntime({
 				host,
 				definition: defineStaticRuntime({
-					name: 'hmr-disabled',
-					plugins: [DisabledHotV2],
+					name: 'hmr-inactive',
+					plugins: [InactiveHotV2],
 				}),
 			})
 			expect(report.replaced).toEqual([address])
-			expect(statusOf(host, address)).toBe('disabled')
-			expect(requirePluginService(host.ctx).isRunning(DisabledHotV2)).toBe(false)
+			expect(statusOf(host, address)).toBe('stopped')
+			expect(requirePluginService(host.ctx).isRunning(InactiveHotV2)).toBe(false)
 		} finally {
 			await host.stop()
 		}
@@ -920,7 +918,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [DirectHttp],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: enabled(DirectHttp) } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: autoStart(DirectHttp) } },
 					workbench: false,
 				}),
 			}),
@@ -941,7 +939,7 @@ describe('@pluxel/runtime-static', () => {
 					plugins: [],
 					configure: () => ({
 						configService: { mode: 'memory' },
-						runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+						runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
 					}),
 					prepare: () => {
 						throw new Error('prepare failed')
@@ -959,7 +957,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
 					persistence: { mode: 'memory' },
 					database: false,
 				}),
@@ -985,7 +983,7 @@ describe('@pluxel/runtime-static', () => {
 					configService: { mode: 'memory' },
 					runtimeState: {
 						mode: 'memory',
-						snapshot: { enabled: enabled(ManagedWebGate) },
+						snapshot: { autoStart: autoStart(ManagedWebGate) },
 					},
 					workbench: { enabled: true },
 				}),
@@ -1011,7 +1009,7 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'product-meta', plugins: [] }),
 			{
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
 				workbench: { enabled: true },
 			},
 			{
@@ -1040,7 +1038,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
 					persistence: { mode: 'memory' },
 					vault: {},
 				}),
@@ -1070,7 +1068,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
 					workbench: false,
 				}),
 			}),
@@ -1099,7 +1097,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [DirectHttp],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: enabled(DirectHttp) } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: autoStart(DirectHttp) } },
 					workbench: false,
 				}),
 			}),
@@ -1142,7 +1140,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [DirectHttp],
 				configure: () => ({
 					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: enabled(DirectHttp) } },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: autoStart(DirectHttp) } },
 					workbench: false,
 				}),
 			}),
@@ -1192,7 +1190,7 @@ describe('@pluxel/runtime-static', () => {
 						configService: { mode: 'memory' },
 						runtimeState: {
 							mode: 'memory',
-							snapshot: { enabled: enabled(FailedNodeLauncherLifetime) },
+							snapshot: { autoStart: autoStart(FailedNodeLauncherLifetime) },
 						},
 						workbench: false,
 					}),
@@ -1220,7 +1218,7 @@ describe('@pluxel/runtime-static', () => {
 					configService: { mode: 'memory' },
 					runtimeState: {
 						mode: 'memory',
-						snapshot: { enabled: enabled(StaticWebSocketA, StaticWebSocketB) },
+						snapshot: { autoStart: autoStart(StaticWebSocketA, StaticWebSocketB) },
 					},
 					workbench: false,
 				}),
@@ -1254,13 +1252,7 @@ describe('@pluxel/runtime-static', () => {
 
 			const ownerA1Closed = ownerA1.closed
 			const ownerA2Closed = ownerA2.closed
-			await requireRuntimePluginGraphCoordinator(runtime.ctx).updateRuntimeState(
-				runtimeStatePatch({
-					type: 'set-enabled',
-					node: addressOf(StaticWebSocketA),
-					enabled: false,
-				}),
-			)
+			await requireRuntimePluginGraphCoordinator(runtime.ctx).stopNode(addressOf(StaticWebSocketA))
 			await expect(ownerA1Closed).resolves.toMatchObject({
 				code: 1012,
 				reason: 'Service Restart',
@@ -1296,7 +1288,7 @@ describe('@pluxel/runtime-static', () => {
 					configService: { mode: 'memory' },
 					runtimeState: {
 						mode: 'memory',
-						snapshot: { enabled: enabled(StreamingDisconnect) },
+						snapshot: { autoStart: autoStart(StreamingDisconnect) },
 					},
 					workbench: false,
 				}),

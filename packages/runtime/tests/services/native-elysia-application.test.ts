@@ -143,7 +143,8 @@ describe('native generation Elysia application', () => {
 		partApplication = undefined
 
 		await withRuntimeHost(async (host) => {
-			await host.start(NativeApplicationPlugin)
+			host.add(NativeApplicationPlugin).start(NativeApplicationPlugin)
+			await host.commit()
 
 			expect(ownerApplication).toBeInstanceOf(Elysia)
 			expect(partApplication).toBe(ownerApplication)
@@ -182,7 +183,8 @@ describe('native generation Elysia application', () => {
 	it('rejects reserved and conflicting routes before atomic publication', async () => {
 		await withRuntimeHost(async (host) => {
 			host.add(ReservedNativeApplicationPlugin)
-			host.cfg(ReservedNativeApplicationPlugin).enable()
+			host.cfg(ReservedNativeApplicationPlugin).setAutoStart(true)
+			host.start(ReservedNativeApplicationPlugin)
 			const reserved = await host.commitAllowFail()
 			assertPluginLifecycleIssue(reserved, ReservedNativeApplicationPlugin, {
 				kind: 'start-failed',
@@ -190,8 +192,10 @@ describe('native generation Elysia application', () => {
 			})
 
 			host.add(NativeRouteConflictB).add(NativeRouteConflictA)
-			host.cfg(NativeRouteConflictA).enable()
-			host.cfg(NativeRouteConflictB).enable()
+			host.cfg(NativeRouteConflictA).setAutoStart(true)
+			host.start(NativeRouteConflictA)
+			host.cfg(NativeRouteConflictB).setAutoStart(true)
+			host.start(NativeRouteConflictB)
 			const conflicted = await host.commitAllowFail()
 			const running = [NativeRouteConflictA, NativeRouteConflictB].filter((plugin) =>
 				host.isRunning(plugin),
@@ -216,11 +220,16 @@ describe('native generation Elysia application', () => {
 				.add(NativeSlashRoutePath)
 				.add(NativeWildcardRoute)
 				.add(NativeConcreteRoute)
-			host.cfg(NativeExactRouteSemantics).enable()
-			host.cfg(NativeEmptyRoutePath).enable()
-			host.cfg(NativeSlashRoutePath).enable()
-			host.cfg(NativeWildcardRoute).enable()
-			host.cfg(NativeConcreteRoute).enable()
+			host.cfg(NativeExactRouteSemantics).setAutoStart(true)
+			host.start(NativeExactRouteSemantics)
+			host.cfg(NativeEmptyRoutePath).setAutoStart(true)
+			host.start(NativeEmptyRoutePath)
+			host.cfg(NativeSlashRoutePath).setAutoStart(true)
+			host.start(NativeSlashRoutePath)
+			host.cfg(NativeWildcardRoute).setAutoStart(true)
+			host.start(NativeWildcardRoute)
+			host.cfg(NativeConcreteRoute).setAutoStart(true)
+			host.start(NativeConcreteRoute)
 			await host.commit()
 
 			await expect(
@@ -257,7 +266,8 @@ describe('native generation Elysia application', () => {
 
 	it('hard-excludes the control namespace from HTTP and WebSocket wildcard owners', async () => {
 		await withRuntimeHost(async (host) => {
-			await host.start(NativeReservedWildcard)
+			host.add(NativeReservedWildcard).start(NativeReservedWildcard)
+			await host.commit()
 			await expect(
 				host
 					.fetch(new Request('http://local.test/native/wildcard'))
@@ -302,7 +312,8 @@ describe('native generation Elysia application', () => {
 	it('keeps isolated, generation-stable Server metadata when physical lifecycle is rejected', async () => {
 		lifecycleApplication = undefined
 		await withRuntimeHost(async (host) => {
-			await host.start(NativePhysicalLifecycleGuard)
+			host.add(NativePhysicalLifecycleGuard).start(NativePhysicalLifecycleGuard)
+			await host.commit()
 			const app = lifecycleApplication!
 			const server = app.server
 			expect(server).toBeTruthy()
@@ -349,7 +360,8 @@ describe('native generation Elysia application', () => {
 	it('fails generation start when a Plugin directly registers Elysia lifecycle hooks', async () => {
 		await withRuntimeHost(async (host) => {
 			host.add(NativeUnsupportedLifecycleHook)
-			host.cfg(NativeUnsupportedLifecycleHook).enable()
+			host.cfg(NativeUnsupportedLifecycleHook).setAutoStart(true)
+			host.start(NativeUnsupportedLifecycleHook)
 			const result = await host.commitAllowFail()
 			assertPluginLifecycleIssue(result, NativeUnsupportedLifecycleHook, {
 				kind: 'start-failed',
@@ -361,7 +373,8 @@ describe('native generation Elysia application', () => {
 
 	it('aborts and drains an entered streaming response with its generation', async () => {
 		await withRuntimeHost(async (host) => {
-			await host.start(NativeStreamingApplicationPlugin)
+			host.add(NativeStreamingApplicationPlugin).start(NativeStreamingApplicationPlugin)
+			await host.commit()
 			const aborted = new Promise<void>((resolve) => {
 				streamAborted = resolve
 			})

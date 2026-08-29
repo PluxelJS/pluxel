@@ -1,6 +1,12 @@
 import { parsePluginDetailHref, parseWorkbenchHref } from '../../workbench/paths'
 
-export type BuiltinWorkbenchIcon = 'home' | 'logs' | 'security' | 'agent-tools' | 'plugins'
+export type BuiltinWorkbenchIcon =
+	| 'home'
+	| 'logs'
+	| 'security'
+	| 'agent-tools'
+	| 'plugins'
+	| 'plugin-graph'
 
 export type WorkbenchLocationHeader = Readonly<{
 	eyebrow: string
@@ -70,6 +76,18 @@ export const BUILTIN_WORKBENCH_ROUTES: readonly BuiltinWorkbenchRoute[] = Object
 		icon: 'plugins',
 		navigation: true,
 	},
+	{
+		path: '/plugin-graph',
+		title: '依赖图',
+		meta: 'Plugins',
+		header: {
+			eyebrow: 'Plugins',
+			title: '依赖图',
+			subtitle: '查看 Plugin provider 与 consumer 关系',
+		},
+		icon: 'plugin-graph',
+		navigation: true,
+	},
 ])
 
 const builtinRouteByPath = new Map(BUILTIN_WORKBENCH_ROUTES.map((route) => [route.path, route]))
@@ -103,6 +121,9 @@ export function resolveWorkbenchLocation(pathname: string): WorkbenchLocationDes
 
 	if (path.startsWith('/plugins/')) {
 		return { ...builtinRoute('/plugins'), path }
+	}
+	if (path.startsWith('/plugin-graph/')) {
+		return { ...builtinRoute('/plugin-graph'), path }
 	}
 	if (path.startsWith('/security/')) {
 		return { ...builtinRoute('/security'), path }

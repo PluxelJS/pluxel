@@ -43,8 +43,8 @@ describe('OtelPlugin', () => {
 			async (host) => {
 				host.add([OtelPlugin, Consumer])
 				host.cfg(OtelPlugin).set({ otlp: [], prometheus: { path: '/metrics' } })
-				host.cfg(OtelPlugin).enable()
-				host.cfg(Consumer).enable()
+				host.start(OtelPlugin)
+				host.start(Consumer)
 				await host.commit()
 
 				const consumer = host.require(Consumer)

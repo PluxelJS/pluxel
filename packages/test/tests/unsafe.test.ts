@@ -36,7 +36,6 @@ describe('@pluxel/test/unsafe', () => {
 
 		await withCoreHost(async (host) => {
 			host.add(OriginalPlugin)
-			host.cfg(OriginalPlugin).enable()
 			await host.commit()
 			expect(host.require(OriginalPlugin).revision).toBe('original')
 

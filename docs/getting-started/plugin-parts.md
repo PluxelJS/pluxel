@@ -15,7 +15,7 @@ Part 不是迷你 Plugin，也不是 service locator：它没有 catalog identit
 | 少量纯逻辑或显式传参已经足够                         | 普通函数或 class           |
 | 只需要把一组 cleanup 从 owner effects 中分组         | `this.ctx.effects.scope()` |
 | 需要自动派生 config、Context、effects 或 nested 组成 | `PluginPart`               |
-| 需要独立 enable、失败状态、依赖选择、配置 revision   | 独立 `Plugin`              |
+| 需要独立启停、自动启动策略、失败状态或依赖选择       | 独立 `Plugin`              |
 | 需要被其他 Plugin 注入或被多个 owner 共享            | 独立 `Plugin`              |
 
 判断的关键不是代码量，而是治理边界。Part 可以拥有很多内部代码，但它的运行状态始终属于 owning Plugin。
@@ -135,7 +135,7 @@ class MetricsPart extends PluginPart<AppPlugin> {
 }
 ```
 
-Part containment 始终存在。optional provider absent、disabled 或 start-failed 时，只是不执行 setup callback；Part 仍会构造、校验 config
+Part containment 始终存在。optional provider absent、当前未运行或 start-failed 时，只是不执行 setup callback；Part 仍会构造、校验 config
 并运行自己的 `init()`。provider 出现、消失或 replacement 时，整个 owner generation 重启。
 
 ## 嵌套 Part 与 immediate host

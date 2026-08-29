@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { requirePluginService } from '@pluxel/core/internal'
+import { CorePluginGraphVerificationError, requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
 @Plugin({ displayName: 'Cascade provider' })
@@ -39,9 +39,14 @@ describe('required dependent closure', () => {
 			host.add([CascadeProvider, CascadeConsumer])
 			await host.commit()
 			host.remove(CascadeProvider, { cascadeDependents: false })
-			await expect(Promise.resolve().then(() => host.commit())).rejects.toThrow(
-				/Core Plugin graph verification failed/,
-			)
+			const error = await Promise.resolve()
+				.then(() => host.commit())
+				.catch((cause: unknown) => cause)
+			expect(error).toBeInstanceOf(CorePluginGraphVerificationError)
+			if (!(error instanceof CorePluginGraphVerificationError)) throw error
+			expect(error.message).toMatch(/Core Plugin graph verification failed/)
+			expect(error.issues).toBe(error.cause.issues)
+			expect(error.issues.some((issue) => issue.kind === 'MissingDependency')).toBe(true)
 			expect(host.isRunning(CascadeProvider)).toBe(true)
 			expect(host.isRunning(CascadeConsumer)).toBe(true)
 		})

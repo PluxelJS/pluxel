@@ -1,9 +1,9 @@
 export {
-	isPluginEnabled,
+	isPluginAutoStartEnabled,
 	listForkIds,
-	replaceEnabledPlugins,
-	setPluginEnabled,
-	setPluginsEnabled,
+	replaceAutoStartPlugins,
+	setPluginAutoStart,
+	setPluginsAutoStart,
 } from './services/RuntimeStateHelpers'
 
 export type {

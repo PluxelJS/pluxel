@@ -47,9 +47,7 @@ import { FontsPlugin } from '@pluxel/fonts'
 import { BadgePlugin } from '@acme/badge'
 
 host.add([FontsPlugin, CanvasPlugin, BadgePlugin])
-host.cfg(FontsPlugin).enable()
-host.cfg(CanvasPlugin).enable()
-host.cfg(BadgePlugin).enable()
+host.start(BadgePlugin)
 await host.commit()
 ```
 

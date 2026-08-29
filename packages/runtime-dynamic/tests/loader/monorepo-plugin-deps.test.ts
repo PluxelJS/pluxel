@@ -4,7 +4,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../support/lowered-plugin'
-import { enablePluginsPatch } from '../support/runtime-state'
+import { pluginsAutoStartPatch } from '../support/runtime-state'
 
 describe('monorepo plugin dependencies', () => {
 	it('commits successfully when dependent plugin modules are both loaded (separate moduleIds)', async () => {
@@ -26,13 +26,13 @@ describe('monorepo plugin dependencies', () => {
 		const batch = loader.beginBatch()
 		await batch.replaceModule('packages/provider/src/entry.ts', { Provider })
 		await batch.replaceModule('packages/consumer/src/entry.ts', { Consumer })
-		await batch.commit({ statePatch: enablePluginsPatch(Provider, Consumer) })
+		await batch.commit({ statePatch: pluginsAutoStartPatch(true, Provider, Consumer) })
 
 		expect(host.isRunning(Provider)).toBe(true)
 		expect(host.isRunning(Consumer)).toBe(true)
 	})
 
-	it('fails commit when a runtime-enabled plugin depends on another plugin that is not loaded via entries', async () => {
+	it('fails commit when an auto-start plugin depends on another plugin that is not loaded via entries', async () => {
 		@Plugin()
 		class Provider extends BasePlugin {}
 		lowerTestPlugin(Provider)
@@ -44,7 +44,7 @@ describe('monorepo plugin dependencies', () => {
 			}
 		}
 		lowerTestPlugin(Consumer, { requires: [Provider] })
-		const { ctx } = createHmrTestContext({ enabled: [pluginNodeAddressOf(Consumer)] })
+		const { ctx } = createHmrTestContext({ autoStart: [pluginNodeAddressOf(Consumer)] })
 		const loader = requireLoaderService(ctx)
 
 		// Simulate: profile selected Consumer's package entry, but not Provider's package entry.
@@ -99,7 +99,7 @@ describe('monorepo plugin dependencies', () => {
 				ZhipuProviderPlugin,
 			})
 			await batch.commit({
-				statePatch: enablePluginsPatch(UsageBillingPlugin, ZhipuProviderPlugin),
+				statePatch: pluginsAutoStartPatch(true, UsageBillingPlugin, ZhipuProviderPlugin),
 			})
 		}
 

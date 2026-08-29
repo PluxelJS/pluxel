@@ -8,7 +8,7 @@ describe('AuthPlugin lifecycle', () => {
 			async (host) => {
 				host.add(AuthPlugin)
 				host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
-				host.cfg(AuthPlugin).enable()
+				host.start(AuthPlugin)
 				await host.commit()
 				const plugin = host.require(AuthPlugin)
 				expect(plugin.status()).toEqual({
@@ -22,7 +22,7 @@ describe('AuthPlugin lifecycle', () => {
 					reason: 'unavailable',
 				})
 
-				host.cfg(AuthPlugin).disable()
+				host.stop(AuthPlugin)
 				await host.commit()
 				await expect(plugin.authenticate(new Request('https://admin.example/'))).resolves.toEqual({
 					allow: false,
@@ -46,7 +46,7 @@ describe('AuthPlugin lifecycle', () => {
 						clientKind: 'public',
 					},
 				})
-				host.cfg(AuthPlugin).enable()
+				host.start(AuthPlugin)
 				await host.commit()
 				const plugin = host.require(AuthPlugin)
 				expect(plugin.status().ready).toBe(true)

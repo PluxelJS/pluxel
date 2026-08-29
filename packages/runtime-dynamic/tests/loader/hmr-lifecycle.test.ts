@@ -10,7 +10,7 @@ import { requireRuntimePluginGraphCoordinator, runtimeStatePatch } from '@pluxel
 import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
-import { enablePlugins, enablePluginsPatch } from '../support/runtime-state'
+import { pluginsAutoStartPatch, setPluginsAutoStart, startPlugins } from '../support/runtime-state'
 
 describe('LoaderService HMR lifecycle', () => {
 	it('keeps the definition/node slot and restarts required dependents once', async () => {
@@ -40,7 +40,8 @@ describe('LoaderService HMR lifecycle', () => {
 
 		await requireLoaderService(ctx).replaceModule('Dep.ts', { Dep })
 		await requireLoaderService(ctx).replaceModule('Consumer.ts', { Consumer })
-		await enablePlugins(ctx, Dep, Consumer)
+		await setPluginsAutoStart(ctx, true, Dep, Consumer)
+		await startPlugins(ctx, Dep, Consumer)
 
 		const originalAddress = pluginNodeAddressOf(Dep)
 		const pluginService = requirePluginService(ctx)
@@ -103,10 +104,11 @@ describe('LoaderService HMR lifecycle', () => {
 		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: base.definition, forkId: 'east' },
-				{ type: 'set-enabled', node: base, enabled: true },
-				{ type: 'set-enabled', node: fork, enabled: true },
+				{ type: 'set-auto-start', node: base, autoStart: true },
+				{ type: 'set-auto-start', node: fork, autoStart: true },
 			),
 		)
+		await startPlugins(ctx, base, fork)
 
 		const pluginService = requirePluginService(ctx)
 		const firstDefault = pluginService.getInstance(base)
@@ -151,7 +153,8 @@ describe('LoaderService HMR lifecycle', () => {
 		class Dep extends BasePlugin {}
 		lowerTestPlugin(Dep)
 		await requireLoaderService(ctx).replaceModule('Dep.ts', { Dep })
-		await enablePlugins(ctx, Dep)
+		await setPluginsAutoStart(ctx, true, Dep)
+		await startPlugins(ctx, Dep)
 
 		abstract class Missing extends BasePlugin {}
 		lowerTestAbstract(Missing)
@@ -230,12 +233,13 @@ describe('LoaderService HMR lifecycle', () => {
 					provider: pluginNodeAddressOf(DepB),
 				},
 				...([DepA, DepB, Consumer] as const).map((PluginCtor) => ({
-					type: 'set-enabled' as const,
+					type: 'set-auto-start' as const,
 					node: pluginNodeAddressOf(PluginCtor),
-					enabled: true,
+					autoStart: true,
 				})),
 			),
 		)
+		await startPlugins(ctx, DepA, DepB, Consumer)
 
 		const pluginService = requirePluginService(ctx)
 		const firstConsumer = pluginService.getInstance(pluginNodeAddressOf(Consumer)) as
@@ -283,12 +287,13 @@ describe('LoaderService HMR lifecycle', () => {
 
 		const consumerBatch = requireLoaderService(ctx).beginBatch()
 		await consumerBatch.replaceModule('consumer.ts', { OptionalConsumer })
-		await consumerBatch.commit({ statePatch: enablePluginsPatch(OptionalConsumer) })
+		await consumerBatch.commit({ statePatch: pluginsAutoStartPatch(true, OptionalConsumer) })
 		expect(consumerStarts).toBe(1)
 
 		const providerBatch = requireLoaderService(ctx).beginBatch()
 		await providerBatch.replaceModule('provider.ts', { OptionalProvider })
-		await providerBatch.commit({ statePatch: enablePluginsPatch(OptionalProvider) })
+		await providerBatch.commit({ statePatch: pluginsAutoStartPatch(true, OptionalProvider) })
+		await startPlugins(ctx, OptionalProvider)
 		expect(consumerStarts).toBe(2)
 
 		await requireLoaderService(ctx).pruneModule('provider.ts')

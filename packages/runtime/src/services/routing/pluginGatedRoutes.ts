@@ -1,6 +1,5 @@
 import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
-import { isPluginEnabled as isRuntimePluginEnabled } from '../RuntimeStateStore'
-import { requireRuntimeStateStore } from '../../internal/runtime-state'
+import { requirePluginService } from '@pluxel/core/internal'
 
 export type PluginOwner = PluginNodeAddress
 export type RouteId = string
@@ -10,28 +9,28 @@ export interface PluginGatedDef {
 	plugin: PluginOwner
 }
 
-export type IsPluginEnabled = (plugin: PluginOwner, ctx: Context) => boolean
+export type IsPluginRunning = (plugin: PluginOwner, ctx: Context) => boolean
 
 export interface PluginGatedOptions {
 	/**
-	 * Resolve whether a plugin is enabled.
+	 * Resolve whether a Plugin generation is currently running.
 	 *
-	 * Default: the host RuntimeState snapshot.
+	 * Default: the committed Core lifecycle projection.
 	 */
-	isPluginEnabled?: IsPluginEnabled
+	isPluginRunning?: IsPluginRunning
 }
 
 export interface PluginRoutingSnapshot {
-	enabledPlugins: PluginOwner[]
-	enabledRouteIds: RouteId[]
+	runningPlugins: PluginOwner[]
+	runningRouteIds: RouteId[]
 }
 
-function defaultIsPluginEnabled(plugin: PluginOwner, ctx: Context): boolean {
-	return isRuntimePluginEnabled(requireRuntimeStateStore(ctx).snapshot(), plugin)
+function defaultIsPluginRunning(plugin: PluginOwner, ctx: Context): boolean {
+	return requirePluginService(ctx).isRunning(plugin)
 }
 
-export function resolveIsPluginEnabled(options: PluginGatedOptions | undefined): IsPluginEnabled {
-	return options?.isPluginEnabled ?? defaultIsPluginEnabled
+export function resolveIsPluginRunning(options: PluginGatedOptions | undefined): IsPluginRunning {
+	return options?.isPluginRunning ?? defaultIsPluginRunning
 }
 
 export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
@@ -39,18 +38,18 @@ export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
 	routes: readonly T[],
 	options: PluginGatedOptions = {},
 ): PluginRoutingSnapshot {
-	const isPluginEnabled = resolveIsPluginEnabled(options)
-	const enabledPlugins = new Map<string, PluginOwner>()
-	const enabledRouteIds: RouteId[] = []
+	const isPluginRunning = resolveIsPluginRunning(options)
+	const runningPlugins = new Map<string, PluginOwner>()
+	const runningRouteIds: RouteId[] = []
 
 	for (const route of routes) {
-		if (!isPluginEnabled(route.plugin, ctx)) continue
-		enabledPlugins.set(pluginNodeIndexKey(route.plugin), route.plugin)
-		enabledRouteIds.push(route.id)
+		if (!isPluginRunning(route.plugin, ctx)) continue
+		runningPlugins.set(pluginNodeIndexKey(route.plugin), route.plugin)
+		runningRouteIds.push(route.id)
 	}
 
 	return {
-		enabledPlugins: [...enabledPlugins.values()],
-		enabledRouteIds: enabledRouteIds.sort(),
+		runningPlugins: [...runningPlugins.values()],
+		runningRouteIds: runningRouteIds.sort(),
 	}
 }

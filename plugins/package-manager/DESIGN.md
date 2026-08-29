@@ -37,7 +37,7 @@ engine 已完成而后续 filesystem publication 失败，持久 manifest 保留
 发布 entries。插件不暴露 `reinstall`：native `update: true` 是全图更新，
 不能诚实实现 selected-package reinstall，也不能把已请求 range 静默改成 `latest`。
 
-wrapper re-export named exports，并把 package default export 继续作为 default。它不注入 Pluxel metadata、不决定 enablement，
+wrapper re-export named exports，并把 package default export 继续作为 default。它不注入 Pluxel metadata、不决定 auto-start policy 或 session lifecycle，
 也不建立第二份 plugin inventory。可信 package source、catalog、lifecycle 和 status 仍由 runtime graph 投影。
 
 ## Capability 与 UI
@@ -63,7 +63,7 @@ native engine callback 默认不转发日志，因为事件可能携带 registry
 
 ## 不变量
 
-- 安装、enablement、lifecycle 是三个独立事实；
+- 安装、auto-start policy、session lifecycle 和 observed lifecycle 是彼此独立的事实；
 - package mutation 不直接调用 dynamic/core internals；
 - dynamic runtime 不依赖 package-manager package；
 - static/普通 test host 和 source 声明不匹配在任何 native/filesystem/UI 副作用前失败；

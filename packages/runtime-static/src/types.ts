@@ -118,14 +118,14 @@ export type StaticRuntimeHostOptions = Omit<
 	| 'nodeModuleArtifactResolver'
 > & {
 	/**
-	 * Runtime config source used for plugin enablement and plugin config records.
+	 * Runtime config source used for plugin config records.
 	 *
 	 * @default JSON config stored in the configured persistence backend.
 	 */
 	configService?: ConfigServiceConfig
 	/**
-	 * Runtime control-plane state source used for plugin enablement, fork metadata,
-	 * dependency overrides, and built-in catalog state.
+	 * Runtime control-plane state source used for Plugin auto-start policy, fork metadata,
+	 * provider defaults, and dependency overrides.
 	 *
 	 * @default JSON runtime state stored in the configured persistence backend.
 	 */
@@ -172,7 +172,7 @@ export type StaticRuntimeHmrController = {
 
 export type StaticRuntimePluginStatus =
 	| 'started'
-	| 'disabled'
+	| 'stopped'
 	| 'config-invalid'
 	| 'dependency-missing'
 	| 'dependency-failed'

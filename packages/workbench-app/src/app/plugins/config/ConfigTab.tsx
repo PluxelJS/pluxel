@@ -11,6 +11,7 @@ import { commitPluginConfig, refreshPluginConfig } from './usePluginConfig'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
 import { buildEditableConfigPatch } from './presentationAdapter'
+import { refreshPluginReadModels } from '../pluginReadModels'
 
 const EMPTY_PATH: readonly string[] = []
 
@@ -60,7 +61,10 @@ export function ConfigTabContent({
 							}))
 					if (result.ok === false) {
 						if (result.state === 'unknown') {
-							await refreshPluginConfig(management, owner)
+							await Promise.all([
+								refreshPluginConfig(management, owner),
+								refreshPluginReadModels(management),
+							])
 						}
 						notify({
 							title: '提交失败',
@@ -70,6 +74,7 @@ export function ConfigTabContent({
 						return
 					}
 					commitPluginConfig(management, owner, result.config)
+					await refreshPluginReadModels(management)
 					formApi.reset(value)
 					if (result.application === 'saved-not-applied') {
 						notify({

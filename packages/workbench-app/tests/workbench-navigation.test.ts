@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { pluginNodeAddressEqual, type PluginNodeAddress } from '@pluxel/core'
 import { createMemoryHistory } from '@tanstack/react-router'
 import { createAppRouter } from '../src/app/router'
-import { groupNavItems } from '../src/app/navigation/navConfig'
+import { baseNavItems, groupNavItems } from '../src/app/navigation/navConfig'
 import { restoreWorkbenchState } from '../src/app/workbench/state'
 import { isPluginWorkbenchLocation, resolveWorkbenchLocation } from '../src/app/workbench/location'
 import { WorkspaceController } from '../src/app/workbench/store'
@@ -46,6 +46,20 @@ const AccessTarget = packageTarget('@example/access', 'AccessPlugin')
 const KookTarget = packageTarget('@example/kook', 'KookPlugin')
 
 describe('Workbench navigation groups', () => {
+	it('registers the dependency graph as one native route including focus subpaths', () => {
+		expect(baseNavItems).toEqual(
+			expect.arrayContaining([expect.objectContaining({ label: '依赖图', href: '/plugin-graph' })]),
+		)
+		expect(resolveWorkbenchLocation('/plugin-graph')).toMatchObject({
+			title: '依赖图',
+			meta: 'Plugins',
+		})
+		expect(resolveWorkbenchLocation('/plugin-graph/node/v1/package/Foo/example')).toMatchObject({
+			path: '/plugin-graph/node/v1/package/Foo/example',
+			title: '依赖图',
+		})
+	})
+
 	it('uses canonical readable Plugin node routes for detail pages', () => {
 		const href = buildPluginDetailHref(OrdersTarget, '/config')
 		expect(href).toBe('/plugins/v1/fork/east/source/OrdersPlugin/app/2/plugins/orders.ts/config')
@@ -302,12 +316,11 @@ describe('Workbench native document tabs', () => {
 		expect(workspace.state.uiState.tabs[0]?.documentKey).toBeUndefined()
 	})
 
-	it('sanitizes version 3 identity and rejects aliases or duplicate documents', () => {
+	it('sanitizes current identity and rejects aliases or duplicate documents', () => {
 		const path = buildWorkbenchHref(TelegramTarget, '/accounts/default')
 		const restored = restoreWorkbenchState({
-			version: 3,
+			version: 4,
 			state: {
-				activeTabId: 'tab:duplicate',
 				navigationCollapsed: true,
 				pluginPane: { visible: true, layout: {} },
 				sectionPanes: { plugins: { visible: false } },
@@ -400,7 +413,7 @@ describe('Workbench native document tabs', () => {
 		expect(restored.editor.layout).toEqual({ type: 'group', groupId: 'group:left' })
 	})
 
-	it.each([1, 2])('rejects unsupported persisted version %s', (version) => {
+	it.each([1, 2, 3])('rejects unsupported persisted version %s', (version) => {
 		expect(restoreWorkbenchState({ version, state: { tabs: [] } })).toEqual(
 			restoreWorkbenchState(undefined),
 		)

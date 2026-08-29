@@ -19,16 +19,14 @@
 
 尚在研究、未采纳的提案：
 
-- [`PLUGIN_DEPENDENCY_GRAPH.md`](PLUGIN_DEPENDENCY_GRAPH.md)：为 Level 1 Management 增加最小的 Plugin dependency graph
-  read model，并让官方 Workbench 复用同一 snapshot 展示 required、optional、incoming dependent 与有效 DAG；不公开 Core graph，
-  不引入 mutation preview 或通用 graph 平台。
-- [`WORKBENCH_VNEXT.md`](WORKBENCH_VNEXT.md)：基于 Wretch、Fonts 与 chatbot BotManager 的真实调用面，从零研究
-  以 Module Federation 2.0 为核心的 Plugin 微前端架构，以及其上的 Model、define-time Feature、exact dependency
-  Attachment 与 lazy ViewSession；若采纳，将替代下面两个 Workbench 局部提案。
+- [`workbench-vnext/`](workbench-vnext/README.md)：基于当前 Wretch/Fonts/PackageManager 调用面与 BotManager proposal fixture，从零研究
+  不可拆分的 MF 2.0 + WS-required Cap’n Web closed Profile 1，以及 direct validated ViewApi、View/Attachment authoring、Plugin generation
+  atomic publication 与 direct opened View；Workbench 只增加 View/Attachment 两个 UI 声明，Collection/Feature/Model/Query/Channel
+  不成为 platform protocol，Shell framework 保持
+  platform-neutral，但必须复用同一 concrete host packages，Workbench/Management SSE 完全不存在，不发布 replaceable
+  transport/artifact/auth SPI。
 - [`WORKBENCH_PLUGIN_COMPOSITION.md`](WORKBENCH_PLUGIN_COMPOSITION.md)：用 chatbot 的共享 Bot 管理页面与 Wretch Port 验证
   plugin-owned Workbench 组合；作为 vNext 的 composition 输入研究，仍不代表当前 API。
-- [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)：Level 1 management 落地后，仅研究可替代 Remote View host
-  所需的 browser runtime、React renderer/delivery ABI、最小 singleton 和 CSS asset ownership；作为 vNext 的 host/delivery 输入研究。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
   decoratorless Plugin declaration。
 

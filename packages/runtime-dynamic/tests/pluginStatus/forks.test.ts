@@ -3,8 +3,8 @@ import { pluginNodeAddressEqual, pluginNodeAddressOf, type PluginNodeAddress } f
 import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import {
+	readRuntimePluginStatusOverview,
 	requireRuntimePluginGraphCoordinator,
-	runtimePluginStatusOverview,
 	runtimeStatePatch,
 } from '@pluxel/runtime/internal'
 import { requireLoaderService } from '../../src/context-plan'
@@ -31,17 +31,18 @@ describe('pluginStatus forks', () => {
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: base.definition, forkId: 'aaa' },
 				{ type: 'ensure-fork', definition: base.definition, forkId: 'bbb' },
-				{ type: 'set-enabled', node: runtimeFork, enabled: true },
+				{ type: 'set-auto-start', node: runtimeFork, autoStart: true },
 			),
 		)
 
-		const addresses = runtimePluginStatusOverview(ctx).statuses.map((status) => status.address)
+		const statusOverview = await readRuntimePluginStatusOverview(ctx)
+		const addresses = statusOverview.statuses.map((status) => status.address)
 		expect(hasAddress(addresses, base)).toBe(true)
 		expect(hasAddress(addresses, runtimeFork)).toBe(true)
 		expect(hasAddress(addresses, persistedFork)).toBe(true)
 	})
 
-	it('enabling the same address twice is idempotent', async () => {
+	it('starting the same address twice is idempotent', async () => {
 		const { ctx } = createHmrTestContext()
 
 		@Plugin()
@@ -50,8 +51,8 @@ describe('pluginStatus forks', () => {
 
 		await requireLoaderService(ctx).replaceModule('A.ts', { Alpha })
 		const address = pluginNodeAddressOf(Alpha)
-		await requireLoaderService(ctx).api.control.enable(address)
-		await requireLoaderService(ctx).api.control.enable(address)
+		await requireLoaderService(ctx).api.control.start(address)
+		await requireLoaderService(ctx).api.control.start(address)
 		expect(requirePluginService(ctx).isRunning(address)).toBe(true)
 	})
 })

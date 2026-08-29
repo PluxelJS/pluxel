@@ -5,7 +5,6 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { requirePluginService } from '@pluxel/core/internal'
 import {
 	PluginGraphRejectedError,
 	RuntimeStateMutationRejectedError,
@@ -15,13 +14,12 @@ import {
 	runtimeStatePatch,
 } from '../../internal/reconciliation'
 import { requireRuntimeStateStore } from '../../internal/runtime-state'
-import { isPluginEnabled, listForkIds } from '../../services/RuntimeStateHelpers'
+import { listForkIds } from '../../services/RuntimeStateHelpers'
 import type {
-	BaseProviderInfo,
+	PluginConsumerRequirementState,
 	PluginDependencyMutationResult,
-	PluginDependencyOption,
-	PluginDependencyRef,
-	PluginDependencyState,
+	PluginProviderOption,
+	PluginProviderPolicyInfo,
 } from '../../web/protocol'
 import { projectPluginApplyReport } from '../presenters/pluginApplyReport'
 
@@ -48,7 +46,7 @@ function candidate(ctx: Context, address: PluginNodeAddress) {
 	return entry.candidate
 }
 
-function explicitOverride(
+function consumerOverride(
 	ctx: Context,
 	consumer: PluginNodeAddress,
 	requirement: PluginDefinitionAddress,
@@ -62,7 +60,7 @@ function explicitOverride(
 		)?.providerAddress
 }
 
-function providerDefault(
+function configuredProviderDefault(
 	ctx: Context,
 	token: PluginDefinitionAddress,
 ): PluginNodeAddress | undefined {
@@ -71,11 +69,10 @@ function providerDefault(
 		.providerDefaults.find((entry) => pluginDefinitionAddressEqual(entry.token, token))?.provider
 }
 
-function candidates(ctx: Context, token: PluginDefinitionAddress): PluginDependencyOption[] {
+function providerOptions(ctx: Context, token: PluginDefinitionAddress): PluginProviderOption[] {
 	const coordinator = requireRuntimePluginGraphCoordinator(ctx)
-	const pluginService = requirePluginService(ctx)
 	const state = requireRuntimeStateStore(ctx).snapshot()
-	const output: PluginDependencyOption[] = []
+	const output: PluginProviderOption[] = []
 	for (const entry of coordinator.catalogSnapshot().entries) {
 		const declaration = entry.candidate.declaration
 		if (
@@ -94,43 +91,29 @@ function candidates(ctx: Context, token: PluginDefinitionAddress): PluginDepende
 			output.push({
 				address,
 				displayName: declaration.displayName,
-				isEnabled: isPluginEnabled(state, address),
-				isRunning: pluginService.isRunning(address),
+				availability: 'available',
 			})
 		}
 	}
 	return output
 }
 
-export function listPluginDependencies(
+export function inspectPluginConsumerRequirements(
 	ctx: Context,
 	consumer: PluginNodeAddress,
-): PluginDependencyRef[] {
-	candidate(ctx, consumer)
-	const pluginService = requirePluginService(ctx)
-	return pluginService.resolvedDependencies(consumer).map((address) => ({
-		address,
-		displayName:
-			pluginCatalogEntry(
-				requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot(),
-				address.definition,
-			)?.candidate.declaration.displayName ?? address.definition.exportName,
-		isRunning: pluginService.isRunning(address),
-	}))
-}
-
-export function inspectPluginDependencies(
-	ctx: Context,
-	consumer: PluginNodeAddress,
-): PluginDependencyState[] {
+): PluginConsumerRequirementState[] {
 	const declaration = candidate(ctx, consumer).declaration
-	const pluginService = requirePluginService(ctx)
-	const effective = pluginService.resolvedDependencies(consumer)
-	return declaration.requires.map((requirement, index) => {
-		const selected = explicitOverride(ctx, consumer, requirement) ?? null
-		const defaultProvider = providerDefault(ctx, requirement) ?? null
-		const resolved = effective[index] ?? null
-		const options = candidates(ctx, requirement)
+	return declaration.requires.map((requirement) => {
+		const override = consumerOverride(ctx, consumer, requirement) ?? null
+		const options = providerOptions(ctx, requirement)
+		const inheritedProvider =
+			configuredProviderDefault(ctx, requirement) ??
+			options.find(
+				(option) =>
+					option.address.variant === 'default' &&
+					pluginDefinitionAddressEqual(option.address.definition, requirement),
+			)?.address ??
+			null
 		return {
 			requirement,
 			kind: options.some(
@@ -138,16 +121,14 @@ export function inspectPluginDependencies(
 			)
 				? 'abstract'
 				: 'plugin',
-			effective: resolved,
-			isRunning: resolved ? pluginService.isRunning(resolved) : false,
-			selected,
-			providerDefault: defaultProvider,
+			consumerOverride: override,
+			inheritedProvider,
 			options,
 		}
 	})
 }
 
-export async function pluginDependencySetTarget(
+export async function setPluginConsumerOverride(
 	ctx: Context,
 	consumer: PluginNodeAddress,
 	requirement: PluginDefinitionAddress,
@@ -169,24 +150,33 @@ export async function pluginDependencySetTarget(
 	}
 }
 
-export async function pluginBaseProviderSet(
+export async function setPluginProviderPolicyDefault(
 	ctx: Context,
-	consumer: PluginNodeAddress,
-	token: PluginDefinitionAddress,
+	policyOwner: PluginNodeAddress,
 	provider: PluginNodeAddress | null,
 ): Promise<PluginDependencyMutationResult> {
+	let token: PluginDefinitionAddress | undefined
 	try {
-		candidate(ctx, consumer)
+		const declaration = candidate(ctx, policyOwner).declaration
+		token = policyOwner.variant === 'default' ? declaration.provides : undefined
 	} catch (error) {
 		if (error instanceof PluginNodeUnavailableError) {
 			return {
 				ok: false,
-				code: 'consumer_unavailable',
+				code: 'provider_policy_unavailable',
 				state: 'unchanged',
 				error: error.message,
 			}
 		}
 		throw error
+	}
+	if (!token) {
+		return {
+			ok: false,
+			code: 'provider_policy_unavailable',
+			state: 'unchanged',
+			error: 'Plugin node does not own an abstract provider policy',
+		}
 	}
 	try {
 		const report = await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
@@ -238,22 +228,18 @@ function dependencyMutationFailure(error: unknown): PluginDependencyMutationResu
 	throw error
 }
 
-export function inspectPluginBaseProvider(
+export function inspectPluginProviderPolicy(
 	ctx: Context,
-	consumer: PluginNodeAddress,
-): BaseProviderInfo | null {
-	const declaration = candidate(ctx, consumer).declaration
-	const token = declaration.requires.find((required) =>
-		candidates(ctx, required).some(
-			(option) => !pluginDefinitionAddressEqual(option.address.definition, required),
-		),
-	)
+	policyOwner: PluginNodeAddress,
+): PluginProviderPolicyInfo | null {
+	const declaration = candidate(ctx, policyOwner).declaration
+	const token = policyOwner.variant === 'default' ? declaration.provides : undefined
 	if (!token) return null
-	const currentDefault = providerDefault(ctx, token) ?? null
+	const defaultProvider = configuredProviderDefault(ctx, token) ?? null
 	return {
 		token,
-		currentDefault,
-		isDefault: !!currentDefault && pluginNodeAddressEqual(currentDefault, consumer),
-		providers: candidates(ctx, token),
+		defaultProvider,
+		policyOwnerIsDefault: !!defaultProvider && pluginNodeAddressEqual(defaultProvider, policyOwner),
+		options: providerOptions(ctx, token).filter((option) => option.address.variant === 'default'),
 	}
 }

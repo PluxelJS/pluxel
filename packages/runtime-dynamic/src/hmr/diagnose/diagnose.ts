@@ -244,8 +244,9 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	const warnings: string[] = []
 
 	{
-		// Monorepo correctness: if an enabled plugin package declares another plugin package as a dependency,
-		// but that dependency is not enabled, the runtime may fail with MissingDependency during DI commit.
+		// Monorepo correctness: if a profile-selected Plugin package declares another Plugin package as a
+		// dependency but that package is not selected, Runtime cannot resolve the provider when a node is
+		// requested to run.
 		const enabledSet = new Set(effectiveEnabled)
 		const missingEdges: Array<{ from: string; missing: string[] }> = []
 		for (const name of effectiveEnabled) {
@@ -260,7 +261,7 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 			const maxEdges = 20
 			const shown = missingEdges.slice(0, maxEdges)
 			warnings.push(
-				`[loader-hmr] ${missingEdges.length} selected plugin package(s) depend on other plugin packages that are not selected in this profile. Consider adding them to profile.enabled to avoid MissingDependency when their plugins are enabled at runtime.`,
+				`[loader-hmr] ${missingEdges.length} selected Plugin package(s) depend on other Plugin packages that are not selected in this profile. Consider adding them to profile.enabled so required providers are available when their consumers are requested to run.`,
 			)
 			for (const edge of shown) {
 				warnings.push(
@@ -283,7 +284,7 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 		...includedEntries,
 	])
 
-	// Watch roots: enabled plugin package dirs + include-containing package + non-package include dirs.
+	// Watch roots: selected Plugin package dirs + include-containing package + non-package include dirs.
 	const watchRootsAbs = new Set<string>()
 	const packageByName = new Map(params.packages.map((p) => [p.name, p]))
 	for (const name of collectWorkspaceDependencyClosure(effectiveEnabled, params.packages, omit)) {

@@ -7,7 +7,7 @@
 - 未经明确设计决策，不改变现有插件调用方式。
 - required plugin dependency 只写在 constructor；不得要求在 decorator 中重复声明。
 - optional integration 使用 non-exported module-level `definePluginRef<T>()` 和 init-time
-  `plugins.use(Ref, callback)`；ref 只观察 host catalog，不加载、安装或默认启用实现包。
+  `plugins.use(Ref, callback)`；ref 只观察 host catalog，不加载、安装实现包，也不改变其自动启动策略。
 - 具体 Plugin package 只有 package root `"."` 可以承载 Plugin；每个 constructor 只有一个 root named export。
 - `@Plugin({ displayName })` 只提供展示默认值；definition/node identity 来自 canonical entry + root export。
 - plugin 内部纯逻辑使用普通对象或函数；只需 cleanup 分组时使用 owner effects scope；需要自动派生 config、Context、effects 或 nested

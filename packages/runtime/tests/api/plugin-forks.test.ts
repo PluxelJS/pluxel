@@ -10,7 +10,7 @@ import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
 import { createRuntimeLogging, type RuntimeLoggingInput } from '../../src/logger/logging'
 import type { PluginLogPolicyStore } from '../../src/logger/policy'
-import { isPluginEnabled, listForkIds } from '../../src/services/RuntimeStateHelpers'
+import { isPluginAutoStartEnabled, listForkIds } from '../../src/services/RuntimeStateHelpers'
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
@@ -50,7 +50,7 @@ afterEach(async () => {
 })
 
 describe('Plugin fork control plane', () => {
-	it('atomically creates, enables, and selects a fork with an address-only report', async () => {
+	it('atomically creates, marks for auto-start, and selects a fork without starting it live', async () => {
 		const host = runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
@@ -61,7 +61,7 @@ describe('Plugin fork control plane', () => {
 		const result = await rpc.ensurePluginFork({
 			base,
 			forkId: 'atomic',
-			enable: true,
+			autoStart: true,
 			selectFor: {
 				consumer,
 				requirement: pluginDefinitionAddressOf(ForkProvider),
@@ -70,14 +70,14 @@ describe('Plugin fork control plane', () => {
 
 		expect(result).toMatchObject({
 			ok: true,
-			status: 'applied',
+			status: 'deferred',
 			fork: { variant: 'fork', forkId: 'atomic' },
-			report: { core: { status: 'committed' } },
+			report: { core: { status: 'unchanged' } },
 		})
 		if (result.ok === false) throw new Error(result.error)
 		const state = requireRuntimeStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).toContain('atomic')
-		expect(isPluginEnabled(state, result.fork)).toBe(true)
+		expect(isPluginAutoStartEnabled(state, result.fork)).toBe(true)
 		expect(state.dependencyOverrides).toHaveLength(1)
 		expect(pluginNodeAddressEqual(state.dependencyOverrides[0]!.providerAddress, result.fork)).toBe(
 			true,
@@ -96,7 +96,7 @@ describe('Plugin fork control plane', () => {
 			rpc.ensurePluginFork({
 				base,
 				forkId: 'must-not-survive',
-				enable: true,
+				autoStart: true,
 				selectFor: {
 					consumer: pluginNodeAddressOf(ForkConsumer),
 					requirement: pluginDefinitionAddressOf(FailingForkProvider),
@@ -112,45 +112,46 @@ describe('Plugin fork control plane', () => {
 		expect(state.dependencyOverrides).toEqual([])
 	})
 
-	it('reports applied, deferred, and saved-not-applied ensure outcomes with reports', async () => {
+	it('reports applied and deferred ensure outcomes with reports', async () => {
 		const host = runtimeHost()
-		host.add([ForkProvider, FailingForkProvider])
+		host.add([ForkProvider, ForkConsumer, FailingForkProvider])
+		host.cfg(ForkConsumer).setAutoStart(true)
+		host.start(ForkConsumer)
 		await host.commit()
 		const rpc = new RuntimeRpcApi(host.ctx)
+		const consumer = pluginNodeAddressOf(ForkConsumer)
 
 		const applied = await rpc.ensurePluginFork({
 			base: pluginNodeAddressOf(ForkProvider),
 			forkId: 'running',
-			enable: true,
+			autoStart: false,
+			selectFor: {
+				consumer,
+				requirement: pluginDefinitionAddressOf(ForkProvider),
+			},
 		})
 		expect(applied).toMatchObject({ ok: true, status: 'applied', report: {} })
 		if (applied.ok) expectBrowserSafeReport(applied.report)
 
 		const deferred = await rpc.ensurePluginFork({
 			base: pluginNodeAddressOf(ForkProvider),
-			forkId: 'disabled',
-			enable: false,
+			forkId: 'dormant',
+			autoStart: false,
 		})
 		expect(deferred).toMatchObject({ ok: true, status: 'deferred', report: {} })
 		if (deferred.ok) expectBrowserSafeReport(deferred.report)
 
-		const failed = await rpc.ensurePluginFork({
+		const nextBoot = await rpc.ensurePluginFork({
 			base: pluginNodeAddressOf(FailingForkProvider),
 			forkId: 'failing',
-			enable: true,
+			autoStart: true,
 		})
-		expect(failed).toMatchObject({
+		expect(nextBoot).toMatchObject({
 			ok: true,
-			status: 'saved-not-applied',
-			applicationFailure: { code: 'plugin_not_running_after_enable' },
-			report: {
-				core: {
-					status: 'committed',
-					summary: { lifecycleReport: { ok: false } },
-				},
-			},
+			status: 'deferred',
+			report: { core: { status: 'unchanged' } },
 		})
-		if (failed.ok) expectBrowserSafeReport(failed.report)
+		if (nextBoot.ok) expectBrowserSafeReport(nextBoot.report)
 	})
 
 	it('blocks inbound references, removes after clearing them, and is idempotent', async () => {
@@ -163,7 +164,7 @@ describe('Plugin fork control plane', () => {
 		const ensured = await rpc.ensurePluginFork({
 			base,
 			forkId: 'referenced',
-			enable: true,
+			autoStart: true,
 			selectFor: {
 				consumer,
 				requirement: pluginDefinitionAddressOf(ForkProvider),
@@ -182,10 +183,10 @@ describe('Plugin fork control plane', () => {
 				},
 			],
 		})
-		expect(host.isRunning(ensured.fork)).toBe(true)
+		expect(host.isRunning(ensured.fork)).toBe(false)
 
 		await expect(
-			rpc.setPluginDependencyTarget({
+			rpc.setPluginConsumerOverride({
 				consumer,
 				requirement: pluginDefinitionAddressOf(ForkProvider),
 				provider: null,
@@ -217,8 +218,12 @@ describe('Plugin fork control plane', () => {
 		await host.commit()
 		const rpc = new RuntimeRpcApi(host.ctx)
 		const base = pluginNodeAddressOf(DrainFailureForkProvider)
-		const ensured = await rpc.ensurePluginFork({ base, forkId: 'drain', enable: true })
+		const ensured = await rpc.ensurePluginFork({ base, forkId: 'drain', autoStart: true })
 		if (!ensured.ok) throw new Error(ensured.error)
+		await expect(
+			rpc.applyPluginLifecycleCommands([{ address: ensured.fork, command: 'start' }]),
+		).resolves.toMatchObject({ results: [{ ok: true }] })
+		expect(host.isRunning(ensured.fork)).toBe(true)
 
 		const removed = await rpc.removePluginFork({ base, forkId: 'drain' })
 		expect(removed).toMatchObject({
@@ -241,25 +246,25 @@ describe('Plugin fork control plane', () => {
 		}
 	})
 
-	it('returns disabled-retained when readonly Config metadata rejects removal', async () => {
+	it('returns stopped-retained when readonly Config metadata rejects removal', async () => {
 		const host = runtimeHost({ configService: { mode: 'readonly' } })
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeRpcApi(host.ctx)
 		const base = pluginNodeAddressOf(ForkProvider)
-		const ensured = await rpc.ensurePluginFork({ base, forkId: 'readonly', enable: true })
+		const ensured = await rpc.ensurePluginFork({ base, forkId: 'readonly', autoStart: true })
 		if (!ensured.ok) throw new Error(ensured.error)
 
 		await expect(rpc.removePluginFork({ base, forkId: 'readonly' })).resolves.toMatchObject({
 			ok: false,
 			code: 'persistence_failed',
-			state: 'disabled-retained',
+			state: 'stopped-retained',
 			fork: ensured.fork,
 			report: {},
 		})
 		const state = requireRuntimeStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).toContain('readonly')
-		expect(isPluginEnabled(state, ensured.fork)).toBe(false)
+		expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
 	})
 
 	it('retries a failed Config cleanup and never purges business persistence', async () => {
@@ -289,7 +294,7 @@ describe('Plugin fork control plane', () => {
 		await host.commit()
 		const rpc = new RuntimeRpcApi(host.ctx)
 		const base = pluginNodeAddressOf(ForkProvider)
-		const ensured = await rpc.ensurePluginFork({ base, forkId: 'retry', enable: true })
+		const ensured = await rpc.ensurePluginFork({ base, forkId: 'retry', autoStart: true })
 		if (!ensured.ok) throw new Error(ensured.error)
 		const config = requireConfigService(host.ctx)
 		config.patchConfig(ensured.fork, { desired: true })
@@ -301,12 +306,12 @@ describe('Plugin fork control plane', () => {
 		await expect(rpc.removePluginFork({ base, forkId: 'retry' })).resolves.toMatchObject({
 			ok: false,
 			code: 'persistence_failed',
-			state: 'disabled-retained',
+			state: 'stopped-retained',
 			fork: ensured.fork,
 		})
 		let state = requireRuntimeStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).toContain('retry')
-		expect(isPluginEnabled(state, ensured.fork)).toBe(false)
+		expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
 		expect(await business.getText('retry/data.bin')).toBe('business-state')
 
 		rejectConfigWrite = false
@@ -342,7 +347,7 @@ describe('Plugin fork control plane', () => {
 			await host.commit()
 			const rpc = new RuntimeRpcApi(host.ctx)
 			const base = pluginNodeAddressOf(ForkProvider)
-			const ensured = await rpc.ensurePluginFork({ base, forkId: 'logging-retry', enable: true })
+			const ensured = await rpc.ensurePluginFork({ base, forkId: 'logging-retry', autoStart: true })
 			if (!ensured.ok) throw new Error(ensured.error)
 			logging.policy.setPluginLevel(ensured.fork, 'debug')
 			await logging.policy.flush()
@@ -352,12 +357,12 @@ describe('Plugin fork control plane', () => {
 			await expect(rpc.removePluginFork({ base, forkId: 'logging-retry' })).resolves.toMatchObject({
 				ok: false,
 				code: 'persistence_failed',
-				state: 'disabled-retained',
+				state: 'stopped-retained',
 				fork: ensured.fork,
 			})
 			let state = requireRuntimeStateStore(host.ctx).snapshot()
 			expect(listForkIds(state, base.definition)).toContain('logging-retry')
-			expect(isPluginEnabled(state, ensured.fork)).toBe(false)
+			expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
 			expect(logging.policy.persistence).toBe('failed')
 
 			rejectLoggingWrite = false

@@ -51,7 +51,7 @@ describe('dynamic host Runtime capability preflight', () => {
 				configService: { mode: 'memory' },
 				runtimeState: {
 					mode: 'memory',
-					snapshot: { enabled: [pluginNodeAddressOf(DynamicVaultConsumerPlugin)] },
+					snapshot: { autoStart: [pluginNodeAddressOf(DynamicVaultConsumerPlugin)] },
 				},
 				plugins: [DynamicVaultConsumerPlugin],
 				vault: {},

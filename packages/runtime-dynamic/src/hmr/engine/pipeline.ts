@@ -5,7 +5,7 @@ import { formatPluginNodeReference, type Context, type PluginNodeAddress } from 
 import { requirePluginService } from '@pluxel/core/internal'
 import { dirname, join } from 'pathe'
 import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
-import { isPluginEnabled, requireRuntimeStateStore, startTimer } from '@pluxel/runtime/internal'
+import { startTimer } from '@pluxel/runtime/internal'
 import type { LoaderBatch } from '../../loader/support'
 import type { LoaderService } from '../../loader/LoaderService'
 import {
@@ -44,7 +44,6 @@ export type HmrExecutionResult = {
 	commitMs: number
 	affectedModules: readonly string[]
 	syncedModules: readonly string[]
-	autoDisabled: readonly string[]
 	executeError?: string
 	injectError?: string
 }
@@ -58,15 +57,15 @@ export type PrefetchTransformResult = {
 export type PluginStatusSnapshotLike = {
 	statuses?: readonly {
 		address: PluginNodeAddress
-		isEnabled?: boolean
-		isRunning?: boolean
+		desiredState?: 'running' | 'stopped'
+		lifecycleState?: 'running' | 'stopped'
 	}[]
 }
 
-export type EnabledButStoppedLookup = {
+export type DesiredButStoppedLookup = {
 	api: {
 		status: {
-			snapshot: () => PluginStatusSnapshotLike
+			snapshot: () => Promise<PluginStatusSnapshotLike>
 		}
 		registry: {
 			findModuleId(address: PluginNodeAddress): string | null
@@ -405,7 +404,6 @@ class HmrRuntimeCommitScheduler {
 			commitMs,
 			affectedModules: [],
 			syncedModules: [],
-			autoDisabled: [],
 		}
 	}
 }
@@ -477,7 +475,6 @@ export class HmrExecutor {
 						commitMs: 0,
 						affectedModules: [],
 						syncedModules: [],
-						autoDisabled: [],
 						executeError: cjsHint,
 					}
 				}
@@ -488,7 +485,6 @@ export class HmrExecutor {
 					commitMs: 0,
 					affectedModules: [],
 					syncedModules: [],
-					autoDisabled: [],
 					executeError: formatErrorMessage(err),
 				}
 			}
@@ -507,7 +503,6 @@ export class HmrExecutor {
 					commitMs: 0,
 					affectedModules: [],
 					syncedModules: [],
-					autoDisabled: [],
 					injectError: formatErrorMessage(err),
 				}
 			}
@@ -537,16 +532,16 @@ export class HmrExecutor {
 	}
 }
 
-export function collectEnabledButStopped(
-	loader: EnabledButStoppedLookup,
+export async function collectDesiredButStopped(
+	loader: DesiredButStoppedLookup,
 	moduleIds: ReadonlySet<string>,
-): readonly string[] {
+): Promise<readonly string[]> {
 	if (moduleIds.size === 0) return []
-	const snapshot = loader.api.status.snapshot()
+	const snapshot = await loader.api.status.snapshot()
 	const statuses = snapshot.statuses ?? []
 	const out: string[] = []
 	for (const status of statuses) {
-		if (!status?.isEnabled || status.isRunning) continue
+		if (status?.desiredState !== 'running' || status.lifecycleState === 'running') continue
 		const moduleId = loader.api.registry.findModuleId(status.address)
 		if (!moduleId || !moduleIds.has(moduleId)) continue
 		out.push(formatPluginNodeReference(status.address))
@@ -728,14 +723,12 @@ export type HmrBatchSummary = {
 	affectedModules: readonly string[]
 	/** Runtime modules successfully re-synced into the core draft before commit. */
 	syncedModules: readonly string[]
-	/** Plugins persisted-disabled by the missing-dependency retry policy during this batch. */
-	autoDisabled: readonly string[]
 	/**
-	 * Enabled plugins in this batch's related module set that were still not running after commit.
+	 * Desired plugins in this batch's related module set that were still not running after commit.
 	 *
 	 * This catches lifecycle failures that do not make the batch itself fail.
 	 */
-	enabledButStopped: readonly string[]
+	desiredButStopped: readonly string[]
 	affected: number
 	fallbackRoots: number
 	invalidated: HmrInvalidationCounts
@@ -853,7 +846,6 @@ export class HmrBatchProcessor {
 		const commitMs = executed ? roundHmrMs(executed.commitMs) : null
 		const affectedModules = executed?.affectedModules ?? []
 		const syncedModules = executed?.syncedModules ?? []
-		const autoDisabled = executed?.autoDisabled ?? []
 		const executeError = executed?.executeError
 		const injectError = executed?.injectError
 
@@ -874,10 +866,17 @@ export class HmrBatchProcessor {
 		const pluginService = requirePluginService(this.ctx)
 		const activeServices = pluginService.graph.activeCount()
 		const loader = requireLoaderService(this.ctx)
+		const statusSnapshot = await loader.api.status.snapshot()
+		const statusByAddress = new Map(
+			(statusSnapshot.statuses ?? []).map((status) => [
+				formatPluginNodeReference(status.address),
+				status,
+			]),
+		)
 		const pluginTotals = collectPluginTotals({
 			registryView: loader.api.registry,
-			isPluginEnabled: (address) =>
-				isPluginEnabled(requireRuntimeStateStore(this.ctx).snapshot(), address),
+			isPluginDesired: (address) =>
+				statusByAddress.get(formatPluginNodeReference(address))?.desiredState === 'running',
 			isRunning: (address) => pluginService.isRunning(address),
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
@@ -893,7 +892,7 @@ export class HmrBatchProcessor {
 			...syncedModules,
 			...graph.affectedIds,
 		])
-		const enabledButStopped = collectEnabledButStopped(loader, relatedModules)
+		const desiredButStopped = await collectDesiredButStopped(loader, relatedModules)
 
 		const changedPretty = [...new Set(changed.map((id) => this.path.pretty(id)))].sort()
 		const logProps = {
@@ -903,8 +902,7 @@ export class HmrBatchProcessor {
 			targets: execOrder.length,
 			affectedModules: hmrOptionalCount(affectedModules.length),
 			syncedModules: hmrOptionalCount(syncedModules.length),
-			autoDisabled: hmrOptionalList(autoDisabled),
-			enabledButStopped: hmrOptionalList(enabledButStopped),
+			desiredButStopped: hmrOptionalList(desiredButStopped),
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,
 			activeServices,
@@ -929,8 +927,7 @@ export class HmrBatchProcessor {
 			targets: execOrder,
 			affectedModules,
 			syncedModules,
-			autoDisabled,
-			enabledButStopped,
+			desiredButStopped,
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,
 			activeServices,

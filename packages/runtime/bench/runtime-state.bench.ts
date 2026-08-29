@@ -43,7 +43,7 @@ const consumers: PluginNodeAddress[] = Array.from({ length: consumerCount }, (_,
 	forkId: `consumer-${index}`,
 }))
 const state: RuntimeStateSnapshot = Object.freeze({
-	enabled: Object.freeze([...consumers]),
+	autoStart: Object.freeze([...consumers]),
 	forks: Object.freeze([]),
 	providerDefaults: Object.freeze([]),
 	dependencyOverrides: Object.freeze(
@@ -76,14 +76,14 @@ describe('RuntimeState indexed mutation', () => {
 	)
 })
 
-describe('disabled durable fork projection', () => {
+describe('stopped durable fork projection', () => {
 	for (const size of forkProjectionSizes) {
 		const runtimeState: RuntimeStateSnapshot = Object.freeze({
-			enabled: Object.freeze([]),
+			autoStart: Object.freeze([]),
 			forks: Object.freeze([
 				Object.freeze({
 					definition: forkProjectionDefinition,
-					forkIds: Object.freeze(Array.from({ length: size }, (_, index) => `disabled-${index}`)),
+					forkIds: Object.freeze(Array.from({ length: size }, (_, index) => `stopped-${index}`)),
 				}),
 			]),
 			providerDefaults: Object.freeze([]),
@@ -91,7 +91,7 @@ describe('disabled durable fork projection', () => {
 		})
 
 		bench(
-			`project ${size} disabled durable fork${size === 1 ? '' : 's'} without Core operations`,
+			`project ${size} stopped durable fork${size === 1 ? '' : 's'} without Core operations`,
 			() => {
 				const plan = reconcilePluginGraph({
 					catalog: forkProjectionCatalog,
@@ -103,7 +103,7 @@ describe('disabled durable fork projection', () => {
 					plan.applied.nodes.size > 0 ||
 					plan.blocked.length > 0
 				) {
-					throw new Error('Disabled durable fork projection allocated applied Core work')
+					throw new Error('Stopped durable fork projection allocated applied Core work')
 				}
 			},
 			{ iterations: 10, warmupIterations: 2 },

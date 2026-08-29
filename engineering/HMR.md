@@ -95,7 +95,8 @@ config module provenance 不进入 source anchor set。anchor set 按 snapshot i
 O(1) membership lookup。draft/snapshot publication 允许 O(C) 构建成本，
 不为追求假设的增量复杂度保留第二份 committed registry、persistent overlay 或 post-PONR route publication。
 
-catalog/source batch 可以触发 `O(C + F + B + E)` 的 bounded reconciliation；blocked closure 必须通过 reverse-edge queue 线性传播。
+catalog/source batch 可以触发 `O(C + F + B + S + E)` 的 bounded reconciliation；`S` 是 process session intents，blocked closure 必须通过
+reverse-edge queue 线性传播。
 definition replacement 继续由 Core 的 definition-to-materialized-node index 枚举 `k` 个 variants，复杂度为 `O(k + affected edges)`，不能扫描完整
 Core graph。纯 addressed restart 与 running config notification 不属于 catalog HMR，不得进入 full reconciler。static route 同样只读取 coordinator
 committed snapshot，不能为 fixed catalog 保留例外 authority。
@@ -105,7 +106,8 @@ source watcher 和 resolved source declaration reader 在 fixed baseline commit 
 workspace scanner 或 package manager。
 
 Workspace profile 的 `enabled` 是 mutable package entry selection：CLI 选择的 package entry 会进入初始加载列表，其 workspace
-dependency closure 会成为 watch roots。它不直接启用插件 lifecycle；module 求值后，插件是否启动仍只读取 RuntimeState。config
+dependency closure 会成为 watch roots。它不写 RuntimeState `autoStart`，也不创建 process session intent；module 求值后，coordinator 以 RuntimeState auto-start、process session
+intent 与 required dependency closure 共同决定 desired graph，live HMR 保留 session intent。config
 的 `plugins` 是 fixed availability，不进入 CLI discovery；同一 definition address 同时由 fixed 与 mutable catalog 提供时启动失败。
 generation shutdown 先停止 watcher/batch admission，丢弃尚未开始的 debounce queue，等待正在执行的 batch 完成，再进入 core
 lifecycle/effects cleanup；Vite/plugin close hooks 完成后才关闭 canonical ModuleRunner。

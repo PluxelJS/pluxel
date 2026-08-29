@@ -124,7 +124,7 @@ describe('dynamic plugin sources', () => {
 			const mutableAddress = catalogEntry!.address
 			const ctor = catalogEntry!.ctor
 			expect(ctor).toBeTypeOf('function')
-			await requireLoaderService(host.ctx).api.control.enable(mutableAddress)
+			await requireLoaderService(host.ctx).api.control.start(mutableAddress)
 			const instance = requirePluginService(host.ctx).getInstance(mutableAddress) as
 				| {
 						started: boolean
@@ -145,7 +145,7 @@ describe('dynamic plugin sources', () => {
 			expect(removed.ok).toBe(true)
 			expect(removed.pluginChanges?.removed).toContain(formatPluginNodeReference(mutableAddress))
 			expect(requireLoaderService(host.ctx).api.registry.getCtor(mutableAddress)).toBeUndefined()
-			expect(requireLoaderService(host.ctx).api.runtime.isRunning(mutableAddress)).toBe(false)
+			expect(requirePluginService(host.ctx).isRunning(mutableAddress)).toBe(false)
 			expect(instance).toMatchObject({ started: true, cleaned: true })
 			expect(instance?.partSnapshot()).toEqual({ started: true, cleaned: true })
 		} finally {
@@ -198,7 +198,7 @@ describe('dynamic plugin sources', () => {
 			configService: { mode: 'memory' },
 			runtimeState: {
 				mode: 'memory',
-				snapshot: { enabled: [pluginNodeAddressOf(SourceProducerPlugin)] },
+				snapshot: { autoStart: [pluginNodeAddressOf(SourceProducerPlugin)] },
 			},
 			plugins: [SourceProducerPlugin],
 			sources: [{ kind: 'directory', path: 'entries', include: ['*.ts'] }],
@@ -206,9 +206,7 @@ describe('dynamic plugin sources', () => {
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
 			expect(
-				requireLoaderService(host.ctx).api.runtime.isRunning(
-					pluginNodeAddressOf(SourceProducerPlugin),
-				),
+				requirePluginService(host.ctx).isRunning(pluginNodeAddressOf(SourceProducerPlugin)),
 			).toBe(false)
 			const publishedBatch = host.hmr.api.waitForBatch({ timeoutMs: 30_000 })
 
@@ -216,9 +214,7 @@ describe('dynamic plugin sources', () => {
 			const published = await publishedBatch
 
 			expect(
-				requireLoaderService(host.ctx).api.runtime.isRunning(
-					pluginNodeAddressOf(SourceProducerPlugin),
-				),
+				requirePluginService(host.ctx).isRunning(pluginNodeAddressOf(SourceProducerPlugin)),
 			).toBe(true)
 			expectSuccessfulBatch(published)
 			expect(

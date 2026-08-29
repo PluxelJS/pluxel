@@ -11,7 +11,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestPlugin } from '../support/lowered-plugin'
-import { enablePlugins, isEnabled } from '../support/runtime-state'
+import { isAutoStartEnabled, setPluginsAutoStart, startPlugins } from '../support/runtime-state'
 
 const fixedOwner = 'pluxel:fixed:/workspace/pluxel.dynamic.ts'
 
@@ -24,7 +24,7 @@ function forkAddress(plugin: PluginConstructor, forkId: string): PluginNodeAddre
 }
 
 describe('LoaderService', () => {
-	it('registers disabled fixed plugins by address without changing enablement', async () => {
+	it('registers stopped fixed plugins by address without adding auto-start policy', async () => {
 		const { ctx } = createHmrTestContext()
 
 		@Plugin()
@@ -36,14 +36,14 @@ describe('LoaderService', () => {
 			requireLoaderService(ctx).registerFixedPlugins([Fixed], { moduleId: fixedOwner }),
 		).resolves.toEqual([address])
 
-		expect(isEnabled(ctx, address)).toBe(false)
+		expect(isAutoStartEnabled(ctx, address)).toBe(false)
 		expect(requireLoaderService(ctx).api.registry.getCtor(address)).toBe(Fixed)
 		expect(requireLoaderService(ctx).api.registry.findModuleId(address)).toBe(fixedOwner)
 		expect(requireLoaderService(ctx).api.anchors.has(fixedOwner)).toBe(false)
 		expect(requirePluginService(ctx).isRunning(address)).toBe(false)
 	})
 
-	it('starts enabled fixed dependencies from lowered constructor facts', async () => {
+	it('starts auto-start fixed dependencies from lowered constructor facts', async () => {
 		const { ctx } = createHmrTestContext()
 		const started: string[] = []
 
@@ -69,7 +69,8 @@ describe('LoaderService', () => {
 		await requireLoaderService(ctx).registerFixedPlugins([Consumer, Provider], {
 			moduleId: fixedOwner,
 		})
-		await enablePlugins(ctx, Provider, Consumer)
+		await setPluginsAutoStart(ctx, true, Provider, Consumer)
+		await startPlugins(ctx, Provider, Consumer)
 
 		expect(started).toEqual(['provider', 'consumer'])
 		expect(
@@ -148,7 +149,7 @@ describe('LoaderService', () => {
 		expect(requireLoaderService(ctx).api.anchors.has('unlowered.ts')).toBe(false)
 	})
 
-	it('derives enabled fork nodes exclusively from RuntimeState v3', async () => {
+	it('derives auto-start fork nodes exclusively from RuntimeState v5', async () => {
 		const { ctx } = createHmrTestContext()
 
 		@Plugin({ displayName: 'Forkable', forkable: true })
@@ -161,11 +162,12 @@ describe('LoaderService', () => {
 		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: base.definition, forkId: 'worker' },
-				{ type: 'set-enabled', node: worker, enabled: true },
+				{ type: 'set-auto-start', node: worker, autoStart: true },
 			),
 		)
+		await requireRuntimePluginGraphCoordinator(ctx).startNode(worker)
 		expect(requirePluginService(ctx).isRunning(base)).toBe(false)
-		expect(requireLoaderService(ctx).api.runtime.isRunning(worker)).toBe(true)
+		expect(requirePluginService(ctx).isRunning(worker)).toBe(true)
 		expect(requireLoaderService(ctx).api.registry.findModuleId(worker)).toBe(fixedOwner)
 	})
 
@@ -244,9 +246,9 @@ describe('LoaderService', () => {
 		await stale.replaceModule('stale.ts', { Stale })
 		await first.commit({
 			statePatch: runtimeStatePatch({
-				type: 'set-enabled',
+				type: 'set-auto-start',
 				node: pluginNodeAddressOf(First),
-				enabled: true,
+				autoStart: true,
 			}),
 		})
 

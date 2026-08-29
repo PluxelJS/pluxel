@@ -17,13 +17,9 @@ import { EmptyState, ErrorState } from '../../../components'
 import { useNotify } from '../../hooks/useNotify'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
-import { updatePluginStatuses } from '../pluginStatusActions'
+import { setPluginAutoStarts } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
-import {
-	runtimeErrorMessage,
-	type PluginStatusAction,
-	useRuntimeManagementClient,
-} from '../../../runtime'
+import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -50,11 +46,6 @@ interface PluginCatalogProps {
 	pluginRoute?: string
 }
 
-const ACTION_LABEL: Record<PluginStatusAction, string> = {
-	restart: '重启',
-	enable: '启用',
-	disable: '禁用',
-}
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
 
 class PluginGroupPersistenceUnknownError extends Error {}
@@ -72,7 +63,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return {
 				running: parsed.running !== false,
 				stopped: parsed.stopped !== false,
-				disabled: parsed.disabled !== false,
+				unavailable: parsed.unavailable !== false,
 			}
 		} catch {
 			return DEFAULT_STATUS_FILTER
@@ -129,7 +120,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setHelpOpened(true)
 			} else if (!editableTarget && e.altKey && ['1', '2', '3'].includes(e.key)) {
 				e.preventDefault()
-				const key = e.key === '1' ? 'running' : e.key === '2' ? 'stopped' : ('disabled' as const)
+				const key = e.key === '1' ? 'running' : e.key === '2' ? 'stopped' : ('unavailable' as const)
 				setStatusFilter((prev) => ({ ...prev, [key]: !prev[key] }))
 			} else if (e.key === 'Escape') {
 				if (helpOpened) {
@@ -281,8 +272,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		}
 	}, [])
 
-	const handleBulkStatus = useCallback(
-		async (action: Exclude<PluginStatusAction, 'restart'>) => {
+	const handleBulkAutoStart = useCallback(
+		async (autoStart: boolean) => {
 			if (selectedIds.length === 0) return
 			const batch = selectedIds.map((id) => {
 				const status = overview.statuses[id]
@@ -294,13 +285,10 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			)
 			setBulkBusy(true)
 			try {
-				const results = await updatePluginStatuses(
+				const results = await setPluginAutoStarts(
 					management,
-					batch.map(({ address }) => ({ address, action })),
+					batch.map(({ address }) => ({ address, autoStart })),
 				)
-				if (results.some((result) => result.ok === true || result.state === 'unknown')) {
-					void refetchOverview()
-				}
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notify({
@@ -313,94 +301,78 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 						color: 'red',
 					})
 				} else {
-					if (action === 'disable') {
-						const undoAction: PluginStatusAction = 'enable'
-						notify({
-							title: '批量操作成功',
-							message: (
-								<Group gap={6} align="center" wrap="nowrap">
-									<Box component="span">
-										{batch.length} 个插件已 {ACTION_LABEL[action]}
-									</Box>
-									<ActionIcon
-										size="sm"
-										variant="subtle"
-										title="撤销"
-										aria-label="撤销"
-										onClick={() => {
-											void (async () => {
-												setBulkBusy(true)
-												try {
-													const undoResults = await updatePluginStatuses(
-														management,
-														batch.map(({ address }) => ({ address, action: undoAction })),
-													)
-													if (
-														undoResults.some(
-															(result) => result.ok === true || result.state === 'unknown',
-														)
-													) {
-														void refetchOverview()
-													}
-													const undoFailed = undoResults.filter((r) => !r.ok)
-													if (undoFailed.length > 0) {
-														notify({
-															title: '撤销失败',
-															message:
-																undoFailed
-																	.map((result) =>
-																		displayNameByAddress.get(pluginNodeIndexKey(result.address)),
-																	)
-																	.filter(Boolean)
-																	.join('，') || '撤销失败',
-															color: 'red',
-														})
-													} else {
-														notify({
-															title: '已撤销',
-															message: `${batch.length} 个插件已 ${ACTION_LABEL[undoAction]}`,
-															color: 'green',
-														})
-													}
-												} catch (error: any) {
+					notify({
+						title: autoStart ? '已批量开启自动启动' : '已批量关闭自动启动',
+						message: (
+							<Group gap={6} align="center" wrap="nowrap">
+								<Box component="span">{batch.length} 个 Plugin 的当前会话状态保持不变</Box>
+								<ActionIcon
+									size="sm"
+									variant="subtle"
+									title="恢复原自动启动策略"
+									aria-label="恢复原自动启动策略"
+									onClick={() => {
+										void (async () => {
+											setBulkBusy(true)
+											try {
+												const undoResults = await setPluginAutoStarts(
+													management,
+													batch.map(({ address, autoStart: previousAutoStart }) => ({
+														address,
+														autoStart: previousAutoStart,
+													})),
+												)
+												const undoFailed = undoResults.filter((result) => !result.ok)
+												if (undoFailed.length > 0) {
 													notify({
-														title: '撤销失败',
-														message: error?.message ?? '撤销失败，请稍后重试。',
+														title: '部分策略恢复失败',
+														message:
+															undoFailed
+																.map((result) =>
+																	displayNameByAddress.get(pluginNodeIndexKey(result.address)),
+																)
+																.filter(Boolean)
+																.join('，') || '恢复失败',
 														color: 'red',
 													})
-												} finally {
-													setBulkBusy(false)
+												} else {
+													notify({
+														title: '已恢复原策略',
+														message: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
+														color: 'green',
+													})
 												}
-											})()
-										}}
-									>
-										<IconCornerUpLeft size={14} />
-									</ActionIcon>
-								</Group>
-							),
-							color: 'green',
-							autoClose: 4000,
-						})
-					} else {
-						notify({
-							title: '批量操作成功',
-							message: `${batch.length} 个插件已 ${ACTION_LABEL[action]}`,
-							color: 'green',
-						})
-					}
-					if (action === 'disable') setSelectedIds([])
+											} catch (error: unknown) {
+												notify({
+													title: '恢复失败',
+													message: runtimeErrorMessage(error, '恢复失败，请稍后重试。'),
+													color: 'red',
+												})
+											} finally {
+												setBulkBusy(false)
+											}
+										})()
+									}}
+								>
+									<IconCornerUpLeft size={14} />
+								</ActionIcon>
+							</Group>
+						),
+						color: 'green',
+						autoClose: 5000,
+					})
 				}
-			} catch (error: any) {
+			} catch (error: unknown) {
 				notify({
 					title: '操作失败',
-					message: error?.message ?? '批量操作失败，请稍后重试。',
+					message: runtimeErrorMessage(error, '批量操作失败，请稍后重试。'),
 					color: 'red',
 				})
 			} finally {
 				setBulkBusy(false)
 			}
 		},
-		[management, selectedIds, notify, overview.statuses, refetchOverview],
+		[management, selectedIds, notify, overview.statuses],
 	)
 
 	const handleBulkAction = useCallback(
@@ -409,9 +381,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setSelectedIds([])
 				return
 			}
-			void handleBulkStatus(action)
+			void handleBulkAutoStart(action === 'auto-start-on')
 		},
-		[handleBulkStatus],
+		[handleBulkAutoStart],
 	)
 
 	// —— 视图渲染 —— //
@@ -516,7 +488,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 								运行 <strong>{overview.running}</strong>
 							</Box>
 							<Box component="span" className="plx-pluginCatalog__metaPill">
-								禁用 <strong>{overview.disabled}</strong>
+								自动启动 <strong>{overview.autoStart}</strong>
 							</Box>
 							{selectedIds.length > 0 ? (
 								<Box component="span" className="plx-pluginCatalog__metaPill">

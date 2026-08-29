@@ -10,6 +10,7 @@ import { PLUGIN_SEARCH_EVENT } from '../constants'
 import { baseNavItems, buildWorkbenchNavItems, groupNavItems } from '../navigation/navConfig'
 import { PluginWorkbenchLayoutProvider } from '../plugins/detail/workbench/context'
 import { useCurrentPathname } from '../router/useCurrentRoute'
+import { settleBrowserNavigation } from '../router/navigationResult'
 import {
 	WorkbenchLayoutProvider,
 	WorkbenchNavigationProvider,
@@ -149,7 +150,7 @@ export function WorkbenchShell() {
 		(to: string) => {
 			if (pathname === to) return
 			startTransition(() => {
-				void navigate({ to })
+				settleBrowserNavigation(navigate({ to }))
 			})
 		},
 		[navigate, pathname],

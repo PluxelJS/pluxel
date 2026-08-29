@@ -78,8 +78,7 @@
 	width: 100%;
 }
 
-.plx-pluginWorkbench__metaChip,
-.plx-pluginWorkbench__actionPersist {
+.plx-pluginWorkbench__metaChip {
 	background: var(--plx-surface-muted);
 	border: 1px solid var(--plx-border);
 	color: var(--plx-text);
@@ -139,6 +138,162 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.plx-pluginWorkbench__statusIssues {
+	background: color-mix(in srgb, var(--mantine-color-yellow-1) 44%, transparent);
+	border: 1px solid color-mix(in srgb, var(--mantine-color-yellow-6) 34%, var(--plx-border));
+	border-radius: 6px;
+	padding: 7px;
+}
+
+.plx-pluginDependencyDetail {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+	min-width: 0;
+}
+
+.plx-pluginDependencyDetail__section {
+	min-width: 0;
+}
+
+.plx-pluginDependencyDetail__section + .plx-pluginDependencyDetail__section {
+	border-top: 1px solid color-mix(in srgb, var(--plx-border) 76%, transparent);
+	padding-top: 9px;
+}
+
+.plx-pluginDependencyDetail__sectionHeader {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+	justify-content: space-between;
+	min-height: 22px;
+	min-width: 0;
+}
+
+.plx-pluginDependencyDetail__sectionTitle {
+	align-items: center;
+	display: flex;
+	font-size: 12px;
+	font-weight: 650;
+	gap: 5px;
+	line-height: 1.35;
+	margin: 0;
+	min-width: 0;
+}
+
+.plx-pluginDependencyDetail__sectionCount {
+	color: var(--plx-text-muted);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+.plx-pluginDependencyDetail__sectionSummary {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.35;
+	white-space: nowrap;
+}
+
+.plx-pluginDependencyDetail__relations {
+	background: color-mix(in srgb, var(--plx-surface-muted) 72%, transparent);
+	border: 1px solid color-mix(in srgb, var(--plx-border) 84%, transparent);
+	border-radius: 6px;
+	margin-top: 4px;
+	overflow: hidden;
+}
+
+.plx-pluginDependencyDetail__relation {
+	align-items: center;
+	display: grid;
+	gap: 7px;
+	grid-template-columns: minmax(0, 1fr) auto;
+	min-height: 34px;
+	min-width: 0;
+	padding: 4px 4px 4px 8px;
+}
+
+.plx-pluginDependencyDetail__relation + .plx-pluginDependencyDetail__relation {
+	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
+}
+
+.plx-pluginDependencyDetail__relation:hover {
+	background: color-mix(in srgb, var(--plx-accent-soft) 28%, transparent);
+}
+
+.plx-pluginDependencyDetail__endpointName,
+.plx-pluginDependencyDetail__endpointLink {
+	display: block;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.35;
+	max-width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginDependencyDetail__endpointName {
+	color: var(--plx-text);
+}
+
+.plx-pluginDependencyDetail__endpointLink {
+	color: var(--plx-accent-strong);
+	text-decoration: none;
+}
+
+.plx-pluginDependencyDetail__endpointLink:hover,
+.plx-pluginDependencyDetail__endpointLink:focus-visible {
+	text-decoration: underline;
+}
+
+.plx-pluginDependencyDetail__relationMeta {
+	align-items: center;
+	display: flex;
+	flex: 0 0 auto;
+	gap: 4px;
+	justify-content: flex-end;
+	min-width: 0;
+}
+
+.plx-pluginDependencyDetail__implementation {
+	border-top: 1px dashed color-mix(in srgb, var(--plx-border) 72%, transparent);
+	grid-column: 1 / -1;
+	min-width: 0;
+	padding: 6px 4px 3px 0;
+}
+
+.plx-pluginDependencyDetail__badge {
+	flex: 0 0 auto;
+	height: 17px;
+	padding-inline: 5px;
+}
+
+.plx-pluginDependencyDetail__graphLink {
+	align-items: center;
+	border-radius: 4px;
+	color: var(--plx-text-muted);
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 24px;
+	justify-content: center;
+	text-decoration: none;
+	width: 24px;
+}
+
+.plx-pluginDependencyDetail__graphLink:hover {
+	background: var(--plx-accent-soft);
+	color: var(--plx-accent-strong);
+}
+
+.plx-pluginDependencyDetail__graphLink:focus-visible {
+	box-shadow: inset 0 0 0 1px var(--plx-selected-border);
+	color: var(--plx-accent-strong);
+	outline: 2px solid transparent;
 }
 
 .plx-pluginWorkbench__contentPanel,
@@ -312,13 +467,6 @@
 	padding-inline: 10px;
 }
 
-.plx-pluginWorkbench__actionKeyHint {
-	color: var(--plx-text-muted);
-	font-size: 11px;
-	font-weight: 600;
-	margin-left: 8px;
-}
-
 /* Assist and outline */
 
 .plx-pluginWorkbench__assistHost {
@@ -468,51 +616,25 @@
 .plx-pluginWorkbench__actionBar {
 	align-items: center;
 	display: flex;
-	min-width: 0;
-}
-
-.plx-pluginWorkbench__actionBar[data-prominent='true'] {
 	gap: 6px;
-}
-
-.plx-pluginWorkbench__actionPersist {
-	align-items: center;
-	border-radius: 8px;
-	display: flex;
-	gap: 10px;
-	min-height: 28px;
-	padding: 2px 8px;
-}
-
-.plx-pluginWorkbench__actionPersistText {
-	display: flex;
-	flex-direction: column;
-	gap: 1px;
-	line-height: 1.1;
 	min-width: 0;
 }
 
 .plx-pluginWorkbench__actionButton {
-	border-radius: 8px;
 	min-height: 28px;
 	padding-inline: 8px;
 }
 
-.plx-pluginWorkbench__actionButton--primary {
-	background: var(--plx-accent);
-	border-color: transparent;
-	color: var(--plx-accent-contrast);
+.plx-pluginWorkbench__actionPolicy,
+.plx-pluginWorkbench__lifecycleActions {
+	flex: 0 0 auto;
 }
 
-.plx-pluginWorkbench__actionButton--primary:hover,
-.plx-pluginWorkbench__actionButton--primary:focus-visible {
-	background: var(--plx-accent-strong);
-}
-
-.plx-pluginWorkbench__actionButton--primary:disabled {
-	background: var(--plx-surface-muted);
-	border-color: var(--plx-border);
-	color: var(--plx-text-muted);
+.plx-pluginWorkbench__actionPolicy .mantine-Switch-label {
+	color: var(--plx-text);
+	font-size: 12px;
+	font-weight: 600;
+	padding-inline-end: 7px;
 }
 
 .plx-pluginWorkbench__actionButton .mantine-Button-label,
@@ -520,11 +642,7 @@
 	color: inherit;
 }
 
-.plx-pluginWorkbench__actionBar[data-prominent='true'] .mantine-Switch-root {
-	flex: 0 0 auto;
-}
-
-.plx-pluginWorkbench__actionBar[data-prominent='true'] > * {
+.plx-pluginWorkbench__actionBar > * {
 	min-width: 0;
 }
 
@@ -558,7 +676,7 @@
 		width: 100%;
 	}
 
-	.plx-pluginWorkbench__actionBar[data-prominent='true'] {
+	.plx-pluginWorkbench__actionBar {
 		flex-wrap: wrap;
 	}
 }

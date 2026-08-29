@@ -1,7 +1,7 @@
 import { ActionIcon, Badge, Group, Paper, Text } from '@mantine/core'
 import { IconBan, IconPower, IconX } from '@tabler/icons-react'
 
-export type BulkAction = 'disable' | 'enable' | 'clear'
+export type BulkAction = 'auto-start-on' | 'auto-start-off' | 'clear'
 
 type Props = {
 	count: number
@@ -27,9 +27,9 @@ export function BulkActionsBar({ count, busy, onAction }: Props) {
 						size="sm"
 						variant="subtle"
 						disabled={busy}
-						onClick={() => onAction('disable')}
-						title="禁用"
-						aria-label="禁用"
+						onClick={() => onAction('auto-start-off')}
+						title="关闭自动启动（不停止当前会话）"
+						aria-label="关闭自动启动"
 					>
 						<IconBan size={14} />
 					</ActionIcon>
@@ -37,9 +37,9 @@ export function BulkActionsBar({ count, busy, onAction }: Props) {
 						size="sm"
 						variant="subtle"
 						disabled={busy}
-						onClick={() => onAction('enable')}
-						title="启用"
-						aria-label="启用"
+						onClick={() => onAction('auto-start-on')}
+						title="开启自动启动（不启动当前会话）"
+						aria-label="开启自动启动"
 					>
 						<IconPower size={14} />
 					</ActionIcon>

@@ -14,7 +14,7 @@ import {
 import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
-import { enablePlugins } from '../support/runtime-state'
+import { setPluginsAutoStart, startPlugins } from '../support/runtime-state'
 
 describe('base provider selection', () => {
 	it('rejects a fork as provider default and persists the deterministic default node', async () => {
@@ -38,10 +38,11 @@ describe('base provider selection', () => {
 		await coordinator.updateRuntimeState(
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: implementation.definition, forkId: 'f1' },
-				{ type: 'set-enabled', node: implementation, enabled: true },
-				{ type: 'set-enabled', node: fork, enabled: true },
+				{ type: 'set-auto-start', node: implementation, autoStart: true },
+				{ type: 'set-auto-start', node: fork, autoStart: true },
 			),
 		)
+		await startPlugins(ctx, implementation, fork)
 		await expect(
 			coordinator.updateRuntimeState(
 				runtimeStatePatch({
@@ -87,7 +88,8 @@ describe('base provider selection', () => {
 
 		await requireLoaderService(ctx).replaceModule('Provider.ts', { Impl })
 		await requireLoaderService(ctx).replaceModule('Consumer.ts', { Consumer })
-		await enablePlugins(ctx, Impl, Consumer)
+		await setPluginsAutoStart(ctx, true, Impl, Consumer)
+		await startPlugins(ctx, Impl, Consumer)
 		const firstConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
 			| Consumer
 			| undefined
@@ -151,10 +153,11 @@ describe('base provider selection', () => {
 					requirement: pluginDefinitionAddressOf(Worker),
 					provider: fork,
 				},
-				{ type: 'set-enabled', node: fork, enabled: true },
-				{ type: 'set-enabled', node: pluginNodeAddressOf(Consumer), enabled: true },
+				{ type: 'set-auto-start', node: fork, autoStart: true },
+				{ type: 'set-auto-start', node: pluginNodeAddressOf(Consumer), autoStart: true },
 			),
 		)
+		await startPlugins(ctx, fork, Consumer)
 		const firstConsumer = requirePluginService(ctx).getInstance(pluginNodeAddressOf(Consumer)) as
 			| Consumer
 			| undefined
@@ -175,7 +178,7 @@ describe('base provider selection', () => {
 			| undefined
 		expect(nextConsumer?.dep.generation).toBe(2)
 		expect(nextConsumer === firstConsumer).toBe(false)
-		expect(requireLoaderService(ctx).api.runtime.isRunning(fork)).toBe(true)
+		expect(requirePluginService(ctx).isRunning(fork)).toBe(true)
 		expect(consumerStarts).toBe(2)
 	})
 })

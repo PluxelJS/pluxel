@@ -251,7 +251,7 @@ runtime owner。
 
 ### 通用 Feature registry
 
-当前没有动态 discovery、独立 enable/disable、多实例或跨 target 安装需求。registry 只会增加 identity、version negotiation、ordering、
+当前没有动态 discovery、独立 auto-start/session lifecycle、多实例或跨 target 安装需求。registry 只会增加 identity、version negotiation、ordering、
 withdrawal 和错误面。
 
 ### 所有共享 UI 都使用 Port

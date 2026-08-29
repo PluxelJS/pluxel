@@ -8,11 +8,11 @@ describe('{{className}}Plugin', () => {
 			async (host) => {
 				host.add({{className}}Plugin)
 				host.cfg({{className}}Plugin).set({ message: 'configured' })
-				host.cfg({{className}}Plugin).enable()
+				host.start({{className}}Plugin)
 				await host.commit()
 
 				expect(host.isRunning({{className}}Plugin)).toBe(true)
-				expect(host.require({{className}}Plugin).config.message).toBe('configured')
+				expect(host.require({{className}}Plugin).message()).toBe('configured')
 			},
 			{ workbench: false },
 		)

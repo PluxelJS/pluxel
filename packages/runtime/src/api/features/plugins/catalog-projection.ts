@@ -6,8 +6,10 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
-	runtimePluginStatusOverview,
+	readRuntimePluginStatusOverview,
+	runtimePluginStatusOverviewFromView,
 	type RuntimePluginStatusOverview,
+	type RuntimePluginStatusProjectionView,
 	type RuntimePluginStatusSnapshot,
 } from '../../../runtime/capabilities'
 import { buildPluginNodeLabels, type PluginNodeLabel } from '../../../runtime/plugin-label'
@@ -44,9 +46,23 @@ type PluginCatalogStaticProjection = Readonly<{
 
 const staticProjectionByRoot = new WeakMap<PlxContext, PluginCatalogStaticProjection>()
 
-export function projectPluginCatalog(pCtx: PlxContext): PluginCatalogProjection {
-	const overview = runtimePluginStatusOverview(pCtx)
-	const projected = staticPluginCatalogProjection(pCtx.root, overview.statuses)
+export async function projectPluginCatalog(pCtx: PlxContext): Promise<PluginCatalogProjection> {
+	return projectPluginCatalogOverview(pCtx.root, await readRuntimePluginStatusOverview(pCtx))
+}
+
+/** @internal Projects the catalog from one coordinator-pinned committed view. */
+export function projectPluginCatalogFromView(
+	root: PlxContext,
+	view: RuntimePluginStatusProjectionView,
+): PluginCatalogProjection {
+	return projectPluginCatalogOverview(root, runtimePluginStatusOverviewFromView(view))
+}
+
+function projectPluginCatalogOverview(
+	root: PlxContext,
+	overview: RuntimePluginStatusOverview,
+): PluginCatalogProjection {
+	const projected = staticPluginCatalogProjection(root, overview.statuses)
 	const entries = overview.statuses.map((entry) => ({
 		...entry,
 		...projected.byAddress.get(pluginNodeIndexKey(entry.address))!,

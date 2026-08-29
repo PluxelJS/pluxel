@@ -55,7 +55,8 @@ describe('CommandsService', () => {
 
 			lowerTestPlugin(LongCommandOwner)
 			host.add(LongCommandOwner)
-			host.cfg(LongCommandOwner).enable()
+			host.cfg(LongCommandOwner).setAutoStart(true)
+			host.start(LongCommandOwner)
 			await host.commit()
 			const pending = host.ctx.commands.execute('owner.long.run', {})
 			await didStart
@@ -77,11 +78,12 @@ describe('CommandsService', () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
 			expect(host.ctx.commands.list().map(({ name }) => name)).toEqual([
-				'plugin.disable',
-				'plugin.enable',
+				'plugin.auto-start.set',
 				'plugin.list',
 				'plugin.restart',
+				'plugin.start',
 				'plugin.status.get',
+				'plugin.stop',
 			])
 			expect(host.ctx.commands.list()).toBe(host.ctx.commands.list())
 		} finally {
@@ -109,7 +111,8 @@ describe('CommandsService', () => {
 
 			lowerTestPlugin(ObservedCommandOwner)
 			host.add(ObservedCommandOwner)
-			host.cfg(ObservedCommandOwner).enable()
+			host.cfg(ObservedCommandOwner).setAutoStart(true)
+			host.start(ObservedCommandOwner)
 			await host.commit()
 			host.remove(ObservedCommandOwner)
 			await host.commit()
@@ -146,7 +149,8 @@ describe('CommandsService', () => {
 			lowerTestPlugin(CommandOwnerV1, { id: 'command-owner-generation' })
 			lowerTestPlugin(CommandOwnerV2, { id: 'command-owner-generation' })
 			host.add(CommandOwnerV1)
-			host.cfg(CommandOwnerV1).enable()
+			host.cfg(CommandOwnerV1).setAutoStart(true)
+			host.start(CommandOwnerV1)
 			await host.commit()
 			await expect(host.ctx.commands.execute('example.value.get', {})).resolves.toEqual({
 				value: 'v1',
@@ -207,7 +211,8 @@ describe('CommandsService', () => {
 
 			lowerTestPlugin(ManualCommandOwner)
 			host.add(ManualCommandOwner)
-			host.cfg(ManualCommandOwner).enable()
+			host.cfg(ManualCommandOwner).setAutoStart(true)
+			host.start(ManualCommandOwner)
 			await host.commit()
 			const pending = captured.execute({}, {})
 			await didStart
@@ -244,7 +249,8 @@ describe('CommandsService', () => {
 
 			lowerTestPlugin(BrokenCommandOwner)
 			host.add(BrokenCommandOwner)
-			host.cfg(BrokenCommandOwner).enable()
+			host.cfg(BrokenCommandOwner).setAutoStart(true)
+			host.start(BrokenCommandOwner)
 			await host.commitAllowFail()
 
 			expect(host.isRunning(BrokenCommandOwner)).toBe(false)
@@ -278,8 +284,10 @@ describe('CommandsService', () => {
 			lowerTestPlugin(CommandOwnerA)
 			lowerTestPlugin(CommandOwnerB)
 			host.add([CommandOwnerA, CommandOwnerB])
-			host.cfg(CommandOwnerA).enable()
-			host.cfg(CommandOwnerB).enable()
+			host.cfg(CommandOwnerA).setAutoStart(true)
+			host.start(CommandOwnerA)
+			host.cfg(CommandOwnerB).setAutoStart(true)
+			host.start(CommandOwnerB)
 			await host.commit()
 
 			expect(host.require(CommandOwnerA).ctx.commands).not.toBe(
@@ -306,31 +314,35 @@ describe('CommandsService', () => {
 			host.add(ManagedPlugin)
 			await host.commit()
 			const address = pluginNodeAddressOf(ManagedPlugin)
-			const started = await host.ctx.commands.execute('plugin.enable', {
+			const started = await host.ctx.commands.execute('plugin.start', {
 				address,
 			})
 			expect(started).toMatchObject({
 				address,
 				displayName: 'ManagedPlugin',
-				isRunning: true,
-				isEnabled: true,
-				lifecycleStage: 'running',
+				autoStart: false,
+				sessionIntent: 'run',
+				desiredState: 'running',
+				activationReason: 'session',
+				lifecycleState: 'running',
 			})
 
 			const listed = await host.ctx.commands.execute('plugin.list', {})
 			expect(listed).toMatchObject({
-				plugins: [expect.objectContaining({ address, isRunning: true })],
-				summary: { total: 1, running: 1, stopped: 0, disabled: 0 },
+				plugins: [expect.objectContaining({ address, lifecycleState: 'running' })],
+				summary: { total: 1, running: 1, stopped: 0, autoStart: 0 },
 			})
 
-			const stopped = await host.ctx.commands.execute('plugin.disable', {
+			const stopped = await host.ctx.commands.execute('plugin.stop', {
 				address,
 			})
 			expect(stopped).toMatchObject({
 				address,
-				isRunning: false,
-				isEnabled: false,
-				lifecycleStage: 'disabled',
+				autoStart: false,
+				sessionIntent: 'inherit',
+				desiredState: 'stopped',
+				activationReason: null,
+				lifecycleState: 'stopped',
 			})
 		} finally {
 			await host.dispose()
@@ -363,8 +375,10 @@ describe('CommandsService', () => {
 			lowerTestPlugin(ManagedProvider)
 			lowerTestPlugin(ManagedConsumer, { requires: [ManagedProvider] })
 			host.add([ManagedProvider, ManagedConsumer])
-			host.cfg(ManagedProvider).enable()
-			host.cfg(ManagedConsumer).enable()
+			host.cfg(ManagedProvider).setAutoStart(true)
+			host.start(ManagedProvider)
+			host.cfg(ManagedConsumer).setAutoStart(true)
+			host.start(ManagedConsumer)
 			await host.commit()
 
 			expect({ providerStarts, consumerStarts }).toEqual({ providerStarts: 1, consumerStarts: 1 })
@@ -375,9 +389,11 @@ describe('CommandsService', () => {
 
 			expect(restarted).toMatchObject({
 				address: providerAddress,
-				isRunning: true,
-				isEnabled: true,
-				lifecycleStage: 'running',
+				autoStart: true,
+				sessionIntent: 'inherit',
+				desiredState: 'running',
+				activationReason: 'auto-start',
+				lifecycleState: 'running',
 			})
 			expect({ providerStarts, consumerStarts }).toEqual({ providerStarts: 2, consumerStarts: 2 })
 		} finally {

@@ -25,9 +25,9 @@ class TakumiTestConsumer extends BasePlugin {
 	}
 }
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
 const fontPath = findTestFont()
@@ -36,7 +36,7 @@ describe('TakumiPlugin', () => {
 	it('renders bounded HTML to raster bytes and SVG without Workbench', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				await host.commit()
 				const takumi = host.require(TakumiTestConsumer).takumi
 
@@ -87,7 +87,7 @@ describe('TakumiPlugin', () => {
 	it.skipIf(!fontPath)('replays FontsPlugin portable resources by revision', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				await host.commit()
 				const consumer = host.require(TakumiTestConsumer)
 				const family = `Pluxel Takumi ${crypto.randomUUID()}`
@@ -122,7 +122,7 @@ describe('TakumiPlugin', () => {
 		async () => {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 					host.cfg(TakumiPlugin).set({ maxFonts: 0 })
 					await host.commit()
 					const consumer = host.require(TakumiTestConsumer)
@@ -143,7 +143,7 @@ describe('TakumiPlugin', () => {
 	it('rejects over-budget pixels and blocks implicit remote image fetches', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				host.cfg(TakumiPlugin).set({ maxPixels: 100 })
 				await host.commit()
 				const takumi = host.require(TakumiTestConsumer).takumi
@@ -173,7 +173,7 @@ describe('TakumiPlugin', () => {
 	it('classifies an invalid cancellation signal as invalid input', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				await host.commit()
 
 				await expect(
@@ -192,7 +192,7 @@ describe('TakumiPlugin', () => {
 	it('bounds structured node metadata before native rendering', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				host.cfg(TakumiPlugin).set({ maxContentBytes: 128 })
 				await host.commit()
 
@@ -214,7 +214,7 @@ describe('TakumiPlugin', () => {
 	it('bounds extracted stylesheets and distinct content image sources by count', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				host.cfg(TakumiPlugin).set({ maxStylesheets: 1, maxImages: 1 })
 				await host.commit()
 				const takumi = host.require(TakumiTestConsumer).takumi
@@ -248,7 +248,7 @@ describe('TakumiPlugin', () => {
 	it('rejects structured accessors without invoking caller code', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				await host.commit()
 				let getterCalled = false
 				const content = Object.defineProperty({ type: 'container' }, 'children', {
@@ -275,7 +275,7 @@ describe('TakumiPlugin', () => {
 	it('requires node image bytes to use the bounded preloaded-images path', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				await host.commit()
 
 				await expect(
@@ -314,7 +314,7 @@ describe('TakumiPlugin', () => {
 		try {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 					await host.commit()
 					const controller = new AbortController()
 					const rendering = host.require(TakumiTestConsumer).takumi.render({
@@ -349,7 +349,7 @@ describe('TakumiPlugin', () => {
 		try {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 					await host.commit()
 					const controller = new AbortController()
 					const rendering = host.require(TakumiTestConsumer).takumi.render({
@@ -377,7 +377,7 @@ describe('TakumiPlugin', () => {
 		try {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 					await host.commit()
 					const controller = new AbortController()
 					const rendered = host.require(TakumiTestConsumer).takumi.render({
@@ -408,7 +408,7 @@ describe('TakumiPlugin', () => {
 		try {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 					await host.commit()
 					await expect(
 						host.require(TakumiTestConsumer).takumi.renderSvg({
@@ -439,7 +439,7 @@ describe('TakumiPlugin', () => {
 		try {
 			await withRuntimeHost(
 				async (host) => {
-					addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 					host.cfg(TakumiPlugin).set({ maxRenderDurationMs: 10 })
 					await host.commit()
 
@@ -461,7 +461,7 @@ describe('TakumiPlugin', () => {
 	it('mounts a provider-owned portable Fonts Port on the Takumi layout', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				addEnabled(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				await host.commit()
 
 				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(

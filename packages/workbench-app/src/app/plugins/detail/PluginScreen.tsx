@@ -1,22 +1,15 @@
 import { Skeleton, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
-import { useDebouncedFlag } from '../../../hooks'
-import {
-	type PluginDependency,
-	type PluginStatusEntry,
-	PluginStatusEntryLifecycleStage,
-	usePluginOverview,
-} from '../pluginOverview'
+import type { PluginStatusEntry } from '../pluginOverview'
 import { usePluginConfig } from '../config/usePluginConfig'
 import { useWorkbenchDocumentPathname } from '../../workbench/context'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 import { WorkbenchTargetProvider } from '../../../workbench/runtime'
-import { formatPluginNodeReference, pluginNodeIndexKey } from '@pluxel/core'
-import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
+import { usePluginDetail } from './usePluginDetail'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
@@ -80,174 +73,20 @@ export interface PluginScreenProps {
 	pluginRoute: string
 }
 
-type PluginStatusSnapshot = {
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: PluginStatusEntryLifecycleStage
-	source: NonNullable<PluginStatusEntry['source']> | null
-}
-
-const EMPTY_STATUS_ENTRIES: readonly PluginStatusEntry[] = Object.freeze([])
-const EMPTY_DEPENDENCIES: readonly PluginDependency[] = Object.freeze([])
-
-function resolveLifecycleStage(
-	isEnabled: boolean,
-	isRunning: boolean,
-	lifecycleStage?: PluginStatusEntryLifecycleStage | null,
-) {
-	if (lifecycleStage) return lifecycleStage
-	if (isEnabled) {
-		return isRunning
-			? PluginStatusEntryLifecycleStage.running
-			: PluginStatusEntryLifecycleStage.stopped
-	}
-	return PluginStatusEntryLifecycleStage.disabled
-}
-
-function resolveStatusSnapshot(statusEntry: PluginStatusEntry | null): PluginStatusSnapshot | null {
-	if (!statusEntry) return null
-	const isEnabled = statusEntry.isEnabled !== false
-	const isRunning = Boolean(statusEntry.isRunning)
-	return {
-		isRunning,
-		isEnabled,
-		lifecycleStage: resolveLifecycleStage(isEnabled, isRunning, statusEntry.lifecycleStage),
-		source: statusEntry.source ?? null,
-	}
-}
-
-function resolvePluginSource(snapshot: PluginStatusSnapshot | null): {
+function resolvePluginSource(status: PluginStatusEntry | null): {
 	kind: PluginSourceKind
 	moduleId: string | null
 	packageName: string | null
 	version: string | null
 	tag: string | null
 } {
-	const rawSource = snapshot?.source ?? null
+	const rawSource = status?.source ?? null
 	return {
 		kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
 		moduleId: rawSource?.moduleId ?? null,
 		packageName: rawSource?.packageName ?? null,
 		version: rawSource?.version ?? null,
 		tag: rawSource?.tag ?? null,
-	}
-}
-
-function usePluginDetail(pluginRoute?: string) {
-	const management = useRuntimeManagementClient()
-	const overviewState = usePluginOverview()
-	const statusEntries = overviewState.overview?.status?.statuses ?? EMPTY_STATUS_ENTRIES
-	const refetchOverview = overviewState.refetch
-
-	const statusMap = useMemo(() => {
-		const map = new Map<string, PluginStatusEntry>()
-		for (const entry of statusEntries) {
-			if (entry?.route) map.set(entry.route, entry)
-		}
-		return map
-	}, [statusEntries])
-	const statusByAddress = useMemo(() => {
-		const map = new Map<string, PluginStatusEntry>()
-		for (const entry of statusEntries) map.set(pluginNodeIndexKey(entry.address), entry)
-		return map
-	}, [statusEntries])
-
-	const statusEntry = useMemo(() => {
-		if (!pluginRoute) return null
-		return statusMap.get(pluginRoute) ?? null
-	}, [pluginRoute, statusMap])
-
-	const listed = useMemo(() => {
-		if (!pluginRoute) return false
-		return statusMap.has(pluginRoute)
-	}, [pluginRoute, statusMap])
-
-	const owner = statusEntry?.address
-	const ownerKey = owner ? pluginNodeIndexKey(owner) : null
-	const requestVersionRef = useRef(0)
-	const [dependencySnapshot, setDependencySnapshot] = useState<{
-		ownerKey: string
-		items: readonly PluginDependency[]
-	} | null>(null)
-	const [dependencyLoading, setDependencyLoading] = useState(false)
-	const [dependencyError, setDependencyError] = useState<Error | null>(null)
-
-	const loadDependencies = useCallback(async () => {
-		if (!owner || !ownerKey) return
-		const requestVersion = ++requestVersionRef.current
-		setDependencyLoading(true)
-		setDependencyError(null)
-		try {
-			const result = await management.dependencies.list(owner)
-			if (result.ok === false) throw new Error(result.error)
-			const items = Object.freeze(
-				result.items.map((dependency): PluginDependency => {
-					const known = statusByAddress.get(pluginNodeIndexKey(dependency.address))
-					return Object.freeze({
-						id: known?.id ?? dependency.displayName,
-						reference: known?.reference ?? formatPluginNodeReference(dependency.address),
-						route: known?.route ?? '',
-						displayName: known?.displayName ?? dependency.displayName,
-						label: known?.label ?? dependency.displayName,
-						rootExportName: known?.rootExportName ?? dependency.address.definition.exportName,
-						address: dependency.address,
-						isRunning: dependency.isRunning ?? known?.isRunning,
-					})
-				}),
-			)
-			if (requestVersion !== requestVersionRef.current) return
-			setDependencySnapshot({ ownerKey, items })
-		} catch (error: unknown) {
-			if (requestVersion !== requestVersionRef.current) return
-			setDependencyError(new Error(runtimeErrorMessage(error, '无法读取插件依赖')))
-		} finally {
-			if (requestVersion === requestVersionRef.current) setDependencyLoading(false)
-		}
-	}, [management.dependencies, owner, ownerKey, statusByAddress])
-
-	useEffect(() => {
-		if (!ownerKey) {
-			requestVersionRef.current += 1
-			setDependencySnapshot(null)
-			setDependencyLoading(false)
-			setDependencyError(null)
-			return
-		}
-		void loadDependencies()
-	}, [loadDependencies, ownerKey])
-
-	const dependencies =
-		dependencySnapshot?.ownerKey === ownerKey ? dependencySnapshot.items : EMPTY_DEPENDENCIES
-	const detail = statusEntry
-		? {
-				route: statusEntry.route,
-				address: statusEntry.address,
-				rootExportName: statusEntry.rootExportName,
-				label: statusEntry.label,
-				desc: '',
-				dependencies,
-			}
-		: undefined
-	const ready = detail !== undefined
-	const loading = overviewState.isLoading || dependencyLoading
-	const error =
-		!overviewState.hasSnapshot && overviewState.error
-			? new Error(overviewState.error)
-			: dependencyError
-
-	const refetch = useCallback(async () => {
-		await refetchOverview()
-	}, [refetchOverview])
-
-	return {
-		detail,
-		ready,
-		listed,
-		hasStatusSnapshot: overviewState.hasSnapshot,
-		statusEntry,
-		error,
-		loading,
-		refetch,
 	}
 }
 
@@ -270,88 +109,49 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 	)
 	const isStacked = isStackedWide || isStackedBreak
 
-	const { detail, ready, listed, hasStatusSnapshot, statusEntry, error, loading, refetch } =
-		usePluginDetail(pluginRoute)
+	const {
+		detail,
+		ready,
+		listed,
+		hasStatusSnapshot,
+		statusEntry,
+		dependencyGraph,
+		error,
+		loading,
+		refetch,
+	} = usePluginDetail(pluginRoute)
 	const pathname = useWorkbenchDocumentPathname()
 	const pluginLabel = detail?.label ?? pluginRoute
 	const description = detail?.desc ?? ''
-	const [statusOverride, setStatusOverride] = useState<{
-		isRunning: boolean
-		isEnabled: boolean
-		lifecycleStage: PluginStatusEntryLifecycleStage
-	} | null>(null)
-
-	useEffect(() => {
-		setStatusOverride(null)
-	}, [pluginRoute])
-
-	const resolvedStatus = useMemo(() => resolveStatusSnapshot(statusEntry), [statusEntry])
-
-	useEffect(() => {
-		if (resolvedStatus) setStatusOverride(null)
-	}, [resolvedStatus])
-
-	const effectiveStatus = statusOverride ?? resolvedStatus
-	const isRunning = Boolean(effectiveStatus?.isRunning)
-	const isEnabled = effectiveStatus?.isEnabled ?? true
-	const lifecycleStage = resolveLifecycleStage(
-		isEnabled,
-		isRunning,
-		effectiveStatus?.lifecycleStage,
-	)
 
 	const owner = detail?.address
 	const configState = usePluginConfig(ready ? owner : undefined)
-	const syncing = useDebouncedFlag(loading || configState.loading, 160)
-	const dependencies = detail?.dependencies ?? EMPTY_DEPENDENCIES
 
 	const handleRefetch = useCallback(async () => {
 		await refetch()
 	}, [refetch])
 
-	const handleStatusOverride = useCallback(
-		(next: {
-			isRunning: boolean
-			isEnabled: boolean
-			lifecycleStage: PluginStatusEntryLifecycleStage
-		}) => {
-			setStatusOverride(next)
-		},
-		[],
-	)
-
 	const contextValue = useMemo(() => {
-		if (!detail || !owner) return null
+		if (!detail || !owner || !statusEntry) return null
 		return {
 			owner,
 			pluginRoute,
 			pluginLabel,
 			description,
-			dependencies,
+			dependencyGraph,
 			status: statusEntry,
-			isRunning,
-			isSyncing: syncing,
-			isEnabled,
-			lifecycleStage,
-			source: resolvePluginSource(resolvedStatus),
+			source: resolvePluginSource(statusEntry),
 			refetch: handleRefetch,
-			setStatusOverride: handleStatusOverride,
 		}
 	}, [
-		dependencies,
+		dependencyGraph,
 		description,
 		pluginLabel,
 		owner,
 		pluginRoute,
 		handleRefetch,
-		handleStatusOverride,
 		statusEntry,
-		isRunning,
-		isEnabled,
-		lifecycleStage,
 		detail,
-		resolvedStatus,
-		syncing,
 	])
 
 	if (!pluginRoute) {

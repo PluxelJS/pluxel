@@ -21,7 +21,7 @@ Pluxel 只有两个 Plugin 身份作用域：
 同一 address 在同一 registry 内只产生一个 slot。generation 是 node 当前的一次运行，不进入 address。
 
 fork 是同一 definition 的运行时多态，不是源码副本：default 和所有 fork 共享 constructor implementation、schema、metadata、
-artifact input 与 HMR invalidation，各自隔离 enabled/running 状态、config value/revision、dependency override、Context、effects 和资源 lease。
+artifact input 与 HMR invalidation，各自隔离 auto-start/session/running 状态、config value/revision、dependency override、Context、effects 和资源 lease。
 
 class name、constructor object、`displayName`、npm version、物理安装路径、digest 和 catalog 顺序都不参与 identity。
 
@@ -148,20 +148,20 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 
 ## 各领域作用域
 
-| 领域               | definition scope                               | node scope                                  | 领域私有 identity                  |
-| ------------------ | ---------------------------------------------- | ------------------------------------------- | ---------------------------------- |
-| Core graph/DI      | required/optional edge target                  | slot、lifecycle owner                       | generation                         |
-| HMR                | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot           | module revision                    |
-| Config             | schema、defaults、declaration path             | value、revision、update notification        | config record revision             |
-| RuntimeState       | fork family、required token                    | enabled、provider target、consumer override | file revision                      |
-| Logging            | 无 policy owner                                | category、filter、policy、reference/label   | rootId、bootId、stream epoch/seq   |
-| Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping         | group id、preference revision      |
-| HTTP               | 无                                             | final Elysia path 的 contribution owner     | sealed application generation      |
-| Artifact           | declaration/source/build input，不含 forkId    | node-to-artifact binding                    | fingerprint、publication revision  |
-| Database           | schema/migration declaration                   | data owner                                  | physical schema/role/instance      |
-| Vault              | 无                                             | default namespace owner                     | explicit shared namespace、blob id |
-| Cache/Rates        | 无                                             | caller namespace owner                      | canonical key、TTL state           |
-| Wretch settings    | 无                                             | consumer settings owner                     | settings revision/file key         |
+| 领域               | definition scope                               | node scope                                     | 领域私有 identity                  |
+| ------------------ | ---------------------------------------------- | ---------------------------------------------- | ---------------------------------- |
+| Core graph/DI      | required/optional edge target                  | slot、lifecycle owner                          | generation                         |
+| HMR                | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot              | module revision                    |
+| Config             | schema、defaults、declaration path             | value、revision、update notification           | config record revision             |
+| RuntimeState       | fork family、required token                    | auto-start、provider target、consumer override | file revision                      |
+| Logging            | 无 policy owner                                | category、filter、policy、reference/label      | rootId、bootId、stream epoch/seq   |
+| Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping            | group id、preference revision      |
+| HTTP               | 无                                             | final Elysia path 的 contribution owner        | sealed application generation      |
+| Artifact           | declaration/source/build input，不含 forkId    | node-to-artifact binding                       | fingerprint、publication revision  |
+| Database           | schema/migration declaration                   | data owner                                     | physical schema/role/instance      |
+| Vault              | 无                                             | default namespace owner                        | explicit shared namespace、blob id |
+| Cache/Rates        | 无                                             | caller namespace owner                         | canonical key、TTL state           |
+| Wretch settings    | 无                                             | consumer settings owner                        | settings revision/file key         |
 
 HMR 对一个 definition 的 default/forks 生成一次 commit plan，不能让部分 fork 使用新源码、部分 fork 使用旧源码。
 artifact build cache 不含 `forkId`，相同输入只编译一次；node binding 和 generation lease 仍各自隔离。
@@ -180,11 +180,11 @@ Management 分类偏好按 definition family 保存，新 fork 自动继承；�
 
 | 领域                          | 当前版本/编码                | 当前 owner 契约                     |
 | ----------------------------- | ---------------------------- | ----------------------------------- |
-| RuntimeState                  | v4                           | structured definition/node address  |
+| RuntimeState                  | v5                           | structured definition/node address  |
 | Config file/env               | v3                           | structured node address             |
 | Logger policy                 | v3                           | structured node address             |
 | Management catalog preference | v3                           | structured definition address       |
-| Workbench browser state       | v3                           | current versioned Plugin route      |
+| Workbench browser state       | v4                           | current versioned Plugin route      |
 | Database owner registry       | node reference               | exact current node reference        |
 | Vault                         | full canonical SHA-256       | exact current node address bytes    |
 | Wretch settings               | `consumers/v3` + envelope v2 | exact current node address envelope |

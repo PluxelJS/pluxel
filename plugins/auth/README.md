@@ -5,25 +5,25 @@ Pluxel 官方 Management 验证插件。它用一个互斥配置覆盖密码、�
 Runtime 负责管理面的入口闸门和物理连接事实；本插件只负责凭据、协议与会话。没有 active 且 ready 的验证 provider 时，远程 Management 一律关闭，只显示 SSH tunnel 指引；localhost 仍可用于恢复和首次设置，不需要一次性 bootstrap token。
 provider ready 后，所有来源（包括 localhost）都必须通过本插件认证；本地恢复不是一条长期绕过路径。
 
-## 启用条件
+## 运行前提
 
 - Host 必须安装 Management Plane；`workbench: { enabled: true }` 会同时安装它，headless host 可使用 `management: {}`。
 - `password`、`password-totp` 和 confidential OIDC 需要 `vault: {}` 保存 secret。Vault 必须已经解锁。
 - public OIDC 不保存 client secret，因此不要求 Vault。
 - 外部登录必须使用由 Pluxel physical carrier 提供的 HTTPS；`Host`、`Forwarded` 或请求 URL 不能伪造安全连接。
-- Host catalog 中最多启用一个 Management 验证 provider。
+- 当前进程中最多运行一个 Management 验证 provider。
 
 生产 static Node listener 可以直接终止 TLS。`PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 必须成对配置，值可以是内联 PEM 内容或 PEM 文件路径；
 private key 受保护时可另设可选的 `PLUXEL_TLS_PASSPHRASE`。不安全的远程请求会在 Runtime 调用 provider 前被拒绝。
 
-将 `AuthPlugin` 加入 catalog、启用并设置一个 mode。`mode` 省略时默认为 `password`。
+将 `AuthPlugin` 加入 catalog、设置一个 mode，再按部署需要打开自动启动策略或在当前进程启动它。`mode` 省略时默认为 `password`。
 
 ```ts
 import { AuthPlugin } from '@pluxel/auth'
 
 host.add(AuthPlugin)
 host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
-host.cfg(AuthPlugin).enable()
+host.start(AuthPlugin)
 ```
 
 首次启动本地账号或 confidential OIDC 时，provider 会以 `ready: false` 正常运行。通过 SSH tunnel 打开本机设置页，保存凭据后立即变为

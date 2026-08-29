@@ -32,7 +32,7 @@ export type PluginReconciliationIssue =
 			message: string
 	  }>
 	| Readonly<{
-			kind: 'provider_unavailable' | 'provider_disabled' | 'provider_incompatible'
+			kind: 'provider_unavailable' | 'provider_incompatible'
 			binding: 'provider-default' | 'dependency-override'
 			consumer?: PluginNodeAddress
 			requirement: PluginDefinitionAddress
@@ -110,6 +110,19 @@ type AppliedNode = Readonly<{
 	candidate: ConcretePluginDefinitionCandidate
 }>
 
+export type PluginSessionIntent = 'inherit' | 'run' | 'stop'
+export type PluginActivationReason = 'auto-start' | 'session' | 'dependency'
+
+export type RuntimePluginSessionEntry = Readonly<{
+	address: PluginNodeAddress
+	intent: Exclude<PluginSessionIntent, 'inherit'>
+}>
+
+export type RuntimePluginDesiredControl = Readonly<{
+	address: PluginNodeAddress
+	activationReason: PluginActivationReason
+}>
+
 export type AppliedPluginGraphSnapshot = Readonly<{
 	nodes: ReadonlyMap<string, AppliedNode>
 	providerDefaults: ReadonlyMap<
@@ -135,6 +148,7 @@ export type ReconciliationPlan = Readonly<{
 	statePatch?: RuntimeStatePatch
 	coreOperations: readonly CorePluginOperation[]
 	blocked: readonly PluginReconciliationIssue[]
+	desiredControl: ReadonlyMap<string, RuntimePluginDesiredControl>
 	applied: AppliedPluginGraphSnapshot
 }>
 
@@ -150,24 +164,39 @@ export function reconcilePluginGraph(input: {
 	catalog: PluginRouteCatalogSnapshot
 	runtimeState: RuntimeStateSnapshot
 	runtimeStateRevision: number
+	sessionIntents?: ReadonlyMap<string, RuntimePluginSessionEntry>
 	applied?: AppliedPluginGraphSnapshot
 }): ReconciliationPlan {
 	const applied = input.applied ?? emptyAppliedPluginGraphSnapshot()
 	const issues: PluginReconciliationIssue[] = []
 	const issueKeys = new Set<string>()
 	const blocked = new Set<string>()
-	const enabled = new Map(
-		input.runtimeState.enabled.map((address) => [pluginNodeIndexKey(address), address]),
+	const sessionIntents = input.sessionIntents ?? new Map<string, RuntimePluginSessionEntry>()
+	const explicitStops = new Set(
+		[...sessionIntents].filter(([, entry]) => entry.intent === 'stop').map(([key]) => key),
 	)
+	const desired = new Map<string, PluginNodeAddress>()
+	const activationReasons = new Map<string, PluginActivationReason>()
+	for (const address of input.runtimeState.autoStart) {
+		const key = pluginNodeIndexKey(address)
+		if (explicitStops.has(key)) continue
+		desired.set(key, address)
+		activationReasons.set(key, 'auto-start')
+	}
+	for (const [key, entry] of sessionIntents) {
+		if (entry.intent !== 'run') continue
+		desired.set(key, entry.address)
+		activationReasons.set(key, 'session')
+	}
 	const durableForks = durableForkIndex(input.runtimeState)
 	const candidates = candidateNodes(input.catalog, input.runtimeState, issues, issueKeys, blocked)
 
-	for (const [key, address] of enabled) {
+	for (const [key, address] of desired) {
 		if (candidates.has(key)) continue
 		addIssue(issues, issueKeys, {
 			kind: 'consumer_unavailable',
 			consumer: address,
-			message: `Plugin node is enabled but unavailable: ${formatPluginNodeReference(address)}`,
+			message: `Plugin node is desired but unavailable: ${formatPluginNodeReference(address)}`,
 		})
 		blocked.add(key)
 	}
@@ -175,7 +204,6 @@ export function reconcilePluginGraph(input: {
 	const providerDefaults = resolveProviderDefaults({
 		catalog: input.catalog,
 		state: input.runtimeState,
-		enabled,
 		durableForks,
 		issues,
 		issueKeys,
@@ -192,17 +220,18 @@ export function reconcilePluginGraph(input: {
 				)
 
 	const validOverrides = new Map<string, ResolvedOverride>()
+	const unavailableOverrides = new Map<string, PluginNodeAddress>()
 	for (const override of input.runtimeState.dependencyOverrides) {
 		const consumerKey = pluginNodeIndexKey(override.consumerAddress)
 		const consumer = candidates.get(consumerKey)
-		const consumerEnabled = enabled.has(consumerKey)
+		const consumerDesired = desired.has(consumerKey)
 		if (!consumer) {
 			addIssue(issues, issueKeys, {
 				kind: 'consumer_unavailable',
 				consumer: override.consumerAddress,
 				message: `Dependency override consumer is unavailable: ${formatPluginNodeReference(override.consumerAddress)}`,
 			})
-			if (consumerEnabled) blocked.add(consumerKey)
+			if (consumerDesired) blocked.add(consumerKey)
 			continue
 		}
 		if (!hasRequirement(consumer.entry, override.requirementAddress)) {
@@ -214,45 +243,54 @@ export function reconcilePluginGraph(input: {
 				provider: override.providerAddress,
 				message: `Dependency requirement no longer exists: ${formatPluginDefinitionReference(override.requirementAddress)}`,
 			})
-			if (consumerEnabled) blocked.add(consumerKey)
+			if (consumerDesired) blocked.add(consumerKey)
 			continue
 		}
 		const providerIssue = validateProvider({
 			catalog: input.catalog,
-			enabled,
 			durableForks,
 			binding: 'dependency-override',
 			consumer: override.consumerAddress,
 			requirement: override.requirementAddress,
 			provider: override.providerAddress,
 		})
-		if (providerIssue) {
-			addIssue(issues, issueKeys, providerIssue)
-			if (consumerEnabled) blocked.add(consumerKey)
-			continue
-		}
-		if (!consumerEnabled) continue
-		validOverrides.set(overrideKey(override.consumerAddress, override.requirementAddress), {
+		const resolvedOverride = {
 			consumer: override.consumerAddress,
 			requirement: override.requirementAddress,
 			provider: override.providerAddress,
-		})
+		}
+		if (providerIssue) {
+			addIssue(issues, issueKeys, providerIssue)
+			if (consumerDesired) blocked.add(consumerKey)
+			if (providerIssue.kind === 'provider_unavailable') {
+				unavailableOverrides.set(consumerKey, override.providerAddress)
+			}
+			continue
+		}
+		validOverrides.set(
+			overrideKey(override.consumerAddress, override.requirementAddress),
+			resolvedOverride,
+		)
 	}
 
-	propagateBlockedDependencies({
+	expandRequiredProviders({
 		catalog: input.catalog,
 		candidates,
-		enabled,
+		desired,
+		activationReasons,
+		explicitStops,
 		blocked,
-		providerDefaults: providerDefaults.effective,
+		providerDefaults: providerDefaults.selected,
+		invalidProviderDefaults: providerDefaults.invalid,
 		validOverrides,
+		unavailableOverrides,
 		issues,
 		issueKeys,
 	})
 
 	const desiredNodes = new Map<string, AppliedNode>()
 	for (const [key, node] of candidates) {
-		if (!enabled.has(key) || blocked.has(key)) continue
+		if (!desired.has(key) || blocked.has(key)) continue
 		desiredNodes.set(key, Object.freeze({ address: node.address, candidate: node.entry.candidate }))
 	}
 
@@ -284,12 +322,19 @@ export function reconcilePluginGraph(input: {
 		dependencyOverrides: desiredOverrides,
 	})
 	const operations = diffAppliedGraph(applied, nextApplied)
+	const desiredControl = new Map<string, RuntimePluginDesiredControl>()
+	for (const [key, address] of desired) {
+		const activationReason = activationReasons.get(key)
+		if (!activationReason) continue
+		desiredControl.set(key, Object.freeze({ address, activationReason }))
+	}
 	return Object.freeze({
 		catalogRevision: input.catalog.revision,
 		runtimeStateRevision: input.runtimeStateRevision,
 		...(inferredPatch ? { statePatch: inferredPatch } : {}),
 		coreOperations: Object.freeze(operations),
 		blocked: Object.freeze(sortIssues(issues)),
+		desiredControl,
 		applied: nextApplied,
 	})
 }
@@ -367,40 +412,69 @@ type RequiredProviderEdge = Readonly<{
 	requirement: PluginDefinitionAddress
 }>
 
-function propagateBlockedDependencies(input: {
+function expandRequiredProviders(input: {
 	catalog: PluginRouteCatalogSnapshot
 	candidates: ReadonlyMap<string, CandidateNode>
-	enabled: ReadonlyMap<string, PluginNodeAddress>
+	desired: Map<string, PluginNodeAddress>
+	activationReasons: Map<string, PluginActivationReason>
+	explicitStops: ReadonlySet<string>
 	blocked: Set<string>
 	providerDefaults: ReadonlyMap<
 		string,
 		Readonly<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 	>
+	invalidProviderDefaults: ReadonlyMap<string, PluginReconciliationIssue>
 	validOverrides: ReadonlyMap<string, ResolvedOverride>
+	unavailableOverrides: ReadonlyMap<string, PluginNodeAddress>
 	issues: PluginReconciliationIssue[]
 	issueKeys: Set<string>
 }): void {
 	const dependentsByProvider = new Map<string, RequiredProviderEdge[]>()
-	const blockedQueue = [...input.blocked]
+	const desiredQueue = [...input.desired.keys()]
 
-	for (const [consumerKey, node] of input.candidates) {
-		if (!input.enabled.has(consumerKey) || input.blocked.has(consumerKey)) continue
+	for (let cursor = 0; cursor < desiredQueue.length; cursor++) {
+		const consumerKey = desiredQueue[cursor]!
+		if (input.blocked.has(consumerKey)) {
+			const unavailableProvider = input.unavailableOverrides.get(consumerKey)
+			if (unavailableProvider) {
+				addDependencyDesired(input, desiredQueue, unavailableProvider)
+			}
+			continue
+		}
+		const node = input.candidates.get(consumerKey)
+		if (!node) continue
 		for (const requirement of node.entry.candidate.declaration.requires) {
 			const explicit = input.validOverrides.get(overrideKey(node.address, requirement))?.provider
+			const requirementKey = pluginDefinitionIndexKey(requirement)
+			if (!explicit && !pluginCatalogEntry(input.catalog, requirement)) {
+				const invalidDefault = input.invalidProviderDefaults.get(requirementKey)
+				if (invalidDefault) {
+					if (invalidDefault.kind === 'provider_unavailable') {
+						addDependencyDesired(input, desiredQueue, invalidDefault.provider)
+					}
+					blockMissingProvider(input, consumerKey, node.address, requirement)
+					break
+				}
+			}
 			const selected =
 				explicit ?? resolveImplicitProvider(requirement, input.catalog, input.providerDefaults)
-			if (!selected || !input.enabled.has(pluginNodeIndexKey(selected))) {
+			const providerKey = selected ? pluginNodeIndexKey(selected) : undefined
+			if (!selected || !providerKey || input.explicitStops.has(providerKey)) {
 				blockMissingProvider(input, consumerKey, node.address, requirement)
-				blockedQueue.push(consumerKey)
 				break
 			}
-			const providerKey = pluginNodeIndexKey(selected)
+			addDependencyDesired(input, desiredQueue, selected)
+			if (!input.candidates.has(providerKey)) {
+				blockMissingProvider(input, consumerKey, node.address, requirement)
+				break
+			}
 			const dependents = dependentsByProvider.get(providerKey) ?? []
 			dependents.push({ consumerKey, consumer: node.address, requirement })
 			dependentsByProvider.set(providerKey, dependents)
 		}
 	}
 
+	const blockedQueue = [...input.blocked]
 	for (let cursor = 0; cursor < blockedQueue.length; cursor++) {
 		const providerKey = blockedQueue[cursor]!
 		for (const edge of dependentsByProvider.get(providerKey) ?? []) {
@@ -409,6 +483,21 @@ function propagateBlockedDependencies(input: {
 			blockedQueue.push(edge.consumerKey)
 		}
 	}
+}
+
+function addDependencyDesired(
+	input: {
+		desired: Map<string, PluginNodeAddress>
+		activationReasons: Map<string, PluginActivationReason>
+	},
+	desiredQueue: string[],
+	provider: PluginNodeAddress,
+): void {
+	const providerKey = pluginNodeIndexKey(provider)
+	if (input.desired.has(providerKey)) return
+	input.desired.set(providerKey, provider)
+	input.activationReasons.set(providerKey, 'dependency')
+	desiredQueue.push(providerKey)
 }
 
 function blockMissingProvider(
@@ -470,33 +559,41 @@ function candidateNodes(
 function resolveProviderDefaults(input: {
 	catalog: PluginRouteCatalogSnapshot
 	state: RuntimeStateSnapshot
-	enabled: ReadonlyMap<string, PluginNodeAddress>
 	durableForks: ReadonlySet<string>
 	issues: PluginReconciliationIssue[]
 	issueKeys: Set<string>
 }): {
+	selected: Map<string, { token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 	effective: Map<string, { token: PluginDefinitionAddress; provider: PluginNodeAddress }>
+	invalid: Map<string, PluginReconciliationIssue>
 	inferred: Array<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 } {
+	const selectedBindings = new Map<
+		string,
+		{ token: PluginDefinitionAddress; provider: PluginNodeAddress }
+	>()
 	const effective = new Map<
 		string,
 		{ token: PluginDefinitionAddress; provider: PluginNodeAddress }
 	>()
+	const invalid = new Map<string, PluginReconciliationIssue>()
 	const inferred: Array<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }> = []
 	const explicit = new Set<string>()
 	for (const binding of input.state.providerDefaults) {
 		const key = pluginDefinitionIndexKey(binding.token)
 		explicit.add(key)
+		selectedBindings.set(key, { token: binding.token, provider: binding.provider })
 		const issue = validateProvider({
 			catalog: input.catalog,
-			enabled: input.enabled,
 			durableForks: input.durableForks,
 			binding: 'provider-default',
 			requirement: binding.token,
 			provider: binding.provider,
 		})
-		if (issue) addIssue(input.issues, input.issueKeys, issue)
-		else effective.set(key, { token: binding.token, provider: binding.provider })
+		if (issue) {
+			addIssue(input.issues, input.issueKeys, issue)
+			invalid.set(key, issue)
+		} else effective.set(key, { token: binding.token, provider: binding.provider })
 	}
 
 	const candidates = new Map<
@@ -507,7 +604,6 @@ function resolveProviderDefaults(input: {
 		const token = entry.candidate.declaration.provides
 		if (!token) continue
 		const provider: PluginNodeAddress = { definition: entry.address, variant: 'default' }
-		if (!input.enabled.has(pluginNodeIndexKey(provider))) continue
 		const key = pluginDefinitionIndexKey(token)
 		const list = candidates.get(key) ?? []
 		list.push({ token, provider })
@@ -520,15 +616,15 @@ function resolveProviderDefaults(input: {
 		)
 		const selected = list[0]
 		if (!selected) continue
+		selectedBindings.set(key, selected)
 		effective.set(key, selected)
 		inferred.push(selected)
 	}
-	return { effective, inferred }
+	return { selected: selectedBindings, effective, invalid, inferred }
 }
 
 function validateProvider(input: {
 	catalog: PluginRouteCatalogSnapshot
-	enabled: ReadonlyMap<string, PluginNodeAddress>
 	durableForks: ReadonlySet<string>
 	binding: 'provider-default' | 'dependency-override'
 	consumer?: PluginNodeAddress
@@ -577,18 +673,11 @@ function validateProvider(input: {
 			'Provider does not implement the required Plugin definition',
 		)
 	}
-	if (!input.enabled.has(pluginNodeIndexKey(input.provider))) {
-		return bindingIssue('provider_disabled', input, 'Explicit provider is disabled')
-	}
 	return undefined
 }
 
 function bindingIssue(
-	kind:
-		| 'provider_unavailable'
-		| 'provider_disabled'
-		| 'provider_incompatible'
-		| 'explicit_binding_invalid',
+	kind: 'provider_unavailable' | 'provider_incompatible' | 'explicit_binding_invalid',
 	input: {
 		binding: 'provider-default' | 'dependency-override'
 		consumer?: PluginNodeAddress

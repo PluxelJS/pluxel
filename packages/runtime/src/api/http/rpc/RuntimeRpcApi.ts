@@ -17,15 +17,15 @@ import {
 	pluginConfigPresentation,
 } from '../../usecases/pluginConfig'
 import {
-	inspectPluginBaseProvider,
-	inspectPluginDependencies,
-	listPluginDependencies,
-	pluginBaseProviderSet,
-	pluginDependencySetTarget,
+	inspectPluginConsumerRequirements,
+	inspectPluginProviderPolicy,
 	PluginNodeUnavailableError,
+	setPluginConsumerOverride as applyPluginConsumerOverride,
+	setPluginProviderPolicyDefault as applyPluginProviderPolicyDefault,
 } from '../../usecases/pluginDependencies'
+import { pluginDependencyGraph } from '../../usecases/pluginDependencyGraph'
 import { ensureFork, removeFork } from '../../usecases/pluginForks'
-import { applyStatusActions } from '../../usecases/pluginStatus'
+import { applyLifecycleCommands, setAutoStart } from '../../usecases/pluginStatus'
 import {
 	pluginStatus as readPluginStatus,
 	pluginsList as readPluginsList,
@@ -35,16 +35,17 @@ import { LoggingHandle } from './LoggingHandle'
 import { AgentToolsHandle } from './AgentToolsHandle'
 import { requireWorkbench } from '../../../services/workbench'
 import type {
-	BaseProviderInspectionResult,
 	ConfigResult,
 	EnsureForkResult,
 	RemoveForkResult,
-	PluginDependencyInspectionResult,
-	PluginDependencyListResult,
+	PluginConsumerRequirementsInspectionResult,
+	PluginDependencyGraphSnapshot,
 	PluginDependencyMutationResult,
+	PluginProviderPolicyInspectionResult,
 	PluginGroup,
 	PluginGroupInput,
 	PluginGroupsMutationResult,
+	PluginControlBatchResult,
 	PluginStatusQueryResult,
 	PluginsListOutput,
 } from '../../../web/protocol'
@@ -63,7 +64,7 @@ export class RuntimeRpcApi extends RpcTarget {
 	}
 
 	async pluginsList(): Promise<PluginsListOutput> {
-		return readPluginsList(this.ctx)
+		return await readPluginsList(this.ctx)
 	}
 
 	async pluginStatus(owner: unknown): Promise<PluginStatusQueryResult> {
@@ -76,7 +77,7 @@ export class RuntimeRpcApi extends RpcTarget {
 				error: 'Invalid Plugin node address',
 			}
 		}
-		return { ok: true, value: readPluginStatus(this.ctx, address) }
+		return { ok: true, value: await readPluginStatus(this.ctx, address) }
 	}
 
 	async pluginGroups(): Promise<readonly PluginGroup[]> {
@@ -165,27 +166,23 @@ export class RuntimeRpcApi extends RpcTarget {
 		return await pluginConfigPatchField(this.ctx, address, input)
 	}
 
-	async pluginDependencies(owner: unknown): Promise<PluginDependencyListResult> {
-		const address = parseRpcNode(owner)
+	async pluginDependencyGraph(): Promise<PluginDependencyGraphSnapshot> {
+		return await pluginDependencyGraph(this.ctx)
+	}
+
+	async inspectPluginConsumerRequirements(
+		consumer: unknown,
+	): Promise<PluginConsumerRequirementsInspectionResult> {
+		const address = parseRpcNode(consumer)
 		if (!address) return invalidDependencyInput('Invalid Plugin node address')
 		try {
-			return { ok: true, items: listPluginDependencies(this.ctx, address) }
+			return { ok: true, items: inspectPluginConsumerRequirements(this.ctx, address) }
 		} catch (error) {
-			return unavailableDependencyQuery(error)
+			return unavailableConsumerRequirementsQuery(error)
 		}
 	}
 
-	async inspectPluginDependencies(owner: unknown): Promise<PluginDependencyInspectionResult> {
-		const address = parseRpcNode(owner)
-		if (!address) return invalidDependencyInput('Invalid Plugin node address')
-		try {
-			return { ok: true, items: inspectPluginDependencies(this.ctx, address) }
-		} catch (error) {
-			return unavailableDependencyQuery(error)
-		}
-	}
-
-	async setPluginDependencyTarget(input: unknown): Promise<PluginDependencyMutationResult> {
+	async setPluginConsumerOverride(input: unknown): Promise<PluginDependencyMutationResult> {
 		const record = readRpcRecord(input)
 		const consumer = parseRpcNode(record?.consumer)
 		const requirement = parseRpcDefinition(record?.requirement)
@@ -197,30 +194,36 @@ export class RuntimeRpcApi extends RpcTarget {
 			!requirement ||
 			!provider.ok
 		) {
-			return invalidDependencyInput('Invalid dependency target input')
+			return invalidDependencyInput('Invalid consumer override input')
 		}
-		return await pluginDependencySetTarget(this.ctx, consumer, requirement, provider.value)
+		return await applyPluginConsumerOverride(this.ctx, consumer, requirement, provider.value)
 	}
 
-	async inspectPluginBaseProvider(owner: unknown): Promise<BaseProviderInspectionResult> {
-		const address = parseRpcNode(owner)
+	async inspectPluginProviderPolicy(
+		policyOwner: unknown,
+	): Promise<PluginProviderPolicyInspectionResult> {
+		const address = parseRpcNode(policyOwner)
 		if (!address) return invalidDependencyInput('Invalid Plugin node address')
 		try {
-			return { ok: true, value: inspectPluginBaseProvider(this.ctx, address) }
+			return { ok: true, value: inspectPluginProviderPolicy(this.ctx, address) }
 		} catch (error) {
-			return unavailableDependencyQuery(error)
+			return unavailableProviderPolicyQuery(error)
 		}
 	}
 
-	async selectPluginBaseProvider(input: unknown): Promise<PluginDependencyMutationResult> {
+	async setPluginProviderPolicyDefault(input: unknown): Promise<PluginDependencyMutationResult> {
 		const record = readRpcRecord(input)
-		const consumer = parseRpcNode(record?.consumer)
-		const token = parseRpcDefinition(record?.token)
+		const policyOwner = parseRpcNode(record?.policyOwner)
 		const provider = parseRpcNullableNode(record?.provider)
-		if (!record || !consumer || !token || !provider.ok) {
-			return invalidDependencyInput('Invalid base provider input')
+		if (
+			!record ||
+			!hasExactKeys(record, ['policyOwner', 'provider']) ||
+			!policyOwner ||
+			!provider.ok
+		) {
+			return invalidDependencyInput('Invalid provider policy input')
 		}
-		return await pluginBaseProviderSet(this.ctx, consumer, token, provider.value)
+		return await applyPluginProviderPolicyDefault(this.ctx, policyOwner, provider.value)
 	}
 
 	async ensurePluginFork(input: unknown): Promise<EnsureForkResult> {
@@ -229,9 +232,10 @@ export class RuntimeRpcApi extends RpcTarget {
 		const selectFor = parseRpcForkSelection(record?.selectFor)
 		if (
 			!record ||
+			!hasOnlyKeys(record, ['base', 'forkId', 'autoStart', 'selectFor']) ||
 			!base ||
 			typeof record.forkId !== 'string' ||
-			(record.enable !== undefined && typeof record.enable !== 'boolean') ||
+			(record.autoStart !== undefined && typeof record.autoStart !== 'boolean') ||
 			!selectFor.ok
 		) {
 			return {
@@ -242,25 +246,16 @@ export class RuntimeRpcApi extends RpcTarget {
 			}
 		}
 		const result = await ensureFork(this.ctx, base, record.forkId, {
-			enable: record.enable as boolean | undefined,
+			autoStart: record.autoStart as boolean | undefined,
 			...(selectFor.value === undefined ? {} : { selectFor: selectFor.value }),
 		})
 		if (result.ok === true) {
-			const report = projectPluginApplyReport(this.ctx, result.report)
-			return result.status === 'saved-not-applied'
-				? {
-						ok: true,
-						status: result.status,
-						fork: parsePluginNodeAddress(result.node),
-						report,
-						applicationFailure: result.applicationFailure,
-					}
-				: {
-						ok: true,
-						status: result.status,
-						fork: parsePluginNodeAddress(result.node),
-						report,
-					}
+			return {
+				ok: true,
+				status: result.status,
+				fork: parsePluginNodeAddress(result.node),
+				report: projectPluginApplyReport(this.ctx, result.report),
+			}
 		}
 		if (result.code === 'persistence_failed') {
 			return {
@@ -281,7 +276,12 @@ export class RuntimeRpcApi extends RpcTarget {
 	async removePluginFork(input: unknown): Promise<RemoveForkResult> {
 		const record = readRpcRecord(input)
 		const base = parseRpcNode(record?.base)
-		if (!record || !base || typeof record.forkId !== 'string') {
+		if (
+			!record ||
+			!hasExactKeys(record, ['base', 'forkId']) ||
+			!base ||
+			typeof record.forkId !== 'string'
+		) {
 			return {
 				ok: false,
 				code: 'invalid_input',
@@ -339,8 +339,12 @@ export class RuntimeRpcApi extends RpcTarget {
 		}
 	}
 
-	async applyPluginStatusActions(actions: unknown) {
-		return await applyStatusActions(this.ctx, actions)
+	async setPluginAutoStart(items: unknown): Promise<PluginControlBatchResult> {
+		return await setAutoStart(this.ctx, items)
+	}
+
+	async applyPluginLifecycleCommands(items: unknown): Promise<PluginControlBatchResult> {
+		return await applyLifecycleCommands(this.ctx, items)
 	}
 }
 
@@ -403,6 +407,10 @@ function hasExactKeys(record: Record<string, unknown>, expected: readonly string
 	return keys.length === expected.length && expected.every((key) => Object.hasOwn(record, key))
 }
 
+function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+	return Object.keys(record).every((key) => allowed.includes(key))
+}
+
 function boundedRpcText(input: unknown): string | undefined {
 	if (typeof input !== 'string') return undefined
 	const value = input.trim()
@@ -446,7 +454,9 @@ function parseRpcForkSelection(input: unknown):
 	const record = readRpcRecord(input)
 	const consumer = parseRpcNode(record?.consumer)
 	const requirement = parseRpcDefinition(record?.requirement)
-	if (!record || !consumer || !requirement) return { ok: false }
+	if (!record || !hasExactKeys(record, ['consumer', 'requirement']) || !consumer || !requirement) {
+		return { ok: false }
+	}
 	return {
 		ok: true,
 		value: Object.freeze({ consumer, requirement }),
@@ -466,7 +476,7 @@ function invalidDependencyInput(message: string): {
 	return { ok: false, code: 'invalid_input', state: 'unchanged', error: message }
 }
 
-function unavailableDependencyQuery(error: unknown): {
+function unavailableConsumerRequirementsQuery(error: unknown): {
 	ok: false
 	code: 'consumer_unavailable'
 	state: 'unchanged'
@@ -476,6 +486,23 @@ function unavailableDependencyQuery(error: unknown): {
 		return {
 			ok: false,
 			code: 'consumer_unavailable',
+			state: 'unchanged',
+			error: error.message,
+		}
+	}
+	throw error
+}
+
+function unavailableProviderPolicyQuery(error: unknown): {
+	ok: false
+	code: 'provider_policy_unavailable'
+	state: 'unchanged'
+	error: string
+} {
+	if (error instanceof PluginNodeUnavailableError) {
+		return {
+			ok: false,
+			code: 'provider_policy_unavailable',
 			state: 'unchanged',
 			error: error.message,
 		}

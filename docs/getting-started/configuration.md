@@ -269,7 +269,7 @@ host.cfg(WorkerPlugin).set({
 	endpoint: 'https://api.example.com',
 	concurrency: 8,
 })
-host.cfg(WorkerPlugin).enable()
+host.start(WorkerPlugin)
 await host.commit()
 ```
 

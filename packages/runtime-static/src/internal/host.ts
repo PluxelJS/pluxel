@@ -11,9 +11,9 @@ import {
 	createPluginRouteCatalogSnapshot,
 	installRuntimePluginGraphCoordinator,
 	installRuntimeRouteCapabilities,
+	readRuntimePluginStatusOverview,
 	requireRuntimeHttpService,
 	requireRuntimeStateStore,
-	runtimePluginStatusOverview,
 	type ElysiaCarrierRequestAddress,
 	type PluginApplyReport,
 	type RuntimeRouteCapabilities,
@@ -155,10 +155,10 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 
 	private async startExclusive(): Promise<StaticRuntimeStartupReport> {
-		if (this.started) return this.report ?? this.currentReport()
+		if (this.started) return this.report ?? (await this.currentReport())
 		const applied = await this.coordinator.reconcileStartup(this.startupCatalog)
 		this.started = true
-		this.report = this.currentReport(applied)
+		this.report = await this.currentReport(applied)
 		return this.report
 	}
 
@@ -213,7 +213,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		})
 		this.runtimeName = definition.name
 		this.started = true
-		const base = this.currentReport(applied, diff.removed)
+		const base = await this.currentReport(applied, diff.removed)
 		const report: StaticRuntimeHmrReport = {
 			...base,
 			added: diff.added,
@@ -233,45 +233,46 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		return result
 	}
 
-	private currentReport(
+	private async currentReport(
 		applied?: PluginApplyReport<CommitSummary>,
 		removed: readonly PluginNodeAddress[] = [],
-	): StaticRuntimeStartupReport {
+	): Promise<StaticRuntimeStartupReport> {
 		const issues = applied?.reconciliation ?? []
 		const lifecycleIssues =
 			applied?.core.status === 'committed' ? applied.core.summary.lifecycleReport.issues : []
 		const registry = requirePluginService(this.ctx)
 		const removedKeys = new Set(removed.map((address) => formatPluginNodeReference(address)))
 		const reportedRemoved = new Set<string>()
-		const entries: StaticRuntimeReportEntry[] = runtimePluginStatusOverview(this.ctx).statuses.map(
-			(status) => {
-				const reference = formatPluginNodeReference(status.address)
-				if (removedKeys.has(reference)) {
-					reportedRemoved.add(reference)
-					return {
-						address: status.address,
-						displayName: status.displayName,
-						rootExportName: status.rootExportName,
-						status: 'catalog-drift',
-						message: 'Plugin was removed from the static catalog',
-					}
-				}
-				const issue = issues.find(
-					(candidate) =>
-						'consumer' in candidate && pluginNodeAddressEqual(candidate.consumer, status.address),
-				)
-				const lifecycleIssue = lifecycleIssues.find((candidate) =>
-					pluginNodeAddressEqual(registry.nodeAddressOf(candidate.plugin), status.address),
-				)
-				const entry: StaticRuntimeReportEntry = {
+		const overview = await readRuntimePluginStatusOverview(this.ctx)
+		const entries: StaticRuntimeReportEntry[] = overview.statuses.map((status) => {
+			const reference = formatPluginNodeReference(status.address)
+			if (removedKeys.has(reference)) {
+				reportedRemoved.add(reference)
+				return {
 					address: status.address,
 					displayName: status.displayName,
 					rootExportName: status.rootExportName,
-					status: !status.isEnabled
-						? 'disabled'
+					status: 'catalog-drift',
+					message: 'Plugin was removed from the static catalog',
+				}
+			}
+			const issue = issues.find(
+				(candidate) =>
+					'consumer' in candidate && pluginNodeAddressEqual(candidate.consumer, status.address),
+			)
+			const lifecycleIssue = lifecycleIssues.find((candidate) =>
+				pluginNodeAddressEqual(registry.nodeAddressOf(candidate.plugin), status.address),
+			)
+			const entry: StaticRuntimeReportEntry = {
+				address: status.address,
+				displayName: status.displayName,
+				rootExportName: status.rootExportName,
+				status:
+					status.desiredState === 'stopped'
+						? 'stopped'
 						: status.availability === 'unavailable'
 							? 'unavailable'
-							: status.isRunning
+							: status.lifecycleState === 'running'
 								? 'started'
 								: issue?.kind === 'missing_required_provider'
 									? 'dependency-missing'
@@ -280,20 +281,19 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 										: lifecycleIssue?.kind === 'dependency-blocked'
 											? 'dependency-failed'
 											: 'start-failed',
-				}
-				if (issue) return Object.assign(entry, { message: issue.message })
-				if (lifecycleIssue) {
-					return Object.assign(entry, {
-						message: lifecycleIssue.error?.message ?? lifecycleIssue.message,
-					})
-				}
-				return entry
-			},
-		)
+			}
+			if (issue) return Object.assign(entry, { message: issue.message })
+			if (lifecycleIssue) {
+				return Object.assign(entry, {
+					message: lifecycleIssue.error?.message ?? lifecycleIssue.message,
+				})
+			}
+			return entry
+		})
 		const unknown = collectUnknownConfigEntries(
 			readConfigSnapshot(requireConfigService(this.ctx)),
 			this.coordinator.catalogSnapshot(),
-			requireRuntimeStateStore(this.ctx).snapshot().enabled,
+			overview.statuses.map((status) => status.address),
 		)
 		for (const address of unknown) {
 			if (removed.some((candidate) => pluginNodeAddressEqual(candidate, address))) continue

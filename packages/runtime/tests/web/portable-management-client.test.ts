@@ -21,6 +21,7 @@ const metadata = {
 			'plugins.status',
 			'plugins.lifecycle',
 			'plugins.config',
+			'plugins.dependencies',
 			'plugin-groups',
 		],
 	},
@@ -41,9 +42,11 @@ const pluginSnapshot = {
 	displayName: 'Portable plugin',
 	label: { title: 'Portable plugin', text: 'Portable plugin' },
 	rootExportName: 'PortablePlugin',
-	isRunning: false,
-	isEnabled: true,
-	lifecycleStage: 'stopped',
+	autoStart: true,
+	sessionIntent: 'inherit',
+	desiredState: 'running',
+	activationReason: 'auto-start',
+	lifecycleState: 'stopped',
 	availability: 'available',
 	issues: [],
 	source: {
@@ -94,10 +97,21 @@ describe('portable runtime management client', () => {
 				},
 			],
 		}
+		const ensureForkResult = {
+			ok: true,
+			status: 'deferred',
+			fork: address,
+			report: {
+				catalogRevision: 1,
+				runtimeStateRevision: 1,
+				reconciliation: [],
+				core: { status: 'unchanged' },
+			},
+		} as const
 		const rpc = {
 			pluginsList: vi.fn(async () => ({
 				plugins: [pluginSnapshot],
-				summary: { total: 1, running: 0, stopped: 1, disabled: 0 },
+				summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 			})),
 			pluginStatus: vi.fn(async () => ({
 				ok: false,
@@ -105,7 +119,10 @@ describe('portable runtime management client', () => {
 				state: 'unchanged',
 				error: 'Invalid Plugin node address',
 			})),
-			applyPluginStatusActions: vi.fn(async () =>
+			setPluginAutoStart: vi.fn(async () =>
+				Object.assign({ ...statusFailure }, { [Symbol.dispose]: disposeStatusResult }),
+			),
+			applyPluginLifecycleCommands: vi.fn(async () =>
 				Object.assign({ ...statusFailure }, { [Symbol.dispose]: disposeStatusResult }),
 			),
 			pluginGroups: vi.fn(async () => [
@@ -140,6 +157,11 @@ describe('portable runtime management client', () => {
 				config: { mode: 'safe' },
 				defaults: { mode: 'safe' },
 			})),
+			pluginDependencyGraph: vi.fn(async () => ({
+				nodes: [{ status: pluginSnapshot, effective: true }],
+				edges: [],
+			})),
+			ensurePluginFork: vi.fn(async () => ensureForkResult),
 			[Symbol.dispose]: vi.fn(),
 		}
 		vi.doMock('capnweb', () => ({
@@ -172,13 +194,16 @@ describe('portable runtime management client', () => {
 		const client = web.createRuntimeManagementClient(options)
 		expect(Object.isFrozen(client)).toBe(true)
 		expect(Object.isFrozen(client.plugins)).toBe(true)
+		expect(Object.isFrozen(client.dependencies)).toBe(true)
+		expect(client.dependencies).not.toHaveProperty('list')
+		expect(Object.isFrozen(client.forks)).toBe(true)
 		expect(Object.isFrozen(client.logs)).toBe(true)
 		expect(Object.isFrozen(client.security)).toBe(true)
 		expect(Object.isFrozen(client.security.vault)).toBe(true)
 		expect(await client.discover()).toEqual(discovery)
 		expect(await client.plugins.list()).toEqual({
 			plugins: [pluginSnapshot],
-			summary: { total: 1, running: 0, stopped: 1, disabled: 0 },
+			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
 		expect(await client.groups.list()).toEqual([
 			expect.objectContaining({ groupId: 'fixture', name: 'Fixture group' }),
@@ -201,15 +226,34 @@ describe('portable runtime management client', () => {
 		expect(Object.isFrozen(presentation.plan)).toBe(true)
 		expect(Object.isFrozen(presentation.plan.fields)).toBe(true)
 
+		const graph = await client.dependencies.graph()
+		expect(graph).toEqual({
+			nodes: [{ status: pluginSnapshot, effective: true }],
+			edges: [],
+		})
+		expect(Object.isFrozen(graph)).toBe(true)
+		expect(Object.isFrozen(graph.nodes[0]!.status)).toBe(true)
+
 		await expect(client.plugins.status(address)).resolves.toEqual({
 			ok: false,
 			code: 'invalid_input',
 			state: 'unchanged',
 			error: 'Invalid Plugin node address',
 		})
+		await expect(client.plugins.setAutoStart([{ address, autoStart: false }])).resolves.toEqual(
+			statusFailure,
+		)
 		await expect(
-			client.plugins.applyStatusActions([{ address, action: 'disable' }]),
+			client.plugins.applyLifecycleCommands([{ address, command: 'stop' }]),
 		).resolves.toEqual(statusFailure)
-		expect(disposeStatusResult).toHaveBeenCalledOnce()
+		await expect(
+			client.forks.ensure({ base: address, forkId: 'fixture-fork', autoStart: true }),
+		).resolves.toEqual(ensureForkResult)
+		expect(rpc.ensurePluginFork).toHaveBeenCalledWith({
+			base: address,
+			forkId: 'fixture-fork',
+			autoStart: true,
+		})
+		expect(disposeStatusResult).toHaveBeenCalledTimes(2)
 	})
 })

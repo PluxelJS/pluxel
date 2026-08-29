@@ -51,9 +51,9 @@ class RedisRatesConsumer extends BasePlugin {
 	}
 }
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
 const policies = [
@@ -72,7 +72,7 @@ describe('@pluxel/redis rates backend', () => {
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		await withRuntimeHost(async (host) => {
-			addEnabled(host, [
+			addStarted(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
 				RatesPlugin,
@@ -116,7 +116,7 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
 		await withRuntimeHost(async (host) => {
-			addEnabled(host, [
+			addStarted(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
 				RatesPlugin,
@@ -142,7 +142,7 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
 		await withRuntimeHost(async (host) => {
-			addEnabled(host, [
+			addStarted(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
 				RatesPlugin,

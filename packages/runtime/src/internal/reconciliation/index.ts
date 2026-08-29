@@ -12,13 +12,17 @@ export {
 export {
 	PluginGraphRejectedError,
 	PluginRestartUnavailableError,
+	PluginStartUnavailableError,
 	RuntimePluginGraphCoordinator,
 	RuntimeStatePersistenceError,
 	type CorePluginGraphDriver,
+	type CorePluginDependencyAdjacency,
+	type CorePluginDependencyAdjacencyEdge,
 	type CorePluginPreparedUpdate,
 	type CorePluginUpdateDraft,
 	type PluginApplyReport,
 	type RuntimePluginGraphUpdate,
+	type RuntimePluginGraphCommittedView,
 	type RuntimePluginGraphExclusiveSession,
 	type RuntimeStateCoordinatorStore,
 } from './coordinator'
@@ -36,8 +40,12 @@ export {
 	reconcilePluginGraph,
 	type AppliedPluginGraphSnapshot,
 	type CorePluginOperation,
+	type PluginActivationReason,
 	type PluginReconciliationIssue,
+	type PluginSessionIntent,
 	type ReconciliationPlan,
+	type RuntimePluginDesiredControl,
+	type RuntimePluginSessionEntry,
 } from './reconcile'
 export {
 	appendRuntimeStatePatch,

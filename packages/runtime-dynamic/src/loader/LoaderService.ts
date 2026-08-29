@@ -18,9 +18,7 @@ import {
 	LoaderBatchSession,
 	LoaderControl,
 	LoaderRegistryView,
-	PluginDependencyInspector,
 	PluginStatusReporter,
-	RuntimeResolver,
 } from './support'
 
 export type { ReplaceModuleResult } from './module-replacer'
@@ -32,11 +30,8 @@ export class LoaderService {
 
 	constructor(public readonly ctx: PluxelContext) {
 		installRuntimePluginGraphCoordinator(this.ctx)
-		const runtime = new RuntimeResolver(this.ctx)
 		this.api = {
-			runtime,
 			status: new PluginStatusReporter(this.ctx),
-			deps: new PluginDependencyInspector(this.ctx),
 			registry: new LoaderRegistryView(this.ctx),
 			anchors: new LoaderAnchors(this.ctx),
 			control: new LoaderControl(this.ctx),

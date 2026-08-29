@@ -109,7 +109,7 @@ function admitRuntimeStateMutation(
 }
 
 type AdmissionState = {
-	enabled: Map<string, PluginNodeAddress>
+	autoStart: Map<string, PluginNodeAddress>
 	forks: Map<string, { definition: PluginDefinitionAddress; forkIds: Set<string> }>
 	providerDefaults: Map<string, RuntimeProviderDefaultState>
 	dependencyOverrides: Map<string, RuntimeDependencyOverrideState>
@@ -119,7 +119,7 @@ type AdmissionState = {
 
 function createAdmissionState(snapshot: RuntimeStateSnapshot): AdmissionState {
 	const state: AdmissionState = {
-		enabled: new Map(snapshot.enabled.map((node) => [pluginNodeIndexKey(node), node])),
+		autoStart: new Map(snapshot.autoStart.map((node) => [pluginNodeIndexKey(node), node])),
 		forks: new Map(
 			snapshot.forks.map((entry) => [
 				pluginDefinitionIndexKey(entry.definition),
@@ -139,7 +139,7 @@ function createAdmissionState(snapshot: RuntimeStateSnapshot): AdmissionState {
 
 function snapshotAdmissionState(state: AdmissionState): RuntimeStateSnapshot {
 	return freezeTrustedRuntimeStateSnapshot({
-		enabled: [...state.enabled.values()],
+		autoStart: [...state.autoStart.values()],
 		forks: [...state.forks.values()].map((entry) => ({
 			definition: entry.definition,
 			forkIds: [...entry.forkIds],
@@ -155,20 +155,20 @@ function validateOperation(
 	operation: RuntimeStatePatchOperation,
 ): void {
 	switch (operation.type) {
-		case 'set-enabled': {
+		case 'set-auto-start': {
 			const key = pluginNodeIndexKey(operation.node)
-			if (!operation.enabled) {
-				state.enabled.delete(key)
+			if (!operation.autoStart) {
+				state.autoStart.delete(key)
 				return
 			}
-			if (state.enabled.has(key)) return
+			if (state.autoStart.has(key)) return
 			// A durable fork remains valid desired intent while its catalog route is temporarily absent.
 			if (operation.node.variant === 'fork' && isDurableFork(state, operation.node)) {
-				state.enabled.set(key, operation.node)
+				state.autoStart.set(key, operation.node)
 				return
 			}
 			requireAvailableNode(catalog, state, operation.node, 'node_unavailable')
-			state.enabled.set(key, operation.node)
+			state.autoStart.set(key, operation.node)
 			return
 		}
 		case 'ensure-fork': {
@@ -321,7 +321,7 @@ function validateOperation(
 			return
 		}
 		case 'remove-node-policy': {
-			state.enabled.delete(pluginNodeIndexKey(operation.node))
+			state.autoStart.delete(pluginNodeIndexKey(operation.node))
 			for (const key of state.overridesByConsumer.get(pluginNodeIndexKey(operation.node)) ?? []) {
 				removeOverride(state, key)
 			}

@@ -48,4 +48,4 @@ The host proves that the same plugin API can run under dynamic HMR and static fi
 semantics.
 
 Capability-specific demos that need local state, such as `PluginVaultDemo`, stay in `src/demo` for
-discovery/manual enablement but are not part of the default enabled set.
+discovery/manual loader-profile source selection but are not part of the profile's default source set.

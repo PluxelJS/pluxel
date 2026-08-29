@@ -25,7 +25,7 @@ export default defineDynamicRuntimeConfig({
 		},
 	],
 	runtimeState: {
-		snapshot: { enabled: [pluginNodeAddressOf(PackageManagerPlugin)] },
+		snapshot: { autoStart: [pluginNodeAddressOf(PackageManagerPlugin)] },
 	},
 	workbench: { enabled: true },
 })
@@ -34,7 +34,7 @@ export default defineDynamicRuntimeConfig({
 三处配置缺一不可：
 
 1. `plugins` 把 Package Manager 放进 fixed catalog；
-2. `runtimeState` 显式启用它；
+2. `runtimeState` 显式让它随宿主自动启动；
 3. `sources` 声明它被允许生产的 directory source。
 
 source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或挂载 UI 之前验证该声明；static host 会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
@@ -90,7 +90,7 @@ interface PackageManagerCommands {
 
 Snapshot 包含 revision、engine、managed root、entries directory、packages 和检测到的 build-script dependencies。Workbench 路由由 catalog node address 生成，消费者不应拼接 Plugin class name URL。headless dynamic host 仍可使用 commands；Workbench disabled 时不会创建相关 UI backend。
 
-## 安装和启用不是同一动作
+## 安装和运行策略不是同一动作
 
 ```text
 package.install
@@ -102,7 +102,8 @@ package.install
   -> 正常 catalog/RuntimeState/依赖图 commit
 ```
 
-安装成功只表示 source 已发布，不会绕过 RuntimeState 自动启动新 Plugin。删除时先让 pnpm prune managed graph，再删除 entry；source batch 随后按正常 lifecycle 卸载 module。mutation 被串行化，一批 specs 只执行一次 native install。
+安装成功只表示 source 已发布，不会替新 Plugin 打开 RuntimeState auto-start policy，也不会创建 process session start intent。删除时先让 pnpm
+prune managed graph，再删除 entry；source batch 随后按正常 lifecycle 卸载 module。mutation 被串行化，一批 specs 只执行一次 native install。
 
 受管目录结构是：
 

@@ -13,7 +13,7 @@ Core-side test surface for Pluxel plugin semantics:
 - A minimal core Host/Context API for integration/unit tests
 - An opinionated Vitest preset (optional)
 
-Runtime/HMR tests that need loader, config enabled bits, HTTP, vault, or runtime services should use
+Runtime/HMR tests that need auto-start policy, session lifecycle commands, HTTP, vault, or runtime services should use
 `@pluxel/runtime/test`. This package intentionally does not register runtime services by default.
 The Host API is backed by `@pluxel/core/test`, so core lifecycle semantics have one shared
 implementation across test packages.
@@ -69,11 +69,11 @@ runtime host.
 ```ts
 host.cfg(P).set({ answer: 42 })
 host.cfg(P).unset('answer')
-host.cfg(P).enable()
 ```
 
 Config test handles take a Plugin constructor/address, never a display name. Plugin/PluginPart class each
 declare at most one `this.configs.use(ObjectSchema)` field; Part paths still belong to the owning Plugin record.
+Core graph membership is controlled by `add/remove/commit`, not by config handles.
 
 ### Forks
 

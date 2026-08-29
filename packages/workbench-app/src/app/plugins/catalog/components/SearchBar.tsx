@@ -1,6 +1,6 @@
 import { ActionIcon, Group, TextInput } from '@mantine/core'
 import {
-	IconBan,
+	IconAlertTriangle,
 	IconFilterOff,
 	IconPlayerPlay,
 	IconPlayerStop,
@@ -65,22 +65,22 @@ export function SearchBar({
 				variant={statusFilter.stopped ? 'filled' : 'subtle'}
 				color={statusFilter.stopped ? 'gray' : undefined}
 				onClick={() => onToggleStatus('stopped')}
-				title="停止 (Alt+2)"
-				aria-label="停止"
+				title="筛选已停止 (Alt+2)"
+				aria-label="筛选已停止"
 				aria-pressed={statusFilter.stopped}
 			>
 				<IconPlayerStop size={12} />
 			</ActionIcon>
 			<ActionIcon
 				size="sm"
-				variant={statusFilter.disabled ? 'filled' : 'subtle'}
-				color={statusFilter.disabled ? 'red' : undefined}
-				onClick={() => onToggleStatus('disabled')}
-				title="禁用 (Alt+3)"
-				aria-label="禁用"
-				aria-pressed={statusFilter.disabled}
+				variant={statusFilter.unavailable ? 'filled' : 'subtle'}
+				color={statusFilter.unavailable ? 'red' : undefined}
+				onClick={() => onToggleStatus('unavailable')}
+				title="不可用 (Alt+3)"
+				aria-label="不可用"
+				aria-pressed={statusFilter.unavailable}
 			>
-				<IconBan size={12} />
+				<IconAlertTriangle size={12} />
 			</ActionIcon>
 		</Group>
 	)

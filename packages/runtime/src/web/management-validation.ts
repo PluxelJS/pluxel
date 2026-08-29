@@ -1,6 +1,10 @@
 import {
+	comparePluginDefinitionAddress,
+	comparePluginNodeAddress,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
+	pluginDefinitionIndexKey,
+	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
@@ -20,8 +24,6 @@ import type {
 } from './security'
 import type { LogRangeResult, LogStreamMeta, RuntimeLogError, RuntimeLogLine } from './logs'
 import type {
-	BaseProviderInfo,
-	BaseProviderInspectionResult,
 	ConfigPresentationResult,
 	ConfigResult,
 	ConfigValidationErrors,
@@ -30,22 +32,26 @@ import type {
 	PluginApplyLifecycleErrorInfo,
 	PluginApplyLifecycleIssue,
 	PluginApplyReport,
-	PluginDependencyInspectionResult,
-	PluginDependencyListResult,
+	PluginControlBatchResult,
+	PluginControlMutationFailure,
+	PluginControlMutationResult,
+	PluginControlMutationSuccess,
+	PluginControlSnapshot,
+	PluginDependencyGraphEdge,
+	PluginDependencyGraphNode,
+	PluginDependencyGraphSnapshot,
+	PluginConsumerRequirementState,
+	PluginConsumerRequirementsInspectionResult,
 	PluginDependencyMutationResult,
-	PluginDependencyOption,
-	PluginDependencyRef,
-	PluginDependencyState,
+	PluginProviderOption,
+	PluginProviderPolicyInfo,
+	PluginProviderPolicyInspectionResult,
 	PluginGroup,
 	PluginGroupsMutationResult,
 	PluginLogPolicyMutationResult,
 	PluginReconciliationIssue,
 	PluginsListOutput,
-	PluginStatusBatchResult,
 	PluginStatusIssue,
-	PluginStatusMutationFailure,
-	PluginStatusMutationResult,
-	PluginStatusMutationSuccess,
 	PluginStatusQueryResult,
 	PluginStatusSnapshot,
 	RemoveForkResult,
@@ -80,17 +86,17 @@ export function parsePluginsListOutput(input: unknown): PluginsListOutput {
 		pluginStatusSnapshot(item, `plugins list.plugins[${index}]`),
 	)
 	const summary = object(value.summary, 'plugins list.summary')
-	shape(summary, ['total', 'running', 'stopped', 'disabled'], [], 'plugins list.summary')
+	shape(summary, ['total', 'running', 'stopped', 'autoStart'], [], 'plugins list.summary')
 	const total = nonNegativeInteger(summary.total, 'plugins list.summary.total')
 	const running = nonNegativeInteger(summary.running, 'plugins list.summary.running')
 	const stopped = nonNegativeInteger(summary.stopped, 'plugins list.summary.stopped')
-	const disabled = nonNegativeInteger(summary.disabled, 'plugins list.summary.disabled')
-	if (total !== plugins.length || running + stopped + disabled !== total) {
+	const autoStart = nonNegativeInteger(summary.autoStart, 'plugins list.summary.autoStart')
+	if (total !== plugins.length || running + stopped !== total || autoStart > total) {
 		fail('plugins list.summary is inconsistent with the catalog snapshot')
 	}
 	return Object.freeze({
 		plugins: Object.freeze(plugins),
-		summary: Object.freeze({ total, running, stopped, disabled }),
+		summary: Object.freeze({ total, running, stopped, autoStart }),
 	})
 }
 
@@ -119,6 +125,58 @@ export function parsePluginStatusQueryResult(input: unknown): PluginStatusQueryR
 		})
 	}
 	fail('plugin status result.ok must be boolean')
+}
+
+/** Validate and deep-freeze the committed Plugin dependency graph snapshot. */
+export function parsePluginDependencyGraphSnapshot(input: unknown): PluginDependencyGraphSnapshot {
+	const value = rootRecord(input, 'plugin dependency graph')
+	shape(value, ['nodes', 'edges'], [], 'plugin dependency graph')
+
+	const nodes = array(value.nodes, 'plugin dependency graph.nodes').map((item, index) =>
+		pluginDependencyGraphNode(item, `plugin dependency graph.nodes[${index}]`),
+	)
+	const nodesByKey = new Map<string, PluginDependencyGraphNode>()
+	let previousNode: PluginDependencyGraphNode | undefined
+	for (const node of nodes) {
+		const key = pluginNodeIndexKey(node.status.address)
+		if (nodesByKey.has(key)) {
+			fail('plugin dependency graph.nodes contains a duplicate node address')
+		}
+		if (
+			previousNode &&
+			comparePluginNodeAddress(previousNode.status.address, node.status.address) > 0
+		) {
+			fail('plugin dependency graph.nodes must be sorted by canonical node identity')
+		}
+		nodesByKey.set(key, node)
+		previousNode = node
+	}
+
+	const edges = array(value.edges, 'plugin dependency graph.edges').map((item, index) =>
+		pluginDependencyGraphEdge(item, `plugin dependency graph.edges[${index}]`),
+	)
+	const edgeKeys = new Set<string>()
+	let previousEdge: PluginDependencyGraphEdge | undefined
+	for (const edge of edges) {
+		const key = pluginDependencyGraphEdgeKey(edge)
+		if (edgeKeys.has(key)) {
+			fail('plugin dependency graph.edges contains a duplicate consumer and requirement')
+		}
+		if (previousEdge && comparePluginDependencyGraphEdge(previousEdge, edge) > 0) {
+			fail(
+				'plugin dependency graph.edges must be sorted by canonical consumer and requirement identity',
+			)
+		}
+		edgeKeys.add(key)
+		previousEdge = edge
+		validatePluginDependencyGraphEdgeMembership(edge, nodesByKey)
+	}
+
+	validatePluginDependencyGraphDag(nodes, edges)
+	return Object.freeze({
+		nodes: Object.freeze(nodes),
+		edges: Object.freeze(edges),
+	})
 }
 
 /** Validate and deep-freeze the host-owned Plugin groups snapshot. */
@@ -192,40 +250,23 @@ export function parseConfigPresentationResult(input: unknown): ConfigPresentatio
 	})
 }
 
-/** Validate and deep-freeze a dependency list result. */
-export function parsePluginDependencyListResult(input: unknown): PluginDependencyListResult {
-	const value = rootRecord(input, 'dependency list result')
-	if (value.ok === true) {
-		shape(value, ['ok', 'items'], [], 'dependency list result')
-		return Object.freeze({
-			ok: true,
-			items: Object.freeze(
-				array(value.items, 'dependency list result.items').map((item, index) =>
-					dependencyRef(item, `dependency list result.items[${index}]`),
-				),
-			) as PluginDependencyRef[],
-		})
-	}
-	return dependencyQueryFailure(value, 'dependency list result')
-}
-
-/** Validate and deep-freeze a dependency inspection result. */
-export function parsePluginDependencyInspectionResult(
+/** Validate and deep-freeze a consumer requirement inspection result. */
+export function parsePluginConsumerRequirementsInspectionResult(
 	input: unknown,
-): PluginDependencyInspectionResult {
-	const value = rootRecord(input, 'dependency inspection result')
+): PluginConsumerRequirementsInspectionResult {
+	const value = rootRecord(input, 'consumer requirements inspection result')
 	if (value.ok === true) {
-		shape(value, ['ok', 'items'], [], 'dependency inspection result')
+		shape(value, ['ok', 'items'], [], 'consumer requirements inspection result')
 		return Object.freeze({
 			ok: true,
 			items: Object.freeze(
-				array(value.items, 'dependency inspection result.items').map((item, index) =>
-					dependencyState(item, `dependency inspection result.items[${index}]`),
+				array(value.items, 'consumer requirements inspection result.items').map((item, index) =>
+					consumerRequirementState(item, `consumer requirements inspection result.items[${index}]`),
 				),
-			) as PluginDependencyState[],
+			) as PluginConsumerRequirementState[],
 		})
 	}
-	return dependencyQueryFailure(value, 'dependency inspection result')
+	return consumerRequirementsQueryFailure(value, 'consumer requirements inspection result')
 }
 
 /** Validate and deep-freeze a dependency/provider mutation result. */
@@ -255,6 +296,7 @@ export function parsePluginDependencyMutationResult(
 			'provider_incompatible',
 			'fork_default_forbidden',
 			'provider_default_requires_abstract',
+			'provider_policy_unavailable',
 			'graph_rejected',
 			'persistence_failed',
 		],
@@ -273,69 +315,45 @@ export function parsePluginDependencyMutationResult(
 	}) as PluginDependencyMutationResult
 }
 
-/** Validate and deep-freeze a base-provider inspection result. */
-export function parseBaseProviderInspectionResult(input: unknown): BaseProviderInspectionResult {
-	const value = rootRecord(input, 'base provider inspection result')
+/** Validate and deep-freeze a provider policy inspection result. */
+export function parsePluginProviderPolicyInspectionResult(
+	input: unknown,
+): PluginProviderPolicyInspectionResult {
+	const value = rootRecord(input, 'provider policy inspection result')
 	if (value.ok === true) {
-		shape(value, ['ok', 'value'], [], 'base provider inspection result')
+		shape(value, ['ok', 'value'], [], 'provider policy inspection result')
 		return Object.freeze({
 			ok: true,
 			value:
 				value.value === null
 					? null
-					: baseProviderInfo(value.value, 'base provider inspection result.value'),
+					: providerPolicyInfo(value.value, 'provider policy inspection result.value'),
 		})
 	}
-	return dependencyQueryFailure(value, 'base provider inspection result')
+	if (value.ok !== false) fail('provider policy inspection result.ok must be boolean')
+	shape(value, ['ok', 'code', 'state', 'error'], [], 'provider policy inspection result')
+	return Object.freeze({
+		ok: false,
+		code: literal(
+			value.code,
+			['invalid_input', 'provider_policy_unavailable'],
+			'provider policy inspection result.code',
+		),
+		state: literal(value.state, ['unchanged'], 'provider policy inspection result.state'),
+		error: text(value.error, 'provider policy inspection result.error'),
+	})
 }
 
 /** Validate and deep-freeze a fork creation/update result. */
 export function parseEnsureForkResult(input: unknown): EnsureForkResult {
 	const value = rootRecord(input, 'ensure fork result')
 	if (value.ok === true) {
-		const status = literal(
-			value.status,
-			['applied', 'deferred', 'saved-not-applied'],
-			'ensure fork result.status',
-		)
-		shape(
-			value,
-			['ok', 'status', 'fork', 'report'],
-			status === 'saved-not-applied' ? ['applicationFailure'] : [],
-			'ensure fork result',
-		)
-		const common = {
+		shape(value, ['ok', 'status', 'fork', 'report'], [], 'ensure fork result')
+		return Object.freeze({
 			ok: true as const,
-			status,
+			status: literal(value.status, ['applied', 'deferred'], 'ensure fork result.status'),
 			fork: nodeAddress(value.fork, 'ensure fork result.fork'),
 			report: pluginApplyReport(value.report, 'ensure fork result.report'),
-		}
-		if (status !== 'saved-not-applied') {
-			return Object.freeze({
-				...common,
-				status: status as 'applied' | 'deferred',
-			})
-		}
-		if (value.applicationFailure === undefined) {
-			fail('ensure fork result.applicationFailure is required for saved-not-applied')
-		}
-		const applicationFailure = object(
-			value.applicationFailure,
-			'ensure fork result.applicationFailure',
-		)
-		shape(applicationFailure, ['code', 'message'], [], 'ensure fork result.applicationFailure')
-		literal(
-			applicationFailure.code,
-			['plugin_not_running_after_enable'],
-			'ensure fork result.applicationFailure.code',
-		)
-		return Object.freeze({
-			...common,
-			status: 'saved-not-applied' as const,
-			applicationFailure: Object.freeze({
-				code: 'plugin_not_running_after_enable' as const,
-				message: text(applicationFailure.message, 'ensure fork result.applicationFailure.message'),
-			}),
 		})
 	}
 	if (value.ok !== false) fail('ensure fork result.ok must be boolean')
@@ -377,67 +395,67 @@ export function parseRemoveForkResult(input: unknown): RemoveForkResult {
 	fail('remove fork result.ok must be boolean')
 }
 
-/** Validate and deep-freeze a status batch result, including partial application. */
-export function parsePluginStatusBatchResult(input: unknown): PluginStatusBatchResult {
-	const value = rootRecord(input, 'plugin status batch result')
+/** Validate and deep-freeze a Plugin control batch result, including partial application. */
+export function parsePluginControlBatchResult(input: unknown): PluginControlBatchResult {
+	const value = rootRecord(input, 'plugin control batch result')
 	if (value.ok === true) {
-		shape(value, ['ok', 'status', 'results'], [], 'plugin status batch result')
-		literal(value.status, ['applied'], 'plugin status batch result.status')
-		const results = array(value.results, 'plugin status batch result.results').map((item, index) =>
-			statusMutationSuccess(item, `plugin status batch result.results[${index}]`),
+		shape(value, ['ok', 'status', 'results'], [], 'plugin control batch result')
+		literal(value.status, ['applied'], 'plugin control batch result.status')
+		const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
+			controlMutationSuccess(item, `plugin control batch result.results[${index}]`),
 		)
 		return Object.freeze({
 			ok: true,
 			status: 'applied',
-			results: Object.freeze(results) as PluginStatusMutationSuccess[],
+			results: Object.freeze(results) as PluginControlMutationSuccess[],
 		})
 	}
-	if (value.ok !== false) fail('plugin status batch result.ok must be boolean')
+	if (value.ok !== false) fail('plugin control batch result.ok must be boolean')
 	const status = literal(
 		value.status,
 		['partially-applied', 'rejected'],
-		'plugin status batch result.status',
+		'plugin control batch result.status',
 	)
 	if (Object.hasOwn(value, 'code')) {
 		shape(
 			value,
 			['ok', 'status', 'code', 'state', 'error', 'results'],
 			[],
-			'plugin status batch result',
+			'plugin control batch result',
 		)
 		if (status !== 'rejected') {
-			fail('plugin status batch result with code must have rejected status')
+			fail('plugin control batch result with code must have rejected status')
 		}
-		literal(value.code, ['invalid_input'], 'plugin status batch result.code')
-		literal(value.state, ['unchanged'], 'plugin status batch result.state')
-		if (array(value.results, 'plugin status batch result.results').length > 0) {
-			fail('plugin status batch invalid-input result must have an empty results array')
+		literal(value.code, ['invalid_input'], 'plugin control batch result.code')
+		literal(value.state, ['unchanged'], 'plugin control batch result.state')
+		if (array(value.results, 'plugin control batch result.results').length > 0) {
+			fail('plugin control batch invalid-input result must have an empty results array')
 		}
 		return Object.freeze({
 			ok: false,
 			status: 'rejected',
 			code: 'invalid_input',
 			state: 'unchanged',
-			error: text(value.error, 'plugin status batch result.error'),
+			error: text(value.error, 'plugin control batch result.error'),
 			results: Object.freeze([]) as [],
 		})
 	}
-	shape(value, ['ok', 'status', 'results'], [], 'plugin status batch result')
-	const results = array(value.results, 'plugin status batch result.results').map((item, index) =>
-		statusMutationResult(item, `plugin status batch result.results[${index}]`),
+	shape(value, ['ok', 'status', 'results'], [], 'plugin control batch result')
+	const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
+		controlMutationResult(item, `plugin control batch result.results[${index}]`),
 	)
 	if (status === 'partially-applied') {
 		if (!results.some((result) => result.ok) || !results.some((result) => !result.ok)) {
-			fail('partially-applied status batch must contain successes and failures')
+			fail('partially-applied control batch must contain successes and failures')
 		}
 	} else if (results.some((result) => result.ok)) {
-		fail('rejected status batch must not contain successful results')
+		fail('rejected control batch must not contain successful results')
 	}
 	return Object.freeze({
 		ok: false,
 		status,
-		results: Object.freeze(results) as PluginStatusMutationResult[],
-	}) as PluginStatusBatchResult
+		results: Object.freeze(results) as PluginControlMutationResult[],
+	}) as PluginControlBatchResult
 }
 
 /** Validate and deep-freeze the current logging policy snapshot. */
@@ -522,6 +540,139 @@ export function parseAgentToolsAdminSnapshot(input: unknown): AgentToolsAdminSna
 	})
 }
 
+function pluginDependencyGraphNode(input: unknown, label: string): PluginDependencyGraphNode {
+	const value = object(input, label)
+	shape(value, ['status', 'effective'], [], label)
+	const status = pluginStatusSnapshot(value.status, `${label}.status`)
+	const effective = boolean(value.effective, `${label}.effective`)
+	if (effective && (status.desiredState !== 'running' || status.availability !== 'available')) {
+		fail(`${label} effective node must be desired running and available`)
+	}
+	return Object.freeze({ status, effective })
+}
+
+function pluginDependencyGraphEdge(input: unknown, label: string): PluginDependencyGraphEdge {
+	const value = object(input, label)
+	shape(value, ['consumer', 'requirement', 'mode', 'resolution', 'effective'], [], label)
+	const consumer = nodeAddress(value.consumer, `${label}.consumer`)
+	const requirement = definitionAddress(value.requirement, `${label}.requirement`)
+	const mode = literal(value.mode, ['required', 'optional'], `${label}.mode`)
+	const effective = boolean(value.effective, `${label}.effective`)
+	const resolution = object(value.resolution, `${label}.resolution`)
+	const state = literal(resolution.state, ['resolved', 'unresolved'], `${label}.resolution.state`)
+
+	if (state === 'unresolved') {
+		shape(resolution, ['state'], [], `${label}.resolution`)
+		if (mode !== 'required') fail(`${label} optional edge must be resolved`)
+		if (effective) fail(`${label} unresolved edge must be inactive`)
+		return Object.freeze({
+			consumer,
+			requirement,
+			mode: 'required',
+			resolution: Object.freeze({ state: 'unresolved' }),
+			effective: false,
+		})
+	}
+
+	shape(resolution, ['state', 'provider', 'via'], [], `${label}.resolution`)
+	const provider = nodeAddress(resolution.provider, `${label}.resolution.provider`)
+	if (mode === 'optional') {
+		const via = literal(resolution.via, ['direct'], `${label}.resolution.via`)
+		return Object.freeze({
+			consumer,
+			requirement,
+			mode,
+			resolution: Object.freeze({ state, provider, via }),
+			effective,
+		})
+	}
+
+	const via = literal(
+		resolution.via,
+		['direct', 'provider-default', 'dependency-override'],
+		`${label}.resolution.via`,
+	)
+	return Object.freeze({
+		consumer,
+		requirement,
+		mode,
+		resolution: Object.freeze({ state, provider, via }),
+		effective,
+	})
+}
+
+function validatePluginDependencyGraphEdgeMembership(
+	edge: PluginDependencyGraphEdge,
+	nodesByKey: ReadonlyMap<string, PluginDependencyGraphNode>,
+): void {
+	const consumer = nodesByKey.get(pluginNodeIndexKey(edge.consumer))
+	if (!consumer) fail('plugin dependency graph edge consumer must exist in nodes')
+	if (edge.resolution.state === 'unresolved') return
+
+	const provider = nodesByKey.get(pluginNodeIndexKey(edge.resolution.provider))
+	if (edge.mode === 'required' && !provider) {
+		fail('plugin dependency graph resolved required edge provider must exist in nodes')
+	}
+	if (!edge.effective) return
+	if (!consumer.effective) {
+		fail('plugin dependency graph effective edge consumer must be an effective node')
+	}
+	if (!provider?.effective) {
+		fail('plugin dependency graph effective edge provider must be an effective node')
+	}
+}
+
+function validatePluginDependencyGraphDag(
+	nodes: readonly PluginDependencyGraphNode[],
+	edges: readonly PluginDependencyGraphEdge[],
+): void {
+	const incomingCount = new Map<string, number>()
+	const outgoing = new Map<string, string[]>()
+	for (const node of nodes) {
+		if (!node.effective) continue
+		const key = pluginNodeIndexKey(node.status.address)
+		incomingCount.set(key, 0)
+		outgoing.set(key, [])
+	}
+	for (const edge of edges) {
+		if (!edge.effective || edge.resolution.state !== 'resolved') continue
+		const consumerKey = pluginNodeIndexKey(edge.consumer)
+		const providerKey = pluginNodeIndexKey(edge.resolution.provider)
+		outgoing.get(consumerKey)!.push(providerKey)
+		incomingCount.set(providerKey, incomingCount.get(providerKey)! + 1)
+	}
+
+	const ready: string[] = []
+	for (const [key, count] of incomingCount) {
+		if (count === 0) ready.push(key)
+	}
+	let visited = 0
+	for (let index = 0; index < ready.length; index += 1) {
+		const key = ready[index]!
+		visited += 1
+		for (const target of outgoing.get(key)!) {
+			const next = incomingCount.get(target)! - 1
+			incomingCount.set(target, next)
+			if (next === 0) ready.push(target)
+		}
+	}
+	if (visited !== incomingCount.size) {
+		fail('plugin dependency graph effective node and edge subset must be a DAG')
+	}
+}
+
+function pluginDependencyGraphEdgeKey(edge: PluginDependencyGraphEdge): string {
+	return `${pluginNodeIndexKey(edge.consumer)}:${pluginDefinitionIndexKey(edge.requirement)}`
+}
+
+function comparePluginDependencyGraphEdge(
+	left: PluginDependencyGraphEdge,
+	right: PluginDependencyGraphEdge,
+): number {
+	const consumerOrder = comparePluginNodeAddress(left.consumer, right.consumer)
+	return consumerOrder || comparePluginDefinitionAddress(left.requirement, right.requirement)
+}
+
 function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapshot {
 	const value = object(input, label)
 	shape(
@@ -533,9 +684,11 @@ function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapsh
 			'displayName',
 			'label',
 			'rootExportName',
-			'isRunning',
-			'isEnabled',
-			'lifecycleStage',
+			'autoStart',
+			'sessionIntent',
+			'desiredState',
+			'activationReason',
+			'lifecycleState',
 			'availability',
 			'issues',
 			'source',
@@ -545,19 +698,7 @@ function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapsh
 	)
 	const projectedLabel = object(value.label, `${label}.label`)
 	shape(projectedLabel, ['title', 'text'], ['qualifier'], `${label}.label`)
-	const lifecycleStage = literal(
-		value.lifecycleStage,
-		['running', 'stopped', 'disabled'],
-		`${label}.lifecycleStage`,
-	)
-	const isRunning = boolean(value.isRunning, `${label}.isRunning`)
-	const isEnabled = boolean(value.isEnabled, `${label}.isEnabled`)
-	if (isRunning !== (lifecycleStage === 'running')) {
-		fail(`${label}.isRunning is inconsistent with lifecycleStage`)
-	}
-	if (isEnabled !== (lifecycleStage !== 'disabled')) {
-		fail(`${label}.isEnabled is inconsistent with lifecycleStage`)
-	}
+	const control = pluginControlSnapshot(value, label)
 	return Object.freeze({
 		address: nodeAddress(value.address, `${label}.address`),
 		reference: text(value.reference, `${label}.reference`),
@@ -571,9 +712,7 @@ function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapsh
 			text: text(projectedLabel.text, `${label}.label.text`),
 		}),
 		rootExportName: text(value.rootExportName, `${label}.rootExportName`),
-		isRunning,
-		isEnabled,
-		lifecycleStage,
+		...control,
 		availability: literal(
 			value.availability,
 			['available', 'unavailable'],
@@ -588,6 +727,57 @@ function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapsh
 	})
 }
 
+function pluginControlSnapshot(
+	value: Readonly<Record<string, unknown>>,
+	label: string,
+): PluginControlSnapshot {
+	const autoStart = boolean(value.autoStart, `${label}.autoStart`)
+	const sessionIntent = literal(
+		value.sessionIntent,
+		['inherit', 'run', 'stop'],
+		`${label}.sessionIntent`,
+	)
+	const desiredState = literal(value.desiredState, ['running', 'stopped'], `${label}.desiredState`)
+	const activationReason = nullableLiteral(
+		value.activationReason,
+		['auto-start', 'session', 'dependency'],
+		`${label}.activationReason`,
+	)
+	const lifecycleState = literal(
+		value.lifecycleState,
+		['running', 'stopped'],
+		`${label}.lifecycleState`,
+	)
+	if ((desiredState === 'running') !== (activationReason !== null)) {
+		fail(`${label}.desiredState is inconsistent with activationReason`)
+	}
+	if (sessionIntent === 'stop' && (desiredState !== 'stopped' || activationReason !== null)) {
+		fail(`${label}.sessionIntent stop must suppress activation`)
+	}
+	if (sessionIntent === 'run' && (desiredState !== 'running' || activationReason !== 'session')) {
+		fail(`${label}.sessionIntent run must activate for the session`)
+	}
+	if (activationReason === 'auto-start' && (sessionIntent !== 'inherit' || autoStart !== true)) {
+		fail(`${label}.activationReason auto-start requires inherited auto-start policy`)
+	}
+	if (activationReason === 'dependency' && (sessionIntent !== 'inherit' || autoStart !== false)) {
+		fail(`${label}.activationReason dependency requires inherited non-auto-start policy`)
+	}
+	if (sessionIntent === 'inherit' && autoStart && activationReason !== 'auto-start') {
+		fail(`${label}.inherited auto-start policy must activate through auto-start`)
+	}
+	if (lifecycleState === 'running' && desiredState !== 'running') {
+		fail(`${label}.lifecycleState running requires desiredState running`)
+	}
+	return Object.freeze({
+		autoStart,
+		sessionIntent,
+		desiredState,
+		activationReason,
+		lifecycleState,
+	})
+}
+
 function pluginStatusIssue(input: unknown, label: string): PluginStatusIssue {
 	const value = object(input, label)
 	shape(value, ['id', 'code', 'message'], [], label)
@@ -599,7 +789,6 @@ function pluginStatusIssue(input: unknown, label: string): PluginStatusIssue {
 				'consumer_unavailable',
 				'requirement_removed',
 				'provider_unavailable',
-				'provider_disabled',
 				'provider_incompatible',
 				'fork_not_allowed',
 				'fork_default_forbidden',
@@ -842,56 +1031,45 @@ function configValidationErrors(input: unknown, label: string): ConfigValidation
 	return Object.freeze(output)
 }
 
-function dependencyRef(input: unknown, label: string): PluginDependencyRef {
+function providerOption(input: unknown, label: string): PluginProviderOption {
 	const value = object(input, label)
-	shape(value, ['address', 'displayName'], ['isRunning'], label)
+	shape(value, ['address', 'displayName', 'availability'], [], label)
 	return Object.freeze({
 		address: nodeAddress(value.address, `${label}.address`),
 		displayName: text(value.displayName, `${label}.displayName`),
-		...(value.isRunning === undefined
-			? {}
-			: { isRunning: boolean(value.isRunning, `${label}.isRunning`) }),
+		availability: literal(
+			value.availability,
+			['available', 'unavailable'],
+			`${label}.availability`,
+		),
 	})
 }
 
-function dependencyOption(input: unknown, label: string): PluginDependencyOption {
-	const value = object(input, label)
-	shape(value, ['address', 'displayName', 'isRunning', 'isEnabled'], [], label)
-	return Object.freeze({
-		address: nodeAddress(value.address, `${label}.address`),
-		displayName: text(value.displayName, `${label}.displayName`),
-		isRunning: boolean(value.isRunning, `${label}.isRunning`),
-		isEnabled: boolean(value.isEnabled, `${label}.isEnabled`),
-	})
-}
-
-function dependencyState(input: unknown, label: string): PluginDependencyState {
+function consumerRequirementState(input: unknown, label: string): PluginConsumerRequirementState {
 	const value = object(input, label)
 	shape(
 		value,
-		['requirement', 'kind', 'effective', 'isRunning', 'selected', 'providerDefault', 'options'],
+		['requirement', 'kind', 'consumerOverride', 'inheritedProvider', 'options'],
 		[],
 		label,
 	)
 	return Object.freeze({
 		requirement: definitionAddress(value.requirement, `${label}.requirement`),
 		kind: literal(value.kind, ['plugin', 'abstract'], `${label}.kind`),
-		effective: nullableNodeAddress(value.effective, `${label}.effective`),
-		isRunning: boolean(value.isRunning, `${label}.isRunning`),
-		selected: nullableNodeAddress(value.selected, `${label}.selected`),
-		providerDefault: nullableNodeAddress(value.providerDefault, `${label}.providerDefault`),
+		consumerOverride: nullableNodeAddress(value.consumerOverride, `${label}.consumerOverride`),
+		inheritedProvider: nullableNodeAddress(value.inheritedProvider, `${label}.inheritedProvider`),
 		options: Object.freeze(
 			array(value.options, `${label}.options`).map((item, index) =>
-				dependencyOption(item, `${label}.options[${index}]`),
+				providerOption(item, `${label}.options[${index}]`),
 			),
-		) as PluginDependencyOption[],
+		) as PluginProviderOption[],
 	})
 }
 
-function dependencyQueryFailure(
+function consumerRequirementsQueryFailure(
 	value: Record<string, unknown>,
 	label: string,
-): PluginDependencyListResult & PluginDependencyInspectionResult & BaseProviderInspectionResult {
+): PluginConsumerRequirementsInspectionResult {
 	if (value.ok !== false) fail(`${label}.ok must be boolean`)
 	shape(value, ['ok', 'code', 'state', 'error'], [], label)
 	return Object.freeze({
@@ -899,21 +1077,21 @@ function dependencyQueryFailure(
 		code: literal(value.code, ['invalid_input', 'consumer_unavailable'], `${label}.code`),
 		state: literal(value.state, ['unchanged'], `${label}.state`),
 		error: text(value.error, `${label}.error`),
-	}) as PluginDependencyListResult & PluginDependencyInspectionResult & BaseProviderInspectionResult
+	})
 }
 
-function baseProviderInfo(input: unknown, label: string): BaseProviderInfo {
+function providerPolicyInfo(input: unknown, label: string): PluginProviderPolicyInfo {
 	const value = object(input, label)
-	shape(value, ['token', 'currentDefault', 'isDefault', 'providers'], [], label)
+	shape(value, ['token', 'defaultProvider', 'policyOwnerIsDefault', 'options'], [], label)
 	return Object.freeze({
 		token: definitionAddress(value.token, `${label}.token`),
-		currentDefault: nullableNodeAddress(value.currentDefault, `${label}.currentDefault`),
-		isDefault: boolean(value.isDefault, `${label}.isDefault`),
-		providers: Object.freeze(
-			array(value.providers, `${label}.providers`).map((item, index) =>
-				dependencyOption(item, `${label}.providers[${index}]`),
+		defaultProvider: nullableNodeAddress(value.defaultProvider, `${label}.defaultProvider`),
+		policyOwnerIsDefault: boolean(value.policyOwnerIsDefault, `${label}.policyOwnerIsDefault`),
+		options: Object.freeze(
+			array(value.options, `${label}.options`).map((item, index) =>
+				providerOption(item, `${label}.options[${index}]`),
 			),
-		) as PluginDependencyOption[],
+		) as PluginProviderOption[],
 	})
 }
 
@@ -958,7 +1136,6 @@ function reconciliationIssue(input: unknown, label: string): PluginReconciliatio
 			'consumer_unavailable',
 			'requirement_removed',
 			'provider_unavailable',
-			'provider_disabled',
 			'provider_incompatible',
 			'fork_not_allowed',
 			'fork_default_forbidden',
@@ -1003,11 +1180,7 @@ function reconciliationIssue(input: unknown, label: string): PluginReconciliatio
 			message,
 		})
 	}
-	if (
-		kind === 'provider_unavailable' ||
-		kind === 'provider_disabled' ||
-		kind === 'provider_incompatible'
-	) {
+	if (kind === 'provider_unavailable' || kind === 'provider_incompatible') {
 		shape(value, ['kind', 'binding', 'requirement', 'provider', 'message'], ['consumer'], label)
 		return Object.freeze({
 			kind,
@@ -1201,7 +1374,7 @@ function removeForkFailure(value: Record<string, unknown>): RemoveForkResult {
 			code,
 			state: literal(
 				value.state,
-				['retained', 'disabled-retained', 'unknown'],
+				['retained', 'stopped-retained', 'unknown'],
 				'remove fork result.state',
 			),
 			fork: nodeAddress(value.fork, 'remove fork result.fork'),
@@ -1221,48 +1394,35 @@ function removeForkFailure(value: Record<string, unknown>): RemoveForkResult {
 	})
 }
 
-function statusMutationResult(input: unknown, label: string): PluginStatusMutationResult {
+function controlMutationResult(input: unknown, label: string): PluginControlMutationResult {
 	const value = object(input, label)
 	return value.ok === true
-		? statusMutationSuccess(value, label)
-		: statusMutationFailure(value, label)
+		? controlMutationSuccess(value, label)
+		: controlMutationFailure(value, label)
 }
 
-function statusMutationSuccess(input: unknown, label: string): PluginStatusMutationSuccess {
+function controlMutationSuccess(input: unknown, label: string): PluginControlMutationSuccess {
 	const value = object(input, label)
 	if (value.ok !== true) fail(`${label}.ok must be true`)
-	shape(
-		value,
-		['address', 'ok', 'status', 'report', 'isRunning', 'isEnabled', 'lifecycleStage'],
-		[],
-		label,
-	)
+	shape(value, ['address', 'ok', 'status', 'report', 'control'], [], label)
 	literal(value.status, ['applied'], `${label}.status`)
-	const lifecycleStage = literal(
-		value.lifecycleStage,
-		['running', 'stopped', 'disabled'],
-		`${label}.lifecycleStage`,
+	const controlValue = object(value.control, `${label}.control`)
+	shape(
+		controlValue,
+		['autoStart', 'sessionIntent', 'desiredState', 'activationReason', 'lifecycleState'],
+		[],
+		`${label}.control`,
 	)
-	const isRunning = boolean(value.isRunning, `${label}.isRunning`)
-	const isEnabled = boolean(value.isEnabled, `${label}.isEnabled`)
-	if (
-		isRunning !== (lifecycleStage === 'running') ||
-		isEnabled !== (lifecycleStage !== 'disabled')
-	) {
-		fail(`${label} lifecycle booleans are inconsistent with lifecycleStage`)
-	}
 	return Object.freeze({
 		address: nodeAddress(value.address, `${label}.address`),
 		ok: true,
 		status: 'applied',
 		report: pluginApplyReport(value.report, `${label}.report`),
-		isRunning,
-		isEnabled,
-		lifecycleStage,
+		control: pluginControlSnapshot(controlValue, `${label}.control`),
 	})
 }
 
-function statusMutationFailure(input: unknown, label: string): PluginStatusMutationFailure {
+function controlMutationFailure(input: unknown, label: string): PluginControlMutationFailure {
 	const value = object(input, label)
 	if (value.ok !== false) fail(`${label}.ok must be false`)
 	shape(value, ['address', 'ok', 'code', 'state', 'error'], [], label)
@@ -1270,9 +1430,10 @@ function statusMutationFailure(input: unknown, label: string): PluginStatusMutat
 		value.code,
 		[
 			'plugin_not_found',
+			'start_unavailable',
 			'restart_unavailable',
+			'node_unavailable',
 			'graph_rejected',
-			'state_mutation_rejected',
 			'persistence_failed',
 		],
 		`${label}.code`,
@@ -1288,7 +1449,7 @@ function statusMutationFailure(input: unknown, label: string): PluginStatusMutat
 		code,
 		state,
 		error: text(value.error, `${label}.error`),
-	}) as PluginStatusMutationFailure
+	}) as PluginControlMutationFailure
 }
 
 function commandInventoryItem(input: unknown, label: string): CommandInventoryItem {
@@ -1778,6 +1939,14 @@ function literal<const T extends string>(input: unknown, allowed: readonly T[], 
 		fail(`${label} must be one of ${allowed.join(', ')}`)
 	}
 	return input as T
+}
+
+function nullableLiteral<const T extends string>(
+	input: unknown,
+	allowed: readonly T[],
+	label: string,
+): T | null {
+	return input === null ? null : literal(input, allowed, label)
 }
 
 function nodeAddress(input: unknown, label: string): PluginNodeAddress {

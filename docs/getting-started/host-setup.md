@@ -47,7 +47,7 @@ export default defineStaticRuntime({
 	configure({ env, deployment }) {
 		return {
 			runtimeState: {
-				snapshot: { enabled: [pluginNodeAddressOf(OrdersPlugin)] },
+				snapshot: { autoStart: [pluginNodeAddressOf(OrdersPlugin)] },
 			},
 			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
 			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
@@ -56,7 +56,9 @@ export default defineStaticRuntime({
 })
 ```
 
-`plugins` 定义 build-time fixed catalog 和 code closure；运行时依赖图由 enabled state、fork 和 provider override 形成。`workbench`、persistence、logging、HTTP、Plugin config records 和 enabled state 是 `configure()` 返回的 startup data。
+`plugins` 定义 build-time fixed catalog 和 code closure；运行时依赖图由 auto-start policy、本次进程意图、fork 和 provider override 形成。
+`workbench`、persistence、logging、HTTP、Plugin config records 和 auto-start policy 是 `configure()` 返回的 startup data；本次进程意图
+不持久化，也不进入 startup config。
 
 `prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。没有应用数据库就无法运行的 static application 在这里打开、迁移并把关闭登记到 root effects；只有部分 Plugin 使用的数据库应成为 provider Plugin，由 graph 隔离失败。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
 
@@ -172,7 +174,7 @@ export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
 	plugins: [HostOperationsPlugin],
 	runtimeState: {
-		snapshot: { enabled: [pluginNodeAddressOf(HostOperationsPlugin)] },
+		snapshot: { autoStart: [pluginNodeAddressOf(HostOperationsPlugin)] },
 	},
 	configPath: 'pluxel.loader.hmr.jsonc',
 	profile: 'dev',
@@ -191,7 +193,8 @@ export default defineDynamicRuntimeConfig({
 })
 ```
 
-`plugins` 是宿主显式 import 的 fixed catalog；`sources` 是 mutable file entries。两者只声明 code availability，不会隐式启用 Plugin，enabled state 仍来自 `runtimeState`。
+`plugins` 是宿主显式 import 的 fixed catalog；`sources` 是 mutable file entries。两者只声明 code availability，不会隐式自动启动 Plugin，
+auto-start policy 仍来自 `runtimeState`。
 
 ### Vite host
 
@@ -242,7 +245,8 @@ dynamicRuntimeVitePlugin({
 
 Host 的两类状态不要混淆：
 
-- runtime state：哪些 Plugin enabled、fork、provider override；
+- runtime state：哪些 Plugin 自动启动、fork、provider override；
+- process session：本次进程中哪些 Plugin 明确启动或停止，由 Runtime coordinator 持有，cold boot 时清空；
 - Plugin config record：交给每个 Plugin schema 校验的 raw object。
 
 Static `configure()` 或 dynamic config 提供初始值，file/memory/readonly backend 决定持久化方式；`readonly` 会读取同一 durable file source，但拒绝 mutation，文件缺失时保留 startup snapshot 且不创建文件。Plugin 只看到已经 normalized 的 `this.config`；详细 contract 见 [配置模型](./configuration.md)。
@@ -319,7 +323,7 @@ workbench: { enabled: true }
 ssh -L 3000:127.0.0.1:3000 user@host
 ```
 
-再打开 `http://127.0.0.1:3000`，启用 Auth Plugin、选择 mode，并进入
+再打开 `http://127.0.0.1:3000`，为 Auth Plugin 打开自动启动策略或在当前进程启动它、选择 mode，并进入
 `/__pluxel/admin-access/setup` 保存首个账号/TOTP 或 confidential client secret。远程 password/OIDC 登录要求物理 carrier 是 HTTPS；
 不安全的远程请求会在调用 provider 前被拒绝。Runtime 不信任代理头，因此不要让同机 reverse proxy 经 loopback 回源 Management，改用
 非 loopback 私网/容器地址或在 Pluxel carrier 直接终止 TLS。
@@ -337,7 +341,9 @@ Plugin 只使用 `ctx.logger`。完整 host logging plan、debug topics 和 sens
 
 graph commit 返回结构化 summary：成功节点进入 running，failed 节点回滚，required dependents blocked，无关 Plugin 可以继续。
 
-Static startup/HMR report 中的 `unavailable` 表示 enabled durable intent 当前没有 route catalog availability，例如 source 被移除后仍保留的 fork；它不是 `start-failed`。相同 definition address 再次出现时，runtime 会按保留的 enabled、fork 和 dependency policy 自动恢复。
+Static startup/HMR report 中的 `unavailable` 表示 durable policy 或 process session intent 引用的节点当前没有 route catalog availability，例如
+source 被移除后仍保留的 fork；它不是 `start-failed`。相同 definition address 再次出现时，runtime 会按保留的 auto-start、fork、dependency
+policy 和本次 session intent 恢复有效图。
 
 宿主决定：
 
@@ -365,7 +371,7 @@ import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
 
 - canonical entry/config 通过 Vite route plugin 加载，不用 raw TS runner。
 - static `plugins` 与 dynamic `sources` 没有重复表示同一 definition。
-- fixed Plugin 是否 enabled 由 runtime state 明确决定。
+- fixed Plugin 是否自动启动由 runtime state 明确决定；当前进程的启停操作不写回该策略。
 - Management provider 与业务 HTTP auth 保持独立；公网前确认 provider ready 且 TLS 可用。
 - persistence、logs、dynamic artifact cache 指向可写 state，不写 immutable deployment root。
 - production build 与真实 Node/PostgreSQL/native 环境做过 smoke test。

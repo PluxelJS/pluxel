@@ -19,7 +19,7 @@ export function AppProviders() {
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const pluginOverview = usePluginOverview()
 	const runningPluginSignature = (pluginOverview.overview?.status.statuses ?? [])
-		.filter((plugin) => plugin.isRunning)
+		.filter((plugin) => plugin.lifecycleState === 'running')
 		.map((plugin) => pluginNodeIndexKey(plugin.address))
 		.sort((left, right) => left.localeCompare(right))
 		.join('\n')

@@ -82,13 +82,13 @@ async function withAuthHost(run: (host: RuntimeHost) => Promise<void>): Promise<
 	}
 }
 
-async function enableAuth(
+async function startAuth(
 	host: RuntimeHost,
 	mode: { type: 'password' } | { type: 'password-totp' },
 ): Promise<AuthPlugin> {
 	host.add(AuthPlugin)
 	host.cfg(AuthPlugin).set({ mode })
-	host.cfg(AuthPlugin).enable()
+	host.start(AuthPlugin)
 	await host.commit()
 	return host.require(AuthPlugin)
 }
@@ -96,7 +96,7 @@ async function enableAuth(
 describe('official authentication Runtime integration', () => {
 	it('sets up locally, protects every peer when ready, and revokes sessions on stop', async () => {
 		await withAuthHost(async (host) => {
-			const plugin = await enableAuth(host, { type: 'password' })
+			const plugin = await startAuth(host, { type: 'password' })
 			const setupPage = await host.fetch(
 				runtimeRequest(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local'),
 			)
@@ -187,7 +187,7 @@ describe('official authentication Runtime integration', () => {
 				principal: { subject: 'local:admin' },
 			})
 
-			host.cfg(AuthPlugin).disable()
+			host.stop(AuthPlugin)
 			await host.commit()
 			const afterStop = await host.fetch(
 				runtimeRequest(REMOTE_ORIGIN, `${RUNTIME_INTERNAL_API_BASE}/meta`, 'remote', {
@@ -203,7 +203,7 @@ describe('official authentication Runtime integration', () => {
 
 	it('enrolls TOTP locally and rejects a replayed login code', async () => {
 		await withAuthHost(async (host) => {
-			await enableAuth(host, { type: 'password-totp' })
+			await startAuth(host, { type: 'password-totp' })
 			const setup = await formState(
 				await host.fetch(runtimeRequest(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local')),
 			)

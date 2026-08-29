@@ -5,7 +5,7 @@ import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 
 export type HmrTestState = {
-	enabled?: readonly PluginNodeAddress[]
+	autoStart?: readonly PluginNodeAddress[]
 	runtimeState?: Partial<
 		Pick<RuntimeStateSnapshot, 'forks' | 'providerDefaults' | 'dependencyOverrides'>
 	>
@@ -36,7 +36,7 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 			runtimeState: {
 				mode: 'memory',
 				snapshot: {
-					enabled: state.enabled ?? [],
+					autoStart: state.autoStart ?? [],
 					forks: persisted.forks ?? [],
 					providerDefaults: persisted.providerDefaults ?? [],
 					dependencyOverrides: persisted.dependencyOverrides ?? [],

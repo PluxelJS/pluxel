@@ -5,7 +5,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
-	isPluginEnabled,
+	isPluginAutoStartEnabled,
 	requireRuntimePluginGraphCoordinator,
 	requireRuntimeStateStore,
 	runtimeStatePatch,
@@ -18,37 +18,36 @@ function addressOf(target: PluginTarget): PluginNodeAddress {
 	return typeof target === 'function' ? pluginNodeAddressOf(target) : target
 }
 
-export async function enablePlugins(ctx: Context, ...targets: PluginTarget[]): Promise<void> {
+export async function setPluginsAutoStart(
+	ctx: Context,
+	autoStart: boolean,
+	...targets: PluginTarget[]
+): Promise<void> {
 	await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
-		enablePluginsPatch(...targets),
-		'test-enable-plugins',
+		pluginsAutoStartPatch(autoStart, ...targets),
+		'test-set-plugins-auto-start',
 	)
 }
 
+export async function startPlugins(ctx: Context, ...targets: PluginTarget[]): Promise<void> {
+	const coordinator = requireRuntimePluginGraphCoordinator(ctx)
+	for (const target of targets) await coordinator.startNode(addressOf(target), 'test-start-plugin')
+}
+
 /** Desired-state patch for a catalog batch that publishes these nodes atomically. */
-export function enablePluginsPatch(...targets: PluginTarget[]): RuntimeStatePatch {
+export function pluginsAutoStartPatch(
+	autoStart: boolean,
+	...targets: PluginTarget[]
+): RuntimeStatePatch {
 	return runtimeStatePatch(
 		...targets.map((target) => ({
-			type: 'set-enabled' as const,
+			type: 'set-auto-start' as const,
 			node: addressOf(target),
-			enabled: true,
+			autoStart,
 		})),
 	)
 }
 
-export async function disablePlugins(ctx: Context, ...targets: PluginTarget[]): Promise<void> {
-	await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
-		runtimeStatePatch(
-			...targets.map((target) => ({
-				type: 'set-enabled' as const,
-				node: addressOf(target),
-				enabled: false,
-			})),
-		),
-		'test-disable-plugins',
-	)
-}
-
-export function isEnabled(ctx: Context, target: PluginTarget): boolean {
-	return isPluginEnabled(requireRuntimeStateStore(ctx).snapshot(), addressOf(target))
+export function isAutoStartEnabled(ctx: Context, target: PluginTarget): boolean {
+	return isPluginAutoStartEnabled(requireRuntimeStateStore(ctx).snapshot(), addressOf(target))
 }

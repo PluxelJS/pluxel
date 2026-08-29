@@ -80,9 +80,6 @@ export type CoreHostConfigHandle<TTarget extends PluginConstructor> = {
 	set(patch: CoreHostConfigPatch<TTarget>): void
 	unset(...keys: string[]): void
 	rev(): number
-	enable(): void
-	disable(): void
-	enabled(): boolean
 }
 
 type TypedTarget<T extends PluginConstructor> = T | PluginNodeHandle<T>
@@ -246,18 +243,10 @@ export function createCoreHost(
 	const ctx = options.createRootContext?.(resolvedConfig) ?? createCoreRootContext(resolvedConfig)
 	const registry = requirePluginService(ctx)
 	const configService = requireConfigService(ctx)
-	const localEnabled: PluginNodeAddress[] = []
 	let update: ReturnType<PluginService['beginUpdate']> | undefined
 
 	const currentUpdate = () => (update ??= registry.beginUpdate({ reason: 'core-test' }))
 	const candidateFor = (Plugin: PluginConstructor) => consumePluginDefinitionCandidate(Plugin)
-	const setEnabled = (owner: PluginNodeAddress, enabled: boolean) => {
-		const index = localEnabled.findIndex((item) => pluginNodeAddressEqual(item, owner))
-		if (enabled && index < 0) localEnabled.push(owner)
-		else if (!enabled && index >= 0) localEnabled.splice(index, 1)
-	}
-	const isEnabled = (owner: PluginNodeAddress) =>
-		localEnabled.some((item) => pluginNodeAddressEqual(item, owner))
 
 	const addOne = (Plugin: PluginConstructor) => {
 		currentUpdate().materializeNode(pluginNodeAddressOf(Plugin), candidateFor(Plugin))
@@ -363,9 +352,6 @@ export function createCoreHost(
 				set: (patch) => configService.patchConfig(owner, patch),
 				unset: (...keys) => configService.unsetConfigKeys(owner, keys),
 				rev: () => configService.getConfigRevision(owner),
-				enable: () => setEnabled(owner, true),
-				disable: () => setEnabled(owner, false),
-				enabled: () => isEnabled(owner),
 			}
 		}) as CoreHost['cfg'],
 		start: async (Plugin) => {

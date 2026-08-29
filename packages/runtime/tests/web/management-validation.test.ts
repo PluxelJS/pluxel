@@ -1,19 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
 	parseAgentToolsAdminSnapshot,
-	parseBaseProviderInspectionResult,
 	parseConfigResult,
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
-	parsePluginDependencyInspectionResult,
-	parsePluginDependencyListResult,
+	parsePluginConsumerRequirementsInspectionResult,
 	parsePluginDependencyMutationResult,
+	parsePluginProviderPolicyInspectionResult,
 	parsePluginGroups,
 	parsePluginGroupsMutationResult,
 	parsePluginLogPolicyMutationResult,
 	parsePluginsListOutput,
-	parsePluginStatusBatchResult,
+	parsePluginControlBatchResult,
 	parsePluginStatusQueryResult,
 	parseRemoveForkResult,
 	parseRuntimeLogStreamsIndex,
@@ -50,9 +49,11 @@ const plugin = {
 	displayName: 'Fixture Plugin',
 	label: { title: 'Fixture Plugin', text: 'Fixture Plugin' },
 	rootExportName: 'FixturePlugin',
-	isRunning: false,
-	isEnabled: true,
-	lifecycleStage: 'stopped',
+	autoStart: true,
+	sessionIntent: 'inherit',
+	desiredState: 'running',
+	activationReason: 'auto-start',
+	lifecycleState: 'stopped',
 	availability: 'available',
 	issues: [],
 	source: {
@@ -83,7 +84,7 @@ describe('management protocol validation', () => {
 	it('validates and deep-freezes every Level 1 RPC result family', () => {
 		const plugins = parsePluginsListOutput({
 			plugins: [plugin],
-			summary: { total: 1, running: 0, stopped: 1, disabled: 0 },
+			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
 		expect(plugins.plugins[0]).toEqual(plugin)
 		expect(Object.isFrozen(plugins)).toBe(true)
@@ -115,28 +116,19 @@ describe('management protocol validation', () => {
 		)
 
 		expect(
-			parsePluginDependencyListResult({
-				ok: true,
-				items: [{ address, displayName: 'Fixture Plugin', isRunning: false }],
-			}),
-		).toMatchObject({ ok: true, items: [{ address }] })
-		expect(
-			parsePluginDependencyInspectionResult({
+			parsePluginConsumerRequirementsInspectionResult({
 				ok: true,
 				items: [
 					{
 						requirement: definition,
 						kind: 'plugin',
-						effective: address,
-						isRunning: false,
-						selected: null,
-						providerDefault: null,
+						consumerOverride: null,
+						inheritedProvider: address,
 						options: [
 							{
 								address,
 								displayName: 'Fixture Plugin',
-								isRunning: false,
-								isEnabled: true,
+								availability: 'available',
 							},
 						],
 					},
@@ -149,16 +141,32 @@ describe('management protocol validation', () => {
 			report,
 		})
 		expect(
-			parseBaseProviderInspectionResult({
+			parsePluginDependencyMutationResult({
+				ok: false,
+				code: 'provider_policy_unavailable',
+				state: 'unchanged',
+				error: 'not a provider policy owner',
+			}),
+		).toMatchObject({ ok: false, code: 'provider_policy_unavailable', state: 'unchanged' })
+		expect(
+			parsePluginProviderPolicyInspectionResult({
 				ok: true,
 				value: {
 					token: definition,
-					currentDefault: address,
-					isDefault: true,
-					providers: [],
+					defaultProvider: address,
+					policyOwnerIsDefault: true,
+					options: [],
 				},
 			}),
 		).toMatchObject({ ok: true, value: { token: definition } })
+		expect(
+			parsePluginProviderPolicyInspectionResult({
+				ok: false,
+				code: 'provider_policy_unavailable',
+				state: 'unchanged',
+				error: 'owner unavailable',
+			}),
+		).toMatchObject({ ok: false, code: 'provider_policy_unavailable', state: 'unchanged' })
 
 		expect(parseEnsureForkResult({ ok: true, status: 'deferred', fork: address, report })).toEqual({
 			ok: true,
@@ -172,7 +180,16 @@ describe('management protocol validation', () => {
 			fork: address,
 		})
 		expect(
-			parsePluginStatusBatchResult({
+			parseRemoveForkResult({
+				ok: false,
+				code: 'persistence_failed',
+				state: 'stopped-retained',
+				fork: address,
+				error: 'metadata cleanup failed',
+			}),
+		).toMatchObject({ ok: false, code: 'persistence_failed', state: 'stopped-retained' })
+		expect(
+			parsePluginControlBatchResult({
 				ok: true,
 				status: 'applied',
 				results: [
@@ -181,13 +198,36 @@ describe('management protocol validation', () => {
 						ok: true,
 						status: 'applied',
 						report,
-						isRunning: false,
-						isEnabled: true,
-						lifecycleStage: 'stopped',
+						control: {
+							autoStart: true,
+							sessionIntent: 'inherit',
+							desiredState: 'running',
+							activationReason: 'auto-start',
+							lifecycleState: 'stopped',
+						},
 					},
 				],
 			}),
 		).toMatchObject({ ok: true, status: 'applied' })
+		expect(
+			parsePluginControlBatchResult({
+				ok: false,
+				status: 'rejected',
+				results: [
+					{
+						address,
+						ok: false,
+						code: 'start_unavailable',
+						state: 'unchanged',
+						error: 'Plugin node is unavailable',
+					},
+				],
+			}),
+		).toMatchObject({
+			ok: false,
+			status: 'rejected',
+			results: [{ code: 'start_unavailable', state: 'unchanged' }],
+		})
 
 		const logging = parseVersionedPluginLogPolicySnapshot({
 			version: 2,
@@ -246,29 +286,16 @@ describe('management protocol validation', () => {
 		expect(() => parseConfigResult(dangerous)).toThrow(/reserved field constructor/)
 
 		expect(() =>
-			parsePluginDependencyListResult({
+			parsePluginConsumerRequirementsInspectionResult({
 				ok: true,
 				items: [
 					{
-						address: { ...address, variant: 'fork', forkId: '../escape' },
-						displayName: 'bad',
-					},
-				],
-			}),
-		).toThrow(/Plugin fork id/)
-
-		expect(() =>
-			parsePluginDependencyInspectionResult({
-				ok: true,
-				items: [
-					{
+						requirement: definition,
 						index: 0,
 						token: definition,
 						kind: 'plugin',
-						effective: address,
-						isRunning: false,
-						selected: null,
-						providerDefault: null,
+						consumerOverride: null,
+						inheritedProvider: null,
 						options: [],
 					},
 				],
@@ -276,14 +303,71 @@ describe('management protocol validation', () => {
 		).toThrow(/unsupported field index/)
 
 		expect(() =>
+			parsePluginConsumerRequirementsInspectionResult({
+				ok: true,
+				items: [
+					{
+						requirement: definition,
+						kind: 'plugin',
+						consumerOverride: null,
+						inheritedProvider: null,
+						options: [
+							{
+								address,
+								displayName: 'Fixture Plugin',
+								availability: 'available',
+								lifecycleState: 'stopped',
+							},
+						],
+					},
+				],
+			}),
+		).toThrow(/unsupported field lifecycleState/)
+
+		expect(() =>
+			parsePluginConsumerRequirementsInspectionResult({
+				ok: true,
+				items: [
+					{
+						requirement: definition,
+						kind: 'plugin',
+						consumerOverride: null,
+						selected: null,
+						inheritedProvider: null,
+						options: [],
+					},
+				],
+			}),
+		).toThrow(/unsupported field selected/)
+
+		expect(() =>
+			parseEnsureForkResult({
+				ok: true,
+				status: 'saved-not-applied',
+				fork: address,
+				report,
+			}),
+		).toThrow(/applied, deferred/)
+
+		expect(() =>
+			parseRemoveForkResult({
+				ok: false,
+				code: 'persistence_failed',
+				state: 'disabled-retained',
+				fork: address,
+				error: 'legacy state',
+			}),
+		).toThrow(/stopped-retained/)
+
+		expect(() =>
 			parsePluginsListOutput({
 				plugins: [plugin],
-				summary: { total: 2, running: 0, stopped: 1, disabled: 1 },
+				summary: { total: 2, running: 0, stopped: 1, autoStart: 1 },
 			}),
 		).toThrow(/inconsistent/)
 
 		expect(() =>
-			parsePluginStatusBatchResult({
+			parsePluginControlBatchResult({
 				ok: false,
 				status: 'partially-applied',
 				results: [

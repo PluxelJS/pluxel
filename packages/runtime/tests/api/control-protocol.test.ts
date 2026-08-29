@@ -1,8 +1,8 @@
-import { requireRuntimePluginGraphCoordinator, runtimeStatePatch } from '@pluxel/runtime/internal'
+import { requireRuntimePluginGraphCoordinator } from '@pluxel/runtime/internal'
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { applyStatusActions } from '../../src/api/usecases/pluginStatus'
+import { applyLifecycleCommands, setAutoStart } from '../../src/api/usecases/pluginStatus'
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import type {
 	ConfigResult,
@@ -10,8 +10,8 @@ import type {
 	EnsureForkResult,
 	PluginDependencyMutationResult,
 	PluginApplyReport,
-	PluginStatusAction,
-	PluginStatusMutationResult,
+	PluginControlMutationResult,
+	PluginLifecycleCommand,
 	RemoveForkResult,
 } from '../../src/web/protocol'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
@@ -21,8 +21,11 @@ class ManagedPlugin extends BasePlugin {}
 
 abstract class ManagedProviderToken extends BasePlugin {}
 
-@Plugin(ManagedProviderToken)
+@Plugin(ManagedProviderToken, { forkable: true })
 class ManagedProvider extends ManagedProviderToken {}
+
+@Plugin(ManagedProviderToken)
+class ManagedAlternateProvider extends ManagedProviderToken {}
 
 @Plugin()
 class ManagedProviderConsumer extends BasePlugin {
@@ -31,9 +34,16 @@ class ManagedProviderConsumer extends BasePlugin {
 	}
 }
 
+@Plugin()
+class ManagedDirectConsumer extends BasePlugin {
+	constructor(readonly provider: ManagedPlugin) {
+		super()
+	}
+}
+
 describe('runtime web control protocol', () => {
-	it('exposes only the three durable lifecycle actions', () => {
-		expectTypeOf<PluginStatusAction>().toEqualTypeOf<'enable' | 'disable' | 'restart'>()
+	it('exposes only the three process lifecycle commands', () => {
+		expectTypeOf<PluginLifecycleCommand>().toEqualTypeOf<'start' | 'stop' | 'restart'>()
 	})
 
 	it('keeps expected status and persistence failures closed and state-bearing', async () => {
@@ -45,7 +55,7 @@ describe('runtime web control protocol', () => {
 			const rpc = new RuntimeRpcApi(host.ctx)
 
 			await expect(
-				rpc.applyPluginStatusActions([{ address, action: 'enable' }]),
+				rpc.applyPluginLifecycleCommands([{ address, command: 'start' }]),
 			).resolves.toMatchObject({
 				ok: true,
 				status: 'applied',
@@ -55,9 +65,13 @@ describe('runtime web control protocol', () => {
 						ok: true,
 						status: 'applied',
 						report: { core: { status: 'committed' } },
-						isRunning: true,
-						isEnabled: true,
-						lifecycleStage: 'running',
+						control: {
+							autoStart: false,
+							sessionIntent: 'run',
+							desiredState: 'running',
+							activationReason: 'session',
+							lifecycleState: 'running',
+						},
 					},
 				],
 			})
@@ -67,9 +81,7 @@ describe('runtime web control protocol', () => {
 			stateStore.commitVersioned = async () => {
 				throw new Error('durable store unavailable')
 			}
-			await expect(
-				rpc.applyPluginStatusActions([{ address, action: 'disable' }]),
-			).resolves.toMatchObject({
+			await expect(rpc.setPluginAutoStart([{ address, autoStart: true }])).resolves.toMatchObject({
 				ok: false,
 				status: 'rejected',
 				results: [
@@ -87,19 +99,106 @@ describe('runtime web control protocol', () => {
 		}
 	})
 
-	it('preserves the browser-safe report on provider-default mutation RPC', async () => {
+	it('keeps provider policy on provider pages and consumer override on requirement rows', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			host.add([ManagedProvider, ManagedProviderConsumer])
+			host.add([ManagedProvider, ManagedAlternateProvider, ManagedProviderConsumer])
+			const providerFork = host.fork(ManagedProvider, 'policy-ineligible')
 			await host.commit()
 			const rpc = new RuntimeRpcApi(host.ctx)
-			const result = await rpc.selectPluginBaseProvider({
-				consumer: pluginNodeAddressOf(ManagedProviderConsumer),
-				token: pluginDefinitionAddressOf(ManagedProviderToken),
-				provider: pluginNodeAddressOf(ManagedProvider),
+			const policyOwner = pluginNodeAddressOf(ManagedProvider)
+			const alternateProvider = pluginNodeAddressOf(ManagedAlternateProvider)
+			const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
+			const token = pluginDefinitionAddressOf(ManagedProviderToken)
+
+			await expect(rpc.inspectPluginProviderPolicy(consumer)).resolves.toEqual({
+				ok: true,
+				value: null,
+			})
+			await expect(rpc.inspectPluginProviderPolicy(policyOwner)).resolves.toMatchObject({
+				ok: true,
+				value: {
+					token,
+					options: expect.arrayContaining([
+						expect.objectContaining({ address: policyOwner }),
+						expect.objectContaining({ address: alternateProvider }),
+					]),
+				},
+			})
+			const providerPolicy = await rpc.inspectPluginProviderPolicy(policyOwner)
+			if (!providerPolicy.ok || !providerPolicy.value) {
+				throw new Error('expected provider policy')
+			}
+			expect(
+				providerPolicy.value.options.every((option) => option.address.variant === 'default'),
+			).toBe(true)
+			expect(providerPolicy.value.options).not.toContainEqual(
+				expect.objectContaining({ address: providerFork }),
+			)
+			await expect(rpc.inspectPluginProviderPolicy(providerFork)).resolves.toEqual({
+				ok: true,
+				value: null,
+			})
+			await expect(
+				rpc.setPluginProviderPolicyDefault({
+					consumer,
+					token,
+					provider: alternateProvider,
+				}),
+			).resolves.toMatchObject({
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+			})
+			await expect(
+				rpc.setPluginProviderPolicyDefault({
+					policyOwner: consumer,
+					provider: alternateProvider,
+				}),
+			).resolves.toMatchObject({
+				ok: false,
+				code: 'provider_policy_unavailable',
+				state: 'unchanged',
+			})
+			const result = await rpc.setPluginProviderPolicyDefault({
+				policyOwner,
+				provider: alternateProvider,
 			})
 			expect(result).toMatchObject({ ok: true, status: 'applied', report: {} })
 			if (result.ok) expectBrowserSafeReport(result.report)
+
+			await expect(rpc.inspectPluginProviderPolicy(policyOwner)).resolves.toMatchObject({
+				ok: true,
+				value: { defaultProvider: alternateProvider, policyOwnerIsDefault: false },
+			})
+			await expect(rpc.inspectPluginProviderPolicy(alternateProvider)).resolves.toMatchObject({
+				ok: true,
+				value: { defaultProvider: alternateProvider, policyOwnerIsDefault: true },
+			})
+			await expect(rpc.inspectPluginConsumerRequirements(consumer)).resolves.toMatchObject({
+				ok: true,
+				items: [
+					{ requirement: token, consumerOverride: null, inheritedProvider: alternateProvider },
+				],
+			})
+
+			await expect(
+				rpc.setPluginConsumerOverride({
+					consumer,
+					requirement: token,
+					provider: policyOwner,
+				}),
+			).resolves.toMatchObject({ ok: true, status: 'applied' })
+			await expect(rpc.inspectPluginConsumerRequirements(consumer)).resolves.toMatchObject({
+				ok: true,
+				items: [
+					{
+						requirement: token,
+						consumerOverride: policyOwner,
+						inheritedProvider: alternateProvider,
+					},
+				],
+			})
 		} finally {
 			await host.dispose()
 		}
@@ -108,23 +207,44 @@ describe('runtime web control protocol', () => {
 	it('addresses dependency inspection and mutation by stable requirement identity', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			host.add([ManagedPlugin, ManagedProvider, ManagedProviderConsumer])
+			host.add([ManagedPlugin, ManagedProvider, ManagedProviderConsumer, ManagedDirectConsumer])
 			await host.commit()
 			const rpc = new RuntimeRpcApi(host.ctx)
 			const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
 			const requirement = pluginDefinitionAddressOf(ManagedProviderToken)
 
-			const inspection = await rpc.inspectPluginDependencies(consumer)
+			const inspection = await rpc.inspectPluginConsumerRequirements(consumer)
 			expect(inspection).toMatchObject({ ok: true, items: [{ requirement }] })
 			if (!inspection.ok) throw new Error(inspection.error)
 			expect(inspection.items[0]).not.toHaveProperty('index')
 			expect(inspection.items[0]).not.toHaveProperty('token')
+			expect(inspection.items[0]).not.toHaveProperty('effective')
+			expect(inspection.items[0]).not.toHaveProperty('isRunning')
+			expect(inspection.items[0]).not.toHaveProperty('selected')
+			expect(inspection.items[0]).toHaveProperty('consumerOverride', null)
 
 			await expect(
-				rpc.setPluginDependencyTarget({ consumer, index: 0, provider: null }),
+				rpc.inspectPluginConsumerRequirements(pluginNodeAddressOf(ManagedDirectConsumer)),
+			).resolves.toMatchObject({
+				ok: true,
+				items: [
+					{
+						kind: 'plugin',
+						inheritedProvider: pluginNodeAddressOf(ManagedPlugin),
+						options: [
+							expect.objectContaining({
+								address: pluginNodeAddressOf(ManagedPlugin),
+							}),
+						],
+					},
+				],
+			})
+
+			await expect(
+				rpc.setPluginConsumerOverride({ consumer, index: 0, provider: null }),
 			).resolves.toMatchObject({ ok: false, code: 'invalid_input', state: 'unchanged' })
 			await expect(
-				rpc.setPluginDependencyTarget({
+				rpc.setPluginConsumerOverride({
 					consumer,
 					requirement: pluginDefinitionAddressOf(ManagedPlugin),
 					provider: null,
@@ -135,7 +255,7 @@ describe('runtime web control protocol', () => {
 				state: 'unchanged',
 			})
 			await expect(
-				rpc.setPluginDependencyTarget({ consumer, requirement, provider: null }),
+				rpc.setPluginConsumerOverride({ consumer, requirement, provider: null }),
 			).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
 		} finally {
 			await host.dispose()
@@ -149,16 +269,16 @@ describe('runtime web control protocol', () => {
 			await host.commit()
 			const address = host.cfg(ManagedPlugin).owner
 			const coordinator = requireRuntimePluginGraphCoordinator(host.ctx)
-			const runExclusive = coordinator.runExclusive.bind(coordinator)
-			coordinator.runExclusive = (() =>
+			const updateRuntimeState = coordinator.updateRuntimeState.bind(coordinator)
+			coordinator.updateRuntimeState = (() =>
 				Promise.reject(
 					new Error('injected programming failure'),
-				)) as typeof coordinator.runExclusive
+				)) as typeof coordinator.updateRuntimeState
 
-			await expect(applyStatusActions(host.ctx, [{ address, action: 'enable' }])).rejects.toThrow(
+			await expect(setAutoStart(host.ctx, [{ address, autoStart: true }])).rejects.toThrow(
 				'injected programming failure',
 			)
-			coordinator.runExclusive = runExclusive
+			coordinator.updateRuntimeState = updateRuntimeState
 		} finally {
 			await host.dispose()
 		}
@@ -173,23 +293,39 @@ describe('runtime web control protocol', () => {
 			const rpc = new RuntimeRpcApi(host.ctx)
 
 			await expect(
-				rpc.applyPluginStatusActions([
-					{ address, action: 'enable' },
-					{ address, action: 'stop' },
+				rpc.applyPluginLifecycleCommands([
+					{ address, command: 'start' },
+					{ address, command: 'enable' },
 				]),
 			).resolves.toEqual({
 				ok: false,
 				status: 'rejected',
 				code: 'invalid_input',
 				state: 'unchanged',
-				error: 'Plugin status action at index 1 is invalid',
+				error: 'Plugin lifecycle command at index 1 is invalid',
 				results: [],
 			})
 			await expect(
-				rpc.applyPluginStatusActions([{ address: { variant: 'default' }, action: 'enable' }]),
+				rpc.applyPluginLifecycleCommands([{ address: { variant: 'default' }, command: 'start' }]),
 			).resolves.toMatchObject({
 				ok: false,
 				status: 'rejected',
+				code: 'invalid_input',
+				state: 'unchanged',
+				results: [],
+			})
+			await expect(
+				rpc.applyPluginLifecycleCommands([{ address, action: 'enable' }]),
+			).resolves.toMatchObject({
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				results: [],
+			})
+			await expect(
+				rpc.setPluginAutoStart([{ address, autoStart: true, enabled: true }]),
+			).resolves.toMatchObject({
+				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 				results: [],
@@ -236,27 +372,32 @@ describe('runtime web control protocol', () => {
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.pluginDependencies(invalidNode)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginConsumerRequirements(null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.inspectPluginDependencies(null)).resolves.toMatchObject({
+			await expect(rpc.setPluginConsumerOverride(null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.setPluginDependencyTarget(null)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginProviderPolicy([])).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.inspectPluginBaseProvider([])).resolves.toMatchObject({
+			await expect(rpc.setPluginProviderPolicyDefault(undefined)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.selectPluginBaseProvider(undefined)).resolves.toMatchObject({
+			await expect(rpc.setPluginAutoStart(null)).resolves.toMatchObject({
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+			})
+			await expect(rpc.applyPluginLifecycleCommands(null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
@@ -287,21 +428,18 @@ describe('runtime web control protocol', () => {
 		}
 	})
 
-	it('classifies a queued restart after disable as unchanged and unavailable', async () => {
+	it('classifies a queued restart after stop as unchanged and unavailable', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
 			host.add(ManagedPlugin)
 			await host.commit()
 			const address = host.cfg(ManagedPlugin).owner
-			await applyStatusActions(host.ctx, [{ address, action: 'enable' }])
+			await applyLifecycleCommands(host.ctx, [{ address, command: 'start' }])
 
 			const coordinator = requireRuntimePluginGraphCoordinator(host.ctx)
-			const disabling = coordinator.updateRuntimeState(
-				runtimeStatePatch({ type: 'set-enabled', node: address, enabled: false }),
-				'test-disable-before-restart',
-			)
-			const restarting = applyStatusActions(host.ctx, [{ address, action: 'restart' }])
-			await disabling
+			const stopping = coordinator.stopNode(address, 'test-stop-before-restart')
+			const restarting = applyLifecycleCommands(host.ctx, [{ address, command: 'restart' }])
+			await stopping
 
 			await expect(restarting).resolves.toMatchObject({
 				ok: false,
@@ -320,6 +458,116 @@ describe('runtime web control protocol', () => {
 		}
 	})
 
+	it('rejects start for an unavailable node while allowing stop to retain cleanup intent', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			host.add(ManagedPlugin)
+			host.cfg(ManagedPlugin).setAutoStart(true)
+			await host.commit()
+			const address = host.cfg(ManagedPlugin).owner
+			host.remove(ManagedPlugin)
+			await host.commit()
+			const rpc = new RuntimeRpcApi(host.ctx)
+
+			await expect(
+				rpc.applyPluginLifecycleCommands([{ address, command: 'start' }]),
+			).resolves.toMatchObject({
+				ok: false,
+				status: 'rejected',
+				results: [
+					{
+						address,
+						ok: false,
+						code: 'start_unavailable',
+						state: 'unchanged',
+					},
+				],
+			})
+
+			await expect(
+				rpc.applyPluginLifecycleCommands([{ address, command: 'stop' }]),
+			).resolves.toMatchObject({
+				ok: true,
+				status: 'applied',
+				results: [
+					{
+						address,
+						ok: true,
+						control: {
+							autoStart: true,
+							sessionIntent: 'stop',
+							desiredState: 'stopped',
+							lifecycleState: 'stopped',
+						},
+					},
+				],
+			})
+
+			await expect(rpc.setPluginAutoStart([{ address, autoStart: false }])).resolves.toMatchObject({
+				ok: true,
+				results: [{ ok: true, control: { autoStart: false, desiredState: 'stopped' } }],
+			})
+			await expect(rpc.setPluginAutoStart([{ address, autoStart: true }])).resolves.toMatchObject({
+				ok: false,
+				status: 'rejected',
+				results: [
+					{
+						address,
+						ok: false,
+						code: 'node_unavailable',
+						state: 'unchanged',
+					},
+				],
+			})
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('returns canonical stopped control when stop releases the last unavailable session reference', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			host.add(ManagedPlugin)
+			await host.commit()
+			const address = host.cfg(ManagedPlugin).owner
+			const rpc = new RuntimeRpcApi(host.ctx)
+			await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+
+			host.remove(ManagedPlugin)
+			await host.commit()
+
+			await expect(
+				rpc.applyPluginLifecycleCommands([{ address, command: 'stop' }]),
+			).resolves.toMatchObject({
+				ok: true,
+				status: 'applied',
+				results: [
+					{
+						address,
+						ok: true,
+						control: {
+							autoStart: false,
+							sessionIntent: 'inherit',
+							desiredState: 'stopped',
+							activationReason: null,
+							lifecycleState: 'stopped',
+						},
+					},
+				],
+			})
+
+			await expect(
+				rpc.applyPluginLifecycleCommands([{ address, command: 'stop' }]),
+			).resolves.toMatchObject({
+				ok: false,
+				status: 'rejected',
+				results: [{ address, ok: false, code: 'plugin_not_found', state: 'unchanged' }],
+			})
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('does not expose an internal-error catch-all in any control result', () => {
 		type ConfigInternal = Extract<ConfigResult, { ok: false; code: 'internal_error' }>
 		type PresentationInternal = Extract<
@@ -332,7 +580,10 @@ describe('runtime web control protocol', () => {
 		>
 		type ForkInternal = Extract<EnsureForkResult, { ok: false; code: 'internal_error' }>
 		type ForkRemoveInternal = Extract<RemoveForkResult, { ok: false; code: 'internal_error' }>
-		type StatusInternal = Extract<PluginStatusMutationResult, { ok: false; code: 'internal_error' }>
+		type StatusInternal = Extract<
+			PluginControlMutationResult,
+			{ ok: false; code: 'internal_error' }
+		>
 
 		expectTypeOf<ConfigInternal>().toEqualTypeOf<never>()
 		expectTypeOf<PresentationInternal>().toEqualTypeOf<never>()

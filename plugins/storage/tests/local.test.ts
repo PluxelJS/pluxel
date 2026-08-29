@@ -15,9 +15,9 @@ class LocalS3Consumer extends BasePlugin {
 
 const temporaryRoots: string[] = []
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
 afterEach(async () => {
@@ -186,7 +186,7 @@ describe('S3Plugin local backend', () => {
 	it('revokes the caller facade and captured local client on provider stop', async () => {
 		const root = await temporaryRoot()
 		await withRuntimeHost(async (host) => {
-			addEnabled(host, [S3Plugin, LocalS3Consumer])
+			addStarted(host, [S3Plugin, LocalS3Consumer])
 			host.cfg(S3Plugin).set({
 				backend: {
 					type: 'local',
@@ -198,7 +198,7 @@ describe('S3Plugin local backend', () => {
 			await host.commit()
 			const capability = host.require(LocalS3Consumer).s3
 			const client = capability.client
-			host.cfg(S3Plugin).disable()
+			host.stop(S3Plugin)
 			await host.commit()
 			expect(() => capability.client).toThrow('Plugin owner stopped')
 			await expect(client.bucketExists()).rejects.toBeInstanceOf(S3NotRunningError)
@@ -214,7 +214,7 @@ async function temporaryRoot(): Promise<string> {
 
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
 	await withRuntimeHost(async (host) => {
-		addEnabled(host, [S3Plugin, LocalS3Consumer])
+		addStarted(host, [S3Plugin, LocalS3Consumer])
 		host.cfg(S3Plugin).set({
 			backend: {
 				type: 'local',

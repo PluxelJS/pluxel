@@ -3,7 +3,7 @@ import type { AnyElysia } from 'elysia'
 
 import {
 	type PluginGatedDef,
-	resolveIsPluginEnabled,
+	resolveIsPluginRunning,
 	type PluginGatedOptions,
 } from '../routing/pluginGatedRoutes'
 import { createHostElysiaApp, type AnyHostElysiaApp } from './elysia'
@@ -17,7 +17,7 @@ export interface PluginGatedModuleDef extends PluginGatedDef {
 function createPluginGatedModule(
 	ctx: Context,
 	module: PluginGatedModuleDef,
-	isPluginEnabled: ReturnType<typeof resolveIsPluginEnabled>,
+	isPluginRunning: ReturnType<typeof resolveIsPluginRunning>,
 ) {
 	const routes = module.build(
 		createHostElysiaApp(ctx, {
@@ -31,7 +31,7 @@ function createPluginGatedModule(
 		name: `plugin-gated:${module.plugin}:${module.id}`,
 	})
 		.beforeHandle(({ status }) => {
-			if (!isPluginEnabled(module.plugin, ctx)) return status(404, 'Not Found')
+			if (!isPluginRunning(module.plugin, ctx)) return status(404, 'Not Found')
 			return undefined
 		})
 		.use(routes)
@@ -42,14 +42,14 @@ export function createPluginGatedRouter(
 	modules: readonly PluginGatedModuleDef[],
 	options: PluginGatedOptions = {},
 ) {
-	const isPluginEnabled = resolveIsPluginEnabled(options)
+	const isPluginRunning = resolveIsPluginRunning(options)
 	let root: AnyElysia = createHostElysiaApp(ctx, {
 		precompile: true,
 		name: 'plugin-gated:root',
 	})
 
 	for (const module of modules)
-		root = root.use(createPluginGatedModule(ctx, module, isPluginEnabled))
+		root = root.use(createPluginGatedModule(ctx, module, isPluginRunning))
 
 	return root
 }

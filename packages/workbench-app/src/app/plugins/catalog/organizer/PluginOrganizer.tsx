@@ -81,7 +81,7 @@ export type { GroupConfig, PluginStatus, PluginStatuses } from './types'
 export type StatusFilter = {
 	running: boolean
 	stopped: boolean
-	disabled: boolean
+	unavailable: boolean
 }
 
 type Props = {
@@ -147,12 +147,23 @@ export function PluginOrganizer({
 	// 基础映射
 	const runningSet = useMemo(() => {
 		const s = new Set<string>()
-		for (const [id, status] of Object.entries(statuses)) if (status.isRunning) s.add(id)
+		for (const [id, status] of Object.entries(statuses)) {
+			if (status.lifecycleState === 'running') s.add(id)
+		}
 		return s
 	}, [statuses])
-	const enabledSet = useMemo(() => {
+	const availableSet = useMemo(() => {
 		const s = new Set<string>()
-		for (const [id, status] of Object.entries(statuses)) if (status.isEnabled !== false) s.add(id)
+		for (const [id, status] of Object.entries(statuses)) {
+			if (status.availability === 'available') s.add(id)
+		}
+		return s
+	}, [statuses])
+	const desiredRunningSet = useMemo(() => {
+		const s = new Set<string>()
+		for (const [id, status] of Object.entries(statuses)) {
+			if (status.desiredState === 'running') s.add(id)
+		}
 		return s
 	}, [statuses])
 	const getName = useCallback((id: string) => statuses[id]?.name ?? id, [statuses])
@@ -517,7 +528,8 @@ export function PluginOrganizer({
 							ids={flatVisibleIds}
 							virtualize={shouldVirtualizeFlatResults}
 							runningSet={runningSet}
-							enabledSet={enabledSet}
+							availableSet={availableSet}
+							desiredRunningSet={desiredRunningSet}
 							selectedSet={selectedSet}
 							activeSet={activeSet}
 							focusedId={focusedId}
@@ -561,7 +573,8 @@ export function PluginOrganizer({
 													pid={id}
 													name={getName(id)}
 													running={runningSet.has(id)}
-													enabled={enabledSet.has(id)}
+													available={availableSet.has(id)}
+													desiredRunning={desiredRunningSet.has(id)}
 													selected={selectedSet.has(id)}
 													active={activeSet.has(id)}
 													onSelect={handleRowSelect}
@@ -632,7 +645,8 @@ export function PluginOrganizer({
 															g={g}
 															visibleIds={vis}
 															runningSet={runningSet}
-															enabledSet={enabledSet}
+															availableSet={availableSet}
+															desiredRunningSet={desiredRunningSet}
 															selectedSet={selectedSet}
 															activeSet={activeSet}
 															onSelect={handleRowSelect}

@@ -93,8 +93,8 @@ occurrence；没有 per-Part override。commit 必须重启被修改 Plugin 与�
 caller-bound view 会破坏 Context isolation，并让 Workbench 中的实现选择表面成功、实际继续调用旧 provider。
 
 `PluginRef<T>` 是 opaque author declaration，只能由工具链从目标 root named export 的 type provenance lower。ref 不
-import、安装、注册或默认启用 package。`plugins.use(Ref, callback)` 只允许作为 `init()` 中的直接语句，callback 必须
-同步且返回的 cleanup/disposable 自动进入 consumer effects。provider absent、disabled 或 start-failed 时 callback 不执行，
+import、安装、注册 package 或打开其自动启动策略。`plugins.use(Ref, callback)` 只允许作为 `init()` 中的直接语句，callback 必须
+同步且返回的 cleanup/disposable 自动进入 consumer effects。provider absent、当前未运行或 start-failed 时 callback 不执行，
 但不阻塞 consumer；running generation 出现、消失或 replacement 时，core 把 consumer 及其 required dependent closure
 合并进一次 restart plan。required/optional ordering edge 的合并图必须无环。
 
@@ -124,7 +124,7 @@ class SearchPlugin extends BasePlugin {
 
 `parts.use()` 只能是 concrete `@Plugin` 或 direct `PluginPart` subclass 的普通 class field initializer。concrete direct Part
 可以用 constructor 参数声明 required Plugin；参数采用与 Plugin 相同的 package-root value-import provenance 和重复检查。Part 不使用
-`@Plugin`，也没有 node address、catalog、fork、独立 enable/restart、RuntimeState 或 Workbench owner。同一 Part class 的每个 field
+`@Plugin`，也没有 node address、catalog、fork、独立 auto-start policy、session start/stop/restart、RuntimeState 或 Workbench owner。同一 Part class 的每个 field
 occurrence 都产生独立实例；Part 可以递归拥有 Part，local containment cycle 在 build 时拒绝，跨模块防线由 runtime 在 generation
 构造阶段 fail-fast。
 
@@ -162,10 +162,10 @@ graph、state、config、logging、Workbench 或 HMR identity。Workbench/日志
 CLI/诊断使用 node reference，不暴露 digest ID。完整 schema、source `realpath`、codec、作用域和持久化边界见
 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)。
 
-route catalog availability、RuntimeState desired policy、Core committed graph 与 running generation projection 是四个独立平面。
-static/dynamic route 只生产 immutable catalog candidate snapshot；runtime-common coordinator 统一展开 durable forks、校验 provider/default/
-override、计算 blocked closure 并提交一个 prepared Core update。disabled durable node 不进入 Core，route 不复制 reconciliation，Core
-也不吸收 module/source/artifact provenance。
+route catalog availability、RuntimeState auto-start policy、process session intent、Core committed graph 与 running generation projection 是五个
+独立平面。static/dynamic route 只生产 immutable catalog candidate snapshot；runtime-common coordinator 统一展开 durable forks、校验
+provider/default/override、计算 activation/provider 与 blocked closure 并提交一个 prepared Core update。不在 effective desired graph 中的 durable
+node 不进入 Core，route 不复制 reconciliation，Core 也不吸收 module/source/artifact provenance。
 
 一个具体插件包只有一个 plugin-bearing entry：package root `"."`。根入口可以唯一 named-export 多个 Plugin；同一
 constructor 的多个根名称、plugin-bearing subpath 与跨包 Plugin re-export 都由 build 拒绝。Workbench、worker、contract
@@ -296,8 +296,8 @@ route 观察文件并执行正常 graph transaction。runtime 不提供 package-
 抽象；其他 registry、离线 bundle 或本地开发工具也可以实现同一文件协议，不需要进入核心。
 
 两条 route 的 catalog 语义是 `static = fixed plugins`、`dynamic = fixed plugins + mutable file sources`。Dynamic fixed catalog
-使用普通 `plugins`，不拥有单独的 enablement、fork 或持久状态；fixed 与 mutable constructor 在同一个 Vite evaluated namespace
-中求值。Package Manager 是宿主显式 import、RuntimeState 显式启用的 dynamic-only fixed plugin。
+使用普通 `plugins`，不拥有单独的 auto-start、session intent、fork 或持久状态；fixed 与 mutable constructor 在同一个 Vite evaluated namespace
+中求值。Package Manager 是宿主显式 import、并由 RuntimeState `autoStart` 声明冷启动策略的 dynamic-only fixed plugin。
 
 ## 不变量
 

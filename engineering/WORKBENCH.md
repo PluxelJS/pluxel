@@ -45,16 +45,33 @@ field patch 提交给同一个 Plugin node config owner；server 每次重新校
 
 Workbench 的插件详情页可以投影 constructor dependency，但这不是 plugin extension。若参数 token 是未装饰的抽象
 `BasePlugin`，host 从 catalog 中查找所有 `@Plugin(Token, ...)` provider，并允许选择具体实现。选择结果属于
-RuntimeState；provider default 与 consumer dependency override 是不同的显式 mutation。selection 不自动启用、fallback 或改写 provider；disabled/
-unavailable/incompatible target 以稳定 code 拒绝，用户必须独立 enable 可用 provider。成功 commit 会重启被修改 plugin 及其 dependent closure，
+RuntimeState；provider default 与 consumer dependency override 是不同的显式 mutation。selection 不修改 provider 的 auto-start policy、fallback
+或改写 provider；unavailable/incompatible target 以稳定 code 拒绝。consumer 进入 effective desired graph 时，required provider 可以由 dependency
+closure 在本次进程激活。成功 commit 会重启被修改 plugin 及其 dependent closure，
 保证旧 caller-bound capability view 不会继续调用先前实现。
 
-“创建并选择 Fork”使用一次 `ensurePluginFork` mutation，把 ensure、enable 与 stable requirement-address override 放入同一个 RuntimeState
-patch；任一 admission/persistence 失败都不会留下 orphan fork。详情页为当前 requirement 的全部 fork option 提供显式删除入口；删除先拒绝
+详情侧栏把 consumer override 直接放入对应“必须依赖”行，并把“跟随默认”作为可选择的显式值；选择具体 provider 只写当前 consumer +
+requirement override，清回默认才删除该 override。当前 Plugin 作为 provider 的全局 default 是相反方向的策略，单独放在“提供方默认”控件，
+不能让用户把它误解为当前 Plugin 的消费实现。两类 inspection 仍按侧栏实际挂载惰性读取，不把候选项塞入 graph snapshot，也不保留第二张
+重复的“消费实现”卡片。
+
+“创建并选择 Fork”使用一次 `ensurePluginFork` mutation，把 ensure 与 stable requirement-address override 放入同一个 RuntimeState patch；它不顺手
+打开 fork 的 auto-start policy，consumer 的 required closure 会按需激活该实现。任一 admission/persistence 失败都不会留下 orphan fork。详情页为
+当前 requirement 的全部 fork option 提供显式删除入口；删除先拒绝
 inbound override，再停止并清理 config/logging metadata，业务 persistence 不由 generic remove purge。
 
 因此 memory/Redis backend、不同数据库 provider 或应用自定义 capability provider 不需要各自注册管理 UI。关闭
 Workbench 后，static/dynamic/headless host 仍通过同一 constructor dependency 与 runtime state 完成选择。
+
+Plugin 状态控件严格投影三个平面：RuntimeState 中的 durable `autoStart`、coordinator-owned process session intent，以及 Core observed
+lifecycle fact。自动启动开关只写持久策略；为了遵守 systemd 的“enable/disable 不等于 start/stop”语义，coordinator 在同一原子操作中 rebase
+session intent，保持修改前的当前 desired state 不变。`start` / `stop` 只影响本次进程，`start` 也负责重试 desired 但未 running 的节点；
+`restart` 只替换实际 running 的 addressed generation。cold boot 清空全部 session intent。
+
+Session intent 是 `inherit | run | stop`，不是 UI 本地状态。它参与 catalog replacement、HMR、config reconciliation、required dependent
+propagation 与 bounded convergence：`run` 把节点加入本次进程的 activation roots，required provider closure 可以被 dependency 激活但不会
+修改 provider 的 `autoStart`；`stop` 是显式阻断，provider 被停止时 required dependent closure 同时退出 effective graph。Workbench 只显示
+committed `desiredState`、`activationReason` 与 `lifecycleState`，mutation pending 时显示“协调中”，不乐观伪造 running。
 
 ```ts
 export const NotesUi = workbenchContract.define({
@@ -89,6 +106,38 @@ ctx.workbench?.mount(NotesWorkbench, {
 
 `dependsOn` 必须完整，且只能包含同一 database definition 的 table。写操作不进入 `liveQuery`；浏览器 mutation
 始终调用 typed RPC，RPC 在 server transaction commit 后返回。
+
+## Plugin dependency observability
+
+官方 App 的 Plugin 详情与 `/plugin-graph` 共用 `RuntimeManagementClient.dependencies.graph()` snapshot，不保留
+无 required/optional 区别的第二份依赖列表接口。详情页把当前 Plugin 作为隐含 owner，按“必须依赖”“可选集成”
+与“被依赖”分组；relation 正文只投影对端 `displayName`，canonical node/definition reference 只用于 tooltip、Plugin detail target 与
+consumer + requirement graph deep link。正常 running/effective/direct facts 不重复显示，缺失、未解析、未生效、非运行状态和非默认
+resolution 才形成紧凑标记。incoming effective 与 inactive relation 合并为一张列表，由 section summary 表达 blast radius，并保留每条
+relation 的 required/optional mode。只有拥有 status node 的 endpoint 才链接 Plugin detail；absent provider 使用 requirement export name
+作为可读 placeholder。Required provider/fork 选择仍在控件实际显示时惰性调用
+`dependencies.inspectConsumerRequirements()`，graph query 不预取候选项。
+
+App 内 graph resource 以 Management Client identity 共享，提供单一 in-flight request、30 秒 TTL、last-known-good、显式刷新与
+stale/error 状态。成功的 auto-start、session lifecycle、config、dependency/provider 和 fork mutation 会同时失效 overview 与 graph；持久化
+`state: unknown` 在 mutation helper 中强制刷新两份 read model。Resource 一次建立 `byNode`、`outgoing`、`incoming` index，不接受
+浏览器本地 graph mutation，也不进入 App Providers。
+
+`/plugin-graph` 默认展示 effective node/edge，并在关系图外保留没有可见 relation 的 effective node；声明关系展示全部 status node，并为
+absent resolved provider 与 unresolved requirement 建立 namespace 分离、browser-only 的 hollow placeholder。DTO 保持
+consumer/requirement/provider 领域方向，画布统一绘制 provider → consumer。Required 为实线、Optional 为虚线、inactive 降低透明度，
+issue 同时使用 icon 与 outline；`autoStart`、`sessionIntent`、`desiredState`、`lifecycleState` 与 `availability` 是互不替代的事实，声明 latent
+cycle 不冒充当前 graph error。
+
+Graph route、screen 和 renderer 使用两层 lazy boundary。Renderer 按无向连通性拆分有 edge 的 component，仅用 `@dagrejs/dagre`
+计算分层节点与 edge route，再按目标画布宽高比把 component 做多列均衡装箱，以只读 SVG relation 和原生 HTML button 绘制。Viewport
+使用单一 CSS transform 提供默认 fit、pointer-centered wheel zoom、background pan 与键盘等价操作，不以纵向滚动容器浏览关系；孤立
+node 不进入关系图 fit/zoom，只通过 header count 按需打开与 inspector 互斥的 overlay list。Node selection 突出一跳 incoming/outgoing
+relation 及其 endpoint，edge selection 只突出 edge 两端，其他 component 保持可交互但降低视觉权重。Renderer 不引入 graph editor、MiniMap、node drag 或 connection handle。Visual model 一次建立 component、isolated node、search text 和按 visual edge
+方向的 incoming/outgoing index，inspector 不在 selection 时扫描全部 edge。Topology key 包含 view/filter、connected node membership 和
+edge resolution facts，不包含孤立 node、effective/status-only 样式，因此 status 或无关系节点 refresh 可以复用 geometry。Plugin detail
+只依赖不含 visualization import 的 canonical deep-link builder。Base path 与
+node/edge focus splat 都由原生 Workbench route 和 host-owned document renderer 处理；非 canonical 或 malformed focus path 安全退回未聚焦。
 
 ## Browser facade
 
@@ -180,7 +229,7 @@ sidecar 推导它，也不创建 product service、额外 HTTP route、polling �
 用户只能在已注册分类与未分组区之间移动、排序插件，不能创建、重命名或删除分类。
 
 Management plane 在 `management` namespace 持久化相对默认分类的 assignment 与排序偏好；它与 RuntimeState、Workbench
-各自拥有独立状态。disabled/stopped Plugin 仍按 catalog source 分类；management 未安装时不创建分类 service 或偏好文件。宿主 exact 规则和
+各自拥有独立状态。auto-start off/stopped Plugin 仍按 catalog source 分类；management 未安装时不创建分类 service 或偏好文件。宿主 exact 规则和
 偏好使用结构化 definition address，目录展示的 variants 和 extension/resource owner 仍使用 node address；不使用 class/display name。
 新 fork 自动继承 family 分类，同一 definition 的 variants 不能拆到不同 group。完整身份、匹配和持久化规则见
 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。
@@ -188,23 +237,23 @@ Management plane 在 `management` namespace 持久化相对默认分类的 assig
 ## Address-keyed non-materializing read model
 
 Management catalog layout、config、status、preference 与 Workbench bundle/artifact 查询只接收 canonical `PluginDefinitionAddress`/
-`PluginNodeAddress`，内部 Map 使用 Core canonical index key。它们不保存 Core slot，也不为 read 调用 `internDefinition`/`internNode`。disabled
-definition、durable disabled/orphan fork 和 invalid lookup 不会创建 Core definition/node record、Context、effects、Workbench mount 或 artifact
+`PluginNodeAddress`，内部 Map 使用 Core canonical index key。它们不保存 Core slot，也不为 read 调用 `internDefinition`/`internNode`。auto-start-off
+definition、durable inactive/orphan fork 和 invalid lookup 不会创建 Core definition/node record、Context、effects、Workbench mount 或 artifact
 lease；只有 Core materialization 和 running owner 的显式 `ctx.workbench?.mount()` 可以创建对应生命周期状态。
 
 runtime-common status overview 是 management RPC、Workbench 目录与分类的 shared projection path。每次 projection 对 pinned catalog/RuntimeState 只建立一次
-enabled/fork/issue 索引，再按 address 投影 running/source facts；management/Workbench service 不得各自扫描并 intern 同一 node。持久化、跨边界 descriptor、
+auto-start/fork/issue 索引，再按 address 投影 session/desired/running/source facts；management/Workbench service 不得各自扫描并 intern 同一 node。持久化、跨边界 descriptor、
 artifact bundle 与 directory lookup 始终按 canonical node key 索引。WorkbenchRegistry 和 dev compiler 仅可在已经 running/materialized 的 mount lease
 内部持有现成 slot，用于 generation watch 与 Core graph relation；不得由 read lookup 创建 slot，并须在 owner withdrawal 时释放 slot、grant、bundle 与 lease。
 
-Management RPC 是 untrusted transport boundary：server 方法接收 `unknown` 并验证 structured address、action、object/index/forkId/field input。status、
+Management RPC 是 untrusted transport boundary：server 方法接收 `unknown` 并验证 structured address、command、object/index/forkId/field input。auto-start、session lifecycle、
 config、dependency/provider、fork 与 dependency query 使用封闭 discriminated union；malformed payload 返回 `invalid_input` 和明确的 `unchanged`
 state，合法 empty 与 invalid query 不可混为 `[]`/`null`。public Management Client 只在这一边界解包 query union；unexpected programming/
 transport exception 保持 reject，不存在 `internal_error` 或按 message 猜测 code 的 catch-all。
 
-成功的 status、config、dependency/provider 与 fork mutation 都返回同一 address-only、deep-frozen `PluginApplyReport`。Workbench 可以按
+成功的 auto-start、session lifecycle、config、dependency/provider 与 fork mutation 都返回同一 address-only、deep-frozen `PluginApplyReport`。Workbench 可以按
 封闭 status/code 做交互提示，但不得把 report 降级成 boolean：drain/start issue、blocked reconciliation 与 committed/unchanged facts 仍可由
-调用者检查。fork metadata persistence 失败时 UI 根据 `retained | disabled-retained | unknown` 刷新并允许幂等重试。
+调用者检查。fork metadata persistence 失败时 UI 根据 `retained | stopped-retained | unknown` 刷新并允许幂等重试。
 
 ## Plugin identity 与可读路径
 
@@ -283,8 +332,8 @@ tab-scoped state、group 归属、browser history 镜像和持久化仍由 Works
 Remote View。窄屏只临时最大化当前 group，并提供 group 切换入口，不卸载或改写其余布局。
 
 Workspace Controller 由 Router 之上的 App 根 Provider 持有，不由会随 route tree 重建的 Shell 或 route provider 持有。持久化 v4
-使用 `tabs + editor.groups + editor.layout`，每个 Tab 恰好属于一个 group，每个 layout leaf 恰好引用一个 group；v3 的扁平 Tab
-状态恢复为单 group，而不是丢弃用户文档。`openTab()` 必须先原子写入
+使用 `tabs + editor.groups + editor.layout`，每个 Tab 恰好属于一个 group，每个 layout leaf 恰好引用一个 group；版本不匹配时恢复
+默认工作区。`openTab()` 必须先原子写入
 document tab 和 navigation intent，route commit 再在同一 Controller 中消费 intent；连续 navigation intent 按提交顺序消费，
 命中已有 document instance 时只聚焦，不把它重写成普通 navigation instance。
 

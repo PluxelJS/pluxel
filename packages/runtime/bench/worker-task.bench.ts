@@ -38,7 +38,7 @@ let worker!: WorkerTaskBenchmark
 
 beforeAll(async () => {
 	host.add(lowerTestPlugin(WorkerTaskBenchmark))
-	host.cfg(WorkerTaskBenchmark).enable()
+	host.start(WorkerTaskBenchmark)
 	await host.commit()
 	worker = host.require(WorkerTaskBenchmark)
 	await worker.run(new Uint8Array(1))

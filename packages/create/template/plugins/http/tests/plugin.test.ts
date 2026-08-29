@@ -10,8 +10,7 @@ describe('HttpPlugin', () => {
 			async (host) => {
 				host.add([TodoPlugin, HttpPlugin])
 				host.cfg(TodoPlugin).set({ maxItems: 2, seedTitle: 'First task' })
-				host.cfg(TodoPlugin).enable()
-				host.cfg(HttpPlugin).enable()
+				host.start(HttpPlugin)
 				await host.commit()
 
 				expect(host.require(HttpPlugin).ctx.elysia).toBeInstanceOf(Elysia)

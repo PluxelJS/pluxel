@@ -35,11 +35,11 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
-			runtimeState: { mode: 'memory', snapshot: { enabled: [demoAddress] } },
+			runtimeState: { mode: 'memory', snapshot: { autoStart: [demoAddress] } },
 		})
 
 		expect(Object.keys(config)).toEqual(['root', 'configPath', 'profile', 'runtimeState'])
-		expect(config.runtimeState?.snapshot?.enabled).toEqual([demoAddress])
+		expect(config.runtimeState?.snapshot?.autoStart).toEqual([demoAddress])
 		expect(() => defineDynamicRuntimeConfig(null as never)).toThrow(/must be an object/i)
 		expect(() =>
 			defineDynamicRuntimeConfig({
@@ -78,17 +78,17 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
-			runtimeState: { snapshot: { enabled: [demoAddress] } },
+			runtimeState: { snapshot: { autoStart: [demoAddress] } },
 			workbench: {
-				enabled: true,
+				autoStart: true,
 				uiBasePath: '/__pluxel/workbench',
 			},
 			logging: false,
 		})
 
-		expect(config.runtimeState?.snapshot?.enabled).toEqual([demoAddress])
+		expect(config.runtimeState?.snapshot?.autoStart).toEqual([demoAddress])
 		expect(config.workbench).toEqual({
-			enabled: true,
+			autoStart: true,
 			uiBasePath: '/__pluxel/workbench',
 		})
 		expect(config.context).toBeUndefined()

@@ -44,7 +44,7 @@ caller.logger -> LoggerProvider -> BatchLogRecordProcessor -> signal OTLP export
 collection，Prometheus scrape 不等待 push interval。
 
 不注册 global OTel provider。一个进程可运行多个 Host、测试 Host 和 replacement generation；global provider 的 write-once contract
-会让其中一个 generation 意外取得永久 authority。constructor required dependency 使 enable、verification、stop、rollback 和
+会让其中一个 generation 意外取得永久 authority。constructor required dependency 使 activation、verification、stop、rollback 和
 replacement 继续服从普通 Plugin graph。
 
 ## Context 与传播

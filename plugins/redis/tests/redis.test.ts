@@ -65,9 +65,9 @@ class RedisConsumerB extends BasePlugin {
 	}
 }
 
-function addEnabled(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
+function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
 	host.add(plugins)
-	for (const PluginClass of plugins) host.cfg(PluginClass).enable()
+	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
 beforeEach(() => {
@@ -93,7 +93,7 @@ beforeEach(() => {
 describe('@pluxel/redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		await withRuntimeHost(async (host) => {
-			addEnabled(host, [RedisPlugin, RedisConsumer])
+			addStarted(host, [RedisPlugin, RedisConsumer])
 			await host.commit()
 
 			const consumer = host.require(RedisConsumer)
@@ -111,7 +111,7 @@ describe('@pluxel/redis', () => {
 			)
 
 			const handle = consumer.redis
-			host.cfg(RedisPlugin).disable()
+			host.stop(RedisPlugin)
 			await host.commit()
 			expect(redisMock.client.close).toHaveBeenCalledOnce()
 			expect(() => handle.client).toThrow('Plugin owner stopped')
@@ -139,10 +139,10 @@ describe('@pluxel/redis', () => {
 			const West = host.fork(RedisPlugin, 'west')
 			host.cfg(East).set({ url: 'redis://east.example:6379', database: 1 })
 			host.cfg(West).set({ url: 'redis://west.example:6379', database: 2 })
-			host.cfg(East).enable()
-			host.cfg(West).enable()
-			host.cfg(RedisConsumerA).enable()
-			host.cfg(RedisConsumerB).enable()
+			host.start(East)
+			host.start(West)
+			host.start(RedisConsumerA)
+			host.start(RedisConsumerB)
 			host.override(RedisConsumerA, pluginDefinitionAddressOf(Redis), East)
 			host.override(RedisConsumerB, pluginDefinitionAddressOf(Redis), West)
 
@@ -157,7 +157,7 @@ describe('@pluxel/redis', () => {
 			])
 			expect(host.require(East).ctx).not.toBe(host.require(West).ctx)
 
-			host.cfg(East).disable()
+			host.stop(East)
 			await host.commitAllowFail()
 			expect(east.client.close).toHaveBeenCalledOnce()
 			expect(() => eastCapability.client).toThrow('Plugin owner stopped')
@@ -170,7 +170,7 @@ describe('@pluxel/redis', () => {
 		redisMock.client.connect.mockRejectedValueOnce(new Error('offline'))
 
 		await withRuntimeHost(async (host) => {
-			addEnabled(host, [RedisPlugin])
+			addStarted(host, [RedisPlugin])
 			const commit = await host.commitAllowFail()
 			expect(host.isRunning(RedisPlugin)).toBe(false)
 			expect(redisMock.client.destroy).toHaveBeenCalledOnce()
