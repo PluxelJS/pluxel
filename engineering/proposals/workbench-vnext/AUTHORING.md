@@ -283,6 +283,10 @@ Descriptor 参数同时承担静态推导和运行时防串线：local View 精�
 opened View 对比；错误 renderer、错误 expose 或错误 descriptor 在使用 API 前 fail-fast。无参数的 `useWorkbench<Api>()` 只靠调用者手写 generic，不能验证
 当前 View 身份，因此不提供。
 
+Hook projection 与 host facade 是 ordinary frozen record；descriptor、connection epoch 和 host facts 不变时保持稳定 identity，未知属性遵循普通
+JavaScript 语义返回 `undefined`。Workbench 不用 observable Proxy 实现 Context/resource lookup；其中 `api`/`provider`/`consumer` 本身仍是上游 Cap’n Web
+为 type-erased RPC 提供的 `RpcStub`，不在外面再包一层 Workbench method Proxy。
+
 MF Bridge 仍可按上游 ABI 接收 internal props，但 generated wrapper 立即把 opened handle 放入每次 Bridge instance 独立的 React Context，再渲染插件的零
 props component。Internal props 与 `WorkbenchProvider` 不从 Plugin 作者 entry 导出。Context 只保存当前 connection epoch 内稳定的 descriptor、API stubs 和
 host service；locale/scheme 等动态 host snapshot 由 hook 订阅，领域 snapshot 继续由 `useRemoteValue()`/`useSyncExternalStore` 管理，不能塞进 Context value。

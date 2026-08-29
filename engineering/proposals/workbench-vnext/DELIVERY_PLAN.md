@@ -56,6 +56,26 @@ topology、initial event emit glue、trivial wrapper 与 export map；不建立 
 
 其中任何一行如果需要新 platform noun，必须先记录 direct capability 失败的具体调用点和 lifecycle，不以“未来可能复用”为理由扩张设计。
 
+## Current 成熟资产保留 gate
+
+[`CURRENT_COMPARISON.md`](CURRENT_COMPARISON.md) 是 current/vNext 取舍和保留账本的唯一说明。Cutover 不是把 current 全部删除后重新发明；以下
+语义必须有等价或更强的 vertical proof：
+
+| Current 成熟资产                                  | vNext 必须提交的 proof                                                                                           |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| React Context、稳定 value、`useSyncExternalStore` | generated wrapper/descriptor hook 的 tear-free、wrong-descriptor 和 StrictMode tests                             |
+| owner effects、mount rollback、grant withdrawal   | publication/opened root 在 stop/replacement/rollback/late resolve 后 bounded cleanup                             |
+| target retain 与 StrictMode microtask replay      | replay 不重复 socket、MF registration、factory、Bridge 或 subscription                                           |
+| candidate module setup 与 last-known-good         | Manifest/expose/shared/Bridge 任一步失败保留上一完整 revision，不能恢复 withdrawn authority                      |
+| canonical route 与 host-owned workspace           | exact/parameterized precedence、server rematch、dirty/title、Pane Kit 和 workspace persistence tests             |
+| `liveQuery` coalescing/revision/gap/LKG 算法      | 至少一个 fixture 以 internal helper 支撑 direct `snapshot/list/watch`，或用测量证明可以删除                      |
+| frozen reflection-safe host record                | host facade 对未知属性返回普通 `undefined`，不引入 Workbench Proxy DSL                                           |
+| platform input validation 与 quota                | auth/profile/identity/route/layout/build/lifecycle envelope、frame/queue/in-flight bounds 的 hostile-input tests |
+| disabled zero cost                                | endpoint/auth backend/producer/compiler/watcher/client allocation 全部为零                                       |
+
+这些 proof 只继承语义和算法，不恢复 Contract/resource/Port/grant/SSE/custom artifact public path。任一成熟资产没有落点时，Slice F 不得删除 current
+implementation。
+
 ## 常见交互 coverage gate
 
 Vertical fixtures 必须用 direct ViewApi 覆盖：
