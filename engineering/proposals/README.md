@@ -19,12 +19,9 @@
 
 尚在研究、未采纳的提案：
 
-- [`workbench-vnext/`](workbench-vnext/README.md)：基于当前 Wretch/Fonts/PackageManager 调用面与 BotManager proposal fixture，从零研究
-  不可拆分的 MF 2.0 + WS-required Cap’n Web closed Profile 1，以及 direct Cap’n Web ViewApi、View/Attachment authoring、Plugin generation
-  atomic publication 与 direct opened View；Workbench 只增加 View/Attachment 两个 UI 声明，Collection/Feature/Model/Query/Channel
-  不成为 platform protocol，Shell framework 保持
-  platform-neutral，但必须复用同一 concrete host packages，Workbench/Management SSE 完全不存在，不发布 replaceable
-  transport/artifact/auth SPI。
+- [`workbench-vnext/`](workbench-vnext/README.md)：Workbench 重构 implementation blueprint。固定不可拆分的
+  MF2 + WS-only Cap’n Web Profile 1、direct View/Attachment API、Plugin generation atomic publication、
+  FontManager/BotManager 调用面、实施切片与 cutover gates；仍未成为当前 API。
 - [`WORKBENCH_PLUGIN_COMPOSITION.md`](WORKBENCH_PLUGIN_COMPOSITION.md)：用 chatbot 的共享 Bot 管理页面与 Wretch Port 验证
   plugin-owned Workbench 组合；作为 vNext 的 composition 输入研究，仍不代表当前 API。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
