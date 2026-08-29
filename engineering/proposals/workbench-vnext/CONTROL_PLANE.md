@@ -102,13 +102,19 @@ type OpenedView =
 	  }>
 ```
 
-`openView()` 在一次 Cap’n Web result 中 transfer exact API root、server-derived params 和 pinned federation reference；没有中间
-`ViewSessionTarget`，也没有后续 `api()` round trip。Concrete browser client 验证整个 result，并建立只存在于本地的 disposable View handle。
-Server 把返回的 API wrapper 绑定到一个 internal lease；local View 只有一个 remote root，Attachment 只有 provider + optional target roots。
+`openView()` 在一次 Cap’n Web result 中 transfer direct API root、server-derived params 和 pinned federation reference；没有中间
+`ViewSessionTarget`，也没有后续 `api()` round trip。Concrete browser client 验证 Workbench 自己拥有的 result envelope，并建立只存在于本地的
+disposable View handle。Envelope 内的 Plugin API stub 及其后续 domain payload 不由 Workbench 解释。Server 把返回的 API wrapper 绑定到一个
+internal lease；local View 只有一个 remote root，Attachment 只有 provider + optional target roots。
 
 Cap’n Web 把返回的 `RpcTarget` 转成 remote stub。Stub 不是 DTO，不能 persist、serialize 到 URL、跨 page 共享或跨 connection epoch
 复活。Server 可以保留 internal diagnostics ID，但 browser protocol 不接收 `grantId`、resource namespace、role string 或“旧 token 换新
 stub”API。
+
+Browser 类型直接使用 pinned Cap’n Web 的 `RpcStub<Api>`，方法调用返回其原生 `RpcPromise`；stub runtime 本身不知道 server method
+inventory，只有 TypeScript generic 提供静态 shape。Workbench 不再建立 Server/Client interface pair、method descriptor 或 proxy DSL。API 文件只允许
+pinned `RpcCompatible` 支持的 by-value/capability shape；type/lint/import boundary 尽早检查 declaration，上游 serializer 最终拒绝实际 unsupported
+custom class/cyclic value。Workbench 不增加第二套 runtime value validator。
 
 ## Authentication 也属于 Cap’n Web
 
@@ -146,15 +152,21 @@ physical admission failure。
 
 ## Direct capability，不再叠加 grant protocol
 
-`openView()` 把 network input 作为 `unknown` 验证成 `OpenViewInput`，再校验 structured target、View key、layout revision、principal policy
-与 quota。`location.path` 必须是 canonical target-relative path；server 用 declared route 重新匹配 params，browser 不能直接注入 params。
+`openView()` 把 network input 作为 `unknown` 验证成 `OpenViewInput`，再校验 structured target、View key、layout revision、authenticated principal lease
+与 quota。`location.path` 必须是 canonical target-relative path；server 用 declared route 重新匹配 params，browser 不能直接注入 params。Plugin-specific
+authorization 留在 factory/target。
 
-Admission 通过后才用 frozen principal projection、server-derived params 和 opened-view `AbortSignal` 调用 factory，并在同一个 result
-直接返回 exact API root。Local View 只返回一个 root；Attachment 只返回 provider 与 optional target API root。Browser-safe
-definition/client 知道 exact contract；raw protocol 不提供 resource/method namespace lookup。普通返回值保持 by-value，只有 declaration 允许的
-observer/task/subscription 等对象成为 child capability。
+Admission 通过后才用 frozen principal projection、server-derived params 和 opened-view `AbortSignal` 调用 sync/async factory。Runtime 在固定
+deadline 内等待 resolved `RpcTarget`，然后在同一个 result 直接返回 API root。Local View 只返回一个 root；Attachment 只返回 provider 与 optional
+target API root。Browser-safe TypeScript generic
+连接 factory、stub 与 renderer props；raw protocol 不提供 resource/method namespace lookup。普通返回值保持 by-value，Plugin API 可以按需返回
+observer/task/subscription 等原生 Cap’n Web child target，Workbench 不登记或反射它们的方法。
 
-Capability 可以共享底层 validated binding/subscription，但不能合并 target/provider owner 或放宽 withdrawal。Server-side revocation 使 retained
+Attachment provider factory 额外得到 platform-issued `caller.node`，只用于关联该 canonical consumer node 已有的 caller-owned state；caller reference
+自身的 admission/有效期仍绑定 exact consumer generation。Provider 与 optional target factory 必须全成功才 transfer roots；任一 reject、timeout、
+withdrawal 或 non-`RpcTarget` result 都 abort 共用 signal、dispose completed/late targets，并且不创建 partial opened handle。
+
+Capability 可以共享 Plugin 自己拥有的 backing/subscription，但不能合并 target/provider owner 或放宽 withdrawal。Server-side revocation 使 retained
 stub 后续调用得到 stable `capability_expired`；socket break 则使整个 graph broken。两者不能混为通用 `internal_error`。
 
 ## Duplex push 直接使用 API callback capability
@@ -169,17 +181,20 @@ stub 后续调用得到 stable `capability_expired`；socket break 则使整个 
 Observer/receiver 只能调用其声明的窄方法，不获得 Shell store、router、其他 View 或 raw transport。Callback queue、message bytes、in-flight RPC、
 active child stub 与每 principal session 数全部有界。
 
-Cap’n Web 只解决 invocation、serialization、pipelining 与 capability transport，不提供 runtime input validation。所有 network input 在 server
-以 `unknown` 进入 Standard Schema/parser；snapshot、patch、event 与 action result 在 browser boundary 再验证、clone、freeze。
+Cap’n Web 只解决 invocation、serialization、pipelining 与 capability transport，不替 Plugin 定义领域信任边界。Workbench 只防御性解析自己拥有的
+`RuntimeBootstrap`、authentication step、`OpenViewInput`、layout/federation reference、identity/revision 和 lifecycle envelope；这些 platform-owned
+values 在进入内部状态前仍是 `unknown`。取得 ViewApi 后，method input/result、snapshot、event、业务授权与错误语义都属于 Plugin：它可以选择
+Valibot、Standard Schema、手写 parser、既有 domain service，或在已知可信的内部路径不重复校验。Workbench 不读取 schema、不生成 validator，也不把
+domain failure 改写成 platform error。
 
 ### 一条有序 WS 的负载纪律
 
 单 socket 不通过公开 priority/channel/QoS API 解决拥塞。Profile 1 固定采用更小的约束面：
 
-- method/callback/result 都受 message byte ceiling；超限 snapshot 必须分页，file/archive bytes 必须走 signed HTTP ticket；
+- method/callback/result 都受粗粒度 message byte ceiling；Plugin 应把大 snapshot 分页，file/archive bytes 必须走 signed HTTP ticket；
 - invalidation 与 progress producer 在进入 transport 前合并为 latest，log tail 使用 bounded queue；overflow 由领域 API 明确报告 gap 或结束订阅；
 - platform runtime 内部对 control/mutation 与 callback/stream output 做 bounded fair scheduling，但 Plugin 不能设置 lane 或权重；
-- 已编码的大 frame 无法抢占，因此 oversized result 在 admission/validation 时直接拒绝，不靠第二条 socket 绕过 head-of-line blocking；
+- 已编码的大 frame 无法抢占，因此 oversized result 在 frame admission/encoding 时直接拒绝，不靠第二条 socket 绕过 head-of-line blocking；
 - conformance 在同时运行 layout/mutation、log tail、progress 与最大合法 page 时测量 bounded control latency 和 bounded memory。
 
 这些是 transport 实现与测试门槛，不增加 Workbench wire kind。若 Cap’n Web runtime 无法在单 WS 上满足该门槛，Profile 1 阻塞，而不是新增 SSE、
@@ -188,13 +203,18 @@ per-feature socket 或公开 scheduler abstraction。
 ## 显式 capability 所有权
 
 页面级 session owner 是唯一能调用 `newWebSocketRpcSession()` 的对象，并公开幂等 `dispose()`/`Symbol.dispose`。官方 App 把 validated
-Management facade 和 Workbench clients 注入 UI；Remote View 不直接看到 root stub。
+Management facade 和 Workbench clients 注入 UI；Remote View 不直接看到 page/session root stub。
+
+Opened View renderer 收到的是 host-owned root 的 borrowed `RpcStub<Api>`。Workbench 不增加 `retain()/dup()/transferOwnership()` 作者 API，也不让
+renderer 取得 session/transport disposer；Bridge/handle 仍是 root 的唯一 platform lifecycle owner。Plugin 直接取得的 child stub 或未 await 的
+`RpcPromise` 沿用上游 caller-disposes 规则，官方 remote-value/task helpers 必须代作者释放自己创建的 subscription/task。Server target 可以实现
+`[Symbol.dispose]`，但 Workbench 的 withdrawal gate 会在 View/owner close 时独立撤销所有 retained duplicates，不依赖 GC 或等待最后一个 stub dispose。
 
 Client cleanup 顺序：
 
 1. Tab/View close 先 destroy MF Bridge，阻止 remote cleanup 后继续发起调用；
-2. local View handle 清除 document/transfer，再显式 dispose child stubs、observers、tasks/subscriptions 和直接返回的 API root；
-3. Attachment handle 同一动作释放 provider/optional target；internal lease 最后一个 root 释放后执行 factory cleanup 并 abort signal；
+2. local View handle 清除 document/transfer，再显式 dispose host-owned child stubs、observers、tasks/subscriptions 和直接返回的 API root；
+3. Attachment handle 同一动作释放 provider/optional target；internal lease 最后一个 root 释放后执行 target disposer/lease cleanup 并 abort signal；
 4. page/session owner dispose root stub 并关闭 socket；
 5. server socket close 即使 browser 未 cleanup 也幂等释放全部 target、observer、lease 与 subscription。
 
@@ -222,7 +242,7 @@ type RuntimeConnectionState =
 4. bootstrap/必要认证成功后，重读 Management/layout，并重新 open ViewApi；
 5. 再注册 remote、打开 View；第一版可以直接 full-document reload。
 
-View client helper 的 last-known-good 只用于健康 session 内的 read/schema failure；MF last-known-good 只用于 artifact load/activation failure。
+View client helper 的 last-known-good 只用于健康 session 内的 read/domain failure；MF last-known-good 只用于 artifact load/activation failure。
 它们都不是 offline mode。Close reason string 不是程序协议；browser 只消费封闭 connection state。
 
 ## Physical ingress 与 security
@@ -242,9 +262,10 @@ Stable error families：
 
 - session/bootstrap：`profile_unsupported | capability_unavailable | quota_exceeded`；
 - authentication：`authentication_required | authentication_failed | authentication_expired | access_unavailable | attempt_limited`；
-- capability：`capability_expired | capability_unavailable | invalid_input | invalid_result | quota_exceeded`。
+- capability/lifecycle：`capability_expired | capability_unavailable | quota_exceeded`。
 
-Programming exception reject 并进入 diagnostics。Authentication expiry、service restart 与 transport break 由 session owner 投影为
+Malformed platform control envelope 与 programming exception reject 并进入 diagnostics；Plugin domain API 自己决定 result/error contract。
+Authentication expiry、service restart 与 transport break 由 session owner 投影为
 `RuntimeConnectionState`，不按 exception/close message 猜测。
 
 ## Vite carrier arbitration
@@ -284,6 +305,7 @@ Close code 只表达 coarse transport lifecycle。Domain failure 继续使用 Ca
 - 出现 HTTP batch、SSE、polling、access-state/login JSON API 或 fallback config；
 - 在 stub 上叠加 grant/resource/method namespace lookup；
 - `openView()` 返回中间 session/resource target，再额外调用一次才能取得 exact API；
+- Workbench 要求 ViewApi schema、method descriptor、contract hash、generated validator 或统一 domain error；
 - disconnect 后 resume 旧 stub、透明 retry mutation 或 replay transient callback/stream；
 - 依赖 GC 回收 server resource；
 - Vite middleware mode、proxy upgrade failure 或 unsupported browser 被伪装成正常运行；

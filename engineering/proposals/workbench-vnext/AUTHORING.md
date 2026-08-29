@@ -13,7 +13,7 @@
 | `Attachment` | required provider 的 renderer/API，由 consumer 选择 placement | provider discovery、arbitrary state、registry |
 
 `ViewApi` 只是“这个 View 打开后拿到的 root capability”的角色名，不是第三种 Workbench resource。
-`CapabilityContract` 是所有 Cap’n Web API 共用的运行时验证基础，不属于 Workbench registry。
+它就是 Plugin 自己声明和实现的普通 Cap’n Web TypeScript interface/RpcTarget；Workbench 不再要求另一份 runtime contract。
 
 Definition 只是一个 Plugin generation 原子发布的 frozen Views/Attachments record，不成为第四种 runtime entity。多页面复用使用普通 TypeScript
 function 生成最终 View descriptors；没有 `Feature` address、install、registry、version、lease 或 protocol kind。
@@ -27,50 +27,60 @@ Workbench 不提供抽象选择菜单。新增交互按固定顺序判断：
 
 1. renderer 与 placement 都属于当前 Plugin：声明 `View`；
 2. renderer 属于 direct required dependency、placement 属于当前 Plugin：声明 `Attachment`；
-3. 领域读取、mutation 与 push：放进该 View/Attachment 已有的 root capability；
+3. 领域读取、mutation 与 push：直接放进该 View/Attachment 已有的 Cap’n Web root；
 4. 普通结果返回 bounded by-value data；只有对象确实需要独立调用、取消或撤销时才返回 child capability；
 5. navigation、document chrome、notification 与文件 bytes 等 browser 行为：使用固定 host facade。
 
 如果一个需求不满足第 2 条，就不应使用 Attachment；如果不满足第 4 条，就不应创建 child target。Definition、publication、opened-view lease、
 MF registration 和 WS scheduling 都由 platform package 管理，不进入 Plugin 作者的日常 mental model。
 
-## ViewApi 只是经过验证的 Cap’n Web contract
+## ViewApi 就是原生 Cap’n Web API
 
-每个 local View declaration 引用一个 browser-safe `CapabilityContract`。这是 Pluxel 为 Cap’n Web 固定提供的 schema wrapper，不是可替换 transport
-SPI：它声明方法、input/result Standard Schema 与 observer/child capability contract，并生成 server validator 和 browser
-client type。限额先使用 platform 固定默认值；只有真实 fixture 证明需要时，才为窄方法声明更严格的上限。
-
-下面只表达候选 shape，exact helper naming 由 Slice A prototype 冻结：
+Plugin 只声明自己会实际使用的 TypeScript surface：
 
 ```ts
-export const SettingsViewApi = capability.define({
-	snapshot: capability.method({
-		result: SettingsSnapshotSchema,
-	}),
-	update: capability.method({
-		input: SettingsInputSchema,
-		result: MutationAckSchema,
-	}),
-	watch: capability.method({
-		input: capability.target(SettingsObserverApi),
-		result: capability.target(SubscriptionApi),
-	}),
-})
+export interface SettingsViewApi {
+	snapshot(): SettingsSnapshot
+	update(input: SettingsInput): Promise<MutationAck>
+	watch(notify: (revision: number) => void): SubscriptionApi
+}
 ```
 
-Contract rules：
+Server target 直接 `extends RpcTarget implements SettingsViewApi`；renderer props 中的 `api` 是上游 `RpcStub<SettingsViewApi>`。
+Stub method 调用按 Cap’n Web 原生类型返回 `RpcPromise<Awaited<Result>>`，支持正常 `await` 与 promise pipelining。`LocalViewProps<Api>`
+只是把 `api: RpcStub<Api>` 与固定 host facade 放进 Bridge props 的便捷投影，不是另一份 Server/Client contract。Workbench 不生成 proxy
+DSL、不枚举 method、不要求 `capability.define/method/target/callback`，也不为 domain API 计算 schema hash。
 
-- server method 的 network input 始终先作为 `unknown` 进入 generated/runtime validator；
-- by-value result 在 server return 和 browser boundary 都验证、clone、freeze；
-- observer、subscription、task 等返回值是 declared child capability，不是 token/string namespace；
-- platform 可以提供 `SubscriptionApi` 和 `capability.subscription(cleanup)` 这类 exact dispose helper，但没有全局 registry 或 resume ID；
-- capability method、callback queue、payload bytes、child target 和 deadline 全部有界；
-- expected business failure 使用 stable result/code，programming exception reject；
-- stub 不能持久化、跨 page 共享或跨 connection epoch 复活；
-- Plugin author 不取得 raw session root、socket、transport factory 或 capability lookup API。
+Factory typing 只需表达异步准备这一种真实需求：
 
-Workbench 不理解 `snapshot`、`list`、`watch`、`run` 等方法名。它只验证 declared capability shape、owner、lifecycle 和 network value。领域包可以使用下述
-concrete recipes，但不能注册新的 platform transport/resource kind。
+```ts
+type ViewTargetFactory<Api> = (
+	context: ViewOpenContext,
+) => (RpcTarget & Api) | Promise<RpcTarget & Api>
+```
+
+Attachment 对 provider/target 使用同一规则。这个 generic 在 TypeScript 擦除后不存在，runtime 只检查 resolved value 确实是
+`RpcTarget`，不会伪装成能检查 `Api` 的 method shape。异步 factory 用于 Plugin 自己的授权、数据库准备或 route object admission；Workbench
+在 opened-view signal 与固定 deadline 内等待，失败或超时不返回部分 root。
+
+责任边界：
+
+- Cap’n Web 负责 invocation、serialization、callback、stream、promise pipelining、capability transfer 与 dispose；
+- Workbench 负责哪个 owner 可以在何时取得哪个 root，以及 owner/view/socket close 后的撤销；
+- Plugin 负责 domain input validation、authorization、业务不变量、stable result、分页上限与兼容策略；
+- Plugin 可以使用 Valibot、Standard Schema、手写 parser 或已有 domain service，但这些都不是 Workbench dependency/conformance；
+- platform 只实施 connection/message/in-flight/callback queue 等粗粒度限额，不理解 `snapshot/list/watch/run` 的语义。
+
+同源 Remote Plugin 是 cooperative trusted code，不是 sandbox；强制每个方法声明 schema 不能把它变成 security boundary。另一方面，浏览器值仍可能被
+DevTools、旧 UI 或错误代码构造，所以修改持久状态的 Plugin 方法必须在自己的 domain boundary 保住业务不变量，不能把 TypeScript 当成输入验证。
+
+Cap’n Web 会暴露 `RpcTarget` 的 prototype methods。Target class 应只保留真正 RPC methods，把实现委托给 private service，并用 JavaScript
+`#private` 隐藏非 RPC prototype member；TypeScript `private` 不能形成运行时边界。
+
+Browser-safe API 文件只声明 pinned Cap’n Web `RpcCompatible` 支持的 by-value/capability shapes；普通 application-defined class、cyclic
+value 或 server-only type 不跨边界。TypeScript/lint/import boundary 尽早拒绝不兼容 declaration，实际值仍由 Cap’n Web serializer 最终执行其原生
+兼容性检查；Workbench 不为此增加 runtime schema DSL。Stub、`RpcPromise`、`[Symbol.dispose]` 与 target disposer 都沿用上游语义；Workbench
+只额外保证 View close/withdrawal 即使遇到 retained duplicate 也会撤销 internal opened-view lease，不依赖 GC 或引用计数最终正确。
 
 ## 常见交互全部是 API shape
 
@@ -132,6 +142,16 @@ host key-value store，直到至少两个真实 fixture 证明它比这三种 ow
 Bridge destroy 时 host 自动清除 dirty/title 和 active transfer。Facade 不暴露 Shell router/store、tab ID、raw `fetch`、socket 或
 MF Runtime。
 
+## Placement 只固定 tab、route 与分组 metadata
+
+Workbench 只有 `tab` 和 `route` 两种 placement。Route 只接受静态整段与 `:param` 整段参数；parameterized route 必须
+`navigation: false`，由集合页通过 `openDocument()` 打开。Exact route 总是优先于 parameterized route；两个可能匹配同一 canonical path 的
+parameterized pattern 在 definition/publication 时拒绝，不能让注册顺序决定结果。
+
+Navigation group 只是 route 上的 by-value layout metadata：stable group ID、label 与 optional icon。它不会获得 registry、owner、lease、API 或
+MF expose；Shell 每次从当前 layout 派生分组。同一个 group ID 的 label/icon 必须完全一致，跨 Plugin 冲突使 candidate publication 明确失败，不能
+静默选择先注册者。BotManager 等多个相关页面可以共享这项 metadata，但每个 View、route、capability 与 Plugin lifecycle 仍然独立。
+
 ## Remote value helper 是 client library，不是 wire protocol
 
 多数管理页面需要 `loading | ready | stale | error`。`runtime/workbench/client` 固定提供一个 `createRemoteValue()`：
@@ -144,7 +164,15 @@ const settings = createRemoteValue({
 ```
 
 它负责 current opened View 内的 initial read、latest request、invalidation coalescing、last-known-good 与 cleanup，但不会要求 server
-实现统一的 cache/revision protocol。省略 helper 的 View 可以直接调用 typed stub。
+实现统一的 cache/revision protocol。为避免 initial read/watch gap，语义固定为：
+
+1. 有 `subscribe` 时先建立 subscription，再开始 initial `read`；
+2. initial/active read 期间收到的任意多次 invalidation 合并为随后一次 latest reread；
+3. 任意时刻最多一个 active read，sequence/epoch guard 保证旧结果不能覆盖更新结果；
+4. dispose 会先拒绝新 read，再释放 subscription 与 pending result；
+5. connection epoch 改变时废弃整个 helper，不复用旧 stub、snapshot authority 或 subscription，fresh root 重新 subscribe/read。
+
+省略 helper 的 View 可以直接调用 typed stub；省略 `subscribe` 时 helper 只是具备 latest-result/cleanup 的一次 read resource。
 
 Helper 不 resume 断开的 stub，不跨 epoch 保留 writable authority。Fresh session 必须重新取得 ViewApi，并由领域 client 决定重新读取哪些 snapshot。
 
@@ -157,7 +185,7 @@ interface FontManagerViewApi {
 	list(input: FontListInput): Promise<FontPage>
 	install(input: InstallFontInput): Promise<FontSnapshot>
 	remove(input: RemoveFontInput): Promise<MutationAck>
-	watch(observer: FontCatalogObserver): Promise<SubscriptionTarget>
+	watch(observer: FontCatalogObserver): SubscriptionApi
 }
 ```
 
@@ -185,14 +213,14 @@ FontManager 一类“父 Plugin 制造对象，依赖 Plugin 选择消费”的�
 ## Long task 与 stream 直接使用 child capability
 
 ```ts
-interface RebuildTaskTarget extends RpcTarget {
+interface RebuildTaskApi {
 	state(): RebuildTaskSnapshot
 	cancel(): void
-	watch(observer: RebuildTaskObserver): SubscriptionTarget
+	watch(observer: RebuildTaskObserver): SubscriptionApi
 }
 
 interface IndexViewApi {
-	rebuild(input: RebuildInput): RebuildTaskTarget
+	rebuild(input: RebuildInput): RebuildTaskApi
 }
 ```
 
@@ -204,8 +232,7 @@ deadline drain。瞬时日志/进度用 callback capability；只有真正需要
 ## View declaration 不重复 API wiring
 
 ```ts
-export const SettingsView = workbench.view({
-	api: SettingsViewApi,
+export const SettingsView = workbench.view<SettingsViewApi>({
 	renderer: workbench.federation.react(import.meta.url, './ui/settings.tsx'),
 	placements: [workbench.tab({ label: 'Settings' })],
 })
@@ -215,7 +242,7 @@ export const ExampleWorkbench = workbench.define({
 })
 ```
 
-Server publication 为每个 declared View exact 绑定一个 target factory。Definition key 已知道 View/API contract，因此不再重复
+Server publication 为每个 declared View 绑定一个 target factory。Definition key 已关联 View，API phantom generic 已让 TypeScript 检查 factory，因此不再重复
 `workbench.bind.view(SettingsView, ...)`：
 
 ```ts
@@ -237,10 +264,17 @@ type ViewOpenContext = Readonly<{
 	params: Readonly<Record<string, string>>
 	signal: AbortSignal
 }>
+
+type AttachmentCaller = Readonly<{
+	node: PluginNodeAddress
+}>
 ```
 
 `params` 由 server 对 declared route 匹配后产生，不信任 browser 传入的 params record。`principal` 是已验证的稳定身份投影，不含
 raw claim、display metadata、cookie、request 或 auth provider target。`signal` 在 View close、owner withdrawal 或 socket epoch 结束时 abort。
+`AttachmentCaller` 只额外提供给 provider factory：它是 platform-issued、server-only 的 exact consumer node address，内部有效期绑定该 consumer
+generation。它不进入 browser contract，不暴露 Context、consumer instance、dependency facade 或 service locator，也不授予任意调用能力；provider
+只可用它关联已有的 caller-owned domain state。Consumer、provider 或 opened View 任一撤销都会 abort 同一个 signal 并撤销 roots。
 
 一个 API target 可以由普通 domain service 共享底层状态，但每次 `openView()` 仍创建 internal lease，并把生命周期绑定到直接返回的 API
 root。Browser client 只建立本地 disposable handle，不取得额外 `ViewSessionTarget`，也不再调用一次 `api()`。未打开 View 不调用 factory、不创建
@@ -251,8 +285,7 @@ child target、不加载 remote。
 Attachment 只在 required dependency provider 拥有 renderer/API、consumer 拥有 placement 时使用。Provider-only settings/picker：
 
 ```ts
-export const FontsPicker = workbench.attachment({
-	providerApi: FontsPickerApi,
+export const FontsPicker = workbench.attachment<FontsPickerApi>({
 	renderer: workbench.federation.react(import.meta.url, './ui/picker.tsx'),
 })
 ```
@@ -260,9 +293,7 @@ export const FontsPicker = workbench.attachment({
 如果 renderer 还必须修改 consumer-owned selection，Attachment 可以额外声明恰好一个 `targetApi`：
 
 ```ts
-export const FontsPicker = workbench.attachment({
-	providerApi: FontsCatalogApi,
-	targetApi: FontSelectionApi,
+export const FontsPicker = workbench.attachment<FontsCatalogApi, FontSelectionApi>({
 	renderer: workbench.federation.react(import.meta.url, './ui/picker.tsx'),
 })
 ```
@@ -296,14 +327,16 @@ placement 本身不让 consumer 产生 MF producer。
 Telegram、KOOK、Milky、Discord 各自拥有 manager、persistence、connections、ViewApi targets 和 publication。`platform-kit` 只导出普通函数：
 
 ```ts
-const botViews = defineBotManagerViews({
-	api: TelegramBotAdminApi,
-	descriptor: TelegramBotDescriptor,
+const botViews = defineBotManagerViews<{
+	overview: TelegramOverviewApi
+	accounts: TelegramAccountsApi
+}>({
+	renderers: TelegramBotRenderers,
+	labels: { service: 'Telegram', account: 'Bot' },
 })
 
 export const TelegramWorkbench = workbench.define({
 	views: botViews,
-	producer: workbench.federation.react(import.meta.url, './ui/index.tsx'),
 })
 ```
 
@@ -314,9 +347,11 @@ Function 在 build/define 时返回 frozen final View record；runtime 不知道
 
 - settings、CRUD、live state、logs、task progress、files、cross-plugin picker 与多页面 BotManager 都不需要新 platform resource kind；
 - 一个 local View 只有一个 root ViewApi；Attachment 只有 provider + optional target 两个 root API；
-- API 方法和 child capability 全部 runtime validated、bounded、owner-aware、可撤销；
+- API root/child capability owner-aware、可撤销；domain validation 与业务限额由 Plugin 实现；
 - dynamic row/item 数不改变 layout/View/producer/socket inventory；
 - multi-page source reuse 不产生 Feature runtime entity；
+- renderer props 使用上游 `RpcStub<Api>`/`RpcPromise<T>` 投影，不建立第二套 Client API DSL；
+- live helper 先 subscribe 后 read，route ambiguity/group metadata conflict 都在 publication 前确定失败；
 - View factory 只获得 principal/route params/signal，不获得 raw request/session；browser 也不能注入 principal/params；
 - View 未打开时 target factory/API/observer/remote allocation 为零；
 - Workbench disabled 时 domain service、Plugin dependency 与 headless business API 仍独立工作。
@@ -327,7 +362,7 @@ Function 在 build/define 时返回 frozen final View record；runtime 不知道
 - 为每种 UI 数据形态建立新的 transport/protocol kind；
 - ViewApi 获得 raw session root、socket、MF Runtime 或 Shell private store；
 - View factory 获得 raw request、cookie、auth provider target 或 browser-supplied params record；
-- method input/result 只靠 TypeScript、不做 runtime validation；
+- Workbench 强迫 Plugin 使用 Valibot、Standard Schema、method descriptor 或 generated validator；
 - collection/account row 被提升为 View、Bridge、capability 或 publication entity；
 - Attachment 接受任意 resource map、字符串 provider、第三 authority 或 optional dependency 猜测；
 - BotManager 源码复用被升级成中心 runtime owner；

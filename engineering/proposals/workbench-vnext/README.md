@@ -21,7 +21,7 @@ MF 2.0 host/consumer + Plugin producers/remotes/exposes
   + Manifest/Snapshot + Runtime Plugins
   + shared platform + Bridge lifecycle
   + one WS-required Cap'n Web Auth/Control Session
-  + one direct validated capability per View
+  + one direct Cap'n Web capability per View
   + exact dependency Attachment + least-authority opened View
 ```
 
@@ -72,7 +72,7 @@ DELIVERY_PLAN
 4. authentication challenge、session state、logout、Management、layout、ViewApi calls/callbacks/streams 和 lifecycle push
    全部复用同一 Cap’n Web session。
 5. Cap’n Web stub 本身就是授权 capability；browser protocol 没有 grant ID、resource namespace lookup 或 resume token。
-6. layout 是 by-value description，不携带 callable capability；`openView()` 一次返回 exact API root(s)、server params 与 federation ref，
+6. layout 是 by-value description，不携带 callable capability；`openView()` 一次返回 typed API root(s)、server params 与 federation ref，
    不建立中间 resource/session target。
 7. Plugin dependency Attachment 只沿 committed direct required edge 绑定，无字符串 registry、候选扫描或 renderer 竞选。
 8. MF 2.0 是唯一 browser module system；不再建立 Workbench artifact manifest、plain ESM loader 或 renderer adapter。
@@ -82,6 +82,10 @@ DELIVERY_PLAN
 12. Workbench disabled 且 Management 未安装时，不创建 backend、endpoint、producer、compiler、watcher 或 client runtime。
 13. Dynamic list/account row 是 API 返回的 domain value，不是 runtime entity；row 数量变化不创建 layout、View、MF
     producer 或 socket。
+14. Workbench 只验证 authentication/profile、identity、route/layout/build revision、factory `RpcTarget`、quota 与 lifecycle 等平台协议；
+    ViewApi 的领域输入、授权、业务不变量、result/error、operation limit 与兼容策略由 Plugin 自己负责。
+15. Renderer API 直接使用上游 `RpcStub<Api>`/`RpcPromise<T>`；sync/async factory 必须在 deadline 内全有或全无，late target 必须回收。
+16. Placement 只有 tab/route；navigation group 只是无 lifecycle 的 by-value metadata，route precedence/collision 不依赖注册顺序。
 
 ## 总体生命周期
 
@@ -96,7 +100,7 @@ Plugin package build
 
 Plugin generation init
   immutable definition
-    + exact ViewApi/Attachment target factories ─> atomic PublishedTarget
+    + typed ViewApi/Attachment target factories ─> atomic PublishedTarget
 
 Browser page
   initial HTTP document
@@ -133,17 +137,17 @@ cross-framework Shell portability，但不发布可替换 transport/artifact/aut
 
 ## 目标
 
-- 让作者只表达领域 schema、operation、placement 与 exact dependency，不重复 transport/export/registry wiring；
+- 让作者只表达普通 TypeScript API、operation、placement 与 exact dependency，不重复 transport/export/registry wiring；
 - 让日常判断固定为 View 或 Attachment、by-value 或 child capability、server API 或 host facade，不暴露更多架构菜单；
-- 让 definition、server binding、MF producer 和 published expose 在 type/runtime 两层保持 exact；
-- 让 Cap’n Web method/observer/child target 的 validation、authority、withdrawal 和 cleanup 有统一语义；
+- 让 TypeScript 检查 ViewApi/factory/renderer shape，让 runtime 只检查它真正看得见的 owner、key、`RpcTarget`、build 与 lifecycle；
+- 让 Cap’n Web method/observer/child target 的 invocation、authority、withdrawal 和 cleanup 有统一语义；
 - 让未打开的 View 不创建 capability、subscription、remote registration 或 artifact request；
 - 让动态 domain row 增长只改变 bounded ViewApi page values，不扩大 publication、layout、producer、socket 或 per-row capability
   inventory；
 - 让 React/UI foundation 通过受控 shared policy 复用，而 Shell private router/store 不泄漏给 remote；
 - 让 React/Vue/Svelte/vanilla Shell 复用同一 concrete WS/MF host packages 与同一 built producer；
 - 让 Node、Vite 和受支持 reverse proxy 对同一路径、认证、heartbeat、drain 和 close semantics 通过真实 listener 测试；
-- 通过一次性切换删除旧 Contract/Extension/Port、HTTP batch/SSE 和 ad-hoc federation wrapper。
+- 通过一次性切换删除旧 resource-oriented Contract/Extension/Port authoring、HTTP batch/SSE 和 ad-hoc federation wrapper。
 
 ## 非目标
 
@@ -151,6 +155,7 @@ cross-framework Shell portability，但不发布可替换 transport/artifact/aut
 - 不建立任意 UI slot、Feature marketplace、resource registry、priority 或 fallback graph。
 - 不建立 collection runtime registry、per-row View/route/capability 或跨 Plugin 字符串引用协议。
 - 不在 Cap’n Web 上再建立 Model/Query/Channel protocol，也不用 Workbench 取代 Plugin dependency、database、command registry 或业务 transaction。
+- 不强制 Plugin 使用 Valibot、Standard Schema、method descriptor、contract hash、generated validator 或平台统一 domain error。
 - 不交付 generic host runtime、bundler adapter、plain ESM mode 或自定义 renderer registry。
 - 不支持重新实现 Profile 1 infrastructure 的 alternate Shell；external Shell 必须消费同一 concrete packages 并通过 conformance。
 - 不支持 cross-origin Shell、offline mutation、旧 session resume 或长期双栈迁移。

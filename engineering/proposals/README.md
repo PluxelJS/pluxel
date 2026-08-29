@@ -20,7 +20,7 @@
 尚在研究、未采纳的提案：
 
 - [`workbench-vnext/`](workbench-vnext/README.md)：基于当前 Wretch/Fonts/PackageManager 调用面与 BotManager proposal fixture，从零研究
-  不可拆分的 MF 2.0 + WS-required Cap’n Web closed Profile 1，以及 direct validated ViewApi、View/Attachment authoring、Plugin generation
+  不可拆分的 MF 2.0 + WS-required Cap’n Web closed Profile 1，以及 direct Cap’n Web ViewApi、View/Attachment authoring、Plugin generation
   atomic publication 与 direct opened View；Workbench 只增加 View/Attachment 两个 UI 声明，Collection/Feature/Model/Query/Channel
   不成为 platform protocol，Shell framework 保持
   platform-neutral，但必须复用同一 concrete host packages，Workbench/Management SSE 完全不存在，不发布 replaceable

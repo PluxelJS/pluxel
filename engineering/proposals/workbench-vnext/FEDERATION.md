@@ -70,7 +70,8 @@ server/distribution 只维护“Plugin definition/build revision -> trusted mani
 `WorkbenchArtifactV2`。
 
 `mf-stats.json` 只用于 build analysis/diagnostics，不成为 consumer runtime contract。所有 external manifest、Snapshot 与 expose metadata 在
-browser trust boundary 验证；dynamic types 不能替代 runtime schema。
+browser trust boundary 验证。Dynamic types 只改善 Remote module 与 renderer props 的开发体验；它既不替代 MF artifact/build revision 校验，也不让
+Workbench 获得 Plugin domain validation 职责。
 
 Layout 中的 `FederatedViewRef` 只是 pinned reference。Capability session 不承载 asset list，MF Manifest 也不承载 ViewApi/domain state、principal 或
 grant。Manifest 请求失败不能改变 server publication authority。
@@ -158,7 +159,7 @@ Production 按 revision 发布完整 immutable MF output，纳入 distribution i
 optimization，不代替 Manifest/shared negotiation。
 
 Dev update 先构建并验证 candidate Manifest/exposes，再让 Shell 注册新 revision并完成 Bridge render；成功后 destroy old Bridge。Artifact
-failure 保留 last-known-good remote。Definition/schema/owner 已 withdrawal 时，即使 old remote module 仍在 cache，也不能借 withdrawn
+failure 保留 last-known-good remote。Definition/API owner/generation 已 withdrawal 时，即使 old remote module 仍在 cache，也不能借 withdrawn
 capability 恢复业务 authority。
 
 Profile 1 不把 upstream Vite remote-consumer HMR 当作 contract。开发态更新同样走 candidate Manifest + immutable revision registration + Bridge

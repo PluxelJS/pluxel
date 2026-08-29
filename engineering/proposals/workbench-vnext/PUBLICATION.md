@@ -11,11 +11,11 @@ runtime owner authority。Workbench 只接受 running generation 在 `init()` �
 
 “注册 Workbench”只有三个阶段：
 
-| 阶段               | 输入                                          | 输出                         | 是否打开 ViewApi |
-| ------------------ | --------------------------------------------- | ---------------------------- | ---------------- |
-| define/build       | Views/Attachments + API/producer contracts    | frozen definition/build plan | 否               |
-| generation bind    | exact factories + required dependency handles | frozen binding graph         | 否               |
-| atomic publication | definition + bindings + producer revision     | immutable `PublishedTarget`  | 否               |
+| 阶段               | 输入                                                   | 输出                         | 是否打开 ViewApi |
+| ------------------ | ------------------------------------------------------ | ---------------------------- | ---------------- |
+| define/build       | Views/Attachments + phantom API types + producer facts | frozen definition/build plan | 否               |
+| generation bind    | declared factories + required dependency handles       | frozen binding graph         | 否               |
+| atomic publication | definition + bindings + producer revision              | immutable `PublishedTarget`  | 否               |
 
 没有 Model/Query/Channel/Collection registration。API factory 只在通过 `openView()` admission 后调用。
 
@@ -26,7 +26,7 @@ ctx.workbench?.publish(definition, bindings)
 ```
 
 每个 Plugin node/generation 最多调用一次。`ctx.workbench` 从 immutable Context 推导 target owner；definition 不重复声明 Plugin address。
-Definition key 已经携带 View/Attachment 的 exact contract，因此 binding value 直接是 factory 或 dependency record，不再包一层
+Definition key 已经携带 View/Attachment declaration，TypeScript generic 已在作者代码中关联 API shape，因此 binding value 直接是 factory 或 dependency record，不再包一层
 `workbench.bind.view/provider/attachment()`。
 
 ```ts
@@ -48,31 +48,42 @@ ctx.workbench?.publish(ExampleWorkbench, {
 Publication transaction：
 
 1. flatten final local View 与 Attachment placement keys；普通 TypeScript builder 的中间结构在这里已经不存在；
-2. 验证 placement/route collision、ViewApi contract、exact target factory、provider Attachment factory 与 required dependency handle；
+2. 验证 placement/route collision、parameterized route ambiguity、navigation group metadata、declared key、target factory、provider Attachment
+   factory 与 required dependency handle；
 3. 验证 MF producer revision 与 exact Bridge expose inventory；
-4. 校验并冻结 factory descriptor，但不调用用户 factory、不创建 stub/observer/remote；
+4. 校验并冻结 sync/async factory descriptor，但不调用用户 factory、不反射 method、不创建 stub/observer/remote；
 5. 构造 immutable `PublishedTarget` 与 candidate layout indexes；
 6. 用一次同步 pointer/index commit 发布新 layout revision；
 7. 把 publication cleanup 绑定 owner generation effects。
 
 任一步失败都使 Plugin `init()` 失败并完整回滚，不留下 partial layout、ViewApi、opened-view lease、subscription 或 artifact publication。
 
-## Exactness contract
+## Declaration exactness
 
-Public type 提前诊断，runtime 仍独立验证：
+TypeScript 与 runtime 各自检查自己真正拥有的边界。TypeScript 提前检查：
 
-- 每个 local View 恰有一个匹配其 `CapabilityContract` 的 target factory；
+- 每个 local View 恰有一个返回相应 API generic 的 target factory；
+- provider publication 为每个 declared Attachment 绑定 provider API factory；
+- consumer placement binding 的 target factory 与 optional target API generic 一致；
+- renderer props 只得到相应 local API 或 `{ provider, target? }`。
+
+Renderer 侧的具体投影直接使用上游 `RpcStub<Api>`；方法调用返回上游 `RpcPromise`。Workbench 不生成第二套 Server/Client type，也不把
+stub runtime reflection 伪装成 method inventory。
+
+Runtime 不声称从擦除后的 TypeScript 恢复 API method inventory。它只独立验证平台事实：
+
 - binding 没有未声明 View/Attachment key，也不缺少 definition key；
 - local View renderer expose 属于 target producer revision；
-- provider publication 为每个 declared Attachment exact 绑定 provider API factory 与 provider-owned renderer expose；
+- provider publication 为每个 declared Attachment 绑定 callable provider factory 与 provider-owned renderer expose；
 - consumer placement binding 只接收 `{ provider: requiredDependency, target? }`；
-- `openView()` 时 provider factory 看到的 validated caller 正是 publishing consumer target；
-- Attachment provider API、optional target API 与 renderer expose exact match declaration；
+- `openView()` 时 provider factory 看到 platform-issued 的 caller node 正是 publishing consumer target，并且其有效期绑定 consumer generation；
 - provider handle 不能携带 target factory；consumer 不能伪造 provider factory；
-- structured Plugin address、definition hash、build revision 和 placement 通过 runtime schema；
-- duplicate publication、stale generation、withdrawn provider 或 callable shape mismatch fail-fast。
+- structured Plugin address、definition/build revision、placement、owner 和 generation 通过 runtime parser；
+- sync/async factory resolved result 是 `RpcTarget`，并绑定正确 owner、opened-view lease 与 withdrawal gate；
+- duplicate publication、stale generation、withdrawn provider、非法 factory 或非 `RpcTarget` result fail-fast。
 
-TypeScript 不能替代这些检查，因为 dynamic Plugin、build inventory、Cap’n Web input 与 browser values 都跨越静态边界。
+Workbench 不校验 Plugin 方法名、参数、返回值、domain error 或 child target shape；这些由 Plugin 自己的 target/service 实现负责。Dynamic Plugin、build
+inventory 与 browser control input 跨越静态边界，所以 TypeScript 也不能替代上面的平台检查。
 
 ## Publication indexes 只索引静态 UI topology
 
@@ -83,6 +94,10 @@ Backend 只维护：
 - target -> tab/route/Attachment placements；
 - producer definition/build revision -> trusted manifest reference；
 - target/provider generation -> affected publications and active opened-view leases。
+
+Navigation group 不进入独立 index/registry。它只是 route description 上的 frozen value；同 group ID 的 label/icon 在整个 candidate layout 中必须
+一致，否则 publication 失败。Exact route 优先于 parameterized route；两个能匹配同一 canonical path 的 parameterized patterns 在 candidate 可见前
+拒绝，不能按 publication 顺序选 winner。
 
 API method、domain row、task、observer、child capability 和 browser cache 都不进入 publication index。Plugin 不能 enumerate 后注入
 contribution，Attachment 不扫描 provider，browser 也不能用 string key 换 capability。
@@ -101,7 +116,7 @@ Layout snapshot 只包含：
 - monotonic revision；
 - canonical target/renderer owner address；
 - stable View key、placement、route/tab/navigation metadata；
-- definition/API contract hash；
+- definition revision 与 producer build revision；
 - `FederatedViewRef`。
 
 Layout 不包含 callable stub、method inventory、grant ID、subscription、task、domain data 或 resolved module。Enumerate/search/restore tabs 不调用 API
@@ -112,40 +127,49 @@ factory、不注册 remote、不请求 manifest，也不预签发 authority。
 ```text
 openView({ target, view, location, expectedLayoutRevision })
   -> local OpenedView {
-       api: exact ViewApi stub
+       api: typed ViewApi stub
        params: server-derived route params
        federatedViewRef
      }
 
   -> Attachment OpenedView {
-       provider: exact provider ViewApi stub
-       target?: exact consumer ViewApi stub
+       provider: typed provider ViewApi stub
+       target?: typed consumer ViewApi stub
        params: server-derived route params
        federatedViewRef
      }
 ```
 
 `location` 只是 canonical target-relative path，静态 tab 省略。Server 先重新匹配 declared route，再校验 structured target、View
-key、layout revision、principal policy 与 quotas。Browser 不直接传入 params record。Revision mismatch 返回 `layout_changed`，不创建 target。
+key、layout revision、authenticated principal lease 与 quotas。Browser 不直接传入 params record。Revision mismatch 返回 `layout_changed`，不创建 target；
+Plugin-specific authorization 留在 factory/target。
 
 Factory 只获得 frozen `principal`、server-derived `params` 和 opened-view `signal`。Attachment provider factory 额外获得 exact
-consumer `caller`。它们都不获得 raw request、cookie、socket、session root 或 auth provider target。
+consumer `caller: { node: PluginNodeAddress }`。Caller 是 server-only identity/ownership reference，不是 capability：不含 consumer Context、instance、
+dependency facade 或 service locator，也不进入 renderer props。Factories 都不获得 raw request、cookie、socket、session root 或 auth provider target。
 
-`openView()` 一次 transfer 上述 capability 与 by-value facts；不会先返回 `ViewSessionTarget` 再调用 `api()`。Concrete browser client 从 result
-建立本地 disposable handle 和 host facade，server 只保留 internal lease。
+Factory 可以返回 `RpcTarget & Api` 或 `Promise<RpcTarget & Api>`。Admission 在调用前建立一个共同的 opened-view signal/deadline；Attachment 的
+provider/optional target 都取得 owner lease 后可以并行准备，但必须全部成功才一次返回。任一 factory reject、deadline、owner withdrawal 或 resolved
+non-`RpcTarget` 都会 abort signal，dispose 已完成及随后迟到的 target，并返回零 root 的稳定 open failure。失败不能把一个 Attachment root、observer、
+Bridge 或 partial handle 暴露给 browser。
+
+`openView()` 一次 transfer 上述 capability 与 by-value facts；不会先返回 `ViewSessionTarget` 再调用 `api()`。Concrete browser client 只验证
+platform-owned result envelope，建立本地 disposable handle 和 host facade；server 只保留 internal lease。Plugin API payload 对 Workbench 是 opaque
+Cap’n Web value。
 
 Opened View rules：
 
 - local View 只有一个 API root；Attachment 只有 provider + optional target 两个 API root；
 - 同一 parameterized View 可以在不同 document 中多次打开，每次都有独立 params/signal/target；
 - renderer 不能取得 page session root、其他 View API、socket 或 capability lookup；
-- API method 可以返回 declaration 允许的 child capability；普通 row/value 不自动成为 target；
+- API method 可以按 Plugin 自己的 TypeScript API 返回任意 Cap’n Web child target；Workbench 不声明、登记或解析 child method shape；普通 row/value 不自动成为 target；
 - target/provider 任一 withdrawal 都使 retained Attachment stub 稳定失败；
 - active opened-view lease、child target、observer、in-flight call、callback queue 与 bytes 全部有界；
+- async factory pending 数与 deadline 有界；abort 后的 late resolve target 立即 dispose，不能复活已失败的 open；
 - Bridge destroy 后 browser handle 显式 dispose 直接返回的 roots；socket close 是 server cleanup 最终边界。
 
 同一 domain service 可以在 factory 内共享 immutable cache/backend，但 Workbench 不通过 method name/schema/returned bytes 猜测 API target 可合并。
-需要共享时由 provider implementation 返回同一 owner-safe backing 或 declared child capability；可变 consumer authority 不跨 owner 合并。
+需要共享时由 provider implementation 返回同一 owner-safe backing 或 Plugin API 定义的 child capability；可变 consumer authority 不跨 owner 合并。
 
 ## Ownership
 
@@ -174,8 +198,9 @@ Owner stop 顺序：
 Provider Attachment withdrawal 不关闭 target 的无关 local View。Consumer replacement 不按 Attachment key 自动领养 provider；新 generation 必须沿
 新 committed dependency edge 重新 publish。
 
-Producer-only HMR 且 API/definition hash 不变时，可以先 render new Bridge 再 destroy old Bridge，并由实现决定是否复用仍有效的 API backing。
-API contract、owner、dependency 或 generation 改变时必须重新 `openView()`，不猜测兼容。
+Renderer-only HMR 且 server generation、publication 与已打开 API target 均未改变时，可以先 render new Bridge 再 destroy old Bridge，并复用仍有效的
+opened View root。Owner、dependency、generation、publication 或 target 改变时必须重新 `openView()`；Workbench 不计算 API contract hash，也不根据
+method shape 猜测兼容。
 
 ## Optional planes
 
@@ -193,6 +218,8 @@ API contract、owner、dependency 或 generation 改变时必须重新 `openView
 - `openView()` 增加中间 session/resource target 或第二次 API lookup round trip；
 - Attachment 通过 scan、priority、fallback、optional dependency 猜测 provider，或接受 arbitrary resource map；
 - collection/account row 被发布为 View/Attachment/capability entity；
-- publication 先可见再异步验证 factory/expose；
+- publication 先可见再异步验证 binding descriptor/expose；
+- async factory failure/timeout 后返回 partial root，或 late resolve target 越过 aborted opened-view lease；
+- Workbench 为 Plugin API 强制 schema、method descriptor、contract hash 或 generated validator；
 - retained old generation handle 越过 owner/provider withdrawal；
 - rollback、replacement 或 StrictMode replay 泄漏 target/session/observer/asset。

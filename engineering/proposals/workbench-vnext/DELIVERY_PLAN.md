@@ -15,6 +15,7 @@ VNext 不从通用后台或微前端产品想象 API。每个 public abstraction
 
 - provider 定义一个 `SettingsViewApi`、一个 Attachment 与一个 Bridge expose；
 - consumer definition 放置 Attachment，publication 绑定 constructor-injected provider handle；
+- provider factory 只用 platform-issued `caller.node` 关联现有 caller-owned settings，不能取得 consumer Context/facade；
 - 删除 Contract/Port resource map、alias/version、renderer mount 与 candidate scan。
 
 ### Fonts 与 Font contribution
@@ -32,11 +33,11 @@ resources/capabilities。
 
 Telegram、KOOK、Milky、Discord 各自拥有 manager、persistence、connection lifecycle、ViewApi targets 与 publication。`platform-kit` 只提供：
 
-- browser-safe BotAdmin API contracts/DTO schemas；
+- browser-safe BotAdmin TypeScript APIs/domain values；
 - ordinary `defineBotManagerViews()` TypeScript builder；
 - server target helper 与 React Bridge panels。
 
-每个平台只保留 Account/upsert schema、domain projector/actions、labels/navigation、diagnostics renderer 与可选 Wretch Attachment。删除四份 route
+每个平台只保留 Account/upsert TypeScript shape、domain projector/actions、labels/navigation、diagnostics renderer 与可选 Wretch Attachment。删除四份 route
 topology、initial event emit glue、trivial wrapper 与 export map；不建立 Feature runtime entity 或中心 Bot hub。
 
 ### Repository coverage matrix
@@ -46,7 +47,7 @@ topology、initial event emit glue、trivial wrapper 与 export map；不建立 
 | Evidence                               | vNext mapping                                      | 必须证明的边界                                      |
 | -------------------------------------- | -------------------------------------------------- | --------------------------------------------------- |
 | PackageManager current local renderer  | local View + snapshot/list/mutations               | 不经 Attachment/Collection，关闭时无残留 observer   |
-| Wretch current provider UI/API         | caller-bound provider-only Attachment              | consumer 只给 placement 与 required handle          |
+| Wretch current provider UI/API         | caller-bound provider-only Attachment              | exact caller state、consumer 只给 placement/handle  |
 | Fonts current manager                  | local manager View                                 | paged rows/task/file ticket，不建立 per-font target |
 | Canvas/Takumi/ECharts font consumers   | provider-only Attachment                           | consumer-owned placement 不产生自己的 producer      |
 | parameterized Account document fixture | one routed View，多次 `openView()`                 | server rematch params、dirty/title cleanup          |
@@ -80,20 +81,21 @@ Vertical fixtures 必须用 direct ViewApi 覆盖：
 
 先冻结 import/lifecycle boundary，不要求第一天拆 npm package：
 
-| Entry                          | 责任                                                                                                 |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `runtime/web/session`          | WS-required Cap’n Web auth/control owner、validated Management facade                                |
-| `runtime/web/capability`       | concrete Standard Schema method/observer/child-target contract + wrapper                             |
-| `runtime/workbench/contract`   | browser-safe capability reference、View/Attachment/placement descriptors                             |
-| `runtime/workbench`            | Context target factories、BoundAttachment、atomic `publish()`                                        |
-| `runtime/workbench/client`     | ViewApi/result validation、local opened View handle、`createRemoteValue()`、transfer；不建 socket/MF |
-| `runtime/workbench/react`      | hooks、Pane Kit 与 Bridge expose authoring                                                           |
-| `runtime/workbench/federation` | one MF host、Runtime Plugin、opened View/Bridge orchestration                                        |
-| `@pluxel/core/federation`      | producer/host shared policy、manifest/build facts                                                    |
+| Entry                          | 责任                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `runtime/capnweb`              | pinned `RpcTarget`/`RpcStub`/`RpcPromise`/stream/dispose re-export；不增加 RPC DSL                  |
+| `runtime/web/session`          | WS-required Cap’n Web auth/control owner、typed Management projection                               |
+| `runtime/workbench/contract`   | browser-safe phantom API generic、View/Attachment/placement descriptors                             |
+| `runtime/workbench`            | Context target factories、required Attachment binding、atomic `publish()`                           |
+| `runtime/workbench/client`     | local opened View handle、optional `createRemoteValue()`、transfer；不建 socket/MF/domain validator |
+| `runtime/workbench/react`      | hooks、Pane Kit 与 Bridge expose authoring                                                          |
+| `runtime/workbench/federation` | one MF host、Runtime Plugin、opened View/Bridge orchestration                                       |
+| `@pluxel/core/federation`      | producer/host shared policy、manifest/build facts                                                   |
 
 Dependency rules：
 
-- capability contract 不 import React、Plugin、Context、Node builtin 或 MF Runtime；
+- browser-safe API types/definition 不 import React、Plugin、Context、Node builtin 或 MF Runtime；
+- `runtime/capnweb` 只固定平台使用的 Cap’n Web runtime identity/version，不包装 method schema 或生成 validator；
 - `runtime/web/session` 不 import React/MF，也不定义 generic transport adapter；
 - `client` 不创建 socket、不加载 remote、不持有 page root；
 - `react` 不 import official router/store/Worksplit；
@@ -111,13 +113,15 @@ Dependency rules：
 冻结 single profile、concrete packages 与 conformance inventory。删除 replaceable host/renderer/transport 方向，并明确
 Model/Query/Channel/Collection/Feature 不成为 vNext runtime protocol。
 
-### Slice A：WS auth + validated capability foundation
+### Slice A：WS auth + native Cap’n Web foundation
 
 - `/__pluxel/runtime/session` 与唯一 browser session owner；
 - pre-auth root、same-origin/secure admission、provider/principal lease 与 quota；
 - password/TOTP/WebAuthn/provider challenge、same-socket capability transfer、cookie/OIDC handoff；
-- generic Standard Schema capability wrapper：method、callback/observer、child target、stable error、`SubscriptionApi`/dispose helper；
+- pinned `RpcTarget`、callback/observer、child target、stream 与 dispose primitive；不增加 capability/schema DSL；
+- API/type probes 直接使用上游 `RpcStub<Api>`/`RpcPromise<T>`，type/build 与 serializer tests 拒绝不兼容 browser/server values；
 - Management query/mutation、logout 与 callback 全部走同一 object graph；
+- platform-owned bootstrap/auth/open/layout envelope 防御性解析，Plugin API payload 保持 opaque；
 - Node production、static/dynamic Vite、standalone `ws: true` proxy 和 production proxy real-socket tests；
 - HMR/control/business WS arbitration、`1012` drain 与 forced settlement。
 - bounded message/callback queue 与 internal fair scheduling probe；oversized snapshot fail，file bytes 不进 Cap’n Web frame。
@@ -129,15 +133,18 @@ Model/Query/Channel/Collection/Feature 不成为 vNext runtime protocol。
 - one Shell/one MF Runtime；
 - official Shell 与 non-React external Shell fixture 消费相同 concrete packages；
 - definition -> producer、View -> Bridge expose；
-- `openView()` 一次返回 exact ViewApi root(s)、server-derived params 与 federation ref，不经过 resource/grant/session lookup 或第二次 RPC；
+- `openView()` 一次返回 direct typed ViewApi root(s)、server-derived params 与 federation ref，不经过 resource/grant/session lookup 或第二次 RPC；
+- sync/async factory 都在 opened-view signal/deadline 内全有或全无，late resolve target 必须 dispose；
 - standard Manifest/Snapshot、fixed shared、trusted Runtime Plugin 与 Bridge destroy；
 - isolated bounded parallel Vite/MF producer builds。
 
 ### Slice C：local View recipes
 
 用 PackageManager、Fonts manager 与 parameterized Account fixture 迁移 settings/live/CRUD/task/file/document recipes。只提供 optional
-`createRemoteValue(read/subscribe)` client helper，不发布 Model/Query/Channel server contract。证明 fresh epoch re-open、runtime validation、child target
-cleanup、bounded page read、server-derived params、dirty/title cleanup 与 signed transfer。
+`createRemoteValue(read/subscribe)` client helper，不发布 Model/Query/Channel server contract。Helper 必须先 subscribe 后 initial read，合并 read
+期间 invalidation，最多一个 active read，并用 epoch guard 阻止 stale result 覆盖。证明 fresh epoch re-open、platform envelope validation、
+Plugin-owned domain validation、child target cleanup、bounded page read、server-derived params、dirty/title cleanup 与 signed transfer。至少一个 fixture
+直接委托已有 domain service/parser，证明 Workbench 不需要读取 schema；另一个 cooperative read-only fixture 可以有意不增加重复 validator。
 
 现有 database/runtime `liveQuery` 若保留，只能成为可选 server implementation helper：把 revision/invalidation/coalescing 接到 Plugin 自己声明的
 `snapshot/list/watch`，不生成 Query address、browser client、registry、resume/replay 或新的 wire shape。至少迁移一个现有 test/call site 证明 helper
@@ -147,15 +154,16 @@ cleanup、bounded page read、server-derived params、dirty/title cleanup 与 si
 
 迁移 Wretch、provider-only Fonts selector 与 provider+target Font fixture。只支持 committed direct required dependency + tab placement，证明：
 
-- provider/optional target exact API；
-- caller/provider edge validation；
+- provider/optional target API generic 在 TypeScript 中一致；
+- caller/provider edge validation，Wretch provider factory 得到 exact node address 但没有 Context/service locator；
 - joint withdrawal；
 - attachment-only consumer 不产生 producer；
 - no scan/Port/resource map/alias/fallback。
 
 ### Slice E：Bot TypeScript composition
 
-用普通 `defineBotManagerViews()` 生成四个平台 final View records。证明没有 Feature identity、registry、protocol、lease 或额外 artifact；每个平台仍独立
+用普通 `defineBotManagerViews()` 生成四个平台 final View records。证明一致 navigation group 只是 final route 的 by-value metadata，group
+label/icon conflict 在 publication 时确定拒绝；没有 Feature/group identity、registry、protocol、lease 或额外 artifact，每个平台仍独立
 publication/failure/withdrawal。
 
 ### Slice F：one-time cutover
@@ -163,7 +171,7 @@ publication/failure/withdrawal。
 全部 workspace producer 迁移后一次删除：
 
 - Cap’n Web HTTP batch、全部 Management/Workbench SSE、`EventSource` 与 `text/event-stream` glue；
-- Contract/Extension/Port 与 resource RPC/liveQuery/events wiring；
+- resource-oriented Contract/Extension/Port authoring 与 RPC/liveQuery/events wiring；
 - custom artifact manifest/loader 与 ad-hoc federation wrapper；
 - compatibility alias、protocol negotiation、旧 session path 和长期双栈。
 
@@ -181,7 +189,10 @@ changelog。
 7. same domain service 可以在 implementation 内共享 backend，但不同 consumer mutable authority 不被 framework 合并；
 8. one Shell + three remotes 只有一个 React/ReactDOM winner；
 9. Workbench disabled + Management absent 时 endpoint/producer/compiler/watcher/client allocation 为 0；
-10. four BotManager builders 不增加 runtime registry、protocol kind、network request 或 persistent identity。
+10. four BotManager builders 不增加 runtime registry、protocol kind、network request 或 persistent identity；
+11. initial read 期间连续 invalidation 只触发一次随后 reread，旧 read/旧 epoch result 永远不能覆盖新 snapshot；
+12. async local/Attachment factory reject、timeout、withdrawal 与 late resolve 后，target/lease/root 在 bounded time 归零；
+13. exact route 优先 parameterized route；ambiguous parameterized patterns 与 navigation group label/icon conflict 原子拒绝。
 
 ## Single-WS performance gates
 
@@ -196,14 +207,14 @@ changelog。
 
 ## Release acceptance
 
-| Gate        | 必须同时成立                                                                                   |
-| ----------- | ---------------------------------------------------------------------------------------------- |
-| Profile     | platform-neutral Shell；MF2 + WS mandatory；single version；no replaceable SPI/config freedom  |
-| Authoring   | only View/Attachment UI declarations + generic capability contract；all common recipes covered |
-| Publication | one atomic publish；layout read zero API；one-result exact `openView()`                        |
-| Transport   | one WS；auth + dynamic API/push；bounded fairness；no SSE/fallback/resume                      |
-| Federation  | one MF Runtime；Manifest/expose/Bridge；fixed shared；bounded build                            |
-| Migration   | old HTTP batch/SSE/Contract/Port/resource paths deleted；docs/changelogs complete              |
+| Gate        | 必须同时成立                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| Profile     | platform-neutral Shell；MF2 + WS mandatory；single version；no replaceable SPI/config freedom |
+| Authoring   | View/Attachment + native interface/RpcTarget/RpcStub；all common recipes covered              |
+| Publication | one atomic publish；layout read zero API；one-result exact `openView()`                       |
+| Transport   | one WS；auth + dynamic API/push；bounded fairness；no SSE/fallback/resume                     |
+| Federation  | one MF Runtime；Manifest/expose/Bridge；fixed shared；bounded build                           |
+| Migration   | old HTTP batch/SSE/resource-oriented Contract/Port paths deleted；docs/changelogs complete    |
 
 ## Global veto conditions
 
@@ -212,9 +223,11 @@ changelog。
 - TS composition/Attachment/MF remote 获得与 Plugin graph 平行的 lifecycle；
 - layout 携带 callable capability，或 Remote View 创建第二个 socket/root session；
 - `openView()` 返回额外 session/resource target 或让 browser 注入 principal/params；
-- ViewApi method/observer/result 没有 runtime schema validation 与 quota；
+- Workbench 强迫 ViewApi 声明 schema、method descriptor、contract hash、generated validator 或统一 domain error；
+- platform-owned control envelope、connection/frame/in-flight/callback queue 没有有界 admission；
 - collection/account row 获得 View/capability/MF identity；
 - Attachment 接受 arbitrary resources、字符串 provider、scan、priority 或 fallback；
+- caller identity 暴露 Context/consumer instance/service locator，或 navigation group 获得独立 registry/lifecycle；
 - remote 依赖 Shell private router/store/Worksplit；
 - 保留 HTTP batch、SSE、polling、HTTP login/domain API、fallback 或旧 session resume；
 - 在 MF Manifest 外建立 artifact manifest/loader/share resolver；
@@ -224,9 +237,10 @@ changelog。
 
 只有以下 implementation detail 可以由 fixture 冻结；它们不能增加 platform concepts：
 
-1. `CapabilityContract` method/observer/child-target schema helper 的最小 TypeScript shape；
-2. `createRemoteValue()` 如何表达 invalidation、latest read、last-known-good 与 dispose，而不进入 wire protocol；
-3. API factory 返回共享 backing 时，direct root wrapper/internal lease 如何维持每次 open 的 admission/cleanup；
+1. `View<Api>` / `Attachment<ProviderApi, TargetApi?>` 如何以最少 conditional types 连接 `RpcTarget & Api` factory 与上游
+   `RpcStub<Api>` renderer props；
+2. `createRemoteValue()` 如何在不增加 server contract 的前提下实现 subscribe-before-read、single-flight、epoch guard 与 React tear-free snapshot；
+3. sync/async API factory 返回共享 backing 时，direct root wrapper/internal lease 如何维持每次 open 的 admission/cleanup，并回收 late resolve；
 4. action 返回 TaskTarget 与接受 progress observer 哪个 recipe 在真实样本中更短；
 5. immutable manifest/signature 与 last-known-good Bridge registration 如何组合；
 6. Host control matcher 如何与 Vite HMR/business WS 共用 listener；
