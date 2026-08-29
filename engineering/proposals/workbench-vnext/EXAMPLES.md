@@ -10,8 +10,8 @@ Plugin 作者只处理四件事：
 
 1. 用普通 TypeScript interface 描述 Plugin 自己的 Cap’n Web API；
 2. 用 `workbench.view<Api>()` 绑定 renderer 和 placement；
-3. 在 Plugin `init()` 中用一个 target factory 原子 `publish()`；
-4. React renderer 只接收上游 `RpcStub<Api>` 和固定 host facade。
+3. 在 Plugin `init()` 中用一个与 definition 同 key 的 flat binding record 原子 `publish()`；
+4. 零 props React renderer 用 `useWorkbench(exactDescriptor)` 取得上游 `RpcStub<Api>` 和固定 host facade。
 
 只有 provider 的 renderer/API 需要被 required consumer 放置时，才增加 `workbench.attachment()`。下列名称是候选 API，但有意
 保持与未来 package boundary 一致：
@@ -19,7 +19,7 @@ Plugin 作者只处理四件事：
 ```ts
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchReact } from '@pluxel/runtime/workbench/react'
+import { useRemoteValue, useWorkbench } from '@pluxel/runtime/workbench/react'
 ```
 
 Browser-safe type/definition 不 import Plugin class、database、Node builtin 或 server service。一个中等规模 Plugin 可以使用：
@@ -34,6 +34,9 @@ src/
     settings.tsx       # MF React Bridge renderer source
   index.ts             # Plugin class + one publish()
 ```
+
+`@pluxel/runtime/workbench` 根入口在 vNext 必须保持 browser-safe、无副作用，因为同一 `definition.ts` 会被 Node Plugin 与 MF remote
+共同 import。Server publication 不是另一个 module helper，只存在于 Plugin Context 的 `ctx.workbench.publish()`。
 
 ## 例一：最小 settings View
 
@@ -83,20 +86,14 @@ export interface SettingsApi {
 import { workbench } from '@pluxel/runtime/workbench'
 import type { SettingsApi } from './api.ts'
 
-export const SettingsView = workbench.view<SettingsApi>({
-	renderer: workbench.federation.react(import.meta.url, '../ui/settings.tsx'),
-	placements: [
-		workbench.tab({
+export const ExampleWorkbench = workbench.define({
+	settings: workbench.view<SettingsApi>({
+		renderer: workbench.entry(import.meta.url, '../ui/settings.tsx'),
+		placement: workbench.tab({
 			label: 'Settings',
 			order: 20,
 		}),
-	],
-})
-
-export const ExampleWorkbench = workbench.define({
-	views: {
-		settings: SettingsView,
-	},
+	}),
 })
 ```
 
@@ -162,15 +159,13 @@ export class ExamplePlugin extends BasePlugin {
 
 	protected override init() {
 		this.ctx.workbench?.publish(ExampleWorkbench, {
-			views: {
-				settings: ({ signal }) => new SettingsTarget(this.settings, signal),
-			},
+			settings: ({ signal }) => new SettingsTarget(this.settings, signal),
 		})
 	}
 }
 ```
 
-`SettingsView` 的 phantom generic 让 TypeScript 检查 factory target 与 renderer props。Runtime 只检查 exact key、owner、resolved
+`ExampleWorkbench.settings` 的 phantom generic 让 TypeScript 检查 factory target 与 renderer hook projection。Runtime 只检查 exact key、owner、resolved
 `RpcTarget`、build revision 和 lifecycle，不反射 methods，也不包装 domain validator。Factory 可以同步返回 target，也可以在 opened-view
 signal/deadline 内异步完成 Plugin 自己的授权或准备；未打开 View 时不调用 factory。
 
@@ -178,11 +173,12 @@ signal/deadline 内异步完成 Plugin 自己的授权或准备；未打开 View
 
 ```tsx
 // ui/settings.tsx
-import { workbenchReact } from '@pluxel/runtime/workbench/react'
-import type { SettingsApi } from '../workbench/api.ts'
+import { useRemoteValue, useWorkbench } from '@pluxel/runtime/workbench/react'
+import { ExampleWorkbench } from '../workbench/definition.ts'
 
-export default function SettingsPanel({ api, host }: workbenchReact.LocalViewProps<SettingsApi>) {
-	const settings = workbenchReact.useRemoteValue({
+export default function SettingsPanel() {
+	const { api, host } = useWorkbench(ExampleWorkbench.settings)
+	const settings = useRemoteValue({
 		read: () => api.snapshot(),
 		subscribe: (invalidate) => api.watch(invalidate),
 	})
@@ -200,7 +196,7 @@ export default function SettingsPanel({ api, host }: workbenchReact.LocalViewPro
 						enabled: !snapshot.enabled,
 						endpoint: snapshot.endpoint,
 					})
-					if (!result.ok) host.notify(`Update failed: ${result.code}`)
+					if (!result.ok) host.notify({ message: `Update failed: ${result.code}` })
 				}}
 			>
 				Toggle
@@ -210,39 +206,49 @@ export default function SettingsPanel({ api, host }: workbenchReact.LocalViewPro
 }
 ```
 
-这里的 `api` 是上游 `RpcStub<SettingsApi>`，`api.snapshot()`/`api.update()` 是上游 `RpcPromise`。`useRemoteValue()` 只是
+这里的 descriptor 同时推导 `api` 的上游 `RpcStub<SettingsApi>` 类型，并在运行时拒绝错误 View/expose 串线；
+`api.snapshot()`/`api.update()` 是上游 `RpcPromise`。`useRemoteValue()` 只是
 React/client convenience：它先建立 `watch` 再执行 initial `snapshot`，合并 read 期间的 invalidation，并防止旧 read 覆盖新结果；server 仍然
 只看到 `snapshot/update/watch`。不用该 hook 时，renderer 可直接调用 typed stub。
+
+MF Bridge 内部仍然需要 host props，但 toolchain 生成的 wrapper 会把它们止于平台边界，等价于：
+
+```tsx
+// generated internal module; not a public Plugin API
+function GeneratedBridge(internal: OpenedViewBridgeProps) {
+	return (
+		<InternalWorkbenchProvider value={internal.runtime}>
+			<SettingsPanel />
+		</InternalWorkbenchProvider>
+	)
+}
+```
+
+Context 每次 opened View/Bridge instance 独立，保存 epoch-stable descriptor、stub 与 host service，不保存 settings snapshot。这样既使用了
+Bridge 的 application props ABI，又不把 `LocalViewProps` 变成每个 Plugin component 的永久签名。
 
 ## 例二：参数化 Account document
 
 Dynamic account 不发布成新 View。一个 parameterized route 复用同一 View/expose，server 在打开时生成窄 target：
 
 ```ts
-export const AccountView = workbench.view<AccountApi>({
-	renderer: workbench.federation.react(import.meta.url, '../ui/account.tsx'),
-	placements: [
-		workbench.route('/accounts/:accountId', {
-			title: 'Account',
-			navigation: false,
-		}),
-	],
-})
-
 export const AccountWorkbench = workbench.define({
-	views: { account: AccountView },
+	account: workbench.view<AccountApi>({
+		renderer: workbench.entry(import.meta.url, '../ui/account.tsx'),
+		placement: workbench.route('/accounts/:accountId', {
+			title: 'Account',
+		}),
+	}),
 })
 
 ctx.workbench?.publish(AccountWorkbench, {
-	views: {
-		account: async ({ params, principal, signal }) => {
-			const account = await manager.admit(params.accountId, { principal, signal })
-			return new AccountTarget(account, {
-				accountId: params.accountId,
-				principal,
-				signal,
-			})
-		},
+	account: async ({ params, principal, signal }) => {
+		const account = await manager.admit(params.accountId, { principal, signal })
+		return new AccountTarget(account, {
+			accountId: params.accountId,
+			principal,
+			signal,
+		})
 	},
 })
 ```
@@ -262,8 +268,13 @@ Host 只接受 definition 已声明的 relative route。`title/meta` 是初始 c
 rematch path 后交给 target factory。
 
 ```tsx
-export default function AccountEditor({ api, host }: workbenchReact.LocalViewProps<AccountApi>) {
-	const account = workbenchReact.useRemoteValue({ read: () => api.snapshot() })
+import { useEffect, useState } from 'react'
+import { useRemoteValue, useWorkbench } from '@pluxel/runtime/workbench/react'
+import { AccountWorkbench } from '../workbench/definition.ts'
+
+export default function AccountEditor() {
+	const { api, host } = useWorkbench(AccountWorkbench.account)
+	const account = useRemoteValue({ read: () => api.snapshot() })
 	const [draft, setDraft] = useState<AccountInput>()
 
 	useEffect(() => {
@@ -354,81 +365,70 @@ export interface FontSelectionApi {
 	select(input: { fontId: string; expectedRevision: number }): Promise<FontSelectionResult>
 }
 
-export const FontsPicker = workbench.attachment<FontsPickerApi, FontSelectionApi>({
-	renderer: workbench.federation.react(import.meta.url, '../ui/picker.tsx'),
-})
-
 export const FontsWorkbench = workbench.define({
-	views: { manager: FontsManagerView },
-	attachments: { picker: FontsPicker },
+	manager: FontsManagerView,
+	picker: workbench.attachment<FontsPickerApi, FontSelectionApi>({
+		renderer: workbench.entry(import.meta.url, '../ui/picker.tsx'),
+	}),
 })
 ```
 
 ```ts
 this.ctx.workbench?.publish(FontsWorkbench, {
-	views: {
-		manager: ({ signal }) => new FontsManagerTarget(this.catalog, signal),
-	},
-	attachments: {
-		picker: ({ caller, principal, signal }) =>
-			new FontsPickerTarget(this.catalog, { caller, principal, signal }),
-	},
+	manager: ({ signal }) => new FontsManagerTarget(this.catalog, signal),
+	picker: ({ consumer, principal, signal }) =>
+		new FontsPickerTarget(this.catalog, { consumer, principal, signal }),
 })
 ```
 
-Provider factory 只获得 platform-issued `caller.node`，用于关联 provider 已有的 caller-bound policy/state；不获得 consumer Context、target
+Provider factory 只获得 platform-issued `consumer.node`，用于关联 provider 已有的 consumer-bound policy/state；不获得 consumer Context、consumer
 factory 或 Shell root。
 
 ### Consumer placement 与 publication
 
 ```ts
 export const CanvasWorkbench = workbench.define({
-	attachments: {
-		fonts: FontsPicker.place(
-			workbench.tab({
-				label: 'Fonts',
-				order: 30,
-			}),
-		),
-	},
+	fonts: FontsWorkbench.picker.place(
+		workbench.tab({
+			label: 'Fonts',
+			order: 30,
+		}),
+	),
 })
 ```
 
 ```ts
 this.ctx.workbench?.publish(CanvasWorkbench, {
-	attachments: {
-		fonts: {
-			provider: this.fonts,
-			target: ({ signal }) => new FontSelectionTarget(this.canvasSettings, signal),
-		},
+	fonts: {
+		provider: this.fonts,
+		consumer: ({ signal }) => new FontSelectionTarget(this.canvasSettings, signal),
 	},
 })
 ```
 
-`this.fonts` 必须是 Canvas Plugin 已 committed 的 direct required dependency handle。Runtime 用 definition 中的 `FontsPicker`
+`this.fonts` 必须是 Canvas Plugin 已 committed 的 direct required dependency handle。Runtime 用 definition 中的 `FontsWorkbench.picker`
 identity 对应 provider publication；不接收 provider string、optional dependency、candidate scan 或 fallback。
 
 Picker renderer 只获得两个根：
 
 ```tsx
-export default function FontsPickerPanel({
-	provider,
-	target,
-	host,
-}: workbenchReact.AttachmentProps<typeof FontsPicker>) {
+export default function FontsPickerPanel() {
+	const { provider, consumer, host } = useWorkbench(FontsWorkbench.picker)
+
 	// provider.list(...) reads provider-owned candidates.
-	// target.select(...) writes consumer-owned selection.
+	// consumer.select(...) writes consumer-owned selection.
 	// host supplies notify/confirm/navigation, never a raw socket or Shell store.
 }
 ```
 
-如果 UI 只修改 provider-wide default，`FontsPicker` 只声明 provider generic，consumer 也省略 `target`。如果 consumer 只在 server 消费 font 而不嵌
+如果 UI 只修改 provider-wide default，Attachment 只声明 provider generic，consumer publication 也省略 `consumer` factory，hook 返回类型不会出现
+`consumer` property。如果 consumer 只在 server 消费 font 而不嵌
 provider UI，它根本不使用 Attachment，只通过正常 Plugin dependency 调用 provider domain service。
 
-## 例五：Wretch 的 caller-owned provider-only Attachment
+## 例五：Wretch 的 consumer-owned provider-only Attachment
 
-Wretch 证明 `caller` 不是理论 metadata。Provider 拥有统一 renderer/API，但设置按 required consumer node 隔离；consumer 只决定 placement，
-不再把 caller-owned RPC 作为 target 重绑一次：
+Wretch 证明 `consumer.node` 不是理论 metadata。Provider 拥有统一 renderer/API，但设置按 required consumer node 隔离；consumer 只决定 placement，
+不再把 consumer-owned RPC 作为第二个 root 重绑一次：
 
 ```ts
 export interface WretchSettingsApi {
@@ -437,19 +437,15 @@ export interface WretchSettingsApi {
 	reset(): Promise<WretchSettingsSnapshot>
 }
 
-export const WretchSettings = workbench.attachment<WretchSettingsApi>({
-	renderer: workbench.federation.react(import.meta.url, '../ui/settings.tsx'),
-})
-
 export const WretchWorkbench = workbench.define({
-	attachments: { settings: WretchSettings },
+	settings: workbench.attachment<WretchSettingsApi>({
+		renderer: workbench.entry(import.meta.url, '../ui/settings.tsx'),
+	}),
 })
 
 this.ctx.workbench?.publish(WretchWorkbench, {
-	attachments: {
-		settings: ({ caller, signal }) =>
-			new WretchSettingsTarget(this.managedSettings.require(caller.node), signal),
-	},
+	settings: ({ consumer, signal }) =>
+		new WretchSettingsTarget(this.managedSettings.require(consumer.node), signal),
 })
 ```
 
@@ -457,25 +453,21 @@ Consumer 仍通过正常 Plugin API 显式启用自己的 managed settings，并
 
 ```ts
 export const HttpConsumerWorkbench = workbench.define({
-	attachments: {
-		http: WretchSettings.place(workbench.tab({ label: 'HTTP' })),
-	},
+	http: WretchWorkbench.settings.place(workbench.tab({ label: 'HTTP' })),
 })
 
 protected override async init() {
 	await this.http.enableManagedSettings()
 
 	this.ctx.workbench?.publish(HttpConsumerWorkbench, {
-		attachments: {
-			http: { provider: this.http },
-		},
+		http: { provider: this.http },
 	})
 }
 ```
 
-`caller.node` 是 platform-issued 的 canonical node address，只用于查找 provider 已拥有的 caller state；caller reference 本身的 admission/有效期绑定
+`consumer.node` 是 platform-issued 的 canonical node address，只用于查找 provider 已拥有的 consumer state；consumer reference 本身的 admission/有效期绑定
 consumer generation。它不把 consumer Context/instance/facade 暴露给 target，也不是任意调用授权。Provider/consumer/View 任一撤销都会关闭
-target。这个结构不需要 optional target API，因为写入的设置本来就由 Wretch provider 按 caller 拥有。
+target。这个结构不需要 optional consumer API，因为写入的设置本来就由 Wretch provider 按 consumer 拥有。
 
 ## 例六：日志、实时状态与长任务
 
@@ -503,15 +495,15 @@ export interface DiagnosticsApi {
 Telegram、KOOK、Milky 和 Discord 可以共用普通 TypeScript builder，但每个 Plugin 仍有独立 API、publication 和 lifecycle：
 
 ```ts
-export const TelegramViews = defineBotManagerViews<{
+export const TelegramEntries = defineBotManagerEntries<{
 	overview: TelegramOverviewApi
 	accounts: TelegramAccountsApi
 	diagnostics: TelegramDiagnosticsApi
 }>({
-	renderers: {
-		overview: workbench.federation.react(import.meta.url, './ui/overview.tsx'),
-		accounts: workbench.federation.react(import.meta.url, './ui/accounts.tsx'),
-		diagnostics: workbench.federation.react(import.meta.url, './ui/diagnostics.tsx'),
+	entries: {
+		overview: workbench.entry(import.meta.url, './ui/overview.tsx'),
+		accounts: workbench.entry(import.meta.url, './ui/accounts.tsx'),
+		diagnostics: workbench.entry(import.meta.url, './ui/diagnostics.tsx'),
 	},
 	labels: { service: 'Telegram', account: 'Bot' },
 	navigation: {
@@ -519,16 +511,14 @@ export const TelegramViews = defineBotManagerViews<{
 	},
 })
 
-export const TelegramWorkbench = workbench.define({ views: TelegramViews })
+export const TelegramWorkbench = workbench.define(TelegramEntries)
 ```
 
 ```ts
-this.ctx.workbench?.publish(TelegramWorkbench, {
-	views: bindBotManagerViews(TelegramViews, this.manager),
-})
+this.ctx.workbench?.publish(TelegramWorkbench, bindBotManagerEntries(TelegramEntries, this.manager))
 ```
 
-`defineBotManagerViews()` 和 `bindBotManagerViews()` 是 `platform-kit` 中的普通函数。它们在 define/init 时返回 final records，runtime
+`defineBotManagerEntries()` 和 `bindBotManagerEntries()` 是 `platform-kit` 中的普通函数。它们在 define/init 时返回 final records，runtime
 不会看到 Feature address、Bot hub、额外 registry 或网络跳转。`navigation.group` 只被展开成各 route 的一致 by-value metadata，不获得 owner 或
 lifecycle；Account 仍是 `list/open` 返回的 domain data/child target。
 
@@ -567,7 +557,7 @@ registry、wire kind、owner、lease 或 independent lifecycle。
 - 最小 settings View 只有一个 TypeScript API、一个 View、一个 target 和一次 publication；
 - 同一 root capability 直接覆盖 snapshot、mutation、watch、paged list、task 和 transfer ticket；
 - 10,000 rows 不增加 View、route、MF expose、API root 或 socket；
-- provider + target Attachment 严格止于两个 root，不接受任意 resource map 或第三 authority；
-- Wretch provider-only Attachment 可以用 exact caller node 关联既有 caller-owned state，不需要 consumer target 或 Context escape hatch；
+- provider + consumer Attachment 严格止于两个 root，不接受任意 resource map 或第三 authority；
+- Wretch provider-only Attachment 可以用 exact consumer node 关联既有 consumer-owned state，不需要第二个 consumer API 或 Context escape hatch；
 - Plugin 作者不看到 raw session root、WebSocket、MF Runtime、grant、manifest URL 或 Shell private store；
 - 如果真实 Wretch、Fonts 或 BotManager fixture 无法用上述表面自然表达，先修正该 API，不新增 resource type system。

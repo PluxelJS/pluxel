@@ -31,23 +31,24 @@ Definition key 已经携带 View/Attachment declaration，TypeScript generic 已
 
 ```ts
 ctx.workbench?.publish(ExampleWorkbench, {
-	views: {
-		settings: ({ principal, params, signal }) =>
-			new SettingsTarget(service, { principal, params, signal }),
-	},
-	attachments: {
-		fonts: {
-			provider: this.fonts,
-			target: ({ principal, params, signal }) =>
-				new FontSelectionTarget(this, { principal, params, signal }),
-		},
+	settings: ({ principal, params, signal }) =>
+		new SettingsTarget(service, { principal, params, signal }),
+	fonts: {
+		provider: this.fonts,
+		consumer: ({ principal, params, signal }) =>
+			new FontSelectionTarget(this, { principal, params, signal }),
 	},
 })
 ```
 
+Definition 与 binding 使用同一个 flat key namespace。Descriptor 自身携带 kind，mapped type 直接从 `ExampleWorkbench.settings/fonts` 推导对应
+factory shape；重复的 `views`/`attachments` 层既不增加 owner，也不增加校验信息，所以不进入 vNext。Definition value 对作者表现为 readonly record，
+platform metadata 只放在 non-enumerable/internal symbol 上；key 必须满足固定 identifier grammar，并拒绝 `__proto__`、`prototype`、`constructor`、`then`
+等会破坏普通 object/Promise 语义的名称。
+
 Publication transaction：
 
-1. flatten final local View 与 Attachment placement keys；普通 TypeScript builder 的中间结构在这里已经不存在；
+1. 读取 flat exact record 中 final local View、provider Attachment 与 placed Attachment keys；普通 TypeScript builder 的中间结构在这里已经不存在；
 2. 验证 placement/route collision、parameterized route ambiguity、navigation group metadata、declared key、target factory、provider Attachment
    factory 与 required dependency handle；
 3. 验证 MF producer revision 与 exact Bridge expose inventory；
@@ -62,22 +63,27 @@ Publication transaction：
 
 TypeScript 与 runtime 各自检查自己真正拥有的边界。TypeScript 提前检查：
 
-- 每个 local View 恰有一个返回相应 API generic 的 target factory；
+- 每个 local View 恰有一个 placement 和一个返回相应 API generic 的 target factory；
 - provider publication 为每个 declared Attachment 绑定 provider API factory；
-- consumer placement binding 的 target factory 与 optional target API generic 一致；
-- renderer props 只得到相应 local API 或 `{ provider, target? }`。
+- consumer placement binding 的 consumer factory 与 optional consumer API generic 一致；
+- descriptor-bound React hook 只得到相应 local API；provider-only Attachment 精确省略 `consumer` property，provider+consumer Attachment 才返回它。
 
 Renderer 侧的具体投影直接使用上游 `RpcStub<Api>`；方法调用返回上游 `RpcPromise`。Workbench 不生成第二套 Server/Client type，也不把
 stub runtime reflection 伪装成 method inventory。
+
+Plugin React component 是零 props component，通过 `useWorkbench(Definition.entry)` 取得投影。MF Bridge 的 generated wrapper props、opened handle 与
+Context provider 属于 `runtime/workbench/federation` internal ABI，不是 public Plugin component signature。Stable descriptor identity 会在 wrapper/hook
+边界检查，但它只标识 definition entry，不是 API contract hash，也不尝试反射 erased method shape。
 
 Runtime 不声称从擦除后的 TypeScript 恢复 API method inventory。它只独立验证平台事实：
 
 - binding 没有未声明 View/Attachment key，也不缺少 definition key；
 - local View renderer expose 属于 target producer revision；
 - provider publication 为每个 declared Attachment 绑定 callable provider factory 与 provider-owned renderer expose；
-- consumer placement binding 只接收 `{ provider: requiredDependency, target? }`；
-- `openView()` 时 provider factory 看到 platform-issued 的 caller node 正是 publishing consumer target，并且其有效期绑定 consumer generation；
-- provider handle 不能携带 target factory；consumer 不能伪造 provider factory；
+- consumer placement binding 根据 descriptor 精确接收 `{ provider: requiredDependency }` 或
+  `{ provider: requiredDependency, consumer: factory }`；
+- `openView()` 时 provider factory 看到 platform-issued 的 consumer node 正是 publishing consumer owner，并且其有效期绑定 consumer generation；
+- provider handle 不能携带 consumer factory；consumer 不能伪造 provider factory；
 - structured Plugin address、definition/build revision、placement、owner 和 generation 通过 runtime parser；
 - sync/async factory resolved result 是 `RpcTarget`，并绑定正确 owner、opened-view lease 与 withdrawal gate；
 - duplicate publication、stale generation、withdrawn provider、非法 factory 或非 `RpcTarget` result fail-fast。
@@ -91,7 +97,7 @@ Backend 只维护：
 
 - target address -> `PublishedTarget`；
 - global navigation -> ordered View descriptions；
-- target -> tab/route/Attachment placements；
+- target -> exact tab/route/Attachment placement entries；
 - producer definition/build revision -> trusted manifest reference；
 - target/provider generation -> affected publications and active opened-view leases。
 
@@ -132,9 +138,15 @@ openView({ target, view, location, expectedLayoutRevision })
        federatedViewRef
      }
 
-  -> Attachment OpenedView {
+  -> provider-only Attachment OpenedView {
        provider: typed provider ViewApi stub
-       target?: typed consumer ViewApi stub
+       params: server-derived route params
+       federatedViewRef
+     }
+
+  -> provider+consumer Attachment OpenedView {
+       provider: typed provider ViewApi stub
+       consumer: typed consumer ViewApi stub
        params: server-derived route params
        federatedViewRef
      }
@@ -145,11 +157,11 @@ key、layout revision、authenticated principal lease 与 quotas。Browser 不�
 Plugin-specific authorization 留在 factory/target。
 
 Factory 只获得 frozen `principal`、server-derived `params` 和 opened-view `signal`。Attachment provider factory 额外获得 exact
-consumer `caller: { node: PluginNodeAddress }`。Caller 是 server-only identity/ownership reference，不是 capability：不含 consumer Context、instance、
-dependency facade 或 service locator，也不进入 renderer props。Factories 都不获得 raw request、cookie、socket、session root 或 auth provider target。
+`consumer: { node: PluginNodeAddress }`。Consumer reference 是 server-only identity/ownership reference，不是 capability：不含 consumer Context、instance、
+dependency facade 或 service locator，也不进入 renderer Context。Factories 都不获得 raw request、cookie、socket、session root 或 auth provider target。
 
 Factory 可以返回 `RpcTarget & Api` 或 `Promise<RpcTarget & Api>`。Admission 在调用前建立一个共同的 opened-view signal/deadline；Attachment 的
-provider/optional target 都取得 owner lease 后可以并行准备，但必须全部成功才一次返回。任一 factory reject、deadline、owner withdrawal 或 resolved
+provider/optional consumer 都取得 owner lease 后可以并行准备，但必须全部成功才一次返回。任一 factory reject、deadline、owner withdrawal 或 resolved
 non-`RpcTarget` 都会 abort signal，dispose 已完成及随后迟到的 target，并返回零 root 的稳定 open failure。失败不能把一个 Attachment root、observer、
 Bridge 或 partial handle 暴露给 browser。
 
@@ -159,7 +171,7 @@ Cap’n Web value。
 
 Opened View rules：
 
-- local View 只有一个 API root；Attachment 只有 provider + optional target 两个 API root；
+- local View 只有一个 API root；Attachment 只有 provider + optional consumer 两个 API root；
 - 同一 parameterized View 可以在不同 document 中多次打开，每次都有独立 params/signal/target；
 - renderer 不能取得 page session root、其他 View API、socket 或 capability lookup；
 - API method 可以按 Plugin 自己的 TypeScript API 返回任意 Cap’n Web child target；Workbench 不声明、登记或解析 child method shape；普通 row/value 不自动成为 target；
@@ -173,12 +185,12 @@ Opened View rules：
 
 ## Ownership
 
-| 来源                   | placement owner | API owner                  | renderer owner | withdrawal boundary    |
-| ---------------------- | --------------- | -------------------------- | -------------- | ---------------------- |
-| local View             | target Plugin   | target                     | target package | target generation      |
-| TypeScript-built Views | target Plugin   | target                     | target package | target generation      |
-| provider Attachment    | target Plugin   | provider + optional target | provider       | target/provider 的交集 |
-| builtin host document  | host            | host/none                  | host           | host/layout revision   |
+| 来源                   | placement owner | API owner                    | renderer owner | withdrawal boundary    |
+| ---------------------- | --------------- | ---------------------------- | -------------- | ---------------------- |
+| local View             | target Plugin   | target                       | target package | target generation      |
+| TypeScript-built Views | target Plugin   | target                       | target package | target generation      |
+| provider Attachment    | target Plugin   | provider + optional consumer | provider       | target/provider 的交集 |
+| builtin host document  | host            | host/none                    | host           | host/layout revision   |
 
 普通 shared library 不获得 runtime owner。MF producer 是 artifact owner，不代替 Plugin generation owner。Browser View handle 只管理一次
 open 的本地资源；server internal lease 只管理该次 capability lifetime，二者都不反向拥有 publication。

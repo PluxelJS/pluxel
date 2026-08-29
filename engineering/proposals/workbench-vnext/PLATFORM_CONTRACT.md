@@ -45,7 +45,7 @@ MF 2.0 与 Cap’n Web/WS 是同级、不可拆分的 platform ABI：
 | Renderer             | Plugin View 固定 React Bridge；Shell framework 可为 React/Vue/Svelte/vanilla                    |
 | UI lifecycle         | `loadRemote` -> Bridge render/update/destroy -> opened View handle dispose                      |
 | Registration         | one definition + sync/async typed root factories -> one atomic `PublishedTarget` per generation |
-| Dynamic API          | local View 一个 direct root capability；Attachment 为 provider + optional target capability     |
+| Dynamic API          | local View 一个 direct root capability；Attachment 为 provider + optional consumer capability   |
 | View open context    | server-derived principal/route params + `AbortSignal`；browser 不得注入 principal/params        |
 | Open result          | 一次返回 direct root(s) + params + federation ref；无中间 session target 或第二次 API lookup    |
 | Browser facade       | fixed navigation/document/transfer/notify/confirm；不暴露 Shell private state                   |
@@ -82,8 +82,8 @@ suite 才能声明支持；不提供“部分兼容”或 alternate adapter path
 Plugin 作者可以声明：
 
 - 原生 Cap’n Web `RpcTarget` methods、callbacks、streams 与 child targets；
-- Views、routes、labels、renderer source 与普通 TypeScript definition builders；
-- required dependency Attachment 的 provider API 与 optional target API；
+- Views、routes、labels、module-relative renderer entry 与普通 TypeScript definition builders；
+- required dependency Attachment 的 provider API 与 optional consumer API；
 - 自己选择的 domain validation、authorization、error/result 与 compatibility policy；
 - Plugin business HTTP 与真实文件传输。
 
@@ -115,9 +115,11 @@ owner 是 Plugin，不是一个不了解领域语义的 Workbench validator fram
 
 ## Public complexity budget
 
-Plugin-facing Workbench surface 冻结为 `View<Api>`、`Attachment<ProviderApi, TargetApi?>`、frozen definition、一次 `publish()` 和固定 host
-facade。API generic 只是 TypeScript phantom；server factory 返回 `RpcTarget & Api`，renderer 直接取得上游 `RpcStub<Api>`/`RpcPromise<T>`，没有
-`CapabilityContract`、schema registry、method descriptor 或第二套 Server/Client type。
+Plugin-facing Workbench surface 冻结为 `View<Api>`、`Attachment<ProviderApi, ConsumerApi = never>`、flat frozen definition、一次 `publish()` 和固定 host
+facade。每个 local View/placed Attachment 恰好一个 placement，provider Attachment 没有 placement；descriptor 已携带 kind，definition/publication
+不重复 `views`/`attachments` 容器。API generic 只是
+TypeScript phantom；server factory 返回 `RpcTarget & Api`，零 props renderer 通过 descriptor-bound `useWorkbench()` 直接取得上游
+`RpcStub<Api>`/`RpcPromise<T>`，没有 public Bridge props、`CapabilityContract`、schema registry、method descriptor 或第二套 Server/Client type。
 Layout、publication、opened-view lease、MF registration 和 WS scheduling 是 platform internal facts，不要求 Plugin 作者配置。
 
 新增 public noun/helper 必须同时满足：至少让两个真实 workspace fixture 的调用点变短；不增加 registry、wire kind、owner 或 independent lifecycle；
@@ -131,14 +133,16 @@ Official 与 external conforming Shell 都直接组合下列 browser-safe 具体
 | ------------------------------ | ------------------------------------------------------------------------ |
 | `runtime/web/session`          | Cap’n Web WS、auth/bootstrap、root ownership 与 dispose                  |
 | `runtime/capnweb`              | pinned `RpcTarget`/`RpcStub`/`RpcPromise` re-export；不增加 RPC DSL      |
+| `runtime/workbench`            | browser-safe definition/entry/placement descriptors                      |
 | `runtime/workbench/client`     | typed root projection、opened View handle、remote-value/transfer helpers |
 | `runtime/workbench/federation` | one MF Runtime、fixed Runtime Plugin、opened View/Bridge                 |
-| `runtime/workbench/react`      | Profile 1 React/Bridge authoring 与 host facade                          |
+| `runtime/workbench/react`      | descriptor-bound hooks、Pane Kit 与 host facade；无 public Bridge props  |
 | `@pluxel/core/federation`      | manifest/build identity 与 fixed shared policy                           |
 
 这些 concrete packages 可以是 public browser entry，但不得在它们前面再定义 `RpcTransport`、`ArtifactLoader`、`RendererHost`、
 `PortableWorkbenchHost`、`AuthAdapter` 或 compiler adapter。Internal test seam 可以 mock concrete dependency，但不能晋升为 public
-extension point。
+extension point。`runtime/workbench` 根入口必须无 React、Plugin Context、Node 或 server side effect，使同一 frozen definition 可安全进入 Plugin server
+module 和 MF remote；server publication 只由 Plugin instance 上的 `ctx.workbench.publish()` 提供。
 
 ## 整体版本，不做子协议协商
 
@@ -168,7 +172,7 @@ render/update/destroy lifecycle。Profile 1 直接采用这些 concrete extensio
 - capability-free layout 与一次直接返回 root(s)/params/federation ref 的 `openView()`；
 - parameterized document server rematch，browser 不能注入 principal/params；
 - sync/async local/Attachment factory 全有或全无；timeout/withdrawal/late resolve 后 target bounded cleanup；
-- Wretch caller-owned state 只得到 server-only exact caller node，不暴露 Context/facade；
+- Wretch consumer-owned state 只得到 server-only exact consumer node，不暴露 Context/facade；
 - exact/parameterized route precedence 与 navigation group metadata conflict deterministic rejection；
 - dirty/title/transfer 在 Bridge destroy 时清理，再释放 opened View roots；
 - signed upload/download ticket 传 bytes，Cap’n Web frame 不承载文件；
@@ -194,7 +198,7 @@ render/update/destroy lifecycle。Profile 1 直接采用这些 concrete extensio
 - 在 Cap’n Web 之上恢复 Model/Query/Channel/Collection resource protocol/registry；
 - 强迫 Plugin 为 ViewApi 声明 Standard Schema、method descriptor、contract hash 或 generated validator；
 - 让 browser 注入 principal/route params，或把 raw request/auth provider target 交给 View factory；
-- 让 Attachment caller reference 暴露 Context/consumer instance/service locator，或让 navigation group 获得 registry/lifecycle；
+- 让 Attachment consumer reference 暴露 Context/consumer instance/service locator，或让 navigation group 获得 registry/lifecycle；
 - 给 remote 暴露 async `beforeClose` callback、generic HTTP client、Shell router/store 或 raw socket；
 - `openView()` 返回中间 resource/session target，再通过第二次调用取得 API；
 - 通过 config flag 恢复 HTTP batch、SSE、plain ESM、local Component 或 old Contract/Port path；

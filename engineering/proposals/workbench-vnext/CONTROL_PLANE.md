@@ -93,19 +93,24 @@ type OpenedView =
 			params: Readonly<Record<string, string>>
 			federatedViewRef: unknown
 	  }>
-	| Readonly<{
+	| (Readonly<{
 			kind: 'attachment'
-			provider: RpcTarget
-			target?: RpcTarget
 			params: Readonly<Record<string, string>>
 			federatedViewRef: unknown
-	  }>
+	  }> &
+			(
+				| Readonly<{ provider: RpcTarget; consumer?: never }>
+				| Readonly<{ provider: RpcTarget; consumer: RpcTarget }>
+			))
 ```
 
 `openView()` 在一次 Cap’n Web result 中 transfer direct API root、server-derived params 和 pinned federation reference；没有中间
 `ViewSessionTarget`，也没有后续 `api()` round trip。Concrete browser client 验证 Workbench 自己拥有的 result envelope，并建立只存在于本地的
 disposable View handle。Envelope 内的 Plugin API stub 及其后续 domain payload 不由 Workbench 解释。Server 把返回的 API wrapper 绑定到一个
-internal lease；local View 只有一个 remote root，Attachment 只有 provider + optional target roots。
+internal lease；local View 只有一个 remote root，Attachment 只有 provider + optional consumer roots。
+
+Attachment 的两个 envelope branch 由已验证的 exact descriptor 决定：provider-only branch 必须没有 `consumer` key，provider+consumer branch 必须有
+且只能有一个 `consumer` root。Concrete client 不把 raw optional field 直接暴露给 Plugin；descriptor-bound hook 仍返回两种精确 record。
 
 Cap’n Web 把返回的 `RpcTarget` 转成 remote stub。Stub 不是 DTO，不能 persist、serialize 到 URL、跨 page 共享或跨 connection epoch
 复活。Server 可以保留 internal diagnostics ID，但 browser protocol 不接收 `grantId`、resource namespace、role string 或“旧 token 换新
@@ -158,12 +163,12 @@ authorization 留在 factory/target。
 
 Admission 通过后才用 frozen principal projection、server-derived params 和 opened-view `AbortSignal` 调用 sync/async factory。Runtime 在固定
 deadline 内等待 resolved `RpcTarget`，然后在同一个 result 直接返回 API root。Local View 只返回一个 root；Attachment 只返回 provider 与 optional
-target API root。Browser-safe TypeScript generic
-连接 factory、stub 与 renderer props；raw protocol 不提供 resource/method namespace lookup。普通返回值保持 by-value，Plugin API 可以按需返回
+consumer API root。Browser-safe TypeScript generic
+连接 factory、stub 与 descriptor-bound renderer Context；raw protocol 不提供 resource/method namespace lookup。普通返回值保持 by-value，Plugin API 可以按需返回
 observer/task/subscription 等原生 Cap’n Web child target，Workbench 不登记或反射它们的方法。
 
-Attachment provider factory 额外得到 platform-issued `caller.node`，只用于关联该 canonical consumer node 已有的 caller-owned state；caller reference
-自身的 admission/有效期仍绑定 exact consumer generation。Provider 与 optional target factory 必须全成功才 transfer roots；任一 reject、timeout、
+Attachment provider factory 额外得到 platform-issued `consumer.node`，只用于关联该 canonical consumer node 已有的 consumer-owned state；consumer
+reference 自身的 admission/有效期仍绑定 exact consumer generation。Provider 与 optional consumer factory 必须全成功才 transfer roots；任一 reject、timeout、
 withdrawal 或 non-`RpcTarget` result 都 abort 共用 signal、dispose completed/late targets，并且不创建 partial opened handle。
 
 Capability 可以共享 Plugin 自己拥有的 backing/subscription，但不能合并 target/provider owner 或放宽 withdrawal。Server-side revocation 使 retained
@@ -214,7 +219,7 @@ Client cleanup 顺序：
 
 1. Tab/View close 先 destroy MF Bridge，阻止 remote cleanup 后继续发起调用；
 2. local View handle 清除 document/transfer，再显式 dispose host-owned child stubs、observers、tasks/subscriptions 和直接返回的 API root；
-3. Attachment handle 同一动作释放 provider/optional target；internal lease 最后一个 root 释放后执行 target disposer/lease cleanup 并 abort signal；
+3. Attachment handle 同一动作释放 provider/optional consumer；internal lease 最后一个 root 释放后执行 target disposer/lease cleanup 并 abort signal；
 4. page/session owner dispose root stub 并关闭 socket；
 5. server socket close 即使 browser 未 cleanup 也幂等释放全部 target、observer、lease 与 subscription。
 

@@ -59,9 +59,11 @@ type FederatedViewRef = Readonly<{
 Plugin definition、producer entry 与 build revision 生成合法且无冲突的 name/expose。作者不手写 remote name、public path、share scope
 或 manifest URL。
 
-`workbench.federation.react()` 是唯一 producer declaration，不是 loader adapter。Toolchain 把同一 Plugin definition 可达的 local Views 与
+作者只用 `workbench.entry(import.meta.url, './ui.tsx')` 声明 module-relative renderer source。Profile 已固定 Vite、MF 2.0 与 React Bridge，
+所以 public API 不再重复 `federation.react()` 这些不可选择的基础设施名词。Toolchain 把同一 Plugin definition 可达的 local Views 与
 Attachment renderers 合并为一个 producer config，并生成 exact expose、Bridge wrapper、shared declaration、dynamic types 和
-`mf-manifest.json`。Publication 必须验证 declaration 与实际 expose inventory exact。
+`mf-manifest.json`。`entry()` 不会被 server 当作 dynamic-import loader 执行；它只是 source provenance，publication 必须验证 declaration 与实际 expose
+inventory exact。
 
 ## Manifest/Snapshot 是 artifact 唯一事实
 
@@ -70,7 +72,7 @@ server/distribution 只维护“Plugin definition/build revision -> trusted mani
 `WorkbenchArtifactV2`。
 
 `mf-stats.json` 只用于 build analysis/diagnostics，不成为 consumer runtime contract。所有 external manifest、Snapshot 与 expose metadata 在
-browser trust boundary 验证。Dynamic types 只改善 Remote module 与 renderer props 的开发体验；它既不替代 MF artifact/build revision 校验，也不让
+browser trust boundary 验证。Dynamic types 只改善 Remote module 与 descriptor-bound hook projection 的开发体验；它既不替代 MF artifact/build revision 校验，也不让
 Workbench 获得 Plugin domain validation 职责。
 
 Layout 中的 `FederatedViewRef` 只是 pinned reference。Capability session 不承载 asset list，MF Manifest 也不承载 ViewApi/domain state、principal 或
@@ -126,17 +128,23 @@ Profile 1 的每个 React View expose 返回一个 MF React Bridge application c
 instance，并与一个 local View handle/internal server lease 一一编排。Shell 通过 Bridge 完成 lazy load、render、update、error boundary 与 destroy，不把 unknown
 remote Component 当作 local Component 直接塞进 Shell tree，也不在 producer 内增加第二套路由来复用 Plugin-wide application instance。
 
-Bridge props/context 只注入稳定 host facade：
+Bridge 的 generated wrapper props 只注入当前 opened handle 与稳定 host service，并立即建立每个 Bridge instance 独立的 React Context。Plugin
+默认导出的零 props component 通过 `useWorkbench(exactDescriptor)` 取得：
 
 - locale、scheme、notify、confirm；
 - relative navigation；ephemeral state 留在 renderer，持久 state 走 ViewApi；
 - document params、idempotent dirty marker 与 display title；无 remote `beforeClose` callback；
 - capability-signed ticket 的 upload/download/progress/cancel helper；无 generic HTTP client；
-- exact local ViewApi 或 Attachment provider/target clients；
+- exact local ViewApi 或 Attachment provider/consumer clients；
 - Pane Kit root。
 
-Remote 不取得 Shell router、workspace store、Worksplit 或 raw transport。Shared React/UI code 不代表共享 Shell private Context；remote 在自己的
-application boundary 建 provider。CSS、portal、focus 与 cleanup 都跟随 Bridge lifecycle。
+Remote 不取得 Shell router、workspace store、Worksplit 或 raw transport。`LocalViewProps`、`AttachmentProps`、generated wrapper props 和 raw
+`WorkbenchProvider` 都不是 public export；descriptor 参数同时完成 TypeScript projection 与 runtime identity check。Shared React/UI code 不代表共享
+Shell private Context；remote 在自己的 application boundary 建 provider。CSS、portal、focus 与 cleanup 都跟随 Bridge lifecycle。
+
+上游 React Bridge 支持通过 props 传数据，但那只是 Shell 到 generated wrapper 的 application ABI，不要求 Pluxel 把基础设施 props 继续扩散到每个
+Plugin page signature。Context 内只保存 epoch-stable descriptor/stubs/host service；locale/scheme 等动态 host state 由 hook 订阅，Plugin domain
+snapshot 不进入 Context。
 
 Document/transfer facade 由 Shell 实现，但语义属于 concrete Profile 1 package，external conforming Shell 不能自行改写。Bridge
 destroy 会幂等清除 dirty/title registration 和 active transfer，然后才 dispose opened View handle 的 capability roots。

@@ -84,8 +84,13 @@ DELIVERY_PLAN
     producer 或 socket。
 14. Workbench 只验证 authentication/profile、identity、route/layout/build revision、factory `RpcTarget`、quota 与 lifecycle 等平台协议；
     ViewApi 的领域输入、授权、业务不变量、result/error、operation limit 与兼容策略由 Plugin 自己负责。
-15. Renderer API 直接使用上游 `RpcStub<Api>`/`RpcPromise<T>`；sync/async factory 必须在 deadline 内全有或全无，late target 必须回收。
-16. Placement 只有 tab/route；navigation group 只是无 lifecycle 的 by-value metadata，route precedence/collision 不依赖注册顺序。
+15. Renderer 是零 props component，通过 exact descriptor-bound `useWorkbench()` 直接使用上游 `RpcStub<Api>`/`RpcPromise<T>`；Bridge props 只属于
+    generated internal wrapper。
+16. Definition/publication 使用一个 flat exact record；descriptor 自带 kind，每个 local View/placed Attachment 恰好一个 placement，provider
+    Attachment 没有 placement；不重复 `views`/`attachments` 分类或 `placements[]`。
+17. Sync/async factory 必须在 deadline 内全有或全无，late target 必须回收。
+18. Placement 只有 tab/route；parameterized route 自动不参与 navigation；navigation group 只是无 lifecycle 的 by-value metadata，route
+    precedence/collision 不依赖注册顺序。
 
 ## 总体生命周期
 
