@@ -85,6 +85,8 @@ withdrawal、Workbench event 或 MF update。`FontManagerPlugin` 不暴露只为
 ## Browser-safe domain API
 
 ```ts
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+
 export type Page<T> = Readonly<{
 	items: readonly T[]
 	nextCursor: string | null
@@ -112,12 +114,11 @@ export type FontCollectionSnapshot = Readonly<{
 	fontIds: readonly string[]
 }>
 
-export interface SubscriptionApi {
-	close(): void
-}
+export interface SubscriptionApi extends RpcTarget {}
 ```
 
-Rows 与 snapshots 都是 bounded values，没有 target、dispose、route 或 runtime identity。
+Rows 与 snapshots 都是 bounded domain values，没有 target、domain disposer、route 或 runtime identity；
+browser awaited object response 仍按 Cap’n Web 规则释放其 transport-level 顶层 disposer。
 
 Catalog API 是 FontManager 自己复用的领域 shape，不是 platform interface：
 
@@ -125,18 +126,22 @@ Catalog API 是 FontManager 自己复用的领域 shape，不是 platform interf
 export type FontCollectionSnapshotResult =
 	Readonly<{ ok: true; value: FontCollectionSnapshot }> | Readonly<{ ok: false; code: 'not_found' }>
 
-export interface FontCollectionCatalogApi {
+export interface FontCollectionCatalogApi extends RpcTarget {
 	listCollections(input: {
 		cursor: string | null
 		limit: number
 		query?: string
-	}): Promise<Page<FontCollectionRow>>
+	}): Page<FontCollectionRow>
 
-	getCollection(input: { collectionId: string }): Promise<FontCollectionSnapshotResult>
+	getCollection(input: { collectionId: string }): FontCollectionSnapshotResult
 
 	watchCollections(invalidate: () => void): SubscriptionApi
 }
 ```
+
+示例假设 catalog service 是 generation 内的 memory index，所以读取同步返回；若实际实现需要 I/O，
+对应 method 保持 `Promise<Page<...>>`/`Promise<Result>`。Browser 侧两者都由 `RpcStub` 投影成可
+await/pipeline 的调用，helper 负责 dispose 每个 awaited object result。
 
 Manager root 扩展 catalog 并直接完成 by-ID CRUD：
 
@@ -157,7 +162,7 @@ export type RemoveFontCollectionResult =
 	| Readonly<{ ok: false; code: 'not_found' }>
 
 export interface FontManagerApi extends FontCollectionCatalogApi {
-	listFonts(input: { cursor: string | null; limit: number; query?: string }): Promise<Page<FontRow>>
+	listFonts(input: { cursor: string | null; limit: number; query?: string }): Page<FontRow>
 
 	createCollection(input: { name: string }): Promise<CreateFontCollectionResult>
 
@@ -175,7 +180,7 @@ export interface FontManagerApi extends FontCollectionCatalogApi {
 
 	removeFont(input: { fontId: string }): Promise<RemoveFontResult>
 	beginInstall(input: { fileName: string; bytes: number }): Promise<UploadTicket>
-	install(input: { upload: CompletedUpload }): Promise<InstallTaskApi>
+	install(input: { upload: CompletedUpload }): InstallTaskApi
 	watchFonts(invalidate: () => void): SubscriptionApi
 }
 ```
@@ -209,7 +214,7 @@ Context、instance、config 或 dependency facade。Publication 只绑定两个 
 Manager renderer 保持本地 `editingCollectionId`/draft state：
 
 ```ts
-const result = await api.createCollection({ name })
+using result = await api.createCollection({ name })
 if (result.ok) {
 	setEditingCollectionId(result.value.id)
 	setDraft(result.value)
@@ -238,8 +243,8 @@ export type SelectFontCollectionResult =
 			current: FontCollectionSelectionSnapshot
 	  }>
 
-export interface FontCollectionSelectionApi {
-	snapshot(): Promise<FontCollectionSelectionSnapshot>
+export interface FontCollectionSelectionApi extends RpcTarget {
+	snapshot(): FontCollectionSelectionSnapshot
 	select(input: {
 		collectionId: string
 		expectedRevision: number
@@ -256,6 +261,8 @@ Consumer target 在 mutation 时直接使用 constructor dependency 验证 ID，
 consumer-owned settings：
 
 ```ts
+import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
+
 class CanvasFontSelectionTarget extends RpcTarget implements FontCollectionSelectionApi {
 	constructor(
 		private readonly settings: CanvasSettings,
@@ -266,7 +273,7 @@ class CanvasFontSelectionTarget extends RpcTarget implements FontCollectionSelec
 	}
 
 	snapshot() {
-		return Promise.resolve(this.settings.snapshotFontCollectionSelection(this.open.principal))
+		return this.settings.snapshotFontCollectionSelection(this.open.principal)
 	}
 
 	select(input: { collectionId: string; expectedRevision: number }) {
@@ -280,10 +287,19 @@ class CanvasFontSelectionTarget extends RpcTarget implements FontCollectionSelec
 		return this.settings.clearFontCollection(input, this.open)
 	}
 
-	watch(invalidate: () => void) {
-		return new SubscriptionTarget(
-			this.settings.watchFontCollectionSelection(this.open.principal, () => void invalidate()),
-		)
+	watch(invalidate: RpcStub<() => void>) {
+		const callback = invalidate.dup()
+		let unsubscribe: (() => void) | undefined
+		try {
+			unsubscribe = this.settings.watchFontCollectionSelection(this.open.principal, () => {
+				using pending = callback()
+			})
+			return new SubscriptionTarget(unsubscribe, callback, this.open.signal)
+		} catch (error) {
+			unsubscribe?.()
+			callback[Symbol.dispose]()
+			throw error
+		}
 	}
 }
 ```
@@ -356,12 +372,14 @@ query/cursor change
   reread catalog page only
 
 dispose
-  close both subscriptions and reject late reads
+  dispose both subscription RpcPromises/stubs and reject late reads
 ```
 
 这样 catalog 与 derived selection status 共用同一个 provider subscription；consumer target 不再
 通过 `FontManagerPlugin.watchCollections()` 建立第二个 provider watch。Helper 使用
 `useSyncExternalStore` 暴露 tear-free snapshot，并沿用 sequence/epoch guard，旧 read 不覆盖新状态。
+两个 server subscription targets 在 disposer 中取消 observer，并释放为跨 call 保留而 `dup()` 的
+callback stub；没有第二个 `close()` RPC lifecycle。
 
 ## Rename、delete 与 replacement
 
@@ -371,7 +389,7 @@ dispose
 - Consumer 可明确 clear/select 新 ID，业务路径在此之前执行自己的 fallback/rejection；
 - FontManager generation replacement 撤销 manager 与所有 picker provider roots；
 - Consumer replacement 撤销自己的 picker placement 与 consumer root；
-- Opened View close 关闭两个 subscriptions；socket close 最终释放整个 object graph。
+- Opened View close dispose 两个 subscription stubs；socket close 最终释放整个 object graph。
 
 ## Optional collection document
 
@@ -391,13 +409,13 @@ root。Collection row 仍不是 capability/publication entity；默认 manager �
 
 ## Complexity bounds
 
-| 变化                     | View entries    | opened roots        | MF producer/expose       | page WS |
-| ------------------------ | --------------- | ------------------- | ------------------------ | ------- |
-| 1 -> 10,000 collections  | 2               | 0                   | 1 / 2                    | 1       |
-| N consumers place picker | provider 仍为 2 | 0                   | provider 仍为 1 / 2      | 1       |
-| 打开 manager             | 不变            | 1 local root        | 按需加载 manager         | 1       |
-| 打开一个 consumer picker | 不变            | provider + consumer | 按需加载 picker          | 1       |
-| 打开 optional document   | 不变            | 1 scoped root       | 复用一个 document expose | 1       |
+| 变化                     | View entries    | opened roots        | MF producer/expose       | control WS |
+| ------------------------ | --------------- | ------------------- | ------------------------ | ---------- |
+| 1 -> 10,000 collections  | 2               | 0                   | 1 / 2                    | 1          |
+| N consumers place picker | provider 仍为 2 | 0                   | provider 仍为 1 / 2      | 1          |
+| 打开 manager             | 不变            | 1 local root        | 按需加载 manager         | 1          |
+| 打开一个 consumer picker | 不变            | provider + consumer | 按需加载 picker          | 1          |
+| 打开 optional document   | 不变            | 1 scoped root       | 复用一个 document expose | 1          |
 
 这套结构覆盖管理、选择、missing、fallback、并发编辑、任务与文件，同时没有 collection registry、
 per-row capability、provider scan、转发 facade 或重复 provider subscription。

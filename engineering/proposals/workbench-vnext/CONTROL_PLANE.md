@@ -20,6 +20,10 @@ Browser 从 document URL 派生 `ws:`/`wss:` scheme。Production 仍服从 Manag
 documents 与全部 Remote Views 都消费该 owner 注入的 facade。连接数不随 target、View、ViewApi、child capability 或 Plugin 数增长。
 Remote View 不取得 raw root stub、socket 或 session factory。
 
+“一条连接”只约束 Management/Workbench control plane。Plugin-owned business application 仍可在自己的
+route/lifecycle 下提供独立 WebSocket；它不能承载 platform capability，也不能作为 control socket 的
+fallback。Carrier 必须按本文后述优先级区分 HMR、control 与 business upgrade。
+
 该 endpoint 只接受 WebSocket upgrade，不同时接受 Cap’n Web HTTP batch。vNext 不实现：
 
 - SSE/`EventSource`、polling 或 per-resource socket；
@@ -76,15 +80,27 @@ interface RuntimeAuthenticationTarget extends RpcTarget {
 
 interface WorkbenchControlTarget extends RpcTarget {
 	layout(input: unknown): WorkbenchLayoutSnapshot
-	openView(input: unknown): OpenedView
+	openView(input: unknown): OpenViewResult
 }
 
 type OpenViewInput = Readonly<{
 	target: unknown
-	view: string
+	descriptor: unknown
 	location?: Readonly<{ path: string }>
 	expectedLayoutRevision: number
 }>
+
+type OpenViewResult =
+	| Readonly<{ ok: true; value: OpenedView }>
+	| Readonly<{
+			ok: false
+			code:
+				| 'layout_changed'
+				| 'target_unavailable'
+				| 'factory_failed'
+				| 'factory_timeout'
+				| 'quota_exceeded'
+	  }>
 
 type OpenedView =
 	| Readonly<{
@@ -104,10 +120,15 @@ type OpenedView =
 			))
 ```
 
-`openView()` 在一次 Cap’n Web result 中 transfer direct API root、server-derived params 和 pinned federation reference；没有中间
+`openView()` 的 success branch 在一次 Cap’n Web result 中 transfer direct API root、server-derived params 和 pinned federation reference；没有中间
 `ViewSessionTarget`，也没有后续 `api()` round trip。Concrete browser client 验证 Workbench 自己拥有的 result envelope，并建立只存在于本地的
-disposable View handle。Envelope 内的 Plugin API stub 及其后续 domain payload 不由 Workbench 解释。Server 把返回的 API wrapper 绑定到一个
-internal lease；local View 只有一个 remote root，Attachment 只有 provider + optional consumer roots。
+disposable View handle。Await 后的顶层 object result 自带 Cap’n Web disposer：failure branch 验证后立即
+dispose；malformed envelope 在 reject 前 dispose；success branch 把整个 result 的唯一 ownership 转入 handle。Envelope 内的 Plugin API stub
+及其后续 domain payload 不由 Workbench 解释。Server 把返回的 API wrapper 绑定到一个 internal
+lease；local View 只有一个 remote root，Attachment 只有 provider + optional consumer roots。
+
+Failure code 只表达 platform admission，具体 factory cause 进入受保护 diagnostics。Malformed envelope、platform programming error 与 broken
+connection 仍 reject；Plugin domain failure 不被包装成这些 code。失败 branch 绝不包含 root 或 partial handle。
 
 Attachment 的两个 envelope branch 由已验证的 exact descriptor 决定：provider-only branch 必须没有 `consumer` key，provider+consumer branch 必须有
 且只能有一个 `consumer` root。Concrete client 不把 raw optional field 直接暴露给 Plugin；descriptor-bound hook 仍返回两种精确 record。
@@ -116,10 +137,16 @@ Cap’n Web 把返回的 `RpcTarget` 转成 remote stub。Stub 不是 DTO，不�
 复活。Server 可以保留 internal diagnostics ID，但 browser protocol 不接收 `grantId`、resource namespace、role string 或“旧 token 换新
 stub”API。
 
-Browser 类型直接使用 pinned Cap’n Web 的 `RpcStub<Api>`，方法调用返回其原生 `RpcPromise`；stub runtime 本身不知道 server method
-inventory，只有 TypeScript generic 提供静态 shape。Workbench 不再建立 Server/Client interface pair、method descriptor 或 proxy DSL。API 文件只允许
+Browser 类型直接使用 pinned Cap’n Web 的 `RpcStub<Api>`。Server method 声明自然同步/异步返回类型，
+stub 按 `Awaited<server return>` 自动产生可 await/pipeline 的 RPC result；child target resolve 为
+`RpcStub`，object result 带负责其全部 nested stubs 的顶层 disposer。Stub runtime 本身不知道 server
+method inventory，只有 TypeScript generic 提供静态 shape。Workbench 不再建立 Server/Client interface pair、method descriptor 或 proxy DSL。API 文件只允许
 pinned `RpcCompatible` 支持的 by-value/capability shape；type/lint/import boundary 尽早检查 declaration，上游 serializer 最终拒绝实际 unsupported
 custom class/cyclic value。Workbench 不增加第二套 runtime value validator。
+
+同一 ownership rule 适用于 platform calls：session owner 持有当前 `bootstrap()`/authentication object
+result 的顶层 disposer；状态转移时先验证并接管新 result，再 dispose 被替换的旧 result。纯 by-value
+`layout()` result 在验证并投影为 local snapshot 后立即 dispose。Host 不从这些 result 中 detach nested stubs，也不逐个释放。
 
 ## Authentication 也属于 Cap’n Web
 
@@ -130,9 +157,14 @@ Authentication flow：
 
 1. exact same-origin `Origin`、TLS/physical peer 和 pre-auth quota 通过后建立 socket；
 2. 有效同源 HttpOnly cookie 可以让首次 `bootstrap()` 直接返回 ready capability；
-3. 否则返回 `RuntimeAuthenticationTarget`；password/TOTP/WebAuthn/provider challenge 在同一 socket 完成；
+3. 否则返回 `RuntimeAuthenticationTarget`；不需要顶层导航的 password/TOTP/WebAuthn/provider challenge 在同一 socket 完成；
 4. 成功结果直接 transfer 绑定 authentication provider generation 与 principal lease 的 Management/Workbench stubs；
 5. browser 不保存 bearer token，也不为每个 RPC 重复发送 authorization metadata。
+
+需要 OIDC top-level navigation 的 step 返回窄 navigation instruction，而不是假装能够在当前 socket
+完成。Browser 导航会终止当前 document/session；callback 只提交 HttpOnly cookie，新 document 再建立
+它唯一的 control session，并由首次 `bootstrap()` 取得 ready capability。旧 socket 的 stub 不会转移到
+新 document。
 
 `RuntimeAuthenticationStep` 是封闭、运行时验证的 challenge/result state machine。失败 code 不泄漏 account/provider enumeration facts；
 attempt、message bytes、CPU/work factor、并发和 authentication deadline 都有独立 pre-auth 上限。
@@ -157,12 +189,12 @@ physical admission failure。
 
 ## Direct capability，不再叠加 grant protocol
 
-`openView()` 把 network input 作为 `unknown` 验证成 `OpenViewInput`，再校验 structured target、View key、layout revision、authenticated principal lease
+`openView()` 把 network input 作为 `unknown` 验证成 `OpenViewInput`，再校验 structured target、canonical descriptor identity、layout revision、authenticated principal lease
 与 quota。`location.path` 必须是 canonical target-relative path；server 用 declared route 重新匹配 params，browser 不能直接注入 params。Plugin-specific
 authorization 留在 factory/target。
 
 Admission 通过后才用 frozen principal projection、server-derived params 和 opened-view `AbortSignal` 调用 sync/async factory。Runtime 在固定
-deadline 内等待 resolved `RpcTarget`，然后在同一个 result 直接返回 API root。Local View 只返回一个 root；Attachment 只返回 provider 与 optional
+deadline 内等待 fresh、尚未作为 Workbench root export 的 resolved `RpcTarget`，然后在同一个 result 直接返回 API root。Local View 只返回一个 root；Attachment 只返回 provider 与 optional
 consumer API root。Browser-safe TypeScript generic
 连接 factory、stub 与 descriptor-bound renderer Context；raw protocol 不提供 resource/method namespace lookup。普通返回值保持 by-value，Plugin API 可以按需返回
 observer/task/subscription 等原生 Cap’n Web child target，Workbench 不登记或反射它们的方法。
@@ -185,6 +217,13 @@ stub 后续调用得到 stable `capability_expired`；socket break 则使整个 
 
 Observer/receiver 只能调用其声明的窄方法，不获得 Shell store、router、其他 View 或 raw transport。Callback queue、message bytes、in-flight RPC、
 active child stub 与每 principal session 数全部有界。
+
+`watch()` 的默认取消语义是返回 child capability，并由 caller dispose stub/RpcPromise；不再为 subscription 增加重复的 `close()` RPC method。
+对应 server target 用幂等 `[Symbol.dispose]()` 取消 domain observer。任何 server code 只要在 call
+settle 后继续持有传入的 callback/observer stub——包括 bootstrap observer、watch 与 tail——都必须遵守
+上游 caller-disposes 规则先 `dup()`，并在对应 session/subscription disposer 中释放 duplicate。
+Callback invocation 返回的 `RpcPromise` 也必须 await 或立即 dispose，不能用 `void callback()` 丢弃。
+Opened View signal/owner withdrawal 仍是独立的最终撤销边界。Task 的 `cancel()` 是允许取消工作后继续读取 terminal state 的领域操作，因此不由 stub disposal 取代。
 
 Cap’n Web 只解决 invocation、serialization、pipelining 与 capability transport，不替 Plugin 定义领域信任边界。Workbench 只防御性解析自己拥有的
 `RuntimeBootstrap`、authentication step、`OpenViewInput`、layout/federation reference、identity/revision 和 lifecycle envelope；这些 platform-owned
@@ -212,43 +251,49 @@ Management facade 和 Workbench clients 注入 UI；Remote View 不直接看到 
 
 Opened View renderer 收到的是 host-owned root 的 borrowed `RpcStub<Api>`。Workbench 不增加 `retain()/dup()/transferOwnership()` 作者 API，也不让
 renderer 取得 session/transport disposer；Bridge/handle 仍是 root 的唯一 platform lifecycle owner。Plugin 直接取得的 child stub 或未 await 的
-`RpcPromise` 沿用上游 caller-disposes 规则，官方 remote-value/task helpers 必须代作者释放自己创建的 subscription/task。Server target 可以实现
+`RpcPromise` 沿用上游 caller-disposes 规则；await 得到的 object result 也必须由直接调用代码或 owning helper dispose。官方 remote-value/task
+helpers 必须代作者释放自己创建的 result/subscription/task。Server target 可以实现
 `[Symbol.dispose]`，但 Workbench 的 withdrawal gate 会在 View/owner close 时独立撤销所有 retained duplicates，不依赖 GC 或等待最后一个 stub dispose。
 
 Client cleanup 顺序：
 
 1. Tab/View close 先 destroy MF Bridge，阻止 remote cleanup 后继续发起调用；
-2. local View handle 清除 document/transfer，再显式 dispose host-owned child stubs、observers、tasks/subscriptions 和直接返回的 API root；
-3. Attachment handle 同一动作释放 provider/optional consumer；internal lease 最后一个 root 释放后执行 target disposer/lease cleanup 并 abort signal；
+2. remote cleanup 释放自己取得的 object results、child stubs、observers、tasks/subscriptions；host 清除 document/transfer；
+3. local/Attachment handle 只调用一次 retained `openView()` 顶层 result disposer，由它释放 local API 或 provider/optional consumer roots；internal lease 最后一个 root 释放后执行 target disposer/lease cleanup 并 abort signal；
 4. page/session owner dispose root stub 并关闭 socket；
 5. server socket close 即使 browser 未 cleanup 也幂等释放全部 target、observer、lease 与 subscription。
 
 不依赖 GC 或 `FinalizationRegistry` 保证远程回收。Host 内部可以 ref-count/`dup()`，但不向 Plugin author 暴露 raw stub refcount、transport
 disposer 或 ownership transfer primitive。
 
-## Disconnect 创建新 epoch
+## Disconnect 终止 document epoch
 
 ```ts
 type RuntimeConnectionState =
-	| Readonly<{ kind: 'connecting' }>
+	| Readonly<{ kind: 'starting' }>
 	| Readonly<{ kind: 'authentication-required' }>
-	| Readonly<{ kind: 'ready'; epoch: string }>
+	| Readonly<{ kind: 'ready' }>
 	| Readonly<{
-			kind: 'closed'
+			kind: 'unavailable'
 			cause: 'authentication' | 'service-restart' | 'transport' | 'unsupported'
 	  }>
 ```
 
-`epoch` 是 browser 内的 immutable identity，不是 resume token。Root broken 后：
+每个 document 只有一个隐式 connection epoch，不把 epoch string 暴露成 resume/reconnect API。Root broken 后：
 
-1. 禁止新 mutation，destroy 全部 Remote Bridge，废弃所有 stubs/opened View handles；
-2. 不把旧 API snapshot 当作可操作 authority，不逐调用 retry，不 replay transient callback/stream；
-3. 用 bounded exponential backoff + jitter 建立全新 socket；
-4. bootstrap/必要认证成功后，重读 Management/layout，并重新 open ViewApi；
-5. 再注册 remote、打开 View；第一版可以直接 full-document reload。
+1. session owner 原子进入 terminal unavailable，禁止新 mutation；
+2. destroy 全部 Remote Bridges，清理 host document/transfer，再 dispose opened handles 与 root stub；
+3. 废弃旧 snapshots、callbacks、streams 和 pending promises，不逐调用 retry 或 replay；
+4. 如果该 document 曾进入 `ready` 且当前 history entry 的 host-only disconnect-reload budget 未消费，Shell 先标记该 entry，再触发一次 full-document reload；新 document 从 canonical URL/workspace persistence 重新 bootstrap；
+5. 如果 initial socket/bootstrap 从未 ready，或 reload 后的新 document 再次失败，显示硬失败页并提供显式 reload，不在后台循环创建 socket；用户动作先重置该 entry 的 budget。
 
-View client helper 的 last-known-good 只用于健康 session 内的 read/domain failure；MF last-known-good 只用于 artifact load/activation failure。
-它们都不是 offline mode。Close reason string 不是程序协议；browser 只消费封闭 connection state。
+`1012 Service Restart`、transport break 与 authentication expiry 都遵循同一 page teardown；区别只用于失败页/导航文案。一个 document 内
+`newWebSocketRpcSession()` 恰好调用一次，不存在 in-place reconnect、backoff session loop、root recreation 或 partial workspace recovery。
+Disconnect-reload budget 只是防刷新循环的 browser navigation flag，不进入 RPC/layout，不保存 principal、stub、snapshot
+或 workspace authority。
+
+Domain cache/stale-data policy 属于 Plugin helper，不由 Workbench session 恢复。Artifact candidate 的
+提交边界见 [`FEDERATION.md`](FEDERATION.md)。Close reason string 不是程序协议，browser 只消费上面的 closed state。
 
 ## Physical ingress 与 security
 
@@ -297,7 +342,9 @@ Reverse proxy 支持是部署 contract，不是 fallback：
 - proxy idle timeout 大于 carrier heartbeat window；
 - heartbeat、idle、drain 是 host policy，不是 Plugin config；
 - replacement/shutdown 先停止新 upgrade，再对 active socket 发 `1012 Service Restart`，有界等待后强制 close；
-- 多 replica 需要 session affinity；不迁移 Cap’n Web object graph；
+- 每次成功 upgrade 绑定一个 upstream 直到 socket close；proxy 不重试、迁移或在 replicas 间恢复
+  Cap’n Web object graph；仅当 authentication/ticket/artifact state 不是共享或自校验状态时，跨 HTTP
+  request/new-document 的部署才额外需要 session affinity；
 - 当前 physical-peer policy 不信任 `Forwarded`/`X-Forwarded-For`，loopback upstream 仍不受支持；trusted proxy 必须作为独立
   security contract，不由“启用 WS”隐式放宽。
 
@@ -312,6 +359,8 @@ Close code 只表达 coarse transport lifecycle。Domain failure 继续使用 Ca
 - `openView()` 返回中间 session/resource target，再额外调用一次才能取得 exact API；
 - Workbench 要求 ViewApi schema、method descriptor、contract hash、generated validator 或统一 domain error；
 - disconnect 后 resume 旧 stub、透明 retry mutation 或 replay transient callback/stream；
+- disconnect 后在同一 document 再次创建 session、重新 open roots 或原地恢复 workspace；
+- subscription 同时要求 `close()` RPC 与 stub disposal，或 server 未 `dup()` 就跨 call 保留 callback capability；
 - 依赖 GC 回收 server resource；
 - Vite middleware mode、proxy upgrade failure 或 unsupported browser 被伪装成正常运行；
 - close reason/message、exception text 或 bearer URL 被当成 public auth/domain protocol。

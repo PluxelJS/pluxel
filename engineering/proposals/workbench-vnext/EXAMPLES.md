@@ -3,11 +3,15 @@
 > 这些样例固定 vNext 的目标调用面，不是当前 API。它们只展示 Workbench 特有 wiring；领域
 > service、parser、authorization 和 UI 细节由 Plugin 自己实现。
 
+下文每个 `*Api` capability interface 都扩展 pinned `RpcTarget`；为聚焦调用面的片段不重复展开已定义的接口。
+
 ## 1. Minimal settings View
 
 Browser-safe API：
 
 ```ts
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+
 export type SettingsSnapshot = Readonly<{
 	revision: number
 	enabled: boolean
@@ -19,12 +23,10 @@ export type SettingsResult =
 	| Readonly<{ ok: false; code: 'conflict'; current: SettingsSnapshot }>
 	| Readonly<{ ok: false; code: 'invalid_endpoint' }>
 
-export interface SubscriptionApi {
-	close(): void
-}
+export interface SubscriptionApi extends RpcTarget {}
 
-export interface SettingsApi {
-	snapshot(): Promise<SettingsSnapshot>
+export interface SettingsApi extends RpcTarget {
+	snapshot(): SettingsSnapshot
 	update(input: {
 		expectedRevision: number
 		enabled: boolean
@@ -33,6 +35,9 @@ export interface SettingsApi {
 	watch(invalidate: () => void): SubscriptionApi
 }
 ```
+
+这里的同步/Promise 是 server target 的自然返回类型；renderer 通过 `RpcStub<SettingsApi>` 调用时仍然
+得到可 await/pipeline 的 RPC result。所有 awaited object result 都用 `using` 或 owning helper 释放。
 
 Definition 与 publication：
 
@@ -73,7 +78,7 @@ export default function SettingsPanel() {
 	return (
 		<button
 			onClick={async () => {
-				const result = await api.update({
+				using result = await api.update({
 					expectedRevision: value.revision,
 					enabled: !value.enabled,
 					endpoint: value.endpoint,
@@ -168,8 +173,8 @@ export default function AccountEditor() {
 这些交互继续属于一个 root：
 
 ```ts
-export interface DiagnosticsApi {
-	status(): Promise<RuntimeStatusSnapshot>
+export interface DiagnosticsApi extends RpcTarget {
+	status(): RuntimeStatusSnapshot
 	watchStatus(invalidate: () => void): SubscriptionApi
 	listLogs(input: LogPageInput): Promise<LogPage>
 	tailLogs(push: (entry: LogEntry) => void): SubscriptionApi
@@ -177,8 +182,8 @@ export interface DiagnosticsApi {
 	prepareLogDownload(input: LogDownloadInput): Promise<DownloadTicket>
 }
 
-export interface RebuildTaskApi {
-	state(): Promise<RebuildTaskSnapshot>
+export interface RebuildTaskApi extends RpcTarget {
+	state(): RebuildTaskSnapshot
 	cancel(): Promise<void>
 	watch(invalidate: () => void): SubscriptionApi
 }
@@ -190,12 +195,13 @@ export interface RebuildTaskApi {
 - progress burst 在 producer 侧 coalesce；需要 byte backpressure 的连续流才使用 Cap’n Web stream；
 - task 是 child capability，因为它确实有独立 state/cancel/lifecycle；
 - task 绑定 opened View、Plugin generation 与 request admission，关闭后停止新 work 并有界 drain；
+- watch/tail 返回的 subscription child 没有 `close()` method；client dispose stub，server disposer 取消 observer 并释放 `dup()` 后 retained callback；
 - archive bytes 不进入 Cap’n Web frame，而由 root 签发 single-use ticket。
 
 Download 调用面：
 
 ```ts
-const ticket = await api.prepareLogDownload({ from, to })
+using ticket = await api.prepareLogDownload({ from, to })
 await host.transfer.download(ticket, {
 	signal,
 	onProgress: ({ transferred, total }) => setProgress(transferred / total),
@@ -205,9 +211,9 @@ await host.transfer.download(ticket, {
 Upload 同理：
 
 ```ts
-const ticket = await api.beginInstall({ fileName: file.name, bytes: file.size })
+using ticket = await api.beginInstall({ fileName: file.name, bytes: file.size })
 const completed = await host.transfer.upload(ticket, file, { signal, onProgress })
-const task = await api.install({ upload: completed })
+using task = await api.install({ upload: completed })
 ```
 
 `host.transfer` 固定 credential、expiry、progress、cancel 与 stable transfer failure；它不是 generic HTTP
@@ -290,9 +296,15 @@ Telegram、KOOK、Milky 与 Discord 的相同点是页面 topology，不是 runt
 可以用普通 TypeScript function 生成重复的 final entries：
 
 ```ts
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+
 type BotRendererEntry = ReturnType<typeof workbench.entry>
 
-function defineBotManagerEntries<OverviewApi, AccountsApi, DiagnosticsApi>(input: {
+function defineBotManagerEntries<
+	OverviewApi extends RpcTarget,
+	AccountsApi extends RpcTarget,
+	DiagnosticsApi extends RpcTarget,
+>(input: {
 	entries: Readonly<{
 		overview: BotRendererEntry
 		accounts: BotRendererEntry

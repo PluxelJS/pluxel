@@ -49,7 +49,7 @@ provider 拥有 renderer/provider API、consumer 拥有 placement，并可选提
 1. Profile 1 固定使用 MF2、React Bridge 和 Cap’n Web over WebSocket；不提供 transport、loader、
    renderer 或 auth SPI。
 2. 每个 browser page 恰好一个 host-owned Cap’n Web session 和一个 MF Runtime；Remote View
-   不创建 socket、session root 或 MF instance。
+   不创建第二条 control socket、session root 或 MF instance。
 3. Authentication、Management、Workbench calls、callbacks、streams 与 lifecycle push 走同一
    WebSocket。平台没有 HTTP batch、SSE、polling、resume 或 fallback。
 4. HTTP 只保留浏览器硬边界：initial/static document、OIDC redirect/callback、HttpOnly cookie
@@ -58,17 +58,29 @@ provider 拥有 renderer/provider API、consumer 拥有 placement，并可选提
    layout 不携带 capability，也不存在 resource/grant/session 二次 lookup。
 6. 一个 Plugin generation 最多提交一次 flat、exact、atomic publication。Attachment 只能绑定
    committed direct required dependency，不扫描 provider 或协商候选。
-7. Workbench 只验证 profile、identity、route/layout/build、factory target、quota 与 lifecycle。
+7. View/provider descriptor identity 只由 owner definition address、entry key 与 kind 组成；placed
+   Attachment 再加入 consumer entry 与 exact provider identity。Declaration identity 在
+   server/producer/wrapper 一致，consumer lowering 组合完整 placement；不依赖 object identity、source
+   path 或 bundler hash。
+8. Definition/publication topology 在 generation 内静态；没有条件 entry、动态 visibility predicate、
+   append/remove 或第二次 publish。
+9. Workbench 只验证 profile、identity、route/layout/build、factory target、quota 与 lifecycle。
    Plugin 自己负责 domain validation、authorization、result/error、容量和兼容策略。
-8. Collection、account、row、query result 都是 Plugin domain data。它们的数量不会创建 View、
-   route、publication、Bridge、MF expose、socket 或默认 child capability。
-9. Renderer 是零 props component，通过 descriptor-bound `useWorkbench()` 取得上游
-   `RpcStub<Api>` 与固定 host facade。Bridge props 和 Provider 仅存在于生成的内部 wrapper。
-10. View 未打开时不调用 target factory、不订阅、不注册 remote、不请求 artifact。关闭时先
+10. Collection、account、row、query result 都是 Plugin domain data。它们的数量不会创建 View、
+    route、publication、Bridge、MF expose、socket 或默认 child capability。
+11. 每个 API capability interface 扩展 pinned `RpcTarget`；target 声明自然同步/异步返回类型，
+    `RpcStub<Api>` 自动推导 client result。Object result 与 child stub 遵守 Cap’n Web 显式 disposal；
+    Subscription 不重复声明 `close()` RPC。
+12. Renderer 是零 props component，通过 descriptor-bound `useWorkbench()` 取得上游
+    `RpcStub<Api>` 与固定 host facade。Bridge props 和 Provider 仅存在于生成的内部 wrapper。
+13. View 激活单位是 generation + publication + descriptor + buildRevision + roots + Bridge；旧新 tuple
+    不能混接。Dev renderer candidate 成功后也整页重载，不做页内 Bridge/root swap。
+14. View 未打开时不调用 target factory、不订阅、不注册 remote、不请求 artifact。关闭时先
     destroy Bridge，再 dispose opened handle；socket close 最终释放整个 capability graph。
-11. Disconnect 结束整个 epoch。旧 stub、callback、stream、snapshot authority 与 mutation
-    不恢复、不透明 retry、不 replay。
-12. Workbench disabled 且 Management 未安装时，endpoint、auth backend、producer、compiler、
+15. Disconnect 结束整个 document epoch。Shell 销毁全部 UI/roots；每个 history entry 最多自动整页
+    重载一次，重复失败停在硬失败页。同一 page 不创建第二条 session，也不恢复旧
+    stub/callback/stream/mutation。
+16. Workbench disabled 且 Management 未安装时，endpoint、auth backend、producer、compiler、
     watcher 和 browser runtime 的分配必须为零。
 
 ## 生命周期
@@ -87,14 +99,14 @@ Plugin generation init
 
 browser page
   initial document
-    -> one WS session -> authenticate -> bootstrap -> layout/openView
+    -> one control WS session -> authenticate -> bootstrap -> layout/openView
     -> one MF Runtime -> register manifest -> load expose -> Bridge render
     -> renderer useWorkbench(descriptor) -> direct root(s) + host facade
 
 close or withdrawal
   Bridge destroy
     -> host document/transfer cleanup
-    -> opened handle/root/child cleanup
+    -> remote child/object-result cleanup -> opened handle cleanup
     -> owner withdrawal or socket close performs final bounded cleanup
 ```
 

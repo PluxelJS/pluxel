@@ -29,11 +29,15 @@ Workbench entity。
 
 ## Direct Cap’n Web API
 
-Plugin 声明普通 TypeScript interface，并直接实现 `RpcTarget`：
+Plugin 的每个 capability interface 都显式扩展 pinned `RpcTarget`，实现 class 也直接继承它：
 
 ```ts
-export interface SettingsApi {
-	snapshot(): Promise<SettingsSnapshot>
+import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
+
+export interface SubscriptionApi extends RpcTarget {}
+
+export interface SettingsApi extends RpcTarget {
+	snapshot(): SettingsSnapshot
 	update(input: SettingsInput): Promise<SettingsResult>
 	watch(invalidate: () => void): SubscriptionApi
 }
@@ -47,15 +51,26 @@ export class SettingsTarget extends RpcTarget implements SettingsApi {
 	}
 
 	snapshot() {
-		return Promise.resolve(this.settings.snapshot())
+		return this.settings.snapshot()
 	}
 
 	update(input: SettingsInput) {
 		return this.settings.update(input, { signal: this.signal })
 	}
 
-	watch(invalidate: () => void) {
-		return new SubscriptionTarget(this.settings.subscribe(() => void invalidate()))
+	watch(invalidate: RpcStub<() => void>) {
+		const callback = invalidate.dup()
+		let unsubscribe: (() => void) | undefined
+		try {
+			unsubscribe = this.settings.subscribe(() => {
+				using pending = callback()
+			})
+			return new SubscriptionTarget(unsubscribe, callback, this.signal)
+		} catch (error) {
+			unsubscribe?.()
+			callback[Symbol.dispose]()
+			throw error
+		}
 	}
 }
 ```
@@ -63,12 +78,30 @@ export class SettingsTarget extends RpcTarget implements SettingsApi {
 Target 应只在 prototype 暴露实际 RPC methods；实现细节委托 private service，并用 JavaScript
 `#private` 隐藏不应成为 RPC 的 prototype member。
 
+API method 声明 target 的自然返回类型：同步读取返回 value，需要 I/O 的操作返回 Promise，独立
+对象返回 child `RpcTarget`。不要为了 browser 调用统一把全部方法包装成 Promise；上游
+`RpcStub<Api>` 会根据 `Awaited<server return>` 自动产生可 await/pipeline 的 RPC result，child target
+resolve 为 `RpcStub`。具体 client 类型始终从 `RpcStub<Api>` 推导，不声明第二份 Client interface。
+
+Cap’n Web 的 object result 带顶层 `[Symbol.dispose]()`，它会释放该 response 中 transfer 的全部
+stubs。直接调用 API 的代码用 `using result = await api.method()`，或把 ownership 交给明确负责
+cleanup 的 helper；primitive result 不需要释放。不要分别释放 object result 内的 member stub 后再
+释放 result。
+
+`SubscriptionApi` 是没有业务 method 的 child capability。`SubscriptionTarget` 只实现幂等
+`[Symbol.dispose]()`：取消 domain observer、释放 retained callback，并响应 opened-view signal。
+Client 通过 dispose 返回的 stub/RpcPromise 取消 subscription，不再额外调用 `close()`。Server 若在
+`watch()` call settle 后保留 callback capability，必须先用上游 `dup()` 取得自己的引用，并在
+subscription disposer 中释放；普通 callback invocation 不需要这一步。
+
+每次 callback invocation 自身也返回 `RpcPromise`。需要确认送达/失败时 await 并处理；只发送
+invalidation 的 fire-and-forget 路径使用 `using pending = callback()`，不能以 `void callback()` 丢弃
+result ownership。
+
 Factory 类型只表达 target 创建与异步 admission：
 
 ```ts
-type ViewTargetFactory<Api> = (
-	context: ViewOpenContext,
-) => (RpcTarget & Api) | Promise<RpcTarget & Api>
+type ViewTargetFactory<Api extends RpcTarget> = (context: ViewOpenContext) => Api | Promise<Api>
 
 type ViewOpenContext = Readonly<{
 	principal: Readonly<{ provider: string; subject: string }>
@@ -79,7 +112,8 @@ type ViewOpenContext = Readonly<{
 
 `params` 由 server 对 declared route 重新匹配后生成；browser 不能直接提交 params record。
 `signal` 在 View close、owner withdrawal 或 connection epoch 结束时 abort。异步 factory 必须在平台
-deadline 内全有或全无，late target 立即 dispose。
+deadline 内全有或全无，late target 立即 dispose。每次 factory call 返回 fresh、尚未作为 Workbench root export 的
+wrapper；可共享的是 wrapper 后面的 domain service/cache，不是 root instance。
 
 责任边界固定为：
 
@@ -176,6 +210,10 @@ ctx.workbench?.publish(ExampleWorkbench, {
 `workbench.entry()` 只记录 module-relative source provenance。Toolchain 生成 producer、expose 与
 Bridge wrapper；作者不填写 remote name、manifest URL、share scope 或 renderer adapter。
 
+Definition 必须是 module/build-time 可确定的 final record。Runtime config、principal、database state
+或 optional provider 不能增删 entry，也不存在 `visibleWhen`/`enabledWhen`。临时业务不可用通过已打开
+root 的 snapshot/result 表达；确实需要另一套页面 topology 时建立另一静态 Plugin definition/build。
+
 Entry 默认导出零 props React component：
 
 ```tsx
@@ -206,10 +244,12 @@ host service；领域 snapshot 不进入 Context。
 `createRemoteValue()`/`useRemoteValue()` 是 client convenience，不是 wire protocol。语义固定为：
 
 1. 有 subscription 时先 subscribe，再执行 initial read；
-2. active read 期间的 invalidation 合并为随后一次 latest read；
-3. 任意时刻最多一个 active read，旧 sequence/epoch 结果不能覆盖新状态；
-4. dependencies 变化时 dispose 旧 subscription，再建立新 read identity；
-5. dispose 拒绝新 read并关闭 subscription；connection epoch 变化时 hard reset。
+2. 每次 read 只把 bounded by-value payload 发布到 local store，并在发布前 dispose 顶层 object result；
+3. active read 期间的 invalidation 合并为随后一次 latest read；
+4. 任意时刻最多一个 active read，旧 sequence/epoch 结果不能覆盖新状态；
+5. dependencies 变化时 dispose 旧 subscription，再建立新 read identity；
+6. dispose 拒绝新 read，并显式 dispose subscription RpcPromise/stub；
+7. connection break 终止整个 page，helper 不实现 reconnect 或跨 document cache。
 
 Server 只看到 Plugin 自己声明的 `snapshot/list/watch`。Helper 不要求统一 revision/query key，
 不跨 View cache，不 resume 旧 stub，也不创造 Query/Collection runtime entity。

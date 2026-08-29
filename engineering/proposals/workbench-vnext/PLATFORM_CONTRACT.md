@@ -36,7 +36,7 @@ MF 2.0 与 Cap’n Web/WS 是同级、不可拆分的 platform ABI：
 | Platform push        | Cap’n Web callback/stream over the same session；无 SSE/EventSource                             |
 | Authentication       | pre-auth Cap’n Web capability -> same-socket principal capability transfer                      |
 | HTTP auth exceptions | OIDC navigation/callback 与 single-use HttpOnly cookie commit                                   |
-| Disconnect           | 结束整个 epoch；fresh bootstrap/read；不 resume/replay/transparent retry                        |
+| Disconnect           | 结束 document epoch；销毁 UI/roots 后每 history entry 最多整页重载一次；不在原 page reconnect   |
 | Artifact protocol    | standard MF 2.0 `mf-manifest.json`/Snapshot only                                                |
 | Browser module host  | 每个 conforming Shell 拥有单个 `ModuleFederation` instance                                      |
 | Host policy          | Pluxel-owned fixed Runtime Plugin + fixed shared policy                                         |
@@ -44,6 +44,7 @@ MF 2.0 与 Cap’n Web/WS 是同级、不可拆分的 platform ABI：
 | Mandatory shared     | React/ReactDOM、MF React Bridge、Workbench React runtime/client、Pane Kit                       |
 | Renderer             | Plugin View 固定 React Bridge；Shell framework 可为 React/Vue/Svelte/vanilla                    |
 | UI lifecycle         | `loadRemote` -> Bridge render/update/destroy -> opened View handle dispose                      |
+| Dev renderer update  | validate immutable candidate -> commit inventory -> full-document reload；无页内 remote swap    |
 | Registration         | one definition + sync/async typed root factories -> one atomic `PublishedTarget` per generation |
 | Dynamic API          | local View 一个 direct root capability；Attachment 为 provider + optional consumer capability   |
 | View open context    | server-derived principal/route params + `AbortSignal`；browser 不得注入 principal/params        |
@@ -52,7 +53,9 @@ MF 2.0 与 Cap’n Web/WS 是同级、不可拆分的 platform ABI：
 | Deployment           | tested Node carrier、owned Vite HTTP server 和 explicitly supported reverse proxy               |
 | Unsupported          | cross-origin Shell、Vite middleware without listener、untrusted loopback proxy、no-WS browser   |
 
-Profile 1 不发布选择这些值的 config。可配置的是业务内容，不是平台骨架。
+Profile 1 不发布选择这些值的 config。可配置的是业务内容，不是平台骨架。Cap’n Web、MF Runtime、
+React Bridge 和 Vite integration 使用 host release 锁定的 exact compatibility set；升级其中任一项都先通过
+完整 conformance，再随整体 profile release 发布，不能由 semver range 在不同 host/producer 中独立漂移。
 
 ## 平台中立来自固定契约，不来自可替换基础设施
 
@@ -98,6 +101,11 @@ Plugin、Shell integrator 与 deployment config 不得扩展：
 - publication/resource/Feature runtime registry 或 Attachment provider discovery；
 - collection runtime identity、global collection resolver 或 per-row capability registry。
 
+Definition topology 在一个 Plugin generation 内保持静态。Workbench 不提供 `visibleWhen`、
+`enabledWhen`、per-principal entry predicate 或增量 registration。平台可以在 layout 层过滤 principal
+无权访问的整个 target；View 内暂时不可用由该 View 的 domain snapshot/result 表达。部署确实需要不同
+页面集合时使用不同静态 Plugin definition/build，而不是运行时修改 publication shape。
+
 这条边界有意牺牲 host freedom，以删除 adapter、negotiation、fallback、cross-product tests 和 ambiguous lifecycle owner。
 
 ## Cooperative Plugin trust boundary
@@ -115,11 +123,14 @@ owner 是 Plugin，不是一个不了解领域语义的 Workbench validator fram
 
 ## Public complexity budget
 
-Plugin-facing Workbench surface 冻结为 `View<Api>`、`Attachment<ProviderApi, ConsumerApi = never>`、flat frozen definition、一次 `publish()` 和固定 host
+Plugin-facing Workbench surface 冻结为 `View<Api extends RpcTarget>`、
+`Attachment<ProviderApi extends RpcTarget, ConsumerApi extends RpcTarget = never>`、flat frozen definition、一次 `publish()` 和固定 host
 facade。每个 local View/placed Attachment 恰好一个 placement，provider Attachment 没有 placement；descriptor 已携带 kind，definition/publication
 不重复 `views`/`attachments` 容器。API generic 只是
-TypeScript phantom；server factory 返回 `RpcTarget & Api`，零 props renderer 通过 descriptor-bound `useWorkbench()` 直接取得上游
-`RpcStub<Api>`/`RpcPromise<T>`，没有 public Bridge props、`CapabilityContract`、schema registry、method descriptor 或第二套 Server/Client type。
+TypeScript phantom 且 `Api` 必须扩展 pinned `RpcTarget`；server target 使用自然同步/异步返回类型，
+renderer 的上游 `RpcStub<Api>` 自动推导可 await/pipeline 的 RPC result 与 object-result disposal。
+零 props renderer 通过 descriptor-bound `useWorkbench()` 取得 stub，没有 public Bridge props、
+`CapabilityContract`、schema registry、method descriptor 或第二套 Server/Client type。
 Layout、publication、opened-view lease、MF registration 和 WS scheduling 是 platform internal facts，不要求 Plugin 作者配置。
 
 新增 public noun/helper 必须同时满足：至少让两个真实 workspace fixture 的调用点变短；不增加 registry、wire kind、owner 或 independent lifecycle；
@@ -146,8 +157,8 @@ module 和 MF remote；server publication 只由 Plugin instance 上的 `ctx.wor
 
 ## 整体版本，不做子协议协商
 
-Bootstrap 携带单一 Workbench profile version。Host build inventory 同时 pin Cap’n Web、MF Runtime/Bridge、platform shared 和
-Pluxel protocol implementation 的 compatible versions。
+Bootstrap 携带单一 Workbench profile version。Host build inventory 同时 pin Cap’n Web、MF Runtime/Bridge、Vite integration、platform shared 和
+Pluxel protocol implementation 的 exact compatibility set。
 
 Versioning 规则：
 
@@ -155,7 +166,7 @@ Versioning 规则：
 - browser 不协商 `transport`, `renderer`, `artifact`, `auth` 子版本；
 - profile mismatch 在 authentication/bootstrap 后、任何 remote load 前 hard fail；
 - server 不保留旧 endpoint、alias、HTTP compatibility 或 manifest adapter；
-- rolling replacement 对旧 socket 发 `1012 Service Restart`，新 page/epoch 加载新的整体 profile；
+- rolling replacement 对旧 socket 发 `1012 Service Restart`，当前 page 终止并整页重载，新 document 加载新的整体 profile；
 - breaking change 通过 new profile + one-time deployment cutover，不在同一 page 双栈运行。
 
 MF 官方 Runtime API 以 `ModuleFederation` instance 为中心，Runtime Plugins 修改 manifest/load/share 行为，Bridge 提供 application-level
@@ -166,21 +177,27 @@ render/update/destroy lifecycle。Profile 1 直接采用这些 concrete extensio
 
 “支持 Workbench vNext”必须同时通过：
 
-- one page/one WS/one MF Runtime 的 runtime probe；
+- one page/one control WS/one MF Runtime 的 runtime probe；
 - official Shell 与至少一个 non-React external Shell fixture 运行同一 built producer；
 - auth challenge -> principal capability transfer -> revocation/close；
 - capability-free layout 与一次直接返回 root(s)/params/federation ref 的 `openView()`；
+- declaration identity 在 server/producer/wrapper 中一致，consumer placement 精确嵌入并匹配 provider identity；
+- `openView()` 预期失败使用 closed result，malformed envelope/programming/transport failure 保持 reject；
 - parameterized document server rematch，browser 不能注入 principal/params；
 - sync/async local/Attachment factory 全有或全无；timeout/withdrawal/late resolve 后 target bounded cleanup；
+- 每次 accepted factory call 返回 fresh Workbench root wrapper，同一 target instance 不跨 open/owner 重复 export；
 - Wretch consumer-owned state 只得到 server-only exact consumer node，不暴露 Context/facade；
 - exact/parameterized route precedence 与 navigation group metadata conflict deterministic rejection；
-- dirty/title/transfer 在 Bridge destroy 时清理，再释放 opened View roots；
+- dirty/title/transfer 在 Bridge destroy 时清理，再 dispose opened View handle 的顶层 result；
 - signed upload/download ticket 传 bytes，Cap’n Web frame 不承载文件；
 - 单 WS 下 control/mutation 对 bounded snapshot、logs/progress 的 latency/memory fairness probe；
 - Bridge destroy-before-opened-view-dispose；
 - Node、Vite HMR/control/business WS arbitration 与 supported proxy real listener tests；
 - Manifest/expose/shared/Bridge failure classification；
+- generation/publication/build/roots/Bridge activation tuple 不跨 revision 混用；
+- dev artifact candidate 失败不提交，成功 commit 后整页重载且不复用旧 roots/Bridge；
 - no HTTP batch/SSE/polling/fallback/resume 的 code and route inventory assertion；
+- disconnect 后同一 document 只创建一次 session，同一 history entry 最多自动重载一次，重复失败 hard-stop；
 - owner/provider replacement 后全部 stub/observer/lease/subscription bounded cleanup。
 
 只通过 TypeScript shape test、mock transport 或 isolated MF loader test 不构成 profile conformance。
@@ -195,6 +212,7 @@ render/update/destroy lifecycle。Profile 1 直接采用这些 concrete extensio
 - 让 Plugin 或 conforming Shell 绕过 concrete host package，注册自己的 Runtime Plugin、share policy 或 raw Cap’n Web root；
 - 让 Profile 1 同时支持多个 renderer ABI、connection topology 或 reconnect policy；
 - 让 dynamic domain row 创建新的 layout、View、MF producer、socket 或全局 provider lookup；
+- 增加 runtime `visibleWhen`/`enabledWhen`、per-principal entry predicate 或 generation 内 topology mutation；
 - 在 Cap’n Web 之上恢复 Model/Query/Channel/Collection resource protocol/registry；
 - 强迫 Plugin 为 ViewApi 声明 Standard Schema、method descriptor、contract hash 或 generated validator；
 - 让 browser 注入 principal/route params，或把 raw request/auth provider target 交给 View factory；
@@ -202,5 +220,8 @@ render/update/destroy lifecycle。Profile 1 直接采用这些 concrete extensio
 - 给 remote 暴露 async `beforeClose` callback、generic HTTP client、Shell router/store 或 raw socket；
 - `openView()` 返回中间 resource/session target，再通过第二次调用取得 API；
 - 通过 config flag 恢复 HTTP batch、SSE、plain ESM、local Component 或 old Contract/Port path；
+- disconnect 后在同一个 document 创建第二条 session、重建 roots 或原地恢复 workspace；
+- 将旧 renderer 接到新 generation roots，或将新 renderer 接到旧 generation roots；
+- 为 remote renderer update 增加页内 revision swap、root reuse 或旧 artifact fallback；
 - 为 rolling migration 长期运行两个 profile；
 - 未通过真实 carrier + MF Bridge integration test 就声明兼容。

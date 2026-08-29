@@ -59,6 +59,11 @@ type FederatedViewRef = Readonly<{
 Plugin definition、producer entry 与 build revision 生成合法且无冲突的 name/expose。作者不手写 remote name、public path、share scope
 或 manifest URL。
 
+Workbench descriptor identity 也不由 MF name/expose 派生。Server lowering、producer build 与 generated
+wrapper 使用 [`PUBLICATION.md`](PUBLICATION.md) 的 declaration identity；Attachment expose 只携带
+provider declaration identity，consumer placement 由 host 与 server lowering 组合并在加载时匹配其
+`provider` 字段。MF expose 只是该 declaration 在某个 immutable build revision 中的加载位置。
+
 作者只用 `workbench.entry(import.meta.url, './ui.tsx')` 声明 module-relative renderer source。Profile 已固定 Vite、MF 2.0 与 React Bridge，
 所以 public API 不再重复 `federation.react()` 这些不可选择的基础设施名词。Toolchain 把同一 Plugin definition 可达的 local Views 与
 Attachment renderers 合并为一个 producer config，并生成 exact expose、Bridge wrapper、shared declaration、dynamic types 和
@@ -99,7 +104,7 @@ Pluxel Runtime Plugin 只使用 MF 2.0 extension points 实现 host policy：
 - fetch/manifest hook 注入 HTTP artifact credential、校验 distribution revision、记录 Manifest/Snapshot trace；
 - resolve/script hook 把 logical remote location 投影到当前 immutable CDN/distribution URL；
 - `resolveShare` 与 share lifecycle hook 验证 singleton/version policy；
-- `errorLoadRemote` 只处理 artifact load/activation failure 与 last-known-good，不暗示 offline control session；
+- `errorLoadRemote` 只分类、记录和呈现当前 pinned artifact 的 load/activation failure；不替换 revision，也不暗示 offline control session；
 - Bridge hook 关联 render/destroy trace、opened View lease 与 Plugin owner generation。
 
 Business Plugin 不能注册 host-wide Runtime Plugin、修改 global Snapshot 或 share scope。Runtime Plugin 是 trusted Shell/toolchain extension，
@@ -147,11 +152,45 @@ Plugin page signature。Context 内只保存 epoch-stable descriptor/stubs/host 
 snapshot 不进入 Context。
 
 Document/transfer facade 由 Shell 实现，但语义属于 concrete Profile 1 package，external conforming Shell 不能自行改写。Bridge
-destroy 会幂等清除 dirty/title registration 和 active transfer，然后才 dispose opened View handle 的 capability roots。
+destroy 会幂等清除 dirty/title registration 和 active transfer，然后才 dispose opened View handle 持有的顶层 result。
 
 Cleanup 顺序是硬契约：Bridge destroy 完成后才能 dispose opened View handle。Profile 1 的 Plugin producer 只接受 React Bridge；Vue/Svelte
 producer 或另一种 Bridge implementation 需要新的整体 profile/version。这个限制不约束 Shell framework：MF Bridge 通过 DOM/application
 boundary 允许 Vue/Svelte/vanilla Shell 承载 React remote application。
+
+## Atomic View activation
+
+Browser 只激活完整 tuple：
+
+```text
+target Plugin node + server generation lease
++ publication/layout revision
++ canonical descriptor identity
++ producer buildRevision + exact Bridge expose
++ opened root(s)/params
++ one Bridge instance
+```
+
+这些字段不是可互换的版本提示。旧 renderer 不得取得新 generation roots，新 renderer 也不得取得旧
+generation roots。激活流程固定为：
+
+1. 从当前 layout 选择 target/descriptor/build tuple；
+2. `openView(expectedLayoutRevision)` 成功取得与同一 tuple pin 的 roots/ref；
+3. 注册 immutable manifest revision，加载并验证 exact expose/Bridge contract；
+4. 创建 Bridge instance，把 opened handle 只交给 generated wrapper；
+5. 首次 render 成功后才把 tuple 设为 active；
+6. 任一步失败都 destroy candidate 并 dispose candidate opened handle，不留下 partial root、remote registration ownership 或 document state。
+
+已有 active tuple 只有在其 server generation lease 仍有效时才可以继续显示和调用。Owner/dependency
+replacement 一旦开始 withdrawal，Shell 先 destroy old Bridge，再 dispose old opened handle；等待新 generation 的
+新 layout 后按上述流程重新打开。中间可以显示 host-owned unavailable/loading document，但绝不把旧
+Bridge 重新接到新 roots。
+
+Artifact candidate staging 是唯一 pre-commit rejection boundary：build/distribution candidate 未通过
+Manifest/expose/shared/Bridge contract validation 时，不进入已提交的 immutable artifact inventory，
+当前完整 active tuple 完全不变。已经 pin 到 layout 的 revision 若 load/activation 失败，则 candidate
+activation 失败并释放 opened result；Runtime Plugin 不尝试旧 revision。Artifact cache 可以继续保存旧
+bytes，但 cache presence 不构成 authority、compatibility 或 fallback permission。
 
 ## Build、distribution 与 dev update
 
@@ -160,19 +199,20 @@ build isolation 解决，不公开为 architecture freedom：
 
 1. 每个 producer build 隔离到 bounded worker/subprocess；
 2. 不同 producer 可以并行，相同 output revision 只允许一个 atomic publication；
-3. Vite/MF integration 必须通过 Manifest、HMR 与并发 conformance；失败会阻塞 Profile 1，不在不同环境 fallback 到另一 compiler；
+3. Vite/MF integration 必须通过 Manifest、dev update/reload 与并发 conformance；失败会阻塞 Profile 1，不在不同环境 fallback 到另一 compiler；
 4. 不公开 bundler adapter，也不让 Plugin 或 deployment 自选 Vite/Rspack/Rsbuild。
 
-Production 按 revision 发布完整 immutable MF output，纳入 distribution inventory、hash/signature 与 content-addressed cache。Cache 是 deployment
-optimization，不代替 Manifest/shared negotiation。
+Production 按 revision 发布完整 immutable MF output，纳入 distribution inventory、hash/signature 与 content-addressed cache。只有完整 build
+candidate 验证成功才能进入 generation publication inventory；Cache 是 deployment optimization，不代替 Manifest/shared negotiation。
 
-Dev update 先构建并验证 candidate Manifest/exposes，再让 Shell 注册新 revision并完成 Bridge render；成功后 destroy old Bridge。Artifact
-failure 保留 last-known-good remote。Definition/API owner/generation 已 withdrawal 时，即使 old remote module 仍在 cache，也不能借 withdrawn
-capability 恢复业务 authority。
+Profile 1 不实现页内 remote renderer HMR。Dev update 先构建并验证 candidate Manifest/exposes；失败
+candidate 不提交。成功 candidate 原子提交 inventory 后触发 full-document reload。旧 document 在 unload
+前只运行旧完整 tuple；新 document 重新 bootstrap、读取 layout、加载 exact expose 并 `openView()`，不
+复用旧 roots 或 Bridge。
 
-Profile 1 不把 upstream Vite remote-consumer HMR 当作 contract。开发态更新同样走 candidate Manifest + immutable revision registration + Bridge
-re-open；若当前 Vite/MF plugin 的 HMR 能力不足，这条受测 revision swap 可以退化为 full-page reload，但不能切换 bundler、plain ESM loader 或第二套
-renderer path。
+因此 upstream Vite remote-consumer HMR 不是 contract，也没有 revision swap、Bridge re-open 或
+renderer/API compatibility guess。Vite HMR socket 仍可承载 toolchain update signal，但最终动作固定为
+page reload；不能切换 bundler、plain ESM loader 或第二套 renderer path。
 
 ## Federation acceptance
 
@@ -182,7 +222,7 @@ renderer path。
 - 未打开 View 不请求其 manifest/expose，打开一个 View 不下载无关 expose chunk；
 - different producer build 存在 bounded parallelism；
 - Manifest、remote entry、expose、shared 与 Bridge failure 可以分阶段诊断；
-- failed revision 保留 last-known-good，但旧 Bridge 不能越过 capability withdrawal；
+- failed build candidate 不替换 artifact inventory；pinned artifact failure 不回退旧 revision；dev commit 后整页重载；
 - React/ReactDOM singleton 与 shared winner 可由 MF DevTools 验证；
 - remote 不 import official router/store/Worksplit；
 - 不存在 Workbench artifact manifest、plain ESM loader、renderer adapter 或 custom share resolver。
@@ -194,6 +234,8 @@ renderer path。
 - 每个 remote bundle 自己的 React/ReactDOM，或 version mismatch 时接受第二份；
 - Workbench layout 复制 asset/shared/type inventory；
 - Runtime Plugin 获得 Management root/business capability；
+- 旧/new renderer、roots、generation、publication 或 buildRevision 被跨 tuple 混接；
+- pinned artifact load 失败后由 Runtime Plugin 猜测并加载旧 buildRevision；
 - external Shell 绕过 concrete host packages，通过 replaceable host/renderer adapter 自行实现 Profile 1；
 - Cap’n Web 被用于传输 remote module bytes；
 - 为 compiler migration 暴露长期 bundler abstraction。
