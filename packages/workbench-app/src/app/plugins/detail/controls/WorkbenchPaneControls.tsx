@@ -7,14 +7,23 @@ import {
 	IconLayoutSidebarRightCollapse,
 	IconLayoutSidebarRightExpand,
 } from '@tabler/icons-react'
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { useHotkey, useHotkeySequence } from '@tanstack/react-hotkeys'
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useActiveWorkbenchTabId, useWorkbenchLayout } from '../../../workbench/context'
+import {
+	WORKBENCH_HOTKEYS,
+	WORKBENCH_HOTKEY_LABELS,
+	WORKBENCH_HOTKEY_SEQUENCES,
+} from '../../../workbench/shortcuts'
 import {
 	WorkbenchLayoutButton,
 	WorkbenchLayoutControls,
 	WorkbenchLayoutToggleButton,
 } from '../../../workbench/LayoutControls'
 import { usePluginWorkbenchLayout } from '../workbench/context'
+
+// TanStack sequences prevent defaults only on completion; reserve the VS Code chord prefix too.
+const reserveFocusModeSequencePrefix = (): void => {}
 
 export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 	const { leftPaneAvailable, leftPaneVisible, setLeftPaneVisible, toggleLeftPane } =
@@ -43,7 +52,7 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 		focusSnapshotRef.current = null
 	}, [activeTabId])
 
-	const toggleFocusMode = () => {
+	const toggleFocusMode = useCallback(() => {
 		if (focusMode) {
 			const snapshot = focusSnapshotRef.current
 			if (leftPaneAvailable) setLeftPaneVisible(snapshot?.leftPaneVisible ?? true)
@@ -61,36 +70,66 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 		if (leftPaneAvailable) setLeftPaneVisible(false)
 		setDockVisible(false)
 		setRightPaneVisible(false)
-	}
+	}, [
+		dockVisible,
+		focusMode,
+		leftPaneAvailable,
+		leftPaneVisible,
+		rightPaneVisible,
+		setDockVisible,
+		setLeftPaneVisible,
+		setRightPaneVisible,
+	])
+
+	useHotkey(WORKBENCH_HOTKEY_SEQUENCES.toggleFocusMode[0], reserveFocusModeSequencePrefix, {
+		ignoreInputs: true,
+		preventDefault: true,
+		stopPropagation: false,
+	})
+	useHotkey(WORKBENCH_HOTKEYS.toggleRightPane, toggleRightPane, {
+		ignoreInputs: true,
+		preventDefault: true,
+	})
+	useHotkey(WORKBENCH_HOTKEYS.toggleDock, toggleDock, {
+		ignoreInputs: true,
+		preventDefault: true,
+	})
+	useHotkeySequence(WORKBENCH_HOTKEY_SEQUENCES.toggleFocusMode, toggleFocusMode, {
+		ignoreInputs: true,
+		preventDefault: true,
+	})
 
 	const layoutToggles = [
 		leftPaneAvailable
 			? {
 					key: 'left',
 					hiddenIcon: <IconLayoutSidebarLeftCollapse size={18} />,
-					hideLabel: '隐藏左栏',
+					hideLabel: '隐藏插件列表',
 					onClick: toggleLeftPane,
+					shortcut: WORKBENCH_HOTKEY_LABELS.togglePluginRail,
 					showIcon: <IconLayoutSidebarLeftExpand size={18} />,
-					showLabel: '显示左栏',
+					showLabel: '显示插件列表',
 					visible: leftPaneVisible,
 				}
 			: null,
 		{
 			key: 'right',
 			hiddenIcon: <IconLayoutSidebarRightCollapse size={18} />,
-			hideLabel: '隐藏右栏',
+			hideLabel: '隐藏辅助侧栏',
 			onClick: toggleRightPane,
+			shortcut: WORKBENCH_HOTKEY_LABELS.toggleRightPane,
 			showIcon: <IconLayoutSidebarRightExpand size={18} />,
-			showLabel: '显示右栏',
+			showLabel: '显示辅助侧栏',
 			visible: rightPaneVisible,
 		},
 		{
 			key: 'dock',
 			hiddenIcon: <IconLayoutBottombarCollapse size={18} />,
-			hideLabel: '隐藏底部日志',
+			hideLabel: '隐藏底部面板',
 			onClick: toggleDock,
+			shortcut: WORKBENCH_HOTKEY_LABELS.toggleDock,
 			showIcon: <IconLayoutBottombarExpand size={18} />,
-			showLabel: '显示底部日志',
+			showLabel: '显示底部面板',
 			visible: dockVisible,
 		},
 	].filter(Boolean)
@@ -105,6 +144,7 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 				active={focusMode}
 				label={focusMode ? '恢复周边面板' : '聚焦工作区'}
 				onClick={toggleFocusMode}
+				shortcut={WORKBENCH_HOTKEY_LABELS.toggleFocusMode}
 			>
 				<IconLayout2 size={18} />
 			</WorkbenchLayoutButton>

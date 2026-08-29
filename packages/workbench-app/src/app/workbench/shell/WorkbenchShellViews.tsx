@@ -68,19 +68,17 @@ export function ActivityRail({
 	pathname: string
 }) {
 	const product = useProduct()
+	const productName = product?.displayName ?? 'Pluxel'
+	const productInitial = Array.from(productName)[0]?.toLocaleUpperCase() ?? 'P'
 	return (
 		<aside className="plx-workbench__activity" aria-label="工作台导航">
 			<div className="plx-workbench__activityBrand">
-				<ColorSchemeToggle
-					label="切换工作台明暗模式"
-					variant="subtle"
-					size={34}
-					radius="sm"
-					className="plx-workbench__activityBrandMark"
-				/>
+				<span className="plx-workbench__activityBrandMark" aria-hidden="true">
+					{productInitial}
+				</span>
 				<span className="plx-workbench__activityBrandText">
-					<strong>{product?.displayName ?? 'Pluxel'}</strong>
-					<small>{product?.publisher ?? '点击图标切换主题'}</small>
+					<strong>{productName}</strong>
+					<small>{product?.publisher ?? 'Plugin Workbench'}</small>
 				</span>
 			</div>
 
@@ -153,6 +151,21 @@ function isExternalHref(href: string): boolean {
 	return !href.startsWith('/')
 }
 
+export function WorkbenchTopbarTools({ isPluginDetail }: { isPluginDetail: boolean }) {
+	return (
+		<div className="plx-workbench__topbarTools" role="toolbar" aria-label="工作台外观与布局">
+			<ColorSchemeToggle
+				label="切换工作台明暗模式"
+				variant="subtle"
+				size={32}
+				radius="sm"
+				className="plx-workbench__themeToggle"
+			/>
+			{isPluginDetail ? <WorkbenchPaneControls /> : null}
+		</div>
+	)
+}
+
 export function RouteGroupRail({ group, pathname }: { group: NavSection; pathname: string }) {
 	return (
 		<aside className="plx-workbench__routeGroup" aria-label={`${group.label} 导航`}>
@@ -183,43 +196,22 @@ export function RouteGroupRail({ group, pathname }: { group: NavSection; pathnam
 	)
 }
 
-export function PluginTopbarActions({
+export function PluginQuickOpenAction({
 	focusWorkbenchSearch,
-	isPluginDetail,
-	togglePluginNav,
 }: {
 	focusWorkbenchSearch: () => void
-	isPluginDetail: boolean
-	togglePluginNav: () => void
 }) {
 	return (
-		<>
-			{isPluginDetail ? (
-				<WorkbenchActionButton
-					className="plx-workbench__action"
-					label="插件列表"
-					onClick={togglePluginNav}
-					title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
-				>
-					<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
-					<span className="plx-workbench__actionLabel">插件列表</span>
-					<span className="plx-workbench__actionHint">
-						{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
-					</span>
-				</WorkbenchActionButton>
-			) : null}
-			<WorkbenchActionButton
-				className="plx-workbench__action"
-				label="打开插件"
-				onClick={focusWorkbenchSearch}
-				title={`打开插件搜索 (${WORKBENCH_HOTKEY_LABELS.focusSearch})`}
-			>
-				<IconSearch size={16} stroke={1.8} />
-				<span className="plx-workbench__actionLabel">打开插件</span>
-				<span className="plx-workbench__actionHint">{WORKBENCH_HOTKEY_LABELS.focusSearch}</span>
-			</WorkbenchActionButton>
-			{isPluginDetail ? <WorkbenchPaneControls /> : null}
-		</>
+		<WorkbenchActionButton
+			className="plx-workbench__action"
+			label="打开插件"
+			onClick={focusWorkbenchSearch}
+			title={`打开插件搜索 (${WORKBENCH_HOTKEY_LABELS.focusSearch})`}
+		>
+			<IconSearch size={16} stroke={1.8} />
+			<span className="plx-workbench__actionLabel">打开插件</span>
+			<span className="plx-workbench__actionHint">{WORKBENCH_HOTKEY_LABELS.focusSearch}</span>
+		</WorkbenchActionButton>
 	)
 }
 

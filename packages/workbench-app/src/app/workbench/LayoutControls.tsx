@@ -51,20 +51,29 @@ export function WorkbenchLayoutButton({
 	children,
 	label,
 	onClick,
+	shortcut,
+	title,
 }: {
 	active: boolean
 	children: ReactNode
 	label: string
 	onClick: () => void
+	shortcut?: string
+	title?: string
 }) {
 	return (
 		<WorkbenchToolbarButton
 			active={active}
 			ariaLabel={label}
-			className="plx-workbench__toolbarButton--layout"
+			className={joinClasses(
+				'plx-workbench__toolbarButton--layout',
+				shortcut ? 'plx-workbench__toolbarButton--withShortcut' : undefined,
+			)}
 			onClick={onClick}
+			title={title ?? (shortcut ? `${label} (${shortcut})` : label)}
 		>
 			{children}
+			{shortcut ? <kbd className="plx-workbench__layoutShortcut">{shortcut}</kbd> : null}
 		</WorkbenchToolbarButton>
 	)
 }
@@ -73,6 +82,7 @@ export function WorkbenchLayoutToggleButton({
 	hiddenIcon,
 	hideLabel,
 	onClick,
+	shortcut,
 	showIcon,
 	showLabel,
 	visible,
@@ -80,16 +90,14 @@ export function WorkbenchLayoutToggleButton({
 	hiddenIcon: ReactNode
 	hideLabel: string
 	onClick: () => void
+	shortcut?: string
 	showIcon: ReactNode
 	showLabel: string
 	visible: boolean
 }) {
+	const label = visible ? hideLabel : showLabel
 	return (
-		<WorkbenchLayoutButton
-			active={visible}
-			label={visible ? hideLabel : showLabel}
-			onClick={onClick}
-		>
+		<WorkbenchLayoutButton active={visible} label={label} onClick={onClick} shortcut={shortcut}>
 			{visible ? hiddenIcon : showIcon}
 		</WorkbenchLayoutButton>
 	)

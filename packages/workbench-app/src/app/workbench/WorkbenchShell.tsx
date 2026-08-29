@@ -35,9 +35,10 @@ import {
 import {
 	ActivityRail,
 	PluginNavigationRail,
-	PluginTopbarActions,
+	PluginQuickOpenAction,
 	RouteGroupRail,
 	WorkbenchHotkeys,
+	WorkbenchTopbarTools,
 } from './shell/WorkbenchShellViews'
 import { WorkbenchStatePersistence } from './shell/WorkbenchStatePersistence'
 import { WorkspaceEditorGrid } from './shell/WorkspaceEditorGrid'
@@ -328,12 +329,15 @@ export function WorkbenchShell() {
 									className="plx-workbench__topbar"
 									data-compact={isPluginDetail ? 'true' : 'false'}
 								>
-									<div className="plx-workbench__topbarTitle">
-										<span className="plx-workbench__eyebrow">{sectionTitle.eyebrow}</span>
-										<span className="plx-workbench__title">{sectionTitle.title}</span>
-										{sectionTitle.subtitle ? (
-											<span className="plx-workbench__subtitle">{sectionTitle.subtitle}</span>
-										) : null}
+									<div className="plx-workbench__topbarLeading">
+										<div className="plx-workbench__topbarTitle">
+											<span className="plx-workbench__eyebrow">{sectionTitle.eyebrow}</span>
+											<span className="plx-workbench__title">{sectionTitle.title}</span>
+											{sectionTitle.subtitle ? (
+												<span className="plx-workbench__subtitle">{sectionTitle.subtitle}</span>
+											) : null}
+										</div>
+										<WorkbenchTopbarTools isPluginDetail={isPluginDetail} />
 									</div>
 
 									{isPluginsSection || editorGroups.length > 1 ? (
@@ -350,11 +354,7 @@ export function WorkbenchShell() {
 												</button>
 											) : null}
 											{isPluginsSection ? (
-												<PluginTopbarActions
-													focusWorkbenchSearch={focusWorkbenchSearch}
-													isPluginDetail={isPluginDetail}
-													togglePluginNav={togglePluginNav}
-												/>
+												<PluginQuickOpenAction focusWorkbenchSearch={focusWorkbenchSearch} />
 											) : null}
 										</div>
 									) : null}

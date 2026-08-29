@@ -108,6 +108,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		setSearch('')
 		setStatusFilter(DEFAULT_STATUS_FILTER)
 	}, [])
+	const resetStatusFilter = useCallback(() => {
+		setStatusFilter(DEFAULT_STATUS_FILTER)
+	}, [])
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const editableTarget = isEditableTarget(e.target)
@@ -394,7 +397,6 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	const groupsForView = draftGroups ?? overview.groups
 	const searchTokens = useMemo(() => parseSearchTokens(filterQuery), [filterQuery])
 	const hasStatusFilter = hasActiveStatusFilter(statusFilter)
-	const hasActiveFilters = filterQuery.length > 0 || hasStatusFilter
 
 	// 搜索过程中的过渡状态，用于降低视觉闪烁
 	const isTransitioning = search.trim() !== deferredSearch
@@ -476,32 +478,19 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	return (
 		<Stack className="plx-pluginCatalog" w="100%">
 			<div className="plx-pluginCatalog__header">
-				<div className="plx-pluginCatalog__titleBlock">
-					<div className="plx-pluginCatalog__titleLine">
-						<span className="plx-workbench__eyebrow">Plugins</span>
-						<span className="plx-workbench__title">插件导览</span>
-						<div className="plx-pluginCatalog__metaGroup" aria-live="polite">
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								总数 <strong>{overview.total}</strong>
-							</Box>
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								运行 <strong>{overview.running}</strong>
-							</Box>
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								自动启动 <strong>{overview.autoStart}</strong>
-							</Box>
-							{selectedIds.length > 0 ? (
-								<Box component="span" className="plx-pluginCatalog__metaPill">
-									已选 <strong>{selectedIds.length}</strong>
-								</Box>
-							) : null}
-							{hasActiveFilters ? (
-								<Box component="span" className="plx-pluginCatalog__metaPill">
-									筛选 <strong>{filterQuery ? '搜索' : '状态'}</strong>
-								</Box>
-							) : null}
-						</div>
-					</div>
+				<div className="plx-pluginCatalog__titleLine">
+					<span className="plx-workbench__eyebrow">Plugins</span>
+					<span className="plx-workbench__title">插件导览</span>
+					{overview.total > 0 ? (
+						<span
+							className="plx-pluginCatalog__titleCount"
+							title={`共 ${overview.total} 个插件`}
+							aria-label={`共 ${overview.total} 个插件`}
+							aria-live="polite"
+						>
+							{overview.total}
+						</span>
+					) : null}
 				</div>
 				<div className="plx-pluginCatalog__headerActions">
 					<button
@@ -531,9 +520,10 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 					onChange={handleSearchChange}
 					inputRef={inputRef}
 					statusFilter={statusFilter}
+					statusCounts={overview.statusCounts}
 					onToggleStatus={toggleStatusFilter}
-					onResetFilters={resetFilters}
-					hasActiveFilters={hasActiveFilters}
+					onResetStatusFilter={resetStatusFilter}
+					hasActiveStatusFilter={hasStatusFilter}
 				/>
 			</div>
 

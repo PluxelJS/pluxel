@@ -6,16 +6,24 @@ export type OverviewSnapshot = {
 	statuses: PluginStatuses
 	groups: GroupConfig[]
 	total: number
+	statusCounts: StatusCounts
+}
+
+export type StatusCounts = {
 	running: number
-	autoStart: number
+	stopped: number
+	unavailable: number
 }
 
 export const EMPTY_OVERVIEW: OverviewSnapshot = {
 	statuses: {},
 	groups: [],
 	total: 0,
-	running: 0,
-	autoStart: 0,
+	statusCounts: {
+		running: 0,
+		stopped: 0,
+		unavailable: 0,
+	},
 }
 
 const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] | undefined) => {
@@ -53,28 +61,29 @@ const toGroups = (groups: readonly (PluginGroup | null | undefined)[] | undefine
 export const buildOverview = (args: {
 	statuses: readonly (PluginStatusEntry | null | undefined)[] | undefined
 	groups: readonly (PluginGroup | null | undefined)[] | undefined
-	summary?: { total?: number | null; running?: number | null; autoStart?: number | null } | null
+	summary?: { total?: number | null } | null
 }): OverviewSnapshot => {
 	const { statuses, groups, summary } = args
 	const summaryStatuses = toStatuses(statuses)
-	let computedRunning = 0
-	let computedAutoStart = 0
+	const statusCounts: StatusCounts = { running: 0, stopped: 0, unavailable: 0 }
 	for (const entry of Object.values(summaryStatuses)) {
-		if (entry?.lifecycleState === 'running') computedRunning += 1
-		if (entry?.autoStart) computedAutoStart += 1
+		if (entry.availability === 'unavailable') {
+			statusCounts.unavailable += 1
+		} else if (entry.lifecycleState === 'running') {
+			statusCounts.running += 1
+		} else {
+			statusCounts.stopped += 1
+		}
 	}
 
 	const total =
 		typeof summary?.total === 'number' ? summary.total : Object.keys(summaryStatuses).length
-	const running = typeof summary?.running === 'number' ? summary.running : computedRunning
-	const autoStart = typeof summary?.autoStart === 'number' ? summary.autoStart : computedAutoStart
 
 	return {
 		statuses: summaryStatuses,
 		groups: toGroups(groups),
 		total,
-		running,
-		autoStart,
+		statusCounts,
 	}
 }
 

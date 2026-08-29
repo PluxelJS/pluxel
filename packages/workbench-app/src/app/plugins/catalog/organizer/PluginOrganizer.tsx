@@ -3,9 +3,9 @@
  * PluginOrganizer
  * -----------------------------------------------------------------------------
  * 设计目标
- * 1) 布局：上（未分组）与下（宿主/包分类）弹性分配
- *    - 无分类时：未分组尽可能占满竖向空间；分类区仅展示提示
- *    - 有分类时：未分组:分类 ≈ 1:2 分配空间，二者各自可滚动
+ * 1) 布局：上（未分组）与下（宿主/包分类）按内容弹性分配
+ *    - 无分类或筛选时：只保留一个占满空间的列表
+ *    - 有分类时：少量未分组项按内容收缩，否则按可见行数分配空间；二者各自可滚动
  *
  * 2) 状态流转（本地优先）
  *    - 仅在首次挂载时读取 external initialGroups；之后完全本地化
@@ -108,6 +108,10 @@ type Props = {
 	className?: string
 	style?: CSSProperties
 }
+
+const COMPACT_UNGROUPED_MAX_ITEMS = 2
+const COMPACT_UNGROUPED_CHROME_HEIGHT = 38
+const MIN_SECTION_HEIGHT = 72
 
 const groupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
 	if (a === b) return true
@@ -429,6 +433,20 @@ export function PluginOrganizer({
 		})
 
 	const LinkComp = LinkComponent
+	const organizerGridRows = useMemo(() => {
+		if (groups.length === 0 || showFlatResults) return 'minmax(0, 1fr)'
+		if (visibleUngrouped.length <= COMPACT_UNGROUPED_MAX_ITEMS) {
+			const compactHeight =
+				COMPACT_UNGROUPED_CHROME_HEIGHT + Math.max(1, visibleUngrouped.length) * dh.rowH
+			return `${compactHeight}px minmax(0, 1fr)`
+		}
+
+		const groupedRows = visibleGroups.reduce(
+			(total, group) => total + 1 + (collapsed[group.groupId] ? 0 : group.pluginIds.length),
+			0,
+		)
+		return `minmax(${MIN_SECTION_HEIGHT}px, ${visibleUngrouped.length}fr) minmax(${MIN_SECTION_HEIGHT}px, ${Math.max(1, groupedRows)}fr)`
+	}, [collapsed, dh.rowH, groups.length, showFlatResults, visibleGroups, visibleUngrouped.length])
 
 	return (
 		<DndContext
@@ -439,17 +457,14 @@ export function PluginOrganizer({
 			onDragStart={handleDragStart}
 			onDragEnd={handleDragEnd}
 		>
-			{/* 根：Grid 分配上下区高度；无分组时让未分组占满 */}
+			{/* 根：有分组时分配双区高度，否则让唯一列表占满。 */}
 			<Box
 				ref={containerRef}
 				className={className}
 				tabIndex={0}
 				style={{
 					display: 'grid',
-					gridTemplateRows:
-						groups.length > 0 && !showFlatResults
-							? 'minmax(0, 1fr) minmax(0, 2fr)'
-							: 'minmax(0, 1fr) auto',
+					gridTemplateRows: organizerGridRows,
 					gap: 4,
 					minHeight: 0,
 					height: '100%',
@@ -459,7 +474,7 @@ export function PluginOrganizer({
 				onKeyDown={handleKeyDown}
 				aria-label="插件列表与分组"
 			>
-				{/* 未分组：占用上半区；内部滚动 */}
+				{/* 默认显示未分组；无分组时即为完整插件列表。 */}
 				<Card
 					className="plx-theme-panel plx-pluginCatalog__sectionCard"
 					withBorder
@@ -477,9 +492,16 @@ export function PluginOrganizer({
 					<div className="plx-pluginCatalog__sectionHeader">
 						<div className="plx-pluginCatalog__sectionHeading">
 							<Text className="plx-pluginCatalog__sectionTitle">
-								{showFlatResults ? '平铺结果' : '未分组'}
+								{showFlatResults ? '筛选结果' : groups.length > 0 ? '未分组' : '全部插件'}
 							</Text>
-							<Text className="plx-pluginCatalog__sectionMetric">
+							<Text
+								className="plx-pluginCatalog__sectionMetric"
+								title={
+									showFlatResults
+										? `${flatVisibleRunning} 个运行中，共 ${flatVisibleIds.length} 个筛选结果`
+										: `${visibleUngroupedRunning} 个运行中，共 ${visibleUngrouped.length} 个插件`
+								}
+							>
 								{showFlatResults
 									? `${flatVisibleRunning}/${flatVisibleIds.length}`
 									: `${visibleUngroupedRunning}/${visibleUngrouped.length}`}
@@ -488,9 +510,6 @@ export function PluginOrganizer({
 						<Box className="plx-pluginCatalog__sectionActions">
 							{selectedCount > 0 ? (
 								<>
-									<Badge size="xs" variant="light" color="gray">
-										已选 {selectedCount}
-									</Badge>
 									<Tooltip label="移动到其他分组" withinPortal withArrow openDelay={200}>
 										<ActionIcon
 											size="sm"
@@ -517,11 +536,6 @@ export function PluginOrganizer({
 							) : null}
 						</Box>
 					</div>
-					<Text className="plx-pluginCatalog__sectionNote">
-						{showFlatResults
-							? '当前按筛选结果平铺显示，清空筛选后恢复分组编辑。'
-							: 'M 移动到已注册分类，U 移回未分组。分类由宿主或插件包提供。'}
-					</Text>
 
 					{showFlatResults ? (
 						<FlatPluginList
@@ -558,43 +572,38 @@ export function PluginOrganizer({
 								items={ungroupedDisplayOrder.map((id) => iid(id))}
 								strategy={verticalListSortingStrategy}
 							>
-								<Stack gap={0} align="stretch" role="list" aria-label="未分组插件">
-									{ungroupedDisplayOrder.length > 0 && (
-										<Box className="plx-pluginCatalog__subgroup">
-											<div className="plx-pluginCatalog__subgroupHeader">
-												<Text className="plx-pluginCatalog__subgroupLabel">未分组插件</Text>
-												<Text className="plx-pluginCatalog__subgroupCount">
-													{ungroupedDisplayOrder.length} 个
-												</Text>
-											</div>
-											{ungroupedDisplayOrder.map((id) => (
-												<SortableRow
-													key={id}
-													pid={id}
-													name={getName(id)}
-													running={runningSet.has(id)}
-													available={availableSet.has(id)}
-													desiredRunning={desiredRunningSet.has(id)}
-													selected={selectedSet.has(id)}
-													active={activeSet.has(id)}
-													onSelect={handleRowSelect}
-													LinkComp={LinkComp}
-													dragDisabled={isFiltering || locked}
-													focused={focusedId === id}
-													meta={getMeta(id)}
-													dh={dh}
-													sortableId={iid(id)}
-												/>
-											))}
-										</Box>
-									)}
+								<Stack
+									gap={0}
+									align="stretch"
+									role="list"
+									aria-label={groups.length > 0 ? '未分组插件' : '全部插件'}
+								>
+									{ungroupedDisplayOrder.map((id) => (
+										<SortableRow
+											key={id}
+											pid={id}
+											name={getName(id)}
+											running={runningSet.has(id)}
+											available={availableSet.has(id)}
+											desiredRunning={desiredRunningSet.has(id)}
+											selected={selectedSet.has(id)}
+											active={activeSet.has(id)}
+											onSelect={handleRowSelect}
+											LinkComp={LinkComp}
+											dragDisabled={isFiltering || locked}
+											focused={focusedId === id}
+											meta={getMeta(id)}
+											dh={dh}
+											sortableId={iid(id)}
+										/>
+									))}
 								</Stack>
 							</SortableContext>
 						</DroppableContainer>
 					)}
 				</Card>
 
-				{/* 已注册分类：有分类时占下半区并可滚动；无分类时收缩为提示行 */}
+				{/* 分类只在可编辑且实际存在时占用空间。 */}
 				{groups.length > 0 && !showFlatResults ? (
 					<Card
 						className="plx-theme-panel plx-pluginCatalog__sectionCard"
@@ -618,7 +627,6 @@ export function PluginOrganizer({
 										{visibleGroups.length} 个
 									</Text>
 								</div>
-								<Text className="plx-pluginCatalog__sectionNote">Shift + 方向键可连续选择</Text>
 							</div>
 
 							<ScrollArea
@@ -672,30 +680,7 @@ export function PluginOrganizer({
 							</ScrollArea>
 						</Stack>
 					</Card>
-				) : (
-					<Card
-						className="plx-theme-panel plx-pluginCatalog__sectionCard"
-						withBorder
-						shadow="none"
-						radius="sm"
-						p={4}
-						style={{
-							minWidth: 0,
-						}}
-					>
-						<div className="plx-pluginCatalog__sectionHeader">
-							<div className="plx-pluginCatalog__sectionHeading">
-								<Text className="plx-pluginCatalog__sectionTitle">插件分类</Text>
-								<Text className="plx-pluginCatalog__sectionMetric">{groups.length} 个</Text>
-							</div>
-						</div>
-						<Text className="plx-pluginCatalog__sectionNote">
-							{groups.length > 0 && showFlatResults
-								? '筛选或长列表模式下暂时隐藏分组卡，清空筛选后恢复分组编辑。'
-								: '当前宿主未注册分类，也没有可识别包来源。'}
-						</Text>
-					</Card>
-				)}
+				) : null}
 			</Box>
 
 			{/* 小芯片 Overlay：不挡视线 */}
