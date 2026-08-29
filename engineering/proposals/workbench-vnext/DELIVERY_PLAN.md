@@ -22,12 +22,12 @@ VNext 不从通用后台或微前端产品想象 API。每个 public abstraction
 
 三种页面共享同一个 direct-capability model：
 
-- Fonts manager local ViewApi：`list/install/remove/default/watch`，拥有 font catalog、持久化与容量；
+- Fonts manager local ViewApi：`list/get/create/update/remove/watch`，另有 font install task，拥有 font asset、collection、持久化与容量；
 - 当前 Canvas/ECharts/Takumi provider-only Attachment：provider API 修改 provider-wide default；
-- Font contribution fixture provider + consumer Attachment：provider API 列候选，optional consumer API 写 consumer-specific selection。
+- Font collection fixture provider + consumer Attachment：provider API 列 collection，optional consumer API 写 consumer-specific `collectionId` selection。
 
-List row 不进入 platform。10,000 fonts 仍是一个 bounded `list()` API 的 rows，不是 10,000 个
-resources/capabilities。
+Font/collection row 不进入 platform。10,000 fonts 或 collections 仍是 bounded page API 的 rows，不是 10,000 个 resources/capabilities、Views、routes 或
+MF exposes。完整 vertical fixture 见 [`FONT_COLLECTION_EXAMPLE.md`](FONT_COLLECTION_EXAMPLE.md)。
 
 ### BotManager
 
@@ -44,15 +44,15 @@ topology、initial event emit glue、trivial wrapper 与 export map；不建立 
 
 这份提案必须区分当前 workspace 事实与 future fixture，不能用假想案例证明抽象：
 
-| Evidence                               | vNext mapping                                      | 必须证明的边界                                       |
-| -------------------------------------- | -------------------------------------------------- | ---------------------------------------------------- |
-| PackageManager current local renderer  | local View + snapshot/list/mutations               | 不经 Attachment/Collection，关闭时无残留 observer    |
-| Wretch current provider UI/API         | consumer-bound provider-only Attachment            | exact consumer state、consumer 只给 placement/handle |
-| Fonts current manager                  | local manager View                                 | paged rows/task/file ticket，不建立 per-font target  |
-| Canvas/Takumi/ECharts font consumers   | provider-only Attachment                           | consumer-owned placement 不产生自己的 producer       |
-| parameterized Account document fixture | one routed View，多次 `openView()`                 | server rematch params、dirty/title cleanup           |
-| current runtime `liveQuery` tests      | server helper backing direct `snapshot/list/watch` | 不恢复 Query resource/wire protocol                  |
-| BotManager proposal evidence           | ordinary TS builder fixture                        | 明确标为 fixture；当前 workspace 无 chatbot source   |
+| Evidence                                   | vNext mapping                                                   | 必须证明的边界                                                                            |
+| ------------------------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| PackageManager current local renderer      | local View + snapshot/list/mutations                            | 不经 Attachment/Collection，关闭时无残留 observer                                         |
+| Wretch current provider UI/API             | consumer-bound provider-only Attachment                         | exact consumer state、consumer 只给 placement/handle                                      |
+| Fonts current manager + collection fixture | local manager；有独立 document UX 证据时才加 parameterized View | bounded page/by-ID CRUD/task/file ticket；不建立 per-row publication/capability inventory |
+| Canvas/Takumi/ECharts font consumers       | provider-only 或 provider+consumer Attachment                   | stable collection ID、consumer-owned selection/placement，不产生自己的 producer           |
+| parameterized Account document fixture     | one routed View，多次 `openView()`                              | server rematch params、dirty/title cleanup                                                |
+| current runtime `liveQuery` tests          | server helper backing direct `snapshot/list/watch`              | 不恢复 Query resource/wire protocol                                                       |
+| BotManager proposal evidence               | ordinary TS builder fixture                                     | 明确标为 fixture；当前 workspace 无 chatbot source                                        |
 
 其中任何一行如果需要新 platform noun，必须先记录 direct capability 失败的具体调用点和 lifecycle，不以“未来可能复用”为理由扩张设计。
 
@@ -169,6 +169,8 @@ Model/Query/Channel/Collection/Feature 不成为 vNext runtime protocol。
 期间 invalidation，最多一个 active read，并用 epoch guard 阻止 stale result 覆盖。证明 fresh epoch re-open、platform envelope validation、
 Plugin-owned domain validation、child target cleanup、bounded page read、server-derived params、dirty/title cleanup 与 signed transfer。至少一个 fixture
 直接委托已有 domain service/parser，证明 Workbench 不需要读取 schema；另一个 cooperative read-only fixture 可以有意不增加重复 validator。
+Fonts manager 默认必须用同一 local View root 的 by-ID RPC 完成 collection CRUD；parameterized document 由独立 Account fixture 证明，不能为了表达
+collection 强制 Fonts 产生第二个 View。
 
 现有 database/runtime `liveQuery` 若保留，只能成为可选 server implementation helper：把 revision/invalidation/coalescing 接到 Plugin 自己声明的
 `snapshot/list/watch`，不生成 Query address、browser client、registry、resume/replay 或新的 wire shape。至少迁移一个现有 test/call site 证明 helper
@@ -180,6 +182,7 @@ Plugin-owned domain validation、child target cleanup、bounded page read、serv
 
 - provider/optional consumer API generic 在 TypeScript 中一致；
 - consumer/provider edge validation，Wretch provider factory 得到 exact node address 但没有 Context/service locator；
+- Font consumer 只持久化 stable `collectionId`，provider 删除 collection 后投影 `missing`，不改写 consumer config；
 - joint withdrawal；
 - attachment-only consumer 不产生 producer；
 - no scan/Port/resource map/alias/fallback。

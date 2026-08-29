@@ -29,16 +29,17 @@ MF 2.0 host/consumer + Plugin producers/remotes/exposes
 
 `PLATFORM_CONTRACT.md` 优先级最高；其他文档只能细化，不能增加替换自由度。每个领域决策只在一个主题文档中定义。
 
-| 文档                                             | 唯一负责的决策                                                            |
-| ------------------------------------------------ | ------------------------------------------------------------------------- |
-| [`PLATFORM_CONTRACT.md`](PLATFORM_CONTRACT.md)   | closed Profile 1、fixed choices、portability、versioning 与 conformance   |
-| [`CURRENT_COMPARISON.md`](CURRENT_COMPARISON.md) | current/vNext 诚实对比、性能边界与成熟资产保留账本                        |
-| [`AUTHORING.md`](AUTHORING.md)                   | direct ViewApi、常见交互 recipe、View/Attachment 与普通 TS composition    |
-| [`EXAMPLES.md`](EXAMPLES.md)                     | 候选 Plugin-facing API 的端到端中性样例                                   |
-| [`PUBLICATION.md`](PUBLICATION.md)               | definition/binding/publication、layout、opened View 与 withdrawal         |
-| [`CONTROL_PLANE.md`](CONTROL_PLANE.md)           | WS-only Cap’n Web、认证、capability、push、dispose、Vite 与 reverse proxy |
-| [`FEDERATION.md`](FEDERATION.md)                 | MF producer/expose、Manifest/Snapshot、shared、Bridge、build 与 HMR       |
-| [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)           | 真实样本、package boundary、实施切片、验收、否决条件与未决原型            |
+| 文档                                                       | 唯一负责的决策                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`PLATFORM_CONTRACT.md`](PLATFORM_CONTRACT.md)             | closed Profile 1、fixed choices、portability、versioning 与 conformance     |
+| [`CURRENT_COMPARISON.md`](CURRENT_COMPARISON.md)           | current/vNext 诚实对比、性能边界与成熟资产保留账本                          |
+| [`AUTHORING.md`](AUTHORING.md)                             | direct ViewApi、常见交互 recipe、View/Attachment 与普通 TS composition      |
+| [`EXAMPLES.md`](EXAMPLES.md)                               | 候选 Plugin-facing API 的端到端中性样例                                     |
+| [`FONT_COLLECTION_EXAMPLE.md`](FONT_COLLECTION_EXAMPLE.md) | FontManager 管理 collection、consumer 选择与实际业务消费的 vertical fixture |
+| [`PUBLICATION.md`](PUBLICATION.md)                         | definition/binding/publication、layout、opened View 与 withdrawal           |
+| [`CONTROL_PLANE.md`](CONTROL_PLANE.md)                     | WS-only Cap’n Web、认证、capability、push、dispose、Vite 与 reverse proxy   |
+| [`FEDERATION.md`](FEDERATION.md)                           | MF producer/expose、Manifest/Snapshot、shared、Bridge、build 与 HMR         |
+| [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)                     | 真实样本、package boundary、实施切片、验收、否决条件与未决原型              |
 
 涉及一个完整 View 的执行路径时，阅读顺序是：
 

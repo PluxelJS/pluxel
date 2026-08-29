@@ -38,6 +38,9 @@ src/
 `@pluxel/runtime/workbench` 根入口在 vNext 必须保持 browser-safe、无副作用，因为同一 `definition.ts` 会被 Node Plugin 与 MF remote
 共同 import。Server publication 不是另一个 module helper，只存在于 Plugin Context 的 `ctx.workbench.publish()`。
 
+“FontManager 创建 collection，required consumer 选择并在真实业务路径中使用”的完整 owner、API、publication、picker、delete/fallback 与复杂度证明见
+[`FONT_COLLECTION_EXAMPLE.md`](FONT_COLLECTION_EXAMPLE.md)。本文下面只保留其最小 API shape。
+
 ## 例一：最小 settings View
 
 ### Browser-safe API types
@@ -292,7 +295,7 @@ export default function AccountEditor() {
 }
 ```
 
-## 例三：Font manager 的列表、任务和文件
+## 例三：Font manager 的字体、collection、任务和文件
 
 Font row 是 bounded by-value data，不是 Workbench Collection 或 per-row capability。`UploadTicket` 和 `CompletedUpload`
 也是 platform transfer service 签发/验证的 opaque domain values。
@@ -310,6 +313,45 @@ type FontPage = Readonly<{
 	nextCursor: string | null
 }>
 
+type FontCollectionRow = Readonly<{
+	id: string
+	name: string
+	revision: number
+	fontCount: number
+}>
+
+type FontCollectionPage = Readonly<{
+	items: readonly FontCollectionRow[]
+	nextCursor: string | null
+}>
+
+type FontCollectionSnapshot = Readonly<{
+	id: string
+	name: string
+	revision: number
+	fontIds: readonly string[]
+}>
+
+type FontCollectionSnapshotResult =
+	Readonly<{ ok: true; value: FontCollectionSnapshot }> | Readonly<{ ok: false; code: 'not_found' }>
+
+type CreateFontCollectionResult =
+	| Readonly<{ ok: true; value: FontCollectionRow }>
+	| Readonly<{ ok: false; code: 'name_conflict' | 'limit_exceeded' }>
+
+type UpdateFontCollectionResult =
+	| Readonly<{ ok: true; value: FontCollectionSnapshot }>
+	| Readonly<{ ok: false; code: 'conflict'; current: FontCollectionSnapshot }>
+	| Readonly<{ ok: false; code: 'invalid_font' | 'not_found' }>
+
+type RemoveFontCollectionResult =
+	| Readonly<{ ok: true }>
+	| Readonly<{ ok: false; code: 'conflict'; current: FontCollectionSnapshot }>
+	| Readonly<{ ok: false; code: 'not_found' }>
+
+type RemoveFontResult =
+	Readonly<{ ok: true }> | Readonly<{ ok: false; code: 'not_found' | 'in_use' }>
+
 type InstallTaskSnapshot = Readonly<{
 	state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 	progress: number
@@ -322,11 +364,29 @@ export interface InstallTaskApi {
 }
 
 export interface FontsManagerApi {
-	list(input: { cursor: string | null; limit: number; query?: string }): Promise<FontPage>
-	remove(input: { id: string }): Promise<{ removed: boolean }>
+	listFonts(input: { cursor: string | null; limit: number; query?: string }): Promise<FontPage>
+	listCollections(input: {
+		cursor: string | null
+		limit: number
+		query?: string
+	}): Promise<FontCollectionPage>
+	getCollection(input: { collectionId: string }): Promise<FontCollectionSnapshotResult>
+	createCollection(input: { name: string }): Promise<CreateFontCollectionResult>
+	updateCollection(input: {
+		collectionId: string
+		expectedRevision: number
+		name: string
+		fontIds: readonly string[]
+	}): Promise<UpdateFontCollectionResult>
+	removeCollection(input: {
+		collectionId: string
+		expectedRevision: number
+	}): Promise<RemoveFontCollectionResult>
+	removeFont(input: { fontId: string }): Promise<RemoveFontResult>
 	beginInstall(input: { fileName: string; bytes: number }): Promise<UploadTicket>
 	install(input: { upload: CompletedUpload }): Promise<InstallTaskApi>
-	watch(notify: (event: { reason: 'catalog-changed' }) => void): SubscriptionApi
+	watchFonts(notify: (catalogRevision: number) => void): SubscriptionApi
+	watchCollections(notify: (catalogRevision: number) => void): SubscriptionApi
 }
 ```
 
@@ -335,7 +395,9 @@ export interface FontsManagerApi {
 - Fonts Plugin 自己把 `limit` clamp/reject 到 1–100，并保证 page byte ceiling；Workbench 不理解 list params；
 - `beginInstall()` 签发 single-use HTTP upload ticket，文件 bytes 不进 Cap’n Web message；
 - `install()` 返回独立可撤销的 task target，因为它确实有 progress/cancel/lifecycle；
-- 只有 task 获得 child capability；普通 font row 没有 stub、dispose 或 publication identity。
+- 只有 task 和显式 subscription handle 获得 child capability；普通 font/collection row 没有 stub、dispose 或 publication identity。
+- collection 同样只是 FontManager domain row；默认由 manager 通过 by-ID RPC 编辑。只有独立 document UX 已经必要时才增加一个固定的
+  `/collections/:collectionId` View pattern，仍不为每个 collection 创建 publication/route/expose。
 
 Renderer 不自己拼 HTTP credential/progress/error：
 
@@ -350,24 +412,54 @@ const task = await api.install({ upload })
 
 ## 例四：provider picker 嵌入 consumer
 
-这是 `Attachment` 唯一需要解决的结构：Fonts Plugin 拥有 picker renderer 和 font catalog，Canvas Plugin 拥有“当前选择哪个
-font”的领域状态和 tab placement。
+这是 `Attachment` 唯一需要解决的结构：Fonts Plugin 拥有 picker renderer 和 collection catalog，Canvas Plugin 拥有“当前选择哪个
+collection”的领域状态和 tab placement。完整代码与 deletion/missing policy 见
+[`FONT_COLLECTION_EXAMPLE.md`](FONT_COLLECTION_EXAMPLE.md)。
 
 ### Provider declaration 与 publication
 
 ```ts
-export interface FontsPickerApi {
-	list(input: FontListInput): Promise<FontPage>
+type FontCollectionListInput = Readonly<{
+	cursor: string | null
+	limit: number
+	query?: string
+}>
+
+type FontCollectionSelectionSnapshot =
+	| Readonly<{ revision: number; status: 'none'; collectionId: null }>
+	| Readonly<{
+			revision: number
+			status: 'ready' | 'missing'
+			collectionId: string
+	  }>
+
+type SelectFontCollectionResult =
+	| Readonly<{ ok: true; value: FontCollectionSelectionSnapshot }>
+	| Readonly<{
+			ok: false
+			code: 'conflict' | 'collection_missing' | 'rejected'
+			current: FontCollectionSelectionSnapshot
+	  }>
+
+export interface FontCollectionCatalogApi {
+	listCollections(input: FontCollectionListInput): Promise<FontCollectionPage>
+	getCollection(input: { collectionId: string }): Promise<FontCollectionSnapshotResult>
+	watchCollections(notify: (catalogRevision: number) => void): SubscriptionApi
 }
 
-export interface FontSelectionApi {
-	snapshot(): Promise<FontSelectionSnapshot>
-	select(input: { fontId: string; expectedRevision: number }): Promise<FontSelectionResult>
+export interface FontCollectionSelectionApi {
+	snapshot(): Promise<FontCollectionSelectionSnapshot>
+	select(input: {
+		collectionId: string
+		expectedRevision: number
+	}): Promise<SelectFontCollectionResult>
+	clear(input: { expectedRevision: number }): Promise<SelectFontCollectionResult>
+	watch(notify: () => void): SubscriptionApi
 }
 
 export const FontsWorkbench = workbench.define({
 	manager: FontsManagerView,
-	picker: workbench.attachment<FontsPickerApi, FontSelectionApi>({
+	picker: workbench.attachment<FontCollectionCatalogApi, FontCollectionSelectionApi>({
 		renderer: workbench.entry(import.meta.url, '../ui/picker.tsx'),
 	}),
 })
@@ -377,7 +469,7 @@ export const FontsWorkbench = workbench.define({
 this.ctx.workbench?.publish(FontsWorkbench, {
 	manager: ({ signal }) => new FontsManagerTarget(this.catalog, signal),
 	picker: ({ consumer, principal, signal }) =>
-		new FontsPickerTarget(this.catalog, { consumer, principal, signal }),
+		new FontCollectionCatalogTarget(this.catalog, { consumer, principal, signal }),
 })
 ```
 
@@ -401,7 +493,11 @@ export const CanvasWorkbench = workbench.define({
 this.ctx.workbench?.publish(CanvasWorkbench, {
 	fonts: {
 		provider: this.fonts,
-		consumer: ({ signal }) => new FontSelectionTarget(this.canvasSettings, signal),
+		consumer: ({ principal, signal }) =>
+			new FontCollectionSelectionTarget(this.canvasSettings, this.fonts, {
+				principal,
+				signal,
+			}),
 	},
 })
 ```
@@ -415,7 +511,7 @@ Picker renderer 只获得两个根：
 export default function FontsPickerPanel() {
 	const { provider, consumer, host } = useWorkbench(FontsWorkbench.picker)
 
-	// provider.list(...) reads provider-owned candidates.
+	// provider.listCollections(...) reads provider-owned candidates.
 	// consumer.select(...) writes consumer-owned selection.
 	// host supplies notify/confirm/navigation, never a raw socket or Shell store.
 }

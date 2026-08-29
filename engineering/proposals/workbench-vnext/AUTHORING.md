@@ -208,14 +208,17 @@ grant。
 
 ### Provider 管理对象，consumer 只拥有选择
 
-FontManager 一类“父 Plugin 制造对象，依赖 Plugin 选择消费”的结构直接映射到现有 owner：
+FontManager 一类“父 Plugin 制造 collection，依赖 Plugin 选择消费”的结构直接映射到现有 owner。完整端到端 API 见
+[`FONT_COLLECTION_EXAMPLE.md`](FONT_COLLECTION_EXAMPLE.md)：
 
-- provider domain service 拥有 row、容量、持久化、删除与 provider generation lifecycle；
-- consumer domain service 只持久化 stable provider item ID 和自己的 selection policy；
+- provider domain service 拥有 collection row、容量、持久化、删除与 provider generation lifecycle；
+- consumer domain service 只持久化 stable `collectionId` 和自己的 selection/fallback policy；
 - required Plugin dependency 在 server 直接注入 provider business capability，负责验证 ID 并完成实际消费；
 - provider 拥有 picker renderer 时才声明 Attachment；provider API 列候选项，optional consumer API 写 consumer selection。
 
-因此没有 global collection resolver、consumer 持有的 remote stub 或 per-row capability。Provider 删除 item 后如何处理旧选择，是领域的
+因此没有 global collection resolver、consumer 持有的 remote stub、per-collection registry/persistent stub 或自动分配的
+capability。Collection row 本身没有 target；默认 manager View 用普通 by-ID RPC 完成 CRUD。只有产品已经需要同时打开多个独立编辑
+document 时，才声明 parameterized View，并为实际 opened document 创建一个临时 collection-scoped root。Provider 删除 collection 后如何处理旧选择，是领域的
 `missing | fallback | rejected` policy，不是 Workbench lifecycle。
 
 ## Long task 与 stream 直接使用 child capability
