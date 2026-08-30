@@ -308,6 +308,12 @@ Bridge wrapper 是 toolchain 生成的内部 ABI。它把 opened handle 与 host
 React Context，然后调用零 props renderer。Remote 不读取官方 Shell private Context。Bridge destroy 是释放 portal、effect、
 subscription 和 document chrome 的唯一 UI lifecycle 边界。
 
+每个 Bridge application 是独立 React root，因此普通 UI library 的 Context 不能从 Shell 跨 root 继承。使用
+Mantine、router、i18n 或同类 Context library 的 renderer，必须在自己的 renderer root 内安装对应 Provider，并由 producer
+携带所需 CSS。它可以从 `host.locale`、`host.colorScheme` 等固定 portable fact 初始化或同步表现，但不能把 Shell 的私有
+Provider、theme object 或 CSS 约定当成 Workbench contract。把 UI library 加入 singleton shared 也不会改变 React Context
+的祖先边界。
+
 开发期 renderer 变化先构建并验证新的完整 producer candidate。失败不改变当前 inventory；成功提交后触发整页 reload。
 不做页内 remote replacement，不把新 roots 接到旧 Bridge，也不在加载失败时尝试其他 build revision。
 

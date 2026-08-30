@@ -6,12 +6,14 @@ import {
 	CopyButton,
 	Group,
 	Loader,
+	MantineProvider,
 	PasswordInput,
 	Stack,
 	Text,
 	TextInput,
 	Title,
 } from '@mantine/core'
+import '@mantine/core/styles.css'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconCheck, IconCopy, IconKey, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
@@ -71,7 +73,7 @@ function messageOf(error: unknown): string {
 }
 
 export default function AuthSetup() {
-	const { api } = useWorkbench(AuthWorkbench.setup)
+	const { api, host } = useWorkbench(AuthWorkbench.setup)
 	const requestId = useRef(0)
 	const [snapshot, setSnapshot] = useState<AuthSetupSnapshot>()
 	const [loading, setLoading] = useState(true)
@@ -200,148 +202,150 @@ export default function AuthSetup() {
 	}
 
 	return (
-		<Stack gap="md" p="md" maw={760}>
-			<Group justify="space-between" align="flex-start">
-				<Stack gap={2}>
-					<Title order={3}>Authentication setup</Title>
-					<Text size="sm" c="dimmed">
-						Provision the first credential for this Auth Plugin generation.
-					</Text>
-				</Stack>
-				<Button
-					variant="light"
-					leftSection={<IconRefresh size={16} />}
-					loading={loading}
-					disabled={busy}
-					onClick={() => void refresh()}
-				>
-					Refresh
-				</Button>
-			</Group>
-
-			{error ? <Alert color="red">{error}</Alert> : null}
-
-			{loading && !snapshot ? (
-				<Group>
-					<Loader size="sm" />
-					<Text>Reading credential state…</Text>
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<Stack gap="md" p="md" maw={760}>
+				<Group justify="space-between" align="flex-start">
+					<Stack gap={2}>
+						<Title order={3}>Authentication setup</Title>
+						<Text size="sm" c="dimmed">
+							Provision the first credential for this Auth Plugin generation.
+						</Text>
+					</Stack>
+					<Button
+						variant="light"
+						leftSection={<IconRefresh size={16} />}
+						loading={loading}
+						disabled={busy}
+						onClick={() => void refresh()}
+					>
+						Refresh
+					</Button>
 				</Group>
-			) : null}
 
-			{snapshot?.state === 'configured' ? (
-				<Alert color="green" icon={<IconCheck size={18} />} title="Authentication is ready">
-					{snapshot.mode === 'oidc-public'
-						? 'This public OIDC client does not require a client secret.'
-						: 'The first credential is configured. Credential rotation is intentionally not exposed on this setup page.'}
-				</Alert>
-			) : null}
+				{error ? <Alert color="red">{error}</Alert> : null}
 
-			{snapshot?.state === 'unavailable' ? (
-				<Alert color="yellow" title="Vault is unavailable">
-					This credential mode needs persistent Vault storage. Enable Vault or provision the
-					credential in a host that uses the same persistence.
-				</Alert>
-			) : null}
+				{loading && !snapshot ? (
+					<Group>
+						<Loader size="sm" />
+						<Text>Reading credential state…</Text>
+					</Group>
+				) : null}
 
-			{snapshot?.state === 'setup-required' ? (
-				<Alert color={snapshot.reason === 'invalid' ? 'red' : 'blue'}>
-					{snapshot.reason === 'invalid'
-						? 'The stored credential record is invalid. Local recovery may replace it once.'
-						: 'No credential has been stored for the configured authentication mode.'}
-				</Alert>
-			) : null}
+				{snapshot?.state === 'configured' ? (
+					<Alert color="green" icon={<IconCheck size={18} />} title="Authentication is ready">
+						{snapshot.mode === 'oidc-public'
+							? 'This public OIDC client does not require a client secret.'
+							: 'The first credential is configured. Credential rotation is intentionally not exposed on this setup page.'}
+					</Alert>
+				) : null}
 
-			{snapshot?.state === 'setup-required' && snapshot.mode === 'password' ? (
-				<PasswordAccountForm
-					username={username}
-					password={password}
-					passwordConfirmation={passwordConfirmation}
-					busy={busy}
-					onUsername={setUsername}
-					onPassword={setPassword}
-					onPasswordConfirmation={setPasswordConfirmation}
-					onSubmit={(event) => void submitPassword(event)}
-				/>
-			) : null}
+				{snapshot?.state === 'unavailable' ? (
+					<Alert color="yellow" title="Vault is unavailable">
+						This credential mode needs persistent Vault storage. Enable Vault or provision the
+						credential in a host that uses the same persistence.
+					</Alert>
+				) : null}
 
-			{snapshot?.state === 'setup-required' && snapshot.mode === 'password-totp' ? (
-				enrollment ? (
-					<Card withBorder>
-						<form onSubmit={(event) => void confirmTotp(event)}>
-							<Stack gap="md">
-								<Stack gap={4}>
-									<Text fw={600}>Enroll a TOTP authenticator</Text>
-									<Text size="sm" c="dimmed">
-										Add the secret to your authenticator, then enter its current six-digit code.
-									</Text>
-								</Stack>
-								<SecretValue label="Base32 secret" value={enrollment.secret} />
-								<SecretValue label="Provisioning URI" value={enrollment.provisioningUri} />
-								<Text size="xs" c="dimmed">
-									Enrollment expires at {new Date(enrollment.expiresAt).toLocaleString()}.
-								</Text>
-								<TextInput
-									label="One-time code"
-									inputMode="numeric"
-									maxLength={6}
-									value={totpCode}
-									disabled={busy}
-									onChange={(event) =>
-										setTotpCode(event.currentTarget.value.replaceAll(/\D/g, '').slice(0, 6))
-									}
-								/>
-								<Group>
-									<Button type="submit" loading={busy} disabled={totpCode.length !== 6}>
-										Confirm and save
-									</Button>
-									<Button
-										variant="subtle"
-										disabled={busy}
-										onClick={() => {
-											setEnrollment(undefined)
-											setTotpCode('')
-										}}
-									>
-										Start over
-									</Button>
-								</Group>
-							</Stack>
-						</form>
-					</Card>
-				) : (
+				{snapshot?.state === 'setup-required' ? (
+					<Alert color={snapshot.reason === 'invalid' ? 'red' : 'blue'}>
+						{snapshot.reason === 'invalid'
+							? 'The stored credential record is invalid. Local recovery may replace it once.'
+							: 'No credential has been stored for the configured authentication mode.'}
+					</Alert>
+				) : null}
+
+				{snapshot?.state === 'setup-required' && snapshot.mode === 'password' ? (
 					<PasswordAccountForm
 						username={username}
 						password={password}
 						passwordConfirmation={passwordConfirmation}
 						busy={busy}
-						submitLabel="Continue to TOTP"
 						onUsername={setUsername}
 						onPassword={setPassword}
 						onPasswordConfirmation={setPasswordConfirmation}
-						onSubmit={(event) => void beginTotp(event)}
+						onSubmit={(event) => void submitPassword(event)}
 					/>
-				)
-			) : null}
+				) : null}
 
-			{snapshot?.state === 'setup-required' && snapshot.mode === 'oidc-confidential' ? (
-				<Card withBorder>
-					<form onSubmit={(event) => void submitOidcSecret(event)}>
-						<Stack gap="md">
-							<PasswordInput
-								label="OIDC client secret"
-								description="The value is persisted in Vault and is never returned by this API."
-								value={oidcSecret}
-								disabled={busy}
-								onChange={(event) => setOidcSecret(event.currentTarget.value)}
-							/>
-							<Button type="submit" loading={busy} disabled={oidcSecret.length === 0}>
-								Save client secret
-							</Button>
-						</Stack>
-					</form>
-				</Card>
-			) : null}
-		</Stack>
+				{snapshot?.state === 'setup-required' && snapshot.mode === 'password-totp' ? (
+					enrollment ? (
+						<Card withBorder>
+							<form onSubmit={(event) => void confirmTotp(event)}>
+								<Stack gap="md">
+									<Stack gap={4}>
+										<Text fw={600}>Enroll a TOTP authenticator</Text>
+										<Text size="sm" c="dimmed">
+											Add the secret to your authenticator, then enter its current six-digit code.
+										</Text>
+									</Stack>
+									<SecretValue label="Base32 secret" value={enrollment.secret} />
+									<SecretValue label="Provisioning URI" value={enrollment.provisioningUri} />
+									<Text size="xs" c="dimmed">
+										Enrollment expires at {new Date(enrollment.expiresAt).toLocaleString()}.
+									</Text>
+									<TextInput
+										label="One-time code"
+										inputMode="numeric"
+										maxLength={6}
+										value={totpCode}
+										disabled={busy}
+										onChange={(event) =>
+											setTotpCode(event.currentTarget.value.replaceAll(/\D/g, '').slice(0, 6))
+										}
+									/>
+									<Group>
+										<Button type="submit" loading={busy} disabled={totpCode.length !== 6}>
+											Confirm and save
+										</Button>
+										<Button
+											variant="subtle"
+											disabled={busy}
+											onClick={() => {
+												setEnrollment(undefined)
+												setTotpCode('')
+											}}
+										>
+											Start over
+										</Button>
+									</Group>
+								</Stack>
+							</form>
+						</Card>
+					) : (
+						<PasswordAccountForm
+							username={username}
+							password={password}
+							passwordConfirmation={passwordConfirmation}
+							busy={busy}
+							submitLabel="Continue to TOTP"
+							onUsername={setUsername}
+							onPassword={setPassword}
+							onPasswordConfirmation={setPasswordConfirmation}
+							onSubmit={(event) => void beginTotp(event)}
+						/>
+					)
+				) : null}
+
+				{snapshot?.state === 'setup-required' && snapshot.mode === 'oidc-confidential' ? (
+					<Card withBorder>
+						<form onSubmit={(event) => void submitOidcSecret(event)}>
+							<Stack gap="md">
+								<PasswordInput
+									label="OIDC client secret"
+									description="The value is persisted in Vault and is never returned by this API."
+									value={oidcSecret}
+									disabled={busy}
+									onChange={(event) => setOidcSecret(event.currentTarget.value)}
+								/>
+								<Button type="submit" loading={busy} disabled={oidcSecret.length === 0}>
+									Save client secret
+								</Button>
+							</Stack>
+						</form>
+					</Card>
+				) : null}
+			</Stack>
+		</MantineProvider>
 	)
 }
 

@@ -1,0 +1,16 @@
+---
+packages:
+  '@pluxel/auth':
+    type: patch
+  '@pluxel/fonts':
+    type: patch
+  '@pluxel/wretch':
+    type: patch
+---
+
+## Make official Workbench remotes own their UI context
+
+Wrap every official Mantine-based federated renderer in its own `MantineProvider`, carry its required
+styles with the producer, and synchronize the provider with the portable Workbench color scheme. This
+keeps Fonts manager and selection attachments, Auth setup, package management, and Wretch settings
+independent from the Shell's private React context across React Bridge roots.

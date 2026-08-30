@@ -6,12 +6,14 @@ import {
 	Code,
 	Group,
 	Loader,
+	MantineProvider,
 	Stack,
 	Table,
 	Text,
 	Textarea,
 	Title,
 } from '@mantine/core'
+import '@mantine/core/styles.css'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDownload, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -85,7 +87,7 @@ function disposeRemoteValue(input: unknown): void {
 }
 
 export function Manager() {
-	const { api } = useWorkbench(PackageManagerWorkbench.manager)
+	const { api, host } = useWorkbench(PackageManagerWorkbench.manager)
 	const requestId = useRef(0)
 	const [snapshot, setSnapshot] = useState<PackageManagerSnapshot>()
 	const [specs, setSpecs] = useState('')
@@ -145,118 +147,120 @@ export function Manager() {
 	}
 
 	return (
-		<Stack gap="md" p="md">
-			<Group justify="space-between" align="flex-start">
-				<Stack gap={2}>
-					<Title order={3}>Managed plugin packages</Title>
-					<Text size="sm" c="dimmed">
-						Powered by the pnpm Rust engine. Package publication and plugin activation remain
-						separate.
-					</Text>
-				</Stack>
-				<Button
-					variant="light"
-					leftSection={<IconRefresh size={16} />}
-					loading={loading}
-					onClick={() => void refresh()}
-				>
-					Refresh
-				</Button>
-			</Group>
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<Stack gap="md" p="md">
+				<Group justify="space-between" align="flex-start">
+					<Stack gap={2}>
+						<Title order={3}>Managed plugin packages</Title>
+						<Text size="sm" c="dimmed">
+							Powered by the pnpm Rust engine. Package publication and plugin activation remain
+							separate.
+						</Text>
+					</Stack>
+					<Button
+						variant="light"
+						leftSection={<IconRefresh size={16} />}
+						loading={loading}
+						onClick={() => void refresh()}
+					>
+						Refresh
+					</Button>
+				</Group>
 
-			{error ? (
-				<Alert color="red" style={{ whiteSpace: 'pre-wrap' }}>
-					{error}
-				</Alert>
-			) : null}
+				{error ? (
+					<Alert color="red" style={{ whiteSpace: 'pre-wrap' }}>
+						{error}
+					</Alert>
+				) : null}
 
-			{snapshot?.dependenciesWithBuildScripts.length ? (
-				<Alert color="yellow" title="Dependencies declare build scripts">
-					Execution follows the host&apos;s exact build policy. Reported dependencies:{' '}
-					<Code>
-						{snapshot.dependenciesWithBuildScripts.slice(0, 8).join(', ')}
-						{snapshot.dependenciesWithBuildScripts.length > 8 ? ', …' : ''}
-					</Code>
-				</Alert>
-			) : null}
+				{snapshot?.dependenciesWithBuildScripts.length ? (
+					<Alert color="yellow" title="Dependencies declare build scripts">
+						Execution follows the host&apos;s exact build policy. Reported dependencies:{' '}
+						<Code>
+							{snapshot.dependenciesWithBuildScripts.slice(0, 8).join(', ')}
+							{snapshot.dependenciesWithBuildScripts.length > 8 ? ', …' : ''}
+						</Code>
+					</Alert>
+				) : null}
 
-			<Card withBorder>
-				<Stack gap="sm">
-					<Textarea
-						label="Install package specs"
-						description="One package per line, for example @scope/plugin@latest."
-						minRows={3}
-						value={specs}
-						disabled={busy}
-						onChange={(event) => setSpecs(event.currentTarget.value)}
-					/>
-					<Group>
-						<Button
-							leftSection={<IconDownload size={16} />}
-							loading={busy}
-							onClick={() => void install()}
-						>
-							Install
-						</Button>
-						{snapshot ? <Badge variant="light">pnpm {snapshot.engine}</Badge> : null}
-					</Group>
-				</Stack>
-			</Card>
+				<Card withBorder>
+					<Stack gap="sm">
+						<Textarea
+							label="Install package specs"
+							description="One package per line, for example @scope/plugin@latest."
+							minRows={3}
+							value={specs}
+							disabled={busy}
+							onChange={(event) => setSpecs(event.currentTarget.value)}
+						/>
+						<Group>
+							<Button
+								leftSection={<IconDownload size={16} />}
+								loading={busy}
+								onClick={() => void install()}
+							>
+								Install
+							</Button>
+							{snapshot ? <Badge variant="light">pnpm {snapshot.engine}</Badge> : null}
+						</Group>
+					</Stack>
+				</Card>
 
-			<Card withBorder p={0}>
-				{loading && !snapshot ? (
-					<Group p="md">
-						<Loader size="sm" />
-						<Text>Loading packages…</Text>
-					</Group>
-				) : (
-					<Table.ScrollContainer minWidth={720}>
-						<Table striped highlightOnHover>
-							<Table.Thead>
-								<Table.Tr>
-									<Table.Th>Package</Table.Th>
-									<Table.Th>Requested</Table.Th>
-									<Table.Th>Installed</Table.Th>
-									<Table.Th>Source</Table.Th>
-									<Table.Th>Action</Table.Th>
-								</Table.Tr>
-							</Table.Thead>
-							<Table.Tbody>
-								{snapshot?.packages.map((pkg) => (
-									<Table.Tr key={pkg.name}>
-										<Table.Td>
-											<Code>{pkg.name}</Code>
-										</Table.Td>
-										<Table.Td>{pkg.requested}</Table.Td>
-										<Table.Td>{pkg.installedVersion ?? 'not materialized'}</Table.Td>
-										<Table.Td>{pkg.entryFile ? 'published' : 'not published'}</Table.Td>
-										<Table.Td>
-											<Button
-												size="xs"
-												variant="subtle"
-												color="red"
-												leftSection={<IconTrash size={14} />}
-												disabled={busy}
-												onClick={() => void mutate(() => api.remove([pkg.name]))}
-											>
-												Remove
-											</Button>
-										</Table.Td>
+				<Card withBorder p={0}>
+					{loading && !snapshot ? (
+						<Group p="md">
+							<Loader size="sm" />
+							<Text>Loading packages…</Text>
+						</Group>
+					) : (
+						<Table.ScrollContainer minWidth={720}>
+							<Table striped highlightOnHover>
+								<Table.Thead>
+									<Table.Tr>
+										<Table.Th>Package</Table.Th>
+										<Table.Th>Requested</Table.Th>
+										<Table.Th>Installed</Table.Th>
+										<Table.Th>Source</Table.Th>
+										<Table.Th>Action</Table.Th>
 									</Table.Tr>
-								))}
-							</Table.Tbody>
-						</Table>
-					</Table.ScrollContainer>
-				)}
-			</Card>
+								</Table.Thead>
+								<Table.Tbody>
+									{snapshot?.packages.map((pkg) => (
+										<Table.Tr key={pkg.name}>
+											<Table.Td>
+												<Code>{pkg.name}</Code>
+											</Table.Td>
+											<Table.Td>{pkg.requested}</Table.Td>
+											<Table.Td>{pkg.installedVersion ?? 'not materialized'}</Table.Td>
+											<Table.Td>{pkg.entryFile ? 'published' : 'not published'}</Table.Td>
+											<Table.Td>
+												<Button
+													size="xs"
+													variant="subtle"
+													color="red"
+													leftSection={<IconTrash size={14} />}
+													disabled={busy}
+													onClick={() => void mutate(() => api.remove([pkg.name]))}
+												>
+													Remove
+												</Button>
+											</Table.Td>
+										</Table.Tr>
+									))}
+								</Table.Tbody>
+							</Table>
+						</Table.ScrollContainer>
+					)}
+				</Card>
 
-			{snapshot ? (
-				<Text size="xs" c="dimmed">
-					Managed root: <Code>{snapshot.rootDir}</Code>; dynamic entries:{' '}
-					<Code>{snapshot.entriesDir}</Code>
-				</Text>
-			) : null}
-		</Stack>
+				{snapshot ? (
+					<Text size="xs" c="dimmed">
+						Managed root: <Code>{snapshot.rootDir}</Code>; dynamic entries:{' '}
+						<Code>{snapshot.entriesDir}</Code>
+					</Text>
+				) : null}
+			</Stack>
+		</MantineProvider>
 	)
 }
 

@@ -1,4 +1,5 @@
-import { Alert, Loader, Stack, Text } from '@mantine/core'
+import { Alert, Loader, MantineProvider, Stack, Text } from '@mantine/core'
+import '@mantine/core/styles.css'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import type { WorkbenchView } from '@pluxel/runtime/workbench'
 import type { RemoteValueSnapshot } from '@pluxel/runtime/workbench/client'
@@ -78,6 +79,13 @@ export function DemoIdentity() {
 			Direct View API · Cap’n Web observer · no platform collection
 		</Text>
 	)
+}
+
+export function DemoProvider({
+	host,
+	children,
+}: Readonly<{ host: WorkbenchHostFacade; children: ReactNode }>) {
+	return <MantineProvider forceColorScheme={host.colorScheme}>{children}</MantineProvider>
 }
 
 function dispose(value: unknown): void {

@@ -1,4 +1,5 @@
-import { Alert, Paper, Select, Stack, Text } from '@mantine/core'
+import { Alert, MantineProvider, Paper, Select, Stack, Text } from '@mantine/core'
+import '@mantine/core/styles.css'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { useEffect, useMemo, useState } from 'react'
 import { FontManagerWorkbench } from '../../PluginContributionFontDemo.workbench'
@@ -10,7 +11,7 @@ import {
 } from '../../PluginContributionFontDemo.shared'
 
 export default function FontSettings() {
-	const { provider, consumer } = useWorkbench(FontManagerWorkbench.selection)
+	const { provider, consumer, host } = useWorkbench(FontManagerWorkbench.selection)
 	const [fonts, setFonts] = useState<readonly FontSet[]>([])
 	const [selected, setSelected] = useState<string | null>(null)
 	const [error, setError] = useState<string>()
@@ -78,23 +79,25 @@ export default function FontSettings() {
 	}
 
 	return (
-		<Paper withBorder radius="md" p="sm" shadow="xs">
-			<Stack gap="xs">
-				{error ? <Alert color="red">{error}</Alert> : null}
-				<Select
-					size="sm"
-					label="Font Set"
-					description="Attachment provider supplies choices; the consumer owns selection."
-					placeholder="选择一个字体集"
-					data={options}
-					value={selected}
-					onChange={(value) => void update(value)}
-					clearable
-					searchable
-				/>
-				{selectedFont ? <Text size="sm">{selectedFont.previewText}</Text> : null}
-			</Stack>
-		</Paper>
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<Paper withBorder radius="md" p="sm" shadow="xs">
+				<Stack gap="xs">
+					{error ? <Alert color="red">{error}</Alert> : null}
+					<Select
+						size="sm"
+						label="Font Set"
+						description="Attachment provider supplies choices; the consumer owns selection."
+						placeholder="选择一个字体集"
+						data={options}
+						value={selected}
+						onChange={(value) => void update(value)}
+						clearable
+						searchable
+					/>
+					{selectedFont ? <Text size="sm">{selectedFont.previewText}</Text> : null}
+				</Stack>
+			</Paper>
+		</MantineProvider>
 	)
 }
 

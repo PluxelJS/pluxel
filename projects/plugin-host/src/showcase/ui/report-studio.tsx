@@ -7,6 +7,7 @@ import {
 	Group,
 	Image,
 	Loader,
+	MantineProvider,
 	Paper,
 	SimpleGrid,
 	Stack,
@@ -15,10 +16,17 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { useRemoteValue, useWorkbench } from '@pluxel/runtime/workbench/react'
+import '@mantine/core/styles.css'
+import type { RpcStub } from '@pluxel/runtime/capnweb'
+import {
+	useRemoteValue,
+	useWorkbench,
+	type WorkbenchHostFacade,
+} from '@pluxel/runtime/workbench/react'
 import { useMemo, useState } from 'react'
 import {
 	ReportStudioWorkbench,
+	type ReportStudioApi,
 	type ShowcaseArtifact,
 	type ShowcaseSnapshot,
 } from '../ReportStudio.workbench'
@@ -39,6 +47,17 @@ const SHOWCASE_ROUTES = Object.freeze([
 
 export default function ReportStudio() {
 	const { api, host } = useWorkbench(ReportStudioWorkbench.studio)
+	return (
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<ReportStudioContent api={api} host={host} />
+		</MantineProvider>
+	)
+}
+
+function ReportStudioContent({
+	api,
+	host,
+}: Readonly<{ api: RpcStub<ReportStudioApi>; host: WorkbenchHostFacade }>) {
 	const [title, setTitle] = useState('Pluxel architecture in practice')
 	const [busy, setBusy] = useState<'generate' | 'probe' | 'clear'>()
 	const [error, setError] = useState<string>()

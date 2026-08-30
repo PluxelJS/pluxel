@@ -122,8 +122,11 @@ function RuntimeSessionGate() {
 		)
 	}
 	return (
-		<GatePanel title="正在连接 Workbench">
-			<Text c="dimmed">建立 Cap’n Web WebSocket session…</Text>
+		<GatePanel title="正在准备 Workbench">
+			<Text c="dimmed">连接 Runtime，并准备插件与 Workbench 视图…</Text>
+			<Text size="xs" c="dimmed">
+				首次启动或界面变更后，Runtime 会先生成并验证 MF2 产物。
+			</Text>
 		</GatePanel>
 	)
 }

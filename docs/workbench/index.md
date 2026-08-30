@@ -208,6 +208,27 @@ export default function OrdersOverview() {
 Cap’n Web awaited object result 可能携带 transport disposer。需要放进 React state 的 DTO 先复制，再释放 remote result；
 不要把已经释放的 proxy 存入 state。`useRemoteValue()` 是一个很小的 snapshot owner，不是平台查询语言或持久缓存。
 
+每个 renderer 由 React Bridge 挂载为独立 React root。若 renderer 使用 Mantine、router、i18n 等依赖 Context 的 UI
+library，应在自己的 root 内安装 Provider，并由 producer import 所需样式；Shell 的私有 Provider 不会跨 root 继承，也不是
+Workbench API。例如 Mantine renderer 的入口可以直接写成：
+
+```tsx
+import { MantineProvider } from '@mantine/core'
+import '@mantine/core/styles.css'
+
+export default function OrdersOverview() {
+	const { api, host } = useWorkbench(OrdersWorkbench.overview)
+	return (
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<OrdersContent api={api} />
+		</MantineProvider>
+	)
+}
+```
+
+这里的 Provider 属于 producer 的 UI 实现，不进入 Workbench 核心 shared contract。`host.colorScheme` 只是可移植的宿主
+外观事实；producer 仍拥有 UI library、Provider 和 CSS。
+
 ## Placement 与参数化 route
 
 Tab 适合 Plugin 详情中的固定页面：

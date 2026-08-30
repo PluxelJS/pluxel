@@ -9,7 +9,8 @@
 		"noEmit": true,
 		"experimentalDecorators": true,
 		"jsx": "react-jsx",
-		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"]
+		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
+		"types": ["vite/client"]
 	},
 	"include": ["./**/*.ts", "./**/*.tsx"]
 }

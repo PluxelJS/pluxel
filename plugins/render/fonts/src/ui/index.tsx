@@ -5,6 +5,7 @@ import {
 	Card,
 	FileButton,
 	Group,
+	MantineProvider,
 	Progress,
 	ScrollArea,
 	Select,
@@ -14,6 +15,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
+import '@mantine/core/styles.css'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconRefresh, IconTrash, IconUpload } from '@tabler/icons-react'
@@ -391,8 +393,12 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 }
 
 export function FontsManagerPanel() {
-	const { api } = useWorkbench(FontsWorkbench.manager)
-	return <FontManagerContent fonts={api} />
+	const { api, host } = useWorkbench(FontsWorkbench.manager)
+	return (
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<FontManagerContent fonts={api} />
+		</MantineProvider>
+	)
 }
 
 type FontSelectionContentProps = Readonly<{
@@ -488,6 +494,10 @@ function FontSelectionContent({ selection }: FontSelectionContentProps) {
 }
 
 export function FontSelectionPanel() {
-	const { provider } = useWorkbench(FontsWorkbench.selection)
-	return <FontSelectionContent selection={provider} />
+	const { provider, host } = useWorkbench(FontsWorkbench.selection)
+	return (
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<FontSelectionContent selection={provider} />
+		</MantineProvider>
+	)
 }
