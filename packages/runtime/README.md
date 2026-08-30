@@ -47,76 +47,75 @@ global/per-owner fair admission 并保留一个 execution slot，之后才在 ho
 其 cloneable 返回值。queue full 不会执行 prepare；callback error 保留领域类型。它不支持 transfer，默认 snapshot prepared
 value；明确 borrow-until-settle 时可选 `inputOwnership: 'borrowed'`。
 
-Runtime 保持业务 HTTP 与 optional Workbench 正交。Workbench 分为 browser-safe Contract、server Extension 和
-owner-bound Binding：
+Runtime 保持业务 HTTP 与 optional Workbench 正交。Workbench 作者面只有固定 definition、Direct View API、
+Attachment 和 owner-bound publication：
 
 ```ts
-// browser-safe module
-const ExampleUi = workbenchContract.define({
-	resources: { commands: workbenchContract.rpc<ExampleCommands>() },
-	views: {
-		Overview: {
-			placements: [workbenchContract.tab()],
-		},
-	},
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import { workbench } from '@pluxel/runtime/workbench'
+
+interface ExampleApi extends RpcTarget {
+	snapshot(): ExampleSnapshot
+}
+
+export const ExampleWorkbench = workbench.define({
+	settings: workbench.view<ExampleApi>({
+		renderer: workbench.entry(import.meta.url, './ui/settings.tsx'),
+		placement: workbench.tab({ label: 'Settings' }),
+	}),
 })
 
-// server module
-const extension = workbench.extension({
-	contract: ExampleUi,
-	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
-})
-
-this.ctx.workbench?.mount(extension, {
-	commands: workbench.bind.rpc(() => new ExampleRpc(this)),
+this.ctx.workbench?.publish(ExampleWorkbench, {
+	settings: ({ principal, signal }) => new ExampleTarget(this, { principal, signal }),
 })
 ```
 
-consumer 只需把一个 Port 的同名 resources 一对一注入 placement 时，用 `portOutlet()` 省略重复 Contract：
+Renderer 默认导出零 props React component，通过 exact descriptor 取得 target：
 
-```ts
-const settings = workbench.portOutlet({
-	port: SettingsPort,
-	placement: workbenchContract.tab(),
-})
-
-this.ctx.workbench?.mount(settings, {
-	settings: workbench.bind.rpc(() => new SettingsRpc(this)),
-})
+```tsx
+const { api, host } = useWorkbench(ExampleWorkbench.settings)
 ```
 
-需要重命名、组合或只提供部分 consumer resources 时继续使用显式 `workbenchContract.define({ outlets })`。
+跨 Plugin UI 使用 Attachment：provider 声明 renderer/API，consumer 用 `attachment.place(...)` 决定位置，并在
+publication binding 中传入 constructor-injected provider Plugin。Collection、account、font 等动态数据仍是 Plugin
+领域对象，不按 item 创建 Workbench entry。
 
 公开入口：
 
-- `@pluxel/runtime`：唯一作者入口，原样转发 core API，并注册配置、HTTP、persistence 等常驻能力；
-- `@pluxel/runtime/services/vault`：Vault 的公开 type-only contract；backend 只由 host 顶层 `vault` object 安装；
-- `@pluxel/runtime/workbench/contract`：browser-safe resource、View、placement 和 Port Contract；
-- `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
-- `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks、受限 host capability 与 declarative Pane Kit；
-- `@pluxel/runtime/web`：framework-neutral discovery、Management Client 与版本化 wire DTO；
-- `@pluxel/runtime/web/react`：只负责把 Management Client 注入 React，不包含官方 Workbench transport。
+- `@pluxel/runtime`：唯一 Plugin 作者入口，转发 core API 并增加 runtime capabilities；
+- `@pluxel/runtime/services/vault`：Vault 的公开 type-only API；backend 只由 host 顶层 `vault` object 安装；
+- `@pluxel/runtime/capnweb`：固定 Cap’n Web `RpcTarget` / `RpcStub` 和 WebSocket session bridge；
+- `@pluxel/runtime/workbench`：browser-safe definition、View、Attachment、placement 和 publication types；
+- `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 与 declarative Pane Kit；
+- `@pluxel/runtime/workbench/client`：conforming Shell 的 layout/opened-handle client；
+- `@pluxel/runtime/web`：portable Runtime session、Management API 和严格校验的 wire DTO；
+- `@pluxel/runtime/web/react`：Management client 的 React Context adapter。
 
-Management control 把持久策略与本次进程生命周期分开：`client.plugins.setAutoStart()` 只修改 RuntimeState v5 的 `autoStart`，
-`client.plugins.applyLifecycleCommands()` 只执行 `start | stop | restart`。公开状态分别返回 `autoStart`、process-local
-`sessionIntent`、`desiredState`、`activationReason` 和 observed `lifecycleState`；调用方不能用 auto-start policy 猜测 Plugin 是否正在运行。
+Management control 把持久策略与本次进程生命周期分开：`client.plugins.setAutoStart()` 只修改 RuntimeState 的
+`autoStart`，`client.plugins.applyLifecycleCommands()` 只执行 `start | stop | restart`。公开状态分别返回
+`autoStart`、process-local `sessionIntent`、`desiredState`、`activationReason` 和 observed `lifecycleState`；调用方
+不能用 auto-start policy 猜测 Plugin 是否正在运行。
 
-默认 `/web` discovery 只报告 `workbench.enabled`；catalog revision、renderer、resource 和 session endpoint
-属于尚未标准化的 View-host protocol，不进入 Management v1。使用 `/web/react` 或 `/workbench/ui` 时，宿主必须提供
-`react` peer；headless 与默认 `/web` 消费者不会加载它。
+Workbench document 只创建一条 `/__pluxel/runtime/session` WebSocket。认证 challenge、Management、Workbench
+layout/openView、Plugin API、logs follow 和 observer 都使用同一个 Cap’n Web object graph。认证/publication epoch
+失效或 socket broken 时完整 reload；同一 document 不 feature reconnect，也不切换备用 API transport。
 
-`RuntimeManagementClientOptions` 只配置 Level 1 connection/auth：`origin`、HTTP/RPC base、
-`credentials`、`fetch` 与 `adminAccess: false | { onBlocked }`。SSE namespace、layout session 和
-transport lifecycle 只属于内部 `@pluxel/runtime/web/internal` client。
+MF2 manifest 和 remote JS/CSS 仍由 HTTP 提供；浏览器写入 `HttpOnly` cookie 使用一个 same-origin、single-use
+cookie-commit POST。这些端点不承载 Management 或 Plugin RPC。
 
-宿主只通过顶层 `workbench: { enabled: true }` 安装 Workbench Plane。关闭后不创建 registry、compiler、watcher、artifact route 或
-resource transport，插件业务 HTTP 和生命周期不受影响。Workbench 启用时同时安装 Management Plane；关闭 Workbench 后只有显式
-提供顶层 `management` object 才安装 headless management route。`management.pluginGroups` 定义与 UI 无关的宿主 catalog layout。
-Management 访问由真实 socket peer 和 `ctx.managementAccess` 上唯一 running provider 决定：provider ready 时认证所有 peer（包括
-loopback）；provider absent/unready 时仅 loopback 可恢复，remote/unknown fail closed。官方 `@pluxel/auth` 提供 OIDC、password 与
-password+TOTP；认证策略不进入 host config，public OIDC 不要求 Vault。自定义 provider 的 `authorize()` 只取得 URL、method、
-headers 与 owner-bound signal，不取得或消费 Management operation body。
+宿主只通过顶层 `workbench: { enabled: true }` 安装 Workbench Plane。关闭后不创建 registry、compiler、watcher、
+MF producer route 或 session transport，插件业务 HTTP 和生命周期不受影响。Workbench 启用时同时安装 Management Plane；
+关闭 Workbench 后只有显式提供顶层 `management` object 才安装 headless management。`management.pluginGroups` 定义与
+UI 无关的宿主 catalog layout。
 
-生产 static Node listener 默认监听 `0.0.0.0`，可用成对的 `PLUXEL_TLS_CERT`/`PLUXEL_TLS_KEY` 接收内联 PEM 内容或 PEM 文件路径并直接
-终止 TLS；加密 private key 可另设 `PLUXEL_TLS_PASSPHRASE`。不安全的 remote Management 请求会在 provider callback 前拒绝。
-尚未标准化的官方 View-host transport 只存在于 `@pluxel/runtime/web/internal`，不是第三方 host 的兼容承诺。
+Management 访问由真实 socket peer 和 `ctx.managementAccess` 上唯一 running provider 决定：真实 loopback peer 取得 Runtime
+recovery principal；remote/unknown 必须使用可信 physical HTTPS carrier，并由 ready provider 完成认证，否则 fail closed。
+官方 `@pluxel/auth` 提供 OIDC、password 与 password+TOTP。自定义 provider 只取得建立 authentication session 所需的
+request metadata 和 owner-bound signal，不取得 Management operation body。
+
+生产 static Node listener 默认监听 `0.0.0.0`，可用成对的 `PLUXEL_TLS_CERT`/`PLUXEL_TLS_KEY` 接收内联 PEM 内容或 PEM
+文件路径并直接终止 TLS；加密 private key 可另设 `PLUXEL_TLS_PASSPHRASE`。不安全的 remote Management session 会在
+provider callback 前拒绝。
+
+完整 Workbench 作者用法见 [`docs/workbench/index.md`](../../docs/workbench/index.md)，内部不变量见
+[`engineering/WORKBENCH.md`](../../engineering/WORKBENCH.md)。

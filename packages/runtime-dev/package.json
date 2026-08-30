@@ -54,6 +54,8 @@
 	"devDependencies": {
 		"@logtape/logtape": "^2.0.2",
 		"@pluxel/test": "workspace:*",
+		"react": "catalog:",
+		"react-dom": "catalog:",
 		"typescript": "catalog:",
 		"vite": "^8.0.0-beta.18"
 	},

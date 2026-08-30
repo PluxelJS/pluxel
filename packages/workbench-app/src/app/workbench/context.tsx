@@ -1,8 +1,13 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import { useStore } from '@tanstack/react-store'
-import type { WorkbenchViewState } from '@pluxel/runtime/workbench/ui/internal'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 import type { WorkspaceController } from './store'
+
+export type WorkbenchViewState = Readonly<{
+	read(scope: string): unknown
+	write(scope: string, value: unknown): void
+	subscribe(scope: string, listener: () => void): () => void
+}>
 
 export type WorkbenchLayoutContextValue = {
 	leftPaneAvailable: boolean

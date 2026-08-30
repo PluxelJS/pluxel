@@ -38,7 +38,7 @@ export type RuntimeLogLine = {
 	streamId: string
 
 	epoch: number
-	/** uint64 string (SSE-friendly, future-proof beyond JS safe integers). */
+	/** uint64 string, encoded as text to remain exact beyond JS safe integers. */
 	seq: string
 
 	/** Epoch milliseconds. */
@@ -103,16 +103,16 @@ export type LogRangeErr = {
 
 export type LogRangeResult = LogRangeOk | LogRangeErr
 
-export type LogSseAppend = {
+export type RuntimeLogAppend = {
 	type: 'append'
 	streamId: string
 	epoch: number
 	fromSeq: string
 	nextSeq: string
-	lines: RuntimeLogLine[]
+	lines: readonly RuntimeLogLine[]
 }
 
-export type LogSseGap = {
+export type RuntimeLogGap = {
 	type: 'gap'
 	streamId: string
 	epoch: number
@@ -120,7 +120,7 @@ export type LogSseGap = {
 	missingTo: string
 }
 
-export type LogSseReset = {
+export type RuntimeLogReset = {
 	type: 'reset'
 	streamId: string
 	bootId: string
@@ -132,7 +132,7 @@ export type LogSseReset = {
 	retention: { windowLines: number }
 }
 
-export type LogSseEvent = LogSseAppend | LogSseGap | LogSseReset
+export type RuntimeLogEvent = RuntimeLogAppend | RuntimeLogGap | RuntimeLogReset
 
 export function compileLogFilter(filter: LogFilter | undefined): CompiledLogFilter {
 	if (!filter) return { hasFilter: false }

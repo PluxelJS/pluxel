@@ -14,18 +14,18 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { createWorkbenchUi, type WorkbenchRpcClient } from '@pluxel/runtime/workbench/ui'
+import type { RpcStub } from '@pluxel/runtime/capnweb'
+import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconRefresh, IconTrash, IconUpload } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FontsManagerSnapshot, FontsWorkbenchCommands } from '../manager-contract.ts'
 import {
-	FontsSelectionPort,
-	type FontSelectionCommands,
+	FontsWorkbench,
+	type FontSelectionApi,
 	type FontSelectionSnapshot,
-} from '../workbench-contract.ts'
-import { FontsWorkbenchUi } from '../workbench-renderer-contract.ts'
+	type FontsManagerApi,
+	type FontsManagerSnapshot,
+} from '../workbench.ts'
 
-const ui = createWorkbenchUi(FontsWorkbenchUi)
 const FONT_ACCEPT = '.ttf,.otf,.ttc,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2'
 
 function messageOf(error: unknown): string {
@@ -56,15 +56,73 @@ function defaultFontOptions(snapshot: FontSelectionSnapshot | undefined) {
 			label: `${item.family} · ${item.source === 'system' ? 'system' : 'registered'}`,
 		})
 	}
-	const selected = snapshot?.defaultFont.workbenchFamily
+	const selected = snapshot?.defaultFont.preferredFamily
 	if (selected && !options.has(selected)) {
 		options.set(selected, { value: selected, label: `${selected} · unavailable` })
 	}
 	return [...options.values()]
 }
 
+function copyDefaultFont(
+	input: FontSelectionSnapshot['defaultFont'],
+): FontSelectionSnapshot['defaultFont'] {
+	return Object.freeze({
+		family: input.family,
+		cssFamily: input.cssFamily,
+		source: input.source,
+		...(input.preferredFamily === undefined ? {} : { preferredFamily: input.preferredFamily }),
+		...(input.configuredFamily === undefined ? {} : { configuredFamily: input.configuredFamily }),
+	})
+}
+
+function copyFamilies(input: FontSelectionSnapshot['families']): FontSelectionSnapshot['families'] {
+	return Object.freeze(
+		input.map((family) =>
+			Object.freeze({
+				family: family.family,
+				source: family.source,
+				styles: Object.freeze(
+					family.styles.map((style) =>
+						Object.freeze({ weight: style.weight, width: style.width, style: style.style }),
+					),
+				),
+			}),
+		),
+	)
+}
+
+function copySelectionSnapshot(input: FontSelectionSnapshot): FontSelectionSnapshot {
+	return Object.freeze({
+		defaultFont: copyDefaultFont(input.defaultFont),
+		families: copyFamilies(input.families),
+	})
+}
+
+function copyManagerSnapshot(input: FontsManagerSnapshot): FontsManagerSnapshot {
+	return Object.freeze({
+		defaultFont: copyDefaultFont(input.defaultFont),
+		managedFonts: Object.freeze(
+			input.managedFonts.map((font) =>
+				Object.freeze({
+					id: font.id,
+					fileName: font.fileName,
+					...(font.family === undefined ? {} : { family: font.family }),
+					resolvedFamilies: Object.freeze([...font.resolvedFamilies]),
+					byteLength: font.byteLength,
+					installedAt: font.installedAt,
+				}),
+			),
+		),
+		families: copyFamilies(input.families),
+		limits: Object.freeze({
+			maxFonts: input.limits.maxFonts,
+			maxFontBytes: input.limits.maxFontBytes,
+		}),
+	})
+}
+
 type FontManagerContentProps = Readonly<{
-	fonts: WorkbenchRpcClient<FontsWorkbenchCommands>
+	fonts: RpcStub<FontsManagerApi>
 }>
 
 function FontManagerContent({ fonts }: FontManagerContentProps) {
@@ -80,9 +138,9 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 		const current = ++requestId.current
 		setLoading(true)
 		try {
-			const next = await fonts.snapshot()
+			using next = await fonts.snapshot()
 			if (requestId.current !== current) return
-			setSnapshot(next)
+			setSnapshot(copyManagerSnapshot(next))
 			setError(undefined)
 		} catch (caught) {
 			if (requestId.current === current) setError(messageOf(caught))
@@ -104,13 +162,13 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 	)
 	const defaultOptions = useMemo(() => defaultFontOptions(snapshot), [snapshot])
 
-	const setDefaultFamily = async (value: string | null) => {
+	const setPreferredFamily = async (value: string | null) => {
 		const current = ++requestId.current
 		setSaving(true)
 		try {
-			const next = await fonts.setDefaultFamily(value)
+			using next = await fonts.setPreferredFamily(value)
 			if (requestId.current !== current) return
-			setSnapshot(next)
+			setSnapshot(copyManagerSnapshot(next))
 			setError(undefined)
 		} catch (caught) {
 			if (requestId.current === current) setError(messageOf(caught))
@@ -129,13 +187,13 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 		setSaving(true)
 		try {
 			const data = new Uint8Array(await file.arrayBuffer())
-			const next = await fonts.install({
+			using next = await fonts.install({
 				fileName: file.name,
 				family: family.trim() || undefined,
 				data,
 			})
 			if (requestId.current !== current) return
-			setSnapshot(next)
+			setSnapshot(copyManagerSnapshot(next))
 			setFile(null)
 			setFamily('')
 			setError(undefined)
@@ -150,9 +208,9 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 		const current = ++requestId.current
 		setSaving(true)
 		try {
-			const next = await fonts.remove(id)
+			using next = await fonts.remove(id)
 			if (requestId.current !== current) return
-			setSnapshot(next)
+			setSnapshot(copyManagerSnapshot(next))
 			setError(undefined)
 		} catch (caught) {
 			if (requestId.current === current) setError(messageOf(caught))
@@ -196,7 +254,7 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 						{snapshot ? <Badge variant="light">{snapshot.defaultFont.source}</Badge> : null}
 					</Group>
 					<Select
-						label="Workbench override"
+						label="Managed preference"
 						description={
 							snapshot
 								? `当前解析为 ${snapshot.defaultFont.family}；清空后恢复 host 配置或系统自动选择。`
@@ -204,11 +262,11 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 						}
 						placeholder="使用 host / system 默认值"
 						data={defaultOptions}
-						value={snapshot?.defaultFont.workbenchFamily ?? null}
+						value={snapshot?.defaultFont.preferredFamily ?? null}
 						disabled={!snapshot || loading || saving}
 						searchable
 						clearable
-						onChange={(value) => void setDefaultFamily(value)}
+						onChange={(value) => void setPreferredFamily(value)}
 					/>
 				</Stack>
 			</Card>
@@ -332,13 +390,13 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 	)
 }
 
-export function Fonts() {
-	const { fonts } = ui.useResources()
-	return <FontManagerContent fonts={fonts} />
+export function FontsManagerPanel() {
+	const { api } = useWorkbench(FontsWorkbench.manager)
+	return <FontManagerContent fonts={api} />
 }
 
 type FontSelectionContentProps = Readonly<{
-	selection: WorkbenchRpcClient<FontSelectionCommands>
+	selection: RpcStub<FontSelectionApi>
 }>
 
 function FontSelectionContent({ selection }: FontSelectionContentProps) {
@@ -352,9 +410,9 @@ function FontSelectionContent({ selection }: FontSelectionContentProps) {
 		const current = ++requestId.current
 		setLoading(true)
 		try {
-			const next = await selection.snapshot()
+			using next = await selection.snapshot()
 			if (requestId.current !== current) return
-			setSnapshot(next)
+			setSnapshot(copySelectionSnapshot(next))
 			setError(undefined)
 		} catch (caught) {
 			if (requestId.current === current) setError(messageOf(caught))
@@ -371,13 +429,13 @@ function FontSelectionContent({ selection }: FontSelectionContentProps) {
 	}, [refresh])
 
 	const options = useMemo(() => defaultFontOptions(snapshot), [snapshot])
-	const setDefaultFamily = async (family: string | null) => {
+	const setPreferredFamily = async (family: string | null) => {
 		const current = ++requestId.current
 		setSaving(true)
 		try {
-			const next = await selection.setDefaultFamily(family)
+			using next = await selection.setPreferredFamily(family)
 			if (requestId.current !== current) return
-			setSnapshot(next)
+			setSnapshot(copySelectionSnapshot(next))
 			setError(undefined)
 		} catch (caught) {
 			if (requestId.current === current) setError(messageOf(caught))
@@ -418,20 +476,18 @@ function FontSelectionContent({ selection }: FontSelectionContentProps) {
 					}
 					placeholder="使用 host / system 默认值"
 					data={options}
-					value={snapshot?.defaultFont.workbenchFamily ?? null}
+					value={snapshot?.defaultFont.preferredFamily ?? null}
 					disabled={!snapshot || loading || saving}
 					searchable
 					clearable
-					onChange={(value) => void setDefaultFamily(value)}
+					onChange={(value) => void setPreferredFamily(value)}
 				/>
 			</Card>
 		</Stack>
 	)
 }
 
-export function FontSelection() {
-	const { selection } = ui.usePort(FontsSelectionPort)
-	return <FontSelectionContent selection={selection} />
+export function FontSelectionPanel() {
+	const { provider } = useWorkbench(FontsWorkbench.selection)
+	return <FontSelectionContent selection={provider} />
 }
-
-export default ui.define({ Fonts, FontSelection })

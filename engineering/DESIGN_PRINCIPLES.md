@@ -27,7 +27,8 @@
   ambient event 类型声明不建立、加载或替代 Plugin graph dependency。
 - standalone host 可以用 `@pluxel/context` 组合自己的封闭能力集合；Runtime Context 只由 launcher 在 root
   创建前组合，Plugin 不能追加、替换或运行时安装 capability。
-- Workbench extension 和资源只能通过可选的 `ctx.workbench?.mount()` 挂载。
+- Workbench definition 只能通过可选的 `ctx.workbench?.publish()` 发布；页面 API 直接使用 fresh Cap’n Web
+  `RpcTarget`，跨 Plugin UI 只使用 provider-owned Attachment 与 consumer-owned placement。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选Workbench。
 
@@ -38,6 +39,9 @@
 - disabled capability 不安装 Context property，也不创建 backend、compiler、watcher、route、transport 或持久状态。
 - optional callback 不执行时，插件仍能完成核心生命周期。
 - 不使用 null stateful service 模拟成功注册。
+
+Workbench 一旦启用，Cap’n Web over WebSocket、MF2 Manifest/Snapshot 和 React Bridge 都是固定实现契约；
+disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任一项。
 
 收益：能力边界可验证，headless host 不承担Workbench成本，也不会得到虚假成功状态。
 

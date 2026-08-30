@@ -5,7 +5,6 @@ import {
 	RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,
 	type RuntimeMetaV1,
 } from '../web/protocol'
-import { RUNTIME_TRANSPORT_PATHS } from '../web/paths'
 const BASE_MANAGEMENT_CAPABILITIES = Object.freeze(
 	RUNTIME_MANAGEMENT_CAPABILITIES.filter((capability) => capability !== 'vault'),
 )
@@ -24,7 +23,6 @@ export class RuntimeManagementService {
 			protocol: protocolDescriptor(this.root.root.vaultAdmin !== undefined),
 			application: this.application,
 			workbench: Object.freeze({ enabled: this.root.workbench !== undefined }),
-			transport: Object.freeze({ rpc: RUNTIME_TRANSPORT_PATHS.rpc }),
 		})
 	}
 }

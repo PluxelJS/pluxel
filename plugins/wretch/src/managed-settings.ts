@@ -5,7 +5,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/runtime'
 import type { Dispatcher } from 'undici'
-import type { WretchManagedSettings } from './workbench-contract.ts'
+import type { WretchManagedSettings } from './workbench.ts'
 
 const MAX_HEADERS = 32
 const MAX_HEADER_VALUE_LENGTH = 4_096

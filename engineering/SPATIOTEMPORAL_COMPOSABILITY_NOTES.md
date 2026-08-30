@@ -17,7 +17,7 @@ Pluxel 已经拥有的动态组成模型。
 - owner-bound runtime capability 的 provider withdrawal、cached handle 与 in-flight 边界已经整理到
   [`PROVIDER_WITHDRAWAL_AUDIT.md`](PROVIDER_WITHDRAWAL_AUDIT.md)。
 - commands manual dispose、Elysia contribution withdrawal/in-flight lease、database cached handle、Node module pending update、Workbench
-  RPC/events lifecycle 和 rates cached limiter lifecycle 都已有回归证据。
+  publication/opened target lifecycle 和 rates cached limiter lifecycle 都已有回归证据。
 - 当前没有足够证据抽取统一 `GenerationLease`。capability 之间的 owner/admission/cleanup 语义仍然有真实差异。
 
 ## 核心判断
@@ -32,7 +32,7 @@ Pluxel 的动态组成仍然由三条边界共同承担：
 
 - graph ordering 能说明 provider/consumer generation 的 stop/start 顺序，不能证明任意外部 effect 可交换；
 - effects cleanup 是进程内资源归属和 at-most-once 机制，不是已提交外部 emission 的数学逆；
-- opaque grant、route、command、database handle、worker lease、cache bucket 和 rates limiter 都可能绑定 owner generation，
+- Workbench publication、route、command、database handle、worker lease、cache bucket 和 rates limiter 都可能绑定 owner generation，
   但它们对已接纳工作的处理不同；
 - root-owned durable resource 和 generation-owned handle 必须分开描述，不能为了统一 API 把它们合并。
 
@@ -87,8 +87,8 @@ Pluxel 的动态组成仍然由三条边界共同承担：
   `request.signal`；Runtime 等待 handler 与 streaming response body settle，但不声称能强制终止忽略 signal 的任意 JavaScript。
 - database stop 拒绝新 operation，并等待已经接纳的运行中和排队 operation 排空；transaction 不被 runtime 强行 abort。
 - worker task 可以用 owner signal 取消 resolving/queued/running task，并等待已接纳 promise settle。
-- Workbench grant revocation 是 publication/authorization 失效；它不取消已经进入的业务 RPC method。events channel 在 owner
-  detach 或 browser disconnect 后进入 closed，迟到 push 被丢弃。
+- Workbench publication withdrawal 关闭新的 View admission、abort opened target signal，并按 owner invocation gate 等待已接纳调用；
+  observer target 由 opened handle、owner generation 和 socket epoch 共同回收。
 - cache 和 rates 都绑定 caller/provider generation，但 in-flight 语义不同：cache 迟到 continuation 会在 active check 处失败，
   rates 已提交给 backend 的判定允许 settle。
 
@@ -128,7 +128,7 @@ Canonical package entry、root named export 和 constructor provenance 能避免
 - transition diagnostics：现有 `CommitSummary` 是否足以解释 add/remove/replacement/required cascade/optional availability 的因果。
 - model-style tests：继续扩大 action alphabet，但 oracle 只能检查抽象 ownership 和 graph rules，不能复制 production scheduler。
 - dynamic route 映射：用少量真实 dynamic route 测试验证 module batch 如何映射到 Core action。
-- Workbench liveQuery：补 variant 回收、owner stop、stream detach 和 database drain 的交错 trace。
+- Workbench opened View：补 owner stop、observer dispose、socket epoch close 和 invocation drain 的交错 trace。
 - Redis adapter lifecycle：补 cache/rates adapter-level stale handle 与 in-flight integration trace。
 - compatibility diagnostics：确认 package manager、TypeScript、schema validation 已提供哪些事实，再决定 Pluxel 是否需要额外输出。
 

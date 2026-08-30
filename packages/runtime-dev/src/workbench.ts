@@ -1,65 +1,81 @@
-import type { Context, PluginNodeAddress } from '@pluxel/runtime'
-import { fileURLToPath } from 'node:url'
-import { readWorkbenchUiEntry, requireWorkbench } from '@pluxel/runtime/internal'
-import { resolve } from 'pathe'
-import { resolvePluginArtifactKey } from '@pluxel/rolldown/vite/declaration'
+import type { Context } from '@pluxel/runtime'
+import { requireWorkbench } from '@pluxel/runtime/internal'
 
 import {
 	PluginArtifactCompiler,
+	type PluginArtifactCompilerOptions,
 	type PluginArtifactCompilerViteServer,
+	type WorkbenchProducerCompilation,
 } from './workbench/PluginArtifactCompiler'
 
-export type PluginArtifactCompilerAttachmentOptions = {
-	/** Route-owned disk cache for compiled Workbench remotes. */
-	cacheDir?: string
-	pluginDirs?: readonly Readonly<{ owner: PluginNodeAddress; dir: string }>[]
-	viteServer?: PluginArtifactCompilerViteServer
-}
+export type PluginArtifactCompilerAttachmentOptions = PluginArtifactCompilerOptions &
+	Readonly<{
+		viteServer?: PluginArtifactCompilerViteServer
+	}>
 
+export type PluginArtifactCompilerAttachment = Readonly<{
+	publishWorkbenchProducers(
+		inputs: readonly WorkbenchProducerCompilation[],
+	): ReturnType<PluginArtifactCompiler['publishWorkbenchProducers']>
+	dispose(): void
+}>
+
+const attachments = new WeakMap<Context, PluginArtifactCompilerAttachment>()
+
+/**
+ * Attaches the route-neutral Node/Workbench artifact compiler to one Runtime root.
+ *
+ * Workbench producer plans must be supplied by the shared semantic lowering pass. The
+ * attachment does not observe generation publication or rediscover renderer entries.
+ */
 export function attachPluginArtifactCompiler(
 	ctx: Context,
 	options: PluginArtifactCompilerAttachmentOptions = {},
-): () => void | Promise<void> {
+): PluginArtifactCompilerAttachment {
 	if (ctx !== ctx.root) {
-		throw new Error('[runtime-dev] Workbench compiler must be attached to the root Context')
+		throw new Error('[runtime-dev] artifact compiler must be attached to the root Context')
+	}
+	if (attachments.has(ctx)) {
+		throw new Error('[runtime-dev] artifact compiler is already attached')
 	}
 
-	const artifacts = ctx.workbench ? requireWorkbench(ctx).artifacts : undefined
-	let compiler: PluginArtifactCompiler | undefined
-	const getCompiler = () =>
-		(compiler ??= new PluginArtifactCompiler(
-			ctx,
-			{ store: artifacts, viteServer: options.viteServer },
-			{ cacheDir: options.cacheDir, pluginDirs: options.pluginDirs },
-		))
-
-	try {
-		const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>
-			getCompiler().watchNodeModule(declaration, onUpdate, onError),
-		)
-		const detachWorkbench = artifacts?.attachSourceBinder(
-			(ownerCtx, declaration, contractFingerprint) => {
-				const descriptor = readWorkbenchUiEntry(declaration)
-				const declarationFile = fileURLToPath(descriptor.moduleUrl)
-				const root = resolve(options.viteServer?.config.root ?? process.cwd())
-				const declarationKey =
-					descriptor.artifactKey ??
-					resolvePluginArtifactKey('workbench', root, declarationFile, descriptor.entryPath)
-				return getCompiler().bindDeclaration(ownerCtx, {
-					entryPath: fileURLToPath(new URL(descriptor.entryPath, descriptor.moduleUrl)),
-					declarationKey,
-					contractFingerprint,
-				})
-			},
-		)
-		const guard = ctx.effects.defer(() => {
-			detachWorkbench?.()
+	const store = ctx.workbench ? requireWorkbench(ctx).artifacts : undefined
+	const compiler = new PluginArtifactCompiler(
+		ctx,
+		{ store, viteServer: options.viteServer },
+		{ cacheDir: options.cacheDir },
+	)
+	const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>
+		compiler.watchNodeModule(declaration, onUpdate, onError),
+	)
+	let active = true
+	const attachment: PluginArtifactCompilerAttachment = Object.freeze({
+		publishWorkbenchProducers: (inputs: readonly WorkbenchProducerCompilation[]) => {
+			if (!active) {
+				return Promise.reject(new Error('[runtime-dev] artifact compiler is disposed'))
+			}
+			return compiler.publishWorkbenchProducers(inputs)
+		},
+		dispose: () => {
+			if (!active) return
+			active = false
+			attachments.delete(ctx)
 			detachNode()
-			compiler?.dispose()
-		})
-		return () => guard.dispose()
+			compiler.dispose()
+		},
+	})
+	attachments.set(ctx, attachment)
+	try {
+		ctx.effects.defer(attachment.dispose)
 	} catch (error) {
-		compiler?.dispose()
+		attachment.dispose()
 		throw error
 	}
+	return attachment
 }
+
+export type {
+	PluginArtifactCompilerOptions,
+	PluginArtifactCompilerViteServer,
+	WorkbenchProducerCompilation,
+} from './workbench/PluginArtifactCompiler'

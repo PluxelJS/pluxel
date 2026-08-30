@@ -2,72 +2,30 @@ import { createHash } from 'node:crypto'
 import { existsSync, type Dirent } from 'node:fs'
 import { readdir, readFile, rm, stat } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pluginDefinitionIndexKey, type Context, type NodeModuleDeclaration } from '@pluxel/runtime'
 import {
-	pluginNodeIndexKey,
-	type Context,
-	type NodeModuleDeclaration,
-	type PluginNodeAddress,
-	type PluginNodeSlot,
-} from '@pluxel/runtime'
-import {
-	createCompiledWorkbenchArtifact,
-	findNearestPackageRoot,
 	readNodeModuleDeclaration,
-	readRuntimeRouteCapabilities,
-	RUNTIME_INTERNAL_API_BASE,
-	resolveModuleIdBaseDir,
-	runtimeWorkbenchArtifactBasePath,
 	type NodeModuleSourceSubscription,
+	type WorkbenchArtifactRevision,
 	type WorkbenchArtifactService,
 } from '@pluxel/runtime/internal'
-import type { WorkbenchPluginDescriptor } from '@pluxel/runtime/workbench'
 import {
-	WORKBENCH_FEDERATION_EXPOSE,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
-	WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
-	WORKBENCH_FEDERATION_SHARE_STRATEGY,
-	workbenchFederationSharedPackages,
-	sanitizeWorkbenchOwnerName,
+	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
-import { validateWorkbenchUiArtifact } from '@pluxel/rolldown/workbench/artifact'
-import type { ViteDevServer } from 'vite'
-import {
-	isParaglideGeneratedFile,
-	resolveParaglideIntegration,
-	type ResolvedParaglideIntegration,
-} from '@pluxel/rolldown/vite/paraglide'
-import { watch, type FSWatcher } from 'chokidar'
-import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
-
 import { collectSourceGraphFiles } from '@pluxel/rolldown/vite/source-graph'
 import {
+	resolveNodeModuleArtifactKey,
 	resolveNodeModuleBuildSignature,
-	resolvePluginArtifactKey,
 } from '@pluxel/rolldown/vite/declaration'
+import { watch, type FSWatcher } from 'chokidar'
+import { isAbsolute, join, resolve } from 'pathe'
+import type { ViteDevServer } from 'vite'
 
-type PluginArtifactCompilerOptions = {
-	/**
-	 * Disk cache directory for compiled plugin artifacts.
-	 *
-	 * Defaults to `.pluxel/plugin-artifacts` under `process.cwd()`.
-	 */
+export type PluginArtifactCompilerOptions = Readonly<{
+	/** Disk cache root. @defaultValue `.pluxel/plugin-artifacts` under `process.cwd()`. */
 	cacheDir?: string
-	/**
-	 * How many compiled remote builds to keep per plugin on disk.
-	 * Keep a few historical hashes so open tabs / inflight MF loads do not trip over
-	 * freshly evicted artifacts during rapid rebuilds.
-	 * Values below 1 are clamped to 1 because the active artifact is served from this cache.
-	 * @default 5
-	 */
-	cacheKeep?: number
-	/**
-	 * Explicit plugin package directories keyed by structured Plugin node owner.
-	 *
-	 * Static hosts do not have a dynamic loader anchor table, so Vite/static
-	 * integrations can provide these after loading the fixed catalog.
-	 */
-	pluginDirs?: readonly Readonly<{ owner: PluginNodeAddress; dir: string }>[]
-}
+}>
 
 export type PluginArtifactCompilerViteServer = {
 	config: Pick<ViteDevServer['config'], 'root'>
@@ -76,31 +34,19 @@ export type PluginArtifactCompilerViteServer = {
 
 export type PluginArtifactCompilerWorkbenchStore = Pick<
 	WorkbenchArtifactService,
-	| 'getCompiledModule'
-	| 'commitCompiledModule'
-	| 'markCompiling'
-	| 'markCompileError'
-	| 'removePlugin'
+	'commitCandidate' | 'getCurrent'
 >
 
-export type PluginArtifactCompilerDeps = {
+export type PluginArtifactCompilerDeps = Readonly<{
 	store?: PluginArtifactCompilerWorkbenchStore
 	viteServer?: PluginArtifactCompilerViteServer
-}
+}>
 
-type PluginCompileEntry = {
-	declarationKey: string
-	owners: Map<PluginNodeSlot, WorkbenchPluginDescriptor>
-	pluginDir: string
-	entryBaseDir: string
-	entryPath: string
-	contractFingerprint: string
-	sourceFiles: string[]
-	paraglide: ResolvedParaglideIntegration | null
-	graphDirty: boolean
-	active: boolean
-	watcher?: FSWatcher | null
-}
+export type WorkbenchProducerCompilation = Readonly<{
+	plan: WorkbenchFederationProducerPlan
+	/** Package/application root against which generated Bridge entries are resolved. */
+	root: string
+}>
 
 type NodeModuleListener = {
 	onUpdate: (url: URL) => void | Promise<void>
@@ -143,11 +89,6 @@ const HASH_IGNORED_SEGMENTS = [
 	'.next',
 ] as const
 
-function hasIgnoredHashPathSegment(filePath: string): boolean {
-	const segments = filePath.replaceAll('\\', '/').toLowerCase().split('/')
-	return HASH_IGNORED_SEGMENTS.some((segment) => segments.includes(segment))
-}
-
 const HASH_ALLOWED_EXTENSIONS = [
 	'.ts',
 	'.tsx',
@@ -162,29 +103,27 @@ const HASH_ALLOWED_EXTENSIONS = [
 	'.json',
 ] as const
 
-// Bump when federation build semantics change (invalidates sourceHash cache key).
-const WORKBENCH_COMPILER_VERSION = 16
 const ARTIFACT_BUILD_CONCURRENCY = 2
 const ARTIFACT_CACHE_KEEP = 5
 
+/**
+ * Route-neutral development artifact compiler.
+ *
+ * Workbench plans come only from the shared semantic lowering pass. This class never
+ * rediscovers renderer declarations or computes a second source hash/build revision.
+ * Node modules retain their independent source watcher because their declaration is a
+ * runtime-consumed artifact primitive rather than a Workbench publication.
+ */
 export class PluginArtifactCompiler {
-	private readonly dbg: ReturnType<Context['logger']['getDebugChannel']>
 	private readonly store?: PluginArtifactCompilerWorkbenchStore
 	private readonly viteServer?: PluginArtifactCompilerViteServer
 	private readonly cacheDir: string
-	private readonly cacheKeep: number
-	private readonly pluginDirs: ReadonlyMap<string, string>
-
-	private readonly entries = new Map<string, PluginCompileEntry>()
-	private pendingPlugins = new Set<string>()
-	private inflightPlugins = new Set<string>()
-	private flushTimer: NodeJS.Timeout | null = null
-	private flushPromise: Promise<void> | null = null
-	private readonly compileTasks = new Map<string, Promise<boolean>>()
+	private readonly producerTasks = new Map<string, Promise<WorkbenchArtifactRevision | null>>()
+	private readonly desiredProducerByDefinition = new Map<string, string>()
 	private readonly nodeEntries = new Map<string, NodeModuleCompileEntry>()
-	private readonly ownerWorkbenchDeclarations = new Map<PluginNodeSlot, string>()
-	private activeNodeBuilds = 0
-	private readonly nodeBuildWaiters: Array<() => void> = []
+	private activeBuilds = 0
+	private readonly buildWaiters: Array<() => void> = []
+	private readonly signal = new AbortController()
 
 	constructor(
 		public ctx: Context,
@@ -193,109 +132,47 @@ export class PluginArtifactCompiler {
 	) {
 		this.store = deps.store
 		this.viteServer = deps.viteServer
-		this.cacheDir = options?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts')
-		this.cacheKeep = Math.max(1, Math.floor(options?.cacheKeep ?? ARTIFACT_CACHE_KEEP))
-		this.pluginDirs = new Map(
-			(options?.pluginDirs ?? []).map(({ owner, dir }) => [pluginNodeIndexKey(owner), dir]),
-		)
-		this.dbg = this.ctx.logger.getDebugChannel('workbench:compile')
+		this.cacheDir = resolve(options?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts'))
 	}
 
-	bindDeclaration(
-		ctx: Context,
-		config: { entryPath: string; declarationKey: string; contractFingerprint?: string },
-	): () => void {
+	/**
+	 * Builds, validates, and commits one immutable producer revision.
+	 *
+	 * A newer plan for the same Plugin definition supersedes an in-flight older build.
+	 * The stale candidate may finish in the disk cache but cannot enter the inventory.
+	 */
+	async publishWorkbenchProducer(
+		input: WorkbenchProducerCompilation,
+	): Promise<WorkbenchArtifactRevision | null> {
 		const store = this.store
 		if (!store) throw new Error('[runtime-dev] Workbench compiler is not attached')
-		const ownerSlot = ctx.pluginInfo.nodeSlot
-		const owner: WorkbenchPluginDescriptor = Object.freeze({
-			address: ctx.pluginInfo.nodeAddress,
-			displayName: ctx.pluginInfo.displayName,
-			rootExportName: ctx.pluginInfo.definitionAddress.exportName,
-		})
-		const declarationKey = config.declarationKey
-		const existing = this.entries.get(declarationKey)
-		if (existing) {
-			if (existing.entryPath !== config.entryPath) {
-				throw new Error(`[runtime-dev] Workbench declaration key collision: ${declarationKey}`)
-			}
-			existing.contractFingerprint = config.contractFingerprint ?? ''
-			existing.owners.set(ownerSlot, owner)
-			this.ownerWorkbenchDeclarations.set(ownerSlot, declarationKey)
-			void store.markCompiling(owner)
-			this.enqueueCompile(declarationKey)
-			const guard = ctx.effects.defer(() => {
-				existing.owners.delete(ownerSlot)
-				if (this.ownerWorkbenchDeclarations.get(ownerSlot) === declarationKey) {
-					this.ownerWorkbenchDeclarations.delete(ownerSlot)
-					void store.removePlugin(owner)
-				}
-				if (existing.owners.size > 0) return
-				existing.active = false
-				this.disposeWatcher(existing)
-				this.pendingPlugins.delete(declarationKey)
-				if (this.entries.get(declarationKey) === existing) {
-					this.entries.delete(declarationKey)
-				}
-			})
-			return () => guard.dispose()
+		const root = resolveProducerRoot(input.root)
+		const plan = input.plan
+		assertSafeProducerReference(plan)
+		const definitionKey = pluginDefinitionIndexKey(plan.definition)
+		const reference = producerReference(plan)
+		this.desiredProducerByDefinition.set(definitionKey, reference)
+		const current = store.getCurrent(plan.definition)
+		if (current?.producer === plan.producer && current.buildRevision === plan.buildRevision) {
+			return current
 		}
 
-		const configuredDir = this.pluginDirs.get(pluginNodeIndexKey(owner.address))
-		let pluginDir = configuredDir ? (findNearestPackageRoot(configuredDir) ?? configuredDir) : null
-		// Dynamic source modules may only be host-owned re-export wrappers. An absolute
-		// declaration still belongs to the package that owns the browser source graph.
-		if (!pluginDir && isAbsolute(config.entryPath)) {
-			pluginDir = findNearestPackageRoot(config.entryPath) ?? dirname(config.entryPath)
+		const taskKey = producerTaskKey(plan, root)
+		const existing = this.producerTasks.get(taskKey)
+		if (existing) return existing
+		const task = this.performProducerBuild(plan, root, definitionKey, reference)
+		this.producerTasks.set(taskKey, task)
+		try {
+			return await task
+		} finally {
+			if (this.producerTasks.get(taskKey) === task) this.producerTasks.delete(taskKey)
 		}
-		pluginDir ??= this.findPluginDir(ctx, owner.address)
-		if (!pluginDir) {
-			pluginDir = this.findViteRootPluginDir(config.entryPath)
-		}
-		if (!pluginDir) throw new Error(`无法定位插件目录: ${owner.displayName}`)
-		const entryBaseDir = this.findPluginEntryBaseDir(ctx, owner.address) ?? pluginDir
+	}
 
-		const sourceFiles = this.collectSourceFiles(entryBaseDir, pluginDir, config.entryPath)
-		const entry: PluginCompileEntry = {
-			declarationKey,
-			owners: new Map([[ownerSlot, owner]]),
-			pluginDir,
-			entryBaseDir,
-			entryPath: config.entryPath,
-			contractFingerprint: config.contractFingerprint ?? '',
-			sourceFiles,
-			paraglide: resolveParaglideIntegration(pluginDir),
-			graphDirty: true,
-			active: true,
-			watcher: null,
-		}
-		this.ownerWorkbenchDeclarations.set(ownerSlot, declarationKey)
-
-		this.entries.set(declarationKey, entry)
-		this.setupWatcher(declarationKey, entry)
-		void store.markCompiling(owner).catch((error) => {
-			this.ctx.logger.error('failed to mark workbench UI as compiling', {
-				owner: owner.address,
-				error,
-			})
-		})
-		this.enqueueCompile(declarationKey)
-
-		const guard = ctx.effects.defer(() => {
-			const stored = this.entries.get(declarationKey)
-			if (stored !== entry) return
-			stored.owners.delete(ownerSlot)
-			if (this.ownerWorkbenchDeclarations.get(ownerSlot) === declarationKey) {
-				this.ownerWorkbenchDeclarations.delete(ownerSlot)
-				void store.removePlugin(owner)
-			}
-			if (stored.owners.size > 0) return
-			stored.active = false
-			this.disposeWatcher(stored)
-			this.pendingPlugins.delete(declarationKey)
-			this.entries.delete(declarationKey)
-		})
-		return () => guard.dispose()
+	async publishWorkbenchProducers(
+		inputs: readonly WorkbenchProducerCompilation[],
+	): Promise<readonly (WorkbenchArtifactRevision | null)[]> {
+		return Promise.all(inputs.map((input) => this.publishWorkbenchProducer(input)))
 	}
 
 	async watchNodeModule(
@@ -309,7 +186,7 @@ export class PluginArtifactCompiler {
 		const root = resolve(this.viteServer?.config.root ?? process.cwd())
 		const key =
 			descriptor.artifactKey ??
-			resolvePluginArtifactKey('node', root, declarationFile, descriptor.entryPath)
+			resolveNodeModuleArtifactKey(root, declarationFile, descriptor.entryPath)
 		const listener: NodeModuleListener = { onUpdate, onError }
 		let entry = this.nodeEntries.get(key)
 		if (entry && entry.entryPath !== entryPath) {
@@ -357,17 +234,8 @@ export class PluginArtifactCompiler {
 	}
 
 	dispose(): void {
-		if (this.flushTimer) {
-			clearTimeout(this.flushTimer)
-			this.flushTimer = null
-		}
-		this.pendingPlugins.clear()
-		for (const entry of this.entries.values()) {
-			entry.active = false
-			this.disposeWatcher(entry)
-		}
-		this.entries.clear()
-		this.ownerWorkbenchDeclarations.clear()
+		this.signal.abort(new Error('[runtime-dev] artifact compiler disposed'))
+		this.desiredProducerByDefinition.clear()
 		for (const entry of this.nodeEntries.values()) {
 			entry.active = false
 			this.disposeNodeWatcher(entry)
@@ -376,11 +244,39 @@ export class PluginArtifactCompiler {
 		this.nodeEntries.clear()
 	}
 
-	private async compileNodeEntry(entry: NodeModuleCompileEntry, initial: boolean): Promise<void> {
-		if (entry.compileTask) {
-			entry.dirty = true
-			return entry.compileTask
+	private async performProducerBuild(
+		plan: WorkbenchFederationProducerPlan,
+		root: string,
+		definitionKey: string,
+		reference: string,
+	): Promise<WorkbenchArtifactRevision | null> {
+		const store = this.store!
+		const outDir = join(this.cacheDir, 'workbench', plan.producer, plan.buildRevision)
+		await this.withBuildSlot(async () => {
+			const { buildWorkbenchFederationProducer } =
+				await import('@pluxel/rolldown/vite/workbench-ui')
+			await buildWorkbenchFederationProducer({
+				plan,
+				root,
+				outDir,
+				minify: false,
+				sourcemap: true,
+				signal: this.signal.signal,
+			})
+		})
+		if (
+			this.signal.signal.aborted ||
+			this.desiredProducerByDefinition.get(definitionKey) !== reference
+		) {
+			return null
 		}
+		const committed = await store.commitCandidate({ plan, artifactRoot: outDir })
+		await this.cleanupProducerCache(plan.producer, committed.buildRevision)
+		return committed
+	}
+
+	private async compileNodeEntry(entry: NodeModuleCompileEntry, initial: boolean): Promise<void> {
+		if (entry.compileTask) return entry.compileTask
 		const task = this.performNodeCompile(entry, initial)
 		entry.compileTask = task
 		try {
@@ -413,7 +309,7 @@ export class PluginArtifactCompiler {
 					}
 				}
 				if (!reusable) {
-					await this.withNodeBuildSlot(async () => {
+					await this.withBuildSlot(async () => {
 						if (!entry.active) return
 						await buildNodeModule({
 							root: resolve(this.viteServer?.config.root ?? process.cwd()),
@@ -512,8 +408,37 @@ export class PluginArtifactCompiler {
 			if (info) builds.push({ path, mtime: info.mtimeMs })
 		}
 		builds.sort((a, b) => b.mtime - a.mtime)
-		for (const stale of builds.slice(Math.max(0, this.cacheKeep - 1))) {
+		for (const stale of builds.slice(Math.max(0, ARTIFACT_CACHE_KEEP - 1))) {
 			await rm(stale.path, { force: true })
+		}
+	}
+
+	private async cleanupProducerCache(producer: string, currentRevision: string): Promise<void> {
+		const root = join(this.cacheDir, 'workbench', producer)
+		const names = await readdir(root).catch((): string[] => [])
+		const builds: Array<{ name: string; path: string; mtime: number }> = []
+		for (const name of names) {
+			if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) continue
+			const path = join(root, name)
+			const manifest = await stat(join(path, WORKBENCH_FEDERATION_MANIFEST_FILE)).catch(
+				(): null => null,
+			)
+			if (manifest?.isFile()) builds.push({ name, path, mtime: manifest.mtimeMs })
+		}
+		builds.sort((left, right) => right.mtime - left.mtime)
+		const retained = new Set(
+			[
+				builds.find((build) => build.name === currentRevision),
+				...builds.filter((build) => build.name !== currentRevision),
+			]
+				.filter((build): build is (typeof builds)[number] => Boolean(build))
+				.slice(0, ARTIFACT_CACHE_KEEP)
+				.map((build) => build.path),
+		)
+		for (const build of builds) {
+			if (!retained.has(build.path)) {
+				await rm(build.path, { recursive: true, force: true })
+			}
 		}
 	}
 
@@ -521,11 +446,7 @@ export class PluginArtifactCompiler {
 		const hash = createHash('sha256')
 		hash.update('node-module-compiler:1')
 		hash.update(entry.key)
-		hash.update(
-			resolveNodeModuleBuildSignature({
-				minify: false,
-			}),
-		)
+		hash.update(resolveNodeModuleBuildSignature({ minify: false }))
 		const files = await this.expandHashTargets(entry.sourceFiles)
 		for (const file of files.sort()) {
 			hash.update(file)
@@ -534,493 +455,92 @@ export class PluginArtifactCompiler {
 		return hash.digest('hex').slice(0, 16)
 	}
 
-	private async withNodeBuildSlot<T>(build: () => Promise<T>): Promise<T> {
-		if (this.activeNodeBuilds >= ARTIFACT_BUILD_CONCURRENCY) {
-			await new Promise<void>((resolveSlot) => this.nodeBuildWaiters.push(resolveSlot))
-		}
-		this.activeNodeBuilds++
-		try {
-			return await build()
-		} finally {
-			this.activeNodeBuilds--
-			this.nodeBuildWaiters.shift()?.()
-		}
-	}
-
-	async requestCompile(pluginName: string): Promise<void> {
-		const entry = this.entries.get(pluginName)
-		if (!entry || !entry.active) return
-		await this.compilePlugin(pluginName)
-	}
-
-	private enqueueCompile(pluginName: string): void {
-		const entry = this.entries.get(pluginName)
-		if (!entry || !entry.active) return
-		this.pendingPlugins.add(pluginName)
-		if (!this.flushTimer) {
-			this.flushTimer = setTimeout(() => {
-				this.flushTimer = null
-				void this.flushPending()
-			}, 100)
-		}
-	}
-
-	private async flushPending(): Promise<void> {
-		if (this.flushPromise) {
-			await this.flushPromise
-			return
-		}
-
-		const task = (async () => {
-			const workers = Array.from(
-				{
-					length: Math.min(ARTIFACT_BUILD_CONCURRENCY, Math.max(this.pendingPlugins.size, 1)),
-				},
-				() => this.flushWorker(),
-			)
-			await Promise.all(workers)
-		})()
-
-		this.flushPromise = task
-		try {
-			await task
-		} finally {
-			if (this.flushPromise === task) this.flushPromise = null
-		}
-		if (this.pendingPlugins.size > 0) await this.flushPending()
-	}
-
-	private async compilePlugin(pluginName: string): Promise<boolean> {
-		const existing = this.compileTasks.get(pluginName)
-		if (existing) return existing
-		const task = this.performCompile(pluginName)
-		this.compileTasks.set(pluginName, task)
-		try {
-			return await task
-		} finally {
-			if (this.compileTasks.get(pluginName) === task) this.compileTasks.delete(pluginName)
-		}
-	}
-
-	private async performCompile(pluginName: string): Promise<boolean> {
-		const store = this.store
-		if (!store) return false
-		const entry = this.entries.get(pluginName)
-		if (!entry) return false
-
-		this.dbg.debug('compile start {pluginName}', { pluginName })
-		try {
-			await this.refreshWatchFiles(entry)
-			const workbenchBuild = await import('@pluxel/rolldown/vite/workbench-ui')
-			const sourceHash = await this.computeSourceHash({
-				files: entry.sourceFiles,
-				baseDir: entry.pluginDir,
-				resolvedSharedSignature: workbenchBuild.resolveWorkbenchFederationShared(entry.pluginDir)
-					.signature,
-				contractFingerprint: entry.contractFingerprint,
-			})
-			const owners = this.activeWorkbenchOwners(entry)
-			const currentOwner = owners[0]
-			const current = currentOwner
-				? store.getCompiledModule(currentOwner.descriptor.address)
-				: undefined
-			if (current?.sourceHash === sourceHash) {
-				await this.commitWorkbenchOwners(
-					entry,
-					sourceHash,
-					current.compiledAt,
-					this.getCachedModuleDirPath(pluginName, sourceHash),
-				)
-				this.dbg.debug('compile done {pluginName} (cached)', { pluginName })
-				return true
-			}
-			await Promise.all(
-				this.activeWorkbenchOwners(entry).map(({ descriptor }) =>
-					store.markCompiling(descriptor, {
-						updatedAt: Date.now(),
-						sourceHash: store.getCompiledModule(descriptor.address)?.sourceHash,
-						compiledAt: store.getCompiledModule(descriptor.address)?.compiledAt,
-					}),
-				),
-			)
-
-			const manifestFile = this.getManifestFilePath(pluginName, sourceHash)
-			if (existsSync(manifestFile)) {
-				const manifestStats = await stat(manifestFile).catch((): null => null)
-				const cachedDir = this.getCachedModuleDirPath(pluginName, sourceHash)
-				const validation = await validateWorkbenchUiArtifact(cachedDir, pluginName)
-				if (manifestStats?.isFile() && validation.valid) {
-					await this.commitWorkbenchOwners(
-						entry,
-						sourceHash,
-						Math.floor(manifestStats.mtimeMs || Date.now()),
-						cachedDir,
-					)
-					await this.cleanupCacheDir(pluginName)
-					this.dbg.debug('compile done {pluginName} (cached:disk)', { pluginName })
-					return true
-				}
-			}
-
-			const built = await this.buildFederatedRemote(entry, sourceHash)
-			await this.commitWorkbenchOwners(entry, sourceHash, built.compiledAt, built.outDir)
-			await this.cleanupCacheDir(pluginName)
-			this.dbg.debug('compile done {pluginName}', { pluginName })
-			return true
-		} catch (error) {
-			await Promise.all(
-				this.activeWorkbenchOwners(entry).map(({ descriptor }) => {
-					const current = store.getCompiledModule(descriptor.address)
-					return store.markCompileError(descriptor, error, {
-						updatedAt: Date.now(),
-						sourceHash: current?.sourceHash,
-						compiledAt: current?.compiledAt,
-					})
-				}),
-			)
-			this.ctx.logger.error('failed to compile {pluginName}', { pluginName, error })
-			return false
-		}
-	}
-
-	private async commitWorkbenchOwners(
-		entry: PluginCompileEntry,
-		sourceHash: string,
-		compiledAt: number,
-		artifactRoot: string,
-	): Promise<void> {
-		const store = this.store
-		if (!store || !entry.active) return
-		await Promise.all(
-			this.activeWorkbenchOwners(entry).map(({ descriptor }) =>
-				store.commitCompiledModule(
-					createCompiledWorkbenchArtifact({
-						owner: descriptor,
-						artifactName: entry.declarationKey,
-						sourceHash,
-						compiledAt,
-					}),
-					{ artifactRoot },
-				),
-			),
-		)
-	}
-
-	private activeWorkbenchOwners(
-		entry: PluginCompileEntry,
-	): Array<{ slot: PluginNodeSlot; descriptor: WorkbenchPluginDescriptor }> {
-		return [...entry.owners]
-			.filter(([slot]) => this.ownerWorkbenchDeclarations.get(slot) === entry.declarationKey)
-			.map(([slot, descriptor]) => ({ slot, descriptor }))
-	}
-
-	private async flushWorker(): Promise<void> {
-		for (;;) {
-			const pluginName = this.takeNextPendingPlugin()
-			if (!pluginName) return
-			const entry = this.entries.get(pluginName)
-			if (!entry || !entry.active) {
-				this.inflightPlugins.delete(pluginName)
-				continue
-			}
-
-			try {
-				await this.compilePlugin(pluginName)
-			} finally {
-				this.inflightPlugins.delete(pluginName)
-			}
-		}
-	}
-
-	private takeNextPendingPlugin(): string | null {
-		for (const pluginName of this.pendingPlugins) {
-			if (this.inflightPlugins.has(pluginName)) continue
-			this.pendingPlugins.delete(pluginName)
-			this.inflightPlugins.add(pluginName)
-			return pluginName
-		}
-		return null
-	}
-
-	private getPluginCacheDir(pluginName: string): string {
-		return join(this.cacheDir, sanitizeWorkbenchOwnerName(pluginName))
-	}
-
-	private getCachedModuleDirPath(pluginName: string, sourceHash: string): string {
-		return join(this.getPluginCacheDir(pluginName), sourceHash)
-	}
-
-	private getManifestFilePath(pluginName: string, sourceHash: string): string {
-		const dir = this.getCachedModuleDirPath(pluginName, sourceHash)
-		return join(dir, WORKBENCH_FEDERATION_MANIFEST_FILE)
-	}
-
-	private async cleanupCacheDir(pluginName: string): Promise<void> {
-		const dir = this.getPluginCacheDir(pluginName)
-		const entries = await readdir(dir).catch((): string[] => [])
-		if (entries.length === 0) return
-
-		const builds: Array<{ path: string; mtime: number }> = []
-		for (const name of entries) {
-			if (!/^[a-f\d]{16}$/.test(name)) continue
-			const full = join(dir, name)
-			const manifestFile = join(full, WORKBENCH_FEDERATION_MANIFEST_FILE)
-			const st = await stat(manifestFile).catch((): null => null)
-			if (!st?.isFile()) continue
-			builds.push({ path: full, mtime: st.mtimeMs ?? 0 })
-		}
-
-		builds.sort((a, b) => b.mtime - a.mtime)
-		for (const stale of builds.slice(this.cacheKeep)) {
-			await rm(stale.path, { recursive: true, force: true }).catch((): undefined => undefined)
-		}
-	}
-
-	private async buildFederatedRemote(
-		entry: PluginCompileEntry,
-		sourceHash: string,
-	): Promise<{ compiledAt: number; outDir: string }> {
-		const absoluteEntry = this.resolvePluginFile(entry.entryBaseDir, entry.entryPath)
-		if (!absoluteEntry || !existsSync(absoluteEntry)) {
-			throw new Error(`Entry file not found: ${absoluteEntry}`)
-		}
-
-		const outDir = this.getCachedModuleDirPath(entry.declarationKey, sourceHash)
-
-		const publicPath = `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactBasePath(entry.declarationKey, sourceHash)}/`
-		const { buildWorkbenchUiRemote } = await import('@pluxel/rolldown/vite/workbench-ui')
-		await buildWorkbenchUiRemote({
-			root: entry.pluginDir,
-			pluginName: entry.declarationKey,
-			entryPath: absoluteEntry,
-			outDir,
-			publicPath,
-			minify: false,
-			sourcemap: true,
-		})
-		const validation = await validateWorkbenchUiArtifact(outDir, entry.declarationKey)
-		if (!validation.valid) {
-			throw new Error(
-				`Incomplete workbench UI artifact: ${'reason' in validation ? validation.reason : 'unknown validation failure'}`,
-			)
-		}
-
-		const manifestFile = join(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE)
-		const manifestContent = await readFile(manifestFile, 'utf-8').catch((): null => null)
-		if (!manifestContent) {
-			throw new Error(`Module federation manifest not found for ${entry.declarationKey}`)
-		}
-		const manifestStat = await stat(manifestFile)
-		return {
-			compiledAt: Math.floor(manifestStat.mtimeMs || Date.now()),
-			outDir,
-		}
-	}
-
-	private setupWatcher(pluginName: string, entry: PluginCompileEntry): void {
-		this.disposeWatcher(entry)
-		const targets = [...new Set(entry.sourceFiles)]
-		if (targets.length === 0) {
-			entry.watcher = null
-			return
-		}
-		const watcher = watch(targets, {
-			ignoreInitial: true,
-			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-			ignored: WATCHER_IGNORED_GLOBS,
-		})
-		const handleChange = () => {
-			if (!entry.active) return
-			entry.graphDirty = true
-			this.enqueueCompile(pluginName)
-		}
-		watcher.on('change', handleChange)
-		watcher.on('unlink', handleChange)
-		watcher.on('add', handleChange)
-		entry.watcher = watcher
-	}
-
-	private disposeWatcher(entry: PluginCompileEntry): void {
-		if (entry.watcher) {
-			entry.watcher.close().catch((): undefined => undefined)
-			entry.watcher = null
-		}
-	}
-
-	private collectSourceFiles(entryBaseDir: string, pluginDir: string, entryPath: string): string[] {
-		const entryFile = this.resolvePluginFile(entryBaseDir, entryPath)
-		const paraglide = resolveParaglideIntegration(pluginDir)
-		const sourceFiles = entryFile ? [entryFile] : []
-		if (paraglide) sourceFiles.push(...paraglide.sourceRoots)
-		return [...new Set(sourceFiles)]
-	}
-
-	private async computeSourceHash(options: {
-		files: string[]
-		baseDir?: string
-		resolvedSharedSignature?: string
-		contractFingerprint?: string
-	}): Promise<string> {
-		const hash = createHash('sha256')
-		hash.update(`compiler:${WORKBENCH_COMPILER_VERSION}`)
-		hash.update(
-			`shared:${options.resolvedSharedSignature ?? workbenchFederationSharedPackages.join('|')}`,
-		)
-		hash.update(`shareStrategy:${WORKBENCH_FEDERATION_SHARE_STRATEGY}`)
-		hash.update(`remoteEntry:${WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE}`)
-		hash.update(`expose:${WORKBENCH_FEDERATION_EXPOSE}`)
-		hash.update(`contract:${options.contractFingerprint ?? ''}`)
-		const expanded = await this.expandHashTargets(options.files)
-		expanded.sort()
-
-		for (const file of expanded) {
-			try {
-				if (existsSync(file)) {
-					const content = await readFile(file, 'utf-8')
-					if (options.baseDir && file.startsWith(options.baseDir))
-						hash.update(relative(options.baseDir, file))
-					else hash.update(file)
-					hash.update(content)
-				}
-			} catch {
-				// ignore transient fs errors while hashing
-			}
-		}
-
-		return hash.digest('hex').slice(0, 16)
-	}
-
 	private async expandHashTargets(files: string[]): Promise<string[]> {
 		const collected: string[] = []
 		const visited = new Set<string>()
-
 		const queue = [...files]
 		for (const target of queue) {
-			if (!target) continue
-			if (visited.has(target)) continue
+			if (!target || visited.has(target)) continue
 			visited.add(target)
-			const stats = await stat(target).catch((): null => null)
-			if (!stats) continue
-			if (stats.isDirectory()) {
-				const entries = await readdir(target)
-				for (const entry of entries) {
-					if (entry.startsWith('.')) continue
-					if (
-						entry.endsWith('~') ||
-						entry.endsWith('.swp') ||
-						entry.endsWith('.swo') ||
-						entry.endsWith('.tmp')
-					) {
-						continue
-					}
-					const fullPath = join(target, entry)
-					if (hasIgnoredHashPathSegment(fullPath)) continue
-					const nestedStats = await stat(fullPath).catch((): null => null)
-					if (!nestedStats) continue
-					if (nestedStats.isDirectory()) queue.push(fullPath)
-					else if (this.isHashableSourceFile(fullPath)) collected.push(fullPath)
+			const info = await stat(target).catch((): null => null)
+			if (!info) continue
+			if (info.isDirectory()) {
+				for (const entry of await readdir(target)) {
+					if (entry.startsWith('.') || /(?:~|\.swp|\.swo|\.tmp)$/.test(entry)) continue
+					const path = join(target, entry)
+					if (hasIgnoredHashPathSegment(path)) continue
+					const nested = await stat(path).catch((): null => null)
+					if (!nested) continue
+					if (nested.isDirectory()) queue.push(path)
+					else if (isHashableSourceFile(path)) collected.push(path)
 				}
-			} else if (this.isHashableSourceFile(target)) {
+			} else if (isHashableSourceFile(target)) {
 				collected.push(target)
 			}
 		}
-
 		return collected
 	}
 
-	private async refreshWatchFiles(entry: PluginCompileEntry): Promise<void> {
-		const environment = this.viteServer?.environments?.ssr
-		if (!environment) return
-
-		const absoluteEntry = this.resolvePluginFile(entry.entryBaseDir, entry.entryPath)
-		if (!absoluteEntry || !existsSync(absoluteEntry)) return
-
-		const root = environment.config.root
-		let url = absoluteEntry
-		if (url.startsWith(root)) url = url.slice(root.length)
-		if (!url.startsWith('/')) url = '/' + url
-
+	private async withBuildSlot<T>(build: () => Promise<T>): Promise<T> {
+		if (this.activeBuilds >= ARTIFACT_BUILD_CONCURRENCY) {
+			await new Promise<void>((resolveSlot) => this.buildWaiters.push(resolveSlot))
+		}
+		this.activeBuilds += 1
 		try {
-			let rootModule = await environment.moduleGraph.getModuleByUrl(url)
-			if (!rootModule || entry.graphDirty) {
-				// Source graph collection is compiler metadata. Keep it in the SSR environment so UI
-				// artifact discovery cannot enqueue partial batches in the browser dependency optimizer.
-				await environment.transformRequest(url)
-				rootModule = await environment.moduleGraph.getModuleByUrl(url)
-			}
-			if (!rootModule) return
-
-			const nextFiles = collectSourceGraphFiles(rootModule, {
-				include: (filePath) => this.isTrackedSourceFile(entry, filePath),
-			})
-			if (entry.paraglide) {
-				for (const sourceRoot of entry.paraglide.sourceRoots) {
-					if (!nextFiles.includes(sourceRoot)) nextFiles.push(sourceRoot)
-				}
-			}
-			const nextSignature = nextFiles.join('\n')
-			const prevSignature = entry.sourceFiles.join('\n')
-			entry.graphDirty = false
-			if (nextSignature === prevSignature) return
-
-			entry.sourceFiles = nextFiles
-			this.setupWatcher(entry.declarationKey, entry)
-		} catch {
-			// Keep previous watcher/hash targets on failure.
+			return await build()
+		} finally {
+			this.activeBuilds -= 1
+			this.buildWaiters.shift()?.()
 		}
 	}
+}
 
-	private isHashableSourceFile(filePath: string): boolean {
-		const lower = filePath.toLowerCase()
-		if (hasIgnoredHashPathSegment(lower)) return false
-		if (
-			lower.endsWith('.d.ts') ||
-			lower.endsWith('.d.mts') ||
-			lower.endsWith('.d.cts') ||
-			lower.endsWith('.map')
-		) {
-			return false
-		}
-		return HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+function resolveProducerRoot(input: unknown): string {
+	if (typeof input !== 'string' || !input || !isAbsolute(input)) {
+		throw new TypeError('[runtime-dev] Workbench producer root must be an absolute path')
 	}
+	return resolve(input)
+}
 
-	private isTrackedSourceFile(entry: PluginCompileEntry, filePath: string): boolean {
-		if (!this.isHashableSourceFile(filePath)) return false
-		if (isParaglideGeneratedFile(entry.paraglide, filePath)) return false
-		return true
+function assertSafeProducerReference(plan: WorkbenchFederationProducerPlan): void {
+	if (
+		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(plan?.producer) ||
+		!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(plan?.buildRevision)
+	) {
+		throw new TypeError('[runtime-dev] Workbench producer plan has an unsafe reference')
 	}
+}
 
-	private resolvePluginFile(
-		pluginDir: string,
-		targetPath: string | null | undefined,
-	): string | null {
-		if (!targetPath) return null
-		if (isAbsolute(targetPath)) return targetPath
-		return resolve(pluginDir, targetPath)
+function producerReference(plan: WorkbenchFederationProducerPlan): string {
+	return `${plan.producer}\0${plan.buildRevision}`
+}
+
+function producerTaskKey(plan: WorkbenchFederationProducerPlan, root: string): string {
+	return [
+		producerReference(plan),
+		root,
+		...plan.entries.map(
+			(entry) =>
+				`${entry.descriptor.kind}:${entry.descriptor.key}:${entry.expose}:${entry.bridgeEntryPath}`,
+		),
+	].join('\0')
+}
+
+function hasIgnoredHashPathSegment(filePath: string): boolean {
+	const segments = filePath.replaceAll('\\', '/').toLowerCase().split('/')
+	return HASH_IGNORED_SEGMENTS.some((segment) => segments.includes(segment))
+}
+
+function isHashableSourceFile(filePath: string): boolean {
+	const lower = filePath.toLowerCase()
+	if (hasIgnoredHashPathSegment(lower)) return false
+	if (
+		lower.endsWith('.d.ts') ||
+		lower.endsWith('.d.mts') ||
+		lower.endsWith('.d.cts') ||
+		lower.endsWith('.map')
+	) {
+		return false
 	}
-
-	private findPluginDir(ctx: Context, owner: PluginNodeAddress): string | null {
-		const configured = this.pluginDirs.get(pluginNodeIndexKey(owner))
-		if (configured) return findNearestPackageRoot(configured) ?? configured
-
-		const baseDir = this.findPluginEntryBaseDir(ctx, owner)
-		if (baseDir) return findNearestPackageRoot(baseDir) ?? baseDir
-		return null
-	}
-
-	private findViteRootPluginDir(entryPath: string): string | null {
-		const viteRoot = this.viteServer?.config.root
-		if (!viteRoot) return null
-
-		const root = isAbsolute(viteRoot) ? viteRoot : resolve(process.cwd(), viteRoot)
-		const entry = this.resolvePluginFile(root, entryPath)
-		if (!entry || !existsSync(entry)) return null
-		return findNearestPackageRoot(root) ?? root
-	}
-
-	private findPluginEntryBaseDir(ctx: Context, owner: PluginNodeAddress): string | null {
-		const moduleId = readRuntimeRouteCapabilities(ctx)?.source?.resolveSource(owner).moduleId
-		if (!moduleId) return null
-		return resolveModuleIdBaseDir(moduleId)
-	}
+	return HASH_ALLOWED_EXTENSIONS.some((extension) => lower.endsWith(extension))
 }

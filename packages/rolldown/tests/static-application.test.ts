@@ -3,17 +3,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { traceNodeModules } from 'nf3'
 import { describe, expect, it, vi } from 'vitest'
-import {
-	WORKBENCH_SHELL_BUILD_INFO_FILE,
-	WORKBENCH_SHELL_BUILD_INFO_VERSION,
-} from '@pluxel/core/federation'
 
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
-import {
-	assertWorkbenchShellContractProtocol,
-	staticApplication,
-} from '../src/cli/static-application.ts'
+import { staticApplication } from '../src/cli/static-application.ts'
 import { readPublicElysiaSpecifiers } from '../src/cli/elysia-singleton.ts'
+import { createPluginSourceVitePipeline } from '../src/vite/plugin-source.ts'
 
 vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
 
@@ -64,6 +58,21 @@ describe('staticApplication', () => {
 		})
 		expect(pluginNames(config).filter((name) => name === 'pluxel:plugin-semantics')).toHaveLength(1)
 		expect(config.onSuccess).toBeTypeOf('function')
+	})
+
+	it('exposes one concrete Vite source pipeline and its sole semantic collector', () => {
+		const pipeline = createPluginSourceVitePipeline({
+			root: '/tmp/pluxel-plugin-source',
+			lintGuard: false,
+			configSource: false,
+		})
+		expect(pluginNames(pipeline)).toEqual([
+			'unplugin-preprocessor-directives',
+			'pluxel:database-source',
+			'pluxel:plugin-semantics',
+			'pluxel:runtime-source',
+		])
+		expect(pipeline.semantics.workbenchPlans).toBeTypeOf('function')
 	})
 
 	it('runs the final output guard after caller-supplied compiler plugins', () => {
@@ -544,35 +553,6 @@ describe('staticApplication', () => {
 				target: 'fetch' as never,
 			}),
 		).toThrow('only the node target is currently supported')
-	})
-
-	it('rejects a stale Workbench shell contract protocol during static assembly', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-workbench-shell-'))
-		try {
-			await expect(assertWorkbenchShellContractProtocol(root, 2)).rejects.toThrow(
-				'build info is missing or invalid',
-			)
-			await writeFile(
-				join(root, WORKBENCH_SHELL_BUILD_INFO_FILE),
-				JSON.stringify({
-					version: WORKBENCH_SHELL_BUILD_INFO_VERSION,
-					contractProtocol: 1,
-				}),
-			)
-			await expect(assertWorkbenchShellContractProtocol(root, 2)).rejects.toThrow(
-				'expected 2, built 1',
-			)
-			await writeFile(
-				join(root, WORKBENCH_SHELL_BUILD_INFO_FILE),
-				JSON.stringify({
-					version: WORKBENCH_SHELL_BUILD_INFO_VERSION,
-					contractProtocol: 2,
-				}),
-			)
-			await expect(assertWorkbenchShellContractProtocol(root, 2)).resolves.toBeUndefined()
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
 	})
 
 	it('keeps production bootstrap imports inside the directly installed route package', async () => {

@@ -121,10 +121,14 @@ export type {
 	ManagementAccessMethod,
 	ManagementAccessPrincipal,
 	ManagementAccessProvider,
-	ManagementAccessProviderDecision,
 	ManagementAccessProviderStatus,
 	ManagementAccessRegistration,
 	ManagementAccessRequestContext,
+	ManagementAuthenticationChallenge,
+	ManagementAuthenticationCookieCommit,
+	ManagementAuthenticationFailureCode,
+	ManagementAuthenticationProviderSession,
+	ManagementAuthenticationProviderStep,
 } from './services/admin-access/types'
 export type { WorkbenchConfig } from './workbench-config'
 export type {

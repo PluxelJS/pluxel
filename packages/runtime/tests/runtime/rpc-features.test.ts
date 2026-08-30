@@ -1,18 +1,18 @@
 import { createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
-import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
 
 function createRpcHost() {
 	return createRuntimeHost()
 }
 
-describe('RuntimeRpcApi Agent tools capability', () => {
+describe('Runtime Management Agent tools capability', () => {
 	it('reads and replaces the persisted policy through one scoped handle', async () => {
 		const host = createRpcHost()
 		try {
-			const rpc = new RuntimeRpcApi(host.ctx)
-			const initial = await rpc.agentTools().snapshot()
-			const saved = await rpc.agentTools().replacePolicy(initial.revision, {
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
+			const initial = await rpc.agentToolsSnapshot()
+			const saved = await rpc.replaceAgentToolsPolicy(initial.revision, {
 				toolsets: [{ id: 'runtime', label: 'Runtime', commandNames: ['plugin.list'] }],
 				agents: [{ agentId: 'pi', label: 'Pi', toolsetIds: ['runtime'] }],
 			})

@@ -1,261 +1,173 @@
-// Read this when:
-// - 你要写自定义 UI
-// - 你想看 Workbench Plane UI + RPC + SSE + replicated state 的最小闭环
+// Direct Workbench demo: one definition, fresh Cap'n Web roots, Plugin-owned watch semantics.
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { PluginWithUIWorkbench } from './PluginWithUI.workbench-extension'
-import type { DemoEvent, PluginWithUIEvents, PluginWithUIStatusDoc } from './PluginWithUI.contracts'
+import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
 import {
-	demoDatabase,
-	demoProjectionQuery,
-	demoProjections,
-	DemoProjectionStore,
-} from './workbench-projection'
+	PluginWithUIWorkbench,
+	type DemoEvent,
+	type PluginWithUIApi,
+	type PluginWithUIObserver,
+	type PluginWithUISnapshot,
+} from './PluginWithUI.workbench'
 
-// Shared server-side data model exposed to the UI.
-const STATUS_DOC_ID = 'status' as const
-const MAX_EVENT_SCAN = 200
 const MAX_EVENT_HISTORY = 80
-const TRIMMED_EVENT_HISTORY = 50
-
-export type PluginWithUIStatus = {
-	pluginName: string
-	startedAt: number
-	counter: number
-	eventCount: number
-}
-
-export type PluginWithUISsePayload =
-	| { type: 'ready'; startedAt: number }
-	| { type: 'tick'; now: number }
-	| { type: 'activity'; message: string }
+const MAX_EVENT_MESSAGE_LENGTH = 1_000
+const MAX_COUNTER_DELTA = 1_000
 
 @Plugin()
 export class PluginWithUI extends BasePlugin {
-	private startedAt = Date.now()
-
-	private statusDoc?: PluginWithUIStatusDoc
-	private eventDocs: DemoEvent[] = []
-	private projections?: DemoProjectionStore
-
+	private readonly startedAt = Date.now()
+	private readonly listeners = new Set<(revision: number) => void>()
+	private events: DemoEvent[] = []
+	private counter = 0
+	private revision = 1
 	private eventSeq = 1
-	private eventSubscribers = new Set<
-		<Key extends keyof PluginWithUIEvents>(event: Key, payload: PluginWithUIEvents[Key]) => void
-	>()
 
-	override async init() {
-		this.startedAt = Date.now()
-
-		this.initState()
-		const workbenchCapability = this.ctx.workbench
-		if (workbenchCapability) {
-			const database = await this.ctx.database.use(demoDatabase)
-			this.projections = new DemoProjectionStore(database)
-			await this.syncProjection()
-			workbenchCapability.mount(PluginWithUIWorkbench, {
-				commands: workbench.bind.rpc(() => new PluginWithUIRpc(this)),
-				status: workbench.bind.liveQuery({
-					database,
-					dependsOn: [demoProjections],
-					query: demoProjectionQuery<PluginWithUIStatusDoc>('status'),
-				}),
-				events: workbench.bind.liveQuery({
-					database,
-					dependsOn: [demoProjections],
-					query: demoProjectionQuery<DemoEvent>('events'),
-				}),
-				activity: workbench.bind.events<PluginWithUIEvents>((events) => this.attachEvents(events)),
-			})
-		}
-
-		this.ctx.logger.info('ready')
+	override init(): void {
+		this.appendEvent('system', 'Direct Cap’n Web Workbench View 已就绪。')
+		this.ctx.workbench?.publish(PluginWithUIWorkbench, {
+			overview: ({ signal }) => new PluginWithUITarget(this, signal),
+			events: ({ signal }) => new PluginWithUITarget(this, signal),
+			dashboard: ({ signal }) => new PluginWithUITarget(this, signal),
+		})
 	}
 
-	private attachEvents(events: {
-		emit<Key extends keyof PluginWithUIEvents>(event: Key, payload: PluginWithUIEvents[Key]): void
-		signal: AbortSignal
-	}) {
-		const emit = events.emit.bind(events)
-		this.eventSubscribers.add(emit)
-		events.emit('ready', { type: 'ready', startedAt: this.startedAt })
-		const timer = setInterval(() => events.emit('tick', { type: 'tick', now: Date.now() }), 1000)
-		const cleanup = () => {
-			clearInterval(timer)
-			this.eventSubscribers.delete(emit)
-		}
-		events.signal.addEventListener('abort', cleanup, { once: true })
-		return cleanup
-	}
-
-	private broadcast(payload: PluginWithUISsePayload) {
-		for (const emit of this.eventSubscribers) {
-			try {
-				emit(payload.type, payload as never)
-			} catch {}
-		}
-	}
-
-	private initState() {
-		const existingList = this.eventDocs.slice(0, MAX_EVENT_SCAN)
-		const maxId = existingList.reduce((acc, e) => Math.max(acc, Number(e.id) || 0), 0)
-		this.eventSeq = Math.max(maxId, 0) + 1
-
-		if (existingList.length === 0) {
-			this.appendEvent('system', 'UI 扩展已加载：RPC/SSE/Routes/Tabs 都已就绪。')
-			return
-		}
-
-		this.syncStatus({ eventCount: existingList.length })
-	}
-
-	getStatus() {
-		const status = this.getStatusDoc()
-		return {
-			pluginName: status?.pluginName ?? this.ctx.pluginInfo.displayName,
-			startedAt: status?.startedAt ?? this.startedAt,
-			counter: status?.counter ?? 0,
-			eventCount: status?.eventCount ?? this.eventDocs.length,
-		}
-	}
-
-	listEvents(limit = 50): DemoEvent[] {
-		const capped = Math.max(0, Math.min(MAX_EVENT_SCAN, Math.floor(limit)))
-		const docs = this.eventDocs.toSorted((left, right) => right.at - left.at).slice(0, capped)
-		return docs.slice(0, capped).map((event: DemoEvent) => Object.assign({}, event))
-	}
-
-	appendEvent(kind: DemoEvent['kind'], message: string): DemoEvent {
-		const trimmed = message.trim()
-		if (!trimmed) throw new Error('消息不能为空')
-
-		const event: DemoEvent = {
-			id: this.allocateEventId(),
-			kind,
-			message: trimmed,
-			at: Date.now(),
-		}
-
-		this.eventDocs.push(event)
-		this.trimEventHistory()
-		this.syncStatus()
-		this.broadcast({ type: 'activity', message: `event:${kind}` })
-		return { ...event }
-	}
-
-	increment(delta = 1) {
-		const current = this.readCounter()
-		const next = current + this.normalizeDelta(delta)
-		this.writeCounter(next)
-		this.appendEvent('counter', `计数器变更：${current} → ${next}`)
-		return { counter: next }
-	}
-
-	resetCounter() {
-		const current = this.readCounter()
-		this.writeCounter(0)
-		this.appendEvent('counter', `计数器重置：${current} → 0`)
-		return { counter: 0 }
-	}
-
-	clearEvents() {
-		this.eventDocs = []
-		this.appendEvent('system', '事件已清空')
-		return { ok: true }
-	}
-
-	private readCounter() {
-		return this.getStatusDoc()?.counter ?? 0
-	}
-
-	private writeCounter(counter: number) {
-		this.syncStatus({ counter })
-	}
-
-	private normalizeDelta(delta: number) {
-		const normalized = Number.isFinite(delta) ? Math.trunc(delta) : 1
-		return normalized === 0 ? 1 : normalized
-	}
-
-	private getStatusDoc() {
-		return this.statusDoc ? { ...this.statusDoc } : undefined
-	}
-
-	private allocateEventId() {
-		let nextId = this.eventSeq
-		while (this.eventDocs.some((event) => event.id === String(nextId))) {
-			nextId += 1
-		}
-		this.eventSeq = nextId + 1
-		return String(nextId)
-	}
-
-	private trimEventHistory() {
-		const all = this.eventDocs.toSorted((left, right) => left.at - right.at)
-		if (all.length <= MAX_EVENT_HISTORY) return
-		const overflow = all.slice(0, Math.max(0, all.length - TRIMMED_EVENT_HISTORY))
-		const removed = new Set(overflow.map(({ id }) => id))
-		this.eventDocs = this.eventDocs.filter(({ id }) => !removed.has(id))
-	}
-
-	private buildStatusDoc(
-		input: {
-			counter?: number
-			eventCount?: number
-		} = {},
-	): PluginWithUIStatusDoc {
-		const current = this.getStatusDoc()
-		return {
-			id: STATUS_DOC_ID,
+	snapshot(): PluginWithUISnapshot {
+		return Object.freeze({
+			revision: this.revision,
 			pluginName: this.ctx.pluginInfo.displayName,
 			startedAt: this.startedAt,
-			counter: input.counter ?? current?.counter ?? 0,
-			eventCount: input.eventCount ?? this.eventDocs.length,
-		}
-	}
-
-	private syncStatus(override: Partial<Omit<PluginWithUIStatusDoc, 'id'>> = {}) {
-		const next = this.buildStatusDoc({
-			counter: override.counter,
-			eventCount: override.eventCount,
+			counter: this.counter,
+			events: Object.freeze(this.events.map((event) => Object.freeze({ ...event }))),
 		})
-		this.statusDoc = next
-		void this.syncProjection()
 	}
 
-	private async syncProjection(): Promise<void> {
-		if (!this.projections) return
-		await Promise.all([
-			this.projections.replaceAll('status', this.statusDoc ? [this.statusDoc] : []),
-			this.projections.replaceAll('events', this.eventDocs),
-		])
+	subscribe(listener: (revision: number) => void): Disposable {
+		this.listeners.add(listener)
+		let active = true
+		return Object.freeze({
+			[Symbol.dispose]: () => {
+				if (!active) return
+				active = false
+				this.listeners.delete(listener)
+			},
+		})
+	}
+
+	addNote(message: string): DemoEvent {
+		return this.appendEvent('note', message)
+	}
+
+	increment(delta = 1): Readonly<{ counter: number }> {
+		if (!Number.isSafeInteger(delta) || Math.abs(delta) > MAX_COUNTER_DELTA) {
+			throw new RangeError(`计数器增量必须是 -${MAX_COUNTER_DELTA} 到 ${MAX_COUNTER_DELTA} 的整数`)
+		}
+		const normalized = delta
+		const previous = this.counter
+		const next = this.counter + normalized
+		if (!Number.isSafeInteger(next)) throw new RangeError('计数器超出安全整数范围')
+		this.counter = next
+		this.appendEvent('counter', `计数器变更：${previous} → ${this.counter}`)
+		return Object.freeze({ counter: this.counter })
+	}
+
+	resetCounter(): Readonly<{ counter: number }> {
+		const previous = this.counter
+		this.counter = 0
+		this.appendEvent('counter', `计数器重置：${previous} → 0`)
+		return Object.freeze({ counter: 0 })
+	}
+
+	clearEvents(): Readonly<{ ok: true }> {
+		this.events = []
+		this.appendEvent('system', '事件已清空')
+		return Object.freeze({ ok: true })
+	}
+
+	private appendEvent(kind: DemoEvent['kind'], input: string): DemoEvent {
+		const message = input.trim()
+		if (!message) throw new TypeError('消息不能为空')
+		if (message.length > MAX_EVENT_MESSAGE_LENGTH) {
+			throw new RangeError(`消息不能超过 ${MAX_EVENT_MESSAGE_LENGTH} 个 UTF-16 code units`)
+		}
+		const event = Object.freeze({
+			id: String(this.eventSeq++),
+			kind,
+			message,
+			at: Date.now(),
+		})
+		this.events = [...this.events, event].slice(-MAX_EVENT_HISTORY)
+		this.revision += 1
+		const listeners = [...this.listeners]
+		for (const listener of listeners) listener(this.revision)
+		return event
 	}
 }
 
-// RPC contract exposed to the custom UI.
-export class PluginWithUIRpc extends RpcTarget {
-	constructor(private readonly plugin: PluginWithUI) {
+class PluginWithUITarget extends RpcTarget implements PluginWithUIApi {
+	constructor(
+		private readonly plugin: PluginWithUI,
+		private readonly signal: AbortSignal,
+	) {
 		super()
 	}
 
-	status() {
-		return this.plugin.getStatus()
+	snapshot() {
+		return this.plugin.snapshot()
 	}
 
-	async addNote(message: string) {
-		return this.plugin.appendEvent('note', message)
+	watch(observer: PluginWithUIObserver): RpcTarget {
+		return new PluginWithUISubscription(
+			this.plugin,
+			observer as RpcStub<PluginWithUIObserver>,
+			this.signal,
+		)
 	}
 
-	async increment(delta?: number) {
-		return this.plugin.increment(typeof delta === 'number' ? delta : 1)
+	addNote(message: string) {
+		return this.plugin.addNote(message)
 	}
 
-	async resetCounter() {
+	increment(delta?: number) {
+		return this.plugin.increment(delta)
+	}
+
+	resetCounter() {
 		return this.plugin.resetCounter()
 	}
 
-	async clearEvents() {
+	clearEvents() {
 		return this.plugin.clearEvents()
+	}
+}
+
+class PluginWithUISubscription extends RpcTarget {
+	readonly #observer: RpcStub<PluginWithUIObserver>
+	readonly #subscription: Disposable
+	readonly #onAbort: () => void
+	readonly #signal: AbortSignal
+	#active = true
+
+	constructor(plugin: PluginWithUI, observer: RpcStub<PluginWithUIObserver>, signal: AbortSignal) {
+		super()
+		if (!observer || typeof observer !== 'function' || typeof observer.dup !== 'function') {
+			throw new TypeError('watch observer must be a Cap’n Web callback')
+		}
+		this.#observer = observer.dup()
+		this.#signal = signal
+		this.#onAbort = () => this[Symbol.dispose]()
+		this.#subscription = plugin.subscribe((revision) => {
+			void this.#observer(revision).catch(() => this[Symbol.dispose]())
+		})
+		if (signal.aborted) this[Symbol.dispose]()
+		else signal.addEventListener('abort', this.#onAbort, { once: true })
+	}
+
+	[Symbol.dispose](): void {
+		if (!this.#active) return
+		this.#active = false
+		this.#signal.removeEventListener('abort', this.#onAbort)
+		this.#subscription[Symbol.dispose]()
+		this.#observer[Symbol.dispose]()
 	}
 }

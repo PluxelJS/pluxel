@@ -1,57 +1,90 @@
-import { Paper, Select, Stack, Text } from '@mantine/core'
-import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
+import { Alert, Paper, Select, Stack, Text } from '@mantine/core'
+import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { useEffect, useMemo, useState } from 'react'
+import { FontManagerWorkbench } from '../../PluginContributionFontDemo.workbench'
 import {
 	FONT_KIND,
 	FONT_MANAGER_PLUGIN_NAME,
-	FontSettingsPort,
 	type FontRef,
-} from '../../PluginContributionFontDemo.contract'
-import { fontSettingsUi } from './runtime'
+	type FontSet,
+} from '../../PluginContributionFontDemo.shared'
 
-export function FontSettings() {
-	const model = fontSettingsUi.useResources()
-	const port = fontSettingsUi.usePort(FontSettingsPort)
-	const host = useWorkbenchHost()
-	const settings = port.settings
-	const fontSets = [...model.fontSets.useQuery().rows].sort((left, right) =>
-		left.name.localeCompare(right.name),
-	)
+export default function FontSettings() {
+	const { provider, consumer } = useWorkbench(FontManagerWorkbench.selection)
+	const [fonts, setFonts] = useState<readonly FontSet[]>([])
 	const [selected, setSelected] = useState<string | null>(null)
+	const [error, setError] = useState<string>()
 
 	useEffect(() => {
 		let active = true
-		void settings.current().then((font): undefined => {
-			if (active) setSelected(font?.id ?? null)
-			return undefined
-		})
+		void (async () => {
+			let rawFonts: Awaited<ReturnType<typeof provider.list>> | undefined
+			let rawSelection: Awaited<ReturnType<typeof consumer.current>> | undefined
+			try {
+				rawFonts = await provider.list()
+				rawSelection = await consumer.current()
+				if (!active) return
+				setFonts(
+					Object.freeze(
+						rawFonts.map((font) =>
+							Object.freeze({
+								id: font.id,
+								name: font.name,
+								previewText: font.previewText,
+								description: font.description,
+							}),
+						),
+					),
+				)
+				setSelected(rawSelection?.id ?? null)
+				setError(undefined)
+			} catch (caught) {
+				if (active) setError(messageOf(caught))
+			} finally {
+				dispose(rawFonts)
+				dispose(rawSelection)
+			}
+		})()
 		return () => {
 			active = false
 		}
-	}, [settings])
+	}, [consumer, provider])
 
 	const options = useMemo(
-		() => fontSets.map((font) => ({ value: font.id, label: font.name })),
-		[fontSets],
+		() => fonts.map((font) => ({ value: font.id, label: font.name })),
+		[fonts],
 	)
-	const selectedFont = fontSets.find((font) => font.id === selected)
-
+	const selectedFont = fonts.find((font) => font.id === selected)
 	const update = async (id: string | null) => {
-		setSelected(id)
-		const font = fontSets.find((item) => item.id === id)
+		const font = fonts.find((item) => item.id === id)
 		const ref: FontRef | null = font
-			? { provider: FONT_MANAGER_PLUGIN_NAME, kind: FONT_KIND, id: font.id, label: font.name }
+			? Object.freeze({
+					provider: FONT_MANAGER_PLUGIN_NAME,
+					kind: FONT_KIND,
+					id: font.id,
+					label: font.name,
+				})
 			: null
-		await settings.set(ref)
+		let result: Awaited<ReturnType<typeof consumer.set>> | undefined
+		try {
+			result = await consumer.set(ref)
+			setSelected(result?.id ?? null)
+			setError(undefined)
+		} catch (caught) {
+			setError(messageOf(caught))
+		} finally {
+			dispose(result)
+		}
 	}
 
 	return (
 		<Paper withBorder radius="md" p="sm" shadow="xs">
 			<Stack gap="xs">
+				{error ? <Alert color="red">{error}</Alert> : null}
 				<Select
 					size="sm"
 					label="Font Set"
-					description={`renderer 来自 ${host.owner.displayName}，配置写回 ${host.target.displayName}`}
+					description="Attachment provider supplies choices; the consumer owns selection."
 					placeholder="选择一个字体集"
 					data={options}
 					value={selected}
@@ -65,4 +98,14 @@ export function FontSettings() {
 	)
 }
 
-export default fontSettingsUi.define({ FontSettings })
+function messageOf(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
+}
+
+function dispose(value: unknown): void {
+	const action =
+		value && (typeof value === 'object' || typeof value === 'function')
+			? (value as Partial<Disposable>)[Symbol.dispose]
+			: undefined
+	if (typeof action === 'function') action.call(value)
+}

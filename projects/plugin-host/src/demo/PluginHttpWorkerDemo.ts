@@ -1,8 +1,6 @@
 // Read this when you need a CPU-bound task on the runtime's shared worker pool.
 
 import { BasePlugin, defineWorkerTask, Plugin } from '@pluxel/runtime'
-import { workbench, workbenchDoc } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 
 type WorkerStatus = {
 	enabled: boolean
@@ -20,25 +18,6 @@ const squareWorker = defineWorkerTask<{ value: number }, { squared: number }>(
 	import.meta.url,
 	'./PluginHttpWorkerDemo/ui/worker.ts',
 )
-const d = workbenchDoc()
-const HttpWorkerUi = workbenchContract.define({
-	views: {
-		documentation: workbenchContract.document({
-			placements: [workbenchContract.tab({ label: 'Worker Demo' })],
-			title: 'HTTP Worker Demo',
-			content: d`
-					Public route base: \`/demo/worker\`.
-
-					- \`GET /status\`: reports the shared worker capability.
-					- \`GET /square/:value\`: invokes the typed task through \`ctx.workers\`.
-
-					Development rebuilds and packaged/static artifacts use the same declaration; the root runtime owns the pool.
-				`,
-		}),
-	},
-})
-const HttpWorkerWorkbench = workbench.extension({ contract: HttpWorkerUi })
-
 @Plugin()
 export class PluginHttpWorkerDemo extends BasePlugin {
 	override async init(): Promise<void> {
@@ -56,8 +35,6 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 					return this.square(value)
 				}),
 		)
-
-		this.ctx.workbench?.mount(HttpWorkerWorkbench, {})
 	}
 
 	// Public route behavior.

@@ -1,243 +1,115 @@
+import { parsePluginDefinitionAddress, parsePluginNodeAddress } from '@pluxel/core'
+import { parseWorkbenchDeclarationIdentity } from '@pluxel/core/federation'
+import type { RpcStub } from '@pluxel/runtime/capnweb'
+import type { WorkbenchLayout, WorkbenchSessionApi } from '@pluxel/runtime/workbench/client'
 import { describe, expect, it, vi } from 'vitest'
-import type { PluginNodeAddress } from '@pluxel/core'
-import type {
-	WorkbenchBundle,
-	WorkbenchCatalog,
-	WorkbenchLayout,
-	WorkbenchLayoutItem,
-} from '@pluxel/runtime/workbench'
-import { WorkbenchClientRuntime } from '../src/workbench/client'
+import { WorkbenchLayoutRuntime } from '../src/workbench/client'
 
-const botAddress = {
-	definition: {
-		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/BotPlugin.ts' },
-		exportName: 'BotPlugin',
-	},
-	variant: 'default',
-} as const satisfies PluginNodeAddress
-const botDescriptor = {
-	address: botAddress,
-	displayName: 'BotPlugin',
-	rootExportName: 'BotPlugin',
-} as const
-
-const bundle = (hash: string): WorkbenchBundle => ({
-	owner: botDescriptor,
-	remoteName: 'bot',
-	remoteEntryUrl: '/bot/remoteEntry.js',
-	exposedModule: 'workbench',
-	sourceHash: hash,
-	compiledAt: 1,
+const definition = parsePluginDefinitionAddress({
+	entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/BotPlugin.ts' },
+	exportName: 'BotPlugin',
+})
+const node = parsePluginNodeAddress({ definition, variant: 'default' })
+const panelDescriptor = parseWorkbenchDeclarationIdentity({
+	kind: 'view',
+	owner: definition,
+	key: 'panel',
+})
+const accountDescriptor = parseWorkbenchDeclarationIdentity({
+	kind: 'view',
+	owner: definition,
+	key: 'account',
 })
 
-function item(input: {
-	id: string
-	view: string
-	placement: 'plugin.tabs' | 'plugin.routes'
-	fingerprint: string
-	path?: string
-}): WorkbenchLayoutItem {
-	return {
-		id: input.id,
-		viewId: input.view,
-		owner: botDescriptor,
-		target: botDescriptor,
-		contractFingerprint: input.fingerprint,
-		placement: input.placement,
-		view: { kind: 'remote', export: input.view },
-		priority: 0,
-		meta: input.path
-			? { route: { path: input.path, title: input.view, addToNav: false } }
-			: { label: input.view },
-		model: {},
-	}
+function federatedRef(descriptor: typeof panelDescriptor) {
+	return Object.freeze({
+		profile: 1 as const,
+		producer: 'pluxel_workbench_bot',
+		buildRevision: 'build-1',
+		manifestUrl: '/__pluxel/runtime/federation/pluxel_workbench_bot/build-1/mf-manifest.json',
+		expose: `./views/${descriptor.key}` as const,
+		descriptor,
+	})
 }
 
-function layout(revision: number, fingerprint: string): WorkbenchLayout {
-	return {
-		revision,
-		target: botDescriptor,
-		items: [
-			item({ id: 'panel', view: 'Panel', placement: 'plugin.tabs', fingerprint }),
-			item({
-				id: 'account',
-				view: 'Account',
-				placement: 'plugin.routes',
-				fingerprint,
-				path: '/accounts/:accountId',
+function layout(): WorkbenchLayout {
+	return Object.freeze({
+		profile: 1,
+		revision: 7,
+		target: Object.freeze({ node, displayName: 'Bot Manager' }),
+		entries: Object.freeze([
+			Object.freeze({
+				descriptor: panelDescriptor,
+				target: Object.freeze({ node, displayName: 'Bot Manager' }),
+				renderer: node,
+				definitionRevisions: Object.freeze({ target: 1, renderer: 1 }),
+				placement: Object.freeze({ kind: 'tab' as const, label: 'Bots', order: 0 }),
+				federatedViewRef: federatedRef(panelDescriptor),
 			}),
-		],
-	}
+			Object.freeze({
+				descriptor: accountDescriptor,
+				target: Object.freeze({ node, displayName: 'Bot Manager' }),
+				renderer: node,
+				definitionRevisions: Object.freeze({ target: 1, renderer: 1 }),
+				placement: Object.freeze({
+					kind: 'route' as const,
+					path: '/accounts/:accountId',
+					title: 'Account',
+					frame: 'shell' as const,
+					order: 0,
+				}),
+				federatedViewRef: federatedRef(accountDescriptor),
+			}),
+		]),
+	})
 }
 
 function fixture() {
-	let revision = 1
-	let fingerprint = 'fp-1'
-	let invalidated: (() => void) | undefined
-	const close = vi.fn()
-	const pluginLayout = vi.fn(async () => layout(revision, fingerprint))
-	const transport = {
-		workbench: {
-			layoutEventsUrl: () => '/events',
-			pluginLayout,
-			globalLayout: async () => ({ revision, target: null, items: [] }),
-			catalog: async (): Promise<WorkbenchCatalog> => ({
-				revision,
-				bundles: [bundle(`hash-${revision}`)],
-				states: [],
-			}),
-		},
-		createSse: () => ({
-			onOpen: () => () => {},
-			onError: () => () => {},
-			ns: () => ({
-				on: (listener: () => void) => {
-					invalidated = listener
-					return () => {}
-				},
-			}),
-			close,
-		}),
-	} as never
-	return {
-		transport,
-		close,
-		pluginLayout,
-		invalidate(nextRevision: number, nextFingerprint: string) {
-			revision = nextRevision
-			fingerprint = nextFingerprint
-			invalidated?.()
-		},
-	}
+	const dispose = vi.fn()
+	const read = vi.fn(async () => ({ ...layout(), [Symbol.dispose]: dispose }))
+	const session = { layout: read } as unknown as RpcStub<WorkbenchSessionApi>
+	return { dispose, read, runtime: new WorkbenchLayoutRuntime(session) }
 }
 
-async function ready(runtime: WorkbenchClientRuntime) {
-	if (runtime.getSnapshot(botAddress).state === 'ready') return
+async function ready(runtime: WorkbenchLayoutRuntime) {
+	if (runtime.getSnapshot(node).state === 'ready') return
 	await new Promise<void>((resolve) => {
-		const unsubscribe = runtime.subscribe(botAddress, () => {
-			if (runtime.getSnapshot(botAddress).state !== 'ready') return
+		const unsubscribe = runtime.subscribe(node, () => {
+			if (runtime.getSnapshot(node).state !== 'ready') return
 			unsubscribe()
 			resolve()
 		})
 	})
 }
 
-describe('WorkbenchClientRuntime', () => {
-	it('publishes one target snapshot for surfaces, routes, and module views', async () => {
+describe('one-epoch Workbench layout runtime', () => {
+	it('compiles tabs and routes from one capability-free layout', async () => {
 		const source = fixture()
-		const Panel = () => null
-		const Account = () => null
-		const runtime = new WorkbenchClientRuntime(source.transport, locale, async () => ({
-			contractFingerprint: 'fp-1',
-			views: { Panel, Account },
-		}))
-		const release = runtime.retain(botAddress)
-		await ready(runtime)
+		const release = source.runtime.retain(node)
+		await ready(source.runtime)
 
-		const snapshot = runtime.getSnapshot(botAddress)
-		expect(snapshot.surfaces.get('plugin.tabs')?.map((entry) => entry.id)).toEqual(['panel'])
-		expect(runtime.resolveRoute(botAddress, '/accounts/alerts%2Fcritical')?.params).toEqual({
-			accountId: 'alerts/critical',
+		const snapshot = source.runtime.getSnapshot(node)
+		expect(snapshot.tabs.map((entry) => entry.descriptor.key)).toEqual(['panel'])
+		expect(source.runtime.resolveRoute(node, '/accounts/primary')?.params).toEqual({
+			accountId: 'primary',
 		})
-		expect(runtime.view(botAddress, snapshot.layout!.items[0]!)).toBe(Panel)
+		expect(snapshot.layout?.revision).toBe(7)
+		expect(source.dispose).toHaveBeenCalledOnce()
 
 		release()
-		await Promise.resolve()
-		expect(source.close).toHaveBeenCalledOnce()
+		source.runtime[Symbol.dispose]()
 	})
 
-	it('reuses an in-flight target across React effect cleanup replay', async () => {
+	it('reuses the same read across React effect cleanup replay', async () => {
 		const source = fixture()
-		const loadModule = vi.fn(async () => ({
-			contractFingerprint: 'fp-1',
-			views: { Panel: () => null, Account: () => null },
-		}))
-		const runtime = new WorkbenchClientRuntime(source.transport, locale, loadModule)
+		const releaseFirst = source.runtime.retain(node)
+		releaseFirst()
+		const releaseReplay = source.runtime.retain(node)
+		await ready(source.runtime)
 
-		const releaseFirstEffect = runtime.retain(botAddress)
-		releaseFirstEffect()
-		const releaseReplayedEffect = runtime.retain(botAddress)
-		await ready(runtime)
-		await Promise.resolve()
-
-		expect(source.pluginLayout).toHaveBeenCalledOnce()
-		expect(loadModule).toHaveBeenCalledOnce()
-		expect(runtime.getSnapshot(botAddress).state).toBe('ready')
-		expect(source.close).not.toHaveBeenCalled()
-
-		releaseReplayedEffect()
-		await Promise.resolve()
-		expect(source.close).toHaveBeenCalledOnce()
-	})
-
-	it('retains the last complete target revision when a replacement setup fails', async () => {
-		const source = fixture()
-		const cleanup = vi.fn()
-		const OldPanel = () => null
-		const runtime = new WorkbenchClientRuntime(source.transport, locale, async (artifact) => {
-			if (artifact.sourceHash === 'hash-2') {
-				return {
-					contractFingerprint: 'fp-2',
-					views: { Panel: () => null, Account: () => null },
-					setup: () => {
-						throw new Error('broken replacement')
-					},
-				}
-			}
-			return {
-				contractFingerprint: 'fp-1',
-				views: { Panel: OldPanel, Account: () => null },
-				setup: () => cleanup,
-			}
-		})
-		const release = runtime.retain(botAddress)
-		await ready(runtime)
-		source.invalidate(2, 'fp-2')
-		await vi.waitFor(() => {
-			expect(runtime.getSnapshot(botAddress).error?.message).toBe('broken replacement')
-		})
-
-		const snapshot = runtime.getSnapshot(botAddress)
-		expect(snapshot.revision).toBe(1)
-		expect(runtime.view(botAddress, snapshot.layout!.items[0]!)).toBe(OldPanel)
-		expect(cleanup).not.toHaveBeenCalled()
-		release()
-		await Promise.resolve()
-		expect(cleanup).toHaveBeenCalledOnce()
-	})
-
-	it('retains the last complete target revision when a replacement does not match its layout', async () => {
-		const source = fixture()
-		const cleanup = vi.fn()
-		const OldPanel = () => null
-		const runtime = new WorkbenchClientRuntime(source.transport, locale, async (artifact) => ({
-			contractFingerprint: artifact.sourceHash === 'hash-2' ? 'stale-fingerprint' : 'fp-1',
-			views: { Panel: OldPanel, Account: () => null },
-			setup: () => cleanup,
-		}))
-		const release = runtime.retain(botAddress)
-		await ready(runtime)
-		source.invalidate(2, 'fp-2')
-		await vi.waitFor(() => {
-			expect(runtime.getSnapshot(botAddress).error?.message).toBe(
-				'[workbench-ui] Contract mismatch for BotPlugin',
-			)
-		})
-
-		const snapshot = runtime.getSnapshot(botAddress)
-		expect(snapshot.revision).toBe(1)
-		expect(runtime.view(botAddress, snapshot.layout!.items[0]!)).toBe(OldPanel)
-		expect(cleanup).toHaveBeenCalledOnce()
-		release()
-		await Promise.resolve()
-		expect(cleanup).toHaveBeenCalledTimes(2)
+		expect(source.read).toHaveBeenCalledOnce()
+		expect(source.runtime.getSnapshot(node).state).toBe('ready')
+		releaseReplay()
+		source.runtime[Symbol.dispose]()
 	})
 })
-
-const locale = {
-	locale: 'en',
-	setLocale: () => {},
-	subscribe: () => () => {},
-	formatDate: (value: Date | number) => String(value),
-	formatNumber: (value: number) => String(value),
-}

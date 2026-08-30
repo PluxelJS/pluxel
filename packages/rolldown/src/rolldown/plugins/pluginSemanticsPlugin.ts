@@ -17,6 +17,11 @@ import {
 	readLiteralString,
 	walkAst,
 } from './pluginUtils.ts'
+import {
+	createWorkbenchSemanticLowering,
+	type WorkbenchSemanticProducerCompilation,
+} from '../../workbench/semantic-lowering.ts'
+import type { WorkbenchFederationProducerPlan } from '@pluxel/core/federation'
 
 export type PluginDependencyMode = 'required' | 'optional'
 
@@ -54,6 +59,10 @@ export type PluginSemanticsCollector = {
 	plugin: ViteCompatPlugin
 	snapshot(): Map<string, PluginDependencyMode>
 	definitions(): readonly PluginSemanticDefinition[]
+	/** Final canonical Workbench producer plans for this compilation. */
+	workbenchPlans(): Promise<readonly WorkbenchFederationProducerPlan[]>
+	/** Source-only build inputs paired with those exact canonical plans. */
+	workbenchCompilations(): Promise<readonly WorkbenchSemanticProducerCompilation[]>
 }
 
 type ImportBinding = {
@@ -163,6 +172,7 @@ export function createPluginSemanticsPlugin(
 	])
 	const exclude = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.*'])
 	const sourceRoot = resolve(options.root ?? process.cwd())
+	const workbenchLowering = createWorkbenchSemanticLowering(sourceRoot)
 	const helperImportSource = options.helperImportSource ?? '@pluxel/runtime/toolchain'
 	if (!helperImportSource.endsWith('/toolchain')) {
 		throw new TypeError(
@@ -182,6 +192,7 @@ export function createPluginSemanticsPlugin(
 		name: 'pluxel:plugin-semantics',
 		enforce: 'pre',
 		async buildStart() {
+			workbenchLowering.reset()
 			collectedDefinitions.clear()
 			dependencyInventory.clear()
 			requiredImports.clear()
@@ -193,6 +204,11 @@ export function createPluginSemanticsPlugin(
 			packagePlan = options.packageJsonPath
 				? await createPackagePlan(options.packageJsonPath, (message) => this.error(message))
 				: undefined
+		},
+		watchChange() {
+			// Renderer-only edits do not re-run the Plugin transform, but they do change
+			// the immutable producer revision computed by the Workbench lowering pass.
+			workbenchLowering.invalidate()
 		},
 		transform: {
 			filter: {
@@ -245,6 +261,21 @@ export function createPluginSemanticsPlugin(
 				for (const node of result.dependencyInventory) {
 					dependencyInventory.set(node.key, node)
 				}
+				await workbenchLowering.collect({
+					id,
+					code,
+					ast,
+					owners: result.definitions
+						.filter((definition) => definition.kind === 'plugin')
+						.map((definition) => ({
+							className: definition.className,
+							definition: definition.definition,
+						})),
+					resolve: async (source) => {
+						const resolved = await this.resolve(source, id, { skipSelf: true })
+						return resolved?.id ? stripQuery(resolved.id) : undefined
+					},
+				})
 				if (result.requiredSources.size > 0) {
 					requiredImports.set(id, result.requiredSources)
 					requiredImports.set(rawId, result.requiredSources)
@@ -274,6 +305,8 @@ export function createPluginSemanticsPlugin(
 		snapshot: () =>
 			collectReachablePackageDependencies(dependencyInventory, packagePlan?.packageName),
 		definitions: () => [...collectedDefinitions.values()],
+		workbenchPlans: () => workbenchLowering.plans(),
+		workbenchCompilations: () => workbenchLowering.compilations(),
 	}
 }
 

@@ -60,20 +60,39 @@ export {
 	type DatabaseArtifact,
 	type DatabaseMigration,
 } from './database-internal'
-export { readWorkbenchUiEntry } from './workbench/ui-entry'
+export {
+	readWorkbenchDefinition,
+	readWorkbenchDescriptor,
+	readWorkbenchRendererEntry,
+} from './workbench/definition'
+export type {
+	WorkbenchDefinitionMetadata,
+	WorkbenchDescriptorMetadata,
+	WorkbenchRendererEntryMetadata,
+} from './workbench/definition'
 export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
 export {
 	RUNTIME_INTERNAL_API_BASE,
 	UI_PUBLIC_BASE,
-	runtimeWorkbenchArtifactBasePath,
+	runtimeWorkbenchFederationArtifactBasePath,
+	runtimeWorkbenchFederationArtifactPath,
 } from './web/paths'
+export { RUNTIME_SESSION_PATH } from './web/session/protocol'
 
-// HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
-export type { WorkbenchArtifactService } from './services/workbench/WorkbenchArtifactService'
-export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
+// Host/toolchain-only federation inventory (kept out of the Plugin author surface).
 export {
+	WorkbenchArtifactService,
+	type WorkbenchArtifactCandidate,
+	type WorkbenchArtifactCommit,
+	type WorkbenchArtifactEntry,
+	type WorkbenchArtifactFile,
+	type WorkbenchArtifactLookup,
+	type WorkbenchArtifactRevision,
+	type WorkbenchResolvedArtifactEntry,
+} from './services/workbench/WorkbenchArtifactService'
+export {
+	loadPackagedWorkbenchDeployment,
 	resolvePackagedNodeModule,
-	resolvePackagedWorkbenchManifest,
 } from './services/workbench/packaged-artifact'
 export {
 	createWorkbenchBackend,

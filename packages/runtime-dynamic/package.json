@@ -69,6 +69,8 @@
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"react": "catalog:",
+		"react-dom": "catalog:",
 		"superjson": "^2.2.6",
 		"tsx": "^4.23.0",
 		"typescript": "catalog:",

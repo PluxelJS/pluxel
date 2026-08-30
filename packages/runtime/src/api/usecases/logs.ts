@@ -4,6 +4,7 @@ import {
 	type LogFilter,
 	type LogRangeResult,
 	type LogStreamMeta,
+	type RuntimeLogEvent,
 	type RuntimeLogLine,
 } from '../../logger/protocol'
 import { pluginNodeAddressEqual } from '@pluxel/core'
@@ -15,6 +16,8 @@ export type LogsMetaInput = {
 }
 
 export type LogsMetaOutput = LogStreamMeta
+
+export type LogsIndexOutput = Readonly<{ streams: readonly LogStreamMeta[] }>
 
 export type LogsRangeInput = {
 	streamId?: string
@@ -47,6 +50,21 @@ export type LogsWaitInput = LogsLatestInput & {
 	 */
 	timeoutMs?: number
 	signal?: AbortSignal
+}
+
+export type LogsFollowInput = Readonly<{
+	streamId?: string
+	filter?: LogFilter
+}>
+
+export function logsIndex(): LogsIndexOutput {
+	return Object.freeze({
+		streams: Object.freeze(
+			requireActiveRuntimeLogging()
+				.stores.list()
+				.map((store) => Object.freeze(store.meta())),
+		),
+	})
 }
 
 function toStreamId(input?: string): string {
@@ -142,6 +160,40 @@ export function logsRange(input: LogsRangeInput): LogsRangeOutput {
 	}
 }
 
+/** Subscribe to one resolved store. Queueing and backpressure remain transport-owned. */
+export function logsFollow(
+	input: LogsFollowInput,
+	listener: (event: RuntimeLogEvent) => void,
+): () => void {
+	const resolved = resolveStream(input.streamId)
+	const filter = mergeFilters(input.filter, resolved.derivedFilter)
+	if (filter === null) throw new TypeError('Conflicting log filters')
+	const compiled = compileLogFilter(filter)
+	return resolved.store.subscribe((event) => {
+		if (event.type === 'reset') {
+			listener(
+				resolved.virtual
+					? Object.freeze({ ...event, streamId: resolved.streamId })
+					: Object.freeze({ ...event }),
+			)
+			return
+		}
+		const lines = compiled.hasFilter
+			? event.lines.filter((line) => matchesLogFilterCompiled(line, compiled))
+			: event.lines
+		if (lines.length === 0) return
+		listener(
+			Object.freeze({
+				...event,
+				streamId: resolved.streamId,
+				lines: Object.freeze(
+					resolved.virtual ? mapLinesStreamId(lines, resolved.streamId) : [...lines],
+				),
+			}),
+		)
+	})
+}
+
 /**
  * Return a "tail" snapshot for UI/agents.
  *
@@ -185,7 +237,7 @@ export function logsLatest(input: LogsLatestInput = {}): LogsLatestOutput {
 /**
  * Wait for logs matching filter/cursor.
  *
- * Transport-neutral polling helper: clients can call it in a loop to simulate SSE tailing.
+ * Transport-neutral wait helper for non-streaming internal consumers.
  */
 export async function logsWaitFor(input: LogsWaitInput = {}): Promise<LogsLatestOutput> {
 	const first = logsLatest(input)

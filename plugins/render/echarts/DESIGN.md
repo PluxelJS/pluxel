@@ -43,8 +43,9 @@ because its native render API already submits asynchronous work.
 `FontsPlugin` remains the only font manager. ECharts consumes its current selection and registry; it
 does not own upload files or choose from an independent font catalog. `@napi-rs/canvas` 1.0.x exposes
 one process-wide native font registry across worker threads, while every job still carries the
-selected CSS family and revision so selection and cache invalidation are deterministic. Workbench
-changes affect subsequent jobs. For a concrete system/registered selection the worker also verifies
+selected CSS family and revision so selection and cache invalidation are deterministic. Provider
+preference changes affect subsequent jobs. ECharts only places the provider-owned selection Attachment
+and does not create a consumer target. For a concrete system/registered selection the worker also verifies
 `GlobalFonts.has(family)` before rendering, so an upstream change in thread-sharing behavior fails
 clearly instead of silently falling back to another font.
 

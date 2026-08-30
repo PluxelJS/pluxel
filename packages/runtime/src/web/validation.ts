@@ -58,11 +58,7 @@ export function parseConfigFieldPathSegments(
 /** Validate, clone, and freeze runtime discovery received from an untrusted host. */
 export function parseRuntimeMetaV1(input: unknown): RuntimeMetaV1 {
 	const meta = record(parseRuntimePortableData(input, 'runtime metadata'), 'runtime metadata')
-	exact(
-		meta,
-		['service', 'ready', 'protocol', 'application', 'workbench', 'transport'],
-		'runtime metadata',
-	)
+	exact(meta, ['service', 'ready', 'protocol', 'application', 'workbench'], 'runtime metadata')
 	if (meta.service !== 'pluxel-runtime') fail('runtime metadata.service must be pluxel-runtime')
 	if (meta.ready !== true) fail('runtime metadata.ready must be true')
 
@@ -100,10 +96,6 @@ export function parseRuntimeMetaV1(input: unknown): RuntimeMetaV1 {
 		fail('runtime metadata.workbench.enabled must be boolean')
 	}
 
-	const transport = record(meta.transport, 'runtime metadata.transport')
-	exact(transport, ['rpc'], 'runtime metadata.transport')
-	if (transport.rpc !== '/rpc') fail('runtime metadata.transport.rpc must be /rpc')
-
 	return Object.freeze({
 		service: 'pluxel-runtime' as const,
 		ready: true as const,
@@ -114,7 +106,6 @@ export function parseRuntimeMetaV1(input: unknown): RuntimeMetaV1 {
 		}),
 		application: Object.freeze({ product }),
 		workbench: Object.freeze({ enabled: workbench.enabled }),
-		transport: Object.freeze({ rpc: '/rpc' as const }),
 	})
 }
 

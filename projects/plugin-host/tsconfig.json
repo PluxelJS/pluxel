@@ -1,0 +1,8 @@
+{
+	// MF declaration generation resolves this project-root config, then supplies exact renderer files.
+	"extends": "./src/demo/tsconfig.json",
+	"compilerOptions": {
+		"rootDir": "."
+	},
+	"files": []
+}

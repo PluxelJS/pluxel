@@ -1,92 +1,152 @@
 # Frontend Architecture
 
-业务 HTTP 与 optional Workbench 是两条独立路径。Workbench 不得成为插件核心能力的启动前提。
+Workbench frontend 是一个固定 Shell 加按需加载的 Plugin applications。业务 HTTP 与 Workbench 正交；
+Workbench 不得成为 Plugin 核心能力的启动前提。
 
-## Server/browser boundary
+## 固定边界
 
-- `@pluxel/runtime/web`：framework-neutral discovery、Management Client 和严格校验的 DTO；
-- `@pluxel/runtime/web/react`：Management Client 的可选 React Context adapter；
-- `@pluxel/runtime/workbench/contract`：browser-safe Contract value；
-- `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
-- `@pluxel/runtime/workbench/ui`：browser resource facade、React hooks 和 exact View exports。
+- `@pluxel/runtime/web`：portable Runtime session、Management API 与严格校验的 DTO；
+- `@pluxel/runtime/web/react`：Management client 的 React Context adapter；
+- `@pluxel/runtime/workbench`：browser-safe Direct View/Attachment definition；
+- `@pluxel/runtime/workbench/client`：layout validation 与 opened View handle；
+- `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/runtime/workbench/federation`：Shell-owned MF Runtime 和 View activation orchestration。
+- `@pluxel/runtime/internal/workbench-react`：toolchain-generated React Bridge wrapper ABI，不是作者入口。
 
-默认 `/web` 不求值 React 或 Mantine，也不导出 raw RPC stub、layout transport 或 session lifecycle。官方 Workbench 尚未标准化的
-View-host transport 位于 `/web/internal`，只能由 workspace App 使用。Management Client 是 stateless request facade，不拥有 SSE/session，
-因此不提供 `dispose()`；持有 layout SSE、grant 和 module lease 的 internal transport 才必须显式清理。
-实现上 `web/client.ts` 只包含 Level 1 discovery/domains，`web/transport-client.ts` 独立拥有 layout、SSE、raw session 与清理；
-两者仅复用不含领域 DTO 的 connection/auth resolver，默认 `/web` 的声明和 bundle 不得引用 internal transport symbol。
+Plugin UI source value-import 自己的 Workbench definition，并只从 `@pluxel/runtime/capnweb` import browser-safe API
+types。它不能 import Plugin implementation、Context、database schema/handle、Node builtin 或 secret。Toolchain 独立构建
+每个 Plugin definition 的 UI producer 并验证这条反向依赖边界。
 
-UI source graph 必须导入 Contract value，不能导入 Extension。Contract module 不能引用 Plugin、Context、provider、
-Node builtin 或 server-only package。toolchain 独立构建每个 UI entry，并验证这条反向依赖边界。
+## 一个 document，一条 session
 
-普通 View 使用 `ui.useResources()` 取得全部 owner resources。跨插件 renderer 另外使用 `ui.usePort(Port)` 取得当前
-consumer outlet 注入的 target-scoped resources。两组 grant 独立。
+`client.tsx` 在 module scope 创建 document-unique `RuntimeSessionClient` 和初始 bootstrap promise，避免 React StrictMode
+重复建立 physical WebSocket。`/__pluxel/runtime/session` 上依次完成：
 
-live-query UI 暴露只读 `useQuery(params)`，返回 `loading | ready | stale | error` 可判别联合，并提供
-`getSnapshot()/subscribe()/refresh()`；mutation 走 typed RPC。events 使用 imperative `subscribe()` 和独立 `useConnectionState()`，两者共享底层
-multiplex transport。
+1. authentication-required bootstrap；
+2. password/TOTP/OIDC challenge；
+3. authenticated ready bootstrap；
+4. Management + Workbench capabilities；
+5. layout/openView、Plugin API、logs follow 和 observer callbacks。
 
-## Layout and rendering
+Workbench App 把 Workbench capability 视为硬要求；management-only bootstrap 不能渲染一个“部分可用”的 Shell。
+认证 authority、publication inventory 或 socket epoch 失效时，页面销毁当前 UI 并要求完整 reload。没有 feature reconnect、
+旧 root恢复或备用 API transport。
 
-Contract placement 只有两种产品语义：`plugin.tabs` 把管理 View 放进目标插件工作区，`plugin.routes` 声明可导航页面。
-同一 View 可以拥有多个 placement，identity 来自 owner + View + normalized tab/path，不依赖数组 index。不提供尚无真实
-消费方的 header、dock、status bar 等通用插槽；出现新产品需求时先确定宿主所有权，再扩展 Contract。
+MF manifest、JS/CSS、字体/图片等静态文件仍走 HTTP；浏览器提交 single-use ticket 写入 `HttpOnly` cookie 也使用一个
+fixed same-origin POST。这些 HTTP 端点不承载 Management 或 Plugin RPC。
 
-global layout 可以下发 route navigation metadata，但打开 target screen 后才取得 resource grant并加载实际引用的
-bundle。builtin document 由 host 渲染且只用于只读内容；交互流程使用 React View + typed RPC。
+## Layout 和 View activation
 
-Remote View 的普通页面切换使用可空的 `useWorkbenchHost().navigation` capability，沿用宿主 active Tab 和 dirty-state 策略；
-standalone View 不伪装该能力。集合页需要打开对象详情时才使用 `navigation.openTab()`；Contract 以 `navigation: false` 声明整段参数 route，并通过 `routeParams` 读取匹配参数。
-宿主对两种操作统一负责路径归一化、route 存在性与 shell frame 校验；`openTab()` 另外按完整路径去重并恢复标题
-metadata。插件不能传入任意宿主 URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implementation。
+Workbench layout 是 capability-free immutable snapshot。它包含 target、placement、openable identity、owner revisions 和
+pinned MF reference，不包含任意 Plugin API dictionary。
 
-Remote View 内需要导航 / 主任务 / 检查器布局时，使用 `@pluxel/runtime/workbench/ui` 的
-`WorkbenchPaneLayout` 与 `WorkbenchPane`。插件只声明稳定 ID、`navigation | primary | inspector` role、尺寸约束和内容；
-宿主拥有 split driver、响应式 drawer、键盘调整、焦点管理和持久化。一个布局最多三栏且恰好一个 primary；响应式以布局
-容器宽度为准，中屏先把 inspector 转 drawer，窄屏再把 navigation 转 drawer，转换不卸载 pane children。
+Shell 打开页面时执行一个原子 activation：
 
-浏览器只创建一个 `WorkbenchClientRuntime` 实例。它拥有 layout SSE、catalog、按 target 引用计数的 session、route index
-以及 Remote module revision。一次 target 更新先加载并 setup 所需 module、校验 Contract 和 route，再原子发布 layout
-snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。React 只订阅 snapshot 和渲染，不拥有 artifact 或 route
-生命周期。target 降到零引用后延迟到当前 microtask 末尾回收；React StrictMode 的 effect replay 会立即恢复同一 lease，
-不重复请求 layout、加载 Remote 或终止唯一 runtime。Provider cleanup 不把 render-stable runtime 标记为永久 disposed，
-真正的 SSE、module setup 和 target snapshot 清理由引用 lease 完成。Workspace tabs、router intent 和持久化由独立
-`WorkspaceController` 实例拥有；该实例位于 Router 之上的稳定根 Provider，不随 Shell 或 route tree 重建，也不使用 module-level store。
-显式 `openTab()` mutation、navigation intent 和随后 route reconciliation 必须落在同一个 Controller 上。Controller 同时拥有
-Tab catalog、editor group 归属、聚焦 group 和递归 grid snapshot；浏览器 URL 只镜像聚焦 group，pane 内容由 host-owned
-document renderer 按各 Tab path 独立渲染。每组 Tab strip 的 `+` 只创建 host-owned clean navigation instance；它不扩大
-Remote View capability，也不复制 dirty 或 tab-scoped state。Tab 拖拽支持组内排序、跨组移动和四边 split，空组自动收拢。
+```text
+current layout entry
+  -> openView(expected layout revision)
+  -> fresh local root or Attachment roots
+  -> register pinned mf-manifest.json revision
+  -> load and validate exact Bridge expose
+  -> create per-open host facade
+  -> Bridge render
+```
 
-## Worksplit adapter boundary
+只有整个 tuple 成功才成为 active：
 
-`split-like-vscode` 是独立的通用 UI library，只拥有 pane 约束、resize math、React 组件、CSS 与可序列化 layout value；
-它不知道 Pluxel plugin、route、Remote View、Tab identity 或持久化政策。Pluxel 只把 `@worksplit/react` 当作普通依赖，
-不为它增加 Vite plugin、codegen、virtual module 或 Pluxel-specific library API。
+```text
+target node + owner generation lease
++ layout/publication revision + descriptor identity
++ producer build revision + expose
++ opened root(s) + one Bridge instance
+```
 
-所有直接 Worksplit import 和 pixel/percentage 转换收敛在
-`packages/workbench-app/src/app/workbench/split/view.tsx`。Section 与 Remote Pane Kit 布局以百分比保存；递归 editor grid 保存
-Worksplit 的 topology 和最后 commit 的 CSS pixel size，并在容器变化时按比例调整。两者都只在 pointer、keyboard、显式
-visibility、拓扑变化或 reset commit 后写入 `WorkspaceController`；实时拖动和响应式临时最大化不产生持久化。Remote layout state
-按当前原生 Tab、owner、target、View、placement/route 与公开 layout ID 隔离；standalone 使用当前挂载期内存 fallback。
-Remote plugin UI 只能使用公开 host capability 和 Pane Kit，不能依赖 Worksplit、宿主 router、split adapter 或 workspace store。具体文件职责和修改路由见该目录的
-[`README.md`](../packages/workbench-app/src/app/workbench/split/README.md)。
+失败 candidate 会 destroy Bridge（若已创建）、关闭 host facade，并 dispose single-owner opened handle。关闭 active
+View 的顺序同样固定为 Bridge destroy → host facade close → opened handle dispose。旧 renderer 不能接新 roots，新 renderer
+也不能接旧 roots。
 
-## Updates and isolation
+## Renderer
 
-registry 与 artifact store 可由 host 共享，但 owner registration、Binding 和 cleanup 保留 immutable Context。
-bundle-only HMR 复用 resource lease；owner generation stop/replacement 撤销旧 lease。不同 target 不共享 grant，但可以共享
-底层 transport connection。
+每个 expose 是标准 React Bridge application。Toolchain 生成 wrapper，wrapper 把 opened handle 和 host facade 放入
+per-Bridge React Context，再渲染 Plugin 默认导出的零 props component。
+
+```tsx
+export default function Settings() {
+	const { api, host } = useWorkbench(SettingsWorkbench.main)
+}
+```
+
+`useWorkbench(exactDescriptor)` 同时完成 TypeScript API 推导和 runtime declaration identity 校验。Remote 不取得
+wrapper props、raw socket、MF Runtime、Shell router/store 或官方 App private Context。
+
+`useRemoteValue()` / `createRemoteValue()` 只是 Plugin-owned `read()`/`watch()` 的小型 client snapshot owner：
+
+- 先建立 optional subscription，再首次读取，避免初始窗口丢失 invalidation；
+- 合并 reading 期间的 invalidation；
+- error 不引入自动 reconnect 或全局 cache；
+- dispose subscription 并拒绝 late read 覆盖；
+- awaited object DTO 必须先复制，再释放 transport result。
+
+Plugin 可以围绕自己的 API 写更复杂的 React helper，但 Workbench 不提供查询语言、collection store 或通用 event model。
+
+## Host facade
+
+Remote 只得到：
+
+- appearance：`locale`、`colorScheme`；
+- feedback：`notify()`、`confirm()`；
+- relative navigation：`navigate()`、`openDocument()`；
+- parameterized document：server-matched params、dirty marker、display title；
+
+`navigation` 和 `document` 在不适用的 frame 中为 `null`。所有 path 都重新规范化，Remote 不能导航任意宿主 URL。
+Document dirty/title registration 属于 per-open host handle；View close 时幂等撤销。
+
+## Pane Kit 与 Workspace
+
+Remote 需要 navigation/primary/inspector 三栏时，使用 `WorkbenchPaneLayout` / `WorkbenchPane`。Plugin 只声明
+稳定 ID、role、尺寸约束和内容；Shell 拥有 split driver、responsive drawer、keyboard、focus 和 workspace persistence。
+每种 role 最多一个，并且恰好有一个 primary。容器宽度变化不卸载 pane children。
+
+`split-like-vscode` 是独立 UI library，不知道 Plugin、View、route 或 persistence。Pluxel adapter 收敛在
+`packages/workbench-app/src/app/workbench/split/`。Remote bundle 不 import Worksplit、宿主 router、split adapter 或
+workspace store。
+
+Workspace controller 独立拥有 tabs、editor groups、focus 和递归 grid。URL 只镜像 focused document；打开同一完整
+document path 会聚焦已有 tab。Plugin 不感知 tab group、drag/drop 或 split topology。
+
+## Module Federation policy
+
+每个 page 只有一个 MF Runtime。Shell 先建立 exact singleton shared winners，再以 `loaded-first` 按需注册 producer：
+
+- React/ReactDOM 及其实际 subpaths；
+- `@module-federation/bridge-react`；
+- `@pluxel/runtime/workbench`、`/client`、`/react`。
+- `@pluxel/runtime/internal/workbench-react`。
+
+Plugin 不能修改 share scope、runtime plugin、manifest resolution 或 fallback。普通 UI/领域依赖由 producer 自己 bundle。
+未打开 View 不请求其 expose；一个 Plugin definition 的多个 Views 共用 producer，但按 expose/chunk 延迟加载。
+
+Development UI update 先构建并验证 immutable candidate。失败保持当前 producer inventory；成功 commit 后完整 document
+reload。Frontend 不实现页内 remote revision swap 或 last-known-old fallback。
 
 ## React state correctness
 
-- `packages/workbench-app/src` 与 `packages/valibot-form/src/web` 强制检查 Hooks 调用、完整依赖和 render 期间的组件身份稳定性；
-  不用 disable 或遗漏依赖表达“只想执行一次”。
-- 跨组件共享事实使用带 `subscribe/getSnapshot` 的 store/resource；`useEffect` 只同步外部系统，不在父 effect 中清空由子
-  effect 注册的命令式引用。
-- 空数组、空对象和 Context value 必须保持稳定身份，避免无事实变化时重复触发 memo、effect 或 transport subscription。
-- RPC/HTTP 读操作必须具备 latest-request、AbortSignal 或 resource revision 语义；仅用 mounted boolean 不能阻止旧请求覆盖新
-  plugin/route 的状态。
-- 配置、mutation 和 lifecycle 控件至少覆盖一次“用户动作 -> 状态变化或 transport 副作用”的测试；仅断言按钮存在不足以验证
-  wiring。
-- 前端 lint 同时启用 React DOM/Context 正确性、JSX accessibility，以及类型感知的 Promise 和安全字符串化规则；新增异步
-  handler 必须显式 await、catch 或用 `void` 表达有意忽略。
+- module-scoped session 和 bootstrap promise 保证 StrictMode 不重复连接；
+- layout runtime、View activation 和 Bridge cleanup 用 mount count + microtask cleanup 吸收 effect replay；
+- 跨组件共享事实使用 `subscribe/getSnapshot` store；
+- 空 array/object 和 Context value 保持稳定 identity；
+- remote read 使用 sequence/epoch guard，旧结果不覆盖新 target/route；
+- mutation handler 显式 await/catch 或用 `void` 表达有意忽略；
+- UI state 永不保存已释放的 Cap’n Web proxy。
+
+## 实现入口
+
+- `packages/workbench-app/src/client.tsx`
+- `packages/workbench-app/src/workbench/client.ts`
+- `packages/workbench-app/src/workbench/runtime.tsx`
+- `packages/workbench-app/src/app/workbench/`
+- `packages/runtime/src/web/session/`
+- `packages/runtime/src/workbench/client.ts`
+- `packages/runtime/src/workbench/react.tsx`
+- `packages/runtime/src/workbench/react-internal.tsx`
+- `packages/runtime/src/workbench/federation.ts`

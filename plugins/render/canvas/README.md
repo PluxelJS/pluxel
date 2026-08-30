@@ -31,7 +31,7 @@ export class BadgePlugin extends BasePlugin {
 ```
 
 Host catalog 至少包含 `[FontsPlugin, CanvasPlugin, BadgePlugin]`。FontsPlugin 启动时会恢复自己统一管理的字体；Canvas
-只在插件详情中挂载由 `FontsPlugin` 渲染的 selector Port tab，不拥有上传集合。Workbench disabled 不影响字体加载、
+只在插件详情中放置由 `FontsPlugin` 渲染的 selection Attachment tab，不拥有上传集合或 consumer RPC target。Workbench disabled 不影响字体加载、
 绘制或编码。selector 修改 provider 默认字体后，后续创建的 raster/SVG context 会自动使用新 family；已有 context
 保持不变。上传和删除字体统一在 FontsPlugin 页面完成。
 

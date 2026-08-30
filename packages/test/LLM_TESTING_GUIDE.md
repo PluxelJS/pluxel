@@ -31,6 +31,6 @@ constructor/address 设置 aggregate record；Part config 位于 occurrence fiel
 需要 config/effects/capability owner、但不独立治理的内部拆分使用 `PluginPart`；简单 helper 仍可显式使用 owner effects。
 需要独立生命周期、配置 revision 或治理的能力建模为 Plugin。
 
-Workbench Plane 至少覆盖：关闭时 callback 不执行且插件可运行；开启时 backend 在首个 init 前安装；module cleanup、target layout、opaque resource binding，以及 dev source 与 production artifact 路径。
+Workbench Plane 至少覆盖：关闭时 callback 不执行且插件可运行；开启时 backend 在首个 init 前安装；publication cleanup、target layout、Direct View/Attachment 的 fresh root 生命周期，以及 dev/production immutable MF producer 路径。
 
 仅测试底层 lowering facts 时，显式从 test/unsafe surface 导入 mutation helper，不要把它们当作 runtime 作者 API。

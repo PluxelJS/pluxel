@@ -4,7 +4,7 @@
 renders run through Pluxel's root-owned shared worker pool, so layout, text measurement, ZRender flush
 and native encoding do not occupy the main event loop. The host still performs a cooperative option-budget
 walk and bounded worker transport serialization. Canvas owns resource limits; Fonts supplies the
-managed registry, provider-wide default family, and Fonts Selection Port.
+managed registry, provider-wide default family, and provider-owned Fonts selection Attachment.
 
 ```ts
 import { EChartsPlugin } from '@pluxel/echarts'
@@ -66,9 +66,9 @@ value count and nesting depth are bounded before the JSON snapshot is retained. 
 also share provider-wide retained count/byte ceilings; dispose and caller stop return that capacity.
 
 When neither the option nor theme explicitly supplies `textStyle.fontFamily`, each render injects
-the current `FontsPlugin.defaultFont.cssFamily`. Therefore Fonts Workbench changes affect subsequent
-renders without rewriting registered themes. The ECharts plugin detail mounts a selector-only Fonts
-Port supplied by FontsPlugin; the canonical FontsPlugin page alone uploads and removes fonts. The
+the current `FontsPlugin.defaultFont.cssFamily`. Therefore provider preference changes affect subsequent
+renders without rewriting registered themes. The ECharts plugin detail places the provider-owned Fonts
+selection Attachment; the canonical FontsPlugin page alone uploads and removes fonts. The
 single managed collection remains server-process-only and survives Canvas/ECharts consumer stops.
 
 ## Images and outbound policy

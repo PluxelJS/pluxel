@@ -17,8 +17,7 @@
 		"@pluxel/package-manager": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
-		"@pluxel/runtime-static": "workspace:*",
-		"drizzle-orm": "catalog:"
+		"@pluxel/runtime-static": "workspace:*"
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:",

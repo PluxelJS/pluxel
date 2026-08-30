@@ -19,11 +19,16 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./workbench": {
+			"@pluxel/hmr": "./src/workbench.ts",
+			"default": "./dist/workbench.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
 		}
 	},
@@ -36,15 +41,39 @@
 		"jose": "^6.2.3"
 	},
 	"devDependencies": {
+		"@mantine/core": "catalog:",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@tabler/icons-react": "catalog:",
+		"@types/react": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
 		"tsdown": "catalog:",
 		"typescript": "catalog:",
+		"vite": "^8.0.0-beta.18",
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:^"
+		"@mantine/core": "catalog:",
+		"@pluxel/runtime": "workspace:^",
+		"@tabler/icons-react": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@tabler/icons-react": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
+		}
 	}
 }

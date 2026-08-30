@@ -4,15 +4,14 @@ import { Type, obj } from '@pluxel/commands/typebox'
 import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { requireDynamicPluginSource } from '@pluxel/runtime-dynamic/source-producer'
-import { workbench } from '@pluxel/runtime/workbench'
 import type {
-	PackageManagerCommands,
+	PackageManagerApi,
 	PackageManagerSnapshot,
 	PackageMutationResult,
 } from './contracts.ts'
 import { loadPnpmEngine } from './pnpm-engine.ts'
 import { ManagedPackageStore } from './store.ts'
-import { PackageManagerWorkbench } from './workbench-extension.ts'
+import { PackageManagerWorkbench } from './workbench.ts'
 
 export const PackageManagerConfig = v.object({
 	rootDir: v.pipe(
@@ -72,7 +71,7 @@ const mutationOutput = obj({
 })
 
 @Plugin({ startTimeoutMs: 120_000 })
-export class PackageManagerPlugin extends BasePlugin implements PackageManagerCommands {
+export class PackageManagerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(PackageManagerConfig)
 	private store?: ManagedPackageStore
 
@@ -115,8 +114,8 @@ export class PackageManagerPlugin extends BasePlugin implements PackageManagerCo
 				execute: async ({ specs }) => toCommandMutation(await store.remove(specs)),
 			}),
 		)
-		this.ctx.workbench?.mount(PackageManagerWorkbench, {
-			manager: workbench.bind.rpc(() => new PackageManagerRpc(store)),
+		this.ctx.workbench?.publish(PackageManagerWorkbench, {
+			manager: () => new PackageManagerTarget(store),
 		})
 	}
 
@@ -146,7 +145,7 @@ function toCommandMutation(result: PackageMutationResult) {
 	}
 }
 
-class PackageManagerRpc extends RpcTarget implements PackageManagerCommands {
+class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 	constructor(private readonly store: ManagedPackageStore) {
 		super()
 	}
@@ -166,7 +165,7 @@ class PackageManagerRpc extends RpcTarget implements PackageManagerCommands {
 
 export type {
 	ManagedPackage,
-	PackageManagerCommands,
+	PackageManagerApi,
 	PackageManagerSnapshot,
 	PackageMutationFailure,
 	PackageMutationResult,

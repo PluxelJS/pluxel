@@ -230,7 +230,7 @@ describe('management protocol validation', () => {
 		})
 
 		const logging = parseVersionedPluginLogPolicySnapshot({
-			version: 2,
+			version: 3,
 			defaultLevel: 'info',
 			overrides: [{ owner: address, level: 'off' }],
 			revision: 2,
@@ -402,7 +402,7 @@ describe('management protocol validation', () => {
 	})
 })
 
-describe('management HTTP payload validation', () => {
+describe("management Cap'n Web DTO validation", () => {
 	it('validates logs and security payloads without retaining mutable wire objects', () => {
 		const meta = {
 			streamId: 'runtime',

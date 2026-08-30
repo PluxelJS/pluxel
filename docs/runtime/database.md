@@ -5,18 +5,18 @@ description: 根据数据归属选择 Plugin 数据库或应用数据库，并�
 
 先判断数据是否必须跟随 Plugin 独立安装、替换和迁移，再选择数据库组织方式。不要仅因为代码写在 Plugin class 中，就默认使用 `ctx.database`。
 
-| 数据与生命周期要求                                                   | 正确组织方式                                                        |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin               | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
-| 需要 Plugin 独立 lineage、旧 generation handle 撤销或 Workbench 查询 | `defineDatabase()` + `ctx.database.use()`                           |
-| fixed catalog、schema 和部署由同一个应用团队控制                     | application-private database package                                |
-| 没有共享数据库，整个 static application 就无法成立                   | host `prepare()` + root-bound typed accessor                        |
-| 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行           | application-private provider Plugin + constructor dependency        |
-| 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务       | application-private database package                                |
+| 数据与生命周期要求                                             | 正确组织方式                                                        |
+| -------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin         | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
+| 需要 Plugin 独立 lineage 或旧 generation handle 撤销           | `defineDatabase()` + `ctx.database.use()`                           |
+| fixed catalog、schema 和部署由同一个应用团队控制               | application-private database package                                |
+| 没有共享数据库，整个 static application 就无法成立             | host `prepare()` + root-bound typed accessor                        |
+| 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行     | application-private provider Plugin + constructor dependency        |
+| 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务 | application-private database package                                |
 
 Managed Plugin database 统一使用 PostgreSQL dialect 和 Drizzle。Plugin 作者只依赖 `drizzle-orm`，不选择 driver；部署宿主在 native PostgreSQL 与 PGlite 之间选择，同一份 schema、migration 和 query 不编写 driver 分支。
 
-Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和 migration 方案。它不是“多个 Plugin 共用一份 Plugin database”：使用它的 Plugin 是应用内部模块，不再拥有独立的数据可移植性，也不会自动获得 Pluxel 的 per-plugin lineage、隔离、旧 handle 撤销或 `liveQuery`。
+Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和 migration 方案。它不是“多个 Plugin 共用一份 Plugin database”：使用它的 Plugin 是应用内部模块，不再拥有独立的数据可移植性，也不会自动获得 Pluxel 的 per-plugin lineage、隔离、旧 handle 撤销或 owner-scoped invalidation。
 
 发布与否只是常见线索，不是最终判断。私有 Plugin 如果仍要被独立启停、替换并保留自己的数据，应该使用 managed database；公开 Plugin 如果不拥有结构化数据，则不需要数据库。
 
@@ -74,7 +74,7 @@ export class NotesPlugin extends BasePlugin {
 
 使用普通 `pgTable()`。不要使用 `pgSchema()`、Plugin name prefix、`public.` 或 physical schema；owner isolation 由 database instance 和 runtime namespace 管理。
 
-schema module 是 server-only。Workbench contract/browser bundle 不能导入它。Plugin package 依赖受支持的 `drizzle-orm`，不依赖 `pg`、PGlite 或其他 driver。
+schema module 是 server-only。Workbench API/browser bundle 不能导入它。Plugin package 依赖受支持的 `drizzle-orm`，不依赖 `pg`、PGlite 或其他 driver。
 
 同一个 Twoslash block 同时验证 schema definition、相对 import、handle 泛型和 query/transaction 的返回类型。`use()` 在返回前完成 active instance 选择和 migration prepare。handle 绑定当前 Plugin owner/generation，stop/replacement 后旧 handle 失效。
 
@@ -86,7 +86,7 @@ schema module 是 server-only。Workbench contract/browser bundle 不能导入�
 
 跨 Plugin workflow 通过 typed capability/RPC，并接受它是两个 transaction。真正必须满足 foreign key、join 或原子 transaction 的表应该归同一 owner。
 
-不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench live query 同样会验证 database handle 与 tables 属于同一个 owner。
+不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench target 也只能调用所属 Plugin 的领域 service，再返回 detached DTO；它不是跨 owner 数据库入口。
 
 ## Migration evolution
 
@@ -240,19 +240,22 @@ protected override init() {
 
 这条路径可以使用 SQLite 或其他数据库，但应用必须自行负责 migration 并发、连接恢复、备份、durability 和 shutdown。不要把 application client 包装成 `ctx.database`，否则会让调用者误以为它具备 managed Plugin database 的 owner isolation 与 replacement 语义。
 
-## Managed database 的 Workbench live query
+## 在 Workbench 中读取数据库状态
 
-`liveQuery` 只接受 managed Plugin database handle。Workbench contract 用 Standard Schema 描述 params/row，并选择稳定唯一的 string/number key。server binding 提供同 owner database handle、完整 `dependsOn` 和显式 DTO query：
+Workbench 不提供数据库专用查询协议。Plugin 在自己的 Direct View API 中返回 bounded browser-safe snapshot，
+需要更新时公开普通 `watch(invalidate)` capability；查询、分页、DTO 投影和 mutation 都留在 Plugin service/target：
 
 ```ts no-twoslash
-notes: workbench.bind.liveQuery({
-	database: this.database,
-	dependsOn: [notes],
-	query: (db) => db.select({ id: notes.id, title: notes.title }).from(notes),
-})
+interface NotesApi extends RpcTarget {
+	list(input: { cursor: string | null; limit: number }): Promise<NotesPage>
+	update(input: UpdateNoteInput): Promise<UpdateNoteResult>
+	watch(invalidate: () => void): RpcTarget
+}
 ```
 
-mutation 仍走 typed RPC；query 只返回 browser-safe DTO。完整 Contract/Binding 边界见 [管理工作台](../workbench/index.md)。
+Target 内部可以使用 owner-bound database handle，但不能把 handle、Drizzle row 或 transaction 暴露给 browser。DTO
+显式转换 `Date`、`BigInt`、Buffer 等 server values，并限制 rows/bytes。Mutation commit 后由 Plugin 自己触发 invalidation；
+Workbench 不解析 table identity，也不成为 database lifecycle owner。完整用法见 [插件管理界面](../workbench/index.md)。
 
 ## 选择 native PostgreSQL 或 PGlite
 

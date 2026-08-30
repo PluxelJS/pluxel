@@ -3,7 +3,7 @@ import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { applyLifecycleCommands, setAutoStart } from '../../src/api/usecases/pluginStatus'
-import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
 import type {
 	ConfigResult,
 	ConfigPresentationResult,
@@ -52,7 +52,7 @@ describe('runtime web control protocol', () => {
 			host.add(ManagedPlugin)
 			await host.commit()
 			const address = host.cfg(ManagedPlugin).owner
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
 			await expect(
 				rpc.applyPluginLifecycleCommands([{ address, command: 'start' }]),
@@ -105,7 +105,7 @@ describe('runtime web control protocol', () => {
 			host.add([ManagedProvider, ManagedAlternateProvider, ManagedProviderConsumer])
 			const providerFork = host.fork(ManagedProvider, 'policy-ineligible')
 			await host.commit()
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			const policyOwner = pluginNodeAddressOf(ManagedProvider)
 			const alternateProvider = pluginNodeAddressOf(ManagedAlternateProvider)
 			const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
@@ -209,7 +209,7 @@ describe('runtime web control protocol', () => {
 		try {
 			host.add([ManagedPlugin, ManagedProvider, ManagedProviderConsumer, ManagedDirectConsumer])
 			await host.commit()
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
 			const requirement = pluginDefinitionAddressOf(ManagedProviderToken)
 
@@ -290,7 +290,7 @@ describe('runtime web control protocol', () => {
 			host.add(ManagedPlugin)
 			await host.commit()
 			const address = host.cfg(ManagedPlugin).owner
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
 			await expect(
 				rpc.applyPluginLifecycleCommands([
@@ -351,7 +351,7 @@ describe('runtime web control protocol', () => {
 	it('returns closed invalid-input results for every Plugin RPC boundary', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			const invalidNode = { variant: 'default' }
 			await expect(rpc.pluginConfigPresentation(invalidNode)).resolves.toMatchObject({
 				ok: false,
@@ -467,7 +467,7 @@ describe('runtime web control protocol', () => {
 			const address = host.cfg(ManagedPlugin).owner
 			host.remove(ManagedPlugin)
 			await host.commit()
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
 			await expect(
 				rpc.applyPluginLifecycleCommands([{ address, command: 'start' }]),
@@ -530,7 +530,7 @@ describe('runtime web control protocol', () => {
 			host.add(ManagedPlugin)
 			await host.commit()
 			const address = host.cfg(ManagedPlugin).owner
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
 
 			host.remove(ManagedPlugin)

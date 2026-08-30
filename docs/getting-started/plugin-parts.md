@@ -183,7 +183,8 @@ replacement 与 optional availability 会重启整个 owner。Config patch 只�
 不会隐式 restart。Part 不提供单独 restart、running 或 failure 状态。
 
 Part Context 是资源归属边界，不是安全 sandbox，也不会复制完整 service graph。部分 capability 仍以 owning Plugin 为最终治理单位；
-Workbench Extension 只能由 owning Plugin 聚合并 mount。
+Workbench definition 只能由 owning Plugin 统一发布，Part 需要参与时向 owner 暴露窄领域能力，由 owner 绑定 Direct View 或
+Attachment target。
 
 ## Config path 属于 owner contract
 

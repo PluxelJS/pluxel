@@ -44,7 +44,7 @@ type NodeModuleSourceAnalysis = Readonly<{
 
 const forbiddenRuntimeImport = /^@pluxel\/(?:core|runtime)(?:\/|$)/
 const forbiddenDeclaration =
-	/\b(?:defineNodeModule|defineWorkerTask|workbench\s*\.\s*(?:entry|extension)|Plugin)\s*\(/
+	/\b(?:defineNodeModule|defineWorkerTask|workbench\s*\.\s*(?:attachment|define|entry|route|tab|view)|Plugin)\s*\(/
 const sourceExtensions = ['.tsx', '.ts', '.jsx', '.js', '.mts', '.mjs', '.cts', '.cjs', '.json']
 const builtins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]))
 const nodeArtifactConditions = [

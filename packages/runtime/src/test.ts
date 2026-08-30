@@ -17,7 +17,8 @@ import {
 	type RuntimeRootContextOptions,
 } from './context/runtime-plan'
 import type { RuntimeHostConfig } from './context/runtime-contract'
-import { createWorkbenchBackend } from './services/workbench'
+import { WorkbenchBackend } from './services/workbench'
+import type { WorkbenchArtifactLookup } from './services/workbench/WorkbenchArtifactService'
 import {
 	createCoreContext,
 	createCoreHost,
@@ -38,6 +39,7 @@ import {
 	type RootContext,
 } from '@pluxel/core'
 import { isPluginAutoStartEnabled } from './runtime-state'
+import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import {
 	consumePluginDefinitionCandidate,
 	requireConfigService,
@@ -153,11 +155,38 @@ function createRuntimeTestRoot(
 	options: RuntimeTestHostOptions = {},
 ): RootContext {
 	return createRuntimeRootContext(config, {
-		workbench: { createBackend: createWorkbenchBackend },
+		workbench: {
+			createBackend: (root, installOptions) =>
+				new WorkbenchBackend(root, installOptions, testWorkbenchArtifacts),
+		},
 		requestAddress: options.requestAddress ?? TEST_LOOPBACK_REQUEST_ADDRESS,
 		...options,
 	})
 }
+
+/** Test-only artifact seam; production always consumes the committed deployment inventory. */
+const testWorkbenchArtifacts: WorkbenchArtifactLookup = Object.freeze({
+	resolveEntry(definition, descriptor) {
+		const producer = workbenchFederationProducerName(definition)
+		const buildRevision = 'test-build'
+		const entry = Object.freeze({
+			descriptor,
+			expose: workbenchFederationExpose(descriptor.key),
+		})
+		return Object.freeze({
+			artifact: Object.freeze({
+				profile: 1,
+				definition,
+				producer,
+				buildRevision,
+				manifestUrl: `/__pluxel/runtime/federation/${producer}/${buildRevision}/mf-manifest.json`,
+				manifestSha256: '0'.repeat(64),
+				entries: Object.freeze([entry]),
+			}),
+			entry,
+		})
+	},
+})
 
 function assertCoreCommit(
 	result: Awaited<ReturnType<ReturnType<PluginService['beginUpdate']>['commit']>>,

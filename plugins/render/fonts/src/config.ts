@@ -8,7 +8,7 @@ export const FontsConfig = v.object({
 		f.formMeta({
 			title: 'Default font family',
 			description:
-				'Preferred system font when Workbench has no override. Omit to select an installed platform default automatically.',
+				'Host preference used when no managed preference is set. Omit to select an installed platform default automatically.',
 		}),
 	),
 	maxRegistrationsPerConsumer: v.pipe(
@@ -57,8 +57,7 @@ export const FontsConfig = v.object({
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(4_096)), 32),
 		f.formMeta({
 			title: 'Pending managed font tasks',
-			description:
-				'Maximum accepted serialized Workbench font operations, including the active one.',
+			description: 'Maximum accepted serialized managed-font operations, including the active one.',
 		}),
 	),
 	maxManagedFonts: v.pipe(

@@ -3,16 +3,8 @@
 import { act, useEffect, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import {
-	WorkbenchPane,
-	WorkbenchPaneLayout,
-	type WorkbenchPaneProps,
-} from '@pluxel/runtime/workbench/ui'
-import {
-	WorkbenchViewProvider,
-	type WorkbenchPaneDescriptor,
-	type WorkbenchViewState,
-} from '@pluxel/runtime/workbench/ui/internal'
+import type { WorkbenchPaneDescriptor } from '@pluxel/runtime/workbench/federation'
+import type { WorkbenchViewState } from '../src/app/workbench/context'
 import {
 	HostRemotePaneLayout,
 	RemotePaneLayoutStateProvider,
@@ -20,7 +12,6 @@ import {
 } from '../src/app/workbench/RemotePaneLayout'
 
 const mounted: Array<ReturnType<typeof createRoot>> = []
-const pane = (props: WorkbenchPaneProps) => <WorkbenchPane {...props} />
 let observedWidth = 1_400
 let resizeCallback: (() => void) | undefined
 
@@ -193,60 +184,18 @@ describe('remote Pane Kit host renderer', () => {
 	})
 })
 
-function Fixture({
-	children,
-	hostState,
-	locale = 'en',
-}: {
-	children: ReactNode
-	hostState?: WorkbenchViewState
-	locale?: string
-}) {
+function Fixture({ children, hostState }: { children: ReactNode; hostState?: WorkbenchViewState }) {
+	const panes: WorkbenchPaneDescriptor[] = [
+		{ id: 'scenario', role: 'navigation', title: 'Scenario', content: 'scenario' },
+		{ id: 'main', role: 'primary', title: 'Main', content: children },
+		{ id: 'inspection', role: 'inspector', title: 'Inspection', content: 'inspection' },
+	]
 	return (
 		<RemotePaneLayoutStateProvider state={hostState}>
-			<WorkbenchViewProvider
-				item={{ owner: ownerDescriptor, target: targetDescriptor } as never}
-				environment={{ locale: { locale, subscribe: () => () => {} } } as never}
-				paneLayoutRenderer={HostRemotePaneLayout}
-			>
-				<WorkbenchPaneLayout id="fixture">
-					{pane({ id: 'scenario', role: 'navigation', title: 'Scenario', children: 'scenario' })}
-					{pane({ id: 'main', role: 'primary', title: 'Main', children })}
-					{pane({
-						id: 'inspection',
-						role: 'inspector',
-						title: 'Inspection',
-						children: 'inspection',
-					})}
-				</WorkbenchPaneLayout>
-			</WorkbenchViewProvider>
+			<HostRemotePaneLayout id="fixture" panes={panes} label="Fixture" />
 		</RemotePaneLayoutStateProvider>
 	)
 }
-
-const ownerDescriptor = {
-	address: {
-		definition: {
-			entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/Owner.ts' },
-			exportName: 'Owner',
-		},
-		variant: 'default',
-	},
-	displayName: 'Owner',
-	rootExportName: 'Owner',
-} as const
-
-const targetDescriptor = {
-	address: {
-		definition: {
-			entry: { kind: 'source-entry', sourceSpace: 'app', path: 'tests/Target.ts' },
-			exportName: 'Target',
-		},
-		variant: 'default',
-	},
-	displayName: 'Target',
-	rootExportName: 'Target',
-} as const
 
 function descriptors(): WorkbenchPaneDescriptor[] {
 	return [

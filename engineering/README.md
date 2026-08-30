@@ -17,7 +17,7 @@
    - [`SPATIOTEMPORAL_COMPOSABILITY_NOTES.md`](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)：Cordis 对照后的 lifecycle、capability withdrawal、system boundary 与 compatibility 思考记录。
    - [`DATABASE.md`](DATABASE.md)：PostgreSQL/Drizzle、PGlite/PG、migration、隔离与 outbox。
    - [`LOGGING.md`](LOGGING.md)：single active root、Context identity、plugin policy、sinks 与大基数预算。
-   - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和Workbench投影。
+   - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和 Workbench 投影。
    - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
    - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。

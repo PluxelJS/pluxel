@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
 	attachSrvxViteNodeCarrier,
@@ -12,7 +12,10 @@ import {
 	type SrvxViteNodeCarrierAttachment,
 } from '../../runtime-dev/src/vite.ts'
 import { staticConfigEnvironmentVitePlugin } from '@pluxel/rolldown/internal/static-config-environment-vite'
-import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
+import {
+	createPluginSourceVitePipeline,
+	type PluginSourceVitePipeline,
+} from '@pluxel/rolldown/vite'
 import {
 	HMR_PATH_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -34,7 +37,7 @@ import {
 } from '@pluxel/runtime/internal'
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-import { formatPluginNodeReference, type PluginNodeAddress } from '@pluxel/core'
+import { formatPluginNodeReference } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import type { IncomingMessage } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
@@ -42,7 +45,7 @@ import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } fro
 import { reloadStaticRuntime } from './hmr'
 import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application'
 import { toStaticRuntimeDefinition } from './internal/application'
-import { createStaticRuntimeHost, readStaticRuntimeImplementations } from './internal/host'
+import { createStaticRuntimeHost } from './internal/host'
 import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
@@ -64,6 +67,10 @@ export type StaticRuntimeVitePluginOptions = {
 }
 
 export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions): PluginOption[] {
+	const sourcePipeline = createPluginSourceVitePipeline({
+		name: 'pluxel:static-runtime-source',
+	})
+	const producerPublishers = new WeakMap<StaticRuntimeHost, () => Promise<void>>()
 	const state: {
 		server?: ViteDevServer
 		entryPath?: string
@@ -120,9 +127,12 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				: {}),
 		})
 		try {
-			const workbenchEnabled = config.workbench !== false && config.workbench?.enabled === true
-			const pluginDirs = workbenchEnabled ? resolveStaticRuntimePluginDirs(server, host) : undefined
-			await configureStaticRuntimeDevRuntime(server, host, pluginDirs)
+			const publishProducers = await configureStaticRuntimeDevRuntime(
+				server,
+				host,
+				sourcePipeline.semantics,
+			)
+			producerPublishers.set(host, publishProducers)
 			await application.prepare?.({ host, startup })
 			return host
 		} catch (error) {
@@ -314,7 +324,10 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 		async handleHotUpdate(ctx) {
 			const host = state.host
-			if (!state.configFiles.has(ctx.file)) return undefined
+			if (!state.configFiles.has(ctx.file)) {
+				await (host ? producerPublishers.get(host)?.() : undefined)
+				return undefined
+			}
 			const server = state.server ?? ctx.server
 			state.server = server
 			const viteInvalidated = invalidateStaticRuntimeChangedModules(
@@ -344,6 +357,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				if (productChanged) ctx.server.ws.send({ type: 'full-reload' })
 				return []
 			}
+			await producerPublishers.get(host)?.()
 			const report = await reloadStaticRuntime({
 				host,
 				definition: toStaticRuntimeDefinition(application),
@@ -365,7 +379,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 
 	return [
 		staticConfigEnvironmentVitePlugin({ entry: options.entry }),
-		...createStaticRuntimeSourcePlugins(),
+		...sourcePipeline.plugins,
 		createHostModuleVitePlugin(),
 		routePlugin,
 	]
@@ -582,12 +596,6 @@ function countStatuses(entries: readonly StaticRuntimeStartupReport['entries'][n
 	return { started, stopped, blocked }
 }
 
-function createStaticRuntimeSourcePlugins(): PluginOption[] {
-	return pluxelRuntimeSourceVitePlugins({
-		name: 'pluxel:static-runtime-source',
-	})
-}
-
 function resolveRuntimeEntryPath(server: ViteDevServer, entry: string, route: string): string {
 	const raw = String(entry ?? '').trim()
 	if (!raw) throw new Error(`[${route}/vite] entry is required`)
@@ -630,17 +638,20 @@ async function resolveViteBindings(
 async function configureStaticRuntimeDevRuntime(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
-	pluginDirs: readonly { owner: PluginNodeAddress; dir: string }[] | undefined,
-): Promise<void> {
+	semantics: Pick<PluginSourceVitePipeline['semantics'], 'workbenchCompilations'>,
+): Promise<() => Promise<void>> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
 	if (!readRuntimeRouteCapabilities(ctx)) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
-	runtimeDev.attachPluginArtifactCompiler(ctx, {
-		pluginDirs,
-		viteServer: server,
-	})
+	const compiler = runtimeDev.attachPluginArtifactCompiler(ctx, { viteServer: server })
+	const publish = async (): Promise<void> => {
+		if (!ctx.workbench) return
+		await compiler.publishWorkbenchProducers(await semantics.workbenchCompilations())
+	}
+	await publish()
+	return publish
 }
 
 async function loadStaticRuntimeDevModule(
@@ -668,45 +679,4 @@ function isStaticRuntimeRouteRequest(
 		matchesMountedRoute: (pathname) => http.matchesMountedRoute(pathname),
 		matchesWorkbenchUiRoute: (pathname) => http.matchesWorkbenchUiRoute(pathname),
 	})
-}
-
-type ViteSsrModuleLike = {
-	readonly file?: string | null
-	readonly ssrModule?: Record<string, unknown> | null
-}
-
-function resolveStaticRuntimePluginDirs(
-	server: ViteDevServer,
-	host: StaticRuntimeHost,
-): readonly { owner: PluginNodeAddress; dir: string }[] | undefined {
-	const modules = moduleGraphEntries(server)
-	if (modules.length === 0) return undefined
-
-	const pluginDirs: Array<{ owner: PluginNodeAddress; dir: string }> = []
-	for (const { address, implementation } of readStaticRuntimeImplementations(host)) {
-		const pluginDir = findSsrExportDir(modules, implementation)
-		if (pluginDir) pluginDirs.push({ owner: address, dir: pluginDir })
-	}
-	return pluginDirs.length > 0 ? pluginDirs : undefined
-}
-
-function moduleGraphEntries(server: ViteDevServer): ViteSsrModuleLike[] {
-	const graph = server.moduleGraph as unknown as {
-		idToModuleMap?: Map<string, ViteSsrModuleLike>
-	}
-	const values = graph.idToModuleMap?.values()
-	return values ? [...values] : []
-}
-
-function findSsrExportDir(
-	modules: readonly ViteSsrModuleLike[],
-	implementation: unknown,
-): string | undefined {
-	for (const module of modules) {
-		if (!module.file || !module.ssrModule) continue
-		for (const value of Object.values(module.ssrModule)) {
-			if (value === implementation) return dirname(module.file)
-		}
-	}
-	return undefined
 }

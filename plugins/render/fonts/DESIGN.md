@@ -5,7 +5,7 @@
 
 ## 两类资源所有权
 
-- provider-owned managed collection：Workbench 上传、删除、统一默认值和持久化全部属于 FontsPlugin。provider
+- provider-owned managed collection：字体、统一 preference 和持久化全部属于 FontsPlugin。provider
   启动自动恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
   graph 语义被阻塞。
 - caller-owned programmatic registration：业务包随代码携带的字体可调用 `register()` / `registerFromPath()`，但
@@ -25,7 +25,7 @@ caller-triggered register/path-read/portable-read 在任何 copy、文件 IO 或
 同时约束 active、global queue 与 per-owner queue。caller stop 会 abort active cooperative task 并 O(1) 撤销 queued item；
 provider stop 拒绝 queue、等待 active task 与 managed/default serialization tail，再清理 native keys，避免新旧 generation
 的 registry mutation 重叠。
-Managed Workbench mutation 继续使用单独的 serialized tail，以保持 storage/registry transaction 顺序；该 tail 的 accepted
+Managed mutation 继续使用单独的 serialized tail，以保持 storage/registry transaction 顺序；该 tail 的 accepted
 operation 数受 `maxPendingManagedTasks` 限制，queue full 不先 snapshot upload bytes。
 
 provider restart、rollback 或 shutdown 会批量移除仍存活的 key，但绝不调用 `GlobalFonts.removeAll()`，因此不会破坏
@@ -37,7 +37,7 @@ provider restart、rollback 或 shutdown 会批量移除仍存活的 key，但�
 provider generation 启动时捕获 baseline，并在 `families[].source` 中区分后续 registration。不建立第二套目录
 scanner/watcher；进程中后来安装的系统字体在 provider/process restart 后出现。
 
-默认 family 解析顺序为：持久化 Workbench override、host `defaultFamily`、操作系统已安装字体优先表、
+默认 family 解析顺序为：持久化 provider preference、host `defaultFamily`、操作系统已安装字体优先表、
 `sans-serif` generic。`defaultFont` 同时给出 raw family 与 CSS-safe family。选择 mutation 在 provider queue 中串行并
 原子持久化；选择暂时不可用时保留 preference、运行期降级，family 重现后自动恢复。
 
@@ -60,16 +60,16 @@ managed record 和 caller registration 保存内容寻址 source；同一 bytes 
 Runtime Context special case：Fonts 仍是正常 Plugin capability，consumer 通过 required edge、caller facade 与 lifecycle
 使用它。
 
-## Workbench 与 Port
+## Workbench View 与 Attachment
 
-FontsPlugin 的正常 Workbench View 持有内部 manager RPC，只有这里提供上传和删除；完整 manager contract 不从包的
-Workbench 子入口导出。`FontsSelectionPort` 是复用同一 renderer bundle 的窄投影：Canvas、ECharts 或第三方 consumer
-选择 placement，绑定 `selectionManager()`，Port UI 只列出 FontsPlugin 的候选并修改统一默认值。
-`selectionManager('portable')` 使用同一 contract，但只投影/接受真正拥有 portable source 的 family，供 Takumi 等
-不能读取 Canvas system registry 的 renderer 使用。
+`FontsWorkbench.manager` 是 FontsPlugin 自己放置的 direct View；`FontsWorkbench.selection` 是 provider-owned、
+provider-only Attachment。Canvas、ECharts、Takumi 或第三方 consumer 只调用 `selection.place(...)` 并绑定其 required
+`FontsPlugin` handle，不创建无状态 consumer target。两个 renderer 都是零 props component，并通过
+`useWorkbench(FontsWorkbench.manager | selection)` 取得 exact Cap'n Web root。
 
-因此 Port outlet 的 resource grant/placement 属于 consumer，字体集合与 mutation 实现仍属于 provider；关闭
-Workbench 只消除 UI artifact、resource 和 transport，不影响 managed collection、默认选择或服务端渲染。
+Managed collection 是 Fonts domain state，不是 Workbench 概念。Definition 不按字体/collection 动态增长，字体 CRUD
+不会创建 View、Attachment、MF expose 或 layout revision。关闭 Workbench 只消除 UI publication 和 opened roots，不影响
+collection 恢复、`setPreferredFamily()`、portable bytes 或服务端渲染。
 
 ## 有意不包含
 

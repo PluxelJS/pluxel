@@ -22,7 +22,13 @@ import type {
 	SecurityOverview,
 	VaultAdminState,
 } from './security'
-import type { LogRangeResult, LogStreamMeta, RuntimeLogError, RuntimeLogLine } from './logs'
+import type {
+	LogRangeResult,
+	LogStreamMeta,
+	RuntimeLogError,
+	RuntimeLogEvent,
+	RuntimeLogLine,
+} from './logs'
 import type {
 	ConfigPresentationResult,
 	ConfigResult,
@@ -469,9 +475,9 @@ export function parseVersionedPluginLogPolicySnapshot(
 		[],
 		'logging policy snapshot',
 	)
-	if (value.version !== 2) fail('logging policy snapshot.version must be 2')
+	if (value.version !== 3) fail('logging policy snapshot.version must be 3')
 	return Object.freeze({
-		version: 2,
+		version: 3,
 		defaultLevel: runtimeLogLevel(value.defaultLevel, 'logging policy snapshot.defaultLevel'),
 		overrides: Object.freeze(
 			array(value.overrides, 'logging policy snapshot.overrides').map((item, index) => {
@@ -1598,6 +1604,63 @@ export function parseLogRangeResult(input: unknown): LogRangeResult {
 			? {}
 			: { tailSeq: uint64Text(value.tailSeq, 'log range result.tailSeq') }),
 	})
+}
+
+/** Validate and deep-freeze one live log callback event. */
+export function parseRuntimeLogEvent(input: unknown): RuntimeLogEvent {
+	const value = rootRecord(input, 'log event')
+	switch (value.type) {
+		case 'append':
+			shape(
+				value,
+				['type', 'streamId', 'epoch', 'fromSeq', 'nextSeq', 'lines'],
+				[],
+				'log append event',
+			)
+			return Object.freeze({
+				type: 'append',
+				streamId: text(value.streamId, 'log append event.streamId'),
+				epoch: nonNegativeInteger(value.epoch, 'log append event.epoch'),
+				fromSeq: uint64Text(value.fromSeq, 'log append event.fromSeq'),
+				nextSeq: uint64Text(value.nextSeq, 'log append event.nextSeq'),
+				lines: Object.freeze(
+					array(value.lines, 'log append event.lines').map((item, index) =>
+						logLine(item, `log append event.lines[${index}]`),
+					),
+				) as RuntimeLogLine[],
+			})
+		case 'gap':
+			shape(value, ['type', 'streamId', 'epoch', 'missingFrom', 'missingTo'], [], 'log gap event')
+			return Object.freeze({
+				type: 'gap',
+				streamId: text(value.streamId, 'log gap event.streamId'),
+				epoch: nonNegativeInteger(value.epoch, 'log gap event.epoch'),
+				missingFrom: uint64Text(value.missingFrom, 'log gap event.missingFrom'),
+				missingTo: uint64Text(value.missingTo, 'log gap event.missingTo'),
+			})
+		case 'reset': {
+			shape(
+				value,
+				[
+					'type',
+					'streamId',
+					'bootId',
+					'epoch',
+					'headSeq',
+					'tailSeq',
+					'nextSeq',
+					'count',
+					'retention',
+				],
+				[],
+				'log reset event',
+			)
+			const { type: _type, ...meta } = value
+			return Object.freeze({ type: 'reset', ...logStreamMeta(meta, 'log reset event') })
+		}
+		default:
+			fail('log event.type is unsupported')
+	}
 }
 
 /** Validate and deep-freeze the security overview HTTP payload. */

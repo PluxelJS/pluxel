@@ -146,7 +146,7 @@ describe('CanvasPlugin', () => {
 	})
 
 	it.skipIf(!discoveredFamily)(
-		'applies Workbench default changes to subsequently created raster and SVG contexts',
+		'applies provider preference changes to subsequently created raster and SVG contexts',
 		async () => {
 			await withRuntimeHost(
 				async (host) => {
@@ -155,14 +155,14 @@ describe('CanvasPlugin', () => {
 					const consumer = host.require(CanvasFontAdminConsumer)
 					const initialWorkerSnapshot = consumer.canvas.workerSnapshot
 
-					await consumer.fonts.selectionManager().setDefaultFamily(discoveredFamily!)
+					await consumer.fonts.setPreferredFamily(discoveredFamily!)
 					expect(consumer.canvas.createCanvasSync(2, 2).getContext('2d').font).toContain(
 						discoveredFamily,
 					)
 					expect(consumer.canvas.workerSnapshot).not.toBe(initialWorkerSnapshot)
 					expect(consumer.canvas.workerSnapshot.font.requiredFamily).toBe(discoveredFamily)
 
-					await consumer.fonts.selectionManager().setDefaultFamily('monospace')
+					await consumer.fonts.setPreferredFamily('monospace')
 					expect(consumer.canvas.createSvgCanvasSync(2, 2).getContext('2d').font).toBe(
 						'10px monospace',
 					)
@@ -300,32 +300,33 @@ describe('CanvasPlugin', () => {
 		)
 	})
 
-	it('uses FontsPlugin as its direct Port renderer and resource owner', async () => {
+	it('places the provider-owned Fonts selection Attachment', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				addStarted(host, [FontsPlugin, CanvasPlugin])
 				await host.commit()
 
-				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(
-					pluginNodeAddressOf(CanvasPlugin),
-				)
-				expect(layout.items).toEqual([
+				const consumer = pluginNodeAddressOf(CanvasPlugin)
+				const provider = pluginNodeAddressOf(FontsPlugin)
+				const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
+				expect(layout.entries).toEqual([
 					expect.objectContaining({
-						owner: {
-							address: pluginNodeAddressOf(FontsPlugin),
-							displayName: 'FontsPlugin',
-							rootExportName: 'FontsPlugin',
+						descriptor: {
+							kind: 'attachment-placement',
+							consumer: consumer.definition,
+							key: 'fonts',
+							provider: {
+								kind: 'attachment',
+								owner: provider.definition,
+								key: 'selection',
+							},
 						},
 						target: {
-							address: pluginNodeAddressOf(CanvasPlugin),
+							node: consumer,
 							displayName: 'CanvasPlugin',
-							rootExportName: 'CanvasPlugin',
 						},
-						viewId: 'FontSelection',
-						port: expect.objectContaining({
-							id: '@pluxel/fonts.selection',
-							model: { selection: expect.objectContaining({ kind: 'rpc' }) },
-						}),
+						renderer: provider,
+						placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 30 },
 					}),
 				])
 			},

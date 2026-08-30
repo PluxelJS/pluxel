@@ -9,7 +9,7 @@ import {
 	type ReactElement,
 	type ReactNode,
 } from 'react'
-import { useWorkbenchViewRuntime } from './ui-runtime'
+import { useWorkbenchReactRuntime } from './react-context'
 
 const PANE_COMPONENT = Symbol.for('@pluxel/runtime/workbench-pane')
 const SAFE_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
@@ -108,7 +108,7 @@ export function WorkbenchPaneLayout({
 	label = 'Workbench panes',
 }: WorkbenchPaneLayoutProps) {
 	const panes = useMemo(() => collectAndValidatePanes(id, children), [children, id])
-	const Renderer = useWorkbenchViewRuntime().paneLayoutRenderer
+	const Renderer = useWorkbenchReactRuntime().paneLayoutRenderer
 	if (!Renderer) {
 		throw new Error('WorkbenchPaneLayout is unavailable in the current host')
 	}

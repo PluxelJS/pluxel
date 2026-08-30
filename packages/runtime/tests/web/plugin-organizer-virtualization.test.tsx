@@ -182,7 +182,6 @@ describe('PluginOrganizer virtualization', () => {
 		const rows = container.querySelectorAll('[data-plugin-row="true"]')
 		expect(rows.length).toBe(12)
 		expect(container.textContent).not.toContain('平铺结果')
-		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
 	})
 
 	it('preserves grouped browse mode when no filtering is active', async () => {
@@ -198,7 +197,7 @@ describe('PluginOrganizer virtualization', () => {
 		expect(container.textContent).toContain('插件分类')
 		expect(container.textContent).toContain('Alpha')
 		expect(container.textContent).not.toContain('新建分组')
-		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
+		expect(container.querySelector('[role="group"][aria-label="分组 Alpha"]')).not.toBeNull()
 		expect(container.querySelectorAll('[data-plugin-row="true"]')).toHaveLength(6)
 	})
 })

@@ -15,7 +15,7 @@ owner、完成 migration prepare，并返回只暴露 `read(callback)` 与 `tran
 host-owned root resource：static `prepare()` 在 Plugin graph 前打开并迁移，实例按 root Context 绑定，关闭登记到 root effects；
 Plugin 通过接收 Context 的 typed accessor 显式取得实例。它不读取 host config、不从 PersistenceService 反推路径，也不投影为
 Runtime Context property。只有部分 Plugin 依赖时才改成 constructor-injected provider Plugin，让 graph 隔离失败和拥有 cleanup。
-runtime 不为 application-private database 提供 per-plugin role/instance、lineage、outbox 或 `liveQuery`。
+runtime 不为 application-private database 提供 per-plugin role/instance、lineage、outbox 或 owner-scoped invalidation。
 
 每个插件最多一个 definition。runtime 为 owner 下的每个 immutable database instance 分配独立 physical schema 与
 NOLOGIN role；system registry 只把一个 instance 标为 active。handle 固定绑定取得时的 instance，每次 operation 都在
@@ -30,7 +30,7 @@ transaction 中确认 instance 仍 active，再设置 instance role、`search_pa
 - `{ driver: 'postgres', connectionString, pool, tls }`：共享远端 pool；
 - `false`：完全关闭，任何 `use()` 都使对应 plugin 启动失败。
 
-没有 plugin 调用 `use()` 时不初始化 driver、migration、outbox 或 live-query backend。PGlite 是开发和本机默认；
+没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox backend。PGlite 是开发和本机默认；
 在 filesystem flush 与 fault-injection 验收完成前，不把它描述为生产级掉电 durable。生产并发、锁、deadlock、
 pool exhaustion 和 connection-loss 门禁必须运行在真正 PostgreSQL。
 
@@ -69,18 +69,19 @@ artifact fingerprint 与 runtime trigger version：PGlite 启动时一次加载�
 handle；远端 PG 为多进程正确性每 owner 查询 active metadata，但不会重复 role/schema/grant/trigger DDL。扩展必须通过
 `requirements.extensions` 声明；缺失权限或 extension 会在 capability acquisition 时诚实失败。
 
-## Invalidation and live query
+## Invalidation and outbox
 
 写操作只能在 `transaction()` 中发生。每个 owner table 的 statement trigger 在同一 transaction 写 pending outbox；
 rollback 会一起回滚。commit 后 dispatcher 以 durable log 发布 table invalidation，本进程轮询 checkpoint 并仅唤醒
 相交的 active query。PGlite 使用同一持久路径和进程内调度；durable log 才是恢复事实。
 
-Workbench `liveQuery` 是经授权、runtime-validated 的 DTO 查询，不是 table replica。完整协议、ordered patch、
-last-known-good 与 grant lifecycle 见 [`WORKBENCH.md`](WORKBENCH.md)。
+table invalidation 是 runtime internal primitive，不是 Plugin 作者查询 API。Workbench target 若需要实时刷新，仍由
+Plugin 自己执行有界查询、返回 DTO，并把 invalidation 转换为自己的 observer；Workbench 不提供数据库 query kind、
+table replica 或通用 patch protocol。
 
 ## Resource control
 
 PGlite 的所有 operation 经单连接 scheduler；远端 PG 的 admission concurrency 等于 pool 上限。scheduler 按 owner
 轮询、公平取队列，限制每 owner pending 数并使排队超时。owner stop 先拒绝新 operation，再等待已接纳的运行中和排队
-operation 排空；live-query subscription 由 Workbench 绑定 cleanup 撤销。同 lineage replacement 复用 active instance，
+operation 排空；内部 invalidation listener 随 owner cleanup 撤销。同 lineage replacement 复用 active instance，
 新 lineage replacement 得到新 instance。archive 会占用宿主存储，但 plugin 无权删除宿主备份或绕过配额策略。

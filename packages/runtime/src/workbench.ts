@@ -1,12 +1,24 @@
-export { workbench } from './workbench/runtime'
-export type * from './workbench/runtime'
-export type * from './workbench/contracts'
-export { doc as workbenchDoc } from './workbench/document-contracts'
+export { workbench } from './workbench/definition'
 export type {
-	BuiltinBadgeValue as WorkbenchBadgeValue,
-	BuiltinDocBlock as WorkbenchDocumentBlock,
-	BuiltinDocContent as WorkbenchDocumentContent,
-	BuiltinDocPart as WorkbenchDocumentPart,
-	BuiltinInfoCardBlock as WorkbenchInfoCardBlock,
-	BuiltinMarkdownPart as WorkbenchMarkdownPart,
-} from './workbench/document-contracts'
+	AnyWorkbenchDefinition,
+	PluginWorkbench,
+	WorkbenchAttachment,
+	WorkbenchAttachmentOpenContext,
+	WorkbenchAttachmentPlacement,
+	WorkbenchAttachmentTargetFactory,
+	WorkbenchBindings,
+	WorkbenchDefinition,
+	WorkbenchEntry,
+	WorkbenchEntryMap,
+	WorkbenchGroup,
+	WorkbenchIcon,
+	WorkbenchNavigation,
+	WorkbenchPlacement,
+	WorkbenchPrincipal,
+	WorkbenchRendererEntry,
+	WorkbenchRoutePlacement,
+	WorkbenchTabPlacement,
+	WorkbenchTargetFactory,
+	WorkbenchView,
+	WorkbenchViewOpenContext,
+} from './workbench/definition'

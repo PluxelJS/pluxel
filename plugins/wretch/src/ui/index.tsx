@@ -10,13 +10,10 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { createWorkbenchUi, type WorkbenchUiModule } from '@pluxel/runtime/workbench/ui'
+import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useState } from 'react'
-import { WretchWorkbenchPort, type WretchManagedSettingsSnapshot } from '../workbench-contract.ts'
-import { WretchWorkbenchUi } from '../workbench-renderer-contract.ts'
-
-const ui = createWorkbenchUi(WretchWorkbenchUi)
+import { WretchWorkbench, type WretchManagedSettingsSnapshot } from '../workbench.ts'
 
 type HeaderRow = { id: number; name: string; value: string }
 
@@ -32,8 +29,20 @@ function timeoutLabel(timeoutMs: number): string {
 	return timeoutMs > 0 ? `${timeoutMs} ms` : '关闭'
 }
 
-export function HttpSettings() {
-	const { settings } = ui.usePort(WretchWorkbenchPort)
+function copySnapshot(input: WretchManagedSettingsSnapshot): WretchManagedSettingsSnapshot {
+	return Object.freeze({
+		settings: Object.freeze({
+			headers: Object.freeze({ ...input.settings.headers }),
+			...(input.settings.proxyUrl === undefined ? {} : { proxyUrl: input.settings.proxyUrl }),
+			...(input.settings.timeoutMs === undefined ? {} : { timeoutMs: input.settings.timeoutMs }),
+		}),
+		hostTimeoutMs: input.hostTimeoutMs,
+		effectiveTimeoutMs: input.effectiveTimeoutMs,
+	})
+}
+
+export default function WretchSettingsPanel() {
+	const { provider } = useWorkbench(WretchWorkbench.settings)
 	const [snapshot, setSnapshot] = useState<WretchManagedSettingsSnapshot>()
 	const [headers, setHeaders] = useState<HeaderRow[]>([])
 	const [proxyUrl, setProxyUrl] = useState('')
@@ -44,7 +53,8 @@ export function HttpSettings() {
 	const [error, setError] = useState<string>()
 	const editingDisabled = loading || saving || !snapshot
 
-	const apply = useCallback((next: WretchManagedSettingsSnapshot) => {
+	const apply = useCallback((input: WretchManagedSettingsSnapshot) => {
+		const next = copySnapshot(input)
 		const rows = rowsOf(next)
 		setSnapshot(next)
 		setHeaders(rows)
@@ -57,7 +67,7 @@ export function HttpSettings() {
 		let active = true
 		void (async () => {
 			try {
-				const next = await settings.get()
+				using next = await provider.snapshot()
 				if (active) apply(next)
 			} catch (caught) {
 				if (active) setError(messageOf(caught))
@@ -68,7 +78,7 @@ export function HttpSettings() {
 		return () => {
 			active = false
 		}
-	}, [apply, settings])
+	}, [apply, provider])
 
 	const updateHeader = (id: number, patch: Partial<HeaderRow>) => {
 		setHeaders((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
@@ -97,13 +107,12 @@ export function HttpSettings() {
 			) {
 				throw new RangeError('请求超时必须是正整数')
 			}
-			apply(
-				await settings.update({
-					headers: headerRecord,
-					proxyUrl: proxyUrl.trim() || undefined,
-					timeoutMs: timeoutMs === '' ? undefined : timeoutMs,
-				}),
-			)
+			using next = await provider.update({
+				headers: headerRecord,
+				proxyUrl: proxyUrl.trim() || undefined,
+				timeoutMs: timeoutMs === '' ? undefined : timeoutMs,
+			})
+			apply(next)
 			setError(undefined)
 		} catch (caught) {
 			setError(messageOf(caught))
@@ -115,7 +124,8 @@ export function HttpSettings() {
 	const reset = async () => {
 		setSaving(true)
 		try {
-			apply(await settings.reset())
+			using next = await provider.reset()
+			apply(next)
 			setError(undefined)
 		} catch (caught) {
 			setError(messageOf(caught))
@@ -259,7 +269,3 @@ export function HttpSettings() {
 		</Stack>
 	)
 }
-
-const wretchWorkbenchUi: WorkbenchUiModule = ui.define({ HttpSettings })
-
-export default wretchWorkbenchUi

@@ -1,6 +1,5 @@
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
-import { FontsSelectionPort } from '@pluxel/fonts/workbench'
 import {
 	BasePlugin,
 	defineWorkerTask,
@@ -8,8 +7,6 @@ import {
 	type Context,
 	WorkerTaskError,
 } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import type { EChartsOption, SetOptionOpts } from 'echarts'
 import { EChartsConfig, type EChartsPluginConfig } from './config.ts'
 import { EChartsError, type EChartsErrorCode } from './errors.ts'
@@ -19,6 +16,7 @@ import {
 	type RenderEngineResult,
 } from './render-engine.ts'
 import type { EChartsWorkerInput, EChartsWorkerOutput } from './worker.ts'
+import { EChartsWorkbench } from './workbench.ts'
 
 const MAX_THEME_NAME_LENGTH = 128
 const UTF8_MEASURE_CHUNK_CHARACTERS = 64 * 1024
@@ -29,15 +27,6 @@ const renderTask = defineWorkerTask<EChartsWorkerInput, EChartsWorkerOutput>(
 	import.meta.url,
 	'./worker.ts',
 )
-
-const EChartsWorkbench = workbench.portOutlet({
-	id: 'Fonts',
-	port: FontsSelectionPort,
-	placement: workbenchContract.tab({
-		label: 'Fonts',
-		icon: workbenchContract.icons.Typography,
-	}),
-})
 
 export type EChartsThemeValue =
 	| null
@@ -181,8 +170,8 @@ export class EChartsPlugin extends BasePlugin {
 			},
 			{ tag: 'echarts-generation' },
 		)
-		this.ctx.workbench?.mount(EChartsWorkbench, {
-			selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
+		this.ctx.workbench?.publish(EChartsWorkbench, {
+			fonts: { provider: this.fonts },
 		})
 	}
 

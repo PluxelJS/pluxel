@@ -18,7 +18,7 @@ export function ProductProvider({
 		let active = true
 		async function loadProduct(): Promise<void> {
 			try {
-				const meta = await client.discover()
+				const meta = await client.describe()
 				if (active) setProduct(meta.application.product)
 			} catch (error: unknown) {
 				console.error('[workbench] failed to load host product metadata', error)

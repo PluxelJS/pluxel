@@ -82,7 +82,7 @@ function addEChartsHost(host: RuntimeHost): void {
 async function verifyManagedWorkerFont(consumer: EChartsTestConsumer, path: string): Promise<void> {
 	const family = `ECharts Worker ${randomUUID()}`
 	await consumer.fonts.registerFromPath({ path, family })
-	await consumer.fonts.selectionManager().setDefaultFamily(family)
+	await consumer.fonts.setPreferredFamily(family)
 	expect(consumer.echarts.defaultFont.family).toBe(family)
 	await expect(
 		consumer.echarts.render({ width: 240, height: 120, option: barOption }),
@@ -464,29 +464,33 @@ describe('EChartsPlugin', () => {
 		)
 	})
 
-	it('mounts the Fonts provider Port in the ECharts target workbench', async () => {
+	it('places the provider-owned Fonts selection Attachment', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				addStarted(host, [FontsPlugin, CanvasPlugin, EChartsPlugin])
 				await host.commit()
 
-				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(
-					pluginNodeAddressOf(EChartsPlugin),
-				)
-				expect(layout.items).toEqual([
+				const consumer = pluginNodeAddressOf(EChartsPlugin)
+				const provider = pluginNodeAddressOf(FontsPlugin)
+				const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
+				expect(layout.entries).toEqual([
 					expect.objectContaining({
-						owner: {
-							address: pluginNodeAddressOf(FontsPlugin),
-							displayName: 'FontsPlugin',
-							rootExportName: 'FontsPlugin',
+						descriptor: {
+							kind: 'attachment-placement',
+							consumer: consumer.definition,
+							key: 'fonts',
+							provider: {
+								kind: 'attachment',
+								owner: provider.definition,
+								key: 'selection',
+							},
 						},
 						target: {
-							address: pluginNodeAddressOf(EChartsPlugin),
+							node: consumer,
 							displayName: 'EChartsPlugin',
-							rootExportName: 'EChartsPlugin',
 						},
-						viewId: 'FontSelection',
-						port: expect.objectContaining({ id: '@pluxel/fonts.selection' }),
+						renderer: provider,
+						placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 30 },
 					}),
 				])
 			},

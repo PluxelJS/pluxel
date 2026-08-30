@@ -8,6 +8,7 @@ import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugin
 import { serverOnlyVitePlugin, serverOnlyVitePluginFactory } from './environment'
 import {
 	createPluginSemanticsPlugin,
+	type PluginSemanticsCollector,
 	type PluginSemanticsPluginOptions,
 } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { databaseSourceVitePlugin } from './database-source'
@@ -19,6 +20,14 @@ export type PluginSourceVitePluginsOptions = {
 	configSource?: false | ConfigSourcePluginOptions
 	lintGuard?: false | LintGuardPluginOptions
 }
+
+export type PluginSourceVitePipeline = Readonly<{
+	plugins: readonly PluginOption[]
+	semantics: Pick<
+		PluginSemanticsCollector,
+		'snapshot' | 'definitions' | 'workbenchPlans' | 'workbenchCompilations'
+	>
+}>
 
 const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
 	// Plugin packages use a dedicated dev export so their generated manifests do
@@ -74,6 +83,20 @@ export type PluxelRuntimeSourceVitePluginsOptions = PluginSourceVitePluginsOptio
 export function pluginSourceVitePlugins(
 	options: PluginSourceVitePluginsOptions = {},
 ): PluginOption[] {
+	return createPluginSourcePlugins(
+		options,
+		(root) =>
+			createPluginSemanticsPlugin({
+				root,
+				sourceSpaces: options.sourceSpaces,
+			}).plugin as Plugin,
+	)
+}
+
+function createPluginSourcePlugins(
+	options: PluginSourceVitePluginsOptions,
+	semantics: (root: string) => Plugin,
+): PluginOption[] {
 	const plugins: PluginOption[] = [
 		PreprocessorDirectives(),
 		serverOnlyVitePluginFactory(
@@ -83,11 +106,7 @@ export function pluginSourceVitePlugins(
 		),
 		serverOnlyVitePluginFactory(
 			'pluxel:plugin-semantics',
-			(environment) =>
-				createPluginSemanticsPlugin({
-					root: options.root ?? environment.config.root,
-					sourceSpaces: options.sourceSpaces,
-				}).plugin,
+			(environment) => semantics(options.root ?? environment.config.root) as Plugin,
 			{ enforce: 'pre' },
 		),
 	]
@@ -114,10 +133,58 @@ export function pluginSourceVitePlugins(
 	return plugins
 }
 
+/**
+ * Concrete source pipeline for a runtime route that must consume the exact same semantic facts
+ * as its Vite transforms. The returned collector is the sole Workbench plan authority.
+ */
+export function createPluginSourceVitePipeline(
+	options: PluxelRuntimeSourceVitePluginsOptions = {},
+): PluginSourceVitePipeline {
+	let collector: PluginSemanticsCollector | undefined
+	let collectorRoot: string | undefined
+	const createSemantics = (root: string): Plugin => {
+		if (collector) {
+			if (collectorRoot !== root) {
+				throw new Error(
+					`[pluxel:runtime-source] one source pipeline cannot span Vite roots ${collectorRoot} and ${root}`,
+				)
+			}
+			return collector.plugin as Plugin
+		}
+		collectorRoot = root
+		collector = createPluginSemanticsPlugin({ root, sourceSpaces: options.sourceSpaces })
+		return collector.plugin as Plugin
+	}
+	if (options.root !== undefined) createSemantics(options.root)
+	const requireCollector = (): PluginSemanticsCollector => {
+		if (!collector) {
+			throw new Error(
+				'[pluxel:runtime-source] semantic facts are unavailable before Vite configures its server environment',
+			)
+		}
+		return collector
+	}
+	const plugins = [
+		...createPluginSourcePlugins(options, createSemantics),
+		createRuntimeSourceConfigPlugin(options),
+	]
+	const semantics = Object.freeze({
+		snapshot: () => requireCollector().snapshot(),
+		definitions: () => requireCollector().definitions(),
+		workbenchPlans: () => requireCollector().workbenchPlans(),
+		workbenchCompilations: () => requireCollector().workbenchCompilations(),
+	})
+	return Object.freeze({ plugins: Object.freeze(plugins), semantics })
+}
+
 /** Complete Vite source preset consumed by both static and dynamic runtime routes. */
 export function pluxelRuntimeSourceVitePlugins(
 	options: PluxelRuntimeSourceVitePluginsOptions = {},
 ): PluginOption[] {
+	return [...pluginSourceVitePlugins(options), createRuntimeSourceConfigPlugin(options)]
+}
+
+function createRuntimeSourceConfigPlugin(options: PluxelRuntimeSourceVitePluginsOptions): Plugin {
 	const packageConditions =
 		options.packageMode === 'distribution'
 			? [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS, 'module', 'browser', 'production']
@@ -163,5 +230,5 @@ export function pluxelRuntimeSourceVitePlugins(
 			}
 		},
 	}
-	return [...pluginSourceVitePlugins(options), configPlugin]
+	return configPlugin
 }

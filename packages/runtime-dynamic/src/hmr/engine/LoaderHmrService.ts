@@ -8,7 +8,9 @@ import {
 	type PluginConstructor,
 	type PluginNodeSlot,
 } from '@pluxel/core'
+import type { WorkbenchFederationProducerPlan } from '@pluxel/core/federation'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { dirname, resolve } from 'pathe'
 import {
 	createServer,
@@ -156,6 +158,59 @@ export interface LoaderHmrConfig {
 const BATCH_DEBOUNCE_MS = 30
 const BATCH_MAX_WAIT_MS = 120
 const BATCH_MAX_FILES = 2000
+
+type WorkbenchProducerCompilation = Readonly<{
+	plan: WorkbenchFederationProducerPlan
+	root: string
+}>
+
+type WorkbenchProducerState = {
+	publish?: (inputs: readonly WorkbenchProducerCompilation[]) => Promise<unknown>
+	source?: Readonly<{
+		compilations(): Promise<readonly WorkbenchProducerCompilation[]>
+	}>
+}
+
+const workbenchProducerStates = new WeakMap<LoaderHmrService, WorkbenchProducerState>()
+
+/** @internal Connects the route-owned compiler without exposing it on LoaderHmrService. */
+export function attachLoaderHmrWorkbenchProducerPublisher(
+	service: LoaderHmrService,
+	publish: (inputs: readonly WorkbenchProducerCompilation[]) => Promise<unknown>,
+): void {
+	const state = workbenchProducerStates.get(service) ?? {}
+	if (state.publish && state.publish !== publish) {
+		throw new Error('[hmr] Workbench producer publisher is already attached')
+	}
+	state.publish = publish
+	workbenchProducerStates.set(service, state)
+}
+
+/** @internal Installs the sole semantic plan source used by initial load and every HMR commit. */
+export function configureLoaderHmrWorkbenchProducerSource(
+	service: LoaderHmrService,
+	source: Readonly<{
+		compilations(): Promise<readonly WorkbenchProducerCompilation[]>
+	}>,
+): void {
+	const state = workbenchProducerStates.get(service) ?? {}
+	if (state.source && state.source !== source) {
+		throw new Error('[hmr] Workbench producer source is already configured')
+	}
+	state.source = source
+	workbenchProducerStates.set(service, state)
+}
+
+async function publishLoaderHmrWorkbenchProducers(service: LoaderHmrService): Promise<void> {
+	const state = workbenchProducerStates.get(service)
+	if (!state?.publish || !state.source) return
+	await state.publish(await state.source.compilations())
+}
+
+function hasLoaderHmrWorkbenchProducerPipeline(service: LoaderHmrService): boolean {
+	const state = workbenchProducerStates.get(service)
+	return Boolean(state?.publish && state.source)
+}
 
 const hmrPackageRoot = (() => {
 	try {
@@ -514,6 +569,7 @@ export class LoaderHmrService {
 
 	private async startImpl(): Promise<void> {
 		if (this.vite) {
+			await publishLoaderHmrWorkbenchProducers(this)
 			await this.ensureBaseline()
 			await this.loadInitialEntries()
 			void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
@@ -533,6 +589,13 @@ export class LoaderHmrService {
 		const clientEntries = this.config.clientEntries?.map((entry) =>
 			normalizePath(resolve(this.hostRoot, entry)),
 		)
+		const sourcePipeline = createPluginSourceVitePipeline({
+			root: this.hostRoot,
+			name: 'pluxel:dynamic-runtime-source',
+		})
+		configureLoaderHmrWorkbenchProducerSource(this, {
+			compilations: () => sourcePipeline.semantics.workbenchCompilations(),
+		})
 		let applicationCarrier: OwnedElysiaApplicationCarrier | undefined
 		const serverConfig = buildLoaderHmrViteConfig({
 			// Vite root should point at the HMR package UI, not the host root.
@@ -542,6 +605,7 @@ export class LoaderHmrService {
 			fsAllow: serverFsAllow,
 			clientEntries,
 			port: this.config.port,
+			sourcePlugins: sourcePipeline.plugins,
 			runnerPlugin: this.plugin,
 			httpPlugin: createFetchHmrServerPlugin({
 				exclude: [
@@ -580,12 +644,11 @@ export class LoaderHmrService {
 		try {
 			// Parallelize Vite listen and fixed-baseline establishment.
 			// so overall startup latency is closer to the slower of the two.
-			await Promise.all([
-				server.listen(),
-				// Fail-fast on bridge/fixed-catalog correctness errors. If this throws,
-				// the host process should crash rather than limping along with a broken HMR runtime.
-				this.ensureBaseline(),
-			])
+			await server.listen()
+			await publishLoaderHmrWorkbenchProducers(this)
+			// Fail-fast on bridge/fixed-catalog correctness errors. If this throws,
+			// the host process should crash rather than limping along with a broken HMR runtime.
+			await this.ensureBaseline()
 		} catch (error) {
 			applicationCarrier.stopAccepting()
 			await server.close().catch((): undefined => undefined)
@@ -698,6 +761,8 @@ export class LoaderHmrService {
 		this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
 			dbgModules: this.dbg.modules,
 			useRequireShims: this.useRequireShims,
+			beforeCommit: () => publishLoaderHmrWorkbenchProducers(this),
+			hasBeforeCommit: () => hasLoaderHmrWorkbenchProducerPipeline(this),
 		})
 
 		this.batchProcessor = new HmrBatchProcessor(

@@ -153,9 +153,8 @@ export function prepareRuntimeRootContext(root: RootContext): Promise<void> {
 	let task!: Promise<void>
 	task = Promise.resolve()
 		.then(async (): Promise<void> => {
-			// Enabling Workbench is an explicit startup decision, so materialize its backend here.
-			void root.workbench
-			await root.vaultAdmin?.prepare()
+			const workbench = root.workbench?.requireBackend()
+			await Promise.all([workbench?.prepare(), root.vaultAdmin?.prepare()])
 			return undefined
 		})
 		.catch((error: unknown) => {
@@ -330,12 +329,10 @@ function resolveRuntimeRootInputs(
 			: {}),
 		...(config.nodeModuleArtifactResolver ? { resolve: config.nodeModuleArtifactResolver } : {}),
 	})
-	const workbenchArtifacts = Object.freeze({
-		...(normalizePath(config.workbenchArtifactRoot)
-			? { root: normalizePath(config.workbenchArtifactRoot) }
-			: {}),
-		...(config.workbenchArtifactResolver ? { resolve: config.workbenchArtifactResolver } : {}),
-	})
+	const workbenchArtifactRoot = normalizePath(config.workbenchArtifactRoot)
+	const workbenchArtifacts = Object.freeze(
+		workbenchArtifactRoot ? { root: workbenchArtifactRoot } : {},
+	)
 	const httpConfig = config.http ?? {}
 	const http: RuntimeHttpHostConfig = Object.freeze({
 		management: planes.management,

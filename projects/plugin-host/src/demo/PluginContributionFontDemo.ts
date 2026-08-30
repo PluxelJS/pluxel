@@ -1,7 +1,11 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
-import { FontConsumerUi, FontManagerUi } from './PluginContributionFontDemo.workbench'
+import {
+	FontConsumerWorkbench,
+	FontManagerWorkbench,
+	type FontCatalogApi,
+	type FontSelectionApi,
+} from './PluginContributionFontDemo.workbench'
 import {
 	ConsumerAppearanceConfig,
 	FONT_SETS,
@@ -9,32 +13,12 @@ import {
 	toFontRef,
 	type FontRef,
 } from './PluginContributionFontDemo.shared'
-import {
-	demoDatabase,
-	demoProjectionQuery,
-	demoProjections,
-	DemoProjectionStore,
-} from './workbench-projection'
-
-const FontManagerWorkbench = workbench.extension({
-	contract: FontManagerUi,
-	entry: workbench.entry(import.meta.url, './PluginContributionFontDemo/ui/index.tsx'),
-})
-const FontConsumerWorkbench = workbench.extension({ contract: FontConsumerUi })
 
 @Plugin()
 export class PluginContributionFontManager extends BasePlugin {
-	override async init(): Promise<void> {
-		const workbenchCapability = this.ctx.workbench
-		if (!workbenchCapability) return
-		const database = await this.ctx.database.use(demoDatabase)
-		await new DemoProjectionStore(database).replaceAll('fontSets', FONT_SETS)
-		workbenchCapability.mount(FontManagerWorkbench, {
-			fontSets: workbench.bind.liveQuery({
-				database,
-				dependsOn: [demoProjections],
-				query: demoProjectionQuery('fontSets'),
-			}),
+	override init(): void {
+		this.ctx.workbench?.publish(FontManagerWorkbench, {
+			selection: () => new FontCatalogTarget(),
 		})
 	}
 }
@@ -44,14 +28,18 @@ export class PluginContributionFontConsumer extends BasePlugin {
 	readonly config = this.configs.use(ConsumerAppearanceConfig)
 	private fontSetRef: FontRef | null = null
 
-	constructor(_fontManager: PluginContributionFontManager) {
+	constructor(private readonly fontManager: PluginContributionFontManager) {
 		super()
 	}
 
 	override init(): void {
-		this.fontSetRef = readFontRef(this.config.fontSetRef)
-		this.ctx.workbench?.mount(FontConsumerWorkbench, {
-			commands: workbench.bind.rpc(() => new FontSettingsRpc(this)),
+		const configured = readFontRef(this.config.fontSetRef)
+		this.fontSetRef = configured ? toFontRef(configured) : null
+		this.ctx.workbench?.publish(FontConsumerWorkbench, {
+			appearanceFont: {
+				provider: this.fontManager,
+				consumer: () => new FontSelectionTarget(this),
+			},
 		})
 	}
 
@@ -60,22 +48,27 @@ export class PluginContributionFontConsumer extends BasePlugin {
 	}
 
 	setFont(ref: FontRef | null): FontRef | null {
-		const value = ref ? toFontRef(ref) : null
-		this.fontSetRef = value
-		return value
+		this.fontSetRef = ref ? toFontRef(ref) : null
+		return this.currentFont()
 	}
 }
 
-export class FontSettingsRpc extends RpcTarget {
+class FontCatalogTarget extends RpcTarget implements FontCatalogApi {
+	list() {
+		return FONT_SETS
+	}
+}
+
+class FontSelectionTarget extends RpcTarget implements FontSelectionApi {
 	constructor(private readonly consumer: PluginContributionFontConsumer) {
 		super()
 	}
 
-	async current() {
+	current() {
 		return this.consumer.currentFont()
 	}
 
-	async set(ref: FontRef | null) {
+	set(ref: FontRef | null) {
 		return this.consumer.setFont(ref)
 	}
 }

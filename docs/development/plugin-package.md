@@ -41,7 +41,7 @@ oxlint.config.ts
 - identity 来自 canonical entry + root named export，不是 class name、`displayName` 或 constructor object。
 - 不从 `src/`、`dist/` 或未声明 subpath 导入 Plugin。
 - 不跨 package re-export 别人的 Plugin class。
-- Workbench contract、worker adapter 等 plugin-free 模块可以有独立 subpath，但不得形成第二个模糊 plugin-bearing root。
+- Workbench definition/API、worker adapter 等 plugin-free 模块可以有独立 subpath，但不得形成第二个模糊 plugin-bearing root。
 
 源码文件移动或 root export 重命名会得到新 definition identity。持久 config/runtime state 不按旧 class name 自动迁移。
 
@@ -141,24 +141,29 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 - generated plugin package records；
 - declaration/types 与 ESM artifact；
 - config schema source；
-- 可选 Workbench remote 与 Node/worker/database artifacts。
+- 可选 Workbench MF2 producer 与 Node/worker/database artifacts。
 
 构建失败不会提交部分 metadata。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
 
 ## Workbench UI package
 
-有 UI 时，server Plugin 声明 literal entry：
+有 UI 时，在 browser-safe `workbench.ts` 中声明固定 Definition 和 literal renderer entry：
 
 ```ts no-twoslash
-const OrdersWorkbench = workbench.extension({
-	contract: OrdersUi,
-	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
+export const OrdersWorkbench = workbench.define({
+	overview: workbench.view<OrdersApi>({
+		renderer: workbench.entry(import.meta.url, './ui/overview.tsx'),
+		placement: workbench.tab({ label: 'Orders' }),
+	}),
 })
 ```
 
-`pluxel build` 才会发现 declaration 并生成独立 remote。server bundle 与 browser remote 分离；browser graph 不能导入 Node builtin、database schema、secret 或 Plugin implementation。
+`pluxel build` 在 TypeScript 擦除前提取 owning Plugin definition、entry key 和 literal source，生成一个标准 MF2
+producer、每个 declaration 的 React Bridge expose 和 `mf-manifest.json`。作者不手写 remote name、expose、shared
+或 Bridge wrapper。Server bundle 与 browser producer 分离；browser graph 不能导入 Node builtin、database handle、
+secret 或 Plugin implementation。
 
-没有 UI declaration 时，不加载 Federation builder，也不创建 remote artifact。
+没有 renderer declaration 时，不加载 Federation builder，也不创建 producer。
 
 ## 数据库与 Node artifacts
 

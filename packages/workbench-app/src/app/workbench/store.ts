@@ -270,6 +270,25 @@ function setWorkbenchTabDirty(store: Store<WorkbenchState>, tabId: string | null
 	})
 }
 
+function setWorkbenchTabPresentation(
+	store: Store<WorkbenchState>,
+	tabId: string,
+	input: Readonly<{ title: string; meta?: string }>,
+) {
+	const title = input.title.trim()
+	if (!title) return
+	const meta = input.meta?.trim() || undefined
+	store.setState((prev) => {
+		const index = prev.uiState.tabs.findIndex((tab) => tab.instanceId === tabId)
+		if (index < 0) return prev
+		const current = prev.uiState.tabs[index]!
+		if (current.title === title && current.meta === meta) return prev
+		const tabs = [...prev.uiState.tabs]
+		tabs[index] = { ...current, title, ...(meta === undefined ? { meta: undefined } : { meta }) }
+		return { ...prev, uiState: { ...prev.uiState, tabs } }
+	})
+}
+
 function closeWorkbenchTab(store: Store<WorkbenchState>, tabId: string) {
 	store.setState((prev) => {
 		const sourceGroup = findWorkbenchGroupForTab(prev.uiState, tabId)
@@ -438,6 +457,10 @@ export class WorkspaceController {
 
 	setTabDirty(tabId: string | null, dirty: boolean): void {
 		setWorkbenchTabDirty(this.store, tabId, dirty)
+	}
+
+	setTabPresentation(tabId: string, input: Readonly<{ title: string; meta?: string }>): void {
+		setWorkbenchTabPresentation(this.store, tabId, input)
 	}
 
 	closeTab(tabId: string): WorkbenchTab | null {

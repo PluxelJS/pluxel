@@ -1,12 +1,10 @@
 import {
 	WorkbenchPaneLayoutControlsProvider,
-	useWorkbenchViewRuntime,
 	type WorkbenchPaneDescriptor,
 	type WorkbenchPaneLayoutControls,
 	type WorkbenchPaneLayoutMode,
 	type WorkbenchPaneLayoutRendererProps,
-	type WorkbenchViewState,
-} from '@pluxel/runtime/workbench/ui/internal'
+} from '@pluxel/runtime/workbench/federation'
 import {
 	createContext,
 	useContext,
@@ -19,6 +17,7 @@ import {
 	useSyncExternalStore,
 	type ReactNode,
 } from 'react'
+import type { WorkbenchViewState } from './context'
 import {
 	WorkbenchSplitView,
 	type SplitViewHandle,
@@ -58,12 +57,7 @@ export function HostRemotePaneLayout({
 	style,
 	label,
 }: HostRemotePaneLayoutProps) {
-	const localeService = useWorkbenchViewRuntime().environment.locale
-	const locale = useSyncExternalStore(
-		(listener) => localeService.subscribe(listener),
-		() => localeService.locale,
-		() => localeService.locale,
-	)
+	const locale = document.documentElement.lang || navigator.language || 'en'
 	const labels = paneHostLabels(locale)
 	const hostState = useContext(RemotePaneStateContext)
 	const hostRef = useRef<HTMLDivElement | null>(null)

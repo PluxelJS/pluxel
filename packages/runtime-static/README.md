@@ -1,6 +1,6 @@
 # @pluxel/runtime-static
 
-Static route 以一个 `defineStaticRuntime()` 默认导出固定插件 catalog。Vite 开发和 production build 都消费同一入口；插件 API、core lifecycle、runtime services 和 Workbench contract 与 dynamic route 共用。
+Static route 以一个 `defineStaticRuntime()` 默认导出固定插件 catalog。Vite 开发和 production build 都消费同一入口；插件 API、core lifecycle、runtime services，以及 Workbench 的 Direct View/Attachment publication 和 Cap’n Web session 与 dynamic route 共用。
 
 ## Canonical entry
 
@@ -84,7 +84,7 @@ export default staticApplication({
 })
 ```
 
-构建产物包含 server entry、fixed plugins、`runtime-static` 与所需 runtime/core closure、deployment manifest，以及 variant 选择的 `workbench/public` shell 和 extension remotes。freezer 生成 namespace-based bootstrap，执行 canonical entry 后分别消费 default application 与 `product`，不静态求值或复制产品字段。业务 SPA 可以独立输出到 `public/`。Node native 或动态依赖由 `nf3` 追踪到产物自己的 `node_modules`；目标机不安装 Pluxel packages。
+构建产物包含 server entry、fixed plugins、`runtime-static` 与所需 runtime/core closure、deployment manifest，以及 variant 选择的 `workbench/public` shell 和 immutable MF producers。freezer 生成 namespace-based bootstrap，执行 canonical entry 后分别消费 default application 与 `product`，不静态求值或复制产品字段。业务 SPA 可以独立输出到 `public/`。Node native 或动态依赖由 `nf3` 追踪到产物自己的 `node_modules`；目标机不安装 Pluxel packages。
 
 存在 config environment binding 时，freezer 从 direct declaration 和 exported schema facts 生成 root `.env.example`。它只写说明和注释 placeholder，不读取 build environment，不生成真实 `.env`；该文件自然进入 distribution inventory。
 

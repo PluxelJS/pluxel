@@ -1,26 +1,23 @@
 import { createContext, type ReactNode, useContext, useRef } from 'react'
-import {
-	createRuntimeManagementClient,
-	type RuntimeManagementClient,
-	type RuntimeManagementClientOptions,
-} from '../web/client'
+import { type RuntimeManagementClient } from '../web/client'
 
 const RuntimeManagementClientContext = createContext<RuntimeManagementClient | null>(null)
 
 export type RuntimeManagementClientProviderProps = {
 	children: ReactNode
-	options?: RuntimeManagementClientOptions
-	client?: RuntimeManagementClient
+	client: RuntimeManagementClient
 }
 
 /** React binding for one host-owned, framework-neutral management client. */
 export function RuntimeManagementClientProvider({
-	options,
 	client,
 	children,
 }: RuntimeManagementClientProviderProps) {
 	const ref = useRef<RuntimeManagementClient | null>(null)
-	if (!ref.current) ref.current = client ?? createRuntimeManagementClient(options)
+	if (!ref.current) ref.current = client
+	if (ref.current !== client) {
+		throw new Error('RuntimeManagementClientProvider client cannot change within one document')
+	}
 	return (
 		<RuntimeManagementClientContext.Provider value={ref.current}>
 			{children}

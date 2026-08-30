@@ -12,13 +12,11 @@ import {
 	Textarea,
 	Title,
 } from '@mantine/core'
-import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDownload, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PackageManagerSnapshot, PackageMutationResult } from '../contracts.ts'
-import { PackageManagerWorkbenchUi } from '../workbench-contract.ts'
-
-const ui = createWorkbenchUi(PackageManagerWorkbenchUi)
+import { PackageManagerWorkbench } from '../workbench.ts'
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
@@ -40,8 +38,54 @@ function parseSpecs(value: string): string[] {
 	]
 }
 
+function copySnapshot(input: PackageManagerSnapshot): PackageManagerSnapshot {
+	return Object.freeze({
+		revision: input.revision,
+		engine: input.engine,
+		rootDir: input.rootDir,
+		entriesDir: input.entriesDir,
+		packages: Object.freeze(
+			input.packages.map((pkg) =>
+				Object.freeze({
+					name: pkg.name,
+					requested: pkg.requested,
+					installedVersion: pkg.installedVersion,
+					entryFile: pkg.entryFile,
+				}),
+			),
+		),
+		dependenciesWithBuildScripts: Object.freeze([...input.dependenciesWithBuildScripts]),
+	})
+}
+
+function copyMutationResult(input: PackageMutationResult): PackageMutationResult {
+	const succeeded = Object.freeze([...input.succeeded])
+	if (input.ok) return Object.freeze({ ok: true, succeeded, failed: Object.freeze([] as const) })
+	return Object.freeze({
+		ok: false,
+		succeeded,
+		failed: Object.freeze(
+			input.failed.map((failure) =>
+				Object.freeze({
+					input: failure.input,
+					code: failure.code,
+					message: failure.message,
+				}),
+			) as [PackageMutationResult['failed'][number], ...PackageMutationResult['failed'][number][]],
+		),
+	})
+}
+
+function disposeRemoteValue(input: unknown): void {
+	const dispose =
+		input && (typeof input === 'object' || typeof input === 'function')
+			? (input as Partial<Disposable>)[Symbol.dispose]
+			: undefined
+	if (typeof dispose === 'function') dispose.call(input)
+}
+
 export function Manager() {
-	const { manager } = ui.useResources()
+	const { api } = useWorkbench(PackageManagerWorkbench.manager)
 	const requestId = useRef(0)
 	const [snapshot, setSnapshot] = useState<PackageManagerSnapshot>()
 	const [specs, setSpecs] = useState('')
@@ -53,16 +97,16 @@ export function Manager() {
 		const current = ++requestId.current
 		setLoading(true)
 		try {
-			const next = await manager.snapshot()
+			using next = await api.snapshot()
 			if (requestId.current !== current) return
-			setSnapshot(next)
+			setSnapshot(copySnapshot(next))
 			setError(undefined)
 		} catch (caught) {
 			if (requestId.current === current) setError(messageOf(caught))
 		} finally {
 			if (requestId.current === current) setLoading(false)
 		}
-	}, [manager])
+	}, [api])
 
 	useEffect(() => {
 		void refresh()
@@ -71,11 +115,17 @@ export function Manager() {
 		}
 	}, [refresh])
 
-	const mutate = async (operation: () => Promise<PackageMutationResult>) => {
+	const mutate = async (operation: () => PromiseLike<PackageMutationResult>) => {
 		if (busy) return
 		setBusy(true)
 		try {
-			const result = await operation()
+			const remoteResult = await operation()
+			let result: PackageMutationResult
+			try {
+				result = copyMutationResult(remoteResult)
+			} finally {
+				disposeRemoteValue(remoteResult)
+			}
 			setError(mutationMessage(result))
 			await refresh()
 		} catch (caught) {
@@ -91,7 +141,7 @@ export function Manager() {
 			setError('Enter at least one npm package specifier.')
 			return
 		}
-		await mutate(() => manager.install(requested))
+		await mutate(() => api.install(requested))
 	}
 
 	return (
@@ -187,7 +237,7 @@ export function Manager() {
 												color="red"
 												leftSection={<IconTrash size={14} />}
 												disabled={busy}
-												onClick={() => void mutate(() => manager.remove([pkg.name]))}
+												onClick={() => void mutate(() => api.remove([pkg.name]))}
 											>
 												Remove
 											</Button>
@@ -210,4 +260,4 @@ export function Manager() {
 	)
 }
 
-export default ui.define({ Manager })
+export default Manager

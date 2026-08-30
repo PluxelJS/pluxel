@@ -21,14 +21,12 @@ import {
 import {
 	getActiveRuntimeLogging,
 	requireRuntimePluginGraphCoordinator,
-	RUNTIME_INTERNAL_API_BASE,
 } from '@pluxel/runtime/internal'
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import { defineProduct } from '@pluxel/runtime/product'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { websocket } from 'elysia/websocket'
 import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { defineStaticRuntime, type StaticRuntimePluginStatus } from '@pluxel/runtime-static'
 import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
 import * as runtimeStaticVite from '@pluxel/runtime-static/vite'
@@ -186,13 +184,13 @@ const InactiveHotV2 = class InactiveHotV2 extends BasePlugin {
 }
 
 let managedWorkbenchMounted = false
+const ManagedWorkbench = workbench.define({})
 
 @Plugin({ displayName: 'Managed Web Gate' })
 class ManagedWebGate extends BasePlugin {
 	override init(): void {
-		managedWorkbenchMounted = Boolean(
-			this.ctx.workbench.mount(workbench.extension({ contract: workbenchContract.define({}) }), {}),
-		)
+		this.ctx.workbench.publish(ManagedWorkbench, {})
+		managedWorkbenchMounted = true
 	}
 }
 
@@ -330,7 +328,7 @@ class StreamingDisconnect extends BasePlugin {
 						responseCancelled = true
 					},
 				}),
-				{ headers: { 'content-type': 'text/event-stream' } },
+				{ headers: { 'content-type': 'application/octet-stream' } },
 			)
 		})
 	}
@@ -999,7 +997,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('projects the host-owned product snapshot through runtime meta', async () => {
+	it('projects the host-owned product snapshot through Cap’n Web management', async () => {
 		const product = defineProduct({
 			displayName: 'Rhythm',
 			publisher: 'Example Company',
@@ -1020,11 +1018,9 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			await host.start()
-			const response = await host.fetch(
-				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}/meta`),
-			)
-			expect(response.status).toBe(200)
-			await expect(response.json()).resolves.toMatchObject({ application: { product } })
+			expect(host.ctx.root.runtimeManagement?.describe()).toMatchObject({
+				application: { product },
+			})
 		} finally {
 			await host.stop()
 		}

@@ -14,7 +14,6 @@ import {
 	prepareRuntimeRootContext,
 	readRuntimeRouteCapabilities,
 	requireRuntimeStateStore,
-	resolvePackagedWorkbenchManifest,
 	resolvePackagedNodeModule,
 	resolveRuntimeStoragePaths,
 	withPluginConfigEnvironment,
@@ -35,7 +34,12 @@ import {
 	type LoaderHmrWorkspaceFs,
 	type WorkspaceSnapshot,
 } from './diagnose'
-import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
+import {
+	attachLoaderHmrWorkbenchProducerPublisher,
+	LoaderHmrService,
+	type LoaderHmrConfig,
+} from './engine/LoaderHmrService'
+export { configureLoaderHmrWorkbenchProducerSource } from './engine/LoaderHmrService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 import { resolveDynamicPluginSources, type DynamicPluginSource } from '../sources'
@@ -284,7 +288,6 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 					root: plan.runtimeStorage.persistenceDir,
 				}),
 			},
-			workbenchArtifactResolver: resolvePackagedWorkbenchManifest,
 			nodeModuleArtifactResolver: resolvePackagedNodeModule,
 		}
 		const runtimeConfig = mergeRuntimeHostConfig(defaultConfig, plan.runtimeConfig)
@@ -479,10 +482,15 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	})
 	ctx.effects.defer(uninstallRoute, { tag: 'LoaderHmrRouteCapabilities', phase: 'shutdown' })
 
-	attachPluginArtifactCompiler(ctx, {
+	const artifactCompiler = attachPluginArtifactCompiler(ctx, {
 		cacheDir: workbenchArtifactCacheDir,
 		viteServer: viteServer ?? hmr.vite,
 	})
+	if (ctx.workbench) {
+		attachLoaderHmrWorkbenchProducerPublisher(hmr, (inputs) =>
+			artifactCompiler.publishWorkbenchProducers(inputs),
+		)
+	}
 
 	return hmr
 }

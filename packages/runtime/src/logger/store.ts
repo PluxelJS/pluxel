@@ -91,7 +91,7 @@ const CHUNK_SIZE = 1024
 function parseSeq(raw: string): bigint | null {
 	try {
 		if (!raw) return null
-		// Only allow unsigned decimal (SSE id, query params).
+		// Only allow the protocol's canonical unsigned-decimal sequence form.
 		if (!/^\d+$/.test(raw)) return null
 		return BigInt(raw)
 	} catch {

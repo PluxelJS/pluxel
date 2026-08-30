@@ -3,7 +3,7 @@ import { IconSettingsOff } from '@tabler/icons-react'
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { EmptyState, ErrorState } from '../../../components'
-import { useResolvedWorkbenchRoute, useWorkbenchSurface } from '../../../workbench/runtime'
+import { useResolvedWorkbenchRoute, useWorkbenchTabs } from '../../../workbench/runtime'
 import { useWorkbenchDocumentPathname } from '../../workbench/context'
 import { WorkbenchRouteRenderer } from '../../router/workbench/WorkbenchRouteRenderer'
 import { PANE_TABS_PROPS, PaneTabLabel, getPaneTabsRootClassName } from '../../workbench/PaneTabs'
@@ -38,10 +38,10 @@ function PaneTabPanel({ children, value }: { children: ReactNode; value: string 
 
 export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const { owner, pluginRoute, pluginLabel, source } = usePluginMeta()
-	const { nodes: tabNodes, items: tabItems } = useWorkbenchSurface('plugin.tabs')
+	const { nodes: tabNodes, entries: tabEntries } = useWorkbenchTabs()
 	const tabGroups = useMemo(
-		() => buildRightPaneTabGroups(pluginLabel, tabItems, tabNodes as ReactNode[]),
-		[pluginLabel, tabItems, tabNodes],
+		() => buildRightPaneTabGroups(pluginLabel, tabEntries, tabNodes as ReactNode[]),
+		[pluginLabel, tabEntries, tabNodes],
 	)
 	const pathname = useWorkbenchDocumentPathname()
 	const restPath = useMemo(() => {

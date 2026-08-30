@@ -28,7 +28,11 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 这些 package 未标记为 private，并声明了面向消费者的入口。消费者只从 package `exports` 导入；版本可用性以 registry 和 release metadata 为准。
 
-`@pluxel/runtime` 还提供职责明确的 browser subpath：`/web` 是不依赖 React/Mantine 的 Runtime discovery、Management Client 与 DTO；`/web/react` 只提供 React Context adapter；`/workbench/contract`、`/workbench`、`/workbench/ui` 分别对应 browser Contract、server Extension/Binding 和 React Remote View adapter。`/web/react` 与 `/workbench/ui` 由宿主提供可选的 `react` peer；带 `/internal` 的 transport 不属于第三方 host API。
+`@pluxel/runtime` 还提供职责明确的 browser subpath：`/web` 是 Runtime session、Management Client 与 DTO；
+`/web/react` 只提供 React Context adapter；`/capnweb` 提供固定 RPC object model；`/workbench` 提供
+browser-safe Direct View/Attachment definition；`/workbench/client` 提供 Shell layout/opened-handle client；
+`/workbench/react` 提供 exact descriptor hook、host facade 和 Pane Kit。`/web/react` 与 `/workbench/react` 由宿主
+提供 React singleton；internal registry、generated Bridge ABI 和 raw MF Runtime 不是第三方作者入口。
 
 ## Workspace-only 能力
 

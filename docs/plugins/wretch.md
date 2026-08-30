@@ -133,38 +133,41 @@ type WretchManagedSettings = Readonly<{
 
 managed settings 使用 runtime persistence，而不是 secret store。不要把 access token、API key 或 cookie 放入该 contract。Workbench disabled 时不会创建 UI backend，但已显式启用的 persisted settings 仍会应用于核心 HTTP client。
 
-## 挂载 Workbench Port
+## 放置 Workbench Attachment
 
-从 `@pluxel/wretch/workbench` 导入稳定 Port，在 consumer 的 Workbench contract 中创建 outlet：
+从 `@pluxel/wretch/workbench` 导入 provider-owned Attachment，并在 consumer 的 Workbench 定义中选择
+placement：
 
 ```ts no-twoslash
 import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import { WretchWorkbenchPort } from '@pluxel/wretch/workbench'
+import { WretchWorkbench } from '@pluxel/wretch/workbench'
 
-export const CustomerWorkbench = workbench.portOutlet({
-	id: 'Http',
-	port: WretchWorkbenchPort,
-	placement: workbenchContract.tab({
-		label: 'HTTP',
-		icon: workbenchContract.icons.Settings,
-	}),
+export const CustomerWorkbench = workbench.define({
+	http: WretchWorkbench.settings.place(
+		workbench.tab({ label: 'HTTP', icon: workbench.icons.Settings }),
+	),
 })
 ```
 
-然后在 consumer 启动时启用设置并绑定 caller-owned RPC：
+consumer 启动时启用设置，并直接绑定 constructor-injected required dependency：
 
 ```ts no-twoslash
 protected override async init(): Promise<void> {
 	await this.http.enableManagedSettings()
 	this.api = this.http.client.url(this.config.baseUrl, true)
 
-	this.ctx.workbench?.mount(CustomerWorkbench, {
-		settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
+	this.ctx.workbench?.publish(CustomerWorkbench, {
+		http: { provider: this.http },
 	})
 }
 ```
 
-`workbenchSettings()` 必须在 `enableManagedSettings()` 完成后调用，否则会抛错。它返回的 RPC 实现 `get()`、`update(settings)` 与 `reset()`，snapshot 同时包含 `hostTimeoutMs` 和最终 `effectiveTimeoutMs`。
+View 打开时，`WretchPlugin` 根据 Workbench 提供的 exact `consumer.node` 找到已经初始化的 managed state，
+并创建 fresh `WretchSettingsApi` capability。若没有先完成 `enableManagedSettings()`，打开 View 会失败。
+provider-owned zero-props renderer 直接通过 `useWorkbench(WretchWorkbench.settings)` 取得 provider stub；
+它提供 `snapshot()`、`update(settings)` 与 `reset()`，snapshot 同时包含 `hostTimeoutMs` 和最终
+`effectiveTimeoutMs`。
 
-同一 caller 并发执行 `enableManagedSettings()` 会共享一次初始化。caller/provider 停止后，旧 RPC 被撤销；provider cleanup 也会关闭 managed `ProxyAgent`。UI 只是该 caller-owned capability 的投影，不是核心 HTTP 请求能够运行的前提。
+同一 caller 并发执行 `enableManagedSettings()` 会共享一次初始化。View 关闭、session 结束或
+caller/provider 停止后，旧 capability 被撤销；provider cleanup 也会关闭 managed `ProxyAgent`。UI 不是核心
+HTTP 请求能够运行的前提。

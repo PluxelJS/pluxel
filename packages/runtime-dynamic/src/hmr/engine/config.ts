@@ -2,7 +2,13 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 import { dirname, resolve } from 'pathe'
-import { type InlineConfig, normalizePath, type Plugin, searchForWorkspaceRoot } from 'vite'
+import {
+	type InlineConfig,
+	normalizePath,
+	type Plugin,
+	type PluginOption,
+	searchForWorkspaceRoot,
+} from 'vite'
 import {
 	PLUXEL_CONDITION_HMR,
 	PLUXEL_CONDITION_SOURCE,
@@ -157,6 +163,8 @@ export interface HmrViteConfigOptions {
 	clientEntries?: string[]
 	runnerPlugin: Plugin
 	httpPlugin: Plugin
+	/** Exact source pipeline owned by the caller, including its semantic collector. */
+	sourcePlugins?: readonly PluginOption[]
 	port?: number
 }
 
@@ -226,10 +234,11 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		},
 		plugins: [
 			clientNodeImportGuardPlugin(),
-			...pluxelRuntimeSourceVitePlugins({
-				name: 'pluxel:dynamic-runtime-source',
-				root: opts.sourceRoot,
-			}),
+			...(opts.sourcePlugins ??
+				pluxelRuntimeSourceVitePlugins({
+					name: 'pluxel:dynamic-runtime-source',
+					root: opts.sourceRoot,
+				})),
 			opts.runnerPlugin,
 			opts.httpPlugin,
 		],

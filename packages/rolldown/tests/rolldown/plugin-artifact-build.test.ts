@@ -4,11 +4,36 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { pluginArtifactBuildPlugin } from '../../src/plugin-artifact/pluginArtifactBuildPlugin.ts'
 import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
+import { readWorkbenchFederationDeploymentInventory } from '../../src/workbench/artifact.ts'
 
 describe('pluginArtifactBuildPlugin', () => {
+	it('atomically emits the host-owned deployment inventory from the canonical plan callback', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'workbench-inventory-fixture', type: 'module' }),
+		})
+		const plans = vi.fn(async () => [])
+		const plugin = pluginArtifactBuildPlugin({
+			root: fixture.path,
+			buildDir: 'dist',
+			workbench: { plans },
+		})
+		const writeBundle = plugin.writeBundle as (() => Promise<void>) | undefined
+		await writeBundle?.call({})
+
+		expect(plans).toHaveBeenCalledOnce()
+		await expect(
+			readWorkbenchFederationDeploymentInventory(join(fixture.path, 'dist')),
+		).resolves.toEqual({
+			version: 1,
+			profile: 1,
+			buildContract: 1,
+			producers: [],
+		})
+	})
+
 	it('embeds checked migrations without exposing an author artifact argument', async () => {
 		const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
 		const checksum = createHash('sha256').update(migration).digest('hex')

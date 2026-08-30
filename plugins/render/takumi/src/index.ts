@@ -1,28 +1,17 @@
 import { FontsPlugin, type DefaultFontSnapshot, type PortableFontsSnapshot } from '@pluxel/fonts'
-import { FontsSelectionPort } from '@pluxel/fonts/workbench'
 import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { prepareImages } from 'takumi-js/helpers'
 import { fromHtml } from 'takumi-js/helpers/html'
 import { Renderer, type Node as TakumiNode } from 'takumi-js/node'
 import { TakumiConfig, type TakumiPluginConfig } from './config.ts'
 import { TakumiError, type TakumiErrorCode } from './errors.ts'
 import { RenderScheduler, type RenderSchedulerOwner } from './render-scheduler.ts'
+import { TakumiWorkbench } from './workbench.ts'
 
 const MAX_CONTENT_DEPTH = 256
 const MAX_STRUCTURED_CONTENT_DEPTH = MAX_CONTENT_DEPTH * 2 + 2
 const MAX_IMAGE_SOURCE_LENGTH = 4_096
 const UTF8_MEASURE_CHUNK_CHARACTERS = 64 * 1024
-
-const TakumiWorkbench = workbench.portOutlet({
-	id: 'Fonts',
-	port: FontsSelectionPort,
-	placement: workbenchContract.tab({
-		label: 'Fonts',
-		icon: workbenchContract.icons.Typography,
-	}),
-})
 
 export type TakumiContent = string | TakumiNode
 
@@ -198,8 +187,8 @@ export class TakumiPlugin extends BasePlugin {
 			},
 			{ tag: 'takumi-generation' },
 		)
-		this.ctx.workbench?.mount(TakumiWorkbench, {
-			selection: workbench.bind.rpc(() => this.fonts.selectionManager('portable')),
+		this.ctx.workbench?.publish(TakumiWorkbench, {
+			fonts: { provider: this.fonts },
 		})
 	}
 

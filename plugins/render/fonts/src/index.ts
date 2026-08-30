@@ -3,7 +3,6 @@ import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
 import { BasePlugin, Plugin, type Context, type PersistenceNamespace } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
 import { FontsConfig, type FontsPluginConfig } from './config.ts'
 import { FontsError, type FontsErrorCode } from './errors.ts'
 import { FontTaskScheduler, type FontTaskSchedulerOwner } from './font-task-scheduler.ts'
@@ -16,19 +15,17 @@ import {
 	toManagedFontSnapshot,
 	type StoredManagedFont,
 } from './managed-record.ts'
-import type {
-	FontsManagerSnapshot,
-	FontsWorkbenchCommands,
-	InstallManagedFontInput,
-	ManagedFontSnapshot,
-} from './manager-contract.ts'
-import type {
-	DefaultFontSnapshot,
-	FontSelectionCommands,
-	FontSelectionSnapshot,
-	FontFamilySnapshot,
-} from './workbench-contract.ts'
-import { FontsWorkbench } from './workbench-extension.ts'
+import {
+	FontsWorkbench,
+	type DefaultFontSnapshot,
+	type FontFamilySnapshot,
+	type FontSelectionApi,
+	type FontSelectionSnapshot,
+	type FontsManagerApi,
+	type FontsManagerSnapshot,
+	type InstallManagedFontInput,
+	type ManagedFontSnapshot,
+} from './workbench.ts'
 
 const STORAGE_NAMESPACE = '@pluxel/fonts'
 const DEFAULT_FONT_KEY = 'settings/default-font.json'
@@ -81,9 +78,6 @@ export type PortableFontsSnapshot = Readonly<{
 	revision: number
 	fonts: readonly PortableFontResourceSnapshot[]
 }>
-
-/** Candidate projection used by a Fonts Selection Port outlet. */
-export type FontSelectionScope = 'all' | 'portable'
 
 type OwnedRegistration = Readonly<{
 	key: FontKey
@@ -203,7 +197,7 @@ type ManagedState = {
 type DefaultFontState = {
 	readonly systemFamilies: Set<string>
 	configuredFamily?: string
-	workbenchFamily?: string
+	preferredFamily?: string
 	storage?: PersistenceNamespace
 	resolvedDefault?: Readonly<{ revision: number; snapshot: DefaultFontSnapshot }>
 	resolvedFamilies?: Readonly<{ revision: number; snapshot: readonly FontFamilySnapshot[] }>
@@ -245,11 +239,11 @@ export class FontsPlugin extends BasePlugin {
 			this.config.defaultFamily === undefined
 				? undefined
 				: normalizeFamily(this.config.defaultFamily)
-		const workbenchDefaultFamily = await loadDefaultFamily(storage)
+		const preferredFamily = await loadDefaultFamily(storage)
 		this.defaults.systemFamilies.clear()
 		for (const family of systemFamilies) this.defaults.systemFamilies.add(family)
 		this.defaults.configuredFamily = configuredDefaultFamily
-		this.defaults.workbenchFamily = workbenchDefaultFamily
+		this.defaults.preferredFamily = preferredFamily
 		this.defaults.storage = storage
 		this.defaults.resolvedDefault = undefined
 		this.defaults.resolvedFamilies = undefined
@@ -285,7 +279,7 @@ export class FontsPlugin extends BasePlugin {
 					this.defaults.tail,
 				])
 				this.defaults.configuredFamily = undefined
-				this.defaults.workbenchFamily = undefined
+				this.defaults.preferredFamily = undefined
 				this.defaults.storage = undefined
 				this.defaults.resolvedDefault = undefined
 				this.defaults.resolvedFamilies = undefined
@@ -314,8 +308,9 @@ export class FontsPlugin extends BasePlugin {
 			{ tag: 'fonts-registry' },
 		)
 		this.managed = await this.initializeManagedFonts(storage)
-		this.ctx.workbench?.mount(FontsWorkbench, {
-			fonts: workbench.bind.rpc(() => this.createWorkbenchManager()),
+		this.ctx.workbench?.publish(FontsWorkbench, {
+			manager: () => this.createWorkbenchManager(),
+			selection: () => this.createSelectionTarget(),
 		})
 	}
 
@@ -455,52 +450,39 @@ export class FontsPlugin extends BasePlugin {
 		})
 	}
 
-	private createWorkbenchManager(): RpcTarget & FontsWorkbenchCommands {
+	/** Updates the provider-wide preference without requiring Workbench. */
+	async setPreferredFamily(family: string | null): Promise<DefaultFontSnapshot> {
+		const state = this.requireManagedState()
+		const snapshot = await this.setPreferredDefaultFamily(state, family)
+		return snapshot.defaultFont
+	}
+
+	private createWorkbenchManager(): FontsManagerApi {
 		this.assertRunning()
-		const state = this.managed
-		if (!state?.active) {
-			throw new FontsError('NOT_RUNNING', 'Managed font collection is not available')
-		}
+		const state = this.requireManagedState()
 		return new FontsManagerRpc(
 			() => this.readManagedSnapshot(state),
-			(family) => this.setWorkbenchDefaultFamily(state, family),
+			(family) => this.setPreferredDefaultFamily(state, family),
 			(input) => this.installManagedFont(state, input),
 			(id) => this.removeManagedFont(state, id),
 		)
 	}
 
-	/** Returns the provider-owned default selector used by `FontsSelectionPort` outlets. */
-	selectionManager(scope: FontSelectionScope = 'all'): RpcTarget & FontSelectionCommands {
+	private createSelectionTarget(): FontSelectionApi {
+		const state = this.requireManagedState()
+		return new FontSelectionRpc(
+			async () => toSelectionSnapshot(await this.readManagedSnapshot(state)),
+			async (family) => toSelectionSnapshot(await this.setPreferredDefaultFamily(state, family)),
+		)
+	}
+
+	private requireManagedState(): ManagedState {
 		this.assertRunning()
-		if (scope !== 'all' && scope !== 'portable') {
-			throw new FontsError('INVALID_INPUT', 'Font selection scope must be all or portable')
-		}
 		const state = this.managed
 		if (!state?.active) {
 			throw new FontsError('NOT_RUNNING', 'Managed font collection is not available')
 		}
-		const portable = scope === 'portable'
-		return new FontSelectionRpc(
-			async () =>
-				toSelectionSnapshot(
-					await this.readManagedSnapshot(state),
-					portable ? portableFamilyKeys(this.portableFontsState) : undefined,
-				),
-			async (family) =>
-				toSelectionSnapshot(
-					await this.setWorkbenchDefaultFamily(
-						state,
-						family,
-						portable
-							? (selected) =>
-									portableFamilyKeys(this.portableFontsState).has(
-										selected.toLocaleLowerCase('en-US'),
-									)
-							: undefined,
-					),
-					portable ? portableFamilyKeys(this.portableFontsState) : undefined,
-				),
-		)
+		return state
 	}
 
 	private async initializeManagedFonts(storage: PersistenceNamespace): Promise<ManagedState> {
@@ -571,10 +553,9 @@ export class FontsPlugin extends BasePlugin {
 		return this.enqueueManaged(state, async () => this.snapshot(state))
 	}
 
-	private setWorkbenchDefaultFamily(
+	private setPreferredDefaultFamily(
 		state: ManagedState,
 		family: string | null,
-		isAllowed?: (selectedFamily: string) => boolean,
 	): Promise<FontsManagerSnapshot> {
 		return this.enqueueManaged(state, async () => {
 			if (family !== null && typeof family !== 'string') {
@@ -582,13 +563,13 @@ export class FontsPlugin extends BasePlugin {
 			}
 			const requested = family === null ? undefined : normalizeFamily(family)
 			const selected = requested ? findAvailableFamily(requested) : undefined
-			if (requested && (!selected || (isAllowed && !isAllowed(selected)))) {
+			if (requested && !selected) {
 				throw new FontsError('FONT_NOT_FOUND', `Font family "${requested}" is not available`)
 			}
 			await this.enqueueDefault(async () => {
 				this.assertManagedStateActive(state)
 				const storage = this.requireDefaultStorage()
-				const previous = this.defaults.workbenchFamily
+				const previous = this.defaults.preferredFamily
 				await persistDefaultFamily(storage, selected)
 				try {
 					this.assertManagedStateActive(state)
@@ -596,7 +577,7 @@ export class FontsPlugin extends BasePlugin {
 					await persistDefaultFamily(storage, previous).catch((): void => undefined)
 					throw error
 				}
-				this.defaults.workbenchFamily = selected
+				this.defaults.preferredFamily = selected
 				if (previous !== selected) nativeRegistryRevision += 1
 			})
 			return this.snapshot(state)
@@ -725,20 +706,20 @@ export class FontsPlugin extends BasePlugin {
 	private resolveDefaultFont(): DefaultFontSnapshot {
 		const cached = this.defaults.resolvedDefault
 		if (cached?.revision === nativeRegistryRevision) return cached.snapshot
-		const workbenchFamily = this.defaults.workbenchFamily
+		const preferredFamily = this.defaults.preferredFamily
 		const configuredFamily = this.defaults.configuredFamily
-		const selectedWorkbenchFamily = workbenchFamily
-			? findAvailableFamily(workbenchFamily)
+		const selectedPreferredFamily = preferredFamily
+			? findAvailableFamily(preferredFamily)
 			: undefined
 		const selectedConfiguredFamily = configuredFamily
 			? findAvailableFamily(configuredFamily)
 			: undefined
 		const automaticFamily =
-			selectedWorkbenchFamily || selectedConfiguredFamily
+			selectedPreferredFamily || selectedConfiguredFamily
 				? undefined
 				: findAutomaticSystemFamily(this.defaults.systemFamilies)
-		const resolved = selectedWorkbenchFamily
-			? { family: selectedWorkbenchFamily, source: 'workbench' as const }
+		const resolved = selectedPreferredFamily
+			? { family: selectedPreferredFamily, source: 'preference' as const }
 			: selectedConfiguredFamily
 				? { family: selectedConfiguredFamily, source: 'config' as const }
 				: automaticFamily
@@ -747,7 +728,7 @@ export class FontsPlugin extends BasePlugin {
 		const snapshot = Object.freeze({
 			...resolved,
 			cssFamily: toCssFamily(resolved.family),
-			...(workbenchFamily ? { workbenchFamily } : {}),
+			...(preferredFamily ? { preferredFamily } : {}),
 			...(configuredFamily ? { configuredFamily } : {}),
 		})
 		this.defaults.resolvedDefault = Object.freeze({
@@ -1014,7 +995,7 @@ class FontRegistrationHandle implements FontRegistration {
 	}
 }
 
-class FontsManagerRpc extends RpcTarget implements FontsWorkbenchCommands {
+class FontsManagerRpc extends RpcTarget implements FontsManagerApi {
 	constructor(
 		private readonly read: () => Promise<FontsManagerSnapshot>,
 		private readonly selectDefault: (family: string | null) => Promise<FontsManagerSnapshot>,
@@ -1028,7 +1009,7 @@ class FontsManagerRpc extends RpcTarget implements FontsWorkbenchCommands {
 		return this.read()
 	}
 
-	setDefaultFamily(family: string | null): Promise<FontsManagerSnapshot> {
+	setPreferredFamily(family: string | null): Promise<FontsManagerSnapshot> {
 		return this.selectDefault(family)
 	}
 
@@ -1041,7 +1022,7 @@ class FontsManagerRpc extends RpcTarget implements FontsWorkbenchCommands {
 	}
 }
 
-class FontSelectionRpc extends RpcTarget implements FontSelectionCommands {
+class FontSelectionRpc extends RpcTarget implements FontSelectionApi {
 	constructor(
 		private readonly read: () => Promise<FontSelectionSnapshot>,
 		private readonly selectDefault: (family: string | null) => Promise<FontSelectionSnapshot>,
@@ -1053,38 +1034,16 @@ class FontSelectionRpc extends RpcTarget implements FontSelectionCommands {
 		return this.read()
 	}
 
-	setDefaultFamily(family: string | null): Promise<FontSelectionSnapshot> {
+	setPreferredFamily(family: string | null): Promise<FontSelectionSnapshot> {
 		return this.selectDefault(family)
 	}
 }
 
-function toSelectionSnapshot(
-	snapshot: FontsManagerSnapshot,
-	allowedFamilies?: ReadonlySet<string>,
-): FontSelectionSnapshot {
+function toSelectionSnapshot(snapshot: FontsManagerSnapshot): FontSelectionSnapshot {
 	return Object.freeze({
 		defaultFont: snapshot.defaultFont,
-		families:
-			allowedFamilies === undefined
-				? snapshot.families
-				: Object.freeze(
-						snapshot.families.filter((font) =>
-							allowedFamilies.has(font.family.toLocaleLowerCase('en-US')),
-						),
-					),
+		families: snapshot.families,
 	})
-}
-
-function portableFamilyKeys(state: PortableFontsState): ReadonlySet<string> {
-	const families = new Set<string>()
-	for (const { source, resolvedFamilies } of state.entries.values()) {
-		if (source.family) {
-			families.add(source.family.toLocaleLowerCase('en-US'))
-			continue
-		}
-		for (const family of resolvedFamilies) families.add(family.toLocaleLowerCase('en-US'))
-	}
-	return families
 }
 
 function normalizeManagedInput(
@@ -1351,8 +1310,4 @@ function changedFamilies(before: ReadonlyMap<string, string>): readonly string[]
 }
 
 export { FontsConfig, FontsError, type FontsErrorCode, type FontsPluginConfig }
-export type {
-	DefaultFontSnapshot,
-	FontFamilySnapshot,
-	FontStyleSnapshot,
-} from './workbench-contract.ts'
+export type { DefaultFontSnapshot, FontFamilySnapshot, FontStyleSnapshot } from './workbench.ts'

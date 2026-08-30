@@ -66,16 +66,16 @@ export type LogRangeErr = {
 
 export type LogRangeResult = LogRangeOk | LogRangeErr
 
-export type LogSseAppend = {
+export type RuntimeLogAppend = {
 	type: 'append'
 	streamId: string
 	epoch: number
 	fromSeq: string
 	nextSeq: string
-	lines: RuntimeLogLine[]
+	lines: readonly RuntimeLogLine[]
 }
 
-export type LogSseGap = {
+export type RuntimeLogGap = {
 	type: 'gap'
 	streamId: string
 	epoch: number
@@ -83,7 +83,7 @@ export type LogSseGap = {
 	missingTo: string
 }
 
-export type LogSseReset = {
+export type RuntimeLogReset = {
 	type: 'reset'
 	streamId: string
 	bootId: string
@@ -95,4 +95,4 @@ export type LogSseReset = {
 	retention: { windowLines: number }
 }
 
-export type LogSseEvent = LogSseAppend | LogSseGap | LogSseReset
+export type RuntimeLogEvent = RuntimeLogAppend | RuntimeLogGap | RuntimeLogReset

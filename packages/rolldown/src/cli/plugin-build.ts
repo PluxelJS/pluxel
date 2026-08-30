@@ -58,24 +58,20 @@ export type PluginBuildPipeline = {
 export function createPluginBuildPipeline(
 	options: PluginBuildPipelineOptions,
 ): PluginBuildPipeline {
-	return createPipeline(
-		options,
-		createPluginSemanticsPlugin({
-			root: options.root,
-		}).plugin,
-	)
+	const semantics = createPluginSemanticsPlugin({ root: options.root })
+	return createPipeline(options, semantics)
 }
 
 function createPipeline(
 	options: PluginBuildPipelineOptions,
-	semanticsPlugin: InlineConfig['plugins'],
+	semantics: ReturnType<typeof createPluginSemanticsPlugin>,
 ): PluginBuildPipeline {
 	const workbench = options.workbench ?? {}
 	const workbenchOptions = workbench === false ? {} : workbench
 	return {
 		plugins: [
 			PreprocessorDirectives(),
-			semanticsPlugin,
+			semantics.plugin,
 			Macros({
 				viteConfig: {
 					configFile: false,
@@ -92,6 +88,7 @@ function createPipeline(
 						? false
 						: {
 								minify: workbenchOptions.minify,
+								plans: () => semantics.workbenchPlans(),
 							},
 				node: options.node,
 			}),
@@ -121,7 +118,7 @@ export function pluginPackage(
 		deps: {
 			neverBundle: [/^@pluxel\//],
 		},
-		...createPipeline(options, semantics.plugin),
+		...createPipeline(options, semantics),
 		onSuccess: createPluginDependencyMetadataHook({
 			packageJsonPath: options.packageMetadata.packageJsonPath,
 			manifestField: options.packageMetadata.manifestField,

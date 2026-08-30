@@ -12,17 +12,42 @@ export type ManagementAccessPrincipal = Readonly<{
 	displayName?: string
 }>
 
-export type ManagementAccessProviderDecision =
-	| Readonly<{ allow: true; principal: ManagementAccessPrincipal }>
+export type ManagementAuthenticationChallenge =
+	| Readonly<{ kind: 'password'; label?: string }>
+	| Readonly<{ kind: 'totp'; digits: 6 }>
+
+export type ManagementAuthenticationFailureCode =
+	| 'authentication_failed'
+	| 'authentication_expired'
+	| 'access_unavailable'
+	| 'attempt_limited'
+
+export type ManagementAuthenticationProviderStep =
+	| Readonly<{ kind: 'challenge'; challenge: ManagementAuthenticationChallenge }>
+	| Readonly<{ kind: 'navigate'; path: '/__pluxel/admin-access/oidc/start' }>
 	| Readonly<{
-			allow: false
-			reason:
-				| 'unavailable'
-				| 'unauthenticated'
-				| 'invalid_credentials'
-				| 'forbidden'
-				| 'secure_transport_required'
+			kind: 'authenticated'
+			principal: ManagementAccessPrincipal
+			cookieCommit?: Readonly<{ ticket: string; expiresAt: number }>
 	  }>
+	| Readonly<{ kind: 'failed'; code: ManagementAuthenticationFailureCode }>
+
+export type ManagementAuthenticationCookieCommit = Readonly<{
+	ticket: string
+	expiresAt: number
+}>
+
+export interface ManagementAuthenticationProviderSession extends Disposable {
+	state(): ManagementAuthenticationProviderStep | Promise<ManagementAuthenticationProviderStep>
+	submit(
+		input: unknown,
+	): ManagementAuthenticationProviderStep | Promise<ManagementAuthenticationProviderStep>
+	/** Optional provider-owned revocation for the credential captured by open(). */
+	logout?():
+		| ManagementAuthenticationCookieCommit
+		| undefined
+		| Promise<ManagementAuthenticationCookieCommit | undefined>
+}
 
 export type ManagementAccessRequestContext = Readonly<{
 	/** True only when the physical carrier is a loopback peer. */
@@ -31,30 +56,24 @@ export type ManagementAccessRequestContext = Readonly<{
 	secure: boolean
 }>
 
-/** One generation-owned implementation of remote Management authentication. */
+/** One generation-owned implementation of Management authentication. */
 export interface ManagementAccessProvider {
-	/**
-	 * A cheap, synchronous snapshot. It can be called concurrently and must never include secrets
-	 * or raw identity claims. Throwing makes this provider temporarily unavailable.
-	 */
+	/** Cheap synchronous status. `ready:false` is a real unavailable state, not a login challenge. */
 	status(): ManagementAccessProviderStatus
 	/**
-	 * Authenticate one remote Management request. The Request contains the original URL, method,
-	 * headers, and an owner-bound signal, but deliberately omits the operation body so an
-	 * authentication provider cannot consume or inspect Management payloads. `request.signal` is
-	 * cancelled when the client disconnects or this Plugin generation is withdrawn. Runtime rejects
-	 * insecure remote requests before calling this method.
+	 * Open one connection-bound authentication flow. The Request contains only URL, headers and
+	 * the owner/session signal; it never contains a Management operation body.
 	 */
-	authorize(
+	open(
 		request: Request,
 		context: ManagementAccessRequestContext,
-	): Promise<ManagementAccessProviderDecision>
-	/**
-	 * Optionally serve the Runtime-owned authentication entry point. The request URL path is
-	 * relative to `/__pluxel/admin-access`. The same cancellation and generation-drain rules apply;
-	 * a returned streaming body keeps the generation alive until the body settles.
-	 */
-	handle(request: Request, context: ManagementAccessRequestContext): Promise<Response | undefined>
+	): ManagementAuthenticationProviderSession | Promise<ManagementAuthenticationProviderSession>
+	/** Exact top-level OIDC navigation entry. No Management payload is served here. */
+	oidcStart?(request: Request, context: ManagementAccessRequestContext): Promise<Response>
+	/** Exact OIDC callback entry. It may commit an HttpOnly cookie and redirect. */
+	oidcCallback?(request: Request, context: ManagementAccessRequestContext): Promise<Response>
+	/** Consume one short-lived, single-use ticket and commit an HttpOnly cookie. */
+	commitCookie?(request: Request, context: ManagementAccessRequestContext): Promise<Response>
 }
 
 export interface ManagementAccessRegistration {
@@ -81,20 +100,7 @@ export type AdminAccessState =
 	| Readonly<{ allow: true; method: 'provider'; principal: AdminAccessPrincipal }>
 	| Readonly<{ allow: false; reason: AdminAccessReason }>
 
-export type AdminAccessRequestContext = Readonly<{
-	request?: Request
-}>
-
-export type AdminAccessAuthorizeInput = AdminAccessRequestContext
-
 export type AdminAccessOverview = Readonly<{
 	policy: 'provider-or-local-recovery'
 	provider: ManagementAccessProviderStatus | null
 }>
-
-export type AdminAccessEntryState =
-	| Readonly<{ state: 'allowed' }>
-	| Readonly<{ state: 'local_setup_required' }>
-	| Readonly<{ state: 'login_required'; method: ManagementAccessMethod }>
-	| Readonly<{ state: 'secure_transport_required' }>
-	| Readonly<{ state: 'authentication_unavailable' }>

@@ -1,5 +1,5 @@
 {
 	"title": "Workbench 与配置",
 	"defaultOpen": true,
-	"pages": ["index", "configuration-playground", "valibot-form"]
+	"pages": ["index", "composition", "configuration-playground", "valibot-form"]
 }

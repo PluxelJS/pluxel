@@ -228,7 +228,7 @@ plugin debug 必须同时通过：
 
 ## Runtime store
 
-store 是 runtime API、SSE 和 Workbench log viewer 的事实源，不是 plugin policy 的事实源。
+store 是 Runtime Management API 和 Workbench log viewer 的事实源，不是 plugin policy 的事实源。
 
 - registry 由 `RuntimeLogging` 实例拥有；
 - 默认最多 64 个 physical streams，非 default stream 使用无 subscriber LRU eviction；
@@ -237,7 +237,7 @@ store 是 runtime API、SSE 和 Workbench log viewer 的事实源，不是 plugi
 - plugin node address 从普通/plugin-debug category 解析，不依赖 record properties；
 - structured `plugin` filter 直接接受 `PluginNodeAddress`；只有非身份用途的 virtual
   `context:<name>` stream 复用 default physical store；
-- range/latest/wait/SSE 使用同一 `RuntimeLogStore`。
+- range/latest/wait/Cap’n Web `follow(observer)` 使用同一 `RuntimeLogStore`。
 
 `RuntimeLogLine` 是 UI/transport projection，保留 category、plugin/context identity、structured message、props 和
 error summary。它不是新的 author-facing LogRecord。
@@ -289,7 +289,7 @@ core 不包含 formatter、sink、policy persistence、host env resolution 或 L
 - `packages/runtime/src/logger/policy.ts`
 - `packages/runtime/src/logger/sink.ts`
 - `packages/runtime/src/logger/store.ts`
-- `packages/runtime/src/api/http/rpc/LoggingHandle.ts`
+- `packages/runtime/src/services/management/RuntimeManagementTarget.ts`
 - `packages/runtime-static/src/internal/host.ts`
 - `packages/runtime-dynamic/src/hmr/host.ts`
 

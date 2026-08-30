@@ -1,80 +1,28 @@
-import { RUNTIME_INTERNAL_API_BASE } from '@pluxel/runtime/internal'
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
+import { CredentialStore } from '../src/credentials.ts'
 import { AuthPlugin } from '../src/index.ts'
-import { generateTotpForTesting } from '../src/totp.ts'
+import { hashPassword } from '../src/password.ts'
 
-const ADMIN_ACCESS = '/__pluxel/admin-access'
-const LOCAL_ORIGIN = 'http://runtime.test:3000'
-const REMOTE_ORIGIN = 'https://runtime.test:3000'
+const ORIGIN = 'https://runtime.test:3000'
+const COOKIE_COMMIT_PATH = '/__pluxel/admin-access/cookie/commit'
 const PASSWORD = 'correct horse battery staple'
 
-function runtimeRequest(
-	origin: string,
-	path: string,
-	peer: 'local' | 'remote',
-	init: RequestInit = {},
-): Request {
+function remoteRequest(path: string, init: RequestInit = {}): Request {
 	const headers = new Headers(init.headers)
-	headers.set('x-auth-test-peer', peer)
-	return new Request(`${origin}${path}`, { ...init, headers })
+	headers.set('x-auth-test-peer', 'remote')
+	return new Request(`${ORIGIN}${path}`, { ...init, headers })
 }
 
-function cookiePair(response: Response): string {
-	const cookie = response.headers.get('set-cookie')
-	if (!cookie) throw new Error('Expected a Set-Cookie header')
-	return cookie.split(';', 1)[0]!
-}
-
-function csrfToken(html: string): string {
-	const token = /name="csrf" value="([A-Za-z0-9_-]{43})"/.exec(html)?.[1]
-	if (!token) throw new Error('Expected a CSRF token')
-	return token
-}
-
-async function formState(response: Response): Promise<Readonly<{ cookie: string; csrf: string }>> {
-	const cookie = cookiePair(response)
-	const csrf = csrfToken(await response.text())
-	return { cookie, csrf }
-}
-
-function postForm(
-	origin: string,
-	path: string,
-	peer: 'local' | 'remote',
-	cookie: string,
-	fields: Record<string, string>,
-): Request {
-	return runtimeRequest(origin, path, peer, {
-		method: 'POST',
-		headers: {
-			'content-type': 'application/x-www-form-urlencoded',
-			cookie,
-			origin,
-		},
-		body: new URLSearchParams(fields),
-	})
-}
-
-function authHostConfig() {
-	return {
-		management: {},
-		workbench: { enabled: true },
-		vault: {},
-	} as const
-}
-
-function peerAddress(request: Request) {
-	const local = request.headers.get('x-auth-test-peer') === 'local'
-	return Object.freeze({
-		address: local ? '127.0.0.1' : '203.0.113.9',
-		port: 45_000,
-		family: 'IPv4' as const,
-	})
+function peerAddress() {
+	return Object.freeze({ address: '203.0.113.9', port: 45_000, family: 'IPv4' as const })
 }
 
 async function withAuthHost(run: (host: RuntimeHost) => Promise<void>): Promise<void> {
-	const host = createRuntimeHost(authHostConfig(), { requestAddress: peerAddress })
+	const host = createRuntimeHost(
+		{ management: {}, workbench: { enabled: true }, vault: {} },
+		{ requestAddress: peerAddress },
+	)
 	try {
 		await run(host)
 	} finally {
@@ -82,182 +30,100 @@ async function withAuthHost(run: (host: RuntimeHost) => Promise<void>): Promise<
 	}
 }
 
-async function startAuth(
-	host: RuntimeHost,
-	mode: { type: 'password' } | { type: 'password-totp' },
-): Promise<AuthPlugin> {
-	host.add(AuthPlugin)
-	host.cfg(AuthPlugin).set({ mode })
-	host.start(AuthPlugin)
-	await host.commit()
-	return host.require(AuthPlugin)
-}
-
-describe('official authentication Runtime integration', () => {
-	it('sets up locally, protects every peer when ready, and revokes sessions on stop', async () => {
+describe('official authentication vNext Runtime integration', () => {
+	it('runs password challenge and commits its session through the narrow endpoint', async () => {
 		await withAuthHost(async (host) => {
-			const plugin = await startAuth(host, { type: 'password' })
-			const setupPage = await host.fetch(
-				runtimeRequest(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local'),
-			)
-			expect(setupPage.status).toBe(200)
-			const setup = await formState(setupPage)
-			const saved = await host.fetch(
-				postForm(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local', setup.cookie, {
-					csrf: setup.csrf,
-					action: 'password',
-					username: 'admin',
-					password: PASSWORD,
-					passwordConfirmation: PASSWORD,
-				}),
-			)
-			expect(saved.status).toBe(200)
-			expect(plugin.status().ready).toBe(true)
+			host.add(AuthPlugin)
+			host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
+			host.start(AuthPlugin)
+			await host.commit()
 
-			const [localApi, localUi, setupWithoutSession] = await Promise.all([
-				host.fetch(runtimeRequest(LOCAL_ORIGIN, `${RUNTIME_INTERNAL_API_BASE}/meta`, 'local')),
-				host.fetch(
-					runtimeRequest(LOCAL_ORIGIN, '/', 'local', {
-						headers: { accept: 'text/html' },
-					}),
-				),
-				host.fetch(runtimeRequest(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local')),
-			])
-			expect(localApi.status).toBe(401)
-			expect(localUi.status).toBe(302)
-			expect(setupWithoutSession.status).toBe(401)
-
-			const localLanding = await host.fetch(
-				runtimeRequest(LOCAL_ORIGIN, `${ADMIN_ACCESS}/login`, 'local'),
-			)
-			const localLogin = await formState(localLanding)
-			const locallySignedIn = await host.fetch(
-				postForm(LOCAL_ORIGIN, `${ADMIN_ACCESS}/login`, 'local', localLogin.cookie, {
-					csrf: localLogin.csrf,
-					username: 'admin',
-					password: PASSWORD,
-					returnTo: '/',
-				}),
-			)
-			const localSession = cookiePair(locallySignedIn)
-			expect(localSession).toContain('pluxel_admin_local_session=')
-			const localManagement = await host.fetch(
-				runtimeRequest(LOCAL_ORIGIN, `${RUNTIME_INTERNAL_API_BASE}/meta`, 'local', {
-					headers: { cookie: localSession },
-				}),
-			)
-			expect(localManagement.status).toBe(200)
-			const localCookieFromRemote = await host.fetch(
-				runtimeRequest(REMOTE_ORIGIN, `${RUNTIME_INTERNAL_API_BASE}/meta`, 'remote', {
-					headers: { cookie: localSession },
-				}),
-			)
-			expect(localCookieFromRemote.status).toBe(401)
-
-			const landing = await host.fetch(
-				runtimeRequest(REMOTE_ORIGIN, `${ADMIN_ACCESS}/login`, 'remote'),
-			)
-			const login = await formState(landing)
-			const signedIn = await host.fetch(
-				postForm(REMOTE_ORIGIN, `${ADMIN_ACCESS}/login`, 'remote', login.cookie, {
-					csrf: login.csrf,
-					username: 'admin',
-					password: PASSWORD,
-					returnTo: '/',
-				}),
-			)
-			expect(signedIn.status).toBe(303)
-			const session = cookiePair(signedIn)
-			const authenticated = runtimeRequest(
-				REMOTE_ORIGIN,
-				`${RUNTIME_INTERNAL_API_BASE}/meta`,
-				'remote',
-				{ headers: { cookie: session } },
-			)
-			const management = await host.fetch(authenticated)
-			expect(management.status).toBe(200)
-			const authenticatedState = await host.fetch(
-				runtimeRequest(REMOTE_ORIGIN, `${ADMIN_ACCESS}/state`, 'remote', {
-					headers: { cookie: session },
-				}),
-			)
-			await expect(authenticatedState.json()).resolves.toEqual({ state: 'allowed' })
-			await expect(plugin.authenticate(authenticated)).resolves.toMatchObject({
-				allow: true,
-				principal: { subject: 'local:admin' },
+			const initial = host.require(AuthPlugin)
+			expect(await host.ctx.adminAccess?.describe()).toMatchObject({
+				provider: { method: 'password', ready: false },
+			})
+			const store = new CredentialStore(initial.ctx.vault)
+			await store.saveAccount({
+				version: 1,
+				type: 'local-account',
+				username: 'Admin',
+				normalizedUsername: 'admin',
+				password: await hashPassword(PASSWORD),
 			})
 
 			host.stop(AuthPlugin)
 			await host.commit()
-			const afterStop = await host.fetch(
-				runtimeRequest(REMOTE_ORIGIN, `${RUNTIME_INTERNAL_API_BASE}/meta`, 'remote', {
-					headers: { cookie: session },
+			host.start(AuthPlugin)
+			await host.commit()
+			expect(await host.ctx.adminAccess?.describe()).toMatchObject({
+				provider: { method: 'password', ready: true },
+			})
+
+			const adminAccess = host.ctx.adminAccess
+			if (!adminAccess) throw new Error('Expected Management access service')
+			const authentication = await adminAccess.openSession(remoteRequest('/'), false, true)
+			await expect(authentication.state()).resolves.toEqual({
+				kind: 'challenge',
+				challenge: { kind: 'password', label: 'Admin' },
+			})
+			const step = await authentication.submit({ password: PASSWORD })
+			expect(step).toMatchObject({
+				kind: 'authenticated',
+				principal: { subject: 'local:admin', displayName: 'Admin' },
+				cookieCommit: { ticket: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) },
+			})
+			if (step.kind !== 'authenticated' || !step.cookieCommit) {
+				throw new Error('Expected a cookie commit ticket')
+			}
+
+			const committed = await host.fetch(
+				remoteRequest(COOKIE_COMMIT_PATH, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json', origin: ORIGIN },
+					body: JSON.stringify({ ticket: step.cookieCommit.ticket }),
 				}),
 			)
-			expect(afterStop.status).toBe(403)
-			await expect(afterStop.json()).resolves.toMatchObject({
-				code: 'management_local_setup_required',
+			expect(committed.status).toBe(204)
+			const cookie = committed.headers.get('set-cookie')?.split(';', 1)[0]
+			expect(cookie).toContain('__Host-pluxel_admin_session=')
+
+			const restored = await adminAccess.openSession(
+				remoteRequest('/', { headers: { cookie: cookie! } }),
+				false,
+				true,
+			)
+			await expect(restored.state()).resolves.toMatchObject({
+				kind: 'authenticated',
+				principal: { subject: 'local:admin' },
 			})
+			restored.release()
+			authentication.release()
 		})
 	})
 
-	it('enrolls TOTP locally and rejects a replayed login code', async () => {
+	it('returns only the fixed OIDC navigation instruction', async () => {
 		await withAuthHost(async (host) => {
-			await startAuth(host, { type: 'password-totp' })
-			const setup = await formState(
-				await host.fetch(runtimeRequest(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local')),
-			)
-			const enrollment = await host.fetch(
-				postForm(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local', setup.cookie, {
-					csrf: setup.csrf,
-					action: 'begin-totp',
-					username: 'admin',
-					password: PASSWORD,
-					passwordConfirmation: PASSWORD,
-				}),
-			)
-			const enrollmentHtml = await enrollment.text()
-			const enrollmentId = /name="enrollmentId" value="([A-Za-z0-9_-]+)"/.exec(enrollmentHtml)?.[1]
-			const secret = /<code>([A-Z2-7]{32})<\/code>/.exec(enrollmentHtml)?.[1]
-			expect(enrollmentId).toBeTruthy()
-			expect(secret).toBeTruthy()
-			const confirmed = await host.fetch(
-				postForm(LOCAL_ORIGIN, `${ADMIN_ACCESS}/setup`, 'local', setup.cookie, {
-					csrf: setup.csrf,
-					action: 'confirm-totp',
-					enrollmentId: enrollmentId!,
-					otp: generateTotpForTesting(secret!, Date.now() - 30_000),
-				}),
-			)
-			expect(confirmed.status).toBe(200)
+			host.add(AuthPlugin)
+			host.cfg(AuthPlugin).set({
+				mode: {
+					type: 'oidc',
+					issuer: 'https://issuer.example',
+					clientId: 'pluxel-client',
+					publicOrigin: ORIGIN,
+					clientKind: 'public',
+				},
+			})
+			host.start(AuthPlugin)
+			await host.commit()
 
-			const login = await formState(
-				await host.fetch(runtimeRequest(REMOTE_ORIGIN, `${ADMIN_ACCESS}/login`, 'remote')),
-			)
-			const otp = generateTotpForTesting(secret!)
-			const fields = {
-				csrf: login.csrf,
-				username: 'admin',
-				password: PASSWORD,
-				otp,
-				returnTo: '/',
-			}
-			const signedIn = await host.fetch(
-				postForm(REMOTE_ORIGIN, `${ADMIN_ACCESS}/login`, 'remote', login.cookie, fields),
-			)
-			expect(signedIn.status).toBe(303)
-			const session = cookiePair(signedIn)
-			const management = await host.fetch(
-				runtimeRequest(REMOTE_ORIGIN, `${RUNTIME_INTERNAL_API_BASE}/meta`, 'remote', {
-					headers: { cookie: session },
-				}),
-			)
-			expect(management.status).toBe(200)
-
-			const replay = await host.fetch(
-				postForm(REMOTE_ORIGIN, `${ADMIN_ACCESS}/login`, 'remote', login.cookie, fields),
-			)
-			expect(replay.status).toBe(401)
+			const adminAccess = host.ctx.adminAccess
+			if (!adminAccess) throw new Error('Expected Management access service')
+			const authentication = await adminAccess.openSession(remoteRequest('/'), false, true)
+			await expect(authentication.state()).resolves.toEqual({
+				kind: 'navigate',
+				path: '/__pluxel/admin-access/oidc/start',
+			})
+			authentication.release()
 		})
 	})
 })

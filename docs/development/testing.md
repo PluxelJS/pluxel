@@ -228,7 +228,7 @@ assertPluginLifecycleIssue(summary, ConsumerPlugin, {
 
 - timer 被 clear；
 - watcher/queue/worker 的 `dispose()` 已 settle；
-- HTTP route、command、Workbench mount 不再可见；
+- HTTP route、command、Workbench publication 不再可见；
 - database/cache/Redis 等旧 owner handle 拒绝继续使用；
 - `init()` 中途失败时，之前 acquire 的资源仍被释放。
 
@@ -240,12 +240,13 @@ cleanup test 要等待 host commit/dispose Promise，不能只检查是否调用
 
 业务 Plugin 至少在 `workbench: false` 下跑一次。它证明 HTTP、database、commands 和核心 lifecycle 没有暗中依赖 UI backend。
 
-需要验证 Contract/Extension/Binding 时再启用默认 runtime Workbench，并测试：
+需要验证 Definition/View/Attachment publication 时再启用默认 Runtime Workbench，并测试：
 
-- mount 只在 Plugin running 后可见；
-- RPC/events/live query binding 随 owner generation 撤销；
-- browser-safe contract 没有 server import；
-- replacement 不保留旧 grant。
+- publication 只在 Plugin running 后进入 layout；
+- 每次 `openView()` 返回 fresh target，close/owner stop 会 abort signal 并释放 observer/task；
+- browser-safe definition 与 renderer graph 没有 server import；
+- Attachment provider/consumer owner 与 placement 保持准确；
+- replacement 不复活旧 socket epoch、opened handle 或 API root。
 
 ### Forks
 

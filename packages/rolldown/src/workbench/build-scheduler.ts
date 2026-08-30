@@ -1,24 +1,45 @@
 import { resolve } from 'node:path'
 
-type Task = () => Promise<void>
+type Task<T> = () => Promise<T>
 
-class SerialTaskQueue {
-	private tail: Promise<void> = Promise.resolve()
+class BoundedTaskQueue {
+	private active = 0
+	private readonly pending: Array<() => void> = []
 
-	run(task: Task): Promise<void> {
-		const result = this.tail.then(task)
-		this.tail = result.then(
-			(): void => undefined,
-			(): void => undefined,
-		)
-		return result
+	constructor(private readonly limit: number) {}
+
+	async run<T>(task: Task<T>): Promise<T> {
+		await this.acquire()
+		try {
+			return await task()
+		} finally {
+			this.release()
+		}
+	}
+
+	private acquire(): Promise<void> {
+		if (this.active < this.limit) {
+			this.active += 1
+			return Promise.resolve()
+		}
+		return new Promise<void>((resolvePending) => {
+			this.pending.push(() => {
+				this.active += 1
+				resolvePending()
+			})
+		})
+	}
+
+	private release(): void {
+		this.active -= 1
+		this.pending.shift()?.()
 	}
 }
 
 class KeyedSerialTaskQueue {
 	private readonly tails = new Map<string, Promise<void>>()
 
-	run(key: string, task: Task): Promise<void> {
+	run<T>(key: string, task: Task<T>): Promise<T> {
 		const previous = this.tails.get(key) ?? Promise.resolve()
 		const result = previous.then(task)
 		const tail = result.then(
@@ -34,19 +55,19 @@ class KeyedSerialTaskQueue {
 	}
 }
 
-const federationBuildQueue = new SerialTaskQueue()
+// The MF Vite plugin has process-local mutable registries. A build slot therefore
+// bounds spawned compiler processes; it is not an in-process critical section.
+export const WORKBENCH_ISOLATED_BUILD_CONCURRENCY = 2
+
+const isolatedBuildSlots = new BoundedTaskQueue(WORKBENCH_ISOLATED_BUILD_CONCURRENCY)
 const outputTransactionQueue = new KeyedSerialTaskQueue()
 
-/**
- * @module-federation/vite is not reentrant: its normalized config and virtual-module
- * registries are module-scoped through at least 1.16.16. Keep every in-process
- * Federation builder invocation inside this critical section. See engineering/HMR.md.
- */
-export function runWorkbenchFederationBuild(task: Task): Promise<void> {
-	return federationBuildQueue.run(task)
+/** Bounds independent producer compiler processes without globally serializing them. */
+export function runWorkbenchIsolatedBuild<T>(task: Task<T>): Promise<T> {
+	return isolatedBuildSlots.run(task)
 }
 
-/** Serializes build, validation, and atomic publication for one artifact target. */
-export function runWorkbenchOutputTransaction(target: string, task: Task): Promise<void> {
+/** Serializes validation and immutable publication for one exact revision directory. */
+export function runWorkbenchOutputTransaction<T>(target: string, task: Task<T>): Promise<T> {
 	return outputTransactionQueue.run(resolve(target), task)
 }

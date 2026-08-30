@@ -1,8 +1,8 @@
 import {
 	type LogFilter,
 	type LogRangeOk,
-	type LogSseEvent,
 	type LogStreamMeta,
+	type RuntimeLogEvent,
 	type RuntimeLogLine,
 	useRuntimeManagementClient,
 } from '../../runtime'
@@ -773,26 +773,12 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 		return () => clearTimeout(t)
 	}, [dirty, draftFilter])
 
-	const filterQuery = useMemo(() => {
-		const params = new URLSearchParams()
-		if (activeFilter.plugin) params.set('plugin', JSON.stringify(activeFilter.plugin))
-		if (activeFilter.context) params.set('context', activeFilter.context)
-		if (activeFilter.displayName) params.set('displayName', activeFilter.displayName)
-		if (activeFilter.category) params.set('category', activeFilter.category)
-		return params.toString()
-	}, [activeFilter])
-
 	const ringRef = useRef(createRingStore<RuntimeLogLine>(CLIENT_RING_CAP))
 	const listApiRef = useRef<LogListApi | null>(null)
 	const followRef = useRef(true)
 	const followWantedRef = useRef(true)
 	const rafRef = useRef<number | null>(null)
 	const pendingLinesRef = useRef<RuntimeLogLine[]>([])
-
-	// —— 快照 + SSE（仅跟随 filterQuery 变化） —— //
-	const abortRef = useRef<AbortController | null>(null)
-	const adminAccessProbeInFlightRef = useRef<Promise<boolean> | null>(null)
-	const lastAdminAccessProbeAtRef = useRef<number>(0)
 
 	const refreshStreams = useCallback(async () => {
 		try {
@@ -812,12 +798,11 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 
 	useEffect(() => {
 		let disposed = false
+		let subscription: Disposable | undefined
+		let initialized = false
+		const bufferedEvents: RuntimeLogEvent[] = []
+		const seenSequences = new Set<string>()
 
-		// reset state
-		if (abortRef.current) {
-			abortRef.current.abort()
-			abortRef.current = null
-		}
 		if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
 		rafRef.current = null
 		pendingLinesRef.current.length = 0
@@ -828,50 +813,19 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 		setSelectedSeq(null)
 		setSelectedLine(null)
 
-		// —— 拉快照 —— //
-		const ac = new AbortController()
-		abortRef.current = ac
-
-		const probeAdminAccessBlocked = async (): Promise<boolean> => {
-			const now = Date.now()
-			if (now - lastAdminAccessProbeAtRef.current < 1500) return false
-			lastAdminAccessProbeAtRef.current = now
-			try {
-				const response = await fetch('/__pluxel/admin-access/state', {
-					credentials: 'same-origin',
-					cache: 'no-store',
-				})
-				if (!response.ok) return false
-				const payload = (await response.json()) as { state?: unknown }
-				if (payload.state === 'allowed') return false
-				if (typeof window !== 'undefined') {
-					window.location.assign('/__pluxel/admin-access')
-				}
-				return true
-			} catch {
-				return false
-			}
-		}
-
-		const fetchMeta = async (): Promise<LogStreamMeta> => {
-			return management.logs.meta(streamId, { signal: ac.signal })
-		}
+		const fetchMeta = async (): Promise<LogStreamMeta> => management.logs.meta(streamId)
 
 		const fetchRange = async (
 			m: LogStreamMeta,
 			fromSeq: string,
 			limit: number,
 		): Promise<LogRangeOk> => {
-			const payload = await management.logs.range(
-				streamId,
-				{
-					epoch: m.epoch,
-					from: fromSeq,
-					limit,
-					...activeFilter,
-				},
-				{ signal: ac.signal },
-			)
+			const payload = await management.logs.range(streamId, {
+				epoch: m.epoch,
+				fromSeq,
+				limit,
+				filter: activeFilter,
+			})
 			if (!isRecord(payload) || payload.ok !== true) throw new Error('Invalid range response')
 			return payload as LogRangeOk
 		}
@@ -889,119 +843,92 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 			rafRef.current = requestAnimationFrame(flush)
 		}
 
-		const onAppendLines = (lines: RuntimeLogLine[]) => {
-			if (disposed || ac.signal.aborted) return
+		const onAppendLines = (lines: readonly RuntimeLogLine[]) => {
+			if (disposed) return
 			if (lines.length === 0) return
-			pendingLinesRef.current.push(...lines)
+			const unseen = lines.filter((line) => {
+				if (seenSequences.has(line.seq)) return false
+				seenSequences.add(line.seq)
+				return true
+			})
+			if (unseen.length === 0) return
+			pendingLinesRef.current.push(...unseen)
 			scheduleFlush()
 		}
 
-		const connectFollow = (m: LogStreamMeta, fromSeq: string) => {
-			const params = new URLSearchParams(filterQuery)
-			params.set('epoch', String(m.epoch))
-			params.set('from', fromSeq)
-			const url = management.logs.followUrl(streamId, params)
-			const es = new EventSource(url)
+		const handleEvent = (event: RuntimeLogEvent) => {
+			if (disposed) return
+			if (event.type === 'reset') {
+				setMeta(event)
+				ringRef.current.clear()
+				pendingLinesRef.current.length = 0
+				seenSequences.clear()
+				setNewSincePause(0)
+				setSelectedSeq(null)
+				setSelectedLine(null)
+				return
+			}
+			if (event.type === 'append') {
+				onAppendLines(event.lines)
+				return
+			}
 
-			es.onopen = () => setConnected(true)
-
-			const onMsg = (ev: MessageEvent) => {
-				let msg: LogSseEvent | null = null
+			const stop = addSeq(event.missingTo, 1n)
+			if (!stop) return
+			let cursor = event.missingFrom
+			void (async () => {
 				try {
-					msg = JSON.parse(ev.data) as LogSseEvent
-				} catch {
-					return
-				}
-				if (!msg || typeof msg !== 'object') return
-
-				if (msg.type === 'reset') {
-					setMeta(msg)
-					ringRef.current.clear()
-					pendingLinesRef.current.length = 0
-					setNewSincePause(0)
-					setSelectedSeq(null)
-					setSelectedLine(null)
-					return
-				}
-
-				if (msg.type === 'append') {
-					onAppendLines(msg.lines ?? [])
-					return
-				}
-
-				if (msg.type === 'gap') {
-					const stop = addSeq(msg.missingTo, 1n)
-					if (!stop) return
-
-					let cursor = msg.missingFrom
-					const loop = async () => {
-						if (disposed || ac.signal.aborted) return
-						try {
-							const mm = (await fetchMeta()) as LogStreamMeta
-							setMeta(mm)
-							while (cursor !== stop && !disposed && !ac.signal.aborted) {
-								const out = await fetchRange(mm, cursor, RANGE_LIMIT)
-								cursor = out.nextSeq
-								onAppendLines(out.lines)
-							}
-						} catch {
-							// ignore
-						}
+					const current = await fetchMeta()
+					if (disposed) return
+					setMeta(current)
+					while (cursor !== stop && !disposed) {
+						const range = await fetchRange(current, cursor, RANGE_LIMIT)
+						if (range.nextSeq === cursor) break
+						cursor = range.nextSeq
+						onAppendLines(range.lines)
 					}
-					void loop()
+				} catch {
+					setConnected(false)
 				}
-			}
-
-			es.addEventListener('reset', (ev) => onMsg(ev as MessageEvent))
-			es.addEventListener('append', (ev) => onMsg(ev as MessageEvent))
-			es.addEventListener('gap', (ev) => onMsg(ev as MessageEvent))
-
-			es.onerror = () => {
-				setConnected(false)
-				if (adminAccessProbeInFlightRef.current !== null) return
-				adminAccessProbeInFlightRef.current = probeAdminAccessBlocked().finally(() => {
-					adminAccessProbeInFlightRef.current = null
-				})
-				void adminAccessProbeInFlightRef.current.then((blocked): undefined => {
-					if (blocked) es.close()
-					return undefined
-				})
-			}
-
-			return es
+			})()
 		}
 
-		let es: EventSource | null = null
 		void (async () => {
 			try {
+				subscription = await management.logs.follow({ streamId, filter: activeFilter }, (event) => {
+					if (!initialized) bufferedEvents.push(event)
+					else handleEvent(event)
+				})
+				if (disposed) {
+					subscription[Symbol.dispose]()
+					return
+				}
+				setConnected(true)
 				const m = await fetchMeta()
-				if (disposed || ac.signal.aborted) return
+				if (disposed) return
 				setMeta(m)
 
 				const tail = seqToBigint(m.tailSeq) ?? 0n
 				const head = seqToBigint(m.headSeq) ?? 1n
 				const start = tail > 0n ? tail - BigInt(Math.max(1, SNAPSHOT_MAX - 1)) + 1n : head
 				const from = (start < head ? head : start).toString(10)
-				// Single source of truth: follow SSE (it will send reset + catch-up appends).
-				es = connectFollow(m, from)
+				const snapshot = await fetchRange(m, from, SNAPSHOT_MAX)
+				if (disposed) return
+				onAppendLines(snapshot.lines)
+				initialized = true
+				for (const event of bufferedEvents.splice(0)) handleEvent(event)
 			} catch {
-				// ignore
-			} finally {
-				abortRef.current = null
+				setConnected(false)
 			}
 		})()
 
 		return () => {
 			disposed = true
-			if (abortRef.current) {
-				abortRef.current.abort()
-				abortRef.current = null
-			}
 			if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
 			rafRef.current = null
-			es?.close()
+			subscription?.[Symbol.dispose]()
 		}
-	}, [activeFilter, filterQuery, management, streamId])
+	}, [activeFilter, management, streamId])
 
 	useEffect(() => {
 		followRef.current = follow

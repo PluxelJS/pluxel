@@ -31,15 +31,15 @@ function hasSafeClaimKeys(value: unknown): boolean {
 	)
 }
 
-const PasswordMode = v.object({
+const PasswordMode = v.strictObject({
 	type: v.literal('password'),
 })
 
-const PasswordTotpMode = v.object({
+const PasswordTotpMode = v.strictObject({
 	type: v.literal('password-totp'),
 })
 
-const OidcMode = v.object({
+const OidcMode = v.strictObject({
 	type: v.literal('oidc'),
 	issuer: v.pipe(HttpsUrl, f.formMeta({ title: 'Issuer URL' })),
 	clientId: v.pipe(
@@ -78,16 +78,6 @@ const OidcMode = v.object({
 		),
 		['openid', 'profile', 'email'],
 	),
-	bearerAudience: v.optional(
-		v.union([
-			v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
-			v.pipe(
-				v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(512))),
-				v.minLength(1),
-				v.maxLength(16),
-			),
-		]),
-	),
 	requiredClaims: v.optional(
 		v.pipe(
 			v.unknown(),
@@ -99,7 +89,7 @@ const OidcMode = v.object({
 })
 
 export const AuthConfig = v.pipe(
-	v.object({
+	v.strictObject({
 		mode: v.pipe(
 			v.optional(v.variant('type', [PasswordMode, PasswordTotpMode, OidcMode]), {
 				type: 'password',

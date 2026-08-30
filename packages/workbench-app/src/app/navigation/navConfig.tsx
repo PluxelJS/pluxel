@@ -1,5 +1,5 @@
 import { isValidElement, type ReactNode } from 'react'
-import type { WorkbenchIcon } from '@pluxel/runtime/workbench/contract'
+import type { WorkbenchIcon } from '@pluxel/runtime/workbench'
 import {
 	IconApi,
 	IconBrandDiscord,
@@ -85,7 +85,7 @@ const workbenchIconMap = {
 	users: IconUsers,
 } satisfies Record<WorkbenchIcon, Icon>
 
-// Workbench contracts carry serializable icon tokens. The host owns their visual mapping.
+// Workbench layout records carry serializable icon tokens. The host owns their visual mapping.
 export function resolveNavIcon(icon: unknown): ReactNode | undefined {
 	if (!icon) return undefined
 	if (isValidElement(icon)) return icon

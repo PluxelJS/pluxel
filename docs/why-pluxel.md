@@ -156,7 +156,7 @@ class 或一次编译的 property descriptor：
 这是一项设计偏好，不是全面禁令：当普通对象或预编译 shape 能得到更明确的 identity、反射和生命周期语义时，不用 `Proxy`
 隐藏动态 rebinding。浏览器 Workbench 的 Cap’n Web RPC stub 仍使用 `Proxy`，因为 RPC method 名称来自 type-erased remote contract，
 本地没有可编译的 runtime method schema；这个边界不参与后端 provider identity、graph edge、Context owner、effects 或 lifecycle
-ordering。SSE namespace 使用显式 `ns(name)`，不再通过任意属性读取推断 namespace。
+ordering。远端 observer 仍是显式 Cap’n Web target，由返回的 disposer 和 socket epoch 约束生命周期。
 
 ## 为什么称为 typed meta-framework
 

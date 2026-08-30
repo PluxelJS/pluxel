@@ -3,6 +3,7 @@ import { requireWorkbench } from '@pluxel/runtime/internal'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchExamplePlugin } from './fixtures/wretch-example.ts'
+import { openWretchSettings } from './workbench-helpers.ts'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -45,7 +46,7 @@ describe('WretchExamplePlugin', () => {
 		)
 	})
 
-	it('mounts the shared HTTP settings renderer in a Workbench-enabled runtime', async () => {
+	it('places and opens the provider-owned settings Attachment', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, WretchExamplePlugin])
@@ -56,22 +57,40 @@ describe('WretchExamplePlugin', () => {
 				expect(host.isRunning(WretchPlugin)).toBe(true)
 				expect(host.isRunning(WretchExamplePlugin)).toBe(true)
 
-				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(
-					pluginNodeAddressOf(WretchExamplePlugin),
-				)
-				expect(layout.items[0]).toMatchObject({
-					owner: {
-						address: pluginNodeAddressOf(WretchPlugin),
-						displayName: 'WretchPlugin',
-						rootExportName: 'WretchPlugin',
+				const consumer = pluginNodeAddressOf(WretchExamplePlugin)
+				const provider = pluginNodeAddressOf(WretchPlugin)
+				const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
+				expect(layout.entries[0]).toMatchObject({
+					descriptor: {
+						kind: 'attachment-placement',
+						consumer: consumer.definition,
+						key: 'http',
+						provider: {
+							kind: 'attachment',
+							owner: provider.definition,
+							key: 'settings',
+						},
 					},
 					target: {
-						address: pluginNodeAddressOf(WretchExamplePlugin),
+						node: consumer,
 						displayName: 'WretchExamplePlugin',
-						rootExportName: 'WretchExamplePlugin',
 					},
-					viewId: 'HttpSettings',
-					port: { id: '@pluxel/wretch.settings' },
+					renderer: provider,
+					placement: { kind: 'tab', label: 'HTTP', icon: 'settings' },
+					federatedViewRef: {
+						expose: './views/settings',
+						descriptor: {
+							kind: 'attachment',
+							owner: provider.definition,
+							key: 'settings',
+						},
+					},
+				})
+				using settings = await openWretchSettings(host, WretchExamplePlugin)
+				expect(settings.api.snapshot()).toMatchObject({
+					settings: { headers: {} },
+					hostTimeoutMs: 30_000,
+					effectiveTimeoutMs: 30_000,
 				})
 			},
 			{ workbench: { enabled: true } },

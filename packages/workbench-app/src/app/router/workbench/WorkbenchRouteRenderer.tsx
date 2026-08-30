@@ -2,7 +2,7 @@ import { Center, Stack, Text } from '@mantine/core'
 import { type ReactNode } from 'react'
 import type { WorkbenchResolvedRoute, WorkbenchTargetSnapshot } from '../../../workbench/client'
 import { WorkbenchRoute, useWorkbenchRuntime } from '../../../workbench/runtime'
-import { WorkbenchRouteStateFallback, WorkbenchRouteStatusBanner } from './WorkbenchRouteStatus'
+import { WorkbenchRouteStateFallback } from './WorkbenchRouteStatus'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 
 export function WorkbenchRouteRenderer(props: {
@@ -34,9 +34,7 @@ export function WorkbenchRouteRenderer(props: {
 	}
 
 	if (snapshot.state !== 'ready' && !snapshot.layout) {
-		return (
-			<WorkbenchRouteStateFallback target={target} displayName={displayName} snapshot={snapshot} />
-		)
+		return <WorkbenchRouteStateFallback displayName={displayName} snapshot={snapshot} />
 	}
 
 	if (!route) {
@@ -53,12 +51,7 @@ export function WorkbenchRouteRenderer(props: {
 		)
 	}
 
-	const content = (
-		<>
-			<WorkbenchRouteStatusBanner target={target} />
-			<WorkbenchRoute target={target} route={route} />
-		</>
-	)
+	const content = <WorkbenchRoute route={route} snapshot={snapshot} />
 
 	return <>{wrapContent ? wrapContent(content) : content}</>
 }

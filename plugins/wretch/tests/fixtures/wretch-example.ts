@@ -1,10 +1,9 @@
 import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import type { Wretch } from 'wretch'
 import { retry } from 'wretch/middlewares'
 import { WretchPlugin } from '../../src/index.ts'
-import { WretchWorkbenchPort } from '../../src/workbench-contract.ts'
+import { WretchWorkbench } from '../../src/workbench.ts'
 
 const WretchExampleConfig = v.object({
 	baseUrl: v.pipe(
@@ -30,13 +29,10 @@ const WretchExampleConfig = v.object({
 	),
 })
 
-const WretchExampleWorkbench = workbench.portOutlet({
-	id: 'Http',
-	port: WretchWorkbenchPort,
-	placement: workbenchContract.tab({
-		label: 'HTTP',
-		icon: workbenchContract.icons.Settings,
-	}),
+const WretchExampleWorkbench = workbench.define({
+	http: WretchWorkbench.settings.place(
+		workbench.tab({ label: 'HTTP', icon: workbench.icons.Settings }),
+	),
 })
 
 @Plugin()
@@ -66,8 +62,8 @@ export class WretchExamplePlugin extends BasePlugin {
 		this.api = api
 
 		this.ctx.elysia.get('/wretch-example/inspect', () => this.inspect())
-		this.ctx.workbench?.mount(WretchExampleWorkbench, {
-			settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
+		this.ctx.workbench?.publish(WretchExampleWorkbench, {
+			http: { provider: this.http },
 		})
 	}
 

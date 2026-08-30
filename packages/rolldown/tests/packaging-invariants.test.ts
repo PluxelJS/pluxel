@@ -340,9 +340,13 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/rolldown/src/plugin-artifact/pluginArtifactBuildPlugin.ts`,
 			'utf8',
 		)
+		const semanticLowering = await readFile(
+			`${root}/packages/rolldown/src/workbench/semantic-lowering.ts`,
+			'utf8',
+		)
 
 		expect(pluginCode).toContain("import('../vite/workbench-ui.ts')")
-		expect(pluginCode).toContain("from '../workbench/build-contract.ts'")
+		expect(semanticLowering).toContain("from './build-contract.ts'")
 		expect(pluginCode).not.toMatch(/import\s+\{[^}]*buildWorkbenchUiRemote[^}]*\}\s+from/)
 		expect(pluginCode).not.toContain('@module-federation/vite')
 	})
@@ -660,7 +664,8 @@ describe('toolchain package boundaries', () => {
 
 		expect(runtimeDevWorkbench).toContain('export function attachPluginArtifactCompiler(')
 		expect(runtimeDevWorkbench).toContain('new PluginArtifactCompiler(')
-		expect(runtimeDevWorkbench).toContain('artifacts?.attachSourceBinder(')
+		expect(runtimeDevWorkbench).toContain('publishWorkbenchProducers:')
+		expect(runtimeDevWorkbench).not.toContain('artifacts?.attachSourceBinder(')
 		expect(runtimeDevWorkbench).toContain('ctx.nodeModules.attachSourceBinder(')
 		expect(runtimeDevWorkbench).not.toContain('ctx.runtimeDev =')
 		expect(runtimeCapabilities).not.toContain('workbenchUiSource')

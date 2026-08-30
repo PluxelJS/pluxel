@@ -9,12 +9,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { ConfigForm } from '../../../workbench-app/src/app/plugins/config/ConfigForm'
-import { BuiltinDoc } from '../../../workbench-app/src/workbench/builtin/Doc'
 import {
 	PluginWorkbenchAsideProvider,
 	usePluginWorkbenchAssistVisibility,
 } from '../../../workbench-app/src/app/plugins/detail/workbench/context'
-import { PluginWorkbenchTabActivityProvider } from '../../../workbench-app/src/app/plugins/detail/workbench/tabActivity'
 import { resolvePluginWorkbenchPanelsState } from '../../../workbench-app/src/app/workbench/split'
 
 const OWNER: PluginNodeAddress = {
@@ -53,7 +51,7 @@ function createFakeManagementClient(
 }
 
 function ConfigHarness({
-	client = createFakeManagementClient(),
+	client,
 	savedConfig = EMPTY_CONFIG,
 	defaults = EMPTY_CONFIG,
 }: {
@@ -62,8 +60,9 @@ function ConfigHarness({
 	defaults?: Record<string, unknown>
 }) {
 	const [dirty, setDirty] = useState(false)
+	const resolvedClient = useMemo(() => client ?? createFakeManagementClient(), [client])
 	return (
-		<RuntimeManagementClientProvider client={client}>
+		<RuntimeManagementClientProvider client={resolvedClient}>
 			<MantineProvider>
 				<div data-dirty={dirty ? 'true' : 'false'}>
 					<ConfigForm
@@ -77,47 +76,6 @@ function ConfigHarness({
 				</div>
 			</MantineProvider>
 		</RuntimeManagementClientProvider>
-	)
-}
-
-function BuiltinDocHarness({
-	mountAssistHost,
-	active = true,
-}: {
-	mountAssistHost: boolean
-	active?: boolean
-}) {
-	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const asideValue = useMemo(
-		() => ({
-			asideAvailable: true,
-			assistHost,
-			setAssistHost,
-			assistVisible: false,
-			setAssistClaim: () => {},
-		}),
-		[assistHost],
-	)
-	const content = useMemo(
-		() => [{ kind: 'md' as const, text: '# Guide\n\n## Overview\nAlpha\n\n## Usage\nBeta' }],
-		[],
-	)
-	return (
-		<MantineProvider>
-			<PluginWorkbenchAsideProvider value={asideValue}>
-				<PluginWorkbenchTabActivityProvider active={active}>
-					<div data-doc-shell="true">
-						<BuiltinDoc
-							id="builtin-doc-test"
-							pluginName="Config owner"
-							title="Builtin Doc Test"
-							content={content}
-						/>
-					</div>
-				</PluginWorkbenchTabActivityProvider>
-				{mountAssistHost ? <div data-assist-host="true" ref={setAssistHost} /> : null}
-			</PluginWorkbenchAsideProvider>
-		</MantineProvider>
 	)
 }
 
@@ -275,32 +233,6 @@ describe('single-schema ConfigForm safety', () => {
 			)
 			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
 			expect(error.mock.calls.flat().join('\n')).not.toContain('Maximum update depth exceeded')
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it('mounts builtin document navigation only while its tab is active', async () => {
-		const { container, root } = await mount(<BuiltinDocHarness mountAssistHost={false} />)
-		try {
-			expect(container.querySelector('[data-doc-shell="true"]')?.textContent).toContain(
-				'Builtin Doc Test',
-			)
-			await act(async () => {
-				root.render(<BuiltinDocHarness mountAssistHost />)
-				await Promise.resolve()
-				await Promise.resolve()
-			})
-			expect(container.querySelector('[data-assist-host="true"]')?.textContent).toContain(
-				'Overview',
-			)
-			await act(async () => {
-				root.render(<BuiltinDocHarness mountAssistHost active={false} />)
-				await Promise.resolve()
-			})
-			expect(container.querySelector('[data-assist-host="true"]')?.textContent).not.toMatch(
-				/Overview|Usage/,
-			)
 		} finally {
 			await act(async () => root.unmount())
 		}

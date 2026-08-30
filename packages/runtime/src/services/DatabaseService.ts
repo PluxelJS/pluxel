@@ -732,14 +732,14 @@ function coordinatorFor(
 	return coordinator
 }
 
-/** @internal Workbench live-query bridge. */
+/** @internal Owner-scoped table invalidation primitive. */
 export function subscribeDatabaseHandle(
 	handle: PluginDatabaseHandle,
 	tables: readonly unknown[],
 	listener: () => void,
 ): () => void {
 	if (!(handle instanceof OwnerDatabaseHandle)) {
-		throw new TypeError('[pluxel/database] liveQuery requires a Pluxel database handle')
+		throw new TypeError('[pluxel/database] subscription requires a Pluxel database handle')
 	}
 	const names = new Set(tables.map(readTableName))
 	return handle.subscribe(names, listener)

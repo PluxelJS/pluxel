@@ -40,11 +40,7 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(createWorkbenchViteClientConfig('/@fs/workspace/workbench/client.tsx')).toEqual({
 			optimizeDeps: {
 				entries: ['/workspace/workbench/client.tsx'],
-				include: [
-					'@tabler/icons-react',
-					'@pluxel/runtime > @elysiajs/eden',
-					'@pluxel/runtime > capnweb',
-				],
+				include: ['@tabler/icons-react', '@pluxel/runtime > capnweb'],
 				noDiscovery: false,
 				holdUntilCrawlEnd: true,
 				ignoreOutdatedRequests: true,

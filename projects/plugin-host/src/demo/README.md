@@ -3,10 +3,10 @@
 - `PluginCompositionConfigDemo`：一个 Plugin 一次声明完整 object schema，并用嵌套字段组织内部模块配置。
 - `PluginOptionalIntegrationDemo`：module-level `definePluginRef<T>()`、init-time `plugins.use(ref, setup)` 与 owner cleanup。
 - `PluginEventsDemo`：producer-owned `EvtChannel`，consumer 通过 constructor required dependency 订阅。
-- `PluginWithUI`：完整 Workbench extension、API、collection、stream、route 和 remote views。
-- `PluginContributionFontDemo`：consumer-owned port placement + provider renderer，演示同一配置 UI 注入多个 dependents。
-- `PluginHttpRoutesDemo`：常驻业务 HTTP + 可选说明文档。
-- `PluginHttpWorkerDemo`：typed task + root shared worker pool + HMR/static artifact；Workbench 只负责展示说明。
+- `PluginWithUI`：direct View API、Plugin-owned observer、tab、route 与 MF2 React Bridge。
+- `PluginContributionFontDemo`：provider-owned Attachment + consumer-owned selection，演示 manager 被依赖插件放置和消费。
+- `PluginHttpRoutesDemo`：常驻业务 HTTP；不为文档额外制造 Workbench 抽象。
+- `PluginHttpWorkerDemo`：typed task + root shared worker pool + HMR/static artifact。
 
-所有管理资源通过 `ctx.workbench?.mount(...)` 创建并绑定 owner effects。关闭 Workbench Plane 时 capability
-不存在且不注册资源，HTTP 和插件核心逻辑仍然工作。
+Workbench 插件每代至多调用一次 `ctx.workbench.publish(definition, bindings)`。每次打开 View 都返回新的
+`RpcTarget`，renderer 通过 exact descriptor 调用 `useWorkbench()`；状态读取和订阅仍由插件 API 自己定义。

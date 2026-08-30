@@ -1,347 +1,273 @@
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { createFixture } from 'fs-fixture'
-import { describe, expect, it } from 'vitest'
-import { join } from 'pathe'
-import { workbenchFederationRemoteName } from '@pluxel/core/federation'
+import { access, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import {
-	buildWorkbenchUiRemote,
+	createWorkbenchFederationProducerPlan,
+	WORKBENCH_FEDERATION_MANIFEST_FILE,
+} from '@pluxel/core/federation'
+import { parsePluginDefinitionAddress } from '@pluxel/core'
+import type { Manifest } from '@module-federation/sdk'
+import { createFixture } from 'fs-fixture'
+import { join } from 'pathe'
+import { describe, expect, it } from 'vitest'
+import {
+	buildWorkbenchFederationProducer,
 	resolveWorkbenchFederationShared,
 } from '../../src/vite/workbench-ui'
-import { validateWorkbenchUiArtifact } from '../../src/workbench/artifact'
+import { validateWorkbenchFederationArtifact } from '../../src/workbench/artifact'
 
-describe('buildWorkbenchUiRemote', () => {
-	it('rejects partial cached artifacts including missing lazy chunks', async () => {
-		await using fixture = await createFixture({
-			'artifact/mf-manifest.json': JSON.stringify({
-				metaData: { remoteEntry: { name: 'remoteEntry.js' } },
-				exposes: [{ name: 'ui-module', assets: { js: { sync: [], async: [] } } }],
-			}),
-			'artifact/remoteEntry.js': 'export const load = () => import("./assets/missing.js")\n',
-		})
+const definition = parsePluginDefinitionAddress({
+	entry: { kind: 'package-root', packageName: '@example/workbench-producer' },
+	exportName: 'WorkbenchProducerPlugin',
+})
 
-		await expect(
-			validateWorkbenchUiArtifact(join(fixture.path, 'artifact'), 'PluginWithUI'),
-		).resolves.toMatchObject({
-			valid: false,
-			reason: 'artifact asset missing: assets/missing.js',
-		})
-	})
-
-	it('rejects artifact references that escape the published remote directory', async () => {
-		await using fixture = await createFixture({
-			'artifact/mf-manifest.json': JSON.stringify({
-				metaData: { remoteEntry: { name: 'remoteEntry.js' } },
-				exposes: [{ name: 'ui-module', assets: { js: { sync: [], async: [] } } }],
-			}),
-			'artifact/remoteEntry.js': 'export const load = () => import("../outside.js")\n',
-			'outside.js': 'export default {}\n',
-		})
-
-		await expect(
-			validateWorkbenchUiArtifact(join(fixture.path, 'artifact'), 'PluginWithUI'),
-		).resolves.toMatchObject({
-			valid: false,
-			reason: 'invalid artifact asset reference in remoteEntry.js: ../outside.js',
-		})
-	})
-
-	it('resolves assets-prefixed references from the artifact root', async () => {
-		await using fixture = await createFixture({
-			'artifact/mf-manifest.json': JSON.stringify({
-				metaData: { remoteEntry: { name: 'remoteEntry.js' } },
-				exposes: [
-					{
-						name: 'ui-module',
-						assets: { js: { sync: ['assets/index.js'], async: [] } },
-					},
-				],
-			}),
-			'artifact/remoteEntry.js': 'export const load = () => import("./assets/index.js")\n',
-			'artifact/assets/index.js': 'export const stylesheet = "assets/index.css"\n',
-			'artifact/assets/index.css': '.split-view { display: flex; }\n',
-		})
-
-		await expect(
-			validateWorkbenchUiArtifact(join(fixture.path, 'artifact'), 'PluginWithUI'),
-		).resolves.toMatchObject({ valid: true })
-	})
-
-	it('builds multiple remotes from the same package root without cross-build corruption', async () => {
-		await using fixture = await createFixture({
-			'packages/plugins/demo/package.json': JSON.stringify({
-				name: '@pluxel/plugins-demo',
-				private: true,
-				type: 'module',
-				dependencies: {
-					react: '19.2.0',
-				},
-			}),
-			'packages/plugins/demo/src/ui/a.ts': 'export default { id: "a" }\n',
-			'packages/plugins/demo/src/ui/b.ts': 'export default { id: "b" }\n',
-			'packages/plugins/demo/node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '19.2.0',
-				main: 'index.js',
-			}),
-			'packages/plugins/demo/node_modules/react/index.js': 'module.exports = {}\n',
-		})
-
-		const tempRoot = fixture.path
-		const root = join(tempRoot, 'packages/plugins/demo')
-		const stickyVirtual = join(root, 'node_modules/__mf__virtual/sticky.txt')
-		const stickyTemp = join(root, '.__mf__temp/sticky.txt')
-		await mkdir(join(root, 'node_modules/__mf__virtual'), { recursive: true })
-		await mkdir(join(root, '.__mf__temp'), { recursive: true })
-		await writeFile(stickyVirtual, 'keep me\n')
-		await writeFile(stickyTemp, 'keep me\n')
-
-		const results = await Promise.all([
-			buildWorkbenchUiRemote({
-				root,
-				pluginName: 'PluginA',
-				entryPath: join(root, 'src/ui/a.ts'),
-				outDir: join(tempRoot, 'plugin-a'),
-				publicPath: '/test/',
-				minify: false,
-			}),
-			buildWorkbenchUiRemote({
-				root,
-				pluginName: 'PluginB',
-				entryPath: join(root, 'src/ui/b.ts'),
-				outDir: join(tempRoot, 'plugin-b'),
-				publicPath: '/test/',
-				minify: false,
-				sourcemap: true,
-			}),
-		])
-
-		for (const [index, result] of results.entries()) {
-			await access(result.manifestPath)
-			const outputFiles = await readdir(result.outDir, { recursive: true })
-			expect(outputFiles.some((file) => String(file).endsWith('.map'))).toBe(index === 1)
-			const manifest = JSON.parse(await readFile(result.manifestPath, 'utf-8')) as {
-				metaData?: { remoteEntry?: { name?: string } }
-			}
-			expect(manifest.metaData?.remoteEntry?.name).toBe('remoteEntry.js')
-		}
-		await expect(readFile(stickyVirtual, 'utf-8')).resolves.toBe('keep me\n')
-		await expect(readFile(stickyTemp, 'utf-8')).resolves.toBe('keep me\n')
-		await expect(
-			readdir(join(root, '.pluxel/vite-workbench-ui-cache')).catch((): string[] => []),
-		).resolves.toEqual([])
-	}, 45_000)
-
-	it('builds remotes from different package roots without cross-build corruption', async () => {
-		await using fixture = await createFixture({
-			'packages/plugins/yiqicha/package.json': JSON.stringify({
-				name: '@pluxel/plugin-yiqicha',
-				private: true,
-				type: 'module',
-				dependencies: { react: '19.2.0' },
-			}),
-			'packages/plugins/yiqicha/src/ui/index.ts': `
-export const marker = "yiqicha-workbench-ui"
-export default { marker }
-`,
-			'packages/plugins/yiqicha/node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '19.2.0',
-				main: 'index.js',
-			}),
-			'packages/plugins/yiqicha/node_modules/react/index.js': 'module.exports = {}\n',
-			'packages/plugins/zhipu/package.json': JSON.stringify({
-				name: '@pluxel/plugin-zhipu',
-				private: true,
-				type: 'module',
-				dependencies: { react: '19.2.0' },
-			}),
-			'packages/plugins/zhipu/src/ui/index.ts': `
-export const marker = "zhipu-workbench-ui"
-export default { marker }
-`,
-			'packages/plugins/zhipu/node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '19.2.0',
-				main: 'index.js',
-			}),
-			'packages/plugins/zhipu/node_modules/react/index.js': 'module.exports = {}\n',
-		})
-
-		const cases = [
+function createPlan(buildRevision = 'revision-a') {
+	return createWorkbenchFederationProducerPlan({
+		definition,
+		buildRevision,
+		entries: [
 			{
-				root: join(fixture.path, 'packages/plugins/yiqicha'),
-				pluginName: 'YiqichaProviderPlugin',
-				marker: 'yiqicha-workbench-ui',
+				descriptor: { kind: 'attachment', owner: definition, key: 'picker' },
+				bridgeEntryPath: 'src/ui/picker.ts',
 			},
 			{
-				root: join(fixture.path, 'packages/plugins/zhipu'),
-				pluginName: 'ZhipuProviderPlugin',
-				marker: 'zhipu-workbench-ui',
+				descriptor: { kind: 'view', owner: definition, key: 'manager' },
+				bridgeEntryPath: 'src/ui/manager.ts',
 			},
-		] as const
-		const results = await Promise.all(
-			cases.map(({ root, pluginName }) =>
-				buildWorkbenchUiRemote({
-					root,
-					pluginName,
-					entryPath: join(root, 'src/ui/index.ts'),
-					outDir: join(fixture.path, `dist/${pluginName}`),
-					publicPath: '/test/',
-					minify: false,
-				}),
-			),
-		)
+		],
+	})
+}
 
-		for (const [index, result] of results.entries()) {
-			const expected = cases[index]!
-			const validation = await validateWorkbenchUiArtifact(result.outDir, expected.pluginName)
-			expect(validation.valid).toBe(true)
-			if (!validation.valid) continue
-			expect(validation.manifest.name ?? validation.manifest.metaData?.name).toBe(
-				workbenchFederationRemoteName(expected.pluginName),
-			)
+function packageFiles(name: string, version: string, exports: readonly string[]) {
+	const packageExports = Object.fromEntries(
+		exports.map((subpath) => [subpath, subpath === '.' ? './index.js' : `${subpath}.js`]),
+	)
+	return {
+		[`node_modules/${name}/package.json`]: JSON.stringify({
+			name,
+			version,
+			type: 'module',
+			exports: packageExports,
+		}),
+		...Object.fromEntries(
+			exports.map((subpath) => [
+				`node_modules/${name}/${subpath === '.' ? 'index.js' : `${subpath.slice(2)}.js`}`,
+				'export {}\n',
+			]),
+		),
+	}
+}
 
-			const files = await readdir(result.outDir, { recursive: true })
-			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
-			const contents = await Promise.all(
-				jsFiles.map((file) => readFile(join(result.outDir, file), 'utf-8')),
-			)
-			const output = contents.join('\n')
-			expect(output).toContain(expected.marker)
-			expect(output).not.toContain(cases[1 - index]!.marker)
-		}
-	}, 45_000)
-
-	it('builds the same remote repeatedly without reusing process-local federation state', async () => {
-		await using fixture = await createFixture({
-			'packages/plugins/demo/package.json': JSON.stringify({
-				name: '@pluxel/plugins-demo',
-				private: true,
-				type: 'module',
-				dependencies: {
-					react: '19.2.0',
-				},
-			}),
-			'packages/plugins/demo/src/ui/index.ts': `
-export const marker = "same-remote"
-export default { marker }
+function producerFixtureFiles(): Record<string, string> {
+	return {
+		'package.json': JSON.stringify({
+			name: '@example/workbench-producer',
+			private: true,
+			type: 'module',
+			devDependencies: {
+				'@pluxel/runtime': '1.0.0',
+				react: '19.2.7',
+				'react-dom': '19.2.7',
+			},
+		}),
+		'tsconfig.json': JSON.stringify({
+			compilerOptions: {
+				declaration: true,
+				module: 'ESNext',
+				moduleResolution: 'Bundler',
+				target: 'ES2022',
+				strict: true,
+			},
+			include: ['src'],
+		}),
+		'src/ui/manager.ts': `
+export const marker = 'profile-one-manager'
+export default () => ({ marker, async render() {}, destroy() {} })
 `,
-			'packages/plugins/demo/node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '19.2.0',
-				main: 'index.js',
-			}),
-			'packages/plugins/demo/node_modules/react/index.js': 'module.exports = {}\n',
-		})
-
-		const root = join(fixture.path, 'packages/plugins/demo')
-		const entryPath = join(root, 'src/ui/index.ts')
-
-		const first = await buildWorkbenchUiRemote({
-			root,
-			pluginName: 'PluginWithUI',
-			entryPath,
-			outDir: join(fixture.path, 'pwui-test-1'),
-			publicPath: '/test/',
-			minify: false,
-		})
-		const second = await buildWorkbenchUiRemote({
-			root,
-			pluginName: 'PluginWithUI',
-			entryPath,
-			outDir: join(fixture.path, 'pwui-test-2'),
-			publicPath: '/test/',
-			minify: false,
-		})
-
-		for (const result of [first, second]) {
-			await access(result.manifestPath)
-			const files = await readdir(result.outDir, { recursive: true })
-			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
-			const contents = await Promise.all(
-				jsFiles.map((file) => readFile(join(result.outDir, file), 'utf-8')),
-			)
-			expect(contents.join('\n')).toContain('same-remote')
-		}
-	}, 45_000)
-
-	it('keeps the official manifest asset graph while externalizing host shared packages', async () => {
-		await using fixture = await createFixture({
-			'packages/plugins/demo/package.json': JSON.stringify({
-				name: '@pluxel/plugins-demo',
-				private: true,
-				type: 'module',
-				dependencies: {
-					react: '19.2.0',
-				},
-			}),
-			'packages/plugins/demo/src/ui/index.ts': `
-import { forwardRef } from 'react'
-
-export const Component = forwardRef(() => null)
-export default { Component }
+		'src/ui/picker.ts': `
+export const marker = 'profile-one-picker'
+export default () => ({ marker, async render() {}, destroy() {} })
 `,
-			'packages/plugins/demo/node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '19.2.0',
-				main: 'index.js',
-			}),
-			'packages/plugins/demo/node_modules/react/index.js':
-				'exports.forwardRef = (render) => ({ $$typeof: Symbol.for("react.forward_ref"), render })\n',
-		})
+		...packageFiles('react', '19.2.7', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...packageFiles('react-dom', '19.2.7', ['.', './client']),
+		...packageFiles('@pluxel/runtime', '1.0.0', [
+			'.',
+			'./workbench',
+			'./workbench/client',
+			'./workbench/react',
+		]),
+	}
+}
 
-		const root = join(fixture.path, 'packages/plugins/demo')
-		const outDir = join(fixture.path, 'dist/workbench-ui')
-		await buildWorkbenchUiRemote({
-			root,
-			pluginName: 'PluginWithTopLevelShared',
-			entryPath: join(root, 'src/ui/index.ts'),
+describe('Workbench Profile 1 federation producer', () => {
+	it('builds multiple Bridge exposes with a standard Manifest, Snapshot, and dynamic types', async () => {
+		await using fixture = await createFixture(producerFixtureFiles())
+		const plan = createPlan()
+		const outDir = join(fixture.path, 'artifact')
+		const build = await buildWorkbenchFederationProducer({
+			root: fixture.path,
+			plan,
 			outDir,
-			publicPath: '/test/',
 			minify: false,
 		})
 
-		const files = await readdir(join(outDir, 'assets'), { recursive: true })
-		const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
-		const contents = await Promise.all(
-			jsFiles.map((file) => readFile(join(outDir, 'assets', file), 'utf-8')),
-		)
-		const allContents = contents.join('\n')
-		const manifest = JSON.parse(await readFile(join(outDir, 'mf-manifest.json'), 'utf-8')) as {
-			exposes?: Array<{ assets?: { js?: { async?: string[]; sync?: string[] } } }>
-		}
-
-		const assets = manifest.exposes?.[0]?.assets?.js
-		expect([...(assets?.sync ?? []), ...(assets?.async ?? [])].length).toBeGreaterThan(0)
-		expect(allContents).not.toContain('react.forward_ref')
-	}, 45_000)
-
-	it('reads shared package versions from OXC package metadata', async () => {
-		await using fixture = await createFixture({
-			'node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '1.2.3',
-				type: 'module',
-				exports: {
-					'.': './dist/index.js',
-				},
-			}),
-			'node_modules/react/dist/index.js': 'export {}\n',
+		await expect(access(build.manifestPath)).resolves.toBeUndefined()
+		const shared = resolveWorkbenchFederationShared(fixture.path)
+		const validation = await validateWorkbenchFederationArtifact(outDir, {
+			plan,
+			compatibility: shared.compatibility,
 		})
+		expect(validation.valid).toBe(true)
+		if (validation.valid === false) throw new Error(validation.reason)
+		expect(validation.snapshot.modules.map((entry) => entry.moduleName).sort()).toEqual([
+			'views/manager',
+			'views/picker',
+		])
+		expect(validation.manifest.shared).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'react',
+					version: '19.2.7',
+					requiredVersion: '19.2.7',
+					singleton: true,
+				}),
+				expect.objectContaining({
+					name: '@module-federation/bridge-react',
+					version: '2.7.0',
+					requiredVersion: '2.7.0',
+					singleton: true,
+				}),
+				expect.objectContaining({
+					name: '@pluxel/runtime/workbench',
+					version: '1.0.0',
+					requiredVersion: '1.0.0',
+					singleton: true,
+				}),
+				expect.objectContaining({
+					name: '@pluxel/runtime/internal/workbench-react',
+					version: '1.0.0',
+					requiredVersion: '1.0.0',
+					singleton: true,
+				}),
+				expect.objectContaining({
+					name: '@pluxel/runtime/workbench/react',
+					version: '1.0.0',
+					requiredVersion: '1.0.0',
+					singleton: true,
+				}),
+			]),
+		)
 
-		const resolved = resolveWorkbenchFederationShared(fixture.path)
+		const outputEntries = await readdir(outDir, { recursive: true })
+		const files = outputEntries.map(String)
+		expect(files).toContain('remoteEntry.js')
+		expect(files.some((file) => file.endsWith('.zip'))).toBe(true)
+		expect(files.some((file) => file.endsWith('.d.ts'))).toBe(true)
+		const javascript = await Promise.all(
+			files
+				.filter((file) => file.endsWith('.js'))
+				.map((file) => readFile(join(outDir, file), 'utf-8')),
+		)
+		expect(javascript.join('\n')).toContain('profile-one-manager')
+		expect(javascript.join('\n')).toContain('profile-one-picker')
+	}, 60_000)
 
-		expect(resolved.signature).toContain('builder:pluxel@3')
-		expect(resolved.signature).toContain('@module-federation/vite@1.16.16')
-		expect(resolved.signature).toContain('vite@8.1.3')
-		expect(resolved.signature).toContain('react@1.2.3')
-		expect(resolved.shared).toMatchObject({
-			react: {
-				version: '1.2.3',
-				singleton: true,
-				import: false,
-				requiredVersion: false,
+	it('reuses a valid immutable revision and rejects a different plan at the same path', async () => {
+		await using fixture = await createFixture(producerFixtureFiles())
+		const plan = createPlan()
+		const outDir = join(fixture.path, 'artifact')
+		await buildWorkbenchFederationProducer({ root: fixture.path, plan, outDir, minify: false })
+		const before = await readFile(join(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE), 'utf-8')
+
+		await writeFile(
+			join(fixture.path, 'src/ui/manager.ts'),
+			'throw new Error("must not rebuild")\n',
+		)
+		await expect(
+			buildWorkbenchFederationProducer({ root: fixture.path, plan, outDir, minify: false }),
+		).resolves.toMatchObject({ outDir })
+		await expect(readFile(join(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE), 'utf-8')).resolves.toBe(
+			before,
+		)
+
+		await expect(
+			buildWorkbenchFederationProducer({
+				root: fixture.path,
+				plan: createPlan('revision-b'),
+				outDir,
+				minify: false,
+			}),
+		).rejects.toThrow('immutable producer revision already exists')
+	}, 60_000)
+
+	it('rejects missing and escaping Manifest assets without scanning JavaScript source', async () => {
+		await using fixture = await createFixture(producerFixtureFiles())
+		const plan = createPlan()
+		const outDir = join(fixture.path, 'artifact')
+		await buildWorkbenchFederationProducer({ root: fixture.path, plan, outDir, minify: false })
+		const shared = resolveWorkbenchFederationShared(fixture.path)
+		const manifestPath = join(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE)
+		const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as Manifest
+		const exposedAsset = manifest.exposes.flatMap((expose) => expose.assets.js.sync)[0]
+		expect(exposedAsset).toBeTypeOf('string')
+		await rm(join(outDir, exposedAsset!), { force: true })
+		await expect(
+			validateWorkbenchFederationArtifact(outDir, {
+				plan,
+				compatibility: shared.compatibility,
+			}),
+		).resolves.toMatchObject({ valid: false, reason: `artifact asset missing: ${exposedAsset}` })
+
+		manifest.metaData.remoteEntry.name = '../outside.js'
+		await writeFile(manifestPath, JSON.stringify(manifest))
+		await expect(
+			validateWorkbenchFederationArtifact(outDir, {
+				plan,
+				compatibility: shared.compatibility,
+			}),
+		).resolves.toMatchObject({
+			valid: false,
+			reason: 'invalid mf-manifest.json: federation manifest remote entry must be remoteEntry.js',
+		})
+	}, 60_000)
+
+	it('hard-fails when a producer-resolved platform shared version is not exact', async () => {
+		const files = producerFixtureFiles()
+		files['node_modules/@pluxel/runtime/package.json'] = JSON.stringify({
+			name: '@pluxel/runtime',
+			version: '',
+			type: 'module',
+			exports: {
+				'.': './index.js',
+				'./workbench': './workbench.js',
+				'./workbench/client': './workbench/client.js',
+				'./workbench/react': './workbench/react.js',
 			},
 		})
+		await using fixture = await createFixture(files)
+
+		expect(() => resolveWorkbenchFederationShared(fixture.path)).toThrow(
+			'shared package has no exact version: @pluxel/runtime',
+		)
 	})
+
+	it('does not publish a failed build candidate', async () => {
+		const files = producerFixtureFiles()
+		files['src/ui/manager.ts'] = 'export default {\n'
+		await using fixture = await createFixture(files)
+		const outDir = join(fixture.path, 'artifact')
+
+		await expect(
+			buildWorkbenchFederationProducer({
+				root: fixture.path,
+				plan: createPlan(),
+				outDir,
+				minify: false,
+			}),
+		).rejects.toThrow('isolated compiler failed')
+		await expect(access(outDir)).rejects.toMatchObject({ code: 'ENOENT' })
+		await expect(
+			readdir(fixture.path).then((entries) =>
+				entries.filter((entry) => entry.includes('.candidate-')),
+			),
+		).resolves.toEqual([])
+	}, 60_000)
 })

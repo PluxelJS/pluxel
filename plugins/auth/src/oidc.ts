@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload } from 'jose'
-import type { AuthDecision, AuthPrincipal } from './contracts.ts'
+import type { ManagementAccessPrincipal as AuthPrincipal } from '@pluxel/runtime'
 import type { OidcAuthMode } from './config.ts'
 import { readCookie } from './sessions.ts'
 
@@ -235,29 +235,6 @@ export class OidcClient {
 		}
 	}
 
-	async authorizeBearer(token: string, signal?: AbortSignal): Promise<AuthDecision> {
-		if (!this.config.bearerAudience) return { allow: false, reason: 'unauthenticated' }
-		if (token.length === 0 || token.length > 32_768) {
-			return { allow: false, reason: 'invalid_credentials' }
-		}
-		try {
-			const verified = await jwtVerify(token, await this.jwkSet(signal), {
-				issuer: this.config.issuer,
-				audience: this.config.bearerAudience,
-				clockTolerance: 5,
-			})
-			if (!claimsAllowed(verified.payload, this.config.requiredClaims)) {
-				return { allow: false, reason: 'forbidden' }
-			}
-			const identity = principal(verified.payload, this.config.issuer)
-			return identity
-				? { allow: true, principal: identity }
-				: { allow: false, reason: 'invalid_credentials' }
-		} catch (error) {
-			return { allow: false, reason: verificationFailureReason(error) }
-		}
-	}
-
 	clear(): void {
 		this.pending.clear()
 		this.discoveryTask = undefined
@@ -366,11 +343,4 @@ export class OidcClient {
 			if (value.expiresAt <= now) this.pending.delete(key)
 		}
 	}
-}
-
-export function readBearer(request: Request): string | undefined {
-	const authorization = request.headers.get('authorization')
-	if (!authorization || authorization.length > 32_800) return undefined
-	const match = /^Bearer\s+(.+)$/i.exec(authorization)
-	return match?.[1]
 }

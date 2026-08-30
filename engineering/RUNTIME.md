@@ -329,34 +329,39 @@ Node declaration、artifact consumer、worker specialization 与共享 pool 实�
 
 launcher 在 Context plan 编译前一次解析 Management/Workbench plane。顶层 `management` object 的存在显式安装 headless
 management；`workbench: { enabled: true }` 在 `management` 省略时也安装 management。两者都省略时不安装 access gate、runtime
-discovery、internal validation、Plugin catalog layout 或 management HTTP/RPC route。生产 Node launcher 默认监听 `0.0.0.0`，
-Runtime 在物理 carrier ingress 用 socket peer 实施访问边界：当前 committed、running provider ready 时，所有 peer（包括 loopback）都经过
-provider；provider absent/unready 时，只有 loopback 进入本地恢复，remote/unknown 除最小 `/__pluxel/admin-access` SSH 指引外全部 fail closed。
-不安全的 remote 请求在 provider callback 前拒绝。生产 static Node listener 用成对的 `PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 接收内联 PEM
+session ingress、internal validation 或 Plugin catalog layout。生产 Node launcher 默认监听 `0.0.0.0`，
+Runtime 在物理 carrier ingress 用 socket peer 实施访问边界：真实 loopback peer 直接取得 Runtime recovery principal；
+remote/unknown 必须使用可信 physical HTTPS carrier，并由当前 committed、running 且 ready 的 provider 完成认证，否则
+fail closed。不安全的 remote 请求在 provider callback 前拒绝。生产 static Node listener 用成对的 `PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 接收内联 PEM
 内容或 PEM 文件路径并直接终止 TLS；加密 private key 可另设 `PLUXEL_TLS_PASSPHRASE`。
 
 Management host 同时预安装 owner-bound `ctx.managementAccess`。认证 Plugin 通过 `provide()` 注册唯一 provider，registration 与精确
-generation effects 绑定；provider callback 在 owner admission 下执行，认证成功后的 lease 持有到 Management response body settle。
+generation effects 绑定；provider callback 在 owner admission 下执行，认证成功后的 lease 持有到 Cap’n Web call/observer settle。
 Runtime 不从 Host/Forwarded headers 推导 locality，也不把 Management auth 应用于业务 Plugin HTTP。官方 `@pluxel/auth` 用正常 Plugin
 lifecycle 提供 OIDC、password、password+TOTP；秘密进入 owner Vault，session/OIDC state/rate limit 留在有界 generation memory。
 
-公开 browser authority 是 `@pluxel/runtime/web`：version 1 discovery、严格验证的 management DTO 和 stateless domain client。
-client 不暴露 raw Cap'n Web stub、server class、React/Mantine 或 Workbench session。official View-host 尚未标准化的 layout/catalog/grant/SSE
-transport 只位于 `@pluxel/runtime/web/internal`；React Context adapter 位于 `/web/react`。server 上每个 carrier 都委托同一个 runtime use case，
-不维护 official-App-only read model。
+公开 browser authority 是 `@pluxel/runtime/web`：document-unique Runtime session client、严格验证的 Management DTO 和
+borrowed Management capability facade。一个 physical WebSocket 上完成 authentication-required → authenticated bootstrap；
+ready 状态返回 Management capability，Workbench-enabled host 同时返回 Workbench session。Client 不暴露 server class、
+React/Mantine 或 generic raw root；React Context adapter 位于 `/web/react`。
+
+认证/publication epoch 失效后 server 发送 bounded `epoch-invalidated` callback 并关闭 socket。Client 在同一 document
+不 reconnect 或切换其他 carrier。Browser cookie 写入通过 same-origin single-use commit ticket 完成；该 fixed POST 不承载
+Management operation。
 
 Management Plane 通过 `PluginCatalogLayoutService` 解析宿主/package 分类并持有用户偏好；该 service 不进入 Workbench backend。
 
 Workbench backend 由以下部分组成：
 
-- `WorkbenchService`：每个 plugin Context 隔离的 optional gate；
-- `WorkbenchRegistry`：module、关系、target layout、opaque grant 和统一 revision；
-- `WorkbenchArtifactService`：dev/package artifact 与 build state；
-- resource services：request-scoped API、live-query snapshot/patch、stream；
-- HTTP：catalog、global layout、plugin layout、artifact、resource 和 revision event。
+- `WorkbenchService`：每个 Plugin Context 隔离的 optional `publish()` gate；
+- `WorkbenchRegistry`：fixed Definition publication、target layout、Attachment resolution 和 fresh target factories；
+- `WorkbenchSessionTarget`：一个 socket epoch 的 capability-free layout、opened roots 与 owner invocation leases；
+- `WorkbenchArtifactService`：已验证 immutable MF producer revision inventory；
+- HTTP：Workbench document、standard MF manifest/assets 和 fixed WebSocket ingress。
 
-资源 namespace 只存在于服务端。浏览器收到 binding token，服务端在请求时解析 token、校验 kind，并在
-revision 变化时撤销 grant。Workbench API 不暴露全局资源字典。
+Workbench API 没有可枚举的全局服务 namespace。Browser 只能通过当前 layout 的 exact descriptor 调用
+`openView()`，成功结果直接拥有 local View API 或 Attachment provider/consumer roots。Owner/publication replacement
+会 abort opened roots 并关闭整个 session epoch。
 
 backend factory 由 static、dynamic 和 production static launcher 在 immutable Runtime Context host 构造时提供。插件不得
 直接安装或 require backend，也不存在 post-root installer。

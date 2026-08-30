@@ -13,7 +13,7 @@ import {
 } from '@pluxel/runtime/internal'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
-import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
 import { projectPluginDependencyGraph } from '../../src/api/usecases/pluginDependencyGraph'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
 import { parsePluginDependencyGraphSnapshot } from '../../src/web/management-validation'
@@ -72,7 +72,7 @@ describe('Plugin dependency graph read model', () => {
 			const registry = requirePluginService(host.ctx)
 			const internNode = vi.spyOn(registry, 'internNodeAddress')
 			const internDefinition = vi.spyOn(registry, 'internDefinitionAddress')
-			const graph = await new RuntimeRpcApi(host.ctx).pluginDependencyGraph()
+			const graph = await new RuntimeManagementTargetImpl(host.ctx).pluginDependencyGraph()
 			expect(() => parsePluginDependencyGraphSnapshot(graph)).not.toThrow()
 			expect(internNode).not.toHaveBeenCalled()
 			expect(internDefinition).not.toHaveBeenCalled()
@@ -127,7 +127,7 @@ describe('Plugin dependency graph read model', () => {
 			host.cfg(BlockedConsumer).setAutoStart(true)
 			host.start(BlockedConsumer)
 			await host.commitAllowFail()
-			const graph = await new RuntimeRpcApi(host.ctx).pluginDependencyGraph()
+			const graph = await new RuntimeManagementTargetImpl(host.ctx).pluginDependencyGraph()
 			expect(() => parsePluginDependencyGraphSnapshot(graph)).not.toThrow()
 			const provider = graph.nodes.find(
 				(node) =>
@@ -305,7 +305,7 @@ describe('Plugin dependency graph read model', () => {
 			host.start(SafeProvider)
 			host.override(CycleConsumer, CycleTokenDefinition, pluginNodeAddressOf(SafeProvider))
 			await host.commit()
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			const before = await rpc.pluginDependencyGraph()
 
 			await expect(

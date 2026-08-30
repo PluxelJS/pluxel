@@ -12,20 +12,16 @@ import {
 	withRuntimeHost,
 } from '@pluxel/runtime/test'
 import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { requireWorkbench } from '@pluxel/runtime/internal'
 import { describe, expect, it } from 'vitest'
 import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
-import type { FontsWorkbenchCommands } from '../src/manager-contract.ts'
-import { FontsSelectionPort } from '../src/workbench-contract.ts'
+import { FontsWorkbench } from '../src/workbench.ts'
+import { openFontsManager, openFontSelection } from './workbench-helpers.ts'
 
-const ConsumerWorkbench = workbench.portOutlet({
-	id: 'Fonts',
-	port: FontsSelectionPort,
-	placement: workbenchContract.tab({
-		label: 'Fonts',
-		icon: workbenchContract.icons.Typography,
-	}),
+export const FontsTestWorkbench = workbench.define({
+	fonts: FontsWorkbench.selection.place(
+		workbench.tab({ label: 'Fonts', icon: workbench.icons.Typography }),
+	),
 })
 
 @Plugin()
@@ -35,8 +31,8 @@ class FontsTestConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.workbench?.mount(ConsumerWorkbench, {
-			selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
+		this.ctx.workbench?.publish(FontsTestWorkbench, {
+			fonts: { provider: this.fonts },
 		})
 	}
 }
@@ -80,7 +76,7 @@ describe('FontsPlugin', () => {
 	})
 
 	it.skipIf(!discoveredFamily)(
-		'persists a Workbench default and resets to the host-configured family',
+		'persists a provider preference and resets to the host-configured family',
 		async () => {
 			const backend = createMemoryPersistenceBackend()
 			await withRuntimeHost(
@@ -89,33 +85,32 @@ describe('FontsPlugin', () => {
 					host.cfg(FontsPlugin).set({ defaultFamily: 'serif' })
 					await host.commit()
 
-					let commands = host.require(FontsTestConsumer).fonts.selectionManager()
-					const selected = await commands.setDefaultFamily(discoveredFamily!)
-					expect(selected.defaultFont).toMatchObject({
+					let fonts = host.require(FontsTestConsumer).fonts
+					const selected = await fonts.setPreferredFamily(discoveredFamily!)
+					expect(selected).toMatchObject({
 						family: discoveredFamily,
-						workbenchFamily: discoveredFamily,
+						preferredFamily: discoveredFamily,
 						configuredFamily: 'serif',
-						source: 'workbench',
+						source: 'preference',
 					})
 
 					host.restart(FontsPlugin)
 					await host.commit()
-					commands = host.require(FontsTestConsumer).fonts.selectionManager()
-					const restored = await commands.snapshot()
-					expect(restored.defaultFont).toMatchObject({
+					fonts = host.require(FontsTestConsumer).fonts
+					expect(fonts.defaultFont).toMatchObject({
 						family: discoveredFamily,
-						workbenchFamily: discoveredFamily,
-						source: 'workbench',
+						preferredFamily: discoveredFamily,
+						source: 'preference',
 					})
 
-					const reset = await commands.setDefaultFamily(null)
-					expect(reset.defaultFont).toMatchObject({
+					const reset = await fonts.setPreferredFamily(null)
+					expect(reset).toMatchObject({
 						family: 'serif',
 						configuredFamily: 'serif',
 						source: 'config',
 					})
-					expect(reset.defaultFont.workbenchFamily).toBeUndefined()
-					await expect(commands.setDefaultFamily('Definitely Missing Font')).rejects.toMatchObject({
+					expect(reset.preferredFamily).toBeUndefined()
+					await expect(fonts.setPreferredFamily('Definitely Missing Font')).rejects.toMatchObject({
 						code: 'FONT_NOT_FOUND',
 					})
 				},
@@ -136,11 +131,8 @@ describe('FontsPlugin', () => {
 					path: fontPath!,
 					family,
 				})
-				const portableSelection = await host
-					.require(FontsLazyConsumer)
-					.fonts.selectionManager('portable')
-					.snapshot()
-				expect(portableSelection.families.map((font) => font.family)).toEqual([family])
+				const fonts = host.require(FontsLazyConsumer).fonts
+				expect(fonts.portableFonts.fonts[0]?.resolvedFamilies).toContain(family)
 				expect(registration.active).toBe(true)
 				expect(registration.families).toContain(family)
 				expect(GlobalFonts.has(family)).toBe(true)
@@ -255,10 +247,10 @@ describe('FontsPlugin', () => {
 					addStarted(host, [FontsPlugin, FontsTestConsumer])
 					await host.commit()
 
-					const commands = managerForTest(host.require(FontsPlugin))
+					using manager = await openFontsManager(host)
 					const [first, duplicate] = await Promise.all([
-						commands.install({ fileName: 'brand.ttf', family, data }),
-						commands.install({ fileName: 'brand-copy.ttf', family, data }),
+						manager.api.install({ fileName: 'brand.ttf', family, data }),
+						manager.api.install({ fileName: 'brand-copy.ttf', family, data }),
 					])
 					expect(first.managedFonts).toHaveLength(1)
 					expect(duplicate.managedFonts).toHaveLength(1)
@@ -271,7 +263,8 @@ describe('FontsPlugin', () => {
 
 					host.start(FontsTestConsumer)
 					await host.commit()
-					const restored = await managerForTest(host.require(FontsPlugin)).snapshot()
+					using restoredManager = await openFontsManager(host)
+					const restored = await restoredManager.api.snapshot()
 					expect(restored.managedFonts).toEqual([
 						expect.objectContaining({ id, fileName: 'brand.ttf', family }),
 					])
@@ -279,17 +272,18 @@ describe('FontsPlugin', () => {
 
 					host.restart(FontsPlugin)
 					await host.commit()
-					const reloaded = await managerForTest(host.require(FontsPlugin)).snapshot()
+					using reloadedManager = await openFontsManager(host)
+					const reloaded = await reloadedManager.api.snapshot()
 					expect(reloaded.managedFonts).toEqual([
 						expect.objectContaining({ id, fileName: 'brand.ttf', family }),
 					])
 					expect(GlobalFonts.has(family)).toBe(true)
 
-					const removed = await managerForTest(host.require(FontsPlugin)).remove(id)
+					const removed = await reloadedManager.api.remove(id)
 					expect(removed.managedFonts).toEqual([])
 					expect(GlobalFonts.has(family)).toBe(false)
 				},
-				{ workbench: false, persistence: { mode: 'custom', backend } },
+				{ workbench: { enabled: true }, persistence: { mode: 'custom', backend } },
 			)
 		},
 	)
@@ -330,7 +324,7 @@ describe('FontsPlugin', () => {
 		)
 	})
 
-	it('bounds the serialized managed Workbench queue before snapshotting upload bytes', async () => {
+	it('bounds the serialized managed-font queue before snapshotting upload bytes', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				addStarted(host, [FontsPlugin, FontsTestConsumer])
@@ -339,16 +333,16 @@ describe('FontsPlugin', () => {
 					maxPendingManagedTasks: 1,
 				})
 				await host.commit()
-				const commands = managerForTest(host.require(FontsPlugin))
-				const active = commands.install({
+				using manager = await openFontsManager(host)
+				const active = manager.api.install({
 					fileName: 'invalid.ttf',
 					data: new Uint8Array(2 * 1024 * 1024),
 				})
 
-				await expect(commands.snapshot()).rejects.toMatchObject({ code: 'FONT_BUSY' })
+				await expect(manager.api.snapshot()).rejects.toMatchObject({ code: 'FONT_BUSY' })
 				await expect(active).rejects.toMatchObject({ code: 'INVALID_FONT' })
 			},
-			{ workbench: false },
+			{ workbench: { enabled: true } },
 		)
 	})
 
@@ -424,44 +418,52 @@ describe('FontsPlugin', () => {
 				await host.commit()
 
 				const registry = requireWorkbench(host.ctx).registry
-				const layout = registry.getPluginLayout(pluginNodeAddressOf(FontsTestConsumer))
-				expect(layout.items).toEqual([
+				const consumer = pluginNodeAddressOf(FontsTestConsumer)
+				const provider = pluginNodeAddressOf(FontsPlugin)
+				const layout = registry.getLayout(consumer)
+				expect(layout.entries).toEqual([
 					expect.objectContaining({
-						owner: {
-							address: pluginNodeAddressOf(FontsPlugin),
-							displayName: 'FontsPlugin',
-							rootExportName: 'FontsPlugin',
+						descriptor: {
+							kind: 'attachment-placement',
+							consumer: consumer.definition,
+							key: 'fonts',
+							provider: {
+								kind: 'attachment',
+								owner: provider.definition,
+								key: 'selection',
+							},
 						},
 						target: {
-							address: pluginNodeAddressOf(FontsTestConsumer),
+							node: consumer,
 							displayName: 'FontsTestConsumer',
-							rootExportName: 'FontsTestConsumer',
 						},
-						viewId: 'FontSelection',
-						port: expect.objectContaining({
-							id: '@pluxel/fonts.selection',
-							model: { selection: expect.objectContaining({ kind: 'rpc' }) },
-						}),
+						renderer: provider,
+						placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 0 },
 					}),
 				])
+				using selection = await openFontSelection(host, FontsTestConsumer)
+				using secondSelection = await openFontSelection(host, FontsTestConsumer)
+				expect(secondSelection.api).not.toBe(selection.api)
+				await expect(selection.api.snapshot()).resolves.toMatchObject({
+					defaultFont: { family: expect.any(String) },
+				})
 
-				const providerLayout = registry.getPluginLayout(pluginNodeAddressOf(FontsPlugin))
-				expect(providerLayout.items).toEqual([
+				const providerLayout = registry.getLayout(provider)
+				expect(providerLayout.entries).toEqual([
 					expect.objectContaining({
-						owner: {
-							address: pluginNodeAddressOf(FontsPlugin),
-							displayName: 'FontsPlugin',
-							rootExportName: 'FontsPlugin',
-						},
+						descriptor: { kind: 'view', owner: provider.definition, key: 'manager' },
 						target: {
-							address: pluginNodeAddressOf(FontsPlugin),
+							node: provider,
 							displayName: 'FontsPlugin',
-							rootExportName: 'FontsPlugin',
 						},
-						viewId: 'Fonts',
-						model: { fonts: expect.objectContaining({ kind: 'rpc' }) },
+						renderer: provider,
+						placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 0 },
 					}),
 				])
+				using manager = await openFontsManager(host)
+				using secondManager = await openFontsManager(host)
+				expect(secondManager.api).not.toBe(manager.api)
+				await expect(manager.api.snapshot()).resolves.toMatchObject({ managedFonts: [] })
 			},
 			{ workbench: { enabled: true } },
 		)
@@ -477,12 +479,4 @@ function findTestFont(): string | undefined {
 		process.env.WINDIR ? join(process.env.WINDIR, 'Fonts', 'arial.ttf') : '',
 	]
 	return candidates.find((candidate) => candidate && existsSync(candidate))
-}
-
-function managerForTest(fonts: FontsPlugin): FontsWorkbenchCommands {
-	return (
-		fonts as unknown as {
-			createWorkbenchManager(): FontsWorkbenchCommands
-		}
-	).createWorkbenchManager()
 }

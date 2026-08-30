@@ -60,8 +60,10 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 tsdown `alwaysBundle` 内联所有 JavaScript 与 declarations。发布 tarball 不得含外部 `@pluxel/context` import，也不得把它加入
 Core 的 dependencies/peerDependencies/optionalDependencies；直接使用 standalone kernel 的应用才显式安装 `@pluxel/context`。
 
-Mantine/React 等 Workbench singleton 由 host 直接安装；插件 UI 把自己 import 的 singleton 声明为
-peer，并在需要独立开发时声明 dev 副本。导入 Drizzle schema/query API 的每个 package 都直接声明
+Workbench fixed singleton set 由 host 直接安装并由 MF build contract 精确锁定：React/ReactDOM 及其实际
+subpaths、MF React Bridge、`@pluxel/runtime/workbench`、`/client`、`/react` 与
+`@pluxel/runtime/internal/workbench-react`。插件 UI 把自己 import 的 React
+声明为 peer，并在需要独立开发时声明 dev 副本；Mantine 等普通 UI 库不进入 platform shared set。导入 Drizzle schema/query API 的每个 package 都直接声明
 `drizzle-orm`；它与 Pluxel 高度集成并不意味着能从根或 `@pluxel/runtime` 隐式继承。只有确实要求宿主
 共享 Drizzle 运行时身份的公开边界才改用 peer。
 
@@ -102,9 +104,11 @@ descriptor。该 authority 不进入 public config，route 与业务 Plugin 都�
 
 runtime route wiring、RuntimeState draft helper、resolver/cache/Vite helper 和 control-plane server DTO 统一从
 `@pluxel/runtime/internal` 供 workspace runtime packages 使用，不创建 `shared`、`plugin-catalog`、`runtime-state`、
-`protocol` 等 public-looking 作者入口。browser management contract 的公开权威入口是 `@pluxel/runtime/web`；它只能导出 versioned DTO、
-discovery 和 framework-neutral domain client，不导出 raw transport stub。React provider 位于 `/web/react`，official Workbench 未标准化的
-View-host transport 位于明确不稳定的 `/web/internal`。
+`protocol` 等 public-looking 作者入口。Browser Management 的公开入口是 `@pluxel/runtime/web`：document session client、
+versioned DTO 和 borrowed Management capability facade；React provider 位于 `/web/react`。Plugin 作者只使用
+`/capnweb`、`/workbench` 和 `/workbench/react`；conforming Shell 另外使用 `/workbench/client` 与
+`/workbench/federation`。Generated Bridge ABI 固定在 `/internal/workbench-react`，raw server registry、wrapper props 和
+MF Runtime 不进入作者 API。
 
 Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/runtime-dynamic/source-producer` 的声明校验；它不得导入
 Vite、watcher、workspace scanner 或 package manager。固定 catalog 只从 dynamic config 的 `plugins` 进入，不提供 package、

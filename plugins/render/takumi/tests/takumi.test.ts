@@ -458,39 +458,35 @@ describe('TakumiPlugin', () => {
 		}
 	})
 
-	it('mounts a provider-owned portable Fonts Port on the Takumi layout', async () => {
+	it('places the provider-owned Fonts selection Attachment', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 				await host.commit()
 
-				const layout = requireWorkbench(host.ctx).registry.getPluginLayout(
-					pluginNodeAddressOf(TakumiPlugin),
-				)
-				expect(layout.items).toEqual([
+				const consumer = pluginNodeAddressOf(TakumiPlugin)
+				const provider = pluginNodeAddressOf(FontsPlugin)
+				const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
+				expect(layout.entries).toEqual([
 					expect.objectContaining({
-						owner: {
-							address: pluginNodeAddressOf(FontsPlugin),
-							displayName: 'FontsPlugin',
-							rootExportName: 'FontsPlugin',
+						descriptor: {
+							kind: 'attachment-placement',
+							consumer: consumer.definition,
+							key: 'fonts',
+							provider: {
+								kind: 'attachment',
+								owner: provider.definition,
+								key: 'selection',
+							},
 						},
 						target: {
-							address: pluginNodeAddressOf(TakumiPlugin),
+							node: consumer,
 							displayName: 'TakumiPlugin',
-							rootExportName: 'TakumiPlugin',
 						},
-						viewId: 'FontSelection',
-						port: expect.objectContaining({
-							id: '@pluxel/fonts.selection',
-							model: { selection: expect.objectContaining({ kind: 'rpc' }) },
-						}),
+						renderer: provider,
+						placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 30 },
 					}),
 				])
-				const portable = await host
-					.require(TakumiTestConsumer)
-					.fonts.selectionManager('portable')
-					.snapshot()
-				expect(portable.families).toEqual([])
 			},
 			{ workbench: { enabled: true } },
 		)

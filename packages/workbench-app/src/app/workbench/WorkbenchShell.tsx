@@ -95,16 +95,14 @@ export function WorkbenchShell() {
 	const workbenchNavItems = useMemo(() => {
 		if (navigationRoutes.length === 0) return []
 		return buildWorkbenchNavItems(
-			navigationRoutes.map((item) => {
-				const route = item.meta?.route
+			navigationRoutes.map((entry) => {
+				const route = entry.placement.kind === 'route' ? entry.placement : undefined
 				return {
-					id: item.id,
-					label: route?.navigationLabel ?? route?.title,
-					href: route
-						? buildWorkbenchHref(item.target.address, route.path, route.frame ?? 'shell')
-						: undefined,
+					id: entry.descriptor.key,
+					label: route?.navigation?.label ?? route?.title,
+					href: route ? buildWorkbenchHref(entry.target.node, route.path, route.frame) : undefined,
 					icon: route?.icon,
-					group: route?.navigationGroup,
+					group: route?.navigation?.group,
 				}
 			}),
 		).filter((item) => typeof item.href === 'string' && item.href !== '#')

@@ -29,11 +29,7 @@ type ViteSsrExternalModuleRegistration = {
 	modules: ReadonlyMap<string, string>
 }
 
-const WORKBENCH_CLIENT_OPTIMIZE_DEPS = [
-	'@tabler/icons-react',
-	'@pluxel/runtime > @elysiajs/eden',
-	'@pluxel/runtime > capnweb',
-] as const
+const WORKBENCH_CLIENT_OPTIMIZE_DEPS = ['@tabler/icons-react', '@pluxel/runtime > capnweb'] as const
 
 export type ImportViteSsrModuleOptions = {
 	/**

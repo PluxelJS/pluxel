@@ -43,4 +43,15 @@ describe('authentication config boundary', () => {
 			}).success,
 		).toBe(false)
 	})
+
+	it('rejects removed bearer and unknown mode options instead of silently stripping them', () => {
+		expect(
+			v.safeParse(AuthConfig, {
+				mode: { ...oidcMode, bearerAudience: 'https://admin.example/api' },
+			}).success,
+		).toBe(false)
+		expect(v.safeParse(AuthConfig, { mode: { type: 'password', legacy: true } }).success).toBe(
+			false,
+		)
+	})
 })

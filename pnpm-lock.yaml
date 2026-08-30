@@ -698,8 +698,14 @@ importers:
       '@inlang/paraglide-js':
         specifier: ^2.15.1
         version: 2.20.2(typescript@6.0.3)
+      '@module-federation/bridge-react':
+        specifier: 2.7.0
+        version: 2.7.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@module-federation/sdk':
+        specifier: 2.7.0
+        version: 2.7.0
       '@module-federation/vite':
-        specifier: ^1.16.16
+        specifier: 1.16.16
         version: 1.16.16(typescript@6.0.3)(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))
       '@pluxel/core':
         specifier: workspace:^
@@ -753,6 +759,9 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -765,9 +774,6 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.4
         version: 0.5.4
-      '@elysiajs/eden':
-        specifier: 1.0.0-beta.5
-        version: 1.0.0-beta.5(elysia@2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@6.0.3))
       '@logtape/file':
         specifier: ^2.0.2
         version: 2.2.3(@logtape/logtape@2.2.3)
@@ -777,6 +783,15 @@ importers:
       '@logtape/pretty':
         specifier: ^2.0.2
         version: 2.2.3(@logtape/logtape@2.2.3)
+      '@module-federation/bridge-react':
+        specifier: 2.7.0
+        version: 2.7.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@module-federation/runtime':
+        specifier: 2.7.0
+        version: 2.7.0
+      '@module-federation/sdk':
+        specifier: 2.7.0
+        version: 2.7.0
       '@pluxel/commands':
         specifier: workspace:^
         version: link:../commands
@@ -790,7 +805,7 @@ importers:
         specifier: ^0.3.0
         version: 0.3.0
       capnweb:
-        specifier: ^0.5.0
+        specifier: 0.5.0
         version: 0.5.0
       drizzle-orm:
         specifier: 'catalog:'
@@ -902,6 +917,12 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -954,6 +975,12 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
       superjson:
         specifier: ^2.2.6
         version: 2.2.6
@@ -1221,6 +1248,9 @@ importers:
         specifier: ^6.2.3
         version: 6.2.3
     devDependencies:
+      '@mantine/core':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/hooks@9.4.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
@@ -1233,12 +1263,27 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@tabler/icons-react':
+        specifier: 'catalog:'
+        version: 3.44.0(react@19.2.7)
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.17
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
       tsdown:
         specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vite:
+        specifier: ^8.0.0-beta.18
+        version: 8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -1897,9 +1942,6 @@ importers:
       '@pluxel/runtime-static':
         specifier: workspace:*
         version: link:../../packages/runtime-static
-      drizzle-orm:
-        specifier: 'catalog:'
-        version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
     devDependencies:
       '@mantine/core':
         specifier: 'catalog:'
@@ -2244,11 +2286,6 @@ packages:
 
   '@electric-sql/pglite@0.5.4':
     resolution: {integrity: sha512-yYZUyyXrHU7tPlCjwZQJ6hIG9DscdCCn7Uk0mYKwC1FeHX286AbcmFveMiRBEak8e9iPupjsoVImN3yJZVed2g==}
-
-  '@elysiajs/eden@1.0.0-beta.5':
-    resolution: {integrity: sha512-N9HRlm40BFjxWrRgjeJBKFYDMYNFK6BHSQy6K0e8FtTJVsKZdG/tRUfSULNvKeB+tG1HI6hubbGLeTe05ZNWnQ==}
-    peerDependencies:
-      elysia: '>= 1.0.0-beta.5'
 
   '@emnapi/core@1.10.0':
     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
@@ -3217,6 +3254,19 @@ packages:
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
       '@cfworker/json-schema':
+        optional: true
+
+  '@module-federation/bridge-react@2.7.0':
+    resolution: {integrity: sha512-i+RDBvAYVxZklRZwD50crqEewP8YYhwZ0LwO6rA2GLXVgcf7OR2aFVE0HLURByoT/oX86dyvKgVvPtXZLHNUhw==}
+    peerDependencies:
+      react: '>=16.9.0'
+      react-dom: '>=16.9.0'
+      react-router: ^6 || ^7
+      react-router-dom: ^4 || ^5 || ^6 || ^7
+    peerDependenciesMeta:
+      react-router:
+        optional: true
+      react-router-dom:
         optional: true
 
   '@module-federation/dts-plugin@2.7.0':
@@ -6319,6 +6369,7 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+    deprecated: v4 is no longer maintained, upgrade to v5
 
   cross-env@10.1.0:
     resolution: {integrity: sha512-GsYosgnACZTADcmEyJctkJIoqAhHjttw7RsFrVoJNXbsWWqaq6Ym+7kZjq6mS45O0jij6vtiReppKQEtqWy6Dw==}
@@ -7480,6 +7531,9 @@ packages:
   loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
+
+  lru-cache@10.4.3:
+    resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
 
   lru-cache@11.5.1:
     resolution: {integrity: sha512-RPimw/7aMdv2oqRrxKwvZXcPfwBrn/JZ2xYcY9Hus/6LaS3VOAKVWKWgNLCFSiOm1ESXinjsDlidVU7JlnCN2A==}
@@ -9763,10 +9817,6 @@ snapshots:
 
   '@electric-sql/pglite@0.5.4': {}
 
-  '@elysiajs/eden@1.0.0-beta.5(elysia@2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@6.0.3))':
-    dependencies:
-      elysia: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@6.0.3)
-
   '@emnapi/core@1.10.0':
     dependencies:
       '@emnapi/wasi-threads': 1.2.1
@@ -10574,6 +10624,13 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
       - supports-color
+
+  '@module-federation/bridge-react@2.7.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      '@module-federation/sdk': 2.7.0
+      lru-cache: 10.4.3
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
 
   '@module-federation/dts-plugin@2.7.0(typescript@6.0.3)':
     dependencies:
@@ -14320,6 +14377,8 @@ snapshots:
   loose-envify@1.4.0:
     dependencies:
       js-tokens: 4.0.0
+
+  lru-cache@10.4.3: {}
 
   lru-cache@11.5.1: {}
 

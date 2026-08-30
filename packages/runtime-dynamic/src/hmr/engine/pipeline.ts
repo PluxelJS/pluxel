@@ -384,13 +384,20 @@ export async function prefetchTransforms(params: {
 export type HmrExecutorConfig = {
 	useRequireShims: boolean
 	dbgModules: LogtapeLogger | null
+	/** Runs after the candidate modules are injected and before their runtime batch is committed. */
+	beforeCommit?: () => void | Promise<void>
+	/** Avoids creating an empty batch when no route-owned pre-commit work is configured. */
+	hasBeforeCommit?: () => boolean
 }
 
 class HmrRuntimeCommitScheduler {
+	constructor(private readonly beforeCommit?: () => void | Promise<void>) {}
+
 	async commitBatch(batch: LoaderBatch): Promise<HmrExecutionResult> {
 		const endCommit = startTimer()
 		let commitResult: RuntimeCommitResult
 		try {
+			await this.beforeCommit?.()
 			await batch.commit({ reason: 'hmr' })
 			commitResult = { ok: true, val: null }
 		} catch (error) {
@@ -419,7 +426,7 @@ export class HmrExecutor {
 		private readonly timing: Pick<TimingTracker, 'start'>,
 		private readonly cfg: HmrExecutorConfig,
 	) {
-		this.commitScheduler = new HmrRuntimeCommitScheduler()
+		this.commitScheduler = new HmrRuntimeCommitScheduler(cfg.beforeCommit)
 		this.loader = requireLoaderService(ctx)
 	}
 
@@ -440,7 +447,11 @@ export class HmrExecutor {
 		_keepOrder = true,
 		removedIds: readonly string[] = [],
 	): Promise<HmrExecutionResult | undefined> {
-		if (cleanIds.length === 0 && removedIds.length === 0) return undefined
+		const hasBeforeCommit =
+			this.cfg.beforeCommit !== undefined && (this.cfg.hasBeforeCommit?.() ?? true)
+		if (cleanIds.length === 0 && removedIds.length === 0 && !hasBeforeCommit) {
+			return undefined
+		}
 
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
 		const ordered = dedupeIds(cleanIds)
@@ -840,9 +851,11 @@ export class HmrBatchProcessor {
 
 		const execOrder = buildOrderedList(targets, graph.distance, 'near', targets.size || 1)
 		const ignored = graph.affectedIds.size === 0
-		const executed = ignored
-			? null
-			: await this.executor.runAndLoadAllClean(execOrder, true, removed)
+		const executed = await this.executor.runAndLoadAllClean(
+			ignored ? [] : execOrder,
+			true,
+			ignored ? [] : removed,
+		)
 		const commitMs = executed ? roundHmrMs(executed.commitMs) : null
 		const affectedModules = executed?.affectedModules ?? []
 		const syncedModules = executed?.syncedModules ?? []
@@ -881,7 +894,7 @@ export class HmrBatchProcessor {
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 		const batchMs = roundHmrMs(endBatch())
-		const commitOk = ignored || Boolean(executed?.commitResult.ok)
+		const commitOk = executed ? executed.commitResult.ok : ignored
 		const commitError =
 			!executeError && !injectError && executed?.commitResult.ok === false
 				? String(executed.commitResult.err ?? 'commit failed')

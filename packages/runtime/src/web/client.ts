@@ -1,8 +1,5 @@
-import { treaty } from '@elysiajs/eden'
-
-import { toGlobalFetch, type RuntimeFetch } from './admin-access'
-import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
+import type { RpcStub } from '../capnweb'
 import type {
 	AgentToolsHandleApi,
 	ConfigFieldMutation,
@@ -10,23 +7,29 @@ import type {
 	ConfigResult,
 	EnsureForkResult,
 	LoggingHandleApi,
-	PluginDependencyGraphSnapshot,
+	PluginAutoStartBatchItem,
 	PluginConsumerRequirementsInspectionResult,
+	PluginControlBatchResult,
+	PluginDependencyGraphSnapshot,
 	PluginDependencyMutationResult,
-	PluginProviderPolicyInspectionResult,
 	PluginGroup,
 	PluginGroupInput,
 	PluginGroupsMutationResult,
-	PluginAutoStartBatchItem,
-	PluginControlBatchResult,
 	PluginLifecycleCommandBatchItem,
-	PluginStatusQueryResult,
+	PluginProviderPolicyInspectionResult,
 	PluginsListOutput,
+	PluginStatusQueryResult,
 	RemoveForkResult,
 	RuntimeMetaV1,
 } from './protocol'
-import type { RuntimeManagementRpcApi } from './management-rpc-protocol'
-import { parseRuntimeMetaV1 } from './validation'
+import type {
+	RuntimeLogFollowInput,
+	RuntimeLogRangeQuery,
+	RuntimeLogStreamsIndex,
+	RuntimeManagementTarget,
+} from './management-target'
+import type { LogRangeResult, LogStreamMeta, RuntimeLogEvent } from './logs'
+import type { RuntimeSecurityClient } from './security'
 import {
 	parseAgentToolsAdminSnapshot,
 	parseConfigPresentationResult,
@@ -34,75 +37,43 @@ import {
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
-	parsePluginDependencyGraphSnapshot,
 	parsePluginConsumerRequirementsInspectionResult,
+	parsePluginControlBatchResult,
+	parsePluginDependencyGraphSnapshot,
 	parsePluginDependencyMutationResult,
-	parsePluginProviderPolicyInspectionResult,
 	parsePluginGroups,
 	parsePluginGroupsMutationResult,
 	parsePluginLogPolicyMutationResult,
-	parsePluginControlBatchResult,
+	parsePluginProviderPolicyInspectionResult,
 	parsePluginsListOutput,
 	parsePluginStatusQueryResult,
 	parseRemoveForkResult,
+	parseRuntimeLogEvent,
 	parseRuntimeLogStreamsIndex,
+	parseSecurityAuditEvents,
+	parseSecurityOverview,
+	parseVaultAdminState,
+	parseVaultKeyPair,
+	parseVaultPublicKeyResult,
 	parseVersionedPluginLogPolicySnapshot,
 } from './management-validation'
-import { invokeRpc } from './rpc-session'
-import { createRuntimeSecurityClient, type RuntimeSecurityClient } from './security'
-import { runtimeLogStreamPath, joinPath } from './paths'
-import { resolveClientUrl } from './http-utils'
-import { resolveRuntimeClientConnection, type RuntimeClientConnectionOptions } from './connection'
-import { expectData, type RuntimeTreatyGet } from './eden'
+import { parseRuntimeMetaV1 } from './validation'
 
-export interface RuntimeLogStreamsIndex {
-	readonly streams: readonly LogStreamMeta[]
-}
+export type { RuntimeLogFollowInput, RuntimeLogRangeQuery, RuntimeLogStreamsIndex }
 
-export type RuntimeLogRangeQuery = LogFilter & {
-	epoch?: number
-	from?: string
-	limit?: number
-}
-
-type RuntimeTreatyStreamRoute = {
-	meta: RuntimeTreatyGet<LogStreamMeta>
-	range: RuntimeTreatyGet<LogRangeResult, RuntimeLogRangeQuery>
-}
-
-type RuntimeTreatyStreamsRoute = RuntimeTreatyGet<RuntimeLogStreamsIndex> &
-	((params: { streamId: string }) => RuntimeTreatyStreamRoute)
-
-interface RuntimeManagementTreatyClient {
-	meta: RuntimeTreatyGet<RuntimeMetaV1>
-	logs: {
-		v1: {
-			streams: RuntimeTreatyStreamsRoute
-		}
-	}
-}
-
-export type RuntimeManagementClientOptions = RuntimeClientConnectionOptions
-
-type RuntimeManagementHttp = Readonly<{
-	meta: {
-		info(init?: RequestInit): Promise<RuntimeMetaV1>
-	}
-	logs: Readonly<{
-		streams(init?: RequestInit): Promise<RuntimeLogStreamsIndex>
-		meta(streamId: string, init?: RequestInit): Promise<LogStreamMeta>
-		range(
-			streamId: string,
-			query?: RuntimeLogRangeQuery,
-			init?: RequestInit,
-		): Promise<LogRangeResult>
-		followUrl(streamId: string, query?: URLSearchParams | string): string
-	}>
+export type RuntimeLogClient = Readonly<{
+	streams(): Promise<RuntimeLogStreamsIndex>
+	meta(streamId: string): Promise<LogStreamMeta>
+	range(streamId: string, query: RuntimeLogRangeQuery): Promise<LogRangeResult>
+	follow(
+		input: RuntimeLogFollowInput,
+		observer: (event: RuntimeLogEvent) => void | Promise<void>,
+	): Promise<Disposable>
 }>
 
-/** Framework-neutral Level 1 management client. No root RPC stub is exposed. */
+/** Framework-neutral facade over one borrowed Management capability from the page session. */
 export type RuntimeManagementClient = Readonly<{
-	discover(init?: RequestInit): Promise<RuntimeMetaV1>
+	describe(): Promise<RuntimeMetaV1>
 	plugins: Readonly<{
 		list(): Promise<PluginsListOutput>
 		status(owner: PluginNodeAddress): Promise<PluginStatusQueryResult>
@@ -139,7 +110,6 @@ export type RuntimeManagementClient = Readonly<{
 		ensure(input: {
 			base: PluginNodeAddress
 			forkId: string
-			/** Whether the fork should start on cold boot. Omission disables auto-start. */
 			autoStart?: boolean
 			selectFor?: {
 				consumer: PluginNodeAddress
@@ -154,218 +124,167 @@ export type RuntimeManagementClient = Readonly<{
 	}>
 	logging: Readonly<LoggingHandleApi>
 	agentTools: Readonly<AgentToolsHandleApi>
-	logs: RuntimeManagementHttp['logs']
+	logs: RuntimeLogClient
 	security: RuntimeSecurityClient
 }>
 
-function createRuntimeManagementTreatyClient(
-	apiBase: string,
-	fetch: RuntimeFetch,
-): RuntimeManagementTreatyClient {
-	// Keep the Treaty surface locally typed.
-	// The internal Elysia app is assembled from dynamically mounted runtime plugins,
-	// so end-to-end route inference currently collapses before it reaches this client.
-	// Re-exporting that unstable server-side type here would couple browser code to
-	// internal assembly details without improving the public plugin/UI contract.
-	return treaty(apiBase, {
-		fetcher: toGlobalFetch(fetch),
-	}) as unknown as RuntimeManagementTreatyClient
-}
-
-function createRuntimeManagementHttp(
-	http: RuntimeManagementTreatyClient,
-	apiBase: string,
-): RuntimeManagementHttp {
-	return Object.freeze({
-		meta: Object.freeze({
-			info: async (init?: RequestInit) =>
-				parseRuntimeMetaV1(await expectData<RuntimeMetaV1>(http.meta.get({ fetch: init }))),
-		}),
-		logs: Object.freeze({
-			streams: async (init?: RequestInit) =>
-				parseRuntimeLogStreamsIndex(
-					await expectData<RuntimeLogStreamsIndex>(http.logs.v1.streams.get({ fetch: init })),
-				),
-			meta: async (streamId: string, init?: RequestInit) =>
-				parseLogStreamMeta(
-					await expectData<LogStreamMeta>(
-						http.logs.v1.streams({ streamId }).meta.get({ fetch: init }),
-					),
-				),
-			range: async (streamId: string, query?: RuntimeLogRangeQuery, init?: RequestInit) =>
-				parseLogRangeResult(
-					await expectData<LogRangeResult>(
-						http.logs.v1.streams({ streamId }).range.get({
-							query,
-							fetch: init,
-						}),
-					),
-				),
-			followUrl: (streamId: string, query?: URLSearchParams | string) => {
-				const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
-				const suffix =
-					query instanceof URLSearchParams
-						? query.toString()
-						: typeof query === 'string'
-							? query
-							: ''
-				return suffix ? `${base}?${suffix}` : base
-			},
-		}),
-	})
-}
-
-/** Discover one runtime without constructing a long-lived client or opening streams. */
-export async function discoverRuntime(
-	options: RuntimeManagementClientOptions = {},
-	init?: RequestInit,
-): Promise<RuntimeMetaV1> {
-	const { apiBase, fetch } = resolveRuntimeClientConnection(options)
-	return await createRuntimeManagementHttp(
-		createRuntimeManagementTreatyClient(apiBase, fetch),
-		apiBase,
-	).meta.info(init)
-}
-
 export function createRuntimeManagementClient(
-	options: RuntimeManagementClientOptions = {},
+	management: RpcStub<RuntimeManagementTarget>,
 ): RuntimeManagementClient {
-	const { apiBase, rpcBase, credentials, fetch } = resolveRuntimeClientConnection(options)
-	const managementHttp = createRuntimeManagementHttp(
-		createRuntimeManagementTreatyClient(apiBase, fetch),
-		apiBase,
-	)
-	const rpc = async <T>(
-		run: (client: RuntimeManagementRpcApi) => PromiseLike<unknown> | unknown,
+	assertManagementTarget(management)
+	const call = <T>(
+		run: (target: RpcStub<RuntimeManagementTarget>) => PromiseLike<unknown> | unknown,
 		parse: (input: unknown) => T,
-	): Promise<T> => {
-		const result = await invokeRpc<RuntimeManagementRpcApi, unknown>(
-			async (raw) => await Promise.resolve(run(raw as unknown as RuntimeManagementRpcApi)),
-			{
-				rpcBase,
-				credentials,
-				fetch,
-			},
-		)
-		const dispose =
-			result && typeof result === 'object'
-				? (result as { [Symbol.dispose]?: () => void })[Symbol.dispose]
-				: undefined
-		try {
-			// Cap'n Web owns the root result lease with Symbol.dispose. Management parsers
-			// intentionally accept portable data only, so materialize that root container
-			// before validation while preserving its already-plain nested values.
-			const portable =
-				typeof dispose === 'function'
-					? Array.isArray(result)
-						? [...result]
-						: Object.fromEntries(Object.entries(result))
-					: result
-			return parse(portable)
-		} finally {
-			dispose?.call(result)
-		}
-	}
+	): Promise<T> => readPortableResult(run(management), parse)
 
 	const client: RuntimeManagementClient = {
-		discover: (init) => managementHttp.meta.info(init),
+		describe: () => call((root) => root.describe(), parseRuntimeMetaV1),
 		plugins: Object.freeze({
-			list: () => rpc((root) => root.pluginsList(), parsePluginsListOutput),
-			status: (owner) => rpc((root) => root.pluginStatus(owner), parsePluginStatusQueryResult),
+			list: () => call((root) => root.pluginsList(), parsePluginsListOutput),
+			status: (owner) => call((root) => root.pluginStatus(owner), parsePluginStatusQueryResult),
 			setAutoStart: (items) =>
-				rpc((root) => root.setPluginAutoStart([...items]), parsePluginControlBatchResult),
+				call((root) => root.setPluginAutoStart([...items]), parsePluginControlBatchResult),
 			applyLifecycleCommands: (items) =>
-				rpc((root) => root.applyPluginLifecycleCommands([...items]), parsePluginControlBatchResult),
+				call(
+					(root) => root.applyPluginLifecycleCommands([...items]),
+					parsePluginControlBatchResult,
+				),
 		}),
 		config: Object.freeze({
 			presentation: (owner) =>
-				rpc((root) => root.pluginConfigPresentation(owner), parseConfigPresentationResult),
-			get: (owner) => rpc((root) => root.pluginConfig(owner), parseConfigResult),
+				call((root) => root.pluginConfigPresentation(owner), parseConfigPresentationResult),
+			get: (owner) => call((root) => root.pluginConfig(owner), parseConfigResult),
 			patch: (owner, patch) =>
-				rpc((root) => root.patchPluginConfig(owner, patch), parseConfigResult),
+				call((root) => root.patchPluginConfig(owner, patch), parseConfigResult),
 			patchField: (owner, input) =>
-				rpc((root) => root.patchPluginConfigField(owner, input), parseConfigResult),
+				call((root) => root.patchPluginConfigField(owner, input), parseConfigResult),
 		}),
 		dependencies: Object.freeze({
-			graph: () => rpc((root) => root.pluginDependencyGraph(), parsePluginDependencyGraphSnapshot),
+			graph: () => call((root) => root.pluginDependencyGraph(), parsePluginDependencyGraphSnapshot),
 			inspectConsumerRequirements: (consumer) =>
-				rpc(
+				call(
 					(root) => root.inspectPluginConsumerRequirements(consumer),
 					parsePluginConsumerRequirementsInspectionResult,
 				),
 			setConsumerOverride: (input) =>
-				rpc((root) => root.setPluginConsumerOverride(input), parsePluginDependencyMutationResult),
+				call((root) => root.setPluginConsumerOverride(input), parsePluginDependencyMutationResult),
 			inspectProviderPolicy: (policyOwner) =>
-				rpc(
+				call(
 					(root) => root.inspectPluginProviderPolicy(policyOwner),
 					parsePluginProviderPolicyInspectionResult,
 				),
 			setProviderPolicyDefault: (input) =>
-				rpc(
+				call(
 					(root) => root.setPluginProviderPolicyDefault(input),
 					parsePluginDependencyMutationResult,
 				),
 		}),
 		forks: Object.freeze({
-			ensure: (input) => rpc((root) => root.ensurePluginFork(input), parseEnsureForkResult),
-			remove: (input) => rpc((root) => root.removePluginFork(input), parseRemoveForkResult),
+			ensure: (input) => call((root) => root.ensurePluginFork(input), parseEnsureForkResult),
+			remove: (input) => call((root) => root.removePluginFork(input), parseRemoveForkResult),
 		}),
 		groups: Object.freeze({
-			list: () => rpc((root) => root.pluginGroups(), parsePluginGroups),
+			list: () => call((root) => root.pluginGroups(), parsePluginGroups),
 			update: (groups) =>
-				rpc(
+				call(
 					(root) =>
 						root.updatePluginGroups(groups.map((group) => ({ ...group, nodes: [...group.nodes] }))),
 					parsePluginGroupsMutationResult,
 				),
 		}),
 		logging: Object.freeze({
-			getPolicy: () =>
-				rpc((root) => root.logging().getPolicy(), parseVersionedPluginLogPolicySnapshot),
+			getPolicy: () => call((root) => root.getLogPolicy(), parseVersionedPluginLogPolicySnapshot),
 			replacePolicy: (expectedRevision, snapshot) =>
-				rpc(
-					(root) => root.logging().replacePolicy(expectedRevision, snapshot),
+				call(
+					(root) => root.replaceLogPolicy(expectedRevision, snapshot),
 					parsePluginLogPolicyMutationResult,
 				),
 			setDefaultLevel: (expectedRevision, level) =>
-				rpc(
-					(root) => root.logging().setDefaultLevel(expectedRevision, level),
+				call(
+					(root) => root.setDefaultLogLevel(expectedRevision, level),
 					parsePluginLogPolicyMutationResult,
 				),
 			setPluginLevel: (expectedRevision, owner, level) =>
-				rpc(
-					(root) => root.logging().setPluginLevel(expectedRevision, owner, level),
+				call(
+					(root) => root.setPluginLogLevel(expectedRevision, owner, level),
 					parsePluginLogPolicyMutationResult,
 				),
 			clearPluginLevel: (expectedRevision, owner) =>
-				rpc(
-					(root) => root.logging().clearPluginLevel(expectedRevision, owner),
+				call(
+					(root) => root.clearPluginLogLevel(expectedRevision, owner),
 					parsePluginLogPolicyMutationResult,
 				),
 			resetPolicy: (expectedRevision) =>
-				rpc(
-					(root) => root.logging().resetPolicy(expectedRevision),
+				call(
+					(root) => root.resetLogPolicy(expectedRevision),
 					parseVersionedPluginLogPolicySnapshot,
 				),
 		}),
 		agentTools: Object.freeze({
-			snapshot: () => rpc((root) => root.agentTools().snapshot(), parseAgentToolsAdminSnapshot),
+			snapshot: () => call((root) => root.agentToolsSnapshot(), parseAgentToolsAdminSnapshot),
 			replacePolicy: (expectedRevision, policy) =>
-				rpc(
-					(root) => root.agentTools().replacePolicy(expectedRevision, policy),
+				call(
+					(root) => root.replaceAgentToolsPolicy(expectedRevision, policy),
 					parseAgentToolsAdminSnapshot,
 				),
 		}),
 		logs: Object.freeze({
-			streams: (init) => managementHttp.logs.streams(init),
-			meta: (streamId, init) => managementHttp.logs.meta(streamId, init),
-			range: (streamId, query, init) => managementHttp.logs.range(streamId, query, init),
-			followUrl: (streamId, query) => managementHttp.logs.followUrl(streamId, query),
+			streams: () => call((root) => root.logStreams(), parseRuntimeLogStreamsIndex),
+			meta: (streamId) => call((root) => root.logMeta(streamId), parseLogStreamMeta),
+			range: (streamId, query) =>
+				call((root) => root.logRange(streamId, query), parseLogRangeResult),
+			follow: async (input, observer) => {
+				if (typeof observer !== 'function') throw new TypeError('Log observer must be a function')
+				const subscription = await management.followLogs(input, async (event) => {
+					await observer(parseRuntimeLogEvent(event))
+				})
+				if (!subscription || typeof subscription[Symbol.dispose] !== 'function') {
+					throw new TypeError('Log follow did not return a disposable subscription')
+				}
+				return subscription
+			},
 		}),
-		security: createRuntimeSecurityClient({
-			apiBase,
-			fetch,
+		security: Object.freeze({
+			readOverview: () => call((root) => root.securityOverview(), parseSecurityOverview),
+			listEvents: (limit) => call((root) => root.securityEvents(limit), parseSecurityAuditEvents),
+			vault: Object.freeze({
+				unlock: () => call((root) => root.vaultUnlock(), parseVaultAdminState),
+				ensureHostKey: () => call((root) => root.vaultEnsureHostKey(), parseVaultPublicKeyResult),
+				generateDeployKey: () => call((root) => root.vaultGenerateDeployKey(), parseVaultKeyPair),
+				setDeployRecipients: (publicKeys: readonly string[]) =>
+					call((root) => root.vaultSetDeployRecipients([...publicKeys]), parseVaultAdminState),
+			}),
 		}),
 	}
 	return Object.freeze(client)
+}
+
+async function readPortableResult<T>(
+	resultPromise: PromiseLike<unknown> | unknown,
+	parse: (input: unknown) => T,
+): Promise<T> {
+	const result = await resultPromise
+	const dispose =
+		result && (typeof result === 'object' || typeof result === 'function')
+			? (result as { [Symbol.dispose]?: () => void })[Symbol.dispose]
+			: undefined
+	try {
+		const portable =
+			typeof dispose === 'function'
+				? Array.isArray(result)
+					? [...result]
+					: Object.fromEntries(Object.entries(result as object))
+				: result
+		return parse(portable)
+	} finally {
+		dispose?.call(result)
+	}
+}
+
+function assertManagementTarget(
+	value: RpcStub<RuntimeManagementTarget>,
+): asserts value is RpcStub<RuntimeManagementTarget> {
+	if ((!value || typeof value !== 'object') && typeof value !== 'function') {
+		throw new TypeError("Management target must be a Cap'n Web stub")
+	}
 }

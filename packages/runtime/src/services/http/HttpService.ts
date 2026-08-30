@@ -2,17 +2,22 @@ import type { Context as PluxelContext } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
-import {
-	createAdminAccessBlockedHeaders,
-	createAdminAccessBlockedPayload,
-	type AdminAccessBlockedKind,
-	type AdminAccessReason,
-} from '../../shared/admin-access-http'
+import type { AdminAccessReason } from '../admin-access/types'
 import type { RenderHandler } from '../../server/types'
-import { RUNTIME_INTERNAL_API_BASE, UI_PUBLIC_BASE } from '../../web/paths'
-import { ADMIN_ACCESS_PAGE_PATH, buildAdminAccessRedirectPath } from '../admin-access/transport'
+import {
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_WORKBENCH_FEDERATION_BASE,
+	UI_PUBLIC_BASE,
+} from '../../web/paths'
+import { isAdminAccessHandoffPath } from '../admin-access/transport'
 import { responseWithLease } from '../admin-access/response-lifetime'
 import { matchesWorkbenchUiBasePath, normalizeWorkbenchUiBasePath } from '../../workbench-config'
+import {
+	matchesRuntimeSessionUpgrade,
+	RuntimeSessionIngress,
+	validateRuntimeSessionOrigin,
+} from '../../web/session/ingress'
+import { RUNTIME_SESSION_PATH } from '../../web/session/protocol'
 import {
 	createHostElysiaApp,
 	type AnyHostElysiaApp,
@@ -123,6 +128,7 @@ class HttpBackend {
 	private readonly applications: ElysiaApplicationDirectory
 	private readonly requestAddress?: RuntimeHttpHostConfig['requestAddress']
 	private applicationCarrier?: ElysiaApplicationCarrier
+	private readonly runtimeSessions = new Set<RuntimeSessionIngress>()
 
 	constructor(
 		ctx: PluxelContext,
@@ -230,13 +236,17 @@ class HttpBackend {
 		return () => {
 			if (!active) return
 			active = false
+			for (const session of this.runtimeSessions) session.close()
 			detachDirectory()
 			if (this.applicationCarrier === carrier) this.applicationCarrier = undefined
 		}
 	}
 
 	matchesWebSocketRoute(request: Request): boolean {
-		return this.applications.matchesWebSocketRoute(request)
+		return (
+			(this.config.management && matchesRuntimeSessionUpgrade(request)) ||
+			this.applications.matchesWebSocketRoute(request)
+		)
 	}
 
 	private mountHostBoundary(spec: HostHttpMountSpec): MountedFetchBoundaryHandle {
@@ -326,29 +336,22 @@ class HttpBackend {
 		const path = url.pathname
 		const method = request.method.toUpperCase()
 		const facts = this.requestFacts(request)
-
-		if (
-			this.config.management &&
-			(path === ADMIN_ACCESS_PAGE_PATH || path.startsWith(`${ADMIN_ACCESS_PAGE_PATH}/`))
-		) {
-			const adminAccess = this.hostCtx.root.adminAccess
-			if (!adminAccess) throw new Error('[pluxel/runtime] Management entry requires adminAccess')
-			return await adminAccess.handleEntryRequest(request, facts.local, facts.secure, facts.port)
+		if (path === RUNTIME_SESSION_PATH) {
+			return await this.fetchRuntimeSession(request, facts.local, facts.secure)
 		}
 
-		const kind = this.protectedRequestKind(request, path, method)
-		if (!kind) return await this.fetchPtr(request, env, ctx)
+		if (this.config.management && isAdminAccessHandoffPath(path)) {
+			const adminAccess = this.hostCtx.root.adminAccess
+			if (!adminAccess) throw new Error('[pluxel/runtime] Management entry requires adminAccess')
+			return await adminAccess.handleEntryRequest(request, facts.local, facts.secure)
+		}
+
+		if (!this.isProtectedArtifactPath(path)) return await this.fetchPtr(request, env, ctx)
 		const adminAccess = this.hostCtx.root.adminAccess
 		if (!adminAccess) throw new Error('[pluxel/runtime] Management request requires adminAccess')
 		const admission = await adminAccess.admit(request, facts.local, facts.secure)
 		if (admission.state.allow === false) {
-			return this.buildAdminAccessDeniedResponse(
-				request,
-				path,
-				method,
-				kind,
-				admission.state.reason,
-			)
+			return this.buildArtifactAccessDeniedResponse(path, method, admission.state.reason)
 		}
 
 		const admittedRequest = requestWithSignal(request, admission.signal)
@@ -366,31 +369,74 @@ class HttpBackend {
 		}
 	}
 
-	private protectedRequestKind(
+	private async fetchRuntimeSession(
 		request: Request,
-		path: string,
-		method: string,
-	): AdminAccessBlockedKind | undefined {
-		if (!this.config.management) return undefined
-		if (path === RUNTIME_INTERNAL_API_BASE || path.startsWith(`${RUNTIME_INTERNAL_API_BASE}/`)) {
-			return 'api'
+		local: boolean,
+		secure: boolean,
+	): Promise<Response> {
+		const noStore = { 'cache-control': 'no-store' }
+		if (!this.config.management) {
+			return new Response('Not Found', { status: 404, headers: noStore })
 		}
-		if (!this.config.workbench) return undefined
-		// Business Plugin routes retain priority over Workbench navigation fallbacks.
-		if (this.applications.matchesHttpRoute(path, method)) return undefined
-		if (path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)) return 'ui'
-		if (
-			this.isHtmlNavigation(request) &&
-			matchesWorkbenchUiBasePath(path, this.config.uiBasePath)
-		) {
-			return 'ui'
+		if (!matchesRuntimeSessionUpgrade(request)) {
+			return new Response('This endpoint only accepts a WebSocket upgrade.', {
+				status: 400,
+				headers: noStore,
+			})
 		}
-		return undefined
+		if ((!local && !secure) || !validateRuntimeSessionOrigin(request, secure)) {
+			return new Response('Runtime session ingress rejected.', {
+				status: 403,
+				headers: noStore,
+			})
+		}
+		const carrier = this.applicationCarrier
+		const adminAccess = this.hostCtx.root.adminAccess
+		if (!carrier || !adminAccess) {
+			return new Response('Runtime session carrier unavailable.', {
+				status: 503,
+				headers: noStore,
+			})
+		}
+
+		let ingress!: RuntimeSessionIngress
+		ingress = new RuntimeSessionIngress({
+			ctx: this.hostCtx,
+			adminAccess,
+			request,
+			local,
+			secure,
+			workbench: this.config.workbench,
+			onRelease: () => this.runtimeSessions.delete(ingress),
+		})
+		this.runtimeSessions.add(ingress)
+		const accepted = carrier.upgrade(
+			Object.freeze({
+				request,
+				upgradeRequest: request,
+				ownerKey: 'pluxel.runtime.control',
+				data: ingress.data,
+				signal: ingress.signal,
+				release: () => ingress.release(),
+			}),
+		)
+		if (!accepted) {
+			ingress.release()
+			return new Response('Runtime session upgrade unavailable.', {
+				status: 503,
+				headers: noStore,
+			})
+		}
+		return new Response(null, { status: 204, headers: noStore })
 	}
 
-	private requestFacts(
-		request: Request,
-	): Readonly<{ local: boolean; secure: boolean; port: number }> {
+	private isProtectedArtifactPath(path: string): boolean {
+		if (!this.config.management || !this.config.workbench) return false
+		const base = `${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_FEDERATION_BASE}`
+		return path === base || path.startsWith(`${base}/`)
+	}
+
+	private requestFacts(request: Request): Readonly<{ local: boolean; secure: boolean }> {
 		let address: ElysiaCarrierRequestAddress | null = null
 		try {
 			address = this.applicationCarrier
@@ -400,21 +446,18 @@ class HttpBackend {
 			address = null
 		}
 		let secure = false
-		let port = 3_000
 		try {
 			if (this.applicationCarrier) {
 				const metadata = this.applicationCarrier.metadata
 				secure = metadata.url.protocol === 'https:'
-				port = metadata.port
 			} else {
 				const url = new URL(request.url)
 				secure = url.protocol === 'https:'
-				port = Number(url.port || (secure ? 443 : 80))
 			}
 		} catch {
 			secure = false
 		}
-		return Object.freeze({ local: isLoopbackAddress(address?.address), secure, port })
+		return Object.freeze({ local: isLoopbackAddress(address?.address), secure })
 	}
 
 	private rebuildRootApp() {
@@ -454,34 +497,25 @@ class HttpBackend {
 		this.fetchPtr = (request) => root.fetch(request)
 	}
 
-	private buildAdminAccessDeniedResponse(
-		request: Request,
+	private buildArtifactAccessDeniedResponse(
 		path: string,
 		method: string,
-		kind: AdminAccessBlockedKind,
 		reason: AdminAccessReason,
 	): Response {
-		const url = new URL(request.url)
-		const redirectPath =
-			kind === 'ui'
-				? buildAdminAccessRedirectPath(`${url.pathname}${url.search}${url.hash}`)
-				: ADMIN_ACCESS_PAGE_PATH
-		this.logger.warn('Blocked Management access', { kind, path, method, reason })
-		if (kind === 'ui') {
-			return new Response(null, {
-				status: 302,
-				headers: {
-					Location: redirectPath,
-					'Cache-Control': 'no-store',
-				},
-			})
-		}
-
-		const payload = createAdminAccessBlockedPayload(path, method, kind, redirectPath, reason)
-		return Response.json(payload, {
-			status: payload.status,
-			headers: createAdminAccessBlockedHeaders(redirectPath, reason),
-		})
+		this.logger.warn('Blocked immutable Workbench artifact request', { path, method, reason })
+		const status =
+			reason === 'authentication_unavailable'
+				? 503
+				: reason === 'secure_transport_required' || reason === 'forbidden'
+					? 403
+					: 401
+		return Response.json(
+			{ code: 'artifact_access_denied', reason },
+			{
+				status,
+				headers: { 'cache-control': 'no-store' },
+			},
+		)
 	}
 
 	private isHtmlNavigation(req: Request): boolean {

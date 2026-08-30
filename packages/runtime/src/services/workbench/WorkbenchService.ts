@@ -1,10 +1,14 @@
 import type { Context as CoreContext } from '@pluxel/core'
 import { isPluginPartContext } from '@pluxel/core/internal'
-import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '../../workbench'
+import type {
+	AnyWorkbenchDefinition,
+	PluginWorkbench,
+	WorkbenchBindings,
+} from '../../workbench/definition'
 import type { WorkbenchBackend } from '../workbench'
 import { pinOwnerContext } from '../../context/owner-view'
 
-export class WorkbenchService {
+export class WorkbenchService implements PluginWorkbench {
 	constructor(
 		public readonly ctx: CoreContext,
 		private readonly backend: WorkbenchBackend,
@@ -12,16 +16,16 @@ export class WorkbenchService {
 		pinOwnerContext(this, ctx)
 	}
 
-	mount<
-		Extension extends AnyWorkbenchExtension,
-		const Bindings extends WorkbenchBindings<Extension>,
-	>(extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> {
+	publish<const Definition extends AnyWorkbenchDefinition>(
+		definition: Definition,
+		bindings: WorkbenchBindings<Definition>,
+	): void {
 		if (isPluginPartContext(this.ctx)) {
 			throw new Error(
-				'[pluxel/runtime] PluginPart cannot mount a Workbench extension directly; aggregate it in the owning Plugin mount.',
+				'[pluxel/runtime] PluginPart cannot publish Workbench entries; aggregate them in the owning Plugin definition.',
 			)
 		}
-		return this.backend.forContext(this.ctx).mount(extension, bindings)
+		this.backend.publish(this.ctx, definition, bindings)
 	}
 
 	/** @internal Control-plane access to the host-owned backend. */

@@ -19,11 +19,6 @@
 
 尚在研究、未采纳的提案：
 
-- [`workbench-vnext/`](workbench-vnext/README.md)：Workbench 重构 implementation blueprint。固定不可拆分的
-  MF2 + WS-only Cap’n Web Profile 1、direct View/Attachment API、Plugin generation atomic publication、
-  FontManager/BotManager 调用面、实施切片与 cutover gates；仍未成为当前 API。
-- [`WORKBENCH_PLUGIN_COMPOSITION.md`](WORKBENCH_PLUGIN_COMPOSITION.md)：用 chatbot 的共享 Bot 管理页面与 Wretch Port 验证
-  plugin-owned Workbench 组合；作为 vNext 的 composition 输入研究，仍不代表当前 API。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
   decoratorless Plugin declaration。
 

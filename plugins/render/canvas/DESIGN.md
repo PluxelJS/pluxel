@@ -8,7 +8,7 @@
   只读取字体快照。
 - `createCanvasSync()` 返回原生 raster Canvas，`createSvgCanvasSync()` 返回原生 SVG Canvas；绘制、测量和编码继续使用上游
   标准对象，避免维护第二份 context API。两个 factory 会把 `FontsPlugin.defaultFont` 应用为新 context 的初始
-  `10px` family；Workbench 变更影响之后创建的 context，不改写已有原生对象。
+  `10px` family；provider preference 变更影响之后创建的 context，不改写已有原生对象。
 - 上游 `SvgExportFlag` 实际是三个互斥 enum variant，并不接受 `0` 或 bitwise 组合；公开 API 因此使用一个
   `mode`，默认 `compact`，不暴露无法实现的 boolean 组合。
 - `decodeImage()` 只接受调用方已经取得的 bytes。URL 下载、认证、重试和 outbound policy 应由 Wretch 或领域 HTTP
@@ -19,7 +19,7 @@
 
 ## Worker boundary
 
-`CanvasPlugin` 包含 caller lease、Fonts dependency、effects 和可选 Workbench mount，不能 structured clone，也不会在线程中
+`CanvasPlugin` 包含 caller lease、Fonts dependency、effects 和可选 Workbench publication，不能 structured clone，也不会在线程中
 重新启动。主线程通过 `canvas.workerSnapshot` 输出 nested-frozen 纯数据：native/text/decode limits、默认 CSS family、Fonts
 revision，以及具体默认 family 存在时的验证名。它不包含字体文件、native key、registry mutation 或 Context。
 
@@ -79,15 +79,16 @@ root decode 先进入 generation-local owner-fair scheduler，再 snapshot bytes
 
 ## Workbench composition
 
-Canvas 自己不实现字体管理 UI。它作为 Fonts 的 direct required consumer 挂载 `FontsSelectionPort`，只决定 `Fonts`
-tab placement，并绑定 provider-owned selector RPC；renderer、候选集合、默认选择与 mutation 都由 `FontsPlugin` 提供。
+Canvas 自己不实现字体管理 UI。它作为 Fonts 的 direct required consumer 放置
+`FontsWorkbench.selection`，只决定 tab placement 并绑定 exact provider handle；renderer、catalog、默认选择与 mutation
+都由 `FontsPlugin` 提供，不创建 Canvas consumer target。
 selector 只能读取候选和修改统一默认值，上传/删除仍只在 FontsPlugin 的 canonical View。Workbench disabled 时 managed
 fonts 和 Canvas 业务能力保持完整。`canvas.defaultFont` 返回同一 provider snapshot，调用方调整字号时可以复用其中的
 `cssFamily`。
 
 ## Runtime boundary
 
-constructor dependency、caller-bound Context、effects、persistence 与 typed Port 已经覆盖依赖、归属、回收和 UI 组合。
+constructor dependency、caller-bound Context、effects、persistence 与 typed Attachment 已经覆盖依赖、归属、回收和 UI 组合。
 把 native Canvas 或字体路径加入 runtime 会制造单一集成特例。唯一反馈给通用工具链的规则是 package-local native
 ownership：artifact graph 中每个 package 可以拥有自己 direct 声明的 native dependency；构建器生成 owner-aware loader bridge，
 不能要求最外层业务插件重复声明 `@napi-rs/canvas`，也不能借传递依赖越过 package contract。

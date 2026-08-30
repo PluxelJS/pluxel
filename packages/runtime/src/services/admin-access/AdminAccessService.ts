@@ -1,30 +1,32 @@
 import type { Context as PluxelContext, PluginContext } from '@pluxel/core'
 import { enterOwnerInvocation, requirePluginService } from '@pluxel/core/internal'
+
 import { pinOwnerContext } from '../../context/owner-view'
 import { recordSecurityEvent } from '../security/audit'
-import { ADMIN_ACCESS_PAGE_PATH } from './transport'
 import { responseWithLease, type ResponseLease } from './response-lifetime'
+import {
+	ADMIN_ACCESS_COOKIE_COMMIT_PATH,
+	ADMIN_ACCESS_OIDC_CALLBACK_PATH,
+	ADMIN_ACCESS_OIDC_START_PATH,
+} from './transport'
 import type {
-	AdminAccessAuthorizeInput,
-	AdminAccessEntryState,
 	AdminAccessOverview,
+	AdminAccessPrincipal,
 	AdminAccessReason,
 	AdminAccessState,
 	ManagementAccessProvider,
-	ManagementAccessProviderDecision,
 	ManagementAccessProviderStatus,
 	ManagementAccessRegistration,
+	ManagementAuthenticationChallenge,
+	ManagementAuthenticationCookieCommit,
+	ManagementAuthenticationFailureCode,
+	ManagementAuthenticationProviderSession,
+	ManagementAuthenticationProviderStep,
 } from './types'
 
 type ProviderRegistration = Readonly<{
 	owner: PluginContext
 	provider: ManagementAccessProvider
-}>
-
-export type AdminAccessAdmission = Readonly<{
-	state: AdminAccessState
-	signal: AbortSignal
-	release(): void
 }>
 
 type ActiveProvider = Readonly<{
@@ -33,45 +35,51 @@ type ActiveProvider = Readonly<{
 	lease: ResponseLease
 }>
 
+export type AdminAccessAdmission = Readonly<{
+	state: AdminAccessState
+	signal: AbortSignal
+	release(): void
+}>
+
+export interface AdminAuthenticationSession {
+	readonly signal: AbortSignal
+	readonly providerId: string
+	state(): Promise<ManagementAuthenticationProviderStep>
+	submit(input: unknown): Promise<ManagementAuthenticationProviderStep>
+	logout(): Promise<ManagementAuthenticationCookieCommit | undefined>
+	release(): void
+}
+
+const MAX_AUTH_ATTEMPTS = 8
+const MAX_AUTH_INPUT_BYTES = 16 * 1024
+const AUTHENTICATION_DEADLINE_MS = 2 * 60_000
 const NOOP_RELEASE = (): void => undefined
 
-function managementRequest(request: Request, signal: AbortSignal): Request {
+function providerRequest(request: Request, signal: AbortSignal, includeBody = false): Request {
+	const hasBody = includeBody && request.method !== 'GET' && request.method !== 'HEAD'
 	const headers = new Headers(request.headers)
-	headers.delete('content-length')
-	headers.delete('transfer-encoding')
+	if (!hasBody) {
+		headers.delete('content-length')
+		headers.delete('transfer-encoding')
+	}
 	return new Request(request.url, {
 		method: request.method,
 		headers,
 		signal,
-	})
-}
-
-function providerEntryRequest(request: Request, signal: AbortSignal): Request {
-	const source = new URL(request.url)
-	const suffix = source.pathname.slice(ADMIN_ACCESS_PAGE_PATH.length)
-	source.pathname = suffix || '/'
-	return new Request(source, {
-		method: request.method,
-		headers: request.headers,
-		body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
-		signal,
-		...(request.method !== 'GET' && request.method !== 'HEAD' && request.body
-			? { duplex: 'half' }
-			: {}),
+		body: hasBody ? request.body : undefined,
+		...(hasBody && request.body ? { duplex: 'half' } : {}),
 	} as RequestInit)
 }
 
 function statusSnapshot(value: unknown): ManagementAccessProviderStatus {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		throw new TypeError('provider status must be an object')
-	}
-	const input = value as Partial<ManagementAccessProviderStatus>
-	const id = typeof input.id === 'string' ? input.id.trim() : ''
-	const label = typeof input.label === 'string' ? input.label.trim() : ''
-	if (!id || id.length > 128 || !/^[a-zA-Z0-9@._:/-]+$/.test(id)) {
+	const input = readRecord(value, 'provider status') as Partial<ManagementAccessProviderStatus>
+	assertExactKeys(input, ['id', 'label', 'method', 'ready'], 'provider status')
+	const id = boundedText(input.id, 128)
+	const label = boundedText(input.label, 128)
+	if (!id || !/^[a-zA-Z0-9@._:/-]+$/.test(id)) {
 		throw new TypeError('provider status.id is invalid')
 	}
-	if (!label || label.length > 128) throw new TypeError('provider status.label is invalid')
+	if (!label) throw new TypeError('provider status.label is invalid')
 	if (input.method !== 'oidc' && input.method !== 'password' && input.method !== 'password-totp') {
 		throw new TypeError('provider status.method is invalid')
 	}
@@ -79,69 +87,184 @@ function statusSnapshot(value: unknown): ManagementAccessProviderStatus {
 	return Object.freeze({ id, label, method: input.method, ready: input.ready })
 }
 
-function decisionSnapshot(value: unknown): ManagementAccessProviderDecision {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		throw new TypeError('provider decision must be an object')
-	}
-	const input = value as Partial<ManagementAccessProviderDecision> & {
-		principal?: { subject?: unknown; displayName?: unknown }
-		reason?: unknown
-	}
-	if (input.allow === true) {
-		const subject =
-			typeof input.principal?.subject === 'string' ? input.principal.subject.trim() : ''
-		if (!subject || subject.length > 512) throw new TypeError('provider principal is invalid')
-		const displayName =
-			typeof input.principal?.displayName === 'string'
-				? input.principal.displayName.trim()
-				: undefined
-		if (displayName && displayName.length > 256) {
-			throw new TypeError('provider principal display name is invalid')
+function providerStepSnapshot(value: unknown): ManagementAuthenticationProviderStep {
+	const input = readRecord(value, 'authentication step')
+	switch (input.kind) {
+		case 'challenge': {
+			assertExactKeys(input, ['kind', 'challenge'], 'authentication challenge step')
+			return Object.freeze({ kind: 'challenge', challenge: challengeSnapshot(input.challenge) })
 		}
-		return Object.freeze({
-			allow: true,
-			principal: Object.freeze({ subject, ...(displayName ? { displayName } : {}) }),
-		})
-	}
-	if (input.allow !== false) throw new TypeError('provider decision.allow is invalid')
-	if (
-		input.reason !== 'unavailable' &&
-		input.reason !== 'unauthenticated' &&
-		input.reason !== 'invalid_credentials' &&
-		input.reason !== 'forbidden' &&
-		input.reason !== 'secure_transport_required'
-	) {
-		throw new TypeError('provider decision.reason is invalid')
-	}
-	return Object.freeze({ allow: false, reason: input.reason })
-}
-
-function denied(reason: AdminAccessReason, signal: AbortSignal): AdminAccessAdmission {
-	return Object.freeze({
-		state: Object.freeze({ allow: false, reason }),
-		signal,
-		release: NOOP_RELEASE,
-	})
-}
-
-function localRecovery(signal: AbortSignal): AdminAccessAdmission {
-	return Object.freeze({
-		state: Object.freeze({ allow: true, method: 'local' }),
-		signal,
-		release: NOOP_RELEASE,
-	})
-}
-
-function decisionReason(
-	reason: Exclude<ManagementAccessProviderDecision, { allow: true }>['reason'],
-): AdminAccessReason {
-	switch (reason) {
-		case 'unavailable':
-			return 'authentication_unavailable'
-		case 'unauthenticated':
-			return 'authentication_required'
+		case 'navigate': {
+			assertExactKeys(input, ['kind', 'path'], 'authentication navigation step')
+			if (input.path !== ADMIN_ACCESS_OIDC_START_PATH) {
+				throw new TypeError('authentication navigation path is invalid')
+			}
+			return Object.freeze({ kind: 'navigate', path: ADMIN_ACCESS_OIDC_START_PATH })
+		}
+		case 'authenticated': {
+			assertOnlyKeys(input, ['kind', 'principal', 'cookieCommit'], 'authenticated step')
+			if (!Object.hasOwn(input, 'principal')) {
+				throw new TypeError('authenticated step.principal is required')
+			}
+			const principal = principalSnapshot(input.principal)
+			if (input.cookieCommit === undefined) {
+				return Object.freeze({ kind: 'authenticated', principal })
+			}
+			const commit = readRecord(input.cookieCommit, 'cookie commit ticket')
+			assertExactKeys(commit, ['ticket', 'expiresAt'], 'cookie commit ticket')
+			const ticket = boundedText(commit.ticket, 4096)
+			if (!ticket || !Number.isSafeInteger(commit.expiresAt) || Number(commit.expiresAt) <= 0) {
+				throw new TypeError('cookie commit ticket is invalid')
+			}
+			return Object.freeze({
+				kind: 'authenticated',
+				principal,
+				cookieCommit: Object.freeze({ ticket, expiresAt: Number(commit.expiresAt) }),
+			})
+		}
+		case 'failed': {
+			assertExactKeys(input, ['kind', 'code'], 'authentication failure step')
+			if (!isAuthenticationFailureCode(input.code)) {
+				throw new TypeError('authentication failure code is invalid')
+			}
+			return Object.freeze({ kind: 'failed', code: input.code })
+		}
 		default:
-			return reason
+			throw new TypeError('authentication step.kind is invalid')
+	}
+}
+
+function challengeSnapshot(value: unknown): ManagementAuthenticationChallenge {
+	const input = readRecord(value, 'authentication challenge')
+	if (input.kind === 'password') {
+		assertOnlyKeys(input, ['kind', 'label'], 'password challenge')
+		const label = input.label === undefined ? undefined : boundedText(input.label, 128)
+		if (input.label !== undefined && !label)
+			throw new TypeError('password challenge.label is invalid')
+		return Object.freeze({ kind: 'password', ...(label ? { label } : {}) })
+	}
+	if (input.kind === 'totp') {
+		assertExactKeys(input, ['kind', 'digits'], 'TOTP challenge')
+		if (input.digits !== 6) throw new TypeError('TOTP challenge.digits must be 6')
+		return Object.freeze({ kind: 'totp', digits: 6 })
+	}
+	throw new TypeError('authentication challenge.kind is invalid')
+}
+
+function principalSnapshot(value: unknown): Readonly<{ subject: string; displayName?: string }> {
+	const input = readRecord(value, 'provider principal')
+	assertOnlyKeys(input, ['subject', 'displayName'], 'provider principal')
+	const subject = boundedText(input.subject, 512)
+	if (!subject) throw new TypeError('provider principal.subject is invalid')
+	const displayName =
+		input.displayName === undefined ? undefined : boundedText(input.displayName, 256)
+	if (input.displayName !== undefined && !displayName) {
+		throw new TypeError('provider principal.displayName is invalid')
+	}
+	return Object.freeze({ subject, ...(displayName ? { displayName } : {}) })
+}
+
+function failedStep(
+	code: ManagementAuthenticationFailureCode,
+): ManagementAuthenticationProviderStep {
+	return Object.freeze({ kind: 'failed', code })
+}
+
+function authenticatedLocal(): ManagementAuthenticationProviderStep {
+	return Object.freeze({
+		kind: 'authenticated',
+		principal: Object.freeze({ subject: 'local', displayName: 'Local recovery' }),
+	})
+}
+
+class FixedAuthenticationSession implements AdminAuthenticationSession {
+	constructor(
+		readonly signal: AbortSignal,
+		readonly providerId: string,
+		private readonly step: ManagementAuthenticationProviderStep,
+	) {}
+
+	async state(): Promise<ManagementAuthenticationProviderStep> {
+		return this.signal.aborted ? failedStep('authentication_expired') : this.step
+	}
+
+	async submit(_input: unknown): Promise<ManagementAuthenticationProviderStep> {
+		return await this.state()
+	}
+
+	async logout(): Promise<undefined> {
+		return undefined
+	}
+
+	release(): void {}
+}
+
+class ProviderAuthenticationSession implements AdminAuthenticationSession {
+	private attempts = 0
+	private active = true
+	private submitting = false
+
+	constructor(
+		readonly signal: AbortSignal,
+		readonly providerId: string,
+		private readonly providerSession: ManagementAuthenticationProviderSession,
+		private readonly lease: ResponseLease,
+		private current: ManagementAuthenticationProviderStep,
+		private readonly deadlineTimer: ReturnType<typeof setTimeout>,
+	) {}
+
+	async state(): Promise<ManagementAuthenticationProviderStep> {
+		return this.expired() ? failedStep('authentication_expired') : this.current
+	}
+
+	async submit(input: unknown): Promise<ManagementAuthenticationProviderStep> {
+		if (this.expired()) return failedStep('authentication_expired')
+		if (this.current.kind !== 'challenge') return this.current
+		if (
+			this.submitting ||
+			++this.attempts > MAX_AUTH_ATTEMPTS ||
+			inputBytes(input) > MAX_AUTH_INPUT_BYTES
+		) {
+			this.current = failedStep('attempt_limited')
+			return this.current
+		}
+
+		this.submitting = true
+		try {
+			this.current = providerStepSnapshot(await this.providerSession.submit(input))
+			if (this.signal.aborted) this.current = failedStep('authentication_expired')
+			return this.current
+		} catch {
+			this.current = failedStep('access_unavailable')
+			return this.current
+		} finally {
+			this.submitting = false
+		}
+	}
+
+	async logout(): Promise<ManagementAuthenticationCookieCommit | undefined> {
+		if (this.expired() || typeof this.providerSession.logout !== 'function') return undefined
+		try {
+			const commit = await this.providerSession.logout()
+			return commit === undefined ? undefined : cookieCommitSnapshot(commit)
+		} catch {
+			return undefined
+		}
+	}
+
+	release(): void {
+		if (!this.active) return
+		this.active = false
+		clearTimeout(this.deadlineTimer)
+		try {
+			this.providerSession[Symbol.dispose]()
+		} finally {
+			this.lease.dispose()
+		}
+	}
+
+	private expired(): boolean {
+		return !this.active || this.signal.aborted
 	}
 }
 
@@ -153,207 +276,169 @@ export class AdminAccessService {
 		pinOwnerContext(this, ctx)
 	}
 
-	/** Conservative public check: locality is never accepted from a caller-provided value. */
-	async authorize(input: AdminAccessAuthorizeInput = {}): Promise<AdminAccessState> {
-		const request = input.request ?? new Request('http://pluxel.invalid/')
-		const admission = await this.admit(request, false, false)
-		admission.release()
-		return admission.state
-	}
-
-	async describe(_input: AdminAccessAuthorizeInput = {}): Promise<AdminAccessOverview> {
+	async describe(): Promise<AdminAccessOverview> {
 		let current: ActiveProvider | undefined
 		try {
 			current = this.currentProvider()
 		} catch {
 			return Object.freeze({ policy: 'provider-or-local-recovery', provider: null })
 		}
-		if (!current) {
-			return Object.freeze({ policy: 'provider-or-local-recovery', provider: null })
-		}
+		if (!current) return Object.freeze({ policy: 'provider-or-local-recovery', provider: null })
 		current.lease.dispose()
 		return Object.freeze({ policy: 'provider-or-local-recovery', provider: current.status })
 	}
 
-	/** @internal The HTTP ingress is the only caller allowed to supply trusted locality. */
-	async admit(request: Request, local: boolean, secure: boolean): Promise<AdminAccessAdmission> {
-		let current: ActiveProvider | undefined
-		try {
-			current = this.currentProvider(request.signal)
-		} catch {
-			return local
-				? localRecovery(request.signal)
-				: denied('authentication_unavailable', request.signal)
-		}
-		const active = current?.status.ready ? current : undefined
-		if (current && !active) current.lease.dispose()
-		if (!active) {
-			return local ? localRecovery(request.signal) : denied('local_setup_required', request.signal)
-		}
-		if (!local && !secure) {
-			active.lease.dispose()
-			return denied('secure_transport_required', request.signal)
-		}
-		let decision: ManagementAccessProviderDecision
-		try {
-			decision = decisionSnapshot(
-				await active.registration.provider.authorize(
-					managementRequest(request, active.lease.signal),
-					Object.freeze({ local, secure }),
-				),
+	/** Open one connection-bound pre-auth flow. Local physical peers get direct recovery authority. */
+	async openSession(
+		request: Request,
+		local: boolean,
+		secure: boolean,
+	): Promise<AdminAuthenticationSession> {
+		if (local) return new FixedAuthenticationSession(request.signal, 'local', authenticatedLocal())
+		if (!secure) {
+			return new FixedAuthenticationSession(
+				request.signal,
+				'unavailable',
+				failedStep('access_unavailable'),
 			)
-		} catch (error) {
-			active.lease.dispose()
-			this.auditFailure('provider_error', error)
-			return denied('authentication_unavailable', request.signal)
 		}
 
-		if (!this.isCurrent(active.registration) || active.lease.signal.aborted) {
-			active.lease.dispose()
-			return denied('authentication_unavailable', request.signal)
+		const deadline = new AbortController()
+		const deadlineTimer = setTimeout(
+			() => deadline.abort(new Error('Management authentication deadline exceeded')),
+			AUTHENTICATION_DEADLINE_MS,
+		)
+		deadlineTimer.unref?.()
+		const callSignal = AbortSignal.any([request.signal, deadline.signal])
+		let current: ActiveProvider | undefined
+		try {
+			current = this.currentProvider(callSignal)
+		} catch {
+			clearTimeout(deadlineTimer)
+			return new FixedAuthenticationSession(
+				request.signal,
+				'unavailable',
+				failedStep('access_unavailable'),
+			)
 		}
-		if (decision.allow === false) {
-			active.lease.dispose()
-			return denied(decisionReason(decision.reason), request.signal)
+		if (!current?.status.ready) {
+			current?.lease.dispose()
+			clearTimeout(deadlineTimer)
+			return new FixedAuthenticationSession(
+				request.signal,
+				'unavailable',
+				failedStep('access_unavailable'),
+			)
+		}
+
+		let providerSession: ManagementAuthenticationProviderSession | undefined
+		try {
+			providerSession = await current.registration.provider.open(
+				providerRequest(request, current.lease.signal),
+				Object.freeze({ local, secure }),
+			)
+			assertProviderSession(providerSession)
+			const step = providerStepSnapshot(await providerSession.state())
+			if (current.lease.signal.aborted) throw current.lease.signal.reason
+			return new ProviderAuthenticationSession(
+				current.lease.signal,
+				current.status.id,
+				providerSession,
+				current.lease,
+				step,
+				deadlineTimer,
+			)
+		} catch (error) {
+			clearTimeout(deadlineTimer)
+			try {
+				providerSession?.[Symbol.dispose]()
+			} finally {
+				current.lease.dispose()
+			}
+			this.auditFailure('provider_open_error', error)
+			return new FixedAuthenticationSession(
+				request.signal,
+				'unavailable',
+				failedStep('access_unavailable'),
+			)
+		}
+	}
+
+	/** Internal HTTP artifact/file gate. Dynamic Management authority never uses this path. */
+	async admit(request: Request, local: boolean, secure: boolean): Promise<AdminAccessAdmission> {
+		if (local) return localRecovery(request.signal)
+		if (!secure) return denied('secure_transport_required', request.signal)
+		const session = await this.openSession(request, false, true)
+		const step = await session.state()
+		if (step.kind !== 'authenticated') {
+			session.release()
+			return denied(authenticationReason(step), request.signal)
 		}
 		return Object.freeze({
 			state: Object.freeze({
 				allow: true,
 				method: 'provider',
-				principal: Object.freeze({
-					provider: active.status.id,
-					subject: decision.principal.subject,
-					...(decision.principal.displayName
-						? { displayName: decision.principal.displayName }
-						: {}),
-				}),
+				principal: providerPrincipal(step.principal, session.providerId),
 			}),
-			signal: active.lease.signal,
-			release: () => active.lease.dispose(),
+			signal: session.signal,
+			release: () => session.release(),
 		})
 	}
 
-	/** @internal Serve the sole unauthenticated Management entry point. */
-	async handleEntryRequest(
-		request: Request,
-		local: boolean,
-		secure: boolean,
-		listenerPort: number,
-	): Promise<Response> {
+	/** Serve only the three browser-hard auth handoff endpoints. */
+	async handleEntryRequest(request: Request, local: boolean, secure: boolean): Promise<Response> {
 		const path = new URL(request.url).pathname
+		const method = request.method.toUpperCase()
+		const operation =
+			path === ADMIN_ACCESS_OIDC_START_PATH && method === 'GET'
+				? 'oidcStart'
+				: path === ADMIN_ACCESS_OIDC_CALLBACK_PATH && method === 'GET'
+					? 'oidcCallback'
+					: path === ADMIN_ACCESS_COOKIE_COMMIT_PATH && method === 'POST'
+						? 'commitCookie'
+						: undefined
+		if (!operation) return new Response('Not Found', { status: 404, headers: noStoreHeaders() })
+		if (!local && !secure) {
+			return new Response('Secure transport required', {
+				status: 403,
+				headers: noStoreHeaders(),
+			})
+		}
+
 		let current: ActiveProvider | undefined
 		try {
 			current = this.currentProvider(request.signal)
 		} catch {
-			if (local) {
-				if (path === `${ADMIN_ACCESS_PAGE_PATH}/state`) {
-					return Response.json({ state: 'allowed' } satisfies AdminAccessEntryState, {
-						headers: entryHeaders('application/json; charset=utf-8'),
-					})
-				}
-				return localWorkbenchRedirect(request)
-			}
-			if (path === `${ADMIN_ACCESS_PAGE_PATH}/state`) {
-				return Response.json(
-					{ state: 'authentication_unavailable' } satisfies AdminAccessEntryState,
-					{ headers: entryHeaders('application/json; charset=utf-8') },
-				)
-			}
-			return new Response(renderAuthenticationUnavailable(), {
-				status: 503,
-				headers: entryHeaders('text/html; charset=utf-8'),
-			})
+			return unavailableResponse()
 		}
-		const providerReady = current?.status.ready === true
-		if (current && providerReady && !local && !secure) {
-			current.lease.dispose()
-			if (path === `${ADMIN_ACCESS_PAGE_PATH}/state`) {
-				return Response.json(
-					{ state: 'secure_transport_required' } satisfies AdminAccessEntryState,
-					{ headers: entryHeaders('application/json; charset=utf-8') },
-				)
-			}
-			return new Response(renderSecureTransportRequired(), {
-				status: 403,
-				headers: entryHeaders('text/html; charset=utf-8'),
-			})
-		}
-		const active = current && (local || providerReady) ? current : undefined
-		if (current && !active) current.lease.dispose()
-		if (path === `${ADMIN_ACCESS_PAGE_PATH}/state`) {
-			const state = await this.entryState(request, local, secure, active)
-			return Response.json(state, { headers: entryHeaders('application/json; charset=utf-8') })
-		}
-		if (active) {
-			let transferred = false
-			try {
-				const response = await active.registration.provider.handle(
-					providerEntryRequest(request, active.lease.signal),
-					Object.freeze({ local, secure }),
-				)
-				if (response) {
-					if (!(response instanceof Response)) {
-						throw new TypeError('provider handle must return a Response or undefined')
-					}
-					if (!this.isCurrent(active.registration) || active.lease.signal.aborted) {
-						void response.body?.cancel(active.lease.signal.reason).catch((): undefined => undefined)
-						return new Response(renderAuthenticationUnavailable(), {
-							status: 503,
-							headers: entryHeaders('text/html; charset=utf-8'),
-						})
-					}
-					const leasedResponse = responseWithLease(response, active.lease)
-					transferred = true
-					return leasedResponse
-				}
-			} catch (error) {
-				this.auditFailure('entry_error', error)
-			} finally {
-				if (!transferred) active.lease.dispose()
-			}
-		}
-		if (local && !providerReady) return localWorkbenchRedirect(request)
-		if (active) {
-			return new Response(renderAuthenticationUnavailable(), {
-				status: 503,
-				headers: entryHeaders('text/html; charset=utf-8'),
-			})
-		}
-		return new Response(renderLocalSetupRequired(listenerPort, secure), {
-			status: 403,
-			headers: entryHeaders('text/html; charset=utf-8'),
-		})
-	}
-
-	private async entryState(
-		request: Request,
-		local: boolean,
-		secure: boolean,
-		current: ActiveProvider | undefined,
-	): Promise<AdminAccessEntryState> {
 		if (!current?.status.ready) {
 			current?.lease.dispose()
-			return local ? { state: 'allowed' } : { state: 'local_setup_required' }
+			return unavailableResponse()
 		}
-		try {
-			const decision = decisionSnapshot(
-				await current.registration.provider.authorize(
-					managementRequest(request, current.lease.signal),
-					Object.freeze({ local, secure }),
-				),
-			)
-			if (!this.isCurrent(current.registration) || current.lease.signal.aborted) {
-				return { state: 'authentication_unavailable' }
-			}
-			if (decision.allow === true) return { state: 'allowed' }
-			return decision.reason === 'unavailable'
-				? { state: 'authentication_unavailable' }
-				: { state: 'login_required', method: current.status.method }
-		} catch (error) {
-			this.auditFailure('state_error', error)
-			return { state: 'authentication_unavailable' }
-		} finally {
+		const handler = current.registration.provider[operation]
+		if (typeof handler !== 'function') {
 			current.lease.dispose()
+			return new Response('Not Found', { status: 404, headers: noStoreHeaders() })
+		}
+
+		try {
+			const response = await handler.call(
+				current.registration.provider,
+				providerRequest(request, current.lease.signal, operation === 'commitCookie'),
+				Object.freeze({ local, secure }),
+			)
+			if (!(response instanceof Response))
+				throw new TypeError(`${operation} must return a Response`)
+			if (current.lease.signal.aborted) {
+				void response.body?.cancel(current.lease.signal.reason).catch((): undefined => undefined)
+				current.lease.dispose()
+				return unavailableResponse()
+			}
+			return responseWithLease(withNoStore(response), current.lease)
+		} catch (error) {
+			current.lease.dispose()
+			this.auditFailure(`${operation}_error`, error)
+			return unavailableResponse()
 		}
 	}
 
@@ -366,8 +451,10 @@ export class AdminAccessService {
 		if (
 			!provider ||
 			typeof provider.status !== 'function' ||
-			typeof provider.authorize !== 'function' ||
-			typeof provider.handle !== 'function'
+			typeof provider.open !== 'function' ||
+			(provider.oidcStart !== undefined && typeof provider.oidcStart !== 'function') ||
+			(provider.oidcCallback !== undefined && typeof provider.oidcCallback !== 'function') ||
+			(provider.commitCookie !== undefined && typeof provider.commitCookie !== 'function')
 		) {
 			throw new TypeError('[pluxel/runtime] Invalid Management access provider')
 		}
@@ -409,8 +496,7 @@ export class AdminAccessService {
 			let lease: ResponseLease | undefined
 			try {
 				lease = enterOwnerInvocation(registration.owner, callSignal)
-				const status = statusSnapshot(registration.provider.status())
-				return { registration, status, lease }
+				return { registration, status: statusSnapshot(registration.provider.status()), lease }
 			} catch (error) {
 				lease?.dispose()
 				this.auditFailure('status_error', error)
@@ -441,56 +527,143 @@ export class AdminAccessService {
 	}
 }
 
-function localWorkbenchRedirect(request: Request): Response {
-	return new Response(null, {
-		status: 303,
-		headers: { ...entryHeaders(), location: sanitizeReturnTo(request) },
+function assertProviderSession(
+	value: unknown,
+): asserts value is ManagementAuthenticationProviderSession {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		typeof (value as ManagementAuthenticationProviderSession).state !== 'function' ||
+		typeof (value as ManagementAuthenticationProviderSession).submit !== 'function' ||
+		((value as ManagementAuthenticationProviderSession).logout !== undefined &&
+			typeof (value as ManagementAuthenticationProviderSession).logout !== 'function') ||
+		typeof (value as ManagementAuthenticationProviderSession)[Symbol.dispose] !== 'function'
+	) {
+		throw new TypeError('provider open() must return a disposable authentication session')
+	}
+}
+
+function cookieCommitSnapshot(value: unknown): ManagementAuthenticationCookieCommit {
+	const commit = readRecord(value, 'cookie commit ticket')
+	assertExactKeys(commit, ['ticket', 'expiresAt'], 'cookie commit ticket')
+	const ticket = boundedText(commit.ticket, 4096)
+	if (!ticket || !Number.isSafeInteger(commit.expiresAt) || Number(commit.expiresAt) <= 0) {
+		throw new TypeError('cookie commit ticket is invalid')
+	}
+	return Object.freeze({ ticket, expiresAt: Number(commit.expiresAt) })
+}
+
+function providerPrincipal(
+	principal: Readonly<{ subject: string; displayName?: string }>,
+	provider: string,
+): AdminAccessPrincipal {
+	return Object.freeze({
+		provider,
+		subject: principal.subject,
+		...(principal.displayName ? { displayName: principal.displayName } : {}),
 	})
 }
 
-function sanitizeReturnTo(request: Request): string {
-	const current = new URL(request.url)
-	const raw = current.searchParams.get('returnTo')
-	if (!raw || raw.includes('\\')) return '/'
+function authenticationReason(step: ManagementAuthenticationProviderStep): AdminAccessReason {
+	if (step.kind === 'challenge' || step.kind === 'navigate') return 'authentication_required'
+	if (step.kind === 'failed') {
+		switch (step.code) {
+			case 'authentication_failed':
+				return 'invalid_credentials'
+			case 'access_unavailable':
+				return 'authentication_unavailable'
+			default:
+				return 'authentication_required'
+		}
+	}
+	return 'authentication_unavailable'
+}
+
+function denied(reason: AdminAccessReason, signal: AbortSignal): AdminAccessAdmission {
+	return Object.freeze({
+		state: Object.freeze({ allow: false, reason }),
+		signal,
+		release: NOOP_RELEASE,
+	})
+}
+
+function localRecovery(signal: AbortSignal): AdminAccessAdmission {
+	return Object.freeze({
+		state: Object.freeze({ allow: true, method: 'local' }),
+		signal,
+		release: NOOP_RELEASE,
+	})
+}
+
+function inputBytes(input: unknown): number {
 	try {
-		const resolved = new URL(raw, current)
-		if (resolved.origin !== current.origin) return '/'
-		if (resolved.pathname.startsWith(ADMIN_ACCESS_PAGE_PATH)) return '/'
-		return `${resolved.pathname}${resolved.search}${resolved.hash}`
+		return new TextEncoder().encode(JSON.stringify(input)).byteLength
 	} catch {
-		return '/'
+		return Number.POSITIVE_INFINITY
 	}
 }
 
-function entryHeaders(contentType?: string): Record<string, string> {
-	return {
-		'cache-control': 'no-store',
-		'content-security-policy':
-			"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-		'referrer-policy': 'no-referrer',
-		'x-content-type-options': 'nosniff',
-		'x-frame-options': 'DENY',
-		...(contentType ? { 'content-type': contentType } : {}),
+function readRecord(value: unknown, label: string): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new TypeError(`${label} must be an object`)
+	}
+	return value as Record<string, unknown>
+}
+
+function boundedText(value: unknown, maxLength: number): string | undefined {
+	if (typeof value !== 'string') return undefined
+	const normalized = value.trim()
+	return normalized && normalized.length <= maxLength ? normalized : undefined
+}
+
+function assertExactKeys(
+	value: Record<string, unknown>,
+	expected: readonly string[],
+	label: string,
+): void {
+	const keys = Object.keys(value)
+	if (keys.length !== expected.length || !expected.every((key) => Object.hasOwn(value, key))) {
+		throw new TypeError(`${label} has unknown or missing fields`)
 	}
 }
 
-function renderLocalSetupRequired(listenerPort: number, secure: boolean): string {
-	const port =
-		Number.isInteger(listenerPort) && listenerPort > 0 && listenerPort <= 65_535
-			? listenerPort
-			: 3_000
-	const protocol = secure ? 'https' : 'http'
-	return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pluxel local setup required</title><style>
-:root{color-scheme:light;font-family:ui-sans-serif,system-ui,sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f6f8;color:#18232c}main{width:min(560px,calc(100vw - 32px));padding:28px;border:1px solid #d8dee3;border-radius:12px;background:#fff;box-shadow:0 16px 48px #18232c1a}h1{margin:0 0 12px;font-size:24px}p{line-height:1.55;color:#46545f}code{display:block;overflow:auto;padding:12px;border-radius:8px;background:#eef2f5;color:#18232c}</style></head>
-<body><main><h1>Local setup required</h1><p>No active authentication provider is available. Remote Management access is closed.</p><p>Connect to this host with SSH, create a loopback tunnel, then configure and start the official authentication plugin from the local Workbench.</p><code>ssh -L ${port}:127.0.0.1:${port} user@host</code><p>Open <strong>${protocol}://127.0.0.1:${port}</strong> after the tunnel is connected.</p></main></body></html>`
+function assertOnlyKeys(
+	value: Record<string, unknown>,
+	allowed: readonly string[],
+	label: string,
+): void {
+	if (Object.keys(value).some((key) => !allowed.includes(key))) {
+		throw new TypeError(`${label} has unknown fields`)
+	}
 }
 
-function renderAuthenticationUnavailable(): string {
-	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authentication unavailable</title></head><body><main><h1>Authentication unavailable</h1><p>The configured Management authentication provider is temporarily unavailable. Try again later.</p></main></body></html>`
+function isAuthenticationFailureCode(value: unknown): value is ManagementAuthenticationFailureCode {
+	return (
+		value === 'authentication_failed' ||
+		value === 'authentication_expired' ||
+		value === 'access_unavailable' ||
+		value === 'attempt_limited'
+	)
 }
 
-function renderSecureTransportRequired(): string {
-	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Secure connection required</title></head><body><main><h1>Secure connection required</h1><p>Remote Management authentication is available only over HTTPS.</p></main></body></html>`
+function noStoreHeaders(): HeadersInit {
+	return { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+}
+
+function unavailableResponse(): Response {
+	return new Response('Authentication unavailable', {
+		status: 503,
+		headers: noStoreHeaders(),
+	})
+}
+
+function withNoStore(response: Response): Response {
+	const headers = new Headers(response.headers)
+	headers.set('cache-control', 'no-store')
+	headers.set('x-content-type-options', 'nosniff')
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	})
 }

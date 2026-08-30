@@ -127,12 +127,12 @@ const revision = this.fonts.revision
 
 `defaultFont` 包含 `family`、可安全放进 Canvas font shorthand 的 `cssFamily`，以及选择来源。解析优先级为：
 
-1. Workbench 持久化选择。
+1. provider-wide 持久化 preference。
 2. `defaultFamily` host config。
 3. 当前平台的自动系统字体。
 4. generic `sans-serif`。
 
-`source` 表示是哪一层选中了默认值：`workbench`、`config`、`system` 或 `generic`，不是字体资源的来源。`workbenchFamily` 或 `configuredFamily` 可能存在但暂时不可用，此时解析会继续 fallback。
+`source` 表示是哪一层选中了默认值：`preference`、`config`、`system` 或 `generic`，不是字体资源的来源。`preferredFamily` 或 `configuredFamily` 可能存在但暂时不可用，此时解析会继续 fallback。preference 是 Fonts 自身的 provider-wide domain state；即使 Workbench 未启用，它也继续生效。
 
 `revision` 是进程内字体注册与默认选择的变更信号。renderer 应把它纳入文字测量 cache key，或在其变化时清空缓存。直接操作 `GlobalFonts` 不会遵守这一契约。
 
@@ -152,35 +152,33 @@ for (const font of snapshot.fonts) {
 content ID，最后一个 registration 释放后才从集合移除。平台自动发现的 system font 没有 FontsPlugin-owned 文件，
 因此诚实地不进入可移植集合。
 
-## Workbench 管理与 Selection Port
+## Workbench 管理与 Selection Attachment
 
-FontsPlugin 自己的 Workbench 页面管理唯一的 provider-owned collection：上传、删除字体并设置默认 family。上传字体持久化在 host persistence 中，provider 重启时会恢复；它不属于任一 Canvas/ECharts consumer。
+FontsPlugin 自己的 manager View 管理 provider-owned 字体集合：上传、删除字体并设置默认 family。上传字体持久化在
+host persistence 中，provider 重启时会恢复；这个集合是 Fonts 的领域状态，不是 Workbench 平台概念，也不属于任一
+Canvas/ECharts consumer。
 
-其他 Plugin 不应复制上传管理界面。如果只需让用户选择统一默认字体，挂载 `FontsSelectionPort`：
+其他 Plugin 不应复制上传管理界面。如果只需在自己的详情页让用户选择统一默认字体，放置 Fonts 提供的 Attachment：
 
 ```ts no-twoslash
-import { FontsSelectionPort } from '@pluxel/fonts/workbench'
+import { FontsWorkbench } from '@pluxel/fonts/workbench'
 import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 
-const FontsTab = workbench.portOutlet({
-	id: 'Fonts',
-	port: FontsSelectionPort,
-	placement: workbenchContract.tab({ label: 'Fonts' }),
+export const ReportsWorkbench = workbench.define({
+	fonts: FontsWorkbench.selection.place(workbench.tab({ label: 'Fonts' })),
 })
 
 protected override init() {
-	this.ctx.workbench?.mount(FontsTab, {
-		selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
+	this.ctx.workbench?.publish(ReportsWorkbench, {
+		fonts: { provider: this.fonts },
 	})
 }
 ```
 
-Selection RPC 公开 `snapshot()` 和 `setDefaultFamily(family | null)`；传 `null` 清除 Workbench override，恢复 config 或自动选择。CanvasPlugin 和 EChartsPlugin 已各自挂载这个 selector，不需要业务 Plugin 再做一次。
-
-renderer 只能消费可移植 bytes 时使用 `selectionManager('portable')`。该投影复用同一 Port/UI 和 provider-wide default，
-但候选只包含 managed/programmatic families，并拒绝选择 system-only family。TakumiPlugin 已使用这个 scope；完整 Fonts
-管理页面与 Canvas/ECharts selector 仍使用默认的 `all`。
+`FontsWorkbench.selection` 是 provider-only Attachment。Renderer 通过
+`useWorkbench(FontsWorkbench.selection)` 取得 Fonts 提供的 `FontSelectionApi`，公开 `snapshot()` 和
+`setPreferredFamily(family | null)`；传 `null` 恢复 host config 或自动选择。Consumer 不创建转发 target，也不拥有
+字体 catalog/selection。Canvas、ECharts 和 Takumi 已各自放置这个 selector，普通业务 Plugin 通常不需要重复添加。
 
 Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。
 

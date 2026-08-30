@@ -10,30 +10,27 @@ describe('AuthPlugin lifecycle', () => {
 				host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
 				host.start(AuthPlugin)
 				await host.commit()
-				const plugin = host.require(AuthPlugin)
-				expect(plugin.status()).toEqual({
-					id: '@pluxel/auth',
-					label: 'Pluxel Authentication',
-					method: 'password',
-					ready: false,
+				expect(await host.ctx.adminAccess?.describe()).toEqual({
+					policy: 'provider-or-local-recovery',
+					provider: {
+						id: '@pluxel/auth',
+						label: 'Pluxel Authentication',
+						method: 'password',
+						ready: false,
+					},
 				})
-				await expect(plugin.authenticate(new Request('https://admin.example/'))).resolves.toEqual({
-					allow: false,
-					reason: 'unavailable',
-				})
-
 				host.stop(AuthPlugin)
 				await host.commit()
-				await expect(plugin.authenticate(new Request('https://admin.example/'))).resolves.toEqual({
-					allow: false,
-					reason: 'unavailable',
+				expect(await host.ctx.adminAccess?.describe()).toEqual({
+					policy: 'provider-or-local-recovery',
+					provider: null,
 				})
 			},
-			{ vault: {}, workbench: false },
+			{ vault: {}, management: {}, workbench: false },
 		)
 	})
 
-	it('runs public OIDC without Vault and requires HTTPS for the reusable authenticator', async () => {
+	it('runs public OIDC without Vault', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add(AuthPlugin)
@@ -48,17 +45,11 @@ describe('AuthPlugin lifecycle', () => {
 				})
 				host.start(AuthPlugin)
 				await host.commit()
-				const plugin = host.require(AuthPlugin)
-				expect(plugin.status().ready).toBe(true)
-				await expect(plugin.authenticate(new Request('http://127.evil.example/'))).resolves.toEqual(
-					{ allow: false, reason: 'secure_transport_required' },
-				)
-				await expect(plugin.authenticate(new Request('http://127.0.0.1/'))).resolves.toEqual({
-					allow: false,
-					reason: 'secure_transport_required',
+				expect(await host.ctx.adminAccess?.describe()).toMatchObject({
+					provider: { method: 'oidc', ready: true },
 				})
 			},
-			{ workbench: false },
+			{ management: {}, workbench: false },
 		)
 	})
 })

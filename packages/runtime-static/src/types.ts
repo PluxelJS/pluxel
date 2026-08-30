@@ -113,7 +113,6 @@ export type StaticRuntimeHostOptions = Omit<
 	| 'plugins'
 	| 'http'
 	| 'workbenchArtifactRoot'
-	| 'workbenchArtifactResolver'
 	| 'nodeModuleArtifactRoot'
 	| 'nodeModuleArtifactResolver'
 > & {
@@ -138,7 +137,7 @@ export type StaticRuntimeHostOptions = Omit<
 	persistence?: PersistenceServiceConfig
 	/** Shared lazy PostgreSQL capability. Omit for persistent local PGlite. */
 	database?: DatabaseConfig
-	/** Optional Workbench Plane resources and UI artifacts. @default false */
+	/** Optional Workbench Direct View/Attachment plane and immutable MF producer artifacts. @default false */
 	workbench?: WorkbenchConfig
 	/** Host-owned logging plan. `false` installs a silent root. */
 	logging?: false | RuntimeLoggingInput

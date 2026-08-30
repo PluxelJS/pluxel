@@ -254,7 +254,7 @@ Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织�
 
 不要把 secret 放进：
 
-- browser-safe Workbench Contract；
+- browser-safe Workbench DTO/API；
 - config form metadata、description 或 option label；
 - structured log properties；
 - status snapshot、command output 或序列化错误。

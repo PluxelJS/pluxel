@@ -1,391 +1,466 @@
 import { createHash } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
-import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
-import { dirname, resolve } from 'pathe'
-import type {
-	WorkbenchBundleEvent,
-	WorkbenchBundle,
-	WorkbenchBundleState,
-	WorkbenchPluginDescriptor,
-} from '../../workbench/contracts'
-import { readWorkbenchUiEntry, type WorkbenchUiEntry } from '../../workbench/ui-entry'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import {
-	WORKBENCH_FEDERATION_EXPOSE,
+	pluginDefinitionAddressEqual,
+	pluginDefinitionIndexKey,
+	type Context,
+	type PluginDefinitionAddress,
+} from '@pluxel/core'
+import {
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
-	WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
-	sanitizeWorkbenchOwnerName,
-	workbenchFederationModuleId,
-	workbenchFederationRemoteName,
+	WORKBENCH_PROFILE_VERSION,
+	assertWorkbenchFederationSnapshotContract,
+	createWorkbenchFederationCompatibilitySet,
+	createWorkbenchFederationProducerPlan,
+	parseWorkbenchDeclarationIdentity,
+	parseWorkbenchFederationManifestContract,
+	workbenchDeclarationIdentityEqual,
+	type WorkbenchDeclarationIdentity,
+	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
-import { RUNTIME_INTERNAL_API_BASE, runtimeWorkbenchArtifactPath } from '../../web/paths'
-import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
+import { generateSnapshotFromManifest, type Manifest } from '@module-federation/sdk'
+import { extname, isAbsolute, join, relative, resolve } from 'pathe'
+import * as React from 'react'
+import * as ReactDom from 'react-dom'
+import { version as runtimeVersion } from '../../../package.json'
+import { runtimeWorkbenchFederationArtifactPath } from '../../web/paths'
 
-type WorkbenchSourceBinder = (
-	owner: Context,
-	declaration: WorkbenchUiEntry,
-	contractFingerprint: string,
-) => () => void
-
-export type WorkbenchArtifactHostOptions = Readonly<{
-	root?: string
-	resolve?: (
-		root: Context,
-		owner: PluginNodeAddress,
-		artifactName: string,
-	) => string | null | Promise<string | null>
+export type WorkbenchArtifactCandidate = Readonly<{
+	plan: WorkbenchFederationProducerPlan
+	artifactRoot: string
 }>
 
+export type WorkbenchArtifactEntry = Readonly<{
+	descriptor: WorkbenchDeclarationIdentity
+	expose: `./views/${string}`
+}>
+
+/**
+ * An immutable, validated MF producer revision.
+ *
+ * The standard Manifest remains the browser artifact authority. This record only pins
+ * the Plugin definition/build identity and exact Bridge expose inventory needed by the
+ * Workbench publication and layout planes.
+ */
+export type WorkbenchArtifactRevision = Readonly<{
+	profile: typeof WORKBENCH_PROFILE_VERSION
+	definition: PluginDefinitionAddress
+	producer: string
+	buildRevision: string
+	manifestUrl: string
+	manifestSha256: string
+	entries: readonly WorkbenchArtifactEntry[]
+}>
+
+export type WorkbenchResolvedArtifactEntry = Readonly<{
+	artifact: WorkbenchArtifactRevision
+	entry: WorkbenchArtifactEntry
+}>
+
+export type WorkbenchArtifactFile = Readonly<{
+	body: Uint8Array
+	contentType: string
+	etag: string
+}>
+
+export type WorkbenchArtifactCommit = Readonly<{
+	revision: number
+	current: WorkbenchArtifactRevision
+	previous: WorkbenchArtifactRevision | null
+}>
+
+/** Narrow Registry dependency. It intentionally exposes no compiler/store lifecycle. */
+export type WorkbenchArtifactLookup = Pick<WorkbenchArtifactService, 'resolveEntry'>
+
+type StoredFile = Readonly<{
+	path: string
+	sha256: string
+	size: number
+	contentType: string
+	manifestBytes?: Uint8Array
+}>
+
+type StoredRevision = Readonly<{
+	value: WorkbenchArtifactRevision
+	definitionKey: string
+	fingerprint: string
+	entriesByKey: ReadonlyMap<string, WorkbenchArtifactEntry>
+	files: ReadonlyMap<string, StoredFile>
+}>
+
+const SHA256 = /^[a-f\d]{64}$/
+const PROFILE_COMPATIBILITY = createWorkbenchFederationCompatibilitySet({
+	react: React.version,
+	reactDom: ReactDom.version,
+	runtime: runtimeVersion,
+})
+
+/**
+ * Definition-scoped immutable MF artifact inventory.
+ *
+ * Candidate validation completes before either inventory map is mutated. A committed
+ * revision is addressable only by its exact producer/buildRevision tuple; current
+ * definition lookup never acts as fallback for a pinned read.
+ */
 export class WorkbenchArtifactService {
-	private revision = 0
-	private readonly bundles = new Map<string, WorkbenchBundle>()
-	private readonly states = new Map<string, WorkbenchBundleState>()
-	private readonly roots = new Map<string, { sourceHash: string; dir: string }>()
-	private readonly listeners = new Set<(event: WorkbenchBundleEvent) => void>()
-	private sourceBinder?: WorkbenchSourceBinder
+	private revisionValue = 0
+	private readonly currentByDefinition = new Map<string, StoredRevision>()
+	private readonly revisionsByReference = new Map<string, StoredRevision>()
+	private readonly listeners = new Set<(commit: WorkbenchArtifactCommit) => void>()
 
-	constructor(
-		private readonly root: Context,
-		private readonly host: WorkbenchArtifactHostOptions = Object.freeze({}),
-	) {}
+	constructor(private readonly root: Context) {}
 
-	attachSourceBinder(sourceBinder: WorkbenchSourceBinder): () => void {
-		if (this.sourceBinder) {
-			throw new Error('[pluxel/runtime] Workbench source compiler is already attached.')
-		}
-		this.sourceBinder = sourceBinder
-		let active = true
-		return () => {
-			if (!active) return
-			active = false
-			if (this.sourceBinder === sourceBinder) this.sourceBinder = undefined
-		}
+	get revision(): number {
+		return this.revisionValue
 	}
 
-	registerFor(
-		owner: Context,
-		declaration: WorkbenchUiEntry,
-		contractFingerprint: string,
-	): () => void {
-		if (this.sourceBinder) return this.sourceBinder(owner, declaration, contractFingerprint)
-		return this.registerPackaged(owner, declaration)
-	}
-
-	subscribe(listener: (event: WorkbenchBundleEvent) => void): () => void {
+	subscribe(listener: (commit: WorkbenchArtifactCommit) => void): () => void {
 		this.listeners.add(listener)
 		return () => this.listeners.delete(listener)
 	}
 
-	getCatalog(): {
-		revision: number
-		bundles: readonly WorkbenchBundle[]
-		states: readonly WorkbenchBundleState[]
-	} {
-		return {
-			revision: this.revision,
-			bundles: [...this.bundles.values()].sort(compareBundleOwner),
-			states: [...this.states.values()].sort(compareBundleOwner),
-		}
+	getCurrent(definition: PluginDefinitionAddress): WorkbenchArtifactRevision | undefined {
+		return this.currentByDefinition.get(pluginDefinitionIndexKey(definition))?.value
 	}
 
-	getCompiledModule(owner: PluginNodeAddress): WorkbenchBundle | undefined {
-		return this.bundles.get(pluginNodeIndexKey(owner))
+	getPinned(producer: string, buildRevision: string): WorkbenchArtifactRevision | undefined {
+		return this.revisionsByReference.get(referenceKey(producer, buildRevision))?.value
 	}
 
-	async commitCompiledModule(
-		module: WorkbenchBundle,
-		options?: { artifactRoot?: string | null },
-	): Promise<void> {
-		const ownerKey = pluginNodeIndexKey(module.owner.address)
-		if (options?.artifactRoot) {
-			this.roots.set(workbenchArtifactOwnerKey(module.owner.address), {
-				sourceHash: module.sourceHash,
-				dir: options.artifactRoot,
-			})
-		}
-		const previous = this.getCompiledModule(module.owner.address)
+	resolveEntry(
+		definition: PluginDefinitionAddress,
+		descriptor: WorkbenchDeclarationIdentity,
+	): WorkbenchResolvedArtifactEntry | undefined {
+		const canonicalDescriptor = parseWorkbenchDeclarationIdentity(descriptor)
+		if (!pluginDefinitionAddressEqual(canonicalDescriptor.owner, definition)) return undefined
+		const stored = this.currentByDefinition.get(pluginDefinitionIndexKey(definition))
+		const entry = stored?.entriesByKey.get(descriptorKey(canonicalDescriptor))
 		if (
-			previous?.sourceHash === module.sourceHash &&
-			previous.compiledAt === module.compiledAt &&
-			this.states.get(ownerKey)?.state === 'ready'
+			!stored ||
+			!entry ||
+			!workbenchDeclarationIdentityEqual(entry.descriptor, canonicalDescriptor)
 		) {
-			return
+			return undefined
 		}
-		this.bundles.set(ownerKey, module)
-		this.states.set(ownerKey, {
-			owner: module.owner,
-			state: 'ready',
-			updatedAt: module.compiledAt,
-			sourceHash: module.sourceHash,
-			compiledAt: module.compiledAt,
-		})
-		this.emit({ type: 'update', ...module, revision: this.nextRevision() })
+		return Object.freeze({ artifact: stored.value, entry })
 	}
 
-	async markCompiling(
-		owner: WorkbenchPluginDescriptor,
-		options?: { updatedAt?: number; sourceHash?: string; compiledAt?: number },
-	): Promise<void> {
-		const state: WorkbenchBundleState = {
-			owner,
-			state: 'building',
-			updatedAt: options?.updatedAt ?? Date.now(),
-			sourceHash: options?.sourceHash,
-			compiledAt: options?.compiledAt,
+	async commitCandidate(candidate: WorkbenchArtifactCandidate): Promise<WorkbenchArtifactRevision> {
+		const prepared = await prepareCandidate(candidate)
+		const reference = referenceKey(prepared.value.producer, prepared.value.buildRevision)
+		const existing = this.revisionsByReference.get(reference)
+		if (existing) {
+			if (existing.fingerprint !== prepared.fingerprint) {
+				throw new Error(
+					`[workbench] immutable federation revision collision: ${prepared.value.producer}@${prepared.value.buildRevision}`,
+				)
+			}
+			const current = this.currentByDefinition.get(prepared.definitionKey)
+			if (current === existing) return existing.value
+			return this.commit(existing)
 		}
-		this.states.set(pluginNodeIndexKey(owner.address), state)
-		this.emit({ type: 'building', revision: this.nextRevision(), ...state })
+
+		this.revisionsByReference.set(reference, prepared)
+		return this.commit(prepared)
 	}
 
-	async markCompileError(
-		owner: WorkbenchPluginDescriptor,
-		error: unknown,
-		options?: { updatedAt?: number; sourceHash?: string; compiledAt?: number },
-	): Promise<void> {
-		const state: WorkbenchBundleState = {
-			owner,
-			state: 'error',
-			updatedAt: options?.updatedAt ?? Date.now(),
-			sourceHash: options?.sourceHash,
-			compiledAt: options?.compiledAt,
-			message: errorMessage(error),
-		}
-		this.states.set(pluginNodeIndexKey(owner.address), state)
-		this.emit({
-			type: 'error',
-			revision: this.nextRevision(),
-			owner,
-			updatedAt: state.updatedAt,
-			sourceHash: state.sourceHash,
-			compiledAt: state.compiledAt,
-			message: state.message ?? 'Unknown workbench UI build error',
-		})
-	}
-
-	async removePlugin(owner: WorkbenchPluginDescriptor): Promise<void> {
-		const ownerKey = pluginNodeIndexKey(owner.address)
-		this.roots.delete(workbenchArtifactOwnerKey(owner.address))
-		this.states.delete(ownerKey)
-		if (!this.bundles.delete(ownerKey)) return
-		this.emit({ type: 'remove', revision: this.nextRevision(), owner })
-	}
-
-	resolveArtifactFile(ownerKey: string, sourceHash: string, file: string): string | null {
-		const normalized = normalizeArtifactFile(file)
+	/**
+	 * Reads one file from an exact committed revision and verifies its immutable digest.
+	 * Unknown revisions/files return `null`; the current definition revision is never used
+	 * as a fallback. The Manifest bytes are returned exactly as emitted by MF.
+	 */
+	async readArtifactFile(
+		producer: string,
+		buildRevision: string,
+		file: string,
+	): Promise<WorkbenchArtifactFile | null> {
+		const normalized = normalizeArtifactPath(file)
 		if (!normalized) return null
-		const stored = this.roots.get(ownerKey)
-		const baseDir = stored?.sourceHash === sourceHash ? stored.dir : null
-		if (!baseDir) return null
-		const fullPath = resolve(baseDir, normalized)
-		if (fullPath !== baseDir && !fullPath.startsWith(`${baseDir}/`)) return null
-		return fullPath
-	}
+		const stored = this.revisionsByReference.get(referenceKey(producer, buildRevision))
+		const expected = stored?.files.get(normalized)
+		if (!stored || !expected) return null
 
-	private registerPackaged(owner: Context, declaration: WorkbenchUiEntry): () => void {
-		const ownerDescriptor: WorkbenchPluginDescriptor = Object.freeze({
-			address: owner.pluginInfo.nodeAddress,
-			displayName: owner.pluginInfo.displayName,
-			rootExportName: owner.pluginInfo.definitionAddress.exportName,
-		})
-		const uiEntry = readWorkbenchUiEntry(declaration)
-		let disposed = false
-		void this.registerPackagedModule(
-			ownerDescriptor,
-			uiEntry.artifactKey ?? workbenchArtifactOwnerKey(ownerDescriptor.address),
-			() => disposed,
-		).catch((error) => {
-			if (!disposed) {
-				void this.markCompileError(ownerDescriptor, error)
-				owner.logger.error('failed to register workbench UI artifact', { error })
-			}
-		})
-		const guard = owner.effects.defer(() => {
-			disposed = true
-			void this.removePlugin(ownerDescriptor)
-		})
-		return () => guard.dispose()
-	}
-
-	private async registerPackagedModule(
-		owner: WorkbenchPluginDescriptor,
-		artifactName: string,
-		isDisposed: () => boolean,
-	): Promise<void> {
-		const manifestPath = await this.resolvePackagedManifestPath(owner.address, artifactName)
-		if (!manifestPath || isDisposed()) {
-			if (!isDisposed()) {
-				throw new Error(`packaged workbench UI artifact not found: ${artifactName}`)
-			}
-			return
-		}
-		const [content, fileStat] = await Promise.all([
-			readFile(manifestPath, 'utf8').catch((): null => null),
-			stat(manifestPath).catch((): null => null),
-		])
-		if (!content || !fileStat?.isFile()) {
-			throw new Error(`packaged workbench UI manifest not found: ${manifestPath}`)
-		}
-		const artifactRoot = dirname(manifestPath)
-		const remoteEntry = await readFile(
-			resolve(artifactRoot, WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE),
-		).catch((): null => null)
-		if (!remoteEntry) {
+		const body = expected.manifestBytes
+			? Buffer.from(expected.manifestBytes)
+			: await readFile(expected.path).catch((): null => null)
+		if (!body || body.byteLength !== expected.size || sha256(body) !== expected.sha256) {
 			throw new Error(
-				`incomplete workbench UI artifact for ${owner.displayName}: remoteEntry.js missing`,
+				`[workbench] committed federation artifact changed: ${producer}@${buildRevision}/${normalized}`,
 			)
 		}
-		await validatePackagedManifest(artifactRoot, artifactName, content)
-		if (isDisposed()) return
-		const sourceHash = createHash('sha256')
-			.update(content)
-			.update(remoteEntry)
-			.digest('hex')
-			.slice(0, 16)
-		await this.commitCompiledModule(
-			createCompiledWorkbenchArtifact({
-				owner,
-				artifactName,
-				sourceHash,
-				compiledAt: Math.floor(fileStat.mtimeMs || Date.now()),
-			}),
-			{ artifactRoot },
-		)
+		return Object.freeze({
+			body,
+			contentType: expected.contentType,
+			etag: `"sha256-${expected.sha256}"`,
+		})
 	}
 
-	private async resolvePackagedManifestPath(
-		owner: PluginNodeAddress,
-		artifactName: string,
-	): Promise<string | null> {
-		const deploymentRoot = this.host.root ?? ''
-		if (deploymentRoot) {
-			return resolveDeploymentWorkbenchManifestPath(deploymentRoot, artifactName)
-		}
-		return (await this.host.resolve?.(this.root, owner, artifactName)) ?? null
-	}
-
-	private nextRevision(): number {
-		this.revision += 1
-		return this.revision
-	}
-
-	private emit(event: WorkbenchBundleEvent): void {
+	private commit(stored: StoredRevision): WorkbenchArtifactRevision {
+		const previous = this.currentByDefinition.get(stored.definitionKey)
+		if (previous === stored) return stored.value
+		this.currentByDefinition.set(stored.definitionKey, stored)
+		this.revisionValue += 1
+		const commit = Object.freeze({
+			revision: this.revisionValue,
+			current: stored.value,
+			previous: previous?.value ?? null,
+		})
 		for (const listener of this.listeners) {
 			try {
-				listener(event)
+				listener(commit)
 			} catch (error) {
-				this.root.logger.error('workbench artifact listener failed', { error })
+				this.root.logger.error('workbench artifact commit listener failed', { error })
 			}
 		}
+		return stored.value
 	}
 }
 
-export function resolveDeploymentWorkbenchManifestPath(
-	deploymentRoot: string,
-	artifactName: string,
-): string {
-	return resolve(
-		deploymentRoot,
-		sanitizeWorkbenchOwnerName(artifactName),
-		WORKBENCH_FEDERATION_MANIFEST_FILE,
-	)
-}
-
-async function validatePackagedManifest(
-	artifactRoot: string,
-	pluginName: string,
-	content: string,
-): Promise<void> {
-	type AssetGroup = {
-		js?: { sync?: string[]; async?: string[] }
-		css?: { sync?: string[]; async?: string[] }
-	}
-	type Manifest = {
-		name?: string
-		metaData?: { name?: string; remoteEntry?: { name?: string } }
-		exposes?: Array<{ name?: string; assets?: AssetGroup }>
-	}
-	let manifest: Manifest
-	try {
-		manifest = JSON.parse(content) as Manifest
-	} catch (error) {
-		throw new Error(`invalid workbench UI manifest for ${pluginName}`, { cause: error })
-	}
-	if (manifest.metaData?.remoteEntry?.name !== WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE) {
-		throw new Error(`invalid workbench UI remote entry for ${pluginName}`)
-	}
-	const expectedName = workbenchFederationRemoteName(pluginName)
-	const actualName = manifest.name ?? manifest.metaData?.name
-	if (actualName && actualName !== expectedName) {
+async function prepareCandidate(candidate: WorkbenchArtifactCandidate): Promise<StoredRevision> {
+	const plan = canonicalPlan(candidate?.plan)
+	const artifactRoot = await canonicalDirectory(candidate?.artifactRoot)
+	const manifestPath = resolve(artifactRoot, WORKBENCH_FEDERATION_MANIFEST_FILE)
+	const manifestBytes = await readFile(manifestPath).catch((error) => {
 		throw new Error(
-			`workbench UI artifact owner mismatch: expected ${expectedName}, got ${actualName}`,
+			`[workbench] federation candidate has no ${WORKBENCH_FEDERATION_MANIFEST_FILE}`,
+			{ cause: error },
+		)
+	})
+	let manifest: Manifest
+	let manifestFiles: readonly string[]
+	try {
+		const input = JSON.parse(Buffer.from(manifestBytes).toString('utf-8')) as unknown
+		manifestFiles = parseWorkbenchFederationManifestContract(input, {
+			plan,
+			compatibility: PROFILE_COMPATIBILITY,
+		}).files
+		manifest = input as Manifest
+	} catch (error) {
+		throw new TypeError(
+			`[workbench] federation manifest contract is invalid: ${errorMessage(error)}`,
+			{ cause: error },
 		)
 	}
-	const exposeName = workbenchFederationModuleId(WORKBENCH_FEDERATION_EXPOSE)
-	const expose = manifest.exposes?.find(
-		(item) => item.name === WORKBENCH_FEDERATION_EXPOSE || item.name === exposeName,
-	)
-	if (!expose) throw new Error(`workbench UI expose missing for ${pluginName}`)
-	const files = [
-		...(expose.assets?.js?.sync ?? []),
-		...(expose.assets?.js?.async ?? []),
-		...(expose.assets?.css?.sync ?? []),
-		...(expose.assets?.css?.async ?? []),
-	]
-	for (const file of files) {
-		const normalized = normalizeArtifactFile(file)
-		if (!normalized) throw new Error(`invalid workbench UI asset path for ${pluginName}: ${file}`)
-		const fileStat = await stat(resolve(artifactRoot, normalized)).catch((): null => null)
-		if (!fileStat?.isFile()) {
-			throw new Error(`workbench UI asset missing for ${pluginName}: ${normalized}`)
-		}
+	try {
+		const snapshot = generateSnapshotFromManifest(manifest, { version: plan.buildRevision })
+		assertWorkbenchFederationSnapshotContract(snapshot, plan)
+	} catch (error) {
+		throw new TypeError(
+			`[workbench] federation manifest cannot produce the required Snapshot: ${errorMessage(error)}`,
+			{ cause: error },
+		)
 	}
-}
-
-export function createCompiledWorkbenchArtifact(input: {
-	owner: WorkbenchPluginDescriptor
-	artifactName?: string
-	sourceHash: string
-	compiledAt?: number
-}): WorkbenchBundle {
-	const compiledAt = input.compiledAt ?? Date.now()
-	const ownerKey = workbenchArtifactOwnerKey(input.owner.address)
-	return {
-		owner: input.owner,
-		remoteName: workbenchFederationRemoteName(input.artifactName ?? ownerKey),
-		remoteEntryUrl: `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactPath(
-			ownerKey,
-			input.sourceHash,
-			WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
-		)}`,
-		exposedModule: WORKBENCH_FEDERATION_EXPOSE,
-		sourceHash: input.sourceHash,
-		compiledAt,
+	const files = new Map<string, StoredFile>()
+	for (const file of manifestFiles) {
+		const filePath = await canonicalArtifactFile(artifactRoot, file)
+		const bytes =
+			file === WORKBENCH_FEDERATION_MANIFEST_FILE ? manifestBytes : await readFile(filePath)
+		files.set(
+			file,
+			Object.freeze({
+				path: filePath,
+				sha256: sha256(bytes),
+				size: bytes.byteLength,
+				contentType: contentTypeForFile(file),
+				...(file === WORKBENCH_FEDERATION_MANIFEST_FILE
+					? { manifestBytes: Uint8Array.from(bytes) }
+					: {}),
+			}),
+		)
 	}
-}
 
-/** Opaque physical URL index. Workbench identity remains the structured address in its DTO. */
-export function workbenchArtifactOwnerKey(owner: PluginNodeAddress): string {
-	return pluginNodePhysicalKey(owner)
-}
-
-function compareBundleOwner(
-	left: { owner: WorkbenchPluginDescriptor },
-	right: { owner: WorkbenchPluginDescriptor },
-): number {
-	return pluginNodeIndexKey(left.owner.address).localeCompare(
-		pluginNodeIndexKey(right.owner.address),
+	const entries = Object.freeze(
+		plan.entries.map((entry) =>
+			Object.freeze({ descriptor: entry.descriptor, expose: entry.expose }),
+		),
 	)
+	const entriesByKey = new Map(
+		entries.map((entry) => [descriptorKey(entry.descriptor), entry] as const),
+	)
+	const manifestSha256 = files.get(WORKBENCH_FEDERATION_MANIFEST_FILE)!.sha256
+	const value: WorkbenchArtifactRevision = Object.freeze({
+		profile: WORKBENCH_PROFILE_VERSION,
+		definition: plan.definition,
+		producer: plan.producer,
+		buildRevision: plan.buildRevision,
+		manifestUrl: runtimeWorkbenchFederationArtifactPath(
+			plan.producer,
+			plan.buildRevision,
+			WORKBENCH_FEDERATION_MANIFEST_FILE,
+		),
+		manifestSha256,
+		entries,
+	})
+	const fingerprint = sha256(
+		Buffer.from(
+			[
+				pluginDefinitionIndexKey(plan.definition),
+				plan.producer,
+				plan.buildRevision,
+				...entries.map(
+					(entry) => `${entry.descriptor.kind}:${entry.descriptor.key}:${entry.expose}`,
+				),
+				...[...files.entries()]
+					.sort(([left], [right]) => left.localeCompare(right))
+					.map(([file, storedFile]) => `${file}:${storedFile.sha256}`),
+			].join('\n'),
+		),
+	)
+	return Object.freeze({
+		value,
+		definitionKey: pluginDefinitionIndexKey(plan.definition),
+		fingerprint,
+		entriesByKey,
+		files,
+	})
 }
 
-function normalizeArtifactFile(file: string): string | null {
-	const cleaned = String(file ?? '')
-		.trim()
-		.replace(/^\/+/, '')
-	if (!cleaned || cleaned.split('/').some((part) => !part || part === '..')) return null
-	return cleaned
+function canonicalPlan(input: WorkbenchFederationProducerPlan): WorkbenchFederationProducerPlan {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError('[workbench] federation candidate plan must be an object')
+	}
+	const keys = Object.keys(input).sort()
+	if (
+		keys.length !== 5 ||
+		keys.some(
+			(key, index) =>
+				key !== ['buildRevision', 'definition', 'entries', 'producer', 'profile'][index],
+		)
+	) {
+		throw new TypeError('[workbench] federation candidate plan has invalid fields')
+	}
+	if (!Array.isArray(input.entries)) {
+		throw new TypeError('[workbench] federation candidate entries must be an array')
+	}
+	const canonical = createWorkbenchFederationProducerPlan({
+		definition: input.definition,
+		buildRevision: input.buildRevision,
+		entries: input.entries.map((entry) => ({
+			descriptor: entry.descriptor,
+			bridgeEntryPath: entry.bridgeEntryPath,
+		})),
+	})
+	if (
+		input.profile !== canonical.profile ||
+		input.producer !== canonical.producer ||
+		input.buildRevision !== canonical.buildRevision ||
+		!pluginDefinitionAddressEqual(input.definition, canonical.definition) ||
+		input.entries.length !== canonical.entries.length ||
+		input.entries.some((entry, index) => {
+			const expected = canonical.entries[index]
+			return (
+				!expected ||
+				entry.expose !== expected.expose ||
+				entry.bridgeEntryPath !== expected.bridgeEntryPath ||
+				!workbenchDeclarationIdentityEqual(entry.descriptor, expected.descriptor)
+			)
+		})
+	) {
+		throw new TypeError('[workbench] federation candidate plan is not canonical')
+	}
+	return canonical
+}
+
+async function canonicalDirectory(input: unknown): Promise<string> {
+	if (typeof input !== 'string' || !isAbsolute(input)) {
+		throw new TypeError('[workbench] federation artifactRoot must be an absolute path')
+	}
+	const root = await realpath(input).catch((error) => {
+		throw new Error('[workbench] federation artifactRoot does not exist', { cause: error })
+	})
+	const rootStat = await stat(root)
+	if (!rootStat.isDirectory()) {
+		throw new TypeError('[workbench] federation artifactRoot must be a directory')
+	}
+	return root
+}
+
+async function canonicalArtifactFile(root: string, file: string): Promise<string> {
+	const normalized = normalizeArtifactPath(file)
+	if (!normalized) throw new TypeError(`[workbench] invalid federation artifact path: ${file}`)
+	const path = await realpath(join(root, normalized)).catch((error) => {
+		throw new Error(`[workbench] federation artifact is missing: ${normalized}`, {
+			cause: error,
+		})
+	})
+	const fromRoot = relative(root, path)
+	if (!fromRoot || fromRoot.startsWith('..') || isAbsolute(fromRoot)) {
+		throw new TypeError(`[workbench] federation artifact escapes its root: ${normalized}`)
+	}
+	const fileStat = await stat(path)
+	if (!fileStat.isFile()) {
+		throw new TypeError(`[workbench] federation artifact is not a file: ${normalized}`)
+	}
+	return path
+}
+
+function normalizeArtifactPath(input: unknown): string | null {
+	if (
+		typeof input !== 'string' ||
+		!input ||
+		input.startsWith('/') ||
+		input.includes('\\') ||
+		input.includes('\0') ||
+		input.includes('?') ||
+		input.includes('#') ||
+		/^[A-Za-z][A-Za-z\d+.-]*:/.test(input)
+	) {
+		return null
+	}
+	const value = input.startsWith('./') ? input.slice(2) : input
+	const segments = value.split('/')
+	if (segments.some((segment) => !segment || segment === '.' || segment === '..')) return null
+	return segments.join('/')
+}
+
+function descriptorKey(descriptor: WorkbenchDeclarationIdentity): string {
+	return `${descriptor.kind}\0${descriptor.key}`
+}
+
+function referenceKey(producer: string, buildRevision: string): string {
+	if (
+		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(producer) ||
+		!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(buildRevision)
+	) {
+		return ''
+	}
+	return `${producer}\0${buildRevision}`
+}
+
+function sha256(input: Uint8Array): string {
+	const value = createHash('sha256').update(input).digest('hex')
+	if (!SHA256.test(value)) throw new Error('unreachable SHA-256 state')
+	return value
+}
+
+function contentTypeForFile(path: string): string {
+	switch (extname(path).toLowerCase()) {
+		case '.js':
+		case '.mjs':
+			return 'application/javascript; charset=utf-8'
+		case '.css':
+			return 'text/css; charset=utf-8'
+		case '.json':
+		case '.map':
+			return 'application/json; charset=utf-8'
+		case '.svg':
+			return 'image/svg+xml'
+		case '.png':
+			return 'image/png'
+		case '.jpg':
+		case '.jpeg':
+			return 'image/jpeg'
+		case '.woff':
+			return 'font/woff'
+		case '.woff2':
+			return 'font/woff2'
+		case '.zip':
+			return 'application/zip'
+		default:
+			return 'application/octet-stream'
+	}
 }
 
 function errorMessage(error: unknown): string {
-	if (error instanceof Error && error.message) return error.message
-	if (typeof error === 'string' && error.trim()) return error.trim()
-	return 'Unknown workbench UI build error'
+	return error instanceof Error ? error.message : String(error)
 }

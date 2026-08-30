@@ -47,10 +47,7 @@ import {
 	type SvgCanvas,
 } from '@napi-rs/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
-import { FontsSelectionPort } from '@pluxel/fonts/workbench'
 import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { CanvasConfig, type CanvasPluginConfig } from './config.ts'
 import {
 	CanvasError,
@@ -72,17 +69,9 @@ import {
 import { CanvasTextLayoutController } from './text-layout.ts'
 import { DecodeScheduler, type DecodeSchedulerOwner } from './decode-scheduler.ts'
 import { assertCanvasDimensions, resolveImageDataOwnership } from './worker-internal.ts'
+import { CanvasWorkbench } from './workbench.ts'
 
 const GENERIC_FONT_FAMILIES = new Set(['serif', 'sans-serif', 'monospace'])
-
-const CanvasWorkbench = workbench.portOutlet({
-	id: 'Fonts',
-	port: FontsSelectionPort,
-	placement: workbenchContract.tab({
-		label: 'Fonts',
-		icon: workbenchContract.icons.Typography,
-	}),
-})
 
 type CanvasGeneration = Readonly<{
 	scheduler: DecodeScheduler
@@ -160,8 +149,8 @@ export class CanvasPlugin extends BasePlugin {
 			},
 			{ tag: 'canvas-generation' },
 		)
-		this.ctx.workbench?.mount(CanvasWorkbench, {
-			selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
+		this.ctx.workbench?.publish(CanvasWorkbench, {
+			fonts: { provider: this.fonts },
 		})
 	}
 

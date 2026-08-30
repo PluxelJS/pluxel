@@ -57,6 +57,10 @@
 			"@pluxel/source": "./src/internal-static-host.ts",
 			"default": "./dist/internal/static-host.mjs"
 		},
+		"./internal/workbench-react": {
+			"@pluxel/source": "./src/workbench/react-internal.tsx",
+			"default": "./dist/internal/workbench-react.mjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger.ts",
 			"default": "./dist/logger.mjs"
@@ -81,29 +85,29 @@
 			"@pluxel/source": "./src/web.ts",
 			"default": "./dist/web.mjs"
 		},
-		"./web/internal": {
-			"@pluxel/source": "./src/web-internal.ts",
-			"default": "./dist/web/internal.mjs"
-		},
 		"./web/react": {
 			"@pluxel/source": "./src/web-react.ts",
 			"default": "./dist/web/react.mjs"
+		},
+		"./web/session": {
+			"@pluxel/source": "./src/web/session/index.ts",
+			"default": "./dist/web/session.mjs"
 		},
 		"./workbench": {
 			"@pluxel/source": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
 		},
-		"./workbench/contract": {
-			"@pluxel/source": "./src/workbench-contract.ts",
-			"default": "./dist/workbench/contract.mjs"
+		"./workbench/client": {
+			"@pluxel/source": "./src/workbench/client.ts",
+			"default": "./dist/workbench/client.mjs"
 		},
-		"./workbench/ui": {
-			"@pluxel/source": "./src/workbench-ui.ts",
-			"default": "./dist/workbench/ui.mjs"
+		"./workbench/federation": {
+			"@pluxel/source": "./src/workbench/federation.ts",
+			"default": "./dist/workbench/federation.mjs"
 		},
-		"./workbench/ui/internal": {
-			"@pluxel/source": "./src/workbench-ui-internal.ts",
-			"default": "./dist/workbench/ui/internal.mjs"
+		"./workbench/react": {
+			"@pluxel/source": "./src/workbench/react.tsx",
+			"default": "./dist/workbench/react.mjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -121,18 +125,19 @@
 			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
+			"./internal/workbench-react": "./dist/internal/workbench-react.mjs",
 			"./logger": "./dist/logger.mjs",
 			"./product": "./dist/product.mjs",
 			"./services/vault": "./dist/services/vault.mjs",
 			"./test": "./dist/test.mjs",
 			"./toolchain": "./dist/toolchain.mjs",
 			"./web": "./dist/web.mjs",
-			"./web/internal": "./dist/web/internal.mjs",
 			"./web/react": "./dist/web/react.mjs",
+			"./web/session": "./dist/web/session.mjs",
 			"./workbench": "./dist/workbench.mjs",
-			"./workbench/contract": "./dist/workbench/contract.mjs",
-			"./workbench/ui": "./dist/workbench/ui.mjs",
-			"./workbench/ui/internal": "./dist/workbench/ui/internal.mjs",
+			"./workbench/client": "./dist/workbench/client.mjs",
+			"./workbench/federation": "./dist/workbench/federation.mjs",
+			"./workbench/react": "./dist/workbench/react.mjs",
 			"./package.json": "./package.json"
 		}
 	},
@@ -148,15 +153,17 @@
 	},
 	"dependencies": {
 		"@electric-sql/pglite": "^0.5.4",
-		"@elysiajs/eden": "1.0.0-beta.5",
 		"@logtape/file": "^2.0.2",
 		"@logtape/logtape": "^2.0.2",
 		"@logtape/pretty": "^2.0.2",
+		"@module-federation/bridge-react": "2.7.0",
+		"@module-federation/runtime": "2.7.0",
+		"@module-federation/sdk": "2.7.0",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@sinclair/typebox": "^0.34.48",
 		"age-encryption": "^0.3.0",
-		"capnweb": "^0.5.0",
+		"capnweb": "0.5.0",
 		"drizzle-orm": "catalog:",
 		"elysia": "2.0.0-beta.7",
 		"jose": "^6.2.3",
@@ -187,14 +194,15 @@
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
-		"react": "catalog:"
+		"react": "catalog:",
+		"react-dom": "catalog:"
 	},
 	"peerDependenciesMeta": {
 		"react": {
 			"optional": true
+		},
+		"react-dom": {
+			"optional": true
 		}
-	},
-	"pluxel": {
-		"workbenchContractProtocol": 2
 	}
 }

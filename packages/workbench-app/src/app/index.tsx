@@ -2,10 +2,9 @@ import { localStorageColorSchemeManager, MantineProvider } from '@mantine/core'
 import { type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
-	getRuntimeManagementClient,
-	getRuntimeTransportClient,
+	createRuntimeManagementClient,
+	type RuntimeClientBootstrap,
 	RuntimeManagementClientProvider,
-	RuntimeTransportClientProvider,
 } from '../runtime'
 import './bootstrap'
 import '../styles/index.scss'
@@ -14,15 +13,16 @@ import { ProductProvider } from './product'
 import { createAppRouter } from './router'
 import { WorkspaceControllerProvider } from './workbench/context'
 import { WorkspaceController } from './workbench/store'
+import { WorkbenchSessionProvider } from '../workbench/runtime'
 
 export interface AppProps {
+	bootstrap: Extract<RuntimeClientBootstrap, { kind: 'workbench' }>
 	history?: RouterHistory
 }
 
-export function App({ history }: AppProps = {}) {
+export function App({ bootstrap, history }: AppProps) {
 	const [router] = useState(() => createAppRouter({ history }))
-	const [transportClient] = useState(() => getRuntimeTransportClient())
-	const [managementClient] = useState(() => getRuntimeManagementClient())
+	const [managementClient] = useState(() => createRuntimeManagementClient(bootstrap.management))
 	const [workspace] = useState(() => new WorkspaceController(router.state.location.pathname))
 	const { theme } = useAppTheme()
 	return (
@@ -33,15 +33,15 @@ export function App({ history }: AppProps = {}) {
 			withCssVariables
 			cssVariablesResolver={appCssVariablesResolver}
 		>
-			<RuntimeTransportClientProvider client={transportClient}>
-				<RuntimeManagementClientProvider client={managementClient}>
+			<RuntimeManagementClientProvider client={managementClient}>
+				<WorkbenchSessionProvider session={bootstrap.workbench}>
 					<ProductProvider client={managementClient}>
 						<WorkspaceControllerProvider controller={workspace}>
 							<RouterProvider router={router} />
 						</WorkspaceControllerProvider>
 					</ProductProvider>
-				</RuntimeManagementClientProvider>
-			</RuntimeTransportClientProvider>
+				</WorkbenchSessionProvider>
+			</RuntimeManagementClientProvider>
 		</MantineProvider>
 	)
 }

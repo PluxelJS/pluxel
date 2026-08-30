@@ -126,8 +126,8 @@ Plugin semantic output 是已构建 Plugin 与 Core/runtime 之间的发布契�
 
 helper 只把 sealed immutable facts 写入 module-evaluation scoped `WeakMap` staging。canonical namespace 完成求值后，route 对每个 root
 constructor 调用 `consumePluginDefinitionCandidate()`；首次读取原子组合 decorator marker、definition、config 与 reachable Part facts，
-验证后删除 staging并缓存唯一 frozen candidate object，同一 evaluated constructor 的后续 host/route读取严格返回该对象。HMR通过新constructor
-产生新candidate，不做cache invalidation。Part facts 可跨多个 definition 复用，但没有 global facts revision、metadata clone、双读或
+验证后删除 staging 并缓存唯一 frozen candidate object，同一 evaluated constructor 的后续 host/route 读取严格返回该对象。HMR 通过新 constructor
+产生新 candidate，不做 cache invalidation。Part facts 可跨多个 definition 复用，但没有 global facts revision、metadata clone、双读或
 candidate ingestion 后的 setter mutation。
 
 lowering trust boundary 使用三个稳定 code：ABI 不支持为 `plugin_lowering_abi_unsupported`，declaration 缺失为
@@ -135,8 +135,8 @@ lowering trust boundary 使用三个稳定 code：ABI 不支持为 `plugin_lower
 ECMAScript instance `#private` field/method/accessor 在 semantic pass 以
 `plugin_caller_view_private_brand_unsupported` hard diagnostic 拒绝，避免 caller facade 在运行时才触发 private brand 错误。
 Plugin inheritance chain 的 function-valued instance field（arrow、function expression、`.bind()`）同样以
-`plugin_caller_view_callable_field_unsupported` hard diagnostic 拒绝；跨节点 callable surface 必须是 prototype method，accessor只返回
-普通数据或有独立receiver/withdrawal契约的对象handle。Core 仍对无法静态证明的动态 callable field 和 accessor-returned function
+`plugin_caller_view_callable_field_unsupported` hard diagnostic 拒绝；跨节点 callable surface 必须是 prototype method，accessor 只返回
+普通数据或有独立 receiver/withdrawal 契约的对象 handle。Core 仍对无法静态证明的动态 callable field 和 accessor-returned function
 保留 runtime fail-fast 防线。type-only `declare` instance field 不产生 caller facade 的 construction-time descriptor，以
 `plugin_caller_view_declared_field_unsupported` hard diagnostic 拒绝。
 
@@ -149,7 +149,7 @@ Part facts 服务 occurrence construction 与来源诊断，不建立第二张 g
 
 `pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
 Rolldown。`pluginPackage()` 与 `staticApplication()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
-legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench declaration extraction 和 decorator
+legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench semantic lowering 和 decorator
 output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
 `runWithTsdown()` 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
 
@@ -311,7 +311,7 @@ Node target 用 `nf3` externalize 并追踪 native/non-bundleable 或无法安�
 `pg-pool` 的 CommonJS 构造器语义。这只是 bundler 无法安全内联部分的 fallback，不是部署端 package install 模式。当前
 freezer 只发布 Node application；在提供真正 platform-neutral 的 runtime/service closure 前，不生成伪 neutral Worker bundle。
 Managed database driver 默认同时追踪 PGlite 与 `pg`；`managedDatabaseDrivers` 可以按 deployment 收窄实际复制的 driver。
-未选择的 driver 被 lowering 成明确 absent module，使 dead runtime branch 不会反向进入 bundle或留下 unresolved external；
+未选择的 driver 被 lowering 成明确 absent module，使 dead runtime branch 不会反向进入 bundle 或留下 unresolved external；
 选择与 startup config 不一致会在真正加载 driver 时明确失败，而不是从 build config 猜测或改写 canonical `configure()`。
 Production source map 可用 `sourcemapExcludeSources` 省略重复的 `sourcesContent`，仍保留 Node stack mapping 所需的
 source path、name 和 mapping；是否另存完整源码归档由 deployment/release policy 决定。
@@ -325,37 +325,42 @@ application 虽然会从 runtime root 消费作者 API，但 tree-shake 后不�
 中也会进入 distribution。无法由 NFT 静态发现的 package 内动态资源使用 `residualDependencies.fullTrace`，该列表自动隐含
 `packages`。显式声明但无法解析的 package 必须使构建失败；最终实际闭包仍以 `pluxel-deployment.json` 为准。
 
-`pluxel-deployment.json` 记录 server entry、catalog hash、target、variant、Workbench artifacts 与 residual package facts。
+`pluxel-deployment.json` 记录 server entry、catalog hash、target、variant、Workbench MF producer inventory 与 residual package facts。
 runtime 以 bootstrap 注入的 deployment root 读取产物，不从 workspace package root 或 `process.cwd()` 推断。
 
 同一 final assembly 的最后一步调用 `@pluxel/rolldown/distribution` 生成确定性 `pluxel-distribution.json`。如果外部任务之后继续写入
 目录，必须用 `pluxel distribution create` 调用同一 finalizer。完整 inventory、DSSE、offline verification 和 marker 不变量见
 [`DISTRIBUTION.md`](DISTRIBUTION.md)。
 
-Workbench shell/remotes 是 browser artifacts，不内联进 server chunk。shell 使用 `workbench/public/`，remote 使用
-`workbench/<artifact>/`；业务 SPA 可以独立输出到 `public/`，不会覆盖 Workbench manifest。`variant: 'workbench'`
+Workbench shell/producers 是 browser outputs，不内联进 server chunk。Shell 使用 `workbench/public/`，producer 使用
+`workbench/<producer>/<revision>/`，并在 Workbench root 写唯一 `pluxel-workbench-producers.json`。业务 SPA 可以独立输出到
+`public/`，不会覆盖 MF manifest。`variant: 'workbench'`
 表示产物具备能力；是否在某次启动安装 Workbench 仍由 application `configure()` 返回值决定。
 headless 与 workbench 使用分离的 internal Node adapter；headless dependency graph 不解析 Workbench installer/backend，
 不是只依赖 minifier 删除未用分支。
 
-## Source declaration
+## Workbench source declaration
 
-server Extension 使用：
+Browser-safe declaration 使用：
 
 ```ts
-workbench.extension({
-	contract: BrowserSafeContract,
-	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
+export const ExampleWorkbench = workbench.define({
+	settings: workbench.view<SettingsApi>({
+		renderer: workbench.entry(import.meta.url, './ui/settings.tsx'),
+		placement: workbench.tab({ label: 'Settings' }),
+	}),
 })
 ```
 
-Rolldown 静态提取 literal entry，并按 declaration module、entry path、source graph、Contract/shared versions 和
-compiler version 生成稳定 artifact key。构建 transform 把该 key 注入 `workbench.entry()` 的 internal 第三参数；
-作者不声明 owner address。artifact 按 key 内容寻址，committed mount 时才关联 Context 的 Plugin node owner。
+Semantic pass 在 TypeScript 擦除前解析 `workbench.define()`、entry key、View/Attachment kind 与 literal
+`workbench.entry(import.meta.url, relativePath)`，再与 owning canonical `PluginDefinitionAddress` 合成 declaration identity。
+同一 Plugin definition 的全部 renderers 被 lower 成一个 `WorkbenchFederationProducerPlan`；每个 declaration 生成一个
+stable `./views/<key>` expose 和 generated React Bridge entry。作者不声明 owner、remote name、expose、public path、
+manifest URL、shared 或 Bridge wrapper。
 
-UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe contract、
-`@pluxel/runtime/workbench/contract`、`@pluxel/runtime/workbench/ui` 和公开 UI peers，不得包含 server Workbench
-entry、Plugin、Context 或 Node API。
+UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe Workbench definition、
+`@pluxel/runtime/capnweb` 类型、`@pluxel/runtime/workbench/react` 和公开 UI peers，不得包含 Plugin implementation、
+Context、database handle 或 Node API。
 
 额外 Node entry 使用 module-level declaration：
 
@@ -372,14 +377,14 @@ const resizeTask = defineWorkerTask<ResizeInput, ResizeOutput>(
 )
 ```
 
-唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中提取 Workbench 与 Node declaration，并注入由
-package identity/version、package-relative declaration path 和 literal entry 生成的 stable key。Node branch 输出
-`dist/artifacts/node/<artifact-key>.mjs`；它与 UI branch 共享 declaration identity、source/build hash、缓存、去重与
-原子发布，但使用独立 Node graph、validator 和 Vite target config。`workbench: false` 只关闭 UI branch。
+唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中收集已 lower 的 Workbench producer plans 与 Node
+declarations。Node branch 输出 `dist/artifacts/node/<artifact-key>.mjs`；Workbench 和 Node 使用独立 identity、
+source/build revision、validator 和 target config，只共享 build orchestration 与 bounded admission。`workbench: false`
+只关闭 UI branch。
 
-production lowering 的 stable identity、`pluginArtifactBuildPlugin` coordinator 与 Node artifact compiler 共同位于
-`packages/rolldown/src/plugin-artifact/`。Workbench remote validator/build primitive 仍留在 `src/workbench/` 与 `src/vite/`：
-co-location 只收拢共同 declaration/build lifecycle，不把 browser artifact 实现和 Node compiler 混成一个模块。
+Production lowering、`pluginArtifactBuildPlugin` coordinator 与 Node artifact compiler 位于
+`packages/rolldown/src/plugin-artifact/`。Workbench semantic lowering、MF validation/build primitive 位于
+`src/workbench/` 与 `src/vite/`；Node 和 browser output 不共用运行时 identity。
 
 Node artifact 必须是单文件 ESM，不得 value-import Pluxel runtime/core、CSS/browser asset 或嵌套 Pluxel declaration。
 普通 JS/TS dependency 继续内联。唯一受控 residual 是 source graph 中某个 package 自己 direct
@@ -394,30 +399,39 @@ artifact 的静态 import 仍只剩 Node builtins，`onNativeResidual` 继续报
 
 ## Development compiler
 
-runtime-dev artifact compiler：
+Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完整 producer plan：
 
-1. 按 target + declaration key 去重 UI/Node source declaration；
-2. 收集各自 Vite module graph 与相关源文件；
-3. 计算 target-specific source/build hash；
-4. 构建 Federation remote 或单文件 Node ESM 到 content-addressed cache；
-5. generation guard 后原子提交 artifact state；
-6. 最后一个 owner lease unload 时停止 watcher，并有界保留历史 artifact。
+1. 按 definition + build revision + build root 去重 producer task；
+2. 收集 source graph，并把 graph/hash 与 plan 的 build revision 交叉验证；
+3. 在 bounded admission 后构建完整 MF producer candidate；
+4. 验证 standard Manifest/Snapshot、exact exposes/shared/types/assets；
+5. 确认该 plan 仍是 definition 最新 desired revision；
+6. 原子提交 immutable producer inventory；
+7. 有界保留 disk cache，stale candidate 不再获得 authority。
 
-compiler 在绑定 declaration 时立即发布 `building`；ready/error revision 驱动 Workbench，不使用客户端轮询猜测。
+Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench producer commit
+通过 session epoch invalidation 驱动 full document reload，不使用浏览器轮询或页内 remote replacement。
 
-UI build root 按显式 `pluginDirs`、absolute declaration entry 最近的 package root、runtime module、Vite root 的顺序解析。
-dynamic source entry 可以只是宿主目录中的临时 re-export wrapper；absolute UI entry 仍由实际持有 browser source graph 的插件 package
-构建，wrapper 只提供 runtime source anchor，不能改变 Federation shared dependency 的解析边界。relative UI entry 则继续以声明插件的
-runtime module 为基准解析。
+Semantic pass 只使用当前 Vite/application build root。`workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path
+相对其声明模块解析；lowering 从实际 definition/renderer module 收集 source graph，在 build root 的
+`.pluxel/workbench-generated/` 生成 Bridge entry，并把 root-relative entry 写入 producer plan。不接受调用方目录列表、absolute
+renderer declaration、runtime-module fallback 或第二套 build-root discovery；跨 package import 只能成为 source graph provenance，
+不能改变 fixed shared set 的解析边界。
 
 ## Production build
 
-生产构建按 artifact key 输出 `dist/workbench/<artifact>/`。缓存 key 包含源码图、依赖 lockfile、shared version 和
-compiler/build-contract version。UI Contract 和 UI runtime 都是 singleton Federation shared package；shared 集合来自
-`@pluxel/core/federation` 的唯一 contract，remote builder 不接受调用方 Vite、shared、并发或缓存策略覆盖。
-Workbench shell 写入 contract protocol build info；static freezer 在复制 shell 前必须与当前 runtime package
-metadata 核对，缺失或不一致直接使构建失败，不能生成 server/shell 跨版本的静态闭包。
-production remote 不输出内嵌源码的 sourcemap；runtime-dev remote 保留 sourcemap 供开发调试。
+生产构建输出 `dist/workbench/<producer>/<revision>/mf-manifest.json`、`remoteEntry.js`、expose chunks、CSS 和 dynamic
+types，并写 root `dist/workbench/pluxel-workbench-producers.json`。Cache/build revision 包含源码图、lockfile、fixed
+shared compatibility set 和 compiler version。Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
+
+固定 singleton shared 包来自 `@pluxel/core/federation`：React/ReactDOM 及实际 subpaths、MF React Bridge、
+`@pluxel/runtime/workbench`、`/client`、`/react` 和 toolchain-only
+`@pluxel/runtime/internal/workbench-react`。每项使用 exact version、`singleton: true`、`loaded-first`；
+Manifest 缺项或版本不一致使 candidate 失败。Production builder 按同一 build contract 生成 Shell 与 producer，写入 exact
+profile/build-contract producer inventory，并逐项用 canonical plan 和 compatibility set 校验 Manifest/Snapshot；任何不一致都使
+application build 失败。
+
+Production producer 不输出内嵌源码 sourcemap；runtime-dev producer 保留 sourcemap 供开发诊断。
 
 static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
 relative file 与 sha256；artifact builder 同时把受控 native residual 的已解析 entry 交给 NF3，因此只在 worker entry 中出现的

@@ -2,17 +2,25 @@ import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
 import { PluginEventsDeclaredConsumer, PluginEventsDeclaredProducer } from './demo/PluginEventsDemo'
+import {
+	PluginContributionFontConsumer,
+	PluginContributionFontManager,
+} from './demo/PluginContributionFontDemo'
 import { PluginHttpRoutesDemo } from './demo/PluginHttpRoutesDemo'
 import {
 	PluginOptionalIntegrationConsumer,
 	PluginOptionalIntegrationProvider,
 } from './demo/PluginOptionalIntegrationDemo'
+import { PluginWithUI } from './demo/PluginWithUI'
 
 export const staticDemoPlugins = [
 	PluginEventsDeclaredProducer,
 	PluginEventsDeclaredConsumer,
 	PluginOptionalIntegrationProvider,
 	PluginOptionalIntegrationConsumer,
+	PluginContributionFontManager,
+	PluginContributionFontConsumer,
+	PluginWithUI,
 	PluginHttpRoutesDemo,
 ] as const
 
@@ -20,6 +28,8 @@ export const staticDemoAutoStartPlugins = [
 	PluginEventsDeclaredConsumer,
 	PluginOptionalIntegrationProvider,
 	PluginOptionalIntegrationConsumer,
+	PluginContributionFontConsumer,
+	PluginWithUI,
 	PluginHttpRoutesDemo,
 ].map(pluginNodeAddressOf)
 

@@ -2,22 +2,18 @@ import { defineCommand } from '@pluxel/commands'
 import { obj, Type } from '@pluxel/commands/typebox'
 import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin, PluginPart, withRuntimeHost } from '@pluxel/runtime/test'
-import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { Elysia } from 'elysia'
 import { pluginConfigPresentation } from '../../src/api/usecases/pluginConfig'
 import { requireRuntimePluginGraphCoordinator } from '../../src/internal/reconciliation'
 
-const extension = workbench.extension({ contract: workbenchContract.define({}) })
 let partCommands: unknown
 let repeatedPartCommands: unknown
 let ownerCommands: unknown
 let partElysia: unknown
 let repeatedPartElysia: unknown
 let ownerElysia: unknown
-let workbenchError: unknown
 
 class CapabilityPart extends PluginPart<CapabilityOwner> {
 	protected override init() {
@@ -36,11 +32,6 @@ class CapabilityPart extends PluginPart<CapabilityOwner> {
 			}),
 		)
 		this.ctx.elysia.get('/part-capability', () => 'part-route')
-		try {
-			this.ctx.workbench.mount(extension, {})
-		} catch (error) {
-			workbenchError = error
-		}
 	}
 }
 
@@ -75,7 +66,6 @@ describe('PluginPart runtime capabilities', () => {
 		partElysia = undefined
 		repeatedPartElysia = undefined
 		ownerElysia = undefined
-		workbenchError = undefined
 
 		await withRuntimeHost(
 			async (host) => {
@@ -89,9 +79,6 @@ describe('PluginPart runtime capabilities', () => {
 				expect(() => {
 					;(partCommands as { ctx: unknown }).ctx = host.ctx
 				}).toThrow(TypeError)
-				expect(workbenchError).toMatchObject({
-					message: expect.stringContaining('PluginPart cannot mount'),
-				})
 				await expect(host.ctx.commands.execute('part.capability.read', {})).resolves.toEqual({
 					value: 'part',
 				})

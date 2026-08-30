@@ -1,7 +1,10 @@
+import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { PassThrough } from 'node:stream'
 import type { ViteDevServer } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import {
+	attachSrvxViteNodeCarrier,
 	createSrvxViteNodeCarrierClose,
 	dispatchSrvxViteNodeRequest,
 } from '../src/vite-node-carrier'
@@ -40,6 +43,30 @@ function createResponse(overrides: Partial<ServerResponse> = {}) {
 		writableEnded: false,
 		...overrides,
 	} as unknown as ServerResponse
+}
+
+function createUpgradeServer() {
+	const httpServer = new EventEmitter()
+	const use = vi.fn()
+	const error = vi.fn()
+	const server = {
+		config: {
+			base: '/base/',
+			logger: { error },
+			server: { hmr: { path: 'hmr' }, port: 5173 },
+		},
+		httpServer,
+		middlewares: { use },
+		ssrFixStacktrace: vi.fn(),
+	} as unknown as ViteDevServer
+	return { error, httpServer, server, use }
+}
+
+function createUpgradeRequest(url: string, protocol?: string): IncomingMessage {
+	return {
+		headers: protocol === undefined ? {} : { 'sec-websocket-protocol': protocol },
+		url,
+	} as IncomingMessage
 }
 
 describe('Vite Node carrier boundaries', () => {
@@ -89,5 +116,92 @@ describe('Vite Node carrier boundaries', () => {
 		await expect(second).rejects.toThrow('srvx carrier close failed without a rejection reason')
 		expect(detach).toHaveBeenCalledOnce()
 		expect(closeCarrier).toHaveBeenCalledOnce()
+	})
+
+	it.each(['vite-hmr', 'vite-ping'])('leaves exact %s upgrades to Vite', async (protocol) => {
+		const { httpServer, server } = createUpgradeServer()
+		const matches = vi.fn(() => true)
+		const handle = vi.fn()
+		const attachment = attachSrvxViteNodeCarrier(server, {
+			fetch: () => new Response('Not Found', { status: 404 }),
+			businessWebSocket: { matches, handle },
+		})
+		try {
+			httpServer.emit(
+				'upgrade',
+				createUpgradeRequest('/base/hmr?token=test', protocol),
+				new PassThrough(),
+				Buffer.alloc(0),
+			)
+			expect(matches).not.toHaveBeenCalled()
+			expect(handle).not.toHaveBeenCalled()
+		} finally {
+			await attachment.close()
+		}
+	})
+
+	it('delegates ordinary and non-HMR-path upgrades to the business carrier', async () => {
+		const { httpServer, server } = createUpgradeServer()
+		const matches = vi.fn(() => true)
+		const handle = vi.fn()
+		const attachment = attachSrvxViteNodeCarrier(server, {
+			fetch: () => new Response('Not Found', { status: 404 }),
+			businessWebSocket: { matches, handle },
+		})
+		try {
+			const ordinarySocket = new PassThrough()
+			httpServer.emit(
+				'upgrade',
+				createUpgradeRequest('/__pluxel/runtime/session'),
+				ordinarySocket,
+				Buffer.from('ordinary'),
+			)
+			const nonHmrPathSocket = new PassThrough()
+			httpServer.emit(
+				'upgrade',
+				createUpgradeRequest('/business', 'vite-hmr'),
+				nonHmrPathSocket,
+				Buffer.from('business'),
+			)
+
+			expect(matches).toHaveBeenCalledTimes(2)
+			expect(handle).toHaveBeenNthCalledWith(
+				1,
+				expect.objectContaining({ url: '/__pluxel/runtime/session' }),
+				ordinarySocket,
+				Buffer.from('ordinary'),
+			)
+			expect(handle).toHaveBeenNthCalledWith(
+				2,
+				expect.objectContaining({ url: '/business' }),
+				nonHmrPathSocket,
+				Buffer.from('business'),
+			)
+		} finally {
+			await attachment.close()
+		}
+	})
+
+	it('removes its business upgrade listener when the attachment closes', async () => {
+		const { httpServer, server } = createUpgradeServer()
+		const matches = vi.fn(() => true)
+		const handle = vi.fn()
+		const baseline = httpServer.listenerCount('upgrade')
+		const attachment = attachSrvxViteNodeCarrier(server, {
+			fetch: () => new Response('Not Found', { status: 404 }),
+			businessWebSocket: { matches, handle },
+		})
+		expect(httpServer.listenerCount('upgrade')).toBe(baseline + 1)
+
+		await attachment.close()
+		expect(httpServer.listenerCount('upgrade')).toBe(baseline)
+		httpServer.emit(
+			'upgrade',
+			createUpgradeRequest('/__pluxel/runtime/session'),
+			new PassThrough(),
+			Buffer.alloc(0),
+		)
+		expect(matches).not.toHaveBeenCalled()
+		expect(handle).not.toHaveBeenCalled()
 	})
 })

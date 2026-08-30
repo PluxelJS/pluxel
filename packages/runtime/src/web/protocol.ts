@@ -44,9 +44,6 @@ export type RuntimeMetaV1 = Readonly<{
 	}>
 	application: HostApplicationMeta
 	workbench: Readonly<{ enabled: boolean }>
-	transport: Readonly<{
-		rpc: '/rpc'
-	}>
 }>
 
 export type PluginSourceSnapshot =
@@ -761,7 +758,7 @@ export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
 export type PluginLogPolicySnapshot = Readonly<{
-	version: 2
+	version: 3
 	defaultLevel: RuntimePluginLogLevel
 	overrides: readonly Readonly<{ owner: PluginNodeAddress; level: RuntimePluginLogLevel }>[]
 }>

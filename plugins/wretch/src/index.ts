@@ -3,9 +3,12 @@ import {
 	BasePlugin,
 	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
+	pluginNodeAddressEqual,
+	pluginNodeIndexKey,
 	Plugin,
 	type Context,
 	type PersistenceNamespace,
+	type PluginNodeAddress,
 } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import wretch, { type Wretch } from 'wretch'
@@ -18,12 +21,12 @@ import {
 	type ManagedSettingsState,
 } from './managed-settings.ts'
 import { createOutboundPolicy, type OutboundPolicy } from './outbound-policy.ts'
-import type {
-	WretchManagedSettings,
-	WretchManagedSettingsSnapshot,
-	WretchWorkbenchCommands,
-} from './workbench-contract.ts'
-import { WretchWorkbench } from './workbench-extension.ts'
+import {
+	WretchWorkbench,
+	type WretchManagedSettings,
+	type WretchManagedSettingsSnapshot,
+	type WretchSettingsApi,
+} from './workbench.ts'
 
 const SETTINGS_NAMESPACE = '@pluxel/wretch'
 
@@ -42,6 +45,7 @@ function stoppedClientError(): Error {
 export class WretchPlugin extends BasePlugin {
 	private readonly config = this.configs.use(WretchConfig)
 	private readonly managed = new Map<Context, ManagedSettingsState>()
+	private readonly managedByNode = new Map<string, ManagedSettingsState>()
 	private readonly managedInitializations = new WeakMap<Context, Promise<ManagedSettingsState>>()
 	private readonly clients = new WeakMap<Context, ClientLease>()
 	private policy?: OutboundPolicy
@@ -59,11 +63,21 @@ export class WretchPlugin extends BasePlugin {
 				if (this.storage === storage) this.storage = undefined
 				const states = [...this.managed.values()]
 				this.managed.clear()
+				this.managedByNode.clear()
 				await Promise.all(states.map(disposeManagedSettings))
 			},
 			{ tag: 'wretch-policy' },
 		)
-		this.ctx.workbench?.mount(WretchWorkbench, {})
+		this.ctx.workbench?.publish(WretchWorkbench, {
+			settings: ({ consumer, signal }) =>
+				createSettingsTarget(
+					this.managedByNode,
+					this.requireStorage(),
+					this.config.timeoutMs,
+					consumer.node,
+					signal,
+				),
+		})
 	}
 
 	/**
@@ -120,45 +134,6 @@ export class WretchPlugin extends BasePlugin {
 		}
 	}
 
-	/** RPC resource for a consumer-owned `WretchWorkbenchPort` outlet. */
-	workbenchSettings(): RpcTarget & WretchWorkbenchCommands {
-		const owner = this.requireCaller()
-		const state = this.managed.get(owner)
-		if (!state) {
-			throw new Error('Call enableManagedSettings() before binding WretchWorkbenchPort')
-		}
-		const storage = this.requireStorage()
-		const managed = this.managed
-		const hostTimeoutMs = this.config.timeoutMs
-		const key = settingsKey(owner.pluginInfo.nodeAddress)
-		const assertActive = (): void => {
-			if (managed.get(owner) !== state) throw stoppedClientError()
-		}
-		const snapshot = (): WretchManagedSettingsSnapshot => {
-			assertActive()
-			return Object.freeze({
-				settings: state.current,
-				hostTimeoutMs,
-				effectiveTimeoutMs: effectiveTimeout(hostTimeoutMs, state.current.timeoutMs),
-			})
-		}
-		return new ManagedSettingsRpc(
-			snapshot,
-			async (settings) => {
-				assertActive()
-				const current = await replaceManagedSettings(state, storage, key, settings, hostTimeoutMs)
-				assertActive()
-				return current
-			},
-			async () => {
-				assertActive()
-				const current = await resetManagedSettings(state, storage, key)
-				assertActive()
-				return current
-			},
-		)
-	}
-
 	private clientLease(owner: Context): ClientLease {
 		const clients = this.clients
 		const existing = clients.get(owner)
@@ -189,6 +164,8 @@ export class WretchPlugin extends BasePlugin {
 		const policy = this.requirePolicy()
 		const storage = this.requireStorage()
 		const managed = this.managed
+		const managedByNode = this.managedByNode
+		const nodeKey = pluginNodeIndexKey(owner.pluginInfo.nodeAddress)
 		const state = await loadManagedSettings(
 			storage,
 			settingsKey(owner.pluginInfo.nodeAddress),
@@ -198,10 +175,15 @@ export class WretchPlugin extends BasePlugin {
 			await disposeManagedSettings(state)
 			throw stoppedClientError()
 		}
+		if (managedByNode.has(nodeKey)) {
+			await disposeManagedSettings(state)
+			throw new Error('Managed Wretch settings already exist for this Plugin node')
+		}
 		try {
 			owner.effects.defer(
 				async () => {
 					if (managed.get(owner) === state) managed.delete(owner)
+					if (managedByNode.get(nodeKey) === state) managedByNode.delete(nodeKey)
 					await disposeManagedSettings(state)
 				},
 				{ tag: 'wretch-managed-settings' },
@@ -211,6 +193,7 @@ export class WretchPlugin extends BasePlugin {
 			throw stoppedClientError()
 		}
 		managed.set(owner, state)
+		managedByNode.set(nodeKey, state)
 		return state
 	}
 
@@ -238,33 +221,95 @@ function effectiveTimeout(hostTimeoutMs: number, consumerTimeout?: number): numb
 	return Math.min(hostTimeoutMs, consumerTimeout)
 }
 
-function settingsKey(owner: PluginContext['pluginInfo']['nodeAddress']): string {
+function settingsKey(owner: PluginNodeAddress): string {
 	const address = parsePluginNodeAddress(owner)
 	const digest = createHash('sha256').update(encodePluginNodeAddressBytes(address)).digest('hex')
 	return `consumers/v3/${digest}.json`
 }
 
-class ManagedSettingsRpc extends RpcTarget implements WretchWorkbenchCommands {
+function createSettingsTarget(
+	managed: ReadonlyMap<string, ManagedSettingsState>,
+	storage: PersistenceNamespace,
+	hostTimeoutMs: number,
+	consumerNode: PluginNodeAddress,
+	signal: AbortSignal,
+): WretchSettingsApi {
+	const owner = parsePluginNodeAddress(consumerNode)
+	const nodeKey = pluginNodeIndexKey(owner)
+	const state = managed.get(nodeKey)
+	if (!state || !pluginNodeAddressEqual(state.owner, owner)) {
+		throw new Error('Call enableManagedSettings() before opening Wretch settings')
+	}
+	return new WretchSettingsTarget(
+		managed,
+		nodeKey,
+		state,
+		storage,
+		settingsKey(owner),
+		hostTimeoutMs,
+		signal,
+	)
+}
+
+class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
+	readonly #managed: ReadonlyMap<string, ManagedSettingsState>
+	readonly #nodeKey: string
+	readonly #state: ManagedSettingsState
+	readonly #storage: PersistenceNamespace
+	readonly #key: string
+	readonly #hostTimeoutMs: number
+	readonly #signal: AbortSignal
+
 	constructor(
-		private readonly read: () => WretchManagedSettingsSnapshot,
-		private readonly write: (settings: WretchManagedSettings) => Promise<WretchManagedSettings>,
-		private readonly clear: () => Promise<WretchManagedSettings>,
+		managed: ReadonlyMap<string, ManagedSettingsState>,
+		nodeKey: string,
+		state: ManagedSettingsState,
+		storage: PersistenceNamespace,
+		key: string,
+		hostTimeoutMs: number,
+		signal: AbortSignal,
 	) {
 		super()
+		this.#managed = managed
+		this.#nodeKey = nodeKey
+		this.#state = state
+		this.#storage = storage
+		this.#key = key
+		this.#hostTimeoutMs = hostTimeoutMs
+		this.#signal = signal
 	}
 
-	get(): WretchManagedSettingsSnapshot {
-		return this.read()
+	snapshot(): WretchManagedSettingsSnapshot {
+		this.#assertActive()
+		return Object.freeze({
+			settings: this.#state.current,
+			hostTimeoutMs: this.#hostTimeoutMs,
+			effectiveTimeoutMs: effectiveTimeout(this.#hostTimeoutMs, this.#state.current.timeoutMs),
+		})
 	}
 
 	async update(settings: WretchManagedSettings): Promise<WretchManagedSettingsSnapshot> {
-		await this.write(settings)
-		return this.read()
+		this.#assertActive()
+		await replaceManagedSettings(
+			this.#state,
+			this.#storage,
+			this.#key,
+			settings,
+			this.#hostTimeoutMs,
+		)
+		return this.snapshot()
 	}
 
 	async reset(): Promise<WretchManagedSettingsSnapshot> {
-		await this.clear()
-		return this.read()
+		this.#assertActive()
+		await resetManagedSettings(this.#state, this.#storage, this.#key)
+		return this.snapshot()
+	}
+
+	#assertActive(): void {
+		if (this.#managed.get(this.#nodeKey) !== this.#state || this.#signal.aborted) {
+			throw stoppedClientError()
+		}
 	}
 }
 

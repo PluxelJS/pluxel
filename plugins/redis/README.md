@@ -155,7 +155,7 @@ sliding window log 的正常 allow 只读取固定大小的 metadata/边界信�
 
 Workbench 的 host-owned“依赖注入”卡片会根据 constructor 中的抽象 `Redis` 自动列出全部
 `@Plugin(Redis, ...)` providers。选择结果属于 RuntimeState，commit 会重启被修改 plugin 及其 dependent closure。
-`@pluxel/redis` 不注册专属 Workbench extension，headless host 使用同一 graph contract。
+`@pluxel/redis` 不发布专属 Workbench Definition，headless host 使用同一 graph contract。
 
 同一个卡片也会根据 `CachePlugin(CacheBackend)`、`RatesPlugin(RatesBackend)` 列出 memory 与本包 Redis provider，
 因此 host 可以独立选择 cache backend、rates backend 和底层 Redis provider。

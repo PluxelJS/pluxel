@@ -9,7 +9,7 @@ plugin source
 	├─ optional Plugin refs and one object config declaration
 	├─ statically owned PluginPart containment tree
 	├─ separately-built Node module / worker task declarations
-	└─ Workbench Contract / Extension declarations
+	└─ Workbench Definition / renderer declarations
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
@@ -17,7 +17,7 @@ plugin source
           ↓
 static or dynamic route: catalog / Vite / HMR / host policy
           ↓
-optional Workbench Plane: target layout / artifacts / bound resources
+optional Workbench Plane: target layout / immutable MF producers / fresh View/Attachment roots
 ```
 
 ## Context 与宿主能力
@@ -147,7 +147,7 @@ Part scope。Part constructor 或 `init()`
 
 Part 可以在自己的 `init()` 中使用 `plugins.use()`；semantic pass 把 reachable Part optional refs 合并到 owning Plugin node，
 provider availability 变化重启整个 owner。同一 Part occurrence 对同一 provider 同时 required 与 optional 时复用同一 caller facade，
-optional setup 仍保留自己的 callback 与 cleanup。Part 不直接 mount Workbench Extension；唯一 owning Plugin 负责聚合贡献。
+optional setup 仍保留自己的 callback 与 cleanup。Part 不直接 publish Workbench Definition；唯一 owning Plugin 负责聚合贡献。
 需要独立启停、失败状态、provider selection、配置 revision、HMR identity 或跨 owner 共享状态时，应升级为真正 Plugin。
 
 ## Identity 与入口
@@ -178,9 +178,9 @@ consumer 先停止；失败插件不进入 running，required dependents 被阻�
 gate、abort generation，再 drain effects。正常停止、init rollback、replacement、optional restart 与 root shutdown
 没有第二条 Plugin teardown hook。
 
-Workbench mount 从 Context 推导 owner 并绑定 owner effects。contribution 只有在 owner 真正 running 后才进入
-layout；init 失败不会留下可见 View 或 resource。HMR replacement 会撤销旧 layout binding、factory、stream、
-live query 和 grant；rollback 通过重新 mount 获得新 lease。
+Workbench publication 从 Context 推导 owner 并绑定 owner effects。Definition 只有在 owner 真正 running 后才进入
+layout；init 失败不会留下可见 View。HMR replacement 会撤销旧 publication、fresh target factory、opened root
+和 Bridge；rollback 由新 generation 重新 `publish()`。
 
 constructor 注入的 dependency 是覆盖 `ctx.caller` 的 generation-bound facade。同一 scoped consumer Context/provider generation pair
 复用一个 facade；root Plugin 与每个 Part occurrence 是不同 scoped consumer，同一 Part class 的多个 occurrence 也不共享 facade，
@@ -224,27 +224,31 @@ runtime use case，不复制 graph 或 commit 逻辑。
 
 Management-enabled host 预安装 owner-bound `ctx.managementAccess`。认证 Plugin 可调用一次 `provide()` 发布唯一 provider；candidate
 registration 不因 `init()` 成功前或 commit publication 前而开放，Runtime 只选择当前 running generation。回调进入 owner invocation
-admission，成功的 remote Management request 将 lease 延长到 response body settle，因此 replacement/stop 能取消 SSE/长请求并等待 drain。
+admission，成功的 remote Management call 将 lease 延长到 result/observer settle，因此 replacement/stop 能取消长调用并等待 drain。
 provider 只负责 Management，不能成为业务 HTTP 的隐式全局 auth。官方 `@pluxel/auth` 也只消费这项公开能力，不获得 runtime internal
 route 或 lifecycle 特例。
 
 ## Optional Workbench Plane
 
-插件只通过 `ctx.workbench?.mount()` 发布可选 Extension。宿主通过顶层 `workbench` 配置安装
-capability 与 backend；disabled 时 Context 没有 `workbench` property，也不创建 registry、compiler、watcher、route 或
-transport。optional chaining 同时避免构造 bindings，不需要 null facade 或 `enabled` 分支。
+插件只通过 `ctx.workbench?.publish(definition, bindings)` 发布固定 Definition。宿主通过顶层 `workbench`
+配置安装 capability 与 backend；disabled 时 Context 没有 `workbench` property，也不创建 registry、compiler、
+MF producer route 或 WebSocket session。optional chaining 同时避免构造 bindings，不需要 null facade 或 `enabled` 分支。
 
-browser-safe `WorkbenchContract` 声明 resource、View、placement 和 Port；server-only `WorkbenchExtension`
-只绑定 Contract 与 UI entry。`workbench?.mount(extension, bindings)` 是唯一发布动作，owner 不在 Extension 重复
-声明。registry
-生成 target-specific layout，并把每个 resource 转成 resource-graph-revision-scoped opaque grant。
-artifact 状态更新可以复用相同 grant；module、实例或依赖图变化会立即撤销旧 grant。浏览器不能按插件
-namespace 任意访问未授予资源。
+Workbench-enabled host 固定使用 Cap’n Web over WebSocket、MF2 Manifest/Snapshot 和 React Bridge。这三项不是
+可替换 adapter，也不存在缺少其中一项时继续提供部分 Workbench 的模式。一个 browser document 只有一条 control
+socket；认证、Management、layout/openView、Plugin API 和 observer 共用同一 Cap’n Web object graph。
 
-跨插件 UI 只使用 typed Port：consumer 选择 placement 并绑定自己的 resource，provider 提供 renderer。
-Workbench 不根据 dependency graph 隐式投影 provider View。
+Definition 只包含 Direct View、Attachment 和 tab/route placement。View 每次打开创建 fresh `RpcTarget`；
+renderer 是零 props React component，通过 `useWorkbench(exactDescriptor)` 取得 exact API root 与受限 host facade。
+Definition 不声明方法 schema、数据库查询、平台事件或动态 collection。输入校验、authorization、snapshot/watch、
+任务和稳定失败码由 Plugin 自己的领域 API 负责。
 
-不维护服务端 UI session/draft。交互状态属于 consumer resource、浏览器局部状态或明确的业务 API。
+跨 Plugin UI 只使用 Attachment：provider 拥有 renderer 和 provider API，consumer 通过普通 constructor dependency
+选择 provider，并用 `attachment.place()` 决定 placement。需要 consumer-owned state 时，placement 另外发布 consumer
+API root。Workbench 不隐式投影 provider 的其他 View，也不把 Attachment 变成业务 dependency。
+
+Collection、bot account、font family 等动态实体只是 Plugin API 返回的领域数据。实体数量变化不创建 Workbench
+entry、MF producer、Bridge expose 或 socket。交互 draft 属于浏览器局部状态或明确的 Plugin API。
 
 ## Node module capability
 
@@ -281,15 +285,17 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/runtime` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；
-- `@pluxel/runtime/workbench/contract`：browser-safe Workbench Contract；
-- `@pluxel/runtime/workbench`：服务端 Extension、entry 和 Binding；
-- `@pluxel/runtime/workbench/ui`：浏览器 resource client；
-- `@pluxel/core/federation`：Workbench bundle build contract；
+- `@pluxel/runtime/capnweb`：固定 Cap’n Web object model 与 WebSocket session bridge；
+- `@pluxel/runtime/workbench`：browser-safe Definition、Direct View、Attachment、placement 和 publication types；
+- `@pluxel/runtime/workbench/client`：conforming Shell 的 layout/opened-handle client；
+- `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/runtime/internal/workbench-react`：toolchain/Shell 共用的 generated React Bridge ABI；
+- `@pluxel/core/federation`：Workbench MF producer/descriptor identity 和固定 shared set；
 - `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
 - `valibot-form`：Config schema 的 portable presentation 与 raw-input transport projector；
-- `@pluxel/runtime-dev`：共享 UI/Node source graph、watch、cache 与 publication lifecycle 的 artifact compiler；
-- `@pluxel/rolldown/vite/workbench-ui`：remote build primitive。
-- `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound RPC 和 Workbench 页面。
+- `@pluxel/runtime-dev`：共享 UI/Node source graph、watch、cache 与 immutable producer publication；
+- `@pluxel/rolldown/vite/workbench-ui`：MF2 producer build primitive。
+- `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound Direct View target 和 Workbench 页面。
 
 dynamic route 与 package manager 之间只有文件协议：producer 在宿主声明的 `sources` 目录原子发布/删除 ESM entry，
 route 观察文件并执行正常 graph transaction。runtime 不提供 package-manager capability、RPC DTO、内置页面或 market

@@ -485,7 +485,7 @@ async function hasHostIdentity(store: VaultStore): Promise<boolean> {
 
 async function resolveManagedRecipients(
 	store: VaultStore,
-	runtime: MountRuntime,
+	_runtime: MountRuntime,
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
 ): Promise<string[]> {
@@ -587,8 +587,8 @@ async function toRuntimeStatus(
 }
 
 function updateStatus(
-	store: VaultStore,
-	runtime: MountRuntime,
+	_store: VaultStore,
+	_runtime: MountRuntime,
 	entry: MountCacheEntry,
 	patch: Partial<MountCacheEntry['status']>,
 ): void {
@@ -1596,7 +1596,8 @@ export class VaultService {
 		return createDeployKeyPair(this.backing.runtime)
 	}
 
-	private async sealMountForTesting(): Promise<void> {
+	/** @internal */
+	async sealMountForTesting(): Promise<void> {
 		await this.managedVault().sealForRuntime()
 	}
 }

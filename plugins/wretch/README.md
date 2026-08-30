@@ -89,36 +89,38 @@ retry、dedupe、缓存、鉴权刷新和业务错误解析不属于进程级安
 
 ## 可选 Workbench 配置 UI
 
-中心插件提供 `WretchWorkbenchPort` renderer。consumer 只负责决定标签页 placement，不实现表单 UI：
+`WretchPlugin` 提供 provider-owned `WretchWorkbench.settings` Attachment。consumer 只选择 placement，
+不实现表单 renderer，也不转发 RPC：
 
 ```ts
 import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import { WretchWorkbenchPort } from '@pluxel/wretch/workbench'
+import { WretchWorkbench } from '@pluxel/wretch/workbench'
 
-export const CustomerWorkbench = workbench.portOutlet({
-	id: 'Http',
-	port: WretchWorkbenchPort,
-	placement: workbenchContract.tab({
-		label: 'HTTP',
-		icon: workbenchContract.icons.Settings,
-	}),
+export const CustomerWorkbench = workbench.define({
+	http: WretchWorkbench.settings.place(
+		workbench.tab({ label: 'HTTP', icon: workbench.icons.Settings }),
+	),
 })
 ```
 
-`portOutlet()` 从 Port 自动派生一对一 resource contract 和 mapping。consumer 启动时显式启用持久化设置，
-并绑定 caller-owned RPC：
+consumer 启动时显式启用持久化设置，再把 constructor-injected direct required dependency 绑定为
+Attachment provider：
 
 ```ts
 override async init(): Promise<void> {
 	await this.http.enableManagedSettings()
 	this.api = this.http.client.url(this.config.baseUrl, true)
 
-	this.ctx.workbench?.mount(CustomerWorkbench, {
-		settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
+	this.ctx.workbench?.publish(CustomerWorkbench, {
+		http: { provider: this.http },
 	})
 }
 ```
+
+provider publication 只在 View 实际打开时，从 server-derived `consumer.node` 找到已启用的 exact consumer
+state，并创建 fresh `WretchSettingsApi` root。browser renderer 是 zero-props component，通过
+`useWorkbench(WretchWorkbench.settings)` 直接取得 `{ provider }`。`snapshot()`、`update()` 与
+`reset()` 返回的 object RPC result 由 renderer 以 `using` 释放顶层 ownership。
 
 UI 当前统一管理：
 
@@ -130,9 +132,9 @@ UI 当前统一管理：
 校验完整 owner address。`displayName` 相同的 Plugin/fork 不会冲突；只接受当前 v2 envelope，并存储在
 `consumers/v3`。`client` 使用 Wretch `defer()` 在每次请求发送前读取当前设置，因此保存后
 已经缓存的 client 也会自动生效，不需要重建。
-同一 caller 并发调用 `enableManagedSettings()` 会共享一次初始化；缓存的 settings RPC 在 caller/provider stop 或
-replacement 后会撤销，不能继续写入旧 generation。provider cleanup 也会主动释放全部 managed ProxyAgent，不依赖
-consumer 必须级联停止。
+同一 caller 并发调用 `enableManagedSettings()` 会共享一次初始化；已打开的 settings capability 在
+caller/provider stop、replacement、View close 或 session end 后撤销，不能继续写入旧 generation。provider
+cleanup 也会主动释放全部 managed ProxyAgent，不依赖 consumer 必须级联停止。
 
 Authorization、Cookie、Proxy-Authorization、X-API-Key，以及带路径或凭据的 proxy URL 会被拒绝。
 当前设置页不支持 authenticated proxy；secret 不进入普通 persistence、日志或 browser contract。

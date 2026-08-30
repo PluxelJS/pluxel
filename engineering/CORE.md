@@ -18,7 +18,7 @@
 
 ## 不负责
 
-- HTTP、RPC、SSE、Workbench Plane；
+- HTTP/WebSocket carrier、Cap’n Web RPC 与 Workbench Plane；
 - 配置或业务数据持久化；
 - workspace scan、package install、Vite、HMR；
 - optional package import、安装、retry 或 absent-module protocol；

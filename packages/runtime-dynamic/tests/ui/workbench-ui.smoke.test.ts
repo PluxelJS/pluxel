@@ -4,10 +4,20 @@ import { writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import {
-	createCompiledWorkbenchArtifact,
-	requireRuntimeHttpService,
-} from '@pluxel/runtime/internal'
+	createWorkbenchFederationCompatibilitySet,
+	createWorkbenchFederationProducerPlan,
+} from '@pluxel/core/federation'
+import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
+import * as React from 'react'
+import * as ReactDom from 'react-dom'
 import { requireWorkbench } from '../../../runtime/src/services/workbench'
+import { version as runtimeVersion } from '../../../runtime/package.json'
+
+const compatibility = createWorkbenchFederationCompatibilitySet({
+	react: React.version,
+	reactDom: ReactDom.version,
+	runtime: runtimeVersion,
+})
 
 describe('HMR UI smoke', () => {
 	it('renders dev UI with a Vite-accessible source entry and rejects stale /dist/public asset requests', async () => {
@@ -146,44 +156,69 @@ describe('HMR UI smoke', () => {
 	})
 
 	it('serves workbench artifact manifests and files through the internal artifact route', async () => {
-		const owner = {
-			address: {
-				definition: {
-					entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/demo.ts' },
-					exportName: 'DemoPlugin',
+		const definition = {
+			entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/demo.ts' },
+			exportName: 'DemoPlugin',
+		} as const
+		const plan = createWorkbenchFederationProducerPlan({
+			definition,
+			buildRevision: 'demo-hash',
+			entries: [
+				{
+					descriptor: { kind: 'view', owner: definition, key: 'dashboard' },
+					bridgeEntryPath: 'generated/dashboard.tsx',
 				},
-				variant: 'default',
-			} as const,
-			displayName: 'Demo Plugin',
-			rootExportName: 'DemoPlugin',
-		}
+			],
+		})
+		const assets = (js: string[] = []) => ({
+			js: { sync: js, async: [] },
+			css: { sync: [], async: [] },
+		})
 		await using fixture = await createFixture({
 			artifacts: {
 				'mf-manifest.json': JSON.stringify({
+					id: plan.producer,
+					name: plan.producer,
 					metaData: {
-						publicPath: '/stale/',
+						name: plan.producer,
+						globalName: plan.producer,
+						buildInfo: { buildVersion: plan.buildRevision, buildName: plan.producer },
+						publicPath: 'auto',
+						remoteEntry: { name: 'remoteEntry.js', path: '', type: 'module' },
+						types: { path: '', name: '', api: 'types/index.d.ts', zip: '@mf-types.zip' },
+						type: 'global',
 					},
+					remotes: [],
+					shared: Object.entries(compatibility.shared).map(([name, version]) => ({
+						name,
+						version,
+						requiredVersion: version,
+						singleton: true,
+						assets: assets(),
+					})),
+					exposes: [
+						{
+							name: 'views/dashboard',
+							path: 'views/dashboard',
+							assets: assets(['assets/dashboard.js']),
+						},
+					],
 				}),
 				'remoteEntry.js': 'export const ok = 1\n',
+				assets: { 'dashboard.js': 'export const dashboard = true\n' },
+				types: { 'index.d.ts': 'export {}\n' },
+				'@mf-types.zip': 'zip-placeholder',
 			},
 		})
 
 		await withRuntimeContext(
 			async (ctx) => {
-				await requireWorkbench(ctx).artifacts.commitCompiledModule(
-					createCompiledWorkbenchArtifact({
-						owner,
-						sourceHash: 'demo-hash',
-						compiledAt: 123,
-					}),
-					{ artifactRoot: resolve(fixture.path, 'artifacts') },
-				)
-
-				const remoteEntryUrl = requireWorkbench(ctx).artifacts.getCompiledModule(
-					owner.address,
-				)?.remoteEntryUrl
-				expect(remoteEntryUrl).toBeTruthy()
-				const manifestUrl = remoteEntryUrl?.replace(/remoteEntry\.js$/, 'mf-manifest.json')
+				const committed = await requireWorkbench(ctx).artifacts.commitCandidate({
+					plan,
+					artifactRoot: resolve(fixture.path, 'artifacts'),
+				})
+				const manifestUrl = committed.manifestUrl
+				const remoteEntryUrl = manifestUrl.replace(/mf-manifest\.json$/, 'remoteEntry.js')
 
 				const manifestRes = await requireRuntimeHttpService(ctx).fetch(
 					new Request(`http://local${manifestUrl}`),
@@ -193,7 +228,7 @@ describe('HMR UI smoke', () => {
 				const manifest = (await manifestRes.json()) as {
 					metaData?: { publicPath?: string }
 				}
-				expect(manifest.metaData?.publicPath).toBe(remoteEntryUrl?.replace(/remoteEntry\.js$/, ''))
+				expect(manifest.metaData?.publicPath).toBe('auto')
 
 				const assetRes = await requireRuntimeHttpService(ctx).fetch(
 					new Request(`http://local${remoteEntryUrl}`),

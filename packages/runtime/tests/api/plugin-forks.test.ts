@@ -6,7 +6,7 @@ import {
 import { requireConfigService } from '@pluxel/core/internal'
 import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
-import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
 import { createRuntimeLogging, type RuntimeLoggingInput } from '../../src/logger/logging'
 import type { PluginLogPolicyStore } from '../../src/logger/policy'
@@ -54,7 +54,7 @@ describe('Plugin fork control plane', () => {
 		const host = runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
-		const rpc = new RuntimeRpcApi(host.ctx)
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const base = pluginNodeAddressOf(ForkProvider)
 		const consumer = pluginNodeAddressOf(ForkConsumer)
 
@@ -89,7 +89,7 @@ describe('Plugin fork control plane', () => {
 		const host = runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
-		const rpc = new RuntimeRpcApi(host.ctx)
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const base = pluginNodeAddressOf(ForkProvider)
 
 		await expect(
@@ -118,7 +118,7 @@ describe('Plugin fork control plane', () => {
 		host.cfg(ForkConsumer).setAutoStart(true)
 		host.start(ForkConsumer)
 		await host.commit()
-		const rpc = new RuntimeRpcApi(host.ctx)
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const consumer = pluginNodeAddressOf(ForkConsumer)
 
 		const applied = await rpc.ensurePluginFork({
@@ -158,7 +158,7 @@ describe('Plugin fork control plane', () => {
 		const host = runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
-		const rpc = new RuntimeRpcApi(host.ctx)
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const base = pluginNodeAddressOf(ForkProvider)
 		const consumer = pluginNodeAddressOf(ForkConsumer)
 		const ensured = await rpc.ensurePluginFork({
@@ -216,7 +216,7 @@ describe('Plugin fork control plane', () => {
 		const host = runtimeHost()
 		host.add(DrainFailureForkProvider)
 		await host.commit()
-		const rpc = new RuntimeRpcApi(host.ctx)
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const base = pluginNodeAddressOf(DrainFailureForkProvider)
 		const ensured = await rpc.ensurePluginFork({ base, forkId: 'drain', autoStart: true })
 		if (!ensured.ok) throw new Error(ensured.error)
@@ -250,7 +250,7 @@ describe('Plugin fork control plane', () => {
 		const host = runtimeHost({ configService: { mode: 'readonly' } })
 		host.add(ForkProvider)
 		await host.commit()
-		const rpc = new RuntimeRpcApi(host.ctx)
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const base = pluginNodeAddressOf(ForkProvider)
 		const ensured = await rpc.ensurePluginFork({ base, forkId: 'readonly', autoStart: true })
 		if (!ensured.ok) throw new Error(ensured.error)
@@ -292,7 +292,7 @@ describe('Plugin fork control plane', () => {
 		})
 		host.add(ForkProvider)
 		await host.commit()
-		const rpc = new RuntimeRpcApi(host.ctx)
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const base = pluginNodeAddressOf(ForkProvider)
 		const ensured = await rpc.ensurePluginFork({ base, forkId: 'retry', autoStart: true })
 		if (!ensured.ok) throw new Error(ensured.error)
@@ -345,7 +345,7 @@ describe('Plugin fork control plane', () => {
 		try {
 			host.add(ForkProvider)
 			await host.commit()
-			const rpc = new RuntimeRpcApi(host.ctx)
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			const base = pluginNodeAddressOf(ForkProvider)
 			const ensured = await rpc.ensurePluginFork({ base, forkId: 'logging-retry', autoStart: true })
 			if (!ensured.ok) throw new Error(ensured.error)

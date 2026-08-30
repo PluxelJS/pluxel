@@ -45,12 +45,6 @@ export interface RuntimeHostConfig extends CoreHostConfig {
 	vault?: false | VaultServiceConfig
 	/** @internal Deployment-owned root containing assembled Workbench artifacts. */
 	workbenchArtifactRoot?: string
-	/** @internal Dynamic/package hosts provide package artifact resolution explicitly. */
-	workbenchArtifactResolver?: (
-		root: CoreContext,
-		owner: import('@pluxel/core').PluginNodeAddress,
-		artifactName: string,
-	) => string | null | Promise<string | null>
 	/** @internal Deployment root containing frozen Node module artifacts. */
 	nodeModuleArtifactRoot?: string
 	/** @internal Dynamic hosts resolve Node module artifacts from plugin packages. */

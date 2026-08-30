@@ -215,7 +215,7 @@ export class NodeElysiaApplicationCarrier implements ElysiaApplicationCarrier {
 			message: (peer, message) =>
 				this.globalHandler.message(
 					this.socket(peer, data, input.ownerKey),
-					message.data as string | Buffer,
+					message.rawData as string | Buffer,
 				),
 			drain: (peer) => this.globalHandler.drain?.(this.socket(peer, data, input.ownerKey)),
 			close: async (peer, details) => {

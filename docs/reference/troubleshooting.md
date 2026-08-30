@@ -72,11 +72,11 @@ initializer 无副作用，并把该 integration 的 registration、资源和 cl
 
 ## HTTP 返回 404
 
-业务路由与 Workbench resource 使用不同边界：
+业务路由与 Workbench View API 使用不同边界：
 
 - 业务 API 直接注册到 generation-scoped `ctx.elysia`；
 - Elysia 中声明的 path 就是最终产品 path，不会再自动增加 Plugin namespace；
-- Workbench resource 只有启用 Workbench 且对应 Binding 生效时存在；
+- Workbench API 只有启用 Workbench、owner publication 生效且用户实际打开 View 时才创建 fresh target；
 - route 必须在 Plugin/Part 的 construction 或 `init()` authoring window 声明；finalization 后 app 已由 Elysia 2 seal；
 - `/__pluxel` 是保留 namespace，跨 owner 的相同 method/path 冲突会使 contribution 启动失败；
 - stop、replacement 或 rollback 后旧 generation 的 handler 不应继续服务。

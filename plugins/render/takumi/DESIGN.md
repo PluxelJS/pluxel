@@ -1,7 +1,7 @@
 # Takumi Plugin 设计
 
 `@pluxel/takumi` 是独立 renderer Plugin，不是 Canvas adapter，也不是 Pluxel runtime 特例。它只通过
-`FontsPlugin` 的公开 capability、BasePlugin config、caller Context/effects 和可选 Workbench Port 组成。
+`FontsPlugin` 的公开 capability、BasePlugin config、caller Context/effects 和可选 Workbench Attachment 组成。
 
 ## Pluxel 能力映射
 
@@ -10,7 +10,7 @@
 - dependency caller facade 让每个消费方得到独立 caller Context，Takumi lease、AbortController 与 queue owner
   绑定该 Context effects；consumer stop/replacement 会取消等待和 native render；
 - Plugin config 持有 host ceilings，renderer、font revision cache、queue 和 native task 属于 generation state；
-- `ctx.workbench?.mount()` 只挂载 portable Fonts Selection Port，Workbench disabled 不影响字体 replay 或 render；
+- `ctx.workbench?.publish()` 只放置 provider-owned Fonts selection Attachment，Workbench disabled 不影响字体 replay 或 render；
 - prototype methods 是唯一跨 Plugin callable surface，返回值是 caller-owned data，不暴露 raw Renderer、registry 或 queue。
 
 这些现有能力已经覆盖 graph ordering、ownership、withdrawal、config、diagnostics 与可选 UI。Takumi 暴露出的缺口是
@@ -31,8 +31,8 @@ TakumiPlugin 按 portable revision 去重 renderer build。一个 build 顺序�
 另一个 native backend。
 
 默认 family 只重排已经由 Takumi 成功注册的 portable families。不可移植 system selection 不会被当成已加载字体；
-Takumi 自己的 embedded last-resort 保持最终 fallback。Workbench outlet 使用 `selectionManager('portable')`，不会向用户
-展示点击后无法加载的 system candidate。Fonts canonical 管理页面仍显示并管理完整 collection。
+Takumi 自己的 embedded last-resort 保持最终 fallback。Workbench Attachment 使用 Fonts provider 的完整 selector；
+portable filtering 保持 Takumi runtime policy，不通过无状态 consumer target 或第二个 Workbench collection 表达。
 
 ## 执行、队列与取消
 
@@ -59,7 +59,7 @@ build 不能回写下一代 renderer state。
 
 `fromHtml()` 是上游同步 parser，单次调用期间无法被 scheduler 或 AbortSignal 抢占；默认 1 MiB content ceiling、总
 stylesheet/node/text/image-source 预算和 wall-clock benchmark 共同限制这段剩余 host-thread 风险。把完整 Takumi render 再套
-一层 Worker 会重复占用 Worker 与 Takumi/libuv native slot并复制字体/输入，因此当前边界保留这个明确、受限的同步段。
+一层 Worker 会重复占用 Worker 与 Takumi/libuv native slot 并复制字体/输入，因此当前边界保留这个明确、受限的同步段。
 
 ## 输入、IO 与预算
 
@@ -71,13 +71,13 @@ style/attributes 绕过内容预算。
 render 后检查 encoded/UTF-8 output bytes；大 HTML、node string、stylesheet 与 SVG output 的 UTF-8 计量分片让出 event loop。
 
 `prepareImages()` 只用于枚举 remote references，并带 `allowUrl: () => false` 与 caller-provided sources；不会调用
-global fetch。解码后的图片内存仍由 Takumi cache/pixel implementation拥有，byte ceiling 不是安全 sandbox；native crash
+global fetch。解码后的图片内存仍由 Takumi cache/pixel implementation 拥有，byte ceiling 不是安全 sandbox；native crash
 仍可终止进程。
 
 ## 有意不包含
 
 - raw `Renderer`、global glyph cache 或 Takumi thread-pool tuning；
 - 从 system family 反查平台私有 font path 的第二套 scanner；
-- 隐式 URL/font fetch、Google Fonts helper或 Twemoji CDN；
+- 隐式 URL/font fetch、Google Fonts helper 或 Twemoji CDN；
 - 为 Takumi 增加 Runtime capability、worker artifact 或 package aggregator；
-- JSX component execution与 animation API。出现真实调用方后，应先定义 snapshot、duration/frame budget 与取消语义再扩展。
+- JSX component execution 与 animation API。出现真实调用方后，应先定义 snapshot、duration/frame budget 与取消语义再扩展。

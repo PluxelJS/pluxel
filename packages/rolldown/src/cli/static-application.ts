@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import {
-	WORKBENCH_SHELL_BUILD_INFO_FILE,
-	WORKBENCH_SHELL_BUILD_INFO_VERSION,
-} from '@pluxel/core/federation'
 import { FullTracePackages, NodeNativePackages, NonBundleablePackages } from 'nf3/db'
 import type { ExternalsTraceOptions } from 'nf3'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
@@ -14,6 +10,10 @@ import type { UserConfig } from 'tsdown'
 import { createDistributionManifest } from '../distribution'
 import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/staticConfigEnvironmentPlugin'
 import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler'
+import {
+	assembleWorkbenchDeploymentArtifacts,
+	collectWorkbenchDeploymentArtifacts,
+} from '../workbench/deployment-assembly'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 import { staticElysiaSingletonPlugin } from './elysia-singleton'
 import { writeStaticConfigEnvironmentExample } from './static-config-environment-output'
@@ -552,23 +552,28 @@ function staticApplicationAssemblyPlugin(options: {
 					content: options.state.environmentExample,
 					ownedExisting: options.state.environmentExampleOwned,
 				})
+				let workbenchInventory = null
 				if (options.variant === 'workbench') {
-					const runtime = resolveRuntimeWorkbenchDistribution(options.cwd)
-					await assertWorkbenchShellContractProtocol(runtime.publicDir, runtime.contractProtocol)
-					await cp(runtime.publicDir, resolve(options.outDir, 'workbench/public'), {
+					const publicDir = resolveRuntimeWorkbenchPublicDir(options.cwd)
+					await cp(publicDir, resolve(options.outDir, 'workbench/public'), {
 						recursive: true,
 						force: true,
 					})
-					await copyBundledPackageWorkbenchArtifacts(bundle, resolve(options.outDir, 'workbench'))
+					workbenchInventory = await assembleBundledPackageWorkbenchArtifacts(
+						bundle,
+						resolve(options.outDir, 'workbench'),
+					)
 				}
 				const entry = Object.values(bundle).find(
 					(item): item is OutputChunk => item.type === 'chunk' && item.isEntry,
 				)
 				if (!entry) throw new Error('[static-application] server entry chunk was not generated')
-				const artifacts =
-					options.variant === 'workbench'
-						? await collectWorkbenchArtifacts(resolve(options.outDir, 'workbench'))
-						: []
+				const artifacts = workbenchInventory
+					? await collectWorkbenchDeploymentArtifacts(
+							resolve(options.outDir, 'workbench'),
+							workbenchInventory,
+						)
+					: []
 				const nodeModules = await collectNodeModuleArtifacts(
 					resolve(options.outDir, 'artifacts/node'),
 				)
@@ -623,11 +628,11 @@ function staticApplicationAssemblyPlugin(options: {
 	}
 }
 
-async function copyBundledPackageWorkbenchArtifacts(
+async function assembleBundledPackageWorkbenchArtifacts(
 	bundle: OutputBundle,
 	destinationRoot: string,
-): Promise<void> {
-	await runWorkbenchOutputTransaction(destinationRoot, async () => {
+): ReturnType<typeof assembleWorkbenchDeploymentArtifacts> {
+	return runWorkbenchOutputTransaction(destinationRoot, async () => {
 		const packageRoots = new Set<string>()
 		for (const item of Object.values(bundle)) {
 			if (item.type !== 'chunk') continue
@@ -639,30 +644,12 @@ async function copyBundledPackageWorkbenchArtifacts(
 			}
 		}
 
-		for (const packageRoot of packageRoots) {
-			const sourceRoot = resolve(packageRoot, 'dist/workbench')
-			if (sourceRoot === destinationRoot) continue
-			const entries = await readdir(sourceRoot, { withFileTypes: true }).catch((): never[] => [])
-			for (const entry of entries) {
-				if (!entry.isDirectory()) continue
-				const source = resolve(sourceRoot, entry.name)
-				const sourceManifest = resolve(source, 'mf-manifest.json')
-				if (!existsSync(sourceManifest)) continue
-				const destination = resolve(destinationRoot, entry.name)
-				const destinationManifest = resolve(destination, 'mf-manifest.json')
-				if (existsSync(destinationManifest)) {
-					const [sourceContent, destinationContent] = await Promise.all([
-						readFile(sourceManifest),
-						readFile(destinationManifest),
-					])
-					if (!sourceContent.equals(destinationContent)) {
-						throw new Error(`[static-application] Workbench artifact collision: ${entry.name}`)
-					}
-					continue
-				}
-				await cp(source, destination, { recursive: true, force: true })
-			}
-		}
+		return assembleWorkbenchDeploymentArtifacts({
+			destinationRoot,
+			dependencyRoots: [...packageRoots].map((packageRoot) =>
+				resolve(packageRoot, 'dist/workbench'),
+			),
+		})
 	})
 }
 
@@ -689,73 +676,17 @@ function assertBundledPluxelClosure(bundle: OutputBundle): void {
 	}
 }
 
-function resolveRuntimeWorkbenchDistribution(cwd: string): {
-	publicDir: string
-	contractProtocol: number
-} {
+function resolveRuntimeWorkbenchPublicDir(cwd: string): string {
 	const applicationRequire = createRequire(resolve(cwd, 'package.json'))
 	const routeRoot = dirname(applicationRequire.resolve('@pluxel/runtime-static/package.json'))
 	const routeRequire = createRequire(resolve(routeRoot, 'package.json'))
 	const packageJsonPath = routeRequire.resolve('@pluxel/runtime/package.json')
 	const packageRoot = dirname(packageJsonPath)
-	const metadata = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
-		pluxel?: { workbenchContractProtocol?: unknown }
-	}
-	const contractProtocol = metadata.pluxel?.workbenchContractProtocol
-	if (!Number.isInteger(contractProtocol) || Number(contractProtocol) <= 0) {
-		throw new Error(
-			'[static-application] @pluxel/runtime does not declare pluxel.workbenchContractProtocol',
-		)
-	}
 	for (const candidate of [resolve(packageRoot, 'dist/public'), resolve(packageRoot, 'public')]) {
-		if (existsSync(candidate)) {
-			return { publicDir: candidate, contractProtocol: Number(contractProtocol) }
-		}
+		if (existsSync(candidate)) return candidate
 	}
 	throw new Error(
 		'[static-application] Workbench variant requires the built @pluxel/runtime public shell',
-	)
-}
-
-export async function assertWorkbenchShellContractProtocol(
-	publicDir: string,
-	expectedProtocol: number,
-): Promise<void> {
-	const buildInfoPath = resolve(publicDir, WORKBENCH_SHELL_BUILD_INFO_FILE)
-	let buildInfo: { version?: unknown; contractProtocol?: unknown }
-	try {
-		buildInfo = JSON.parse(await readFile(buildInfoPath, 'utf-8')) as typeof buildInfo
-	} catch {
-		throw new Error(
-			`[static-application] Workbench shell build info is missing or invalid: ${buildInfoPath}; rebuild @pluxel/runtime`,
-		)
-	}
-	if (
-		buildInfo.version !== WORKBENCH_SHELL_BUILD_INFO_VERSION ||
-		buildInfo.contractProtocol !== expectedProtocol
-	) {
-		throw new Error(
-			`[static-application] Workbench shell contract protocol mismatch: expected ${expectedProtocol}, built ${String(buildInfo.contractProtocol ?? '<missing>')}; rebuild @pluxel/runtime`,
-		)
-	}
-}
-
-async function collectWorkbenchArtifacts(root: string): Promise<unknown[]> {
-	const entries = await readdir(root, { withFileTypes: true }).catch((): never[] => [])
-	const artifacts: unknown[] = []
-	for (const entry of entries) {
-		if (!entry.isDirectory()) continue
-		const manifest = resolve(root, entry.name, 'mf-manifest.json')
-		if (!existsSync(manifest)) continue
-		const content = await readFile(manifest, 'utf-8')
-		artifacts.push({
-			name: entry.name,
-			manifest: relative(dirname(root), manifest),
-			sha256: createHash('sha256').update(content).digest('hex'),
-		})
-	}
-	return artifacts.sort((a, b) =>
-		String((a as { name: string }).name).localeCompare(String((b as { name: string }).name)),
 	)
 }
 

@@ -1,20 +1,11 @@
 import type { ReactNode } from 'react'
-import type { WorkbenchLayoutItem } from '@pluxel/runtime/workbench'
+import type { WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
 
 export type RightPaneTabGroup = {
 	id: string
 	label: string
-	priority: number
+	order: number
 	nodes: Array<{ key: string; node: ReactNode }>
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
-
-function readStringProp(obj: Record<string, unknown>, key: string): string | undefined {
-	const value = obj[key]
-	return typeof value === 'string' ? value : undefined
 }
 
 export function normalizeRestPath(raw?: string): string {
@@ -34,38 +25,35 @@ export function normalizeRestPath(raw?: string): string {
 
 export function buildRightPaneTabGroups(
 	displayName: string,
-	tabItems: readonly WorkbenchLayoutItem[],
-	tabNodes: ReactNode[],
+	entries: readonly WorkbenchLayoutEntry[],
+	nodes: ReactNode[],
 ): RightPaneTabGroup[] {
-	const byId = new Map<string, RightPaneTabGroup>()
-	for (const [index, item] of tabItems.entries()) {
-		const meta = isRecord(item.meta) ? item.meta : {}
-		const tabMeta = isRecord(meta.tabGroup) ? meta.tabGroup : undefined
-		const configuredId = tabMeta ? readStringProp(tabMeta, 'id')?.trim() : undefined
-		const rawGroupId = configuredId || item.id || `${displayName}:tab:${byId.size}`
-		const groupId =
-			rawGroupId === 'config' || rawGroupId === 'route'
-				? `${displayName}:tab:${rawGroupId}`
-				: rawGroupId
-		const configuredLabel = tabMeta ? readStringProp(tabMeta, 'label')?.trim() : undefined
-		const itemLabel = readStringProp(meta, 'label')?.trim()
-		const label = configuredLabel || itemLabel || '扩展面板'
-		const node = tabNodes[index]
-		const existing = byId.get(groupId)
+	const groups = new Map<string, RightPaneTabGroup>()
+	for (const [index, entry] of entries.entries()) {
+		const placement = entry.placement
+		if (placement.kind !== 'tab') continue
+		const requestedId = placement.group?.id ?? entry.descriptor.key
+		const id =
+			requestedId === 'config' || requestedId === 'route'
+				? `${displayName}:${requestedId}`
+				: requestedId
+		const label = placement.group?.label ?? placement.label ?? entry.target.displayName
+		const node = nodes[index]
+		const existing = groups.get(id)
 		if (existing) {
-			existing.priority = Math.max(existing.priority, item.priority)
-			if (node) existing.nodes.push({ key: item.id, node })
+			existing.order = Math.min(existing.order, placement.order)
+			if (node) existing.nodes.push({ key: entry.descriptor.key, node })
 		} else {
-			byId.set(groupId, {
-				id: groupId,
+			groups.set(id, {
+				id,
 				label,
-				priority: item.priority,
-				nodes: node ? [{ key: item.id, node }] : [],
+				order: placement.order,
+				nodes: node ? [{ key: entry.descriptor.key, node }] : [],
 			})
 		}
 	}
-	return [...byId.values()].sort(
-		(left, right) => right.priority - left.priority || left.id.localeCompare(right.id),
+	return [...groups.values()].sort(
+		(left, right) => left.order - right.order || left.id.localeCompare(right.id),
 	)
 }
 

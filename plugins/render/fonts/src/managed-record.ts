@@ -1,5 +1,5 @@
 import { createHash, type Hash } from 'node:crypto'
-import type { ManagedFontSnapshot } from './manager-contract.ts'
+import type { ManagedFontSnapshot } from './workbench.ts'
 
 const MAGIC = new TextEncoder().encode('PLUXELF1')
 const HEADER_LIMIT = 4_096

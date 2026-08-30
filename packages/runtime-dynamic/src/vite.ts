@@ -1,7 +1,7 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
-import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
+import { createPluginSourceVitePipeline } from '../../rolldown/src/vite/index.ts'
 import {
 	collectViteSsrImportFiles,
 	createHostModuleVitePlugin,
@@ -84,6 +84,10 @@ type DynamicViteApplicationCarrier = ReturnType<typeof createViteNodeElysiaAppli
 
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
 	const mode = options.mode ?? 'development'
+	const sourcePipeline = createPluginSourceVitePipeline({
+		name: 'pluxel:dynamic-runtime-source',
+		packageMode: mode,
+	})
 	let singletonHostRoot: string | null = null
 	let singletonHostResolver: OxcResolver | null = null
 	let contextHostHasContext: boolean | undefined
@@ -130,8 +134,11 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		state.controller = undefined
 		delete (server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY]
 		await previous?.stop()
-		const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } =
-			await loadDynamicHmrHostModule(server)
+		const {
+			bootPlannedLoaderHmrHost,
+			configureLoaderHmrWorkbenchProducerSource,
+			planLoaderHmrHostFromConfig,
+		} = await loadDynamicHmrHostModule(server)
 		const plan = await planLoaderHmrHostFromConfig(loaded.config, {
 			configModuleId: state.configPath,
 		})
@@ -143,6 +150,9 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 				mode === 'distribution'
 					? resolve(plan.runtimeStorage.persistenceDir, '..', 'workbench-artifacts')
 					: undefined,
+		})
+		configureLoaderHmrWorkbenchProducerSource(booted.hmr, {
+			compilations: () => sourcePipeline.semantics.workbenchCompilations(),
 		})
 		const applicationCarrier = state.applicationCarrier
 		if (!applicationCarrier) {
@@ -360,10 +370,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 
 	return [
 		singletonBridgePlugin,
-		...pluxelRuntimeSourceVitePlugins({
-			name: 'pluxel:dynamic-runtime-source',
-			packageMode: mode,
-		}),
+		...sourcePipeline.plugins,
 		createHostModuleVitePlugin(),
 		routePlugin,
 	]
@@ -450,7 +457,12 @@ function sourcePathToPublicSpecifier(
 async function loadDynamicHmrHostModule(
 	_server: ViteDevServer,
 ): Promise<
-	Pick<typeof import('./hmr/host'), 'bootPlannedLoaderHmrHost' | 'planLoaderHmrHostFromConfig'>
+	Pick<
+		typeof import('./hmr/host'),
+		| 'bootPlannedLoaderHmrHost'
+		| 'configureLoaderHmrWorkbenchProducerSource'
+		| 'planLoaderHmrHostFromConfig'
+	>
 > {
 	return import('./hmr/host')
 }

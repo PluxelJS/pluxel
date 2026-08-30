@@ -67,7 +67,7 @@ pnpm start
 ```
 
 `host/src/pluxel.static.ts` 的 default export 同时交给 `staticRuntimeVitePlugin()` 和 `staticApplication()`。fixed catalog、
-结构化 auto-start addresses 与 Todo config snapshot 都是显式数据。Workbench artifact 会进入 production distribution，
+结构化 auto-start addresses 与 Todo config snapshot 都是显式数据。Workbench Shell、MF producer inventory 和 manifests 会进入 production distribution，
 但启动时默认关闭；需要管理 UI 时使用：
 
 `host/web/` 是独立 private workspace package，直接声明 React 与以后新增的纯前端依赖，但不 import Pluxel。

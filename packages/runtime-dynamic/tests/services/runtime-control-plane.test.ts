@@ -3,7 +3,7 @@ import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import type { PluginApplyReport } from '@pluxel/runtime/web'
-import { RuntimeRpcApi } from '../../../runtime/src/api/http/rpc/RuntimeRpcApi'
+import { RuntimeManagementTargetImpl } from '../../../runtime/src/services/management/RuntimeManagementTarget'
 import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
 import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
@@ -18,7 +18,7 @@ async function loadModule(
 
 function createRpcFixture() {
 	const fixture = createHmrTestContext()
-	return { ...fixture, rpc: new RuntimeRpcApi(fixture.ctx) }
+	return { ...fixture, rpc: new RuntimeManagementTargetImpl(fixture.ctx) }
 }
 
 describe('runtime control-plane RPC', () => {

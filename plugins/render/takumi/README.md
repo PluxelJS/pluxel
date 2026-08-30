@@ -38,8 +38,9 @@ FontsPlugin 的 managed upload 与 `register()` / `registerFromPath()` 字体会
 Takumi 自己的 parsed resource cache；字体删除或替换后新 revision 不会继续看见旧 registry。
 
 平台自动发现的系统字体只有 Canvas native registry 能看到，FontsPlugin 不拥有其文件 bytes，因此不会伪装成
-Takumi 可移植资源。Takumi 的 Fonts tab 只列 managed/programmatic portable families；如果 provider-wide default
-仍指向不可移植的系统 family，Takumi 依次使用可移植 families，再回落到上游内嵌 Geist last-resort font。
+Takumi 可移植资源。Takumi 放置通用的 provider-owned Fonts selection Attachment；selector 展示 Fonts 的完整 provider
+catalog，而 Takumi 的 headless render 路径仍只 replay 真正拥有 bytes 的 portable families。如果 provider-wide default
+指向不可移植的系统 family，Takumi 依次使用可移植 families，再回落到上游内嵌 Geist last-resort font。
 
 ## 图片、取消和调度
 

@@ -1,11 +1,11 @@
 # Plugin Catalog Classification
 
 本文定义 Management Plugin catalog 的分类所有权、身份、默认解析和用户偏好。这里的 group 是宿主管理界面的
-catalog layout，不是插件能力、依赖、生命周期或 Workbench Extension placement。
+catalog layout，不是插件能力、依赖、生命周期或 Workbench View/Attachment placement。
 
 ## Ownership
 
-- `@Plugin`、`PluginNodeInfo`、插件包 manifest 和 Workbench Contract 不声明 catalog group。
+- `@Plugin`、`PluginNodeInfo`、插件包 manifest 和 Workbench definition/publication 不声明 catalog group。
 - Management Plane 在启用时拥有分类解析与偏好持久化；management 未安装时不创建分类 service、文件或 route 成本。
 - 宿主只能通过顶层 `management.pluginGroups` 注册产品分类；插件作者不能在运行时创建、重命名或锁定分类。
 - 用户可以在已注册分类之间移动和排序插件，也可以明确放回未分组区，但不能创建、重命名或删除分类。

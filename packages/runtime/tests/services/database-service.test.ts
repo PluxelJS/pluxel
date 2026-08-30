@@ -3,10 +3,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { pgTable, text } from 'drizzle-orm/pg-core'
-import { asc } from 'drizzle-orm'
-import * as v from 'valibot'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
 	defineDatabase,
@@ -15,9 +12,6 @@ import {
 } from '@pluxel/runtime/database'
 import type { DatabaseArtifact } from '../../src/database-internal'
 import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
-import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import { requireWorkbench } from '../../src/services/workbench'
 import {
 	attachPostgresPoolErrorHandler,
 	subscribeDatabaseHandle,
@@ -164,19 +158,15 @@ async function resetRuntimeHost(host: RuntimeHost): Promise<void> {
 
 describe('DatabaseService', () => {
 	let databaseHost: RuntimeHost
-	let workbenchDatabaseHost: RuntimeHost
 
 	beforeAll(() => {
 		databaseHost = createRuntimeHost({
 			workbench: false,
 			database: { driver: 'pglite', dataDir: 'memory://' },
 		})
-		workbenchDatabaseHost = createRuntimeHost({
-			database: { driver: 'pglite', dataDir: 'memory://' },
-		})
 	})
 
-	afterAll(() => Promise.all([databaseHost.dispose(), workbenchDatabaseHost.dispose()]))
+	afterAll(() => databaseHost.dispose())
 
 	it('contains idle PostgreSQL pool errors at the database service boundary', () => {
 		const pool = new EventEmitter()
@@ -620,136 +610,6 @@ describe('DatabaseService', () => {
 			await expect(recovered.read((db) => db.select().from(stable.items))).resolves.toEqual([
 				{ id: 'kept', value: 'durable' },
 			])
-		} finally {
-			await resetRuntimeHost(host)
-		}
-	}, 30_000)
-
-	it('projects validated, ordered liveQuery snapshots and revokes them with the owner', async () => {
-		const definition = databaseFixture()
-		const contract = workbenchContract.define({
-			resources: {
-				items: workbenchContract.liveQuery({
-					row: v.object({ id: v.string(), value: v.string() }),
-					key: 'id',
-				}),
-			},
-			views: {
-				Test: { placements: [workbenchContract.tab()] },
-			},
-		})
-		const extension = workbench.extension({ contract })
-		const host = workbenchDatabaseHost
-		try {
-			@Plugin({ displayName: 'LiveQueryDatabasePlugin' })
-			class LiveQueryDatabasePlugin extends BasePlugin {
-				db!: PluginDatabaseHandle<typeof definition.database>
-				override async init() {
-					this.db = await this.ctx.database.use(definition.database)
-					await this.db.transaction((tx) =>
-						tx.insert(definition.items).values({ id: 'b', value: 'second' }),
-					)
-					this.ctx.workbench.mount(extension, {
-						items: workbench.bind.liveQuery({
-							database: this.db,
-							dependsOn: [definition.items],
-							query: (db) => db.select().from(definition.items).orderBy(asc(definition.items.id)),
-						}),
-					})
-				}
-			}
-
-			lowerTestPlugin(LiveQueryDatabasePlugin)
-			host.add(LiveQueryDatabasePlugin)
-			host.cfg(LiveQueryDatabasePlugin).setAutoStart(true)
-			host.start(LiveQueryDatabasePlugin)
-			await host.commit()
-			const backend = requireWorkbench(host.ctx)
-			const grantId = backend.registry.getPluginLayout(pluginNodeAddressOf(LiveQueryDatabasePlugin))
-				.items[0]!.model.items!.grantId
-			const resourceId = backend.registry.resolveModel(grantId, 'liveQuery').resourceId
-			await expect(backend.liveQueries.loadFor(resourceId, undefined)).resolves.toMatchObject({
-				revision: 1,
-				rows: [{ id: 'b', value: 'second' }],
-			})
-
-			await host
-				.require(LiveQueryDatabasePlugin)
-				.db.transaction((tx) => tx.insert(definition.items).values({ id: 'a', value: 'first' }))
-			await expect(backend.liveQueries.loadFor(resourceId, undefined)).resolves.toMatchObject({
-				revision: 2,
-				rows: [
-					{ id: 'a', value: 'first' },
-					{ id: 'b', value: 'second' },
-				],
-			})
-
-			const stoppedHandle = host.require(LiveQueryDatabasePlugin).db
-			host.remove(LiveQueryDatabasePlugin)
-			await host.commit()
-			await expect(stoppedHandle.read((db) => db.select().from(definition.items))).rejects.toThrow(
-				'stopped',
-			)
-			await expect(backend.liveQueries.loadFor(resourceId, undefined)).rejects.toThrow(
-				'unavailable',
-			)
-		} finally {
-			await resetRuntimeHost(host)
-		}
-	}, 30_000)
-
-	it('validates liveQuery params and rejects duplicate projected keys', async () => {
-		const definition = databaseFixture()
-		const contract = workbenchContract.define({
-			resources: {
-				items: workbenchContract.liveQuery({
-					params: v.object({ search: v.string() }),
-					row: v.object({ id: v.string(), value: v.string() }),
-					key: 'id',
-				}),
-			},
-			views: {
-				Test: { placements: [workbenchContract.tab()] },
-			},
-		})
-		const extension = workbench.extension({ contract })
-		const host = workbenchDatabaseHost
-		try {
-			@Plugin({ displayName: 'ValidatedLiveQueryPlugin' })
-			class ValidatedLiveQueryPlugin extends BasePlugin {
-				override async init() {
-					const database = await this.ctx.database.use(definition.database)
-					await database.transaction((tx) =>
-						tx.insert(definition.items).values({ id: 'same', value: 'value' }),
-					)
-					this.ctx.workbench.mount(extension, {
-						items: workbench.bind.liveQuery({
-							database,
-							dependsOn: [definition.items],
-							query: async (db) => {
-								const rows = await db.select().from(definition.items)
-								return [...rows, ...rows]
-							},
-						}),
-					})
-				}
-			}
-			lowerTestPlugin(ValidatedLiveQueryPlugin)
-			host.add(ValidatedLiveQueryPlugin)
-			host.cfg(ValidatedLiveQueryPlugin).setAutoStart(true)
-			host.start(ValidatedLiveQueryPlugin)
-			await host.commit()
-			const backend = requireWorkbench(host.ctx)
-			const grantId = backend.registry.getPluginLayout(
-				pluginNodeAddressOf(ValidatedLiveQueryPlugin),
-			).items[0]!.model.items!.grantId
-			const resourceId = backend.registry.resolveModel(grantId, 'liveQuery').resourceId
-			await expect(backend.liveQueries.loadFor(resourceId, undefined)).rejects.toThrow(
-				'invalid liveQuery params',
-			)
-			await expect(backend.liveQueries.loadFor(resourceId, { search: '' })).rejects.toThrow(
-				'duplicate key',
-			)
 		} finally {
 			await resetRuntimeHost(host)
 		}

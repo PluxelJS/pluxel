@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-	runWorkbenchFederationBuild,
+	runWorkbenchIsolatedBuild,
 	runWorkbenchOutputTransaction,
+	WORKBENCH_ISOLATED_BUILD_CONCURRENCY,
 } from '../src/workbench/build-scheduler'
 
 const pause = (milliseconds = 20) =>
 	new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
 describe('workbench build scheduler', () => {
-	it('treats the Federation builder as a process-wide exclusive resource', async () => {
+	it('allows bounded parallel producer compilers', async () => {
 		let active = 0
 		let maximumActive = 0
 
 		await Promise.all(
 			Array.from({ length: 3 }, () =>
-				runWorkbenchFederationBuild(async () => {
+				runWorkbenchIsolatedBuild(async () => {
 					active += 1
 					maximumActive = Math.max(maximumActive, active)
 					try {
@@ -27,16 +28,16 @@ describe('workbench build scheduler', () => {
 			),
 		)
 
-		expect(maximumActive).toBe(1)
+		expect(maximumActive).toBe(WORKBENCH_ISOLATED_BUILD_CONCURRENCY)
 	})
 
 	it('continues scheduling after a failed Federation build', async () => {
 		await expect(
-			runWorkbenchFederationBuild(async () => {
+			runWorkbenchIsolatedBuild(async () => {
 				throw new Error('expected build failure')
 			}),
 		).rejects.toThrow('expected build failure')
-		await expect(runWorkbenchFederationBuild(async () => {})).resolves.toBeUndefined()
+		await expect(runWorkbenchIsolatedBuild(async () => {})).resolves.toBeUndefined()
 
 		await expect(
 			runWorkbenchOutputTransaction('/tmp/pluxel-failed-target', async () => {

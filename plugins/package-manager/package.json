@@ -20,7 +20,7 @@
 			"default": "./dist/index.mjs"
 		},
 		"./workbench": {
-			"@pluxel/hmr": "./src/workbench-contract.ts",
+			"@pluxel/hmr": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
 		},
 		"./package.json": "./package.json"

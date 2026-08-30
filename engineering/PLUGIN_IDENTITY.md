@@ -169,8 +169,9 @@ artifact build cache 不含 `forkId`，相同输入只编译一次；node bindin
 config patch 顺序是 validate -> 保存 desired record -> 通知 addressed running generation -> 报告 apply 结果。listener 缺失或失败返回
 `saved-not-applied`，desired config 保留供后续 mutation、显式 restart 或下次 boot 重试。修改一个 fork 不通知 sibling/default。
 
-Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench extension/resource owner
-仍按 node，grant 按 generation。Plugin 在 `ctx.elysia` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
+Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench
+View/Attachment descriptor identity 按 definition，publication/binding owner 按 node，opened target lifetime 按
+generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
 也不提供另一份 `publicPath` 映射。多个 node 需要同时暴露 HTTP 时，业务 config 或唯一 gateway 必须让最终 path 保持不冲突。
 
 ## 持久化版本

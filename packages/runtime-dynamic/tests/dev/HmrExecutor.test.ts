@@ -9,6 +9,8 @@ type ExecutorOptions = {
 	batchRollback: () => void
 	importModule: (id: string) => Promise<Record<string, unknown>>
 	replaceModule?: () => Promise<unknown> | unknown
+	beforeCommit?: () => Promise<void> | void
+	commit?: () => Promise<void> | void
 }
 
 function createExecutor(options: ExecutorOptions) {
@@ -26,7 +28,7 @@ function createExecutor(options: ExecutorOptions) {
 			replaceModule: options.replaceModule ?? vi.fn(async () => ({})),
 			removeModule: vi.fn(),
 			rollback: options.batchRollback,
-			commit: vi.fn(),
+			commit: options.commit ?? vi.fn(),
 		}) as ReturnType<typeof loader.beginBatch>
 	const executor = new HmrExecutor(
 		host.ctx,
@@ -39,7 +41,11 @@ function createExecutor(options: ExecutorOptions) {
 			toVite: (id: string) => id,
 		} as ConstructorParameters<typeof HmrExecutor>[2],
 		{ start: () => () => 1 },
-		{ useRequireShims: false, dbgModules: null },
+		{
+			useRequireShims: false,
+			dbgModules: null,
+			beforeCommit: options.beforeCommit,
+		},
 	)
 	return { executor, dispose: () => host.dispose() }
 }
@@ -104,6 +110,59 @@ describe('HmrExecutor', () => {
 					props: { file: '/repo/plugin.ts', error: injectError },
 				},
 			])
+		} finally {
+			await fixture.dispose()
+		}
+	})
+
+	it('publishes route-owned artifacts after injection and before the runtime commit', async () => {
+		const order: string[] = []
+		const fixture = createExecutor({
+			errorLogs: [],
+			batchRollback: vi.fn(),
+			importModule: vi.fn(async () => ({ Plugin: class Plugin {} })),
+			replaceModule: vi.fn(() => {
+				order.push('inject')
+				return {}
+			}),
+			beforeCommit: vi.fn(() => {
+				order.push('artifact')
+			}),
+			commit: vi.fn(() => {
+				order.push('runtime')
+			}),
+		})
+
+		try {
+			const result = await fixture.executor.runAndLoadAllClean(['/repo/plugin.ts'])
+			expect(result?.commitResult.ok).toBe(true)
+			expect(order).toEqual(['inject', 'artifact', 'runtime'])
+		} finally {
+			await fixture.dispose()
+		}
+	})
+
+	it('rolls back the runtime candidate when artifact preparation fails', async () => {
+		const batchRollback = vi.fn()
+		const commit = vi.fn()
+		const fixture = createExecutor({
+			errorLogs: [],
+			batchRollback,
+			importModule: vi.fn(async () => ({ Plugin: class Plugin {} })),
+			beforeCommit: vi.fn(() => {
+				throw new Error('federation build failed')
+			}),
+			commit,
+		})
+
+		try {
+			const result = await fixture.executor.runAndLoadAllClean(['/repo/plugin.ts'])
+			expect(result?.commitResult).toEqual({
+				ok: false,
+				err: expect.objectContaining({ message: 'federation build failed' }),
+			})
+			expect(batchRollback).toHaveBeenCalledTimes(1)
+			expect(commit).not.toHaveBeenCalled()
 		} finally {
 			await fixture.dispose()
 		}

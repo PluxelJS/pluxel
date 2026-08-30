@@ -137,7 +137,7 @@ blob I/O 不进入这个 transaction。需要数据库级 durability、并发隔
 
 Vault 不在普通 Plugin 调用时偷偷 auto-unlock。host 在启动/preflight 阶段通过 host identity 或部署环境中的 age identity 解锁；若 storage 尚未 ready，Plugin 访问会 fail fast。
 
-默认部署 identity 环境变量是 `PLUXEL_VAULT_DEPLOY_IDENTITY`，host 可通过 `vault.deployIdentityEnv` 改名。私钥不得写进普通 Plugin config、日志、Workbench resource 或发行物。
+默认部署 identity 环境变量是 `PLUXEL_VAULT_DEPLOY_IDENTITY`，host 可通过 `vault.deployIdentityEnv` 改名。私钥不得写进普通 Plugin config、日志、Workbench DTO/API 或发行物。
 
 `vaultAdmin` 是仅在 Vault enabled 时存在的 root-owned 宿主管理 API，用于 preflight、unlock、rekey 和 deploy recipient
 管理。宿主读取前也必须检查 absence；业务 Plugin 只使用已检查的 `ctx.vault`，不调用 root admin API。

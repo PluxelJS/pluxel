@@ -19,6 +19,7 @@ import {
 	ConsumerLateSettings,
 	setFixtureFetches,
 } from '../src/test-fixtures.ts'
+import { openWretchSettings } from './workbench-helpers.ts'
 
 let fetchA: FetchLike
 let fetchB: FetchLike
@@ -114,8 +115,10 @@ describe('WretchPlugin', () => {
 				await host.commit()
 				const a = host.require(ConsumerA)
 				const late = host.require(ConsumerLateSettings)
-				await a.http.workbenchSettings().update({ headers: { 'X-Owner': 'a' } })
-				await late.http.workbenchSettings().update({ headers: { 'X-Owner': 'late' } })
+				using aSettings = await openWretchSettings(host, ConsumerA)
+				using lateSettings = await openWretchSettings(host, ConsumerLateSettings)
+				await aSettings.api.update({ headers: { 'X-Owner': 'a' } })
+				await lateSettings.api.update({ headers: { 'X-Owner': 'late' } })
 
 				expect([...persistence.writes.keys()]).toHaveLength(2)
 				for (const [key, text] of persistence.writes) {
@@ -130,7 +133,7 @@ describe('WretchPlugin', () => {
 					)
 				}
 			},
-			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+			{ persistence: { mode: 'custom', backend: persistence.backend } },
 		)
 	})
 
@@ -143,12 +146,13 @@ describe('WretchPlugin', () => {
 			async (host) => {
 				addStarted(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 				await host.commit()
-				await host.require(ConsumerA).http.workbenchSettings().update({ headers: {} })
+				using settings = await openWretchSettings(host, ConsumerA)
+				await settings.api.update({ headers: {} })
 				key = [...persistence.writes.keys()][0]!
 				expectedOwner = host.require(ConsumerA).ctx.pluginInfo.nodeAddress
 				wrongOwner = host.require(ConsumerLateSettings).ctx.pluginInfo.nodeAddress
 			},
-			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+			{ persistence: { mode: 'custom', backend: persistence.backend } },
 		)
 		const stored = JSON.parse(persistence.writes.get(key)!) as Record<string, unknown>
 		await persistence.put(key, JSON.stringify({ ...stored, owner: wrongOwner }))
@@ -207,64 +211,59 @@ describe('WretchPlugin', () => {
 			})
 		setFixtureFetches(fetchA, fetchB)
 
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [WretchPlugin, ConsumerA])
-				await host.commit()
-				const consumer = host.require(ConsumerA)
-				const client = consumer.client
-				const commands = consumer.http.workbenchSettings()
+		await withRuntimeHost(async (host) => {
+			addStarted(host, [WretchPlugin, ConsumerA])
+			await host.commit()
+			const consumer = host.require(ConsumerA)
+			const client = consumer.client
+			using settings = await openWretchSettings(host, ConsumerA)
 
-				await commands.update({
-					headers: { 'Accept-Language': 'zh-HK', 'X-Consumer': 'managed' },
-					proxyUrl: 'http://proxy.example:8080',
-					timeoutMs: 5_000,
-				})
+			await settings.api.update({
+				headers: { 'Accept-Language': 'zh-HK', 'X-Consumer': 'managed' },
+				proxyUrl: 'http://proxy.example:8080',
+				timeoutMs: 5_000,
+			})
 
-				await expect(client.get('/managed').json()).resolves.toMatchObject({
-					language: 'zh-HK',
-					consumer: 'managed',
-					hasProxyDispatcher: true,
-				})
+			await expect(client.get('/managed').json()).resolves.toMatchObject({
+				language: 'zh-HK',
+				consumer: 'managed',
+				hasProxyDispatcher: true,
+			})
 
-				host.stop(ConsumerA)
-				await host.commit()
-				host.start(ConsumerA)
-				await host.commit()
+			host.stop(ConsumerA)
+			await host.commit()
+			host.start(ConsumerA)
+			await host.commit()
 
-				expect(host.require(ConsumerA).http.workbenchSettings().get().settings).toMatchObject({
-					headers: { 'accept-language': 'zh-HK', 'x-consumer': 'managed' },
-					proxyUrl: 'http://proxy.example:8080/',
-					timeoutMs: 5_000,
-				})
-			},
-			{ workbench: false },
-		)
+			using restarted = await openWretchSettings(host, ConsumerA)
+			expect(restarted.api.snapshot().settings).toMatchObject({
+				headers: { 'accept-language': 'zh-HK', 'x-consumer': 'managed' },
+				proxyUrl: 'http://proxy.example:8080/',
+				timeoutMs: 5_000,
+			})
+		})
 	})
 
 	it('rejects unsafe proxy, header, and timeout settings', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).set({ timeoutMs: 1_000 })
-				await host.commit()
-				const commands = host.require(ConsumerA).http.workbenchSettings()
+		await withRuntimeHost(async (host) => {
+			addStarted(host, [WretchPlugin, ConsumerA])
+			host.cfg(WretchPlugin).set({ timeoutMs: 1_000 })
+			await host.commit()
+			using settings = await openWretchSettings(host, ConsumerA)
 
-				await expect(
-					commands.update({ headers: {}, proxyUrl: 'http://user:pass@proxy.example' }),
-				).rejects.toThrow('Authenticated proxy URLs are not supported')
-				await expect(
-					commands.update({ headers: {}, proxyUrl: 'http://proxy.example/tunnel' }),
-				).rejects.toThrow('without path')
-				await expect(
-					commands.update({ headers: { Authorization: 'Bearer secret' } }),
-				).rejects.toThrow('secret-bearing')
-				await expect(commands.update({ headers: {}, timeoutMs: 2_000 })).rejects.toThrow(
-					'cannot exceed the host limit',
-				)
-			},
-			{ workbench: false },
-		)
+			await expect(
+				settings.api.update({ headers: {}, proxyUrl: 'http://user:pass@proxy.example' }),
+			).rejects.toThrow('Authenticated proxy URLs are not supported')
+			await expect(
+				settings.api.update({ headers: {}, proxyUrl: 'http://proxy.example/tunnel' }),
+			).rejects.toThrow('without path')
+			await expect(
+				settings.api.update({ headers: { Authorization: 'Bearer secret' } }),
+			).rejects.toThrow('secret-bearing')
+			await expect(settings.api.update({ headers: {}, timeoutMs: 2_000 })).rejects.toThrow(
+				'cannot exceed the host limit',
+			)
+		})
 	})
 
 	it('accepts only exact HTTP(S) origins in host policy config', () => {
@@ -284,22 +283,20 @@ describe('WretchPlugin', () => {
 			jsonResponse({ language: new Headers(options.headers).get('accept-language') })
 		setFixtureFetches(fetchA, fetchB)
 
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [WretchPlugin, ConsumerLateSettings])
-				await host.commit()
+		await withRuntimeHost(async (host) => {
+			addStarted(host, [WretchPlugin, ConsumerLateSettings])
+			await host.commit()
 
-				const consumer = host.require(ConsumerLateSettings)
-				await consumer.http.workbenchSettings().update({
-					headers: { 'Accept-Language': 'zh-HK' },
-				})
+			const consumer = host.require(ConsumerLateSettings)
+			using settings = await openWretchSettings(host, ConsumerLateSettings)
+			await settings.api.update({
+				headers: { 'Accept-Language': 'zh-HK' },
+			})
 
-				await expect(consumer.client.get('/managed').json()).resolves.toEqual({
-					language: 'zh-HK',
-				})
-			},
-			{ workbench: false },
-		)
+			await expect(consumer.client.get('/managed').json()).resolves.toEqual({
+				language: 'zh-HK',
+			})
+		})
 	})
 
 	it('shares one managed-settings initialization across concurrent calls', async () => {
@@ -317,9 +314,10 @@ describe('WretchPlugin', () => {
 				expect(persistence.reads()).toBe(1)
 				persistence.release()
 				await Promise.all([first, second])
-				expect(http.workbenchSettings().get().settings.headers).toEqual({})
+				using settings = await openWretchSettings(host, ConsumerB)
+				expect(settings.api.snapshot().settings.headers).toEqual({})
 			},
-			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+			{ persistence: { mode: 'custom', backend: persistence.backend } },
 		)
 	})
 
@@ -440,43 +438,58 @@ describe('WretchPlugin', () => {
 	})
 
 	it('revokes cached managed-settings RPC with its caller generation', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [WretchPlugin, ConsumerA])
-				await host.commit()
+		await withRuntimeHost(async (host) => {
+			addStarted(host, [WretchPlugin, ConsumerA])
+			await host.commit()
 
-				const commands = host.require(ConsumerA).http.workbenchSettings()
-				host.stop(ConsumerA)
-				await host.commit()
+			using settings = await openWretchSettings(host, ConsumerA)
+			const commands = settings.api
+			host.stop(ConsumerA)
+			await host.commit()
 
-				expect(() => commands.get()).toThrow('stopped or replaced plugin generation')
-				await expect(commands.update({ headers: {} })).rejects.toThrow(
-					'stopped or replaced plugin generation',
-				)
-			},
-			{ workbench: false },
-		)
+			expect(() => commands.snapshot()).toThrow('stopped or replaced plugin generation')
+			await expect(commands.update({ headers: {} })).rejects.toThrow(
+				'stopped or replaced plugin generation',
+			)
+		})
+	})
+
+	it('revokes a settings capability when its View closes', async () => {
+		await withRuntimeHost(async (host) => {
+			addStarted(host, [WretchPlugin, ConsumerA])
+			await host.commit()
+
+			const settings = await openWretchSettings(host, ConsumerA)
+			const api = settings.api
+			using independentSettings = await openWretchSettings(host, ConsumerA)
+			expect(independentSettings.api).not.toBe(api)
+			settings[Symbol.dispose]()
+
+			expect(() => api.snapshot()).toThrow('stopped or replaced plugin generation')
+			await expect(api.update({ headers: {} })).rejects.toThrow(
+				'stopped or replaced plugin generation',
+			)
+			expect(independentSettings.api.snapshot().settings.headers).toEqual({})
+		})
 	})
 
 	it('releases managed proxy state on a provider restart', async () => {
 		const close = vi.spyOn(ProxyAgent.prototype, 'close')
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					addStarted(host, [WretchPlugin, ConsumerA])
-					await host.commit()
+			await withRuntimeHost(async (host) => {
+				addStarted(host, [WretchPlugin, ConsumerA])
+				await host.commit()
 
-					await host.require(ConsumerA).http.workbenchSettings().update({
-						headers: {},
-						proxyUrl: 'http://proxy.example:8080',
-					})
-					const before = close.mock.calls.length
-					host.restart(WretchPlugin)
-					await host.commit()
-					expect(close.mock.calls.length).toBeGreaterThan(before)
-				},
-				{ workbench: false },
-			)
+				using settings = await openWretchSettings(host, ConsumerA)
+				await settings.api.update({
+					headers: {},
+					proxyUrl: 'http://proxy.example:8080',
+				})
+				const before = close.mock.calls.length
+				host.restart(WretchPlugin)
+				await host.commit()
+				expect(close.mock.calls.length).toBeGreaterThan(before)
+			})
 		} finally {
 			close.mockRestore()
 		}

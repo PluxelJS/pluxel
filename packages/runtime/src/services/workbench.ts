@@ -1,160 +1,120 @@
-import { randomUUID } from 'node:crypto'
-import type { Context, PluginNodeSlot } from '@pluxel/core'
+import type { Context } from '@pluxel/core'
 import {
 	readProductDescriptor,
 	type HostApplicationMeta,
 	type ProductDescriptor,
 } from '../product-contract'
-import type { WorkbenchResourceContract } from '../workbench/contracts'
 import type {
-	AnyWorkbenchExtension,
+	AnyWorkbenchDefinition,
 	WorkbenchBindings,
-	WorkbenchMount,
-	PluginWorkbench,
-} from '../workbench/runtime'
+	WorkbenchPrincipal,
+} from '../workbench/definition'
+import type { WorkbenchSessionApi } from '../workbench/client-protocol'
 import {
 	WorkbenchArtifactService,
-	type WorkbenchArtifactHostOptions,
+	type WorkbenchArtifactLookup,
 } from './workbench/WorkbenchArtifactService'
-import { WorkbenchRpcService } from './workbench/resources/WorkbenchRpcService'
-import { WorkbenchEventsService } from './workbench/resources/WorkbenchEventsService'
-import { WorkbenchLiveQueryService } from './workbench/resources/WorkbenchLiveQueryService'
-import { WorkbenchRegistry, type InternalModelRef } from './workbench/WorkbenchRegistry'
+import { WorkbenchRegistry } from './workbench/WorkbenchRegistry'
+import {
+	expireWorkbenchSession,
+	WorkbenchSessionTarget,
+	workbenchSessionSignal,
+} from './workbench/WorkbenchSessionTarget'
 import { WorkbenchService } from './workbench/WorkbenchService'
+import { loadPackagedWorkbenchDeployment } from './workbench/packaged-artifact'
+
+export type WorkbenchServerSession = Readonly<{
+	target: WorkbenchSessionApi
+	signal: AbortSignal
+	dispose(): void
+}>
 
 export class WorkbenchBackend {
 	readonly application: HostApplicationMeta
 	readonly artifacts: WorkbenchArtifactService
-	readonly rpc: WorkbenchRpcService
-	readonly events: WorkbenchEventsService
-	readonly liveQueries: WorkbenchLiveQueryService
 	readonly registry: WorkbenchRegistry
-	private readonly views = new WeakMap<Context, PluginWorkbench>()
-	private readonly mounts = new Map<PluginNodeSlot, { owner: Context; dispose: () => void }>()
+	private preparation?: Promise<void>
 
-	constructor(root: Context, options: WorkbenchInstallOptions) {
+	constructor(
+		root: Context,
+		private readonly options: WorkbenchInstallOptions,
+		registryArtifacts?: WorkbenchArtifactLookup,
+	) {
 		this.application = Object.freeze({
 			product:
 				options.product === undefined || options.product === null
 					? null
 					: readProductDescriptor(options.product, '[workbench] product'),
 		})
-		this.artifacts = new WorkbenchArtifactService(root, options.artifacts)
-		this.rpc = new WorkbenchRpcService(root, undefined)
-		this.events = new WorkbenchEventsService(root, undefined)
-		this.liveQueries = new WorkbenchLiveQueryService(this.events)
-		this.registry = new WorkbenchRegistry(root, this.artifacts)
-		this.events.registerResourceFor(root, 'workbench.layouts', (channel) => {
-			const emit = () => channel.emit('revision', this.registry.getCatalog().revision)
-			emit()
-			return this.registry.subscribe(emit)
-		})
+		this.artifacts = new WorkbenchArtifactService(root)
+		this.registry = new WorkbenchRegistry(root, registryArtifacts ?? this.artifacts)
 	}
 
-	forContext(ctx: Context): PluginWorkbench {
-		const existing = this.views.get(ctx)
+	/** Loads the immutable production producer inventory before Plugin startup. */
+	prepare(): Promise<void> {
+		if (!this.options.artifacts?.root) return Promise.resolve()
+		const existing = this.preparation
 		if (existing) return existing
-		const view: PluginWorkbench = {
-			mount: (module, bindings) => this.mount(ctx, module, bindings),
-		}
-		this.views.set(ctx, view)
-		return view
+		let task!: Promise<void>
+		task = loadPackagedWorkbenchDeployment(this.artifacts, this.options.artifacts.root)
+			.then((): void => undefined)
+			.catch((error: unknown) => {
+				if (this.preparation === task) this.preparation = undefined
+				throw error
+			})
+		this.preparation = task
+		return task
 	}
 
-	private mount<
-		Extension extends AnyWorkbenchExtension,
-		const Bindings extends WorkbenchBindings<Extension>,
-	>(owner: Context, extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> {
-		const ownerSlot = owner.pluginInfo.nodeSlot
-		const ownerDescriptor = Object.freeze({
-			address: owner.pluginInfo.nodeAddress,
-			displayName: owner.pluginInfo.displayName,
-			rootExportName: owner.pluginInfo.definitionAddress.exportName,
-		})
-		const cleanup: Array<() => void> = []
-		const refs: Record<string, InternalModelRef> = {}
-		const resources = extension.contract.resources
-		const expectedKeys = Object.keys(resources).sort()
-		const actualKeys = Object.keys(bindings as object).sort()
-		if (expectedKeys.join('\0') !== actualKeys.join('\0')) {
-			const missing = expectedKeys.filter((key) => !actualKeys.includes(key))
-			const extra = actualKeys.filter((key) => !expectedKeys.includes(key))
-			throw new Error(
-				`[workbench] bindings must exactly match Contract resources` +
-					`${missing.length > 0 ? `; missing: ${missing.join(', ')}` : ''}` +
-					`${extra.length > 0 ? `; extra: ${extra.join(', ')}` : ''}`,
-			)
-		}
-		for (const [key, contract] of Object.entries(resources) as Array<
-			[string, WorkbenchResourceContract]
-		>) {
-			const binding = (bindings as Record<string, any>)[key]
-			if (!binding || binding.kind !== contract.kind) {
-				throw new Error(`[workbench] bindings.${key}: expected ${contract.kind} binding`)
-			}
-		}
+	publish<const Definition extends AnyWorkbenchDefinition>(
+		owner: Context,
+		definition: Definition,
+		bindings: WorkbenchBindings<Definition>,
+	): void {
+		this.registry.publish(owner, definition, bindings)
+	}
 
-		const previous = this.mounts.get(ownerSlot)
-		if (previous?.owner === owner) {
-			throw new Error(`[workbench] Plugin node already mounted a Workbench extension`)
-		}
-		previous?.dispose()
-
-		try {
-			for (const [key, contract] of Object.entries(resources) as Array<
-				[string, WorkbenchResourceContract]
-			>) {
-				const binding = (bindings as Record<string, any>)[key]
-				const resourceId = randomUUID()
-				refs[key] = Object.freeze({ ownerSlot, resourceId, modelKey: key, kind: contract.kind })
-				switch (contract.kind) {
-					case 'rpc': {
-						cleanup.push(this.rpc.registerResourceFor(owner, resourceId, binding.factory))
-						break
-					}
-					case 'events': {
-						cleanup.push(this.events.registerResourceFor(owner, resourceId, binding.handler))
-						break
-					}
-					case 'liveQuery': {
-						cleanup.push(
-							this.liveQueries.registerResourceFor(owner, resourceId, key, contract, binding),
-						)
-						break
-					}
-				}
-			}
-
-			if (extension.entry) {
-				cleanup.push(
-					this.artifacts.registerFor(owner, extension.entry, extension.contract.fingerprint),
-				)
-			}
-			cleanup.push(this.registry.mount(ownerSlot, ownerDescriptor, extension, Object.freeze(refs)))
-		} catch (error) {
-			for (const dispose of cleanup.toReversed()) dispose()
-			throw error
-		}
-
+	createSession(
+		principal: WorkbenchPrincipal,
+		invalidate: (cause: Error) => void,
+	): WorkbenchServerSession {
+		const identity = parsePrincipal(principal)
 		let active = true
-		const dispose = () => {
+		let unsubscribeRegistry = (): void => {}
+		let unsubscribeArtifacts = (): void => {}
+		const target = new WorkbenchSessionTarget(this.registry, identity, () => {
 			if (!active) return
 			active = false
-			for (const cleanupItem of cleanup.toReversed()) cleanupItem()
-			if (this.mounts.get(ownerSlot)?.owner === owner) this.mounts.delete(ownerSlot)
+			unsubscribeRegistry()
+			unsubscribeArtifacts()
+		})
+		const expire = (cause: Error) => {
+			if (!active) return
+			expireWorkbenchSession(target, cause)
+			try {
+				invalidate(cause)
+			} catch {
+				// Carrier cleanup remains authoritative if an observer itself fails.
+			}
 		}
-		const guard = owner.effects.defer(dispose)
-		const mounted = { owner, dispose: () => guard.dispose() }
-		this.mounts.set(ownerSlot, mounted)
+		unsubscribeRegistry = this.registry.subscribe(() =>
+			expire(new Error('Workbench publication changed')),
+		)
+		unsubscribeArtifacts = this.artifacts.subscribe(() =>
+			expire(new Error('Workbench federation revision changed')),
+		)
+
 		return Object.freeze({
-			extension,
+			target,
+			signal: workbenchSessionSignal(target),
+			dispose: () => target[Symbol.dispose](),
 		})
 	}
 }
 
 export type WorkbenchInstallOptions = Readonly<{
 	product?: ProductDescriptor | null
-	artifacts?: WorkbenchArtifactHostOptions
+	artifacts?: Readonly<{ root?: string }>
 }>
 
 export type WorkbenchBackendFactory = (
@@ -177,4 +137,38 @@ export function requireWorkbench(ctx: Context): WorkbenchBackend {
 	return service.requireBackend()
 }
 
-export type { SseChannel } from './workbench/resources/WorkbenchEventsService'
+function parsePrincipal(input: WorkbenchPrincipal): WorkbenchPrincipal {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError('[workbench] principal must be an object')
+	}
+	const keys = Object.keys(input).sort()
+	if (
+		keys.some((key) => !['displayName', 'provider', 'subject'].includes(key)) ||
+		!keys.includes('provider') ||
+		!keys.includes('subject')
+	) {
+		throw new TypeError('[workbench] principal has an invalid shape')
+	}
+	if (
+		typeof input.provider !== 'string' ||
+		!input.provider ||
+		input.provider.length > 128 ||
+		input.provider.trim() !== input.provider ||
+		typeof input.subject !== 'string' ||
+		!input.subject ||
+		input.subject.length > 1_024 ||
+		input.subject.trim() !== input.subject ||
+		(input.displayName !== undefined &&
+			(typeof input.displayName !== 'string' ||
+				!input.displayName ||
+				input.displayName.length > 256 ||
+				input.displayName.trim() !== input.displayName))
+	) {
+		throw new TypeError('[workbench] principal has invalid fields')
+	}
+	return Object.freeze({
+		provider: input.provider,
+		subject: input.subject,
+		...(input.displayName === undefined ? {} : { displayName: input.displayName }),
+	})
+}
