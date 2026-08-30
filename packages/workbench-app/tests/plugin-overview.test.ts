@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PluginGroup, PluginsListOutput, RuntimeManagementClient } from '@pluxel/runtime/web'
+import type { PluginCatalogSnapshot, RuntimeManagementClient } from '@pluxel/runtime/web'
 import {
 	buildPluginOverview,
 	PluginOverviewResource,
@@ -13,7 +13,7 @@ const address = {
 	variant: 'default',
 } as const
 
-const plugins = {
+const catalog = {
 	plugins: [
 		{
 			address,
@@ -38,57 +38,41 @@ const plugins = {
 			},
 		},
 	],
+	sections: [
+		{
+			sectionId: 'package:@pluxel/example',
+			name: '@pluxel/example',
+			basis: { kind: 'package', packageName: '@pluxel/example' },
+			nodes: [address],
+		},
+	],
 	summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
-} satisfies PluginsListOutput
-
-const groups = [
-	{
-		groupId: 'examples',
-		name: 'Examples',
-		nodes: [
-			{
-				address,
-				reference: '@pluxel/example#ExamplePlugin',
-				route: 'v1/package/ExamplePlugin/@pluxel/example',
-				displayName: 'ExamplePlugin',
-				label: 'Example',
-				rootExportName: 'ExamplePlugin',
-			},
-		],
-	},
-] satisfies readonly PluginGroup[]
+} satisfies PluginCatalogSnapshot
 
 describe('plugin overview resource', () => {
 	it('uses canonical routes as ids and catalog labels as display text', () => {
-		const overview = buildPluginOverview(plugins, groups)
+		const overview = buildPluginOverview(catalog)
 
 		expect(overview.status.statuses[0]).toMatchObject({
 			id: 'v1/package/ExamplePlugin/@pluxel/example',
 			label: 'Example',
 			address,
 		})
-		expect(overview.groups).toEqual(groups)
+		expect(overview.sections).toEqual(catalog.sections)
 		expect(Object.isFrozen(overview)).toBe(true)
 		expect(Object.isFrozen(overview.status.statuses)).toBe(true)
 	})
 
 	it('deduplicates in-flight reads, honors TTL, and keeps the last good snapshot', async () => {
 		let now = 1_000
-		let pluginReads = 0
-		let groupReads = 0
+		let catalogReads = 0
 		let fail = false
 		const client = {
-			plugins: {
-				list: async () => {
-					pluginReads += 1
+			catalog: {
+				snapshot: async () => {
+					catalogReads += 1
 					if (fail) throw new Error('offline')
-					return plugins
-				},
-			},
-			groups: {
-				list: async () => {
-					groupReads += 1
-					return groups
+					return catalog
 				},
 			},
 		} as unknown as RuntimeManagementClient
@@ -98,11 +82,11 @@ describe('plugin overview resource', () => {
 		const duplicate = resource.load()
 		expect(duplicate).toBe(first)
 		await first
-		expect([pluginReads, groupReads]).toEqual([1, 1])
+		expect(catalogReads).toBe(1)
 
 		now += 10_000
 		await resource.load()
-		expect([pluginReads, groupReads]).toEqual([1, 1])
+		expect(catalogReads).toBe(1)
 
 		fail = true
 		await resource.load(true)
@@ -114,46 +98,41 @@ describe('plugin overview resource', () => {
 	})
 
 	it('queues a fresh read when invalidated during an in-flight overview request', async () => {
-		let release!: (value: PluginsListOutput) => void
-		const firstPlugins = new Promise<PluginsListOutput>((resolve) => {
+		let release!: (value: PluginCatalogSnapshot) => void
+		const firstCatalog = new Promise<PluginCatalogSnapshot>((resolve) => {
 			release = resolve
 		})
-		const pluginList = vi
-			.fn<() => Promise<PluginsListOutput>>()
-			.mockReturnValueOnce(firstPlugins)
-			.mockResolvedValueOnce(plugins)
-		const groupList = vi.fn().mockResolvedValue(groups)
+		const catalogSnapshot = vi
+			.fn<() => Promise<PluginCatalogSnapshot>>()
+			.mockReturnValueOnce(firstCatalog)
+			.mockResolvedValueOnce(catalog)
 		const resource = new PluginOverviewResource({
-			plugins: { list: pluginList },
-			groups: { list: groupList },
+			catalog: { snapshot: catalogSnapshot },
 		} as unknown as RuntimeManagementClient)
 		const unsubscribe = resource.subscribe(() => undefined)
 
 		void resource.load()
 		resource.markStale()
 		const refreshed = resource.load(true)
-		release(plugins)
+		release(catalog)
 		await refreshed
 		unsubscribe()
 
-		expect(pluginList).toHaveBeenCalledTimes(2)
-		expect(groupList).toHaveBeenCalledTimes(2)
+		expect(catalogSnapshot).toHaveBeenCalledTimes(2)
 		expect(resource.getSnapshot()).toMatchObject({ isLoading: false, isStale: false })
 	})
 
 	it('does not lose an invalidation when the old overview request rejects', async () => {
 		let rejectOld!: (reason: Error) => void
-		const firstPlugins = new Promise<PluginsListOutput>((_resolve, reject) => {
+		const firstCatalog = new Promise<PluginCatalogSnapshot>((_resolve, reject) => {
 			rejectOld = reject
 		})
-		const pluginList = vi
-			.fn<() => Promise<PluginsListOutput>>()
-			.mockReturnValueOnce(firstPlugins)
-			.mockResolvedValueOnce(plugins)
-		const groupList = vi.fn().mockResolvedValue(groups)
+		const catalogSnapshot = vi
+			.fn<() => Promise<PluginCatalogSnapshot>>()
+			.mockReturnValueOnce(firstCatalog)
+			.mockResolvedValueOnce(catalog)
 		const resource = new PluginOverviewResource({
-			plugins: { list: pluginList },
-			groups: { list: groupList },
+			catalog: { snapshot: catalogSnapshot },
 		} as unknown as RuntimeManagementClient)
 		const unsubscribe = resource.subscribe(() => undefined)
 
@@ -164,7 +143,7 @@ describe('plugin overview resource', () => {
 		await refreshed
 		unsubscribe()
 
-		expect(pluginList).toHaveBeenCalledTimes(2)
+		expect(catalogSnapshot).toHaveBeenCalledTimes(2)
 		expect(resource.getSnapshot()).toMatchObject({
 			overview: expect.any(Object),
 			isLoading: false,

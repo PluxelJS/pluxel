@@ -12,15 +12,14 @@ import type {
 	PluginControlBatchResult,
 	PluginDependencyGraphSnapshot,
 	PluginDependencyMutationResult,
-	PluginGroup,
-	PluginGroupInput,
-	PluginGroupsMutationResult,
+	PluginCatalogLayoutInput,
+	PluginCatalogLayoutMutationResult,
+	PluginCatalogSnapshot,
 	PluginLifecycleCommandBatchItem,
 	PluginProviderPolicyInspectionResult,
-	PluginsListOutput,
 	PluginStatusQueryResult,
 	RemoveForkResult,
-	RuntimeMetaV1,
+	RuntimeMeta,
 } from './protocol'
 import type {
 	RuntimeLogFollowInput,
@@ -41,11 +40,10 @@ import {
 	parsePluginControlBatchResult,
 	parsePluginDependencyGraphSnapshot,
 	parsePluginDependencyMutationResult,
-	parsePluginGroups,
-	parsePluginGroupsMutationResult,
+	parsePluginCatalogLayoutMutationResult,
+	parsePluginCatalogSnapshot,
 	parsePluginLogPolicyMutationResult,
 	parsePluginProviderPolicyInspectionResult,
-	parsePluginsListOutput,
 	parsePluginStatusQueryResult,
 	parseRemoveForkResult,
 	parseRuntimeLogEvent,
@@ -57,7 +55,7 @@ import {
 	parseVaultPublicKeyResult,
 	parseVersionedPluginLogPolicySnapshot,
 } from './management-validation'
-import { parseRuntimeMetaV1 } from './validation'
+import { parseRuntimeMeta } from './validation'
 
 export type { RuntimeLogFollowInput, RuntimeLogRangeQuery, RuntimeLogStreamsIndex }
 
@@ -73,9 +71,12 @@ export type RuntimeLogClient = Readonly<{
 
 /** Framework-neutral facade over one borrowed Management capability from the page session. */
 export type RuntimeManagementClient = Readonly<{
-	describe(): Promise<RuntimeMetaV1>
+	describe(): Promise<RuntimeMeta>
+	catalog: Readonly<{
+		snapshot(): Promise<PluginCatalogSnapshot>
+		updateLayout(input: PluginCatalogLayoutInput): Promise<PluginCatalogLayoutMutationResult>
+	}>
 	plugins: Readonly<{
-		list(): Promise<PluginsListOutput>
 		status(owner: PluginNodeAddress): Promise<PluginStatusQueryResult>
 		setAutoStart(items: readonly PluginAutoStartBatchItem[]): Promise<PluginControlBatchResult>
 		applyLifecycleCommands(
@@ -118,10 +119,6 @@ export type RuntimeManagementClient = Readonly<{
 		}): Promise<EnsureForkResult>
 		remove(input: { base: PluginNodeAddress; forkId: string }): Promise<RemoveForkResult>
 	}>
-	groups: Readonly<{
-		list(): Promise<readonly PluginGroup[]>
-		update(groups: readonly PluginGroupInput[]): Promise<PluginGroupsMutationResult>
-	}>
 	logging: Readonly<LoggingHandleApi>
 	agentTools: Readonly<AgentToolsHandleApi>
 	logs: RuntimeLogClient
@@ -138,9 +135,22 @@ export function createRuntimeManagementClient(
 	): Promise<T> => readPortableResult(run(management), parse)
 
 	const client: RuntimeManagementClient = {
-		describe: () => call((root) => root.describe(), parseRuntimeMetaV1),
+		describe: () => call((root) => root.describe(), parseRuntimeMeta),
+		catalog: Object.freeze({
+			snapshot: () => call((root) => root.pluginCatalog(), parsePluginCatalogSnapshot),
+			updateLayout: (input) =>
+				call(
+					(root) =>
+						root.updatePluginCatalogLayout({
+							sections: input.sections.map((section) => ({
+								sectionId: section.sectionId,
+								nodes: [...section.nodes],
+							})),
+						}),
+					parsePluginCatalogLayoutMutationResult,
+				),
+		}),
 		plugins: Object.freeze({
-			list: () => call((root) => root.pluginsList(), parsePluginsListOutput),
 			status: (owner) => call((root) => root.pluginStatus(owner), parsePluginStatusQueryResult),
 			setAutoStart: (items) =>
 				call((root) => root.setPluginAutoStart([...items]), parsePluginControlBatchResult),
@@ -182,15 +192,6 @@ export function createRuntimeManagementClient(
 		forks: Object.freeze({
 			ensure: (input) => call((root) => root.ensurePluginFork(input), parseEnsureForkResult),
 			remove: (input) => call((root) => root.removePluginFork(input), parseRemoveForkResult),
-		}),
-		groups: Object.freeze({
-			list: () => call((root) => root.pluginGroups(), parsePluginGroups),
-			update: (groups) =>
-				call(
-					(root) =>
-						root.updatePluginGroups(groups.map((group) => ({ ...group, nodes: [...group.nodes] }))),
-					parsePluginGroupsMutationResult,
-				),
 		}),
 		logging: Object.freeze({
 			getPolicy: () => call((root) => root.getLogPolicy(), parseVersionedPluginLogPolicySnapshot),

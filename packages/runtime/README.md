@@ -105,8 +105,9 @@ cookie-commit POST。这些端点不承载 Management 或 Plugin RPC。
 
 宿主只通过顶层 `workbench: { enabled: true }` 安装 Workbench Plane。关闭后不创建 registry、compiler、watcher、
 MF producer route 或 session transport，插件业务 HTTP 和生命周期不受影响。Workbench 启用时同时安装 Management Plane；
-关闭 Workbench 后只有显式提供顶层 `management` object 才安装 headless management。`management.pluginGroups` 定义与
-UI 无关的宿主 catalog layout。
+关闭 Workbench 后只有显式提供顶层 `management: true` 才安装 headless management；`management` 不接受 object。
+Plugin catalog sections 按 committed declaration 的 provider role、package-root、source direct parent-directory 依次自动派生；
+不读取 dependency edges 或运行状态。用户布局只作为 Management persistence 中的 definition-family 偏好覆盖。
 
 Management 访问由真实 socket peer 和 `ctx.managementAccess` 上唯一 running provider 决定：真实 loopback peer 取得 Runtime
 recovery principal；remote/unknown 必须使用可信 physical HTTPS carrier，并由 ready provider 完成认证，否则 fail closed。

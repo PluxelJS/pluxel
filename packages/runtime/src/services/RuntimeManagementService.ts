@@ -3,7 +3,7 @@ import type { HostApplicationMeta } from '../product-contract'
 import {
 	RUNTIME_MANAGEMENT_CAPABILITIES,
 	RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,
-	type RuntimeMetaV1,
+	type RuntimeMeta,
 } from '../web/protocol'
 const BASE_MANAGEMENT_CAPABILITIES = Object.freeze(
 	RUNTIME_MANAGEMENT_CAPABILITIES.filter((capability) => capability !== 'vault'),
@@ -16,7 +16,7 @@ export class RuntimeManagementService {
 		private readonly application: HostApplicationMeta,
 	) {}
 
-	describe(): RuntimeMetaV1 {
+	describe(): RuntimeMeta {
 		return Object.freeze({
 			service: 'pluxel-runtime',
 			ready: true,
@@ -27,7 +27,7 @@ export class RuntimeManagementService {
 	}
 }
 
-function protocolDescriptor(vault: boolean): RuntimeMetaV1['protocol'] {
+function protocolDescriptor(vault: boolean): RuntimeMeta['protocol'] {
 	return Object.freeze({
 		name: 'pluxel.management',
 		major: RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,

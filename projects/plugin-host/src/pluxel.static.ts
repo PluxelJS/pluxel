@@ -3,7 +3,6 @@ import { defineStaticRuntime } from '@pluxel/runtime-static'
 import {
 	createHostConfigRecords,
 	createHostRuntimeState,
-	hostManagement,
 	product,
 	staticHostPlugins,
 } from './showcase/catalog'
@@ -27,7 +26,6 @@ export default defineStaticRuntime({
 				mode: 'memory',
 				snapshot: createHostRuntimeState(false),
 			},
-			management: hostManagement,
 			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
 			persistence: resolve(staticDataRoot, 'persistence'),
 			vault: {},

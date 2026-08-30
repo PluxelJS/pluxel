@@ -7,7 +7,10 @@ import {
 } from '@pluxel/core'
 import { RpcTarget, type RpcStub } from 'capnweb'
 import type { AgentToolsPolicyInput } from '../../agent-tools'
-import { readGroups, writeGroups } from '../../api/features/pluginGroups/service'
+import {
+	readPluginCatalog,
+	writePluginCatalogLayout,
+} from '../../api/features/pluginCatalog/service'
 import { PluginCatalogLayoutError } from './PluginCatalogLayoutService'
 import { PersistenceError } from '../persistence/PersistenceService'
 import {
@@ -27,10 +30,7 @@ import { pluginDependencyGraph } from '../../api/usecases/pluginDependencyGraph'
 import { ensureFork, removeFork } from '../../api/usecases/pluginForks'
 import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
 import { logsFollow, logsIndex, logsMeta, logsRange } from '../../api/usecases/logs'
-import {
-	pluginStatus as readPluginStatus,
-	pluginsList as readPluginsList,
-} from '../../api/usecases/plugins'
+import { pluginStatus as readPluginStatus } from '../../api/usecases/plugins'
 import { projectPluginApplyReport } from '../../api/presenters/pluginApplyReport'
 import { requireContextRuntimeLogging } from '../../logger/logging'
 import type {
@@ -56,12 +56,11 @@ import type {
 	PluginDependencyGraphSnapshot,
 	PluginDependencyMutationResult,
 	PluginProviderPolicyInspectionResult,
-	PluginGroup,
-	PluginGroupInput,
-	PluginGroupsMutationResult,
+	PluginCatalogLayoutInput,
+	PluginCatalogLayoutMutationResult,
+	PluginCatalogSnapshot,
 	PluginControlBatchResult,
 	PluginStatusQueryResult,
-	PluginsListOutput,
 } from '../../web/protocol'
 import { parseConfigPresentationResult, parseConfigResult } from '../../web/management-validation'
 
@@ -79,8 +78,8 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return management.describe()
 	}
 
-	async pluginsList(): Promise<PluginsListOutput> {
-		return await readPluginsList(this.ctx)
+	async pluginCatalog(): Promise<PluginCatalogSnapshot> {
+		return await readPluginCatalog(this.ctx)
 	}
 
 	async pluginStatus(owner: unknown): Promise<PluginStatusQueryResult> {
@@ -96,12 +95,8 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return { ok: true, value: await readPluginStatus(this.ctx, address) }
 	}
 
-	async pluginGroups(): Promise<readonly PluginGroup[]> {
-		return await readGroups(this.ctx)
-	}
-
-	async updatePluginGroups(input: unknown): Promise<PluginGroupsMutationResult> {
-		const parsed = parseRpcPluginGroups(input)
+	async updatePluginCatalogLayout(input: unknown): Promise<PluginCatalogLayoutMutationResult> {
+		const parsed = parseRpcPluginCatalogLayout(input)
 		if (parsed.ok === false) {
 			return {
 				ok: false,
@@ -111,7 +106,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			}
 		}
 		try {
-			return { ok: true, groups: await writeGroups(this.ctx, parsed.value) }
+			return { ok: true, sections: await writePluginCatalogLayout(this.ctx, parsed.value) }
 		} catch (error) {
 			if (error instanceof PluginCatalogLayoutError) {
 				return {
@@ -747,52 +742,61 @@ function readRpcRecord(input: unknown): Record<string, unknown> | undefined {
 		: undefined
 }
 
-const MAX_PLUGIN_GROUPS = 10_000
-const MAX_PLUGIN_GROUP_NODES = 10_000
-const MAX_PLUGIN_GROUP_TEXT = 256
+const MAX_PLUGIN_CATALOG_SECTIONS = 10_000
+const MAX_PLUGIN_CATALOG_NODES = 10_000
+// A source-derived ID may contain the percent-encoded form of a maximal canonical source path.
+const MAX_PLUGIN_CATALOG_SECTION_ID = 16_384
 
-function parseRpcPluginGroups(
+function parseRpcPluginCatalogLayout(
 	input: unknown,
 ):
-	| Readonly<{ ok: true; value: readonly PluginGroupInput[] }>
+	| Readonly<{ ok: true; value: PluginCatalogLayoutInput }>
 	| Readonly<{ ok: false; error: string }> {
-	if (!Array.isArray(input)) return { ok: false, error: 'Plugin groups must be an array' }
-	if (input.length > MAX_PLUGIN_GROUPS) {
-		return { ok: false, error: `Plugin groups exceed ${MAX_PLUGIN_GROUPS} items` }
+	const layout = readRpcRecord(input)
+	if (!layout || !hasExactKeys(layout, ['sections']) || !Array.isArray(layout.sections)) {
+		return { ok: false, error: 'Plugin catalog layout must contain only a sections array' }
+	}
+	if (layout.sections.length > MAX_PLUGIN_CATALOG_SECTIONS) {
+		return {
+			ok: false,
+			error: `Plugin catalog layout exceeds ${MAX_PLUGIN_CATALOG_SECTIONS} sections`,
+		}
 	}
 	let totalNodes = 0
-	const groups: PluginGroupInput[] = []
-	for (const [index, value] of input.entries()) {
-		const group = readRpcRecord(value)
-		if (!group || !hasExactKeys(group, ['groupId', 'name', 'nodes'])) {
-			return { ok: false, error: `Plugin groups[${index}] must be a closed group object` }
+	const sections: PluginCatalogLayoutInput['sections'][number][] = []
+	for (const [index, value] of layout.sections.entries()) {
+		const section = readRpcRecord(value)
+		if (!section || !hasExactKeys(section, ['sectionId', 'nodes'])) {
+			return { ok: false, error: `sections[${index}] must be a closed section object` }
 		}
-		const groupId = boundedRpcText(group.groupId)
-		const name = boundedRpcText(group.name)
-		if (!groupId || !name || !Array.isArray(group.nodes)) {
-			return { ok: false, error: `Plugin groups[${index}] has invalid fields` }
+		const sectionId = boundedRpcText(section.sectionId, MAX_PLUGIN_CATALOG_SECTION_ID)
+		if (!sectionId || !Array.isArray(section.nodes)) {
+			return { ok: false, error: `sections[${index}] has invalid fields` }
 		}
-		totalNodes += group.nodes.length
-		if (totalNodes > MAX_PLUGIN_GROUP_NODES) {
+		totalNodes += section.nodes.length
+		if (totalNodes > MAX_PLUGIN_CATALOG_NODES) {
 			return {
 				ok: false,
-				error: `Plugin groups exceed ${MAX_PLUGIN_GROUP_NODES} total nodes`,
+				error: `Plugin catalog layout exceeds ${MAX_PLUGIN_CATALOG_NODES} total nodes`,
 			}
 		}
 		const nodes: PluginNodeAddress[] = []
-		for (const [nodeIndex, rawNode] of group.nodes.entries()) {
+		for (const [nodeIndex, rawNode] of section.nodes.entries()) {
 			const node = parseRpcNode(rawNode)
 			if (!node) {
 				return {
 					ok: false,
-					error: `Plugin groups[${index}].nodes[${nodeIndex}] is invalid`,
+					error: `sections[${index}].nodes[${nodeIndex}] is invalid`,
 				}
 			}
 			nodes.push(node)
 		}
-		groups.push(Object.freeze({ groupId, name, nodes: Object.freeze(nodes) }))
+		sections.push(Object.freeze({ sectionId, nodes: Object.freeze(nodes) }))
 	}
-	return { ok: true, value: Object.freeze(groups) }
+	return {
+		ok: true,
+		value: Object.freeze({ sections: Object.freeze(sections) }),
+	}
 }
 
 function hasExactKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
@@ -804,10 +808,10 @@ function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]
 	return Object.keys(record).every((key) => allowed.includes(key))
 }
 
-function boundedRpcText(input: unknown): string | undefined {
+function boundedRpcText(input: unknown, maxLength: number): string | undefined {
 	if (typeof input !== 'string') return undefined
 	const value = input.trim()
-	return value && value.length <= MAX_PLUGIN_GROUP_TEXT ? value : undefined
+	return value && value.length <= maxLength ? value : undefined
 }
 
 function parseRpcNode(input: unknown): PluginNodeAddress | undefined {

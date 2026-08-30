@@ -7,7 +7,7 @@ import {
 	type RuntimeJsonObject,
 	type RuntimeJsonValue,
 	type RuntimeManagementCapability,
-	type RuntimeMetaV1,
+	type RuntimeMeta,
 } from './protocol'
 import { readProductDescriptor } from '../product-contract'
 
@@ -56,7 +56,7 @@ export function parseConfigFieldPathSegments(
 }
 
 /** Validate, clone, and freeze runtime discovery received from an untrusted host. */
-export function parseRuntimeMetaV1(input: unknown): RuntimeMetaV1 {
+export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 	const meta = record(parseRuntimePortableData(input, 'runtime metadata'), 'runtime metadata')
 	exact(meta, ['service', 'ready', 'protocol', 'application', 'workbench'], 'runtime metadata')
 	if (meta.service !== 'pluxel-runtime') fail('runtime metadata.service must be pluxel-runtime')
@@ -67,7 +67,7 @@ export function parseRuntimeMetaV1(input: unknown): RuntimeMetaV1 {
 	if (protocol.name !== 'pluxel.management') {
 		fail('runtime metadata.protocol.name must be pluxel.management')
 	}
-	if (protocol.major !== 1) fail('runtime metadata.protocol.major must be 1')
+	if (protocol.major !== 2) fail('runtime metadata.protocol.major must be 2')
 	const capabilities = closedStringArray<RuntimeManagementCapability>(
 		protocol.capabilities,
 		RUNTIME_MANAGEMENT_CAPABILITIES,
@@ -101,7 +101,7 @@ export function parseRuntimeMetaV1(input: unknown): RuntimeMetaV1 {
 		ready: true as const,
 		protocol: Object.freeze({
 			name: 'pluxel.management' as const,
-			major: 1 as const,
+			major: 2 as const,
 			capabilities,
 		}),
 		application: Object.freeze({ product }),

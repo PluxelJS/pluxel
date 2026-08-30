@@ -1,108 +1,118 @@
-# Plugin Catalog Classification
+# Plugin Catalog Sections
 
-本文定义 Management Plugin catalog 的分类所有权、身份、默认解析和用户偏好。这里的 group 是宿主管理界面的
-catalog layout，不是插件能力、依赖、生命周期或 Workbench View/Attachment placement。
+本文定义 Management Plugin catalog 的自动分区、用户布局偏好与持久化边界。catalog section 只是管理界面的布局，
+不是 Plugin 能力、依赖、生命周期、route navigation 或 Workbench View/Attachment placement。
 
 ## Ownership
 
-- `@Plugin`、`PluginNodeInfo`、插件包 manifest 和 Workbench definition/publication 不声明 catalog group。
-- Management Plane 在启用时拥有分类解析与偏好持久化；management 未安装时不创建分类 service、文件或 route 成本。
-- 宿主只能通过顶层 `management.pluginGroups` 注册产品分类；插件作者不能在运行时创建、重命名或锁定分类。
-- 用户可以在已注册分类之间移动和排序插件，也可以明确放回未分组区，但不能创建、重命名或删除分类。
+- `@Plugin` 不声明 UI 分区，宿主配置也不注册、命名或匹配分区。
+- Management Plane 从 committed immutable catalog 的稳定事实自动派生分区；关闭 Management 时不创建布局 service 或偏好文件。
+- 用户可以在当前派生分区之间移动、排序 Plugin，也可以把 Plugin 放入未分区区；不能创建、重命名或删除分区。
+- section ID 由 Runtime 生成，对 client 是不透明值；client 只能原样回传，不能解析或构造。
 
-这保持 core host-free，并避免把 UI 布局误当成插件身份。route `navigation.group`、tab group 和插件目录分类是
-三个独立契约，不能共享 ID 或状态语义。
+唯一事实源是 runtime coordinator 的 committed catalog/status projection。dynamic loader 只拥有未发布 batch，布局 service
+不维护第二份 catalog registry。running 状态、auto-start policy 和当前依赖选择均不决定默认分区。
 
-分类的唯一 Plugin 事实源是 runtime coordinator 的 committed immutable catalog/status projection。dynamic loader 只拥有当前 batch 的 unpublished
-draft，management layout service 不能读取它或维护第二份 committed registry。source/package provenance 从 catalog entry 读取；running 状态不决定 classification。
+catalog、偏好与布局使用 canonical definition/node address 及其 index key。读取 stopped、暂时消失或偏好中的 orphan
+只能做 non-creating lookup/decode，不得 materialize Core slot、Context、effects 或 artifact lease。
 
-catalog、偏好与布局全部以 canonical definition/node address 及其 index key 建 Map。读取 auto-start off、stopped、durable orphan 或 invalid address 只能做
-non-creating lookup/decode，不得调用 Core intern、创建 definition/node slot、materialized record、Context、effects 或 artifact lease。Workbench registry
-只为真正 running 且 mount contribution 的 owner 持有资源；catalog read model 不能借用该 registry 表示 availability。
+## Enabling Management
 
-## Host declaration
-
-在 canonical host module 中从 `@pluxel/runtime` 导入 `pluginNodeAddressOf`，并对已 lower 的 catalog constructor 取 definition address：
+Workbench 启用时自动安装 Management Plane。无 Workbench 的宿主只能用布尔 flag 显式安装：
 
 ```ts
-management: {
-	pluginGroups: [
-		{
-			id: 'observability',
-			name: 'Observability',
-			definitions: [pluginNodeAddressOf(OtelPlugin).definition],
-			packages: ['@pluxel/otel'],
-		},
-	],
-}
+workbench: false,
+management: true
 ```
 
-`id` 是稳定、不透明的偏好身份，`name` 只用于展示。宿主 ID 不得使用保留的 `package:` 前缀。
-`definitions` 精确匹配结构化 Plugin definition address；default 和当前/未来 forks 继承同一分类。`packages` 的每项只能是精确 package name，或以唯一末尾 `*`
-表示的 package-name prefix。除此以外不提供 glob、正则或 callback，保证 static/dynamic host 使用同一可序列化契约。
+`management` 不接受 object，也不承载 catalog 分类规则。这样 static 与 dynamic host 使用完全相同的 catalog 模型，新增或移除
+Plugin 不要求同步修改宿主配置。
 
-同一 definition address 只能由一个宿主分类声明。package pattern 同时命中时使用最长的 literal prefix；相同长度仍有
-多个候选属于无效宿主配置，Workbench 安装必须失败并指出冲突规则。
+## Derived sections
 
-## Automatic package groups
+Runtime 对每个 concrete Plugin definition 按以下优先级选择一个默认分区：
 
-分类器按以下优先级为 catalog 中每个插件计算默认分类：
+| 优先级 | immutable catalog fact             | `basis`            | 展示名                            |
+| ------ | ---------------------------------- | ------------------ | --------------------------------- |
+| 1      | concrete declaration 的 `provides` | `provider`         | 被提供 definition 的 `exportName` |
+| 2      | definition entry 是 `package-root` | `package`          | 精确 package name                 |
+| 3      | definition entry 是 `source-entry` | `source-directory` | 直接父目录的最后一段              |
 
-1. 宿主 `definitions` 的精确 definition address；
-2. 宿主 `packages` 的最长 package pattern；
-3. runtime source 提供可信 `packageName` 时，进入 `package:<packageName>` 自动分类；
-4. 无可信包来源时进入未分组区。
+规则是 first-match，不混合多个依据：provider role 优先于 Plugin 自己的 package/source provenance。package 分区读取
+definition address 中的 package-root，不读取 runtime source snapshot 上可变的 `packageName`。source 分区使用完整
+`sourceSpace + direct parent path` 作为身份；`src/render/canvas.ts` 与 `src/render/fonts.ts` 同区，
+`src/render/internal/debug.ts` 则属于 `src/render/internal`，不会按祖先目录、关键词或任意深度猜测合并。entry 没有父目录时，
+以 `sourceSpace` 作为分区身份和展示名。
 
-自动 package group 的 ID 为 `package:` 加精确 package name，展示名就是 package name。它只由能够提供可信
-`packageName` 的 runtime source 生成，插件 metadata、类名、module path 和用户输入都不能伪造 package group。普通 dynamic
-file source 不推断 npm 身份；官方 package-manager 在自己的 Workbench 页面管理 package，而它发布的 Plugin 在全局目录中仍按
-宿主 `definitions` 规则分类，未显式分类时进入未分组区。
+分区依据作为结构化 `basis` 暴露：`provider`、`package` 或 `source-directory`。展示名和 section ID 都由 Runtime 从该依据生成。
+同一 definition 的 default node 与所有当前/未来 forks 始终属于同一个 section。只要当前 catalog 仍有至少一个 definition
+派生到某个 section，该 section 就保持注册，即使用户已把其中所有 node 移走；没有 definition 派生到它时才从当前快照消失。
+
+不根据 `requires`、`optional` 或当前 provider resolution 聚类。那些边会随 fork、override、availability 和 policy 改变，一个
+consumer 也可能有多个角色；把它们用于目录布局会让默认位置随运行状态跳动，并产生不明确的主分区。依赖图仍是查看这些关系的
+唯一权威视图。
+
+每次读取使用一次 pinned coordinator projection 同时产生 status、summary 与 sections，避免先后读取导致 revision 撕裂。
+派生与偏好覆盖对 catalog 和偏好各做线性索引，再执行稳定排序；不得为每个 section 重复扫描完整 catalog。
+
+没有用户排序时，section 按 `provider → source-directory → package`、展示名、opaque ID 稳定排序；section 内按 canonical
+node identity 稳定排序。用户排序以 definition family 为单位覆盖这些 fallback，不会把 forks 当成独立排序项。
+
+## Dynamic catalog behavior
+
+- 新 definition 在 committed catalog 出现后立即按上述规则派生；不需要同步修改宿主配置。
+- definition 消失后不再出现在快照中，也不会因偏好记录而 materialize。它再次以相同 canonical address 出现时恢复偏好。
+- 用户指定的目标 section 暂时消失时，placement 保持休眠，当前快照回退到该 definition 的自动分区；目标恢复后重新应用。
+- 显式 `null` placement 不回退，始终表示用户选择未分区区。
+- HMR batch 只有 commit 后才影响 sections；读取不会观察 unpublished draft 或半次 reconciliation。
 
 ## User preferences
 
-Management Plane 持久化的是相对于当前默认分类的偏好，不是分类定义：
+Management 持久化相对于当前派生布局的覆盖，而不是分区定义：
 
 ```ts
 type PluginCatalogPreferences = {
-	version: 3
-	assignments: { definition: PluginDefinitionAddress; groupId: string | null }[]
-	groupOrder: string[]
-	pluginOrder: { groupId: string; definitions: PluginDefinitionAddress[] }[]
+	version: 4
+	placements: { definition: PluginDefinitionAddress; sectionId: string | null }[]
+	sectionOrder: string[]
+	definitionOrder: { sectionId: string; definitions: PluginDefinitionAddress[] }[]
 }
 ```
 
-- assignment 缺失：跟随当前宿主/package 默认分类；
-- assignment 为 group ID：用户显式移动到该已注册分类；
-- assignment 为 `null`：用户显式放在未分组区；
-- 删除 assignment：恢复默认分类。
+- placement 缺失：跟随当前自动分区；
+- placement 为 section ID：显式移动到当前存在的派生分区；
+- placement 为 `null`：显式放入未分区区；
+- 删除覆盖：恢复自动分区。
 
-`groupOrder` 和 `pluginOrder` 只是已知 group/definition family 的稳定排序提示。读取时忽略未知、重复和失效项；暂时消失的
-definition assignment 可以保留，以便相同 address 重新出现时恢复。一个 definition 的 variants 不能分到不同 group 或不同排序位置。
-写入 API 虽接收当前 node 列表以保持 UI mutation 直接，但先折叠并验证 definition family；必须拒绝未知 group、伪造 package group、
-未知 node、重复 membership 和 split-family 输入，不能把无效输入静默保存。
+偏好以 definition family 为粒度，因此新 fork 自动继承相同位置和排序。暂时消失的 definition preference 可以保留，使相同
+address 再次出现时恢复布局；它本身不能使 orphan 出现在 catalog 中。
 
-有效布局由一次 shared status/catalog projection 扫描和偏好覆盖得到；每次 projection 对 pinned revision 只建立一次 node/definition key 索引，分类
-实现不得按插件启动状态建立第二份分组图。auto-start-off/stopped 插件仍在 catalog 中分类，HMR 和 dynamic source add/remove 只使 catalog projection
-重新计算，不参与 plugin lifecycle transaction。复杂度为 catalog/status records 加偏好 records 的线性构建与输出排序，不得为每个 group 重复全
-catalog 扫描。
+layout mutation 必须拒绝未知 section、未知 node、重复 membership、重复 section 以及把同一 definition 的 forks 拆到不同
+section 的输入。输入是当前 catalog 的完整目标布局，不是 patch：node 未出现在任何 section 时表示移入未分区区；省略
+section 不能删除它。client 应回传所有当前 section（包括空 section）以完整表达顺序。`name` 和 `basis` 不属于 mutation，
+因此不能借布局写入重命名或伪造派生依据。mutation 返回服务端重新解析后的 sections，调用方不能假设提交内容就是最终状态。
 
-## Persistence
+## Persistence and protocol
 
-偏好使用 `management` persistence namespace，不进入 RuntimeState 或 Workbench backend。这样固定 auto-start policy 的 memory
-RuntimeState 与 durable management layout 可以独立选择；management 未安装也没有隐式状态成本。
+偏好文件使用 `management` persistence namespace 的 `plugin-catalog.json`，不进入 RuntimeState 或 Workbench backend。
+reader/writer 只接受严格的 version 4 shape；没有旧版本 reader、migration 或名称/布局猜测。
 
-reader/writer 只接受 version 3 definition address。其他版本、非法 address、同一 family 的冲突 assignment 或 order group
-直接拒绝，不从名称或 node 布局猜测转换。
+Management protocol major 2 提供一个目录能力：
+
+- `client.catalog.snapshot()`：返回同一 pinned revision 的 `plugins`、`sections` 和 `summary`；
+- `client.catalog.updateLayout({ sections })`：保存 placement/order 覆盖并返回解析后的 sections。
+
+不存在独立 Plugin status list 与 section list 的组合读取，也不存在宿主分类配置。
 
 ## Verification
 
 变更必须覆盖：
 
-- management disabled 零分类 service/持久化写入；
-- static definition address 规则、dynamic exact package、最长 prefix 与冲突拒绝；
-- auto-start-off/stopped catalog entry 仍分类；
-- inactive/orphan read 和无效 mutation 不创建 Core slot/record 或 Workbench artifact owner；
-- 用户移动、明确未分组、恢复默认、排序和无效 mutation 拒绝；
-- 新 fork 继承 family 分类、同 definition variants 不可拆组；
-- 新安装 package 自动出现、卸载消失、同 address 重装恢复偏好；
-- 当前 v3 round-trip、family 冲突拒绝、非法 preference version 与非法 address 拒绝。
+- Management disabled 时零布局 service/偏好写入；
+- provider role、exact package、source parent-directory 的优先级与稳定身份；
+- dynamic add/remove 后自动重算，stopped/auto-start-off Plugin 仍存在于 catalog；
+- 用户移动、未分区、section/definition 排序和无效 mutation 拒绝；
+- 新 fork 继承 family 偏好，variants 不可拆分；
+- orphan preference 不 materialize node，相同 address 返回时恢复偏好；
+- v4 round-trip，任何旧版本与非法 address 直接拒绝；
+- protocol snapshot 的 node membership、唯一性、summary 一致性和 portable-data budgets。

@@ -21,7 +21,7 @@ import {
 	type NodeModuleArtifactHostOptions,
 } from '../node-artifact/NodeModuleService'
 import { WorkerTaskService } from '../node-artifact/WorkerTaskService'
-import { resolveRuntimePlanePlan, type PluginGroupConfig } from '../management-config'
+import { resolveRuntimePlanePlan } from '../runtime-plane'
 import { CommandsService } from '../services/CommandsService'
 import { ConfigService, type ConfigServiceConfig } from '../services/ConfigService'
 import {
@@ -51,10 +51,7 @@ import type {
 	WorkbenchInstallOptions,
 } from '../services/workbench'
 import { WorkbenchService } from '../services/workbench/WorkbenchService'
-import {
-	PluginCatalogLayoutService,
-	validatePluginGroups,
-} from '../services/management/PluginCatalogLayoutService'
+import { PluginCatalogLayoutService } from '../services/management/PluginCatalogLayoutService'
 import { resolveWorkbenchUiBasePath } from '../workbench-config'
 import { readProductDescriptor, type HostApplicationMeta } from '../product-contract'
 import type { RuntimeHostConfig } from './runtime-contract'
@@ -109,7 +106,6 @@ type RuntimeRootInputs = Readonly<{
 	vault?: VaultServiceConfig
 	application: HostApplicationMeta
 	management: boolean
-	pluginGroups: readonly PluginGroupConfig[]
 	workbench?: Readonly<{
 		createBackend: WorkbenchBackendFactory
 		options: WorkbenchInstallOptions
@@ -245,7 +241,7 @@ function createRuntimeContextInstallations(
 			}),
 			installRootCapability(PLUGIN_CATALOG_LAYOUT_CAPABILITY, {
 				property: 'pluginCatalogLayout',
-				create: (root) => new PluginCatalogLayoutService(root as RootContext, inputs.pluginGroups),
+				create: (root) => new PluginCatalogLayoutService(root as RootContext),
 			}),
 		)
 	}
@@ -311,18 +307,6 @@ function resolveRuntimeRootInputs(
 	}
 
 	const persistence = snapshotPersistence(config.persistence)
-	const pluginGroups = Object.freeze(
-		(config.management?.pluginGroups ?? []).map((group) =>
-			Object.freeze({
-				...group,
-				...(group.definitions
-					? { definitions: Object.freeze(group.definitions.map((item) => clonePlainData(item))) }
-					: {}),
-				...(group.packages ? { packages: Object.freeze([...group.packages]) } : {}),
-			}),
-		),
-	)
-	validatePluginGroups(pluginGroups)
 	const nodeArtifacts = Object.freeze({
 		...(normalizePath(config.nodeModuleArtifactRoot)
 			? { root: normalizePath(config.nodeModuleArtifactRoot) }
@@ -366,7 +350,6 @@ function resolveRuntimeRootInputs(
 		vault,
 		application,
 		management: planes.management,
-		pluginGroups,
 		...(planes.workbench && options.workbench
 			? {
 					workbench: Object.freeze({

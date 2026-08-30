@@ -6,7 +6,7 @@ import { RUNTIME_SESSION_PATH } from '../src/web/session/protocol'
 
 describe('runtime Management plane installation', () => {
 	it('installs headless Management as a capability with no dynamic HTTP API', async () => {
-		const host = createRuntimeHost({ workbench: false, management: {} })
+		const host = createRuntimeHost({ workbench: false, management: true })
 		try {
 			expect(host.ctx.workbench).toBeUndefined()
 			expect(host.ctx.root.adminAccess).toBeDefined()
@@ -15,12 +15,13 @@ describe('runtime Management plane installation', () => {
 
 			const target = new RuntimeManagementTargetImpl(host.ctx)
 			expect(target.describe()).toMatchObject({
-				protocol: { name: 'pluxel.management', major: 1 },
+				protocol: { name: 'pluxel.management', major: 2 },
 				workbench: { enabled: false },
 			})
 			expect(target.describe().protocol.capabilities).not.toContain('vault')
-			await expect(target.pluginsList()).resolves.toMatchObject({
+			await expect(target.pluginCatalog()).resolves.toMatchObject({
 				plugins: [],
+				sections: [],
 				summary: { total: 0 },
 			})
 			await expect(target.securityOverview()).resolves.toMatchObject({
@@ -59,17 +60,17 @@ describe('runtime Management plane installation', () => {
 				workbench: false,
 				management: { unknownField: true },
 			} as never),
-		).toThrow(/management includes unsupported "unknownField"/)
+		).toThrow(/management must be true/)
 		expect(() =>
 			createRuntimeHost({
 				workbench: false,
-				management: { pluginGroups: false },
+				management: { enabled: true },
 			} as never),
-		).toThrow(/management\.pluginGroups must be an array/)
+		).toThrow(/management must be true/)
 	})
 
 	it('advertises Vault only when its optional capability is installed', async () => {
-		const host = createRuntimeHost({ workbench: false, management: {}, vault: {} })
+		const host = createRuntimeHost({ workbench: false, management: true, vault: {} })
 		try {
 			const target = new RuntimeManagementTargetImpl(host.ctx)
 			expect(target.describe().protocol.capabilities).toContain('vault')

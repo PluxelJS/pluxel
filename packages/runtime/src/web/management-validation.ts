@@ -52,11 +52,12 @@ import type {
 	PluginProviderOption,
 	PluginProviderPolicyInfo,
 	PluginProviderPolicyInspectionResult,
-	PluginGroup,
-	PluginGroupsMutationResult,
+	PluginCatalogLayoutMutationResult,
+	PluginCatalogSection,
+	PluginCatalogSectionBasis,
+	PluginCatalogSnapshot,
 	PluginLogPolicyMutationResult,
 	PluginReconciliationIssue,
-	PluginsListOutput,
 	PluginStatusIssue,
 	PluginStatusQueryResult,
 	PluginStatusSnapshot,
@@ -85,23 +86,34 @@ const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as co
 const RUNTIME_LOG_LEVELS = [...LOG_LEVELS, 'off'] as const
 
 /** Validate and deep-freeze the Plugin catalog returned by the management RPC boundary. */
-export function parsePluginsListOutput(input: unknown): PluginsListOutput {
-	const value = rootRecord(input, 'plugins list')
-	shape(value, ['plugins', 'summary'], [], 'plugins list')
-	const plugins = array(value.plugins, 'plugins list.plugins').map((item, index) =>
-		pluginStatusSnapshot(item, `plugins list.plugins[${index}]`),
+export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapshot {
+	const value = rootRecord(input, 'plugin catalog')
+	shape(value, ['plugins', 'sections', 'summary'], [], 'plugin catalog')
+	const plugins = array(value.plugins, 'plugin catalog.plugins').map((item, index) =>
+		pluginStatusSnapshot(item, `plugin catalog.plugins[${index}]`),
 	)
-	const summary = object(value.summary, 'plugins list.summary')
-	shape(summary, ['total', 'running', 'stopped', 'autoStart'], [], 'plugins list.summary')
-	const total = nonNegativeInteger(summary.total, 'plugins list.summary.total')
-	const running = nonNegativeInteger(summary.running, 'plugins list.summary.running')
-	const stopped = nonNegativeInteger(summary.stopped, 'plugins list.summary.stopped')
-	const autoStart = nonNegativeInteger(summary.autoStart, 'plugins list.summary.autoStart')
+	const knownNodes = new Set<string>()
+	for (const plugin of plugins) {
+		const nodeKey = pluginNodeIndexKey(plugin.address)
+		if (knownNodes.has(nodeKey)) fail('plugin catalog contains a duplicate Plugin node')
+		knownNodes.add(nodeKey)
+	}
+	const sections = array(value.sections, 'plugin catalog.sections').map((item, index) => {
+		return pluginCatalogSection(item, `plugin catalog.sections[${index}]`)
+	})
+	validatePluginCatalogSections(sections, 'plugin catalog', knownNodes)
+	const summary = object(value.summary, 'plugin catalog.summary')
+	shape(summary, ['total', 'running', 'stopped', 'autoStart'], [], 'plugin catalog.summary')
+	const total = nonNegativeInteger(summary.total, 'plugin catalog.summary.total')
+	const running = nonNegativeInteger(summary.running, 'plugin catalog.summary.running')
+	const stopped = nonNegativeInteger(summary.stopped, 'plugin catalog.summary.stopped')
+	const autoStart = nonNegativeInteger(summary.autoStart, 'plugin catalog.summary.autoStart')
 	if (total !== plugins.length || running + stopped !== total || autoStart > total) {
-		fail('plugins list.summary is inconsistent with the catalog snapshot')
+		fail('plugin catalog.summary is inconsistent with the catalog snapshot')
 	}
 	return Object.freeze({
 		plugins: Object.freeze(plugins),
+		sections: Object.freeze(sections),
 		summary: Object.freeze({ total, running, stopped, autoStart }),
 	})
 }
@@ -185,44 +197,45 @@ export function parsePluginDependencyGraphSnapshot(input: unknown): PluginDepend
 	})
 }
 
-/** Validate and deep-freeze the host-owned Plugin groups snapshot. */
-export function parsePluginGroups(input: unknown): readonly PluginGroup[] {
-	const value = rootArray(input, 'plugin groups')
-	return Object.freeze(value.map((item, index) => pluginGroup(item, `plugin groups[${index}]`)))
-}
-
-/** Validate and deep-freeze a Plugin groups mutation result. */
-export function parsePluginGroupsMutationResult(input: unknown): PluginGroupsMutationResult {
-	const value = rootRecord(input, 'plugin groups mutation result')
+/** Validate and deep-freeze a Plugin catalog layout mutation result. */
+export function parsePluginCatalogLayoutMutationResult(
+	input: unknown,
+): PluginCatalogLayoutMutationResult {
+	const value = rootRecord(input, 'plugin catalog layout mutation result')
 	if (value.ok === true) {
-		shape(value, ['ok', 'groups'], [], 'plugin groups mutation result')
+		shape(value, ['ok', 'sections'], [], 'plugin catalog layout mutation result')
+		const sections = array(value.sections, 'plugin catalog layout mutation result.sections').map(
+			(item, index) => {
+				return pluginCatalogSection(
+					item,
+					`plugin catalog layout mutation result.sections[${index}]`,
+				)
+			},
+		)
+		validatePluginCatalogSections(sections, 'plugin catalog layout mutation result')
 		return Object.freeze({
 			ok: true,
-			groups: Object.freeze(
-				array(value.groups, 'plugin groups mutation result.groups').map((item, index) =>
-					pluginGroup(item, `plugin groups mutation result.groups[${index}]`),
-				),
-			),
+			sections: Object.freeze(sections),
 		})
 	}
-	if (value.ok !== false) fail('plugin groups mutation result.ok must be boolean')
-	shape(value, ['ok', 'code', 'state', 'error'], [], 'plugin groups mutation result')
+	if (value.ok !== false) fail('plugin catalog layout mutation result.ok must be boolean')
+	shape(value, ['ok', 'code', 'state', 'error'], [], 'plugin catalog layout mutation result')
 	const code = literal(
 		value.code,
 		['invalid_input', 'mutation_rejected', 'persistence_failed'],
-		'plugin groups mutation result.code',
+		'plugin catalog layout mutation result.code',
 	)
 	const state = literal(
 		value.state,
 		code === 'persistence_failed' ? ['unknown'] : ['unchanged'],
-		'plugin groups mutation result.state',
+		'plugin catalog layout mutation result.state',
 	)
 	return Object.freeze({
 		ok: false,
 		code,
 		state,
-		error: text(value.error, 'plugin groups mutation result.error'),
-	}) as PluginGroupsMutationResult
+		error: text(value.error, 'plugin catalog layout mutation result.error'),
+	}) as PluginCatalogLayoutMutationResult
 }
 
 /** Validate and deep-freeze config query and mutation results. */
@@ -851,33 +864,69 @@ function pluginSourceSnapshot(input: unknown, label: string): PluginStatusSnapsh
 	})
 }
 
-function pluginGroup(input: unknown, label: string): PluginGroup {
+function pluginCatalogSection(input: unknown, label: string): PluginCatalogSection {
 	const value = object(input, label)
-	shape(value, ['groupId', 'name', 'nodes'], [], label)
+	shape(value, ['sectionId', 'name', 'basis', 'nodes'], [], label)
 	return Object.freeze({
-		groupId: text(value.groupId, `${label}.groupId`),
+		sectionId: text(value.sectionId, `${label}.sectionId`),
 		name: text(value.name, `${label}.name`),
+		basis: pluginCatalogSectionBasis(value.basis, `${label}.basis`),
 		nodes: Object.freeze(
-			array(value.nodes, `${label}.nodes`).map((item, index) => {
-				const nodeLabel = `${label}.nodes[${index}]`
-				const node = object(item, nodeLabel)
-				shape(
-					node,
-					['reference', 'route', 'displayName', 'label', 'rootExportName', 'address'],
-					[],
-					nodeLabel,
-				)
-				return Object.freeze({
-					reference: text(node.reference, `${nodeLabel}.reference`),
-					route: text(node.route, `${nodeLabel}.route`),
-					displayName: text(node.displayName, `${nodeLabel}.displayName`),
-					label: text(node.label, `${nodeLabel}.label`),
-					rootExportName: text(node.rootExportName, `${nodeLabel}.rootExportName`),
-					address: nodeAddress(node.address, `${nodeLabel}.address`),
-				})
-			}),
+			array(value.nodes, `${label}.nodes`).map((item, index) =>
+				nodeAddress(item, `${label}.nodes[${index}]`),
+			),
 		),
 	})
+}
+
+function pluginCatalogSectionBasis(input: unknown, label: string): PluginCatalogSectionBasis {
+	const value = object(input, label)
+	const kind = literal(value.kind, ['provider', 'package', 'source-directory'], `${label}.kind`)
+	if (kind === 'provider') {
+		shape(value, ['kind', 'definition'], [], label)
+		return Object.freeze({
+			kind,
+			definition: definitionAddress(value.definition, `${label}.definition`),
+		})
+	}
+	if (kind === 'package') {
+		shape(value, ['kind', 'packageName'], [], label)
+		return Object.freeze({ kind, packageName: text(value.packageName, `${label}.packageName`) })
+	}
+	shape(value, ['kind', 'sourceSpace', 'path'], [], label)
+	return Object.freeze({
+		kind,
+		sourceSpace: text(value.sourceSpace, `${label}.sourceSpace`),
+		path: text(value.path, `${label}.path`),
+	})
+}
+
+function validatePluginCatalogSections(
+	sections: readonly PluginCatalogSection[],
+	label: string,
+	knownNodes?: ReadonlySet<string>,
+): void {
+	const sectionIds = new Set<string>()
+	const placedNodes = new Set<string>()
+	const definitionSections = new Map<string, string>()
+	for (const section of sections) {
+		if (sectionIds.has(section.sectionId)) fail(`${label} contains duplicate section ids`)
+		sectionIds.add(section.sectionId)
+		for (const node of section.nodes) {
+			const nodeKey = pluginNodeIndexKey(node)
+			if (knownNodes && !knownNodes.has(nodeKey)) {
+				fail(`${label} section references an unknown Plugin node`)
+			}
+			if (placedNodes.has(nodeKey)) fail(`${label} places one Plugin node more than once`)
+			placedNodes.add(nodeKey)
+			const definitionKey = pluginDefinitionIndexKey(node.definition)
+			const previousSection = definitionSections.get(definitionKey)
+			if (previousSection !== undefined && previousSection !== section.sectionId) {
+				fail(`${label} splits one Plugin definition family across sections`)
+			}
+			definitionSections.set(definitionKey, section.sectionId)
+		}
+	}
 }
 
 function configSuccess(value: Record<string, unknown>): ConfigResult {

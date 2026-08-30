@@ -124,7 +124,7 @@ class RuntimeSessionNodeHarness {
 	private listening = false
 
 	constructor() {
-		this.host = createRuntimeHost({ management: {}, workbench: { enabled: true } })
+		this.host = createRuntimeHost({ workbench: { enabled: true } })
 		const http = requireRuntimeHttpService(this.host.ctx)
 		this.nodeCarrier = new NodeElysiaApplicationCarrier({
 			fetch: (request) => this.host.fetch(request),
@@ -261,7 +261,7 @@ describe('Runtime Session over the production Node carrier', () => {
 			const layout = await ready.workbench.layout({ target: null })
 			try {
 				expect(management).toMatchObject({
-					protocol: { name: 'pluxel.management', major: 1 },
+					protocol: { name: 'pluxel.management', major: 2 },
 					workbench: { enabled: true },
 				})
 				expect(layout).toMatchObject({ profile: 1, target: null, entries: [] })
@@ -372,7 +372,7 @@ describe('Runtime Session over the production Node carrier', () => {
 				const layout = await ready.workbench.layout({ target: null })
 				try {
 					expect(management).toMatchObject({
-						protocol: { name: 'pluxel.management', major: 1 },
+						protocol: { name: 'pluxel.management', major: 2 },
 						workbench: { enabled: true },
 					})
 					expect(layout).toMatchObject({ profile: 1, target: null, entries: [] })

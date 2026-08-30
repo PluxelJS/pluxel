@@ -30,7 +30,6 @@ export {
 	createHostConfigRecords,
 	createHostRuntimeState,
 	draftsStorageNode,
-	hostManagement,
 	product,
 	releasesStorageNode,
 } from './policy'

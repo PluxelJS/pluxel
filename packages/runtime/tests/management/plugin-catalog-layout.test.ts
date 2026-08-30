@@ -1,13 +1,11 @@
+import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
+import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
-import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
-import { requirePluginService } from '@pluxel/core/internal'
-import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
-import { requireRuntimePluginGraphCoordinator } from '../../src/internal/reconciliation'
+
 import {
-	installRuntimeRouteCapabilities,
-	type RuntimePluginSource,
-} from '../../src/runtime/capabilities'
-import { lowerTestPlugin } from '../helpers/lowered-plugin'
+	PluginCatalogLayoutService,
+	type PluginCatalogLayoutEntry,
+} from '../../src/services/management/PluginCatalogLayoutService'
 
 const hosts: RuntimeHost[] = []
 
@@ -15,248 +13,289 @@ afterEach(async () => {
 	await Promise.all(hosts.splice(0).map((host) => host.dispose()))
 })
 
-function packageSource(packageName: string): RuntimePluginSource {
+function packageDefinition(packageName: string, exportName: string): PluginDefinitionAddress {
+	return { entry: { kind: 'package-root', packageName }, exportName }
+}
+
+function sourceDefinition(path: string, exportName: string): PluginDefinitionAddress {
+	return { entry: { kind: 'source-entry', sourceSpace: 'app', path }, exportName }
+}
+
+function node(definition: PluginDefinitionAddress, forkId?: string): PluginNodeAddress {
+	return forkId === undefined
+		? { definition, variant: 'default' }
+		: { definition, variant: 'fork', forkId }
+}
+
+function entry(
+	definition: PluginDefinitionAddress,
+	options: Readonly<{ forkId?: string; provides?: PluginDefinitionAddress }> = {},
+): PluginCatalogLayoutEntry {
 	return {
-		__typename: 'PluginSourceInfo',
-		kind: 'package',
-		moduleId: packageName,
-		packageName,
-		version: '1.0.0',
-		tag: null,
+		address: node(definition, options.forkId),
+		...(options.provides === undefined ? {} : { provides: options.provides }),
 	}
 }
 
-function installSourceMap(host: RuntimeHost, packages: Readonly<Record<string, string>>): void {
-	const uninstall = installRuntimeRouteCapabilities(host.ctx, {
-		source: {
-			resolveSource(address) {
-				const displayName = requireRuntimePluginGraphCoordinator(host.ctx)
-					.catalogSnapshot()
-					.byDefinition.get(pluginDefinitionIndexKey(address.definition))?.candidate
-					.declaration.displayName
-				const packageName = displayName ? packages[displayName] : undefined
-				return packageName
-					? packageSource(packageName)
-					: {
-							__typename: 'PluginSourceInfo',
-							kind: 'unknown',
-							moduleId: null,
-							packageName: null,
-							version: null,
-							tag: null,
-						}
-			},
-		},
-	})
-	host.ctx.effects.defer(uninstall, { tag: 'test-source-map' })
+function createLayout(): PluginCatalogLayoutService {
+	const host = createRuntimeHost({ workbench: false, management: true })
+	hosts.push(host)
+	return host.ctx.root.pluginCatalogLayout!
 }
 
 describe('Management Plugin catalog layout', () => {
-	it('has no catalog layout service or preference file when management is disabled', async () => {
+	it('allocates no service or preference file when Management is disabled', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		hosts.push(host)
-		expect(host.ctx.workbench).toBeUndefined()
 		expect(host.ctx.root.pluginCatalogLayout).toBeUndefined()
 		await expect(
 			host.ctx.root.persistence.namespace('management').stat('plugin-catalog.json'),
 		).resolves.toBeUndefined()
 	})
 
-	it('classifies fixed plugins first, host package families second, and exact packages last', async () => {
-		@Plugin({ displayName: 'FixedChatPlugin' })
-		class FixedChatPlugin extends BasePlugin {}
-		@Plugin({ displayName: 'SuitePackagePlugin' })
-		class SuitePackagePlugin extends BasePlugin {}
-		@Plugin({ displayName: 'VendorPluginA' })
-		class VendorPluginA extends BasePlugin {}
-		@Plugin({ displayName: 'VendorPluginB' })
-		class VendorPluginB extends BasePlugin {}
-		for (const PluginCtor of [FixedChatPlugin, SuitePackagePlugin, VendorPluginA, VendorPluginB]) {
-			lowerTestPlugin(PluginCtor)
-		}
+	it('derives provider, source-directory, and exact-package sections from catalog facts', async () => {
+		const providerRole = packageDefinition('@roles/render', 'RenderProvider')
+		const providerA = packageDefinition('@vendor/webgl', 'WebglRenderer')
+		const providerB = sourceDefinition('src/render/canvas.ts', 'CanvasRenderer')
+		const sourcePeer = sourceDefinition('src/render/fonts.ts', 'FontsPlugin')
+		const sourceOther = sourceDefinition('src/auth/oidc.ts', 'OidcPlugin')
+		const sourceNested = sourceDefinition('src/render/internal/debug.ts', 'DebugPlugin')
+		const sourceRoot = sourceDefinition('root.ts', 'RootPlugin')
+		const packageA = packageDefinition('@vendor/tools', 'ToolA')
+		const packageB = packageDefinition('@vendor/tools', 'ToolB')
 
-		const host = createRuntimeHost({
-			workbench: false,
-			management: {
-				pluginGroups: [
-					{
-						id: 'chatbots',
-						name: 'Chatbots',
-						definitions: [pluginNodeAddressOf(FixedChatPlugin).definition],
-						packages: ['@suite/chat-*'],
-					},
-				],
-			},
-		})
-		hosts.push(host)
-		host.add([FixedChatPlugin, SuitePackagePlugin, VendorPluginA, VendorPluginB])
-		installSourceMap(host, {
-			SuitePackagePlugin: '@suite/chat-telegram',
-			VendorPluginA: '@vendor/tools',
-			VendorPluginB: '@vendor/tools',
-		})
-		await host.commit()
-
-		expect(host.ctx.workbench).toBeUndefined()
-		const catalog = host.ctx.root.pluginCatalogLayout
-		expect(catalog).toBeDefined()
-		await expect(catalog!.listGroups()).resolves.toEqual([
-			{
-				groupId: 'chatbots',
-				name: 'Chatbots',
-				nodes: [pluginNodeAddressOf(FixedChatPlugin), pluginNodeAddressOf(SuitePackagePlugin)],
-			},
-			{
-				groupId: 'package:@vendor/tools',
-				name: '@vendor/tools',
-				nodes: [pluginNodeAddressOf(VendorPluginA), pluginNodeAddressOf(VendorPluginB)],
-			},
-		])
-	})
-
-	it('stores user moves as overrides while keeping the group registry closed', async () => {
-		@Plugin({ displayName: 'HostDefaultPlugin' })
-		class HostDefaultPlugin extends BasePlugin {}
-		@Plugin({ displayName: 'PackageDefaultPlugin' })
-		class PackageDefaultPlugin extends BasePlugin {}
-		lowerTestPlugin(HostDefaultPlugin)
-		lowerTestPlugin(PackageDefaultPlugin)
-
-		const host = createRuntimeHost({
-			workbench: false,
-			management: {
-				pluginGroups: [
-					{
-						id: 'host',
-						name: 'Host',
-						definitions: [pluginNodeAddressOf(HostDefaultPlugin).definition],
-					},
-				],
-			},
-		})
-		hosts.push(host)
-		host.add([HostDefaultPlugin, PackageDefaultPlugin])
-		installSourceMap(host, { PackageDefaultPlugin: '@vendor/pkg' })
-		await host.commit()
-
-		const catalog = host.ctx.root.pluginCatalogLayout!
 		await expect(
-			catalog.updateGroups([
-				{ groupId: 'host', name: 'Host', nodes: [pluginNodeAddressOf(PackageDefaultPlugin)] },
-				{ groupId: 'package:@vendor/pkg', name: '@vendor/pkg', nodes: [] },
+			createLayout().listSections([
+				entry(providerA, { provides: providerRole }),
+				entry(providerB, { provides: providerRole }),
+				entry(sourcePeer),
+				entry(sourceOther),
+				entry(sourceNested),
+				entry(sourceRoot),
+				entry(packageA),
+				entry(packageB),
 			]),
 		).resolves.toEqual([
-			{ groupId: 'host', name: 'Host', nodes: [pluginNodeAddressOf(PackageDefaultPlugin)] },
-			{ groupId: 'package:@vendor/pkg', name: '@vendor/pkg', nodes: [] },
+			{
+				sectionId: 'provider:package:@roles/render::RenderProvider',
+				name: 'RenderProvider',
+				basis: { kind: 'provider', definition: providerRole },
+				nodes: [node(providerA), node(providerB)],
+			},
+			{
+				sectionId: 'source:app',
+				name: 'app',
+				basis: { kind: 'source-directory', sourceSpace: 'app', path: '' },
+				nodes: [node(sourceRoot)],
+			},
+			{
+				sectionId: 'source:app/src/auth',
+				name: 'auth',
+				basis: { kind: 'source-directory', sourceSpace: 'app', path: 'src/auth' },
+				nodes: [node(sourceOther)],
+			},
+			{
+				sectionId: 'source:app/src/render/internal',
+				name: 'internal',
+				basis: {
+					kind: 'source-directory',
+					sourceSpace: 'app',
+					path: 'src/render/internal',
+				},
+				nodes: [node(sourceNested)],
+			},
+			{
+				sectionId: 'source:app/src/render',
+				name: 'render',
+				basis: { kind: 'source-directory', sourceSpace: 'app', path: 'src/render' },
+				nodes: [node(sourcePeer)],
+			},
+			{
+				sectionId: 'package:@vendor/tools',
+				name: '@vendor/tools',
+				basis: { kind: 'package', packageName: '@vendor/tools' },
+				nodes: [node(packageA), node(packageB)],
+			},
+		])
+	})
+
+	it('recomputes derived sections as dynamic definitions enter and leave the catalog', async () => {
+		const layout = createLayout()
+		const first = sourceDefinition('src/render/first.ts', 'First')
+		const second = sourceDefinition('src/render/second.ts', 'Second')
+		const auth = sourceDefinition('src/auth/index.ts', 'Auth')
+
+		await expect(layout.listSections([entry(first)])).resolves.toHaveLength(1)
+		await expect(layout.listSections([entry(first), entry(second), entry(auth)])).resolves.toEqual([
+			expect.objectContaining({ sectionId: 'source:app/src/auth', nodes: [node(auth)] }),
+			expect.objectContaining({
+				sectionId: 'source:app/src/render',
+				nodes: [node(first), node(second)],
+			}),
+		])
+		await expect(layout.listSections([entry(auth)])).resolves.toEqual([
+			expect.objectContaining({ sectionId: 'source:app/src/auth', nodes: [node(auth)] }),
+		])
+	})
+
+	it('rejects duplicate nodes and inconsistent declaration facts', async () => {
+		const layout = createLayout()
+		const plugin = packageDefinition('@vendor/plugin', 'Plugin')
+		const role = packageDefinition('@roles/example', 'ExampleProvider')
+
+		await expect(layout.listSections([entry(plugin), entry(plugin)])).rejects.toThrow(
+			'duplicate Plugin node',
+		)
+		await expect(
+			layout.listSections([entry(plugin), entry(plugin, { forkId: 'fork', provides: role })]),
+		).rejects.toThrow('inconsistent facts')
+	})
+
+	it('stores placement and ordering preferences without permitting invented sections', async () => {
+		const layout = createLayout()
+		const renderA = sourceDefinition('src/render/a.ts', 'A')
+		const renderB = sourceDefinition('src/render/b.ts', 'B')
+		const auth = sourceDefinition('src/auth/index.ts', 'Auth')
+		const entries = [entry(renderA), entry(renderB), entry(auth)]
+
+		await expect(
+			layout.updateSections(
+				[
+					{ sectionId: 'source:app/src/render', nodes: [node(auth), node(renderB)] },
+					{ sectionId: 'source:app/src/auth', nodes: [] },
+				],
+				entries,
+			),
+		).resolves.toEqual([
+			expect.objectContaining({
+				sectionId: 'source:app/src/render',
+				nodes: [node(auth), node(renderB)],
+			}),
+			expect.objectContaining({ sectionId: 'source:app/src/auth', nodes: [] }),
 		])
 
 		await expect(
-			catalog.updateGroups([
-				{ groupId: 'invented', name: 'Invented', nodes: [pluginNodeAddressOf(HostDefaultPlugin)] },
-			]),
-		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_GROUP_LAYOUT' })
+			layout.updateSections(
+				[{ sectionId: 'source:app/src/render', nodes: [node(renderB), node(auth)] }],
+				entries,
+			),
+		).resolves.toEqual([
+			expect.objectContaining({
+				sectionId: 'source:app/src/render',
+				nodes: [node(renderB), node(auth)],
+			}),
+			expect.objectContaining({ sectionId: 'source:app/src/auth', nodes: [] }),
+		])
+
 		await expect(
-			catalog.updateGroups([
-				{ groupId: 'host', name: 'Renamed', nodes: [pluginNodeAddressOf(HostDefaultPlugin)] },
-			]),
-		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_GROUP_LAYOUT' })
+			layout.updateSections([{ sectionId: 'invented', nodes: [] }], entries),
+		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_CATALOG_LAYOUT' })
+		await expect(
+			layout.updateSections(
+				[
+					{
+						sectionId: 'source:app/src/render',
+						nodes: [node(packageDefinition('@missing/x', 'X'))],
+					},
+				],
+				entries,
+			),
+		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_CATALOG_LAYOUT' })
 	})
 
-	it('rejects unsupported catalog preference versions', async () => {
-		const host = createRuntimeHost({ workbench: false, management: {} })
-		hosts.push(host)
-		await host.ctx.root.persistence
+	it('falls back to the derived section while a preferred target is absent', async () => {
+		const layout = createLayout()
+		const render = sourceDefinition('src/render/index.ts', 'Render')
+		const auth = sourceDefinition('src/auth/index.ts', 'Auth')
+		const both = [entry(render), entry(auth)]
+
+		await layout.updateSections(
+			[
+				{ sectionId: 'source:app/src/render', nodes: [node(render), node(auth)] },
+				{ sectionId: 'source:app/src/auth', nodes: [] },
+			],
+			both,
+		)
+		await expect(layout.listSections([entry(auth)])).resolves.toEqual([
+			expect.objectContaining({ sectionId: 'source:app/src/auth', nodes: [node(auth)] }),
+		])
+		await expect(layout.listSections(both)).resolves.toEqual([
+			expect.objectContaining({
+				sectionId: 'source:app/src/render',
+				nodes: [node(render), node(auth)],
+			}),
+			expect.objectContaining({ sectionId: 'source:app/src/auth', nodes: [] }),
+		])
+	})
+
+	it('keeps every fork in one definition family and applies preferences to future forks', async () => {
+		const layout = createLayout()
+		const family = packageDefinition('@vendor/family', 'Family')
+		const other = sourceDefinition('src/other/index.ts', 'Other')
+		const entries = [entry(family), entry(family, { forkId: 'east' }), entry(other)]
+
+		await expect(
+			layout.updateSections(
+				[
+					{ sectionId: 'source:app/src/other', nodes: [node(family), node(family, 'east')] },
+					{ sectionId: 'package:@vendor/family', nodes: [] },
+				],
+				entries,
+			),
+		).resolves.toEqual([
+			expect.objectContaining({
+				sectionId: 'source:app/src/other',
+				nodes: [node(family), node(family, 'east')],
+			}),
+			expect.objectContaining({ sectionId: 'package:@vendor/family', nodes: [] }),
+		])
+
+		await expect(
+			layout.listSections([...entries, entry(family, { forkId: 'west' })]),
+		).resolves.toEqual([
+			expect.objectContaining({
+				sectionId: 'source:app/src/other',
+				nodes: [node(family), node(family, 'east'), node(family, 'west')],
+			}),
+			expect.objectContaining({ sectionId: 'package:@vendor/family', nodes: [] }),
+		])
+
+		await expect(
+			layout.updateSections(
+				[
+					{ sectionId: 'source:app/src/other', nodes: [node(family)] },
+					{ sectionId: 'package:@vendor/family', nodes: [node(family, 'east')] },
+				],
+				entries,
+			),
+		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_CATALOG_LAYOUT' })
+	})
+
+	it('rejects old preference versions and ignores preferences for absent definitions', async () => {
+		const legacyHost = createRuntimeHost({ workbench: false })
+		hosts.push(legacyHost)
+		await legacyHost.ctx.root.persistence
 			.namespace('management')
 			.put(
 				'plugin-catalog.json',
-				JSON.stringify({ version: 1, assignments: [], groupOrder: [], pluginOrder: [] }),
+				JSON.stringify({ version: 3, placements: [], sectionOrder: [], definitionOrder: [] }),
 			)
-		const catalog = host.ctx.root.pluginCatalogLayout!
-		await expect(catalog.ready).rejects.toThrow('preferences version must be 3')
-	})
+		await expect(new PluginCatalogLayoutService(legacyHost.ctx).ready).rejects.toThrow(
+			'preferences version must be 4',
+		)
 
-	it('does not materialize an orphan node while loading catalog preferences', async () => {
-		const host = createRuntimeHost({ workbench: false, management: {} })
+		const host = createRuntimeHost({ workbench: false })
 		hosts.push(host)
-		const orphan = {
-			definition: {
-				entry: {
-					kind: 'source-entry',
-					sourceSpace: 'app',
-					path: 'pluxel-test:orphan-preference',
-				},
-				exportName: 'Plugin',
-			},
-			variant: 'default',
-		} as const
+		const orphan = sourceDefinition('src/orphan/index.ts', 'Orphan')
 		await host.ctx.root.persistence.namespace('management').put(
 			'plugin-catalog.json',
 			JSON.stringify({
-				version: 3,
-				assignments: [{ definition: orphan.definition, groupId: null }],
-				groupOrder: [],
-				pluginOrder: [{ groupId: 'missing', definitions: [orphan.definition] }],
+				version: 4,
+				placements: [{ definition: orphan, sectionId: null }],
+				sectionOrder: ['source:app/src/orphan'],
+				definitionOrder: [{ sectionId: 'source:app/src/orphan', definitions: [orphan] }],
 			}),
 		)
-		const pluginService = requirePluginService(host.ctx)
-		expect(pluginService.resolvePluginNode(orphan)).toBeUndefined()
-
-		const catalog = host.ctx.root.pluginCatalogLayout!
-		await expect(catalog.listGroups()).resolves.toEqual([])
-
-		expect(pluginService.resolvePluginNode(orphan)).toBeUndefined()
-	})
-
-	it('loads definition preferences inherited by every fork', async () => {
-		@Plugin({ displayName: 'FamilyPlugin', forkable: true })
-		class FamilyPlugin extends BasePlugin {}
-		lowerTestPlugin(FamilyPlugin)
-
-		const host = createRuntimeHost({
-			workbench: false,
-			management: {
-				pluginGroups: [{ id: 'family', name: 'Family' }],
-			},
-		})
-		hosts.push(host)
-		const East = host.fork(FamilyPlugin, 'east')
-		host.add(FamilyPlugin)
-		installSourceMap(host, {})
-		await host.commit()
-
-		const owner = pluginNodeAddressOf(FamilyPlugin)
-		const storage = host.ctx.root.persistence.namespace('management')
-		await storage.put(
-			'plugin-catalog.json',
-			JSON.stringify({
-				version: 3,
-				assignments: [{ definition: owner.definition, groupId: 'family' }],
-				groupOrder: ['family'],
-				pluginOrder: [{ groupId: 'family', definitions: [owner.definition] }],
-			}),
-		)
-
-		const catalog = host.ctx.root.pluginCatalogLayout!
-		await expect(catalog.listGroups()).resolves.toEqual([
-			{
-				groupId: 'family',
-				name: 'Family',
-				nodes: [pluginNodeAddressOf(FamilyPlugin), East],
-			},
-		])
-	})
-
-	it('rejects ambiguous host rules during management plan compilation', () => {
-		expect(() =>
-			createRuntimeHost({
-				workbench: false,
-				management: {
-					pluginGroups: [
-						{ id: 'one', name: 'One', packages: ['@vendor/pkg'] },
-						{ id: 'two', name: 'Two', packages: ['@vendor/pkg*'] },
-					],
-				},
-			}),
-		).toThrow('duplicates a rule')
+		await expect(new PluginCatalogLayoutService(host.ctx).listSections([])).resolves.toEqual([])
 	})
 })

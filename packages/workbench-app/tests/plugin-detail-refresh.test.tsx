@@ -3,7 +3,7 @@
 import type { PluginNodeAddress } from '@pluxel/core'
 import type {
 	PluginDependencyGraphSnapshot,
-	PluginsListOutput,
+	PluginCatalogSnapshot,
 	PluginStatusSnapshot,
 	RuntimeManagementClient,
 } from '@pluxel/runtime/web'
@@ -47,8 +47,7 @@ describe('plugin detail refresh', () => {
 			.mockReturnValueOnce(oldRead)
 			.mockResolvedValueOnce(committedAfterMutation)
 		const client = {
-			plugins: { list: vi.fn().mockResolvedValue(pluginList(ownerStatus)) },
-			groups: { list: vi.fn().mockResolvedValue([]) },
+			catalog: { snapshot: vi.fn().mockResolvedValue(pluginCatalog(ownerStatus)) },
 			dependencies: { graph: graphRead },
 		} as unknown as RuntimeManagementClient
 		let detail: ReturnType<typeof usePluginDetail> | undefined
@@ -133,9 +132,10 @@ function graph(nodeStatus: PluginStatusSnapshot): PluginDependencyGraphSnapshot 
 	})
 }
 
-function pluginList(nodeStatus: PluginStatusSnapshot): PluginsListOutput {
+function pluginCatalog(nodeStatus: PluginStatusSnapshot): PluginCatalogSnapshot {
 	return {
 		plugins: [nodeStatus],
+		sections: [],
 		summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 	}
 }

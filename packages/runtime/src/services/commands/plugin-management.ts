@@ -2,12 +2,8 @@ import { CommandError, defineCommand, type AnyCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { formatPluginNodeReference, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
-import { pluginStatus, pluginsList } from '../../api/usecases/plugins'
-import type {
-	PluginsListOutput,
-	PluginLifecycleCommand,
-	PluginStatusSnapshot,
-} from '../../web/protocol'
+import { pluginStatus, pluginStatusOverview } from '../../api/usecases/plugins'
+import type { PluginLifecycleCommand, PluginStatusSnapshot } from '../../web/protocol'
 
 const pluginEntryAddress = Type.Union([
 	obj({
@@ -126,7 +122,7 @@ function mutablePluginSnapshot(snapshot: PluginStatusSnapshot) {
 	}
 }
 
-function mutablePluginsOutput(output: PluginsListOutput) {
+function mutablePluginsOutput(output: import('../../api/usecases/plugins').PluginStatusOverview) {
 	return {
 		plugins: output.plugins.map(mutablePluginSnapshot),
 		summary: { ...output.summary },
@@ -235,7 +231,7 @@ export function createPluginManagementCommands(ctx: Context): readonly AnyComman
 			behavior: { kind: 'query', world: 'closed' },
 			input: obj({}),
 			output: pluginsOutput,
-			execute: async () => mutablePluginsOutput(await pluginsList(ctx)),
+			execute: async () => mutablePluginsOutput(await pluginStatusOverview(ctx)),
 		}),
 		defineCommand({
 			name: 'plugin.status.get',

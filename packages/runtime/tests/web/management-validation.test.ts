@@ -8,10 +8,9 @@ import {
 	parsePluginConsumerRequirementsInspectionResult,
 	parsePluginDependencyMutationResult,
 	parsePluginProviderPolicyInspectionResult,
-	parsePluginGroups,
-	parsePluginGroupsMutationResult,
+	parsePluginCatalogLayoutMutationResult,
+	parsePluginCatalogSnapshot,
 	parsePluginLogPolicyMutationResult,
-	parsePluginsListOutput,
 	parsePluginControlBatchResult,
 	parsePluginStatusQueryResult,
 	parseRemoveForkResult,
@@ -65,40 +64,33 @@ const plugin = {
 	},
 } as const
 
-const group = {
-	groupId: 'fixture',
+const section = {
+	sectionId: 'package:@fixture/management-validation',
 	name: 'Fixture',
-	nodes: [
-		{
-			reference: plugin.reference,
-			route: plugin.route,
-			displayName: plugin.displayName,
-			label: plugin.label.text,
-			rootExportName: plugin.rootExportName,
-			address,
-		},
-	],
+	basis: { kind: 'package', packageName: '@fixture/management-validation' },
+	nodes: [address],
 } as const
 
 describe('management protocol validation', () => {
 	it('validates and deep-freezes every Level 1 RPC result family', () => {
-		const plugins = parsePluginsListOutput({
+		const catalog = parsePluginCatalogSnapshot({
 			plugins: [plugin],
+			sections: [section],
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
-		expect(plugins.plugins[0]).toEqual(plugin)
-		expect(Object.isFrozen(plugins)).toBe(true)
-		expect(Object.isFrozen(plugins.plugins)).toBe(true)
-		expect(Object.isFrozen(plugins.plugins[0]!.address.definition.entry)).toBe(true)
+		expect(catalog.plugins[0]).toEqual(plugin)
+		expect(catalog.sections).toEqual([section])
+		expect(Object.isFrozen(catalog)).toBe(true)
+		expect(Object.isFrozen(catalog.plugins)).toBe(true)
+		expect(Object.isFrozen(catalog.plugins[0]!.address.definition.entry)).toBe(true)
 
 		expect(parsePluginStatusQueryResult({ ok: true, value: plugin })).toEqual({
 			ok: true,
 			value: plugin,
 		})
-		expect(parsePluginGroups([group])).toEqual([group])
-		expect(parsePluginGroupsMutationResult({ ok: true, groups: [group] })).toEqual({
+		expect(parsePluginCatalogLayoutMutationResult({ ok: true, sections: [section] })).toEqual({
 			ok: true,
-			groups: [group],
+			sections: [section],
 		})
 
 		const config = parseConfigResult({
@@ -360,11 +352,42 @@ describe('management protocol validation', () => {
 		).toThrow(/stopped-retained/)
 
 		expect(() =>
-			parsePluginsListOutput({
+			parsePluginCatalogSnapshot({
 				plugins: [plugin],
+				sections: [section],
 				summary: { total: 2, running: 0, stopped: 1, autoStart: 1 },
 			}),
 		).toThrow(/inconsistent/)
+
+		expect(() =>
+			parsePluginCatalogSnapshot({
+				plugins: [plugin, plugin],
+				sections: [section],
+				summary: { total: 2, running: 0, stopped: 2, autoStart: 2 },
+			}),
+		).toThrow(/duplicate Plugin node/)
+
+		expect(() =>
+			parsePluginCatalogLayoutMutationResult({
+				ok: true,
+				sections: [section, section],
+			}),
+		).toThrow(/duplicate section ids/)
+
+		expect(() =>
+			parsePluginCatalogLayoutMutationResult({
+				ok: true,
+				sections: [
+					section,
+					{
+						sectionId: 'source:app/src/other',
+						name: 'other',
+						basis: { kind: 'source-directory', sourceSpace: 'app', path: 'src/other' },
+						nodes: [{ definition, variant: 'fork', forkId: 'other' }],
+					},
+				],
+			}),
+		).toThrow(/definition family across sections/)
 
 		expect(() =>
 			parsePluginControlBatchResult({

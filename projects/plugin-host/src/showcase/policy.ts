@@ -34,7 +34,6 @@ const echartsShowcaseRenderer = sourceNode(
 )
 const showcaseRenderer = sourceDefinition('src/showcase/ReportStudio.ts', 'ShowcaseRenderer')
 const releaseArchivePlugin = sourceNode('src/showcase/ReportStudio.ts', 'ReleaseArchivePlugin')
-const eventProducer = sourceNode('src/demo/PluginEventsDemo.ts', 'PluginEventsDeclaredProducer')
 const eventConsumer = sourceNode('src/demo/PluginEventsDemo.ts', 'PluginEventsDeclaredConsumer')
 const optionalProvider = sourceNode(
 	'src/demo/PluginOptionalIntegrationDemo.ts',
@@ -128,50 +127,6 @@ export function createHostConfigRecords(localStorageRoot = '.pluxel/showcase/s3'
 		},
 	] as const
 }
-
-export const hostManagement = Object.freeze({
-	pluginGroups: Object.freeze([
-		Object.freeze({
-			id: 'showcase',
-			name: 'Architecture showcase',
-			definitions: Object.freeze([
-				echartsShowcaseRenderer.definition,
-				sourceDefinition('src/showcase/ReportStudio.ts', 'TakumiShowcaseRenderer'),
-				sourceDefinition('src/showcase/ReportStudio.ts', 'CanvasShowcaseRenderer'),
-				releaseArchivePlugin.definition,
-				reportStudioPlugin.definition,
-				eventProducer.definition,
-				eventConsumer.definition,
-				optionalProvider.definition,
-				optionalConsumer.definition,
-			]),
-		}),
-		Object.freeze({
-			id: 'official-rendering',
-			name: 'Official rendering',
-			packages: Object.freeze([
-				'@pluxel/fonts',
-				'@pluxel/canvas',
-				'@pluxel/echarts',
-				'@pluxel/takumi',
-			]),
-		}),
-		Object.freeze({
-			id: 'official-capabilities',
-			name: 'Official capabilities',
-			packages: Object.freeze([
-				'@pluxel/auth',
-				'@pluxel/cache',
-				'@pluxel/otel',
-				'@pluxel/package-manager',
-				'@pluxel/rates',
-				'@pluxel/redis',
-				'@pluxel/storage',
-				'@pluxel/wretch',
-			]),
-		}),
-	]),
-})
 
 function packageDefinition(packageName: string, exportName: string): PluginDefinitionAddress {
 	return parsePluginDefinitionAddress({

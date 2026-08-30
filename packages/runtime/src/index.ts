@@ -116,7 +116,6 @@ export {
 	type CommandInventoryItem,
 	type CommandToolset,
 } from './agent-tools'
-export type { ManagementConfig, PluginGroupConfig } from './management-config'
 export type {
 	ManagementAccessMethod,
 	ManagementAccessPrincipal,

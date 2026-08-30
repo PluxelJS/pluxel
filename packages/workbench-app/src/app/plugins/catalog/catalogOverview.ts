@@ -1,4 +1,5 @@
-import type { PluginGroup } from '../../../runtime'
+import type { PluginCatalogSection } from '../../../runtime'
+import { pluginNodeIndexKey } from '@pluxel/core'
 import type { PluginStatusEntry } from '../pluginOverview'
 import type { GroupConfig, PluginStatuses } from './organizer/types'
 
@@ -50,20 +51,30 @@ const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] |
 	return snapshot
 }
 
-const toGroups = (groups: readonly (PluginGroup | null | undefined)[] | undefined) => {
-	return (groups ?? []).map((group) => ({
-		groupId: group?.groupId ?? '',
-		name: group?.name ?? '',
-		pluginIds: (group?.nodes ?? []).map((node) => node.route),
+const toGroups = (
+	sections: readonly (PluginCatalogSection | null | undefined)[] | undefined,
+	statuses: PluginStatuses,
+) => {
+	const idsByAddress = new Map(
+		Object.values(statuses).map((status) => [pluginNodeIndexKey(status.address), status.id]),
+	)
+	return (sections ?? []).map((section) => ({
+		groupId: section?.sectionId ?? '',
+		name: section?.name ?? '',
+		pluginIds: (section?.nodes ?? []).map((address) => {
+			const id = idsByAddress.get(pluginNodeIndexKey(address))
+			if (!id) throw new Error('Plugin catalog section references an unknown Plugin node')
+			return id
+		}),
 	}))
 }
 
 export const buildOverview = (args: {
 	statuses: readonly (PluginStatusEntry | null | undefined)[] | undefined
-	groups: readonly (PluginGroup | null | undefined)[] | undefined
+	sections: readonly (PluginCatalogSection | null | undefined)[] | undefined
 	summary?: { total?: number | null } | null
 }): OverviewSnapshot => {
-	const { statuses, groups, summary } = args
+	const { statuses, sections, summary } = args
 	const summaryStatuses = toStatuses(statuses)
 	const statusCounts: StatusCounts = { running: 0, stopped: 0, unavailable: 0 }
 	for (const entry of Object.values(summaryStatuses)) {
@@ -81,7 +92,7 @@ export const buildOverview = (args: {
 
 	return {
 		statuses: summaryStatuses,
-		groups: toGroups(groups),
+		groups: toGroups(sections, summaryStatuses),
 		total,
 		statusCounts,
 	}

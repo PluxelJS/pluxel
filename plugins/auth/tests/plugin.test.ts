@@ -26,7 +26,7 @@ describe('AuthPlugin lifecycle', () => {
 					provider: null,
 				})
 			},
-			{ vault: {}, management: {}, workbench: false },
+			{ vault: {}, management: true, workbench: false },
 		)
 	})
 
@@ -49,7 +49,7 @@ describe('AuthPlugin lifecycle', () => {
 					provider: { method: 'oidc', ready: true },
 				})
 			},
-			{ management: {}, workbench: false },
+			{ management: true, workbench: false },
 		)
 	})
 })

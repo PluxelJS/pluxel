@@ -14,7 +14,7 @@ const metadata = Object.freeze({
 	ready: true as const,
 	protocol: Object.freeze({
 		name: 'pluxel.management' as const,
-		major: 1 as const,
+		major: 2 as const,
 		capabilities: RUNTIME_MANAGEMENT_CAPABILITIES,
 	}),
 	application: Object.freeze({ product: null }),
@@ -37,10 +37,12 @@ describe('injected Runtime Management client', () => {
 		const subscriptionDispose = vi.fn()
 		const target = {
 			describe: vi.fn(async () => metadata),
-			pluginsList: vi.fn(async () => ({
+			pluginCatalog: vi.fn(async () => ({
 				plugins: [],
+				sections: [],
 				summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 			})),
+			updatePluginCatalogLayout: vi.fn(async () => ({ ok: true, sections: [] })),
 			logStreams: vi.fn(async () => ({ streams: [logMeta] })),
 			logMeta: vi.fn(async () => logMeta),
 			logRange: vi.fn(async () => ({
@@ -65,9 +67,14 @@ describe('injected Runtime Management client', () => {
 
 		const client = createRuntimeManagementClient(target)
 		await expect(client.describe()).resolves.toEqual(metadata)
-		await expect(client.plugins.list()).resolves.toEqual({
+		await expect(client.catalog.snapshot()).resolves.toEqual({
 			plugins: [],
+			sections: [],
 			summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
+		})
+		await expect(client.catalog.updateLayout({ sections: [] })).resolves.toEqual({
+			ok: true,
+			sections: [],
 		})
 		await expect(client.logs.streams()).resolves.toEqual({ streams: [logMeta] })
 		await expect(

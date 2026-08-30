@@ -21,7 +21,6 @@ import type { VaultServiceConfig, VaultStorageApi } from '../services/vault/type
 import type { VaultAdminService } from '../services/vault/VaultService'
 import type { WorkbenchService } from '../services/workbench/WorkbenchService'
 import type { PluginCatalogLayoutService } from '../services/management/PluginCatalogLayoutService'
-import type { ManagementConfig } from '../management-config'
 import type { WorkbenchConfig } from '../workbench-config'
 
 /** Host-owned inputs resolved into one immutable Runtime Context plan. */
@@ -33,11 +32,8 @@ export interface RuntimeHostConfig extends CoreHostConfig {
 	workers?: WorkersConfig
 	/** @internal Workbench distribution asset wiring supplied by runtime launchers. */
 	http?: RuntimeHttpAssetConfig
-	/**
-	 * Optional management plane. Object presence enables headless management;
-	 * Workbench also enables management when this field is omitted.
-	 */
-	management?: ManagementConfig
+	/** Explicitly installs headless management. Workbench also installs management when enabled. */
+	management?: true
 	workbench?: WorkbenchConfig
 	/** Runtime debug topics enabled for this host. */
 	debug?: readonly string[]

@@ -4,7 +4,6 @@ import { dirname, resolve } from 'pathe'
 import {
 	createHostConfigRecords,
 	createHostRuntimeState,
-	hostManagement,
 	packageManagerNode,
 	product,
 } from './showcase/policy'
@@ -39,7 +38,6 @@ export default defineDynamicRuntimeConfig({
 		},
 	},
 	runtimeState: { mode: 'memory', snapshot: createHostRuntimeState(true) },
-	management: hostManagement,
 	workbench: { enabled: true },
 	vault: {},
 })

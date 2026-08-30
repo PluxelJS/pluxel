@@ -1,10 +1,10 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import {
-	parseRuntimeMetaV1,
+	parseRuntimeMeta,
 	type PluginDependencyGraphEdge,
 	type PluginDependencyGraphSnapshot,
 	type RuntimeManagementClient,
-	type RuntimeMetaV1,
+	type RuntimeMeta,
 } from '../../src/web'
 
 describe('@pluxel/runtime/web framework boundary', () => {
@@ -41,8 +41,8 @@ describe('@pluxel/runtime/web framework boundary', () => {
 	})
 
 	it('keeps fixed session transport out of runtime metadata', () => {
-		type WorkbenchDetail = Extract<keyof RuntimeMetaV1['workbench'], 'revision' | 'renderers'>
-		type Transport = Extract<keyof RuntimeMetaV1, 'transport'>
+		type WorkbenchDetail = Extract<keyof RuntimeMeta['workbench'], 'revision' | 'renderers'>
+		type Transport = Extract<keyof RuntimeMeta, 'transport'>
 		expectTypeOf<WorkbenchDetail>().toEqualTypeOf<never>()
 		expectTypeOf<Transport>().toEqualTypeOf<never>()
 
@@ -51,14 +51,14 @@ describe('@pluxel/runtime/web framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 1,
-				capabilities: ['plugins.list'],
+				major: 2,
+				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },
 			workbench: { enabled: true },
 		}
-		expect(parseRuntimeMetaV1(metadata)).toEqual(metadata)
-		expect(() => parseRuntimeMetaV1({ ...metadata, transport: {} })).toThrow(
+		expect(parseRuntimeMeta(metadata)).toEqual(metadata)
+		expect(() => parseRuntimeMeta({ ...metadata, transport: {} })).toThrow(
 			'runtime metadata contains unsupported field transport',
 		)
 	})

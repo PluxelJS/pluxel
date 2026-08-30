@@ -17,15 +17,14 @@ export type {
 	CommandToolset,
 } from '../agent-tools'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 1 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 2 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
-	'plugins.list',
+	'plugin-catalog',
 	'plugins.status',
 	'plugins.lifecycle',
 	'plugins.config',
 	'plugins.dependencies',
 	'plugins.forks',
-	'plugin-groups',
 	'logging',
 	'agent-tools',
 	'security',
@@ -34,12 +33,12 @@ export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 
 export type RuntimeManagementCapability = (typeof RUNTIME_MANAGEMENT_CAPABILITIES)[number]
 
-export type RuntimeMetaV1 = Readonly<{
+export type RuntimeMeta = Readonly<{
 	service: 'pluxel-runtime'
 	ready: true
 	protocol: Readonly<{
 		name: 'pluxel.management'
-		major: 1
+		major: 2
 		capabilities: readonly RuntimeManagementCapability[]
 	}>
 	application: HostApplicationMeta
@@ -106,8 +105,22 @@ export type PluginStatusSnapshot = PluginControlSnapshot &
 		source: PluginSourceSnapshot
 	}>
 
-export type PluginsListOutput = Readonly<{
+export type PluginCatalogSectionBasis =
+	| Readonly<{ kind: 'provider'; definition: PluginDefinitionAddress }>
+	| Readonly<{ kind: 'package'; packageName: string }>
+	| Readonly<{ kind: 'source-directory'; sourceSpace: string; path: string }>
+
+export type PluginCatalogSection = Readonly<{
+	/** Server-generated opaque identity; clients return it unchanged when updating layout. */
+	sectionId: string
+	name: string
+	basis: PluginCatalogSectionBasis
+	nodes: readonly PluginNodeAddress[]
+}>
+
+export type PluginCatalogSnapshot = Readonly<{
 	plugins: readonly PluginStatusSnapshot[]
+	sections: readonly PluginCatalogSection[]
 	summary: Readonly<{ total: number; running: number; stopped: number; autoStart: number }>
 }>
 
@@ -542,27 +555,15 @@ export type PluginControlBatchResult =
 	  }>
 export type PluginDependencyKind = 'plugin' | 'abstract'
 
-export type PluginGroupInput = {
-	groupId: string
-	name: string
-	nodes: readonly PluginNodeAddress[]
-}
-
-export type PluginGroup = Readonly<{
-	groupId: string
-	name: string
-	nodes: readonly Readonly<{
-		reference: string
-		route: string
-		displayName: string
-		label: string
-		rootExportName: string
-		address: PluginNodeAddress
+export type PluginCatalogLayoutInput = Readonly<{
+	sections: readonly Readonly<{
+		sectionId: string
+		nodes: readonly PluginNodeAddress[]
 	}>[]
 }>
 
-export type PluginGroupsMutationResult =
-	| Readonly<{ ok: true; groups: readonly PluginGroup[] }>
+export type PluginCatalogLayoutMutationResult =
+	| Readonly<{ ok: true; sections: readonly PluginCatalogSection[] }>
 	| Readonly<{
 			ok: false
 			code: 'invalid_input' | 'mutation_rejected'

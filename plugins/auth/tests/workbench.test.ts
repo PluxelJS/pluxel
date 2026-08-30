@@ -69,7 +69,7 @@ describe('Auth Workbench credential setup', () => {
 				opened.session.dispose()
 				expect(() => opened.api.snapshot()).toThrow('Auth setup View is closed')
 			},
-			{ management: {}, workbench: { enabled: true }, vault: {} },
+			{ workbench: { enabled: true }, vault: {} },
 		)
 	})
 
@@ -94,7 +94,7 @@ describe('Auth Workbench credential setup', () => {
 				).resolves.toMatchObject({ ok: false, code: 'forbidden' })
 				opened.session.dispose()
 			},
-			{ management: {}, workbench: { enabled: true }, vault: {} },
+			{ workbench: { enabled: true }, vault: {} },
 		)
 	})
 
@@ -127,7 +127,7 @@ describe('Auth Workbench credential setup', () => {
 				})
 				opened.session.dispose()
 			},
-			{ management: {}, workbench: { enabled: true }, vault: {} },
+			{ workbench: { enabled: true }, vault: {} },
 		)
 	})
 
@@ -161,7 +161,7 @@ describe('Auth Workbench credential setup', () => {
 				})
 				opened.session.dispose()
 			},
-			{ management: {}, workbench: { enabled: true }, vault: {} },
+			{ workbench: { enabled: true }, vault: {} },
 		)
 
 		await withRuntimeHost(
@@ -190,7 +190,7 @@ describe('Auth Workbench credential setup', () => {
 				})
 				opened.session.dispose()
 			},
-			{ management: {}, workbench: { enabled: true } },
+			{ workbench: { enabled: true } },
 		)
 	})
 })

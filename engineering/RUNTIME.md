@@ -97,7 +97,7 @@ registration handle 同样不能越过已关闭 gate。单独调用 registration
 开始的调用或关闭同 owner 的其他 command admission。
 
 基础 `plugin.list`、`plugin.status.get`、`plugin.auto-start.set`、`plugin.start`、`plugin.stop`、`plugin.restart` 由 root Commands
-服务固定提供。查询委托 `pluginsList` / `pluginStatus`；持久策略 mutation 与本次进程 lifecycle command 使用各自的 runtime use case，
+服务固定提供。查询委托 `pluginStatusOverview` / `pluginStatus`；持久策略 mutation 与本次进程 lifecycle command 使用各自的 runtime use case，
 但最终都进入同一个 coordinator transaction 与 Core commit 事实源。CLI、Agent、HTTP 和 Workbench 是宿主 carrier；它们负责授权、确认、
 过滤与 principal 映射，不拥有 command 定义或插件生命周期。
 
@@ -327,9 +327,10 @@ Node declaration、artifact consumer、worker specialization 与共享 pool 实�
 
 ## Optional management plane
 
-launcher 在 Context plan 编译前一次解析 Management/Workbench plane。顶层 `management` object 的存在显式安装 headless
-management；`workbench: { enabled: true }` 在 `management` 省略时也安装 management。两者都省略时不安装 access gate、runtime
-session ingress、internal validation 或 Plugin catalog layout。生产 Node launcher 默认监听 `0.0.0.0`，
+launcher 在 Context plan 编译前一次解析 Management/Workbench plane。顶层 `management: true` 显式安装 headless
+management；`workbench: { enabled: true }` 在 `management` 省略时也安装 management。`management` 不接受 object 或分类规则。
+两者都省略时不安装 access gate、runtime session ingress、internal validation 或 Plugin catalog layout。Plugin catalog 的
+自动派生、动态回退和用户偏好规则见 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。生产 Node launcher 默认监听 `0.0.0.0`，
 Runtime 在物理 carrier ingress 用 socket peer 实施访问边界：真实 loopback peer 直接取得 Runtime recovery principal；
 remote/unknown 必须使用可信 physical HTTPS carrier，并由当前 committed、running 且 ready 的 provider 完成认证，否则
 fail closed。不安全的 remote 请求在 provider callback 前拒绝。生产 static Node listener 用成对的 `PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 接收内联 PEM

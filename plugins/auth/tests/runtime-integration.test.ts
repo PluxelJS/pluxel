@@ -20,7 +20,7 @@ function peerAddress() {
 
 async function withAuthHost(run: (host: RuntimeHost) => Promise<void>): Promise<void> {
 	const host = createRuntimeHost(
-		{ management: {}, workbench: { enabled: true }, vault: {} },
+		{ workbench: { enabled: true }, vault: {} },
 		{ requestAddress: peerAddress },
 	)
 	try {

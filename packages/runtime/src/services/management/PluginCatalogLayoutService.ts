@@ -1,4 +1,5 @@
 import {
+	formatPluginDefinitionReference,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
 	pluginDefinitionIndexKey,
@@ -7,75 +8,70 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import type { PluginGroupConfig } from '../../management-config'
-import { readRuntimePluginStatusOverview } from '../../runtime/capabilities'
 import { PersistenceError, type PersistenceNamespace } from '../persistence/PersistenceService'
 
-const PACKAGE_GROUP_PREFIX = 'package:'
 const PREFERENCE_KEY = 'plugin-catalog.json'
 
-export type PluginGroupLayout = Readonly<{
-	groupId: string
+export type PluginCatalogSectionBasis =
+	| Readonly<{ kind: 'provider'; definition: PluginDefinitionAddress }>
+	| Readonly<{ kind: 'package'; packageName: string }>
+	| Readonly<{ kind: 'source-directory'; sourceSpace: string; path: string }>
+
+export type PluginCatalogSectionLayout = Readonly<{
+	sectionId: string
 	name: string
+	basis: PluginCatalogSectionBasis
+	nodes: readonly PluginNodeAddress[]
+}>
+
+export type PluginCatalogLayoutEntry = Readonly<{
+	address: PluginNodeAddress
+	provides?: PluginDefinitionAddress
+}>
+
+export type PluginCatalogSectionInput = Readonly<{
+	sectionId: string
 	nodes: readonly PluginNodeAddress[]
 }>
 
 type PluginCatalogPreferencesSnapshot = Readonly<{
-	version: 3
-	assignments: readonly Readonly<{
+	version: 4
+	placements: readonly Readonly<{
 		definition: PluginDefinitionAddress
-		groupId: string | null
+		sectionId: string | null
 	}>[]
-	groupOrder: readonly string[]
-	pluginOrder: readonly Readonly<{
-		groupId: string
+	sectionOrder: readonly string[]
+	definitionOrder: readonly Readonly<{
+		sectionId: string
 		definitions: readonly PluginDefinitionAddress[]
 	}>[]
 }>
 
 type PluginCatalogPreferences = {
-	assignments: Map<
+	placements: Map<
 		string,
-		Readonly<{ definition: PluginDefinitionAddress; groupId: string | null }>
+		Readonly<{ definition: PluginDefinitionAddress; sectionId: string | null }>
 	>
-	groupOrder: string[]
-	pluginOrder: Map<string, PluginDefinitionAddress[]>
+	sectionOrder: string[]
+	definitionOrder: Map<string, PluginDefinitionAddress[]>
 }
-
-type NormalizedPackagePattern = Readonly<{
-	groupId: string
-	literal: string
-	prefix: boolean
-}>
-
-type NormalizedHostGroup = Readonly<{
-	id: string
-	name: string
-	definitionKeys: readonly string[]
-	packages: readonly NormalizedPackagePattern[]
-}>
 
 type CatalogEntry = Readonly<{
 	address: PluginNodeAddress
 	nodeKey: string
 	definition: PluginDefinitionAddress
 	definitionKey: string
-	packageName: string | null
+	section: RegisteredSection
 }>
 
-export type PluginCatalogLayoutEntry = Readonly<{
-	address: PluginNodeAddress
-	packageName: string | null
-}>
-
-type RegisteredGroup = Readonly<{
+type RegisteredSection = Readonly<{
 	id: string
 	name: string
-	kind: 'host' | 'package'
+	basis: PluginCatalogSectionBasis
 }>
 
 export class PluginCatalogLayoutError extends Error {
-	readonly code = 'INVALID_PLUGIN_GROUP_LAYOUT'
+	readonly code = 'INVALID_PLUGIN_CATALOG_LAYOUT'
 
 	constructor(message: string) {
 		super(message)
@@ -83,222 +79,168 @@ export class PluginCatalogLayoutError extends Error {
 	}
 }
 
+/** Management-owned preferences over sections derived exclusively from immutable catalog facts. */
 export class PluginCatalogLayoutService {
 	readonly ready: Promise<void>
 
-	private readonly hostGroups: readonly NormalizedHostGroup[]
-	private readonly explicitDefinitionGroups = new Map<string, string>()
 	private readonly storage: PersistenceNamespace
 	private preferences: PluginCatalogPreferences = emptyPreferences()
-	private writeQueue: Promise<void> = Promise.resolve()
+	private mutationTail: Promise<void> = Promise.resolve()
 
-	constructor(
-		private readonly root: Context,
-		pluginGroups: readonly PluginGroupConfig[] = [],
-	) {
-		this.hostGroups = normalizeHostGroups(pluginGroups)
-		for (const group of this.hostGroups) {
-			for (const definitionKey of group.definitionKeys) {
-				this.explicitDefinitionGroups.set(definitionKey, group.id)
-			}
-		}
+	constructor(root: Context) {
 		this.storage = root.root.persistence.namespace('management')
 		this.ready = this.load()
 	}
 
-	async listGroups(
-		catalogEntries?: readonly PluginCatalogLayoutEntry[],
-	): Promise<readonly PluginGroupLayout[]> {
+	async listSections(
+		input: readonly PluginCatalogLayoutEntry[],
+	): Promise<readonly PluginCatalogSectionLayout[]> {
 		await this.ready
-		const entries = await this.catalogEntries(catalogEntries)
-		return this.resolveLayout(entries).groups
+		await this.mutationTail
+		return this.resolveLayout(normalizeEntries(input)).sections
 	}
 
-	async getGroup(id: string): Promise<PluginGroupLayout | undefined> {
-		const groups = await this.listGroups()
-		return groups.find((group) => group.groupId === id)
+	updateSections(
+		sections: readonly PluginCatalogSectionInput[],
+		input: readonly PluginCatalogLayoutEntry[],
+	): Promise<readonly PluginCatalogSectionLayout[]> {
+		const task = this.mutationTail
+			.catch((): void => undefined)
+			.then(async () => {
+				await this.ready
+				return await this.applyUpdate(sections, normalizeEntries(input))
+			})
+		this.mutationTail = task.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return task
 	}
 
-	async updateGroups(
-		groups: readonly PluginGroupLayout[],
-		catalogEntries?: readonly PluginCatalogLayoutEntry[],
-	): Promise<readonly PluginGroupLayout[]> {
-		if (!Array.isArray(groups)) throw invalid('groups must be an array')
-		await this.ready
-		const entries = await this.catalogEntries(catalogEntries)
+	private async applyUpdate(
+		sections: readonly PluginCatalogSectionInput[],
+		entries: CatalogEntry[],
+	): Promise<readonly PluginCatalogSectionLayout[]> {
+		if (!Array.isArray(sections)) throw invalid('sections must be an array')
 		const current = this.resolveLayout(entries)
-		const registered = current.registered
 		const knownNodes = new Set(entries.map((entry) => entry.nodeKey))
+		const seenNodes = new Set<string>()
 		const desired = new Map<string, string>()
-		const groupOrder: string[] = []
-		const pluginOrder = new Map<string, PluginDefinitionAddress[]>()
+		const sectionOrder: string[] = []
+		const definitionOrder = new Map<string, PluginDefinitionAddress[]>()
 
-		for (const rawGroup of groups) {
-			if (!rawGroup || typeof rawGroup !== 'object' || Array.isArray(rawGroup)) {
-				throw invalid('every group must be an object')
+		for (const rawSection of sections) {
+			if (!rawSection || typeof rawSection !== 'object' || Array.isArray(rawSection)) {
+				throw invalid('every section must be an object')
 			}
-			const groupId = layoutText('groupId', rawGroup.groupId)
-			const canonical = registered.get(groupId)
-			if (!canonical) throw invalid(`unknown group "${groupId}"`)
-			if (layoutText('name', rawGroup.name) !== canonical.name) {
-				throw invalid(`group "${groupId}" must use canonical name "${canonical.name}"`)
+			const sectionId = layoutText('sectionId', rawSection.sectionId)
+			if (!current.registered.has(sectionId)) throw invalid(`unknown section "${sectionId}"`)
+			if (sectionOrder.includes(sectionId)) throw invalid(`duplicate section "${sectionId}"`)
+			sectionOrder.push(sectionId)
+			if (!Array.isArray(rawSection.nodes)) {
+				throw invalid(`section "${sectionId}" nodes must be an array`)
 			}
-			if (groupOrder.includes(groupId)) throw invalid(`duplicate group "${groupId}"`)
-			groupOrder.push(groupId)
-			if (!Array.isArray(rawGroup.nodes)) {
-				throw invalid(`group "${groupId}" nodes must be an array`)
-			}
+
 			const order: PluginDefinitionAddress[] = []
-			for (const rawOwner of rawGroup.nodes) {
-				let owner: PluginNodeAddress
+			for (const rawNode of rawSection.nodes) {
+				let node: PluginNodeAddress
 				try {
-					owner = parsePluginNodeAddress(rawOwner)
+					node = parsePluginNodeAddress(rawNode)
 				} catch (error) {
-					throw invalid(`group "${groupId}" contains an invalid Plugin node address`, error)
+					throw invalid(`section "${sectionId}" contains an invalid Plugin node address`, error)
 				}
-				const nodeKey = pluginNodeIndexKey(owner)
-				if (!knownNodes.has(nodeKey))
-					throw invalid(`group "${groupId}" contains an unknown Plugin node`)
-				const definitionKey = pluginDefinitionIndexKey(owner.definition)
-				const previousGroup = desired.get(definitionKey)
-				if (previousGroup && previousGroup !== groupId) {
-					throw invalid('fork variants of one Plugin definition cannot be split across groups')
+				const nodeKey = pluginNodeIndexKey(node)
+				if (!knownNodes.has(nodeKey)) {
+					throw invalid(`section "${sectionId}" contains an unknown Plugin node`)
 				}
-				if (!previousGroup) {
-					desired.set(definitionKey, groupId)
-					order.push(owner.definition)
+				if (seenNodes.has(nodeKey)) throw invalid('a Plugin node cannot appear more than once')
+				seenNodes.add(nodeKey)
+
+				const definitionKey = pluginDefinitionIndexKey(node.definition)
+				const previousSection = desired.get(definitionKey)
+				if (previousSection && previousSection !== sectionId) {
+					throw invalid('fork variants of one Plugin definition cannot be split across sections')
+				}
+				if (!previousSection) {
+					desired.set(definitionKey, sectionId)
+					order.push(node.definition)
 				}
 			}
-			pluginOrder.set(groupId, order)
+			definitionOrder.set(sectionId, order)
 		}
 
-		const assignments: PluginCatalogPreferences['assignments'] = new Map()
+		const placements = new Map(this.preferences.placements)
 		for (const entry of uniqueDefinitionEntries(entries)) {
-			const desiredGroup = desired.get(entry.definitionKey) ?? null
-			const defaultGroup = this.defaultGroup(entry, registered)
-			if (desiredGroup !== defaultGroup) {
-				assignments.set(entry.definitionKey, {
+			placements.delete(entry.definitionKey)
+			const desiredSection = desired.get(entry.definitionKey) ?? null
+			const defaultSection = entry.section.id
+			if (desiredSection !== defaultSection) {
+				placements.set(entry.definitionKey, {
 					definition: entry.definition,
-					groupId: desiredGroup,
+					sectionId: desiredSection,
 				})
 			}
 		}
 
-		this.preferences = { assignments, groupOrder, pluginOrder }
+		this.preferences = { placements, sectionOrder, definitionOrder }
 		await this.save()
-		return this.resolveLayout(entries).groups
+		return this.resolveLayout(entries).sections
 	}
 
 	private resolveLayout(entries: CatalogEntry[]): {
-		groups: readonly PluginGroupLayout[]
-		registered: Map<string, RegisteredGroup>
-		entries: CatalogEntry[]
+		sections: readonly PluginCatalogSectionLayout[]
+		registered: Map<string, RegisteredSection>
 	} {
-		const registered = this.registeredGroups(entries)
+		const registered = registeredSections(entries)
 		const members = new Map<string, CatalogEntry[]>()
-		for (const groupId of registered.keys()) members.set(groupId, [])
+		for (const sectionId of registered.keys()) members.set(sectionId, [])
 
 		for (const entry of entries) {
-			const override = this.preferences.assignments.get(entry.definitionKey)
-			const groupId = override ? override.groupId : this.defaultGroup(entry, registered)
-			if (groupId && registered.has(groupId)) members.get(groupId)!.push(entry)
+			const override = this.preferences.placements.get(entry.definitionKey)
+			const preferredSection = override?.sectionId
+			const sectionId =
+				preferredSection === null
+					? null
+					: preferredSection && registered.has(preferredSection)
+						? preferredSection
+						: entry.section.id
+			if (sectionId) members.get(sectionId)!.push(entry)
 		}
 
-		for (const [groupId, memberEntries] of members) {
-			const order = this.preferences.pluginOrder.get(groupId) ?? []
+		for (const [sectionId, memberEntries] of members) {
+			const order = this.preferences.definitionOrder.get(sectionId) ?? []
 			const rank = new Map(
 				order.map((definition, index) => [pluginDefinitionIndexKey(definition), index]),
 			)
 			memberEntries.sort(
-				(a, b) =>
-					(rank.get(a.definitionKey) ?? Number.MAX_SAFE_INTEGER) -
-						(rank.get(b.definitionKey) ?? Number.MAX_SAFE_INTEGER) ||
-					addressSortKey(a.address).localeCompare(addressSortKey(b.address)),
+				(left, right) =>
+					(rank.get(left.definitionKey) ?? Number.MAX_SAFE_INTEGER) -
+						(rank.get(right.definitionKey) ?? Number.MAX_SAFE_INTEGER) ||
+					left.nodeKey.localeCompare(right.nodeKey),
 			)
 		}
 
-		const preferred = new Map(this.preferences.groupOrder.map((id, index) => [id, index]))
-		const hostOrder = new Map(this.hostGroups.map((group, index) => [group.id, index]))
-		const groups = Object.freeze(
+		const preferred = new Map(this.preferences.sectionOrder.map((id, index) => [id, index]))
+		const sections = Object.freeze(
 			[...registered.values()]
 				.sort(
-					(a, b) =>
-						(preferred.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-							(preferred.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
-						(hostOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-							(hostOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
-						a.name.localeCompare(b.name) ||
-						a.id.localeCompare(b.id),
+					(left, right) =>
+						(preferred.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+							(preferred.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
+						sectionKindRank(left.basis.kind) - sectionKindRank(right.basis.kind) ||
+						left.name.localeCompare(right.name) ||
+						left.id.localeCompare(right.id),
 				)
-				.map((group) =>
+				.map((section) =>
 					Object.freeze({
-						groupId: group.id,
-						name: group.name,
-						nodes: Object.freeze((members.get(group.id) ?? []).map((entry) => entry.address)),
+						sectionId: section.id,
+						name: section.name,
+						basis: section.basis,
+						nodes: Object.freeze((members.get(section.id) ?? []).map((entry) => entry.address)),
 					}),
 				),
 		)
-		return { groups, registered, entries }
-	}
-
-	private async catalogEntries(
-		input?: readonly PluginCatalogLayoutEntry[],
-	): Promise<CatalogEntry[]> {
-		let entries = input
-		if (!entries) {
-			const statusOverview = await readRuntimePluginStatusOverview(this.root)
-			entries = statusOverview.statuses.map((status) => ({
-				address: status.address,
-				packageName: status.source.packageName,
-			}))
-		}
-		return entries.map((entry) => ({
-			address: entry.address,
-			nodeKey: pluginNodeIndexKey(entry.address),
-			definition: entry.address.definition,
-			definitionKey: pluginDefinitionIndexKey(entry.address.definition),
-			packageName: entry.packageName?.trim() || null,
-		}))
-	}
-
-	private registeredGroups(entries: readonly CatalogEntry[]): Map<string, RegisteredGroup> {
-		const groups = new Map<string, RegisteredGroup>()
-		for (const group of this.hostGroups) {
-			groups.set(group.id, { id: group.id, name: group.name, kind: 'host' })
-		}
-		for (const entry of entries) {
-			if (!entry.packageName || this.matchHostPackage(entry.packageName)) continue
-			const id = packageGroupId(entry.packageName)
-			groups.set(id, { id, name: entry.packageName, kind: 'package' })
-		}
-		return groups
-	}
-
-	private defaultGroup(
-		entry: CatalogEntry,
-		registered: ReadonlyMap<string, RegisteredGroup>,
-	): string | null {
-		const explicit = this.explicitDefinitionGroups.get(entry.definitionKey)
-		if (explicit) return explicit
-		if (!entry.packageName) return null
-		const hostPackage = this.matchHostPackage(entry.packageName)
-		if (hostPackage) return hostPackage
-		const automatic = packageGroupId(entry.packageName)
-		return registered.has(automatic) ? automatic : null
-	}
-
-	private matchHostPackage(packageName: string): string | null {
-		let best: NormalizedPackagePattern | undefined
-		for (const group of this.hostGroups) {
-			for (const pattern of group.packages) {
-				const matches = pattern.prefix
-					? packageName.startsWith(pattern.literal)
-					: packageName === pattern.literal
-				if (!matches) continue
-				if (!best || pattern.literal.length > best.literal.length) best = pattern
-			}
-		}
-		return best?.groupId ?? null
+		return { sections, registered }
 	}
 
 	private async load(): Promise<void> {
@@ -309,188 +251,200 @@ export class PluginCatalogLayoutService {
 
 	private async save(): Promise<void> {
 		const content = JSON.stringify(preferencesSnapshot(this.preferences))
-		this.writeQueue = this.writeQueue
-			.catch((): void => undefined)
-			.then(async (): Promise<void> => {
-				try {
-					await this.storage.put(PREFERENCE_KEY, content)
-				} catch (error) {
-					if (error instanceof PersistenceError) throw error
-					throw new PersistenceError(
-						'IO',
-						'[management.pluginCatalogLayout] Failed to persist plugin group preferences',
-						{ cause: error },
-					)
-				}
-				return undefined
-			})
-		await this.writeQueue
+		try {
+			await this.storage.put(PREFERENCE_KEY, content)
+		} catch (error) {
+			if (error instanceof PersistenceError) throw error
+			throw new PersistenceError(
+				'IO',
+				'[management.pluginCatalogLayout] Failed to persist Plugin catalog layout preferences',
+				{ cause: error },
+			)
+		}
 	}
 }
 
-/** @internal Validate host-owned classifications before any Context capability is created. */
-export function validatePluginGroups(groups: readonly PluginGroupConfig[]): void {
-	normalizeHostGroups(groups)
+function normalizeEntries(input: readonly PluginCatalogLayoutEntry[]): CatalogEntry[] {
+	if (!Array.isArray(input)) throw new TypeError('Plugin catalog layout entries must be an array')
+	const seenNodes = new Set<string>()
+	const sectionsByDefinition = new Map<string, RegisteredSection>()
+	return input.map((entry) => {
+		const address = parsePluginNodeAddress(entry.address)
+		const definition = address.definition
+		const nodeKey = pluginNodeIndexKey(address)
+		if (seenNodes.has(nodeKey)) {
+			throw new TypeError('Plugin catalog layout entries contain a duplicate Plugin node')
+		}
+		seenNodes.add(nodeKey)
+		const definitionKey = pluginDefinitionIndexKey(definition)
+		const provides =
+			entry.provides === undefined ? undefined : parsePluginDefinitionAddress(entry.provides)
+		const section = deriveDefaultSection(definition, provides)
+		const existingSection = sectionsByDefinition.get(definitionKey)
+		if (existingSection && !sameSection(existingSection, section)) {
+			throw new TypeError(
+				'Plugin catalog layout entries contain inconsistent facts for one Plugin definition',
+			)
+		}
+		sectionsByDefinition.set(definitionKey, section)
+		return Object.freeze({
+			address,
+			nodeKey,
+			definition,
+			definitionKey,
+			section,
+		})
+	})
 }
 
-function normalizeHostGroups(input: readonly PluginGroupConfig[]): readonly NormalizedHostGroup[] {
-	if (!Array.isArray(input)) {
-		throw new TypeError('management.pluginGroups must be an array')
+function registeredSections(entries: readonly CatalogEntry[]): Map<string, RegisteredSection> {
+	const sections = new Map<string, RegisteredSection>()
+	for (const entry of uniqueDefinitionEntries(entries)) {
+		const section = entry.section
+		const previous = sections.get(section.id)
+		if (previous && !sameSection(previous, section)) {
+			throw new Error('[management.pluginCatalogLayout] derived section identity collision')
+		}
+		sections.set(section.id, section)
 	}
-	const groupIds = new Set<string>()
-	const definitionOwners = new Map<string, string>()
-	const patternOwners = new Map<string, string>()
-	return Object.freeze(
-		input.map((raw, index) => {
-			const at = `management.pluginGroups[${index}]`
-			if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-				throw new TypeError(`${at} must be an object`)
-			}
-			const unknown = Object.keys(raw).filter(
-				(key) => key !== 'id' && key !== 'name' && key !== 'definitions' && key !== 'packages',
-			)
-			if (unknown.length > 0) {
-				throw new TypeError(
-					`${at} includes unsupported ${unknown.map((key) => `"${key}"`).join(', ')}`,
-				)
-			}
-			const id = requiredText(`${at}.id`, raw.id)
-			const name = requiredText(`${at}.name`, raw.name)
-			if (id.startsWith(PACKAGE_GROUP_PREFIX)) {
-				throw new TypeError(`${at}.id cannot use reserved prefix "${PACKAGE_GROUP_PREFIX}"`)
-			}
-			if (groupIds.has(id)) throw new TypeError(`${at}.id duplicates group "${id}"`)
-			groupIds.add(id)
-			if (raw.definitions !== undefined && !Array.isArray(raw.definitions)) {
-				throw new TypeError(`${at}.definitions must be an array`)
-			}
-			const definitionKeys = (raw.definitions ?? []).map(
-				(definition: unknown, definitionIndex: number) => {
-					let address: PluginDefinitionAddress
-					try {
-						address = parsePluginDefinitionAddress(definition)
-					} catch (error) {
-						throw new TypeError(
-							`${at}.definitions[${definitionIndex}] is not a valid Plugin definition address`,
-							{
-								cause: error,
-							},
-						)
-					}
-					const definitionKey = pluginDefinitionIndexKey(address)
-					const previous = definitionOwners.get(definitionKey)
-					if (previous) {
-						throw new TypeError(`${at}.definitions assigns one Plugin definition to both groups`)
-					}
-					definitionOwners.set(definitionKey, id)
-					return definitionKey
-				},
-			)
-			const packages = uniqueText(raw.packages ?? [], `${at}.packages`).map((pattern) => {
-				const firstWildcard = pattern.indexOf('*')
-				if (firstWildcard >= 0 && firstWildcard !== pattern.length - 1) {
-					throw new TypeError(`${at}.packages only supports one trailing "*"`)
-				}
-				if (firstWildcard >= 0 && pattern.includes('*', firstWildcard + 1)) {
-					throw new TypeError(`${at}.packages only supports one trailing "*"`)
-				}
-				const literal = firstWildcard < 0 ? pattern : pattern.slice(0, -1)
-				if (!literal) throw new TypeError(`${at}.packages cannot use a bare "*"`)
-				const previous = patternOwners.get(literal)
-				if (previous) throw new TypeError(`${at}.packages duplicates a rule from "${previous}"`)
-				patternOwners.set(literal, id)
-				return { groupId: id, literal, prefix: firstWildcard >= 0 }
-			})
-			return Object.freeze({
-				id,
-				name,
-				definitionKeys: Object.freeze(definitionKeys),
-				packages: Object.freeze(packages),
-			})
+	return sections
+}
+
+function deriveDefaultSection(
+	definition: PluginDefinitionAddress,
+	provides?: PluginDefinitionAddress,
+): RegisteredSection {
+	if (provides) {
+		return Object.freeze({
+			id: `provider:${formatPluginDefinitionReference(provides)}`,
+			name: provides.exportName,
+			basis: Object.freeze({ kind: 'provider', definition: provides }),
+		})
+	}
+	const origin = definition.entry
+	if (origin.kind === 'package-root') {
+		return Object.freeze({
+			id: `package:${origin.packageName}`,
+			name: origin.packageName,
+			basis: Object.freeze({ kind: 'package', packageName: origin.packageName }),
+		})
+	}
+	const slash = origin.path.lastIndexOf('/')
+	const directory = slash < 0 ? '' : origin.path.slice(0, slash)
+	return Object.freeze({
+		id: sourceSectionId(origin.sourceSpace, directory),
+		name: directory ? directory.slice(directory.lastIndexOf('/') + 1) : origin.sourceSpace,
+		basis: Object.freeze({
+			kind: 'source-directory',
+			sourceSpace: origin.sourceSpace,
+			path: directory,
 		}),
+	})
+}
+
+function sourceSectionId(sourceSpace: string, path: string): string {
+	const encodedPath = path
+		.split('/')
+		.filter(Boolean)
+		.map((segment) => encodeURIComponent(segment))
+		.join('/')
+	return `source:${encodeURIComponent(sourceSpace)}${encodedPath ? `/${encodedPath}` : ''}`
+}
+
+function sameSection(left: RegisteredSection, right: RegisteredSection): boolean {
+	if (left.id !== right.id || left.name !== right.name || left.basis.kind !== right.basis.kind) {
+		return false
+	}
+	if (left.basis.kind === 'provider' && right.basis.kind === 'provider') {
+		return (
+			pluginDefinitionIndexKey(left.basis.definition) ===
+			pluginDefinitionIndexKey(right.basis.definition)
+		)
+	}
+	if (left.basis.kind === 'package' && right.basis.kind === 'package') {
+		return left.basis.packageName === right.basis.packageName
+	}
+	return (
+		left.basis.kind === 'source-directory' &&
+		right.basis.kind === 'source-directory' &&
+		left.basis.sourceSpace === right.basis.sourceSpace &&
+		left.basis.path === right.basis.path
 	)
+}
+
+function sectionKindRank(kind: PluginCatalogSectionBasis['kind']): number {
+	if (kind === 'provider') return 0
+	if (kind === 'source-directory') return 1
+	return 2
 }
 
 function parsePreferencesSnapshot(input: unknown): PluginCatalogPreferencesSnapshot {
-	if (!input || typeof input !== 'object' || Array.isArray(input)) {
-		throw new TypeError('[management.pluginCatalogLayout] preferences must be an object')
-	}
-	const version = (input as Record<string, unknown>).version
-	if (version !== 3) {
-		throw new TypeError('[management.pluginCatalogLayout] preferences version must be 3')
-	}
 	const raw = exactRecord(
 		input,
-		['version', 'assignments', 'groupOrder', 'pluginOrder'],
+		['version', 'placements', 'sectionOrder', 'definitionOrder'],
 		'preferences',
 	)
-	if (!Array.isArray(raw.assignments)) {
-		throw new TypeError('[management.pluginCatalogLayout] assignments must be an array')
+	if (raw.version !== 4) {
+		throw new TypeError('[management.pluginCatalogLayout] preferences version must be 4')
 	}
-	if (!Array.isArray(raw.groupOrder)) {
-		throw new TypeError('[management.pluginCatalogLayout] groupOrder must be an array')
+	if (!Array.isArray(raw.placements)) {
+		throw new TypeError('[management.pluginCatalogLayout] placements must be an array')
 	}
-	if (!Array.isArray(raw.pluginOrder)) {
-		throw new TypeError('[management.pluginCatalogLayout] pluginOrder must be an array')
+	if (!Array.isArray(raw.sectionOrder)) {
+		throw new TypeError('[management.pluginCatalogLayout] sectionOrder must be an array')
 	}
-	const assignments: Array<{ definition: PluginDefinitionAddress; groupId: string | null }> = []
-	const assignmentByDefinition = new Map<string, string | null>()
-	for (const [index, inputAssignment] of raw.assignments.entries()) {
-		const assignment = exactRecord(
-			inputAssignment,
-			['definition', 'groupId'],
-			`assignments[${index}]`,
+	if (!Array.isArray(raw.definitionOrder)) {
+		throw new TypeError('[management.pluginCatalogLayout] definitionOrder must be an array')
+	}
+
+	const seenPlacements = new Set<string>()
+	const placements = raw.placements.map((inputPlacement, index) => {
+		const placement = exactRecord(
+			inputPlacement,
+			['definition', 'sectionId'],
+			`placements[${index}]`,
 		)
-		const definition = parsePluginDefinitionAddress(assignment.definition)
-		const key = definitionSortKey(definition)
-		let groupId: string | null
-		if (assignment.groupId === null) groupId = null
-		else if (typeof assignment.groupId === 'string') groupId = assignment.groupId
-		else {
-			throw new TypeError(`assignments[${index}].groupId must be string or null`)
-		}
-		if (assignmentByDefinition.has(key)) {
-			if (assignmentByDefinition.get(key) !== groupId) {
-				throw new TypeError('fork variants have conflicting preference assignments')
-			}
-			continue
-		}
-		assignmentByDefinition.set(key, groupId)
-		assignments.push({ definition, groupId })
-	}
-	const groupOrder = strictUniqueStrings(raw.groupOrder, 'groupOrder')
-	const orderGroups = new Set<string>()
-	const orderedDefinitionGroups = new Map<string, string>()
-	const pluginOrder = raw.pluginOrder.map((inputOrder, index) => {
-		const order = exactRecord(inputOrder, ['groupId', 'definitions'], `pluginOrder[${index}]`)
-		const groupId = requiredText(`pluginOrder[${index}].groupId`, order.groupId)
-		if (orderGroups.has(groupId)) throw new TypeError(`duplicate pluginOrder group "${groupId}"`)
-		orderGroups.add(groupId)
-		const inputDefinitions = order.definitions
-		if (!Array.isArray(inputDefinitions)) {
-			throw new TypeError(`pluginOrder[${index}].definitions must be an array`)
-		}
-		const definitionKeys = new Set<string>()
-		const definitions: PluginDefinitionAddress[] = []
-		for (const inputDefinition of inputDefinitions) {
-			const definition = parsePluginDefinitionAddress(inputDefinition)
-			const key = definitionSortKey(definition)
-			if (definitionKeys.has(key)) continue
-			const previousGroup = orderedDefinitionGroups.get(key)
-			if (previousGroup && previousGroup !== groupId) {
-				throw new TypeError('fork variants have conflicting plugin order groups')
-			}
-			definitionKeys.add(key)
-			orderedDefinitionGroups.set(key, groupId)
-			definitions.push(definition)
-		}
-		return Object.freeze({ groupId, definitions: Object.freeze(definitions) })
+		const definition = parsePluginDefinitionAddress(placement.definition)
+		const key = pluginDefinitionIndexKey(definition)
+		if (seenPlacements.has(key)) throw new TypeError('placements contains a duplicate definition')
+		seenPlacements.add(key)
+		const sectionId =
+			placement.sectionId === null
+				? null
+				: requiredText(`placements[${index}].sectionId`, placement.sectionId)
+		return Object.freeze({ definition, sectionId })
 	})
+
+	const sectionOrder = strictUniqueStrings(raw.sectionOrder, 'sectionOrder')
+	const seenOrderSections = new Set<string>()
+	const orderedDefinitions = new Set<string>()
+	const definitionOrder = raw.definitionOrder.map((inputOrder, index) => {
+		const order = exactRecord(inputOrder, ['sectionId', 'definitions'], `definitionOrder[${index}]`)
+		const sectionId = requiredText(`definitionOrder[${index}].sectionId`, order.sectionId)
+		if (seenOrderSections.has(sectionId)) {
+			throw new TypeError(`duplicate definitionOrder section "${sectionId}"`)
+		}
+		seenOrderSections.add(sectionId)
+		if (!Array.isArray(order.definitions)) {
+			throw new TypeError(`definitionOrder[${index}].definitions must be an array`)
+		}
+		const definitions = order.definitions.map((inputDefinition) => {
+			const definition = parsePluginDefinitionAddress(inputDefinition)
+			const key = pluginDefinitionIndexKey(definition)
+			if (orderedDefinitions.has(key)) {
+				throw new TypeError('definitionOrder contains a duplicate Plugin definition')
+			}
+			orderedDefinitions.add(key)
+			return definition
+		})
+		return Object.freeze({ sectionId, definitions: Object.freeze(definitions) })
+	})
+
 	return Object.freeze({
-		version: 3,
-		assignments: Object.freeze(assignments),
-		groupOrder: Object.freeze(groupOrder),
-		pluginOrder: Object.freeze(pluginOrder),
+		version: 4,
+		placements: Object.freeze(placements),
+		sectionOrder: Object.freeze(sectionOrder),
+		definitionOrder: Object.freeze(definitionOrder),
 	})
 }
 
@@ -498,15 +452,15 @@ function preferencesFromSnapshot(
 	snapshot: PluginCatalogPreferencesSnapshot,
 ): PluginCatalogPreferences {
 	return {
-		assignments: new Map(
-			snapshot.assignments.map(({ definition, groupId }) => [
+		placements: new Map(
+			snapshot.placements.map(({ definition, sectionId }) => [
 				pluginDefinitionIndexKey(definition),
-				{ definition, groupId },
+				{ definition, sectionId },
 			]),
 		),
-		groupOrder: [...snapshot.groupOrder],
-		pluginOrder: new Map(
-			snapshot.pluginOrder.map(({ groupId, definitions }) => [groupId, [...definitions]]),
+		sectionOrder: [...snapshot.sectionOrder],
+		definitionOrder: new Map(
+			snapshot.definitionOrder.map(({ sectionId, definitions }) => [sectionId, [...definitions]]),
 		),
 	}
 }
@@ -514,22 +468,24 @@ function preferencesFromSnapshot(
 function preferencesSnapshot(
 	preferences: PluginCatalogPreferences,
 ): PluginCatalogPreferencesSnapshot {
-	return {
-		version: 3,
-		assignments: [...preferences.assignments.values()].map(({ definition, groupId }) => ({
-			definition,
-			groupId,
-		})),
-		groupOrder: [...preferences.groupOrder],
-		pluginOrder: [...preferences.pluginOrder].map(([groupId, definitions]) => ({
-			groupId,
-			definitions: [...definitions],
-		})),
-	}
+	return Object.freeze({
+		version: 4,
+		placements: Object.freeze(
+			[...preferences.placements.values()].map(({ definition, sectionId }) =>
+				Object.freeze({ definition, sectionId }),
+			),
+		),
+		sectionOrder: Object.freeze([...preferences.sectionOrder]),
+		definitionOrder: Object.freeze(
+			[...preferences.definitionOrder].map(([sectionId, definitions]) =>
+				Object.freeze({ sectionId, definitions: Object.freeze([...definitions]) }),
+			),
+		),
+	})
 }
 
 function emptyPreferences(): PluginCatalogPreferences {
-	return { assignments: new Map(), groupOrder: [], pluginOrder: new Map() }
+	return { placements: new Map(), sectionOrder: [], definitionOrder: new Map() }
 }
 
 function exactRecord(
@@ -543,22 +499,16 @@ function exactRecord(
 	const record = input as Record<string, unknown>
 	const expected = new Set(keys)
 	for (const key of Object.keys(record)) {
-		if (!expected.has(key))
+		if (!expected.has(key)) {
 			throw new TypeError(`[management.pluginCatalogLayout] ${label} has unknown field ${key}`)
+		}
 	}
 	for (const key of keys) {
-		if (!(key in record))
+		if (!(key in record)) {
 			throw new TypeError(`[management.pluginCatalogLayout] ${label} is missing ${key}`)
+		}
 	}
 	return record
-}
-
-function addressSortKey(address: PluginNodeAddress): string {
-	return pluginNodeIndexKey(address)
-}
-
-function definitionSortKey(address: PluginDefinitionAddress): string {
-	return pluginDefinitionIndexKey(address)
 }
 
 function uniqueDefinitionEntries(entries: readonly CatalogEntry[]): CatalogEntry[] {
@@ -568,10 +518,6 @@ function uniqueDefinitionEntries(entries: readonly CatalogEntry[]): CatalogEntry
 		seen.add(entry.definitionKey)
 		return true
 	})
-}
-
-function packageGroupId(packageName: string): string {
-	return `${PACKAGE_GROUP_PREFIX}${packageName}`
 }
 
 function invalid(message: string, cause?: unknown): PluginCatalogLayoutError {
@@ -588,19 +534,6 @@ function layoutText(field: string, value: unknown): string {
 function requiredText(field: string, value: unknown): string {
 	if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${field} must be text`)
 	return value.trim()
-}
-
-function uniqueText(input: readonly string[], field: string): string[] {
-	if (!Array.isArray(input)) throw new TypeError(`${field} must be an array`)
-	const result: string[] = []
-	const seen = new Set<string>()
-	for (const [index, value] of input.entries()) {
-		const text = requiredText(`${field}[${index}]`, value)
-		if (seen.has(text)) throw new TypeError(`${field} contains duplicate "${text}"`)
-		seen.add(text)
-		result.push(text)
-	}
-	return result
 }
 
 function strictUniqueStrings(input: readonly unknown[], field: string): string[] {

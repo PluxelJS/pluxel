@@ -286,16 +286,23 @@ workbench: {
 
 `workbench: false` 或省略该字段时不创建 Workbench registry、MF compiler/watcher、producer route 或 control session。Plugin business HTTP、database、commands 和 lifecycle 不受影响。启用 Workbench 会同时启用 Management Plane。
 
-不加载 Workbench UI、但需要通过 `@pluxel/runtime/web` 管理宿主时，只配置访问策略：
+不加载 Workbench UI、但需要通过 `@pluxel/runtime/web` 管理宿主时，显式启用 Management：
 
 ```ts no-twoslash
 workbench: false,
-management: {}
+management: true
 ```
 
-`management` object 的存在会启用 headless management；省略时，关闭 Workbench 的宿主没有 management route 或 backend。该配置只承载
-`management.pluginGroups` 宿主产品分类；认证策略和 OIDC secret 属于认证 Plugin。没有独立 `enabled` flag，也不存在同时“启用
-Workbench、禁用 management”的矛盾状态。
+`management: true` 会启用 headless management；省略时，关闭 Workbench 的宿主没有 management route 或 backend。
+该字段只接受布尔值，不承载 catalog 分类。Runtime 按固定优先级自动派生 catalog sections：
+
+1. 有 `provides` 的 concrete Plugin 按被提供的 provider role 归类；
+2. 其余 package-root definitions 按精确 package name 归类；
+3. 其余 source-entry definitions 按直接父目录归类，例如 `src/render/canvas.ts` 与 `src/render/fonts.ts` 同属 `render`。
+
+规则不读取 `requires` / `optional` 依赖边，也不随启动状态或当前 provider selection 改变。用户移动和排序只作为
+Management 偏好保存；同一 definition 的 default node 与 forks 不会被拆开。认证策略和 OIDC secret 属于认证 Plugin。
+Workbench 启用时总会同时启用 Management，不存在同时“启用 Workbench、禁用 Management”的矛盾状态。
 
 生产 Node launcher 默认监听 `0.0.0.0`。Runtime 从物理 socket peer 和认证 provider 状态决定 Management 访问：真实
 loopback socket 取得 Runtime recovery principal；remote/unknown 必须由可信 physical carrier 提供 HTTPS，并由当前

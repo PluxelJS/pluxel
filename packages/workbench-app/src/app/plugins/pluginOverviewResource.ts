@@ -1,7 +1,7 @@
 import type {
-	PluginGroup,
+	PluginCatalogSection,
+	PluginCatalogSnapshot,
 	PluginStatusSnapshot,
-	PluginsListOutput,
 	RuntimeManagementClient,
 } from '@pluxel/runtime/web'
 
@@ -18,9 +18,9 @@ export type PluginStatusEntry = Readonly<
 export type PluginOverview = Readonly<{
 	status: Readonly<{
 		statuses: readonly PluginStatusEntry[]
-		summary: PluginsListOutput['summary']
+		summary: PluginCatalogSnapshot['summary']
 	}>
-	groups: readonly PluginGroup[]
+	sections: readonly PluginCatalogSection[]
 }>
 
 export type PluginOverviewResourceSnapshot = Readonly<{
@@ -40,16 +40,13 @@ function projectStatus(entry: PluginStatusSnapshot): PluginStatusEntry {
 	return Object.freeze({ ...entry, id: entry.route, label: entry.label.text })
 }
 
-export function buildPluginOverview(
-	plugins: PluginsListOutput,
-	groups: readonly PluginGroup[],
-): PluginOverview {
+export function buildPluginOverview(catalog: PluginCatalogSnapshot): PluginOverview {
 	return Object.freeze({
 		status: Object.freeze({
-			statuses: Object.freeze(plugins.plugins.map(projectStatus)),
-			summary: plugins.summary,
+			statuses: Object.freeze(catalog.plugins.map(projectStatus)),
+			summary: catalog.summary,
 		}),
-		groups: Object.freeze([...groups]),
+		sections: Object.freeze([...catalog.sections]),
 	})
 }
 
@@ -102,13 +99,14 @@ export class PluginOverviewResource {
 		)
 		const readVersion = this.invalidationVersion
 		this.inflightVersion = readVersion
-		const task = Promise.all([this.client.plugins.list(), this.client.groups.list()])
-			.then(([plugins, groups]): void => {
+		const task = this.client.catalog
+			.snapshot()
+			.then((catalog): void => {
 				this.loadedAt = this.now()
 				this.loadedVersion = readVersion
 				this.publish(
 					Object.freeze({
-						overview: buildPluginOverview(plugins, groups),
+						overview: buildPluginOverview(catalog),
 						isLoading: false,
 						isStale: readVersion !== this.invalidationVersion,
 					}),

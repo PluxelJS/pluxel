@@ -1,4 +1,4 @@
-/** Host-owned plugin search, organization, bulk actions, and group persistence. */
+/** Derived Plugin catalog search, organization, bulk actions, and layout persistence. */
 
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
 import { pluginNodeIndexKey } from '@pluxel/core'
@@ -48,7 +48,7 @@ interface PluginCatalogProps {
 
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
 
-class PluginGroupPersistenceUnknownError extends Error {}
+class PluginCatalogLayoutPersistenceUnknownError extends Error {}
 
 export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginRoute }) => {
 	const management = useRuntimeManagementClient()
@@ -171,7 +171,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		try {
 			return buildOverview({
 				statuses: overviewState.overview?.status?.statuses,
-				groups: overviewState.overview?.groups,
+				sections: overviewState.overview?.sections,
 				summary: overviewState.overview?.status?.summary,
 			})
 		} catch (error) {
@@ -179,7 +179,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return EMPTY_OVERVIEW
 		}
 	}, [
-		overviewState.overview?.groups,
+		overviewState.overview?.sections,
 		overviewState.overview?.status?.statuses,
 		overviewState.overview?.status?.summary,
 	])
@@ -208,22 +208,21 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return
 		}
 		pendingCommitRef.current = null
-		const task = management.groups
-			.update(
-				pending.map((group) => ({
-					groupId: group.groupId,
-					name: group.name,
+		const task = management.catalog
+			.updateLayout({
+				sections: pending.map((group) => ({
+					sectionId: group.groupId,
 					nodes: group.pluginIds.map((id) => {
 						const status = overview.statuses[id]
-						if (!status) throw new Error(`Plugin group references unknown catalog id: ${id}`)
+						if (!status) throw new Error(`Plugin section references unknown catalog id: ${id}`)
 						return status.address
 					}),
 				})),
-			)
+			})
 			.then((result): undefined => {
 				if (result.ok === false) {
 					if (result.code === 'persistence_failed') {
-						throw new PluginGroupPersistenceUnknownError(result.error)
+						throw new PluginCatalogLayoutPersistenceUnknownError(result.error)
 					}
 					throw new Error(result.error)
 				}
@@ -234,7 +233,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			.catch(async (error: unknown): Promise<void> => {
 				const message = runtimeErrorMessage(error, '分组同步失败，请稍后重试。')
 				notify({ title: '同步失败', message, color: 'red' })
-				if (error instanceof PluginGroupPersistenceUnknownError) {
+				if (error instanceof PluginCatalogLayoutPersistenceUnknownError) {
 					await refetchOverview()
 					if (!pendingCommitRef.current) {
 						setDraftGroups(null)
@@ -256,7 +255,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				}
 			})
 		inflightCommitRef.current = task
-	}, [management.groups, notify, overview.statuses, refetchOverview])
+	}, [management.catalog, notify, overview.statuses, refetchOverview])
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {

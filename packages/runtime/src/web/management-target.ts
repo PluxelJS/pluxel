@@ -13,16 +13,15 @@ import type {
 	PluginConsumerRequirementsInspectionResult,
 	PluginDependencyMutationResult,
 	PluginProviderPolicyInspectionResult,
-	PluginGroup,
-	PluginGroupInput,
-	PluginGroupsMutationResult,
+	PluginCatalogLayoutInput,
+	PluginCatalogLayoutMutationResult,
+	PluginCatalogSnapshot,
 	PluginAutoStartBatchItem,
 	PluginControlBatchResult,
 	PluginLifecycleCommandBatchItem,
 	PluginStatusQueryResult,
-	PluginsListOutput,
 	RemoveForkResult,
-	RuntimeMetaV1,
+	RuntimeMeta,
 	VaultKeyPair,
 } from './protocol'
 import type { VaultAdminState } from '../services/vault/types'
@@ -46,13 +45,14 @@ export type RuntimeLogObserver = (event: unknown) => Promise<void>
 /** Disposal is the only cancellation operation for a live log subscription. */
 export interface RuntimeLogSubscriptionTarget extends RpcTarget {}
 
-/** Profile 1's authenticated, connection-bound Management capability. */
+/** Authenticated, connection-bound Management capability for the current protocol major. */
 export interface RuntimeManagementTarget extends RpcTarget {
-	describe: () => RuntimeMetaV1 | Promise<RuntimeMetaV1>
-	pluginsList: () => Promise<PluginsListOutput>
+	describe: () => RuntimeMeta | Promise<RuntimeMeta>
+	pluginCatalog: () => Promise<PluginCatalogSnapshot>
+	updatePluginCatalogLayout: (
+		input: PluginCatalogLayoutInput,
+	) => Promise<PluginCatalogLayoutMutationResult>
 	pluginStatus: (owner: PluginNodeAddress) => Promise<PluginStatusQueryResult>
-	pluginGroups: () => Promise<readonly PluginGroup[]>
-	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroupsMutationResult>
 	pluginConfigPresentation: (owner: PluginNodeAddress) => Promise<ConfigPresentationResult>
 	pluginConfig: (owner: PluginNodeAddress) => Promise<ConfigResult>
 	patchPluginConfig: (

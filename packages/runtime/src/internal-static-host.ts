@@ -3,7 +3,7 @@ export {
 	matchesWorkbenchUiBasePath,
 	resolveWorkbenchUiBasePath,
 } from './workbench-config'
-export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './management-config'
+export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './runtime-plane'
 export { createRuntimeRootContext, prepareRuntimeRootContext } from './context/runtime-plan'
 export type { RuntimeHostConfig } from './context/runtime-contract'
 export { isPluginAutoStartEnabled, setPluginAutoStart } from './services/RuntimeStateHelpers'

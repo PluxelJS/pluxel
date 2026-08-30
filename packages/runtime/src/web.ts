@@ -29,7 +29,7 @@ export * from './web/protocol'
 export {
 	parseConfigFieldPathSegments,
 	parseConfigPresentationPlanV1,
-	parseRuntimeMetaV1,
+	parseRuntimeMeta,
 	parseRuntimePortableData,
 	RuntimeProtocolValidationError,
 } from './web/validation'

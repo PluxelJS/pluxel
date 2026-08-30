@@ -8,11 +8,7 @@ import {
 	type RuntimePluginSource,
 	unknownPluginSource,
 } from '../../runtime/capabilities'
-import type {
-	PluginSourceSnapshot,
-	PluginStatusSnapshot,
-	PluginsListOutput,
-} from '../../web/protocol'
+import type { PluginSourceSnapshot, PluginStatusSnapshot } from '../../web/protocol'
 import {
 	projectedPluginByAddress,
 	projectPluginCatalogFromView,
@@ -32,35 +28,39 @@ export async function pluginStatus(
 	address: PluginNodeAddress,
 ): Promise<PluginStatusSnapshot | null> {
 	const projected = await requireRuntimePluginGraphCoordinator(ctx).readCommitted((view) =>
-		projectedPluginByAddress(projectCommittedCatalog(ctx, view), address),
+		projectedPluginByAddress(projectCommittedPluginCatalog(ctx, view), address),
 	)
 	if (!projected) return null
-	const { nodeKey: _nodeKey, issues, reference, route, label, source, ...snapshot } = projected
-	return {
-		...snapshot,
-		issues: [...issues],
-		reference,
-		route,
-		label,
-		source: plainSource(source),
-	}
+	return portablePluginStatus(projected)
 }
 
-export async function pluginsList(ctx: Context): Promise<PluginsListOutput> {
+export type PluginStatusOverview = Readonly<{
+	plugins: readonly PluginStatusSnapshot[]
+	summary: Readonly<{ total: number; running: number; stopped: number; autoStart: number }>
+}>
+
+export async function pluginStatusOverview(ctx: Context): Promise<PluginStatusOverview> {
 	const overview = await requireRuntimePluginGraphCoordinator(ctx).readCommitted((view) =>
-		projectCommittedCatalog(ctx, view),
+		projectCommittedPluginCatalog(ctx, view),
 	)
 	return {
-		plugins: overview.entries.map(({ nodeKey: _nodeKey, source, issues, ...snapshot }) => ({
-			...snapshot,
-			issues: [...issues],
-			source: plainSource(source),
-		})),
+		plugins: overview.entries.map(portablePluginStatus),
 		summary: overview.summary,
 	}
 }
 
-function projectCommittedCatalog(ctx: Context, view: RuntimePluginGraphCommittedView) {
+export function portablePluginStatus(
+	entry: import('../features/plugins/catalog-projection').PluginCatalogProjectionEntry,
+): PluginStatusSnapshot {
+	const { nodeKey: _nodeKey, source, issues, ...snapshot } = entry
+	return {
+		...snapshot,
+		issues: [...issues],
+		source: plainSource(source),
+	}
+}
+
+export function projectCommittedPluginCatalog(ctx: Context, view: RuntimePluginGraphCommittedView) {
 	return projectPluginCatalogFromView(ctx.root, {
 		catalog: view.catalog,
 		state: view.runtimeState.state,
