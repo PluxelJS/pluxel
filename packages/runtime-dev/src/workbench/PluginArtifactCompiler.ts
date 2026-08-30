@@ -44,7 +44,7 @@ export type PluginArtifactCompilerDeps = Readonly<{
 
 export type WorkbenchProducerCompilation = Readonly<{
 	plan: WorkbenchFederationProducerPlan
-	/** Package/application root against which generated Bridge entries are resolved. */
+	/** Package root against which generated Bridge entries and dependencies are resolved. */
 	root: string
 }>
 

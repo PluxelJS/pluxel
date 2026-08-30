@@ -37,7 +37,7 @@ export default defineDynamicRuntimeConfig({
 2. `runtimeState` 显式让它随宿主自动启动；
 3. `sources` 声明它被允许生产的 directory source。
 
-source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或挂载 UI 之前验证该声明；static host 会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
+source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；static host 会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 
 ## 配置安全默认值
 
@@ -59,7 +59,7 @@ host.cfg(PackageManagerPlugin).set({
 
 只有同时设置 `ignoreScripts: false` 与非空、精确的 `allowBuilds` 时才允许 native/build scripts。Registry、auth 和 proxy 读取 pnpm config，但不会进入 snapshot、RPC payload 或日志。
 
-## Commands、RPC 与 Workbench
+## Commands 与 Workbench Direct View
 
 Plugin running 后发布两个 runtime command：
 
@@ -78,17 +78,24 @@ await ctx.root.commands.execute('package.remove', {
 - 每次接受 1–100 个 spec，返回 `{ ok, succeeded, failed }`；
 - failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`。
 
-Workbench enabled 时，Plugin 挂载 plugin-relative `/packages` 页面，并通过 typed RPC 暴露：
+Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
+每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 exact descriptor
+`useWorkbench(PackageManagerWorkbench.manager)` 取得该 root：
 
 ```ts no-twoslash
-interface PackageManagerCommands {
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+
+interface PackageManagerApi extends RpcTarget {
 	snapshot(): Promise<PackageManagerSnapshot>
 	install(specs: readonly string[]): Promise<PackageMutationResult>
 	remove(names: readonly string[]): Promise<PackageMutationResult>
 }
 ```
 
-Snapshot 包含 revision、engine、managed root、entries directory、packages 和检测到的 build-script dependencies。Workbench 路由由 catalog node address 生成，消费者不应拼接 Plugin class name URL。headless dynamic host 仍可使用 commands；Workbench disabled 时不会创建相关 UI backend。
+这些调用与 layout、Management 共用当前 Workbench 的 Cap’n Web over WebSocket Runtime Session，不经过 command registry 或业务 HTTP。
+Snapshot 包含 revision、engine、managed root、entries directory、packages 和检测到的 build-script dependencies。Workbench 路由由
+catalog node address 生成，消费者不应拼接 Plugin class name URL。headless dynamic host 仍可使用 commands；Workbench disabled 时不会
+创建相关 UI backend。
 
 ## 安装和运行策略不是同一动作
 
@@ -121,7 +128,9 @@ prune managed graph，再删除 entry；source batch 随后按正常 lifecycle �
 
 只接受小写 canonical npm registry package name 加 version、range 或 dist-tag。alias、filesystem path、URL、Git 和任意 tarball 都会被拒绝。单项失败通过结构化 mutation result 返回，错误消息会隐藏 registry credential。
 
-如果 native install 失败，旧 manifest 和 entries 保持可用；如果安装成功但 entry publication 失败，操作返回可重试失败，不把半个 entry 暴露给 route。Plugin stop 会撤销 commands/RPC/UI，但 managed project 是 host-owned 持久状态，不因一次 generation cleanup 被删除。
+如果 native install 失败，旧 manifest 和 entries 保持可用；如果安装成功但 entry publication 失败，操作返回可重试失败，不把半个 entry
+暴露给 route。Plugin stop 会撤销 commands 和 Direct View publication，并使已打开的 API root 失效；managed project 是 host-owned
+持久状态，不因一次 generation cleanup 被删除。
 
 ## 适用范围
 

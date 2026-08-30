@@ -86,6 +86,7 @@ export async function buildWorkbenchFederationProducer(
 			const paraglide = resolveParaglideIntegration(root)
 			const payload: WorkbenchUiWorkerPayload = {
 				root,
+				applicationRoot: resolvedShared.resolveRoot,
 				outDir: candidateDir,
 				producer: plan.producer,
 				exposes: Object.fromEntries(

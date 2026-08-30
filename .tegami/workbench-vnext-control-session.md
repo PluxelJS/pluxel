@@ -35,6 +35,13 @@ Bridge exposes, immutable producer inventories, and platform-owned singleton sha
 dynamic runtimes consume the same producer artifacts; custom renderer modules, shell protocol
 metadata, and runtime artifact replacement are removed.
 
+Static integration tests can open the production Node Runtime Session carrier with an origin-aware,
+disposable test connection instead of weakening the WebSocket origin boundary.
+
+Management config presentations and config results are validated into ordinary, deeply frozen
+portable records before crossing Cap'n Web, including defaults produced from null-prototype config
+maps.
+
 The official font-backed renderers now place the Fonts provider's Attachment directly. Font
 collections remain a Fonts domain model exposed through its Cap'n Web API, not a Workbench platform
 resource.

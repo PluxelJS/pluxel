@@ -1,4 +1,5 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { federation, type ModuleFederationOptions } from '@module-federation/vite'
 import { build, type InlineConfig, type PluginOption } from 'vite'
@@ -10,8 +11,12 @@ import {
 import { resolve } from 'pathe'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/vite'
 
+const require = createRequire(import.meta.url)
+const typescriptCompiler = require.resolve('typescript/bin/tsc')
+
 export type WorkbenchUiWorkerPayload = Readonly<{
 	root: string
+	applicationRoot: string
 	outDir: string
 	producer: string
 	exposes: Readonly<Record<string, string>>
@@ -81,7 +86,9 @@ async function writeDtsTsConfig(payload: WorkbenchUiWorkerPayload): Promise<stri
 		`${JSON.stringify({
 			extends: resolve(payload.root, 'tsconfig.json'),
 			compilerOptions: {
+				allowImportingTsExtensions: true,
 				lib: ['ES2024', 'DOM', 'DOM.Iterable', 'ESNext.Disposable'],
+				rootDir: payload.applicationRoot,
 			},
 		})}\n`,
 		'utf-8',
@@ -114,6 +121,7 @@ function createPlugins(payload: WorkbenchUiWorkerPayload, dtsTsConfigPath: strin
 					generateTypes: {
 						abortOnError: true,
 						compileInChildProcess: false,
+						compilerInstance: typescriptCompiler,
 						generateAPITypes: true,
 					},
 				},

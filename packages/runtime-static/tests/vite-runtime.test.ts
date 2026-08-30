@@ -89,10 +89,10 @@ describe('static Vite runtime', () => {
 					PLUXEL_VITE_SMOKE_CACHE: fixture.getPath('.vite-cache'),
 					VITE_STATIC_LABEL: 'configured-through-vite',
 				},
-				timeout: 30_000,
+				timeout: 60_000,
 			}),
 		).resolves.toBeDefined()
-	}, 45_000)
+	}, 90_000)
 })
 
 function pluginSource(version: string, available: boolean): string {

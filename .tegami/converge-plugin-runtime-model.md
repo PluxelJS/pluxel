@@ -50,18 +50,17 @@ mutable Runtime Context overrides, and compatibility aliases. Static, dynamic, a
 inputs before root creation; standalone hosts may compose their own shape, but Plugins cannot add to or mutate the Runtime
 Context.
 
-Separate the runtime management plane from the optional Workbench extension plane. Publish one
-framework-neutral browser contract/client for management snapshots and mutations, make the official
-Workbench consume that same path, and keep its not-yet-standardized View-host session transport behind
-an explicit internal entry and physical module boundary. Management connection options no longer carry
-SSE/session fields or the legacy `adminAccess.enabled` shape. Level 1 discovery reports only whether
-Workbench is enabled; renderer, layout, artifact, grant and View-host session transport remain internal
-until the View-host ABI is standardized, while catalog and Plugin session lifecycle facts use the public
-Management protocol. Remove the internal GraphQL endpoint,
+Separate the runtime management plane from the optional Workbench UI plane. Publish one
+framework-neutral Management contract, and make a Workbench-enabled host carry authentication,
+Management, layout/openView, logs and direct Plugin View APIs over one Cap'n Web WebSocket session.
+Workbench definitions now expose only fixed Direct Views and provider-owned Attachments delivered by
+MF2 Manifest/Snapshot plus generated React Bridges; renderer props, custom renderers, grants, resources,
+ports and parallel HTTP/SSE RPC paths are not extension points. Management connection options no longer
+carry SSE/session fields or the legacy `adminAccess.enabled` shape. Remove the internal GraphQL endpoint,
 GQLens code-generation stack, workspace submodule, generated clients, and duplicated GraphQL read
 model.
-Headless hosts can explicitly enable management without creating layout, artifact, grant, remote-view,
-or UI routing state; omitting both planes has zero management/Workbench backend cost.
+Headless hosts can explicitly enable management without creating Workbench publication, MF producer,
+Bridge or UI routing state; omitting both planes has zero management/Workbench backend cost.
 `management.pluginGroups` remains the host-owned Plugin classification contract. Management access
 is determined by physical-peer recovery and the unique committed, running authentication provider;
 there is no `management.access` configuration. Workbench configuration only owns its UI plane, while

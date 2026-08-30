@@ -288,7 +288,7 @@ Toolchain 在 TypeScript 擦除前读取 `workbench.define()` 和 literal `workb
 一个 Bridge wrapper。作者不手写 remote name、expose、shared、public path 或 manifest URL。
 
 生产产物以 `mf-manifest.json` 为唯一浏览器模块事实；Snapshot 由标准 Manifest 生成。Host 只保存
-`Plugin definition + build revision -> producer root/manifest URL` 的冻结 inventory，不复制 Manifest 的 assets、shared
+`Plugin definition + build revision -> immutable artifact root/manifest URL` 的冻结 inventory，不复制 Manifest 的 assets、shared
 或 types 字段。Manifest、remote entry、expose inventory、dynamic types 和 shared versions 必须全部验证后才能提交。
 
 固定 singleton shared 包括：

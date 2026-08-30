@@ -9,6 +9,7 @@
 		"dynamic": "pnpm exec vite --config vite.dynamic.config.ts",
 		"static": "pnpm exec vite --config vite.static.config.ts",
 		"build:static": "pnpm exec tsdown --config tsdown.static.config.ts",
+		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "pnpm exec tsc -p src/demo/tsconfig.json --pretty false",
 		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host",
 		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host"
@@ -23,6 +24,7 @@
 		"@mantine/core": "catalog:",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:",
 		"@types/react": "catalog:",
 		"@types/react-dom": "catalog:",
@@ -31,6 +33,7 @@
 		"react-dom": "catalog:",
 		"tsdown": "catalog:",
 		"typescript": "catalog:",
-		"vite": "^8.0.0-beta.18"
+		"vite": "^8.0.0-beta.18",
+		"vitest": "catalog:"
 	}
 }

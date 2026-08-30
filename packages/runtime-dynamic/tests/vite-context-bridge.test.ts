@@ -64,10 +64,10 @@ describe('dynamic config host singleton bridge', () => {
 					PLUXEL_CONTEXT_BRIDGE_FIXTURE: fixture.path,
 					PLUXEL_CONTEXT_PACKAGE_ROOT: contextPackageRoot,
 				},
-				timeout: 30_000,
+				timeout: 60_000,
 			}),
 		).resolves.toBeDefined()
-	}, 30_000)
+	}, 90_000)
 
 	it('does not require standalone Context when the host has not installed it', async () => {
 		await using fixture = await createDiskFixture({

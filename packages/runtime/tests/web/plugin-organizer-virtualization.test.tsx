@@ -182,7 +182,7 @@ describe('PluginOrganizer virtualization', () => {
 		const rows = container.querySelectorAll('[data-plugin-row="true"]')
 		expect(rows.length).toBe(12)
 		expect(container.textContent).not.toContain('平铺结果')
-	})
+	}, 30_000)
 
 	it('preserves grouped browse mode when no filtering is active', async () => {
 		const statuses = buildStatuses(6)

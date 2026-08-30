@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as v from 'valibot'
 import { arrayMeta, formMeta, picklistMeta } from 'valibot-form'
+import { serialize } from 'capnweb'
 import { compileConfigPresentationPlanV1 } from '../../src/api/presenters/configPresentation'
 import type { ConfigPresentationFieldV1 } from '../../src/web/protocol'
 import { parseConfigPresentationPlanV1, parseRuntimePortableData } from '../../src/web/validation'
@@ -66,6 +67,7 @@ describe('ConfigPresentationPlanV1 compiler', () => {
 			branches: [{ discriminatorValue: 'text' }, { discriminatorValue: 'count' }],
 		})
 		expect(() => JSON.stringify(output)).not.toThrow()
+		expect(() => serialize(output)).not.toThrow()
 		expect(parseRuntimePortableData(output)).toEqual(output)
 	})
 
@@ -123,6 +125,17 @@ describe('ConfigPresentationPlanV1 validation', () => {
 		}
 		expect(Object.isFrozen(parsed)).toBe(true)
 		expect(Object.isFrozen(parsed.values)).toBe(true)
+		expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype)
+		expect(() => serialize(parsed)).not.toThrow()
+		const nullPrototypeInput = Object.assign(Object.create(null), {
+			nested: Object.assign(Object.create(null), { value: 'safe' }),
+		})
+		const normalized = parseRuntimePortableData(nullPrototypeInput) as {
+			readonly nested: Readonly<{ value: string }>
+		}
+		expect(Object.getPrototypeOf(normalized)).toBe(Object.prototype)
+		expect(Object.getPrototypeOf(normalized.nested)).toBe(Object.prototype)
+		expect(() => serialize(normalized)).not.toThrow()
 		expect(() => parseRuntimePortableData({ callback: () => undefined })).toThrow(/portable data/)
 		expect(() => parseRuntimePortableData({ date: new Date() })).toThrow(/plain object/)
 		expect(() => parseRuntimePortableData({ missing: undefined })).toThrow(/portable data/)

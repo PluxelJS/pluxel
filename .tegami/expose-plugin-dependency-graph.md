@@ -69,11 +69,9 @@ Plugin service directly instead of keeping test-only loader APIs alive.
 Keep static Vite document navigation working for canonical Plugin focus URLs whose identity segments
 contain filename punctuation, while leaving non-document asset and Vite-internal requests with Vite.
 Observe Vite's callback-style srvx request and shutdown promises so rapid navigation cancellation or
-concurrent close cannot become a process-level unhandled rejection. Propagate browser cancellation
-into SSE writers and observe asynchronous log drains so repeatedly entering and leaving the log view
-cannot keep writing to a cancelled stream or terminate the Node host. Replace the Workbench event
-stream's fire-and-forget third-party Fetch writer with the Runtime-owned cancellation-aware SSE
-lifecycle, so response cancellation clears keepalive work and runs resource cleanup exactly once.
+concurrent close cannot become a process-level unhandled rejection. Carry graph refresh and log follow
+as Cap'n Web observers on the Workbench document's single WebSocket, and bind observer cleanup to the
+opened handle and socket epoch instead of maintaining a parallel Workbench SSE event stream.
 Treat browser-state v4 as the only accepted Workbench persistence schema and restore defaults for every
 other version instead of carrying v3 dual-read migration branches. Drive temporary editor-group maximize
 state declaratively through the grid adapter's canonical layout API, removing the stale imperative

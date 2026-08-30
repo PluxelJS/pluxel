@@ -37,7 +37,10 @@ export class RuntimeSessionServer implements Disposable {
 		)
 		try {
 			this.remoteRoot = newWebSocketRpcSession<RpcTarget>(options.socket.webSocket, this.root, {
-				onSendError: () => new Error('Runtime control operation failed'),
+				onSendError: (error) => {
+					options.ctx.logger.error('Runtime control operation failed', { error })
+					return new Error('Runtime control operation failed')
+				},
 			})
 		} catch (error) {
 			this.root[Symbol.dispose]()

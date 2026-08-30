@@ -2,7 +2,7 @@ import { pluginNodeAddressOf } from '@pluxel/core'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { requireWorkbench } from '../../src/services/workbench'
 
 interface SettingsApi extends RpcTarget {
@@ -82,6 +82,44 @@ class LocalPlugin extends BasePlugin {
 			settings: ({ signal }) => {
 				localFactoryCalls += 1
 				return new SettingsTarget(signal)
+			},
+		})
+	}
+}
+
+let reusedTarget: SettingsTarget | undefined
+let reusedFactory: PromiseWithResolvers<SettingsTarget> | undefined
+let reusedFactoryStarted: PromiseWithResolvers<void> | undefined
+
+@Plugin({ displayName: 'Reused target' })
+class ReusedTargetPlugin extends BasePlugin {
+	protected override init() {
+		this.ctx.workbench?.publish(LocalWorkbench, {
+			settings: ({ signal }) => {
+				if (reusedFactory) {
+					reusedFactoryStarted?.resolve()
+					return reusedFactory.promise
+				}
+				reusedTarget ??= new SettingsTarget(signal)
+				return reusedTarget
+			},
+		})
+	}
+}
+
+let lateFactory: PromiseWithResolvers<SettingsTarget> | undefined
+let lateFactoryStarted: PromiseWithResolvers<void> | undefined
+let lateFactorySignal: AbortSignal | undefined
+
+@Plugin({ displayName: 'Late factory' })
+class LateFactoryPlugin extends BasePlugin {
+	protected override init() {
+		this.ctx.workbench?.publish(LocalWorkbench, {
+			settings: ({ signal }) => {
+				lateFactorySignal = signal
+				lateFactoryStarted?.resolve()
+				if (!lateFactory) throw new Error('late factory test was not initialized')
+				return lateFactory.promise
 			},
 		})
 	}
@@ -205,6 +243,197 @@ describe('Workbench vNext publication', () => {
 		} finally {
 			await host.dispose()
 		}
+	})
+
+	it('rejects an RpcTarget that a factory already exported', async () => {
+		reusedTarget = undefined
+		reusedFactory = undefined
+		reusedFactoryStarted = undefined
+		disposedTargets.length = 0
+		const host = createRuntimeHost()
+		host.add(ReusedTargetPlugin)
+		host.start(ReusedTargetPlugin)
+		await host.commit()
+
+		try {
+			const backend = requireWorkbench(host.ctx)
+			const session = backend.createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(ReusedTargetPlugin)
+			const layout = session.target.layout({ target })
+			const input = {
+				layoutRevision: layout.revision,
+				target,
+				descriptor: layout.entries[0]!.descriptor,
+			}
+			const first = await session.target.openView(input)
+			expect(first.ok).toBe(true)
+			const firstTarget = reusedTarget
+			expect(firstTarget?.disposed).toBe(false)
+
+			await expect(session.target.openView(input)).resolves.toEqual({
+				ok: false,
+				code: 'factory_failed',
+			})
+			expect(firstTarget?.disposed).toBe(false)
+
+			session.dispose()
+			expect(firstTarget?.disposed).toBe(true)
+			expect(disposedTargets.filter((candidate) => candidate === firstTarget)).toHaveLength(1)
+		} finally {
+			await host.dispose()
+			reusedTarget = undefined
+			reusedFactory = undefined
+			reusedFactoryStarted = undefined
+		}
+	})
+
+	it('does not dispose another session root when a late factory reuses it', async () => {
+		reusedTarget = undefined
+		reusedFactory = undefined
+		reusedFactoryStarted = undefined
+		disposedTargets.length = 0
+		const host = createRuntimeHost()
+		host.add(ReusedTargetPlugin)
+		host.start(ReusedTargetPlugin)
+		await host.commit()
+
+		try {
+			const backend = requireWorkbench(host.ctx)
+			const target = pluginNodeAddressOf(ReusedTargetPlugin)
+			const firstSession = backend.createSession(localPrincipal, () => {})
+			const firstLayout = firstSession.target.layout({ target })
+			const first = await firstSession.target.openView({
+				layoutRevision: firstLayout.revision,
+				target,
+				descriptor: firstLayout.entries[0]!.descriptor,
+			})
+			if (!first.ok || first.value.kind !== 'local') throw new Error('first open failed')
+			const firstTarget = first.value.api as SettingsTarget
+
+			reusedFactory = Promise.withResolvers<SettingsTarget>()
+			reusedFactoryStarted = Promise.withResolvers<void>()
+			const secondSession = backend.createSession(localPrincipal, () => {})
+			const secondLayout = secondSession.target.layout({ target })
+			const secondOpening = secondSession.target.openView({
+				layoutRevision: secondLayout.revision,
+				target,
+				descriptor: secondLayout.entries[0]!.descriptor,
+			})
+			await reusedFactoryStarted.promise
+
+			secondSession.dispose()
+			reusedFactory.resolve(firstTarget)
+			await expect(secondOpening).resolves.toEqual({
+				ok: false,
+				code: 'target_unavailable',
+			})
+			expect(firstTarget.disposed).toBe(false)
+			expect(firstTarget.signal.aborted).toBe(false)
+
+			firstSession.dispose()
+			expect(firstTarget.disposed).toBe(true)
+			expect(disposedTargets.filter((candidate) => candidate === firstTarget)).toHaveLength(1)
+		} finally {
+			await host.dispose()
+			reusedTarget = undefined
+			reusedFactory = undefined
+			reusedFactoryStarted = undefined
+		}
+	})
+
+	it('disposes a factory target once when it resolves after session close', async () => {
+		disposedTargets.length = 0
+		lateFactory = Promise.withResolvers<SettingsTarget>()
+		lateFactoryStarted = Promise.withResolvers<void>()
+		lateFactorySignal = undefined
+		const host = createRuntimeHost()
+		host.add(LateFactoryPlugin)
+		host.start(LateFactoryPlugin)
+		await host.commit()
+		let resolvedTarget: SettingsTarget | undefined
+
+		try {
+			const backend = requireWorkbench(host.ctx)
+			const session = backend.createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(LateFactoryPlugin)
+			const layout = session.target.layout({ target })
+			const opening = session.target.openView({
+				layoutRevision: layout.revision,
+				target,
+				descriptor: layout.entries[0]!.descriptor,
+			})
+			await lateFactoryStarted.promise
+
+			session.dispose()
+			expect(lateFactorySignal?.aborted).toBe(true)
+			resolvedTarget = new SettingsTarget(lateFactorySignal!)
+			lateFactory.resolve(resolvedTarget)
+			await expect(opening).resolves.toEqual({ ok: false, code: 'target_unavailable' })
+			expect(resolvedTarget.disposed).toBe(true)
+			expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
+		} finally {
+			await host.dispose()
+			lateFactory = undefined
+			lateFactoryStarted = undefined
+			lateFactorySignal = undefined
+		}
+		expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
+	})
+
+	it('returns factory_timeout before a non-cooperative factory settles', async () => {
+		disposedTargets.length = 0
+		lateFactory = Promise.withResolvers<SettingsTarget>()
+		lateFactoryStarted = Promise.withResolvers<void>()
+		lateFactorySignal = undefined
+		const host = createRuntimeHost()
+		host.add(LateFactoryPlugin)
+		host.start(LateFactoryPlugin)
+		await host.commit()
+		let fakeTimers = false
+		let resolvedTarget: SettingsTarget | undefined
+
+		try {
+			const backend = requireWorkbench(host.ctx)
+			const session = backend.createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(LateFactoryPlugin)
+			const layout = session.target.layout({ target })
+			vi.useFakeTimers()
+			fakeTimers = true
+			const opening = session.target.openView({
+				layoutRevision: layout.revision,
+				target,
+				descriptor: layout.entries[0]!.descriptor,
+			})
+			await lateFactoryStarted.promise
+
+			await vi.advanceTimersByTimeAsync(14_999)
+			let settled = false
+			void opening.then((): undefined => {
+				settled = true
+				return undefined
+			})
+			await Promise.resolve()
+			expect(settled).toBe(false)
+			await vi.advanceTimersByTimeAsync(1)
+			await expect(opening).resolves.toEqual({ ok: false, code: 'factory_timeout' })
+			expect(lateFactorySignal?.aborted).toBe(true)
+
+			resolvedTarget = new SettingsTarget(lateFactorySignal!)
+			lateFactory.resolve(resolvedTarget)
+			vi.useRealTimers()
+			fakeTimers = false
+			await vi.waitFor(() => expect(resolvedTarget?.disposed).toBe(true))
+			expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
+
+			session.dispose()
+		} finally {
+			if (fakeTimers) vi.useRealTimers()
+			await host.dispose()
+			lateFactory = undefined
+			lateFactoryStarted = undefined
+			lateFactorySignal = undefined
+		}
+		expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
 	})
 
 	it('server-rematches parameterized routes and rejects browser params', async () => {

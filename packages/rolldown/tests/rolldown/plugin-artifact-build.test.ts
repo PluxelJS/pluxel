@@ -10,20 +10,20 @@ import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
 import { readWorkbenchFederationDeploymentInventory } from '../../src/workbench/artifact.ts'
 
 describe('pluginArtifactBuildPlugin', () => {
-	it('atomically emits the host-owned deployment inventory from the canonical plan callback', async () => {
+	it('atomically emits the host-owned deployment inventory from canonical compilations', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: 'workbench-inventory-fixture', type: 'module' }),
 		})
-		const plans = vi.fn(async () => [])
+		const compilations = vi.fn(async () => [])
 		const plugin = pluginArtifactBuildPlugin({
 			root: fixture.path,
 			buildDir: 'dist',
-			workbench: { plans },
+			workbench: { compilations },
 		})
 		const writeBundle = plugin.writeBundle as (() => Promise<void>) | undefined
 		await writeBundle?.call({})
 
-		expect(plans).toHaveBeenCalledOnce()
+		expect(compilations).toHaveBeenCalledOnce()
 		await expect(
 			readWorkbenchFederationDeploymentInventory(join(fixture.path, 'dist')),
 		).resolves.toEqual({

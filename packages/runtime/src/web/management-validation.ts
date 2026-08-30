@@ -1009,32 +1009,45 @@ function configValidationErrors(input: unknown, label: string): ConfigValidation
 	const output: Record<
 		string,
 		Readonly<Record<string, readonly Readonly<{ message: string; path: readonly string[] }>[]>>
-	> = Object.create(null)
+	> = {}
 	for (const [fieldName, sectionsInput] of Object.entries(fields)) {
 		const sectionLabel = `${label}.${fieldName}`
 		const sections = object(sectionsInput, sectionLabel)
-		const sectionOutput: Record<string, { message: string; path: string[] }[]> = Object.create(null)
+		const sectionOutput: Record<string, { message: string; path: string[] }[]> = {}
 		for (const [sectionName, errorsInput] of Object.entries(sections)) {
 			const errorsLabel = `${sectionLabel}.${sectionName}`
-			sectionOutput[sectionName] = Object.freeze(
-				array(errorsInput, errorsLabel).map((errorInput, index) => {
-					const errorLabel = `${errorsLabel}[${index}]`
-					const error = object(errorInput, errorLabel)
-					shape(error, ['message', 'path'], [], errorLabel)
-					return Object.freeze({
-						message: text(error.message, `${errorLabel}.message`),
-						path: Object.freeze(
-							array(error.path, `${errorLabel}.path`).map((segment, pathIndex) =>
-								text(segment, `${errorLabel}.path[${pathIndex}]`),
-							),
-						) as string[],
-					})
-				}),
-			) as { message: string; path: string[] }[]
+			defineRecordField(
+				sectionOutput,
+				sectionName,
+				Object.freeze(
+					array(errorsInput, errorsLabel).map((errorInput, index) => {
+						const errorLabel = `${errorsLabel}[${index}]`
+						const error = object(errorInput, errorLabel)
+						shape(error, ['message', 'path'], [], errorLabel)
+						return Object.freeze({
+							message: text(error.message, `${errorLabel}.message`),
+							path: Object.freeze(
+								array(error.path, `${errorLabel}.path`).map((segment, pathIndex) =>
+									text(segment, `${errorLabel}.path[${pathIndex}]`),
+								),
+							) as string[],
+						})
+					}),
+				) as { message: string; path: string[] }[],
+			)
 		}
-		output[fieldName] = Object.freeze(sectionOutput)
+		defineRecordField(output, fieldName, Object.freeze(sectionOutput))
 	}
 	return Object.freeze(output)
+}
+
+function defineRecordField<Value>(record: Record<string, Value>, key: string, value: Value): void {
+	Object.defineProperty(record, key, {
+		value,
+		enumerable: true,
+		configurable: true,
+		writable: true,
+	})
 }
 
 function providerOption(input: unknown, label: string): PluginProviderOption {

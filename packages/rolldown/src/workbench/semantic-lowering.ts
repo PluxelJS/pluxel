@@ -129,7 +129,7 @@ export type WorkbenchSemanticModuleInput = Readonly<{
 
 export type WorkbenchSemanticProducerCompilation = Readonly<{
 	plan: WorkbenchFederationProducerPlan
-	/** Single package/application root containing the generated Bridge and browser source graph. */
+	/** Package root containing the generated Bridge and resolving the producer dependency graph. */
 	root: string
 }>
 

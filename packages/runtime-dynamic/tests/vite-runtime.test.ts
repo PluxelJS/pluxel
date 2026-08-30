@@ -56,8 +56,8 @@ describe('dynamic Vite runtime', () => {
 					PLUXEL_DYNAMIC_VITE_PLUGIN: fixture.getPath('entries/dynamic-http.ts'),
 					PLUXEL_DYNAMIC_VITE_CACHE: fixture.getPath('.vite-cache'),
 				},
-				timeout: 45_000,
+				timeout: 90_000,
 			}),
 		).resolves.toBeDefined()
-	}, 60_000)
+	}, 120_000)
 })

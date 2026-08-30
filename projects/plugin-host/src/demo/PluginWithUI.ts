@@ -157,7 +157,20 @@ class PluginWithUISubscription extends RpcTarget {
 		this.#signal = signal
 		this.#onAbort = () => this[Symbol.dispose]()
 		this.#subscription = plugin.subscribe((revision) => {
-			void this.#observer(revision).catch(() => this[Symbol.dispose]())
+			try {
+				const result = this.#observer(revision)
+				void (async () => {
+					try {
+						await result
+					} catch {
+						this[Symbol.dispose]()
+					} finally {
+						result[Symbol.dispose]()
+					}
+				})()
+			} catch {
+				this[Symbol.dispose]()
+			}
 		})
 		if (signal.aborted) this[Symbol.dispose]()
 		else signal.addEventListener('abort', this.#onAbort, { once: true })

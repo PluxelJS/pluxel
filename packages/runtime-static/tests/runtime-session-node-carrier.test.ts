@@ -26,6 +26,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { openRuntimeSessionTestConnection } from '@pluxel/runtime-static/test'
 
 import { runStaticNodeWorkbenchApplication } from '../src/internal/node-workbench-application'
 
@@ -357,8 +358,9 @@ describe('Runtime Session over the production Node carrier', () => {
 		)
 		let stopped = false
 		try {
-			const connection = connectRuntimeSession('127.0.0.1', runtime.address.port, 'http:')
-			await withTimeout(waitForOpen(connection.socket))
+			await using connection = await openRuntimeSessionTestConnection(
+				`http://127.0.0.1:${runtime.address.port}`,
+			)
 			const invalidation = Promise.withResolvers<RuntimeSessionEvent>()
 			const ready = await connection.root.bootstrap((event) =>
 				invalidation.resolve(Object.freeze({ ...event })),
@@ -391,31 +393,11 @@ describe('Runtime Session over the production Node carrier', () => {
 			await expect(withTimeout(closed)).resolves.toMatchObject({ code: 1012 })
 			await stop
 			stopped = true
-			connection.root[Symbol.dispose]()
 		} finally {
 			if (!stopped) await runtime.stop()
 		}
 	}, 20_000)
 })
-
-function connectRuntimeSession(
-	host: string,
-	port: number,
-	originProtocol: 'http:' | 'https:',
-): Readonly<{ socket: WebSocket; root: RpcStub<RuntimeSessionRoot> }> {
-	const WebSocketConstructor = NodeWebSocket as unknown as new (
-		url: string,
-		protocols: string[],
-		options: { headers: Record<string, string> },
-	) => WebSocket
-	const socket = new WebSocketConstructor(`ws://${host}:${port}${RUNTIME_SESSION_PATH}`, [], {
-		headers: { origin: `${originProtocol}//${host}:${port}` },
-	})
-	return Object.freeze({
-		socket,
-		root: newWebSocketRpcSession<RuntimeSessionRoot>(socket),
-	})
-}
 
 async function authenticate(
 	root: RpcStub<RuntimeSessionRoot>,

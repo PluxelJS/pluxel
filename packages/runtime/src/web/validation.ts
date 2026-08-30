@@ -607,9 +607,9 @@ function optionalPicklistEntries(recordValue: Record<string, unknown>, label: st
 function optionalStringRecord(recordValue: Record<string, unknown>, key: string, label: string) {
 	if (recordValue[key] === undefined) return {}
 	const source = record(recordValue[key], `${label}.${key}`)
-	const output: Record<string, string> = Object.create(null)
+	const output: Record<string, string> = {}
 	for (const [entryKey, value] of Object.entries(source)) {
-		output[entryKey] = text(value, `${label}.${key}.${entryKey}`)
+		defineRecordField(output, entryKey, text(value, `${label}.${key}.${entryKey}`))
 	}
 	return { [key]: Object.freeze(output) }
 }
@@ -733,19 +733,32 @@ function clonePortable(
 			fail(`${label} must be a plain object`)
 		}
 		if (Object.getOwnPropertySymbols(input).length > 0) fail(`${label} must not contain symbols`)
-		const out: Record<string, unknown> = Object.create(null)
+		const out: Record<string, unknown> = {}
 		const descriptors = Object.entries(Object.getOwnPropertyDescriptors(input))
 		if (descriptors.length > MAX_OBJECT_FIELDS) fail(`${label} has too many fields`)
 		for (const [key, descriptor] of descriptors) {
 			consumeText(key, `${label} key`, budget)
 			if (!('value' in descriptor)) fail(`${label}.${key} must be a data property`)
 			if (descriptor.value === undefined) fail(`${label}.${key} is not portable data`)
-			out[key] = clonePortable(descriptor.value, `${label}.${key}`, ancestors, depth + 1, budget)
+			defineRecordField(
+				out,
+				key,
+				clonePortable(descriptor.value, `${label}.${key}`, ancestors, depth + 1, budget),
+			)
 		}
 		return Object.freeze(out) as RuntimeJsonObject
 	} finally {
 		ancestors.delete(input)
 	}
+}
+
+function defineRecordField<Value>(target: Record<string, Value>, key: string, value: Value): void {
+	Object.defineProperty(target, key, {
+		value,
+		enumerable: true,
+		configurable: true,
+		writable: true,
+	})
 }
 
 function consumeText(input: string, label: string, budget: ValidationBudget): void {

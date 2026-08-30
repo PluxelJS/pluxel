@@ -229,6 +229,11 @@ export function createWorkbenchBridge(identity, descriptor, Renderer) {
 				name: 'pluxel-cli-build-fixture-runtime-ui',
 				version: '1.0.0',
 				type: 'module',
+				dependencies: {
+					'@pluxel/runtime': '1.0.0',
+					react: '19.2.7',
+					'react-dom': '19.2.7',
+				},
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 				},

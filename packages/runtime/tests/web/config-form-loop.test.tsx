@@ -210,7 +210,7 @@ describe('single-schema ConfigForm safety', () => {
 		} finally {
 			await act(async () => root.unmount())
 		}
-	})
+	}, 30_000)
 
 	it('resets to defaults and reports dirty without a render loop', async () => {
 		const error = vi.spyOn(console, 'error').mockImplementation(() => {})

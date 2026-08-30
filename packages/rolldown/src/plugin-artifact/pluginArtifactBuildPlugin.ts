@@ -18,6 +18,7 @@ import { extractDatabaseDeclarations } from '../database/declaration.ts'
 import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
 import { resolveWithOxc } from '../resolver/oxc.ts'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
+import type { WorkbenchSemanticProducerCompilation } from '../workbench/semantic-lowering.ts'
 import { allowOptionalQuerySuffix, type ViteCompatPlugin } from '../rolldown/plugins/compat.ts'
 import {
 	normalizePatterns,
@@ -74,10 +75,10 @@ export type PluginArtifactBuildPluginOptions = {
 		| {
 				/** Minifies Workbench remote output when true. @defaultValue true */
 				minify?: boolean
-				/** @internal Returns the final frozen plans owned by this compilation. */
-				plans?: () =>
-					| readonly WorkbenchFederationProducerPlan[]
-					| Promise<readonly WorkbenchFederationProducerPlan[]>
+				/** @internal Returns each final plan with the package root that owns its browser graph. */
+				compilations?: () =>
+					| readonly WorkbenchSemanticProducerCompilation[]
+					| Promise<readonly WorkbenchSemanticProducerCompilation[]>
 		  }
 	/** Node artifact build policy. Omission enables Node artifacts with default minification. */
 	node?: {
@@ -202,12 +203,13 @@ export function pluginArtifactBuildPlugin(
 			},
 		},
 		async writeBundle() {
-			const producerPlans =
-				options.workbench === false ? [] : await (options.workbench?.plans?.() ?? [])
+			const producerCompilations =
+				options.workbench === false ? [] : await (options.workbench?.compilations?.() ?? [])
+			const producerPlans = producerCompilations.map((compilation) => compilation.plan)
 			await Promise.all([
-				...producerPlans
-					.toSorted((left, right) => left.producer.localeCompare(right.producer))
-					.map((plan) => buildProductionProducer(root, plan, options)),
+				...producerCompilations
+					.toSorted((left, right) => left.plan.producer.localeCompare(right.plan.producer))
+					.map((compilation) => buildProductionProducer(root, compilation, options)),
 				...[...nodeDeclarations.values()]
 					.sort((a, b) => a.artifactKey.localeCompare(b.artifactKey))
 					.map((declaration) => buildProductionNodeModule(root, declaration, options)),
@@ -254,16 +256,20 @@ function injectedArgument(code: string, insertOffset: number, value: string): st
 }
 
 async function buildProductionProducer(
-	root: string,
-	plan: WorkbenchFederationProducerPlan,
+	deploymentRoot: string,
+	compilation: WorkbenchSemanticProducerCompilation,
 	options: PluginArtifactBuildPluginOptions,
 ): Promise<void> {
+	const { plan, root: sourceRoot } = compilation
 	const target = options.workbench === false ? {} : (options.workbench ?? {})
-	const outDir = resolve(root, workbenchFederationBuildOutDir(plan, options.buildDir ?? 'dist'))
+	const outDir = resolve(
+		deploymentRoot,
+		workbenchFederationBuildOutDir(plan, options.buildDir ?? 'dist'),
+	)
 	options.log?.(`[workbench-ui] build ${plan.producer} (${plan.buildRevision})`)
 	const buildTools = await loadWorkbenchUiBuildTools()
 	await buildTools.buildWorkbenchFederationProducer({
-		root,
+		root: sourceRoot,
 		plan,
 		outDir,
 		minify: target.minify ?? true,

@@ -63,6 +63,7 @@ import type {
 	PluginStatusQueryResult,
 	PluginsListOutput,
 } from '../../web/protocol'
+import { parseConfigPresentationResult, parseConfigResult } from '../../web/management-validation'
 
 export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
 	private readonly ctx: Context
@@ -141,13 +142,13 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				message: 'Invalid Plugin node address',
 			}
 		}
-		return await pluginConfigPresentation(this.ctx, address)
+		return parseConfigPresentationResult(await pluginConfigPresentation(this.ctx, address))
 	}
 
 	async pluginConfig(owner: unknown): Promise<ConfigResult> {
 		const address = parseRpcNode(owner)
 		if (!address) return invalidConfigInput('Invalid Plugin node address')
-		return await pluginConfigGet(this.ctx, address)
+		return parseConfigResult(await pluginConfigGet(this.ctx, address))
 	}
 
 	async patchPluginConfig(owner: unknown, patch: unknown): Promise<ConfigResult> {
@@ -155,14 +156,14 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		if (!address) return invalidConfigInput('Invalid Plugin node address')
 		const record = readRpcRecord(patch)
 		if (!record) return invalidConfigInput('Config patch must be an object')
-		return await pluginConfigPatch(this.ctx, address, record)
+		return parseConfigResult(await pluginConfigPatch(this.ctx, address, record))
 	}
 
 	async patchPluginConfigField(owner: unknown, input: unknown): Promise<ConfigResult> {
 		const address = parseRpcNode(owner)
 		if (!address) return invalidConfigInput('Invalid Plugin node address')
 		if (!readRpcRecord(input)) return invalidConfigInput('Config field mutation must be an object')
-		return await pluginConfigPatchField(this.ctx, address, input)
+		return parseConfigResult(await pluginConfigPatchField(this.ctx, address, input))
 	}
 
 	async pluginDependencyGraph(): Promise<PluginDependencyGraphSnapshot> {

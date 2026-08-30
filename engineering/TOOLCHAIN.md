@@ -412,11 +412,11 @@ Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完�
 Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench producer commit
 通过 session epoch invalidation 驱动 full document reload，不使用浏览器轮询或页内 remote replacement。
 
-Semantic pass 只使用当前 Vite/application build root。`workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path
-相对其声明模块解析；lowering 从实际 definition/renderer module 收集 source graph，在 build root 的
-`.pluxel/workbench-generated/` 生成 Bridge entry，并把 root-relative entry 写入 producer plan。不接受调用方目录列表、absolute
-renderer declaration、runtime-module fallback 或第二套 build-root discovery；跨 package import 只能成为 source graph provenance，
-不能改变 fixed shared set 的解析边界。
+`workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path 相对声明模块解析；lowering 从实际
+definition/renderer module 收集 source graph，在 owning package root 的 `.pluxel/workbench-generated/` 生成 Bridge entry，
+并把 package-relative entry 写入 producer plan。Producer 使用同一 package root 解析依赖，并复用 fixed shared build contract
+已经确定的 workspace root 作为 TypeScript declaration graph 边界；host application root 只拥有部署输出。这里不接受调用方目录
+列表、absolute renderer declaration、runtime-module fallback、workspace root override 或第二套 filesystem discovery。
 
 ## Production build
 

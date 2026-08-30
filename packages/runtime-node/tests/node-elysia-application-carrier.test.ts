@@ -1,6 +1,6 @@
-import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
 import { getWebSocketHooks } from 'crossws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { NodeElysiaApplicationCarrier } from '../src/index'
 
 describe('Node Elysia application carrier', () => {
 	afterEach(() => vi.useRealTimers())

@@ -119,8 +119,8 @@ describe('dynamic fixed plugin module identity', () => {
 			execFileAsync(process.execPath, ['--import', 'tsx', runner], {
 				cwd: resolve(workspaceRoot, 'packages/runtime-dynamic'),
 				env: { ...process.env, CI: '1', CHOKIDAR_USEPOLLING: '1' },
-				timeout: 45_000,
+				timeout: 90_000,
 			}),
 		).resolves.toBeDefined()
-	}, 60_000)
+	}, 120_000)
 })

@@ -1,10 +1,12 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, symlink, writeFile } from 'node:fs/promises'
 import { parsePluginDefinitionAddress } from '@pluxel/core'
+import { workbenchFederationBuildOutDir } from '@pluxel/core/federation'
 import { createFixture } from 'fs-fixture'
 import { dirname, resolve } from 'pathe'
 import { rolldown } from 'rolldown'
 import { describe, expect, it } from 'vitest'
 import { createPluginSemanticsPlugin } from '../src/rolldown/plugins/pluginSemanticsPlugin'
+import { pluginArtifactBuildPlugin } from '../src/plugin-artifact/pluginArtifactBuildPlugin'
 import { parseStandaloneWithLang } from '../src/rolldown/plugins/pluginUtils'
 import { buildWorkbenchFederationProducer } from '../src/vite/workbench-ui'
 import { validateWorkbenchFederationArtifact } from '../src/workbench/artifact'
@@ -38,6 +40,7 @@ function packageFiles(name: string, version: string, exports: readonly string[])
 
 function fixtureFiles(): Record<string, string> {
 	return {
+		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
 		'package.json': JSON.stringify({
 			name: '@example/semantic-plugin',
 			type: 'module',
@@ -225,15 +228,32 @@ class SemanticPlugin {
 		)
 	}, 60_000)
 
-	it('compiles a producer from the nearest package root', async () => {
+	it('builds a workspace producer from its package root into the host deployment root', async () => {
 		const files = fixtureFiles()
 		files['packages/nested/package.json'] = JSON.stringify({
 			name: '@example/nested-plugin',
 			type: 'module',
+			devDependencies: {
+				'@pluxel/runtime': '1.0.0',
+				react: '19.2.7',
+				'react-dom': '19.2.7',
+			},
 		})
-		files['packages/nested/src/settings.tsx'] =
-			'export default function Settings() { return null }\n'
+		files['packages/nested/tsconfig.json'] = JSON.stringify({
+			extends: '../../tsconfig.json',
+			include: ['src', '.pluxel/workbench-generated'],
+		})
+		files['packages/shared/src/label.ts'] = "export const settingsLabel = 'Workspace settings'\n"
+		files['packages/nested/src/settings.tsx'] = `
+import { settingsLabel } from '../../shared/src/label.ts'
+export default function Settings() { return settingsLabel }
+`
 		await using fixture = await createFixture(files)
+		await symlink(
+			resolve(fixture.path, 'node_modules'),
+			resolve(fixture.path, 'packages/nested/node_modules'),
+			'dir',
+		)
 		const code = `
 import { workbench } from '@pluxel/runtime/workbench'
 export const SemanticWorkbench = workbench.define({
@@ -243,6 +263,7 @@ export const SemanticWorkbench = workbench.define({
 	}),
 })
 class SemanticPlugin {
+	declare ctx: { workbench: { publish(definition: unknown, bindings: unknown): void } }
 	init() { this.ctx.workbench.publish(SemanticWorkbench, { settings: () => ({}) }) }
 }
 `
@@ -252,12 +273,32 @@ class SemanticPlugin {
 		const nestedRoot = resolve(fixture.path, 'packages/nested')
 
 		expect(compilation?.root).toBe(nestedRoot)
+		expect(resolveWorkbenchFederationShared(nestedRoot).resolveRoot).toBe(fixture.path)
 		const bridgeEntryPath = compilation?.plan.entries[0]?.bridgeEntryPath
 		expect(bridgeEntryPath).toMatch(/^\.pluxel\/workbench-generated\//)
 		await expect(readFile(resolve(nestedRoot, bridgeEntryPath!), 'utf-8')).resolves.toContain(
 			'../../../../src/plugin.ts',
 		)
-	})
+
+		const artifactPlugin = pluginArtifactBuildPlugin({
+			root: fixture.path,
+			buildDir: 'host-dist',
+			workbench: { compilations: async () => [compilation!] },
+		})
+		const writeBundle = artifactPlugin.writeBundle as (() => Promise<void>) | undefined
+		await writeBundle?.call({})
+
+		const deploymentOutDir = resolve(
+			fixture.path,
+			workbenchFederationBuildOutDir(compilation!.plan, 'host-dist'),
+		)
+		const validation = await validateWorkbenchFederationArtifact(deploymentOutDir, {
+			plan: compilation!.plan,
+			compatibility: resolveWorkbenchFederationShared(nestedRoot).compatibility,
+		})
+		expect(validation.valid).toBe(true)
+		expect(deploymentOutDir.startsWith(resolve(fixture.path, 'host-dist'))).toBe(true)
+	}, 60_000)
 
 	it('does not create a producer for an attachment-only consumer', async () => {
 		const files = fixtureFiles()

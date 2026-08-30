@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { formatPluginNodeReference, pluginNodeAddressOf } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 import { requireLoaderService } from '../src/context-plan.ts'
@@ -95,6 +96,7 @@ describe('dynamic plugin sources', () => {
 					'  cleaned = false',
 					'  protected override init() {',
 					'    this.started = true',
+					"    this.ctx.elysia.get('/mutable-source', () => 'mutable-source')",
 					'    this.ctx.effects.defer(() => { this.cleaned = true })',
 					'  }',
 					'  snapshot() { return { started: this.started, cleaned: this.cleaned } }',
@@ -134,6 +136,11 @@ describe('dynamic plugin sources', () => {
 				| undefined
 			expect(instance).toMatchObject({ started: true, cleaned: false })
 			expect(instance?.partSnapshot()).toEqual({ started: true, cleaned: false })
+			await expect(
+				requireRuntimeHttpService(host.ctx)
+					.fetch(new Request('http://local.test/mutable-source'))
+					.then((response) => response.text()),
+			).resolves.toBe('mutable-source')
 
 			const removedBatch = host.hmr.api.waitForBatch({
 				afterEpoch: added.epoch,
@@ -148,6 +155,11 @@ describe('dynamic plugin sources', () => {
 			expect(requirePluginService(host.ctx).isRunning(mutableAddress)).toBe(false)
 			expect(instance).toMatchObject({ started: true, cleaned: true })
 			expect(instance?.partSnapshot()).toEqual({ started: true, cleaned: true })
+			expect(
+				await requireRuntimeHttpService(host.ctx).fetch(
+					new Request('http://local.test/mutable-source'),
+				),
+			).toMatchObject({ status: 404 })
 		} finally {
 			await host.stop()
 		}

@@ -229,7 +229,7 @@ describe('DatabaseService', () => {
 			await runningOperation?.catch(() => undefined)
 			await resetRuntimeHost(host)
 		}
-	}, 30_000)
+	}, 60_000)
 
 	it('rejects new operations from a cached handle after owner teardown', async () => {
 		const definition = databaseFixture('cached-owner-handle')

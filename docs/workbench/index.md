@@ -123,7 +123,20 @@ class OrdersSubscription extends RpcTarget {
 		super()
 		this.#observer = observer.dup()
 		this.#unsubscribe = plugin.subscribe((revision) => {
-			void this.#observer(revision).catch(() => this[Symbol.dispose]())
+			try {
+				const result = this.#observer(revision)
+				void (async () => {
+					try {
+						await result
+					} catch {
+						this[Symbol.dispose]()
+					} finally {
+						result[Symbol.dispose]()
+					}
+				})()
+			} catch {
+				this[Symbol.dispose]()
+			}
 		})
 		this.#signal = signal
 		if (signal.aborted) this[Symbol.dispose]()
@@ -143,8 +156,8 @@ class OrdersSubscription extends RpcTarget {
 每次打开 View 都会调用 factory，所以必须返回新的 `RpcTarget`。`principal`、server-matched `params` 和
 `signal` 都在 factory context 中；按用户授权或按 route 打开对象时就在这里 admission。
 
-`OrdersSubscription` 对需要跨调用保留的 observer 调用 `dup()`，并在自己的 `[Symbol.dispose]()` 中
-unsubscribe 和释放 observer。这样 View close、socket close 和 Plugin replacement 都走同一清理路径。
+`OrdersSubscription` 对需要跨调用保留的 observer 调用 `dup()`，在每次 callback settle 后释放 invocation result，并在自己的
+`[Symbol.dispose]()` 中 unsubscribe 和释放 observer。这样 View close、socket close 和 Plugin replacement 都走同一清理路径。
 
 Bindings 必须与 definition 的 key 完全一致。一个 Plugin generation 只调用一次 `publish()`；`PluginPart` 把 UI
 需求交给 owning Plugin 聚合。

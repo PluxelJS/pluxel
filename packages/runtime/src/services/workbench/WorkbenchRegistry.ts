@@ -580,9 +580,20 @@ export class WorkbenchRegistry {
 		context: WorkbenchViewOpenContext | WorkbenchAttachmentOpenContext,
 		lease: OpenedViewLease,
 	): Promise<RpcTarget> {
-		const pending = Promise.resolve().then(() => factory(context))
+		const pending = Promise.resolve()
+			.then(() => {
+				if (lease.signal.aborted) throw lease.signal.reason
+				return factory(context)
+			})
+			.then((target) => this.claimFreshRoot(target))
 		lease.trackPending(pending)
-		const target = await pending
+		const target = await raceAbort(pending, lease.signal)
+		if (lease.signal.aborted) throw lease.signal.reason
+		lease.reserve(target)
+		return target
+	}
+
+	private claimFreshRoot(target: unknown): RpcTarget {
 		if (!(target instanceof RpcTarget)) {
 			throw new TypeError('Workbench factory must return a fresh RpcTarget')
 		}
@@ -590,10 +601,6 @@ export class WorkbenchRegistry {
 			throw new TypeError('Workbench factory returned an RpcTarget that was already exported')
 		}
 		this.exportedRoots.add(target)
-		if (lease.signal.aborted) {
-			throw lease.signal.reason
-		}
-		lease.reserve(target)
 		return target
 	}
 
@@ -795,7 +802,7 @@ function matchPlacement(
 	const expected = placement.path.split('/').slice(1)
 	const actual = location.replace(/\/+$/, '').split('/').slice(1)
 	if (expected.length !== actual.length) return null
-	const params: Record<string, string> = Object.create(null)
+	const params: Record<string, string> = {}
 	for (let index = 0; index < expected.length; index += 1) {
 		const pattern = expected[index]!
 		const segment = actual[index]!
@@ -855,6 +862,18 @@ function isOwnerClosed(error: unknown): boolean {
 function disposeTarget(target: RpcTarget): void {
 	const dispose = (target as RpcTarget & Partial<Disposable>)[Symbol.dispose]
 	if (typeof dispose === 'function') invokeDisposer(dispose.bind(target))
+}
+
+function raceAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+	if (signal.aborted) return Promise.reject(signal.reason)
+	let onAbort: (() => void) | undefined
+	const aborted = new Promise<never>((_resolve, reject) => {
+		onAbort = () => reject(signal.reason)
+		signal.addEventListener('abort', onAbort, { once: true })
+	})
+	return Promise.race([pending, aborted]).finally(() => {
+		if (onAbort) signal.removeEventListener('abort', onAbort)
+	})
 }
 
 function invokeDisposer(dispose: (() => void) | undefined): void {

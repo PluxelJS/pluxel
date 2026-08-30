@@ -287,8 +287,15 @@ expect(fixture.fs.existsSync(fixture.getPath('packages/a/src/index.ts'))).toBe(t
 Static canonical entry：
 
 ```ts twoslash
-import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import {
+	createStaticRuntimeTestHost,
+	openRuntimeSessionTestConnection,
+} from '@pluxel/runtime-static/test'
 ```
+
+需要从 Node 测试真实 WS-only control plane 时，用 `openRuntimeSessionTestConnection(origin)` 建立带同源
+`Origin` 的 production-carrier connection，并通过 `await using` 释放 socket 与 Cap’n Web root；不要为测试关闭
+Runtime Session 的 origin 校验，也不要回退到 HTTP/SSE transport。
 
 Dynamic HMR 集成测试通过真实 `dynamicRuntimeVitePlugin()` 加载 source，不直接调用内部 loader method。覆盖 initial commit、add/change/unlink、failed replacement 保留旧 generation 和 source recovery。
 
