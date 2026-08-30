@@ -242,9 +242,11 @@ Part config 属于静态 owner schema：即使 optional provider absent、对应
 default、transform 和 validation。需要“未启用时不要求凭据”等语义时，在 schema 中使用带 `enabled` discriminator 的 object
 明确表达，不根据 runtime catalog 动态改变配置契约。
 
-Workbench 把父 schema 显示为 General tab，把 Part schema 按 nested path 显示为独立 tab。所有 tab 编辑同一个 Plugin config
-owner；提交任意 tab 都会在 server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前
-generation；否则只保存 desired config，不会单独更新 Part 或隐式 restart。
+Workbench 把父 schema 显示为“常规”分区，把 Part schema 按 nested path 显示为独立分区。配置操作栏固定在内容区顶部，切换分区时会保留
+各自的滚动位置和未保存草稿；分区名称后的圆点与“待保存”计数用于提示尚未提交的变化。使用 `Ctrl/⌘ + S` 保存当前分区，或使用
+`Ctrl/⌘ + Shift + S` 一次保存当前 Plugin 的全部已修改分区。所有分区编辑同一个 Plugin config owner；保存当前分区或全部分区都会在
+server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前 generation；否则只保存
+desired config，不会单独更新 Part 或隐式 restart。
 
 Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./plugin-parts.md)。
 

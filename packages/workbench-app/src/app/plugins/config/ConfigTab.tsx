@@ -1,6 +1,6 @@
-import { Box, Button, Group } from '@mantine/core'
+import { Box } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { FieldNode } from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
@@ -15,6 +15,19 @@ import { refreshPluginReadModels } from '../pluginReadModels'
 
 const EMPTY_PATH: readonly string[] = []
 
+export type ConfigFormState = {
+	dirty: boolean
+	canSubmit: boolean
+	submitting: boolean
+	values: Record<string, unknown>
+}
+
+export type ConfigFormBridge = {
+	form: ReturnType<typeof useAutoFormCtx>['form']
+	reset: (values?: Record<string, unknown>) => void
+	submit: () => void
+}
+
 export function ConfigTabContent({
 	owner,
 	displayName,
@@ -22,10 +35,12 @@ export function ConfigTabContent({
 	savedValue,
 	defaultValue,
 	showToc = true,
-	showActions = true,
-	active = true,
-	onDirtyChange,
 	path = EMPTY_PATH,
+	persistedValue = savedValue,
+	scrollHost,
+	scrollHostVersion = 0,
+	registerForm,
+	reportState,
 }: {
 	owner: PluginNodeAddress
 	displayName: string
@@ -33,10 +48,13 @@ export function ConfigTabContent({
 	savedValue: Record<string, unknown>
 	defaultValue: Record<string, unknown>
 	showToc?: boolean
-	showActions?: boolean
-	active?: boolean
-	onDirtyChange?: (dirty: boolean) => void
 	path?: readonly string[]
+	/** Full value at `path`, including child sections that are not rendered by this form. */
+	persistedValue?: Record<string, unknown>
+	scrollHost?: HTMLElement | null
+	scrollHostVersion?: number
+	registerForm?: (key: string, bridge: ConfigFormBridge) => void | (() => void)
+	reportState?: (key: string, state: ConfigFormState) => void
 }) {
 	const notify = useNotify()
 	const management = useRuntimeManagementClient()
@@ -57,7 +75,7 @@ export function ConfigTabContent({
 						? management.config.patch(owner, patch)
 						: management.config.patchField(owner, {
 								fieldPath: path.join('.'),
-								value: { ...savedValue, ...patch },
+								value: { ...persistedValue, ...patch },
 							}))
 					if (result.ok === false) {
 						if (result.state === 'unknown') {
@@ -97,93 +115,81 @@ export function ConfigTabContent({
 					}
 				},
 			}),
-		[fields, initialValue, management, notify, owner, path, savedValue],
+		[fields, initialValue, management, notify, owner, path, persistedValue, savedValue],
 	)
 
 	return (
 		<AutoForm fields={fields} formOpts={opts}>
-			{onDirtyChange ? <DirtyReporter onDirtyChange={onDirtyChange} /> : null}
-			<Box px="xs" pb={24}>
+			{registerForm ? <FormBridge tabKey={tabKey} registerForm={registerForm} /> : null}
+			{reportState ? <FormStateSlot tabKey={tabKey} reportState={reportState} /> : null}
+			<Box px="xs" pt="xs" pb={24}>
 				<AutoForm.Fields sectionIdPrefix={sectionIdPrefix} fieldIdPrefix={fieldIdPrefix} />
 			</Box>
 			{showToc ? (
 				<FormToc
 					sectionIdPrefix={sectionIdPrefix}
 					fieldIdPrefix={fieldIdPrefix}
-					scrollHost={null}
-					scrollHostVersion={0}
+					scrollHost={scrollHost}
+					scrollHostVersion={scrollHostVersion}
 				/>
-			) : null}
-			{showActions && active ? (
-				<ConfigActions fields={fields} initialValue={initialValue} defaultValue={defaultValue} />
 			) : null}
 		</AutoForm>
 	)
 }
 
-function DirtyReporter({ onDirtyChange }: { onDirtyChange(dirty: boolean): void }) {
-	const { form } = useAutoFormCtx<any>()
-	return (
-		<form.Subscribe selector={(state: any) => state.isDirty}>
-			{(dirty) => {
-				queueMicrotask(() => onDirtyChange(Boolean(dirty)))
-				return null
-			}}
-		</form.Subscribe>
-	)
+function FormBridge({
+	tabKey,
+	registerForm,
+}: {
+	tabKey: string
+	registerForm: (key: string, bridge: ConfigFormBridge) => void | (() => void)
+}): null {
+	const { form, reset, submit } = useAutoFormCtx<any>()
+
+	useEffect(() => {
+		const dispose = registerForm(tabKey, { form, reset, submit })
+		return () => {
+			if (typeof dispose === 'function') dispose()
+		}
+	}, [form, registerForm, reset, submit, tabKey])
+
+	return null
 }
 
-function ConfigActions({
-	fields,
-	initialValue,
-	defaultValue,
+function FormStateSlot({
+	tabKey,
+	reportState,
 }: {
-	fields: readonly FieldNode[]
-	initialValue: Record<string, unknown>
-	defaultValue: Record<string, unknown>
+	tabKey: string
+	reportState: (key: string, state: ConfigFormState) => void
 }) {
-	const { form, reset, submit } = useAutoFormCtx<any>()
-	const restoreDefaults = () => {
-		const editableDefaults = buildEditableConfigPatch(fields, defaultValue, initialValue)
-		for (const [key, value] of Object.entries(editableDefaults)) {
-			form.setFieldValue(key, value)
-		}
-	}
+	const { form } = useAutoFormCtx<any>()
 	return (
 		<form.Subscribe
 			selector={(state: any) => ({
-				dirty: state.isDirty,
-				canSubmit: state.canSubmit,
-				submitting: state.isSubmitting,
+				dirty: Boolean(state.isDirty),
+				canSubmit: Boolean(state.canSubmit),
+				submitting: Boolean(state.isSubmitting),
+				values: state.values as Record<string, unknown>,
 			})}
 		>
-			{({ dirty, canSubmit, submitting }) => (
-				<Group justify="flex-end" gap="xs" px="xs" pb="md">
-					<Button
-						size="xs"
-						variant="default"
-						disabled={!dirty || submitting}
-						onClick={() => reset(initialValue)}
-					>
-						撤销
-					</Button>
-					<Button size="xs" variant="subtle" disabled={submitting} onClick={restoreDefaults}>
-						恢复默认
-					</Button>
-					<Button
-						size="xs"
-						disabled={!dirty || !canSubmit || submitting}
-						loading={submitting}
-						onClick={() => void submit()}
-					>
-						保存
-					</Button>
-				</Group>
-			)}
+			{(state) => <FormStateEffect tabKey={tabKey} state={state} reportState={reportState} />}
 		</form.Subscribe>
 	)
 }
 
-export function ConfigTabPanel(props: Parameters<typeof ConfigTabContent>[0]) {
-	return <ConfigTabContent {...props} />
+function FormStateEffect({
+	tabKey,
+	state,
+	reportState,
+}: {
+	tabKey: string
+	state: ConfigFormState
+	reportState: (key: string, state: ConfigFormState) => void
+}): null {
+	useEffect(() => {
+		reportState(tabKey, state)
+	}, [reportState, state, tabKey])
+
+	return null
 }

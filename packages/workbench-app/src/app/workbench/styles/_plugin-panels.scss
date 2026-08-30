@@ -355,65 +355,53 @@
 
 /* Config action dock */
 
+.plx-pluginWorkbench__configForm {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
 .plx-pluginWorkbench__configToolbar {
 	align-items: center;
+	background: color-mix(in srgb, var(--plx-surface) 96%, transparent);
 	border-bottom: 1px solid color-mix(in srgb, var(--plx-border) 82%, transparent);
 	display: flex;
-	gap: 6px;
-	justify-content: space-between;
-	margin-bottom: 6px;
-	min-height: 34px;
-	padding: 4px 6px 6px;
-}
-
-.plx-pluginWorkbench__configToolbarNav {
-	align-items: center;
-	display: flex;
-	flex: 1 1 auto;
-	flex-wrap: nowrap;
-	gap: 6px;
-	min-width: 0;
-}
-
-.plx-pluginWorkbench__configToolbarDivider {
-	background: color-mix(in srgb, var(--plx-border) 84%, transparent);
-	border-radius: 999px;
 	flex: 0 0 auto;
-	height: 18px;
-	width: 1px;
+	min-height: 42px;
+	padding: 6px 8px;
+	position: relative;
+	z-index: 2;
 }
 
-.plx-pluginWorkbench__configToolbarScroller {
-	flex: 0 1 auto;
+.plx-pluginWorkbench__configScrollArea {
+	flex: 1;
+	min-height: 0;
 	min-width: 0;
-	overflow-x: auto;
-	overflow-y: hidden;
-	padding-bottom: 1px;
-	scrollbar-width: none;
-	white-space: nowrap;
 }
 
-.plx-pluginWorkbench__configToolbarScroller::-webkit-scrollbar {
-	display: none;
+.plx-pluginWorkbench__configScrollArea [data-config-scroll-root] {
+	scroll-padding-top: 12px;
 }
 
 .plx-pluginWorkbench__configActionDock {
 	align-items: center;
-	align-self: auto;
 	display: flex;
 	flex: 0 0 auto;
-	flex-wrap: nowrap;
+	flex-wrap: wrap;
 	gap: 8px;
-	justify-content: flex-end;
-	max-width: min(100%, 760px);
+	justify-content: space-between;
 	min-width: 0;
+	width: 100%;
 }
 
 .plx-pluginWorkbench__configActionSummary {
 	align-items: center;
 	display: flex;
-	flex: 0 1 auto;
-	flex-wrap: nowrap;
+	flex: 1 1 300px;
+	flex-wrap: wrap;
 	gap: 6px;
 	min-width: 0;
 }
@@ -647,8 +635,7 @@
 }
 
 @media (max-width: 75rem) {
-	.plx-pluginWorkbench__commandBar,
-	.plx-pluginWorkbench__configToolbar {
+	.plx-pluginWorkbench__commandBar {
 		align-items: stretch;
 		flex-direction: column;
 	}
@@ -660,20 +647,6 @@
 
 	.plx-pluginWorkbench__metaChip {
 		max-width: 100%;
-	}
-
-	.plx-pluginWorkbench__configToolbarNav {
-		flex-wrap: wrap;
-	}
-
-	.plx-pluginWorkbench__configActionDock {
-		align-self: flex-start;
-		flex-wrap: wrap;
-		max-width: 100%;
-	}
-
-	.plx-pluginWorkbench__configActionSelect {
-		width: 100%;
 	}
 
 	.plx-pluginWorkbench__actionBar {
