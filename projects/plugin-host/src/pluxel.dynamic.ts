@@ -5,6 +5,7 @@ import {
 	createHostConfigRecords,
 	createHostRuntimeState,
 	hostManagement,
+	packageManagerNode,
 	product,
 } from './showcase/policy'
 
@@ -12,6 +13,7 @@ export { product }
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../../..')
+const managedPackagesRoot = resolve(repoRoot, '.pluxel/managed-plugins')
 const activeProfile = process.env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
 const configPath = process.env.PLUXEL_HMR_CONFIG ?? 'projects/plugin-host/pluxel.loader.hmr.jsonc'
 
@@ -23,13 +25,18 @@ export default defineDynamicRuntimeConfig({
 	sources: [
 		{
 			kind: 'directory',
-			path: '.pluxel/managed-plugins/entries',
+			path: resolve(managedPackagesRoot, 'entries'),
 			include: ['*.mjs'],
 		},
 	],
 	configService: {
 		mode: 'memory',
-		snapshot: { plugins: createHostConfigRecords() },
+		snapshot: {
+			plugins: [
+				...createHostConfigRecords(resolve(repoRoot, '.pluxel/showcase/s3')),
+				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
+			],
+		},
 	},
 	runtimeState: { mode: 'memory', snapshot: createHostRuntimeState(true) },
 	management: hostManagement,

@@ -35,7 +35,6 @@ describe('HMR runtime persistence storage', () => {
 		const plan = await planLoaderHmrHostFromConfig({
 			root: fixture.path,
 			fs: fixture.fs,
-			chdir: false,
 			logging: false,
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },

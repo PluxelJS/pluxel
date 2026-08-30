@@ -161,14 +161,17 @@ describe('createFetchDevServerPlugin', () => {
 		await Promise.all(servers.splice(0).map((server) => server.close()))
 	})
 
-	it('injects the Vite client while preserving excluded and rejected middleware routes', async () => {
+	it('runs HTML through Vite while preserving excluded and rejected middleware routes', async () => {
 		let middleware: Middleware | undefined
+		const transformIndexHtml = vi.fn((_url: string, html: string, _originalUrl?: string) =>
+			html.replace('</head>', '<script type="module" src="/@vite/client"></script></head>'),
+		)
 		const plugin = createFetchDevServerPlugin({
 			exclude: [/^\/src\/.+/],
-			shouldHandle: (req) => req.url === '/' || req.url === '/runtime',
+			shouldHandle: (req) => req.url === '/?source=test' || req.url === '/runtime',
 			fetch: async (req) =>
 				new URL(req.url).pathname === '/'
-					? new Response('<!doctype html><html><body>hmr</body></html>', {
+					? new Response('<!doctype html><html><head></head><body>hmr</body></html>', {
 							headers: { 'Content-Type': 'text/html; charset=utf-8' },
 						})
 					: new Response('handled'),
@@ -177,6 +180,7 @@ describe('createFetchDevServerPlugin', () => {
 		plugin.configResolved?.({ base: '/' } as any)
 		plugin.configureServer?.({
 			config: { base: '/', logger: { error: vi.fn() } },
+			transformIndexHtml,
 			middlewares: {
 				use(fn: Middleware) {
 					middleware = fn
@@ -190,13 +194,18 @@ describe('createFetchDevServerPlugin', () => {
 		servers.push(harness)
 
 		const baseUrl = await harness.listen()
-		const html = await fetch(`${baseUrl}/`)
+		const html = await fetch(`${baseUrl}/?source=test`)
 		const excluded = await fetch(`${baseUrl}/src/client.tsx`)
 		const skipped = await fetch(`${baseUrl}/vite-asset.js`)
 		const handled = await fetch(`${baseUrl}/runtime`)
 
 		expect(html.status).toBe(200)
 		expect(await html.text()).toContain('/@vite/client')
+		expect(transformIndexHtml).toHaveBeenCalledWith(
+			'/',
+			'<!doctype html><html><head></head><body>hmr</body></html>',
+			'/?source=test',
+		)
 		expect(excluded.status).toBe(299)
 		expect(await excluded.text()).toBe('next')
 		expect(skipped.status).toBe(299)
@@ -210,7 +219,7 @@ describe('createFetchDevServerPlugin', () => {
 		let requestAborted = false
 		let responseCancelled = false
 		const plugin = createFetchDevServerPlugin({
-			injectClientScript: false,
+			transformHtml: false,
 			fetch: (request) => {
 				request.signal.addEventListener('abort', () => {
 					requestAborted = true
@@ -224,6 +233,7 @@ describe('createFetchDevServerPlugin', () => {
 							responseCancelled = true
 						},
 					}),
+					{ headers: { 'content-type': 'text/html; charset=utf-8' } },
 				)
 			},
 		})

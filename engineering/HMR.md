@@ -66,6 +66,10 @@ Dynamic route 先提交 fixed baseline，再处理显式 mutable sources。Sourc
 正向 include glob，结果最多 10,000 entries。Initial discovery 与 watcher add/change/unlink 共用同一 batch 路径；
 普通 import dependency 变化沿 importer graph 回到 source anchor。
 
+Dynamic host 的扫描、存储、module resolution 与日志路径都显式锚定 resolved `root`。启动和 replacement 不得调用
+`process.chdir()`；同进程 Vite 持有自己的 config/root 解析上下文，Plugin 中明确声明为“相对当前工作目录”的路径则继续以
+launcher cwd 为准。两者不同时，宿主配置应传绝对 Plugin 数据路径。
+
 Source producer 只原子发布普通 ESM entry；package acquisition、lockfile、registry、安装状态、RPC 和 UI 都属于 producer
 Plugin。Dynamic batch 拥有一次 update 内的 unpublished draft，commit 后唯一 authority 是 coordinator immutable snapshot。
 不保留第二份 committed registry 或 post-commit route callback。
@@ -125,6 +129,7 @@ Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 
 - optional provider replacement 正确重启 consumer closure；
 - database accepted operations 在 replacement 前 drain；
 - static/dynamic 共享一个 ModuleRunner 与 source classifier；
+- dynamic host generation 不改变 Vite 进程 cwd；
 - Workbench candidate failure 保持当前 inventory；
 - stale/superseded producer 不能 commit；
 - successful producer commit 关闭 socket epoch 并触发 full reload；

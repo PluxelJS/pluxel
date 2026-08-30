@@ -27,15 +27,19 @@ describe('dynamic route Context capabilities', () => {
 	})
 
 	it('resolves installed services through stable internal descriptors', async () => {
+		const workspaceRoot = '/virtual/pluxel-workspace'
 		const host = createRuntimeHost(
 			{ workbench: false },
-			{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
+			{
+				routeContextCapabilities: createDynamicRouteContextCapabilities({ workspaceRoot }),
+			},
 		)
 		try {
 			const loader = requireLoaderService(host.ctx)
 			const scan = requireScanService(host.ctx)
 			expect(requireLoaderService(host.ctx)).toBe(loader)
 			expect(requireScanService(host.ctx)).toBe(scan)
+			expect(scan.defaultRoots).toEqual([workspaceRoot])
 			expect('loader' in host.ctx).toBe(false)
 			expect('scanService' in host.ctx).toBe(false)
 		} finally {

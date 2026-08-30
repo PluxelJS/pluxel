@@ -204,8 +204,11 @@ describe('HMR UI smoke', () => {
 						},
 					],
 				}),
-				'remoteEntry.js': 'export const ok = 1\n',
-				assets: { 'dashboard.js': 'export const dashboard = true\n' },
+				'remoteEntry.js': "export { ok } from './assets/remote-runtime.js'\n",
+				assets: {
+					'dashboard.js': 'export const dashboard = true\n',
+					'remote-runtime.js': 'export const ok = 1\n',
+				},
 				types: { 'index.d.ts': 'export {}\n' },
 				'@mf-types.zip': 'zip-placeholder',
 			},
@@ -219,6 +222,10 @@ describe('HMR UI smoke', () => {
 				})
 				const manifestUrl = committed.manifestUrl
 				const remoteEntryUrl = manifestUrl.replace(/mf-manifest\.json$/, 'remoteEntry.js')
+				const remoteRuntimeUrl = manifestUrl.replace(
+					/mf-manifest\.json$/,
+					'assets/remote-runtime.js',
+				)
 
 				const manifestRes = await requireRuntimeHttpService(ctx).fetch(
 					new Request(`http://local${manifestUrl}`),
@@ -235,7 +242,14 @@ describe('HMR UI smoke', () => {
 				)
 				expect(assetRes.status).toBe(200)
 				expect(assetRes.headers.get('content-type')).toContain('application/javascript')
-				expect(await assetRes.text()).toContain('export const ok = 1')
+				expect(await assetRes.text()).toContain("from './assets/remote-runtime.js'")
+
+				const runtimeChunkRes = await requireRuntimeHttpService(ctx).fetch(
+					new Request(`http://local${remoteRuntimeUrl}`),
+				)
+				expect(runtimeChunkRes.status).toBe(200)
+				expect(runtimeChunkRes.headers.get('content-type')).toContain('application/javascript')
+				expect(await runtimeChunkRes.text()).toContain('export const ok = 1')
 			},
 			{
 				configService: { mode: 'memory' },

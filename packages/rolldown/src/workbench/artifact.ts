@@ -42,7 +42,7 @@ export async function readWorkbenchFederationDeploymentInventory(
 	return parseWorkbenchFederationDeploymentInventory(input)
 }
 
-/** Validates the standard MF Manifest/Snapshot and its exact Profile 1 inventory. */
+/** Validates the standard MF Manifest/Snapshot and its exact Profile 1 declared inventory. */
 export async function validateWorkbenchFederationArtifact(
 	outDir: string,
 	expected: WorkbenchFederationArtifactExpectation,

@@ -2,7 +2,7 @@ import type { AnyHostElysiaApp } from '../../services/http/elysia'
 import { requireWorkbench } from '../../services/workbench'
 import { RUNTIME_WORKBENCH_FEDERATION_BASE } from '../../web/paths'
 
-/** Standard immutable MF files are Workbench's only ordinary HTTP surface. */
+/** Exact files from a committed immutable MF producer closure are served on this HTTP surface. */
 export const workbenchRoutes = (app: AnyHostElysiaApp) =>
 	app.group(RUNTIME_WORKBENCH_FEDERATION_BASE, (federation) =>
 		federation.get('/:producer/:revision/*', async ({ params, pluginCtx, request, status }) => {

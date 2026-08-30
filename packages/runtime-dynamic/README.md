@@ -74,6 +74,9 @@ dependency 路径，Plugin import 仍与 `ctx.elysia` 保持引用相等。priva
 目录。source entry 的普通 import dependency 不受 entry glob 限制：已进入 Vite graph 后，它的变化会沿 importer graph 回到
 对应 entry。
 
+`root` 不会修改宿主进程的 working directory；Vite config reload 始终保留 launcher cwd。Plugin 自己声明为相对 cwd 的文件配置
+不随 dynamic `root` 隐式重定位；当两者不同时，宿主应给这类配置传绝对路径。
+
 需要 registry package 安装时，装配官方 [`@pluxel/package-manager`](../../plugins/package-manager/README.md)。该插件把
 受管 package 发布成 `.mjs` source entry，dynamic core 不知道 package manager 的存在。
 

@@ -45,7 +45,6 @@ describe('dynamic host Runtime capability preflight', () => {
 		try {
 			const plan = await planLoaderHmrHostFromConfig({
 				root,
-				chdir: false,
 				logging: false,
 				printUrls: false,
 				configService: { mode: 'memory' },

@@ -14,6 +14,7 @@ import type { RpcStub } from '@pluxel/runtime/capnweb'
 import type { RuntimeAuthenticationTarget } from '@pluxel/runtime/web/session'
 import React, { useEffect, useState, type FormEvent } from 'react'
 import ReactDOM from 'react-dom/client'
+import { AppThemeProvider } from './app/AppThemeProvider.tsx'
 import { App } from './app/index.tsx'
 import {
 	createRuntimeSessionClient,
@@ -58,8 +59,10 @@ const initialBootstrap = runtimeSession.bootstrap(sessionObserver)
 
 ReactDOM.createRoot(document.querySelector('#root') as HTMLElement).render(
 	<React.StrictMode>
-		<ColorSchemeScript defaultColorScheme="auto" />
-		<RuntimeSessionGate />
+		<AppThemeProvider>
+			<ColorSchemeScript defaultColorScheme="auto" />
+			<RuntimeSessionGate />
+		</AppThemeProvider>
 	</React.StrictMode>,
 )
 

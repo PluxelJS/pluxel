@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import {
 	pluginDefinitionAddressEqual,
 	pluginDefinitionIndexKey,
@@ -250,8 +250,9 @@ async function prepareCandidate(candidate: WorkbenchArtifactCandidate): Promise<
 			{ cause: error },
 		)
 	}
+	const artifactFiles = await collectArtifactFiles(artifactRoot)
 	const files = new Map<string, StoredFile>()
-	for (const file of manifestFiles) {
+	for (const file of [...new Set([...manifestFiles, ...artifactFiles])].sort()) {
 		const filePath = await canonicalArtifactFile(artifactRoot, file)
 		const bytes =
 			file === WORKBENCH_FEDERATION_MANIFEST_FILE ? manifestBytes : await readFile(filePath)
@@ -392,6 +393,31 @@ async function canonicalArtifactFile(root: string, file: string): Promise<string
 		throw new TypeError(`[workbench] federation artifact is not a file: ${normalized}`)
 	}
 	return path
+}
+
+async function collectArtifactFiles(root: string): Promise<readonly string[]> {
+	const files: string[] = []
+	const visit = async (directory: string, prefix: string): Promise<void> => {
+		const entries = await readdir(directory, { withFileTypes: true })
+		entries.sort((left, right) => left.name.localeCompare(right.name))
+		for (const entry of entries) {
+			const file = prefix ? `${prefix}/${entry.name}` : entry.name
+			if (normalizeArtifactPath(file) !== file) {
+				throw new TypeError(`[workbench] invalid federation artifact path: ${file}`)
+			}
+			const path = join(directory, entry.name)
+			if (entry.isDirectory()) {
+				await visit(path, file)
+				continue
+			}
+			if (!entry.isFile()) {
+				throw new TypeError(`[workbench] federation artifact must be a regular file: ${file}`)
+			}
+			files.push(file)
+		}
+	}
+	await visit(root, '')
+	return Object.freeze(files)
 }
 
 function normalizeArtifactPath(input: unknown): string | null {

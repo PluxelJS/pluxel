@@ -53,7 +53,6 @@ export type LoaderHmrHostOptions<
 	TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot,
 > = {
 	root?: string
-	chdir?: boolean
 	fs?: LoaderHmrWorkspaceFs
 	debug?: readonly string[]
 	snapshot: TSnapshot
@@ -79,7 +78,6 @@ export type PlannedLoaderHmrHost<
 	TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot,
 > = {
 	root: string
-	chdir: boolean
 	fs: LoaderHmrWorkspaceFs
 	debug: readonly string[]
 	snapshot: TSnapshot
@@ -167,7 +165,6 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 	return {
 		root,
-		chdir: opts.chdir !== false,
 		fs,
 		debug: opts.debug ?? ['hmr:*', 'bundler', 'workbench:compile'],
 		snapshot,
@@ -270,7 +267,6 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	options: BootLoaderHmrHostOptions = {},
 ): Promise<BootedLoaderHmrHost> {
-	if (plan.chdir) process.chdir(plan.root)
 	await plan.fs.promises.mkdir(plan.runtimeStorage.logsDir, { recursive: true })
 	const logging = createRuntimeLogging(resolveLoaderRuntimeLoggingInput(plan))
 	await logging.install()
@@ -306,7 +302,10 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		ctx = createRuntimeRootContext(runtimeConfig, {
 			logging,
 			product: options.product ?? null,
-			routeContextCapabilities: createDynamicRouteContextCapabilities(),
+			routeContextCapabilities: createDynamicRouteContextCapabilities({
+				workspaceRoot: plan.root,
+				fs: plan.fs,
+			}),
 			...(workbench ? { workbench } : {}),
 		})
 		ctx.effects.defer(() => logging.dispose(), {
@@ -483,7 +482,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	ctx.effects.defer(uninstallRoute, { tag: 'LoaderHmrRouteCapabilities', phase: 'shutdown' })
 
 	const artifactCompiler = attachPluginArtifactCompiler(ctx, {
-		cacheDir: workbenchArtifactCacheDir,
+		cacheDir: workbenchArtifactCacheDir ?? resolve(plan.root, '.pluxel/plugin-artifacts'),
 		viteServer: viteServer ?? hmr.vite,
 	})
 	if (ctx.workbench) {

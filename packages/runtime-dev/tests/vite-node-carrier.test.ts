@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { PassThrough } from 'node:stream'
-import type { ViteDevServer } from 'vite'
+import { createServer as createViteServer, type ViteDevServer } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	attachSrvxViteNodeCarrier,
@@ -70,6 +71,63 @@ function createUpgradeRequest(url: string, protocol?: string): IncomingMessage {
 }
 
 describe('Vite Node carrier boundaries', () => {
+	it('runs carrier HTML through the active Vite index pipeline', async () => {
+		const transformedUrls: string[] = []
+		const server = await createViteServer({
+			configFile: false,
+			appType: 'custom',
+			logLevel: 'silent',
+			server: { host: '127.0.0.1' },
+			plugins: [
+				{
+					name: 'test-html-transform',
+					transformIndexHtml: {
+						order: 'pre',
+						handler(html, context) {
+							transformedUrls.push(context.originalUrl ?? context.path)
+							return html.replace('</head>', '<meta name="carrier-transform" /></head>')
+						},
+					},
+				},
+				{
+					name: 'test-vite-carrier',
+					configureServer(vite) {
+						attachSrvxViteNodeCarrier(vite, {
+							transformViteHtml: true,
+							shouldHandle: (request) => request.url?.startsWith('/__pluxel/workbench') ?? false,
+							fetch: () =>
+								new Response('<!doctype html><html><head></head><body>workbench</body></html>', {
+									status: 201,
+									headers: {
+										'content-length': '1',
+										'content-type': 'text/html; charset=utf-8',
+										'x-carrier': 'preserved',
+									},
+								}),
+						})
+					},
+				},
+			],
+		})
+		try {
+			await server.listen()
+			const address = server.httpServer?.address() as AddressInfo
+			const response = await fetch(
+				`http://127.0.0.1:${address.port}/__pluxel/workbench?source=test`,
+			)
+			const html = await response.text()
+
+			expect(response.status).toBe(201)
+			expect(response.headers.get('x-carrier')).toBe('preserved')
+			expect(response.headers.get('content-length')).not.toBe('1')
+			expect(html).toContain('name="carrier-transform"')
+			expect(html).toContain('/@vite/client')
+			expect(transformedUrls).toEqual(['/__pluxel/workbench?source=test'])
+		} finally {
+			await server.close()
+		}
+	})
+
 	it('normalizes and handles a rejected handler without a reason', async () => {
 		const { error, server, ssrFixStacktrace } = createServer()
 		const response = createResponse()

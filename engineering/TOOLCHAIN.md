@@ -405,9 +405,10 @@ Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完�
 2. 收集 source graph，并把 graph/hash 与 plan 的 build revision 交叉验证；
 3. 在 bounded admission 后构建完整 MF producer candidate；
 4. 验证 standard Manifest/Snapshot、exact exposes/shared/types/assets；
-5. 确认该 plan 仍是 definition 最新 desired revision；
-6. 原子提交 immutable producer inventory；
-7. 有界保留 disk cache，stale candidate 不再获得 authority。
+5. 对 producer root 的全部 regular files 建立 immutable digest inventory；
+6. 确认该 plan 仍是 definition 最新 desired revision；
+7. 原子提交 immutable producer inventory；
+8. 有界保留 disk cache，stale candidate 不再获得 authority。
 
 Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench producer commit
 通过 session epoch invalidation 驱动 full document reload，不使用浏览器轮询或页内 remote replacement。

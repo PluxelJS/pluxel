@@ -70,7 +70,6 @@ describe('dynamic plugin sources', () => {
 		const root = fixture.path
 		const plan = await planLoaderHmrHostFromConfig({
 			root,
-			chdir: false,
 			logging: false,
 			printUrls: false,
 			configService: { mode: 'memory' },
@@ -204,7 +203,6 @@ describe('dynamic plugin sources', () => {
 
 		const plan = await planLoaderHmrHostFromConfig({
 			root,
-			chdir: false,
 			logging: false,
 			printUrls: false,
 			configService: { mode: 'memory' },

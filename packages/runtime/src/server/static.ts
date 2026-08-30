@@ -5,7 +5,6 @@ import type { RenderHandler } from './types'
 async function buildStaticHtml(options?: { publicDirAbs?: string; uiBasePath?: string }) {
 	return resolveBuiltAssets(options).then((assets) =>
 		renderRuntimeUiHtml(assets, {
-			target: 'static-built',
 			uiBasePath: options?.uiBasePath,
 		}),
 	)

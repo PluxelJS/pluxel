@@ -250,6 +250,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				await logStaticRuntimeStarted(host, startup, state.configFiles)
 
 				state.carrier = attachSrvxViteNodeCarrier(server, {
+					transformViteHtml: true,
 					fetch(request) {
 						const activeHost = state.host
 						if (!activeHost) {

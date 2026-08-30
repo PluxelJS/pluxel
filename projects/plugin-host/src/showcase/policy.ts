@@ -17,7 +17,7 @@ const authPlugin = packageNode('@pluxel/auth', 'AuthPlugin')
 const memoryCacheBackendPlugin = packageNode('@pluxel/cache', 'MemoryCacheBackendPlugin')
 const cachePlugin = packageNode('@pluxel/cache', 'CachePlugin')
 const otelPlugin = packageNode('@pluxel/otel', 'OtelPlugin')
-const packageManagerPlugin = packageNode('@pluxel/package-manager', 'PackageManagerPlugin')
+export const packageManagerNode = packageNode('@pluxel/package-manager', 'PackageManagerPlugin')
 const memoryRatesBackendPlugin = packageNode('@pluxel/rates', 'MemoryRatesBackendPlugin')
 const ratesPlugin = packageNode('@pluxel/rates', 'RatesPlugin')
 const s3PluginDefinition = packageDefinition('@pluxel/storage', 'S3Plugin')
@@ -66,7 +66,7 @@ export function createHostRuntimeState(dynamic: boolean): Partial<RuntimeStateSn
 	return {
 		autoStart: [
 			...bootSafeOfficialPlugins,
-			...(dynamic ? [packageManagerPlugin] : []),
+			...(dynamic ? [packageManagerNode] : []),
 			reportStudioPlugin,
 			eventConsumer,
 			optionalProvider,
@@ -98,7 +98,7 @@ export function createHostRuntimeState(dynamic: boolean): Partial<RuntimeStateSn
 	}
 }
 
-export function createHostConfigRecords() {
+export function createHostConfigRecords(localStorageRoot = '.pluxel/showcase/s3') {
 	return [
 		{
 			owner: otelPlugin,
@@ -109,7 +109,7 @@ export function createHostConfigRecords() {
 			config: {
 				backend: {
 					type: 'local',
-					rootDir: '.pluxel/showcase/s3',
+					rootDir: localStorageRoot,
 					bucketName: 'draft-previews',
 					syncWrites: true,
 				},
@@ -120,7 +120,7 @@ export function createHostConfigRecords() {
 			config: {
 				backend: {
 					type: 'local',
-					rootDir: '.pluxel/showcase/s3',
+					rootDir: localStorageRoot,
 					bucketName: 'released-reports',
 					syncWrites: true,
 				},

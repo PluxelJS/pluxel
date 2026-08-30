@@ -1,4 +1,4 @@
-import { rm, symlink, writeFile } from 'node:fs/promises'
+import { symlink, writeFile } from 'node:fs/promises'
 import {
 	WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE,
 	createWorkbenchFederationCompatibilitySet,
@@ -85,7 +85,8 @@ function assetGroup(js: string[] = []) {
 function candidateFiles(plan: WorkbenchFederationProducerPlan, rawManifest?: string) {
 	return {
 		'mf-manifest.json': rawManifest ?? `${JSON.stringify(manifest(plan), null, 2)}\n`,
-		'remoteEntry.js': 'export const ready = true\n',
+		'remoteEntry.js': "export { ready } from './assets/remote-runtime.js'\n",
+		'assets/remote-runtime.js': 'export const ready = true\n',
 		'assets/view-0.js': 'export const manager = true\n',
 		'assets/view-1.js': 'export const picker = true\n',
 		'types/index.d.ts': 'export {}\n',
@@ -175,6 +176,17 @@ describe('WorkbenchArtifactService', () => {
 		expect(Buffer.from(served!.body).toString('utf-8')).toBe(rawManifest)
 		expect(served?.contentType).toBe('application/json; charset=utf-8')
 		expect(served?.etag).toMatch(/^"sha256-[a-f\d]{64}"$/)
+		const remoteRuntime = await artifacts.readArtifactFile(
+			plan.producer,
+			plan.buildRevision,
+			'assets/remote-runtime.js',
+		)
+		expect(Buffer.from(remoteRuntime!.body).toString('utf-8')).toBe('export const ready = true\n')
+		expect(remoteRuntime?.contentType).toBe('application/javascript; charset=utf-8')
+		await writeFile(fixture.getPath('artifact/assets/late.js'), 'export const late = true\n')
+		expect(
+			await artifacts.readArtifactFile(plan.producer, plan.buildRevision, 'assets/late.js'),
+		).toBeNull()
 		expect(
 			await artifacts.readArtifactFile(plan.producer, 'missing-revision', 'remoteEntry.js'),
 		).toBeNull()
@@ -235,14 +247,13 @@ describe('WorkbenchArtifactService', () => {
 				artifactRoot: fixture.getPath('rejected'),
 			}),
 		).rejects.toThrow('expose inventory mismatch')
-		await rm(fixture.getPath('escaping/assets/view-0.js'))
-		await symlink('../../outside.js', fixture.getPath('escaping/assets/view-0.js'))
+		await symlink('../../outside.js', fixture.getPath('escaping/assets/unlisted.js'))
 		await expect(
 			artifacts.commitCandidate({
 				plan: rejected,
 				artifactRoot: fixture.getPath('escaping'),
 			}),
-		).rejects.toThrow('escapes its root')
+		).rejects.toThrow('must be a regular file')
 
 		expect(artifacts.revision).toBe(1)
 		expect(artifacts.getCurrent(definition)?.buildRevision).toBe('revision-a')

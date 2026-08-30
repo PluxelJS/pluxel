@@ -510,7 +510,7 @@ function installDynamicHttpMiddleware(
 		closeHttp?: () => Promise<void>
 	},
 	server: ViteDevServer,
-	injectClientScript: boolean,
+	transformHtml: boolean,
 ): void {
 	if (state.httpInstalled) return
 	state.httpInstalled = true
@@ -546,7 +546,7 @@ function installDynamicHttpMiddleware(
 					},
 				}
 			: {}),
-		injectClientScript,
+		transformHtml,
 	})
 	callViteHook(plugin.configResolved, server.config)
 	callViteHook(plugin.configureServer, server)

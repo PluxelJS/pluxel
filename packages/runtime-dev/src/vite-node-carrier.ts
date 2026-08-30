@@ -19,7 +19,7 @@ export interface ViteBusinessWebSocketUpgrade {
 export interface SrvxViteNodeCarrierOptions {
 	fetch: FetchHandler
 	shouldHandle?: (request: IncomingMessage) => boolean
-	injectViteClientScript?: boolean
+	transformViteHtml?: boolean
 	businessWebSocket?: ViteBusinessWebSocketUpgrade
 }
 
@@ -46,8 +46,9 @@ export function createViteNodeElysiaApplicationCarrier(
 /**
  * Attaches a Fetch dispatcher to Vite's listener through srvx's public Node handler.
  *
- * Vite retains its listener, middleware fallthrough, assets, and exact HMR upgrade path. The
- * optional business WebSocket bridge only receives non-HMR upgrades selected by its own matcher.
+ * Vite retains its listener, middleware fallthrough, assets, and exact HMR upgrade path. Optional
+ * HTML transformation runs the complete Vite index pipeline selected by the host. The optional
+ * business WebSocket bridge only receives non-HMR upgrades selected by its own matcher.
  */
 export function attachSrvxViteNodeCarrier(
 	server: ViteDevServer,
@@ -65,8 +66,8 @@ export function attachSrvxViteNodeCarrier(
 		},
 		async fetch(request) {
 			const response = await options.fetch(request)
-			return options.injectViteClientScript && isHtmlResponse(response)
-				? withInjectedViteClient(response, server.config.base || '/')
+			return options.transformViteHtml && isHtmlResponse(response)
+				? transformViteHtmlResponse(server, request, response)
 				: response
 		},
 	})
@@ -193,26 +194,18 @@ function isHtmlResponse(response: Response) {
 	return (response.headers.get('content-type') ?? '').toLowerCase().startsWith('text/html')
 }
 
-function withInjectedViteClient(response: Response, base: string): Response {
+async function transformViteHtmlResponse(
+	server: ViteDevServer,
+	request: Request,
+	response: Response,
+): Promise<Response> {
 	if (!response.body) return response
-	const clientUrl = base === '/' ? '/@vite/client' : `${base.replace(/\/$/, '')}/@vite/client`
-	const nonce = response.headers.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
-	const snippet = `<script${nonce ? ` nonce="${nonce}"` : ''}>import("${clientUrl}")</script>`
-	const extra = new TextEncoder().encode(snippet)
-	const body = response.body.pipeThrough(
-		new TransformStream<Uint8Array, Uint8Array>({
-			transform(chunk, controller) {
-				controller.enqueue(chunk)
-			},
-			flush(controller) {
-				controller.enqueue(extra)
-			},
-		}),
-	)
-
+	const url = new URL(request.url)
+	const originalUrl = `${url.pathname}${url.search}`
+	const html = await server.transformIndexHtml(url.pathname, await response.text(), originalUrl)
 	const headers = new Headers(response.headers)
 	headers.delete('content-length')
-	return new Response(body, {
+	return new Response(html, {
 		status: response.status,
 		statusText: response.statusText,
 		headers,

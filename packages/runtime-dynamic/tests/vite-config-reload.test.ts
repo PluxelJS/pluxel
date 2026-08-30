@@ -5,6 +5,7 @@ import { dynamicRuntimeVitePlugin } from '../src/vite.ts'
 
 describe('dynamic Vite config generations', () => {
 	it('retries a config generation after startup failure and awaits host cleanup on close', async () => {
+		const viteProcessCwd = process.cwd()
 		await using fixture = await createDiskFixture(
 			{
 				'pnpm-workspace.yaml': 'packages: []\n',
@@ -73,6 +74,7 @@ describe('dynamic Vite config generations', () => {
 		})
 
 		try {
+			expect(process.cwd()).toBe(viteProcessCwd)
 			expect(generations).toBe(1)
 			expect(readController(server)).toBeDefined()
 
@@ -82,14 +84,17 @@ describe('dynamic Vite config generations', () => {
 			expect(generations).toBe(2)
 			expect(disposed).toBe(2)
 			expect(readController(server)).toBeUndefined()
+			expect(process.cwd()).toBe(viteProcessCwd)
 
 			await expect(callHotUpdate(route, server, configPath)).resolves.toEqual([])
 			expect(generations).toBe(3)
 			expect(readController(server)).toBeDefined()
+			expect(process.cwd()).toBe(viteProcessCwd)
 		} finally {
 			await server.close()
 		}
 		expect(disposed).toBe(3)
+		expect(process.cwd()).toBe(viteProcessCwd)
 	}, 30_000)
 })
 

@@ -28,13 +28,22 @@ describe('PackageManagerPlugin dynamic host', () => {
 				profiles: { test: { enabled: [] } },
 			}),
 		)
-		const previousCwd = process.cwd()
 		const managedRoot = resolve(root, '.pluxel/managed-plugins')
 		const plan = await planLoaderHmrHostFromConfig({
 			root,
 			logging: false,
 			printUrls: false,
-			configService: { mode: 'memory' },
+			configService: {
+				mode: 'memory',
+				snapshot: {
+					plugins: [
+						{
+							owner: pluginNodeAddressOf(PackageManagerPlugin),
+							config: { rootDir: managedRoot },
+						},
+					],
+				},
+			},
 			runtimeState: {
 				mode: 'memory',
 				snapshot: { autoStart: [pluginNodeAddressOf(PackageManagerPlugin)] },
@@ -58,7 +67,6 @@ describe('PackageManagerPlugin dynamic host', () => {
 			expect(host.ctx.commands.list().some(({ name }) => name === 'package.install')).toBe(true)
 		} finally {
 			await host.stop()
-			process.chdir(previousCwd)
 		}
 	}, 60_000)
 })

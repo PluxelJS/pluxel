@@ -15,7 +15,7 @@ export interface FetchHmrServerPluginOptions {
 	exclude?: Array<string | RegExp>
 	fetch: HttpHandler
 	handleHotUpdate?: Plugin['handleHotUpdate']
-	injectClientScript?: boolean
+	transformHtml?: boolean
 	shouldHandle?: (request: IncomingMessage) => boolean
 	/** @internal Carrier-owned business WebSocket bridge. */
 	businessWebSocket?: ViteBusinessWebSocketUpgrade
@@ -44,7 +44,7 @@ export function createFetchHmrServerPlugin(options: FetchHmrServerPluginOptions)
 		configureServer(server) {
 			attachment = attachSrvxViteNodeCarrier(server, {
 				fetch: options.fetch,
-				injectViteClientScript: options.injectClientScript !== false,
+				transformViteHtml: options.transformHtml !== false,
 				businessWebSocket: options.businessWebSocket,
 				shouldHandle(request) {
 					const rawUrl = request.url ?? '/'

@@ -368,8 +368,10 @@ export function parseWorkbenchFederationProducerPlan(
 /**
  * Validates the standard MF Manifest fields owned by Workbench Profile 1.
  *
- * The returned file inventory is the only artifact set a host may commit or serve. Snapshot
- * generation remains an SDK operation; pass its result to
+ * The returned file inventory is the minimum Manifest-declared set a candidate must contain.
+ * A host additionally pins the producer root's complete regular-file output closure because MF
+ * remote-entry implementation chunks are not guaranteed to appear in Manifest asset arrays.
+ * Snapshot generation remains an SDK operation; pass its result to
  * `assertWorkbenchFederationSnapshotContract()` before publishing the candidate.
  */
 export function parseWorkbenchFederationManifestContract(

@@ -214,6 +214,8 @@ export default defineConfig({
 
 Dynamic route 只拥有 file/source lifecycle：watch、OXC resolution、module execution、graph transaction 与 HMR。package download、market、安装管理 RPC 和页面不属于 route core。
 
+Dynamic `root` 是 source、runtime storage 与 module resolution 的显式路径基准，不会改变 Vite 进程的 working directory。Plugin 配置中注明“相对当前工作目录”的路径仍以 launcher cwd 为准；如果 dynamic `root` 与它不同，应在配置模块中生成绝对路径。
+
 运行期安装 package 时显式装配官方 [Package Manager Plugin](../plugins/package-manager.md)；它把受管 package 原子发布成 `.mjs` source entry，dynamic route 只观察这些文件。
 
 ### Source 约束
