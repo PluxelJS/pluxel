@@ -113,6 +113,104 @@ describe('staticApplication', () => {
 		expect(config.outputOptions).toMatchObject({ sourcemapExcludeSources: true })
 	})
 
+	it('assembles Node artifacts from every package reachable through the server bundle', async () => {
+		const applicationArtifactKey = 'node-1111111111111111'
+		const dependencyArtifactKey = 'node-2222222222222222'
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-static-node-artifacts-'))
+		const outDir = join(root, 'dist')
+		const dependencyRoot = join(root, 'dependency')
+		const dependencyEntry = join(dependencyRoot, 'dist/index.mjs')
+		const applicationEntry = join(root, 'src/pluxel.static.ts')
+		try {
+			await mkdir(join(outDir, 'artifacts/node'), { recursive: true })
+			await mkdir(dirname(applicationEntry), { recursive: true })
+			await mkdir(dirname(dependencyEntry), { recursive: true })
+			await mkdir(join(dependencyRoot, 'dist/artifacts/node'), { recursive: true })
+			await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'fixture-application' }))
+			await writeFile(
+				join(dependencyRoot, 'package.json'),
+				JSON.stringify({ name: 'fixture-dependency' }),
+			)
+			await writeFile(
+				applicationEntry,
+				[
+					"import { defineStaticRuntime } from '@pluxel/runtime-static'",
+					"export default defineStaticRuntime({ name: 'fixture-application', plugins: [] })",
+				].join('\n'),
+			)
+			await writeFile(dependencyEntry, 'export const dependency = true\n')
+			await writeFile(
+				join(dependencyRoot, `dist/artifacts/node/${dependencyArtifactKey}.mjs`),
+				'export default function dependencyWorker() {}\n',
+			)
+			await writeFile(join(outDir, 'app.mjs'), 'export const start = () => undefined\n')
+			await writeFile(
+				join(outDir, `artifacts/node/${applicationArtifactKey}.mjs`),
+				'export default function applicationWorker() {}\n',
+			)
+
+			const config = staticApplication({
+				cwd: root,
+				entry: './src/pluxel.static.ts',
+				outDir,
+				variant: 'headless',
+				lint: false,
+			})
+			const declarationPlugin = (
+				config.plugins as Array<{ name?: string; buildStart?: unknown }>
+			).find((candidate) => candidate?.name === 'pluxel-static-application-declaration')
+			await (
+				declarationPlugin?.buildStart as
+					| ((this: { error(message: string): never }) => Promise<void>)
+					| undefined
+			)?.call({
+				error(message): never {
+					throw new Error(message)
+				},
+			})
+			const plugin = (config.plugins as Array<{ name?: string; writeBundle?: unknown }>).find(
+				(candidate) => candidate?.name === 'pluxel-static-application-assembly',
+			)
+			const writeBundle = (
+				plugin?.writeBundle as
+					| {
+							handler?: (options: object, bundle: object) => Promise<void>
+					  }
+					| undefined
+			)?.handler
+
+			await writeBundle?.(
+				{},
+				{
+					'app.mjs': {
+						type: 'chunk',
+						fileName: 'app.mjs',
+						isEntry: true,
+						imports: [],
+						dynamicImports: [],
+						modules: { [dependencyEntry]: {} },
+						code: `export const artifacts = [${JSON.stringify(applicationArtifactKey)}, ${JSON.stringify(dependencyArtifactKey)}]\n`,
+					},
+				},
+			)
+
+			const deployment = JSON.parse(
+				await readFile(join(outDir, 'pluxel-deployment.json'), 'utf8'),
+			) as {
+				capabilities: { nodeModules: { artifacts: Array<{ key: string }> } }
+			}
+			expect(deployment.capabilities.nodeModules.artifacts.map(({ key }) => key)).toEqual([
+				applicationArtifactKey,
+				dependencyArtifactKey,
+			])
+			await expect(
+				readFile(join(outDir, `artifacts/node/${dependencyArtifactKey}.mjs`), 'utf8'),
+			).resolves.toContain('dependencyWorker')
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
 	it('bridges every explicit public Elysia runtime export except package data', () => {
 		expect([
 			...readPublicElysiaSpecifiers({

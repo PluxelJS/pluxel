@@ -10,17 +10,26 @@
 	},
 	"profiles": {
 		"plugins-host": {
-			"enabled": [],
-			"include": ["projects/plugin-host/src/demo/**/*.ts"],
-			"exclude": [
-				"projects/plugin-host/src/demo/**/ui/**",
-				"projects/plugin-host/src/demo/**/*.d.ts",
-				"projects/plugin-host/src/demo/**/*.optional.ts",
-				"projects/plugin-host/src/demo/**/*.shared.ts",
-				"projects/plugin-host/src/demo/PluginVaultDemo.ts",
-				"projects/plugin-host/src/demo/env.ts",
-				"projects/plugin-host/src/demo/index.ts",
+			"enabled": [
+				"@pluxel/auth",
+				"@pluxel/cache",
+				"@pluxel/canvas",
+				"@pluxel/echarts",
+				"@pluxel/fonts",
+				"@pluxel/otel",
+				"@pluxel/package-manager",
+				"@pluxel/rates",
+				"@pluxel/redis",
+				"@pluxel/storage",
+				"@pluxel/takumi",
+				"@pluxel/wretch",
 			],
+			"include": [
+				"projects/plugin-host/src/showcase/ReportStudio.ts",
+				"projects/plugin-host/src/demo/PluginEventsDemo.ts",
+				"projects/plugin-host/src/demo/PluginOptionalIntegrationDemo.ts",
+			],
+			"exclude": [],
 		},
 	},
 }

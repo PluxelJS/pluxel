@@ -1930,9 +1930,42 @@ importers:
 
   projects/plugin-host:
     dependencies:
+      '@opentelemetry/api':
+        specifier: 'catalog:'
+        version: 1.9.1
+      '@opentelemetry/api-logs':
+        specifier: 'catalog:'
+        version: 0.221.0
+      '@pluxel/auth':
+        specifier: workspace:*
+        version: link:../../plugins/auth
+      '@pluxel/cache':
+        specifier: workspace:*
+        version: link:../../plugins/cache
+      '@pluxel/canvas':
+        specifier: workspace:*
+        version: link:../../plugins/render/canvas
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../../packages/commands
+      '@pluxel/echarts':
+        specifier: workspace:*
+        version: link:../../plugins/render/echarts
+      '@pluxel/fonts':
+        specifier: workspace:*
+        version: link:../../plugins/render/fonts
+      '@pluxel/otel':
+        specifier: workspace:*
+        version: link:../../plugins/otel
       '@pluxel/package-manager':
         specifier: workspace:*
         version: link:../../plugins/package-manager
+      '@pluxel/rates':
+        specifier: workspace:*
+        version: link:../../plugins/rates
+      '@pluxel/redis':
+        specifier: workspace:*
+        version: link:../../plugins/redis
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -1942,6 +1975,15 @@ importers:
       '@pluxel/runtime-static':
         specifier: workspace:*
         version: link:../../packages/runtime-static
+      '@pluxel/storage':
+        specifier: workspace:*
+        version: link:../../plugins/storage
+      '@pluxel/takumi':
+        specifier: workspace:*
+        version: link:../../plugins/render/takumi
+      '@pluxel/wretch':
+        specifier: workspace:*
+        version: link:../../plugins/wretch
     devDependencies:
       '@mantine/core':
         specifier: 'catalog:'

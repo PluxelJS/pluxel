@@ -1,7 +1,14 @@
 import { fileURLToPath } from 'node:url'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
-import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dirname, resolve } from 'pathe'
+import {
+	createHostConfigRecords,
+	createHostRuntimeState,
+	hostManagement,
+	product,
+} from './showcase/policy'
+
+export { product }
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../../..')
@@ -13,7 +20,6 @@ export default defineDynamicRuntimeConfig({
 	configPath,
 	profile: activeProfile,
 	logsDir: 'projects/plugin-host/logs',
-	plugins: [PackageManagerPlugin],
 	sources: [
 		{
 			kind: 'directory',
@@ -21,8 +27,12 @@ export default defineDynamicRuntimeConfig({
 			include: ['*.mjs'],
 		},
 	],
-	runtimeState: {
+	configService: {
 		mode: 'memory',
+		snapshot: { plugins: createHostConfigRecords() },
 	},
+	runtimeState: { mode: 'memory', snapshot: createHostRuntimeState(true) },
+	management: hostManagement,
 	workbench: { enabled: true },
+	vault: {},
 })

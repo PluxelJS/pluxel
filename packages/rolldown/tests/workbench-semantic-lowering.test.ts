@@ -327,6 +327,38 @@ class SemanticPlugin {
 		await expect(lowering.plans()).resolves.toEqual([])
 	})
 
+	it('atomically replaces repeated module collection while preserving cross-module ownership', async () => {
+		await using fixture = await createFixture(fixtureFiles())
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({
+	settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx') }),
+})
+class SemanticPlugin {
+	init() { this.ctx.workbench.publish(SemanticWorkbench, { settings: () => ({}) }) }
+}
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await Promise.all([
+			collectModule(lowering, fixture.path, 'src/plugin.ts', code),
+			collectModule(lowering, fixture.path, 'src/plugin.ts', code),
+		])
+		await expect(lowering.plans()).resolves.toHaveLength(1)
+
+		await collectModule(
+			lowering,
+			fixture.path,
+			'src/plugin.ts',
+			'class SemanticPlugin { init() {} }\n',
+		)
+		await expect(lowering.plans()).resolves.toEqual([])
+
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+		await expect(collectModule(lowering, fixture.path, 'src/other.ts', code)).rejects.toThrow(
+			'duplicate Workbench publication ownership',
+		)
+	})
+
 	it('rejects conditional publication and inline definition topology', async () => {
 		await using fixture = await createFixture(fixtureFiles())
 		const lowering = createWorkbenchSemanticLowering(fixture.path)

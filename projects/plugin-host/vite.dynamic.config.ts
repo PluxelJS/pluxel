@@ -5,6 +5,11 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
 	appType: 'spa',
+	ssr: {
+		// @opentelemetry/resources publishes extensionless ESM imports that Node cannot
+		// execute directly. Keep it in Vite's SSR graph for the dynamic OtelPlugin demo.
+		noExternal: ['@opentelemetry/resources'],
+	},
 	server: {
 		host: process.env.PLUXEL_HOST_BIND ?? '127.0.0.1',
 		port: Number(process.env.PLUXEL_HOST_PORT ?? 5173),

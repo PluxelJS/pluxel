@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire, isBuiltin } from 'node:module'
-import { dirname, extname, isAbsolute, parse, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, parse, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
 	getCachedResolver,
@@ -26,6 +26,8 @@ export type HostModuleClassifier = Readonly<{
 type PackageManifest = {
 	name?: unknown
 	type?: unknown
+	module?: unknown
+	esnext?: unknown
 	exports?: unknown
 	napi?: unknown
 	binary?: unknown
@@ -34,6 +36,7 @@ type PackageManifest = {
 
 type PackageInfo = Readonly<{
 	name: string | null
+	root: string
 	manifest: PackageManifest
 }>
 
@@ -65,12 +68,15 @@ export function createHostModuleClassifier(options: {
 				Boolean(pkg?.manifest.napi) ||
 				Boolean(pkg?.manifest.binary) ||
 				pkg?.manifest.gypfile === true
+			const explicitEsm =
+				extension !== '.cjs' && extension !== '.cts' && isExplicitEsmFile(normalized, pkg)
 			const commonjs =
 				extension === '.cjs' ||
 				extension === '.cts' ||
-				(extension === '.js' && pkg?.manifest.type !== 'module') ||
-				pkg?.manifest.type === 'commonjs' ||
-				hasRequireOnlyRootExport(pkg?.manifest.exports)
+				(!explicitEsm &&
+					((extension === '.js' && pkg?.manifest.type !== 'module') ||
+						pkg?.manifest.type === 'commonjs' ||
+						hasRequireOnlyRootExport(pkg?.manifest.exports)))
 			if (!native && !commonjs) return null
 
 			return {
@@ -173,6 +179,7 @@ async function findPackageInfo(filePath: string): Promise<PackageInfo | null> {
 			const manifest = JSON.parse(await readFile(resolve(current, 'package.json'), 'utf8'))
 			return {
 				name: typeof manifest?.name === 'string' ? manifest.name : null,
+				root: current,
 				manifest,
 			}
 		} catch {}
@@ -181,6 +188,21 @@ async function findPackageInfo(filePath: string): Promise<PackageInfo | null> {
 		current = parent
 	}
 	return null
+}
+
+function isExplicitEsmFile(filePath: string, pkg: PackageInfo | null): boolean {
+	if (!pkg) return false
+	return [pkg.manifest.module, pkg.manifest.esnext].some((entry) => {
+		if (typeof entry !== 'string') return false
+		const entryPath = resolve(pkg.root, entry)
+		const fromEntryDirectory = relative(dirname(entryPath), filePath)
+		return (
+			filePath === entryPath ||
+			(!isAbsolute(fromEntryDirectory) &&
+				fromEntryDirectory !== '..' &&
+				!fromEntryDirectory.startsWith(`..${sep}`))
+		)
+	})
 }
 
 function hasRequireOnlyRootExport(exportsField: unknown): boolean {

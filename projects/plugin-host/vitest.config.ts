@@ -3,7 +3,7 @@ import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 export default definePluxelVitestConfig(
 	{},
 	{
-		include: ['src/demo/**/*.test.ts'],
+		include: ['src/**/*.ts', 'src/**/*.tsx'],
 		exclude: ['node_modules/**', 'dist/**', '**/*.d.ts'],
 		passWithNoTests: false,
 	},

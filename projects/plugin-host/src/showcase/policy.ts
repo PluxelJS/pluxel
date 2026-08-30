@@ -1,0 +1,211 @@
+import {
+	parsePluginDefinitionAddress,
+	parsePluginNodeAddress,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+	type RuntimeStateSnapshot,
+} from '@pluxel/runtime'
+import { defineProduct } from '@pluxel/runtime/product'
+
+export const product = defineProduct({
+	displayName: 'Pluxel Architecture Lab',
+	publisher: 'PluxelJS',
+	copyright: 'Runnable architecture showcase and official plugin host',
+})
+
+const authPlugin = packageNode('@pluxel/auth', 'AuthPlugin')
+const memoryCacheBackendPlugin = packageNode('@pluxel/cache', 'MemoryCacheBackendPlugin')
+const cachePlugin = packageNode('@pluxel/cache', 'CachePlugin')
+const otelPlugin = packageNode('@pluxel/otel', 'OtelPlugin')
+const packageManagerPlugin = packageNode('@pluxel/package-manager', 'PackageManagerPlugin')
+const memoryRatesBackendPlugin = packageNode('@pluxel/rates', 'MemoryRatesBackendPlugin')
+const ratesPlugin = packageNode('@pluxel/rates', 'RatesPlugin')
+const s3PluginDefinition = packageDefinition('@pluxel/storage', 'S3Plugin')
+const wretchPlugin = packageNode('@pluxel/wretch', 'WretchPlugin')
+const fontsPlugin = packageNode('@pluxel/fonts', 'FontsPlugin')
+const canvasPlugin = packageNode('@pluxel/canvas', 'CanvasPlugin')
+const echartsPlugin = packageNode('@pluxel/echarts', 'EChartsPlugin')
+const takumiPlugin = packageNode('@pluxel/takumi', 'TakumiPlugin')
+
+const reportStudioPlugin = sourceNode('src/showcase/ReportStudio.ts', 'ReportStudioPlugin')
+const echartsShowcaseRenderer = sourceNode(
+	'src/showcase/ReportStudio.ts',
+	'EChartsShowcaseRenderer',
+)
+const showcaseRenderer = sourceDefinition('src/showcase/ReportStudio.ts', 'ShowcaseRenderer')
+const releaseArchivePlugin = sourceNode('src/showcase/ReportStudio.ts', 'ReleaseArchivePlugin')
+const eventProducer = sourceNode('src/demo/PluginEventsDemo.ts', 'PluginEventsDeclaredProducer')
+const eventConsumer = sourceNode('src/demo/PluginEventsDemo.ts', 'PluginEventsDeclaredConsumer')
+const optionalProvider = sourceNode(
+	'src/demo/PluginOptionalIntegrationDemo.ts',
+	'PluginOptionalIntegrationProvider',
+)
+const optionalConsumer = sourceNode(
+	'src/demo/PluginOptionalIntegrationDemo.ts',
+	'PluginOptionalIntegrationConsumer',
+)
+
+export const draftsStorageNode = forkNode(s3PluginDefinition, 'drafts')
+export const releasesStorageNode = forkNode(s3PluginDefinition, 'releases')
+
+const bootSafeOfficialPlugins = Object.freeze([
+	authPlugin,
+	memoryCacheBackendPlugin,
+	cachePlugin,
+	otelPlugin,
+	memoryRatesBackendPlugin,
+	ratesPlugin,
+	wretchPlugin,
+	fontsPlugin,
+	canvasPlugin,
+	echartsPlugin,
+	takumiPlugin,
+])
+
+export function createHostRuntimeState(dynamic: boolean): Partial<RuntimeStateSnapshot> {
+	return {
+		autoStart: [
+			...bootSafeOfficialPlugins,
+			...(dynamic ? [packageManagerPlugin] : []),
+			reportStudioPlugin,
+			eventConsumer,
+			optionalProvider,
+			optionalConsumer,
+			draftsStorageNode,
+			releasesStorageNode,
+		],
+		forks: [{ definition: s3PluginDefinition, forkIds: ['drafts', 'releases'] }],
+		providerDefaults: [
+			providerDefault(packageDefinition('@pluxel/cache', 'Cache'), cachePlugin),
+			providerDefault(packageDefinition('@pluxel/cache', 'CacheBackend'), memoryCacheBackendPlugin),
+			providerDefault(packageDefinition('@pluxel/rates', 'Rates'), ratesPlugin),
+			providerDefault(packageDefinition('@pluxel/rates', 'RatesBackend'), memoryRatesBackendPlugin),
+			providerDefault(packageDefinition('@pluxel/storage', 'S3'), defaultNode(s3PluginDefinition)),
+			providerDefault(showcaseRenderer, echartsShowcaseRenderer),
+		],
+		dependencyOverrides: [
+			{
+				consumerAddress: reportStudioPlugin,
+				requirementAddress: packageDefinition('@pluxel/storage', 'S3'),
+				providerAddress: draftsStorageNode,
+			},
+			{
+				consumerAddress: releaseArchivePlugin,
+				requirementAddress: packageDefinition('@pluxel/storage', 'S3'),
+				providerAddress: releasesStorageNode,
+			},
+		],
+	}
+}
+
+export function createHostConfigRecords() {
+	return [
+		{
+			owner: otelPlugin,
+			config: { otlp: [], prometheus: { path: '/showcase/metrics' } },
+		},
+		{
+			owner: draftsStorageNode,
+			config: {
+				backend: {
+					type: 'local',
+					rootDir: '.pluxel/showcase/s3',
+					bucketName: 'draft-previews',
+					syncWrites: true,
+				},
+			},
+		},
+		{
+			owner: releasesStorageNode,
+			config: {
+				backend: {
+					type: 'local',
+					rootDir: '.pluxel/showcase/s3',
+					bucketName: 'released-reports',
+					syncWrites: true,
+				},
+			},
+		},
+	] as const
+}
+
+export const hostManagement = Object.freeze({
+	pluginGroups: Object.freeze([
+		Object.freeze({
+			id: 'showcase',
+			name: 'Architecture showcase',
+			definitions: Object.freeze([
+				echartsShowcaseRenderer.definition,
+				sourceDefinition('src/showcase/ReportStudio.ts', 'TakumiShowcaseRenderer'),
+				sourceDefinition('src/showcase/ReportStudio.ts', 'CanvasShowcaseRenderer'),
+				releaseArchivePlugin.definition,
+				reportStudioPlugin.definition,
+				eventProducer.definition,
+				eventConsumer.definition,
+				optionalProvider.definition,
+				optionalConsumer.definition,
+			]),
+		}),
+		Object.freeze({
+			id: 'official-rendering',
+			name: 'Official rendering',
+			packages: Object.freeze([
+				'@pluxel/fonts',
+				'@pluxel/canvas',
+				'@pluxel/echarts',
+				'@pluxel/takumi',
+			]),
+		}),
+		Object.freeze({
+			id: 'official-capabilities',
+			name: 'Official capabilities',
+			packages: Object.freeze([
+				'@pluxel/auth',
+				'@pluxel/cache',
+				'@pluxel/otel',
+				'@pluxel/package-manager',
+				'@pluxel/rates',
+				'@pluxel/redis',
+				'@pluxel/storage',
+				'@pluxel/wretch',
+			]),
+		}),
+	]),
+})
+
+function packageDefinition(packageName: string, exportName: string): PluginDefinitionAddress {
+	return parsePluginDefinitionAddress({
+		entry: { kind: 'package-root', packageName },
+		exportName,
+	})
+}
+
+function sourceDefinition(path: string, exportName: string): PluginDefinitionAddress {
+	return parsePluginDefinitionAddress({
+		entry: { kind: 'source-entry', sourceSpace: 'app', path },
+		exportName,
+	})
+}
+
+function packageNode(packageName: string, exportName: string): PluginNodeAddress {
+	return defaultNode(packageDefinition(packageName, exportName))
+}
+
+function sourceNode(path: string, exportName: string): PluginNodeAddress {
+	return defaultNode(sourceDefinition(path, exportName))
+}
+
+function defaultNode(definition: PluginDefinitionAddress): PluginNodeAddress {
+	return parsePluginNodeAddress({ definition, variant: 'default' })
+}
+
+function forkNode(definition: PluginDefinitionAddress, forkId: string): PluginNodeAddress {
+	return parsePluginNodeAddress({ definition, variant: 'fork', forkId })
+}
+
+function providerDefault(
+	token: PluginDefinitionAddress,
+	provider: PluginNodeAddress,
+): Readonly<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }> {
+	return Object.freeze({ token, provider })
+}

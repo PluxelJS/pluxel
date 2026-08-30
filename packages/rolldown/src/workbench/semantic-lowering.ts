@@ -169,6 +169,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 		const facts = await moduleFacts(id, input.code, input.ast, input.resolve)
 		modules.set(id, facts)
 		const owners = new Map(input.owners.map((owner) => [owner.className, owner] as const))
+		const nextPublications = new Map<string, PublishFact>()
 
 		for (const statement of input.ast.body as unknown as Node[]) {
 			const declaration = unwrapDeclaration(statement)
@@ -199,15 +200,32 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 				throw semanticError(id, `${className} publish() must receive definition and bindings`)
 			}
 			const key = pluginDefinitionIndexKey(owner.definition)
-			if (publications.has(key)) {
+			if (nextPublications.has(key)) {
 				throw semanticError(id, `${className} has duplicate Workbench publication ownership`)
 			}
-			publications.set(key, {
+			nextPublications.set(key, {
 				owner,
 				moduleId: id,
 				definitionExpression: args[0]!,
 			})
 		}
+
+		// Vite may concurrently transform one module for prefetch and evaluation. Treat collection as
+		// an atomic module snapshot so repeated transforms are idempotent and HMR can remove a
+		// publication, while still rejecting two distinct modules that claim the same owner.
+		for (const [key, publication] of nextPublications) {
+			const current = publications.get(key)
+			if (current && current.moduleId !== id) {
+				throw semanticError(
+					id,
+					`${publication.owner.className} has duplicate Workbench publication ownership`,
+				)
+			}
+		}
+		for (const [key, publication] of publications) {
+			if (publication.moduleId === id) publications.delete(key)
+		}
+		for (const [key, publication] of nextPublications) publications.set(key, publication)
 	}
 
 	const compilations = (): Promise<readonly WorkbenchSemanticProducerCompilation[]> => {

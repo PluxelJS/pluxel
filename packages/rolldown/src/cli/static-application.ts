@@ -14,6 +14,7 @@ import {
 	assembleWorkbenchDeploymentArtifacts,
 	collectWorkbenchDeploymentArtifacts,
 } from '../workbench/deployment-assembly'
+import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 import { staticElysiaSingletonPlugin } from './elysia-singleton'
 import { writeStaticConfigEnvironmentExample } from './static-config-environment-output'
@@ -546,6 +547,14 @@ function staticApplicationAssemblyPlugin(options: {
 			async handler(_, bundle) {
 				assertBundledPluxelClosure(bundle)
 				await mkdir(options.outDir, { recursive: true })
+				const packageRoots = await collectBundledPackageRoots(bundle)
+				await assembleNodeModuleDeploymentArtifacts({
+					destinationRoot: resolve(options.outDir, 'artifacts/node'),
+					dependencyRoots: packageRoots.map((packageRoot) =>
+						resolve(packageRoot, 'dist/artifacts/node'),
+					),
+					requiredArtifactKeys: collectBundledNodeArtifactKeys(bundle),
+				})
 				options.state.environmentExampleOwned = await writeStaticConfigEnvironmentExample({
 					outDir: options.outDir,
 					bundle,
@@ -560,7 +569,7 @@ function staticApplicationAssemblyPlugin(options: {
 						force: true,
 					})
 					workbenchInventory = await assembleBundledPackageWorkbenchArtifacts(
-						bundle,
+						packageRoots,
 						resolve(options.outDir, 'workbench'),
 					)
 				}
@@ -629,28 +638,38 @@ function staticApplicationAssemblyPlugin(options: {
 }
 
 async function assembleBundledPackageWorkbenchArtifacts(
-	bundle: OutputBundle,
+	packageRoots: readonly string[],
 	destinationRoot: string,
 ): ReturnType<typeof assembleWorkbenchDeploymentArtifacts> {
 	return runWorkbenchOutputTransaction(destinationRoot, async () => {
-		const packageRoots = new Set<string>()
-		for (const item of Object.values(bundle)) {
-			if (item.type !== 'chunk') continue
-			for (const rawId of Object.keys(item.modules)) {
-				const id = rawId.split('?', 1)[0]
-				if (!isAbsolute(id)) continue
-				const packageRoot = await findNearestPackageRoot(id)
-				if (packageRoot) packageRoots.add(packageRoot)
-			}
-		}
-
 		return assembleWorkbenchDeploymentArtifacts({
 			destinationRoot,
-			dependencyRoots: [...packageRoots].map((packageRoot) =>
-				resolve(packageRoot, 'dist/workbench'),
-			),
+			dependencyRoots: packageRoots.map((packageRoot) => resolve(packageRoot, 'dist/workbench')),
 		})
 	})
+}
+
+async function collectBundledPackageRoots(bundle: OutputBundle): Promise<string[]> {
+	const packageRoots = new Set<string>()
+	for (const item of Object.values(bundle)) {
+		if (item.type !== 'chunk') continue
+		for (const rawId of Object.keys(item.modules)) {
+			const id = rawId.split('?', 1)[0]
+			if (!isAbsolute(id)) continue
+			const packageRoot = await findNearestPackageRoot(id)
+			if (packageRoot) packageRoots.add(packageRoot)
+		}
+	}
+	return [...packageRoots].sort()
+}
+
+function collectBundledNodeArtifactKeys(bundle: OutputBundle): string[] {
+	const keys = new Set<string>()
+	for (const item of Object.values(bundle)) {
+		if (item.type !== 'chunk') continue
+		for (const match of item.code.matchAll(/\bnode-[0-9a-f]{16}\b/g)) keys.add(match[0])
+	}
+	return [...keys].sort()
 }
 
 async function findNearestPackageRoot(file: string): Promise<string | null> {

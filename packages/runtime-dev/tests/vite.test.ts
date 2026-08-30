@@ -167,10 +167,26 @@ describe('runtime-dev Vite plugin stack', () => {
 	it('classifies CommonJS and native packages for Node externalization', async () => {
 		await using fixture = await createDiskFixture()
 		const root = fixture.path
+		const legacyEsmRoot = join(root, 'node_modules', 'fixture-legacy-esm')
 		await Promise.all([
 			writePackage(root, 'fixture-commonjs', { type: 'commonjs', main: './index.js' }),
 			writePackage(root, 'fixture-native', { type: 'module', napi: { name: 'fixture-native' } }),
 			writePackage(root, 'fixture-esm', { type: 'module', main: './index.js' }),
+			writePackage(root, 'fixture-legacy-esm', {
+				type: 'commonjs',
+				main: './build/src/index.js',
+				module: './build/esm/index.js',
+			}),
+			mkdir(join(legacyEsmRoot, 'build', 'src'), { recursive: true }).then(() =>
+				writeFile(join(legacyEsmRoot, 'build', 'src', 'index.js'), 'module.exports = true\n'),
+			),
+			mkdir(join(legacyEsmRoot, 'build', 'esm'), { recursive: true }).then(() =>
+				Promise.all([
+					writeFile(join(legacyEsmRoot, 'build', 'esm', 'index.js'), 'export default true\n'),
+					writeFile(join(legacyEsmRoot, 'build', 'esm', 'internal.js'), 'export default true\n'),
+					writeFile(join(legacyEsmRoot, 'build', 'esm', 'compat.cjs'), 'module.exports = true\n'),
+				]),
+			),
 		])
 		const classifier = createHostModuleClassifier({ root })
 		expect(
@@ -178,12 +194,23 @@ describe('runtime-dev Vite plugin stack', () => {
 				classifier.classifySpecifier('fixture-commonjs'),
 				classifier.classifySpecifier('fixture-native'),
 				classifier.classifySpecifier('fixture-esm'),
+				classifier.classifySpecifier('fixture-legacy-esm'),
 			]),
 		).toEqual([
 			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
 			expect.objectContaining({ reason: 'native' }),
 			null,
+			null,
 		])
+		expect(
+			await classifier.classifyFile(join(legacyEsmRoot, 'build', 'esm', 'internal.js')),
+		).toBeNull()
+		expect(
+			await classifier.classifyFile(join(legacyEsmRoot, 'build', 'esm', 'compat.cjs')),
+		).toEqual(expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }))
+		expect(await classifier.classifyFile(join(legacyEsmRoot, 'build', 'src', 'index.js'))).toEqual(
+			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
+		)
 	})
 
 	it('prefers the ESM side of dual import/require exports in the real Vite runner', async () => {

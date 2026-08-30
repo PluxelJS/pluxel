@@ -10,15 +10,29 @@
 		"static": "pnpm exec vite --config vite.static.config.ts",
 		"build:static": "pnpm exec tsdown --config tsdown.static.config.ts",
 		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "pnpm exec tsc -p src/demo/tsconfig.json --pretty false",
+		"typecheck": "pnpm exec tsc -p src/tsconfig.json --pretty false",
 		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host",
 		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host"
 	},
 	"dependencies": {
+		"@opentelemetry/api": "catalog:",
+		"@opentelemetry/api-logs": "catalog:",
+		"@pluxel/auth": "workspace:*",
+		"@pluxel/cache": "workspace:*",
+		"@pluxel/canvas": "workspace:*",
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/echarts": "workspace:*",
+		"@pluxel/fonts": "workspace:*",
+		"@pluxel/otel": "workspace:*",
 		"@pluxel/package-manager": "workspace:*",
+		"@pluxel/rates": "workspace:*",
+		"@pluxel/redis": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
-		"@pluxel/runtime-static": "workspace:*"
+		"@pluxel/runtime-static": "workspace:*",
+		"@pluxel/storage": "workspace:*",
+		"@pluxel/takumi": "workspace:*",
+		"@pluxel/wretch": "workspace:*"
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:",
