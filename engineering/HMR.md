@@ -55,6 +55,11 @@ Runtime-dev classifier 固定优先级：
 Bare specifier 与 `/@fs/` 边界使用同一 classifier，workspace alias 不能绕过分类。Project 不注入第二份 Vite
 `InlineConfig` 或自定义 bridge policy。
 
+React transform/refresh 也只有一个 owner：dynamic development 的 `dynamicRuntimeVitePlugin()` 自带
+`@vitejs/plugin-react`，starter 不再重复安装；static host 由应用配置安装；distribution mode 不安装；独立 HMR server
+仅在存在 browser client entry 时安装。Starter smoke 必须同时验证静态、动态入口图和 `/@react-refresh` 的 JavaScript
+响应，避免 plugin stack 重复或缺失形成空 MIME/404。
+
 ## Static 与 dynamic route
 
 `staticRuntimeVitePlugin({ entry })` 通过 ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 Plugin
@@ -85,10 +90,12 @@ cleanup → Vite hooks → ModuleRunner close。
 Semantic lowering 在 TypeScript 擦除前读取 `workbench.define()` 和 literal `workbench.entry()`，一次生成 owning Plugin
 definition 的完整 producer plan。Compiler 不重新发现 declarations 或计算第二个 build revision。
 
-同一 producer task 去重；同一 definition 的新 plan supersede 旧 in-flight build。不同 producer 的 source hash、图准备和
-cache lookup 可以并行，实际 `@module-federation/vite` builder 位于 process-wide exclusive section，因为当前上游 Vite
-integration 仍包含 module-scoped normalized config、virtual module registry 和 caches。只有真实并发回归证明这些状态已
-归属 MF instance 后才可缩小临界区；同 output transaction ordering 始终保留。
+同一 producer task 去重；同一 definition 的新 plan supersede 旧 in-flight build。`@module-federation/vite` 1.21.1 的
+producer build 直接在当前进程运行；真实双 producer 并发回归必须验证 expose、Manifest 和 JavaScript 不串线。统一 artifact
+compiler 保留两个 build slot 的 bounded admission，不再叠加 child process 或第二层通用并发队列。上游 export detector 仍有
+process-global application root：同一 application root 最多并发两个 producer；切换到另一 application root 前必须等当前
+cohort 排空。这个精确约束不能扩大为全局单线程。同一 output 的 transaction ordering 始终保留，保证 immutable candidate 的
+validation/publication 不交错。
 
 每个 candidate 必须验证：
 

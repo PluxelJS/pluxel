@@ -142,6 +142,8 @@ describe('Workbench Federation activation', () => {
 		expect(options.shareStrategy).toBe('loaded-first')
 		expect(Object.keys(options.shared).sort()).toEqual(
 			[
+				'@mantine/core',
+				'@mantine/hooks',
 				'@module-federation/bridge-react',
 				'@pluxel/runtime/internal/workbench-react',
 				'@pluxel/runtime/workbench',

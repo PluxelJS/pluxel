@@ -13,7 +13,6 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import '@mantine/core/styles.css'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconCheck, IconCopy, IconKey, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'

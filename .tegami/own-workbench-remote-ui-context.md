@@ -10,7 +10,8 @@ packages:
 
 ## Make official Workbench remotes own their UI context
 
-Wrap every official Mantine-based federated renderer in its own `MantineProvider`, carry its required
-styles with the producer, and synchronize the provider with the portable Workbench color scheme. This
-keeps Fonts manager and selection attachments, Auth setup, package management, and Wretch settings
-independent from the Shell's private React context across React Bridge roots.
+Wrap every official Mantine-based federated renderer in its own `MantineProvider` and synchronize the
+provider with the portable Workbench color scheme. This keeps Fonts manager and selection attachments,
+Auth setup, package management, and Wretch settings independent from the Shell's private React context
+across React Bridge roots while the fixed Workbench MF profile reuses the Shell's Mantine modules and
+base styles.

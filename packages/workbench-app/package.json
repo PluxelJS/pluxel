@@ -25,7 +25,7 @@
 		"@dnd-kit/modifiers": "^9.0.0",
 		"@dnd-kit/sortable": "^10.0.0",
 		"@material/material-color-utilities": "^0.4.0",
-		"@module-federation/runtime": "^2.7.0",
+		"@module-federation/runtime": "2.9.0",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@tanstack/react-hotkeys": "^0.8.4",
@@ -48,7 +48,7 @@
 		"@tanstack/router-plugin": "^1.167.9",
 		"@types/react": "catalog:",
 		"@types/react-dom": "catalog:",
-		"@vitejs/plugin-react": "^5.1.4",
+		"@vitejs/plugin-react": "^6.1.1",
 		"postcss": "^8.5.6",
 		"postcss-preset-mantine": "^1.18.0",
 		"postcss-simple-vars": "^7.0.1",
@@ -56,7 +56,7 @@
 		"react-dom": "catalog:",
 		"sass-embedded": "^1.93.2",
 		"valibot": "^1.2.0",
-		"vite": "^8.0.0-beta.18"
+		"vite": "^8.2.2"
 	},
 	"peerDependencies": {
 		"@mantine/core": "catalog:",

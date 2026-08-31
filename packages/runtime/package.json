@@ -156,9 +156,9 @@
 		"@logtape/file": "^2.0.2",
 		"@logtape/logtape": "^2.0.2",
 		"@logtape/pretty": "^2.0.2",
-		"@module-federation/bridge-react": "2.7.0",
-		"@module-federation/runtime": "2.7.0",
-		"@module-federation/sdk": "2.7.0",
+		"@module-federation/bridge-react": "2.9.0",
+		"@module-federation/runtime": "2.9.0",
+		"@module-federation/sdk": "2.9.0",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@sinclair/typebox": "^0.34.48",
@@ -177,6 +177,7 @@
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:",
+		"@mantine/hooks": "catalog:",
 		"@mantine/notifications": "catalog:",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -191,13 +192,21 @@
 		"react": "catalog:",
 		"react-dom": "catalog:",
 		"valibot-form": "workspace:*",
-		"vite": "^8.0.0-beta.18"
+		"vite": "^8.2.2"
 	},
 	"peerDependencies": {
+		"@mantine/core": "catalog:",
+		"@mantine/hooks": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:"
 	},
 	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@mantine/hooks": {
+			"optional": true
+		},
 		"react": {
 			"optional": true
 		},

@@ -6,7 +6,7 @@ import {
 } from './plugins/runtime/identity'
 
 export const WORKBENCH_PROFILE_VERSION = 1 as const
-export const WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION = 1 as const
+export const WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION = 2 as const
 export const WORKBENCH_FEDERATION_BUILD_ROOT = 'dist' as const
 export const WORKBENCH_FEDERATION_OUT_DIR = 'workbench' as const
 export const WORKBENCH_FEDERATION_MANIFEST_FILE = 'mf-manifest.json' as const
@@ -16,14 +16,16 @@ export const WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE =
 export const WORKBENCH_FEDERATION_PRODUCER_INVENTORY_VERSION = 1 as const
 export const WORKBENCH_FEDERATION_SHARE_STRATEGY = 'loaded-first' as const
 export const WORKBENCH_FEDERATION_BRIDGE = 'react' as const
-export const WORKBENCH_FEDERATION_VITE_VERSION = '1.16.16' as const
-export const WORKBENCH_FEDERATION_RUNTIME_VERSION = '2.7.0' as const
-export const WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION = '2.7.0' as const
+export const WORKBENCH_FEDERATION_VITE_VERSION = '1.21.1' as const
+export const WORKBENCH_FEDERATION_RUNTIME_VERSION = '2.9.0' as const
+export const WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION = '2.9.0' as const
+export const WORKBENCH_FEDERATION_MANTINE_VERSION = '9.5.2' as const
 
 /**
- * Profile 1 platform shares. Producers cannot add, remove, or override these entries.
- * React subpaths are expanded by the build tool and use the exact `react`/`react-dom`
- * package versions resolved for this compatibility set.
+ * Profile 1 platform shares. Producers cannot add, remove, override, or provide
+ * fallbacks for these entries. React subpaths use the exact `react`/`react-dom`
+ * versions resolved for this compatibility set. Mantine is a fixed Shell-provided
+ * Workbench UI dependency so every remote root reuses one module instance.
  */
 export const WORKBENCH_FEDERATION_SHARED_MODULES = [
 	'react',
@@ -31,6 +33,8 @@ export const WORKBENCH_FEDERATION_SHARED_MODULES = [
 	'react/jsx-dev-runtime',
 	'react-dom',
 	'react-dom/client',
+	'@mantine/core',
+	'@mantine/hooks',
 	'@module-federation/bridge-react',
 	'@pluxel/runtime/workbench',
 	'@pluxel/runtime/workbench/client',
@@ -153,6 +157,8 @@ export function createWorkbenchFederationCompatibilitySet(
 		'react/jsx-dev-runtime': react,
 		'react-dom': reactDom,
 		'react-dom/client': reactDom,
+		'@mantine/core': WORKBENCH_FEDERATION_MANTINE_VERSION,
+		'@mantine/hooks': WORKBENCH_FEDERATION_MANTINE_VERSION,
 		'@module-federation/bridge-react': WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
 		'@pluxel/runtime/workbench': runtime,
 		'@pluxel/runtime/workbench/client': runtime,

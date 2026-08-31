@@ -30,34 +30,29 @@ catalog:
   '@opentelemetry/sdk-metrics': ^2.10.0
   '@opentelemetry/sdk-trace-base': ^2.10.0
   '@pnpm/napi': 12.0.0-rc.0
-  '@mantine/core': ^9.4.1
-  '@mantine/dates': ^9.4.1
-  '@mantine/hooks': ^9.4.1
-  '@mantine/modals': ^9.4.1
-  '@mantine/notifications': ^9.4.1
+  '@mantine/core': ^9.5.2
+  '@mantine/dates': ^9.5.2
+  '@mantine/hooks': ^9.5.2
+  '@mantine/modals': ^9.5.2
+  '@mantine/notifications': ^9.5.2
   '@pluxel/market': ^0.1.0
   '@tabler/icons-react': ^3.37.1
-  '@types/react': ^19.2.14
-  '@types/react-dom': ^19.2.3
+  '@types/react': ^19.2.18
+  '@types/react-dom': ^19.2.5
   drizzle-orm: ^0.45.2
   echarts: ^6.1.0
-  react: ^19.2.7
-  react-dom: ^19.2.7
+  react: ^19.2.8
+  react-dom: ^19.2.8
   redis: ^6.1.0
   s3mini: ^1.0.0
   takumi-js: ^2.12.0
-  tsdown: ^0.22.5
+  tsdown: ^0.22.14
   typescript: ^6.0.3
   undici: ^7.16.0
   vitest: ^4.1.10
   wretch: ^3.0.9
   yaml: ^2.8.2
 managePackageManagerVersions: false
-
-packageExtensions:
-  '@mantine/hooks@9.4.1':
-    peerDependencies:
-      react-dom: ^19.2.0
 
 allowBuilds:
   '@parcel/watcher': false
@@ -76,6 +71,7 @@ minimumReleaseAgeExclude:
   - '@pnpm/napi.win32-x64@12.0.0-rc.0'
   - '@pnpm/napi@12.0.0-rc.0'
   - elysia@2.0.0-beta.7
+  - '@module-federation/vite@1.21.1'
 
 onlyBuiltDependencies:
   - esbuild

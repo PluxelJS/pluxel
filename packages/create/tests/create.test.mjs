@@ -75,7 +75,10 @@ describe('create-pluxel', () => {
 			)
 			assert.equal(pluginManifest.devDependencies.oxlint, undefined)
 		}
-		assert.match(await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8'), /root: webRoot/)
+		const viteConfig = await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8')
+		assert.match(viteConfig, /root: webRoot/)
+		assert.equal(viteConfig.match(/\breact\(\)/g)?.length, 1)
+		assert.match(viteConfig, /mode === 'dynamic'[\s\S]*dynamicRuntimeVitePlugin/)
 		await assert.rejects(readFile(resolve(generated, 'host/vite.dynamic.config.ts')), {
 			code: 'ENOENT',
 		})

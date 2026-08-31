@@ -279,6 +279,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 			)
 			const buildRevision = await buildRevisionFor(
 				buildRoot,
+				sourceRoot,
 				publication.owner.definition,
 				definition,
 				generatedEntries,
@@ -890,6 +891,7 @@ async function writeBridgeEntry(input: {
 
 async function buildRevisionFor(
 	root: string,
+	compatibilityRoot: string,
 	owner: PluginDefinitionAddress,
 	definition: Definition,
 	entries: readonly Readonly<{
@@ -900,7 +902,7 @@ async function buildRevisionFor(
 ): Promise<string> {
 	const hash = createHash('sha256')
 	hash.update(`workbench-semantic-abi:${GENERATED_ABI_VERSION}\n`)
-	hash.update(`compat:${resolveWorkbenchFederationShared(root).signature}\n`)
+	hash.update(`compat:${resolveWorkbenchFederationShared(compatibilityRoot).signature}\n`)
 	hash.update(`owner:${JSON.stringify(owner)}\n`)
 	hash.update(
 		`definition:${relative(root, definition.binding.moduleId)}#${definition.exportName}\n`,

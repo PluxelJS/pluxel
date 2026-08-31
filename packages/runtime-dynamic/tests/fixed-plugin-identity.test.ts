@@ -87,6 +87,8 @@ describe('dynamic fixed plugin module identity', () => {
 				'  server: { middlewareMode: true, watch: { usePolling: true, interval: 20 } },',
 				'})',
 				'try {',
+				"  const refresh = await server.transformRequest('/@react-refresh')",
+				"  assert.match(refresh?.code ?? '', /react-refresh/)",
 				"  const controller = server[Symbol.for('pluxel.dynamicRuntimeController')]",
 				'  assert.ok(controller)',
 				'  const loader = requireLoaderService(controller.booted.ctx)',

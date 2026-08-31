@@ -105,7 +105,7 @@
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
 		"option-t": "^55.1.2",
-		"rolldown": "^1.1.5",
+		"rolldown": "^1.2.6",
 		"tinybench": "^6.0.0",
 		"unplugin-macros": "^0.20.2"
 	},

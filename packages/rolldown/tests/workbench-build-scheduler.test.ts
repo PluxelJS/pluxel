@@ -1,44 +1,50 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-	runWorkbenchIsolatedBuild,
+	runWorkbenchFederationBuild,
 	runWorkbenchOutputTransaction,
-	WORKBENCH_ISOLATED_BUILD_CONCURRENCY,
 } from '../src/workbench/build-scheduler'
 
 const pause = (milliseconds = 20) =>
 	new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
 describe('workbench build scheduler', () => {
-	it('allows bounded parallel producer compilers', async () => {
+	it('bounds same-application builds and never overlaps different application roots', async () => {
 		let active = 0
-		let maximumActive = 0
+		let maximum = 0
+		let activeRoot: string | undefined
+		let crossedRoots = false
+		const run = (root: string) =>
+			runWorkbenchFederationBuild(root, async () => {
+				if (activeRoot !== undefined && activeRoot !== root) crossedRoots = true
+				activeRoot = root
+				active += 1
+				maximum = Math.max(maximum, active)
+				try {
+					await pause()
+				} finally {
+					active -= 1
+					if (active === 0) activeRoot = undefined
+				}
+			})
 
-		await Promise.all(
-			Array.from({ length: 3 }, () =>
-				runWorkbenchIsolatedBuild(async () => {
-					active += 1
-					maximumActive = Math.max(maximumActive, active)
-					try {
-						await pause()
-					} finally {
-						active -= 1
-					}
-				}),
-			),
-		)
+		await Promise.all([run('/application/a'), run('/application/b'), run('/application/a')])
+		expect(crossedRoots).toBe(false)
+		expect(maximum).toBe(2)
+	})
 
-		expect(maximumActive).toBe(WORKBENCH_ISOLATED_BUILD_CONCURRENCY)
+	it('continues with the next application root after a Federation build fails', async () => {
+		await expect(
+			runWorkbenchFederationBuild('/application/failure', async () => {
+				throw new Error('expected Federation failure')
+			}),
+		).rejects.toThrow('expected Federation failure')
+		await expect(
+			runWorkbenchFederationBuild('/application/recovery', async () => 'recovered'),
+		).resolves.toBe('recovered')
 	})
 
 	it('continues scheduling after a failed Federation build', async () => {
-		await expect(
-			runWorkbenchIsolatedBuild(async () => {
-				throw new Error('expected build failure')
-			}),
-		).rejects.toThrow('expected build failure')
-		await expect(runWorkbenchIsolatedBuild(async () => {})).resolves.toBeUndefined()
-
 		await expect(
 			runWorkbenchOutputTransaction('/tmp/pluxel-failed-target', async () => {
 				throw new Error('expected transaction failure')

@@ -119,11 +119,13 @@ document path 会聚焦已有 tab。Plugin 不感知 tab group、drag/drop 或 s
 每个 page 只有一个 MF Runtime。Shell 先建立 exact singleton shared winners，再以 `loaded-first` 按需注册 producer：
 
 - React/ReactDOM 及其实际 subpaths；
+- `@mantine/core`、`@mantine/hooks`；
 - `@module-federation/bridge-react`；
 - `@pluxel/runtime/workbench`、`/client`、`/react`。
 - `@pluxel/runtime/internal/workbench-react`。
 
-Plugin 不能修改 share scope、runtime plugin、manifest resolution 或 fallback。普通 UI/领域依赖由 producer 自己 bundle。
+Plugin 不能修改 share scope、runtime plugin、manifest resolution 或 fallback。Mantine 基础 CSS 由 Shell 唯一加载，remote
+只创建自己的 `MantineProvider`；producer 不得重复导入 Core stylesheet。其他 UI/领域依赖由 producer 自己 bundle。
 未打开 View 不请求其 expose；一个 Plugin definition 的多个 Views 共用 producer，但按 expose/chunk 延迟加载。
 
 Development UI update 先构建并验证 immutable candidate。失败保持当前 producer inventory；成功 commit 后完整 document

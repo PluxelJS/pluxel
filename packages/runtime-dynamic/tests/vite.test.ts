@@ -155,6 +155,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			'pluxel-config-source',
 			'pluxel:dynamic-runtime-source',
 			'pluxel:host-modules',
+			'vite:react-babel',
+			'vite:react:refresh-wrapper',
+			'vite:react:config-post',
+			'vite:react-refresh-fbm',
+			'vite:react-refresh',
+			'vite:react-virtual-preamble',
 			'pluxel:dynamic-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
@@ -169,7 +175,10 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
 			'cacheDir',
 		)
-		expect(plugins.at(-3)?.config?.({})?.resolve?.dedupe).toEqual(
+		expect(
+			plugins.find((plugin) => plugin.name === 'pluxel:dynamic-runtime-source')?.config?.({})
+				?.resolve?.dedupe,
+		).toEqual(
 			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
 		)
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
@@ -185,6 +194,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		}>
 		const source = plugins.find((plugin) => plugin.name === 'pluxel:dynamic-runtime-source')
 		const route = plugins.at(-1)
+		expect(plugins.some((plugin) => plugin.name?.startsWith('vite:react'))).toBe(false)
 		const sourceConfig = source?.config?.({}) as {
 			resolve?: { conditions?: string[] }
 			ssr?: { resolve?: { conditions?: string[] } }

@@ -270,6 +270,7 @@ async function buildProductionProducer(
 	const buildTools = await loadWorkbenchUiBuildTools()
 	await buildTools.buildWorkbenchFederationProducer({
 		root: sourceRoot,
+		applicationRoot: deploymentRoot,
 		plan,
 		outDir,
 		minify: target.minify ?? true,

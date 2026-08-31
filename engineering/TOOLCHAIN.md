@@ -415,9 +415,10 @@ Node module 继续拥有独立 watcher、content-addressed build、staged setup 
 
 `workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path 相对声明模块解析；lowering 从实际
 definition/renderer module 收集 source graph，在 owning package root 的 `.pluxel/workbench-generated/` 生成 Bridge entry，
-并把 package-relative entry 写入 producer plan。Producer 使用同一 package root 解析依赖，并复用 fixed shared build contract
-已经确定的 workspace root 作为 TypeScript declaration graph 边界；host application root 只拥有部署输出。这里不接受调用方目录
-列表、absolute renderer declaration、runtime-module fallback、workspace root override 或第二套 filesystem discovery。
+并把 package-relative entry 写入 producer plan。Builder 明确区分三个目录事实：producer root 解析 Bridge/source 与 producer
+依赖；host application root 作为 Vite root，并决定 fixed shared winner、compatibility signature 与 MF export detection；两者的
+最小公共祖先作为 TypeScript declaration `rootDir`，覆盖跨 workspace link 的 producer。这里不接受调用方目录列表、absolute
+renderer declaration、runtime-module fallback、root override 或第二套 filesystem discovery。
 
 ## Production build
 
@@ -425,12 +426,23 @@ definition/renderer module 收集 source graph，在 owning package root 的 `.p
 types，并写 root `dist/workbench/pluxel-workbench-producers.json`。Cache/build revision 包含源码图、lockfile、fixed
 shared compatibility set 和 compiler version。Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
 
-固定 singleton shared 包来自 `@pluxel/core/federation`：React/ReactDOM 及实际 subpaths、MF React Bridge、
-`@pluxel/runtime/workbench`、`/client`、`/react` 和 toolchain-only
+固定 singleton shared 包来自 `@pluxel/core/federation`：React/ReactDOM 及实际 subpaths、`@mantine/core`、
+`@mantine/hooks`、MF React Bridge、`@pluxel/runtime/workbench`、`/client`、`/react` 和 toolchain-only
 `@pluxel/runtime/internal/workbench-react`。每项使用 exact version、`singleton: true`、`loaded-first`；
 Manifest 缺项或版本不一致使 candidate 失败。Production builder 按同一 build contract 生成 Shell 与 producer，写入 exact
 profile/build-contract producer inventory，并逐项用 canonical plan 和 compatibility set 校验 Manifest/Snapshot；任何不一致都使
 application build 失败。
+
+Mantine shared 只提供 module implementation，不提供跨 React root 的 Context。Renderer 继续创建自己的
+`MantineProvider`；`@mantine/core` 基础 CSS 由 Shell 唯一加载，producer compiler 对 Core stylesheet import fail-fast，避免每个
+remote 重复输出同一份 CSS。未进入固定 profile 的 UI library 不获得这种处理。
+
+固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 1.21.1 的 used-export collector 不能用公开配置表达
+“完整 export surface”；builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，并在后置 transform 删除。
+这保证传递依赖需要的 React/Mantine export 仍出现在 host-backed facade，同时 marker 和 shared implementation 都不进入产物。
+
+Dynamic types 使用 MF 2.9 的默认 `tsc`，不再把绝对 compiler executable 交给 package manager。每个 immutable candidate
+拥有独立 `tsBuildInfoFile`，并发 producer 不共享 MF 默认 cache 文件；类型、Manifest 或 asset 缺失都使 candidate 失败。
 
 Production producer 不输出内嵌源码 sourcemap；runtime-dev producer 保留 sourcemap 供开发诊断。
 

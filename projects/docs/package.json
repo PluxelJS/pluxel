@@ -75,7 +75,7 @@
 		"tailwindcss": "4.3.3",
 		"tsdown": "catalog:",
 		"typescript": "catalog:",
-		"vite": "8.2.1",
+		"vite": "8.2.2",
 		"vitest": "catalog:",
 		"wretch": "catalog:"
 	}

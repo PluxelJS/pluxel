@@ -214,7 +214,6 @@ Workbench API。例如 Mantine renderer 的入口可以直接写成：
 
 ```tsx
 import { MantineProvider } from '@mantine/core'
-import '@mantine/core/styles.css'
 
 export default function OrdersOverview() {
 	const { api, host } = useWorkbench(OrdersWorkbench.overview)
@@ -226,8 +225,10 @@ export default function OrdersOverview() {
 }
 ```
 
-这里的 Provider 属于 producer 的 UI 实现，不进入 Workbench 核心 shared contract。`host.colorScheme` 只是可移植的宿主
-外观事实；producer 仍拥有 UI library、Provider 和 CSS。
+这里的 Provider 属于 renderer root，不能从 Shell 继承；但 `@mantine/core` 与 `@mantine/hooks` 是 Workbench 固定的 MF2
+singleton shared，组件和 hooks 在一个 document 内只加载一份。Mantine 基础 CSS 也由 Shell 统一加载，renderer 不应再次导入
+`@mantine/core/styles.css`，producer build 会直接拒绝这种重复。`host.colorScheme` 只是可移植的宿主外观事实，不暴露 Shell
+私有 Provider 或 theme object。其他 UI library 仍由 producer 自己打包并管理 Provider/CSS。
 
 ## Placement 与参数化 route
 

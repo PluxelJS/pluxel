@@ -29,7 +29,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		).resolves.toEqual({
 			version: 1,
 			profile: 1,
-			buildContract: 1,
+			buildContract: 2,
 			producers: [],
 		})
 	})

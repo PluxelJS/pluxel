@@ -5,11 +5,14 @@ import {
 } from '@module-federation/runtime'
 import * as BridgeReact from '@module-federation/bridge-react/v19'
 import {
+	WORKBENCH_FEDERATION_MANTINE_VERSION,
 	WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
 	WORKBENCH_FEDERATION_RUNTIME_VERSION,
 	WORKBENCH_FEDERATION_SHARE_STRATEGY,
 	workbenchDeclarationIdentityEqual,
 } from '@pluxel/core/federation'
+import * as MantineCore from '@mantine/core'
+import * as MantineHooks from '@mantine/hooks'
 import * as React from 'react'
 import * as ReactJsxDevRuntime from 'react/jsx-dev-runtime'
 import * as ReactJsxRuntime from 'react/jsx-runtime'
@@ -434,6 +437,8 @@ function fixedShared() {
 		'react/jsx-dev-runtime': sharedModule(ReactJsxDevRuntime, React.version),
 		'react-dom': sharedModule(ReactDom, ReactDom.version),
 		'react-dom/client': sharedModule(ReactDomClient, ReactDom.version),
+		'@mantine/core': sharedModule(MantineCore, WORKBENCH_FEDERATION_MANTINE_VERSION),
+		'@mantine/hooks': sharedModule(MantineHooks, WORKBENCH_FEDERATION_MANTINE_VERSION),
 		'@module-federation/bridge-react': sharedModule(
 			BridgeReact,
 			WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,

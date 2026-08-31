@@ -293,6 +293,10 @@ async function verifyDynamicViteHost(root: string): Promise<void> {
 }
 
 async function verifyViteBrowserGraph(origin: string): Promise<void> {
+	const refreshRuntime = await waitForResponse(`${origin}/@react-refresh`, 30_000)
+	if (!refreshRuntime.headers.get('content-type')?.includes('javascript')) {
+		throw new Error('Vite React refresh runtime is not served as JavaScript')
+	}
 	const entry = await waitForResponse(`${origin}/src/client/main.tsx`, 30_000)
 	const source = await entry.text()
 	const imports = [...source.matchAll(/\b(?:from|import)\s+["'](\/[^"']+)["']/g)].map(

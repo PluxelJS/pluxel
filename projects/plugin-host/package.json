@@ -36,6 +36,7 @@
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:",
+		"@mantine/hooks": "catalog:",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -47,7 +48,7 @@
 		"react-dom": "catalog:",
 		"tsdown": "catalog:",
 		"typescript": "catalog:",
-		"vite": "^8.0.0-beta.18",
+		"vite": "^8.2.2",
 		"vitest": "catalog:"
 	}
 }

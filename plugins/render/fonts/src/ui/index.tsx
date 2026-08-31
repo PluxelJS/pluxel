@@ -15,7 +15,6 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import '@mantine/core/styles.css'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconRefresh, IconTrash, IconUpload } from '@tabler/icons-react'

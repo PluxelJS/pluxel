@@ -184,8 +184,8 @@ const buildFixtures = {
 		].join('\n'),
 	},
 	runtimeUi: {
-		...fixturePackage('react', '19.2.7', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...fixturePackage('react-dom', '19.2.7', ['.', './client']),
+		...fixturePackage('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...fixturePackage('react-dom', '19.2.8', ['.', './client']),
 		...fixturePackage('@pluxel/runtime', '1.0.0', [
 			'.',
 			'./capnweb',
@@ -231,8 +231,8 @@ export function createWorkbenchBridge(identity, descriptor, Renderer) {
 				type: 'module',
 				dependencies: {
 					'@pluxel/runtime': '1.0.0',
-					react: '19.2.7',
-					'react-dom': '19.2.7',
+					react: '19.2.8',
+					'react-dom': '19.2.8',
 				},
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },

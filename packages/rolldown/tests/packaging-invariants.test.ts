@@ -311,7 +311,7 @@ describe('toolchain package boundaries', () => {
 		for (const pkg of [runtimeDynamic, runtimeStatic, runtimeDev]) {
 			expect(pkg.dependencies).not.toHaveProperty('vite')
 			expect(pkg.devDependencies).toHaveProperty('vite')
-			expect(pkg.peerDependencies).toHaveProperty('vite', '>=8.0.0-beta.18 <9')
+			expect(pkg.peerDependencies).toHaveProperty('vite', '>=8.2.2 <9')
 			expect(pkg.peerDependenciesMeta?.vite?.optional).toBe(true)
 		}
 		for (const pkg of [runtimeDynamic, runtimeStatic]) {

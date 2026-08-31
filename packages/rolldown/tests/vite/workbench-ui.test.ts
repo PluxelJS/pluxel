@@ -19,18 +19,22 @@ const definition = parsePluginDefinitionAddress({
 	exportName: 'WorkbenchProducerPlugin',
 })
 
-function createPlan(buildRevision = 'revision-a') {
+function createPlan(
+	buildRevision = 'revision-a',
+	producerDefinition = definition,
+	managerEntry = 'src/ui/manager.ts',
+) {
 	return createWorkbenchFederationProducerPlan({
-		definition,
+		definition: producerDefinition,
 		buildRevision,
 		entries: [
 			{
-				descriptor: { kind: 'attachment', owner: definition, key: 'picker' },
+				descriptor: { kind: 'attachment', owner: producerDefinition, key: 'picker' },
 				bridgeEntryPath: 'src/ui/picker.ts',
 			},
 			{
-				descriptor: { kind: 'view', owner: definition, key: 'manager' },
-				bridgeEntryPath: 'src/ui/manager.ts',
+				descriptor: { kind: 'view', owner: producerDefinition, key: 'manager' },
+				bridgeEntryPath: managerEntry,
 			},
 		],
 	})
@@ -62,10 +66,15 @@ function producerFixtureFiles(): Record<string, string> {
 			name: '@example/workbench-producer',
 			private: true,
 			type: 'module',
+			devEngines: {
+				packageManager: { name: 'pnpm', version: '>=11 <12', onFail: 'error' },
+			},
 			devDependencies: {
+				'@mantine/core': '9.5.2',
+				'@mantine/hooks': '9.5.2',
 				'@pluxel/runtime': '1.0.0',
-				react: '19.2.7',
-				'react-dom': '19.2.7',
+				react: '19.2.8',
+				'react-dom': '19.2.8',
 			},
 		}),
 		'tsconfig.json': JSON.stringify({
@@ -79,15 +88,50 @@ function producerFixtureFiles(): Record<string, string> {
 			include: ['src'],
 		}),
 		'src/ui/manager.ts': `
-export const marker = 'profile-one-manager'
+import { marker as mantineCoreMarker } from '@mantine/core'
+import { marker as mantineHooksMarker } from '@mantine/hooks'
+import { iconMarker } from 'transitive-react-consumer'
+export const marker = 'profile-one-manager-' + mantineCoreMarker + mantineHooksMarker + iconMarker
 export default () => ({ marker, async render() {}, destroy() {} })
 `,
 		'src/ui/picker.ts': `
 export const marker = 'profile-one-picker'
 export default () => ({ marker, async render() {}, destroy() {} })
 `,
-		...packageFiles('react', '19.2.7', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...packageFiles('react-dom', '19.2.7', ['.', './client']),
+		...packageFiles('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...packageFiles('react-dom', '19.2.8', ['.', './client']),
+		'node_modules/react/index.js': [
+			"export const forwardRef = 'must-not-bundle-react-forward-ref'",
+			"export const createElement = 'must-not-bundle-react-create-element'",
+			'',
+		].join('\n'),
+		'node_modules/react/index.d.ts': [
+			'export declare const forwardRef: string',
+			'export declare const createElement: string',
+			'',
+		].join('\n'),
+		'node_modules/transitive-react-consumer/package.json': JSON.stringify({
+			name: 'transitive-react-consumer',
+			version: '1.0.0',
+			type: 'module',
+			exports: './index.js',
+			types: './index.d.ts',
+		}),
+		'node_modules/transitive-react-consumer/index.js': [
+			"import { forwardRef, createElement } from 'react'",
+			"export const iconMarker = 'transitive-react-consumer-' + forwardRef + createElement",
+			'',
+		].join('\n'),
+		'node_modules/transitive-react-consumer/index.d.ts':
+			'export declare const iconMarker: string\n',
+		...packageFiles('@mantine/core', '9.5.2', ['.']),
+		...packageFiles('@mantine/hooks', '9.5.2', ['.']),
+		'node_modules/@mantine/core/index.js':
+			"export const marker = 'must-not-bundle-mantine-core'\n",
+		'node_modules/@mantine/core/index.d.ts': 'export declare const marker: string\n',
+		'node_modules/@mantine/hooks/index.js':
+			"export const marker = 'must-not-bundle-mantine-hooks'\n",
+		'node_modules/@mantine/hooks/index.d.ts': 'export declare const marker: string\n',
 		...packageFiles('@pluxel/runtime', '1.0.0', [
 			'.',
 			'./workbench',
@@ -95,6 +139,31 @@ export default () => ({ marker, async render() {}, destroy() {} })
 			'./workbench/react',
 		]),
 	}
+}
+
+function nestedProducerFixtureFiles(): Record<string, string> {
+	const nested: Record<string, string> = {
+		'application/package.json': JSON.stringify({
+			name: '@example/application',
+			private: true,
+			type: 'module',
+		}),
+		'application/pnpm-workspace.yaml': 'packages:\n  - apps/*\n',
+		'application/apps/host/package.json': JSON.stringify({
+			name: '@example/host',
+			private: true,
+			type: 'module',
+		}),
+	}
+	for (const [path, contents] of Object.entries(producerFixtureFiles())) {
+		if (path.startsWith('node_modules/')) {
+			nested[`application/${path}`] = contents
+			nested[`external/producer/${path}`] = contents
+		} else {
+			nested[`external/producer/${path}`] = contents
+		}
+	}
+	return nested
 }
 
 describe('Workbench Profile 1 federation producer', () => {
@@ -125,14 +194,26 @@ describe('Workbench Profile 1 federation producer', () => {
 			expect.arrayContaining([
 				expect.objectContaining({
 					name: 'react',
-					version: '19.2.7',
-					requiredVersion: '19.2.7',
+					version: '19.2.8',
+					requiredVersion: '19.2.8',
+					singleton: true,
+				}),
+				expect.objectContaining({
+					name: '@mantine/core',
+					version: '9.5.2',
+					requiredVersion: '9.5.2',
+					singleton: true,
+				}),
+				expect.objectContaining({
+					name: '@mantine/hooks',
+					version: '9.5.2',
+					requiredVersion: '9.5.2',
 					singleton: true,
 				}),
 				expect.objectContaining({
 					name: '@module-federation/bridge-react',
-					version: '2.7.0',
-					requiredVersion: '2.7.0',
+					version: '2.9.0',
+					requiredVersion: '2.9.0',
 					singleton: true,
 				}),
 				expect.objectContaining({
@@ -168,6 +249,119 @@ describe('Workbench Profile 1 federation producer', () => {
 		)
 		expect(javascript.join('\n')).toContain('profile-one-manager')
 		expect(javascript.join('\n')).toContain('profile-one-picker')
+		expect(javascript.join('\n')).not.toContain('must-not-bundle-mantine-core')
+		expect(javascript.join('\n')).not.toContain('must-not-bundle-mantine-hooks')
+		expect(javascript.join('\n')).not.toContain('must-not-bundle-react-forward-ref')
+		expect(javascript.join('\n')).not.toContain('must-not-bundle-react-create-element')
+		expect(javascript.join('\n')).not.toContain('@pluxel-workbench-full-shared-surface')
+	}, 60_000)
+
+	it('builds distinct producers concurrently without process-local state leakage', async () => {
+		const files = producerFixtureFiles()
+		files['src/ui/manager.ts'] = `
+export const marker = 'concurrent-producer-first'
+export default () => ({ marker, async render() {}, destroy() {} })
+`
+		files['src/ui/manager-second.ts'] = `
+export const marker = 'concurrent-producer-second'
+export default () => ({ marker, async render() {}, destroy() {} })
+`
+		await using fixture = await createFixture(files)
+		const firstDefinition = parsePluginDefinitionAddress({
+			entry: { kind: 'package-root', packageName: '@example/concurrent-first' },
+			exportName: 'ConcurrentFirstPlugin',
+		})
+		const secondDefinition = parsePluginDefinitionAddress({
+			entry: { kind: 'package-root', packageName: '@example/concurrent-second' },
+			exportName: 'ConcurrentSecondPlugin',
+		})
+		const firstOutDir = join(fixture.path, 'artifact-first')
+		const secondOutDir = join(fixture.path, 'artifact-second')
+
+		await Promise.all([
+			buildWorkbenchFederationProducer({
+				root: fixture.path,
+				plan: createPlan('concurrent-a', firstDefinition),
+				outDir: firstOutDir,
+				minify: false,
+			}),
+			buildWorkbenchFederationProducer({
+				root: fixture.path,
+				plan: createPlan(
+					'concurrent-b',
+					secondDefinition,
+					'src/ui/manager-second.ts',
+				),
+				outDir: secondOutDir,
+				minify: false,
+			}),
+		])
+
+		const readJavaScript = async (outDir: string): Promise<string> => {
+			const entries = await readdir(outDir, { recursive: true })
+			return (
+				await Promise.all(
+					entries
+						.map(String)
+						.filter((entry) => entry.endsWith('.js'))
+						.map((entry) => readFile(join(outDir, entry), 'utf-8')),
+				)
+			).join('\n')
+		}
+		const [firstJavaScript, secondJavaScript] = await Promise.all([
+			readJavaScript(firstOutDir),
+			readJavaScript(secondOutDir),
+		])
+		expect(firstJavaScript).toContain('concurrent-producer-first')
+		expect(firstJavaScript).not.toContain('concurrent-producer-second')
+		expect(secondJavaScript).toContain('concurrent-producer-second')
+		expect(secondJavaScript).not.toContain('concurrent-producer-first')
+	}, 60_000)
+
+	it('inspects fixed shared exports from the application root for a nested producer', async () => {
+		await using fixture = await createFixture(nestedProducerFixtureFiles())
+		const root = join(fixture.path, 'external/producer')
+		const applicationRoot = join(fixture.path, 'application/apps/host')
+		const outDir = join(root, 'artifact')
+
+		await buildWorkbenchFederationProducer({
+			root,
+			applicationRoot,
+			plan: createPlan('nested-application-root'),
+			outDir,
+			minify: false,
+		})
+
+		const javascript = (
+			await Promise.all(
+				(await readdir(outDir, { recursive: true }))
+					.map(String)
+					.filter((entry) => entry.endsWith('.js'))
+					.map((entry) => readFile(join(outDir, entry), 'utf-8')),
+			)
+		).join('\n')
+		expect(javascript).toContain('transitive-react-consumer')
+		expect(javascript).not.toContain('must-not-bundle-react-forward-ref')
+		expect(javascript).not.toContain('must-not-bundle-react-create-element')
+	}, 60_000)
+
+	it('rejects Mantine core stylesheet imports owned by the Workbench Shell', async () => {
+		const files = producerFixtureFiles()
+		files['src/ui/manager.ts'] = `
+import '@mantine/core/styles.css'
+export default () => ({ async render() {}, destroy() {} })
+`
+		files['node_modules/@mantine/core/styles.css'] = '.must-not-bundle { color: red; }\n'
+		await using fixture = await createFixture(files)
+
+		await expect(
+			buildWorkbenchFederationProducer({
+				root: fixture.path,
+				plan: createPlan(),
+				outDir: join(fixture.path, 'artifact'),
+				minify: false,
+			}),
+		).rejects.toThrow('Mantine core styles are provided once by the Workbench Shell')
 	}, 60_000)
 
 	it('reuses a valid immutable revision and rejects a different plan at the same path', async () => {
@@ -249,6 +443,21 @@ describe('Workbench Profile 1 federation producer', () => {
 		)
 	})
 
+	it('rejects an installed Mantine version outside the fixed Workbench profile', async () => {
+		const files = producerFixtureFiles()
+		files['node_modules/@mantine/core/package.json'] = JSON.stringify({
+			name: '@mantine/core',
+			version: '9.5.0',
+			type: 'module',
+			exports: { '.': './index.js' },
+		})
+		await using fixture = await createFixture(files)
+
+		expect(() => resolveWorkbenchFederationShared(fixture.path)).toThrow(
+			'Profile 1 requires @mantine/core@9.5.2, resolved 9.5.0',
+		)
+	})
+
 	it('does not publish a failed build candidate', async () => {
 		const files = producerFixtureFiles()
 		files['src/ui/manager.ts'] = 'export default {\n'
@@ -262,7 +471,7 @@ describe('Workbench Profile 1 federation producer', () => {
 				outDir,
 				minify: false,
 			}),
-		).rejects.toThrow('isolated compiler failed')
+		).rejects.toThrow('Build failed')
 		await expect(access(outDir)).rejects.toMatchObject({ code: 'ENOENT' })
 		await expect(
 			readdir(fixture.path).then((entries) =>

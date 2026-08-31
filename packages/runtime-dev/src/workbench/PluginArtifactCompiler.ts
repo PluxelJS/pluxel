@@ -258,6 +258,7 @@ export class PluginArtifactCompiler {
 			await buildWorkbenchFederationProducer({
 				plan,
 				root,
+				applicationRoot: this.viteServer?.config.root,
 				outDir,
 				minify: false,
 				sourcemap: true,

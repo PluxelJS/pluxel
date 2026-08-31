@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
+import react from '@vitejs/plugin-react'
 import { createPluginSourceVitePipeline } from '../../rolldown/src/vite/index.ts'
 import {
 	collectViteSsrImportFiles,
@@ -372,6 +373,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		singletonBridgePlugin,
 		...sourcePipeline.plugins,
 		createHostModuleVitePlugin(),
+		...(mode === 'development' ? react() : []),
 		routePlugin,
 	]
 }

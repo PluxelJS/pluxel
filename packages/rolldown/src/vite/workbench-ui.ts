@@ -1,8 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
 import {
 	WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
@@ -11,23 +8,29 @@ import {
 	workbenchFederationBuildOutDir,
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
-import { dirname, resolve } from 'pathe'
+import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import {
 	resolveWorkbenchFederationBridgeEntry,
 	resolveWorkbenchFederationShared,
 	type ResolvedFederationShared,
 } from '../workbench/build-contract.ts'
 import {
-	runWorkbenchIsolatedBuild,
+	runWorkbenchFederationBuild,
 	runWorkbenchOutputTransaction,
 } from '../workbench/build-scheduler.ts'
 import { resolveParaglideIntegration } from './paraglide.ts'
 import { validateWorkbenchFederationArtifact } from '../workbench/artifact.ts'
-import type { WorkbenchUiWorkerPayload } from './workbench-ui-worker.ts'
+import {
+	runWorkbenchUiWorker,
+	type WorkbenchUiWorkerPayload,
+} from './workbench-ui-worker.ts'
 
 export type BuildWorkbenchFederationProducerOptions = Readonly<{
 	plan: WorkbenchFederationProducerPlan
+	/** Package root used to resolve generated Bridge entries and producer source dependencies. */
 	root?: string
+	/** Host application root that provides the fixed shared winners. @defaultValue root */
+	applicationRoot?: string
 	outDir?: string
 	minify?: boolean
 	sourcemap?: boolean
@@ -44,9 +47,6 @@ export { canonicalCompatibilitySignature } from '../workbench/build-contract.ts'
 export { resolveWorkbenchFederationShared, type ResolvedFederationShared }
 
 const PRODUCER_STAMP_FILE = 'pluxel-producer.json'
-const require = createRequire(import.meta.url)
-const compilerCwd = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-
 type ProducerStamp = Readonly<{
 	profile: typeof WORKBENCH_PROFILE_VERSION
 	buildContract: typeof WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION
@@ -60,9 +60,10 @@ export async function buildWorkbenchFederationProducer(
 	options: BuildWorkbenchFederationProducerOptions,
 ): Promise<WorkbenchFederationProducerBuild> {
 	const root = resolve(options.root ?? process.cwd())
+	const applicationRoot = resolve(options.applicationRoot ?? root)
 	const plan = assertPlan(options.plan)
 	const outDir = resolve(root, options.outDir ?? workbenchFederationBuildOutDir(plan))
-	const resolvedShared = resolveWorkbenchFederationShared(root)
+	const resolvedShared = resolveWorkbenchFederationShared(applicationRoot)
 	const compatibilitySignature = resolvedShared.signature
 	const result = Object.freeze({
 		outDir,
@@ -86,7 +87,8 @@ export async function buildWorkbenchFederationProducer(
 			const paraglide = resolveParaglideIntegration(root)
 			const payload: WorkbenchUiWorkerPayload = {
 				root,
-				applicationRoot: resolvedShared.resolveRoot,
+				applicationRoot,
+				declarationRoot: commonDirectory(root, applicationRoot),
 				outDir: candidateDir,
 				producer: plan.producer,
 				exposes: Object.fromEntries(
@@ -99,17 +101,16 @@ export async function buildWorkbenchFederationProducer(
 				sourcemap: options.sourcemap ?? false,
 				paraglide: paraglide ? { project: paraglide.project, outdir: paraglide.outdir } : null,
 			}
-			const compilerDiagnostics = await runWorkbenchIsolatedBuild(() =>
-				runCompilerProcess(payload, options.signal),
-			)
+			if (options.signal?.aborted) throw options.signal.reason
+			await runWorkbenchFederationBuild(applicationRoot, () => runWorkbenchUiWorker(payload))
+			if (options.signal?.aborted) throw options.signal.reason
 			const validation = await validateWorkbenchFederationArtifact(candidateDir, {
 				plan,
 				compatibility: resolvedShared.compatibility,
 			})
 			if (validation.valid === false) {
-				const diagnostics = compilerDiagnostics.stderr || compilerDiagnostics.stdout
 				throw new Error(
-					`[workbench-ui] invalid federation producer candidate: ${validation.reason}${diagnostics ? `\n${diagnostics}` : ''}`,
+					`[workbench-ui] invalid federation producer candidate: ${validation.reason}`,
 				)
 			}
 			await writeFile(
@@ -129,66 +130,16 @@ export async function buildWorkbenchFederationProducer(
 	})
 }
 
-async function runCompilerProcess(
-	payload: WorkbenchUiWorkerPayload,
-	signal: AbortSignal | undefined,
-): Promise<{ stdout: string; stderr: string }> {
-	if (signal?.aborted) throw signal.reason
-	const workerUrl = resolveWorkerUrl()
-	const script = [
-		"let source = '';",
-		'for await (const chunk of process.stdin) source += chunk;',
-		`const worker = await import(${JSON.stringify(workerUrl.href)});`,
-		'await worker.runWorkbenchUiWorker(JSON.parse(source));',
-	].join('\n')
-	const args = workerUrl.pathname.endsWith('.ts')
-		? [
-				'--conditions=@pluxel/source',
-				'--import',
-				require.resolve('tsx'),
-				'--input-type=module',
-				'--eval',
-				script,
-			]
-		: ['--input-type=module', '--eval', script]
-	const child = spawn(process.execPath, args, {
-		cwd: compilerCwd,
-		env: process.env,
-		stdio: ['pipe', 'pipe', 'pipe'],
-		signal,
-	})
-	let stdout = ''
-	let stderr = ''
-	child.stdout.setEncoding('utf-8').on('data', (chunk: string) => {
-		stdout += chunk
-	})
-	child.stderr.setEncoding('utf-8').on('data', (chunk: string) => {
-		stderr += chunk
-	})
-	child.stdin.end(JSON.stringify(payload))
-	await new Promise<void>((resolveExit, rejectExit) => {
-		child.once('error', rejectExit)
-		child.once('close', (code, closeSignal) => {
-			if (code === 0) {
-				resolveExit()
-				return
-			}
-			rejectExit(
-				new Error(
-					`[workbench-ui] isolated compiler failed (${closeSignal ?? code ?? 'unknown'}): ${
-						stderr.trim() || stdout.trim() || 'no diagnostic output'
-					}`,
-				),
-			)
-		})
-	})
-	return { stdout: stdout.trim(), stderr: stderr.trim() }
-}
-
-function resolveWorkerUrl(): URL {
-	return import.meta.url.endsWith('.ts')
-		? new URL('./workbench-ui-worker.ts', import.meta.url)
-		: new URL('../internal/workbench-ui-worker.mjs', import.meta.url)
+function commonDirectory(left: string, right: string): string {
+	const target = resolve(right)
+	let current = resolve(left)
+	for (;;) {
+		const path = relative(current, target)
+		if (!isAbsolute(path) && path !== '..' && !path.startsWith('../')) return current
+		const parent = dirname(current)
+		if (parent === current) return current
+		current = parent
+	}
 }
 
 async function isCommittedRevision(

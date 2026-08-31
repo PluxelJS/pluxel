@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import {
 	WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
 	WORKBENCH_FEDERATION_RUNTIME_VERSION,
+	WORKBENCH_FEDERATION_MANTINE_VERSION,
 	WORKBENCH_FEDERATION_SHARED_MODULES,
 	WORKBENCH_FEDERATION_VITE_VERSION,
 	WORKBENCH_PROFILE_VERSION,
@@ -34,6 +35,18 @@ export function resolveWorkbenchFederationShared(root: string): ResolvedFederati
 
 	const sourceRoot = resolve(root)
 	const resolveRoot = findWorkspaceRoot(sourceRoot) ?? sourceRoot
+	assertOptionalSharedPackageVersion(
+		sourceRoot,
+		resolveRoot,
+		'@mantine/core',
+		WORKBENCH_FEDERATION_MANTINE_VERSION,
+	)
+	assertOptionalSharedPackageVersion(
+		sourceRoot,
+		resolveRoot,
+		'@mantine/hooks',
+		WORKBENCH_FEDERATION_MANTINE_VERSION,
+	)
 	const compatibility = createWorkbenchFederationCompatibilitySet({
 		react: resolveRequiredPackageVersion(sourceRoot, resolveRoot, 'react'),
 		reactDom: resolveRequiredPackageVersion(sourceRoot, resolveRoot, 'react-dom'),
@@ -124,14 +137,7 @@ function resolveRequiredPackageVersion(
 	workspaceRoot: string,
 	packageName: string,
 ): string {
-	const resolveFrom = (root: string) =>
-		resolvePackageJsonPathWithOxc(root, packageName, {
-			conditionNames: ['import', 'module', 'browser', 'default'],
-			tsconfig: 'auto',
-		})
-	const packageJsonPath =
-		resolveFrom(sourceRoot) ??
-		(sourceRoot === workspaceRoot ? undefined : resolveFrom(workspaceRoot))
+	const packageJsonPath = resolveSharedPackageJsonPath(sourceRoot, workspaceRoot, packageName)
 	if (!packageJsonPath) {
 		throw new Error(
 			`[workbench-ui] Profile ${WORKBENCH_PROFILE_VERSION} shared package is not installed: ${packageName}`,
@@ -142,6 +148,38 @@ function resolveRequiredPackageVersion(
 		throw new Error(`[workbench-ui] shared package has no exact version: ${packageName}`)
 	}
 	return version
+}
+
+function assertOptionalSharedPackageVersion(
+	sourceRoot: string,
+	workspaceRoot: string,
+	packageName: string,
+	expectedVersion: string,
+): void {
+	const packageJsonPath = resolveSharedPackageJsonPath(sourceRoot, workspaceRoot, packageName)
+	if (!packageJsonPath) return
+	const actualVersion = readPackageVersion(packageJsonPath)
+	if (actualVersion !== expectedVersion) {
+		throw new Error(
+			`[workbench-ui] Profile ${WORKBENCH_PROFILE_VERSION} requires ${packageName}@${expectedVersion}, resolved ${actualVersion}`,
+		)
+	}
+}
+
+function resolveSharedPackageJsonPath(
+	sourceRoot: string,
+	workspaceRoot: string,
+	packageName: string,
+): string | undefined {
+	const resolveFrom = (root: string) =>
+		resolvePackageJsonPathWithOxc(root, packageName, {
+			conditionNames: ['import', 'module', 'browser', 'default'],
+			tsconfig: 'auto',
+		})
+	return (
+		resolveFrom(sourceRoot) ??
+		(sourceRoot === workspaceRoot ? undefined : resolveFrom(workspaceRoot))
+	)
 }
 
 function readPackageVersion(packageJsonPath: string): string {

@@ -13,7 +13,6 @@ import {
 	Textarea,
 	Title,
 } from '@mantine/core'
-import '@mantine/core/styles.css'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDownload, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'

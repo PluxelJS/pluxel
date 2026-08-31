@@ -16,7 +16,6 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import '@mantine/core/styles.css'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import {
 	useRemoteValue,

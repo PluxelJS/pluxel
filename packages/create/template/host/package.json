@@ -22,6 +22,7 @@
 	"devDependencies": {
 		"@example/web": "workspace:*",
 		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
 		"@pluxel/cli": "catalog:pluxel",
 		"@pluxel/rolldown": "catalog:pluxel",
 		"@tabler/icons-react": "catalog:frontend",

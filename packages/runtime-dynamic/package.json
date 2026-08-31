@@ -57,6 +57,7 @@
 		"@pluxel/core": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/runtime": "workspace:^",
+		"@vitejs/plugin-react": "^6.1.1",
 		"crossws": "0.4.12",
 		"elysia": "2.0.0-beta.7",
 		"jsonc-parser": "^3.3.1",
@@ -74,10 +75,10 @@
 		"superjson": "^2.2.6",
 		"tsx": "^4.23.0",
 		"typescript": "catalog:",
-		"vite": "^8.0.0-beta.18"
+		"vite": "^8.2.2"
 	},
 	"peerDependencies": {
-		"vite": ">=8.0.0-beta.18 <9"
+		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"vite": {

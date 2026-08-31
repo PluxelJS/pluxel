@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
+import react from '@vitejs/plugin-react'
 import { dirname, resolve } from 'pathe'
 import {
 	type InlineConfig,
@@ -234,6 +235,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		},
 		plugins: [
 			clientNodeImportGuardPlugin(),
+			...(hasClientEntries ? react() : []),
 			...(opts.sourcePlugins ??
 				pluxelRuntimeSourceVitePlugins({
 					name: 'pluxel:dynamic-runtime-source',

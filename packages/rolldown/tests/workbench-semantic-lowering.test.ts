@@ -46,8 +46,8 @@ function fixtureFiles(): Record<string, string> {
 			type: 'module',
 			devDependencies: {
 				'@pluxel/runtime': '1.0.0',
-				react: '19.2.7',
-				'react-dom': '19.2.7',
+				react: '19.2.8',
+				'react-dom': '19.2.8',
 			},
 		}),
 		'tsconfig.json': JSON.stringify({
@@ -66,8 +66,8 @@ function fixtureFiles(): Record<string, string> {
 		}),
 		'src/settings.tsx': 'export default function Settings() { return null }\n',
 		'src/picker.tsx': 'export default function Picker() { return null }\n',
-		...packageFiles('react', '19.2.7', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...packageFiles('react-dom', '19.2.7', ['.', './client']),
+		...packageFiles('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...packageFiles('react-dom', '19.2.8', ['.', './client']),
 		...packageFiles('@pluxel/runtime', '1.0.0', [
 			'.',
 			'./capnweb',
@@ -235,8 +235,8 @@ class SemanticPlugin {
 			type: 'module',
 			devDependencies: {
 				'@pluxel/runtime': '1.0.0',
-				react: '19.2.7',
-				'react-dom': '19.2.7',
+				react: '19.2.8',
+				'react-dom': '19.2.8',
 			},
 		})
 		files['packages/nested/tsconfig.json'] = JSON.stringify({

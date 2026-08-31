@@ -11,7 +11,6 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import '@mantine/core/styles.css'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useState } from 'react'

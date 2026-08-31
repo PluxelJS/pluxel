@@ -1,6 +1,6 @@
 ---
 title: 插件间 UI 组合
-description: 用 Attachment 覆盖 provider 设置、FontManager collection 和 BotManager 等真实场景。
+description: 用官方 FontsPlugin、provider 设置、多 collection 与 BotManager 说明 Attachment 的最小正确形状。
 ---
 
 Attachment 适合“provider 拥有界面，consumer 决定把它放在哪里”的场景。它只组合每次打开所需的
@@ -87,9 +87,109 @@ export default function HttpSettingsPanel() {
 这条路径只有一个 renderer 和一个 provider API。Consumer 不实现转发 target，不复制 provider 的 UI，也不把
 设置 state 搬到 Workbench。
 
-## Provider catalog + consumer selection
+## 官方 FontsPlugin：先用 provider-only
 
-FontManager 类型的场景多一个真实 owner：
+`@pluxel/fonts` 是这套模型的官方参考实现。它的真实需求是：
+
+- FontsPlugin 拥有唯一的 managed 字体集合、持久化和 provider-wide 默认 family；
+- Canvas、ECharts、Takumi 只希望在自己的详情页放置同一个选择器；
+- consumer 不拥有另一份选择状态，也不需要修改 FontsPlugin 之外的数据。
+
+因此最诚实的拓扑是一个本地 manager View 加一个 provider-only Attachment，而不是为了形式对称创建空的
+consumer target：
+
+```ts
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import { workbench } from '@pluxel/runtime/workbench'
+
+export interface FontSelectionApi extends RpcTarget {
+	snapshot(): Promise<FontSelectionSnapshot>
+	setPreferredFamily(family: string | null): Promise<FontSelectionSnapshot>
+}
+
+export const FontsWorkbench = workbench.define({
+	manager: workbench.view<FontsManagerApi>({
+		renderer: workbench.entry(import.meta.url, './ui/manager.tsx'),
+		placement: workbench.tab({
+			label: 'Fonts',
+			icon: workbench.icons.Typography,
+		}),
+	}),
+	selection: workbench.attachment<FontSelectionApi>({
+		renderer: workbench.entry(import.meta.url, './ui/selection.tsx'),
+	}),
+})
+```
+
+FontsPlugin 只发布自己拥有的两个 API。Factory 每次打开都会返回 fresh target；当前 target 不保留
+subscription 或其他 per-open 资源，因此不需要制造空 disposer：
+
+```ts
+this.ctx.workbench?.publish(FontsWorkbench, {
+	manager: () => this.createWorkbenchManager(),
+	selection: () => this.createSelectionTarget(),
+})
+```
+
+Canvas 等 consumer 仍通过 constructor dependency 获得 `FontsPlugin`，Workbench 只增加 placement：
+
+```ts
+export const CanvasWorkbench = workbench.define({
+	fonts: FontsWorkbench.selection.place(
+		workbench.tab({
+			label: 'Fonts',
+			icon: workbench.icons.Typography,
+			order: 30,
+		}),
+	),
+})
+
+@Plugin()
+export class CanvasPlugin extends BasePlugin {
+	constructor(private readonly fonts: FontsPlugin) {
+		super()
+	}
+
+	override init() {
+		this.ctx.workbench?.publish(CanvasWorkbench, {
+			fonts: { provider: this.fonts },
+		})
+	}
+}
+```
+
+Provider-owned renderer 用 exact descriptor 取得唯一 root：
+
+```tsx
+export default function FontSelectionPanel() {
+	const { provider } = useWorkbench(FontsWorkbench.selection)
+	// provider is RpcStub<FontSelectionApi>
+}
+```
+
+这套实现适合作为默认教材，原因不是它使用了最多概念，而是每个概念都有真实 owner：
+
+- manager API 才能上传和删除；selection API 只暴露读取候选和修改统一默认值，调用面没有被 UI 复用扩大；
+- consumer stop 只撤销 placement；字体、preference 和 native registration 继续属于 FontsPlugin；
+- Workbench disabled 时，constructor dependency、字体恢复、注册和渲染路径完全不变；
+- 字体数量变化不会增加 definition、View、Attachment、MF expose 或 WebSocket；
+- RPC 输入的大小、family、容量和持久化失败仍由 FontsPlugin 校验，不额外引入 Workbench schema；
+- UI 对 await 得到的 Cap’n Web snapshot 做本地拷贝后释放 transport result；没有已证实的实时同步需求，所以保留显式刷新，
+  不预先增加 watch/subscription。
+
+这里的“选择”仍是 provider-wide preference。把选择器放到 Canvas、ECharts 或 Takumi 页面，不会把它变成
+consumer-owned state。完整业务能力见[字体插件](../plugins/rendering/fonts.md)，真实源码位于
+`plugins/render/fonts/src/workbench.ts`、`src/index.ts` 和 `src/ui/index.tsx`。
+
+## 多 collection 且 consumer 自有选择
+
+只有产品确实同时满足下面三个条件，才需要从 provider-only Attachment 升级成双 root：
+
+- provider 拥有多个动态 collection；
+- consumer 持久化自己的 `collectionId` 与 fallback policy；
+- picker 同时需要读 provider catalog 和修改 consumer selection。
+
+这种 FontManager 场景多一个真实 owner：
 
 - provider 拥有字体资产和 collection catalog；
 - consumer 拥有“当前选择哪个 collection”及自己的 fallback policy；

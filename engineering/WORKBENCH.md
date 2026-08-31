@@ -297,22 +297,24 @@ Toolchain 在 TypeScript 擦除前读取 `workbench.define()` 和 literal `workb
 
 - `react`、`react/jsx-runtime`、`react/jsx-dev-runtime`；
 - `react-dom`、`react-dom/client`；
+- `@mantine/core`、`@mantine/hooks`；
 - `@module-federation/bridge-react`；
 - `@pluxel/runtime/workbench`、`/client`、`/react`。
 - `@pluxel/runtime/internal/workbench-react`。
 
-版本必须精确匹配并使用 `loaded-first`。Shell 先建立 winner，再按需注册 remote；不接受第二份 React，也不允许
-Plugin 局部覆盖 share policy。Mantine、router 和领域 library 等普通依赖由 producer 自己 bundle。
+版本必须精确匹配并使用 `loaded-first`。Shell 先建立 winner，再按需注册 remote；不接受第二份 React 或 Mantine，
+也不允许 Plugin 局部覆盖 share policy。Producer 对固定 shared 使用 `import: false`，不携带 fallback。Router、编辑器和
+领域 library 等未进入固定 profile 的依赖继续由 producer 自己 bundle。
 
 Bridge wrapper 是 toolchain 生成的内部 ABI。它把 opened handle 与 host facade 放进每个 Bridge instance 独立的
 React Context，然后调用零 props renderer。Remote 不读取官方 Shell private Context。Bridge destroy 是释放 portal、effect、
 subscription 和 document chrome 的唯一 UI lifecycle 边界。
 
-每个 Bridge application 是独立 React root，因此普通 UI library 的 Context 不能从 Shell 跨 root 继承。使用
-Mantine、router、i18n 或同类 Context library 的 renderer，必须在自己的 renderer root 内安装对应 Provider，并由 producer
-携带所需 CSS。它可以从 `host.locale`、`host.colorScheme` 等固定 portable fact 初始化或同步表现，但不能把 Shell 的私有
-Provider、theme object 或 CSS 约定当成 Workbench contract。把 UI library 加入 singleton shared 也不会改变 React Context
-的祖先边界。
+每个 Bridge application 是独立 React root，因此 UI library 的 Context 不能从 Shell 跨 root 继承。Mantine renderer 必须在
+自己的 renderer root 内创建 `MantineProvider`，但 Provider 和全部 Mantine component/hook 实现来自 Shell 提供的 singleton
+shared module；`@mantine/core` 基础 CSS 同样只由 Shell 加载，producer build 会拒绝重复导入。Router、i18n 或其他 Context
+library 仍由 producer 自己拥有 Provider、module 和 CSS。Remote 可以从 `host.locale`、`host.colorScheme` 等固定 portable fact
+初始化或同步表现，但不能读取 Shell 的私有 Provider 或 theme object。共享 module instance 不会改变 React Context 的祖先边界。
 
 开发期 renderer 变化先构建并验证新的完整 producer candidate。失败不改变当前 inventory；成功提交后触发整页 reload。
 不做页内 remote replacement，不把新 roots 接到旧 Bridge，也不在加载失败时尝试其他 build revision。

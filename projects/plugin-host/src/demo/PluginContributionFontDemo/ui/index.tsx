@@ -1,5 +1,4 @@
 import { Alert, MantineProvider, Paper, Select, Stack, Text } from '@mantine/core'
-import '@mantine/core/styles.css'
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { useEffect, useMemo, useState } from 'react'
 import { FontManagerWorkbench } from '../../PluginContributionFontDemo.workbench'
