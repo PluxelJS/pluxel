@@ -277,6 +277,11 @@ dynamicRuntimeVitePlugin({
 
 ## 共享宿主策略
 
+宿主配置是封闭契约，不是任意 metadata 容器。TypeScript 会在 `defineStaticRuntime()` 的
+`configure()` 返回值和 `defineDynamicRuntimeConfig()` 的直接输入中拒绝未知顶层字段，也会严格检查
+`workbench` 等封闭子配置；Runtime 对 JavaScript、类型断言和外部输入重复执行相同的运行时校验。
+Plugin 业务配置、产品 metadata 与宿主策略应进入各自已有入口，不能借未知字段附加到 host config。
+
 ### Plugin config 与 runtime state
 
 Host 的两类状态不要混淆：

@@ -1,5 +1,9 @@
 import type { PluginConstructor } from '@pluxel/core'
-import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
+import type {
+	ExactConfigProperty,
+	ExactConfigShape,
+	RuntimeHostConfig,
+} from '@pluxel/runtime/internal/static-host'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import { assertDynamicPluginSources, type DynamicPluginSource } from './sources'
 
@@ -28,6 +32,7 @@ const DYNAMIC_RUNTIME_CONFIG_FIELDS = new Set([
 	'logging',
 ])
 const DYNAMIC_RUNTIME_STORAGE_FIELDS = new Set(['persistenceDir'])
+const DYNAMIC_RUNTIME_WORKBENCH_FIELDS = new Set(['enabled', 'uiBasePath'])
 
 export type DynamicRuntimeStorageOptions = Readonly<{
 	/** Directory for config/runtime-state persistence, relative to `root` unless absolute. */
@@ -67,7 +72,25 @@ type MarkedDynamicRuntimeConfig = DynamicRuntimeConfig & {
 	readonly [DYNAMIC_RUNTIME_CONFIG_MARKER]?: true
 }
 
-export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(config: T): T {
+type ExactDynamicRuntimeConfig<Config extends DynamicRuntimeConfig> = Config extends unknown
+	? ExactConfigShape<Config, DynamicRuntimeConfig> extends never
+		? never
+		: ExactConfigProperty<
+				ExactConfigProperty<Config, 'storage', DynamicRuntimeConfig['storage']>,
+				'workbench',
+				DynamicRuntimeConfig['workbench']
+			>
+	: never
+
+type ExactDynamicRuntimeConfigConstraint<Config extends DynamicRuntimeConfig> = [Config] extends [
+	ExactDynamicRuntimeConfig<Config>,
+]
+	? unknown
+	: never
+
+export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(
+	config: T & ExactDynamicRuntimeConfigConstraint<T>,
+): T {
 	assertDynamicRuntimeConfig(config)
 	Object.defineProperty(config, DYNAMIC_RUNTIME_CONFIG_MARKER, {
 		value: true,
@@ -110,6 +133,7 @@ export function assertDynamicRuntimeConfig(
 	)
 	const runtimeConfig = config as DynamicRuntimeConfig
 	assertStorageConfig(runtimeConfig.storage)
+	assertRuntimePlaneConfig(runtimeConfig.workbench, runtimeConfig.management)
 	assertFixedPlugins(runtimeConfig.plugins)
 	assertDynamicPluginSources(runtimeConfig.sources)
 }
@@ -147,5 +171,19 @@ function assertStorageConfig(storage: unknown): void {
 		(typeof persistenceDir !== 'string' || !persistenceDir.trim() || persistenceDir.includes('\0'))
 	) {
 		throw new TypeError('[runtime-dynamic] storage.persistenceDir must be a non-empty path')
+	}
+}
+
+function assertRuntimePlaneConfig(workbench: unknown, management: unknown): void {
+	if (management !== undefined && management !== true) {
+		throw new TypeError('[runtime-dynamic] management must be true when provided')
+	}
+	if (workbench === undefined || workbench === false) return
+	if (!workbench || typeof workbench !== 'object' || Array.isArray(workbench)) {
+		throw new TypeError('[runtime-dynamic] workbench must be false or a configuration object')
+	}
+	assertKnownFields(workbench, DYNAMIC_RUNTIME_WORKBENCH_FIELDS, '[runtime-dynamic] workbench')
+	if ((workbench as { enabled?: unknown }).enabled !== true) {
+		throw new TypeError('[runtime-dynamic] workbench.enabled must be true')
 	}
 }

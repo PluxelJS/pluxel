@@ -80,7 +80,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			profile: 'dev',
 			runtimeState: { snapshot: { autoStart: [demoAddress] } },
 			workbench: {
-				autoStart: true,
+				enabled: true,
 				uiBasePath: '/__pluxel/workbench',
 			},
 			logging: false,
@@ -88,10 +88,22 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 
 		expect(config.runtimeState?.snapshot?.autoStart).toEqual([demoAddress])
 		expect(config.workbench).toEqual({
-			autoStart: true,
+			enabled: true,
 			uiBasePath: '/__pluxel/workbench',
 		})
 		expect(config.context).toBeUndefined()
+	})
+
+	it.each([
+		['access', { exposure: 'private' }],
+		['pluginGroups', []],
+	] as const)('rejects removed workbench.%s at the config boundary', (field, value) => {
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				root: '/repo',
+				workbench: { enabled: true, [field]: value },
+			} as never),
+		).toThrow(new RegExp(`unsupported "${field}"`, 'i'))
 	})
 
 	it('accepts explicit mutable file sources without package-manager configuration', () => {

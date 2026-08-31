@@ -280,6 +280,10 @@ version 5；
 程序化 dynamic launcher 只接受 config module path，让 config、固定插件和 mutable source 都经由 launcher 所有的 canonical
 Vite SSR runner 求值。object config 不跨 module realm 传递 constructor。
 
+`defineDynamicRuntimeConfig()` 捕获直接输入的具体类型，并对顶层、`storage` 与 `workbench` 这些封闭结构执行 unknown-key
+检查；不能依靠 TypeScript 的普通结构兼容把额外策略字段混入配置。Runtime module boundary 仍重复执行结构校验，覆盖 JavaScript、
+类型断言和外部 module value。
+
 ## Node module service
 
 `NodeModuleService` 是常驻 root service，`ctx.nodeModules` 是保留 owner Context 的隔离视图。作者只通过
@@ -405,6 +409,11 @@ default export 的 application authoring boundary，不求值 product，也不�
 fixed catalog 只限制可用插件代码集合，不移除运行时启停。ConfigService 与 RuntimeState 仍在每次启动时加载 plugin
 config records、auto-start policy、dependency overrides 和 persistence state。process session intent 总在 cold boot 时清空。`configure()` 的返回值同样在每次 host startup
 重新解析，不是构建时序列化常量。
+
+`defineStaticRuntime()` 捕获 `configure()` 的具体返回类型，对顶层 host options 与封闭的 `workbench` 子配置执行 unknown-key
+检查；这弥补 TypeScript 对 contextually typed callback return 不执行深层 excess-property checking 的限制。Runtime startup
+继续验证真实对象，类型注解、断言或 JavaScript 不能绕过运行时边界。Custom persistence 等显式 extension contract 保持结构开放，
+不会被递归 exact 化。
 
 `configEnvironmentBootstrap` 只把当前 startup environment 解码成 ConfigService initial snapshot。Binding 必须指向同一 fixed
 catalog 中 implementation 的 default node，并与该 Plugin 实际 root config schema 做 object identity 断言；同一 implementation

@@ -6,6 +6,11 @@ import type {
 	StaticRuntimeStartupContext,
 } from './types.ts'
 import { mergeConfigRecords, withPluginConfigEnvironment } from '@pluxel/runtime/internal'
+import {
+	resolveRuntimePlanePlan,
+	type ExactConfigProperty,
+	type ExactConfigShape,
+} from '@pluxel/runtime/internal/static-host'
 import { resolveHostEnv } from '@pluxel/runtime/environment'
 import { join } from 'pathe'
 import { resolveConfigEnvironmentBootstrap } from './config-environment.ts'
@@ -15,6 +20,30 @@ const STATIC_RUNTIME_APPLICATION_MARKER = Symbol.for('pluxel.staticRuntimeApplic
 type MarkedStaticRuntimeApplication = StaticRuntimeApplication & {
 	readonly [STATIC_RUNTIME_APPLICATION_MARKER]?: true
 }
+
+type ExactStaticRuntimeHostOptions<Options extends StaticRuntimeHostOptions> =
+	Options extends unknown
+		? ExactConfigShape<Options, StaticRuntimeHostOptions> extends never
+			? never
+			: ExactConfigProperty<Options, 'workbench', StaticRuntimeHostOptions['workbench']>
+		: never
+
+type StaticRuntimeApplicationInput<
+	TPlugins extends readonly PluginConstructor[],
+	TBindings extends StaticRuntimeBindings,
+	THostOptions extends StaticRuntimeHostOptions,
+> = Omit<StaticRuntimeApplication<TPlugins, TBindings>, 'configure'> & {
+	/** Bundled resolver code. Returned values are resolved again for every host startup. */
+	configure?: (
+		startup: StaticRuntimeStartupContext<TBindings>,
+	) => THostOptions | Promise<THostOptions>
+}
+
+type ExactStaticRuntimeApplicationConstraint<THostOptions extends StaticRuntimeHostOptions> = [
+	THostOptions,
+] extends [ExactStaticRuntimeHostOptions<THostOptions>]
+	? unknown
+	: { configure?: never }
 
 const APPLICATION_FIELDS = new Set([
 	'name',
@@ -39,9 +68,11 @@ const HOST_OPTION_FIELDS = new Set([
 
 export function defineStaticRuntime<
 	const TPlugins extends readonly PluginConstructor[],
-	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,
+	TBindings extends StaticRuntimeBindings,
+	const THostOptions extends StaticRuntimeHostOptions,
 >(
-	application: StaticRuntimeApplication<TPlugins, TBindings>,
+	application: StaticRuntimeApplicationInput<TPlugins, TBindings, THostOptions> &
+		ExactStaticRuntimeApplicationConstraint<THostOptions>,
 ): StaticRuntimeApplication<TPlugins, TBindings> {
 	assertKnownFields(application, APPLICATION_FIELDS, '[runtime-static] Static application')
 	if (!String(application.name ?? '').trim()) {
@@ -91,6 +122,7 @@ export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRu
 		throw new TypeError('[runtime-static] Static application configure() must return an object')
 	}
 	assertKnownFields(options, HOST_OPTION_FIELDS, '[runtime-static] configure() result')
+	resolveRuntimePlanePlan(options.workbench, options.management)
 	const environment = resolveHostEnv(startup.env)
 	const seededConfigService =
 		environmentSeed.length === 0

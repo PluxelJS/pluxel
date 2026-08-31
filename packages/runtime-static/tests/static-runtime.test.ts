@@ -34,7 +34,7 @@ import * as runtimeStaticVite from '@pluxel/runtime-static/vite'
 import { reloadStaticRuntime } from '../src/hmr'
 import { createStaticRuntimeHost } from '../src/internal/host'
 import { runStaticNodeApplication } from '../src/internal/node-application'
-import type { StaticRuntimeHost } from '../src/types'
+import type { StaticRuntimeHost, StaticRuntimeStartupContext } from '../src/types'
 import { OptionalConsumer, OptionalProvider, optionalRuns } from './plugins/OptionalPlugins'
 import { RequiredConsumer } from './plugins/RequiredConsumer'
 import { RequiredProvider } from './plugins/RequiredProvider'
@@ -483,10 +483,10 @@ describe('@pluxel/runtime-static', () => {
 
 		let bindingValue = ''
 		const runtime = await createStaticRuntimeTestHost(
-			defineStaticRuntime<readonly [], { serviceUrl: string }>({
+			defineStaticRuntime({
 				name: 'bindings',
 				plugins: [],
-				configure({ bindings }) {
+				configure({ bindings }: StaticRuntimeStartupContext<{ serviceUrl: string }>) {
 					bindingValue = bindings.serviceUrl
 					return {
 						configService: { mode: 'memory' },
@@ -501,6 +501,21 @@ describe('@pluxel/runtime-static', () => {
 		} finally {
 			await runtime.stop()
 		}
+	})
+
+	it.each([
+		['access', { exposure: 'private' }],
+		['pluginGroups', []],
+	] as const)('rejects removed workbench.%s at startup', async (field, value) => {
+		const application = defineStaticRuntime({
+			name: `removed-workbench-${field}`,
+			plugins: [],
+			configure: () => ({ workbench: { enabled: true, [field]: value } }) as never,
+		})
+
+		await expect(createStaticRuntimeTestHost(application)).rejects.toThrow(
+			new RegExp(`unsupported "${field}"`, 'i'),
+		)
 	})
 
 	it('uses config snapshot v3 from the reserved environment and exposes lowered schema source', async () => {
