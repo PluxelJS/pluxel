@@ -21,6 +21,9 @@
 
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
   decoratorless Plugin declaration。
+- [`WORKBENCH_STANDARD_PAGES.md`](WORKBENCH_STANDARD_PAGES.md)：研究host-rendered Markdown document + typed snapshot/action slots 的
+  Standard Page；Workbench是第一版adapter，resource/runtime protocol保持宿主中性，在Config resource与完整React View之间提供受限、
+  零Plugin producer的管理界面。
 
 已实施的架构与用户行为仍分别从 [`../README.md`](../README.md) 与 [`../../docs/index.md`](../../docs/index.md)
 进入当前文档；上面的 accepted proposal 索引只用于跟踪未完成的迁移 gate。
