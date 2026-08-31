@@ -315,6 +315,3 @@ packages/*/data/
 
 # Temporary type probes (elysia typing checks)
 **/.tmp-elysia-typing-check.ts
-
-# tsdown/rolldown-plugin-dts intermediate outputs
-packages/runtime/packages/

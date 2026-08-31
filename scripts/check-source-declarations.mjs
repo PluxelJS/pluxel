@@ -4,6 +4,8 @@ import { relative, resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
 const sourceRoots = ['packages', 'plugins', 'projects']
 const ignoredDirectories = new Set(['.git', '.pluxel', '.vercel', 'dist', 'node_modules', 'public'])
+const declarationPattern = /\.d\.[cm]?ts$/
+const declarationMapPattern = /\.d\.[cm]?ts\.map$/
 const allowedDeclarations = new Set([
 	'packages/runtime-dynamic/src/third-party.d.ts',
 	'packages/test/src/vendor-types.d.ts',
@@ -20,18 +22,18 @@ const declarationGroups = await Promise.all(
 const declarations = declarationGroups.flat()
 const unexpected = declarations
 	.map((path) => relative(root, path).replaceAll('\\', '/'))
-	.filter((path) => path.endsWith('.d.ts.map') || !allowedDeclarations.has(path))
-	.sort()
+	.filter((path) => declarationMapPattern.test(path) || !allowedDeclarations.has(path))
+	.toSorted()
 
 if (unexpected.length > 0) {
-	console.error(
+	process.stderr.write(
 		`Unexpected generated declarations in source directories:\n- ${unexpected.join('\n- ')}\n` +
-			'Declaration builds must keep intermediate output in dist or a disposable cache.',
+			'Declaration builds must keep intermediate output in dist or a disposable cache.\n',
 	)
 	process.exitCode = 1
 } else {
-	console.info(
-		`Source declaration check passed (${allowedDeclarations.size} explicit declarations)`,
+	process.stdout.write(
+		`Source declaration check passed (${allowedDeclarations.size} explicit declarations)\n`,
 	)
 }
 
@@ -40,7 +42,9 @@ async function declarationFiles(directory, insideSource) {
 	try {
 		entries = await readdir(directory, { withFileTypes: true })
 	} catch (error) {
-		if (error?.code === 'ENOENT') return []
+		if (error?.code === 'ENOENT') {
+			return []
+		}
 		throw error
 	}
 
@@ -48,10 +52,13 @@ async function declarationFiles(directory, insideSource) {
 		entries.map((entry) => {
 			const path = resolve(directory, entry.name)
 			if (entry.isDirectory()) {
-				if (ignoredDirectories.has(entry.name)) return []
+				if (ignoredDirectories.has(entry.name)) {
+					return []
+				}
 				return declarationFiles(path, insideSource || entry.name === 'src')
 			}
-			return insideSource && (entry.name.endsWith('.d.ts') || entry.name.endsWith('.d.ts.map'))
+			return declarationMapPattern.test(entry.name) ||
+				(insideSource && declarationPattern.test(entry.name))
 				? [path]
 				: []
 		}),
