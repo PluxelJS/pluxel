@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
@@ -111,6 +111,24 @@ describe('create-pluxel', () => {
 		assert.equal(
 			JSON.parse(await readFile(resolve(temporaryRoot, 'empty/package.json'), 'utf8')).private,
 			true,
+		)
+	})
+
+	it('rejects external dependency versions outside the named catalogs', async () => {
+		const result = await run([bin, 'unmanaged-catalog', '--no-install'], temporaryRoot)
+		assert.equal(result.code, 0, result.stderr)
+
+		const generated = resolve(temporaryRoot, 'unmanaged-catalog')
+		const manifestPath = resolve(generated, 'packages/domain/package.json')
+		const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+		manifest.dependencies = { nanoid: '^5.1.6' }
+		await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, '\t')}\n`)
+
+		const governance = await run(['scripts/check-workspace-governance.mjs'], generated)
+		assert.notEqual(governance.code, 0)
+		assert.match(
+			governance.stderr,
+			/packages\/domain\/package\.json: dependencies\.nanoid must be governed by a catalog/,
 		)
 	})
 

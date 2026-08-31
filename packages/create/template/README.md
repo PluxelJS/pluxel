@@ -20,6 +20,8 @@ The root installs `pncat` as the only catalog-management interface. Versions are
 `pncat.config.ts`; use `pnpm catalog:add -- <package>`, `pnpm catalog:migrate`, and
 `pnpm catalog:clean` instead of editing catalog entries or package references by hand. Packages still
 declare every dependency they directly use: the root centralizes version policy, not dependency ownership.
+The governance check rejects bare third-party version specifiers, so every external version remains visible
+in one named catalog while internal workspace and peer edges retain their package-owned contracts.
 
 The host package build runs its one Vite config first, then [`host/tsdown.config.ts`](host/tsdown.config.ts)
 uses `staticApplication()` and copies `host/web/dist` into `host/dist/public`. The host finally runs

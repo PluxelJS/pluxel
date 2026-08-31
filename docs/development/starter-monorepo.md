@@ -78,7 +78,8 @@ React singleton、runtime 与三个 Plugin package；两边的 React 版本都�
 根目录预装 `pncat`，并用 `pluxel`、`frontend`、`backend`、`test`、`tooling` named catalogs 集中版本政策。
 新增、重新分组或清理依赖分别使用 `pnpm catalog:add -- <package>`、`pnpm catalog:migrate` 和
 `pnpm catalog:clean`，不要手改 catalog 与 package 引用。集中的是版本选择，不是依赖所有权：每个 workspace
-仍声明直接使用的包。Plugin 生产代码通常只需要 `@pluxel/runtime`；测试中的 `@pluxel/test` 及其
+仍声明直接使用的包。governance 会拒绝绕过 named catalog 的第三方裸版本，同时保留内部 workspace dependency
+和 peer contract。Plugin 生产代码通常只需要 `@pluxel/runtime`；测试中的 `@pluxel/test` 及其
 `@pluxel/core` peer、Vitest、TypeScript 继续属于各 Plugin 的 `devDependencies`。pnpm 会复用安装内容，重复声明
 不会产生多份物理安装。
 

@@ -26,6 +26,8 @@ final rename.
 `pluxel new` and build commands later. That generated-project dependency is not an implementation
 dependency of this package. The starter root also installs `pncat` as the sole interface for catalog
 changes; individual packages continue declaring their direct runtime, peer and development dependencies.
+Generated governance rejects bare third-party versions so the named catalogs remain the single version
+policy authority, while local package edges retain their package-owned workspace and peer contracts.
 
 Maintainer checks:
 

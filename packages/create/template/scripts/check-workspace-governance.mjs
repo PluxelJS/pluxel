@@ -86,6 +86,9 @@ const packageManifests = await Promise.all(
 		return { manifestPath, manifest: await readJson(manifestPath) }
 	}),
 )
+const workspacePackageNames = new Set(
+	packageManifests.map(({ manifest }) => manifest.name).filter(Boolean),
+)
 for (const { manifestPath, manifest } of packageManifests) {
 	for (const field of dependencyFields) {
 		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
@@ -94,8 +97,8 @@ for (const { manifestPath, manifest } of packageManifests) {
 			if (expectedSpecifier && specifier !== expectedSpecifier) {
 				errors.push(`${relative(manifestPath)}: ${field}.${name} must use ${expectedSpecifier}`)
 			}
-			if (specifier.startsWith('catalog:') && !catalogName) {
-				errors.push(`${relative(manifestPath)}: ${field}.${name} is missing from the catalog`)
+			if (!catalogName && !workspacePackageNames.has(name)) {
+				errors.push(`${relative(manifestPath)}: ${field}.${name} must be governed by a catalog`)
 			}
 		}
 	}
