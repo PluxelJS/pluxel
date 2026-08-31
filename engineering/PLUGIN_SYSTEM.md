@@ -222,6 +222,12 @@ owner effects，因此 generation stop、replacement、start rollback 和 shutdo
 publication，不取消已经开始的调用。runtime 自身固定注册基础插件查询与生命周期命令，这些 handler 只调用既有
 runtime use case，不复制 graph 或 commit 逻辑。
 
+跨 Plugin 的 carrier publication 是独立路径：provider 创建 `ctx.commands.createMount()`，只通过领域化
+`registerCommand()` 接受 carrier declaration。Mount 利用 caller-capability binder 固定 provider 与 consumer generation，
+把 exact direct command wrapper 和同步 installer cleanup 归入正确 effects；调用方不传 owner Context。它不创建 secondary
+registry、不镜像 root catalog，也不让 registry-installed compatible-replacement handle 成为 route identity。Root 与
+carrier exposure 必须分别显式选择。
+
 Management-enabled host 预安装 owner-bound `ctx.managementAccess`。认证 Plugin 可调用一次 `provide()` 发布唯一 provider；candidate
 registration 不因 `init()` 成功前或 commit publication 前而开放，Runtime 只选择当前 running generation。回调进入 owner invocation
 admission，成功的 remote Management call 将 lease 延长到 result/observer settle，因此 replacement/stop 能取消长调用并等待 drain。

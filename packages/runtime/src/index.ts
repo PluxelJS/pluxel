@@ -105,7 +105,7 @@ export {
 	type WorkspacePersistenceBackendOptions,
 } from './services/persistence/PersistenceService'
 export type { ConfigServiceConfig } from './services/ConfigService'
-export type { CommandCatalogSnapshot } from './services/CommandsService'
+export type { CommandCatalogSnapshot, CommandMount } from './services/CommandsService'
 export type {
 	ManagementAccessMethod,
 	ManagementAccessPrincipal,

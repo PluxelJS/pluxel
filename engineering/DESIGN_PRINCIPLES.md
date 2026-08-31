@@ -29,6 +29,8 @@
   创建前组合，Plugin 不能追加、替换或运行时安装 capability。
 - Workbench definition 只能通过可选的 `ctx.workbench?.publish()` 发布；页面 API 直接使用 fresh Cap’n Web
   `RpcTarget`，跨 Plugin UI 只使用 provider-owned Attachment 与 consumer-owned placement。
+- command 的 root catalog publication 与 carrier-specific publication 是两个显式决定。Carrier provider 通过
+  caller-bound mount 固定 provider/consumer ownership，不接受 caller-supplied owner，也不自动镜像 root catalog。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选Workbench。
 

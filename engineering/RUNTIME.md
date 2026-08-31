@@ -101,6 +101,17 @@ running 时，Core 统一关闭 generation gate、拒绝新调用、abort 已接
 registration handle 同样不能越过已关闭 gate。单独调用 registration disposer 只撤销 catalog publication，不会取消已经
 开始的调用或关闭同 owner 的其他 command admission。
 
+需要让其他 Plugin 向 provider 自有 router、SDK callback 或局部 catalog 发布 command 时，provider 在 `init()` 中创建
+`ctx.commands.createMount<CarrierContext>()`，再只通过自己的领域 `registerCommand()` 暴露写入口。Mount field 被 dependency
+facade 读取时，Core 现有 caller-capability binder 产生固定 consumer generation 的 view；调用方不能传入或覆盖 owner。
+`mount.bind(direct, install)` 捕获当前 command implementation，由 Runtime 在每次执行期间同时持有 provider 与 publication
+owner admission，并把同步 installer 返回的 registration 纳入 publication owner effects。两侧相同则只取得一次 lease。
+
+Mount 不提供 catalog、lookup、subscription、按 name 执行或整体手动 dispose，也不接受 registry 返回的
+replacement-following installed handle。手动撤销一条 binding 只关闭未来 route/lookup，不取消已经接纳的调用；provider 或
+consumer stop/replacement 则会拒绝新调用、abort 并 drain 已接纳的 command/presenter，随后撤销各自 publication。Root
+publication 与 carrier publication 始终显式独立，Runtime 不镜像 root catalog，也不维护 secondary registry。
+
 基础 `plugin.list`、`plugin.status.get`、`plugin.auto-start.set`、`plugin.start`、`plugin.stop`、`plugin.restart` 由 root Commands
 服务固定提供。查询委托 `pluginStatusOverview` / `pluginStatus`；持久策略 mutation 与本次进程 lifecycle command 使用各自的 runtime use case，
 但最终都进入同一个 coordinator transaction 与 Core commit 事实源。CLI、Agent、HTTP 和 Workbench 是宿主 carrier；它们负责授权、确认、

@@ -4,6 +4,7 @@ import {
 	defineCommand,
 	type CommandCatalogSnapshot,
 	type CommandDescriptor,
+	type DirectCommand,
 	type InstalledCommand,
 } from '../src'
 import { Type, obj } from '../src/typebox'
@@ -36,6 +37,25 @@ function versionedCommand(version: string, presentation: 'first' | 'replacement'
 }
 
 describe('@pluxel/commands registry', () => {
+	const assertDirectCommandDistinction = () => {
+		type Input = { value: number }
+		type Output = { value: number; version: string }
+
+		const direct: DirectCommand<Input, Output> = versionedCommand('v1')
+		const installed = createCommandRegistry().register(direct)
+		const installedOnly: InstalledCommand<Input, Output> = installed
+		const acceptDirect = (_command: DirectCommand<Input, Output>): void => {}
+
+		acceptDirect(direct)
+		// @ts-expect-error A disposable object is a registration, not a direct definition.
+		acceptDirect({ ...direct, dispose() {} })
+		// @ts-expect-error Installed handles follow compatible catalog replacement, not one implementation.
+		acceptDirect(installed)
+		// @ts-expect-error Hiding dispose does not erase the installed-command identity.
+		acceptDirect(installedOnly)
+	}
+	void assertDirectCommandDistinction
+
 	const assertDynamicLookupOutput = () => {
 		const registry = createCommandRegistry()
 		registry.register(versionedCommand('v1'))

@@ -10,9 +10,11 @@ import {
 import type { Context as CoreContext } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/internal'
 import { createPluginManagementCommands } from './commands/plugin-management'
+import { createCommandMount, type CommandMount } from './commands/CommandMount'
 import { pinOwnerContext } from '../context/owner-view'
 
 export type CommandCatalogSnapshot = RegistryCommandCatalogSnapshot
+export type { CommandMount } from './commands/CommandMount'
 
 export class CommandsService {
 	private registry?: ReturnType<typeof createCommandRegistry<CommandContext>>
@@ -27,6 +29,11 @@ export class CommandsService {
 	/** Register a command until its owner Context stops or the returned handle is disposed. */
 	register<I, O>(command: Command<I, O>): CommandRegistration<I, O> {
 		return this.registerFor(this.ctx, command)
+	}
+
+	/** Create an empty carrier publication mount owned by the calling Context. */
+	createMount<Ctx extends CommandContext = CommandContext>(): CommandMount<Ctx> {
+		return createCommandMount<Ctx>(this.ctx)
 	}
 
 	list(): readonly CommandDescriptor[] {

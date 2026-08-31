@@ -190,6 +190,9 @@ and make their IO operations observe it.
 
 The base `CommandContext` may be omitted. When a host extends it with required request-scoped
 fields, the command, registry, and argv APIs require that context at the call site.
+An extended context is a per-invocation capability record: callable fields should be closure-safe
+and must not depend on the context object as their `this` receiver, because hosts may project the
+record when composing cancellation and deadline facts.
 
 ## Omit output when success has no business value
 
@@ -280,13 +283,21 @@ fails closed with `COMMAND_NOT_FOUND`. Compatibility contains only `name`, `inpu
 `outputSchema`, serialized with canonical object-key order. Presentation, behavior, and examples may
 change without invalidating a typed handle. Disposal does not cancel calls that already started.
 
-`@pluxel/runtime` provides this ownership binding through `ctx.commands.register(command)`. Runtime
-plugins should use that service. Runtime binds execution to the immutable owner Context; Core closes
-the generation's shared admission gate, aborts the combined owner/call signal, and drains admitted
+Carrier packages that must retain one concrete implementation should accept `DirectCommand` rather
+than `Command`. Commands returned by `defineCommand()` and ordinary hand-authored command objects are
+assignable to it, while `InstalledCommand` and `CommandRegistration` are rejected because their
+`execute()` follows compatible catalog replacement. A direct definition is lifecycle-neutral and cannot
+also expose `dispose`. This is a type-level misuse guard, not a trust or security boundary; JavaScript
+carrier entry points must still validate received objects.
+
+`@pluxel/runtime` provides root-catalog ownership through `ctx.commands.register(command)`. Carrier
+providers that need a generation-pinned route or SDK publication use
+`ctx.commands.createMount<CarrierContext>()` and bind a `DirectCommand`; a registry-installed handle
+must not become that route's identity. Runtime holds the relevant owner admission while execution
+settles. Core closes the generation gate, aborts the combined owner/call signal, and drains admitted
 invocations before effects cleanup. Direct registry construction remains lifecycle-neutral for
-standalone hosts and carrier implementations. Manually disposing one runtime registration withdraws
-publication, makes its retained installed handle reject later calls with `COMMAND_NOT_FOUND`, and
-does not cancel a call that already started or close sibling command admission.
+standalone hosts and provider-private name discovery. Manually disposing one publication withdraws
+future lookup and does not cancel a call that already started or close sibling command admission.
 
 Agent/MCP, HTTP, and other protocol projections belong to the carrier. They consume filtered command
 descriptors, map the current provider protocol, retain any reverse name mapping, and dispatch back

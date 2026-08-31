@@ -26,6 +26,13 @@ registry，Runtime 的 `list()`、`snapshot()`、`subscribe()` 和 throwing `exe
 CommandsService 只增加 owner execution gate；generation stop 时由 Core 统一关闭 admission、abort 并等待已接纳调用，再
 drain effects。
 
+Carrier provider 可在 `init()` 中调用 `this.ctx.commands.createMount<CarrierContext>()`，并在自己的领域
+`registerCommand()` 内使用 `mount.bind(directCommand, install)` 将 exact command implementation 交给 router 或 SDK。
+Mount 通过 dependency caller view 自动区分 provider owner 与 publication owner，执行期间同时持有两侧 generation
+admission，并把同步 installer 返回的 registration 归入 publication owner effects。它不是 secondary registry，不提供
+lookup/snapshot/execute，也不接受会跟随 compatible catalog replacement 的 installed handle；root catalog 与 carrier
+publication 必须分别显式注册。
+
 Runtime 不定义 Agent、Toolset 或 provider adapter。需要 Agent allowlist 时安装普通官方 Plugin
 `@pluxel/agent-tools`；它把 Toolset/assignment 放进标准 Plugin config，并在这个唯一 registry 上生成受限 catalog。
 外部 Agent adapter 也应是普通 Plugin，通过 constructor dependency 消费它，而不是取得 Runtime 特例。

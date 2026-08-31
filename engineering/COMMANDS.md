@@ -46,21 +46,36 @@ Plugin Context's effects. Runtime wraps execution in the owner's internal invoca
 drains that gate once per generation before effects drain. A manually disposed registration withdraws
 publication and does not cancel work that already entered execution or close sibling admission.
 
+Carrier providers that publish a command into their own router or SDK callback surface use
+`ctx.commands.createMount<CarrierContext>()`. A mount is not a second registry: it has no name lookup,
+snapshot, subscription, dynamic execution, or caller-supplied owner. Its caller-bound `bind()` accepts a
+`DirectCommand`, pins the exact command implementation to the provider and publication-owner generations,
+and adopts the provider's synchronous route/SDK registration into the publication owner's effects. The
+returned handle is a plain disposer, not an executable installed command.
+
+`DirectCommand` is the commands-package type for an exact implementation. Ordinary `defineCommand()`
+results and hand-authored commands satisfy it, while the compatible-replacement handle returned by a
+registry does not—even when widened to `InstalledCommand`. This is a type-level misuse guard; JavaScript
+carrier entry points and Runtime still validate received objects. Root catalog publication and carrier
+publication remain two independent, explicit decisions.
+
 The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers
 consume `ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or
 handlers; Agent adapter Plugins consume a constructor-injected `AgentToolsPlugin` bound catalog.
 
 An argv/message carrier explicitly binds its allowed commands to `createArgvRouter()`. The router owns only
 route grammar and candidate construction: after `resolve()`, the carrier performs authorization, constructs
-the invocation Context, and calls the returned command's throwing `execute()`. It does not own a mirrored
-command catalog or carrier policy. The workspace `@pluxel/cli` executable remains a build/development tool
-and is not implicitly connected to a running runtime.
+the invocation Context, and calls the mounted command's throwing `execute()`. It may maintain one private
+catalog only when the carrier has a real discovery use case, but the route must retain the mounted direct
+command rather than a registry-installed handle. The workspace `@pluxel/cli` executable remains a
+build/development tool and is not implicitly connected to a running runtime.
 
-The runtime catalog accepts commands requiring the common `CommandContext`. A carrier that constructs
-additional invocation facts owns a registry/router parameterized by its extended context. Common commands
-can bind to that carrier; commands requiring the extended context cannot enter the runtime catalog.
-Carrier bindings own route syntax and result rendering, while the same `Command` remains the reusable
-business definition.
+The root runtime catalog accepts commands requiring the common `CommandContext`. A carrier that constructs
+additional invocation facts parameterizes its mount/router with that extended context. Common direct
+commands can mount into the carrier; commands requiring the extended context cannot enter the root catalog.
+Carrier declarations own route syntax, admission and result rendering, while the underlying command keeps
+the single schema/validation/codec/execution pipeline. Presentation and error rendering must settle inside
+the mounted execution so both provider and publication-owner admission remain held.
 
 Implementation entry points:
 
@@ -72,4 +87,5 @@ Implementation entry points:
 - `packages/commands/src/argv/parse.ts`: option coercion and untrusted candidate construction;
 - `packages/commands/src/argv/router.ts`: trie registration, routing, and resolution;
 - `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
+- `packages/runtime/src/services/CommandsService.ts`: root publication and owner-bound carrier mounts;
 - `plugins/agent-tools/src/index.ts`: optional Toolset/Agent config projection and call-time enforcement.

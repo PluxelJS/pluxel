@@ -153,6 +153,12 @@ export function toCommandError(
 	})
 }
 
+/**
+ * Per-invocation data record passed through command carriers.
+ *
+ * Context extensions should use enumerable own data properties; carrier runtimes may copy the
+ * record to replace `signal` with a host-composed signal before execution.
+ */
 export interface CommandContext {
 	/** Cooperative cancellation signal. Omitted when the call has no cancellation source. */
 	readonly signal?: AbortSignal
@@ -268,6 +274,17 @@ export interface Command<I = unknown, O = unknown, Ctx extends CommandContext = 
 	/** @internal Keeps the argv input type invariant without exposing an unchecked input method. */
 	readonly [commandInputType]?: (input: I) => I
 	readonly execute: (candidate: unknown, ...context: CommandContextArgs<Ctx>) => Promise<O>
+}
+
+/** A concrete command implementation, never a compatible-replacement catalog handle. */
+export type DirectCommand<
+	I = unknown,
+	O = unknown,
+	Ctx extends CommandContext = CommandContext,
+> = Command<I, O, Ctx> & {
+	readonly [installedCommandBrand]?: never
+	/** Direct implementations are lifecycle-neutral definitions, not disposable registrations. */
+	readonly dispose?: never
 }
 
 /** A command whose input identity is erased and whose dynamically selected output must be narrowed. */

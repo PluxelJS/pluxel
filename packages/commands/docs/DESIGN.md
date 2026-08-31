@@ -105,6 +105,9 @@ understands into its own Result type, without making that presentation policy pa
 
 Context is passed per call. No registry or adapter stores mutable current Context, principal, or
 owner identity.
+Extended contexts are structural per-invocation data records. Callable capability fields must be
+receiver-independent because a host may project the record to replace `signal` or `deadlineMs`
+without mutating the caller's object.
 
 Registries and argv routers preserve their `CommandContext` requirement. A carrier-specific context
 may extend the base context and accept portable base-context commands, but a base registry cannot
@@ -132,6 +135,21 @@ the new implementation. Withdrawal or an incompatible replacement fails closed w
 `COMMAND_NOT_FOUND`. Compatibility includes only the name and input/output schemas, with recursive
 object-key canonicalization; presentation, behavior, and examples do not invalidate a typed handle.
 Calls already admitted continue independently of later disposal.
+
+`DirectCommand` marks APIs that require one concrete implementation rather than the registry's live,
+compatible-replacement handle. It is a type-only exclusion built from the installed-command brand:
+ordinary `Command` implementations remain assignable, but `InstalledCommand` remains rejected when a
+`CommandRegistration` is widened to hide `dispose`. Runtime object validation is still required at a
+JavaScript or plugin boundary; the type is not an authenticity mechanism.
+Direct definitions also exclude a `dispose` member: lifecycle cleanup belongs to a publication handle,
+not to the reusable command definition.
+"Direct" fixes publication identity; it does not deep-freeze a command object's private or closed-over
+state. Adapters capture the selected `execute` function and preserve the command receiver semantics.
+
+Pluxel carrier providers use this distinction with Runtime's owner-bound `CommandMount`: the route or
+SDK callback retains the mounted direct wrapper, while any optional provider-private registry remains
+discovery-only. Root catalog publication is separate and may intentionally use the replacement-following
+installed handle. The commands package itself remains lifecycle-neutral and has no mount or Context owner.
 
 Carrier-specific names require an adapter-owned reversible map. They do not rename the underlying
 command.

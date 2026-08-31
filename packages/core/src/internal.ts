@@ -64,3 +64,4 @@ export type {
 	PluginPartDefinitionNode,
 	PluginPartDefinitionTree,
 } from './plugins/runtime/part-definition'
+export { CALLER_CONTEXT_BIND } from './plugins/composition/symbols'

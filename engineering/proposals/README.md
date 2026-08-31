@@ -19,9 +19,6 @@
 
 尚在研究、未采纳的提案：
 
-- [`PORTABLE_COMMAND_REGISTRIES.md`](PORTABLE_COMMAND_REGISTRIES.md)：研究 owner-bound secondary command registry、
-  cross-owner publication 与 carrier output 二阶段呈现，使 KOOK/Discord 等 provider 不必维护 per-caller registry，
-  同时保持 root catalog exposure 为显式独立决策。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
   decoratorless Plugin declaration。
 - [`WORKBENCH_STANDARD_PAGES.md`](WORKBENCH_STANDARD_PAGES.md)：研究host-rendered Markdown document + typed snapshot/action slots 的
