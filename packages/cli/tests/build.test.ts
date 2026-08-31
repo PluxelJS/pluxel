@@ -186,6 +186,8 @@ const buildFixtures = {
 	runtimeUi: {
 		...fixturePackage('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
 		...fixturePackage('react-dom', '19.2.8', ['.', './client']),
+		...fixturePackage('@mantine/core', '9.5.2', ['.']),
+		...fixturePackage('@mantine/hooks', '9.5.2', ['.']),
 		...fixturePackage('@pluxel/runtime', '1.0.0', [
 			'.',
 			'./capnweb',
@@ -230,6 +232,8 @@ export function createWorkbenchBridge(identity, descriptor, Renderer) {
 				version: '1.0.0',
 				type: 'module',
 				dependencies: {
+					'@mantine/core': '9.5.2',
+					'@mantine/hooks': '9.5.2',
 					'@pluxel/runtime': '1.0.0',
 					react: '19.2.8',
 					'react-dom': '19.2.8',
@@ -546,6 +550,33 @@ describe('build command', () => {
 				'pluxel-plugin-beta': 'optional',
 			})
 			expect(await readFile(resolve(fixtureDir, 'user-success.txt'), 'utf8')).toBe('ok')
+		})
+	})
+
+	it('preserves an all-external tsdown override when merging the plugin preset', async () => {
+		await withBuildFixture('basic', async (fixtureDir) => {
+			await writeFile(
+				resolve(fixtureDir, 'tsdown.config.ts'),
+				[
+					'export default {',
+					"  entry: 'src/index.ts',",
+					"  format: ['esm'],",
+					'  dts: false,',
+					'  deps: { neverBundle: true },',
+					'}',
+				].join('\n'),
+			)
+			const runtime = await resolveBuildContext({})
+
+			await runWithTsdown({
+				context: runtime,
+				log: () => {},
+				extraConfig: pluginPackageOverlay(runtime),
+			})
+
+			expect(await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf8')).toMatch(
+				/from ["']@pluxel\/runtime["']/,
+			)
 		})
 	})
 

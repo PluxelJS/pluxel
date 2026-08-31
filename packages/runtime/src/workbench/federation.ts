@@ -5,11 +5,12 @@ import {
 } from '@module-federation/runtime'
 import * as BridgeReact from '@module-federation/bridge-react/v19'
 import {
-	WORKBENCH_FEDERATION_MANTINE_VERSION,
-	WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
 	WORKBENCH_FEDERATION_RUNTIME_VERSION,
+	WORKBENCH_FEDERATION_SHARED_MODULES,
 	WORKBENCH_FEDERATION_SHARE_STRATEGY,
+	createWorkbenchFederationCompatibilitySet,
 	workbenchDeclarationIdentityEqual,
+	type WorkbenchFederationSharedModule,
 } from '@pluxel/core/federation'
 import * as MantineCore from '@mantine/core'
 import * as MantineHooks from '@mantine/hooks'
@@ -70,6 +71,21 @@ type FederationState = Readonly<{
 }>
 
 type WorkbenchBridgeApplication = ReturnType<WorkbenchBridgeProvider>
+
+const WORKBENCH_SHARED_IMPLEMENTATIONS = {
+	react: React,
+	'react/jsx-runtime': ReactJsxRuntime,
+	'react/jsx-dev-runtime': ReactJsxDevRuntime,
+	'react-dom': ReactDom,
+	'react-dom/client': ReactDomClient,
+	'@mantine/core': MantineCore,
+	'@mantine/hooks': MantineHooks,
+	'@module-federation/bridge-react': BridgeReact,
+	'@pluxel/runtime/workbench': Workbench,
+	'@pluxel/runtime/workbench/client': WorkbenchClient,
+	'@pluxel/runtime/workbench/react': WorkbenchReact,
+	'@pluxel/runtime/internal/workbench-react': WorkbenchReactInternal,
+} satisfies Readonly<Record<WorkbenchFederationSharedModule, unknown>>
 
 export type WorkbenchHostDocumentBindings = Readonly<{
 	params: Readonly<Record<string, string>>
@@ -431,26 +447,17 @@ function federationState(): FederationState {
 }
 
 function fixedShared() {
-	return {
-		react: sharedModule(React, React.version),
-		'react/jsx-runtime': sharedModule(ReactJsxRuntime, React.version),
-		'react/jsx-dev-runtime': sharedModule(ReactJsxDevRuntime, React.version),
-		'react-dom': sharedModule(ReactDom, ReactDom.version),
-		'react-dom/client': sharedModule(ReactDomClient, ReactDom.version),
-		'@mantine/core': sharedModule(MantineCore, WORKBENCH_FEDERATION_MANTINE_VERSION),
-		'@mantine/hooks': sharedModule(MantineHooks, WORKBENCH_FEDERATION_MANTINE_VERSION),
-		'@module-federation/bridge-react': sharedModule(
-			BridgeReact,
-			WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
-		),
-		'@pluxel/runtime/workbench': sharedModule(Workbench, runtimeVersion),
-		'@pluxel/runtime/workbench/client': sharedModule(WorkbenchClient, runtimeVersion),
-		'@pluxel/runtime/workbench/react': sharedModule(WorkbenchReact, runtimeVersion),
-		'@pluxel/runtime/internal/workbench-react': sharedModule(
-			WorkbenchReactInternal,
-			runtimeVersion,
-		),
-	}
+	const compatibility = createWorkbenchFederationCompatibilitySet({
+		react: React.version,
+		reactDom: ReactDom.version,
+		runtime: runtimeVersion,
+	})
+	return Object.fromEntries(
+		WORKBENCH_FEDERATION_SHARED_MODULES.map((request) => [
+			request,
+			sharedModule(WORKBENCH_SHARED_IMPLEMENTATIONS[request], compatibility.shared[request]),
+		]),
+	)
 }
 
 function sharedModule(module: unknown, version: string) {

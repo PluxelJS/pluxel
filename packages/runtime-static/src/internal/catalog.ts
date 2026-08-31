@@ -6,7 +6,7 @@ import {
 	type PluginRouteCatalogEntry,
 	type PluginRouteCatalogSnapshot,
 } from '@pluxel/runtime/internal'
-import type { StaticRuntimeDefinition } from '../types'
+import type { StaticRuntimeDefinition } from '../types.ts'
 
 type ConfigShape = Readonly<{
 	plugins: readonly Readonly<{

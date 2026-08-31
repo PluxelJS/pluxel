@@ -9,28 +9,48 @@ const pause = (milliseconds = 20) =>
 	new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
 describe('workbench build scheduler', () => {
-	it('bounds same-application builds and never overlaps different application roots', async () => {
+	it('bounds same-application builds', async () => {
 		let active = 0
 		let maximum = 0
+		await Promise.all(
+			Array.from({ length: 3 }, () =>
+				runWorkbenchFederationBuild('/application/a', async () => {
+					active += 1
+					maximum = Math.max(maximum, active)
+					try {
+						await pause()
+					} finally {
+						active -= 1
+					}
+				}),
+			),
+		)
+		expect(maximum).toBe(2)
+	})
+
+	it('never overlaps roots or lets a later same-root task skip a waiting cohort', async () => {
 		let activeRoot: string | undefined
 		let crossedRoots = false
-		const run = (root: string) =>
+		const order: string[] = []
+		const run = (root: string, label: string) =>
 			runWorkbenchFederationBuild(root, async () => {
 				if (activeRoot !== undefined && activeRoot !== root) crossedRoots = true
 				activeRoot = root
-				active += 1
-				maximum = Math.max(maximum, active)
+				order.push(label)
 				try {
 					await pause()
 				} finally {
-					active -= 1
-					if (active === 0) activeRoot = undefined
+					activeRoot = undefined
 				}
 			})
 
-		await Promise.all([run('/application/a'), run('/application/b'), run('/application/a')])
+		await Promise.all([
+			run('/application/a', 'a-first'),
+			run('/application/b', 'b'),
+			run('/application/a', 'a-later'),
+		])
 		expect(crossedRoots).toBe(false)
-		expect(maximum).toBe(2)
+		expect(order).toEqual(['a-first', 'b', 'a-later'])
 	})
 
 	it('continues with the next application root after a Federation build fails', async () => {

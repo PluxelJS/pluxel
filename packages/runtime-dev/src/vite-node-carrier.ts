@@ -7,7 +7,7 @@ import type { ResolvedConfig, ViteDevServer } from 'vite'
 import {
 	NodeElysiaApplicationCarrier,
 	type NodeElysiaApplicationCarrierOptions,
-} from '@pluxel/runtime-node'
+} from '../../runtime-node/src/index.ts'
 
 type FetchHandler = (request: Request) => Response | Promise<Response>
 

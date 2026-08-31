@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsdown'
+import { pluxelRuntimeNodeSourceBridgeExternal } from './tsdown-source-bridge.ts'
 
 export default defineConfig({
 	exports: {
@@ -16,6 +17,7 @@ export default defineConfig({
 			'vite/*',
 		],
 	},
+	plugins: [pluxelRuntimeNodeSourceBridgeExternal()],
 	entry: {
 		index: 'src/index.ts',
 		workbench: 'src/workbench.ts',

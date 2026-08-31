@@ -2,51 +2,66 @@ import { resolve } from 'node:path'
 
 type Task<T> = () => Promise<T>
 
-type PendingBuild = Readonly<{
+type BuildCohort = {
 	applicationRoot: string
-	start: () => void
-}>
+	pending: Array<() => void>
+	running: number
+}
 
 class FederationBuildCoordinator {
-	private activeRoot: string | undefined
-	private active = 0
-	private readonly pending: PendingBuild[] = []
+	private activeCohort: BuildCohort | undefined
+	private readonly waitingCohorts: BuildCohort[] = []
 
 	constructor(private readonly concurrency: number) {}
 
 	run<T>(applicationRoot: string, task: Task<T>): Promise<T> {
 		return new Promise<T>((resolveTask, rejectTask) => {
-			this.pending.push({
-				applicationRoot,
-				start: () => {
-					this.active += 1
-					void Promise.resolve()
-						.then(task)
-						.then(resolveTask, rejectTask)
-						.finally(() => {
-							this.active -= 1
-							this.drain()
-						})
-				},
-			})
+			let cohort!: BuildCohort
+			const start = () => {
+				void Promise.resolve()
+					.then(task)
+					.then(resolveTask, rejectTask)
+					.finally(() => {
+						cohort.running -= 1
+						this.drain()
+					})
+			}
+			cohort = this.enqueue(applicationRoot, start)
 			this.drain()
 		})
 	}
 
+	private enqueue(applicationRoot: string, start: () => void): BuildCohort {
+		if (
+			this.activeCohort?.applicationRoot === applicationRoot &&
+			this.waitingCohorts.length === 0
+		) {
+			this.activeCohort.pending.push(start)
+			return this.activeCohort
+		}
+		const waiting = this.waitingCohorts.at(-1)
+		if (waiting?.applicationRoot === applicationRoot) {
+			waiting.pending.push(start)
+			return waiting
+		}
+		const cohort = { applicationRoot, pending: [start], running: 0 }
+		this.waitingCohorts.push(cohort)
+		return cohort
+	}
+
 	private drain(): void {
-		if (this.activeRoot === undefined) {
-			this.activeRoot = this.pending[0]?.applicationRoot
+		if (!this.activeCohort) {
+			this.activeCohort = this.waitingCohorts.shift()
 		}
-		while (this.activeRoot !== undefined && this.active < this.concurrency) {
-			const nextIndex = this.pending.findIndex(
-				(item) => item.applicationRoot === this.activeRoot,
-			)
-			if (nextIndex < 0) break
-			this.pending.splice(nextIndex, 1)[0]!.start()
+		const cohort = this.activeCohort
+		if (!cohort) return
+		while (cohort.running < this.concurrency && cohort.pending.length > 0) {
+			cohort.running += 1
+			cohort.pending.shift()!()
 		}
-		if (this.active > 0) return
-		this.activeRoot = undefined
-		if (this.pending.length > 0) this.drain()
+		if (cohort.running > 0 || cohort.pending.length > 0) return
+		this.activeCohort = undefined
+		this.drain()
 	}
 }
 
@@ -75,10 +90,7 @@ class KeyedSerialTaskQueue {
 const federationBuilds = new FederationBuildCoordinator(2)
 const outputTransactionQueue = new KeyedSerialTaskQueue()
 
-export function runWorkbenchFederationBuild<T>(
-	applicationRoot: string,
-	task: Task<T>,
-): Promise<T> {
+export function runWorkbenchFederationBuild<T>(applicationRoot: string, task: Task<T>): Promise<T> {
 	return federationBuilds.run(resolve(applicationRoot), task)
 }
 

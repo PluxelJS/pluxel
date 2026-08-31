@@ -92,10 +92,10 @@ definition 的完整 producer plan。Compiler 不重新发现 declarations 或�
 
 同一 producer task 去重；同一 definition 的新 plan supersede 旧 in-flight build。`@module-federation/vite` 1.21.1 的
 producer build 直接在当前进程运行；真实双 producer 并发回归必须验证 expose、Manifest 和 JavaScript 不串线。统一 artifact
-compiler 保留两个 build slot 的 bounded admission，不再叠加 child process 或第二层通用并发队列。上游 export detector 仍有
-process-global application root：同一 application root 最多并发两个 producer；切换到另一 application root 前必须等当前
-cohort 排空。这个精确约束不能扩大为全局单线程。同一 output 的 transaction ordering 始终保留，保证 immutable candidate 的
-validation/publication 不交错。
+compiler 不再为 Workbench 叠加通用 build queue；MF builder 自己拥有两个 build slot。上游 export detector 仍有
+process-global application root：同一 application root 最多并发两个 producer；不同 root 按到达顺序形成 cohort，切换前必须等
+当前 cohort 排空，后到的同 root task 不能越过已经等待的其他 root。这个精确约束不能扩大为全局单线程。Node artifact 继续使用
+独立的两个 build slot。同一 output 的 transaction ordering 始终保留，保证 immutable candidate 的 validation/publication 不交错。
 
 每个 candidate 必须验证：
 

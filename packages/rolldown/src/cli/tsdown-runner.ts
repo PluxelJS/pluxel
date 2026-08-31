@@ -147,6 +147,7 @@ type OnlyBundleValue = TsdownDepsConfig['onlyBundle']
 type BundleMatchValue = NeverBundleValue | AlwaysBundleValue
 type BundleMatchFn = Extract<BundleMatchValue, (...args: any[]) => unknown>
 type BundlePatternValue = Exclude<BundleMatchValue, BundleMatchFn | undefined>
+type BundlePatternList = Exclude<BundlePatternValue, true>
 const DEPRECATED_DEPS_KEYS = ['external', 'noExternal', 'inlineOnly'] as const
 
 function normalizeOverride(input: unknown): TsdownOverride | undefined {
@@ -286,6 +287,7 @@ function mergeBundleMatchers<T extends BundleMatchValue>(
 ): T | undefined {
 	if (!overlayValue) return userValue
 	if (!userValue) return overlayValue
+	if (overlayValue === true || userValue === true) return true as T
 
 	const overlayIsFn = isBundleMatchFn(overlayValue)
 	const userIsFn = isBundleMatchFn(userValue)
@@ -304,11 +306,12 @@ function mergeBundleMatchers<T extends BundleMatchValue>(
 }
 
 function createBundleMatcher(patterns: BundlePatternValue): BundleMatchFn {
+	if (patterns === true) return () => true
 	const normalized = toBundlePatternArray(patterns)
 	return (id: string) => normalized.some((pattern) => matchExternalPattern(pattern, id))
 }
 
-function toBundlePatternArray(patterns: BundlePatternValue): Array<string | RegExp> {
+function toBundlePatternArray(patterns: BundlePatternList): Array<string | RegExp> {
 	return Array.isArray(patterns) ? patterns : [patterns]
 }
 

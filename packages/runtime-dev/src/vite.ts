@@ -6,7 +6,7 @@ export {
 	createHostModuleVitePlugin,
 	type HostModuleClassifier,
 	type HostModuleDecision,
-} from './host-modules'
+} from './host-modules.ts'
 export {
 	attachSrvxViteNodeCarrier,
 	createViteNodeElysiaApplicationCarrier,
@@ -14,7 +14,7 @@ export {
 	type SrvxViteNodeCarrierOptions,
 	type ViteBusinessWebSocketUpgrade,
 	type ViteNodeElysiaApplicationCarrierOptions,
-} from './vite-node-carrier'
+} from './vite-node-carrier.ts'
 
 const PLUXEL_SSR_MODULE_RUNNER_STATE = Symbol.for('pluxel.viteSsrModuleRunnerState')
 const PLUXEL_SSR_MODULE_RUNNER_EXTERNALIZER = Symbol.for('pluxel.viteSsrModuleRunnerExternalizer')

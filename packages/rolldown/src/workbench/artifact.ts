@@ -6,6 +6,7 @@ import {
 	parseWorkbenchFederationManifestContract,
 	workbenchFederationDeploymentInventoryPath,
 	type WorkbenchFederationDeploymentInventory,
+	type WorkbenchFederationCompatibilitySet,
 	type WorkbenchFederationManifestExpectation,
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
@@ -15,7 +16,6 @@ import {
 	type ProviderModuleInfo,
 } from '@module-federation/sdk'
 import { join } from 'pathe'
-import type { WorkbenchFederationCompatibilitySet } from './build-contract.ts'
 
 export type WorkbenchFederationArtifactExpectation = Readonly<{
 	plan: WorkbenchFederationProducerPlan

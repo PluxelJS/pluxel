@@ -42,10 +42,10 @@ import { requirePluginService } from '@pluxel/core/internal'
 import type { IncomingMessage } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
-import { reloadStaticRuntime } from './hmr'
-import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application'
-import { toStaticRuntimeDefinition } from './internal/application'
-import { createStaticRuntimeHost } from './internal/host'
+import { reloadStaticRuntime } from './hmr.ts'
+import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application.ts'
+import { toStaticRuntimeDefinition } from './internal/application.ts'
+import { createStaticRuntimeHost } from './internal/host.ts'
 import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
@@ -54,7 +54,7 @@ import type {
 	StaticRuntimeHmrReport,
 	StaticRuntimeStartupReport,
 	StaticRuntimeStartupContext,
-} from './types'
+} from './types.ts'
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
 const STATIC_RUNTIME_CACHE_DIR = '.pluxel/vite/static-runtime-v2'
@@ -646,7 +646,10 @@ async function configureStaticRuntimeDevRuntime(
 	if (!readRuntimeRouteCapabilities(ctx)) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
-	const compiler = runtimeDev.attachPluginArtifactCompiler(ctx, { viteServer: server })
+	const compiler = runtimeDev.attachPluginArtifactCompiler(ctx, {
+		packageMode: 'development',
+		viteServer: server,
+	})
 	const publish = async (): Promise<void> => {
 		if (!ctx.workbench) return
 		await compiler.publishWorkbenchProducers(await semantics.workbenchCompilations())

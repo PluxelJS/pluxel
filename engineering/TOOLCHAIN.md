@@ -216,8 +216,8 @@ Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocess
 preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
 同时用于 Workbench UI production build；plugin semantics、lint 和 config metadata 只应用于 server environment。
 runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
-static/dynamic 对配置 import graph 的收集与失效复用同一个 runtime-dev helper；artifact compiler 的 worker 数、
-缓存保留和 Federation shared package 集合属于内核不变量，不进入 Context 或 route config。
+static/dynamic 对配置 import graph 的收集与失效复用同一个 runtime-dev helper；Node artifact build slot、缓存保留、
+Federation application-root coordinator 和 shared package 集合属于内核不变量，不进入 Context 或 route config。
 Workbench browser entry 在 route `config` hook 进入 Vite optimizer；插件 UI 的 watch graph 则通过 SSR environment
 收集，不能为了编译元数据调用 client transform 并向 optimizer 注入不完整依赖批次。
 Dynamic host 显式使用 `mode: 'distribution'` 时仍保留 source transform/HMR pipeline，但 package resolution 不启用
@@ -244,6 +244,9 @@ specifier 结果使用有界缓存。static/config ModuleRunner 通过 server-on
 不能回落到上一次构建的 `dist/vite.mjs`；各 runtime package 的 production build 用 pre-resolve externalizer 把这条
 bridge 精确改写为 `@pluxel/rolldown/vite` 公共入口。这样修改内核 Vite 默认后无需先手工 build 才能启动项目，也不会
 把 Rolldown 工具链内联进 runtime 发布物或增加 dev-only package export。
+配置加载期的 runtime-dev Node carrier 同样直接桥接当前 runtime-node source；runtime-dev 自身发布构建把它精确改写回
+`@pluxel/runtime-node`，而 static/dynamic route build 继续按各自 package closure 内联 carrier。开发启动因此不读取旧 dist，
+发布边界也不残留 monorepo 相对路径。
 
 仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
 `@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的
@@ -429,7 +432,9 @@ shared compatibility set 和 compiler version。Builder 不接受调用方覆盖
 固定 singleton shared 包来自 `@pluxel/core/federation`：React/ReactDOM 及实际 subpaths、`@mantine/core`、
 `@mantine/hooks`、MF React Bridge、`@pluxel/runtime/workbench`、`/client`、`/react` 和 toolchain-only
 `@pluxel/runtime/internal/workbench-react`。每项使用 exact version、`singleton: true`、`loaded-first`；
-Manifest 缺项或版本不一致使 candidate 失败。Production builder 按同一 build contract 生成 Shell 与 producer，写入 exact
+application root 必须能解析全部 Shell-provided package；producer 自己解析到的 React、Runtime 与可选 Mantine 也必须与 winner
+一致。开发 producer 只启用 `@pluxel/hmr`/`@pluxel/source` package exports，distribution producer 只使用 built exports；调用方必须
+显式选择，不能从目录或现有 dist 猜测。Manifest 缺项或版本不一致使 candidate 失败。Production builder 按同一 build contract 生成 Shell 与 producer，写入 exact
 profile/build-contract producer inventory，并逐项用 canonical plan 和 compatibility set 校验 Manifest/Snapshot；任何不一致都使
 application build 失败。
 

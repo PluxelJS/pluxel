@@ -35,7 +35,7 @@ import {
 	diffCatalog,
 	readConfigSnapshot,
 	type StaticRuntimeCatalog,
-} from './catalog'
+} from './catalog.ts'
 import type {
 	StaticRuntimeCatalogSnapshot,
 	StaticRuntimeDefinition,
@@ -45,7 +45,7 @@ import type {
 	StaticRuntimeHostOptions,
 	StaticRuntimeReportEntry,
 	StaticRuntimeStartupReport,
-} from '../types'
+} from '../types.ts'
 
 export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public readonly ctx: Context

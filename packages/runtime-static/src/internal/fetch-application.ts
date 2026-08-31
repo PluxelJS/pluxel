@@ -1,6 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-import { startStaticRuntimeApplication } from './application'
+import { startStaticRuntimeApplication } from './application.ts'
 import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import type {
 	StaticRuntime,
@@ -8,7 +8,7 @@ import type {
 	StaticRuntimeBindings,
 	StaticRuntimeDeployment,
 	StaticRuntimeEnvironment,
-} from '../types'
+} from '../types.ts'
 
 export type StaticFetchApplicationOptions<
 	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,

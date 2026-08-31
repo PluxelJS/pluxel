@@ -3,13 +3,13 @@ import { newWebSocketRpcSession, type RpcStub } from '@pluxel/runtime/capnweb'
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/runtime/web/session'
 import NodeWebSocket from 'crossws/websocket'
-import { startStaticRuntimeApplication } from './internal/application'
+import { startStaticRuntimeApplication } from './internal/application.ts'
 import type {
 	StaticRuntime,
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
 	StaticRuntimeEnvironment,
-} from './types'
+} from './types.ts'
 
 export type RuntimeSessionTestConnection = Disposable &
 	Readonly<{

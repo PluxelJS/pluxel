@@ -45,6 +45,8 @@ function fixtureFiles(): Record<string, string> {
 			name: '@example/semantic-plugin',
 			type: 'module',
 			devDependencies: {
+				'@mantine/core': '9.5.2',
+				'@mantine/hooks': '9.5.2',
 				'@pluxel/runtime': '1.0.0',
 				react: '19.2.8',
 				'react-dom': '19.2.8',
@@ -68,6 +70,8 @@ function fixtureFiles(): Record<string, string> {
 		'src/picker.tsx': 'export default function Picker() { return null }\n',
 		...packageFiles('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
 		...packageFiles('react-dom', '19.2.8', ['.', './client']),
+		...packageFiles('@mantine/core', '9.5.2', ['.']),
+		...packageFiles('@mantine/hooks', '9.5.2', ['.']),
 		...packageFiles('@pluxel/runtime', '1.0.0', [
 			'.',
 			'./capnweb',
@@ -196,6 +200,7 @@ class SemanticPlugin {
 			plan: plans[0]!,
 			outDir,
 			minify: false,
+			packageMode: 'development',
 		})
 		const compatibility = resolveWorkbenchFederationShared(fixture.path).compatibility
 		const validation = await validateWorkbenchFederationArtifact(outDir, {
@@ -273,7 +278,6 @@ class SemanticPlugin {
 		const nestedRoot = resolve(fixture.path, 'packages/nested')
 
 		expect(compilation?.root).toBe(nestedRoot)
-		expect(resolveWorkbenchFederationShared(nestedRoot).resolveRoot).toBe(fixture.path)
 		const bridgeEntryPath = compilation?.plan.entries[0]?.bridgeEntryPath
 		expect(bridgeEntryPath).toMatch(/^\.pluxel\/workbench-generated\//)
 		await expect(readFile(resolve(nestedRoot, bridgeEntryPath!), 'utf-8')).resolves.toContain(
@@ -294,7 +298,7 @@ class SemanticPlugin {
 		)
 		const validation = await validateWorkbenchFederationArtifact(deploymentOutDir, {
 			plan: compilation!.plan,
-			compatibility: resolveWorkbenchFederationShared(nestedRoot).compatibility,
+			compatibility: resolveWorkbenchFederationShared(fixture.path).compatibility,
 		})
 		expect(validation.valid).toBe(true)
 		expect(deploymentOutDir.startsWith(resolve(fixture.path, 'host-dist'))).toBe(true)

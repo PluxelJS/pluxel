@@ -7,7 +7,10 @@ import { serve } from 'srvx/node'
 import type { ServerRequest } from 'srvx'
 import type { PluginConstructor } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-import { runStaticFetchApplication, type StaticFetchApplicationOptions } from './fetch-application'
+import {
+	runStaticFetchApplication,
+	type StaticFetchApplicationOptions,
+} from './fetch-application.ts'
 import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
 import type {
@@ -15,7 +18,7 @@ import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
 	StaticRuntimeEnvironment,
-} from '../types'
+} from '../types.ts'
 import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
 
 export type StaticNodeApplication = StaticRuntime & {

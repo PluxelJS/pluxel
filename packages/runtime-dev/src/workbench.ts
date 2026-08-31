@@ -6,7 +6,7 @@ import {
 	type PluginArtifactCompilerOptions,
 	type PluginArtifactCompilerViteServer,
 	type WorkbenchProducerCompilation,
-} from './workbench/PluginArtifactCompiler'
+} from './workbench/PluginArtifactCompiler.ts'
 
 export type PluginArtifactCompilerAttachmentOptions = PluginArtifactCompilerOptions &
 	Readonly<{
@@ -30,7 +30,7 @@ const attachments = new WeakMap<Context, PluginArtifactCompilerAttachment>()
  */
 export function attachPluginArtifactCompiler(
 	ctx: Context,
-	options: PluginArtifactCompilerAttachmentOptions = {},
+	options: PluginArtifactCompilerAttachmentOptions,
 ): PluginArtifactCompilerAttachment {
 	if (ctx !== ctx.root) {
 		throw new Error('[runtime-dev] artifact compiler must be attached to the root Context')
@@ -43,7 +43,7 @@ export function attachPluginArtifactCompiler(
 	const compiler = new PluginArtifactCompiler(
 		ctx,
 		{ store, viteServer: options.viteServer },
-		{ cacheDir: options.cacheDir },
+		{ cacheDir: options.cacheDir, packageMode: options.packageMode },
 	)
 	const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>
 		compiler.watchNodeModule(declaration, onUpdate, onError),
@@ -78,4 +78,4 @@ export type {
 	PluginArtifactCompilerOptions,
 	PluginArtifactCompilerViteServer,
 	WorkbenchProducerCompilation,
-} from './workbench/PluginArtifactCompiler'
+} from './workbench/PluginArtifactCompiler.ts'

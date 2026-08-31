@@ -10,19 +10,20 @@ describe('attachPluginArtifactCompiler', () => {
 		const { ctx } = runtime
 		const attachSourceBinder = vi.spyOn(ctx.nodeModules, 'attachSourceBinder')
 
-		const attachment = attachPluginArtifactCompiler(ctx)
+		const options = { packageMode: 'development' } as const
+		const attachment = attachPluginArtifactCompiler(ctx, options)
 
 		expect(attachSourceBinder).toHaveBeenCalledOnce()
-		expect(() => attachPluginArtifactCompiler(ctx)).toThrow(/already attached/)
+		expect(() => attachPluginArtifactCompiler(ctx, options)).toThrow(/already attached/)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(1)
-		expect(() => attachPluginArtifactCompiler(createOwnerContext(ctx, 'nested'))).toThrow(
+		expect(() => attachPluginArtifactCompiler(createOwnerContext(ctx, 'nested'), options)).toThrow(
 			/root Context/,
 		)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(1)
 
 		attachment.dispose()
 		await expect(attachment.publishWorkbenchProducers([])).rejects.toThrow(/disposed/)
-		const attachmentAgain = attachPluginArtifactCompiler(ctx)
+		const attachmentAgain = attachPluginArtifactCompiler(ctx, options)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(2)
 		attachmentAgain.dispose()
 		await runtime.dispose()

@@ -271,6 +271,7 @@ async function buildProductionProducer(
 	await buildTools.buildWorkbenchFederationProducer({
 		root: sourceRoot,
 		applicationRoot: deploymentRoot,
+		packageMode: 'distribution',
 		plan,
 		outDir,
 		minify: target.minify ?? true,

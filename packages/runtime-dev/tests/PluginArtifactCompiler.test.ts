@@ -86,7 +86,7 @@ describe('PluginArtifactCompiler', () => {
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ store: artifacts },
-			{ cacheDir: fixture.getPath('.pluxel/artifacts') },
+			{ cacheDir: fixture.getPath('.pluxel/artifacts'), packageMode: 'development' },
 		)
 		const plan = createPlan('semantic-revision-a')
 		const input = { plan, root: fixture.getPath('plugin') }
@@ -106,6 +106,7 @@ describe('PluginArtifactCompiler', () => {
 			expect.objectContaining({
 				plan,
 				root: fixture.getPath('plugin'),
+				packageMode: 'development',
 				minify: false,
 				sourcemap: true,
 			}),
@@ -123,7 +124,7 @@ describe('PluginArtifactCompiler', () => {
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ store: artifacts },
-			{ cacheDir: fixture.getPath('.pluxel/artifacts') },
+			{ cacheDir: fixture.getPath('.pluxel/artifacts'), packageMode: 'development' },
 		)
 		await compiler.publishWorkbenchProducer({
 			plan: createPlan('revision-a'),
@@ -155,7 +156,7 @@ describe('PluginArtifactCompiler', () => {
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ store: artifacts },
-			{ cacheDir: fixture.getPath('.pluxel/artifacts') },
+			{ cacheDir: fixture.getPath('.pluxel/artifacts'), packageMode: 'development' },
 		)
 		const firstGate = deferred<void>()
 		producerBuildMocks.buildWorkbenchFederationProducer.mockImplementationOnce(
@@ -197,7 +198,7 @@ describe('PluginArtifactCompiler', () => {
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{},
-			{ cacheDir: fixture.getPath('.pluxel/artifacts') },
+			{ cacheDir: fixture.getPath('.pluxel/artifacts'), packageMode: 'development' },
 		)
 		const declaration = defineNodeModule(pathToFileURL(fixture.getPath('plugin.ts')), './task.ts')
 		const updates: URL[][] = [[], []]

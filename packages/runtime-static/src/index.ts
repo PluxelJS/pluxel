@@ -18,6 +18,6 @@ export type {
 	StaticRuntimeReportEntry,
 	StaticRuntimeStartupContext,
 	StaticRuntimeStartupReport,
-} from './types'
-export { bindConfigEnvironment } from './config-environment'
-export { defineStaticRuntime } from './application'
+} from './types.ts'
+export { bindConfigEnvironment } from './config-environment.ts'
+export { defineStaticRuntime } from './application.ts'

@@ -1,4 +1,4 @@
-import type { StaticRuntimeDefinition, StaticRuntimeHmrReport, StaticRuntimeHost } from './index'
+import type { StaticRuntimeDefinition, StaticRuntimeHmrReport, StaticRuntimeHost } from './index.ts'
 
 export type ReloadStaticRuntimeOptions = {
 	host: StaticRuntimeHost

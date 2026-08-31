@@ -4,9 +4,9 @@ import type {
 	StaticRuntimeBindings,
 	StaticRuntimeHostOptions,
 	StaticRuntimeStartupContext,
-} from './types'
+} from './types.ts'
 import { mergeConfigRecords, withPluginConfigEnvironment } from '@pluxel/runtime/internal'
-import { resolveConfigEnvironmentBootstrap } from './config-environment'
+import { resolveConfigEnvironmentBootstrap } from './config-environment.ts'
 
 const STATIC_RUNTIME_APPLICATION_MARKER = Symbol.for('pluxel.staticRuntimeApplication')
 

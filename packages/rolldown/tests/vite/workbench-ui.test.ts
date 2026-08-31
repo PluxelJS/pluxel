@@ -8,11 +8,20 @@ import type { Manifest } from '@module-federation/sdk'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
 import { describe, expect, it } from 'vitest'
-import {
-	buildWorkbenchFederationProducer,
-	resolveWorkbenchFederationShared,
-} from '../../src/vite/workbench-ui'
+import { buildWorkbenchFederationProducer as buildWorkbenchFederationProducerWithMode } from '../../src/vite/workbench-ui'
 import { validateWorkbenchFederationArtifact } from '../../src/workbench/artifact'
+import { resolveWorkbenchFederationShared } from '../../src/workbench/build-contract'
+
+type DevelopmentBuildOptions = Omit<
+	Parameters<typeof buildWorkbenchFederationProducerWithMode>[0],
+	'packageMode'
+>
+
+const buildWorkbenchFederationProducer = (options: DevelopmentBuildOptions) =>
+	buildWorkbenchFederationProducerWithMode({
+		...options,
+		packageMode: 'development',
+	})
 
 const definition = parsePluginDefinitionAddress({
 	entry: { kind: 'package-root', packageName: '@example/workbench-producer' },
@@ -126,8 +135,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 			'export declare const iconMarker: string\n',
 		...packageFiles('@mantine/core', '9.5.2', ['.']),
 		...packageFiles('@mantine/hooks', '9.5.2', ['.']),
-		'node_modules/@mantine/core/index.js':
-			"export const marker = 'must-not-bundle-mantine-core'\n",
+		'node_modules/@mantine/core/index.js': "export const marker = 'must-not-bundle-mantine-core'\n",
 		'node_modules/@mantine/core/index.d.ts': 'export declare const marker: string\n',
 		'node_modules/@mantine/hooks/index.js':
 			"export const marker = 'must-not-bundle-mantine-hooks'\n",
@@ -164,6 +172,17 @@ function nestedProducerFixtureFiles(): Record<string, string> {
 		}
 	}
 	return nested
+}
+
+async function readJavaScriptOutput(outDir: string): Promise<string> {
+	const entries = await readdir(outDir, { recursive: true })
+	const sources = await Promise.all(
+		entries
+			.map(String)
+			.filter((entry) => entry.endsWith('.js'))
+			.map((entry) => readFile(join(outDir, entry), 'utf-8')),
+	)
+	return sources.join('\n')
 }
 
 describe('Workbench Profile 1 federation producer', () => {
@@ -256,6 +275,72 @@ describe('Workbench Profile 1 federation producer', () => {
 		expect(javascript.join('\n')).not.toContain('@pluxel-workbench-full-shared-surface')
 	}, 60_000)
 
+	it('selects the explicit development or distribution package export graph', async () => {
+		const files = producerFixtureFiles()
+		files['src/ui/manager.ts'] = `
+import { marker as selectedMarker } from 'conditional-workbench'
+export const marker = 'conditional-export-' + selectedMarker
+export default () => ({ marker, async render() {}, destroy() {} })
+`
+		files['src/ui/manager-development.ts'] = `
+import { marker as selectedMarker, type DevelopmentContract } from 'conditional-workbench'
+const contract: DevelopmentContract = { mode: 'development' }
+export const marker = 'conditional-export-' + selectedMarker + contract.mode
+export default () => ({ marker, async render() {}, destroy() {} })
+`
+		files['node_modules/conditional-workbench/package.json'] = JSON.stringify({
+			name: 'conditional-workbench',
+			version: '1.0.0',
+			type: 'module',
+			exports: {
+				'.': {
+					'@pluxel/hmr': './source.js',
+					default: './distribution.js',
+				},
+			},
+		})
+		files['node_modules/conditional-workbench/source.js'] =
+			"export const marker = 'selected-workbench-source-export'\n"
+		files['node_modules/conditional-workbench/source.d.ts'] = [
+			'export declare const marker: string',
+			"export type DevelopmentContract = { mode: 'development' }",
+			'',
+		].join('\n')
+		files['node_modules/conditional-workbench/distribution.js'] =
+			"export const marker = 'selected-workbench-distribution-export'\n"
+		files['node_modules/conditional-workbench/distribution.d.ts'] =
+			'export declare const marker: string\n'
+		await using fixture = await createFixture(files)
+
+		const developmentOutDir = join(fixture.path, 'artifact-development')
+		const distributionOutDir = join(fixture.path, 'artifact-distribution')
+		await Promise.all([
+			buildWorkbenchFederationProducerWithMode({
+				root: fixture.path,
+				plan: createPlan('conditional-development', definition, 'src/ui/manager-development.ts'),
+				outDir: developmentOutDir,
+				minify: false,
+				packageMode: 'development',
+			}),
+			buildWorkbenchFederationProducerWithMode({
+				root: fixture.path,
+				plan: createPlan('conditional-distribution'),
+				outDir: distributionOutDir,
+				minify: false,
+				packageMode: 'distribution',
+			}),
+		])
+
+		const [developmentJavaScript, distributionJavaScript] = await Promise.all([
+			readJavaScriptOutput(developmentOutDir),
+			readJavaScriptOutput(distributionOutDir),
+		])
+		expect(developmentJavaScript).toContain('selected-workbench-source-export')
+		expect(developmentJavaScript).not.toContain('selected-workbench-distribution-export')
+		expect(distributionJavaScript).toContain('selected-workbench-distribution-export')
+		expect(distributionJavaScript).not.toContain('selected-workbench-source-export')
+	}, 60_000)
+
 	it('builds distinct producers concurrently without process-local state leakage', async () => {
 		const files = producerFixtureFiles()
 		files['src/ui/manager.ts'] = `
@@ -277,45 +362,57 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		})
 		const firstOutDir = join(fixture.path, 'artifact-first')
 		const secondOutDir = join(fixture.path, 'artifact-second')
-
-		await Promise.all([
-			buildWorkbenchFederationProducer({
-				root: fixture.path,
-				plan: createPlan('concurrent-a', firstDefinition),
-				outDir: firstOutDir,
-				minify: false,
-			}),
-			buildWorkbenchFederationProducer({
-				root: fixture.path,
-				plan: createPlan(
-					'concurrent-b',
-					secondDefinition,
-					'src/ui/manager-second.ts',
-				),
-				outDir: secondOutDir,
-				minify: false,
-			}),
-		])
-
-		const readJavaScript = async (outDir: string): Promise<string> => {
-			const entries = await readdir(outDir, { recursive: true })
-			return (
-				await Promise.all(
-					entries
-						.map(String)
-						.filter((entry) => entry.endsWith('.js'))
-						.map((entry) => readFile(join(outDir, entry), 'utf-8')),
-				)
-			).join('\n')
+		const previousTestOverride = process.env.MFE_VITE_NO_TEST_ENV_CHECK
+		process.env.MFE_VITE_NO_TEST_ENV_CHECK = 'caller-owned'
+		try {
+			await Promise.all([
+				buildWorkbenchFederationProducer({
+					root: fixture.path,
+					plan: createPlan('concurrent-a', firstDefinition),
+					outDir: firstOutDir,
+					minify: false,
+				}),
+				buildWorkbenchFederationProducer({
+					root: fixture.path,
+					plan: createPlan('concurrent-b', secondDefinition, 'src/ui/manager-second.ts'),
+					outDir: secondOutDir,
+					minify: false,
+				}),
+			])
+			expect(process.env.MFE_VITE_NO_TEST_ENV_CHECK).toBe('caller-owned')
+		} finally {
+			if (previousTestOverride === undefined) delete process.env.MFE_VITE_NO_TEST_ENV_CHECK
+			else process.env.MFE_VITE_NO_TEST_ENV_CHECK = previousTestOverride
 		}
+
 		const [firstJavaScript, secondJavaScript] = await Promise.all([
-			readJavaScript(firstOutDir),
-			readJavaScript(secondOutDir),
+			readJavaScriptOutput(firstOutDir),
+			readJavaScriptOutput(secondOutDir),
 		])
 		expect(firstJavaScript).toContain('concurrent-producer-first')
 		expect(firstJavaScript).not.toContain('concurrent-producer-second')
 		expect(secondJavaScript).toContain('concurrent-producer-second')
 		expect(secondJavaScript).not.toContain('concurrent-producer-first')
+	}, 60_000)
+
+	it('preserves user source that contains the shared-surface analysis marker', async () => {
+		const files = producerFixtureFiles()
+		files['src/ui/manager.ts'] = `
+export const marker = 'user-owned-@pluxel-workbench-full-shared-surface'
+export default () => ({ marker, async render() {}, destroy() {} })
+`
+		await using fixture = await createFixture(files)
+		const outDir = join(fixture.path, 'artifact')
+
+		await buildWorkbenchFederationProducer({
+			root: fixture.path,
+			plan: createPlan('user-owned-analysis-marker'),
+			outDir,
+			minify: false,
+		})
+
+		const javascript = await readJavaScriptOutput(outDir)
+		expect(javascript).toContain('user-owned-@pluxel-workbench-full-shared-surface')
 	}, 60_000)
 
 	it('inspects fixed shared exports from the application root for a nested producer', async () => {
@@ -332,14 +429,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 			minify: false,
 		})
 
-		const javascript = (
-			await Promise.all(
-				(await readdir(outDir, { recursive: true }))
-					.map(String)
-					.filter((entry) => entry.endsWith('.js'))
-					.map((entry) => readFile(join(outDir, entry), 'utf-8')),
-			)
-		).join('\n')
+		const javascript = await readJavaScriptOutput(outDir)
 		expect(javascript).toContain('transitive-react-consumer')
 		expect(javascript).not.toContain('must-not-bundle-react-forward-ref')
 		expect(javascript).not.toContain('must-not-bundle-react-create-element')
@@ -348,7 +438,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 	it('rejects Mantine core stylesheet imports owned by the Workbench Shell', async () => {
 		const files = producerFixtureFiles()
 		files['src/ui/manager.ts'] = `
-import '@mantine/core/styles.css'
+import '@mantine/core/styles.css?inline'
 export default () => ({ async render() {}, destroy() {} })
 `
 		files['node_modules/@mantine/core/styles.css'] = '.must-not-bundle { color: red; }\n'
@@ -364,12 +454,70 @@ export default () => ({ async render() {}, destroy() {} })
 		).rejects.toThrow('Mantine core styles are provided once by the Workbench Shell')
 	}, 60_000)
 
+	it('rejects producer-local shared packages that disagree with the application winner', async () => {
+		const files = nestedProducerFixtureFiles()
+		files['external/producer/node_modules/@mantine/core/package.json'] = JSON.stringify({
+			name: '@mantine/core',
+			version: '9.5.0',
+			type: 'module',
+			exports: { '.': './index.js' },
+		})
+		await using fixture = await createFixture(files)
+		const root = join(fixture.path, 'external/producer')
+
+		await expect(
+			buildWorkbenchFederationProducer({
+				root,
+				applicationRoot: join(fixture.path, 'application/apps/host'),
+				plan: createPlan('producer-shared-mismatch'),
+				outDir: join(root, 'artifact'),
+				minify: false,
+			}),
+		).rejects.toThrow('Profile 1 requires @mantine/core@9.5.2, resolved 9.5.0')
+	}, 60_000)
+
+	it('allows a producer without local Mantine when the application provides the winner', async () => {
+		const files = nestedProducerFixtureFiles()
+		files['external/producer/src/ui/manager.ts'] = `
+export const marker = 'producer-with-host-mantine'
+export default () => ({ marker, async render() {}, destroy() {} })
+`
+		delete files['external/producer/node_modules/@mantine/core/package.json']
+		delete files['external/producer/node_modules/@mantine/core/index.js']
+		delete files['external/producer/node_modules/@mantine/core/index.d.ts']
+		delete files['external/producer/node_modules/@mantine/hooks/package.json']
+		delete files['external/producer/node_modules/@mantine/hooks/index.js']
+		delete files['external/producer/node_modules/@mantine/hooks/index.d.ts']
+		await using fixture = await createFixture(files)
+		const root = join(fixture.path, 'external/producer')
+		const outDir = join(root, 'artifact')
+
+		await buildWorkbenchFederationProducer({
+			root,
+			applicationRoot: join(fixture.path, 'application/apps/host'),
+			plan: createPlan('producer-with-host-mantine'),
+			outDir,
+			minify: false,
+		})
+
+		await expect(access(join(outDir, 'mf-manifest.json'))).resolves.toBeUndefined()
+	}, 60_000)
+
 	it('reuses a valid immutable revision and rejects a different plan at the same path', async () => {
 		await using fixture = await createFixture(producerFixtureFiles())
 		const plan = createPlan()
 		const outDir = join(fixture.path, 'artifact')
 		await buildWorkbenchFederationProducer({ root: fixture.path, plan, outDir, minify: false })
 		const before = await readFile(join(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE), 'utf-8')
+		await expect(
+			buildWorkbenchFederationProducerWithMode({
+				root: fixture.path,
+				plan,
+				outDir,
+				minify: false,
+				packageMode: 'distribution',
+			}),
+		).rejects.toThrow('immutable producer revision already exists')
 
 		await writeFile(
 			join(fixture.path, 'src/ui/manager.ts'),
@@ -458,6 +606,18 @@ export default () => ({ async render() {}, destroy() {} })
 		)
 	})
 
+	it('requires the application to install every Shell-provided shared package', async () => {
+		await using fixture = await createFixture(producerFixtureFiles())
+		await rm(join(fixture.path, 'node_modules/@mantine/hooks'), {
+			recursive: true,
+			force: true,
+		})
+
+		expect(() => resolveWorkbenchFederationShared(fixture.path)).toThrow(
+			'Profile 1 shared package is not installed: @mantine/hooks',
+		)
+	})
+
 	it('does not publish a failed build candidate', async () => {
 		const files = producerFixtureFiles()
 		files['src/ui/manager.ts'] = 'export default {\n'
@@ -477,6 +637,9 @@ export default () => ({ async render() {}, destroy() {} })
 			readdir(fixture.path).then((entries) =>
 				entries.filter((entry) => entry.includes('.candidate-')),
 			),
+		).resolves.toEqual([])
+		await expect(
+			readdir(join(fixture.path, '.pluxel/vite-workbench-ui-cache')).catch((): string[] => []),
 		).resolves.toEqual([])
 	}, 60_000)
 })

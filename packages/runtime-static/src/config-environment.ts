@@ -14,7 +14,7 @@ import type {
 	ConfigEnvironmentSchema,
 	StaticRuntimeApplication,
 	StaticRuntimeEnvironment,
-} from './types'
+} from './types.ts'
 
 const CONFIG_ENVIRONMENT_BINDING = Symbol.for('pluxel.staticConfigEnvironmentBinding')
 const ENVIRONMENT_NAME = /^[A-Z_][A-Z0-9_]*$/

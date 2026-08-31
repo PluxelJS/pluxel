@@ -1,4 +1,4 @@
 export {
 	NodeElysiaApplicationCarrier,
 	type NodeElysiaApplicationCarrierOptions,
-} from './node-elysia-application-carrier'
+} from './node-elysia-application-carrier.ts'

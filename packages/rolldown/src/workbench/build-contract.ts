@@ -11,15 +11,11 @@ import {
 	type WorkbenchFederationCompatibilitySet,
 } from '@pluxel/core/federation'
 import type { ModuleFederationOptions } from '@module-federation/vite'
-import { resolve } from 'pathe'
-import { resolvePackageJsonPathWithOxc } from '../resolver/oxc.ts'
-
-export type { WorkbenchFederationCompatibilitySet } from '@pluxel/core/federation'
+import { dirname, resolve } from 'pathe'
 
 export type ResolvedFederationShared = Readonly<{
 	shared: ModuleFederationOptions['shared']
 	signature: string
-	resolveRoot: string
 	compatibility: WorkbenchFederationCompatibilitySet
 }>
 
@@ -33,24 +29,21 @@ export function resolveWorkbenchFederationShared(root: string): ResolvedFederati
 		WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
 	)
 
-	const sourceRoot = resolve(root)
-	const resolveRoot = findWorkspaceRoot(sourceRoot) ?? sourceRoot
-	assertOptionalSharedPackageVersion(
-		sourceRoot,
-		resolveRoot,
+	const applicationRoot = resolve(root)
+	assertProfilePackageVersion(
+		applicationRoot,
 		'@mantine/core',
 		WORKBENCH_FEDERATION_MANTINE_VERSION,
 	)
-	assertOptionalSharedPackageVersion(
-		sourceRoot,
-		resolveRoot,
+	assertProfilePackageVersion(
+		applicationRoot,
 		'@mantine/hooks',
 		WORKBENCH_FEDERATION_MANTINE_VERSION,
 	)
 	const compatibility = createWorkbenchFederationCompatibilitySet({
-		react: resolveRequiredPackageVersion(sourceRoot, resolveRoot, 'react'),
-		reactDom: resolveRequiredPackageVersion(sourceRoot, resolveRoot, 'react-dom'),
-		runtime: resolveRequiredPackageVersion(sourceRoot, resolveRoot, '@pluxel/runtime'),
+		react: resolveRequiredPackageVersion(applicationRoot, 'react'),
+		reactDom: resolveRequiredPackageVersion(applicationRoot, 'react-dom'),
+		runtime: resolveRequiredPackageVersion(applicationRoot, '@pluxel/runtime'),
 	})
 	const signature = canonicalCompatibilitySignature(compatibility)
 	const shared = Object.fromEntries(
@@ -69,7 +62,29 @@ export function resolveWorkbenchFederationShared(root: string): ResolvedFederati
 		}),
 	) as unknown as ModuleFederationOptions['shared']
 
-	return Object.freeze({ shared, signature, resolveRoot, compatibility })
+	return Object.freeze({ shared, signature, compatibility })
+}
+
+/** Validates that producer-local packages agree with the host-owned compatibility set. */
+export function assertWorkbenchFederationProducerCompatibility(
+	producerRoot: string,
+	compatibility: WorkbenchFederationCompatibilitySet,
+): void {
+	const root = resolve(producerRoot)
+	const expected = {
+		react: compatibility.shared.react,
+		'react-dom': compatibility.shared['react-dom'],
+		'@pluxel/runtime': compatibility.shared['@pluxel/runtime/workbench'],
+	} as const
+	for (const [packageName, version] of Object.entries(expected)) {
+		assertProfilePackageVersion(root, packageName, version)
+	}
+	assertOptionalProfilePackageVersion(root, '@mantine/core', compatibility.shared['@mantine/core'])
+	assertOptionalProfilePackageVersion(
+		root,
+		'@mantine/hooks',
+		compatibility.shared['@mantine/hooks'],
+	)
 }
 
 /** @internal Resolves the Profile-owned Bridge implementation for Vite aliasing. */
@@ -84,7 +99,7 @@ export function resolveWorkbenchFederationBridgeEntry(): string {
 	}
 }
 
-export function canonicalCompatibilitySignature(
+function canonicalCompatibilitySignature(
 	compatibility: WorkbenchFederationCompatibilitySet,
 ): string {
 	return [
@@ -132,12 +147,8 @@ function resolveToolchainPackageVersion(packageName: string): string {
 	}
 }
 
-function resolveRequiredPackageVersion(
-	sourceRoot: string,
-	workspaceRoot: string,
-	packageName: string,
-): string {
-	const packageJsonPath = resolveSharedPackageJsonPath(sourceRoot, workspaceRoot, packageName)
+function resolveRequiredPackageVersion(root: string, packageName: string): string {
+	const packageJsonPath = resolveSharedPackageJsonPath(root, packageName)
 	if (!packageJsonPath) {
 		throw new Error(
 			`[workbench-ui] Profile ${WORKBENCH_PROFILE_VERSION} shared package is not installed: ${packageName}`,
@@ -150,13 +161,25 @@ function resolveRequiredPackageVersion(
 	return version
 }
 
-function assertOptionalSharedPackageVersion(
-	sourceRoot: string,
-	workspaceRoot: string,
+function assertProfilePackageVersion(
+	root: string,
 	packageName: string,
 	expectedVersion: string,
 ): void {
-	const packageJsonPath = resolveSharedPackageJsonPath(sourceRoot, workspaceRoot, packageName)
+	const actualVersion = resolveRequiredPackageVersion(root, packageName)
+	if (actualVersion !== expectedVersion) {
+		throw new Error(
+			`[workbench-ui] Profile ${WORKBENCH_PROFILE_VERSION} requires ${packageName}@${expectedVersion}, resolved ${actualVersion}`,
+		)
+	}
+}
+
+function assertOptionalProfilePackageVersion(
+	root: string,
+	packageName: string,
+	expectedVersion: string,
+): void {
+	const packageJsonPath = resolveSharedPackageJsonPath(root, packageName)
 	if (!packageJsonPath) return
 	const actualVersion = readPackageVersion(packageJsonPath)
 	if (actualVersion !== expectedVersion) {
@@ -166,20 +189,17 @@ function assertOptionalSharedPackageVersion(
 	}
 }
 
-function resolveSharedPackageJsonPath(
-	sourceRoot: string,
-	workspaceRoot: string,
-	packageName: string,
-): string | undefined {
-	const resolveFrom = (root: string) =>
-		resolvePackageJsonPathWithOxc(root, packageName, {
-			conditionNames: ['import', 'module', 'browser', 'default'],
-			tsconfig: 'auto',
-		})
-	return (
-		resolveFrom(sourceRoot) ??
-		(sourceRoot === workspaceRoot ? undefined : resolveFrom(workspaceRoot))
-	)
+function resolveSharedPackageJsonPath(root: string, packageName: string): string | undefined {
+	// Keep compatibility ownership local to the host/producer resolution chain. Resolver-wide
+	// fallbacks can otherwise make an uninstalled fixture or application inherit the toolchain copy.
+	let current = resolve(root)
+	for (;;) {
+		const packageJsonPath = resolve(current, 'node_modules', packageName, 'package.json')
+		if (existsSync(packageJsonPath)) return packageJsonPath
+		const parent = dirname(current)
+		if (parent === current) return undefined
+		current = parent
+	}
 }
 
 function readPackageVersion(packageJsonPath: string): string {
@@ -191,20 +211,4 @@ function readPackageVersion(packageJsonPath: string): string {
 	} catch {
 		return 'missing'
 	}
-}
-
-function findWorkspaceRoot(start: string): string | null {
-	let current = resolve(start)
-	for (let depth = 0; depth < 12; depth += 1) {
-		if (
-			existsSync(resolve(current, 'pnpm-workspace.yaml')) ||
-			existsSync(resolve(current, 'pnpm-lock.yaml'))
-		) {
-			return current
-		}
-		const parent = resolve(current, '..')
-		if (parent === current) break
-		current = parent
-	}
-	return null
 }

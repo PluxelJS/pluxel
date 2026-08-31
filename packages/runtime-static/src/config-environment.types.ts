@@ -1,6 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
 import { v } from '@pluxel/runtime'
-import { bindConfigEnvironment } from './config-environment'
+import { bindConfigEnvironment } from './config-environment.ts'
 
 declare const plugin: PluginConstructor
 const schema = v.pipe(
@@ -43,5 +43,3 @@ bindConfigEnvironment(plugin, schema, { values: { 0: 'APP_FIRST_VALUE' } })
 bindConfigEnvironment(plugin, schema, { tuple: { 0: 'APP_FIRST_TUPLE_VALUE' } })
 // @ts-expect-error Record inputs cannot promise static field completion.
 bindConfigEnvironment(plugin, schema, { record: { arbitrary: 'APP_ARBITRARY' } })
-
-export {}

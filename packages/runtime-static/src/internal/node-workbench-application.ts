@@ -1,13 +1,13 @@
 import type { PluginConstructor } from '@pluxel/core'
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-import { runStaticNodeApplication, type StaticNodeApplication } from './node-application'
+import { runStaticNodeApplication, type StaticNodeApplication } from './node-application.ts'
 import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
 	StaticRuntimeDeployment,
 	StaticRuntimeEnvironment,
-} from '../types'
+} from '../types.ts'
 
 export function runStaticNodeWorkbenchApplication<
 	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,

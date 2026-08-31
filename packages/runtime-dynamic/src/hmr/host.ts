@@ -322,6 +322,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			plan,
 			options.viteServer,
 			options.workbenchArtifactCacheDir,
+			options.workbenchAssets === 'built' ? 'distribution' : 'development',
 		)
 
 		return {
@@ -461,6 +462,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	viteServer: ViteDevServer | undefined,
 	workbenchArtifactCacheDir: string | undefined,
+	workbenchPackageMode: 'development' | 'distribution',
 ): Promise<LoaderHmrService> {
 	const baseRoute = readRuntimeRouteCapabilities(ctx)
 	if (baseRoute?.modules) {
@@ -483,6 +485,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 	const artifactCompiler = attachPluginArtifactCompiler(ctx, {
 		cacheDir: workbenchArtifactCacheDir ?? resolve(plan.root, '.pluxel/plugin-artifacts'),
+		packageMode: workbenchPackageMode,
 		viteServer: viteServer ?? hmr.vite,
 	})
 	if (ctx.workbench) {

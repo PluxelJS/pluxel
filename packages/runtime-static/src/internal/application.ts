@@ -1,8 +1,8 @@
 import type { PluginConstructor } from '@pluxel/core'
 import { isWorkbenchEnabled } from '@pluxel/runtime/internal/static-host'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from '../application'
-import { createStaticRuntimeHost, type StaticRuntimeHostDeployment } from './host'
+import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from '../application.ts'
+import { createStaticRuntimeHost, type StaticRuntimeHostDeployment } from './host.ts'
 import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import type {
 	StaticRuntime,
@@ -10,7 +10,7 @@ import type {
 	StaticRuntimeBindings,
 	StaticRuntimeDefinition,
 	StaticRuntimeStartupContext,
-} from '../types'
+} from '../types.ts'
 
 export type StartStaticRuntimeApplicationOptions<
 	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,

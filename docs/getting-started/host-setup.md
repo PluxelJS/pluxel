@@ -17,6 +17,10 @@ Pluxel 提供静态和动态两种宿主模式。静态宿主的 Plugin 清单�
 
 不要根据是否需要 HMR 选择宿主模式：两种模式在开发期都支持模块热更新，也使用相同的 generation 清理流程。业务 Plugin 不需要为两种模式编写不同实现。
 
+开启 Workbench 的 host 必须能从 application root 解析 `react`、`react-dom`、`@mantine/core` 与 `@mantine/hooks`，并满足当前
+`@pluxel/runtime` 的 peer versions。它们是 Shell 提供给 MF2 remote 的固定 singleton winner；缺包或 Mantine 精确版本不一致会在
+producer build 前失败。Headless host 不需要安装这组 browser peers。
+
 ## Static host
 
 ```sh package-install

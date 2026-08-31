@@ -5,7 +5,7 @@ packages:
   '@pluxel/create':
     type: patch
   '@pluxel/rolldown':
-    type: patch
+    type: major
   '@pluxel/runtime':
     type: patch
   '@pluxel/runtime-dynamic':
@@ -21,5 +21,11 @@ remotes now reuse the Shell's exact React and Mantine singleton modules without 
 while each renderer keeps its own Mantine provider root.
 
 Producer builds now run in-process with precise application-root coordination, isolated declaration
-caches, and validated dynamic types. The dynamic Vite integration owns React Refresh exactly once,
-including in newly created projects.
+caches, fair cross-root admission, producer/host shared-version validation, and validated dynamic types.
+The dynamic Vite integration owns React Refresh exactly once, including in newly created projects.
+
+The low-level shared-resolution result and compatibility-signature helpers are no longer exported from
+`@pluxel/rolldown/vite/workbench-ui`; callers provide the application root directly to the producer
+builder instead of depending on inferred workspace roots. Producer calls must also select
+`packageMode: 'development' | 'distribution'` so package subpaths cannot silently fall back to stale
+built output during Workbench HMR.

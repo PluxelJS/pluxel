@@ -25,6 +25,8 @@ import type { ViteDevServer } from 'vite'
 export type PluginArtifactCompilerOptions = Readonly<{
 	/** Disk cache root. @defaultValue `.pluxel/plugin-artifacts` under `process.cwd()`. */
 	cacheDir?: string
+	/** Package export graph used by Workbench producers. */
+	packageMode: 'development' | 'distribution'
 }>
 
 export type PluginArtifactCompilerViteServer = {
@@ -103,7 +105,7 @@ const HASH_ALLOWED_EXTENSIONS = [
 	'.json',
 ] as const
 
-const ARTIFACT_BUILD_CONCURRENCY = 2
+const NODE_ARTIFACT_BUILD_CONCURRENCY = 2
 const ARTIFACT_CACHE_KEEP = 5
 
 /**
@@ -118,21 +120,23 @@ export class PluginArtifactCompiler {
 	private readonly store?: PluginArtifactCompilerWorkbenchStore
 	private readonly viteServer?: PluginArtifactCompilerViteServer
 	private readonly cacheDir: string
+	private readonly packageMode: 'development' | 'distribution'
 	private readonly producerTasks = new Map<string, Promise<WorkbenchArtifactRevision | null>>()
 	private readonly desiredProducerByDefinition = new Map<string, string>()
 	private readonly nodeEntries = new Map<string, NodeModuleCompileEntry>()
-	private activeBuilds = 0
-	private readonly buildWaiters: Array<() => void> = []
+	private activeNodeBuilds = 0
+	private readonly nodeBuildWaiters: Array<() => void> = []
 	private readonly signal = new AbortController()
 
 	constructor(
 		public ctx: Context,
 		deps: PluginArtifactCompilerDeps,
-		options?: PluginArtifactCompilerOptions,
+		options: PluginArtifactCompilerOptions,
 	) {
 		this.store = deps.store
 		this.viteServer = deps.viteServer
-		this.cacheDir = resolve(options?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts'))
+		this.cacheDir = resolve(options.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts'))
+		this.packageMode = options.packageMode
 	}
 
 	/**
@@ -252,18 +256,16 @@ export class PluginArtifactCompiler {
 	): Promise<WorkbenchArtifactRevision | null> {
 		const store = this.store!
 		const outDir = join(this.cacheDir, 'workbench', plan.producer, plan.buildRevision)
-		await this.withBuildSlot(async () => {
-			const { buildWorkbenchFederationProducer } =
-				await import('@pluxel/rolldown/vite/workbench-ui')
-			await buildWorkbenchFederationProducer({
-				plan,
-				root,
-				applicationRoot: this.viteServer?.config.root,
-				outDir,
-				minify: false,
-				sourcemap: true,
-				signal: this.signal.signal,
-			})
+		const { buildWorkbenchFederationProducer } = await import('@pluxel/rolldown/vite/workbench-ui')
+		await buildWorkbenchFederationProducer({
+			plan,
+			root,
+			applicationRoot: this.viteServer?.config.root,
+			packageMode: this.packageMode,
+			outDir,
+			minify: false,
+			sourcemap: true,
+			signal: this.signal.signal,
 		})
 		if (
 			this.signal.signal.aborted ||
@@ -310,7 +312,7 @@ export class PluginArtifactCompiler {
 					}
 				}
 				if (!reusable) {
-					await this.withBuildSlot(async () => {
+					await this.withNodeBuildSlot(async () => {
 						if (!entry.active) return
 						await buildNodeModule({
 							root: resolve(this.viteServer?.config.root ?? process.cwd()),
@@ -482,16 +484,16 @@ export class PluginArtifactCompiler {
 		return collected
 	}
 
-	private async withBuildSlot<T>(build: () => Promise<T>): Promise<T> {
-		if (this.activeBuilds >= ARTIFACT_BUILD_CONCURRENCY) {
-			await new Promise<void>((resolveSlot) => this.buildWaiters.push(resolveSlot))
+	private async withNodeBuildSlot<T>(build: () => Promise<T>): Promise<T> {
+		if (this.activeNodeBuilds >= NODE_ARTIFACT_BUILD_CONCURRENCY) {
+			await new Promise<void>((resolveSlot) => this.nodeBuildWaiters.push(resolveSlot))
 		}
-		this.activeBuilds += 1
+		this.activeNodeBuilds += 1
 		try {
 			return await build()
 		} finally {
-			this.activeBuilds -= 1
-			this.buildWaiters.shift()?.()
+			this.activeNodeBuilds -= 1
+			this.nodeBuildWaiters.shift()?.()
 		}
 	}
 }

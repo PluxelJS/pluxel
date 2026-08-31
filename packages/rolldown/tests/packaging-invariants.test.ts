@@ -5,6 +5,12 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { parseSync } from 'oxc-parser'
+import {
+	WORKBENCH_FEDERATION_MANTINE_VERSION,
+	WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
+	WORKBENCH_FEDERATION_RUNTIME_VERSION,
+	WORKBENCH_FEDERATION_VITE_VERSION,
+} from '@pluxel/core/federation'
 import { describe, expect, it } from 'vitest'
 import { collectImportSpecifiers } from '../src/rolldown/plugins/importCollector.ts'
 import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
@@ -334,6 +340,21 @@ describe('toolchain package boundaries', () => {
 		expect(staticVite).not.toContain('../../rolldown/src/')
 	})
 
+	it('keeps the Vite Node carrier on current source without leaking that bridge into builds', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const carrier = await readFile(`${root}/packages/runtime-dev/src/vite-node-carrier.ts`, 'utf8')
+		const buildConfig = await readFile(`${root}/packages/runtime-dev/tsdown.config.ts`, 'utf8')
+		const sourceBridge = await readFile(
+			`${root}/packages/runtime-dev/tsdown-source-bridge.ts`,
+			'utf8',
+		)
+
+		expect(carrier).toContain("from '../../runtime-node/src/index.ts'")
+		expect(carrier).not.toContain("from '@pluxel/runtime-node'")
+		expect(buildConfig).toContain('pluxelRuntimeNodeSourceBridgeExternal()')
+		expect(sourceBridge).toContain("return { id: '@pluxel/runtime-node', external: true }")
+	})
+
 	it('keeps Vite and Module Federation lazy behind Workbench UI declarations', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const pluginCode = await readFile(
@@ -355,6 +376,9 @@ describe('toolchain package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtimeDynamicFiles = await collectSourceFiles(`${root}/packages/runtime-dynamic/src`)
 		const runtimeDevFiles = await collectSourceFiles(`${root}/packages/runtime-dev/src`)
+		const rolldown = await readJson(`${root}/packages/rolldown/package.json`)
+		const runtime = await readJson(`${root}/packages/runtime/package.json`)
+		const workspace = await readFile(`${root}/pnpm-workspace.yaml`, 'utf8')
 		const runtimeStatic = await readJson(`${root}/packages/runtime-static/package.json`)
 		const runtimeStaticTsdown = await readFile(
 			`${root}/packages/runtime-static/tsdown.config.ts`,
@@ -390,6 +414,22 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStaticTsdown).not.toContain('oxc-parser')
 		expect(runtimeStaticTsdown).not.toContain('oxc-resolver')
 		expect(runtimeStaticTsdown).not.toContain('typescript')
+		expect(rolldown.dependencies?.['@module-federation/vite']).toBe(
+			WORKBENCH_FEDERATION_VITE_VERSION,
+		)
+		expect(rolldown.dependencies?.['@module-federation/bridge-react']).toBe(
+			WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
+		)
+		expect(runtime.dependencies?.['@module-federation/runtime']).toBe(
+			WORKBENCH_FEDERATION_RUNTIME_VERSION,
+		)
+		expect(runtime.dependencies?.['@module-federation/bridge-react']).toBe(
+			WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
+		)
+		expect(runtime.peerDependencies?.['@mantine/core']).toBe('catalog:')
+		expect(runtime.peerDependencies?.['@mantine/hooks']).toBe('catalog:')
+		expect(workspace).toContain(`  '@mantine/core': ^${WORKBENCH_FEDERATION_MANTINE_VERSION}\n`)
+		expect(workspace).toContain(`  '@mantine/hooks': ^${WORKBENCH_FEDERATION_MANTINE_VERSION}\n`)
 	})
 
 	it('keeps Rolldown plugin utility dependencies inside the rolldown package', async () => {

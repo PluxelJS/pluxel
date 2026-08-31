@@ -10,6 +10,7 @@ import {
 } from '@pluxel/core/federation'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import {
+	assertWorkbenchFederationProducerCompatibility,
 	resolveWorkbenchFederationBridgeEntry,
 	resolveWorkbenchFederationShared,
 	type ResolvedFederationShared,
@@ -20,10 +21,7 @@ import {
 } from '../workbench/build-scheduler.ts'
 import { resolveParaglideIntegration } from './paraglide.ts'
 import { validateWorkbenchFederationArtifact } from '../workbench/artifact.ts'
-import {
-	runWorkbenchUiWorker,
-	type WorkbenchUiWorkerPayload,
-} from './workbench-ui-worker.ts'
+import { runWorkbenchViteBuild, type WorkbenchViteBuildOptions } from './workbench-vite-build.ts'
 
 export type BuildWorkbenchFederationProducerOptions = Readonly<{
 	plan: WorkbenchFederationProducerPlan
@@ -31,9 +29,15 @@ export type BuildWorkbenchFederationProducerOptions = Readonly<{
 	root?: string
 	/** Host application root that provides the fixed shared winners. @defaultValue root */
 	applicationRoot?: string
+	/** Selects source exports for development or built package exports for distribution assembly. */
+	packageMode: 'development' | 'distribution'
 	outDir?: string
 	minify?: boolean
 	sourcemap?: boolean
+	/**
+	 * Prevents a queued Federation build from starting or publishing after abort. An already-running
+	 * Vite build finishes before this operation rejects because Vite has no build cancellation API.
+	 */
 	signal?: AbortSignal
 }>
 
@@ -43,13 +47,11 @@ export type WorkbenchFederationProducerBuild = Readonly<{
 	compatibilitySignature: string
 }>
 
-export { canonicalCompatibilitySignature } from '../workbench/build-contract.ts'
-export { resolveWorkbenchFederationShared, type ResolvedFederationShared }
-
 const PRODUCER_STAMP_FILE = 'pluxel-producer.json'
 type ProducerStamp = Readonly<{
 	profile: typeof WORKBENCH_PROFILE_VERSION
 	buildContract: typeof WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION
+	packageMode: BuildWorkbenchFederationProducerOptions['packageMode']
 	producer: string
 	buildRevision: string
 	exposes: readonly string[]
@@ -64,6 +66,9 @@ export async function buildWorkbenchFederationProducer(
 	const plan = assertPlan(options.plan)
 	const outDir = resolve(root, options.outDir ?? workbenchFederationBuildOutDir(plan))
 	const resolvedShared = resolveWorkbenchFederationShared(applicationRoot)
+	if (root !== applicationRoot) {
+		assertWorkbenchFederationProducerCompatibility(root, resolvedShared.compatibility)
+	}
 	const compatibilitySignature = resolvedShared.signature
 	const result = Object.freeze({
 		outDir,
@@ -72,7 +77,7 @@ export async function buildWorkbenchFederationProducer(
 	})
 
 	return runWorkbenchOutputTransaction(outDir, async () => {
-		if (await isCommittedRevision(outDir, plan, resolvedShared)) return result
+		if (await isCommittedRevision(outDir, plan, resolvedShared, options.packageMode)) return result
 		if (await exists(outDir)) {
 			throw new Error(
 				`[workbench-ui] immutable producer revision already exists but does not match its plan: ${outDir}`,
@@ -82,12 +87,12 @@ export async function buildWorkbenchFederationProducer(
 		const buildId = randomUUID()
 		const candidateDir = `${outDir}.candidate-${buildId}`
 		const cacheDir = resolve(root, '.pluxel/vite-workbench-ui-cache', `${plan.producer}-${buildId}`)
-		await rm(candidateDir, { recursive: true, force: true })
 		try {
 			const paraglide = resolveParaglideIntegration(root)
-			const payload: WorkbenchUiWorkerPayload = {
-				root,
+			const viteBuild: WorkbenchViteBuildOptions = {
+				producerRoot: root,
 				applicationRoot,
+				packageMode: options.packageMode,
 				declarationRoot: commonDirectory(root, applicationRoot),
 				outDir: candidateDir,
 				producer: plan.producer,
@@ -102,7 +107,10 @@ export async function buildWorkbenchFederationProducer(
 				paraglide: paraglide ? { project: paraglide.project, outdir: paraglide.outdir } : null,
 			}
 			if (options.signal?.aborted) throw options.signal.reason
-			await runWorkbenchFederationBuild(applicationRoot, () => runWorkbenchUiWorker(payload))
+			await runWorkbenchFederationBuild(applicationRoot, () => {
+				if (options.signal?.aborted) throw options.signal.reason
+				return runWorkbenchViteBuild(viteBuild)
+			})
 			if (options.signal?.aborted) throw options.signal.reason
 			const validation = await validateWorkbenchFederationArtifact(candidateDir, {
 				plan,
@@ -115,7 +123,7 @@ export async function buildWorkbenchFederationProducer(
 			}
 			await writeFile(
 				resolve(candidateDir, PRODUCER_STAMP_FILE),
-				`${JSON.stringify(createStamp(plan, compatibilitySignature))}\n`,
+				`${JSON.stringify(createStamp(plan, compatibilitySignature, options.packageMode))}\n`,
 				'utf-8',
 			)
 			await mkdir(dirname(outDir), { recursive: true })
@@ -146,6 +154,7 @@ async function isCommittedRevision(
 	outDir: string,
 	plan: WorkbenchFederationProducerPlan,
 	shared: ResolvedFederationShared,
+	packageMode: BuildWorkbenchFederationProducerOptions['packageMode'],
 ): Promise<boolean> {
 	let stamp: ProducerStamp
 	try {
@@ -155,7 +164,9 @@ async function isCommittedRevision(
 	} catch {
 		return false
 	}
-	if (JSON.stringify(stamp) !== JSON.stringify(createStamp(plan, shared.signature))) return false
+	if (JSON.stringify(stamp) !== JSON.stringify(createStamp(plan, shared.signature, packageMode))) {
+		return false
+	}
 	const validation = await validateWorkbenchFederationArtifact(outDir, {
 		plan,
 		compatibility: shared.compatibility,
@@ -166,10 +177,12 @@ async function isCommittedRevision(
 function createStamp(
 	plan: WorkbenchFederationProducerPlan,
 	compatibilitySignature: string,
+	packageMode: BuildWorkbenchFederationProducerOptions['packageMode'],
 ): ProducerStamp {
 	return {
 		profile: WORKBENCH_PROFILE_VERSION,
 		buildContract: WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION,
+		packageMode,
 		producer: plan.producer,
 		buildRevision: plan.buildRevision,
 		exposes: plan.entries.map((entry) => entry.expose),
