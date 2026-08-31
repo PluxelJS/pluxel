@@ -101,8 +101,20 @@ if (await isDirectory(resolve(root, 'projects'))) {
 	if (!workspacePatterns.has('projects/*')) errors.push('workspace is missing projects/*')
 }
 
-const catalogNames = new Set(Object.keys(workspace.catalog ?? {}))
-if (catalogNames.size === 0) errors.push('pnpm-workspace.yaml must define a default catalog')
+const catalogSpecifiers = new Map()
+for (const [name] of Object.entries(workspace.catalog ?? {})) {
+	catalogSpecifiers.set(name, new Set(['catalog:']))
+}
+for (const [catalogName, catalog] of Object.entries(workspace.catalogs ?? {})) {
+	for (const name of Object.keys(catalog ?? {})) {
+		const specifiers = catalogSpecifiers.get(name) ?? new Set()
+		specifiers.add(`catalog:${catalogName}`)
+		catalogSpecifiers.set(name, specifiers)
+	}
+}
+if (catalogSpecifiers.size === 0) {
+	errors.push('pnpm-workspace.yaml must define at least one catalog')
+}
 
 const packageNames = packageManifests.map(({ manifest }) => manifest.name).filter(Boolean)
 if (new Set(packageNames).size !== packageNames.length) {
@@ -145,11 +157,9 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 	}
 	for (const field of dependencyFields) {
 		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
-			if (catalogNames.has(name) && specifier !== 'catalog:') {
-				errors.push(`${relative(manifestPath)}: ${field}.${name} must use catalog:`)
-			}
-			if (specifier === 'catalog:' && !catalogNames.has(name)) {
-				errors.push(`${relative(manifestPath)}: ${field}.${name} is missing from the catalog`)
+			const acceptedCatalogSpecifiers = catalogSpecifiers.get(name)
+			if (specifier.startsWith('catalog:') && !acceptedCatalogSpecifiers?.has(specifier)) {
+				errors.push(`${relative(manifestPath)}: ${field}.${name} is missing from ${specifier}`)
 			}
 
 			if (!isPublic || !publicVersions.has(name)) continue

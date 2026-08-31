@@ -53,29 +53,29 @@
 		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
-		"@logtape/logtape": "^2.0.2",
+		"@logtape/logtape": "catalog:prod",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/runtime": "workspace:^",
-		"@vitejs/plugin-react": "^6.1.1",
-		"crossws": "0.4.12",
-		"elysia": "2.0.0-beta.7",
-		"jsonc-parser": "^3.3.1",
-		"pathe": "^2.0.3",
-		"picomatch": "^4.0.3",
-		"srvx": "0.12.7",
-		"valibot": "^1.2.0"
+		"@vitejs/plugin-react": "catalog:build",
+		"crossws": "catalog:prod",
+		"elysia": "catalog:prod",
+		"jsonc-parser": "catalog:prod",
+		"pathe": "catalog:node",
+		"picomatch": "catalog:prod",
+		"srvx": "catalog:prod",
+		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"react": "catalog:",
-		"react-dom": "catalog:",
-		"superjson": "^2.2.6",
-		"tsx": "^4.23.0",
-		"typescript": "catalog:",
-		"vite": "^8.2.2"
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"superjson": "catalog:validation",
+		"tsx": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
 		"vite": ">=8.2.2 <9"
@@ -87,6 +87,6 @@
 	},
 	"inlinedDependencies": {
 		"chokidar": "5.0.0",
-		"readdirp": "5.0.0"
+		"readdirp": "5.1.1"
 	}
 }

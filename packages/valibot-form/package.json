@@ -39,36 +39,36 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"valibot": "^1.2.0"
+		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
-		"@dnd-kit/core": "^6.3.1",
-		"@dnd-kit/sortable": "^10.0.0",
-		"@dnd-kit/utilities": "^3.2.2",
-		"@mantine/core": "catalog:",
-		"@mantine/hooks": "catalog:",
-		"@tabler/icons-react": "catalog:",
-		"@tanstack/react-form": "^1.28.3",
-		"@types/react": "catalog:",
-		"@types/react-dom": "catalog:",
-		"@vitejs/plugin-react": "^6.1.1",
-		"jsdom": "^28.1.0",
-		"react": "catalog:",
-		"react-dom": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vite": "^8.2.2"
+		"@dnd-kit/core": "catalog:frontend",
+		"@dnd-kit/sortable": "catalog:frontend",
+		"@dnd-kit/utilities": "catalog:frontend",
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"@tabler/icons-react": "catalog:icons",
+		"@tanstack/react-form": "catalog:frontend",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"@vitejs/plugin-react": "catalog:build",
+		"jsdom": "catalog:dev",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
-		"@dnd-kit/core": "^6.3.1",
-		"@dnd-kit/sortable": "^10.0.0",
-		"@dnd-kit/utilities": "^3.2.2",
-		"@mantine/core": "catalog:",
-		"@mantine/hooks": "catalog:",
-		"@tabler/icons-react": "catalog:",
-		"@tanstack/react-form": "^1.28.3",
-		"react": "catalog:",
-		"react-dom": "catalog:"
+		"@dnd-kit/core": "catalog:frontend",
+		"@dnd-kit/sortable": "catalog:frontend",
+		"@dnd-kit/utilities": "catalog:frontend",
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"@tabler/icons-react": "catalog:icons",
+		"@tanstack/react-form": "catalog:frontend",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
 		"@dnd-kit/core": {

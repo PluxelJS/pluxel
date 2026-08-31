@@ -178,9 +178,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(
 			plugins.find((plugin) => plugin.name === 'pluxel:dynamic-runtime-source')?.config?.({})
 				?.resolve?.dedupe,
-		).toEqual(
-			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
-		)
+		).toEqual(expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']))
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
 	})
 

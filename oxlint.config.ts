@@ -87,11 +87,24 @@ const baselineRules: RuleMap = {
 	// DnD grouping/list roles do not map cleanly to fieldset/ul without changing layout semantics.
 	'jsx-a11y/prefer-tag-over-role': 'off',
 	'react/exhaustive-deps': 'off',
+	// oxlint-tsgolint 7 enables React Compiler diagnostics through the broad correctness
+	// category. Adopting those rules is a separate UI architecture migration; keep the
+	// repository's existing, explicitly selected Hooks and runtime-safety policy stable.
+	'react/exhaustive-effect-dependencies': 'off',
+	'react/globals': 'off',
+	'react/immutability': 'off',
+	'react/incompatible-library': 'off',
+	'react/memo-dependencies': 'off',
+	'react/no-deriving-state-in-effects': 'off',
 	'react/no-array-index-key': 'off',
 	'react/no-danger': 'error',
 	'react/no-unstable-nested-components': 'off',
+	'react/preserve-manual-memoization': 'off',
 	'react/react-in-jsx-scope': 'off',
+	'react/refs': 'off',
 	'react/rules-of-hooks': 'off',
+	'react/set-state-in-effect': 'off',
+	'react/use-memo': 'off',
 	'typescript/no-extraneous-class': 'off',
 	'unicorn/consistent-function-scoping': 'off',
 	'unicorn/no-array-sort': 'off',

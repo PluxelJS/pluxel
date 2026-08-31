@@ -2,14 +2,14 @@ import type { Context as PluxelContext } from '../../context/Context'
 import {
 	Eventure,
 	type EmitSettledRecord,
+	type ErrorPolicy,
 	type EventArgs,
 	type EventDescriptor,
-	type EventEmitterOptions,
 	type EventListener,
 	type EventResult,
+	type EventureOptions,
 	type EventureWaitForOptions,
 	type EventureWaitForPromise,
-	type OnOptions,
 	type Unsubscribe,
 } from 'eventure'
 import { pinOwnerContext } from '../../context/owner-view'
@@ -22,11 +22,14 @@ import { deferEventCleanup, withEventLogger } from './event-support'
  */
 export interface Events {}
 
-export type EventsServiceConfig = Readonly<
-	Omit<EventEmitterOptions<Events>, 'events' | 'logger'> & {
-		readonly events?: readonly (keyof Events)[]
-	}
->
+export type EventsServiceConfig = Readonly<{
+	readonly events?: readonly (keyof Events)[]
+	readonly catchPromiseError?: boolean
+	readonly checkSyncFuncReturnPromise?: boolean
+	readonly errorPolicy?: ErrorPolicy
+}>
+
+type OnOptions = Readonly<{ prepend?: boolean; signal?: AbortSignal }>
 
 type EventPredicate<D extends EventDescriptor> = (...args: EventArgs<D>) => boolean | void
 
@@ -119,7 +122,9 @@ class EventsServiceView implements EventsService {
 		listener: EventListener<Events[K]>,
 		opts?: OnOptions,
 	): Unsubscribe {
-		return this.ownSubscription(this.#backend.on(event, listener, opts))
+		return opts?.prepend
+			? this.onFront(event, listener, { signal: opts.signal })
+			: this.ownSubscription(this.#backend.on(event, listener, opts))
 	}
 
 	onFront<K extends keyof Events>(
@@ -127,7 +132,7 @@ class EventsServiceView implements EventsService {
 		listener: EventListener<Events[K]>,
 		opts?: Omit<OnOptions, 'prepend'>,
 	): Unsubscribe {
-		return this.ownSubscription(this.#backend.onFront(event, listener, opts))
+		return this.ownSubscription(this.#backend.at(event, 'front').on(listener, opts))
 	}
 
 	onAt<K extends keyof Events>(
@@ -138,7 +143,9 @@ class EventsServiceView implements EventsService {
 		},
 		listener: EventListener<Events[K]>,
 	): Unsubscribe {
-		return this.ownSubscription(this.#backend.onAt(event, options, listener))
+		return this.ownSubscription(
+			this.#backend.at(event, options.at).on(listener, { signal: options.signal }),
+		)
 	}
 
 	off<K extends keyof Events>(event: K, listener: EventListener<Events[K]>): boolean {
@@ -150,7 +157,11 @@ class EventsServiceView implements EventsService {
 		listener: EventListener<Events[K]>,
 		predicate?: EventPredicate<Events[K]>,
 	): Unsubscribe {
-		return this.ownSubscription(this.#backend.once(event, listener, predicate))
+		return this.ownSubscription(
+			predicate
+				? this.#backend.when(event, predicate).once(listener)
+				: this.#backend.once(event, listener),
+		)
 	}
 
 	onceFront<K extends keyof Events>(
@@ -158,7 +169,10 @@ class EventsServiceView implements EventsService {
 		listener: EventListener<Events[K]>,
 		predicate?: EventPredicate<Events[K]>,
 	): Unsubscribe {
-		return this.ownSubscription(this.#backend.onceFront(event, listener, predicate))
+		const scope = this.#backend.at(event, 'front')
+		return this.ownSubscription(
+			predicate ? scope.when(predicate).once(listener) : scope.once(listener),
+		)
 	}
 
 	many<K extends keyof Events>(
@@ -167,7 +181,11 @@ class EventsServiceView implements EventsService {
 		listener: EventListener<Events[K]>,
 		predicate?: EventPredicate<Events[K]>,
 	): Unsubscribe {
-		return this.ownSubscription(this.#backend.many(event, times, listener, predicate))
+		return this.ownSubscription(
+			predicate
+				? this.#backend.when(event, predicate).many(times, listener)
+				: this.#backend.many(event, times, listener),
+		)
 	}
 
 	manyFront<K extends keyof Events>(
@@ -176,22 +194,28 @@ class EventsServiceView implements EventsService {
 		listener: EventListener<Events[K]>,
 		predicate?: EventPredicate<Events[K]>,
 	): Unsubscribe {
-		return this.ownSubscription(this.#backend.manyFront(event, times, listener, predicate))
+		const scope = this.#backend.at(event, 'front')
+		return this.ownSubscription(
+			predicate ? scope.when(predicate).many(times, listener) : scope.many(times, listener),
+		)
 	}
 
 	when<K extends keyof Events>(
 		event: K,
 		predicate?: EventPredicate<Events[K]>,
 	): EventsWhenGuard<Events[K]> {
-		const guard = this.#backend.when(event, predicate)
+		const condition = predicate ?? (() => true)
 		return Object.freeze({
-			once: (listener: EventListener<Events[K]>) => this.ownSubscription(guard.once(listener)),
+			once: (listener: EventListener<Events[K]>) =>
+				this.ownSubscription(this.#backend.when(event, condition).once(listener)),
 			onceFront: (listener: EventListener<Events[K]>) =>
-				this.ownSubscription(guard.onceFront(listener)),
+				this.ownSubscription(this.#backend.at(event, 'front').when(condition).once(listener)),
 			many: (times: number, listener: EventListener<Events[K]>) =>
-				this.ownSubscription(guard.many(times, listener)),
+				this.ownSubscription(this.#backend.when(event, condition).many(times, listener)),
 			manyFront: (times: number, listener: EventListener<Events[K]>) =>
-				this.ownSubscription(guard.manyFront(times, listener)),
+				this.ownSubscription(
+					this.#backend.at(event, 'front').when(condition).many(times, listener),
+				),
 		})
 	}
 
@@ -237,10 +261,15 @@ export function createEventsBackend(
 	ctx: PluxelContext,
 	config?: EventsServiceConfig,
 ): Eventure<Events> {
-	let backendConfig: EventEmitterOptions<Events> | undefined
+	let backendConfig: EventureOptions<Events> | undefined
 	if (config) {
-		const { events, ...options } = config
-		backendConfig = { ...options, ...(events ? { events: [...events] } : {}) }
+		const { events, catchPromiseError, checkSyncFuncReturnPromise, ...options } = config
+		backendConfig = {
+			...options,
+			captureRejections: catchPromiseError,
+			captureReturnedPromises: checkSyncFuncReturnPromise,
+			...(events ? { preallocateEvents: [...events] } : {}),
+		}
 	}
 	return new Eventure(withEventLogger(ctx, backendConfig))
 }

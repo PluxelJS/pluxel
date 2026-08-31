@@ -1,7 +1,23 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import Module from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { generateDtsBundle } from 'dts-bundle-generator'
+
+// dts-bundle-generator still uses the pre-TypeScript-7 compiler API through CommonJS.
+// Keep the application compiler on TS 7 while routing this isolated tool to the legacy alias.
+const CommonJsModule = /** @type {typeof Module & {
+ * _load(request: string, parent: unknown, isMain: boolean): unknown
+ * }} */ (Module)
+const loadCommonJsModule = CommonJsModule._load
+CommonJsModule._load = function loadWithLegacyTypeScript(request, parent, isMain) {
+	return loadCommonJsModule(
+		request === 'typescript' ? 'typescript-legacy' : request,
+		parent,
+		isMain,
+	)
+}
+const { generateDtsBundle } = await import('dts-bundle-generator')
+CommonJsModule._load = loadCommonJsModule
 
 const docsRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))

@@ -78,17 +78,17 @@
 		"@pluxel/rolldown": "workspace:^"
 	},
 	"devDependencies": {
-		"@platformatic/vfs": "^0.3.0",
+		"@platformatic/vfs": "catalog:dev",
 		"@pluxel/core": "workspace:*",
-		"fs-fixture": "^2.13.0",
-		"vitest": "catalog:"
+		"fs-fixture": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"vitest": "catalog:"
+		"vitest": "catalog:test"
 	},
 	"inlinedDependencies": {
-		"@platformatic/vfs": "0.3.4",
+		"@platformatic/vfs": "0.4.0",
 		"fs-fixture": "2.14.0"
 	}
 }

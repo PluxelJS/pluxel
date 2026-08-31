@@ -33,7 +33,7 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"takumi-js": "catalog:"
+		"takumi-js": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
@@ -41,16 +41,16 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/react": "catalog:",
-		"react": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"@types/react": "catalog:types",
+		"react": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/fonts": "workspace:^",
 		"@pluxel/runtime": "workspace:^",
-		"react": "catalog:"
+		"react": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
 		"react": {

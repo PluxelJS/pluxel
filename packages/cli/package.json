@@ -33,35 +33,35 @@
 		"typecheck": "tsc --noEmit --pretty false --composite false --customConditions development"
 	},
 	"dependencies": {
-		"@clack/prompts": "^1.0.1",
-		"gunshi": "^0.29.2",
-		"jsonc-parser": "^3.3.1",
-		"package-manager-detector": "^1.6.0",
-		"pathe": "^2.0.3",
-		"picomatch": "^4.0.3",
-		"pkg-types": "^2.3.0",
-		"semver": "^7.8.5",
-		"yaml": "catalog:"
+		"@clack/prompts": "catalog:prod",
+		"gunshi": "catalog:prod",
+		"jsonc-parser": "catalog:prod",
+		"package-manager-detector": "catalog:prod",
+		"pathe": "catalog:node",
+		"picomatch": "catalog:prod",
+		"pkg-types": "catalog:node",
+		"semver": "catalog:prod",
+		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
-		"@pluxel/market": "catalog:",
+		"@pluxel/market": "catalog:dev",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/picomatch": "^4.0.2",
-		"@types/react": "catalog:",
-		"@types/semver": "^7.8.0",
-		"ink": "^6.8.0",
-		"react": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:"
+		"@types/picomatch": "catalog:types",
+		"@types/react": "catalog:types",
+		"@types/semver": "catalog:types",
+		"ink": "catalog:dev",
+		"react": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev"
 	},
 	"peerDependencies": {
-		"@pluxel/market": "catalog:",
+		"@pluxel/market": "catalog:peer",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/runtime-dynamic": "workspace:^",
-		"oxlint": "^1.58.0",
-		"tsdown": "catalog:"
+		"oxlint": "catalog:peer",
+		"tsdown": "catalog:build"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/market": {

@@ -25,11 +25,11 @@
 	},
 	"dependencies": {
 		"@pluxel/runtime": "workspace:*",
-		"crossws": "0.4.12",
-		"elysia": "2.0.0-beta.7",
-		"srvx": "0.12.7"
+		"crossws": "catalog:prod",
+		"elysia": "catalog:prod",
+		"srvx": "catalog:prod"
 	},
 	"devDependencies": {
-		"typescript": "catalog:"
+		"typescript": "catalog:dev"
 	}
 }

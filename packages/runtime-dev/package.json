@@ -47,17 +47,17 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-node": "workspace:*",
-		"chokidar": "^5.0.0",
-		"pathe": "^2.0.3",
-		"srvx": "0.12.7"
+		"chokidar": "catalog:node",
+		"pathe": "catalog:node",
+		"srvx": "catalog:prod"
 	},
 	"devDependencies": {
-		"@logtape/logtape": "^2.0.2",
+		"@logtape/logtape": "catalog:dev",
 		"@pluxel/test": "workspace:*",
-		"react": "catalog:",
-		"react-dom": "catalog:",
-		"typescript": "catalog:",
-		"vite": "^8.2.2"
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
 		"vite": ">=8.2.2 <9"

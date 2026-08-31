@@ -2,8 +2,8 @@
 // Runtime lifecycle state machine for a single plugin instance.
 // This module is performance‑sensitive: it avoids allocations on hot transitions.
 
-import { bakeMachine } from '../../internal/fsm/defineMachine.macro' with { type: 'macro' }
-import { hydrateMachine, type MachineImpl } from '../../internal/fsm/defineMachine.macro'
+import { bakeMachine } from '../../internal/fsm/defineMachine.macro.ts' with { type: 'macro' }
+import { hydrateMachine, type MachineImpl } from '../../internal/fsm/defineMachine.macro.ts'
 import type { PluginLifecycleAdapter } from '../composition/BasePlugin'
 import { LATE_INIT_CLEANUP_ERROR } from '../composition/symbols'
 

@@ -1,7 +1,6 @@
 import { staticApplication } from '@pluxel/rolldown/build'
-import { defineConfig } from 'tsdown'
 
-export default defineConfig({
+export default {
 	...staticApplication({
 		entry: './src/pluxel.static.ts',
 		variant: 'workbench',
@@ -14,4 +13,4 @@ export default defineConfig({
 			rename: 'public',
 		},
 	],
-})
+}

@@ -3,9 +3,11 @@ import { CALLER_CONTEXT_BIND } from '../../plugins/composition/symbols'
 import {
 	EvtChannel as BaseEvtChannel,
 	type EventDescriptor,
-	type EventEmitterOptions,
 	type EventListener,
-	type OnOptions,
+	type EvtChannelOptions,
+	type EvtChannelPosition,
+	type EvtChannelScope,
+	type SubscriptionOptions,
 	type Unsubscribe,
 } from 'eventure'
 import { deferEventCleanup, withEventLogger } from './event-support'
@@ -22,6 +24,9 @@ const REGISTRATION_METHODS = new Set<PropertyKey>([
 ])
 
 type InvokeWithOwner = (method: Function, receiver: unknown, args: readonly unknown[]) => unknown
+type EventPredicate<D extends EventDescriptor> = (
+	...args: Parameters<EventListener<D>>
+) => boolean | void
 
 /** Named, capability-owned event channel for explicit public protocols. */
 export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
@@ -29,8 +34,21 @@ export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
 	private readonly callerViews = new WeakMap<PluxelContext, EvtChannel<D>>()
 	private registrationOwner?: PluxelContext
 
-	constructor(ctx: PluxelContext, config?: EventEmitterOptions<Record<string, D>>) {
-		super(withEventLogger<Record<string, D>>(ctx, config))
+	constructor(
+		ctx: PluxelContext,
+		config?: Readonly<{
+			catchPromiseError?: boolean
+			checkSyncFuncReturnPromise?: boolean
+			errorPolicy?: EvtChannelOptions<D>['errorPolicy']
+		}>,
+	) {
+		super(
+			withEventLogger<Record<string, D>>(ctx, {
+				captureRejections: config?.catchPromiseError,
+				captureReturnedPromises: config?.checkSyncFuncReturnPromise,
+				errorPolicy: config?.errorPolicy,
+			}),
+		)
 		this.#ownerContext = ctx
 	}
 
@@ -38,19 +56,65 @@ export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
 		return this.#ownerContext
 	}
 
-	protected override _register(
+	override on(
 		listener: EventListener<D>,
-		opts?: OnOptions,
-		prepend?: boolean,
+		options?: SubscriptionOptions & { prepend?: boolean },
 	): Unsubscribe {
-		return this.ownSubscription(super._register(listener, opts, prepend))
+		return options?.prepend
+			? this.onFront(listener, { signal: options.signal })
+			: this.ownSubscription(super.on(listener, options))
 	}
 
-	override onAt(
+	override once(
+		listener: EventListener<D>,
+		predicateOrOptions?: EventPredicate<D> | SubscriptionOptions,
+	): Unsubscribe {
+		return this.ownSubscription(
+			typeof predicateOrOptions === 'function'
+				? super.when(predicateOrOptions).once(listener)
+				: super.once(listener, predicateOrOptions),
+		)
+	}
+
+	override many(
+		times: number,
+		listener: EventListener<D>,
+		predicateOrOptions?: EventPredicate<D> | SubscriptionOptions,
+	): Unsubscribe {
+		return this.ownSubscription(
+			typeof predicateOrOptions === 'function'
+				? super.when(predicateOrOptions).many(times, listener)
+				: super.many(times, listener, predicateOrOptions),
+		)
+	}
+
+	override when(predicate?: EventPredicate<D>): EvtChannelScope<D> {
+		return this.ownedScope(super.when(predicate ?? (() => true)))
+	}
+
+	override at(position: EvtChannelPosition): EvtChannelScope<D> {
+		return this.ownedScope(super.at(position))
+	}
+
+	onFront(listener: EventListener<D>, options?: SubscriptionOptions): Unsubscribe {
+		return this.at('front').on(listener, options)
+	}
+
+	onAt(
 		options: { at: number | ((ctx: { count: number }) => number); signal?: AbortSignal },
 		listener: EventListener<D>,
 	): Unsubscribe {
-		return this.ownSubscription(super.onAt(options, listener))
+		return this.at(options.at).on(listener, { signal: options.signal })
+	}
+
+	onceFront(listener: EventListener<D>, predicate?: EventPredicate<D>): Unsubscribe {
+		const scope = this.at('front')
+		return predicate ? scope.when(predicate).once(listener) : scope.once(listener)
+	}
+
+	manyFront(times: number, listener: EventListener<D>, predicate?: EventPredicate<D>): Unsubscribe {
+		const scope = this.at('front')
+		return predicate ? scope.when(predicate).many(times, listener) : scope.many(times, listener)
 	}
 
 	/** @internal Used by injected Plugin caller views; not an author-facing event API. */
@@ -76,6 +140,19 @@ export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
 		deferEventCleanup(this.registrationOwner ?? ctx.caller ?? ctx, unsubscribe)
 		return unsubscribe
 	}
+
+	private ownedScope(scope: EvtChannelScope<D>): EvtChannelScope<D> {
+		return Object.freeze({
+			on: (listener: EventListener<D>, options?: SubscriptionOptions) =>
+				this.ownSubscription(scope.on(listener, options)),
+			once: (listener: EventListener<D>, options?: SubscriptionOptions) =>
+				this.ownSubscription(scope.once(listener, options)),
+			many: (times: number, listener: EventListener<D>, options?: SubscriptionOptions) =>
+				this.ownSubscription(scope.many(times, listener, options)),
+			when: (predicate: EventPredicate<D>) => this.ownedScope(scope.when(predicate)),
+			at: (position: EvtChannelPosition) => this.ownedScope(scope.at(position)),
+		})
+	}
 }
 
 /** Compile one ordinary, cached facade so hot channel operations remain Proxy-free. */
@@ -95,9 +172,9 @@ function createCallerChannelView<D extends EventDescriptor>(
 			if ('value' in descriptor && typeof descriptor.value === 'function') {
 				const method = descriptor.value as Function
 				const value =
-					property === 'when'
+					property === 'when' || property === 'at'
 						? (...args: unknown[]) =>
-								bindWhenGuard(Reflect.apply(method, source, args), invokeWithOwner)
+								bindChannelScope(Reflect.apply(method, source, args), invokeWithOwner)
 						: REGISTRATION_METHODS.has(property)
 							? (...args: unknown[]) => invokeWithOwner(method, source, args)
 							: (...args: unknown[]) => Reflect.apply(method, source, args)
@@ -121,13 +198,16 @@ function createCallerChannelView<D extends EventDescriptor>(
 	return Object.preventExtensions(view)
 }
 
-function bindWhenGuard(value: unknown, invokeWithOwner: InvokeWithOwner): unknown {
+function bindChannelScope(value: unknown, invokeWithOwner: InvokeWithOwner): unknown {
 	if (!value || typeof value !== 'object') return value
-	const guard = value as Record<'once' | 'onceFront' | 'many' | 'manyFront', Function>
+	const scope = value as Record<'on' | 'once' | 'many' | 'when' | 'at', Function>
 	return Object.freeze({
-		once: (...args: unknown[]) => invokeWithOwner(guard.once, guard, args),
-		onceFront: (...args: unknown[]) => invokeWithOwner(guard.onceFront, guard, args),
-		many: (...args: unknown[]) => invokeWithOwner(guard.many, guard, args),
-		manyFront: (...args: unknown[]) => invokeWithOwner(guard.manyFront, guard, args),
+		on: (...args: unknown[]) => invokeWithOwner(scope.on, scope, args),
+		once: (...args: unknown[]) => invokeWithOwner(scope.once, scope, args),
+		many: (...args: unknown[]) => invokeWithOwner(scope.many, scope, args),
+		when: (...args: unknown[]) =>
+			bindChannelScope(invokeWithOwner(scope.when, scope, args), invokeWithOwner),
+		at: (...args: unknown[]) =>
+			bindChannelScope(invokeWithOwner(scope.at, scope, args), invokeWithOwner),
 	})
 }

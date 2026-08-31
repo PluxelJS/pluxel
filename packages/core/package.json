@@ -97,19 +97,19 @@
 		"bench:di": "pnpm exec tsdown bench/vendor/diod/src/index.ts --no-config --format esm --out-dir bench/vendor/diod/dist --minify && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},
 	"dependencies": {
-		"@logtape/logtape": "^2.0.2",
-		"@standard-schema/spec": "^1.1.0",
-		"eventure": "^0.4.4",
-		"std-env": "^4.0.0-rc.1"
+		"@logtape/logtape": "catalog:prod",
+		"@standard-schema/spec": "catalog:prod",
+		"eventure": "catalog:prod",
+		"std-env": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
-		"option-t": "^55.1.2",
-		"rolldown": "^1.2.6",
-		"tinybench": "^6.0.0",
-		"unplugin-macros": "^0.20.2"
+		"option-t": "catalog:validation",
+		"rolldown": "catalog:build",
+		"tinybench": "catalog:dev",
+		"unplugin-macros": "catalog:build"
 	},
 	"inlinedDependencies": {
-		"option-t": "55.1.2"
+		"option-t": "56.1.2"
 	}
 }

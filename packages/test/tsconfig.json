@@ -3,7 +3,6 @@
 	"include": ["src"],
 	"compilerOptions": {
 		"customConditions": [],
-		"baseUrl": ".",
 		"paths": {
 			"@pluxel/test": ["./src"],
 			"@pluxel/test/*": ["./src/*"]

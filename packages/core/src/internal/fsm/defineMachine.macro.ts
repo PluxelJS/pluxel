@@ -1,5 +1,11 @@
 // file: src/defineMachine.macro.ts
-import { type AnyFn, type HookFn, type UltraDef, UltraMachine, UltraMachineSync } from './ultra-fsm'
+import {
+	type AnyFn,
+	type HookFn,
+	type UltraDef,
+	UltraMachine,
+	UltraMachineSync,
+} from './ultra-fsm.ts'
 
 type TransitionTuple<S extends string, E extends string> = readonly [
 	from: S,

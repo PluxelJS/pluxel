@@ -414,20 +414,21 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStaticTsdown).not.toContain('oxc-parser')
 		expect(runtimeStaticTsdown).not.toContain('oxc-resolver')
 		expect(runtimeStaticTsdown).not.toContain('typescript')
-		expect(rolldown.dependencies?.['@module-federation/vite']).toBe(
-			WORKBENCH_FEDERATION_VITE_VERSION,
+		expect(rolldown.dependencies?.['@module-federation/vite']).toBe('catalog:build')
+		expect(rolldown.dependencies?.['@module-federation/bridge-react']).toBe('catalog:frontend')
+		expect(runtime.dependencies?.['@module-federation/runtime']).toBe('catalog:prod')
+		expect(runtime.dependencies?.['@module-federation/bridge-react']).toBe('catalog:frontend')
+		expect(runtime.peerDependencies?.['@mantine/core']).toBe('catalog:frontend')
+		expect(runtime.peerDependencies?.['@mantine/hooks']).toBe('catalog:frontend')
+		expect(workspace).toContain(
+			`  '@module-federation/vite': ${WORKBENCH_FEDERATION_VITE_VERSION}\n`,
 		)
-		expect(rolldown.dependencies?.['@module-federation/bridge-react']).toBe(
-			WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
+		expect(workspace).toContain(
+			`  '@module-federation/bridge-react': ${WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION}\n`,
 		)
-		expect(runtime.dependencies?.['@module-federation/runtime']).toBe(
-			WORKBENCH_FEDERATION_RUNTIME_VERSION,
+		expect(workspace).toContain(
+			`  '@module-federation/runtime': ${WORKBENCH_FEDERATION_RUNTIME_VERSION}\n`,
 		)
-		expect(runtime.dependencies?.['@module-federation/bridge-react']).toBe(
-			WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
-		)
-		expect(runtime.peerDependencies?.['@mantine/core']).toBe('catalog:')
-		expect(runtime.peerDependencies?.['@mantine/hooks']).toBe('catalog:')
 		expect(workspace).toContain(`  '@mantine/core': ^${WORKBENCH_FEDERATION_MANTINE_VERSION}\n`)
 		expect(workspace).toContain(`  '@mantine/hooks': ^${WORKBENCH_FEDERATION_MANTINE_VERSION}\n`)
 	})

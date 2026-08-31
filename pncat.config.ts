@@ -32,6 +32,8 @@ const WORKFLOW_PACKAGES: (string | RegExp)[] = ['knitwork', '@tanstack/pacer', '
 const NODE_RUNTIME_PACKAGES: (string | RegExp)[] = ['chokidar', 'pathe', 'pkg-types']
 
 export default defineConfig({
+	// pnpm supports parent>child overrides, but catalog specifiers cannot resolve that selector.
+	exclude: ['@esbuild-kit/core-utils>esbuild', 'tegami'],
 	catalogRules: mergeCatalogRules([
 		{
 			name: 'build',

@@ -38,30 +38,30 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"jose": "^6.2.3"
+		"jose": "catalog:prod"
 	},
 	"devDependencies": {
-		"@mantine/core": "catalog:",
+		"@mantine/core": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@tabler/icons-react": "catalog:",
-		"@types/react": "catalog:",
-		"@types/react-dom": "catalog:",
-		"react": "catalog:",
-		"react-dom": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vite": "^8.2.2",
-		"vitest": "catalog:"
+		"@tabler/icons-react": "catalog:icons",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@mantine/core": "catalog:",
+		"@mantine/core": "catalog:frontend",
 		"@pluxel/runtime": "workspace:^",
-		"@tabler/icons-react": "catalog:",
-		"react": "catalog:",
-		"react-dom": "catalog:"
+		"@tabler/icons-react": "catalog:icons",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
 		"@mantine/core": {

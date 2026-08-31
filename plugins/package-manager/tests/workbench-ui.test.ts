@@ -9,9 +9,9 @@ vi.mock('@pluxel/runtime/workbench/react', () => ({
 	}),
 }))
 
-import Manager from '../src/ui/index.tsx'
+import ManagerWorkbench from '../src/ui/index.tsx'
 
 it('owns the Mantine context for the Package Manager Workbench renderer', () => {
-	const markup = renderToStaticMarkup(createElement(Manager))
+	const markup = renderToStaticMarkup(createElement(ManagerWorkbench))
 	expect(markup).toContain('Managed plugin packages')
 })

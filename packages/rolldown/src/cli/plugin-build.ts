@@ -72,12 +72,7 @@ function createPipeline(
 		plugins: [
 			PreprocessorDirectives(),
 			semantics.plugin,
-			Macros({
-				viteConfig: {
-					configFile: false,
-					root: options.root,
-				},
-			}),
+			Macros(),
 			options.lint === false ? undefined : lintGuardPlugin({ cwd: options.root }),
 			configSourcePlugin(),
 			pluginArtifactBuildPlugin({

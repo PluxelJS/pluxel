@@ -1,6 +1,6 @@
 // file: test/fsm.test.ts
 import { describe, expect, test } from 'vitest'
-import { defineMachine } from '../../../src/internal/fsm/defineMachine.macro'
+import { defineMachine } from '../../../src/internal/fsm/defineMachine.macro.ts'
 import { fsm } from '../../../src/internal/fsm/machine.runtime'
 
 describe('Ultra FSM', () => {

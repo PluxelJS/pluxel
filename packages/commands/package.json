@@ -60,11 +60,11 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@sinclair/typebox": "^0.34.48"
+		"@sinclair/typebox": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/test": "workspace:*",
-		"@sinclair/parsebox": "^0.11.6",
-		"@types/node": "^25.9.3"
+		"@sinclair/parsebox": "catalog:dev",
+		"@types/node": "catalog:types"
 	}
 }

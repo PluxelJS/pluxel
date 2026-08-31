@@ -9,29 +9,29 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WorkbenchRouteImport } from './routes/_workbench'
 import { Route as StandaloneRouteImport } from './routes/_standalone'
+import { Route as WorkbenchRouteImport } from './routes/_workbench'
 import { Route as WorkbenchIndexRouteImport } from './routes/_workbench.index'
-import { Route as WorkbenchSecurityRouteImport } from './routes/_workbench.security'
-import { Route as WorkbenchPluginsRouteImport } from './routes/_workbench.plugins'
-import { Route as WorkbenchPluginGraphRouteImport } from './routes/_workbench.plugin-graph'
-import { Route as WorkbenchLogsRouteImport } from './routes/_workbench.logs'
 import { Route as WorkbenchAgentToolsRouteImport } from './routes/_workbench.agent-tools'
+import { Route as WorkbenchLogsRouteImport } from './routes/_workbench.logs'
+import { Route as WorkbenchPluginGraphRouteImport } from './routes/_workbench.plugin-graph'
+import { Route as WorkbenchPluginsRouteImport } from './routes/_workbench.plugins'
+import { Route as WorkbenchSecurityRouteImport } from './routes/_workbench.security'
 import { Route as WorkbenchPluginsIndexRouteImport } from './routes/_workbench.plugins.index'
-import { Route as WorkbenchSecurityAuditRouteImport } from './routes/_workbench.security_.audit'
 import { Route as WorkbenchPluginsNameRouteImport } from './routes/_workbench.plugins.$name'
-import { Route as WorkbenchPluginsNameIndexRouteImport } from './routes/_workbench.plugins.$name.index'
-import { Route as WorkbenchWorkbenchPluginNameSplatRouteImport } from './routes/_workbench.workbench.$pluginName.$'
-import { Route as WorkbenchPluginsNameSplatRouteImport } from './routes/_workbench.plugins.$name.$'
-import { Route as WorkbenchPluginGraphKindSplatRouteImport } from './routes/_workbench.plugin-graph_.$kind.$'
+import { Route as WorkbenchSecurityAuditRouteImport } from './routes/_workbench.security_.audit'
 import { Route as StandaloneWorkbenchStandalonePluginNameSplatRouteImport } from './routes/_standalone.workbench-standalone.$pluginName.$'
+import { Route as WorkbenchPluginGraphKindSplatRouteImport } from './routes/_workbench.plugin-graph_.$kind.$'
+import { Route as WorkbenchPluginsNameIndexRouteImport } from './routes/_workbench.plugins.$name.index'
+import { Route as WorkbenchPluginsNameSplatRouteImport } from './routes/_workbench.plugins.$name.$'
+import { Route as WorkbenchWorkbenchPluginNameSplatRouteImport } from './routes/_workbench.workbench.$pluginName.$'
 
-const WorkbenchRoute = WorkbenchRouteImport.update({
-  id: '/_workbench',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const StandaloneRoute = StandaloneRouteImport.update({
   id: '/_standalone',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkbenchRoute = WorkbenchRouteImport.update({
+  id: '/_workbench',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkbenchIndexRoute = WorkbenchIndexRouteImport.update({
@@ -39,19 +39,9 @@ const WorkbenchIndexRoute = WorkbenchIndexRouteImport.update({
   path: '/',
   getParentRoute: () => WorkbenchRoute,
 } as any)
-const WorkbenchSecurityRoute = WorkbenchSecurityRouteImport.update({
-  id: '/security',
-  path: '/security',
-  getParentRoute: () => WorkbenchRoute,
-} as any)
-const WorkbenchPluginsRoute = WorkbenchPluginsRouteImport.update({
-  id: '/plugins',
-  path: '/plugins',
-  getParentRoute: () => WorkbenchRoute,
-} as any)
-const WorkbenchPluginGraphRoute = WorkbenchPluginGraphRouteImport.update({
-  id: '/plugin-graph',
-  path: '/plugin-graph',
+const WorkbenchAgentToolsRoute = WorkbenchAgentToolsRouteImport.update({
+  id: '/agent-tools',
+  path: '/agent-tools',
   getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchLogsRoute = WorkbenchLogsRouteImport.update({
@@ -59,9 +49,19 @@ const WorkbenchLogsRoute = WorkbenchLogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => WorkbenchRoute,
 } as any)
-const WorkbenchAgentToolsRoute = WorkbenchAgentToolsRouteImport.update({
-  id: '/agent-tools',
-  path: '/agent-tools',
+const WorkbenchPluginGraphRoute = WorkbenchPluginGraphRouteImport.update({
+  id: '/plugin-graph',
+  path: '/plugin-graph',
+  getParentRoute: () => WorkbenchRoute,
+} as any)
+const WorkbenchPluginsRoute = WorkbenchPluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
+  getParentRoute: () => WorkbenchRoute,
+} as any)
+const WorkbenchSecurityRoute = WorkbenchSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchPluginsIndexRoute = WorkbenchPluginsIndexRouteImport.update({
@@ -69,33 +69,21 @@ const WorkbenchPluginsIndexRoute = WorkbenchPluginsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => WorkbenchPluginsRoute,
 } as any)
-const WorkbenchSecurityAuditRoute = WorkbenchSecurityAuditRouteImport.update({
-  id: '/security_/audit',
-  path: '/security/audit',
-  getParentRoute: () => WorkbenchRoute,
-} as any)
 const WorkbenchPluginsNameRoute = WorkbenchPluginsNameRouteImport.update({
   id: '/$name',
   path: '/$name',
   getParentRoute: () => WorkbenchPluginsRoute,
 } as any)
-const WorkbenchPluginsNameIndexRoute =
-  WorkbenchPluginsNameIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => WorkbenchPluginsNameRoute,
-  } as any)
-const WorkbenchWorkbenchPluginNameSplatRoute =
-  WorkbenchWorkbenchPluginNameSplatRouteImport.update({
-    id: '/workbench/$pluginName/$',
-    path: '/workbench/$pluginName/$',
-    getParentRoute: () => WorkbenchRoute,
-  } as any)
-const WorkbenchPluginsNameSplatRoute =
-  WorkbenchPluginsNameSplatRouteImport.update({
-    id: '/$',
-    path: '/$',
-    getParentRoute: () => WorkbenchPluginsNameRoute,
+const WorkbenchSecurityAuditRoute = WorkbenchSecurityAuditRouteImport.update({
+  id: '/security_/audit',
+  path: '/security/audit',
+  getParentRoute: () => WorkbenchRoute,
+} as any)
+const StandaloneWorkbenchStandalonePluginNameSplatRoute =
+  StandaloneWorkbenchStandalonePluginNameSplatRouteImport.update({
+    id: '/workbench-standalone/$pluginName/$',
+    path: '/workbench-standalone/$pluginName/$',
+    getParentRoute: () => StandaloneRoute,
   } as any)
 const WorkbenchPluginGraphKindSplatRoute =
   WorkbenchPluginGraphKindSplatRouteImport.update({
@@ -103,11 +91,23 @@ const WorkbenchPluginGraphKindSplatRoute =
     path: '/plugin-graph/$kind/$',
     getParentRoute: () => WorkbenchRoute,
   } as any)
-const StandaloneWorkbenchStandalonePluginNameSplatRoute =
-  StandaloneWorkbenchStandalonePluginNameSplatRouteImport.update({
-    id: '/workbench-standalone/$pluginName/$',
-    path: '/workbench-standalone/$pluginName/$',
-    getParentRoute: () => StandaloneRoute,
+const WorkbenchPluginsNameIndexRoute =
+  WorkbenchPluginsNameIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => WorkbenchPluginsNameRoute,
+  } as any)
+const WorkbenchPluginsNameSplatRoute =
+  WorkbenchPluginsNameSplatRouteImport.update({
+    id: '/$',
+    path: '/$',
+    getParentRoute: () => WorkbenchPluginsNameRoute,
+  } as any)
+const WorkbenchWorkbenchPluginNameSplatRoute =
+  WorkbenchWorkbenchPluginNameSplatRouteImport.update({
+    id: '/workbench/$pluginName/$',
+    path: '/workbench/$pluginName/$',
+    getParentRoute: () => WorkbenchRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -217,18 +217,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_workbench': {
-      id: '/_workbench'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof WorkbenchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_standalone': {
       id: '/_standalone'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof StandaloneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_workbench': {
+      id: '/_workbench'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof WorkbenchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_workbench/': {
@@ -238,25 +238,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkbenchIndexRouteImport
       parentRoute: typeof WorkbenchRoute
     }
-    '/_workbench/security': {
-      id: '/_workbench/security'
-      path: '/security'
-      fullPath: '/security'
-      preLoaderRoute: typeof WorkbenchSecurityRouteImport
-      parentRoute: typeof WorkbenchRoute
-    }
-    '/_workbench/plugins': {
-      id: '/_workbench/plugins'
-      path: '/plugins'
-      fullPath: '/plugins'
-      preLoaderRoute: typeof WorkbenchPluginsRouteImport
-      parentRoute: typeof WorkbenchRoute
-    }
-    '/_workbench/plugin-graph': {
-      id: '/_workbench/plugin-graph'
-      path: '/plugin-graph'
-      fullPath: '/plugin-graph'
-      preLoaderRoute: typeof WorkbenchPluginGraphRouteImport
+    '/_workbench/agent-tools': {
+      id: '/_workbench/agent-tools'
+      path: '/agent-tools'
+      fullPath: '/agent-tools'
+      preLoaderRoute: typeof WorkbenchAgentToolsRouteImport
       parentRoute: typeof WorkbenchRoute
     }
     '/_workbench/logs': {
@@ -266,11 +252,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkbenchLogsRouteImport
       parentRoute: typeof WorkbenchRoute
     }
-    '/_workbench/agent-tools': {
-      id: '/_workbench/agent-tools'
-      path: '/agent-tools'
-      fullPath: '/agent-tools'
-      preLoaderRoute: typeof WorkbenchAgentToolsRouteImport
+    '/_workbench/plugin-graph': {
+      id: '/_workbench/plugin-graph'
+      path: '/plugin-graph'
+      fullPath: '/plugin-graph'
+      preLoaderRoute: typeof WorkbenchPluginGraphRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/plugins': {
+      id: '/_workbench/plugins'
+      path: '/plugins'
+      fullPath: '/plugins'
+      preLoaderRoute: typeof WorkbenchPluginsRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/security': {
+      id: '/_workbench/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof WorkbenchSecurityRouteImport
       parentRoute: typeof WorkbenchRoute
     }
     '/_workbench/plugins/': {
@@ -280,13 +280,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkbenchPluginsIndexRouteImport
       parentRoute: typeof WorkbenchPluginsRoute
     }
-    '/_workbench/security_/audit': {
-      id: '/_workbench/security_/audit'
-      path: '/security/audit'
-      fullPath: '/security/audit'
-      preLoaderRoute: typeof WorkbenchSecurityAuditRouteImport
-      parentRoute: typeof WorkbenchRoute
-    }
     '/_workbench/plugins/$name': {
       id: '/_workbench/plugins/$name'
       path: '/$name'
@@ -294,32 +287,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkbenchPluginsNameRouteImport
       parentRoute: typeof WorkbenchPluginsRoute
     }
-    '/_workbench/plugins/$name/': {
-      id: '/_workbench/plugins/$name/'
-      path: '/'
-      fullPath: '/plugins/$name/'
-      preLoaderRoute: typeof WorkbenchPluginsNameIndexRouteImport
-      parentRoute: typeof WorkbenchPluginsNameRoute
-    }
-    '/_workbench/workbench/$pluginName/$': {
-      id: '/_workbench/workbench/$pluginName/$'
-      path: '/workbench/$pluginName/$'
-      fullPath: '/workbench/$pluginName/$'
-      preLoaderRoute: typeof WorkbenchWorkbenchPluginNameSplatRouteImport
-      parentRoute: typeof WorkbenchRoute
-    }
-    '/_workbench/plugins/$name/$': {
-      id: '/_workbench/plugins/$name/$'
-      path: '/$'
-      fullPath: '/plugins/$name/$'
-      preLoaderRoute: typeof WorkbenchPluginsNameSplatRouteImport
-      parentRoute: typeof WorkbenchPluginsNameRoute
-    }
-    '/_workbench/plugin-graph_/$kind/$': {
-      id: '/_workbench/plugin-graph_/$kind/$'
-      path: '/plugin-graph/$kind/$'
-      fullPath: '/plugin-graph/$kind/$'
-      preLoaderRoute: typeof WorkbenchPluginGraphKindSplatRouteImport
+    '/_workbench/security_/audit': {
+      id: '/_workbench/security_/audit'
+      path: '/security/audit'
+      fullPath: '/security/audit'
+      preLoaderRoute: typeof WorkbenchSecurityAuditRouteImport
       parentRoute: typeof WorkbenchRoute
     }
     '/_standalone/workbench-standalone/$pluginName/$': {
@@ -328,6 +300,34 @@ declare module '@tanstack/react-router' {
       fullPath: '/workbench-standalone/$pluginName/$'
       preLoaderRoute: typeof StandaloneWorkbenchStandalonePluginNameSplatRouteImport
       parentRoute: typeof StandaloneRoute
+    }
+    '/_workbench/plugin-graph_/$kind/$': {
+      id: '/_workbench/plugin-graph_/$kind/$'
+      path: '/plugin-graph/$kind/$'
+      fullPath: '/plugin-graph/$kind/$'
+      preLoaderRoute: typeof WorkbenchPluginGraphKindSplatRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/plugins/$name/': {
+      id: '/_workbench/plugins/$name/'
+      path: '/'
+      fullPath: '/plugins/$name/'
+      preLoaderRoute: typeof WorkbenchPluginsNameIndexRouteImport
+      parentRoute: typeof WorkbenchPluginsNameRoute
+    }
+    '/_workbench/plugins/$name/$': {
+      id: '/_workbench/plugins/$name/$'
+      path: '/$'
+      fullPath: '/plugins/$name/$'
+      preLoaderRoute: typeof WorkbenchPluginsNameSplatRouteImport
+      parentRoute: typeof WorkbenchPluginsNameRoute
+    }
+    '/_workbench/workbench/$pluginName/$': {
+      id: '/_workbench/workbench/$pluginName/$'
+      path: '/workbench/$pluginName/$'
+      fullPath: '/workbench/$pluginName/$'
+      preLoaderRoute: typeof WorkbenchWorkbenchPluginNameSplatRouteImport
+      parentRoute: typeof WorkbenchRoute
     }
   }
 }

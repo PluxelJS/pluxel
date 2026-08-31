@@ -44,8 +44,8 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@chenglou/pretext": "catalog:",
-		"@napi-rs/canvas": "catalog:"
+		"@chenglou/pretext": "catalog:prod",
+		"@napi-rs/canvas": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
@@ -53,9 +53,9 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/fonts": "workspace:^",

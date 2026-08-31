@@ -33,7 +33,7 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"redis": "catalog:"
+		"redis": "catalog:backend"
 	},
 	"devDependencies": {
 		"@pluxel/cache": "workspace:*",
@@ -42,9 +42,9 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/cache": "workspace:^",

@@ -26,10 +26,10 @@
 		"prepack": "pnpm run build"
 	},
 	"devDependencies": {
-		"@types/node": "^25.9.3",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"@types/node": "catalog:types",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"engines": {
 		"node": ">=24"

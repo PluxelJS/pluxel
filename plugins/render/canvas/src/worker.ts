@@ -136,10 +136,14 @@ function decodeNativeImageInto(image: NativeImage, source: Uint8Array): Promise<
 			callback()
 		}
 		image.onload = () => {
-			void image.decode().then(
-				() => settle(() => resolve(image)),
-				(cause: unknown) => settle(() => reject(cause)),
-			)
+			// Canvas 1.0.8 keeps the native image mutably borrowed while invoking onload.
+			// Defer decode until the callback returns so the borrow has been released.
+			void Promise.resolve()
+				.then(() => image.decode())
+				.then(
+					() => settle(() => resolve(image)),
+					(cause: unknown) => settle(() => reject(cause)),
+				)
 		}
 		image.onerror = (cause) => settle(() => reject(cause))
 		try {

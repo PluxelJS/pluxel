@@ -1,4 +1,4 @@
-import { Worker, type TransferListItem } from 'node:worker_threads'
+import { Worker, type Transferable } from 'node:worker_threads'
 import { pathToFileURL } from 'node:url'
 
 type WorkerRequest = Readonly<{
@@ -12,7 +12,7 @@ type WorkerResponse =
 	| Readonly<{ taskId: number; ok: false; error: unknown }>
 
 type WorkerHandle = {
-	postMessage(value: unknown, transferList?: readonly TransferListItem[]): void
+	postMessage(value: unknown, transferList?: readonly Transferable[]): void
 	terminate(): Promise<number>
 	ref?(): void
 	unref?(): void
@@ -152,10 +152,7 @@ export class WorkerThreadPool {
 				filename: pathToFileURL(filename).href,
 				input,
 			}
-			slot.worker.postMessage(
-				request,
-				transferList === undefined ? undefined : (transferList as readonly TransferListItem[]),
-			)
+			slot.worker.postMessage(request, transferList)
 		} catch (cause) {
 			this.finishReusableTask(slot, task, { ok: false, error: cause })
 		}

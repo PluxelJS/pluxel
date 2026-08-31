@@ -15,8 +15,8 @@
 		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host"
 	},
 	"dependencies": {
-		"@opentelemetry/api": "catalog:",
-		"@opentelemetry/api-logs": "catalog:",
+		"@opentelemetry/api": "catalog:prod",
+		"@opentelemetry/api-logs": "catalog:prod",
 		"@pluxel/auth": "workspace:*",
 		"@pluxel/cache": "workspace:*",
 		"@pluxel/canvas": "workspace:*",
@@ -35,20 +35,20 @@
 		"@pluxel/wretch": "workspace:*"
 	},
 	"devDependencies": {
-		"@mantine/core": "catalog:",
-		"@mantine/hooks": "catalog:",
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@tabler/icons-react": "catalog:",
-		"@types/react": "catalog:",
-		"@types/react-dom": "catalog:",
-		"pathe": "^2.0.3",
-		"react": "catalog:",
-		"react-dom": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vite": "^8.2.2",
-		"vitest": "catalog:"
+		"@tabler/icons-react": "catalog:icons",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"pathe": "catalog:node",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vitest": "catalog:test"
 	}
 }

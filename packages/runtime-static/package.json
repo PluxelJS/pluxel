@@ -65,10 +65,10 @@
 	"dependencies": {
 		"@pluxel/core": "workspace:^",
 		"@pluxel/runtime": "workspace:^",
-		"@standard-schema/spec": "^1.1.0",
-		"crossws": "0.4.12",
-		"elysia": "2.0.0-beta.7",
-		"srvx": "0.12.7",
+		"@standard-schema/spec": "catalog:prod",
+		"crossws": "catalog:prod",
+		"elysia": "catalog:prod",
+		"srvx": "catalog:prod",
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
@@ -76,8 +76,8 @@
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsx": "^4.23.0",
-		"vite": "^8.2.2"
+		"tsx": "catalog:dev",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
 		"@pluxel/rolldown": "workspace:^",
@@ -94,6 +94,6 @@
 	"inlinedDependencies": {
 		"chokidar": "5.0.0",
 		"pathe": "2.0.3",
-		"readdirp": "5.0.0"
+		"readdirp": "5.1.1"
 	}
 }
