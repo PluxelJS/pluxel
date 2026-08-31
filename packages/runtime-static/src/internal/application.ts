@@ -32,7 +32,9 @@ export async function startStaticRuntimeApplication<
 			'[runtime-static] Application must be created with defineStaticRuntime(...)',
 		)
 	}
-	const hostOptions = await resolveStaticRuntimeHostOptions(application, options.startup)
+	const hostOptions = await resolveStaticRuntimeHostOptions(application, options.startup, {
+		workbench: options.deployment?.workbenchIncluded === true,
+	})
 	if (
 		isWorkbenchEnabled(hostOptions.workbench) &&
 		options.deployment?.workbenchIncluded === false

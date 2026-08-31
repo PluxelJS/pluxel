@@ -6,7 +6,6 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { RpcTarget, type RpcStub } from 'capnweb'
-import type { AgentToolsPolicyInput } from '../../agent-tools'
 import {
 	readPluginCatalog,
 	writePluginCatalogLayout,
@@ -408,14 +407,6 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			parseLogFollowInput(input),
 			observer as RpcStub<RuntimeLogObserver>,
 		)
-	}
-
-	agentToolsSnapshot() {
-		return this.ctx.root.agentTools.snapshot()
-	}
-
-	replaceAgentToolsPolicy(expectedRevision: number, policy: AgentToolsPolicyInput) {
-		return this.ctx.root.agentTools.replacePolicy(expectedRevision, policy)
 	}
 
 	async securityOverview() {

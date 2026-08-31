@@ -406,7 +406,7 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/sdk')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('oxc-parser')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('oxc-resolver')
-		expect(runtimeStatic.dependencies).not.toHaveProperty('pathe')
+		expect(runtimeStatic.dependencies).toHaveProperty('pathe', 'catalog:node')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('typescript')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('nf3')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('unplugin-macros')

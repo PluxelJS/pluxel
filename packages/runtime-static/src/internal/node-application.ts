@@ -20,6 +20,11 @@ import type {
 	StaticRuntimeEnvironment,
 } from '../types.ts'
 import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
+import {
+	describePluxelPlatform,
+	env as runtimeEnvironment,
+	resolveHostEnv,
+} from '@pluxel/runtime/environment'
 
 export type StaticNodeApplication = StaticRuntime & {
 	readonly address: { host: string; port: number }
@@ -35,8 +40,9 @@ export async function runStaticNodeApplication<
 	},
 ): Promise<StaticNodeApplication> {
 	const env = options.env ?? readProcessEnvironment()
-	const host = env.PLUXEL_HOST_BIND?.trim() || '0.0.0.0'
-	const port = parsePort(env.PLUXEL_HOST_PORT, 3000)
+	const pluxelEnvironment = resolveHostEnv(env)
+	const host = pluxelEnvironment.hostBind ?? '0.0.0.0'
+	const port = pluxelEnvironment.hostPort ?? 3000
 	const tls = resolveTlsOptions(env)
 	const runtime = await runStaticFetchApplication(application, { ...options, env })
 	const http = requireRuntimeHttpService(runtime.ctx)
@@ -147,6 +153,17 @@ export async function runStaticNodeApplication<
 	}
 	process.once('SIGINT', onSignal)
 	process.once('SIGTERM', onSignal)
+	const platform = describePluxelPlatform()
+	runtime.ctx.logger.info('Runtime started', {
+		listener: `${tls ? 'https' : 'http'}://${formatListenerHost(host)}:${actualPort}`,
+		workbench: runtime.ctx.workbench !== undefined,
+		hostDataRoot: pluxelEnvironment.dataRoot,
+		runtime: platform.runtime.name,
+		runtimeVersion: platform.runtime.version,
+		deploymentProvider: platform.deployment.provider,
+		ci: platform.deployment.ci,
+		mode: platform.mode,
+	})
 
 	return {
 		...runtime,
@@ -294,14 +311,9 @@ function applicationContentType(path: string): string {
 }
 
 function readProcessEnvironment(): StaticRuntimeEnvironment {
-	return process.env
+	return runtimeEnvironment
 }
 
-function parsePort(value: string | undefined, fallback: number): number {
-	if (value === undefined || value.trim() === '') return fallback
-	const port = Number(value)
-	if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-		throw new Error(`[runtime-static] Invalid PLUXEL_HOST_PORT: ${value}`)
-	}
-	return port
+function formatListenerHost(host: string): string {
+	return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
 }

@@ -1,7 +1,6 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from '../capnweb'
 import type {
-	AgentToolsHandleApi,
 	ConfigFieldMutation,
 	ConfigPresentationResult,
 	ConfigResult,
@@ -30,7 +29,6 @@ import type {
 import type { LogRangeResult, LogStreamMeta, RuntimeLogEvent } from './logs'
 import type { RuntimeSecurityClient } from './security'
 import {
-	parseAgentToolsAdminSnapshot,
 	parseConfigPresentationResult,
 	parseConfigResult,
 	parseEnsureForkResult,
@@ -120,7 +118,6 @@ export type RuntimeManagementClient = Readonly<{
 		remove(input: { base: PluginNodeAddress; forkId: string }): Promise<RemoveForkResult>
 	}>
 	logging: Readonly<LoggingHandleApi>
-	agentTools: Readonly<AgentToolsHandleApi>
 	logs: RuntimeLogClient
 	security: RuntimeSecurityClient
 }>
@@ -219,14 +216,6 @@ export function createRuntimeManagementClient(
 				call(
 					(root) => root.resetLogPolicy(expectedRevision),
 					parseVersionedPluginLogPolicySnapshot,
-				),
-		}),
-		agentTools: Object.freeze({
-			snapshot: () => call((root) => root.agentToolsSnapshot(), parseAgentToolsAdminSnapshot),
-			replacePolicy: (expectedRevision, policy) =>
-				call(
-					(root) => root.replaceAgentToolsPolicy(expectedRevision, policy),
-					parseAgentToolsAdminSnapshot,
 				),
 		}),
 		logs: Object.freeze({

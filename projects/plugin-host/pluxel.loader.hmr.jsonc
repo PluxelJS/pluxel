@@ -11,6 +11,7 @@
 	"profiles": {
 		"plugins-host": {
 			"enabled": [
+				"@pluxel/agent-tools",
 				"@pluxel/auth",
 				"@pluxel/cache",
 				"@pluxel/canvas",

@@ -51,15 +51,47 @@ describe('@pluxel/runtime/web framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 2,
+				major: 3,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },
+			platform: {
+				runtime: { name: 'node', version: '24.0.0' },
+				deployment: { provider: null, ci: false },
+				mode: 'test',
+				platform: 'linux',
+			},
 			workbench: { enabled: true },
 		}
 		expect(parseRuntimeMeta(metadata)).toEqual(metadata)
 		expect(() => parseRuntimeMeta({ ...metadata, transport: {} })).toThrow(
 			'runtime metadata contains unsupported field transport',
 		)
+	})
+
+	it('accepts and freezes the optional browser-safe platform snapshot', () => {
+		const parsed = parseRuntimeMeta({
+			service: 'pluxel-runtime',
+			ready: true,
+			protocol: {
+				name: 'pluxel.management',
+				major: 3,
+				capabilities: ['plugin-catalog'],
+			},
+			application: { product: null },
+			platform: {
+				runtime: { name: 'workerd', version: null },
+				deployment: { provider: 'cloudflare_workers', ci: false },
+				mode: 'production',
+				platform: null,
+			},
+			workbench: { enabled: true },
+		})
+		expect(parsed.platform).toMatchObject({
+			runtime: { name: 'workerd' },
+			deployment: { provider: 'cloudflare_workers' },
+		})
+		expect(Object.isFrozen(parsed.platform)).toBe(true)
+		expect(Object.isFrozen(parsed.platform?.runtime)).toBe(true)
 	})
 })

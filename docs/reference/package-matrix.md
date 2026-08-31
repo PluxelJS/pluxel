@@ -18,6 +18,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/rolldown`        | Plugin package 与 static application 构建集成              | [开发和发布插件包](../development/plugin-package.md) |
 | `@pluxel/test`            | 经过真实语义转换的 Plugin 测试 harness                     | [测试 Plugin](../development/testing.md)             |
 | `@pluxel/commands`        | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../runtime/commands.md)                   |
+| `@pluxel/agent-tools`     | 可选 Agent Toolset 与 command allowlist Plugin             | [Agent tools](../plugins/agent-tools.md)             |
 | `valibot-form`            | Valibot 表单 metadata 与可选 Web adapter                   | [Valibot 配置表单](../workbench/valibot-form.mdx)    |
 | `@pluxel/auth`            | Workbench 与 Management API 认证 provider                  | [Management 认证](../plugins/auth.md)                |
 | `@pluxel/wretch`          | Plugin-owned HTTP client                                   | [Wretch HTTP client](../plugins/wretch.md)           |

@@ -17,6 +17,7 @@
 	"dependencies": {
 		"@opentelemetry/api": "catalog:prod",
 		"@opentelemetry/api-logs": "catalog:prod",
+		"@pluxel/agent-tools": "workspace:*",
 		"@pluxel/auth": "workspace:*",
 		"@pluxel/cache": "workspace:*",
 		"@pluxel/canvas": "workspace:*",

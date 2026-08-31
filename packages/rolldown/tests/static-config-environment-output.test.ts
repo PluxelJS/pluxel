@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDistributionManifest } from '../src/distribution'
-import { writeStaticConfigEnvironmentExample } from '../src/cli/static-config-environment-output'
+import {
+	renderStaticApplicationEnvironmentExample,
+	writeStaticConfigEnvironmentExample,
+} from '../src/cli/static-config-environment-output'
 
 const roots: string[] = []
 
@@ -12,6 +15,19 @@ afterEach(async () => {
 })
 
 describe('static config environment example output', () => {
+	it('always describes the framework-owned static host variables', () => {
+		const content = renderStaticApplicationEnvironmentExample()
+		expect(content).toContain('# PLUXEL_DATA_ROOT=./.pluxel')
+		expect(content).toContain('# PLUXEL_WORKBENCH=false')
+		expect(content).toContain('# PLUXEL_HOST_BIND=0.0.0.0')
+		expect(content).toContain('# PLUXEL_HOST_PORT=3000')
+	})
+
+	it('appends declared Plugin bootstrap variables after the standard section', () => {
+		const content = renderStaticApplicationEnvironmentExample('# APP_VALUE=\n')
+		expect(content.indexOf('PLUXEL_DATA_ROOT')).toBeLessThan(content.indexOf('APP_VALUE'))
+	})
+
 	it('writes exact bytes before finalization and enters the distribution inventory', async () => {
 		const root = await createRoot()
 		const content = '# generated\n# APP_VALUE=\n'

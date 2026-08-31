@@ -48,13 +48,12 @@ export const product = defineProduct({
 export default defineStaticRuntime({
 	name: 'rhythm',
 	plugins: [OrdersPlugin],
-	configure({ env, deployment }) {
+	configure() {
 		return {
 			runtimeState: {
 				snapshot: { autoStart: [pluginNodeAddressOf(OrdersPlugin)] },
 			},
-			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
-			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
+			persistence: '.pluxel/persistence',
 		}
 	},
 })
@@ -63,6 +62,9 @@ export default defineStaticRuntime({
 `plugins` 定义 build-time fixed catalog 和 code closure；运行时依赖图由 auto-start policy、本次进程意图、fork 和 provider override 形成。
 `workbench`、persistence、logging、HTTP、Plugin config records 和 auto-start policy 是 `configure()` 返回的 startup data；本次进程意图
 不持久化，也不进入 startup config。
+
+Static Vite host 与 `variant: 'workbench'` 产物默认启用 Workbench；`PLUXEL_WORKBENCH=false` 可在启动时完整关闭 Plane。
+`PLUXEL_DATA_ROOT` 会覆盖 string/omitted persistence root，但不会替换 application 明确注入的 custom backend。
 
 `prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。没有应用数据库就无法运行的 static application 在这里打开、迁移并把关闭登记到 root effects；只有部分 Plugin 使用的数据库应成为 provider Plugin，由 graph 隔离失败。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
 
@@ -87,11 +89,7 @@ export default defineStaticRuntime({
 			concurrency: 'ORDERS_CONCURRENCY',
 		}),
 	],
-	configure({ env, deployment }) {
-		return {
-			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
-		}
-	},
+	configure: () => ({ persistence: '.pluxel/persistence' }),
 })
 ```
 
@@ -133,7 +131,39 @@ export default staticApplication({
 
 生产产物包含 Node server entry、fixed Plugin closure、deployment manifest 和所需 Node dependencies。目标机不再安装 Pluxel packages。
 
-`configEnvironmentBootstrap` 非空时，构建还会生成 root `.env.example`。它是 distribution inventory 中的普通 immutable asset；不会包含构建机 value，也不会生成或加载 `.env`。如果其他 assembly input 已占用该保留路径，构建会失败而不是覆盖。
+构建总会生成 root `.env.example`，列出官方 host 变量；存在 `configEnvironmentBootstrap` 时还会追加对应 Plugin bootstrap 变量。它是 distribution inventory 中的普通 immutable asset；不会包含构建机 value，也不会生成或加载 `.env`。如果其他 assembly input 已占用该保留路径，构建会失败而不是覆盖。
+
+### 统一 host environment
+
+下游不要直接读取 `process.env`。Pluxel 转导 `std-env` 的 universal `env`，并另外提供已经校验和补全默认值的 `hostEnv`。同一入口可在 Node、Bun、Deno 与 Worker-compatible runtime 中使用：
+
+```ts no-twoslash
+import { env, hostEnv } from '@pluxel/runtime/environment'
+
+console.log(env.MY_APPLICATION_VARIABLE)
+console.log(hostEnv.dataRoot, hostEnv.workbench)
+```
+
+`env` 是与 `std-env` 相同的原始字符串对象；`hostEnv` 是 Pluxel 官方字段的有效值，不是第二份可变环境。Launcher 测试或 adapter 需要解析显式输入时使用 `resolveHostEnv(input)`。`PluxelEnvironmentVariables` 已声明 `PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH`、listener/TLS、config、Vault 与 HMR 变量；应用可以用 module augmentation 添加自己的部署变量。官方变量的行为为：
+
+```ts no-twoslash
+declare module '@pluxel/runtime/environment' {
+	interface PluxelEnvironmentVariables {
+		readonly DATABASE_URL?: string
+	}
+}
+```
+
+| 变量                                    | 行为                                                                                           |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `PLUXEL_DATA_ROOT`                      | 共享 Host data root；默认 `.pluxel`，Pluxel persistence 位于其 `persistence/` 子目录           |
+| `PLUXEL_WORKBENCH`                      | 严格为 `true` 或 `false`；覆盖 Workbench startup policy，但不能开启 headless 产物中不存在的 UI |
+| `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | Node/Vite physical listener；port 必须为 `0..65535` 整数                                       |
+| `PLUXEL_TLS_CERT` / `PLUXEL_TLS_KEY`    | static Node TLS，必须成对配置；可选 `PLUXEL_TLS_PASSPHRASE`                                    |
+
+外部 database、cache 或 sidecar 需要与 Pluxel 放在同一数据树时直接消费 `hostEnv.dataRoot`，并相对同一个 Host root 使用自己拥有的子目录（例如 `database/`）；不要读取 `env.PLUXEL_DATA_ROOT` 并自行补默认值。应用显式选择不同的 persistence path/backend 表示有意偏离共享 root；部署希望统一时设置 `PLUXEL_DATA_ROOT`。
+
+变量优先级为 Pluxel/build 默认值 < application string path/Workbench policy < 显式 `PLUXEL_DATA_ROOT`/`PLUXEL_WORKBENCH`。环境值非法时启动 fail-fast；不会静默回退。
 
 freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使 `configure()` 可以在启动时选择任一 backend。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
 

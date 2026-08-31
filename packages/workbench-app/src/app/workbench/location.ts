@@ -1,12 +1,6 @@
 import { parsePluginDetailHref, parseWorkbenchHref } from '../../workbench/paths'
 
-export type BuiltinWorkbenchIcon =
-	| 'home'
-	| 'logs'
-	| 'security'
-	| 'agent-tools'
-	| 'plugins'
-	| 'plugin-graph'
+export type BuiltinWorkbenchIcon = 'home' | 'logs' | 'security' | 'plugins' | 'plugin-graph'
 
 export type WorkbenchLocationHeader = Readonly<{
 	eyebrow: string
@@ -59,14 +53,6 @@ export const BUILTIN_WORKBENCH_ROUTES: readonly BuiltinWorkbenchRoute[] = Object
 		header: { eyebrow: 'Security', title: '安全', subtitle: '访问验证与加密存储' },
 		icon: 'security',
 		navigation: false,
-	},
-	{
-		path: '/agent-tools',
-		title: 'Agent 工具',
-		meta: 'Runtime',
-		header: { eyebrow: 'Agents', title: 'Agent 工具', subtitle: '工具集与 Agent 能力分配' },
-		icon: 'agent-tools',
-		navigation: true,
 	},
 	{
 		path: '/plugins',
@@ -127,9 +113,6 @@ export function resolveWorkbenchLocation(pathname: string): WorkbenchLocationDes
 	}
 	if (path.startsWith('/security/')) {
 		return { ...builtinRoute('/security'), path }
-	}
-	if (path.startsWith('/agent-tools/')) {
-		return { ...builtinRoute('/agent-tools'), path }
 	}
 	if (path.startsWith('/logs/')) {
 		return { ...builtinRoute('/logs'), path }

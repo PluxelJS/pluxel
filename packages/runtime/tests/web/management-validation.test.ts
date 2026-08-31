@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-	parseAgentToolsAdminSnapshot,
 	parseConfigResult,
 	parseEnsureForkResult,
 	parseLogRangeResult,
@@ -234,26 +233,6 @@ describe('management protocol validation', () => {
 			revision: 3,
 			persistence: 'dirty',
 		})
-
-		const agentTools = parseAgentToolsAdminSnapshot({
-			revision: 1,
-			catalogRevision: 2,
-			persistence: 'durable',
-			writable: true,
-			commands: [
-				{
-					name: 'fixture.read',
-					description: 'Read fixture state',
-					behavior: { kind: 'query', world: 'closed' },
-				},
-			],
-			policy: {
-				toolsets: [{ id: 'fixture', label: 'Fixture', commandNames: ['fixture.read'] }],
-				agents: [{ agentId: 'codex', label: 'Codex', toolsetIds: ['fixture'] }],
-			},
-		})
-		expect(agentTools.commands[0]?.behavior).toEqual({ kind: 'query', world: 'closed' })
-		expect(Object.isFrozen(agentTools.policy.toolsets)).toBe(true)
 	})
 
 	it('rejects open shapes, dangerous fields, malformed addresses, and dishonest states', () => {

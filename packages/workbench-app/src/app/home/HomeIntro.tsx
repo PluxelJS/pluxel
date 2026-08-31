@@ -1,13 +1,17 @@
-import { Button, Group, Paper, SimpleGrid, Text, Title } from '@mantine/core'
+import { Alert, Badge, Button, Group, Paper, SimpleGrid, Text, Title } from '@mantine/core'
 import {
 	IconArrowRight,
+	IconCloud,
 	IconHistory,
+	IconInfoCircle,
 	IconPlugConnected,
 	IconShieldCheck,
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
+import type { PluxelPlatformSnapshot } from '@pluxel/runtime/environment'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { usePluginOverview } from '../plugins/pluginOverview'
+import { useRuntimeMeta } from '../product'
 
 type WorkspaceLink = {
 	title: string
@@ -43,6 +47,8 @@ const WORKSPACE_LINKS: WorkspaceLink[] = [
 
 export function HomeIntro() {
 	const overview = usePluginOverview()
+	const runtimeMeta = useRuntimeMeta()
+	const platform = runtimeMeta?.platform
 	const summary = overview.overview?.status.summary
 	const statuses = overview.overview?.status.statuses ?? []
 	const runningPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'running')
@@ -65,6 +71,7 @@ export function HomeIntro() {
 					<Text className="plx-home__description">
 						管理插件、依赖与运行日志，常用操作集中在当前页面。
 					</Text>
+					<PlatformSummary platform={platform} />
 					<Group gap="sm" className="plx-home__heroActions">
 						<Button
 							component={RouterLinkAdapter}
@@ -142,6 +149,60 @@ export function HomeIntro() {
 				</SimpleGrid>
 			</section>
 		</main>
+	)
+}
+
+export function platformNotice(platform: PluxelPlatformSnapshot | undefined): string | null {
+	if (!platform) return null
+	if (platform.runtime.name === 'workerd') {
+		return '当前 Workbench 运行在 Cloudflare Workers runtime；文件系统、长连接与持久化能力由部署适配器决定。'
+	}
+	if (platform.runtime.name && platform.runtime.name !== 'node') {
+		return `当前 Workbench 运行在 ${platform.runtime.name}；部分 Node 专属能力可能不可用。`
+	}
+	if (platform.deployment.provider === 'cloudflare_workers') {
+		return '检测到 Cloudflare Workers 部署环境；请确认 WebSocket 与持久化绑定符合宿主配置。'
+	}
+	return null
+}
+
+function PlatformSummary({ platform }: { platform: PluxelPlatformSnapshot | undefined }) {
+	if (!platform) return null
+	const notice = platformNotice(platform)
+	const runtimeLabel = [platform.runtime.name ?? 'unknown runtime', platform.runtime.version]
+		.filter(Boolean)
+		.join(' ')
+	return (
+		<div className="plx-home__platform">
+			<Group gap={6} wrap="wrap" aria-label="宿主环境">
+				<Badge variant="light" leftSection={<IconInfoCircle size={12} />}>
+					{runtimeLabel}
+				</Badge>
+				{platform.platform ? <Badge variant="default">{platform.platform}</Badge> : null}
+				{platform.deployment.provider ? (
+					<Badge color="cyan" variant="light" leftSection={<IconCloud size={12} />}>
+						{platform.deployment.provider.replaceAll('_', ' ')}
+					</Badge>
+				) : null}
+				<Badge color={platform.mode === 'production' ? 'green' : 'gray'} variant="light">
+					{platform.mode}
+				</Badge>
+				{platform.deployment.ci ? (
+					<Badge color="violet" variant="light">
+						CI
+					</Badge>
+				) : null}
+			</Group>
+			{notice ? (
+				<Alert
+					color="orange"
+					icon={<IconInfoCircle size={16} />}
+					className="plx-home__platformNotice"
+				>
+					{notice}
+				</Alert>
+			) : null}
+		</div>
 	)
 }
 

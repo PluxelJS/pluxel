@@ -3,7 +3,6 @@ import type { RpcTarget } from '../capnweb'
 import type { SecurityAuditEvent, SecurityOverview } from './security'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type {
-	AgentToolsHandleApi,
 	ConfigFieldMutation,
 	ConfigPresentationResult,
 	ConfigResult,
@@ -110,9 +109,6 @@ export interface RuntimeManagementTarget extends RpcTarget {
 		input: unknown,
 		observer: RuntimeLogObserver,
 	) => RuntimeLogSubscriptionTarget | Promise<RuntimeLogSubscriptionTarget>
-
-	agentToolsSnapshot: AgentToolsHandleApi['snapshot']
-	replaceAgentToolsPolicy: AgentToolsHandleApi['replacePolicy']
 
 	securityOverview: () => SecurityOverview | Promise<SecurityOverview>
 	securityEvents: (

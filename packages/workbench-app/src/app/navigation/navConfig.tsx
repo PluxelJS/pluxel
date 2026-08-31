@@ -14,7 +14,6 @@ import {
 	IconPlugConnected,
 	IconPuzzle,
 	IconReceipt,
-	IconRobot,
 	IconSearch,
 	IconSettings,
 	IconShieldLock,
@@ -48,7 +47,6 @@ const builtinWorkbenchIconMap = {
 	home: IconHome2,
 	logs: IconHistory,
 	security: IconShieldLock,
-	'agent-tools': IconRobot,
 	plugins: IconPuzzle,
 	'plugin-graph': IconChartDots3,
 } satisfies Record<BuiltinWorkbenchIcon, Icon>

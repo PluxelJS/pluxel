@@ -29,11 +29,12 @@ The host package build runs its one Vite config first, then [`host/tsdown.config
 uses `staticApplication()` and copies `host/web/dist` into `host/dist/public`. The host finally runs
 `pluxel distribution create` after that write so the distribution manifest covers browser assets.
 
-Set `PLUXEL_WORKBENCH=true` when you want the Workbench UI. It shares the Vite process but owns the
-non-root `http://127.0.0.1:3310/__pluxel/workbench` path, leaving the product SPA at `/`.
+Workbench is enabled by default. It shares the Vite process but owns the non-root
+`http://127.0.0.1:3310/__pluxel/workbench` path, leaving the product SPA at `/`. Set
+`PLUXEL_WORKBENCH=false` when the host should run without the management UI.
 
 ```sh
-PLUXEL_WORKBENCH=true pnpm dev
+PLUXEL_WORKBENCH=false pnpm dev
 ```
 
 The repository also includes a dynamic host configuration:

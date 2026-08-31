@@ -1,8 +1,9 @@
 import type { LoaderHmrConfig } from './engine/LoaderHmrService'
+import { env as pluxelEnv } from '@pluxel/runtime/environment'
 
 export function applyLoaderHmrEnvOverrides(
 	base: LoaderHmrConfig,
-	env = process.env,
+	env: Readonly<Record<string, string | undefined>> = pluxelEnv,
 ): LoaderHmrConfig {
 	const out: LoaderHmrConfig = { ...base }
 

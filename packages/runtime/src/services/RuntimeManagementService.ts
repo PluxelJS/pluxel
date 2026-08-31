@@ -1,5 +1,6 @@
 import type { Context } from '@pluxel/core'
 import type { HostApplicationMeta } from '../product-contract'
+import { describePluxelPlatform } from '../environment'
 import {
 	RUNTIME_MANAGEMENT_CAPABILITIES,
 	RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,
@@ -22,6 +23,7 @@ export class RuntimeManagementService {
 			ready: true,
 			protocol: protocolDescriptor(this.root.root.vaultAdmin !== undefined),
 			application: this.application,
+			platform: describePluxelPlatform(),
 			workbench: Object.freeze({ enabled: this.root.workbench !== undefined }),
 		})
 	}

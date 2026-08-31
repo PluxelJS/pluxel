@@ -25,6 +25,7 @@ import {
 	resolveModulePath,
 	unwrapViteId,
 } from '@pluxel/runtime/internal'
+import { env as runtimeEnvironment } from '@pluxel/runtime/environment'
 import {
 	createHostModuleClassifier,
 	getPluxelViteSsrModuleRunner,
@@ -405,7 +406,7 @@ export class HmrRunner {
 		if (!pkgName) return result
 		if (!isHardBridgeSpecifier(pkgName) && !this.isBridgeModule(pkgName)) return result
 
-		if (process.env.PLUXEL_HMR_DEBUG_FETCH === '1') {
+		if (runtimeEnvironment.PLUXEL_HMR_DEBUG_FETCH === '1') {
 			console.error('[hmr:runner] patch fetchModule.invalidate=false', { id, pkgName })
 		}
 

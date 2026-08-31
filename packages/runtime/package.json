@@ -37,6 +37,10 @@
 			"@pluxel/source": "./src/database.ts",
 			"default": "./dist/database.mjs"
 		},
+		"./environment": {
+			"@pluxel/source": "./src/environment.ts",
+			"default": "./dist/environment.mjs"
+		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
@@ -120,6 +124,7 @@
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./database": "./dist/database.mjs",
+			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
 			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",

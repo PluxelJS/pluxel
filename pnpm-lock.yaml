@@ -1373,6 +1373,9 @@ importers:
       elysia:
         specifier: catalog:prod
         version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
       srvx:
         specifier: catalog:prod
         version: 0.12.7
@@ -1584,6 +1587,33 @@ importers:
       vite:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+
+  plugins/agent-tools:
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../../packages/commands
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../packages/test
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   plugins/auth:
     dependencies:
@@ -2294,6 +2324,9 @@ importers:
       '@opentelemetry/api-logs':
         specifier: catalog:prod
         version: 0.221.0
+      '@pluxel/agent-tools':
+        specifier: workspace:*
+        version: link:../../plugins/agent-tools
       '@pluxel/auth':
         specifier: workspace:*
         version: link:../../plugins/auth

@@ -68,6 +68,7 @@
 		"@standard-schema/spec": "catalog:prod",
 		"crossws": "catalog:prod",
 		"elysia": "catalog:prod",
+		"pathe": "catalog:node",
 		"srvx": "catalog:prod",
 		"valibot-form": "workspace:^"
 	},
@@ -93,7 +94,6 @@
 	},
 	"inlinedDependencies": {
 		"chokidar": "5.0.0",
-		"pathe": "2.0.3",
 		"readdirp": "5.1.1"
 	}
 }

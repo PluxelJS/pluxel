@@ -10,6 +10,10 @@ Workbench 是 host-owned 的插件管理界面。它只投影已经存在的 Plu
 这三项是同一个实现契约，不提供可替换 transport、loader 或 renderer SPI。Workbench 可以在 headless
 部署中整体不安装；一旦安装，就不存在缺少 WebSocket、MF2 或 Bridge 时仍部分工作的模式。
 
+Shell 首页可以通过 Management metadata 显示 browser-safe host platform snapshot：JavaScript runtime/version、`std-env` 检测到的
+deployment provider、CI、mode 与 OS platform。该 snapshot 是诊断提示而非 capability guarantee；尤其 provider detection 不等于当前
+request 必然运行于该 provider。不得向 browser 投影完整 environment、变量名、路径、token、certificate 或 secret。
+
 ## 平台边界
 
 Workbench 只定义四个作者概念：

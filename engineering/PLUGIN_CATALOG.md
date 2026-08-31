@@ -97,7 +97,7 @@ section 不能删除它。client 应回传所有当前 section（包括空 secti
 偏好文件使用 `management` persistence namespace 的 `plugin-catalog.json`，不进入 RuntimeState 或 Workbench backend。
 reader/writer 只接受严格的 version 4 shape；没有旧版本 reader、migration 或名称/布局猜测。
 
-Management protocol major 2 提供一个目录能力：
+Management protocol major 3 提供一个目录能力：
 
 - `client.catalog.snapshot()`：返回同一 pinned revision 的 `plugins`、`sections` 和 `summary`；
 - `client.catalog.updateLayout({ sections })`：保存 placement/order 覆盖并返回解析后的 sections。

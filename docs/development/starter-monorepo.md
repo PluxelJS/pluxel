@@ -68,7 +68,7 @@ pnpm start
 
 `host/src/pluxel.static.ts` 的 default export 同时交给 `staticRuntimeVitePlugin()` 和 `staticApplication()`。fixed catalog、
 结构化 auto-start addresses 与 Todo config snapshot 都是显式数据。Workbench Shell、MF producer inventory 和 manifests 会进入 production distribution，
-但启动时默认关闭；需要管理 UI 时使用：
+并默认启用；部署需要 headless 行为时设置 `PLUXEL_WORKBENCH=false`：
 
 `host/web/` 是独立 private workspace package，直接声明 React 与以后新增的纯前端依赖，但不 import Pluxel。
 `host/package.json` 把 `@example/web` 声明为 build-time workspace dependency，并直接声明 Workbench/Vite graph 需要共享的
@@ -89,7 +89,7 @@ copy 把 Web 输出放入 `host/dist/public`。最后显式执行 `pluxel distri
 禁止在 finalization 完成后继续写 distribution。
 
 ```sh
-PLUXEL_WORKBENCH=true pnpm dev
+PLUXEL_WORKBENCH=false pnpm dev
 ```
 
 开发时只有 `host/vite.config.ts` 启动一个 `3310` server。它把 Vite `root` 指向 `host/web/`；Pluxel middleware 先认领

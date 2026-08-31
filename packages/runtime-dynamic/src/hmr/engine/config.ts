@@ -20,6 +20,7 @@ import {
 	resolveModulePath,
 	toBasePackage,
 } from '@pluxel/runtime/internal'
+import { env } from '@pluxel/runtime/environment'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watch'
 import { ELYSIA_SINGLETON_BRIDGE_MODULES } from '../../elysia-singleton'
@@ -114,8 +115,8 @@ export const BASE_LOADER_HMR_RESOLVE_CONDITIONS = [
 const DEFAULT_RESOLVE_CONDITIONS = ['import', 'module', 'browser', 'production', 'default']
 const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
-export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
-	const extras = env && !DEFAULT_RESOLVE_CONDITIONS.includes(env) ? [env] : []
+export function buildHmrResolveConditions(mode = env.NODE_ENV): string[] {
+	const extras = mode && !DEFAULT_RESOLVE_CONDITIONS.includes(mode) ? [mode] : []
 	return [
 		...new Set([...BASE_LOADER_HMR_RESOLVE_CONDITIONS, ...DEFAULT_RESOLVE_CONDITIONS, ...extras]),
 	]

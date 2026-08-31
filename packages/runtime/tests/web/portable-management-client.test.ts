@@ -14,10 +14,16 @@ const metadata = Object.freeze({
 	ready: true as const,
 	protocol: Object.freeze({
 		name: 'pluxel.management' as const,
-		major: 2 as const,
+		major: 3 as const,
 		capabilities: RUNTIME_MANAGEMENT_CAPABILITIES,
 	}),
 	application: Object.freeze({ product: null }),
+	platform: Object.freeze({
+		runtime: Object.freeze({ name: 'node', version: '24.0.0' }),
+		deployment: Object.freeze({ provider: null, ci: false }),
+		mode: 'test' as const,
+		platform: 'linux',
+	}),
 	workbench: Object.freeze({ enabled: false }),
 })
 

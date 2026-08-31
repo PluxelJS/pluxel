@@ -58,7 +58,11 @@ export function parseConfigFieldPathSegments(
 /** Validate, clone, and freeze runtime discovery received from an untrusted host. */
 export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 	const meta = record(parseRuntimePortableData(input, 'runtime metadata'), 'runtime metadata')
-	exact(meta, ['service', 'ready', 'protocol', 'application', 'workbench'], 'runtime metadata')
+	exact(
+		meta,
+		['service', 'ready', 'protocol', 'application', 'platform', 'workbench'],
+		'runtime metadata',
+	)
 	if (meta.service !== 'pluxel-runtime') fail('runtime metadata.service must be pluxel-runtime')
 	if (meta.ready !== true) fail('runtime metadata.ready must be true')
 
@@ -67,7 +71,7 @@ export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 	if (protocol.name !== 'pluxel.management') {
 		fail('runtime metadata.protocol.name must be pluxel.management')
 	}
-	if (protocol.major !== 2) fail('runtime metadata.protocol.major must be 2')
+	if (protocol.major !== 3) fail('runtime metadata.protocol.major must be 3')
 	const capabilities = closedStringArray<RuntimeManagementCapability>(
 		protocol.capabilities,
 		RUNTIME_MANAGEMENT_CAPABILITIES,
@@ -96,17 +100,56 @@ export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 		fail('runtime metadata.workbench.enabled must be boolean')
 	}
 
+	const platform = platformSnapshot(meta.platform)
 	return Object.freeze({
 		service: 'pluxel-runtime' as const,
 		ready: true as const,
 		protocol: Object.freeze({
 			name: 'pluxel.management' as const,
-			major: 2 as const,
+			major: 3 as const,
 			capabilities,
 		}),
 		application: Object.freeze({ product }),
+		platform,
 		workbench: Object.freeze({ enabled: workbench.enabled }),
 	})
+}
+
+function platformSnapshot(input: unknown): RuntimeMeta['platform'] {
+	const snapshot = record(input, 'runtime metadata.platform')
+	exact(snapshot, ['runtime', 'deployment', 'mode', 'platform'], 'runtime metadata.platform')
+	const runtime = record(snapshot.runtime, 'runtime metadata.platform.runtime')
+	exact(runtime, ['name', 'version'], 'runtime metadata.platform.runtime')
+	const deployment = record(snapshot.deployment, 'runtime metadata.platform.deployment')
+	exact(deployment, ['provider', 'ci'], 'runtime metadata.platform.deployment')
+	const runtimeName = nullableString(runtime.name, 'runtime metadata.platform.runtime.name')
+	const runtimeVersion = nullableString(
+		runtime.version,
+		'runtime metadata.platform.runtime.version',
+	)
+	const deploymentProvider = nullableString(
+		deployment.provider,
+		'runtime metadata.platform.deployment.provider',
+	)
+	if (typeof deployment.ci !== 'boolean') {
+		fail('runtime metadata.platform.deployment.ci must be boolean')
+	}
+	if (!['development', 'production', 'test', 'unknown'].includes(String(snapshot.mode))) {
+		fail('runtime metadata.platform.mode is invalid')
+	}
+	const platform = nullableString(snapshot.platform, 'runtime metadata.platform.platform')
+	return Object.freeze({
+		runtime: Object.freeze({ name: runtimeName, version: runtimeVersion }),
+		deployment: Object.freeze({ provider: deploymentProvider, ci: deployment.ci }),
+		mode: snapshot.mode as 'development' | 'production' | 'test' | 'unknown',
+		platform,
+	})
+}
+
+function nullableString(input: unknown, label: string): string | null {
+	if (input === null) return null
+	if (typeof input === 'string') return input
+	fail(`${label} must be a string or null`)
 }
 
 /** Validate the serializable config form plan received from a runtime boundary. */

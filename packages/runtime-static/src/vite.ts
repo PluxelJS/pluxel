@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { env as runtimeEnvironment } from '@pluxel/runtime/environment'
 import {
 	attachSrvxViteNodeCarrier,
 	collectViteSsrImportFiles,
@@ -115,10 +116,12 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		if (!server) throw new Error('[runtime-static/vite] Vite server is not configured')
 		const startup: StaticRuntimeStartupContext = {
 			mode: 'development',
-			env: process.env,
+			env: runtimeEnvironment,
 			bindings: await resolveViteBindings(options.bindings),
 		}
-		const config = await resolveStaticRuntimeHostOptions(application, startup)
+		const config = await resolveStaticRuntimeHostOptions(application, startup, {
+			workbench: true,
+		})
 		const host = await createStaticRuntimeHost(toStaticRuntimeDefinition(application), config, {
 			createWorkbenchBackend,
 			product,

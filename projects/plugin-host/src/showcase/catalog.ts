@@ -1,3 +1,4 @@
+import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { AuthPlugin } from '@pluxel/auth'
 import { CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'
@@ -35,6 +36,7 @@ export {
 } from './policy'
 
 export const officialStaticPlugins = Object.freeze([
+	AgentToolsPlugin,
 	AuthPlugin,
 	MemoryCacheBackendPlugin,
 	CachePlugin,

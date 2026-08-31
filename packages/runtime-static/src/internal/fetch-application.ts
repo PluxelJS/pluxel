@@ -1,5 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
+import { env as runtimeEnvironment } from '@pluxel/runtime/environment'
 import { startStaticRuntimeApplication } from './application.ts'
 import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import type {
@@ -52,5 +53,5 @@ export function runStaticFetchApplication<
 }
 
 function readProcessEnvironment(): StaticRuntimeEnvironment {
-	return process.env
+	return runtimeEnvironment
 }

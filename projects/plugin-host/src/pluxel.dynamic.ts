@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { env } from '@pluxel/runtime/environment'
 import { dirname, resolve } from 'pathe'
 import {
 	createHostConfigRecords,
@@ -13,8 +14,8 @@ export { product }
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../../..')
 const managedPackagesRoot = resolve(repoRoot, '.pluxel/managed-plugins')
-const activeProfile = process.env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
-const configPath = process.env.PLUXEL_HMR_CONFIG ?? 'projects/plugin-host/pluxel.loader.hmr.jsonc'
+const activeProfile = env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
+const configPath = env.PLUXEL_HMR_CONFIG ?? 'projects/plugin-host/pluxel.loader.hmr.jsonc'
 
 export default defineDynamicRuntimeConfig({
 	root: repoRoot,

@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type UserConfig } from 'vite'
+import { hostEnv } from '@pluxel/runtime/environment'
 
 const webRoot = fileURLToPath(new URL('./web', import.meta.url))
 const webEntry = fileURLToPath(new URL('./web/index.html', import.meta.url))
@@ -21,8 +22,8 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => {
 		root: webRoot,
 		appType: 'spa',
 		server: {
-			host: process.env.PLUXEL_HOST_BIND ?? '127.0.0.1',
-			port: Number(process.env.PLUXEL_HOST_PORT ?? 3310),
+			host: hostEnv.hostBind ?? '127.0.0.1',
+			port: hostEnv.hostPort ?? 3310,
 		},
 		build: {
 			outDir: 'dist',

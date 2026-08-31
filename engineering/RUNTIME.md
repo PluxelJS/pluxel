@@ -29,6 +29,11 @@ Runtime 在 Plugin lifecycle 前显式调用 `prepareRuntimeRootContext(root)`�
 Vault 等 leaf service 的领域 `prepare()`。同一成功 attempt 共享 task；失败会清除 task，下一次 host startup attempt 可重试。
 资源关闭仍通过 root/generation effects 或 launcher `stop()`，不回流到 Context kernel。
 
+Host environment 统一从 `@pluxel/runtime/environment` 取得。该入口直接转导 `std-env` 的 universal `env` object，并用可声明合并的
+`PluxelEnvironmentVariables` 增强官方 `PLUXEL_*` 字段；`hostEnv` 是唯一经过校验的有效 Host view，并补全共享 data root
+`.pluxel`。Pluxel persistence 使用其 `persistence/` 子目录，其他 integration 各自拥有 sibling 子目录。static/dynamic launcher、生产 bootstrap、Vite config 和 application host 不各自读取 `process.env` 或复制默认路径。
+Launcher 注入环境时通过 `resolveHostEnv(input)` 走同一解析边界；完整 environment 不进入 Context、日志或 Management DTO。
+
 业务 HTTP 使用每个 generation 一个严格惰性的原生 Elysia application；root Plugin 与全部 Part 共享同一 scope identity。
 finalizer 在 init 后等待 modules、检查 inventory 并 compile/seal，同一次 Core operation 在 settlement 后构造 immutable directory，
 publication 只同步交换 ready pointer。每个 root 仍只有一个 host-only carrier/backend，用于 control plane、UI assets 与 business
@@ -101,12 +106,10 @@ registration handle 同样不能越过已关闭 gate。单独调用 registration
 但最终都进入同一个 coordinator transaction 与 Core commit 事实源。CLI、Agent、HTTP 和 Workbench 是宿主 carrier；它们负责授权、确认、
 过滤与 principal 映射，不拥有 command 定义或插件生命周期。
 
-`ctx.root.agentTools` 在唯一 command registry 之上维护持久化 Toolset 与 Agent assignment。Toolset 只保存稳定
-command name，不复制 descriptor 或 handler；插件停止时命令从投影消失，同名命令恢复时自动重新进入。Agent carrier
-必须用 `await ctx.root.agentTools.catalog(agentId)` 得到的 bound catalog 同时完成工具发布与执行，因为该 catalog 会在
-调用时再次检查 assignment。bound catalog 只提供过滤后的 `list()`/`snapshot()`/`subscribe()` 与单一 throwing
-`execute()`；它不暴露 command lookup，也不缓存可执行 handle，避免 policy 撤销后通过旧引用继续调用。Workbench 的
-`/agent-tools` 只是该宿主策略的管理面，Workbench disabled 不影响已经保存的 Agent catalog。
+Runtime 不安装 Agent、Toolset、provider adapter、独立 policy store 或 Agent 专用 Management API。需要 Agent allowlist 的
+host 把普通官方 `@pluxel/agent-tools` Plugin 放进 catalog；其 Toolset/assignment 进入标准 Plugin config，并只在唯一 command
+registry 上建立受限视图。外部 Agent adapter 同样是普通 Plugin，通过 constructor dependency 消费该 provider。这样未安装或未启动
+插件时没有 Agent 状态、持久化或 UI 成本，Workbench 只使用通用 Plugin config 页面。
 
 argv/message carrier 用 `createArgvRouter()` 显式绑定自己允许暴露的 command 与 route grammar。router 的 `resolve()` 只返回
 command、route 和未信任 candidate；carrier 随后完成授权、构造 invocation Context，并调用返回 command 的 throwing
@@ -379,7 +382,8 @@ import graph，因此产品变化复用正常 host replacement，并在 Workbenc
 或 HMR protocol。
 
 Workbench backend 安装时接收 nullable snapshot，并通过既有 runtime meta read model 暴露
-`application.product`。Workbench disabled/headless 不安装 backend，也不创建 product service、route、registry 或持久状态。
+`application.product`。同一 read model 可选投影由 `std-env` 检测的非敏感 platform snapshot（runtime/provider/CI/mode/platform），不投影变量名或值。
+Workbench disabled/headless 不安装 backend，也不创建 product service、route、registry 或持久状态。
 
 ## Static application ownership
 

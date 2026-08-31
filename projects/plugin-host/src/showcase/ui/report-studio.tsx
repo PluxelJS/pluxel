@@ -34,7 +34,7 @@ const INSPECTION_SURFACES = Object.freeze([
 	['Catalog + lifecycle', 'Plugins'],
 	['Providers + S3 forks', 'Dependencies'],
 	['PluginPart settings', 'Config'],
-	['Commands + telemetry', 'Agent tools · Logs'],
+	['Commands + telemetry', 'Commands · Logs'],
 ] as const)
 
 const SHOWCASE_ROUTES = Object.freeze([
@@ -285,8 +285,8 @@ function ReportStudioContent({
 						))}
 					</Group>
 					<Text size="xs" c="dimmed" mt="sm">
-						The generated MF2 Bridge renders this view; Agent tools expose the two showcase
-						commands.
+						The generated MF2 Bridge renders this view; both showcase commands publish into the
+						unified registry, and Agent adapters only receive explicitly assigned subsets.
 					</Text>
 				</Paper>
 			</SimpleGrid>

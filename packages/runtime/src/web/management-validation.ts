@@ -9,13 +9,6 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import type {
-	AgentToolAssignment,
-	AgentToolsAdminSnapshot,
-	AgentToolsPolicy,
-	CommandInventoryItem,
-	CommandToolset,
-} from '../agent-tools'
-import type {
 	AdminAccessOverview,
 	RuntimeSecurityClient,
 	SecurityAuditEvent,
@@ -523,39 +516,6 @@ export function parsePluginLogPolicyMutationResult(input: unknown): PluginLogPol
 			['none', 'clean', 'dirty', 'failed'],
 			'logging policy mutation result.persistence',
 		),
-	})
-}
-
-/** Validate and deep-freeze the Agent tools administration snapshot. */
-export function parseAgentToolsAdminSnapshot(input: unknown): AgentToolsAdminSnapshot {
-	const value = rootRecord(input, 'agent tools snapshot')
-	shape(
-		value,
-		['revision', 'catalogRevision', 'persistence', 'writable', 'commands', 'policy'],
-		['loadError'],
-		'agent tools snapshot',
-	)
-	return Object.freeze({
-		revision: nonNegativeInteger(value.revision, 'agent tools snapshot.revision'),
-		catalogRevision: nonNegativeInteger(
-			value.catalogRevision,
-			'agent tools snapshot.catalogRevision',
-		),
-		persistence: literal(
-			value.persistence,
-			['durable', 'ephemeral', 'readonly'],
-			'agent tools snapshot.persistence',
-		),
-		writable: boolean(value.writable, 'agent tools snapshot.writable'),
-		...(value.loadError === undefined
-			? {}
-			: { loadError: text(value.loadError, 'agent tools snapshot.loadError') }),
-		commands: Object.freeze(
-			array(value.commands, 'agent tools snapshot.commands').map((item, index) =>
-				commandInventoryItem(item, `agent tools snapshot.commands[${index}]`),
-			),
-		),
-		policy: agentToolsPolicy(value.policy, 'agent tools snapshot.policy'),
 	})
 }
 
@@ -1518,84 +1478,6 @@ function controlMutationFailure(input: unknown, label: string): PluginControlMut
 		state,
 		error: text(value.error, `${label}.error`),
 	}) as PluginControlMutationFailure
-}
-
-function commandInventoryItem(input: unknown, label: string): CommandInventoryItem {
-	const value = object(input, label)
-	shape(value, ['name', 'description', 'behavior'], ['title'], label)
-	return Object.freeze({
-		name: text(value.name, `${label}.name`),
-		...(value.title === undefined ? {} : { title: text(value.title, `${label}.title`) }),
-		description: text(value.description, `${label}.description`),
-		behavior: commandBehavior(value.behavior, `${label}.behavior`),
-	})
-}
-
-function commandBehavior(input: unknown, label: string): CommandInventoryItem['behavior'] {
-	const value = object(input, label)
-	const kind = literal(value.kind, ['query', 'mutation'], `${label}.kind`)
-	if (kind === 'query') {
-		shape(value, ['kind', 'world'], [], label)
-		return Object.freeze({
-			kind,
-			world: literal(value.world, ['closed', 'open'], `${label}.world`),
-		})
-	}
-	shape(value, ['kind', 'destructive', 'idempotent', 'world'], [], label)
-	return Object.freeze({
-		kind,
-		destructive: boolean(value.destructive, `${label}.destructive`),
-		idempotent: boolean(value.idempotent, `${label}.idempotent`),
-		world: literal(value.world, ['closed', 'open'], `${label}.world`),
-	})
-}
-
-function agentToolsPolicy(input: unknown, label: string): AgentToolsPolicy {
-	const value = object(input, label)
-	shape(value, ['toolsets', 'agents'], [], label)
-	return Object.freeze({
-		toolsets: Object.freeze(
-			array(value.toolsets, `${label}.toolsets`).map((item, index) =>
-				commandToolset(item, `${label}.toolsets[${index}]`),
-			),
-		),
-		agents: Object.freeze(
-			array(value.agents, `${label}.agents`).map((item, index) =>
-				agentAssignment(item, `${label}.agents[${index}]`),
-			),
-		),
-	})
-}
-
-function commandToolset(input: unknown, label: string): CommandToolset {
-	const value = object(input, label)
-	shape(value, ['id', 'label', 'commandNames'], ['description'], label)
-	return Object.freeze({
-		id: text(value.id, `${label}.id`),
-		label: text(value.label, `${label}.label`),
-		...(value.description === undefined
-			? {}
-			: { description: text(value.description, `${label}.description`) }),
-		commandNames: Object.freeze(
-			array(value.commandNames, `${label}.commandNames`).map((item, index) =>
-				text(item, `${label}.commandNames[${index}]`),
-			),
-		),
-	})
-}
-
-function agentAssignment(input: unknown, label: string): AgentToolAssignment {
-	const value = object(input, label)
-	shape(value, ['agentId', 'label', 'toolsetIds'], [], label)
-	return Object.freeze({
-		agentId: text(value.agentId, `${label}.agentId`),
-		label: text(value.label, `${label}.label`),
-		toolsetIds: Object.freeze(
-			array(value.toolsetIds, `${label}.toolsetIds`).map((item, index) =>
-				text(item, `${label}.toolsetIds[${index}]`),
-			),
-		),
-	})
 }
 
 /** Validate and deep-freeze the HTTP log-stream index. */

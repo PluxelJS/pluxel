@@ -53,6 +53,20 @@
 	max-width: 620px;
 }
 
+.plx-home__platform {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 13px;
+}
+
+.plx-home__platformNotice {
+	font-size: 12px;
+	line-height: 1.45;
+	max-width: 680px;
+	padding: 8px 10px;
+}
+
 .plx-home__heroActions {
 	margin-top: 15px;
 }

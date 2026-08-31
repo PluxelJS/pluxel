@@ -1,3 +1,5 @@
+import { env } from '@pluxel/runtime/environment'
+
 export const DEFAULT_VITE_WATCH_IGNORED = [
 	/\.wrangler/,
 	/\.mf/,
@@ -6,5 +8,5 @@ export const DEFAULT_VITE_WATCH_IGNORED = [
 ] as const
 
 export const VITE_WATCH_USE_POLLING = ['1', 'true'].includes(
-	process.env.CHOKIDAR_USEPOLLING?.toLowerCase() ?? '',
+	env.CHOKIDAR_USEPOLLING?.toLowerCase() ?? '',
 )

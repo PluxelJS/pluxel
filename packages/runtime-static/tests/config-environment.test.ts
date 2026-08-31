@@ -128,6 +128,34 @@ const snapshotEnvironment = (owner: PluginNodeAddress, config: Readonly<Record<s
 	JSON.stringify({ version: 3, plugins: [{ owner, config }] })
 
 describe('static config environment bootstrap', () => {
+	it('applies the unified Pluxel host environment after application string defaults', async () => {
+		const resolved = await resolveStaticRuntimeHostOptions(
+			defineStaticRuntime({
+				name: 'host-environment',
+				plugins: [],
+				configure: () => ({ persistence: './application-state', workbench: false }),
+			}),
+			startup({
+				PLUXEL_DATA_ROOT: './deployment-state',
+				PLUXEL_WORKBENCH: 'true',
+			}),
+		)
+		expect(resolved.persistence).toBe('deployment-state/persistence')
+		expect(resolved.workbench).toEqual({ enabled: true })
+	})
+
+	it('uses the static Workbench build default while preserving explicit disable', async () => {
+		const application = defineStaticRuntime({ name: 'workbench-default', plugins: [] })
+		await expect(
+			resolveStaticRuntimeHostOptions(application, startup(), { workbench: true }),
+		).resolves.toMatchObject({ workbench: { enabled: true } })
+		await expect(
+			resolveStaticRuntimeHostOptions(application, startup({ PLUXEL_WORKBENCH: 'false' }), {
+				workbench: true,
+			}),
+		).resolves.toMatchObject({ workbench: false })
+	})
+
 	it('creates opaque immutable bindings and rejects empty, non-portable, and reserved names', () => {
 		const mapping = { nested: { left: 'APP_LEFT' } }
 		const binding = bindConfigEnvironment(EnvironmentPlugin, EnvironmentConfig, mapping)

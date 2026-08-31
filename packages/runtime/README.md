@@ -26,9 +26,9 @@ registry，Runtime 的 `list()`、`snapshot()`、`subscribe()` 和 throwing `exe
 CommandsService 只增加 owner execution gate；generation stop 时由 Core 统一关闭 admission、abort 并等待已接纳调用，再
 drain effects。
 
-需要持久化 Agent allowlist 的宿主使用 `await ctx.root.agentTools.catalog(agentId)`。这个 bound catalog 只公开过滤后的
-`list()`/`snapshot()`/`subscribe()` 与单一 `execute()`，并在每次调用时重新检查当前 Toolset assignment；发布工具和执行
-工具必须使用同一个 catalog，不能绕过它直接调用 root registry。
+Runtime 不定义 Agent、Toolset 或 provider adapter。需要 Agent allowlist 时安装普通官方 Plugin
+`@pluxel/agent-tools`；它把 Toolset/assignment 放进标准 Plugin config，并在这个唯一 registry 上生成受限 catalog。
+外部 Agent adapter 也应是普通 Plugin，通过 constructor dependency 消费它，而不是取得 Runtime 特例。
 
 单独构建的 Node ESM entry 使用 `defineNodeModule(import.meta.url, literal)` 声明，并通过
 `ctx.nodeModules.use(declaration, setup)` 消费。首次 load/setup 会阻塞插件启动；开发期 staged replacement 与 owner

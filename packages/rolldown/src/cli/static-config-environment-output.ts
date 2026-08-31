@@ -10,6 +10,26 @@ export type StaticConfigEnvironmentExampleWriteOptions = {
 	ownedExisting: boolean
 }
 
+const STANDARD_PLUXEL_ENVIRONMENT_EXAMPLE = `# Pluxel host environment
+# Uncomment only the values owned by this deployment.
+# PLUXEL_DATA_ROOT=./.pluxel
+# PLUXEL_WORKBENCH=false
+# PLUXEL_HOST_BIND=0.0.0.0
+# PLUXEL_HOST_PORT=3000
+
+# Optional TLS termination. Certificate and key must be configured together.
+# PLUXEL_TLS_CERT=/run/secrets/tls.crt
+# PLUXEL_TLS_KEY=/run/secrets/tls.key
+# PLUXEL_TLS_PASSPHRASE=
+`
+
+/** Compose the framework-owned host variables with optional Plugin config bootstrap variables. */
+export function renderStaticApplicationEnvironmentExample(pluginContent?: string): string {
+	return pluginContent
+		? `${STANDARD_PLUXEL_ENVIRONMENT_EXAMPLE}\n${pluginContent}`
+		: STANDARD_PLUXEL_ENVIRONMENT_EXAMPLE
+}
+
 /** Writes or withdraws the generated asset before distribution finalization. */
 export async function writeStaticConfigEnvironmentExample(
 	options: StaticConfigEnvironmentExampleWriteOptions,

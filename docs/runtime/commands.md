@@ -1,6 +1,6 @@
 ---
-title: Commands 与 Agent tools
-description: 定义一次命令契约，再复用于注册表、Agent tools、CLI、HTTP 和 Workbench。
+title: Commands 与 Agent 集成
+description: 定义一次命令契约，再复用于统一注册表、可选 Agent Plugin、CLI、HTTP 和 Workbench。
 ---
 
 `@pluxel/commands` 让一条命令只定义一次输入、输出、副作用等级和执行函数，再安全地暴露给 Agent、CLI、HTTP 或 Workbench。不同入口共享同一份校验和错误契约，不需要各自重写参数解析。
@@ -151,15 +151,19 @@ const tools = visible.map((descriptor) => provider.projectCommand(descriptor))
 
 provider adapter 自己映射 name、title、description、input/output JSON Schema 和 `behavior`。MCP annotation、task support、provider 重命名与反向 name mapping 都是 carrier 契约，不是 command kernel 的公开概念。
 
-Runtime host 需要持久化 Agent policy 时使用 `ctx.root.agentTools`：Toolset 保存稳定 command names，Agent assignment 保存 Toolset IDs。没有 assignment 的 Agent 默认看不到任何命令；暂时不存在的 name 会保留在 policy，之后同名 command 发布时重新生效。
+需要持久化 Agent allowlist 时安装可选官方 Plugin `@pluxel/agent-tools`。Toolset 与 Agent assignment 是它的普通 Plugin config：ConfigService 负责校验、持久化和通用配置页面，Runtime 不安装 Agent capability，也不维护第二套 policy store 或 Management RPC。
 
 ```ts no-twoslash
-const catalog = await ctx.root.agentTools.catalog(agentId)
+import { AgentToolsPlugin } from '@pluxel/agent-tools'
+
+const catalog = agentTools.catalog(agentId)
 const tools = catalog.list().map((descriptor) => provider.projectCommand(descriptor))
 const result = await catalog.execute(toolName, candidate, invocationContext)
 ```
 
-发布和执行必须使用同一个 bound catalog。它会在调用时再次检查 assignment，并提供包含 `catalogRevision`/`policyRevision` 的 snapshot 与订阅能力。Agent carrier 不应在收到 tool call 后绕过它调用 `ctx.root.commands.execute()`。
+Agent adapter 应是通过 constructor required dependency 取得 `AgentToolsPlugin` 的普通 Plugin。发布和执行必须使用同一个 bound catalog；它会在调用时再次检查 assignment，并提供包含 `catalogRevision`/`policyRevision` 的 snapshot 与订阅能力。Plugin stop/replacement 后旧 catalog 立即撤销。adapter 不应在收到 tool call 后绕过它调用裸 `ctx.commands.execute()`。
+
+Toolset 只保存稳定 command name，不复制 descriptor 或 handler。暂时不存在的 name 会保留在 config，之后同名 command 发布时自动进入投影。MCP、OpenAI、Claude 等 provider schema、tool name 映射、principal、确认与审计仍由 adapter 自己负责。完整用法见 [Agent tools Plugin](../plugins/agent-tools.md)。
 
 ## 6. argv/message grammar
 
@@ -205,11 +209,11 @@ argv.bind(patchConfig, {
 
 ## 公开入口
 
-| 需求                          | 入口                                   |
-| ----------------------------- | -------------------------------------- |
-| Plugin 发布能力               | `this.ctx.commands.register(command)`  |
-| 独立 host 建 catalog          | `createCommandRegistry()`              |
-| Runtime Agent allowlist       | `ctx.root.agentTools.catalog(agentId)` |
-| 自定义 route/positionals/tail | `createArgvRouter().bind()`            |
+| 需求                          | 入口                                  |
+| ----------------------------- | ------------------------------------- |
+| Plugin 发布能力               | `this.ctx.commands.register(command)` |
+| 独立 host 建 catalog          | `createCommandRegistry()`             |
+| Agent allowlist               | `agentTools.catalog(agentId)`         |
+| 自定义 route/positionals/tail | `createArgvRouter().bind()`           |
 
 carrier 负责授权、确认、principal 映射、输出格式和进程退出码；command definition 与 runtime registry 不承担这些宿主策略。

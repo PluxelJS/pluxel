@@ -2,6 +2,7 @@
 // workspace source here to avoid running stale runtime-dynamic dist output.
 import { dynamicRuntimeVitePlugin } from '../../packages/runtime-dynamic/src/vite.ts'
 import { defineConfig } from 'vite'
+import { hostEnv } from '@pluxel/runtime/environment'
 
 export default defineConfig({
 	appType: 'spa',
@@ -11,8 +12,8 @@ export default defineConfig({
 		noExternal: ['@opentelemetry/resources'],
 	},
 	server: {
-		host: process.env.PLUXEL_HOST_BIND ?? '127.0.0.1',
-		port: Number(process.env.PLUXEL_HOST_PORT ?? 5173),
+		host: hostEnv.hostBind ?? '127.0.0.1',
+		port: hostEnv.hostPort ?? 5173,
 	},
 	plugins: [
 		dynamicRuntimeVitePlugin({

@@ -106,16 +106,6 @@ export {
 } from './services/persistence/PersistenceService'
 export type { ConfigServiceConfig } from './services/ConfigService'
 export type { CommandCatalogSnapshot } from './services/CommandsService'
-export {
-	type AgentCommandCatalog,
-	type AgentCommandCatalogSnapshot,
-	type AgentToolAssignment,
-	type AgentToolsAdminSnapshot,
-	type AgentToolsPolicy,
-	type AgentToolsPolicyInput,
-	type CommandInventoryItem,
-	type CommandToolset,
-} from './agent-tools'
 export type {
 	ManagementAccessMethod,
 	ManagementAccessPrincipal,

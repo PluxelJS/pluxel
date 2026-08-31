@@ -1,5 +1,4 @@
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
-import type { AgentToolsAdminSnapshot, AgentToolsPolicyInput } from '../agent-tools'
 import type {
 	PluginDefinitionAddress,
 	PluginLifecycleIssueKind,
@@ -7,17 +6,10 @@ import type {
 	PluginNodeAddress,
 } from '@pluxel/core'
 import type { HostApplicationMeta } from '../product-contract'
+import type { PluxelPlatformSnapshot } from '../environment'
 export type { VaultKeyPair } from '../services/vault/types'
-export type {
-	AgentToolAssignment,
-	AgentToolsAdminSnapshot,
-	AgentToolsPolicy,
-	AgentToolsPolicyInput,
-	CommandInventoryItem,
-	CommandToolset,
-} from '../agent-tools'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 2 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 3 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -26,7 +18,6 @@ export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugins.dependencies',
 	'plugins.forks',
 	'logging',
-	'agent-tools',
 	'security',
 	'vault',
 ] as const)
@@ -38,10 +29,12 @@ export type RuntimeMeta = Readonly<{
 	ready: true
 	protocol: Readonly<{
 		name: 'pluxel.management'
-		major: 2
+		major: 3
 		capabilities: readonly RuntimeManagementCapability[]
 	}>
 	application: HostApplicationMeta
+	/** Non-secret runtime/provider detection for diagnostics. */
+	platform: PluxelPlatformSnapshot
 	workbench: Readonly<{ enabled: boolean }>
 }>
 
@@ -795,12 +788,4 @@ export type LoggingHandleApi = {
 		owner: PluginNodeAddress,
 	) => Promise<PluginLogPolicyMutationResult>
 	resetPolicy: (expectedRevision: number) => Promise<VersionedPluginLogPolicySnapshot>
-}
-
-export type AgentToolsHandleApi = {
-	snapshot: () => Promise<AgentToolsAdminSnapshot>
-	replacePolicy: (
-		expectedRevision: number,
-		policy: AgentToolsPolicyInput,
-	) => Promise<AgentToolsAdminSnapshot>
 }

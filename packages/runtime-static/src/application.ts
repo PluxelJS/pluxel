@@ -6,6 +6,8 @@ import type {
 	StaticRuntimeStartupContext,
 } from './types.ts'
 import { mergeConfigRecords, withPluginConfigEnvironment } from '@pluxel/runtime/internal'
+import { resolveHostEnv } from '@pluxel/runtime/environment'
+import { join } from 'pathe'
 import { resolveConfigEnvironmentBootstrap } from './config-environment.ts'
 
 const STATIC_RUNTIME_APPLICATION_MARKER = Symbol.for('pluxel.staticRuntimeApplication')
@@ -81,6 +83,7 @@ export function isStaticRuntimeApplication(value: unknown): value is StaticRunti
 export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRuntimeBindings>(
 	application: StaticRuntimeApplication<readonly PluginConstructor[], TBindings>,
 	startup: StaticRuntimeStartupContext<TBindings>,
+	defaults: Readonly<{ workbench?: boolean }> = {},
 ): Promise<StaticRuntimeHostOptions> {
 	const environmentSeed = resolveConfigEnvironmentBootstrap(application, startup.env)
 	const options = (await application.configure?.(startup)) ?? {}
@@ -88,6 +91,7 @@ export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRu
 		throw new TypeError('[runtime-static] Static application configure() must return an object')
 	}
 	assertKnownFields(options, HOST_OPTION_FIELDS, '[runtime-static] configure() result')
+	const environment = resolveHostEnv(startup.env)
 	const seededConfigService =
 		environmentSeed.length === 0
 			? options.configService
@@ -99,7 +103,24 @@ export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRu
 					},
 				}
 	const configService = withPluginConfigEnvironment(seededConfigService, startup.env)
-	return configService === options.configService ? options : { ...options, configService }
+	const workbench: StaticRuntimeHostOptions['workbench'] =
+		environment.workbench === false
+			? false
+			: environment.workbench === true
+				? {
+						...(typeof options.workbench === 'object' ? options.workbench : {}),
+						enabled: true,
+					}
+				: (options.workbench ?? (defaults.workbench ? { enabled: true } : undefined))
+	return {
+		...options,
+		...(configService === options.configService ? {} : { configService }),
+		...(startup.env.PLUXEL_DATA_ROOT !== undefined &&
+		(options.persistence === undefined || typeof options.persistence === 'string')
+			? { persistence: join(environment.dataRoot, 'persistence') }
+			: {}),
+		...(workbench === undefined ? {} : { workbench }),
+	}
 }
 
 function assertKnownFields(value: object, allowed: ReadonlySet<string>, label: string): void {

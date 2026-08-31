@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { isAbsolute, resolve } from 'pathe'
+import { isAbsolute, join, resolve } from 'pathe'
 import type { ViteDevServer } from 'vite'
 
 import type { Context, PluginConstructor } from '@pluxel/core'
@@ -23,6 +23,12 @@ import {
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import {
+	describePluxelPlatform,
+	env as runtimeEnvironment,
+	hostEnv as defaultHostEnvironment,
+	resolveHostEnv,
+} from '@pluxel/runtime/environment'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { attachPluginArtifactCompiler } from '@pluxel/runtime-dev/workbench'
 import type { DynamicRuntimeStorageOptions } from '../config'
@@ -132,7 +138,7 @@ function planRuntimeStorage(
 	runtimeStorage: RuntimeStoragePaths
 } {
 	const runtimeStorage = resolveRuntimeStoragePaths(root, {
-		persistenceDir: storage?.persistenceDir ?? '.pluxel/persistence',
+		persistenceDir: storage?.persistenceDir ?? join(defaultHostEnvironment.dataRoot, 'persistence'),
 		...(logs.logsDir ? { logsDir: logs.logsDir } : {}),
 		...(logs.logFile ? { logFile: logs.logFile } : {}),
 	})
@@ -209,9 +215,33 @@ export async function planLoaderHmrHostFromConfig(
 		return resolveDefaultLoaderHmrConfigPath(rootDir)
 	})()
 	const env: Record<string, string | undefined> = {
-		...process.env,
+		...runtimeEnvironment,
 		...(profile ? { PLUXEL_HMR_PROFILE: profile } : {}),
 		...envOverrides,
+	}
+	const pluxelEnvironment = resolveHostEnv(env)
+	const resolvedHostOptions: typeof hostOpts = {
+		...hostOpts,
+		...(env.PLUXEL_DATA_ROOT !== undefined &&
+		(hostOpts.persistence === undefined || typeof hostOpts.persistence === 'string')
+			? {
+					storage: {
+						...hostOpts.storage,
+						persistenceDir: join(pluxelEnvironment.dataRoot, 'persistence'),
+					},
+					...(typeof hostOpts.persistence === 'string' ? { persistence: undefined } : {}),
+				}
+			: {}),
+		...(pluxelEnvironment.workbench === undefined
+			? {}
+			: {
+					workbench: pluxelEnvironment.workbench
+						? {
+								...(typeof hostOpts.workbench === 'object' ? hostOpts.workbench : {}),
+								enabled: true,
+							}
+						: false,
+				}),
 	}
 
 	const diagnosed = await diagnoseWorkspace({
@@ -242,7 +272,7 @@ export async function planLoaderHmrHostFromConfig(
 
 	return planLoaderHmrHost(
 		{
-			...hostOpts,
+			...resolvedHostOptions,
 			root: rootDir,
 			snapshot,
 			warnings: diagnosed.warnings,
@@ -324,6 +354,17 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			options.workbenchArtifactCacheDir,
 			options.workbenchAssets === 'built' ? 'distribution' : 'development',
 		)
+		const platform = describePluxelPlatform()
+		ctx.logger.info('Runtime started', {
+			profile: plan.snapshot.activeProfile,
+			workbench: ctx.workbench !== undefined,
+			persistenceRoot: plan.runtimeStorage.persistenceDir,
+			runtime: platform.runtime.name,
+			runtimeVersion: platform.runtime.version,
+			deploymentProvider: platform.deployment.provider,
+			ci: platform.deployment.ci,
+			mode: platform.mode,
+		})
 
 		return {
 			root: plan.root,

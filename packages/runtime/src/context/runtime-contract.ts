@@ -9,7 +9,6 @@ import type { RuntimeStateStoreConfig } from '../services/RuntimeStateStore'
 import type { RuntimeManagementService } from '../services/RuntimeManagementService'
 import type { AdminAccessService } from '../services/admin-access/AdminAccessService'
 import type { ManagementAccessService } from '../services/admin-access/ManagementAccessService'
-import type { AgentToolsService } from '../services/commands/AgentToolsService'
 import type { RuntimeHttpAssetConfig } from '../services/http/HttpService'
 import type { Elysia } from 'elysia'
 import type { InternalApiValidationService } from '../services/http/InternalApiValidationService'
@@ -76,7 +75,6 @@ declare module '@pluxel/core' {
 		readonly adminAccess?: AdminAccessService
 		/** @internal Present only when the runtime management plane is enabled. */
 		readonly runtimeManagement?: RuntimeManagementService
-		readonly agentTools: AgentToolsService
 		/** @internal Management projection over the shared Plugin catalog. */
 		readonly pluginCatalogLayout?: PluginCatalogLayoutService
 		/** Present only when the host explicitly enables `vault` with a configuration object. */

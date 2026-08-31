@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'pathe'
+import { env as pluxelEnv } from '@pluxel/runtime/environment'
 import {
 	DEFAULT_LOADER_HMR_CONFIG_BASENAME,
 	readLoaderHmrConfigV2,
@@ -32,7 +33,8 @@ export type LoaderHmrProfileRef = {
 	/**
 	 * Environment used for profile selection (optional).
 	 *
-	 * Defaults to `process.env`. When `profile` is provided, it wins over `env.PLUXEL_HMR_PROFILE`.
+	 * Defaults to Pluxel's universal `env`. When `profile` is provided, it wins over
+	 * `env.PLUXEL_HMR_PROFILE`.
 	 */
 	env?: Record<string, string | undefined>
 	fs?: LoaderHmrWorkspaceFs
@@ -77,7 +79,7 @@ export function readLoaderHmrConfigRaw(
  */
 export function readLoaderHmrProfileView(ref: LoaderHmrProfileRef = {}): LoaderHmrProfileView {
 	const { rootDir, configPath, config } = readLoaderHmrConfigRaw(ref)
-	const env = { ...(ref.env ?? process.env) }
+	const env = { ...(ref.env ?? pluxelEnv) }
 	if (ref.profile) env.PLUXEL_HMR_PROFILE = ref.profile
 	const merged = mergeLoaderHmrProfile(config, env)
 
@@ -117,7 +119,7 @@ export async function resolveLoaderHmrWorkspace(
 		rootDir: rootDirAbs,
 		configPath: ref.configPath,
 	})
-	const env = { ...(ref.env ?? process.env) }
+	const env = { ...(ref.env ?? pluxelEnv) }
 	if (ref.profile) env.PLUXEL_HMR_PROFILE = ref.profile
 
 	const res = await diagnoseWorkspace({

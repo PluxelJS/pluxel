@@ -8,9 +8,9 @@ architecture choices through the Workbench instead of leaving them in logs-only 
 
 The product identity in both routes is **Pluxel Architecture Lab**:
 
-- `dynamic`: host-owned Vite server, all 16 official concrete Plugins source-loaded through loader
+- `dynamic`: host-owned Vite server, all 17 official concrete Plugins source-loaded through loader
   HMR, including the dynamic-only Package Manager;
-- `static`: host-owned Vite server and production freezer, the other 15 official Plugins. Package
+- `static`: host-owned Vite server and production freezer, the other 16 official Plugins. Package
   Manager is intentionally absent because its source-producer contract is dynamic-only.
 
 Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default. This
@@ -68,8 +68,11 @@ the image itself is read from the stored artifact route. The same Plugin also re
   and starting Redis. A failed external provider blocks only its required branch.
 - Edit the Report Studio Part config, Wretch Attachment settings, Fonts selection, auth setup and
   official Plugin config forms.
-- Inspect plugin graph, lifecycle, logs and Agent tools; these are host-owned projections of the
-  same runtime state used by the showcase.
+- Configure Agent toolsets and assignments through the ordinary `AgentToolsPlugin` config form.
+  External Agent adapters consume its bound catalog; Runtime and Workbench do not own an Agent
+  protocol or dedicated Agent page.
+- Inspect plugin graph, lifecycle and logs; these are host-owned projections of the same runtime
+  state used by the showcase.
 
 The catalog keeps only two focused legacy scenarios that add semantics not already covered by
 Report Studio: a required `EvtChannel` edge and optional-provider attach/detach. Their graph,
@@ -104,5 +107,5 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 pnpm --filter @pluxel/plugins-host build:static
 ```
 
-The tests assert the 16/15 official catalog boundary, safe provider defaults, stopped Redis policy,
+The tests assert the 17/16 official catalog boundary, safe provider defaults, stopped Redis policy,
 S3 fork bindings, real render/cache behavior and isolated draft/release storage.

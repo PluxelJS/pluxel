@@ -1,5 +1,4 @@
 import { formatPluginNodeRoute } from '@pluxel/core'
-import { AgentToolsScreen } from '../../agent-tools/AgentToolsScreen'
 import { LiveLog } from '../../log_viewer/LiveLog'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 import { PluginScreen } from '../../plugins/detail/PluginScreen'
@@ -21,7 +20,6 @@ export function WorkbenchDocumentRenderer({ pathname }: { pathname: string }) {
 	if (pathname === '/logs') return <LiveLog />
 	if (pathname === '/security') return <SecurityScreen />
 	if (pathname === '/security/audit') return <SecurityAuditScreen />
-	if (pathname === '/agent-tools') return <AgentToolsScreen />
 	if (pathname === '/plugin-graph' || pathname.startsWith('/plugin-graph/')) {
 		return <LazyPluginGraphScreen pathname={pathname} />
 	}

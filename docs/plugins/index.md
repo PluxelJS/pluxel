@@ -8,14 +8,15 @@ Pluxel 的核心 package 提供 Plugin 模型、依赖图、生命周期和宿�
 
 ## 可公开安装
 
-| Plugin            | 用途                             | 文档                                     |
-| ----------------- | -------------------------------- | ---------------------------------------- |
-| `@pluxel/auth`    | Workbench 与 Management API 认证 | [Management 认证](./auth.md)             |
-| `@pluxel/wretch`  | 带宿主出站策略的 HTTP client     | [Wretch HTTP client](./wretch.md)        |
-| `@pluxel/fonts`   | 服务端字体发现与管理             | [服务端字体](./rendering/fonts.md)       |
-| `@pluxel/canvas`  | 服务端 Canvas 与图片处理         | [服务端 Canvas](./rendering/canvas.md)   |
-| `@pluxel/echarts` | 服务端 ECharts 渲染              | [服务端 ECharts](./rendering/echarts.md) |
-| `@pluxel/takumi`  | HTML/node-tree 图片渲染          | [Takumi](./rendering/takumi.md)          |
+| Plugin                | 用途                               | 文档                                     |
+| --------------------- | ---------------------------------- | ---------------------------------------- |
+| `@pluxel/agent-tools` | Agent Toolset 与 command allowlist | [Agent tools](./agent-tools.md)          |
+| `@pluxel/auth`        | Workbench 与 Management API 认证   | [Management 认证](./auth.md)             |
+| `@pluxel/wretch`      | 带宿主出站策略的 HTTP client       | [Wretch HTTP client](./wretch.md)        |
+| `@pluxel/fonts`       | 服务端字体发现与管理               | [服务端字体](./rendering/fonts.md)       |
+| `@pluxel/canvas`      | 服务端 Canvas 与图片处理           | [服务端 Canvas](./rendering/canvas.md)   |
+| `@pluxel/echarts`     | 服务端 ECharts 渲染                | [服务端 ECharts](./rendering/echarts.md) |
+| `@pluxel/takumi`      | HTML/node-tree 图片渲染            | [Takumi](./rendering/takumi.md)          |
 
 这些 package 已声明公共入口。具体可安装版本以 npm registry 和发布记录为准。
 

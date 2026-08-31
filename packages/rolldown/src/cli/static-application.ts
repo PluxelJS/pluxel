@@ -17,7 +17,10 @@ import {
 import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 import { staticElysiaSingletonPlugin } from './elysia-singleton'
-import { writeStaticConfigEnvironmentExample } from './static-config-environment-output'
+import {
+	renderStaticApplicationEnvironmentExample,
+	writeStaticConfigEnvironmentExample,
+} from './static-config-environment-output'
 
 export type StaticApplicationBuildOptions = {
 	entry: string
@@ -100,6 +103,7 @@ export function staticApplication(
 		(driver) => !managedDatabaseDrivers.includes(driver),
 	)
 	const state: StaticApplicationBuildState = {
+		environmentExample: renderStaticApplicationEnvironmentExample(),
 		environmentExampleOwned: false,
 		residualPackages: [],
 	}
@@ -153,7 +157,9 @@ export function staticApplication(
 				entry,
 				onDeclaration(facts) {
 					state.name = facts.name
-					state.environmentExample = facts.environmentExample
+					state.environmentExample = renderStaticApplicationEnvironmentExample(
+						facts.environmentExample,
+					)
 				},
 			}),
 			staticElysiaSingletonPlugin(cwd),
@@ -518,11 +524,12 @@ function buildBootstrap(
 	return `
 import 'pluxel:static-elysia-wiring'
 import { readHostProduct as __readHostProduct } from '@pluxel/runtime/internal/static-host'
+import { env as __pluxelEnvironment } from '@pluxel/runtime/environment'
 import * as __pluxelHostModule from ${JSON.stringify(entry)}
 import { ${runner} as __runStaticApplication } from ${JSON.stringify(runnerModule)}
 const __pluxelProduct = __readHostProduct(__pluxelHostModule, ${JSON.stringify(`[static-application] ${entry}`)})
 const __pluxelStaticRuntime = await __runStaticApplication(__pluxelHostModule.default, {
-	env: process.env,
+	env: __pluxelEnvironment,
 	deployment: ${deployment},
 	product: __pluxelProduct,
 })

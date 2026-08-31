@@ -1,3 +1,4 @@
+import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
@@ -33,13 +34,14 @@ import { EChartsShowcaseRenderer, ReportStudioPlugin, ShowcaseRenderer } from '.
 
 describe('plugin-host catalog', () => {
 	it('loads every official concrete plugin and keeps Package Manager dynamic-only', () => {
-		expect(officialStaticPlugins).toHaveLength(15)
-		expect(officialDynamicPlugins).toHaveLength(16)
-		expect(new Set(officialDynamicPlugins).size).toBe(16)
+		expect(officialStaticPlugins).toHaveLength(16)
+		expect(officialDynamicPlugins).toHaveLength(17)
+		expect(new Set(officialDynamicPlugins).size).toBe(17)
+		expect(officialStaticPlugins).toContain(AgentToolsPlugin)
 		expect(officialStaticPlugins).not.toContain(PackageManagerPlugin)
 		expect(officialDynamicPlugins).toContain(PackageManagerPlugin)
 		expect(staticHostPlugins).not.toContain(PackageManagerPlugin)
-		expect(staticHostPlugins).toHaveLength(24)
+		expect(staticHostPlugins).toHaveLength(25)
 	})
 
 	it('keeps only demos that add event and optional lifecycle semantics', () => {

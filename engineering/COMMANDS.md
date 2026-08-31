@@ -22,16 +22,16 @@ Runtime and host integrations must preserve these boundaries:
 - Agent adapters filter descriptors before publishing a tool catalog and map behavior to standard
   read-only, destructive, idempotent, and open-world annotations.
 
-Runtime hosts use `ctx.root.agentTools` when the filtered catalog must be managed persistently. It keeps
-user-defined Toolsets and Agent assignments outside command definitions: a Toolset is an explicit set of
-stable command names, and one Agent receives the union of its assigned Toolsets. An Agent with no assignment
-receives no commands. Missing command names remain in policy and become available again when a plugin
-publishes the same stable name.
+Runtime does not install an Agent, Toolset, provider adapter, policy store, or Agent-specific Management API.
+Hosts that need managed Agent allowlists install the ordinary official `@pluxel/agent-tools` Plugin. Its
+Toolsets and Agent assignments are one standard Plugin config, so ConfigService remains the only persistence,
+validation, and update authority. Missing stable command names remain in config and become available when a
+Plugin publishes the same name.
 
-`await ctx.root.agentTools.catalog(agentId)` returns a live constrained catalog. Its `list()` only exposes
+`AgentToolsPlugin.catalog(agentId)` returns a live constrained catalog. Its `list()` only exposes
 currently registered commands assigned to that Agent; its single throwing `execute()` checks the current
 assignment again before dispatching through the root command catalog. Carriers must use this bound
-catalog for both publication and execution. Calling `ctx.root.commands.execute()` directly would bypass the
+catalog for both publication and execution. Calling `ctx.commands.execute()` directly would bypass the
 Agent assignment and is only appropriate for a separately authorized host control path.
 
 The bound catalog publishes `{ catalogRevision, policyRevision }` snapshots and subscriptions. Command
@@ -48,7 +48,7 @@ publication and does not cancel work that already entered execution or close sib
 
 The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers
 consume `ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or
-handlers; Agent carriers with a persisted assignment consume their bound `agentTools.catalog()` view.
+handlers; Agent adapter Plugins consume a constructor-injected `AgentToolsPlugin` bound catalog.
 
 An argv/message carrier explicitly binds its allowed commands to `createArgvRouter()`. The router owns only
 route grammar and candidate construction: after `resolve()`, the carrier performs authorization, constructs
@@ -72,5 +72,4 @@ Implementation entry points:
 - `packages/commands/src/argv/parse.ts`: option coercion and untrusted candidate construction;
 - `packages/commands/src/argv/router.ts`: trie registration, routing, and resolution;
 - `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
-- `packages/runtime/src/services/commands/AgentToolsService.ts`: persisted Toolsets, Agent assignments,
-  constrained catalog projection, and call-time enforcement.
+- `plugins/agent-tools/src/index.ts`: optional Toolset/Agent config projection and call-time enforcement.

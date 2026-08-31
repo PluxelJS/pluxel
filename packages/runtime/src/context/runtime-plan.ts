@@ -33,7 +33,6 @@ import { RuntimeStateStore, type RuntimeStateStoreConfig } from '../services/Run
 import { RuntimeManagementService } from '../services/RuntimeManagementService'
 import { AdminAccessService } from '../services/admin-access/AdminAccessService'
 import { ManagementAccessService } from '../services/admin-access/ManagementAccessService'
-import { AgentToolsService } from '../services/commands/AgentToolsService'
 import { HttpService, type RuntimeHttpHostConfig } from '../services/http/HttpService'
 import { ElysiaApplicationDirectory } from '../services/http/ElysiaApplicationDirectory'
 import type { Elysia } from 'elysia'
@@ -65,7 +64,6 @@ const MANAGEMENT_ACCESS_CAPABILITY = defineContextCapability<ManagementAccessSer
 )
 const RUNTIME_MANAGEMENT_CAPABILITY =
 	defineContextCapability<RuntimeManagementService>('runtime.management')
-const AGENT_TOOLS_CAPABILITY = defineContextCapability<AgentToolsService>('runtime.agent-tools')
 const DATABASE_CAPABILITY = defineContextCapability<DatabaseService>('runtime.database')
 const COMMANDS_CAPABILITY = defineContextCapability<CommandsService>('runtime.commands')
 const ELYSIA_CAPABILITY = defineContextCapability<Elysia>('runtime.elysia')
@@ -172,10 +170,6 @@ function createRuntimeContextInstallations(
 		}),
 		installRootCapability(RUNTIME_STATE_CAPABILITY, {
 			create: (ctx) => new RuntimeStateStore(ctx as RootContext, inputs.runtimeState),
-		}),
-		installRootCapability(AGENT_TOOLS_CAPABILITY, {
-			property: 'agentTools',
-			create: (ctx) => new AgentToolsService(ctx as RootContext),
 		}),
 		installScopeCapability(DATABASE_CAPABILITY, {
 			property: 'database',

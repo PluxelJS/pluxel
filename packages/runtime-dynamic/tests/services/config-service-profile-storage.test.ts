@@ -11,6 +11,30 @@ import { requireRuntimeStateStore } from '@pluxel/runtime/internal'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR runtime persistence storage', () => {
+	it('lets PLUXEL_DATA_ROOT override an application string persistence path', async () => {
+		await using fixture = await createFixture({
+			'pnpm-workspace.yaml': 'packages: []\n',
+			'pluxel.loader.hmr.jsonc': JSON.stringify({
+				version: 2,
+				profile: 'dev',
+				defaults: { roots: [] },
+				profiles: { dev: { enabled: [] } },
+			}),
+		})
+
+		const plan = await planLoaderHmrHostFromConfig({
+			root: fixture.path,
+			fs: fixture.fs,
+			persistence: './application-state',
+			env: { PLUXEL_DATA_ROOT: './deployment-state' },
+		})
+
+		expect(plan.runtimeStorage.persistenceDir).toBe(
+			resolve(fixture.path, 'deployment-state/persistence'),
+		)
+		expect(plan.runtimeConfig.persistence).toBeUndefined()
+	})
+
 	it('initializes plugin config from the dynamic host environment', async () => {
 		const owner = {
 			definition: {

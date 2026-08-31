@@ -16,6 +16,7 @@ import type {
 import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
+import type { PluxelEnvironmentVariables } from '@pluxel/runtime/environment'
 
 declare const CONFIG_ENVIRONMENT_BINDING_BRAND: unique symbol
 
@@ -53,7 +54,7 @@ export type ConfigEnvironmentSchema = StandardSchemaV1 &
 		type: string
 	}>
 
-export type StaticRuntimeEnvironment = Readonly<Record<string, string | undefined>>
+export type StaticRuntimeEnvironment = PluxelEnvironmentVariables
 export type StaticRuntimeBindings = Readonly<Record<string, unknown>>
 
 export type StaticRuntimeDeployment = Readonly<{

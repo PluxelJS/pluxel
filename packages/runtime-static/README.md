@@ -19,13 +19,12 @@ export const product = defineProduct({
 export default defineStaticRuntime({
 	name: 'app',
 	plugins: [DemoPlugin],
-	configure({ env, deployment }) {
+	configure() {
 		return {
 			runtimeState: {
 				snapshot: { autoStart: [pluginNodeAddressOf(DemoPlugin)] },
 			},
-			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
-			workbench: env.PLUXEL_WORKBENCH === 'false' ? false : { enabled: true },
+			persistence: '.pluxel/persistence',
 		}
 	},
 })
@@ -86,9 +85,9 @@ export default staticApplication({
 
 构建产物包含 server entry、fixed plugins、`runtime-static` 与所需 runtime/core closure、deployment manifest，以及 variant 选择的 `workbench/public` shell 和 immutable MF producers。freezer 生成 namespace-based bootstrap，执行 canonical entry 后分别消费 default application 与 `product`，不静态求值或复制产品字段。业务 SPA 可以独立输出到 `public/`。Node native 或动态依赖由 `nf3` 追踪到产物自己的 `node_modules`；目标机不安装 Pluxel packages。
 
-存在 config environment binding 时，freezer 从 direct declaration 和 exported schema facts 生成 root `.env.example`。它只写说明和注释 placeholder，不读取 build environment，不生成真实 `.env`；该文件自然进入 distribution inventory。
+freezer 总会生成 root `.env.example`，包含 Pluxel host 变量；存在 config environment binding 时，再从 direct declaration 和 exported schema facts 追加 Plugin bootstrap 变量。它只写说明和注释 placeholder，不读取 build environment，不生成真实 `.env`；该文件自然进入 distribution inventory。
 
-`variant` 决定 artifact 是否存在，启动时的 `workbench` 配置决定是否启用。`headless` 产物不能在启动时开启 Workbench。当前 freezer 只生成 Node application，并拥有 HTTP listener 与 signal shutdown；在 runtime services 拆出真正 platform-neutral closure 前不开放 Fetch/Worker target。
+`variant` 决定 artifact 是否存在；Workbench variant 与 static Vite 默认启用，`PLUXEL_WORKBENCH=false` 可在启动时关闭。`headless` 产物不能在启动时开启 Workbench。Host 从唯一环境入口 `@pluxel/runtime/environment` 导入 universal `env`；需要校验后的行为与默认 data root 时读取 `hostEnv`，不要直接依赖 `process.env`。当前 freezer 只生成 Node application，并拥有 HTTP listener 与 signal shutdown；在 runtime services 拆出真正 platform-neutral closure 前不开放 Fetch/Worker target。
 headless 与 workbench 使用独立的 production adapter，因此 headless server closure 不解析 Workbench backend。
 
 测试使用 `createStaticRuntimeTestHost()`：

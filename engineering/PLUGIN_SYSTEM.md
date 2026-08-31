@@ -282,6 +282,7 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
 - `@pluxel/runtime/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
+- `@pluxel/agent-tools`：可选官方 Plugin，以标准 Plugin config 在唯一 command registry 上投影 Agent allowlist；
 - `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/runtime` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；

@@ -38,6 +38,7 @@ export default defineConfig({
 	entry: {
 		index: 'src/index.ts',
 		database: 'src/database.ts',
+		environment: 'src/environment.ts',
 		logger: 'src/logger.ts',
 		product: 'src/product.ts',
 		'services/vault': 'src/services/vault.ts',

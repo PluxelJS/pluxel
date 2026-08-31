@@ -14,6 +14,7 @@ export const product = defineProduct({
 })
 
 const authPlugin = packageNode('@pluxel/auth', 'AuthPlugin')
+const agentToolsPlugin = packageNode('@pluxel/agent-tools', 'AgentToolsPlugin')
 const memoryCacheBackendPlugin = packageNode('@pluxel/cache', 'MemoryCacheBackendPlugin')
 const cachePlugin = packageNode('@pluxel/cache', 'CachePlugin')
 const otelPlugin = packageNode('@pluxel/otel', 'OtelPlugin')
@@ -48,6 +49,7 @@ export const draftsStorageNode = forkNode(s3PluginDefinition, 'drafts')
 export const releasesStorageNode = forkNode(s3PluginDefinition, 'releases')
 
 const bootSafeOfficialPlugins = Object.freeze([
+	agentToolsPlugin,
 	authPlugin,
 	memoryCacheBackendPlugin,
 	cachePlugin,

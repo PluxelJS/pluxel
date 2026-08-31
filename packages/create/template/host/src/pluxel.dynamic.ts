@@ -21,12 +21,5 @@ export default defineDynamicRuntimeConfig({
 	],
 	configService: exampleConfigService(),
 	runtimeState: exampleRuntimeState(),
-	storage: { persistenceDir: '.pluxel/dynamic' },
-	workbench:
-		process.env.PLUXEL_WORKBENCH === 'true'
-			? {
-					enabled: true,
-					uiBasePath: '/__pluxel/workbench',
-				}
-			: false,
+	workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
 })
