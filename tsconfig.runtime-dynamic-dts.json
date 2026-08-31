@@ -1,0 +1,4 @@
+{
+	"extends": "./packages/runtime-dynamic/tsconfig.json",
+	"include": ["packages/runtime-dynamic/src"]
+}

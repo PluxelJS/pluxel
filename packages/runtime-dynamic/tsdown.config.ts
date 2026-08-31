@@ -46,6 +46,7 @@ export default defineConfig({
 		'source-producer': 'src/source-producer.ts',
 	},
 	dts: {
+		tsconfig: '../../tsconfig.runtime-dynamic-dts.json',
 		sourcemap: true,
 		eager: true,
 	},

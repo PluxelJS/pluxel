@@ -47,6 +47,7 @@ export default defineConfig({
 		vite: 'src/vite.ts',
 	},
 	dts: {
+		tsconfig: '../../tsconfig.runtime-static-dts.json',
 		sourcemap: true,
 		eager: true,
 	},
