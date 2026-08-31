@@ -5,7 +5,7 @@ const CONTEXT_INSTALLATION_TYPE: unique symbol = Symbol('pluxel.context.installa
 const CONTEXT_TYPE: unique symbol = Symbol('pluxel.context.type')
 const ROOT_CONTEXT_TYPE: unique symbol = Symbol('pluxel.context.root-type')
 const CONSTRUCTING = Symbol('pluxel.context.constructing')
-const EMPTY_OWNER_VALUES: unknown[] = Object.freeze([]) as unknown[]
+const EMPTY_OWNER_VALUES: unknown[] = Object.freeze([]) as unknown as unknown[]
 
 type CapabilityScope = 'root' | 'scope' | 'owner-view'
 

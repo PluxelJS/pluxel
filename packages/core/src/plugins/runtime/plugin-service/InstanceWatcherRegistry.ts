@@ -95,7 +95,7 @@ export class InstanceWatcherRegistry {
 
 		const retargeted: InstanceWatcher[] = []
 		for (const [resolvedKey, set] of this.watchersByResolvedKey) {
-			if (availabilityChangedSet.has(resolvedKey)) continue
+			if (resolvedKey !== undefined && availabilityChangedSet.has(resolvedKey)) continue
 			for (const entry of set) {
 				const nextResolved = this.resolveGraphKey(summary.graph, entry.id)
 				if (nextResolved !== entry.resolvedKey) retargeted.push(entry)
