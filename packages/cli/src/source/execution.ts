@@ -220,7 +220,7 @@ export function sourcePnpmfileBootstrapContents(
 		'if (!existsSync(generated)) {',
 		'\tthrow new Error(',
 		"\t\t'Source overlay is missing. Run `pluxel source install` from an independently available CLI; ' +",
-		"\t\t'for Pluxel local-projects run `node ../../scripts/source-local-project.mjs`.',",
+		"\t\t\t'for Pluxel local-projects run `node ../../scripts/source-local-project.mjs`.',",
 		'\t)',
 		'}',
 		'module.exports = require(generated)',
