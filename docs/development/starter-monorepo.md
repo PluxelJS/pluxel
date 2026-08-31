@@ -81,7 +81,8 @@ React singleton、runtime 与三个 Plugin package；两边的 React 版本都�
 仍声明直接使用的包。governance 会拒绝绕过 named catalog 的第三方裸版本，同时保留内部 workspace dependency
 和 peer contract。Plugin 生产代码通常只需要 `@pluxel/runtime`；测试中的 `@pluxel/test` 及其
 `@pluxel/core` peer、Vitest、TypeScript 继续属于各 Plugin 的 `devDependencies`。pnpm 会复用安装内容，重复声明
-不会产生多份物理安装。
+不会产生多份物理安装。starter 规则已覆盖常见 React UI、测试、后端/数据和构建工具生态；产品引入新的依赖族时再扩展
+`pncat.config.ts`，不要退回按 `dependencies` / `devDependencies` 字段分组。
 
 host build 先用唯一 Vite config 构建 `host/web/dist`，再由 freezer 清理并生成 server/Workbench 产物，同时通过 tsdown
 copy 把 Web 输出放入 `host/dist/public`。最后显式执行 `pluxel distribution create`，让最终 inventory 包含浏览器文件；

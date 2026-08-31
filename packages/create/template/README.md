@@ -22,6 +22,8 @@ The root installs `pncat` as the only catalog-management interface. Versions are
 declare every dependency they directly use: the root centralizes version policy, not dependency ownership.
 The governance check rejects bare third-party version specifiers, so every external version remains visible
 in one named catalog while internal workspace and peer edges retain their package-owned contracts.
+The starter policy already recognizes common React UI, testing, backend/data and build-tool ecosystems;
+extend the rules in `pncat.config.ts` when the product adopts a new dependency family.
 
 The host package build runs its one Vite config first, then [`host/tsdown.config.ts`](host/tsdown.config.ts)
 uses `staticApplication()` and copies `host/web/dist` into `host/dist/public`. The host finally runs

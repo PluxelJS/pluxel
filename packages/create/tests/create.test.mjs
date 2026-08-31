@@ -4,6 +4,7 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
+import pncatConfig from '../template/pncat.config.ts'
 
 const packageRoot = resolve(import.meta.dirname, '..')
 const repositoryRoot = resolve(packageRoot, '../..')
@@ -19,6 +20,35 @@ afterAll(async () => {
 })
 
 describe('create-pluxel', () => {
+	it('routes common ecosystem dependencies into stable named catalogs', () => {
+		assert.deepEqual(
+			Object.fromEntries(
+				[
+					'@pluxel/test',
+					'@heroui/react',
+					'@tanstack/react-router',
+					'lucide-react',
+					'playwright',
+					'@libsql/client',
+					'graphql-yoga',
+					'@types/qrcode',
+					'electron-builder',
+				].map((name) => [name, catalogFor(name)]),
+			),
+			{
+				'@pluxel/test': 'pluxel',
+				'@heroui/react': 'frontend',
+				'@tanstack/react-router': 'frontend',
+				'lucide-react': 'frontend',
+				playwright: 'test',
+				'@libsql/client': 'backend',
+				'graphql-yoga': 'backend',
+				'@types/qrcode': 'tooling',
+				'electron-builder': 'tooling',
+			},
+		)
+	})
+
 	it('builds a typed single-file npm CLI boundary with tsdown', async () => {
 		const manifest = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8'))
 		assert.deepEqual(manifest.bin, { 'create-pluxel': './dist/create.mjs' })
@@ -143,6 +173,16 @@ describe('create-pluxel', () => {
 		assert.match(version.stdout, /^\d+\.\d+\.\d+\s*$/)
 	})
 })
+
+function catalogFor(packageName) {
+	return [...pncatConfig.catalogRules]
+		.sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0))
+		.find((rule) =>
+			rule.match.some((matcher) =>
+				typeof matcher === 'string' ? matcher === packageName : matcher.test(packageName),
+			),
+		)?.name
+}
 
 async function listFiles(root, current = '') {
 	const entries = await readdir(resolve(root, current), { withFileTypes: true })
