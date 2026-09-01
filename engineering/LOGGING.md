@@ -239,6 +239,10 @@ store 是 Runtime Management API 和 Workbench log viewer 的事实源，不是 
   `context:<name>` stream 复用 default physical store；
 - range/latest/wait/Cap’n Web `follow(observer)` 使用同一 `RuntimeLogStore`。
 
+Workbench 的 bounded range/follow 固定经过页面唯一的已认证 Runtime Cap’n Web session。Plugin generation-scoped
+`ctx.elysia` 是业务 ingress，不拥有 store、Management principal 或 Runtime session epoch，不能成为日志 fallback 或第二条
+控制通道。长期归档由 file/OTel sink 负责；当前不提供 HTTP archive/download API。
+
 `RuntimeLogLine` 是 UI/transport projection，保留 category、plugin/context identity、structured message、props 和
 error summary。它不是新的 author-facing LogRecord。
 
@@ -301,4 +305,5 @@ core 不包含 formatter、sink、policy persistence、host env resolution 或 L
 - 不在 filter 前 capture caller、serialize error 或求值 lazy properties；
 - 不用动态 reconfigure 实现 plugin level 修改；
 - 不引入通用 policy language、processor chain 或 LogTape config merge framework；
+- 不经 `ctx.elysia`、Plugin route 或第二条 live transport 暴露 Runtime logs；
 - 修改 category、Context service、launcher boot order或 policy hot path 时，必须同步更新本文件和对应 benchmark/tests。

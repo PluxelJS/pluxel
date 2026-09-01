@@ -22,6 +22,8 @@ import {
 	parseVersionedPluginLogPolicySnapshot,
 } from '../../src/web/management-validation'
 import { RuntimeProtocolValidationError } from '../../src/web/validation'
+import { prepareRuntimeLogRangeForRpc } from '../../src/services/management/log-transport'
+import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../src/web/session/limits'
 
 const address = {
 	definition: {
@@ -432,12 +434,19 @@ describe("management Cap'n Web DTO validation", () => {
 					ts: 1_700_000_000_000,
 					level: 'info',
 					category: ['pluxel', 'runtime'],
+					plugin: address,
+					pluginReference: 'package:@fixture/management-validation::FixturePlugin',
+					pluginLabel: 'Fixture',
 					msg: 'ready',
 					props: { ready: true },
 				},
 			],
 		})
-		expect(range.ok && range.lines[0]?.plugin).toBeUndefined()
+		expect(range.ok && range.lines[0]).toMatchObject({
+			plugin: address,
+			pluginReference: 'package:@fixture/management-validation::FixturePlugin',
+			pluginLabel: 'Fixture',
+		})
 		expect(Object.isFrozen(range)).toBe(true)
 		expect(
 			Object.isFrozen((Reflect.get(range, 'lines') as Array<{ props: unknown }>)[0]?.props),
@@ -511,5 +520,92 @@ describe("management Cap'n Web DTO validation", () => {
 		expect(() =>
 			parseVaultPublicKeyResult({ publicKey: 'age1public', privateKey: 'secret' }),
 		).toThrow(/unsupported field privateKey/)
+	})
+
+	it('paginates log ranges below the physical WebSocket message budget', () => {
+		const largeProps = Object.fromEntries(
+			Array.from({ length: 80 }, (_, index) => [`field${index}`, 'x'.repeat(4_000)]),
+		)
+		const result = prepareRuntimeLogRangeForRpc({
+			ok: true,
+			streamId: 'default',
+			epoch: 1,
+			fromSeq: '1',
+			nextSeq: '81',
+			lines: Array.from({ length: 80 }, (_, index) => ({
+				streamId: 'default',
+				epoch: 1,
+				seq: String(index + 1),
+				ts: 1_700_000_000_000 + index,
+				level: 'info',
+				category: ['pluxel', 'runtime'],
+				msg: `line-${index + 1}`,
+				...(index === 0
+					? { plugin: undefined, props: largeProps }
+					: { props: { index, payload: 'x'.repeat(4_000) } }),
+			})),
+		})
+
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+		expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(
+			RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES,
+		)
+		expect(result.lines.length).toBeLessThan(80)
+		expect(result.lines[0]?.props).toEqual({ rpcPayloadTruncated: true })
+		expect(Object.hasOwn(result.lines[0]!, 'plugin')).toBe(false)
+		expect(result.nextSeq).toBe(String(Number(result.lines.at(-1)!.seq) + 1))
+	})
+
+	it('preserves in-budget log text and deterministically compacts an oversized single line', () => {
+		const preservedMessage = 'p'.repeat(10_000)
+		const preserved = prepareRuntimeLogRangeForRpc({
+			ok: true,
+			streamId: 'default',
+			epoch: 1,
+			fromSeq: '1',
+			nextSeq: '2',
+			lines: [
+				{
+					streamId: 'default',
+					epoch: 1,
+					seq: '1',
+					ts: 1_700_000_000_000,
+					level: 'info',
+					category: ['pluxel', 'runtime'],
+					msg: preservedMessage,
+				},
+			],
+		})
+		expect(preserved.ok && preserved.lines[0]?.msg).toBe(preservedMessage)
+		expect(preserved.ok && preserved.lines[0]?.props).toBeUndefined()
+
+		const oversized = prepareRuntimeLogRangeForRpc({
+			ok: true,
+			streamId: 'default',
+			epoch: 1,
+			fromSeq: '1',
+			nextSeq: '2',
+			lines: [
+				{
+					streamId: 'default',
+					epoch: 1,
+					seq: '1',
+					ts: 1_700_000_000_000,
+					level: 'error',
+					category: ['pluxel', 'runtime'],
+					msg: '\0'.repeat(RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES),
+					error: { stack: '\0'.repeat(RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES) },
+				},
+			],
+		})
+
+		expect(oversized.ok).toBe(true)
+		if (!oversized.ok) return
+		expect(oversized.lines).toHaveLength(1)
+		expect(oversized.lines[0]?.props).toEqual({ rpcPayloadTruncated: true })
+		expect(new TextEncoder().encode(JSON.stringify(oversized)).byteLength).toBeLessThanOrEqual(
+			RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES,
+		)
 	})
 })

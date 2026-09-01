@@ -1692,7 +1692,17 @@ function logLine(input: unknown, label: string): RuntimeLogLine {
 	shape(
 		value,
 		['streamId', 'epoch', 'seq', 'ts', 'level', 'category', 'msg'],
-		['name', 'plugin', 'context', 'message', 'props', 'error', 'raw'],
+		[
+			'name',
+			'plugin',
+			'pluginReference',
+			'pluginLabel',
+			'context',
+			'message',
+			'props',
+			'error',
+			'raw',
+		],
 		label,
 	)
 	return Object.freeze({
@@ -1708,6 +1718,12 @@ function logLine(input: unknown, label: string): RuntimeLogLine {
 		) as string[],
 		...(value.name === undefined ? {} : { name: text(value.name, `${label}.name`) }),
 		...(value.plugin === undefined ? {} : { plugin: nodeAddress(value.plugin, `${label}.plugin`) }),
+		...(value.pluginReference === undefined
+			? {}
+			: { pluginReference: text(value.pluginReference, `${label}.pluginReference`) }),
+		...(value.pluginLabel === undefined
+			? {}
+			: { pluginLabel: text(value.pluginLabel, `${label}.pluginLabel`) }),
 		...(value.context === undefined ? {} : { context: text(value.context, `${label}.context`) }),
 		msg: text(value.msg, `${label}.msg`),
 		...(value.message === undefined

@@ -17,6 +17,8 @@ export function toPlainObject(value: unknown, depth = 4, seen?: WeakSet<object>)
 
 	if (isErrorLike(value)) {
 		seen ??= new WeakSet<object>()
+		if (seen.has(value)) return '[Circular]'
+		seen.add(value)
 		const errorRecord = value as unknown as Record<string, unknown>
 		const extra: Record<string, unknown> = {}
 		for (const k in errorRecord) {
@@ -25,9 +27,9 @@ export function toPlainObject(value: unknown, depth = 4, seen?: WeakSet<object>)
 		}
 		const cause = (value as { cause?: unknown }).cause
 		return {
-			name: value.name,
-			message: value.message,
-			stack: value.stack,
+			name: toPlainObject(value.name, depth - 1, seen),
+			message: toPlainObject(value.message, depth - 1, seen),
+			stack: toPlainObject(value.stack, depth - 1, seen),
 			cause: cause ? toPlainObject(cause, depth - 1, seen) : undefined,
 			...extra,
 		}
@@ -78,4 +80,27 @@ export function toPlainObject(value: unknown, depth = 4, seen?: WeakSet<object>)
 	}
 
 	return String(value)
+}
+
+/** Convert the bounded plain projection into JSON-like data accepted by Runtime RPC validation. */
+export function toPortableLogValue(value: unknown, depth = 4, seen?: WeakSet<object>): unknown {
+	return normalizePortableLogValue(toPlainObject(value, depth, seen))
+}
+
+/** Apply JSON's undefined semantics to an already-bounded, plain log projection. */
+export function normalizePortableLogValue(value: unknown): unknown {
+	return removeUndefined(value, false)
+}
+
+function removeUndefined(value: unknown, arrayItem: boolean): unknown {
+	if (value === undefined) return arrayItem ? null : undefined
+	if (Array.isArray(value)) return value.map((item) => removeUndefined(item, true))
+	if (value === null || typeof value !== 'object') return value
+
+	const output: Record<string, unknown> = {}
+	for (const [key, item] of Object.entries(value)) {
+		const portable = removeUndefined(item, false)
+		if (portable !== undefined) output[key] = portable
+	}
+	return output
 }

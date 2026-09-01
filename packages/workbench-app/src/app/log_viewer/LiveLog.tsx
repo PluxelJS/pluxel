@@ -516,6 +516,7 @@ const LogList = memo(function LogList(props: {
 	apiRef: { current: LogListApi | null }
 	palette: PlxLogTheme
 	metaCount?: number
+	emptyMessage?: string
 }) {
 	const {
 		store,
@@ -533,6 +534,7 @@ const LogList = memo(function LogList(props: {
 		apiRef,
 		palette,
 		metaCount,
+		emptyMessage,
 	} = props
 
 	const _version = useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion)
@@ -708,7 +710,7 @@ const LogList = memo(function LogList(props: {
 							padding: 16,
 						}}
 					>
-						{metaCount ? '暂无可见日志（可能在加载/被过滤）' : '暂无日志'}
+						{emptyMessage ?? (metaCount ? '暂无可见日志（可能在加载/被过滤）' : '暂无日志')}
 					</div>
 				) : null}
 			</div>
@@ -721,6 +723,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 	const plxScheme = useThemeModel()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
 	const [connected, setConnected] = useState(false)
+	const [connectionError, setConnectionError] = useState<string | null>(null)
 	const [follow, setFollow] = useState(true)
 	const [newSincePause, setNewSincePause] = useState(0)
 	const [selectedSeq, setSelectedSeq] = useState<string | null>(null)
@@ -809,6 +812,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 		ringRef.current.clear()
 		setMeta(null)
 		setConnected(false)
+		setConnectionError(null)
 		setNewSincePause(0)
 		setSelectedSeq(null)
 		setSelectedLine(null)
@@ -887,8 +891,9 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 						cursor = range.nextSeq
 						onAppendLines(range.lines)
 					}
-				} catch {
+				} catch (error: unknown) {
 					setConnected(false)
+					setConnectionError(stringifyUnknown(error, '日志缺口回填失败'))
 				}
 			})()
 		}
@@ -904,6 +909,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 					return
 				}
 				setConnected(true)
+				setConnectionError(null)
 				const m = await fetchMeta()
 				if (disposed) return
 				setMeta(m)
@@ -917,8 +923,9 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 				onAppendLines(snapshot.lines)
 				initialized = true
 				for (const event of bufferedEvents.splice(0)) handleEvent(event)
-			} catch {
+			} catch (error: unknown) {
 				setConnected(false)
+				setConnectionError(stringifyUnknown(error, '日志连接失败'))
 			}
 		})()
 
@@ -1047,6 +1054,9 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 								{connected ? 'connected' : 'disconnected'}
 								{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
 							</div>
+							{connectionError ? (
+								<div style={{ color: palette.errorText }}>{connectionError}</div>
+							) : null}
 						</>
 					) : (
 						<>
@@ -1055,6 +1065,9 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 								{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
 								{activeFilterSummary ? ` · ${activeFilterSummary}` : ''}
 							</div>
+							{connectionError ? (
+								<div style={{ color: palette.errorText }}>{connectionError}</div>
+							) : null}
 							<button type="button" onClick={clearLogs} style={controlButtonStyle(palette)}>
 								clear
 							</button>
@@ -1085,6 +1098,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 					apiRef={listApiRef}
 					palette={palette}
 					metaCount={meta?.count}
+					emptyMessage={connectionError ?? undefined}
 				/>
 
 				{showSidePanel ? (

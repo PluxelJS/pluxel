@@ -5,8 +5,9 @@ import {
 	createRuntimeLogging,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
-} from '@pluxel/runtime/internal'
+} from '../../src/logger/logging'
 import { afterEach, describe, expect, it } from 'vitest'
+import { parseLogRangeResult } from '../../src/web/management-validation'
 
 function storePlan(initialPluginPolicy?: RuntimeLoggingInput['root']['initialPluginPolicy']) {
 	return {
@@ -124,6 +125,37 @@ describe('RuntimeLogging', () => {
 		})
 	})
 
+	it('stores exact portable log DTOs for range and follow transports', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+
+		pluginLogger(logging, pluginA, 'Orders').info('started', {
+			omitted: undefined,
+			nested: { omitted: undefined, retained: true },
+			values: [1, undefined, 3],
+		})
+
+		const store = logging.stores.getOrCreate('default')
+		const meta = store.meta()
+		const line = store.tailWindow(1)[0]!
+		expect(Object.entries(line).filter(([, value]) => value === undefined)).toEqual([])
+		expect(line.props).toMatchObject({
+			nested: { retained: true },
+			values: [1, null, 3],
+		})
+		expect(() =>
+			parseLogRangeResult({
+				ok: true,
+				streamId: meta.streamId,
+				epoch: meta.epoch,
+				fromSeq: line.seq,
+				nextSeq: meta.nextSeq,
+				lines: [line],
+			}),
+		).not.toThrow()
+	})
+
 	it('uses the stable plugin reference when display metadata is unavailable', async () => {
 		logging = createRuntimeLogging(storePlan())
 		await logging.install()
@@ -167,6 +199,38 @@ describe('RuntimeLogging', () => {
 			code: 'unavailable',
 			retryable: false,
 		})
+	})
+
+	it('bounds Error fields and represents circular causes as portable data', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+		const diagnostic = new Error('m'.repeat(10_000), { cause: undefined })
+		diagnostic.name = 'N'.repeat(10_000)
+		diagnostic.stack = 's'.repeat(10_000)
+		Object.defineProperty(diagnostic, 'cause', {
+			value: diagnostic,
+			enumerable: true,
+			configurable: true,
+		})
+
+		pluginLogger(logging, pluginA).error('failed', { error: diagnostic })
+
+		const line = logging.stores.getOrCreate('default').tailWindow(1)[0]!
+		expect(line.error?.name).toHaveLength(4_001)
+		expect(line.error?.message).toHaveLength(4_001)
+		expect(line.error?.stack).toHaveLength(4_001)
+		expect(line.error?.cause).toBe('[Circular]')
+		expect(() =>
+			parseLogRangeResult({
+				ok: true,
+				streamId: line.streamId,
+				epoch: line.epoch,
+				fromSeq: line.seq,
+				nextSeq: String(BigInt(line.seq) + 1n),
+				lines: [line],
+			}),
+		).not.toThrow()
 	})
 
 	it('intersects plugin policy with the root debug topic matcher', async () => {

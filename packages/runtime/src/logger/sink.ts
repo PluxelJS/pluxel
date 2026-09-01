@@ -3,7 +3,7 @@ import { formatPluginNodeReference } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
 import { captureCaller, formatLogName, isReservedLogProperty } from './host'
 import type { RuntimeLogError, RuntimeLogLine } from './protocol'
-import { toPlainObject } from './serialization'
+import { toPortableLogValue } from './serialization'
 import { RuntimeLogStoreRegistry } from './store'
 import { formatPluginNodeStandaloneLabel } from '../runtime/plugin-label'
 
@@ -48,9 +48,9 @@ function sanitizeMessageParts(
 					: part
 		else if (typeof part === 'number' || typeof part === 'boolean' || typeof part === 'bigint')
 			out[i] = part
-		else if (part === null || part === undefined) out[i] = part
+		else if (part === null || part === undefined) out[i] = part ?? null
 		else if (part instanceof Error) out[i] = part.message || part.name
-		else out[i] = toPlainObject(part, 4, seen)
+		else out[i] = toPortableLogValue(part, 4, seen)
 	}
 	return out
 }
@@ -96,9 +96,9 @@ function isErrorLike(v: unknown): v is { name?: unknown; message?: unknown; stac
 }
 
 function extractErrorLike(value: unknown, seen: WeakSet<object>): RuntimeLogError | undefined {
-	if (value instanceof Error) return toPlainObject(value, 6, seen) as RuntimeLogError
+	if (value instanceof Error) return toPortableLogValue(value, 6, seen) as RuntimeLogError
 	if (!isErrorLike(value)) return undefined
-	return toPlainObject(value, 6, seen) as RuntimeLogError
+	return toPortableLogValue(value, 6, seen) as RuntimeLogError
 }
 
 export type RuntimeLogSinkOptions = {
@@ -155,6 +155,7 @@ function pickExtraProps(
 	let kept = 0
 	for (const k in raw) {
 		if (!Object.hasOwn(raw, k)) continue
+		if (raw[k] === undefined) continue
 		if (isReservedLogProperty(k) && (k !== 'caller' || !opts.caller)) continue
 		if (k === 'caller' && typeof raw[k] !== 'string' && !opts.caller) continue
 		if (opts.hiddenKeys.has(k)) continue
@@ -163,7 +164,7 @@ function pickExtraProps(
 			continue
 		}
 		if (kept++ >= opts.maxPropsKeys) break
-		;(out ??= {})[k] = toPlainObject(raw[k], 4, seen)
+		;(out ??= {})[k] = toPortableLogValue(raw[k], 4, seen)
 	}
 	return out
 }
@@ -220,7 +221,7 @@ function toRuntimeLogLineInput(
 	if (!error && rawProps.cause !== undefined) error = extractErrorLike(rawProps.cause, errorSeen)
 
 	const raw = opts.includeRaw
-		? toPlainObject(
+		? toPortableLogValue(
 				{
 					timestamp: record.timestamp,
 					level: record.level,
@@ -237,16 +238,16 @@ function toRuntimeLogLineInput(
 		ts,
 		level: record.level,
 		category: [...record.category],
-		name,
-		plugin,
-		pluginReference,
-		pluginLabel,
-		context,
+		...(name === undefined ? {} : { name }),
+		...(plugin === undefined ? {} : { plugin }),
+		...(pluginReference === undefined ? {} : { pluginReference }),
+		...(pluginLabel === undefined ? {} : { pluginLabel }),
+		...(context === undefined ? {} : { context }),
 		msg,
-		message,
-		props,
-		error,
-		raw,
+		...(message === undefined ? {} : { message }),
+		...(props === undefined ? {} : { props }),
+		...(error === undefined ? {} : { error }),
+		...(raw === undefined ? {} : { raw }),
 	}
 }
 

@@ -41,6 +41,7 @@ import type {
 import type { LogFilter, RuntimeLogEvent } from '../../logger/protocol'
 import { listSecurityEvents } from '../security/audit'
 import type { VaultAdminApi } from '../vault/types'
+import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
 import type {
 	RuntimeLogFollowInput,
 	RuntimeLogObserver,
@@ -66,6 +67,7 @@ import {
 	parseConfigResult,
 	parsePluginControlBatchResult,
 } from '../../web/management-validation'
+import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
 
 export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
 	private readonly ctx: Context
@@ -400,7 +402,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 
 	logRange(streamId: unknown, query: unknown) {
 		const input = parseLogRangeInput(streamId, query)
-		return logsRange(input)
+		return prepareRuntimeLogRangeForRpc(logsRange(input))
 	}
 
 	async followLogs(
@@ -463,9 +465,9 @@ const MAX_LOG_STREAM_ID = 256
 const MAX_LOG_TEXT = 512
 const MAX_LOG_RANGE_LINES = 20_000
 const MAX_LOG_CALLBACK_LINES = 512
-const MAX_LOG_CALLBACK_BYTES = 128 * 1024
+const MAX_LOG_CALLBACK_BYTES = RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES
 const MAX_LOG_PENDING_EVENTS = 32
-const MAX_LOG_PENDING_BYTES = 512 * 1024
+const MAX_LOG_PENDING_BYTES = RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES * 4
 const MAX_DEPLOY_RECIPIENTS = 1_000
 const MAX_DEPLOY_RECIPIENT_LENGTH = 4_096
 
@@ -510,7 +512,7 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeLogSubscription
 			return
 		}
 
-		const bytes = encodedBytes(event)
+		const bytes = estimateRuntimeRpcPayloadBytes(event)
 		const oversized =
 			bytes > MAX_LOG_CALLBACK_BYTES ||
 			(event.type === 'append' && event.lines.length > MAX_LOG_CALLBACK_LINES)
@@ -528,7 +530,7 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeLogSubscription
 		this.startDrain()
 	}
 
-	private push(event: RuntimeLogEvent, bytes = encodedBytes(event)): void {
+	private push(event: RuntimeLogEvent, bytes = estimateRuntimeRpcPayloadBytes(event)): void {
 		this.queue.push(event)
 		this.queuedBytes += bytes
 	}
@@ -544,7 +546,7 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeLogSubscription
 			while (this.active) {
 				const event = this.queue.shift()
 				if (!event) return
-				this.queuedBytes = Math.max(0, this.queuedBytes - encodedBytes(event))
+				this.queuedBytes = Math.max(0, this.queuedBytes - estimateRuntimeRpcPayloadBytes(event))
 				const result = this.observer(event)
 				try {
 					await result
@@ -668,14 +670,6 @@ function boundedInteger(input: unknown, min: number, max: number): number {
 		throw new TypeError(`Expected an integer between ${min} and ${max}`)
 	}
 	return Number(input)
-}
-
-function encodedBytes(input: unknown): number {
-	try {
-		return new TextEncoder().encode(JSON.stringify(input)).byteLength
-	} catch {
-		return Number.POSITIVE_INFINITY
-	}
 }
 
 function collapseLogGap(

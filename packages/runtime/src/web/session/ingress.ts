@@ -7,11 +7,11 @@ import type {
 } from '../../services/admin-access/AdminAccessService'
 import { RuntimeSessionServer } from './server'
 import { RuntimeSessionWebSocket } from './elysia-websocket'
+import { RUNTIME_SESSION_MAX_MESSAGE_BYTES } from './limits'
 import { RUNTIME_SESSION_PATH } from './protocol'
 
-const MAX_MESSAGE_BYTES = 256 * 1024
 const MAX_INITIALIZATION_MESSAGES = 32
-const MAX_INITIALIZATION_BYTES = MAX_MESSAGE_BYTES
+const MAX_INITIALIZATION_BYTES = RUNTIME_SESSION_MAX_MESSAGE_BYTES
 
 export type RuntimeSessionIngressOptions = Readonly<{
 	ctx: Context
@@ -74,7 +74,7 @@ export class RuntimeSessionIngress {
 			return
 		}
 		const socket = new RuntimeSessionWebSocket(rawSocket, {
-			maxMessageBytes: MAX_MESSAGE_BYTES,
+			maxMessageBytes: RUNTIME_SESSION_MAX_MESSAGE_BYTES,
 		})
 		this.socket = socket
 		let authentication: AdminAuthenticationSession | undefined
