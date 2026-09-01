@@ -6,6 +6,8 @@ import {
 	RedisCacheBackendConfig,
 	RedisCacheBackendPlugin,
 	type RedisClient,
+	type RedisConnection,
+	RedisScripts,
 } from '../src/index.ts'
 
 type FakeSetOptions = { expiration?: { type: 'PX'; value: number } }
@@ -75,9 +77,27 @@ function literalPrefix(pattern: string): string {
 @Plugin(Redis)
 class FakeRedisPlugin extends Redis {
 	readonly fake = new FakeRedisClient()
+	readonly selectedIds: string[] = []
+	private readonly connections = new Map<string, RedisConnection>(
+		['default', 'cache'].map((id) => [
+			id,
+			{
+				id,
+				client: this.fake as unknown as RedisClient,
+				scripts: new RedisScripts(() => this.fake as unknown as RedisClient),
+			},
+		]),
+	)
 
-	override get client(): RedisClient {
-		return this.fake as unknown as RedisClient
+	override connection(connectionId = 'default'): RedisConnection {
+		this.selectedIds.push(connectionId)
+		const connection = this.connections.get(connectionId)
+		if (!connection) throw new Error('Unknown fake connection')
+		return connection
+	}
+
+	override connectionIds(): readonly string[] {
+		return [...this.connections.keys()]
 	}
 }
 
@@ -92,11 +112,13 @@ describe('@pluxel/redis cache backend', () => {
 			true,
 		)
 		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud800:' }).success).toBe(false)
+		expect(v.safeParse(RedisCacheBackendConfig, { connectionId: 'Invalid ID' }).success).toBe(false)
 	})
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
 		await withRuntimeHost(async (host) => {
 			addStarted(host, [FakeRedisPlugin, RedisCacheBackendPlugin])
+			host.cfg(RedisCacheBackendPlugin).set({ connectionId: 'cache' })
 			await host.commit()
 			const backend = host.require(RedisCacheBackendPlugin)
 			const redis = host.require(FakeRedisPlugin).fake
@@ -120,6 +142,7 @@ describe('@pluxel/redis cache backend', () => {
 			await backend.set('forever', value, { ttlMs: 0 })
 			expect(redis.ttls.has('pluxel:cache:forever')).toBe(false)
 			expect(await backend.get<typeof value>('forever')).toEqual({ value, ttlMs: 0 })
+			expect(host.require(FakeRedisPlugin).selectedIds.every((id) => id === 'cache')).toBe(true)
 		})
 	})
 

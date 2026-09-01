@@ -31,11 +31,12 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		await withRuntimeHost(async (host) => {
 			addStarted(host, [RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, IntegrationConsumer])
-			host.cfg(RedisPlugin).set({ url: redisUrl! })
+			host.cfg(RedisPlugin).set({ connections: [{ id: 'default', url: redisUrl! }] })
 			host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: prefix })
 			await host.commit()
 			const consumer = host.require(IntegrationConsumer)
-			const redis = host.require(RedisPlugin).client as unknown as IntegrationRedisClient
+			const redis = host.require(RedisPlugin).connection()
+				.client as unknown as IntegrationRedisClient
 			try {
 				for (const policy of algorithms) {
 					const limiter = consumer.rates.use(`integration.${policy.algorithm}`, policy)

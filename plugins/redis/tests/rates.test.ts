@@ -7,6 +7,8 @@ import {
 	RedisRatesBackendConfig,
 	RedisRatesBackendPlugin,
 	type RedisClient,
+	type RedisConnection,
+	RedisScripts,
 } from '../src/index.ts'
 
 type ScriptOptions = { keys: string[]; arguments: string[] }
@@ -39,8 +41,27 @@ function cloneOptions(options: ScriptOptions): ScriptOptions {
 @Plugin(Redis)
 class FakeRatesRedisPlugin extends Redis {
 	readonly fake = new FakeRatesRedisClient()
-	override get client(): RedisClient {
-		return this.fake as unknown as RedisClient
+	readonly selectedIds: string[] = []
+	private readonly connections = new Map<string, RedisConnection>(
+		['default', 'rates'].map((id) => [
+			id,
+			{
+				id,
+				client: this.fake as unknown as RedisClient,
+				scripts: new RedisScripts(() => this.fake as unknown as RedisClient),
+			},
+		]),
+	)
+
+	override connection(connectionId = 'default'): RedisConnection {
+		this.selectedIds.push(connectionId)
+		const connection = this.connections.get(connectionId)
+		if (!connection) throw new Error('Unknown fake connection')
+		return connection
+	}
+
+	override connectionIds(): readonly string[] {
+		return [...this.connections.keys()]
 	}
 }
 
@@ -69,6 +90,7 @@ describe('@pluxel/redis rates backend', () => {
 			true,
 		)
 		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud800:' }).success).toBe(false)
+		expect(v.safeParse(RedisRatesBackendConfig, { connectionId: 'Invalid ID' }).success).toBe(false)
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		await withRuntimeHost(async (host) => {
@@ -78,7 +100,10 @@ describe('@pluxel/redis rates backend', () => {
 				RatesPlugin,
 				RedisRatesConsumer,
 			])
-			host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: 'pluxel:{rates}:' })
+			host.cfg(RedisRatesBackendPlugin).set({
+				connectionId: 'rates',
+				keyPrefix: 'pluxel:{rates}:',
+			})
 			await host.commit()
 			const consumer = host.require(RedisRatesConsumer)
 			const redis = host.require(FakeRatesRedisPlugin).fake
@@ -111,6 +136,7 @@ describe('@pluxel/redis rates backend', () => {
 			expect(slidingLogSource).toContain("'(' .. cutoff, '+inf', 'WITHSCORES'")
 			expect(redis.evalShaCalls).toHaveLength(4)
 			expect(redis.evalCalls).toHaveLength(4)
+			expect(host.require(FakeRatesRedisPlugin).selectedIds).toEqual(['rates'])
 		})
 	})
 

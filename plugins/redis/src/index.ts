@@ -2,10 +2,16 @@ export {
 	Redis,
 	RedisConfig,
 	RedisConnectionError,
+	RedisConnectionNotFoundError,
 	RedisNotRunningError,
 	RedisPlugin,
 } from './client.ts'
-export type { RedisClient, RedisPluginConfig } from './client.ts'
+export type {
+	RedisClient,
+	RedisConnection,
+	RedisConnectionConfig,
+	RedisPluginConfig,
+} from './client.ts'
 export { RedisCacheBackendConfig, RedisCacheBackendPlugin } from './cache-backend.ts'
 export type { RedisCacheBackendPluginConfig } from './cache-backend.ts'
 export { RedisRatesBackendConfig, RedisRatesBackendPlugin } from './rates-backend.ts'

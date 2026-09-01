@@ -2,7 +2,7 @@
 	"name": "@pluxel/storage",
 	"version": "0.0.0",
 	"private": true,
-	"description": "S3mini-compatible S3 capability with one configurable local or remote provider",
+	"description": "S3mini-compatible S3 capability with a bounded local and remote bucket catalog",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",

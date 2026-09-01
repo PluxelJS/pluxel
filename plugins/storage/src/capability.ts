@@ -15,7 +15,16 @@ export class S3NotRunningError extends Error {
 	readonly code = 'S3_NOT_RUNNING'
 
 	constructor() {
-		super('S3 capability belongs to a stopped or replaced provider.')
+		super('S3 capability belongs to a stopped or replaced provider or consumer.')
+	}
+}
+
+export class S3BucketNotFoundError extends Error {
+	override name = 'S3BucketNotFoundError'
+	readonly code = 'S3_BUCKET_NOT_FOUND'
+
+	constructor(readonly bucketId: string) {
+		super(`S3 bucket "${bucketId}" is not configured.`)
 	}
 }
 
@@ -29,7 +38,13 @@ export class S3UnsupportedOperationError extends Error {
 	}
 }
 
-/** Raw S3 capability. Consumers use s3mini's API; the host selects its implementation. */
+export interface S3Bucket {
+	readonly id: string
+	readonly client: S3Client
+}
+
+/** Named S3 bucket catalog. Consumers select a configured bucket explicitly. */
 export abstract class S3 extends BasePlugin {
-	abstract get client(): S3Client
+	abstract bucket(bucketId?: string): S3Bucket
+	abstract bucketIds(): readonly string[]
 }

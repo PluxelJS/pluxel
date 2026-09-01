@@ -31,15 +31,20 @@ async function startVaultS3(host: RuntimeHost): Promise<void> {
 		})
 	host.add(S3Plugin)
 	host.cfg(S3Plugin).set({
-		backend: {
-			type: 'remote',
-			endpoint: 'https://bucket.s3.example.com',
-			region: 'auto',
-			credentials: REFERENCE,
-			requestSizeInBytes: 8 * 1024 * 1024,
-			requestAbortTimeout: 30_000,
-			minPartSize: 8 * 1024 * 1024,
-		},
+		buckets: [
+			{
+				id: 'assets',
+				backend: {
+					type: 'remote',
+					endpoint: 'https://bucket.s3.example.com',
+					region: 'auto',
+					credentials: REFERENCE,
+					requestSizeInBytes: 8 * 1024 * 1024,
+					requestAbortTimeout: 30_000,
+					minPartSize: 8 * 1024 * 1024,
+				},
+			},
+		],
 	})
 	host.start(S3Plugin)
 	await host.commit()
@@ -51,15 +56,15 @@ async function openCredentials(host: RuntimeHost, principal: WorkbenchPrincipal)
 	const layout = backend.registry.getLayout(target)
 	const entry = layout.entries.find(
 		(candidate) =>
-			candidate.descriptor.kind === 'content' && candidate.descriptor.key === 'credentials',
+			candidate.descriptor.kind === 'content' && candidate.descriptor.key === 'buckets',
 	)
-	if (!entry) throw new Error('S3Plugin published no credential Content')
+	if (!entry) throw new Error('S3Plugin published no bucket Content')
 	const session = backend.createSession(principal, () => {})
 	const opened = await session.target.openEntry({
 		layoutRevision: layout.revision,
 		target,
 		descriptor: entry.descriptor,
-		location: '/storage/s3/credentials',
+		location: '/storage/s3',
 	})
 	if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
 		session.dispose()
@@ -95,7 +100,15 @@ describe('S3 Workbench credential rotation', () => {
 				await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
 					ok: true,
 					data: {
-						status: { backend: 'remote-vault', credentialRotation: 'available' },
+						status: {
+							buckets: [
+								{
+									id: 'assets',
+									backend: 'remote-vault',
+									credentialRotation: 'available',
+								},
+							],
+						},
 					},
 				})
 				await second.opened.root.subscribe(contentObserver(secondUpdates))
@@ -116,11 +129,13 @@ describe('S3 Workbench credential rotation', () => {
 							: { name: field.name, control: undefined },
 					),
 				).toEqual([
+					{ name: 'bucketId', control: 'text' },
 					{ name: 'accessKeyId', control: 'password' },
 					{ name: 'secretAccessKey', control: 'password' },
 				])
 
 				const replacement = {
+					bucketId: 'assets',
 					accessKeyId: 'replacement-access-key',
 					secretAccessKey: 'replacement-secret-key',
 				}
@@ -131,8 +146,13 @@ describe('S3 Workbench credential rotation', () => {
 						ok: true,
 						data: {
 							status: {
-								backend: 'remote-vault',
-								credentialRotation: 'restart-required',
+								buckets: [
+									{
+										id: 'assets',
+										backend: 'remote-vault',
+										credentialRotation: 'restart-required',
+									},
+								],
 							},
 						},
 					},
@@ -145,15 +165,23 @@ describe('S3 Workbench credential rotation', () => {
 						.require(VaultSeeder)
 						.ctx.vault!.kv({ namespace: REFERENCE.namespace })
 						.get(REFERENCE.key),
-				).resolves.toEqual(replacement)
+				).resolves.toEqual({
+					accessKeyId: replacement.accessKeyId,
+					secretAccessKey: replacement.secretAccessKey,
+				})
 				await vi.waitFor(() =>
 					expect(secondUpdates).toHaveBeenCalledWith(
 						expect.objectContaining({
 							ok: true,
 							data: {
 								status: {
-									backend: 'remote-vault',
-									credentialRotation: 'restart-required',
+									buckets: [
+										{
+											id: 'assets',
+											backend: 'remote-vault',
+											credentialRotation: 'restart-required',
+										},
+									],
 								},
 							},
 						}),
@@ -176,6 +204,7 @@ describe('S3 Workbench credential rotation', () => {
 				const { opened, session } = await openCredentials(host, RECOVERY)
 				await opened.root.subscribe(contentObserver())
 				const replacement = {
+					bucketId: 'assets',
 					accessKeyId: 'forbidden-access-key',
 					secretAccessKey: 'forbidden-secret-key',
 				}
@@ -213,11 +242,20 @@ describe('S3 Workbench credential rotation', () => {
 				const { opened, session } = await openCredentials(host, ADMIN)
 				await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
 					data: {
-						status: { backend: 'local', credentialRotation: 'not-applicable' },
+						status: {
+							buckets: [
+								{
+									id: 'default',
+									backend: 'local',
+									credentialRotation: 'not-applicable',
+								},
+							],
+						},
 					},
 				})
 				await expect(
 					opened.root.run('rotate', {
+						bucketId: 'default',
 						accessKeyId: 'unused-access-key',
 						secretAccessKey: 'unused-secret-key',
 					}),
@@ -231,26 +269,40 @@ describe('S3 Workbench credential rotation', () => {
 			async (host) => {
 				host.add(S3Plugin)
 				host.cfg(S3Plugin).set({
-					backend: {
-						type: 'remote',
-						endpoint: 'https://bucket.s3.example.com',
-						region: 'auto',
-						credentials: { type: 'anonymous' },
-						requestSizeInBytes: 8 * 1024 * 1024,
-						requestAbortTimeout: 30_000,
-						minPartSize: 8 * 1024 * 1024,
-					},
+					buckets: [
+						{
+							id: 'public',
+							backend: {
+								type: 'remote',
+								endpoint: 'https://bucket.s3.example.com',
+								region: 'auto',
+								credentials: { type: 'anonymous' },
+								requestSizeInBytes: 8 * 1024 * 1024,
+								requestAbortTimeout: 30_000,
+								minPartSize: 8 * 1024 * 1024,
+							},
+						},
+					],
 				})
 				host.start(S3Plugin)
 				await host.commit()
 				const { opened, session } = await openCredentials(host, ADMIN)
 				await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
 					data: {
-						status: { backend: 'remote-anonymous', credentialRotation: 'not-applicable' },
+						status: {
+							buckets: [
+								{
+									id: 'public',
+									backend: 'remote-anonymous',
+									credentialRotation: 'not-applicable',
+								},
+							],
+						},
 					},
 				})
 				await expect(
 					opened.root.run('rotate', {
+						bucketId: 'public',
 						accessKeyId: 'unused-access-key',
 						secretAccessKey: 'unused-secret-key',
 					}),

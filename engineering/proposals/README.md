@@ -20,6 +20,8 @@
 
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含待验证的
   decoratorless Plugin declaration。
+- [`REMOVE_PLUGIN_FORKS.md`](REMOVE_PLUGIN_FORKS.md)：评估删除通用 Plugin fork；Redis/S3 的 producer-owned bounded catalog
+  验证迁移已完成，Core/Runtime 身份与控制面的完整删除仍待决策。
 
 已实施的架构与用户行为仍分别从 [`../README.md`](../README.md) 与 [`../../docs/index.md`](../../docs/index.md)
 进入当前文档；上面的 accepted proposal 索引只用于跟踪尚未落地的扩展设计与实施边界。

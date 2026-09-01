@@ -7,9 +7,9 @@ import {
 	RatesPolicyConflictError,
 } from '@pluxel/rates'
 import { formatPluginNodeReference, Plugin, type PluginNodeAddress, v } from '@pluxel/runtime'
-import { Redis } from './client.ts'
+import { Redis, type RedisConnection } from './client.ts'
 import { defineRedisScript, type RedisScriptDefinition, type RedisScriptRunner } from './scripts.ts'
-import { isWellFormedUnicode } from './validation.ts'
+import { isRedisConnectionId, isWellFormedUnicode } from './validation.ts'
 
 type RedisRatesReply =
 	| { kind: 'decision'; decision: RateDecision }
@@ -360,6 +360,10 @@ const SCRIPTS: Record<
 }
 
 export const RedisRatesBackendConfig = v.object({
+	connectionId: v.optional(
+		v.pipe(v.string(), v.check(isRedisConnectionId, 'connectionId must be a valid Redis ID')),
+		'default',
+	),
 	keyPrefix: v.optional(
 		v.pipe(
 			v.string(),
@@ -376,6 +380,7 @@ export type RedisRatesBackendPluginConfig = v.InferOutput<typeof RedisRatesBacke
 @Plugin(RatesBackend)
 export class RedisRatesBackendPlugin extends RatesBackend {
 	private readonly config = this.configs.use(RedisRatesBackendConfig)
+	private connectionHandle?: RedisConnection
 	private readonly runners = new Map<
 		ResolvedRatePolicy['algorithm'],
 		RedisScriptRunner<
@@ -399,7 +404,7 @@ export class RedisRatesBackendPlugin extends RatesBackend {
 		const owner = canonicalBackendOwner(request.owner)
 		let runner = this.runners.get(policy.algorithm)
 		if (!runner) {
-			runner = this.redis.scripts.use(SCRIPTS[policy.algorithm])
+			runner = this.connection().scripts.use(SCRIPTS[policy.algorithm])
 			this.runners.set(policy.algorithm, runner)
 		}
 		let encodedPolicy = this.encodedPolicies.get(policy)
@@ -417,6 +422,10 @@ export class RedisRatesBackendPlugin extends RatesBackend {
 		})
 		if (reply.kind === 'decision') return reply.decision
 		throw new RatesPolicyConflictError(reply.active, policy)
+	}
+
+	private connection(): RedisConnection {
+		return (this.connectionHandle ??= this.redis.connection(this.config.connectionId))
 	}
 }
 

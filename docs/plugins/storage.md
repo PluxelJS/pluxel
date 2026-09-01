@@ -5,7 +5,7 @@ description: 通过统一的 s3mini API 在本地存储、远端 S3 和平台实
 
 > `@pluxel/storage` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/storage` 提供接近原始 bucket 的 `S3` 能力。业务 Plugin 通过 `S3.client` 使用 s3mini 1.x API，宿主则通过 `S3Plugin` 选择本地存储或真实 S3 后端。
+`@pluxel/storage` 提供接近原始 bucket 的 `S3` 能力。业务 Plugin 通过 `S3.bucket(id).client` 使用 s3mini 1.x API，宿主则通过 `S3Plugin` 配置一个有界的 local/remote bucket catalog。
 
 ## 写入与读取对象
 
@@ -20,11 +20,13 @@ export class AssetsPlugin extends BasePlugin {
 	}
 
 	putAvatar(userId: string, body: Blob) {
-		return this.s3.client.putAnyObject(`avatars/${userId}.webp`, body, 'image/webp')
+		return this.s3
+			.bucket('assets')
+			.client.putAnyObject(`avatars/${userId}.webp`, body, 'image/webp')
 	}
 
 	getAvatar(userId: string) {
-		return this.s3.client.getObjectResponse(`avatars/${userId}.webp`)
+		return this.s3.bucket('assets').client.getObjectResponse(`avatars/${userId}.webp`)
 	}
 }
 ```
@@ -39,12 +41,17 @@ export class AssetsPlugin extends BasePlugin {
 
 ```ts no-twoslash
 {
-	backend: {
-		type: 'local',
-		rootDir: '.pluxel/s3',
-		bucketName: 'local',
-		syncWrites: true,
-	},
+	buckets: [
+		{
+			id: 'default',
+			backend: {
+				type: 'local',
+				rootDir: '.pluxel/s3',
+				bucketName: 'local',
+				syncWrites: true,
+			},
+		},
+	],
 }
 ```
 
@@ -55,12 +62,17 @@ import { S3Plugin } from '@pluxel/storage'
 
 host.add([S3Plugin, AssetsPlugin])
 host.cfg(S3Plugin).set({
-	backend: {
-		type: 'local',
-		rootDir: '/var/lib/my-app/s3',
-		bucketName: 'assets',
-		syncWrites: true,
-	},
+	buckets: [
+		{
+			id: 'assets',
+			backend: {
+				type: 'local',
+				rootDir: '/var/lib/my-app/s3',
+				bucketName: 'assets',
+				syncWrites: true,
+			},
+		},
+	],
 })
 ```
 
@@ -76,15 +88,20 @@ local backend 支持 CRUD、typed/stream/range/conditional reads、delimiter/pre
 
 ```ts no-twoslash
 host.cfg(S3Plugin).set({
-	backend: {
-		type: 'remote',
-		endpoint: 'https://public-assets.s3.example.com',
-		region: 'auto',
-		credentials: { type: 'anonymous' },
-		requestSizeInBytes: 8 * 1024 * 1024,
-		requestAbortTimeout: 30_000,
-		minPartSize: 8 * 1024 * 1024,
-	},
+	buckets: [
+		{
+			id: 'public-assets',
+			backend: {
+				type: 'remote',
+				endpoint: 'https://public-assets.s3.example.com',
+				region: 'auto',
+				credentials: { type: 'anonymous' },
+				requestSizeInBytes: 8 * 1024 * 1024,
+				requestAbortTimeout: 30_000,
+				minPartSize: 8 * 1024 * 1024,
+			},
+		},
+	],
 })
 ```
 
@@ -109,23 +126,30 @@ const credentials = {
 
 ```ts no-twoslash
 host.cfg(S3Plugin).set({
-	backend: {
-		type: 'remote',
-		endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
-		region: 'us-east-1',
-		credentials: {
-			type: 'vault',
-			namespace: 'production-secrets',
-			key: 'assets.s3',
+	buckets: [
+		{
+			id: 'assets',
+			backend: {
+				type: 'remote',
+				endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
+				region: 'us-east-1',
+				credentials: {
+					type: 'vault',
+					namespace: 'production-secrets',
+					key: 'assets.s3',
+				},
+			},
 		},
-	},
+	],
 })
 ```
 
-省略 `namespace` 时使用当前 `S3Plugin` instance 的 Vault namespace；`key` 默认是 `s3.credentials`。provider 在 `init()` 中读取一次 credential snapshot。Vault 不可用、key 缺失或对象非法分别以 `S3CredentialsError.reason` 的 `unavailable`、`missing`、`invalid` 失败 lifecycle。轮换 credential 后，应重启对应 S3 provider generation。
+省略 `namespace` 时使用当前 `S3Plugin` 的 Vault namespace；default bucket 的 `key` 默认是 `s3.credentials`，其他 bucket 默认是
+`s3.<bucket-id>.credentials`。provider 在 `init()` 中为每个 remote/vault bucket 读取一次 credential snapshot。Vault 不可用、key
+缺失或对象非法分别以 `S3CredentialsError.reason` 的 `unavailable`、`missing`、`invalid` 失败整个 generation。
 
-Workbench enabled 时，每个已经运行的 provider 都固定发布 `S3 credentials` Content，状态明确显示 local、remote/anonymous 或
-remote/vault；只有 remote/vault generation 接受其中的一次性 password form，local/anonymous 报告 `not-applicable`、明确拒绝且
+Workbench enabled 时，provider 固定发布一个 `S3 buckets` Content，以 bounded rows 显示各 ID 的 local、remote/anonymous 或
+remote/vault；只有选中的 remote/vault bucket 接受一次性 password form，local/anonymous 报告 `not-applicable`、明确拒绝且
 不访问 Vault。Handler 将 replacement access key 写入当前配置引用的 Vault record，
 并重新检查 authenticated Management principal、当前 generation 与 backend，
 串行执行写入和 `flush()`。Content 不读取或展示旧 credential，新 credential 也不会进入 plan、load、action result 或日志。
@@ -154,26 +178,29 @@ remote backend 是真实 s3mini client，支持范围取决于目标 S3 服务�
 普通 `putAnyObject()` 已支持流式 body。需要显式控制 multipart 时，使用 s3mini 的原生序列：
 
 ```ts no-twoslash
-const uploadId = await this.s3.client.getMultipartUploadId(
+const client = this.s3.bucket('assets').client
+const uploadId = await client.getMultipartUploadId(
 	'exports/archive.bin',
 	'application/octet-stream',
 )
 
 try {
-	const first = await this.s3.client.uploadPart('exports/archive.bin', uploadId, firstChunk, 1)
-	const second = await this.s3.client.uploadPart('exports/archive.bin', uploadId, secondChunk, 2)
-	await this.s3.client.completeMultipartUpload('exports/archive.bin', uploadId, [first, second])
+	const first = await client.uploadPart('exports/archive.bin', uploadId, firstChunk, 1)
+	const second = await client.uploadPart('exports/archive.bin', uploadId, secondChunk, 2)
+	await client.completeMultipartUpload('exports/archive.bin', uploadId, [first, second])
 } catch (error) {
-	await this.s3.client.abortMultipartUpload('exports/archive.bin', uploadId)
+	await client.abortMultipartUpload('exports/archive.bin', uploadId)
 	throw error
 }
 ```
 
 `firstChunk` 与 `secondChunk` 应使用 `uploadPart()` 接受的 s3mini body 类型。part number、最小 part size 与服务限制仍由 s3mini/backend 约束。
 
-## 生命周期、fork 与一致性
+## Catalog 生命周期与一致性
 
-`S3` 是普通 abstract capability；官方 `S3Plugin` 通过 `@Plugin(S3, { forkable: true })` 显式允许多实例。多个 bucket 应使用独立 `S3Plugin` fork、独立配置和 dependency override，而不是在每个 method 上增加 bucket name 参数。
+`S3Plugin` 的 `buckets` 配置包含 1–64 个唯一 stable ID。consumer 通过 `s3.bucket(id)` 取得 owner-bound handle；重复选择为
+O(1)，consumer 或 provider 停止后旧 handle 会被撤销。所有 bucket 属于同一个原子 generation：资源并行初始化，任一项失败会回滚
+全部项。需要独立启停、故障隔离或扩缩容的对象存储应使用独立进程/host。
 
 provider stop/replacement 后，旧 `S3` caller facade 先由 Core generation gate 拒绝。此前取得的 local client
 会被 revoke 并抛 `S3NotRunningError`（code `S3_NOT_RUNNING`）；remote client 的 in-flight fetch 会收到 lifecycle abort。

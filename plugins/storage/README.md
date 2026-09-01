@@ -1,7 +1,7 @@
 # `@pluxel/storage`
 
-Pluxel 官方 S3 capability。S3/s3mini 是唯一业务 API；官方安装面只有一个 `S3Plugin`，通过 `backend.type` 配置选择
-本地模拟或真实 S3。`S3` 是 constructor dependency token，不是宿主需要额外安装和治理的实例。
+Pluxel 官方 S3 capability。S3/s3mini 是唯一对象操作 API；官方安装面只有一个 `S3Plugin`，配置一个有界 named bucket catalog，
+每个 bucket 通过 `backend.type` 选择本地模拟或真实 S3。`S3` 是 constructor dependency token，不是宿主需要逐 bucket 安装和治理的实例。
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/runtime'
@@ -14,18 +14,20 @@ class AssetsPlugin extends BasePlugin {
 	}
 
 	putAvatar(userId: string, body: Blob) {
-		return this.s3.client.putAnyObject(`avatars/${userId}.webp`, body, 'image/webp')
+		return this.s3
+			.bucket('assets')
+			.client.putAnyObject(`avatars/${userId}.webp`, body, 'image/webp')
 	}
 
 	getAvatar(userId: string) {
-		return this.s3.client.getObjectResponse(`avatars/${userId}.webp`)
+		return this.s3.bucket('assets').client.getObjectResponse(`avatars/${userId}.webp`)
 	}
 }
 
 host.add([S3Plugin, AssetsPlugin])
 ```
 
-`S3.client` 锚定 s3mini 1.x 的 bucket、listing、typed/stream read、PUT、multipart、copy/move、delete 与 presign
+`S3Bucket.client` 锚定 s3mini 1.x 的 bucket、listing、typed/stream read、PUT、multipart、copy/move、delete 与 presign
 方法。remote backend 直接返回真实 `S3mini` 实例；local backend 实现同一 contract。它是 raw bucket capability，不自动添加
 caller prefix；业务 key、metadata schema 和删除所有权属于 consumer。
 
@@ -35,12 +37,17 @@ caller prefix；业务 key、metadata schema 和删除所有权属于 consumer�
 
 ```ts
 host.cfg(S3Plugin).set({
-	backend: {
-		type: 'local',
-		rootDir: '/var/lib/my-app/s3',
-		bucketName: 'assets',
-		syncWrites: true,
-	},
+	buckets: [
+		{
+			id: 'assets',
+			backend: {
+				type: 'local',
+				rootDir: '/var/lib/my-app/s3',
+				bucketName: 'assets',
+				syncWrites: true,
+			},
+		},
+	],
 })
 ```
 
@@ -48,15 +55,20 @@ host.cfg(S3Plugin).set({
 
 ```ts
 host.cfg(S3Plugin).set({
-	backend: {
-		type: 'remote',
-		endpoint: 'https://public-assets.s3.example.com',
-		region: 'auto',
-		credentials: { type: 'anonymous' },
-		requestSizeInBytes: 8 * 1024 * 1024,
-		requestAbortTimeout: 30_000,
-		minPartSize: 8 * 1024 * 1024,
-	},
+	buckets: [
+		{
+			id: 'public-assets',
+			backend: {
+				type: 'remote',
+				endpoint: 'https://public-assets.s3.example.com',
+				region: 'auto',
+				credentials: { type: 'anonymous' },
+				requestSizeInBytes: 8 * 1024 * 1024,
+				requestAbortTimeout: 30_000,
+				minPartSize: 8 * 1024 * 1024,
+			},
+		},
+	],
 })
 ```
 
@@ -73,26 +85,31 @@ S3 配置只保存引用：
 
 ```ts
 host.cfg(S3Plugin).set({
-	backend: {
-		type: 'remote',
-		endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
-		region: 'us-east-1',
-		credentials: {
-			type: 'vault',
-			namespace: 'production-secrets',
-			key: 'assets.s3',
+	buckets: [
+		{
+			id: 'assets',
+			backend: {
+				type: 'remote',
+				endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
+				region: 'us-east-1',
+				credentials: {
+					type: 'vault',
+					namespace: 'production-secrets',
+					key: 'assets.s3',
+				},
+			},
 		},
-	},
+	],
 })
 ```
 
-省略 `namespace` 时使用当前 `S3Plugin` 实例自己的 Vault namespace；`key` 默认 `s3.credentials`。插件在 `init()` 读取一次
-credential snapshot，缺失、非法或 Vault 未安装都会让 lifecycle 诚实失败并抛 `S3CredentialsError`。轮换凭据后重启对应
-S3 plugin generation。local 和 anonymous 模式完全不访问 Vault，也不会创建 Vault 成本。
+省略 `namespace` 时使用当前 `S3Plugin` 的 Vault namespace；default bucket 的 `key` 默认 `s3.credentials`，其他 bucket 默认
+`s3.<bucket-id>.credentials`。插件在 `init()` 为每个 remote/vault bucket 读取一次 credential snapshot；任一引用缺失、非法或
+Vault 未安装都会让整个 catalog 诚实失败并抛 `S3CredentialsError`。local 和 anonymous bucket 完全不访问 Vault。
 
-Workbench enabled 时，每个成功运行的 provider 都固定发布 `S3 credentials` Content，状态明确显示 local、remote/anonymous 或
-remote/vault；只有 remote/vault generation 接受其中的 rotation action，local/anonymous 报告 `not-applicable`、明确拒绝且不访问
-Vault。一次性 password form 把 replacement access key 写入当前配置引用的
+Workbench enabled 时，provider 固定发布一个 `S3 buckets` Content，以 bounded rows 显示每个 ID 的 local、remote/anonymous 或
+remote/vault 状态；只有选中的 remote/vault bucket 接受 rotation action，local/anonymous 报告 `not-applicable`、明确拒绝且不访问
+Vault。一次性 password form 按 bucket ID 把 replacement access key 写入对应配置引用的
 Vault record；不会读取或显示旧值，也不会在 action result 或日志中返回新值。
 保存只完成持久化，当前 S3 client 仍使用启动时的 credential snapshot，必须通过正常 Plugin management restart 对应 generation。
 
@@ -112,10 +129,13 @@ S3 key，不参与文件路径解析。默认 root `.pluxel/s3` 只适合开发�
 无法本地成立的 presigned URL、versioning、SSE-C、version-specific copy/delete 和 replacement tagging 不会被忽略，而是抛
 稳定 code 为 `S3_UNSUPPORTED_OPERATION` 的 `S3UnsupportedOperationError`。
 
-## 多 bucket 与特殊平台
+## Bucket catalog 与特殊平台
 
-`S3Plugin` 通过 `@Plugin(S3, { forkable: true })` 显式允许多实例。多个 bucket 使用 `S3Plugin` fork、独立 backend 配置和
-dependency override，不给每个 S3 method 增加 connection name。绝大多数部署只治理这一个插件类型。
+`S3Plugin` 拥有 1–64 个唯一 ID 的配置驱动 catalog。consumer 通过 `s3.bucket(id)` 取得 owner-bound handle；重复选择是 O(1)，
+consumer 或 provider 停止后旧 handle 会被撤销。动态 bucket 数量不会增加 Plugin definition、Workbench entry 或 socket。
+
+Catalog 是原子 lifecycle 单元：bucket 资源并行初始化，任一项失败都会回滚全部项。需要独立启停、故障域或扩缩容的对象存储服务，
+由独立进程/host 表达，而不是复制 Plugin identity。
 
 只有平台真正接管 client 生命周期或 s3mini 无法表达其认证协议时，才提供额外 `@Plugin(S3, ...)`；这属于扩展逃生口，不是
 普通 local/remote/anonymous/vault 配置的建模方式。s3mini 当前不接受 session token，因此 STS 或平台原生 credential chain

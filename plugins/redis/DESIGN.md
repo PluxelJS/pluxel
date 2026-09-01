@@ -5,7 +5,8 @@
 `@pluxel/redis` 拥有 Redis connection capability，并附带常用的 Redis cache/rates adapter 与 Lua authoring primitive：
 
 ```text
-Redis consumer -> Redis abstract token -> selected Redis provider -> node-redis/platform client
+Redis consumer -> Redis abstract token -> selected Redis provider -> named connection catalog
+                                                             \-> node-redis/platform clients
 ```
 
 Redis raw capability 不提供 caller namespace、distributed lock、queue abstraction 或业务 schema。cache namespace 与
@@ -33,28 +34,29 @@ fail closed。这样正常 allow 保持与 `limit` 无关的读取量，deny 不
 公开作者面只有：
 
 - `Redis`：required dependency token；
-- `Redis.client`：原生 node-redis compatible client；
-- `defineRedisScript()` / `Redis.scripts`：typed Lua definition、EVALSHA 与 NOSCRIPT fallback；
+- `Redis.connection(id)` / `connectionIds()`：有界 named connection catalog；
+- `RedisConnection.client`：原生 node-redis compatible client；
+- `defineRedisScript()` / `RedisConnection.scripts`：typed Lua definition、EVALSHA 与 NOSCRIPT fallback；
 - `RedisPlugin`：credential-free standalone provider；
 - `RedisCacheBackendPlugin`：内置 `CacheBackend` adapter；
 - `RedisRatesBackendPlugin`：内置四算法 `RatesBackend` adapter；
 - `RedisConfig`：连接与有界 queue 配置；
 - `RedisClient`：client type；
-- `RedisNotRunningError` / `RedisConnectionError`：明确 lifecycle failure。
+- `RedisNotRunningError` / `RedisConnectionNotFoundError` / `RedisConnectionError`：稳定的 lifecycle 与 selection failure。
 
 不包装普通 node-redis command。额外 facade 会制造第二套 Redis API，并阻碍 transaction、stream、pub/sub 与新命令。
 
 ## Lua scripts
 
 script definition 是 immutable module-level value，包含稳定 name、source、SHA1、可选 key count 与 reply decoder。
-`Redis.scripts.use(definition)` 按 definition identity 缓存 runner；`run()` 校验 key count，先执行 EVALSHA，只有错误前缀
+`RedisConnection.scripts.use(definition)` 按 definition identity 缓存 runner；`run()` 校验 key count，先执行 EVALSHA，只有错误前缀
 为 NOSCRIPT 时才回退 EVAL。其他 Redis、network、auth 或 decoder error 不被吞掉。
 
 `readOnly: true` 使用 EVALSHA_RO/EVAL_RO，为 Redis 7+ Cluster/replica routing 保留明确语义；默认 false 保持旧 server
 兼容。helper 不根据 Lua source 猜测 read/write 属性。
 
-script registry 按 bound caller Context 缓存，不使用共享的可变“当前 caller”。默认 provider 的 client 虽然相同，
-Vault/platform provider 仍可以安全地按 caller 返回不同 client 或 routing view。
+connection handle 按 bound caller Context 与 connection ID 缓存，不使用共享的可变“当前 caller”。handle 同时检查 consumer owner
+与 provider generation；其 script registry 因而也不会跨 consumer 或 connection 串线。
 
 这比启动时强制 SCRIPT LOAD 更适合 standalone、reconnect、failover 与 Cluster：script cache 是 server/node-local 且
 可能随时被清除，lazy EVALSHA fallback 才是持续正确的执行语义。helper 不建立另一套 global registry，也不包装普通
@@ -62,21 +64,21 @@ command。
 
 ## Lifecycle
 
-`RedisPlugin.init()` 创建 client 后立即用 owner effects 登记幂等 cleanup，再监听 error 并连接。initial connect 在
-`connectTimeoutMs` 内未 ready 或直接失败时抛出 `RedisConnectionError`，plugin 不进入 running。stop/replacement
-先撤销 holder，再 graceful close；close 失败才 destroy。
+`RedisPlugin.init()` 对 1–64 个唯一 ID 并行创建 client，每个资源创建后立即登记幂等 cleanup，再监听 error 并连接。任何
+initial connect 在 `connectTimeoutMs` 内未 ready 或直接失败时，startup signal 会取消 sibling，等待全部 settle 后抛出
+`RedisConnectionError`；plugin 不进入 running，也不会留下部分 catalog。stop/replacement 先撤销 catalog 和 owner handles，再
+graceful close；close 失败才 destroy。
 
-holder 是嵌套共享对象，而不是直接改写 plugin field。Pluxel caller view 使用轻量 prototype binding，嵌套 holder
-保证所有 caller view 观察同一 lifecycle generation；旧 caller facade 在 cleanup 前先由 Core generation gate 拒绝。
-`RedisNotRunningError` 只保护当前 provider 内部尚未发布或已撤销的 client holder，不替代 node-redis 自身的 captured-client
-关闭错误语义。
+runtime lookup 使用 `Map<connectionId, state>`，选择为 O(1)。每个 caller Context 只在首次选择时登记一个 effects cleanup，重复选择
+返回稳定 handle；旧 caller facade 仍会在 cleanup 前先由 Core generation gate 拒绝。`RedisNotRunningError` 保护已撤销的 handle，
+不替代 captured node-redis client 自身的 closed-client 错误语义。
 
 node-redis 负责 established connection 的 reconnect。`disableOfflineQueue` 与 `commandQueueMaxLength` 控制断线和压力
 期间的行为，避免 Redis provider 自己再维护一套 command queue。
 
-`Redis` 是普通 abstract capability token；`RedisPlugin` 通过 `@Plugin(Redis, { forkable: true })` 显式允许多实例。
-多 endpoint/database 使用正常 Pluxel fork 与 dependency override，而不是在一个 provider 内维护 connection name -> client map；
-每个 fork因而拥有独立 config、lifecycle、failure 与 replacement 边界。其他 Redis provider 必须独立决定是否安全支持 fork。
+`Redis` 是普通 abstract capability token；多 endpoint/database 是 `RedisPlugin` 自己拥有的 bounded domain collection，不产生额外
+Plugin identity、config owner、HMR generation 或 dependency edge。Cache/Rates adapter 通过各自配置的 `connectionId` 选择连接；
+其他 consumer 也把 ID 作为自己的显式领域配置。需要独立故障域的服务由独立部署表达。
 
 ## Secret
 
@@ -102,8 +104,9 @@ RatesPlugin   <- RedisRatesBackendPlugin -> Redis
 Redis consumer 只安装一个 Redis package，就同时拥有 raw capability、Lua helper 与可选 cache/rates integration；
 memory-only consumer 仍不安装 node-redis。adapter 源码是本包内唯一同时知道 backend contract 与 `Redis` 的模块。
 
-Workbench 继续用 host-owned dependency selection 选择 Redis provider。默认 standalone provider 另外发布一张
-host-rendered Content，只读取当前 connection state，并提供一个带有界 transient payload 的原生 `PING` action。状态变化复用
-既有 Workbench Cap'n Web session 调用 `dataChanged()`；Content 不复制 endpoint/database 持久配置，不保留 payload，也不暴露
+Workbench 继续用 host-owned dependency selection 选择 Redis provider。默认 standalone provider另外发布一张固定
+host-rendered Content，以 bounded rows 读取全部 connection state，并提供一个按 ID 选择、带有界 transient payload 的原生 `PING`
+action。动态连接数量不改变 Workbench definition、entry 或 socket。状态变化复用既有 Workbench Cap'n Web session 调用
+`dataChanged()`；Content 不复制 endpoint 持久配置，不保留 payload，也不暴露
 credential、任意 Redis command 或 key browser。Workbench disabled 时不注册额外 Redis event listener，且不影响 Redis
 capability 或 lifecycle。
