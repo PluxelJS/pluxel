@@ -106,6 +106,18 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		).toThrow(new RegExp(`unsupported "${field}"`, 'i'))
 	})
 
+	it('rejects unknown fields in Runtime service configuration', () => {
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				database: {
+					driver: 'postgres',
+					connectionString: 'postgres://localhost/db',
+					pool: { max: 4, legacy: true },
+				},
+			} as never),
+		).toThrow(/database\.pool includes unsupported "legacy"/i)
+	})
+
 	it('accepts explicit mutable file sources without package-manager configuration', () => {
 		class FixedPlugin {}
 		const config = defineDynamicRuntimeConfig({

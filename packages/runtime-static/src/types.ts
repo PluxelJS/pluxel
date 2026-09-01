@@ -12,8 +12,9 @@ import type {
 	DatabaseConfig,
 	RuntimeStateStoreConfig,
 	WorkbenchConfig,
+	WorkersConfig,
 } from '@pluxel/runtime'
-import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
+import type { VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { PluxelEnvironmentVariables } from '@pluxel/runtime/environment'
@@ -107,16 +108,7 @@ export type StaticRuntimeApplication<
 	}) => void | Promise<void>
 }
 
-export type StaticRuntimeHostOptions = Omit<
-	RuntimeHostConfig,
-	| 'name'
-	| 'logger'
-	| 'plugins'
-	| 'http'
-	| 'workbenchArtifactRoot'
-	| 'nodeModuleArtifactRoot'
-	| 'nodeModuleArtifactResolver'
-> & {
+export type StaticRuntimeHostOptions = {
 	/**
 	 * Runtime config source used for plugin config records.
 	 *
@@ -138,8 +130,16 @@ export type StaticRuntimeHostOptions = Omit<
 	persistence?: PersistenceServiceConfig
 	/** Shared lazy PostgreSQL capability. Omit for persistent local PGlite. */
 	database?: DatabaseConfig
+	/** Shared bounded worker-task execution policy. */
+	workers?: WorkersConfig
+	/** Explicitly installs headless management. Workbench also installs management when enabled. */
+	management?: true
 	/** Optional Workbench Direct View/Attachment plane and immutable MF producer artifacts. @default false */
 	workbench?: WorkbenchConfig
+	/** Explicitly enables the encrypted Vault. Omitted or `false` has zero backend cost. */
+	vault?: false | VaultServiceConfig
+	/** Runtime debug topics enabled for this host. */
+	debug?: readonly string[]
 	/** Host-owned logging plan. `false` installs a silent root. */
 	logging?: false | RuntimeLoggingInput
 	/**

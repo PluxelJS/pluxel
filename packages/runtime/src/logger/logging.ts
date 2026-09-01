@@ -34,6 +34,7 @@ import { createRuntimeLogSink, type RuntimeLogSinkOptions } from './sink'
 import { RuntimeLogStoreRegistry } from './store'
 import { captureCaller } from './host'
 import { createRuntimePrettyConsoleSink } from './pretty'
+import { assertRuntimeLoggingInput } from '../context/runtime-config-validation'
 
 const ACTIVE_RUNTIME_LOGGING = Symbol.for('pluxel:runtime:active-logging')
 const CONTEXT_RUNTIME_LOGGING = new WeakMap<object, RuntimeLogging>()
@@ -644,6 +645,7 @@ function findAddedProcessExitListeners(
 }
 
 export function createRuntimeLogging(input: RuntimeLoggingInput): RuntimeLogging {
+	assertRuntimeLoggingInput(input)
 	return new RuntimeLoggingImpl(input)
 }
 

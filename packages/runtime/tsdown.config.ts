@@ -45,6 +45,7 @@ export default defineConfig({
 		test: 'src/test.ts',
 		toolchain: 'src/toolchain.ts',
 		internal: 'src/internal.ts',
+		'internal/config-validation': 'src/internal-config-validation.ts',
 		'internal/static': 'src/internal-static.ts',
 		'internal/static-host': 'src/internal-static-host.ts',
 		'internal/workbench-react': 'src/workbench/react-internal.tsx',

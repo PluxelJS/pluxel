@@ -279,8 +279,10 @@ dynamicRuntimeVitePlugin({
 
 宿主配置是封闭契约，不是任意 metadata 容器。TypeScript 会在 `defineStaticRuntime()` 的
 `configure()` 返回值和 `defineDynamicRuntimeConfig()` 的直接输入中拒绝未知顶层字段，也会严格检查
-`workbench` 等封闭子配置；Runtime 对 JavaScript、类型断言和外部输入重复执行相同的运行时校验。
-Plugin 业务配置、产品 metadata 与宿主策略应进入各自已有入口，不能借未知字段附加到 host config。
+`configService`、`runtimeState`、persistence wrapper、`database.pool`、`workers`、`workbench`、`vault` 与完整
+logging plan 等所有 Runtime-owned 封闭子配置；Runtime 对 JavaScript、类型断言和外部输入重复执行相同的运行时校验。
+Plugin raw config、环境变量映射、custom persistence backend 与 custom log sink 是明确的开放扩展点；其实现私有字段不会被
+递归检查。Plugin 业务配置、产品 metadata 与宿主策略应进入各自已有入口，不能借未知字段附加到 host config。
 
 ### Plugin config 与 runtime state
 

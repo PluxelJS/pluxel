@@ -26,7 +26,7 @@ describe('RuntimeState address persistence', () => {
 					snapshot: { enabled: [ProviderNode] },
 				} as never,
 			}),
-		).toThrow(/runtimeState\.snapshot has unknown field enabled/i)
+		).toThrow(/runtimeState\.snapshot includes unsupported "enabled"/i)
 	})
 
 	it.each([

@@ -22,7 +22,6 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		try {
 			process.chdir(fixture.path)
 			const runtime = createRuntimeContext({
-				profile: 'test',
 				configService: { mode: 'memory' },
 			})
 			const ctx = runtime.ctx
@@ -42,7 +41,6 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		try {
 			process.chdir(fixture.path)
 			const runtime = createRuntimeContext({
-				profile: 'test',
 				configService: {
 					mode: 'readonly',
 					snapshot: {

@@ -7,10 +7,11 @@ import type {
 } from './types.ts'
 import { mergeConfigRecords, withPluginConfigEnvironment } from '@pluxel/runtime/internal'
 import {
-	resolveRuntimePlanePlan,
-	type ExactConfigProperty,
+	assertKnownConfigFields,
+	assertRuntimeServiceConfigFields,
+	closedConfigFields,
 	type ExactConfigShape,
-} from '@pluxel/runtime/internal/static-host'
+} from '@pluxel/runtime/internal/config-validation'
 import { resolveHostEnv } from '@pluxel/runtime/environment'
 import { join } from 'pathe'
 import { resolveConfigEnvironmentBootstrap } from './config-environment.ts'
@@ -22,11 +23,7 @@ type MarkedStaticRuntimeApplication = StaticRuntimeApplication & {
 }
 
 type ExactStaticRuntimeHostOptions<Options extends StaticRuntimeHostOptions> =
-	Options extends unknown
-		? ExactConfigShape<Options, StaticRuntimeHostOptions> extends never
-			? never
-			: ExactConfigProperty<Options, 'workbench', StaticRuntimeHostOptions['workbench']>
-		: never
+	Options extends unknown ? ExactConfigShape<Options, StaticRuntimeHostOptions> : never
 
 type StaticRuntimeApplicationInput<
 	TPlugins extends readonly PluginConstructor[],
@@ -45,26 +42,26 @@ type ExactStaticRuntimeApplicationConstraint<THostOptions extends StaticRuntimeH
 	? unknown
 	: { configure?: never }
 
-const APPLICATION_FIELDS = new Set([
-	'name',
-	'plugins',
-	'configEnvironmentBootstrap',
-	'configure',
-	'prepare',
-])
-const HOST_OPTION_FIELDS = new Set([
-	'configService',
-	'runtimeState',
-	'persistence',
-	'database',
-	'workers',
-	'management',
-	'workbench',
-	'vault',
-	'debug',
-	'logging',
-	'profile',
-])
+const APPLICATION_FIELDS = closedConfigFields<StaticRuntimeApplication>({
+	name: true,
+	plugins: true,
+	configEnvironmentBootstrap: true,
+	configure: true,
+	prepare: true,
+})
+const HOST_OPTION_FIELDS = closedConfigFields<StaticRuntimeHostOptions>({
+	configService: true,
+	runtimeState: true,
+	persistence: true,
+	database: true,
+	workers: true,
+	management: true,
+	workbench: true,
+	vault: true,
+	debug: true,
+	logging: true,
+	profile: true,
+})
 
 export function defineStaticRuntime<
 	const TPlugins extends readonly PluginConstructor[],
@@ -73,8 +70,20 @@ export function defineStaticRuntime<
 >(
 	application: StaticRuntimeApplicationInput<TPlugins, TBindings, THostOptions> &
 		ExactStaticRuntimeApplicationConstraint<THostOptions>,
-): StaticRuntimeApplication<TPlugins, TBindings> {
-	assertKnownFields(application, APPLICATION_FIELDS, '[runtime-static] Static application')
+): StaticRuntimeApplication<TPlugins, TBindings>
+/** Compatibility overload for explicit type arguments; startup validation remains authoritative. */
+export function defineStaticRuntime<
+	const TPlugins extends readonly PluginConstructor[] = never,
+	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,
+>(
+	application: [TPlugins] extends [never]
+		? never
+		: StaticRuntimeApplication<NoInfer<TPlugins>, NoInfer<TBindings>>,
+): StaticRuntimeApplication<TPlugins, TBindings>
+export function defineStaticRuntime(
+	application: StaticRuntimeApplication<readonly PluginConstructor[], never>,
+): StaticRuntimeApplication<readonly PluginConstructor[], never> {
+	assertKnownConfigFields(application, APPLICATION_FIELDS, '[runtime-static] Static application')
 	if (!String(application.name ?? '').trim()) {
 		throw new Error('[runtime-static] Static application name is required')
 	}
@@ -121,8 +130,8 @@ export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRu
 	if (!options || typeof options !== 'object' || Array.isArray(options)) {
 		throw new TypeError('[runtime-static] Static application configure() must return an object')
 	}
-	assertKnownFields(options, HOST_OPTION_FIELDS, '[runtime-static] configure() result')
-	resolveRuntimePlanePlan(options.workbench, options.management)
+	assertKnownConfigFields(options, HOST_OPTION_FIELDS, '[runtime-static] configure() result')
+	assertRuntimeServiceConfigFields(options, '[runtime-static] configure() result')
 	const environment = resolveHostEnv(startup.env)
 	const seededConfigService =
 		environmentSeed.length === 0
@@ -153,10 +162,4 @@ export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRu
 			: {}),
 		...(workbench === undefined ? {} : { workbench }),
 	}
-}
-
-function assertKnownFields(value: object, allowed: ReadonlySet<string>, label: string): void {
-	const unknown = Object.keys(value).filter((key) => !allowed.has(key))
-	if (unknown.length === 0) return
-	throw new Error(`${label} includes unsupported ${unknown.map((key) => `"${key}"`).join(', ')}`)
 }

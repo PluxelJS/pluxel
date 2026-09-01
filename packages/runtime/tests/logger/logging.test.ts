@@ -61,6 +61,16 @@ describe('RuntimeLogging', () => {
 		if (getConfig()) await reset()
 	})
 
+	it('rejects unknown logging fields at the construction boundary', () => {
+		const plan = storePlan()
+		expect(() =>
+			createRuntimeLogging({
+				...plan,
+				root: { ...plan.root, legacy: true },
+			} as never),
+		).toThrow(/logging\.root includes unsupported "legacy"/i)
+	})
+
 	it('resolves an inspectable root plan without per-plugin logger config', () => {
 		logging = createRuntimeLogging(
 			storePlan({

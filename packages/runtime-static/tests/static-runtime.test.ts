@@ -518,6 +518,25 @@ describe('@pluxel/runtime-static', () => {
 		)
 	})
 
+	it('rejects unknown fields in Runtime service configuration at startup', async () => {
+		const application = defineStaticRuntime({
+			name: 'unknown-database-pool-field',
+			plugins: [],
+			configure: () =>
+				({
+					database: {
+						driver: 'postgres',
+						connectionString: 'postgres://localhost/db',
+						pool: { max: 4, legacy: true },
+					},
+				}) as never,
+		})
+
+		await expect(createStaticRuntimeTestHost(application)).rejects.toThrow(
+			/database\.pool includes unsupported "legacy"/i,
+		)
+	})
+
 	it('uses config snapshot v3 from the reserved environment and exposes lowered schema source', async () => {
 		configuredValue = undefined
 		const owner = addressOf(ConfiguredPlugin)

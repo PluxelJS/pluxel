@@ -54,6 +54,7 @@ import { PluginCatalogLayoutService } from '../services/management/PluginCatalog
 import { resolveWorkbenchUiBasePath } from '../workbench-config'
 import { readProductDescriptor, type HostApplicationMeta } from '../product-contract'
 import type { RuntimeHostConfig } from './runtime-contract'
+import { assertRuntimeHostConfig } from './runtime-config-validation'
 import { RUNTIME_STATE_CAPABILITY } from './runtime-state-capability'
 import './runtime-contract'
 
@@ -115,6 +116,7 @@ export function createRuntimeRootContext(
 	config: RuntimeHostConfig = {},
 	options: RuntimeRootContextOptions = {},
 ): RootContext {
+	assertRuntimeHostConfig(config)
 	const coreInputs = resolveCoreRootInputs(config)
 	const inputs = resolveRuntimeRootInputs(config, options)
 	const applications = new ElysiaApplicationDirectory()

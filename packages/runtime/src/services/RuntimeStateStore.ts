@@ -70,8 +70,8 @@ export type RuntimeStateStoreMode = 'file' | 'memory' | 'readonly'
 
 export interface RuntimeStateStoreConfig {
 	mode?: RuntimeStateStoreMode
-	snapshot?: Partial<RuntimeStateSnapshot> & {
-		autoStart?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
+	snapshot?: Omit<Partial<RuntimeStateSnapshot>, 'autoStart'> & {
+		autoStart?: Iterable<PluginNodeAddress>
 	}
 }
 
@@ -287,9 +287,7 @@ function replaceDraft(
 
 function applySnapshot(
 	draft: RuntimeStateDraft,
-	snapshot: Partial<RuntimeStateSnapshot> & {
-		autoStart?: Iterable<PluginNodeAddress> | PluginNodeAddress[]
-	},
+	snapshot: NonNullable<RuntimeStateStoreConfig['snapshot']>,
 ): void {
 	assertClosedRecord(
 		snapshot,

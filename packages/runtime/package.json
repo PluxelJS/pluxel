@@ -45,6 +45,10 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
+		"./internal/config-validation": {
+			"@pluxel/source": "./src/internal-config-validation.ts",
+			"default": "./dist/internal/config-validation.mjs"
+		},
 		"./internal/database/pglite": {
 			"@pluxel/source": "./src/services/database-adapters/pglite.ts",
 			"default": "./dist/internal/database/pglite.mjs"
@@ -126,6 +130,7 @@
 			"./database": "./dist/database.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/config-validation": "./dist/internal/config-validation.mjs",
 			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
 			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
