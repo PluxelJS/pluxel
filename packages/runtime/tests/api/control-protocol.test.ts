@@ -1,6 +1,7 @@
 import { requireRuntimePluginGraphCoordinator } from '@pluxel/runtime/internal'
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { serialize } from 'capnweb'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { applyLifecycleCommands, setAutoStart } from '../../src/api/usecases/pluginStatus'
 import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
@@ -18,6 +19,13 @@ import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
 
 @Plugin()
 class ManagedPlugin extends BasePlugin {}
+
+@Plugin()
+class FailingManagedPlugin extends BasePlugin {
+	override init(): void {
+		throw new Error('fixture startup failed')
+	}
+}
 
 abstract class ManagedProviderToken extends BasePlugin {}
 
@@ -54,9 +62,8 @@ describe('runtime web control protocol', () => {
 			const address = host.cfg(ManagedPlugin).owner
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
-			await expect(
-				rpc.applyPluginLifecycleCommands([{ address, command: 'start' }]),
-			).resolves.toMatchObject({
+			const startResult = await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			expect(startResult).toMatchObject({
 				ok: true,
 				status: 'applied',
 				results: [
@@ -75,13 +82,15 @@ describe('runtime web control protocol', () => {
 					},
 				],
 			})
+			expect(() => serialize(startResult)).not.toThrow()
 
 			const stateStore = requireRuntimeStateStore(host.ctx)
 			const commitVersioned = stateStore.commitVersioned.bind(stateStore)
 			stateStore.commitVersioned = async () => {
 				throw new Error('durable store unavailable')
 			}
-			await expect(rpc.setPluginAutoStart([{ address, autoStart: true }])).resolves.toMatchObject({
+			const persistenceFailure = await rpc.setPluginAutoStart([{ address, autoStart: true }])
+			expect(persistenceFailure).toMatchObject({
 				ok: false,
 				status: 'rejected',
 				results: [
@@ -93,13 +102,57 @@ describe('runtime web control protocol', () => {
 					},
 				],
 			})
+			expect(() => serialize(persistenceFailure)).not.toThrow()
 			stateStore.commitVersioned = commitVersioned
 		} finally {
 			await host.dispose()
 		}
 	})
 
-	it('keeps provider policy on provider pages and consumer override on requirement rows', async () => {
+	it('returns a serializable lifecycle report when an admitted start fails', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			host.add(FailingManagedPlugin)
+			await host.commit()
+			const address = host.cfg(FailingManagedPlugin).owner
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
+
+			const result = await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			expect(result).toMatchObject({
+				ok: true,
+				status: 'applied',
+				results: [
+					{
+						address,
+						ok: true,
+						control: { desiredState: 'running', lifecycleState: 'stopped' },
+						report: {
+							core: {
+								status: 'committed',
+								summary: {
+									lifecycleReport: {
+										ok: false,
+										issues: [
+											{
+												plugin: address,
+												kind: 'start-failed',
+												error: { message: 'fixture startup failed' },
+											},
+										],
+									},
+								},
+							},
+						},
+					},
+				],
+			})
+			expect(() => serialize(result)).not.toThrow()
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('keeps provider policy on provider content and consumer override on requirement rows', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
 			host.add([ManagedProvider, ManagedAlternateProvider, ManagedProviderConsumer])

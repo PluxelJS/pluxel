@@ -61,7 +61,11 @@ import type {
 	PluginControlBatchResult,
 	PluginStatusQueryResult,
 } from '../../web/protocol'
-import { parseConfigPresentationResult, parseConfigResult } from '../../web/management-validation'
+import {
+	parseConfigPresentationResult,
+	parseConfigResult,
+	parsePluginControlBatchResult,
+} from '../../web/management-validation'
 
 export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
 	private readonly ctx: Context
@@ -334,11 +338,11 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	}
 
 	async setPluginAutoStart(items: unknown): Promise<PluginControlBatchResult> {
-		return await setAutoStart(this.ctx, items)
+		return parsePluginControlBatchResult(await setAutoStart(this.ctx, items))
 	}
 
 	async applyPluginLifecycleCommands(items: unknown): Promise<PluginControlBatchResult> {
-		return await applyLifecycleCommands(this.ctx, items)
+		return parsePluginControlBatchResult(await applyLifecycleCommands(this.ctx, items))
 	}
 
 	async getLogPolicy(): Promise<VersionedPluginLogPolicySnapshot> {

@@ -1,9 +1,17 @@
+import { pluginNodeAddressEqual } from '@pluxel/core'
+import type { PluginControlMutationSuccess } from '@pluxel/runtime/web'
 import type { PluginStatusEntry } from '../../pluginOverview'
 import type { PluginLifecycleCommand } from '../../pluginStatusActions'
 
 export type PluginControlPending = 'auto-start' | PluginLifecycleCommand | null
 
 export type PluginStatusTone = 'green' | 'yellow' | 'gray' | 'red' | 'blue'
+
+export type PluginLifecycleOutcomePresentation = Readonly<{
+	title: string
+	message: string
+	color: 'green' | 'yellow' | 'red'
+}>
 
 const ACTIVATION_REASON_LABEL: Record<
 	Exclude<PluginStatusEntry['activationReason'], null>,
@@ -76,5 +84,54 @@ export function describePluginControl(
 		activationReasonLabel: status.activationReason
 			? ACTIVATION_REASON_LABEL[status.activationReason]
 			: '无',
+	})
+}
+
+export function describePluginLifecycleOutcome(
+	pluginLabel: string,
+	command: PluginLifecycleCommand,
+	result: PluginControlMutationSuccess,
+): PluginLifecycleOutcomePresentation {
+	const report = result.report.core
+	const issue =
+		report.status === 'committed'
+			? report.summary.lifecycleReport.issues.find((candidate) =>
+					pluginNodeAddressEqual(candidate.plugin, result.address),
+				)
+			: undefined
+	if (issue) {
+		const detail = issue.error?.message || issue.message
+		const partPath = issue.error?.partPath
+		return Object.freeze({
+			title:
+				command === 'stop'
+					? 'Plugin 停止异常'
+					: command === 'restart'
+						? 'Plugin 重启失败'
+						: 'Plugin 启动失败',
+			message: `${pluginLabel}：${detail}${partPath?.length ? `（PluginPart：${partPath.join(' / ')}）` : ''}`,
+			color: 'red',
+		})
+	}
+
+	const expectedRunning = command !== 'stop'
+	const running = result.control.lifecycleState === 'running'
+	if (running !== expectedRunning) {
+		return Object.freeze({
+			title: '命令已提交，运行状态仍未收敛',
+			message: `${pluginLabel} 当前仍${running ? '在运行' : '未运行'}，请检查协调问题与依赖状态。`,
+			color: 'yellow',
+		})
+	}
+
+	return Object.freeze({
+		title:
+			command === 'stop'
+				? 'Plugin 已停止'
+				: command === 'restart'
+					? 'Plugin 已重启'
+					: 'Plugin 已启动',
+		message: pluginLabel,
+		color: 'green',
 	})
 }

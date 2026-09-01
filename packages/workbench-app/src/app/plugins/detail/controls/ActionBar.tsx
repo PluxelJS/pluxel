@@ -13,7 +13,7 @@ import {
 } from '../../pluginStatusActions'
 import { usePluginScope } from '../context'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
-import { describePluginControl } from './pluginControlModel'
+import { describePluginControl, describePluginLifecycleOutcome } from './pluginControlModel'
 
 export function ActionBar() {
 	const management = useRuntimeManagementClient()
@@ -73,22 +73,7 @@ export function ActionBar() {
 				})
 				return
 			}
-			const expectedRunning = command !== 'stop'
-			const running = result.control.lifecycleState === 'running'
-			const settled = running === expectedRunning
-			notify({
-				title: settled
-					? command === 'stop'
-						? 'Plugin 已停止'
-						: command === 'restart'
-							? 'Plugin 已重启'
-							: 'Plugin 已启动'
-					: '命令已提交，运行状态仍未收敛',
-				message: settled
-					? pluginLabel
-					: `${pluginLabel} 当前仍${running ? '在运行' : '未运行'}，请检查协调问题与依赖状态。`,
-				color: settled ? 'green' : 'yellow',
-			})
+			notify(describePluginLifecycleOutcome(pluginLabel, command, result))
 		} catch (error: unknown) {
 			notify({
 				title: '生命周期命令执行失败',

@@ -9,7 +9,10 @@ import {
 	buildConsumerOverrideSelection,
 	FOLLOW_DEFAULT_VALUE,
 } from '../src/app/plugins/detail/usePluginDependencyControls'
-import { describePluginControl } from '../src/app/plugins/detail/controls/pluginControlModel'
+import {
+	describePluginControl,
+	describePluginLifecycleOutcome,
+} from '../src/app/plugins/detail/controls/pluginControlModel'
 import type { PluginStatusEntry } from '../src/app/plugins/pluginOverview'
 
 const requirement = definition('CacheProvider')
@@ -151,7 +154,99 @@ describe('plugin detail control presentation', () => {
 			canChangeAutoStart: true,
 		})
 	})
+
+	it('surfaces the target lifecycle issue instead of a generic unsettled warning', () => {
+		const outcome = describePluginLifecycleOutcome('Discord', 'start', {
+			address: memory,
+			ok: true,
+			status: 'applied',
+			control: {
+				autoStart: true,
+				sessionIntent: 'run',
+				desiredState: 'running',
+				activationReason: 'session',
+				lifecycleState: 'stopped',
+			},
+			report: applyReport([
+				{
+					plugin: redis,
+					phase: 'start',
+					kind: 'start-failed',
+					message: 'unrelated failure',
+				},
+				{
+					plugin: memory,
+					phase: 'start',
+					kind: 'start-failed',
+					message: 'Discord failed to start',
+					error: {
+						name: 'Error',
+						message: 'DiscordPlugin requires host config vault: {}',
+						partPath: ['accounts'],
+					},
+				},
+			]),
+		})
+
+		expect(outcome).toEqual({
+			title: 'Plugin 启动失败',
+			message: 'Discord：DiscordPlugin requires host config vault: {}（PluginPart：accounts）',
+			color: 'red',
+		})
+	})
+
+	it('keeps the generic warning only when no lifecycle issue explains the final state', () => {
+		expect(
+			describePluginLifecycleOutcome('Discord', 'restart', {
+				address: memory,
+				ok: true,
+				status: 'applied',
+				control: {
+					autoStart: true,
+					sessionIntent: 'run',
+					desiredState: 'running',
+					activationReason: 'session',
+					lifecycleState: 'stopped',
+				},
+				report: applyReport([]),
+			}),
+		).toEqual({
+			title: '命令已提交，运行状态仍未收敛',
+			message: 'Discord 当前仍未运行，请检查协调问题与依赖状态。',
+			color: 'yellow',
+		})
+	})
 })
+
+function applyReport(
+	issues: Array<{
+		plugin: PluginNodeAddress
+		phase: 'start'
+		kind: 'start-failed'
+		message: string
+		error?: { name: string; message: string; partPath?: string[] }
+	}>,
+) {
+	return {
+		catalogRevision: 1,
+		runtimeStateRevision: 1,
+		reconciliation: [],
+		core: {
+			status: 'committed' as const,
+			summary: {
+				pluginChanges: {
+					added: [],
+					replaced: [],
+					removed: [],
+					restarted: [],
+					availabilityChanged: [],
+				},
+				runtimeUpdate: {},
+				lifecycleReport: { ok: issues.length === 0, issues },
+			},
+		},
+	}
+}
 
 function consumerRequirement({
 	consumerOverride,
