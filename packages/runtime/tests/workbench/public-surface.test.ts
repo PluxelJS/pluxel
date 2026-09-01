@@ -7,10 +7,11 @@ describe('Workbench public author surface', () => {
 	it('keeps definition, client, and React entries narrow', () => {
 		expect(Object.keys(Workbench).sort()).toEqual(['workbench'])
 		expect(Object.keys(WorkbenchClient).sort()).toEqual([
-			'WorkbenchOpenedPageHandle',
+			'WorkbenchOpenedContentHandle',
 			'WorkbenchOpenedViewHandle',
 			'createRemoteValue',
-			'openWorkbenchView',
+			'detachWorkbenchPortableValue',
+			'openWorkbenchEntry',
 			'readWorkbenchLayout',
 		])
 		expect(Object.keys(WorkbenchReact).sort()).toEqual([

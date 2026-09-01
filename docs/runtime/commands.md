@@ -224,6 +224,9 @@ Agent adapter 应是通过 constructor required dependency 取得 `AgentToolsPlu
 
 Toolset 只保存稳定 command name，不复制 descriptor 或 handler。暂时不存在的 name 会保留在 config，之后同名 command 发布时自动进入投影。MCP、OpenAI、Claude 等 provider schema、tool name 映射、principal、确认与审计仍由 adapter 自己负责。完整用法见 [Agent tools Plugin](../plugins/agent-tools.md)。
 
+需要直接内置 Agent engine 时，workspace preview [`@pluxel/pi-agent`](../plugins/pi-agent.md) 会把同一个
+bound catalog 投影给 Pi，并保持 Pluxel 作为唯一 Plugin runtime 与权限边界。
+
 ## 7. argv/message grammar
 
 只有确实需要人类友好的 route、alias、positionals 或 tail 时才使用自定义 router。下面是 standalone/router primitive 用法；Runtime Plugin carrier 应在 provider 内把 `CommandMount` 给出的 `owned` command 绑定到 router，而不是让普通 consumer 直接绑定 raw/installed command：

@@ -71,6 +71,51 @@ describe('AgentToolsPlugin', () => {
 		}
 	})
 
+	it('projects toolsets, assignments, missing tools and ungrouped commands for Workbench', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			host.add([AgentToolsPlugin, NotesCommands])
+			host.cfg(AgentToolsPlugin).set({
+				toolsets: [
+					{
+						id: 'reader',
+						label: 'Reader',
+						description: 'Read-only tools',
+						commandNames: ['notes.read', 'notes.missing'],
+					},
+				],
+				agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['reader'] }],
+			})
+			host.start(AgentToolsPlugin).start(NotesCommands)
+			await host.commit()
+
+			const snapshot = host.require(AgentToolsPlugin).snapshot()
+			expect(snapshot).toMatchObject({
+				toolsets: [
+					{
+						id: 'reader',
+						availableCommandNames: ['notes.read'],
+						missingCommandNames: ['notes.missing'],
+					},
+				],
+				assignments: [
+					{
+						agentId: 'assistant',
+						commandNames: ['notes.missing', 'notes.read'],
+						availableCommandNames: ['notes.read'],
+						missingCommandNames: ['notes.missing'],
+					},
+				],
+			})
+			expect(snapshot.commands.map(({ name }) => name)).toEqual(
+				expect.arrayContaining(['notes.delete', 'notes.read']),
+			)
+			expect(snapshot.ungroupedCommandNames).toEqual(expect.arrayContaining(['notes.delete']))
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('keeps missing command names and projects them when an owner starts', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {

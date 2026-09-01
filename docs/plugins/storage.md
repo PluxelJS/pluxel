@@ -124,6 +124,17 @@ host.cfg(S3Plugin).set({
 
 省略 `namespace` 时使用当前 `S3Plugin` instance 的 Vault namespace；`key` 默认是 `s3.credentials`。provider 在 `init()` 中读取一次 credential snapshot。Vault 不可用、key 缺失或对象非法分别以 `S3CredentialsError.reason` 的 `unavailable`、`missing`、`invalid` 失败 lifecycle。轮换 credential 后，应重启对应 S3 provider generation。
 
+Workbench enabled 时，每个已经运行的 provider 都固定发布 `S3 credentials` Content，状态明确显示 local、remote/anonymous 或
+remote/vault；只有 remote/vault generation 接受其中的一次性 password form，local/anonymous 报告 `not-applicable`、明确拒绝且
+不访问 Vault。Handler 将 replacement access key 写入当前配置引用的 Vault record，
+并重新检查 authenticated Management principal、当前 generation 与 backend，
+串行执行写入和 `flush()`。Content 不读取或展示旧 credential，新 credential 也不会进入 plan、load、action result 或日志。
+保存后仍需通过正常 Plugin management restart 当前 S3 generation，新的 client 才会读取 replacement。
+
+这条 Content 不能用于首次 provisioning。缺失或非法 record 会让 S3Plugin 启动失败，而失败 generation 的 Workbench publication
+必然回滚；宿主必须在启动前写入 credential。不要为了显示 setup Content 让 S3 capability 半启动，也不要另建脱离 Plugin owner
+lifecycle 的 secret registry。
+
 local 和 anonymous backend 不访问 Vault。当前 s3mini contract 不接受 session token；STS、平台 credential chain 或特殊认证协议需要由平台提供另一个 `S3` implementation。
 
 ## local 与 remote 的能力差异

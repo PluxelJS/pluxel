@@ -96,6 +96,8 @@ compiler 不再为 Workbench 叠加通用 build queue；MF builder 自己拥有�
 process-global application root：同一 application root 最多并发两个 producer；不同 root 按到达顺序形成 cohort，切换前必须等
 当前 cohort 排空，后到的同 root task 不能越过已经等待的其他 root。这个精确约束不能扩大为全局单线程。Node artifact 继续使用
 独立的两个 build slot。同一 output 的 transaction ordering 始终保留，保证 immutable candidate 的 validation/publication 不交错。
+Runtime-dev 在 producer 进入构建时记录 name/revision，完成时记录 `built` 或磁盘 `reused` 及端到端耗时；内存 candidate
+复用保持静默，失败日志保留同一归因和原始错误。
 
 每个 candidate 必须验证：
 

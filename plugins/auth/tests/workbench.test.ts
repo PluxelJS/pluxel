@@ -18,7 +18,7 @@ async function openSetup(host: RuntimeHost, principal: WorkbenchPrincipal = LOCA
 	)
 	if (!entry) throw new Error('AuthPlugin published no setup View')
 	const session = backend.createSession(principal, () => {})
-	const opened = await session.target.openView({
+	const opened = await session.target.openEntry({
 		layoutRevision: layout.revision,
 		target,
 		descriptor: entry.descriptor,

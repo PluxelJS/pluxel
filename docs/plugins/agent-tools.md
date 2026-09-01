@@ -27,7 +27,10 @@ host.cfg(AgentToolsPlugin).set({
 ```
 
 这是测试 host 的配置写法；production host 通过 ConfigService 管理同一个 Plugin record。配置使用标准
-Plugin schema，所以会自动得到持久化、服务端校验、运行中更新和通用 Plugin 配置页面，不需要 Agent 专用 RPC 或页面。
+Plugin schema，所以会自动得到持久化、服务端校验、运行中更新和通用 Plugin 配置页面。
+
+Workbench 启用时，插件还会发布只读 Agent tools 页面，分组展示当前 commands、Toolsets、缺失 command、
+Agent assignments 与未分组 command。该页面不保存第二份策略，修改仍进入通用 Config 页面；headless host 的行为不变。
 
 暂时没有注册的 command name 会保留在 Toolset；以后有 Plugin 发布同名 command 时，受限 catalog 自动更新。
 
@@ -67,3 +70,6 @@ command owner admission 的调用不会被配置更新追溯取消。
 
 adapter 自己负责 provider schema 与 annotations、tool name 映射、principal、授权、确认、rate limit、审计和输出呈现。
 这些概念不会进入 `@pluxel/commands` 或 Runtime。
+
+provider 需要构建 tool setup 选择器时，可以读取 `agentTools.snapshot()`。返回值是 detached 的诊断投影，包含
+policy/catalog revision、Toolsets、assignments 和命令摘要；选择之后仍应创建 `catalog(agentId)`，并让发现与执行都走该 catalog。

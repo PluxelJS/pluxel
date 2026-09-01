@@ -106,12 +106,13 @@ TLS/mTLS 继续使用官方 exporter 的 `CERTIFICATE`、`CLIENT_KEY`、`CLIENT_
 
 ## Workbench 运维说明
 
-Workbench 启用且 `OtelPlugin` 正常运行时，Plugin 会发布一个“运维说明” Standard Page。页面汇总 OTLP HTTP/gRPC
-endpoint 规则、限频 diagnostics、Prometheus pull 与 secret/config 边界，方便从 Plugin detail 直接排查部署问题。
+Workbench 启用且 `OtelPlugin` 正常运行时，Plugin 会发布一个 host-rendered“运维说明” Content。除了 OTLP HTTP/gRPC
+endpoint 规则、限频 diagnostics、Prometheus pull 与 secret/config 边界，它还显示 metrics、traces、logs exporter 和
+Prometheus listener 的当前状态，并提供“立即导出待处理 telemetry”操作。
 
-这是 build-time 编译的静态 Markdown：没有 RPC target、实时状态、刷新/invalidate 或操作按钮，也不会创建 OTel 专属
-React/MF producer。页面不会显示环境变量值、credential、完整 header 或未保存的 Config draft；实际配置与 exporter
-状态仍以启动校验、Plugin 日志和 Collector 侧观测为准。
+状态由 Plugin 领域变化触发 `dataChanged()`，Framework 在既有 Workbench WebSocket 与 Cap'n Web session 上重新读取并推送
+最新完整状态；按钮同样通过这个 Content root 调用，不创建 OTel 专属 React/MF producer、SSE 或额外连接。页面不会显示
+环境变量值、credential、完整 header 或未保存的 Config draft；Plugin 未运行时仍应通过 Config、启动 diagnostics 和日志恢复。
 
 ## resource、batch 与 sampling
 

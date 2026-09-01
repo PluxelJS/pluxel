@@ -1,54 +1,103 @@
 ---
 title: 插件管理界面
-description: 用 Standard Page、Direct View API、Attachment 和 Cap’n Web 为 Plugin 提供管理界面。
+description: 用 Content、Direct View API、Attachment 和 Cap’n Web 为 Plugin 提供管理界面。
 ---
 
-Workbench 用于给 Plugin 增加说明页、管理页面、诊断页和对象编辑器。静态说明使用 host-rendered Standard Page；
-需要运行期状态或交互时，Plugin 声明完整 View 和 Cap’n Web API。宿主负责认证、WebSocket session、布局、内容交付和页面生命周期。
+Workbench 用于给 Plugin 增加说明、轻量运维界面、管理页面和对象编辑器。文档、状态、按钮与一次性表单使用
+host-rendered Content；自定义布局和复杂交互使用完整 View。宿主负责认证、WebSocket session、布局、内容交付和页面生命周期。
 
 Workbench-enabled host 固定使用 Cap’n Web over WebSocket。完整 View/Attachment 固定使用 Module Federation 2.0 和
-React Bridge；Standard Page 由 Shell 直接渲染，不生成 Plugin JavaScript。Plugin 不选择 transport、loader 或 renderer。
+React Bridge；Content 由 Shell 直接渲染，不生成 Plugin JavaScript。Plugin 不选择 transport、loader 或 renderer。
 Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
 普通 Plugin API 提供，不能依赖某个页面曾经打开。
 
 ## 如何选择
 
-- 只展示运行中 Plugin 的说明、部署提示或故障排查：使用 `workbench.page()`。
-- 页面需要状态、按钮、表单或自定义布局：使用 `workbench.view<Api>()`。
+- 普通、非敏感的 Plugin 配置：直接声明 `configs.use()`，使用 Workbench 已有的标准 Config UI，不再创建
+  Content 或 View。
+- 展示说明、bounded live state、按钮或一次性 Valibot 表单：使用 `workbench.content()`。
+- Secret 不进入普通 config。Config 只保存 Vault 引用；Plugin 已有明确的 provisioning/rotation 契约，且一次表单即可完成时，
+  用 Content action 写入 Vault。多步骤 enrollment、OAuth、progress 或 recovery state machine 使用完整 View。
+- 需要自定义布局、progress/cancel、分页、high-rate stream 或任意组件：使用 `workbench.view<Api>()`。
 - 页面和 API 由 provider 拥有，但是否出现、出现在哪里由 consumer 决定：使用 Attachment。
 - 同一页面编辑不同对象：使用一个 parameterized route，不为每个对象创建 entry。
 - 列表、collection、bot account、字体等动态数据：放进 Plugin API 返回值，不建立动态 Workbench 定义。
 - 只需要跨 Plugin 的服务端能力：继续使用 constructor dependency，不添加 UI composition。
 
-## 静态 Standard Page
+例如 Redis 的连接状态和 PING、S3 的 Vault credential replacement 都适合 Content；Agent session 的 streaming、goal、
+subagent 与 abort 则是完整 View。Content 不复制通用 Config UI，也不把一次性 secret form 扩展成通用 Vault editor。
 
-把固定 definition 与 Markdown source 放在 browser-safe 文件中：
+## Host-rendered Content
+
+Content 的 Markdown、数据和控件都由 Shell 渲染。Plugin 声明 Valibot schema 与 slot，Markdown 决定它们出现的位置：
 
 ```ts
 // src/workbench.ts
+import { v } from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
+import { formMeta, numberMeta } from 'valibot-form'
 
-export const OtelWorkbench = workbench.define({
-	operations: workbench.page({
-		document: workbench.markdown(import.meta.url, './workbench-guide.md'),
-		placement: workbench.tab({ label: '运维说明' }),
+const Status = v.object({
+	connection: v.pipe(v.picklist(['connected', 'unavailable']), formMeta({ title: '连接状态' })),
+	queued: v.pipe(v.number(), v.integer(), v.minValue(0), formMeta({ title: '待处理数量' })),
+})
+
+const ProbeInput = v.object({
+	timeoutMs: v.pipe(
+		v.number(),
+		v.integer(),
+		v.minValue(100),
+		v.maxValue(30_000),
+		formMeta({ title: '超时（ms）' }),
+		numberMeta({ step: 100 }),
+	),
+})
+
+export const ServiceWorkbench = workbench.define({
+	overview: workbench.content({
+		document: workbench.markdown(import.meta.url, './overview.md', {
+			status: workbench.data(Status),
+			refresh: workbench.action({ label: '刷新' }),
+			probe: workbench.action({ label: '测试连接', input: ProbeInput, form: 'embedded' }),
+		}),
+		placement: workbench.tab({ label: '概览' }),
 	}),
 })
 ```
 
 ```md
-# OpenTelemetry 运维说明
+# Service
 
-OTLP HTTP 默认使用端口 `4318`；gRPC 默认使用端口 `4317`。
+::slot[status]
 
-Header、证书与 client key 应由部署环境提供，不要写入日志。
+::slot[refresh]
+
+::slot[probe]
 ```
 
-Plugin 运行时发布 definition，不传 binding：
+Plugin 只实现一次完整读取和 action handlers。领域状态变化时调用 `dataChanged()`；Framework 会合并通知、重新执行
+`load()`，再通过现有 Cap’n Web session 把最新完整状态推给 Shell：
 
 ```ts
 override init() {
-	this.ctx.workbench?.publish(OtelWorkbench)
+	this.ctx.workbench?.publish(ServiceWorkbench, {
+		overview: ({ signal, dataChanged }) => {
+			this.serviceEvents.addEventListener('change', dataChanged, { signal })
+			return {
+				load: () => ({ status: this.inspectService() }),
+				actions: {
+					refresh: async () => {
+						await this.refreshService()
+						return { ok: true, message: '刷新完成' }
+					},
+					probe: async ({ timeoutMs }) => {
+						await this.probeService(timeoutMs)
+						return { ok: true, message: '连接正常' }
+					},
+				},
+			}
+		},
+	})
 }
 ```
 
@@ -57,8 +106,27 @@ Markdown 在 build time 编译，浏览器不会运行 Markdown parser 或插入
 相对链接、JSX 风格标签、task list 与 frontmatter 会使构建失败；`{name}` 一类 MDX expression 只按普通文本处理，
 不会执行。
 
-Standard Page 没有 runtime binding、RPC target、snapshot、invalidate、signal 或 action，也不会生成 MF producer/Bridge。
-它只在 owning Plugin generation 正常运行并发布时可见；需要动态内容时使用完整 View。
+`:slot[key]` 只能在普通 paragraph 中放 inline scalar data；`::slot[key]` 放 block data 或 action。每个声明必须恰好出现一次，
+unknown、missing、duplicate、nested 或 inline action 都会使构建失败。Data schema 用于只读展示，不允许 default、transform、lazy、
+undefined-producing wrapper 或 password；action input 必须是 host form 支持的 Valibot object，默认用 dialog，`form: 'embedded'`
+固定展开。Shell 只提交 raw portable data，Runtime 会在 handler 前再次执行 authoritative Valibot validation。
+
+需要防止误触时给 action 添加确认文案，例如
+`workbench.action({ label: '删除', confirm: '确定删除这条记录吗？' })`。Shell 会显示危险样式并在提交前调用 host confirm。
+这只是 UX guard，不是授权边界：Framework 会在执行时重新确认 owner generation；handler 仍须根据 open 时认证的
+`principal` 重新授权，并在写入前重新检查当前领域状态，不能信任确认框、旧 data 或客户端提交的前置条件。
+
+`load()` 一次返回所有 data keys，并可直接返回领域已有的递归只读 detached snapshot；Framework 不会修改它。`actions` 与声明的
+action keys 都必须 exact。含 data 的 Content 执行 Action 后，Framework 会在同一个 `run()` 调用中再 load 一次，所以按钮和表单
+不需要自建 snapshot、watch、invalidate 或 RPC target；action-only Content 直接返回 action outcome。`dataChanged()` 没有 payload，表示
+“当前 read model 可能已变化”；它提供 latest-state push，不保证逐事件交付。`signal` 是整个 opened Content 的 lifetime signal，
+关闭、session 失效或 Plugin replacement 时用于清理领域订阅。
+
+只有 action 的 Content 不调用 `subscribe()`，打开后可直接执行按钮或表单；只有声明了 data，Shell 才建立一个 observer 并执行
+initial `load()`。
+
+纯 Markdown Content 省略 slots，并继续 `publish(ServiceWorkbench)`，不创建 root、不占 opened-entry quota，也不生成 MF
+producer/Bridge。需要 lossless events、独立并发状态、progress/cancel、server pagination 或任意 React UI 时使用完整 View。
 
 ## 最小完整示例
 
@@ -209,6 +277,7 @@ Bindings 必须与 definition 的 key 完全一致。一个 Plugin generation �
 `src/ui/overview.tsx` 默认导出零 props component：
 
 ```tsx
+import { detachWorkbenchPortableValue } from '@pluxel/runtime/workbench/client'
 import { useRemoteValue, useWorkbench } from '@pluxel/runtime/workbench/react'
 import { OrdersWorkbench, type OrdersSnapshot } from '../workbench.js'
 
@@ -216,13 +285,7 @@ export default function OrdersOverview() {
 	const { api, host } = useWorkbench(OrdersWorkbench.overview)
 	const snapshot = useRemoteValue<OrdersSnapshot>(
 		{
-			read: async () => {
-				using remote = await api.snapshot()
-				return Object.freeze({
-					revision: remote.revision,
-					openOrders: remote.openOrders,
-				})
-			},
+			read: async () => detachWorkbenchPortableValue(await api.snapshot(), 'Orders snapshot'),
 			subscribe: (invalidate) => api.watch(() => invalidate()),
 		},
 		[api],
@@ -234,7 +297,7 @@ export default function OrdersOverview() {
 	return (
 		<button
 			onClick={async () => {
-				using next = await api.refresh()
+				const next = detachWorkbenchPortableValue(await api.refresh(), 'Orders refresh result')
 				host.notify({ message: `Revision ${next.revision}` })
 			}}
 		>
@@ -247,8 +310,10 @@ export default function OrdersOverview() {
 `useWorkbench()` 必须接收这个 renderer 对应的 exact descriptor。View 得到 `{ api, host }`；Attachment
 根据声明得到 `{ provider, host }` 或 `{ provider, consumer, host }`。不传基础设施 props，也不按字符串查找 API。
 
-Cap’n Web awaited object result 可能携带 transport disposer。需要放进 React state 的 DTO 先复制，再释放 remote result；
-不要把已经释放的 proxy 存入 state。`useRemoteValue()` 是一个很小的 snapshot owner，不是平台查询语言或持久缓存。
+Cap’n Web awaited object result 可能携带 transport disposer。`detachWorkbenchPortableValue()` 会验证 JSON-like
+portable data、复制为深度冻结的普通对象，并恰好释放一次 remote result；它不替代 Plugin 自己的领域 schema 校验。
+不要把 transport-owned result 或已经释放的 proxy 存入 state。`useRemoteValue()` 是一个很小的 snapshot owner，
+不是平台查询语言或持久缓存。
 
 每个 renderer 由 React Bridge 挂载为独立 React root。若 renderer 使用 Mantine、router、i18n 等依赖 Context 的 UI
 library，应在自己的 root 内安装 Provider，并由 producer import 所需样式；Shell 的私有 Provider 不会跨 root 继承，也不是
@@ -365,11 +430,15 @@ resize、focus 和 workspace persistence。
 Plugin API 和 observer 都复用这个 Cap’n Web session。认证或 publication epoch 失效、socket broken 时，页面要求完整
 reload；不会在原 document 内切换 transport、重连一部分功能或复用旧 API root。
 
-MF2 manifest 和 JS/CSS 仍通过 HTTP 获取；Standard Page plan 则随现有 `openView()` RPC 返回，不增加浏览器 artifact
+MF2 manifest 和 JS/CSS 仍通过 HTTP 获取；Content plan 则随现有 `openEntry()` RPC 返回，不增加浏览器 artifact
 fetch。浏览器写入 `HttpOnly` cookie 还有一个 single-use cookie-commit POST。这些端点不承载 Workbench RPC。
 
 Plugin stop/replacement 会撤销 publication，并使当前 socket epoch 失效。Shell 销毁所有 active Bridges、释放 opened
-handles，再要求整页 reload。开发期 Page/MF candidate 只有全部验证并原子提交后才生效；失败不会替换当前完整版本。
+handles，再要求整页 reload。开发期 Content/MF candidate 只有全部验证并原子提交后才生效；失败不会替换当前完整版本。
+
+Plugin 启停命令的 `ok: true` 表示运行意图与 graph commit 已应用，不保证每个 `init()` 或 drain 都成功。Workbench 会继续读取
+`report.core.summary.lifecycleReport`：目标 Plugin 有结构化 lifecycle issue 时直接显示该 issue 的安全 message；只有 report 没有
+可解释当前节点的 issue、但观察状态尚未达到目标时，才显示“运行状态仍未收敛”的协调提示。
 
 ## Vite 与反向代理
 
@@ -386,14 +455,16 @@ physical TLS 或 locality；remote Management 必须使用 TLS passthrough、HTT
 
 - Workbench disabled 时 Plugin 核心 API 与 headless 行为正常；
 - Definition、binding 和 renderer descriptor 的类型保持 exact；
-- Page-only Plugin 不生成 MF producer/Bridge，也没有 server-side Page lease；
-- Standard Page 的 HTML、图片、不安全链接和超预算内容在 build/RPC 边界被拒绝；
+- Content-only Plugin 不生成 MF producer/Bridge；纯 Markdown Content 没有 server-side opened lease；
+- Content 的 HTML、图片、不安全链接、错误 slot topology 和超预算内容在 build/RPC 边界被拒绝；
+- data/action schema、binding keys、load result 和 action input 在 publication/RPC 边界 fail closed；
+- live data 按 sequence 应用，失败保留最近成功状态并可手动 retry；
 - 每次打开创建 fresh target，关闭、abort 和 replacement 会清理 subscription/task；
 - RPC 输入预算、领域授权和稳定失败码有 Plugin 自己的测试；
 - awaited DTO 在进入 React state 前已复制并释放 remote result；
 - parameterized route 的 params 由 server 匹配；
 - Attachment provider/consumer owner 与 placement 正确；
-- production build 对完整 View 包含标准 `mf-manifest.json`、所有 exposes 和动态类型，对 Page 包含已验证的 immutable plan；
+- production build 对完整 View 包含标准 `mf-manifest.json`、所有 exposes 和动态类型，对 Content 包含已验证的 immutable plan；
 - Vite HMR 与 Runtime session Upgrade 都由同一 listener 正确分流；
 - 反向代理保留 Upgrade、同源 cookie 和短期 handoff 的实例归属；
 - 页面没有备用 API transport 或 reconnect 分支。

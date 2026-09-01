@@ -19,7 +19,7 @@ import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
 import { resolveWithOxc } from '../resolver/oxc.ts'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
 import type {
-	WorkbenchSemanticPageCompilation,
+	WorkbenchSemanticContentCompilation,
 	WorkbenchSemanticProducerCompilation,
 } from '../workbench/semantic-lowering.ts'
 import { allowOptionalQuerySuffix, type ViteCompatPlugin } from '../rolldown/plugins/compat.ts'
@@ -82,10 +82,10 @@ export type PluginArtifactBuildPluginOptions = {
 				compilations?: () =>
 					| readonly WorkbenchSemanticProducerCompilation[]
 					| Promise<readonly WorkbenchSemanticProducerCompilation[]>
-				/** @internal Returns canonical immutable Standard Page sets. */
-				pageCompilations?: () =>
-					| readonly WorkbenchSemanticPageCompilation[]
-					| Promise<readonly WorkbenchSemanticPageCompilation[]>
+				/** @internal Returns canonical immutable Workbench Content sets. */
+				contentCompilations?: () =>
+					| readonly WorkbenchSemanticContentCompilation[]
+					| Promise<readonly WorkbenchSemanticContentCompilation[]>
 		  }
 	/** Node artifact build policy. Omission enables Node artifacts with default minification. */
 	node?: {
@@ -212,18 +212,22 @@ export function pluginArtifactBuildPlugin(
 		async writeBundle() {
 			const producerCompilations =
 				options.workbench === false ? [] : await (options.workbench?.compilations?.() ?? [])
-			const pageCompilations =
-				options.workbench === false ? [] : await (options.workbench?.pageCompilations?.() ?? [])
-			for (const compilation of pageCompilations) {
+			const contentCompilations =
+				options.workbench === false ? [] : await (options.workbench?.contentCompilations?.() ?? [])
+			for (const compilation of contentCompilations) {
 				for (const source of compilation.sources) this.addWatchFile(source)
 			}
 			const producerPlans = producerCompilations.map((compilation) => compilation.plan)
-			const pageTools =
-				options.workbench === false ? undefined : await import('../workbench/page-artifact.ts')
-			const pageEntries = pageTools
+			const contentTools =
+				options.workbench === false ? undefined : await import('../workbench/content-artifact.ts')
+			const contentEntries = contentTools
 				? await Promise.all(
-						pageCompilations.map((compilation) =>
-							pageTools.publishWorkbenchPageArtifact(root, options.buildDir ?? 'dist', compilation),
+						contentCompilations.map((compilation) =>
+							contentTools.publishWorkbenchContentArtifact(
+								root,
+								options.buildDir ?? 'dist',
+								compilation,
+							),
 						),
 					)
 				: []
@@ -241,10 +245,10 @@ export function pluginArtifactBuildPlugin(
 			if (options.workbench !== false) {
 				await Promise.all([
 					writeWorkbenchDeploymentInventory(root, producerPlans, options),
-					pageTools!.writeWorkbenchPageDeploymentInventory(
+					contentTools!.writeWorkbenchContentDeploymentInventory(
 						root,
 						options.buildDir ?? 'dist',
-						pageEntries,
+						contentEntries,
 					),
 				])
 			}

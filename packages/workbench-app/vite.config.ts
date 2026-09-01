@@ -25,6 +25,8 @@ export default defineConfig(({ mode }) => {
 				'/__pluxel/runtime': {
 					target: 'http://localhost:3000',
 					changeOrigin: true,
+					rewriteWsOrigin: true,
+					ws: true,
 				},
 			},
 		},

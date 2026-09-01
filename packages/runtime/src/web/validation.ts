@@ -211,6 +211,14 @@ function fieldArray(
 	return Object.freeze(input.map((item, index) => fieldNode(item, `${label}[${index}]`, depth)))
 }
 
+/** @internal Validates and freezes a portable valibot-form field projection. */
+export function parseFormPresentationFields(
+	input: unknown,
+	label = 'form presentation fields',
+): readonly ConfigPresentationFieldV1[] {
+	return fieldArray(input, label, 0)
+}
+
 function fieldNode(input: unknown, label: string, depth: number): ConfigPresentationFieldV1 {
 	if (depth > MAX_TREE_DEPTH) fail(`${label} exceeds maximum nesting depth`)
 	const node = record(input, label)

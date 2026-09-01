@@ -84,7 +84,7 @@ function createPipeline(
 						: {
 								minify: workbenchOptions.minify,
 								compilations: () => semantics.workbenchCompilations(),
-								pageCompilations: () => semantics.workbenchPageCompilations(),
+								contentCompilations: () => semantics.workbenchContentCompilations(),
 							},
 				node: options.node,
 			}),

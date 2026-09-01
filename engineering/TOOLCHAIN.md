@@ -328,17 +328,17 @@ application 虽然会从 runtime root 消费作者 API，但 tree-shake 后不�
 中也会进入 distribution。无法由 NFT 静态发现的 package 内动态资源使用 `residualDependencies.fullTrace`，该列表自动隐含
 `packages`。显式声明但无法解析的 package 必须使构建失败；最终实际闭包仍以 `pluxel-deployment.json` 为准。
 
-`pluxel-deployment.json` 记录 server entry、catalog hash、target、variant、Workbench MF producer/Page inventory 与 residual package facts。
+`pluxel-deployment.json` 记录 server entry、catalog hash、target、variant、Workbench MF producer/Content inventory 与 residual package facts。
 runtime 以 bootstrap 注入的 deployment root 读取产物，不从 workspace package root 或 `process.cwd()` 推断。
 
 同一 final assembly 的最后一步调用 `@pluxel/rolldown/distribution` 生成确定性 `pluxel-distribution.json`。如果外部任务之后继续写入
 目录，必须用 `pluxel distribution create` 调用同一 finalizer。完整 inventory、DSSE、offline verification 和 marker 不变量见
 [`DISTRIBUTION.md`](DISTRIBUTION.md)。
 
-Workbench Shell、producer 和 Standard Page plan 是 browser-facing outputs，不内联进 server chunk。Shell 使用
-`workbench/public/`，producer 使用 `workbench/<producer>/<revision>/`，Page 使用
-`workbench/pages/<definition-digest>/<page-set-digest>/page-plan.json`；Workbench root 分别写唯一
-`pluxel-workbench-producers.json` 与 `pluxel-workbench-pages.json`。业务 SPA 可以独立输出到 `public/`，不会覆盖这些 inventory。
+Workbench Shell、producer 和 Content plan 是 browser-facing outputs，不内联进 server chunk。Shell 使用
+`workbench/public/`，producer 使用 `workbench/<producer>/<revision>/`，Content 使用
+`workbench/content/<definition-digest>/<content-set-digest>/content-plan.json`；Workbench root 分别写唯一
+`pluxel-workbench-producers.json` 与 `pluxel-workbench-content.json`。业务 SPA 可以独立输出到 `public/`，不会覆盖这些 inventory。
 `variant: 'workbench'`
 表示产物具备能力；是否在某次启动安装 Workbench 仍由 application `configure()` 返回值决定。
 headless 与 workbench 使用分离的 internal Node adapter；headless dependency graph 不解析 Workbench installer/backend，
@@ -350,7 +350,7 @@ Browser-safe declaration 使用：
 
 ```ts
 export const ExampleWorkbench = workbench.define({
-	guide: workbench.page({
+	guide: workbench.content({
 		document: workbench.markdown(import.meta.url, './guide.md'),
 		placement: workbench.tab({ label: 'Guide' }),
 	}),
@@ -361,15 +361,20 @@ export const ExampleWorkbench = workbench.define({
 })
 ```
 
-Semantic pass 在 TypeScript 擦除前解析 `workbench.define()`、entry key、Page/View/Attachment kind，以及 literal
-`workbench.markdown(import.meta.url, relativePath)` / `workbench.entry(import.meta.url, relativePath)`，再与 owning
+Semantic pass 在 TypeScript 擦除前解析 `workbench.define()`、entry key、Content/View/Attachment kind，以及 literal
+`workbench.markdown(import.meta.url, relativePath, slots?)` / `workbench.entry(import.meta.url, relativePath)`，再与 owning
 canonical `PluginDefinitionAddress` 合成 declaration identity。
-Markdown 由 build-time CommonMark/GFM compiler 降为有界 portable AST；HTML、图片、相对/不安全链接、task list、frontmatter
-和不支持的语法 fail-fast。Markdown source 进入 watch graph，但不进入 server bundle 或 browser parser。
+Markdown 由 build-time CommonMark/GFM + directive compiler 降为有界 portable AST；HTML、图片、相对/不安全链接、task list、
+frontmatter、错误 slot topology 和不支持的语法 fail-fast。`data()`/`action()` 的静态 declaration 被 lower 为 slot metadata；真实
+schema 只保留在 server module，不求值、不序列化。Markdown source 进入 watch graph，但不进入 server bundle 或 browser parser。
 同一 Plugin definition 的全部 renderers 被 lower 成一个 `WorkbenchFederationProducerPlan`；每个 declaration 生成一个
 stable `./views/<key>` expose 和 generated React Bridge entry。作者不声明 owner、remote name、expose、public path、
-manifest URL、shared 或 Bridge wrapper。Page 独立编译为一个 definition-scoped immutable Page set；Page-only definition 的
+manifest URL、shared 或 Bridge wrapper。Content 独立编译为一个 definition-scoped immutable Content set；Content-only definition 的
 producer 数为零，不启动 Federation builder，也不做 React/Mantine compatibility 检查。
+
+Mixed Content/View 的 generated Bridge 只导入 renderer descriptor 的 identity projection，不导入完整 definition。Renderer 若直接
+静态 import definition，toolchain 将该 import 改写到同一 projection；dynamic/indirect definition import 直接拒绝。Packaging sentinel
+检查 JS、source map 与 dynamic types，确保 Content schema/handler 不进入 browser outputs，而不是依赖普通 tree-shaking。
 
 UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe Workbench definition、
 `@pluxel/runtime/capnweb` 类型、`@pluxel/runtime/workbench/react` 和公开 UI peers，不得包含 Plugin implementation、
@@ -390,7 +395,7 @@ const resizeTask = defineWorkerTask<ResizeInput, ResizeOutput>(
 )
 ```
 
-唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中收集已 lower 的 Workbench producer/Page plans 与 Node
+唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中收集已 lower 的 Workbench producer/Content plans 与 Node
 declarations。Node branch 输出 `dist/artifacts/node/<artifact-key>.mjs`；Workbench 和 Node 使用独立 identity、
 source/build revision、validator 和 target config，只共享 build orchestration 与 bounded admission。`workbench: false`
 完全跳过 renderer 与 Markdown compiler/accessor。
@@ -412,19 +417,19 @@ artifact 的静态 import 仍只剩 Node builtins，`onNativeResidual` 继续报
 
 ## Development compiler
 
-Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完整 producer/Page plan：
+Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完整 producer/Content plan：
 
 1. 按 definition + build revision + build root 去重 task；
 2. 收集 renderer 与 Markdown source graph，并把 graph/hash 与 plan 的 build revision 交叉验证；
-3. 在 bounded admission 后构建需要的完整 MF producer 与 Page set candidate；
-4. 验证 Manifest/Snapshot、exact exposes/shared/types/assets，以及 Page definition/content digest 和 portable plan；
-5. 对 producer root 的全部 regular files与 Page artifact 建立 immutable digest inventory；
+3. 在 bounded admission 后构建需要的完整 MF producer 与 Content set candidate；
+4. 验证 Manifest/Snapshot、exact exposes/shared/types/assets，以及 Content definition/content digest 和 portable plan；
+5. 对 producer root 的全部 regular files与 Content artifact 建立 immutable digest inventory；
 6. 确认该 plan 仍是 definition 最新 desired revision；
-7. 把 producer 与 Page candidate 作为一个 tuple 原子提交，失败回滚已提交部分；
+7. 把 producer 与 Content candidate 作为一个 tuple 原子提交，失败回滚已提交部分；
 8. 有界保留 disk cache，stale candidate 不再获得 authority。
 
 Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench tuple commit
-通过 session epoch invalidation 驱动 full document reload，不使用浏览器轮询、Page-local invalidate 或页内 remote replacement。
+通过 session epoch invalidation 驱动 full document reload，不使用浏览器轮询、Content-local reconnect 或页内 remote replacement。
 
 `workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path 相对声明模块解析；lowering 从实际
 definition/renderer module 收集 source graph，在 owning package root 的 `.pluxel/workbench-generated/` 生成 Bridge entry，
@@ -436,10 +441,11 @@ renderer declaration、runtime-module fallback、root override 或第二套 file
 ## Production build
 
 生产构建输出 `dist/workbench/<producer>/<revision>/mf-manifest.json`、`remoteEntry.js`、expose chunks、CSS 和 dynamic
-types；Standard Page 输出 `dist/workbench/pages/<definition-digest>/<page-set-digest>/page-plan.json`。Root 分别写
-`dist/workbench/pluxel-workbench-producers.json` 与 `dist/workbench/pluxel-workbench-pages.json`。发布包和 static application
-都消费预编译 Page inventory，因此 distribution 不要求保留原始 `src/*.md`。Cache/build revision 包含源码图、lockfile、fixed
-shared compatibility set 和 compiler version。Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
+types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-digest>/content-plan.json`。Root 分别写
+`dist/workbench/pluxel-workbench-producers.json` 与 `dist/workbench/pluxel-workbench-content.json`。发布包和 static application
+都消费预编译 Content inventory，因此 distribution 不要求保留原始 `src/*.md`。Cache/build revision 包含解析后的 UI 源码图、
+实际命中的 package metadata 与 subpath、fixed shared compatibility set 和 compiler version；无关 workspace lockfile 内容不参与。
+Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
 
 固定 singleton shared 包来自 `@pluxel/core/federation`：React/ReactDOM 及实际 subpaths、`@mantine/core`、
 `@mantine/hooks`、MF React Bridge、`@pluxel/runtime/workbench`、`/client`、`/react` 和 toolchain-only

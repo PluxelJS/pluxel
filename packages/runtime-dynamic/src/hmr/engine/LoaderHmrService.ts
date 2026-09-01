@@ -164,7 +164,7 @@ type WorkbenchArtifactState = {
 	source?: Readonly<{
 		compilations(): Promise<WorkbenchArtifactCompilations>
 	}>
-	pageSources?: ReadonlySet<string>
+	contentSources?: ReadonlySet<string>
 }
 
 const workbenchArtifactStates = new WeakMap<LoaderHmrService, WorkbenchArtifactState>()
@@ -202,8 +202,10 @@ export async function refreshLoaderHmrWorkbenchArtifacts(service: LoaderHmrServi
 	const state = workbenchArtifactStates.get(service)
 	if (!state?.publish || !state.source) return
 	const compilations = await state.source.compilations()
-	state.pageSources = new Set(
-		compilations.pages.flatMap((page) => page.sources.map((source) => service.normalizeId(source))),
+	state.contentSources = new Set(
+		compilations.content.flatMap((content) =>
+			content.sources.map((source) => service.normalizeId(source)),
+		),
 	)
 	await state.publish(compilations)
 }
@@ -214,8 +216,13 @@ function hasLoaderHmrWorkbenchArtifactPipeline(service: LoaderHmrService): boole
 }
 
 /** @internal Exact source predicate used before the TypeScript/module-graph HMR filters. */
-export function isLoaderHmrWorkbenchPageSource(service: LoaderHmrService, file: string): boolean {
-	return workbenchArtifactStates.get(service)?.pageSources?.has(service.normalizeId(file)) ?? false
+export function isLoaderHmrWorkbenchContentSource(
+	service: LoaderHmrService,
+	file: string,
+): boolean {
+	return (
+		workbenchArtifactStates.get(service)?.contentSources?.has(service.normalizeId(file)) ?? false
+	)
 }
 
 const hmrPackageRoot = (() => {
@@ -602,11 +609,11 @@ export class LoaderHmrService {
 		configureLoaderHmrWorkbenchArtifactSource(this, {
 			compilations: async () => {
 				sourcePipeline.semantics.invalidateWorkbench()
-				const [producers, pages] = await Promise.all([
+				const [producers, content] = await Promise.all([
 					sourcePipeline.semantics.workbenchCompilations(),
-					sourcePipeline.semantics.workbenchPageCompilations(),
+					sourcePipeline.semantics.workbenchContentCompilations(),
 				])
-				return { producers, pages }
+				return { producers, content }
 			},
 		})
 		let applicationCarrier: OwnedElysiaApplicationCarrier | undefined
@@ -888,11 +895,11 @@ export class LoaderHmrService {
 	private enqueueFileChange(file: string) {
 		if (this.closed) return false
 		const clean = this.path.toClean(file)
-		if (isLoaderHmrWorkbenchPageSource(this, clean)) {
+		if (isLoaderHmrWorkbenchContentSource(this, clean)) {
 			void refreshLoaderHmrWorkbenchArtifacts(this)
 				.then(() => this.forwardWorkbenchFullReload())
 				.catch((error) => {
-					this.ctx.logger.error('failed to rebuild Workbench Page artifact', {
+					this.ctx.logger.error('failed to rebuild Workbench Content artifact', {
 						file: clean,
 						error,
 					})

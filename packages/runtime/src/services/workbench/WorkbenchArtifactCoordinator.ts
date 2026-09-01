@@ -12,28 +12,28 @@ import {
 	type WorkbenchPreparedArtifactCandidate,
 } from './WorkbenchArtifactService'
 import {
-	WorkbenchPageArtifactService,
-	type WorkbenchPageArtifactCandidate,
-	type WorkbenchPageArtifactRevision,
-	type WorkbenchPreparedPageArtifactCandidate,
-} from './WorkbenchPageArtifactService'
+	WorkbenchContentArtifactService,
+	type WorkbenchContentArtifactCandidate,
+	type WorkbenchContentArtifactRevision,
+	type WorkbenchPreparedContentArtifactCandidate,
+} from './WorkbenchContentArtifactService'
 
 export type WorkbenchArtifactBatchCandidate = Readonly<{
 	definition: PluginDefinitionAddress
 	federation?: WorkbenchArtifactCandidate
-	pages?: WorkbenchPageArtifactCandidate
+	content?: WorkbenchContentArtifactCandidate
 }>
 
 export type WorkbenchArtifactBatchCommit = Readonly<{
 	revision: number
 	federation: WorkbenchArtifactRevision | null
-	pages: WorkbenchPageArtifactRevision | null
+	content: WorkbenchContentArtifactRevision | null
 }>
 
 type PreparedArtifactBatch = Readonly<{
 	definition: PluginDefinitionAddress
 	federation?: WorkbenchPreparedArtifactCandidate
-	pages?: WorkbenchPreparedPageArtifactCandidate
+	content?: WorkbenchPreparedContentArtifactCandidate
 }>
 
 const PREPARED_BATCH = Symbol('pluxel.workbench.prepared-artifact-batch')
@@ -54,21 +54,21 @@ export class WorkbenchArtifactCoordinator {
 	constructor(
 		private readonly root: Context,
 		readonly federation: WorkbenchArtifactService,
-		readonly pages: WorkbenchPageArtifactService,
+		readonly content: WorkbenchContentArtifactService,
 	) {
 		federation.subscribe((commit) => {
 			this.publish(
 				Object.freeze({
 					federation: commit.current,
-					pages: this.pages.getCurrent(commit.current.definition) ?? null,
+					content: this.content.getCurrent(commit.current.definition) ?? null,
 				}),
 			)
 		})
-		pages.subscribe((commit) => {
+		content.subscribe((commit) => {
 			this.publish(
 				Object.freeze({
 					federation: this.federation.getCurrent(commit.current.definition) ?? null,
-					pages: commit.current,
+					content: commit.current,
 				}),
 			)
 		})
@@ -97,54 +97,54 @@ export class WorkbenchArtifactCoordinator {
 			throw new TypeError('[workbench] artifact candidate batch must be an object')
 		}
 		const keys = Object.keys(candidate).sort()
-		if (keys.some((key) => !['definition', 'federation', 'pages'].includes(key))) {
+		if (keys.some((key) => !['definition', 'federation', 'content'].includes(key))) {
 			throw new TypeError('[workbench] artifact candidate batch has unsupported fields')
 		}
 		const federationInput = optionalCandidateSide(candidate, 'federation')
-		const pageInput = optionalCandidateSide(candidate, 'pages')
+		const contentInput = optionalCandidateSide(candidate, 'content')
 		const definition = parsePluginDefinitionAddress(candidate.definition)
 		if (
 			(federationInput &&
 				!pluginDefinitionAddressEqual(federationInput.plan.definition, definition)) ||
-			(pageInput && !pluginDefinitionAddressEqual(pageInput.definition, definition))
+			(contentInput && !pluginDefinitionAddressEqual(contentInput.definition, definition))
 		) {
 			throw new TypeError('[workbench] artifact candidate batch definitions do not match')
 		}
 
-		const [federation, pages] = await Promise.all([
+		const [federation, content] = await Promise.all([
 			federationInput
 				? this.federation.prepareCandidate(WORKBENCH_ARTIFACT_TRANSACTION, federationInput)
 				: undefined,
-			pageInput
-				? this.pages.prepareCandidate(WORKBENCH_ARTIFACT_TRANSACTION, pageInput)
+			contentInput
+				? this.content.prepareCandidate(WORKBENCH_ARTIFACT_TRANSACTION, contentInput)
 				: undefined,
 		])
 		return Object.freeze({
-			[PREPARED_BATCH]: Object.freeze({ definition, federation, pages }),
+			[PREPARED_BATCH]: Object.freeze({ definition, federation, content }),
 		})
 	}
 
 	/** Commits one already validated tuple synchronously. */
 	commitPrepared(candidate: WorkbenchPreparedArtifactBatchCandidate): WorkbenchArtifactBatchCommit {
-		const { definition, federation, pages } = readPreparedBatch(candidate)
+		const { definition, federation, content } = readPreparedBatch(candidate)
 		if (federation) this.federation.assertPrepared(WORKBENCH_ARTIFACT_TRANSACTION, federation)
-		if (pages) this.pages.assertPrepared(WORKBENCH_ARTIFACT_TRANSACTION, pages)
+		if (content) this.content.assertPrepared(WORKBENCH_ARTIFACT_TRANSACTION, content)
 		const federationCheckpoint = federation
 			? this.federation.checkpointPrepared(WORKBENCH_ARTIFACT_TRANSACTION, federation)
 			: undefined
-		const pageCheckpoint = pages
-			? this.pages.checkpointPrepared(WORKBENCH_ARTIFACT_TRANSACTION, pages)
+		const contentCheckpoint = content
+			? this.content.checkpointPrepared(WORKBENCH_ARTIFACT_TRANSACTION, content)
 			: undefined
 		const federationCurrentCheckpoint = federation
 			? undefined
 			: this.federation.checkpointCurrent(WORKBENCH_ARTIFACT_TRANSACTION, definition)
-		const pageCurrentCheckpoint = pages
+		const contentCurrentCheckpoint = content
 			? undefined
-			: this.pages.checkpointCurrent(WORKBENCH_ARTIFACT_TRANSACTION, definition)
+			: this.content.checkpointCurrent(WORKBENCH_ARTIFACT_TRANSACTION, definition)
 		const previousFederationRevision = this.federation.revision
-		const previousPageRevision = this.pages.revision
+		const previousContentRevision = this.content.revision
 		let committedFederation: WorkbenchArtifactRevision | null = null
-		let committedPages: WorkbenchPageArtifactRevision | null = null
+		let committedContent: WorkbenchContentArtifactRevision | null = null
 		try {
 			if (federation) {
 				committedFederation = this.federation.commitPrepared(
@@ -153,17 +153,20 @@ export class WorkbenchArtifactCoordinator {
 					{ notify: false },
 				)
 			} else this.federation.withdrawCurrent(WORKBENCH_ARTIFACT_TRANSACTION, definition)
-			if (pages) {
-				committedPages = this.pages.commitPrepared(WORKBENCH_ARTIFACT_TRANSACTION, pages, {
+			if (content) {
+				committedContent = this.content.commitPrepared(WORKBENCH_ARTIFACT_TRANSACTION, content, {
 					notify: false,
 				})
-			} else this.pages.withdrawCurrent(WORKBENCH_ARTIFACT_TRANSACTION, definition)
+			} else this.content.withdrawCurrent(WORKBENCH_ARTIFACT_TRANSACTION, definition)
 		} catch (error) {
-			if (pageCheckpoint) {
-				this.pages.restoreCheckpoint(WORKBENCH_ARTIFACT_TRANSACTION, pageCheckpoint)
+			if (contentCheckpoint) {
+				this.content.restoreCheckpoint(WORKBENCH_ARTIFACT_TRANSACTION, contentCheckpoint)
 			}
-			if (pageCurrentCheckpoint) {
-				this.pages.restoreCurrentCheckpoint(WORKBENCH_ARTIFACT_TRANSACTION, pageCurrentCheckpoint)
+			if (contentCurrentCheckpoint) {
+				this.content.restoreCurrentCheckpoint(
+					WORKBENCH_ARTIFACT_TRANSACTION,
+					contentCurrentCheckpoint,
+				)
 			}
 			if (federationCheckpoint) {
 				this.federation.restoreCheckpoint(WORKBENCH_ARTIFACT_TRANSACTION, federationCheckpoint)
@@ -179,18 +182,18 @@ export class WorkbenchArtifactCoordinator {
 
 		const changed =
 			this.federation.revision !== previousFederationRevision ||
-			this.pages.revision !== previousPageRevision
+			this.content.revision !== previousContentRevision
 		if (!changed) {
 			return Object.freeze({
 				revision: this.revisionValue,
 				federation: committedFederation,
-				pages: committedPages,
+				content: committedContent,
 			})
 		}
 		return this.publish(
 			Object.freeze({
 				federation: committedFederation,
-				pages: committedPages,
+				content: committedContent,
 			}),
 		)
 	}
@@ -211,7 +214,7 @@ export class WorkbenchArtifactCoordinator {
 	}
 }
 
-function optionalCandidateSide<Key extends 'federation' | 'pages'>(
+function optionalCandidateSide<Key extends 'federation' | 'content'>(
 	candidate: WorkbenchArtifactBatchCandidate,
 	key: Key,
 ): NonNullable<WorkbenchArtifactBatchCandidate[Key]> | undefined {

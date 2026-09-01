@@ -76,8 +76,8 @@ export type WorkbenchViewDeclarationIdentity = Readonly<{
 	key: string
 }>
 
-export type WorkbenchPageIdentity = Readonly<{
-	kind: 'page'
+export type WorkbenchContentIdentity = Readonly<{
+	kind: 'content'
 	owner: PluginDefinitionAddress
 	key: string
 }>
@@ -101,7 +101,7 @@ export type WorkbenchAttachmentPlacementIdentity = Readonly<{
 
 export type WorkbenchOpenableIdentity =
 	| WorkbenchViewDeclarationIdentity
-	| WorkbenchPageIdentity
+	| WorkbenchContentIdentity
 	| WorkbenchAttachmentPlacementIdentity
 
 export type WorkbenchFederationDescriptorIdentity = WorkbenchDeclarationIdentity
@@ -219,17 +219,17 @@ export function parseWorkbenchOpenableIdentity(input: unknown): WorkbenchOpenabl
 		if (declaration.kind !== 'view') throw new TypeError('unreachable Workbench identity state')
 		return declaration
 	}
-	if (record.kind === 'page') {
-		assertExactKeys(record, 'Page identity', ['kind', 'owner', 'key'])
+	if (record.kind === 'content') {
+		assertExactKeys(record, 'Content identity', ['kind', 'owner', 'key'])
 		return Object.freeze({
-			kind: 'page',
+			kind: 'content',
 			owner: parsePluginDefinitionAddress(record.owner),
-			key: readEntryKey(record.key, 'Page identity key'),
+			key: readEntryKey(record.key, 'Content identity key'),
 		})
 	}
 	if (record.kind !== 'attachment-placement') {
 		throw new TypeError(
-			'[pluxel/core/federation] openable identity kind must be view, page, or attachment-placement',
+			'[pluxel/core/federation] openable identity kind must be view, content, or attachment-placement',
 		)
 	}
 	assertExactKeys(record, 'attachment placement identity', ['kind', 'consumer', 'key', 'provider'])

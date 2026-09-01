@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 
-import type { WorkbenchStandardPagePlanV1 } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchContentPlan } from '@pluxel/runtime/workbench/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { StandardPageRenderer } from '../src/app/workbench/StandardPageRenderer'
+import { WorkbenchContentRenderer } from '../src/app/workbench/WorkbenchContentRenderer'
 
 const plan = {
 	version: 1,
-	kind: 'standard-page',
+	kind: 'workbench-content',
 	document: {
 		version: 1,
 		blocks: [
@@ -88,12 +88,13 @@ const plan = {
 			},
 		],
 	},
-} satisfies WorkbenchStandardPagePlanV1
+	slots: [],
+} satisfies WorkbenchContentPlan
 
-describe('Standard Page renderer', () => {
+describe('Workbench Content renderer', () => {
 	it('renders the portable plan as semantic HTML and escapes all source text', () => {
 		const container = document.createElement('div')
-		container.innerHTML = renderToStaticMarkup(<StandardPageRenderer plan={plan} />)
+		container.innerHTML = renderToStaticMarkup(<WorkbenchContentRenderer plan={plan} />)
 
 		expect(container.querySelector('article')).not.toBeNull()
 		expect(container.querySelector('h1')?.textContent).toBe('Redis <script>alert(1)</script>')
@@ -111,12 +112,12 @@ describe('Standard Page renderer', () => {
 		expect(container.querySelector('img')).toBeNull()
 	})
 
-	it('uses closed link policies and scopes fragments to each mounted page', () => {
+	it('uses closed link policies and scopes fragments to each mounted Content', () => {
 		const container = document.createElement('div')
 		container.innerHTML = renderToStaticMarkup(
 			<>
-				<StandardPageRenderer plan={plan} />
-				<StandardPageRenderer plan={plan} />
+				<WorkbenchContentRenderer plan={plan} />
+				<WorkbenchContentRenderer plan={plan} />
 			</>,
 		)
 

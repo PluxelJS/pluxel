@@ -3,6 +3,7 @@
 	"pages": [
 		"index",
 		"---公开 Plugin---",
+		"agent-tools",
 		"auth",
 		"wretch",
 		"rendering",
@@ -12,6 +13,7 @@
 		"redis",
 		"storage",
 		"otel",
-		"package-manager"
+		"package-manager",
+		"pi-agent"
 	]
 }

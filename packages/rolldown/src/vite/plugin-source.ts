@@ -29,7 +29,7 @@ export type PluginSourceVitePipeline = Readonly<{
 		| 'definitions'
 		| 'workbenchPlans'
 		| 'workbenchCompilations'
-		| 'workbenchPageCompilations'
+		| 'workbenchContentCompilations'
 		| 'invalidateWorkbench'
 	>
 }>
@@ -178,7 +178,7 @@ export function createPluginSourceVitePipeline(
 		definitions: () => requireCollector().definitions(),
 		workbenchPlans: () => requireCollector().workbenchPlans(),
 		workbenchCompilations: () => requireCollector().workbenchCompilations(),
-		workbenchPageCompilations: () => requireCollector().workbenchPageCompilations(),
+		workbenchContentCompilations: () => requireCollector().workbenchContentCompilations(),
 		invalidateWorkbench: () => requireCollector().invalidateWorkbench(),
 	})
 	return Object.freeze({ plugins: Object.freeze(plugins), semantics })

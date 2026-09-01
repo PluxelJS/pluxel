@@ -4,17 +4,17 @@ import { RpcTarget } from '../../capnweb'
 import type { WorkbenchPrincipal } from '../../workbench/definition'
 import type {
 	WorkbenchLayoutInput,
-	WorkbenchOpenViewInput,
+	WorkbenchOpenEntryInput,
 	WorkbenchSessionApi,
 } from '../../workbench/client-protocol'
-import { OpenedViewLease, WorkbenchRegistry } from './WorkbenchRegistry'
+import { OpenedEntryLease, WorkbenchRegistry } from './WorkbenchRegistry'
 
 const EXPIRE = Symbol('pluxel.workbench.session.expire')
 const SIGNAL = Symbol('pluxel.workbench.session.signal')
 
 export class WorkbenchSessionTarget extends RpcTarget implements WorkbenchSessionApi {
 	readonly #controller = new AbortController()
-	readonly #opened = new Set<OpenedViewLease>()
+	readonly #opened = new Set<OpenedEntryLease>()
 	#active = true
 
 	constructor(
@@ -30,12 +30,12 @@ export class WorkbenchSessionTarget extends RpcTarget implements WorkbenchSessio
 		return this.registry.getLayout(parseLayoutInput(input).target)
 	}
 
-	async openView(input: WorkbenchOpenViewInput) {
+	async openEntry(input: WorkbenchOpenEntryInput) {
 		this.#assertActive()
-		return await this.registry.openView(
+		return await this.registry.openEntry(
 			this.principal,
 			this.#controller.signal,
-			parseOpenViewInput(input),
+			parseOpenEntryInput(input),
 			this.#opened,
 		)
 	}
@@ -44,8 +44,8 @@ export class WorkbenchSessionTarget extends RpcTarget implements WorkbenchSessio
 		if (!this.#active) return
 		this.#active = false
 		this.#controller.abort(cause)
-		const openedViews = [...this.#opened]
-		for (const opened of openedViews) opened.close()
+		const openedEntries = [...this.#opened]
+		for (const opened of openedEntries) opened.close()
 		this.#opened.clear()
 		this.onDispose()
 	}
@@ -78,21 +78,21 @@ function parseLayoutInput(input: unknown): WorkbenchLayoutInput {
 	})
 }
 
-function parseOpenViewInput(input: unknown): WorkbenchOpenViewInput {
-	const record = readExactRecord(input, 'openView input', [
+function parseOpenEntryInput(input: unknown): WorkbenchOpenEntryInput {
+	const record = readExactRecord(input, 'openEntry input', [
 		'layoutRevision',
 		'target',
 		'descriptor',
 		'location',
 	])
 	if (!Number.isSafeInteger(record.layoutRevision) || (record.layoutRevision as number) < 0) {
-		throw new TypeError('[workbench] openView.layoutRevision must be a non-negative safe integer')
+		throw new TypeError('[workbench] openEntry.layoutRevision must be a non-negative safe integer')
 	}
 	if (
 		record.location !== undefined &&
 		(typeof record.location !== 'string' || record.location.length > 4096)
 	) {
-		throw new TypeError('[workbench] openView.location must be a bounded string')
+		throw new TypeError('[workbench] openEntry.location must be a bounded string')
 	}
 	return Object.freeze({
 		layoutRevision: record.layoutRevision as number,

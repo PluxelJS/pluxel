@@ -10,7 +10,8 @@ vi.mock('@pluxel/runtime/workbench/react', () => ({
 	}),
 }))
 
-import { FontSelectionPanel, FontsManagerPanel } from '../src/ui/index.tsx'
+import FontsManagerPanel from '../src/ui/manager.tsx'
+import FontSelectionPanel from '../src/ui/selection.tsx'
 
 describe('Fonts Workbench UI roots', () => {
 	it.each([

@@ -108,7 +108,7 @@ function RuntimeSessionGate() {
 	if (state.kind === 'invalidated') {
 		return (
 			<GatePanel title="Workbench 会话已更新">
-				<Text c="dimmed">运行时 epoch 已因 {state.cause} 失效，需要重新载入整个页面。</Text>
+				<Text c="dimmed">{sessionInvalidationMessage(state.cause)}</Text>
 				<Button onClick={() => window.location.reload()}>重新载入</Button>
 			</GatePanel>
 		)
@@ -129,6 +129,17 @@ function RuntimeSessionGate() {
 			</Text>
 		</GatePanel>
 	)
+}
+
+function sessionInvalidationMessage(cause: RuntimeSessionEvent['cause']): string {
+	switch (cause) {
+		case 'workbench':
+			return 'Plugin publication、运行 generation 或界面产物已变化。为避免继续使用已撤销的 RPC target，需要重新载入整个页面。'
+		case 'authentication':
+			return '认证 authority 已变化，需要重新载入整个页面并重新确认会话。'
+		case 'service-restart':
+			return 'Runtime 管理服务已重启，需要重新载入整个页面并建立新的会话。'
+	}
 }
 
 function AuthenticationChallenge({

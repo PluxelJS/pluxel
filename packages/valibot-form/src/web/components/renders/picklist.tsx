@@ -48,6 +48,7 @@ export function PicklistField(props: RendererProps) {
 				onBlur={() => triggerFormBlur(inputProps)}
 				disabled={inputProps.disabled || inputProps.readOnly}
 				required={node.required}
+				ariaLabel={node.meta.label}
 			/>
 		</FieldChrome>
 	)

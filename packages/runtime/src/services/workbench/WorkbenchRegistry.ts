@@ -14,7 +14,7 @@ import {
 	type WorkbenchAttachmentDeclarationIdentity,
 	type WorkbenchAttachmentPlacementIdentity,
 	type WorkbenchDeclarationIdentity,
-	type WorkbenchPageIdentity,
+	type WorkbenchContentIdentity,
 	type WorkbenchViewDeclarationIdentity,
 } from '@pluxel/core/federation'
 import {
@@ -26,9 +26,11 @@ import { RpcTarget } from '../../capnweb'
 import {
 	readWorkbenchDefinition,
 	readWorkbenchDescriptor,
+	readWorkbenchMarkdownDocument,
 	readWorkbenchRendererEntry,
 	type AnyWorkbenchDefinition,
 	type WorkbenchAttachmentOpenContext,
+	type WorkbenchContentFactory,
 	type WorkbenchDefinitionMetadata,
 	type WorkbenchDescriptorMetadata,
 	type WorkbenchPlacement,
@@ -42,19 +44,25 @@ import type {
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutTarget,
-	WorkbenchOpenViewFailureCode,
-	WorkbenchOpenViewInput,
-	WorkbenchOpenViewResult,
-	WorkbenchStandardPageLayoutEntry,
+	WorkbenchOpenEntryFailureCode,
+	WorkbenchOpenEntryInput,
+	WorkbenchOpenEntryResult,
+	WorkbenchContentLayoutEntry,
 } from '../../workbench/client-protocol'
 import type { WorkbenchArtifactLookup } from './WorkbenchArtifactService'
 import type {
-	WorkbenchPageArtifactLookup,
-	WorkbenchResolvedPageArtifact,
-} from './WorkbenchPageArtifactService'
+	WorkbenchContentArtifactLookup,
+	WorkbenchResolvedContentArtifact,
+} from './WorkbenchContentArtifactService'
+import {
+	prepareWorkbenchContentContract,
+	validateWorkbenchContentBinding,
+	type WorkbenchContentContract,
+} from './WorkbenchContentPresentation'
+import { WorkbenchContentTarget } from './WorkbenchContentTarget'
 
-const OPEN_VIEW_TIMEOUT_MS = 15_000
-const MAX_OPEN_VIEWS_PER_SESSION = 64
+const OPEN_ENTRY_TIMEOUT_MS = 15_000
+const MAX_OPEN_ENTRIES_PER_SESSION = 64
 const PROFILE_VERSION = 1 as const
 
 type PublishedView = Readonly<{
@@ -78,16 +86,18 @@ type PublishedAttachmentPlacement = Readonly<{
 	consumerFactory?: WorkbenchTargetFactory<any>
 }>
 
-type PublishedPage = Readonly<{
-	kind: 'page'
-	metadata: Extract<WorkbenchDescriptorMetadata, { kind: 'page' }>
+type PublishedContent = Readonly<{
+	kind: 'content'
+	metadata: Extract<WorkbenchDescriptorMetadata, { kind: 'content' }>
+	contract: WorkbenchContentContract
+	factory?: WorkbenchContentFactory<any>
 }>
 
 type PublishedEntry =
 	| PublishedView
 	| PublishedAttachment
 	| PublishedAttachmentPlacement
-	| PublishedPage
+	| PublishedContent
 
 type PublishedTarget = Readonly<{
 	owner: PluginContext
@@ -99,10 +109,10 @@ type PublishedTarget = Readonly<{
 
 type OpenCandidate = Readonly<{
 	target: PublishedTarget
-	entry: PublishedView | PublishedAttachmentPlacement | PublishedPage
+	entry: PublishedView | PublishedAttachmentPlacement | PublishedContent
 	layoutEntry: WorkbenchLayoutEntry
 	params: Readonly<Record<string, string>>
-	page?: WorkbenchResolvedPageArtifact
+	content?: WorkbenchResolvedContentArtifact
 }>
 
 export class WorkbenchRegistry {
@@ -120,7 +130,7 @@ export class WorkbenchRegistry {
 	constructor(
 		private readonly root: Context,
 		private readonly artifacts: WorkbenchArtifactLookup,
-		private readonly pages: WorkbenchPageArtifactLookup,
+		private readonly content: WorkbenchContentArtifactLookup,
 	) {}
 
 	get revision(): number {
@@ -181,7 +191,7 @@ export class WorkbenchRegistry {
 		const entries = publication
 			? [...publication.entries.values()]
 					.filter(
-						(entry): entry is PublishedView | PublishedAttachmentPlacement | PublishedPage =>
+						(entry): entry is PublishedView | PublishedAttachmentPlacement | PublishedContent =>
 							entry.kind !== 'attachment',
 					)
 					.map((entry) => this.layoutEntry(publication, entry))
@@ -195,12 +205,12 @@ export class WorkbenchRegistry {
 		})
 	}
 
-	async openView(
+	async openEntry(
 		principal: WorkbenchPrincipal,
 		sessionSignal: AbortSignal,
-		input: WorkbenchOpenViewInput,
-		opened: Set<OpenedViewLease>,
-	): Promise<WorkbenchOpenViewResult> {
+		input: WorkbenchOpenEntryInput,
+		opened: Set<OpenedEntryLease>,
+	): Promise<WorkbenchOpenEntryResult> {
 		if (input.layoutRevision !== this.revisionValue) {
 			return failure('layout_changed')
 		}
@@ -208,22 +218,26 @@ export class WorkbenchRegistry {
 		const candidate = this.resolveOpenCandidate(input)
 		if (!candidate) return failure('target_unavailable')
 		if (sessionSignal.aborted) return failure('target_unavailable')
-		if (candidate.entry.kind === 'page') {
+		if (
+			candidate.entry.kind === 'content' &&
+			candidate.entry.contract.presentation.slots.length === 0
+		) {
 			let ownerLease: { dispose(): void } | undefined
 			try {
 				ownerLease = enterOwnerInvocation(candidate.target.owner, sessionSignal)
 				if (sessionSignal.aborted) return failure('target_unavailable')
-				const page = candidate.page
-				if (!page || !('standardPageRef' in candidate.layoutEntry)) {
+				const content = candidate.content
+				if (!content || !('contentRef' in candidate.layoutEntry)) {
 					return failure('target_unavailable')
 				}
 				return Object.freeze({
 					ok: true as const,
 					value: Object.freeze({
-						kind: 'page' as const,
+						kind: 'content' as const,
+						mode: 'static' as const,
 						params: candidate.params,
-						standardPageRef: candidate.layoutEntry.standardPageRef,
-						plan: page.plan,
+						contentRef: candidate.layoutEntry.contentRef,
+						plan: content.plan,
 					}),
 				})
 			} catch (error) {
@@ -235,17 +249,58 @@ export class WorkbenchRegistry {
 				ownerLease?.dispose()
 			}
 		}
-		if (opened.size >= MAX_OPEN_VIEWS_PER_SESSION) return failure('quota_exceeded')
+		if (opened.size >= MAX_OPEN_ENTRIES_PER_SESSION) return failure('quota_exceeded')
 
-		const lease = new OpenedViewLease(opened, sessionSignal)
+		const lease = new OpenedEntryLease(opened, sessionSignal)
 		opened.add(lease)
 		let timedOut = false
 		const timeout = setTimeout(() => {
 			timedOut = true
-			lease.abort(new Error('Workbench View factory timed out'))
-		}, OPEN_VIEW_TIMEOUT_MS)
+			lease.abort(new Error('Workbench entry factory timed out'))
+		}, OPEN_ENTRY_TIMEOUT_MS)
 
 		try {
+			if (candidate.entry.kind === 'content') {
+				const ownerLease = enterOwnerInvocation(candidate.target.owner, lease.signal)
+				lease.adoptOwner(ownerLease)
+				const content = candidate.content
+				if (!content || !('contentRef' in candidate.layoutEntry) || !candidate.entry.factory) {
+					lease.close()
+					return failure('target_unavailable')
+				}
+				const root = new WorkbenchContentTarget(
+					candidate.entry.contract,
+					candidate.target.owner.logger,
+					(reason) => lease.abort(reason),
+				)
+				lease.reserve(root)
+				const context = Object.freeze({
+					principal,
+					params: candidate.params,
+					signal: lease.signal,
+					...(candidate.entry.contract.data.size === 0 ? {} : { dataChanged: root.dataChanged }),
+				})
+				const factory = candidate.entry.factory
+				const pending = Promise.resolve().then(() => factory(context as never))
+				const binding = validateWorkbenchContentBinding(
+					candidate.entry.contract,
+					await raceAbort(pending, lease.signal),
+				)
+				root.attach(binding)
+				lease.activate([root])
+				return Object.freeze({
+					ok: true as const,
+					value: Object.freeze({
+						kind: 'content' as const,
+						mode: 'interactive' as const,
+						params: candidate.params,
+						contentRef: candidate.layoutEntry.contentRef,
+						plan: content.plan,
+						presentation: candidate.entry.contract.presentation,
+						root,
+					}),
+				})
+			}
 			if (candidate.entry.kind === 'view') {
 				const ownerLease = enterOwnerInvocation(candidate.target.owner, lease.signal)
 				lease.adoptOwner(ownerLease)
@@ -259,8 +314,8 @@ export class WorkbenchRegistry {
 					lease,
 				)
 				lease.activate([api])
-				if ('standardPageRef' in candidate.layoutEntry) {
-					throw new Error('Workbench View resolved a Standard Page layout entry')
+				if ('contentRef' in candidate.layoutEntry) {
+					throw new Error('Workbench View resolved a Workbench Content layout entry')
 				}
 				return Object.freeze({
 					ok: true as const,
@@ -309,8 +364,8 @@ export class WorkbenchRegistry {
 			const provider = roots[0]!
 			const consumer = roots[1]
 			lease.activate(roots)
-			if ('standardPageRef' in candidate.layoutEntry) {
-				throw new Error('Workbench Attachment resolved a Standard Page layout entry')
+			if ('contentRef' in candidate.layoutEntry) {
+				throw new Error('Workbench Attachment resolved a Workbench Content layout entry')
 			}
 			return Object.freeze({
 				ok: true as const,
@@ -328,7 +383,7 @@ export class WorkbenchRegistry {
 			if (sessionSignal.aborted || isOwnerClosed(error)) {
 				return failure('target_unavailable')
 			}
-			candidate.target.owner.logger.error('Workbench View factory failed', { error })
+			candidate.target.owner.logger.error('Workbench entry factory failed', { error })
 			return failure('factory_failed')
 		} finally {
 			clearTimeout(timeout)
@@ -342,7 +397,11 @@ export class WorkbenchRegistry {
 	): PublishedTarget {
 		const metadata = readWorkbenchDefinition(definition)
 		const expectedKeys = metadata.entries
-			.filter((entry) => entry.kind !== 'page')
+			.filter(
+				(entry) =>
+					entry.kind !== 'content' ||
+					Object.keys(readWorkbenchMarkdownDocument(entry.document).slots).length > 0,
+			)
 			.map((entry) => entry.key)
 			.sort()
 		if (expectedKeys.length === 0 && bindings.length > 0) {
@@ -368,12 +427,33 @@ export class WorkbenchRegistry {
 		for (const descriptor of metadata.entries) {
 			const binding = bindingRecord[descriptor.key]
 			switch (descriptor.kind) {
-				case 'page': {
+				case 'content': {
+					const descriptorIdentity = parseWorkbenchOpenableIdentity({
+						kind: 'content',
+						owner: owner.pluginInfo.definitionAddress,
+						key: descriptor.key,
+					}) as WorkbenchContentIdentity
+					const resolved = this.content.resolveContent(
+						owner.pluginInfo.definitionAddress,
+						descriptorIdentity,
+						descriptor.document,
+					)
+					if (!resolved) {
+						throw new TypeError(
+							`[workbench] no committed Content artifact for Content "${descriptor.key}"`,
+						)
+					}
+					const contract = prepareWorkbenchContentContract(descriptor.document, resolved.plan)
+					const interactive = contract.presentation.slots.length > 0
 					entries.set(
 						descriptor.key,
 						Object.freeze({
-							kind: 'page',
+							kind: 'content',
 							metadata: descriptor,
+							contract,
+							...(interactive
+								? { factory: requireContentFactory(binding, `bindings.${descriptor.key}`) }
+								: {}),
 						}),
 					)
 					break
@@ -476,18 +556,22 @@ export class WorkbenchRegistry {
 
 	private validateCandidate(candidate: PublishedTarget): void {
 		for (const entry of candidate.entries.values()) {
-			if (entry.kind === 'page') {
+			if (entry.kind === 'content') {
 				const descriptor = parseWorkbenchOpenableIdentity({
-					kind: 'page',
+					kind: 'content',
 					owner: candidate.owner.pluginInfo.definitionAddress,
 					key: entry.metadata.key,
 				})
 				if (
-					descriptor.kind !== 'page' ||
-					!this.pages.resolvePage(candidate.owner.pluginInfo.definitionAddress, descriptor)
+					descriptor.kind !== 'content' ||
+					!this.content.resolveContent(
+						candidate.owner.pluginInfo.definitionAddress,
+						descriptor,
+						entry.metadata.document,
+					)
 				) {
 					throw new TypeError(
-						`[workbench] no committed Page artifact for Page "${entry.metadata.key}"`,
+						`[workbench] no committed Content artifact for Content "${entry.metadata.key}"`,
 					)
 				}
 				continue
@@ -574,17 +658,23 @@ export class WorkbenchRegistry {
 
 	private layoutEntry(
 		target: PublishedTarget,
-		entry: PublishedView | PublishedAttachmentPlacement | PublishedPage,
+		entry: PublishedView | PublishedAttachmentPlacement | PublishedContent,
 	): WorkbenchLayoutEntry {
-		if (entry.kind === 'page') {
+		if (entry.kind === 'content') {
 			const descriptor = parseWorkbenchOpenableIdentity({
-				kind: 'page',
+				kind: 'content',
 				owner: target.owner.pluginInfo.definitionAddress,
 				key: entry.metadata.key,
-			}) as WorkbenchPageIdentity
-			const resolved = this.pages.resolvePage(target.owner.pluginInfo.definitionAddress, descriptor)
+			}) as WorkbenchContentIdentity
+			const resolved = this.content.resolveContent(
+				target.owner.pluginInfo.definitionAddress,
+				descriptor,
+				entry.metadata.document,
+			)
 			if (!resolved) {
-				throw new Error(`[workbench] committed Page artifact withdrew Page "${descriptor.key}"`)
+				throw new Error(
+					`[workbench] committed Content artifact withdrew Content "${descriptor.key}"`,
+				)
 			}
 			return Object.freeze({
 				descriptor,
@@ -593,12 +683,12 @@ export class WorkbenchRegistry {
 					target: target.owner.pluginInfo.definitionRevision,
 				}),
 				placement: entry.metadata.placement,
-				standardPageRef: Object.freeze({
+				contentRef: Object.freeze({
 					profile: 1,
 					digest: resolved.artifact.digest,
 					descriptor,
 				}),
-			}) satisfies WorkbenchStandardPageLayoutEntry
+			}) satisfies WorkbenchContentLayoutEntry
 		}
 		if (entry.kind === 'view') {
 			const descriptor = parseWorkbenchOpenableIdentity({
@@ -671,7 +761,7 @@ export class WorkbenchRegistry {
 		})
 	}
 
-	private resolveOpenCandidate(input: WorkbenchOpenViewInput): OpenCandidate | null {
+	private resolveOpenCandidate(input: WorkbenchOpenEntryInput): OpenCandidate | null {
 		const pluginService = requirePluginService(this.root)
 		const slot = pluginService.resolvePluginNode(input.target)
 		const target = slot ? this.activeBySlot.get(slot) : undefined
@@ -682,14 +772,15 @@ export class WorkbenchRegistry {
 		if (!workbenchOpenableIdentityEqual(layoutEntry.descriptor, input.descriptor)) return null
 		const params = matchPlacement(metadata.metadata.placement, input.location)
 		if (!params) return null
-		if (metadata.kind === 'page') {
-			if (layoutEntry.descriptor.kind !== 'page') return null
-			const page = this.pages.resolvePage(
+		if (metadata.kind === 'content') {
+			if (layoutEntry.descriptor.kind !== 'content') return null
+			const content = this.content.resolveContent(
 				target.owner.pluginInfo.definitionAddress,
 				layoutEntry.descriptor,
+				metadata.metadata.document,
 			)
-			if (!page) return null
-			return Object.freeze({ target, entry: metadata, layoutEntry, params, page })
+			if (!content) return null
+			return Object.freeze({ target, entry: metadata, layoutEntry, params, content })
 		}
 		return Object.freeze({ target, entry: metadata, layoutEntry, params })
 	}
@@ -697,7 +788,7 @@ export class WorkbenchRegistry {
 	private async runFactory(
 		factory: (context: any) => RpcTarget | Promise<RpcTarget>,
 		context: WorkbenchViewOpenContext | WorkbenchAttachmentOpenContext,
-		lease: OpenedViewLease,
+		lease: OpenedEntryLease,
 	): Promise<RpcTarget> {
 		const pending = Promise.resolve()
 			.then(() => {
@@ -766,7 +857,7 @@ export class WorkbenchRegistry {
 	}
 }
 
-export class OpenedViewLease {
+export class OpenedEntryLease {
 	private readonly controller = new AbortController()
 	private readonly ownerLeases: Array<{ signal: AbortSignal; dispose(): void }> = []
 	private readonly reserved = new Set<RpcTarget>()
@@ -776,7 +867,7 @@ export class OpenedViewLease {
 	readonly signal: AbortSignal
 
 	constructor(
-		private readonly opened: Set<OpenedViewLease>,
+		private readonly opened: Set<OpenedEntryLease>,
 		sessionSignal: AbortSignal,
 	) {
 		this.signal = AbortSignal.any([sessionSignal, this.controller.signal])
@@ -810,7 +901,7 @@ export class OpenedViewLease {
 	reserve(target: RpcTarget): void {
 		if (!this.active) {
 			disposeTarget(target)
-			throw this.signal.reason ?? new Error('Workbench View was closed')
+			throw this.signal.reason ?? new Error('Workbench entry was closed')
 		}
 		this.reserved.add(target)
 	}
@@ -834,7 +925,7 @@ export class OpenedViewLease {
 		if (!this.active) return
 		this.active = false
 		if (!this.controller.signal.aborted) {
-			this.controller.abort(new Error('Workbench View closed'))
+			this.controller.abort(new Error('Workbench entry closed'))
 		}
 		for (const target of this.reserved) disposeTarget(target)
 		this.reserved.clear()
@@ -887,6 +978,11 @@ function requireFactory(
 ): (context: any) => RpcTarget | Promise<RpcTarget> {
 	if (typeof value !== 'function') throw new TypeError(`[workbench] ${label} must be a factory`)
 	return value as (context: any) => RpcTarget | Promise<RpcTarget>
+}
+
+function requireContentFactory(value: unknown, label: string): WorkbenchContentFactory<any> {
+	if (typeof value !== 'function') throw new TypeError(`[workbench] ${label} must be a factory`)
+	return value as WorkbenchContentFactory<any>
 }
 
 function readPlainRecord(value: unknown, label: string): Record<string, any> {
@@ -967,7 +1063,7 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
 	return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
-function failure(code: WorkbenchOpenViewFailureCode): WorkbenchOpenViewResult {
+function failure(code: WorkbenchOpenEntryFailureCode): WorkbenchOpenEntryResult {
 	return Object.freeze({ ok: false, code })
 }
 

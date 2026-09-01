@@ -651,7 +651,7 @@ async function configureStaticRuntimeDevRuntime(
 	host: StaticRuntimeHost,
 	semantics: Pick<
 		PluginSourceVitePipeline['semantics'],
-		'invalidateWorkbench' | 'workbenchCompilations' | 'workbenchPageCompilations'
+		'invalidateWorkbench' | 'workbenchCompilations' | 'workbenchContentCompilations'
 	>,
 ): Promise<() => Promise<void>> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
@@ -666,11 +666,11 @@ async function configureStaticRuntimeDevRuntime(
 	const publish = async (): Promise<void> => {
 		if (!ctx.workbench) return
 		semantics.invalidateWorkbench()
-		const [producers, pages] = await Promise.all([
+		const [producers, content] = await Promise.all([
 			semantics.workbenchCompilations(),
-			semantics.workbenchPageCompilations(),
+			semantics.workbenchContentCompilations(),
 		])
-		await compiler.publishWorkbenchArtifacts({ producers, pages })
+		await compiler.publishWorkbenchArtifacts({ producers, content })
 	}
 	await publish()
 	requireRuntimeHttpService(ctx).consumeFullReloadRequest()

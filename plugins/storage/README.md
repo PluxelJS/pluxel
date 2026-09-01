@@ -90,6 +90,15 @@ host.cfg(S3Plugin).set({
 credential snapshot，缺失、非法或 Vault 未安装都会让 lifecycle 诚实失败并抛 `S3CredentialsError`。轮换凭据后重启对应
 S3 plugin generation。local 和 anonymous 模式完全不访问 Vault，也不会创建 Vault 成本。
 
+Workbench enabled 时，每个成功运行的 provider 都固定发布 `S3 credentials` Content，状态明确显示 local、remote/anonymous 或
+remote/vault；只有 remote/vault generation 接受其中的 rotation action，local/anonymous 报告 `not-applicable`、明确拒绝且不访问
+Vault。一次性 password form 把 replacement access key 写入当前配置引用的
+Vault record；不会读取或显示旧值，也不会在 action result 或日志中返回新值。
+保存只完成持久化，当前 S3 client 仍使用启动时的 credential snapshot，必须通过正常 Plugin management restart 对应 generation。
+
+这不是首次 provisioning 入口。Vault record 缺失或非法时 S3Plugin 会诚实地启动失败，失败 generation 不能发布 Content；请先由
+deployment/host 写入 record。实现不会为了 setup Content 保留半启动的 S3 capability，也不会创建平行 credential registry。
+
 ## 本地兼容范围
 
 local backend 支持 bucket create/exists、CRUD、typed/stream/range/conditional reads、delimiter/prefix listing、opaque

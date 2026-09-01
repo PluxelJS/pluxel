@@ -4,87 +4,107 @@ import {
 	type PluginDefinitionAddress,
 } from '../plugins/runtime/identity'
 
-export const WORKBENCH_PAGE_ARTIFACT_VERSION = 1 as const
-export const WORKBENCH_PAGE_ARTIFACT_ROOT = 'pages' as const
-export const WORKBENCH_PAGE_ARTIFACT_FILE = 'page-plan.json' as const
-export const WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE = 'pluxel-workbench-pages.json' as const
+export const WORKBENCH_CONTENT_ARTIFACT_VERSION = 1 as const
+export const WORKBENCH_CONTENT_ARTIFACT_ROOT = 'content' as const
+export const WORKBENCH_CONTENT_ARTIFACT_FILE = 'content-plan.json' as const
+export const WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE = 'pluxel-workbench-content.json' as const
 
-export type WorkbenchPageInline =
+export type WorkbenchContentInline =
 	| Readonly<{ type: 'text'; value: string }>
 	| Readonly<{ type: 'code'; value: string }>
+	| Readonly<{ type: 'slot'; key: string }>
 	| Readonly<{
 			type: 'emphasis' | 'strong' | 'delete'
-			children: readonly WorkbenchPageInline[]
+			children: readonly WorkbenchContentInline[]
 	  }>
 	| Readonly<{
 			type: 'link'
 			target:
 				| Readonly<{ kind: 'https' | 'mailto'; href: string }>
 				| Readonly<{ kind: 'fragment'; anchor: string }>
-			children: readonly WorkbenchPageInline[]
+			children: readonly WorkbenchContentInline[]
 	  }>
 
-export type WorkbenchPageTableAlignment = 'left' | 'center' | 'right' | null
-export type WorkbenchPageTableCell = readonly WorkbenchPageInline[]
-export type WorkbenchPageTableRow = readonly WorkbenchPageTableCell[]
+export type WorkbenchContentTableAlignment = 'left' | 'center' | 'right' | null
+export type WorkbenchContentTableCell = readonly WorkbenchContentInline[]
+export type WorkbenchContentTableRow = readonly WorkbenchContentTableCell[]
 
-export type WorkbenchPageBlock =
+export type WorkbenchContentBlock =
+	| Readonly<{ type: 'slot'; key: string }>
 	| Readonly<{
 			type: 'heading'
 			level: 1 | 2 | 3 | 4 | 5 | 6
 			anchor: string
-			children: readonly WorkbenchPageInline[]
+			children: readonly WorkbenchContentInline[]
 	  }>
-	| Readonly<{ type: 'paragraph'; children: readonly WorkbenchPageInline[] }>
-	| Readonly<{ type: 'blockquote'; children: readonly WorkbenchPageBlock[] }>
+	| Readonly<{ type: 'paragraph'; children: readonly WorkbenchContentInline[] }>
+	| Readonly<{ type: 'blockquote'; children: readonly WorkbenchContentBlock[] }>
 	| Readonly<{
 			type: 'list'
 			ordered: boolean
 			start?: number
-			items: readonly Readonly<{ children: readonly WorkbenchPageBlock[] }>[]
+			items: readonly Readonly<{ children: readonly WorkbenchContentBlock[] }>[]
 	  }>
 	| Readonly<{ type: 'thematic-break' }>
 	| Readonly<{ type: 'code'; language?: string; value: string }>
 	| Readonly<{
 			type: 'table'
-			align: readonly WorkbenchPageTableAlignment[]
-			header: WorkbenchPageTableRow
-			rows: readonly WorkbenchPageTableRow[]
+			align: readonly WorkbenchContentTableAlignment[]
+			header: WorkbenchContentTableRow
+			rows: readonly WorkbenchContentTableRow[]
 	  }>
 
-export type WorkbenchPageDocumentPlanV1 = Readonly<{
-	version: typeof WORKBENCH_PAGE_ARTIFACT_VERSION
-	blocks: readonly WorkbenchPageBlock[]
+export type WorkbenchContentDocumentPlan = Readonly<{
+	version: typeof WORKBENCH_CONTENT_ARTIFACT_VERSION
+	blocks: readonly WorkbenchContentBlock[]
 }>
 
-export type WorkbenchStandardPagePlanV1 = Readonly<{
-	version: typeof WORKBENCH_PAGE_ARTIFACT_VERSION
-	kind: 'standard-page'
-	document: WorkbenchPageDocumentPlanV1
-}>
-
-export type WorkbenchPageSetEntryV1 = Readonly<{
+export type WorkbenchContentDataSlot = Readonly<{
+	kind: 'data'
 	key: string
-	page: WorkbenchStandardPagePlanV1
+	display: 'inline' | 'block'
 }>
 
-export type WorkbenchPageSetV1 = Readonly<{
-	version: typeof WORKBENCH_PAGE_ARTIFACT_VERSION
-	kind: 'workbench-page-set'
+export type WorkbenchContentActionSlot = Readonly<{
+	kind: 'action'
+	key: string
+	display: 'block'
+	label: string
+	input: 'none' | 'dialog' | 'embedded'
+	confirm?: string
+}>
+
+export type WorkbenchContentSlot = WorkbenchContentDataSlot | WorkbenchContentActionSlot
+
+export type WorkbenchContentPlan = Readonly<{
+	version: typeof WORKBENCH_CONTENT_ARTIFACT_VERSION
+	kind: 'workbench-content'
+	document: WorkbenchContentDocumentPlan
+	slots: readonly WorkbenchContentSlot[]
+}>
+
+export type WorkbenchContentSetEntry = Readonly<{
+	key: string
+	content: WorkbenchContentPlan
+}>
+
+export type WorkbenchContentSet = Readonly<{
+	version: typeof WORKBENCH_CONTENT_ARTIFACT_VERSION
+	kind: 'workbench-content-set'
 	definition: PluginDefinitionAddress
-	entries: readonly WorkbenchPageSetEntryV1[]
+	entries: readonly WorkbenchContentSetEntry[]
 }>
 
-export type WorkbenchPageDeploymentEntryV1 = Readonly<{
+export type WorkbenchContentDeploymentEntry = Readonly<{
 	definition: PluginDefinitionAddress
 	definitionDigest: string
 	digest: string
 	artifactRoot: string
 }>
 
-export type WorkbenchPageDeploymentInventoryV1 = Readonly<{
-	version: typeof WORKBENCH_PAGE_ARTIFACT_VERSION
-	pages: readonly WorkbenchPageDeploymentEntryV1[]
+export type WorkbenchContentDeploymentInventory = Readonly<{
+	version: typeof WORKBENCH_CONTENT_ARTIFACT_VERSION
+	entries: readonly WorkbenchContentDeploymentEntry[]
 }>
 
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]{0,127}$/
@@ -102,6 +122,13 @@ const MAX_LIST_ITEMS = 512
 const MAX_TABLE_COLUMNS = 16
 const MAX_TABLE_ROWS = 64
 const MAX_TABLE_CELLS = 1_024
+const MAX_ACTION_LABEL_BYTES = 128
+const MAX_ACTION_CONFIRM_BYTES = 1_024
+
+type SlotNode = Readonly<{
+	key: string
+	display: 'inline' | 'block'
+}>
 
 type Budget = {
 	nodes: number
@@ -111,73 +138,76 @@ type Budget = {
 	tableCells: number
 	anchors: Set<string>
 	fragments: string[]
+	slotNodes: SlotNode[]
 }
 
-export function createWorkbenchPageSet(input: {
+export function createWorkbenchContentSet(input: {
 	definition: PluginDefinitionAddress
-	entries: readonly Readonly<{ key: string; page: WorkbenchStandardPagePlanV1 }>[]
-}): WorkbenchPageSetV1 {
-	return parseWorkbenchPageSet({
-		version: WORKBENCH_PAGE_ARTIFACT_VERSION,
-		kind: 'workbench-page-set',
+	entries: readonly Readonly<{ key: string; content: WorkbenchContentPlan }>[]
+}): WorkbenchContentSet {
+	return parseWorkbenchContentSet({
+		version: WORKBENCH_CONTENT_ARTIFACT_VERSION,
+		kind: 'workbench-content-set',
 		definition: input.definition,
 		entries: input.entries,
 	})
 }
 
-export function parseWorkbenchPageSet(input: unknown): WorkbenchPageSetV1 {
-	const record = exact(input, 'Workbench Page set', ['version', 'kind', 'definition', 'entries'])
-	if (record.version !== 1 || record.kind !== 'workbench-page-set') {
-		throw invalid('Workbench Page set version or kind is unsupported')
+export function parseWorkbenchContentSet(input: unknown): WorkbenchContentSet {
+	const record = exact(input, 'Workbench Content set', ['version', 'kind', 'definition', 'entries'])
+	if (record.version !== 1 || record.kind !== 'workbench-content-set') {
+		throw invalid('Workbench Content set version or kind is unsupported')
 	}
 	if (!Array.isArray(record.entries) || record.entries.length === 0) {
-		throw invalid('Workbench Page set entries must be a non-empty array')
+		throw invalid('Workbench Content set entries must be a non-empty array')
 	}
 	let previous = ''
 	const entries = record.entries.map((entryInput, index) => {
-		const entry = exact(entryInput, `Workbench Page set entry ${index}`, ['key', 'page'])
-		const key = pageKey(entry.key, `Workbench Page set entry ${index} key`)
-		if (key <= previous) throw invalid('Workbench Page set entries must use unique sorted keys')
+		const entry = exact(entryInput, `Workbench Content set entry ${index}`, ['key', 'content'])
+		const key = contentKey(entry.key, `Workbench Content set entry ${index} key`)
+		if (key <= previous) {
+			throw invalid('Workbench Content set entries must use unique sorted keys')
+		}
 		previous = key
-		return Object.freeze({ key, page: parseWorkbenchStandardPagePlan(entry.page) })
+		return Object.freeze({ key, content: parseWorkbenchContentPlan(entry.content) })
 	})
 	const output = Object.freeze({
-		version: WORKBENCH_PAGE_ARTIFACT_VERSION,
-		kind: 'workbench-page-set' as const,
+		version: WORKBENCH_CONTENT_ARTIFACT_VERSION,
+		kind: 'workbench-content-set' as const,
 		definition: parsePluginDefinitionAddress(record.definition),
 		entries: Object.freeze(entries),
 	})
-	assertSerializedBudget(output, 'Workbench Page set')
+	assertSerializedBudget(output, 'Workbench Content set')
 	return output
 }
 
-export function serializeWorkbenchPageSet(input: WorkbenchPageSetV1): string {
-	return `${JSON.stringify(parseWorkbenchPageSet(input))}\n`
+export function serializeWorkbenchContentSet(input: WorkbenchContentSet): string {
+	return `${JSON.stringify(parseWorkbenchContentSet(input))}\n`
 }
 
-export function serializeWorkbenchPageDefinition(definition: PluginDefinitionAddress): string {
+export function serializeWorkbenchContentDefinition(definition: PluginDefinitionAddress): string {
 	return `${JSON.stringify(parsePluginDefinitionAddress(definition))}\n`
 }
 
-export function createWorkbenchPageDeploymentInventory(
-	pages: readonly WorkbenchPageDeploymentEntryV1[],
-): WorkbenchPageDeploymentInventoryV1 {
-	return parseWorkbenchPageDeploymentInventory({
-		version: WORKBENCH_PAGE_ARTIFACT_VERSION,
-		pages,
+export function createWorkbenchContentDeploymentInventory(
+	entries: readonly WorkbenchContentDeploymentEntry[],
+): WorkbenchContentDeploymentInventory {
+	return parseWorkbenchContentDeploymentInventory({
+		version: WORKBENCH_CONTENT_ARTIFACT_VERSION,
+		entries,
 	})
 }
 
-export function parseWorkbenchPageDeploymentInventory(
+export function parseWorkbenchContentDeploymentInventory(
 	input: unknown,
-): WorkbenchPageDeploymentInventoryV1 {
-	const record = exact(input, 'Workbench Page deployment inventory', ['version', 'pages'])
-	if (record.version !== 1 || !Array.isArray(record.pages)) {
-		throw invalid('Workbench Page deployment inventory is invalid')
+): WorkbenchContentDeploymentInventory {
+	const record = exact(input, 'Workbench Content deployment inventory', ['version', 'entries'])
+	if (record.version !== 1 || !Array.isArray(record.entries)) {
+		throw invalid('Workbench Content deployment inventory is invalid')
 	}
 	let previous = ''
-	const pages = record.pages.map((pageInput, index) => {
-		const entry = exact(pageInput, `Workbench Page deployment entry ${index}`, [
+	const entries = record.entries.map((entryInput, index) => {
+		const entry = exact(entryInput, `Workbench Content deployment entry ${index}`, [
 			'definition',
 			'definitionDigest',
 			'digest',
@@ -186,30 +216,36 @@ export function parseWorkbenchPageDeploymentInventory(
 		const definition = parsePluginDefinitionAddress(entry.definition)
 		const key = pluginDefinitionIndexKey(definition)
 		if (key <= previous) {
-			throw invalid('Workbench Page deployment entries must use unique sorted definitions')
+			throw invalid('Workbench Content deployment entries must use unique sorted definitions')
 		}
 		previous = key
 		const definitionDigest = digest(entry.definitionDigest, 'definition digest')
-		const pageDigest = digest(entry.digest, 'Page set digest')
-		const artifactRoot = workbenchPageArtifactRoot(definitionDigest, pageDigest)
+		const contentDigest = digest(entry.digest, 'Content set digest')
+		const artifactRoot = workbenchContentArtifactRoot(definitionDigest, contentDigest)
 		if (entry.artifactRoot !== artifactRoot) {
-			throw invalid('Workbench Page artifact root is non-canonical')
+			throw invalid('Workbench Content artifact root is non-canonical')
 		}
 		return Object.freeze({
 			definition,
 			definitionDigest,
-			digest: pageDigest,
+			digest: contentDigest,
 			artifactRoot,
 		})
 	})
-	return Object.freeze({ version: WORKBENCH_PAGE_ARTIFACT_VERSION, pages: Object.freeze(pages) })
+	return Object.freeze({
+		version: WORKBENCH_CONTENT_ARTIFACT_VERSION,
+		entries: Object.freeze(entries),
+	})
 }
 
-export function workbenchPageArtifactRoot(definitionDigest: string, pageDigest: string): string {
-	return `${WORKBENCH_PAGE_ARTIFACT_ROOT}/${digest(definitionDigest, 'definition digest')}/${digest(pageDigest, 'Page set digest')}`
+export function workbenchContentArtifactRoot(
+	definitionDigest: string,
+	contentDigest: string,
+): string {
+	return `${WORKBENCH_CONTENT_ARTIFACT_ROOT}/${digest(definitionDigest, 'definition digest')}/${digest(contentDigest, 'Content set digest')}`
 }
 
-export function parseWorkbenchStandardPagePlan(input: unknown): WorkbenchStandardPagePlanV1 {
+export function parseWorkbenchContentPlan(input: unknown): WorkbenchContentPlan {
 	const budget: Budget = {
 		nodes: 0,
 		textBytes: 0,
@@ -218,32 +254,113 @@ export function parseWorkbenchStandardPagePlan(input: unknown): WorkbenchStandar
 		tableCells: 0,
 		anchors: new Set(),
 		fragments: [],
+		slotNodes: [],
 	}
-	const record = exact(input, 'Standard Page plan', ['version', 'kind', 'document'])
-	if (record.version !== 1 || record.kind !== 'standard-page') {
-		throw invalid('Standard Page plan version or kind is unsupported')
+	const record = exact(input, 'Workbench Content plan', ['version', 'kind', 'document', 'slots'])
+	if (record.version !== 1 || record.kind !== 'workbench-content') {
+		throw invalid('Workbench Content plan version or kind is unsupported')
 	}
+	const slots = parseSlots(record.slots, budget)
 	const document = parseDocument(record.document, budget)
 	for (const anchor of budget.fragments) {
 		if (!budget.anchors.has(anchor)) {
-			throw invalid(`Standard Page fragment does not name a heading: ${anchor}`)
+			throw invalid(`Workbench Content fragment does not name a heading: ${anchor}`)
 		}
 	}
+	validateSlotTopology(slots, budget.slotNodes)
 	const output = Object.freeze({
-		version: WORKBENCH_PAGE_ARTIFACT_VERSION,
-		kind: 'standard-page' as const,
+		version: WORKBENCH_CONTENT_ARTIFACT_VERSION,
+		kind: 'workbench-content' as const,
 		document,
+		slots,
 	})
-	assertSerializedBudget(output, 'Standard Page plan')
+	assertSerializedBudget(output, 'Workbench Content plan')
 	return output
 }
 
-function parseDocument(input: unknown, budget: Budget): WorkbenchPageDocumentPlanV1 {
-	const record = exact(input, 'Standard Page document', ['version', 'blocks'])
-	if (record.version !== 1) throw invalid('Standard Page document version is unsupported')
+function parseSlots(input: unknown, budget: Budget): readonly WorkbenchContentSlot[] {
+	if (!Array.isArray(input)) throw invalid('Workbench Content slots must be an array')
+	if (input.length > MAX_NODES) throw invalid('Workbench Content slot node budget exceeded')
+	let previous = ''
+	const slots = input.map((slotInput, index): WorkbenchContentSlot => {
+		const label = `Workbench Content slot ${index}`
+		const record = object(slotInput, label)
+		let slot: WorkbenchContentSlot
+		if (record.kind === 'data') {
+			keys(record, label, ['kind', 'key', 'display'])
+			if (record.display !== 'inline' && record.display !== 'block') {
+				throw invalid(`${label}.display is invalid`)
+			}
+			slot = Object.freeze({
+				kind: 'data',
+				key: contentKey(record.key, `${label}.key`),
+				display: record.display,
+			})
+		} else if (record.kind === 'action') {
+			optionalKeys(record, label, ['kind', 'key', 'display', 'label', 'input'], ['confirm'])
+			if (record.display !== 'block') throw invalid(`${label}.display must be block`)
+			if (record.input !== 'none' && record.input !== 'dialog' && record.input !== 'embedded') {
+				throw invalid(`${label}.input is invalid`)
+			}
+			const actionLabel = boundedText(
+				record.label,
+				`${label}.label`,
+				MAX_ACTION_LABEL_BYTES,
+				budget,
+			)
+			const confirm =
+				record.confirm === undefined
+					? undefined
+					: boundedText(record.confirm, `${label}.confirm`, MAX_ACTION_CONFIRM_BYTES, budget)
+			slot = Object.freeze({
+				kind: 'action',
+				key: contentKey(record.key, `${label}.key`),
+				display: 'block',
+				label: actionLabel,
+				input: record.input,
+				...(confirm === undefined ? {} : { confirm }),
+			})
+		} else {
+			throw invalid(`${label}.kind is unsupported`)
+		}
+		if (slot.key <= previous) {
+			throw invalid('Workbench Content slots must use unique sorted keys')
+		}
+		previous = slot.key
+		return slot
+	})
+	return Object.freeze(slots)
+}
+
+function validateSlotTopology(slots: readonly WorkbenchContentSlot[], nodes: readonly SlotNode[]) {
+	const declarations = new Map(slots.map((slot) => [slot.key, slot]))
+	const placed = new Set<string>()
+	for (const node of nodes) {
+		const declaration = declarations.get(node.key)
+		if (!declaration) {
+			throw invalid(`Workbench Content document slot is undeclared: ${node.key}`)
+		}
+		if (placed.has(node.key)) {
+			throw invalid(`Workbench Content document slot must appear exactly once: ${node.key}`)
+		}
+		if (declaration.display !== node.display) {
+			throw invalid(`Workbench Content document slot display does not match: ${node.key}`)
+		}
+		placed.add(node.key)
+	}
+	for (const slot of slots) {
+		if (!placed.has(slot.key)) {
+			throw invalid(`Workbench Content slot has no document node: ${slot.key}`)
+		}
+	}
+}
+
+function parseDocument(input: unknown, budget: Budget): WorkbenchContentDocumentPlan {
+	const record = exact(input, 'Workbench Content document', ['version', 'blocks'])
+	if (record.version !== 1) throw invalid('Workbench Content document version is unsupported')
 	return Object.freeze({
-		version: WORKBENCH_PAGE_ARTIFACT_VERSION,
-		blocks: blocks(record.blocks, budget, 1, 'Standard Page document blocks'),
+		version: WORKBENCH_CONTENT_ARTIFACT_VERSION,
+		blocks: blocks(record.blocks, budget, 1, 'Workbench Content document blocks'),
 	})
 }
 
@@ -252,7 +369,7 @@ function blocks(
 	budget: Budget,
 	depth: number,
 	label: string,
-): readonly WorkbenchPageBlock[] {
+): readonly WorkbenchContentBlock[] {
 	depthBudget(depth)
 	if (!Array.isArray(input)) throw invalid(`${label} must be an array`)
 	return Object.freeze(
@@ -260,9 +377,15 @@ function blocks(
 	)
 }
 
-function block(input: unknown, budget: Budget, depth: number, label: string): WorkbenchPageBlock {
+function block(
+	input: unknown,
+	budget: Budget,
+	depth: number,
+	label: string,
+): WorkbenchContentBlock {
 	nodeBudget(budget)
 	const record = object(input, label)
+	if (record.type === 'slot') return parseSlotNode(record, budget, 'block', label)
 	if (record.type === 'heading') {
 		keys(record, label, ['type', 'level', 'anchor', 'children'])
 		if (
@@ -328,7 +451,9 @@ function list(record: Record<string, unknown>, budget: Budget, depth: number, la
 		throw invalid(`${label} is invalid`)
 	}
 	budget.listItems += record.items.length
-	if (budget.listItems > MAX_LIST_ITEMS) throw invalid('Standard Page list item budget exceeded')
+	if (budget.listItems > MAX_LIST_ITEMS) {
+		throw invalid('Workbench Content list item budget exceeded')
+	}
 	const start = record.ordered
 		? record.start === undefined
 			? 1
@@ -360,7 +485,7 @@ function table(record: Record<string, unknown>, budget: Budget, depth: number, l
 	) {
 		throw invalid(`${label}.align is invalid`)
 	}
-	const align = record.align.map((value, index): WorkbenchPageTableAlignment => {
+	const align = record.align.map((value, index): WorkbenchContentTableAlignment => {
 		if (value !== null && value !== 'left' && value !== 'center' && value !== 'right') {
 			throw invalid(`${label}.align[${index}] is invalid`)
 		}
@@ -386,7 +511,9 @@ function tableRow(input: unknown, columns: number, budget: Budget, depth: number
 		throw invalid(`${label} must contain exactly ${columns} cells`)
 	}
 	budget.tableCells += input.length
-	if (budget.tableCells > MAX_TABLE_CELLS) throw invalid('Standard Page table cell budget exceeded')
+	if (budget.tableCells > MAX_TABLE_CELLS) {
+		throw invalid('Workbench Content table cell budget exceeded')
+	}
 	return Object.freeze(
 		input.map((cell, index) => inlines(cell, budget, depth, `${label}[${index}]`)),
 	)
@@ -397,7 +524,7 @@ function inlines(
 	budget: Budget,
 	depth: number,
 	label: string,
-): readonly WorkbenchPageInline[] {
+): readonly WorkbenchContentInline[] {
 	depthBudget(depth)
 	if (!Array.isArray(input)) throw invalid(`${label} must be an array`)
 	return Object.freeze(
@@ -405,9 +532,15 @@ function inlines(
 	)
 }
 
-function inline(input: unknown, budget: Budget, depth: number, label: string): WorkbenchPageInline {
+function inline(
+	input: unknown,
+	budget: Budget,
+	depth: number,
+	label: string,
+): WorkbenchContentInline {
 	nodeBudget(budget)
 	const record = object(input, label)
+	if (record.type === 'slot') return parseSlotNode(record, budget, 'inline', label)
 	if (record.type === 'text' || record.type === 'code') {
 		keys(record, label, ['type', 'value'])
 		const value = text(record.value, `${label}.value`)
@@ -424,7 +557,7 @@ function inline(input: unknown, budget: Budget, depth: number, label: string): W
 	if (record.type !== 'link') throw invalid(`${label}.type is unsupported`)
 	keys(record, label, ['type', 'target', 'children'])
 	budget.links += 1
-	if (budget.links > MAX_LINKS) throw invalid('Standard Page link budget exceeded')
+	if (budget.links > MAX_LINKS) throw invalid('Workbench Content link budget exceeded')
 	const target = object(record.target, `${label}.target`)
 	if (target.kind === 'fragment') {
 		keys(target, `${label}.target`, ['kind', 'anchor'])
@@ -456,6 +589,18 @@ function inline(input: unknown, budget: Budget, depth: number, label: string): W
 		target: Object.freeze({ kind: target.kind, href }),
 		children: inlines(record.children, budget, depth + 1, `${label}.children`),
 	})
+}
+
+function parseSlotNode(
+	record: Record<string, unknown>,
+	budget: Budget,
+	display: 'inline' | 'block',
+	label: string,
+): Readonly<{ type: 'slot'; key: string }> {
+	keys(record, label, ['type', 'key'])
+	const key = contentKey(record.key, `${label}.key`)
+	budget.slotNodes.push(Object.freeze({ key, display }))
+	return Object.freeze({ type: 'slot', key })
 }
 
 function object(input: unknown, label: string): Record<string, unknown> {
@@ -495,7 +640,7 @@ function optionalKeys(
 	}
 }
 
-function pageKey(input: unknown, label: string): string {
+function contentKey(input: unknown, label: string): string {
 	const value = text(input, label)
 	if (!ENTRY_KEY.test(value) || RESERVED_ENTRY_KEYS.has(value)) throw invalid(`${label} is invalid`)
 	return value
@@ -518,6 +663,15 @@ function text(input: unknown, label: string): string {
 	return input
 }
 
+function boundedText(input: unknown, label: string, maxBytes: number, budget: Budget): string {
+	const value = text(input, label)
+	if (value.length === 0 || value.trim() !== value || bytes(value) > maxBytes) {
+		throw invalid(`${label} is invalid`)
+	}
+	textBudget(budget, value)
+	return value
+}
+
 function hasAsciiControl(input: string): boolean {
 	for (let index = 0; index < input.length; index += 1) {
 		const code = input.charCodeAt(index)
@@ -533,16 +687,16 @@ function positiveInteger(input: unknown, label: string): number {
 
 function nodeBudget(budget: Budget) {
 	budget.nodes += 1
-	if (budget.nodes > MAX_NODES) throw invalid('Standard Page node budget exceeded')
+	if (budget.nodes > MAX_NODES) throw invalid('Workbench Content node budget exceeded')
 }
 
 function textBudget(budget: Budget, value: string) {
 	budget.textBytes += bytes(value)
-	if (budget.textBytes > MAX_TEXT_BYTES) throw invalid('Standard Page text budget exceeded')
+	if (budget.textBytes > MAX_TEXT_BYTES) throw invalid('Workbench Content text budget exceeded')
 }
 
 function depthBudget(depth: number) {
-	if (depth > MAX_DEPTH) throw invalid('Standard Page depth budget exceeded')
+	if (depth > MAX_DEPTH) throw invalid('Workbench Content depth budget exceeded')
 }
 
 function assertSerializedBudget(input: unknown, label: string) {
@@ -555,5 +709,5 @@ function bytes(value: string): number {
 }
 
 function invalid(message: string): TypeError {
-	return new TypeError(`[pluxel/core/workbench-page] ${message}`)
+	return new TypeError(`[pluxel/core/workbench-content] ${message}`)
 }

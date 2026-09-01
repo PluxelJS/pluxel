@@ -6,6 +6,7 @@ import {
 	type RedisSentinelType,
 } from 'redis'
 import { RedisScripts } from './scripts.ts'
+import { RedisWorkbench, type RedisWorkbenchStatus } from './workbench.ts'
 
 function isCredentialFreeRedisUrl(value: string): boolean {
 	const url = new URL(value)
@@ -83,6 +84,13 @@ export abstract class Redis extends BasePlugin {
 export class RedisPlugin extends Redis {
 	private readonly config = this.configs.use(RedisConfig)
 	private readonly holder: { client?: RedisClientType } = {}
+	private readonly workbenchDataListeners = new Set<() => void>()
+	private recentErrorType: string | null = null
+	private pingStatus: RedisWorkbenchStatus['ping'] = {
+		state: 'not-run',
+		latencyMs: null,
+		errorType: null,
+	}
 
 	override get client(): RedisClientType {
 		const client = this.holder.client
@@ -117,9 +125,14 @@ export class RedisPlugin extends Redis {
 			}
 		}
 		this.ctx.effects.defer(dispose, { tag: 'RedisClient' })
+		const workbench = this.ctx.workbench
 
 		client.on('error', (error) => {
-			if (!disposed) this.ctx.logger.error('Redis client error', { error })
+			if (disposed) return
+			this.ctx.logger.error('Redis client error', { error })
+			if (!workbench) return
+			this.recentErrorType = safeErrorType(error)
+			this.notifyWorkbenchDataChanged()
 		})
 
 		const abort = () => client.destroy()
@@ -132,7 +145,79 @@ export class RedisPlugin extends Redis {
 		} finally {
 			signal.removeEventListener('abort', abort)
 		}
+
+		if (workbench) {
+			const connectionChanged = (): void => {
+				if (client.isReady) this.recentErrorType = null
+				this.notifyWorkbenchDataChanged()
+			}
+			client.on('ready', connectionChanged)
+			client.on('reconnecting', connectionChanged)
+			client.on('end', connectionChanged)
+			this.ctx.effects.defer(
+				() => {
+					client.off('ready', connectionChanged)
+					client.off('reconnecting', connectionChanged)
+					client.off('end', connectionChanged)
+				},
+				{ tag: 'RedisWorkbenchEvents' },
+			)
+		}
+
+		this.ctx.workbench?.publish(RedisWorkbench, {
+			connection: ({ signal: contentSignal, dataChanged }) => {
+				const release = (): void => {
+					this.workbenchDataListeners.delete(dataChanged)
+				}
+				this.workbenchDataListeners.add(dataChanged)
+				contentSignal.addEventListener('abort', release, { once: true })
+				if (contentSignal.aborted) release()
+				return {
+					load: () => ({ status: this.workbenchStatus(client) }),
+					actions: {
+						ping: async ({ payload }) => this.pingRedis(client, payload),
+					},
+				}
+			},
+		})
 	}
+
+	private workbenchStatus(client: RedisClientType): RedisWorkbenchStatus {
+		return {
+			connection: client.isReady ? 'ready' : client.isOpen ? 'reconnecting' : 'closed',
+			recentErrorType: this.recentErrorType,
+			ping: this.pingStatus,
+		}
+	}
+
+	private async pingRedis(
+		client: RedisClientType,
+		payload: string,
+	): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+		const startedAt = performance.now()
+		try {
+			const reply = payload ? await client.ping(payload) : await client.ping()
+			const expected = payload || 'PONG'
+			if (reply !== expected) throw new TypeError('Redis returned an unexpected PING reply.')
+			const latencyMs = Math.max(0, Math.round(performance.now() - startedAt))
+			this.pingStatus = { state: 'succeeded', latencyMs, errorType: null }
+			this.notifyWorkbenchDataChanged()
+			return { ok: true, message: `Redis replied in ${latencyMs} ms.` }
+		} catch (error) {
+			this.pingStatus = { state: 'failed', latencyMs: null, errorType: safeErrorType(error) }
+			this.notifyWorkbenchDataChanged()
+			return { ok: false, message: 'Redis PING failed. Check the Plugin logs.' }
+		}
+	}
+
+	private notifyWorkbenchDataChanged(): void {
+		for (const changed of this.workbenchDataListeners) changed()
+	}
+}
+
+function safeErrorType(error: unknown): string {
+	const value = error instanceof Error ? error.name : typeof error
+	return (value || 'Error').slice(0, 128)
 }
 
 async function connectWithin(client: RedisClientType, timeoutMs: number): Promise<void> {

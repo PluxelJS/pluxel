@@ -1,6 +1,12 @@
 import { CommandError, type CommandContext, type CommandDescriptor } from '@pluxel/commands'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { AgentToolsConfig } from './config.ts'
+import type {
+	AgentToolAssignmentSnapshot,
+	AgentToolsSnapshot,
+	AgentToolsetSnapshot,
+} from './contracts.ts'
+import { AgentToolsWorkbench } from './workbench.ts'
 
 const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
 const emptyDescriptors: readonly CommandDescriptor[] = Object.freeze([])
@@ -26,15 +32,33 @@ export interface AgentCommandCatalog {
 type PolicyProjection = Readonly<{
 	revision: number
 	allowedByAgent: ReadonlyMap<string, ReadonlySet<string>>
+	toolsets: readonly AgentToolsetPolicy[]
+	assignments: readonly AgentToolAssignmentPolicy[]
+}>
+
+type AgentToolsetPolicy = Readonly<{
+	id: string
+	label: string
+	description?: string
+	commandNames: readonly string[]
+}>
+
+type AgentToolAssignmentPolicy = Readonly<{
+	agentId: string
+	label: string
+	toolsetIds: readonly string[]
 }>
 
 type AgentToolsPolicyView = Readonly<{
 	toolsets: readonly Readonly<{
 		id: string
+		label: string
+		description?: string
 		commandNames: readonly string[]
 	}>[]
 	agents: readonly Readonly<{
 		agentId: string
+		label: string
 		toolsetIds: readonly string[]
 	}>[]
 }>
@@ -56,6 +80,22 @@ export class AgentToolsPlugin extends BasePlugin {
 		)
 		controller.start(this.config)
 		this.controller = controller
+		this.ctx.workbench?.publish(AgentToolsWorkbench, {
+			overview: ({ signal, dataChanged }) => {
+				const unsubscribePolicy = controller.subscribePolicy(dataChanged)
+				const unsubscribeCatalog = controller.commands.subscribe(dataChanged)
+				let active = true
+				const release = () => {
+					if (!active) return
+					active = false
+					unsubscribePolicy()
+					unsubscribeCatalog()
+				}
+				signal.addEventListener('abort', release, { once: true })
+				if (signal.aborted) release()
+				return { load: () => ({ status: controller.snapshot() }) }
+			},
+		})
 		this.configs.onUpdate(this.config, ({ desired }) => {
 			controller.update(desired)
 		})
@@ -72,11 +112,23 @@ export class AgentToolsPlugin extends BasePlugin {
 		const normalizedAgentId = normalizeAgentId(agentId)
 		return controller.catalog(normalizedAgentId)
 	}
+
+	/** Read a detached projection for setup selection and diagnostics. */
+	snapshot(): AgentToolsSnapshot {
+		const controller = this.controller
+		if (!controller) throw new Error('AgentToolsPlugin is not running')
+		return controller.snapshot()
+	}
 }
 
 class AgentToolsController {
 	private active = false
-	private projection: PolicyProjection = Object.freeze({ revision: 0, allowedByAgent: new Map() })
+	private projection: PolicyProjection = Object.freeze({
+		revision: 0,
+		allowedByAgent: new Map(),
+		toolsets: Object.freeze([]),
+		assignments: Object.freeze([]),
+	})
 	private readonly listeners = new Set<() => void>()
 
 	constructor(
@@ -100,6 +152,8 @@ class AgentToolsController {
 		this.projection = Object.freeze({
 			revision: this.projection.revision + 1,
 			allowedByAgent: new Map(),
+			toolsets: Object.freeze([]),
+			assignments: Object.freeze([]),
 		})
 		this.notify()
 		this.listeners.clear()
@@ -107,6 +161,64 @@ class AgentToolsController {
 
 	catalog(agentId: string): AgentCommandCatalog {
 		return new BoundAgentCommandCatalog(this, agentId)
+	}
+
+	snapshot(): AgentToolsSnapshot {
+		const catalog = this.commands.snapshot()
+		const availableNames = new Set(catalog.descriptors.map(({ name }) => name))
+		const assignedNames = new Set(
+			this.projection.toolsets.flatMap(({ commandNames }) => commandNames),
+		)
+		const namesByToolset = new Map(
+			this.projection.toolsets.map((toolset) => [toolset.id, toolset.commandNames] as const),
+		)
+		const toolsets: readonly AgentToolsetSnapshot[] = Object.freeze(
+			this.projection.toolsets.map((toolset) =>
+				Object.freeze({
+					...toolset,
+					commandNames: Object.freeze([...toolset.commandNames]),
+					availableCommandNames: Object.freeze(
+						toolset.commandNames.filter((name) => availableNames.has(name)),
+					),
+					missingCommandNames: Object.freeze(
+						toolset.commandNames.filter((name) => !availableNames.has(name)),
+					),
+				}),
+			),
+		)
+		const assignments: readonly AgentToolAssignmentSnapshot[] = Object.freeze(
+			this.projection.assignments.map((assignment) => {
+				const commandNames = new Set<string>()
+				for (const toolsetId of assignment.toolsetIds) {
+					for (const name of namesByToolset.get(toolsetId) ?? []) commandNames.add(name)
+				}
+				return Object.freeze({
+					...assignment,
+					toolsetIds: Object.freeze([...assignment.toolsetIds]),
+					commandNames: Object.freeze([...commandNames].toSorted()),
+					availableCommandNames: Object.freeze(
+						[...commandNames].filter((name) => availableNames.has(name)).toSorted(),
+					),
+					missingCommandNames: Object.freeze(
+						[...commandNames].filter((name) => !availableNames.has(name)).toSorted(),
+					),
+				})
+			}),
+		)
+		return Object.freeze({
+			policyRevision: this.projection.revision,
+			catalogRevision: catalog.revision,
+			commands: Object.freeze(
+				catalog.descriptors.map(({ name, title, description, behavior }) =>
+					Object.freeze({ name, ...(title ? { title } : {}), description, behavior }),
+				),
+			),
+			toolsets,
+			assignments,
+			ungroupedCommandNames: Object.freeze(
+				catalog.descriptors.map(({ name }) => name).filter((name) => !assignedNames.has(name)),
+			),
+		})
 	}
 
 	currentProjection(): PolicyProjection {
@@ -215,16 +327,35 @@ class BoundAgentCommandCatalog implements AgentCommandCatalog {
 }
 
 function projectPolicy(config: AgentToolsPolicyView, revision: number): PolicyProjection {
-	const toolsets = new Map(config.toolsets.map((toolset) => [toolset.id, toolset.commandNames]))
+	const toolsetRecords = Object.freeze(
+		config.toolsets.map((toolset) =>
+			Object.freeze({
+				id: toolset.id,
+				label: toolset.label,
+				...(toolset.description ? { description: toolset.description } : {}),
+				commandNames: Object.freeze([...toolset.commandNames]),
+			}),
+		),
+	)
+	const assignments = Object.freeze(
+		config.agents.map((agent) =>
+			Object.freeze({
+				agentId: agent.agentId,
+				label: agent.label,
+				toolsetIds: Object.freeze([...agent.toolsetIds]),
+			}),
+		),
+	)
+	const toolsets = new Map(toolsetRecords.map((toolset) => [toolset.id, toolset.commandNames]))
 	const allowedByAgent = new Map<string, ReadonlySet<string>>()
-	for (const agent of config.agents) {
+	for (const agent of assignments) {
 		const names = new Set<string>()
 		for (const toolsetId of agent.toolsetIds) {
 			for (const name of toolsets.get(toolsetId) ?? []) names.add(name)
 		}
 		allowedByAgent.set(agent.agentId, names)
 	}
-	return Object.freeze({ revision, allowedByAgent })
+	return Object.freeze({ revision, allowedByAgent, toolsets: toolsetRecords, assignments })
 }
 
 function normalizeAgentId(value: string): string {
@@ -236,4 +367,10 @@ function normalizeAgentId(value: string): string {
 }
 
 export { AgentToolsConfig } from './config.ts'
+export type {
+	AgentToolAssignmentSnapshot,
+	AgentToolCommandSummary,
+	AgentToolsSnapshot,
+	AgentToolsetSnapshot,
+} from './contracts.ts'
 export type { AgentToolAssignment, AgentToolsPluginConfig, CommandToolset } from './config.ts'

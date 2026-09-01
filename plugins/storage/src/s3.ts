@@ -1,9 +1,15 @@
 import { resolve } from 'node:path'
 import { f, Plugin, v } from '@pluxel/runtime'
 import type { VaultKvHandle } from '@pluxel/runtime/services/vault'
+import type { WorkbenchContentActionResult, WorkbenchPrincipal } from '@pluxel/runtime/workbench'
 import { S3mini } from 's3mini'
 import { S3, type S3Client, S3NotRunningError } from './capability.ts'
 import { LocalS3Client } from './local.ts'
+import {
+	S3Workbench,
+	type S3CredentialRotationInput,
+	type S3OperationsStatus,
+} from './workbench.ts'
 
 const MEBIBYTE = 1024 * 1024
 
@@ -166,6 +172,9 @@ type RemoteCredentials = RemoteBackend['credentials']
 export class S3Plugin extends S3 {
 	private readonly config = this.configs.use(S3Config)
 	private readonly holder: { client?: S3Client } = {}
+	private credentialMutation: Promise<void> = Promise.resolve()
+	private credentialReplacementSaved = false
+	private readonly workbenchDataListeners = new Set<() => void>()
 
 	override get client(): S3Client {
 		const client = this.holder.client
@@ -174,12 +183,108 @@ export class S3Plugin extends S3 {
 	}
 
 	protected override async init(signal: AbortSignal): Promise<void> {
+		this.ctx.workbench?.publish(S3Workbench, {
+			credentials: ({ principal, signal: contentSignal, dataChanged }) => {
+				const release = () => this.workbenchDataListeners.delete(dataChanged)
+				this.workbenchDataListeners.add(dataChanged)
+				contentSignal.addEventListener('abort', release, { once: true })
+				if (contentSignal.aborted) release()
+				return {
+					load: () => ({ status: this.workbenchStatus(contentSignal) }),
+					actions: {
+						rotate: (input) => this.rotateCredentials(principal, contentSignal, input),
+					},
+				}
+			},
+		})
 		const backend = this.config.backend
 		if (backend.type === 'local') {
 			await this.initLocal(backend, signal)
 			return
 		}
 		await this.initRemote(backend, signal)
+	}
+
+	private workbenchStatus(signal: AbortSignal): S3OperationsStatus {
+		if (signal.aborted || !this.holder.client) throw new Error('S3 provider is not running')
+		const backend = this.config.backend
+		if (backend.type === 'local') {
+			return Object.freeze({ backend: 'local', credentialRotation: 'not-applicable' })
+		}
+		if (backend.credentials.type === 'anonymous') {
+			return Object.freeze({ backend: 'remote-anonymous', credentialRotation: 'not-applicable' })
+		}
+		return Object.freeze({
+			backend: 'remote-vault',
+			credentialRotation: this.credentialReplacementSaved ? 'restart-required' : 'available',
+		})
+	}
+
+	private rotateCredentials(
+		principal: WorkbenchPrincipal,
+		signal: AbortSignal,
+		input: S3CredentialRotationInput,
+	): Promise<WorkbenchContentActionResult> {
+		return this.runCredentialMutation(async () => {
+			if (!credentialRotationAuthorized(principal)) {
+				return Object.freeze({
+					ok: false as const,
+					message: 'Credential rotation requires an authenticated Management principal.',
+				})
+			}
+			if (signal.aborted || !this.holder.client) {
+				return Object.freeze({
+					ok: false as const,
+					message: 'The S3 provider is no longer running.',
+				})
+			}
+			const backend = this.config.backend
+			if (backend.type !== 'remote' || backend.credentials.type !== 'vault') {
+				return Object.freeze({
+					ok: false as const,
+					message: 'Credential rotation requires a remote S3 backend with a Vault reference.',
+				})
+			}
+			const reference = backend.credentials
+			let credentials: S3AccessKeyCredentials
+			try {
+				credentials = normalizeCredentials(input)
+			} catch {
+				return Object.freeze({ ok: false as const, message: 'The credentials are invalid.' })
+			}
+			try {
+				const vault = this.ctx.vault
+				if (!vault) throw new Error('Vault is unavailable')
+				await vault
+					.kv(reference.namespace ? { namespace: reference.namespace } : undefined)
+					.set(reference.key, credentials)
+				await vault.flush()
+			} catch {
+				return Object.freeze({
+					ok: false as const,
+					message: 'The replacement credentials could not be persisted.',
+				})
+			}
+			this.credentialReplacementSaved = true
+			this.notifyWorkbenchDataChanged()
+			return Object.freeze({
+				ok: true as const,
+				message: 'Credentials saved. Restart this S3 Plugin generation to apply them.',
+			})
+		})
+	}
+
+	private runCredentialMutation<Result>(operation: () => Promise<Result>): Promise<Result> {
+		const task = this.credentialMutation.then(operation)
+		this.credentialMutation = task.then(
+			(): undefined => undefined,
+			(): undefined => undefined,
+		)
+		return task
+	}
+
+	private notifyWorkbenchDataChanged(): void {
+		for (const dataChanged of this.workbenchDataListeners) dataChanged()
 	}
 
 	private async initLocal(config: LocalBackend, signal: AbortSignal): Promise<void> {
@@ -290,4 +395,12 @@ function normalizeCredentials(value: unknown): S3AccessKeyCredentials {
 		accessKeyId: candidate.accessKeyId,
 		secretAccessKey: candidate.secretAccessKey,
 	})
+}
+
+function credentialRotationAuthorized(principal: WorkbenchPrincipal): boolean {
+	return (
+		principal.provider.length > 0 &&
+		principal.subject.length > 0 &&
+		!(principal.provider === 'local' && principal.subject === 'local')
+	)
 }

@@ -24,7 +24,7 @@ export default function Dashboard() {
 					刷新当前文档
 				</Button>
 				<Text size="xs" c="dimmed">
-					route params 由服务端 openView 再匹配。
+					route params 由服务端 openEntry 再匹配。
 				</Text>
 			</Stack>
 		</DemoProvider>

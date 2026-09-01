@@ -26,6 +26,7 @@
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/otel": "workspace:*",
 		"@pluxel/package-manager": "workspace:*",
+		"@pluxel/pi-agent": "workspace:*",
 		"@pluxel/rates": "workspace:*",
 		"@pluxel/redis": "workspace:*",
 		"@pluxel/runtime": "workspace:*",

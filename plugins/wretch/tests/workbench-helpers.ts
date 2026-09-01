@@ -23,7 +23,7 @@ export async function openWretchSettings(
 		Object.freeze({ provider: 'test', subject: 'wretch-tests' }),
 		() => {},
 	)
-	const opened = await session.target.openView({
+	const opened = await session.target.openEntry({
 		layoutRevision: layout.revision,
 		target,
 		descriptor: entry.descriptor,

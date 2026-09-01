@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
 import {
-	openWorkbenchView,
+	openWorkbenchEntry,
 	type WorkbenchLayoutEntry,
 	type WorkbenchSessionApi,
 } from '@pluxel/runtime/workbench/client'
@@ -29,8 +29,8 @@ const SettingsWorkbench = workbench.define({
 		placement: workbench.tab({ label: 'Settings' }),
 	}),
 })
-const SameNamedOtherWorkbench = workbench.define({
-	settings: workbench.view<SettingsApi>({
+const OtherWorkbench = workbench.define({
+	other: workbench.view<SettingsApi>({
 		renderer,
 		placement: workbench.tab({ label: 'Other' }),
 	}),
@@ -72,13 +72,13 @@ const host: WorkbenchHostFacade = Object.freeze({
 
 async function openedHandle(api: object) {
 	const session = {
-		openView: vi.fn().mockResolvedValue({
+		openEntry: vi.fn().mockResolvedValue({
 			ok: true,
 			value: { kind: 'local', api, params: {}, federatedViewRef },
 			[Symbol.dispose]() {},
 		}),
 	} as unknown as RpcStub<WorkbenchSessionApi>
-	const opened = await openWorkbenchView(session, entry, { layoutRevision: 1 })
+	const opened = await openWorkbenchEntry(session, entry, { layoutRevision: 1 })
 	if (!opened.ok) throw new Error('expected open success')
 	return opened.handle
 }
@@ -94,7 +94,7 @@ describe('generated Workbench React Bridge', () => {
 			observed = useWorkbench(SettingsWorkbench.settings)
 			return <p>ready</p>
 		}
-		const provider = createWorkbenchBridge(identity, SettingsWorkbench.settings, Settings)
+		const provider = createWorkbenchBridge(identity, Settings)
 		expect(readWorkbenchBridgeProvider(provider)).toBe(provider)
 		expect(readWorkbenchBridgeIdentity(provider)).toEqual(identity)
 		const application = provider()
@@ -116,15 +116,15 @@ describe('generated Workbench React Bridge', () => {
 		handle[Symbol.dispose]()
 	})
 
-	it('rejects a same-kind, same-key descriptor object from another definition', async () => {
+	it('rejects a descriptor whose kind or key does not match the generated identity', async () => {
 		const apiCall = vi.fn()
 		const handle = await openedHandle({ snapshot: apiCall, [Symbol.dispose]() {} })
 		function WrongRenderer() {
-			const { api } = useWorkbench(SameNamedOtherWorkbench.settings)
+			const { api } = useWorkbench(OtherWorkbench.other)
 			void api.snapshot()
 			return null
 		}
-		const application = createWorkbenchBridge(identity, SettingsWorkbench.settings, WrongRenderer)()
+		const application = createWorkbenchBridge(identity, WrongRenderer)()
 		const dom = document.createElement('div')
 
 		await act(() =>
@@ -134,7 +134,7 @@ describe('generated Workbench React Bridge', () => {
 				__pluxelWorkbench: { profile: 1, handle, host },
 			}),
 		)
-		expect(dom.textContent).toContain('descriptor does not belong to this renderer')
+		expect(dom.textContent).toContain('descriptor identity does not match this renderer')
 		expect(apiCall).not.toHaveBeenCalled()
 
 		act(() => application.destroy({ dom, moduleName: 'settings' }))

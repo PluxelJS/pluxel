@@ -62,6 +62,11 @@ cleanup 和 provider-owned registry；即使宿主显式执行非级联 provider
 普通配置只接受非敏感 header 和无 credential 的 proxy URL。secret 不进入 browser contract 或普通
 persistence。Attachment 不提供任意请求控制台；领域测试请求和响应脱敏仍归 consumer。
 
+这里不改用 Content：设置属于 exact consumer，placement 也由 consumer 选择；动态 header collection、保存/reset 和
+`ProxyAgent` replacement/cleanup 已经构成 provider-owned Attachment 的完整生命周期。provider Content 会丢失 consumer
+所有权，consumer 自建 Content 又会复制 provider validation 和持久化。认证 secret 的 schema、刷新与轮换语义继续由
+consumer 领域拥有，不并入这套普通设置。
+
 ## 有意不包含
 
 - 通用 caller profile、公开 client generation API 或自定义 client handle；

@@ -16,14 +16,19 @@ type ApiOf<Descriptor> = WorkbenchDescriptorApi<Descriptor>
 
 type ConsumerApiOf<Descriptor> = WorkbenchDescriptorConsumerApi<Descriptor>
 
+// Browser-only toolchain projections deliberately erase server API contracts to `any`. Keep that
+// erased root permissive during declaration emit while preserving exact RpcStub inference for every
+// author-defined descriptor.
+type StubOf<Api> = 0 extends 1 & Api ? any : Api extends RpcTarget ? RpcStub<Api> : never
+
 export type WorkbenchHookValue<Descriptor extends WorkbenchRenderableDescriptor> =
 	Descriptor extends Readonly<{ kind: 'view' }>
-		? Readonly<{ api: RpcStub<ApiOf<Descriptor>>; host: WorkbenchHostFacade }>
+		? Readonly<{ api: StubOf<ApiOf<Descriptor>>; host: WorkbenchHostFacade }>
 		: [ConsumerApiOf<Descriptor>] extends [never]
-			? Readonly<{ provider: RpcStub<ApiOf<Descriptor>>; host: WorkbenchHostFacade }>
+			? Readonly<{ provider: StubOf<ApiOf<Descriptor>>; host: WorkbenchHostFacade }>
 			: Readonly<{
-					provider: RpcStub<ApiOf<Descriptor>>
-					consumer: RpcStub<ConsumerApiOf<Descriptor> & RpcTarget>
+					provider: StubOf<ApiOf<Descriptor>>
+					consumer: StubOf<ConsumerApiOf<Descriptor> & RpcTarget>
 					host: WorkbenchHostFacade
 				}>
 
@@ -32,9 +37,6 @@ export function useWorkbench<Descriptor extends WorkbenchRenderableDescriptor>(
 	descriptor: Descriptor,
 ): WorkbenchHookValue<Descriptor> {
 	const runtime = useWorkbenchReactRuntime()
-	if (descriptor !== runtime.descriptor) {
-		throw new Error('useWorkbench() descriptor does not belong to this renderer')
-	}
 	const metadata = readWorkbenchDescriptor(descriptor)
 	if (
 		(metadata.kind !== 'view' && metadata.kind !== 'attachment') ||

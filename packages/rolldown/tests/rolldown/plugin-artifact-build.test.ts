@@ -6,14 +6,14 @@ import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
 import { describe, expect, it, vi } from 'vitest'
 import {
-	WORKBENCH_PAGE_ARTIFACT_FILE,
-	createWorkbenchPageSet,
-	serializeWorkbenchPageSet,
+	WORKBENCH_CONTENT_ARTIFACT_FILE,
+	createWorkbenchContentSet,
+	serializeWorkbenchContentSet,
 } from '@pluxel/core/internal'
 import { pluginArtifactBuildPlugin } from '../../src/plugin-artifact/pluginArtifactBuildPlugin.ts'
 import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
 import { readWorkbenchFederationDeploymentInventory } from '../../src/workbench/artifact.ts'
-import { readWorkbenchPageDeploymentInventory } from '../../src/workbench/page-artifact.ts'
+import { readWorkbenchContentDeploymentInventory } from '../../src/workbench/content-artifact.ts'
 
 describe('pluginArtifactBuildPlugin', () => {
 	it('atomically emits the host-owned deployment inventory from canonical compilations', async () => {
@@ -21,17 +21,17 @@ describe('pluginArtifactBuildPlugin', () => {
 			'package.json': JSON.stringify({ name: 'workbench-inventory-fixture', type: 'module' }),
 		})
 		const compilations = vi.fn(async () => [])
-		const pageCompilations = vi.fn(async () => [])
+		const contentCompilations = vi.fn(async () => [])
 		const plugin = pluginArtifactBuildPlugin({
 			root: fixture.path,
 			buildDir: 'dist',
-			workbench: { compilations, pageCompilations },
+			workbench: { compilations, contentCompilations },
 		})
 		const writeBundle = plugin.writeBundle as (() => Promise<void>) | undefined
 		await writeBundle?.call({})
 
 		expect(compilations).toHaveBeenCalledOnce()
-		expect(pageCompilations).toHaveBeenCalledOnce()
+		expect(contentCompilations).toHaveBeenCalledOnce()
 		await expect(
 			readWorkbenchFederationDeploymentInventory(join(fixture.path, 'dist')),
 		).resolves.toEqual({
@@ -41,26 +41,30 @@ describe('pluginArtifactBuildPlugin', () => {
 			producers: [],
 		})
 		await expect(
-			readWorkbenchPageDeploymentInventory(join(fixture.path, 'dist/workbench')),
-		).resolves.toEqual({ version: 1, pages: [] })
+			readWorkbenchContentDeploymentInventory(join(fixture.path, 'dist/workbench')),
+		).resolves.toEqual({ version: 1, entries: [] })
 	})
 
-	it('publishes a page-only immutable artifact without creating an MF producer', async () => {
+	it('publishes a content-only immutable artifact without creating an MF producer', async () => {
 		await using fixture = await createFixture({
-			'package.json': JSON.stringify({ name: 'workbench-page-artifact-fixture', type: 'module' }),
+			'package.json': JSON.stringify({
+				name: 'workbench-content-artifact-fixture',
+				type: 'module',
+			}),
 		})
 		const definition = {
-			entry: { kind: 'package-root', packageName: '@example/page-only' },
-			exportName: 'PageOnlyPlugin',
+			entry: { kind: 'package-root', packageName: '@example/content-only' },
+			exportName: 'ContentOnlyPlugin',
 		} as const
-		const pageSet = createWorkbenchPageSet({
+		const contentSet = createWorkbenchContentSet({
 			definition,
 			entries: [
 				{
 					key: 'guide',
-					page: {
+					content: {
 						version: 1,
-						kind: 'standard-page',
+						kind: 'workbench-content',
+						slots: [],
 						document: {
 							version: 1,
 							blocks: [
@@ -76,33 +80,33 @@ describe('pluginArtifactBuildPlugin', () => {
 				},
 			],
 		})
-		const serialized = serializeWorkbenchPageSet(pageSet)
+		const serialized = serializeWorkbenchContentSet(contentSet)
 		const bytes = new TextEncoder().encode(serialized)
 		const digest = createHash('sha256').update(bytes).digest('hex')
-		const pageCompilations = vi.fn(async () => [
-			{ pageSet, digest, bytes, root: fixture.path, sources: [] },
+		const contentCompilations = vi.fn(async () => [
+			{ contentSet, digest, bytes, root: fixture.path, sources: [] },
 		])
 		const compilations = vi.fn(async () => [])
 		const plugin = pluginArtifactBuildPlugin({
 			root: fixture.path,
 			buildDir: 'dist',
-			workbench: { compilations, pageCompilations },
+			workbench: { compilations, contentCompilations },
 		})
 		const writeBundle = plugin.writeBundle as (() => Promise<void>) | undefined
 		await writeBundle?.call({})
 
-		const inventory = await readWorkbenchPageDeploymentInventory(
+		const inventory = await readWorkbenchContentDeploymentInventory(
 			join(fixture.path, 'dist/workbench'),
 		)
-		expect(inventory.pages).toHaveLength(1)
-		expect(inventory.pages[0]).toMatchObject({ definition, digest })
+		expect(inventory.entries).toHaveLength(1)
+		expect(inventory.entries[0]).toMatchObject({ definition, digest })
 		await expect(
 			readFile(
 				join(
 					fixture.path,
 					'dist/workbench',
-					inventory.pages[0]!.artifactRoot,
-					WORKBENCH_PAGE_ARTIFACT_FILE,
+					inventory.entries[0]!.artifactRoot,
+					WORKBENCH_CONTENT_ARTIFACT_FILE,
 				),
 				'utf-8',
 			),
@@ -111,10 +115,10 @@ describe('pluginArtifactBuildPlugin', () => {
 		expect(files).not.toContain('mf-manifest.json')
 		expect(files).not.toContain('remoteEntry.js')
 		expect(compilations).toHaveBeenCalledOnce()
-		expect(pageCompilations).toHaveBeenCalledOnce()
+		expect(contentCompilations).toHaveBeenCalledOnce()
 	})
 
-	it('does not request or publish Page artifacts when Workbench is disabled', async () => {
+	it('does not request or publish Content artifacts when Workbench is disabled', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: 'workbench-disabled-fixture', type: 'module' }),
 		})

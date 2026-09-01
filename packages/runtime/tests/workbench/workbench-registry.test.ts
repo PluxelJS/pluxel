@@ -1,10 +1,12 @@
 import { pluginNodeAddressOf, type Context } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
+import * as v from 'valibot'
 import { requireWorkbench } from '../../src/services/workbench'
+import type { WorkbenchContentObserver } from '@pluxel/runtime/workbench/client'
 
 interface SettingsApi extends RpcTarget {
 	snapshot(): Readonly<{ enabled: boolean }>
@@ -27,10 +29,20 @@ const LocalWorkbench = workbench.define({
 	}),
 })
 
-const PageWorkbench = workbench.define({
-	guide: workbench.page({
+const ContentWorkbench = workbench.define({
+	guide: workbench.content({
 		document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
 		placement: workbench.tab({ label: 'Guide' }),
+	}),
+})
+
+const InteractiveContentWorkbench = workbench.define({
+	interactive: workbench.content({
+		document: workbench.markdown(import.meta.url, './fixtures/interactive.md', {
+			status: workbench.data(v.object({ count: v.number() })),
+			refresh: workbench.action({ label: 'Refresh' }),
+		}),
+		placement: workbench.tab({ label: 'Interactive' }),
 	}),
 })
 
@@ -95,11 +107,53 @@ class LocalPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'Page' })
-class PagePlugin extends BasePlugin {
+@Plugin({ displayName: 'Content' })
+class ContentPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(PageWorkbench)
+		this.ctx.workbench?.publish(ContentWorkbench)
 	}
+}
+
+let contentCount = 0
+let contentChanged: (() => void) | undefined
+let contentSignal: AbortSignal | undefined
+
+@Plugin({ displayName: 'Interactive Content' })
+class InteractiveContentPlugin extends BasePlugin {
+	protected override init() {
+		this.ctx.workbench?.publish(InteractiveContentWorkbench, {
+			interactive: ({ dataChanged, signal }) => {
+				contentChanged = dataChanged
+				contentSignal = signal
+				return {
+					load: () => ({ status: { count: contentCount } }),
+					actions: {
+						refresh: () => {
+							contentCount += 1
+						},
+					},
+				}
+			},
+		})
+	}
+}
+
+function retainedContentObserver(handler: () => void | Promise<void>) {
+	const disposeObserver = vi.fn()
+	const disposeResults: ReturnType<typeof vi.fn>[] = []
+	const observer = Object.assign(
+		vi.fn(() => {
+			const disposeResult = vi.fn()
+			disposeResults.push(disposeResult)
+			const result = Promise.resolve(handler())
+			return Object.assign(result, { [Symbol.dispose]: disposeResult })
+		}),
+		{
+			dup: () => observer,
+			[Symbol.dispose]: disposeObserver,
+		},
+	) as unknown as RpcStub<WorkbenchContentObserver>
+	return { observer, disposeObserver, disposeResults }
 }
 
 @Plugin({ displayName: 'No publication' })
@@ -222,7 +276,7 @@ class ConsumerPlugin extends BasePlugin {
 }
 
 describe('Workbench vNext publication', () => {
-	it('rejects an explicit undefined binding for a binding-free Page definition', async () => {
+	it('rejects an explicit undefined binding for a binding-free Content definition', async () => {
 		const host = createRuntimeHost()
 		host.add(NoPublicationPlugin)
 		host.start(NoPublicationPlugin)
@@ -237,7 +291,7 @@ describe('Workbench vNext publication', () => {
 				publish(owner: Context, definition: unknown, ...bindings: unknown[]): void
 			}
 
-			expect(() => registry.publish(instance.ctx, PageWorkbench, undefined)).toThrow(
+			expect(() => registry.publish(instance.ctx, ContentWorkbench, undefined)).toThrow(
 				'bindings must be omitted for a binding-free definition',
 			)
 		} finally {
@@ -245,44 +299,195 @@ describe('Workbench vNext publication', () => {
 		}
 	})
 
-	it('opens a static Page without a target, retained lease, or View quota', async () => {
+	it('opens a static Content without a target, retained lease, or View quota', async () => {
 		const host = createRuntimeHost()
-		host.add(PagePlugin)
-		host.start(PagePlugin)
+		host.add(ContentPlugin)
+		host.start(ContentPlugin)
 		await host.commit()
 
 		try {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(PagePlugin)
+			const target = pluginNodeAddressOf(ContentPlugin)
 			const layout = session.target.layout({ target })
 			expect(layout.entries).toHaveLength(1)
 			const entry = layout.entries[0]!
-			expect(entry.descriptor).toMatchObject({ kind: 'page', key: 'guide' })
-			expect(entry).toHaveProperty('standardPageRef')
+			expect(entry.descriptor).toMatchObject({ kind: 'content', key: 'guide' })
+			expect(entry).toHaveProperty('contentRef')
 			expect(entry).not.toHaveProperty('renderer')
 			expect(entry).not.toHaveProperty('federatedViewRef')
 
 			for (let index = 0; index < 65; index += 1) {
-				const result = await session.target.openView({
+				const result = await session.target.openEntry({
 					layoutRevision: layout.revision,
 					target,
 					descriptor: entry.descriptor,
 				})
 				expect(result.ok).toBe(true)
-				if (!result.ok || result.value.kind !== 'page') throw new Error('Page open failed')
+				if (!result.ok || result.value.kind !== 'content') throw new Error('Content open failed')
 				expect(result.value).not.toHaveProperty('api')
 				expect(result.value).not.toHaveProperty('provider')
 				expect(result.value.plan).toEqual({
 					version: 1,
-					kind: 'standard-page',
+					kind: 'workbench-content',
 					document: { version: 1, blocks: [] },
+					slots: [],
 				})
 			}
 
-			host.stop(PagePlugin)
+			host.stop(ContentPlugin)
 			await host.commit()
 			expect(session.signal.aborted).toBe(true)
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('opens interactive Content on one framework root and releases its lifetime lease', async () => {
+		contentCount = 0
+		contentChanged = undefined
+		contentSignal = undefined
+		const host = createRuntimeHost()
+		host.add(InteractiveContentPlugin)
+		host.start(InteractiveContentPlugin)
+		await host.commit()
+
+		try {
+			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(InteractiveContentPlugin)
+			const layout = session.target.layout({ target })
+			const entry = layout.entries[0]!
+			const opened = await session.target.openEntry({
+				layoutRevision: layout.revision,
+				target,
+				descriptor: entry.descriptor,
+			})
+			expect(opened.ok).toBe(true)
+			if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+				throw new Error('interactive Content open failed')
+			}
+			expect(opened.value.presentation.slots.map((slot) => slot.key)).toEqual(['refresh', 'status'])
+			const updates: unknown[] = []
+			const disposeObserver = vi.fn()
+			const observer = Object.assign(
+				(outcome: unknown) =>
+					Object.assign(
+						Promise.resolve().then(() => updates.push(outcome)),
+						{
+							[Symbol.dispose]: vi.fn(),
+						},
+					),
+				{
+					dup: () => observer,
+					[Symbol.dispose]: disposeObserver,
+				},
+			) as unknown as Parameters<typeof opened.value.root.subscribe>[0] & WorkbenchContentObserver
+			await expect(opened.value.root.subscribe(observer)).resolves.toMatchObject({
+				ok: true,
+				data: { status: { count: 0 } },
+			})
+			await expect(opened.value.root.run('refresh')).resolves.toMatchObject({
+				action: { ok: true },
+				data: { ok: true, data: { status: { count: 1 } } },
+			})
+
+			contentCount = 2
+			contentChanged?.()
+			await vi.waitFor(() => expect(updates).toHaveLength(1))
+			expect(updates[0]).toMatchObject({ ok: true, data: { status: { count: 2 } } })
+
+			opened.value.root[Symbol.dispose]()
+			expect(contentSignal?.aborted).toBe(true)
+			expect(disposeObserver).toHaveBeenCalledTimes(1)
+			session.dispose()
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('aborts the Content lifetime and releases opened quota when an observer rejects', async () => {
+		contentCount = 0
+		contentChanged = undefined
+		contentSignal = undefined
+		const host = createRuntimeHost()
+		host.add(InteractiveContentPlugin)
+		host.start(InteractiveContentPlugin)
+		await host.commit()
+
+		try {
+			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(InteractiveContentPlugin)
+			const layout = session.target.layout({ target })
+			const input = {
+				layoutRevision: layout.revision,
+				target,
+				descriptor: layout.entries[0]!.descriptor,
+			}
+			const opened = await session.target.openEntry(input)
+			if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+				throw new Error('interactive Content open failed')
+			}
+			const lifetime = contentSignal
+			if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
+			const retained = retainedContentObserver(() => Promise.reject(new Error('browser gone')))
+			await opened.value.root.subscribe(retained.observer)
+
+			contentChanged?.()
+			await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
+			expect(retained.disposeObserver).toHaveBeenCalledTimes(1)
+			expect(retained.disposeResults[0]).toHaveBeenCalledTimes(1)
+
+			for (let index = 0; index < 64; index += 1) {
+				await expect(session.target.openEntry(input)).resolves.toMatchObject({ ok: true })
+			}
+			await expect(session.target.openEntry(input)).resolves.toEqual({
+				ok: false,
+				code: 'quota_exceeded',
+			})
+			session.dispose()
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('aborts the Content lifetime when an observer throws synchronously', async () => {
+		contentChanged = undefined
+		contentSignal = undefined
+		const host = createRuntimeHost()
+		host.add(InteractiveContentPlugin)
+		host.start(InteractiveContentPlugin)
+		await host.commit()
+
+		try {
+			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(InteractiveContentPlugin)
+			const layout = session.target.layout({ target })
+			const opened = await session.target.openEntry({
+				layoutRevision: layout.revision,
+				target,
+				descriptor: layout.entries[0]!.descriptor,
+			})
+			if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+				throw new Error('interactive Content open failed')
+			}
+			const lifetime = contentSignal
+			if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
+			const disposeObserver = vi.fn()
+			const observer = Object.assign(
+				vi.fn(() => {
+					throw new Error('synchronous callback failure')
+				}),
+				{
+					dup: () => observer,
+					[Symbol.dispose]: disposeObserver,
+				},
+			) as unknown as Parameters<typeof opened.value.root.subscribe>[0]
+			await opened.value.root.subscribe(observer)
+
+			contentChanged?.()
+			await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
+			expect(disposeObserver).toHaveBeenCalledTimes(1)
+			session.dispose()
 		} finally {
 			await host.dispose()
 		}
@@ -309,7 +514,7 @@ describe('Workbench vNext publication', () => {
 			expect(localFactoryCalls).toBe(0)
 			expect(layout.entries[0]).not.toHaveProperty('api')
 
-			const result = await session.target.openView({
+			const result = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: layout.entries[0]!.descriptor,
@@ -349,12 +554,12 @@ describe('Workbench vNext publication', () => {
 				target,
 				descriptor: layout.entries[0]!.descriptor,
 			}
-			const first = await session.target.openView(input)
+			const first = await session.target.openEntry(input)
 			expect(first.ok).toBe(true)
 			const firstTarget = reusedTarget
 			expect(firstTarget?.disposed).toBe(false)
 
-			await expect(session.target.openView(input)).resolves.toEqual({
+			await expect(session.target.openEntry(input)).resolves.toEqual({
 				ok: false,
 				code: 'factory_failed',
 			})
@@ -386,7 +591,7 @@ describe('Workbench vNext publication', () => {
 			const target = pluginNodeAddressOf(ReusedTargetPlugin)
 			const firstSession = backend.createSession(localPrincipal, () => {})
 			const firstLayout = firstSession.target.layout({ target })
-			const first = await firstSession.target.openView({
+			const first = await firstSession.target.openEntry({
 				layoutRevision: firstLayout.revision,
 				target,
 				descriptor: firstLayout.entries[0]!.descriptor,
@@ -398,7 +603,7 @@ describe('Workbench vNext publication', () => {
 			reusedFactoryStarted = Promise.withResolvers<void>()
 			const secondSession = backend.createSession(localPrincipal, () => {})
 			const secondLayout = secondSession.target.layout({ target })
-			const secondOpening = secondSession.target.openView({
+			const secondOpening = secondSession.target.openEntry({
 				layoutRevision: secondLayout.revision,
 				target,
 				descriptor: secondLayout.entries[0]!.descriptor,
@@ -441,7 +646,7 @@ describe('Workbench vNext publication', () => {
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(LateFactoryPlugin)
 			const layout = session.target.layout({ target })
-			const opening = session.target.openView({
+			const opening = session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: layout.entries[0]!.descriptor,
@@ -483,7 +688,7 @@ describe('Workbench vNext publication', () => {
 			const layout = session.target.layout({ target })
 			vi.useFakeTimers()
 			fakeTimers = true
-			const opening = session.target.openView({
+			const opening = session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: layout.entries[0]!.descriptor,
@@ -531,7 +736,7 @@ describe('Workbench vNext publication', () => {
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(RoutedPlugin)
 			const layout = session.target.layout({ target })
-			const result = await session.target.openView({
+			const result = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: layout.entries[0]!.descriptor,
@@ -540,7 +745,7 @@ describe('Workbench vNext publication', () => {
 			expect(result.ok).toBe(true)
 			expect(routedParams).toEqual({ accountId: 'account 1' })
 			await expect(
-				session.target.openView({
+				session.target.openEntry({
 					layoutRevision: layout.revision,
 					target,
 					descriptor: layout.entries[0]!.descriptor,
@@ -591,7 +796,7 @@ describe('Workbench vNext publication', () => {
 				provider: { kind: 'attachment', key: 'picker' },
 			})
 
-			const result = await session.target.openView({
+			const result = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: layout.entries[0]!.descriptor,
@@ -620,7 +825,7 @@ describe('Workbench vNext publication', () => {
 			})
 			const target = pluginNodeAddressOf(LocalPlugin)
 			const layout = session.target.layout({ target })
-			const result = await session.target.openView({
+			const result = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: layout.entries[0]!.descriptor,

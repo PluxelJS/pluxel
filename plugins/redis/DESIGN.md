@@ -102,4 +102,8 @@ RatesPlugin   <- RedisRatesBackendPlugin -> Redis
 Redis consumer 只安装一个 Redis package，就同时拥有 raw capability、Lua helper 与可选 cache/rates integration；
 memory-only consumer 仍不安装 node-redis。adapter 源码是本包内唯一同时知道 backend contract 与 `Redis` 的模块。
 
-Workbench 只投影 constructor dependency selection，不属于 Redis capability，也不影响 headless 生命周期。
+Workbench 继续用 host-owned dependency selection 选择 Redis provider。默认 standalone provider 另外发布一张
+host-rendered Content，只读取当前 connection state，并提供一个带有界 transient payload 的原生 `PING` action。状态变化复用
+既有 Workbench Cap'n Web session 调用 `dataChanged()`；Content 不复制 endpoint/database 持久配置，不保留 payload，也不暴露
+credential、任意 Redis command 或 key browser。Workbench disabled 时不注册额外 Redis event listener，且不影响 Redis
+capability 或 lifecycle。

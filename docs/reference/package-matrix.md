@@ -31,7 +31,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 `@pluxel/runtime` 还提供职责明确的 browser subpath：`/web` 是 Runtime session、Management Client 与 DTO；
 `/web/react` 只提供 React Context adapter；`/capnweb` 提供固定 RPC object model；`/workbench` 提供
-browser-safe Direct View/Attachment definition；`/workbench/client` 提供 Shell layout/opened-handle client；
+browser-safe Content、Direct View 和 Attachment definition；`/workbench/client` 提供 Shell layout/opened-handle client；
 `/workbench/react` 提供 exact descriptor hook、host facade 和 Pane Kit。`/web/react` 与 `/workbench/react` 由宿主
 提供 React singleton；internal registry、generated Bridge ABI 和 raw MF Runtime 不是第三方作者入口。
 
@@ -47,6 +47,7 @@ browser-safe Direct View/Attachment definition；`/workbench/client` 提供 Shel
 | `@pluxel/storage`         | local/remote object storage                | [对象存储](../plugins/storage.md)                |
 | `@pluxel/otel`            | traces、metrics 与 exporters               | [OpenTelemetry](../plugins/otel.md)              |
 | `@pluxel/package-manager` | dynamic host package 管理                  | [Package manager](../plugins/package-manager.md) |
+| `@pluxel/pi-agent`        | Pi embedded engine、goal 与 subagent       | [Pi Agent](../plugins/pi-agent.md)               |
 
 仓库外项目不得把这些 package 视为可安装的公共依赖，也不得用源码相对路径绕过 package boundary。
 

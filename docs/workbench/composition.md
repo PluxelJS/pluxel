@@ -174,7 +174,7 @@ export default function FontSelectionPanel() {
 - Workbench disabled 时，constructor dependency、字体恢复、注册和渲染路径完全不变；
 - 字体数量变化不会增加 definition、View、Attachment、MF expose 或 WebSocket；
 - RPC 输入的大小、family、容量和持久化失败仍由 FontsPlugin 校验，不额外引入 Workbench schema；
-- UI 对 await 得到的 Cap’n Web snapshot 做本地拷贝后释放 transport result；没有已证实的实时同步需求，所以保留显式刷新，
+- UI 用 `detachWorkbenchPortableValue()` 校验并复制 await 得到的 Cap’n Web snapshot，同时释放 transport result；没有已证实的实时同步需求，所以保留显式刷新，
   不预先增加 watch/subscription。
 
 这里的“选择”仍是 provider-wide preference。把选择器放到 Canvas、ECharts 或 Takumi 页面，不会把它变成

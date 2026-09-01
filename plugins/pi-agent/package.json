@@ -1,0 +1,61 @@
+{
+	"name": "@pluxel/pi-agent",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Official Pi agent engine integration for Pluxel",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/pi-agent"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "catalog:prod",
+		"typebox": "catalog:prod"
+	},
+	"devDependencies": {
+		"@pluxel/agent-tools": "workspace:*",
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@pluxel/agent-tools": "workspace:^",
+		"@pluxel/commands": "workspace:^",
+		"@pluxel/runtime": "workspace:^"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/agent-tools": "required"
+		}
+	}
+}

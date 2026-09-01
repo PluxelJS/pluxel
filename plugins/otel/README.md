@@ -75,6 +75,11 @@ host.cfg(OtelPlugin).set({
 只做 Prometheus pull 时使用 `{ otlp: [], prometheus: {} }`。配置至少保留一个输出；被关闭的 signal 不加载 exporter、不读取它的
 endpoint，也不会返回一个看似工作的 no-op API。访问关闭 signal 的 getter 会立即报错。
 
+Workbench-enabled host 会显示一个 host-rendered `Content`：它展示 metrics/traces/logs 的 disabled、waiting、healthy 或
+failing 状态、Prometheus 的监听路径，并提供“立即导出待处理 telemetry”按钮。Exporter 状态变化通过现有 Workbench
+Cap’n Web session 推送最新值；按钮调用各 active provider 的 `forceFlush()`。界面只显示 bounded `errorType`，不会投影
+endpoint、headers、payload、certificate、secret 或未保存的 Config draft。Workbench 关闭时不影响 provider、exporter 或业务 API。
+
 默认 pull URL 是显式产品协议 `GET /metrics`。`OtelPlugin` 直接在自己的 generation-scoped `ctx.elysia`
 上声明该 route，由宿主现有 carrier 提供服务，不启动第二个 listener。并发 scrape 合并为同一次 collection；OTLP periodic
 reader 与 Prometheus reader 相互独立。

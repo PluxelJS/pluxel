@@ -42,6 +42,7 @@ export function NumberField(props: RendererProps) {
 					step: info.step ?? (info.integer ? 1 : undefined),
 					disabled: inputProps.disabled,
 					readOnly: inputProps.readOnly,
+					'aria-label': node.meta.label,
 				})}
 			/>
 		</FieldChrome>

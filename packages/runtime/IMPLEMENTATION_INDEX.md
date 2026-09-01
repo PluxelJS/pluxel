@@ -11,7 +11,7 @@
 
 - `src/workbench/definition.ts`：Direct View、Attachment、placement、entry 和 exact binding types；
 - `src/workbench/definition.type-probes.ts`：作者面 inference/variance 静态探针；
-- `src/workbench/client-protocol.ts`：capability-free layout 与 `openView()` wire types；
+- `src/workbench/client-protocol.ts`：capability-free layout 与 `openEntry()` wire types；
 - `src/workbench/client.ts`：layout validation、single-owner opened handle 和 `createRemoteValue()`；
 - `src/workbench/react-context.tsx`：generated Bridge 内部 Context 与受限 host facade；
 - `src/workbench/react.tsx`：作者 `useWorkbench(exactDescriptor)`、`useRemoteValue()` 和 Pane Kit exports；

@@ -104,7 +104,7 @@ Management control 把持久策略与本次进程生命周期分开：`client.pl
 不能用 auto-start policy 猜测 Plugin 是否正在运行。
 
 Workbench document 只创建一条 `/__pluxel/runtime/session` WebSocket。认证 challenge、Management、Workbench
-layout/openView、Plugin API、logs follow 和 observer 都使用同一个 Cap’n Web object graph。认证/publication epoch
+layout/openEntry、Plugin API、logs follow 和 observer 都使用同一个 Cap’n Web object graph。认证/publication epoch
 失效或 socket broken 时完整 reload；同一 document 不 feature reconnect，也不切换备用 API transport。
 
 MF2 manifest 和 remote JS/CSS 仍由 HTTP 提供；浏览器写入 `HttpOnly` cookie 使用一个 same-origin、single-use

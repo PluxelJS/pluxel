@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { pluginDefinitionIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import {
-	WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE,
-	parseWorkbenchPageDeploymentInventory,
+	WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE,
+	parseWorkbenchContentDeploymentInventory,
 } from '@pluxel/core/internal'
 import {
 	WORKBENCH_FEDERATION_OUT_DIR,
@@ -59,38 +59,41 @@ export async function loadPackagedWorkbenchDeployment(
 		)
 	}
 
-	const pageInventoryPath = resolve(root, WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE)
-	let pageInput: unknown
-	if (!existsSync(pageInventoryPath)) {
-		pageInput = { version: 1, pages: [] }
+	const contentInventoryPath = resolve(root, WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE)
+	let contentInput: unknown
+	if (!existsSync(contentInventoryPath)) {
+		contentInput = { version: 1, entries: [] }
 	} else {
 		try {
-			pageInput = JSON.parse(await readFile(pageInventoryPath, 'utf-8')) as unknown
+			contentInput = JSON.parse(await readFile(contentInventoryPath, 'utf-8')) as unknown
 		} catch (error) {
-			throw new Error(`[workbench] cannot read production Page inventory: ${pageInventoryPath}`, {
-				cause: error,
-			})
+			throw new Error(
+				`[workbench] cannot read production Content inventory: ${contentInventoryPath}`,
+				{
+					cause: error,
+				},
+			)
 		}
 	}
-	const pageInventory = parseWorkbenchPageDeploymentInventory(pageInput)
-	for (const page of pageInventory.pages) {
+	const contentInventory = parseWorkbenchContentDeploymentInventory(contentInput)
+	for (const content of contentInventory.entries) {
 		const candidateRoot = await resolveDeploymentArtifactRoot(
 			root,
-			page.artifactRoot,
-			'pages/',
+			content.artifactRoot,
+			'content/',
 			false,
 		)
-		const key = pluginDefinitionIndexKey(page.definition)
+		const key = pluginDefinitionIndexKey(content.definition)
 		const existing = candidates.get(key)
 		candidates.set(
 			key,
 			Object.freeze({
-				definition: page.definition,
+				definition: content.definition,
 				...existing,
-				pages: Object.freeze({
-					definition: page.definition,
-					definitionDigest: page.definitionDigest,
-					digest: page.digest,
+				content: Object.freeze({
+					definition: content.definition,
+					definitionDigest: content.definitionDigest,
+					digest: content.digest,
 					artifactRoot: candidateRoot,
 				}),
 			}),

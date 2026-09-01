@@ -62,25 +62,29 @@ describe('Workbench federation identities', () => {
 		).toBe(true)
 	})
 
-	it('keeps Page openable identity outside the federation declaration union', () => {
-		const page = parseWorkbenchOpenableIdentity({ kind: 'page', owner: provider, key: 'guide' })
-		expect(page).toEqual({ kind: 'page', owner: provider, key: 'guide' })
-		expect(Object.isFrozen(page)).toBe(true)
+	it('keeps Content openable identity outside the federation declaration union', () => {
+		const content = parseWorkbenchOpenableIdentity({
+			kind: 'content',
+			owner: provider,
+			key: 'guide',
+		})
+		expect(content).toEqual({ kind: 'content', owner: provider, key: 'guide' })
+		expect(Object.isFrozen(content)).toBe(true)
 		expect(
-			workbenchOpenableIdentityEqual(page, {
-				kind: 'page',
+			workbenchOpenableIdentityEqual(content, {
+				kind: 'content',
 				owner: parsePluginDefinitionAddress({ ...provider }),
 				key: 'guide',
 			}),
 		).toBe(true)
 		expect(
-			workbenchOpenableIdentityEqual(page, {
+			workbenchOpenableIdentityEqual(content, {
 				kind: 'view',
 				owner: provider,
 				key: 'guide',
 			}),
 		).toBe(false)
-		expect(() => parseWorkbenchDeclarationIdentity(page)).toThrow('view or attachment')
+		expect(() => parseWorkbenchDeclarationIdentity(content)).toThrow('view or attachment')
 	})
 
 	it('rejects malformed, extra, reserved, and non-openable identities', () => {
@@ -101,7 +105,10 @@ describe('Workbench federation identities', () => {
 				owner: provider,
 				key: 'collectionPicker',
 			}),
-		).toThrow('view, page, or attachment-placement')
+		).toThrow('view, content, or attachment-placement')
+		expect(() =>
+			parseWorkbenchOpenableIdentity({ kind: 'page', owner: provider, key: 'guide' }),
+		).toThrow('view, content, or attachment-placement')
 	})
 
 	it('compares identities field by field', () => {

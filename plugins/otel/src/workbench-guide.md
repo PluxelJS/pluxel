@@ -2,6 +2,12 @@
 
 本页说明运行中的 OpenTelemetry Plugin 如何输出 telemetry。输出选择与 Prometheus 路径仍在 Config 页面保存；修改配置会由 Runtime 按正常 Plugin lifecycle 应用。
 
+## 当前输出状态
+
+::slot[status]
+
+::slot[flush]
+
 ## OTLP endpoint
 
 - Generic HTTP endpoint 会为启用的 signal 分别追加 `/v1/metrics`、`/v1/traces` 与 `/v1/logs`。
@@ -19,4 +25,4 @@
 
 Prometheus pull 只导出 metrics。启用后使用 Config 中的固定 Plugin route；它与 OTLP metrics push 可以同时工作，也不会创建第二个 HTTP listener。
 
-Standard Page 不显示 credential、完整 header 或未保存的 Config draft。
+Workbench Content 不显示 credential、完整 header 或未保存的 Config draft。

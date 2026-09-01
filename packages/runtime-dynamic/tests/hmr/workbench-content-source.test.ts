@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from 'vitest'
 import {
 	attachLoaderHmrWorkbenchArtifactPublisher,
 	configureLoaderHmrWorkbenchArtifactSource,
-	isLoaderHmrWorkbenchPageSource,
+	isLoaderHmrWorkbenchContentSource,
 	LoaderHmrService,
 	refreshLoaderHmrWorkbenchArtifacts,
 } from '../../src/hmr/engine/LoaderHmrService'
 
-describe('Loader HMR Workbench Page sources', () => {
+describe('Loader HMR Workbench Content sources', () => {
 	it('tracks exact Markdown sources outside the TypeScript module graph', async () => {
 		const service = {
 			normalizeId: (id: string) => id.replaceAll('\\', '/'),
@@ -23,24 +23,24 @@ describe('Loader HMR Workbench Page sources', () => {
 				if (fail) throw new Error('invalid Markdown')
 				return {
 					producers: [],
-					pages: [{ sources: [source] }],
+					content: [{ sources: [source] }],
 				} as unknown as WorkbenchArtifactCompilations
 			},
 		})
 
 		await refreshLoaderHmrWorkbenchArtifacts(service)
-		expect(isLoaderHmrWorkbenchPageSource(service, source)).toBe(true)
-		expect(isLoaderHmrWorkbenchPageSource(service, '/workspace/plugin/other.md')).toBe(false)
+		expect(isLoaderHmrWorkbenchContentSource(service, source)).toBe(true)
+		expect(isLoaderHmrWorkbenchContentSource(service, '/workspace/plugin/other.md')).toBe(false)
 
 		fail = true
 		await expect(refreshLoaderHmrWorkbenchArtifacts(service)).rejects.toThrow('invalid Markdown')
-		expect(isLoaderHmrWorkbenchPageSource(service, source)).toBe(true)
+		expect(isLoaderHmrWorkbenchContentSource(service, source)).toBe(true)
 
 		fail = false
 		source = '/workspace/plugin/operations.md'
 		await refreshLoaderHmrWorkbenchArtifacts(service)
-		expect(isLoaderHmrWorkbenchPageSource(service, '/workspace/plugin/guide.md')).toBe(false)
-		expect(isLoaderHmrWorkbenchPageSource(service, source)).toBe(true)
+		expect(isLoaderHmrWorkbenchContentSource(service, '/workspace/plugin/guide.md')).toBe(false)
+		expect(isLoaderHmrWorkbenchContentSource(service, source)).toBe(true)
 		expect(publish).toHaveBeenCalledTimes(2)
 	})
 
@@ -70,7 +70,7 @@ describe('Loader HMR Workbench Page sources', () => {
 			compilations: async () =>
 				({
 					producers: [],
-					pages: [{ sources: [tracked] }],
+					content: [{ sources: [tracked] }],
 				}) as unknown as WorkbenchArtifactCompilations,
 		})
 		await refreshLoaderHmrWorkbenchArtifacts(service)

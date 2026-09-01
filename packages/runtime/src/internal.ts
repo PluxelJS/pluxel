@@ -62,12 +62,16 @@ export {
 } from './database-internal'
 export {
 	readWorkbenchDefinition,
+	readWorkbenchContentSlot,
 	readWorkbenchDescriptor,
 	readWorkbenchMarkdownDocument,
 	readWorkbenchRendererEntry,
 } from './workbench/definition'
 export type {
 	WorkbenchDefinitionMetadata,
+	WorkbenchContentActionMetadata,
+	WorkbenchContentDataMetadata,
+	WorkbenchContentSlotMetadata,
 	WorkbenchDescriptorMetadata,
 	WorkbenchMarkdownDocumentMetadata,
 	WorkbenchRendererEntryMetadata,
@@ -98,14 +102,14 @@ export {
 	type WorkbenchArtifactBatchCommit,
 } from './services/workbench/WorkbenchArtifactCoordinator'
 export {
-	WorkbenchPageArtifactService,
-	type WorkbenchPageArtifactCandidate,
-	type WorkbenchPageArtifactCommit,
-	type WorkbenchPageArtifactEntry,
-	type WorkbenchPageArtifactLookup,
-	type WorkbenchPageArtifactRevision,
-	type WorkbenchResolvedPageArtifact,
-} from './services/workbench/WorkbenchPageArtifactService'
+	WorkbenchContentArtifactService,
+	type WorkbenchContentArtifactCandidate,
+	type WorkbenchContentArtifactCommit,
+	type WorkbenchContentArtifactEntry,
+	type WorkbenchContentArtifactLookup,
+	type WorkbenchContentArtifactRevision,
+	type WorkbenchResolvedContentArtifact,
+} from './services/workbench/WorkbenchContentArtifactService'
 export {
 	loadPackagedWorkbenchDeployment,
 	resolvePackagedNodeModule,

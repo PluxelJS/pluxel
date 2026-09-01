@@ -148,6 +148,9 @@ async function writeDtsTsConfig(options: WorkbenchViteBuildOptions): Promise<str
 			extends: resolve(options.producerRoot, 'tsconfig.json'),
 			compilerOptions: {
 				allowImportingTsExtensions: true,
+				// TypeScript 7 requires an emit-safe companion for .ts imports. DTS generation must
+				// rewrite those specifiers instead of carrying source-only extensions into consumers.
+				rewriteRelativeImportExtensions: true,
 				// Declaration generation must follow the same package graph as Vite. Otherwise a
 				// development renderer can bundle source JS while declarations resolve stale dist.
 				customConditions: workbenchCustomConditions(options.packageMode),

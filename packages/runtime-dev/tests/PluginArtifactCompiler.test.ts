@@ -5,9 +5,9 @@ import { defineNodeModule } from '@pluxel/runtime'
 import {
 	WorkbenchArtifactCoordinator,
 	WorkbenchArtifactService,
-	WorkbenchPageArtifactService,
+	WorkbenchContentArtifactService,
 } from '@pluxel/runtime/internal'
-import { createWorkbenchPageSet, serializeWorkbenchPageSet } from '@pluxel/core/internal'
+import { createWorkbenchContentSet, serializeWorkbenchContentSet } from '@pluxel/core/internal'
 import {
 	createWorkbenchFederationCompatibilitySet,
 	createWorkbenchFederationProducerPlan,
@@ -66,15 +66,16 @@ function createPlan(buildRevision: string): WorkbenchFederationProducerPlan {
 	})
 }
 
-function createPageCompilation(root: string, heading: string) {
-	const pageSet = createWorkbenchPageSet({
+function createContentCompilation(root: string, heading: string) {
+	const contentSet = createWorkbenchContentSet({
 		definition,
 		entries: [
 			{
 				key: 'guide',
-				page: {
+				content: {
 					version: 1,
-					kind: 'standard-page',
+					kind: 'workbench-content',
+					slots: [],
 					document: {
 						version: 1,
 						blocks: [
@@ -90,9 +91,9 @@ function createPageCompilation(root: string, heading: string) {
 			},
 		],
 	})
-	const bytes = new TextEncoder().encode(serializeWorkbenchPageSet(pageSet))
+	const bytes = new TextEncoder().encode(serializeWorkbenchContentSet(contentSet))
 	return {
-		pageSet,
+		contentSet,
 		digest: createHash('sha256').update(bytes).digest('hex'),
 		bytes,
 		root,
@@ -102,9 +103,9 @@ function createPageCompilation(root: string, heading: string) {
 
 function createWorkbenchStores(host: ReturnType<typeof createHost>) {
 	const federation = new WorkbenchArtifactService(host.ctx)
-	const pages = new WorkbenchPageArtifactService(host.ctx)
-	const coordinator = new WorkbenchArtifactCoordinator(host.ctx, federation, pages)
-	return { federation, pages, coordinator }
+	const content = new WorkbenchContentArtifactService(host.ctx)
+	const coordinator = new WorkbenchArtifactCoordinator(host.ctx, federation, content)
+	return { federation, content, coordinator }
 }
 
 describe('PluginArtifactCompiler', () => {
@@ -130,6 +131,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createHost()
 		const { federation, coordinator } = createWorkbenchStores(host)
+		const infoLog = vi.spyOn(host.ctx.logger, 'info')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator },
@@ -138,8 +140,8 @@ describe('PluginArtifactCompiler', () => {
 		const plan = createPlan('semantic-revision-a')
 		const input = { plan, root: fixture.getPath('plugin') }
 
-		const [first] = await compiler.publishWorkbenchArtifacts({ producers: [input], pages: [] })
-		const [second] = await compiler.publishWorkbenchArtifacts({ producers: [input], pages: [] })
+		const [first] = await compiler.publishWorkbenchArtifacts({ producers: [input], content: [] })
+		const [second] = await compiler.publishWorkbenchArtifacts({ producers: [input], content: [] })
 
 		expect(first?.federation?.buildRevision).toBe('semantic-revision-a')
 		expect(second?.federation).toBe(first?.federation)
@@ -154,7 +156,66 @@ describe('PluginArtifactCompiler', () => {
 				sourcemap: true,
 			}),
 		)
+		expect(infoLog).toHaveBeenCalledTimes(2)
+		expect(infoLog).toHaveBeenNthCalledWith(1, 'Workbench {definition}: build start', {
+			definition: plan.definition.exportName,
+			revision: plan.buildRevision.slice(0, 8),
+			producer: plan.producer,
+			buildRevision: plan.buildRevision,
+		})
+		expect(infoLog).toHaveBeenNthCalledWith(
+			2,
+			'Workbench {definition}: {cache} in {durationMs} ms',
+			{
+				definition: plan.definition.exportName,
+				revision: plan.buildRevision.slice(0, 8),
+				producer: plan.producer,
+				buildRevision: plan.buildRevision,
+				cache: 'built',
+				durationMs: expect.any(Number),
+			},
+		)
 		compiler.dispose()
+		await host.dispose()
+	})
+
+	it('reports a reusable disk producer without logging the in-memory fast path', async () => {
+		await using fixture = await createDiskFixture({
+			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+		})
+		const host = createHost()
+		const { coordinator } = createWorkbenchStores(host)
+		const infoLog = vi.spyOn(host.ctx.logger, 'info')
+		const options = {
+			cacheDir: fixture.getPath('.pluxel/artifacts'),
+			packageMode: 'development',
+		} as const
+		const input = { plan: createPlan('disk-revision'), root: fixture.getPath('plugin') }
+		const firstCompiler = new PluginArtifactCompiler(host.ctx, { coordinator }, options)
+
+		await firstCompiler.publishWorkbenchArtifacts({ producers: [input], content: [] })
+		await firstCompiler.publishWorkbenchArtifacts({ producers: [input], content: [] })
+		expect(infoLog).toHaveBeenCalledTimes(2)
+		firstCompiler.dispose()
+
+		const secondCompiler = new PluginArtifactCompiler(host.ctx, { coordinator }, options)
+		await secondCompiler.publishWorkbenchArtifacts({ producers: [input], content: [] })
+
+		expect(infoLog).toHaveBeenCalledTimes(3)
+		expect(infoLog).toHaveBeenNthCalledWith(
+			3,
+			'Workbench {definition}: {cache} in {durationMs} ms',
+			{
+				definition: input.plan.definition.exportName,
+				revision: input.plan.buildRevision.slice(0, 8),
+				producer: input.plan.producer,
+				buildRevision: input.plan.buildRevision,
+				cache: 'reused',
+				durationMs: expect.any(Number),
+			},
+		)
+
+		secondCompiler.dispose()
 		await host.dispose()
 	})
 
@@ -164,6 +225,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createHost()
 		const { federation, coordinator } = createWorkbenchStores(host)
+		const errorLog = vi.spyOn(host.ctx.logger, 'error')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator },
@@ -171,7 +233,7 @@ describe('PluginArtifactCompiler', () => {
 		)
 		await compiler.publishWorkbenchArtifacts({
 			producers: [{ plan: createPlan('revision-a'), root: fixture.getPath('plugin') }],
-			pages: [],
+			content: [],
 		})
 		producerBuildMocks.buildWorkbenchFederationProducer.mockRejectedValueOnce(
 			new Error('candidate build failed'),
@@ -180,11 +242,31 @@ describe('PluginArtifactCompiler', () => {
 		await expect(
 			compiler.publishWorkbenchArtifacts({
 				producers: [{ plan: createPlan('revision-b'), root: fixture.getPath('plugin') }],
-				pages: [],
+				content: [],
 			}),
 		).rejects.toThrow('candidate build failed')
 		expect(federation.getCurrent(definition)?.buildRevision).toBe('revision-a')
 		expect(federation.getPinned(createPlan('revision-b').producer, 'revision-b')).toBeUndefined()
+		expect(errorLog).toHaveBeenCalledWith('Workbench {definition}: failed after {durationMs} ms', {
+			definition: createPlan('revision-b').definition.exportName,
+			revision: 'revision',
+			producer: createPlan('revision-b').producer,
+			buildRevision: 'revision-b',
+			durationMs: expect.any(Number),
+			error: expect.objectContaining({ message: 'candidate build failed' }),
+		})
+
+		await expect(
+			compiler.publishWorkbenchArtifacts({
+				producers: [{ plan: createPlan('revision-b'), root: fixture.getPath('plugin') }],
+				content: [],
+			}),
+		).resolves.toEqual([
+			expect.objectContaining({
+				federation: expect.objectContaining({ buildRevision: 'revision-b' }),
+			}),
+		])
+		expect(producerBuildMocks.buildWorkbenchFederationProducer).toHaveBeenCalledTimes(3)
 
 		compiler.dispose()
 		await host.dispose()
@@ -212,14 +294,14 @@ describe('PluginArtifactCompiler', () => {
 		const secondPlan = createPlan('revision-b')
 		const first = compiler.publishWorkbenchArtifacts({
 			producers: [{ plan: firstPlan, root: fixture.getPath('plugin') }],
-			pages: [],
+			content: [],
 		})
 		await vi.waitFor(() => {
 			expect(producerBuildMocks.buildWorkbenchFederationProducer).toHaveBeenCalledOnce()
 		})
 		const second = compiler.publishWorkbenchArtifacts({
 			producers: [{ plan: secondPlan, root: fixture.getPath('plugin') }],
-			pages: [],
+			content: [],
 		})
 		await expect(second).resolves.toEqual([
 			expect.objectContaining({
@@ -236,12 +318,12 @@ describe('PluginArtifactCompiler', () => {
 		await host.dispose()
 	})
 
-	it('publishes a Page-only snapshot without invoking the federation builder', async () => {
+	it('publishes a Content-only snapshot without invoking the federation builder', async () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
 		const host = createHost()
-		const { federation, pages, coordinator } = createWorkbenchStores(host)
+		const { federation, content, coordinator } = createWorkbenchStores(host)
 		const addWatchFiles = vi.fn()
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
@@ -254,29 +336,32 @@ describe('PluginArtifactCompiler', () => {
 			},
 			{ cacheDir: fixture.getPath('.pluxel/artifacts'), packageMode: 'development' },
 		)
-		const page = {
-			...createPageCompilation(fixture.getPath('plugin'), 'Guide'),
+		const compilation = {
+			...createContentCompilation(fixture.getPath('plugin'), 'Guide'),
 			sources: [fixture.getPath('plugin/guide.md')],
 		}
 
-		const [commit] = await compiler.publishWorkbenchArtifacts({ producers: [], pages: [page] })
+		const [commit] = await compiler.publishWorkbenchArtifacts({
+			producers: [],
+			content: [compilation],
+		})
 
-		expect(commit).toMatchObject({ federation: null, pages: { digest: page.digest } })
+		expect(commit).toMatchObject({ federation: null, content: { digest: compilation.digest } })
 		expect(federation.getCurrent(definition)).toBeUndefined()
-		expect(pages.getCurrent(definition)?.digest).toBe(page.digest)
+		expect(content.getCurrent(definition)?.digest).toBe(compilation.digest)
 		expect(producerBuildMocks.buildWorkbenchFederationProducer).not.toHaveBeenCalled()
-		expect(addWatchFiles).toHaveBeenCalledWith(page.sources)
+		expect(addWatchFiles).toHaveBeenCalledWith(compilation.sources)
 
 		compiler.dispose()
 		await host.dispose()
 	})
 
-	it('commits mixed Page and federation candidates once and withdraws stale tuple sides', async () => {
+	it('commits mixed Content and federation candidates once and withdraws stale tuple sides', async () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
 		const host = createHost()
-		const { federation, pages, coordinator } = createWorkbenchStores(host)
+		const { federation, content, coordinator } = createWorkbenchStores(host)
 		const commitCandidate = vi.spyOn(coordinator, 'commitCandidate')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
@@ -284,11 +369,11 @@ describe('PluginArtifactCompiler', () => {
 			{ cacheDir: fixture.getPath('.pluxel/artifacts'), packageMode: 'development' },
 		)
 		const root = fixture.getPath('plugin')
-		const page = createPageCompilation(root, 'Mixed')
+		const compilation = createContentCompilation(root, 'Mixed')
 
 		await compiler.publishWorkbenchArtifacts({
 			producers: [{ plan: createPlan('mixed-a'), root }],
-			pages: [page],
+			content: [compilation],
 		})
 		expect(commitCandidate).toHaveBeenCalledOnce()
 		expect(commitCandidate).toHaveBeenCalledWith({
@@ -296,61 +381,61 @@ describe('PluginArtifactCompiler', () => {
 			federation: expect.objectContaining({
 				plan: expect.objectContaining({ buildRevision: 'mixed-a' }),
 			}),
-			pages: expect.objectContaining({ digest: page.digest }),
+			content: expect.objectContaining({ digest: compilation.digest }),
 		})
 
-		await compiler.publishWorkbenchArtifacts({ producers: [], pages: [page] })
+		await compiler.publishWorkbenchArtifacts({ producers: [], content: [compilation] })
 		expect(federation.getCurrent(definition)).toBeUndefined()
-		expect(pages.getCurrent(definition)?.digest).toBe(page.digest)
+		expect(content.getCurrent(definition)?.digest).toBe(compilation.digest)
 
 		await compiler.publishWorkbenchArtifacts({
 			producers: [{ plan: createPlan('mixed-b'), root }],
-			pages: [page],
+			content: [compilation],
 		})
 		await compiler.publishWorkbenchArtifacts({
 			producers: [{ plan: createPlan('mixed-b'), root }],
-			pages: [],
+			content: [],
 		})
 		expect(federation.getCurrent(definition)?.buildRevision).toBe('mixed-b')
-		expect(pages.getCurrent(definition)).toBeUndefined()
+		expect(content.getCurrent(definition)).toBeUndefined()
 
-		await compiler.publishWorkbenchArtifacts({ producers: [], pages: [] })
+		await compiler.publishWorkbenchArtifacts({ producers: [], content: [] })
 		expect(federation.getCurrent(definition)).toBeUndefined()
-		expect(pages.getCurrent(definition)).toBeUndefined()
+		expect(content.getCurrent(definition)).toBeUndefined()
 		expect(commitCandidate).toHaveBeenLastCalledWith({ definition })
 
 		compiler.dispose()
 		await host.dispose()
 	})
 
-	it('keeps the prior mixed tuple when Page materialization fails', async () => {
+	it('keeps the prior mixed tuple when Content materialization fails', async () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
 		const host = createHost()
-		const { federation, pages, coordinator } = createWorkbenchStores(host)
+		const { federation, content, coordinator } = createWorkbenchStores(host)
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator },
 			{ cacheDir: fixture.getPath('.pluxel/artifacts'), packageMode: 'development' },
 		)
 		const root = fixture.getPath('plugin')
-		const currentPage = createPageCompilation(root, 'Current')
+		const currentContent = createContentCompilation(root, 'Current')
 		await compiler.publishWorkbenchArtifacts({
 			producers: [{ plan: createPlan('mixed-current'), root }],
-			pages: [currentPage],
+			content: [currentContent],
 		})
-		const invalidPage = createPageCompilation(root, 'Invalid')
-		invalidPage.bytes[0] = invalidPage.bytes[0]! ^ 1
+		const invalidContent = createContentCompilation(root, 'Invalid')
+		invalidContent.bytes[0] = invalidContent.bytes[0]! ^ 1
 
 		await expect(
 			compiler.publishWorkbenchArtifacts({
 				producers: [{ plan: createPlan('mixed-next'), root }],
-				pages: [invalidPage],
+				content: [invalidContent],
 			}),
 		).rejects.toThrow('digest does not match')
 		expect(federation.getCurrent(definition)?.buildRevision).toBe('mixed-current')
-		expect(pages.getCurrent(definition)?.digest).toBe(currentPage.digest)
+		expect(content.getCurrent(definition)?.digest).toBe(currentContent.digest)
 
 		compiler.dispose()
 		await host.dispose()

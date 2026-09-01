@@ -16,15 +16,15 @@ import {
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconCheck, IconCopy, IconKey, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import {
-	AuthWorkbench,
-	type AuthPasswordSetupInput,
-	type AuthSetupFailure,
-	type AuthSetupMutationResult,
-	type AuthSetupSnapshot,
-	type AuthTotpEnrollment,
-	type AuthTotpEnrollmentResult,
-} from '../workbench.ts'
+import { AuthWorkbench } from '../workbench.ts'
+import type {
+	AuthPasswordSetupInput,
+	AuthSetupFailure,
+	AuthSetupMutationResult,
+	AuthSetupSnapshot,
+	AuthTotpEnrollment,
+	AuthTotpEnrollmentResult,
+} from '../workbench-contracts.ts'
 
 function disposeRemoteValue(input: unknown): void {
 	const dispose =

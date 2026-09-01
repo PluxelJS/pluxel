@@ -106,6 +106,7 @@ export {
 } from './services/persistence/PersistenceService'
 export type { ConfigServiceConfig } from './services/ConfigService'
 export type { CommandCatalogSnapshot, CommandMount } from './services/CommandsService'
+export type { VaultServiceConfig } from './services/vault/types'
 export type {
 	ManagementAccessMethod,
 	ManagementAccessPrincipal,

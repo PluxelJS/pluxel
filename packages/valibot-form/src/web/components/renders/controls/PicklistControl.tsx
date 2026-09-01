@@ -30,6 +30,7 @@ export interface PicklistControlProps {
 	onBlur?: () => void
 	disabled?: boolean
 	required?: boolean
+	ariaLabel?: string
 }
 
 interface NormalizedOption {
@@ -106,6 +107,7 @@ export function PicklistControl({
 	onBlur,
 	disabled,
 	required,
+	ariaLabel,
 }: PicklistControlProps) {
 	const multiple = Boolean(meta.multiple)
 	const variant = meta.control ?? (multiple ? 'select' : 'select')
@@ -254,6 +256,7 @@ export function PicklistControl({
 					disabled={disabled}
 					comboboxProps={{ withinPortal: true, position: 'bottom-start' as const }}
 					maxDropdownHeight={280}
+					aria-label={ariaLabel}
 				/>
 			)
 		}
@@ -269,6 +272,7 @@ export function PicklistControl({
 				onChange(raw)
 			},
 			onBlur,
+			'aria-label': ariaLabel,
 			searchable,
 			clearable,
 			hidePickedOptions: true,
@@ -305,6 +309,7 @@ export function PicklistControl({
 				value={singleValue || null}
 				onChange={(id) => onChange(toRaw(id))}
 				onBlur={onBlur}
+				aria-label={ariaLabel}
 				{...(disabled !== undefined && { disabled })}
 			>
 				<Stack gap={6} mt="xs">
@@ -342,6 +347,7 @@ export function PicklistControl({
 				clearable={clearable}
 				comboboxProps={{ withinPortal: true, position: 'bottom-start' as const }}
 				maxDropdownHeight={280}
+				aria-label={ariaLabel}
 			/>
 		)
 	}
@@ -351,6 +357,7 @@ export function PicklistControl({
 		value: singleValue || null,
 		onChange: (id: string | null) => onChange(toRaw(id)),
 		onBlur,
+		'aria-label': ariaLabel,
 		searchable,
 		clearable,
 		comboboxProps: { withinPortal: true, position: 'bottom-start' as const },

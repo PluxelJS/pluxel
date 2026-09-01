@@ -155,11 +155,11 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		configureLoaderHmrWorkbenchArtifactSource(booted.hmr, {
 			compilations: async () => {
 				sourcePipeline.semantics.invalidateWorkbench()
-				const [producers, pages] = await Promise.all([
+				const [producers, content] = await Promise.all([
 					sourcePipeline.semantics.workbenchCompilations(),
-					sourcePipeline.semantics.workbenchPageCompilations(),
+					sourcePipeline.semantics.workbenchContentCompilations(),
 				])
-				return { producers, pages }
+				return { producers, content }
 			},
 		})
 		const applicationCarrier = state.applicationCarrier

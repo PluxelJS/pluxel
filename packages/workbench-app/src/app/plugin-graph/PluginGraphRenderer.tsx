@@ -1,4 +1,3 @@
-/* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- The spatial graph viewport is an ARIA application with equivalent keyboard pan and zoom controls. */
 import {
 	IconAlertTriangle,
 	IconArrowsMaximize,
@@ -409,6 +408,7 @@ export function PluginGraphRenderer({
 						<span>可以查看独立节点，或切换到“声明关系”。</span>
 					</div>
 				) : (
+					/* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- This spatial viewport is an ARIA application with keyboard-equivalent pan and zoom controls. */
 					<div
 						ref={setViewportElement}
 						className="plx-pluginGraphViewport"
@@ -556,6 +556,7 @@ export function PluginGraphRenderer({
 							})}
 						</div>
 					</div>
+					/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
 				)}
 			</section>
 

@@ -1,17 +1,18 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import {
+	WORKBENCH_FEDERATION_SHARED_MODULES,
 	createWorkbenchFederationProducerPlan,
 	workbenchFederationProducerName,
 	type WorkbenchFederationDescriptorIdentity,
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
 import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/core'
-import type { WorkbenchPageSetV1 } from '@pluxel/core/internal'
+import type { WorkbenchContentSet } from '@pluxel/core/internal'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, relative, resolve } from 'pathe'
-import { resolveWithOxc } from '../resolver/oxc.ts'
+import { resolvePackageJsonPathWithOxc, resolveWithOxc } from '../resolver/oxc.ts'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 import { resolveWorkbenchFederationShared } from './build-contract.ts'
@@ -73,6 +74,7 @@ type MarkdownDocument = Readonly<{
 	kind: 'markdown-document'
 	moduleId: string
 	sourcePath: string
+	slots: ReadonlyMap<string, WorkbenchSemanticContentSlot>
 }>
 
 type Placement = Readonly<{ kind: 'placement' }>
@@ -80,7 +82,7 @@ type Placement = Readonly<{ kind: 'placement' }>
 type Descriptor =
 	| Readonly<{ kind: 'view'; renderer: Renderer }>
 	| Readonly<{ kind: 'attachment'; renderer: Renderer }>
-	| Readonly<{ kind: 'page'; document: MarkdownDocument; placement: Placement }>
+	| Readonly<{ kind: 'content'; document: MarkdownDocument; placement: Placement }>
 	| Readonly<{
 			kind: 'attachment-placement'
 			provider: DefinedEntry
@@ -130,7 +132,38 @@ const WORKBENCH_NAMESPACE: WorkbenchNamespace = Object.freeze({
 const WORKBENCH_IMPORTS = new Set(['@pluxel/runtime/workbench'])
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'prototype', 'constructor', 'then'])
-const GENERATED_ABI_VERSION = 1
+const GENERATED_ABI_VERSION = 2
+const BUILD_REVISION_VERSION = 2
+const FIXED_SHARED_PACKAGES = new Set(
+	WORKBENCH_FEDERATION_SHARED_MODULES.map(packageNameFromSpecifier),
+)
+const SOURCE_RESOLVE_OPTIONS = {
+	conditionNames: [
+		'@pluxel/hmr',
+		'@pluxel/source',
+		'development',
+		'browser',
+		'import',
+		'module',
+		'default',
+	],
+	extensions: [
+		'.tsx',
+		'.ts',
+		'.jsx',
+		'.js',
+		'.mts',
+		'.mjs',
+		'.cts',
+		'.cjs',
+		'.css',
+		'.scss',
+		'.sass',
+		'.less',
+		'.json',
+	],
+	tsconfig: 'auto' as const,
+}
 
 export type WorkbenchSemanticModuleInput = Readonly<{
 	id: string
@@ -146,11 +179,24 @@ export type WorkbenchSemanticProducerCompilation = Readonly<{
 	root: string
 }>
 
-export type WorkbenchSemanticPageCompilation = Readonly<{
-	pageSet: WorkbenchPageSetV1
+export type WorkbenchSemanticContentSlot =
+	| Readonly<{
+			kind: 'data'
+			key: string
+	  }>
+	| Readonly<{
+			kind: 'action'
+			key: string
+			label: string
+			input: 'none' | 'dialog' | 'embedded'
+			confirm?: string
+	  }>
+
+export type WorkbenchSemanticContentCompilation = Readonly<{
+	contentSet: WorkbenchContentSet
 	digest: string
 	bytes: Uint8Array
-	/** Package root containing the Markdown source or packaged Page artifact. */
+	/** Package root containing the Markdown source or packaged Content artifact. */
 	root: string
 	/** Exact Markdown source dependencies. Empty when reusing a packaged artifact. */
 	sources: readonly string[]
@@ -158,7 +204,7 @@ export type WorkbenchSemanticPageCompilation = Readonly<{
 
 type WorkbenchSemanticCompilationSnapshot = Readonly<{
 	producers: readonly WorkbenchSemanticProducerCompilation[]
-	pages: readonly WorkbenchSemanticPageCompilation[]
+	content: readonly WorkbenchSemanticContentCompilation[]
 }>
 
 export type WorkbenchSemanticLowering = Readonly<{
@@ -167,7 +213,7 @@ export type WorkbenchSemanticLowering = Readonly<{
 	collect(input: WorkbenchSemanticModuleInput): Promise<void>
 	plans(): Promise<readonly WorkbenchFederationProducerPlan[]>
 	compilations(): Promise<readonly WorkbenchSemanticProducerCompilation[]>
-	pageCompilations(): Promise<readonly WorkbenchSemanticPageCompilation[]>
+	contentCompilations(): Promise<readonly WorkbenchSemanticContentCompilation[]>
 }>
 
 /**
@@ -269,14 +315,14 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 		const currentCompilations = await compilations()
 		return Object.freeze(currentCompilations.map((compilation) => compilation.plan))
 	}
-	const pageCompilations = (): Promise<readonly WorkbenchSemanticPageCompilation[]> => {
+	const contentCompilations = (): Promise<readonly WorkbenchSemanticContentCompilation[]> => {
 		finalized ??= finalizePlans()
-		return finalized.then((snapshot) => snapshot.pages)
+		return finalized.then((snapshot) => snapshot.content)
 	}
 
 	const finalizePlans = async (): Promise<WorkbenchSemanticCompilationSnapshot> => {
 		const producers: WorkbenchSemanticProducerCompilation[] = []
-		const pages: WorkbenchSemanticPageCompilation[] = []
+		const content: WorkbenchSemanticContentCompilation[] = []
 		for (const publication of [...publications.values()].sort((left, right) =>
 			pluginDefinitionIndexKey(left.owner.definition).localeCompare(
 				pluginDefinitionIndexKey(right.owner.definition),
@@ -289,32 +335,33 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 			)
 			const definition = await evaluateDefinition(definitionBinding)
 			const requiresBindings = [...definition.entries.values()].some(
-				(descriptor) => descriptor.kind !== 'page',
+				(descriptor) => descriptor.kind !== 'content' || descriptor.document.slots.size > 0,
 			)
 			if (publication.hasBindings !== requiresBindings) {
 				throw semanticError(
 					publication.moduleId,
 					requiresBindings
-						? 'publish() requires bindings for every non-Page definition'
-						: 'Page-only publish() must not receive bindings',
+						? 'publish() requires bindings for every View, Attachment, and interactive Content'
+						: 'static Content-only publish() must not receive bindings',
 				)
 			}
 			const buildRoot = resolveProducerBuildRoot(sourceRoot, publication.moduleId)
-			const pageEntries = [...definition.entries]
+			const contentEntries = [...definition.entries]
 				.filter(
-					(entry): entry is [string, Extract<Descriptor, { kind: 'page' }>] =>
-						entry[1].kind === 'page',
+					(entry): entry is [string, Extract<Descriptor, { kind: 'content' }>] =>
+						entry[1].kind === 'content',
 				)
 				.sort(([left], [right]) => left.localeCompare(right))
-			if (pageEntries.length > 0) {
-				const { compileWorkbenchPageSet } = await import('./page-compiler.ts')
-				pages.push(
-					await compileWorkbenchPageSet({
+			if (contentEntries.length > 0) {
+				const { compileWorkbenchContentSet } = await import('./content-compiler.ts')
+				content.push(
+					await compileWorkbenchContentSet({
 						definition: publication.owner.definition,
 						root: buildRoot,
-						entries: pageEntries.map(([key, descriptor]) => ({
+						entries: contentEntries.map(([key, descriptor]) => ({
 							key,
 							sourcePath: descriptor.document.sourcePath,
+							slots: [...descriptor.document.slots.values()],
 						})),
 					}),
 				)
@@ -364,7 +411,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 		}
 		return Object.freeze({
 			producers: Object.freeze(producers),
-			pages: Object.freeze(pages),
+			content: Object.freeze(content),
 		})
 	}
 
@@ -658,6 +705,228 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 		throw semanticError(moduleId, `cannot statically resolve ${name}`)
 	}
 
+	const parseContentSlots = async (
+		moduleId: string,
+		expression: Node | undefined,
+		environment: EvaluationEnvironment,
+		stack: Set<string>,
+	): Promise<ReadonlyMap<string, WorkbenchSemanticContentSlot>> => {
+		if (!expression) return new Map()
+		const resolved = await resolveStaticValueNode(
+			moduleId,
+			expression,
+			'workbench.markdown() slots',
+			new Set(),
+		)
+		if (resolved.node.type !== 'ObjectExpression') {
+			throw semanticError(moduleId, 'workbench.markdown() slots must resolve to one static record')
+		}
+		const slots = new Map<string, WorkbenchSemanticContentSlot>()
+		for (const property of nodes(resolved.node.properties)) {
+			if (property.type !== 'Property' || property.computed === true) {
+				throw semanticError(moduleId, 'workbench.markdown() slots require exact static properties')
+			}
+			const key = propertyName(property.key)
+			if (!key) throw semanticError(moduleId, 'workbench.markdown() slot key must be static')
+			assertEntryKey(moduleId, key)
+			if (slots.has(key)) {
+				throw semanticError(moduleId, `workbench.markdown() slot ${key} is duplicated`)
+			}
+			const value = object(property.value)
+			if (!value) throw semanticError(moduleId, `workbench.markdown() slot ${key} has no value`)
+			slots.set(key, await parseContentSlot(resolved.moduleId, key, value, environment, stack))
+		}
+		return new Map([...slots].sort(([left], [right]) => left.localeCompare(right)))
+	}
+
+	const parseContentSlot = async (
+		moduleId: string,
+		key: string,
+		expression: Node,
+		environment: EvaluationEnvironment,
+		stack: Set<string>,
+	): Promise<WorkbenchSemanticContentSlot> => {
+		const resolved = await resolveStaticValueNode(
+			moduleId,
+			expression,
+			`Workbench Content slot ${key}`,
+			new Set(),
+		)
+		const call = resolved.node
+		const module = await getModule(resolved.moduleId)
+		if (call.type !== 'CallExpression') {
+			throw semanticError(moduleId, `Workbench Content slot ${key} must be workbench.data/action()`)
+		}
+		const args = nodes(call.arguments)
+		if (isWorkbenchCall(call, module, 'data')) {
+			if (args.length !== 1) {
+				throw semanticError(
+					moduleId,
+					`workbench.data() for slot ${key} requires one schema binding`,
+				)
+			}
+			await assertSchemaBinding(resolved.moduleId, args[0]!, environment)
+			return Object.freeze({ kind: 'data', key })
+		}
+		if (!isWorkbenchCall(call, module, 'action') || args.length !== 1) {
+			throw semanticError(moduleId, `Workbench Content slot ${key} must be workbench.data/action()`)
+		}
+		const options = await staticObjectProperties(
+			resolved.moduleId,
+			args[0]!,
+			`workbench.action() for slot ${key}`,
+		)
+		const allowed = new Set(['label', 'input', 'form', 'confirm'])
+		for (const option of options.keys()) {
+			if (!allowed.has(option)) {
+				throw semanticError(
+					moduleId,
+					`workbench.action() for slot ${key} has unknown option ${option}`,
+				)
+			}
+		}
+		const labelNode = options.get('label')
+		if (!labelNode) {
+			throw semanticError(moduleId, `workbench.action() for slot ${key} requires label`)
+		}
+		const label = await evaluateExpression(resolved.moduleId, labelNode, environment, stack)
+		if (typeof label !== 'string' || label.length === 0) {
+			throw semanticError(moduleId, `workbench.action() for slot ${key} requires a static label`)
+		}
+		const confirmNode = options.get('confirm')
+		const confirm = confirmNode
+			? await evaluateExpression(resolved.moduleId, confirmNode, environment, stack)
+			: undefined
+		if (confirm !== undefined && (typeof confirm !== 'string' || confirm.length === 0)) {
+			throw semanticError(
+				moduleId,
+				`workbench.action() for slot ${key} requires static confirmation text`,
+			)
+		}
+		const inputNode = options.get('input')
+		const formNode = options.get('form')
+		if (!inputNode) {
+			if (formNode) {
+				throw semanticError(moduleId, `workbench.action() for slot ${key} form requires input`)
+			}
+			return Object.freeze({
+				kind: 'action',
+				key,
+				label,
+				input: 'none',
+				...(confirm === undefined ? {} : { confirm: confirm as string }),
+			})
+		}
+		await assertSchemaBinding(resolved.moduleId, inputNode, environment)
+		let input: 'dialog' | 'embedded' = 'dialog'
+		if (formNode) {
+			const form = await evaluateExpression(resolved.moduleId, formNode, environment, stack)
+			if (form !== 'embedded') {
+				throw semanticError(moduleId, `workbench.action() for slot ${key} form must be "embedded"`)
+			}
+			input = 'embedded'
+		}
+		return Object.freeze({
+			kind: 'action',
+			key,
+			label,
+			input,
+			...(confirm ? { confirm: confirm as string } : {}),
+		})
+	}
+
+	const assertSchemaBinding = async (
+		moduleId: string,
+		expression: Node,
+		environment: EvaluationEnvironment,
+	): Promise<void> => {
+		const node = unwrapExpression(expression)
+		if (node.type !== 'Identifier' || typeof node.name !== 'string' || environment.has(node.name)) {
+			throw semanticError(moduleId, 'Workbench Content schema must be a module-level binding')
+		}
+		const module = await getModule(moduleId)
+		if (!module.constants.has(node.name) && !module.imports.has(node.name)) {
+			throw semanticError(
+				moduleId,
+				`Workbench Content schema binding ${node.name} is not traceable`,
+			)
+		}
+	}
+
+	const staticObjectProperties = async (
+		moduleId: string,
+		expression: Node,
+		label: string,
+	): Promise<ReadonlyMap<string, Node>> => {
+		const resolved = await resolveStaticValueNode(moduleId, expression, label, new Set())
+		if (resolved.node.type !== 'ObjectExpression') {
+			throw semanticError(moduleId, `${label} must resolve to one static record`)
+		}
+		const result = new Map<string, Node>()
+		for (const property of nodes(resolved.node.properties)) {
+			if (property.type !== 'Property' || property.computed === true) {
+				throw semanticError(moduleId, `${label} requires exact static properties`)
+			}
+			const key = propertyName(property.key)
+			if (!key) throw semanticError(moduleId, `${label} property key must be static`)
+			if (result.has(key)) throw semanticError(moduleId, `${label} property ${key} is duplicated`)
+			const value = object(property.value)
+			if (!value) throw semanticError(moduleId, `${label} property ${key} has no value`)
+			result.set(key, value)
+		}
+		return result
+	}
+
+	const resolveStaticValueNode = async (
+		moduleId: string,
+		expression: Node,
+		label: string,
+		seen: Set<string>,
+	): Promise<Readonly<{ moduleId: string; node: Node }>> => {
+		const node = unwrapExpression(expression)
+		if (node.type !== 'Identifier' || typeof node.name !== 'string') {
+			return Object.freeze({ moduleId, node })
+		}
+		const marker = `${moduleId}\0${node.name}`
+		if (seen.has(marker)) throw semanticError(moduleId, `${label} has a cyclic binding`)
+		seen.add(marker)
+		const module = await getModule(moduleId)
+		const imported = module.imports.get(node.name)
+		if (imported) {
+			if (imported.namespace || !imported.resolved) {
+				throw semanticError(moduleId, `${label} import ${node.name} is not statically traceable`)
+			}
+			return resolveStaticExportNode(imported.resolved, imported.imported, label, seen)
+		}
+		const initializer = module.constants.get(node.name)
+		if (!initializer)
+			throw semanticError(moduleId, `${label} binding ${node.name} is not traceable`)
+		return resolveStaticValueNode(moduleId, initializer, label, seen)
+	}
+
+	const resolveStaticExportNode = async (
+		moduleId: string,
+		exportName: string,
+		label: string,
+		seen: Set<string>,
+	): Promise<Readonly<{ moduleId: string; node: Node }>> => {
+		const module = await getModule(moduleId)
+		const exported = module.exports.get(exportName)
+		if (!exported) throw semanticError(moduleId, `${label} export ${exportName} is missing`)
+		if (exported.kind === 'reexport') {
+			if (!exported.resolved) {
+				throw semanticError(moduleId, `${label} re-export ${exportName} is not traceable`)
+			}
+			return resolveStaticExportNode(exported.resolved, exported.imported, label, seen)
+		}
+		return resolveStaticValueNode(
+			moduleId,
+			{ type: 'Identifier', name: exported.local },
+			label,
+			seen,
+		)
+	}
+
 	const evaluateCall = async (
 		moduleId: string,
 		call: Node,
@@ -673,10 +942,10 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 			if (isWorkbenchMember(callee, module)) {
 				switch (method) {
 					case 'markdown': {
-						if (args.length !== 2 || !isImportMetaUrl(args[0]!)) {
+						if ((args.length !== 2 && args.length !== 3) || !isImportMetaUrl(args[0]!)) {
 							throw semanticError(
 								moduleId,
-								'workbench.markdown() must use import.meta.url and one literal relative path',
+								'workbench.markdown() must use import.meta.url, one literal relative path, and optional static slots',
 							)
 						}
 						const path = literalString(args[1])
@@ -696,6 +965,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 							kind: 'markdown-document',
 							moduleId,
 							sourcePath: resolve(dirname(moduleId), path),
+							slots: await parseContentSlots(moduleId, args[2], environment, stack),
 						})
 					}
 					case 'entry': {
@@ -725,19 +995,19 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 						}
 						return Object.freeze({ kind: method, renderer: options.get('renderer')! })
 					}
-					case 'page': {
+					case 'content': {
 						if (args.length !== 1) {
-							throw semanticError(moduleId, 'workbench.page() must receive one record')
+							throw semanticError(moduleId, 'workbench.content() must receive one record')
 						}
 						const options = await evaluateExpression(moduleId, args[0]!, environment, stack)
 						if (!(options instanceof Map)) {
-							throw semanticError(moduleId, 'workbench.page() must receive one static record')
+							throw semanticError(moduleId, 'workbench.content() must receive one static record')
 						}
 						const keys = [...options.keys()].sort()
 						if (keys.length !== 2 || keys[0] !== 'document' || keys[1] !== 'placement') {
 							throw semanticError(
 								moduleId,
-								'workbench.page() requires exactly document and placement',
+								'workbench.content() requires exactly document and placement',
 							)
 						}
 						const document = options.get('document')
@@ -745,10 +1015,10 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 						if (!isMarkdownDocument(document) || !isPlacement(placement)) {
 							throw semanticError(
 								moduleId,
-								'workbench.page() requires workbench.markdown() and a static placement',
+								'workbench.content() requires workbench.markdown() and a static placement',
 							)
 						}
-						return Object.freeze({ kind: 'page', document, placement })
+						return Object.freeze({ kind: 'content', document, placement })
 					}
 					case 'tab':
 					case 'route':
@@ -809,7 +1079,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 		return evaluateExpression(callable.moduleId, returned, childEnvironment, stack)
 	}
 
-	return Object.freeze({ reset, invalidate, collect, plans, compilations, pageCompilations })
+	return Object.freeze({ reset, invalidate, collect, plans, compilations, contentCompilations })
 }
 
 function resolveProducerBuildRoot(sourceRoot: string, publicationModuleId: string): string {
@@ -984,8 +1254,7 @@ async function writeBridgeEntry(input: {
 	const entryRevision = createHash('sha256')
 		.update(`workbench-generated-entry:${GENERATED_ABI_VERSION}\n`)
 		.update(`${JSON.stringify(input.identity)}\n`)
-		.update(`${input.definition.binding.moduleId}#${input.definition.exportName}\n`)
-		.update(`${input.renderer.entryPath}\n`)
+		.update(`definition-export:${input.definition.exportName}\n`)
 		.digest('hex')
 		.slice(0, 16)
 	const generatedDir = resolve(
@@ -995,21 +1264,182 @@ async function writeBridgeEntry(input: {
 		entryRevision,
 	)
 	const bridgePath = resolve(generatedDir, `${input.identity.key}.tsx`)
-	const definitionImport = relativeImport(bridgePath, input.definition.binding.moduleId)
-	const rendererImport = relativeImport(bridgePath, input.renderer.entryPath)
+	await mkdir(generatedDir, { recursive: true })
+	const projectedRenderer = await writeProjectedRenderer({ ...input, generatedDir })
+	const rendererImport = relativeImport(bridgePath, projectedRenderer)
 	const source = [
 		'// Generated by @pluxel/rolldown. Do not edit.',
 		`import { createWorkbenchBridge } from '@pluxel/runtime/internal/workbench-react'`,
-		`import { ${input.definition.exportName} as Definition } from ${JSON.stringify(definitionImport)}`,
 		`import Renderer from ${JSON.stringify(rendererImport)}`,
 		'',
-		`export default createWorkbenchBridge(${JSON.stringify(input.identity)}, Definition.${input.identity.key}, Renderer)`,
+		`export default createWorkbenchBridge(${JSON.stringify(input.identity)}, Renderer)`,
 		'',
 	].join('\n')
-	await mkdir(generatedDir, { recursive: true })
 	const previous = await readFile(bridgePath, 'utf-8').catch((): undefined => undefined)
 	if (previous !== source) await writeFile(bridgePath, source, 'utf-8')
 	return normalizeRelativePath(relative(input.root, bridgePath), 'generated Bridge entry')
+}
+
+async function writeProjectedRenderer(input: {
+	generatedDir: string
+	identity: WorkbenchFederationDescriptorIdentity
+	definition: Definition
+	renderer: Renderer
+}): Promise<string> {
+	const extension = extname(input.renderer.entryPath) || '.tsx'
+	const rendererPath = resolve(input.generatedDir, `${input.identity.key}.renderer${extension}`)
+	const projectionPath = resolve(input.generatedDir, `${input.identity.key}.definition.ts`)
+	const original = await readFile(input.renderer.entryPath, 'utf-8').catch((cause) => {
+		throw new Error(
+			`[workbench-semantic] renderer source is unavailable: ${input.renderer.entryPath}`,
+			{ cause },
+		)
+	})
+	const ast = parseStandaloneWithLang(original, input.renderer.entryPath)
+	if (!ast) {
+		throw new Error(`[workbench-semantic] cannot parse renderer source ${input.renderer.entryPath}`)
+	}
+	await assertRendererDefinitionBoundary(
+		input.renderer.entryPath,
+		input.definition.binding.moduleId,
+		ast,
+	)
+	const replacements: Array<Readonly<{ start: number; end: number; value: string }>> = []
+	let projectsDefinition = false
+	for (const statement of ast.body as unknown as Node[]) {
+		if (
+			statement.type !== 'ImportDeclaration' &&
+			statement.type !== 'ExportNamedDeclaration' &&
+			statement.type !== 'ExportAllDeclaration'
+		) {
+			continue
+		}
+		const sourceNode = object(statement.source)
+		const specifier = literalString(sourceNode)
+		if (!sourceNode || specifier === null || isBareSpecifier(specifier)) continue
+		const hit = resolveImport(input.renderer.entryPath, specifier)
+		if (!hit) continue
+		const target = resolve(hit.path)
+		let replacementTarget = target
+		if (target === resolve(input.definition.binding.moduleId)) {
+			assertProjectionImport(statement, input.definition, input.renderer.entryPath)
+			replacementTarget = projectionPath
+			projectsDefinition = true
+		}
+		if (typeof sourceNode.start !== 'number' || typeof sourceNode.end !== 'number') {
+			throw new TypeError(
+				`[workbench-semantic] renderer import has no source range: ${input.renderer.entryPath}`,
+			)
+		}
+		replacements.push({
+			start: sourceNode.start,
+			end: sourceNode.end,
+			value: JSON.stringify(relativeImport(rendererPath, replacementTarget)),
+		})
+	}
+	if (!projectsDefinition) return input.renderer.entryPath
+	let projected = original
+	for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+		projected = `${projected.slice(0, replacement.start)}${replacement.value}${projected.slice(replacement.end)}`
+	}
+	const rendererDeclaration = `workbench.entry(import.meta.url, ${JSON.stringify(`./${input.identity.key}.renderer${extension}`)})`
+	// The original definition already type-checks the renderer against its exact API contract. This
+	// browser-only projection must erase that server-owned generic instead of inferring RpcTarget,
+	// which is invariant and would make declaration emit reject the projected renderer.
+	const descriptor =
+		input.identity.kind === 'view'
+			? `workbench.view<any>({ renderer: ProjectedRenderer, placement: workbench.tab({ label: ${JSON.stringify(input.identity.key)} }) })`
+			: 'workbench.attachment<any>({ renderer: ProjectedRenderer })'
+	const projection = [
+		'// Generated browser-only Workbench descriptor projection. Do not edit.',
+		`import { workbench } from '@pluxel/runtime/workbench'`,
+		`const ProjectedRenderer = ${rendererDeclaration}`,
+		`export const ${input.definition.exportName} = workbench.define({`,
+		`\t${JSON.stringify(input.identity.key)}: ${descriptor},`,
+		'})',
+		'',
+	].join('\n')
+	for (const [path, source] of [
+		[rendererPath, projected],
+		[projectionPath, projection],
+	] as const) {
+		const previous = await readFile(path, 'utf-8').catch((): undefined => undefined)
+		if (previous !== source) await writeFile(path, source, 'utf-8')
+	}
+	return rendererPath
+}
+
+async function assertRendererDefinitionBoundary(
+	rendererPath: string,
+	definitionPath: string,
+	rendererAst: Program,
+): Promise<void> {
+	const renderer = await realpath(resolve(rendererPath)).catch(() => resolve(rendererPath))
+	const definition = await realpath(resolve(definitionPath)).catch(() => resolve(definitionPath))
+	const queue: string[] = []
+	const visited = new Set<string>()
+	const collect = async (
+		importer: string,
+		imports: ReturnType<typeof collectImportSpecifiers>,
+		direct: boolean,
+	): Promise<void> => {
+		for (const item of imports) {
+			const hit = resolveImport(importer, item.specifier)
+			if (!hit) continue
+			const target = await realpath(resolve(hit.path)).catch(() => resolve(hit.path))
+			if (target === definition) {
+				if (direct && item.kind === 'static') continue
+				throw new Error(
+					`[workbench-semantic] renderer may reference its server definition only through a direct static import: ${rendererPath}`,
+				)
+			}
+			if (
+				!isInstalledDependencyPath(hit.path) &&
+				['.js', '.jsx', '.ts', '.tsx', '.mjs', '.mts', '.cjs', '.cts'].includes(extname(hit.path))
+			) {
+				queue.push(hit.path)
+			}
+		}
+	}
+	await collect(rendererPath, collectImportSpecifiers(rendererAst), true)
+	while (queue.length > 0) {
+		const path = queue.shift()!
+		const canonical = await realpath(resolve(path)).catch(() => resolve(path))
+		if (canonical === renderer || visited.has(canonical)) continue
+		visited.add(canonical)
+		const source = await readFile(path, 'utf-8').catch((cause) => {
+			throw new Error(`[workbench-semantic] renderer dependency is unavailable: ${path}`, {
+				cause,
+			})
+		})
+		const ast = parseStandaloneWithLang(source, path)
+		if (!ast) {
+			throw new Error(`[workbench-semantic] cannot verify renderer dependency ${path}`)
+		}
+		await collect(path, collectImportSpecifiers(ast), false)
+	}
+}
+
+function assertProjectionImport(
+	statement: Node,
+	definition: Definition,
+	rendererPath: string,
+): void {
+	if (statement.type !== 'ImportDeclaration') {
+		throw new Error(
+			`[workbench-semantic] renderer must import ${definition.exportName} directly instead of re-exporting its server definition: ${rendererPath}`,
+		)
+	}
+	const specifiers = nodes(statement.specifiers)
+	if (
+		specifiers.length !== 1 ||
+		specifiers[0]?.type !== 'ImportSpecifier' ||
+		propertyName(specifiers[0]!.imported) !== definition.exportName
+	) {
+		throw new Error(
+			`[workbench-semantic] renderer import from its server definition must contain only ${definition.exportName}: ${rendererPath}`,
+		)
+	}
 }
 
 async function buildRevisionFor(
@@ -1025,6 +1455,7 @@ async function buildRevisionFor(
 ): Promise<string> {
 	const hash = createHash('sha256')
 	hash.update(`workbench-semantic-abi:${GENERATED_ABI_VERSION}\n`)
+	hash.update(`workbench-build-revision:${BUILD_REVISION_VERSION}\n`)
 	hash.update(`compat:${resolveWorkbenchFederationShared(compatibilityRoot).signature}\n`)
 	hash.update(`owner:${JSON.stringify(owner)}\n`)
 	hash.update(
@@ -1033,7 +1464,6 @@ async function buildRevisionFor(
 	for (const entry of entries) {
 		hash.update(`entry:${JSON.stringify(entry.descriptor)}:${entry.bridgeEntryPath}\n`)
 	}
-	await hashDependencyState(hash, root)
 	const roots = [
 		...new Set([definition.binding.moduleId, ...entries.map((entry) => entry.renderer.entryPath)]),
 	].sort()
@@ -1048,30 +1478,231 @@ async function hashSourceGraph(
 ): Promise<void> {
 	const queue = [...entryPaths]
 	const visited = new Set<string>()
-	const packageMetadata = new Set<string>()
-	while (queue.length > 0) {
-		const file = resolve(queue.shift()!)
+	const packageMetadata = new Map<string, PackageFingerprint>()
+	const packageDirectories = new Map<string, string | null>()
+	const dependencyQueue: PackageFingerprint[] = []
+	const expandedDependencies = new Set<string>()
+	const rootPackageJson = resolve(root, 'package.json')
+	if (existsSync(rootPackageJson)) await readPackageFingerprint(rootPackageJson, packageMetadata)
+	while (queue.length > 0 || dependencyQueue.length > 0) {
+		if (queue.length === 0) {
+			const dependencyPackage = dependencyQueue.shift()!
+			if (expandedDependencies.has(dependencyPackage.path)) continue
+			expandedDependencies.add(dependencyPackage.path)
+			for (const dependency of dependencyPackage.dependencies) {
+				const hit = resolveImport(resolve(dependencyPackage.root, 'package.json'), dependency)
+				const childPackageJson =
+					hit?.packageJsonPath ??
+					resolvePackageJsonPathWithOxc(
+						dependencyPackage.root,
+						dependency,
+						SOURCE_RESOLVE_OPTIONS,
+					) ??
+					findInstalledPackageJson(dependencyPackage.root, dependency)
+				if (!childPackageJson) continue
+				const childPackage = await readPackageFingerprint(childPackageJson, packageMetadata)
+				if (!hit) {
+					dependencyPackage.resolutions.add(`${dependency}->${childPackage.identity}`)
+					if (!FIXED_SHARED_PACKAGES.has(childPackage.name)) dependencyQueue.push(childPackage)
+					continue
+				}
+				const resolvedPath = await realpath(hit.path).catch(() => resolve(hit.path))
+				dependencyPackage.resolutions.add(
+					`${dependency}->${childPackage.identity}:${normalizePackagePath(childPackage.root, resolvedPath)}`,
+				)
+				if (isInstalledDependencyPath(hit.path)) {
+					if (!FIXED_SHARED_PACKAGES.has(childPackage.name)) dependencyQueue.push(childPackage)
+				} else if (existsSync(hit.path)) {
+					queue.push(hit.path)
+				}
+			}
+			continue
+		}
+		const requestedFile = resolve(queue.shift()!)
+		const file = await realpath(requestedFile).catch(() => requestedFile)
 		if (visited.has(file)) continue
 		visited.add(file)
 		const content = await readFile(file, 'utf-8').catch((cause) => {
 			throw new Error(`[workbench-semantic] renderer source is unavailable: ${file}`, { cause })
 		})
-		hash.update(`file:${normalizeGraphPath(root, file)}\n`)
+		const sourcePackageJson = findContainingPackageJson(file, packageDirectories)
+		const sourcePackage = sourcePackageJson
+			? await readPackageFingerprint(sourcePackageJson, packageMetadata)
+			: undefined
+		hash.update(`file:${normalizeGraphPath(root, file, content, sourcePackage)}\n`)
 		hash.update(content)
 		for (const specifier of sourceImports(file, content)) {
 			const hit = resolveImport(file, specifier)
 			if (!hit) continue
-			if (isBareSpecifier(specifier)) {
-				if (hit.packageJsonPath) packageMetadata.add(hit.packageJsonPath)
-				continue
+			let dependencyPackage: PackageFingerprint | undefined
+			if (hit.packageJsonPath) {
+				dependencyPackage = await readPackageFingerprint(hit.packageJsonPath, packageMetadata)
+				const resolvedPath = await realpath(hit.path).catch(() => resolve(hit.path))
+				dependencyPackage.resolutions.add(
+					`${specifier}->${normalizePackagePath(dependencyPackage.root, resolvedPath)}`,
+				)
 			}
-			if (existsSync(hit.path)) queue.push(hit.path)
+			if (!existsSync(hit.path)) continue
+			if (!isBareSpecifier(specifier) || !isInstalledDependencyPath(hit.path)) {
+				queue.push(hit.path)
+			} else if (dependencyPackage && !FIXED_SHARED_PACKAGES.has(dependencyPackage.name)) {
+				dependencyQueue.push(dependencyPackage)
+			}
 		}
 	}
-	for (const packageJson of [...packageMetadata].sort()) {
-		hash.update(`package:${packageJson}\n`)
-		hash.update(await readFile(packageJson, 'utf-8').catch(() => ''))
+	const packageRecords = [...packageMetadata.values()]
+		.map((item) => ({
+			item,
+			sortKey: `${item.identity}\0${item.metadata}\0${[...item.resolutions].sort().join('\0')}`,
+		}))
+		.sort((left, right) => left.sortKey.localeCompare(right.sortKey))
+	for (const { item } of packageRecords) {
+		const resolutions = [...item.resolutions].sort()
+		hash.update(
+			`package:${JSON.stringify({ identity: item.identity, metadata: item.metadata, resolutions })}\n`,
+		)
 	}
+}
+
+type PackageFingerprint = {
+	path: string
+	root: string
+	name: string
+	identity: string
+	metadata: string
+	dependencies: readonly string[]
+	resolutions: Set<string>
+}
+
+async function readPackageFingerprint(
+	packageJsonPath: string,
+	packages: Map<string, PackageFingerprint>,
+): Promise<PackageFingerprint> {
+	const canonicalPath = await realpath(packageJsonPath).catch(() => resolve(packageJsonPath))
+	const cached = packages.get(canonicalPath)
+	if (cached) return cached
+	const manifest = await readFile(canonicalPath, 'utf-8').catch(() => '')
+	let name = '<anonymous>'
+	let version = '<workspace>'
+	let dependencies: readonly string[] = []
+	let metadata = '{}'
+	try {
+		const parsed = JSON.parse(manifest) as Record<string, unknown>
+		if (typeof parsed.name === 'string' && parsed.name.length > 0) name = parsed.name
+		if (typeof parsed.version === 'string' && parsed.version.length > 0) version = parsed.version
+		dependencies = [
+			...new Set([
+				...recordKeys(parsed.dependencies),
+				...recordKeys(parsed.optionalDependencies),
+				...recordKeys(parsed.peerDependencies),
+			]),
+		].sort()
+		metadata = canonicalPackageMetadata(parsed)
+	} catch {
+		// The builder owns invalid package metadata diagnostics; keep fingerprinting deterministic.
+	}
+	const fingerprint: PackageFingerprint = {
+		path: canonicalPath,
+		root: dirname(canonicalPath),
+		name,
+		identity: `${name}@${version}`,
+		metadata,
+		dependencies,
+		resolutions: new Set(),
+	}
+	packages.set(canonicalPath, fingerprint)
+	return fingerprint
+}
+
+function recordKeys(value: unknown): string[] {
+	return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : []
+}
+
+function findContainingPackageJson(file: string, cache: Map<string, string | null>): string | null {
+	let current = dirname(file)
+	const searched: string[] = []
+	for (;;) {
+		if (cache.has(current)) {
+			const cached = cache.get(current) ?? null
+			for (const directory of searched) cache.set(directory, cached)
+			return cached
+		}
+		searched.push(current)
+		const packageJson = resolve(current, 'package.json')
+		if (existsSync(packageJson)) {
+			for (const directory of searched) cache.set(directory, packageJson)
+			return packageJson
+		}
+		const parent = dirname(current)
+		if (parent === current) {
+			for (const directory of searched) cache.set(directory, null)
+			return null
+		}
+		current = parent
+	}
+}
+
+function findInstalledPackageJson(start: string, packageName: string): string | null {
+	let current = resolve(start)
+	for (;;) {
+		const packageJson = resolve(current, 'node_modules', packageName, 'package.json')
+		if (existsSync(packageJson)) return packageJson
+		const parent = dirname(current)
+		if (parent === current) return null
+		current = parent
+	}
+}
+
+function canonicalPackageMetadata(manifest: Record<string, unknown>): string {
+	const fields = [
+		'name',
+		'version',
+		'type',
+		'exports',
+		'imports',
+		'main',
+		'module',
+		'browser',
+		'sideEffects',
+		'dependencies',
+		'optionalDependencies',
+		'peerDependencies',
+	] as const
+	return JSON.stringify(
+		Object.fromEntries(
+			fields
+				.filter((field) => Object.hasOwn(manifest, field))
+				.map((field) => [
+					field,
+					field === 'exports'
+						? canonicalPackageExports(manifest[field])
+						: canonicalJsonValue(manifest[field]),
+				]),
+		),
+	)
+}
+
+function canonicalPackageExports(value: unknown): unknown {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return canonicalJsonValue(value)
+	}
+	return canonicalJsonValue(
+		Object.fromEntries(
+			Object.entries(value as Record<string, unknown>).filter(([key]) => key !== './package.json'),
+		),
+	)
+}
+
+function canonicalJsonValue(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(canonicalJsonValue)
+	if (value && typeof value === 'object') {
+		return Object.fromEntries(
+			Object.entries(value as Record<string, unknown>)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, item]) => [key, canonicalJsonValue(item)]),
+		)
+	}
+	return value
 }
 
 function sourceImports(file: string, content: string): string[] {
@@ -1092,33 +1723,7 @@ function resolveImport(
 	specifier: string,
 ): { path: string; packageJsonPath?: string } | null {
 	if (/^(?:https?:|data:|node:)/.test(specifier)) return null
-	const hit = resolveWithOxc(dirname(importer), specifier, {
-		conditionNames: [
-			'@pluxel/hmr',
-			'@pluxel/source',
-			'development',
-			'browser',
-			'import',
-			'module',
-			'default',
-		],
-		extensions: [
-			'.tsx',
-			'.ts',
-			'.jsx',
-			'.js',
-			'.mts',
-			'.mjs',
-			'.cts',
-			'.cjs',
-			'.css',
-			'.scss',
-			'.sass',
-			'.less',
-			'.json',
-		],
-		tsconfig: 'auto',
-	})
+	const hit = resolveWithOxc(dirname(importer), specifier, SOURCE_RESOLVE_OPTIONS)
 	return hit ? { path: hit.path, packageJsonPath: hit.packageJsonPath } : null
 }
 
@@ -1130,34 +1735,9 @@ function isBareSpecifier(source: string): boolean {
 	return !source.startsWith('.') && !source.startsWith('/') && !source.startsWith('\0')
 }
 
-async function hashDependencyState(
-	hash: ReturnType<typeof createHash>,
-	root: string,
-): Promise<void> {
-	for (const file of findDependencyStateFiles(root)) {
-		hash.update(`dependency-state:${file}\n`)
-		hash.update(await readFile(file))
-	}
-}
-
-function findDependencyStateFiles(start: string): string[] {
-	const names = [
-		'pnpm-lock.yaml',
-		'pnpm-workspace.yaml',
-		'package-lock.json',
-		'yarn.lock',
-		'bun.lock',
-		'bun.lockb',
-	]
-	let current = resolve(start)
-	for (let depth = 0; depth < 12; depth += 1) {
-		const files = names.map((name) => resolve(current, name)).filter((file) => existsSync(file))
-		if (files.length > 0) return files.sort()
-		const parent = resolve(current, '..')
-		if (parent === current) break
-		current = parent
-	}
-	return []
+function packageNameFromSpecifier(specifier: string): string {
+	const parts = specifier.split('/')
+	return specifier.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0]!
 }
 
 function relativeImport(importer: string, target: string): string {
@@ -1174,9 +1754,26 @@ function normalizeRelativePath(input: string, label: string): string {
 	return value.replace(/^\.\//, '')
 }
 
-function normalizeGraphPath(root: string, file: string): string {
+function normalizeGraphPath(
+	root: string,
+	file: string,
+	content: string,
+	sourcePackage: PackageFingerprint | undefined,
+): string {
 	const path = relative(root, file).replaceAll('\\', '/')
-	return path.startsWith('../') ? `external:${file.replaceAll('\\', '/')}` : path
+	if (!path.startsWith('../') && path !== '..') return path
+	if (sourcePackage) {
+		return `package-source:${sourcePackage.identity}:${normalizePackagePath(sourcePackage.root, file)}`
+	}
+	return `external-source:${extname(file)}:${createHash('sha256').update(content).digest('hex')}`
+}
+
+function normalizePackagePath(packageRoot: string, file: string): string {
+	return relative(packageRoot, file).replaceAll('\\', '/') || '.'
+}
+
+function isInstalledDependencyPath(file: string): boolean {
+	return file.replaceAll('\\', '/').split('/').includes('node_modules')
 }
 
 function isImportMetaUrl(node: Node): boolean {
@@ -1195,7 +1792,7 @@ function isDescriptor(value: SemanticValue): value is Descriptor {
 		'kind' in value &&
 		(value.kind === 'view' ||
 			value.kind === 'attachment' ||
-			value.kind === 'page' ||
+			value.kind === 'content' ||
 			value.kind === 'attachment-placement')
 	)
 }

@@ -8,13 +8,14 @@ architecture choices through the Workbench instead of leaving them in logs-only 
 
 The product identity in both routes is **Pluxel Architecture Lab**:
 
-- `dynamic`: host-owned Vite server, all 17 official concrete Plugins source-loaded through loader
+- `dynamic`: host-owned Vite server, all 18 official concrete Plugins source-loaded through loader
   HMR, including the dynamic-only Package Manager;
-- `static`: host-owned Vite server and production freezer, the other 16 official Plugins. Package
+- `static`: host-owned Vite server and production freezer, the other 17 official Plugins. Package
   Manager is intentionally absent because its source-producer contract is dynamic-only.
 
-Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default. This
-keeps the host useful without a local Redis while preserving real implementation choices in the
+Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default. Pi Agent
+also remains stopped until an Agent Tools assignment and model choice are intentional. This keeps the
+host useful without external infrastructure while preserving real implementation choices in the
 Workbench. Memory is the explicit default for both backend tokens.
 
 ## Run
@@ -107,5 +108,5 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 pnpm --filter @pluxel/plugins-host build:static
 ```
 
-The tests assert the 17/16 official catalog boundary, safe provider defaults, stopped Redis policy,
+The tests assert the 18/17 official catalog boundary, safe provider defaults, stopped Redis/Pi policy,
 S3 fork bindings, real render/cache behavior and isolated draft/release storage.

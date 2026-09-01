@@ -1,13 +1,13 @@
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import {
-	openWorkbenchView,
+	openWorkbenchEntry,
 	type WorkbenchFederatedLayoutEntry,
 	type WorkbenchLayoutEntry,
-	type WorkbenchOpenedPageHandle,
+	type WorkbenchOpenedContentHandle,
 	type WorkbenchSessionApi,
-	type WorkbenchStandardPageLayoutEntry,
-	type WorkbenchStandardPagePlanV1,
+	type WorkbenchContentLayoutEntry,
+	type WorkbenchContentPlan,
 } from '@pluxel/runtime/workbench/client'
 import {
 	createWorkbenchViewHost,
@@ -32,7 +32,9 @@ import {
 	type ReactNode,
 } from 'react'
 import { InlineNotice } from '../components'
-import { StandardPageRenderer } from '../app/workbench/StandardPageRenderer'
+import { WorkbenchContentRenderer } from '../app/workbench/WorkbenchContentRenderer'
+import { WorkbenchContentController } from '../app/workbench/WorkbenchContentController'
+import type { WorkbenchContentInteraction } from '../app/workbench/WorkbenchContentSlots'
 import {
 	useActiveWorkbenchTabId,
 	useOptionalWorkspaceNavigation,
@@ -93,9 +95,9 @@ type WorkbenchFederatedEntryActivation = {
 	opened?: FederatedWorkbenchView
 }
 
-type WorkbenchPageEntryActivation = {
+type WorkbenchContentEntryActivation = {
 	readonly input: Readonly<{
-		entry: WorkbenchStandardPageLayoutEntry
+		entry: WorkbenchContentLayoutEntry
 		layoutRevision: number
 		location: string | undefined
 		session: RpcStub<WorkbenchSessionApi>
@@ -103,7 +105,8 @@ type WorkbenchPageEntryActivation = {
 	mounts: number
 	started: boolean
 	active: boolean
-	opened?: WorkbenchOpenedPageHandle
+	opened?: WorkbenchOpenedContentHandle
+	controller?: WorkbenchContentController
 }
 
 const WorkbenchSessionContext = createContext<RpcStub<WorkbenchSessionApi> | null>(null)
@@ -258,9 +261,9 @@ type WorkbenchEntryViewProps = Readonly<{
 
 export function WorkbenchEntryView(props: WorkbenchEntryViewProps) {
 	const { entry, layoutRevision, location } = props
-	if ('standardPageRef' in entry) {
+	if ('contentRef' in entry) {
 		return (
-			<WorkbenchStandardPageEntryView
+			<WorkbenchContentEntryView
 				key={`${workbenchEntryKey(entry)}:${layoutRevision}:${location ?? ''}`}
 				entry={entry}
 				layoutRevision={layoutRevision}
@@ -471,21 +474,28 @@ function FederatedWorkbenchEntryView({
 	)
 }
 
-export function WorkbenchStandardPageEntryView({
+export function WorkbenchContentEntryView({
 	entry,
 	layoutRevision,
 	location,
 }: {
-	entry: WorkbenchStandardPageLayoutEntry
+	entry: WorkbenchContentLayoutEntry
 	layoutRevision: number
 	location?: string
 }) {
-	const { session } = useWorkbenchRuntime()
-	const [plan, setPlan] = useState<WorkbenchStandardPagePlanV1 | null>(null)
+	const { confirm, notify, session } = useWorkbenchRuntime()
+	const confirmRef = useRef(confirm)
+	const notifyRef = useRef(notify)
+	confirmRef.current = confirm
+	notifyRef.current = notify
+	const [content, setContent] = useState<Readonly<{
+		plan: WorkbenchContentPlan
+		interaction: WorkbenchContentInteraction | null
+	}> | null>(null)
 	const [error, setError] = useState<Error | null>(null)
 	const [opening, setOpening] = useState(true)
 	const activation = useMemo(
-		() => createPageEntryActivation({ entry, layoutRevision, location, session }),
+		() => createContentEntryActivation({ entry, layoutRevision, location, session }),
 		[entry, layoutRevision, location, session],
 	)
 
@@ -497,12 +507,12 @@ export function WorkbenchStandardPageEntryView({
 			session: openingSession,
 		} = activation.input
 		activation.mounts += 1
-		if (activation.started) return () => releasePageActivation(activation)
+		if (activation.started) return () => releaseContentActivation(activation)
 		activation.started = true
 		setOpening(true)
 		setError(null)
-		setPlan(null)
-		void openWorkbenchView(openingSession, openingEntry, {
+		setContent(null)
+		void openWorkbenchEntry(openingSession, openingEntry, {
 			layoutRevision: openingRevision,
 			...(openingLocation === undefined ? {} : { location: openingLocation }),
 		}).then(
@@ -510,7 +520,7 @@ export function WorkbenchStandardPageEntryView({
 				if (result.ok === false) {
 					if (activation.active) {
 						setOpening(false)
-						setError(new Error(`Standard Page could not open: ${result.code}`))
+						setError(new Error(`Workbench Content could not open: ${result.code}`))
 					}
 					return undefined
 				}
@@ -519,18 +529,34 @@ export function WorkbenchStandardPageEntryView({
 					activation.opened[Symbol.dispose]()
 					return undefined
 				}
-				setPlan(activation.opened.plan)
+				const opened = activation.opened
+				if (opened.mode === 'interactive' && opened.presentation) {
+					const controller = new WorkbenchContentController(opened)
+					activation.controller = controller
+					controller.start()
+					setContent({
+						plan: opened.plan,
+						interaction: {
+							presentation: opened.presentation,
+							controller,
+							confirm: (input) => confirmRef.current(input),
+							notify: (input) => notifyRef.current(input),
+						},
+					})
+				} else {
+					setContent({ plan: opened.plan, interaction: null })
+				}
 				setOpening(false)
 				return undefined
 			},
 			(openError: unknown): undefined => {
 				if (!activation.active) return undefined
 				setOpening(false)
-				setError(toWorkbenchError(openError, 'Standard Page could not be opened'))
+				setError(toWorkbenchError(openError, 'Workbench Content could not be opened'))
 				return undefined
 			},
 		)
-		return () => releasePageActivation(activation)
+		return () => releaseContentActivation(activation)
 	}, [activation])
 
 	return (
@@ -539,9 +565,13 @@ export function WorkbenchStandardPageEntryView({
 			contributionId={entry.descriptor.key}
 			point={entry.placement.kind}
 		>
-			{plan ? <StandardPageRenderer plan={plan} /> : null}
-			{opening ? <InlineNotice title="Standard Page">正在打开…</InlineNotice> : null}
-			{error ? <InlineNotice title="Standard Page 打开失败">{error.message}</InlineNotice> : null}
+			{content ? (
+				<WorkbenchContentRenderer interaction={content.interaction} plan={content.plan} />
+			) : null}
+			{opening ? <InlineNotice title="Workbench Content">正在打开…</InlineNotice> : null}
+			{error ? (
+				<InlineNotice title="Workbench Content 打开失败">{error.message}</InlineNotice>
+			) : null}
 		</WorkbenchErrorBoundary>
 	)
 }
@@ -580,17 +610,18 @@ function releaseFederatedActivation(activation: WorkbenchFederatedEntryActivatio
 	})
 }
 
-function createPageEntryActivation(
-	input: WorkbenchPageEntryActivation['input'],
-): WorkbenchPageEntryActivation {
+function createContentEntryActivation(
+	input: WorkbenchContentEntryActivation['input'],
+): WorkbenchContentEntryActivation {
 	return { input, mounts: 0, started: false, active: true }
 }
 
-function releasePageActivation(activation: WorkbenchPageEntryActivation): void {
+function releaseContentActivation(activation: WorkbenchContentEntryActivation): void {
 	activation.mounts -= 1
 	queueMicrotask(() => {
 		if (activation.mounts !== 0 || !activation.active) return
 		activation.active = false
+		activation.controller?.[Symbol.dispose]()
 		activation.opened?.[Symbol.dispose]()
 	})
 }

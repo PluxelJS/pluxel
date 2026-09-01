@@ -24,7 +24,7 @@ import * as Workbench from '../workbench'
 import type { RpcStub } from '../capnweb'
 import * as WorkbenchClient from './client'
 import {
-	openWorkbenchView,
+	openWorkbenchEntry,
 	type WorkbenchClientFederatedOpenResult,
 	type WorkbenchOpenedViewHandle,
 } from './client'
@@ -322,7 +322,7 @@ export async function openFederatedWorkbenchView(
 	}
 	let opened: WorkbenchClientFederatedOpenResult
 	try {
-		opened = await openWorkbenchView(input.session, input.entry, {
+		opened = await openWorkbenchEntry(input.session, input.entry, {
 			layoutRevision: input.layoutRevision,
 			...(input.location === undefined ? {} : { location: input.location }),
 		})

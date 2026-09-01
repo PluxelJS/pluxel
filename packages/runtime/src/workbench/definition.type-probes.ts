@@ -2,6 +2,7 @@ import { RpcTarget, type RpcStub } from '../capnweb'
 import { workbench, type PluginWorkbench, type WorkbenchBindings } from './definition'
 import { type WorkbenchHookValue } from './react'
 import type { BasePlugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 interface LocalApi extends RpcTarget {
 	snapshot(): Readonly<{ revision: number }>
@@ -43,29 +44,74 @@ const ConsumerWorkbench = workbench.define({
 	picker: ProviderWorkbench.picker.place(workbench.tab()),
 })
 
-const PageWorkbench = workbench.define({
-	guide: workbench.page({
+const ContentWorkbench = workbench.define({
+	guide: workbench.content({
 		document: workbench.markdown(import.meta.url, './guide.md'),
 		placement: workbench.tab(),
 	}),
 })
 
+const InteractiveContentWorkbench = workbench.define({
+	status: workbench.content({
+		document: workbench.markdown(import.meta.url, './guide.md', {
+			state: workbench.data(v.object({ ready: v.boolean() })),
+			history: workbench.data(
+				v.object({ entries: v.array(v.object({ labels: v.array(v.string()) })) }),
+			),
+			refresh: workbench.action({ label: 'Refresh' }),
+			probe: workbench.action({
+				label: 'Probe',
+				input: v.object({ timeoutMs: v.number(), labels: v.array(v.string()) }),
+			}),
+		}),
+		placement: workbench.tab(),
+	}),
+})
+
 const MixedWorkbench = workbench.define({
-	...PageWorkbench,
+	...ContentWorkbench,
 	local: workbench.view<LocalApi>({ renderer, placement: workbench.tab() }),
 })
 
 declare const provider: BasePlugin
 declare const pluginWorkbench: PluginWorkbench
+const detachedHistory = { entries: [{ labels: ['ready'] }] } as const
 
-pluginWorkbench.publish(PageWorkbench)
+pluginWorkbench.publish(ContentWorkbench)
 pluginWorkbench.publish(MixedWorkbench, { local: () => new LocalTarget() })
-// @ts-expect-error Markdown-only Page publication has no bindings argument.
-pluginWorkbench.publish(PageWorkbench, {})
-// @ts-expect-error A mixed definition still requires its non-Page binding.
+pluginWorkbench.publish(InteractiveContentWorkbench, {
+	status: ({ dataChanged }) => {
+		dataChanged()
+		return {
+			load: () => ({ state: { ready: true }, history: detachedHistory }),
+			actions: {
+				refresh: () => undefined,
+				probe: (input) => {
+					input.labels.push('checked')
+					return { ok: true, message: String(input.timeoutMs) }
+				},
+			},
+		}
+	},
+})
+// @ts-expect-error Markdown-only Content publication has no bindings argument.
+pluginWorkbench.publish(ContentWorkbench, {})
+// @ts-expect-error A mixed definition still requires its non-Content binding.
 pluginWorkbench.publish(MixedWorkbench)
-// @ts-expect-error Page keys never enter the bindings record.
+// @ts-expect-error Content keys never enter the bindings record.
 pluginWorkbench.publish(MixedWorkbench, { local: () => new LocalTarget(), guide: () => null })
+// @ts-expect-error Interactive Content requires a binding.
+pluginWorkbench.publish(InteractiveContentWorkbench)
+pluginWorkbench.publish(InteractiveContentWorkbench, {
+	status: () => ({
+		// @ts-expect-error load must return every data slot with its inferred output.
+		load: () => ({}),
+		actions: {
+			refresh: () => undefined,
+			probe: () => undefined,
+		},
+	}),
+})
 
 const validBindings = {
 	local: () => new LocalTarget(),

@@ -49,6 +49,11 @@ TOTP enrollment belongs to one opened target and has bounded count, attempts and
 owner stop or replacement disposes every pending enrollment. Failures use the stable `AuthSetupFailureCode` union; raw storage/crypto
 errors do not cross the RPC boundary.
 
+This setup flow remains one Direct View instead of splitting selected modes into Content. The fixed definition covers password,
+password-TOTP, public OIDC and confidential OIDC; TOTP must reveal an enrollment secret/provisioning URI and then confirm it against
+bounded state owned by the same opened target. A Content split would either expose permanently inapplicable actions or duplicate the
+mode/readiness UI and mutation authority. The simpler password and client-secret forms remain steps of this same credential state machine.
+
 ## Credential and lifecycle rules
 
 Vault records remain versioned `management-account-v1` and `oidc-client-secret-v1` values. Password verification uses bounded async scrypt. TOTP verification serializes record mutation and persists `lastAcceptedCounter` before success. OIDC uses Authorization Code + PKCE with bounded discovery/token/JWKS IO.

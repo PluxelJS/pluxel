@@ -73,11 +73,11 @@ describe('Workbench Federation activation', () => {
 			useEffect(() => () => void order.push('bridge'), [])
 			return <p>federated</p>
 		}
-		const provider = createWorkbenchBridge(identity, SettingsWorkbench.settings, Renderer)
+		const provider = createWorkbenchBridge(identity, Renderer)
 		mf.loadRemote.mockResolvedValue({ default: provider })
 		const disposeResult = vi.fn(() => order.push('rpc'))
 		const session = {
-			openView: vi.fn().mockResolvedValue({
+			openEntry: vi.fn().mockResolvedValue({
 				ok: true,
 				value: {
 					kind: 'local',
@@ -160,7 +160,7 @@ describe('Workbench Federation activation', () => {
 	})
 
 	it('does not force-replace a producer revision inside one document', async () => {
-		const provider = createWorkbenchBridge(identity, SettingsWorkbench.settings, () => null)
+		const provider = createWorkbenchBridge(identity, () => null)
 		mf.loadRemote.mockResolvedValue({ default: provider })
 		const resultDisposers: Array<ReturnType<typeof vi.fn>> = []
 		const changedRef = Object.freeze({
@@ -170,7 +170,7 @@ describe('Workbench Federation activation', () => {
 				'/__pluxel/runtime/federation/pluxel_workbench_settings/build-2/mf-manifest.json',
 		})
 		const session = {
-			openView: vi.fn().mockImplementation(async () => {
+			openEntry: vi.fn().mockImplementation(async () => {
 				const dispose = vi.fn()
 				resultDisposers.push(dispose)
 				const currentRef = resultDisposers.length === 1 ? ref : changedRef
@@ -221,7 +221,7 @@ describe('Workbench Federation activation', () => {
 		expect(resultDisposers[1]).toHaveBeenCalledTimes(1)
 	})
 
-	it('closes the per-open host when openView rejects before returning a result', async () => {
+	it('closes the per-open host when openEntry rejects before returning a result', async () => {
 		const reset = vi.fn()
 		const host = createWorkbenchViewHost({
 			locale: 'en',
@@ -236,7 +236,7 @@ describe('Workbench Federation activation', () => {
 			},
 		})
 		const session = {
-			openView: vi.fn().mockRejectedValue(new Error('socket closed')),
+			openEntry: vi.fn().mockRejectedValue(new Error('socket closed')),
 		} as unknown as RpcStub<WorkbenchSessionApi>
 
 		await expect(
@@ -256,7 +256,7 @@ describe('Workbench Federation activation', () => {
 		let resolveOpen!: (value: unknown) => void
 		const disposeResult = vi.fn()
 		const session = {
-			openView: vi.fn().mockReturnValue(
+			openEntry: vi.fn().mockReturnValue(
 				new Promise((resolve) => {
 					resolveOpen = resolve
 				}),

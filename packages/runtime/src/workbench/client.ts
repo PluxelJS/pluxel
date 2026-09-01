@@ -1,5 +1,5 @@
 import { parsePluginNodeAddress } from '@pluxel/core'
-import { parseWorkbenchStandardPagePlan } from '@pluxel/core/internal'
+import { parseWorkbenchContentPlan } from '@pluxel/core/internal'
 import {
 	parseWorkbenchDeclarationIdentity,
 	parseWorkbenchOpenableIdentity,
@@ -9,50 +9,72 @@ import {
 	type WorkbenchOpenableIdentity,
 } from '@pluxel/core/federation'
 import type { RpcStub, RpcTarget } from '../capnweb'
+import { parseRuntimePortableData } from '../web/validation'
 import type {
 	WorkbenchFederatedViewRef,
 	WorkbenchFederatedLayoutEntry,
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,
-	WorkbenchOpenViewFailureCode,
-	WorkbenchOpenViewInput,
+	WorkbenchOpenEntryFailureCode,
+	WorkbenchOpenEntryInput,
 	WorkbenchSessionApi,
-	WorkbenchStandardPageLayoutEntry,
-	WorkbenchStandardPageRef,
+	WorkbenchContentLayoutEntry,
+	WorkbenchContentRef,
+	WorkbenchContentRoot,
 } from './client-protocol'
+import { parseWorkbenchContentPresentation } from './client-validation'
 import { readWorkbenchIcon, readWorkbenchRoutePath, type WorkbenchPlacement } from './definition'
 import {
-	createWorkbenchOpenedPageHandle,
+	createWorkbenchOpenedContentHandle,
 	createWorkbenchOpenedViewHandle,
 	type WorkbenchOpenedClientValue,
-	type WorkbenchOpenedPageHandle,
+	type WorkbenchOpenedContentHandle,
 	type WorkbenchOpenedState,
 	type WorkbenchOpenedViewHandle,
-} from './opened-view'
+} from './opened-entry'
 
 export {
-	WorkbenchOpenedPageHandle,
+	WorkbenchOpenedContentHandle,
 	WorkbenchOpenedViewHandle,
 	type WorkbenchOpenedClientValue,
-} from './opened-view'
+} from './opened-entry'
 
 type DisposableValue = Readonly<{ [Symbol.dispose](): void }>
+
+/**
+ * Copies one awaited Workbench RPC DTO into a deeply frozen portable-data tree and releases the
+ * Cap'n Web result that owned it. This validates portability, not the caller's domain schema.
+ */
+export function detachWorkbenchPortableValue<Value>(
+	input: Value,
+	label = 'Workbench RPC result',
+): Value {
+	const dispose = readOwnDisposer(input)
+	try {
+		return parseRuntimePortableData(
+			dispose === undefined ? input : copyWithoutTransportDisposer(input),
+			label,
+		) as Value
+	} finally {
+		dispose?.call(input)
+	}
+}
 
 export type WorkbenchClientOpenResult =
 	| Readonly<{
 			ok: true
-			handle: WorkbenchOpenedViewHandle | WorkbenchOpenedPageHandle
+			handle: WorkbenchOpenedViewHandle | WorkbenchOpenedContentHandle
 	  }>
-	| Readonly<{ ok: false; code: WorkbenchOpenViewFailureCode }>
+	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
 
 export type WorkbenchClientFederatedOpenResult =
 	| Readonly<{ ok: true; handle: WorkbenchOpenedViewHandle }>
-	| Readonly<{ ok: false; code: WorkbenchOpenViewFailureCode }>
+	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
 
-export type WorkbenchClientPageOpenResult =
-	| Readonly<{ ok: true; handle: WorkbenchOpenedPageHandle }>
-	| Readonly<{ ok: false; code: WorkbenchOpenViewFailureCode }>
+export type WorkbenchClientContentOpenResult =
+	| Readonly<{ ok: true; handle: WorkbenchOpenedContentHandle }>
+	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
 
 /** Reads and validates a capability-free layout, releasing the Cap'n Web result immediately. */
 export async function readWorkbenchLayout(
@@ -71,28 +93,28 @@ export async function readWorkbenchLayout(
  * Opens the exact tuple selected from a layout. A closed failure never returns a capability;
  * success transfers ownership of the single top-level RPC result to the returned handle.
  */
-export function openWorkbenchView(
+export function openWorkbenchEntry(
 	session: RpcStub<WorkbenchSessionApi>,
 	entry: WorkbenchFederatedLayoutEntry,
 	options: Readonly<{ layoutRevision: number; location?: string }>,
 ): Promise<WorkbenchClientFederatedOpenResult>
-export function openWorkbenchView(
+export function openWorkbenchEntry(
 	session: RpcStub<WorkbenchSessionApi>,
-	entry: WorkbenchStandardPageLayoutEntry,
+	entry: WorkbenchContentLayoutEntry,
 	options: Readonly<{ layoutRevision: number; location?: string }>,
-): Promise<WorkbenchClientPageOpenResult>
-export function openWorkbenchView(
+): Promise<WorkbenchClientContentOpenResult>
+export function openWorkbenchEntry(
 	session: RpcStub<WorkbenchSessionApi>,
 	entry: WorkbenchLayoutEntry,
 	options: Readonly<{ layoutRevision: number; location?: string }>,
 ): Promise<WorkbenchClientOpenResult>
-export async function openWorkbenchView(
+export async function openWorkbenchEntry(
 	session: RpcStub<WorkbenchSessionApi>,
 	entry: WorkbenchLayoutEntry,
 	options: Readonly<{ layoutRevision: number; location?: string }>,
 ): Promise<WorkbenchClientOpenResult> {
 	const canonicalEntry = parseWorkbenchLayoutEntry(entry, 'layout entry')
-	const input: WorkbenchOpenViewInput = Object.freeze({
+	const input: WorkbenchOpenEntryInput = Object.freeze({
 		layoutRevision: readRevision(options.layoutRevision, 'layoutRevision'),
 		target: canonicalEntry.target.node,
 		descriptor: canonicalEntry.descriptor,
@@ -100,25 +122,25 @@ export async function openWorkbenchView(
 			? {}
 			: { location: readBoundedText(options.location, 'location', 4096) }),
 	})
-	const result = await session.openView(input)
+	const result = await session.openEntry(input)
 	let adopted = false
 	try {
-		const record = readExactRecord(result, 'openView result', ['ok', 'value', 'code'])
+		const record = readExactRecord(result, 'openEntry result', ['ok', 'value', 'code'])
 		if (record.ok === false) {
-			if (Object.hasOwn(record, 'value')) malformed('openView failure includes value')
+			if (Object.hasOwn(record, 'value')) malformed('openEntry failure includes value')
 			const code = readFailureCode(record.code)
 			return Object.freeze({ ok: false as const, code })
 		}
 		if (record.ok !== true || Object.hasOwn(record, 'code')) {
-			malformed('openView result has an invalid discriminant')
+			malformed('openEntry result has an invalid discriminant')
 		}
-		const disposable = requireDisposable(result, 'successful openView result')
+		const disposable = requireDisposable(result, 'successful openEntry result')
 		const value = parseOpenedValue(record.value)
 		assertOpenedMatchesLayout(value, canonicalEntry)
 		const state: WorkbenchOpenedState = { active: true, result: disposable, value }
 		const handle =
-			value.kind === 'page'
-				? createWorkbenchOpenedPageHandle({ ...state, value })
+			value.kind === 'content'
+				? createWorkbenchOpenedContentHandle({ ...state, value })
 				: createWorkbenchOpenedViewHandle({ ...state, value })
 		adopted = true
 		return Object.freeze({ ok: true as const, handle })
@@ -262,20 +284,20 @@ function parseWorkbenchLayoutEntry(input: unknown, label: string): WorkbenchLayo
 	const record = readRecord(input, label)
 	const descriptor = parseWorkbenchOpenableIdentity(record.descriptor)
 	const target = parseLayoutTarget(record.target, `${label}.target`)
-	if (descriptor.kind === 'page') {
+	if (descriptor.kind === 'content') {
 		assertExactKeys(record, label, [
 			'descriptor',
 			'target',
 			'definitionRevisions',
 			'placement',
-			'standardPageRef',
+			'contentRef',
 		])
 		const revisions = readExactRecord(record.definitionRevisions, `${label}.definitionRevisions`, [
 			'target',
 		])
-		const standardPageRef = parseStandardPageRef(record.standardPageRef)
-		if (!workbenchOpenableIdentityEqual(standardPageRef.descriptor, descriptor)) {
-			malformed(`${label} Page descriptor does not match its artifact ref`)
+		const contentRef = parseContentRef(record.contentRef)
+		if (!workbenchOpenableIdentityEqual(contentRef.descriptor, descriptor)) {
+			malformed(`${label} Content descriptor does not match its artifact ref`)
 		}
 		return Object.freeze({
 			descriptor,
@@ -284,7 +306,7 @@ function parseWorkbenchLayoutEntry(input: unknown, label: string): WorkbenchLayo
 				target: readRevision(revisions.target, `${label}.definitionRevisions.target`),
 			}),
 			placement: parsePlacement(record.placement, `${label}.placement`),
-			standardPageRef,
+			contentRef,
 		})
 	}
 	assertExactKeys(record, label, [
@@ -318,7 +340,7 @@ function parseWorkbenchLayoutEntry(input: unknown, label: string): WorkbenchLayo
 }
 
 function parseOpenedValue(input: unknown): WorkbenchOpenedClientValue {
-	const record = readRecord(input, 'opened View')
+	const record = readRecord(input, 'opened Workbench entry')
 	if (record.kind === 'local') {
 		assertExactKeys(record, 'opened local View', ['kind', 'api', 'params', 'federatedViewRef'])
 		const ref = parseFederatedViewRef(record.federatedViewRef)
@@ -352,30 +374,61 @@ function parseOpenedValue(input: unknown): WorkbenchOpenedClientValue {
 			federatedViewRef: ref,
 		})
 	}
-	if (record.kind === 'page') {
-		assertExactKeys(record, 'opened Standard Page', ['kind', 'params', 'standardPageRef', 'plan'])
+	if (record.kind === 'content') {
+		const plan = parseWorkbenchContentPlan(record.plan)
+		if (record.mode === 'static') {
+			assertExactKeys(record, 'opened static Workbench Content', [
+				'kind',
+				'mode',
+				'params',
+				'contentRef',
+				'plan',
+			])
+			if (plan.slots.length > 0) malformed('static Workbench Content includes slots')
+			return Object.freeze({
+				kind: 'content',
+				mode: 'static',
+				params: parseParams(record.params),
+				contentRef: parseContentRef(record.contentRef),
+				plan,
+			})
+		}
+		if (record.mode !== 'interactive') malformed('opened Workbench Content mode is unsupported')
+		assertExactKeys(record, 'opened interactive Workbench Content', [
+			'kind',
+			'mode',
+			'params',
+			'contentRef',
+			'plan',
+			'presentation',
+			'root',
+		])
+		if (plan.slots.length === 0) malformed('interactive Workbench Content has no slots')
 		return Object.freeze({
-			kind: 'page',
+			kind: 'content',
+			mode: 'interactive',
 			params: parseParams(record.params),
-			standardPageRef: parseStandardPageRef(record.standardPageRef),
-			plan: parseWorkbenchStandardPagePlan(record.plan),
+			contentRef: parseContentRef(record.contentRef),
+			plan,
+			presentation: parseWorkbenchContentPresentation(record.presentation, plan),
+			root: readStub(record.root, 'opened Workbench Content root') as RpcStub<WorkbenchContentRoot>,
 		})
 	}
-	malformed('opened View kind is unsupported')
+	malformed('opened Workbench entry kind is unsupported')
 }
 
 function assertOpenedMatchesLayout(
 	opened: WorkbenchOpenedClientValue,
 	entry: WorkbenchLayoutEntry,
 ): void {
-	if ('standardPageRef' in entry) {
-		if (opened.kind !== 'page') malformed('Standard Page returned a federated View root')
-		if (!standardPageRefEqual(opened.standardPageRef, entry.standardPageRef)) {
-			malformed('opened Standard Page tuple does not match the selected layout entry')
+	if ('contentRef' in entry) {
+		if (opened.kind !== 'content') malformed('Workbench Content returned a federated View root')
+		if (!contentRefEqual(opened.contentRef, entry.contentRef)) {
+			malformed('opened Workbench Content tuple does not match the selected layout entry')
 		}
 		return
 	}
-	if (opened.kind === 'page') malformed('federated View returned a Standard Page')
+	if (opened.kind === 'content') malformed('federated View returned a Workbench Content')
 	const expected = entry.federatedViewRef
 	const actual = opened.federatedViewRef
 	if (
@@ -446,22 +499,23 @@ function parseFederatedViewRef(input: unknown): WorkbenchFederatedViewRef {
 	})
 }
 
-function parseStandardPageRef(input: unknown): WorkbenchStandardPageRef {
-	const record = readExactRecord(input, 'Standard Page ref', ['profile', 'digest', 'descriptor'])
-	if (record.profile !== 1) malformed('Standard Page profile is unsupported')
+function parseContentRef(input: unknown): WorkbenchContentRef {
+	const record = readExactRecord(input, 'Workbench Content ref', [
+		'profile',
+		'digest',
+		'descriptor',
+	])
+	if (record.profile !== 1) malformed('Workbench Content profile is unsupported')
 	const descriptor = parseWorkbenchOpenableIdentity(record.descriptor)
-	if (descriptor.kind !== 'page') malformed('Standard Page ref must identify a Page')
+	if (descriptor.kind !== 'content') malformed('Workbench Content ref must identify a Content')
 	return Object.freeze({
 		profile: 1,
-		digest: readPatternText(record.digest, 'Standard Page digest', /^[a-f\d]{64}$/),
+		digest: readPatternText(record.digest, 'Workbench Content digest', /^[a-f\d]{64}$/),
 		descriptor,
 	})
 }
 
-function standardPageRefEqual(
-	left: WorkbenchStandardPageRef,
-	right: WorkbenchStandardPageRef,
-): boolean {
+function contentRefEqual(left: WorkbenchContentRef, right: WorkbenchContentRef): boolean {
 	return (
 		left.profile === right.profile &&
 		left.digest === right.digest &&
@@ -470,7 +524,7 @@ function standardPageRefEqual(
 }
 
 function rendererDeclaration(descriptor: WorkbenchOpenableIdentity): WorkbenchDeclarationIdentity {
-	if (descriptor.kind === 'page') malformed('Standard Page has no renderer declaration')
+	if (descriptor.kind === 'content') malformed('Workbench Content has no renderer declaration')
 	return descriptor.kind === 'view' ? descriptor : descriptor.provider
 }
 
@@ -542,16 +596,17 @@ function parseGroup(input: unknown, label: string) {
 }
 
 function parseParams(input: unknown): Readonly<Record<string, string>> {
-	const record = readRecord(input, 'opened View params')
+	const record = readRecord(input, 'opened Workbench entry params')
 	const output: Record<string, string> = Object.create(null)
 	for (const [key, value] of Object.entries(record)) {
-		if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)) malformed('opened View param name is invalid')
-		output[key] = readBoundedText(value, `opened View params.${key}`, 2048)
+		if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key))
+			malformed('opened Workbench entry param name is invalid')
+		output[key] = readBoundedText(value, `opened Workbench entry params.${key}`, 2048)
 	}
 	return Object.freeze(output)
 }
 
-function readFailureCode(input: unknown): WorkbenchOpenViewFailureCode {
+function readFailureCode(input: unknown): WorkbenchOpenEntryFailureCode {
 	if (
 		input !== 'layout_changed' &&
 		input !== 'target_unavailable' &&
@@ -559,7 +614,7 @@ function readFailureCode(input: unknown): WorkbenchOpenViewFailureCode {
 		input !== 'factory_timeout' &&
 		input !== 'quota_exceeded'
 	) {
-		malformed('openView failure code is unsupported')
+		malformed('openEntry failure code is unsupported')
 	}
 	return input
 }
@@ -583,6 +638,28 @@ function isDisposable(input: unknown): input is DisposableValue {
 		input !== null &&
 		typeof (input as Partial<DisposableValue>)[Symbol.dispose] === 'function'
 	)
+}
+
+function readOwnDisposer(input: unknown): (() => void) | undefined {
+	if ((typeof input !== 'object' && typeof input !== 'function') || input === null) return undefined
+	const descriptor = Object.getOwnPropertyDescriptor(input, Symbol.dispose)
+	return descriptor && 'value' in descriptor && typeof descriptor.value === 'function'
+		? descriptor.value
+		: undefined
+}
+
+function copyWithoutTransportDisposer(input: unknown): unknown {
+	if (typeof input !== 'object' || input === null) return input
+	const prototype = Object.getPrototypeOf(input)
+	if (prototype !== Object.prototype && prototype !== null && prototype !== Array.prototype) {
+		return input
+	}
+	const symbols = Object.getOwnPropertySymbols(input)
+	if (symbols.length !== 1 || symbols[0] !== Symbol.dispose) return input
+
+	const descriptors = Object.getOwnPropertyDescriptors(input)
+	Reflect.deleteProperty(descriptors, Symbol.dispose)
+	return Object.defineProperties(Array.isArray(input) ? [] : {}, descriptors)
 }
 
 function disposeValue(input: unknown): void {
@@ -639,6 +716,15 @@ function malformed(message: string): never {
 }
 
 export type {
+	WorkbenchContentActionOutcome,
+	WorkbenchContentActionPresentation,
+	WorkbenchContentDataOutcome,
+	WorkbenchContentLoadOutcome,
+	WorkbenchContentDataPresentation,
+	WorkbenchContentObserver,
+	WorkbenchContentPresentation,
+	WorkbenchContentRunOutcome,
+	WorkbenchContentValidationIssue,
 	WorkbenchFederatedViewRef,
 	WorkbenchFederatedLayoutEntry,
 	WorkbenchLayout,
@@ -647,22 +733,24 @@ export type {
 	WorkbenchLayoutTarget,
 	WorkbenchOpenedAttachment,
 	WorkbenchOpenedLocalView,
-	WorkbenchOpenedStandardPage,
-	WorkbenchOpenedView,
-	WorkbenchOpenViewFailureCode,
-	WorkbenchOpenViewInput,
-	WorkbenchOpenViewResult,
+	WorkbenchOpenedContent,
+	WorkbenchOpenedInteractiveContent,
+	WorkbenchOpenedStaticContent,
+	WorkbenchOpenedEntry,
+	WorkbenchOpenEntryFailureCode,
+	WorkbenchOpenEntryInput,
+	WorkbenchOpenEntryResult,
 	WorkbenchSessionApi,
-	WorkbenchStandardPageLayoutEntry,
-	WorkbenchStandardPageRef,
+	WorkbenchContentLayoutEntry,
+	WorkbenchContentRef,
 } from './client-protocol'
 
 export type {
-	WorkbenchPageBlock,
-	WorkbenchPageDocumentPlanV1,
-	WorkbenchPageInline,
-	WorkbenchPageTableAlignment,
-	WorkbenchPageTableCell,
-	WorkbenchPageTableRow,
-	WorkbenchStandardPagePlanV1,
+	WorkbenchContentBlock,
+	WorkbenchContentDocumentPlan,
+	WorkbenchContentInline,
+	WorkbenchContentTableAlignment,
+	WorkbenchContentTableCell,
+	WorkbenchContentTableRow,
+	WorkbenchContentPlan,
 } from '@pluxel/core/internal'

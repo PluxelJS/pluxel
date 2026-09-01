@@ -1,15 +1,20 @@
 import {
 	formatPluginNodeReference,
 	pluginDefinitionAddressOf,
+	pluginNodeAddressOf,
 	type PluginConstructor,
 	v,
 } from '@pluxel/runtime'
+import { requireWorkbench } from '@pluxel/runtime/internal'
 import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import type { WorkbenchContentObserver } from '@pluxel/runtime/workbench/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const redisMock = vi.hoisted(() => {
+	type Listener = (...arguments_: unknown[]) => void
 	const makeClient = () => {
 		const state = { open: false, ready: false }
+		const listeners = new Map<string, Set<Listener>>()
 		const client = {
 			get isOpen() {
 				return state.open
@@ -18,6 +23,7 @@ const redisMock = vi.hoisted(() => {
 				return state.ready
 			},
 			on: vi.fn(),
+			off: vi.fn(),
 			connect: vi.fn(async () => {
 				state.open = true
 				state.ready = true
@@ -31,13 +37,29 @@ const redisMock = vi.hoisted(() => {
 				state.open = false
 				state.ready = false
 			}),
+			ping: vi.fn(async (payload?: string) => payload || 'PONG'),
 		}
-		client.on.mockImplementation(() => client)
-		return { state, client }
+		client.on.mockImplementation((event: string, listener: Listener) => {
+			let eventListeners = listeners.get(event)
+			if (!eventListeners) {
+				eventListeners = new Set()
+				listeners.set(event, eventListeners)
+			}
+			eventListeners.add(listener)
+			return client
+		})
+		client.off.mockImplementation((event: string, listener: Listener) => {
+			listeners.get(event)?.delete(listener)
+			return client
+		})
+		const emit = (event: string, ...arguments_: unknown[]): void => {
+			for (const listener of listeners.get(event) ?? []) listener(...arguments_)
+		}
+		return { state, client, listeners, emit }
 	}
-	const { state, client } = makeClient()
+	const { state, client, listeners, emit } = makeClient()
 	const createClient = vi.fn(() => client)
-	return { state, client, createClient, makeClient }
+	return { state, client, listeners, emit, createClient, makeClient }
 })
 
 vi.mock('redis', () => ({ createClient: redisMock.createClient }))
@@ -73,8 +95,10 @@ function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): v
 beforeEach(() => {
 	redisMock.state.open = false
 	redisMock.state.ready = false
+	redisMock.listeners.clear()
 	redisMock.createClient.mockClear()
 	redisMock.client.on.mockClear()
+	redisMock.client.off.mockClear()
 	redisMock.client.connect.mockReset().mockImplementation(async () => {
 		redisMock.state.open = true
 		redisMock.state.ready = true
@@ -88,34 +112,122 @@ beforeEach(() => {
 		redisMock.state.open = false
 		redisMock.state.ready = false
 	})
+	redisMock.client.ping
+		.mockReset()
+		.mockImplementation(async (payload?: string) => payload || 'PONG')
 })
 
 describe('@pluxel/redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
-		await withRuntimeHost(async (host) => {
-			addStarted(host, [RedisPlugin, RedisConsumer])
-			await host.commit()
+		await withRuntimeHost(
+			async (host) => {
+				addStarted(host, [RedisPlugin, RedisConsumer])
+				await host.commit()
 
-			const consumer = host.require(RedisConsumer)
-			expect(consumer.redis.client).toBe(redisMock.client)
-			expect(redisMock.createClient).toHaveBeenCalledWith(
-				expect.objectContaining({
-					url: 'redis://127.0.0.1:6379',
-					database: 0,
-					name: `pluxel:${formatPluginNodeReference(
-						host.require(RedisPlugin).ctx.pluginInfo.nodeAddress,
-					)}`,
-					commandsQueueMaxLength: 10_000,
-					disableOfflineQueue: true,
-				}),
-			)
+				const consumer = host.require(RedisConsumer)
+				expect(consumer.redis.client).toBe(redisMock.client)
+				expect(redisMock.createClient).toHaveBeenCalledWith(
+					expect.objectContaining({
+						url: 'redis://127.0.0.1:6379',
+						database: 0,
+						name: `pluxel:${formatPluginNodeReference(
+							host.require(RedisPlugin).ctx.pluginInfo.nodeAddress,
+						)}`,
+						commandsQueueMaxLength: 10_000,
+						disableOfflineQueue: true,
+					}),
+				)
+				expect(redisMock.client.on).toHaveBeenCalledTimes(1)
+				expect(redisMock.client.on).toHaveBeenCalledWith('error', expect.any(Function))
 
-			const handle = consumer.redis
-			host.stop(RedisPlugin)
-			await host.commit()
-			expect(redisMock.client.close).toHaveBeenCalledOnce()
-			expect(() => handle.client).toThrow('Plugin owner stopped')
-		})
+				const handle = consumer.redis
+				host.stop(RedisPlugin)
+				await host.commit()
+				expect(redisMock.client.close).toHaveBeenCalledOnce()
+				expect(() => handle.client).toThrow('Plugin owner stopped')
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('publishes live connection state and a bounded transient PING form', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addStarted(host, [RedisPlugin])
+				await host.commit()
+
+				const backend = requireWorkbench(host.ctx)
+				const target = pluginNodeAddressOf(RedisPlugin)
+				const layout = backend.registry.getLayout(target)
+				const entry = layout.entries.find(
+					(candidate) =>
+						candidate.descriptor.kind === 'content' && candidate.descriptor.key === 'connection',
+				)
+				if (!entry) throw new Error('RedisPlugin published no connection Content')
+				const session = backend.createSession({ provider: 'local', subject: 'operator' }, () => {})
+				const opened = await session.target.openEntry({
+					layoutRevision: layout.revision,
+					target,
+					descriptor: entry.descriptor,
+				})
+				if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+					throw new Error('Redis connection Content failed to open')
+				}
+
+				const updates: unknown[] = []
+				const observer = Object.assign(
+					(outcome: unknown) =>
+						Object.assign(
+							Promise.resolve().then(() => updates.push(outcome)),
+							{
+								[Symbol.dispose]: vi.fn(),
+							},
+						),
+					{
+						dup: () => observer,
+						[Symbol.dispose]: vi.fn(),
+					},
+				) as unknown as WorkbenchContentObserver
+				await expect(opened.value.root.subscribe(observer)).resolves.toMatchObject({
+					ok: true,
+					data: {
+						status: {
+							connection: 'ready',
+							recentErrorType: null,
+							ping: { state: 'not-run' },
+						},
+					},
+				})
+				await expect(
+					opened.value.root.run('ping', { payload: 'workbench' }),
+				).resolves.toMatchObject({
+					action: { ok: true, message: expect.stringContaining('Redis replied in') },
+					data: { ok: true, data: { status: { ping: { state: 'succeeded' } } } },
+				})
+				expect(redisMock.client.ping).toHaveBeenCalledWith('workbench')
+				await expect(
+					opened.value.root.run('ping', { payload: 'x'.repeat(257) }),
+				).resolves.toMatchObject({
+					action: { ok: false, code: 'validation_failed' },
+					data: null,
+				})
+				expect(redisMock.client.ping).toHaveBeenCalledTimes(1)
+
+				redisMock.state.ready = false
+				redisMock.emit('reconnecting')
+				await vi.waitFor(() =>
+					expect(updates).toContainEqual(
+						expect.objectContaining({
+							data: expect.objectContaining({
+								status: expect.objectContaining({ connection: 'reconnecting' }),
+							}),
+						}),
+					),
+				)
+				session.dispose()
+			},
+			{ workbench: { enabled: true } },
+		)
 	})
 
 	it('rejects credentials and database paths in ordinary plugin config', () => {

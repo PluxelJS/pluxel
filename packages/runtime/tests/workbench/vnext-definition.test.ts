@@ -7,6 +7,7 @@ import {
 } from '@pluxel/runtime/internal'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
+import * as v from 'valibot'
 
 interface SettingsApi extends RpcTarget {
 	snapshot(): Readonly<{ enabled: boolean }>
@@ -17,10 +18,10 @@ interface CatalogApi extends RpcTarget {
 }
 
 describe('Workbench vNext definitions', () => {
-	it('declares a frozen host-rendered Markdown Page with no renderer', () => {
+	it('declares a frozen host-rendered Markdown Content with no renderer', () => {
 		const document = workbench.markdown(import.meta.url, './fixtures/guide.md')
 		const definition = workbench.define({
-			guide: workbench.page({
+			guide: workbench.content({
 				document,
 				placement: workbench.tab({ label: 'Guide' }),
 			}),
@@ -29,9 +30,10 @@ describe('Workbench vNext definitions', () => {
 		expect(readWorkbenchMarkdownDocument(document)).toEqual({
 			moduleUrl: import.meta.url,
 			sourcePath: './fixtures/guide.md',
+			slots: {},
 		})
 		expect(readWorkbenchDescriptor(definition.guide)).toMatchObject({
-			kind: 'page',
+			kind: 'content',
 			key: 'guide',
 			document,
 		})
@@ -40,7 +42,7 @@ describe('Workbench vNext definitions', () => {
 		expect(definition.guide).not.toHaveProperty('renderer')
 	})
 
-	it('rejects forged Page documents and unsafe Markdown provenance', () => {
+	it('rejects forged Content documents and unsafe Markdown provenance', () => {
 		expect(() => workbench.markdown(import.meta.url, '/guide.md')).toThrow(
 			'sourcePath must be module-relative',
 		)
@@ -48,18 +50,53 @@ describe('Workbench vNext definitions', () => {
 			'sourcePath must not contain',
 		)
 		expect(() =>
-			workbench.page({
+			workbench.content({
 				document: {} as never,
 				placement: workbench.tab(),
 			}),
 		).toThrow('must be created by workbench.markdown')
 		expect(() =>
-			workbench.page({
+			workbench.content({
 				document: workbench.markdown(import.meta.url, './guide.md'),
 				placement: workbench.tab(),
 				legacy: true,
 			} as never),
 		).toThrow('unsupported option "legacy"')
+	})
+
+	it('rejects forged data/action declarations and an action form without input', () => {
+		const data = workbench.data(v.string())
+		const action = workbench.action({ label: 'Refresh' })
+		const dataBrand = Reflect.ownKeys(data).find((key) => typeof key === 'symbol')
+		const actionBrand = Reflect.ownKeys(action).find((key) => typeof key === 'symbol')
+		if (!dataBrand || !actionBrand) throw new Error('Content slot brand was not found')
+
+		expect(() =>
+			workbench.markdown(import.meta.url, './guide.md', {
+				status: { [dataBrand]: { schema: v.string() } } as never,
+			}),
+		).toThrow('must be created by workbench.data() or action()')
+		expect(() =>
+			workbench.markdown(import.meta.url, './guide.md', {
+				refresh: {
+					[actionBrand]: {
+						label: 'Forged',
+						input: undefined,
+						form: 'none',
+					},
+				} as never,
+			}),
+		).toThrow('must be created by workbench.data() or action()')
+		expect(() => workbench.action({ label: 'Refresh', form: 'embedded' } as never)).toThrow(
+			'form requires an input schema',
+		)
+	})
+
+	it('uses the artifact UTF-8 bounds for action text', () => {
+		expect(() => workbench.action({ label: '界'.repeat(43) })).toThrow('exceeds 128 UTF-8 bytes')
+		expect(() => workbench.action({ label: 'Delete', confirm: '界'.repeat(342) })).toThrow(
+			'exceeds 1024 UTF-8 bytes',
+		)
 	})
 
 	it('creates one flat frozen definition with keyed descriptors', () => {

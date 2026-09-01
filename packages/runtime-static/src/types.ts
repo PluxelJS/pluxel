@@ -11,10 +11,10 @@ import type {
 	PersistenceServiceConfig,
 	DatabaseConfig,
 	RuntimeStateStoreConfig,
+	VaultServiceConfig,
 	WorkbenchConfig,
 	WorkersConfig,
 } from '@pluxel/runtime'
-import type { VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { PluxelEnvironmentVariables } from '@pluxel/runtime/environment'

@@ -19,7 +19,7 @@ import {
 import type { RuntimeHostConfig } from './context/runtime-contract'
 import { WorkbenchBackend } from './services/workbench'
 import type { WorkbenchArtifactLookup } from './services/workbench/WorkbenchArtifactService'
-import type { WorkbenchPageArtifactLookup } from './services/workbench/WorkbenchPageArtifactService'
+import type { WorkbenchContentArtifactLookup } from './services/workbench/WorkbenchContentArtifactService'
 import {
 	createCoreContext,
 	createCoreHost,
@@ -48,6 +48,11 @@ import {
 	type ConcretePluginDefinitionCandidate,
 	type PluginService,
 } from '@pluxel/core/internal'
+import {
+	readWorkbenchContentSlot,
+	readWorkbenchMarkdownDocument,
+	type WorkbenchMarkdownDocument,
+} from './workbench/definition'
 
 export {
 	BasePlugin,
@@ -158,7 +163,7 @@ function createRuntimeTestRoot(
 	return createRuntimeRootContext(config, {
 		workbench: {
 			createBackend: (root, installOptions) =>
-				new WorkbenchBackend(root, installOptions, testWorkbenchArtifacts, testWorkbenchPages),
+				new WorkbenchBackend(root, installOptions, testWorkbenchArtifacts, testWorkbenchContents),
 		},
 		requestAddress: options.requestAddress ?? TEST_LOOPBACK_REQUEST_ADDRESS,
 		...options,
@@ -189,10 +194,14 @@ const testWorkbenchArtifacts: WorkbenchArtifactLookup = Object.freeze({
 	},
 })
 
-const testWorkbenchPages: WorkbenchPageArtifactLookup = Object.freeze({
-	resolvePage(definition, descriptor) {
-		if (descriptor.kind !== 'page') return undefined
+const testWorkbenchContents: WorkbenchContentArtifactLookup = Object.freeze({
+	resolveContent(definition, descriptor, declaration) {
+		if (descriptor.kind !== 'content') return undefined
+		if (!declaration) {
+			throw new Error('[workbench] test Content lookup requires the current declaration')
+		}
 		const entry = Object.freeze({ descriptor })
+		const plan = testWorkbenchContentPlan(declaration)
 		return Object.freeze({
 			artifact: Object.freeze({
 				profile: 1,
@@ -202,14 +211,42 @@ const testWorkbenchPages: WorkbenchPageArtifactLookup = Object.freeze({
 				entries: Object.freeze([entry]),
 			}),
 			entry,
-			plan: Object.freeze({
-				version: 1,
-				kind: 'standard-page',
-				document: Object.freeze({ version: 1, blocks: Object.freeze([]) }),
-			}),
+			plan,
 		})
 	},
 })
+
+function testWorkbenchContentPlan(declaration: WorkbenchMarkdownDocument) {
+	const slots = readWorkbenchMarkdownDocument(declaration).slots
+	return Object.freeze({
+		version: 1 as const,
+		kind: 'workbench-content' as const,
+		document: Object.freeze({
+			version: 1 as const,
+			blocks: Object.freeze(
+				Object.keys(slots).map((key) => Object.freeze({ type: 'slot' as const, key })),
+			),
+		}),
+		slots: Object.freeze(
+			Object.keys(slots)
+				.sort()
+				.map((key) => {
+					const slot = readWorkbenchContentSlot(slots[key]!)
+					if (slot.kind === 'data') {
+						return Object.freeze({ kind: 'data' as const, key, display: 'block' as const })
+					}
+					return Object.freeze({
+						kind: 'action' as const,
+						key,
+						display: 'block' as const,
+						label: slot.label,
+						input: slot.form,
+						...(slot.confirm === undefined ? {} : { confirm: slot.confirm }),
+					})
+				}),
+		),
+	})
+}
 
 function assertCoreCommit(
 	result: Awaited<ReturnType<ReturnType<PluginService['beginUpdate']>['commit']>>,

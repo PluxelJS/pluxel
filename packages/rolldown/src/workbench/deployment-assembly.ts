@@ -11,15 +11,15 @@ import {
 } from '@pluxel/core/federation'
 import { pluginDefinitionIndexKey } from '@pluxel/core'
 import {
-	WORKBENCH_PAGE_ARTIFACT_FILE,
-	WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE,
-	createWorkbenchPageDeploymentInventory,
-	parseWorkbenchPageDeploymentInventory,
-	parseWorkbenchPageSet,
-	serializeWorkbenchPageDefinition,
-	serializeWorkbenchPageSet,
-	type WorkbenchPageDeploymentEntryV1,
-	type WorkbenchPageDeploymentInventoryV1,
+	WORKBENCH_CONTENT_ARTIFACT_FILE,
+	WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE,
+	createWorkbenchContentDeploymentInventory,
+	parseWorkbenchContentDeploymentInventory,
+	parseWorkbenchContentSet,
+	serializeWorkbenchContentDefinition,
+	serializeWorkbenchContentSet,
+	type WorkbenchContentDeploymentEntry,
+	type WorkbenchContentDeploymentInventory,
 } from '@pluxel/core/internal'
 import { dirname, relative, resolve } from 'pathe'
 
@@ -30,8 +30,8 @@ export type WorkbenchDeploymentArtifact = Readonly<{
 	sha256: string
 }>
 
-export type WorkbenchPageDeploymentArtifact = Readonly<{
-	definition: WorkbenchPageDeploymentEntryV1['definition']
+export type WorkbenchContentDeploymentArtifact = Readonly<{
+	definition: WorkbenchContentDeploymentEntry['definition']
 	digest: string
 	plan: string
 	sha256: string
@@ -50,13 +50,13 @@ type ProducerSource = Readonly<{
 	fingerprint: string
 }>
 
-type PageSource = Readonly<{
-	page: WorkbenchPageDeploymentEntryV1
+type ContentSource = Readonly<{
+	content: WorkbenchContentDeploymentEntry
 	artifactRoot: string
 	fingerprint: string
 }>
 
-const MAX_PAGE_ARTIFACT_BYTES = 512 * 1_024 + 1
+const MAX_CONTENT_ARTIFACT_BYTES = 512 * 1_024 + 1
 
 /**
  * Merges the application and bundled-package producer inventories into one deployment inventory.
@@ -120,59 +120,62 @@ export async function assembleWorkbenchDeploymentArtifacts(
 	return inventory
 }
 
-/** Merges canonical Page inventories without scanning unreferenced directories. */
-export async function assembleWorkbenchPageDeploymentArtifacts(
+/** Merges canonical Content inventories without scanning unreferenced directories. */
+export async function assembleWorkbenchContentDeploymentArtifacts(
 	input: AssembleWorkbenchDeploymentInput,
-): Promise<WorkbenchPageDeploymentInventoryV1> {
+): Promise<WorkbenchContentDeploymentInventory> {
 	const destinationRoot = resolve(input.destinationRoot)
-	const localInventory = await readPageInventory(destinationRoot, false)
+	const localInventory = await readContentInventory(destinationRoot, false)
 	const sourceRoots = [...new Set(input.dependencyRoots.map((root) => resolve(root)))]
 		.filter((root) => root !== destinationRoot)
 		.sort((left, right) => left.localeCompare(right))
 	const inventories = [
 		{ root: destinationRoot, inventory: localInventory },
 		...(await Promise.all(
-			sourceRoots.map(async (root) => ({ root, inventory: await readPageInventory(root, false) })),
+			sourceRoots.map(async (root) => ({
+				root,
+				inventory: await readContentInventory(root, false),
+			})),
 		)),
 	]
 
-	const merged = new Map<string, PageSource>()
+	const merged = new Map<string, ContentSource>()
 	for (const source of inventories) {
 		if (!source.inventory) continue
-		for (const page of source.inventory.pages) {
-			const artifactRoot = resolve(source.root, page.artifactRoot)
-			const fingerprint = await validatePageArtifact(artifactRoot, page)
-			const candidate = Object.freeze({ page, artifactRoot, fingerprint })
-			const key = pluginDefinitionIndexKey(page.definition)
+		for (const content of source.inventory.entries) {
+			const artifactRoot = resolve(source.root, content.artifactRoot)
+			const fingerprint = await validateContentArtifact(artifactRoot, content)
+			const candidate = Object.freeze({ content, artifactRoot, fingerprint })
+			const key = pluginDefinitionIndexKey(content.definition)
 			const existing = merged.get(key)
 			if (!existing) {
 				merged.set(key, candidate)
 				continue
 			}
 			if (
-				existing.page.digest !== page.digest ||
-				existing.page.definitionDigest !== page.definitionDigest ||
+				existing.content.digest !== content.digest ||
+				existing.content.definitionDigest !== content.definitionDigest ||
 				existing.fingerprint !== fingerprint
 			) {
-				throw new Error(`[static-application] Workbench Page artifact collision: ${key}`)
+				throw new Error(`[static-application] Workbench Content artifact collision: ${key}`)
 			}
 		}
 	}
 
-	const pages = [...merged.values()].sort((left, right) =>
-		pluginDefinitionIndexKey(left.page.definition).localeCompare(
-			pluginDefinitionIndexKey(right.page.definition),
+	const content = [...merged.values()].sort((left, right) =>
+		pluginDefinitionIndexKey(left.content.definition).localeCompare(
+			pluginDefinitionIndexKey(right.content.definition),
 		),
 	)
-	for (const source of pages) {
-		const target = resolve(destinationRoot, source.page.artifactRoot)
+	for (const source of content) {
+		const target = resolve(destinationRoot, source.content.artifactRoot)
 		if (target === source.artifactRoot) continue
-		const existingArtifact = await readExactPageArtifact(target, false)
+		const existingArtifact = await readExactContentArtifact(target, false)
 		const existingFingerprint = existingArtifact?.fingerprint ?? null
 		if (existingFingerprint !== null) {
 			if (existingFingerprint !== source.fingerprint) {
 				throw new Error(
-					`[static-application] Workbench Page content collision: ${pluginDefinitionIndexKey(source.page.definition)}@${source.page.digest}`,
+					`[static-application] Workbench Content collision: ${pluginDefinitionIndexKey(source.content.definition)}@${source.content.digest}`,
 				)
 			}
 			continue
@@ -181,12 +184,14 @@ export async function assembleWorkbenchPageDeploymentArtifacts(
 			source.artifactRoot,
 			target,
 			source.fingerprint,
-			WORKBENCH_PAGE_ARTIFACT_FILE,
+			WORKBENCH_CONTENT_ARTIFACT_FILE,
 		)
 	}
 
-	const inventory = createWorkbenchPageDeploymentInventory(pages.map(({ page }) => page))
-	await writePageInventory(destinationRoot, inventory)
+	const inventory = createWorkbenchContentDeploymentInventory(
+		content.map(({ content: entry }) => entry),
+	)
+	await writeContentInventory(destinationRoot, inventory)
 	return inventory
 }
 
@@ -220,32 +225,32 @@ export async function collectWorkbenchDeploymentArtifacts(
 	)
 }
 
-export async function collectWorkbenchPageDeploymentArtifacts(
+export async function collectWorkbenchContentDeploymentArtifacts(
 	destinationRoot: string,
-	inventory: WorkbenchPageDeploymentInventoryV1,
-): Promise<readonly WorkbenchPageDeploymentArtifact[]> {
-	const canonical = parseWorkbenchPageDeploymentInventory(inventory)
+	inventory: WorkbenchContentDeploymentInventory,
+): Promise<readonly WorkbenchContentDeploymentArtifact[]> {
+	const canonical = parseWorkbenchContentDeploymentInventory(inventory)
 	const root = resolve(destinationRoot)
 	const deploymentRoot = dirname(root)
 	return Promise.all(
-		canonical.pages.map(async (page) => {
-			const planPath = resolve(root, page.artifactRoot, WORKBENCH_PAGE_ARTIFACT_FILE)
+		canonical.entries.map(async (content) => {
+			const planPath = resolve(root, content.artifactRoot, WORKBENCH_CONTENT_ARTIFACT_FILE)
 			const body = await readFile(planPath).catch((error) => {
 				throw new Error(
-					`[static-application] Workbench Page plan is missing: ${pluginDefinitionIndexKey(page.definition)}@${page.digest}`,
+					`[static-application] Workbench Content plan is missing: ${pluginDefinitionIndexKey(content.definition)}@${content.digest}`,
 					{ cause: error },
 				)
 			})
-			if (sha256(body) !== page.digest) {
+			if (sha256(body) !== content.digest) {
 				throw new Error(
-					`[static-application] Workbench Page plan digest mismatch: ${pluginDefinitionIndexKey(page.definition)}`,
+					`[static-application] Workbench Content plan digest mismatch: ${pluginDefinitionIndexKey(content.definition)}`,
 				)
 			}
 			return Object.freeze({
-				definition: page.definition,
-				digest: page.digest,
+				definition: content.definition,
+				digest: content.digest,
 				plan: relative(deploymentRoot, planPath),
-				sha256: page.digest,
+				sha256: content.digest,
 			})
 		}),
 	)
@@ -282,82 +287,84 @@ async function readInventory(
 	}
 }
 
-async function readPageInventory(
+async function readContentInventory(
 	root: string,
 	required: boolean,
-): Promise<WorkbenchPageDeploymentInventoryV1 | null> {
-	const path = resolve(root, WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE)
+): Promise<WorkbenchContentDeploymentInventory | null> {
+	const path = resolve(root, WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE)
 	let content: string
 	try {
 		content = await readFile(path, 'utf-8')
 	} catch (error) {
 		if (!required && isNotFound(error)) return null
-		throw new Error(`[static-application] cannot read Workbench Page inventory: ${path}`, {
+		throw new Error(`[static-application] cannot read Workbench Content inventory: ${path}`, {
 			cause: error,
 		})
 	}
 	try {
-		return parseWorkbenchPageDeploymentInventory(JSON.parse(content) as unknown)
+		return parseWorkbenchContentDeploymentInventory(JSON.parse(content) as unknown)
 	} catch (error) {
-		throw new Error(`[static-application] invalid Workbench Page inventory: ${path}`, {
+		throw new Error(`[static-application] invalid Workbench Content inventory: ${path}`, {
 			cause: error,
 		})
 	}
 }
 
-async function validatePageArtifact(
+async function validateContentArtifact(
 	artifactRoot: string,
-	page: WorkbenchPageDeploymentEntryV1,
+	content: WorkbenchContentDeploymentEntry,
 ): Promise<string> {
 	const definitionDigest = sha256(
-		Buffer.from(serializeWorkbenchPageDefinition(page.definition), 'utf-8'),
+		Buffer.from(serializeWorkbenchContentDefinition(content.definition), 'utf-8'),
 	)
-	if (definitionDigest !== page.definitionDigest) {
+	if (definitionDigest !== content.definitionDigest) {
 		throw new Error(
-			`[static-application] Workbench Page definition digest mismatch: ${pluginDefinitionIndexKey(page.definition)}`,
+			`[static-application] Workbench Content definition digest mismatch: ${pluginDefinitionIndexKey(content.definition)}`,
 		)
 	}
-	const artifact = await readExactPageArtifact(artifactRoot, true)
+	const artifact = await readExactContentArtifact(artifactRoot, true)
 	const { bytes, path } = artifact
-	if (sha256(bytes) !== page.digest) {
+	if (sha256(bytes) !== content.digest) {
 		throw new Error(
-			`[static-application] Workbench Page artifact digest mismatch: ${pluginDefinitionIndexKey(page.definition)}`,
+			`[static-application] Workbench Content artifact digest mismatch: ${pluginDefinitionIndexKey(content.definition)}`,
 		)
 	}
 	let serialized: string
 	try {
 		serialized = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 	} catch (error) {
-		throw new TypeError(`[static-application] invalid Workbench Page artifact UTF-8: ${path}`, {
+		throw new TypeError(`[static-application] invalid Workbench Content artifact UTF-8: ${path}`, {
 			cause: error,
 		})
 	}
-	let pageSet
+	let contentSet
 	try {
-		pageSet = parseWorkbenchPageSet(JSON.parse(serialized) as unknown)
+		contentSet = parseWorkbenchContentSet(JSON.parse(serialized) as unknown)
 	} catch (error) {
-		throw new TypeError(`[static-application] invalid Workbench Page artifact: ${path}`, {
+		throw new TypeError(`[static-application] invalid Workbench Content artifact: ${path}`, {
 			cause: error,
 		})
 	}
-	if (pluginDefinitionIndexKey(pageSet.definition) !== pluginDefinitionIndexKey(page.definition)) {
-		throw new Error(`[static-application] Workbench Page artifact definition mismatch: ${path}`)
+	if (
+		pluginDefinitionIndexKey(contentSet.definition) !== pluginDefinitionIndexKey(content.definition)
+	) {
+		throw new Error(`[static-application] Workbench Content artifact definition mismatch: ${path}`)
 	}
-	if (serializeWorkbenchPageSet(pageSet) !== serialized) {
-		throw new Error(`[static-application] Workbench Page artifact is not canonical: ${path}`)
+	if (serializeWorkbenchContentSet(contentSet) !== serialized) {
+		throw new Error(`[static-application] Workbench Content artifact is not canonical: ${path}`)
 	}
 	return artifact.fingerprint
 }
 
-async function readExactPageArtifact(
+async function readExactContentArtifact(
 	root: string,
 	required: true,
 ): Promise<Readonly<{ path: string; bytes: Buffer; fingerprint: string }>>
-async function readExactPageArtifact(
+async function readExactContentArtifact(
 	root: string,
 	required: false,
 ): Promise<Readonly<{ path: string; bytes: Buffer; fingerprint: string }> | null>
-async function readExactPageArtifact(
+async function readExactContentArtifact(
 	root: string,
 	required: boolean,
 ): Promise<Readonly<{ path: string; bytes: Buffer; fingerprint: string }> | null> {
@@ -366,39 +373,42 @@ async function readExactPageArtifact(
 		rootStat = await lstat(root)
 	} catch (error) {
 		if (!required && isNotFound(error)) return null
-		throw new Error(`[static-application] Workbench Page artifact directory is missing: ${root}`, {
-			cause: error,
-		})
+		throw new Error(
+			`[static-application] Workbench Content artifact directory is missing: ${root}`,
+			{
+				cause: error,
+			},
+		)
 	}
 	if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
 		throw new TypeError(
-			`[static-application] Workbench Page artifact root is not a directory: ${root}`,
+			`[static-application] Workbench Content artifact root is not a directory: ${root}`,
 		)
 	}
 	const entries = await readdir(root, { withFileTypes: true })
 	if (
 		entries.length !== 1 ||
-		entries[0]?.name !== WORKBENCH_PAGE_ARTIFACT_FILE ||
+		entries[0]?.name !== WORKBENCH_CONTENT_ARTIFACT_FILE ||
 		!entries[0].isFile()
 	) {
 		throw new TypeError(
-			`[static-application] Workbench Page artifact root must contain only ${WORKBENCH_PAGE_ARTIFACT_FILE}: ${root}`,
+			`[static-application] Workbench Content artifact root must contain only ${WORKBENCH_CONTENT_ARTIFACT_FILE}: ${root}`,
 		)
 	}
-	const path = resolve(root, WORKBENCH_PAGE_ARTIFACT_FILE)
+	const path = resolve(root, WORKBENCH_CONTENT_ARTIFACT_FILE)
 	const fileStat = await lstat(path)
 	if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
 		throw new TypeError(
-			`[static-application] Workbench Page artifact is not a regular file: ${path}`,
+			`[static-application] Workbench Content artifact is not a regular file: ${path}`,
 		)
 	}
-	if (fileStat.size > MAX_PAGE_ARTIFACT_BYTES) {
+	if (fileStat.size > MAX_CONTENT_ARTIFACT_BYTES) {
 		throw new TypeError(
-			`[static-application] Workbench Page artifact exceeds its byte budget: ${path}`,
+			`[static-application] Workbench Content artifact exceeds its byte budget: ${path}`,
 		)
 	}
 	const bytes = await readFile(path)
-	const fingerprint = sha256(Buffer.from(`f:${WORKBENCH_PAGE_ARTIFACT_FILE}:${sha256(bytes)}`))
+	const fingerprint = sha256(Buffer.from(`f:${WORKBENCH_CONTENT_ARTIFACT_FILE}:${sha256(bytes)}`))
 	return Object.freeze({ path, bytes, fingerprint })
 }
 
@@ -556,11 +566,11 @@ async function writeInventory(
 	}
 }
 
-async function writePageInventory(
+async function writeContentInventory(
 	root: string,
-	inventory: WorkbenchPageDeploymentInventoryV1,
+	inventory: WorkbenchContentDeploymentInventory,
 ): Promise<void> {
-	const target = resolve(root, WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE)
+	const target = resolve(root, WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE)
 	const candidate = `${target}.candidate-${randomUUID()}`
 	await mkdir(root, { recursive: true })
 	try {

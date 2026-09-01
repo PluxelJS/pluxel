@@ -378,12 +378,12 @@ Workbench backend 由以下部分组成：
 - `WorkbenchService`：每个 Plugin Context 隔离的 optional `publish()` gate；
 - `WorkbenchRegistry`：fixed Definition publication、target layout、Attachment resolution 和 fresh target factories；
 - `WorkbenchSessionTarget`：一个 socket epoch 的 capability-free layout、opened roots 与 owner invocation leases；
-- `WorkbenchArtifactService`：已验证 immutable MF producer revision inventory；
-- HTTP：Workbench document、standard MF manifest/assets 和 fixed WebSocket ingress。
+- `WorkbenchArtifactService`：已验证 immutable Content 与 MF producer revision inventory；
+- HTTP：Workbench document、Content plan、standard MF manifest/assets 和 fixed WebSocket ingress。
 
 Workbench API 没有可枚举的全局服务 namespace。Browser 只能通过当前 layout 的 exact descriptor 调用
-`openView()`，成功结果直接拥有 local View API 或 Attachment provider/consumer roots。Owner/publication replacement
-会 abort opened roots 并关闭整个 session epoch。
+`openEntry()`：Content 返回 pinned host plan，interactive Content 另带 framework-owned root；View 返回 local API 或
+Attachment provider/consumer roots。Owner/publication replacement 会 abort interactive opened roots 并关闭整个 session epoch。
 
 backend factory 由 static、dynamic 和 production static launcher 在 immutable Runtime Context host 构造时提供。插件不得
 直接安装或 require backend，也不存在 post-root installer。

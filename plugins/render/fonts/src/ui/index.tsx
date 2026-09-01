@@ -5,7 +5,6 @@ import {
 	Card,
 	FileButton,
 	Group,
-	MantineProvider,
 	Progress,
 	ScrollArea,
 	Select,
@@ -16,16 +15,14 @@ import {
 	Title,
 } from '@mantine/core'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
-import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconRefresh, IconTrash, IconUpload } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-	FontsWorkbench,
-	type FontSelectionApi,
-	type FontSelectionSnapshot,
-	type FontsManagerApi,
-	type FontsManagerSnapshot,
-} from '../workbench.ts'
+import type {
+	FontSelectionApi,
+	FontSelectionSnapshot,
+	FontsManagerApi,
+	FontsManagerSnapshot,
+} from '../workbench-contracts.ts'
 
 const FONT_ACCEPT = '.ttf,.otf,.ttc,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2'
 
@@ -126,7 +123,7 @@ type FontManagerContentProps = Readonly<{
 	fonts: RpcStub<FontsManagerApi>
 }>
 
-function FontManagerContent({ fonts }: FontManagerContentProps) {
+export function FontManagerContent({ fonts }: FontManagerContentProps) {
 	const requestId = useRef(0)
 	const [snapshot, setSnapshot] = useState<FontsManagerSnapshot>()
 	const [file, setFile] = useState<File | null>(null)
@@ -391,20 +388,11 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 	)
 }
 
-export function FontsManagerPanel() {
-	const { api, host } = useWorkbench(FontsWorkbench.manager)
-	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<FontManagerContent fonts={api} />
-		</MantineProvider>
-	)
-}
-
 type FontSelectionContentProps = Readonly<{
 	selection: RpcStub<FontSelectionApi>
 }>
 
-function FontSelectionContent({ selection }: FontSelectionContentProps) {
+export function FontSelectionContent({ selection }: FontSelectionContentProps) {
 	const requestId = useRef(0)
 	const [snapshot, setSnapshot] = useState<FontSelectionSnapshot>()
 	const [loading, setLoading] = useState(true)
@@ -489,14 +477,5 @@ function FontSelectionContent({ selection }: FontSelectionContentProps) {
 				/>
 			</Card>
 		</Stack>
-	)
-}
-
-export function FontSelectionPanel() {
-	const { provider, host } = useWorkbench(FontsWorkbench.selection)
-	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<FontSelectionContent selection={provider} />
-		</MantineProvider>
 	)
 }

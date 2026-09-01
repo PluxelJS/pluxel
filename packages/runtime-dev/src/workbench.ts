@@ -26,7 +26,7 @@ const attachments = new WeakMap<Context, PluginArtifactCompilerAttachment>()
  * Attaches the route-neutral Node/Workbench artifact compiler to one Runtime root.
  *
  * Workbench artifact compilations must come from the shared semantic lowering snapshot. The
- * attachment does not observe generation publication or rediscover Page/renderer entries.
+ * attachment does not observe generation publication or rediscover Content/renderer entries.
  */
 export function attachPluginArtifactCompiler(
 	ctx: Context,
@@ -76,7 +76,7 @@ export function attachPluginArtifactCompiler(
 
 export type {
 	WorkbenchArtifactCompilations,
-	WorkbenchPageCompilation,
+	WorkbenchContentCompilation,
 	PluginArtifactCompilerOptions,
 	PluginArtifactCompilerViteServer,
 	WorkbenchProducerCompilation,

@@ -7,106 +7,114 @@ import {
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
 import {
-	WORKBENCH_PAGE_ARTIFACT_FILE,
-	parseWorkbenchPageSet,
-	serializeWorkbenchPageDefinition,
-	serializeWorkbenchPageSet,
-	type WorkbenchPageSetV1,
-	type WorkbenchStandardPagePlanV1,
+	WORKBENCH_CONTENT_ARTIFACT_FILE,
+	parseWorkbenchContentSet,
+	serializeWorkbenchContentDefinition,
+	serializeWorkbenchContentSet,
+	type WorkbenchContentSet,
+	type WorkbenchContentPlan,
 } from '@pluxel/core/internal'
 import {
 	parseWorkbenchOpenableIdentity,
 	workbenchOpenableIdentityEqual,
-	type WorkbenchPageIdentity,
+	type WorkbenchContentIdentity,
 } from '@pluxel/core/federation'
 import { isAbsolute, join, relative } from 'pathe'
+import type { WorkbenchMarkdownDocument } from '../../workbench/definition'
 import { WORKBENCH_ARTIFACT_TRANSACTION } from './WorkbenchArtifactService'
 
-export type WorkbenchPageArtifactCandidate = Readonly<{
+export type WorkbenchContentArtifactCandidate = Readonly<{
 	definition: PluginDefinitionAddress
 	definitionDigest: string
 	digest: string
 	artifactRoot: string
 }>
 
-export type WorkbenchPageArtifactEntry = Readonly<{
-	descriptor: WorkbenchPageIdentity
+export type WorkbenchContentArtifactEntry = Readonly<{
+	descriptor: WorkbenchContentIdentity
 }>
 
-export type WorkbenchPageArtifactRevision = Readonly<{
+export type WorkbenchContentArtifactRevision = Readonly<{
 	profile: 1
 	definition: PluginDefinitionAddress
 	definitionDigest: string
 	digest: string
-	entries: readonly WorkbenchPageArtifactEntry[]
+	entries: readonly WorkbenchContentArtifactEntry[]
 }>
 
-export type WorkbenchResolvedPageArtifact = Readonly<{
-	artifact: WorkbenchPageArtifactRevision
-	entry: WorkbenchPageArtifactEntry
-	plan: WorkbenchStandardPagePlanV1
+export type WorkbenchResolvedContentArtifact = Readonly<{
+	artifact: WorkbenchContentArtifactRevision
+	entry: WorkbenchContentArtifactEntry
+	plan: WorkbenchContentPlan
 }>
 
-export type WorkbenchPageArtifactCommit = Readonly<{
+export type WorkbenchContentArtifactCommit = Readonly<{
 	revision: number
-	current: WorkbenchPageArtifactRevision
-	previous: WorkbenchPageArtifactRevision | null
+	current: WorkbenchContentArtifactRevision
+	previous: WorkbenchContentArtifactRevision | null
 }>
 
-export type WorkbenchPageArtifactLookup = Pick<WorkbenchPageArtifactService, 'resolvePage'>
-
-type StoredPageEntry = Readonly<{
-	value: WorkbenchPageArtifactEntry
-	plan: WorkbenchStandardPagePlanV1
+export type WorkbenchContentArtifactLookup = Readonly<{
+	resolveContent(
+		definition: PluginDefinitionAddress,
+		descriptor: WorkbenchContentIdentity,
+		/** Test lookups may synthesize a plan from the current declaration. */
+		declaration?: WorkbenchMarkdownDocument,
+	): WorkbenchResolvedContentArtifact | undefined
 }>
 
-type StoredPageRevision = Readonly<{
-	value: WorkbenchPageArtifactRevision
+type StoredContentEntry = Readonly<{
+	value: WorkbenchContentArtifactEntry
+	plan: WorkbenchContentPlan
+}>
+
+type StoredContentRevision = Readonly<{
+	value: WorkbenchContentArtifactRevision
 	definitionKey: string
 	referenceKey: string
-	entriesByKey: ReadonlyMap<string, StoredPageEntry>
+	entriesByKey: ReadonlyMap<string, StoredContentEntry>
 }>
 
-const PREPARED = Symbol('pluxel.workbench.prepared-page-artifact')
+const PREPARED = Symbol('pluxel.workbench.prepared-content-artifact')
 
 /** @internal Validated immutable candidate; only its owning store can commit it. */
-export type WorkbenchPreparedPageArtifactCandidate = Readonly<{
-	[PREPARED]: StoredPageRevision
+export type WorkbenchPreparedContentArtifactCandidate = Readonly<{
+	[PREPARED]: StoredContentRevision
 }>
 
-const CHECKPOINT = Symbol('pluxel.workbench.page-artifact-checkpoint')
+const CHECKPOINT = Symbol('pluxel.workbench.content-artifact-checkpoint')
 
 /** @internal Rollback token used only by the combined Workbench artifact transaction. */
-export type WorkbenchPageArtifactCheckpoint = Readonly<{
+export type WorkbenchContentArtifactCheckpoint = Readonly<{
 	[CHECKPOINT]: Readonly<{
 		definitionKey: string
 		referenceKey: string
-		current?: StoredPageRevision
-		revision?: StoredPageRevision
+		current?: StoredContentRevision
+		revision?: StoredContentRevision
 		revisionValue: number
 	}>
 }>
 
-const CURRENT_CHECKPOINT = Symbol('pluxel.workbench.page-current-checkpoint')
+const CURRENT_CHECKPOINT = Symbol('pluxel.workbench.content-current-checkpoint')
 
 /** @internal Current-pointer rollback token for an absent artifact in a full batch. */
-export type WorkbenchPageArtifactCurrentCheckpoint = Readonly<{
+export type WorkbenchContentArtifactCurrentCheckpoint = Readonly<{
 	[CURRENT_CHECKPOINT]: Readonly<{
 		definitionKey: string
-		current?: StoredPageRevision
+		current?: StoredContentRevision
 		revisionValue: number
 	}>
 }>
 
 const SHA256 = /^[a-f\d]{64}$/
-const MAX_PAGE_ARTIFACT_BYTES = 512 * 1_024 + 1
+const MAX_CONTENT_ARTIFACT_BYTES = 512 * 1_024 + 1
 
-/** Definition-scoped immutable Standard Page artifact inventory. */
-export class WorkbenchPageArtifactService {
+/** Definition-scoped immutable Workbench Content artifact inventory. */
+export class WorkbenchContentArtifactService {
 	private revisionValue = 0
-	private readonly currentByDefinition = new Map<string, StoredPageRevision>()
-	private readonly revisionsByReference = new Map<string, StoredPageRevision>()
-	private readonly listeners = new Set<(commit: WorkbenchPageArtifactCommit) => void>()
+	private readonly currentByDefinition = new Map<string, StoredContentRevision>()
+	private readonly revisionsByReference = new Map<string, StoredContentRevision>()
+	private readonly listeners = new Set<(commit: WorkbenchContentArtifactCommit) => void>()
 
 	constructor(private readonly root: Context) {}
 
@@ -114,28 +122,31 @@ export class WorkbenchPageArtifactService {
 		return this.revisionValue
 	}
 
-	subscribe(listener: (commit: WorkbenchPageArtifactCommit) => void): () => void {
+	subscribe(listener: (commit: WorkbenchContentArtifactCommit) => void): () => void {
 		this.listeners.add(listener)
 		return () => this.listeners.delete(listener)
 	}
 
-	getCurrent(definition: PluginDefinitionAddress): WorkbenchPageArtifactRevision | undefined {
+	getCurrent(definition: PluginDefinitionAddress): WorkbenchContentArtifactRevision | undefined {
 		return this.currentByDefinition.get(pluginDefinitionIndexKey(definition))?.value
 	}
 
 	getPinned(
 		definitionDigest: string,
-		pageDigest: string,
-	): WorkbenchPageArtifactRevision | undefined {
-		return this.revisionsByReference.get(referenceKey(definitionDigest, pageDigest))?.value
+		contentDigest: string,
+	): WorkbenchContentArtifactRevision | undefined {
+		return this.revisionsByReference.get(referenceKey(definitionDigest, contentDigest))?.value
 	}
 
-	resolvePage(
+	resolveContent(
 		definition: PluginDefinitionAddress,
-		descriptor: WorkbenchPageIdentity,
-	): WorkbenchResolvedPageArtifact | undefined {
+		descriptor: WorkbenchContentIdentity,
+	): WorkbenchResolvedContentArtifact | undefined {
 		const canonical = parseWorkbenchOpenableIdentity(descriptor)
-		if (canonical.kind !== 'page' || !pluginDefinitionAddressEqual(canonical.owner, definition)) {
+		if (
+			canonical.kind !== 'content' ||
+			!pluginDefinitionAddressEqual(canonical.owner, definition)
+		) {
 			return undefined
 		}
 		const stored = this.currentByDefinition.get(pluginDefinitionIndexKey(definition))
@@ -148,27 +159,27 @@ export class WorkbenchPageArtifactService {
 
 	async prepareCandidate(
 		authority: symbol,
-		candidate: WorkbenchPageArtifactCandidate,
-	): Promise<WorkbenchPreparedPageArtifactCandidate> {
+		candidate: WorkbenchContentArtifactCandidate,
+	): Promise<WorkbenchPreparedContentArtifactCandidate> {
 		assertTransactionAuthority(authority)
 		return Object.freeze({ [PREPARED]: await prepareCandidate(candidate) })
 	}
 
-	assertPrepared(authority: symbol, candidate: WorkbenchPreparedPageArtifactCandidate): void {
+	assertPrepared(authority: symbol, candidate: WorkbenchPreparedContentArtifactCandidate): void {
 		assertTransactionAuthority(authority)
 		const stored = readPrepared(candidate)
 		const existing = this.revisionsByReference.get(stored.referenceKey)
-		if (existing && !samePageRevision(existing, stored)) {
+		if (existing && !sameContentRevision(existing, stored)) {
 			throw new Error(
-				`[workbench] immutable Page revision collision: ${stored.value.definitionDigest}@${stored.value.digest}`,
+				`[workbench] immutable Content revision collision: ${stored.value.definitionDigest}@${stored.value.digest}`,
 			)
 		}
 	}
 
 	checkpointPrepared(
 		authority: symbol,
-		candidate: WorkbenchPreparedPageArtifactCandidate,
-	): WorkbenchPageArtifactCheckpoint {
+		candidate: WorkbenchPreparedContentArtifactCandidate,
+	): WorkbenchContentArtifactCheckpoint {
 		assertTransactionAuthority(authority)
 		const stored = readPrepared(candidate)
 		return Object.freeze({
@@ -182,10 +193,10 @@ export class WorkbenchPageArtifactService {
 		})
 	}
 
-	restoreCheckpoint(authority: symbol, checkpoint: WorkbenchPageArtifactCheckpoint): void {
+	restoreCheckpoint(authority: symbol, checkpoint: WorkbenchContentArtifactCheckpoint): void {
 		assertTransactionAuthority(authority)
 		const state = checkpoint?.[CHECKPOINT]
-		if (!state) throw new TypeError('[workbench] invalid Page artifact checkpoint')
+		if (!state) throw new TypeError('[workbench] invalid Content artifact checkpoint')
 		if (state.current) this.currentByDefinition.set(state.definitionKey, state.current)
 		else this.currentByDefinition.delete(state.definitionKey)
 		if (state.revision) this.revisionsByReference.set(state.referenceKey, state.revision)
@@ -196,7 +207,7 @@ export class WorkbenchPageArtifactService {
 	checkpointCurrent(
 		authority: symbol,
 		definition: PluginDefinitionAddress,
-	): WorkbenchPageArtifactCurrentCheckpoint {
+	): WorkbenchContentArtifactCurrentCheckpoint {
 		assertTransactionAuthority(authority)
 		const definitionKey = pluginDefinitionIndexKey(definition)
 		return Object.freeze({
@@ -210,11 +221,11 @@ export class WorkbenchPageArtifactService {
 
 	restoreCurrentCheckpoint(
 		authority: symbol,
-		checkpoint: WorkbenchPageArtifactCurrentCheckpoint,
+		checkpoint: WorkbenchContentArtifactCurrentCheckpoint,
 	): void {
 		assertTransactionAuthority(authority)
 		const state = checkpoint?.[CURRENT_CHECKPOINT]
-		if (!state) throw new TypeError('[workbench] invalid Page current checkpoint')
+		if (!state) throw new TypeError('[workbench] invalid Content current checkpoint')
 		if (state.current) this.currentByDefinition.set(state.definitionKey, state.current)
 		else this.currentByDefinition.delete(state.definitionKey)
 		this.revisionValue = state.revisionValue
@@ -223,7 +234,7 @@ export class WorkbenchPageArtifactService {
 	withdrawCurrent(
 		authority: symbol,
 		definition: PluginDefinitionAddress,
-	): WorkbenchPageArtifactRevision | null {
+	): WorkbenchContentArtifactRevision | null {
 		assertTransactionAuthority(authority)
 		const definitionKey = pluginDefinitionIndexKey(definition)
 		const previous = this.currentByDefinition.get(definitionKey)
@@ -235,9 +246,9 @@ export class WorkbenchPageArtifactService {
 
 	commitPrepared(
 		authority: symbol,
-		candidate: WorkbenchPreparedPageArtifactCandidate,
+		candidate: WorkbenchPreparedContentArtifactCandidate,
 		options: Readonly<{ notify?: boolean }> = {},
-	): WorkbenchPageArtifactRevision {
+	): WorkbenchContentArtifactRevision {
 		assertTransactionAuthority(authority)
 		const prepared = readPrepared(candidate)
 		this.assertPrepared(authority, candidate)
@@ -246,7 +257,7 @@ export class WorkbenchPageArtifactService {
 		return this.commit(stored, options.notify !== false)
 	}
 
-	private commit(stored: StoredPageRevision, notify: boolean): WorkbenchPageArtifactRevision {
+	private commit(stored: StoredContentRevision, notify: boolean): WorkbenchContentArtifactRevision {
 		const previous = this.currentByDefinition.get(stored.definitionKey)
 		if (previous === stored) return stored.value
 		this.currentByDefinition.set(stored.definitionKey, stored)
@@ -261,7 +272,7 @@ export class WorkbenchPageArtifactService {
 				try {
 					listener(commit)
 				} catch (error) {
-					this.root.logger.error('workbench Page artifact commit listener failed', { error })
+					this.root.logger.error('workbench Content artifact commit listener failed', { error })
 				}
 			}
 		}
@@ -270,52 +281,55 @@ export class WorkbenchPageArtifactService {
 }
 
 async function prepareCandidate(
-	candidate: WorkbenchPageArtifactCandidate,
-): Promise<StoredPageRevision> {
+	candidate: WorkbenchContentArtifactCandidate,
+): Promise<StoredContentRevision> {
 	const definition = candidate?.definition
 	const definitionKey = pluginDefinitionIndexKey(definition)
 	const definitionDigest = digest(candidate?.definitionDigest, 'definition digest')
 	const expectedDefinitionDigest = sha256(
-		Buffer.from(serializeWorkbenchPageDefinition(definition), 'utf-8'),
+		Buffer.from(serializeWorkbenchContentDefinition(definition), 'utf-8'),
 	)
 	if (definitionDigest !== expectedDefinitionDigest) {
-		throw new TypeError('[workbench] Page candidate definition digest is not canonical')
+		throw new TypeError('[workbench] Content candidate definition digest is not canonical')
 	}
-	const pageDigest = digest(candidate?.digest, 'Page set digest')
+	const contentDigest = digest(candidate?.digest, 'Content set digest')
 	const artifactRoot = await canonicalDirectory(candidate?.artifactRoot)
 	const artifactPath = await canonicalArtifactFile(artifactRoot)
 	const bytes = await readArtifactFile(artifactPath)
-	if (sha256(bytes) !== pageDigest) {
-		throw new TypeError('[workbench] Page candidate digest does not match its artifact bytes')
+	if (sha256(bytes) !== contentDigest) {
+		throw new TypeError('[workbench] Content candidate digest does not match its artifact bytes')
 	}
 	let serialized: string
 	try {
 		serialized = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 	} catch (error) {
-		throw new TypeError('[workbench] Page candidate artifact is not valid UTF-8', { cause: error })
+		throw new TypeError('[workbench] Content candidate artifact is not valid UTF-8', {
+			cause: error,
+		})
 	}
-	let pageSet: WorkbenchPageSetV1
+	let contentSet: WorkbenchContentSet
 	try {
-		pageSet = parseWorkbenchPageSet(JSON.parse(serialized) as unknown)
+		contentSet = parseWorkbenchContentSet(JSON.parse(serialized) as unknown)
 	} catch (error) {
-		throw new TypeError('[workbench] Page candidate artifact is invalid', { cause: error })
+		throw new TypeError('[workbench] Content candidate artifact is invalid', { cause: error })
 	}
-	if (serializeWorkbenchPageSet(pageSet) !== serialized) {
-		throw new TypeError('[workbench] Page candidate artifact is not canonically serialized')
+	if (serializeWorkbenchContentSet(contentSet) !== serialized) {
+		throw new TypeError('[workbench] Content candidate artifact is not canonically serialized')
 	}
-	if (!pluginDefinitionAddressEqual(pageSet.definition, definition)) {
-		throw new TypeError('[workbench] Page candidate definition does not match its Page set')
+	if (!pluginDefinitionAddressEqual(contentSet.definition, definition)) {
+		throw new TypeError('[workbench] Content candidate definition does not match its Content set')
 	}
-	const storedEntries = pageSet.entries.map((entry) => {
+	const storedEntries = contentSet.entries.map((entry) => {
 		const descriptor = parseWorkbenchOpenableIdentity({
-			kind: 'page',
+			kind: 'content',
 			owner: definition,
 			key: entry.key,
 		})
-		if (descriptor.kind !== 'page') throw new Error('unreachable Workbench Page identity state')
+		if (descriptor.kind !== 'content')
+			throw new Error('unreachable Workbench Content identity state')
 		return Object.freeze({
 			value: Object.freeze({ descriptor }),
-			plan: entry.page,
+			plan: entry.content,
 		})
 	})
 	const entriesByKey = new Map(
@@ -325,20 +339,20 @@ async function prepareCandidate(
 		profile: 1 as const,
 		definition,
 		definitionDigest,
-		digest: pageDigest,
+		digest: contentDigest,
 		entries: Object.freeze(storedEntries.map((entry) => entry.value)),
 	})
 	return Object.freeze({
 		value,
 		definitionKey,
-		referenceKey: referenceKey(definitionDigest, pageDigest),
+		referenceKey: referenceKey(definitionDigest, contentDigest),
 		entriesByKey,
 	})
 }
 
-function readPrepared(candidate: WorkbenchPreparedPageArtifactCandidate): StoredPageRevision {
+function readPrepared(candidate: WorkbenchPreparedContentArtifactCandidate): StoredContentRevision {
 	const stored = candidate?.[PREPARED]
-	if (!stored) throw new TypeError('[workbench] invalid prepared Page artifact candidate')
+	if (!stored) throw new TypeError('[workbench] invalid prepared Content artifact candidate')
 	return stored
 }
 
@@ -348,7 +362,7 @@ function assertTransactionAuthority(authority: symbol): void {
 	}
 }
 
-function samePageRevision(left: StoredPageRevision, right: StoredPageRevision): boolean {
+function sameContentRevision(left: StoredContentRevision, right: StoredContentRevision): boolean {
 	return (
 		left.definitionKey === right.definitionKey &&
 		left.value.definitionDigest === right.value.definitionDigest &&
@@ -358,27 +372,27 @@ function samePageRevision(left: StoredPageRevision, right: StoredPageRevision): 
 
 async function canonicalDirectory(input: unknown): Promise<string> {
 	if (typeof input !== 'string' || !isAbsolute(input)) {
-		throw new TypeError('[workbench] Page artifactRoot must be an absolute path')
+		throw new TypeError('[workbench] Content artifactRoot must be an absolute path')
 	}
 	const root = await realpath(input).catch((error) => {
-		throw new Error('[workbench] Page artifactRoot does not exist', { cause: error })
+		throw new Error('[workbench] Content artifactRoot does not exist', { cause: error })
 	})
 	const rootStat = await stat(root)
 	if (!rootStat.isDirectory()) {
-		throw new TypeError('[workbench] Page artifactRoot must be a directory')
+		throw new TypeError('[workbench] Content artifactRoot must be a directory')
 	}
 	return root
 }
 
 async function canonicalArtifactFile(root: string): Promise<string> {
-	const path = await realpath(join(root, WORKBENCH_PAGE_ARTIFACT_FILE)).catch((error) => {
-		throw new Error(`[workbench] Page artifact is missing: ${WORKBENCH_PAGE_ARTIFACT_FILE}`, {
+	const path = await realpath(join(root, WORKBENCH_CONTENT_ARTIFACT_FILE)).catch((error) => {
+		throw new Error(`[workbench] Content artifact is missing: ${WORKBENCH_CONTENT_ARTIFACT_FILE}`, {
 			cause: error,
 		})
 	})
 	const fromRoot = relative(root, path)
 	if (!fromRoot || fromRoot.startsWith('..') || isAbsolute(fromRoot)) {
-		throw new TypeError('[workbench] Page artifact escapes its root')
+		throw new TypeError('[workbench] Content artifact escapes its root')
 	}
 	return path
 }
@@ -387,19 +401,19 @@ async function readArtifactFile(path: string): Promise<Buffer> {
 	const file = await open(path, 'r')
 	try {
 		const fileStat = await file.stat()
-		if (!fileStat.isFile()) throw new TypeError('[workbench] Page artifact is not a file')
-		if (fileStat.size > MAX_PAGE_ARTIFACT_BYTES) {
-			throw new TypeError('[workbench] Page artifact exceeds the serialized byte budget')
+		if (!fileStat.isFile()) throw new TypeError('[workbench] Content artifact is not a file')
+		if (fileStat.size > MAX_CONTENT_ARTIFACT_BYTES) {
+			throw new TypeError('[workbench] Content artifact exceeds the serialized byte budget')
 		}
-		const buffer = Buffer.allocUnsafe(MAX_PAGE_ARTIFACT_BYTES + 1)
+		const buffer = Buffer.allocUnsafe(MAX_CONTENT_ARTIFACT_BYTES + 1)
 		let bytesRead = 0
 		while (bytesRead < buffer.byteLength) {
 			const result = await file.read(buffer, bytesRead, buffer.byteLength - bytesRead, bytesRead)
 			if (result.bytesRead === 0) break
 			bytesRead += result.bytesRead
 		}
-		if (bytesRead > MAX_PAGE_ARTIFACT_BYTES) {
-			throw new TypeError('[workbench] Page artifact exceeds the serialized byte budget')
+		if (bytesRead > MAX_CONTENT_ARTIFACT_BYTES) {
+			throw new TypeError('[workbench] Content artifact exceeds the serialized byte budget')
 		}
 		return buffer.subarray(0, bytesRead)
 	} finally {
@@ -414,8 +428,8 @@ function digest(input: unknown, label: string): string {
 	return input
 }
 
-function referenceKey(definitionDigest: string, pageDigest: string): string {
-	return `${digest(definitionDigest, 'definition digest')}\0${digest(pageDigest, 'Page set digest')}`
+function referenceKey(definitionDigest: string, contentDigest: string): string {
+	return `${digest(definitionDigest, 'definition digest')}\0${digest(contentDigest, 'Content set digest')}`
 }
 
 function sha256(input: Uint8Array): string {

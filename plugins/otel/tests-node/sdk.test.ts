@@ -157,6 +157,11 @@ test('exports native metrics, traces, and logs with caller scopes and trace corr
 		span.end()
 	})
 
+	await runtime.forceFlush()
+	assert.ok(metrics.exports.some(({ scopeMetrics }) => scopeMetrics.length > 0))
+	assert.ok(spans.exports.flat().some(({ name }) => name === 'catalog.refresh'))
+	assert.ok(logs.exports.flat().some(({ body }) => body === 'catalog refreshed'))
+
 	await runtime.shutdown()
 	active.removeCallback(observe)
 	await runtime.shutdown()

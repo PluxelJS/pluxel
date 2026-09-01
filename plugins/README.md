@@ -48,6 +48,7 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 ## 首批插件
 
 - [`@pluxel/agent-tools`](agent-tools/README.md)：以标准 Plugin config 组合 command Toolset，并向外部 Agent adapter 提供 fail-closed 受限 catalog。
+- [`@pluxel/pi-agent`](pi-agent/README.md)：把 Pi 作为 embedded engine，复用 AgentTools policy，并提供内存 session、goal 与 bounded subagent。
 - [`@pluxel/auth`](auth/README.md)：Management 官方认证 provider，支持 OIDC、password 与 password+TOTP，凭据进入 owner Vault。
 - [`@pluxel/cache`](cache/README.md)：显式 scope、同步 local cache、多态异步 backend 与进程内请求合并。
 - [`@pluxel/rates`](rates/README.md)：caller-aware 四算法 admission control、原子 decision 与 memory backend。

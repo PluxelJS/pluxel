@@ -89,3 +89,5 @@ Implementation entry points:
 - `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
 - `packages/runtime/src/services/CommandsService.ts`: root publication and owner-bound carrier mounts;
 - `plugins/agent-tools/src/index.ts`: optional Toolset/Agent config projection and call-time enforcement.
+- `plugins/pi-agent/src/tool-adapter.ts`: Pi provider-safe schema/name projection that still dispatches
+  through the bound AgentTools catalog; Pi built-ins and default resource discovery stay disabled.

@@ -35,6 +35,17 @@ ordinary config 只保存 Vault namespace/key 引用，不保存 access key。va
 `S3AccessKeyCredentials` object；local/anonymous 分支不触碰 Vault。Vault 缺失、引用不存在或 payload 非法会让 `init()` 失败，
 不会构造半配置 client。credential snapshot 每 generation 读取一次，rotation 通过正常 restart/replacement 生效。
 
+每个已经运行的 generation 固定发布同一个 Workbench credential Content，状态明确区分 local、remote/anonymous 与
+remote/vault，保持 definition topology 不随 config 分支变化；只有 remote/vault generation 接受 rotation，local/anonymous 明确
+报告 `not-applicable`、拒绝 action 且不访问 Vault。一次性 password form 覆盖当前配置引用的
+Vault record。Handler 重新检查 authenticated Management principal、generation 仍在运行且 backend 仍为 remote/vault，串行
+执行 `kv.set()` + `flush()`，只返回通用成功/失败 message；旧值、新值不进入 Content plan、load、result 或日志，Vault
+namespace/key 也不进入 Content transport。新 credential 仍只在正常 restart/replacement 后生效。
+
+这条路径不承担首次 provisioning：missing/invalid credential 会让 `init()` 失败，失败 generation 的 publication 会随 rollback
+撤销。为了显示 setup Content 而让 S3 capability 半启动，或另建脱离 owner lifecycle 的 provisioning registry，都会破坏既有能力与
+所有权边界。首次写入继续由 deployment/host 在启动前完成。
+
 provider effect 在 stop、replacement、rollback 和 shutdown 时清除 active client。remote 会 abort 仍在进行的 custom fetch；
 local 会 abort/等待已接纳文件操作。旧 caller facade 由 Core generation gate 拒绝；此前取得的 local client handle
 继续以带 `S3_NOT_RUNNING` code 的 `S3NotRunningError` 报告 withdrawal。
@@ -73,5 +84,6 @@ presigned URL、启用/暂停 versioning、version listing、version-specific co
 `S3UnsupportedOperationError`，稳定 code 为 `S3_UNSUPPORTED_OPERATION`。只有实现提供相同 observable semantics 并有测试时，
 才能将一项改为 supported。
 
-Workbench 不属于存储业务能力。标准 host 只看到一个官方 `S3Plugin`；headless host 使用同一 graph。本包只依赖 s3mini 和
-Pluxel public author API，不要求 runtime 增加 storage 特例。
+Workbench Content 只是运行中 provider 的可选 operations 投影；credential action 仅在 remote/vault 分支可用。它不属于 S3 业务能力，也不是其启动前提。
+标准 host 仍只治理一个官方 `S3Plugin`；headless host 使用同一 graph。本包只依赖 s3mini 和 Pluxel public author API，不要求
+runtime 增加 storage 特例。

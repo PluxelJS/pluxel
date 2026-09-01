@@ -7,13 +7,15 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import {
 	createRemoteValue,
-	openWorkbenchView,
+	detachWorkbenchPortableValue,
+	openWorkbenchEntry,
 	readWorkbenchLayout,
 	type WorkbenchLayoutEntry,
 	type WorkbenchSessionApi,
-	type WorkbenchStandardPageLayoutEntry,
+	type WorkbenchContentLayoutEntry,
 } from '@pluxel/runtime/workbench/client'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
+import { serialize } from 'capnweb'
 
 const definition = parsePluginDefinitionAddress({
 	entry: { kind: 'package-root', packageName: '@example/settings' },
@@ -42,52 +44,55 @@ const entry: WorkbenchLayoutEntry = Object.freeze({
 	}),
 })
 
-const pageDescriptor = parseWorkbenchOpenableIdentity({
-	kind: 'page',
+const contentDescriptor = parseWorkbenchOpenableIdentity({
+	kind: 'content',
 	owner: definition,
 	key: 'guide',
 })
-if (pageDescriptor.kind !== 'page') throw new Error('unexpected Page identity')
-const pageEntry: WorkbenchStandardPageLayoutEntry = Object.freeze({
-	descriptor: pageDescriptor,
+if (contentDescriptor.kind !== 'content') throw new Error('unexpected Content identity')
+const contentEntry: WorkbenchContentLayoutEntry = Object.freeze({
+	descriptor: contentDescriptor,
 	target: Object.freeze({ node, displayName: 'Settings' }),
 	definitionRevisions: Object.freeze({ target: 3 }),
 	placement: Object.freeze({ kind: 'tab', label: 'Guide', order: 0 }),
-	standardPageRef: Object.freeze({
+	contentRef: Object.freeze({
 		profile: 1,
 		digest: '1'.repeat(64),
-		descriptor: pageDescriptor,
+		descriptor: contentDescriptor,
 	}),
 })
 
 describe('Workbench opened View client', () => {
-	it('owns and validates a capability-free Standard Page result', async () => {
+	it('owns and validates a capability-free Workbench Content result', async () => {
 		const disposeResult = vi.fn()
 		const session = {
-			openView: vi.fn().mockResolvedValue({
+			openEntry: vi.fn().mockResolvedValue({
 				ok: true,
 				value: {
-					kind: 'page',
+					kind: 'content',
+					mode: 'static',
 					params: {},
-					standardPageRef: pageEntry.standardPageRef,
+					contentRef: contentEntry.contentRef,
 					plan: {
 						version: 1,
-						kind: 'standard-page',
+						kind: 'workbench-content',
 						document: { version: 1, blocks: [] },
+						slots: [],
 					},
 				},
 				[Symbol.dispose]: disposeResult,
 			}),
 		} as unknown as RpcStub<WorkbenchSessionApi>
 
-		const opened = await openWorkbenchView(session, pageEntry, { layoutRevision: 7 })
+		const opened = await openWorkbenchEntry(session, contentEntry, { layoutRevision: 7 })
 		expect(opened.ok).toBe(true)
-		if (!opened.ok) throw new Error('expected Page success')
-		expect(opened.handle.kind).toBe('page')
+		if (!opened.ok) throw new Error('expected Content success')
+		expect(opened.handle.kind).toBe('content')
 		expect(opened.handle.plan).toEqual({
 			version: 1,
-			kind: 'standard-page',
+			kind: 'workbench-content',
 			document: { version: 1, blocks: [] },
+			slots: [],
 		})
 		expect(Object.isFrozen(opened.handle.plan.document.blocks)).toBe(true)
 
@@ -96,27 +101,79 @@ describe('Workbench opened View client', () => {
 		expect(disposeResult).toHaveBeenCalledTimes(1)
 	})
 
-	it('disposes a Standard Page result whose artifact tuple does not match layout', async () => {
+	it('disposes a Workbench Content result whose artifact tuple does not match layout', async () => {
 		const disposeResult = vi.fn()
 		const session = {
-			openView: vi.fn().mockResolvedValue({
+			openEntry: vi.fn().mockResolvedValue({
 				ok: true,
 				value: {
-					kind: 'page',
+					kind: 'content',
+					mode: 'static',
 					params: {},
-					standardPageRef: { ...pageEntry.standardPageRef, digest: '2'.repeat(64) },
+					contentRef: { ...contentEntry.contentRef, digest: '2'.repeat(64) },
 					plan: {
 						version: 1,
-						kind: 'standard-page',
+						kind: 'workbench-content',
 						document: { version: 1, blocks: [] },
+						slots: [],
 					},
 				},
 				[Symbol.dispose]: disposeResult,
 			}),
 		} as unknown as RpcStub<WorkbenchSessionApi>
 
-		await expect(openWorkbenchView(session, pageEntry, { layoutRevision: 7 })).rejects.toThrow(
-			'Standard Page tuple',
+		await expect(openWorkbenchEntry(session, contentEntry, { layoutRevision: 7 })).rejects.toThrow(
+			'Workbench Content tuple',
+		)
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
+	it('rejects variant-crossing fields in an interactive Content presentation', async () => {
+		const disposeResult = vi.fn()
+		const session = {
+			openEntry: vi.fn().mockResolvedValue({
+				ok: true,
+				value: {
+					kind: 'content',
+					mode: 'interactive',
+					params: {},
+					contentRef: contentEntry.contentRef,
+					plan: {
+						version: 1,
+						kind: 'workbench-content',
+						document: {
+							version: 1,
+							blocks: [{ type: 'slot', key: 'refresh' }],
+						},
+						slots: [
+							{
+								kind: 'action',
+								key: 'refresh',
+								display: 'block',
+								label: 'Refresh',
+								input: 'none',
+							},
+						],
+					},
+					presentation: {
+						slots: [
+							{
+								kind: 'action',
+								key: 'refresh',
+								label: 'Refresh',
+								input: 'none',
+								field: {},
+							},
+						],
+					},
+					root: { [Symbol.dispose]() {} },
+				},
+				[Symbol.dispose]: disposeResult,
+			}),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+
+		await expect(openWorkbenchEntry(session, contentEntry, { layoutRevision: 7 })).rejects.toThrow(
+			'unsupported field field',
 		)
 		expect(disposeResult).toHaveBeenCalledTimes(1)
 	})
@@ -135,10 +192,10 @@ describe('Workbench opened View client', () => {
 			[Symbol.dispose]: disposeResult,
 		}
 		const session = {
-			openView: vi.fn().mockResolvedValue(result),
+			openEntry: vi.fn().mockResolvedValue(result),
 		} as unknown as RpcStub<WorkbenchSessionApi>
 
-		const opened = await openWorkbenchView(session, entry, { layoutRevision: 7 })
+		const opened = await openWorkbenchEntry(session, entry, { layoutRevision: 7 })
 		expect(opened.ok).toBe(true)
 		if (!opened.ok) throw new Error('expected success')
 		expect(opened.handle.active).toBe(true)
@@ -158,7 +215,7 @@ describe('Workbench opened View client', () => {
 			key: 'other',
 		})
 		const session = {
-			openView: vi.fn().mockResolvedValue({
+			openEntry: vi.fn().mockResolvedValue({
 				ok: true,
 				value: {
 					kind: 'local',
@@ -170,7 +227,7 @@ describe('Workbench opened View client', () => {
 			}),
 		} as unknown as RpcStub<WorkbenchSessionApi>
 
-		await expect(openWorkbenchView(session, entry, { layoutRevision: 7 })).rejects.toThrow(
+		await expect(openWorkbenchEntry(session, entry, { layoutRevision: 7 })).rejects.toThrow(
 			'federation tuple',
 		)
 		expect(disposeResult).toHaveBeenCalledTimes(1)
@@ -179,14 +236,14 @@ describe('Workbench opened View client', () => {
 	it('returns a closed failure with no retained result', async () => {
 		const disposeResult = vi.fn()
 		const session = {
-			openView: vi.fn().mockResolvedValue({
+			openEntry: vi.fn().mockResolvedValue({
 				ok: false,
 				code: 'layout_changed',
 				[Symbol.dispose]: disposeResult,
 			}),
 		} as unknown as RpcStub<WorkbenchSessionApi>
 
-		await expect(openWorkbenchView(session, entry, { layoutRevision: 7 })).resolves.toEqual({
+		await expect(openWorkbenchEntry(session, entry, { layoutRevision: 7 })).resolves.toEqual({
 			ok: false,
 			code: 'layout_changed',
 		})
@@ -213,6 +270,37 @@ describe('Workbench opened View client', () => {
 })
 
 describe('remote value owner', () => {
+	it('detaches, validates, and releases a transport-owned portable DTO', () => {
+		const dispose = vi.fn()
+		const input = Object.assign(Object.create(null), {
+			nested: Object.assign(Object.create(null), { value: 'safe' }),
+		})
+		Object.defineProperty(input, Symbol.dispose, { value: dispose })
+
+		const detached = detachWorkbenchPortableValue(input, 'test Workbench DTO') as {
+			readonly nested: Readonly<{ value: string }>
+		}
+
+		expect(detached).toEqual({ nested: { value: 'safe' } })
+		expect(Object.getPrototypeOf(detached)).toBe(Object.prototype)
+		expect(Object.getPrototypeOf(detached.nested)).toBe(Object.prototype)
+		expect(Object.isFrozen(detached)).toBe(true)
+		expect(Object.isFrozen(detached.nested)).toBe(true)
+		expect(Object.getOwnPropertySymbols(detached)).toEqual([])
+		expect(() => serialize(detached)).not.toThrow()
+		expect(dispose).toHaveBeenCalledOnce()
+	})
+
+	it('releases a transport-owned DTO when portable-data validation fails', () => {
+		const dispose = vi.fn()
+		const input = Object.defineProperty({ missing: undefined }, Symbol.dispose, {
+			value: dispose,
+		})
+
+		expect(() => detachWorkbenchPortableValue(input)).toThrow(/portable data/)
+		expect(dispose).toHaveBeenCalledOnce()
+	})
+
 	it('subscribes before reading and coalesces invalidation during an active read', async () => {
 		const order: string[] = []
 		const disposeSubscription = vi.fn()

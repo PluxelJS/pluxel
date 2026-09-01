@@ -15,7 +15,7 @@ export async function openFontsManager(host: RuntimeHost): Promise<OpenedApi<Fon
 	)
 	if (!entry) throw new Error('FontsPlugin published no manager View')
 	const session = backend.createSession(testPrincipal, () => {})
-	const opened = await session.target.openView({
+	const opened = await session.target.openEntry({
 		layoutRevision: layout.revision,
 		target,
 		descriptor: entry.descriptor,
@@ -44,7 +44,7 @@ export async function openFontSelection(
 	)
 	if (!entry) throw new Error('Consumer published no Fonts selection Attachment')
 	const session = backend.createSession(testPrincipal, () => {})
-	const opened = await session.target.openView({
+	const opened = await session.target.openEntry({
 		layoutRevision: layout.revision,
 		target,
 		descriptor: entry.descriptor,

@@ -1,10 +1,14 @@
 import type { BasePlugin, PluginNodeAddress } from '@pluxel/core'
+import type { GenericSchema, GenericSchemaAsync, InferOutput } from 'valibot'
 import type { RpcTarget } from '../capnweb'
 
 const DEFINITION = Symbol('pluxel.workbench.definition')
 const DESCRIPTOR = Symbol('pluxel.workbench.descriptor')
 const RENDERER_ENTRY = Symbol('pluxel.workbench.renderer-entry')
 const MARKDOWN_DOCUMENT = Symbol('pluxel.workbench.markdown-document')
+const DATA_SLOT = Symbol('pluxel.workbench.content-data')
+const ACTION_SLOT = Symbol('pluxel.workbench.content-action')
+const canonicalContentSlots = new WeakSet<object>()
 
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const GROUP_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
@@ -75,9 +79,33 @@ export type WorkbenchRendererEntry = Readonly<{
 	readonly [RENDERER_ENTRY]: WorkbenchRendererEntryMetadata
 }>
 
-export type WorkbenchMarkdownDocument = Readonly<{
-	readonly [MARKDOWN_DOCUMENT]: WorkbenchMarkdownDocumentMetadata
-}>
+export type WorkbenchContentSchema = GenericSchema | GenericSchemaAsync
+
+export interface WorkbenchContentData<Schema extends WorkbenchContentSchema> {
+	readonly [DATA_SLOT]: Readonly<{ schema: Schema }>
+}
+
+export interface WorkbenchContentAction<
+	InputSchema extends WorkbenchContentSchema | undefined = undefined,
+> {
+	readonly [ACTION_SLOT]: Readonly<{
+		label: string
+		input: InputSchema
+		form: InputSchema extends undefined ? 'none' : 'dialog' | 'embedded'
+		confirm?: string
+	}>
+}
+
+export type WorkbenchContentSlot =
+	| WorkbenchContentData<WorkbenchContentSchema>
+	| WorkbenchContentAction<undefined>
+	| WorkbenchContentAction<WorkbenchContentSchema>
+
+export type WorkbenchContentSlotMap = Readonly<Record<string, WorkbenchContentSlot>>
+
+export interface WorkbenchMarkdownDocument<Slots extends WorkbenchContentSlotMap = {}> {
+	readonly [MARKDOWN_DOCUMENT]: WorkbenchMarkdownDocumentMetadata<Slots>
+}
 
 type DescriptorBrand<Api extends RpcTarget, ConsumerApi extends RpcTarget | never = never> = {
 	/** @internal Invariant phantom types; no property is emitted at runtime. */
@@ -93,11 +121,11 @@ export type WorkbenchView<Api extends RpcTarget> = Readonly<{
 }> &
 	DescriptorBrand<Api>
 
-export type WorkbenchPage = Readonly<{
-	kind: 'page'
-	document: WorkbenchMarkdownDocument
-	placement: WorkbenchPlacement
-}>
+export interface WorkbenchContent<Slots extends WorkbenchContentSlotMap = {}> {
+	readonly kind: 'content'
+	readonly document: WorkbenchMarkdownDocument<Slots>
+	readonly placement: WorkbenchPlacement
+}
 
 export type WorkbenchAttachment<
 	ProviderApi extends RpcTarget,
@@ -120,7 +148,7 @@ export type WorkbenchAttachmentPlacement<
 	DescriptorBrand<ProviderApi, ConsumerApi>
 
 export type WorkbenchEntry = Readonly<{
-	kind: 'view' | 'attachment' | 'attachment-placement' | 'page'
+	kind: 'view' | 'attachment' | 'attachment-placement' | 'content'
 }>
 
 /** @internal Existential descriptor shapes used across the fixed Workbench entries. */
@@ -192,6 +220,65 @@ export type WorkbenchAttachmentTargetFactory<Api extends RpcTarget> = (
 	context: WorkbenchAttachmentOpenContext,
 ) => Api | Promise<Api>
 
+type WorkbenchContentSlotsOf<Entry> = Entry extends WorkbenchContent<infer Slots> ? Slots : never
+
+type WorkbenchContentDataKey<Slots extends WorkbenchContentSlotMap> = {
+	[Key in keyof Slots & string]: Slots[Key] extends WorkbenchContentData<any> ? Key : never
+}[keyof Slots & string]
+
+type WorkbenchContentActionKey<Slots extends WorkbenchContentSlotMap> = {
+	[Key in keyof Slots & string]: Slots[Key] extends WorkbenchContentAction<any> ? Key : never
+}[keyof Slots & string]
+
+type WorkbenchContentDataValue<Value> = Value extends readonly unknown[]
+	? { readonly [Key in keyof Value]: WorkbenchContentDataValue<Value[Key]> }
+	: Value extends object
+		? { readonly [Key in keyof Value]: WorkbenchContentDataValue<Value[Key]> }
+		: Value
+
+type WorkbenchContentDataValues<Slots extends WorkbenchContentSlotMap> = Readonly<{
+	[Key in WorkbenchContentDataKey<Slots>]: Slots[Key] extends WorkbenchContentData<infer Schema>
+		? WorkbenchContentDataValue<InferOutput<Schema>>
+		: never
+}>
+
+export type WorkbenchContentActionResult =
+	| void
+	| Readonly<{ ok: true; message: string }>
+	| Readonly<{ ok: false; message: string }>
+
+type WorkbenchContentActionHandler<Slot extends WorkbenchContentSlot> =
+	Slot extends WorkbenchContentAction<infer Schema>
+		? Schema extends WorkbenchContentSchema
+			? (
+					input: InferOutput<Schema>,
+				) => WorkbenchContentActionResult | Promise<WorkbenchContentActionResult>
+			: () => WorkbenchContentActionResult | Promise<WorkbenchContentActionResult>
+		: never
+
+type WorkbenchContentActionHandlers<Slots extends WorkbenchContentSlotMap> = Readonly<{
+	[Key in WorkbenchContentActionKey<Slots>]: WorkbenchContentActionHandler<Slots[Key]>
+}>
+
+export type WorkbenchContentOpenContext<Slots extends WorkbenchContentSlotMap> =
+	WorkbenchViewOpenContext &
+		([WorkbenchContentDataKey<Slots>] extends [never] ? {} : Readonly<{ dataChanged(): void }>)
+
+export type WorkbenchContentBinding<Slots extends WorkbenchContentSlotMap> = ([
+	WorkbenchContentDataKey<Slots>,
+] extends [never]
+	? Readonly<{ load?: never }>
+	: Readonly<{
+			load(): WorkbenchContentDataValues<Slots> | Promise<WorkbenchContentDataValues<Slots>>
+		}>) &
+	([WorkbenchContentActionKey<Slots>] extends [never]
+		? Readonly<{ actions?: never }>
+		: Readonly<{ actions: WorkbenchContentActionHandlers<Slots> }>)
+
+export type WorkbenchContentFactory<Slots extends WorkbenchContentSlotMap> = (
+	context: WorkbenchContentOpenContext<Slots>,
+) => WorkbenchContentBinding<Slots> | Promise<WorkbenchContentBinding<Slots>>
+
 type BindingFor<Entry extends WorkbenchEntry> =
 	Entry extends Readonly<{ kind: 'view' }>
 		? WorkbenchTargetFactory<WorkbenchDescriptorApi<Entry>>
@@ -204,11 +291,15 @@ type BindingFor<Entry extends WorkbenchEntry> =
 							provider: BasePlugin
 							consumer: WorkbenchTargetFactory<WorkbenchDescriptorConsumerApi<Entry>>
 						}>
-				: never
+				: Entry extends WorkbenchContent<infer Slots>
+					? WorkbenchContentFactory<Slots>
+					: never
 
 type WorkbenchBindingKey<Definition extends AnyWorkbenchDefinition> = {
-	[Key in keyof Definition & string]: Definition[Key] extends Readonly<{ kind: 'page' }>
-		? never
+	[Key in keyof Definition & string]: Definition[Key] extends Readonly<{ kind: 'content' }>
+		? keyof WorkbenchContentSlotsOf<Definition[Key]> extends never
+			? never
+			: Key
 		: Key
 }[keyof Definition & string]
 
@@ -248,7 +339,7 @@ export type WorkbenchDescriptorMetadata =
 			placement: WorkbenchPlacement
 	  }>
 	| Readonly<{
-			kind: 'page'
+			kind: 'content'
 			key: string
 			document: WorkbenchMarkdownDocument
 			placement: WorkbenchPlacement
@@ -263,9 +354,29 @@ export type WorkbenchRendererEntryMetadata = Readonly<{
 	entryPath: string
 }>
 
-export type WorkbenchMarkdownDocumentMetadata = Readonly<{
+export type WorkbenchContentDataMetadata = Readonly<{
+	kind: 'data'
+	schema: WorkbenchContentSchema
+}>
+
+export type WorkbenchContentActionMetadata = Readonly<{
+	kind: 'action'
+	label: string
+	input?: WorkbenchContentSchema
+	form: 'none' | 'dialog' | 'embedded'
+	confirm?: string
+}>
+
+export type WorkbenchContentSlotMetadata =
+	| WorkbenchContentDataMetadata
+	| WorkbenchContentActionMetadata
+
+export type WorkbenchMarkdownDocumentMetadata<
+	Slots extends WorkbenchContentSlotMap = WorkbenchContentSlotMap,
+> = Readonly<{
 	moduleUrl: string
 	sourcePath: string
+	slots: Slots
 }>
 
 function rendererEntry(moduleUrl: string | URL, entryPath: string): WorkbenchRendererEntry {
@@ -276,12 +387,87 @@ function rendererEntry(moduleUrl: string | URL, entryPath: string): WorkbenchRen
 	})
 }
 
-function markdown(moduleUrl: string | URL, sourcePath: string): WorkbenchMarkdownDocument {
+function markdown<const Slots extends WorkbenchContentSlotMap = {}>(
+	moduleUrl: string | URL,
+	sourcePath: string,
+	slots?: Slots,
+): WorkbenchMarkdownDocument<Slots> {
 	const declarationUrl = parseModuleUrl('markdown', moduleUrl)
 	const path = parseModuleRelativePath('markdown', 'sourcePath', sourcePath)
+	const normalizedSlots = normalizeContentSlots(slots ?? Object.freeze({})) as Slots
 	return Object.freeze({
-		[MARKDOWN_DOCUMENT]: Object.freeze({ moduleUrl: declarationUrl, sourcePath: path }),
+		[MARKDOWN_DOCUMENT]: Object.freeze({
+			moduleUrl: declarationUrl,
+			sourcePath: path,
+			slots: normalizedSlots,
+		}),
 	})
+}
+
+function data<Schema extends WorkbenchContentSchema>(schema: Schema): WorkbenchContentData<Schema> {
+	assertValibotSchema('data', schema)
+	const slot = Object.freeze({ [DATA_SLOT]: Object.freeze({ schema }) })
+	canonicalContentSlots.add(slot)
+	return slot
+}
+
+function action(input: {
+	label: string
+	input?: never
+	form?: never
+	confirm?: string
+}): WorkbenchContentAction<undefined>
+function action<const InputSchema extends WorkbenchContentSchema>(input: {
+	label: string
+	input: InputSchema
+	form?: 'embedded'
+	confirm?: string
+}): WorkbenchContentAction<InputSchema>
+function action(input?: {
+	label?: unknown
+	input?: unknown
+	form?: unknown
+	confirm?: unknown
+}): WorkbenchContentAction<WorkbenchContentSchema> | WorkbenchContentAction<undefined> {
+	if (input === undefined) {
+		throw new TypeError('[workbench] action(): options are required')
+	}
+	assertExactKeys('action', input, ['label', 'input', 'form', 'confirm'])
+	const label = requiredUtf8Text('action', 'label', input.label, 128)
+	const confirm =
+		input.confirm === undefined
+			? undefined
+			: requiredUtf8Text('action', 'confirm', input.confirm, 1_024)
+	if (input.input === undefined) {
+		if (input.form !== undefined) {
+			throw new TypeError('[workbench] action(): form requires an input schema')
+		}
+		const slot = Object.freeze({
+			[ACTION_SLOT]: Object.freeze({
+				label,
+				input: undefined,
+				form: 'none' as const,
+				...(confirm === undefined ? {} : { confirm }),
+			}),
+		})
+		canonicalContentSlots.add(slot)
+		return slot
+	}
+	assertValibotSchema('action', input.input)
+	if (input.form !== undefined && input.form !== 'embedded') {
+		throw new TypeError('[workbench] action(): form must be "embedded"')
+	}
+	const form = input.form === 'embedded' ? 'embedded' : 'dialog'
+	const slot = Object.freeze({
+		[ACTION_SLOT]: Object.freeze({
+			label,
+			input: input.input,
+			form,
+			...(confirm === undefined ? {} : { confirm }),
+		}),
+	})
+	canonicalContentSlots.add(slot)
+	return slot
 }
 
 function view<Api extends RpcTarget>(input: {
@@ -298,15 +484,15 @@ function view<Api extends RpcTarget>(input: {
 	}) as WorkbenchView<Api>
 }
 
-function page(input: {
-	document: WorkbenchMarkdownDocument
+function content<const Slots extends WorkbenchContentSlotMap>(input: {
+	document: WorkbenchMarkdownDocument<Slots>
 	placement: WorkbenchPlacement
-}): WorkbenchPage {
-	assertExactKeys('page', input, ['document', 'placement'])
+}): WorkbenchContent<Slots> {
+	assertExactKeys('content', input, ['document', 'placement'])
 	assertMarkdownDocument(input?.document)
 	assertPlacement(input?.placement)
 	return descriptor({
-		kind: 'page',
+		kind: 'content',
 		document: input.document,
 		placement: input.placement,
 	})
@@ -428,22 +614,22 @@ function cloneDefinitionEntry(
 				metadata,
 			}
 		}
-		case 'page': {
-			const pageDescriptor = source as WorkbenchPage
+		case 'content': {
+			const contentDescriptor = source as WorkbenchContent
 			const metadata = Object.freeze({
-				kind: 'page' as const,
+				kind: 'content' as const,
 				key,
-				document: pageDescriptor.document,
-				placement: pageDescriptor.placement,
+				document: contentDescriptor.document,
+				placement: contentDescriptor.placement,
 			})
 			const value = descriptor(
 				{
-					kind: 'page',
-					document: pageDescriptor.document,
-					placement: pageDescriptor.placement,
+					kind: 'content',
+					document: contentDescriptor.document,
+					placement: contentDescriptor.placement,
 				},
 				metadata,
-			) as WorkbenchPage
+			) as WorkbenchContent
 			return {
 				descriptor: value,
 				metadata,
@@ -568,6 +754,71 @@ function assertMarkdownDocument(value: unknown): asserts value is WorkbenchMarkd
 		!(value as Record<PropertyKey, unknown>)[MARKDOWN_DOCUMENT]
 	) {
 		throw new TypeError('[workbench] document must be created by workbench.markdown()')
+	}
+}
+
+function normalizeContentSlots(input: unknown): WorkbenchContentSlotMap {
+	if (!isPlainRecord(input)) {
+		throw new TypeError('[workbench] markdown(): slots must be a plain record')
+	}
+	const output: Record<string, WorkbenchContentSlot> = Object.create(null)
+	for (const [key, slot] of Object.entries(input)) {
+		assertEntryKey(key)
+		readContentSlotMetadata(slot)
+		output[key] = slot as WorkbenchContentSlot
+	}
+	return Object.freeze(output)
+}
+
+function readContentSlotMetadata(value: unknown): WorkbenchContentSlotMetadata {
+	if (!value || typeof value !== 'object' || !canonicalContentSlots.has(value)) {
+		throw new TypeError(
+			'[workbench] markdown(): every slot must be created by workbench.data() or action()',
+		)
+	}
+	const record = value as Record<PropertyKey, unknown>
+	const dataMetadata = record[DATA_SLOT]
+	if (dataMetadata && typeof dataMetadata === 'object') {
+		return Object.freeze({
+			kind: 'data',
+			schema: (dataMetadata as { schema: WorkbenchContentSchema }).schema,
+		})
+	}
+	const actionMetadata = record[ACTION_SLOT]
+	if (actionMetadata && typeof actionMetadata === 'object') {
+		const metadata = actionMetadata as {
+			label: string
+			input?: WorkbenchContentSchema
+			form: 'none' | 'dialog' | 'embedded'
+			confirm?: string
+		}
+		return Object.freeze({
+			kind: 'action',
+			label: metadata.label,
+			...(metadata.input === undefined ? {} : { input: metadata.input }),
+			form: metadata.form,
+			...(metadata.confirm === undefined ? {} : { confirm: metadata.confirm }),
+		})
+	}
+	throw new TypeError(
+		'[workbench] markdown(): every slot must be created by workbench.data() or action()',
+	)
+}
+
+function assertValibotSchema(
+	api: 'data' | 'action',
+	value: unknown,
+): asserts value is WorkbenchContentSchema {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		(value as { kind?: unknown }).kind !== 'schema' ||
+		(value as { ['~standard']?: { version?: unknown; vendor?: unknown } })['~standard']?.version !==
+			1 ||
+		(value as { ['~standard']?: { version?: unknown; vendor?: unknown } })['~standard']?.vendor !==
+			'valibot'
+	) {
+		throw new TypeError(`[workbench] ${api}(): schema must be a Valibot schema`)
 	}
 }
 
@@ -703,6 +954,14 @@ function requiredText(api: string, field: string, value: unknown, max: number): 
 	return value
 }
 
+function requiredUtf8Text(api: string, field: string, value: unknown, maxBytes: number): string {
+	const text = requiredText(api, field, value, maxBytes)
+	if (new TextEncoder().encode(text).byteLength > maxBytes) {
+		throw new TypeError(`[workbench] ${api}(): ${field} exceeds ${maxBytes} UTF-8 bytes`)
+	}
+	return text
+}
+
 function assertExactKeys(api: string, value: unknown, allowed: readonly string[]): void {
 	if (!isPlainRecord(value))
 		throw new TypeError(`[workbench] ${api}(): options must be a plain record`)
@@ -753,13 +1012,20 @@ export function readWorkbenchMarkdownDocument(
 	return document[MARKDOWN_DOCUMENT]
 }
 
+/** @internal Runtime publication compiler only. */
+export function readWorkbenchContentSlot(slot: WorkbenchContentSlot): WorkbenchContentSlotMetadata {
+	return readContentSlotMetadata(slot)
+}
+
 export const workbench = Object.freeze({
 	define,
 	view,
-	page,
+	content,
 	attachment,
 	entry: rendererEntry,
 	markdown,
+	data,
+	action,
 	tab,
 	route,
 	icons: WORKBENCH_ICONS,

@@ -16,9 +16,13 @@ Agent provider Plugin 通过 constructor required dependency 消费 `AgentToolsP
 映射、确认、审计、provider tool schema/annotation、工具名映射和结果呈现。provider 必须同时使用 bound
 catalog 的 `list()/subscribe()` 与 `execute()`，不能在 tool call 时改走裸 `ctx.commands.execute()`。
 
+Workbench Content 和 `snapshot()` 都只读取这份 policy/catalog 投影。宿主渲染的 Content 通过现有 Workbench
+session 接收 policy 与 command catalog 的更新，不保存编辑状态，也不需要 Plugin 自有 React renderer；Pi 等
+provider 可以用 snapshot 列出可选 assignment，但发现和执行命令仍绑定到 `catalog(agentId)`。
+
 ## 有意不包含
 
-- Runtime Context capability、Management RPC 或内建 Workbench 页面；
+- Runtime Context capability、Management RPC 或 Workbench 专用配置写入协议；
 - 第二份 command registry、持久化 policy store 或独立 revision authority；
 - MCP、OpenAI、Claude 等 provider contract；
 - 自动发现全部 commands、按名称前缀隐式授权或默认 assignment；

@@ -14,7 +14,8 @@ import {
 import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useState } from 'react'
-import { WretchWorkbench, type WretchManagedSettingsSnapshot } from '../workbench.ts'
+import { WretchWorkbench } from '../workbench.ts'
+import type { WretchManagedSettingsSnapshot } from '../workbench-contracts.ts'
 
 type HeaderRow = { id: number; name: string; value: string }
 

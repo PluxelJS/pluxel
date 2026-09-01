@@ -243,7 +243,8 @@ cleanup test 要等待 host commit/dispose Promise，不能只检查是否调用
 需要验证 Definition/View/Attachment publication 时再启用默认 Runtime Workbench，并测试：
 
 - publication 只在 Plugin running 后进入 layout；
-- 每次 `openView()` 返回 fresh target，close/owner stop 会 abort signal 并释放 observer/task；
+- 每次 `openEntry()` 返回与所选 Content/View 匹配的 fresh handle；interactive Content 和 View 在 close/owner stop 时会 abort
+  signal 并释放 observer/root，纯 Markdown Content 不创建 root；
 - browser-safe definition 与 renderer graph 没有 server import；
 - Attachment provider/consumer owner 与 placement 保持准确；
 - replacement 不复活旧 socket epoch、opened handle 或 API root。

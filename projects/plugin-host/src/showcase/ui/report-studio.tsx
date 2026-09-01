@@ -24,11 +24,11 @@ import {
 } from '@pluxel/runtime/workbench/react'
 import { useMemo, useState } from 'react'
 import {
-	ReportStudioWorkbench,
 	type ReportStudioApi,
 	type ShowcaseArtifact,
 	type ShowcaseSnapshot,
-} from '../ReportStudio.workbench'
+} from '../ReportStudio.contracts'
+import { ReportStudioWorkbench } from '../ReportStudio.workbench'
 
 const INSPECTION_SURFACES = Object.freeze([
 	['Catalog + lifecycle', 'Plugins'],

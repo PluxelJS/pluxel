@@ -203,6 +203,7 @@ web_modules/
 # Module Federation Vite temporary directories
 **/.__mf__temp/
 **/node_modules/__mf__virtual/
+**/.mf/
 
 # Next.js build output
 .next

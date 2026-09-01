@@ -6,6 +6,7 @@ import { EChartsPlugin } from '@pluxel/echarts'
 import { FontsPlugin } from '@pluxel/fonts'
 import { OtelPlugin } from '@pluxel/otel'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
+import { PiAgentPlugin } from '@pluxel/pi-agent'
 import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 import { S3Plugin } from '@pluxel/storage'
@@ -37,6 +38,7 @@ export {
 
 export const officialStaticPlugins = Object.freeze([
 	AgentToolsPlugin,
+	PiAgentPlugin,
 	AuthPlugin,
 	MemoryCacheBackendPlugin,
 	CachePlugin,

@@ -1,6 +1,7 @@
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
+import { PiAgentPlugin } from '@pluxel/pi-agent'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 import {
@@ -34,14 +35,15 @@ import { EChartsShowcaseRenderer, ReportStudioPlugin, ShowcaseRenderer } from '.
 
 describe('plugin-host catalog', () => {
 	it('loads every official concrete plugin and keeps Package Manager dynamic-only', () => {
-		expect(officialStaticPlugins).toHaveLength(16)
-		expect(officialDynamicPlugins).toHaveLength(17)
-		expect(new Set(officialDynamicPlugins).size).toBe(17)
+		expect(officialStaticPlugins).toHaveLength(17)
+		expect(officialDynamicPlugins).toHaveLength(18)
+		expect(new Set(officialDynamicPlugins).size).toBe(18)
 		expect(officialStaticPlugins).toContain(AgentToolsPlugin)
+		expect(officialStaticPlugins).toContain(PiAgentPlugin)
 		expect(officialStaticPlugins).not.toContain(PackageManagerPlugin)
 		expect(officialDynamicPlugins).toContain(PackageManagerPlugin)
 		expect(staticHostPlugins).not.toContain(PackageManagerPlugin)
-		expect(staticHostPlugins).toHaveLength(25)
+		expect(staticHostPlugins).toHaveLength(26)
 	})
 
 	it('keeps only demos that add event and optional lifecycle semantics', () => {
@@ -90,6 +92,13 @@ describe('plugin-host catalog', () => {
 				}),
 			]),
 		)
+	})
+
+	it('keeps Pi Agent available but stopped until an assignment and model are intentional', () => {
+		const autoStart = createHostRuntimeState(false).autoStart ?? []
+		expect(
+			autoStart.some((node) => pluginNodeAddressEqual(node, pluginNodeAddressOf(PiAgentPlugin))),
+		).toBe(false)
 	})
 
 	it('prepares isolated draft/release S3 forks and consumer overrides', () => {

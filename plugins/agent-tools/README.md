@@ -20,8 +20,8 @@ host.cfg(AgentToolsPlugin).set({
 })
 ```
 
-这里使用的是测试 host config handle；production static/dynamic host 通过自己的 ConfigService 管理同一 record。同一 schema 会出现在通用 Plugin 配置页，不需要
-Agent 专用 Workbench 页面。
+这里使用的是测试 host config handle；production static/dynamic host 通过自己的 ConfigService 管理同一 record。同一 schema 会出现在通用 Plugin 配置页。可选的
+Agent tools Workbench Content 由宿主渲染，实时只读展示 published commands、Toolset、缺失 command、Agent assignment 和未分组 command；编辑仍走通用 Config 页面，不加载 Plugin 自有 React UI。
 
 外部 Agent adapter 应是普通 Plugin，并通过 required dependency 取得受限 catalog：
 
@@ -56,5 +56,8 @@ adapter 自己负责 MCP/OpenAI/Claude 等 provider schema、工具名映射、�
 
 Toolset 中暂时没有注册的 command name 会保留。对应 Plugin 以后发布同名 command 时，catalog subscription
 会自动给出新 snapshot。配置更新不会取消已经进入 command owner admission 的调用，只影响之后的调用。
+
+`snapshot()` 提供同一 catalog/policy 的 detached 诊断投影，可用于 provider 的 tool setup 选择器；它不是第二份
+policy store。实际 tool call 仍必须通过对应的 bound catalog 执行。
 
 完整边界见 [`DESIGN.md`](DESIGN.md)。

@@ -1,7 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import type { WorkbenchDeclarationIdentity } from '@pluxel/core/federation'
 import type { WorkbenchOpenedClientValue, WorkbenchOpenedViewHandle } from './client'
-import type { WorkbenchRenderableDescriptor } from './definition'
 import type { WorkbenchPaneLayoutRenderer } from './ui-pane'
 
 export type { WorkbenchRenderableDescriptor } from './definition'
@@ -53,7 +52,6 @@ export type WorkbenchHostFacade = Readonly<{
 }>
 
 export type WorkbenchReactRuntime = Readonly<{
-	descriptor: WorkbenchRenderableDescriptor
 	identity: WorkbenchDeclarationIdentity
 	opened: WorkbenchOpenedClientValue
 	host: WorkbenchHostFacade

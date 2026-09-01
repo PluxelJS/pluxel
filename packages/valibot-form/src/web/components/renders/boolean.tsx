@@ -30,6 +30,7 @@ export function BooleanField(props: RendererProps) {
 					name: inputProps.name,
 					disabled: inputProps.disabled,
 					readOnly: inputProps.readOnly,
+					'aria-label': node.meta.label,
 				})}
 			/>
 		</FieldChrome>

@@ -24,7 +24,7 @@ describe('PluginWithUI Workbench observer', () => {
 			const entry = layout.entries.find((candidate) => candidate.descriptor.key === 'overview')
 			if (!entry) throw new Error('PluginWithUI overview View is missing')
 
-			const opened = await session.target.openView({
+			const opened = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: entry.descriptor,

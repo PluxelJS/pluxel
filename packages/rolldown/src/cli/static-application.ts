@@ -12,9 +12,9 @@ import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/st
 import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler'
 import {
 	assembleWorkbenchDeploymentArtifacts,
-	assembleWorkbenchPageDeploymentArtifacts,
+	assembleWorkbenchContentDeploymentArtifacts,
 	collectWorkbenchDeploymentArtifacts,
-	collectWorkbenchPageDeploymentArtifacts,
+	collectWorkbenchContentDeploymentArtifacts,
 } from '../workbench/deployment-assembly'
 import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
@@ -592,10 +592,10 @@ function staticApplicationAssemblyPlugin(options: {
 							workbenchInventories.producers,
 						)
 					: []
-				const pages = workbenchInventories
-					? await collectWorkbenchPageDeploymentArtifacts(
+				const content = workbenchInventories
+					? await collectWorkbenchContentDeploymentArtifacts(
 							resolve(options.outDir, 'workbench'),
-							workbenchInventories.pages,
+							workbenchInventories.content,
 						)
 					: []
 				const nodeModules = await collectNodeModuleArtifacts(
@@ -634,7 +634,7 @@ function staticApplicationAssemblyPlugin(options: {
 									included: options.variant === 'workbench',
 									publicRoot: options.variant === 'workbench' ? 'workbench/public' : null,
 									artifacts,
-									pages,
+									content,
 								},
 							},
 							residualDependencies: {
@@ -659,7 +659,7 @@ async function assembleBundledPackageWorkbenchArtifacts(
 ): Promise<
 	Readonly<{
 		producers: Awaited<ReturnType<typeof assembleWorkbenchDeploymentArtifacts>>
-		pages: Awaited<ReturnType<typeof assembleWorkbenchPageDeploymentArtifacts>>
+		content: Awaited<ReturnType<typeof assembleWorkbenchContentDeploymentArtifacts>>
 	}>
 > {
 	return runWorkbenchOutputTransaction(destinationRoot, async () => {
@@ -668,8 +668,8 @@ async function assembleBundledPackageWorkbenchArtifacts(
 			dependencyRoots: packageRoots.map((packageRoot) => resolve(packageRoot, 'dist/workbench')),
 		}
 		const producers = await assembleWorkbenchDeploymentArtifacts(input)
-		const pages = await assembleWorkbenchPageDeploymentArtifacts(input)
-		return Object.freeze({ producers, pages })
+		const content = await assembleWorkbenchContentDeploymentArtifacts(input)
+		return Object.freeze({ producers, content })
 	})
 }
 

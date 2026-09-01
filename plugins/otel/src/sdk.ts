@@ -21,6 +21,7 @@ export type OtelRuntime = Readonly<{
 	getTracer(scopeName: string): Tracer
 	getLogger(scopeName: string): Logger
 	prometheus?: PrometheusPullReader
+	forceFlush(): Promise<void>
 	shutdown(): Promise<void>
 }>
 
@@ -146,6 +147,16 @@ export async function createOtelRuntime(
 				return activeLoggerProvider.getLogger(scopeName)
 			},
 			prometheus,
+			forceFlush(): Promise<void> {
+				return shutdownAll(
+					[
+						...(activeMetricProvider ? [() => activeMetricProvider.forceFlush()] : []),
+						...(activeTracerProvider ? [() => activeTracerProvider.forceFlush()] : []),
+						...(activeLoggerProvider ? [() => activeLoggerProvider.forceFlush()] : []),
+					],
+					'OpenTelemetry provider flush failed',
+				)
+			},
 			shutdown(): Promise<void> {
 				shutdownPromise ??= shutdownAll(
 					[

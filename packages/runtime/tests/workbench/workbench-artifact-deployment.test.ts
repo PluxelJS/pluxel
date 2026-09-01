@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto'
 import { symlink, writeFile } from 'node:fs/promises'
 import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/core'
 import {
-	WORKBENCH_PAGE_ARTIFACT_FILE,
-	WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE,
-	createWorkbenchPageSet,
-	createWorkbenchPageDeploymentInventory,
-	serializeWorkbenchPageDefinition,
-	serializeWorkbenchPageSet,
-	workbenchPageArtifactRoot,
+	WORKBENCH_CONTENT_ARTIFACT_FILE,
+	WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE,
+	createWorkbenchContentSet,
+	createWorkbenchContentDeploymentInventory,
+	serializeWorkbenchContentDefinition,
+	serializeWorkbenchContentSet,
+	workbenchContentArtifactRoot,
 } from '@pluxel/core/internal'
 import {
 	WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE,
@@ -27,7 +27,7 @@ import { version as runtimeVersion } from '../../package.json'
 import { requireWorkbench } from '../../src/services/workbench.ts'
 import { WorkbenchArtifactService } from '../../src/services/workbench/WorkbenchArtifactService.ts'
 import { WorkbenchArtifactCoordinator } from '../../src/services/workbench/WorkbenchArtifactCoordinator.ts'
-import { WorkbenchPageArtifactService } from '../../src/services/workbench/WorkbenchPageArtifactService.ts'
+import { WorkbenchContentArtifactService } from '../../src/services/workbench/WorkbenchContentArtifactService.ts'
 import { loadPackagedWorkbenchDeployment } from '../../src/services/workbench/packaged-artifact.ts'
 
 const definition = {
@@ -114,20 +114,20 @@ function candidateFiles(plan: WorkbenchFederationProducerPlan, rawManifest?: str
 function createArtifactServices() {
 	const root = { logger: { error: vi.fn() } } as never
 	const artifacts = new WorkbenchArtifactService(root)
-	const pages = new WorkbenchPageArtifactService(root)
-	const coordinator = new WorkbenchArtifactCoordinator(root, artifacts, pages)
-	return { artifacts, pages, coordinator }
+	const content = new WorkbenchContentArtifactService(root)
+	const coordinator = new WorkbenchArtifactCoordinator(root, artifacts, content)
+	return { artifacts, content, coordinator }
 }
 
-function createPageArtifact(value: string) {
-	const pageSet = createWorkbenchPageSet({
+function createContentArtifact(value: string) {
+	const contentSet = createWorkbenchContentSet({
 		definition,
 		entries: [
 			{
 				key: 'guide',
-				page: {
+				content: {
 					version: 1,
-					kind: 'standard-page',
+					kind: 'workbench-content',
 					document: {
 						version: 1,
 						blocks: [
@@ -137,16 +137,17 @@ function createPageArtifact(value: string) {
 							},
 						],
 					},
+					slots: [],
 				},
 			},
 		],
 	})
-	const bytes = serializeWorkbenchPageSet(pageSet)
+	const bytes = serializeWorkbenchContentSet(contentSet)
 	return Object.freeze({
 		bytes,
 		candidate: Object.freeze({
 			definition,
-			definitionDigest: sha256(serializeWorkbenchPageDefinition(definition)),
+			definitionDigest: sha256(serializeWorkbenchContentDefinition(definition)),
 			digest: sha256(bytes),
 		}),
 	})
@@ -157,36 +158,36 @@ function sha256(input: string | Uint8Array): string {
 }
 
 describe('WorkbenchArtifactService', () => {
-	it('commits and resolves one bounded immutable Standard Page set', async () => {
-		const page = createPageArtifact('Guide')
+	it('commits and resolves one bounded immutable Workbench Content set', async () => {
+		const contentArtifact = createContentArtifact('Guide')
 		await using fixture = await createDiskFixture({
-			page: { [WORKBENCH_PAGE_ARTIFACT_FILE]: page.bytes },
-			overBudget: { [WORKBENCH_PAGE_ARTIFACT_FILE]: 'x'.repeat(512 * 1_024 + 2) },
+			content: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: contentArtifact.bytes },
+			overBudget: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: 'x'.repeat(512 * 1_024 + 2) },
 		})
-		const { pages, coordinator } = createArtifactServices()
+		const { content, coordinator } = createArtifactServices()
 		const committed = await coordinator.commitCandidate({
 			definition,
-			pages: { ...page.candidate, artifactRoot: fixture.getPath('page') },
+			content: { ...contentArtifact.candidate, artifactRoot: fixture.getPath('content') },
 		})
 
-		expect(committed.pages).toMatchObject({ digest: page.candidate.digest })
+		expect(committed.content).toMatchObject({ digest: contentArtifact.candidate.digest })
 		expect(
-			pages.resolvePage(definition, { kind: 'page', owner: definition, key: 'guide' }),
+			content.resolveContent(definition, { kind: 'content', owner: definition, key: 'guide' }),
 		).toMatchObject({
 			plan: {
-				kind: 'standard-page',
+				kind: 'workbench-content',
 				document: { blocks: [{ type: 'paragraph' }] },
 			},
 		})
-		expect(() => pages.withdrawCurrent(Symbol('unauthorized'), definition)).toThrow(
+		expect(() => content.withdrawCurrent(Symbol('unauthorized'), definition)).toThrow(
 			'coordinator authority',
 		)
-		expect(pages.getCurrent(definition)?.digest).toBe(page.candidate.digest)
+		expect(content.getCurrent(definition)?.digest).toBe(contentArtifact.candidate.digest)
 		await expect(
 			coordinator.commitCandidate({
 				definition,
-				pages: {
-					...page.candidate,
+				content: {
+					...contentArtifact.candidate,
 					digest: sha256('x'.repeat(512 * 1_024 + 2)),
 					artifactRoot: fixture.getPath('overBudget'),
 				},
@@ -194,25 +195,25 @@ describe('WorkbenchArtifactService', () => {
 		).rejects.toThrow('serialized byte budget')
 	})
 
-	it('rejects malformed optional sides and invalid UTF-8 Page artifacts before mutation', async () => {
+	it('rejects malformed optional sides and invalid UTF-8 Content artifacts before mutation', async () => {
 		const invalidBytes = Buffer.from([0xff])
 		await using fixture = await createDiskFixture({
-			invalidUtf8: { [WORKBENCH_PAGE_ARTIFACT_FILE]: invalidBytes },
+			invalidUtf8: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: invalidBytes },
 		})
-		const { artifacts, pages, coordinator } = createArtifactServices()
+		const { artifacts, content, coordinator } = createArtifactServices()
 
 		await expect(
 			coordinator.commitCandidate({ definition, federation: false } as never),
 		).rejects.toThrow('federation must be an object')
-		await expect(coordinator.commitCandidate({ definition, pages: null } as never)).rejects.toThrow(
-			'pages must be an object',
-		)
+		await expect(
+			coordinator.commitCandidate({ definition, content: null } as never),
+		).rejects.toThrow('content must be an object')
 		await expect(
 			coordinator.commitCandidate({
 				definition,
-				pages: {
+				content: {
 					definition,
-					definitionDigest: sha256(serializeWorkbenchPageDefinition(definition)),
+					definitionDigest: sha256(serializeWorkbenchContentDefinition(definition)),
 					digest: sha256(invalidBytes),
 					artifactRoot: fixture.getPath('invalidUtf8'),
 				},
@@ -221,65 +222,65 @@ describe('WorkbenchArtifactService', () => {
 
 		expect(coordinator.revision).toBe(0)
 		expect(artifacts.getCurrent(definition)).toBeUndefined()
-		expect(pages.getCurrent(definition)).toBeUndefined()
+		expect(content.getCurrent(definition)).toBeUndefined()
 	})
 
 	it('commits a full desired artifact tuple atomically and withdraws absent sides', async () => {
 		const federationA = createPlan('transaction-a')
 		const federationB = createPlan('transaction-b')
-		const pageA = createPageArtifact('A')
-		const pageB = createPageArtifact('B')
+		const contentA = createContentArtifact('A')
+		const contentB = createContentArtifact('B')
 		await using fixture = await createDiskFixture({
 			federationA: candidateFiles(federationA),
 			federationB: candidateFiles(federationB),
-			pageA: { [WORKBENCH_PAGE_ARTIFACT_FILE]: pageA.bytes },
-			pageB: { [WORKBENCH_PAGE_ARTIFACT_FILE]: pageB.bytes },
+			contentA: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: contentA.bytes },
+			contentB: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: contentB.bytes },
 		})
 		const root = { logger: { error: vi.fn() } } as never
 		const federation = new WorkbenchArtifactService(root)
-		const pages = new WorkbenchPageArtifactService(root)
-		const coordinator = new WorkbenchArtifactCoordinator(root, federation, pages)
+		const content = new WorkbenchContentArtifactService(root)
+		const coordinator = new WorkbenchArtifactCoordinator(root, federation, content)
 		const commits = vi.fn()
 		coordinator.subscribe(commits)
 
 		await coordinator.commitCandidate({
 			definition,
 			federation: { plan: federationA, artifactRoot: fixture.getPath('federationA') },
-			pages: { ...pageA.candidate, artifactRoot: fixture.getPath('pageA') },
+			content: { ...contentA.candidate, artifactRoot: fixture.getPath('contentA') },
 		})
 		expect(commits).toHaveBeenCalledTimes(1)
 		expect(federation.getCurrent(definition)?.buildRevision).toBe('transaction-a')
-		expect(pages.getCurrent(definition)?.digest).toBe(pageA.candidate.digest)
+		expect(content.getCurrent(definition)?.digest).toBe(contentA.candidate.digest)
 
-		const commitPrepared = pages.commitPrepared.bind(pages)
-		vi.spyOn(pages, 'commitPrepared').mockImplementationOnce((...args) => {
+		const commitPrepared = content.commitPrepared.bind(content)
+		vi.spyOn(content, 'commitPrepared').mockImplementationOnce((...args) => {
 			commitPrepared(...args)
-			throw new Error('simulated post-commit Page failure')
+			throw new Error('simulated post-commit Content failure')
 		})
 		await expect(
 			coordinator.commitCandidate({
 				definition,
 				federation: { plan: federationB, artifactRoot: fixture.getPath('federationB') },
-				pages: { ...pageB.candidate, artifactRoot: fixture.getPath('pageB') },
+				content: { ...contentB.candidate, artifactRoot: fixture.getPath('contentB') },
 			}),
-		).rejects.toThrow('simulated post-commit Page failure')
+		).rejects.toThrow('simulated post-commit Content failure')
 		expect(commits).toHaveBeenCalledTimes(1)
 		expect(coordinator.revision).toBe(1)
 		expect(federation.revision).toBe(1)
-		expect(pages.revision).toBe(1)
+		expect(content.revision).toBe(1)
 		expect(federation.getCurrent(definition)?.buildRevision).toBe('transaction-a')
 		expect(federation.getPinned(federationB.producer, federationB.buildRevision)).toBeUndefined()
-		expect(pages.getCurrent(definition)?.digest).toBe(pageA.candidate.digest)
+		expect(content.getCurrent(definition)?.digest).toBe(contentA.candidate.digest)
 		expect(
-			pages.getPinned(pageB.candidate.definitionDigest, pageB.candidate.digest),
+			content.getPinned(contentB.candidate.definitionDigest, contentB.candidate.digest),
 		).toBeUndefined()
 
-		const pageOnly = await coordinator.commitCandidate({
+		const contentOnly = await coordinator.commitCandidate({
 			definition,
-			pages: { ...pageB.candidate, artifactRoot: fixture.getPath('pageB') },
+			content: { ...contentB.candidate, artifactRoot: fixture.getPath('contentB') },
 		})
-		expect(pageOnly.federation).toBeNull()
-		expect(pageOnly.pages?.digest).toBe(pageB.candidate.digest)
+		expect(contentOnly.federation).toBeNull()
+		expect(contentOnly.content?.digest).toBe(contentB.candidate.digest)
 		expect(federation.getCurrent(definition)).toBeUndefined()
 
 		const federationOnly = await coordinator.commitCandidate({
@@ -287,87 +288,93 @@ describe('WorkbenchArtifactService', () => {
 			federation: { plan: federationB, artifactRoot: fixture.getPath('federationB') },
 		})
 		expect(federationOnly.federation?.buildRevision).toBe('transaction-b')
-		expect(federationOnly.pages).toBeNull()
-		expect(pages.getCurrent(definition)).toBeUndefined()
+		expect(federationOnly.content).toBeNull()
+		expect(content.getCurrent(definition)).toBeUndefined()
 
 		const withdrawn = await coordinator.commitCandidate({ definition })
-		expect(withdrawn).toMatchObject({ federation: null, pages: null })
+		expect(withdrawn).toMatchObject({ federation: null, content: null })
 		expect(federation.getCurrent(definition)).toBeUndefined()
-		expect(pages.getCurrent(definition)).toBeUndefined()
+		expect(content.getCurrent(definition)).toBeUndefined()
 		expect(commits).toHaveBeenCalledTimes(4)
 	})
 
 	it('rolls back commits that fail after withdrawing an absent side', async () => {
 		const federationA = createPlan('absent-rollback-a')
 		const federationB = createPlan('absent-rollback-b')
-		const pageA = createPageArtifact('A')
-		const pageB = createPageArtifact('B')
+		const contentA = createContentArtifact('A')
+		const contentB = createContentArtifact('B')
 		await using fixture = await createDiskFixture({
 			federationA: candidateFiles(federationA),
 			federationB: candidateFiles(federationB),
-			pageA: { [WORKBENCH_PAGE_ARTIFACT_FILE]: pageA.bytes },
-			pageB: { [WORKBENCH_PAGE_ARTIFACT_FILE]: pageB.bytes },
+			contentA: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: contentA.bytes },
+			contentB: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: contentB.bytes },
 		})
-		const { artifacts, pages, coordinator } = createArtifactServices()
+		const { artifacts, content, coordinator } = createArtifactServices()
 		const commits = vi.fn()
 		coordinator.subscribe(commits)
 		await coordinator.commitCandidate({
 			definition,
 			federation: { plan: federationA, artifactRoot: fixture.getPath('federationA') },
-			pages: { ...pageA.candidate, artifactRoot: fixture.getPath('pageA') },
+			content: { ...contentA.candidate, artifactRoot: fixture.getPath('contentA') },
 		})
 
-		const commitPages = pages.commitPrepared.bind(pages)
-		const pageCommitSpy = vi.spyOn(pages, 'commitPrepared').mockImplementationOnce((...args) => {
-			commitPages(...args)
-			throw new Error('simulated Page commit failure after federation withdraw')
-		})
+		const commitContent = content.commitPrepared.bind(content)
+		const contentCommitSpy = vi
+			.spyOn(content, 'commitPrepared')
+			.mockImplementationOnce((...args) => {
+				commitContent(...args)
+				throw new Error('simulated Content commit failure after federation withdraw')
+			})
 		await expect(
 			coordinator.commitCandidate({
 				definition,
-				pages: { ...pageB.candidate, artifactRoot: fixture.getPath('pageB') },
+				content: { ...contentB.candidate, artifactRoot: fixture.getPath('contentB') },
 			}),
 		).rejects.toThrow('after federation withdraw')
-		pageCommitSpy.mockRestore()
+		contentCommitSpy.mockRestore()
 
 		expect(coordinator.revision).toBe(1)
 		expect(artifacts.revision).toBe(1)
-		expect(pages.revision).toBe(1)
+		expect(content.revision).toBe(1)
 		expect(commits).toHaveBeenCalledTimes(1)
 		expect(artifacts.getCurrent(definition)?.buildRevision).toBe(federationA.buildRevision)
 		expect(artifacts.getPinned(federationA.producer, federationA.buildRevision)).toBeDefined()
-		expect(pages.getCurrent(definition)?.digest).toBe(pageA.candidate.digest)
+		expect(content.getCurrent(definition)?.digest).toBe(contentA.candidate.digest)
 		expect(
-			pages.getPinned(pageB.candidate.definitionDigest, pageB.candidate.digest),
+			content.getPinned(contentB.candidate.definitionDigest, contentB.candidate.digest),
 		).toBeUndefined()
 
-		const withdrawPages = pages.withdrawCurrent.bind(pages)
-		const pageWithdrawSpy = vi.spyOn(pages, 'withdrawCurrent').mockImplementationOnce((...args) => {
-			withdrawPages(...args)
-			throw new Error('simulated Page withdraw failure after federation commit')
-		})
+		const withdrawContent = content.withdrawCurrent.bind(content)
+		const contentWithdrawSpy = vi
+			.spyOn(content, 'withdrawCurrent')
+			.mockImplementationOnce((...args) => {
+				withdrawContent(...args)
+				throw new Error('simulated Content withdraw failure after federation commit')
+			})
 		await expect(
 			coordinator.commitCandidate({
 				definition,
 				federation: { plan: federationB, artifactRoot: fixture.getPath('federationB') },
 			}),
 		).rejects.toThrow('after federation commit')
-		pageWithdrawSpy.mockRestore()
+		contentWithdrawSpy.mockRestore()
 
 		expect(coordinator.revision).toBe(1)
 		expect(artifacts.revision).toBe(1)
-		expect(pages.revision).toBe(1)
+		expect(content.revision).toBe(1)
 		expect(commits).toHaveBeenCalledTimes(1)
 		expect(artifacts.getCurrent(definition)?.buildRevision).toBe(federationA.buildRevision)
 		expect(artifacts.getPinned(federationB.producer, federationB.buildRevision)).toBeUndefined()
-		expect(pages.getCurrent(definition)?.digest).toBe(pageA.candidate.digest)
-		expect(pages.getPinned(pageA.candidate.definitionDigest, pageA.candidate.digest)).toBeDefined()
+		expect(content.getCurrent(definition)?.digest).toBe(contentA.candidate.digest)
+		expect(
+			content.getPinned(contentA.candidate.definitionDigest, contentA.candidate.digest),
+		).toBeDefined()
 	})
 
-	it('invalidates an active session once for one coordinated Page commit', async () => {
-		const page = createPageArtifact('Session update')
+	it('invalidates an active session once for one coordinated Content commit', async () => {
+		const content = createContentArtifact('Session update')
 		await using fixture = await createDiskFixture({
-			page: { [WORKBENCH_PAGE_ARTIFACT_FILE]: page.bytes },
+			content: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: content.bytes },
 		})
 
 		await withRuntimeHost(async (host) => {
@@ -377,14 +384,14 @@ describe('WorkbenchArtifactService', () => {
 			const invalidated = vi.fn()
 			const unsubscribe = backend.artifactCoordinator.subscribe(coordinatorEvents)
 			const session = backend.createSession(
-				{ provider: 'test', subject: 'session-page-update' },
+				{ provider: 'test', subject: 'session-content-update' },
 				invalidated,
 			)
 
 			try {
 				await backend.artifactCoordinator.commitCandidate({
 					definition,
-					pages: { ...page.candidate, artifactRoot: fixture.getPath('page') },
+					content: { ...content.candidate, artifactRoot: fixture.getPath('content') },
 				})
 
 				expect(coordinatorEvents).toHaveBeenCalledTimes(1)
@@ -429,15 +436,15 @@ describe('WorkbenchArtifactService', () => {
 		)
 	})
 
-	it('loads a Page-only production inventory from its canonical Workbench path', async () => {
-		const page = createPageArtifact('Packaged guide')
-		const artifactRoot = workbenchPageArtifactRoot(
-			page.candidate.definitionDigest,
-			page.candidate.digest,
+	it('loads a Content-only production inventory from its canonical Workbench path', async () => {
+		const contentArtifact = createContentArtifact('Packaged guide')
+		const artifactRoot = workbenchContentArtifactRoot(
+			contentArtifact.candidate.definitionDigest,
+			contentArtifact.candidate.digest,
 		)
-		const pageInventory = createWorkbenchPageDeploymentInventory([
+		const contentInventory = createWorkbenchContentDeploymentInventory([
 			{
-				...page.candidate,
+				...contentArtifact.candidate,
 				artifactRoot,
 			},
 		])
@@ -446,10 +453,12 @@ describe('WorkbenchArtifactService', () => {
 				[WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE]: `${JSON.stringify(
 					createWorkbenchFederationDeploymentInventory([]),
 				)}\n`,
-				[WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE]: `${JSON.stringify(pageInventory)}\n`,
-				pages: {
-					[page.candidate.definitionDigest]: {
-						[page.candidate.digest]: { [WORKBENCH_PAGE_ARTIFACT_FILE]: page.bytes },
+				[WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE]: `${JSON.stringify(contentInventory)}\n`,
+				content: {
+					[contentArtifact.candidate.definitionDigest]: {
+						[contentArtifact.candidate.digest]: {
+							[WORKBENCH_CONTENT_ARTIFACT_FILE]: contentArtifact.bytes,
+						},
 					},
 				},
 			},
@@ -458,14 +467,14 @@ describe('WorkbenchArtifactService', () => {
 		await withRuntimeHost(
 			async (host) => {
 				await host.commit()
-				const pages = requireWorkbench(host.ctx).pages
-				expect(pages.getCurrent(definition)).toMatchObject({
-					definitionDigest: page.candidate.definitionDigest,
-					digest: page.candidate.digest,
+				const contentService = requireWorkbench(host.ctx).content
+				expect(contentService.getCurrent(definition)).toMatchObject({
+					definitionDigest: contentArtifact.candidate.definitionDigest,
+					digest: contentArtifact.candidate.digest,
 				})
 				expect(
-					pages.resolvePage(definition, {
-						kind: 'page',
+					contentService.resolveContent(definition, {
+						kind: 'content',
 						owner: definition,
 						key: 'guide',
 					}),
@@ -475,25 +484,25 @@ describe('WorkbenchArtifactService', () => {
 		)
 	})
 
-	it('merges packaged federation and Page inventories into one definition commit', async () => {
+	it('merges packaged federation and Content inventories into one definition commit', async () => {
 		const plan = createPlan('production-mixed')
-		const page = createPageArtifact('Mixed packaged guide')
-		const pageArtifactRoot = workbenchPageArtifactRoot(
-			page.candidate.definitionDigest,
-			page.candidate.digest,
+		const content = createContentArtifact('Mixed packaged guide')
+		const contentArtifactRoot = workbenchContentArtifactRoot(
+			content.candidate.definitionDigest,
+			content.candidate.digest,
 		)
 		const federationInventory = createWorkbenchFederationDeploymentInventory([plan])
-		const pageInventory = createWorkbenchPageDeploymentInventory([
-			{ ...page.candidate, artifactRoot: pageArtifactRoot },
+		const contentInventory = createWorkbenchContentDeploymentInventory([
+			{ ...content.candidate, artifactRoot: contentArtifactRoot },
 		])
 		await using fixture = await createDiskFixture({
 			workbench: {
 				[WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE]: `${JSON.stringify(federationInventory)}\n`,
-				[WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE]: `${JSON.stringify(pageInventory)}\n`,
+				[WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE]: `${JSON.stringify(contentInventory)}\n`,
 				[plan.producer]: { [plan.buildRevision]: candidateFiles(plan) },
-				pages: {
-					[page.candidate.definitionDigest]: {
-						[page.candidate.digest]: { [WORKBENCH_PAGE_ARTIFACT_FILE]: page.bytes },
+				content: {
+					[content.candidate.definitionDigest]: {
+						[content.candidate.digest]: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: content.bytes },
 					},
 				},
 			},
@@ -508,7 +517,7 @@ describe('WorkbenchArtifactService', () => {
 
 				expect(commits).toHaveBeenCalledTimes(1)
 				expect(backend.artifacts.getCurrent(definition)?.buildRevision).toBe('production-mixed')
-				expect(backend.pages.getCurrent(definition)?.digest).toBe(page.candidate.digest)
+				expect(backend.content.getCurrent(definition)?.digest).toBe(content.candidate.digest)
 			},
 			{ workbenchArtifactRoot: fixture.getPath('workbench') },
 		)
@@ -551,7 +560,7 @@ describe('WorkbenchArtifactService', () => {
 				},
 			},
 		})
-		const { artifacts, pages, coordinator } = createArtifactServices()
+		const { artifacts, content, coordinator } = createArtifactServices()
 		const commits = vi.fn()
 		coordinator.subscribe(commits)
 
@@ -563,7 +572,7 @@ describe('WorkbenchArtifactService', () => {
 		expect(coordinator.revision).toBe(0)
 		expect(artifacts.getCurrent(valid.definition)).toBeUndefined()
 		expect(artifacts.getCurrent(rejected.definition)).toBeUndefined()
-		expect(pages.revision).toBe(0)
+		expect(content.revision).toBe(0)
 	})
 
 	it('atomically commits one exact standard Manifest revision and serves its raw bytes', async () => {

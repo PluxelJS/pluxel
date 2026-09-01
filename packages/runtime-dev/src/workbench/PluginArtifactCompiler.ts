@@ -9,18 +9,18 @@ import {
 	type WorkbenchArtifactBatchCommit,
 	type WorkbenchArtifactCandidate,
 	type WorkbenchArtifactCoordinator,
-	type WorkbenchPageArtifactCandidate,
+	type WorkbenchContentArtifactCandidate,
 } from '@pluxel/runtime/internal'
 import {
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
 import {
-	WORKBENCH_PAGE_ARTIFACT_FILE,
-	parseWorkbenchPageSet,
-	serializeWorkbenchPageDefinition,
-	serializeWorkbenchPageSet,
-	type WorkbenchPageSetV1,
+	WORKBENCH_CONTENT_ARTIFACT_FILE,
+	parseWorkbenchContentSet,
+	serializeWorkbenchContentDefinition,
+	serializeWorkbenchContentSet,
+	type WorkbenchContentSet,
 } from '@pluxel/core/internal'
 import { collectSourceGraphFiles } from '@pluxel/rolldown/vite/source-graph'
 import {
@@ -60,30 +60,30 @@ export type WorkbenchProducerCompilation = Readonly<{
 	root: string
 }>
 
-export type WorkbenchPageCompilation = Readonly<{
-	pageSet: WorkbenchPageSetV1
+export type WorkbenchContentCompilation = Readonly<{
+	contentSet: WorkbenchContentSet
 	digest: string
 	bytes: Uint8Array
-	/** Package root containing the Markdown source or packaged Page artifact. */
+	/** Package root containing the Markdown source or packaged Content artifact. */
 	root: string
 	sources: readonly string[]
 }>
 
 export type WorkbenchArtifactCompilations = Readonly<{
 	producers: readonly WorkbenchProducerCompilation[]
-	pages: readonly WorkbenchPageCompilation[]
+	content: readonly WorkbenchContentCompilation[]
 }>
 
 type WorkbenchDefinitionCompilation = {
 	definition: WorkbenchFederationProducerPlan['definition']
 	producer?: WorkbenchProducerCompilation
-	page?: WorkbenchPageCompilation
+	content?: WorkbenchContentCompilation
 }
 
 type WorkbenchDefinitionCandidate = Readonly<{
 	definition: WorkbenchFederationProducerPlan['definition']
 	federation?: WorkbenchArtifactCandidate
-	pages?: WorkbenchPageArtifactCandidate
+	content?: WorkbenchContentArtifactCandidate
 }>
 
 type NodeModuleListener = {
@@ -195,13 +195,13 @@ export class PluginArtifactCompiler {
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
-				const [federation, pages] = await Promise.all([
+				const [federation, content] = await Promise.all([
 					compilation.producer ? this.materializeProducer(compilation.producer) : undefined,
-					compilation.page ? this.materializePage(compilation.page) : undefined,
+					compilation.content ? this.materializeContent(compilation.content) : undefined,
 				])
 				return [
 					key,
-					Object.freeze({ definition: compilation.definition, federation, pages }),
+					Object.freeze({ definition: compilation.definition, federation, content }),
 				] as const
 			}),
 		)
@@ -328,53 +328,81 @@ export class PluginArtifactCompiler {
 		root: string,
 	): Promise<WorkbenchArtifactCandidate> {
 		const outDir = join(this.cacheDir, 'workbench', plan.producer, plan.buildRevision)
-		const { buildWorkbenchFederationProducer } = await import('@pluxel/rolldown/vite/workbench-ui')
-		await buildWorkbenchFederationProducer({
-			plan,
-			root,
-			applicationRoot: this.viteServer?.config.root,
-			packageMode: this.packageMode,
-			outDir,
-			minify: false,
-			sourcemap: true,
-			signal: this.signal.signal,
-		})
+		const artifactWasPresent = existsSync(outDir)
+		const startedAt = performance.now()
+		const logFacts = {
+			definition: plan.definition.exportName,
+			revision: plan.buildRevision.slice(0, 8),
+			producer: plan.producer,
+			buildRevision: plan.buildRevision,
+		}
+		if (!artifactWasPresent) {
+			this.ctx.logger.info('Workbench {definition}: build start', logFacts)
+		}
+		try {
+			const { buildWorkbenchFederationProducer } =
+				await import('@pluxel/rolldown/vite/workbench-ui')
+			await buildWorkbenchFederationProducer({
+				plan,
+				root,
+				applicationRoot: this.viteServer?.config.root,
+				packageMode: this.packageMode,
+				outDir,
+				minify: false,
+				sourcemap: true,
+				signal: this.signal.signal,
+			})
+		} catch (error) {
+			if (!this.signal.signal.aborted) {
+				this.ctx.logger.error('Workbench {definition}: failed after {durationMs} ms', {
+					...logFacts,
+					durationMs: Math.round(performance.now() - startedAt),
+					error,
+				})
+			}
+			throw error
+		}
 		if (this.signal.signal.aborted) throw this.signal.signal.reason
+		this.ctx.logger.info('Workbench {definition}: {cache} in {durationMs} ms', {
+			...logFacts,
+			cache: artifactWasPresent ? 'reused' : 'built',
+			durationMs: Math.round(performance.now() - startedAt),
+		})
 		return Object.freeze({ plan, artifactRoot: outDir })
 	}
 
-	private async materializePage(
-		input: WorkbenchPageCompilation,
-	): Promise<WorkbenchPageArtifactCandidate> {
-		resolvePageRoot(input.root)
+	private async materializeContent(
+		input: WorkbenchContentCompilation,
+	): Promise<WorkbenchContentArtifactCandidate> {
+		resolveContentRoot(input.root)
 		if (input.sources.length > 0) this.viteServer?.watcher?.add([...input.sources])
-		const digest = parseSha256(input.digest, 'Page set digest')
+		const digest = parseSha256(input.digest, 'Content set digest')
 		const bytes = Buffer.from(input.bytes)
 		if (sha256(bytes) !== digest) {
-			throw new TypeError('[runtime-dev] Workbench Page digest does not match its bytes')
+			throw new TypeError('[runtime-dev] Workbench Content digest does not match its bytes')
 		}
 		let serialized: string
 		try {
 			serialized = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 		} catch (cause) {
-			throw new TypeError('[runtime-dev] Workbench Page bytes are not valid UTF-8', { cause })
+			throw new TypeError('[runtime-dev] Workbench Content bytes are not valid UTF-8', { cause })
 		}
-		let pageSet: WorkbenchPageSetV1
+		let contentSet: WorkbenchContentSet
 		try {
-			pageSet = parseWorkbenchPageSet(JSON.parse(serialized) as unknown)
+			contentSet = parseWorkbenchContentSet(JSON.parse(serialized) as unknown)
 		} catch (cause) {
-			throw new TypeError('[runtime-dev] Workbench Page set is invalid', { cause })
+			throw new TypeError('[runtime-dev] Workbench Content set is invalid', { cause })
 		}
 		if (
-			serializeWorkbenchPageSet(pageSet) !== serialized ||
-			serializeWorkbenchPageSet(input.pageSet) !== serialized
+			serializeWorkbenchContentSet(contentSet) !== serialized ||
+			serializeWorkbenchContentSet(input.contentSet) !== serialized
 		) {
-			throw new TypeError('[runtime-dev] Workbench Page bytes are not canonically serialized')
+			throw new TypeError('[runtime-dev] Workbench Content bytes are not canonically serialized')
 		}
-		const definition = pageSet.definition
-		const definitionDigest = sha256(serializeWorkbenchPageDefinition(definition))
-		const artifactRoot = join(this.cacheDir, 'workbench-pages', definitionDigest, digest)
-		await publishImmutablePageArtifact(artifactRoot, bytes, digest)
+		const definition = contentSet.definition
+		const definitionDigest = sha256(serializeWorkbenchContentDefinition(definition))
+		const artifactRoot = join(this.cacheDir, 'workbench-content', definitionDigest, digest)
+		await publishImmutableContentArtifact(artifactRoot, bytes, digest)
 		return Object.freeze({ definition, definitionDigest, digest, artifactRoot })
 	}
 
@@ -391,8 +419,10 @@ export class PluginArtifactCompiler {
 					),
 				)
 			}
-			if (candidate.pages) {
-				tasks.push(this.cleanupPageCache(candidate.pages.definitionDigest, candidate.pages.digest))
+			if (candidate.content) {
+				tasks.push(
+					this.cleanupContentCache(candidate.content.definitionDigest, candidate.content.digest),
+				)
 			}
 		}
 		await Promise.all(tasks).catch((error) => {
@@ -400,14 +430,19 @@ export class PluginArtifactCompiler {
 		})
 	}
 
-	private async cleanupPageCache(definitionDigest: string, currentDigest: string): Promise<void> {
-		const root = join(this.cacheDir, 'workbench-pages', definitionDigest)
+	private async cleanupContentCache(
+		definitionDigest: string,
+		currentDigest: string,
+	): Promise<void> {
+		const root = join(this.cacheDir, 'workbench-content', definitionDigest)
 		const names = await readdir(root).catch((): string[] => [])
 		const revisions: Array<{ name: string; path: string; mtime: number }> = []
 		for (const name of names) {
 			if (!SHA256.test(name)) continue
 			const path = join(root, name)
-			const artifact = await stat(join(path, WORKBENCH_PAGE_ARTIFACT_FILE)).catch((): null => null)
+			const artifact = await stat(join(path, WORKBENCH_CONTENT_ARTIFACT_FILE)).catch(
+				(): null => null,
+			)
 			if (artifact?.isFile()) revisions.push({ name, path, mtime: artifact.mtimeMs })
 		}
 		revisions.sort((left, right) => right.mtime - left.mtime)
@@ -663,9 +698,9 @@ function resolveProducerRoot(input: unknown): string {
 	return resolve(input)
 }
 
-function resolvePageRoot(input: unknown): string {
+function resolveContentRoot(input: unknown): string {
 	if (typeof input !== 'string' || !input || !isAbsolute(input)) {
-		throw new TypeError('[runtime-dev] Workbench Page root must be an absolute path')
+		throw new TypeError('[runtime-dev] Workbench Content root must be an absolute path')
 	}
 	return resolve(input)
 }
@@ -673,7 +708,7 @@ function resolvePageRoot(input: unknown): string {
 function groupWorkbenchCompilations(
 	input: WorkbenchArtifactCompilations,
 ): Map<string, WorkbenchDefinitionCompilation> {
-	if (!input || !Array.isArray(input.producers) || !Array.isArray(input.pages)) {
+	if (!input || !Array.isArray(input.producers) || !Array.isArray(input.content)) {
 		throw new TypeError('[runtime-dev] Workbench artifact compilations must contain arrays')
 	}
 	const definitions = new Map<string, WorkbenchDefinitionCompilation>()
@@ -687,32 +722,32 @@ function groupWorkbenchCompilations(
 		current.producer = producer
 		definitions.set(key, current)
 	}
-	for (const page of input.pages) {
-		const definition = page.pageSet.definition
+	for (const content of input.content) {
+		const definition = content.contentSet.definition
 		const key = pluginDefinitionIndexKey(definition)
 		const current: WorkbenchDefinitionCompilation = definitions.get(key) ?? { definition }
-		if (current.page) {
-			throw new TypeError(`[runtime-dev] duplicate Workbench Page definition: ${key}`)
+		if (current.content) {
+			throw new TypeError(`[runtime-dev] duplicate Workbench Content definition: ${key}`)
 		}
-		current.page = page
+		current.content = content
 		definitions.set(key, current)
 	}
 	return definitions
 }
 
-async function publishImmutablePageArtifact(
+async function publishImmutableContentArtifact(
 	artifactRoot: string,
 	bytes: Uint8Array,
 	digest: string,
 ): Promise<void> {
-	const artifactPath = join(artifactRoot, WORKBENCH_PAGE_ARTIFACT_FILE)
-	if (await validateExistingPageArtifact(artifactPath, bytes, digest)) return
+	const artifactPath = join(artifactRoot, WORKBENCH_CONTENT_ARTIFACT_FILE)
+	if (await validateExistingContentArtifact(artifactPath, bytes, digest)) return
 	const parent = resolve(artifactRoot, '..')
 	await mkdir(parent, { recursive: true })
 	const temporaryRoot = `${artifactRoot}.tmp-${process.pid}-${randomUUID()}`
 	await mkdir(temporaryRoot)
 	try {
-		await writeFile(join(temporaryRoot, WORKBENCH_PAGE_ARTIFACT_FILE), bytes, { flag: 'wx' })
+		await writeFile(join(temporaryRoot, WORKBENCH_CONTENT_ARTIFACT_FILE), bytes, { flag: 'wx' })
 		try {
 			await rename(temporaryRoot, artifactRoot)
 		} catch (error) {
@@ -721,12 +756,12 @@ async function publishImmutablePageArtifact(
 	} finally {
 		await rm(temporaryRoot, { recursive: true, force: true })
 	}
-	if (!(await validateExistingPageArtifact(artifactPath, bytes, digest))) {
-		throw new Error(`[runtime-dev] immutable Workbench Page artifact collision: ${digest}`)
+	if (!(await validateExistingContentArtifact(artifactPath, bytes, digest))) {
+		throw new Error(`[runtime-dev] immutable Workbench Content artifact collision: ${digest}`)
 	}
 }
 
-async function validateExistingPageArtifact(
+async function validateExistingContentArtifact(
 	artifactPath: string,
 	expected: Uint8Array,
 	digest: string,
@@ -737,7 +772,7 @@ async function validateExistingPageArtifact(
 	})
 	if (!existing) return false
 	if (sha256(existing) !== digest || !existing.equals(Buffer.from(expected))) {
-		throw new Error(`[runtime-dev] immutable Workbench Page artifact collision: ${digest}`)
+		throw new Error(`[runtime-dev] immutable Workbench Content artifact collision: ${digest}`)
 	}
 	return true
 }

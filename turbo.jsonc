@@ -333,12 +333,9 @@
 			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build", "@worksplit/react#build"],
 		},
 		"@pluxel/plugins-host#typecheck": {
-			// The maintainer host is the explicit dist-boundary smoke check.
-			"dependsOn": [
-				"@pluxel/cli#build",
-				"@pluxel/runtime-dynamic#build",
-				"@pluxel/runtime-static#build",
-			],
+			// The maintainer host is the explicit dist-boundary smoke check. Wait for every direct
+			// workspace dependency so its typecheck cannot race a package build cleaning dist.
+			"dependsOn": ["^build"],
 			"outputs": [],
 			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/tsconfig*.json"],
 			"outputLogs": "errors-only",

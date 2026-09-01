@@ -72,6 +72,11 @@ metrics periodic reader、BSP 和 BLRP 都有有界 batch/queue/delay/export tim
 export 诊断包装器保留原生 exporter 语义，只上报 `{ signal, ok }` 或 bounded `errorType`。首次失败、每分钟持续失败窗口和恢复按
 signal 分开记录；不会记录 endpoint、headers、payload、response 或任意业务 attributes。Prometheus collection error 返回 503。
 
+可选 Workbench Content 复用同一份 export state，只保留每个 signal 的 latest outcome。每个 opened Content 注册一个
+`dataChanged()` callback，并严格由其 lifetime signal 移除；状态变化只通知 Framework 重新执行完整 `load()`。手动 flush action
+调用 generation-local provider 的 `forceFlush()`，部分失败记录 bounded error type 并返回可展示的 expected failure。Content 不拥有
+provider 生命周期，不增加 exporter、timer、listener 或 transport，Workbench disabled 时也不会改变 telemetry 行为。
+
 ## 环境与安全
 
 signal-specific OTLP 设置覆盖 generic 设置。HTTP generic endpoint 追加标准 `/v1/{signal}`，specific endpoint 视为完整 URL；gRPC

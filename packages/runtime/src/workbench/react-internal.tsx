@@ -9,8 +9,7 @@ import {
 	type WorkbenchDeclarationIdentity,
 } from '@pluxel/core/federation'
 import { useMemo, type ComponentType } from 'react'
-import { readWorkbenchOpenedViewHandle } from './opened-view'
-import { readWorkbenchDescriptor, type WorkbenchRenderableDescriptor } from './definition'
+import { readWorkbenchOpenedViewHandle } from './opened-entry'
 import {
 	WorkbenchReactContextProvider,
 	type WorkbenchBridgePayload,
@@ -32,20 +31,11 @@ export type WorkbenchBridgeProvider = (() => Readonly<{
 	Readonly<{ [BRIDGE_METADATA]: WorkbenchBridgeMetadata }>
 
 /** Toolchain-generated Bridge ABI. This entry is not a Plugin author API. */
-export function createWorkbenchBridge<Descriptor extends WorkbenchRenderableDescriptor>(
+export function createWorkbenchBridge(
 	identityInput: WorkbenchDeclarationIdentity,
-	descriptor: Descriptor,
 	Renderer: ComponentType,
 ): WorkbenchBridgeProvider {
 	const identity = parseWorkbenchDeclarationIdentity(identityInput)
-	const metadata = readWorkbenchDescriptor(descriptor)
-	if (
-		(metadata.kind !== 'view' && metadata.kind !== 'attachment') ||
-		metadata.kind !== identity.kind ||
-		metadata.key !== identity.key
-	) {
-		throw new TypeError('[workbench/react] generated Bridge descriptor identity mismatch')
-	}
 	if (typeof Renderer !== 'function') {
 		throw new TypeError('[workbench/react] renderer must be a zero-props React component')
 	}
@@ -59,7 +49,6 @@ export function createWorkbenchBridge<Descriptor extends WorkbenchRenderableDesc
 		const value = useMemo(
 			() =>
 				Object.freeze({
-					descriptor,
 					identity,
 					opened,
 					host: payload.host,

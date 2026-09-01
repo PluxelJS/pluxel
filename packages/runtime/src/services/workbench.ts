@@ -16,9 +16,9 @@ import {
 } from './workbench/WorkbenchArtifactService'
 import { WorkbenchArtifactCoordinator } from './workbench/WorkbenchArtifactCoordinator'
 import {
-	WorkbenchPageArtifactService,
-	type WorkbenchPageArtifactLookup,
-} from './workbench/WorkbenchPageArtifactService'
+	WorkbenchContentArtifactService,
+	type WorkbenchContentArtifactLookup,
+} from './workbench/WorkbenchContentArtifactService'
 import { WorkbenchRegistry } from './workbench/WorkbenchRegistry'
 import {
 	expireWorkbenchSession,
@@ -37,7 +37,7 @@ export type WorkbenchServerSession = Readonly<{
 export class WorkbenchBackend {
 	readonly application: HostApplicationMeta
 	readonly artifacts: WorkbenchArtifactService
-	readonly pages: WorkbenchPageArtifactService
+	readonly content: WorkbenchContentArtifactService
 	readonly artifactCoordinator: WorkbenchArtifactCoordinator
 	readonly registry: WorkbenchRegistry
 	private preparation?: Promise<void>
@@ -46,7 +46,7 @@ export class WorkbenchBackend {
 		root: Context,
 		private readonly options: WorkbenchInstallOptions,
 		registryArtifacts?: WorkbenchArtifactLookup,
-		registryPages?: WorkbenchPageArtifactLookup,
+		registryContent?: WorkbenchContentArtifactLookup,
 	) {
 		this.application = Object.freeze({
 			product:
@@ -55,12 +55,12 @@ export class WorkbenchBackend {
 					: readProductDescriptor(options.product, '[workbench] product'),
 		})
 		this.artifacts = new WorkbenchArtifactService(root)
-		this.pages = new WorkbenchPageArtifactService(root)
-		this.artifactCoordinator = new WorkbenchArtifactCoordinator(root, this.artifacts, this.pages)
+		this.content = new WorkbenchContentArtifactService(root)
+		this.artifactCoordinator = new WorkbenchArtifactCoordinator(root, this.artifacts, this.content)
 		this.registry = new WorkbenchRegistry(
 			root,
 			registryArtifacts ?? this.artifacts,
-			registryPages ?? this.pages,
+			registryContent ?? this.content,
 		)
 	}
 

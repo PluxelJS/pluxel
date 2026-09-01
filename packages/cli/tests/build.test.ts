@@ -220,12 +220,12 @@ export declare const workbench: {
 }
 `,
 		'node_modules/@pluxel/runtime/internal/workbench-react.js': `
-export function createWorkbenchBridge(identity, descriptor, Renderer) {
-	return Object.freeze({ identity, descriptor, Renderer })
+export function createWorkbenchBridge(identity, Renderer) {
+	return Object.freeze({ identity, Renderer })
 }
 `,
 		'node_modules/@pluxel/runtime/internal/workbench-react.d.ts':
-			'export declare function createWorkbenchBridge(identity: unknown, descriptor: unknown, Renderer: unknown): unknown\n',
+			'export declare function createWorkbenchBridge(identity: unknown, Renderer: unknown): unknown\n',
 		'package.json': JSON.stringify(
 			{
 				name: 'pluxel-cli-build-fixture-runtime-ui',
@@ -704,8 +704,12 @@ describe('build command', () => {
 			expect(repeatedManifest.isFile()).toBe(true)
 
 			await writeFile(
-				resolve(fixtureDir, 'package-lock.json'),
-				JSON.stringify({ lockfileVersion: 3, packages: { '': { version: '1.0.1' } } }),
+				resolve(fixtureDir, 'src/ui/index.ts'),
+				[
+					"export const UI_ONLY_MARKER = '__PLUXEL_UI_ONLY_MARKER_V2__'",
+					'export default function First() { return UI_ONLY_MARKER }',
+					'',
+				].join('\n'),
 			)
 			await runWithTsdown({
 				context: runtime,
