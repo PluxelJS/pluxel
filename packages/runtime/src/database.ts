@@ -1,12 +1,15 @@
 import type { PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT, PgTransaction } from 'drizzle-orm/pg-core/session'
-import type { DatabaseArtifact, DatabaseEvolution } from './database-internal'
+import type { DatabaseArtifact } from './database-internal'
 
 const databaseDefinitionMarker = Symbol.for('pluxel.database.definition')
 
 export type DatabaseRequirement = Readonly<{
 	extensions?: readonly string[]
 }>
+
+/** Schema evolution strategy used by a Plugin-owned database. */
+export type DatabaseEvolution = 'migrations' | 'reset-on-schema-change'
 
 export type DatabaseDefinition<TSchema extends Record<string, unknown> = Record<string, unknown>> =
 	Readonly<{
