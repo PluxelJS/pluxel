@@ -65,3 +65,28 @@ export type {
 	PluginPartDefinitionTree,
 } from './plugins/runtime/part-definition'
 export { CALLER_CONTEXT_BIND } from './plugins/composition/symbols'
+export {
+	WORKBENCH_PAGE_ARTIFACT_FILE,
+	WORKBENCH_PAGE_ARTIFACT_ROOT,
+	WORKBENCH_PAGE_ARTIFACT_VERSION,
+	WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE,
+	createWorkbenchPageDeploymentInventory,
+	createWorkbenchPageSet,
+	parseWorkbenchPageDeploymentInventory,
+	parseWorkbenchPageSet,
+	parseWorkbenchStandardPagePlan,
+	serializeWorkbenchPageDefinition,
+	serializeWorkbenchPageSet,
+	workbenchPageArtifactRoot,
+	type WorkbenchPageBlock,
+	type WorkbenchPageDeploymentEntryV1,
+	type WorkbenchPageDeploymentInventoryV1,
+	type WorkbenchPageDocumentPlanV1,
+	type WorkbenchPageInline,
+	type WorkbenchPageSetEntryV1,
+	type WorkbenchPageSetV1,
+	type WorkbenchPageTableAlignment,
+	type WorkbenchPageTableCell,
+	type WorkbenchPageTableRow,
+	type WorkbenchStandardPagePlanV1,
+} from './internal/workbench-page-artifact'

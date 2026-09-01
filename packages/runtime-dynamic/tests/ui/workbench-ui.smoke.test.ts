@@ -216,11 +216,11 @@ describe('HMR UI smoke', () => {
 
 		await withRuntimeContext(
 			async (ctx) => {
-				const committed = await requireWorkbench(ctx).artifacts.commitCandidate({
-					plan,
-					artifactRoot: resolve(fixture.path, 'artifacts'),
+				const committed = await requireWorkbench(ctx).artifactCoordinator.commitCandidate({
+					definition,
+					federation: { plan, artifactRoot: resolve(fixture.path, 'artifacts') },
 				})
-				const manifestUrl = committed.manifestUrl
+				const manifestUrl = committed.federation!.manifestUrl
 				const remoteEntryUrl = manifestUrl.replace(/mf-manifest\.json$/, 'remoteEntry.js')
 				const remoteRuntimeUrl = manifestUrl.replace(
 					/mf-manifest\.json$/,

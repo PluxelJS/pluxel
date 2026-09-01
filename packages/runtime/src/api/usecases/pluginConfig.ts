@@ -127,16 +127,15 @@ export async function pluginConfigPresentation(
 		),
 	]
 	const sections = await Promise.all(
-		declarations.map(
-			async ({ path, declaration }): Promise<PluginConfigPresentationSection> =>
-				Object.freeze({
-					path: Object.freeze([...path]),
-					fieldName: declaration.fieldName,
-					schema: declaration.schema,
-					defaults: await collectConfigDefaults(declaration.schema, {
-						missingObjectDefault: {},
-					}),
+		declarations.map(async ({ path, declaration }): Promise<PluginConfigPresentationSection> =>
+			Object.freeze({
+				path: Object.freeze([...path]),
+				fieldName: declaration.fieldName,
+				schema: declaration.schema,
+				defaults: await collectConfigDefaults(declaration.schema, {
+					missingObjectDefault: {},
 				}),
+			}),
 		),
 	)
 	return {

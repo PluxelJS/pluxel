@@ -3,7 +3,7 @@ import { isPluginPartContext } from '@pluxel/core/internal'
 import type {
 	AnyWorkbenchDefinition,
 	PluginWorkbench,
-	WorkbenchBindings,
+	WorkbenchPublishBindings,
 } from '../../workbench/definition'
 import type { WorkbenchBackend } from '../workbench'
 import { pinOwnerContext } from '../../context/owner-view'
@@ -18,14 +18,14 @@ export class WorkbenchService implements PluginWorkbench {
 
 	publish<const Definition extends AnyWorkbenchDefinition>(
 		definition: Definition,
-		bindings: WorkbenchBindings<Definition>,
+		...bindings: WorkbenchPublishBindings<Definition>
 	): void {
 		if (isPluginPartContext(this.ctx)) {
 			throw new Error(
 				'[pluxel/runtime] PluginPart cannot publish Workbench entries; aggregate them in the owning Plugin definition.',
 			)
 		}
-		this.backend.publish(this.ctx, definition, bindings)
+		this.backend.publish(this.ctx, definition, ...bindings)
 	}
 
 	/** @internal Control-plane access to the host-owned backend. */

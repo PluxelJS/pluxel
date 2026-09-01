@@ -1,6 +1,14 @@
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
-import type { WorkbenchLayoutEntry, WorkbenchSessionApi } from '@pluxel/runtime/workbench/client'
+import {
+	openWorkbenchView,
+	type WorkbenchFederatedLayoutEntry,
+	type WorkbenchLayoutEntry,
+	type WorkbenchOpenedPageHandle,
+	type WorkbenchSessionApi,
+	type WorkbenchStandardPageLayoutEntry,
+	type WorkbenchStandardPagePlanV1,
+} from '@pluxel/runtime/workbench/client'
 import {
 	createWorkbenchViewHost,
 	openFederatedWorkbenchView,
@@ -24,6 +32,7 @@ import {
 	type ReactNode,
 } from 'react'
 import { InlineNotice } from '../components'
+import { StandardPageRenderer } from '../app/workbench/StandardPageRenderer'
 import {
 	useActiveWorkbenchTabId,
 	useOptionalWorkspaceNavigation,
@@ -63,10 +72,10 @@ type WorkbenchTargetContextValue = Readonly<{
 	snapshot: ReturnType<WorkbenchLayoutRuntime['getSnapshot']>
 }>
 
-type WorkbenchEntryActivation = {
+type WorkbenchFederatedEntryActivation = {
 	readonly input: Readonly<{
 		activeTabId: ReturnType<typeof useActiveWorkbenchTabId>
-		entry: WorkbenchLayoutEntry
+		entry: WorkbenchFederatedLayoutEntry
 		frame: 'shell' | 'standalone'
 		hostNavigation: WorkbenchNavigation | undefined
 		layoutRevision: number
@@ -82,6 +91,19 @@ type WorkbenchEntryActivation = {
 	appearanceDirty: boolean
 	host?: WorkbenchViewHostHandle
 	opened?: FederatedWorkbenchView
+}
+
+type WorkbenchPageEntryActivation = {
+	readonly input: Readonly<{
+		entry: WorkbenchStandardPageLayoutEntry
+		layoutRevision: number
+		location: string | undefined
+		session: RpcStub<WorkbenchSessionApi>
+	}>
+	mounts: number
+	started: boolean
+	active: boolean
+	opened?: WorkbenchOpenedPageHandle
 }
 
 const WorkbenchSessionContext = createContext<RpcStub<WorkbenchSessionApi> | null>(null)
@@ -226,19 +248,36 @@ export function WorkbenchRoute({
 	)
 }
 
-function WorkbenchEntryView({
-	entry,
-	frame,
-	layoutRevision,
-	location,
-	params,
-}: {
+type WorkbenchEntryViewProps = Readonly<{
 	entry: WorkbenchLayoutEntry
 	frame: 'shell' | 'standalone'
 	layoutRevision: number
 	location?: string
 	params: Readonly<Record<string, string>>
-}) {
+}>
+
+export function WorkbenchEntryView(props: WorkbenchEntryViewProps) {
+	const { entry, layoutRevision, location } = props
+	if ('standardPageRef' in entry) {
+		return (
+			<WorkbenchStandardPageEntryView
+				key={`${workbenchEntryKey(entry)}:${layoutRevision}:${location ?? ''}`}
+				entry={entry}
+				layoutRevision={layoutRevision}
+				location={location}
+			/>
+		)
+	}
+	return <FederatedWorkbenchEntryView {...props} entry={entry} />
+}
+
+function FederatedWorkbenchEntryView({
+	entry,
+	frame,
+	layoutRevision,
+	location,
+	params,
+}: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchFederatedLayoutEntry }) {
 	const { session, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
 	const navigation = useOptionalWorkspaceNavigation()
 	const workspace = useWorkspaceController()
@@ -287,7 +326,7 @@ function WorkbenchEntryView({
 	const paneLayoutRenderer = useMemo(() => createPaneLayoutRenderer(viewState), [viewState])
 	const activation = useMemo(
 		() =>
-			createEntryActivation({
+			createFederatedEntryActivation({
 				activeTabId,
 				entry,
 				frame,
@@ -330,7 +369,7 @@ function WorkbenchEntryView({
 		} = activation.input
 		activation.mounts += 1
 		if (activation.started) {
-			return () => releaseActivation(activation)
+			return () => releaseFederatedActivation(activation)
 		}
 		activation.started = true
 		setOpening(true)
@@ -400,7 +439,7 @@ function WorkbenchEntryView({
 				return undefined
 			},
 		)
-		return () => releaseActivation(activation)
+		return () => releaseFederatedActivation(activation)
 	}, [activation])
 
 	useEffect(() => {
@@ -432,6 +471,81 @@ function WorkbenchEntryView({
 	)
 }
 
+export function WorkbenchStandardPageEntryView({
+	entry,
+	layoutRevision,
+	location,
+}: {
+	entry: WorkbenchStandardPageLayoutEntry
+	layoutRevision: number
+	location?: string
+}) {
+	const { session } = useWorkbenchRuntime()
+	const [plan, setPlan] = useState<WorkbenchStandardPagePlanV1 | null>(null)
+	const [error, setError] = useState<Error | null>(null)
+	const [opening, setOpening] = useState(true)
+	const activation = useMemo(
+		() => createPageEntryActivation({ entry, layoutRevision, location, session }),
+		[entry, layoutRevision, location, session],
+	)
+
+	useEffect(() => {
+		const {
+			entry: openingEntry,
+			layoutRevision: openingRevision,
+			location: openingLocation,
+			session: openingSession,
+		} = activation.input
+		activation.mounts += 1
+		if (activation.started) return () => releasePageActivation(activation)
+		activation.started = true
+		setOpening(true)
+		setError(null)
+		setPlan(null)
+		void openWorkbenchView(openingSession, openingEntry, {
+			layoutRevision: openingRevision,
+			...(openingLocation === undefined ? {} : { location: openingLocation }),
+		}).then(
+			(result): undefined => {
+				if (result.ok === false) {
+					if (activation.active) {
+						setOpening(false)
+						setError(new Error(`Standard Page could not open: ${result.code}`))
+					}
+					return undefined
+				}
+				activation.opened = result.handle
+				if (!activation.active) {
+					activation.opened[Symbol.dispose]()
+					return undefined
+				}
+				setPlan(activation.opened.plan)
+				setOpening(false)
+				return undefined
+			},
+			(openError: unknown): undefined => {
+				if (!activation.active) return undefined
+				setOpening(false)
+				setError(toWorkbenchError(openError, 'Standard Page could not be opened'))
+				return undefined
+			},
+		)
+		return () => releasePageActivation(activation)
+	}, [activation])
+
+	return (
+		<WorkbenchErrorBoundary
+			pluginName={entry.target.node.definition.exportName}
+			contributionId={entry.descriptor.key}
+			point={entry.placement.kind}
+		>
+			{plan ? <StandardPageRenderer plan={plan} /> : null}
+			{opening ? <InlineNotice title="Standard Page">正在打开…</InlineNotice> : null}
+			{error ? <InlineNotice title="Standard Page 打开失败">{error.message}</InlineNotice> : null}
+		</WorkbenchErrorBoundary>
+	)
+}
+
 function createPaneLayoutRenderer(
 	state: ReturnType<typeof useHostWorkbenchViewState>,
 ): WorkbenchPaneLayoutRenderer {
@@ -444,7 +558,9 @@ function createPaneLayoutRenderer(
 	}
 }
 
-function createEntryActivation(input: WorkbenchEntryActivation['input']): WorkbenchEntryActivation {
+function createFederatedEntryActivation(
+	input: WorkbenchFederatedEntryActivation['input'],
+): WorkbenchFederatedEntryActivation {
 	return {
 		input,
 		mounts: 0,
@@ -454,13 +570,28 @@ function createEntryActivation(input: WorkbenchEntryActivation['input']): Workbe
 	}
 }
 
-function releaseActivation(activation: WorkbenchEntryActivation): void {
+function releaseFederatedActivation(activation: WorkbenchFederatedEntryActivation): void {
 	activation.mounts -= 1
 	queueMicrotask(() => {
 		if (activation.mounts !== 0 || !activation.active) return
 		activation.active = false
 		if (activation.opened) activation.opened[Symbol.dispose]()
 		else activation.host?.[Symbol.dispose]()
+	})
+}
+
+function createPageEntryActivation(
+	input: WorkbenchPageEntryActivation['input'],
+): WorkbenchPageEntryActivation {
+	return { input, mounts: 0, started: false, active: true }
+}
+
+function releasePageActivation(activation: WorkbenchPageEntryActivation): void {
+	activation.mounts -= 1
+	queueMicrotask(() => {
+		if (activation.mounts !== 0 || !activation.active) return
+		activation.active = false
+		activation.opened?.[Symbol.dispose]()
 	})
 }
 

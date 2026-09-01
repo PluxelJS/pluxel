@@ -4,6 +4,7 @@ import type { RpcTarget } from '../capnweb'
 const DEFINITION = Symbol('pluxel.workbench.definition')
 const DESCRIPTOR = Symbol('pluxel.workbench.descriptor')
 const RENDERER_ENTRY = Symbol('pluxel.workbench.renderer-entry')
+const MARKDOWN_DOCUMENT = Symbol('pluxel.workbench.markdown-document')
 
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const GROUP_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
@@ -74,6 +75,10 @@ export type WorkbenchRendererEntry = Readonly<{
 	readonly [RENDERER_ENTRY]: WorkbenchRendererEntryMetadata
 }>
 
+export type WorkbenchMarkdownDocument = Readonly<{
+	readonly [MARKDOWN_DOCUMENT]: WorkbenchMarkdownDocumentMetadata
+}>
+
 type DescriptorBrand<Api extends RpcTarget, ConsumerApi extends RpcTarget | never = never> = {
 	/** @internal Invariant phantom types; no property is emitted at runtime. */
 	readonly [apiType]: (value: Api) => Api
@@ -87,6 +92,12 @@ export type WorkbenchView<Api extends RpcTarget> = Readonly<{
 	placement: WorkbenchPlacement
 }> &
 	DescriptorBrand<Api>
+
+export type WorkbenchPage = Readonly<{
+	kind: 'page'
+	document: WorkbenchMarkdownDocument
+	placement: WorkbenchPlacement
+}>
 
 export type WorkbenchAttachment<
 	ProviderApi extends RpcTarget,
@@ -109,7 +120,7 @@ export type WorkbenchAttachmentPlacement<
 	DescriptorBrand<ProviderApi, ConsumerApi>
 
 export type WorkbenchEntry = Readonly<{
-	kind: 'view' | 'attachment' | 'attachment-placement'
+	kind: 'view' | 'attachment' | 'attachment-placement' | 'page'
 }>
 
 /** @internal Existential descriptor shapes used across the fixed Workbench entries. */
@@ -195,14 +206,26 @@ type BindingFor<Entry extends WorkbenchEntry> =
 						}>
 				: never
 
+type WorkbenchBindingKey<Definition extends AnyWorkbenchDefinition> = {
+	[Key in keyof Definition & string]: Definition[Key] extends Readonly<{ kind: 'page' }>
+		? never
+		: Key
+}[keyof Definition & string]
+
 export type WorkbenchBindings<Definition extends AnyWorkbenchDefinition> = {
-	-readonly [Key in keyof Definition & string]: BindingFor<Definition[Key]>
+	-readonly [Key in WorkbenchBindingKey<Definition>]: BindingFor<Definition[Key]>
 }
+
+/** @internal Shared by the public Context view and its Runtime implementation. */
+export type WorkbenchPublishBindings<Definition extends AnyWorkbenchDefinition> =
+	WorkbenchBindingKey<Definition> extends never
+		? readonly []
+		: readonly [bindings: WorkbenchBindings<Definition>]
 
 export interface PluginWorkbench {
 	publish<const Definition extends AnyWorkbenchDefinition>(
 		definition: Definition,
-		bindings: WorkbenchBindings<Definition>,
+		...bindings: WorkbenchPublishBindings<Definition>
 	): void
 }
 
@@ -224,6 +247,12 @@ export type WorkbenchDescriptorMetadata =
 			provider: Extract<WorkbenchRenderableDescriptor, { kind: 'attachment' }>
 			placement: WorkbenchPlacement
 	  }>
+	| Readonly<{
+			kind: 'page'
+			key: string
+			document: WorkbenchMarkdownDocument
+			placement: WorkbenchPlacement
+	  }>
 
 export type WorkbenchDefinitionMetadata = Readonly<{
 	entries: readonly WorkbenchDescriptorMetadata[]
@@ -234,17 +263,24 @@ export type WorkbenchRendererEntryMetadata = Readonly<{
 	entryPath: string
 }>
 
+export type WorkbenchMarkdownDocumentMetadata = Readonly<{
+	moduleUrl: string
+	sourcePath: string
+}>
+
 function rendererEntry(moduleUrl: string | URL, entryPath: string): WorkbenchRendererEntry {
-	const declarationUrl = parseModuleUrl(moduleUrl)
-	const path = requiredText('entry', 'entryPath', entryPath, 2_048)
-	if (!path.startsWith('./') && !path.startsWith('../')) {
-		throw new TypeError('[workbench] entry(): entryPath must be module-relative')
-	}
-	if (path.includes('\\') || path.includes('?') || path.includes('#')) {
-		throw new TypeError('[workbench] entry(): entryPath must not contain \\, ? or #')
-	}
+	const declarationUrl = parseModuleUrl('entry', moduleUrl)
+	const path = parseModuleRelativePath('entry', 'entryPath', entryPath)
 	return Object.freeze({
 		[RENDERER_ENTRY]: Object.freeze({ moduleUrl: declarationUrl, entryPath: path }),
+	})
+}
+
+function markdown(moduleUrl: string | URL, sourcePath: string): WorkbenchMarkdownDocument {
+	const declarationUrl = parseModuleUrl('markdown', moduleUrl)
+	const path = parseModuleRelativePath('markdown', 'sourcePath', sourcePath)
+	return Object.freeze({
+		[MARKDOWN_DOCUMENT]: Object.freeze({ moduleUrl: declarationUrl, sourcePath: path }),
 	})
 }
 
@@ -260,6 +296,20 @@ function view<Api extends RpcTarget>(input: {
 		renderer: input.renderer,
 		placement: input.placement,
 	}) as WorkbenchView<Api>
+}
+
+function page(input: {
+	document: WorkbenchMarkdownDocument
+	placement: WorkbenchPlacement
+}): WorkbenchPage {
+	assertExactKeys('page', input, ['document', 'placement'])
+	assertMarkdownDocument(input?.document)
+	assertPlacement(input?.placement)
+	return descriptor({
+		kind: 'page',
+		document: input.document,
+		placement: input.placement,
+	})
 }
 
 function attachment<
@@ -378,6 +428,27 @@ function cloneDefinitionEntry(
 				metadata,
 			}
 		}
+		case 'page': {
+			const pageDescriptor = source as WorkbenchPage
+			const metadata = Object.freeze({
+				kind: 'page' as const,
+				key,
+				document: pageDescriptor.document,
+				placement: pageDescriptor.placement,
+			})
+			const value = descriptor(
+				{
+					kind: 'page',
+					document: pageDescriptor.document,
+					placement: pageDescriptor.placement,
+				},
+				metadata,
+			) as WorkbenchPage
+			return {
+				descriptor: value,
+				metadata,
+			}
+		}
 	}
 }
 
@@ -490,6 +561,16 @@ function assertRendererEntry(value: unknown): asserts value is WorkbenchRenderer
 	}
 }
 
+function assertMarkdownDocument(value: unknown): asserts value is WorkbenchMarkdownDocument {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		!(value as Record<PropertyKey, unknown>)[MARKDOWN_DOCUMENT]
+	) {
+		throw new TypeError('[workbench] document must be created by workbench.markdown()')
+	}
+}
+
 function assertPlacement(value: unknown): asserts value is WorkbenchPlacement {
 	if (!value || typeof value !== 'object') {
 		throw new TypeError('[workbench] placement must be created by workbench.tab() or route()')
@@ -500,20 +581,35 @@ function assertPlacement(value: unknown): asserts value is WorkbenchPlacement {
 	}
 }
 
-function parseModuleUrl(input: string | URL): string {
+function parseModuleUrl(api: 'entry' | 'markdown', input: string | URL): string {
 	let url: URL
 	try {
 		url = new URL(String(input))
 	} catch (cause) {
-		throw new TypeError('[workbench] entry(): moduleUrl must be an absolute URL', { cause })
+		throw new TypeError(`[workbench] ${api}(): moduleUrl must be an absolute URL`, { cause })
 	}
 	if (url.protocol !== 'file:' && url.protocol !== 'http:' && url.protocol !== 'https:') {
-		throw new TypeError('[workbench] entry(): moduleUrl must use file:, http: or https:')
+		throw new TypeError(`[workbench] ${api}(): moduleUrl must use file:, http: or https:`)
 	}
 	if (url.href.length > 8_192) {
-		throw new TypeError('[workbench] entry(): moduleUrl exceeds the supported length')
+		throw new TypeError(`[workbench] ${api}(): moduleUrl exceeds the supported length`)
 	}
 	return url.href
+}
+
+function parseModuleRelativePath(
+	api: 'entry' | 'markdown',
+	field: 'entryPath' | 'sourcePath',
+	input: unknown,
+): string {
+	const path = requiredText(api, field, input, 2_048)
+	if (!path.startsWith('./') && !path.startsWith('../')) {
+		throw new TypeError(`[workbench] ${api}(): ${field} must be module-relative`)
+	}
+	if (path.includes('\\') || path.includes('?') || path.includes('#')) {
+		throw new TypeError(`[workbench] ${api}(): ${field} must not contain \\, ? or #`)
+	}
+	return path
 }
 
 function assertEntryKey(key: string): void {
@@ -649,11 +745,21 @@ export function readWorkbenchRendererEntry(
 	return entry[RENDERER_ENTRY]
 }
 
+/** @internal Toolchain lowering only. */
+export function readWorkbenchMarkdownDocument(
+	document: WorkbenchMarkdownDocument,
+): WorkbenchMarkdownDocumentMetadata {
+	assertMarkdownDocument(document)
+	return document[MARKDOWN_DOCUMENT]
+}
+
 export const workbench = Object.freeze({
 	define,
 	view,
+	page,
 	attachment,
 	entry: rendererEntry,
+	markdown,
 	tab,
 	route,
 	icons: WORKBENCH_ICONS,

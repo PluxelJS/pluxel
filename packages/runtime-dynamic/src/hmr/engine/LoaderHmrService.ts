@@ -8,7 +8,6 @@ import {
 	type PluginConstructor,
 	type PluginNodeSlot,
 } from '@pluxel/core'
-import type { WorkbenchFederationProducerPlan } from '@pluxel/core/federation'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { dirname, resolve } from 'pathe'
@@ -29,6 +28,7 @@ import {
 	startTimer,
 } from '@pluxel/runtime/internal'
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
+import type { WorkbenchArtifactCompilations } from '@pluxel/runtime-dev/workbench'
 import { createViteNodeElysiaApplicationCarrier } from '@pluxel/runtime-dev/vite'
 import {
 	buildLoaderHmrViteConfig,
@@ -159,57 +159,63 @@ const BATCH_DEBOUNCE_MS = 30
 const BATCH_MAX_WAIT_MS = 120
 const BATCH_MAX_FILES = 2000
 
-type WorkbenchProducerCompilation = Readonly<{
-	plan: WorkbenchFederationProducerPlan
-	root: string
-}>
-
-type WorkbenchProducerState = {
-	publish?: (inputs: readonly WorkbenchProducerCompilation[]) => Promise<unknown>
+type WorkbenchArtifactState = {
+	publish?: (input: WorkbenchArtifactCompilations) => Promise<unknown>
 	source?: Readonly<{
-		compilations(): Promise<readonly WorkbenchProducerCompilation[]>
+		compilations(): Promise<WorkbenchArtifactCompilations>
 	}>
+	pageSources?: ReadonlySet<string>
 }
 
-const workbenchProducerStates = new WeakMap<LoaderHmrService, WorkbenchProducerState>()
+const workbenchArtifactStates = new WeakMap<LoaderHmrService, WorkbenchArtifactState>()
 
 /** @internal Connects the route-owned compiler without exposing it on LoaderHmrService. */
-export function attachLoaderHmrWorkbenchProducerPublisher(
+export function attachLoaderHmrWorkbenchArtifactPublisher(
 	service: LoaderHmrService,
-	publish: (inputs: readonly WorkbenchProducerCompilation[]) => Promise<unknown>,
+	publish: (input: WorkbenchArtifactCompilations) => Promise<unknown>,
 ): void {
-	const state = workbenchProducerStates.get(service) ?? {}
+	const state = workbenchArtifactStates.get(service) ?? {}
 	if (state.publish && state.publish !== publish) {
-		throw new Error('[hmr] Workbench producer publisher is already attached')
+		throw new Error('[hmr] Workbench artifact publisher is already attached')
 	}
 	state.publish = publish
-	workbenchProducerStates.set(service, state)
+	workbenchArtifactStates.set(service, state)
 }
 
 /** @internal Installs the sole semantic plan source used by initial load and every HMR commit. */
-export function configureLoaderHmrWorkbenchProducerSource(
+export function configureLoaderHmrWorkbenchArtifactSource(
 	service: LoaderHmrService,
 	source: Readonly<{
-		compilations(): Promise<readonly WorkbenchProducerCompilation[]>
+		compilations(): Promise<WorkbenchArtifactCompilations>
 	}>,
 ): void {
-	const state = workbenchProducerStates.get(service) ?? {}
+	const state = workbenchArtifactStates.get(service) ?? {}
 	if (state.source && state.source !== source) {
-		throw new Error('[hmr] Workbench producer source is already configured')
+		throw new Error('[hmr] Workbench artifact source is already configured')
 	}
 	state.source = source
-	workbenchProducerStates.set(service, state)
+	workbenchArtifactStates.set(service, state)
 }
 
-async function publishLoaderHmrWorkbenchProducers(service: LoaderHmrService): Promise<void> {
-	const state = workbenchProducerStates.get(service)
+/** @internal Refreshes the complete artifact snapshot and records its exact non-module sources. */
+export async function refreshLoaderHmrWorkbenchArtifacts(service: LoaderHmrService): Promise<void> {
+	const state = workbenchArtifactStates.get(service)
 	if (!state?.publish || !state.source) return
-	await state.publish(await state.source.compilations())
+	const compilations = await state.source.compilations()
+	state.pageSources = new Set(
+		compilations.pages.flatMap((page) => page.sources.map((source) => service.normalizeId(source))),
+	)
+	await state.publish(compilations)
 }
 
-function hasLoaderHmrWorkbenchProducerPipeline(service: LoaderHmrService): boolean {
-	const state = workbenchProducerStates.get(service)
+function hasLoaderHmrWorkbenchArtifactPipeline(service: LoaderHmrService): boolean {
+	const state = workbenchArtifactStates.get(service)
 	return Boolean(state?.publish && state.source)
+}
+
+/** @internal Exact source predicate used before the TypeScript/module-graph HMR filters. */
+export function isLoaderHmrWorkbenchPageSource(service: LoaderHmrService, file: string): boolean {
+	return workbenchArtifactStates.get(service)?.pageSources?.has(service.normalizeId(file)) ?? false
 }
 
 const hmrPackageRoot = (() => {
@@ -569,7 +575,7 @@ export class LoaderHmrService {
 
 	private async startImpl(): Promise<void> {
 		if (this.vite) {
-			await publishLoaderHmrWorkbenchProducers(this)
+			await refreshLoaderHmrWorkbenchArtifacts(this)
 			await this.ensureBaseline()
 			await this.loadInitialEntries()
 			void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
@@ -593,8 +599,15 @@ export class LoaderHmrService {
 			root: this.hostRoot,
 			name: 'pluxel:dynamic-runtime-source',
 		})
-		configureLoaderHmrWorkbenchProducerSource(this, {
-			compilations: () => sourcePipeline.semantics.workbenchCompilations(),
+		configureLoaderHmrWorkbenchArtifactSource(this, {
+			compilations: async () => {
+				sourcePipeline.semantics.invalidateWorkbench()
+				const [producers, pages] = await Promise.all([
+					sourcePipeline.semantics.workbenchCompilations(),
+					sourcePipeline.semantics.workbenchPageCompilations(),
+				])
+				return { producers, pages }
+			},
 		})
 		let applicationCarrier: OwnedElysiaApplicationCarrier | undefined
 		const serverConfig = buildLoaderHmrViteConfig({
@@ -645,7 +658,7 @@ export class LoaderHmrService {
 			// Parallelize Vite listen and fixed-baseline establishment.
 			// so overall startup latency is closer to the slower of the two.
 			await server.listen()
-			await publishLoaderHmrWorkbenchProducers(this)
+			await refreshLoaderHmrWorkbenchArtifacts(this)
 			// Fail-fast on bridge/fixed-catalog correctness errors. If this throws,
 			// the host process should crash rather than limping along with a broken HMR runtime.
 			await this.ensureBaseline()
@@ -761,8 +774,8 @@ export class LoaderHmrService {
 		this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
 			dbgModules: this.dbg.modules,
 			useRequireShims: this.useRequireShims,
-			beforeCommit: () => publishLoaderHmrWorkbenchProducers(this),
-			hasBeforeCommit: () => hasLoaderHmrWorkbenchProducerPipeline(this),
+			beforeCommit: () => refreshLoaderHmrWorkbenchArtifacts(this),
+			hasBeforeCommit: () => hasLoaderHmrWorkbenchArtifactPipeline(this),
 		})
 
 		this.batchProcessor = new HmrBatchProcessor(
@@ -875,6 +888,17 @@ export class LoaderHmrService {
 	private enqueueFileChange(file: string) {
 		if (this.closed) return false
 		const clean = this.path.toClean(file)
+		if (isLoaderHmrWorkbenchPageSource(this, clean)) {
+			void refreshLoaderHmrWorkbenchArtifacts(this)
+				.then(() => this.forwardWorkbenchFullReload())
+				.catch((error) => {
+					this.ctx.logger.error('failed to rebuild Workbench Page artifact', {
+						file: clean,
+						error,
+					})
+				})
+			return true
+		}
 		if (this.toolkit.pathFilter(clean)) {
 			this.debouncer.push(clean)
 			return true
@@ -901,6 +925,12 @@ export class LoaderHmrService {
 			}
 		}
 		return false
+	}
+
+	private forwardWorkbenchFullReload(): void {
+		if (requireRuntimeHttpService(this.ctx).consumeFullReloadRequest()) {
+			this.vite.ws.send({ type: 'full-reload' })
+		}
 	}
 
 	private isAnchorClean(clean: string): boolean {

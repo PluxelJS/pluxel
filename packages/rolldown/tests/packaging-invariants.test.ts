@@ -705,7 +705,8 @@ describe('toolchain package boundaries', () => {
 
 		expect(runtimeDevWorkbench).toContain('export function attachPluginArtifactCompiler(')
 		expect(runtimeDevWorkbench).toContain('new PluginArtifactCompiler(')
-		expect(runtimeDevWorkbench).toContain('publishWorkbenchProducers:')
+		expect(runtimeDevWorkbench).toContain('publishWorkbenchArtifacts:')
+		expect(runtimeDevWorkbench).not.toContain('publishWorkbenchProducers:')
 		expect(runtimeDevWorkbench).not.toContain('artifacts?.attachSourceBinder(')
 		expect(runtimeDevWorkbench).toContain('ctx.nodeModules.attachSourceBinder(')
 		expect(runtimeDevWorkbench).not.toContain('ctx.runtimeDev =')

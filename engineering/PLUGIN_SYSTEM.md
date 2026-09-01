@@ -9,7 +9,7 @@ plugin source
 	├─ optional Plugin refs and one object config declaration
 	├─ statically owned PluginPart containment tree
 	├─ separately-built Node module / worker task declarations
-	└─ Workbench Definition / renderer declarations
+	└─ Workbench Definition / Markdown or renderer declarations
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
@@ -17,7 +17,7 @@ plugin source
           ↓
 static or dynamic route: catalog / Vite / HMR / host policy
           ↓
-optional Workbench Plane: target layout / immutable MF producers / fresh View/Attachment roots
+optional Workbench Plane: target layout / immutable Page plans or MF producers / fresh View roots
 ```
 
 ## Context 与宿主能力
@@ -236,15 +236,17 @@ route 或 lifecycle 特例。
 
 ## Optional Workbench Plane
 
-插件只通过 `ctx.workbench?.publish(definition, bindings)` 发布固定 Definition。宿主通过顶层 `workbench`
+插件只通过 `ctx.workbench?.publish(definition)` 或 `publish(definition, bindings)` 发布固定 Definition。宿主通过顶层 `workbench`
 配置安装 capability 与 backend；disabled 时 Context 没有 `workbench` property，也不创建 registry、compiler、
 MF producer route 或 WebSocket session。optional chaining 同时避免构造 bindings，不需要 null facade 或 `enabled` 分支。
 
-Workbench-enabled host 固定使用 Cap’n Web over WebSocket、MF2 Manifest/Snapshot 和 React Bridge。这三项不是
-可替换 adapter，也不存在缺少其中一项时继续提供部分 Workbench 的模式。一个 browser document 只有一条 control
+Workbench-enabled host 固定使用 Cap’n Web over WebSocket；完整 View/Attachment 固定使用 MF2 Manifest/Snapshot 和
+React Bridge，Standard Page 则由 Shell 渲染 build-time portable plan。这些都不是可替换 adapter。Page-only Plugin 不生成
+MF producer；一旦 definition 含 renderer 就必须满足完整 MF/Bridge contract。一个 browser document 只有一条 control
 socket；认证、Management、layout/openView、Plugin API 和 observer 共用同一 Cap’n Web object graph。
 
-Definition 只包含 Direct View、Attachment 和 tab/route placement。View 每次打开创建 fresh `RpcTarget`；
+Definition 只包含 Standard Page、Direct View、Attachment 和 tab/route placement。Page 只承载静态 Markdown，没有 binding、
+RPC target、invalidate/signal/action、MF producer 或 server-side per-open lease。View 每次打开创建 fresh `RpcTarget`；
 renderer 是零 props React component，通过 `useWorkbench(exactDescriptor)` 取得 exact API root 与受限 host facade。
 Definition 不声明方法 schema、数据库查询、平台事件或动态 collection。输入校验、authorization、snapshot/watch、
 任务和稳定失败码由 Plugin 自己的领域 API 负责。
@@ -293,14 +295,14 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/runtime` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；
 - `@pluxel/runtime/capnweb`：固定 Cap’n Web object model 与 WebSocket session bridge；
-- `@pluxel/runtime/workbench`：browser-safe Definition、Direct View、Attachment、placement 和 publication types；
+- `@pluxel/runtime/workbench`：browser-safe Definition、Standard Page、Direct View、Attachment、placement 和 publication types；
 - `@pluxel/runtime/workbench/client`：conforming Shell 的 layout/opened-handle client；
 - `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
 - `@pluxel/runtime/internal/workbench-react`：toolchain/Shell 共用的 generated React Bridge ABI；
 - `@pluxel/core/federation`：Workbench MF producer/descriptor identity 和固定 shared set；
 - `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
 - `valibot-form`：Config schema 的 portable presentation 与 raw-input transport projector；
-- `@pluxel/runtime-dev`：共享 UI/Node source graph、watch、cache 与 immutable producer publication；
+- `@pluxel/runtime-dev`：共享 Page/UI/Node source graph、watch、cache 与 immutable artifact publication；
 - `@pluxel/rolldown/vite/workbench-ui`：MF2 producer build primitive。
 - `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound Direct View target 和 Workbench 页面。
 

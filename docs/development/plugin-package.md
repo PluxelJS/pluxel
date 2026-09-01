@@ -23,6 +23,8 @@ src/
   OrdersPlugin.ts      Plugin implementation
   config.ts            server/shared-safe schema
   index.ts             如果模板使用独立 root barrel
+  workbench.ts         可选 Workbench definition
+  *.md                 可选 Standard Page source
   ui/                  可选 Workbench browser entry
 tests/
   OrdersPlugin.test.ts
@@ -141,13 +143,28 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 - generated plugin package records；
 - declaration/types 与 ESM artifact；
 - config schema source；
-- 可选 Workbench MF2 producer 与 Node/worker/database artifacts。
+- 可选 Workbench Standard Page artifact、MF2 producer 与 Node/worker/database artifacts。
 
 构建失败不会提交部分 metadata。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
 
-## Workbench UI package
+## Workbench 内容
 
-有 UI 时，在 browser-safe `workbench.ts` 中声明固定 Definition 和 literal renderer entry：
+只需说明、部署提示或故障排查时，优先声明 Standard Page：
+
+```ts no-twoslash
+export const OrdersWorkbench = workbench.define({
+	guide: workbench.page({
+		document: workbench.markdown(import.meta.url, './guide.md'),
+		placement: workbench.tab({ label: 'Guide' }),
+	}),
+})
+```
+
+`pluxel build` 在 TypeScript 擦除前提取 literal Markdown source，把受支持的 CommonMark/GFM 降为有界 portable plan。
+Page-only package 不加载 Federation builder、不生成 remote entry，也不要求 React/Mantine compatibility。发布 package
+保留预编译 Page artifact 即可，production host 不依赖 `src/*.md`。
+
+需要运行期状态、交互或自定义布局时，在 browser-safe `workbench.ts` 中声明完整 View 和 literal renderer entry：
 
 ```ts no-twoslash
 export const OrdersWorkbench = workbench.define({
@@ -163,7 +180,8 @@ producer、每个 declaration 的 React Bridge expose 和 `mf-manifest.json`。�
 或 Bridge wrapper。Server bundle 与 browser producer 分离；browser graph 不能导入 Node builtin、database handle、
 secret 或 Plugin implementation。
 
-没有 renderer declaration 时，不加载 Federation builder，也不创建 producer。
+同一 definition 可以同时含 Page 与 View；两类 artifact 必须全部构建成功后再作为一个 revision 提交。没有 renderer
+declaration 时，不加载 Federation builder，也不创建 producer。
 
 ## 数据库与 Node artifacts
 

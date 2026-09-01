@@ -1,13 +1,19 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
 import { describe, expect, it, vi } from 'vitest'
+import {
+	WORKBENCH_PAGE_ARTIFACT_FILE,
+	createWorkbenchPageSet,
+	serializeWorkbenchPageSet,
+} from '@pluxel/core/internal'
 import { pluginArtifactBuildPlugin } from '../../src/plugin-artifact/pluginArtifactBuildPlugin.ts'
 import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
 import { readWorkbenchFederationDeploymentInventory } from '../../src/workbench/artifact.ts'
+import { readWorkbenchPageDeploymentInventory } from '../../src/workbench/page-artifact.ts'
 
 describe('pluginArtifactBuildPlugin', () => {
 	it('atomically emits the host-owned deployment inventory from canonical compilations', async () => {
@@ -15,15 +21,17 @@ describe('pluginArtifactBuildPlugin', () => {
 			'package.json': JSON.stringify({ name: 'workbench-inventory-fixture', type: 'module' }),
 		})
 		const compilations = vi.fn(async () => [])
+		const pageCompilations = vi.fn(async () => [])
 		const plugin = pluginArtifactBuildPlugin({
 			root: fixture.path,
 			buildDir: 'dist',
-			workbench: { compilations },
+			workbench: { compilations, pageCompilations },
 		})
 		const writeBundle = plugin.writeBundle as (() => Promise<void>) | undefined
 		await writeBundle?.call({})
 
 		expect(compilations).toHaveBeenCalledOnce()
+		expect(pageCompilations).toHaveBeenCalledOnce()
 		await expect(
 			readWorkbenchFederationDeploymentInventory(join(fixture.path, 'dist')),
 		).resolves.toEqual({
@@ -31,6 +39,94 @@ describe('pluginArtifactBuildPlugin', () => {
 			profile: 1,
 			buildContract: 2,
 			producers: [],
+		})
+		await expect(
+			readWorkbenchPageDeploymentInventory(join(fixture.path, 'dist/workbench')),
+		).resolves.toEqual({ version: 1, pages: [] })
+	})
+
+	it('publishes a page-only immutable artifact without creating an MF producer', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'workbench-page-artifact-fixture', type: 'module' }),
+		})
+		const definition = {
+			entry: { kind: 'package-root', packageName: '@example/page-only' },
+			exportName: 'PageOnlyPlugin',
+		} as const
+		const pageSet = createWorkbenchPageSet({
+			definition,
+			entries: [
+				{
+					key: 'guide',
+					page: {
+						version: 1,
+						kind: 'standard-page',
+						document: {
+							version: 1,
+							blocks: [
+								{
+									type: 'heading',
+									level: 1,
+									anchor: 'guide',
+									children: [{ type: 'text', value: 'Guide' }],
+								},
+							],
+						},
+					},
+				},
+			],
+		})
+		const serialized = serializeWorkbenchPageSet(pageSet)
+		const bytes = new TextEncoder().encode(serialized)
+		const digest = createHash('sha256').update(bytes).digest('hex')
+		const pageCompilations = vi.fn(async () => [
+			{ pageSet, digest, bytes, root: fixture.path, sources: [] },
+		])
+		const compilations = vi.fn(async () => [])
+		const plugin = pluginArtifactBuildPlugin({
+			root: fixture.path,
+			buildDir: 'dist',
+			workbench: { compilations, pageCompilations },
+		})
+		const writeBundle = plugin.writeBundle as (() => Promise<void>) | undefined
+		await writeBundle?.call({})
+
+		const inventory = await readWorkbenchPageDeploymentInventory(
+			join(fixture.path, 'dist/workbench'),
+		)
+		expect(inventory.pages).toHaveLength(1)
+		expect(inventory.pages[0]).toMatchObject({ definition, digest })
+		await expect(
+			readFile(
+				join(
+					fixture.path,
+					'dist/workbench',
+					inventory.pages[0]!.artifactRoot,
+					WORKBENCH_PAGE_ARTIFACT_FILE,
+				),
+				'utf-8',
+			),
+		).resolves.toBe(serialized)
+		const files = await readdir(join(fixture.path, 'dist/workbench'), { recursive: true })
+		expect(files).not.toContain('mf-manifest.json')
+		expect(files).not.toContain('remoteEntry.js')
+		expect(compilations).toHaveBeenCalledOnce()
+		expect(pageCompilations).toHaveBeenCalledOnce()
+	})
+
+	it('does not request or publish Page artifacts when Workbench is disabled', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'workbench-disabled-fixture', type: 'module' }),
+		})
+		const plugin = pluginArtifactBuildPlugin({
+			root: fixture.path,
+			buildDir: 'dist',
+			workbench: false,
+		})
+		const writeBundle = plugin.writeBundle as (() => Promise<void>) | undefined
+		await writeBundle?.call({})
+		await expect(readdir(join(fixture.path, 'dist/workbench'))).rejects.toMatchObject({
+			code: 'ENOENT',
 		})
 	})
 

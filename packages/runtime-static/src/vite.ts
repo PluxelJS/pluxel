@@ -71,7 +71,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 	const sourcePipeline = createPluginSourceVitePipeline({
 		name: 'pluxel:static-runtime-source',
 	})
-	const producerPublishers = new WeakMap<StaticRuntimeHost, () => Promise<void>>()
+	const artifactPublishers = new WeakMap<StaticRuntimeHost, () => Promise<void>>()
 	const state: {
 		server?: ViteDevServer
 		entryPath?: string
@@ -130,12 +130,12 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				: {}),
 		})
 		try {
-			const publishProducers = await configureStaticRuntimeDevRuntime(
+			const publishArtifacts = await configureStaticRuntimeDevRuntime(
 				server,
 				host,
 				sourcePipeline.semantics,
 			)
-			producerPublishers.set(host, publishProducers)
+			artifactPublishers.set(host, publishArtifacts)
 			await application.prepare?.({ host, startup })
 			return host
 		} catch (error) {
@@ -329,7 +329,11 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		async handleHotUpdate(ctx) {
 			const host = state.host
 			if (!state.configFiles.has(ctx.file)) {
-				await (host ? producerPublishers.get(host)?.() : undefined)
+				await (host ? artifactPublishers.get(host)?.() : undefined)
+				if (host && requireRuntimeHttpService(host.ctx).consumeFullReloadRequest()) {
+					ctx.server.ws.send({ type: 'full-reload' })
+					return []
+				}
 				return undefined
 			}
 			const server = state.server ?? ctx.server
@@ -361,7 +365,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				if (productChanged) ctx.server.ws.send({ type: 'full-reload' })
 				return []
 			}
-			await producerPublishers.get(host)?.()
+			await artifactPublishers.get(host)?.()
 			const report = await reloadStaticRuntime({
 				host,
 				definition: toStaticRuntimeDefinition(application),
@@ -377,6 +381,9 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				roundHmrMs(performance.now() - start),
 				viteInvalidated,
 			)
+			if (requireRuntimeHttpService(host.ctx).consumeFullReloadRequest()) {
+				ctx.server.ws.send({ type: 'full-reload' })
+			}
 			return []
 		},
 	}
@@ -642,7 +649,10 @@ async function resolveViteBindings(
 async function configureStaticRuntimeDevRuntime(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
-	semantics: Pick<PluginSourceVitePipeline['semantics'], 'workbenchCompilations'>,
+	semantics: Pick<
+		PluginSourceVitePipeline['semantics'],
+		'invalidateWorkbench' | 'workbenchCompilations' | 'workbenchPageCompilations'
+	>,
 ): Promise<() => Promise<void>> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
@@ -655,9 +665,15 @@ async function configureStaticRuntimeDevRuntime(
 	})
 	const publish = async (): Promise<void> => {
 		if (!ctx.workbench) return
-		await compiler.publishWorkbenchProducers(await semantics.workbenchCompilations())
+		semantics.invalidateWorkbench()
+		const [producers, pages] = await Promise.all([
+			semantics.workbenchCompilations(),
+			semantics.workbenchPageCompilations(),
+		])
+		await compiler.publishWorkbenchArtifacts({ producers, pages })
 	}
 	await publish()
+	requireRuntimeHttpService(ctx).consumeFullReloadRequest()
 	return publish
 }
 

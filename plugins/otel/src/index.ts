@@ -6,6 +6,7 @@ import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
 import type { PrometheusPullReader } from './prometheus.ts'
 import type { OtelRuntime } from './sdk.ts'
+import { OtelWorkbench } from './workbench.ts'
 
 export { OtelConfig } from './config.ts'
 export type { OtelPluginConfig, OtelSignal } from './config.ts'
@@ -65,6 +66,7 @@ export class OtelPlugin extends BasePlugin {
 			}
 			throw error
 		}
+		this.ctx.workbench?.publish(OtelWorkbench)
 	}
 
 	private getCallerScoped<T>(

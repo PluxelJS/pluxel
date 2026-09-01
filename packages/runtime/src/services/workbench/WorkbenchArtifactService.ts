@@ -88,6 +88,40 @@ type StoredRevision = Readonly<{
 	files: ReadonlyMap<string, StoredFile>
 }>
 
+const PREPARED = Symbol('pluxel.workbench.prepared-federation-artifact')
+
+/** @internal Package-private authority for the combined artifact transaction. */
+export const WORKBENCH_ARTIFACT_TRANSACTION = Symbol('pluxel.workbench.artifact-transaction')
+
+/** @internal Validated immutable candidate; only its owning store can commit it. */
+export type WorkbenchPreparedArtifactCandidate = Readonly<{
+	[PREPARED]: StoredRevision
+}>
+
+const CHECKPOINT = Symbol('pluxel.workbench.federation-artifact-checkpoint')
+
+/** @internal Rollback token used only by the combined Workbench artifact transaction. */
+export type WorkbenchArtifactCheckpoint = Readonly<{
+	[CHECKPOINT]: Readonly<{
+		definitionKey: string
+		reference: string
+		current?: StoredRevision
+		revision?: StoredRevision
+		revisionValue: number
+	}>
+}>
+
+const CURRENT_CHECKPOINT = Symbol('pluxel.workbench.federation-current-checkpoint')
+
+/** @internal Current-pointer rollback token for an absent artifact in a full batch. */
+export type WorkbenchArtifactCurrentCheckpoint = Readonly<{
+	[CURRENT_CHECKPOINT]: Readonly<{
+		definitionKey: string
+		current?: StoredRevision
+		revisionValue: number
+	}>
+}>
+
 const SHA256 = /^[a-f\d]{64}$/
 const PROFILE_COMPATIBILITY = createWorkbenchFederationCompatibilitySet({
 	react: React.version,
@@ -145,8 +179,17 @@ export class WorkbenchArtifactService {
 		return Object.freeze({ artifact: stored.value, entry })
 	}
 
-	async commitCandidate(candidate: WorkbenchArtifactCandidate): Promise<WorkbenchArtifactRevision> {
-		const prepared = await prepareCandidate(candidate)
+	async prepareCandidate(
+		authority: symbol,
+		candidate: WorkbenchArtifactCandidate,
+	): Promise<WorkbenchPreparedArtifactCandidate> {
+		assertTransactionAuthority(authority)
+		return Object.freeze({ [PREPARED]: await prepareCandidate(candidate) })
+	}
+
+	assertPrepared(authority: symbol, candidate: WorkbenchPreparedArtifactCandidate): void {
+		assertTransactionAuthority(authority)
+		const prepared = readPrepared(candidate)
 		const reference = referenceKey(prepared.value.producer, prepared.value.buildRevision)
 		const existing = this.revisionsByReference.get(reference)
 		if (existing) {
@@ -155,13 +198,90 @@ export class WorkbenchArtifactService {
 					`[workbench] immutable federation revision collision: ${prepared.value.producer}@${prepared.value.buildRevision}`,
 				)
 			}
-			const current = this.currentByDefinition.get(prepared.definitionKey)
-			if (current === existing) return existing.value
-			return this.commit(existing)
 		}
+	}
 
-		this.revisionsByReference.set(reference, prepared)
-		return this.commit(prepared)
+	checkpointPrepared(
+		authority: symbol,
+		candidate: WorkbenchPreparedArtifactCandidate,
+	): WorkbenchArtifactCheckpoint {
+		assertTransactionAuthority(authority)
+		const stored = readPrepared(candidate)
+		const reference = referenceKey(stored.value.producer, stored.value.buildRevision)
+		return Object.freeze({
+			[CHECKPOINT]: Object.freeze({
+				definitionKey: stored.definitionKey,
+				reference,
+				current: this.currentByDefinition.get(stored.definitionKey),
+				revision: this.revisionsByReference.get(reference),
+				revisionValue: this.revisionValue,
+			}),
+		})
+	}
+
+	restoreCheckpoint(authority: symbol, checkpoint: WorkbenchArtifactCheckpoint): void {
+		assertTransactionAuthority(authority)
+		const state = checkpoint?.[CHECKPOINT]
+		if (!state) throw new TypeError('[workbench] invalid federation artifact checkpoint')
+		if (state.current) this.currentByDefinition.set(state.definitionKey, state.current)
+		else this.currentByDefinition.delete(state.definitionKey)
+		if (state.revision) this.revisionsByReference.set(state.reference, state.revision)
+		else this.revisionsByReference.delete(state.reference)
+		this.revisionValue = state.revisionValue
+	}
+
+	checkpointCurrent(
+		authority: symbol,
+		definition: PluginDefinitionAddress,
+	): WorkbenchArtifactCurrentCheckpoint {
+		assertTransactionAuthority(authority)
+		const definitionKey = pluginDefinitionIndexKey(definition)
+		return Object.freeze({
+			[CURRENT_CHECKPOINT]: Object.freeze({
+				definitionKey,
+				current: this.currentByDefinition.get(definitionKey),
+				revisionValue: this.revisionValue,
+			}),
+		})
+	}
+
+	restoreCurrentCheckpoint(
+		authority: symbol,
+		checkpoint: WorkbenchArtifactCurrentCheckpoint,
+	): void {
+		assertTransactionAuthority(authority)
+		const state = checkpoint?.[CURRENT_CHECKPOINT]
+		if (!state) throw new TypeError('[workbench] invalid federation current checkpoint')
+		if (state.current) this.currentByDefinition.set(state.definitionKey, state.current)
+		else this.currentByDefinition.delete(state.definitionKey)
+		this.revisionValue = state.revisionValue
+	}
+
+	withdrawCurrent(
+		authority: symbol,
+		definition: PluginDefinitionAddress,
+	): WorkbenchArtifactRevision | null {
+		assertTransactionAuthority(authority)
+		const definitionKey = pluginDefinitionIndexKey(definition)
+		const previous = this.currentByDefinition.get(definitionKey)
+		if (!previous) return null
+		this.currentByDefinition.delete(definitionKey)
+		this.revisionValue += 1
+		return previous.value
+	}
+
+	commitPrepared(
+		authority: symbol,
+		candidate: WorkbenchPreparedArtifactCandidate,
+		options: Readonly<{ notify?: boolean }> = {},
+	): WorkbenchArtifactRevision {
+		assertTransactionAuthority(authority)
+		const prepared = readPrepared(candidate)
+		this.assertPrepared(authority, candidate)
+		const reference = referenceKey(prepared.value.producer, prepared.value.buildRevision)
+		const stored = this.revisionsByReference.get(reference) ?? prepared
+		this.revisionsByReference.set(reference, stored)
+		return this.commit(stored, options.notify !== false)
 	}
 
 	/**
@@ -195,24 +315,38 @@ export class WorkbenchArtifactService {
 		})
 	}
 
-	private commit(stored: StoredRevision): WorkbenchArtifactRevision {
+	private commit(stored: StoredRevision, notify: boolean): WorkbenchArtifactRevision {
 		const previous = this.currentByDefinition.get(stored.definitionKey)
 		if (previous === stored) return stored.value
 		this.currentByDefinition.set(stored.definitionKey, stored)
 		this.revisionValue += 1
-		const commit = Object.freeze({
-			revision: this.revisionValue,
-			current: stored.value,
-			previous: previous?.value ?? null,
-		})
-		for (const listener of this.listeners) {
-			try {
-				listener(commit)
-			} catch (error) {
-				this.root.logger.error('workbench artifact commit listener failed', { error })
+		if (notify) {
+			const commit = Object.freeze({
+				revision: this.revisionValue,
+				current: stored.value,
+				previous: previous?.value ?? null,
+			})
+			for (const listener of this.listeners) {
+				try {
+					listener(commit)
+				} catch (error) {
+					this.root.logger.error('workbench artifact commit listener failed', { error })
+				}
 			}
 		}
 		return stored.value
+	}
+}
+
+function readPrepared(candidate: WorkbenchPreparedArtifactCandidate): StoredRevision {
+	const stored = candidate?.[PREPARED]
+	if (!stored) throw new TypeError('[workbench] invalid prepared federation artifact candidate')
+	return stored
+}
+
+function assertTransactionAuthority(authority: symbol): void {
+	if (authority !== WORKBENCH_ARTIFACT_TRANSACTION) {
+		throw new TypeError('[workbench] artifact store mutation requires coordinator authority')
 	}
 }
 

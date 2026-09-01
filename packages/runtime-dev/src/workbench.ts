@@ -5,7 +5,7 @@ import {
 	PluginArtifactCompiler,
 	type PluginArtifactCompilerOptions,
 	type PluginArtifactCompilerViteServer,
-	type WorkbenchProducerCompilation,
+	type WorkbenchArtifactCompilations,
 } from './workbench/PluginArtifactCompiler.ts'
 
 export type PluginArtifactCompilerAttachmentOptions = PluginArtifactCompilerOptions &
@@ -14,9 +14,9 @@ export type PluginArtifactCompilerAttachmentOptions = PluginArtifactCompilerOpti
 	}>
 
 export type PluginArtifactCompilerAttachment = Readonly<{
-	publishWorkbenchProducers(
-		inputs: readonly WorkbenchProducerCompilation[],
-	): ReturnType<PluginArtifactCompiler['publishWorkbenchProducers']>
+	publishWorkbenchArtifacts(
+		input: WorkbenchArtifactCompilations,
+	): ReturnType<PluginArtifactCompiler['publishWorkbenchArtifacts']>
 	dispose(): void
 }>
 
@@ -25,8 +25,8 @@ const attachments = new WeakMap<Context, PluginArtifactCompilerAttachment>()
 /**
  * Attaches the route-neutral Node/Workbench artifact compiler to one Runtime root.
  *
- * Workbench producer plans must be supplied by the shared semantic lowering pass. The
- * attachment does not observe generation publication or rediscover renderer entries.
+ * Workbench artifact compilations must come from the shared semantic lowering snapshot. The
+ * attachment does not observe generation publication or rediscover Page/renderer entries.
  */
 export function attachPluginArtifactCompiler(
 	ctx: Context,
@@ -39,10 +39,10 @@ export function attachPluginArtifactCompiler(
 		throw new Error('[runtime-dev] artifact compiler is already attached')
 	}
 
-	const store = ctx.workbench ? requireWorkbench(ctx).artifacts : undefined
+	const coordinator = ctx.workbench ? requireWorkbench(ctx).artifactCoordinator : undefined
 	const compiler = new PluginArtifactCompiler(
 		ctx,
-		{ store, viteServer: options.viteServer },
+		{ coordinator, viteServer: options.viteServer },
 		{ cacheDir: options.cacheDir, packageMode: options.packageMode },
 	)
 	const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>
@@ -50,11 +50,11 @@ export function attachPluginArtifactCompiler(
 	)
 	let active = true
 	const attachment: PluginArtifactCompilerAttachment = Object.freeze({
-		publishWorkbenchProducers: (inputs: readonly WorkbenchProducerCompilation[]) => {
+		publishWorkbenchArtifacts: (input: WorkbenchArtifactCompilations) => {
 			if (!active) {
 				return Promise.reject(new Error('[runtime-dev] artifact compiler is disposed'))
 			}
-			return compiler.publishWorkbenchProducers(inputs)
+			return compiler.publishWorkbenchArtifacts(input)
 		},
 		dispose: () => {
 			if (!active) return
@@ -75,6 +75,8 @@ export function attachPluginArtifactCompiler(
 }
 
 export type {
+	WorkbenchArtifactCompilations,
+	WorkbenchPageCompilation,
 	PluginArtifactCompilerOptions,
 	PluginArtifactCompilerViteServer,
 	WorkbenchProducerCompilation,

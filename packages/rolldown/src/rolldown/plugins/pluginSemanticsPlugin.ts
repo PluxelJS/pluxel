@@ -19,6 +19,7 @@ import {
 } from './pluginUtils.ts'
 import {
 	createWorkbenchSemanticLowering,
+	type WorkbenchSemanticPageCompilation,
 	type WorkbenchSemanticProducerCompilation,
 } from '../../workbench/semantic-lowering.ts'
 import type { WorkbenchFederationProducerPlan } from '@pluxel/core/federation'
@@ -63,6 +64,10 @@ export type PluginSemanticsCollector = {
 	workbenchPlans(): Promise<readonly WorkbenchFederationProducerPlan[]>
 	/** Source-only build inputs paired with those exact canonical plans. */
 	workbenchCompilations(): Promise<readonly WorkbenchSemanticProducerCompilation[]>
+	/** Canonical immutable Standard Page sets for this compilation. */
+	workbenchPageCompilations(): Promise<readonly WorkbenchSemanticPageCompilation[]>
+	/** Invalidates derived Workbench artifacts after a non-module source change such as Markdown. */
+	invalidateWorkbench(): void
 }
 
 type ImportBinding = {
@@ -307,6 +312,8 @@ export function createPluginSemanticsPlugin(
 		definitions: () => [...collectedDefinitions.values()],
 		workbenchPlans: () => workbenchLowering.plans(),
 		workbenchCompilations: () => workbenchLowering.compilations(),
+		workbenchPageCompilations: () => workbenchLowering.pageCompilations(),
+		invalidateWorkbench: () => workbenchLowering.invalidate(),
 	}
 }
 

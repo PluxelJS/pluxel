@@ -1,14 +1,15 @@
 # Workbench 架构
 
 Workbench 是 host-owned 的插件管理界面。它只投影已经存在的 Plugin 状态和操作，不成为业务能力、
-领域状态或 Plugin dependency 的替代品。一个 Workbench-enabled host 固定使用三项基础设施：
+领域状态或 Plugin dependency 的替代品。一个 Workbench-enabled host 固定使用以下交付路径：
 
-- Cap’n Web over WebSocket 承载认证、Management、View API 和双向通知；
-- Module Federation 2.0 Manifest/Snapshot 交付浏览器模块；
-- React Bridge 管理每次 View 打开对应的 render/destroy 生命周期。
+- Cap’n Web over WebSocket 承载认证、Management、layout、View API 和双向通知；
+- Shell 自己渲染 build-time 编译的 Standard Page portable plan；
+- 完整 View/Attachment 才通过 Module Federation 2.0 与 React Bridge 交付 Plugin-owned UI。
 
-这三项是同一个实现契约，不提供可替换 transport、loader 或 renderer SPI。Workbench 可以在 headless
-部署中整体不安装；一旦安装，就不存在缺少 WebSocket、MF2 或 Bridge 时仍部分工作的模式。
+这些路径是固定产品契约，不提供可替换 transport、loader 或 renderer SPI。Workbench 可以在 headless
+部署中整体不安装。Page-only Plugin 不生成 MF producer，也不需要 React Bridge；只要一个 definition 含 View 或
+Attachment renderer，就必须满足完整 MF/Bridge contract，不能退化成另一种 loader。
 
 Shell 首页可以通过 Management metadata 显示 browser-safe host platform snapshot：JavaScript runtime/version、`std-env` 检测到的
 deployment provider、CI、mode 与 OS platform。该 snapshot 是诊断提示而非 capability guarantee；尤其 provider detection 不等于当前
@@ -16,18 +17,19 @@ request 必然运行于该 provider。不得向 browser 投影完整 environment
 
 ## 平台边界
 
-Workbench 只定义四个作者概念：
+Workbench 只定义五个作者概念：
 
 | 概念       | 作用                                                    | 所有者                                    |
 | ---------- | ------------------------------------------------------- | ----------------------------------------- |
-| Definition | 一组固定的 View、Attachment 和 placement                | Plugin definition                         |
+| Definition | 一组固定的 Page、View、Attachment 和 placement          | Plugin definition                         |
+| Page       | Shell 渲染的静态 Markdown 说明页                        | 发布它的 Plugin                           |
 | View       | Plugin 自己放置、自己提供 API 和界面的页面              | 发布它的 Plugin                           |
 | Attachment | provider 提供界面和 provider API，consumer 决定是否放置 | provider declaration + consumer placement |
-| Placement  | `tab()` 或 `route()` 的产品位置                         | View owner 或 Attachment consumer         |
+| Placement  | `tab()` 或 `route()` 的产品位置                         | Page/View owner 或 Attachment consumer    |
 
 Workbench 不定义数据库查询模型、领域事件模型、集合注册表、动态 feature registry 或通用 schema 层。
-页面需要什么交互，Plugin 就公开一个直接的 `RpcTarget` 接口。分页、snapshot、watch、任务、冲突码和
-输入校验都是该 Plugin 的领域 API，由 Plugin 按真实需求实现。
+Standard Page 只承载静态说明；页面需要运行期状态或交互时，Plugin 使用完整 View 并公开直接的 `RpcTarget`。
+分页、snapshot、watch、任务、冲突码和输入校验都是该 Plugin 的领域 API，由 Plugin 按真实需求实现。
 
 `collection`、bot account、font family、document row 等始终是 Plugin 领域对象。它们可以由一个 manager
 View 管理，也可以由 Attachment 选择，但不会因数量变化而创建 Workbench entry、MF producer、socket 或
@@ -40,6 +42,8 @@ Attachment 只复用 provider 的界面，不建立新的业务依赖机制。
 
 ```ts
 workbench.define({ ... })
+workbench.page({ document, placement })
+workbench.markdown(import.meta.url, './guide.md')
 workbench.view<Api>({ renderer, placement })
 workbench.attachment<ProviderApi, ConsumerApi?>({ renderer })
 attachment.place(placement)
@@ -47,6 +51,7 @@ workbench.entry(import.meta.url, './ui.tsx')
 workbench.tab({ ... })
 workbench.route('/path/:param', { ... })
 ctx.workbench?.publish(definition, bindings)
+ctx.workbench?.publish(pageOnlyDefinition)
 useWorkbench(exactDescriptor)
 useRemoteValue({ read, subscribe? })
 ```
@@ -64,17 +69,19 @@ Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/runtime/internal/workb
 
 ## Definition 与源码组织
 
-一个有 UI 的 Plugin 通常使用三类文件：
+一个有 Workbench 内容的 Plugin 使用下列文件：
 
 ```text
 src/workbench.ts       browser-safe API、DTO 和固定 definition
-src/index.ts           Plugin、领域实现、RpcTarget 和 publish()
-src/ui/*.tsx           零 props React renderer
+src/index.ts           Plugin、领域实现和 publish()
+src/*.md               可选 Standard Page source
+src/ui/*.tsx           可选完整 View 的零 props React renderer
 ```
 
 `workbench.ts` 可以从 package 的 `./workbench` subpath 导出，供依赖者引用 Attachment descriptor。它不能
 导入 Plugin instance、Context、database handle、Node builtin 或 secret。`workbench.entry()` 的第二个参数必须
-是 module-relative literal；它只是 toolchain 可追踪的源码 provenance，不是运行时 dynamic import。
+是 module-relative literal；`workbench.markdown()` 的 source 同样必须是 module-relative literal。两者只是 toolchain
+可追踪的源码 provenance，不是运行时 dynamic import 或文件读取。
 
 Definition 是 flat、frozen、固定键集合：
 
@@ -99,7 +106,8 @@ Definition 只声明固定拓扑。运行期 item 可见性、权限和业务状
 
 ## Publication 与 target 生命周期
 
-Plugin 在 `init()` 中最多发布一次，bindings 的键必须与 definition 完全一致：
+Plugin 在 `init()` 中最多发布一次。Bindings 只包含 View/Attachment，且键必须与 definition 中全部非 Page entry
+完全一致；Page-only definition 不接收 bindings：
 
 ```ts
 this.ctx.workbench?.publish(OrdersWorkbench, {
@@ -123,6 +131,35 @@ Factory 不取得 raw request、auth provider、consumer Context 或 service loc
 
 Workbench 不要求 API 另外声明方法 schema。TypeScript interface 约束调用面，Cap’n Web 负责对象图和 capability
 传输；Plugin 仍负责它真正需要的输入预算、领域授权和稳定失败码。内部管理页并不等于可信调用方。
+
+## Standard Page
+
+Standard Page 用于运行中 Plugin 的使用说明、部署提示和故障排查，不提供 API root：
+
+```ts
+export const OtelWorkbench = workbench.define({
+	operations: workbench.page({
+		document: workbench.markdown(import.meta.url, './workbench-guide.md'),
+		placement: workbench.tab({ label: '运维说明' }),
+	}),
+})
+
+// Page-only definition 没有 bindings。
+this.ctx.workbench?.publish(OtelWorkbench)
+```
+
+Markdown 在 build time 编译为有版本、不可变且有界的 portable AST。当前只支持 heading、paragraph、强调/删除线、
+list、blockquote、thematic break、inline/fenced code、bounded GFM table，以及安全的 `https:`、`mailto:` 和当前文档
+fragment link。Raw HTML（含 JSX 风格标签）、图片、相对链接、task list 和 frontmatter 都会使构建失败；`{name}`
+一类 MDX expression 只按普通文本处理，不会执行。
+浏览器只接受并再次验证 portable plan；Shell 不运行 Markdown parser，不插入 raw HTML，也不加载 Plugin JavaScript。
+
+Page 仍属于发布它的 running generation。`openView()` 对 Page 只做一次短 owner admission，并返回 pinned immutable
+plan；返回前即释放 admission，不执行 factory，不占 opened-View quota，也不保留 server-side Page lease。Owner、publication
+或 Page artifact 变化继续使现有 session epoch 失效并要求完整 reload。Page 不是 package 未运行时仍可访问的离线文档。
+
+静态 Page 没有 snapshot、invalidate、signal、action、slot 或 Config draft bridge。需要其中任一能力时，当前实现使用完整
+View；只有经过独立真实用例和 lifecycle 评审后，才会扩大 Page contract。
 
 ## View
 
@@ -270,26 +307,46 @@ layout({ target })
 openView({ layoutRevision, target, descriptor, location? })
 ```
 
-Layout 是 capability-free 的 immutable snapshot，只包含目标、placement、declaration/openable identity、owner revisions
-和固定的 federated view reference。它不携带 Plugin API root 或可遍历的服务字典。
+Layout 是 capability-free 的 immutable snapshot，只包含目标、placement、declaration/openable identity、owner revisions，
+以及 discriminated federated View 或 Standard Page reference。它不携带 Plugin API root、Page content 或可遍历的服务字典。
 
 打开流程固定为：
 
 1. Shell 从当前 layout 选择 entry；
-2. `openView()` 校验 revision、target、descriptor 和 route，并创建 owner invocation lease；
-3. local View 返回一个 fresh API root；Attachment 返回 provider root，并按声明可选返回 consumer root；
-4. Shell 通过 pinned manifest/expose 加载并校验 Bridge；
-5. Shell 创建 per-open host facade，render Bridge；
-6. close 时先 destroy Bridge，再关闭 host facade，最后 dispose opened handle。
+2. `openView()` 校验 revision、target、descriptor 和 route，并做 owner admission；
+3. Standard Page 返回 pinned portable plan并立即释放短 admission；Shell 二次验证后直接渲染；
+4. local View 返回 fresh API root；Attachment 返回 provider root，并按声明可选返回 consumer root；
+5. federated branch 通过 pinned manifest/expose 加载并校验 Bridge；
+6. Shell 创建 per-open host facade，render Bridge；
+7. close 时先 destroy Bridge，再关闭 host facade，最后 dispose opened handle。
 
-任一步失败都释放 candidate roots，不发布半激活 View。每个 session 最多 64 个 opened Views，factory 默认 15 秒
-超时。Layout revision 改变、target 不可用和 quota/factory failure 使用封闭 code 返回；编程或 transport failure 继续 reject。
+任一步失败都释放 candidate roots，不发布半激活 entry。每个 session 最多 64 个 retained federated Views，factory 默认
+15 秒超时；静态 Page 不占 quota，也不执行 factory。Layout revision 改变、target 不可用和 quota/factory failure 使用
+封闭 code 返回；编程或 transport failure 继续 reject。
+
+## Standard Page artifact
+
+Page plan 是独立的 content-addressed artifact，不注入 server JavaScript，也不伪装成 MF producer。Production topology 为：
+
+```text
+dist/workbench/
+  pluxel-workbench-pages.json
+  pages/<definition-digest>/<page-set-digest>/page-plan.json
+```
+
+Inventory、definition digest、page-set digest、canonical path 和内容在加载时全部复核。Plugin package 可以只保留预编译
+Page artifact；production Runtime 不依赖发布包中的 `src/*.md`。Static assembly、dynamic distribution discovery 和 dev
+compiler 都向同一个 Runtime Page artifact store 提交验证后的 immutable page set。
+
+同一 definition 同时含 Page 与 federated renderer 时，两类 candidate 必须作为一个 revision 原子提交。Prepare 或 commit
+任一步失败都回滚已提交部分并保留完整 last-known-good tuple；成功后才通过 session epoch invalidation 触发 full reload。
+浏览器通过现有 `openView()` RPC 取得 plan，不增加任意 artifact HTTP fetch。
 
 ## MF2 交付与 React Bridge
 
 Toolchain 在 TypeScript 擦除前读取 `workbench.define()` 和 literal `workbench.entry()`，把同一 Plugin definition
 的所有 View/Attachment renderer 合并为一个 producer。每个 declaration 生成一个稳定 `./views/<key>` expose 和
-一个 Bridge wrapper。作者不手写 remote name、expose、shared、public path 或 manifest URL。
+一个 Bridge wrapper。Page 不进入 producer。作者不手写 remote name、expose、shared、public path 或 manifest URL。
 
 生产产物以 `mf-manifest.json` 为唯一浏览器模块事实；Snapshot 由标准 Manifest 生成。Host 只保存
 `Plugin definition + build revision -> immutable artifact root/manifest URL` 的冻结 inventory，不复制 Manifest 的 assets、shared
@@ -338,13 +395,16 @@ Remote 不取得 generic HTTP client、raw socket、Shell store 或 unrestricted
 
 ## 资源所有权与清理
 
-下列事件会使整个 socket epoch 或对应 opened handle 失效：
+下列事件会使整个 socket epoch 或已经打开的 handle 失效：
 
 - authentication/logout/revoke；
 - Plugin owner 或 Attachment provider stop/replacement；
-- publication 或部署 producer inventory 改变；
+- publication、部署 producer inventory 或 Page artifact inventory 改变；
 - physical WebSocket broken；
-- View close 或 Bridge activation failure。
+- entry close。
+
+Page validation 或 Bridge activation failure 只拒绝本次 activation，并释放已经取得的资源；它们不会凭空创建 handle，
+也不会单独使 socket epoch 失效。
 
 Owner withdrawal 先关闭 invocation admission、abort open signal，再等待已接纳调用并 drain generation effects。
 Opened handle 对 Cap’n Web 返回的顶层 object graph 负责；renderer 若手工 await object result，应先复制需要长期保留的
@@ -358,11 +418,13 @@ DTO，再 dispose transport result。Observer/callback 需要跨调用保留时�
 - 一个 document 只有一个 physical session 和一个 MF Runtime；
 - auth challenge、ready bootstrap、Management、View API 和 logs follow 使用同一 socket；
 - definition/bindings exact，descriptor identity 不可伪造；
+- Page-only publication 没有 binding、RPC target、MF producer、Bridge 或 retained-root quota；
+- Page plan 只包含二次验证后的 portable AST，Shell 不解析 Markdown 或插入 raw HTML；
 - 每次 open 都返回 fresh roots，close/timeout/replacement 会 abort 并清理；
 - provider-only 与 provider+consumer Attachment 都保持正确 owner；
 - Manifest/expose/shared/Bridge 不匹配会在 commit 或 activation 前失败；
 - Bridge destroy 发生在 opened handle dispose 之前；
-- dev candidate 失败保留当前 revision，成功后完整 reload；
+- mixed Page/MF candidate 原子提交；失败保留完整当前 revision，成功后完整 reload；
 - dynamic rows 数量不改变 definition、producer 或 socket 数；
 - headless host 不初始化 Workbench backend，但 Plugin 业务能力仍正常。
 
@@ -375,8 +437,10 @@ DTO，再 dispose transport result。Observer/callback 需要跨调用保留时�
 - `packages/runtime/src/workbench/react-internal.tsx`
 - `packages/runtime/src/workbench/federation.ts`
 - `packages/runtime/src/services/workbench/WorkbenchRegistry.ts`
+- `packages/runtime/src/services/workbench/WorkbenchPageArtifactService.ts`
 - `packages/runtime/src/services/workbench/WorkbenchSessionTarget.ts`
 - `packages/runtime/src/web/session/`
 - `packages/rolldown/src/workbench/semantic-lowering.ts`
+- `packages/rolldown/src/workbench/page-compiler.ts`
 - `packages/rolldown/src/vite/workbench-ui.ts`
-- `packages/workbench-app/src/workbench/`
+- `packages/workbench-app/src/app/workbench/StandardPageRenderer.tsx`

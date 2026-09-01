@@ -110,7 +110,7 @@ const EmptyWorkbenchPublication = workbench.define({})
 @Plugin({ displayName: 'Runtime session test publication' })
 class RuntimeSessionPublication extends BasePlugin {
 	protected override init(): void {
-		this.ctx.workbench?.publish(EmptyWorkbenchPublication, {})
+		this.ctx.workbench?.publish(EmptyWorkbenchPublication)
 	}
 }
 

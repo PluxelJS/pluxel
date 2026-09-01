@@ -14,6 +14,7 @@ import {
 	type WorkbenchAttachmentDeclarationIdentity,
 	type WorkbenchAttachmentPlacementIdentity,
 	type WorkbenchDeclarationIdentity,
+	type WorkbenchPageIdentity,
 	type WorkbenchViewDeclarationIdentity,
 } from '@pluxel/core/federation'
 import {
@@ -28,11 +29,11 @@ import {
 	readWorkbenchRendererEntry,
 	type AnyWorkbenchDefinition,
 	type WorkbenchAttachmentOpenContext,
-	type WorkbenchBindings,
 	type WorkbenchDefinitionMetadata,
 	type WorkbenchDescriptorMetadata,
 	type WorkbenchPlacement,
 	type WorkbenchPrincipal,
+	type WorkbenchPublishBindings,
 	type WorkbenchTargetFactory,
 	type WorkbenchViewOpenContext,
 } from '../../workbench/definition'
@@ -44,8 +45,13 @@ import type {
 	WorkbenchOpenViewFailureCode,
 	WorkbenchOpenViewInput,
 	WorkbenchOpenViewResult,
+	WorkbenchStandardPageLayoutEntry,
 } from '../../workbench/client-protocol'
 import type { WorkbenchArtifactLookup } from './WorkbenchArtifactService'
+import type {
+	WorkbenchPageArtifactLookup,
+	WorkbenchResolvedPageArtifact,
+} from './WorkbenchPageArtifactService'
 
 const OPEN_VIEW_TIMEOUT_MS = 15_000
 const MAX_OPEN_VIEWS_PER_SESSION = 64
@@ -72,7 +78,16 @@ type PublishedAttachmentPlacement = Readonly<{
 	consumerFactory?: WorkbenchTargetFactory<any>
 }>
 
-type PublishedEntry = PublishedView | PublishedAttachment | PublishedAttachmentPlacement
+type PublishedPage = Readonly<{
+	kind: 'page'
+	metadata: Extract<WorkbenchDescriptorMetadata, { kind: 'page' }>
+}>
+
+type PublishedEntry =
+	| PublishedView
+	| PublishedAttachment
+	| PublishedAttachmentPlacement
+	| PublishedPage
 
 type PublishedTarget = Readonly<{
 	owner: PluginContext
@@ -84,9 +99,10 @@ type PublishedTarget = Readonly<{
 
 type OpenCandidate = Readonly<{
 	target: PublishedTarget
-	entry: PublishedView | PublishedAttachmentPlacement
+	entry: PublishedView | PublishedAttachmentPlacement | PublishedPage
 	layoutEntry: WorkbenchLayoutEntry
 	params: Readonly<Record<string, string>>
+	page?: WorkbenchResolvedPageArtifact
 }>
 
 export class WorkbenchRegistry {
@@ -104,6 +120,7 @@ export class WorkbenchRegistry {
 	constructor(
 		private readonly root: Context,
 		private readonly artifacts: WorkbenchArtifactLookup,
+		private readonly pages: WorkbenchPageArtifactLookup,
 	) {}
 
 	get revision(): number {
@@ -113,7 +130,7 @@ export class WorkbenchRegistry {
 	publish<const Definition extends AnyWorkbenchDefinition>(
 		owner: Context,
 		definition: Definition,
-		bindings: WorkbenchBindings<Definition>,
+		...bindings: WorkbenchPublishBindings<Definition>
 	): void {
 		const pluginOwner = requirePluginContext(owner)
 		if (this.publicationsByContext.has(pluginOwner)) {
@@ -164,7 +181,7 @@ export class WorkbenchRegistry {
 		const entries = publication
 			? [...publication.entries.values()]
 					.filter(
-						(entry): entry is PublishedView | PublishedAttachmentPlacement =>
+						(entry): entry is PublishedView | PublishedAttachmentPlacement | PublishedPage =>
 							entry.kind !== 'attachment',
 					)
 					.map((entry) => this.layoutEntry(publication, entry))
@@ -187,11 +204,38 @@ export class WorkbenchRegistry {
 		if (input.layoutRevision !== this.revisionValue) {
 			return failure('layout_changed')
 		}
-		if (opened.size >= MAX_OPEN_VIEWS_PER_SESSION) return failure('quota_exceeded')
 
 		const candidate = this.resolveOpenCandidate(input)
 		if (!candidate) return failure('target_unavailable')
 		if (sessionSignal.aborted) return failure('target_unavailable')
+		if (candidate.entry.kind === 'page') {
+			let ownerLease: { dispose(): void } | undefined
+			try {
+				ownerLease = enterOwnerInvocation(candidate.target.owner, sessionSignal)
+				if (sessionSignal.aborted) return failure('target_unavailable')
+				const page = candidate.page
+				if (!page || !('standardPageRef' in candidate.layoutEntry)) {
+					return failure('target_unavailable')
+				}
+				return Object.freeze({
+					ok: true as const,
+					value: Object.freeze({
+						kind: 'page' as const,
+						params: candidate.params,
+						standardPageRef: candidate.layoutEntry.standardPageRef,
+						plan: page.plan,
+					}),
+				})
+			} catch (error) {
+				if (sessionSignal.aborted || isOwnerClosed(error)) {
+					return failure('target_unavailable')
+				}
+				throw error
+			} finally {
+				ownerLease?.dispose()
+			}
+		}
+		if (opened.size >= MAX_OPEN_VIEWS_PER_SESSION) return failure('quota_exceeded')
 
 		const lease = new OpenedViewLease(opened, sessionSignal)
 		opened.add(lease)
@@ -215,6 +259,9 @@ export class WorkbenchRegistry {
 					lease,
 				)
 				lease.activate([api])
+				if ('standardPageRef' in candidate.layoutEntry) {
+					throw new Error('Workbench View resolved a Standard Page layout entry')
+				}
 				return Object.freeze({
 					ok: true as const,
 					value: Object.freeze({
@@ -262,6 +309,9 @@ export class WorkbenchRegistry {
 			const provider = roots[0]!
 			const consumer = roots[1]
 			lease.activate(roots)
+			if ('standardPageRef' in candidate.layoutEntry) {
+				throw new Error('Workbench Attachment resolved a Standard Page layout entry')
+			}
 			return Object.freeze({
 				ok: true as const,
 				value: Object.freeze({
@@ -288,11 +338,21 @@ export class WorkbenchRegistry {
 	private preparePublication<const Definition extends AnyWorkbenchDefinition>(
 		owner: PluginContext,
 		definition: Definition,
-		bindings: WorkbenchBindings<Definition>,
+		bindings: readonly unknown[],
 	): PublishedTarget {
 		const metadata = readWorkbenchDefinition(definition)
-		const expectedKeys = metadata.entries.map((entry) => entry.key).sort()
-		const bindingRecord = readPlainRecord(bindings, 'bindings')
+		const expectedKeys = metadata.entries
+			.filter((entry) => entry.kind !== 'page')
+			.map((entry) => entry.key)
+			.sort()
+		if (expectedKeys.length === 0 && bindings.length > 0) {
+			throw new TypeError('[workbench] bindings must be omitted for a binding-free definition')
+		}
+		if (expectedKeys.length > 0 && bindings.length !== 1) {
+			throw new TypeError('[workbench] bindings are required for a definition with bound entries')
+		}
+		const bindingRecord =
+			expectedKeys.length === 0 ? Object.create(null) : readPlainRecord(bindings[0], 'bindings')
 		const actualKeys = Object.keys(bindingRecord).sort()
 		if (!sameStrings(expectedKeys, actualKeys)) {
 			const missing = expectedKeys.filter((key) => !actualKeys.includes(key))
@@ -308,6 +368,16 @@ export class WorkbenchRegistry {
 		for (const descriptor of metadata.entries) {
 			const binding = bindingRecord[descriptor.key]
 			switch (descriptor.kind) {
+				case 'page': {
+					entries.set(
+						descriptor.key,
+						Object.freeze({
+							kind: 'page',
+							metadata: descriptor,
+						}),
+					)
+					break
+				}
 				case 'view': {
 					entries.set(
 						descriptor.key,
@@ -406,6 +476,22 @@ export class WorkbenchRegistry {
 
 	private validateCandidate(candidate: PublishedTarget): void {
 		for (const entry of candidate.entries.values()) {
+			if (entry.kind === 'page') {
+				const descriptor = parseWorkbenchOpenableIdentity({
+					kind: 'page',
+					owner: candidate.owner.pluginInfo.definitionAddress,
+					key: entry.metadata.key,
+				})
+				if (
+					descriptor.kind !== 'page' ||
+					!this.pages.resolvePage(candidate.owner.pluginInfo.definitionAddress, descriptor)
+				) {
+					throw new TypeError(
+						`[workbench] no committed Page artifact for Page "${entry.metadata.key}"`,
+					)
+				}
+				continue
+			}
 			if (entry.kind !== 'view' && entry.kind !== 'attachment') continue
 			const descriptor = parseWorkbenchDeclarationIdentity({
 				kind: entry.kind,
@@ -488,8 +574,32 @@ export class WorkbenchRegistry {
 
 	private layoutEntry(
 		target: PublishedTarget,
-		entry: PublishedView | PublishedAttachmentPlacement,
+		entry: PublishedView | PublishedAttachmentPlacement | PublishedPage,
 	): WorkbenchLayoutEntry {
+		if (entry.kind === 'page') {
+			const descriptor = parseWorkbenchOpenableIdentity({
+				kind: 'page',
+				owner: target.owner.pluginInfo.definitionAddress,
+				key: entry.metadata.key,
+			}) as WorkbenchPageIdentity
+			const resolved = this.pages.resolvePage(target.owner.pluginInfo.definitionAddress, descriptor)
+			if (!resolved) {
+				throw new Error(`[workbench] committed Page artifact withdrew Page "${descriptor.key}"`)
+			}
+			return Object.freeze({
+				descriptor,
+				target: this.describeTarget(target.owner.pluginInfo.nodeAddress, target),
+				definitionRevisions: Object.freeze({
+					target: target.owner.pluginInfo.definitionRevision,
+				}),
+				placement: entry.metadata.placement,
+				standardPageRef: Object.freeze({
+					profile: 1,
+					digest: resolved.artifact.digest,
+					descriptor,
+				}),
+			}) satisfies WorkbenchStandardPageLayoutEntry
+		}
 		if (entry.kind === 'view') {
 			const descriptor = parseWorkbenchOpenableIdentity({
 				kind: 'view',
@@ -572,6 +682,15 @@ export class WorkbenchRegistry {
 		if (!workbenchOpenableIdentityEqual(layoutEntry.descriptor, input.descriptor)) return null
 		const params = matchPlacement(metadata.metadata.placement, input.location)
 		if (!params) return null
+		if (metadata.kind === 'page') {
+			if (layoutEntry.descriptor.kind !== 'page') return null
+			const page = this.pages.resolvePage(
+				target.owner.pluginInfo.definitionAddress,
+				layoutEntry.descriptor,
+			)
+			if (!page) return null
+			return Object.freeze({ target, entry: metadata, layoutEntry, params, page })
+		}
 		return Object.freeze({ target, entry: metadata, layoutEntry, params })
 	}
 

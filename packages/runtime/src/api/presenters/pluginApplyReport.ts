@@ -73,20 +73,19 @@ export function projectPluginApplyReport(
 							lifecycleReport: Object.freeze({
 								ok: summary.lifecycleReport.ok,
 								issues: Object.freeze(
-									summary.lifecycleReport.issues.map(
-										(issue): PluginApplyLifecycleIssue =>
-											Object.freeze({
-												plugin: projectNodeAddress(plugins.nodeAddressOf(issue.plugin)),
-												phase: issue.phase,
-												kind: issue.kind,
-												message: issue.message,
-												...(issue.error ? { error: projectLifecycleError(issue.error) } : {}),
-												...(issue.blockedBy
-													? {
-															blockedBy: projectNodeAddress(plugins.nodeAddressOf(issue.blockedBy)),
-														}
-													: {}),
-											}),
+									summary.lifecycleReport.issues.map((issue): PluginApplyLifecycleIssue =>
+										Object.freeze({
+											plugin: projectNodeAddress(plugins.nodeAddressOf(issue.plugin)),
+											phase: issue.phase,
+											kind: issue.kind,
+											message: issue.message,
+											...(issue.error ? { error: projectLifecycleError(issue.error) } : {}),
+											...(issue.blockedBy
+												? {
+														blockedBy: projectNodeAddress(plugins.nodeAddressOf(issue.blockedBy)),
+													}
+												: {}),
+										}),
 									),
 								),
 							}),

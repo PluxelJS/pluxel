@@ -1,22 +1,64 @@
 ---
 title: 插件管理界面
-description: 用 Direct View API、Attachment 和 Cap’n Web 为 Plugin 提供管理界面。
+description: 用 Standard Page、Direct View API、Attachment 和 Cap’n Web 为 Plugin 提供管理界面。
 ---
 
-Workbench 用于给 Plugin 增加管理页面、设置页、诊断页和对象编辑器。Plugin 直接声明页面和一个
-Cap’n Web API；宿主负责认证、WebSocket session、布局、浏览器模块加载和页面生命周期。
+Workbench 用于给 Plugin 增加说明页、管理页面、诊断页和对象编辑器。静态说明使用 host-rendered Standard Page；
+需要运行期状态或交互时，Plugin 声明完整 View 和 Cap’n Web API。宿主负责认证、WebSocket session、布局、内容交付和页面生命周期。
 
-Workbench-enabled host 固定使用 Cap’n Web over WebSocket、Module Federation 2.0 和 React Bridge。
-Plugin 不选择 transport、loader 或 renderer。Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
+Workbench-enabled host 固定使用 Cap’n Web over WebSocket。完整 View/Attachment 固定使用 Module Federation 2.0 和
+React Bridge；Standard Page 由 Shell 直接渲染，不生成 Plugin JavaScript。Plugin 不选择 transport、loader 或 renderer。
+Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
 普通 Plugin API 提供，不能依赖某个页面曾经打开。
 
 ## 如何选择
 
-- 页面由当前 Plugin 自己拥有：使用 `workbench.view<Api>()`。
+- 只展示运行中 Plugin 的说明、部署提示或故障排查：使用 `workbench.page()`。
+- 页面需要状态、按钮、表单或自定义布局：使用 `workbench.view<Api>()`。
 - 页面和 API 由 provider 拥有，但是否出现、出现在哪里由 consumer 决定：使用 Attachment。
 - 同一页面编辑不同对象：使用一个 parameterized route，不为每个对象创建 entry。
 - 列表、collection、bot account、字体等动态数据：放进 Plugin API 返回值，不建立动态 Workbench 定义。
 - 只需要跨 Plugin 的服务端能力：继续使用 constructor dependency，不添加 UI composition。
+
+## 静态 Standard Page
+
+把固定 definition 与 Markdown source 放在 browser-safe 文件中：
+
+```ts
+// src/workbench.ts
+import { workbench } from '@pluxel/runtime/workbench'
+
+export const OtelWorkbench = workbench.define({
+	operations: workbench.page({
+		document: workbench.markdown(import.meta.url, './workbench-guide.md'),
+		placement: workbench.tab({ label: '运维说明' }),
+	}),
+})
+```
+
+```md
+# OpenTelemetry 运维说明
+
+OTLP HTTP 默认使用端口 `4318`；gRPC 默认使用端口 `4317`。
+
+Header、证书与 client key 应由部署环境提供，不要写入日志。
+```
+
+Plugin 运行时发布 definition，不传 binding：
+
+```ts
+override init() {
+	this.ctx.workbench?.publish(OtelWorkbench)
+}
+```
+
+Markdown 在 build time 编译，浏览器不会运行 Markdown parser 或插入 raw HTML。支持普通段落、标题、强调/删除线、
+列表、引用、分隔线、代码、bounded GFM table，以及安全的 `https:`、`mailto:` 和本文 fragment link。HTML、图片、
+相对链接、JSX 风格标签、task list 与 frontmatter 会使构建失败；`{name}` 一类 MDX expression 只按普通文本处理，
+不会执行。
+
+Standard Page 没有 runtime binding、RPC target、snapshot、invalidate、signal 或 action，也不会生成 MF producer/Bridge。
+它只在 owning Plugin generation 正常运行并发布时可见；需要动态内容时使用完整 View。
 
 ## 最小完整示例
 
@@ -323,12 +365,11 @@ resize、focus 和 workspace persistence。
 Plugin API 和 observer 都复用这个 Cap’n Web session。认证或 publication epoch 失效、socket broken 时，页面要求完整
 reload；不会在原 document 内切换 transport、重连一部分功能或复用旧 API root。
 
-MF2 manifest 和 JS/CSS 仍通过 HTTP 获取；浏览器写入 `HttpOnly` cookie 还有一个 single-use cookie-commit POST。
-这些端点不承载 Workbench RPC。
+MF2 manifest 和 JS/CSS 仍通过 HTTP 获取；Standard Page plan 则随现有 `openView()` RPC 返回，不增加浏览器 artifact
+fetch。浏览器写入 `HttpOnly` cookie 还有一个 single-use cookie-commit POST。这些端点不承载 Workbench RPC。
 
 Plugin stop/replacement 会撤销 publication，并使当前 socket epoch 失效。Shell 销毁所有 active Bridges、释放 opened
-handles，再要求整页 reload。开发期 UI candidate 只有在 Manifest/expose/shared/Bridge 验证成功后才提交；失败不会替换
-当前完整版本。
+handles，再要求整页 reload。开发期 Page/MF candidate 只有全部验证并原子提交后才生效；失败不会替换当前完整版本。
 
 ## Vite 与反向代理
 
@@ -345,12 +386,14 @@ physical TLS 或 locality；remote Management 必须使用 TLS passthrough、HTT
 
 - Workbench disabled 时 Plugin 核心 API 与 headless 行为正常；
 - Definition、binding 和 renderer descriptor 的类型保持 exact；
+- Page-only Plugin 不生成 MF producer/Bridge，也没有 server-side Page lease；
+- Standard Page 的 HTML、图片、不安全链接和超预算内容在 build/RPC 边界被拒绝；
 - 每次打开创建 fresh target，关闭、abort 和 replacement 会清理 subscription/task；
 - RPC 输入预算、领域授权和稳定失败码有 Plugin 自己的测试；
 - awaited DTO 在进入 React state 前已复制并释放 remote result；
 - parameterized route 的 params 由 server 匹配；
 - Attachment provider/consumer owner 与 placement 正确；
-- production build 包含标准 `mf-manifest.json`、所有 exposes 和动态类型；
+- production build 对完整 View 包含标准 `mf-manifest.json`、所有 exposes 和动态类型，对 Page 包含已验证的 immutable plan；
 - Vite HMR 与 Runtime session Upgrade 都由同一 listener 正确分流；
 - 反向代理保留 Upgrade、同源 cookie 和短期 handoff 的实例归属；
 - 页面没有备用 API transport 或 reconnect 分支。

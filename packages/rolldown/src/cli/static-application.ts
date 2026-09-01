@@ -12,7 +12,9 @@ import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/st
 import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler'
 import {
 	assembleWorkbenchDeploymentArtifacts,
+	assembleWorkbenchPageDeploymentArtifacts,
 	collectWorkbenchDeploymentArtifacts,
+	collectWorkbenchPageDeploymentArtifacts,
 } from '../workbench/deployment-assembly'
 import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
@@ -568,14 +570,14 @@ function staticApplicationAssemblyPlugin(options: {
 					content: options.state.environmentExample,
 					ownedExisting: options.state.environmentExampleOwned,
 				})
-				let workbenchInventory = null
+				let workbenchInventories = null
 				if (options.variant === 'workbench') {
 					const publicDir = resolveRuntimeWorkbenchPublicDir(options.cwd)
 					await cp(publicDir, resolve(options.outDir, 'workbench/public'), {
 						recursive: true,
 						force: true,
 					})
-					workbenchInventory = await assembleBundledPackageWorkbenchArtifacts(
+					workbenchInventories = await assembleBundledPackageWorkbenchArtifacts(
 						packageRoots,
 						resolve(options.outDir, 'workbench'),
 					)
@@ -584,10 +586,16 @@ function staticApplicationAssemblyPlugin(options: {
 					(item): item is OutputChunk => item.type === 'chunk' && item.isEntry,
 				)
 				if (!entry) throw new Error('[static-application] server entry chunk was not generated')
-				const artifacts = workbenchInventory
+				const artifacts = workbenchInventories
 					? await collectWorkbenchDeploymentArtifacts(
 							resolve(options.outDir, 'workbench'),
-							workbenchInventory,
+							workbenchInventories.producers,
+						)
+					: []
+				const pages = workbenchInventories
+					? await collectWorkbenchPageDeploymentArtifacts(
+							resolve(options.outDir, 'workbench'),
+							workbenchInventories.pages,
 						)
 					: []
 				const nodeModules = await collectNodeModuleArtifacts(
@@ -626,6 +634,7 @@ function staticApplicationAssemblyPlugin(options: {
 									included: options.variant === 'workbench',
 									publicRoot: options.variant === 'workbench' ? 'workbench/public' : null,
 									artifacts,
+									pages,
 								},
 							},
 							residualDependencies: {
@@ -647,12 +656,20 @@ function staticApplicationAssemblyPlugin(options: {
 async function assembleBundledPackageWorkbenchArtifacts(
 	packageRoots: readonly string[],
 	destinationRoot: string,
-): ReturnType<typeof assembleWorkbenchDeploymentArtifacts> {
+): Promise<
+	Readonly<{
+		producers: Awaited<ReturnType<typeof assembleWorkbenchDeploymentArtifacts>>
+		pages: Awaited<ReturnType<typeof assembleWorkbenchPageDeploymentArtifacts>>
+	}>
+> {
 	return runWorkbenchOutputTransaction(destinationRoot, async () => {
-		return assembleWorkbenchDeploymentArtifacts({
+		const input = {
 			destinationRoot,
 			dependencyRoots: packageRoots.map((packageRoot) => resolve(packageRoot, 'dist/workbench')),
-		})
+		}
+		const producers = await assembleWorkbenchDeploymentArtifacts(input)
+		const pages = await assembleWorkbenchPageDeploymentArtifacts(input)
+		return Object.freeze({ producers, pages })
 	})
 }
 

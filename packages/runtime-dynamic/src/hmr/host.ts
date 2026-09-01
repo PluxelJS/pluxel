@@ -41,11 +41,11 @@ import {
 	type WorkspaceSnapshot,
 } from './diagnose'
 import {
-	attachLoaderHmrWorkbenchProducerPublisher,
+	attachLoaderHmrWorkbenchArtifactPublisher,
 	LoaderHmrService,
 	type LoaderHmrConfig,
 } from './engine/LoaderHmrService'
-export { configureLoaderHmrWorkbenchProducerSource } from './engine/LoaderHmrService'
+export { configureLoaderHmrWorkbenchArtifactSource } from './engine/LoaderHmrService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 import { resolveDynamicPluginSources, type DynamicPluginSource } from '../sources'
@@ -530,8 +530,8 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		viteServer: viteServer ?? hmr.vite,
 	})
 	if (ctx.workbench) {
-		attachLoaderHmrWorkbenchProducerPublisher(hmr, (inputs) =>
-			artifactCompiler.publishWorkbenchProducers(inputs),
+		attachLoaderHmrWorkbenchArtifactPublisher(hmr, (input) =>
+			artifactCompiler.publishWorkbenchArtifacts(input),
 		)
 	}
 

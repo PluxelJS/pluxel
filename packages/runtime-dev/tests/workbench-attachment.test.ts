@@ -22,7 +22,9 @@ describe('attachPluginArtifactCompiler', () => {
 		expect(attachSourceBinder).toHaveBeenCalledTimes(1)
 
 		attachment.dispose()
-		await expect(attachment.publishWorkbenchProducers([])).rejects.toThrow(/disposed/)
+		await expect(
+			attachment.publishWorkbenchArtifacts({ producers: [], pages: [] }),
+		).rejects.toThrow(/disposed/)
 		const attachmentAgain = attachPluginArtifactCompiler(ctx, options)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(2)
 		attachmentAgain.dispose()

@@ -119,7 +119,7 @@ local template 默认不运行 package manager；审查模板内容后显式传�
 2. 合并标准 Plugin build pipeline；
 3. 运行 preprocessor、decorator/config semantic extraction，并聚合 PluginPart dependency facts；
 4. 生成 server ESM 与 declarations；
-5. 按 declaration 生成 Workbench、Node module、worker、database artifact；
+5. 按 declaration 生成 Workbench Standard Page/MF producer、Node module、worker、database artifact；
 6. 成功后事务性同步 generated package metadata。
 
 用户 `tsdown.config.ts` 只描述 entry/output/minify/sourcemap 等普通 bundler 配置。不要再次安装第二套 semantic plugin。
@@ -181,6 +181,10 @@ export default staticApplication({
 Static/dynamic Vite adapters 执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
 Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
 graph 与 server Plugin implementation 保持分离。
+
+`workbench.markdown(import.meta.url, './guide.md')` 的 source 会进入 adapter watch graph，并在 server transform 阶段编译；
+Page-only definition 不创建 browser module graph。Definition 同时含 Page 与 renderer 时，dev compiler 把 Page plan 与 MF
+producer 作为一个 candidate 提交，任一分支失败都保留完整 last-known-good revision。
 
 当前生成产物使用 Plugin lowering ABI v2，其中 root constructor arguments、Part constructor arguments 与 owner aggregate graph facts
 是分离字段。旧 ABI artifact 不会被当成“没有 Part dependency”继续加载；看到 `plugin_lowering_abi_unsupported` 时，应配套升级

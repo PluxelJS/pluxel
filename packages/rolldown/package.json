@@ -125,6 +125,9 @@
 		"@module-federation/vite": "catalog:build",
 		"@pluxel/core": "workspace:^",
 		"drizzle-kit": "catalog:backend",
+		"mdast-util-from-markdown": "catalog:prod",
+		"mdast-util-gfm": "catalog:prod",
+		"micromark-extension-gfm": "catalog:prod",
 		"nf3": "catalog:prod",
 		"oxc-parser": "catalog:prod",
 		"oxc-resolver": "catalog:prod",
@@ -137,6 +140,7 @@
 	},
 	"devDependencies": {
 		"@rolldown/pluginutils": "catalog:build",
+		"@types/mdast": "catalog:types",
 		"@types/node": "catalog:types",
 		"fdir": "catalog:dev",
 		"fs-fixture": "catalog:dev",

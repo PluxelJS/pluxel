@@ -25,10 +25,10 @@ import type { RpcStub } from '../capnweb'
 import * as WorkbenchClient from './client'
 import {
 	openWorkbenchView,
-	type WorkbenchClientOpenResult,
+	type WorkbenchClientFederatedOpenResult,
 	type WorkbenchOpenedViewHandle,
 } from './client'
-import type { WorkbenchLayoutEntry, WorkbenchSessionApi } from './client-protocol'
+import type { WorkbenchFederatedLayoutEntry, WorkbenchSessionApi } from './client-protocol'
 import * as WorkbenchReactInternal from './react-internal'
 import * as WorkbenchReact from './react'
 import {
@@ -221,7 +221,7 @@ export function createWorkbenchViewHost(
 
 export type OpenFederatedWorkbenchViewInput = Readonly<{
 	session: RpcStub<WorkbenchSessionApi>
-	entry: WorkbenchLayoutEntry
+	entry: WorkbenchFederatedLayoutEntry
 	layoutRevision: number
 	location?: string
 	dom: HTMLElement
@@ -231,7 +231,7 @@ export type OpenFederatedWorkbenchViewInput = Readonly<{
 
 export type OpenFederatedWorkbenchViewResult =
 	| Readonly<{ ok: true; view: FederatedWorkbenchView }>
-	| Exclude<WorkbenchClientOpenResult, { ok: true }>
+	| Exclude<WorkbenchClientFederatedOpenResult, { ok: true }>
 
 /** One exact MF Bridge application paired with one opened Cap'n Web result. */
 export class FederatedWorkbenchView implements Disposable {
@@ -320,7 +320,7 @@ export async function openFederatedWorkbenchView(
 	if (!(input.host instanceof WorkbenchViewHostHandle) || !input.host.active) {
 		throw new TypeError('[workbench/federation] a fresh View host handle is required')
 	}
-	let opened: WorkbenchClientOpenResult
+	let opened: WorkbenchClientFederatedOpenResult
 	try {
 		opened = await openWorkbenchView(input.session, input.entry, {
 			layoutRevision: input.layoutRevision,

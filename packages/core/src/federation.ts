@@ -76,6 +76,12 @@ export type WorkbenchViewDeclarationIdentity = Readonly<{
 	key: string
 }>
 
+export type WorkbenchPageIdentity = Readonly<{
+	kind: 'page'
+	owner: PluginDefinitionAddress
+	key: string
+}>
+
 export type WorkbenchAttachmentDeclarationIdentity = Readonly<{
 	kind: 'attachment'
 	owner: PluginDefinitionAddress
@@ -95,6 +101,7 @@ export type WorkbenchAttachmentPlacementIdentity = Readonly<{
 
 export type WorkbenchOpenableIdentity =
 	| WorkbenchViewDeclarationIdentity
+	| WorkbenchPageIdentity
 	| WorkbenchAttachmentPlacementIdentity
 
 export type WorkbenchFederationDescriptorIdentity = WorkbenchDeclarationIdentity
@@ -212,9 +219,17 @@ export function parseWorkbenchOpenableIdentity(input: unknown): WorkbenchOpenabl
 		if (declaration.kind !== 'view') throw new TypeError('unreachable Workbench identity state')
 		return declaration
 	}
+	if (record.kind === 'page') {
+		assertExactKeys(record, 'Page identity', ['kind', 'owner', 'key'])
+		return Object.freeze({
+			kind: 'page',
+			owner: parsePluginDefinitionAddress(record.owner),
+			key: readEntryKey(record.key, 'Page identity key'),
+		})
+	}
 	if (record.kind !== 'attachment-placement') {
 		throw new TypeError(
-			'[pluxel/core/federation] openable identity kind must be view or attachment-placement',
+			'[pluxel/core/federation] openable identity kind must be view, page, or attachment-placement',
 		)
 	}
 	assertExactKeys(record, 'attachment placement identity', ['kind', 'consumer', 'key', 'provider'])
@@ -253,17 +268,22 @@ export function workbenchOpenableIdentityEqual(
 ): boolean {
 	const canonicalLeft = parseWorkbenchOpenableIdentity(left)
 	const canonicalRight = parseWorkbenchOpenableIdentity(right)
-	if (canonicalLeft.kind === 'view' || canonicalRight.kind === 'view') {
+	if (
+		canonicalLeft.kind === 'attachment-placement' ||
+		canonicalRight.kind === 'attachment-placement'
+	) {
 		return (
-			canonicalLeft.kind === 'view' &&
-			canonicalRight.kind === 'view' &&
-			workbenchDeclarationIdentityEqual(canonicalLeft, canonicalRight)
+			canonicalLeft.kind === 'attachment-placement' &&
+			canonicalRight.kind === 'attachment-placement' &&
+			canonicalLeft.key === canonicalRight.key &&
+			pluginDefinitionAddressEqual(canonicalLeft.consumer, canonicalRight.consumer) &&
+			workbenchDeclarationIdentityEqual(canonicalLeft.provider, canonicalRight.provider)
 		)
 	}
 	return (
+		canonicalLeft.kind === canonicalRight.kind &&
 		canonicalLeft.key === canonicalRight.key &&
-		pluginDefinitionAddressEqual(canonicalLeft.consumer, canonicalRight.consumer) &&
-		workbenchDeclarationIdentityEqual(canonicalLeft.provider, canonicalRight.provider)
+		pluginDefinitionAddressEqual(canonicalLeft.owner, canonicalRight.owner)
 	)
 }
 

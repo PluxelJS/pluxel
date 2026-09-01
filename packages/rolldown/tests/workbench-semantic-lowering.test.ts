@@ -1,4 +1,4 @@
-import { readFile, symlink, writeFile } from 'node:fs/promises'
+import { readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { parsePluginDefinitionAddress } from '@pluxel/core'
 import { workbenchFederationBuildOutDir } from '@pluxel/core/federation'
 import { createFixture } from 'fs-fixture'
@@ -12,6 +12,10 @@ import { buildWorkbenchFederationProducer } from '../src/vite/workbench-ui'
 import { validateWorkbenchFederationArtifact } from '../src/workbench/artifact'
 import { resolveWorkbenchFederationShared } from '../src/workbench/build-contract'
 import { createWorkbenchSemanticLowering } from '../src/workbench/semantic-lowering'
+import {
+	publishWorkbenchPageArtifact,
+	writeWorkbenchPageDeploymentInventory,
+} from '../src/workbench/page-artifact'
 
 const owner = parsePluginDefinitionAddress({
 	entry: { kind: 'package-root', packageName: '@example/semantic-plugin' },
@@ -139,6 +143,159 @@ async function collectModule(
 }
 
 describe('Workbench semantic lowering', () => {
+	it('compiles a Markdown-only Page without creating or resolving an MF producer', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: '@example/page-only', type: 'module' }),
+			'src/guide.md': [
+				'# Operations',
+				'',
+				'See [Operations](#Operations), [运维说明](#运维说明), and [support](mailto:ops@example.com).',
+				'',
+				'## 运维说明',
+				'',
+				'| State | Ready |',
+				'| :-- | --: |',
+				'| Cache | Yes |',
+				'',
+				'```sh',
+				'pluxel status',
+				'```',
+			].join('\n'),
+		})
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({
+	guide: workbench.page({
+		document: workbench.markdown(import.meta.url, './guide.md'),
+		placement: workbench.tab({ label: 'Guide' }),
+	}),
+})
+class SemanticPlugin {
+	init() { this.ctx.workbench.publish(SemanticWorkbench) }
+}
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+
+		await expect(lowering.plans()).resolves.toEqual([])
+		const pages = await lowering.pageCompilations()
+		expect(pages).toHaveLength(1)
+		expect(pages[0]).toMatchObject({
+			digest: expect.stringMatching(/^[a-f\d]{64}$/),
+			root: fixture.path,
+			pageSet: {
+				version: 1,
+				kind: 'workbench-page-set',
+				definition: owner,
+				entries: [{ key: 'guide', page: { version: 1, kind: 'standard-page' } }],
+			},
+		})
+		const blocks = pages[0]!.pageSet.entries[0]!.page.document.blocks
+		expect(blocks).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ type: 'heading', anchor: 'operations' }),
+				expect.objectContaining({ type: 'table' }),
+				expect.objectContaining({ type: 'code', language: 'sh', value: 'pluxel status' }),
+			]),
+		)
+		expect(blocks).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ type: 'heading', anchor: 'section' }),
+				expect.objectContaining({
+					type: 'paragraph',
+					children: expect.arrayContaining([
+						expect.objectContaining({ target: { kind: 'fragment', anchor: 'operations' } }),
+						expect.objectContaining({ target: { kind: 'fragment', anchor: 'section' } }),
+					]),
+				}),
+			]),
+		)
+		const initialDigest = pages[0]!.digest
+		await writeFile(resolve(fixture.path, 'src/guide.md'), '# Updated operations\n')
+		lowering.invalidate()
+		const [updatedPage] = await lowering.pageCompilations()
+		expect(updatedPage?.digest).not.toBe(initialDigest)
+		await expect(
+			readFile(resolve(fixture.path, '.pluxel/workbench-generated/missing'), 'utf-8'),
+		).rejects.toMatchObject({ code: 'ENOENT' })
+	})
+
+	it('rejects unsafe or unsupported Markdown at the build boundary', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: '@example/page-invalid', type: 'module' }),
+			'src/guide.md': '# Guide\n\n<script>alert(1)</script>\n',
+		})
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({
+	guide: workbench.page({
+		document: workbench.markdown(import.meta.url, './guide.md'),
+		placement: workbench.route({ path: '/guide' }),
+	}),
+})
+class SemanticPlugin {
+	init() { this.ctx.workbench.publish(SemanticWorkbench) }
+}
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+		await expect(lowering.pageCompilations()).rejects.toThrow('raw HTML and MDX')
+	})
+
+	it('rejects leading frontmatter before CommonMark can reinterpret it as content', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: '@example/page-frontmatter', type: 'module' }),
+			'src/guide.md': '---\ntitle: Guide\n---\n\n# Guide\n',
+		})
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({
+	guide: workbench.page({
+		document: workbench.markdown(import.meta.url, './guide.md'),
+		placement: workbench.tab({ label: 'Guide' }),
+	}),
+})
+class SemanticPlugin {
+	init() { this.ctx.workbench.publish(SemanticWorkbench) }
+}
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+		await expect(lowering.pageCompilations()).rejects.toThrow('1:1: frontmatter is not supported')
+	})
+
+	it('reuses an exact packaged Page artifact when distribution source has no Markdown', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: '@example/packaged-page', type: 'module' }),
+			'src/guide.md': '# Packaged guide\n',
+		})
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({
+	guide: workbench.page({
+		document: workbench.markdown(import.meta.url, './guide.md'),
+		placement: workbench.tab({ label: 'Guide' }),
+	}),
+})
+class SemanticPlugin {
+	init() { this.ctx.workbench.publish(SemanticWorkbench) }
+}
+`
+		const source = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(source, fixture.path, 'src/plugin.ts', code)
+		const [compiled] = await source.pageCompilations()
+		const entry = await publishWorkbenchPageArtifact(fixture.path, 'dist', compiled!)
+		await writeWorkbenchPageDeploymentInventory(fixture.path, 'dist', [entry])
+		await rm(resolve(fixture.path, 'src/guide.md'))
+
+		const packaged = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(packaged, fixture.path, 'src/plugin.ts', code)
+		const [reused] = await packaged.pageCompilations()
+		expect(reused?.digest).toBe(compiled?.digest)
+		expect(reused?.pageSet).toEqual(compiled?.pageSet)
+		expect(reused?.sources).toEqual([])
+	})
+
 	it('lowers one owner producer and generates exact descriptor-bound Bridge entries', async () => {
 		await using fixture = await createFixture(fixtureFiles())
 		const code = `

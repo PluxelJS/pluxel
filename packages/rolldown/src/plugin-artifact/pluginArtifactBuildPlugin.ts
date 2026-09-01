@@ -18,7 +18,10 @@ import { extractDatabaseDeclarations } from '../database/declaration.ts'
 import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
 import { resolveWithOxc } from '../resolver/oxc.ts'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
-import type { WorkbenchSemanticProducerCompilation } from '../workbench/semantic-lowering.ts'
+import type {
+	WorkbenchSemanticPageCompilation,
+	WorkbenchSemanticProducerCompilation,
+} from '../workbench/semantic-lowering.ts'
 import { allowOptionalQuerySuffix, type ViteCompatPlugin } from '../rolldown/plugins/compat.ts'
 import {
 	normalizePatterns,
@@ -79,6 +82,10 @@ export type PluginArtifactBuildPluginOptions = {
 				compilations?: () =>
 					| readonly WorkbenchSemanticProducerCompilation[]
 					| Promise<readonly WorkbenchSemanticProducerCompilation[]>
+				/** @internal Returns canonical immutable Standard Page sets. */
+				pageCompilations?: () =>
+					| readonly WorkbenchSemanticPageCompilation[]
+					| Promise<readonly WorkbenchSemanticPageCompilation[]>
 		  }
 	/** Node artifact build policy. Omission enables Node artifacts with default minification. */
 	node?: {
@@ -205,7 +212,21 @@ export function pluginArtifactBuildPlugin(
 		async writeBundle() {
 			const producerCompilations =
 				options.workbench === false ? [] : await (options.workbench?.compilations?.() ?? [])
+			const pageCompilations =
+				options.workbench === false ? [] : await (options.workbench?.pageCompilations?.() ?? [])
+			for (const compilation of pageCompilations) {
+				for (const source of compilation.sources) this.addWatchFile(source)
+			}
 			const producerPlans = producerCompilations.map((compilation) => compilation.plan)
+			const pageTools =
+				options.workbench === false ? undefined : await import('../workbench/page-artifact.ts')
+			const pageEntries = pageTools
+				? await Promise.all(
+						pageCompilations.map((compilation) =>
+							pageTools.publishWorkbenchPageArtifact(root, options.buildDir ?? 'dist', compilation),
+						),
+					)
+				: []
 			await Promise.all([
 				...producerCompilations
 					.toSorted((left, right) => left.plan.producer.localeCompare(right.plan.producer))
@@ -218,7 +239,14 @@ export function pluginArtifactBuildPlugin(
 					: []),
 			])
 			if (options.workbench !== false) {
-				await writeWorkbenchDeploymentInventory(root, producerPlans, options)
+				await Promise.all([
+					writeWorkbenchDeploymentInventory(root, producerPlans, options),
+					pageTools!.writeWorkbenchPageDeploymentInventory(
+						root,
+						options.buildDir ?? 'dist',
+						pageEntries,
+					),
+				])
 			}
 		},
 		async closeBundle() {

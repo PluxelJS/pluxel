@@ -25,7 +25,12 @@ export type PluginSourceVitePipeline = Readonly<{
 	plugins: readonly PluginOption[]
 	semantics: Pick<
 		PluginSemanticsCollector,
-		'snapshot' | 'definitions' | 'workbenchPlans' | 'workbenchCompilations'
+		| 'snapshot'
+		| 'definitions'
+		| 'workbenchPlans'
+		| 'workbenchCompilations'
+		| 'workbenchPageCompilations'
+		| 'invalidateWorkbench'
 	>
 }>
 
@@ -173,6 +178,8 @@ export function createPluginSourceVitePipeline(
 		definitions: () => requireCollector().definitions(),
 		workbenchPlans: () => requireCollector().workbenchPlans(),
 		workbenchCompilations: () => requireCollector().workbenchCompilations(),
+		workbenchPageCompilations: () => requireCollector().workbenchPageCompilations(),
+		invalidateWorkbench: () => requireCollector().invalidateWorkbench(),
 	})
 	return Object.freeze({ plugins: Object.freeze(plugins), semantics })
 }

@@ -137,7 +137,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		await previous?.stop()
 		const {
 			bootPlannedLoaderHmrHost,
-			configureLoaderHmrWorkbenchProducerSource,
+			configureLoaderHmrWorkbenchArtifactSource,
 			planLoaderHmrHostFromConfig,
 		} = await loadDynamicHmrHostModule(server)
 		const plan = await planLoaderHmrHostFromConfig(loaded.config, {
@@ -152,8 +152,15 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					? resolve(plan.runtimeStorage.persistenceDir, '..', 'workbench-artifacts')
 					: undefined,
 		})
-		configureLoaderHmrWorkbenchProducerSource(booted.hmr, {
-			compilations: () => sourcePipeline.semantics.workbenchCompilations(),
+		configureLoaderHmrWorkbenchArtifactSource(booted.hmr, {
+			compilations: async () => {
+				sourcePipeline.semantics.invalidateWorkbench()
+				const [producers, pages] = await Promise.all([
+					sourcePipeline.semantics.workbenchCompilations(),
+					sourcePipeline.semantics.workbenchPageCompilations(),
+				])
+				return { producers, pages }
+			},
 		})
 		const applicationCarrier = state.applicationCarrier
 		if (!applicationCarrier) {
@@ -462,7 +469,7 @@ async function loadDynamicHmrHostModule(
 	Pick<
 		typeof import('./hmr/host'),
 		| 'bootPlannedLoaderHmrHost'
-		| 'configureLoaderHmrWorkbenchProducerSource'
+		| 'configureLoaderHmrWorkbenchArtifactSource'
 		| 'planLoaderHmrHostFromConfig'
 	>
 > {

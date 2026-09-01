@@ -33,7 +33,6 @@
 		"@tanstack/react-store": "catalog:frontend",
 		"@tanstack/react-virtual": "catalog:frontend",
 		"@worksplit/react": "workspace:*",
-		"markdown-exit": "catalog:prod",
 		"valibot-form": "workspace:*"
 	},
 	"devDependencies": {

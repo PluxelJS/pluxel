@@ -2,7 +2,9 @@ import type { PluginNodeAddress } from '@pluxel/core'
 import type {
 	WorkbenchDeclarationIdentity,
 	WorkbenchOpenableIdentity,
+	WorkbenchPageIdentity,
 } from '@pluxel/core/federation'
+import type { WorkbenchStandardPagePlanV1 } from '@pluxel/core/internal'
 import type { RpcTarget } from '../capnweb'
 import type { WorkbenchPlacement } from './definition'
 
@@ -20,8 +22,8 @@ export type WorkbenchLayoutTarget = Readonly<{
 	displayName: string
 }>
 
-export type WorkbenchLayoutEntry = Readonly<{
-	descriptor: WorkbenchOpenableIdentity
+export type WorkbenchFederatedLayoutEntry = Readonly<{
+	descriptor: Exclude<WorkbenchOpenableIdentity, WorkbenchPageIdentity>
 	target: WorkbenchLayoutTarget
 	renderer: PluginNodeAddress
 	definitionRevisions: Readonly<{
@@ -31,6 +33,24 @@ export type WorkbenchLayoutEntry = Readonly<{
 	placement: WorkbenchPlacement
 	federatedViewRef: WorkbenchFederatedViewRef
 }>
+
+export type WorkbenchStandardPageRef = Readonly<{
+	profile: 1
+	digest: string
+	descriptor: WorkbenchPageIdentity
+}>
+
+export type WorkbenchStandardPageLayoutEntry = Readonly<{
+	descriptor: WorkbenchPageIdentity
+	target: WorkbenchLayoutTarget
+	definitionRevisions: Readonly<{
+		target: number
+	}>
+	placement: WorkbenchPlacement
+	standardPageRef: WorkbenchStandardPageRef
+}>
+
+export type WorkbenchLayoutEntry = WorkbenchFederatedLayoutEntry | WorkbenchStandardPageLayoutEntry
 
 export type WorkbenchLayout = Readonly<{
 	profile: 1
@@ -72,7 +92,17 @@ export type WorkbenchOpenedAttachment = Readonly<{
 	consumer?: RpcTarget
 }>
 
-export type WorkbenchOpenedView = WorkbenchOpenedLocalView | WorkbenchOpenedAttachment
+export type WorkbenchOpenedStandardPage = Readonly<{
+	kind: 'page'
+	params: Readonly<Record<string, string>>
+	standardPageRef: WorkbenchStandardPageRef
+	plan: WorkbenchStandardPagePlanV1
+}>
+
+export type WorkbenchOpenedView =
+	| WorkbenchOpenedLocalView
+	| WorkbenchOpenedAttachment
+	| WorkbenchOpenedStandardPage
 
 export type WorkbenchOpenViewResult =
 	| Readonly<{ ok: true; value: WorkbenchOpenedView }>

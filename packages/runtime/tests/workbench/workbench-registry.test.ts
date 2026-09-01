@@ -1,4 +1,5 @@
-import { pluginNodeAddressOf } from '@pluxel/core'
+import { pluginNodeAddressOf, type Context } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
@@ -23,6 +24,13 @@ const LocalWorkbench = workbench.define({
 	settings: workbench.view<SettingsApi>({
 		renderer,
 		placement: workbench.tab({ label: 'Settings' }),
+	}),
+})
+
+const PageWorkbench = workbench.define({
+	guide: workbench.page({
+		document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
+		placement: workbench.tab({ label: 'Guide' }),
 	}),
 })
 
@@ -86,6 +94,16 @@ class LocalPlugin extends BasePlugin {
 		})
 	}
 }
+
+@Plugin({ displayName: 'Page' })
+class PagePlugin extends BasePlugin {
+	protected override init() {
+		this.ctx.workbench?.publish(PageWorkbench)
+	}
+}
+
+@Plugin({ displayName: 'No publication' })
+class NoPublicationPlugin extends BasePlugin {}
 
 let reusedTarget: SettingsTarget | undefined
 let reusedFactory: PromiseWithResolvers<SettingsTarget> | undefined
@@ -204,6 +222,72 @@ class ConsumerPlugin extends BasePlugin {
 }
 
 describe('Workbench vNext publication', () => {
+	it('rejects an explicit undefined binding for a binding-free Page definition', async () => {
+		const host = createRuntimeHost()
+		host.add(NoPublicationPlugin)
+		host.start(NoPublicationPlugin)
+		await host.commit()
+
+		try {
+			const instance = requirePluginService(host.ctx).getInstance(
+				pluginNodeAddressOf(NoPublicationPlugin),
+			)
+			if (!instance) throw new Error('NoPublicationPlugin did not start')
+			const registry = requireWorkbench(host.ctx).registry as unknown as {
+				publish(owner: Context, definition: unknown, ...bindings: unknown[]): void
+			}
+
+			expect(() => registry.publish(instance.ctx, PageWorkbench, undefined)).toThrow(
+				'bindings must be omitted for a binding-free definition',
+			)
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('opens a static Page without a target, retained lease, or View quota', async () => {
+		const host = createRuntimeHost()
+		host.add(PagePlugin)
+		host.start(PagePlugin)
+		await host.commit()
+
+		try {
+			const backend = requireWorkbench(host.ctx)
+			const session = backend.createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(PagePlugin)
+			const layout = session.target.layout({ target })
+			expect(layout.entries).toHaveLength(1)
+			const entry = layout.entries[0]!
+			expect(entry.descriptor).toMatchObject({ kind: 'page', key: 'guide' })
+			expect(entry).toHaveProperty('standardPageRef')
+			expect(entry).not.toHaveProperty('renderer')
+			expect(entry).not.toHaveProperty('federatedViewRef')
+
+			for (let index = 0; index < 65; index += 1) {
+				const result = await session.target.openView({
+					layoutRevision: layout.revision,
+					target,
+					descriptor: entry.descriptor,
+				})
+				expect(result.ok).toBe(true)
+				if (!result.ok || result.value.kind !== 'page') throw new Error('Page open failed')
+				expect(result.value).not.toHaveProperty('api')
+				expect(result.value).not.toHaveProperty('provider')
+				expect(result.value.plan).toEqual({
+					version: 1,
+					kind: 'standard-page',
+					document: { version: 1, blocks: [] },
+				})
+			}
+
+			host.stop(PagePlugin)
+			await host.commit()
+			expect(session.signal.aborted).toBe(true)
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('keeps layout capability-free and opens one fresh root lazily', async () => {
 		localFactoryCalls = 0
 		disposedTargets.length = 0

@@ -345,17 +345,15 @@ const ratioOf = (rowsByName: Map<string, BenchRow>, numerator: string, denominat
 const referenceRowsFromComparison = (comparison: ComparisonRow[]): BenchRow[] =>
 	comparison
 		.filter((row) => row.referenceLatencyMeanMs != null)
-		.map(
-			(row): BenchRow => ({
-				name: row.name,
-				runs: null,
-				opsMean: row.referenceOpsMean ?? 0,
-				opsRmePct: 0,
-				latencyMeanMs: row.referenceLatencyMeanMs!,
-				latencyP99Ms: null,
-				latencyRmePct: 0,
-			}),
-		)
+		.map((row): BenchRow => ({
+			name: row.name,
+			runs: null,
+			opsMean: row.referenceOpsMean ?? 0,
+			opsRmePct: 0,
+			latencyMeanMs: row.referenceLatencyMeanMs!,
+			latencyP99Ms: null,
+			latencyRmePct: 0,
+		}))
 
 export function buildDecisionSignals(rows: BenchRow[], comparison: ComparisonRow[]) {
 	const referenceRows = referenceRowsFromComparison(comparison)

@@ -1,6 +1,7 @@
 import { parsePluginDefinitionAddress, parsePluginNodeAddress } from '@pluxel/core'
 import {
 	parseWorkbenchDeclarationIdentity,
+	parseWorkbenchOpenableIdentity,
 	type WorkbenchViewDeclarationIdentity,
 } from '@pluxel/core/federation'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,6 +11,7 @@ import {
 	readWorkbenchLayout,
 	type WorkbenchLayoutEntry,
 	type WorkbenchSessionApi,
+	type WorkbenchStandardPageLayoutEntry,
 } from '@pluxel/runtime/workbench/client'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 
@@ -40,7 +42,85 @@ const entry: WorkbenchLayoutEntry = Object.freeze({
 	}),
 })
 
+const pageDescriptor = parseWorkbenchOpenableIdentity({
+	kind: 'page',
+	owner: definition,
+	key: 'guide',
+})
+if (pageDescriptor.kind !== 'page') throw new Error('unexpected Page identity')
+const pageEntry: WorkbenchStandardPageLayoutEntry = Object.freeze({
+	descriptor: pageDescriptor,
+	target: Object.freeze({ node, displayName: 'Settings' }),
+	definitionRevisions: Object.freeze({ target: 3 }),
+	placement: Object.freeze({ kind: 'tab', label: 'Guide', order: 0 }),
+	standardPageRef: Object.freeze({
+		profile: 1,
+		digest: '1'.repeat(64),
+		descriptor: pageDescriptor,
+	}),
+})
+
 describe('Workbench opened View client', () => {
+	it('owns and validates a capability-free Standard Page result', async () => {
+		const disposeResult = vi.fn()
+		const session = {
+			openView: vi.fn().mockResolvedValue({
+				ok: true,
+				value: {
+					kind: 'page',
+					params: {},
+					standardPageRef: pageEntry.standardPageRef,
+					plan: {
+						version: 1,
+						kind: 'standard-page',
+						document: { version: 1, blocks: [] },
+					},
+				},
+				[Symbol.dispose]: disposeResult,
+			}),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+
+		const opened = await openWorkbenchView(session, pageEntry, { layoutRevision: 7 })
+		expect(opened.ok).toBe(true)
+		if (!opened.ok) throw new Error('expected Page success')
+		expect(opened.handle.kind).toBe('page')
+		expect(opened.handle.plan).toEqual({
+			version: 1,
+			kind: 'standard-page',
+			document: { version: 1, blocks: [] },
+		})
+		expect(Object.isFrozen(opened.handle.plan.document.blocks)).toBe(true)
+
+		opened.handle[Symbol.dispose]()
+		opened.handle[Symbol.dispose]()
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
+	it('disposes a Standard Page result whose artifact tuple does not match layout', async () => {
+		const disposeResult = vi.fn()
+		const session = {
+			openView: vi.fn().mockResolvedValue({
+				ok: true,
+				value: {
+					kind: 'page',
+					params: {},
+					standardPageRef: { ...pageEntry.standardPageRef, digest: '2'.repeat(64) },
+					plan: {
+						version: 1,
+						kind: 'standard-page',
+						document: { version: 1, blocks: [] },
+					},
+				},
+				[Symbol.dispose]: disposeResult,
+			}),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+
+		await expect(openWorkbenchView(session, pageEntry, { layoutRevision: 7 })).rejects.toThrow(
+			'Standard Page tuple',
+		)
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
 	it('owns only the successful top-level Cap’n Web result', async () => {
 		const disposeResult = vi.fn()
 		const disposeApi = vi.fn()

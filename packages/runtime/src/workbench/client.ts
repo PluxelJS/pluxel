@@ -1,35 +1,57 @@
 import { parsePluginNodeAddress } from '@pluxel/core'
+import { parseWorkbenchStandardPagePlan } from '@pluxel/core/internal'
 import {
 	parseWorkbenchDeclarationIdentity,
 	parseWorkbenchOpenableIdentity,
 	workbenchDeclarationIdentityEqual,
+	workbenchOpenableIdentityEqual,
 	type WorkbenchDeclarationIdentity,
 	type WorkbenchOpenableIdentity,
 } from '@pluxel/core/federation'
 import type { RpcStub, RpcTarget } from '../capnweb'
 import type {
 	WorkbenchFederatedViewRef,
+	WorkbenchFederatedLayoutEntry,
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,
 	WorkbenchOpenViewFailureCode,
 	WorkbenchOpenViewInput,
 	WorkbenchSessionApi,
+	WorkbenchStandardPageLayoutEntry,
+	WorkbenchStandardPageRef,
 } from './client-protocol'
 import { readWorkbenchIcon, readWorkbenchRoutePath, type WorkbenchPlacement } from './definition'
 import {
+	createWorkbenchOpenedPageHandle,
 	createWorkbenchOpenedViewHandle,
 	type WorkbenchOpenedClientValue,
+	type WorkbenchOpenedPageHandle,
 	type WorkbenchOpenedState,
 	type WorkbenchOpenedViewHandle,
 } from './opened-view'
 
-export { WorkbenchOpenedViewHandle, type WorkbenchOpenedClientValue } from './opened-view'
+export {
+	WorkbenchOpenedPageHandle,
+	WorkbenchOpenedViewHandle,
+	type WorkbenchOpenedClientValue,
+} from './opened-view'
 
 type DisposableValue = Readonly<{ [Symbol.dispose](): void }>
 
 export type WorkbenchClientOpenResult =
+	| Readonly<{
+			ok: true
+			handle: WorkbenchOpenedViewHandle | WorkbenchOpenedPageHandle
+	  }>
+	| Readonly<{ ok: false; code: WorkbenchOpenViewFailureCode }>
+
+export type WorkbenchClientFederatedOpenResult =
 	| Readonly<{ ok: true; handle: WorkbenchOpenedViewHandle }>
+	| Readonly<{ ok: false; code: WorkbenchOpenViewFailureCode }>
+
+export type WorkbenchClientPageOpenResult =
+	| Readonly<{ ok: true; handle: WorkbenchOpenedPageHandle }>
 	| Readonly<{ ok: false; code: WorkbenchOpenViewFailureCode }>
 
 /** Reads and validates a capability-free layout, releasing the Cap'n Web result immediately. */
@@ -49,6 +71,21 @@ export async function readWorkbenchLayout(
  * Opens the exact tuple selected from a layout. A closed failure never returns a capability;
  * success transfers ownership of the single top-level RPC result to the returned handle.
  */
+export function openWorkbenchView(
+	session: RpcStub<WorkbenchSessionApi>,
+	entry: WorkbenchFederatedLayoutEntry,
+	options: Readonly<{ layoutRevision: number; location?: string }>,
+): Promise<WorkbenchClientFederatedOpenResult>
+export function openWorkbenchView(
+	session: RpcStub<WorkbenchSessionApi>,
+	entry: WorkbenchStandardPageLayoutEntry,
+	options: Readonly<{ layoutRevision: number; location?: string }>,
+): Promise<WorkbenchClientPageOpenResult>
+export function openWorkbenchView(
+	session: RpcStub<WorkbenchSessionApi>,
+	entry: WorkbenchLayoutEntry,
+	options: Readonly<{ layoutRevision: number; location?: string }>,
+): Promise<WorkbenchClientOpenResult>
 export async function openWorkbenchView(
 	session: RpcStub<WorkbenchSessionApi>,
 	entry: WorkbenchLayoutEntry,
@@ -79,7 +116,10 @@ export async function openWorkbenchView(
 		const value = parseOpenedValue(record.value)
 		assertOpenedMatchesLayout(value, canonicalEntry)
 		const state: WorkbenchOpenedState = { active: true, result: disposable, value }
-		const handle = createWorkbenchOpenedViewHandle(state)
+		const handle =
+			value.kind === 'page'
+				? createWorkbenchOpenedPageHandle({ ...state, value })
+				: createWorkbenchOpenedViewHandle({ ...state, value })
 		adopted = true
 		return Object.freeze({ ok: true as const, handle })
 	} finally {
@@ -219,7 +259,35 @@ function parseWorkbenchLayout(input: unknown): WorkbenchLayout {
 }
 
 function parseWorkbenchLayoutEntry(input: unknown, label: string): WorkbenchLayoutEntry {
-	const record = readExactRecord(input, label, [
+	const record = readRecord(input, label)
+	const descriptor = parseWorkbenchOpenableIdentity(record.descriptor)
+	const target = parseLayoutTarget(record.target, `${label}.target`)
+	if (descriptor.kind === 'page') {
+		assertExactKeys(record, label, [
+			'descriptor',
+			'target',
+			'definitionRevisions',
+			'placement',
+			'standardPageRef',
+		])
+		const revisions = readExactRecord(record.definitionRevisions, `${label}.definitionRevisions`, [
+			'target',
+		])
+		const standardPageRef = parseStandardPageRef(record.standardPageRef)
+		if (!workbenchOpenableIdentityEqual(standardPageRef.descriptor, descriptor)) {
+			malformed(`${label} Page descriptor does not match its artifact ref`)
+		}
+		return Object.freeze({
+			descriptor,
+			target,
+			definitionRevisions: Object.freeze({
+				target: readRevision(revisions.target, `${label}.definitionRevisions.target`),
+			}),
+			placement: parsePlacement(record.placement, `${label}.placement`),
+			standardPageRef,
+		})
+	}
+	assertExactKeys(record, label, [
 		'descriptor',
 		'target',
 		'renderer',
@@ -227,8 +295,6 @@ function parseWorkbenchLayoutEntry(input: unknown, label: string): WorkbenchLayo
 		'placement',
 		'federatedViewRef',
 	])
-	const descriptor = parseWorkbenchOpenableIdentity(record.descriptor)
-	const target = parseLayoutTarget(record.target, `${label}.target`)
 	const revisions = readExactRecord(record.definitionRevisions, `${label}.definitionRevisions`, [
 		'target',
 		'renderer',
@@ -286,6 +352,15 @@ function parseOpenedValue(input: unknown): WorkbenchOpenedClientValue {
 			federatedViewRef: ref,
 		})
 	}
+	if (record.kind === 'page') {
+		assertExactKeys(record, 'opened Standard Page', ['kind', 'params', 'standardPageRef', 'plan'])
+		return Object.freeze({
+			kind: 'page',
+			params: parseParams(record.params),
+			standardPageRef: parseStandardPageRef(record.standardPageRef),
+			plan: parseWorkbenchStandardPagePlan(record.plan),
+		})
+	}
 	malformed('opened View kind is unsupported')
 }
 
@@ -293,6 +368,14 @@ function assertOpenedMatchesLayout(
 	opened: WorkbenchOpenedClientValue,
 	entry: WorkbenchLayoutEntry,
 ): void {
+	if ('standardPageRef' in entry) {
+		if (opened.kind !== 'page') malformed('Standard Page returned a federated View root')
+		if (!standardPageRefEqual(opened.standardPageRef, entry.standardPageRef)) {
+			malformed('opened Standard Page tuple does not match the selected layout entry')
+		}
+		return
+	}
+	if (opened.kind === 'page') malformed('federated View returned a Standard Page')
 	const expected = entry.federatedViewRef
 	const actual = opened.federatedViewRef
 	if (
@@ -363,7 +446,31 @@ function parseFederatedViewRef(input: unknown): WorkbenchFederatedViewRef {
 	})
 }
 
+function parseStandardPageRef(input: unknown): WorkbenchStandardPageRef {
+	const record = readExactRecord(input, 'Standard Page ref', ['profile', 'digest', 'descriptor'])
+	if (record.profile !== 1) malformed('Standard Page profile is unsupported')
+	const descriptor = parseWorkbenchOpenableIdentity(record.descriptor)
+	if (descriptor.kind !== 'page') malformed('Standard Page ref must identify a Page')
+	return Object.freeze({
+		profile: 1,
+		digest: readPatternText(record.digest, 'Standard Page digest', /^[a-f\d]{64}$/),
+		descriptor,
+	})
+}
+
+function standardPageRefEqual(
+	left: WorkbenchStandardPageRef,
+	right: WorkbenchStandardPageRef,
+): boolean {
+	return (
+		left.profile === right.profile &&
+		left.digest === right.digest &&
+		workbenchOpenableIdentityEqual(left.descriptor, right.descriptor)
+	)
+}
+
 function rendererDeclaration(descriptor: WorkbenchOpenableIdentity): WorkbenchDeclarationIdentity {
+	if (descriptor.kind === 'page') malformed('Standard Page has no renderer declaration')
 	return descriptor.kind === 'view' ? descriptor : descriptor.provider
 }
 
@@ -533,15 +640,29 @@ function malformed(message: string): never {
 
 export type {
 	WorkbenchFederatedViewRef,
+	WorkbenchFederatedLayoutEntry,
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,
 	WorkbenchLayoutTarget,
 	WorkbenchOpenedAttachment,
 	WorkbenchOpenedLocalView,
+	WorkbenchOpenedStandardPage,
 	WorkbenchOpenedView,
 	WorkbenchOpenViewFailureCode,
 	WorkbenchOpenViewInput,
 	WorkbenchOpenViewResult,
 	WorkbenchSessionApi,
+	WorkbenchStandardPageLayoutEntry,
+	WorkbenchStandardPageRef,
 } from './client-protocol'
+
+export type {
+	WorkbenchPageBlock,
+	WorkbenchPageDocumentPlanV1,
+	WorkbenchPageInline,
+	WorkbenchPageTableAlignment,
+	WorkbenchPageTableCell,
+	WorkbenchPageTableRow,
+	WorkbenchStandardPagePlanV1,
+} from '@pluxel/core/internal'

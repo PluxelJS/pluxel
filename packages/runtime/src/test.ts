@@ -19,6 +19,7 @@ import {
 import type { RuntimeHostConfig } from './context/runtime-contract'
 import { WorkbenchBackend } from './services/workbench'
 import type { WorkbenchArtifactLookup } from './services/workbench/WorkbenchArtifactService'
+import type { WorkbenchPageArtifactLookup } from './services/workbench/WorkbenchPageArtifactService'
 import {
 	createCoreContext,
 	createCoreHost,
@@ -157,7 +158,7 @@ function createRuntimeTestRoot(
 	return createRuntimeRootContext(config, {
 		workbench: {
 			createBackend: (root, installOptions) =>
-				new WorkbenchBackend(root, installOptions, testWorkbenchArtifacts),
+				new WorkbenchBackend(root, installOptions, testWorkbenchArtifacts, testWorkbenchPages),
 		},
 		requestAddress: options.requestAddress ?? TEST_LOOPBACK_REQUEST_ADDRESS,
 		...options,
@@ -184,6 +185,28 @@ const testWorkbenchArtifacts: WorkbenchArtifactLookup = Object.freeze({
 				entries: Object.freeze([entry]),
 			}),
 			entry,
+		})
+	},
+})
+
+const testWorkbenchPages: WorkbenchPageArtifactLookup = Object.freeze({
+	resolvePage(definition, descriptor) {
+		if (descriptor.kind !== 'page') return undefined
+		const entry = Object.freeze({ descriptor })
+		return Object.freeze({
+			artifact: Object.freeze({
+				profile: 1,
+				definition,
+				definitionDigest: '0'.repeat(64),
+				digest: '1'.repeat(64),
+				entries: Object.freeze([entry]),
+			}),
+			entry,
+			plan: Object.freeze({
+				version: 1,
+				kind: 'standard-page',
+				document: Object.freeze({ version: 1, blocks: Object.freeze([]) }),
+			}),
 		})
 	},
 })

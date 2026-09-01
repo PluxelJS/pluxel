@@ -104,6 +104,15 @@ OTEL_EXPORTER_OTLP_TIMEOUT=10000
 
 TLS/mTLS 继续使用官方 exporter 的 `CERTIFICATE`、`CLIENT_KEY`、`CLIENT_CERTIFICATE` 变量及对应 signal-specific 形式；gRPC 还支持 `INSECURE`。URL 不允许携带 userinfo，认证应放在 header 或 TLS 配置中。
 
+## Workbench 运维说明
+
+Workbench 启用且 `OtelPlugin` 正常运行时，Plugin 会发布一个“运维说明” Standard Page。页面汇总 OTLP HTTP/gRPC
+endpoint 规则、限频 diagnostics、Prometheus pull 与 secret/config 边界，方便从 Plugin detail 直接排查部署问题。
+
+这是 build-time 编译的静态 Markdown：没有 RPC target、实时状态、刷新/invalidate 或操作按钮，也不会创建 OTel 专属
+React/MF producer。页面不会显示环境变量值、credential、完整 header 或未保存的 Config draft；实际配置与 exporter
+状态仍以启动校验、Plugin 日志和 Collector 侧观测为准。
+
 ## resource、batch 与 sampling
 
 runtime 用 host root name 作为默认 service name，并合并标准 OTel resource 环境变量。metrics periodic reader 接受 `OTEL_METRIC_EXPORT_INTERVAL` 与 `OTEL_METRIC_EXPORT_TIMEOUT`；trace batch processor 使用 `OTEL_BSP_*`；log batch processor 使用 `OTEL_BLRP_*`。

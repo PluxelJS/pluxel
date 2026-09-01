@@ -189,7 +189,7 @@ const ManagedWorkbench = workbench.define({})
 @Plugin({ displayName: 'Managed Web Gate' })
 class ManagedWebGate extends BasePlugin {
 	override init(): void {
-		this.ctx.workbench.publish(ManagedWorkbench, {})
+		this.ctx.workbench.publish(ManagedWorkbench)
 		managedWorkbenchMounted = true
 	}
 }

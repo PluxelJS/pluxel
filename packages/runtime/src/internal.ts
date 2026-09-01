@@ -63,11 +63,13 @@ export {
 export {
 	readWorkbenchDefinition,
 	readWorkbenchDescriptor,
+	readWorkbenchMarkdownDocument,
 	readWorkbenchRendererEntry,
 } from './workbench/definition'
 export type {
 	WorkbenchDefinitionMetadata,
 	WorkbenchDescriptorMetadata,
+	WorkbenchMarkdownDocumentMetadata,
 	WorkbenchRendererEntryMetadata,
 } from './workbench/definition'
 export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
@@ -90,6 +92,20 @@ export {
 	type WorkbenchArtifactRevision,
 	type WorkbenchResolvedArtifactEntry,
 } from './services/workbench/WorkbenchArtifactService'
+export {
+	WorkbenchArtifactCoordinator,
+	type WorkbenchArtifactBatchCandidate,
+	type WorkbenchArtifactBatchCommit,
+} from './services/workbench/WorkbenchArtifactCoordinator'
+export {
+	WorkbenchPageArtifactService,
+	type WorkbenchPageArtifactCandidate,
+	type WorkbenchPageArtifactCommit,
+	type WorkbenchPageArtifactEntry,
+	type WorkbenchPageArtifactLookup,
+	type WorkbenchPageArtifactRevision,
+	type WorkbenchResolvedPageArtifact,
+} from './services/workbench/WorkbenchPageArtifactService'
 export {
 	loadPackagedWorkbenchDeployment,
 	resolvePackagedNodeModule,

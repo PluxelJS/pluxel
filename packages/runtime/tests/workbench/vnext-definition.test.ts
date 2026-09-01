@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	readWorkbenchDefinition,
 	readWorkbenchDescriptor,
+	readWorkbenchMarkdownDocument,
 	readWorkbenchRendererEntry,
 } from '@pluxel/runtime/internal'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
@@ -16,6 +17,51 @@ interface CatalogApi extends RpcTarget {
 }
 
 describe('Workbench vNext definitions', () => {
+	it('declares a frozen host-rendered Markdown Page with no renderer', () => {
+		const document = workbench.markdown(import.meta.url, './fixtures/guide.md')
+		const definition = workbench.define({
+			guide: workbench.page({
+				document,
+				placement: workbench.tab({ label: 'Guide' }),
+			}),
+		})
+
+		expect(readWorkbenchMarkdownDocument(document)).toEqual({
+			moduleUrl: import.meta.url,
+			sourcePath: './fixtures/guide.md',
+		})
+		expect(readWorkbenchDescriptor(definition.guide)).toMatchObject({
+			kind: 'page',
+			key: 'guide',
+			document,
+		})
+		expect(Object.isFrozen(document)).toBe(true)
+		expect(Object.isFrozen(definition.guide)).toBe(true)
+		expect(definition.guide).not.toHaveProperty('renderer')
+	})
+
+	it('rejects forged Page documents and unsafe Markdown provenance', () => {
+		expect(() => workbench.markdown(import.meta.url, '/guide.md')).toThrow(
+			'sourcePath must be module-relative',
+		)
+		expect(() => workbench.markdown(import.meta.url, './guide.md?raw')).toThrow(
+			'sourcePath must not contain',
+		)
+		expect(() =>
+			workbench.page({
+				document: {} as never,
+				placement: workbench.tab(),
+			}),
+		).toThrow('must be created by workbench.markdown')
+		expect(() =>
+			workbench.page({
+				document: workbench.markdown(import.meta.url, './guide.md'),
+				placement: workbench.tab(),
+				legacy: true,
+			} as never),
+		).toThrow('unsupported option "legacy"')
+	})
+
 	it('creates one flat frozen definition with keyed descriptors', () => {
 		const renderer = workbench.entry(import.meta.url, './fixtures/settings.tsx')
 		const definition = workbench.define({

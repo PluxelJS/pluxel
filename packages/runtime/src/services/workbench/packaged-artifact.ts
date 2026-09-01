@@ -1,6 +1,10 @@
 import { existsSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import type { Context, PluginNodeAddress } from '@pluxel/core'
+import { pluginDefinitionIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
+import {
+	WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE,
+	parseWorkbenchPageDeploymentInventory,
+} from '@pluxel/core/internal'
 import {
 	WORKBENCH_FEDERATION_OUT_DIR,
 	WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE,
@@ -13,15 +17,16 @@ import {
 	requireRuntimePluginGraphCoordinator,
 } from '../../internal/reconciliation'
 import type {
-	WorkbenchArtifactRevision,
-	WorkbenchArtifactService,
-} from './WorkbenchArtifactService'
+	WorkbenchArtifactBatchCandidate,
+	WorkbenchArtifactBatchCommit,
+	WorkbenchArtifactCoordinator,
+} from './WorkbenchArtifactCoordinator'
 
 /** Loads the one host-owned production inventory without invoking a source compiler. */
 export async function loadPackagedWorkbenchDeployment(
-	artifacts: WorkbenchArtifactService,
+	artifacts: WorkbenchArtifactCoordinator,
 	workbenchRoot: string,
-): Promise<readonly WorkbenchArtifactRevision[]> {
+): Promise<readonly WorkbenchArtifactBatchCommit[]> {
 	const root = await canonicalWorkbenchRoot(workbenchRoot)
 	const inventoryPath = resolve(root, WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE)
 	let input: unknown
@@ -33,31 +38,94 @@ export async function loadPackagedWorkbenchDeployment(
 		})
 	}
 	const inventory = parseWorkbenchFederationDeploymentInventory(input)
-	const committed: WorkbenchArtifactRevision[] = []
+	const candidates = new Map<string, WorkbenchArtifactBatchCandidate>()
 	for (const producer of inventory.producers) {
-		const prefix = `${WORKBENCH_FEDERATION_OUT_DIR}/`
-		if (!producer.artifactRoot.startsWith(prefix)) {
-			throw new TypeError('[workbench] production artifact root is outside the Workbench root')
+		const candidateRoot = await resolveDeploymentArtifactRoot(
+			root,
+			producer.artifactRoot,
+			`${WORKBENCH_FEDERATION_OUT_DIR}/`,
+			true,
+		)
+		const key = pluginDefinitionIndexKey(producer.plan.definition)
+		if (candidates.has(key)) {
+			throw new TypeError('[workbench] production deployment has duplicate definition artifacts')
 		}
-		const candidateRoot = await realpath(
-			resolve(root, producer.artifactRoot.slice(prefix.length)),
-		).catch((error) => {
-			throw new Error(
-				`[workbench] production artifact root does not exist: ${producer.artifactRoot}`,
-				{ cause: error },
-			)
-		})
-		const fromRoot = relative(root, candidateRoot)
-		if (!fromRoot || fromRoot.startsWith('..') || isAbsolute(fromRoot)) {
-			throw new TypeError(
-				`[workbench] production artifact root escapes its deployment: ${producer.artifactRoot}`,
-			)
-		}
-		committed.push(
-			await artifacts.commitCandidate({ plan: producer.plan, artifactRoot: candidateRoot }),
+		candidates.set(
+			key,
+			Object.freeze({
+				definition: producer.plan.definition,
+				federation: Object.freeze({ plan: producer.plan, artifactRoot: candidateRoot }),
+			}),
 		)
 	}
-	return Object.freeze(committed)
+
+	const pageInventoryPath = resolve(root, WORKBENCH_PAGE_DEPLOYMENT_INVENTORY_FILE)
+	let pageInput: unknown
+	if (!existsSync(pageInventoryPath)) {
+		pageInput = { version: 1, pages: [] }
+	} else {
+		try {
+			pageInput = JSON.parse(await readFile(pageInventoryPath, 'utf-8')) as unknown
+		} catch (error) {
+			throw new Error(`[workbench] cannot read production Page inventory: ${pageInventoryPath}`, {
+				cause: error,
+			})
+		}
+	}
+	const pageInventory = parseWorkbenchPageDeploymentInventory(pageInput)
+	for (const page of pageInventory.pages) {
+		const candidateRoot = await resolveDeploymentArtifactRoot(
+			root,
+			page.artifactRoot,
+			'pages/',
+			false,
+		)
+		const key = pluginDefinitionIndexKey(page.definition)
+		const existing = candidates.get(key)
+		candidates.set(
+			key,
+			Object.freeze({
+				definition: page.definition,
+				...existing,
+				pages: Object.freeze({
+					definition: page.definition,
+					definitionDigest: page.definitionDigest,
+					digest: page.digest,
+					artifactRoot: candidateRoot,
+				}),
+			}),
+		)
+	}
+
+	const ordered = [...candidates].sort(([left], [right]) => left.localeCompare(right))
+	const prepared = await Promise.all(
+		ordered.map(([, candidate]) => artifacts.prepareCandidate(candidate)),
+	)
+	return Object.freeze(prepared.map((candidate) => artifacts.commitPrepared(candidate)))
+}
+
+async function resolveDeploymentArtifactRoot(
+	root: string,
+	artifactRoot: string,
+	prefix: string,
+	stripPrefix: boolean,
+): Promise<string> {
+	if (!artifactRoot.startsWith(prefix)) {
+		throw new TypeError('[workbench] production artifact root is outside the Workbench root')
+	}
+	const relativeRoot = stripPrefix ? artifactRoot.slice(prefix.length) : artifactRoot
+	const candidateRoot = await realpath(resolve(root, relativeRoot)).catch((error) => {
+		throw new Error(`[workbench] production artifact root does not exist: ${artifactRoot}`, {
+			cause: error,
+		})
+	})
+	const fromRoot = relative(root, candidateRoot)
+	if (!fromRoot || fromRoot.startsWith('..') || isAbsolute(fromRoot)) {
+		throw new TypeError(
+			`[workbench] production artifact root escapes its deployment: ${artifactRoot}`,
+		)
+	}
+	return candidateRoot
 }
 
 export function resolvePackagedNodeModule(

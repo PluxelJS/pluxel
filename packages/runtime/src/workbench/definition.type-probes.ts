@@ -1,5 +1,5 @@
 import { RpcTarget, type RpcStub } from '../capnweb'
-import { workbench, type WorkbenchBindings } from './definition'
+import { workbench, type PluginWorkbench, type WorkbenchBindings } from './definition'
 import { type WorkbenchHookValue } from './react'
 import type { BasePlugin } from '@pluxel/core'
 
@@ -43,7 +43,29 @@ const ConsumerWorkbench = workbench.define({
 	picker: ProviderWorkbench.picker.place(workbench.tab()),
 })
 
+const PageWorkbench = workbench.define({
+	guide: workbench.page({
+		document: workbench.markdown(import.meta.url, './guide.md'),
+		placement: workbench.tab(),
+	}),
+})
+
+const MixedWorkbench = workbench.define({
+	...PageWorkbench,
+	local: workbench.view<LocalApi>({ renderer, placement: workbench.tab() }),
+})
+
 declare const provider: BasePlugin
+declare const pluginWorkbench: PluginWorkbench
+
+pluginWorkbench.publish(PageWorkbench)
+pluginWorkbench.publish(MixedWorkbench, { local: () => new LocalTarget() })
+// @ts-expect-error Markdown-only Page publication has no bindings argument.
+pluginWorkbench.publish(PageWorkbench, {})
+// @ts-expect-error A mixed definition still requires its non-Page binding.
+pluginWorkbench.publish(MixedWorkbench)
+// @ts-expect-error Page keys never enter the bindings record.
+pluginWorkbench.publish(MixedWorkbench, { local: () => new LocalTarget(), guide: () => null })
 
 const validBindings = {
 	local: () => new LocalTarget(),

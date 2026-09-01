@@ -8,6 +8,7 @@ import {
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
 import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/core'
+import type { WorkbenchPageSetV1 } from '@pluxel/core/internal'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, relative, resolve } from 'pathe'
 import { resolveWithOxc } from '../resolver/oxc.ts'
@@ -55,6 +56,7 @@ type PublishFact = Readonly<{
 	owner: PluginOwner
 	moduleId: string
 	definitionExpression: Node
+	hasBindings: boolean
 }>
 
 type BindingRef = Readonly<{
@@ -67,9 +69,18 @@ type Renderer = Readonly<{
 	entryPath: string
 }>
 
+type MarkdownDocument = Readonly<{
+	kind: 'markdown-document'
+	moduleId: string
+	sourcePath: string
+}>
+
+type Placement = Readonly<{ kind: 'placement' }>
+
 type Descriptor =
 	| Readonly<{ kind: 'view'; renderer: Renderer }>
 	| Readonly<{ kind: 'attachment'; renderer: Renderer }>
+	| Readonly<{ kind: 'page'; document: MarkdownDocument; placement: Placement }>
 	| Readonly<{
 			kind: 'attachment-placement'
 			provider: DefinedEntry
@@ -104,6 +115,8 @@ type SemanticValue =
 	| Definition
 	| DefinedEntry
 	| FunctionValue
+	| MarkdownDocument
+	| Placement
 	| RecordValue
 	| WorkbenchNamespace
 
@@ -133,12 +146,28 @@ export type WorkbenchSemanticProducerCompilation = Readonly<{
 	root: string
 }>
 
+export type WorkbenchSemanticPageCompilation = Readonly<{
+	pageSet: WorkbenchPageSetV1
+	digest: string
+	bytes: Uint8Array
+	/** Package root containing the Markdown source or packaged Page artifact. */
+	root: string
+	/** Exact Markdown source dependencies. Empty when reusing a packaged artifact. */
+	sources: readonly string[]
+}>
+
+type WorkbenchSemanticCompilationSnapshot = Readonly<{
+	producers: readonly WorkbenchSemanticProducerCompilation[]
+	pages: readonly WorkbenchSemanticPageCompilation[]
+}>
+
 export type WorkbenchSemanticLowering = Readonly<{
 	reset(): void
 	invalidate(): void
 	collect(input: WorkbenchSemanticModuleInput): Promise<void>
 	plans(): Promise<readonly WorkbenchFederationProducerPlan[]>
 	compilations(): Promise<readonly WorkbenchSemanticProducerCompilation[]>
+	pageCompilations(): Promise<readonly WorkbenchSemanticPageCompilation[]>
 }>
 
 /**
@@ -151,7 +180,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 	const modules = new Map<string, ModuleFacts>()
 	const publications = new Map<string, PublishFact>()
 	const loadingModules = new Map<string, Promise<ModuleFacts>>()
-	let finalized: Promise<readonly WorkbenchSemanticProducerCompilation[]> | undefined
+	let finalized: Promise<WorkbenchSemanticCompilationSnapshot> | undefined
 
 	const reset = () => {
 		modules.clear()
@@ -196,8 +225,11 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 				)
 			}
 			const args = nodes(call.arguments)
-			if (args.length !== 2) {
-				throw semanticError(id, `${className} publish() must receive definition and bindings`)
+			if (args.length === 0 || args.length > 2) {
+				throw semanticError(
+					id,
+					`${className} publish() must receive definition and optional bindings`,
+				)
 			}
 			const key = pluginDefinitionIndexKey(owner.definition)
 			if (nextPublications.has(key)) {
@@ -207,6 +239,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 				owner,
 				moduleId: id,
 				definitionExpression: args[0]!,
+				hasBindings: args.length === 2,
 			})
 		}
 
@@ -230,15 +263,20 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 
 	const compilations = (): Promise<readonly WorkbenchSemanticProducerCompilation[]> => {
 		finalized ??= finalizePlans()
-		return finalized
+		return finalized.then((snapshot) => snapshot.producers)
 	}
 	const plans = async (): Promise<readonly WorkbenchFederationProducerPlan[]> => {
 		const currentCompilations = await compilations()
 		return Object.freeze(currentCompilations.map((compilation) => compilation.plan))
 	}
+	const pageCompilations = (): Promise<readonly WorkbenchSemanticPageCompilation[]> => {
+		finalized ??= finalizePlans()
+		return finalized.then((snapshot) => snapshot.pages)
+	}
 
-	const finalizePlans = async (): Promise<readonly WorkbenchSemanticProducerCompilation[]> => {
-		const lowered: WorkbenchSemanticProducerCompilation[] = []
+	const finalizePlans = async (): Promise<WorkbenchSemanticCompilationSnapshot> => {
+		const producers: WorkbenchSemanticProducerCompilation[] = []
+		const pages: WorkbenchSemanticPageCompilation[] = []
 		for (const publication of [...publications.values()].sort((left, right) =>
 			pluginDefinitionIndexKey(left.owner.definition).localeCompare(
 				pluginDefinitionIndexKey(right.owner.definition),
@@ -250,7 +288,37 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 				new Set(),
 			)
 			const definition = await evaluateDefinition(definitionBinding)
+			const requiresBindings = [...definition.entries.values()].some(
+				(descriptor) => descriptor.kind !== 'page',
+			)
+			if (publication.hasBindings !== requiresBindings) {
+				throw semanticError(
+					publication.moduleId,
+					requiresBindings
+						? 'publish() requires bindings for every non-Page definition'
+						: 'Page-only publish() must not receive bindings',
+				)
+			}
 			const buildRoot = resolveProducerBuildRoot(sourceRoot, publication.moduleId)
+			const pageEntries = [...definition.entries]
+				.filter(
+					(entry): entry is [string, Extract<Descriptor, { kind: 'page' }>] =>
+						entry[1].kind === 'page',
+				)
+				.sort(([left], [right]) => left.localeCompare(right))
+			if (pageEntries.length > 0) {
+				const { compileWorkbenchPageSet } = await import('./page-compiler.ts')
+				pages.push(
+					await compileWorkbenchPageSet({
+						definition: publication.owner.definition,
+						root: buildRoot,
+						entries: pageEntries.map(([key, descriptor]) => ({
+							key,
+							sourcePath: descriptor.document.sourcePath,
+						})),
+					}),
+				)
+			}
 			const localEntries = [...definition.entries]
 				.filter(
 					(entry): entry is [string, Extract<Descriptor, { renderer: Renderer }>] =>
@@ -292,9 +360,12 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 					bridgeEntryPath,
 				})),
 			})
-			lowered.push(Object.freeze({ plan, root: buildRoot }))
+			producers.push(Object.freeze({ plan, root: buildRoot }))
 		}
-		return Object.freeze(lowered)
+		return Object.freeze({
+			producers: Object.freeze(producers),
+			pages: Object.freeze(pages),
+		})
 	}
 
 	const getModule = async (id: string): Promise<ModuleFacts> => {
@@ -601,6 +672,32 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 			const objectNode = object(callee.object)!
 			if (isWorkbenchMember(callee, module)) {
 				switch (method) {
+					case 'markdown': {
+						if (args.length !== 2 || !isImportMetaUrl(args[0]!)) {
+							throw semanticError(
+								moduleId,
+								'workbench.markdown() must use import.meta.url and one literal relative path',
+							)
+						}
+						const path = literalString(args[1])
+						if (path === null || (!path.startsWith('./') && !path.startsWith('../'))) {
+							throw semanticError(moduleId, 'workbench.markdown() path must be a relative literal')
+						}
+						if (path.includes('\\') || path.includes('?') || path.includes('#')) {
+							throw semanticError(moduleId, 'workbench.markdown() path must be normalized')
+						}
+						if (extname(path).toLowerCase() !== '.md') {
+							throw semanticError(
+								moduleId,
+								'workbench.markdown() source must use the .md extension',
+							)
+						}
+						return Object.freeze({
+							kind: 'markdown-document',
+							moduleId,
+							sourcePath: resolve(dirname(moduleId), path),
+						})
+					}
 					case 'entry': {
 						if (args.length !== 2 || !isImportMetaUrl(args[0]!)) {
 							throw semanticError(
@@ -628,8 +725,34 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 						}
 						return Object.freeze({ kind: method, renderer: options.get('renderer')! })
 					}
+					case 'page': {
+						if (args.length !== 1) {
+							throw semanticError(moduleId, 'workbench.page() must receive one record')
+						}
+						const options = await evaluateExpression(moduleId, args[0]!, environment, stack)
+						if (!(options instanceof Map)) {
+							throw semanticError(moduleId, 'workbench.page() must receive one static record')
+						}
+						const keys = [...options.keys()].sort()
+						if (keys.length !== 2 || keys[0] !== 'document' || keys[1] !== 'placement') {
+							throw semanticError(
+								moduleId,
+								'workbench.page() requires exactly document and placement',
+							)
+						}
+						const document = options.get('document')
+						const placement = options.get('placement')
+						if (!isMarkdownDocument(document) || !isPlacement(placement)) {
+							throw semanticError(
+								moduleId,
+								'workbench.page() requires workbench.markdown() and a static placement',
+							)
+						}
+						return Object.freeze({ kind: 'page', document, placement })
+					}
 					case 'tab':
 					case 'route':
+						return Object.freeze({ kind: 'placement' })
 					case 'icons':
 						return new Map()
 					case 'define':
@@ -686,7 +809,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 		return evaluateExpression(callable.moduleId, returned, childEnvironment, stack)
 	}
 
-	return Object.freeze({ reset, invalidate, collect, plans, compilations })
+	return Object.freeze({ reset, invalidate, collect, plans, compilations, pageCompilations })
 }
 
 function resolveProducerBuildRoot(sourceRoot: string, publicationModuleId: string): string {
@@ -1070,7 +1193,10 @@ function isDescriptor(value: SemanticValue): value is Descriptor {
 		Boolean(value) &&
 		typeof value === 'object' &&
 		'kind' in value &&
-		(value.kind === 'view' || value.kind === 'attachment' || value.kind === 'attachment-placement')
+		(value.kind === 'view' ||
+			value.kind === 'attachment' ||
+			value.kind === 'page' ||
+			value.kind === 'attachment-placement')
 	)
 }
 
@@ -1082,6 +1208,23 @@ function isRenderer(value: SemanticValue | undefined): value is Renderer {
 		'entryPath' in value &&
 		typeof value.moduleId === 'string' &&
 		typeof value.entryPath === 'string',
+	)
+}
+
+function isMarkdownDocument(value: SemanticValue | undefined): value is MarkdownDocument {
+	return Boolean(
+		value &&
+		typeof value === 'object' &&
+		'kind' in value &&
+		value.kind === 'markdown-document' &&
+		'sourcePath' in value &&
+		typeof value.sourcePath === 'string',
+	)
+}
+
+function isPlacement(value: SemanticValue | undefined): value is Placement {
+	return Boolean(
+		value && typeof value === 'object' && 'kind' in value && value.kind === 'placement',
 	)
 }
 
