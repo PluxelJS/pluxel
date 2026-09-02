@@ -69,6 +69,6 @@ class FontSelectionTarget extends RpcTarget implements FontSelectionApi {
 	}
 
 	set(ref: FontRef | null) {
-		return this.consumer.setFont(ref)
+		this.consumer.setFont(ref)
 	}
 }

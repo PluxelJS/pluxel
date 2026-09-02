@@ -13,11 +13,15 @@ import {
 	Textarea,
 	Title,
 } from '@mantine/core'
-import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDownload, IconRefresh, IconTrash } from '@tabler/icons-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PackageManagerSnapshot, PackageMutationResult } from '../contracts.ts'
-import { PackageManagerWorkbench } from '../workbench.ts'
+import { useState } from 'react'
+import type { PackageMutationResult } from '../contracts.ts'
+import {
+	installPackagesMutation,
+	managerScope,
+	packageManagerSnapshotQuery,
+	removePackagesMutation,
+} from './manager.scope.ts'
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
@@ -39,100 +43,37 @@ function parseSpecs(value: string): string[] {
 	]
 }
 
-function copySnapshot(input: PackageManagerSnapshot): PackageManagerSnapshot {
-	return Object.freeze({
-		revision: input.revision,
-		engine: input.engine,
-		rootDir: input.rootDir,
-		entriesDir: input.entriesDir,
-		packages: Object.freeze(
-			input.packages.map((pkg) =>
-				Object.freeze({
-					name: pkg.name,
-					requested: pkg.requested,
-					installedVersion: pkg.installedVersion,
-					entryFile: pkg.entryFile,
-				}),
-			),
-		),
-		dependenciesWithBuildScripts: Object.freeze([...input.dependenciesWithBuildScripts]),
-	})
-}
-
-function copyMutationResult(input: PackageMutationResult): PackageMutationResult {
-	const succeeded = Object.freeze([...input.succeeded])
-	if (input.ok) return Object.freeze({ ok: true, succeeded, failed: Object.freeze([] as const) })
-	return Object.freeze({
-		ok: false,
-		succeeded,
-		failed: Object.freeze(
-			input.failed.map((failure) =>
-				Object.freeze({
-					input: failure.input,
-					code: failure.code,
-					message: failure.message,
-				}),
-			) as [PackageMutationResult['failed'][number], ...PackageMutationResult['failed'][number][]],
-		),
-	})
-}
-
-function disposeRemoteValue(input: unknown): void {
-	const dispose =
-		input && (typeof input === 'object' || typeof input === 'function')
-			? (input as Partial<Disposable>)[Symbol.dispose]
-			: undefined
-	if (typeof dispose === 'function') dispose.call(input)
-}
-
 export function Manager() {
-	const { api, host } = useWorkbench(PackageManagerWorkbench.manager)
-	const requestId = useRef(0)
-	const [snapshot, setSnapshot] = useState<PackageManagerSnapshot>()
+	const { host } = managerScope.useWorkbench()
+	const snapshotQuery = packageManagerSnapshotQuery.useQuery()
+	const installPackages = installPackagesMutation.useMutation()
+	const removePackages = removePackagesMutation.useMutation()
+	const snapshot = snapshotQuery.data
 	const [specs, setSpecs] = useState('')
-	const [loading, setLoading] = useState(true)
-	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string>()
+	const loading = snapshotQuery.isPending || snapshotQuery.isFetching
+	const mutating = installPackages.isPending || removePackages.isPending
+	// mutateAsync settles after cache invalidation, not after the authoritative snapshot refetch.
+	// Keep write controls closed until that refresh has caught up.
+	const busy = loading || mutating
+	const visibleError =
+		error ?? (snapshotQuery.status === 'error' ? messageOf(snapshotQuery.error) : undefined)
 
-	const refresh = useCallback(async () => {
-		const current = ++requestId.current
-		setLoading(true)
+	const refresh = async () => {
 		try {
-			using next = await api.snapshot()
-			if (requestId.current !== current) return
-			setSnapshot(copySnapshot(next))
+			await snapshotQuery.refetch()
 			setError(undefined)
 		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setLoading(false)
+			setError(messageOf(caught))
 		}
-	}, [api])
+	}
 
-	useEffect(() => {
-		void refresh()
-		return () => {
-			requestId.current += 1
-		}
-	}, [refresh])
-
-	const mutate = async (operation: () => PromiseLike<PackageMutationResult>) => {
-		if (busy) return
-		setBusy(true)
+	const applyMutation = async (operation: Promise<PackageMutationResult>) => {
 		try {
-			const remoteResult = await operation()
-			let result: PackageMutationResult
-			try {
-				result = copyMutationResult(remoteResult)
-			} finally {
-				disposeRemoteValue(remoteResult)
-			}
+			const result = await operation
 			setError(mutationMessage(result))
-			await refresh()
 		} catch (caught) {
 			setError(messageOf(caught))
-		} finally {
-			setBusy(false)
 		}
 	}
 
@@ -142,7 +83,7 @@ export function Manager() {
 			setError('Enter at least one npm package specifier.')
 			return
 		}
-		await mutate(() => api.install(requested))
+		await applyMutation(installPackages.mutateAsync(requested))
 	}
 
 	return (
@@ -160,15 +101,16 @@ export function Manager() {
 						variant="light"
 						leftSection={<IconRefresh size={16} />}
 						loading={loading}
+						disabled={mutating}
 						onClick={() => void refresh()}
 					>
 						Refresh
 					</Button>
 				</Group>
 
-				{error ? (
+				{visibleError ? (
 					<Alert color="red" style={{ whiteSpace: 'pre-wrap' }}>
-						{error}
+						{visibleError}
 					</Alert>
 				) : null}
 
@@ -195,7 +137,8 @@ export function Manager() {
 						<Group>
 							<Button
 								leftSection={<IconDownload size={16} />}
-								loading={busy}
+								loading={mutating}
+								disabled={busy}
 								onClick={() => void install()}
 							>
 								Install
@@ -239,7 +182,7 @@ export function Manager() {
 													color="red"
 													leftSection={<IconTrash size={14} />}
 													disabled={busy}
-													onClick={() => void mutate(() => api.remove([pkg.name]))}
+													onClick={() => void applyMutation(removePackages.mutateAsync([pkg.name]))}
 												>
 													Remove
 												</Button>
@@ -263,4 +206,4 @@ export function Manager() {
 	)
 }
 
-export default Manager
+export default managerScope.render(Manager)

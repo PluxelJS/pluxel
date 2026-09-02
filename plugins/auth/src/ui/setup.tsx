@@ -13,191 +13,251 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconCheck, IconCopy, IconKey, IconRefresh } from '@tabler/icons-react'
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { AuthWorkbench } from '../workbench.ts'
+import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
 import type {
 	AuthPasswordSetupInput,
 	AuthSetupFailure,
 	AuthSetupMutationResult,
 	AuthSetupSnapshot,
 	AuthTotpEnrollment,
-	AuthTotpEnrollmentResult,
 } from '../workbench-contracts.ts'
-
-function disposeRemoteValue(input: unknown): void {
-	const dispose =
-		input && (typeof input === 'object' || typeof input === 'function')
-			? (input as Partial<Disposable>)[Symbol.dispose]
-			: undefined
-	if (typeof dispose === 'function') dispose.call(input)
-}
-
-function copySnapshot(input: AuthSetupSnapshot): AuthSetupSnapshot {
-	if (input.state === 'configured') {
-		return Object.freeze({ mode: input.mode, state: 'configured' })
-	}
-	if (input.state === 'unavailable') {
-		return Object.freeze({ mode: input.mode, state: 'unavailable', reason: input.reason })
-	}
-	return Object.freeze({ mode: input.mode, state: 'setup-required', reason: input.reason })
-}
-
-function copyFailure(input: AuthSetupFailure): AuthSetupFailure {
-	return Object.freeze({ ok: false, code: input.code, message: input.message })
-}
-
-function copyMutationResult(input: AuthSetupMutationResult): AuthSetupMutationResult {
-	return input.ok === false
-		? copyFailure(input)
-		: Object.freeze({ ok: true, snapshot: copySnapshot(input.snapshot) })
-}
-
-function copyEnrollmentResult(input: AuthTotpEnrollmentResult): AuthTotpEnrollmentResult {
-	if (input.ok === false) return copyFailure(input)
-	return Object.freeze({
-		ok: true,
-		enrollment: Object.freeze({
-			id: input.enrollment.id,
-			secret: input.enrollment.secret,
-			provisioningUri: input.enrollment.provisioningUri,
-			expiresAt: input.enrollment.expiresAt,
-		}),
-	})
-}
+import {
+	authSetupSnapshotQuery,
+	beginTotpMutation,
+	confirmTotpMutation,
+	setupOidcSecretMutation,
+	setupPasswordMutation,
+	setupScope,
+} from './setup.scope.ts'
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
 }
 
-export default function AuthSetup() {
-	const { api, host } = useWorkbench(AuthWorkbench.setup)
-	const requestId = useRef(0)
-	const [snapshot, setSnapshot] = useState<AuthSetupSnapshot>()
-	const [loading, setLoading] = useState(true)
-	const [busy, setBusy] = useState(false)
-	const [error, setError] = useState<string>()
-	const [username, setUsername] = useState('')
-	const [password, setPassword] = useState('')
-	const [passwordConfirmation, setPasswordConfirmation] = useState('')
-	const [oidcSecret, setOidcSecret] = useState('')
-	const [enrollment, setEnrollment] = useState<AuthTotpEnrollment>()
-	const [totpCode, setTotpCode] = useState('')
+type AuthSetupOperation = 'password' | 'totp-enrollment' | 'totp-confirmation' | 'oidc-secret'
 
-	const refresh = useCallback(async () => {
-		const current = ++requestId.current
-		setLoading(true)
-		try {
-			const remote = await api.snapshot()
-			try {
-				if (requestId.current === current) {
-					setSnapshot(copySnapshot(remote))
-					setError(undefined)
-				}
-			} finally {
-				disposeRemoteValue(remote)
-			}
-		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setLoading(false)
-		}
-	}, [api])
+type AuthSetupDraft = {
+	username: string
+	password: string
+	passwordConfirmation: string
+	oidcSecret: string
+	enrollment: AuthTotpEnrollment | undefined
+	totpCode: string
+}
+
+function clearDraftSecrets(draft: AuthSetupDraft): boolean {
+	const changed =
+		draft.password.length > 0 ||
+		draft.passwordConfirmation.length > 0 ||
+		draft.oidcSecret.length > 0 ||
+		draft.enrollment !== undefined ||
+		draft.totpCode.length > 0
+	draft.password = ''
+	draft.passwordConfirmation = ''
+	draft.oidcSecret = ''
+	draft.enrollment = undefined
+	draft.totpCode = ''
+	return changed
+}
+
+function useAuthSetupDraft() {
+	const mounted = useRef(true)
+	// JavaScript strings cannot be zeroed, but one mutable owner lets every transition and
+	// unmount immediately drop the references retained by this component.
+	const draftRef = useRef<AuthSetupDraft>({
+		username: '',
+		password: '',
+		passwordConfirmation: '',
+		oidcSecret: '',
+		enrollment: undefined,
+		totpCode: '',
+	})
+	const [, rerender] = useReducer((revision: number) => revision + 1, 0)
+
+	const update = useCallback((patch: Partial<AuthSetupDraft>) => {
+		Object.assign(draftRef.current, patch)
+		rerender()
+	}, [])
+	const clearSecrets = useCallback(() => {
+		if (clearDraftSecrets(draftRef.current)) rerender()
+	}, [])
 
 	useEffect(() => {
-		void refresh()
+		mounted.current = true
 		return () => {
-			requestId.current += 1
+			mounted.current = false
+			clearDraftSecrets(draftRef.current)
 		}
-	}, [refresh])
+	}, [])
 
-	const clearSecrets = () => {
-		setPassword('')
-		setPasswordConfirmation('')
-		setOidcSecret('')
-		setTotpCode('')
-		setEnrollment(undefined)
+	return Object.freeze({ draft: draftRef.current, mounted, update, clearSecrets })
+}
+
+function snapshotIdentity(snapshot: AuthSetupSnapshot | undefined): string {
+	if (!snapshot) return 'pending'
+	// A same-state refresh must preserve an in-progress enrollment.
+	return snapshot.state === 'configured'
+		? `${snapshot.mode}:configured`
+		: `${snapshot.mode}:${snapshot.state}:${snapshot.reason}`
+}
+
+function AuthSetup() {
+	const { host } = setupScope.useWorkbench()
+	const snapshotQuery = authSetupSnapshotQuery.useQuery()
+	const setupPassword = setupPasswordMutation.useMutation()
+	const beginTotpEnrollment = beginTotpMutation.useMutation()
+	const confirmTotpEnrollment = confirmTotpMutation.useMutation()
+	const setupOidcSecret = setupOidcSecretMutation.useMutation()
+	const { draft, mounted, update: updateDraft, clearSecrets } = useAuthSetupDraft()
+	const operationPending = useRef(false)
+	const [activeOperation, setActiveOperation] = useState<AuthSetupOperation>()
+	const [error, setError] = useState<string>()
+	const querySnapshot = snapshotQuery.data
+	const latestQuerySnapshot = useRef(querySnapshot)
+	latestQuerySnapshot.current = querySnapshot
+	const committedAgainst = useRef<AuthSetupSnapshot | undefined>(undefined)
+	const [committedSnapshot, setCommittedSnapshot] = useState<AuthSetupSnapshot>()
+	const snapshot = committedSnapshot ?? querySnapshot
+	const snapshotKey = snapshotIdentity(snapshot)
+	const latestSnapshotKey = useRef(snapshotKey)
+	latestSnapshotKey.current = snapshotKey
+	const loading = snapshotQuery.isPending || snapshotQuery.isFetching
+	const busy = loading || activeOperation !== undefined
+	const visibleError =
+		error ?? (snapshotQuery.status === 'error' ? messageOf(snapshotQuery.error) : undefined)
+
+	useEffect(() => {
+		clearSecrets()
+	}, [clearSecrets, snapshotKey])
+
+	useEffect(() => {
+		if (committedSnapshot && querySnapshot !== committedAgainst.current) {
+			// A post-commit query result has arrived; it is authoritative again. Until this
+			// point the mutation result prevents the stale setup form from reopening.
+			setCommittedSnapshot(undefined)
+		}
+	}, [committedSnapshot, querySnapshot])
+
+	const refresh = async () => {
+		try {
+			await snapshotQuery.refetch()
+			if (mounted.current) setError(undefined)
+		} catch (caught) {
+			if (mounted.current) setError(messageOf(caught))
+		}
 	}
 
-	const applyMutation = async (
-		operation: () => PromiseLike<AuthSetupMutationResult>,
-	): Promise<boolean> => {
-		if (busy) return false
-		setBusy(true)
+	const runCredentialOperation = async <Result,>(
+		name: AuthSetupOperation,
+		operation: () => Promise<Result>,
+	): Promise<Result | undefined> => {
+		if (operationPending.current) return undefined
+		operationPending.current = true
+		setActiveOperation(name)
 		try {
-			const remote = await operation()
-			let result: AuthSetupMutationResult
-			try {
-				result = copyMutationResult(remote)
-			} finally {
-				disposeRemoteValue(remote)
-			}
-			if (result.ok === false) {
-				setError(result.message)
-				if (result.code === 'not_required') await refresh()
-				return false
-			}
-			setSnapshot(result.snapshot)
+			return await operation()
+		} catch (caught) {
+			if (mounted.current) setError(messageOf(caught))
+			return undefined
+		} finally {
+			operationPending.current = false
+			if (mounted.current) setActiveOperation(undefined)
+		}
+	}
+
+	const applyMutationFailure = (failure: AuthSetupFailure): void => {
+		if (!mounted.current) return
+		if (failure.code === 'not_required') {
 			setError(undefined)
 			clearSecrets()
-			return true
-		} catch (caught) {
-			setError(messageOf(caught))
-			return false
-		} finally {
-			setBusy(false)
+		} else if (failure.code === 'enrollment_expired') {
+			setError(failure.message)
+			clearSecrets()
+		} else {
+			setError(failure.message)
 		}
+	}
+
+	const applyMutationResult = (result: AuthSetupMutationResult): void => {
+		if (!mounted.current) return
+		if (result.ok === false) {
+			applyMutationFailure(result)
+			return
+		}
+		const currentQuerySnapshot = latestQuerySnapshot.current
+		if (snapshotIdentity(currentQuerySnapshot) === snapshotIdentity(result.snapshot)) {
+			setCommittedSnapshot(undefined)
+		} else {
+			committedAgainst.current = currentQuerySnapshot
+			setCommittedSnapshot(result.snapshot)
+		}
+		setError(undefined)
+		clearSecrets()
 	}
 
 	const passwordInput = (): AuthPasswordSetupInput => ({
-		username,
-		password,
-		passwordConfirmation,
+		username: draft.username,
+		password: draft.password,
+		passwordConfirmation: draft.passwordConfirmation,
 	})
 
 	const submitPassword = async (event: FormEvent) => {
 		event.preventDefault()
-		await applyMutation(() => api.setupPassword(passwordInput()))
+		const result = await runCredentialOperation('password', () =>
+			setupPassword.mutateAsync(passwordInput()),
+		)
+		if (result) applyMutationResult(result)
 	}
 
 	const beginTotp = async (event: FormEvent) => {
 		event.preventDefault()
-		if (busy) return
-		setBusy(true)
-		try {
-			const remote = await api.beginTotp(passwordInput())
-			let result: AuthTotpEnrollmentResult
+		const operationSnapshotKey = snapshotKey
+		const result = await runCredentialOperation('totp-enrollment', async () => {
 			try {
-				result = copyEnrollmentResult(remote)
+				return await beginTotpEnrollment.mutateAsync(passwordInput())
 			} finally {
-				disposeRemoteValue(remote)
+				// Enrollment includes a TOTP secret. Never retain a second copy in mutation state.
+				beginTotpEnrollment.reset()
 			}
-			if (result.ok === false) {
-				setError(result.message)
-				if (result.code === 'not_required') await refresh()
-				return
-			}
-			setEnrollment(result.enrollment)
-			setPassword('')
-			setPasswordConfirmation('')
-			setError(undefined)
-		} catch (caught) {
-			setError(messageOf(caught))
-		} finally {
-			setBusy(false)
+		})
+		if (!result || !mounted.current) return
+		if (result.ok === false) {
+			applyMutationFailure(result)
+			return
 		}
+		if (latestSnapshotKey.current !== operationSnapshotKey) {
+			clearSecrets()
+			return
+		}
+		updateDraft({
+			password: '',
+			passwordConfirmation: '',
+			oidcSecret: '',
+			enrollment: result.enrollment,
+			totpCode: '',
+		})
+		setError(undefined)
 	}
 
 	const confirmTotp = async (event: FormEvent) => {
 		event.preventDefault()
-		if (!enrollment) return
-		await applyMutation(() => api.confirmTotp({ enrollmentId: enrollment.id, code: totpCode }))
+		if (!draft.enrollment) return
+		const result = await runCredentialOperation('totp-confirmation', () =>
+			confirmTotpEnrollment.mutateAsync({
+				enrollmentId: draft.enrollment!.id,
+				code: draft.totpCode,
+			}),
+		)
+		if (result) applyMutationResult(result)
 	}
 
 	const submitOidcSecret = async (event: FormEvent) => {
 		event.preventDefault()
-		await applyMutation(() => api.setupOidcSecret({ secret: oidcSecret }))
+		const result = await runCredentialOperation('oidc-secret', () =>
+			setupOidcSecret.mutateAsync({ secret: draft.oidcSecret }),
+		)
+		if (result) applyMutationResult(result)
 	}
 
 	return (
@@ -221,7 +281,7 @@ export default function AuthSetup() {
 					</Button>
 				</Group>
 
-				{error ? <Alert color="red">{error}</Alert> : null}
+				{visibleError ? <Alert color="red">{visibleError}</Alert> : null}
 
 				{loading && !snapshot ? (
 					<Group>
@@ -255,19 +315,19 @@ export default function AuthSetup() {
 
 				{snapshot?.state === 'setup-required' && snapshot.mode === 'password' ? (
 					<PasswordAccountForm
-						username={username}
-						password={password}
-						passwordConfirmation={passwordConfirmation}
+						username={draft.username}
+						password={draft.password}
+						passwordConfirmation={draft.passwordConfirmation}
 						busy={busy}
-						onUsername={setUsername}
-						onPassword={setPassword}
-						onPasswordConfirmation={setPasswordConfirmation}
+						onUsername={(username) => updateDraft({ username })}
+						onPassword={(password) => updateDraft({ password })}
+						onPasswordConfirmation={(passwordConfirmation) => updateDraft({ passwordConfirmation })}
 						onSubmit={(event) => void submitPassword(event)}
 					/>
 				) : null}
 
 				{snapshot?.state === 'setup-required' && snapshot.mode === 'password-totp' ? (
-					enrollment ? (
+					draft.enrollment ? (
 						<Card withBorder>
 							<form onSubmit={(event) => void confirmTotp(event)}>
 								<Stack gap="md">
@@ -277,31 +337,37 @@ export default function AuthSetup() {
 											Add the secret to your authenticator, then enter its current six-digit code.
 										</Text>
 									</Stack>
-									<SecretValue label="Base32 secret" value={enrollment.secret} />
-									<SecretValue label="Provisioning URI" value={enrollment.provisioningUri} />
+									<SecretValue label="Base32 secret" value={draft.enrollment.secret} />
+									<SecretValue label="Provisioning URI" value={draft.enrollment.provisioningUri} />
 									<Text size="xs" c="dimmed">
-										Enrollment expires at {new Date(enrollment.expiresAt).toLocaleString()}.
+										Enrollment expires at {new Date(draft.enrollment.expiresAt).toLocaleString()}.
 									</Text>
 									<TextInput
 										label="One-time code"
 										inputMode="numeric"
 										maxLength={6}
-										value={totpCode}
+										value={draft.totpCode}
 										disabled={busy}
 										onChange={(event) =>
-											setTotpCode(event.currentTarget.value.replaceAll(/\D/g, '').slice(0, 6))
+											updateDraft({
+												totpCode: event.currentTarget.value.replaceAll(/\D/g, '').slice(0, 6),
+											})
 										}
 									/>
 									<Group>
-										<Button type="submit" loading={busy} disabled={totpCode.length !== 6}>
+										<Button
+											type="submit"
+											loading={activeOperation === 'totp-confirmation'}
+											disabled={busy || draft.totpCode.length !== 6}
+										>
 											Confirm and save
 										</Button>
 										<Button
+											type="button"
 											variant="subtle"
 											disabled={busy}
 											onClick={() => {
-												setEnrollment(undefined)
-												setTotpCode('')
+												clearSecrets()
 											}}
 										>
 											Start over
@@ -312,14 +378,16 @@ export default function AuthSetup() {
 						</Card>
 					) : (
 						<PasswordAccountForm
-							username={username}
-							password={password}
-							passwordConfirmation={passwordConfirmation}
+							username={draft.username}
+							password={draft.password}
+							passwordConfirmation={draft.passwordConfirmation}
 							busy={busy}
 							submitLabel="Continue to TOTP"
-							onUsername={setUsername}
-							onPassword={setPassword}
-							onPasswordConfirmation={setPasswordConfirmation}
+							onUsername={(username) => updateDraft({ username })}
+							onPassword={(password) => updateDraft({ password })}
+							onPasswordConfirmation={(passwordConfirmation) =>
+								updateDraft({ passwordConfirmation })
+							}
 							onSubmit={(event) => void beginTotp(event)}
 						/>
 					)
@@ -332,11 +400,15 @@ export default function AuthSetup() {
 								<PasswordInput
 									label="OIDC client secret"
 									description="The value is persisted in Vault and is never returned by this API."
-									value={oidcSecret}
+									value={draft.oidcSecret}
 									disabled={busy}
-									onChange={(event) => setOidcSecret(event.currentTarget.value)}
+									onChange={(event) => updateDraft({ oidcSecret: event.currentTarget.value })}
 								/>
-								<Button type="submit" loading={busy} disabled={oidcSecret.length === 0}>
+								<Button
+									type="submit"
+									loading={activeOperation === 'oidc-secret'}
+									disabled={busy || draft.oidcSecret.length === 0}
+								>
 									Save client secret
 								</Button>
 							</Stack>
@@ -347,6 +419,8 @@ export default function AuthSetup() {
 		</MantineProvider>
 	)
 }
+
+export default setupScope.render(AuthSetup)
 
 type PasswordAccountFormProps = Readonly<{
 	username: string

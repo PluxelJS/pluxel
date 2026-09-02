@@ -65,7 +65,11 @@ override init() {
 
 `FontsWorkbench` 固定包含一个 manager View 和一个 provider-only selection Attachment。Selector 直接取得 Fonts
 提供的 catalog/selection API；consumer 不创建转发 target。Placement 随 consumer generation 撤销，但 renderer、API、
-字体数据、选择和 native registration 都由 FontsPlugin 持有。上传和删除只出现在 manager View。
+字体数据、选择和 native registration 都由 FontsPlugin 持有。两个 renderer 都用 descriptor-bound scope 取得 exact root，
+并由 query/mutation resources 处理 snapshot ownership 与写后失效。Workbench mutation 只确认写入完成并返回 `void`，
+更新后的 catalog、选择和限制统一由 snapshot query 读取，避免同一份大 DTO 经 mutation 和 query 重复传输。上传和删除只
+出现在 manager View。上传前的 `File.arrayBuffer()` 仍是浏览器本地准备步骤：关闭 renderer 只能阻止读取完成后的 RPC，
+不能取消已经开始的文件读取。
 
 ```ts
 host.cfg(FontsPlugin).set({

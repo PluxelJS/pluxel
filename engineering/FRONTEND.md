@@ -9,15 +9,18 @@ Workbench 不得成为 Plugin 核心能力的启动前提。
 - `@pluxel/runtime/web/react`：Management client 的 React Context adapter；
 - `@pluxel/runtime/workbench`：Content/View/Attachment definition；
 - `@pluxel/runtime/workbench/client`：layout、portable Content plan/presentation 与 opened entry handle validation；
-- `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/runtime/workbench/react`：descriptor-bound renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
 - `@pluxel/runtime/workbench/federation`：Shell-owned MF Runtime 和 View activation orchestration。
 - `@pluxel/runtime/internal/workbench-react`：toolchain-generated React Bridge wrapper ABI，不是作者入口。
 
-完整 Plugin UI source value-import 自己的 Workbench definition，并只从 `@pluxel/runtime/capnweb` import browser-safe API
-types。它不能 import Plugin implementation、Context、database schema/handle、Node builtin 或 secret。Toolchain 独立构建
-每个含 renderer 的 Plugin definition 的 UI producer并验证这条反向依赖边界。Generated Bridge 和 renderer descriptor
-projection 只保留 View identity，不把同一 definition 中 Content 的 schema、handler 或 server imports 带进 browser graph。
-Content Markdown 在 build time 降为 portable plan，也不进入 browser module graph。
+普通 Plugin UI 的 renderer-specific `*.scope.ts(x)` 是唯一可以 value-import 自己 Workbench definition 的 module；renderer graph
+内的 page/panel 只 import scope/resource，跨 renderer shared component 只接收普通 props/data。低层
+`useWorkbench(exactDescriptor)` renderer 可改由 default entry 作为唯一 direct definition boundary。Browser contract 可以
+type-only import。UI 不能 import Plugin implementation、Context、database schema/handle、Node builtin 或 secret。Toolchain
+独立构建每个含 renderer 的 Plugin definition 的 UI producer，验证 scope/entry 绑定 exact descriptor，并把该 import 改写成
+browser-only projection。Projection 保留 exact View/Attachment API types，但 generated JS 不执行 source definition，也不把同一
+definition 中 Content 的 schema、handler 或 server imports 带进 browser graph。Content Markdown 在 build time 降为 portable
+plan，也不进入 browser module graph。
 
 ## 一个 document，一条 session
 
@@ -80,18 +83,48 @@ validation issues 映射到字段；validation/domain/unexpected failure 保留 
 都不能更新 React state。
 
 每个 expose 是标准 React Bridge application。Toolchain 生成 wrapper，wrapper 把 opened handle 和 host facade 放入
-per-Bridge React Context，再渲染 Plugin 默认导出的零 props component。
+per-Bridge React Context，再渲染 Plugin 默认导出的零 props component。Plugin 用 renderer-specific scope 绑定默认 entry：
 
 ```tsx
-export default function Settings() {
-	const { api, host } = useWorkbench(SettingsWorkbench.main)
-}
+// settings.scope.ts
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { SettingsWorkbench } from '../workbench.js'
+
+export const settingsScope = createWorkbenchRenderer(SettingsWorkbench.settings)
+export const settingsQuery = settingsScope.query({
+	queryFn: ({ api }) => api.snapshot(),
+	watch: ({ api }, invalidate) => api.watch(invalidate),
+})
+
+// settings.tsx
+import { SettingsPage } from './settings-page.js'
+import { settingsScope } from './settings.scope.js'
+
+export default settingsScope.render(SettingsPage)
 ```
 
-`useWorkbench(exactDescriptor)` 同时完成 TypeScript API 推导和 runtime declaration identity 校验。Remote 不取得
-wrapper props、raw socket、MF Runtime、Shell router/store 或官方 App private Context。
+Scope 和 resource 只是 module-scoped frozen declarations。每次 `render()` Bridge mount 创建独立 renderer owner，持有当前
+exact root/host、query cache、watch subscription、retry timer、AbortController 和 mutation close signal；destroy 时一次清理。
+Scope module 和 symbol 默认与 descriptor entry 同名（`<entry>.scope.ts` / `<entry>Scope`），resource 按领域语义命名，
+避免同一 renderer 同时出现 entry 名、页面名和 Plugin 名三套别名。
+相同 descriptor 或 parameterized route 同时打开多次，也不会跨 handle、params、principal、session 或 owner generation 共享
+cache/invalidation。Workbench 不使用 document-global `QueryClient`，也不向 Remote 暴露 raw query cache/key。
 
-`useRemoteValue()` / `createRemoteValue()` 只是 Plugin-owned `read()`/`watch()` 的小型 client snapshot owner：
+Query owner 对 awaited DTO 统一执行 portable validation、deep copy/freeze 和 top-level transport disposer。Watch query 先 subscribe
+再 read；同 key 的 active observers 共享一个 watch/read，read 期间 invalidation 合并为一次 follow-up。后台 failure 保留最近成功 data
+并标 stale/error。Keyed query 使用 resource identity + canonical portable author key；unkeyed query 只有 resource identity。
+资源级没有命令式 refetch/invalidate，只有当前 Hook result 的 `refetch()` / `invalidate()` controls 与 mutation 使用的
+scope-typed target；result 还投影 `status/data/error` 和 `isPending/isFetching/isStale`。
+
+Mutation 是 per-hook single-flight，不自动 retry；pending 时第二个调用稳定失败。`invalidates` 在远端调用前验证 target，
+renderer owner 仍 active 时在 mutation settle 后标 stale，包括 RPC reject 或 result detach failure；active query 自行刷新，mutation
+success 不等待该读取。普通事件处理器使用只把失败写入 Hook state 的 `mutate()`；需要 detached result 或显式流程编排时使用
+`mutateAsync()`。Renderer close 已清空 cache，并使 pending `refetch()` / `mutateAsync()` 及时失败；无法取消的 RPC 仍可 settle，
+但晚到的 fulfilled DTO 会 detach/dispose，不更新 React。
+
+`useWorkbench(exactDescriptor)` 同时完成 TypeScript API 推导和 runtime declaration identity 校验，并与
+`useRemoteValue()` / `createRemoteValue()` 一起保留为高级 escape hatch。后两者仍是 Plugin-owned `read()`/`watch()` 的小型
+client snapshot owner：
 
 - 先建立 optional subscription，再首次读取，避免初始窗口丢失 invalidation；
 - 合并 reading 期间的 invalidation；
@@ -99,7 +132,9 @@ wrapper props、raw socket、MF Runtime、Shell router/store 或官方 App priva
 - dispose subscription 并拒绝 late read 覆盖；
 - awaited object DTO 使用 `detachWorkbenchPortableValue()` 校验、深拷贝并释放 transport result。
 
-Plugin 可以围绕自己的 API 写更复杂的 React helper，但 Workbench 不提供查询语言、collection store 或通用 event model。
+Plugin 可以围绕自己的 API 写领域 callback、progress/cancel 或 lossless stream helper，但 Workbench 不提供查询语言、
+跨 renderer cache、collection store 或通用 event model。Remote 不取得 wrapper props、raw socket、MF Runtime、Shell
+router/store 或官方 App private Context。
 
 ## Host facade
 
@@ -153,6 +188,9 @@ building 状态。后台 producer 成功后提交完整 tuple 并触发完整 do
 - 跨组件共享事实使用 `subscribe/getSnapshot` store；
 - 空 array/object 和 Context value 保持稳定 identity；
 - Content state 与 remote read 使用 sequence/epoch guard，旧结果不覆盖新 target/route；
+- renderer query/mutation cache 属于 per-open owner，StrictMode replay 不重复 watch，teardown 后 late result 只释放不提交；
+- structured query key canonicalize 后才进 cache，typed invalidation 只解析当前 renderer scope 的 resource；
+- mutation per-hook single-flight、无自动 retry，并在 active owner 中于 settle 后执行预先验证的 invalidation；
 - mutation handler 显式 await/catch 或用 `void` 表达有意忽略；
 - UI state 永不保存已释放的 Cap’n Web proxy。
 
@@ -164,7 +202,9 @@ building 状态。后台 producer 成功后提交完整 tuple 并触发完整 do
 - `packages/workbench-app/src/app/workbench/`
 - `packages/runtime/src/web/session/`
 - `packages/runtime/src/workbench/client.ts`
+- `packages/runtime/src/workbench/portable-value.ts`
 - `packages/runtime/src/workbench/react.tsx`
+- `packages/runtime/src/workbench/renderer-scope.tsx`
 - `packages/runtime/src/workbench/react-internal.tsx`
 - `packages/runtime/src/workbench/federation.ts`
 - `packages/workbench-app/src/app/workbench/WorkbenchContentRenderer.tsx`

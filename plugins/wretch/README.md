@@ -118,9 +118,8 @@ override async init(): Promise<void> {
 ```
 
 provider publication 只在 View 实际打开时，从 server-derived `consumer.node` 找到已启用的 exact consumer
-state，并创建 fresh `WretchSettingsApi` root。browser renderer 是 zero-props component，通过
-`useWorkbench(WretchWorkbench.settings)` 直接取得 `{ provider }`。`snapshot()`、`update()` 与
-`reset()` 返回的 object RPC result 由 renderer 以 `using` 释放顶层 ownership。
+state，并创建 fresh `WretchSettingsApi` root。browser renderer 使用 descriptor-bound `settingsScope`，由 query/mutation
+resources 取得 `{ provider }`、自动 detach `snapshot()` / `update()` / `reset()` 的 DTO，并在写入 settle 后刷新 snapshot。
 
 UI 当前统一管理：
 

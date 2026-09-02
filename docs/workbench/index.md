@@ -19,6 +19,8 @@ Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
 - Secret 不进入普通 config。Config 只保存 Vault 引用；Plugin 已有明确的 provisioning/rotation 契约，且一次表单即可完成时，
   用 Content action 写入 Vault。多步骤 enrollment、OAuth、progress 或 recovery state machine 使用完整 View。
 - 需要自定义布局、progress/cancel、分页、high-rate stream 或任意组件：使用 `workbench.view<Api>()`。
+- 完整 View 主要是 snapshot/watch + mutation：使用 renderer scope 的 query/mutation；callback、progress、cancel 或 lossless stream
+  才下沉到领域 Cap’n Web capability。
 - 页面和 API 由 provider 拥有，但是否出现、出现在哪里由 consumer 决定：使用 Attachment。
 - 同一页面编辑不同对象：使用一个 parameterized route，不为每个对象创建 entry。
 - 列表、collection、bot account、字体等动态数据：放进 Plugin API 返回值，不建立动态 Workbench 定义。
@@ -272,48 +274,159 @@ class OrdersSubscription extends RpcTarget {
 Bindings 必须与 definition 的 key 完全一致。一个 Plugin generation 只调用一次 `publish()`；`PluginPart` 把 UI
 需求交给 owning Plugin 聚合。
 
-### 3. 编写零 props renderer
+### 3. 声明 renderer scope 与 resources
 
-`src/ui/overview.tsx` 默认导出零 props component：
+普通 snapshot/watch 页面先在 renderer-specific `src/ui/overview.scope.ts` 声明 scope。这个 module 是当前 renderer graph
+唯一直接 value-import definition 的边界；scope 和 resource 都是 module-scoped immutable declaration，不保存当前 API root
+或 React state：
+
+```ts
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { OrdersWorkbench } from '../workbench.js'
+
+export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
+
+export const ordersQuery = overviewScope.query({
+	queryFn: ({ api }) => api.snapshot(),
+	watch: ({ api }, invalidate) => api.watch(invalidate),
+})
+
+export const refreshOrders = overviewScope.mutation({
+	mutationFn: ({ api }) => api.refresh(),
+})
+```
+
+Renderer-specific scope module 优先与 descriptor entry 同名：`overview` 使用 `overview.scope.ts`，scope symbol 使用
+`overviewScope`。这样 entry、scope 与 build error 能直接互相定位；resource 则继续使用领域名称。
+
+这里 `api.refresh()` 提交后会通过 `watch` 通知，所以 mutation 不再重复声明 `invalidates`。如果 query 没有 `watch`，或该
+watch contract 不覆盖这项写操作，再由 mutation 显式声明 invalidation；不要为同一次提交同时建立两条刷新路径。
+
+Toolchain 会把这条 exact definition import 改写为 browser-only projection，同时保留 `RpcStub<OrdersApi>` 的准确类型；原始
+definition module 不会在浏览器执行。Indirect/re-export/dynamic definition import、绑定错误 entry、一个 scope 绑定多个 descriptor，
+或跨 renderer 复用同一 scope 都会在 build 时拒绝。共享 UI 应保持为普通 props/data component，不 import renderer scope。
+只使用低层 `useWorkbench(exactDescriptor)` 的高级 renderer 可以改在 default entry 保留唯一 direct definition import；两条路径都
+不允许 graph 中出现第二个 definition value boundary。
+
+需要按输入读取时提供 `queryKey(input)`，并用 `query.useQuery(input)`。Key 会先验证和 canonicalize；结构相等的 portable key
+共享同一 entry。`query.target(input)` 只失效该 key，`query.all()` 失效当前 resource 的已有 keys。Invalidation target 是当前
+scope 的 opaque typed value，不是 global cache key；不能交给另一个 renderer scope。
+
+```ts
+const orderQuery = overviewScope.query({
+	queryKey: (input: Readonly<{ id: string }>) => [input.id],
+	queryFn: ({ api }, input) => api.order(input.id),
+})
+
+const renameOrder = overviewScope.mutation({
+	mutationFn: ({ api }, input: Readonly<{ id: string; name: string }>) => api.rename(input),
+	invalidates: (input) => [orderQuery.target({ id: input.id })],
+})
+```
+
+无参 query 本身就是 exact invalidation target；keyed query 必须显式选择 `target(input)` 或 `all()`，避免一个 resource
+在代码中含糊地代表“某个 key”还是“全部 key”。
+
+### 4. 绑定 entry 并渲染 page
+
+默认 entry 保持零 props，只负责把 page 绑定到 scope：
 
 ```tsx
-import { detachWorkbenchPortableValue } from '@pluxel/runtime/workbench/client'
-import { useRemoteValue, useWorkbench } from '@pluxel/runtime/workbench/react'
-import { OrdersWorkbench, type OrdersSnapshot } from '../workbench.js'
+// src/ui/overview.tsx
+import { OrdersPage } from './orders-page.js'
+import { overviewScope } from './overview.scope.js'
 
-export default function OrdersOverview() {
-	const { api, host } = useWorkbench(OrdersWorkbench.overview)
-	const snapshot = useRemoteValue<OrdersSnapshot>(
-		{
-			read: async () => detachWorkbenchPortableValue(await api.snapshot(), 'Orders snapshot'),
-			subscribe: (invalidate) => api.watch(() => invalidate()),
-		},
-		[api],
-	)
+export default overviewScope.render(OrdersPage)
+```
 
-	if (snapshot.state === 'loading') return <p>Loading…</p>
-	if (snapshot.state === 'error') return <p>Unavailable</p>
+Renderer graph 内的 page/panel 可以直接 import scope 和 resources，不需要层层传递 `api`、`host` 或 cache：
+
+```tsx
+// src/ui/orders-page.tsx
+import { ordersQuery, overviewScope, refreshOrders } from './overview.scope.js'
+
+export function OrdersPage() {
+	const { host } = overviewScope.useWorkbench()
+	const orders = ordersQuery.useQuery()
+	const refresh = refreshOrders.useMutation()
+
+	if (orders.status === 'pending') return <p>Loading…</p>
+	if (orders.status === 'error' && orders.data === undefined) return <p>Unavailable</p>
 
 	return (
-		<button
-			onClick={async () => {
-				const next = detachWorkbenchPortableValue(await api.refresh(), 'Orders refresh result')
-				host.notify({ message: `Revision ${next.revision}` })
-			}}
-		>
-			Refresh {snapshot.value.openOrders} orders
-		</button>
+		<>
+			{orders.status === 'error' ? <p>Showing stale data.</p> : null}
+			<button
+				disabled={refresh.isPending}
+				onClick={() => {
+					void refresh
+						.mutateAsync()
+						.then((next) => host.notify({ message: `Revision ${next.revision}` }))
+						.catch(() => host.notify({ message: 'Refresh failed', tone: 'error' }))
+				}}
+			>
+				Refresh {orders.data.openOrders} orders
+			</button>
+		</>
 	)
 }
 ```
 
-`useWorkbench()` 必须接收这个 renderer 对应的 exact descriptor。View 得到 `{ api, host }`；Attachment
-根据声明得到 `{ provider, host }` 或 `{ provider, consumer, host }`。不传基础设施 props，也不按字符串查找 API。
+每次 Bridge mount 都会创建独立 renderer owner，持有这次打开的 exact root/host、query cache、watch、retry timer、
+AbortController 和 mutation close signal。即使相同 View 或 route 同时打开多次，也不会跨 open handle、params、principal、session
+或 Plugin generation 共享 data/error/invalidation；Workbench 不提供 global `QueryClient`。
 
-Cap’n Web awaited object result 可能携带 transport disposer。`detachWorkbenchPortableValue()` 会验证 JSON-like
-portable data、复制为深度冻结的普通对象，并恰好释放一次 remote result；它不替代 Plugin 自己的领域 schema 校验。
-不要把 transport-owned result 或已经释放的 proxy 存入 state。`useRemoteValue()` 是一个很小的 snapshot owner，
-不是平台查询语言或持久缓存。
+Query 把 API result 放入 cache 前会验证 portable data、深拷贝、深冻结，并恰好释放一次 top-level transport result。显式
+`undefined` field、class instance、accessor、cycle、binary 或 capability 都不能进入 cache。带 watch 的 query 先订阅再读取；
+同 key 的 observers 共享一个 read/watch，read 期间多次 invalidation 只触发一次 follow-up read。后台失败保留最近成功 data 并
+标记 stale/error。Query option 的 `watch` 一旦保留 callback，就必须同步返回或异步 resolve 到 `Disposable`；API
+方法通常声明返回 child `RpcTarget`，其 browser-side `RpcPromise` / `RpcStub` 满足该清理契约。
+
+### Query 与 mutation 契约
+
+| 选项或操作                   | 当前语义                                                                                                                                                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                    | 默认 `true`；`false` 时当前 observer 不自动 read 或持有 watch。当前 Hook 的显式 `refetch()` 会绕过 `enabled`。keyed query 也可使用返回 boolean 的 predicate。                                                                                                 |
+| `staleTime`                  | 单位为毫秒；unwatched 默认 `0`，watched 默认 `Infinity`。显式 invalidation 始终覆盖 `staleTime`。                                                                                                                                                             |
+| `retry`                      | 默认 `false`；接受非负 safe integer 或 `({ failureCount, error }) => boolean`，Framework 最多 retry 5 次。renderer/scope/key/portable/limit/closed 类错误不 retry。                                                                                           |
+| query `signal`               | `queryFn` 的 read 被新读取取代、query deactivate 或 renderer close 时 abort；`watch` 在 deactivate 或 close 时 abort。signal 用于通知可取消的底层工作，同时阻止晚到结果提交。底层若不观察 signal 仍可 settle，Framework 仍会 detach/dispose 其结果。          |
+| mutation `signal`            | 只在 per-open renderer owner close 时 abort。Hook unmount 和 `reset()` 不会伪装取消已经接受的写入；底层工作仍须观察 signal 才能取消。                                                                                                                         |
+| `mutate()` / `mutateAsync()` | `mutate()` 用于 event handler 的 fire-and-observe，失败进入 Hook state，不向外泄漏 rejected Promise；pending 时的重复调用保留当前 pending state。`mutateAsync()` 用于需要 result 或显式流程编排的调用，并会 reject pending duplicate。两者经过同一 pipeline。 |
+| mutation `reset()`           | 只把 settled success/error state 清回 idle；pending 时不取消，也不重置。                                                                                                                                                                                      |
+
+Query result 提供 `status`、`data`、`error`、`isPending`、`isFetching`、`isStale` 和 instance-bound
+`refetch()` / `invalidate()`。`refetch()` 返回本次显式读取的 Promise；`invalidate()` 同步标 stale，只为 active observers
+调度读取。Module-scoped resource 不提供无法判定 open handle 的命令式刷新。
+
+`useMutation()` 是 per-hook single-flight：普通 event handler 直接调用 `mutation.mutate(input)`，再从 Hook state 呈现结果；只有
+需要返回值或显式 `await` / `catch` 的流程才使用 `mutateAsync()`。Pending 时第二次 `mutateAsync()` 稳定失败，不自动
+queue、retry 或猜测幂等性。若 mutation result 只是下一份 snapshot 的重复副本，领域 API 应返回 `void`，并用权威 watch 或
+`invalidates` 刷新 query；只有 UI 确实消费的 domain result 才返回 portable DTO。
+
+静态 freshness 关系写 `invalidates: [query]`，只有 target 依赖 mutation input 时才使用 callback。若 mutation commit 必然通过同一
+权威 watch 通知当前 snapshot，就省略该 mutation 的 `invalidates`；若通知可能丢失、延后，或 RPC reject/detach failure 后仍必须刷新，
+则声明 `invalidates`。Framework 会 coalesce 同期 invalidation，但作者仍应只声明真实 freshness authority，避免 watch 与
+`invalidates` 无条件触发双重刷新。Targets 会在调用远端方法前完成 scope/key 验证；owner 仍 active 时，在 mutation settle 后标
+stale，即使 RPC reject 或 result detach 失败也一样。Mutation success 不等待 invalidated query 的读取完成。
+
+### 稳定错误与恢复
+
+| `code`                               | 作者应如何处理                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `WORKBENCH_RENDERER_CLOSED`          | 当前 open 已结束；停止更新，后续交给新的 open 重建。                                               |
+| `WORKBENCH_RENDERER_SCOPE_MISMATCH`  | 修正 descriptor、scope、resource 或 invalidation target 的 wiring，不要在 scopes 间复用 resource。 |
+| `WORKBENCH_RESOURCE_KEY_INVALID`     | 修正 `queryKey()` / `target(input)`，只返回有界 portable key。                                     |
+| `WORKBENCH_RESOURCE_LIMIT_EXCEEDED`  | 减少 active keys、cache entries 或 mutation targets；不要盲目 retry。                              |
+| `WORKBENCH_MUTATION_PENDING`         | 等待当前 Hook 的 mutation settle，再接受下一次写入。                                               |
+| `WORKBENCH_NON_PORTABLE_VALUE`       | 让 API 返回普通 portable DTO；移除 `undefined`、class、accessor、cycle、binary 与 capability。     |
+| `WORKBENCH_PORTABLE_VALUE_TOO_DEEP`  | 扁平化 DTO，避免把深层对象图当作 snapshot。                                                        |
+| `WORKBENCH_PORTABLE_VALUE_TOO_LARGE` | 分页、裁剪字段或按 key 拆分读取。                                                                  |
+| `WORKBENCH_TRANSPORT_DISPOSE_FAILED` | 修复 top-level transport result 的 disposer/ownership，并检查错误的 `cause`。                      |
+
+低层 `useWorkbench(exactDescriptor)`、`useRemoteValue()` / `createRemoteValue()` 和
+`detachWorkbenchPortableValue()` 仍是高级 escape hatch：适用于单组件自管 read owner、callback/progress/cancel、lossless event
+或 capability handle。手工 await DTO 时，必须用 detach helper 建立 ownership continuation；不要把 transport-owned result、
+capability 或已经释放的 proxy 放入 React state。
 
 每个 renderer 由 React Bridge 挂载为独立 React root。若 renderer 使用 Mantine、router、i18n 等依赖 Context 的 UI
 library，应在自己的 root 内安装 Provider，并由 producer import 所需样式；Shell 的私有 Provider 不会跨 root 继承，也不是
@@ -322,11 +435,11 @@ Workbench API。例如 Mantine renderer 的入口可以直接写成：
 ```tsx
 import { MantineProvider } from '@mantine/core'
 
-export default function OrdersOverview() {
-	const { api, host } = useWorkbench(OrdersWorkbench.overview)
+export function OrdersPage() {
+	const { host } = overviewScope.useWorkbench()
 	return (
 		<MantineProvider forceColorScheme={host.colorScheme}>
-			<OrdersContent api={api} />
+			<OrdersContent />
 		</MantineProvider>
 	)
 }
@@ -396,13 +509,15 @@ export const ReportsWorkbench = workbench.define({
 
 Provider 发布 Attachment factory；consumer 发布 placement，并在 binding 中传入 constructor-injected provider Plugin。
 Provider 的 renderer 和 API 始终由 provider package 拥有。Consumer 不复制 provider UI，也不创建无意义的转发 API。
+Provider renderer 同样为 Attachment descriptor 创建专用 scope；其 query/mutation context 会按声明精确推导为
+`{ provider, host }` 或 `{ provider, consumer, host }`，每次 placement open 拥有独立 renderer owner。
 
 ## API 设计准则
 
 围绕实际界面设计一个直接 `RpcTarget`：
 
 - 读取复杂状态优先返回 bounded immutable snapshot；大列表使用 cursor/limit；
-- mutation 返回界面下一步需要的 snapshot 或稳定可分支结果，避免随后再请求一次；
+- mutation 只在界面下一步确实需要时返回 bounded DTO；否则返回 `void`，并声明 typed query invalidation；
 - 需要实时更新时由 Plugin 自己提供 `watch(invalidate)`、observer 或 task capability；
 - 长任务返回有明确 progress/cancel/dispose 语义的 child `RpcTarget`；
 - 只有真实信任边界和领域不变量需要 runtime validation，不为每个内部方法重复声明 schema；
@@ -438,6 +553,11 @@ handles，再要求整页 reload。开发期 Content/topology 可以先发布，
 placement 会保留在原位置并显示构建中或构建失败状态，producer 成功提交后触发 reload。Production/static build 仍要求
 Content/MF candidate 全部验证并原子提交后才生效。
 
+Bridge destroy 也会关闭 per-open renderer owner：watch、retry timer、cache 与 active mutation lifetime 一次清理。Pending
+`refetch()` / `mutateAsync()` 会以 closed error 及时拒绝；无法取消的 RPC 可以在后台 settle，但晚到的 fulfilled DTO 仍会
+detach/dispose，且不会再更新已关闭页面。Portable/scope/key/limit/closed 与 mutation-pending 错误提供稳定 code；Plugin
+自己的领域/RPC error 保持原样。
+
 Plugin 启停命令的 `ok: true` 表示运行意图与 graph commit 已应用，不保证每个 `init()` 或 drain 都成功。Workbench 会继续读取
 `report.core.summary.lifecycleReport`：目标 Plugin 有结构化 lifecycle issue 时直接显示该 issue 的安全 message；只有 report 没有
 可解释当前节点的 issue、但观察状态尚未达到目标时，才显示“运行状态仍未收敛”的协调提示。
@@ -462,8 +582,11 @@ physical TLS 或 locality；remote Management 必须使用 TLS passthrough、HTT
 - data/action schema、binding keys、load result 和 action input 在 publication/RPC 边界 fail closed；
 - live data 按 sequence 应用，失败保留最近成功状态并可手动 retry；
 - 每次打开创建 fresh target，关闭、abort 和 replacement 会清理 subscription/task；
+- 每次打开还创建独立 renderer owner；并行 View 不共享 query/mutation/cache/invalidation；
+- query 的 subscribe-before-read、coalescing、canonical keyed identity、stale failure 与 typed invalidation 有测试；
+- mutation per-hook single-flight、无 retry，并在 RPC/detach failure 后仍执行已声明 invalidation；
 - RPC 输入预算、领域授权和稳定失败码有 Plugin 自己的测试；
-- awaited DTO 在进入 React state 前已复制并释放 remote result；
+- awaited DTO 在进入 React state/cache 前已验证、深复制、深冻结并释放 top-level remote result；
 - parameterized route 的 params 由 server 匹配；
 - Attachment provider/consumer owner 与 placement 正确；
 - production build 对完整 View 包含标准 `mf-manifest.json`、所有 exposes 和动态类型，对 Content 包含已验证的 immutable plan；

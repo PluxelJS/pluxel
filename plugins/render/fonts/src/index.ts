@@ -453,8 +453,7 @@ export class FontsPlugin extends BasePlugin {
 	/** Updates the provider-wide preference without requiring Workbench. */
 	async setPreferredFamily(family: string | null): Promise<DefaultFontSnapshot> {
 		const state = this.requireManagedState()
-		const snapshot = await this.setPreferredDefaultFamily(state, family)
-		return snapshot.defaultFont
+		return this.setPreferredDefaultFamily(state, family)
 	}
 
 	private createWorkbenchManager(): FontsManagerApi {
@@ -462,7 +461,9 @@ export class FontsPlugin extends BasePlugin {
 		const state = this.requireManagedState()
 		return new FontsManagerRpc(
 			() => this.readManagedSnapshot(state),
-			(family) => this.setPreferredDefaultFamily(state, family),
+			async (family) => {
+				await this.setPreferredDefaultFamily(state, family)
+			},
 			(input) => this.installManagedFont(state, input),
 			(id) => this.removeManagedFont(state, id),
 		)
@@ -472,7 +473,9 @@ export class FontsPlugin extends BasePlugin {
 		const state = this.requireManagedState()
 		return new FontSelectionRpc(
 			async () => toSelectionSnapshot(await this.readManagedSnapshot(state)),
-			async (family) => toSelectionSnapshot(await this.setPreferredDefaultFamily(state, family)),
+			async (family) => {
+				await this.setPreferredDefaultFamily(state, family)
+			},
 		)
 	}
 
@@ -556,7 +559,7 @@ export class FontsPlugin extends BasePlugin {
 	private setPreferredDefaultFamily(
 		state: ManagedState,
 		family: string | null,
-	): Promise<FontsManagerSnapshot> {
+	): Promise<DefaultFontSnapshot> {
 		return this.enqueueManaged(state, async () => {
 			if (family !== null && typeof family !== 'string') {
 				throw new FontsError('INVALID_INPUT', 'Default font family must be text or null')
@@ -580,14 +583,11 @@ export class FontsPlugin extends BasePlugin {
 				this.defaults.preferredFamily = selected
 				if (previous !== selected) nativeRegistryRevision += 1
 			})
-			return this.snapshot(state)
+			return this.resolveDefaultFont()
 		})
 	}
 
-	private installManagedFont(
-		state: ManagedState,
-		input: InstallManagedFontInput,
-	): Promise<FontsManagerSnapshot> {
+	private installManagedFont(state: ManagedState, input: InstallManagedFontInput): Promise<void> {
 		return this.enqueueManaged(state, async () => {
 			const borrowed = normalizeManagedInput(input)
 			const normalized = Object.freeze({
@@ -597,7 +597,7 @@ export class FontsPlugin extends BasePlugin {
 			this.assertFontSize(normalized.data.byteLength)
 			const id = await managedFontId(normalized.data, normalized.family)
 			this.assertManagedStateActive(state)
-			if (state.fonts.has(id)) return this.snapshot(state)
+			if (state.fonts.has(id)) return
 			if (state.fonts.size >= this.config.maxManagedFonts) {
 				throw new FontsError(
 					'FONT_LIMIT_EXCEEDED',
@@ -623,7 +623,6 @@ export class FontsPlugin extends BasePlugin {
 				this.assertManagedStateActive(state)
 				const snapshot = toManagedFontSnapshot(stored, registration.handle.families)
 				state.fonts.set(id, { stored, snapshot, registration })
-				return this.snapshot(state)
 			} catch (error) {
 				this.releaseRegistration(registration)
 				if (!state.active) {
@@ -634,7 +633,7 @@ export class FontsPlugin extends BasePlugin {
 		})
 	}
 
-	private removeManagedFont(state: ManagedState, id: string): Promise<FontsManagerSnapshot> {
+	private removeManagedFont(state: ManagedState, id: string): Promise<void> {
 		return this.enqueueManaged(state, async () => {
 			if (!MANAGED_ID.test(id)) throw new FontsError('INVALID_INPUT', 'Managed font ID is invalid')
 			const font = state.fonts.get(id)
@@ -643,7 +642,6 @@ export class FontsPlugin extends BasePlugin {
 			this.assertManagedStateActive(state)
 			state.fonts.delete(id)
 			this.releaseRegistration(font.registration)
-			return this.snapshot(state)
 		})
 	}
 
@@ -998,9 +996,9 @@ class FontRegistrationHandle implements FontRegistration {
 class FontsManagerRpc extends RpcTarget implements FontsManagerApi {
 	constructor(
 		private readonly read: () => Promise<FontsManagerSnapshot>,
-		private readonly selectDefault: (family: string | null) => Promise<FontsManagerSnapshot>,
-		private readonly add: (input: InstallManagedFontInput) => Promise<FontsManagerSnapshot>,
-		private readonly drop: (id: string) => Promise<FontsManagerSnapshot>,
+		private readonly selectDefault: (family: string | null) => Promise<void>,
+		private readonly add: (input: InstallManagedFontInput) => Promise<void>,
+		private readonly drop: (id: string) => Promise<void>,
 	) {
 		super()
 	}
@@ -1009,15 +1007,15 @@ class FontsManagerRpc extends RpcTarget implements FontsManagerApi {
 		return this.read()
 	}
 
-	setPreferredFamily(family: string | null): Promise<FontsManagerSnapshot> {
+	setPreferredFamily(family: string | null): Promise<void> {
 		return this.selectDefault(family)
 	}
 
-	install(input: InstallManagedFontInput): Promise<FontsManagerSnapshot> {
+	install(input: InstallManagedFontInput): Promise<void> {
 		return this.add(input)
 	}
 
-	remove(id: string): Promise<FontsManagerSnapshot> {
+	remove(id: string): Promise<void> {
 		return this.drop(id)
 	}
 }
@@ -1025,7 +1023,7 @@ class FontsManagerRpc extends RpcTarget implements FontsManagerApi {
 class FontSelectionRpc extends RpcTarget implements FontSelectionApi {
 	constructor(
 		private readonly read: () => Promise<FontSelectionSnapshot>,
-		private readonly selectDefault: (family: string | null) => Promise<FontSelectionSnapshot>,
+		private readonly selectDefault: (family: string | null) => Promise<void>,
 	) {
 		super()
 	}
@@ -1034,7 +1032,7 @@ class FontSelectionRpc extends RpcTarget implements FontSelectionApi {
 		return this.read()
 	}
 
-	setPreferredFamily(family: string | null): Promise<FontSelectionSnapshot> {
+	setPreferredFamily(family: string | null): Promise<void> {
 		return this.selectDefault(family)
 	}
 }

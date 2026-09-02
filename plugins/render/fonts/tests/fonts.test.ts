@@ -248,12 +248,13 @@ describe('FontsPlugin', () => {
 					await host.commit()
 
 					using manager = await openFontsManager(host)
-					const [first, duplicate] = await Promise.all([
+					const installed = await Promise.all([
 						manager.api.install({ fileName: 'brand.ttf', family, data }),
 						manager.api.install({ fileName: 'brand-copy.ttf', family, data }),
 					])
+					expect(installed).toEqual([undefined, undefined])
+					const first = await manager.api.snapshot()
 					expect(first.managedFonts).toHaveLength(1)
-					expect(duplicate.managedFonts).toHaveLength(1)
 					expect(GlobalFonts.has(family)).toBe(true)
 					const id = first.managedFonts[0]!.id
 
@@ -279,7 +280,8 @@ describe('FontsPlugin', () => {
 					])
 					expect(GlobalFonts.has(family)).toBe(true)
 
-					const removed = await reloadedManager.api.remove(id)
+					await expect(reloadedManager.api.remove(id)).resolves.toBeUndefined()
+					const removed = await reloadedManager.api.snapshot()
 					expect(removed.managedFonts).toEqual([])
 					expect(GlobalFonts.has(family)).toBe(false)
 				},
@@ -444,6 +446,7 @@ describe('FontsPlugin', () => {
 				using selection = await openFontSelection(host, FontsTestConsumer)
 				using secondSelection = await openFontSelection(host, FontsTestConsumer)
 				expect(secondSelection.api).not.toBe(selection.api)
+				await expect(selection.api.setPreferredFamily(null)).resolves.toBeUndefined()
 				await expect(selection.api.snapshot()).resolves.toMatchObject({
 					defaultFont: { family: expect.any(String) },
 				})
@@ -463,6 +466,7 @@ describe('FontsPlugin', () => {
 				using manager = await openFontsManager(host)
 				using secondManager = await openFontsManager(host)
 				expect(secondManager.api).not.toBe(manager.api)
+				await expect(manager.api.setPreferredFamily(null)).resolves.toBeUndefined()
 				await expect(manager.api.snapshot()).resolves.toMatchObject({ managedFonts: [] })
 			},
 			{ workbench: { enabled: true } },

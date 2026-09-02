@@ -9,7 +9,6 @@ import {
 	type WorkbenchOpenableIdentity,
 } from '@pluxel/core/federation'
 import type { RpcStub, RpcTarget } from '../capnweb'
-import { parseRuntimePortableData } from '../web/validation'
 import type {
 	WorkbenchFederatedViewRef,
 	WorkbenchFederatedLayoutEntry,
@@ -40,27 +39,15 @@ export {
 	WorkbenchOpenedViewHandle,
 	type WorkbenchOpenedClientValue,
 } from './opened-entry'
+export {
+	detachWorkbenchPortableValue,
+	WorkbenchPortableValueError,
+	type WorkbenchDetached,
+	type WorkbenchPortableValue,
+	type WorkbenchPortableValueErrorCode,
+} from './portable-value'
 
 type DisposableValue = Readonly<{ [Symbol.dispose](): void }>
-
-/**
- * Copies one awaited Workbench RPC DTO into a deeply frozen portable-data tree and releases the
- * Cap'n Web result that owned it. This validates portability, not the caller's domain schema.
- */
-export function detachWorkbenchPortableValue<Value>(
-	input: Value,
-	label = 'Workbench RPC result',
-): Value {
-	const dispose = readOwnDisposer(input)
-	try {
-		return parseRuntimePortableData(
-			dispose === undefined ? input : copyWithoutTransportDisposer(input),
-			label,
-		) as Value
-	} finally {
-		dispose?.call(input)
-	}
-}
 
 export type WorkbenchClientOpenResult =
 	| Readonly<{
@@ -678,28 +665,6 @@ function isDisposable(input: unknown): input is DisposableValue {
 		input !== null &&
 		typeof (input as Partial<DisposableValue>)[Symbol.dispose] === 'function'
 	)
-}
-
-function readOwnDisposer(input: unknown): (() => void) | undefined {
-	if ((typeof input !== 'object' && typeof input !== 'function') || input === null) return undefined
-	const descriptor = Object.getOwnPropertyDescriptor(input, Symbol.dispose)
-	return descriptor && 'value' in descriptor && typeof descriptor.value === 'function'
-		? descriptor.value
-		: undefined
-}
-
-function copyWithoutTransportDisposer(input: unknown): unknown {
-	if (typeof input !== 'object' || input === null) return input
-	const prototype = Object.getPrototypeOf(input)
-	if (prototype !== Object.prototype && prototype !== null && prototype !== Array.prototype) {
-		return input
-	}
-	const symbols = Object.getOwnPropertySymbols(input)
-	if (symbols.length !== 1 || symbols[0] !== Symbol.dispose) return input
-
-	const descriptors = Object.getOwnPropertyDescriptors(input)
-	Reflect.deleteProperty(descriptors, Symbol.dispose)
-	return Object.defineProperties(Array.isArray(input) ? [] : {}, descriptors)
 }
 
 function disposeValue(input: unknown): void {

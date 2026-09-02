@@ -111,11 +111,12 @@ export function normalizeManagedSettings(input: unknown): WretchManagedSettings 
 		}
 		timeoutMs = value.timeoutMs
 	}
+	const proxyUrl = normalizedProxyUrl(value.proxyUrl)
 
 	return Object.freeze({
 		headers: Object.freeze(headers),
-		proxyUrl: normalizedProxyUrl(value.proxyUrl),
-		timeoutMs,
+		...(proxyUrl === undefined ? {} : { proxyUrl }),
+		...(timeoutMs === undefined ? {} : { timeoutMs }),
 	})
 }
 

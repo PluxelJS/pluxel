@@ -1,61 +1,34 @@
 import { Alert, MantineProvider, Paper, Select, Stack, Text } from '@mantine/core'
-import { useWorkbench } from '@pluxel/runtime/workbench/react'
-import { useEffect, useMemo, useState } from 'react'
-import { FontManagerWorkbench } from '../../PluginContributionFontDemo.workbench'
+import { useMemo } from 'react'
 import {
 	FONT_KIND,
 	FONT_MANAGER_PLUGIN_NAME,
 	type FontRef,
-	type FontSet,
 } from '../../PluginContributionFontDemo.shared'
+import { fontCatalog, fontSelection, selectionScope, setFontSelection } from './selection.scope'
 
-export default function FontSettings() {
-	const { provider, consumer, host } = useWorkbench(FontManagerWorkbench.selection)
-	const [fonts, setFonts] = useState<readonly FontSet[]>([])
-	const [selected, setSelected] = useState<string | null>(null)
-	const [error, setError] = useState<string>()
+function FontSettings() {
+	const { host } = selectionScope.useWorkbench()
+	return (
+		<MantineProvider forceColorScheme={host.colorScheme}>
+			<FontSettingsContent />
+		</MantineProvider>
+	)
+}
 
-	useEffect(() => {
-		let active = true
-		void (async () => {
-			let rawFonts: Awaited<ReturnType<typeof provider.list>> | undefined
-			let rawSelection: Awaited<ReturnType<typeof consumer.current>> | undefined
-			try {
-				rawFonts = await provider.list()
-				rawSelection = await consumer.current()
-				if (!active) return
-				setFonts(
-					Object.freeze(
-						rawFonts.map((font) =>
-							Object.freeze({
-								id: font.id,
-								name: font.name,
-								previewText: font.previewText,
-								description: font.description,
-							}),
-						),
-					),
-				)
-				setSelected(rawSelection?.id ?? null)
-				setError(undefined)
-			} catch (caught) {
-				if (active) setError(messageOf(caught))
-			} finally {
-				dispose(rawFonts)
-				dispose(rawSelection)
-			}
-		})()
-		return () => {
-			active = false
-		}
-	}, [consumer, provider])
+function FontSettingsContent() {
+	const catalogQuery = fontCatalog.useQuery()
+	const selectionQuery = fontSelection.useQuery()
+	const selectionMutation = setFontSelection.useMutation()
+	const fonts = catalogQuery.data ?? []
+	const selected = selectionQuery.data?.id ?? null
 
 	const options = useMemo(
 		() => fonts.map((font) => ({ value: font.id, label: font.name })),
 		[fonts],
 	)
 	const selectedFont = fonts.find((font) => font.id === selected)
-	const update = async (id: string | null) => {
+	const update = (id: string | null) => {
 		const font = fonts.find((item) => item.id === id)
 		const ref: FontRef | null = font
 			? Object.freeze({
@@ -65,49 +38,41 @@ export default function FontSettings() {
 					label: font.name,
 				})
 			: null
-		let result: Awaited<ReturnType<typeof consumer.set>> | undefined
-		try {
-			result = await consumer.set(ref)
-			setSelected(result?.id ?? null)
-			setError(undefined)
-		} catch (caught) {
-			setError(messageOf(caught))
-		} finally {
-			dispose(result)
-		}
+		selectionMutation.mutate(ref)
 	}
+	const error =
+		selectionMutation.status === 'error'
+			? selectionMutation.error
+			: catalogQuery.status === 'error'
+				? catalogQuery.error
+				: selectionQuery.status === 'error'
+					? selectionQuery.error
+					: undefined
 
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<Paper withBorder radius="md" p="sm" shadow="xs">
-				<Stack gap="xs">
-					{error ? <Alert color="red">{error}</Alert> : null}
-					<Select
-						size="sm"
-						label="Font Set"
-						description="Attachment provider supplies choices; the consumer owns selection."
-						placeholder="选择一个字体集"
-						data={options}
-						value={selected}
-						onChange={(value) => void update(value)}
-						clearable
-						searchable
-					/>
-					{selectedFont ? <Text size="sm">{selectedFont.previewText}</Text> : null}
-				</Stack>
-			</Paper>
-		</MantineProvider>
+		<Paper withBorder radius="md" p="sm" shadow="xs">
+			<Stack gap="xs">
+				{error ? <Alert color="red">{messageOf(error)}</Alert> : null}
+				<Select
+					size="sm"
+					label="Font Set"
+					description="Attachment provider supplies choices; the consumer owns selection."
+					placeholder="选择一个字体集"
+					data={options}
+					value={selected}
+					disabled={catalogQuery.status === 'pending' || selectionMutation.isPending}
+					onChange={update}
+					clearable
+					searchable
+				/>
+				{selectedFont ? <Text size="sm">{selectedFont.previewText}</Text> : null}
+			</Stack>
+		</Paper>
 	)
 }
 
+export default selectionScope.render(FontSettings)
+
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
-}
-
-function dispose(value: unknown): void {
-	const action =
-		value && (typeof value === 'object' || typeof value === 'function')
-			? (value as Partial<Disposable>)[Symbol.dispose]
-			: undefined
-	if (typeof action === 'function') action.call(value)
 }

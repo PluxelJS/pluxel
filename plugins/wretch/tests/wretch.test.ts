@@ -6,6 +6,7 @@ import {
 	v,
 } from '@pluxel/runtime'
 import { assertPluginLifecycleIssue, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { detachWorkbenchPortableValue } from '@pluxel/runtime/workbench/client'
 import { ProxyAgent } from 'undici'
 import wretch, { type FetchLike } from 'wretch'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -135,6 +136,39 @@ describe('WretchPlugin', () => {
 			},
 			{ persistence: { mode: 'custom', backend: persistence.backend } },
 		)
+	})
+
+	it('emits portable settings snapshots without undefined optional fields', async () => {
+		await withRuntimeHost(async (host) => {
+			addStarted(host, [WretchPlugin, ConsumerA])
+			await host.commit()
+			using settings = await openWretchSettings(host, ConsumerA)
+
+			const headersOnly = await detachWorkbenchPortableValue(
+				settings.api.update({ headers: { 'X-Mode': 'headers' } }),
+			)
+			expect(headersOnly.settings).toEqual({ headers: { 'x-mode': 'headers' } })
+			expect(Object.hasOwn(headersOnly.settings, 'proxyUrl')).toBe(false)
+			expect(Object.hasOwn(headersOnly.settings, 'timeoutMs')).toBe(false)
+
+			const proxyOnly = await detachWorkbenchPortableValue(
+				settings.api.update({ headers: {}, proxyUrl: 'http://proxy.example:8080' }),
+			)
+			expect(proxyOnly.settings).toEqual({
+				headers: {},
+				proxyUrl: 'http://proxy.example:8080/',
+			})
+			expect(Object.hasOwn(proxyOnly.settings, 'timeoutMs')).toBe(false)
+
+			const timeoutOnly = await detachWorkbenchPortableValue(
+				settings.api.update({ headers: {}, timeoutMs: 1_000 }),
+			)
+			expect(timeoutOnly.settings).toEqual({ headers: {}, timeoutMs: 1_000 })
+			expect(Object.hasOwn(timeoutOnly.settings, 'proxyUrl')).toBe(false)
+
+			const queried = detachWorkbenchPortableValue(settings.api.snapshot())
+			expect(queried).toEqual(timeoutOnly)
+		})
 	})
 
 	it('rejects persisted settings whose owner does not match the hashed filename', async () => {

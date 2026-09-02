@@ -156,7 +156,9 @@ content ID，最后一个 registration 释放后才从集合移除。平台自�
 
 FontsPlugin 自己的 manager View 管理 provider-owned 字体集合：上传、删除字体并设置默认 family。上传字体持久化在
 host persistence 中，provider 重启时会恢复；这个集合是 Fonts 的领域状态，不是 Workbench 平台概念，也不属于任一
-Canvas/ECharts consumer。
+Canvas/ECharts consumer。Manager 使用 descriptor-bound snapshot query 和 mutations；Runtime 负责 DTO detach、关闭时的
+远端请求所有权与写后刷新。浏览器会先按当前上限检查 `File.size`，再通过 `File.arrayBuffer()` 准备上传 bytes。该 Web API
+不能取消已经开始的读取；关闭页面只会丢弃晚到的 bytes 并阻止随后发起 RPC，服务端仍会再次执行 authoritative 校验。
 
 其他 Plugin 不应复制上传管理界面。如果只需在自己的详情页让用户选择统一默认字体，放置 Fonts 提供的 Attachment：
 
@@ -175,9 +177,10 @@ protected override init() {
 }
 ```
 
-`FontsWorkbench.selection` 是 provider-only Attachment。Renderer 通过
-`useWorkbench(FontsWorkbench.selection)` 取得 Fonts 提供的 `FontSelectionApi`，公开 `snapshot()` 和
-`setPreferredFamily(family | null)`；传 `null` 恢复 host config 或自动选择。Consumer 不创建转发 target，也不拥有
+`FontsWorkbench.selection` 是 provider-only Attachment。它的 renderer module 同样通过
+`createWorkbenchRenderer(FontsWorkbench.selection)` 建立 descriptor-bound scope，并声明 snapshot query 与选择 mutation。
+Scope 取得 Fonts 提供的 `FontSelectionApi`，Runtime 自动 detach 返回 DTO、释放 transport ownership 并在写入后刷新；API 公开
+`snapshot()` 和 `setPreferredFamily(family | null)`，传 `null` 恢复 host config 或自动选择。Consumer 不创建转发 target，也不拥有
 字体 catalog/selection。Canvas、ECharts 和 Takumi 已各自放置这个 selector，普通业务 Plugin 通常不需要重复添加。
 
 Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。

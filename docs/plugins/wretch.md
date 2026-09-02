@@ -164,9 +164,9 @@ protected override async init(): Promise<void> {
 
 View 打开时，`WretchPlugin` 根据 Workbench 提供的 exact `consumer.node` 找到已经初始化的 managed state，
 并创建 fresh `WretchSettingsApi` capability。若没有先完成 `enableManagedSettings()`，打开 View 会失败。
-provider-owned zero-props renderer 直接通过 `useWorkbench(WretchWorkbench.settings)` 取得 provider stub；
-它提供 `snapshot()`、`update(settings)` 与 `reset()`，snapshot 同时包含 `hostTimeoutMs` 和最终
-`effectiveTimeoutMs`。
+provider-owned zero-props renderer 通过 descriptor-bound scope 的 query/mutation resources 取得 provider stub；
+它提供 `snapshot()`、`update(settings)` 与 `reset()`，Framework 自动 detach 返回 DTO 并在 mutation settle 后刷新 snapshot。
+snapshot 同时包含 `hostTimeoutMs` 和最终 `effectiveTimeoutMs`。
 
 同一 caller 并发执行 `enableManagedSettings()` 会共享一次初始化。View 关闭、session 结束或
 caller/provider 停止后，旧 capability 被撤销；provider cleanup 也会关闭 managed `ProxyAgent`。UI 不是核心

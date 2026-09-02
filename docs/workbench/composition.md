@@ -78,10 +78,21 @@ export class ReportsPlugin extends BasePlugin {
 Renderer 仍位于 provider package：
 
 ```tsx
-export default function HttpSettingsPanel() {
-	const { provider, host } = useWorkbench(HttpWorkbench.settings)
-	// provider is RpcStub<HttpSettingsApi>
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { HttpWorkbench } from '../workbench.ts'
+
+const settingsScope = createWorkbenchRenderer(HttpWorkbench.settings)
+const httpSettingsQuery = settingsScope.query({
+	queryFn: ({ provider }) => provider.snapshot(),
+})
+
+function HttpSettingsPanel() {
+	const { host } = settingsScope.useWorkbench()
+	const settings = httpSettingsQuery.useQuery()
+	// render host + detached settings.data
 }
+
+export default settingsScope.render(HttpSettingsPanel)
 ```
 
 这条路径只有一个 renderer 和一个 provider API。Consumer 不实现转发 target，不复制 provider 的 UI，也不把
@@ -158,13 +169,28 @@ export class CanvasPlugin extends BasePlugin {
 }
 ```
 
-Provider-owned renderer 用 exact descriptor 取得唯一 root：
+Provider-owned renderer 用 descriptor-bound scope 取得唯一 root：
 
 ```tsx
-export default function FontSelectionPanel() {
-	const { provider } = useWorkbench(FontsWorkbench.selection)
-	// provider is RpcStub<FontSelectionApi>
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { FontsWorkbench } from '../workbench.ts'
+
+export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)
+export const fontSelectionQuery = selectionScope.query({
+	queryFn: ({ provider }) => provider.snapshot(),
+})
+export const setPreferredFont = selectionScope.mutation({
+	mutationFn: ({ provider }, family: string | null) => provider.setPreferredFamily(family),
+	invalidates: [fontSelectionQuery],
+})
+
+function FontSelectionPanel() {
+	const selection = fontSelectionQuery.useQuery()
+	const setPreferred = setPreferredFont.useMutation()
+	// render detached selection.data and call setPreferred.mutateAsync(family)
 }
+
+export default selectionScope.render(FontSelectionPanel)
 ```
 
 这套实现适合作为默认教材，原因不是它使用了最多概念，而是每个概念都有真实 owner：
@@ -174,12 +200,12 @@ export default function FontSelectionPanel() {
 - Workbench disabled 时，constructor dependency、字体恢复、注册和渲染路径完全不变；
 - 字体数量变化不会增加 definition、View、Attachment、MF expose 或 WebSocket；
 - RPC 输入的大小、family、容量和持久化失败仍由 FontsPlugin 校验，不额外引入 Workbench schema；
-- UI 用 `detachWorkbenchPortableValue()` 校验并复制 await 得到的 Cap’n Web snapshot，同时释放 transport result；没有已证实的实时同步需求，所以保留显式刷新，
-  不预先增加 watch/subscription。
+- Selection UI 没有已证实的实时同步需求，因此 query 不声明 `watch`；mutation settle 后失效 snapshot，Runtime 自动完成
+  portable detach、deep freeze 与 top-level transport result 释放。
 
 这里的“选择”仍是 provider-wide preference。把选择器放到 Canvas、ECharts 或 Takumi 页面，不会把它变成
 consumer-owned state。完整业务能力见[字体插件](../plugins/rendering/fonts.md)，真实源码位于
-`plugins/render/fonts/src/workbench.ts`、`src/index.ts` 和 `src/ui/index.tsx`。
+`plugins/render/fonts/src/workbench.ts`、`src/index.ts`、`src/ui/selection.scope.ts` 和 `src/ui/index.tsx`。
 
 ## 多 collection 且 consumer 自有选择
 
@@ -310,10 +336,23 @@ this.ctx.workbench?.publish(CanvasWorkbench, {
 Picker renderer 精确得到两个 owners：
 
 ```tsx
-export default function FontCollectionPicker() {
-	const { provider, consumer, host } = useWorkbench(FontManagerWorkbench.collectionPicker)
-	// provider: catalog; consumer: current Canvas selection
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { FontManagerWorkbench } from '../workbench.ts'
+
+const collectionPickerScope = createWorkbenchRenderer(FontManagerWorkbench.collectionPicker)
+const fontCatalogQuery = collectionPickerScope.query({
+	queryFn: ({ provider }) => provider.list(),
+})
+const fontSelectionQuery = collectionPickerScope.query({
+	queryFn: ({ consumer }) => consumer.current(),
+})
+
+function FontCollectionPicker() {
+	const { host } = collectionPickerScope.useWorkbench()
+	// provider catalog and consumer selection stay separate query resources
 }
+
+export default collectionPickerScope.render(FontCollectionPicker)
 ```
 
 Provider root 不代理 consumer selection，consumer root 也不转发 catalog。两个 target 各自保留 owner admission 与

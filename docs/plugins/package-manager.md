@@ -79,8 +79,8 @@ await ctx.root.commands.execute('package.remove', {
 - failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`。
 
 Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
-每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 exact descriptor
-`useWorkbench(PackageManagerWorkbench.manager)` 取得该 root：
+每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound scope 声明 snapshot query 与
+install/remove mutation，Framework 自动 detach 返回 DTO、释放 transport ownership，并刷新写入后的 snapshot：
 
 ```ts no-twoslash
 import type { RpcTarget } from '@pluxel/runtime/capnweb'

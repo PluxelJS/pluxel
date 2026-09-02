@@ -125,19 +125,19 @@ class PluginWithUITarget extends RpcTarget implements PluginWithUIApi {
 	}
 
 	addNote(message: string) {
-		return this.plugin.addNote(message)
+		this.plugin.addNote(message)
 	}
 
 	increment(delta?: number) {
-		return this.plugin.increment(delta)
+		this.plugin.increment(delta)
 	}
 
 	resetCounter() {
-		return this.plugin.resetCounter()
+		this.plugin.resetCounter()
 	}
 
 	clearEvents() {
-		return this.plugin.clearEvents()
+		this.plugin.clearEvents()
 	}
 }
 

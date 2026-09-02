@@ -64,8 +64,13 @@ Runtime Context special case：Fonts 仍是正常 Plugin capability，consumer �
 
 `FontsWorkbench.manager` 是 FontsPlugin 自己放置的 direct View；`FontsWorkbench.selection` 是 provider-owned、
 provider-only Attachment。Canvas、ECharts、Takumi 或第三方 consumer 只调用 `selection.place(...)` 并绑定其 required
-`FontsPlugin` handle，不创建无状态 consumer target。两个 renderer 都是零 props component，并通过
-`useWorkbench(FontsWorkbench.manager | selection)` 取得 exact Cap'n Web root。
+`FontsPlugin` handle，不创建无状态 consumer target。两个 renderer 都是零 props component，并使用各自的
+descriptor-bound scope/query/mutation 取得 exact Cap'n Web root；DTO detach/dispose、远端请求关闭与 mutation 后刷新
+由 scope owner 负责。Manager 只为 `File.arrayBuffer()` 保留本地 operation/unmount guard：该浏览器 API 不接受
+`AbortSignal`，guard 在读取完成后阻止 late RPC，但不声称能中止已开始的文件读取。
+
+Workbench mutation 是 command：成功只返回 `void`。完整 catalog/selection snapshot 只由 query 传输；mutation settle
+后失效对应 query，避免同一次写入把大 DTO 作为 mutation result 和 refetch result 发送两遍。
 
 Managed collection 是 Fonts domain state，不是 Workbench 概念。Definition 不按字体/collection 动态增长，字体 CRUD
 不会创建 View、Attachment、MF expose 或 layout revision。关闭 Workbench 只消除 UI publication 和 opened roots，不影响

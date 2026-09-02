@@ -4,13 +4,17 @@ import {
 	parseWorkbenchOpenableIdentity,
 	type WorkbenchViewDeclarationIdentity,
 } from '@pluxel/core/federation'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import {
 	createRemoteValue,
 	detachWorkbenchPortableValue,
 	openWorkbenchEntry,
 	readWorkbenchLayout,
+	WorkbenchPortableValueError,
+	type WorkbenchDetached,
 	type WorkbenchLayoutEntry,
+	type WorkbenchPortableValue,
+	type WorkbenchPortableValueErrorCode,
 	type WorkbenchSessionApi,
 	type WorkbenchContentLayoutEntry,
 	type WorkbenchUnavailableFederatedLayoutEntry,
@@ -354,14 +358,135 @@ describe('remote value owner', () => {
 		expect(dispose).toHaveBeenCalledOnce()
 	})
 
+	it('retains the synchronous overload and exposes deeply readonly output types', () => {
+		const detached = detachWorkbenchPortableValue({
+			nested: { value: 'safe' },
+			items: [1, 2],
+		})
+
+		expect(detached).not.toBeInstanceOf(Promise)
+		expectTypeOf(detached).toEqualTypeOf<{
+			readonly nested: { readonly value: string }
+			readonly items: readonly number[]
+		}>()
+		expectTypeOf<WorkbenchDetached<{ value: { count: number } }>>().toEqualTypeOf<{
+			readonly value: { readonly count: number }
+		}>()
+		expectTypeOf<WorkbenchDetached<[string, { count: number }]>>().toEqualTypeOf<
+			readonly [string, { readonly count: number }]
+		>()
+		expectTypeOf<WorkbenchPortableValueErrorCode>().toEqualTypeOf<
+			| 'WORKBENCH_NON_PORTABLE_VALUE'
+			| 'WORKBENCH_PORTABLE_VALUE_TOO_DEEP'
+			| 'WORKBENCH_PORTABLE_VALUE_TOO_LARGE'
+			| 'WORKBENCH_TRANSPORT_DISPOSE_FAILED'
+		>()
+		expectTypeOf<WorkbenchPortableValue>().toMatchTypeOf<
+			null | boolean | number | string | readonly WorkbenchPortableValue[] | object
+		>()
+	})
+
+	it('awaits a PromiseLike before detaching and releasing its resolved result', async () => {
+		const dispose = vi.fn()
+		const input = Object.defineProperty({ nested: { value: 'safe' } }, Symbol.dispose, {
+			value: dispose,
+		})
+
+		const detached = detachWorkbenchPortableValue(Promise.resolve(input))
+		expectTypeOf(detached).toEqualTypeOf<
+			Promise<{
+				readonly nested: { readonly value: string }
+			}>
+		>()
+		await expect(detached).resolves.toEqual({ nested: { value: 'safe' } })
+		expect(dispose).toHaveBeenCalledOnce()
+	})
+
 	it('releases a transport-owned DTO when portable-data validation fails', () => {
 		const dispose = vi.fn()
 		const input = Object.defineProperty({ missing: undefined }, Symbol.dispose, {
 			value: dispose,
 		})
 
-		expect(() => detachWorkbenchPortableValue(input)).toThrow(/portable data/)
+		expect(() => detachWorkbenchPortableValue(input)).toThrowError(
+			expect.objectContaining({
+				name: 'WorkbenchPortableValueError',
+				code: 'WORKBENCH_NON_PORTABLE_VALUE',
+			}),
+		)
 		expect(dispose).toHaveBeenCalledOnce()
+	})
+
+	it('never invokes a nested disposer while releasing the transport-owned top level', () => {
+		const disposeTopLevel = vi.fn()
+		const disposeNested = vi.fn()
+		const nested = Object.defineProperty({ value: 'unsafe' }, Symbol.dispose, {
+			value: disposeNested,
+		})
+		const input = Object.defineProperty({ nested }, Symbol.dispose, { value: disposeTopLevel })
+
+		expect(() => detachWorkbenchPortableValue(input)).toThrowError(
+			expect.objectContaining({ code: 'WORKBENCH_NON_PORTABLE_VALUE' }),
+		)
+		expect(disposeTopLevel).toHaveBeenCalledOnce()
+		expect(disposeNested).not.toHaveBeenCalled()
+	})
+
+	it('reports a disposer failure with its stable code and cause', () => {
+		const cleanupFailure = new Error('socket cleanup failed')
+		const dispose = vi.fn(() => {
+			throw cleanupFailure
+		})
+		const input = Object.defineProperty({ value: 'safe' }, Symbol.dispose, { value: dispose })
+
+		let error: unknown
+		try {
+			detachWorkbenchPortableValue(input)
+		} catch (caught) {
+			error = caught
+		}
+		expect(error).toBeInstanceOf(WorkbenchPortableValueError)
+		expect(error).toMatchObject({
+			code: 'WORKBENCH_TRANSPORT_DISPOSE_FAILED',
+			cause: cleanupFailure,
+		})
+		expect(dispose).toHaveBeenCalledOnce()
+	})
+
+	it('preserves the portable error code when validation and cleanup both fail', () => {
+		const cleanupFailure = new Error('socket cleanup failed')
+		const dispose = vi.fn(() => {
+			throw cleanupFailure
+		})
+		const input = Object.defineProperty({ credential: undefined }, Symbol.dispose, {
+			value: dispose,
+		})
+
+		let error: unknown
+		try {
+			detachWorkbenchPortableValue(input, 'settings payload')
+		} catch (caught) {
+			error = caught
+		}
+		expect(error).toMatchObject({
+			code: 'WORKBENCH_NON_PORTABLE_VALUE',
+			cause: cleanupFailure,
+		})
+		expect((error as Error).message).toContain('settings payload')
+		expect((error as Error).message).not.toContain('credential')
+		expect(dispose).toHaveBeenCalledOnce()
+	})
+
+	it('uses distinct stable codes for depth and size limits', () => {
+		let tooDeep: Record<string, unknown> = {}
+		for (let depth = 0; depth < 66; depth += 1) tooDeep = { nested: tooDeep }
+
+		expect(() => detachWorkbenchPortableValue(tooDeep)).toThrowError(
+			expect.objectContaining({ code: 'WORKBENCH_PORTABLE_VALUE_TOO_DEEP' }),
+		)
+		expect(() =>
+			detachWorkbenchPortableValue(Array.from({ length: 10_001 }, () => 0)),
+		).toThrowError(expect.objectContaining({ code: 'WORKBENCH_PORTABLE_VALUE_TOO_LARGE' }))
 	})
 
 	it('subscribes before reading and coalesces invalidation during an active read', async () => {

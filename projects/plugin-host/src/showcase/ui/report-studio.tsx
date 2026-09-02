@@ -16,19 +16,16 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
-import {
-	useRemoteValue,
-	useWorkbench,
-	type WorkbenchHostFacade,
-} from '@pluxel/runtime/workbench/react'
+import type { WorkbenchHostFacade } from '@pluxel/runtime/workbench/react'
 import { useMemo, useState } from 'react'
+import type { ShowcaseArtifact } from '../ReportStudio.contracts'
 import {
-	type ReportStudioApi,
-	type ShowcaseArtifact,
-	type ShowcaseSnapshot,
-} from '../ReportStudio.contracts'
-import { ReportStudioWorkbench } from '../ReportStudio.workbench'
+	clearPreviewCache,
+	generateReport,
+	probeOutbound,
+	reportStudioSnapshot,
+	studioScope,
+} from './studio.scope'
 
 const INSPECTION_SURFACES = Object.freeze([
 	['Catalog + lifecycle', 'Plugins'],
@@ -44,39 +41,32 @@ const SHOWCASE_ROUTES = Object.freeze([
 	'GET /showcase/metrics',
 ] as const)
 
-export default function ReportStudio() {
-	const { api, host } = useWorkbench(ReportStudioWorkbench.studio)
+function ReportStudio() {
+	const { host } = studioScope.useWorkbench()
 	return (
 		<MantineProvider forceColorScheme={host.colorScheme}>
-			<ReportStudioContent api={api} host={host} />
+			<ReportStudioContent host={host} />
 		</MantineProvider>
 	)
 }
 
-function ReportStudioContent({
-	api,
-	host,
-}: Readonly<{ api: RpcStub<ReportStudioApi>; host: WorkbenchHostFacade }>) {
+function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) {
 	const [title, setTitle] = useState('Pluxel architecture in practice')
-	const [busy, setBusy] = useState<'generate' | 'probe' | 'clear'>()
 	const [error, setError] = useState<string>()
 	const [preview, setPreview] = useState<ShowcaseArtifact>()
-	const remote = useRemoteValue<ShowcaseSnapshot>(
-		{
-			read: async () => {
-				const raw = await api.snapshot()
-				try {
-					return cloneSnapshot(raw)
-				} finally {
-					dispose(raw)
-				}
-			},
-			subscribe: (invalidate) => api.watch(() => invalidate()),
-		},
-		[api],
-	)
+	const snapshotQuery = reportStudioSnapshot.useQuery()
+	const generateMutation = generateReport.useMutation()
+	const probeMutation = probeOutbound.useMutation()
+	const clearMutation = clearPreviewCache.useMutation()
+	const busy = generateMutation.isPending
+		? 'generate'
+		: probeMutation.isPending
+			? 'probe'
+			: clearMutation.isPending
+				? 'clear'
+				: undefined
 
-	const snapshot = remote.state === 'ready' ? remote.value : undefined
+	const snapshot = snapshotQuery.data
 	const newest = snapshot?.artifacts.at(-1)
 	const activePreview = preview ?? newest
 	const providers = useMemo<readonly (readonly [string, string])[]>(
@@ -94,53 +84,41 @@ function ReportStudioContent({
 	)
 
 	const generate = async () => {
-		setBusy('generate')
 		setError(undefined)
-		let raw: Awaited<ReturnType<typeof api.generate>> | undefined
 		try {
-			raw = await api.generate(title)
-			setPreview(cloneArtifact(raw))
-			host.notify({ title: 'Report generated', message: `${raw.engine} · ${raw.byteLength} bytes` })
+			const artifact = await generateMutation.mutateAsync(title)
+			setPreview(artifact)
+			host.notify({
+				title: 'Report generated',
+				message: `${artifact.engine} · ${artifact.byteLength} bytes`,
+			})
 		} catch (caught) {
 			setError(messageOf(caught))
-		} finally {
-			dispose(raw)
-			setBusy(undefined)
 		}
 	}
 
 	const probe = async () => {
-		setBusy('probe')
 		setError(undefined)
-		let raw: Awaited<ReturnType<typeof api.probeOutbound>> | undefined
 		try {
-			raw = await api.probeOutbound()
-			if (!raw?.ok) setError(raw?.message ?? 'Outbound probe failed')
+			const result = await probeMutation.mutateAsync()
+			if (!result?.ok) setError(result?.message ?? 'Outbound probe failed')
 		} catch (caught) {
 			setError(messageOf(caught))
-		} finally {
-			dispose(raw)
-			setBusy(undefined)
 		}
 	}
 
 	const clear = async () => {
-		setBusy('clear')
 		setError(undefined)
-		let raw: Awaited<ReturnType<typeof api.clearCache>> | undefined
 		try {
-			raw = await api.clearCache()
-			host.notify({ title: 'Preview cache cleared', message: `${raw.entries} entries remain` })
+			const stats = await clearMutation.mutateAsync()
+			host.notify({ title: 'Preview cache cleared', message: `${stats.entries} entries remain` })
 		} catch (caught) {
 			setError(messageOf(caught))
-		} finally {
-			dispose(raw)
-			setBusy(undefined)
 		}
 	}
 
-	if (remote.state === 'loading') return <Loader size="sm" />
-	if (remote.state === 'error') return <Alert color="red">{messageOf(remote.error)}</Alert>
+	if (snapshotQuery.status === 'pending') return <Loader size="sm" />
+	if (snapshot === undefined) return <Alert color="red">{messageOf(snapshotQuery.error)}</Alert>
 
 	return (
 		<Stack gap="lg">
@@ -157,6 +135,9 @@ function ReportStudioContent({
 				</Text>
 			</div>
 
+			{snapshotQuery.status === 'error' ? (
+				<Alert color="red">{messageOf(snapshotQuery.error)}</Alert>
+			) : null}
 			{error ? <Alert color="red">{error}</Alert> : null}
 
 			<SimpleGrid cols={{ base: 1, md: 2 }}>
@@ -294,6 +275,8 @@ function ReportStudioContent({
 	)
 }
 
+export default studioScope.render(ReportStudio)
+
 function Metric({ label, value }: { label: string; value: string | number }) {
 	return (
 		<Card withBorder radius="md">
@@ -307,34 +290,10 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 	)
 }
 
-function cloneSnapshot(value: ShowcaseSnapshot): ShowcaseSnapshot {
-	return Object.freeze({
-		...value,
-		cache: Object.freeze({ ...value.cache }),
-		...(value.lastRateDecision
-			? { lastRateDecision: Object.freeze({ ...value.lastRateDecision }) }
-			: {}),
-		artifacts: Object.freeze(value.artifacts.map(cloneArtifact)),
-		...(value.lastOutbound ? { lastOutbound: Object.freeze({ ...value.lastOutbound }) } : {}),
-	})
-}
-
 function artifactUrl(id: string): string {
 	return `/showcase/artifacts/${encodeURIComponent(id)}`
 }
 
-function cloneArtifact(value: ShowcaseArtifact): ShowcaseArtifact {
-	return Object.freeze({ ...value })
-}
-
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
-}
-
-function dispose(value: unknown): void {
-	const action =
-		value && (typeof value === 'object' || typeof value === 'function')
-			? (value as Partial<Disposable>)[Symbol.dispose]
-			: undefined
-	if (typeof action === 'function') action.call(value)
 }

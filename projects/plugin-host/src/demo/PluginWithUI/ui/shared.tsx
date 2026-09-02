@@ -1,75 +1,27 @@
 import { Alert, Loader, MantineProvider, Stack, Text } from '@mantine/core'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
-import type { WorkbenchView } from '@pluxel/runtime/workbench'
-import type { RemoteValueSnapshot } from '@pluxel/runtime/workbench/client'
-import {
-	useRemoteValue,
-	useWorkbench,
-	type WorkbenchHostFacade,
-} from '@pluxel/runtime/workbench/react'
+import type { WorkbenchHostFacade } from '@pluxel/runtime/workbench/react'
 import type { ReactNode } from 'react'
-import type { PluginWithUIApi, PluginWithUISnapshot } from '../../PluginWithUI.workbench'
-
-type DemoDescriptor = WorkbenchView<PluginWithUIApi>
-type DemoView = Readonly<{
-	api: RpcStub<PluginWithUIApi>
-	host: WorkbenchHostFacade
-	snapshot: RemoteValueSnapshot<PluginWithUISnapshot>
-}>
-
-export function useDemoView(descriptor: DemoDescriptor): DemoView {
-	const { api, host } = useWorkbench(descriptor)
-	const snapshot = useRemoteValue<PluginWithUISnapshot>(
-		{
-			read: async () => {
-				const raw = await api.snapshot()
-				try {
-					return Object.freeze({
-						revision: raw.revision,
-						pluginName: raw.pluginName,
-						startedAt: raw.startedAt,
-						counter: raw.counter,
-						events: Object.freeze(
-							raw.events.map((event) =>
-								Object.freeze({
-									id: event.id,
-									kind: event.kind,
-									message: event.message,
-									at: event.at,
-								}),
-							),
-						),
-					})
-				} finally {
-					dispose(raw)
-				}
-			},
-			subscribe: (invalidate) => api.watch(() => invalidate()),
-		},
-		[api],
-	)
-	return { api, host, snapshot }
-}
-
-export async function runMutation(run: () => PromiseLike<unknown>): Promise<void> {
-	const result = await run()
-	dispose(result)
-}
+import type { PluginWithUISnapshot } from '../../PluginWithUI.workbench'
 
 export function DemoSnapshot({
-	state,
+	pending,
+	data,
+	error,
 	children,
 }: {
-	state: RemoteValueSnapshot<PluginWithUISnapshot>
+	pending: boolean
+	data: PluginWithUISnapshot | undefined
+	error: unknown | null
 	children(snapshot: PluginWithUISnapshot): ReactNode
 }) {
-	if (state.state === 'loading') return <Loader size="sm" />
-	if (state.state === 'error') {
-		return (
-			<Alert color="red">{state.error instanceof Error ? state.error.message : '加载失败'}</Alert>
-		)
-	}
-	return <Stack gap="sm">{children(state.value)}</Stack>
+	if (pending && data === undefined) return <Loader size="sm" />
+	if (data === undefined) return <Alert color="red">{messageOf(error)}</Alert>
+	return (
+		<Stack gap="sm">
+			{error === null || error === undefined ? null : <Alert color="red">{messageOf(error)}</Alert>}
+			{children(data)}
+		</Stack>
+	)
 }
 
 export function DemoIdentity() {
@@ -87,10 +39,7 @@ export function DemoProvider({
 	return <MantineProvider forceColorScheme={host.colorScheme}>{children}</MantineProvider>
 }
 
-function dispose(value: unknown): void {
-	const action =
-		value && (typeof value === 'object' || typeof value === 'function')
-			? (value as Partial<Disposable>)[Symbol.dispose]
-			: undefined
-	if (typeof action === 'function') action.call(value)
+function messageOf(error: unknown): string {
+	if (error === null || error === undefined) return '加载失败'
+	return error instanceof Error ? error.message : String(error)
 }

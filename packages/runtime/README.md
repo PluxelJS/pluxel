@@ -77,11 +77,31 @@ this.ctx.workbench?.publish(ExampleWorkbench, {
 })
 ```
 
-Renderer 默认导出零 props React component，通过 exact descriptor 取得 target：
+普通 snapshot/watch renderer 用专用 scope module 绑定 exact descriptor 并声明 resources：
 
 ```tsx
-const { api, host } = useWorkbench(ExampleWorkbench.settings)
+// ui/settings.scope.ts
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { ExampleWorkbench } from '../workbench.js'
+
+export const settingsScope = createWorkbenchRenderer(ExampleWorkbench.settings)
+export const settingsQuery = settingsScope.query({
+	queryFn: ({ api }) => api.snapshot(),
+})
+
+// ui/settings.tsx
+import { SettingsPage } from './settings-page.js'
+import { settingsScope } from './settings.scope.js'
+
+export default settingsScope.render(SettingsPage)
 ```
+
+Scope/resource 是 module-scoped immutable declaration；每次 Bridge mount 创建独立 renderer owner，持有当前 root/host、
+query cache、watch、timer 和 mutation close signal。Query result 进入 cache 前由 Runtime portable-detach、深冻结并释放 top-level
+transport result。Mutation 使用 scope-typed invalidation、per-hook single-flight 且不自动 retry；事件处理器使用 `mutate()`，
+需要 result 或显式流程编排时使用 `mutateAsync()`。低层
+`useWorkbench(exactDescriptor)`、`useRemoteValue()` 和 `detachWorkbenchPortableValue()` 继续用于 callback/progress/cancel、
+lossless event 或手工 ownership 场景。
 
 跨 Plugin UI 使用 Attachment：provider 声明 renderer/API，consumer 用 `attachment.place(...)` 决定位置，并在
 publication binding 中传入 constructor-injected provider Plugin。Collection、account、font 等动态数据仍是 Plugin
@@ -93,8 +113,8 @@ publication binding 中传入 constructor-injected provider Plugin。Collection�
 - `@pluxel/runtime/services/vault`：Vault 的公开 type-only API；backend 只由 host 顶层 `vault` object 安装；
 - `@pluxel/runtime/capnweb`：固定 Cap’n Web `RpcTarget` / `RpcStub` 和 WebSocket session bridge；
 - `@pluxel/runtime/workbench`：browser-safe definition、View、Attachment、placement 和 publication types；
-- `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 与 declarative Pane Kit；
-- `@pluxel/runtime/workbench/client`：conforming Shell 的 layout/opened-handle client；
+- `@pluxel/runtime/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 与 declarative Pane Kit；
+- `@pluxel/runtime/workbench/client`：conforming Shell 的 layout/opened-handle client 与 portable DTO detach；
 - `@pluxel/runtime/web`：portable Runtime session、Management API 和严格校验的 wire DTO；
 - `@pluxel/runtime/web/react`：Management client 的 React Context adapter。
 

@@ -62,14 +62,16 @@ export interface FontsManagerApi extends RpcTarget {
 	/** Reads a detached snapshot; modifying it does not update FontsPlugin. */
 	snapshot(): Promise<FontsManagerSnapshot>
 	/** Sets the provider-wide preference. `null` restores config/automatic selection. */
-	setPreferredFamily(family: string | null): Promise<FontsManagerSnapshot>
-	install(input: InstallManagedFontInput): Promise<FontsManagerSnapshot>
-	remove(id: string): Promise<FontsManagerSnapshot>
+	setPreferredFamily(family: string | null): Promise<void>
+	/** Installs font bytes. Read the authoritative result through `snapshot()`. */
+	install(input: InstallManagedFontInput): Promise<void>
+	/** Removes one managed font. Read the authoritative result through `snapshot()`. */
+	remove(id: string): Promise<void>
 }
 
 export interface FontSelectionApi extends RpcTarget {
 	/** Reads the provider-owned catalog and current provider-wide selection. */
 	snapshot(): Promise<FontSelectionSnapshot>
 	/** Sets the provider-wide preference. `null` restores config/automatic selection. */
-	setPreferredFamily(family: string | null): Promise<FontSelectionSnapshot>
+	setPreferredFamily(family: string | null): Promise<void>
 }

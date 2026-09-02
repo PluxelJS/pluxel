@@ -1,65 +1,17 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import type { RpcStub, RpcTarget } from '../capnweb'
 import { createRemoteValue, type RemoteValueOptions, type RemoteValueSnapshot } from './client'
 import {
-	readWorkbenchDescriptor,
-	type WorkbenchDescriptorApi,
-	type WorkbenchDescriptorConsumerApi,
-} from './definition'
-import {
+	resolveWorkbenchHookValue,
 	useWorkbenchReactRuntime,
-	type WorkbenchHostFacade,
+	type WorkbenchHookValue,
 	type WorkbenchRenderableDescriptor,
 } from './react-context'
-
-type ApiOf<Descriptor> = WorkbenchDescriptorApi<Descriptor>
-
-type ConsumerApiOf<Descriptor> = WorkbenchDescriptorConsumerApi<Descriptor>
-
-// Browser-only toolchain projections deliberately erase server API contracts to `any`. Keep that
-// erased root permissive during declaration emit while preserving exact RpcStub inference for every
-// author-defined descriptor.
-type StubOf<Api> = 0 extends 1 & Api ? any : Api extends RpcTarget ? RpcStub<Api> : never
-
-export type WorkbenchHookValue<Descriptor extends WorkbenchRenderableDescriptor> =
-	Descriptor extends Readonly<{ kind: 'view' }>
-		? Readonly<{ api: StubOf<ApiOf<Descriptor>>; host: WorkbenchHostFacade }>
-		: [ConsumerApiOf<Descriptor>] extends [never]
-			? Readonly<{ provider: StubOf<ApiOf<Descriptor>>; host: WorkbenchHostFacade }>
-			: Readonly<{
-					provider: StubOf<ApiOf<Descriptor>>
-					consumer: StubOf<ConsumerApiOf<Descriptor> & RpcTarget>
-					host: WorkbenchHostFacade
-				}>
 
 /** Returns the exact direct capability root(s) bound to this generated renderer. */
 export function useWorkbench<Descriptor extends WorkbenchRenderableDescriptor>(
 	descriptor: Descriptor,
 ): WorkbenchHookValue<Descriptor> {
-	const runtime = useWorkbenchReactRuntime()
-	const metadata = readWorkbenchDescriptor(descriptor)
-	if (
-		(metadata.kind !== 'view' && metadata.kind !== 'attachment') ||
-		metadata.kind !== runtime.identity.kind ||
-		metadata.key !== runtime.identity.key
-	) {
-		throw new Error('useWorkbench() descriptor identity does not match this renderer')
-	}
-	if (metadata.kind === 'view') {
-		if (runtime.opened.kind !== 'local') {
-			throw new Error('Workbench View renderer received Attachment roots')
-		}
-		return Object.freeze({ api: runtime.opened.api, host: runtime.host }) as never
-	}
-	if (runtime.opened.kind !== 'attachment') {
-		throw new Error('Workbench Attachment renderer received a local View root')
-	}
-	const consumer = runtime.opened.consumer
-	return Object.freeze({
-		provider: runtime.opened.provider,
-		...(consumer === undefined ? {} : { consumer }),
-		host: runtime.host,
-	}) as never
+	return resolveWorkbenchHookValue(useWorkbenchReactRuntime(), descriptor)
 }
 
 /** React owner for `createRemoteValue()`; dependencies create a new isolated read identity. */
@@ -94,6 +46,25 @@ export function useRemoteValue<Value>(
 }
 
 export { WorkbenchPane, WorkbenchPaneLayout, useWorkbenchPaneLayout } from './ui-pane'
+export { createWorkbenchRenderer, WorkbenchRendererError } from './renderer-scope'
+export type {
+	WorkbenchKeyedQueryResource,
+	WorkbenchMutationExecutionContext,
+	WorkbenchMutationResource,
+	WorkbenchMutationState,
+	WorkbenchQueryExecutionContext,
+	WorkbenchQueryInvalidation,
+	WorkbenchQueryResource,
+	WorkbenchQueryResult,
+	WorkbenchQueryRetry,
+	WorkbenchRendererErrorCode,
+	WorkbenchRendererKeyedQueryOptions,
+	WorkbenchRendererMutationOptions,
+	WorkbenchRendererQueryOptions,
+	WorkbenchRendererScope,
+	WorkbenchResourceKey,
+	WorkbenchZeroProps,
+} from './renderer-scope'
 export type {
 	WorkbenchPaneCollapseAt,
 	WorkbenchPaneLayoutControls,
@@ -109,6 +80,7 @@ export type {
 	WorkbenchDocumentInput,
 	WorkbenchDocumentTitle,
 	WorkbenchHostFacade,
+	WorkbenchHookValue,
 	WorkbenchNavigation,
 	WorkbenchNotificationInput,
 } from './react-context'

@@ -9,6 +9,7 @@ describe('Workbench public author surface', () => {
 		expect(Object.keys(WorkbenchClient).sort()).toEqual([
 			'WorkbenchOpenedContentHandle',
 			'WorkbenchOpenedViewHandle',
+			'WorkbenchPortableValueError',
 			'createRemoteValue',
 			'detachWorkbenchPortableValue',
 			'openWorkbenchEntry',
@@ -17,6 +18,8 @@ describe('Workbench public author surface', () => {
 		expect(Object.keys(WorkbenchReact).sort()).toEqual([
 			'WorkbenchPane',
 			'WorkbenchPaneLayout',
+			'WorkbenchRendererError',
+			'createWorkbenchRenderer',
 			'useRemoteValue',
 			'useWorkbench',
 			'useWorkbenchPaneLayout',

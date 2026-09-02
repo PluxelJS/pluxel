@@ -8,7 +8,7 @@ export interface FontCatalogApi extends RpcTarget {
 
 export interface FontSelectionApi extends RpcTarget {
 	current(): FontRef | null
-	set(ref: FontRef | null): FontRef | null
+	set(ref: FontRef | null): void
 }
 
 const selectionRenderer = workbench.entry(

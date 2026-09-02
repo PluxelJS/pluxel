@@ -11,11 +11,15 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react'
-import { useCallback, useEffect, useState } from 'react'
-import { WretchWorkbench } from '../workbench.ts'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WretchManagedSettingsSnapshot } from '../workbench-contracts.ts'
+import {
+	resetWretchSettingsMutation,
+	settingsScope,
+	updateWretchSettingsMutation,
+	wretchSettingsQuery,
+} from './settings.scope.ts'
 
 type HeaderRow = { id: number; name: string; value: string }
 
@@ -31,63 +35,54 @@ function timeoutLabel(timeoutMs: number): string {
 	return timeoutMs > 0 ? `${timeoutMs} ms` : '关闭'
 }
 
-function copySnapshot(input: WretchManagedSettingsSnapshot): WretchManagedSettingsSnapshot {
-	return Object.freeze({
-		settings: Object.freeze({
-			headers: Object.freeze({ ...input.settings.headers }),
-			...(input.settings.proxyUrl === undefined ? {} : { proxyUrl: input.settings.proxyUrl }),
-			...(input.settings.timeoutMs === undefined ? {} : { timeoutMs: input.settings.timeoutMs }),
-		}),
-		hostTimeoutMs: input.hostTimeoutMs,
-		effectiveTimeoutMs: input.effectiveTimeoutMs,
-	})
-}
-
-export default function WretchSettingsPanel() {
-	const { provider, host } = useWorkbench(WretchWorkbench.settings)
+function WretchSettingsPanel() {
+	const { host } = settingsScope.useWorkbench()
+	const snapshotQuery = wretchSettingsQuery.useQuery()
+	const updateSettings = updateWretchSettingsMutation.useMutation()
+	const resetSettings = resetWretchSettingsMutation.useMutation()
 	const [snapshot, setSnapshot] = useState<WretchManagedSettingsSnapshot>()
 	const [headers, setHeaders] = useState<HeaderRow[]>([])
 	const [proxyUrl, setProxyUrl] = useState('')
 	const [timeoutMs, setTimeoutMs] = useState<number | string>('')
 	const [nextId, setNextId] = useState(0)
-	const [loading, setLoading] = useState(true)
-	const [saving, setSaving] = useState(false)
 	const [error, setError] = useState<string>()
+	const hydrated = useRef(false)
+	const dirty = useRef(false)
+	const operationPending = useRef(false)
+	const loading = snapshotQuery.isPending
+	const saving = updateSettings.isPending || resetSettings.isPending
+	const visibleError =
+		error ?? (snapshotQuery.status === 'error' ? messageOf(snapshotQuery.error) : undefined)
 	const editingDisabled = loading || saving || !snapshot
 
 	const apply = useCallback((input: WretchManagedSettingsSnapshot) => {
-		const next = copySnapshot(input)
-		const rows = rowsOf(next)
-		setSnapshot(next)
+		const rows = rowsOf(input)
+		hydrated.current = true
+		dirty.current = false
+		setSnapshot(input)
 		setHeaders(rows)
 		setNextId(rows.length)
-		setProxyUrl(next.settings.proxyUrl ?? '')
-		setTimeoutMs(next.settings.timeoutMs ?? '')
+		setProxyUrl(input.settings.proxyUrl ?? '')
+		setTimeoutMs(input.settings.timeoutMs ?? '')
 	}, [])
 
 	useEffect(() => {
-		let active = true
-		void (async () => {
-			try {
-				using next = await provider.snapshot()
-				if (active) apply(next)
-			} catch (caught) {
-				if (active) setError(messageOf(caught))
-			} finally {
-				if (active) setLoading(false)
-			}
-		})()
-		return () => {
-			active = false
-		}
-	}, [apply, provider])
+		// Background refetches must not replace an unsaved draft. Mutation results are applied
+		// directly below, so a late invalidation refetch is only useful while the draft is clean.
+		if (snapshotQuery.data && (!hydrated.current || !dirty.current)) apply(snapshotQuery.data)
+	}, [apply, snapshotQuery.data])
+
+	const markDirty = () => {
+		dirty.current = true
+	}
 
 	const updateHeader = (id: number, patch: Partial<HeaderRow>) => {
+		markDirty()
 		setHeaders((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
 	}
 
 	const save = async () => {
-		if (!snapshot) return
+		if (!snapshot || operationPending.current) return
 		const headerRecord: Record<string, string> = {}
 		const headerNames = new Set<string>()
 		for (const row of headers) {
@@ -101,7 +96,6 @@ export default function WretchSettingsPanel() {
 			headerNames.add(canonical)
 			headerRecord[name] = row.value
 		}
-		setSaving(true)
 		try {
 			if (
 				timeoutMs !== '' &&
@@ -109,30 +103,33 @@ export default function WretchSettingsPanel() {
 			) {
 				throw new RangeError('请求超时必须是正整数')
 			}
-			using next = await provider.update({
+			operationPending.current = true
+			const normalizedProxyUrl = proxyUrl.trim() || undefined
+			const next = await updateSettings.mutateAsync({
 				headers: headerRecord,
-				proxyUrl: proxyUrl.trim() || undefined,
-				timeoutMs: timeoutMs === '' ? undefined : timeoutMs,
+				...(normalizedProxyUrl === undefined ? {} : { proxyUrl: normalizedProxyUrl }),
+				...(timeoutMs === '' ? {} : { timeoutMs }),
 			})
 			apply(next)
 			setError(undefined)
 		} catch (caught) {
 			setError(messageOf(caught))
 		} finally {
-			setSaving(false)
+			operationPending.current = false
 		}
 	}
 
 	const reset = async () => {
-		setSaving(true)
+		if (operationPending.current) return
 		try {
-			using next = await provider.reset()
+			operationPending.current = true
+			const next = await resetSettings.mutateAsync()
 			apply(next)
 			setError(undefined)
 		} catch (caught) {
 			setError(messageOf(caught))
 		} finally {
-			setSaving(false)
+			operationPending.current = false
 		}
 	}
 
@@ -146,7 +143,7 @@ export default function WretchSettingsPanel() {
 					</Text>
 				</Stack>
 
-				{error ? <Alert color="red">{error}</Alert> : null}
+				{visibleError ? <Alert color="red">{visibleError}</Alert> : null}
 
 				<Card withBorder radius="md">
 					<Stack gap="md">
@@ -156,7 +153,10 @@ export default function WretchSettingsPanel() {
 							placeholder="http://proxy.example:8080"
 							value={proxyUrl}
 							disabled={editingDisabled}
-							onChange={(event) => setProxyUrl(event.currentTarget.value)}
+							onChange={(event) => {
+								markDirty()
+								setProxyUrl(event.currentTarget.value)
+							}}
 						/>
 						<NumberInput
 							label="请求超时"
@@ -172,7 +172,10 @@ export default function WretchSettingsPanel() {
 							step={1_000}
 							value={timeoutMs}
 							disabled={editingDisabled}
-							onChange={setTimeoutMs}
+							onChange={(value) => {
+								markDirty()
+								setTimeoutMs(value)
+							}}
 						/>
 					</Stack>
 				</Card>
@@ -193,6 +196,7 @@ export default function WretchSettingsPanel() {
 								disabled={editingDisabled}
 								leftSection={<IconPlus size={14} />}
 								onClick={() => {
+									markDirty()
 									setHeaders((current) => [...current, { id: nextId, name: '', value: '' }])
 									setNextId((current) => current + 1)
 								}}
@@ -237,9 +241,10 @@ export default function WretchSettingsPanel() {
 												color="red"
 												px="xs"
 												disabled={editingDisabled}
-												onClick={() =>
+												onClick={() => {
+													markDirty()
 													setHeaders((current) => current.filter((item) => item.id !== row.id))
-												}
+												}}
 											>
 												<IconTrash size={16} />
 											</Button>
@@ -273,3 +278,5 @@ export default function WretchSettingsPanel() {
 		</MantineProvider>
 	)
 }
+
+export default settingsScope.render(WretchSettingsPanel)

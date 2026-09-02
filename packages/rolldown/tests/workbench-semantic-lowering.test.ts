@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import { readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { parsePluginDefinitionAddress } from '@pluxel/core'
 import { workbenchFederationBuildOutDir } from '@pluxel/core/federation'
 import { createFixture } from 'fs-fixture'
@@ -16,6 +18,9 @@ import {
 	publishWorkbenchContentArtifact,
 	writeWorkbenchContentDeploymentInventory,
 } from '../src/workbench/content-artifact'
+
+const testRequire = createRequire(import.meta.url)
+const typescriptBin = resolve(dirname(testRequire.resolve('typescript/package.json')), 'bin/tsc')
 
 const owner = parsePluginDefinitionAddress({
 	entry: { kind: 'package-root', packageName: '@example/semantic-plugin' },
@@ -73,6 +78,7 @@ function fixtureFiles(): Record<string, string> {
 		}),
 		'src/settings.tsx': 'export default function Settings() { return null }\n',
 		'src/picker.tsx': 'export default function Picker() { return null }\n',
+		'src/tool.tsx': 'export default function Tool() { return null }\n',
 		...packageFiles('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
 		...packageFiles('react-dom', '19.2.8', ['.', './client']),
 		...packageFiles('@mantine/core', '9.5.2', ['.']),
@@ -103,13 +109,29 @@ export const workbench = Object.freeze({
 `,
 		'node_modules/@pluxel/runtime/workbench.d.ts': `
 export type RendererEntry = Readonly<{ path: string }>
-export type Entry<Api> = Readonly<{ renderer: RendererEntry; api?: Api }>
-export type Attachment<Api> = Entry<Api> & { place(placement: unknown): unknown }
+declare const apiType: unique symbol
+declare const consumerApiType: unique symbol
+type DescriptorBrand<Api, ConsumerApi = never> = Readonly<{
+	[apiType]: (value: Api) => Api
+	[consumerApiType]: (value: ConsumerApi) => ConsumerApi
+}>
+export type Entry<Api> = Readonly<{ renderer: RendererEntry }> & DescriptorBrand<Api>
+export type Attachment<Api, ConsumerApi = never> = Entry<Api> &
+	DescriptorBrand<Api, ConsumerApi> & { place(placement: unknown): unknown }
+export type WorkbenchRenderableDescriptor = Readonly<{ renderer: RendererEntry }>
+export type WorkbenchDescriptorApi<Descriptor> = Descriptor extends Readonly<{
+	[apiType]: (value: infer Api) => unknown
+}> ? Api : never
+export type WorkbenchDescriptorConsumerApi<Descriptor> = Descriptor extends Readonly<{
+	[consumerApiType]: (value: infer Api) => unknown
+}> ? Api : never
 export declare const workbench: {
 	entry(base: string, path: string): RendererEntry
-	view<Api>(value: Entry<Api> & Record<string, unknown>): Entry<Api>
+	view<Api>(value: Readonly<{ renderer: RendererEntry }> & Record<string, unknown>): Entry<Api>
 	content(value: Record<string, unknown>): unknown
-	attachment<Api>(value: Entry<Api> & Record<string, unknown>): Attachment<Api>
+	attachment<Api, ConsumerApi = never>(
+		value: Readonly<{ renderer: RendererEntry }> & Record<string, unknown>,
+	): Attachment<Api, ConsumerApi>
 	markdown(base: string, path: string, slots?: Record<string, unknown>): unknown
 	data(schema: unknown): unknown
 	action(value: Record<string, unknown>): unknown
@@ -119,9 +141,34 @@ export declare const workbench: {
 `,
 		'node_modules/@pluxel/runtime/workbench/react.js': `
 export function useWorkbench() { return Object.freeze({ api: Object.freeze({}) }) }
+export function createWorkbenchRenderer(descriptor) {
+	return Object.freeze({
+		render: (Component) => Component,
+		useWorkbench: () => useWorkbench(descriptor),
+	})
+}
 `,
 		'node_modules/@pluxel/runtime/workbench/react.d.ts': `
-export declare function useWorkbench(descriptor: unknown): { api: unknown }
+import type {
+	WorkbenchDescriptorApi,
+	WorkbenchDescriptorConsumerApi,
+	WorkbenchRenderableDescriptor,
+} from '../workbench.js'
+export declare function useWorkbench<Descriptor extends WorkbenchRenderableDescriptor>(
+	descriptor: Descriptor,
+): [WorkbenchDescriptorConsumerApi<Descriptor>] extends [never]
+	? { api: WorkbenchDescriptorApi<Descriptor> }
+	: {
+		api: WorkbenchDescriptorApi<Descriptor>
+		provider: WorkbenchDescriptorApi<Descriptor>
+		consumer: WorkbenchDescriptorConsumerApi<Descriptor>
+	}
+export declare function createWorkbenchRenderer<Descriptor extends WorkbenchRenderableDescriptor>(
+	descriptor: Descriptor,
+): {
+	render<Component>(component: Component): Component
+	useWorkbench(): ReturnType<typeof useWorkbench<Descriptor>>
+}
 `,
 		'node_modules/@pluxel/runtime/internal/workbench-react.js': `
 export function createWorkbenchBridge(identity, Renderer) {
@@ -499,7 +546,13 @@ class SemanticPlugin {
 			resolve(fixture.path, 'src/settings.tsx'),
 			`import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { SemanticWorkbench } from './plugin.ts'
-export default function Settings() { useWorkbench(SemanticWorkbench.settings); return null }
+export default function Settings() {
+	const { api } = useWorkbench(SemanticWorkbench.settings)
+	api.snapshot()
+	// @ts-expect-error the browser projection must retain the exact View API
+	api.select('not-a-settings-method')
+	return null
+}
 `,
 			'utf-8',
 		)
@@ -507,20 +560,55 @@ export default function Settings() { useWorkbench(SemanticWorkbench.settings); r
 			resolve(fixture.path, 'src/picker.tsx'),
 			`import { useWorkbench } from '@pluxel/runtime/workbench/react'
 import { SemanticWorkbench } from './plugin.ts'
-export default function Picker() { useWorkbench(SemanticWorkbench.picker); return null }
+export default function Picker() {
+	const { provider, consumer } = useWorkbench(SemanticWorkbench.picker)
+	provider.select('selected')
+	consumer.preview('selected')
+	// @ts-expect-error provider and consumer contracts must not collapse to any
+	provider.preview('not-a-provider-method')
+	return null
+}
 `,
 			'utf-8',
 		)
-		const code = `
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
-
-interface SettingsApi extends RpcTarget {
+		await writeFile(
+			resolve(fixture.path, 'src/tool.tsx'),
+			`import { useWorkbench } from '@pluxel/runtime/workbench/react'
+import { SemanticWorkbench } from './plugin.ts'
+export default function Tool() {
+	const { api } = useWorkbench(SemanticWorkbench.tool)
+	api.run()
+	// @ts-expect-error provider-only Attachment must retain its exact API
+	api.preview('not-a-tool-method')
+	return null
+}
+`,
+			'utf-8',
+		)
+		await writeFile(
+			resolve(fixture.path, 'src/protocol.ts'),
+			`import type { RpcTarget } from '@pluxel/runtime/capnweb'
+export interface SettingsApi extends RpcTarget {
 	snapshot(): { enabled: boolean }
 }
-interface PickerApi extends RpcTarget {
+export type PickerApi = RpcTarget & {
 	select(id: string): Promise<void>
 }
+export interface PickerConsumerApi extends RpcTarget {
+	preview(id: string): void
+}
+export type ToolApi = RpcTarget & { run(): void }
+`,
+			'utf-8',
+		)
+		await writeFile(
+			resolve(fixture.path, 'src/protocol-index.ts'),
+			`export type { PickerApi, PickerConsumerApi, SettingsApi, ToolApi } from './protocol.ts'\n`,
+			'utf-8',
+		)
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+import type { PickerApi, PickerConsumerApi, SettingsApi, ToolApi } from './protocol-index.ts'
 
 const renderer = workbench.entry(import.meta.url, './settings.tsx')
 function entries(viewRenderer: ReturnType<typeof workbench.entry>) {
@@ -529,8 +617,11 @@ function entries(viewRenderer: ReturnType<typeof workbench.entry>) {
 			renderer: viewRenderer,
 			placement: workbench.tab({ label: 'Settings' }),
 		}),
-		picker: workbench.attachment<PickerApi>({
+		picker: workbench.attachment<PickerApi, PickerConsumerApi>({
 			renderer: workbench.entry(import.meta.url, './picker.tsx'),
+		}),
+		tool: workbench.attachment<ToolApi>({
+			renderer: workbench.entry(import.meta.url, './tool.tsx'),
 		}),
 	}
 }
@@ -539,7 +630,11 @@ export const SemanticWorkbench = workbench.define(entries(renderer))
 class SemanticPlugin {
 	declare ctx: { workbench?: { publish(definition: unknown, bindings: unknown): void } }
 	init() {
-		this.ctx.workbench?.publish(SemanticWorkbench, { settings: () => ({}), picker: () => ({}) })
+		this.ctx.workbench?.publish(SemanticWorkbench, {
+			settings: () => ({}),
+			picker: () => ({}),
+			tool: () => ({}),
+		})
 	}
 }
 `
@@ -554,6 +649,7 @@ class SemanticPlugin {
 			entries: [
 				{ descriptor: { kind: 'attachment', owner, key: 'picker' }, expose: './views/picker' },
 				{ descriptor: { kind: 'view', owner, key: 'settings' }, expose: './views/settings' },
+				{ descriptor: { kind: 'attachment', owner, key: 'tool' }, expose: './views/tool' },
 			],
 		})
 		const settings = plans[0]!.entries.find((entry) => entry.descriptor.key === 'settings')!
@@ -568,13 +664,31 @@ class SemanticPlugin {
 			resolve(dirname(resolve(fixture.path, settings.bridgeEntryPath)), 'settings.definition.ts'),
 			'utf-8',
 		)
-		expect(settingsProjection).toContain('workbench.view<any>')
+		expect(settingsProjection).toContain(
+			'type SourceDescriptor = (typeof import("../../../../src/plugin.js"))["SemanticWorkbench"]["settings"]',
+		)
+		expect(settingsProjection).toContain('workbench.view({ renderer: ProjectedRenderer, placement:')
+		expect(settingsProjection).toContain('as unknown as SourceDescriptor')
+		expect(settingsProjection).not.toContain('workbench.view<any>')
 		const picker = plans[0]!.entries.find((entry) => entry.descriptor.key === 'picker')!
 		const pickerProjection = await readFile(
 			resolve(dirname(resolve(fixture.path, picker.bridgeEntryPath)), 'picker.definition.ts'),
 			'utf-8',
 		)
-		expect(pickerProjection).toContain('workbench.attachment<any>')
+		expect(pickerProjection).toContain(
+			'type SourceDescriptor = (typeof import("../../../../src/plugin.js"))["SemanticWorkbench"]["picker"]',
+		)
+		expect(pickerProjection).toContain('workbench.attachment({ renderer: ProjectedRenderer })')
+		expect(pickerProjection).not.toContain('workbench.attachment<any>')
+		const tool = plans[0]!.entries.find((entry) => entry.descriptor.key === 'tool')!
+		const toolProjection = await readFile(
+			resolve(dirname(resolve(fixture.path, tool.bridgeEntryPath)), 'tool.definition.ts'),
+			'utf-8',
+		)
+		expect(toolProjection).toContain(
+			'type SourceDescriptor = (typeof import("../../../../src/plugin.js"))["SemanticWorkbench"]["tool"]',
+		)
+		expect(toolProjection).toContain('workbench.attachment({ renderer: ProjectedRenderer })')
 
 		const outDir = resolve(fixture.path, 'dist/semantic-producer')
 		await buildWorkbenchFederationProducer({
@@ -582,15 +696,70 @@ class SemanticPlugin {
 			plan: plans[0]!,
 			outDir,
 			minify: false,
-			packageMode: 'development',
+			packageMode: 'distribution',
+			typeAssets: 'required',
 		})
+		const artifactEntries = await readdir(outDir, { recursive: true })
+		const artifactFiles = artifactEntries.map(String)
+		const declarations = await Promise.all(
+			artifactFiles
+				.filter((file) => file.endsWith('.d.ts'))
+				.map((file) => readFile(resolve(outDir, file), 'utf-8')),
+		)
+		expect(declarations).not.toHaveLength(0)
+		expect(declarations.join('\n')).not.toContain(fixture.path)
+		expect(declarations.join('\n')).not.toContain('src/plugin.ts')
+		const settingsDeclaration = artifactFiles.find((file) =>
+			file.endsWith('/settings.definition.d.ts'),
+		)
+		expect(settingsDeclaration).toBeTypeOf('string')
+		const settingsDeclarationPath = resolve(outDir, settingsDeclaration!)
+		const packagedDefinitionDeclaration = resolve(
+			dirname(settingsDeclarationPath),
+			'../../../../src/plugin.d.ts',
+		)
+		await expect(readFile(packagedDefinitionDeclaration, 'utf-8')).resolves.toContain(
+			"from './protocol-index.ts'",
+		)
+		await expect(
+			readFile(resolve(dirname(packagedDefinitionDeclaration), 'protocol.d.ts'), 'utf-8'),
+		).resolves.toContain('export type PickerApi = RpcTarget &')
+		await rm(resolve(fixture.path, 'src'), { recursive: true, force: true })
+		try {
+			execFileSync(
+				process.execPath,
+				[
+					typescriptBin,
+					'--ignoreConfig',
+					'--noEmit',
+					'--pretty',
+					'false',
+					'--module',
+					'ESNext',
+					'--moduleResolution',
+					'Bundler',
+					'--target',
+					'ES2022',
+					'--lib',
+					'ES2024,DOM,DOM.Iterable,ESNext.Disposable',
+					settingsDeclarationPath,
+				],
+				{ cwd: fixture.path, stdio: 'pipe' },
+			)
+		} catch (error) {
+			const output = error as { stdout?: Buffer; stderr?: Buffer }
+			throw new Error(
+				`packaged Workbench declaration did not resolve:\n${output.stdout?.toString() ?? ''}${output.stderr?.toString() ?? ''}`,
+				{ cause: error },
+			)
+		}
 		const compatibility = resolveWorkbenchFederationShared(fixture.path).compatibility
 		const validation = await validateWorkbenchFederationArtifact(outDir, {
 			plan: plans[0]!,
 			compatibility,
 		})
-		expect(validation.valid).toBe(true)
 		if (validation.valid === false) throw new Error(validation.reason)
+		expect(validation.valid).toBe(true)
 		expect(validation.manifest.shared).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -614,6 +783,168 @@ class SemanticPlugin {
 			]),
 		)
 	}, 60_000)
+
+	it('projects one exact renderer scope through every importing page without executing the definition', async () => {
+		const serverSentinel = 'SCOPE_SERVER_DEFINITION_MUST_NOT_EXECUTE_97ac'
+		const files = fixtureFiles()
+		files['src/server-label.ts'] = `export const serverLabel = '${serverSentinel}'\n`
+		files['src/settings.types.ts'] = `
+import type { ScopedWorkbench } from './workbench.ts'
+export type SettingsDescriptor = typeof ScopedWorkbench.settings
+`
+		files['src/settings.scope.ts'] = `
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import type { SettingsDescriptor } from './settings.types.ts'
+import { ScopedWorkbench } from './workbench.ts'
+export type SettingsScopeDescriptor = SettingsDescriptor
+export const settingsRenderer = createWorkbenchRenderer(ScopedWorkbench.settings)
+`
+		files['src/settings-page.tsx'] = `
+import { settingsRenderer } from './settings.scope.ts'
+export function SettingsPage() {
+	const { api } = settingsRenderer.useWorkbench()
+	api.snapshot()
+	return 'scope-page-marker'
+}
+`
+		files['src/settings.tsx'] = `
+import { SettingsPage } from './settings-page.tsx'
+import { settingsRenderer } from './settings.scope.ts'
+export default settingsRenderer.render(SettingsPage)
+`
+		await using fixture = await createFixture(files)
+		const code = `
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import { workbench } from '@pluxel/runtime/workbench'
+import { serverLabel } from './server-label.ts'
+interface SettingsApi extends RpcTarget { snapshot(): { enabled: boolean } }
+export const ScopedWorkbench = workbench.define({
+	settings: workbench.view<SettingsApi>({
+		renderer: workbench.entry(import.meta.url, './settings.tsx'),
+		placement: workbench.tab({ label: serverLabel }),
+	}),
+})
+class SemanticPlugin {
+	init() { this.ctx.workbench.publish(ScopedWorkbench, { settings: () => ({}) }) }
+}
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/workbench.ts', code)
+		const [plan] = await lowering.plans()
+		const bridgeEntryPath = resolve(fixture.path, plan!.entries[0]!.bridgeEntryPath)
+		const generatedDir = dirname(bridgeEntryPath)
+		const generatedFiles = await readdir(generatedDir)
+		const generatedSources = await Promise.all(
+			generatedFiles
+				.filter((file) => /settings\.renderer(?:-module-\d+)?\.(?:ts|tsx)$/.test(file))
+				.map((file) => readFile(resolve(generatedDir, file), 'utf-8')),
+		)
+		expect(generatedSources).toHaveLength(3)
+		expect(
+			generatedSources.filter((source) => source.includes('createWorkbenchRenderer(')),
+		).toHaveLength(1)
+		expect(
+			generatedSources.filter((source) => source.includes('settingsRenderer.render(SettingsPage)')),
+		).toHaveLength(1)
+		expect(
+			generatedSources.filter(
+				(source) => source.includes('scope-page-marker') && source.includes('settingsRenderer'),
+			),
+		).toHaveLength(1)
+		expect(generatedSources.join('\n')).toContain('./settings.definition.ts')
+		expect(generatedSources.join('\n')).not.toContain('../src/settings.scope.ts')
+
+		const outDir = resolve(fixture.path, 'dist/scoped-producer')
+		await buildWorkbenchFederationProducer({
+			root: fixture.path,
+			plan: plan!,
+			outDir,
+			minify: false,
+			sourcemap: true,
+			packageMode: 'development',
+			typeAssets: 'optional',
+		})
+		const browserFiles = await readdir(outDir, { recursive: true })
+		const browserAssets = await Promise.all(
+			browserFiles
+				.map(String)
+				.filter((file) => file.endsWith('.js') || file.endsWith('.map'))
+				.map((file) => readFile(resolve(outDir, file), 'utf-8')),
+		)
+		expect(browserAssets.join('\n')).toContain('scope-page-marker')
+		expect(browserAssets.join('\n')).not.toContain(serverSentinel)
+	}, 60_000)
+
+	it('rejects a renderer scope that does not bind its generated descriptor', async () => {
+		const files = fixtureFiles()
+		files['src/settings.scope.ts'] = `
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { ScopedWorkbench } from './workbench.ts'
+export const settingsRenderer = createWorkbenchRenderer(ScopedWorkbench.other)
+`
+		files['src/settings.tsx'] = `
+import { settingsRenderer } from './settings.scope.ts'
+export default settingsRenderer.render(() => null)
+`
+		await using fixture = await createFixture(files)
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+export const ScopedWorkbench = workbench.define({
+	settings: workbench.view({
+		renderer: workbench.entry(import.meta.url, './settings.tsx'),
+		placement: workbench.tab({ label: 'Settings' }),
+	}),
+	other: workbench.view({
+		renderer: workbench.entry(import.meta.url, './picker.tsx'),
+		placement: workbench.tab({ label: 'Other' }),
+	}),
+})
+class SemanticPlugin {
+	init() {
+		this.ctx.workbench.publish(ScopedWorkbench, { settings: () => ({}), other: () => ({}) })
+	}
+}
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/workbench.ts', code)
+		await expect(lowering.plans()).rejects.toThrow(
+			'one createWorkbenchRenderer() bound to ScopedWorkbench.settings',
+		)
+	})
+
+	it('rejects a namespace renderer factory bound to the wrong descriptor', async () => {
+		const files = fixtureFiles()
+		files['src/settings.tsx'] = `
+import * as WorkbenchReact from '@pluxel/runtime/workbench/react'
+import { ScopedWorkbench } from './workbench.ts'
+const settingsRenderer = WorkbenchReact.createWorkbenchRenderer(ScopedWorkbench.other)
+export default settingsRenderer.render(() => null)
+`
+		await using fixture = await createFixture(files)
+		const code = `
+import { workbench } from '@pluxel/runtime/workbench'
+export const ScopedWorkbench = workbench.define({
+	settings: workbench.view({
+		renderer: workbench.entry(import.meta.url, './settings.tsx'),
+		placement: workbench.tab({ label: 'Settings' }),
+	}),
+	other: workbench.view({
+		renderer: workbench.entry(import.meta.url, './picker.tsx'),
+		placement: workbench.tab({ label: 'Other' }),
+	}),
+})
+class SemanticPlugin {
+	init() {
+		this.ctx.workbench.publish(ScopedWorkbench, { settings: () => ({}), other: () => ({}) })
+	}
+}
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/workbench.ts', code)
+		await expect(lowering.plans()).rejects.toThrow(
+			'one createWorkbenchRenderer() bound to ScopedWorkbench.settings',
+		)
+	})
 
 	it('keeps mixed Content schema and handler modules out of browser producer outputs', async () => {
 		const schemaSentinel = 'SERVER_ONLY_CONTENT_SCHEMA_51d0a1'

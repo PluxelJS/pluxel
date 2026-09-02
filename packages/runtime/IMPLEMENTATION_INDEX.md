@@ -12,12 +12,17 @@
 - `src/workbench/definition.ts`：Direct View、Attachment、placement、entry 和 exact binding types；
 - `src/workbench/definition.type-probes.ts`：作者面 inference/variance 静态探针；
 - `src/workbench/client-protocol.ts`：capability-free layout 与 `openEntry()` wire types；
-- `src/workbench/client.ts`：layout validation、single-owner opened handle 和 `createRemoteValue()`；
+- `src/workbench/client.ts`：layout validation、single-owner opened handle、`createRemoteValue()` 与 portable detach re-export；
+- `src/workbench/portable-value.ts`：同步/Promise DTO detach、deep freeze、budget、稳定错误与 top-level transport disposer；
 - `src/workbench/react-context.tsx`：generated Bridge 内部 Context 与受限 host facade；
-- `src/workbench/react.tsx`：作者 `useWorkbench(exactDescriptor)`、`useRemoteValue()` 和 Pane Kit exports；
+- `src/workbench/react.tsx`：renderer scope/query/mutation、低层 hooks 与 Pane Kit 的 public exports；
+- `src/workbench/renderer-scope.tsx`：exact descriptor scope、per-open owner、canonical query cache、watch/read lifecycle、
+  typed invalidation 与 per-hook single-flight mutation；
 - `src/workbench/react-internal.tsx`：toolchain-generated Bridge wrapper、payload/provider identity validation；
 - `src/workbench/federation.ts`：页面唯一 MF Runtime、fixed shared、Bridge activation 与 per-open host handle；
 - `src/workbench/ui-pane.tsx`：public Pane Kit declaration 与 host renderer boundary。
+- `../rolldown/src/workbench/semantic-lowering.ts`：renderer-specific scope provenance、exact descriptor/API projection 与
+  browser graph enforcement。
 
 ## Workbench server
 

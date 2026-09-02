@@ -61,13 +61,16 @@ ctx.workbench?.publish(definition, bindings)
 ctx.workbench?.publish(staticContentDefinition)
 useWorkbench(exactDescriptor)
 useRemoteValue({ read, subscribe? })
+createWorkbenchRenderer(exactDescriptor)
+scope.query({ queryFn, watch? })
+scope.mutation({ mutationFn, invalidates? })
 ```
 
 入口职责固定为：
 
 - `@pluxel/runtime/workbench`：browser-safe definition builder 和类型；
-- `@pluxel/runtime/workbench/react`：零 props renderer 的 hook、host facade 和 Pane Kit；
-- `@pluxel/runtime/workbench/client`：conforming Shell 使用的 session/opened-handle client；
+- `@pluxel/runtime/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/runtime/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable DTO detach；
 - `@pluxel/runtime/capnweb`：固定版本的 `RpcTarget`、`RpcStub` 和 WebSocket session bridge。
 
 Plugin author 不取得 raw socket、MF Runtime、Shell router/store、Bridge wrapper props 或 server registry。
@@ -82,7 +85,8 @@ Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/runtime/internal/workb
 src/workbench.ts       browser-safe API、DTO 和固定 definition
 src/index.ts           Plugin、领域实现和 publish()
 src/*.md               可选 Content source
-src/ui/*.tsx           可选完整 View 的零 props React renderer
+src/ui/*.scope.ts      每个 renderer 的 exact scope 与 resource declarations
+src/ui/*.tsx           可选完整 View 的 React renderer/page
 ```
 
 `workbench.ts` 可以从 package 的 `./workbench` subpath 导出，供依赖者引用 Attachment descriptor。它不能
@@ -220,21 +224,82 @@ export const OrdersWorkbench = workbench.define({
 })
 ```
 
-Renderer 是零 props component，并用 declaration 中的 exact descriptor 取得 API：
+普通 snapshot/watch View 使用 renderer-specific scope 声明 query 和 mutation。Scope module 是 renderer graph
+唯一可以 value-import exact definition 的位置；模块级 scope/resource 都是 frozen declaration，不保存当前 API root、cache
+或 subscription。为让文件与符号可预测，scope module 和 scope symbol 应跟随 descriptor entry：`<entry>.scope.ts` 与
+`<entry>Scope`；resource 再按领域语义命名：
 
 ```tsx
-export default function OrdersOverview() {
-	const { api, host } = useWorkbench(OrdersWorkbench.overview)
-	const orders = useRemoteValue({
-		read: () => api.snapshot(),
-		subscribe: (invalidate) => api.watch(invalidate),
-	})
+// src/ui/overview.scope.ts
+import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { OrdersWorkbench } from '../workbench.js'
+
+export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
+export const ordersQuery = overviewScope.query({
+	queryFn: ({ api }) => api.snapshot(),
+	watch: ({ api }, invalidate) => api.watch(invalidate),
+})
+export const refreshOrders = overviewScope.mutation({
+	mutationFn: ({ api }) => api.refresh(),
+})
+```
+
+默认 entry 只把 page 绑定到 scope，保持 generated Bridge 的零 props ABI：
+
+```tsx
+// src/ui/overview.tsx
+import { OrdersPage } from './orders-page.js'
+import { overviewScope } from './overview.scope.js'
+
+export default overviewScope.render(OrdersPage)
+```
+
+Renderer graph 内的 page/panel 直接复用同一个 scope/resource：
+
+```tsx
+// src/ui/orders-page.tsx
+import { ordersQuery, overviewScope, refreshOrders } from './overview.scope.js'
+
+export function OrdersPage() {
+	const { host } = overviewScope.useWorkbench()
+	const orders = ordersQuery.useQuery()
+	const refresh = refreshOrders.useMutation()
 	// ...
 }
 ```
 
-Descriptor 同时完成 TypeScript 推导和运行时 identity 校验。`useWorkbench()` 不接受字符串 key，也没有可枚举的
-全局 API namespace。UI helper 可在 Plugin package 内围绕 direct API 组合 read model，但不会升级成平台 primitive。
+`render()` 为每次 Bridge mount 创建独立 renderer owner，持有本次 exact roots、host、query cache、watch、retry timer、
+AbortController 和 mutation close signal；Bridge destroy 时从一条路径清理。即使相同 descriptor、route 或 Attachment 同时打开，
+也不会跨 open handle、principal、params、session 或 owner generation 共享状态。Workbench 不提供 global `QueryClient`，
+也不暴露 raw query key/cache。
+
+Query 的结果进入 cache 前统一通过 portable detach：只接受有界的 `null`、boolean、finite number、string、dense array 和 plain
+object，不接受显式 `undefined`、class、accessor、cycle、capability 或 binary。Framework 深拷贝、深冻结并恰好释放一次
+top-level transport result；late result 也会释放但不会提交。带 `watch` 的 query 先订阅再读取，默认以 invalidation 为 freshness
+authority；并发 read single-flight，read 中的多次通知合并为一次 follow-up read。后台读取失败保留最近成功 data 并标 stale/error。
+Query option 的 `watch` 若保留 callback，必须同步返回或异步 resolve 到 `Disposable`；领域 API 通常返回 child
+`RpcTarget`，browser-side `RpcPromise` / `RpcStub` 提供该 disposer。
+Query 默认不 retry；unwatched query 默认 `staleTime: 0`，watched query 默认 `staleTime: Infinity`，但 invalidation 始终覆盖
+`staleTime`。Renderer close、scope/key/portable validation 和 resource-limit failure 不参与 retry。
+
+Unkeyed query 以 resource identity 定位；keyed query 再加 canonical portable key。同一 owner 内的 observers 共享 read/watch，
+不同 resource 即使作者 key 相同也不碰撞。Hook result 包含 `status/data/error`、`isPending/isFetching/isStale` 以及
+instance-bound `refetch()` / `invalidate()`；resource declaration 不提供无法判定 open handle 的命令式操作。无参 query 本身就是
+scope-typed exact invalidation target；keyed query 显式提供 `query.target(input)` / `query.all()`。静态关系直接声明
+`invalidates: [query]`，需要 mutation input 时才使用 callback。Targets 在调用远端方法前验证，owner 仍 active 时在 settle
+后标记 stale。RPC reject 或 result detach failure 仍 invalidates；owner 已关闭时 cache 已被销毁。Mutation 每个 Hook
+single-flight、无自动 retry。事件处理器用 `mutate()` 并从 Hook state 观察结果；需要返回值或流程编排时使用
+`mutateAsync()`。Pending 时第二次调用不会覆盖当前 state，`mutateAsync()` 会以稳定 code 失败；Runtime 不猜测写操作的幂等性
+或执行顺序。若 mutation result 只是下一份 snapshot 的重复副本，领域 API 返回 `void`，由权威 watch 或 typed invalidation
+触发 query 重读；只有 UI 确实消费的 domain result 才返回 portable DTO。
+
+如果 query 的权威 `watch` 已覆盖某项 mutation，并保证在 commit 后通知，就不再为同一 query 声明 `invalidates`；两条路径会
+把一次提交放大成重复读取。Unwatched query，或没有覆盖该写操作的 watch，才使用 mutation invalidation。
+
+Descriptor 同时完成 TypeScript 推导和运行时 identity 校验。`createWorkbenchRenderer()`、scope hook 与 invalidation target 都会拒绝
+scope mismatch。低层 `useWorkbench(exactDescriptor)`、`useRemoteValue()` / `createRemoteValue()` 和
+`detachWorkbenchPortableValue()` 继续作为高级 escape hatch：适用于单组件自管读取、callback/progress/cancel、lossless event 或
+其他不应放入 query cache 的 capability protocol。它们不接受字符串 key，也没有可枚举的全局 API namespace。
 
 参数化 route 只声明一次：
 
@@ -280,8 +345,9 @@ this.ctx.workbench?.publish(ReportsWorkbench, {
 })
 ```
 
-Renderer 调用 `useWorkbench(HttpWorkbench.settings)` 得到 `{ provider, host }`。Provider factory 只获得 exact
-consumer node address，用它索引 provider 自己已经拥有的 per-consumer state；它不能取得 consumer instance 或 Context。
+Renderer 为 `HttpWorkbench.settings` 创建专用 scope，并通过 `scope.useWorkbench()` 得到 `{ provider, host }`。Provider factory
+只获得 exact consumer node address，用它索引 provider 自己已经拥有的 per-consumer state；它不能取得 consumer instance 或
+Context。
 
 如果 consumer 也拥有必须由这个界面修改的状态，Attachment 声明第二个 API generic：
 
@@ -391,6 +457,13 @@ Toolchain 在 TypeScript 擦除前读取 `workbench.define()` 和 literal `workb
 一个 Bridge wrapper。Content 不进入 producer；generated Bridge 只投影 renderer declaration identity，不导入含 server schema/handler 的
 完整 definition。作者不手写 remote name、expose、shared、public path 或 manifest URL。
 
+使用 renderer scope 的 source graph 必须包含唯一的 `createWorkbenchRenderer(ExactDefinition.entry)`，通常位于专用
+`*.scope.ts(x)`；只有该 module 可以直接 value-import 当前 definition，其他 page/panel 通过 scope/resource 间接取得 API，
+跨 renderer shared component 只接收普通 props/data。低层 `useWorkbench(exactDescriptor)` renderer 仍可在 default entry 保留
+唯一 direct definition import，但同一 graph 不能再有第二个 boundary。Semantic lowering 把 exact import 改写为 browser-only
+descriptor projection，并保留 View/Attachment 的 exact API types；renderer JS 不执行 server definition module。
+Indirect/re-export/dynamic definition import、错误 entry 或跨 renderer 复用 scope 都在 build 时拒绝。
+
 生产产物以 `mf-manifest.json` 为唯一浏览器模块事实；Snapshot 由标准 Manifest 生成。Host 只保存
 `Plugin definition + build revision -> immutable artifact root/manifest URL` 的冻结 inventory，不复制 Manifest 的 assets、shared
 或 types 字段。Manifest、remote entry、expose inventory、dynamic types 和 shared versions 必须全部验证后才能提交。
@@ -432,7 +505,7 @@ build revision。
 
 ## Host facade 与 Pane Kit
 
-`useWorkbench()` 返回的 `host` 只包含固定行为：
+`scope.useWorkbench()` 或低层 `useWorkbench(exactDescriptor)` 返回的 `host` 只包含固定行为：
 
 - `locale`、`colorScheme`；
 - `notify()`、`confirm()`；
@@ -462,6 +535,11 @@ Opened handle 对 Cap’n Web 返回的顶层 object graph 负责；renderer 若
 直接放入 React state，也不能用 Plugin 自己的宽松 clone 绕过普通对象、`undefined`、accessor、cycle 与容量约束。
 Observer/callback 需要跨调用保留时必须 `dup()`，subscription target 的 disposer 负责释放 callback 和领域 unsubscribe。
 
+Renderer query/mutation owner 仍遵守同一边界：Bridge teardown 使 cache、watch、timer 和 active Hook state inactive，pending
+`refetch()` / `mutateAsync()` 及时 closed-reject；无法取消的 RPC 可以继续 settle，但晚到的 fulfilled DTO 必须
+detach/dispose，不能再更新 React。Framework 自身的 portable、scope、key、limit、closed 与 mutation-pending failure 使用
+稳定 error code；领域/RPC error 保持原样。
+
 ## 验证不变量
 
 实现或修改 Workbench 时至少验证：
@@ -474,6 +552,10 @@ Observer/callback 需要跨调用保留时必须 `dup()`，subscription target �
 - interactive Content 的 presentation、binding、load data 和 action input 在各自 trust boundary exact validation；
 - `dataChanged()` coalescing、sequence ordering、stale/retry 和 observer fatal close 均有并发/lifecycle tests；
 - 每次 open 都返回 fresh roots，close/timeout/replacement 会 abort 并清理；
+- 同一 descriptor 并行打开时 renderer cache、watch、retry、mutation 和 invalidation 完全隔离；
+- query subscribe-before-read、single-flight/coalescing、stale-data failure、canonical key 与 typed invalidation 均有测试；
+- mutation per-hook single-flight、无 retry，且 reject/detach failure 后仍执行已声明 invalidation；
+- portable DTO 同步/Promise detach 都深冻结并在成功、失败和 late settle 时释放 top-level transport result；
 - provider-only 与 provider+consumer Attachment 都保持正确 owner；
 - Manifest/expose/shared/Bridge 不匹配会在 commit 或 activation 前失败；
 - Bridge destroy 发生在 opened handle dispose 之前；
@@ -486,7 +568,9 @@ Observer/callback 需要跨调用保留时必须 `dup()`，subscription target �
 - `packages/runtime/src/workbench/definition.ts`
 - `packages/runtime/src/workbench/client-protocol.ts`
 - `packages/runtime/src/workbench/client.ts`
+- `packages/runtime/src/workbench/portable-value.ts`
 - `packages/runtime/src/workbench/react.tsx`
+- `packages/runtime/src/workbench/renderer-scope.tsx`
 - `packages/runtime/src/workbench/react-internal.tsx`
 - `packages/runtime/src/workbench/federation.ts`
 - `packages/runtime/src/services/workbench/WorkbenchRegistry.ts`

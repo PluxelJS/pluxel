@@ -70,6 +70,22 @@ type Renderer = Readonly<{
 	entryPath: string
 }>
 
+type RendererGraphImport = Readonly<{
+	specifier: string
+	kind: 'static' | 'dynamic'
+	typeOnly: boolean
+	start?: number
+	end?: number
+	target?: string
+}>
+
+type RendererGraphModule = Readonly<{
+	path: string
+	source: string
+	ast: Program
+	imports: readonly RendererGraphImport[]
+}>
+
 type MarkdownDocument = Readonly<{
 	kind: 'markdown-document'
 	moduleId: string
@@ -130,9 +146,10 @@ const WORKBENCH_NAMESPACE: WorkbenchNamespace = Object.freeze({
 	kind: 'workbench-namespace',
 })
 const WORKBENCH_IMPORTS = new Set(['@pluxel/runtime/workbench'])
+const WORKBENCH_REACT_IMPORTS = new Set(['@pluxel/runtime/workbench/react'])
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'prototype', 'constructor', 'then'])
-const GENERATED_ABI_VERSION = 2
+const GENERATED_ABI_VERSION = 3
 const BUILD_REVISION_VERSION = 2
 const FIXED_SHARED_PACKAGES = new Set(
 	WORKBENCH_FEDERATION_SHARED_MODULES.map(packageNameFromSpecifier),
@@ -1289,124 +1306,117 @@ async function writeProjectedRenderer(input: {
 	const extension = extname(input.renderer.entryPath) || '.tsx'
 	const rendererPath = resolve(input.generatedDir, `${input.identity.key}.renderer${extension}`)
 	const projectionPath = resolve(input.generatedDir, `${input.identity.key}.definition.ts`)
-	const original = await readFile(input.renderer.entryPath, 'utf-8').catch((cause) => {
-		throw new Error(
-			`[workbench-semantic] renderer source is unavailable: ${input.renderer.entryPath}`,
-			{ cause },
-		)
-	})
-	const ast = parseStandaloneWithLang(original, input.renderer.entryPath)
-	if (!ast) {
-		throw new Error(`[workbench-semantic] cannot parse renderer source ${input.renderer.entryPath}`)
-	}
-	await assertRendererDefinitionBoundary(
+	const projectionGraph = await collectRendererProjectionGraph(
 		input.renderer.entryPath,
 		input.definition.binding.moduleId,
-		ast,
+		input.definition,
+		input.identity,
 	)
-	const replacements: Array<Readonly<{ start: number; end: number; value: string }>> = []
-	let projectsDefinition = false
-	for (const statement of ast.body as unknown as Node[]) {
-		if (
-			statement.type !== 'ImportDeclaration' &&
-			statement.type !== 'ExportNamedDeclaration' &&
-			statement.type !== 'ExportAllDeclaration'
-		) {
-			continue
-		}
-		const sourceNode = object(statement.source)
-		const specifier = literalString(sourceNode)
-		if (!sourceNode || specifier === null || isBareSpecifier(specifier)) continue
-		const hit = resolveImport(input.renderer.entryPath, specifier)
-		if (!hit) continue
-		const target = resolve(hit.path)
-		let replacementTarget = target
-		if (target === resolve(input.definition.binding.moduleId)) {
-			assertProjectionImport(statement, input.definition, input.renderer.entryPath)
-			replacementTarget = projectionPath
-			projectsDefinition = true
-		}
-		if (typeof sourceNode.start !== 'number' || typeof sourceNode.end !== 'number') {
-			throw new TypeError(
-				`[workbench-semantic] renderer import has no source range: ${input.renderer.entryPath}`,
-			)
-		}
-		replacements.push({
-			start: sourceNode.start,
-			end: sourceNode.end,
-			value: JSON.stringify(relativeImport(rendererPath, replacementTarget)),
-		})
+	if (!projectionGraph) return input.renderer.entryPath
+	const clonedPaths = new Map<string, string>()
+	const clonedModules = [...projectionGraph.modules]
+		.filter(([path]) => projectionGraph.clonePaths.has(path))
+		.sort(([left], [right]) => left.localeCompare(right))
+	let moduleIndex = 0
+	for (const [path] of clonedModules) {
+		clonedPaths.set(
+			path,
+			path === projectionGraph.rendererPath
+				? rendererPath
+				: resolve(
+						input.generatedDir,
+						`${input.identity.key}.renderer-module-${moduleIndex++}${extname(path) || '.ts'}`,
+					),
+		)
 	}
-	if (!projectsDefinition) return input.renderer.entryPath
-	let projected = original
-	for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
-		projected = `${projected.slice(0, replacement.start)}${replacement.value}${projected.slice(replacement.end)}`
+	for (const [path, module] of clonedModules) {
+		const clonePath = clonedPaths.get(path)!
+		const replacements: Array<Readonly<{ start: number; end: number; value: string }>> = []
+		for (const item of module.imports) {
+			if (!item.target) continue
+			let replacementTarget: string | undefined
+			if (item.target === projectionGraph.definitionPath && !item.typeOnly) {
+				replacementTarget = projectionPath
+			} else {
+				replacementTarget = clonedPaths.get(item.target)
+				if (!replacementTarget && !isBareSpecifier(item.specifier)) {
+					replacementTarget = item.target
+				}
+			}
+			if (!replacementTarget) continue
+			if (typeof item.start !== 'number' || typeof item.end !== 'number') {
+				throw new TypeError(
+					`[workbench-semantic] renderer import has no source range: ${module.path}`,
+				)
+			}
+			replacements.push({
+				start: item.start,
+				end: item.end,
+				value: JSON.stringify(relativeImport(clonePath, replacementTarget)),
+			})
+		}
+		let projected = module.source
+		for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+			projected = `${projected.slice(0, replacement.start)}${replacement.value}${projected.slice(replacement.end)}`
+		}
+		const previous = await readFile(clonePath, 'utf-8').catch((): undefined => undefined)
+		if (previous !== projected) await writeFile(clonePath, projected, 'utf-8')
 	}
 	const rendererDeclaration = `workbench.entry(import.meta.url, ${JSON.stringify(`./${input.identity.key}.renderer${extension}`)})`
-	// The original definition already type-checks the renderer against its exact API contract. This
-	// browser-only projection must erase that server-owned generic instead of inferring RpcTarget,
-	// which is invariant and would make declaration emit reject the projected renderer.
+	// Keep the runtime graph browser-only while deriving the invariant API brands from the author's
+	// exact descriptor. `typeof import(...)` exists only in TypeScript's type graph, so Vite never
+	// executes the server definition module. Indexing the final definition also works when the entry
+	// was produced through helper composition and preserves both Attachment API parameters without
+	// trying to recover their source-level generic syntax.
+	const sourceDefinitionImport = relativeImport(projectionPath, input.definition.binding.moduleId)
+		.replace(/\.(?:tsx?|jsx)$/i, '.js')
+		.replace(/\.mts$/i, '.mjs')
+		.replace(/\.cts$/i, '.cjs')
+	const sourceDescriptor = `(typeof import(${JSON.stringify(sourceDefinitionImport)}))[${JSON.stringify(input.definition.exportName)}][${JSON.stringify(input.identity.key)}]`
 	const descriptor =
 		input.identity.kind === 'view'
-			? `workbench.view<any>({ renderer: ProjectedRenderer, placement: workbench.tab({ label: ${JSON.stringify(input.identity.key)} }) })`
-			: 'workbench.attachment<any>({ renderer: ProjectedRenderer })'
+			? `workbench.view({ renderer: ProjectedRenderer, placement: workbench.tab({ label: ${JSON.stringify(input.identity.key)} }) }) as unknown as SourceDescriptor`
+			: 'workbench.attachment({ renderer: ProjectedRenderer }) as unknown as SourceDescriptor'
 	const projection = [
 		'// Generated browser-only Workbench descriptor projection. Do not edit.',
 		`import { workbench } from '@pluxel/runtime/workbench'`,
+		`type SourceDescriptor = ${sourceDescriptor}`,
 		`const ProjectedRenderer = ${rendererDeclaration}`,
 		`export const ${input.definition.exportName} = workbench.define({`,
 		`\t${JSON.stringify(input.identity.key)}: ${descriptor},`,
 		'})',
 		'',
 	].join('\n')
-	for (const [path, source] of [
-		[rendererPath, projected],
-		[projectionPath, projection],
-	] as const) {
-		const previous = await readFile(path, 'utf-8').catch((): undefined => undefined)
-		if (previous !== source) await writeFile(path, source, 'utf-8')
-	}
+	const previousProjection = await readFile(projectionPath, 'utf-8').catch(
+		(): undefined => undefined,
+	)
+	if (previousProjection !== projection) await writeFile(projectionPath, projection, 'utf-8')
 	return rendererPath
 }
 
-async function assertRendererDefinitionBoundary(
+async function collectRendererProjectionGraph(
 	rendererPath: string,
 	definitionPath: string,
-	rendererAst: Program,
-): Promise<void> {
+	definitionObject: Definition,
+	identity: WorkbenchFederationDescriptorIdentity,
+): Promise<
+	| Readonly<{
+			modules: ReadonlyMap<string, RendererGraphModule>
+			clonePaths: ReadonlySet<string>
+			rendererPath: string
+			definitionPath: string
+	  }>
+	| undefined
+> {
 	const renderer = await realpath(resolve(rendererPath)).catch(() => resolve(rendererPath))
-	const definition = await realpath(resolve(definitionPath)).catch(() => resolve(definitionPath))
-	const queue: string[] = []
-	const visited = new Set<string>()
-	const collect = async (
-		importer: string,
-		imports: ReturnType<typeof collectImportSpecifiers>,
-		direct: boolean,
-	): Promise<void> => {
-		for (const item of imports) {
-			const hit = resolveImport(importer, item.specifier)
-			if (!hit) continue
-			const target = await realpath(resolve(hit.path)).catch(() => resolve(hit.path))
-			if (target === definition) {
-				if (direct && item.kind === 'static') continue
-				throw new Error(
-					`[workbench-semantic] renderer may reference its server definition only through a direct static import: ${rendererPath}`,
-				)
-			}
-			if (
-				!isInstalledDependencyPath(hit.path) &&
-				['.js', '.jsx', '.ts', '.tsx', '.mjs', '.mts', '.cjs', '.cts'].includes(extname(hit.path))
-			) {
-				queue.push(hit.path)
-			}
-		}
-	}
-	await collect(rendererPath, collectImportSpecifiers(rendererAst), true)
+	const definitionFile = await realpath(resolve(definitionPath)).catch(() =>
+		resolve(definitionPath),
+	)
+	const queue = [renderer]
+	const modules = new Map<string, RendererGraphModule>()
 	while (queue.length > 0) {
 		const path = queue.shift()!
-		const canonical = await realpath(resolve(path)).catch(() => resolve(path))
-		if (canonical === renderer || visited.has(canonical)) continue
-		visited.add(canonical)
+		if (modules.has(path)) continue
 		const source = await readFile(path, 'utf-8').catch((cause) => {
 			throw new Error(`[workbench-semantic] renderer dependency is unavailable: ${path}`, {
 				cause,
@@ -1416,8 +1426,231 @@ async function assertRendererDefinitionBoundary(
 		if (!ast) {
 			throw new Error(`[workbench-semantic] cannot verify renderer dependency ${path}`)
 		}
-		await collect(path, collectImportSpecifiers(ast), false)
+		const imports: RendererGraphImport[] = []
+		for (const item of collectImportSpecifiers(ast)) {
+			const typeOnly = isTypeOnlyRendererImport(ast, item)
+			const hit = resolveImport(path, item.specifier)
+			const target = hit
+				? await realpath(resolve(hit.path)).catch(() => resolve(hit.path))
+				: undefined
+			imports.push(Object.freeze({ ...item, typeOnly, target }))
+			if (
+				!typeOnly &&
+				target &&
+				target !== definitionFile &&
+				!isInstalledDependencyPath(target) &&
+				['.js', '.jsx', '.ts', '.tsx', '.mjs', '.mts', '.cjs', '.cts'].includes(extname(target))
+			) {
+				queue.push(target)
+			}
+		}
+		modules.set(path, Object.freeze({ path, source, ast, imports: Object.freeze(imports) }))
 	}
+
+	const definitionImports: Array<
+		Readonly<{ module: RendererGraphModule; item: RendererGraphImport }>
+	> = []
+	const rendererCalls: Array<Readonly<{ module: RendererGraphModule; call: Node }>> = []
+	for (const module of modules.values()) {
+		for (const item of module.imports) {
+			if (item.typeOnly || item.target !== definitionFile) continue
+			if (item.kind !== 'static') {
+				throw new Error(
+					`[workbench-semantic] renderer may reference its server definition only through a direct static import: ${rendererPath}`,
+				)
+			}
+			definitionImports.push({ module, item })
+		}
+		for (const call of collectWorkbenchRendererCalls(module.ast)) {
+			rendererCalls.push({ module, call })
+		}
+	}
+	if (definitionImports.length === 0) {
+		if (rendererCalls.length > 0) {
+			throw new Error(
+				`[workbench-semantic] createWorkbenchRenderer() must bind the exact directly imported descriptor for ${identity.key}: ${rendererPath}`,
+			)
+		}
+		return undefined
+	}
+	if (definitionImports.length !== 1) {
+		throw new Error(
+			`[workbench-semantic] renderer graph must have exactly one direct server definition import: ${rendererPath}`,
+		)
+	}
+	const boundary = definitionImports[0]!
+	const statement = rendererImportStatement(boundary.module.ast, boundary.item)
+	if (!statement) {
+		throw new Error(
+			`[workbench-semantic] cannot locate the direct server definition import: ${boundary.module.path}`,
+		)
+	}
+	assertProjectionImport(statement, definitionObject, boundary.module.path)
+	if (rendererCalls.length === 0) {
+		if (boundary.module.path !== renderer) {
+			throw new Error(
+				`[workbench-semantic] renderer may reference its server definition only through a direct static import: ${rendererPath}`,
+			)
+		}
+	} else {
+		if (
+			rendererCalls.length !== 1 ||
+			rendererCalls[0]!.module.path !== boundary.module.path ||
+			!isModuleConstInitializer(rendererCalls[0]!.module.ast, rendererCalls[0]!.call) ||
+			!isExactWorkbenchRendererCall(
+				rendererCalls[0]!.call,
+				statement,
+				definitionObject,
+				identity.key,
+			)
+		) {
+			throw new Error(
+				`[workbench-semantic] renderer graph must contain one createWorkbenchRenderer() bound to ${definitionObject.exportName}.${identity.key}: ${rendererPath}`,
+			)
+		}
+	}
+
+	const importers = new Map<string, Set<string>>()
+	for (const module of modules.values()) {
+		for (const item of module.imports) {
+			if (!item.target || !modules.has(item.target)) continue
+			let paths = importers.get(item.target)
+			if (!paths) {
+				paths = new Set()
+				importers.set(item.target, paths)
+			}
+			paths.add(module.path)
+		}
+	}
+	const clonePaths = new Set([boundary.module.path])
+	const importerQueue = [boundary.module.path]
+	while (importerQueue.length > 0) {
+		for (const importer of importers.get(importerQueue.shift()!) ?? []) {
+			if (clonePaths.has(importer)) continue
+			clonePaths.add(importer)
+			importerQueue.push(importer)
+		}
+	}
+	if (!clonePaths.has(renderer)) {
+		throw new Error(
+			`[workbench-semantic] renderer scope is not statically reachable from its entry: ${rendererPath}`,
+		)
+	}
+	return Object.freeze({
+		modules,
+		clonePaths,
+		rendererPath: renderer,
+		definitionPath: definitionFile,
+	})
+}
+
+function isModuleConstInitializer(ast: Program, call: Node): boolean {
+	for (const statement of ast.body as unknown as Node[]) {
+		const declaration = unwrapDeclaration(statement)
+		if (declaration?.type !== 'VariableDeclaration' || declaration.kind !== 'const') continue
+		for (const declarator of nodes(declaration.declarations)) {
+			const initializer = object(declarator.init)
+			if (initializer && unwrapExpression(initializer) === call) return true
+		}
+	}
+	return false
+}
+
+function collectWorkbenchRendererCalls(ast: Program): Node[] {
+	const factories = new Set<string>()
+	const namespaces = new Set<string>()
+	for (const statement of ast.body as unknown as Node[]) {
+		if (
+			statement.type !== 'ImportDeclaration' ||
+			!WORKBENCH_REACT_IMPORTS.has(literalString(statement.source) ?? '') ||
+			statement.importKind === 'type'
+		) {
+			continue
+		}
+		for (const specifier of nodes(statement.specifiers)) {
+			if (
+				specifier.type === 'ImportSpecifier' &&
+				specifier.importKind !== 'type' &&
+				propertyName(specifier.imported) === 'createWorkbenchRenderer'
+			) {
+				const local = identifierName(specifier.local)
+				if (local) factories.add(local)
+			}
+			if (specifier.type === 'ImportNamespaceSpecifier') {
+				const local = identifierName(specifier.local)
+				if (local) namespaces.add(local)
+			}
+		}
+	}
+	const calls: Node[] = []
+	if (factories.size === 0 && namespaces.size === 0) return calls
+	walk(ast, (node) => {
+		if (node.type !== 'CallExpression') return
+		const callee = unwrapExpression(object(node.callee) ?? {})
+		if (callee.type === 'Identifier' && factories.has(String(callee.name))) {
+			calls.push(node)
+			return
+		}
+		if (callee.type === 'MemberExpression' && memberName(callee) === 'createWorkbenchRenderer') {
+			const owner = unwrapExpression(object(callee.object) ?? {})
+			if (owner.type === 'Identifier' && namespaces.has(String(owner.name))) calls.push(node)
+		}
+	})
+	return calls
+}
+
+function isTypeOnlyRendererImport(
+	ast: Program,
+	item: Readonly<{ kind: 'static' | 'dynamic'; start?: number; end?: number }>,
+): boolean {
+	if (item.kind === 'dynamic') return false
+	const statement = rendererImportStatement(ast, item)
+	if (!statement) return false
+	if (statement.importKind === 'type' || statement.exportKind === 'type') return true
+	const specifiers = nodes(statement.specifiers)
+	return (
+		specifiers.length > 0 &&
+		specifiers.every(
+			(specifier) => specifier.importKind === 'type' || specifier.exportKind === 'type',
+		)
+	)
+}
+
+function rendererImportStatement(
+	ast: Program,
+	item: Readonly<{ start?: number; end?: number }>,
+): Node | undefined {
+	return (ast.body as unknown as Node[]).find((statement) => {
+		if (
+			statement.type !== 'ImportDeclaration' &&
+			statement.type !== 'ExportNamedDeclaration' &&
+			statement.type !== 'ExportAllDeclaration'
+		) {
+			return false
+		}
+		const source = object(statement.source)
+		return source?.start === item.start && source.end === item.end
+	})
+}
+
+function isExactWorkbenchRendererCall(
+	call: Node,
+	definitionImport: Node,
+	definition: Definition,
+	entryKey: string,
+): boolean {
+	const args = nodes(call.arguments)
+	if (args.length !== 1) return false
+	const descriptor = unwrapExpression(args[0]!)
+	if (descriptor.type !== 'MemberExpression' || memberName(descriptor) !== entryKey) return false
+	const owner = unwrapExpression(object(descriptor.object) ?? {})
+	if (owner.type !== 'Identifier' || typeof owner.name !== 'string') return false
+	const specifier = nodes(definitionImport.specifiers)[0]
+	return (
+		specifier?.type === 'ImportSpecifier' &&
+		propertyName(specifier.imported) === definition.exportName &&
+		identifierName(specifier.local) === owner.name
+	)
 }
 
 function assertProjectionImport(
@@ -1432,8 +1665,10 @@ function assertProjectionImport(
 	}
 	const specifiers = nodes(statement.specifiers)
 	if (
+		statement.importKind === 'type' ||
 		specifiers.length !== 1 ||
 		specifiers[0]?.type !== 'ImportSpecifier' ||
+		specifiers[0]?.importKind === 'type' ||
 		propertyName(specifiers[0]!.imported) !== definition.exportName
 	) {
 		throw new Error(

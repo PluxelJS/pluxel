@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-const snapshot = Object.freeze({
+const viewSnapshot = Object.freeze({
 	revision: 1,
 	pluginName: 'PluginWithUI',
 	startedAt: 0,
@@ -25,18 +25,57 @@ const snapshot = Object.freeze({
 })
 
 vi.mock('@pluxel/runtime/workbench/react', () => ({
-	useRemoteValue: () => Object.freeze({ state: 'ready', value: snapshot }),
-	useWorkbench: () => ({
-		api: Object.freeze({}),
-		provider: Object.freeze({}),
-		consumer: Object.freeze({}),
-		host: Object.freeze({
-			colorScheme: 'dark',
-			document: Object.freeze({ setTitle: vi.fn() }),
-			navigation: Object.freeze({ navigate: vi.fn() }),
-			notify: vi.fn(),
-		}),
-	}),
+	createWorkbenchRenderer: (descriptor: Readonly<{ kind: string }>) => {
+		let queryIndex = 0
+		return Object.freeze({
+			render: (Component: unknown) => Component,
+			useWorkbench: () => ({
+				api: Object.freeze({}),
+				provider: Object.freeze({}),
+				consumer: Object.freeze({}),
+				host: Object.freeze({
+					colorScheme: 'dark',
+					document: Object.freeze({ setTitle: vi.fn() }),
+					navigation: Object.freeze({ navigate: vi.fn() }),
+					notify: vi.fn(),
+				}),
+			}),
+			query: () => {
+				const resourceIndex = queryIndex++
+				return Object.freeze({
+					useQuery: () =>
+						Object.freeze({
+							status: 'success',
+							data:
+								descriptor.kind === 'attachment'
+									? resourceIndex === 0
+										? Object.freeze([])
+										: null
+									: viewSnapshot,
+							error: null,
+							isPending: false,
+							isFetching: false,
+							isStale: false,
+							refetch: vi.fn(),
+							invalidate: vi.fn(),
+						}),
+				})
+			},
+			mutation: () =>
+				Object.freeze({
+					useMutation: () =>
+						Object.freeze({
+							status: 'idle',
+							isPending: false,
+							data: undefined,
+							error: null,
+							mutate: vi.fn(),
+							mutateAsync: vi.fn(),
+							reset: vi.fn(),
+						}),
+				}),
+		})
+	},
 }))
 
 import FontSettings from './demo/PluginContributionFontDemo/ui/index.tsx'

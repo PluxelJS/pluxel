@@ -29,9 +29,10 @@ export default defineDynamicRuntimeConfig({
 插件的 `rootDir/entries` 一致。插件会在加载 pnpm native engine、创建目录、注册 commands 或发布 Direct View 前验证这项声明；static host
 会以 `DYNAMIC_SOURCE_REQUIRED` 启动失败，声明不匹配则以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 Workbench enabled 时，插件发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
-每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过
-`useWorkbench(PackageManagerWorkbench.manager)` 取得该 root。Workbench 根据 catalog node address 生成导航，调用方不拼接 Plugin
-名称 URL。headless host 仍可使用 `package.install` 和 `package.remove` commands。
+每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound `managerScope` 声明
+snapshot query 与 install/remove mutation。Runtime 自动 detach DTO、释放 transport ownership，并在写入 settle 后失效 snapshot。
+Workbench 根据 catalog node address 生成导航，调用方不拼接 Plugin 名称 URL。headless host 仍可使用 `package.install` 和
+`package.remove` commands。
 
 安装、自动启动策略和当前进程启停是三个独立操作。安装成功只发布 source；dynamic runtime 按 RuntimeState、session intent 和正常 dependency graph 决定插件是否
 启动。删除 package 会先让 pnpm prune managed project，再删除 entry，之后由 dynamic batch 卸载对应 module。

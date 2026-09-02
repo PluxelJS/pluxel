@@ -46,9 +46,8 @@ required dependency `{ provider: this.http }`；renderer、API factory 和 state
 `WretchPlugin` 自己发布 Attachment factory。View 实际打开时，factory 只使用 Workbench 提供的
 server-only `consumer.node` 查找已经由 `enableManagedSettings()` 建立的 exact state，然后返回 fresh
 `WretchSettingsApi` target。target 同时受 consumer/provider generation、opened View signal 与 Cap’n Web
-session ownership 约束。renderer 是 zero-props component，通过
-`useWorkbench(WretchWorkbench.settings)` 取得 provider stub；所有 object RPC result 在读取后释放顶层
-ownership。
+session ownership 约束。zero-props renderer 通过 descriptor-bound scope 的 query/mutation resources 取得 provider stub；
+Framework 在结果进入 React state 前完成 portable detach 和顶层 ownership 释放。
 
 managed settings 以 caller `PluginNodeAddress` canonical bytes 的完整 SHA-256 作为物理文件名，并保留一个 caller Context state。
 文件 envelope 同时保存完整结构化 owner，加载时严格比对；display name 相同的 Plugin/fork 不会冲突。只读取

@@ -21,10 +21,10 @@ export type PluginWithUIObserver = (revision: number) => void | Promise<void>
 export interface PluginWithUIApi extends RpcTarget {
 	snapshot(): PluginWithUISnapshot
 	watch(observer: PluginWithUIObserver): RpcTarget
-	addNote(message: string): DemoEvent
-	increment(delta?: number): Readonly<{ counter: number }>
-	resetCounter(): Readonly<{ counter: number }>
-	clearEvents(): Readonly<{ ok: true }>
+	addNote(message: string): void
+	increment(delta?: number): void
+	resetCounter(): void
+	clearEvents(): void
 }
 
 const overviewRenderer = workbench.entry(import.meta.url, './PluginWithUI/ui/overview.tsx')
