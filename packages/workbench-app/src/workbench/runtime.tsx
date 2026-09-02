@@ -5,9 +5,11 @@ import {
 	type WorkbenchFederatedLayoutEntry,
 	type WorkbenchLayoutEntry,
 	type WorkbenchOpenedContentHandle,
+	type WorkbenchReadyFederatedLayoutEntry,
 	type WorkbenchSessionApi,
 	type WorkbenchContentLayoutEntry,
 	type WorkbenchContentPlan,
+	type WorkbenchUnavailableFederatedLayoutEntry,
 } from '@pluxel/runtime/workbench/client'
 import {
 	createWorkbenchViewHost,
@@ -77,7 +79,7 @@ type WorkbenchTargetContextValue = Readonly<{
 type WorkbenchFederatedEntryActivation = {
 	readonly input: Readonly<{
 		activeTabId: ReturnType<typeof useActiveWorkbenchTabId>
-		entry: WorkbenchFederatedLayoutEntry
+		entry: WorkbenchReadyFederatedLayoutEntry
 		frame: 'shell' | 'standalone'
 		hostNavigation: WorkbenchNavigation | undefined
 		layoutRevision: number
@@ -281,6 +283,55 @@ function FederatedWorkbenchEntryView({
 	location,
 	params,
 }: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchFederatedLayoutEntry }) {
+	if (isUnavailableFederatedLayoutEntry(entry)) {
+		return <UnavailableFederatedWorkbenchEntryView entry={entry} />
+	}
+	if (!isReadyFederatedLayoutEntry(entry)) {
+		throw new Error('[workbench-app] federated entry has no renderer availability')
+	}
+	return (
+		<ReadyFederatedWorkbenchEntryView
+			entry={entry}
+			frame={frame}
+			layoutRevision={layoutRevision}
+			location={location}
+			params={params}
+		/>
+	)
+}
+
+function UnavailableFederatedWorkbenchEntryView({
+	entry,
+}: {
+	entry: WorkbenchUnavailableFederatedLayoutEntry
+}) {
+	const unavailable = entry.federatedViewUnavailable
+	const failed = unavailable.reason === 'failed'
+	return (
+		<WorkbenchErrorBoundary
+			pluginName={entry.renderer.definition.exportName}
+			contributionId={entry.descriptor.key}
+			point={entry.placement.kind}
+		>
+			<InlineNotice
+				title={failed ? 'Workbench View 构建失败' : 'Workbench View 正在构建'}
+				tone={failed ? 'error' : 'muted'}
+			>
+				{failed
+					? unavailable.message
+					: '对应界面产物正在后台构建，完成后 Workbench 会话会自动刷新。'}
+			</InlineNotice>
+		</WorkbenchErrorBoundary>
+	)
+}
+
+function ReadyFederatedWorkbenchEntryView({
+	entry,
+	frame,
+	layoutRevision,
+	location,
+	params,
+}: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchReadyFederatedLayoutEntry }) {
 	const { session, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
 	const navigation = useOptionalWorkspaceNavigation()
 	const workspace = useWorkspaceController()
@@ -628,4 +679,16 @@ function releaseContentActivation(activation: WorkbenchContentEntryActivation): 
 
 function workbenchEntryKey(entry: WorkbenchLayoutEntry): string {
 	return `${pluginNodeIndexKey(entry.target.node)}:${entry.descriptor.kind}:${entry.descriptor.key}`
+}
+
+function isUnavailableFederatedLayoutEntry(
+	entry: WorkbenchFederatedLayoutEntry,
+): entry is WorkbenchUnavailableFederatedLayoutEntry {
+	return entry.federatedViewUnavailable !== undefined
+}
+
+function isReadyFederatedLayoutEntry(
+	entry: WorkbenchFederatedLayoutEntry,
+): entry is WorkbenchReadyFederatedLayoutEntry {
+	return entry.federatedViewRef !== undefined
 }

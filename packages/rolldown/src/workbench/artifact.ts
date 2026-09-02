@@ -9,6 +9,7 @@ import {
 	type WorkbenchFederationCompatibilitySet,
 	type WorkbenchFederationManifestExpectation,
 	type WorkbenchFederationProducerPlan,
+	type WorkbenchFederationTypeAssetPolicy,
 } from '@pluxel/core/federation'
 import {
 	generateSnapshotFromManifest,
@@ -20,6 +21,8 @@ import { join } from 'pathe'
 export type WorkbenchFederationArtifactExpectation = Readonly<{
 	plan: WorkbenchFederationProducerPlan
 	compatibility: WorkbenchFederationCompatibilitySet
+	/** @defaultValue 'required' */
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
 }>
 
 export type WorkbenchArtifactValidation =

@@ -1,11 +1,14 @@
 import { pluginNodeAddressOf, type Context } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
+import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
-import { requireWorkbench } from '../../src/services/workbench'
+import { requireWorkbench, WorkbenchBackend } from '../../src/services/workbench'
+import type { WorkbenchArtifactLookup } from '../../src/services/workbench/WorkbenchArtifactService'
+import type { WorkbenchContentArtifactLookup } from '../../src/services/workbench/WorkbenchContentArtifactService'
 import type { WorkbenchContentObserver } from '@pluxel/runtime/workbench/client'
 
 interface SettingsApi extends RpcTarget {
@@ -534,6 +537,182 @@ describe('Workbench vNext publication', () => {
 		}
 	})
 
+	it('opens ready entries after producer-status-only layout revisions', async () => {
+		localFactoryCalls = 0
+		const host = createRuntimeHost()
+		host.add(LocalPlugin)
+		host.start(LocalPlugin)
+		await host.commit()
+
+		try {
+			const target = pluginNodeAddressOf(LocalPlugin)
+			const instance = requirePluginService(host.ctx).getInstance(target)
+			if (!instance) throw new Error('LocalPlugin did not start')
+			const artifacts = mutableWorkbenchArtifactLookup()
+			artifacts.setReady()
+			const backend = new WorkbenchBackend(host.ctx, {}, artifacts.lookup, emptyContentLookup)
+			backend.producerStatus.enablePendingProducerBuilds()
+			backend.publish(instance.ctx, LocalWorkbench, {
+				settings: ({ signal }) => {
+					localFactoryCalls += 1
+					return new SettingsTarget(signal)
+				},
+			})
+			const session = backend.createSession(localPrincipal, () => {})
+			const layout = session.target.layout({ target })
+
+			backend.producerStatus.setBuilding({
+				definition: target.definition,
+				producer: workbenchFederationProducerName(target.definition),
+				buildRevision: 'pending-build',
+			})
+
+			const result = await session.target.openEntry({
+				layoutRevision: layout.revision,
+				target,
+				descriptor: layout.entries[0]!.descriptor,
+			})
+			expect(result.ok).toBe(true)
+			expect(localFactoryCalls).toBe(1)
+			session.dispose()
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('keeps federated entries visible while their producer artifact is unavailable', async () => {
+		const host = createRuntimeHost()
+		host.add(LocalPlugin)
+		host.start(LocalPlugin)
+		await host.commit()
+
+		try {
+			const target = pluginNodeAddressOf(LocalPlugin)
+			const instance = requirePluginService(host.ctx).getInstance(target)
+			if (!instance) throw new Error('LocalPlugin did not start')
+			const artifacts = mutableWorkbenchArtifactLookup()
+			const backend = new WorkbenchBackend(host.ctx, {}, artifacts.lookup, emptyContentLookup)
+			backend.producerStatus.enablePendingProducerBuilds()
+			backend.producerStatus.setBuilding({
+				definition: target.definition,
+				producer: workbenchFederationProducerName(target.definition),
+				buildRevision: 'pending-build',
+			})
+			backend.publish(instance.ctx, LocalWorkbench, {
+				settings: ({ signal }) => new SettingsTarget(signal),
+			})
+
+			let invalidated: Error | undefined
+			const session = backend.createSession(localPrincipal, (cause) => {
+				invalidated = cause
+			})
+			const building = session.target.layout({ target })
+			expect(building.entries).toHaveLength(1)
+			expect(building.entries[0]).toMatchObject({
+				descriptor: { kind: 'view', key: 'settings' },
+				federatedViewUnavailable: { reason: 'building' },
+			})
+			expect(building.entries[0]).not.toHaveProperty('federatedViewRef')
+			await expect(
+				backend.registry.openEntry(
+					localPrincipal,
+					new AbortController().signal,
+					{
+						layoutRevision: building.revision,
+						target,
+						descriptor: {
+							kind: 'view',
+							owner: target.definition,
+							key: 'settings',
+						},
+					},
+					new Set(),
+				),
+			).resolves.toEqual({ ok: false, code: 'target_unavailable' })
+
+			backend.producerStatus.setFailed({
+				definition: target.definition,
+				producer: workbenchFederationProducerName(target.definition),
+				buildRevision: 'failed-build',
+				error: new Error('renderer syntax error'),
+			})
+			expect(session.signal.aborted).toBe(false)
+			expect(invalidated).toBeUndefined()
+			const failed = backend.registry.getLayout(target)
+			expect(failed.revision).toBeGreaterThan(building.revision)
+			expect(failed.entries).toHaveLength(1)
+			expect(failed.entries[0]).toMatchObject({
+				descriptor: { kind: 'view', key: 'settings' },
+				federatedViewUnavailable: {
+					reason: 'failed',
+					message: 'renderer syntax error',
+				},
+			})
+
+			artifacts.setReady()
+			const visible = backend.registry.getLayout(target)
+			expect(visible.entries).toHaveLength(1)
+			expect(visible.entries[0]).toMatchObject({
+				descriptor: { kind: 'view', key: 'settings' },
+				federatedViewRef: {
+					producer: workbenchFederationProducerName(target.definition),
+					buildRevision: 'ready-build',
+					expose: workbenchFederationExpose('settings'),
+				},
+			})
+			expect(visible.entries[0]).not.toHaveProperty('federatedViewUnavailable')
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('rejects federated publications without artifacts outside development pending mode', async () => {
+		const host = createRuntimeHost()
+		host.add(LocalPlugin)
+		host.start(LocalPlugin)
+		await host.commit()
+
+		try {
+			const target = pluginNodeAddressOf(LocalPlugin)
+			const instance = requirePluginService(host.ctx).getInstance(target)
+			if (!instance) throw new Error('LocalPlugin did not start')
+			const pendingOnlyBackend = new WorkbenchBackend(
+				host.ctx,
+				{},
+				Object.freeze({ resolveEntry: () => undefined }),
+				emptyContentLookup,
+			)
+			pendingOnlyBackend.producerStatus.enablePendingProducerBuilds()
+
+			expect(() =>
+				pendingOnlyBackend.publish(instance.ctx, LocalWorkbench, {
+					settings: ({ signal }) => new SettingsTarget(signal),
+				}),
+			).toThrow('no committed federation artifact for view "settings"')
+
+			const strictStatusBackend = new WorkbenchBackend(
+				host.ctx,
+				{},
+				Object.freeze({ resolveEntry: () => undefined }),
+				emptyContentLookup,
+			)
+			strictStatusBackend.producerStatus.setFailed({
+				definition: target.definition,
+				producer: workbenchFederationProducerName(target.definition),
+				buildRevision: 'failed-build',
+				error: new Error('renderer syntax error'),
+			})
+
+			expect(() =>
+				strictStatusBackend.publish(instance.ctx, LocalWorkbench, {
+					settings: ({ signal }) => new SettingsTarget(signal),
+				}),
+			).toThrow('no committed federation artifact for view "settings"')
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('rejects an RpcTarget that a factory already exported', async () => {
 		reusedTarget = undefined
 		reusedFactory = undefined
@@ -846,3 +1025,42 @@ describe('Workbench vNext publication', () => {
 })
 
 const localPrincipal = Object.freeze({ provider: 'local', subject: 'local' })
+
+const emptyContentLookup: WorkbenchContentArtifactLookup = Object.freeze({
+	resolveContent: () => undefined,
+})
+
+function mutableWorkbenchArtifactLookup(): Readonly<{
+	lookup: WorkbenchArtifactLookup
+	setReady(): void
+}> {
+	let ready = false
+	return Object.freeze({
+		lookup: Object.freeze({
+			resolveEntry(definition, descriptor) {
+				if (!ready) return undefined
+				const producer = workbenchFederationProducerName(definition)
+				const buildRevision = 'ready-build'
+				const entry = Object.freeze({
+					descriptor,
+					expose: workbenchFederationExpose(descriptor.key),
+				})
+				return Object.freeze({
+					artifact: Object.freeze({
+						profile: 1,
+						definition,
+						producer,
+						buildRevision,
+						manifestUrl: `/__pluxel/runtime/federation/${producer}/${buildRevision}/mf-manifest.json`,
+						manifestSha256: '0'.repeat(64),
+						entries: Object.freeze([entry]),
+					}),
+					entry,
+				})
+			},
+		}),
+		setReady() {
+			ready = true
+		},
+	})
+}

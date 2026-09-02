@@ -13,6 +13,7 @@ import { parseRuntimePortableData } from '../web/validation'
 import type {
 	WorkbenchFederatedViewRef,
 	WorkbenchFederatedLayoutEntry,
+	WorkbenchFederatedViewUnavailable,
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,
@@ -122,6 +123,9 @@ export async function openWorkbenchEntry(
 			? {}
 			: { location: readBoundedText(options.location, 'location', 4096) }),
 	})
+	if (!('contentRef' in canonicalEntry) && !('federatedViewRef' in canonicalEntry)) {
+		return Object.freeze({ ok: false as const, code: 'target_unavailable' as const })
+	}
 	const result = await session.openEntry(input)
 	let adopted = false
 	try {
@@ -316,17 +320,19 @@ function parseWorkbenchLayoutEntry(input: unknown, label: string): WorkbenchLayo
 		'definitionRevisions',
 		'placement',
 		'federatedViewRef',
+		'federatedViewUnavailable',
 	])
 	const revisions = readExactRecord(record.definitionRevisions, `${label}.definitionRevisions`, [
 		'target',
 		'renderer',
 	])
-	const federatedViewRef = parseFederatedViewRef(record.federatedViewRef)
-	const declaration = rendererDeclaration(descriptor)
-	if (!workbenchDeclarationIdentityEqual(federatedViewRef.descriptor, declaration)) {
-		malformed(`${label} renderer declaration does not match its federated ref`)
+	const hasFederatedRef = Object.hasOwn(record, 'federatedViewRef')
+	const hasUnavailable = Object.hasOwn(record, 'federatedViewUnavailable')
+	if (hasFederatedRef === hasUnavailable) {
+		malformed(`${label} must include exactly one federated View availability field`)
 	}
-	return Object.freeze({
+	const declaration = rendererDeclaration(descriptor)
+	const base = Object.freeze({
 		descriptor,
 		target,
 		renderer: parsePluginNodeAddress(record.renderer),
@@ -335,7 +341,17 @@ function parseWorkbenchLayoutEntry(input: unknown, label: string): WorkbenchLayo
 			renderer: readRevision(revisions.renderer, `${label}.definitionRevisions.renderer`),
 		}),
 		placement: parsePlacement(record.placement, `${label}.placement`),
-		federatedViewRef,
+	})
+	if (hasFederatedRef) {
+		const federatedViewRef = parseFederatedViewRef(record.federatedViewRef)
+		if (!workbenchDeclarationIdentityEqual(federatedViewRef.descriptor, declaration)) {
+			malformed(`${label} renderer declaration does not match its federated ref`)
+		}
+		return Object.freeze({ ...base, federatedViewRef })
+	}
+	return Object.freeze({
+		...base,
+		federatedViewUnavailable: parseFederatedViewUnavailable(record.federatedViewUnavailable),
 	})
 }
 
@@ -429,6 +445,9 @@ function assertOpenedMatchesLayout(
 		return
 	}
 	if (opened.kind === 'content') malformed('federated View returned a Workbench Content')
+	if (!('federatedViewRef' in entry)) {
+		malformed('unavailable federated View returned a Workbench root')
+	}
 	const expected = entry.federatedViewRef
 	const actual = opened.federatedViewRef
 	if (
@@ -497,6 +516,27 @@ function parseFederatedViewRef(input: unknown): WorkbenchFederatedViewRef {
 		expose,
 		descriptor: parseWorkbenchDeclarationIdentity(record.descriptor),
 	})
+}
+
+function parseFederatedViewUnavailable(input: unknown): WorkbenchFederatedViewUnavailable {
+	const record = readExactRecord(input, 'federated View unavailable state', ['reason', 'message'])
+	if (record.reason === 'building') {
+		return Object.freeze({
+			reason: 'building' as const,
+			...(record.message === undefined
+				? {}
+				: {
+						message: readBoundedText(record.message, 'federated View unavailable message', 2048),
+					}),
+		})
+	}
+	if (record.reason === 'failed') {
+		return Object.freeze({
+			reason: 'failed' as const,
+			message: readBoundedText(record.message, 'federated View unavailable message', 2048),
+		})
+	}
+	malformed('federated View unavailable reason is unsupported')
 }
 
 function parseContentRef(input: unknown): WorkbenchContentRef {
@@ -725,8 +765,11 @@ export type {
 	WorkbenchContentPresentation,
 	WorkbenchContentRunOutcome,
 	WorkbenchContentValidationIssue,
+	WorkbenchFederatedViewUnavailable,
 	WorkbenchFederatedViewRef,
 	WorkbenchFederatedLayoutEntry,
+	WorkbenchReadyFederatedLayoutEntry,
+	WorkbenchUnavailableFederatedLayoutEntry,
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,

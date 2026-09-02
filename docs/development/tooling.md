@@ -184,8 +184,10 @@ graph 与 server Plugin implementation 保持分离。
 
 `workbench.markdown(import.meta.url, './guide.md')` 的 source 会进入 adapter watch graph，并在 server transform 阶段编译；
 Content-only definition 不创建 browser module graph，即使 Content 包含 data/action slot。Definition 同时含 Content 与 View
-renderer 时，dev compiler 把 Content plan 与 MF producer 作为一个 candidate 提交，任一分支失败都保留完整
-last-known-good revision。Content schema 与 handler 只留在 server binding，不进入 browser projection。
+renderer 时，dev compiler 会先提交 definition topology 与 Content plan；已有 producer artifact 快速复用，缺失或过期的
+producer 在后台构建，完成后再提交完整 tuple 并触发 Workbench session reload。后台 producer 失败不会阻塞 Runtime
+启动，对应 View/Attachment placement 会保留在 layout 中，未就绪时显示构建中，失败后显示错误状态。Content schema 与
+handler 只留在 server binding，不进入 browser projection；production/static build 仍要求 Content 与 MF producer 全部严格通过后才发布 artifact。
 
 当前生成产物使用 Plugin lowering ABI v2，其中 root constructor arguments、Part constructor arguments 与 owner aggregate graph facts
 是分离字段。旧 ABI artifact 不会被当成“没有 Part dependency”继续加载；看到 `plugin_lowering_abi_unsupported` 时，应配套升级

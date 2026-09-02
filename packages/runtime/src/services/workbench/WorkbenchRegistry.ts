@@ -41,6 +41,7 @@ import {
 } from '../../workbench/definition'
 import type {
 	WorkbenchFederatedViewRef,
+	WorkbenchFederatedViewUnavailable,
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutTarget,
@@ -48,12 +49,15 @@ import type {
 	WorkbenchOpenEntryInput,
 	WorkbenchOpenEntryResult,
 	WorkbenchContentLayoutEntry,
+	WorkbenchReadyFederatedLayoutEntry,
+	WorkbenchUnavailableFederatedLayoutEntry,
 } from '../../workbench/client-protocol'
 import type { WorkbenchArtifactLookup } from './WorkbenchArtifactService'
 import type {
 	WorkbenchContentArtifactLookup,
 	WorkbenchResolvedContentArtifact,
 } from './WorkbenchContentArtifactService'
+import type { WorkbenchProducerStatusLookup } from './WorkbenchProducerStatusService'
 import {
 	prepareWorkbenchContentContract,
 	validateWorkbenchContentBinding,
@@ -115,8 +119,15 @@ type OpenCandidate = Readonly<{
 	content?: WorkbenchResolvedContentArtifact
 }>
 
+type WorkbenchFederatedAvailability =
+	| Pick<WorkbenchReadyFederatedLayoutEntry, 'federatedViewRef'>
+	| Pick<WorkbenchUnavailableFederatedLayoutEntry, 'federatedViewUnavailable'>
+
+export type WorkbenchRegistryRevisionCause = 'publication' | 'producer-status'
+
 export class WorkbenchRegistry {
 	private revisionValue = 0
+	private structuralRevisionValue = 0
 	private readonly publicationsByContext = new WeakMap<PluginContext, PublishedTarget>()
 	private readonly publicationsBySlot = new Map<
 		PluginNodeSlot,
@@ -124,14 +135,19 @@ export class WorkbenchRegistry {
 	>()
 	private readonly activeBySlot = new Map<PluginNodeSlot, PublishedTarget>()
 	private readonly slotWatches = new Map<PluginNodeSlot, () => void>()
-	private readonly listeners = new Set<(revision: number) => void>()
+	private readonly listeners = new Set<
+		(revision: number, cause: WorkbenchRegistryRevisionCause) => void
+	>()
 	private readonly exportedRoots = new WeakSet<RpcTarget>()
 
 	constructor(
 		private readonly root: Context,
 		private readonly artifacts: WorkbenchArtifactLookup,
 		private readonly content: WorkbenchContentArtifactLookup,
-	) {}
+		private readonly producerStatus: WorkbenchProducerStatusLookup,
+	) {
+		this.producerStatus.subscribe(() => this.bump('producer-status'))
+	}
 
 	get revision(): number {
 		return this.revisionValue
@@ -176,7 +192,9 @@ export class WorkbenchRegistry {
 		}
 	}
 
-	subscribe(listener: (revision: number) => void): () => void {
+	subscribe(
+		listener: (revision: number, cause: WorkbenchRegistryRevisionCause) => void,
+	): () => void {
 		this.listeners.add(listener)
 		return () => this.listeners.delete(listener)
 	}
@@ -189,13 +207,13 @@ export class WorkbenchRegistry {
 		const publication = slot ? this.activeBySlot.get(slot) : undefined
 		const target = this.describeTarget(address, publication)
 		const entries = publication
-			? [...publication.entries.values()]
-					.filter(
+			? this.layoutEntries(
+					publication,
+					[...publication.entries.values()].filter(
 						(entry): entry is PublishedView | PublishedAttachmentPlacement | PublishedContent =>
 							entry.kind !== 'attachment',
-					)
-					.map((entry) => this.layoutEntry(publication, entry))
-					.sort(compareLayoutEntries)
+					),
+				)
 			: []
 		return Object.freeze({
 			profile: PROFILE_VERSION,
@@ -211,13 +229,25 @@ export class WorkbenchRegistry {
 		input: WorkbenchOpenEntryInput,
 		opened: Set<OpenedEntryLease>,
 	): Promise<WorkbenchOpenEntryResult> {
-		if (input.layoutRevision !== this.revisionValue) {
+		if (
+			input.layoutRevision < this.structuralRevisionValue ||
+			input.layoutRevision > this.revisionValue
+		) {
 			return failure('layout_changed')
 		}
 
 		const candidate = this.resolveOpenCandidate(input)
 		if (!candidate) return failure('target_unavailable')
 		if (sessionSignal.aborted) return failure('target_unavailable')
+		const federatedViewRef =
+			candidate.entry.kind === 'content'
+				? undefined
+				: 'federatedViewRef' in candidate.layoutEntry
+					? candidate.layoutEntry.federatedViewRef
+					: undefined
+		if (candidate.entry.kind !== 'content' && !federatedViewRef) {
+			return failure('target_unavailable')
+		}
 		if (
 			candidate.entry.kind === 'content' &&
 			candidate.entry.contract.presentation.slots.length === 0
@@ -323,7 +353,7 @@ export class WorkbenchRegistry {
 						kind: 'local' as const,
 						api,
 						params: candidate.params,
-						federatedViewRef: candidate.layoutEntry.federatedViewRef,
+						federatedViewRef,
 					}),
 				})
 			}
@@ -374,7 +404,7 @@ export class WorkbenchRegistry {
 					provider,
 					...(consumer ? { consumer } : {}),
 					params: candidate.params,
-					federatedViewRef: candidate.layoutEntry.federatedViewRef,
+					federatedViewRef,
 				}),
 			})
 		} catch (error) {
@@ -582,7 +612,7 @@ export class WorkbenchRegistry {
 				owner: candidate.owner.pluginInfo.definitionAddress,
 				key: entry.metadata.key,
 			})
-			if (!this.artifacts.resolveEntry(candidate.owner.pluginInfo.definitionAddress, descriptor)) {
+			if (!this.federatedViewAvailability(candidate, descriptor)) {
 				throw new TypeError(
 					`[workbench] no committed federation artifact for ${entry.kind} "${entry.metadata.key}"`,
 				)
@@ -644,7 +674,8 @@ export class WorkbenchRegistry {
 				if (entry.kind === 'attachment') continue
 				const placement = entry.metadata.placement
 				if (placement.kind !== 'route' || !placement.navigation) continue
-				entries.push(this.layoutEntry(publication, entry))
+				const layoutEntry = this.layoutEntry(publication, entry)
+				if (layoutEntry) entries.push(layoutEntry)
 			}
 		}
 		entries.sort(compareLayoutEntries)
@@ -659,7 +690,7 @@ export class WorkbenchRegistry {
 	private layoutEntry(
 		target: PublishedTarget,
 		entry: PublishedView | PublishedAttachmentPlacement | PublishedContent,
-	): WorkbenchLayoutEntry {
+	): WorkbenchLayoutEntry | null {
 		if (entry.kind === 'content') {
 			const descriptor = parseWorkbenchOpenableIdentity({
 				kind: 'content',
@@ -671,11 +702,7 @@ export class WorkbenchRegistry {
 				descriptor,
 				entry.metadata.document,
 			)
-			if (!resolved) {
-				throw new Error(
-					`[workbench] committed Content artifact withdrew Content "${descriptor.key}"`,
-				)
-			}
+			if (!resolved) return null
 			return Object.freeze({
 				descriptor,
 				target: this.describeTarget(target.owner.pluginInfo.nodeAddress, target),
@@ -696,6 +723,12 @@ export class WorkbenchRegistry {
 				owner: target.owner.pluginInfo.definitionAddress,
 				key: entry.metadata.key,
 			}) as WorkbenchViewDeclarationIdentity
+			const availability = this.federatedViewAvailability(target, descriptor)
+			if (!availability) {
+				throw new Error(
+					`[workbench] committed federation artifact withdrew view "${entry.metadata.key}"`,
+				)
+			}
 			return Object.freeze({
 				descriptor,
 				target: this.describeTarget(target.owner.pluginInfo.nodeAddress, target),
@@ -705,13 +738,13 @@ export class WorkbenchRegistry {
 					renderer: target.owner.pluginInfo.definitionRevision,
 				}),
 				placement: entry.metadata.placement,
-				federatedViewRef: this.federatedViewRef(target, descriptor),
-			})
+				...availability,
+			}) satisfies WorkbenchLayoutEntry
 		}
 
 		const provider = this.publicationsByContext.get(entry.providerOwner)
 		if (!provider || provider !== this.activeBySlot.get(entry.providerSlot)) {
-			throw new Error('[workbench] active Attachment provider publication is unavailable')
+			return null
 		}
 		const providerIdentity: WorkbenchAttachmentDeclarationIdentity = {
 			kind: 'attachment',
@@ -724,6 +757,12 @@ export class WorkbenchRegistry {
 			key: entry.metadata.key,
 			provider: providerIdentity,
 		}) as WorkbenchAttachmentPlacementIdentity
+		const availability = this.federatedViewAvailability(provider, descriptor.provider)
+		if (!availability) {
+			throw new Error(
+				`[workbench] committed federation artifact withdrew attachment "${descriptor.provider.key}"`,
+			)
+		}
 		return Object.freeze({
 			descriptor,
 			target: this.describeTarget(target.owner.pluginInfo.nodeAddress, target),
@@ -733,23 +772,41 @@ export class WorkbenchRegistry {
 				renderer: provider.owner.pluginInfo.definitionRevision,
 			}),
 			placement: entry.metadata.placement,
-			federatedViewRef: this.federatedViewRef(provider, descriptor.provider),
-		})
+			...availability,
+		}) satisfies WorkbenchLayoutEntry
+	}
+
+	private federatedViewAvailability(
+		publication: PublishedTarget,
+		descriptor: WorkbenchDeclarationIdentity,
+	): WorkbenchFederatedAvailability | null {
+		const federatedViewRef = this.federatedViewRef(publication, descriptor)
+		if (federatedViewRef) return Object.freeze({ federatedViewRef })
+		const federatedViewUnavailable = this.federatedViewUnavailable(publication)
+		return federatedViewUnavailable ? Object.freeze({ federatedViewUnavailable }) : null
+	}
+
+	private federatedViewUnavailable(
+		publication: PublishedTarget,
+	): WorkbenchFederatedViewUnavailable | null {
+		if (!this.producerStatus.pendingProducerBuildsEnabled) return null
+		const status = this.producerStatus.getStatus(publication.owner.pluginInfo.definitionAddress)
+		if (status?.state === 'failed') {
+			return Object.freeze({ reason: 'failed' as const, message: status.message })
+		}
+		if (status?.state === 'building') return Object.freeze({ reason: 'building' as const })
+		return null
 	}
 
 	private federatedViewRef(
 		publication: PublishedTarget,
 		descriptor: WorkbenchDeclarationIdentity,
-	): WorkbenchFederatedViewRef {
+	): WorkbenchFederatedViewRef | null {
 		const resolved = this.artifacts.resolveEntry(
 			publication.owner.pluginInfo.definitionAddress,
 			descriptor,
 		)
-		if (!resolved) {
-			throw new Error(
-				`[workbench] committed federation artifact withdrew ${descriptor.kind} "${descriptor.key}"`,
-			)
-		}
+		if (!resolved) return null
 		const { artifact, entry } = resolved
 		return Object.freeze({
 			profile: artifact.profile,
@@ -769,6 +826,7 @@ export class WorkbenchRegistry {
 		const metadata = target.entries.get(input.descriptor.key)
 		if (!metadata || metadata.kind === 'attachment') return null
 		const layoutEntry = this.layoutEntry(target, metadata)
+		if (!layoutEntry) return null
 		if (!workbenchOpenableIdentityEqual(layoutEntry.descriptor, input.descriptor)) return null
 		const params = matchPlacement(metadata.metadata.placement, input.location)
 		if (!params) return null
@@ -783,6 +841,19 @@ export class WorkbenchRegistry {
 			return Object.freeze({ target, entry: metadata, layoutEntry, params, content })
 		}
 		return Object.freeze({ target, entry: metadata, layoutEntry, params })
+	}
+
+	private layoutEntries(
+		publication: PublishedTarget,
+		entries: readonly (PublishedView | PublishedAttachmentPlacement | PublishedContent)[],
+	): WorkbenchLayoutEntry[] {
+		const layoutEntries: WorkbenchLayoutEntry[] = []
+		for (const entry of entries) {
+			const layoutEntry = this.layoutEntry(publication, entry)
+			if (layoutEntry) layoutEntries.push(layoutEntry)
+		}
+		layoutEntries.sort(compareLayoutEntries)
+		return layoutEntries
 	}
 
 	private async runFactory(
@@ -822,7 +893,7 @@ export class WorkbenchRegistry {
 		if (previous === next) return
 		if (next) this.activeBySlot.set(slot, next)
 		else this.activeBySlot.delete(slot)
-		this.bump()
+		this.bump('publication')
 	}
 
 	private withdraw(publication: PublishedTarget): void {
@@ -851,9 +922,10 @@ export class WorkbenchRegistry {
 		})
 	}
 
-	private bump(): void {
+	private bump(cause: WorkbenchRegistryRevisionCause): void {
 		this.revisionValue += 1
-		for (const listener of this.listeners) listener(this.revisionValue)
+		if (cause === 'publication') this.structuralRevisionValue = this.revisionValue
+		for (const listener of this.listeners) listener(this.revisionValue, cause)
 	}
 }
 

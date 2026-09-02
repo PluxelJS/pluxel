@@ -420,8 +420,15 @@ shared module；`@mantine/core` 基础 CSS 同样只由 Shell 加载，producer 
 library 仍由 producer 自己拥有 Provider、module 和 CSS。Remote 可以从 `host.locale`、`host.colorScheme` 等固定 portable fact
 初始化或同步表现，但不能读取 Shell 的私有 Provider 或 theme object。共享 module instance 不会改变 React Context 的祖先边界。
 
-开发期 renderer 变化先构建并验证新的完整 producer candidate。失败不改变当前 inventory；成功提交后触发整页 reload。
-不做页内 remote replacement，不把新 roots 接到旧 Bridge，也不在加载失败时尝试其他 build revision。
+开发期 renderer 变化先发布 definition topology 与 Content artifact；缺失或过期的 producer 不阻塞 Runtime 启动，
+对应 View/Attachment placement 仍保留在 layout 中，并由 Shell 显示 `building` 状态。producer runtime build 使用持久
+Vite cache 在后台补齐，成功提交后通过 session epoch invalidation 触发整页 reload；失败会把同一 placement 更新为
+`failed` 状态并显示安全错误 message，下一次变更或启动会重试。
+开发期 producer 可以省略 dynamic type artifact，Manifest/Snapshot/shared/expose 运行时合约仍验证。
+
+Production/static assembly 不走后台降级路径：producer candidate 必须一次性通过 Manifest、Snapshot、dynamic types
+和 shared version 验证后才能提交。不做页内 remote replacement，不把新 roots 接到旧 Bridge，也不在加载失败时尝试其他
+build revision。
 
 ## Host facade 与 Pane Kit
 

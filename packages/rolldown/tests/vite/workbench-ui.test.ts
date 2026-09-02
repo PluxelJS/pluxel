@@ -186,7 +186,7 @@ async function readJavaScriptOutput(outDir: string): Promise<string> {
 }
 
 describe('Workbench Profile 1 federation producer', () => {
-	it('builds multiple Bridge exposes with a standard Manifest, Snapshot, and dynamic types', async () => {
+	it('builds multiple Bridge exposes with a runtime-only development Manifest and Snapshot', async () => {
 		await using fixture = await createFixture(producerFixtureFiles())
 		const plan = createPlan()
 		const outDir = join(fixture.path, 'artifact')
@@ -202,6 +202,7 @@ describe('Workbench Profile 1 federation producer', () => {
 		const validation = await validateWorkbenchFederationArtifact(outDir, {
 			plan,
 			compatibility: shared.compatibility,
+			typeAssets: 'optional',
 		})
 		expect(validation.valid).toBe(true)
 		if (validation.valid === false) throw new Error(validation.reason)
@@ -259,8 +260,8 @@ describe('Workbench Profile 1 federation producer', () => {
 		const outputEntries = await readdir(outDir, { recursive: true })
 		const files = outputEntries.map(String)
 		expect(files).toContain('remoteEntry.js')
-		expect(files.some((file) => file.endsWith('.zip'))).toBe(true)
-		expect(files.some((file) => file.endsWith('.d.ts'))).toBe(true)
+		expect(files.some((file) => file.endsWith('.zip'))).toBe(false)
+		expect(files.some((file) => file.endsWith('.d.ts'))).toBe(false)
 		const javascript = await Promise.all(
 			files
 				.filter((file) => file.endsWith('.js'))
@@ -335,10 +336,14 @@ export default () => ({ marker, async render() {}, destroy() {} })
 			readJavaScriptOutput(developmentOutDir),
 			readJavaScriptOutput(distributionOutDir),
 		])
+		const distributionEntries = await readdir(distributionOutDir, { recursive: true })
+		const distributionFiles = distributionEntries.map(String)
 		expect(developmentJavaScript).toContain('selected-workbench-source-export')
 		expect(developmentJavaScript).not.toContain('selected-workbench-distribution-export')
 		expect(distributionJavaScript).toContain('selected-workbench-distribution-export')
 		expect(distributionJavaScript).not.toContain('selected-workbench-source-export')
+		expect(distributionFiles.some((file) => file.endsWith('.zip'))).toBe(true)
+		expect(distributionFiles.some((file) => file.endsWith('.d.ts'))).toBe(true)
 	}, 60_000)
 
 	it('builds distinct producers concurrently without process-local state leakage', async () => {
@@ -555,6 +560,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 			validateWorkbenchFederationArtifact(outDir, {
 				plan,
 				compatibility: shared.compatibility,
+				typeAssets: 'optional',
 			}),
 		).resolves.toMatchObject({ valid: false, reason: `artifact asset missing: ${exposedAsset}` })
 
@@ -564,6 +570,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 			validateWorkbenchFederationArtifact(outDir, {
 				plan,
 				compatibility: shared.compatibility,
+				typeAssets: 'optional',
 			}),
 		).resolves.toMatchObject({
 			valid: false,
@@ -637,9 +644,6 @@ export default () => ({ marker, async render() {}, destroy() {} })
 			readdir(fixture.path).then((entries) =>
 				entries.filter((entry) => entry.includes('.candidate-')),
 			),
-		).resolves.toEqual([])
-		await expect(
-			readdir(join(fixture.path, '.pluxel/vite-workbench-ui-cache')).catch((): string[] => []),
 		).resolves.toEqual([])
 	}, 60_000)
 })

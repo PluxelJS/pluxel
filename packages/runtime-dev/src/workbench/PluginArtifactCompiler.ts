@@ -10,10 +10,12 @@ import {
 	type WorkbenchArtifactCandidate,
 	type WorkbenchArtifactCoordinator,
 	type WorkbenchContentArtifactCandidate,
+	type WorkbenchProducerStatusReporter,
 } from '@pluxel/runtime/internal'
 import {
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
 	type WorkbenchFederationProducerPlan,
+	type WorkbenchFederationTypeAssetPolicy,
 } from '@pluxel/core/federation'
 import {
 	WORKBENCH_CONTENT_ARTIFACT_FILE,
@@ -51,6 +53,7 @@ export type PluginArtifactCompilerWorkbenchCoordinator = Pick<
 
 export type PluginArtifactCompilerDeps = Readonly<{
 	coordinator?: PluginArtifactCompilerWorkbenchCoordinator
+	producerStatus?: WorkbenchProducerStatusReporter
 	viteServer?: PluginArtifactCompilerViteServer
 }>
 
@@ -84,6 +87,11 @@ type WorkbenchDefinitionCandidate = Readonly<{
 	definition: WorkbenchFederationProducerPlan['definition']
 	federation?: WorkbenchArtifactCandidate
 	content?: WorkbenchContentArtifactCandidate
+}>
+
+type WorkbenchDefinitionCommitResult = Readonly<{
+	commits: readonly WorkbenchArtifactBatchCommit[]
+	withdrawnDefinitions: readonly WorkbenchFederationProducerPlan['definition'][]
 }>
 
 type NodeModuleListener = {
@@ -155,10 +163,12 @@ const SHA256 = /^[a-f\d]{64}$/
  */
 export class PluginArtifactCompiler {
 	private readonly coordinator?: PluginArtifactCompilerWorkbenchCoordinator
+	private readonly producerStatus?: WorkbenchProducerStatusReporter
 	private readonly viteServer?: PluginArtifactCompilerViteServer
 	private readonly cacheDir: string
 	private readonly packageMode: 'development' | 'distribution'
 	private readonly producerTasks = new Map<string, Promise<WorkbenchArtifactCandidate>>()
+	private readonly producerBackgroundCommits = new Map<string, Promise<void>>()
 	private readonly producerCandidates = new Map<string, WorkbenchArtifactCandidate>()
 	private readonly committedWorkbenchDefinitions = new Map<
 		string,
@@ -177,9 +187,11 @@ export class PluginArtifactCompiler {
 		options: PluginArtifactCompilerOptions,
 	) {
 		this.coordinator = deps.coordinator
+		this.producerStatus = deps.producerStatus
 		this.viteServer = deps.viteServer
 		this.cacheDir = resolve(options.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts'))
 		this.packageMode = options.packageMode
+		if (this.packageMode === 'development') this.producerStatus?.enablePendingProducerBuilds()
 	}
 
 	/**
@@ -189,8 +201,16 @@ export class PluginArtifactCompiler {
 	async publishWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): Promise<readonly WorkbenchArtifactBatchCommit[]> {
-		const coordinator = this.coordinator
-		if (!coordinator) throw new Error('[runtime-dev] Workbench compiler is not attached')
+		if (this.packageMode === 'development') {
+			return this.publishDevelopmentWorkbenchArtifacts(input)
+		}
+		return this.publishStrictWorkbenchArtifacts(input)
+	}
+
+	private async publishStrictWorkbenchArtifacts(
+		input: WorkbenchArtifactCompilations,
+	): Promise<readonly WorkbenchArtifactBatchCommit[]> {
+		this.requireWorkbenchCoordinator()
 		const epoch = ++this.workbenchPublicationEpoch
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
@@ -207,24 +227,94 @@ export class PluginArtifactCompiler {
 		)
 		if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) return []
 		const candidates = new Map(materialized)
-		return this.withWorkbenchCommit(async () => {
-			if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) return []
-			const desired = new Map(this.committedWorkbenchDefinitions)
-			for (const [key, compilation] of definitions) desired.set(key, compilation.definition)
-			const commits: WorkbenchArtifactBatchCommit[] = []
-			for (const [key, definition] of [...desired].sort(([left], [right]) =>
-				left.localeCompare(right),
-			)) {
-				if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) break
-				const candidate = candidates.get(key)
-				const commit = await coordinator.commitCandidate(candidate ?? Object.freeze({ definition }))
-				commits.push(commit)
-				if (candidate) this.committedWorkbenchDefinitions.set(key, definition)
-				else this.committedWorkbenchDefinitions.delete(key)
-			}
-			await this.cleanupWorkbenchCandidates(candidates.values())
-			return Object.freeze(commits)
-		})
+		const commitResult = await this.commitWorkbenchDefinitions(epoch, definitions, candidates)
+		return commitResult.commits
+	}
+
+	private async publishDevelopmentWorkbenchArtifacts(
+		input: WorkbenchArtifactCompilations,
+	): Promise<readonly WorkbenchArtifactBatchCommit[]> {
+		this.requireWorkbenchCoordinator()
+		const epoch = ++this.workbenchPublicationEpoch
+		const definitions = groupWorkbenchCompilations(input)
+		const materialized = await Promise.all(
+			[...definitions.entries()].map(async ([key, compilation]) => {
+				const content = compilation.content
+					? await this.materializeContent(compilation.content)
+					: undefined
+				let federation: WorkbenchArtifactCandidate | undefined
+				if (compilation.producer) {
+					federation = this.cachedProducerCandidate(compilation.producer)
+					if (
+						!federation &&
+						!this.hasProducerBuildTask(compilation.producer) &&
+						this.hasProducerArtifactOnDisk(compilation.producer)
+					) {
+						try {
+							federation = await this.materializeProducer(compilation.producer, {
+								repairStaleCache: false,
+								logFailure: false,
+							})
+						} catch (error) {
+							this.ctx.logger.warn('Workbench {definition}: cached producer is stale', {
+								definition: compilation.producer.plan.definition.exportName,
+								revision: compilation.producer.plan.buildRevision.slice(0, 8),
+								producer: compilation.producer.plan.producer,
+								buildRevision: compilation.producer.plan.buildRevision,
+								error,
+							})
+						}
+					}
+				}
+				return [
+					key,
+					Object.freeze({
+						definition: compilation.definition,
+						federation,
+						content,
+						producer: federation ? undefined : compilation.producer,
+					}),
+				] as const
+			}),
+		)
+		if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) return []
+		const candidates = new Map(
+			materialized.map(([key, candidate]) => [
+				key,
+				Object.freeze({
+					definition: candidate.definition,
+					...(candidate.federation ? { federation: candidate.federation } : {}),
+					...(candidate.content ? { content: candidate.content } : {}),
+				}) satisfies WorkbenchDefinitionCandidate,
+			]),
+		)
+		const pendingProducers = materialized.filter(([, candidate]) => candidate.producer)
+		const commitResult = await this.commitWorkbenchDefinitions(epoch, definitions, candidates)
+		const commits = commitResult.commits
+		if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) return commits
+		for (const definition of commitResult.withdrawnDefinitions)
+			this.producerStatus?.clear(definition)
+		const pendingKeys = new Set(pendingProducers.map(([key]) => key))
+		for (const [key, candidate] of materialized) {
+			if (pendingKeys.has(key)) this.markProducerBuilding(candidate.producer!.plan)
+			else this.producerStatus?.clear(candidate.definition)
+		}
+		for (const [key, candidate] of pendingProducers) {
+			this.scheduleDevelopmentProducerCommit({
+				key,
+				epoch,
+				definition: candidate.definition,
+				producer: candidate.producer!,
+				content: candidate.content,
+			})
+		}
+		return commits
+	}
+
+	private requireWorkbenchCoordinator(): PluginArtifactCompilerWorkbenchCoordinator {
+		const coordinator = this.coordinator
+		if (!coordinator) throw new Error('[runtime-dev] Workbench compiler is not attached')
+		return coordinator
 	}
 
 	async watchNodeModule(
@@ -289,7 +379,9 @@ export class PluginArtifactCompiler {
 		this.signal.abort(new Error('[runtime-dev] artifact compiler disposed'))
 		this.workbenchPublicationEpoch += 1
 		this.committedWorkbenchDefinitions.clear()
+		this.producerBackgroundCommits.clear()
 		this.producerCandidates.clear()
+		this.producerStatus?.disablePendingProducerBuilds()
 		for (const entry of this.nodeEntries.values()) {
 			entry.active = false
 			this.disposeNodeWatcher(entry)
@@ -298,20 +390,142 @@ export class PluginArtifactCompiler {
 		this.nodeEntries.clear()
 	}
 
+	private async commitWorkbenchDefinitions(
+		epoch: number,
+		definitions: ReadonlyMap<string, WorkbenchDefinitionCompilation>,
+		candidates: ReadonlyMap<string, WorkbenchDefinitionCandidate>,
+	): Promise<WorkbenchDefinitionCommitResult> {
+		const coordinator = this.requireWorkbenchCoordinator()
+		return this.withWorkbenchCommit(async () => {
+			if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) {
+				return emptyWorkbenchDefinitionCommitResult()
+			}
+			const desired = new Map(this.committedWorkbenchDefinitions)
+			for (const [key, compilation] of definitions) desired.set(key, compilation.definition)
+
+			const commits: WorkbenchArtifactBatchCommit[] = []
+			const withdrawnDefinitions: WorkbenchFederationProducerPlan['definition'][] = []
+			for (const [key, definition] of [...desired].sort(([left], [right]) =>
+				left.localeCompare(right),
+			)) {
+				if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) break
+				const candidate = candidates.get(key)
+				const commit = await coordinator.commitCandidate(candidate ?? Object.freeze({ definition }))
+				commits.push(commit)
+				if (definitions.has(key)) {
+					this.committedWorkbenchDefinitions.set(key, definition)
+				} else {
+					this.committedWorkbenchDefinitions.delete(key)
+					withdrawnDefinitions.push(definition)
+				}
+			}
+			await this.cleanupWorkbenchCandidates(candidates.values())
+			return Object.freeze({
+				commits: Object.freeze(commits),
+				withdrawnDefinitions: Object.freeze(withdrawnDefinitions),
+			})
+		})
+	}
+
+	private cachedProducerCandidate(
+		input: WorkbenchProducerCompilation,
+	): WorkbenchArtifactCandidate | undefined {
+		const root = resolveProducerRoot(input.root)
+		const plan = input.plan
+		assertSafeProducerReference(plan)
+		const cached = this.producerCandidates.get(
+			producerTaskKey(plan, root, this.workbenchProducerTypeAssets()),
+		)
+		if (cached && existsSync(join(cached.artifactRoot, WORKBENCH_FEDERATION_MANIFEST_FILE))) {
+			return cached
+		}
+		return undefined
+	}
+
+	private hasProducerArtifactOnDisk(input: WorkbenchProducerCompilation): boolean {
+		const plan = input.plan
+		assertSafeProducerReference(plan)
+		return existsSync(join(this.producerOutDir(plan), WORKBENCH_FEDERATION_MANIFEST_FILE))
+	}
+
+	private hasProducerBuildTask(input: WorkbenchProducerCompilation): boolean {
+		const root = resolveProducerRoot(input.root)
+		const plan = input.plan
+		assertSafeProducerReference(plan)
+		return this.producerTasks.has(producerTaskKey(plan, root, this.workbenchProducerTypeAssets()))
+	}
+
+	private scheduleDevelopmentProducerCommit(input: {
+		key: string
+		epoch: number
+		definition: WorkbenchFederationProducerPlan['definition']
+		producer: WorkbenchProducerCompilation
+		content?: WorkbenchContentArtifactCandidate
+	}): void {
+		const coordinator = this.requireWorkbenchCoordinator()
+		const root = resolveProducerRoot(input.producer.root)
+		const policy = this.workbenchProducerTypeAssets()
+		const taskKey = `${input.epoch}\0${input.key}\0${producerTaskKey(input.producer.plan, root, policy)}`
+		if (this.producerBackgroundCommits.has(taskKey)) return
+		let task!: Promise<void>
+		task = (async () => {
+			await deferBackgroundWorkbenchTask()
+			if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
+			const federation = await this.materializeProducer(input.producer)
+			if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
+			await this.withWorkbenchCommit(async () => {
+				if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
+				const candidate: WorkbenchDefinitionCandidate = Object.freeze({
+					definition: input.definition,
+					federation,
+					...(input.content ? { content: input.content } : {}),
+				})
+				await coordinator.commitCandidate(candidate)
+				this.producerStatus?.clear(input.definition)
+				this.committedWorkbenchDefinitions.set(input.key, input.definition)
+				await this.cleanupWorkbenchCandidates([candidate])
+			})
+		})()
+			.catch((error) => {
+				if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
+				this.ctx.logger.error('Workbench {definition}: background publish failed', {
+					definition: input.definition.exportName,
+					revision: input.producer.plan.buildRevision.slice(0, 8),
+					producer: input.producer.plan.producer,
+					buildRevision: input.producer.plan.buildRevision,
+					error,
+				})
+				this.producerStatus?.setFailed({
+					definition: input.definition,
+					producer: input.producer.plan.producer,
+					buildRevision: input.producer.plan.buildRevision,
+					error,
+				})
+			})
+			.finally(() => {
+				if (this.producerBackgroundCommits.get(taskKey) === task) {
+					this.producerBackgroundCommits.delete(taskKey)
+				}
+			})
+		this.producerBackgroundCommits.set(taskKey, task)
+	}
+
 	private async materializeProducer(
 		input: WorkbenchProducerCompilation,
+		options: Readonly<{ repairStaleCache?: boolean; logFailure?: boolean }> = {},
 	): Promise<WorkbenchArtifactCandidate> {
 		const root = resolveProducerRoot(input.root)
 		const plan = input.plan
 		assertSafeProducerReference(plan)
-		const taskKey = producerTaskKey(plan, root)
+		const policy = this.workbenchProducerTypeAssets()
+		const taskKey = producerTaskKey(plan, root, policy)
 		const cached = this.producerCandidates.get(taskKey)
 		if (cached && existsSync(join(cached.artifactRoot, WORKBENCH_FEDERATION_MANIFEST_FILE))) {
 			return cached
 		}
 		const existing = this.producerTasks.get(taskKey)
 		if (existing) return existing
-		const task = this.performProducerBuild(plan, root).then((candidate) => {
+		const task = this.performProducerBuild(plan, root, options).then((candidate) => {
 			this.producerCandidates.set(taskKey, candidate)
 			return candidate
 		})
@@ -326,9 +540,12 @@ export class PluginArtifactCompiler {
 	private async performProducerBuild(
 		plan: WorkbenchFederationProducerPlan,
 		root: string,
+		options: Readonly<{ repairStaleCache?: boolean; logFailure?: boolean }>,
 	): Promise<WorkbenchArtifactCandidate> {
-		const outDir = join(this.cacheDir, 'workbench', plan.producer, plan.buildRevision)
+		const typeAssets = this.workbenchProducerTypeAssets()
+		const outDir = this.producerOutDir(plan)
 		const artifactWasPresent = existsSync(outDir)
+		let cacheResult: 'built' | 'reused' = artifactWasPresent ? 'reused' : 'built'
 		const startedAt = performance.now()
 		const logFacts = {
 			definition: plan.definition.exportName,
@@ -342,18 +559,41 @@ export class PluginArtifactCompiler {
 		try {
 			const { buildWorkbenchFederationProducer } =
 				await import('@pluxel/rolldown/vite/workbench-ui')
-			await buildWorkbenchFederationProducer({
-				plan,
-				root,
-				applicationRoot: this.viteServer?.config.root,
-				packageMode: this.packageMode,
-				outDir,
-				minify: false,
-				sourcemap: true,
-				signal: this.signal.signal,
-			})
+			const build = () =>
+				buildWorkbenchFederationProducer({
+					plan,
+					root,
+					applicationRoot: this.viteServer?.config.root,
+					packageMode: this.packageMode,
+					outDir,
+					cacheDir: join(this.cacheDir, 'workbench-vite'),
+					minify: false,
+					sourcemap: true,
+					typeAssets,
+					signal: this.signal.signal,
+				})
+			try {
+				await build()
+			} catch (error) {
+				if (
+					this.packageMode === 'development' &&
+					artifactWasPresent &&
+					options.repairStaleCache !== false &&
+					isImmutableProducerMismatch(error)
+				) {
+					this.ctx.logger.warn('Workbench {definition}: discarding stale producer cache', {
+						...logFacts,
+						error,
+					})
+					await rm(outDir, { recursive: true, force: true })
+					cacheResult = 'built'
+					await build()
+				} else {
+					throw error
+				}
+			}
 		} catch (error) {
-			if (!this.signal.signal.aborted) {
+			if (!this.signal.signal.aborted && options.logFailure !== false) {
 				this.ctx.logger.error('Workbench {definition}: failed after {durationMs} ms', {
 					...logFacts,
 					durationMs: Math.round(performance.now() - startedAt),
@@ -365,10 +605,33 @@ export class PluginArtifactCompiler {
 		if (this.signal.signal.aborted) throw this.signal.signal.reason
 		this.ctx.logger.info('Workbench {definition}: {cache} in {durationMs} ms', {
 			...logFacts,
-			cache: artifactWasPresent ? 'reused' : 'built',
+			cache: cacheResult,
 			durationMs: Math.round(performance.now() - startedAt),
 		})
-		return Object.freeze({ plan, artifactRoot: outDir })
+		return Object.freeze({ plan, artifactRoot: outDir, typeAssets })
+	}
+
+	private producerOutDir(plan: WorkbenchFederationProducerPlan): string {
+		return join(
+			this.cacheDir,
+			'workbench',
+			this.packageMode,
+			this.workbenchProducerTypeAssets(),
+			plan.producer,
+			plan.buildRevision,
+		)
+	}
+
+	private workbenchProducerTypeAssets(): WorkbenchFederationTypeAssetPolicy {
+		return this.packageMode === 'development' ? 'optional' : 'required'
+	}
+
+	private markProducerBuilding(plan: WorkbenchFederationProducerPlan): void {
+		this.producerStatus?.setBuilding({
+			definition: plan.definition,
+			producer: plan.producer,
+			buildRevision: plan.buildRevision,
+		})
 	}
 
 	private async materializeContent(
@@ -610,7 +873,13 @@ export class PluginArtifactCompiler {
 	}
 
 	private async cleanupProducerCache(producer: string, currentRevision: string): Promise<void> {
-		const root = join(this.cacheDir, 'workbench', producer)
+		const root = join(
+			this.cacheDir,
+			'workbench',
+			this.packageMode,
+			this.workbenchProducerTypeAssets(),
+			producer,
+		)
 		const names = await readdir(root).catch((): string[] => [])
 		const builds: Array<{ name: string; path: string; mtime: number }> = []
 		for (const name of names) {
@@ -735,6 +1004,13 @@ function groupWorkbenchCompilations(
 	return definitions
 }
 
+function emptyWorkbenchDefinitionCommitResult(): WorkbenchDefinitionCommitResult {
+	return Object.freeze({
+		commits: Object.freeze([]),
+		withdrawnDefinitions: Object.freeze([]),
+	})
+}
+
 async function publishImmutableContentArtifact(
 	artifactRoot: string,
 	bytes: Uint8Array,
@@ -807,15 +1083,33 @@ function producerReference(plan: WorkbenchFederationProducerPlan): string {
 	return `${plan.producer}\0${plan.buildRevision}`
 }
 
-function producerTaskKey(plan: WorkbenchFederationProducerPlan, root: string): string {
+function producerTaskKey(
+	plan: WorkbenchFederationProducerPlan,
+	root: string,
+	typeAssets: WorkbenchFederationTypeAssetPolicy,
+): string {
 	return [
 		producerReference(plan),
 		root,
+		typeAssets,
 		...plan.entries.map(
 			(entry) =>
 				`${entry.descriptor.kind}:${entry.descriptor.key}:${entry.expose}:${entry.bridgeEntryPath}`,
 		),
 	].join('\0')
+}
+
+function deferBackgroundWorkbenchTask(): Promise<void> {
+	return new Promise<void>((resolveTask) => {
+		const timer = setTimeout(resolveTask, 0)
+		timer.unref?.()
+	})
+}
+
+function isImmutableProducerMismatch(error: unknown): boolean {
+	return (
+		error instanceof Error && error.message.includes('immutable producer revision already exists')
+	)
 }
 
 function hasIgnoredHashPathSegment(filePath: string): boolean {

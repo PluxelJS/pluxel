@@ -367,6 +367,48 @@ describe('Workbench federation Profile 1 artifact contract', () => {
 		).toThrow('expected exact singleton')
 	})
 
+	it('allows development manifests to omit dynamic type assets explicitly', () => {
+		const runtimeOnly = manifest()
+		delete (runtimeOnly.metaData as Record<string, unknown>).types
+		const contract = parseWorkbenchFederationManifestContract(runtimeOnly, {
+			plan,
+			compatibility,
+			typeAssets: 'optional',
+		})
+		expect(contract.files).toEqual(
+			expect.arrayContaining(['mf-manifest.json', 'remoteEntry.js', 'assets/view-0.js']),
+		)
+		expect(contract.files).not.toContain('types/index.d.ts')
+		expect(contract.files).not.toContain('@mf-types.zip')
+
+		const placeholders = manifest()
+		placeholders.metaData.types = { api: '', zip: '' } as never
+		expect(
+			parseWorkbenchFederationManifestContract(placeholders, {
+				plan,
+				compatibility,
+				typeAssets: 'optional',
+			}).files,
+		).not.toContain('@mf-types.zip')
+
+		const partialTypes = manifest()
+		partialTypes.metaData.types = { api: 'types/index.d.ts' } as never
+		expect(
+			parseWorkbenchFederationManifestContract(partialTypes, {
+				plan,
+				compatibility,
+				typeAssets: 'optional',
+			}).files,
+		).not.toContain('types/index.d.ts')
+		expect(() =>
+			parseWorkbenchFederationManifestContract(partialTypes, {
+				plan,
+				compatibility,
+				typeAssets: 'required',
+			}),
+		).toThrow('federation manifest type asset is invalid: zip')
+	})
+
 	it('rejects Snapshot module inventories that do not exactly match the producer plan', () => {
 		const validModules = plan.entries.map((entry) => ({ moduleName: entry.expose.slice(2) }))
 		expect(() =>

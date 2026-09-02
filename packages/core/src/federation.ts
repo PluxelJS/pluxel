@@ -61,9 +61,18 @@ export type WorkbenchFederationPlatformVersions = Readonly<{
 	runtime: string
 }>
 
+export type WorkbenchFederationTypeAssetPolicy = 'required' | 'optional'
+
 export type WorkbenchFederationManifestExpectation = Readonly<{
 	plan: WorkbenchFederationProducerPlan
 	compatibility: WorkbenchFederationCompatibilitySet
+	/**
+	 * Dynamic type artifacts are required for production artifacts. Development runtime-only
+	 * producer builds may omit them while preserving the same MF runtime contract.
+	 *
+	 * @defaultValue 'required'
+	 */
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
 }>
 
 export type WorkbenchFederationManifestContract = Readonly<{
@@ -485,14 +494,24 @@ export function parseWorkbenchFederationManifestContract(
 		collectWorkbenchFederationAssets(item.assets, files)
 	}
 
-	const types = readRecord(metaData.types, 'federation manifest.metaData.types')
-	for (const field of ['api', 'zip'] as const) {
-		const file = normalizeWorkbenchFederationAssetPath(types[field])
-		if (!file) {
-			throw new TypeError(`federation manifest type asset is invalid: ${field}`)
-		}
-		files.add(file)
+	const typeAssets = expected.typeAssets ?? 'required'
+	if (typeAssets !== 'required' && typeAssets !== 'optional') {
+		throw new TypeError('federation manifest type asset policy is invalid')
 	}
+	if (typeAssets === 'optional') {
+		return Object.freeze({ files: Object.freeze([...files]) })
+	}
+	const types = readRecord(metaData.types, 'federation manifest.metaData.types')
+	const api = normalizeWorkbenchFederationAssetPath(types.api)
+	if (!api) {
+		throw new TypeError('federation manifest type asset is invalid: api')
+	}
+	const zip = normalizeWorkbenchFederationAssetPath(types.zip)
+	if (!zip) {
+		throw new TypeError('federation manifest type asset is invalid: zip')
+	}
+	files.add(api)
+	files.add(zip)
 	return Object.freeze({ files: Object.freeze([...files]) })
 }
 

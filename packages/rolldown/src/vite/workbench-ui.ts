@@ -7,6 +7,7 @@ import {
 	createWorkbenchFederationProducerPlan,
 	workbenchFederationBuildOutDir,
 	type WorkbenchFederationProducerPlan,
+	type WorkbenchFederationTypeAssetPolicy,
 } from '@pluxel/core/federation'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import {
@@ -16,6 +17,7 @@ import {
 	type ResolvedFederationShared,
 } from '../workbench/build-contract.ts'
 import {
+	runWorkbenchBuildCacheTransaction,
 	runWorkbenchFederationBuild,
 	runWorkbenchOutputTransaction,
 } from '../workbench/build-scheduler.ts'
@@ -32,8 +34,19 @@ export type BuildWorkbenchFederationProducerOptions = Readonly<{
 	/** Selects source exports for development or built package exports for distribution assembly. */
 	packageMode: 'development' | 'distribution'
 	outDir?: string
+	/**
+	 * Root for Vite and declaration incremental caches.
+	 * Development defaults to `.pluxel/vite-workbench-ui-cache` under `root`.
+	 * Distribution uses an ephemeral cache unless this is provided.
+	 */
+	cacheDir?: string
 	minify?: boolean
 	sourcemap?: boolean
+	/**
+	 * Selects whether dynamic type artifacts are part of this producer candidate.
+	 * Development defaults to a runtime-only producer; distribution defaults to strict types.
+	 */
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
 	/**
 	 * Prevents a queued Federation build from starting or publishing after abort. An already-running
 	 * Vite build finishes before this operation rejects because Vite has no build cancellation API.
@@ -56,6 +69,7 @@ type ProducerStamp = Readonly<{
 	buildRevision: string
 	exposes: readonly string[]
 	compatibilitySignature: string
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
 }>
 
 export async function buildWorkbenchFederationProducer(
@@ -64,6 +78,7 @@ export async function buildWorkbenchFederationProducer(
 	const root = resolve(options.root ?? process.cwd())
 	const applicationRoot = resolve(options.applicationRoot ?? root)
 	const plan = assertPlan(options.plan)
+	const typeAssets = resolveTypeAssetPolicy(options)
 	const outDir = resolve(root, options.outDir ?? workbenchFederationBuildOutDir(plan))
 	const resolvedShared = resolveWorkbenchFederationShared(applicationRoot)
 	if (root !== applicationRoot) {
@@ -77,7 +92,9 @@ export async function buildWorkbenchFederationProducer(
 	})
 
 	return runWorkbenchOutputTransaction(outDir, async () => {
-		if (await isCommittedRevision(outDir, plan, resolvedShared, options.packageMode)) return result
+		if (await isCommittedRevision(outDir, plan, resolvedShared, options.packageMode, typeAssets)) {
+			return result
+		}
 		if (await exists(outDir)) {
 			throw new Error(
 				`[workbench-ui] immutable producer revision already exists but does not match its plan: ${outDir}`,
@@ -86,7 +103,7 @@ export async function buildWorkbenchFederationProducer(
 
 		const buildId = randomUUID()
 		const candidateDir = `${outDir}.candidate-${buildId}`
-		const cacheDir = resolve(root, '.pluxel/vite-workbench-ui-cache', `${plan.producer}-${buildId}`)
+		const cache = resolveBuildCacheDir(root, plan, options, typeAssets, buildId)
 		try {
 			const paraglide = resolveParaglideIntegration(root)
 			const viteBuild: WorkbenchViteBuildOptions = {
@@ -99,22 +116,26 @@ export async function buildWorkbenchFederationProducer(
 				exposes: Object.fromEntries(
 					plan.entries.map((entry) => [entry.expose, resolve(root, entry.bridgeEntryPath)]),
 				),
-				cacheDir,
+				cacheDir: cache.dir,
 				shared: resolvedShared.shared,
 				bridgeReactEntry: resolveWorkbenchFederationBridgeEntry(),
 				minify: options.minify ?? true,
 				sourcemap: options.sourcemap ?? false,
+				typeAssets,
 				paraglide: paraglide ? { project: paraglide.project, outdir: paraglide.outdir } : null,
 			}
 			if (options.signal?.aborted) throw options.signal.reason
-			await runWorkbenchFederationBuild(applicationRoot, () => {
-				if (options.signal?.aborted) throw options.signal.reason
-				return runWorkbenchViteBuild(viteBuild)
-			})
+			await runWorkbenchBuildCacheTransaction(cache.dir, () =>
+				runWorkbenchFederationBuild(applicationRoot, () => {
+					if (options.signal?.aborted) throw options.signal.reason
+					return runWorkbenchViteBuild(viteBuild)
+				}),
+			)
 			if (options.signal?.aborted) throw options.signal.reason
 			const validation = await validateWorkbenchFederationArtifact(candidateDir, {
 				plan,
 				compatibility: resolvedShared.compatibility,
+				typeAssets,
 			})
 			if (validation.valid === false) {
 				throw new Error(
@@ -123,7 +144,7 @@ export async function buildWorkbenchFederationProducer(
 			}
 			await writeFile(
 				resolve(candidateDir, PRODUCER_STAMP_FILE),
-				`${JSON.stringify(createStamp(plan, compatibilitySignature, options.packageMode))}\n`,
+				`${JSON.stringify(createStamp(plan, compatibilitySignature, options.packageMode, typeAssets))}\n`,
 				'utf-8',
 			)
 			await mkdir(dirname(outDir), { recursive: true })
@@ -133,7 +154,7 @@ export async function buildWorkbenchFederationProducer(
 			await rm(candidateDir, { recursive: true, force: true })
 			throw error
 		} finally {
-			await rm(cacheDir, { recursive: true, force: true })
+			if (cache.ephemeral) await rm(cache.dir, { recursive: true, force: true })
 		}
 	})
 }
@@ -155,6 +176,7 @@ async function isCommittedRevision(
 	plan: WorkbenchFederationProducerPlan,
 	shared: ResolvedFederationShared,
 	packageMode: BuildWorkbenchFederationProducerOptions['packageMode'],
+	typeAssets: WorkbenchFederationTypeAssetPolicy,
 ): Promise<boolean> {
 	let stamp: ProducerStamp
 	try {
@@ -164,12 +186,16 @@ async function isCommittedRevision(
 	} catch {
 		return false
 	}
-	if (JSON.stringify(stamp) !== JSON.stringify(createStamp(plan, shared.signature, packageMode))) {
+	if (
+		JSON.stringify(stamp) !==
+		JSON.stringify(createStamp(plan, shared.signature, packageMode, typeAssets))
+	) {
 		return false
 	}
 	const validation = await validateWorkbenchFederationArtifact(outDir, {
 		plan,
 		compatibility: shared.compatibility,
+		typeAssets,
 	})
 	return validation.valid
 }
@@ -178,6 +204,7 @@ function createStamp(
 	plan: WorkbenchFederationProducerPlan,
 	compatibilitySignature: string,
 	packageMode: BuildWorkbenchFederationProducerOptions['packageMode'],
+	typeAssets: WorkbenchFederationTypeAssetPolicy,
 ): ProducerStamp {
 	return {
 		profile: WORKBENCH_PROFILE_VERSION,
@@ -187,7 +214,42 @@ function createStamp(
 		buildRevision: plan.buildRevision,
 		exposes: plan.entries.map((entry) => entry.expose),
 		compatibilitySignature,
+		...(typeAssets === 'required' ? {} : { typeAssets }),
 	}
+}
+
+function resolveTypeAssetPolicy(
+	options: BuildWorkbenchFederationProducerOptions,
+): WorkbenchFederationTypeAssetPolicy {
+	const typeAssets =
+		options.typeAssets ?? (options.packageMode === 'development' ? 'optional' : 'required')
+	if (typeAssets !== 'required' && typeAssets !== 'optional') {
+		throw new TypeError('[workbench-ui] invalid Workbench federation type asset policy')
+	}
+	return typeAssets
+}
+
+function resolveBuildCacheDir(
+	root: string,
+	plan: WorkbenchFederationProducerPlan,
+	options: BuildWorkbenchFederationProducerOptions,
+	typeAssets: WorkbenchFederationTypeAssetPolicy,
+	buildId: string,
+): Readonly<{ dir: string; ephemeral: boolean }> {
+	const cacheRoot = options.cacheDir
+		? resolve(root, options.cacheDir)
+		: resolve(root, '.pluxel/vite-workbench-ui-cache')
+	const persistent = options.packageMode === 'development' || Boolean(options.cacheDir)
+	if (persistent) {
+		return Object.freeze({
+			dir: resolve(cacheRoot, options.packageMode, typeAssets, plan.producer),
+			ephemeral: false,
+		})
+	}
+	return Object.freeze({
+		dir: resolve(cacheRoot, 'ephemeral', `${plan.producer}-${buildId}`),
+		ephemeral: true,
+	})
 }
 
 function assertPlan(input: WorkbenchFederationProducerPlan): WorkbenchFederationProducerPlan {

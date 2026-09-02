@@ -18,8 +18,9 @@ module batch
   -> drain effects
   -> start new generations
   -> publish new Workbench Definitions
-  -> build/validate MF producer candidate
-  -> commit producer inventory
+  -> commit Workbench topology/Content and any reusable producer
+  -> background build/validate missing MF producer candidate
+  -> commit producer inventory when ready
   -> close browser socket epoch
   -> full document reload
 ```
@@ -96,20 +97,23 @@ compiler 不再为 Workbench 叠加通用 build queue；MF builder 自己拥有�
 process-global application root：同一 application root 最多并发两个 producer；不同 root 按到达顺序形成 cohort，切换前必须等
 当前 cohort 排空，后到的同 root task 不能越过已经等待的其他 root。这个精确约束不能扩大为全局单线程。Node artifact 继续使用
 独立的两个 build slot。同一 output 的 transaction ordering 始终保留，保证 immutable candidate 的 validation/publication 不交错。
-Runtime-dev 在 producer 进入构建时记录 name/revision，完成时记录 `built` 或磁盘 `reused` 及端到端耗时；内存 candidate
-复用保持静默，失败日志保留同一归因和原始错误。
+Runtime-dev 会先发布 topology/Content，并把缺失 producer 放入后台构建；已存在的 producer artifact 可在 publish 路径快速
+复用。producer 进入构建时记录 name/revision，完成时记录 `built` 或磁盘 `reused` 及端到端耗时；内存 candidate 复用保持
+静默，失败日志保留同一归因和原始错误。开发 producer 使用持久 Vite cache，默认不生成 dynamic types；production 或显式
+required type policy 仍严格生成和校验类型资产。
 
 每个 candidate 必须验证：
 
 - producer name 和 build revision；
 - `mf-manifest.json` 与标准 Snapshot；
 - exact `./views/<key>` expose inventory；
-- `remoteEntry.js`、全部 JS/CSS/type files 均存在；
+- `remoteEntry.js`、全部 JS/CSS runtime assets 均存在；
 - fixed singleton shared 包和 exact versions；
 - generated React Bridge declaration identity。
 
-验证失败不提交。成功 candidate 原子进入 `WorkbenchArtifactService` 的 immutable producer inventory；production freezer
-写入同构的 `pluxel-workbench-producers.json`，runtime 不从 source 重新编译。
+验证失败不提交 producer inventory；开发期对应 layout entry 保留原位置并显示 failed 状态，等待下一次重试。成功 candidate 原子进入
+`WorkbenchArtifactService` 的 immutable producer inventory；production freezer 写入同构的
+`pluxel-workbench-producers.json`，runtime 不从 source 重新编译。Production candidate 额外要求 dynamic type files 存在。
 
 ## Browser update policy
 
@@ -122,7 +126,9 @@ Workbench 不实现页内 remote HMR。Producer inventory commit 或 Plugin publ
 5. MF Runtime 加载 pinned new manifest/expose 并创建 fresh roots/Bridge。
 
 旧 document 不注册新 remote，不把新 roots 接到旧 renderer，不保存 old remote fallback。Candidate build failure 不会
-推进 inventory 或 reload。Vite HMR socket 可以作为 toolchain update signal carrier，但 Workbench 产品动作仍是 full reload。
+推进 producer inventory；开发期 topology publication 可以先让未就绪 View 以 building 状态出现，失败后用 registry
+revision 更新为 failed 状态。Vite HMR socket 可以作为 toolchain update signal carrier，但 Workbench 产品动作仍是
+producer 成功后的 full reload。
 
 ## Node module update
 
@@ -139,7 +145,7 @@ Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 
 - database accepted operations 在 replacement 前 drain；
 - static/dynamic 共享一个 ModuleRunner 与 source classifier；
 - dynamic host generation 不改变 Vite 进程 cwd；
-- Workbench candidate failure 保持当前 inventory；
+- Workbench candidate failure 不推进 producer inventory；
 - stale/superseded producer 不能 commit；
 - successful producer commit 关闭 socket epoch 并触发 full reload；
 - 新 document 不复用旧 roots、Bridge、host facade 或 MF registration；

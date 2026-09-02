@@ -421,15 +421,19 @@ Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完�
 
 1. 按 definition + build revision + build root 去重 task；
 2. 收集 renderer 与 Markdown source graph，并把 graph/hash 与 plan 的 build revision 交叉验证；
-3. 在 bounded admission 后构建需要的完整 MF producer 与 Content set candidate；
-4. 验证 Manifest/Snapshot、exact exposes/shared/types/assets，以及 Content definition/content digest 和 portable plan；
-5. 对 producer root 的全部 regular files与 Content artifact 建立 immutable digest inventory；
-6. 确认该 plan 仍是 definition 最新 desired revision；
-7. 把 producer 与 Content candidate 作为一个 tuple 原子提交，失败回滚已提交部分；
-8. 有界保留 disk cache，stale candidate 不再获得 authority。
+3. 同步 materialize Content set，并快速复用内存或磁盘上已验证的 producer candidate；
+4. 先提交 definition topology、Content 与已可用 producer；缺失 producer 会撤掉该 definition 的当前 federation
+   pointer，但对应 View/Attachment placement 仍保留在 layout 中并显示 building 状态；
+5. 缺失 producer 进入后台 build queue，使用持久 Vite/cache root；同一 cache root 的访问串行化，避免 DTS/Vite
+   临时文件竞争；
+6. 后台完成后确认该 plan 仍是最新 desired revision，再把 producer 与同一轮 Content candidate 作为完整 tuple 原子提交；
+7. 后台失败时不提交 producer inventory，而是把对应 layout entry 更新为 failed 状态和安全错误 message；
+8. 验证 Manifest/Snapshot、exact exposes/shared/runtime assets，以及 Content definition/content digest 和 portable plan；
+9. 有界保留 disk cache，stale/superseded candidate 不再获得 commit authority。
 
-Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench tuple commit
-通过 session epoch invalidation 驱动 full document reload，不使用浏览器轮询、Content-local reconnect 或页内 remote replacement。
+Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench producer 成功 commit
+通过 session epoch invalidation 驱动 full document reload；producer-status-only 的 building/failed 展示可在同一 session
+轻量刷新，但不做 Content-local reconnect 或页内 remote replacement。
 
 `workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path 相对声明模块解析；lowering 从实际
 definition/renderer module 收集 source graph，在 owning package root 的 `.pluxel/workbench-generated/` 生成 Bridge entry，
@@ -464,8 +468,10 @@ remote 重复输出同一份 CSS。未进入固定 profile 的 UI library 不获
 “完整 export surface”；builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，并在后置 transform 删除。
 这保证传递依赖需要的 React/Mantine export 仍出现在 host-backed facade，同时 marker 和 shared implementation 都不进入产物。
 
-Dynamic types 使用 MF 2.9 的默认 `tsc`，不再把绝对 compiler executable 交给 package manager。每个 immutable candidate
-拥有独立 `tsBuildInfoFile`，并发 producer 不共享 MF 默认 cache 文件；类型、Manifest 或 asset 缺失都使 candidate 失败。
+Dynamic types 使用 MF 2.9 的默认 `tsc`，不再把绝对 compiler executable 交给 package manager。开发 producer 默认省略
+dynamic type artifact，只校验浏览器运行时 contract；显式 required 或 production producer 仍生成并校验 `api` 与 `zip`
+类型资产。required DTS build 使用 producer-scoped `tsBuildInfoFile` 与串行 cache transaction，避免并发 producer 共享
+MF 默认 cache 文件；production 中类型、Manifest 或 asset 缺失都使 candidate 失败。
 
 Production producer 不输出内嵌源码 sourcemap；runtime-dev producer 保留 sourcemap 供开发诊断。
 

@@ -18,12 +18,16 @@ export type WorkbenchFederatedViewRef = Readonly<{
 	descriptor: WorkbenchDeclarationIdentity
 }>
 
+export type WorkbenchFederatedViewUnavailable =
+	| Readonly<{ reason: 'building'; message?: string }>
+	| Readonly<{ reason: 'failed'; message: string }>
+
 export type WorkbenchLayoutTarget = Readonly<{
 	node: PluginNodeAddress
 	displayName: string
 }>
 
-export type WorkbenchFederatedLayoutEntry = Readonly<{
+type WorkbenchFederatedLayoutEntryBase = Readonly<{
 	descriptor: Exclude<WorkbenchOpenableIdentity, WorkbenchContentIdentity>
 	target: WorkbenchLayoutTarget
 	renderer: PluginNodeAddress
@@ -32,8 +36,23 @@ export type WorkbenchFederatedLayoutEntry = Readonly<{
 		renderer: number
 	}>
 	placement: WorkbenchPlacement
-	federatedViewRef: WorkbenchFederatedViewRef
 }>
+
+export type WorkbenchReadyFederatedLayoutEntry = WorkbenchFederatedLayoutEntryBase &
+	Readonly<{
+		federatedViewRef: WorkbenchFederatedViewRef
+		federatedViewUnavailable?: never
+	}>
+
+export type WorkbenchUnavailableFederatedLayoutEntry = WorkbenchFederatedLayoutEntryBase &
+	Readonly<{
+		federatedViewUnavailable: WorkbenchFederatedViewUnavailable
+		federatedViewRef?: never
+	}>
+
+export type WorkbenchFederatedLayoutEntry =
+	| WorkbenchReadyFederatedLayoutEntry
+	| WorkbenchUnavailableFederatedLayoutEntry
 
 export type WorkbenchContentRef = Readonly<{
 	profile: 1

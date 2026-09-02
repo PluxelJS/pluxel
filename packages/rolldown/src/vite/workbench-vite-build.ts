@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { federation, type ModuleFederationOptions } from '@module-federation/vite'
@@ -7,6 +7,7 @@ import {
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
 	WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
 	WORKBENCH_FEDERATION_SHARE_STRATEGY,
+	type WorkbenchFederationTypeAssetPolicy,
 } from '@pluxel/core/federation'
 import { dirname, resolve } from 'pathe'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/vite'
@@ -31,13 +32,15 @@ export type WorkbenchViteBuildOptions = Readonly<{
 	bridgeReactEntry: string
 	minify: boolean
 	sourcemap: boolean
+	typeAssets: WorkbenchFederationTypeAssetPolicy
 	paraglide: Readonly<{ project: string; outdir: string }> | null
 }>
 
 export async function runWorkbenchViteBuild(options: WorkbenchViteBuildOptions): Promise<void> {
 	const restoreTestEnvironment = enableFederationInTestEnvironment()
 	try {
-		const dtsTsConfigPath = await writeDtsTsConfig(options)
+		const dtsTsConfigPath =
+			options.typeAssets === 'required' ? await writeDtsTsConfig(options) : null
 		await build(createViteConfig(options, dtsTsConfigPath))
 	} finally {
 		restoreTestEnvironment()
@@ -46,7 +49,7 @@ export async function runWorkbenchViteBuild(options: WorkbenchViteBuildOptions):
 
 function createViteConfig(
 	options: WorkbenchViteBuildOptions,
-	dtsTsConfigPath: string,
+	dtsTsConfigPath: string | null,
 ): InlineConfig {
 	return {
 		configFile: false,
@@ -137,6 +140,7 @@ async function writeDtsTsConfig(options: WorkbenchViteBuildOptions): Promise<str
 	// build cache while linking the compiler owned by this package.
 	const nodeModulesDir = resolve(options.cacheDir, 'node_modules')
 	await mkdir(nodeModulesDir, { recursive: true })
+	await rm(resolve(nodeModulesDir, 'typescript'), { recursive: true, force: true })
 	await symlink(
 		toolchainTypeScriptRoot,
 		resolve(nodeModulesDir, 'typescript'),
@@ -170,7 +174,7 @@ async function writeDtsTsConfig(options: WorkbenchViteBuildOptions): Promise<str
 
 function createPlugins(
 	options: WorkbenchViteBuildOptions,
-	dtsTsConfigPath: string,
+	dtsTsConfigPath: string | null,
 ): PluginOption[] {
 	const [declareFullSharedSurface, removeSharedSurfaceDeclaration] =
 		fullSharedSurfaceAnalysisPlugins(options)
@@ -193,16 +197,19 @@ function createPlugins(
 			filename: WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
 			exposes: options.exposes,
 			manifest: { fileName: WORKBENCH_FEDERATION_MANIFEST_FILE },
-			dts: {
-				cwd: options.cacheDir,
-				consumeTypes: false,
-				tsConfigPath: dtsTsConfigPath,
-				generateTypes: {
-					abortOnError: true,
-					compileInChildProcess: false,
-					generateAPITypes: true,
-				},
-			},
+			dts:
+				options.typeAssets === 'required'
+					? {
+							cwd: options.cacheDir,
+							consumeTypes: false,
+							tsConfigPath: dtsTsConfigPath!,
+							generateTypes: {
+								abortOnError: true,
+								compileInChildProcess: false,
+								generateAPITypes: true,
+							},
+						}
+					: false,
 			publicPath: 'auto',
 			shared: options.shared,
 			shareStrategy: WORKBENCH_FEDERATION_SHARE_STRATEGY,

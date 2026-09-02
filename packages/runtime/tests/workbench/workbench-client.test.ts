@@ -13,6 +13,7 @@ import {
 	type WorkbenchLayoutEntry,
 	type WorkbenchSessionApi,
 	type WorkbenchContentLayoutEntry,
+	type WorkbenchUnavailableFederatedLayoutEntry,
 } from '@pluxel/runtime/workbench/client'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import { serialize } from 'capnweb'
@@ -59,6 +60,18 @@ const contentEntry: WorkbenchContentLayoutEntry = Object.freeze({
 		profile: 1,
 		digest: '1'.repeat(64),
 		descriptor: contentDescriptor,
+	}),
+})
+
+const unavailableEntry: WorkbenchUnavailableFederatedLayoutEntry = Object.freeze({
+	descriptor,
+	target: Object.freeze({ node, displayName: 'Settings' }),
+	renderer: node,
+	definitionRevisions: Object.freeze({ target: 3, renderer: 3 }),
+	placement: Object.freeze({ kind: 'tab', label: 'Settings', order: 0 }),
+	federatedViewUnavailable: Object.freeze({
+		reason: 'failed',
+		message: 'renderer syntax error',
 	}),
 })
 
@@ -264,6 +277,56 @@ describe('Workbench opened View client', () => {
 
 		await expect(readWorkbenchLayout(session, { target: null })).rejects.toThrow(
 			'fixed Workbench icon set',
+		)
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
+	it('accepts unavailable federated layout entries and does not open them', async () => {
+		const disposeResult = vi.fn()
+		const session = {
+			layout: vi.fn().mockResolvedValue({
+				profile: 1,
+				revision: 1,
+				target: null,
+				entries: [unavailableEntry],
+				[Symbol.dispose]: disposeResult,
+			}),
+			openEntry: vi.fn(),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+
+		const layout = await readWorkbenchLayout(session, { target: null })
+		expect(layout.entries[0]).toMatchObject({
+			federatedViewUnavailable: {
+				reason: 'failed',
+				message: 'renderer syntax error',
+			},
+		})
+		await expect(
+			openWorkbenchEntry(session, layout.entries[0]!, { layoutRevision: 1 }),
+		).resolves.toEqual({ ok: false, code: 'target_unavailable' })
+		expect(session.openEntry).not.toHaveBeenCalled()
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
+	it('rejects federated layout entries with ambiguous availability', async () => {
+		const disposeResult = vi.fn()
+		const session = {
+			layout: vi.fn().mockResolvedValue({
+				profile: 1,
+				revision: 1,
+				target: null,
+				entries: [
+					{
+						...entry,
+						federatedViewUnavailable: { reason: 'building' },
+					},
+				],
+				[Symbol.dispose]: disposeResult,
+			}),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+
+		await expect(readWorkbenchLayout(session, { target: null })).rejects.toThrow(
+			'exactly one federated View availability field',
 		)
 		expect(disposeResult).toHaveBeenCalledTimes(1)
 	})

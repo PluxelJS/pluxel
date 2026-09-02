@@ -17,6 +17,7 @@ import {
 	workbenchDeclarationIdentityEqual,
 	type WorkbenchDeclarationIdentity,
 	type WorkbenchFederationProducerPlan,
+	type WorkbenchFederationTypeAssetPolicy,
 } from '@pluxel/core/federation'
 import { generateSnapshotFromManifest, type Manifest } from '@module-federation/sdk'
 import { extname, isAbsolute, join, relative, resolve } from 'pathe'
@@ -28,6 +29,8 @@ import { runtimeWorkbenchFederationArtifactPath } from '../../web/paths'
 export type WorkbenchArtifactCandidate = Readonly<{
 	plan: WorkbenchFederationProducerPlan
 	artifactRoot: string
+	/** @defaultValue 'required' */
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
 }>
 
 export type WorkbenchArtifactEntry = Readonly<{
@@ -367,6 +370,7 @@ async function prepareCandidate(candidate: WorkbenchArtifactCandidate): Promise<
 		manifestFiles = parseWorkbenchFederationManifestContract(input, {
 			plan,
 			compatibility: PROFILE_COMPATIBILITY,
+			typeAssets: candidate.typeAssets ?? 'required',
 		}).files
 		manifest = input as Manifest
 	} catch (error) {

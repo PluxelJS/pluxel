@@ -184,8 +184,10 @@ producer、每个 declaration 的 React Bridge expose 和 `mf-manifest.json`。�
 或 Bridge wrapper。Server bundle 与 browser producer 分离；browser graph 不能导入 Node builtin、database handle、
 secret 或 Plugin implementation。
 
-同一 definition 可以同时含 Content 与 View；两类 artifact 必须全部构建成功后再作为一个 revision 提交。没有 renderer
-declaration 时，不加载 Federation builder，也不创建 producer。
+同一 definition 可以同时含 Content 与 View；发布包和 static/distribution build 中，两类 artifact 必须全部构建成功后再作为
+一个 revision 提交。开发 host 会先发布 Content/topology，再在后台补齐缺失 producer；未就绪 View 显示构建中，
+producer 失败时在对应位置显示错误。
+没有 renderer declaration 时，不加载 Federation builder，也不创建 producer。
 
 ## 数据库与 Node artifacts
 

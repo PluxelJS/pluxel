@@ -39,10 +39,11 @@ export function attachPluginArtifactCompiler(
 		throw new Error('[runtime-dev] artifact compiler is already attached')
 	}
 
-	const coordinator = ctx.workbench ? requireWorkbench(ctx).artifactCoordinator : undefined
+	const backend = ctx.workbench ? requireWorkbench(ctx) : undefined
+	const coordinator = backend?.artifactCoordinator
 	const compiler = new PluginArtifactCompiler(
 		ctx,
-		{ coordinator, viteServer: options.viteServer },
+		{ coordinator, producerStatus: backend?.producerStatus, viteServer: options.viteServer },
 		{ cacheDir: options.cacheDir, packageMode: options.packageMode },
 	)
 	const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>

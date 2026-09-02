@@ -111,6 +111,13 @@ export {
 	type WorkbenchResolvedContentArtifact,
 } from './services/workbench/WorkbenchContentArtifactService'
 export {
+	WorkbenchProducerStatusService,
+	type WorkbenchProducerBuildIdentity,
+	type WorkbenchProducerStatus,
+	type WorkbenchProducerStatusLookup,
+	type WorkbenchProducerStatusReporter,
+} from './services/workbench/WorkbenchProducerStatusService'
+export {
 	loadPackagedWorkbenchDeployment,
 	resolvePackagedNodeModule,
 } from './services/workbench/packaged-artifact'

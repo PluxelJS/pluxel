@@ -88,10 +88,16 @@ class KeyedSerialTaskQueue {
 // process-global project root. Same-root builds may run concurrently; switching roots waits
 // until the active cohort drains so one application cannot inspect another's shared winners.
 const federationBuilds = new FederationBuildCoordinator(2)
+const buildCacheTransactionQueue = new KeyedSerialTaskQueue()
 const outputTransactionQueue = new KeyedSerialTaskQueue()
 
 export function runWorkbenchFederationBuild<T>(applicationRoot: string, task: Task<T>): Promise<T> {
 	return federationBuilds.run(resolve(applicationRoot), task)
+}
+
+/** Serializes tools that share one persistent compiler/cache directory. */
+export function runWorkbenchBuildCacheTransaction<T>(cacheDir: string, task: Task<T>): Promise<T> {
+	return buildCacheTransactionQueue.run(resolve(cacheDir), task)
 }
 
 /** Serializes validation and immutable publication for one exact revision directory. */

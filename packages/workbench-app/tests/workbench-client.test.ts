@@ -64,6 +64,68 @@ function layout(): WorkbenchLayout {
 	})
 }
 
+function producerStatusLayout(reason: 'building' | 'failed'): WorkbenchLayout {
+	return Object.freeze({
+		profile: 1,
+		revision: reason === 'building' ? 8 : 9,
+		target: Object.freeze({ node, displayName: 'Bot Manager' }),
+		entries: Object.freeze([
+			Object.freeze({
+				descriptor: panelDescriptor,
+				target: Object.freeze({ node, displayName: 'Bot Manager' }),
+				renderer: node,
+				definitionRevisions: Object.freeze({ target: 1, renderer: 1 }),
+				placement: Object.freeze({ kind: 'tab' as const, label: 'Bots', order: 0 }),
+				federatedViewUnavailable:
+					reason === 'building'
+						? Object.freeze({ reason: 'building' as const })
+						: Object.freeze({
+								reason: 'failed' as const,
+								message: 'renderer syntax error',
+							}),
+			}),
+		]),
+	})
+}
+
+function routeConflictLayout(): WorkbenchLayout {
+	return Object.freeze({
+		profile: 1,
+		revision: 10,
+		target: Object.freeze({ node, displayName: 'Bot Manager' }),
+		entries: Object.freeze([
+			Object.freeze({
+				descriptor: panelDescriptor,
+				target: Object.freeze({ node, displayName: 'Bot Manager' }),
+				renderer: node,
+				definitionRevisions: Object.freeze({ target: 1, renderer: 1 }),
+				placement: Object.freeze({
+					kind: 'route' as const,
+					path: '/accounts/:accountId',
+					title: 'Account',
+					frame: 'shell' as const,
+					order: 0,
+				}),
+				federatedViewRef: federatedRef(panelDescriptor),
+			}),
+			Object.freeze({
+				descriptor: accountDescriptor,
+				target: Object.freeze({ node, displayName: 'Bot Manager' }),
+				renderer: node,
+				definitionRevisions: Object.freeze({ target: 1, renderer: 1 }),
+				placement: Object.freeze({
+					kind: 'route' as const,
+					path: '/accounts/:id',
+					title: 'Account',
+					frame: 'shell' as const,
+					order: 1,
+				}),
+				federatedViewRef: federatedRef(accountDescriptor),
+			}),
+		]),
+	})
+}
+
 function fixture() {
 	const dispose = vi.fn()
 	const read = vi.fn(async () => ({ ...layout(), [Symbol.dispose]: dispose }))
@@ -111,5 +173,90 @@ describe('one-epoch Workbench layout runtime', () => {
 		expect(source.runtime.getSnapshot(node).state).toBe('ready')
 		releaseReplay()
 		source.runtime[Symbol.dispose]()
+	})
+
+	it('publishes layout compilation failures as error snapshots', async () => {
+		const dispose = vi.fn()
+		const read = vi.fn(async () => ({ ...routeConflictLayout(), [Symbol.dispose]: dispose }))
+		const runtime = new WorkbenchLayoutRuntime({
+			layout: read,
+		} as unknown as RpcStub<WorkbenchSessionApi>)
+
+		try {
+			const release = runtime.retain(node)
+			await vi.waitFor(() => expect(runtime.getSnapshot(node).state).toBe('error'))
+			expect(runtime.getSnapshot(node).error?.message).toContain('ambiguous routes')
+			expect(read).toHaveBeenCalledOnce()
+			expect(dispose).toHaveBeenCalledOnce()
+			release()
+		} finally {
+			runtime[Symbol.dispose]()
+		}
+	})
+
+	it('refreshes building producer status inside the same session', async () => {
+		const dispose = vi.fn()
+		const read = vi
+			.fn()
+			.mockResolvedValueOnce({ ...producerStatusLayout('building'), [Symbol.dispose]: dispose })
+			.mockResolvedValueOnce({ ...producerStatusLayout('failed'), [Symbol.dispose]: dispose })
+		const runtime = new WorkbenchLayoutRuntime(
+			{
+				layout: read,
+			} as unknown as RpcStub<WorkbenchSessionApi>,
+			{ statusPollMs: 10 },
+		)
+
+		try {
+			const release = runtime.retain(node)
+			await ready(runtime)
+			expect(runtime.getSnapshot(node).layout?.revision).toBe(8)
+			expect(read).toHaveBeenCalledOnce()
+
+			await vi.waitFor(() => expect(runtime.getSnapshot(node).layout?.revision).toBe(9))
+			expect(read.mock.calls.length).toBeGreaterThanOrEqual(2)
+			expect(runtime.getSnapshot(node).tabs[0]).toMatchObject({
+				federatedViewUnavailable: {
+					reason: 'failed',
+					message: 'renderer syntax error',
+				},
+			})
+
+			release()
+		} finally {
+			runtime[Symbol.dispose]()
+		}
+		expect(dispose).toHaveBeenCalledTimes(2)
+	})
+
+	it('continues refreshing failed producer status inside the same session', async () => {
+		const dispose = vi.fn()
+		const read = vi
+			.fn()
+			.mockResolvedValueOnce({ ...producerStatusLayout('failed'), [Symbol.dispose]: dispose })
+			.mockResolvedValueOnce({ ...layout(), [Symbol.dispose]: dispose })
+		const runtime = new WorkbenchLayoutRuntime(
+			{
+				layout: read,
+			} as unknown as RpcStub<WorkbenchSessionApi>,
+			{ statusPollMs: 10 },
+		)
+
+		try {
+			const release = runtime.retain(node)
+			await ready(runtime)
+			expect(runtime.getSnapshot(node).layout?.revision).toBe(9)
+			expect(read).toHaveBeenCalledOnce()
+
+			await vi.waitFor(() => expect(runtime.getSnapshot(node).layout?.revision).toBe(7))
+			expect(read).toHaveBeenCalledTimes(2)
+			expect(runtime.getSnapshot(node).tabs[0]).toHaveProperty('federatedViewRef')
+			expect(runtime.getSnapshot(node).tabs[0]).not.toHaveProperty('federatedViewUnavailable')
+
+			release()
+		} finally {
+			runtime[Symbol.dispose]()
+		}
+		expect(dispose).toHaveBeenCalledTimes(2)
 	})
 })

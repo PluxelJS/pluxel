@@ -19,6 +19,7 @@ import {
 	WorkbenchContentArtifactService,
 	type WorkbenchContentArtifactLookup,
 } from './workbench/WorkbenchContentArtifactService'
+import { WorkbenchProducerStatusService } from './workbench/WorkbenchProducerStatusService'
 import { WorkbenchRegistry } from './workbench/WorkbenchRegistry'
 import {
 	expireWorkbenchSession,
@@ -39,6 +40,7 @@ export class WorkbenchBackend {
 	readonly artifacts: WorkbenchArtifactService
 	readonly content: WorkbenchContentArtifactService
 	readonly artifactCoordinator: WorkbenchArtifactCoordinator
+	readonly producerStatus: WorkbenchProducerStatusService
 	readonly registry: WorkbenchRegistry
 	private preparation?: Promise<void>
 
@@ -57,10 +59,12 @@ export class WorkbenchBackend {
 		this.artifacts = new WorkbenchArtifactService(root)
 		this.content = new WorkbenchContentArtifactService(root)
 		this.artifactCoordinator = new WorkbenchArtifactCoordinator(root, this.artifacts, this.content)
+		this.producerStatus = new WorkbenchProducerStatusService()
 		this.registry = new WorkbenchRegistry(
 			root,
 			registryArtifacts ?? this.artifacts,
 			registryContent ?? this.content,
+			this.producerStatus,
 		)
 	}
 
@@ -111,9 +115,10 @@ export class WorkbenchBackend {
 				// Carrier cleanup remains authoritative if an observer itself fails.
 			}
 		}
-		unsubscribeRegistry = this.registry.subscribe(() =>
-			expire(new Error('Workbench publication changed')),
-		)
+		unsubscribeRegistry = this.registry.subscribe((_revision, cause) => {
+			if (cause === 'producer-status') return
+			expire(new Error('Workbench publication changed'))
+		})
 		unsubscribeArtifacts = this.artifactCoordinator.subscribe(() =>
 			expire(new Error('Workbench artifact revision changed')),
 		)

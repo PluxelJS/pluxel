@@ -141,8 +141,10 @@ Plugin 不能修改 share scope、runtime plugin、manifest resolution 或 fallb
 未打开 View 不请求其 expose；一个 Plugin definition 的多个 Views 共用 producer，但按 expose/chunk 延迟加载。
 Content-only Plugin 没有 producer，不参与 shared compatibility 或 Bridge activation。
 
-Development Content/UI update 先构建并验证完整 immutable candidate。Mixed Content/MF tuple 原子提交；失败保持当前完整 inventory，成功 commit 后完整 document
-reload。Frontend 不实现页内 remote revision swap 或 last-known-old fallback。
+Development Content/UI update 先发布 topology/Content；缺失 producer 在后台构建，未就绪 View 保留 layout 位置并显示
+building 状态。后台 producer 成功后提交完整 tuple 并触发完整 document reload；失败不推进 producer inventory，而是
+显示 failed 状态和安全错误 message。Production/static build 仍要求完整 immutable candidate 一次性通过验证。Frontend 不实现
+页内 remote revision swap 或 last-known-old fallback。
 
 ## React state correctness
 

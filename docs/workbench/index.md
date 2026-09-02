@@ -434,7 +434,9 @@ MF2 manifest 和 JS/CSS 仍通过 HTTP 获取；Content plan 则随现有 `openE
 fetch。浏览器写入 `HttpOnly` cookie 还有一个 single-use cookie-commit POST。这些端点不承载 Workbench RPC。
 
 Plugin stop/replacement 会撤销 publication，并使当前 socket epoch 失效。Shell 销毁所有 active Bridges、释放 opened
-handles，再要求整页 reload。开发期 Content/MF candidate 只有全部验证并原子提交后才生效；失败不会替换当前完整版本。
+handles，再要求整页 reload。开发期 Content/topology 可以先发布，缺失 producer 在后台构建；未就绪或失败的 View/Attachment
+placement 会保留在原位置并显示构建中或构建失败状态，producer 成功提交后触发 reload。Production/static build 仍要求
+Content/MF candidate 全部验证并原子提交后才生效。
 
 Plugin 启停命令的 `ok: true` 表示运行意图与 graph commit 已应用，不保证每个 `init()` 或 drain 都成功。Workbench 会继续读取
 `report.core.summary.lifecycleReport`：目标 Plugin 有结构化 lifecycle issue 时直接显示该 issue 的安全 message；只有 report 没有
