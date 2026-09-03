@@ -21,5 +21,7 @@
   验证迁移已完成，Core/Runtime 身份与控制面的完整删除仍待决策。
 - [`NATIVE_ELYSIA_APPLICATION.md`](NATIVE_ELYSIA_APPLICATION.md)：核心 HTTP application contract 已进入当前架构；本文只应
   跟踪 beta.7 fail-fast、第二 carrier、portable WS 与 peer-range admission 等尚未完成的 gate。
+- [`IDENTITY_PLATFORM.md`](IDENTITY_PLATFORM.md)：尚未实现的自托管身份产品架构，研究 protocol-neutral Authority、认证方式、
+  OIDC/OAuth、实验性 GNAP 与独立管理面的所有权和信任边界。
 
 已实施架构与用户行为分别从 [`../README.md`](../README.md) 与 [`../../docs/index.md`](../../docs/index.md) 进入。
