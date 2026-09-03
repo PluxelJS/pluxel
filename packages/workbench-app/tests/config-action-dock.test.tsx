@@ -3,6 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import type { PluginNodeAddress } from '@pluxel/core'
 import { RuntimeManagementClientProvider } from '@pluxel/runtime/web/react'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -14,6 +15,7 @@ vi.mock('../src/app/plugins/pluginReadModels', () => ({
 }))
 
 import { ConfigForm } from '../src/app/plugins/config/ConfigForm'
+import { createManagementQueryClient } from '../src/app/managementQuery'
 
 const OWNER: PluginNodeAddress = {
 	definition: {
@@ -62,18 +64,21 @@ function ConfigHarness({
 		defaults: Record<string, unknown>
 	}>
 }) {
+	const queryClient = createManagementQueryClient()
 	return (
 		<RuntimeManagementClientProvider client={client}>
-			<MantineProvider>
-				<ConfigForm
-					owner={OWNER}
-					displayName="Config owner"
-					fields={rootFields}
-					savedConfig={savedConfig}
-					defaults={{ rootEnabled: false }}
-					sections={sections}
-				/>
-			</MantineProvider>
+			<QueryClientProvider client={queryClient}>
+				<MantineProvider>
+					<ConfigForm
+						owner={OWNER}
+						displayName="Config owner"
+						fields={rootFields}
+						savedConfig={savedConfig}
+						defaults={{ rootEnabled: false }}
+						sections={sections}
+					/>
+				</MantineProvider>
+			</QueryClientProvider>
 		</RuntimeManagementClientProvider>
 	)
 }

@@ -11,7 +11,9 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { RuntimeManagementClientProvider } from '../src/runtime'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { usePluginDetail } from '../src/app/plugins/detail/usePluginDetail'
+import { createManagementQueryClient } from '../src/app/managementQuery'
 
 const owner = node('OwnerPlugin')
 const ownerStatus = status(owner)
@@ -60,11 +62,14 @@ describe('plugin detail refresh', () => {
 		const container = document.createElement('div')
 		document.body.appendChild(container)
 		const root = createRoot(container)
+		const queryClient = createManagementQueryClient()
 		mounted.push(root)
 		await act(async () => {
 			root.render(
 				<RuntimeManagementClientProvider client={client}>
-					<Probe />
+					<QueryClientProvider client={queryClient}>
+						<Probe />
+					</QueryClientProvider>
 				</RuntimeManagementClientProvider>,
 			)
 			await Promise.resolve()
@@ -76,7 +81,7 @@ describe('plugin detail refresh', () => {
 			refresh = detail!.refetch()
 			await Promise.resolve()
 		})
-		expect(graphRead).toHaveBeenCalledOnce()
+		expect(graphRead).toHaveBeenCalledTimes(2)
 
 		await act(async () => {
 			releaseOldGraph(oldGraph)

@@ -11,6 +11,10 @@ React Bridge；Content 由 Shell 直接渲染，不生成 Plugin JavaScript。Pl
 Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
 普通 Plugin API 提供，不能依赖某个页面曾经打开。
 
+> 本页的 renderer scope、query 与 mutation API 只用于 Plugin-owned View/Attachment。官方 Shell 的 Management 页面是
+> host-private 实现：它按 authenticated document session 管理普通 DTO snapshot。两者虽然共用一条 Cap’n Web socket，
+> 但不共享 QueryClient、cache、resource owner 或公共 facade。
+
 ## 如何选择
 
 - 普通、非敏感的 Plugin 配置：直接声明 `configs.use()`，使用 Workbench 已有的标准 Config UI，不再创建

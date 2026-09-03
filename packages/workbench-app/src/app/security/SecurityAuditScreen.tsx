@@ -1,12 +1,13 @@
 import { Badge, Button, Group, Loader, Paper, Stack, Table, Text } from '@mantine/core'
 import { IconRefresh } from '@tabler/icons-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
 	type SecurityAuditEvent,
 	runtimeErrorMessage,
 	useRuntimeManagementClient,
 } from '../../runtime'
 import { EmptyState, ErrorState } from '../../components'
+import { managementQueryKeys } from '../managementQuery'
 
 const eventTimeFormatter = new Intl.DateTimeFormat(undefined, {
 	dateStyle: 'short',
@@ -30,27 +31,16 @@ function toneForEventStatus(status: SecurityAuditEvent['status']): string {
 
 export function SecurityAuditScreen() {
 	const security = useRuntimeManagementClient().security
-	const [events, setEvents] = useState<readonly SecurityAuditEvent[]>([])
-	const [loading, setLoading] = useState(true)
-	const [refreshing, setRefreshing] = useState(false)
-	const [error, setError] = useState<string | null>(null)
-
-	const refresh = useCallback(async () => {
-		setRefreshing(true)
-		setError(null)
-		try {
-			setEvents(await security.listEvents())
-		} catch (cause) {
-			setError(runtimeErrorMessage(cause, 'Failed to load security audit events'))
-		} finally {
-			setLoading(false)
-			setRefreshing(false)
-		}
-	}, [security])
-
-	useEffect(() => {
-		void refresh()
-	}, [refresh])
+	const query = useQuery<readonly SecurityAuditEvent[]>({
+		queryKey: managementQueryKeys.securityEvents(),
+		queryFn: () => security.listEvents(),
+	})
+	const events = query.data ?? []
+	const loading = query.isPending
+	const refreshing = query.isFetching
+	const error = query.error
+		? runtimeErrorMessage(query.error, 'Failed to load security audit events')
+		: null
 
 	if (loading) {
 		return (
@@ -63,7 +53,11 @@ export function SecurityAuditScreen() {
 
 	if (error) {
 		return (
-			<ErrorState title="Audit events unavailable" message={error} onRetry={() => void refresh()} />
+			<ErrorState
+				title="Audit events unavailable"
+				message={error}
+				onRetry={() => void query.refetch()}
+			/>
 		)
 	}
 
@@ -86,7 +80,7 @@ export function SecurityAuditScreen() {
 						variant="light"
 						size="xs"
 						loading={refreshing}
-						onClick={() => void refresh()}
+						onClick={() => void query.refetch()}
 					>
 						刷新
 					</Button>

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { type RuntimeManagementClient, useRuntimeManagementClient } from '../../runtime'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { runtimeErrorMessage, useRuntimeManagementClient } from '../../runtime'
+import { managementQueryKeys, refetchManagementQuery } from '../managementQuery'
 import {
-	PluginDependencyGraphResource,
+	buildPluginDependencyGraphProjection,
 	type PluginDependencyGraphProjection,
-} from './pluginDependencyGraphResource'
+} from './pluginDependencyGraphModel'
 
 export type PluginDependencyGraphState = Readonly<{
 	hasSnapshot: boolean
@@ -14,47 +15,22 @@ export type PluginDependencyGraphState = Readonly<{
 	refetch: () => Promise<void>
 }>
 
-const resources = new WeakMap<RuntimeManagementClient, PluginDependencyGraphResource>()
-
-function resourceFor(client: RuntimeManagementClient): PluginDependencyGraphResource {
-	let resource = resources.get(client)
-	if (!resource) {
-		resource = new PluginDependencyGraphResource(client)
-		resources.set(client, resource)
-	}
-	return resource
-}
-
-export function invalidatePluginDependencyGraph(client: RuntimeManagementClient): void {
-	resources.get(client)?.markStale()
-}
-
-export async function refreshPluginDependencyGraph(client: RuntimeManagementClient): Promise<void> {
-	await resources.get(client)?.load(true)
-}
-
 export function usePluginDependencyGraph(): PluginDependencyGraphState {
 	const client = useRuntimeManagementClient()
-	const resource = useMemo(() => resourceFor(client), [client])
-	const snapshot = useSyncExternalStore(
-		resource.subscribe,
-		resource.getSnapshot,
-		resource.getSnapshot,
-	)
-	useEffect(() => {
-		void resource.load()
-	}, [resource])
-	const refetch = useCallback(async () => {
-		resource.markStale()
-		await resource.load(true)
-	}, [resource])
+	const queryClient = useQueryClient()
+	const query = useQuery({
+		queryKey: managementQueryKeys.pluginDependencyGraph(),
+		queryFn: async () => buildPluginDependencyGraphProjection(await client.dependencies.graph()),
+	})
 
 	return {
-		hasSnapshot: snapshot.graph !== null,
-		graph: snapshot.graph,
-		isLoading: snapshot.isLoading,
-		isStale: snapshot.isStale,
-		...(snapshot.error === undefined ? {} : { error: snapshot.error }),
-		refetch,
+		hasSnapshot: query.data !== undefined,
+		graph: query.data ?? null,
+		isLoading: query.isPending,
+		isStale: query.isFetching && query.data !== undefined,
+		...(query.error ? { error: runtimeErrorMessage(query.error, '无法读取插件依赖图') } : {}),
+		refetch: async () => {
+			await refetchManagementQuery(queryClient, managementQueryKeys.pluginDependencyGraph())
+		},
 	}
 }

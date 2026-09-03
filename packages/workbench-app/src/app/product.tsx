@@ -1,8 +1,10 @@
-import { createContext, type ReactNode, useContext, useEffect, useState } from 'react'
+import { createContext, type ReactNode, useContext, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import type { RuntimeMeta } from '@pluxel/runtime/web'
 
 import type { RuntimeManagementClient } from '../runtime'
+import { managementQueryKeys } from './managementQuery'
 
 const ProductContext = createContext<ProductDescriptor | null | undefined>(undefined)
 const RuntimeMetaContext = createContext<RuntimeMeta | null | undefined>(undefined)
@@ -14,24 +16,12 @@ export function ProductProvider({
 	children: ReactNode
 	client: RuntimeManagementClient
 }) {
-	const [meta, setMeta] = useState<RuntimeMeta | null>(null)
+	const { data: meta = null } = useQuery({
+		queryKey: managementQueryKeys.runtimeMeta(),
+		queryFn: () => client.describe(),
+		staleTime: Number.POSITIVE_INFINITY,
+	})
 	const product = meta?.application.product ?? null
-
-	useEffect(() => {
-		let active = true
-		async function loadProduct(): Promise<void> {
-			try {
-				const nextMeta = await client.describe()
-				if (active) setMeta(nextMeta)
-			} catch (error: unknown) {
-				console.error('[workbench] failed to load host product metadata', error)
-			}
-		}
-		void loadProduct()
-		return () => {
-			active = false
-		}
-	}, [client])
 
 	useEffect(() => {
 		document.title = product ? `${product.displayName} Workbench` : 'Pluxel Workbench'

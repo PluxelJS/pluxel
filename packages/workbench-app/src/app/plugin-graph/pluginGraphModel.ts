@@ -7,7 +7,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import type { PluginDependencyGraphEdge, PluginDependencyGraphNode } from '@pluxel/runtime/web'
-import type { PluginDependencyGraphProjection } from '../plugins/pluginDependencyGraphResource'
+import type { PluginDependencyGraphProjection } from '../plugins/pluginDependencyGraphModel'
 import type { PluginGraphFocus } from './pluginGraphRoute'
 
 export type PluginGraphView = 'effective' | 'declaration'

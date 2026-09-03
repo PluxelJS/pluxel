@@ -1,7 +1,7 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { PluginDependencyGraphSnapshot, PluginStatusSnapshot } from '@pluxel/runtime/web'
 import { describe, expect, it } from 'vitest'
-import { buildPluginDependencyGraphProjection } from '../src/app/plugins/pluginDependencyGraphResource'
+import { buildPluginDependencyGraphProjection } from '../src/app/plugins/pluginDependencyGraphModel'
 import { selectPluginDependencyDetail } from '../src/app/plugins/pluginDependencyGraphSelectors'
 
 const owner = node('OwnerPlugin')

@@ -1,5 +1,6 @@
 import { Box } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo } from 'react'
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { FieldNode } from 'valibot-form'
@@ -58,6 +59,7 @@ export function ConfigTabContent({
 }) {
 	const notify = useNotify()
 	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const initialValue = useMemo(
 		() => ({ ...defaultValue, ...savedValue }),
 		[defaultValue, savedValue],
@@ -80,8 +82,8 @@ export function ConfigTabContent({
 					if (result.ok === false) {
 						if (result.state === 'unknown') {
 							await Promise.all([
-								refreshPluginConfig(management, owner),
-								refreshPluginReadModels(management),
+								refreshPluginConfig(queryClient, owner),
+								refreshPluginReadModels(queryClient),
 							])
 						}
 						notify({
@@ -91,8 +93,8 @@ export function ConfigTabContent({
 						})
 						return
 					}
-					commitPluginConfig(management, owner, result.config)
-					await refreshPluginReadModels(management)
+					commitPluginConfig(queryClient, owner, result.config)
+					await refreshPluginReadModels(queryClient)
 					formApi.reset(value)
 					if (result.application === 'saved-not-applied') {
 						notify({
@@ -115,7 +117,17 @@ export function ConfigTabContent({
 					}
 				},
 			}),
-		[fields, initialValue, management, notify, owner, path, persistedValue, savedValue],
+		[
+			fields,
+			initialValue,
+			management,
+			notify,
+			owner,
+			path,
+			persistedValue,
+			queryClient,
+			savedValue,
+		],
 	)
 
 	return (

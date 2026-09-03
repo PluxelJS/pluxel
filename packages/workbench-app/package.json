@@ -29,6 +29,7 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@tanstack/react-hotkeys": "catalog:frontend",
+		"@tanstack/react-query": "catalog:frontend",
 		"@tanstack/react-router": "catalog:frontend",
 		"@tanstack/react-store": "catalog:frontend",
 		"@tanstack/react-virtual": "catalog:frontend",

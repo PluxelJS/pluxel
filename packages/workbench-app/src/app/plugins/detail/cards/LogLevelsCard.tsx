@@ -5,7 +5,8 @@ import {
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
 	runtimeErrorMessage,
 	useRuntimeManagementClient,
@@ -13,12 +14,18 @@ import {
 	type RuntimePluginLogLevel,
 	type VersionedPluginLogPolicySnapshot,
 } from '../../../../runtime'
+import { managementQueryKeys } from '../../../managementQuery'
 
 type Snapshot = VersionedPluginLogPolicySnapshot
 type Mutation = Pick<Snapshot, 'revision' | 'persistence'>
+type PolicyCommand =
+	| Readonly<{ kind: 'plugin'; owner: PluginNodeAddress; level: RuntimePluginLogLevel | null }>
+	| Readonly<{ kind: 'default'; level: RuntimePluginLogLevel }>
+	| Readonly<{ kind: 'reset' }>
 
 const LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const
 const LEVEL_SET = new Set<string>(LEVELS)
+const LOG_POLICY_MUTATION_KEY = ['management', 'logging', 'update-policy'] as const
 
 const LEVEL_OPTIONS: Array<{ value: LogLevel; label: string }> = [
 	{ value: 'trace', label: 'trace' },
@@ -41,27 +48,50 @@ export function LogLevelsCard({
 	compact?: boolean
 }) {
 	const management = useRuntimeManagementClient()
-	const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-	const [loading, setLoading] = useState(false)
-	const [saving, setSaving] = useState(false)
-	const [error, setError] = useState<string | null>(null)
-
-	const refresh = useCallback(async () => {
-		setLoading(true)
-		setError(null)
-		try {
-			const res = await management.logging.getPolicy()
-			setSnapshot(res)
-		} catch (e) {
-			setError(runtimeErrorMessage(e))
-		} finally {
-			setLoading(false)
-		}
-	}, [management.logging])
-
-	useEffect(() => {
-		void refresh()
-	}, [refresh])
+	const queryClient = useQueryClient()
+	const policyQuery = useQuery({
+		queryKey: managementQueryKeys.loggingPolicy(),
+		queryFn: () => management.logging.getPolicy(),
+	})
+	const snapshot = policyQuery.data ?? null
+	const policyMutation = useMutation({
+		mutationKey: LOG_POLICY_MUTATION_KEY,
+		// Every write consumes the shared revision. Serializing within this session
+		// lets a queued write observe the cache committed by the preceding one.
+		scope: { id: 'management:logging-policy' },
+		mutationFn: async (command: PolicyCommand): Promise<Snapshot> => {
+			const current = queryClient.getQueryData<Snapshot>(managementQueryKeys.loggingPolicy())
+			if (!current) throw new Error('Plugin log policy is not loaded')
+			if (command.kind === 'reset') return management.logging.resetPolicy(current.revision)
+			let updated: Mutation
+			if (command.kind === 'default') {
+				updated = await management.logging.setDefaultLevel(current.revision, command.level)
+				return { ...current, ...updated, defaultLevel: command.level }
+			}
+			updated = command.level
+				? await management.logging.setPluginLevel(current.revision, command.owner, command.level)
+				: await management.logging.clearPluginLevel(current.revision, command.owner)
+			const overrides = current.overrides.filter(
+				(entry) => !pluginNodeAddressEqual(entry.owner, command.owner),
+			)
+			if (command.level) overrides.push({ owner: command.owner, level: command.level })
+			return { ...current, ...updated, overrides }
+		},
+		onSuccess: (next) => {
+			queryClient.setQueryData(managementQueryKeys.loggingPolicy(), next)
+		},
+		onError: async () => {
+			await queryClient.invalidateQueries({
+				queryKey: managementQueryKeys.loggingPolicy(),
+				exact: true,
+				refetchType: 'all',
+			})
+		},
+	})
+	const loading = policyQuery.isFetching
+	const saving = useIsMutating({ mutationKey: LOG_POLICY_MUTATION_KEY, exact: true }) > 0
+	const errorCause = policyMutation.error ?? policyQuery.error
+	const error = errorCause ? runtimeErrorMessage(errorCause) : null
 
 	const currentDefault = snapshot?.defaultLevel ?? 'info'
 	const currentPlugin = snapshot?.overrides.find((entry) =>
@@ -71,93 +101,31 @@ export function LogLevelsCard({
 	const pluginSelectValue = currentPlugin === undefined ? '__inherit__' : currentPlugin
 	const defaultSelectValue = currentDefault
 
-	const setPluginLevel = useCallback(
-		async (next: string | null) => {
-			setSaving(true)
-			setError(null)
-			try {
-				if (!snapshot) throw new Error('Plugin log policy is not loaded')
-				let updated: Mutation
-				if (next === '__inherit__') {
-					updated = await management.logging.clearPluginLevel(snapshot.revision, owner)
-				} else if (next === '__off__') {
-					updated = await management.logging.setPluginLevel(snapshot.revision, owner, 'off')
-				} else {
-					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					updated = await management.logging.setPluginLevel(snapshot.revision, owner, next)
-				}
-				setSnapshot((previous) => {
-					if (!previous) return previous
-					const overrides = previous.overrides.filter(
-						(entry) => !pluginNodeAddressEqual(entry.owner, owner),
-					)
-					if (next !== '__inherit__') {
-						overrides.push({ owner, level: next === '__off__' ? 'off' : (next as LogLevel) })
-					}
-					return { ...previous, ...updated, overrides }
-				})
-			} catch (e) {
-				setError(runtimeErrorMessage(e))
-			} finally {
-				setSaving(false)
-			}
-		},
-		[management.logging, owner, snapshot],
-	)
+	const setPluginLevel = (next: string | null) => {
+		if (next === '__inherit__') {
+			policyMutation.mutate({ kind: 'plugin', owner, level: null })
+			return
+		}
+		if (next === '__off__') {
+			policyMutation.mutate({ kind: 'plugin', owner, level: 'off' })
+			return
+		}
+		if (!next || !isLogLevel(next)) return
+		policyMutation.mutate({ kind: 'plugin', owner, level: next })
+	}
 
-	const deleteRule = useCallback(
-		async (ruleOwner: PluginNodeAddress) => {
-			setSaving(true)
-			setError(null)
-			try {
-				if (!snapshot) throw new Error('Plugin log policy is not loaded')
-				const updated = await management.logging.clearPluginLevel(snapshot.revision, ruleOwner)
-				setSnapshot((previous) => {
-					if (!previous) return previous
-					const overrides = previous.overrides.filter(
-						(entry) => !pluginNodeAddressEqual(entry.owner, ruleOwner),
-					)
-					return { ...previous, ...updated, overrides }
-				})
-			} catch (e) {
-				setError(runtimeErrorMessage(e))
-			} finally {
-				setSaving(false)
-			}
-		},
-		[management.logging, snapshot],
-	)
+	const deleteRule = (ruleOwner: PluginNodeAddress) => {
+		policyMutation.mutate({ kind: 'plugin', owner: ruleOwner, level: null })
+	}
 
-	const setDefaultLevel = useCallback(
-		async (next: string | null) => {
-			setSaving(true)
-			setError(null)
-			try {
-				if (!snapshot) throw new Error('Plugin log policy is not loaded')
-				let updated: Mutation
-				if (next === '__off__') {
-					updated = await management.logging.setDefaultLevel(snapshot.revision, 'off')
-				} else {
-					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					updated = await management.logging.setDefaultLevel(snapshot.revision, next)
-				}
-				setSnapshot((previous) =>
-					previous
-						? {
-								...previous,
-								...updated,
-								defaultLevel: next === '__off__' ? 'off' : (next as LogLevel),
-							}
-						: previous,
-				)
-			} catch (e) {
-				setError(runtimeErrorMessage(e))
-			} finally {
-				setSaving(false)
-			}
-		},
-		[management.logging, snapshot],
-	)
+	const setDefaultLevel = (next: string | null) => {
+		if (next === '__off__') {
+			policyMutation.mutate({ kind: 'default', level: 'off' })
+			return
+		}
+		if (!next || !isLogLevel(next)) return
+		policyMutation.mutate({ kind: 'default', level: next })
+	}
 
 	const overrides = useMemo(() => {
 		const levels = snapshot?.overrides
@@ -175,19 +143,7 @@ export function LogLevelsCard({
 		return out
 	}, [snapshot])
 
-	const clearAll = useCallback(async () => {
-		setSaving(true)
-		setError(null)
-		try {
-			if (!snapshot) throw new Error('Plugin log policy is not loaded')
-			const next = await management.logging.resetPolicy(snapshot.revision)
-			setSnapshot(next)
-		} catch (e) {
-			setError(runtimeErrorMessage(e))
-		} finally {
-			setSaving(false)
-		}
-	}, [management.logging, snapshot])
+	const clearAll = () => policyMutation.mutate({ kind: 'reset' })
 
 	return (
 		<Stack gap={compact ? 'xs' : 'sm'} style={compact ? { minHeight: 0 } : undefined}>
@@ -205,7 +161,7 @@ export function LogLevelsCard({
 						variant="default"
 						loading={loading}
 						disabled={saving}
-						onClick={() => void refresh()}
+						onClick={() => void policyQuery.refetch()}
 					>
 						刷新
 					</Button>

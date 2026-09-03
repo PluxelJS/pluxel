@@ -5,12 +5,14 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
 	runtimeErrorMessage,
 	useRuntimeManagementClient,
 	type PluginConsumerRequirementState,
 } from '../../../runtime'
 import { usePluginScope } from './context'
+import { managementQueryKeys } from '../../managementQuery'
 
 export const FOLLOW_DEFAULT_VALUE = 'follow-default'
 const PROVIDER_VALUE_PREFIX = 'provider:'
@@ -85,23 +87,19 @@ export function buildConsumerOverrideSelection(row: PluginConsumerRequirementSta
 	})
 }
 
-type ConsumerRequirementsSnapshot = Readonly<{
-	ownerKey: string
-	items: readonly PluginConsumerRequirementState[]
-}>
-
 export function usePluginDependencyControls() {
 	const { owner, refetch } = usePluginScope()
 	const management = useRuntimeManagementClient()
 	const ownerKey = pluginNodeIndexKey(owner)
-	const [snapshot, setSnapshot] = useState<ConsumerRequirementsSnapshot | null>(null)
-	const [loadingOwner, setLoadingOwner] = useState<string | null>(null)
-	const [errorByOwner, setErrorByOwner] = useState<Readonly<{
-		ownerKey: string
-		error: string
-	}> | null>(null)
+	const requirementsQuery = useQuery<readonly PluginConsumerRequirementState[]>({
+		queryKey: managementQueryKeys.consumerRequirements(owner),
+		queryFn: async () => {
+			const result = await management.dependencies.inspectConsumerRequirements(owner)
+			if (result.ok === false) throw new Error(result.error)
+			return result.items
+		},
+	})
 	const [pendingKeys, setPendingKeys] = useState(() => new Set<string>())
-	const requestIdRef = useRef(0)
 	const pendingKeysRef = useRef(new Set<string>())
 	const mountedRef = useRef(false)
 
@@ -112,30 +110,9 @@ export function usePluginDependencyControls() {
 		}
 	}, [])
 
-	const load = useCallback(async () => {
-		const requestId = ++requestIdRef.current
-		setLoadingOwner(ownerKey)
-		try {
-			const result = await management.dependencies.inspectConsumerRequirements(owner)
-			if (result.ok === false) throw new Error(result.error)
-			if (!mountedRef.current || requestIdRef.current !== requestId) return
-			setSnapshot(Object.freeze({ ownerKey, items: result.items }))
-			setErrorByOwner(null)
-		} catch (error) {
-			if (!mountedRef.current || requestIdRef.current !== requestId) return
-			setErrorByOwner({ ownerKey, error: runtimeErrorMessage(error, '无法读取依赖实现') })
-		} finally {
-			if (mountedRef.current && requestIdRef.current === requestId) setLoadingOwner(null)
-		}
-	}, [management.dependencies, owner, ownerKey])
-
-	useEffect(() => {
-		void load()
-	}, [load])
-
 	const refreshAll = useCallback(async () => {
-		await Promise.all([load(), refetch()])
-	}, [load, refetch])
+		await Promise.all([requirementsQuery.refetch(), refetch()])
+	}, [refetch, requirementsQuery])
 
 	const runPending = useCallback(
 		async <T>(key: string, operation: () => Promise<T>): Promise<T> => {
@@ -217,7 +194,7 @@ export function usePluginDependencyControls() {
 		[management.forks, ownerKey, refreshAll, runPending],
 	)
 
-	const requirements = snapshot?.ownerKey === ownerKey ? snapshot.items : null
+	const requirements = requirementsQuery.data ?? null
 	const byRequirement = useMemo(
 		() =>
 			new Map(
@@ -232,8 +209,10 @@ export function usePluginDependencyControls() {
 	return {
 		requirements,
 		byRequirement,
-		isLoading: loadingOwner === ownerKey,
-		error: errorByOwner?.ownerKey === ownerKey ? errorByOwner.error : undefined,
+		isLoading: requirementsQuery.isPending,
+		error: requirementsQuery.error
+			? runtimeErrorMessage(requirementsQuery.error, '无法读取依赖实现')
+			: undefined,
 		refresh: refreshAll,
 		isConsumerOverridePending(requirement: PluginDefinitionAddress): boolean {
 			return pendingKeys.has(

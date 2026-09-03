@@ -1,23 +1,7 @@
 import type { PluginNodeAddress } from '@pluxel/core'
+import type { QueryClient } from '@tanstack/react-query'
 import type { RuntimeManagementClient } from '@pluxel/runtime/web'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const readModelMocks = vi.hoisted(() => ({
-	invalidateGraph: vi.fn(),
-	invalidateOverview: vi.fn(),
-	refreshGraph: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-	refreshOverview: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-}))
-
-vi.mock('../src/app/plugins/pluginDependencyGraph', () => ({
-	invalidatePluginDependencyGraph: readModelMocks.invalidateGraph,
-	refreshPluginDependencyGraph: readModelMocks.refreshGraph,
-}))
-
-vi.mock('../src/app/plugins/pluginOverview', () => ({
-	invalidatePluginOverview: readModelMocks.invalidateOverview,
-	refreshPluginOverview: readModelMocks.refreshOverview,
-}))
 
 import { refreshPluginReadModels } from '../src/app/plugins/pluginReadModels'
 import {
@@ -33,20 +17,23 @@ const address = {
 	variant: 'default',
 } as const satisfies PluginNodeAddress
 
+function queryClientDouble() {
+	return {
+		cancelQueries: vi.fn().mockResolvedValue(undefined),
+		invalidateQueries: vi.fn().mockResolvedValue(undefined),
+	} as unknown as QueryClient
+}
+
 describe('plugin read model refresh', () => {
-	beforeEach(() => {
-		vi.clearAllMocks()
-	})
+	beforeEach(() => vi.clearAllMocks())
 
-	it('invalidates and refreshes overview and an existing lazy graph together', async () => {
-		const client = {} as RuntimeManagementClient
+	it('cancels stale reads, invalidates both models, and awaits authoritative refetches', async () => {
+		const queryClient = queryClientDouble()
 
-		await refreshPluginReadModels(client)
+		await refreshPluginReadModels(queryClient)
 
-		expect(readModelMocks.invalidateOverview).toHaveBeenCalledWith(client)
-		expect(readModelMocks.invalidateGraph).toHaveBeenCalledWith(client)
-		expect(readModelMocks.refreshOverview).toHaveBeenCalledWith(client)
-		expect(readModelMocks.refreshGraph).toHaveBeenCalledWith(client)
+		expect(queryClient.cancelQueries).toHaveBeenCalledTimes(2)
+		expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
 	})
 
 	it.each([
@@ -62,19 +49,18 @@ describe('plugin read model refresh', () => {
 			},
 		},
 	])('forces committed read-model alignment after a $label status mutation', async ({ result }) => {
+		const queryClient = queryClientDouble()
 		const client = {
-			plugins: {
-				setAutoStart: vi.fn().mockResolvedValue({ results: [result] }),
-			},
+			plugins: { setAutoStart: vi.fn().mockResolvedValue({ results: [result] }) },
 		} as unknown as RuntimeManagementClient
 
-		await setPluginAutoStarts(client, [{ address, autoStart: true }])
+		await setPluginAutoStarts(client, queryClient, [{ address, autoStart: true }])
 
-		expect(readModelMocks.refreshOverview).toHaveBeenCalledOnce()
-		expect(readModelMocks.refreshGraph).toHaveBeenCalledOnce()
+		expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
 	})
 
 	it('does not invalidate graph facts after an unchanged rejection', async () => {
+		const queryClient = queryClientDouble()
 		const client = {
 			plugins: {
 				applyLifecycleCommands: vi.fn().mockResolvedValue({
@@ -91,9 +77,21 @@ describe('plugin read model refresh', () => {
 			},
 		} as unknown as RuntimeManagementClient
 
-		await applyPluginLifecycleCommands(client, [{ address, command: 'start' }])
+		await applyPluginLifecycleCommands(client, queryClient, [{ address, command: 'start' }])
 
-		expect(readModelMocks.invalidateOverview).not.toHaveBeenCalled()
-		expect(readModelMocks.invalidateGraph).not.toHaveBeenCalled()
+		expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
+		expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
+	})
+
+	it('realigns read models when transport fails after a command may have committed', async () => {
+		const queryClient = queryClientDouble()
+		const client = {
+			plugins: { setAutoStart: vi.fn().mockRejectedValue(new Error('socket closed')) },
+		} as unknown as RuntimeManagementClient
+
+		await expect(
+			setPluginAutoStarts(client, queryClient, [{ address, autoStart: true }]),
+		).rejects.toThrow('socket closed')
+		expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
 	})
 })

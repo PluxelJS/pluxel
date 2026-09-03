@@ -2,6 +2,7 @@ import { Box, ScrollArea } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import type { PluginNodeAddress } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { FieldNode } from 'valibot-form'
 
 import { useRuntimeManagementClient } from '../../../runtime'
@@ -68,6 +69,7 @@ function ConfigFormInstance({
 	sections,
 }: ConfigFormProps & { sections: readonly PluginConfigSection[] }) {
 	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const notify = useNotify()
 	const visibleSections = useMemo<readonly PluginConfigSection[]>(
 		() => (sections.length > 0 ? sections : [{ path: [], fields, defaults, fieldName: '' }]),
@@ -178,8 +180,8 @@ function ConfigFormInstance({
 			if (result.ok === false) {
 				if (result.state === 'unknown') {
 					await Promise.all([
-						refreshPluginConfig(management, owner),
-						refreshPluginReadModels(management),
+						refreshPluginConfig(queryClient, owner),
+						refreshPluginReadModels(queryClient),
 					])
 				}
 				notify({
@@ -190,8 +192,8 @@ function ConfigFormInstance({
 				return
 			}
 
-			commitPluginConfig(management, owner, result.config)
-			await refreshPluginReadModels(management)
+			commitPluginConfig(queryClient, owner, result.config)
+			await refreshPluginReadModels(queryClient)
 			for (const key of dirtyKeys) {
 				const state = formStates[key]
 				if (state) formBridgesRef.current[key]?.reset(state.values)
@@ -214,6 +216,10 @@ function ConfigFormInstance({
 				})
 			}
 		} catch (cause) {
+			await Promise.allSettled([
+				refreshPluginConfig(queryClient, owner),
+				refreshPluginReadModels(queryClient),
+			])
 			notify({
 				title: '全部保存失败',
 				message: cause instanceof Error ? cause.message : '无法连接运行时',
@@ -229,6 +235,7 @@ function ConfigFormInstance({
 		management,
 		notify,
 		owner,
+		queryClient,
 		savedConfig,
 		savingAll,
 		sectionItems,

@@ -181,7 +181,7 @@ export const fontSelectionQuery = selectionScope.query(({ provider }) => ({
 	queryKey: ['fonts', 'selection'] as const,
 	queryFn: () => provider.snapshot(),
 }))
-export const setPreferredFont = selectionScope.mutation(({ provider }) => ({
+export const setPreferredFontMutation = selectionScope.mutation(({ provider }) => ({
 	mutationFn: (family: string | null) => provider.setPreferredFamily(family),
 	workbench: {
 		invalidates: [fontSelectionQuery],
@@ -190,7 +190,7 @@ export const setPreferredFont = selectionScope.mutation(({ provider }) => ({
 
 function FontSelectionPanel() {
 	const selection = fontSelectionQuery.useQuery()
-	const setPreferred = setPreferredFont.useMutation()
+	const setPreferred = setPreferredFontMutation.useMutation()
 	// render detached selection.data and call setPreferred.mutateAsync(family)
 }
 
@@ -209,7 +209,7 @@ export default selectionScope.render(FontSelectionPanel)
 
 这里的“选择”仍是 provider-wide preference。把选择器放到 Canvas、ECharts 或 Takumi 页面，不会把它变成
 consumer-owned state。完整业务能力见[字体插件](../plugins/rendering/fonts.md)，真实源码位于
-`plugins/render/fonts/src/workbench.ts`、`src/index.ts`、`src/ui/selection.scope.ts` 和 `src/ui/index.tsx`。
+`plugins/render/fonts/src/workbench.ts`、`src/index.ts`、`src/ui/selection.scope.ts` 和 `src/ui/selection.tsx`。
 
 ## 多 collection 且 consumer 自有选择
 
@@ -346,7 +346,7 @@ import { FontManagerWorkbench } from '../workbench.ts'
 const collectionPickerScope = createWorkbenchRenderer(FontManagerWorkbench.collectionPicker)
 const fontCatalogQuery = collectionPickerScope.query(({ provider }) => ({
 	queryKey: ['fonts', 'catalog'] as const,
-	queryFn: () => provider.list(),
+	queryFn: () => provider.list({ cursor: null, limit: 50 }),
 }))
 const fontSelectionQuery = collectionPickerScope.query(({ consumer }) => ({
 	queryKey: ['fonts', 'consumer-selection'] as const,

@@ -9,6 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { ConfigForm } from '../../../workbench-app/src/app/plugins/config/ConfigForm'
+import { ManagementQueryProvider } from '../../../workbench-app/src/app/managementQuery'
 import {
 	PluginWorkbenchAsideProvider,
 	usePluginWorkbenchAssistVisibility,
@@ -63,18 +64,20 @@ function ConfigHarness({
 	const resolvedClient = useMemo(() => client ?? createFakeManagementClient(), [client])
 	return (
 		<RuntimeManagementClientProvider client={resolvedClient}>
-			<MantineProvider>
-				<div data-dirty={dirty ? 'true' : 'false'}>
-					<ConfigForm
-						owner={OWNER}
-						displayName="Config owner"
-						fields={fields}
-						savedConfig={savedConfig}
-						defaults={defaults}
-						onDirtyChange={setDirty}
-					/>
-				</div>
-			</MantineProvider>
+			<ManagementQueryProvider>
+				<MantineProvider>
+					<div data-dirty={dirty ? 'true' : 'false'}>
+						<ConfigForm
+							owner={OWNER}
+							displayName="Config owner"
+							fields={fields}
+							savedConfig={savedConfig}
+							defaults={defaults}
+							onDirtyChange={setDirty}
+						/>
+					</div>
+				</MantineProvider>
+			</ManagementQueryProvider>
 		</RuntimeManagementClientProvider>
 	)
 }

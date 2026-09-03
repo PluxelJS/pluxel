@@ -22,7 +22,7 @@ export default defineStaticRuntime({
 				mode: 'memory',
 				snapshot: createHostRuntimeState(false),
 			},
-			workbench: { enabled: true },
+			workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
 			persistence: '.pluxel/static/persistence',
 			vault: {},
 		}

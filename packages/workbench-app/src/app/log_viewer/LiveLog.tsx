@@ -804,6 +804,7 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 		let subscription: Disposable | undefined
 		let initialized = false
 		const bufferedEvents: RuntimeLogEvent[] = []
+		let bootstrapOverflow = false
 		const seenSequences = new Set<string>()
 
 		if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
@@ -853,6 +854,10 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 			const unseen = lines.filter((line) => {
 				if (seenSequences.has(line.seq)) return false
 				seenSequences.add(line.seq)
+				if (seenSequences.size > CLIENT_RING_CAP * 2) {
+					const oldest = seenSequences.values().next().value
+					if (oldest !== undefined) seenSequences.delete(oldest)
+				}
 				return true
 			})
 			if (unseen.length === 0) return
@@ -901,8 +906,13 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 		void (async () => {
 			try {
 				subscription = await management.logs.follow({ streamId, filter: activeFilter }, (event) => {
-					if (!initialized) bufferedEvents.push(event)
-					else handleEvent(event)
+					if (!initialized) {
+						if (bufferedEvents.length < 1024) bufferedEvents.push(event)
+						else {
+							bootstrapOverflow = true
+							bufferedEvents.length = 0
+						}
+					} else handleEvent(event)
 				})
 				if (disposed) {
 					subscription[Symbol.dispose]()
@@ -922,8 +932,30 @@ export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Pr
 				if (disposed) return
 				onAppendLines(snapshot.lines)
 				initialized = true
-				for (const event of bufferedEvents.splice(0)) handleEvent(event)
+				if (bootstrapOverflow) {
+					const current = await fetchMeta()
+					if (disposed) return
+					setMeta(current)
+					const currentTail = seqToBigint(current.tailSeq) ?? 0n
+					const currentHead = seqToBigint(current.headSeq) ?? 1n
+					const recoveryStart =
+						currentTail > 0n
+							? currentTail - BigInt(Math.max(1, SNAPSHOT_MAX - 1)) + 1n
+							: currentHead
+					const recovery = await fetchRange(
+						current,
+						(recoveryStart < currentHead ? currentHead : recoveryStart).toString(10),
+						SNAPSHOT_MAX,
+					)
+					if (disposed) return
+					onAppendLines(recovery.lines)
+				} else {
+					for (const event of bufferedEvents.splice(0)) handleEvent(event)
+				}
 			} catch (error: unknown) {
+				subscription?.[Symbol.dispose]()
+				subscription = undefined
+				bufferedEvents.length = 0
 				setConnected(false)
 				setConnectionError(stringifyUnknown(error, '日志连接失败'))
 			}

@@ -5,7 +5,7 @@ import type {
 	PluginStatusSnapshot,
 } from '@pluxel/runtime/web'
 import { describe, expect, it } from 'vitest'
-import { buildPluginDependencyGraphProjection } from '../src/app/plugins/pluginDependencyGraphResource'
+import { buildPluginDependencyGraphProjection } from '../src/app/plugins/pluginDependencyGraphModel'
 import {
 	buildPluginGraphVisualModel,
 	describePluginGraphNode,

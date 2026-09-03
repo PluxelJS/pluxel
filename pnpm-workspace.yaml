@@ -123,6 +123,7 @@ catalogs:
     '@mantine/notifications': ^9.5.2
     '@module-federation/bridge-react': 2.9.0
     '@tanstack/query-core': ^5.102.8
+    '@tanstack/react-query': ^5.102.8
     '@tanstack/react-form': ^1.33.5
     '@tanstack/react-hotkeys': ^0.10.0
     '@tanstack/react-router': ^1.170.32

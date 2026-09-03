@@ -3,6 +3,7 @@ import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconPlayerStop, IconRotateClockwise } from '@tabler/icons-react'
 import { useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { formatPluginDefinitionReference, formatPluginNodeReference } from '@pluxel/core'
 import { useNotify } from '../../../hooks/useNotify'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../../runtime'
@@ -17,6 +18,7 @@ import { describePluginControl, describePluginLifecycleOutcome } from './pluginC
 
 export function ActionBar() {
 	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
 	const notify = useNotify()
 	const autoStartPendingRef = useRef(false)
@@ -30,7 +32,7 @@ export function ActionBar() {
 		autoStartPendingRef.current = true
 		setAutoStartPending(true)
 		try {
-			const result = await setPluginAutoStart(management, owner, autoStart)
+			const result = await setPluginAutoStart(management, queryClient, owner, autoStart)
 			if (result.ok === false) {
 				notify({
 					title: '自动启动策略更新失败',
@@ -64,7 +66,7 @@ export function ActionBar() {
 		lifecyclePendingRef.current = true
 		setLifecyclePending(command)
 		try {
-			const result = await applyPluginLifecycleCommand(management, owner, command)
+			const result = await applyPluginLifecycleCommand(management, queryClient, owner, command)
 			if (result.ok === false) {
 				notify({
 					title: '生命周期命令执行失败',

@@ -5,7 +5,8 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { IconRefresh, IconStar } from '@tabler/icons-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
 	runtimeErrorMessage,
 	useRuntimeManagementClient,
@@ -13,62 +14,32 @@ import {
 } from '../../../../runtime'
 import { useNotify } from '../../../hooks/useNotify'
 import { usePluginScope } from '../context'
+import { managementQueryKeys, refetchManagementQuery } from '../../../managementQuery'
 
 export function ProviderPolicyCard() {
 	const { owner, refetch } = usePluginScope()
 	const ownerKey = pluginNodeIndexKey(owner)
 	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const notify = useNotify()
-	const [policyByOwner, setPolicyByOwner] = useState(
-		() => new Map<string, PluginProviderPolicyInfo | null>(),
-	)
-	const [loadingOwners, setLoadingOwners] = useState(() => new Set<string>())
-	const [pendingOwners, setPendingOwners] = useState(() => new Set<string>())
-	const requestIdsRef = useRef(new Map<string, number>())
-	const pendingOwnersRef = useRef(new Set<string>())
-	const mountedRef = useRef(false)
-	const policy = policyByOwner.get(ownerKey) ?? null
-	const loading = loadingOwners.has(ownerKey)
-	const pending = pendingOwners.has(ownerKey)
-
-	useEffect(() => {
-		mountedRef.current = true
-		return () => {
-			mountedRef.current = false
-		}
-	}, [])
-
-	const load = useCallback(async () => {
-		const requestId = (requestIdsRef.current.get(ownerKey) ?? 0) + 1
-		requestIdsRef.current.set(ownerKey, requestId)
-		setLoadingOwners((previous) => new Set(previous).add(ownerKey))
-		try {
+	const policyQuery = useQuery<PluginProviderPolicyInfo>({
+		queryKey: managementQueryKeys.providerPolicy(owner),
+		queryFn: async () => {
 			const result = await management.dependencies.inspectProviderPolicy(owner)
 			if (result.ok === false) throw new Error(result.error)
-			if (!mountedRef.current || requestIdsRef.current.get(ownerKey) !== requestId) return
-			setPolicyByOwner((previous) => new Map(previous).set(ownerKey, result.value))
-		} catch (error) {
-			if (!mountedRef.current || requestIdsRef.current.get(ownerKey) !== requestId) return
-			setPolicyByOwner((previous) => new Map(previous).set(ownerKey, null))
-			notify({
-				title: '读取提供方策略失败',
-				message: runtimeErrorMessage(error, '无法读取提供方策略'),
-				color: 'red',
-			})
-		} finally {
-			if (mountedRef.current && requestIdsRef.current.get(ownerKey) === requestId) {
-				setLoadingOwners((previous) => {
-					const next = new Set(previous)
-					next.delete(ownerKey)
-					return next
-				})
-			}
-		}
-	}, [management.dependencies, notify, owner, ownerKey])
-
+			return result.value
+		},
+	})
+	const policy = policyQuery.data ?? null
+	const loading = policyQuery.isFetching
 	useEffect(() => {
-		void load()
-	}, [load])
+		if (!policyQuery.error) return
+		notify({
+			title: '读取提供方策略失败',
+			message: runtimeErrorMessage(policyQuery.error, '无法读取提供方策略'),
+			color: 'red',
+		})
+	}, [notify, policyQuery.error])
 
 	const optionsByKey = useMemo(
 		() =>
@@ -96,49 +67,55 @@ export function ProviderPolicyCard() {
 		return data
 	}, [optionsByKey, policy?.defaultProvider, policy?.options])
 
+	const updatePolicy = useMutation({
+		mutationKey: ['management', 'dependencies', 'set-provider-policy', ownerKey],
+		mutationFn: async (provider: PluginNodeAddress | null) => {
+			const result = await management.dependencies.setProviderPolicyDefault({
+				policyOwner: owner,
+				provider,
+			})
+			if (result.ok === false) {
+				if (result.state === 'unknown') {
+					await Promise.all([policyQuery.refetch(), refetch()])
+				}
+				throw new Error(result.error || result.code || '操作失败')
+			}
+			await Promise.all([
+				refetchManagementQuery(queryClient, managementQueryKeys.providerPolicy(owner)),
+				refetch(),
+			])
+			return provider
+		},
+		onSuccess: (provider) => {
+			notify({
+				title: '已更新默认实现',
+				message: provider
+					? (optionsByKey.get(pluginNodeIndexKey(provider))?.displayName ??
+						provider.definition.exportName)
+					: '未设置',
+				color: 'green',
+			})
+		},
+		onError: (error) => {
+			notify({
+				title: '更新失败',
+				message: runtimeErrorMessage(error, '操作失败'),
+				color: 'red',
+			})
+		},
+	})
+	const pending = updatePolicy.isPending
+
 	const handleChange = useCallback(
-		async (value: string | null) => {
-			if (!policy || pendingOwnersRef.current.has(ownerKey)) return
+		(value: string | null) => {
+			if (!policy || pending) return
 			const provider: PluginNodeAddress | null = value
 				? (optionsByKey.get(value)?.address ?? null)
 				: null
 			if (value && !provider) return
-			pendingOwnersRef.current.add(ownerKey)
-			setPendingOwners(new Set(pendingOwnersRef.current))
-			try {
-				const result = await management.dependencies.setProviderPolicyDefault({
-					policyOwner: owner,
-					provider,
-				})
-				if (result.ok === false) {
-					if (result.state === 'unknown') {
-						await load()
-						await refetch()
-					}
-					throw new Error(result.error || result.code || '操作失败')
-				}
-				await load()
-				await refetch()
-				notify({
-					title: '已更新默认实现',
-					message: provider
-						? (optionsByKey.get(pluginNodeIndexKey(provider))?.displayName ??
-							provider.definition.exportName)
-						: '未设置',
-					color: 'green',
-				})
-			} catch (error) {
-				notify({
-					title: '更新失败',
-					message: runtimeErrorMessage(error, '操作失败'),
-					color: 'red',
-				})
-			} finally {
-				pendingOwnersRef.current.delete(ownerKey)
-				if (mountedRef.current) setPendingOwners(new Set(pendingOwnersRef.current))
-			}
+			updatePolicy.mutate(provider)
 		},
-		[policy, load, management.dependencies, notify, owner, ownerKey, optionsByKey, refetch],
+		[optionsByKey, pending, policy, updatePolicy],
 	)
 
 	if (!policy) return null
@@ -184,7 +161,7 @@ export function ProviderPolicyCard() {
 					<ActionIcon
 						size="sm"
 						variant="subtle"
-						onClick={() => void load()}
+						onClick={() => void policyQuery.refetch()}
 						disabled={loading || pending}
 					>
 						<IconRefresh size={14} />

@@ -97,24 +97,11 @@ import { settingsScope } from './settings.scope.js'
 export default settingsScope.render(SettingsPage)
 ```
 
-Scope/resource 是 module-scoped immutable declaration；每次 Bridge mount 创建独立 renderer owner 和基于 query-core 的私有
-`QueryClient`，持有当前 roots/host、subscription 和 close state。Query result 进入 cache 前由 Runtime
-portable-detach、深冻结并释放 top-level transport result。这个 client 随 renderer owner 清理，不暴露 raw `QueryClient`、
-raw cache 或全局 client，也不进入 Module Federation shared set。Mutation 使用 scope-typed invalidation 和 per-hook
-single-flight；事件处理器使用 `mutate()`，需要 result 或显式流程编排时使用 `mutateAsync()`。低层
-`useWorkbench(exactDescriptor)`、`useRemoteValue()` 和 `detachWorkbenchPortableValue()` 继续用于 callback/progress/cancel、
-lossless event 或手工 ownership 场景。
-
-`query()` 声明无输入的具体 query，`queryFamily()` 按输入构建 query；每个 query 都提供领域稳定的
-`queryKey`。外层 factory 捕获 `api` / `provider` / `consumer`，`queryFn` 只接收 query-core 原生 context。
-TanStack 选项保持顶层；Workbench 扩展只放在 `workbench.subscribe` 和 `workbench.invalidates`。公开类型是
-明确的受控 allowlist，不承诺透传 TanStack Query 的全部 options；factory 返回的未知顶层或 `workbench`
-字段会在 TypeScript typecheck 时拒绝，并继续由 Runtime 在绕过类型时 fail-fast。
-Workbench 默认 `enabled: true`、`retry: false`；`staleTime` 在有 subscription 时默认 `Infinity`，否则为 `0`。
-Options factory 必须同步、确定且无副作用，因为 Hook resolution 与 family target preflight 都可能重复执行；
-读取、订阅和写入副作用分别属于 `queryFn`、`workbench.subscribe` 与 `mutationFn`。
-Hook result controls 只在产生它的 Hook 与当前 family input 仍 active 时有效；卸载或 input replacement 后以
-`WORKBENCH_RENDERER_HOOK_INACTIVE` 失败，不能从旧 closure 复活 cache observer。
+Scope/resource 是 module-scoped declaration；每次 Bridge mount 创建独立 renderer owner，并随 opened handle 一起清理。
+Snapshot/watch、mutation、portable detach 与低层 escape hatch 的完整契约只在
+[Workbench 作者文档](../../docs/workbench/index.md)维护；内部所有权、admission 与 teardown 不变量见
+[Workbench 架构](../../engineering/WORKBENCH.md)。Shell 的 Management client 位于 `/web`，Plugin renderer resource 位于
+`/workbench/react`；两者共用 transport，但不共享 facade、cache 或生命周期。
 
 跨 Plugin UI 使用 Attachment：provider 声明 renderer/API，consumer 用 `attachment.place(...)` 决定位置，并在
 publication binding 中传入 constructor-injected provider Plugin。Collection、account、font 等动态数据仍是 Plugin

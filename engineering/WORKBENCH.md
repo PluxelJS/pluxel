@@ -45,6 +45,11 @@ Attachment 只复用 provider 的界面，不建立新的业务依赖机制。
 
 ## 公开作者面
 
+本节只固定平台概念、包边界与 server-side ownership；作者可复制的 options、默认值、错误行为和完整示例以
+[`docs/workbench/index.md`](../docs/workbench/index.md) 为唯一权威，Attachment/manager/collection 的选择指南以
+[`docs/workbench/composition.md`](../docs/workbench/composition.md) 为唯一权威。Shell 的 React 状态分层与 Management query
+实现属于 [`engineering/FRONTEND.md`](./FRONTEND.md)，不能从“共用一条 WebSocket”推导为共用 renderer resource owner。
+
 ```ts
 workbench.define({ ... })
 workbench.content({ document, placement })

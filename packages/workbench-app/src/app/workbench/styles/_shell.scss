@@ -1192,11 +1192,15 @@
 		color: inherit;
 		font-size: 10px;
 		font-weight: 650;
+		max-width: 100%;
+		overflow: hidden;
 		left: auto;
 		opacity: 1;
 		padding: 0;
 		position: static;
 		transform: none;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.plx-workbench__activityItem:hover .plx-workbench__activityLabel,

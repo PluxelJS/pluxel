@@ -560,6 +560,9 @@ catalogs:
     '@tanstack/react-hotkeys':
       specifier: ^0.10.0
       version: 0.10.0
+    '@tanstack/react-query':
+      specifier: ^5.102.8
+      version: 5.102.8
     '@tanstack/react-router':
       specifier: ^1.170.32
       version: 1.170.32
@@ -1553,6 +1556,9 @@ importers:
       '@tanstack/react-hotkeys':
         specifier: catalog:frontend
         version: 0.10.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tanstack/react-query':
+        specifier: catalog:frontend
+        version: 5.102.8(react@19.2.8)
       '@tanstack/react-router':
         specifier: catalog:frontend
         version: 1.170.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -5662,6 +5668,11 @@ packages:
     peerDependencies:
       react: '>=16.8'
       react-dom: '>=16.8'
+
+  '@tanstack/react-query@5.102.8':
+    resolution: {integrity: sha512-TYBea4OuXWD7MhaSHq069TWbFe7rcwWN6kzT7JF0OKi1K6c1gTv2IzD6A6ExJsCMozdkqBWeuIUZmu4KQg0O5A==}
+    peerDependencies:
+      react: ^18 || ^19
 
   '@tanstack/react-router@1.170.32':
     resolution: {integrity: sha512-SIpxvaTKco100a5ZR3ePmArbhtm3XOx+w1dpGYY9gxHDta4iXSKDdQuhLonwJbIMkVJsU1rwXf0UDHMrF/1snw==}
@@ -12586,6 +12597,11 @@ snapshots:
       '@tanstack/react-store': 0.11.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
+
+  '@tanstack/react-query@5.102.8(react@19.2.8)':
+    dependencies:
+      '@tanstack/query-core': 5.102.8
+      react: 19.2.8
 
   '@tanstack/react-router@1.170.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:

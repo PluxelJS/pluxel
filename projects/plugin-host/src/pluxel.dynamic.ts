@@ -39,6 +39,6 @@ export default defineDynamicRuntimeConfig({
 		},
 	},
 	runtimeState: { mode: 'memory', snapshot: createHostRuntimeState(true) },
-	workbench: { enabled: true },
+	workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
 	vault: {},
 })

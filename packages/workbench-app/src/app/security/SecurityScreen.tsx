@@ -1,5 +1,6 @@
 import { Group, Loader, Stack, Text } from '@mantine/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
 	type SecurityAuditEvent,
 	type SecurityOverview,
@@ -23,20 +24,31 @@ import {
 	summarizeInventory,
 } from './securityModel'
 import { NamespaceInventoryPanel, SecurityControlsPane, SecurityToolbar } from './SecurityPanels'
+import { managementQueryKeys } from '../managementQuery'
 
 export function SecurityScreen() {
 	const notify = useNotify()
 	const security = useRuntimeManagementClient().security
 	const vaultApi = security.vault
-	const [overview, setOverview] = useState<SecurityOverview | null>(null)
-	const [events, setEvents] = useState<readonly SecurityAuditEvent[]>([])
-	const [loading, setLoading] = useState(true)
-	const [refreshing, setRefreshing] = useState(false)
+	const overviewQuery = useQuery<SecurityOverview>({
+		queryKey: managementQueryKeys.securityOverview(),
+		queryFn: () => security.readOverview(),
+	})
+	const eventsQuery = useQuery<readonly SecurityAuditEvent[]>({
+		queryKey: managementQueryKeys.securityEvents(),
+		queryFn: () => security.listEvents(),
+	})
+	const overview = overviewQuery.data ?? null
+	const events = eventsQuery.data ?? []
+	const loading = overviewQuery.isPending || eventsQuery.isPending
+	const refreshing = overviewQuery.isFetching || eventsQuery.isFetching
 	const [busy, setBusy] = useState<SecurityBusyKey | null>(null)
-	const [error, setError] = useState<string | null>(null)
 	const [deployRecipientsDraft, setDeployRecipientsDraft] = useState('')
 	const [namespaceSearch, setNamespaceSearch] = useState('')
 	const [generatedKeyPair, setGeneratedKeyPair] = useState<VaultKeyPair | null>(null)
+	const draftInitialized = useRef(false)
+	const queryError = overviewQuery.error ?? eventsQuery.error
+	const error = queryError ? runtimeErrorMessage(queryError, 'Failed to load security state') : null
 	const adminAccess = overview?.adminAccess ?? null
 	const vault = overview?.vault.enabled === true ? overview.vault.state : null
 	const deployRecipients = useMemo(
@@ -57,45 +69,24 @@ export function SecurityScreen() {
 		sanitizeSecuritySplitLayout,
 	)
 
-	const applyOverview = useCallback(
-		(nextOverview: SecurityOverview, options: RefreshOptions = {}) => {
-			setOverview(nextOverview)
-			if (!nextOverview.vault.enabled) {
-				setDeployRecipientsDraft('')
-				setGeneratedKeyPair(null)
-				return
-			}
-			if (options.syncDeployRecipientsDraft) {
+	const refresh = useCallback(
+		async (options: RefreshOptions = {}) => {
+			const [overviewResult] = await Promise.all([overviewQuery.refetch(), eventsQuery.refetch()])
+			const nextOverview = overviewResult.data
+			if (options.syncDeployRecipientsDraft && nextOverview?.vault.enabled) {
 				setDeployRecipientsDraft(formatRecipientsDraft(nextOverview.vault.state.deploy.recipients))
 			}
 		},
-		[],
-	)
-
-	const refresh = useCallback(
-		async (options: RefreshOptions = {}) => {
-			setRefreshing(true)
-			setError(null)
-			try {
-				const [nextOverview, nextEvents] = await Promise.all([
-					security.readOverview(),
-					security.listEvents(),
-				])
-				applyOverview(nextOverview, options)
-				setEvents(nextEvents)
-			} catch (cause) {
-				setError(runtimeErrorMessage(cause, 'Failed to load security state'))
-			} finally {
-				setLoading(false)
-				setRefreshing(false)
-			}
-		},
-		[applyOverview, security],
+		[eventsQuery, overviewQuery],
 	)
 
 	useEffect(() => {
-		void refresh({ syncDeployRecipientsDraft: true })
-	}, [refresh])
+		if (draftInitialized.current || !overview) return
+		draftInitialized.current = true
+		if (overview.vault.enabled) {
+			setDeployRecipientsDraft(formatRecipientsDraft(overview.vault.state.deploy.recipients))
+		}
+	}, [overview])
 
 	async function generateDeployKey() {
 		if (!vault) return

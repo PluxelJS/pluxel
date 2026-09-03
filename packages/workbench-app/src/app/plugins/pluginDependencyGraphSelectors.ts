@@ -1,6 +1,6 @@
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { PluginDependencyGraphEdge, PluginDependencyGraphNode } from '@pluxel/runtime/web'
-import type { PluginDependencyGraphProjection } from './pluginDependencyGraphResource'
+import type { PluginDependencyGraphProjection } from './pluginDependencyGraphModel'
 
 export type RequiredPluginDependencyEdge = Extract<PluginDependencyGraphEdge, { mode: 'required' }>
 export type OptionalPluginDependencyEdge = Extract<PluginDependencyGraphEdge, { mode: 'optional' }>

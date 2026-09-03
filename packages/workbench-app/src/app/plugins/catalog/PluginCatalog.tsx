@@ -10,6 +10,7 @@ import {
 	IconSearchOff,
 } from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { JSX } from 'react/jsx-runtime'
 import { PluginOrganizer } from './organizer/PluginOrganizer'
 import type { GroupConfig } from './organizer/types'
@@ -52,6 +53,7 @@ class PluginCatalogLayoutPersistenceUnknownError extends Error {}
 
 export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginRoute }) => {
 	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
 			return DEFAULT_STATUS_FILTER
@@ -289,6 +291,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			try {
 				const results = await setPluginAutoStarts(
 					management,
+					queryClient,
 					batch.map(({ address }) => ({ address, autoStart })),
 				)
 				const failed = results.filter((r) => !r.ok)
@@ -319,6 +322,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 											try {
 												const undoResults = await setPluginAutoStarts(
 													management,
+													queryClient,
 													batch.map(({ address, autoStart: previousAutoStart }) => ({
 														address,
 														autoStart: previousAutoStart,
@@ -374,7 +378,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setBulkBusy(false)
 			}
 		},
-		[management, selectedIds, notify, overview.statuses],
+		[management, selectedIds, notify, overview.statuses, queryClient],
 	)
 
 	const handleBulkAction = useCallback(

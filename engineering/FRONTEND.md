@@ -41,6 +41,31 @@ MF manifest、JS/CSS、字体/图片等静态文件仍走 HTTP；Content plan �
 HTTP fetch。浏览器提交 single-use ticket 写入 `HttpOnly` cookie 也使用一个 fixed same-origin POST。这些 HTTP 端点不承载
 Management 或 Plugin RPC。
 
+## 三类前端状态
+
+同一个 document 共用一条 Cap’n Web session，不代表所有 React 状态共享 owner、cache 或更新协议。Frontend 按事实分成三层：
+
+| 状态                      | 生命周期                       | 实现                                                                         | 不负责                                              |
+| ------------------------- | ------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------- |
+| Shell local UI            | document / workspace           | React state、TanStack Store、专用 controller                                 | RPC cache、capability ownership                     |
+| Shell Management snapshot | authenticated document session | Shell 私有 `@tanstack/react-query` `QueryClient` + `RuntimeManagementClient` | descriptor/scope provenance、per-open root disposal |
+| Plugin renderer resource  | 单次 `openEntry()` / Bridge    | `createWorkbenchRenderer()` 创建的 per-open owner，内部使用 Query Core       | Shell workspace、跨 open cache                      |
+
+Shell 不复用 Plugin renderer adapter，也不伪造 descriptor 或 opened owner。`RuntimeManagementClient` 已经负责 Cap’n Web
+result 的 wire validation、portable copy 与 top-level disposal；React Query 只负责本地 DTO 的去重、缓存、竞态隔离、loading/error
+状态和失效。Query cache 中禁止存放 `RpcStub`、opened handle、subscription 或其他需要显式释放的对象。
+
+Shell 的 QueryClient 与 authenticated session 同寿命，在 `App` 内创建，session epoch 销毁时整体清空。Query key 统一从
+`managementQueryKeys` 生成，并使用 canonical node identity。默认 `retry: false`、`networkMode: 'always'`、
+`refetchOnReconnect: false`；浏览器 online 状态不能代表现有 WebSocket 可用，socket broken 仍由 session gate 要求完整 reload。
+普通 snapshot 允许 stale window 与 window-focus refresh。Mutation 按实际受影响的 read model 精确失效；若写入结果为
+`unknown` 或 transport 在提交后断开，则先取消旧 fetch，再等待 authoritative refetch，不能让 mutation 前的晚到结果成为最终状态。
+
+共享 transport 也不等于 snapshot 自动实时。当前 Management 普通读取没有统一 change feed，实时一致性来自本地 mutation
+invalidation、显式刷新与 focus freshness；不能用短轮询冒充 WebSocket push。只有具备权威变更源与单调 revision 的领域才应增加
+push invalidation。Plugin snapshot/watch 继续 subscribe-before-read，日志等有序连续流继续使用专用协议、gap recovery 与有界
+buffer；layout、Content controller、entry activation、workspace draft 也不进入 React Query。
+
 ## Layout 和 entry activation
 
 Workbench layout 是 capability-free immutable snapshot。它包含 target、placement、openable identity、owner revisions 和
@@ -106,33 +131,15 @@ import { settingsScope } from './settings.scope.js'
 export default settingsScope.render(SettingsPage)
 ```
 
-Scope 和 resource 只是 module-scoped frozen declarations。每次 `render()` Bridge mount 创建独立 renderer owner 和基于
-query-core 的私有 `QueryClient`，持有当前 exact roots/host、subscription 和 close state；destroy 时一次清理。
-Scope module 和 symbol 默认与 descriptor entry 同名（`<entry>.scope.ts` / `<entry>Scope`），resource 按领域语义命名，
-避免同一 renderer 同时出现 entry 名、页面名和 Plugin 名三套别名。
-相同 descriptor 或 parameterized route 同时打开多次，也不会跨 handle、params、principal、session 或 owner generation 共享
-cache/invalidation。私有 client 随 renderer owner 清理；Workbench 不向 Remote 暴露 raw `QueryClient`、query cache/key 或
-document-global client。
+Scope/resource 是 module-scoped declaration；每次 `render()` Bridge mount 创建独立 renderer owner 和私有 Query Core client，
+持有当前 exact roots/host、subscription 与 close state。相同 descriptor 或 parameterized route 同时打开多次，也不会跨
+handle、params、principal、session 或 owner generation 共享 cache。Query result 在进入 cache 前完成 portable validation、
+deep copy/freeze 和 top-level result disposal；带 watch 的 snapshot 必须 subscribe-before-read，读取期间的 invalidation 合并成
+一次 follow-up。Renderer close 停用 controls、subscription 和 cache，晚到 RPC 只完成 detach/dispose，不能提交 React state。
 
-`scope.query(factory)` 声明无输入的具体 query，`scope.queryFamily((context, input) => options)` 按输入构建
-query；两者都产生具体、领域稳定的 `queryKey`。Workbench roots 只由外层 factory 捕获，`queryFn` 保持
-query-core 原生 context，例如 `signal` 和 `queryKey`。公开 query/mutation options 是明确的受控 allowlist，不承诺透传
-TanStack Query 的全部 options。TanStack 字段保持顶层；Workbench 自有扩展只在 `workbench.subscribe` 和
-`workbench.invalidates`。
-
-Query owner 对 awaited DTO 统一执行 portable validation、deep copy/freeze 和 top-level transport disposer。带 subscription 的 query 先 subscribe
-再 read；同 key 的 active observers 共享一个 subscription/read，read 期间 invalidation 合并为一次 follow-up。后台 failure 保留最近成功 data
-并标 stale/error。Concrete query 使用其 `queryKey`，query family 再按 input 构建 canonical portable key。
-资源级没有命令式 refetch/invalidate，只有当前 Hook result 的 `refetch()` / `invalidate()` controls 与 mutation 使用的
-scope-typed target；result 还投影 `status/data/error` 和 `isPending/isFetching/isStale`。Hook unmount 或 family input
-replacement 会使旧 controls 以 `WORKBENCH_RENDERER_HOOK_INACTIVE` 失败，避免 GC 后从旧 closure 复活无 sidecar observer。
-
-Mutation 是 per-hook single-flight，pending 时第二个调用稳定失败。`workbench.invalidates` 在远端调用前验证 target，
-renderer owner 仍 active 时在 mutation settle 后标 stale，包括 RPC reject 或 result detach failure；active query 自行刷新，mutation
-success 不等待该读取。普通事件处理器使用只把失败写入 Hook state 的 `mutate()`；需要 detached result 或显式流程编排时使用
-`mutateAsync()`。Renderer close 会停用私有 client，并使 pending `refetch()` / `mutateAsync()` 及时失败；无法取消的 RPC 仍可 settle，
-但晚到的 fulfilled DTO 会 detach/dispose，不更新 React。Mutation Hook 卸载前已接受的操作可继续 settle；卸载后旧 controls
-不能再启动新操作。
+公开 query/mutation options、默认值、错误码、inactive controls 与 typed invalidation 只由
+[`docs/workbench/index.md`](../docs/workbench/index.md) 定义；本文件不重复维护作者 API 教程。Frontend 实现只要求这些公共语义
+映射到 per-open owner，且不向 Remote 暴露 raw QueryClient、cache、socket 或 document-global client。
 
 `useWorkbench(exactDescriptor)` 同时完成 TypeScript API 推导和 runtime declaration identity 校验，并与
 `useRemoteValue()` / `createRemoteValue()` 一起保留为高级 escape hatch。后两者仍是 Plugin-owned `read()`/`watch()` 的小型
@@ -210,6 +217,7 @@ building 状态。后台 producer 成功后提交完整 tuple 并触发完整 do
 ## 实现入口
 
 - `packages/workbench-app/src/client.tsx`
+- `packages/workbench-app/src/app/managementQuery.tsx`
 - `packages/workbench-app/src/workbench/client.ts`
 - `packages/workbench-app/src/workbench/runtime.tsx`
 - `packages/workbench-app/src/app/workbench/`
