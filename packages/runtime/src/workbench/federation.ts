@@ -103,6 +103,8 @@ export type CreateWorkbenchViewHostInput = Readonly<{
 	document?: WorkbenchHostDocumentBindings
 }>
 
+const workbenchViewHostOwnerSignals = new WeakMap<WorkbenchViewHostHandle, AbortSignal>()
+
 /** Per-open host behavior scope, closed after Bridge destroy and before the Cap'n Web result. */
 export class WorkbenchViewHostHandle implements Disposable {
 	readonly facade: WorkbenchHostFacade
@@ -118,6 +120,7 @@ export class WorkbenchViewHostHandle implements Disposable {
 		this.#locale = readLocale(input.locale)
 		this.#colorScheme = readColorScheme(input.colorScheme)
 		this.#document = input.document
+		workbenchViewHostOwnerSignals.set(this, this.#scope.signal)
 		const navigation = input.navigation
 			? Object.freeze({
 					navigate: (path: string) => input.navigation!.navigate(readRelativePath(path)),
@@ -498,10 +501,15 @@ function bridgePayload(
 	host: WorkbenchViewHostHandle,
 	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer,
 ): WorkbenchBridgePayload {
+	const ownerSignal = workbenchViewHostOwnerSignals.get(host)
+	if (!ownerSignal) {
+		throw new TypeError('[workbench/federation] invalid Workbench view host owner')
+	}
 	return Object.freeze({
 		profile: 1,
 		handle,
 		host: host.facade,
+		ownerSignal,
 		...(paneLayoutRenderer === undefined ? {} : { paneLayoutRenderer }),
 	})
 }

@@ -5,6 +5,7 @@ const BUILD_PACKAGES: (string | RegExp)[] = ['@hono/vite-dev-server', '@rolldown
 const FRONTEND_PACKAGES: (string | RegExp)[] = [
 	/^@mantine\//,
 	/^@dnd-kit\//,
+	'@tanstack/query-core',
 	'@tanstack/react-form',
 	'@tanstack/react-router',
 	'@tanstack/react-virtual',

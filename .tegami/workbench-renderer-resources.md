@@ -14,17 +14,23 @@ packages:
 
 ## Add lifecycle-owned Workbench renderer resources
 
-Add exact descriptor-bound React renderer scopes with per-open query and mutation resources. Workbench
-now owns portable RPC result detachment, snapshot/watch consistency, canonical keyed invalidation,
-single-flight mutation state, and teardown of subscriptions, retries, and late transport results. Mutation
-Hooks provide `mutate()` for fire-and-observe event handlers and `mutateAsync()` for result-driven flows.
-Mutation hooks expose `mutate()` for event handlers and `mutateAsync()` when callers need the detached
-result or explicit sequencing; preflight and operation failures remain observable through Hook state.
+Add exact descriptor-bound React renderer scopes with per-open query and mutation resources backed by a
+private query-core `QueryClient`. Workbench owns portable RPC result detachment, subscription-driven
+snapshot consistency, typed invalidation, single-flight mutation state, and teardown of subscriptions and
+late transport results. Mutation hooks expose `mutate()` for event handlers and `mutateAsync()` when
+callers need the detached result or explicit sequencing; preflight and operation failures remain observable
+through Hook state.
 
-Keep resource declarations flat: queries accept top-level `watch`, mutations accept top-level static or
-input-derived `invalidates`, unkeyed queries are exact typed invalidation targets, and keyed queries expose
-only explicit `target(input)` and `all()` choices. Direct Cap'n Web query and mutation results infer their
-detached DTO types without author-side wrappers or result annotations.
+Declare concrete queries with `query(factory)` and input-dependent queries with `queryFamily(factory)`;
+both produce stable domain-readable query keys. Keep TanStack options at the top level while isolating
+Workbench-owned behavior under `workbench.subscribe` and `workbench.invalidates`. Concrete queries are
+exact typed invalidation targets, while query families expose only explicit `target(input)` and `all()`
+choices. Direct Cap'n Web query and mutation results infer their detached DTO types without author-side
+wrappers or result annotations.
+
+Limit instance controls to the active Hook and current query-family input. Reject calls through stale
+controls with `WORKBENCH_RENDERER_HOOK_INACTIVE`, preventing an observer from being resurrected without
+its typed invalidation sidecar after cache collection.
 
 Preserve exact View and Attachment API types in generated browser declarations, and allow one
 renderer-specific scope module to import its exact definition without executing server-only definition

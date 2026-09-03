@@ -91,10 +91,13 @@ import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
 import { SettingsWorkbench } from '../workbench.js'
 
 export const settingsScope = createWorkbenchRenderer(SettingsWorkbench.settings)
-export const settingsQuery = settingsScope.query({
-	queryFn: ({ api }) => api.snapshot(),
-	watch: ({ api }, invalidate) => api.watch(invalidate),
-})
+export const settingsQuery = settingsScope.query(({ api }) => ({
+	queryKey: ['settings', 'snapshot'] as const,
+	queryFn: () => api.snapshot(),
+	workbench: {
+		subscribe: ({ invalidate }) => api.watch(invalidate),
+	},
+}))
 
 // settings.tsx
 import { SettingsPage } from './settings-page.js'
@@ -103,24 +106,33 @@ import { settingsScope } from './settings.scope.js'
 export default settingsScope.render(SettingsPage)
 ```
 
-Scope 和 resource 只是 module-scoped frozen declarations。每次 `render()` Bridge mount 创建独立 renderer owner，持有当前
-exact root/host、query cache、watch subscription、retry timer、AbortController 和 mutation close signal；destroy 时一次清理。
+Scope 和 resource 只是 module-scoped frozen declarations。每次 `render()` Bridge mount 创建独立 renderer owner 和基于
+query-core 的私有 `QueryClient`，持有当前 exact roots/host、subscription 和 close state；destroy 时一次清理。
 Scope module 和 symbol 默认与 descriptor entry 同名（`<entry>.scope.ts` / `<entry>Scope`），resource 按领域语义命名，
 避免同一 renderer 同时出现 entry 名、页面名和 Plugin 名三套别名。
 相同 descriptor 或 parameterized route 同时打开多次，也不会跨 handle、params、principal、session 或 owner generation 共享
-cache/invalidation。Workbench 不使用 document-global `QueryClient`，也不向 Remote 暴露 raw query cache/key。
+cache/invalidation。私有 client 随 renderer owner 清理；Workbench 不向 Remote 暴露 raw `QueryClient`、query cache/key 或
+document-global client。
 
-Query owner 对 awaited DTO 统一执行 portable validation、deep copy/freeze 和 top-level transport disposer。Watch query 先 subscribe
-再 read；同 key 的 active observers 共享一个 watch/read，read 期间 invalidation 合并为一次 follow-up。后台 failure 保留最近成功 data
-并标 stale/error。Keyed query 使用 resource identity + canonical portable author key；unkeyed query 只有 resource identity。
+`scope.query(factory)` 声明无输入的具体 query，`scope.queryFamily((context, input) => options)` 按输入构建
+query；两者都产生具体、领域稳定的 `queryKey`。Workbench roots 只由外层 factory 捕获，`queryFn` 保持
+query-core 原生 context，例如 `signal` 和 `queryKey`。公开 query/mutation options 是明确的受控 allowlist，不承诺透传
+TanStack Query 的全部 options。TanStack 字段保持顶层；Workbench 自有扩展只在 `workbench.subscribe` 和
+`workbench.invalidates`。
+
+Query owner 对 awaited DTO 统一执行 portable validation、deep copy/freeze 和 top-level transport disposer。带 subscription 的 query 先 subscribe
+再 read；同 key 的 active observers 共享一个 subscription/read，read 期间 invalidation 合并为一次 follow-up。后台 failure 保留最近成功 data
+并标 stale/error。Concrete query 使用其 `queryKey`，query family 再按 input 构建 canonical portable key。
 资源级没有命令式 refetch/invalidate，只有当前 Hook result 的 `refetch()` / `invalidate()` controls 与 mutation 使用的
-scope-typed target；result 还投影 `status/data/error` 和 `isPending/isFetching/isStale`。
+scope-typed target；result 还投影 `status/data/error` 和 `isPending/isFetching/isStale`。Hook unmount 或 family input
+replacement 会使旧 controls 以 `WORKBENCH_RENDERER_HOOK_INACTIVE` 失败，避免 GC 后从旧 closure 复活无 sidecar observer。
 
-Mutation 是 per-hook single-flight，不自动 retry；pending 时第二个调用稳定失败。`invalidates` 在远端调用前验证 target，
+Mutation 是 per-hook single-flight，pending 时第二个调用稳定失败。`workbench.invalidates` 在远端调用前验证 target，
 renderer owner 仍 active 时在 mutation settle 后标 stale，包括 RPC reject 或 result detach failure；active query 自行刷新，mutation
 success 不等待该读取。普通事件处理器使用只把失败写入 Hook state 的 `mutate()`；需要 detached result 或显式流程编排时使用
-`mutateAsync()`。Renderer close 已清空 cache，并使 pending `refetch()` / `mutateAsync()` 及时失败；无法取消的 RPC 仍可 settle，
-但晚到的 fulfilled DTO 会 detach/dispose，不更新 React。
+`mutateAsync()`。Renderer close 会停用私有 client，并使 pending `refetch()` / `mutateAsync()` 及时失败；无法取消的 RPC 仍可 settle，
+但晚到的 fulfilled DTO 会 detach/dispose，不更新 React。Mutation Hook 卸载前已接受的操作可继续 settle；卸载后旧 controls
+不能再启动新操作。
 
 `useWorkbench(exactDescriptor)` 同时完成 TypeScript API 推导和 runtime declaration identity 校验，并与
 `useRemoteValue()` / `createRemoteValue()` 一起保留为高级 escape hatch。后两者仍是 Plugin-owned `read()`/`watch()` 的小型
@@ -175,6 +187,7 @@ Plugin 不能修改 share scope、runtime plugin、manifest resolution 或 fallb
 只创建自己的 `MantineProvider`；producer 不得重复导入 Core stylesheet。其他 UI/领域依赖由 producer 自己 bundle。
 未打开 View 不请求其 expose；一个 Plugin definition 的多个 Views 共用 producer，但按 expose/chunk 延迟加载。
 Content-only Plugin 没有 producer，不参与 shared compatibility 或 Bridge activation。
+`@tanstack/query-core` 是 renderer owner 的内部实现依赖，不进入这个 fixed shared set。
 
 Development Content/UI update 先发布 topology/Content；缺失 producer 在后台构建，未就绪 View 保留 layout 位置并显示
 building 状态。后台 producer 成功后提交完整 tuple 并触发完整 document reload；失败不推进 producer inventory，而是
@@ -188,9 +201,9 @@ building 状态。后台 producer 成功后提交完整 tuple 并触发完整 do
 - 跨组件共享事实使用 `subscribe/getSnapshot` store；
 - 空 array/object 和 Context value 保持稳定 identity；
 - Content state 与 remote read 使用 sequence/epoch guard，旧结果不覆盖新 target/route；
-- renderer query/mutation cache 属于 per-open owner，StrictMode replay 不重复 watch，teardown 后 late result 只释放不提交；
+- renderer query/mutation cache 属于 per-open owner，StrictMode replay 不重复 subscription，teardown 后 late result 只释放不提交；
 - structured query key canonicalize 后才进 cache，typed invalidation 只解析当前 renderer scope 的 resource；
-- mutation per-hook single-flight、无自动 retry，并在 active owner 中于 settle 后执行预先验证的 invalidation；
+- mutation per-hook single-flight，并在 active owner 中于 settle 后执行预先验证的 invalidation；
 - mutation handler 显式 await/catch 或用 `void` 表达有意忽略；
 - UI state 永不保存已释放的 Cap’n Web proxy。
 

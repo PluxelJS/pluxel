@@ -61,9 +61,9 @@ tsdown `alwaysBundle` 内联所有 JavaScript 与 declarations。发布 tarball 
 Core 的 dependencies/peerDependencies/optionalDependencies；直接使用 standalone kernel 的应用才显式安装 `@pluxel/context`。
 
 Workbench fixed singleton set 由 host 直接安装并由 MF build contract 精确锁定：React/ReactDOM 及其实际
-subpaths、MF React Bridge、`@pluxel/runtime/workbench`、`/client`、`/react` 与
-`@pluxel/runtime/internal/workbench-react`。插件 UI 把自己 import 的 React
-声明为 peer，并在需要独立开发时声明 dev 副本；Mantine 等普通 UI 库不进入 platform shared set。导入 Drizzle schema/query API 的每个 package 都直接声明
+subpaths、`@mantine/core`、`@mantine/hooks`、MF React Bridge、`@pluxel/runtime/workbench`、`/client`、`/react` 与
+`@pluxel/runtime/internal/workbench-react`。插件 UI 把自己 import 的 React 和 Mantine 声明为 peer，并在需要独立开发时声明
+dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实现依赖，不进入 platform shared set。导入 Drizzle schema/query API 的每个 package 都直接声明
 `drizzle-orm`；它与 Pluxel 高度集成并不意味着能从根或 `@pluxel/runtime` 隐式继承。只有确实要求宿主
 共享 Drizzle 运行时身份的公开边界才改用 peer。
 

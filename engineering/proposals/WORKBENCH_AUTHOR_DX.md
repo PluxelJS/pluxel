@@ -11,7 +11,7 @@ transport，会反复编写同一组机械逻辑：
 
 - 从 renderer entry 向子组件层层传递 `api`、`host` 和 cache；
 - 手工 detach DTO、释放 transport result，并防止 late result 写入已卸载组件；
-- 为 `snapshot/watch` 重写 subscribe-before-read、coalescing、retry 和 teardown；
+- 为 `snapshot/watch` 重写 subscribe-before-read、coalescing 和 teardown；
 - 自行把 route params、principal、session epoch 与 open handle 编入全局 cache key；
 - 在 definition 的 browser projection 丢失类型后补显式 generic 或断言。
 
@@ -33,36 +33,41 @@ Renderer-specific scope module 优先与 descriptor entry 同名，例如 `overv
 
 ### Module-scoped immutable declarations
 
-`scope.query()` 与 `scope.mutation()` 在 module evaluation 时声明领域读取、写入和 freshness 关系。Resource 本身
+`scope.query()`、`scope.queryFamily()` 与 `scope.mutation()` 在 module evaluation 时声明领域读取、写入和 freshness 关系。
+Resource 本身
 immutable，不保存“最近一次”API root、cache 或 observer，也不提供无法判定 open handle 的全局命令式刷新。
 
-作者 API 保持扁平：
+作者 API 按所有权分层：
 
-- `watch` 和 `invalidates` 直接位于 resource options，不增加单层 namespace；
-- unkeyed query 本身是 exact invalidation target；
-- keyed query 必须显式选择 `.target(input)` 或 `.all()`；
-- 静态关系使用 `invalidates: [query]`，依赖 mutation input 时才使用 callback；
-- 权威 watch 必然覆盖 commit 时，不为同一 mutation 重复声明 `invalidates`。
+- `scope.query(factory)` 声明无输入的具体 query，`scope.queryFamily((context, input) => options)` 按输入构建 query；
+- 每个 query 都返回具体、领域稳定的 `queryKey`；
+- Workbench roots 只由外层 factory 捕获，`queryFn` 只使用 query-core 原生安全 context；
+- TanStack 原生 options 保持顶层，Workbench 自有扩展放在 `workbench.subscribe` 和 `workbench.invalidates`；
+- 公开类型只承诺明确的受控 allowlist，不把 TanStack Query 的全部 options 隐式变成 Pluxel 契约；
+- 具体 query 本身是 exact invalidation target，query family 必须显式选择 `.target(input)` 或 `.all()`；
+- 权威 subscription 必然覆盖 commit 时，不为同一 mutation 重复声明 invalidation。
 
 ### Per-open renderer owner
 
-每次 Bridge mount 创建一个 renderer owner。相同 descriptor 同时打开多次，也不共享 API root、query data、watch、
-retry、mutation 或 invalidation。Workbench 不提供 global `QueryClient`，也不要求作者维护 session/open identity。
+每次 Bridge mount 创建一个 renderer owner 和基于 query-core 的私有 `QueryClient`。相同 descriptor 同时打开多次，
+也不共享 API root、query data、subscription、mutation 或 invalidation。这个 client 随 renderer owner 清理，不暴露 raw
+`QueryClient`、raw cache 或 global client，也不进入 Module Federation fixed shared set。作者不需维护
+session/open identity。
 
-| 对象                       | 创建时机                   | 持有内容                                            | 结束时机                           |
-| -------------------------- | -------------------------- | --------------------------------------------------- | ---------------------------------- |
-| renderer scope             | renderer module evaluation | exact descriptor、React context、provenance token   | module/HMR replacement             |
-| query/mutation declaration | renderer module evaluation | frozen options、opaque identity                     | module/HMR replacement             |
-| renderer owner             | 每次 Bridge mount          | exact roots、host、cache、watch、timer、abort state | Bridge destroy/open close          |
-| query observer             | 每次 Hook mount            | 当前 key 的 active interest                         | Hook cleanup                       |
-| mutation state             | 每个 `useMutation()`       | single-flight 状态与本次调用结果                    | Hook cleanup；已接受写入仍归 owner |
+| 对象                       | 创建时机                   | 持有内容                                                       | 结束时机                           |
+| -------------------------- | -------------------------- | -------------------------------------------------------------- | ---------------------------------- |
+| renderer scope             | renderer module evaluation | exact descriptor、React context、provenance token              | module/HMR replacement             |
+| query/mutation declaration | renderer module evaluation | frozen options、opaque identity                                | module/HMR replacement             |
+| renderer owner             | 每次 Bridge mount          | exact roots、host、私有 QueryClient、subscription、close state | Bridge destroy/open close          |
+| query observer             | 每次 Hook mount            | 当前 key 的 active interest                                    | Hook cleanup                       |
+| mutation state             | 每个 `useMutation()`       | single-flight 状态与本次调用结果                               | Hook cleanup；已接受写入仍归 owner |
 
 核心不变量：
 
 1. Module-scoped declaration 不持有 mutable current instance。
 2. Hook 只能从匹配 scope 的 React Context 取得 owner。
 3. Query cache、key、observer 和 invalidation 不跨 open handle、session epoch 或 scope。
-4. Owner close 从一条路径终止 watch/retry，abort 可取消工作，并拒绝新的提交。
+4. Owner close 从一条路径终止 query/subscription，abort 可取消工作，并拒绝新的提交。
 5. 无法取消的 late result 仍必须完成 detach/dispose，但不能更新已关闭 renderer。
 
 ### Portable DTO ownership
@@ -86,11 +91,11 @@ targets，并在 settle 后、owner 仍 active 时标 stale；RPC reject 或 res
 
 ### 有意保持的小表面
 
-当前 API 只承诺 per-open query/mutation 所需语义：明确的 `enabled`、`staleTime`、有限 retry、cancellation signal、
+当前 API 只承诺 per-open query/mutation 所需的受控 TanStack allowlist、Workbench subscription/typed invalidation、
 single-flight mutation 与稳定错误码。`mutate()` 服务 event handler 的 fire-and-observe，`mutateAsync()` 只用于消费 result
-或显式编排流程。Mutation result 若只是下一份 snapshot 的重复副本，领域 command 返回 `void` 并交给 watch/invalidation；
-只有 UI 确实消费的 domain result 才返回 portable DTO。API 借用熟悉词汇，但不暴露 TanStack Query、raw cache 或
-transport result，也不假装兼容其完整状态机。
+或显式编排流程。Mutation result 若只是下一份 snapshot 的重复副本，领域 command 返回 `void` 并交给 subscription/invalidation；
+只有 UI 确实消费的 domain result 才返回 portable DTO。API 复用 TanStack Query 的原生状态机，但不暴露 raw cache、
+transport result 或未经挑选的全量 options。
 
 ## 实施证据
 
@@ -133,7 +138,7 @@ Browser semantic projection：
 
 后续变更至少保持：
 
-- 同一 descriptor 并行 open 完全隔离，close/replacement 后没有 cache、watch、timer 或 mutation owner 泄漏；
+- 同一 descriptor 并行 open 完全隔离，close/replacement 后没有 QueryClient、subscription 或 mutation owner 泄漏；
 - query subscribe-before-read，失效通知可合并，后台失败保留最近成功 snapshot；
 - 所有 fulfilled DTO，包括 superseded/closed 后的 late result，都经过 portable 验证与 top-level disposal；
 - scope、key、resource budget、closed 和 mutation single-flight 失败维持稳定 code；

@@ -551,6 +551,9 @@ catalogs:
     '@module-federation/bridge-react':
       specifier: 2.9.0
       version: 2.9.0
+    '@tanstack/query-core':
+      specifier: ^5.102.8
+      version: 5.102.8
     '@tanstack/react-form':
       specifier: ^1.33.5
       version: 1.33.5
@@ -1177,6 +1180,9 @@ importers:
       '@sinclair/typebox':
         specifier: catalog:prod
         version: 0.34.52
+      '@tanstack/query-core':
+        specifier: catalog:frontend
+        version: 5.102.8
       age-encryption:
         specifier: catalog:prod
         version: 0.3.1
@@ -5637,6 +5643,9 @@ packages:
   '@tanstack/pacer-lite@0.1.1':
     resolution: {integrity: sha512-y/xtNPNt/YeyoVxE/JCx+T7yjEzpezmbb+toK8DDD1P4m7Kzs5YR956+7OKexG3f8aXgC3rLZl7b1V+yNUSy5w==}
     engines: {node: '>=18'}
+
+  '@tanstack/query-core@5.102.8':
+    resolution: {integrity: sha512-ZNjkJ33CqvPNec/6lZBnHqLc3EVGPZ9ySLhYahU9TcuRFdmwXewuj0c4hwSWcGHqEUwcSrKeZ+oGcvPBqXcQcg==}
 
   '@tanstack/react-form@1.33.5':
     resolution: {integrity: sha512-LlRB28qJwO/QCGaHvWnbdh4haBgTFiZVmzA2uzxSBS3YA7/IqrQ6HOBK70CkFQ+DbflZ7NawsmSln13h5iIdTA==}
@@ -12560,6 +12569,8 @@ snapshots:
       '@tanstack/store': 0.11.1
 
   '@tanstack/pacer-lite@0.1.1': {}
+
+  '@tanstack/query-core@5.102.8': {}
 
   '@tanstack/react-form@1.33.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:

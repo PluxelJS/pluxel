@@ -1,7 +1,7 @@
 import type { RpcTarget } from '../capnweb'
 import { detachWorkbenchPortableValue, type WorkbenchDetached } from './client'
 import { workbench } from './definition'
-import { createWorkbenchRenderer } from './react'
+import { createWorkbenchRenderer, type WorkbenchResourceKey } from './react'
 
 type SettingsSnapshot = Readonly<{
 	mode: 'automatic' | 'manual'
@@ -53,67 +53,121 @@ const ProbeWorkbench = workbench.define({
 const settingsRenderer = createWorkbenchRenderer(ProbeWorkbench.settings)
 const otherRenderer = createWorkbenchRenderer(ProbeWorkbench.other)
 
-const settingsQuery = settingsRenderer.query({
-	queryFn: ({ api }) => api.snapshot(),
-	watch: ({ api }, invalidate) => api.watch(invalidate),
-})
-
-const itemQuery = settingsRenderer.query({
-	queryKey: (input: Readonly<{ id: string }>) => [input.id],
-	queryFn: ({ api }, input) => api.item(input.id),
-	watch: ({ api }, input, invalidate) => {
-		const id: string = input.id
-		void id
-		return api.watch(invalidate)
+const settingsQuery = settingsRenderer.query(({ api }) => ({
+	queryKey: ['settings', 'snapshot'] as const,
+	queryFn: (context) => {
+		const { queryKey, signal } = context
+		// @ts-expect-error The per-open QueryClient is intentionally not part of the author context.
+		context.client
+		const key: readonly WorkbenchResourceKey[] = queryKey
+		const querySignal: AbortSignal = signal
+		void key
+		void querySignal
+		return api.snapshot()
 	},
-})
+	workbench: {
+		subscribe: ({ invalidate, signal }) => {
+			const subscriptionSignal: AbortSignal = signal
+			void subscriptionSignal
+			return api.watch(invalidate)
+		},
+	},
+}))
 
-const labelsQuery = settingsRenderer.query({
-	queryFn: ({ api }) => api.labels(),
-})
+const itemQuery = settingsRenderer.queryFamily(({ api }, input: Readonly<{ id: string }>) => ({
+	queryKey: ['settings', 'item', input.id] as const,
+	queryFn: () => api.item(input.id),
+	workbench: {
+		subscribe: ({ invalidate }) => {
+			const id: string = input.id
+			void id
+			return api.watch(invalidate)
+		},
+	},
+}))
 
-const selectionQuery = settingsRenderer.query({
-	queryFn: ({ api }) => api.selection(),
-})
+const labelsQuery = settingsRenderer.query(({ api }) => ({
+	queryKey: ['settings', 'labels'] as const,
+	queryFn: () => api.labels(),
+}))
 
-const promisedQuery = settingsRenderer.query({
+const selectionQuery = settingsRenderer.query(({ api }) => ({
+	queryKey: ['settings', 'selection'] as const,
+	queryFn: () => api.selection(),
+}))
+
+const promisedQuery = settingsRenderer.query(() => ({
+	queryKey: ['settings', 'promised'] as const,
 	queryFn: () => Promise.resolve({ source: 'promise' as const }),
-})
+}))
 
-const synchronousQuery = settingsRenderer.query({
+const synchronousQuery = settingsRenderer.query(() => ({
+	queryKey: ['settings', 'synchronous'] as const,
 	queryFn: () => ({ source: 'sync' as const }),
+}))
+
+const explicitSettingsQuery = settingsRenderer.query(({ api }) => ({
+	queryKey: ['settings', 'explicit'] as const,
+	queryFn: (): Promise<SettingsSnapshot> => api.snapshot(),
+}))
+
+const otherQuery = otherRenderer.query(({ api }) => ({
+	queryKey: ['other', 'inspect'] as const,
+	queryFn: () => api.inspect(),
+}))
+
+const saveSettings = settingsRenderer.mutation(({ api, signal }) => {
+	const mutationSignal: AbortSignal = signal
+	void mutationSignal
+	return {
+		mutationFn: (input: SaveInput) => api.save(input),
+		workbench: {
+			invalidates: (input: SaveInput) => [settingsQuery, itemQuery.target({ id: input.id })],
+		},
+	}
 })
 
-const explicitSettingsQuery = settingsRenderer.query<SettingsSnapshot>({
-	queryFn: ({ api }) => api.snapshot(),
-})
+const resetSettings = settingsRenderer.mutation(({ api }) => ({
+	mutationFn: () => api.reset(),
+	workbench: {
+		invalidates: [settingsQuery],
+	},
+}))
 
-const otherQuery = otherRenderer.query({
-	queryFn: ({ api }) => api.inspect(),
-})
+settingsRenderer.mutation(({ api }) => ({
+	mutationFn: (input: SaveInput) => api.save(input),
+	workbench: {
+		invalidates: [settingsQuery],
+	},
+}))
 
-const saveSettings = settingsRenderer.mutation({
-	mutationFn: ({ api }, input: SaveInput) => api.save(input),
-	invalidates: (input) => [settingsQuery, itemQuery.target({ id: input.id })],
-})
+settingsRenderer.query(({ api }) => ({
+	queryKey: ['settings', 'legacy-watch'] as const,
+	queryFn: () => api.snapshot(),
+	// @ts-expect-error Workbench subscriptions are namespaced under workbench.subscribe.
+	watch: () => api.watch(() => undefined),
+}))
 
-const resetSettings = settingsRenderer.mutation({
-	mutationFn: ({ api }) => api.reset(),
+settingsRenderer.mutation(({ api }) => ({
+	mutationFn: () => api.reset(),
+	// @ts-expect-error Workbench invalidations are namespaced under workbench.invalidates.
 	invalidates: [settingsQuery],
-})
+}))
 
-settingsRenderer.mutation({
-	mutationFn: ({ api }, input: SaveInput) => api.save(input),
-	invalidates: [settingsQuery],
-})
+settingsRenderer.mutation(({ api }) => ({
+	// @ts-expect-error A mutation accepts one variables value, not a domain argument list.
+	mutationFn: (input: SaveInput, _extra: number) => api.save(input),
+}))
 
-settingsRenderer.mutation({
-	mutationFn: ({ api }, input: SaveInput) => api.save(input),
-	// @ts-expect-error An invalidation target from a different descriptor is rejected by type.
-	invalidates: [otherQuery],
-})
+settingsRenderer.mutation(({ api }) => ({
+	mutationFn: (input: SaveInput) => api.save(input),
+	workbench: {
+		// @ts-expect-error An invalidation target from a different descriptor is rejected by type.
+		invalidates: [otherQuery],
+	},
+}))
 
-// @ts-expect-error Unkeyed queries are exact invalidation targets and do not expose target().
+// @ts-expect-error A concrete query is already an exact invalidation target.
 settingsQuery.target()
 
 function SettingsPage() {

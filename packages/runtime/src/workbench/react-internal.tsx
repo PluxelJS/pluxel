@@ -52,11 +52,12 @@ export function createWorkbenchBridge(
 					identity,
 					opened,
 					host: payload.host,
+					ownerSignal: payload.ownerSignal,
 					...(payload.paneLayoutRenderer === undefined
 						? {}
 						: { paneLayoutRenderer: payload.paneLayoutRenderer }),
 				}),
-			[opened, payload.host, payload.paneLayoutRenderer],
+			[opened, payload.host, payload.ownerSignal, payload.paneLayoutRenderer],
 		)
 		return (
 			<WorkbenchReactContextProvider value={value}>
@@ -97,12 +98,13 @@ function readBridgePayload(input: unknown): WorkbenchBridgePayload {
 	}
 	const record = input as Record<string, unknown>
 	for (const key of Object.keys(record)) {
-		if (!['profile', 'handle', 'host', 'paneLayoutRenderer'].includes(key)) {
+		if (!['profile', 'handle', 'host', 'ownerSignal', 'paneLayoutRenderer'].includes(key)) {
 			throw new TypeError(`[workbench/react] unsupported Bridge payload field ${key}`)
 		}
 	}
 	if (record.profile !== 1) throw new TypeError('[workbench/react] unsupported Bridge profile')
 	const host = readHostFacade(record.host)
+	const ownerSignal = readOwnerSignal(record.ownerSignal)
 	if (record.paneLayoutRenderer !== undefined && typeof record.paneLayoutRenderer !== 'function') {
 		throw new TypeError('[workbench/react] invalid Pane Kit renderer')
 	}
@@ -110,6 +112,7 @@ function readBridgePayload(input: unknown): WorkbenchBridgePayload {
 		profile: 1,
 		handle: record.handle as WorkbenchBridgePayload['handle'],
 		host,
+		ownerSignal,
 		...(record.paneLayoutRenderer === undefined
 			? {}
 			: {
@@ -117,6 +120,19 @@ function readBridgePayload(input: unknown): WorkbenchBridgePayload {
 						record.paneLayoutRenderer as WorkbenchBridgePayload['paneLayoutRenderer'],
 				}),
 	})
+}
+
+function readOwnerSignal(input: unknown): AbortSignal {
+	if (
+		!input ||
+		typeof input !== 'object' ||
+		typeof (input as AbortSignal).aborted !== 'boolean' ||
+		typeof (input as AbortSignal).addEventListener !== 'function' ||
+		typeof (input as AbortSignal).removeEventListener !== 'function'
+	) {
+		throw new TypeError('[workbench/react] invalid renderer owner signal')
+	}
+	return input as AbortSignal
 }
 
 function readHostFacade(input: unknown): WorkbenchHostFacade {

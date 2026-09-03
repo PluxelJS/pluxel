@@ -4,16 +4,21 @@ import { WretchWorkbench } from '../workbench.ts'
 
 export const settingsScope = createWorkbenchRenderer(WretchWorkbench.settings)
 
-export const wretchSettingsQuery = settingsScope.query({
-	queryFn: ({ provider }) => provider.snapshot(),
-})
+export const wretchSettingsQuery = settingsScope.query(({ provider }) => ({
+	queryKey: ['wretch', 'settings'] as const,
+	queryFn: () => provider.snapshot(),
+}))
 
-export const updateWretchSettingsMutation = settingsScope.mutation({
-	mutationFn: ({ provider }, settings: WretchManagedSettings) => provider.update(settings),
-	invalidates: [wretchSettingsQuery],
-})
+export const updateWretchSettingsMutation = settingsScope.mutation(({ provider }) => ({
+	mutationFn: (settings: WretchManagedSettings) => provider.update(settings),
+	workbench: {
+		invalidates: [wretchSettingsQuery],
+	},
+}))
 
-export const resetWretchSettingsMutation = settingsScope.mutation({
-	mutationFn: ({ provider }) => provider.reset(),
-	invalidates: [wretchSettingsQuery],
-})
+export const resetWretchSettingsMutation = settingsScope.mutation(({ provider }) => ({
+	mutationFn: () => provider.reset(),
+	workbench: {
+		invalidates: [wretchSettingsQuery],
+	},
+}))

@@ -82,9 +82,10 @@ import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
 import { HttpWorkbench } from '../workbench.ts'
 
 const settingsScope = createWorkbenchRenderer(HttpWorkbench.settings)
-const httpSettingsQuery = settingsScope.query({
-	queryFn: ({ provider }) => provider.snapshot(),
-})
+const httpSettingsQuery = settingsScope.query(({ provider }) => ({
+	queryKey: ['http', 'settings'] as const,
+	queryFn: () => provider.snapshot(),
+}))
 
 function HttpSettingsPanel() {
 	const { host } = settingsScope.useWorkbench()
@@ -176,13 +177,16 @@ import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
 import { FontsWorkbench } from '../workbench.ts'
 
 export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)
-export const fontSelectionQuery = selectionScope.query({
-	queryFn: ({ provider }) => provider.snapshot(),
-})
-export const setPreferredFont = selectionScope.mutation({
-	mutationFn: ({ provider }, family: string | null) => provider.setPreferredFamily(family),
-	invalidates: [fontSelectionQuery],
-})
+export const fontSelectionQuery = selectionScope.query(({ provider }) => ({
+	queryKey: ['fonts', 'selection'] as const,
+	queryFn: () => provider.snapshot(),
+}))
+export const setPreferredFont = selectionScope.mutation(({ provider }) => ({
+	mutationFn: (family: string | null) => provider.setPreferredFamily(family),
+	workbench: {
+		invalidates: [fontSelectionQuery],
+	},
+}))
 
 function FontSelectionPanel() {
 	const selection = fontSelectionQuery.useQuery()
@@ -200,7 +204,7 @@ export default selectionScope.render(FontSelectionPanel)
 - Workbench disabled 时，constructor dependency、字体恢复、注册和渲染路径完全不变；
 - 字体数量变化不会增加 definition、View、Attachment、MF expose 或 WebSocket；
 - RPC 输入的大小、family、容量和持久化失败仍由 FontsPlugin 校验，不额外引入 Workbench schema；
-- Selection UI 没有已证实的实时同步需求，因此 query 不声明 `watch`；mutation settle 后失效 snapshot，Runtime 自动完成
+- Selection UI 没有已证实的实时同步需求，因此 query 不声明 `workbench.subscribe`；mutation settle 后失效 snapshot，Runtime 自动完成
   portable detach、deep freeze 与 top-level transport result 释放。
 
 这里的“选择”仍是 provider-wide preference。把选择器放到 Canvas、ECharts 或 Takumi 页面，不会把它变成
@@ -340,12 +344,14 @@ import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
 import { FontManagerWorkbench } from '../workbench.ts'
 
 const collectionPickerScope = createWorkbenchRenderer(FontManagerWorkbench.collectionPicker)
-const fontCatalogQuery = collectionPickerScope.query({
-	queryFn: ({ provider }) => provider.list(),
-})
-const fontSelectionQuery = collectionPickerScope.query({
-	queryFn: ({ consumer }) => consumer.current(),
-})
+const fontCatalogQuery = collectionPickerScope.query(({ provider }) => ({
+	queryKey: ['fonts', 'catalog'] as const,
+	queryFn: () => provider.list(),
+}))
+const fontSelectionQuery = collectionPickerScope.query(({ consumer }) => ({
+	queryKey: ['fonts', 'consumer-selection'] as const,
+	queryFn: () => consumer.current(),
+}))
 
 function FontCollectionPicker() {
 	const { host } = collectionPickerScope.useWorkbench()

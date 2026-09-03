@@ -172,6 +172,7 @@
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@sinclair/typebox": "catalog:prod",
+		"@tanstack/query-core": "catalog:frontend",
 		"age-encryption": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"drizzle-orm": "catalog:backend",

@@ -1,4 +1,12 @@
 import {
+	CancelledError,
+	QueryClient,
+	QueryObserver,
+	isCancelledError,
+	type QueryFunctionContext,
+	type QueryObserverResult,
+} from '@tanstack/query-core'
+import {
 	createContext,
 	createElement,
 	useCallback,
@@ -30,10 +38,9 @@ const MAX_KEY_TEXT = 16_384
 const MAX_KEY_ARRAY_ITEMS = 128
 const MAX_KEY_OBJECT_FIELDS = 128
 const MAX_QUERY_ENTRIES = 256
-const MAX_RESOURCE_ENTRIES = 128
 const MAX_ACTIVE_QUERY_ENTRIES = 64
-const MAX_QUERY_RETRIES = 5
 const MAX_MUTATION_INVALIDATIONS = 128
+const QUERY_GC_TIME = 5 * 60_000
 
 export type WorkbenchZeroProps = Readonly<Record<string, never>>
 
@@ -45,53 +52,45 @@ export type WorkbenchResourceKey =
 	| readonly WorkbenchResourceKey[]
 	| { readonly [key: string]: WorkbenchResourceKey }
 
-export type WorkbenchQueryExecutionContext<Context> = Context &
-	Readonly<{
-		/**
-		 * Aborted when this read is superseded, becomes unobserved without a waiter, or its
-		 * renderer closes. Workbench rejects late commits; the query must observe the signal to
-		 * cancel underlying local work that supports cancellation.
-		 */
-		signal: AbortSignal
-	}>
+export type WorkbenchQueryExecutionContext<
+	QueryKey extends readonly WorkbenchResourceKey[] = readonly WorkbenchResourceKey[],
+> = Readonly<Pick<QueryFunctionContext<QueryKey>, 'queryKey' | 'signal'>>
 
 export type WorkbenchQueryRetry =
-	| false
+	| boolean
 	| number
-	| ((input: Readonly<{ failureCount: number; error: unknown }>) => boolean)
+	| ((failureCount: number, error: unknown) => boolean)
+
+export type WorkbenchQueryRetryDelay = number | ((failureCount: number, error: unknown) => number)
 
 type WorkbenchAwaitable<Value> = Value | PromiseLike<NoInfer<Value>>
-
 type WorkbenchResolvedResult<Value> = WorkbenchResolvedPortableValue<Value>
 
-export type WorkbenchRendererQueryOptions<Context, Value> = Readonly<{
-	queryFn(context: WorkbenchQueryExecutionContext<Context>): WorkbenchAwaitable<Value>
-	/** Whether this observer participates in reads and watch ownership. @defaultValue true */
+export type WorkbenchQueryOptions<
+	QueryKey extends readonly WorkbenchResourceKey[],
+	Value,
+> = Readonly<{
+	queryKey: QueryKey
+	queryFn(context: WorkbenchQueryExecutionContext<QueryKey>): WorkbenchAwaitable<Value>
+	/** Whether this observer automatically reads and owns its subscription. @defaultValue true */
 	enabled?: boolean
-	/** Milliseconds before cached data becomes stale. Defaults to `0`, or `Infinity` with `watch`. */
+	/** Milliseconds before cached data becomes stale. Defaults to `0`, or `Infinity` with subscribe. */
 	staleTime?: number
-	/** Query failure retries; counts are capped at five. @defaultValue false */
+	/** TanStack-compatible retry behavior. Workbench boundary failures are never retried. @defaultValue false */
 	retry?: WorkbenchQueryRetry
-	watch?(
-		context: WorkbenchQueryExecutionContext<Context>,
-		invalidate: () => void,
-	): Disposable | PromiseLike<Disposable>
+	retryDelay?: WorkbenchQueryRetryDelay
+	/** Workbench extensions must be declared under `workbench`. */
+	watch?: never
+	/** Query resources do not declare mutation invalidations. */
+	invalidates?: never
+	workbench?: Readonly<{
+		subscribe(context: WorkbenchQuerySubscriptionContext): Disposable | PromiseLike<Disposable>
+	}>
 }>
 
-export type WorkbenchRendererKeyedQueryOptions<Context, Input, Value> = Readonly<{
-	queryKey(input: Input): readonly WorkbenchResourceKey[]
-	queryFn(context: WorkbenchQueryExecutionContext<Context>, input: Input): WorkbenchAwaitable<Value>
-	/** Whether this input participates in reads and watch ownership. @defaultValue true */
-	enabled?: boolean | ((input: Input) => boolean)
-	/** Milliseconds before cached data becomes stale. Defaults to `0`, or `Infinity` with `watch`. */
-	staleTime?: number
-	/** Query failure retries; counts are capped at five. @defaultValue false */
-	retry?: WorkbenchQueryRetry
-	watch?(
-		context: WorkbenchQueryExecutionContext<Context>,
-		input: Input,
-		invalidate: () => void,
-	): Disposable | PromiseLike<Disposable>
+export type WorkbenchQuerySubscriptionContext = Readonly<{
+	signal: AbortSignal
+	invalidate(): void
 }>
 
 type WorkbenchQueryControls<Value> = Readonly<{
@@ -138,7 +137,7 @@ export interface WorkbenchQueryResource<
 	useQuery(): WorkbenchQueryResult<WorkbenchDetached<Value>>
 }
 
-export interface WorkbenchKeyedQueryResource<Descriptor, Input, Value> {
+export interface WorkbenchQueryFamilyResource<Descriptor, Input, Value> {
 	useQuery(input: Input): WorkbenchQueryResult<WorkbenchDetached<Value>>
 	target(input: Input): WorkbenchQueryInvalidation<Descriptor>
 	all(): WorkbenchQueryInvalidation<Descriptor>
@@ -146,49 +145,68 @@ export interface WorkbenchKeyedQueryResource<Descriptor, Input, Value> {
 
 export type WorkbenchMutationExecutionContext<Context> = Context &
 	Readonly<{
-		/**
-		 * Aborted when the per-open renderer closes. Hook unmount and `reset()` do not cancel an
-		 * accepted mutation, and underlying work must observe the signal to be cancelable.
-		 */
+		/** Aborted when this per-open renderer owner closes. */
 		signal: AbortSignal
 	}>
 
-export type WorkbenchRendererMutationOptions<
+export type WorkbenchMutationOptions<Descriptor, Input, Result> = Readonly<{
+	mutationFn(input: Input): WorkbenchAwaitable<Result>
+	/** Workbench extensions must be declared under `workbench`. */
+	watch?: never
+	/** Workbench extensions must be declared under `workbench`. */
+	invalidates?: never
+	workbench?: Readonly<{
+		invalidates?:
+			| readonly WorkbenchQueryInvalidation<Descriptor>[]
+			| ((input: NoInfer<Input>) => readonly WorkbenchQueryInvalidation<Descriptor>[])
+	}>
+}>
+
+type WorkbenchMutationFunctionInput<MutationFn> = MutationFn extends (...input: any[]) => any
+	? Parameters<MutationFn> extends []
+		? void
+		: Parameters<MutationFn>[0]
+	: never
+type WorkbenchMutationFunctionResult<MutationFn> = MutationFn extends (
+	...input: any[]
+) => infer Result
+	? Result
+	: never
+// `never` keeps an unannotated input-derived invalidation from silently widening to `any`.
+// `Options` below separately captures the author's exact mutation function for Hook input/result types.
+type WorkbenchMutationFunction = (input: never) => unknown
+type WorkbenchInferredMutationOptions<
 	Descriptor,
-	Context,
-	Input extends readonly unknown[],
-	Result,
+	MutationFn extends WorkbenchMutationFunction,
 > = Readonly<{
-	mutationFn(
-		context: WorkbenchMutationExecutionContext<Context>,
-		...input: Input
-	): WorkbenchAwaitable<Result>
-	invalidates?:
-		| readonly WorkbenchQueryInvalidation<Descriptor>[]
-		| ((...input: NoInfer<Input>) => readonly WorkbenchQueryInvalidation<Descriptor>[])
+	mutationFn: MutationFn
+	/** Workbench extensions must be declared under `workbench`. */
+	watch?: never
+	/** Workbench extensions must be declared under `workbench`. */
+	invalidates?: never
+	workbench?: Readonly<{
+		invalidates?:
+			| readonly WorkbenchQueryInvalidation<Descriptor>[]
+			| ((
+					input: NoInfer<WorkbenchMutationFunctionInput<MutationFn>>,
+			  ) => readonly WorkbenchQueryInvalidation<Descriptor>[])
+	}>
 }>
 
 type WorkbenchDetachedResolvedMutationResult<Result> = Result extends void
 	? void
 	: WorkbenchDetached<Result>
 
-type WorkbenchDetachedMutationResult<Result> = WorkbenchDetachedResolvedMutationResult<
-	WorkbenchResolvedResult<Result>
->
+type MutationArguments<Input> = [Input] extends [void] ? [] : [input: Input]
 
-type WorkbenchMutationControls<Input extends readonly unknown[], Result> = Readonly<{
-	/** Starts an operation and reports its outcome through this Hook's state. */
-	mutate(...input: Input): void
-	/** Starts an operation and returns its detached result to the caller. */
-	mutateAsync(...input: Input): Promise<Result>
+type WorkbenchMutationControls<Input, Result> = Readonly<{
+	mutate(...input: MutationArguments<Input>): void
+	mutateAsync(...input: MutationArguments<Input>): Promise<Result>
 	/** Clears settled state. It neither cancels nor resets a pending operation. */
 	reset(): void
 }>
 
-export type WorkbenchMutationState<
-	Input extends readonly unknown[],
-	Result,
-> = WorkbenchMutationControls<Input, Result> &
+export type WorkbenchMutationState<Input, Result> = WorkbenchMutationControls<Input, Result> &
 	(
 		| Readonly<{
 				status: 'idle'
@@ -216,12 +234,13 @@ export type WorkbenchMutationState<
 		  }>
 	)
 
-export interface WorkbenchMutationResource<Input extends readonly unknown[], Result> {
+export interface WorkbenchMutationResource<Input, Result> {
 	useMutation(): WorkbenchMutationState<Input, WorkbenchDetachedResolvedMutationResult<Result>>
 }
 
 export type WorkbenchRendererErrorCode =
 	| 'WORKBENCH_RENDERER_CLOSED'
+	| 'WORKBENCH_RENDERER_HOOK_INACTIVE'
 	| 'WORKBENCH_RENDERER_SCOPE_MISMATCH'
 	| 'WORKBENCH_RESOURCE_KEY_INVALID'
 	| 'WORKBENCH_RESOURCE_LIMIT_EXCEEDED'
@@ -242,47 +261,108 @@ export class WorkbenchRendererError extends Error {
 export interface WorkbenchRendererScope<Descriptor extends WorkbenchRenderableDescriptor> {
 	render(component: ComponentType<WorkbenchZeroProps>): ComponentType<WorkbenchZeroProps>
 	useWorkbench(): WorkbenchHookValue<Descriptor>
-	query<Input, Value>(
-		options: WorkbenchRendererKeyedQueryOptions<WorkbenchHookValue<Descriptor>, Input, Value>,
-	): WorkbenchKeyedQueryResource<Descriptor, Input, WorkbenchResolvedResult<Value>>
-	query<Value>(
-		options: WorkbenchRendererQueryOptions<WorkbenchHookValue<Descriptor>, Value>,
+	query<const QueryKey extends readonly WorkbenchResourceKey[], Value>(
+		factory: (context: WorkbenchHookValue<Descriptor>) => WorkbenchQueryOptions<QueryKey, Value>,
 	): WorkbenchQueryResource<Descriptor, WorkbenchResolvedResult<Value>>
-	mutation<Input extends readonly unknown[], Result>(
-		options: WorkbenchRendererMutationOptions<
-			Descriptor,
-			WorkbenchHookValue<Descriptor>,
-			Input,
-			Result
-		>,
-	): WorkbenchMutationResource<Input, WorkbenchResolvedResult<Result>>
+	queryFamily<Input, const QueryKey extends readonly WorkbenchResourceKey[], Value>(
+		factory: (
+			context: WorkbenchHookValue<Descriptor>,
+			input: Input,
+		) => WorkbenchQueryOptions<QueryKey, Value>,
+	): WorkbenchQueryFamilyResource<Descriptor, Input, WorkbenchResolvedResult<Value>>
+	mutation<
+		MutationFn extends WorkbenchMutationFunction,
+		Options extends WorkbenchInferredMutationOptions<Descriptor, MutationFn>,
+	>(
+		factory: (
+			context: WorkbenchMutationExecutionContext<WorkbenchHookValue<Descriptor>>,
+		) => Options,
+	): WorkbenchMutationResource<
+		WorkbenchMutationFunctionInput<Options['mutationFn']>,
+		WorkbenchResolvedResult<WorkbenchMutationFunctionResult<Options['mutationFn']>>
+	>
 }
 
-type AnyQueryOptions<Context, Input, Value> =
-	| WorkbenchRendererQueryOptions<Context, Value>
-	| WorkbenchRendererKeyedQueryOptions<Context, Input, Value>
+type ScopeState<Descriptor extends WorkbenchRenderableDescriptor = WorkbenchRenderableDescriptor> =
+	{
+		context: ReturnType<typeof createContext<RendererOwner<Descriptor> | null>>
+		token: object
+		nextResourceId: number
+	}
 
-type QueryResourceDefinition<
+type QueryDefinition<
 	Descriptor extends WorkbenchRenderableDescriptor,
-	Context,
 	Input,
+	QueryKey extends readonly WorkbenchResourceKey[],
 	Value,
 > = Readonly<{
 	scope: ScopeState<Descriptor>
-	keyed: boolean
-	options: AnyQueryOptions<Context, Input, Value>
 	resource: object
+	resourceId: number
+	family: boolean
+	factory: (
+		context: WorkbenchHookValue<Descriptor>,
+		input: Input,
+	) => WorkbenchQueryOptions<QueryKey, Value>
 }>
 
-type MutationResourceDefinition<
+type NormalizedQueryOptions<
+	QueryKey extends readonly WorkbenchResourceKey[] = readonly WorkbenchResourceKey[],
+	Value = unknown,
+> = Readonly<{
+	queryKey: QueryKey
+	canonicalKey: string
+	queryFn(context: WorkbenchQueryExecutionContext<QueryKey>): WorkbenchAwaitable<Value>
+	enabled: boolean
+	staleTime: number
+	retry: WorkbenchQueryRetry
+	retryDelay?: WorkbenchQueryRetryDelay
+	subscribe?: (context: WorkbenchQuerySubscriptionContext) => Disposable | PromiseLike<Disposable>
+}>
+
+type QueryEntry<
+	QueryKey extends readonly WorkbenchResourceKey[] = readonly WorkbenchResourceKey[],
+	Value = unknown,
+> = {
+	resource: object
+	canonicalKey: string
+	options: NormalizedQueryOptions<QueryKey, Value>
+	internalKey: readonly [number, readonly WorkbenchResourceKey[]]
+	activeObservers: number
+	active: boolean
+	lifecycle: number
+	revision: number
+	subscriptionGeneration: number
+	subscriptionController: AbortController | undefined
+	subscriptionPromise: Promise<void> | undefined
+	pendingSubscription: Disposable | undefined
+	subscription: Disposable | undefined
+}
+
+type AnyQueryEntry = QueryEntry<any, any>
+
+type QueryObserverLease = {
+	entry: AnyQueryEntry
+	token: object | undefined
+	active: boolean
+}
+
+type MutationDefinition<
 	Descriptor extends WorkbenchRenderableDescriptor,
-	Context,
-	Input extends readonly unknown[],
+	Input,
 	Result,
 > = Readonly<{
 	scope: ScopeState<Descriptor>
-	options: WorkbenchRendererMutationOptions<Descriptor, Context, Input, Result>
-	resource: object
+	factory: (
+		context: WorkbenchMutationExecutionContext<WorkbenchHookValue<Descriptor>>,
+	) => WorkbenchMutationOptions<Descriptor, Input, Result>
+}>
+
+type NormalizedMutationOptions<Descriptor, Input, Result> = Readonly<{
+	mutationFn(input: Input): WorkbenchAwaitable<Result>
+	invalidates?:
+		| readonly WorkbenchQueryInvalidation<Descriptor>[]
+		| ((input: Input) => readonly WorkbenchQueryInvalidation<Descriptor>[])
 }>
 
 type MutationSnapshot<Result> =
@@ -291,56 +371,22 @@ type MutationSnapshot<Result> =
 	| Readonly<{ status: 'success'; isPending: false; data: Result; error: null }>
 	| Readonly<{ status: 'error'; isPending: false; data: undefined; error: unknown }>
 
-type QueryEntry<Value = unknown> = {
-	resource: QueryResourceDefinition<any, any, any, Value>
-	cacheKey: string
-	input: unknown
-	listeners: Map<() => void, boolean>
-	enabledObservers: number
-	snapshot: WorkbenchQueryResult<WorkbenchDetached<Value>>
-	status: 'pending' | 'success' | 'error'
-	data: WorkbenchDetached<Value> | undefined
-	error: unknown
-	stale: boolean
-	fetching: boolean
-	updatedAt: number
-	lastUsed: number
-	desiredRevision: number
-	processedRevision: number
-	running: Promise<void> | undefined
-	readController: AbortController | undefined
-	watchController: AbortController | undefined
-	watchGeneration: number
-	watch: Disposable | undefined
-	watchPending: Disposable | undefined
-	retryTimer: ReturnType<typeof setTimeout> | undefined
-	retryResolve: (() => void) | undefined
-	cleanupVersion: number
-	waiters: Set<QueryWaiter<Value>>
-	refetch: () => Promise<WorkbenchDetached<Value>>
-	invalidate: () => void
-}
-
-type QueryWaiter<Value> = {
-	resolve(value: WorkbenchDetached<Value>): void
-	reject(error: unknown): void
-}
-
-type ScopeState<Descriptor extends WorkbenchRenderableDescriptor = WorkbenchRenderableDescriptor> =
-	{
-		context: ReturnType<typeof createContext<RendererOwner<Descriptor> | null>>
-		token: object
-	}
-
 type InvalidationMetadata = Readonly<{
 	scopeToken: object
 	resource: object
-	cacheKey: string | null
+	resolve(context: unknown): string
+	all: boolean
+}>
+
+type ValidatedInvalidation = Readonly<{
+	resource: object
+	canonicalKey: string | null
 	all: boolean
 }>
 
 const invalidationMetadata = new WeakMap<object, InvalidationMetadata>()
 const disposedValues = new WeakSet<object>()
+let nextOwnerId = 0
 
 export function createWorkbenchRenderer<Descriptor extends WorkbenchRenderableDescriptor>(
 	descriptor: Descriptor,
@@ -365,10 +411,11 @@ export function createWorkbenchRenderer<Descriptor extends WorkbenchRenderableDe
 	const scopeState: ScopeState<Descriptor> = {
 		context: createContext<RendererOwner<Descriptor> | null>(null),
 		token: Object.freeze({}),
+		nextResourceId: 0,
 	}
 
-	const scope = {
-		render(component: ComponentType<WorkbenchZeroProps>) {
+	const scope: WorkbenchRendererScope<Descriptor> = {
+		render(component) {
 			if (typeof component !== 'function') {
 				throw new TypeError('[workbench/react] renderer must be a zero-props React component')
 			}
@@ -379,9 +426,9 @@ export function createWorkbenchRenderer<Descriptor extends WorkbenchRenderableDe
 				const ownership = useMemo(
 					() => ({
 						mounts: 0,
-						owner: new RendererOwner(scopeState, hookValue),
+						owner: new RendererOwner(scopeState, hookValue, runtime.ownerSignal),
 					}),
-					[hookValue],
+					[hookValue, runtime.ownerSignal],
 				)
 				useEffect(() => {
 					ownership.mounts += 1
@@ -393,7 +440,7 @@ export function createWorkbenchRenderer<Descriptor extends WorkbenchRenderableDe
 					}
 				}, [ownership])
 				return (
-					<ScopedContext.Provider value={ownership.owner}>
+					<ScopedContext.Provider key={ownership.owner.id} value={ownership.owner}>
 						{createElement(component)}
 					</ScopedContext.Provider>
 				)
@@ -404,183 +451,267 @@ export function createWorkbenchRenderer<Descriptor extends WorkbenchRenderableDe
 		useWorkbench() {
 			return useScopedOwner(scopeState).context
 		},
-		query<Input, Value>(
-			options:
-				| WorkbenchRendererQueryOptions<WorkbenchHookValue<Descriptor>, Value>
-				| WorkbenchRendererKeyedQueryOptions<WorkbenchHookValue<Descriptor>, Input, Value>,
-		) {
-			return createQueryResource(scopeState, options)
+		query(factory) {
+			return createQueryResource(scopeState, false, factory as never) as never
 		},
-		mutation<Input extends readonly unknown[], Result>(
-			options: WorkbenchRendererMutationOptions<
-				Descriptor,
-				WorkbenchHookValue<Descriptor>,
-				Input,
-				Result
-			>,
-		) {
-			return createMutationResource(scopeState, options)
+		queryFamily(factory) {
+			return createQueryResource(scopeState, true, factory as never) as never
+		},
+		mutation(factory) {
+			return createMutationResource(scopeState, factory as never) as never
 		},
 	}
-	return Object.freeze(scope) as WorkbenchRendererScope<Descriptor>
+	return Object.freeze(scope)
 }
 
 class RendererOwner<Descriptor extends WorkbenchRenderableDescriptor> implements Disposable {
+	readonly id = ++nextOwnerId
 	readonly context: WorkbenchHookValue<Descriptor>
 	readonly signal: AbortSignal
+	readonly queryClient: QueryClient
 	readonly #scope: ScopeState<Descriptor>
 	readonly #abort = new AbortController()
-	readonly #entries = new Map<object, Map<string, QueryEntry>>()
+	readonly #entries = new Map<object, Map<string, AnyQueryEntry>>()
+	readonly #entriesByQueryKey = new Map<readonly unknown[], AnyQueryEntry>()
+	readonly #observerLeases = new Map<object, QueryObserverLease>()
 	readonly #closeListeners = new Set<() => void>()
+	readonly #unsubscribeQueryCache: () => void
+	readonly #ownerSignal: AbortSignal
+	readonly #closeFromOwnerSignal = () => this[Symbol.dispose]()
 	#closed = false
 	#activeEntries = 0
 	#entryCount = 0
-	#clock = 0
 
-	constructor(scope: ScopeState<Descriptor>, context: WorkbenchHookValue<Descriptor>) {
+	constructor(
+		scope: ScopeState<Descriptor>,
+		context: WorkbenchHookValue<Descriptor>,
+		ownerSignal: AbortSignal,
+	) {
+		if (ownerSignal.aborted) {
+			throw rendererError('WORKBENCH_RENDERER_CLOSED', 'Workbench renderer instance is closed')
+		}
 		this.#scope = scope
 		this.context = context
+		this.#ownerSignal = ownerSignal
 		this.signal = this.#abort.signal
+		this.queryClient = new QueryClient({
+			defaultOptions: {
+				queries: {
+					gcTime: QUERY_GC_TIME,
+					networkMode: 'always',
+					refetchOnReconnect: false,
+					refetchOnWindowFocus: false,
+					retry: false,
+					structuralSharing: false,
+				},
+			},
+		})
+		this.#unsubscribeQueryCache = this.queryClient.getQueryCache().subscribe((event) => {
+			if (event.type !== 'removed' || this.#closed) return
+			const entry = this.#entriesByQueryKey.get(event.query.queryKey)
+			if (entry) this.#removeEntry(entry)
+		})
+		ownerSignal.addEventListener('abort', this.#closeFromOwnerSignal, { once: true })
 	}
 
 	get closed(): boolean {
 		return this.#closed
 	}
 
-	resolve<Value>(
-		resource: QueryResourceDefinition<Descriptor, WorkbenchHookValue<Descriptor>, unknown, Value>,
-		cacheKey: string,
-		input: unknown,
-	): QueryEntry<Value> {
+	resolve<Input, QueryKey extends readonly WorkbenchResourceKey[], Value>(
+		definition: QueryDefinition<Descriptor, Input, QueryKey, Value>,
+		input: Input,
+	): QueryEntry<QueryKey, Value> {
 		this.#requireActive()
-		if (resource.scope.token !== this.#scope.token) {
-			throw rendererError(
-				'WORKBENCH_RENDERER_SCOPE_MISMATCH',
-				'Workbench query resource belongs to a different renderer scope',
-			)
-		}
-		let resourceEntries = this.#entries.get(resource.resource)
+		this.#requireScope(definition.scope)
+		const options = this.#resolveOptions(definition, input)
+		let resourceEntries = this.#entries.get(definition.resource)
 		if (!resourceEntries) {
 			resourceEntries = new Map()
-			this.#entries.set(resource.resource, resourceEntries)
+			this.#entries.set(definition.resource, resourceEntries)
 		}
-		const current = resourceEntries.get(cacheKey) as QueryEntry<Value> | undefined
-		if (current) {
-			current.lastUsed = ++this.#clock
-			return current
+		const current = resourceEntries.get(options.canonicalKey) as unknown as
+			| QueryEntry<QueryKey, Value>
+			| undefined
+		if (current) return current
+		if (this.#entryCount >= MAX_QUERY_ENTRIES) {
+			throw rendererError(
+				'WORKBENCH_RESOURCE_LIMIT_EXCEEDED',
+				'Workbench renderer has too many query keys',
+			)
 		}
-		this.#admitEntry(resourceEntries)
-		// Global eviction can remove the last entry in this resource and detach its local map.
-		// Reattach that same map before publishing the admitted entry.
-		if (!this.#entries.has(resource.resource)) {
-			this.#entries.set(resource.resource, resourceEntries)
+
+		const entry: QueryEntry<QueryKey, Value> = {
+			resource: definition.resource,
+			canonicalKey: options.canonicalKey,
+			options,
+			internalKey: Object.freeze([definition.resourceId, options.queryKey]),
+			activeObservers: 0,
+			active: false,
+			lifecycle: 0,
+			revision: 0,
+			subscriptionGeneration: 0,
+			subscriptionController: undefined,
+			subscriptionPromise: undefined,
+			pendingSubscription: undefined,
+			subscription: undefined,
 		}
-		const entry = createQueryEntry(this, resource, cacheKey, input, ++this.#clock)
-		resourceEntries.set(cacheKey, entry as QueryEntry)
+		resourceEntries.set(options.canonicalKey, entry as unknown as AnyQueryEntry)
+		this.#entriesByQueryKey.set(entry.internalKey, entry as unknown as AnyQueryEntry)
 		this.#entryCount += 1
 		return entry
 	}
 
-	subscribe<Value>(entry: QueryEntry<Value>, listener: () => void, enabled: boolean): () => void {
+	observe(entry: AnyQueryEntry, enabled: boolean, token?: object): () => void {
 		this.#requireActive()
-		if (entry.listeners.has(listener)) return () => {}
-		entry.listeners.set(listener, enabled)
-		entry.lastUsed = ++this.#clock
-		if (enabled) {
-			entry.cleanupVersion += 1
-			const activate = entry.enabledObservers === 0
-			if (activate) {
-				if (this.#activeEntries >= MAX_ACTIVE_QUERY_ENTRIES) {
-					entry.listeners.delete(listener)
-					throw rendererError(
-						'WORKBENCH_RESOURCE_LIMIT_EXCEEDED',
-						'Workbench renderer has too many active query keys',
-					)
-				}
-				this.#activeEntries += 1
-			}
-			entry.enabledObservers += 1
-			if (activate) this.#activate(entry)
+		if (token) {
+			const previous = this.#observerLeases.get(token)
+			if (previous) this.#releaseObserver(previous)
 		}
-		let subscribed = true
-		return () => {
-			if (!subscribed) return
-			subscribed = false
-			if (!entry.listeners.delete(listener)) return
-			if (enabled) {
-				entry.enabledObservers -= 1
-				if (entry.enabledObservers === 0) {
-					this.#activeEntries -= 1
-					const cleanupVersion = ++entry.cleanupVersion
-					queueMicrotask(() => {
-						if (
-							!this.#closed &&
-							entry.enabledObservers === 0 &&
-							entry.cleanupVersion === cleanupVersion
-						) {
-							this.#deactivate(entry)
-						}
-					})
-				}
+		if (!enabled) return () => {}
+		entry.lifecycle += 1
+		if (!entry.active) {
+			if (this.#activeEntries >= MAX_ACTIVE_QUERY_ENTRIES) {
+				this.#reclaimObserverlessEntries()
 			}
+			if (this.#activeEntries >= MAX_ACTIVE_QUERY_ENTRIES) {
+				throw rendererError(
+					'WORKBENCH_RESOURCE_LIMIT_EXCEEDED',
+					'Workbench renderer has too many active query keys',
+				)
+			}
+			entry.active = true
+			this.#activeEntries += 1
+		}
+		entry.activeObservers += 1
+		const lease: QueryObserverLease = { entry, token, active: true }
+		if (token) this.#observerLeases.set(token, lease)
+		return () => this.#releaseObserver(lease)
+	}
+
+	async executeQuery<QueryKey extends readonly WorkbenchResourceKey[], Value>(
+		entry: QueryEntry<QueryKey, Value>,
+		context: QueryFunctionContext<readonly unknown[]>,
+	): Promise<WorkbenchDetached<WorkbenchResolvedResult<Value>>> {
+		// Access the query-core signal before awaiting an async Workbench subscription. This makes
+		// removeObserver() cancel the fetch even while subscription setup is still pending.
+		const signal = context.signal
+		try {
+			this.#throwIfClosedOrCancelled(signal)
+			await this.#ensureSubscription(entry)
+			this.#throwIfClosedOrCancelled(signal)
+			while (true) {
+				const revision = entry.revision
+				const authorContext = Object.freeze({
+					queryKey: entry.options.queryKey,
+					signal,
+				}) as WorkbenchQueryExecutionContext<QueryKey>
+				const result = entry.options.queryFn(authorContext)
+				const value = (await detachWorkbenchPortableValue(
+					Promise.resolve(result),
+					'Workbench query result',
+				)) as WorkbenchDetached<WorkbenchResolvedResult<Value>>
+				this.#throwIfClosedOrCancelled(signal)
+				if (entry.revision === revision) return value
+			}
+		} catch (error) {
+			if (isWorkbenchQueryBoundaryFailure(error)) throw error
+			throw new WorkbenchQueryFailure(error)
 		}
 	}
 
-	refetch<Value>(entry: QueryEntry<Value>): Promise<WorkbenchDetached<Value>> {
-		if (this.#closed) {
-			return Promise.reject(
-				rendererError('WORKBENCH_RENDERER_CLOSED', 'Workbench renderer instance is closed'),
+	invalidate(entry: AnyQueryEntry): void {
+		this.#requireActive()
+		entry.revision += 1
+		const filters = { queryKey: entry.internalKey, exact: true, refetchType: 'none' as const }
+		void this.queryClient.invalidateQueries(filters)
+		if (entry.active) {
+			void this.queryClient.refetchQueries(
+				{ queryKey: entry.internalKey, exact: true, type: 'active' },
+				{ cancelRefetch: false },
 			)
 		}
-		this.#request(entry, true)
-		return new Promise((resolve, reject) => {
-			entry.waiters.add({ resolve, reject })
-		})
 	}
 
-	invalidate(entry: QueryEntry): void {
-		this.#requireActive()
-		entry.stale = true
-		this.#refreshSnapshot(entry)
-		if (entry.enabledObservers > 0) this.#request(entry, false)
-	}
-
-	invalidateTarget(target: object): void {
-		this.#requireActive()
-		const metadata = invalidationMetadata.get(target)
-		if (!metadata || metadata.scopeToken !== this.#scope.token) {
-			throw rendererError(
-				'WORKBENCH_RENDERER_SCOPE_MISMATCH',
-				'Workbench invalidation target belongs to a different renderer scope',
-			)
-		}
-		const entries = this.#entries.get(metadata.resource)
-		if (!entries) return
-		if (metadata.all) {
-			for (const entry of entries.values()) this.invalidate(entry)
-			return
-		}
-		const entry = entries.get(metadata.cacheKey!)
-		if (entry) this.invalidate(entry)
-	}
-
-	validateInvalidationTargets(targets: readonly object[]): readonly InvalidationMetadata[] {
-		this.#requireActive()
-		return Object.freeze(
-			targets.map((target) => {
-				const metadata = invalidationMetadata.get(target)
-				if (!metadata || metadata.scopeToken !== this.#scope.token) {
-					throw rendererError(
-						'WORKBENCH_RENDERER_SCOPE_MISMATCH',
-						'Workbench invalidation target belongs to a different renderer scope',
-					)
-				}
-				return metadata
-			}),
+	refetch<QueryKey extends readonly WorkbenchResourceKey[], Value>(
+		entry: QueryEntry<QueryKey, Value>,
+		observer: QueryObserver<WorkbenchDetached<WorkbenchResolvedResult<Value>>, unknown>,
+	): Promise<WorkbenchDetached<WorkbenchResolvedResult<Value>>> {
+		if (this.#closed) return Promise.reject(this.#closedError())
+		// Every explicit refetch owns a temporary Workbench lease so concurrent or cancel-restart
+		// reads cannot release one another's subscription.
+		const release = this.observe(entry, true)
+		const operation = observer.refetch({ throwOnError: true }).then(
+			(result) => {
+				if (this.#closed) throw this.#closedError()
+				if (result.status === 'error') throw reportedQueryError(result.error)
+				return result.data as WorkbenchDetached<WorkbenchResolvedResult<Value>>
+			},
+			(error: unknown) => Promise.reject(reportedQueryError(error)),
 		)
+		const result = this.raceClose(
+			operation,
+			'Workbench renderer instance closed during query refetch',
+		).finally(release)
+		void result.catch(() => {})
+		return result
 	}
 
-	invalidateValidatedTargets(targets: readonly InvalidationMetadata[]): void {
+	validateInvalidationTargets(targets: readonly unknown[]): readonly ValidatedInvalidation[] {
+		this.#requireActive()
+		const exactByResource = new Map<object, Map<string, ValidatedInvalidation>>()
+		const allByResource = new Map<object, ValidatedInvalidation>()
+		for (let index = 0; index < targets.length; index += 1) {
+			if (!(index in targets)) {
+				throw new TypeError('[workbench/react] mutation invalidates must be a dense array')
+			}
+			const target = targets[index]
+			const metadata =
+				(typeof target === 'object' || typeof target === 'function') && target !== null
+					? invalidationMetadata.get(target)
+					: undefined
+			if (!metadata || metadata.scopeToken !== this.#scope.token) {
+				throw rendererError(
+					'WORKBENCH_RENDERER_SCOPE_MISMATCH',
+					'Workbench invalidation target belongs to a different renderer scope',
+				)
+			}
+			if (metadata.all) {
+				allByResource.set(
+					metadata.resource,
+					Object.freeze({
+						resource: metadata.resource,
+						canonicalKey: null,
+						all: true,
+					}),
+				)
+				exactByResource.delete(metadata.resource)
+				continue
+			}
+			if (allByResource.has(metadata.resource)) continue
+			const canonicalKey = metadata.resolve(this.context)
+			let exact = exactByResource.get(metadata.resource)
+			if (!exact) {
+				exact = new Map()
+				exactByResource.set(metadata.resource, exact)
+			}
+			exact.set(
+				canonicalKey,
+				Object.freeze({
+					resource: metadata.resource,
+					canonicalKey,
+					all: false,
+				}),
+			)
+		}
+		const validated = [...allByResource.values()]
+		for (const targetsForResource of exactByResource.values()) {
+			validated.push(...targetsForResource.values())
+		}
+		return Object.freeze(validated)
+	}
+
+	invalidateValidatedTargets(targets: readonly ValidatedInvalidation[]): void {
 		if (this.#closed) return
 		for (const target of targets) {
 			const entries = this.#entries.get(target.resource)
@@ -588,7 +719,7 @@ class RendererOwner<Descriptor extends WorkbenchRenderableDescriptor> implements
 			if (target.all) {
 				for (const entry of entries.values()) this.invalidate(entry)
 			} else {
-				const entry = entries.get(target.cacheKey!)
+				const entry = entries.get(target.canonicalKey!)
 				if (entry) this.invalidate(entry)
 			}
 		}
@@ -603,455 +734,424 @@ class RendererOwner<Descriptor extends WorkbenchRenderableDescriptor> implements
 		return () => this.#closeListeners.delete(listener)
 	}
 
+	raceClose<Value>(operation: Promise<Value>, message: string): Promise<Value> {
+		if (this.#closed) return Promise.reject(this.#closedError())
+		let remove = () => {}
+		const closed = new Promise<never>((_resolve, reject) => {
+			remove = this.onClose(() => reject(rendererError('WORKBENCH_RENDERER_CLOSED', message)))
+		})
+		const raced = Promise.race([operation, closed]).finally(remove)
+		void raced.catch(() => {})
+		return raced
+	}
+
 	[Symbol.dispose](): void {
 		if (this.#closed) return
 		this.#closed = true
+		this.#ownerSignal.removeEventListener('abort', this.#closeFromOwnerSignal)
 		this.#abort.abort()
 		for (const listener of this.#closeListeners) callSafely(listener)
 		this.#closeListeners.clear()
-		const error = rendererError(
-			'WORKBENCH_RENDERER_CLOSED',
-			'Workbench renderer instance is closed',
-		)
 		for (const entries of this.#entries.values()) {
-			for (const entry of entries.values()) {
-				entry.cleanupVersion += 1
-				entry.readController?.abort()
-				entry.watchController?.abort()
-				this.#cancelRetry(entry)
-				try {
-					this.#disposeWatch(entry)
-				} catch {
-					// Closing the owner is authoritative even when an author disposer is faulty.
-				}
-				for (const waiter of entry.waiters) waiter.reject(error)
-				entry.waiters.clear()
-				entry.listeners.clear()
-			}
+			for (const entry of entries.values()) this.#disposeEntry(entry)
 		}
 		this.#entries.clear()
-		this.#entryCount = 0
+		this.#entriesByQueryKey.clear()
+		this.#observerLeases.clear()
 		this.#activeEntries = 0
+		this.#entryCount = 0
+		this.#unsubscribeQueryCache()
+		void this.queryClient.cancelQueries(undefined, { silent: true })
+		this.queryClient.clear()
+	}
+
+	#resolveOptions<Input, QueryKey extends readonly WorkbenchResourceKey[], Value>(
+		definition: QueryDefinition<Descriptor, Input, QueryKey, Value>,
+		input: Input,
+	): NormalizedQueryOptions<QueryKey, Value> {
+		let declared: unknown
+		try {
+			declared = definition.factory(this.context, input)
+		} catch (cause) {
+			throw new TypeError('[workbench/react] query options factory failed', { cause })
+		}
+		return normalizeQueryOptions<QueryKey, Value>(declared)
+	}
+
+	#requireScope(scope: ScopeState): void {
+		if (scope.token !== this.#scope.token) {
+			throw rendererError(
+				'WORKBENCH_RENDERER_SCOPE_MISMATCH',
+				'Workbench resource belongs to a different renderer scope',
+			)
+		}
 	}
 
 	#requireActive(): void {
-		if (this.#closed) {
-			throw rendererError('WORKBENCH_RENDERER_CLOSED', 'Workbench renderer instance is closed')
+		if (this.#closed) throw this.#closedError()
+	}
+
+	#closedError(): WorkbenchRendererError {
+		return rendererError('WORKBENCH_RENDERER_CLOSED', 'Workbench renderer instance is closed')
+	}
+
+	#throwIfClosedOrCancelled(signal: AbortSignal): void {
+		if (this.#closed) throw this.#closedError()
+		if (signal.aborted) throw new CancelledError({ revert: true, silent: true })
+	}
+
+	#deactivate(entry: AnyQueryEntry): void {
+		entry.active = false
+		this.#activeEntries -= 1
+		this.#closeSubscription(entry)
+		if (entry.options.subscribe) {
+			entry.revision += 1
+			void this.queryClient.invalidateQueries({
+				queryKey: entry.internalKey,
+				exact: true,
+				refetchType: 'none',
+			})
 		}
 	}
 
-	#admitEntry(resourceEntries: Map<string, QueryEntry>): void {
-		while (this.#entryCount >= MAX_QUERY_ENTRIES || resourceEntries.size >= MAX_RESOURCE_ENTRIES) {
-			let candidate: QueryEntry | undefined
-			const candidateMaps =
-				resourceEntries.size >= MAX_RESOURCE_ENTRIES ? [resourceEntries] : this.#entries.values()
-			for (const entries of candidateMaps) {
-				for (const entry of entries.values()) {
-					if (
-						entry.listeners.size === 0 &&
-						entry.running === undefined &&
-						entry.watch === undefined &&
-						(!candidate || entry.lastUsed < candidate.lastUsed)
-					) {
-						candidate = entry
-					}
-				}
-			}
-			if (!candidate) {
-				throw rendererError(
-					'WORKBENCH_RESOURCE_LIMIT_EXCEEDED',
-					'Workbench renderer query cache limit was exceeded',
-				)
-			}
-			this.#deleteEntry(candidate)
+	#releaseObserver(lease: QueryObserverLease): void {
+		if (!lease.active) return
+		lease.active = false
+		if (lease.token && this.#observerLeases.get(lease.token) === lease) {
+			this.#observerLeases.delete(lease.token)
 		}
-	}
-
-	#deleteEntry(entry: QueryEntry): void {
-		const entries = this.#entries.get(entry.resource.resource)
-		if (!entries?.delete(entry.cacheKey)) return
-		if (entries.size === 0) this.#entries.delete(entry.resource.resource)
-		this.#entryCount -= 1
-	}
-
-	#activate(entry: QueryEntry): void {
-		const watched = getWatch(entry.resource.options) !== undefined
-		if (watched) entry.stale = true
-		const staleTime = getStaleTime(entry.resource.options, watched)
-		const fresh =
-			entry.status === 'success' &&
-			!entry.stale &&
-			(Date.now() - entry.updatedAt < staleTime || staleTime === Infinity)
-		if (!fresh) this.#request(entry, false)
-	}
-
-	#deactivate(entry: QueryEntry): void {
-		entry.cleanupVersion += 1
-		entry.watchGeneration += 1
-		entry.watchController?.abort()
-		entry.watchController = undefined
-		try {
-			this.#disposeWatch(entry)
-		} catch {
-			// An inactive query has no observer error channel; cleanup must still complete.
-		}
-		if (getWatch(entry.resource.options)) entry.stale = true
-		if (entry.waiters.size === 0) {
-			entry.readController?.abort()
-			this.#cancelRetry(entry)
-		}
-		this.#refreshSnapshot(entry)
-	}
-
-	#request(entry: QueryEntry, explicit: boolean): void {
-		entry.stale = true
-		if (entry.running) {
-			if (entry.desiredRevision === entry.processedRevision + 1) {
-				entry.desiredRevision += 1
-				entry.readController?.abort()
-			}
-		} else {
-			entry.desiredRevision += 1
-		}
-		this.#refreshSnapshot(entry)
-		if (explicit || entry.enabledObservers > 0) this.#run(entry)
-	}
-
-	#run(entry: QueryEntry): void {
-		if (entry.running || this.#closed) return
-		const running = Promise.resolve().then(() => this.#runLoop(entry))
-		const handled = running.catch((error: unknown) => {
-			if (!this.#closed && (entry.enabledObservers > 0 || entry.waiters.size > 0)) {
-				entry.processedRevision = entry.desiredRevision
-				entry.status = 'error'
-				entry.error = error
-				entry.stale = true
-				this.#rejectWaiters(entry, error)
-			}
-		})
-		entry.running = handled.finally(() => {
-			entry.running = undefined
-			entry.readController = undefined
-			entry.fetching = false
-			this.#refreshSnapshot(entry)
+		if (this.#closed) return
+		const entry = lease.entry
+		entry.activeObservers -= 1
+		const lifecycle = ++entry.lifecycle
+		if (entry.activeObservers !== 0) return
+		queueMicrotask(() => {
 			if (
 				!this.#closed &&
-				entry.desiredRevision > entry.processedRevision &&
-				(entry.enabledObservers > 0 || entry.waiters.size > 0)
+				entry.active &&
+				entry.activeObservers === 0 &&
+				entry.lifecycle === lifecycle
 			) {
-				this.#run(entry)
+				this.#deactivate(entry)
 			}
 		})
 	}
 
-	async #runLoop(entry: QueryEntry): Promise<void> {
-		while (
-			!this.#closed &&
-			entry.desiredRevision > entry.processedRevision &&
-			(entry.enabledObservers > 0 || entry.waiters.size > 0)
-		) {
-			let revision = entry.desiredRevision
-			entry.fetching = true
-			this.#refreshSnapshot(entry)
-			let failureCount = 0
-			while (!this.#closed) {
-				try {
-					await this.#ensureWatch(entry)
-					if (this.#closed || (entry.enabledObservers === 0 && entry.waiters.size === 0)) {
-						entry.processedRevision = revision
-						break
-					}
-					revision = entry.desiredRevision
-					const controller = new AbortController()
-					entry.readController = controller
-					const context = executionContext(this.context, controller.signal)
-					const query = getQueryFn(entry.resource.options)
-					const input = entry.input
-					const result = entry.resource.keyed ? query(context, input) : query(context)
-					const value = (await detachWorkbenchPortableValue(
-						Promise.resolve(result),
-						'Workbench query result',
-					)) as WorkbenchDetached<unknown>
-					entry.processedRevision = revision
-					if (
-						!this.#closed &&
-						entry.desiredRevision === revision &&
-						(entry.enabledObservers > 0 || entry.waiters.size > 0)
-					) {
-						entry.status = 'success'
-						entry.data = value
-						entry.error = null
-						entry.stale = false
-						entry.updatedAt = Date.now()
-						this.#resolveWaiters(entry, value)
-					}
-					break
-				} catch (caught) {
-					if (this.#closed) break
-					if (entry.desiredRevision !== revision) {
-						entry.processedRevision = revision
-						break
-					}
-					let error = caught
-					failureCount += 1
-					let retry = false
-					try {
-						retry = this.#shouldRetry(entry, failureCount, error)
-					} catch (retryError) {
-						error = retryError
-					}
-					if (retry) {
-						await this.#retryDelay(entry, failureCount)
-						if (this.#closed || (entry.enabledObservers === 0 && entry.waiters.size === 0)) {
-							entry.processedRevision = revision
-							break
-						}
-						continue
-					}
-					entry.processedRevision = revision
-					if (!this.#closed && (entry.enabledObservers > 0 || entry.waiters.size > 0)) {
-						entry.status = 'error'
-						entry.error = error
-						entry.stale = true
-						this.#rejectWaiters(entry, error)
-					}
-					break
-				}
+	#reclaimObserverlessEntries(): void {
+		for (const entries of this.#entries.values()) {
+			for (const entry of entries.values()) {
+				if (entry.active && entry.activeObservers === 0) this.#deactivate(entry)
 			}
 		}
 	}
 
-	async #ensureWatch(entry: QueryEntry): Promise<void> {
-		const watch = getWatch(entry.resource.options)
-		if (!watch || entry.watch) return
-		if (entry.enabledObservers === 0) return
-		const generation = ++entry.watchGeneration
+	async #ensureSubscription(entry: AnyQueryEntry): Promise<void> {
+		if (!entry.options.subscribe || entry.subscription) return
+		if (!entry.active || this.#closed) {
+			this.#throwIfClosedOrCancelled(this.signal)
+			throw new CancelledError({ revert: true, silent: true })
+		}
+		if (entry.subscriptionPromise) return entry.subscriptionPromise
+
+		const generation = ++entry.subscriptionGeneration
 		const controller = new AbortController()
-		entry.watchController = controller
+		entry.subscriptionController = controller
+		const operation = this.#openSubscription(entry, generation, controller)
+		entry.subscriptionPromise = operation
+		try {
+			await operation
+		} finally {
+			if (entry.subscriptionPromise === operation) entry.subscriptionPromise = undefined
+		}
+	}
+
+	async #openSubscription(
+		entry: AnyQueryEntry,
+		generation: number,
+		controller: AbortController,
+	): Promise<void> {
 		const invalidate = () => {
-			if (this.#closed || entry.enabledObservers === 0 || entry.watchGeneration !== generation) {
+			if (this.#closed || !entry.active || entry.subscriptionGeneration !== generation) {
 				return
 			}
 			this.invalidate(entry)
 		}
-		const context = executionContext(this.context, controller.signal)
+		let returned: Disposable | PromiseLike<Disposable> | undefined
+		let pending: Disposable | undefined
 		try {
-			const pending = entry.resource.keyed
-				? watch(context, entry.input, invalidate)
-				: watch(context, invalidate)
-			entry.watchPending = isDisposable(pending) ? pending : undefined
-			const settled = await pending
+			returned = entry.options.subscribe!(
+				Object.freeze({
+					signal: controller.signal,
+					invalidate,
+				}),
+			)
+			pending = isDisposable(returned) ? returned : undefined
+			if (pending) entry.pendingSubscription = pending
+			const settled = await returned
 			if (!isDisposable(settled)) {
-				throw new TypeError('[workbench/react] query watch() must return a Disposable')
+				throw new WorkbenchQueryContractError(
+					'[workbench/react] workbench.subscribe must return a Disposable',
+				)
 			}
-			if (this.#closed || entry.enabledObservers === 0 || entry.watchGeneration !== generation) {
-				disposeOnce(settled)
-				entry.watchPending = undefined
-				return
+			if (this.#closed || !entry.active || entry.subscriptionGeneration !== generation) {
+				tryDispose(settled)
+				if (entry.pendingSubscription === pending) entry.pendingSubscription = undefined
+				throw new CancelledError({ revert: true, silent: true })
 			}
-			entry.watch = settled
-			entry.watchPending = undefined
+			if (entry.pendingSubscription === pending) entry.pendingSubscription = undefined
+			entry.subscription = settled
 		} catch (error) {
 			controller.abort()
-			try {
-				this.#disposeWatch(entry)
-			} catch {
-				// Preserve the watch/read failure that selected this retry path.
+			tryDispose(pending)
+			if (entry.pendingSubscription === pending) entry.pendingSubscription = undefined
+			if (entry.subscriptionGeneration === generation) {
+				entry.subscriptionGeneration += 1
+				entry.subscriptionController = undefined
 			}
-			if (entry.watchGeneration === generation) entry.watchController = undefined
 			throw error
 		}
 	}
 
-	#disposeWatch(entry: QueryEntry): void {
-		const watch = entry.watch
-		const pending = entry.watchPending
-		entry.watch = undefined
-		entry.watchPending = undefined
-		let failure: unknown
-		try {
-			disposeOnce(watch)
-		} catch (error) {
-			failure = error
-		}
-		if (pending !== watch) {
-			try {
-				disposeOnce(pending)
-			} catch (error) {
-				failure ??= error
-			}
-		}
-		if (failure !== undefined) throw failure
+	#closeSubscription(entry: AnyQueryEntry): void {
+		entry.subscriptionGeneration += 1
+		entry.subscriptionController?.abort()
+		entry.subscriptionController = undefined
+		tryDispose(entry.pendingSubscription)
+		entry.pendingSubscription = undefined
+		tryDispose(entry.subscription)
+		entry.subscription = undefined
+		entry.subscriptionPromise = undefined
 	}
 
-	#shouldRetry(entry: QueryEntry, failureCount: number, error: unknown): boolean {
-		if (
-			this.#closed ||
-			(entry.enabledObservers === 0 && entry.waiters.size === 0) ||
-			error instanceof WorkbenchRendererError ||
-			error instanceof WorkbenchPortableValueError
-		) {
-			return false
-		}
-		const retry = entry.resource.options.retry
-		if (retry === undefined || retry === false) return false
-		if (failureCount > MAX_QUERY_RETRIES) return false
-		if (typeof retry === 'number') return failureCount <= Math.min(retry, MAX_QUERY_RETRIES)
-		return retry(Object.freeze({ failureCount, error })) === true
+	#disposeEntry(entry: AnyQueryEntry): void {
+		entry.lifecycle += 1
+		entry.active = false
+		entry.activeObservers = 0
+		this.#closeSubscription(entry)
 	}
 
-	#retryDelay(entry: QueryEntry, failureCount: number): Promise<void> {
-		return new Promise((resolve) => {
-			entry.retryResolve = resolve
-			entry.retryTimer = setTimeout(
-				() => {
-					entry.retryTimer = undefined
-					entry.retryResolve = undefined
-					resolve()
-				},
-				Math.min(250 * 2 ** (failureCount - 1), 4_000),
-			)
-		})
-	}
-
-	#cancelRetry(entry: QueryEntry): void {
-		if (entry.retryTimer !== undefined) clearTimeout(entry.retryTimer)
-		entry.retryTimer = undefined
-		const resolve = entry.retryResolve
-		entry.retryResolve = undefined
-		resolve?.()
-	}
-
-	#resolveWaiters<Value>(entry: QueryEntry<Value>, value: WorkbenchDetached<Value>): void {
-		for (const waiter of entry.waiters) waiter.resolve(value)
-		entry.waiters.clear()
-	}
-
-	#rejectWaiters<Value>(entry: QueryEntry<Value>, error: unknown): void {
-		for (const waiter of entry.waiters) waiter.reject(error)
-		entry.waiters.clear()
-	}
-
-	#refreshSnapshot(entry: QueryEntry): void {
-		if (this.#closed) return
-		entry.snapshot = createSnapshot(entry)
-		for (const listener of entry.listeners.keys()) callSafely(listener)
+	#removeEntry(entry: AnyQueryEntry): void {
+		this.#disposeEntry(entry)
+		this.#entriesByQueryKey.delete(entry.internalKey)
+		const resourceEntries = this.#entries.get(entry.resource)
+		if (!resourceEntries?.delete(entry.canonicalKey)) return
+		if (resourceEntries.size === 0) this.#entries.delete(entry.resource)
+		this.#entryCount -= 1
 	}
 }
 
-function createQueryResource<Descriptor extends WorkbenchRenderableDescriptor, Input, Value>(
+function createQueryResource<
+	Descriptor extends WorkbenchRenderableDescriptor,
+	Input,
+	QueryKey extends readonly WorkbenchResourceKey[],
+	Value,
+>(
 	scope: ScopeState<Descriptor>,
-	options:
-		| WorkbenchRendererQueryOptions<WorkbenchHookValue<Descriptor>, Value>
-		| WorkbenchRendererKeyedQueryOptions<WorkbenchHookValue<Descriptor>, Input, Value>,
+	family: boolean,
+	factory: (
+		context: WorkbenchHookValue<Descriptor>,
+		input: Input,
+	) => WorkbenchQueryOptions<QueryKey, Value>,
 ):
 	| WorkbenchQueryResource<Descriptor, WorkbenchResolvedResult<Value>>
-	| WorkbenchKeyedQueryResource<Descriptor, Input, WorkbenchResolvedResult<Value>> {
-	const normalized = normalizeOptions(options)
-	const keyed = 'queryKey' in normalized
+	| WorkbenchQueryFamilyResource<Descriptor, Input, WorkbenchResolvedResult<Value>> {
+	if (typeof factory !== 'function') {
+		throw new TypeError('[workbench/react] query() requires an options factory')
+	}
 	const resource = {} as Record<string, unknown>
-	const definition: QueryResourceDefinition<
-		Descriptor,
-		WorkbenchHookValue<Descriptor>,
-		Input,
-		Value
-	> = Object.freeze({ scope, keyed, options: normalized, resource })
-	if (keyed) {
+	const definition: QueryDefinition<Descriptor, Input, QueryKey, Value> = Object.freeze({
+		scope,
+		resource,
+		resourceId: ++scope.nextResourceId,
+		family,
+		factory,
+	})
+	if (family) {
 		Object.assign(resource, {
 			useQuery(input: Input) {
-				return useQueryResource(definition, input, canonicalQueryKey(normalized.queryKey(input)))
+				return useQueryResource(definition, input)
 			},
 			target(input: Input) {
-				return createInvalidationTarget(
-					scope,
-					resource,
-					canonicalQueryKey(normalized.queryKey(input)),
-					false,
-				)
+				return createInvalidationTarget(scope, definition, input, false)
 			},
 			all() {
-				return createInvalidationTarget(scope, resource, null, true)
+				return createInvalidationTarget(scope, definition, undefined, true)
 			},
 		})
 	} else {
 		Object.assign(resource, {
 			useQuery() {
-				return useQueryResource(definition, undefined, 'singleton')
+				return useQueryResource(definition, undefined as Input)
 			},
 		})
 		invalidationMetadata.set(
 			resource,
-			Object.freeze({
-				scopeToken: scope.token,
-				resource,
-				cacheKey: 'singleton',
-				all: false,
-			}),
+			createInvalidationMetadata(scope, definition, undefined, false),
 		)
 	}
 	return Object.freeze(resource) as never
 }
 
-function createMutationResource<
+function useQueryResource<
 	Descriptor extends WorkbenchRenderableDescriptor,
-	Input extends readonly unknown[],
-	Result,
+	Input,
+	QueryKey extends readonly WorkbenchResourceKey[],
+	Value,
 >(
+	definition: QueryDefinition<Descriptor, Input, QueryKey, Value>,
+	input: Input,
+): WorkbenchQueryResult<WorkbenchDetached<WorkbenchResolvedResult<Value>>> {
+	type DetachedValue = WorkbenchDetached<WorkbenchResolvedResult<Value>>
+	const owner = useScopedOwner(definition.scope)
+	const entry = owner.resolve(definition, input)
+	const observer = useMemo(
+		() =>
+			new QueryObserver<DetachedValue, unknown>(owner.queryClient, {
+				queryKey: entry.internalKey,
+				queryFn: (context) => owner.executeQuery(entry, context),
+				enabled: entry.options.enabled,
+				staleTime: entry.options.staleTime,
+				retry: (failureCount, error) => shouldRetry(entry.options.retry, failureCount, error),
+				...(entry.options.retryDelay === undefined
+					? {}
+					: {
+							retryDelay: (failureCount: number, error: unknown) =>
+								readRetryDelay(entry.options.retryDelay!, failureCount, error),
+						}),
+				gcTime: QUERY_GC_TIME,
+				networkMode: 'always',
+				refetchOnReconnect: false,
+				refetchOnWindowFocus: false,
+				notifyOnChangeProps: 'all',
+			}),
+		[entry, owner],
+	)
+	const observerToken = useRef<object>(Object.freeze({})).current
+	const hookLease = useMemo(() => ({ active: false }), [observer])
+	const subscribe = useCallback(
+		(listener: () => void) => {
+			hookLease.active = true
+			let release = () => {}
+			try {
+				release = owner.observe(entry, entry.options.enabled, observerToken)
+				const unsubscribe = observer.subscribe(listener)
+				return () => {
+					hookLease.active = false
+					unsubscribe()
+					release()
+				}
+			} catch (error) {
+				hookLease.active = false
+				release()
+				throw error
+			}
+		},
+		[entry, hookLease, observer, observerToken, owner],
+	)
+	const getSnapshot = useCallback(() => observer.getCurrentResult(), [observer])
+	const result = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+	const controls = useMemo(
+		() => ({
+			refetch: () => {
+				if (!hookLease.active) return Promise.reject(hookInactiveError())
+				return owner.refetch(entry, observer)
+			},
+			invalidate: () => {
+				if (!hookLease.active) throw hookInactiveError()
+				owner.invalidate(entry)
+			},
+		}),
+		[entry, hookLease, observer, owner],
+	)
+	return useMemo(() => projectQueryResult(result, controls), [controls, result])
+}
+
+function projectQueryResult<Value>(
+	result: QueryObserverResult<Value, unknown>,
+	controls: Readonly<{ refetch(): Promise<Value>; invalidate(): void }>,
+): WorkbenchQueryResult<Value> {
+	const common = {
+		isFetching: result.isFetching,
+		isStale: result.isStale,
+		refetch: controls.refetch,
+		invalidate: controls.invalidate,
+	}
+	if (result.status === 'pending') {
+		return Object.freeze({
+			...common,
+			status: 'pending',
+			data: undefined,
+			error: null,
+			isPending: true,
+			isStale: true,
+		})
+	}
+	if (result.status === 'error') {
+		return Object.freeze({
+			...common,
+			status: 'error',
+			data: result.data,
+			error: reportedQueryError(result.error),
+			isPending: false,
+			isStale: true,
+		})
+	}
+	return Object.freeze({
+		...common,
+		status: 'success',
+		data: result.data,
+		error: null,
+		isPending: false,
+	})
+}
+
+function createMutationResource<Descriptor extends WorkbenchRenderableDescriptor, Input, Result>(
 	scope: ScopeState<Descriptor>,
-	options: WorkbenchRendererMutationOptions<
-		Descriptor,
-		WorkbenchHookValue<Descriptor>,
-		Input,
-		Result
-	>,
+	factory: (
+		context: WorkbenchMutationExecutionContext<WorkbenchHookValue<Descriptor>>,
+	) => WorkbenchMutationOptions<Descriptor, Input, Result>,
 ): WorkbenchMutationResource<Input, WorkbenchResolvedResult<Result>> {
-	const normalized = normalizeMutationOptions(options)
-	const resource = {} as Record<string, unknown>
-	const definition: MutationResourceDefinition<
-		Descriptor,
-		WorkbenchHookValue<Descriptor>,
-		Input,
-		Result
-	> = Object.freeze({ scope, options: normalized, resource })
-	Object.assign(resource, {
+	if (typeof factory !== 'function') {
+		throw new TypeError('[workbench/react] mutation() requires an options factory')
+	}
+	const definition: MutationDefinition<Descriptor, Input, Result> = Object.freeze({
+		scope,
+		factory,
+	})
+	return Object.freeze({
 		useMutation() {
 			return useMutationResource(definition)
 		},
-	})
-	return Object.freeze(resource) as unknown as WorkbenchMutationResource<
-		Input,
-		WorkbenchResolvedResult<Result>
-	>
+	}) as WorkbenchMutationResource<Input, WorkbenchResolvedResult<Result>>
 }
 
-function useMutationResource<
-	Descriptor extends WorkbenchRenderableDescriptor,
-	Input extends readonly unknown[],
-	Result,
->(
-	resource: MutationResourceDefinition<Descriptor, WorkbenchHookValue<Descriptor>, Input, Result>,
-): WorkbenchMutationState<Input, WorkbenchDetachedMutationResult<Result>> {
-	type DetachedResult = WorkbenchDetachedMutationResult<Result>
-	const owner = useScopedOwner(resource.scope)
+function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, Input, Result>(
+	definition: MutationDefinition<Descriptor, Input, Result>,
+): WorkbenchMutationState<
+	Input,
+	WorkbenchDetachedResolvedMutationResult<WorkbenchResolvedResult<Result>>
+> {
+	type DetachedResult = WorkbenchDetachedResolvedMutationResult<WorkbenchResolvedResult<Result>>
+	const owner = useScopedOwner(definition.scope)
+	const options = useMemo(() => {
+		const context = Object.freeze({
+			...owner.context,
+			signal: owner.signal,
+		}) as WorkbenchMutationExecutionContext<WorkbenchHookValue<Descriptor>>
+		let declared: unknown
+		try {
+			declared = definition.factory(context)
+		} catch (cause) {
+			throw new TypeError('[workbench/react] mutation options factory failed', { cause })
+		}
+		return normalizeMutationOptions<Descriptor, Input, Result>(declared)
+	}, [definition, owner])
 	const mounted = useRef(true)
 	const pending = useRef(false)
 	const sequence = useRef(0)
 	const [snapshot, setSnapshot] = useState<MutationSnapshot<DetachedResult>>(() =>
 		Object.freeze({ status: 'idle', isPending: false, data: undefined, error: null }),
 	)
-	const rejectBeforeStart = useCallback((error: unknown): Promise<never> => {
-		if (mounted.current) {
-			setSnapshot(
-				Object.freeze({
-					status: 'error',
-					isPending: false,
-					data: undefined,
-					error,
-				}),
-			)
-		}
-		return Promise.reject(error)
-	}, [])
 
 	useEffect(() => {
 		mounted.current = true
@@ -1060,8 +1160,16 @@ function useMutationResource<
 		}
 	}, [])
 
+	const rejectBeforeStart = useCallback((error: unknown): Promise<never> => {
+		if (mounted.current) {
+			setSnapshot(Object.freeze({ status: 'error', isPending: false, data: undefined, error }))
+		}
+		return Promise.reject(error)
+	}, [])
+
 	const mutateAsync = useCallback(
-		(...input: Input): Promise<DetachedResult> => {
+		(...args: MutationArguments<Input>): Promise<DetachedResult> => {
+			if (!mounted.current) return Promise.reject(hookInactiveError())
 			if (owner.closed) {
 				return rejectBeforeStart(
 					rendererError('WORKBENCH_RENDERER_CLOSED', 'Workbench renderer instance is closed'),
@@ -1075,12 +1183,15 @@ function useMutationResource<
 					),
 				)
 			}
-
-			let targets: readonly InvalidationMetadata[]
+			const input = args[0] as Input
+			let targets: readonly ValidatedInvalidation[]
 			try {
-				const invalidates = resource.options.invalidates
 				const declared =
-					typeof invalidates === 'function' ? invalidates(...input) : (invalidates ?? [])
+					typeof options.invalidates === 'function'
+						? args.length === 0
+							? (options.invalidates as () => readonly WorkbenchQueryInvalidation<Descriptor>[])()
+							: options.invalidates(input)
+						: (options.invalidates ?? [])
 				if (!Array.isArray(declared)) {
 					throw new TypeError('[workbench/react] mutation invalidates() must return an array')
 				}
@@ -1090,7 +1201,7 @@ function useMutationResource<
 						'Workbench mutation declares too many invalidation targets',
 					)
 				}
-				targets = owner.validateInvalidationTargets(declared as readonly object[])
+				targets = owner.validateInvalidationTargets(declared)
 			} catch (error) {
 				return rejectBeforeStart(error)
 			}
@@ -1104,15 +1215,14 @@ function useMutationResource<
 			}
 
 			const operation = (async (): Promise<DetachedResult> => {
-				let failed = false
 				let failure: unknown
+				let failed = false
 				let value: DetachedResult | undefined
 				try {
-					const context = executionContext(
-						owner.context,
-						owner.signal,
-					) as WorkbenchMutationExecutionContext<WorkbenchHookValue<Descriptor>>
-					const result = resource.options.mutationFn(context, ...input)
+					const result =
+						args.length === 0
+							? (options.mutationFn as () => WorkbenchAwaitable<Result>)()
+							: options.mutationFn(input)
 					const settled = await Promise.resolve(result)
 					value = (
 						settled === undefined
@@ -1166,32 +1276,18 @@ function useMutationResource<
 				}
 				return value as DetachedResult
 			})()
-
-			let removeCloseListener = () => {}
-			const closed = new Promise<never>((_resolve, reject) => {
-				removeCloseListener = owner.onClose(() => {
-					reject(
-						rendererError(
-							'WORKBENCH_RENDERER_CLOSED',
-							'Workbench renderer instance closed during its mutation',
-						),
-					)
-				})
-			})
-			return Promise.race([operation, closed]).finally(removeCloseListener)
+			return owner.raceClose(operation, 'Workbench renderer instance closed during its mutation')
 		},
-		[owner, rejectBeforeStart, resource],
+		[options, owner, rejectBeforeStart],
 	)
 
 	const mutate = useCallback(
-		(...input: Input): void => {
-			// Accepted operation failures and preflight failures are already represented by
-			// mutation state. A second call while pending intentionally preserves that state.
+		(...input: MutationArguments<Input>): void => {
+			if (!mounted.current) throw hookInactiveError()
 			void mutateAsync(...input).catch(() => {})
 		},
 		[mutateAsync],
 	)
-
 	const reset = useCallback(() => {
 		if (pending.current || !mounted.current) return
 		sequence.current += 1
@@ -1202,24 +1298,6 @@ function useMutationResource<
 		() => Object.freeze({ ...snapshot, mutate, mutateAsync, reset }),
 		[mutate, mutateAsync, reset, snapshot],
 	) as WorkbenchMutationState<Input, DetachedResult>
-}
-
-function useQueryResource<Descriptor extends WorkbenchRenderableDescriptor, Input, Value>(
-	resource: QueryResourceDefinition<Descriptor, WorkbenchHookValue<Descriptor>, Input, Value>,
-	input: Input,
-	cacheKey: string,
-): WorkbenchQueryResult<WorkbenchDetached<WorkbenchResolvedResult<Value>>> {
-	const owner = useScopedOwner(resource.scope)
-	const enabled = readEnabled(resource.options, input)
-	const entry = owner.resolve(resource as never, cacheKey, input)
-	const subscribe = useCallback(
-		(listener: () => void) => owner.subscribe(entry, listener, enabled),
-		[enabled, entry, owner],
-	)
-	const getSnapshot = useCallback(() => entry.snapshot, [entry])
-	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot) as WorkbenchQueryResult<
-		WorkbenchDetached<WorkbenchResolvedResult<Value>>
-	>
 }
 
 function useScopedOwner<Descriptor extends WorkbenchRenderableDescriptor>(
@@ -1238,198 +1316,258 @@ function useScopedOwner<Descriptor extends WorkbenchRenderableDescriptor>(
 	return owner
 }
 
-function createQueryEntry<Value>(
-	owner: RendererOwner<any>,
-	resource: QueryResourceDefinition<any, any, any, Value>,
-	cacheKey: string,
-	input: unknown,
-	lastUsed: number,
-): QueryEntry<Value> {
-	const entry: QueryEntry<Value> = {
-		resource,
-		cacheKey,
-		input,
-		listeners: new Map(),
-		enabledObservers: 0,
-		status: 'pending' as const,
-		data: undefined,
-		error: null,
-		stale: true,
-		fetching: false,
-		updatedAt: 0,
-		lastUsed,
-		desiredRevision: 0,
-		processedRevision: 0,
-		running: undefined,
-		readController: undefined,
-		watchController: undefined,
-		watchGeneration: 0,
-		watch: undefined,
-		watchPending: undefined,
-		retryTimer: undefined,
-		retryResolve: undefined,
-		cleanupVersion: 0,
-		waiters: new Set(),
-		refetch: undefined as unknown as () => Promise<WorkbenchDetached<Value>>,
-		invalidate: undefined as unknown as () => void,
-		snapshot: undefined as unknown as WorkbenchQueryResult<WorkbenchDetached<Value>>,
+function normalizeQueryOptions<
+	QueryKey extends readonly WorkbenchResourceKey[] = readonly WorkbenchResourceKey[],
+	Value = unknown,
+>(input: unknown): NormalizedQueryOptions<QueryKey, Value> {
+	const options = readOptionsRecord(input, 'query options')
+	assertOnlyKeys(options, [
+		'queryKey',
+		'queryFn',
+		'enabled',
+		'staleTime',
+		'retry',
+		'retryDelay',
+		'workbench',
+	])
+	if (!('queryKey' in options)) {
+		throw new TypeError('[workbench/react] query options require queryKey')
 	}
-	entry.refetch = () => owner.refetch(entry)
-	entry.invalidate = () => owner.invalidate(entry)
-	entry.snapshot = createSnapshot(entry)
-	return entry
-}
-
-function createSnapshot<Value>(
-	entry: QueryEntry<Value>,
-): WorkbenchQueryResult<WorkbenchDetached<Value>> {
-	const controls = {
-		isFetching: entry.fetching,
-		isStale: entry.stale,
-		refetch: entry.refetch,
-		invalidate: entry.invalidate,
+	if (typeof options.queryFn !== 'function') {
+		throw new TypeError('[workbench/react] query options require queryFn')
 	}
-	if (entry.status === 'pending') {
-		return Object.freeze({
-			...controls,
-			status: 'pending',
-			data: undefined,
-			error: null,
-			isPending: true,
-			isStale: true,
-		})
-	}
-	if (entry.status === 'error') {
-		return Object.freeze({
-			...controls,
-			status: 'error',
-			data: entry.data,
-			error: entry.error,
-			isPending: false,
-			isStale: true,
-		})
-	}
-	return Object.freeze({
-		...controls,
-		status: 'success',
-		data: entry.data!,
-		error: null,
-		isPending: false,
-	})
-}
-
-function normalizeOptions<Context, Input, Value>(
-	options: AnyQueryOptions<Context, Input, Value>,
-): AnyQueryOptions<Context, Input, Value> {
-	if (!options || typeof options !== 'object' || typeof options.queryFn !== 'function') {
-		throw new TypeError('[workbench/react] query() requires queryFn')
-	}
-	if ('workbench' in options) {
-		throw new TypeError('[workbench/react] query options do not support a workbench namespace')
-	}
-	const keyed = 'queryKey' in options
-	if (keyed && typeof options.queryKey !== 'function') {
-		throw new TypeError('[workbench/react] keyed query() requires queryKey')
+	if (options.enabled !== undefined && typeof options.enabled !== 'boolean') {
+		throw new TypeError('[workbench/react] query enabled must be a boolean')
 	}
 	if (
 		options.staleTime !== undefined &&
-		(options.staleTime < 0 ||
+		(typeof options.staleTime !== 'number' ||
+			options.staleTime < 0 ||
 			(!Number.isFinite(options.staleTime) && options.staleTime !== Infinity))
 	) {
-		throw new TypeError('[workbench/react] query staleTime must be non-negative')
+		throw new TypeError('[workbench/react] query staleTime must be a non-negative number')
 	}
-	if (
-		options.retry !== undefined &&
-		options.retry !== false &&
-		typeof options.retry !== 'function' &&
-		(typeof options.retry !== 'number' || !Number.isSafeInteger(options.retry) || options.retry < 0)
-	) {
-		throw new TypeError('[workbench/react] query retry must be false, a count, or a predicate')
-	}
-	if (options.watch !== undefined && typeof options.watch !== 'function') {
-		throw new TypeError('[workbench/react] query watch must be a function')
-	}
-	return Object.freeze({
-		...(keyed ? { queryKey: options.queryKey } : {}),
-		queryFn: options.queryFn,
-		...(options.enabled === undefined ? {} : { enabled: options.enabled }),
-		...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
-		...(options.retry === undefined ? {} : { retry: options.retry }),
-		...(options.watch === undefined ? {} : { watch: options.watch }),
-	}) as AnyQueryOptions<Context, Input, Value>
-}
+	validateRetry(options.retry)
+	validateRetryDelay(options.retryDelay)
 
-function normalizeMutationOptions<Descriptor, Context, Input extends readonly unknown[], Result>(
-	options: WorkbenchRendererMutationOptions<Descriptor, Context, Input, Result>,
-): WorkbenchRendererMutationOptions<Descriptor, Context, Input, Result> {
-	if (!options || typeof options !== 'object' || typeof options.mutationFn !== 'function') {
-		throw new TypeError('[workbench/react] mutation() requires mutationFn')
+	let subscribe: NormalizedQueryOptions<QueryKey, Value>['subscribe']
+	if (options.workbench !== undefined) {
+		const workbench = readOptionsRecord(options.workbench, 'query workbench options')
+		assertOnlyKeys(workbench, ['subscribe'])
+		if (typeof workbench.subscribe !== 'function') {
+			throw new TypeError('[workbench/react] query workbench.subscribe must be a function')
+		}
+		subscribe = workbench.subscribe as NormalizedQueryOptions<QueryKey, Value>['subscribe']
 	}
-	if ('workbench' in options) {
-		throw new TypeError('[workbench/react] mutation options do not support a workbench namespace')
-	}
-	const invalidates = options.invalidates
-	if (
-		invalidates !== undefined &&
-		typeof invalidates !== 'function' &&
-		!Array.isArray(invalidates)
-	) {
-		throw new TypeError('[workbench/react] mutation invalidates must be an array or function')
-	}
-	const normalizedInvalidates = Array.isArray(invalidates)
-		? Object.freeze([...invalidates])
-		: invalidates
+	const { canonical, key } = normalizeQueryKey(options.queryKey)
 	return Object.freeze({
-		mutationFn: options.mutationFn,
-		...(normalizedInvalidates === undefined ? {} : { invalidates: normalizedInvalidates }),
+		queryKey: key as QueryKey,
+		canonicalKey: canonical,
+		queryFn: options.queryFn as NormalizedQueryOptions<QueryKey, Value>['queryFn'],
+		enabled: options.enabled !== false,
+		staleTime: (options.staleTime as number | undefined) ?? (subscribe ? Infinity : 0),
+		retry: (options.retry as WorkbenchQueryRetry | undefined) ?? false,
+		...(options.retryDelay === undefined
+			? {}
+			: { retryDelay: options.retryDelay as WorkbenchQueryRetryDelay }),
+		...(subscribe ? { subscribe } : {}),
 	})
 }
 
-function readEnabled<Context, Input, Value>(
-	options: AnyQueryOptions<Context, Input, Value>,
-	input: Input,
-): boolean {
-	const enabled = options.enabled
-	const result = typeof enabled === 'function' ? enabled(input) : enabled !== false
-	if (typeof result !== 'boolean') {
-		throw new TypeError('[workbench/react] query enabled predicate must return a boolean')
+function normalizeMutationOptions<Descriptor, Input, Result>(
+	input: unknown,
+): NormalizedMutationOptions<Descriptor, Input, Result> {
+	const options = readOptionsRecord(input, 'mutation options')
+	assertOnlyKeys(options, ['mutationFn', 'workbench'])
+	if (typeof options.mutationFn !== 'function') {
+		throw new TypeError('[workbench/react] mutation options require mutationFn')
 	}
-	return result
+	let invalidates: NormalizedMutationOptions<Descriptor, Input, Result>['invalidates']
+	if (options.workbench !== undefined) {
+		const workbench = readOptionsRecord(options.workbench, 'mutation workbench options')
+		assertOnlyKeys(workbench, ['invalidates'])
+		const declared = workbench.invalidates
+		if (declared !== undefined && typeof declared !== 'function' && !Array.isArray(declared)) {
+			throw new TypeError(
+				'[workbench/react] mutation workbench.invalidates must be an array or function',
+			)
+		}
+		invalidates = Array.isArray(declared)
+			? (Object.freeze(declared.slice()) as readonly WorkbenchQueryInvalidation<Descriptor>[])
+			: (declared as NormalizedMutationOptions<Descriptor, Input, Result>['invalidates'])
+	}
+	return Object.freeze({
+		mutationFn: options.mutationFn as NormalizedMutationOptions<
+			Descriptor,
+			Input,
+			Result
+		>['mutationFn'],
+		...(invalidates === undefined ? {} : { invalidates }),
+	})
 }
 
-function getQueryFn(options: AnyQueryOptions<any, any, any>): (...input: any[]) => unknown {
-	return options.queryFn as (...input: any[]) => unknown
+function readOptionsRecord(input: unknown, label: string): Record<string, unknown> {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError(`[workbench/react] ${label} must be an object`)
+	}
+	if (Object.getPrototypeOf(input) !== Object.prototype && Object.getPrototypeOf(input) !== null) {
+		throw new TypeError(`[workbench/react] ${label} must be a plain object`)
+	}
+	if (Object.getOwnPropertySymbols(input).length > 0) {
+		throw new TypeError(`[workbench/react] ${label} contains unsupported symbol options`)
+	}
+	const descriptors = Object.getOwnPropertyDescriptors(input)
+	for (const descriptor of Object.values(descriptors)) {
+		if (!('value' in descriptor)) {
+			throw new TypeError(`[workbench/react] ${label} must not contain accessors`)
+		}
+	}
+	return input as Record<string, unknown>
 }
 
-function getWatch(
-	options: AnyQueryOptions<any, any, any>,
-): ((...input: any[]) => unknown) | undefined {
-	return options.watch as ((...input: any[]) => unknown) | undefined
+function assertOnlyKeys(options: Record<string, unknown>, allowed: readonly string[]): void {
+	const supported = new Set(allowed)
+	for (const key of Object.keys(options)) {
+		if (!supported.has(key)) {
+			throw new TypeError(`[workbench/react] unsupported option "${key}"`)
+		}
+	}
 }
 
-function getStaleTime(options: AnyQueryOptions<any, any, any>, watched: boolean): number {
-	return options.staleTime ?? (watched ? Infinity : 0)
+function validateRetry(input: unknown): void {
+	if (
+		input !== undefined &&
+		typeof input !== 'boolean' &&
+		typeof input !== 'function' &&
+		(typeof input !== 'number' || !Number.isSafeInteger(input) || input < 0)
+	) {
+		throw new TypeError('[workbench/react] query retry must be a boolean, count, or predicate')
+	}
 }
 
-function executionContext<Context>(
-	context: Context,
-	signal: AbortSignal,
-): WorkbenchQueryExecutionContext<Context> {
-	return Object.freeze({ ...context, signal }) as WorkbenchQueryExecutionContext<Context>
+function validateRetryDelay(input: unknown): void {
+	if (
+		input !== undefined &&
+		typeof input !== 'function' &&
+		(typeof input !== 'number' || !Number.isFinite(input) || input < 0)
+	) {
+		throw new TypeError(
+			'[workbench/react] query retryDelay must be a non-negative number or function',
+		)
+	}
+}
+
+function shouldRetry(declared: WorkbenchQueryRetry, failureCount: number, error: unknown): boolean {
+	if (isWorkbenchQueryBoundaryFailure(error)) return false
+	const failure = error instanceof WorkbenchQueryFailure ? error : undefined
+	if (failure?.stopRetry) return false
+	const reported = failure?.reported ?? error
+	if (declared === true) return true
+	if (declared === false) return false
+	if (typeof declared === 'number') return failureCount < declared
+	try {
+		return declared(failureCount, reported)
+	} catch (predicateError) {
+		if (failure) failure.reported = predicateError
+		return false
+	}
+}
+
+function readRetryDelay(
+	declared: WorkbenchQueryRetryDelay,
+	failureCount: number,
+	error: unknown,
+): number {
+	if (isWorkbenchQueryBoundaryFailure(error)) return 0
+	if (typeof declared === 'number') return declared
+	const failure = error instanceof WorkbenchQueryFailure ? error : undefined
+	try {
+		const delay = declared(failureCount, failure?.reported ?? error)
+		if (!Number.isFinite(delay) || delay < 0) {
+			throw new TypeError('[workbench/react] query retryDelay must return a non-negative number')
+		}
+		return delay
+	} catch (delayError) {
+		if (failure) {
+			failure.reported = delayError
+			failure.stopRetry = true
+		}
+		return 0
+	}
+}
+
+function isWorkbenchQueryBoundaryFailure(error: unknown): boolean {
+	return (
+		error instanceof WorkbenchPortableValueError ||
+		error instanceof WorkbenchRendererError ||
+		error instanceof WorkbenchQueryContractError ||
+		isCancelledError(error)
+	)
+}
+
+function reportedQueryError(error: unknown): unknown {
+	return error instanceof WorkbenchQueryFailure ? error.reported : error
 }
 
 function createInvalidationTarget<Descriptor extends WorkbenchRenderableDescriptor>(
 	scope: ScopeState<Descriptor>,
-	resource: object,
-	cacheKey: string | null,
+	definition: QueryDefinition<Descriptor, any, any, any>,
+	input: unknown,
 	all: boolean,
 ): WorkbenchQueryInvalidation<Descriptor> {
 	const target = Object.freeze({})
-	invalidationMetadata.set(
-		target,
-		Object.freeze({ scopeToken: scope.token, resource, cacheKey, all }),
-	)
+	invalidationMetadata.set(target, createInvalidationMetadata(scope, definition, input, all))
 	return target as WorkbenchQueryInvalidation<Descriptor>
+}
+
+function createInvalidationMetadata<Descriptor extends WorkbenchRenderableDescriptor>(
+	scope: ScopeState<Descriptor>,
+	definition: QueryDefinition<Descriptor, any, any, any>,
+	input: unknown,
+	all: boolean,
+): InvalidationMetadata {
+	return Object.freeze({
+		scopeToken: scope.token,
+		resource: definition.resource,
+		all,
+		resolve(context: unknown) {
+			if (all) return ''
+			let declared: unknown
+			try {
+				declared = definition.factory(context as WorkbenchHookValue<Descriptor>, input)
+			} catch (cause) {
+				throw new TypeError('[workbench/react] query options factory failed', { cause })
+			}
+			return normalizeQueryOptions(declared).canonicalKey
+		},
+	})
+}
+
+function normalizeQueryKey(input: unknown): Readonly<{
+	canonical: string
+	key: readonly WorkbenchResourceKey[]
+}> {
+	const canonical = canonicalQueryKey(input)
+	return Object.freeze({
+		canonical,
+		key: cloneResourceKey(input) as readonly WorkbenchResourceKey[],
+	})
+}
+
+function cloneResourceKey(input: unknown): WorkbenchResourceKey {
+	if (input === null) return null
+	if (typeof input === 'boolean') return input
+	if (typeof input === 'string') return input
+	if (typeof input === 'number') return Object.is(input, -0) ? 0 : input
+	if (Array.isArray(input)) return Object.freeze(input.map((value) => cloneResourceKey(value)))
+	const output = Object.create(null) as Record<string, WorkbenchResourceKey>
+	for (const key of Object.keys(input as object).sort()) {
+		Object.defineProperty(output, key, {
+			value: cloneResourceKey((input as Record<string, unknown>)[key]),
+			enumerable: true,
+		})
+	}
+	return Object.freeze(output)
 }
 
 function canonicalQueryKey(input: unknown): string {
@@ -1480,7 +1618,7 @@ function encodeKey(
 			const parts: string[] = []
 			for (let index = 0; index < input.length; index += 1) {
 				const descriptor = descriptors[index]
-				if (!descriptor || !('value' in descriptor)) keyInvalid()
+				if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) keyInvalid()
 				parts.push(encodeKey(descriptor.value, depth + 1, ancestors, budget))
 			}
 			return `a${input.length}[${parts.join('')}]`
@@ -1493,7 +1631,7 @@ function encodeKey(
 		const parts: string[] = []
 		for (const key of fields) {
 			const descriptor = descriptors[key]
-			if (!descriptor || !('value' in descriptor)) keyInvalid()
+			if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) keyInvalid()
 			consumeKeyText(key, budget)
 			parts.push(`${key.length}:${key}${encodeKey(descriptor.value, depth + 1, ancestors, budget)}`)
 		}
@@ -1527,6 +1665,26 @@ function rendererError(
 	return new WorkbenchRendererError(code, `[workbench/react] ${message}`, cause)
 }
 
+function hookInactiveError(): WorkbenchRendererError {
+	return rendererError(
+		'WORKBENCH_RENDERER_HOOK_INACTIVE',
+		'Workbench resource Hook is no longer active',
+	)
+}
+
+class WorkbenchQueryContractError extends TypeError {}
+
+class WorkbenchQueryFailure extends Error {
+	reported: unknown
+	stopRetry = false
+
+	constructor(error: unknown) {
+		super('Workbench query failed', { cause: error })
+		this.name = 'WorkbenchQueryFailure'
+		this.reported = error
+	}
+}
+
 function isDisposable(input: unknown): input is Disposable {
 	return (
 		(typeof input === 'object' || typeof input === 'function') &&
@@ -1541,11 +1699,18 @@ function disposeOnce(input: Disposable | undefined): void {
 	input[Symbol.dispose]()
 }
 
+function tryDispose(input: Disposable | undefined): void {
+	try {
+		disposeOnce(input)
+	} catch {
+		// Query teardown remains authoritative when an author-owned disposer is faulty.
+	}
+}
+
 function callSafely(listener: () => void): void {
 	try {
 		listener()
 	} catch {
-		// These callbacks are framework-owned notifications. One faulty listener must not interrupt
-		// owner teardown or prevent the remaining React subscribers from observing the new snapshot.
+		// One framework notification must not prevent the remaining owner cleanup.
 	}
 }

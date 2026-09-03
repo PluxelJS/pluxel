@@ -69,6 +69,7 @@ const host: WorkbenchHostFacade = Object.freeze({
 	navigation: null,
 	document: null,
 })
+const ownerSignal = new AbortController().signal
 
 async function openedHandle(api: object) {
 	const session = {
@@ -104,7 +105,7 @@ describe('generated Workbench React Bridge', () => {
 			application.render({
 				dom,
 				moduleName: 'pluxel_workbench_settings/views/settings',
-				__pluxelWorkbench: { profile: 1, handle, host },
+				__pluxelWorkbench: { profile: 1, handle, host, ownerSignal },
 			}),
 		)
 		expect(dom.textContent).toBe('ready')
@@ -131,7 +132,7 @@ describe('generated Workbench React Bridge', () => {
 			application.render({
 				dom,
 				moduleName: 'pluxel_workbench_settings/views/settings',
-				__pluxelWorkbench: { profile: 1, handle, host },
+				__pluxelWorkbench: { profile: 1, handle, host, ownerSignal },
 			}),
 		)
 		expect(dom.textContent).toContain('descriptor identity does not match this renderer')

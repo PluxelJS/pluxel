@@ -81,6 +81,8 @@ export type WorkbenchReactRuntime = Readonly<{
 	identity: WorkbenchDeclarationIdentity
 	opened: WorkbenchOpenedClientValue
 	host: WorkbenchHostFacade
+	/** @internal Synchronously closes renderer-owned resources before the opened RPC root is released. */
+	ownerSignal: AbortSignal
 	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 }>
 
@@ -89,6 +91,7 @@ export type WorkbenchBridgePayload = Readonly<{
 	profile: 1
 	handle: WorkbenchOpenedViewHandle
 	host: WorkbenchHostFacade
+	ownerSignal: AbortSignal
 	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 }>
 

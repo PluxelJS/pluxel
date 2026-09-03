@@ -286,21 +286,25 @@ import { OrdersWorkbench } from '../workbench.js'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
-export const ordersQuery = overviewScope.query({
-	queryFn: ({ api }) => api.snapshot(),
-	watch: ({ api }, invalidate) => api.watch(invalidate),
-})
+export const ordersQuery = overviewScope.query(({ api }) => ({
+	queryKey: ['orders', 'snapshot'] as const,
+	queryFn: () => api.snapshot(),
+	workbench: {
+		subscribe: ({ invalidate }) => api.watch(invalidate),
+	},
+}))
 
-export const refreshOrders = overviewScope.mutation({
-	mutationFn: ({ api }) => api.refresh(),
-})
+export const refreshOrders = overviewScope.mutation(({ api }) => ({
+	mutationFn: () => api.refresh(),
+}))
 ```
 
 Renderer-specific scope module 优先与 descriptor entry 同名：`overview` 使用 `overview.scope.ts`，scope symbol 使用
 `overviewScope`。这样 entry、scope 与 build error 能直接互相定位；resource 则继续使用领域名称。
 
-这里 `api.refresh()` 提交后会通过 `watch` 通知，所以 mutation 不再重复声明 `invalidates`。如果 query 没有 `watch`，或该
-watch contract 不覆盖这项写操作，再由 mutation 显式声明 invalidation；不要为同一次提交同时建立两条刷新路径。
+这里 `api.refresh()` 提交后会通过领域 `watch()` 推送 subscription 通知，所以 mutation 不再重复声明
+`workbench.invalidates`。如果 query 没有 subscription，或该 contract 不覆盖这项写操作，再由 mutation 显式声明
+invalidation；不要为同一次提交同时建立两条刷新路径。
 
 Toolchain 会把这条 exact definition import 改写为 browser-only projection，同时保留 `RpcStub<OrdersApi>` 的准确类型；原始
 definition module 不会在浏览器执行。Indirect/re-export/dynamic definition import、绑定错误 entry、一个 scope 绑定多个 descriptor，
@@ -308,24 +312,40 @@ definition module 不会在浏览器执行。Indirect/re-export/dynamic definiti
 只使用低层 `useWorkbench(exactDescriptor)` 的高级 renderer 可以改在 default entry 保留唯一 direct definition import；两条路径都
 不允许 graph 中出现第二个 definition value boundary。
 
-需要按输入读取时提供 `queryKey(input)`，并用 `query.useQuery(input)`。Key 会先验证和 canonicalize；结构相等的 portable key
-共享同一 entry。`query.target(input)` 只失效该 key，`query.all()` 失效当前 resource 的已有 keys。Invalidation target 是当前
-scope 的 opaque typed value，不是 global cache key；不能交给另一个 renderer scope。
+需要按输入读取时使用 `queryFamily((context, input) => options)`，并用 `query.useQuery(input)`。Factory 为每个输入生成具体、
+领域可读的 `queryKey`；Key 会先验证和 canonicalize，结构相等的 portable key 共享同一 query。
+`query.target(input)` 只失效该 key，`query.all()` 失效当前 family 的已有 keys。Invalidation target 是当前 scope 的 opaque typed
+value，不是 global cache key；不能交给另一个 renderer scope。
+
+Options factory 是同步、确定且无副作用的声明函数：Hook 解析资源和 mutation 预检 family target 时都可能再次执行它。
+不要在 factory 中读取时间、发起 I/O、注册 subscription 或修改外部状态；这些行为分别留给 `queryFn`、
+`workbench.subscribe` 和 `mutationFn`。同一个 canonical `queryKey` 必须始终描述同一份读取语义。
 
 ```ts
-const orderQuery = overviewScope.query({
-	queryKey: (input: Readonly<{ id: string }>) => [input.id],
-	queryFn: ({ api }, input) => api.order(input.id),
-})
+const orderQuery = overviewScope.queryFamily(({ api }, input: Readonly<{ id: string }>) => ({
+	queryKey: ['orders', 'detail', input.id] as const,
+	queryFn: ({ signal }) => {
+		signal.throwIfAborted()
+		return api.order(input.id)
+	},
+}))
 
-const renameOrder = overviewScope.mutation({
-	mutationFn: ({ api }, input: Readonly<{ id: string; name: string }>) => api.rename(input),
-	invalidates: (input) => [orderQuery.target({ id: input.id })],
-})
+type RenameOrderInput = Readonly<{ id: string; name: string }>
+
+const renameOrder = overviewScope.mutation(({ api }) => ({
+	mutationFn: (input: RenameOrderInput) => api.rename(input),
+	workbench: {
+		invalidates: (input: RenameOrderInput) => [orderQuery.target({ id: input.id })],
+	},
+}))
 ```
 
-无参 query 本身就是 exact invalidation target；keyed query 必须显式选择 `target(input)` 或 `all()`，避免一个 resource
-在代码中含糊地代表“某个 key”还是“全部 key”。
+Workbench roots（`api` / `provider` / `consumer`）只由外层 factory 捕获。`queryFn` 接收 query-core 原生的
+安全 context：规范化后的 `queryKey` 与 `signal`；不会混入 Pluxel 自定义参数。`signal` 首先用于本地取消和阻止晚到
+结果提交；除非领域 API 明确提供本地 cancellation adapter，不要把 `AbortSignal` 当 RPC DTO 传输。
+
+无输入的具体 query 本身就是 exact invalidation target；query family 必须显式选择 `target(input)` 或 `all()`，避免一个
+family 在代码中含糊地代表“某个 key”还是“全部 key”。
 
 ### 4. 绑定 entry 并渲染 page
 
@@ -372,51 +392,63 @@ export function OrdersPage() {
 }
 ```
 
-每次 Bridge mount 都会创建独立 renderer owner，持有这次打开的 exact root/host、query cache、watch、retry timer、
-AbortController 和 mutation close signal。即使相同 View 或 route 同时打开多次，也不会跨 open handle、params、principal、session
-或 Plugin generation 共享 data/error/invalidation；Workbench 不提供 global `QueryClient`。
+每次 Bridge mount 都会创建独立 renderer owner，以 query-core 创建这次 open 私有的 `QueryClient`，并持有 exact
+roots/host、subscription 和 close state。即使相同 View 或 route 同时打开多次，也不会跨 open handle、params、
+principal、session 或 Plugin generation 共享 data/error/invalidation。这个 client 随 renderer owner 清理，不向 Remote 暴露 raw
+`QueryClient`、raw cache 或全局 client。
 
 Query 把 API result 放入 cache 前会验证 portable data、深拷贝、深冻结，并恰好释放一次 top-level transport result。显式
-`undefined` field、class instance、accessor、cycle、binary 或 capability 都不能进入 cache。带 watch 的 query 先订阅再读取；
-同 key 的 observers 共享一个 read/watch，read 期间多次 invalidation 只触发一次 follow-up read。后台失败保留最近成功 data 并
-标记 stale/error。Query option 的 `watch` 一旦保留 callback，就必须同步返回或异步 resolve 到 `Disposable`；API
+`undefined` field、class instance、accessor、cycle、binary 或 capability 都不能进入 cache。带 subscription 的 query 先订阅再读取；
+同 key 的 observers 共享一个 read/subscription，read 期间多次 invalidation 只触发一次 follow-up read。后台失败保留最近成功 data 并
+标记 stale/error。`workbench.subscribe` 一旦保留 callback，就必须同步返回或异步 resolve 到 `Disposable`；API
 方法通常声明返回 child `RpcTarget`，其 browser-side `RpcPromise` / `RpcStub` 满足该清理契约。
 
 ### Query 与 mutation 契约
 
 | 选项或操作                   | 当前语义                                                                                                                                                                                                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`                    | 默认 `true`；`false` 时当前 observer 不自动 read 或持有 watch。当前 Hook 的显式 `refetch()` 会绕过 `enabled`。keyed query 也可使用返回 boolean 的 predicate。                                                                                                 |
-| `staleTime`                  | 单位为毫秒；unwatched 默认 `0`，watched 默认 `Infinity`。显式 invalidation 始终覆盖 `staleTime`。                                                                                                                                                             |
-| `retry`                      | 默认 `false`；接受非负 safe integer 或 `({ failureCount, error }) => boolean`，Framework 最多 retry 5 次。renderer/scope/key/portable/limit/closed 类错误不 retry。                                                                                           |
-| query `signal`               | `queryFn` 的 read 被新读取取代、query deactivate 或 renderer close 时 abort；`watch` 在 deactivate 或 close 时 abort。signal 用于通知可取消的底层工作，同时阻止晚到结果提交。底层若不观察 signal 仍可 settle，Framework 仍会 detach/dispose 其结果。          |
-| mutation `signal`            | 只在 per-open renderer owner close 时 abort。Hook unmount 和 `reset()` 不会伪装取消已经接受的写入；底层工作仍须观察 signal 才能取消。                                                                                                                         |
+| `enabled`                    | TanStack-compatible boolean；Workbench 默认 `true`。`false` 时当前 observer 不自动读取或持有 subscription，但当前 Hook 的显式 `refetch()` 仍执行一次读取。                                                                                                    |
+| `staleTime`                  | TanStack-compatible 毫秒数；无 subscription 时默认 `0`，有 `workbench.subscribe` 时默认 `Infinity`。显式 invalidation 始终覆盖 freshness。                                                                                                                    |
+| `retry`                      | TanStack-compatible retry；Workbench 默认 `false`。predicate 签名为 `(failureCount, error) => boolean`；renderer boundary failure 不 retry。                                                                                                                  |
+| `retryDelay`                 | TanStack-compatible delay；接受非负毫秒数或 `(failureCount, error) => number`，省略时沿用 query-core backoff。                                                                                                                                                |
+| query `signal`               | 由 query-core 通过 `queryFn` context 提供；读取被替代、query deactivate 或 renderer close 时 abort。底层若不观察 signal 仍可 settle，Workbench 仍会 detach/dispose 晚到结果并阻止其提交。                                                                     |
+| mutation `signal`            | 由外层 mutation factory 捕获，只在 per-open renderer owner close 时 abort。Hook unmount 和 `reset()` 不会伪装取消已接受的写入。                                                                                                                               |
 | `mutate()` / `mutateAsync()` | `mutate()` 用于 event handler 的 fire-and-observe，失败进入 Hook state，不向外泄漏 rejected Promise；pending 时的重复调用保留当前 pending state。`mutateAsync()` 用于需要 result 或显式流程编排的调用，并会 reject pending duplicate。两者经过同一 pipeline。 |
 | mutation `reset()`           | 只把 settled success/error state 清回 idle；pending 时不取消，也不重置。                                                                                                                                                                                      |
 
 Query result 提供 `status`、`data`、`error`、`isPending`、`isFetching`、`isStale` 和 instance-bound
 `refetch()` / `invalidate()`。`refetch()` 返回本次显式读取的 Promise；`invalidate()` 同步标 stale，只为 active observers
-调度读取。Module-scoped resource 不提供无法判定 open handle 的命令式刷新。
+调度读取。Controls 只在产生它的 Hook 仍挂载时有效：卸载后 `refetch()` reject、`invalidate()` throw；同一个
+`queryFamily` Hook 切换 input 后，旧 input 的 result controls 也立即失效。Module-scoped resource 不提供无法判定 open
+handle 的命令式刷新。
 
 `useMutation()` 是 per-hook single-flight：普通 event handler 直接调用 `mutation.mutate(input)`，再从 Hook state 呈现结果；只有
 需要返回值或显式 `await` / `catch` 的流程才使用 `mutateAsync()`。Pending 时第二次 `mutateAsync()` 稳定失败，不自动
-queue、retry 或猜测幂等性。若 mutation result 只是下一份 snapshot 的重复副本，领域 API 应返回 `void`，并用权威 watch 或
-`invalidates` 刷新 query；只有 UI 确实消费的 domain result 才返回 portable DTO。
+queue 或猜测幂等性。Hook 卸载后不能从旧 controls 启动新 mutation：`mutate()` throw、`mutateAsync()` reject，`reset()`
+no-op；卸载前已接受的 mutation 仍按 owner lifetime settle。若 mutation result 只是下一份 snapshot 的重复副本，领域 API 应返回 `void`，并用权威 subscription 或
+`workbench.invalidates` 刷新 query；只有 UI 确实消费的 domain result 才返回 portable DTO。
 
-静态 freshness 关系写 `invalidates: [query]`，只有 target 依赖 mutation input 时才使用 callback。若 mutation commit 必然通过同一
-权威 watch 通知当前 snapshot，就省略该 mutation 的 `invalidates`；若通知可能丢失、延后，或 RPC reject/detach failure 后仍必须刷新，
-则声明 `invalidates`。Framework 会 coalesce 同期 invalidation，但作者仍应只声明真实 freshness authority，避免 watch 与
-`invalidates` 无条件触发双重刷新。Targets 会在调用远端方法前完成 scope/key 验证；owner 仍 active 时，在 mutation settle 后标
+静态 freshness 关系写 `workbench: { invalidates: [query] }`，只有 target 依赖 mutation input 时才使用 callback；callback
+复用并显式标注 `mutationFn` 的 variables type，避免把 freshness mapping 悄悄放宽成 `any`。若
+mutation commit 必然通过同一权威 subscription 通知当前 snapshot，就省略该 mutation 的
+`workbench.invalidates`；若通知可能丢失、延后，或 RPC reject/detach failure 后仍必须刷新，则声明 invalidation。
+Framework 会 coalesce 同期 invalidation，但作者仍应只声明真实 freshness authority，避免 subscription 与 invalidation
+无条件触发双重刷新。Targets 会在调用远端方法前完成 scope/key 验证；owner 仍 active 时，在 mutation settle 后标
 stale，即使 RPC reject 或 result detach 失败也一样。Mutation success 不等待 invalidated query 的读取完成。
+
+Query/mutation options 是公开类型明确列出的受控 allowlist，不承诺透传 TanStack Query 的全部 options。
+TanStack 原生 query/mutation 字段保持顶层；Workbench 自有的 subscription 和 typed invalidation 只出现在
+`workbench` namespace。
 
 ### 稳定错误与恢复
 
 | `code`                               | 作者应如何处理                                                                                     |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | `WORKBENCH_RENDERER_CLOSED`          | 当前 open 已结束；停止更新，后续交给新的 open 重建。                                               |
+| `WORKBENCH_RENDERER_HOOK_INACTIVE`   | 丢弃已卸载 Hook 或旧 family input 的 controls；从当前 render 重新取得 controls。                   |
 | `WORKBENCH_RENDERER_SCOPE_MISMATCH`  | 修正 descriptor、scope、resource 或 invalidation target 的 wiring，不要在 scopes 间复用 resource。 |
-| `WORKBENCH_RESOURCE_KEY_INVALID`     | 修正 `queryKey()` / `target(input)`，只返回有界 portable key。                                     |
-| `WORKBENCH_RESOURCE_LIMIT_EXCEEDED`  | 减少 active keys、cache entries 或 mutation targets；不要盲目 retry。                              |
+| `WORKBENCH_RESOURCE_KEY_INVALID`     | 修正 `queryKey` / `target(input)`，只返回有界 portable key。                                       |
+| `WORKBENCH_RESOURCE_LIMIT_EXCEEDED`  | 缩小 queryKey，或减少 active query keys / mutation targets；不要盲目 retry。                       |
 | `WORKBENCH_MUTATION_PENDING`         | 等待当前 Hook 的 mutation settle，再接受下一次写入。                                               |
 | `WORKBENCH_NON_PORTABLE_VALUE`       | 让 API 返回普通 portable DTO；移除 `undefined`、class、accessor、cycle、binary 与 capability。     |
 | `WORKBENCH_PORTABLE_VALUE_TOO_DEEP`  | 扁平化 DTO，避免把深层对象图当作 snapshot。                                                        |
@@ -553,7 +585,7 @@ handles，再要求整页 reload。开发期 Content/topology 可以先发布，
 placement 会保留在原位置并显示构建中或构建失败状态，producer 成功提交后触发 reload。Production/static build 仍要求
 Content/MF candidate 全部验证并原子提交后才生效。
 
-Bridge destroy 也会关闭 per-open renderer owner：watch、retry timer、cache 与 active mutation lifetime 一次清理。Pending
+Bridge destroy 也会关闭 per-open renderer owner：私有 `QueryClient`、subscription 与 active mutation lifetime 一次清理。Pending
 `refetch()` / `mutateAsync()` 会以 closed error 及时拒绝；无法取消的 RPC 可以在后台 settle，但晚到的 fulfilled DTO 仍会
 detach/dispose，且不会再更新已关闭页面。Portable/scope/key/limit/closed 与 mutation-pending 错误提供稳定 code；Plugin
 自己的领域/RPC error 保持原样。
@@ -584,7 +616,7 @@ physical TLS 或 locality；remote Management 必须使用 TLS passthrough、HTT
 - 每次打开创建 fresh target，关闭、abort 和 replacement 会清理 subscription/task；
 - 每次打开还创建独立 renderer owner；并行 View 不共享 query/mutation/cache/invalidation；
 - query 的 subscribe-before-read、coalescing、canonical keyed identity、stale failure 与 typed invalidation 有测试；
-- mutation per-hook single-flight、无 retry，并在 RPC/detach failure 后仍执行已声明 invalidation；
+- mutation per-hook single-flight，并在 RPC/detach failure 后仍执行已声明 invalidation；
 - RPC 输入预算、领域授权和稳定失败码有 Plugin 自己的测试；
 - awaited DTO 在进入 React state/cache 前已验证、深复制、深冻结并释放 top-level remote result；
 - parameterized route 的 params 由 server 匹配；
