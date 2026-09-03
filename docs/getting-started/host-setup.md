@@ -144,7 +144,7 @@ console.log(env.MY_APPLICATION_VARIABLE)
 console.log(hostEnv.dataRoot, hostEnv.workbench)
 ```
 
-`env` 是与 `std-env` 相同的原始字符串对象；`hostEnv` 是 Pluxel 官方字段的有效值，不是第二份可变环境。Launcher 测试或 adapter 需要解析显式输入时使用 `resolveHostEnv(input)`。`PluxelEnvironmentVariables` 已声明 `PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH`、listener/TLS、config、Vault 与 HMR 变量；应用可以用 module augmentation 添加自己的部署变量。官方变量的行为为：
+`env` 是与 `std-env` 相同的原始字符串对象；`hostEnv` 是 Pluxel 官方字段的有效值，不是第二份可变环境。Launcher 测试或 adapter 需要解析显式输入时使用 `resolveHostEnv(input)`。`PluxelEnvironmentVariables` 已声明 `PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH`、listener、config、Vault 与 HMR 变量；应用可以用 module augmentation 添加自己的部署变量。官方变量的行为为：
 
 ```ts no-twoslash
 declare module '@pluxel/runtime/environment' {
@@ -159,7 +159,6 @@ declare module '@pluxel/runtime/environment' {
 | `PLUXEL_DATA_ROOT`                      | 共享 Host data root；默认 `.pluxel`，Pluxel persistence 位于其 `persistence/` 子目录           |
 | `PLUXEL_WORKBENCH`                      | 严格为 `true` 或 `false`；覆盖 Workbench startup policy，但不能开启 headless 产物中不存在的 UI |
 | `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | Node/Vite physical listener；port 必须为 `0..65535` 整数                                       |
-| `PLUXEL_TLS_CERT` / `PLUXEL_TLS_KEY`    | static Node TLS，必须成对配置；可选 `PLUXEL_TLS_PASSPHRASE`                                    |
 
 外部 database、cache 或 sidecar 需要与 Pluxel 放在同一数据树时直接消费 `hostEnv.dataRoot`，并相对同一个 Host root 使用自己拥有的子目录（例如 `database/`）；不要读取 `env.PLUXEL_DATA_ROOT` 并自行补默认值。应用显式选择不同的 persistence path/backend 表示有意偏离共享 root；部署希望统一时设置 `PLUXEL_DATA_ROOT`。
 
@@ -300,7 +299,7 @@ Plugin 直接在 generation-scoped `ctx.elysia` 中声明最终业务 path。宿
 或 dynamic config；需要 `/orders` namespace 时由 Plugin 使用 Elysia `group('/orders', ...)` 明确表达。`/__pluxel` 始终由宿主
 control plane 保留。
 
-launcher 拥有 listener、port、TLS、shutdown、srvx/runtime adapter 和跨业务 API 的外层 policy。Plugin 拥有自己 contribution
+launcher 拥有 listener、port、shutdown、srvx/runtime adapter 和跨业务 API 的外层 policy；部署 ingress、反向代理或平台拥有 TLS。Plugin 拥有自己 contribution
 内部的 Elysia hook、schema、error 与业务授权。不要让 Plugin 调用物理 server 的 `listen()` / `stop()`，也不要依赖不同 Plugin
 app 的组合顺序取得“全局”CORS 或 auth。
 
@@ -355,8 +354,7 @@ committed、running 且 ready 的 provider 完成认证，否则 fail closed。`
 OIDC redirect/callback 与 cookie commit 只能通过 provider 的三个 exact handoff method 实现。Provider registration、session、
 回调和 response body 都随 Plugin generation 撤销并参与 drain。
 
-生产 static Node listener 可以直接终止 TLS。`PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 必须同时配置，值可以是内联 PEM 内容或 PEM 文件路径；
-加密 private key 可另设可选的 `PLUXEL_TLS_PASSPHRASE`。两项都省略时 listener 使用 HTTP。
+内建 production static Node launcher 只监听 HTTP。公网部署在 ingress、反向代理或平台终止 TLS，不把证书和私钥交给应用进程。
 
 官方 `@pluxel/auth` 在一个插件里提供三种互斥模式：`oidc`、`password`、`password-totp`。本地账号的 password verifier、TOTP
 secret/counter 和 confidential OIDC client secret 使用 owner Vault，因此这些模式需要 `vault: {}`。需要交互式首次配置时再启用
@@ -385,7 +383,8 @@ confidential OIDC 时，必须预置相同 Vault credential，或先用带 Workb
 headless；public OIDC 没有 provisioning，只凭配置即可 ready。
 
 远程 password/OIDC 登录要求物理 carrier 是 HTTPS；不安全的远程请求会在调用 provider 前被拒绝。Runtime 不信任代理头，
-因此不要让同机 reverse proxy 经 loopback 回源 Management，改用非 loopback 私网/容器地址或在 Pluxel carrier 直接终止 TLS。
+因此内建 HTTP-only Node launcher 不通过普通 TLS 反代开放远程 Management，也不要让反代经 loopback 回源取得 recovery principal。
+默认用 loopback/SSH tunnel 管理；需要远程 Management 的平台集成必须提供自身能证明 HTTPS 的 application carrier。
 
 最终业务 Elysia path 与 Workbench exposure 是不同边界；声明固定业务 route 不等于开放管理权限，Management provider 也不会自动保护
 业务插件 API。
@@ -431,6 +430,6 @@ import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
 - canonical entry/config 通过 Vite route plugin 加载，不用 raw TS runner。
 - static `plugins` 与 dynamic `sources` 没有重复表示同一 definition。
 - fixed Plugin 是否自动启动由 runtime state 明确决定；当前进程的启停操作不写回该策略。
-- Management provider 与业务 HTTP auth 保持独立；公网前确认 provider ready 且 TLS 可用。
+- Management provider 与业务 HTTP auth 保持独立；内建 Node launcher 保持 loopback 管理，需要远程 Management 时确认 provider ready 且 deployment carrier 能证明 HTTPS。
 - persistence、logs、dynamic artifact cache 指向可写 state，不写 immutable deployment root。
 - production build 与真实 Node/PostgreSQL/native 环境做过 smoke test。

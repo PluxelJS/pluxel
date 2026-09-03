@@ -254,7 +254,7 @@ Elysia 原生 `response` schema 声明完整 HTTP DTO，让运行时响应校验
 - 用 standalone `new Elysia()` 拼接 Pluxel Plugin：server lifecycle、hook 和 WebSocket owner 可能分裂；
 - 只为共享 path prefix 建立核心 Plugin：`group()` 或普通常量已经能表达 namespace，prefix 本身不是 lifecycle。
 
-宿主拥有 listener、port、TLS、process shutdown 和物理 server policy。Plugin 调用 application 的 `listen()` / `stop()` 会立即
+宿主拥有 listener、port、process shutdown 和物理 server policy，部署 ingress、反向代理或平台拥有 TLS。Plugin 调用 application 的 `listen()` / `stop()` 会立即
 失败；`setup()` / `cleanup()` 也会立即失败，因为 Elysia 2 beta.7 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
 调用 Server view 的 `stop()`、`reload()`、`ref()` 或 `unref()`，不选择 srvx/runtime adapter。srvx 的接入属于宿主 carrier 工作，
 不是 Plugin 的第二套 Web 作者 API。

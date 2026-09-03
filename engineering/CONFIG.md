@@ -40,7 +40,7 @@ schema，也不扩展到 Part、fork 或 dynamic source。
 
 Host behavior environment 与 Plugin config bootstrap 是两个契约。前者由 `@pluxel/runtime/environment` 直接转导 `std-env` 的 universal
 `env`，并以 `hostEnv` 暴露校验后且包含默认 data root 的有效 view；launcher 注入环境时使用同一 `resolveHostEnv()` 解析
-`PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH` 和 listener/TLS 字段。下游 host 不直接读取 `process.env` 或复制默认路径。
+`PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH` 和 listener 字段。下游 host 不直接读取 `process.env` 或复制默认路径。
 后者仍只通过本节的 typed binding/`PLUXEL_CONFIG` 进入 ConfigService。完整 environment 不进入 Plugin Context 或 config snapshot。
 
 `bindConfigEnvironment()` 在 canonical module evaluation 时用 `valibot-form` raw-input projector 从真实 schema node 冻结唯一

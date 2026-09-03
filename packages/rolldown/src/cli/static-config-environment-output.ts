@@ -16,11 +16,6 @@ const STANDARD_PLUXEL_ENVIRONMENT_EXAMPLE = `# Pluxel host environment
 # PLUXEL_WORKBENCH=false
 # PLUXEL_HOST_BIND=0.0.0.0
 # PLUXEL_HOST_PORT=3000
-
-# Optional TLS termination. Certificate and key must be configured together.
-# PLUXEL_TLS_CERT=/run/secrets/tls.crt
-# PLUXEL_TLS_KEY=/run/secrets/tls.key
-# PLUXEL_TLS_PASSPHRASE=
 `
 
 /** Compose the framework-owned host variables with optional Plugin config bootstrap variables. */

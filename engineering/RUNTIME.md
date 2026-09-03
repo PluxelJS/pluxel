@@ -354,8 +354,9 @@ management；`workbench: { enabled: true }` 在 `management` 省略时也安装 
 自动派生、动态回退和用户偏好规则见 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。生产 Node launcher 默认监听 `0.0.0.0`，
 Runtime 在物理 carrier ingress 用 socket peer 实施访问边界：真实 loopback peer 直接取得 Runtime recovery principal；
 remote/unknown 必须使用可信 physical HTTPS carrier，并由当前 committed、running 且 ready 的 provider 完成认证，否则
-fail closed。不安全的 remote 请求在 provider callback 前拒绝。生产 static Node listener 用成对的 `PLUXEL_TLS_CERT` 与 `PLUXEL_TLS_KEY` 接收内联 PEM
-内容或 PEM 文件路径并直接终止 TLS；加密 private key 可另设 `PLUXEL_TLS_PASSPHRASE`。
+fail closed。不安全的 remote 请求在 provider callback 前拒绝。内建 production static Node launcher 只提供 HTTP，默认通过
+loopback/SSH tunnel 管理；公网 TLS 属于 ingress、反向代理或部署平台，需要 remote Management 的平台集成必须提供自身能证明
+HTTPS 的 application carrier。
 
 Management host 同时预安装 owner-bound `ctx.managementAccess`。认证 Plugin 通过 `provide()` 注册唯一 provider，registration 与精确
 generation effects 绑定；provider callback 在 owner admission 下执行，认证成功后的 lease 持有到 Cap’n Web call/observer settle。

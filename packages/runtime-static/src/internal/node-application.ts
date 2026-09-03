@@ -43,7 +43,6 @@ export async function runStaticNodeApplication<
 	const pluxelEnvironment = resolveHostEnv(env)
 	const host = pluxelEnvironment.hostBind ?? '0.0.0.0'
 	const port = pluxelEnvironment.hostPort ?? 3000
-	const tls = resolveTlsOptions(env)
 	const runtime = await runStaticFetchApplication(application, { ...options, env })
 	const http = requireRuntimeHttpService(runtime.ctx)
 	let carrier!: ReturnType<typeof serve>
@@ -57,7 +56,7 @@ export async function runStaticNodeApplication<
 			const url = new URL(carrier.url)
 			return Object.freeze({
 				url,
-				port: Number(url.port || (url.protocol === 'https:' ? 443 : 80)),
+				port: Number(url.port || 80),
 				hostname: url.hostname,
 				development: false,
 			})
@@ -70,7 +69,6 @@ export async function runStaticNodeApplication<
 			manual: true,
 			hostname: host,
 			port,
-			...(tls ? { tls } : {}),
 			silent: true,
 			gracefulShutdown: false,
 			fetch: (request) =>
@@ -155,7 +153,7 @@ export async function runStaticNodeApplication<
 	process.once('SIGTERM', onSignal)
 	const platform = describePluxelPlatform()
 	runtime.ctx.logger.info('Runtime started', {
-		listener: `${tls ? 'https' : 'http'}://${formatListenerHost(host)}:${actualPort}`,
+		listener: `http://${formatListenerHost(host)}:${actualPort}`,
 		workbench: runtime.ctx.workbench !== undefined,
 		hostDataRoot: pluxelEnvironment.dataRoot,
 		runtime: platform.runtime.name,
@@ -170,21 +168,6 @@ export async function runStaticNodeApplication<
 		address: { host, port: actualPort },
 		stop,
 	}
-}
-
-function resolveTlsOptions(
-	env: StaticRuntimeEnvironment,
-): { cert: string; key: string; passphrase?: string } | undefined {
-	const cert = env.PLUXEL_TLS_CERT?.trim()
-	const key = env.PLUXEL_TLS_KEY?.trim()
-	if (!cert && !key) return undefined
-	if (!cert || !key) {
-		throw new TypeError(
-			'[runtime-static] PLUXEL_TLS_CERT and PLUXEL_TLS_KEY must be configured together',
-		)
-	}
-	const passphrase = env.PLUXEL_TLS_PASSPHRASE
-	return Object.freeze({ cert, key, ...(passphrase ? { passphrase } : {}) })
 }
 
 async function dispatch(

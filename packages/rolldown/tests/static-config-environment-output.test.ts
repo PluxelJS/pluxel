@@ -21,6 +21,7 @@ describe('static config environment example output', () => {
 		expect(content).toContain('# PLUXEL_WORKBENCH=false')
 		expect(content).toContain('# PLUXEL_HOST_BIND=0.0.0.0')
 		expect(content).toContain('# PLUXEL_HOST_PORT=3000')
+		expect(content).not.toContain('PLUXEL_TLS_')
 	})
 
 	it('appends declared Plugin bootstrap variables after the standard section', () => {

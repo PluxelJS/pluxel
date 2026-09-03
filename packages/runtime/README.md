@@ -141,9 +141,9 @@ recovery principal；remote/unknown 必须使用可信 physical HTTPS carrier，
 官方 `@pluxel/auth` 提供 OIDC、password 与 password+TOTP。自定义 provider 只取得建立 authentication session 所需的
 request metadata 和 owner-bound signal，不取得 Management operation body。
 
-生产 static Node listener 默认监听 `0.0.0.0`，可用成对的 `PLUXEL_TLS_CERT`/`PLUXEL_TLS_KEY` 接收内联 PEM 内容或 PEM
-文件路径并直接终止 TLS；加密 private key 可另设 `PLUXEL_TLS_PASSPHRASE`。不安全的 remote Management session 会在
-provider callback 前拒绝。
+生产 static Node listener 默认通过 HTTP 监听 `0.0.0.0`，公网 TLS 由 ingress、反向代理或部署平台终止。Runtime 不从
+forwarding headers 推断物理 TLS；内建 Node launcher 默认只通过 loopback/SSH tunnel 管理，需要 remote Management 的平台
+集成必须提供自身能证明 HTTPS 的 application carrier。不安全的 remote Management session 会在 provider callback 前拒绝。
 
 完整 Workbench 作者用法见 [`docs/workbench/index.md`](../../docs/workbench/index.md)，内部不变量见
 [`engineering/WORKBENCH.md`](../../engineering/WORKBENCH.md)。

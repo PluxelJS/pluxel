@@ -20,9 +20,6 @@ export interface PluxelEnvironmentVariables extends Readonly<Record<string, stri
 	readonly PLUXEL_WORKBENCH?: 'true' | 'false'
 	readonly PLUXEL_HOST_BIND?: string
 	readonly PLUXEL_HOST_PORT?: string
-	readonly PLUXEL_TLS_CERT?: string
-	readonly PLUXEL_TLS_KEY?: string
-	readonly PLUXEL_TLS_PASSPHRASE?: string
 	readonly PLUXEL_VAULT_DEPLOY_IDENTITY?: string
 	readonly PLUXEL_HMR_PROFILE?: string
 	readonly PLUXEL_HMR_CONFIG?: string
