@@ -26,6 +26,8 @@ coding agent 能从所验证的产品边界直接推导出最短、正确的测�
    复制 registry、observer、canonical address 或 Cap'n Web disposal 样板。
 8. **复用 runner 已有语言**：Core/Runtime host 保持 runner-neutral；official Vitest preset 只为 runner 无法理解的 Plugin lifecycle
    identity 增加一个 matcher。普通 object/error/poll/type assertion 不建立 Pluxel wrapper。
+9. **smoke 也使用可释放 lease**：真实 dev server 应以一次 `await` 达到 ready，并暴露标准 URL；不要让 coding agent 自己发现随机端口、
+   轮询 readiness 或拼装 Vite teardown。
 
 ## 不把所有测试统一成一种 host
 
@@ -49,6 +51,8 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
   Plugin 重复的 internal registry/session 样板，不模拟 DOM 表单和点击。
 - [`DIRECT_RPC.md`](DIRECT_RPC.md)：区分纯 `RpcTarget` object contract 与直接挂载到 `ctx.elysia` 的业务 RPC endpoint；前者
   使用 local capability membrane，后者必须按 Fetch 或 WebSocket carrier 的真实边界验证。
+- [`DEV_SERVER_SMOKE.md`](DEV_SERVER_SMOKE.md)：为 dynamic Runtime 定义真实 Vite/Node listener 的一次启动式 disposable lease；让
+  coding agent 可以用标准 `fetch`、WebSocket 或 browser 做 physical smoke，同时不向 dev server 暴露 test-host Plugin mutation authority。
 
 ## 后续议题
 
@@ -58,7 +62,7 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
 - Plugin fork 未来的产品删除决策；本次 test v2 已选择暂时保留并使用无 mutation typed ref；
 - external HTTP/database/worker/clock fixture 的最小标准 seam；
 - 各 domain 已有 cancellation/deadline 是否足够覆盖长任务，哪些地方仍缺少可注入 clock 或 readiness seam；
-- static/dynamic/real-carrier integration 是否需要统一的分层命名；
+- static artifact integration 与 dynamic dev server 在真实调用点中是否出现足够相同的 lease contract，值得提取 carrier-neutral 命名；
 - callback-scoped commit、teardown 聚合与 diagnostics 的 prototype 是否能保持已有 structured failure facts。
 
 只有真实调用点和重复样板证明需求后，才为这些议题增加公共 surface。

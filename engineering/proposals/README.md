@@ -14,7 +14,7 @@
 仍有未实现边界的文件：
 
 - [`testing/`](testing/)：面向 Plugin 作者与 coding agent 的 composable test API 重新设计；当前研究 Plugin host lifecycle/config、
-  Workbench RPC、纯 `RpcTarget` contract 与 Elysia-mounted endpoint 的分层入口。
+  Workbench RPC、纯 `RpcTarget` contract、Elysia-mounted endpoint 与真实 dynamic dev server smoke 的分层入口。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的
   decoratorless Plugin declaration。
 - [`REMOVE_PLUGIN_FORKS.md`](REMOVE_PLUGIN_FORKS.md)：评估删除通用 Plugin fork；Redis/S3 的 producer-owned bounded catalog

@@ -158,7 +158,11 @@ Plugin ctx.elysia WebSocket route
 ```
 
 当前普通 `@pluxel/runtime/test` host 不打开端口，因此不应给它增加看似可用的 `host.rpc.websocket()`。如果真实 Plugin 用例重复证明
-需要公共样板，应在 Node-owned test entry 设计一个 real-listener fixture，例如候选：
+需要公共样板，应按所验证的 launcher 选择 physical fixture：
+
+- 验证 dynamic config、Vite source graph/HMR 与 carrier 的 smoke 使用
+  [`startDevServer()`](DEV_SERVER_SMOKE.md)，再用 endpoint 自己的 production WebSocket/RPC client 连接 `server.origin`；
+- 只验证 Node carrier 与显式 Plugin fixture 的测试，未来可在 Node-owned test entry 设计一个 real-listener host，例如候选：
 
 ```ts
 import { createNodeRuntimeTestHost } from '@pluxel/runtime-node/test'
@@ -169,7 +173,8 @@ using api = await host.websocket.rpc<OrdersApi>('/orders/rpc')
 await expect(api.order('42')).resolves.toEqual({ id: '42' })
 ```
 
-这只是未来 API 的形状约束，不是当前采纳提案。只有以下前置条件成立后才设计具体签名：
+第二种只是未来 API 的形状约束，不是当前采纳提案。dynamic lease 也不会因此增加通用 RPC codec。只有以下前置条件成立后才设计
+Node host 的具体签名：
 
 1. 至少两个真实 Plugin 以同一个受支持 Cap'n Web/Elysia mount contract 暴露业务 WebSocket RPC；
 2. Node test host 已能以 production carrier 启动 ephemeral listener 并可靠 cleanup；

@@ -80,10 +80,14 @@ Direct RpcTarget contract
 
 Physical transport / loader / artifact
   -> Node/static/dynamic specialized host
+  -> dynamic dev smoke uses a ready, disposable server lease
 
 Workbench renderer/Shell behavior
   -> browser/React test
 ```
+
+真实 dynamic dev server 的候选入口见 [`DEV_SERVER_SMOKE.md`](DEV_SERVER_SMOKE.md)。它复用“单次 await 得到稳定资源、scope 结束统一
+dispose”的习惯，但不会复用 `host.start(Plugin)`：dev server 的 Plugin authority 必须来自 config、source catalog 与 HMR。
 
 同一 Runtime test host 上的 driver 共享一个真实 root、Plugin graph、generation ownership 和 disposal boundary，因此可以自然组合：
 
