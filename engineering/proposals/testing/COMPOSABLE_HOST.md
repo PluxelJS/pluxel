@@ -113,20 +113,20 @@ public API 不出现第六种“有时 staging、有时立即执行”的 method
 
 除非 prototype 的真实迁移矩阵给出反证，最终 author-facing surface 固定为：
 
-| 入口                       | 初始方法                                                                         | 不包含                                                            |
-| -------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `createCoreTestHost()`     | 返回 async-disposable `CoreTestHost`                                             | callback lifetime wrapper                                         |
-| Core host 顶层             | `add/remove/restart/replaceDefinition/commit/commitExpectFail/require/isRunning` | `start/stop/get/has/last/status/ctx`                              |
-| `createRuntimeTestHost()`  | 返回 async-disposable `RuntimeTestHost`                                          | callback lifetime wrapper、physical listener                      |
-| Runtime host 顶层          | `start/stop/restart/replaceDefinition/commit/commitExpectFail/require/isRunning` | staged mutation、`add/remove/fork`、重建的 `status`               |
-| `runtimeHost.config`       | `patch/reset`                                                                    | raw ConfigService、field-path UI protocol、根据状态换语义的 `set` |
-| `runtimeHost.http`         | `fetch`                                                                          | WebSocket Upgrade、通用 RPC codec                                 |
-| `runtimeHost.commands`     | `execute/list`                                                                   | `register/createMount`                                            |
-| `runtimeHost.workbench`    | `open`                                                                           | UI action、registry、transport mode                               |
-| fork value                 | `definePluginFork(Plugin, forkId)`                                               | host mutation、raw node address                                   |
-| standalone local RPC       | `createLocalRpcClient`                                                           | Runtime host、URL、physical carrier                               |
-| lifecycle assertion        | `assertPluginLifecycleIssue(summary, target, expected)`                          | test-runner matcher suite                                         |
-| framework internal harness | root/service/transaction/failure-injection authority                             | `@pluxel/test` 主入口 re-export                                   |
+| 入口                       | 初始方法                                                                         | 不包含                                                           |
+| -------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `createCoreTestHost()`     | 返回 async-disposable `CoreTestHost`                                             | callback lifetime wrapper                                        |
+| Core host 顶层             | `add/remove/restart/replaceDefinition/commit/commitExpectFail/require/isRunning` | `start/stop/get/has/last/status/ctx`                             |
+| `createRuntimeTestHost()`  | 返回 async-disposable `RuntimeTestHost`                                          | callback lifetime wrapper、physical listener                     |
+| Runtime host 顶层          | `start/stop/restart/replaceDefinition/commit/commitExpectFail/require/isRunning` | staged mutation、`add/remove/fork`、重建的 `status`              |
+| `runtimeHost.config`       | `patch`                                                                          | raw ConfigService、field-path UI protocol、test-only `reset/set` |
+| `runtimeHost.http`         | `fetch`                                                                          | WebSocket Upgrade、通用 RPC codec                                |
+| `runtimeHost.commands`     | `execute/list`                                                                   | `register/createMount`                                           |
+| `runtimeHost.workbench`    | `open`                                                                           | UI action、registry、transport mode                              |
+| fork value                 | `definePluginFork(Plugin, forkId)`                                               | host mutation、raw node address                                  |
+| standalone local RPC       | `createLocalRpcClient`                                                           | Runtime host、URL、physical carrier                              |
+| official Vitest assertion  | `expect(failure).toHavePluginLifecycleIssue(target, expected)`                   | 通用 matcher suite、snapshot serializer、global equality tester  |
+| framework internal harness | root/service/transaction/failure-injection authority                             | `@pluxel/test` 主入口 re-export                                  |
 
 表中没有为了对称而预留的方法。新增 surface 必须由至少两个真实 author-side 调用点或一个不可替代的 correctness boundary 证明。
 
@@ -134,14 +134,14 @@ public API 不出现第六种“有时 staging、有时立即执行”的 method
 
 测试 API 的简洁不能删除以下产品事实：
 
-| 概念                      | 含义                                                    | 候选 test API                                              |
-| ------------------------- | ------------------------------------------------------- | ---------------------------------------------------------- |
-| catalog availability      | host 是否拥有某个 concrete implementation candidate     | advanced change 的 `catalog.add/remove`                    |
-| session intent            | 本次进程明确希望 node running/stopped                   | `host.start/stop`；advanced change 的 `session.start/stop` |
-| durable auto-start policy | 下次 cold boot 是否自动希望 node running                | advanced change 的 `policy.setAutoStart`                   |
-| actual lifecycle          | 当前 generation 是否 running、failed、blocked、draining | `host.isRunning/require` 与原始 commit summary             |
-| desired Plugin config     | 已保存、等待或已经应用的 raw record/revision            | fixture `initialConfig`；live `host.config.patch`          |
-| applied Plugin config     | 当前 generation 已确认的 snapshot/revision              | config result 与 Plugin public behavior                    |
+| 概念                      | 含义                                                    | 候选 test API                                     |
+| ------------------------- | ------------------------------------------------------- | ------------------------------------------------- |
+| catalog availability      | host 是否拥有某个 concrete implementation candidate     | advanced change 的 `catalog.add/remove`           |
+| session intent            | 本次进程明确希望 node running/stopped                   | `host.start/stop`；advanced `change.start/stop`   |
+| durable auto-start policy | 下次 cold boot 是否自动希望 node running                | framework internal harness                        |
+| actual lifecycle          | 当前 generation 是否 running、failed、blocked、draining | `host.isRunning/require` 与原始 commit summary    |
+| desired Plugin config     | 已保存、等待或已经应用的 raw record/revision            | fixture `initialConfig`；live `host.config.patch` |
+| applied Plugin config     | 当前 generation 已确认的 snapshot/revision              | config result 与 Plugin public behavior           |
 
 因此不提供：
 
@@ -151,6 +151,10 @@ host.disable(Plugin)
 ```
 
 `enable` 无法回答“加入 catalog”“本次启动”还是“以后自动启动”。对 coding agent 而言，短但多义比多一个单词成本更高。
+
+public author `change` 也不提供 `policy.setAutoStart()`。当前真实调用全部属于 Runtime cold-boot、RuntimeState、Management 或 capability
+framework tests；Plugin 不拥有自己的 durable launch policy。相关测试进入 Runtime internal harness，普通 Plugin 测试只表达本进程
+`start/stop`。这也让“public `start()` 永不修改 auto-start policy”成为更容易验证的单向边界。
 
 ## 候选 Runtime API
 
@@ -203,6 +207,11 @@ route capability installation、request address、artifact resolver 等进入 in
 | HTTP       | in-process directory 可用，不打开端口    | physical carrier 进入专门 host                    |
 | Commands   | owner-aware catalog 可用                 | 不需要 test-only enable flag                      |
 | Workers    | service 可用，pool 保持惰性              | 使用既有 worker budget config                     |
+
+test world 自身的 control/config/runtime-state store 始终是每 host 隔离的 memory implementation，不暴露 backend injection；这些是 fixture
+authority 的实现资源，不是 Plugin capability。`persistence` 未传时则显式规范化为 production 已支持的 `{ mode: 'memory' }`，避免 implicit-memory
+warning，同时保持真实 namespace、flush、revision 和 writable semantics；调用方传入 production `persistence` config 时原样覆盖。factory 不读取或
+复用进程级默认目录，因此两个 test host 不得共享隐式状态。
 
 测试只为真正 optional 的能力明确开启所需项：
 
@@ -295,11 +304,6 @@ Core graph 根据 Consumer 的 required edge 启动 Provider。使用 `dependenc
 ```ts
 type RawPluginConfig = Readonly<Record<string, unknown>>
 
-type SuccessfulCommitSummary = Omit<CommitSummary, 'lifecycleReport'> &
-	Readonly<{
-		lifecycleReport: Readonly<{ ok: true; issues: readonly [] }>
-	}>
-
 type LifecycleFailureCommitSummary = Omit<CommitSummary, 'lifecycleReport'> &
 	Readonly<{
 		lifecycleReport: Readonly<{
@@ -363,7 +367,6 @@ type RuntimePluginBatchStartOptions = Readonly<{
 
 interface RuntimeConfigTestDriver {
 	patch(target: PluginTestTarget, patch: RawPluginConfig): Promise<PluginConfigResult>
-	reset(target: PluginTestTarget, keys?: readonly string[]): Promise<PluginConfigResult>
 }
 
 interface RuntimeHttpTestDriver {
@@ -390,11 +393,8 @@ interface RuntimeTestHost extends AsyncDisposable {
 	): Promise<PluginInstances<TTargets>>
 	stop(target: PluginTestTarget): Promise<void>
 	restart<TTarget extends PluginTestTarget>(target: TTarget): Promise<PluginInstanceFor<TTarget>>
-	replaceDefinition(
-		current: PluginConstructor,
-		next: PluginConstructor,
-	): Promise<SuccessfulCommitSummary>
-	commit(build: (change: RuntimePluginTestChange) => undefined): Promise<SuccessfulCommitSummary>
+	replaceDefinition(current: PluginConstructor, next: PluginConstructor): Promise<void>
+	commit(build: (change: RuntimePluginTestChange) => undefined): Promise<void>
 	commitExpectFail(
 		build: (change: RuntimePluginTestChange) => undefined,
 	): Promise<LifecycleFailureCommitSummary>
@@ -428,7 +428,7 @@ batch 仍遵循真实 failure isolation：若一个 root failed，其他成功 r
 batch form 有意不接受一个无法保持异构类型关系的 `initialConfig` map。多个 root 需要不同 bootstrap config 时使用一次 `commit()`：
 
 ```ts
-const summary = await host.commit((change) => {
+await host.commit((change) => {
 	change.start(BackendPlugin, { initialConfig: backendConfig })
 	change.start(ConsumerPlugin, { initialConfig: consumerConfig })
 })
@@ -496,7 +496,7 @@ await host.replaceDefinition(WorkerPlugin, WorkerPluginV2)
 - `restart()` 只接受当前 running target，提交一次显式 generation restart，成功后返回新 instance；stopped target 应使用 `start()`；
 - `replaceDefinition()` 只接受 current/next constructor，校验两者 canonical definition address 相同，并替换 default 与所有 forks 共享的
   implementation；
-- replacement 返回 commit summary，不虚构某一个 family member 的 instance；需要 instance 时使用与 next constructor 绑定的 target 调用
+- replacement 只返回完成信号，不暴露 definition family 的内部 planning summary；需要 instance 时使用与 next constructor 绑定的 target 调用
   `require()`；
 - 方法返回的 Promise resolve 时，operation 已稳定且 cleanup 已 settle 或进入结构化 drain report；
 - host driver 不提供同步 staged versions，因此调用后忘记 commit 不会产生“断言旧状态但测试仍通过”的错误。
@@ -511,15 +511,18 @@ await host.commit((change) => {
 
 ### 多变化场景：callback-scoped commit
 
-测试真正关心同一次 graph/config/policy/session change 时：
+测试真正关心同一次 graph/config/dependency/session change 时：
 
 ```ts
-const summary = await host.commit((change) => {
+await host.commit((change) => {
 	change.start(ConsumerPlugin, {
 		catalog: [ProviderPlugin],
 		initialConfig: { endpoint: 'https://example.test' },
 	})
-	change.policy.setAutoStart(ConsumerPlugin, true)
+	change.dependencies.setDefault({
+		requirement: StoragePlugin,
+		provider: ProviderPlugin,
+	})
 })
 ```
 
@@ -531,7 +534,7 @@ callback 是同步、短生命周期的 draft authority：
 - callback throw 时整个 draft rollback；
 - operation 完成前另一项 host mutation 立即失败，不在隐藏 queue 中等待；
 - public target 只接受 constructor/`PluginForkRef`，不接受 display name、address 或手写 key；
-- commit summary 使用生产 lifecycle facts。
+- strict commit 成功只返回完成信号；预期 lifecycle failure 的 commit 返回生产 summary。
 
 `change` 与 host 共享核心 command vocabulary，但不伪装成同一种执行对象：
 
@@ -547,7 +550,7 @@ await host.commit((change) => {
 - callback 内不逐项 `await`，只在外层 `await host.commit(...)` 一次；
 - Runtime 共享 `start/stop/restart/replaceDefinition` 及 start options；Core 共享 `add/remove/restart/replaceDefinition` 及 add options；
 - `require/isRunning`、driver 和 `commit` 不复制到 `change`；draft 内没有可观察的中间 committed state，也不能递归提交；
-- `catalog/config/policy/dependencies` 只保留高级变化所需的正交领域命令，不迫使常见 lifecycle 改写成
+- `catalog/config/forks/dependencies` 只保留 author 高级变化所需的正交领域命令，不迫使常见 lifecycle 改写成
   `change.session.start()`。
 
 mutation exclusivity 只约束 fixture authority；HTTP/RPC/command 等已开始或并发进入的 inbound work 继续遵循真实 generation admission、drain
@@ -629,9 +632,6 @@ interface RuntimePluginTestChange {
 	readonly config: {
 		seed(target: PluginTestTarget, value: RawPluginConfig): undefined
 	}
-	readonly policy: {
-		setAutoStart(target: PluginTestTarget, value: boolean): undefined
-	}
 	readonly dependencies: {
 		setDefault(input: ProviderDefaultInput): undefined
 		clearDefault(requirement: PluginConstructor): undefined
@@ -650,7 +650,7 @@ dependency override 使用 named object，因为 consumer/requirement/provider �
 failure test 使用独立且可从 autocomplete 发现的 `commitExpectFail()`：
 
 ```ts
-const summary = await host.commitExpectFail((change) => {
+const failure = await host.commitExpectFail((change) => {
 	change.start(Consumer, { catalog: [BrokenProvider] })
 })
 ```
@@ -660,8 +660,10 @@ const summary = await host.commitExpectFail((change) => {
 callback programming error、invalid graph、fixture config input validation 与 persistence commit failure 抛错，也不改变 apply、rollback 或 report 内容。
 
 如果 commit 完全成功，helper 以 assertion error reject，防止预期失败的测试因忘记检查 summary 而假通过。
-`commit()` 返回的 `SuccessfulCommitSummary` 在类型上固定 `ok: true` 和 empty issues；`commitExpectFail()` 返回的
-`LifecycleFailureCommitSummary` 固定 `ok: false` 和 non-empty issues tuple。不再把控制流差异藏在 options object 或仅靠文档解释。
+`commit()` 成功只返回 `void`：author 测试没有检查 reconciliation planning facts 的稳定需求，返回 `pluginChanges` 还会重新暴露
+`PluginNodeSlot`。`commitExpectFail()` 返回的 `LifecycleFailureCommitSummary` 固定 `ok: false` 和 non-empty issues tuple，因为 failure facts
+正是该操作的测试目标。不再把控制流差异藏在 options object 或仅靠文档解释。Core/Runtime framework tests 若需检查 successful commit 的
+restart/availability delta，使用 internal harness 取得完整 production summary。
 
 ### Live config 使用 production mutation
 
@@ -676,7 +678,7 @@ expect(result).toMatchObject({
 })
 ```
 
-`host.config.patch/reset` 应调用与 Management RPC 相同的 use case/coordinator，而不是直接修改 `ConfigService`：
+`host.config.patch` 应调用与 Management RPC 相同的 use case/coordinator，而不是直接修改 `ConfigService`：
 
 - validate once；
 - persistence flush/confirm；
@@ -702,6 +704,11 @@ await host.restart(WorkerPlugin)
 Management 的 nested `patchField(fieldPath, value)` 属于表单/协议 mapping，不进入通用 author driver；Plugin 行为测试可以提交完整 nested value
 给 `patch()`，Workbench/Management protocol tests 则经过其真实 RPC 或 internal use-case harness。没有真实 author-side 重复前不增加第三个 config
 mutation 入口。
+
+同理，v2 不预先提供 `host.config.reset()` 或 `change.config.reset()`。当前 workspace 没有 Plugin author 调用点，production Management client
+也尚未公开 reset；仅有一个未接入控制面的 use case 和 Core ConfigService white-box `unset()` tests，不足以建立 author contract。需要构造 key
+deletion、默认值恢复或 raw revision 的 framework tests 使用 internal harness。未来 production 先冻结 reset 的删除范围、持久化和 listener 语义后，
+test driver 才镜像同一 operation。
 
 ## Core host 使用自己的真实动词
 
@@ -741,11 +748,8 @@ interface CoreTestHost extends AsyncDisposable {
 	): Promise<PluginInstances<TTargets>>
 	remove(target: PluginTestTarget): Promise<void>
 	restart<TTarget extends PluginTestTarget>(target: TTarget): Promise<PluginInstanceFor<TTarget>>
-	replaceDefinition(
-		current: PluginConstructor,
-		next: PluginConstructor,
-	): Promise<SuccessfulCommitSummary>
-	commit(build: (change: CorePluginTestChange) => undefined): Promise<SuccessfulCommitSummary>
+	replaceDefinition(current: PluginConstructor, next: PluginConstructor): Promise<void>
+	commit(build: (change: CorePluginTestChange) => undefined): Promise<void>
 	commitExpectFail(
 		build: (change: CorePluginTestChange) => undefined,
 	): Promise<LifecycleFailureCommitSummary>
@@ -766,7 +770,6 @@ interface CorePluginTestChange {
 	replaceDefinition(current: PluginConstructor, next: PluginConstructor): undefined
 	readonly config: {
 		patch(target: PluginTestTarget, value: RawPluginConfig): undefined
-		reset(target: PluginTestTarget, keys?: readonly string[]): undefined
 	}
 	readonly dependencies: {
 		setDefault(input: ProviderDefaultInput): undefined
@@ -777,7 +780,7 @@ interface CorePluginTestChange {
 }
 ```
 
-候选 Core draft 以同步 `add/remove/restart/replaceDefinition` 共享 host 命令词汇，只额外提供 `config.patch/reset` 与
+候选 Core draft 以同步 `add/remove/restart/replaceDefinition` 共享 host 命令词汇，只额外提供 `config.patch` 与
 `dependencies.setDefault/setOverride`。Core 没有 catalog、session intent、
 durable auto-start policy、Runtime persistence 或 Management config mutation，因此不得为了 API 外观加入空实现。
 
@@ -801,11 +804,12 @@ host.require(Plugin) // running instance，否则抛 setup error
 host.isRunning(Plugin) // boolean convenience
 ```
 
-不保留低使用率且重叠的 `get/has/last/services/plugins()`；mutation 自己返回 summary，single/batch add/start 自己返回 instance。Plugin 业务
+不保留低使用率且重叠的 `get/has/last/services/plugins()`；single/batch add/start 返回明确请求的 instance，其他 strict mutation 成功只返回
+完成信号。Plugin 业务
 状态通过 returned instance 或 inbound driver 观察，owner-bound storage 的必要白盒断言从 instance 的 public/domain seam 进入。
 
 也不新增一个从多个内部来源重建的 `status()` snapshot。即时问题“现在是否 running”由 `isRunning()` 回答；failed/blocked/drain 的因果证据属于
-本次 `commit()` summary 或 `PluginLifecycleAssertionError.summary`。这避免 caller 拿一个脱离 commit 边界、可能已经 stale 的简化状态猜原因。
+`commitExpectFail()` 返回值或 `PluginLifecycleAssertionError.summary`。这避免 caller 拿一个脱离 commit 边界、可能已经 stale 的简化状态猜原因。
 
 Core/Runtime 自身需要 root authority 的测试迁移到明确 internal 的 test harness（候选 subpath：`@pluxel/core/test/internal`、
 `@pluxel/runtime/test/internal`）。该 harness 可以暴露 root context、raw service、staged transaction 和 failure injection，但不被
@@ -928,6 +932,10 @@ test host 不提供一个全局 fake clock service，除非 Runtime 自己拥有
 `init()` 只建立 task、注册 cleanup 并达到可声明的 readiness。专门验证 lifecycle timeout 时配置既有 Plugin/root timeout；不要由 test helper
 偷偷延长，否则测试与 production contract 不再相同。
 
+Vitest 测试若观察的确实是 carrier、external adapter 或异步 publication 的 eventual state，直接使用 runner 已有的
+`expect.poll(() => observed).toEqual(expected)`；等待 mock/callback 可使用 `vi.waitFor()`。不要把它们包装成 `host.waitFor/eventually()`。这些工具
+不得用于弥补 lifecycle/config helper 提前 resolve：`start/stop/restart/config.patch` 自己承诺的稳定边界仍必须由 implementation 等待完成。
+
 ## 一个完整的组合示例
 
 ```ts
@@ -967,7 +975,8 @@ commit、DOM selector 或 physical port。
 
 ## Failure 与 assertion 设计
 
-API 不内建 `expect()` 或测试框架 matchers。Vitest/Jest/Node test runner 都可以消费相同结构化结果。
+Core/Runtime host API 不内建 `expect()`，其 command、result 与 error 保持 runner-neutral；official `@pluxel/test` Vitest adapter 只增加下面一个
+identity-aware matcher。其他 runner 仍可消费相同结构化 failure summary，framework harness 则可使用 internal resolver。
 
 - `start/restart()` 是 assertive fixture operation：目标未 running 时 reject；`replaceDefinition()` 是 definition-wide strict operation；
 - `commitExpectFail()` 用于检查 expected start/blocked/drain issues；
@@ -975,19 +984,49 @@ API 不内建 `expect()` 或测试框架 matchers。Vitest/Jest/Node test runner
 - programming error、invalid target、stale draft authority 和 capability disabled 不伪装成 domain failure；
 - message 面向诊断，测试分支依赖现有 stable kind/code/discriminant。
 
-保留一个已有真实需求的 runner-neutral helper：
+official Vitest stack 保留一个已有真实需求的 matcher：
 
 ```ts
-assertPluginLifecycleIssue(summary, BrokenProvider, {
+expect(failure).toHavePluginLifecycleIssue(BrokenProvider, {
 	kind: 'start-failed',
 })
 ```
 
-它只负责从 constructor/fork ref 定位 summary 中的 canonical node/issue，并优先匹配 stable phase/kind/blockedBy；对尚无 stable cause code 的错误保留
-optional `message: string | RegExp` 诊断匹配，但明确不把 message 变成稳定协议。这避免 Plugin 作者理解 slot/address。
-当前 workspace 已有 38 个调用点。除此之外不增加 `expectRunning()`、`expectStarted()`、`expectConfigApplied()` 等 assertion DSL；低使用率的
-`findPluginLifecycleIssue/pluginLifecycleIssuePlugins` 和 framework collect helpers 移到 internal harness。`isRunning()`、returned instance、这个
-唯一 helper 与 domain result 已经提供足够证据。
+`toHavePluginLifecycleIssue()` 只负责从 constructor/fork ref 定位 summary 中的 canonical node/issue，并优先匹配 stable
+phase/kind/blockedBy；对尚无 stable cause code 的错误保留 optional `message: string | RegExp` 诊断匹配，但明确不把 message 变成稳定协议。
+它必须支持 `.not` 与 `expect.soft()`，失败时展示非敏感的 expected target/fields 和 normalized actual issues，而不是只打印“没有找到”。这避免
+Plugin 作者理解 slot/address，并复用 Vitest 的 matcher reporting。当前测试调用没有使用旧 assert 的返回值，因此 matcher 返回 `void` 不损失真实
+能力。
+
+matcher 由 `@pluxel/test` 的 Vitest setup 自动注册并提供 module augmentation；runner-neutral 的 `@pluxel/core/test` 与
+`@pluxel/runtime/test` 不依赖 Vitest。identity resolver 是 matcher implementation/internal harness 的共享内部能力，不再 public export
+`assertPluginLifecycleIssue/findPluginLifecycleIssue/pluginLifecycleIssuePlugins`。除此之外不增加 `toBePluginRunning()`、
+`toHavePluginConfig()`、asymmetric lifecycle matcher、snapshot serializer 或 Plugin target global equality tester；`isRunning()`、returned
+instance、标准 Vitest matcher 与 domain result 已经提供足够证据。
+
+候选 adapter declaration 只扩展 Vitest matcher，不把 `expect` 注入 host package：
+
+```ts
+type PluginLifecycleIssueExpectation = Readonly<{
+	phase?: PluginLifecycleIssuePhase
+	kind?: PluginLifecycleIssueKind
+	blockedBy?: PluginTestTarget
+	message?: string | RegExp
+}>
+
+declare module 'vitest' {
+	interface Matchers<T = any> {
+		toHavePluginLifecycleIssue(
+			target: PluginTestTarget,
+			expected?: PluginLifecycleIssueExpectation,
+		): void
+	}
+}
+```
+
+Vitest 的 matcher augmentation 无法仅凭 `T` 完美隐藏错误 receiver，因此 implementation 必须验证 received 是 failure summary，并给出明确
+usage error；type tests 仍应尽可能把 method 限制到 compatible receiver。不要为了实现 receiver-sensitive autocomplete 再引入
+`expectPluginFailure(summary)` wrapper，那会重新产生第二套 assertion 语言。
 
 当前实现只有 structured `CommitSummary`，strict helper 抛出的普通 Error 会丢失它；同时本提案删除 `last()`，因此需要一个且仅一个
 test-only wrapper：
@@ -1150,8 +1189,10 @@ ref 中的 canonical definition + forkId，不要求 current candidate。这个�
 | Runtime `add([P, C]); start(C); commit()`             | `await host.start(C, { catalog: [P] })`                     |
 | Runtime `addStarted([A, B, C]); commit()`             | `await host.start([A, B, C])`                               |
 | pre-start `cfg(A).set(value)`                         | single `initialConfig`；multi-root 使用 callback `commit`   |
-| running `cfg(A).set(value); commit()`                 | `await config.patch(A, value)`                              |
+| running `cfg(A).set(value); commit()`                 | `await host.config.patch(A, value)`                         |
 | staged `commitAllowFail()`                            | callback-scoped `commitExpectFail(change => ...)`           |
+| `assertPluginLifecycleIssue(summary, P, expected)`    | `expect(summary).toHavePluginLifecycleIssue(P, expected)`   |
+| author-side `setAutoStart(...)`                       | Runtime internal harness                                    |
 | `const F = host.fork(P, 'f')` + `start(F)`            | `const F = definePluginFork(P, 'f')`; `await host.start(F)` |
 | dependency-only `host.fork(P, 'f')`                   | `change.forks.ensure(F)` + dependency override              |
 | `replace(P, Next)`                                    | `await host.replaceDefinition(P, Next)`                     |
@@ -1205,6 +1246,10 @@ ref 中的 canonical definition + forkId，不要求 current candidate。这个�
 拒绝。driver method destructure 后的合法调用必须通过，显式 `dispose()` 与 `AsyncDisposable` 则必须在 runtime contract test 中证明是同一幂等
 operation。replacement 后的旧 constructor/ref 属于依赖 committed state 的 runtime stale-target test，不能误称为 TypeScript 能静态拒绝。
 
+正向精确关系使用 workspace 已采用的 Vitest `expectTypeOf()`；负向 surface 使用 `@ts-expect-error` 并由 package `typecheck` 覆盖。不要新建
+test-host type assertion DSL，也不要让仅用于推导的 lifecycle expression 在 runtime test 中真的执行。matcher augmentation 还必须有独立 type test，
+证明 official preset 导入后可发现、错误 target/expectation 被拒绝，且没有把 Core/Runtime host package 反向绑定到 Vitest。
+
 ## 验收条件
 
 总体设计只有同时满足以下条件才可采纳：
@@ -1212,12 +1257,13 @@ operation。replacement 后的旧 constructor/ref 属于依赖 committed state �
 1. Runtime single Plugin + initial config 缩为一次 `host.start()`；Core 对应行为是一次 `host.add()`；二者返回 typed instance；
 2. single/batch add/start 都在一次 commit 中稳定，并从 literal constructor tuple 推导 readonly instance tuple；
 3. required provider 仍由 constructor facts 决定，Runtime `catalog` option 不复制 dependency declaration；
-4. `host.start()` 不修改 auto-start policy；Core 不出现 session/policy vocabulary；
-5. stop/remove/restart/replaceDefinition resolve 时 lifecycle 与 cleanup 已达到现有稳定边界；
+4. `host.start()` 不修改 auto-start policy；public author change 不暴露 policy，Core 不出现 session/policy vocabulary；
+5. stop/remove/restart/replaceDefinition/strict commit resolve 时 lifecycle 与 cleanup 已达到现有稳定边界，成功只返回 `void`；
 6. multi-change callback 不可逃逸、不可跨 `await`，throw 时无 pending draft；empty draft 拒绝；block 与 expression callback 都可 typecheck，
    `async` callback 在 type/runtime 都拒绝；
-7. `commitExpectFail` 要求至少一个 lifecycle issue，完全成功时拒绝，且不吞 programming/persistence/invalid graph error；
-8. config 参数不伪造 constructor-level 类型关系；`initialConfig` 与 live mutation 不隐式换语义；
+7. `commitExpectFail` 要求至少一个 lifecycle issue，完全成功时拒绝，且不吞 programming/persistence/invalid graph error；official Vitest
+   matcher 支持 target/fork、blockedBy、`.not`、soft assertion 与结构化安全诊断；
+8. config 参数不伪造 constructor-level 类型关系；`initialConfig` 与 live mutation 不隐式换语义；未有 production/author 证据前不提供 reset；
 9. Workbench/Vault disabled 时零 backend；Database 默认惰性 PGlite且 `database: false` 真正零 backend；driver 不自动安装 capability；
 10. HTTP、commands、Workbench driver 都观察同一 Plugin generation 和 withdrawal；
 11. Workbench `principal` 必填，local RPC、real WebSocket carrier 与 browser test 不互相冒充；
@@ -1228,7 +1274,8 @@ operation。replacement 后的旧 constructor/ref 属于依赖 committed state �
 16. `replaceDefinition` 影响完整 family，不接受 fork ref，且旧 constructor/ref 不能在 replacement 后返回错误类型的 instance；
 17. author surface 只接受 constructor/`PluginForkRef`，不要求 Plugin 作者构造 definition/node address；
 18. 代表矩阵迁移后不再需要 package 自建 `addStarted`/Workbench registry wiring 等 framework 样板；
-19. 一个未读 internal source 的 coding agent 通过上述盲测矩阵，能从 autocomplete 写出 single/batch lifecycle、config、RPC/HTTP 调用与 cleanup test；
+19. 一个未读 internal source 的 coding agent 通过上述盲测矩阵，能从 autocomplete 写出 single/batch lifecycle、config、RPC/HTTP、failure
+    matcher 与 cleanup test；
 20. old symbol zero gate、public exports、模板、用户文档和 Tegami changelog 与最终实现一致。
 
 ## 原型阶段需要回答

@@ -24,6 +24,8 @@ coding agent 能从所验证的产品边界直接推导出最短、正确的测�
    不能在 root 创建后补装 capability。
 7. **Agent 的局部信息足够**：常规测试应能依靠 TypeScript autocomplete 和一个短示例完成；不要求先搜索 internal tests
    复制 registry、observer、canonical address 或 Cap'n Web disposal 样板。
+8. **复用 runner 已有语言**：Core/Runtime host 保持 runner-neutral；official Vitest preset 只为 runner 无法理解的 Plugin lifecycle
+   identity 增加一个 matcher。普通 object/error/poll/type assertion 不建立 Pluxel wrapper。
 
 ## 不把所有测试统一成一种 host
 
@@ -42,7 +44,7 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
 
 - [`COMPOSABLE_HOST.md`](COMPOSABLE_HOST.md)：重新设计 Core/Runtime test host；Core 使用真实 `add/remove`，Runtime 使用真实
   `start/stop`，共同以立即完成的常用行为和 callback-scoped `commit` 取代长期 staging，并分开 public author host 与 framework
-  internal harness。
+  internal harness；strict success 只返回完成信号，official Vitest adapter 提供唯一的 lifecycle issue matcher。
 - [`WORKBENCH_RPC.md`](WORKBENCH_RPC.md)：为 Plugin 测试提供类型化、进程内的真实 Workbench RPC entry opener，删除各
   Plugin 重复的 internal registry/session 样板，不模拟 DOM 表单和点击。
 - [`DIRECT_RPC.md`](DIRECT_RPC.md)：区分纯 `RpcTarget` object contract 与直接挂载到 `ctx.elysia` 的业务 RPC endpoint；前者
