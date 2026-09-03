@@ -42,6 +42,13 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
 
 低层 host 不应为了统一外观安装高层 Runtime 能力，普通 Plugin 测试也不应为了调用一个 RPC action 启动浏览器或物理端口。
 
+在 Runtime/static/dynamic 三条路径中，默认选择只有一条：Plugin 行为使用 `createRuntimeTestHost()`。static helper 只验证 `defineStaticRuntime()` application 的
+fixed catalog、configure/prepare、bindings/env、cold boot 和 startup report；dynamic 没有 test host，项目 Vite command 和
+`startDynamicDevRuntime()` 验证的是 source/HMR/physical carrier。删除外层边界后仍然成立的 assertion 必须回到 Runtime test host，
+不在三层复制同一 Plugin suite。
+Plugin 若确实只使用 Core graph/config/lifecycle/effects，可选更小的 `createCoreTestHost()`；一旦使用 HTTP、commands、database、Vault 或
+Workbench 等 Runtime capability，就使用 Runtime host，不在 Core host 中伪造能力。
+
 ## 当前提案
 
 - [`COMPOSABLE_HOST.md`](COMPOSABLE_HOST.md)：重新设计 Core/Runtime test host；Core 使用真实 `add/remove`，Runtime 使用真实
@@ -53,8 +60,8 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
   使用 local capability membrane，后者必须按 Fetch 或 WebSocket carrier 的真实边界验证。
 - [`DEV_SERVER_SMOKE.md`](DEV_SERVER_SMOKE.md)：拒绝 test-owned dev server，收敛到项目 Vite command 与唯一的 production dynamic
   programmatic launcher；coding agent 用标准 `fetch`、WebSocket 或 browser 做 physical smoke。
-- [`RUNTIME_SURFACE_ALIGNMENT.md`](RUNTIME_SURFACE_ALIGNMENT.md)：定义通用 test host、static application test 与 dynamic Runtime 应共享的
-  ready/disposal/driver vocabulary，并明确拒绝为表面对称建立万能 host 或额外 static launcher。
+- [`RUNTIME_SURFACE_ALIGNMENT.md`](RUNTIME_SURFACE_ALIGNMENT.md)：定义 Plugin test、static application test 与 dynamic smoke 的
+  默认选择规则，以及它们确实共享的 ready/disposal/driver vocabulary；不为表面对称建立万能 host 或额外 static launcher。
 
 ## 实施 package map
 
@@ -64,7 +71,7 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
 | -------------------------------------- | ------------------------------------------------------------------------- |
 | `@pluxel/core/test`                    | runner-neutral `createCoreTestHost()`、Core types 与同一 fork ref factory |
 | `@pluxel/runtime/test`                 | runner-neutral `createRuntimeTestHost()`、Runtime drivers、local RPC      |
-| `@pluxel/runtime-static/test`          | `startStaticRuntimeTestHost()`，组合 Runtime driver facades               |
+| `@pluxel/runtime-static/test`          | `startStaticApplicationTestHost()`，验证 application wiring               |
 | `@pluxel/test/vitest`                  | Vitest/Vite preset、matcher registration 与 module augmentation           |
 | `@pluxel/test/fixtures`                | filesystem fixture utilities，与 Plugin host 无关                         |
 | `@pluxel/test/unsafe`                  | 显式构造 synthetic lowering/replacement facts；不由 host 自动调用         |
@@ -105,12 +112,13 @@ prototype 不得顺手增加 global fake clock、backend admin、carrier-neutral
 2. Runtime 组合 Core primitive，实现 session lifecycle、config/HTTP/commands drivers、capability defaults 与 internal harness；
 3. `@pluxel/test/vitest` 注册唯一 matcher，完成 augmentation/type fixture，再迁移 expected-failure calls；
 4. 实现 Workbench/local RPC lease，先迁移 S3、Fonts 等已存在的重复 wiring；
-5. 用共享 Runtime driver facade 实现 `startStaticRuntimeTestHost()`，把 raw static commit report移入 internal；
+5. 用共享 Runtime driver facade 实现 `startStaticApplicationTestHost()`，把 raw static commit report移入 internal；
 6. 最后重构 production dynamic launcher 与 static/dynamic Vite `{ entry }`，用 physical conformance 验证没有第二套 boot path；
 7. 全量迁移 packages/plugins/projects/templates/docs，添加各受影响 public package 的 pending Tegami major changelog。
 
 合并前用 `rg` 和 package export/type tests 保证以下旧 public symbols/形状为零：`createHost/withHost`、`createRuntimeHost/withRuntimeHost`、
-`createStaticRuntimeTestHost`、`openRuntimeSessionTestConnection`、`createDynamicDevRuntime`、无 target 的 resource `.start()/.stop()`、无 callback
+`createStaticRuntimeTestHost`、`openRuntimeSessionTestConnection`、`createDynamicDevRuntime`、无 target 的 resource
+`.start()/.stop()`、无 callback
 的 staged `commit()/commitAllowFail()`、`cfg()`、mutable `host.fork()`、`assert/findPluginLifecycleIssue` 与 dynamic Vite `{ config }`。internal
 implementation 的同名 production transaction 不计入 gate，必须按 import path/receiver type 精确检查，不能用会误报的纯文本删除。
 

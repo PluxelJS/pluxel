@@ -79,9 +79,14 @@ Runtime Plugin behavior
 Direct RpcTarget contract
   -> local RPC client, no host
 
-Physical transport / loader / artifact
-  -> Node/static/dynamic specialized host
-  -> dynamic dev smoke uses the production Vite launcher
+Static application wiring
+  -> static application test host
+
+Dynamic source / HMR / physical carrier
+  -> project Vite command or production dynamic launcher
+
+Static deployment artifact
+  -> launch the generated artifact
 
 Workbench renderer/Shell behavior
   -> browser/React test
@@ -93,6 +98,9 @@ authority 必须来自 config、source catalog 与 HMR。
 
 static application test 的对应收敛见 [`RUNTIME_SURFACE_ALIGNMENT.md`](RUNTIME_SURFACE_ALIGNMENT.md)：它复用本提案的 domain driver 与只读
 query，但不复用 fixture lifecycle mutation。static fixed catalog、configure/prepare 与 runtime-state startup 必须仍由 application boot 一次完成。
+除非 assertion 本身依赖这些 application facts，Plugin 作者仍应使用 `createRuntimeTestHost()`；不把同一 behavior suite 迁到
+static/dynamic 入口重复执行。dynamic 更不是 test host，`startDynamicDevRuntime()` 是可被测试和 coding agent 调用的 production
+launcher。
 
 同一 Runtime test host 上的 driver 共享一个真实 root、Plugin graph、generation ownership 和 disposal boundary，因此可以自然组合：
 

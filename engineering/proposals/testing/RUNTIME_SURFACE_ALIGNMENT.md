@@ -1,6 +1,7 @@
-# Test、static 与 dynamic Runtime API 收敛
+# Plugin test、static application test 与 dynamic smoke 边界
 
-> 状态：设计已冻结，尚未实现。本文定义三条入口应共享的语法与必须保留的边界；prototype 只验证实现可行性。
+> 状态：设计已冻结，尚未实现。本文定义三条入口应共享的资源语法，并明确它们不是三种可互换的 Plugin test host；
+> prototype 只验证实现可行性。
 
 ## 结论
 
@@ -11,7 +12,7 @@ Plugin fixture world
   -> createRuntimeTestHost()
 
 fixed static application in a test process
-  -> startStaticRuntimeTestHost(application)
+  -> startStaticApplicationTestHost(application)
 
 dynamic Vite server
   -> project dev command
@@ -28,13 +29,27 @@ startRuntime({ source: ..., carrier: ..., test: ... })
 这种统一只把关键边界藏进 options。coding agent 看到局部调用时，无法判断 catalog 来自 constructor fixture、fixed application 还是 Vite
 source graph，也无法知道是否打开 listener/watcher。
 
+## 默认选择规则
+
+Plugin 作者默认只使用 `createRuntimeTestHost()`。只有当被断言事实本身包含更外层边界时，才升级入口：
+
+| 断言中不可删除的事实                                                    | 入口                                                     |
+| ----------------------------------------------------------------------- | -------------------------------------------------------- |
+| Plugin constructor、config、lifecycle 或 Runtime capability             | `createRuntimeTestHost()`                                |
+| `defineStaticRuntime()`、`configure/prepare`、bindings/env 或 cold boot | `startStaticApplicationTestHost(application)`            |
+| dynamic entry、Vite ModuleRunner、source/HMR 或真实 carrier             | 项目 Vite command 或 `startDynamicDevRuntime({ entry })` |
+| freezer artifact、deployment files、assets、Node/TLS                    | 真实启动生成的 artifact                                  |
+
+删除 static application 或 dynamic source/carrier 后，断言仍然成立的测试就应留在 Runtime test host。不对同一 Plugin
+behavior 做 Runtime/static/dynamic 三份镜像测试；外层测试只选一条最小代表性路径，证明 wiring 没有绕过内层已验证的行为。
+
 ## 三条入口的本质差异
 
-| 入口                           | 输入 authority                               | Factory resolve 时                       | Catalog/lifecycle mutation                             | Inbound boundary             |
-| ------------------------------ | -------------------------------------------- | ---------------------------------------- | ------------------------------------------------------ | ---------------------------- |
-| `createRuntimeTestHost()`      | test 直接提供 Plugin constructor/fork/config | 只有隔离 test world；没有 Plugin running | `host.start/stop/commit` 是 fixture authority          | in-process driver            |
-| `startStaticRuntimeTestHost()` | `defineStaticRuntime()` application          | application configure/prepare/boot 完成  | fixed catalog；intent 来自 runtime state/control plane | in-process driver            |
-| `startDynamicDevRuntime()`     | dynamic config entry + Vite source graph     | Vite/controller/carrier/listener ready   | catalog 来自 source/HMR；intent 来自 control plane     | physical HTTP/WebSocket/Vite |
+| 入口                               | 输入 authority                               | Factory resolve 时                       | Catalog/lifecycle mutation                             | Inbound boundary             |
+| ---------------------------------- | -------------------------------------------- | ---------------------------------------- | ------------------------------------------------------ | ---------------------------- |
+| `createRuntimeTestHost()`          | test 直接提供 Plugin constructor/fork/config | 只有隔离 test world；没有 Plugin running | `host.start/stop/commit` 是 fixture authority          | in-process driver            |
+| `startStaticApplicationTestHost()` | `defineStaticRuntime()` application          | application configure/prepare/boot 完成  | fixed catalog；intent 来自 runtime state/control plane | in-process driver            |
+| `startDynamicDevRuntime()`         | dynamic config entry + Vite source graph     | Vite/controller/carrier/listener ready   | catalog 来自 source/HMR；intent 来自 control plane     | physical HTTP/WebSocket/Vite |
 
 这些差异必须出现在函数名、参数和返回 surface 上，不能只写在文档里。
 
@@ -62,7 +77,7 @@ interface AsyncOwnedResource extends AsyncDisposable {
 factory 返回的对象不再需要启动它自身：
 
 - `createRuntimeTestHost()` 同步建立一个可用但没有 running Plugin 的 fixture world；
-- `startStaticRuntimeTestHost()` resolve 时完整 static application 已完成 cold boot；
+- `startStaticApplicationTestHost()` resolve 时完整 static application 已完成 cold boot；
 - `startDynamicDevRuntime()` resolve 时真实 Vite server 已监听并 ready。
 
 因此三者都不暴露 receiver-level `.start()`/`.stop()`。`RuntimeTestHost.start(Plugin)` 的 target 参数使它明确是 Plugin lifecycle command，
@@ -81,7 +96,7 @@ host.commands.execute(...)
 host.workbench.open(...)
 ```
 
-`RuntimeTestHost` 与 `StaticRuntimeTestHost` 应从同一内部 driver factory 组合这些 facade，避免分别维护 request normalization、disabled
+`RuntimeTestHost` 与 `StaticApplicationTestHost` 应从同一内部 driver factory 组合这些 facade，避免分别维护 request normalization、disabled
 capability error、Workbench session ownership 与 type declarations。facade 可以共享，不要求整个 host 继承同一 base class。
 
 physical resource 不复制这些 driver：
@@ -96,6 +111,10 @@ await fetch(new URL('/health', runtime.origin))
 in-process `host.http.origin` 与 physical `runtime.origin` 都是 normalized immutable HTTP origin string，方便注入标准 client；前者位于 driver
 namespace 并不可连接，后者位于 server resource 且可连接。不要返回 mutable `URL` object，也不要仅为统一 property 位置把 physical fetch 包回
 `runtime.http`。
+
+static application host 提供共享 driver，是为了从公开 inbound boundary 观察 application wiring，不是让 Plugin suite 切换 host 后再跑一次。
+例如“`configure()` 启用 Workbench 后 entry 可打开”属于 application test；“Plugin action 的每个 validation branch”仍属于 Runtime Plugin test。
+shared facade 的 conformance 由 Runtime/static package 自身测试一次，application 作者不复制这个 matrix。
 
 ### 4. Query 与 diagnostics 命名稳定
 
@@ -119,19 +138,24 @@ host.startupReport // StaticRuntimeStartupReport
 普通 object/error assertion 使用 Vitest built-ins。只有 `LifecycleFailureCommitSummary` 继续使用
 `toHavePluginLifecycleIssue`；不要为了表面统一让 static startup report、dynamic diagnostics 和 commit failure 假装成同一个 error shape。
 
-## Static test API 的具体收口
+## Static application test API 的具体收口
 
 当前 `createStaticRuntimeTestHost()` 实际会完成 application configure、prepare 和 `host.start()`，却返回仍带 `.start()`/`.stop()` 的
 `StaticRuntime`，并把 `ctx` 与顶层 `fetch` 暴露给 author tests。这同时产生了“create 到底是否 ready”和“已经启动为何还能 start”的认知成本。
 当前 workspace 的 19 个 test calls 在 factory resolve 后没有再次调用 `.start()`；成功路径却反复用 `finally` 调 `.stop()`。真实使用已经
 证明它是 booted owned resource，而不是需要两阶段控制的 plan。
 
-冻结 replacement：
+名称冻结为 `startStaticApplicationTestHost()`：`Application` 直接说明输入 authority 是 `defineStaticRuntime()` 的完整 application，
+`TestHost` 说明返回的是 in-process fixture 而非 artifact/server。不采用 `startStaticRuntimeTestHost()`，因为它看起来像
+`createRuntimeTestHost()` 的 static 变体，会弱化“Plugin behavior 默认仍用 Runtime host”的选择规则。这个 factory 低频且建立整个
+application，明确性比缩短几个单词更重要。
+
+冻结用法：
 
 ```ts
-import { startStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
 
-await using host = await startStaticRuntimeTestHost(
+await using host = await startStaticApplicationTestHost(
 	defineStaticRuntime({
 		name: 'orders-app',
 		plugins: [OrdersPlugin],
@@ -154,21 +178,21 @@ expect(response.status).toBe(200)
 options 从 application 的 binding type 推导，不能像当前实现一样无条件把 `bindings` 标为 optional：
 
 ```ts
-type StaticRuntimeTestHostOptions<TBindings extends StaticRuntimeBindings> = Readonly<
+type StaticApplicationTestHostOptions<TBindings extends StaticRuntimeBindings> = Readonly<
 	{ env?: StaticRuntimeEnvironment } & ({} extends TBindings
 		? { bindings?: TBindings }
 		: { bindings: TBindings })
 >
 
-declare function startStaticRuntimeTestHost<
+declare function startStaticApplicationTestHost<
 	const TPlugins extends readonly PluginConstructor[],
 	TBindings extends StaticRuntimeBindings,
 >(
 	application: StaticRuntimeApplication<TPlugins, TBindings>,
 	...options: {} extends TBindings
-		? [options?: StaticRuntimeTestHostOptions<TBindings>]
-		: [options: StaticRuntimeTestHostOptions<TBindings>]
-): Promise<StaticRuntimeTestHost<TPlugins>>
+		? [options?: StaticApplicationTestHostOptions<TBindings>]
+		: [options: StaticApplicationTestHostOptions<TBindings>]
+): Promise<StaticApplicationTestHost<TPlugins>>
 ```
 
 没有 required binding 时保持零 options；存在 `{ serviceUrl: string }` 等 required binding 时，整个 options 与 `bindings` 都在编译期必填。
@@ -181,7 +205,7 @@ test helper 不暗中覆盖为 memory。需要隔离的 fixture 在 application 
 type StaticPluginTestTarget<TPlugins extends readonly PluginConstructor[]> =
 	TPlugins[number] | PluginForkRef<TPlugins[number]>
 
-interface StaticRuntimeTestHost<
+interface StaticApplicationTestHost<
 	TPlugins extends readonly PluginConstructor[] = readonly PluginConstructor[],
 > extends AsyncDisposable {
 	readonly startupReport: StaticRuntimeStartupReport
@@ -247,7 +271,7 @@ static 不因为 dynamic 有 programmatic direct launcher 就新增 `startStatic
 
 - development/source/HMR smoke：运行安装了 `staticRuntimeVitePlugin({ entry })` 的项目 Vite command；
 - production artifact smoke：启动 freezer 生成的 Node application/artifact，并从外部访问它；
-- application contract/in-process HTTP：使用 `startStaticRuntimeTestHost(application)`。
+- application contract/in-process HTTP：使用 `startStaticApplicationTestHost(application)`。
 
 static production artifact 包含 deployment filesystem、variant、public assets、Node listener、TLS/env 与 signal ownership。用一个直接接收
 application object 的“server test host”无法验证这些事实；它只能制造看似 physical、实际绕过 freezer 的第四条入口。
@@ -283,5 +307,7 @@ startDynamicDevRuntime({ entry: new URL('./pluxel.dynamic.ts', import.meta.url) 
 4. static partial startup failure 保留结构化 report，fatal setup failure 在无泄漏清理后 reject；
 5. dynamic/static Vite plugin 对 `entry` 使用同一 path normalization rules；
 6. dynamic programmatic launcher 与 dynamic Vite plugin 共享 boot/carrier implementation；
-7. static Vite 与 production artifact smoke 不依赖 `StaticRuntimeTestHost` 私有状态；
+7. static Vite 与 production artifact smoke 不依赖 `StaticApplicationTestHost` 私有状态；
 8. 没有 public `mode`/`carrier` flag、万能 `RuntimeHost` union 或仅为类型对称新增的 method。
+9. 代表性迁移中没有把同一 Plugin behavior suite 复制到 Runtime/static/dynamic 三层；每个外层 case 都能指出不可删除的
+   application、source/HMR、carrier 或 artifact 事实。
