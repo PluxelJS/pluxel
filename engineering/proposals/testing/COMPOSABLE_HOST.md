@@ -90,6 +90,9 @@ Workbench renderer/Shell behavior
 或由现有 production programmatic launcher 提供 ready/disposable resource。两者都不会复用 `host.start(Plugin)`，因为 dev server 的 catalog
 authority 必须来自 config、source catalog 与 HMR。
 
+static application test 的对应收敛见 [`RUNTIME_SURFACE_ALIGNMENT.md`](RUNTIME_SURFACE_ALIGNMENT.md)：它复用本提案的 domain driver 与只读
+query，但不复用 fixture lifecycle mutation。static fixed catalog、configure/prepare 与 runtime-state startup 必须仍由 application boot 一次完成。
+
 同一 Runtime test host 上的 driver 共享一个真实 root、Plugin graph、generation ownership 和 disposal boundary，因此可以自然组合：
 
 ```text

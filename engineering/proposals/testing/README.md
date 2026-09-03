@@ -53,6 +53,8 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
   使用 local capability membrane，后者必须按 Fetch 或 WebSocket carrier 的真实边界验证。
 - [`DEV_SERVER_SMOKE.md`](DEV_SERVER_SMOKE.md)：拒绝 test-owned dev server，收敛到项目 Vite command 与唯一的 production dynamic
   programmatic launcher；coding agent 用标准 `fetch`、WebSocket 或 browser 做 physical smoke。
+- [`RUNTIME_SURFACE_ALIGNMENT.md`](RUNTIME_SURFACE_ALIGNMENT.md)：定义通用 test host、static application test 与 dynamic Runtime 应共享的
+  ready/disposal/driver vocabulary，并明确拒绝为表面对称建立万能 host 或额外 static launcher。
 
 ## 后续议题
 

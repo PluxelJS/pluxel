@@ -50,7 +50,7 @@ try {
 import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
 
 await using runtime = await startDynamicDevRuntime({
-	config: new URL('../fixtures/pluxel.dynamic.ts', import.meta.url),
+	entry: new URL('../fixtures/pluxel.dynamic.ts', import.meta.url),
 })
 
 const response = await fetch(new URL('/health', runtime.origin))
@@ -71,7 +71,7 @@ export interface DynamicDevRuntime extends AsyncDisposable {
 
 export function startDynamicDevRuntime(
 	options: Readonly<{
-		config: string | URL
+		entry: string | URL
 	}>,
 ): Promise<DynamicDevRuntime>
 ```
@@ -86,8 +86,9 @@ export function startDynamicDevRuntime(
 - direct launcher 固定 loopback 与 OS-assigned ephemeral port；部署监听选项继续属于 Vite/application host；
 - `ctx` 是现有 production host authority，不由 test package 复制；smoke assertion 应优先经过 `origin`。
 
-`config` 的 string 继续遵循 production dynamic launcher 的明确 path base；test 和跨 cwd 脚本推荐 file `URL`。实现前必须让 direct launcher、
-Vite plugin 与 config diagnostics 对 URL/path normalization 使用同一底层函数，不能让两种宿主解释出不同 module。
+`entry` 的 string 遵循 production Vite plugin 的明确 path base；test 和跨 cwd 脚本推荐 file `URL`。实现前必须让 direct launcher、Vite
+plugin 与 config diagnostics 对 URL/path normalization 使用同一底层函数，不能让两种宿主解释出不同 module。`entry` 与 static Vite plugin
+统一表达“由 Vite 加载的 canonical Runtime module”，不会把 module locator 与模块内部 config value 混为一谈。
 
 ## 唯一的 Vite 运行语义
 
@@ -98,7 +99,7 @@ HTTP middleware 或 HMR controller。项目自己的 `vite.config.ts` 仍直接�
 export default defineConfig({
 	plugins: [
 		dynamicRuntimeVitePlugin({
-			config: './src/pluxel.dynamic.ts',
+			entry: './src/pluxel.dynamic.ts',
 		}),
 	],
 })
