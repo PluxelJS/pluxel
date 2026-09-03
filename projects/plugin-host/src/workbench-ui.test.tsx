@@ -9,8 +9,7 @@ const viewSnapshot = Object.freeze({
 	counter: 0,
 	events: Object.freeze([]),
 	rendererProvider: 'renderer',
-	draftStorageProvider: 'drafts',
-	releaseStorageProvider: 'releases',
+	storageProvider: 'storage',
 	cacheProvider: 'cache',
 	ratesProvider: 'rates',
 	cache: Object.freeze({
@@ -78,11 +77,11 @@ vi.mock('@pluxel/runtime/workbench/react', () => ({
 	},
 }))
 
-import FontSettings from './demo/PluginContributionFontDemo/ui/index.tsx'
+import FontSettings from './demo/PluginContributionFontDemo/ui/selection.tsx'
 import Dashboard from './demo/PluginWithUI/ui/dashboard.tsx'
 import Events from './demo/PluginWithUI/ui/events.tsx'
 import Overview from './demo/PluginWithUI/ui/overview.tsx'
-import ReportStudio from './showcase/ui/report-studio.tsx'
+import ReportStudio from './showcase/ui/studio.tsx'
 
 describe('plugin-host Workbench UI roots', () => {
 	it.each([

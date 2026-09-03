@@ -108,7 +108,8 @@ lossless event 或手工 ownership 场景。
 `query()` 声明无输入的具体 query，`queryFamily()` 按输入构建 query；每个 query 都提供领域稳定的
 `queryKey`。外层 factory 捕获 `api` / `provider` / `consumer`，`queryFn` 只接收 query-core 原生 context。
 TanStack 选项保持顶层；Workbench 扩展只放在 `workbench.subscribe` 和 `workbench.invalidates`。公开类型是
-明确的受控 allowlist，不承诺透传 TanStack Query 的全部 options。
+明确的受控 allowlist，不承诺透传 TanStack Query 的全部 options；factory 返回的未知顶层或 `workbench`
+字段会在 TypeScript typecheck 时拒绝，并继续由 Runtime 在绕过类型时 fail-fast。
 Workbench 默认 `enabled: true`、`retry: false`；`staleTime` 在有 subscription 时默认 `Infinity`，否则为 `0`。
 Options factory 必须同步、确定且无副作用，因为 Hook resolution 与 family target preflight 都可能重复执行；
 读取、订阅和写入副作用分别属于 `queryFn`、`workbench.subscribe` 与 `mutationFn`。

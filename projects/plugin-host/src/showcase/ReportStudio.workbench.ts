@@ -13,7 +13,7 @@ export type {
 
 export const ReportStudioWorkbench = workbench.define({
 	studio: workbench.view<ReportStudioApi>({
-		renderer: workbench.entry(import.meta.url, './ui/report-studio.tsx'),
+		renderer: workbench.entry(import.meta.url, './ui/studio.tsx'),
 		placement: workbench.route('/architecture-lab', {
 			title: 'Pluxel Architecture Lab',
 			navigation: { label: 'Architecture Lab' },

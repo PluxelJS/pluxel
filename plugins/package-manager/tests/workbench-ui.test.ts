@@ -40,7 +40,7 @@ vi.mock('@pluxel/runtime/workbench/react', () => ({
 		}),
 }))
 
-import ManagerWorkbench from '../src/ui/index.tsx'
+import ManagerWorkbench from '../src/ui/manager.tsx'
 
 it('owns the Mantine context for the Package Manager Workbench renderer', () => {
 	const markup = renderToStaticMarkup(createElement(ManagerWorkbench))

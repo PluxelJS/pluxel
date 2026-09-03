@@ -28,13 +28,7 @@ import {
 	TakumiShowcaseRenderer,
 } from './ReportStudio'
 
-export {
-	createHostConfigRecords,
-	createHostRuntimeState,
-	draftsStorageNode,
-	product,
-	releasesStorageNode,
-} from './policy'
+export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
 export const officialStaticPlugins = Object.freeze([
 	AgentToolsPlugin,

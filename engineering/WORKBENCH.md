@@ -289,7 +289,8 @@ authority；并发 read single-flight，read 中的多次通知合并为一次 f
 领域稳定的具体 `queryKey`。Workbench roots（`api` / `provider` / `consumer`）只由外层 factory 捕获；
 `queryFn` 只接收 query-core 原生安全 context，例如 `signal` 和规范化后的 `queryKey`，不混入 Pluxel 自定义参数。
 Query/mutation options 是公开类型明确列出的受控 allowlist，不承诺透传 TanStack Query 的全部 options。TanStack
-原生字段保持顶层；Workbench 自有扩展只使用 `workbench.subscribe` 和 `workbench.invalidates`。
+原生字段保持顶层；Workbench 自有扩展只使用 `workbench.subscribe` 和 `workbench.invalidates`。Factory 返回类型必须
+对顶层与 `workbench` 字段保持 compile-time exact，Runtime 对绕过类型的未知字段继续 fail-fast。
 Options factory 必须同步、确定且无副作用；Hook resolution 和 family target preflight 都可以重复执行它。I/O、subscription
 注册与 mutation 副作用分别只发生在 `queryFn`、`workbench.subscribe` 和 `mutationFn`。
 Workbench 默认 `enabled: true`、无 subscription 时 `staleTime: 0`、有 subscription 时 `staleTime: Infinity`，并默认

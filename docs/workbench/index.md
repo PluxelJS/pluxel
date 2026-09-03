@@ -438,7 +438,8 @@ stale，即使 RPC reject 或 result detach 失败也一样。Mutation success �
 
 Query/mutation options 是公开类型明确列出的受控 allowlist，不承诺透传 TanStack Query 的全部 options。
 TanStack 原生 query/mutation 字段保持顶层；Workbench 自有的 subscription 和 typed invalidation 只出现在
-`workbench` namespace。
+`workbench` namespace。Factory 返回的顶层与 `workbench` 对象在 TypeScript 中都是 exact；未知字段会在作者
+typecheck 时拒绝，非 TypeScript 调用方或绕过类型的值仍会由 Runtime fail-fast 校验。
 
 ### 稳定错误与恢复
 

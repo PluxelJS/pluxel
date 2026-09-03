@@ -42,8 +42,8 @@ Cache -> rendering Part -> ShowcaseRenderer
                          ├─ ECharts -> Canvas -> Fonts
                          ├─ Takumi ----------> Fonts
                          └─ Canvas ----------> Fonts
-S3#drafts   -> publishing Part
-S3#releases -> ReleaseArchivePlugin
+S3 bucket:drafts   -> publishing Part
+S3 bucket:releases -> ReleaseArchivePlugin
 Wretch      -> provider-owned HTTP settings Attachment
 Otel        -> report metrics at /showcase/metrics
 ```
@@ -63,8 +63,8 @@ the image itself is read from the stored artifact route. The same Plugin also re
 
 - Change the `ShowcaseRenderer` dependency between ECharts, Takumi and Canvas. The consumer and its
   dependent closure restart with a newly bound caller facade.
-- Inspect the two `S3Plugin` forks. `drafts` and `releases` use separate local buckets and are bound
-  with per-consumer dependency overrides.
+- Inspect the single `S3Plugin` provider. Its bounded `drafts` and `releases` bucket catalog keeps
+  the two storage domains explicit without provider forks or dependency overrides.
 - Change `CacheBackend` or `RatesBackend` from Memory to a Redis implementation after configuring
   and starting Redis. A failed external provider blocks only its required branch.
 - Edit the Report Studio Part config, Wretch Attachment settings, Fonts selection, auth setup and
@@ -109,4 +109,4 @@ pnpm --filter @pluxel/plugins-host build:static
 ```
 
 The tests assert the 18/17 official catalog boundary, safe provider defaults, stopped Redis/Pi policy,
-S3 fork bindings, real render/cache behavior and isolated draft/release storage.
+the S3 named-bucket catalog, real render/cache behavior and isolated draft/release storage.

@@ -5,12 +5,11 @@ import { PiAgentPlugin } from '@pluxel/pi-agent'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 import {
-	pluginDefinitionAddressEqual,
 	pluginDefinitionAddressOf,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 } from '@pluxel/runtime'
-import { S3, S3Plugin } from '@pluxel/storage'
+import { S3 } from '@pluxel/storage'
 import { describe, expect, it } from 'vitest'
 import {
 	PluginEventsDeclaredConsumer,
@@ -23,12 +22,11 @@ import {
 import {
 	createHostConfigRecords,
 	createHostRuntimeState,
-	draftsStorageNode,
 	focusedDemoPlugins,
 	officialDynamicPlugins,
 	officialStaticPlugins,
 	redisBackedPlugins,
-	releasesStorageNode,
+	s3StorageNode,
 	staticHostPlugins,
 } from './catalog'
 import { EChartsShowcaseRenderer, ReportStudioPlugin, ShowcaseRenderer } from './ReportStudio'
@@ -101,40 +99,38 @@ describe('plugin-host catalog', () => {
 		).toBe(false)
 	})
 
-	it('prepares isolated draft/release S3 forks and consumer overrides', () => {
+	it('prepares one S3 provider with isolated draft and release buckets', () => {
 		const state = createHostRuntimeState(false)
-		expect(state.forks).toEqual([
-			{
-				definition: pluginDefinitionAddressOf(S3Plugin),
-				forkIds: ['drafts', 'releases'],
-			},
-		])
-		expect(state.autoStart?.some((node) => pluginNodeAddressEqual(node, draftsStorageNode))).toBe(
-			true,
+		expect(state.forks).toBeUndefined()
+		expect(
+			state.autoStart?.filter((node) => pluginNodeAddressEqual(node, s3StorageNode)),
+		).toHaveLength(1)
+		expect(state.dependencyOverrides).toBeUndefined()
+		expect(state.providerDefaults).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					token: pluginDefinitionAddressOf(S3),
+					provider: s3StorageNode,
+				}),
+			]),
 		)
-		expect(state.autoStart?.some((node) => pluginNodeAddressEqual(node, releasesStorageNode))).toBe(
-			true,
-		)
-		expect(state.dependencyOverrides).toHaveLength(2)
-		for (const binding of state.dependencyOverrides ?? []) {
-			expect(
-				pluginDefinitionAddressEqual(binding.requirementAddress, pluginDefinitionAddressOf(S3)),
-			).toBe(true)
-		}
 
 		const records = createHostConfigRecords()
 		expect(records).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					owner: draftsStorageNode,
+					owner: s3StorageNode,
 					config: expect.objectContaining({
-						backend: expect.objectContaining({ bucketName: 'draft-previews' }),
-					}),
-				}),
-				expect.objectContaining({
-					owner: releasesStorageNode,
-					config: expect.objectContaining({
-						backend: expect.objectContaining({ bucketName: 'released-reports' }),
+						buckets: [
+							expect.objectContaining({
+								id: 'drafts',
+								backend: expect.objectContaining({ bucketName: 'draft-previews' }),
+							}),
+							expect.objectContaining({
+								id: 'releases',
+								backend: expect.objectContaining({ bucketName: 'released-reports' }),
+							}),
+						],
 					}),
 				}),
 			]),

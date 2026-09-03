@@ -26,7 +26,8 @@ both produce stable domain-readable query keys. Keep TanStack options at the top
 Workbench-owned behavior under `workbench.subscribe` and `workbench.invalidates`. Concrete queries are
 exact typed invalidation targets, while query families expose only explicit `target(input)` and `all()`
 choices. Direct Cap'n Web query and mutation results infer their detached DTO types without author-side
-wrappers or result annotations.
+wrappers or result annotations. Reject unknown top-level and nested `workbench` options during TypeScript
+authoring while retaining Runtime fail-fast validation for values that bypass the type system.
 
 Limit instance controls to the active Hook and current query-family input. Reject calls through stale
 controls with `WORKBENCH_RENDERER_HOOK_INACTIVE`, preventing an observer from being resurrected without

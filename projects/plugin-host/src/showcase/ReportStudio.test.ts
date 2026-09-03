@@ -27,7 +27,7 @@ afterEach(async () => {
 })
 
 describe('ReportStudioPlugin', () => {
-	it('renders through selected providers, caches, and publishes to isolated S3 forks', async () => {
+	it('renders through selected providers, caches, and publishes to isolated S3 buckets', async () => {
 		const storageRoot = await mkdtemp(join(tmpdir(), 'pluxel-report-studio-'))
 		temporaryRoots.push(storageRoot)
 		const host = createRuntimeHost()
@@ -46,10 +46,12 @@ describe('ReportStudioPlugin', () => {
 				ReleaseArchivePlugin,
 				ReportStudioPlugin,
 			])
-			const drafts = host.fork(S3Plugin, 'drafts')
-			const releases = host.fork(S3Plugin, 'releases')
-			host.cfg(drafts).set(localStorageConfig(storageRoot, 'drafts'))
-			host.cfg(releases).set(localStorageConfig(storageRoot, 'releases'))
+			host.cfg(S3Plugin).set({
+				buckets: [
+					localStorageConfig('drafts', storageRoot, 'drafts'),
+					localStorageConfig('releases', storageRoot, 'releases'),
+				],
+			})
 			host.cfg(OtelPlugin).set({ otlp: [], prometheus: { path: '/showcase/metrics' } })
 
 			host.override(
@@ -77,8 +79,16 @@ describe('ReportStudioPlugin', () => {
 				pluginDefinitionAddressOf(ShowcaseRenderer),
 				pluginNodeAddressOf(CanvasShowcaseRenderer),
 			)
-			host.override(ReportStudioPlugin, pluginDefinitionAddressOf(S3), drafts)
-			host.override(ReleaseArchivePlugin, pluginDefinitionAddressOf(S3), releases)
+			host.override(
+				ReportStudioPlugin,
+				pluginDefinitionAddressOf(S3),
+				pluginNodeAddressOf(S3Plugin),
+			)
+			host.override(
+				ReleaseArchivePlugin,
+				pluginDefinitionAddressOf(S3),
+				pluginNodeAddressOf(S3Plugin),
+			)
 			host.start(ReportStudioPlugin)
 			await host.commit()
 
@@ -90,9 +100,10 @@ describe('ReportStudioPlugin', () => {
 			expect(first).not.toHaveProperty('dataUrl')
 			expect(first.cacheHit).toBe(false)
 			expect(second.cacheHit).toBe(true)
-			expect(await host.require(drafts).client.getObject(first.objectKey)).not.toBeNull()
+			const storage = host.require(S3Plugin)
+			expect(await storage.bucket('drafts').client.getObject(first.objectKey)).not.toBeNull()
 			expect(
-				await host.require(releases).client.getObject(`releases/${first.id}.png`),
+				await storage.bucket('releases').client.getObject(`releases/${first.id}.png`),
 			).not.toBeNull()
 
 			const status = await host.fetch(new Request('http://local.test/showcase/status'))
@@ -124,6 +135,6 @@ describe('ReportStudioPlugin', () => {
 	})
 })
 
-function localStorageConfig(rootDir: string, bucketName: string) {
-	return { backend: { type: 'local' as const, rootDir, bucketName, syncWrites: false } }
+function localStorageConfig(id: string, rootDir: string, bucketName: string) {
+	return { id, backend: { type: 'local' as const, rootDir, bucketName, syncWrites: false } }
 }

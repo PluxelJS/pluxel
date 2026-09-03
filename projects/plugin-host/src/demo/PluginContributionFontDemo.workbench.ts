@@ -13,7 +13,7 @@ export interface FontSelectionApi extends RpcTarget {
 
 const selectionRenderer = workbench.entry(
 	import.meta.url,
-	'./PluginContributionFontDemo/ui/index.tsx',
+	'./PluginContributionFontDemo/ui/selection.tsx',
 )
 
 export const FontManagerWorkbench = workbench.define({

@@ -10,6 +10,6 @@ export type {
 /** Provider-owned renderer and capability; consumers only choose its placement. */
 export const WretchWorkbench = workbench.define({
 	settings: workbench.attachment<WretchSettingsApi>({
-		renderer: workbench.entry(import.meta.url, './ui/index.tsx'),
+		renderer: workbench.entry(import.meta.url, './ui/settings.tsx'),
 	}),
 })

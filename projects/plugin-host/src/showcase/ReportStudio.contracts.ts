@@ -25,8 +25,7 @@ export type ShowcaseCacheStats = Readonly<{
 export type ShowcaseSnapshot = Readonly<{
 	revision: number
 	rendererProvider: string
-	draftStorageProvider: string
-	releaseStorageProvider: string
+	storageProvider: string
 	cacheProvider: string
 	ratesProvider: string
 	cache: ShowcaseCacheStats

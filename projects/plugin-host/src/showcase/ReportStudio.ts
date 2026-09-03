@@ -92,7 +92,7 @@ export class TakumiShowcaseRenderer extends ShowcaseRenderer {
 		const result = await this.takumi.render({
 			width: WIDTH,
 			height: HEIGHT,
-			content: `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:56px;background:#10172a;color:#f8fafc"><div style="font-size:18px;color:#5eead4">PLUXEL REPORT STUDIO</div><div style="font-size:46px;font-weight:700;margin-top:18px">${escapeHtml(title)}</div><div style="font-size:20px;color:#94a3b8;margin-top:28px">Plugin graph → bounded renderer → forked storage</div></div>`,
+			content: `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:56px;background:#10172a;color:#f8fafc"><div style="font-size:18px;color:#5eead4">PLUXEL REPORT STUDIO</div><div style="font-size:46px;font-weight:700;margin-top:18px">${escapeHtml(title)}</div><div style="font-size:20px;color:#94a3b8;margin-top:28px">Plugin graph → bounded renderer → named storage buckets</div></div>`,
 		})
 		return Object.freeze({
 			engine: 'takumi',
@@ -242,12 +242,14 @@ class PublishingPart extends PluginPart<ReportStudioPlugin> {
 
 	async put(id: string, preview: RenderedPreview): Promise<string> {
 		const key = `${this.config.prefix}/${id}.png`
-		await this.storage.client.putObject(key, Buffer.from(preview.data), preview.mediaType)
+		await this.storage
+			.bucket('drafts')
+			.client.putObject(key, Buffer.from(preview.data), preview.mediaType)
 		return key
 	}
 
 	async read(key: string): Promise<ArrayBuffer | null> {
-		return await this.storage.client.getObjectArrayBuffer(key)
+		return await this.storage.bucket('drafts').client.getObjectArrayBuffer(key)
 	}
 
 	providerReference(): string {
@@ -263,12 +265,10 @@ export class ReleaseArchivePlugin extends BasePlugin {
 
 	async archive(id: string, preview: RenderedPreview): Promise<string> {
 		const key = `releases/${id}.png`
-		await this.storage.client.putObject(key, Buffer.from(preview.data), preview.mediaType)
+		await this.storage
+			.bucket('releases')
+			.client.putObject(key, Buffer.from(preview.data), preview.mediaType)
 		return key
-	}
-
-	providerReference(): string {
-		return formatPluginNodeReference(this.storage.ctx.pluginInfo.nodeAddress)
 	}
 }
 
@@ -381,8 +381,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		return Object.freeze({
 			revision: this.revision,
 			rendererProvider: this.rendering.providerReference(),
-			draftStorageProvider: this.publishing.providerReference(),
-			releaseStorageProvider: this.archive.providerReference(),
+			storageProvider: this.publishing.providerReference(),
 			cacheProvider: this.rendering.cacheProviderReference(),
 			ratesProvider: this.admission.providerReference(),
 			cache: cacheStats(this.rendering.stats()),
@@ -589,8 +588,7 @@ function compactSnapshot(snapshot: ShowcaseSnapshot) {
 	return {
 		revision: snapshot.revision,
 		rendererProvider: snapshot.rendererProvider,
-		draftStorageProvider: snapshot.draftStorageProvider,
-		releaseStorageProvider: snapshot.releaseStorageProvider,
+		storageProvider: snapshot.storageProvider,
 		cache: snapshot.cache,
 		artifacts: snapshot.artifacts.map(pickCommandArtifact),
 	}

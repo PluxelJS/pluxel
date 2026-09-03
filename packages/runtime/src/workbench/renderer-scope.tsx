@@ -65,6 +65,12 @@ export type WorkbenchQueryRetryDelay = number | ((failureCount: number, error: u
 
 type WorkbenchAwaitable<Value> = Value | PromiseLike<NoInfer<Value>>
 type WorkbenchResolvedResult<Value> = WorkbenchResolvedPortableValue<Value>
+type WorkbenchQueryFunctionResult<Options> =
+	Options extends Readonly<{
+		queryFn: (...input: never[]) => infer Result
+	}>
+		? Result
+		: never
 
 export type WorkbenchQueryOptions<
 	QueryKey extends readonly WorkbenchResourceKey[],
@@ -92,6 +98,29 @@ export type WorkbenchQuerySubscriptionContext = Readonly<{
 	signal: AbortSignal
 	invalidate(): void
 }>
+
+type WorkbenchExactOptions<Actual, Expected> = Actual extends Expected
+	? Exclude<keyof Actual, keyof Expected> extends never
+		? 'workbench' extends keyof Actual
+			? Actual extends Readonly<{ workbench?: infer ActualWorkbench }>
+				? Expected extends Readonly<{ workbench?: infer ExpectedWorkbench }>
+					? Exclude<
+							keyof NonNullable<ActualWorkbench>,
+							keyof NonNullable<ExpectedWorkbench>
+						> extends never
+						? Actual
+						: never
+					: never
+				: never
+			: Actual
+		: never
+	: never
+
+type WorkbenchExactOptionsConstraint<Actual, Expected> = [Actual] extends [
+	WorkbenchExactOptions<Actual, Expected>,
+]
+	? unknown
+	: never
 
 type WorkbenchQueryControls<Value> = Readonly<{
 	isFetching: boolean
@@ -261,22 +290,44 @@ export class WorkbenchRendererError extends Error {
 export interface WorkbenchRendererScope<Descriptor extends WorkbenchRenderableDescriptor> {
 	render(component: ComponentType<WorkbenchZeroProps>): ComponentType<WorkbenchZeroProps>
 	useWorkbench(): WorkbenchHookValue<Descriptor>
-	query<const QueryKey extends readonly WorkbenchResourceKey[], Value>(
-		factory: (context: WorkbenchHookValue<Descriptor>) => WorkbenchQueryOptions<QueryKey, Value>,
-	): WorkbenchQueryResource<Descriptor, WorkbenchResolvedResult<Value>>
-	queryFamily<Input, const QueryKey extends readonly WorkbenchResourceKey[], Value>(
+	query<
+		const QueryKey extends readonly WorkbenchResourceKey[],
+		const Options extends WorkbenchQueryOptions<QueryKey, unknown>,
+	>(
+		factory: (
+			context: WorkbenchHookValue<Descriptor>,
+		) => Options &
+			WorkbenchExactOptionsConstraint<Options, WorkbenchQueryOptions<QueryKey, unknown>>,
+	): WorkbenchQueryResource<
+		Descriptor,
+		WorkbenchResolvedResult<WorkbenchQueryFunctionResult<Options>>
+	>
+	queryFamily<
+		Input,
+		const QueryKey extends readonly WorkbenchResourceKey[],
+		const Options extends WorkbenchQueryOptions<QueryKey, unknown>,
+	>(
 		factory: (
 			context: WorkbenchHookValue<Descriptor>,
 			input: Input,
-		) => WorkbenchQueryOptions<QueryKey, Value>,
-	): WorkbenchQueryFamilyResource<Descriptor, Input, WorkbenchResolvedResult<Value>>
+		) => Options &
+			WorkbenchExactOptionsConstraint<Options, WorkbenchQueryOptions<QueryKey, unknown>>,
+	): WorkbenchQueryFamilyResource<
+		Descriptor,
+		Input,
+		WorkbenchResolvedResult<WorkbenchQueryFunctionResult<Options>>
+	>
 	mutation<
 		MutationFn extends WorkbenchMutationFunction,
 		Options extends WorkbenchInferredMutationOptions<Descriptor, MutationFn>,
 	>(
 		factory: (
 			context: WorkbenchMutationExecutionContext<WorkbenchHookValue<Descriptor>>,
-		) => Options,
+		) => Options &
+			WorkbenchExactOptionsConstraint<
+				Options,
+				WorkbenchInferredMutationOptions<Descriptor, MutationFn>
+			>,
 	): WorkbenchMutationResource<
 		WorkbenchMutationFunctionInput<Options['mutationFn']>,
 		WorkbenchResolvedResult<WorkbenchMutationFunctionResult<Options['mutationFn']>>

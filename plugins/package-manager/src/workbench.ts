@@ -3,7 +3,7 @@ import type { PackageManagerApi } from './contracts.ts'
 
 export const PackageManagerWorkbench = workbench.define({
 	manager: workbench.view<PackageManagerApi>({
-		renderer: workbench.entry(import.meta.url, './ui/index.tsx'),
+		renderer: workbench.entry(import.meta.url, './ui/manager.tsx'),
 		placement: workbench.route('/packages', {
 			title: 'Packages',
 			icon: workbench.icons.CloudUpload,

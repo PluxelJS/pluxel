@@ -148,10 +148,42 @@ settingsRenderer.query(({ api }) => ({
 	watch: () => api.watch(() => undefined),
 }))
 
+// @ts-expect-error Query option factories reject unknown top-level fields.
+settingsRenderer.query(({ api }) => ({
+	queryKey: ['settings', 'unknown-query-option'] as const,
+	queryFn: () => api.snapshot(),
+	unknown: true,
+}))
+
+// @ts-expect-error Query option factories reject unknown Workbench fields.
+settingsRenderer.query(({ api }) => ({
+	queryKey: ['settings', 'unknown-query-workbench-option'] as const,
+	queryFn: () => api.snapshot(),
+	workbench: {
+		subscribe: ({ invalidate }) => api.watch(invalidate),
+		unknown: true,
+	},
+}))
+
 settingsRenderer.mutation(({ api }) => ({
 	mutationFn: () => api.reset(),
 	// @ts-expect-error Workbench invalidations are namespaced under workbench.invalidates.
 	invalidates: [settingsQuery],
+}))
+
+// @ts-expect-error Mutation option factories reject unknown top-level fields.
+settingsRenderer.mutation(({ api }) => ({
+	mutationFn: () => api.reset(),
+	unknown: true,
+}))
+
+// @ts-expect-error Mutation option factories reject unknown Workbench fields.
+settingsRenderer.mutation(({ api }) => ({
+	mutationFn: () => api.reset(),
+	workbench: {
+		invalidates: [settingsQuery],
+		unknown: true,
+	},
 }))
 
 settingsRenderer.mutation(({ api }) => ({

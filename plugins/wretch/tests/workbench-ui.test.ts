@@ -40,7 +40,7 @@ vi.mock('@pluxel/runtime/workbench/react', () => ({
 		}),
 }))
 
-import WretchSettingsPanel from '../src/ui/index.tsx'
+import WretchSettingsPanel from '../src/ui/settings.tsx'
 
 it('owns the Mantine context for the Wretch Workbench renderer', () => {
 	const markup = renderToStaticMarkup(createElement(WretchSettingsPanel))

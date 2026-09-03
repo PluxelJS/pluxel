@@ -29,7 +29,7 @@ import {
 
 const INSPECTION_SURFACES = Object.freeze([
 	['Catalog + lifecycle', 'Plugins'],
-	['Providers + S3 forks', 'Dependencies'],
+	['Providers + S3 buckets', 'Dependencies'],
 	['PluginPart settings', 'Config'],
 	['Commands + telemetry', 'Commands · Logs'],
 ] as const)
@@ -76,8 +76,7 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 						['Renderer', snapshot.rendererProvider],
 						['Cache', snapshot.cacheProvider],
 						['Rates owner', snapshot.ratesProvider],
-						['Draft S3 fork', snapshot.draftStorageProvider],
-						['Release S3 fork', snapshot.releaseStorageProvider],
+						['S3 provider', snapshot.storageProvider],
 					] as const)
 				: [],
 		[snapshot],
@@ -130,8 +129,8 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 					Pluxel Architecture Lab
 				</Title>
 				<Text c="dimmed" maw={820}>
-					一次生成会经过 caller-aware Rates、Cache、可替换 renderer、共享 worker、两个 S3 fork、OTel
-					和 Workbench observer。下面的结果来自真实插件调用链。
+					一次生成会经过 caller-aware Rates、Cache、可替换 renderer、共享 worker、两个具名 S3
+					bucket、OTel 和 Workbench observer。下面的结果来自真实插件调用链。
 				</Text>
 			</div>
 

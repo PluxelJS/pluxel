@@ -34,7 +34,6 @@ const echartsShowcaseRenderer = sourceNode(
 	'EChartsShowcaseRenderer',
 )
 const showcaseRenderer = sourceDefinition('src/showcase/ReportStudio.ts', 'ShowcaseRenderer')
-const releaseArchivePlugin = sourceNode('src/showcase/ReportStudio.ts', 'ReleaseArchivePlugin')
 const eventConsumer = sourceNode('src/demo/PluginEventsDemo.ts', 'PluginEventsDeclaredConsumer')
 const optionalProvider = sourceNode(
 	'src/demo/PluginOptionalIntegrationDemo.ts',
@@ -45,8 +44,7 @@ const optionalConsumer = sourceNode(
 	'PluginOptionalIntegrationConsumer',
 )
 
-export const draftsStorageNode = forkNode(s3PluginDefinition, 'drafts')
-export const releasesStorageNode = forkNode(s3PluginDefinition, 'releases')
+export const s3StorageNode = defaultNode(s3PluginDefinition)
 
 const bootSafeOfficialPlugins = Object.freeze([
 	agentToolsPlugin,
@@ -72,10 +70,8 @@ export function createHostRuntimeState(dynamic: boolean): Partial<RuntimeStateSn
 			eventConsumer,
 			optionalProvider,
 			optionalConsumer,
-			draftsStorageNode,
-			releasesStorageNode,
+			s3StorageNode,
 		],
-		forks: [{ definition: s3PluginDefinition, forkIds: ['drafts', 'releases'] }],
 		providerDefaults: [
 			providerDefault(packageDefinition('@pluxel/cache', 'Cache'), cachePlugin),
 			providerDefault(packageDefinition('@pluxel/cache', 'CacheBackend'), memoryCacheBackendPlugin),
@@ -83,18 +79,6 @@ export function createHostRuntimeState(dynamic: boolean): Partial<RuntimeStateSn
 			providerDefault(packageDefinition('@pluxel/rates', 'RatesBackend'), memoryRatesBackendPlugin),
 			providerDefault(packageDefinition('@pluxel/storage', 'S3'), defaultNode(s3PluginDefinition)),
 			providerDefault(showcaseRenderer, echartsShowcaseRenderer),
-		],
-		dependencyOverrides: [
-			{
-				consumerAddress: reportStudioPlugin,
-				requirementAddress: packageDefinition('@pluxel/storage', 'S3'),
-				providerAddress: draftsStorageNode,
-			},
-			{
-				consumerAddress: releaseArchivePlugin,
-				requirementAddress: packageDefinition('@pluxel/storage', 'S3'),
-				providerAddress: releasesStorageNode,
-			},
 		],
 	}
 }
@@ -106,25 +90,28 @@ export function createHostConfigRecords(localStorageRoot = '.pluxel/showcase/s3'
 			config: { otlp: [], prometheus: { path: '/showcase/metrics' } },
 		},
 		{
-			owner: draftsStorageNode,
+			owner: s3StorageNode,
 			config: {
-				backend: {
-					type: 'local',
-					rootDir: localStorageRoot,
-					bucketName: 'draft-previews',
-					syncWrites: true,
-				},
-			},
-		},
-		{
-			owner: releasesStorageNode,
-			config: {
-				backend: {
-					type: 'local',
-					rootDir: localStorageRoot,
-					bucketName: 'released-reports',
-					syncWrites: true,
-				},
+				buckets: [
+					{
+						id: 'drafts',
+						backend: {
+							type: 'local',
+							rootDir: localStorageRoot,
+							bucketName: 'draft-previews',
+							syncWrites: true,
+						},
+					},
+					{
+						id: 'releases',
+						backend: {
+							type: 'local',
+							rootDir: localStorageRoot,
+							bucketName: 'released-reports',
+							syncWrites: true,
+						},
+					},
+				],
 			},
 		},
 	] as const
@@ -154,10 +141,6 @@ function sourceNode(path: string, exportName: string): PluginNodeAddress {
 
 function defaultNode(definition: PluginDefinitionAddress): PluginNodeAddress {
 	return parsePluginNodeAddress({ definition, variant: 'default' })
-}
-
-function forkNode(definition: PluginDefinitionAddress, forkId: string): PluginNodeAddress {
-	return parsePluginNodeAddress({ definition, variant: 'fork', forkId })
 }
 
 function providerDefault(
