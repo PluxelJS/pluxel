@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Elysia } from 'elysia'
 
-import { withRuntimeContext } from '@pluxel/runtime/test'
+import { createRuntimeContext } from '@pluxel/runtime/test'
 import {
 	createPluginGatedRouter,
 	getPluginRoutingSnapshot,
@@ -39,18 +39,24 @@ const routes: PluginGatedModuleDef[] = [
 
 describe('plugin gated routes', () => {
 	it('returns 404 when plugin is stopped', async () => {
-		await withRuntimeContext(async (ctx) => {
+		{
+			await using runtimeContext = createRuntimeContext({})
+			const ctx = runtimeContext.ctx
+
 			const api = createPluginGatedRouter(ctx, routes, { isPluginRunning: () => false })
 			const app = new Elysia({ precompile: true })
 			app.mount('/api', api.fetch)
 
 			const res = await app.fetch(new Request('http://test/api/ok'))
 			expect(res.status).toBe(404)
-		}, {})
+		}
 	})
 
 	it('handles request when plugin is running', async () => {
-		await withRuntimeContext(async (ctx) => {
+		{
+			await using runtimeContext = createRuntimeContext({})
+			const ctx = runtimeContext.ctx
+
 			const api = createPluginGatedRouter(ctx, routes, {
 				isPluginRunning: (plugin) => plugin === pluginB,
 			})
@@ -60,11 +66,14 @@ describe('plugin gated routes', () => {
 			const res = await app.fetch(new Request('http://test/api/ok'))
 			expect(res.status).toBe(200)
 			expect(await res.text()).toBe('ok')
-		}, {})
+		}
 	})
 
 	it('computes a runtime snapshot of running plugins/routes', () => {
-		return withRuntimeContext((ctx) => {
+		return (async () => {
+			await using runtimeContext = createRuntimeContext({})
+			const ctx = runtimeContext.ctx
+
 			const snap = getPluginRoutingSnapshot(ctx, routes, {
 				isPluginRunning: (plugin) => plugin === pluginA,
 			})
@@ -72,6 +81,6 @@ describe('plugin gated routes', () => {
 				runningPlugins: [pluginA],
 				runningRouteIds: ['a.hello'],
 			})
-		}, {})
+		})()
 	})
 })

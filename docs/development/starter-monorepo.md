@@ -119,7 +119,7 @@ constructor dependency、optional ref 和 config authoring model；不要为两�
 - `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
 - `plugins/audit/tests` 使用 `@pluxel/test` 的 core-only `withHost()`。
 - `plugins/todo/tests` 验证 config、状态操作、optional provider 存在与缺失两种情况。
-- `plugins/http/tests` 使用 `withRuntimeHost()` 验证 required edge、HTTP schema、mutation 和错误状态。
+- `plugins/http/tests` 使用 `createRuntimeHost()` 和 `await using` 验证 required edge、HTTP schema、mutation 和错误状态。
 - `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
 
 选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 runtime service 才使用 runtime host。

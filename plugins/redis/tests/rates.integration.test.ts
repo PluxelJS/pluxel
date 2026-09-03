@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
 import type { PluginConstructor } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { RedisPlugin, RedisRatesBackendPlugin } from '../src/index.ts'
 
@@ -29,7 +29,9 @@ const algorithms = [
 describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, IntegrationConsumer])
 			host.cfg(RedisPlugin).set({ connections: [{ id: 'default', url: redisUrl! }] })
 			host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: prefix })
@@ -218,7 +220,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 			} finally {
 				await unlinkPrefix(redis, prefix)
 			}
-		})
+		}
 	})
 })
 

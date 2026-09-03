@@ -18,7 +18,7 @@ import {
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
 import { createDiskFixture } from '@pluxel/test/fixtures'
-import { withRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeHost } from '@pluxel/runtime/test'
 import * as React from 'react'
 import * as ReactDom from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -377,7 +377,9 @@ describe('WorkbenchArtifactService', () => {
 			content: { [WORKBENCH_CONTENT_ARTIFACT_FILE]: content.bytes },
 		})
 
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
 			const coordinatorEvents = vi.fn()
@@ -401,7 +403,7 @@ describe('WorkbenchArtifactService', () => {
 				unsubscribe()
 				session.dispose()
 			}
-		})
+		}
 	})
 
 	it('loads the host-owned production inventory before Runtime startup completes', async () => {
@@ -416,24 +418,23 @@ describe('WorkbenchArtifactService', () => {
 			},
 		})
 
-		await withRuntimeHost(
-			async (host) => {
-				await host.commit()
-				const artifacts = requireWorkbench(host.ctx).artifacts
-				expect(artifacts.getCurrent(definition)).toMatchObject({
-					producer: plan.producer,
-					buildRevision: plan.buildRevision,
-				})
-				expect(
-					artifacts.resolveEntry(definition, {
-						kind: 'attachment',
-						owner: definition,
-						key: 'picker',
-					}),
-				).toMatchObject({ entry: { expose: './views/picker' } })
-			},
-			{ workbenchArtifactRoot: fixture.getPath('workbench') },
-		)
+		{
+			await using host = createRuntimeHost({ workbenchArtifactRoot: fixture.getPath('workbench') })
+
+			await host.commit()
+			const artifacts = requireWorkbench(host.ctx).artifacts
+			expect(artifacts.getCurrent(definition)).toMatchObject({
+				producer: plan.producer,
+				buildRevision: plan.buildRevision,
+			})
+			expect(
+				artifacts.resolveEntry(definition, {
+					kind: 'attachment',
+					owner: definition,
+					key: 'picker',
+				}),
+			).toMatchObject({ entry: { expose: './views/picker' } })
+		}
 	})
 
 	it('loads a Content-only production inventory from its canonical Workbench path', async () => {
@@ -464,24 +465,23 @@ describe('WorkbenchArtifactService', () => {
 			},
 		})
 
-		await withRuntimeHost(
-			async (host) => {
-				await host.commit()
-				const contentService = requireWorkbench(host.ctx).content
-				expect(contentService.getCurrent(definition)).toMatchObject({
-					definitionDigest: contentArtifact.candidate.definitionDigest,
-					digest: contentArtifact.candidate.digest,
-				})
-				expect(
-					contentService.resolveContent(definition, {
-						kind: 'content',
-						owner: definition,
-						key: 'guide',
-					}),
-				).toMatchObject({ plan: { document: { blocks: [{ type: 'paragraph' }] } } })
-			},
-			{ workbenchArtifactRoot: fixture.getPath('workbench') },
-		)
+		{
+			await using host = createRuntimeHost({ workbenchArtifactRoot: fixture.getPath('workbench') })
+
+			await host.commit()
+			const contentService = requireWorkbench(host.ctx).content
+			expect(contentService.getCurrent(definition)).toMatchObject({
+				definitionDigest: contentArtifact.candidate.definitionDigest,
+				digest: contentArtifact.candidate.digest,
+			})
+			expect(
+				contentService.resolveContent(definition, {
+					kind: 'content',
+					owner: definition,
+					key: 'guide',
+				}),
+			).toMatchObject({ plan: { document: { blocks: [{ type: 'paragraph' }] } } })
+		}
 	})
 
 	it('merges packaged federation and Content inventories into one definition commit', async () => {
@@ -508,19 +508,18 @@ describe('WorkbenchArtifactService', () => {
 			},
 		})
 
-		await withRuntimeHost(
-			async (host) => {
-				const backend = requireWorkbench(host.ctx)
-				const commits = vi.fn()
-				backend.artifactCoordinator.subscribe(commits)
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbenchArtifactRoot: fixture.getPath('workbench') })
 
-				expect(commits).toHaveBeenCalledTimes(1)
-				expect(backend.artifacts.getCurrent(definition)?.buildRevision).toBe('production-mixed')
-				expect(backend.content.getCurrent(definition)?.digest).toBe(content.candidate.digest)
-			},
-			{ workbenchArtifactRoot: fixture.getPath('workbench') },
-		)
+			const backend = requireWorkbench(host.ctx)
+			const commits = vi.fn()
+			backend.artifactCoordinator.subscribe(commits)
+			await host.commit()
+
+			expect(commits).toHaveBeenCalledTimes(1)
+			expect(backend.artifacts.getCurrent(definition)?.buildRevision).toBe('production-mixed')
+			expect(backend.content.getCurrent(definition)?.digest).toBe(content.candidate.digest)
+		}
 	})
 
 	it('validates every packaged definition before committing the first one', async () => {

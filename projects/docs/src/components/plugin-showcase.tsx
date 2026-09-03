@@ -104,23 +104,23 @@ declare interface RuntimeHost {
   start<T>(plugin: PluginClass<T>): void
   commit(): Promise<void>
   require<T>(plugin: PluginClass<T>): T
+  [Symbol.asyncDispose](): Promise<void>
 }
-declare const withRuntimeHost: (run: (host: RuntimeHost) => Promise<void>) => Promise<void>
+declare const createRuntimeHost: () => RuntimeHost
 // ---cut---
 import { expect, it } from 'vitest'
 
 it('运行完整的 Plugin graph', async () => {
-  await withRuntimeHost(async (host) => {
-    host.add(StatusPlugin)
-    host.start(StatusPlugin)
-    await host.commit()
-    const status = host.require(StatusPlugin).status()
-    //    ^?
-    expect(status).toEqual({ ready: true, label: 'ready' })
-  })
+  await using host = createRuntimeHost()
+  host.add(StatusPlugin)
+  host.start(StatusPlugin)
+  await host.commit()
+  const status = host.require(StatusPlugin).status()
+  //    ^?
+  expect(status).toEqual({ ready: true, label: 'ready' })
 })
 
-// withRuntimeHost 退出：停止依赖图并回收 effects`,
+// 当前作用域退出：停止依赖图并回收 effects`,
 		description: '测试运行同一张依赖图；作用域退出后按所有权停止 Plugin 并释放 effects。',
 		href: '/docs/development/testing',
 		label: '测试',

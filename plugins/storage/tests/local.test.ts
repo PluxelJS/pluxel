@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PluginConstructor } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
 
@@ -194,7 +194,9 @@ describe('S3Plugin local backend', () => {
 
 	it('revokes the caller facade and captured local client on provider stop', async () => {
 		const root = await temporaryRoot()
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [S3Plugin, LocalS3Consumer])
 			host.cfg(S3Plugin).set({
 				buckets: [
@@ -217,7 +219,7 @@ describe('S3Plugin local backend', () => {
 			await host.commit()
 			expect(() => bucket.client).toThrow('Plugin owner stopped')
 			await expect(client.bucketExists()).rejects.toBeInstanceOf(S3NotRunningError)
-		})
+		}
 	})
 })
 
@@ -228,7 +230,9 @@ async function temporaryRoot(): Promise<string> {
 }
 
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
-	await withRuntimeHost(async (host) => {
+	{
+		await using host = createRuntimeHost()
+
 		addStarted(host, [S3Plugin, LocalS3Consumer])
 		host.cfg(S3Plugin).set({
 			buckets: [
@@ -245,5 +249,5 @@ async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void
 		})
 		await host.commit()
 		await run(host.require(LocalS3Consumer).s3)
-	})
+	}
 }

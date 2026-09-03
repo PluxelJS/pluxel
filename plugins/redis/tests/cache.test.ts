@@ -1,5 +1,5 @@
 import { type PluginConstructor, v } from '@pluxel/runtime'
-import { Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -116,7 +116,9 @@ describe('@pluxel/redis cache backend', () => {
 	})
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [FakeRedisPlugin, RedisCacheBackendPlugin])
 			host.cfg(RedisCacheBackendPlugin).set({ connectionId: 'cache' })
 			await host.commit()
@@ -143,11 +145,13 @@ describe('@pluxel/redis cache backend', () => {
 			expect(redis.ttls.has('pluxel:cache:forever')).toBe(false)
 			expect(await backend.get<typeof value>('forever')).toEqual({ value, ttlMs: 0 })
 			expect(host.require(FakeRedisPlugin).selectedIds.every((id) => id === 'cache')).toBe(true)
-		})
+		}
 	})
 
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [FakeRedisPlugin, RedisCacheBackendPlugin])
 			host.cfg(RedisCacheBackendPlugin).set({
 				keyPrefix: 'pluxel[prod]:cache:',
@@ -166,6 +170,6 @@ describe('@pluxel/redis cache backend', () => {
 			expect(redis.scanCalls).toEqual([{ MATCH: 'pluxel\\[prod\\]:cache:scope:*', COUNT: 3 }])
 			expect(redis.unlinkCalls.every((batch) => batch.length <= 2)).toBe(true)
 			expect([...redis.values.keys()]).toEqual(['pluxel[prod]:cache:other:a'])
-		})
+		}
 	})
 })

@@ -1,6 +1,6 @@
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
 import { formatPluginNodeReference, type PluginConstructor, v } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -93,7 +93,9 @@ describe('@pluxel/redis rates backend', () => {
 		expect(v.safeParse(RedisRatesBackendConfig, { connectionId: 'Invalid ID' }).success).toBe(false)
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
@@ -137,11 +139,13 @@ describe('@pluxel/redis rates backend', () => {
 			expect(redis.evalShaCalls).toHaveLength(4)
 			expect(redis.evalCalls).toHaveLength(4)
 			expect(host.require(FakeRatesRedisPlugin).selectedIds).toEqual(['rates'])
-		})
+		}
 	})
 
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
@@ -163,11 +167,13 @@ describe('@pluxel/redis rates backend', () => {
 			redis.scriptLoaded = false
 			await limiter.consume('third')
 			expect(redis.evalCalls).toHaveLength(2)
-		})
+		}
 	})
 
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
@@ -185,6 +191,6 @@ describe('@pluxel/redis rates backend', () => {
 			})
 			redis.reply = [-2]
 			await expect(limiter.consume('other')).rejects.toMatchObject({ code: 'RATES_UNAVAILABLE' })
-		})
+		}
 	})
 })

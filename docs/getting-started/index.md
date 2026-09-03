@@ -77,31 +77,27 @@ export class StatusPlugin extends BasePlugin {
 用下面的内容替换 `tests/status.test.ts`：
 
 ```ts no-twoslash
-import { withRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { StatusPlugin } from '@acme/pluxel-plugin-status'
 
 describe('StatusPlugin', () => {
 	it('starts with config and mounts its route', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add(StatusPlugin)
-				host.cfg(StatusPlugin).set({ label: 'healthy', intervalMs: 1_000 })
-				host.start(StatusPlugin)
-				await host.commit()
+		await using host = createRuntimeHost({ workbench: false })
+		host.add(StatusPlugin)
+		host.cfg(StatusPlugin).set({ label: 'healthy', intervalMs: 1_000 })
+		host.start(StatusPlugin)
+		await host.commit()
 
-				const response = await host.fetch(new Request('http://local.test/status'))
+		const response = await host.fetch(new Request('http://local.test/status'))
 
-				expect(response.status).toBe(200)
-				expect(await response.json()).toMatchObject({ label: 'healthy', samples: 0 })
-			},
-			{ workbench: false },
-		)
-	}
+		expect(response.status).toBe(200)
+		expect(await response.json()).toMatchObject({ label: 'healthy', samples: 0 })
+	})
 })
 ```
 
-`withRuntimeHost()` 使用真实配置校验、依赖图和 lifecycle，并在 callback 结束后关闭 host。`ctx.elysia` 是当前
+`createRuntimeHost()` 使用真实配置校验、依赖图和 lifecycle；`await using` 在作用域结束后关闭 host。`ctx.elysia` 是当前
 generation 的真实 Elysia 2 application，`/status` 就是最终产品路径。Plugin 与它的 Part 完成 `init()` 后，Runtime
 会 compile/seal app 并原子发布；路由和 timer 都随该 generation 在 shutdown、replacement 或 rollback 时清理。
 

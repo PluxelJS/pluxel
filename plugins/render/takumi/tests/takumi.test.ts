@@ -8,7 +8,7 @@ import {
 	Plugin,
 	pluginNodeAddressOf,
 	type RuntimeHost,
-	withRuntimeHost,
+	createRuntimeHost,
 } from '@pluxel/runtime/test'
 import { Renderer } from 'takumi-js/node'
 import { describe, expect, it, vi } from 'vitest'
@@ -34,265 +34,256 @@ const fontPath = findTestFont()
 
 describe('TakumiPlugin', () => {
 	it('renders bounded HTML to raster bytes and SVG without Workbench', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
-				const takumi = host.require(TakumiTestConsumer).takumi
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				const raster = await takumi.render({
-					content:
-						'<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;background:#0f172a;color:white;font-size:32px">Pluxel</div>',
-					width: 320,
-					height: 180,
-				})
-				expect([...raster.data.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
-				expect(raster).toMatchObject({
-					mediaType: 'image/png',
-					width: 320,
-					height: 180,
-					devicePixelRatio: 1,
-				})
-				const jpeg = await takumi.render({
-					content: '<div style="background:white;color:black">JPEG</div>',
-					width: 64,
-					height: 32,
-					output: { format: 'jpeg', quality: 80 },
-				})
-				expect([...jpeg.data.subarray(0, 3)]).toEqual([255, 216, 255])
-				expect(jpeg.mediaType).toBe('image/jpeg')
-				const webp = await takumi.render({
-					content: '<div style="background:white;color:black">WebP</div>',
-					width: 64,
-					height: 32,
-					output: { format: 'webp', lossless: true },
-				})
-				expect(webp.data.toString('ascii', 0, 4)).toBe('RIFF')
-				expect(webp.data.toString('ascii', 8, 12)).toBe('WEBP')
-				expect(webp.mediaType).toBe('image/webp')
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			await host.commit()
+			const takumi = host.require(TakumiTestConsumer).takumi
 
-				const svg = await takumi.renderSvg({
-					content: '<div style="color:#2563eb;font-size:24px">Takumi SVG</div>',
-					width: 320,
-					height: 180,
-				})
-				expect(svg.mediaType).toBe('image/svg+xml')
-				expect(svg.data).toContain('<svg')
-				expect(host.ctx.workbench).toBeUndefined()
-			},
-			{ workbench: false },
-		)
+			const raster = await takumi.render({
+				content:
+					'<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;background:#0f172a;color:white;font-size:32px">Pluxel</div>',
+				width: 320,
+				height: 180,
+			})
+			expect([...raster.data.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+			expect(raster).toMatchObject({
+				mediaType: 'image/png',
+				width: 320,
+				height: 180,
+				devicePixelRatio: 1,
+			})
+			const jpeg = await takumi.render({
+				content: '<div style="background:white;color:black">JPEG</div>',
+				width: 64,
+				height: 32,
+				output: { format: 'jpeg', quality: 80 },
+			})
+			expect([...jpeg.data.subarray(0, 3)]).toEqual([255, 216, 255])
+			expect(jpeg.mediaType).toBe('image/jpeg')
+			const webp = await takumi.render({
+				content: '<div style="background:white;color:black">WebP</div>',
+				width: 64,
+				height: 32,
+				output: { format: 'webp', lossless: true },
+			})
+			expect(webp.data.toString('ascii', 0, 4)).toBe('RIFF')
+			expect(webp.data.toString('ascii', 8, 12)).toBe('WEBP')
+			expect(webp.mediaType).toBe('image/webp')
+
+			const svg = await takumi.renderSvg({
+				content: '<div style="color:#2563eb;font-size:24px">Takumi SVG</div>',
+				width: 320,
+				height: 180,
+			})
+			expect(svg.mediaType).toBe('image/svg+xml')
+			expect(svg.data).toContain('<svg')
+			expect(host.ctx.workbench).toBeUndefined()
+		}
 	})
 
 	it.skipIf(!fontPath)('replays FontsPlugin portable resources by revision', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
-				const consumer = host.require(TakumiTestConsumer)
-				const family = `Pluxel Takumi ${crypto.randomUUID()}`
-				const registration = await consumer.fonts.registerFromPath({ path: fontPath!, family })
-				const snapshot = consumer.fonts.portableFonts
-				expect(snapshot.fonts).toEqual([
-					expect.objectContaining({ family, byteLength: expect.any(Number) }),
-				])
-				const id = snapshot.fonts[0]!.id
-				const firstRead = await consumer.fonts.readPortableFont(id)
-				const firstByte = firstRead[0]
-				firstRead[0] = firstByte === 0 ? 1 : 0
-				const secondRead = await consumer.fonts.readPortableFont(id)
-				expect(secondRead[0]).toBe(firstByte)
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				const rendered = await consumer.takumi.render({
-					content: `<div style="font-family:'${family}';font-size:28px">Portable font</div>`,
-					width: 360,
-					height: 120,
-				})
-				expect(rendered.fontRevision).toBe(snapshot.revision)
-				registration.dispose()
-				expect(consumer.fonts.portableFonts.fonts).toEqual([])
-				expect(consumer.fonts.portableFonts.revision).toBeGreaterThan(snapshot.revision)
-			},
-			{ workbench: false },
-		)
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			await host.commit()
+			const consumer = host.require(TakumiTestConsumer)
+			const family = `Pluxel Takumi ${crypto.randomUUID()}`
+			const registration = await consumer.fonts.registerFromPath({ path: fontPath!, family })
+			const snapshot = consumer.fonts.portableFonts
+			expect(snapshot.fonts).toEqual([
+				expect.objectContaining({ family, byteLength: expect.any(Number) }),
+			])
+			const id = snapshot.fonts[0]!.id
+			const firstRead = await consumer.fonts.readPortableFont(id)
+			const firstByte = firstRead[0]
+			firstRead[0] = firstByte === 0 ? 1 : 0
+			const secondRead = await consumer.fonts.readPortableFont(id)
+			expect(secondRead[0]).toBe(firstByte)
+
+			const rendered = await consumer.takumi.render({
+				content: `<div style="font-family:'${family}';font-size:28px">Portable font</div>`,
+				width: 360,
+				height: 120,
+			})
+			expect(rendered.fontRevision).toBe(snapshot.revision)
+			registration.dispose()
+			expect(consumer.fonts.portableFonts.fonts).toEqual([])
+			expect(consumer.fonts.portableFonts.revision).toBeGreaterThan(snapshot.revision)
+		}
 	})
 
 	it.skipIf(!fontPath)(
 		'rejects portable font collections over the resource-count ceiling',
 		async () => {
-			await withRuntimeHost(
-				async (host) => {
-					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-					host.cfg(TakumiPlugin).set({ maxFonts: 0 })
-					await host.commit()
-					const consumer = host.require(TakumiTestConsumer)
-					const registration = await consumer.fonts.registerFromPath({
-						path: fontPath!,
-						family: `Pluxel Takumi Count ${crypto.randomUUID()}`,
-					})
-					await expect(
-						consumer.takumi.render({ content: '<div>font limit</div>', width: 10, height: 10 }),
-					).rejects.toMatchObject({ code: 'FONT_COUNT_EXCEEDED' })
-					registration.dispose()
-				},
-				{ workbench: false },
-			)
+			{
+				await using host = createRuntimeHost({ workbench: false })
+
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				host.cfg(TakumiPlugin).set({ maxFonts: 0 })
+				await host.commit()
+				const consumer = host.require(TakumiTestConsumer)
+				const registration = await consumer.fonts.registerFromPath({
+					path: fontPath!,
+					family: `Pluxel Takumi Count ${crypto.randomUUID()}`,
+				})
+				await expect(
+					consumer.takumi.render({ content: '<div>font limit</div>', width: 10, height: 10 }),
+				).rejects.toMatchObject({ code: 'FONT_COUNT_EXCEEDED' })
+				registration.dispose()
+			}
 		},
 	)
 
 	it('rejects over-budget pixels and blocks implicit remote image fetches', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				host.cfg(TakumiPlugin).set({ maxPixels: 100 })
-				await host.commit()
-				const takumi = host.require(TakumiTestConsumer).takumi
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			host.cfg(TakumiPlugin).set({ maxPixels: 100 })
+			await host.commit()
+			const takumi = host.require(TakumiTestConsumer).takumi
+
+			await expect(
+				takumi.render({ content: '<div>large</div>', width: 20, height: 20 }),
+			).rejects.toMatchObject({ code: 'PIXELS_EXCEEDED' })
+
+			const fetchSpy = vi.spyOn(globalThis, 'fetch')
+			try {
 				await expect(
-					takumi.render({ content: '<div>large</div>', width: 20, height: 20 }),
-				).rejects.toMatchObject({ code: 'PIXELS_EXCEEDED' })
-
-				const fetchSpy = vi.spyOn(globalThis, 'fetch')
-				try {
-					await expect(
-						takumi.render({
-							content: '<img src="https://example.invalid/image.png">',
-							width: 10,
-							height: 10,
-						}),
-					).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
-					expect(fetchSpy).not.toHaveBeenCalled()
-				} finally {
-					fetchSpy.mockRestore()
-				}
-			},
-			{ workbench: false },
-		)
+					takumi.render({
+						content: '<img src="https://example.invalid/image.png">',
+						width: 10,
+						height: 10,
+					}),
+				).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
+				expect(fetchSpy).not.toHaveBeenCalled()
+			} finally {
+				fetchSpy.mockRestore()
+			}
+		}
 	})
 
 	it('classifies an invalid cancellation signal as invalid input', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				await expect(
-					host.require(TakumiTestConsumer).takumi.render({
-						content: '<div>invalid signal</div>',
-						width: 10,
-						height: 10,
-						signal: {} as AbortSignal,
-					}),
-				).rejects.toMatchObject({ code: 'INVALID_INPUT' })
-			},
-			{ workbench: false },
-		)
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			await host.commit()
+
+			await expect(
+				host.require(TakumiTestConsumer).takumi.render({
+					content: '<div>invalid signal</div>',
+					width: 10,
+					height: 10,
+					signal: {} as AbortSignal,
+				}),
+			).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+		}
 	})
 
 	it('bounds structured node metadata before native rendering', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				host.cfg(TakumiPlugin).set({ maxContentBytes: 128 })
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				await expect(
-					host.require(TakumiTestConsumer).takumi.render({
-						content: {
-							type: 'container',
-							style: { backgroundImage: `url("${'x'.repeat(256)}")` },
-						},
-						width: 10,
-						height: 10,
-					}),
-				).rejects.toMatchObject({ code: 'CONTENT_TOO_LARGE' })
-			},
-			{ workbench: false },
-		)
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			host.cfg(TakumiPlugin).set({ maxContentBytes: 128 })
+			await host.commit()
+
+			await expect(
+				host.require(TakumiTestConsumer).takumi.render({
+					content: {
+						type: 'container',
+						style: { backgroundImage: `url("${'x'.repeat(256)}")` },
+					},
+					width: 10,
+					height: 10,
+				}),
+			).rejects.toMatchObject({ code: 'CONTENT_TOO_LARGE' })
+		}
 	})
 
 	it('bounds extracted stylesheets and distinct content image sources by count', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				host.cfg(TakumiPlugin).set({ maxStylesheets: 1, maxImages: 1 })
-				await host.commit()
-				const takumi = host.require(TakumiTestConsumer).takumi
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				await expect(
-					takumi.render({
-						content: '<style>.a{color:red}</style><style>.b{color:blue}</style><div>x</div>',
-						width: 10,
-						height: 10,
-					}),
-				).rejects.toMatchObject({ code: 'STYLESHEET_TOO_LARGE' })
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			host.cfg(TakumiPlugin).set({ maxStylesheets: 1, maxImages: 1 })
+			await host.commit()
+			const takumi = host.require(TakumiTestConsumer).takumi
 
-				await expect(
-					takumi.render({
-						content: {
-							type: 'container',
-							children: [
-								{ type: 'image', src: 'memory://one', width: 1, height: 1 },
-								{ type: 'image', src: 'memory://two', width: 1, height: 1 },
-							],
-						},
-						width: 10,
-						height: 10,
-					}),
-				).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
-			},
-			{ workbench: false },
-		)
+			await expect(
+				takumi.render({
+					content: '<style>.a{color:red}</style><style>.b{color:blue}</style><div>x</div>',
+					width: 10,
+					height: 10,
+				}),
+			).rejects.toMatchObject({ code: 'STYLESHEET_TOO_LARGE' })
+
+			await expect(
+				takumi.render({
+					content: {
+						type: 'container',
+						children: [
+							{ type: 'image', src: 'memory://one', width: 1, height: 1 },
+							{ type: 'image', src: 'memory://two', width: 1, height: 1 },
+						],
+					},
+					width: 10,
+					height: 10,
+				}),
+			).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
+		}
 	})
 
 	it('rejects structured accessors without invoking caller code', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
-				let getterCalled = false
-				const content = Object.defineProperty({ type: 'container' }, 'children', {
-					enumerable: true,
-					get() {
-						getterCalled = true
-						return []
-					},
-				})
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				await expect(
-					host.require(TakumiTestConsumer).takumi.render({
-						content: content as never,
-						width: 10,
-						height: 10,
-					}),
-				).rejects.toMatchObject({ code: 'INVALID_INPUT' })
-				expect(getterCalled).toBe(false)
-			},
-			{ workbench: false },
-		)
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			await host.commit()
+			let getterCalled = false
+			const content = Object.defineProperty({ type: 'container' }, 'children', {
+				enumerable: true,
+				get() {
+					getterCalled = true
+					return []
+				},
+			})
+
+			await expect(
+				host.require(TakumiTestConsumer).takumi.render({
+					content: content as never,
+					width: 10,
+					height: 10,
+				}),
+			).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+			expect(getterCalled).toBe(false)
+		}
 	})
 
 	it('requires node image bytes to use the bounded preloaded-images path', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				await expect(
-					host.require(TakumiTestConsumer).takumi.render({
-						content: {
-							type: 'image',
-							src: new Uint8Array(new SharedArrayBuffer(4)),
-							width: 1,
-							height: 1,
-						},
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			await host.commit()
+
+			await expect(
+				host.require(TakumiTestConsumer).takumi.render({
+					content: {
+						type: 'image',
+						src: new Uint8Array(new SharedArrayBuffer(4)),
 						width: 1,
 						height: 1,
-					}),
-				).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
-			},
-			{ workbench: false },
-		)
+					},
+					width: 1,
+					height: 1,
+				}),
+			).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
+		}
 	})
 
 	it('forwards caller cancellation to Takumi native rendering', async () => {
@@ -312,27 +303,26 @@ describe('TakumiPlugin', () => {
 				})
 			})
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-					await host.commit()
-					const controller = new AbortController()
-					const rendering = host.require(TakumiTestConsumer).takumi.render({
-						content: '<div>cancel me</div>',
-						width: 100,
-						height: 100,
-						signal: controller.signal,
-					})
+			{
+				await using host = createRuntimeHost({ workbench: false })
 
-					await vi.waitFor(() => expect(nativeRender).toHaveBeenCalledOnce())
-					expect(nativeSignal?.aborted).toBe(false)
-					const reason = new DOMException('cancel test', 'AbortError')
-					controller.abort(reason)
-					expect(nativeSignal?.aborted).toBe(true)
-					await expect(rendering).rejects.toBe(reason)
-				},
-				{ workbench: false },
-			)
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				await host.commit()
+				const controller = new AbortController()
+				const rendering = host.require(TakumiTestConsumer).takumi.render({
+					content: '<div>cancel me</div>',
+					width: 100,
+					height: 100,
+					signal: controller.signal,
+				})
+
+				await vi.waitFor(() => expect(nativeRender).toHaveBeenCalledOnce())
+				expect(nativeSignal?.aborted).toBe(false)
+				const reason = new DOMException('cancel test', 'AbortError')
+				controller.abort(reason)
+				expect(nativeSignal?.aborted).toBe(true)
+				await expect(rendering).rejects.toBe(reason)
+			}
 		} finally {
 			nativeRender.mockRestore()
 		}
@@ -347,26 +337,25 @@ describe('TakumiPlugin', () => {
 			return Buffer.from([1, 2, 3])
 		})
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-					await host.commit()
-					const controller = new AbortController()
-					const rendering = host.require(TakumiTestConsumer).takumi.render({
-						content: '<div>already running</div>',
-						width: 100,
-						height: 100,
-						signal: controller.signal,
-					})
+			{
+				await using host = createRuntimeHost({ workbench: false })
 
-					await vi.waitFor(() => expect(nativeRender).toHaveBeenCalledOnce())
-					const reason = new DOMException('discard late output', 'AbortError')
-					controller.abort(reason)
-					releaseNative()
-					await expect(rendering).rejects.toBe(reason)
-				},
-				{ workbench: false },
-			)
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				await host.commit()
+				const controller = new AbortController()
+				const rendering = host.require(TakumiTestConsumer).takumi.render({
+					content: '<div>already running</div>',
+					width: 100,
+					height: 100,
+					signal: controller.signal,
+				})
+
+				await vi.waitFor(() => expect(nativeRender).toHaveBeenCalledOnce())
+				const reason = new DOMException('discard late output', 'AbortError')
+				controller.abort(reason)
+				releaseNative()
+				await expect(rendering).rejects.toBe(reason)
+			}
 		} finally {
 			nativeRender.mockRestore()
 		}
@@ -375,24 +364,23 @@ describe('TakumiPlugin', () => {
 	it('cancels cooperative image snapshotting before native rendering', async () => {
 		const nativeRender = vi.spyOn(Renderer.prototype, 'render')
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-					await host.commit()
-					const controller = new AbortController()
-					const rendered = host.require(TakumiTestConsumer).takumi.render({
-						content: '<img src="memory://image">',
-						images: [{ src: 'memory://image', data: new Uint8Array(2 * 1024 * 1024) }],
-						width: 10,
-						height: 10,
-						signal: controller.signal,
-					})
-					queueMicrotask(() => controller.abort())
-					await expect(rendered).rejects.toMatchObject({ name: 'AbortError' })
-					expect(nativeRender).not.toHaveBeenCalled()
-				},
-				{ workbench: false },
-			)
+			{
+				await using host = createRuntimeHost({ workbench: false })
+
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				await host.commit()
+				const controller = new AbortController()
+				const rendered = host.require(TakumiTestConsumer).takumi.render({
+					content: '<img src="memory://image">',
+					images: [{ src: 'memory://image', data: new Uint8Array(2 * 1024 * 1024) }],
+					width: 10,
+					height: 10,
+					signal: controller.signal,
+				})
+				queueMicrotask(() => controller.abort())
+				await expect(rendered).rejects.toMatchObject({ name: 'AbortError' })
+				expect(nativeRender).not.toHaveBeenCalled()
+			}
 		} finally {
 			nativeRender.mockRestore()
 		}
@@ -406,21 +394,20 @@ describe('TakumiPlugin', () => {
 			return `<svg>${'界'.repeat(1024 * 1024)}</svg>`
 		})
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-					await host.commit()
-					await expect(
-						host.require(TakumiTestConsumer).takumi.renderSvg({
-							content: { type: 'text', text: 'SVG' },
-							width: 10,
-							height: 10,
-							signal: controller.signal,
-						}),
-					).rejects.toBe(reason)
-				},
-				{ workbench: false },
-			)
+			{
+				await using host = createRuntimeHost({ workbench: false })
+
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				await host.commit()
+				await expect(
+					host.require(TakumiTestConsumer).takumi.renderSvg({
+						content: { type: 'text', text: 'SVG' },
+						width: 10,
+						height: 10,
+						signal: controller.signal,
+					}),
+				).rejects.toBe(reason)
+			}
 		} finally {
 			nativeRender.mockRestore()
 		}
@@ -437,59 +424,57 @@ describe('TakumiPlugin', () => {
 				})
 			})
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-					host.cfg(TakumiPlugin).set({ maxRenderDurationMs: 10 })
-					await host.commit()
+			{
+				await using host = createRuntimeHost({ workbench: false })
 
-					await expect(
-						host.require(TakumiTestConsumer).takumi.render({
-							content: '<div>deadline</div>',
-							width: 100,
-							height: 100,
-						}),
-					).rejects.toMatchObject({ code: 'RENDER_TIMEOUT' })
-				},
-				{ workbench: false },
-			)
+				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+				host.cfg(TakumiPlugin).set({ maxRenderDurationMs: 10 })
+				await host.commit()
+
+				await expect(
+					host.require(TakumiTestConsumer).takumi.render({
+						content: '<div>deadline</div>',
+						width: 100,
+						height: 100,
+					}),
+				).rejects.toMatchObject({ code: 'RENDER_TIMEOUT' })
+			}
 		} finally {
 			nativeRender.mockRestore()
 		}
 	})
 
 	it('places the provider-owned Fonts selection Attachment', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: { enabled: true } })
 
-				const consumer = pluginNodeAddressOf(TakumiPlugin)
-				const provider = pluginNodeAddressOf(FontsPlugin)
-				const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
-				expect(layout.entries).toEqual([
-					expect.objectContaining({
-						descriptor: {
-							kind: 'attachment-placement',
-							consumer: consumer.definition,
-							key: 'fonts',
-							provider: {
-								kind: 'attachment',
-								owner: provider.definition,
-								key: 'selection',
-							},
+			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+			await host.commit()
+
+			const consumer = pluginNodeAddressOf(TakumiPlugin)
+			const provider = pluginNodeAddressOf(FontsPlugin)
+			const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
+			expect(layout.entries).toEqual([
+				expect.objectContaining({
+					descriptor: {
+						kind: 'attachment-placement',
+						consumer: consumer.definition,
+						key: 'fonts',
+						provider: {
+							kind: 'attachment',
+							owner: provider.definition,
+							key: 'selection',
 						},
-						target: {
-							node: consumer,
-							displayName: 'TakumiPlugin',
-						},
-						renderer: provider,
-						placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 30 },
-					}),
-				])
-			},
-			{ workbench: { enabled: true } },
-		)
+					},
+					target: {
+						node: consumer,
+						displayName: 'TakumiPlugin',
+					},
+					renderer: provider,
+					placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 30 },
+				}),
+			])
+		}
 	})
 })
 

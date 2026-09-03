@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, createRuntimeHost } from '@pluxel/runtime/test'
 import { Elysia, t } from 'elysia'
 import { describe, expect, it } from 'vitest'
 
@@ -65,7 +65,9 @@ class NativeElysiaIsolationB extends BasePlugin {
 
 describe('native Elysia authoring capability', () => {
 	it('preserves function plugins, async modules, context, schemas, errors and mounts', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add(NativeElysiaCapabilities).start(NativeElysiaCapabilities)
 			await host.commit()
 
@@ -117,11 +119,13 @@ describe('native Elysia authoring capability', () => {
 				new Request('http://local/native-capabilities/mounted/child'),
 			)
 			expect(await mounted.json()).toEqual({ pathname: '/child' })
-		})
+		}
 	})
 
 	it('keeps decorators and hooks local to each generation application', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add([NativeElysiaIsolationA, NativeElysiaIsolationB])
 			host.cfg(NativeElysiaIsolationA).setAutoStart(true)
 			host.start(NativeElysiaIsolationA)
@@ -139,6 +143,6 @@ describe('native Elysia authoring capability', () => {
 					.fetch(new Request('http://local/native-isolation/b'))
 					.then((response) => response.text()),
 			).resolves.toBe('b')
-		})
+		}
 	})
 })

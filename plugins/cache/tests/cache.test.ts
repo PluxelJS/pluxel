@@ -1,5 +1,5 @@
 import type { PluginConstructor } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	Cache,
@@ -19,8 +19,8 @@ function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): v
 	for (const PluginClass of plugins) host.start(PluginClass)
 }
 
-function withHost<T>(fn: (host: RuntimeHost) => Promise<T> | T): Promise<T> {
-	return withRuntimeHost(fn, { workbench: false })
+function createHost(): RuntimeHost {
+	return createRuntimeHost({ workbench: false })
 }
 
 type User = { id: string; name: string }
@@ -145,7 +145,9 @@ describe('@pluxel/cache', () => {
 	it('keeps scoped L1 synchronous, bounded, TTL-aware, and independently configurable', async () => {
 		vi.useFakeTimers()
 		try {
-			await withHost(async (host) => {
+			{
+				await using host = createHost()
+
 				addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 				host.cfg(CachePlugin).set({ ttlMs: 20, maxEntries: 2 })
 				await host.commit()
@@ -168,14 +170,16 @@ describe('@pluxel/cache', () => {
 				expect(l1.get('a')).toBe(1)
 				vi.advanceTimersByTime(80)
 				expect(l1.get('a')).toBeUndefined()
-			})
+			}
 		} finally {
 			vi.useRealTimers()
 		}
 	})
 
 	it('uses the default memory backend as an async L2 behind local cache', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache.scope('memory-l2', { maxEntries: 1 })
@@ -184,11 +188,13 @@ describe('@pluxel/cache', () => {
 			expect(cache.local.get('a')).toBeUndefined()
 			expect(await cache.get<number>('a')).toBe(1)
 			expect(cache.stats().backendHits).toBe(1)
-		})
+		}
 	})
 
 	it('uses node identity for caller isolation while global uses one managed shared namespace', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			await host.commit()
 			const a = host.require(ConsumerA)
@@ -219,11 +225,13 @@ describe('@pluxel/cache', () => {
 				owner: null,
 				value: { id: '1', name: 'shared' },
 			})
-		})
+		}
 	})
 
 	it('rejects a backend entry whose structured owner does not match its physical key', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			await host.commit()
 			const a = host.require(ConsumerA)
@@ -244,11 +252,13 @@ describe('@pluxel/cache', () => {
 			await expect(a.cache.get('owned')).rejects.toThrow('owner does not match')
 			backend.values.set(key, { ...entry, value: 'legacy-raw-value' })
 			await expect(a.cache.get('owned')).rejects.toThrow('entry must be an object')
-		})
+		}
 	})
 
 	it('deduplicates a global loader across consumers and does not cache rejection', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			await host.commit()
 			const a = host.require(ConsumerA).cache.global
@@ -287,11 +297,13 @@ describe('@pluxel/cache', () => {
 			await expect(a.getOrLoad('undefined', (): undefined => undefined)).rejects.toThrow(
 				/undefined/,
 			)
-		})
+		}
 	})
 
 	it('coalesces an external miss and preserves per-subscriber abort', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			await host.commit()
 			const backend = host.require(TestCacheBackendPlugin)
@@ -319,11 +331,13 @@ describe('@pluxel/cache', () => {
 			expect(backend.metrics.gets).toBe(1)
 			expect(backend.metrics.sets).toBe(1)
 			expect(loads).toBe(1)
-		})
+		}
 	})
 
 	it('supports cache-first, cache-and-refresh, and remote-first async reads', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const backend = host.require(TestCacheBackendPlugin)
@@ -345,11 +359,13 @@ describe('@pluxel/cache', () => {
 			await remoteFirst.set('k', 'remote')
 			remoteFirst.local.set('k', 'memory')
 			expect(await remoteFirst.get<string>('k')).toBe('remote')
-		})
+		}
 	})
 
 	it('orders invalidation after in-flight load', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache
@@ -360,22 +376,26 @@ describe('@pluxel/cache', () => {
 			await loading
 			await deleting
 			expect(await cache.get('3')).toBeUndefined()
-		})
+		}
 	})
 
 	it('fails loudly instead of reporting a local-only clear as successful', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MissingClearCacheBackend, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache
 			await cache.set('value', 1)
 			await expect(cache.clear()).rejects.toBeInstanceOf(TypeError)
 			expect(cache.local.get('value')).toBe(1)
-		})
+		}
 	})
 
 	it('revokes cached namespace handles when provider stops', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const handle = host.require(ConsumerA).cache.scope('saved')
@@ -383,11 +403,13 @@ describe('@pluxel/cache', () => {
 			host.stop(CachePlugin)
 			await host.commit()
 			await expect(handle.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
-		})
+		}
 	})
 
 	it('revokes caller-local, global, and decorator handles when the caller stops', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
 			await host.commit()
 			const consumer = host.require(DecoratedConsumer)
@@ -403,11 +425,13 @@ describe('@pluxel/cache', () => {
 			await expect(local.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
 			await expect(global.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
 			expect(() => consumer.user('1')).toThrow('Plugin owner stopped')
-		})
+		}
 	})
 
 	it('keeps a shared global registration alive until its final owner stops', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			await host.commit()
 			const a = host.require(ConsumerA).cache.global
@@ -419,11 +443,13 @@ describe('@pluxel/cache', () => {
 
 			await expect(a.get('shared')).rejects.toBeInstanceOf(CacheStoppedError)
 			expect(await b.get('shared')).toBe(1)
-		})
+		}
 	})
 
 	it('does not let a stopped memory backend handle recreate its state', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const backend = host.require(MemoryCacheBackendPlugin)
@@ -436,11 +462,13 @@ describe('@pluxel/cache', () => {
 
 			await expect(backend.get('saved')).rejects.toBeInstanceOf(CacheStoppedError)
 			await expect(backend.set('late', 2, { ttlMs: 0 })).rejects.toBeInstanceOf(CacheStoppedError)
-		})
+		}
 	})
 
 	it('bounds distinct in-flight work while allowing same-key joins', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache.scope('backpressure', { maxInFlight: 1 })
@@ -451,11 +479,13 @@ describe('@pluxel/cache', () => {
 			expect(cache.stats().rejected).toBe(1)
 			gate.resolve(1)
 			expect(await Promise.all([first, joined])).toEqual([1, 1])
-		})
+		}
 	})
 
 	it('supports @Cached, @Memoized, custom method scopes, and explicit invalidation', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
 			await host.commit()
 			const consumer = host.require(DecoratedConsumer)
@@ -479,11 +509,13 @@ describe('@pluxel/cache', () => {
 			await consumer.pair('admins', '3')
 			await consumer.pair('admins', '3')
 			expect(consumer.pairCalls).toBe(1)
-		})
+		}
 	})
 
 	it('uses scan-resistant SIEVE eviction', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache
@@ -496,11 +528,13 @@ describe('@pluxel/cache', () => {
 
 			expect(sieve.get('a')).toBe(1)
 			expect(sieve.get('b')).toBeUndefined()
-		})
+		}
 	})
 
 	it('validates scopes, capacities, and primitive keys', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache
@@ -508,11 +542,13 @@ describe('@pluxel/cache', () => {
 			expect(() => cache.scope(`scope\ud800`)).toThrow(/well-formed Unicode/)
 			expect(() => cache.scope('valid', { maxEntries: 0 })).toThrow(/maxEntries/)
 			await expect(cache.set(Number.NaN, 1)).rejects.toThrow(/finite/)
-		})
+		}
 	})
 
 	it('binds one exact normalized policy to each scope', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache
@@ -532,11 +568,13 @@ describe('@pluxel/cache', () => {
 			expect(() => cache.scope('policy', { ttlMs: 11 })).toThrow(CachePolicyConflictError)
 			expect(() => cache.scope('unknown', { extra: true } as never)).toThrow(/unknown field/)
 			expect(() => cache.scope('nonplain', new (class {})() as never)).toThrow(/plain object/)
-		})
+		}
 	})
 
 	it('encodes bounded typed tuple and record keys without ambiguity', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const cache = host.require(ConsumerA).cache
@@ -569,11 +607,13 @@ describe('@pluxel/cache', () => {
 			).rejects.toThrow(/16/)
 			await expect(cache.set('x'.repeat(1_025), 1)).rejects.toThrow(/1024/)
 			await expect(cache.set(Number.POSITIVE_INFINITY, 1)).rejects.toThrow(/finite/)
-		})
+		}
 	})
 
 	it('supports required and bypass backend failure policies for getOrLoad only', async () => {
-		await withHost(async (host) => {
+		{
+			await using host = createHost()
+
 			addStarted(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
 			await host.commit()
 			const backend = host.require(TestCacheBackendPlugin)
@@ -604,6 +644,6 @@ describe('@pluxel/cache', () => {
 			await expect(
 				bypass.getOrLoad('loader-error', () => Promise.reject(new Error('loader failed'))),
 			).rejects.toThrow('loader failed')
-		})
+		}
 	})
 })

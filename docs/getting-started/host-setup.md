@@ -424,7 +424,7 @@ Static application 测试使用：
 import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
 ```
 
-普通 runtime Plugin 测试使用 `@pluxel/runtime/test` 的 `withRuntimeHost()` 或 `createRuntimeHost()`。完整选择见 [测试插件](../development/testing.md)。
+普通 runtime Plugin 测试使用 `@pluxel/runtime/test` 的 `createRuntimeHost()`，并由 `await using` 或 `finally` 明确拥有其生命周期。完整选择见 [测试插件](../development/testing.md)。
 
 ### 启动前检查
 

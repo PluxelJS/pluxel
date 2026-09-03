@@ -3,7 +3,7 @@ import {
 	BasePlugin,
 	Plugin,
 	PluginPart,
-	withRuntimeHost,
+	createRuntimeHost,
 } from '@pluxel/runtime/test'
 import { Elysia } from 'elysia'
 import { websocket } from 'elysia/websocket'
@@ -142,7 +142,9 @@ describe('native generation Elysia application', () => {
 		ownerApplication = undefined
 		partApplication = undefined
 
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add(NativeApplicationPlugin).start(NativeApplicationPlugin)
 			await host.commit()
 
@@ -177,11 +179,13 @@ describe('native generation Elysia application', () => {
 					ownerApplication!.server,
 				),
 			).rejects.toThrow('Plugin owner stopped')
-		})
+		}
 	})
 
 	it('rejects reserved and conflicting routes before atomic publication', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add(ReservedNativeApplicationPlugin)
 			host.cfg(ReservedNativeApplicationPlugin).setAutoStart(true)
 			host.start(ReservedNativeApplicationPlugin)
@@ -209,11 +213,13 @@ describe('native generation Elysia application', () => {
 			})
 			const response = await host.fetch(new Request('http://local.test/native/conflict'))
 			expect(await response.text()).toBe(running[0] === NativeRouteConflictA ? 'a' : 'b')
-		})
+		}
 	})
 
 	it('preserves exact Elysia method/path semantics in selection and collision checks', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host
 				.add(NativeExactRouteSemantics)
 				.add(NativeEmptyRoutePath)
@@ -261,11 +267,13 @@ describe('native generation Elysia application', () => {
 					.fetch(new Request('http://local.test/native/precedence', { method: 'POST' }))
 					.then((response) => response.text()),
 			).resolves.toBe('wildcard')
-		})
+		}
 	})
 
 	it('hard-excludes the control namespace from HTTP and WebSocket wildcard owners', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add(NativeReservedWildcard).start(NativeReservedWildcard)
 			await host.commit()
 			await expect(
@@ -306,12 +314,14 @@ describe('native generation Elysia application', () => {
 			} finally {
 				detach()
 			}
-		})
+		}
 	})
 
 	it('keeps isolated, generation-stable Server metadata when physical lifecycle is rejected', async () => {
 		lifecycleApplication = undefined
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add(NativePhysicalLifecycleGuard).start(NativePhysicalLifecycleGuard)
 			await host.commit()
 			const app = lifecycleApplication!
@@ -354,11 +364,13 @@ describe('native generation Elysia application', () => {
 					.fetch(new Request('http://local.test/native/server-id'))
 					.then((response) => response.text()),
 			).resolves.toBe(server?.id)
-		})
+		}
 	})
 
 	it('fails generation start when a Plugin directly registers Elysia lifecycle hooks', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add(NativeUnsupportedLifecycleHook)
 			host.cfg(NativeUnsupportedLifecycleHook).setAutoStart(true)
 			host.start(NativeUnsupportedLifecycleHook)
@@ -368,11 +380,13 @@ describe('native generation Elysia application', () => {
 				message: 'public external application attach/detach epoch',
 			})
 			expect(host.isRunning(NativeUnsupportedLifecycleHook)).toBe(false)
-		})
+		}
 	})
 
 	it('aborts and drains an entered streaming response with its generation', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			host.add(NativeStreamingApplicationPlugin).start(NativeStreamingApplicationPlugin)
 			await host.commit()
 			const aborted = new Promise<void>((resolve) => {
@@ -388,7 +402,7 @@ describe('native generation Elysia application', () => {
 			await reading
 			await stopping
 			expect(host.isRunning(NativeStreamingApplicationPlugin)).toBe(false)
-		})
+		}
 		streamAborted = undefined
 	})
 })

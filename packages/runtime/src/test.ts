@@ -122,9 +122,10 @@ export interface RuntimeHost extends Omit<
 	commitAllowFail(): Promise<CommitSummary>
 	cfg<T extends PluginConstructor>(target: TypedTarget<T>): RuntimeHostConfigHandle<T>
 	dispose(): Promise<void>
+	[Symbol.asyncDispose](): Promise<void>
 }
 
-export type RuntimeTestContext = CoreTestContext
+export type RuntimeTestContext = CoreTestContext & AsyncDisposable
 export type RuntimeHostConfigPatch<T extends PluginConstructor> = CoreHostConfigPatch<T>
 export type RuntimeHostConfigHandle<TTarget extends PluginConstructor> = {
 	readonly owner: PluginNodeAddress
@@ -516,20 +517,9 @@ export function createRuntimeHost(
 				await core.dispose()
 			}
 		},
+		[Symbol.asyncDispose]: () => host.dispose(),
 	}
 	return host
-}
-
-export async function withRuntimeHost<T>(
-	fn: (host: RuntimeHost) => Promise<T> | T,
-	config: RuntimeHostConfig = {},
-): Promise<T> {
-	const host = createRuntimeHost(config)
-	try {
-		return await fn(host)
-	} finally {
-		await host.dispose()
-	}
 }
 
 export function createRuntimeContext(config: RuntimeHostConfig = {}): RuntimeTestContext {
@@ -537,17 +527,9 @@ export function createRuntimeContext(config: RuntimeHostConfig = {}): RuntimeTes
 		createRootContext: createRuntimeTestRoot,
 	})
 	installRuntimePluginGraphCoordinator(runtime.ctx)
-	return runtime
-}
-
-export async function withRuntimeContext<T>(
-	fn: (ctx: RootContext) => Promise<T> | T,
-	config: RuntimeHostConfig = {},
-): Promise<T> {
-	const runtime = createRuntimeContext(config)
-	try {
-		return await fn(runtime.ctx)
-	} finally {
-		await runtime.dispose()
+	return {
+		ctx: runtime.ctx,
+		dispose: runtime.dispose,
+		[Symbol.asyncDispose]: runtime.dispose,
 	}
 }

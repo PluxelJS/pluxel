@@ -1,4 +1,4 @@
-import { withRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeHost } from '@pluxel/runtime/test'
 import { createMemoryPersistenceBackend, createWorkspacePersistenceBackend } from '@pluxel/runtime'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -59,36 +59,35 @@ function createMemoryFsLike() {
 
 describe('PersistenceService (runtime)', () => {
 	it('provides namespaced memory persistence with explicit capability', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				const ns = host.ctx.root.persistence.namespace('runtime-test')
+		{
+			await using host = createRuntimeHost({ persistence: { mode: 'memory' } })
 
-				await ns.put('a.txt', 'hello')
-				await ns.put('nested/b.bin', new Uint8Array([1, 2, 3]))
-				await ns.put('nested-other.bin', 'nope')
+			const ns = host.ctx.root.persistence.namespace('runtime-test')
 
-				expect(host.ctx.root.persistence.capability).toBe('ephemeral')
-				expect(await ns.getText('a.txt')).toBe('hello')
-				expect(await ns.stat('nested/b.bin')).toMatchObject({
-					key: 'nested/b.bin',
-					kind: 'file',
-					size: 3,
-				})
+			await ns.put('a.txt', 'hello')
+			await ns.put('nested/b.bin', new Uint8Array([1, 2, 3]))
+			await ns.put('nested-other.bin', 'nope')
 
-				const entries: string[] = []
-				for await (const entry of ns.list()) entries.push(entry.key)
-				expect(entries).toEqual(['a.txt', 'nested-other.bin', 'nested/b.bin'])
+			expect(host.ctx.root.persistence.capability).toBe('ephemeral')
+			expect(await ns.getText('a.txt')).toBe('hello')
+			expect(await ns.stat('nested/b.bin')).toMatchObject({
+				key: 'nested/b.bin',
+				kind: 'file',
+				size: 3,
+			})
 
-				const nestedEntries: string[] = []
-				for await (const entry of ns.list('nested')) nestedEntries.push(entry.key)
-				expect(nestedEntries).toEqual(['nested/b.bin'])
+			const entries: string[] = []
+			for await (const entry of ns.list()) entries.push(entry.key)
+			expect(entries).toEqual(['a.txt', 'nested-other.bin', 'nested/b.bin'])
 
-				await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toThrow(
-					/ephemeral/,
-				)
-			},
-			{ persistence: { mode: 'memory' } },
-		)
+			const nestedEntries: string[] = []
+			for await (const entry of ns.list('nested')) nestedEntries.push(entry.key)
+			expect(nestedEntries).toEqual(['nested/b.bin'])
+
+			await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toThrow(
+				/ephemeral/,
+			)
+		}
 	})
 
 	it('enforces declared capabilities when a custom backend omits preflight', async () => {
@@ -98,40 +97,37 @@ describe('PersistenceService (runtime)', () => {
 			namespace: memory.namespace,
 		}
 
-		await withRuntimeHost(
-			async (host) => {
-				await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toMatchObject({
-					code: 'UNAVAILABLE',
-				})
-			},
-			{ persistence: { mode: 'custom', backend } },
-		)
+		{
+			await using host = createRuntimeHost({ persistence: { mode: 'custom', backend } })
+
+			await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toMatchObject({
+				code: 'UNAVAILABLE',
+			})
+		}
 	})
 
 	it('supports built-in Node file persistence with a configured directory', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pluxel-persistence-'))
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					const ns = host.ctx.root.persistence.namespace('runtime-test')
-					expect(host.ctx.root.persistence.capability).toBe('durable')
-					await expect(
-						host.ctx.root.persistence.preflight({ durable: true, writable: true }),
-					).resolves.toBeUndefined()
-					await ns.put('a.txt', 'hello')
-					await ns.put('nested/b.bin', new Uint8Array([1, 2, 3]))
-				},
-				{ persistence: dir },
-			)
+			{
+				await using host = createRuntimeHost({ persistence: dir })
 
-			await withRuntimeHost(
-				async (host) => {
-					const ns = host.ctx.root.persistence.namespace('runtime-test')
-					expect(await ns.getText('a.txt')).toBe('hello')
-					expect(await ns.get('nested/b.bin')).toEqual(new Uint8Array([1, 2, 3]))
-				},
-				{ persistence: dir },
-			)
+				const ns = host.ctx.root.persistence.namespace('runtime-test')
+				expect(host.ctx.root.persistence.capability).toBe('durable')
+				await expect(
+					host.ctx.root.persistence.preflight({ durable: true, writable: true }),
+				).resolves.toBeUndefined()
+				await ns.put('a.txt', 'hello')
+				await ns.put('nested/b.bin', new Uint8Array([1, 2, 3]))
+			}
+
+			{
+				await using host = createRuntimeHost({ persistence: dir })
+
+				const ns = host.ctx.root.persistence.namespace('runtime-test')
+				expect(await ns.getText('a.txt')).toBe('hello')
+				expect(await ns.get('nested/b.bin')).toEqual(new Uint8Array([1, 2, 3]))
+			}
 		} finally {
 			await rm(dir, { recursive: true, force: true })
 		}
@@ -140,16 +136,15 @@ describe('PersistenceService (runtime)', () => {
 	it('warns once when implicit memory persistence receives writes', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 		try {
-			await withRuntimeHost(
-				async (host) => {
-					const ns = host.ctx.root.persistence.namespace('runtime-test')
-					await ns.put('a.txt', 'hello')
-					await ns.put('b.txt', 'again')
-					expect(warn).toHaveBeenCalledTimes(1)
-					expect(warn.mock.calls[0]?.[0]).toContain('implicit in-memory persistence')
-				},
-				{ persistence: undefined },
-			)
+			{
+				await using host = createRuntimeHost({ persistence: undefined })
+
+				const ns = host.ctx.root.persistence.namespace('runtime-test')
+				await ns.put('a.txt', 'hello')
+				await ns.put('b.txt', 'again')
+				expect(warn).toHaveBeenCalledTimes(1)
+				expect(warn.mock.calls[0]?.[0]).toContain('implicit in-memory persistence')
+			}
 		} finally {
 			warn.mockRestore()
 		}
@@ -157,9 +152,13 @@ describe('PersistenceService (runtime)', () => {
 
 	it('rejects object-shaped file compatibility config', async () => {
 		await expect(
-			withRuntimeHost(async () => undefined, {
-				persistence: {} as never,
-			}),
+			(async () => {
+				await using _host = createRuntimeHost({
+					persistence: {} as never,
+				})
+
+				return undefined
+			})(),
 		).rejects.toThrow(/invalid persistence config/i)
 	})
 

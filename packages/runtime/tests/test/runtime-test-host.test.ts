@@ -1,10 +1,20 @@
 import { pluginNodeAddressOf, pluginNodeIndexKey } from '@pluxel/core'
 import { requireRuntimePluginGraphCoordinator, runtimeStatePatch } from '@pluxel/runtime/internal'
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, createRuntimeContext, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 describe('runtime/test host', () => {
+	it('exposes explicit async disposal on both test resources', async () => {
+		const host = createRuntimeHost()
+		expect(host[Symbol.asyncDispose]).toBeTypeOf('function')
+		await host[Symbol.asyncDispose]()
+
+		const runtime = createRuntimeContext()
+		expect(runtime[Symbol.asyncDispose]).toBeTypeOf('function')
+		await runtime[Symbol.asyncDispose]()
+	})
+
 	it('keeps mutable PluginService authority off the normal runtime test host', async () => {
 		const host = createRuntimeHost()
 		try {

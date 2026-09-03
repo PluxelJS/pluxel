@@ -1,5 +1,5 @@
 import type { PluginConstructor } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {
@@ -77,38 +77,39 @@ describe('S3Plugin remote backend', () => {
 	})
 
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [S3VaultSeeder])
-				await host.commit()
-				await host
-					.require(S3VaultSeeder)
-					.ctx.vault!.kv({ namespace: 'shared-secrets' })
-					.set('assets.s3', {
-						accessKeyId: 'access-id',
-						secretAccessKey: 'secret-value',
-					})
+		{
+			await using host = createRuntimeHost({ vault: {} })
 
-				addStarted(host, [S3Plugin, S3Consumer])
-				host.cfg(S3Plugin).set({
-					...remoteConfig({
-						type: 'vault',
-						key: 'assets.s3',
-						namespace: 'shared-secrets',
-					}),
-				})
-				await host.commit()
-				expect(s3Mock.configs.at(-1)).toMatchObject({
+			addStarted(host, [S3VaultSeeder])
+			await host.commit()
+			await host
+				.require(S3VaultSeeder)
+				.ctx.vault!.kv({ namespace: 'shared-secrets' })
+				.set('assets.s3', {
 					accessKeyId: 'access-id',
 					secretAccessKey: 'secret-value',
 				})
-			},
-			{ vault: {} },
-		)
+
+			addStarted(host, [S3Plugin, S3Consumer])
+			host.cfg(S3Plugin).set({
+				...remoteConfig({
+					type: 'vault',
+					key: 'assets.s3',
+					namespace: 'shared-secrets',
+				}),
+			})
+			await host.commit()
+			expect(s3Mock.configs.at(-1)).toMatchObject({
+				accessKeyId: 'access-id',
+				secretAccessKey: 'secret-value',
+			})
+		}
 	})
 
 	it('provides O(1) named bucket selection and owner-bound handles', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [S3Plugin, S3ConsumerA, S3ConsumerB])
 			host.cfg(S3Plugin).set({
 				buckets: [
@@ -136,11 +137,13 @@ describe('S3Plugin remote backend', () => {
 			await host.commit()
 			expect(() => eastCapability.client).toThrow('Plugin owner stopped')
 			expect(westCapability.client).toBe(westClient)
-		})
+		}
 	})
 
 	it('fails lifecycle when a configured Vault reference is missing', async () => {
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [S3Plugin, S3Consumer])
 			host.cfg(S3Plugin).set({
 				...remoteConfig({ type: 'vault', key: 'missing.s3' }),
@@ -152,7 +155,7 @@ describe('S3Plugin remote backend', () => {
 					(issue) => issue.error?.name === S3CredentialsError.name,
 				),
 			).toBe(true)
-		})
+		}
 	})
 
 	it('aborts s3mini fetches and revokes the capability when the provider stops', async () => {
@@ -166,7 +169,9 @@ describe('S3Plugin remote backend', () => {
 		)
 		vi.stubGlobal('fetch', fetchMock)
 
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [S3Plugin, S3Consumer])
 			host.cfg(S3Plugin).set(remoteConfig({ type: 'anonymous' }))
 			await host.commit()
@@ -182,7 +187,7 @@ describe('S3Plugin remote backend', () => {
 			await host.commit()
 			await expect(pending).rejects.toBeInstanceOf(S3NotRunningError)
 			expect(() => bucket.client).toThrow('Plugin owner stopped')
-		})
+		}
 	})
 })
 
@@ -212,10 +217,12 @@ function remoteBucket(id: string, credentials: RemoteCredentials, endpoint: stri
 async function withRemoteS3(
 	run: (s3: S3, client: Record<string, any>, config: Record<string, any>) => void | Promise<void>,
 ): Promise<void> {
-	await withRuntimeHost(async (host) => {
+	{
+		await using host = createRuntimeHost()
+
 		addStarted(host, [S3Plugin, S3Consumer])
 		host.cfg(S3Plugin).set(remoteConfig({ type: 'anonymous' }))
 		await host.commit()
 		await run(host.require(S3Consumer).s3, s3Mock.clients.at(-1)!, s3Mock.configs.at(-1)!)
-	})
+	}
 }

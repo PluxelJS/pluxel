@@ -1,4 +1,4 @@
-import { pluginNodeAddressOf, withRuntimeHost } from '@pluxel/runtime/test'
+import { pluginNodeAddressOf, createRuntimeHost } from '@pluxel/runtime/test'
 import { requireWorkbench } from '@pluxel/runtime/internal'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
@@ -16,84 +16,82 @@ describe('WretchExamplePlugin', () => {
 			}),
 		)
 
-		await withRuntimeHost(
-			async (host) => {
-				host.add([WretchPlugin, WretchExamplePlugin])
-				host.start(WretchPlugin)
-				host.cfg(WretchExamplePlugin).set({
-					baseUrl: 'https://example.test/api',
-					inspectPath: '/inspect-me',
-					retryAttempts: 0,
-				})
-				host.start(WretchExamplePlugin)
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				await expect(host.require(WretchExamplePlugin).inspect()).resolves.toMatchObject({
-					url: 'https://example.test/api/inspect-me',
-					headers: {
-						accept: 'application/json',
-						'x-pluxel-client': 'WretchExamplePlugin',
-					},
-				})
+			host.add([WretchPlugin, WretchExamplePlugin])
+			host.start(WretchPlugin)
+			host.cfg(WretchExamplePlugin).set({
+				baseUrl: 'https://example.test/api',
+				inspectPath: '/inspect-me',
+				retryAttempts: 0,
+			})
+			host.start(WretchExamplePlugin)
+			await host.commit()
 
-				const response = await host.fetch(new Request('http://local.test/wretch-example/inspect'))
-				expect(response.status).toBe(200)
-				expect(await response.json()).toMatchObject({
-					url: 'https://example.test/api/inspect-me',
-				})
-			},
-			{ workbench: false },
-		)
+			await expect(host.require(WretchExamplePlugin).inspect()).resolves.toMatchObject({
+				url: 'https://example.test/api/inspect-me',
+				headers: {
+					accept: 'application/json',
+					'x-pluxel-client': 'WretchExamplePlugin',
+				},
+			})
+
+			const response = await host.fetch(new Request('http://local.test/wretch-example/inspect'))
+			expect(response.status).toBe(200)
+			expect(await response.json()).toMatchObject({
+				url: 'https://example.test/api/inspect-me',
+			})
+		}
 	})
 
 	it('places and opens the provider-owned settings Attachment', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([WretchPlugin, WretchExamplePlugin])
-				host.start(WretchPlugin)
-				host.start(WretchExamplePlugin)
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: { enabled: true } })
 
-				expect(host.isRunning(WretchPlugin)).toBe(true)
-				expect(host.isRunning(WretchExamplePlugin)).toBe(true)
+			host.add([WretchPlugin, WretchExamplePlugin])
+			host.start(WretchPlugin)
+			host.start(WretchExamplePlugin)
+			await host.commit()
 
-				const consumer = pluginNodeAddressOf(WretchExamplePlugin)
-				const provider = pluginNodeAddressOf(WretchPlugin)
-				const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
-				expect(layout.entries[0]).toMatchObject({
+			expect(host.isRunning(WretchPlugin)).toBe(true)
+			expect(host.isRunning(WretchExamplePlugin)).toBe(true)
+
+			const consumer = pluginNodeAddressOf(WretchExamplePlugin)
+			const provider = pluginNodeAddressOf(WretchPlugin)
+			const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
+			expect(layout.entries[0]).toMatchObject({
+				descriptor: {
+					kind: 'attachment-placement',
+					consumer: consumer.definition,
+					key: 'http',
+					provider: {
+						kind: 'attachment',
+						owner: provider.definition,
+						key: 'settings',
+					},
+				},
+				target: {
+					node: consumer,
+					displayName: 'WretchExamplePlugin',
+				},
+				renderer: provider,
+				placement: { kind: 'tab', label: 'HTTP', icon: 'settings' },
+				federatedViewRef: {
+					expose: './views/settings',
 					descriptor: {
-						kind: 'attachment-placement',
-						consumer: consumer.definition,
-						key: 'http',
-						provider: {
-							kind: 'attachment',
-							owner: provider.definition,
-							key: 'settings',
-						},
+						kind: 'attachment',
+						owner: provider.definition,
+						key: 'settings',
 					},
-					target: {
-						node: consumer,
-						displayName: 'WretchExamplePlugin',
-					},
-					renderer: provider,
-					placement: { kind: 'tab', label: 'HTTP', icon: 'settings' },
-					federatedViewRef: {
-						expose: './views/settings',
-						descriptor: {
-							kind: 'attachment',
-							owner: provider.definition,
-							key: 'settings',
-						},
-					},
-				})
-				using settings = await openWretchSettings(host, WretchExamplePlugin)
-				expect(settings.api.snapshot()).toMatchObject({
-					settings: { headers: {} },
-					hostTimeoutMs: 30_000,
-					effectiveTimeoutMs: 30_000,
-				})
-			},
-			{ workbench: { enabled: true } },
-		)
+				},
+			})
+			using settings = await openWretchSettings(host, WretchExamplePlugin)
+			expect(settings.api.snapshot()).toMatchObject({
+				settings: { headers: {} },
+				hostTimeoutMs: 30_000,
+				effectiveTimeoutMs: 30_000,
+			})
+		}
 	})
 })

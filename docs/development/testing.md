@@ -96,7 +96,7 @@ subclass 偷偷改址。专门测试替身可以从 unsafe test entry 显式 low
 
 ```ts no-twoslash
 import { InngestPlugin } from '@acme/inngest'
-import { withRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeHost } from '@pluxel/runtime/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 
 class TestInngestPlugin extends InngestPlugin {
@@ -105,11 +105,10 @@ class TestInngestPlugin extends InngestPlugin {
 
 lowerTestReplacement(InngestPlugin, TestInngestPlugin)
 
-await withRuntimeHost(async (host) => {
-	host.add(InngestPlugin)
-	host.replace(InngestPlugin, TestInngestPlugin)
-	await host.commit()
-})
+await using host = createRuntimeHost()
+host.add(InngestPlugin)
+host.replace(InngestPlugin, TestInngestPlugin)
+await host.commit()
 ```
 
 替身若改变 constructor dependency，必须通过 `requires` 明确写出本次 evaluation 的 edge；不要复制旧 candidate metadata，
@@ -119,7 +118,7 @@ Vite/Rolldown semantic lowering。
 ### Runtime capability
 
 ```ts twoslash
-import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { expect, it } from 'vitest'
 
 @Plugin()
@@ -130,27 +129,24 @@ class HealthPlugin extends BasePlugin {
 }
 
 it('publishes and removes its Elysia application', async () => {
-	await withRuntimeHost(
-		async (host) => {
-			host.add(HealthPlugin)
-			host.start(HealthPlugin)
-			await host.commit()
+	await using host = createRuntimeHost({ workbench: false })
+	host.add(HealthPlugin)
+	host.start(HealthPlugin)
+	await host.commit()
 
-			const url = 'http://local.test/health'
-			const response = await host.fetch(new Request(url))
-			expect(await response.json()).toEqual({ ok: true })
+	const url = 'http://local.test/health'
+	const response = await host.fetch(new Request(url))
+	expect(await response.json()).toEqual({ ok: true })
 
-			host.remove(HealthPlugin)
-			await host.commit()
-			expect((await host.fetch(new Request(url))).status).toBe(404)
-		},
-		{ workbench: false },
-	)
+	host.remove(HealthPlugin)
+	await host.commit()
+	expect((await host.fetch(new Request(url))).status).toBe(404)
 })
 ```
 
 `host.fetch()` 经过真实 immutable route directory、generation admission 和已经 seal 的 Elysia app，但不打开物理端口。
-`withRuntimeHost()` 在 callback 结束后自动 `dispose()`；需要手动控制 host lifetime 时使用 `createRuntimeHost()`。
+`await using` 在当前作用域结束后自动调用 host 的异步释放协议；无法使用 explicit resource management 语法时，必须在
+`finally` 中调用 `await host.dispose()`。
 Runtime test host 的 `start/stop/restart` 都只暂存本进程生命周期命令，由下一次 `commit()` 与 catalog、config 和 RuntimeState
 变更一起提交；它们不修改 `autoStart`。需要验证冷启动策略时才调用 `host.cfg(Plugin).setAutoStart(...)`，并明确断言修改策略不会
 改变当前进程的 desired state。

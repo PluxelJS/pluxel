@@ -5,7 +5,7 @@ import {
 	v,
 } from '@pluxel/runtime'
 import { requireWorkbench } from '@pluxel/runtime/internal'
-import { BasePlugin, Plugin, type RuntimeHost, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
 import type { WorkbenchContentObserver } from '@pluxel/runtime/workbench/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -118,128 +118,126 @@ beforeEach(() => {
 
 describe('@pluxel/redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [RedisPlugin, RedisConsumer])
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: false })
 
-				const consumer = host.require(RedisConsumer)
-				const handle = consumer.redis.connection()
-				expect(handle.client).toBe(redisMock.client)
-				expect(redisMock.createClient).toHaveBeenCalledWith(
-					expect.objectContaining({
-						url: 'redis://127.0.0.1:6379',
-						database: 0,
-						name: `pluxel:${formatPluginNodeReference(
-							host.require(RedisPlugin).ctx.pluginInfo.nodeAddress,
-						)}:default`,
-						commandsQueueMaxLength: 10_000,
-						disableOfflineQueue: true,
-					}),
-				)
-				expect(redisMock.client.on).toHaveBeenCalledTimes(1)
-				expect(redisMock.client.on).toHaveBeenCalledWith('error', expect.any(Function))
+			addStarted(host, [RedisPlugin, RedisConsumer])
+			await host.commit()
 
-				host.stop(RedisPlugin)
-				await host.commit()
-				expect(redisMock.client.close).toHaveBeenCalledOnce()
-				expect(() => handle.client).toThrow('Plugin owner stopped')
-			},
-			{ workbench: false },
-		)
+			const consumer = host.require(RedisConsumer)
+			const handle = consumer.redis.connection()
+			expect(handle.client).toBe(redisMock.client)
+			expect(redisMock.createClient).toHaveBeenCalledWith(
+				expect.objectContaining({
+					url: 'redis://127.0.0.1:6379',
+					database: 0,
+					name: `pluxel:${formatPluginNodeReference(
+						host.require(RedisPlugin).ctx.pluginInfo.nodeAddress,
+					)}:default`,
+					commandsQueueMaxLength: 10_000,
+					disableOfflineQueue: true,
+				}),
+			)
+			expect(redisMock.client.on).toHaveBeenCalledTimes(1)
+			expect(redisMock.client.on).toHaveBeenCalledWith('error', expect.any(Function))
+
+			host.stop(RedisPlugin)
+			await host.commit()
+			expect(redisMock.client.close).toHaveBeenCalledOnce()
+			expect(() => handle.client).toThrow('Plugin owner stopped')
+		}
 	})
 
 	it('publishes live connection state and a bounded transient PING form', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				addStarted(host, [RedisPlugin])
-				await host.commit()
+		{
+			await using host = createRuntimeHost({ workbench: { enabled: true } })
 
-				const backend = requireWorkbench(host.ctx)
-				const target = pluginNodeAddressOf(RedisPlugin)
-				const layout = backend.registry.getLayout(target)
-				const entry = layout.entries.find(
-					(candidate) =>
-						candidate.descriptor.kind === 'content' && candidate.descriptor.key === 'connections',
-				)
-				if (!entry) throw new Error('RedisPlugin published no connections Content')
-				const session = backend.createSession({ provider: 'local', subject: 'operator' }, () => {})
-				const opened = await session.target.openEntry({
-					layoutRevision: layout.revision,
-					target,
-					descriptor: entry.descriptor,
-				})
-				if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
-					throw new Error('Redis connection Content failed to open')
-				}
+			addStarted(host, [RedisPlugin])
+			await host.commit()
 
-				const updates: unknown[] = []
-				const observer = Object.assign(
-					(outcome: unknown) =>
-						Object.assign(
-							Promise.resolve().then(() => updates.push(outcome)),
-							{
-								[Symbol.dispose]: vi.fn(),
-							},
-						),
-					{
-						dup: () => observer,
-						[Symbol.dispose]: vi.fn(),
-					},
-				) as unknown as WorkbenchContentObserver
-				await expect(opened.value.root.subscribe(observer)).resolves.toMatchObject({
-					ok: true,
-					data: {
-						status: {
-							connections: [
-								{
-									id: 'default',
-									connection: 'ready',
-									recentErrorType: null,
-									ping: { state: 'not-run' },
-								},
-							],
+			const backend = requireWorkbench(host.ctx)
+			const target = pluginNodeAddressOf(RedisPlugin)
+			const layout = backend.registry.getLayout(target)
+			const entry = layout.entries.find(
+				(candidate) =>
+					candidate.descriptor.kind === 'content' && candidate.descriptor.key === 'connections',
+			)
+			if (!entry) throw new Error('RedisPlugin published no connections Content')
+			const session = backend.createSession({ provider: 'local', subject: 'operator' }, () => {})
+			const opened = await session.target.openEntry({
+				layoutRevision: layout.revision,
+				target,
+				descriptor: entry.descriptor,
+			})
+			if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+				throw new Error('Redis connection Content failed to open')
+			}
+
+			const updates: unknown[] = []
+			const observer = Object.assign(
+				(outcome: unknown) =>
+					Object.assign(
+						Promise.resolve().then(() => updates.push(outcome)),
+						{
+							[Symbol.dispose]: vi.fn(),
 						},
+					),
+				{
+					dup: () => observer,
+					[Symbol.dispose]: vi.fn(),
+				},
+			) as unknown as WorkbenchContentObserver
+			await expect(opened.value.root.subscribe(observer)).resolves.toMatchObject({
+				ok: true,
+				data: {
+					status: {
+						connections: [
+							{
+								id: 'default',
+								connection: 'ready',
+								recentErrorType: null,
+								ping: { state: 'not-run' },
+							},
+						],
 					},
-				})
-				await expect(
-					opened.value.root.run('ping', { connectionId: 'default', payload: 'workbench' }),
-				).resolves.toMatchObject({
-					action: { ok: true, message: expect.stringContaining('replied in') },
-					data: {
-						ok: true,
-						data: { status: { connections: [{ ping: { state: 'succeeded' } }] } },
-					},
-				})
-				expect(redisMock.client.ping).toHaveBeenCalledWith('workbench')
-				await expect(
-					opened.value.root.run('ping', {
-						connectionId: 'default',
-						payload: 'x'.repeat(257),
-					}),
-				).resolves.toMatchObject({
-					action: { ok: false, code: 'validation_failed' },
-					data: null,
-				})
-				expect(redisMock.client.ping).toHaveBeenCalledTimes(1)
+				},
+			})
+			await expect(
+				opened.value.root.run('ping', { connectionId: 'default', payload: 'workbench' }),
+			).resolves.toMatchObject({
+				action: { ok: true, message: expect.stringContaining('replied in') },
+				data: {
+					ok: true,
+					data: { status: { connections: [{ ping: { state: 'succeeded' } }] } },
+				},
+			})
+			expect(redisMock.client.ping).toHaveBeenCalledWith('workbench')
+			await expect(
+				opened.value.root.run('ping', {
+					connectionId: 'default',
+					payload: 'x'.repeat(257),
+				}),
+			).resolves.toMatchObject({
+				action: { ok: false, code: 'validation_failed' },
+				data: null,
+			})
+			expect(redisMock.client.ping).toHaveBeenCalledTimes(1)
 
-				redisMock.state.ready = false
-				redisMock.emit('reconnecting')
-				await vi.waitFor(() =>
-					expect(updates).toContainEqual(
-						expect.objectContaining({
-							data: expect.objectContaining({
-								status: expect.objectContaining({
-									connections: [expect.objectContaining({ connection: 'reconnecting' })],
-								}),
+			redisMock.state.ready = false
+			redisMock.emit('reconnecting')
+			await vi.waitFor(() =>
+				expect(updates).toContainEqual(
+					expect.objectContaining({
+						data: expect.objectContaining({
+							status: expect.objectContaining({
+								connections: [expect.objectContaining({ connection: 'reconnecting' })],
 							}),
 						}),
-					),
-				)
-				session.dispose()
-			},
-			{ workbench: { enabled: true } },
-		)
+					}),
+				),
+			)
+			session.dispose()
+		}
 	})
 
 	it('rejects credentials and database paths in ordinary plugin config', () => {
@@ -272,7 +270,9 @@ describe('@pluxel/redis', () => {
 			.mockImplementationOnce(() => east.client)
 			.mockImplementationOnce(() => west.client)
 
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [RedisPlugin, RedisConsumerA, RedisConsumerB])
 			host.cfg(RedisPlugin).set({
 				connections: [
@@ -301,13 +301,15 @@ describe('@pluxel/redis', () => {
 			expect(() => eastConnection.client).toThrow('Plugin owner stopped')
 			expect(west.client.close).not.toHaveBeenCalled()
 			expect(westConnection.client).toBe(west.client)
-		})
+		}
 	})
 
 	it('fails lifecycle honestly and destroys a client that cannot connect', async () => {
 		redisMock.client.connect.mockRejectedValueOnce(new Error('offline'))
 
-		await withRuntimeHost(async (host) => {
+		{
+			await using host = createRuntimeHost()
+
 			addStarted(host, [RedisPlugin])
 			const commit = await host.commitAllowFail()
 			expect(host.isRunning(RedisPlugin)).toBe(false)
@@ -317,6 +319,6 @@ describe('@pluxel/redis', () => {
 					(issue) => issue.error?.name === RedisConnectionError.name,
 				),
 			).toBe(true)
-		})
+		}
 	})
 })

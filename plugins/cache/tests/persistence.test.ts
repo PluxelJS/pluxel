@@ -3,7 +3,7 @@ import {
 	assertPluginLifecycleIssue,
 	BasePlugin,
 	Plugin,
-	withRuntimeHost,
+	createRuntimeHost,
 } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
@@ -33,26 +33,25 @@ async function withPersistentCache(
 		flushIntervalMs?: number
 	} = {},
 ): Promise<void> {
-	await withRuntimeHost(
-		async (host) => {
-			const plugins = [MemoryCacheBackendPlugin, CachePlugin, PersistentCacheConsumer] as const
-			host.add(plugins)
-			for (const PluginClass of plugins) host.start(PluginClass)
-			const persistence = {
-				mode: options.mode ?? 'durable',
-				...(options.flushIntervalMs === undefined
-					? {}
-					: { flushIntervalMs: options.flushIntervalMs }),
-			}
-			host.cfg(MemoryCacheBackendPlugin).set({
-				...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
-				persistence,
-			})
-			await host.commit()
-			await fn(host.require(PersistentCacheConsumer).cache)
-		},
-		{ persistence: { mode: 'custom', backend } },
-	)
+	{
+		await using host = createRuntimeHost({ persistence: { mode: 'custom', backend } })
+
+		const plugins = [MemoryCacheBackendPlugin, CachePlugin, PersistentCacheConsumer] as const
+		host.add(plugins)
+		for (const PluginClass of plugins) host.start(PluginClass)
+		const persistence = {
+			mode: options.mode ?? 'durable',
+			...(options.flushIntervalMs === undefined
+				? {}
+				: { flushIntervalMs: options.flushIntervalMs }),
+		}
+		host.cfg(MemoryCacheBackendPlugin).set({
+			...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
+			persistence,
+		})
+		await host.commit()
+		await fn(host.require(PersistentCacheConsumer).cache)
+	}
 }
 
 describe('MemoryCacheBackendPlugin persistence', () => {
@@ -152,24 +151,23 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 	})
 
 	it('fails lifecycle honestly when durable persistence is unavailable', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add(MemoryCacheBackendPlugin)
-				host.start(MemoryCacheBackendPlugin)
-				host.cfg(MemoryCacheBackendPlugin).set({
-					maxEntries: 10,
-					persistence: { mode: 'durable', flushIntervalMs: 1_000 },
-				})
-				const summary = await host.commitAllowFail()
-				expect(
-					assertPluginLifecycleIssue(summary, MemoryCacheBackendPlugin, {
-						kind: 'start-failed',
-						message: 'ephemeral',
-					}),
-				).toMatchObject({ kind: 'start-failed' })
-			},
-			{ persistence: { mode: 'memory' } },
-		)
+		{
+			await using host = createRuntimeHost({ persistence: { mode: 'memory' } })
+
+			host.add(MemoryCacheBackendPlugin)
+			host.start(MemoryCacheBackendPlugin)
+			host.cfg(MemoryCacheBackendPlugin).set({
+				maxEntries: 10,
+				persistence: { mode: 'durable', flushIntervalMs: 1_000 },
+			})
+			const summary = await host.commitAllowFail()
+			expect(
+				assertPluginLifecycleIssue(summary, MemoryCacheBackendPlugin, {
+					kind: 'start-failed',
+					message: 'ephemeral',
+				}),
+			).toMatchObject({ kind: 'start-failed' })
+		}
 	})
 
 	it('reports durable snapshot read failures without misclassifying them as corruption', async () => {
@@ -188,24 +186,25 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			},
 		}
 
-		await withRuntimeHost(
-			async (host) => {
-				host.add(MemoryCacheBackendPlugin)
-				host.start(MemoryCacheBackendPlugin)
-				host.cfg(MemoryCacheBackendPlugin).set({
-					maxEntries: 10,
-					persistence: { mode: 'durable', flushIntervalMs: 1_000 },
-				})
-				const summary = await host.commitAllowFail()
-				expect(
-					assertPluginLifecycleIssue(summary, MemoryCacheBackendPlugin, {
-						kind: 'start-failed',
-						message: 'could not be restored',
-					}),
-				).toMatchObject({ kind: 'start-failed' })
-			},
-			{ persistence: { mode: 'custom', backend: persistence } },
-		)
+		{
+			await using host = createRuntimeHost({
+				persistence: { mode: 'custom', backend: persistence },
+			})
+
+			host.add(MemoryCacheBackendPlugin)
+			host.start(MemoryCacheBackendPlugin)
+			host.cfg(MemoryCacheBackendPlugin).set({
+				maxEntries: 10,
+				persistence: { mode: 'durable', flushIntervalMs: 1_000 },
+			})
+			const summary = await host.commitAllowFail()
+			expect(
+				assertPluginLifecycleIssue(summary, MemoryCacheBackendPlugin, {
+					kind: 'start-failed',
+					message: 'could not be restored',
+				}),
+			).toMatchObject({ kind: 'start-failed' })
+		}
 	})
 
 	it('starts empty and replaces a corrupt best-effort snapshot', async () => {

@@ -1,7 +1,7 @@
 import { defineCommand } from '@pluxel/commands'
 import { obj, Type } from '@pluxel/commands/typebox'
 import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
-import { BasePlugin, Plugin, PluginPart, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, PluginPart, createRuntimeHost } from '@pluxel/runtime/test'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { Elysia } from 'elysia'
@@ -67,65 +67,63 @@ describe('PluginPart runtime capabilities', () => {
 		repeatedPartElysia = undefined
 		ownerElysia = undefined
 
-		await withRuntimeHost(
-			async (host) => {
-				host.add(CapabilityOwner).start(CapabilityOwner)
-				await host.commit()
-				expect(partCommands).toBe(repeatedPartCommands)
-				expect(partCommands).not.toBe(ownerCommands)
-				expect(partElysia).toBe(repeatedPartElysia)
-				expect(partElysia).toBe(ownerElysia)
-				expect(partElysia).toBeInstanceOf(Elysia)
-				expect(() => {
-					;(partCommands as { ctx: unknown }).ctx = host.ctx
-				}).toThrow(TypeError)
-				await expect(host.ctx.commands.execute('part.capability.read', {})).resolves.toEqual({
-					value: 'part',
-				})
+		{
+			await using host = createRuntimeHost({ workbench: { enabled: true } })
 
-				const mounted = await host.fetch(new Request('http://local/part-capability'))
-				expect(await mounted.text()).toBe('part-route')
+			host.add(CapabilityOwner).start(CapabilityOwner)
+			await host.commit()
+			expect(partCommands).toBe(repeatedPartCommands)
+			expect(partCommands).not.toBe(ownerCommands)
+			expect(partElysia).toBe(repeatedPartElysia)
+			expect(partElysia).toBe(ownerElysia)
+			expect(partElysia).toBeInstanceOf(Elysia)
+			expect(() => {
+				;(partCommands as { ctx: unknown }).ctx = host.ctx
+			}).toThrow(TypeError)
+			await expect(host.ctx.commands.execute('part.capability.read', {})).resolves.toEqual({
+				value: 'part',
+			})
 
-				host.remove(CapabilityOwner)
-				await host.commit()
-				expect(host.ctx.commands.list().some(({ name }) => name === 'part.capability.read')).toBe(
-					false,
-				)
-				const removed = await host.fetch(new Request('http://local/part-capability'))
-				expect(removed.status).toBe(404)
-			},
-			{ workbench: { enabled: true } },
-		)
+			const mounted = await host.fetch(new Request('http://local/part-capability'))
+			expect(await mounted.text()).toBe('part-route')
+
+			host.remove(CapabilityOwner)
+			await host.commit()
+			expect(host.ctx.commands.list().some(({ name }) => name === 'part.capability.read')).toBe(
+				false,
+			)
+			const removed = await host.fetch(new Request('http://local/part-capability'))
+			expect(removed.status).toBe(404)
+		}
 	})
 
 	it('projects owner and Part schemas as Workbench sections under one config owner', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add(ConfiguredOwner).start(ConfiguredOwner)
-				await host.commit()
-				const address = pluginNodeAddressOf(ConfiguredOwner)
-				const definition = requireRuntimePluginGraphCoordinator(host.ctx)
-					.catalogSnapshot()
-					.byDefinition.get(pluginDefinitionIndexKey(address.definition))?.candidate
-					.declaration.config
-				expect(definition).toMatchObject({
-					owner: { fieldName: 'config' },
-					parts: [{ path: ['configured'], declaration: { fieldName: 'config' } }],
-				})
-				expect(definition?.owner?.source).toContain('v.object')
-				expect(definition?.parts[0]?.declaration?.source).toContain('v.object')
-				await expect(pluginConfigPresentation(host.ctx, address)).resolves.toMatchObject({
-					ok: true,
-					plan: {
-						defaults: { enabled: true, configured: { size: 10 } },
-						sections: [
-							{ path: [], defaults: { enabled: true } },
-							{ path: ['configured'], defaults: { size: 10 } },
-						],
-					},
-				})
-			},
-			{ workbench: false },
-		)
+		{
+			await using host = createRuntimeHost({ workbench: false })
+
+			host.add(ConfiguredOwner).start(ConfiguredOwner)
+			await host.commit()
+			const address = pluginNodeAddressOf(ConfiguredOwner)
+			const definition = requireRuntimePluginGraphCoordinator(host.ctx)
+				.catalogSnapshot()
+				.byDefinition.get(pluginDefinitionIndexKey(address.definition))?.candidate
+				.declaration.config
+			expect(definition).toMatchObject({
+				owner: { fieldName: 'config' },
+				parts: [{ path: ['configured'], declaration: { fieldName: 'config' } }],
+			})
+			expect(definition?.owner?.source).toContain('v.object')
+			expect(definition?.parts[0]?.declaration?.source).toContain('v.object')
+			await expect(pluginConfigPresentation(host.ctx, address)).resolves.toMatchObject({
+				ok: true,
+				plan: {
+					defaults: { enabled: true, configured: { size: 10 } },
+					sections: [
+						{ path: [], defaults: { enabled: true } },
+						{ path: ['configured'], defaults: { size: 10 } },
+					],
+				},
+			})
+		}
 	})
 })
