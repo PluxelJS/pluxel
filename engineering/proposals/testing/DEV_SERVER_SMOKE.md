@@ -1,179 +1,169 @@
-# Dynamic dev server smoke API
+# Dynamic Runtime smoke boundary
 
-> 状态：候选设计，尚未采纳或实现。本文定义真实 Vite/Node listener 的 smoke-test 边界，不改变
-> [`COMPOSABLE_HOST.md`](COMPOSABLE_HOST.md) 中 in-process Runtime test host 的职责。当前 launcher 行为以
+> 状态：候选设计，尚未采纳或实现。本文收敛 coding agent 的真实 dev smoke 路径，不建立第二套 test-owned launcher。当前行为以
 > [`../../../packages/runtime-dynamic/README.md`](../../../packages/runtime-dynamic/README.md) 为准。
 
-## 决策
+## 修正后的决策
 
-coding agent 不应只能在“很快但无物理 carrier 的 test host”和“自己拼装 Vite、端口发现与 teardown”之间选择。dynamic Runtime
-应提供一个专门的 test entry，让同一套资源所有权习惯可以用于真实 dev server smoke：
+不新增 `@pluxel/runtime-dynamic/test.startDevServer()`。
+
+dynamic Runtime 本来就由 Vite 承载。再由 test package 创建一台“测试 dev server”，会形成另一个语义入口：production/dev 使用
+`dynamicRuntimeVitePlugin()` 或 `createDynamicDevRuntime()`，测试却通过新的 wrapper 决定 config resolution、readiness、端口与 teardown。
+两者即使初版共用实现，长期也容易出现行为漂移。
+
+coding agent 应根据目标直接使用 production 入口：
+
+```text
+验证真实项目的 Vite config / middleware / assets
+  -> 运行项目已有 dev command
+  -> fetch / WebSocket / browser 访问 Vite 输出的 origin
+
+需要在 Vitest 或脚本内拥有 server lifetime
+  -> 使用 @pluxel/runtime-dynamic 的 canonical programmatic launcher
+  -> fetch / WebSocket / browser 访问 launcher.origin
+
+只验证 Plugin behavior，不验证物理 carrier
+  -> createRuntimeTestHost()
+  -> host.http.fetch() / other in-process drivers
+```
+
+因此 test API 不拥有 dev server。它只应说明何时越过 in-process 边界，以及如何用标准客户端观察 production launcher。
+
+## 收敛现有 programmatic launcher
+
+当前 `createDynamicDevRuntime()` 需要：
 
 ```ts
-import { startDevServer } from '@pluxel/runtime-dynamic/test'
+const runtime = await createDynamicDevRuntime({ config: 'src/pluxel.dynamic.ts' })
+await runtime.start()
+try {
+	// smoke
+} finally {
+	await runtime.stop()
+}
+```
 
-await using server = await startDevServer({
+这个 API 已经是现有的 production direct launcher，但 create/start/stop ceremony 不适合一次启动即 ready 的资源，也没有提供物理请求所需
+的 origin。与其在 `/test` 再包一层，候选 breaking refactor 应直接改善这个唯一 launcher：
+
+```ts
+import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
+
+await using runtime = await startDynamicDevRuntime({
 	config: new URL('../fixtures/pluxel.dynamic.ts', import.meta.url),
 })
 
-const response = await fetch(new URL('/health', server.origin))
-expect(response).toHaveProperty('status', 200)
-expect(await response.json()).toEqual({ ok: true })
+const response = await fetch(new URL('/health', runtime.origin))
+expect(response.status).toBe(200)
 ```
 
-这是 physical integration test，不是给 `RuntimeTestHost` 增加 listen mode。它应真实经过：
-
-```text
-dynamic config module
-  -> Vite config/source graph
-  -> semantic lowering + initial reconciliation
-  -> Runtime HTTP directory/application carrier
-  -> loopback TCP listener
-  -> fetch / WebSocket / browser
-```
-
-因此它能验证普通 host 故意不覆盖的 config loading、source resolution、Vite middleware、真实 request metadata、WebSocket upgrade、
-Workbench assets 和 listener cleanup。普通 Plugin 行为仍优先使用 in-process host；只有 assertion 的可信度依赖这些边界时才承担 dev
-server 的启动与 watcher 成本。
-
-## 最小 public surface
-
-首版只在 `@pluxel/runtime-dynamic/test` 导出一个 factory 和它的 lease type：
+候选最小 contract：
 
 ```ts
-export interface DevServerTestLease extends AsyncDisposable {
-	/** Loopback HTTP origin, for example http://127.0.0.1:43127/. */
+export interface DynamicDevRuntime extends AsyncDisposable {
+	/** Available after the factory resolves. */
+	readonly ctx: Context
+	/** Actual loopback HTTP origin selected by Vite. */
 	readonly origin: URL
-	/** Idempotently closes every resource owned by this lease. */
+	/** Idempotently releases all resources owned by this direct launcher. */
 	dispose(): Promise<void>
 }
 
-export function startDevServer(
+export function startDynamicDevRuntime(
 	options: Readonly<{
-		/** File URL of the real dynamic Runtime config module. */
-		config: URL
+		config: string | URL
 	}>,
-): Promise<DevServerTestLease>
+): Promise<DynamicDevRuntime>
 ```
 
-`startDevServer()` 的单次 `await` 同时表示 create、listen 和 ready。resolve 前必须完成：
+这不是新增一个 head，而是用 ready resource contract 取代现有 unstarted handle：
 
-1. 加载并验证 config module；
-2. 建立 Vite source graph 与 dynamic Runtime controller；
-3. 完成 initial catalog reconciliation 并启动 HMR watcher；
-4. 把 application carrier 接到 Vite HTTP server；
-5. 在 `127.0.0.1:0` 成功监听，并从实际 socket address 构造 `origin`。
+- 删除 `createDynamicDevRuntime()`、`.start()` 与 `.stop()`，不留 alias；
+- `startDynamicDevRuntime()` resolve 时 config、Vite graph、initial reconciliation、HMR、carrier 与 listener 已 ready；
+- startup 失败在 reject 前回收部分资源；
+- `dispose()` 与 `[Symbol.asyncDispose]()` 是同一个幂等 operation；
+- `origin` 从 Vite 实际 socket address 得到，不复制端口配置；
+- direct launcher 固定 loopback 与 OS-assigned ephemeral port；部署监听选项继续属于 Vite/application host；
+- `ctx` 是现有 production host authority，不由 test package 复制；smoke assertion 应优先经过 `origin`。
 
-任一步失败都应在 reject 前回收已经取得的资源。factory 不返回半启动 lease，不增加 `ready()` 或可观察的 transitional state。
+`config` 的 string 继续遵循 production dynamic launcher 的明确 path base；test 和跨 cwd 脚本推荐 file `URL`。实现前必须让 direct launcher、
+Vite plugin 与 config diagnostics 对 URL/path normalization 使用同一底层函数，不能让两种宿主解释出不同 module。
 
-这里的 ready 表示 server 与 initial reconciliation 已稳定，并不表示 catalog 中每个 Plugin 都 running。`plugins`/`sources` 提供
-availability，不应因为 helper 名为 `startDevServer` 就隐式制造 Plugin session intent 或 durable auto-start policy。需要启动目标时，smoke
-应通过启用后的真实 Management/Workbench RPC 发出与产品相同的控制请求，或使用 fixture 已显式准备的 runtime state；随后用
-`expect.poll()` 等待公开 endpoint 可观察。test lease 不提供一条绕过控制面的捷径。
+## 唯一的 Vite 运行语义
 
-`config` 只接受 `URL` 是刻意的：test 文件中的相对 URL 以该文件为基准，不依赖 agent、Vitest 或 workspace 的当前工作目录，也不会把
-HTTP URL 与文件路径字符串混为一谈。底层 production launcher 可以继续接受自己的 path contract；test entry 在边界完成显式转换。
-
-`origin` 使用标准 `URL`，所以 HTTP、RPC 和 browser smoke 不需要 Pluxel wrapper：
+canonical programmatic launcher 必须薄薄地拥有 production `dynamicRuntimeVitePlugin()` 建立的 Vite server，不能复制 boot、config loading、
+HTTP middleware 或 HMR controller。项目自己的 `vite.config.ts` 仍直接安装同一个 plugin：
 
 ```ts
-await expect(fetch(new URL('/api/orders', server.origin))).resolves.toMatchObject({
-	status: 200,
+export default defineConfig({
+	plugins: [
+		dynamicRuntimeVitePlugin({
+			config: './src/pluxel.dynamic.ts',
+		}),
+	],
 })
 ```
 
-WebSocket 同样使用真实 carrier；调用方从 origin 建立目标 URL 并显式选择协议：
+两种方式的区别只是 server ownership：
 
-```ts
-const socketUrl = new URL('/events', server.origin)
-socketUrl.protocol = socketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+| 使用方式                   | 谁组合 Vite config                     | 谁拥有 lifetime              | 适合验证                         |
+| -------------------------- | -------------------------------------- | ---------------------------- | -------------------------------- |
+| 项目 `vite`/dev command    | application                            | Vite CLI / application host  | 完整项目 config、assets、浏览器  |
+| `startDynamicDevRuntime()` | Pluxel canonical direct-launch profile | returned production resource | 程序化 HTTP/WebSocket/HMR smoke  |
+| `createRuntimeTestHost()`  | 不启动 Vite                            | returned test host           | 快速 Plugin behavior/integration |
 
-await using socket = await openTestWebSocket(socketUrl)
-```
+这三者不是三个相互竞争的 Runtime 实现。前两者必须经过同一个 dynamic Vite plugin；第三者明确不声称验证 Vite 或 physical carrier。
 
-`openTestWebSocket` 若以后被多个 package 证明需要，应属于 carrier-neutral test utility；它不是 dynamic server lease 的方法。首版不为一行
-URL 转换增加 `server.ws()`、`server.websocketOrigin` 或 RPC codec。
+## Ready 不等于所有 Plugin running
 
-## 为什么不复用 RuntimeTestHost lifecycle API
+`startDynamicDevRuntime()` 的名称表示启动 dynamic Runtime server，不表示启动 catalog 中每个 Plugin。`plugins`/`sources` 只提供 catalog
+availability；factory 不隐式制造 session intent 或 durable auto-start policy。
 
-两个入口复用的是 mental model，而不是 mutation authority：
+physical smoke 需要目标 Plugin running 时，应通过已启用的真实 Management/Workbench RPC 发出与产品相同的控制请求，或使用 fixture 已
+显式准备的 runtime state，然后通过 `expect.poll()` 等待公开 endpoint。programmatic launcher 不增加 `runtime.start(Plugin)`、
+`runtime.commit()` 或 `runtime.require(Plugin)` 这些绕过 control plane 的 test authority。
 
-| 边界                      | 创建后如何取得 ready state          | Catalog/lifecycle authority                                                | 调用边界                           |
-| ------------------------- | ----------------------------------- | -------------------------------------------------------------------------- | ---------------------------------- |
-| `createRuntimeTestHost()` | `await host.start(Plugin)`          | fixture 直接声明 constructor/fork 与 session intent                        | in-process drivers                 |
-| `startDevServer()`        | factory resolve 时整个 server ready | dynamic config/source/HMR 定义 catalog；production control plane 改 intent | `fetch`/WebSocket/browser over TCP |
+## RPC 与断言
 
-dev server 上不应出现：
+launcher 只提供标准 origin，不提供另一套 `runtime.http.fetch()`、`runtime.rpc()`、Vitest matcher 或 codec：
 
-```ts
-await server.start(Plugin)
-await server.commit(...)
-server.require(Plugin)
-server.ctx
-```
+- HTTP/mounted RPC 使用 `fetch(new URL(path, runtime.origin))`；
+- WebSocket 使用 endpoint 自己的 production client，并从 `runtime.origin` 构造 `ws:` URL；
+- Workbench/browser smoke 把 Playwright `baseURL` 指向 `runtime.origin`；
+- HMR smoke 修改 test-owned source，通过公开响应等待新 generation；
+- planning epoch、raw controller 和 lifecycle summary 仍属于 framework internal harness。
 
-这些方法会绕过正在被 smoke 验证的 config/source loader，或者向 Plugin 测试公开 root authority。若测试需要直接安排 Plugin graph，应回到
-`RuntimeTestHost`；若需要验证 source replacement，应编辑 fixture source，并从公开 HTTP/RPC/Workbench 结果观察 HMR。
+这使同一个 production server 可以被 Vitest、独立 Node script、Playwright 或 coding agent 的 shell smoke 使用，而无需每个 consumer 学习
+Pluxel-specific test driver。
 
-同理，不给 `createRuntimeTestHost()` 增加 `listen: true`、`mode: 'dev'` 或 `carrier: 'vite'`。这些 flag 会让同一个 method 的 readiness、
-性能、错误来源与可验证边界随 options 改变，使测试只看局部代码时无法知道自己是否打开了真实端口和 watcher。
+## Timeout、teardown 与状态安全
 
-## 生命周期与失败
+launcher 不内置 test timeout。compiler、migration、Plugin startup 与 drain 的期限由调用环境或 production cancellation contract 决定；
+Vitest 可设置 test/hook timeout，eventual assertion 使用 `expect.poll()`/`vi.waitFor()`。隐藏的 5 秒或 30 秒 deadline 会让合法长任务变成
+随机基础设施失败。
 
-lease 同时拥有：
+resource 同时拥有 listener/application carrier、Vite HMR/watch/compiler、Runtime controller、Plugin effects 和 launcher child leases。
+`dispose()` resolve 后不得遗留端口、watcher、effect 或后台 task；重复调用幂等，多项 teardown failure 使用 `AggregateError` 保留。
 
-1. HTTP/WebSocket application carrier 与 loopback listener；
-2. Vite HMR、watcher 与 compiler resources；
-3. Runtime controller、Plugin generations 和 capability effects；
-4. 该 launcher 建立的其余 cache/child lease。
+programmatic launcher 与项目 dev command 都读取调用方的真实 config，不能为了测试偷偷覆盖 persistence、Vault、Database、config service 或
+runtime state。自动化 smoke 应使用明确的 fixture config，并显式选择 memory backend 或 test-owned 临时目录/数据库。coding agent 在未知
+仓库中不应把 production config 当作 disposable fixture。
 
-prototype 必须依据 carrier 的 drain contract 证明无竞态关闭顺序，不在 author API 中公开内部阶段。public guarantee 是 `dispose()` resolve 后
-不再持有 listener、watcher、Plugin effect 或后台 task。重复 `dispose()` 必须幂等；多个 teardown failure 使用 `AggregateError` 保留，而不是
-只报告最后一个。
+不增加含糊的 `isolated: true`。完整 isolation 必须同时覆盖路径派生和每个 durable capability；在真实 fixture 证明统一 overlay contract 前，
+布尔值只能制造虚假的安全保证。
 
-startup 与 teardown 不内置短测试 timeout。真实 compiler、migration 或 Plugin drain 的合理时间属于调用环境；Vitest 可以在 test/hook
-上设 timeout，外部最终一致状态使用 `expect.poll()` 或 `vi.waitFor()`。helper 自行施加一个隐藏的 5 秒或 30 秒 deadline 会让长任务表现成
-随机基础设施失败。需要取消时应最终沿用 launcher 的标准 cancellation contract，而不是另建 `server.waitFor()`。
+## 验收条件
 
-## 状态安全边界
+重构 canonical launcher 前至少证明：
 
-这个 helper 启动的是调用方提供的**真实 config**。它不得偷偷把 persistence、Vault、Database、config service 或 runtime state 换成
-memory backend，否则通过的测试并没有验证声明的 dev server。反过来，直接指向日常或 production config 也可能写入它所声明的 `.pluxel`
-目录、Vault 和数据库。
+1. direct launcher 与项目 Vite plugin path 共享 config normalization、boot 和 carrier implementation；
+2. factory resolve 后可立即从 `origin` 请求 Runtime-owned route；
+3. 通过真实 control RPC 启动 Plugin 后，可访问其 HTTP/WebSocket endpoint；
+4. source edit 后可从公开结果观察 HMR replacement 与旧 connection drain；
+5. invalid config、boot 或 listen failure 不遗留端口、watcher 和 Runtime effects；
+6. `dispose()` 后 origin 拒绝连接且重复 dispose 成功；
+7. memory fixture 与 temp-directory durable fixture 均无跨 test 状态泄漏；
+8. 项目 dev command 和 programmatic launcher 的共同 conformance 不依赖 test-only implementation。
 
-canonical smoke fixture 因此应显式声明隔离状态，例如 memory persistence，或把所有 durable path/backend 指向 test-owned temporary
-resources。文档和错误信息必须提醒调用方这一点；coding agent 在未知仓库中不应把 production config 当作 disposable fixture。
-
-首版不冻结 `isolated: true` 或 config overlay API。安全 overlay 必须同时覆盖 config/runtime-state/persistence/database/vault 与路径派生，且不能
-无意改变正在验证的 config semantics；在至少两个真实 smoke fixture 证明完整 contract 前，一个布尔值只会制造虚假的隔离保证。
-
-网络固定为 loopback + OS-assigned ephemeral port。test API 不接受 `host`、固定 `port`、`open` 或公网暴露选项；这些是 application launcher/
-CLI 的部署责任，不是 smoke fixture 的变量。
-
-## 与更高层测试的边界
-
-这个 lease 足以成为其他工具的底座，但不吸收它们的 API：
-
-- HTTP 与 mounted RPC：使用标准 `fetch(new URL(path, server.origin))`，按 endpoint 的真实 codec 断言；
-- WebSocket RPC：使用真实 WebSocket client 和 URL；
-- Workbench/browser：Playwright 的 `baseURL` 指向 `server.origin`，DOM 交互只在验证 Shell/renderer 时使用；
-- CLI/subprocess/signal/stdout：由独立 launcher acceptance test 启动真实命令，不能用 in-process lease 冒充；
-- HMR：修改 test-owned source fixture，通过公开结果等待新 generation 生效；需要 epoch/planning facts 的 framework tests 使用 internal harness。
-
-不要提前设计一个 `startRuntimeServer({ mode: 'static' | 'dynamic' })`。static artifact host 和 dynamic Vite host 的输入、readiness、更新能力
-与失败阶段不同；先让 dynamic 的真实用例稳定，再提取被两边调用点证明相同的 carrier lease contract。
-
-## Prototype 验收条件
-
-实现进入 public API 前至少迁移这些真实场景：
-
-1. 通过真实 Management/Workbench control RPC 启动 config 中可用的 Plugin，再以 `fetch` 命中其 HTTP endpoint；
-2. mounted RPC 或 WebSocket endpoint 能经过物理 carrier 往返；
-3. source edit 后 HMR replacement 可从公开响应观察，旧 WebSocket generation 正确 drain；
-4. invalid config/startup 失败不遗留端口或 watcher；
-5. `dispose()` 后原 origin 拒绝连接，重复 dispose 不失败；
-6. 一个显式 memory fixture 与一个 temp-directory durable fixture 均无跨 test 状态泄漏；
-7. Playwright 能直接复用 `origin`，无需取得 Vite server 或 root `ctx`。
-
-只有当这些迁移证明调用方还需要额外 public fact 时才增加 surface。Vite server instance、raw socket/port、controller、root Context、Plugin
-instance 和 internal readiness epoch 都不因 framework tests 方便而公开。
+如果 application-host smoke 只需运行现有 `vite` command，就不应强迫它改用 programmatic launcher；后者只解决进程内需要明确 lifetime 与
+origin 的用例。

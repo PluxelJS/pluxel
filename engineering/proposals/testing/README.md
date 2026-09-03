@@ -26,8 +26,8 @@ coding agent 能从所验证的产品边界直接推导出最短、正确的测�
    复制 registry、observer、canonical address 或 Cap'n Web disposal 样板。
 8. **复用 runner 已有语言**：Core/Runtime host 保持 runner-neutral；official Vitest preset 只为 runner 无法理解的 Plugin lifecycle
    identity 增加一个 matcher。普通 object/error/poll/type assertion 不建立 Pluxel wrapper。
-9. **smoke 也使用可释放 lease**：真实 dev server 应以一次 `await` 达到 ready，并暴露标准 URL；不要让 coding agent 自己发现随机端口、
-   轮询 readiness 或拼装 Vite teardown。
+9. **test 不再创建第二台 dev server**：真实 smoke 运行项目 Vite command，或直接复用 production dynamic launcher；需要程序化 ownership
+   时改良现有 launcher 的 ready/disposable contract，不在 `/test` 再包一个入口。
 
 ## 不把所有测试统一成一种 host
 
@@ -51,8 +51,8 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
   Plugin 重复的 internal registry/session 样板，不模拟 DOM 表单和点击。
 - [`DIRECT_RPC.md`](DIRECT_RPC.md)：区分纯 `RpcTarget` object contract 与直接挂载到 `ctx.elysia` 的业务 RPC endpoint；前者
   使用 local capability membrane，后者必须按 Fetch 或 WebSocket carrier 的真实边界验证。
-- [`DEV_SERVER_SMOKE.md`](DEV_SERVER_SMOKE.md)：为 dynamic Runtime 定义真实 Vite/Node listener 的一次启动式 disposable lease；让
-  coding agent 可以用标准 `fetch`、WebSocket 或 browser 做 physical smoke，同时不向 dev server 暴露 test-host Plugin mutation authority。
+- [`DEV_SERVER_SMOKE.md`](DEV_SERVER_SMOKE.md)：拒绝 test-owned dev server，收敛到项目 Vite command 与唯一的 production dynamic
+  programmatic launcher；coding agent 用标准 `fetch`、WebSocket 或 browser 做 physical smoke。
 
 ## 后续议题
 
