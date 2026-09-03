@@ -19,7 +19,5 @@
   验证迁移已完成，Core/Runtime 身份与控制面的完整删除仍待决策。
 - [`NATIVE_ELYSIA_APPLICATION.md`](NATIVE_ELYSIA_APPLICATION.md)：核心 HTTP application contract 已进入当前架构；本文只应
   跟踪 beta.7 fail-fast、第二 carrier、portable WS 与 peer-range admission 等尚未完成的 gate。
-- [`WORKBENCH_AUTHOR_DX.md`](WORKBENCH_AUTHOR_DX.md)：核心 API 已进入当前架构；本文只保留决策摘要、实施证据与尚未验证或
-  延后的边界，当前 API 以权威工程文档和用户文档为准。
 
 已实施架构与用户行为分别从 [`../README.md`](../README.md) 与 [`../../docs/index.md`](../../docs/index.md) 进入。
