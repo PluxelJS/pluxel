@@ -1,9 +1,9 @@
-import { withCoreContext } from '@pluxel/core/test'
+import { withCoreInternalTestContext } from '@pluxel/core/internal/test'
 import { describe, expect, it } from 'vitest'
 
 describe('EffectsService child scope ownership', () => {
 	it('disposes child resources without over-cleaning the parent scope', async () => {
-		await withCoreContext(async (ctx) => {
+		await withCoreInternalTestContext(async (ctx) => {
 			const cleaned: string[] = []
 			const parent = ctx.effects.defer(() => {
 				cleaned.push('parent')
@@ -24,7 +24,7 @@ describe('EffectsService child scope ownership', () => {
 	})
 
 	it('propagates parent disposal into an owned child scope exactly once', async () => {
-		await withCoreContext(async (ctx) => {
+		await withCoreInternalTestContext(async (ctx) => {
 			let childCleanups = 0
 			const child = ctx.effects.scope()
 			child.defer(() => {

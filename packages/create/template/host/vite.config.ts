@@ -6,13 +6,13 @@ import { hostEnv } from '@pluxel/runtime/environment'
 const webRoot = fileURLToPath(new URL('./web', import.meta.url))
 const webEntry = fileURLToPath(new URL('./web/index.html', import.meta.url))
 const staticEntry = fileURLToPath(new URL('./src/pluxel.static.ts', import.meta.url))
-const dynamicConfig = fileURLToPath(new URL('./src/pluxel.dynamic.ts', import.meta.url))
+const dynamicEntry = fileURLToPath(new URL('./src/pluxel.dynamic.ts', import.meta.url))
 
 export default defineConfig(async ({ mode }): Promise<UserConfig> => {
 	let plugins: UserConfig['plugins']
 	if (mode === 'dynamic') {
 		const { dynamicRuntimeVitePlugin } = await import('@pluxel/runtime-dynamic/vite')
-		plugins = dynamicRuntimeVitePlugin({ config: dynamicConfig })
+		plugins = dynamicRuntimeVitePlugin({ entry: dynamicEntry })
 	} else {
 		const { staticRuntimeVitePlugin } = await import('@pluxel/runtime-static/vite')
 		plugins = [react(), ...staticRuntimeVitePlugin({ entry: staticEntry })]

@@ -167,25 +167,31 @@ HTTP(S) URL 与服务端文件路径会被拒绝。ECharts/Canvas 不应隐式�
 ## 配置与职责
 
 ```ts no-twoslash
-host.cfg(EChartsPlugin).set({
-	defaultDevicePixelRatio: 1,
-	maxDevicePixelRatio: 4,
-	maxThemesPerConsumer: 32,
-	maxTotalThemes: 256,
-	maxTotalThemeBytes: 16 * 1024 * 1024,
-	maxThemeBytes: 1024 * 1024,
-	maxThemeNodes: 20_000,
-	maxThemeDepth: 64,
-	maxDataUrlBytes: 32 * 1024 * 1024,
-	maxImages: 32,
-	maxTotalImageBytes: 32 * 1024 * 1024,
-	maxTotalImagePixels: 16_777_216,
-	maxOptionBytes: 8 * 1024 * 1024,
-	maxOptionNodes: 100_000,
-	maxOptionDepth: 64,
-	maxOutputBytes: 64 * 1024 * 1024,
+await host.start(EChartsPlugin, {
+	catalog: [FontsPlugin, CanvasPlugin],
+	initialConfig: {
+		defaultDevicePixelRatio: 1,
+		maxDevicePixelRatio: 4,
+		maxThemesPerConsumer: 32,
+		maxTotalThemes: 256,
+		maxTotalThemeBytes: 16 * 1024 * 1024,
+		maxThemeBytes: 1024 * 1024,
+		maxThemeNodes: 20_000,
+		maxThemeDepth: 64,
+		maxDataUrlBytes: 32 * 1024 * 1024,
+		maxImages: 32,
+		maxTotalImageBytes: 32 * 1024 * 1024,
+		maxTotalImagePixels: 16_777_216,
+		maxOptionBytes: 8 * 1024 * 1024,
+		maxOptionNodes: 100_000,
+		maxOptionDepth: 64,
+		maxOutputBytes: 64 * 1024 * 1024,
+	},
 })
 ```
+
+这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
+`host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
 
 | 字段                      |    默认值 | 职责                                               |
 | ------------------------- | --------: | -------------------------------------------------- |

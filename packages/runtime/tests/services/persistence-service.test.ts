@@ -1,4 +1,4 @@
-import { createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { createMemoryPersistenceBackend, createWorkspacePersistenceBackend } from '@pluxel/runtime'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -60,7 +60,7 @@ function createMemoryFsLike() {
 describe('PersistenceService (runtime)', () => {
 	it('provides namespaced memory persistence with explicit capability', async () => {
 		{
-			await using host = createRuntimeHost({ persistence: { mode: 'memory' } })
+			await using host = createRuntimeInternalTestHost({ persistence: { mode: 'memory' } })
 
 			const ns = host.ctx.root.persistence.namespace('runtime-test')
 
@@ -98,7 +98,9 @@ describe('PersistenceService (runtime)', () => {
 		}
 
 		{
-			await using host = createRuntimeHost({ persistence: { mode: 'custom', backend } })
+			await using host = createRuntimeInternalTestHost({
+				persistence: { mode: 'custom', backend },
+			})
 
 			await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toMatchObject({
 				code: 'UNAVAILABLE',
@@ -110,7 +112,7 @@ describe('PersistenceService (runtime)', () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pluxel-persistence-'))
 		try {
 			{
-				await using host = createRuntimeHost({ persistence: dir })
+				await using host = createRuntimeInternalTestHost({ persistence: dir })
 
 				const ns = host.ctx.root.persistence.namespace('runtime-test')
 				expect(host.ctx.root.persistence.capability).toBe('durable')
@@ -122,7 +124,7 @@ describe('PersistenceService (runtime)', () => {
 			}
 
 			{
-				await using host = createRuntimeHost({ persistence: dir })
+				await using host = createRuntimeInternalTestHost({ persistence: dir })
 
 				const ns = host.ctx.root.persistence.namespace('runtime-test')
 				expect(await ns.getText('a.txt')).toBe('hello')
@@ -137,7 +139,7 @@ describe('PersistenceService (runtime)', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 		try {
 			{
-				await using host = createRuntimeHost({ persistence: undefined })
+				await using host = createRuntimeInternalTestHost({ persistence: undefined })
 
 				const ns = host.ctx.root.persistence.namespace('runtime-test')
 				await ns.put('a.txt', 'hello')
@@ -153,7 +155,7 @@ describe('PersistenceService (runtime)', () => {
 	it('rejects object-shaped file compatibility config', async () => {
 		await expect(
 			(async () => {
-				await using _host = createRuntimeHost({
+				await using _host = createRuntimeInternalTestHost({
 					persistence: {} as never,
 				})
 

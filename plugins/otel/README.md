@@ -57,18 +57,22 @@ producer 仍须定义稳定的数据字典、attribute allowlist、基数和隐�
 默认向 OTLP 推送 metrics、traces 和 logs，并关闭 Prometheus：
 
 ```ts
-host.cfg(OtelPlugin).set({
-	otlp: ['metrics', 'traces', 'logs'],
-	prometheus: false,
+await host.start(OtelPlugin, {
+	initialConfig: {
+		otlp: ['metrics', 'traces', 'logs'],
+		prometheus: false,
+	},
 })
 ```
 
 `otlp` 可选择任意子集。Prometheus 只读取 metrics，也可以与 metrics OTLP push 同时开启：
 
 ```ts
-host.cfg(OtelPlugin).set({
-	otlp: ['metrics', 'traces', 'logs'],
-	prometheus: { path: '/metrics' },
+await host.start(OtelPlugin, {
+	initialConfig: {
+		otlp: ['metrics', 'traces', 'logs'],
+		prometheus: { path: '/metrics' },
+	},
 })
 ```
 

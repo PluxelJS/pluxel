@@ -33,6 +33,7 @@ import {
 	type WorkbenchContentFactory,
 	type WorkbenchDefinitionMetadata,
 	type WorkbenchDescriptorMetadata,
+	type WorkbenchEntry,
 	type WorkbenchPlacement,
 	type WorkbenchPrincipal,
 	type WorkbenchPublishBindings,
@@ -151,6 +152,17 @@ export class WorkbenchRegistry {
 
 	get revision(): number {
 		return this.revisionValue
+	}
+
+	/** @internal Assertive test drivers use object identity to reject stale authored entries. */
+	hasPublishedEntry(targetAddress: PluginNodeAddress, entry: WorkbenchEntry): boolean {
+		const address = parsePluginNodeAddress(targetAddress)
+		const pluginService = requirePluginService(this.root)
+		const slot = pluginService.resolvePluginNode(address)
+		const publication = slot ? this.activeBySlot.get(slot) : undefined
+		if (!publication) return false
+		const metadata = readWorkbenchDescriptor(entry)
+		return publication.entries.get(metadata.key)?.metadata === metadata
 	}
 
 	publish<const Definition extends AnyWorkbenchDefinition>(

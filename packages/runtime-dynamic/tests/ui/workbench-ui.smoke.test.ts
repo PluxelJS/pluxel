@@ -1,5 +1,5 @@
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
-import { createRuntimeContext } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
@@ -22,7 +22,7 @@ const compatibility = createWorkbenchFederationCompatibilitySet({
 describe('HMR UI smoke', () => {
 	it('renders dev UI with a Vite-accessible source entry and rejects stale /dist/public asset requests', async () => {
 		{
-			await using runtimeContext = createRuntimeContext({
+			await using runtimeContext = createRuntimeInternalTestHost({
 				configService: { mode: 'memory' },
 				workbench: { enabled: true },
 			})
@@ -69,7 +69,7 @@ describe('HMR UI smoke', () => {
 
 		const publicDir = resolve(fixture.path, 'dist/public')
 		{
-			await using runtimeContext = createRuntimeContext({
+			await using runtimeContext = createRuntimeInternalTestHost({
 				configService: { mode: 'memory' },
 				workbench: { enabled: true },
 			})
@@ -125,7 +125,7 @@ describe('HMR UI smoke', () => {
 
 	it('limits Workbench navigation to the configured UI base path', async () => {
 		{
-			await using runtimeContext = createRuntimeContext({
+			await using runtimeContext = createRuntimeInternalTestHost({
 				configService: { mode: 'memory' },
 				workbench: {
 					enabled: true,
@@ -215,7 +215,7 @@ describe('HMR UI smoke', () => {
 		})
 
 		{
-			await using runtimeContext = createRuntimeContext({
+			await using runtimeContext = createRuntimeInternalTestHost({
 				configService: { mode: 'memory' },
 				workbench: { enabled: true },
 			})

@@ -1,5 +1,6 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 
@@ -56,7 +57,7 @@ describe('updates attempted during an in-flight Core transaction', () => {
 	beforeEach(resetRace)
 
 	it('rejects overlap and applies the latest config in the next generation', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const config = host.cfg(InflightUpdatePlugin)
 			config.set({ value: 1 })
 			host.add(InflightUpdatePlugin)
@@ -78,7 +79,7 @@ describe('updates attempted during an in-flight Core transaction', () => {
 	})
 
 	it('admits replacement only after the active transaction settles', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.cfg(InflightUpdatePlugin).set({ value: 1 })
 			host.add(InflightUpdatePlugin)
 
@@ -100,7 +101,7 @@ describe('updates attempted during an in-flight Core transaction', () => {
 	})
 
 	it('admits removal only after the active transaction settles', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.cfg(InflightUpdatePlugin).set({ value: 1 })
 			host.add(InflightUpdatePlugin)
 

@@ -48,6 +48,7 @@ export default defineConfig({
 		'internal/config-validation': 'src/internal-config-validation.ts',
 		'internal/static': 'src/internal-static.ts',
 		'internal/static-host': 'src/internal-static-host.ts',
+		'internal/test': 'src/internal-test.ts',
 		'internal/workbench-react': 'src/workbench/react-internal.tsx',
 		'internal/database/pglite': 'src/services/database-adapters/pglite.ts',
 		'internal/database/postgres': 'src/services/database-adapters/postgres.ts',

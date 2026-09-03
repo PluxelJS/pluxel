@@ -1,6 +1,7 @@
 # Workbench RPC test API
 
-> 状态：设计已冻结，尚未实现。当前公开入口没有本文提出的 `host.workbench.open()`；现行测试必须遵循
+> 状态：架构原则已冻结，public surface 为 release candidate，尚未实现。精确 lease 与 error contract 见
+> [`CONTRACT.md`](CONTRACT.md)。当前公开入口没有本文提出的 `host.workbench.open()`；现行测试必须遵循
 > [`../../../docs/development/testing.md`](../../../docs/development/testing.md)。
 
 ## 决策问题
@@ -180,6 +181,8 @@ helper 内部可以读取 entry metadata，但不能把 metadata reader、regist
 返回值是一个由 helper 拥有 cleanup 的 lease，并按 authored entry kind 收窄：
 
 ```ts
+type OpenedWorkbenchTestLease<Value extends object> = Readonly<Value> & Disposable
+
 type OpenedWorkbenchTestEntry<Entry extends WorkbenchEntry> =
 	Entry extends WorkbenchView<infer Api>
 		? OpenedWorkbenchTestLease<{
@@ -197,7 +200,9 @@ type OpenedWorkbenchTestEntry<Entry extends WorkbenchEntry> =
 				: never
 ```
 
-具体声明可以复用现有 protocol 类型，避免建立第二套 response model。上面的类型只说明必须保留的推导结果，不要求复制字段。
+`OpenedWorkbenchTestLease<Value>` 精确为 `Readonly<Value> & Disposable`，不会再包一层 `.value`。Content 返回 production
+`WorkbenchOpenedContent` 的同构 discriminated union：`mode: 'static'` 的分支在类型上没有 `root`，`mode: 'interactive'` 的分支带
+`RpcStub<WorkbenchContentRoot>`。实现复用现有 protocol 字段和 validator，不建立第二套 response model。
 
 Content 继续暴露 canonical `WorkbenchContentRoot`：
 
@@ -371,10 +376,11 @@ credential missing
 
 ## Prototype 实现问题
 
-以下问题可以在 prototype 中决定，不应改变作者 mental model：
+以下问题只允许在 prototype 中决定 internal 实现，不改变作者类型或错误契约：
 
 - local `RpcStub` 返回的 envelope 如何 transfer/dup，使 helper 自己释放中间 result 而不提前关闭 nested root；
-- static Content 是否在类型层精确去掉 `root`，还是复用 production `WorkbenchOpenedContent` discriminant；
-- setup error 是否需要 test-only error class，或 message + existing Workbench failure code 已足够。
+- local envelope 如何映射成上述 frozen Content discriminant；
+- setup diagnostics 如何携带 existing Workbench failure code 而不泄漏 registry identity。
 
-除非调用方确实需要 catch 分支，不为了测试 setup error 新建稳定 public error hierarchy。
+setup/programming failure 使用现有 Workbench failure code（若 production 已有）与普通 `Error`/`TypeError`；不新增 test-only public error
+class。调用方不应把完整 message 当成协议。

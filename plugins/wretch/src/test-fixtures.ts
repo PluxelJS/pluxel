@@ -12,7 +12,7 @@ export function setFixtureFetches(a: FetchLike, b: FetchLike = a): void {
 	fetchB = b
 }
 
-const ConsumerWorkbench = workbench.define({
+export const ConsumerWorkbench = workbench.define({
 	settings: WretchWorkbench.settings.place(
 		workbench.tab({ label: 'HTTP', icon: workbench.icons.Settings }),
 	),

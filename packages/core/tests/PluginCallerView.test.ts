@@ -1,4 +1,5 @@
-import { BasePlugin, Plugin, definePluginRef, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 
@@ -132,7 +133,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('pins caller Context per consumer and shares one view across required and optional edges', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer, CallerViewPeer])
 			await host.commit()
 
@@ -173,7 +174,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('writes author fields through to the pinned provider without shadow state', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 
@@ -189,7 +190,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('runs prototype setters with the caller pinned to each consumer generation', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer, CallerViewPeer])
 			await host.commit()
 
@@ -207,7 +208,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('uses one stable edge facade and a fresh receiver for each accepted invocation', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 
@@ -223,7 +224,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('isolates call receivers for overlapping invocations on one generation edge', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 
@@ -244,7 +245,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('uses a non-extensible descriptor facade without changing the raw provider', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 
@@ -268,7 +269,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('rejects function-valued instance fields and accessor results at the caller boundary', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 
@@ -289,7 +290,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('keeps the dependency surface fixed to construction-time fields and prototype methods', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			await host.start(CallerViewProvider)
 			const raw = host.require(CallerViewProvider) as CallerViewProvider & { dynamic?: number }
 			raw.addDynamicField()
@@ -308,7 +309,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('keeps the generation ownership projection immutable on its Context', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			await host.start(CallerViewProvider)
 			const ctx = host.require(CallerViewProvider).ctx
 			const pluginInfo = ctx.pluginInfo
@@ -324,7 +325,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('does not reuse views and rejects cached stale access after definition replacement', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 			const oldRaw = host.require(CallerViewProvider)
@@ -350,7 +351,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('keeps an admitted Promise getter alive through settlement while teardown waits', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 			const consumer = host.require(CallerViewConsumer)
@@ -377,7 +378,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('keeps a Promise-valued data field admitted through settlement', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 			const raw = host.require(CallerViewProvider)
@@ -404,7 +405,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('injects the replacement provider generation after an incremental consumer add', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add(CallerViewProvider)
 			await host.commit()
 			const firstProvider = host.require(CallerViewProvider)
@@ -428,7 +429,7 @@ describe('generation-bound Plugin caller facade', () => {
 	})
 
 	it('keeps an admitted Promise method alive through settlement while teardown waits', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CallerViewProvider, CallerViewConsumer])
 			await host.commit()
 			const view = host.require(CallerViewConsumer).provider

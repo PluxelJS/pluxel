@@ -1,7 +1,7 @@
 # Composable Plugin test host API
 
-> 状态：设计已冻结，尚未实现。本文会影响 public test API、资源生命周期与测试教程；prototype 只验证
-> 实现可行性，只有 correctness blocker 或代表性迁移的反证才能重开 public surface。当前行为仍以
+> 状态：架构原则已冻结，public surface 为 release candidate，尚未实现。规范性摘要见 [`CONTRACT.md`](CONTRACT.md)；prototype 与
+> 代表性迁移通过后才冻结签名。当前行为仍以
 > [`../../../docs/development/testing.md`](../../../docs/development/testing.md) 为准。
 
 ## 决策问题
@@ -374,13 +374,13 @@ type PluginInstanceFor<TTarget extends PluginTestTarget> = TTarget extends Plugi
 
 type DependencyOverrideTarget = Readonly<{
 	consumer: PluginTestTarget
-	requirement: PluginConstructor
+	requirement: PluginToken
 }>
 
 type DependencyOverrideInput = DependencyOverrideTarget & Readonly<{ provider: PluginTestTarget }>
 
 type ProviderDefaultInput = Readonly<{
-	requirement: PluginConstructor
+	requirement: PluginToken
 	provider: PluginConstructor
 }>
 
@@ -704,7 +704,7 @@ interface RuntimePluginTestChange {
 	}
 	readonly dependencies: {
 		setDefault(input: ProviderDefaultInput): undefined
-		clearDefault(requirement: PluginConstructor): undefined
+		clearDefault(requirement: PluginToken): undefined
 		setOverride(input: DependencyOverrideInput): undefined
 		clearOverride(input: DependencyOverrideTarget): undefined
 	}
@@ -846,7 +846,7 @@ interface CorePluginTestChange {
 	}
 	readonly dependencies: {
 		setDefault(input: ProviderDefaultInput): undefined
-		clearDefault(requirement: PluginConstructor): undefined
+		clearDefault(requirement: PluginToken): undefined
 		setOverride(input: DependencyOverrideInput): undefined
 		clearOverride(input: DependencyOverrideTarget): undefined
 	}
@@ -882,6 +882,10 @@ host.isRunning(Plugin) // boolean convenience
 不保留低使用率且重叠的 `get/has/last/services/plugins()`；single/batch add/start 返回明确请求的 instance，其他 strict mutation 成功只返回
 完成信号。Plugin 业务
 状态通过 returned instance 或 inbound driver 观察，owner-bound storage 的必要白盒断言从 instance 的 public/domain seam 进入。
+
+`start/add/require()` 返回的是当前 raw Plugin instance，不是经 constructor dependency 建立的 caller-bound facade。它适合观察 Plugin 自己的
+公开状态、领域 seam 和 owner-bound capability；不能证明 `ctx.caller`、consumer admission 或跨 Plugin method withdrawal。验证这些事实时必须
+建立真实 Consumer Plugin，并通过其 constructor 注入的 dependency facade 调用 provider。
 
 也不新增一个从多个内部来源重建的 `status()` snapshot。即时问题“现在是否 running”由 `isRunning()` 回答；failed/blocked/drain 的因果证据属于
 `commitExpectFail()` 返回值或 `PluginLifecycleAssertionError.summary`。这避免 caller 拿一个脱离 commit 边界、可能已经 stale 的简化状态猜原因。
@@ -971,8 +975,10 @@ using api = createLocalRpcClient<Api>(new ApiTarget(service))
 Runtime Management RPC 是 host 产品控制面，不是普通 Plugin 业务依赖。只有测试 Workbench management UI、protocol mapping 或 provider
 authorization 时才创建 Management client；不要让普通 Plugin tests 通过 Management RPC 启动自己，只为追求“更端到端”。
 
-如果多个外部 consumer tests 需要同一个 client，未来可以增加独立 `host.management.connect(principal)` proposal。它不得与
-host 的 fixture authority 混成一个对象：前者验证受限产品控制面，后者建立测试世界。
+当前官方 Auth provider 的 `adminAccess` publication/session 测试属于 privileged Runtime protocol conformance，迁入
+`@pluxel/runtime/internal/test` 的最小 root authority，并保留真实 Runtime Session carrier smoke；这不是普通 Plugin author host 的后门。
+如果多个独立外部 author consumer tests 仍需要同一个 client，未来可以增加独立 Management driver proposal。它不得与 host 的 fixture authority
+混成一个对象：前者验证受限产品控制面，后者建立测试世界。
 
 ## 不把 storage 变成 test backdoor
 
@@ -1174,7 +1180,7 @@ class PluginLifecycleAssertionError extends Error {
 
 它只表示“mutation 已执行，但请求的 lifecycle/cleanup postcondition 未满足”，例如 requested root 未 running、generation config injection 失败、
 本次 drain 出现 error，或 `commitExpectFail()` 实际完全成功。其 `summary` 始终是 slot-free `PluginTestCommitSummary`；strict lifecycle failure 时
-自然满足 failure subtype，unexpected success 时则为 `{ ok: true, issues: [] }`。它不包装 callback programming error、invalid graph、fixture config
+自然满足 failure subtype，unexpected success 时则为 `{ lifecycleReport: { ok: true, issues: [] } }`。它不包装 callback programming error、invalid graph、fixture config
 validation、persistence commit failure、capability disabled 或 teardown failure。预期 lifecycle failure 的测试仍
 使用 `commitExpectFail()`，不以 catch 作为普通控制流；error class 的价值是让意外 strict failure 保留完整诊断，并允许 runner/reporter
 显示 summary。
@@ -1235,7 +1241,7 @@ const West = definePluginFork(RedisPlugin, 'west')
 `definePluginFork()` 只用现有 identity codec 校验并原样保留 `forkId`，然后返回 immutable branded `PluginForkRef<T>`；它不读 host、不消费 candidate、不写
 RuntimeState、不 materialize node。同一 canonical definition + forkId 在不同 ref object 中仍是同一 target。host admission 才校验
 constructor 已 lowering、definition 允许 fork，以及当前 catalog candidate 与 ref 绑定的 implementation 一致。
-Core 实现中只有一个 brand/factory；`@pluxel/test` 与 `@pluxel/runtime/test` 可从各自教程入口 re-export 同一 symbol，不得各自构造
+Core 实现中只有一个 brand/factory；`@pluxel/core/test` 与 `@pluxel/runtime/test` 可从各自教程入口 re-export 同一 symbol，不得各自构造
 不兼容的 fork ref。
 
 default constructor 与 fork ref 使用同一 lifecycle/config/query API，并可以混合 batch：
@@ -1275,7 +1281,10 @@ await host.commit((change) => {
 
 provider default 只能是 default constructor；这是 Runtime 的现有产品不变量，fork 不能成为 global provider default。consumer-specific override 的
 consumer/provider 都可以是 fork ref。`change.forks.remove(ref)` 表达删除 durable fork identity 及其 policy/config/override/cleanup 序列；
-`stop(ref)` 只改 session intent，不删 fork。Core 没有 durable fork registry，直接使用 `add(ref)` / `remove(ref)` materialize/dematerialize。
+它必须是该 `commit()` 的唯一 command，与任何其他 draft command 混用都在 production mutation 前 fail-fast。production `removeFork` 是
+stop → config/logging flush → durable remove 的多阶段 PONR use case，而不是可诚实塞进一次 coordinator update 的原子 graph command；test host
+直接复用它，不另造更宽的 transaction。`stop(ref)` 只改 session intent，不删 fork。Core 没有 durable fork registry，直接使用 `add(ref)` /
+`remove(ref)` materialize/dematerialize。
 
 implementation replacement 始终 definition-wide，因此 `replaceDefinition(Current, Next)` 只接受 constructor，不接受 fork ref，也不返回某一
 family member 的 instance。constructor/ref 都与 expected implementation 绑定；replacement 完成后，旧 target 传给任何 public target-taking

@@ -1,4 +1,4 @@
-import { Plugin, withHost } from '@pluxel/test'
+import { createCoreTestHost, Plugin } from '@pluxel/core/test'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	defineRedisScript,
@@ -60,54 +60,51 @@ class ScriptRedisPlugin extends Redis {
 
 describe('@pluxel/redis scripts', () => {
 	it('defines typed scripts and falls back from EVALSHA to EVAL on NOSCRIPT', async () => {
-		await withHost(async (host) => {
-			host.add(ScriptRedisPlugin)
-			await host.commit()
-			const redis = host.require(ScriptRedisPlugin)
-			redis.fake.evalSha
-				.mockRejectedValueOnce(new Error('NOSCRIPT No matching script.'))
-				.mockResolvedValueOnce(7)
-			redis.fake.eval.mockResolvedValueOnce(5)
+		await using host = createCoreTestHost()
+		const redis = await host.add(ScriptRedisPlugin)
+		redis.fake.evalSha
+			.mockRejectedValueOnce(new Error('NOSCRIPT No matching script.'))
+			.mockResolvedValueOnce(7)
+		redis.fake.eval.mockResolvedValueOnce(5)
 
-			const connection = redis.connection()
-			const run = connection.scripts.use(Add)
-			expect(connection.scripts.use(Add)).toBe(run)
-			expect(Add.sha1).toMatch(/^[a-f0-9]{40}$/)
-			expect(await run({ keys: ['counter'], arguments: ['5'] })).toBe(5)
-			expect(await run({ keys: ['counter'], arguments: ['2'] })).toBe(7)
+		const connection = redis.connection()
+		const run = connection.scripts.use(Add)
+		expect(connection.scripts.use(Add)).toBe(run)
+		expect(Add.sha1).toMatch(/^[a-f0-9]{40}$/)
+		expect(await run({ keys: ['counter'], arguments: ['5'] })).toBe(5)
+		expect(await run({ keys: ['counter'], arguments: ['2'] })).toBe(7)
 
-			expect(redis.fake.evalSha).toHaveBeenNthCalledWith(1, Add.sha1, {
-				keys: ['counter'],
-				arguments: ['5'],
-			})
-			expect(redis.fake.eval).toHaveBeenCalledWith(Add.source, {
-				keys: ['counter'],
-				arguments: ['5'],
-			})
-
-			redis.fake.evalShaRo.mockRejectedValueOnce(new Error('NOSCRIPT missing'))
-			redis.fake.evalRo.mockResolvedValueOnce('value')
-			expect(await connection.scripts.run(Read, { keys: ['key'] })).toBe('value')
-			expect(redis.fake.evalShaRo).toHaveBeenCalledWith(Read.sha1, {
-				keys: ['key'],
-				arguments: [],
-			})
-			expect(redis.fake.evalRo).toHaveBeenCalledWith(Read.source, {
-				keys: ['key'],
-				arguments: [],
-			})
-
-			await expect(
-				connection.scripts.run(Add, {
-					keys: [] as unknown as readonly [string],
-					arguments: ['1'],
-				}),
-			).rejects.toThrow(/requires 1 keys/)
-
-			redis.fake.evalSha.mockResolvedValueOnce('not-an-integer')
-			await expect(
-				connection.scripts.run(Add, { keys: ['counter'], arguments: ['1'] }),
-			).rejects.toBeInstanceOf(RedisScriptDecodeError)
+		expect(redis.fake.evalSha).toHaveBeenNthCalledWith(1, Add.sha1, {
+			keys: ['counter'],
+			arguments: ['5'],
 		})
+		expect(redis.fake.eval).toHaveBeenCalledWith(Add.source, {
+			keys: ['counter'],
+			arguments: ['5'],
+		})
+
+		redis.fake.evalShaRo.mockRejectedValueOnce(new Error('NOSCRIPT missing'))
+		redis.fake.evalRo.mockResolvedValueOnce('value')
+		expect(await connection.scripts.run(Read, { keys: ['key'] })).toBe('value')
+		expect(redis.fake.evalShaRo).toHaveBeenCalledWith(Read.sha1, {
+			keys: ['key'],
+			arguments: [],
+		})
+		expect(redis.fake.evalRo).toHaveBeenCalledWith(Read.source, {
+			keys: ['key'],
+			arguments: [],
+		})
+
+		await expect(
+			connection.scripts.run(Add, {
+				keys: [] as unknown as readonly [string],
+				arguments: ['1'],
+			}),
+		).rejects.toThrow(/requires 1 keys/)
+
+		redis.fake.evalSha.mockResolvedValueOnce('not-an-integer')
+		await expect(
+			connection.scripts.run(Add, { keys: ['counter'], arguments: ['1'] }),
+		).rejects.toBeInstanceOf(RedisScriptDecodeError)
 	})
 })

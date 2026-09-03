@@ -36,21 +36,28 @@ host 安装默认 provider：
 ```ts no-twoslash
 import { RedisPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, QueuePlugin])
-host.cfg(RedisPlugin).set({
-	connections: [
-		{
-			id: 'queue',
-			url: 'redis://127.0.0.1:6379',
-			database: 0,
-			connectTimeoutMs: 10_000,
-			commandQueueMaxLength: 10_000,
-			disableOfflineQueue: true,
-			pingIntervalMs: 0,
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [
+				{
+					id: 'queue',
+					url: 'redis://127.0.0.1:6379',
+					database: 0,
+					connectTimeoutMs: 10_000,
+					commandQueueMaxLength: 10_000,
+					disableOfflineQueue: true,
+					pingIntervalMs: 0,
+				},
+			],
 		},
-	],
+	})
+	change.start(QueuePlugin)
 })
 ```
+
+这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
+application boundary；production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
 
 `RedisConnection.client` 的公开类型是 node-redis 的 standalone、Cluster 或 Sentinel client union。这个 capability 是 raw server access，不自动添加 caller prefix；key、channel、consumer group 和 stream 的 namespace 都是 consumer 自己定义的业务 contract。
 
@@ -123,12 +130,22 @@ const value = await this.redis.connection('queue').scripts.run(Increment, {
 import { CachePlugin } from '@pluxel/cache'
 import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
-host.cfg(RedisCacheBackendPlugin).set({
-	connectionId: 'cache',
-	keyPrefix: 'pluxel:cache:',
-	scanCount: 200,
-	deleteBatchSize: 200,
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [{ id: 'cache', url: 'redis://127.0.0.1:6379' }],
+		},
+	})
+	change.start(RedisCacheBackendPlugin, {
+		initialConfig: {
+			connectionId: 'cache',
+			keyPrefix: 'pluxel:cache:',
+			scanCount: 200,
+			deleteBatchSize: 200,
+		},
+	})
+	change.start(CachePlugin)
+	change.start(AccountsPlugin)
 })
 ```
 
@@ -149,10 +166,20 @@ host.cfg(RedisCacheBackendPlugin).set({
 import { RatesPlugin } from '@pluxel/rates'
 import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
-host.cfg(RedisRatesBackendPlugin).set({
-	connectionId: 'rates',
-	keyPrefix: 'pluxel:rates:',
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [{ id: 'rates', url: 'redis://127.0.0.1:6379' }],
+		},
+	})
+	change.start(RedisRatesBackendPlugin, {
+		initialConfig: {
+			connectionId: 'rates',
+			keyPrefix: 'pluxel:rates:',
+		},
+	})
+	change.start(RatesPlugin)
+	change.start(MessagingPlugin)
 })
 ```
 

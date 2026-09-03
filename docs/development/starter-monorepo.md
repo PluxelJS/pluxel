@@ -79,8 +79,9 @@ React singleton、runtime 与三个 Plugin package；两边的 React 版本都�
 新增、重新分组或清理依赖分别使用 `pnpm catalog:add -- <package>`、`pnpm catalog:migrate` 和
 `pnpm catalog:clean`，不要手改 catalog 与 package 引用。集中的是版本选择，不是依赖所有权：每个 workspace
 仍声明直接使用的包。governance 会拒绝绕过 named catalog 的第三方裸版本，同时保留内部 workspace dependency
-和 peer contract。Plugin 生产代码通常只需要 `@pluxel/runtime`；测试中的 `@pluxel/test` 及其
-`@pluxel/core` peer、Vitest、TypeScript 继续属于各 Plugin 的 `devDependencies`。pnpm 会复用安装内容，重复声明
+和 peer contract。Plugin 生产代码通常只需要 `@pluxel/runtime`；测试 runner `@pluxel/test`、core-only host
+`@pluxel/core`、Vitest、TypeScript 继续属于实际使用它们的 Plugin `devDependencies`。`@pluxel/test` 没有 host 根入口；
+host 始终从 `@pluxel/core/test` 或 `@pluxel/runtime/test` 导入。pnpm 会复用安装内容，重复声明
 不会产生多份物理安装。starter 规则已覆盖常见 React UI、测试、后端/数据和构建工具生态；产品引入新的依赖族时再扩展
 `pncat.config.ts`，不要退回按 `dependencies` / `devDependencies` 字段分组。
 
@@ -117,12 +118,15 @@ constructor dependency、optional ref 和 config authoring model；不要为两�
 ## 测试层次
 
 - `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
-- `plugins/audit/tests` 使用 `@pluxel/test` 的 core-only `withHost()`。
-- `plugins/todo/tests` 验证 config、状态操作、optional provider 存在与缺失两种情况。
-- `plugins/http/tests` 使用 `createRuntimeHost()` 和 `await using` 验证 required edge、HTTP schema、mutation 和错误状态。
+- `plugins/audit/tests` 使用 `@pluxel/core/test` 的 `createCoreTestHost()` 与立即完成的 `add/remove`。
+- `plugins/todo/tests` 使用 Core host 的 `initialConfig`，验证状态操作及 optional provider 存在与缺失两种情况。
+- `plugins/http/tests` 使用 `@pluxel/runtime/test` 的 `createRuntimeTestHost()`、`await using` 和 `host.http.fetch()` 验证 required edge、
+  HTTP schema、mutation 与错误状态。
 - `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
 
-选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 runtime service 才使用 runtime host。
+选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 Runtime service 才使用 Runtime host。常用 command 会立即提交；
+多个变化必须共享边界时才使用同步 `commit(change => ...)`。首次配置使用 `initialConfig`，运行期更新使用
+`host.config.patch()`。
 
 ## 常用命令
 

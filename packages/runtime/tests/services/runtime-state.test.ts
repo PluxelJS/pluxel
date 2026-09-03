@@ -1,6 +1,6 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import { createMemoryPersistenceBackend } from '@pluxel/runtime'
-import { createRuntimeContext, createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { requireRuntimeStateStore } from '@pluxel/runtime/internal'
 import { SuperJSON } from 'superjson'
 import { describe, expect, it } from 'vitest'
@@ -19,7 +19,7 @@ const ConsumerNode: PluginNodeAddress = { definition: Consumer, variant: 'defaul
 describe('RuntimeState address persistence', () => {
 	it('rejects legacy and unknown startup snapshot fields instead of silently dropping them', () => {
 		expect(() =>
-			createRuntimeContext({
+			createRuntimeInternalTestHost({
 				persistence: { mode: 'memory' },
 				runtimeState: {
 					mode: 'memory',
@@ -56,7 +56,7 @@ describe('RuntimeState address persistence', () => {
 	] as const)('rejects a v5 file with %s', async (_case, file, expected) => {
 		const backend = createMemoryPersistenceBackend()
 		await backend.namespace('runtime-state').put('state.json', SuperJSON.stringify(file))
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestHost({
 			persistence: { mode: 'readonly', backend },
 			runtimeState: {},
 		})
@@ -77,7 +77,7 @@ describe('RuntimeState address persistence', () => {
 			dependencyOverrides: [],
 		})
 		await backend.namespace('runtime-state').put('state.json', persisted)
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestHost({
 			persistence: { mode: 'readonly', backend },
 			runtimeState: {},
 		})
@@ -97,7 +97,7 @@ describe('RuntimeState address persistence', () => {
 
 	it('keeps the startup state snapshot when a readonly file is absent', async () => {
 		const backend = createMemoryPersistenceBackend()
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestHost({
 			persistence: { mode: 'readonly', backend },
 			runtimeState: { snapshot: { autoStart: [ProviderNode] } },
 		})
@@ -126,7 +126,7 @@ describe('RuntimeState address persistence', () => {
 	])('fails fast on %s readonly state without isolating or rewriting it', async (_case, text) => {
 		const backend = createMemoryPersistenceBackend()
 		await backend.namespace('runtime-state').put('state.json', text)
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestHost({
 			persistence: { mode: 'readonly', backend },
 			runtimeState: {},
 		})
@@ -142,7 +142,7 @@ describe('RuntimeState address persistence', () => {
 	})
 
 	it('compare-and-commits coordinator snapshots without accepting a stale revision', async () => {
-		const host = createRuntimeHost({
+		const host = createRuntimeInternalTestHost({
 			workbench: false,
 			runtimeState: { mode: 'memory' },
 		})
@@ -165,7 +165,7 @@ describe('RuntimeState address persistence', () => {
 	})
 
 	it('reuses one immutable snapshot per revision and invalidates it on commit', async () => {
-		const host = createRuntimeHost({
+		const host = createRuntimeInternalTestHost({
 			workbench: false,
 			runtimeState: { mode: 'memory' },
 		})
@@ -209,7 +209,7 @@ describe('RuntimeState address persistence', () => {
 			}),
 		)
 
-		const host = createRuntimeHost({
+		const host = createRuntimeInternalTestHost({
 			workbench: false,
 			persistence: { mode: 'custom', backend },
 			runtimeState: { mode: 'file' },
@@ -233,7 +233,7 @@ describe('RuntimeState address persistence', () => {
 		await backend
 			.namespace('runtime-state')
 			.put('state.json', SuperJSON.stringify({ version, autoStart: ['NameOnlyPlugin'] }))
-		const host = createRuntimeHost({
+		const host = createRuntimeInternalTestHost({
 			workbench: false,
 			persistence: { mode: 'custom', backend },
 			runtimeState: { mode: 'file' },
@@ -259,7 +259,7 @@ describe('RuntimeState address persistence', () => {
 				dependencyOverrides: [],
 			}),
 		)
-		const host = createRuntimeHost({
+		const host = createRuntimeInternalTestHost({
 			workbench: false,
 			persistence: { mode: 'custom', backend },
 			runtimeState: { mode: 'file' },
@@ -285,7 +285,7 @@ describe('RuntimeState address persistence', () => {
 				dependencyOverrides: [],
 			}),
 		)
-		const host = createRuntimeHost({
+		const host = createRuntimeInternalTestHost({
 			workbench: false,
 			persistence: { mode: 'custom', backend },
 			runtimeState: { mode: 'file' },

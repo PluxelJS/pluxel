@@ -13,7 +13,8 @@ import {
 	requirePluginService,
 	resolveCoreRootInputs,
 } from '@pluxel/core/internal'
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { describe, expect, it, vi } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 
@@ -88,7 +89,7 @@ describe('PluginService read cost model', () => {
 	it.each(['committed', 'pending'] as const)(
 		'replaces a definition family through one %s multi-root closure traversal',
 		async (mode) => {
-			await withCoreHost(async (host) => {
+			await withCoreInternalTestHost(async (host) => {
 				host.add(QueryTarget)
 				for (let index = 0; index < 32; index++) host.fork(QueryTarget, `cost-${index}`)
 				await host.commit()
@@ -123,7 +124,7 @@ describe('PluginService read cost model', () => {
 	)
 
 	it('unions every provider-default consumer into one closure traversal', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const plugins = requirePluginService(host.ctx)
 			host.add(QueryTarget)
 			const first = host.fork(QueryTarget, 'provider-default-consumer-1')
@@ -162,7 +163,7 @@ describe('PluginService read cost model', () => {
 	})
 
 	it('does not create slots, records, or generations for unmaterialized orphan reads', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			const orphan = Object.freeze({
 				definition: pluginNodeAddressOf(QueryTarget).definition,
@@ -203,7 +204,7 @@ describe('PluginService read cost model', () => {
 	})
 
 	it('does not intern absent nodes through reads or rejected planning mutations', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			const defaultAddress = pluginNodeAddressOf(QueryTarget)
 			const orphan = Object.freeze({

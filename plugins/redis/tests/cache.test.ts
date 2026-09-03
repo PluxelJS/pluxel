@@ -1,5 +1,5 @@
-import { type PluginConstructor, v } from '@pluxel/runtime'
-import { Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
+import { v } from '@pluxel/runtime'
+import { createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -101,11 +101,6 @@ class FakeRedisPlugin extends Redis {
 	}
 }
 
-function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
-	host.add(plugins)
-	for (const PluginClass of plugins) host.start(PluginClass)
-}
-
 describe('@pluxel/redis cache backend', () => {
 	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
 		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\u{1f680}:' }).success).toBe(
@@ -117,11 +112,14 @@ describe('@pluxel/redis cache backend', () => {
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FakeRedisPlugin, RedisCacheBackendPlugin])
-			host.cfg(RedisCacheBackendPlugin).set({ connectionId: 'cache' })
-			await host.commit()
+			await host.commit((change) => {
+				change.start(FakeRedisPlugin)
+				change.start(RedisCacheBackendPlugin, {
+					initialConfig: { connectionId: 'cache' },
+				})
+			})
 			const backend = host.require(RedisCacheBackendPlugin)
 			const redis = host.require(FakeRedisPlugin).fake
 			const value = {
@@ -150,15 +148,18 @@ describe('@pluxel/redis cache backend', () => {
 
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FakeRedisPlugin, RedisCacheBackendPlugin])
-			host.cfg(RedisCacheBackendPlugin).set({
-				keyPrefix: 'pluxel[prod]:cache:',
-				scanCount: 3,
-				deleteBatchSize: 2,
+			await host.commit((change) => {
+				change.start(FakeRedisPlugin)
+				change.start(RedisCacheBackendPlugin, {
+					initialConfig: {
+						keyPrefix: 'pluxel[prod]:cache:',
+						scanCount: 3,
+						deleteBatchSize: 2,
+					},
+				})
 			})
-			await host.commit()
 			const backend = host.require(RedisCacheBackendPlugin)
 			const redis = host.require(FakeRedisPlugin).fake
 			for (const key of ['scope:a', 'scope:b', 'scope:c', 'scope:d', 'other:a']) {

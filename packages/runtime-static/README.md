@@ -90,10 +90,21 @@ freezer 总会生成 root `.env.example`，包含 Pluxel host 变量；存在 co
 `variant` 决定 artifact 是否存在；Workbench variant 与 static Vite 默认启用，`PLUXEL_WORKBENCH=false` 可在启动时关闭。`headless` 产物不能在启动时开启 Workbench。Host 从唯一环境入口 `@pluxel/runtime/environment` 导入 universal `env`；需要校验后的行为与默认 data root 时读取 `hostEnv`，不要直接依赖 `process.env`。当前 freezer 只生成 Node application，并拥有 HTTP listener 与 signal shutdown；在 runtime services 拆出真正 platform-neutral closure 前不开放 Fetch/Worker target。
 headless 与 workbench 使用独立的 production adapter，因此 headless server closure 不解析 Workbench backend。
 
-测试使用 `createStaticRuntimeTestHost()`：
+只有断言依赖完整 static application 的 `configure()`、`prepare()`、bindings 或 cold boot 时，才使用 application test host；
+普通 Plugin 行为继续使用 `@pluxel/runtime/test`：
 
 ```ts
-import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
+
+await using host = await startStaticApplicationTestHost(application)
+
+expect(host.startupReport.runtime).toBe('app')
+const response = await host.http.fetch(new URL('/health', host.http.origin))
 ```
+
+factory resolve 时 application cold boot 已完成。返回值只提供冻结的 startup report、fixed-catalog `require()` / `isRunning()`
+查询和共享 Runtime drivers；它没有 root Context、fixture lifecycle mutation、HMR authority 或 physical listener。显式 bindings 的
+application 会在类型层要求传入 `{ bindings }`，省略 `env` 固定使用空对象，不读取测试进程环境。`dispose()` 与
+`[Symbol.asyncDispose]()` 是同一个幂等 teardown。
 
 用户配置见 [`../../docs/getting-started/host-setup.md`](../../docs/getting-started/host-setup.md)，内部边界见 [`../../engineering/RUNTIME.md`](../../engineering/RUNTIME.md)。

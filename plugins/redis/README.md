@@ -4,7 +4,8 @@ Pluxel 官方 Redis capability，同时自带 `RedisCacheBackendPlugin`、`Redis
 依赖抽象 `Redis`；host 选择默认 standalone provider、Vault-aware provider、Sentinel、Cluster 或平台 binding 实现。
 
 ```ts
-import { Redis, RedisPlugin } from '@pluxel/redis'
+import { Redis } from '@pluxel/redis'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin()
 class QueuePlugin extends BasePlugin {
@@ -16,8 +17,6 @@ class QueuePlugin extends BasePlugin {
 		return this.redis.connection('queue').client.lPush('queue', value)
 	}
 }
-
-host.add([RedisPlugin, QueuePlugin])
 ```
 
 `Redis` 是 raw server capability，不自动添加 caller namespace。使用普通 Redis command、transaction、stream 或
@@ -26,20 +25,30 @@ pub/sub 的插件需要定义自己的 key/channel contract。需要 caller-awar
 ## 默认 standalone provider
 
 ```ts
-host.cfg(RedisPlugin).set({
-	connections: [
-		{
-			id: 'queue',
-			url: 'redis://127.0.0.1:6379',
-			database: 0,
-			connectTimeoutMs: 10_000,
-			commandQueueMaxLength: 10_000,
-			disableOfflineQueue: true,
-			pingIntervalMs: 0,
+import { RedisPlugin } from '@pluxel/redis'
+
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [
+				{
+					id: 'queue',
+					url: 'redis://127.0.0.1:6379',
+					database: 0,
+					connectTimeoutMs: 10_000,
+					commandQueueMaxLength: 10_000,
+					disableOfflineQueue: true,
+					pingIntervalMs: 0,
+				},
+			],
 		},
-	],
+	})
+	change.start(QueuePlugin)
 })
 ```
+
+这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
+application boundary；production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
 
 - `commandQueueMaxLength` 防止断线或高压期间积累无界 client queue；
 - `disableOfflineQueue: true` 默认让断线期间 command 快速失败，而不是等待不确定时长；
@@ -102,13 +111,22 @@ Catalog 是原子 lifecycle 单元：所有配置连接并行启动，任一连�
 import { CachePlugin } from '@pluxel/cache'
 import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
-
-host.cfg(RedisCacheBackendPlugin).set({
-	connectionId: 'cache',
-	keyPrefix: 'pluxel:cache:',
-	scanCount: 200,
-	deleteBatchSize: 200,
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [{ id: 'cache', url: 'redis://127.0.0.1:6379' }],
+		},
+	})
+	change.start(RedisCacheBackendPlugin, {
+		initialConfig: {
+			connectionId: 'cache',
+			keyPrefix: 'pluxel:cache:',
+			scanCount: 200,
+			deleteBatchSize: 200,
+		},
+	})
+	change.start(CachePlugin)
+	change.start(AccountsPlugin)
 })
 ```
 
@@ -137,11 +155,20 @@ adapter 遵循通用 `CacheBackend` contract：`undefined` 只表示 miss，`nul
 import { RatesPlugin } from '@pluxel/rates'
 import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
-
-host.cfg(RedisRatesBackendPlugin).set({
-	connectionId: 'rates',
-	keyPrefix: 'pluxel:rates:',
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [{ id: 'rates', url: 'redis://127.0.0.1:6379' }],
+		},
+	})
+	change.start(RedisRatesBackendPlugin, {
+		initialConfig: {
+			connectionId: 'rates',
+			keyPrefix: 'pluxel:rates:',
+		},
+	})
+	change.start(RatesPlugin)
+	change.start(MessagingPlugin)
 })
 ```
 

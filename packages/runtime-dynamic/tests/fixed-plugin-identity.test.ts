@@ -83,7 +83,7 @@ describe('dynamic fixed plugin module identity', () => {
 				"  root: resolve(workspaceRoot, 'packages/runtime-dynamic'),",
 				"  cacheDir: resolve(root, '.vite-cache'),",
 				'  optimizeDeps: { noDiscovery: true, include: [] },',
-				`  plugins: dynamicRuntimeVitePlugin({ config: ${JSON.stringify(configPath)} }),`,
+				`  plugins: dynamicRuntimeVitePlugin({ entry: ${JSON.stringify(configPath)} }),`,
 				'  server: { middlewareMode: true, watch: { usePolling: true, interval: 20 } },',
 				'})',
 				'try {',

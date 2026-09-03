@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createHost } from '@pluxel/test'
 import { createDiskFixture, createFixture } from '@pluxel/test/fixtures'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { normalize } from 'pathe'
 import { type EntryResolutionOk, ScanService } from '../../src/scan/ScanService'
 
@@ -58,7 +58,7 @@ function createService(
 	root: string,
 	overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {},
 ): ScanService & AsyncDisposable {
-	const host = createHost()
+	const host = createRuntimeInternalTestHost({ workbench: false })
 	const service = new ScanService(host.ctx, {
 		roots: root,
 		installedBase: root,

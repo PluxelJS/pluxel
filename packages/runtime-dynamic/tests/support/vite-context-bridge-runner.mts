@@ -14,7 +14,7 @@ const contextPackageRoot = process.env.PLUXEL_CONTEXT_PACKAGE_ROOT
 if (!fixtureRoot || !contextPackageRoot)
 	throw new Error('Context bridge fixture environment is missing')
 
-const dynamicPlugins = dynamicRuntimeVitePlugin({ config: './unused.ts' }) as Plugin[]
+const dynamicPlugins = dynamicRuntimeVitePlugin({ entry: './unused.ts' }) as Plugin[]
 const bridge = dynamicPlugins.find((plugin) => plugin.name === 'pluxel:dynamic-singleton-bridge')
 if (!bridge) throw new Error('dynamic singleton bridge plugin is missing')
 

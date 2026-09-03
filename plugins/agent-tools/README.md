@@ -14,13 +14,16 @@ pnpm add @pluxel/agent-tools @pluxel/commands @pluxel/runtime
 ```ts
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 
-host.cfg(AgentToolsPlugin).set({
-	toolsets: [{ id: 'notes-read', label: 'Notes read', commandNames: ['notes.read'] }],
-	agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['notes-read'] }],
+await host.start(AgentToolsPlugin, {
+	initialConfig: {
+		toolsets: [{ id: 'notes-read', label: 'Notes read', commandNames: ['notes.read'] }],
+		agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['notes-read'] }],
+	},
 })
 ```
 
-这里使用的是测试 host config handle；production static/dynamic host 通过自己的 ConfigService 管理同一 record。同一 schema 会出现在通用 Plugin 配置页。可选的
+这里的 `initialConfig` 只用于测试 fixture 首次启动；已启动的测试 host 使用 `host.config.patch()`，production static/dynamic host
+通过自己的 ConfigService 管理同一 record。同一 schema 会出现在通用 Plugin 配置页。可选的
 Agent tools Workbench Content 由宿主渲染，实时只读展示 published commands、Toolset、缺失 command、Agent assignment 和未分组 command；编辑仍走通用 Config 页面，不加载 Plugin 自有 React UI。
 
 外部 Agent adapter 应是普通 Plugin，并通过 required dependency 取得受限 catalog：

@@ -1,16 +1,15 @@
-import { createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
 
 describe('AuthPlugin lifecycle', () => {
 	it('runs in setup-required state and revokes its generation on stop', async () => {
 		{
-			await using host = createRuntimeHost({ vault: {}, management: true, workbench: false })
+			await using host = createRuntimeInternalTestHost({ vault: {}, management: true })
 
-			host.add(AuthPlugin)
-			host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
-			host.start(AuthPlugin)
-			await host.commit()
+			await host.start(AuthPlugin, {
+				initialConfig: { mode: { type: 'password' } },
+			})
 			expect(await host.ctx.adminAccess?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: {
@@ -20,8 +19,7 @@ describe('AuthPlugin lifecycle', () => {
 					ready: false,
 				},
 			})
-			host.stop(AuthPlugin)
-			await host.commit()
+			await host.stop(AuthPlugin)
 			expect(await host.ctx.adminAccess?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: null,
@@ -31,20 +29,19 @@ describe('AuthPlugin lifecycle', () => {
 
 	it('runs public OIDC without Vault', async () => {
 		{
-			await using host = createRuntimeHost({ management: true, workbench: false })
+			await using host = createRuntimeInternalTestHost({ management: true })
 
-			host.add(AuthPlugin)
-			host.cfg(AuthPlugin).set({
-				mode: {
-					type: 'oidc',
-					issuer: 'https://issuer.example',
-					clientId: 'pluxel-client',
-					publicOrigin: 'https://admin.example',
-					clientKind: 'public',
+			await host.start(AuthPlugin, {
+				initialConfig: {
+					mode: {
+						type: 'oidc',
+						issuer: 'https://issuer.example',
+						clientId: 'pluxel-client',
+						publicOrigin: 'https://admin.example',
+						clientKind: 'public',
+					},
 				},
 			})
-			host.start(AuthPlugin)
-			await host.commit()
 			expect(await host.ctx.adminAccess?.describe()).toMatchObject({
 				provider: { method: 'oidc', ready: true },
 			})

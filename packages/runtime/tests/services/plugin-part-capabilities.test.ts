@@ -1,7 +1,8 @@
 import { defineCommand } from '@pluxel/commands'
 import { obj, Type } from '@pluxel/commands/typebox'
 import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
-import { BasePlugin, Plugin, PluginPart, createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime/test'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { Elysia } from 'elysia'
@@ -68,10 +69,9 @@ describe('PluginPart runtime capabilities', () => {
 		ownerElysia = undefined
 
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true } })
+			await using host = createRuntimeInternalTestHost({ workbench: { enabled: true } })
 
-			host.add(CapabilityOwner).start(CapabilityOwner)
-			await host.commit()
+			await host.start(CapabilityOwner)
 			expect(partCommands).toBe(repeatedPartCommands)
 			expect(partCommands).not.toBe(ownerCommands)
 			expect(partElysia).toBe(repeatedPartElysia)
@@ -80,29 +80,27 @@ describe('PluginPart runtime capabilities', () => {
 			expect(() => {
 				;(partCommands as { ctx: unknown }).ctx = host.ctx
 			}).toThrow(TypeError)
-			await expect(host.ctx.commands.execute('part.capability.read', {})).resolves.toEqual({
+			await expect(host.commands.execute('part.capability.read', {})).resolves.toEqual({
 				value: 'part',
 			})
 
-			const mounted = await host.fetch(new Request('http://local/part-capability'))
+			const mounted = await host.http.fetch(new Request('http://local/part-capability'))
 			expect(await mounted.text()).toBe('part-route')
 
-			host.remove(CapabilityOwner)
-			await host.commit()
-			expect(host.ctx.commands.list().some(({ name }) => name === 'part.capability.read')).toBe(
+			await host.commit((change) => change.catalog.remove(CapabilityOwner))
+			expect(host.commands.list().some(({ name }) => name === 'part.capability.read')).toBe(
 				false,
 			)
-			const removed = await host.fetch(new Request('http://local/part-capability'))
+			const removed = await host.http.fetch(new Request('http://local/part-capability'))
 			expect(removed.status).toBe(404)
 		}
 	})
 
 	it('projects owner and Part schemas as Workbench sections under one config owner', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			host.add(ConfiguredOwner).start(ConfiguredOwner)
-			await host.commit()
+			await host.start(ConfiguredOwner)
 			const address = pluginNodeAddressOf(ConfiguredOwner)
 			const definition = requireRuntimePluginGraphCoordinator(host.ctx)
 				.catalogSnapshot()

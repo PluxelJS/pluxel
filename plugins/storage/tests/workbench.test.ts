@@ -1,11 +1,15 @@
-import { requireWorkbench } from '@pluxel/runtime/internal'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { BasePlugin, Plugin, createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	BasePlugin,
+	Plugin,
+	createRuntimeTestHost,
+	type RuntimeTestHost,
+} from '@pluxel/runtime/test'
 import type { WorkbenchPrincipal } from '@pluxel/runtime/workbench'
 import type { WorkbenchContentObserver } from '@pluxel/runtime/workbench/client'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import { describe, expect, it, vi } from 'vitest'
 import { S3Plugin } from '../src/index.ts'
+import { S3Workbench } from '../src/workbench.ts'
 
 const REFERENCE = Object.freeze({
 	type: 'vault' as const,
@@ -18,10 +22,8 @@ const ADMIN = Object.freeze({ provider: '@pluxel/auth', subject: 'local:admin' }
 @Plugin()
 class VaultSeeder extends BasePlugin {}
 
-async function startVaultS3(host: RuntimeHost): Promise<void> {
-	host.add(VaultSeeder)
-	host.start(VaultSeeder)
-	await host.commit()
+async function startVaultS3(host: RuntimeTestHost): Promise<void> {
+	await host.start(VaultSeeder)
 	await host
 		.require(VaultSeeder)
 		.ctx.vault!.kv({ namespace: REFERENCE.namespace })
@@ -29,48 +31,33 @@ async function startVaultS3(host: RuntimeHost): Promise<void> {
 			accessKeyId: 'old-access-key',
 			secretAccessKey: 'old-secret-key',
 		})
-	host.add(S3Plugin)
-	host.cfg(S3Plugin).set({
-		buckets: [
-			{
-				id: 'assets',
-				backend: {
-					type: 'remote',
-					endpoint: 'https://bucket.s3.example.com',
-					region: 'auto',
-					credentials: REFERENCE,
-					requestSizeInBytes: 8 * 1024 * 1024,
-					requestAbortTimeout: 30_000,
-					minPartSize: 8 * 1024 * 1024,
+	await host.start(S3Plugin, {
+		initialConfig: {
+			buckets: [
+				{
+					id: 'assets',
+					backend: {
+						type: 'remote',
+						endpoint: 'https://bucket.s3.example.com',
+						region: 'auto',
+						credentials: REFERENCE,
+						requestSizeInBytes: 8 * 1024 * 1024,
+						requestAbortTimeout: 30_000,
+						minPartSize: 8 * 1024 * 1024,
+					},
 				},
-			},
-		],
+			],
+		},
 	})
-	host.start(S3Plugin)
-	await host.commit()
 }
 
-async function openCredentials(host: RuntimeHost, principal: WorkbenchPrincipal) {
-	const backend = requireWorkbench(host.ctx)
-	const target = pluginNodeAddressOf(S3Plugin)
-	const layout = backend.registry.getLayout(target)
-	const entry = layout.entries.find(
-		(candidate) =>
-			candidate.descriptor.kind === 'content' && candidate.descriptor.key === 'buckets',
-	)
-	if (!entry) throw new Error('S3Plugin published no bucket Content')
-	const session = backend.createSession(principal, () => {})
-	const opened = await session.target.openEntry({
-		layoutRevision: layout.revision,
-		target,
-		descriptor: entry.descriptor,
+function openCredentials(host: RuntimeTestHost, principal: WorkbenchPrincipal) {
+	return host.workbench.open({
+		target: S3Plugin,
+		entry: S3Workbench.buckets,
+		principal,
 		location: '/storage/s3',
 	})
-	if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
-		session.dispose()
-		throw new Error('S3 credential Content failed to open')
-	}
-	return Object.freeze({ opened: opened.value, session })
 }
 
 function contentObserver(
@@ -92,11 +79,11 @@ function contentObserver(
 describe('S3 Workbench credential rotation', () => {
 	it('uses password fields and never echoes replacement credentials', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true }, vault: {} })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
 			await startVaultS3(host)
-			const { opened, session } = await openCredentials(host, ADMIN)
-			const second = await openCredentials(host, ADMIN)
+			using opened = await openCredentials(host, ADMIN)
+			using second = await openCredentials(host, ADMIN)
 			const secondUpdates = vi.fn()
 			await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
 				ok: true,
@@ -112,7 +99,7 @@ describe('S3 Workbench credential rotation', () => {
 					},
 				},
 			})
-			await second.opened.root.subscribe(contentObserver(secondUpdates))
+			await second.root.subscribe(contentObserver(secondUpdates))
 			const action = opened.presentation.slots.find((slot) => slot.kind === 'action')
 			expect(action).toMatchObject({
 				kind: 'action',
@@ -188,20 +175,19 @@ describe('S3 Workbench credential rotation', () => {
 					}),
 				),
 			)
-			second.session.dispose()
+			second[Symbol.dispose]()
 			await opened.root.run('rotate', replacement)
 			await Promise.resolve()
 			expect(secondUpdates).toHaveBeenCalledTimes(1)
-			session.dispose()
 		}
 	})
 
 	it('denies the loopback recovery principal and stops accepting calls with the generation', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true }, vault: {} })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
 			await startVaultS3(host)
-			const { opened, session } = await openCredentials(host, RECOVERY)
+			using opened = await openCredentials(host, RECOVERY)
 			await opened.root.subscribe(contentObserver())
 			const replacement = {
 				bucketId: 'assets',
@@ -222,23 +208,19 @@ describe('S3 Workbench credential rotation', () => {
 				secretAccessKey: 'old-secret-key',
 			})
 
-			host.stop(S3Plugin)
-			await host.commit()
+			await host.stop(S3Plugin)
 			await expect(opened.root.run('rotate', replacement)).resolves.toMatchObject({
 				action: { ok: false, code: 'invalid_input' },
 			})
-			session.dispose()
 		}
 	})
 
 	it('keeps credential Content topology fixed and rejects local or anonymous backends', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true } })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
-			host.add(S3Plugin)
-			host.start(S3Plugin)
-			await host.commit()
-			const { opened, session } = await openCredentials(host, ADMIN)
+			await host.start(S3Plugin)
+			using opened = await openCredentials(host, ADMIN)
 			await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
 				data: {
 					status: {
@@ -259,32 +241,30 @@ describe('S3 Workbench credential rotation', () => {
 					secretAccessKey: 'unused-secret-key',
 				}),
 			).resolves.toMatchObject({ action: { ok: false, code: 'rejected' }, data: { ok: true } })
-			session.dispose()
 		}
 
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true } })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
-			host.add(S3Plugin)
-			host.cfg(S3Plugin).set({
-				buckets: [
-					{
-						id: 'public',
-						backend: {
-							type: 'remote',
-							endpoint: 'https://bucket.s3.example.com',
-							region: 'auto',
-							credentials: { type: 'anonymous' },
-							requestSizeInBytes: 8 * 1024 * 1024,
-							requestAbortTimeout: 30_000,
-							minPartSize: 8 * 1024 * 1024,
+			await host.start(S3Plugin, {
+				initialConfig: {
+					buckets: [
+						{
+							id: 'public',
+							backend: {
+								type: 'remote',
+								endpoint: 'https://bucket.s3.example.com',
+								region: 'auto',
+								credentials: { type: 'anonymous' },
+								requestSizeInBytes: 8 * 1024 * 1024,
+								requestAbortTimeout: 30_000,
+								minPartSize: 8 * 1024 * 1024,
+							},
 						},
-					},
-				],
+					],
+				},
 			})
-			host.start(S3Plugin)
-			await host.commit()
-			const { opened, session } = await openCredentials(host, ADMIN)
+			using opened = await openCredentials(host, ADMIN)
 			await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
 				data: {
 					status: {
@@ -305,7 +285,6 @@ describe('S3 Workbench credential rotation', () => {
 					secretAccessKey: 'unused-secret-key',
 				}),
 			).resolves.toMatchObject({ action: { ok: false, code: 'rejected' }, data: { ok: true } })
-			session.dispose()
 		}
 	})
 })

@@ -126,7 +126,7 @@ describe('dynamic config host singleton bridge', () => {
 })
 
 function singletonBridgePlugin(): Plugin {
-	const plugin = (dynamicRuntimeVitePlugin({ config: './unused.ts' }) as Plugin[]).find(
+	const plugin = (dynamicRuntimeVitePlugin({ entry: './unused.ts' }) as Plugin[]).find(
 		(candidate) => candidate.name === 'pluxel:dynamic-singleton-bridge',
 	)
 	if (!plugin) throw new Error('dynamic singleton bridge plugin is missing')

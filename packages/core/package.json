@@ -32,6 +32,11 @@
 			"import": "./dist/internal.mjs",
 			"require": "./dist/internal.cjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"import": "./dist/internal/test.mjs",
+			"require": "./dist/internal/test.cjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
 			"import": "./dist/logger.mjs",
@@ -67,6 +72,10 @@
 			"./internal": {
 				"import": "./dist/internal.mjs",
 				"require": "./dist/internal.cjs"
+			},
+			"./internal/test": {
+				"import": "./dist/internal/test.mjs",
+				"require": "./dist/internal/test.cjs"
 			},
 			"./logger": {
 				"import": "./dist/logger.mjs",

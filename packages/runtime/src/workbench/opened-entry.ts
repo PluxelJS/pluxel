@@ -190,3 +190,15 @@ export function readWorkbenchOpenedViewHandle(
 	if (!state.active) throw new Error('[workbench/client] opened View handle is closed')
 	return state.value
 }
+
+/** @internal Test/Shell integration may inspect the already-validated value without taking it. */
+export function readWorkbenchOpenedContentHandle(
+	handle: WorkbenchOpenedContentHandle,
+): OpenedContentValue {
+	if (!(handle instanceof WorkbenchOpenedContentHandle)) {
+		throw new TypeError('[workbench/client] invalid opened Content handle')
+	}
+	const state = handle[OPENED]
+	if (!state.active) throw new Error('[workbench/client] opened Content handle is closed')
+	return state.value
+}

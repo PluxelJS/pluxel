@@ -1,7 +1,8 @@
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineWorkerTask } from '@pluxel/runtime'
-import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { afterAll, beforeAll, bench, describe } from 'vitest'
 import { lowerTestPlugin } from '../tests/helpers/lowered-plugin'
 
@@ -29,7 +30,7 @@ class WorkerTaskBenchmark extends BasePlugin {
 	}
 }
 
-const host = createRuntimeHost({
+const host = createRuntimeInternalTestHost({
 	workbench: false,
 	nodeModuleArtifactRoot: artifactRoot,
 	workers: { maxThreads: 1, idleTimeoutMs: 60_000 },
@@ -37,10 +38,7 @@ const host = createRuntimeHost({
 let worker!: WorkerTaskBenchmark
 
 beforeAll(async () => {
-	host.add(lowerTestPlugin(WorkerTaskBenchmark))
-	host.start(WorkerTaskBenchmark)
-	await host.commit()
-	worker = host.require(WorkerTaskBenchmark)
+	worker = await host.start(lowerTestPlugin(WorkerTaskBenchmark))
 	await worker.run(new Uint8Array(1))
 })
 

@@ -1,7 +1,7 @@
 # Plugin test、static application test 与 dynamic smoke 边界
 
-> 状态：设计已冻结，尚未实现。本文定义三条入口应共享的资源语法，并明确它们不是三种可互换的 Plugin test host；
-> prototype 只验证实现可行性。
+> 状态：架构原则已冻结，public surface 为 release candidate，尚未实现。规范性入口与 package ownership 见
+> [`CONTRACT.md`](CONTRACT.md)。本文定义三条入口应共享的资源语法，并明确它们不是三种可互换的 Plugin test host。
 
 ## 结论
 

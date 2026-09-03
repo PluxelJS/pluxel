@@ -123,8 +123,13 @@ caller、`RatesPlugin` 或 backend generation 停止或被替换后，旧 handle
 ```ts no-twoslash
 import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
 
-host.add([MemoryRatesBackendPlugin, RatesPlugin, MessagingPlugin])
-host.cfg(MemoryRatesBackendPlugin).set({ maxIdentities: 10_000 })
+await host.commit((change) => {
+	change.start(MemoryRatesBackendPlugin, {
+		initialConfig: { maxIdentities: 10_000 },
+	})
+	change.start(RatesPlugin)
+	change.start(MessagingPlugin)
+})
 ```
 
 内存 backend 重启后额度会重置，也不会淘汰仍有效的 state。达到 `maxIdentities` 时，它会抛出 `RatesUnavailableError`，其中可能带 `retryAfterMs`。
@@ -135,10 +140,14 @@ host.cfg(MemoryRatesBackendPlugin).set({ maxIdentities: 10_000 })
 import { RatesPlugin } from '@pluxel/rates'
 import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
+await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 ```
 
 consumer 仍只依赖 `Rates`。Redis adapter 使用 Redis server time，并在单 key Lua 调用中校验 policy、更新状态和 TTL，避免多个实例间的读写竞态。
+
+上面的 `host` 是 `createRuntimeTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；同一 application boundary 的
+多项原子 setup 使用同步 `commit()` callback，首次配置使用 `initialConfig`。production static/dynamic host 通过自己的
+ConfigService 与 RuntimeState 表达相同配置和启动策略。
 
 ## 稳定错误契约
 

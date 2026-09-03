@@ -35,6 +35,10 @@
 			"@pluxel/source": "./src/internal/node-workbench-application.ts",
 			"default": "./dist/internal/node-workbench-application.mjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
 		"./test": {
 			"@pluxel/source": "./src/test.ts",
 			"default": "./dist/test.mjs"
@@ -52,6 +56,7 @@
 			"./internal/fetch-workbench-application": "./dist/internal/fetch-workbench-application.mjs",
 			"./internal/node-application": "./dist/internal/node-application.mjs",
 			"./internal/node-workbench-application": "./dist/internal/node-workbench-application.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
 			"./test": "./dist/test.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"

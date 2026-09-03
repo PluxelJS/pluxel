@@ -51,9 +51,7 @@ export class ReportsPlugin extends BasePlugin {
 import { FontsPlugin } from '@pluxel/fonts'
 import { ReportsPlugin } from '@acme/reports'
 
-host.add([FontsPlugin, ReportsPlugin])
-host.start(ReportsPlugin)
-await host.commit()
+await host.start(ReportsPlugin, { catalog: [FontsPlugin] })
 ```
 
 系统字体由 `@napi-rs/canvas` 的 platform font manager 在 FontsPlugin 启动时发现。它不会安装或删除操作系统字体，也不会把字体文件发到浏览器。
@@ -190,17 +188,19 @@ Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程�
 host 通过 Plugin config 配置 FontsPlugin：
 
 ```ts no-twoslash
-host.cfg(FontsPlugin).set({
-	defaultFamily: 'Noto Sans',
-	maxRegistrationsPerConsumer: 32,
-	maxNativeRegistrations: 512,
-	maxTotalFontBytes: 256 * 1024 * 1024,
-	maxConcurrentFontTasks: 4,
-	maxQueuedFontTasks: 32,
-	maxQueuedFontTasksPerConsumer: 8,
-	maxPendingManagedTasks: 32,
-	maxManagedFonts: 64,
-	maxFontBytes: 16 * 1024 * 1024,
+await host.start(FontsPlugin, {
+	initialConfig: {
+		defaultFamily: 'Noto Sans',
+		maxRegistrationsPerConsumer: 32,
+		maxNativeRegistrations: 512,
+		maxTotalFontBytes: 256 * 1024 * 1024,
+		maxConcurrentFontTasks: 4,
+		maxQueuedFontTasks: 32,
+		maxQueuedFontTasksPerConsumer: 8,
+		maxPendingManagedTasks: 32,
+		maxManagedFonts: 64,
+		maxFontBytes: 16 * 1024 * 1024,
+	},
 })
 ```
 

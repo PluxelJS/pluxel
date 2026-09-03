@@ -65,6 +65,10 @@
 			"@pluxel/source": "./src/internal-static-host.ts",
 			"default": "./dist/internal/static-host.mjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
 		"./internal/workbench-react": {
 			"@pluxel/source": "./src/workbench/react-internal.tsx",
 			"default": "./dist/internal/workbench-react.mjs"
@@ -135,6 +139,7 @@
 			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
 			"./internal/workbench-react": "./dist/internal/workbench-react.mjs",
 			"./logger": "./dist/logger.mjs",
 			"./product": "./dist/product.mjs",

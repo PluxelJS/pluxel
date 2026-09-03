@@ -1,6 +1,6 @@
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { AgentToolsPlugin } from '../src/index.ts'
 
@@ -47,35 +47,29 @@ const policy = {
 
 describe('AgentToolsPlugin', () => {
 	it('projects the shared command catalog and rechecks assignment during execution', async () => {
-		const host = createRuntimeHost({ workbench: false })
-		try {
-			host.add([AgentToolsPlugin, NotesCommands])
-			host.cfg(AgentToolsPlugin).set(policy)
-			host.start(AgentToolsPlugin).start(NotesCommands)
-			await host.commit()
+		await using host = createRuntimeTestHost({ workbench: false })
+		await host.start(AgentToolsPlugin, { catalog: [NotesCommands], initialConfig: policy })
+		await host.start(NotesCommands)
 
-			const tools = host.require(AgentToolsPlugin)
-			const researcher = tools.catalog('researcher')
-			expect(researcher.list().map(({ name }) => name)).toEqual(['notes.read'])
-			await expect(researcher.execute('notes.read', {})).resolves.toEqual({ value: 'read' })
-			await expect(researcher.execute('notes.delete', {})).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-				details: { reason: 'command_not_assigned' },
-			})
+		const tools = host.require(AgentToolsPlugin)
+		const researcher = tools.catalog('researcher')
+		expect(researcher.list().map(({ name }) => name)).toEqual(['notes.read'])
+		await expect(researcher.execute('notes.read', {})).resolves.toEqual({ value: 'read' })
+		await expect(researcher.execute('notes.delete', {})).rejects.toMatchObject({
+			code: 'FORBIDDEN',
+			details: { reason: 'command_not_assigned' },
+		})
 
-			const operator = tools.catalog('operator')
-			expect(operator.list().map(({ name }) => name)).toEqual(['notes.delete', 'notes.read'])
-			await expect(operator.execute('notes.delete', {})).resolves.toEqual({ value: 'deleted' })
-		} finally {
-			await host.dispose()
-		}
+		const operator = tools.catalog('operator')
+		expect(operator.list().map(({ name }) => name)).toEqual(['notes.delete', 'notes.read'])
+		await expect(operator.execute('notes.delete', {})).resolves.toEqual({ value: 'deleted' })
 	})
 
 	it('projects toolsets, assignments, missing tools and ungrouped commands for Workbench', async () => {
-		const host = createRuntimeHost({ workbench: false })
-		try {
-			host.add([AgentToolsPlugin, NotesCommands])
-			host.cfg(AgentToolsPlugin).set({
+		await using host = createRuntimeTestHost({ workbench: false })
+		await host.start(AgentToolsPlugin, {
+			catalog: [NotesCommands],
+			initialConfig: {
 				toolsets: [
 					{
 						id: 'reader',
@@ -85,99 +79,78 @@ describe('AgentToolsPlugin', () => {
 					},
 				],
 				agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['reader'] }],
-			})
-			host.start(AgentToolsPlugin).start(NotesCommands)
-			await host.commit()
+			},
+		})
+		await host.start(NotesCommands)
 
-			const snapshot = host.require(AgentToolsPlugin).snapshot()
-			expect(snapshot).toMatchObject({
-				toolsets: [
-					{
-						id: 'reader',
-						availableCommandNames: ['notes.read'],
-						missingCommandNames: ['notes.missing'],
-					},
-				],
-				assignments: [
-					{
-						agentId: 'assistant',
-						commandNames: ['notes.missing', 'notes.read'],
-						availableCommandNames: ['notes.read'],
-						missingCommandNames: ['notes.missing'],
-					},
-				],
-			})
-			expect(snapshot.commands.map(({ name }) => name)).toEqual(
-				expect.arrayContaining(['notes.delete', 'notes.read']),
-			)
-			expect(snapshot.ungroupedCommandNames).toEqual(expect.arrayContaining(['notes.delete']))
-		} finally {
-			await host.dispose()
-		}
+		const snapshot = host.require(AgentToolsPlugin).snapshot()
+		expect(snapshot).toMatchObject({
+			toolsets: [
+				{
+					id: 'reader',
+					availableCommandNames: ['notes.read'],
+					missingCommandNames: ['notes.missing'],
+				},
+			],
+			assignments: [
+				{
+					agentId: 'assistant',
+					commandNames: ['notes.missing', 'notes.read'],
+					availableCommandNames: ['notes.read'],
+					missingCommandNames: ['notes.missing'],
+				},
+			],
+		})
+		expect(snapshot.commands.map(({ name }) => name)).toEqual(
+			expect.arrayContaining(['notes.delete', 'notes.read']),
+		)
+		expect(snapshot.ungroupedCommandNames).toEqual(expect.arrayContaining(['notes.delete']))
 	})
 
 	it('keeps missing command names and projects them when an owner starts', async () => {
-		const host = createRuntimeHost({ workbench: false })
-		try {
-			host.add([AgentToolsPlugin, NotesCommands])
-			host.cfg(AgentToolsPlugin).set(policy)
-			host.start(AgentToolsPlugin)
-			await host.commit()
+		await using host = createRuntimeTestHost({ workbench: false })
+		await host.start(AgentToolsPlugin, { catalog: [NotesCommands], initialConfig: policy })
 
-			const catalog = host.require(AgentToolsPlugin).catalog('researcher')
-			expect(catalog.list()).toEqual([])
-			let published: string[] = []
-			const unsubscribe = catalog.subscribe((snapshot) => {
-				published = snapshot.descriptors.map(({ name }) => name)
-			})
+		const catalog = host.require(AgentToolsPlugin).catalog('researcher')
+		expect(catalog.list()).toEqual([])
+		let published: string[] = []
+		const unsubscribe = catalog.subscribe((snapshot) => {
+			published = snapshot.descriptors.map(({ name }) => name)
+		})
 
-			host.start(NotesCommands)
-			await host.commit()
-			expect(catalog.list().map(({ name }) => name)).toEqual(['notes.read'])
-			expect(published).toEqual(['notes.read'])
-			unsubscribe()
-		} finally {
-			await host.dispose()
-		}
+		await host.start(NotesCommands)
+		expect(catalog.list().map(({ name }) => name)).toEqual(['notes.read'])
+		expect(published).toEqual(['notes.read'])
+		unsubscribe()
 	})
 
 	it('withdraws stale catalogs when the Plugin stops', async () => {
-		const host = createRuntimeHost({ workbench: false })
-		try {
-			host.add([AgentToolsPlugin, NotesCommands])
-			host.cfg(AgentToolsPlugin).set(policy)
-			host.start(AgentToolsPlugin).start(NotesCommands)
-			await host.commit()
+		await using host = createRuntimeTestHost({ workbench: false })
+		await host.start(AgentToolsPlugin, { catalog: [NotesCommands], initialConfig: policy })
+		await host.start(NotesCommands)
 
-			const catalog = host.require(AgentToolsPlugin).catalog('researcher')
-			expect(catalog.snapshot().available).toBe(true)
-			let available = true
-			const unsubscribe = catalog.subscribe((snapshot) => {
-				available = snapshot.available
-			})
-			host.stop(AgentToolsPlugin)
-			await host.commit()
-			expect(available).toBe(false)
-			expect(catalog.snapshot()).toMatchObject({ available: false, descriptors: [] })
-			await expect(catalog.execute('notes.read', {})).rejects.toMatchObject({ code: 'ABORTED' })
-			unsubscribe()
-		} finally {
-			await host.dispose()
-		}
+		const catalog = host.require(AgentToolsPlugin).catalog('researcher')
+		expect(catalog.snapshot().available).toBe(true)
+		let available = true
+		const unsubscribe = catalog.subscribe((snapshot) => {
+			available = snapshot.available
+		})
+		await host.stop(AgentToolsPlugin)
+		expect(available).toBe(false)
+		expect(catalog.snapshot()).toMatchObject({ available: false, descriptors: [] })
+		await expect(catalog.execute('notes.read', {})).rejects.toMatchObject({ code: 'ABORTED' })
+		unsubscribe()
 	})
 
 	it('rejects Agent assignments that reference unknown Toolsets', async () => {
-		const host = createRuntimeHost({ workbench: false })
-		try {
-			host.add(AgentToolsPlugin)
-			host.cfg(AgentToolsPlugin).set({
-				agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['missing'] }],
-			})
-			host.start(AgentToolsPlugin)
-			await host.commitAllowFail()
-			expect(host.isRunning(AgentToolsPlugin)).toBe(false)
-		} finally {
-			await host.dispose()
-		}
+		await using host = createRuntimeTestHost({ workbench: false })
+		await expect(
+			host.start(AgentToolsPlugin, {
+				initialConfig: {
+					agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['missing'] }],
+				},
+			}),
+		).rejects.toMatchObject({ code: 'validation_failed' })
+		expect(host.isRunning(AgentToolsPlugin)).toBe(false)
 	})
 })

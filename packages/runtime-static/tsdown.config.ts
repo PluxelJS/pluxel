@@ -43,6 +43,7 @@ export default defineConfig({
 		'internal/fetch-workbench-application': 'src/internal/fetch-workbench-application.ts',
 		'internal/node-application': 'src/internal/node-application.ts',
 		'internal/node-workbench-application': 'src/internal/node-workbench-application.ts',
+		'internal/test': 'src/internal-test.ts',
 		test: 'src/test.ts',
 		vite: 'src/vite.ts',
 	},

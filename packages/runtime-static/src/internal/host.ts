@@ -40,11 +40,11 @@ import type {
 	StaticRuntimeCatalogSnapshot,
 	StaticRuntimeDefinition,
 	StaticRuntimeHmrController,
-	StaticRuntimeHmrReport,
 	StaticRuntimeHost,
 	StaticRuntimeHostOptions,
+	StaticRuntimeInternalHmrReport,
+	StaticRuntimeInternalStartupReport,
 	StaticRuntimeReportEntry,
-	StaticRuntimeStartupReport,
 } from '../types.ts'
 
 export class StaticRuntimeHostImpl implements StaticRuntimeHost {
@@ -56,10 +56,12 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	private stopRequested = false
 	private operationTail: Promise<void> = Promise.resolve()
 	private stopPromise: Promise<void> | undefined
-	private report: StaticRuntimeStartupReport | undefined
+	private report: StaticRuntimeInternalStartupReport | undefined
 	private readonly coordinator
 
-	public readonly hmr: StaticRuntimeHmrController = {
+	public readonly hmr: StaticRuntimeHmrController & {
+		reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeInternalHmrReport>
+	} = {
 		reload: (definition) => this.reload(definition),
 	}
 
@@ -143,18 +145,18 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		}
 	}
 
-	lastReport(): StaticRuntimeStartupReport | undefined {
+	lastReport(): StaticRuntimeInternalStartupReport | undefined {
 		return this.report
 	}
 
-	start(): Promise<StaticRuntimeStartupReport> {
+	start(): Promise<StaticRuntimeInternalStartupReport> {
 		if (this.stopRequested || this.disposed) {
 			return Promise.reject(new Error('[runtime-static] cannot start a disposed host'))
 		}
 		return this.enqueueOperation(() => this.startExclusive())
 	}
 
-	private async startExclusive(): Promise<StaticRuntimeStartupReport> {
+	private async startExclusive(): Promise<StaticRuntimeInternalStartupReport> {
 		if (this.started) return this.report ?? (await this.currentReport())
 		const applied = await this.coordinator.reconcileStartup(this.startupCatalog)
 		this.started = true
@@ -174,6 +176,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	private async stopExclusive(): Promise<void> {
 		if (this.disposed) return
 		this.disposed = true
+		const errors: unknown[] = []
 		try {
 			const empty = createPluginRouteCatalogSnapshot(
 				this.coordinator.catalogSnapshot().revision + 1,
@@ -184,16 +187,23 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 				reason: 'shutdown',
 				mode: 'live',
 			})
-		} finally {
-			try {
-				await this.ctx.effects.dispose()
-			} finally {
-				await this.logging.dispose()
-			}
+		} catch (error) {
+			errors.push(error)
 		}
+		try {
+			await this.ctx.effects.dispose()
+		} catch (error) {
+			errors.push(error)
+		}
+		try {
+			await this.logging.dispose()
+		} catch (error) {
+			errors.push(error)
+		}
+		throwStaticRuntimeErrors(errors, '[runtime-static] host shutdown failed')
 	}
 
-	private reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeHmrReport> {
+	private reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeInternalHmrReport> {
 		if (this.stopRequested || this.disposed) {
 			return Promise.reject(new Error('[runtime-static] cannot reload a disposed host'))
 		}
@@ -202,7 +212,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 
 	private async reloadExclusive(
 		definition: StaticRuntimeDefinition,
-	): Promise<StaticRuntimeHmrReport> {
+	): Promise<StaticRuntimeInternalHmrReport> {
 		const previous = this.coordinator.catalogSnapshot()
 		const next = buildCatalog(definition, previous.revision + 1)
 		const diff = diffCatalog(previous, next)
@@ -214,7 +224,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		this.runtimeName = definition.name
 		this.started = true
 		const base = await this.currentReport(applied, diff.removed)
-		const report: StaticRuntimeHmrReport = {
+		const report: StaticRuntimeInternalHmrReport = {
 			...base,
 			added: diff.added,
 			removed: diff.removed,
@@ -236,7 +246,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	private async currentReport(
 		applied?: PluginApplyReport<CommitSummary>,
 		removed: readonly PluginNodeAddress[] = [],
-	): Promise<StaticRuntimeStartupReport> {
+	): Promise<StaticRuntimeInternalStartupReport> {
 		const issues = applied?.reconciliation ?? []
 		const lifecycleIssues =
 			applied?.core.status === 'committed' ? applied.core.summary.lifecycleReport.issues : []
@@ -359,7 +369,7 @@ export async function createStaticRuntimeHost(
 		/** @internal Test-only physical peer seam. */
 		requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 	} = {},
-): Promise<StaticRuntimeHost> {
+): Promise<StaticRuntimeHostImpl> {
 	const logging = createRuntimeLogging(resolveStaticRuntimeLoggingInput(definition, options))
 	await logging.install()
 	let host: StaticRuntimeHostImpl | undefined
@@ -368,10 +378,23 @@ export async function createStaticRuntimeHost(
 		await host.prepare()
 		return host
 	} catch (error) {
-		if (host) await host.stop().catch((): undefined => undefined)
-		else await logging.dispose().catch((): undefined => undefined)
+		try {
+			if (host) await host.stop()
+			else await logging.dispose()
+		} catch (cleanupError) {
+			throw new AggregateError(
+				[error, cleanupError],
+				'[runtime-static] host startup and cleanup both failed',
+				{ cause: cleanupError },
+			)
+		}
 		throw error
 	}
+}
+
+function throwStaticRuntimeErrors(errors: readonly unknown[], message: string): void {
+	if (errors.length === 1) throw errors[0]
+	if (errors.length > 1) throw new AggregateError(errors, message)
 }
 
 export type StaticRuntimeHostDeployment = {

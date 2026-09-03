@@ -1,4 +1,7 @@
-import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
 import type { LoaderBatch } from '../../src/loader/support'
 import type { ScanService } from '../../src/scan/ScanService'
 import {
@@ -20,7 +23,7 @@ export function createHmrTestHost(options?: {
 	errorLogs?: ErrorLog[]
 	scanService?: ScanServiceOverride
 }) {
-	const host = createRuntimeHost(
+	const host = createRuntimeInternalTestHost(
 		{ workbench: false },
 		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)
@@ -32,7 +35,7 @@ export function createHmrTestHost(options?: {
 	return host
 }
 
-export function captureLoggerErrors(host: RuntimeHost, errorLogs: ErrorLog[]) {
+export function captureLoggerErrors(host: RuntimeInternalTestHost, errorLogs: ErrorLog[]) {
 	const logger = host.ctx.logger as typeof host.ctx.logger & {
 		error: (messageOrObj: unknown, maybeProps?: unknown) => void
 	}
@@ -47,7 +50,7 @@ export function captureLoggerErrors(host: RuntimeHost, errorLogs: ErrorLog[]) {
 	}
 }
 
-export function captureLoaderModules(host: RuntimeHost, capture: LoaderModuleCapture) {
+export function captureLoaderModules(host: RuntimeInternalTestHost, capture: LoaderModuleCapture) {
 	const loader = requireLoaderService(host.ctx) as ReturnType<typeof requireLoaderService> & {
 		beginBatch: () => LoaderBatch
 	}

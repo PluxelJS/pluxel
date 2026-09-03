@@ -1,4 +1,5 @@
-import { BasePlugin, Plugin, assertPluginLifecycleIssue, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { assertPluginLifecycleIssue, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -36,7 +37,7 @@ describe('late init settlement', () => {
 	beforeEach(() => resetLateInit('cleanup'))
 
 	it('never resurrects a timed-out generation and immediately runs its returned cleanup', async () => {
-		await withCoreHost(
+		await withCoreInternalTestHost(
 			async (host) => {
 				host.add(LateInitPlugin)
 				const summary = await host.commitAllowFail()
@@ -56,7 +57,7 @@ describe('late init settlement', () => {
 	})
 
 	it('publishes a frozen successor for a late rejection without mutating the first summary', async () => {
-		await withCoreHost(
+		await withCoreInternalTestHost(
 			async (host) => {
 				const registry = requirePluginService(host.ctx)
 				const publications: unknown[] = []
@@ -88,7 +89,7 @@ describe('late init settlement', () => {
 
 	it('publishes a frozen successor for a late returned-cleanup failure', async () => {
 		resetLateInit('cleanup-failure')
-		await withCoreHost(
+		await withCoreInternalTestHost(
 			async (host) => {
 				const registry = requirePluginService(host.ctx)
 				host.add(LateInitPlugin)

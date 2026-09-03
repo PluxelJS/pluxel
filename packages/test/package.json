@@ -13,24 +13,11 @@
 		"!**/*.map"
 	],
 	"type": "module",
-	"main": "./dist/index.cjs",
-	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.cts",
 	"exports": {
-		".": {
-			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.mjs",
-			"require": "./dist/index.cjs"
-		},
 		"./fixtures": {
 			"@pluxel/source": "./src/fixtures.ts",
 			"import": "./dist/fixtures.mjs",
 			"require": "./dist/fixtures.cjs"
-		},
-		"./setup": {
-			"@pluxel/source": "./src/setup.ts",
-			"import": "./dist/setup.mjs",
-			"require": "./dist/setup.cjs"
 		},
 		"./unsafe": {
 			"@pluxel/source": "./src/unsafe.ts",
@@ -46,17 +33,9 @@
 	},
 	"publishConfig": {
 		"exports": {
-			".": {
-				"import": "./dist/index.mjs",
-				"require": "./dist/index.cjs"
-			},
 			"./fixtures": {
 				"import": "./dist/fixtures.mjs",
 				"require": "./dist/fixtures.cjs"
-			},
-			"./setup": {
-				"import": "./dist/setup.mjs",
-				"require": "./dist/setup.cjs"
 			},
 			"./unsafe": {
 				"import": "./dist/unsafe.mjs",

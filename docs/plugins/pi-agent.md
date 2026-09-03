@@ -14,24 +14,30 @@ Pi 插件 required-depend on `AgentToolsPlugin`。先用 AgentTools assignment �
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { PiAgentPlugin } from '@pluxel/pi-agent'
 
-host.add([AgentToolsPlugin, PiAgentPlugin, NotesPlugin])
-host.cfg(AgentToolsPlugin).set({
-	toolsets: [
-		{ id: 'notes-read', label: 'Notes read', commandNames: ['notes.read'] },
-		{ id: 'notes-write', label: 'Notes write', commandNames: ['notes.create'] },
-	],
-	agents: [
-		{ agentId: 'researcher', label: 'Researcher', toolsetIds: ['notes-read'] },
-		{ agentId: 'operator', label: 'Operator', toolsetIds: ['notes-read', 'notes-write'] },
-	],
+await host.start(AgentToolsPlugin, {
+	catalog: [NotesPlugin],
+	initialConfig: {
+		toolsets: [
+			{ id: 'notes-read', label: 'Notes read', commandNames: ['notes.read'] },
+			{ id: 'notes-write', label: 'Notes write', commandNames: ['notes.create'] },
+		],
+		agents: [
+			{ agentId: 'researcher', label: 'Researcher', toolsetIds: ['notes-read'] },
+			{ agentId: 'operator', label: 'Operator', toolsetIds: ['notes-read', 'notes-write'] },
+		],
+	},
 })
-host.cfg(PiAgentPlugin).set({
-	defaultToolSetupId: 'researcher',
-	model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
+await host.start(NotesPlugin)
+await host.start(PiAgentPlugin, {
+	initialConfig: {
+		defaultToolSetupId: 'researcher',
+		model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
+	},
 })
 ```
 
-这里把 AgentTools assignment 用作 Pi 的 tool setup。模型 credential 不进入普通 Plugin config；Pi `ModelRuntime`
+这里的 `host` 是 `createRuntimeTestHost()` fixture，`initialConfig` 只用于首次 lifecycle；production deployment 通过 ConfigService
+管理相同 records。AgentTools assignment 用作 Pi 的 tool setup。模型 credential 不进入普通 Plugin config；Pi `ModelRuntime`
 从标准 Pi credential store 读取。省略 `model` 时由 Pi 解析已配置的默认可用模型。
 
 ## 创建会话

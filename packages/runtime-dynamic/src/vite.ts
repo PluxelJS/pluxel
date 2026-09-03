@@ -26,6 +26,7 @@ import {
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
+import { resolveDynamicRuntimeEntry } from './entry'
 import {
 	assertDynamicRuntimeConfig,
 	isDynamicRuntimeConfig,
@@ -62,7 +63,8 @@ const CONTEXT_DIST_ROOT = normalizePath(
 )
 
 export type DynamicRuntimeVitePluginOptions = {
-	config: string
+	/** Canonical config module. Relative strings resolve from the final Vite root. */
+	entry: string | URL
 	/**
 	 * `development` resolves source exports and serves the Workbench source graph.
 	 * `distribution` resolves built package exports and serves the packaged Workbench bundle.
@@ -110,10 +112,10 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	}> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-dynamic/vite] Vite server is not configured')
-		const configPath = (state.configPath ??= resolveRuntimeConfigPath(
-			server,
-			options.config,
-			'runtime-dynamic',
+		const configPath = (state.configPath ??= resolveDynamicRuntimeEntry(
+			options.entry,
+			server.config.root,
+			'runtime-dynamic/vite',
 		))
 		let mod: Record<string, unknown>
 		try {
@@ -474,12 +476,6 @@ async function loadDynamicHmrHostModule(
 	>
 > {
 	return import('./hmr/host')
-}
-
-function resolveRuntimeConfigPath(server: ViteDevServer, config: string, route: string): string {
-	const raw = String(config ?? '').trim()
-	if (!raw) throw new Error(`[${route}/vite] config is required`)
-	return normalizePath(resolve(server.config.root, raw))
 }
 
 function validateDynamicRuntimeConfigModule(

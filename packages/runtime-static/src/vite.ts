@@ -43,17 +43,16 @@ import { requirePluginService } from '@pluxel/core/internal'
 import type { IncomingMessage } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
-import { reloadStaticRuntime } from './hmr.ts'
 import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application.ts'
 import { toStaticRuntimeDefinition } from './internal/application.ts'
-import { createStaticRuntimeHost } from './internal/host.ts'
+import { createStaticRuntimeHost, type StaticRuntimeHostImpl } from './internal/host.ts'
 import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
 	StaticRuntimeDefinition,
 	StaticRuntimeHost,
-	StaticRuntimeHmrReport,
-	StaticRuntimeStartupReport,
+	StaticRuntimeInternalHmrReport,
+	StaticRuntimeInternalStartupReport,
 	StaticRuntimeStartupContext,
 } from './types.ts'
 
@@ -78,7 +77,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		configFiles: Set<string>
 		application?: StaticRuntimeApplication
 		product?: ProductDescriptor | null
-		host?: StaticRuntimeHost
+		host?: StaticRuntimeHostImpl
 		carrier?: SrvxViteNodeCarrierAttachment
 		applicationCarrier?: StaticViteApplicationCarrier
 		detachApplicationCarrier?: () => void
@@ -111,7 +110,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 	const createHost = async (
 		application: StaticRuntimeApplication,
 		product: ProductDescriptor | null,
-	): Promise<StaticRuntimeHost> => {
+	): Promise<StaticRuntimeHostImpl> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-static/vite] Vite server is not configured')
 		const startup: StaticRuntimeStartupContext = {
@@ -147,7 +146,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 	async function replaceHost(
 		application: StaticRuntimeApplication,
 		product: ProductDescriptor | null,
-	): Promise<StaticRuntimeStartupReport> {
+	): Promise<StaticRuntimeInternalStartupReport> {
 		const previousHost = state.host
 		const previousApplication = state.application
 		const previousProduct = state.product ?? null
@@ -161,7 +160,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			}
 		}
 
-		let next: StaticRuntimeHost | undefined
+		let next: StaticRuntimeHostImpl | undefined
 		try {
 			next = await createHost(application, product)
 			const applicationCarrier = state.applicationCarrier
@@ -182,7 +181,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			state.detachApplicationCarrier?.()
 			state.detachApplicationCarrier = undefined
 			if (previousHost && previousApplication) {
-				let restored: StaticRuntimeHost | undefined
+				let restored: StaticRuntimeHostImpl | undefined
 				try {
 					restored = await createHost(previousApplication, previousProduct)
 					const applicationCarrier = state.applicationCarrier
@@ -366,10 +365,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				return []
 			}
 			await artifactPublishers.get(host)?.()
-			const report = await reloadStaticRuntime({
-				host,
-				definition: toStaticRuntimeDefinition(application),
-			})
+			const report = await host.hmr.reload(toStaticRuntimeDefinition(application))
 			state.application = application
 			state.product = loaded.product
 			state.configFiles = loaded.configFiles
@@ -417,7 +413,7 @@ type StaticRuntimeReportSummary = {
 
 async function logStaticRuntimeStarted(
 	host: StaticRuntimeHost,
-	startup: StaticRuntimeStartupReport,
+	startup: StaticRuntimeInternalStartupReport,
 	configFiles: ReadonlySet<string>,
 ): Promise<void> {
 	const summary = await formatStaticRuntimeReport(host, startup)
@@ -426,7 +422,7 @@ async function logStaticRuntimeStarted(
 
 async function logStaticRuntimeHmrUpdated(
 	host: StaticRuntimeHost,
-	report: StaticRuntimeHmrReport,
+	report: StaticRuntimeInternalHmrReport,
 	changedFile: string,
 	configFiles: ReadonlySet<string>,
 	commitMs: number,
@@ -456,7 +452,7 @@ async function logStaticRuntimeHmrUpdated(
 
 async function formatStaticRuntimeReport(
 	host: StaticRuntimeHost,
-	report: StaticRuntimeStartupReport,
+	report: StaticRuntimeInternalStartupReport,
 ): Promise<StaticRuntimeReportSummary> {
 	const catalog = host.describeCatalog().plugins
 	const catalogLabels = catalog.map(
@@ -539,7 +535,7 @@ function toHmrPluginTotals(summary: StaticRuntimeReportSummary): HmrPluginTotals
 
 function affectedStaticRuntimePlugins(
 	host: StaticRuntimeHost,
-	report: StaticRuntimeHmrReport,
+	report: StaticRuntimeInternalHmrReport,
 ): number {
 	const pluginService = requirePluginService(host.ctx)
 	const affected = new Set<string>()
@@ -591,7 +587,7 @@ function invalidateStaticRuntimeChangedModules(
 	return invalidated
 }
 
-function countStatuses(entries: readonly StaticRuntimeStartupReport['entries'][number][]): {
+function countStatuses(entries: readonly StaticRuntimeInternalStartupReport['entries'][number][]): {
 	started: number
 	stopped: number
 	blocked: number

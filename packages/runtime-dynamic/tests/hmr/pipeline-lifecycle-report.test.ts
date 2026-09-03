@@ -5,11 +5,8 @@ import {
 	pluginNodeAddressOf,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import {
-	BasePlugin,
-	createRuntimeHost as createBaseRuntimeHost,
-	Plugin,
-} from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
 import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 
@@ -22,7 +19,7 @@ import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../sup
 import { pluginsAutoStartPatch, isAutoStartEnabled } from '../support/runtime-state'
 
 function createRuntimeHost(config: RuntimeHostConfig = {}) {
-	return createBaseRuntimeHost(
+	return createRuntimeInternalTestHost(
 		{ workbench: false, ...config },
 		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)
@@ -116,7 +113,7 @@ describe('HmrExecutor transactions', () => {
 			await startup.replaceModule('/consumer.ts', { Consumer })
 			await startup.commit({ statePatch: pluginsAutoStartPatch(true, Dep, Consumer) })
 
-			const firstConsumer = host.get(Consumer)
+			const firstConsumer = host.require(Consumer)
 			@Plugin({ displayName: 'Dependency' })
 			class DepNext extends BasePlugin {
 				readonly generation = 2
@@ -134,7 +131,7 @@ describe('HmrExecutor transactions', () => {
 			expect(result?.commitResult.ok).toBe(true)
 			expect(result?.affectedModules).toEqual([])
 			expect(result?.syncedModules).toEqual([])
-			const nextConsumer = host.get(Consumer)
+			const nextConsumer = host.require(Consumer)
 			expect(nextConsumer === firstConsumer).toBe(false)
 			expect(consumerStarts).toBe(2)
 			expect(nextConsumer?.dep.generation).toBe(2)

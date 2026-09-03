@@ -10,6 +10,14 @@ import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
+const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
+const packageManagerConfig = {
+	rootDir: '.pluxel/managed-plugins',
+	ignoreScripts: true,
+	allowBuilds: [],
+	minimumReleaseAgeMinutes: 1_440,
+}
+
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
 	plugins: [PackageManagerPlugin],
@@ -20,14 +28,20 @@ export default defineDynamicRuntimeConfig({
 			include: ['*.mjs'],
 		},
 	],
-	runtimeState: { snapshot: { autoStart: [pluginNodeAddressOf(PackageManagerPlugin)] } },
+	configService: {
+		snapshot: {
+			plugins: [{ owner: packageManagerNode, config: packageManagerConfig }],
+		},
+	},
+	runtimeState: { snapshot: { autoStart: [packageManagerNode] } },
 	workbench: { enabled: true },
 })
 ```
 
-`plugins` 把管理插件加入固定 catalog，RuntimeState 的 `autoStart` 声明其冷启动策略；`sources` 是唯一的 runtime 接缝。source directory 必须和
-插件的 `rootDir/entries` 一致。插件会在加载 pnpm native engine、创建目录、注册 commands 或发布 Direct View 前验证这项声明；static host
-会以 `DYNAMIC_SOURCE_REQUIRED` 启动失败，声明不匹配则以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
+`plugins` 把管理插件加入固定 catalog，ConfigService 提供 Plugin config，RuntimeState 的 `autoStart` 声明其冷启动策略；`sources`
+是唯一的 runtime 接缝。source directory 必须和插件的 `rootDir/entries` 一致。插件会在加载 pnpm native engine、创建目录、注册
+commands 或发布 Direct View 前验证这项声明；static host 会以 `DYNAMIC_SOURCE_REQUIRED` 启动失败，声明不匹配则以
+`DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 Workbench enabled 时，插件发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
 每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound `managerScope` 声明
 snapshot query 与 install/remove mutation。Runtime 自动 detach DTO、释放 transport ownership，并在写入 settle 后失效 snapshot。
@@ -39,14 +53,8 @@ Workbench 根据 catalog node address 生成导航，调用方不拼接 Plugin �
 
 ## 安全默认值
 
-```ts
-host.cfg(PackageManagerPlugin).set({
-	rootDir: '.pluxel/managed-plugins',
-	ignoreScripts: true,
-	allowBuilds: [],
-	minimumReleaseAgeMinutes: 1_440,
-})
-```
+上例的 `packageManagerConfig` 同时展示了安全默认值。运行中的配置更新由宿主 ConfigService 负责，不通过测试 fixture API 修改
+production host。
 
 - 只接受小写 npm registry package name 加 version/range/dist-tag，不接受 alias、path、URL、Git 或任意 tarball；
 - 默认忽略 dependency scripts；需要 native build 时同时设置 `ignoreScripts: false` 并显式列入非空 `allowBuilds`；

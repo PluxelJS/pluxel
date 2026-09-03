@@ -103,10 +103,10 @@ describe('monorepo plugin dependencies', () => {
 			})
 		}
 
-		const firstProvider = host.get(ZhipuProviderPlugin)
+		const firstProvider = host.require(ZhipuProviderPlugin)
 		expect(host.isRunning(UsageBillingPlugin)).toBe(true)
-		expect(firstProvider?.seq).toBe(1)
-		expect(firstProvider?.recorder.seq).toBe(1)
+		expect(firstProvider.seq).toBe(1)
+		expect(firstProvider.recorder.seq).toBe(1)
 
 		@Plugin(UsageRecorderPlugin, { displayName: 'Usage billing next' })
 		class UsageBillingPluginNext extends UsageRecorderPlugin {
@@ -122,9 +122,9 @@ describe('monorepo plugin dependencies', () => {
 		})
 		await batch.commit()
 
-		const nextProvider = host.get(ZhipuProviderPlugin)
-		expect(nextProvider?.seq).toBe(2)
-		expect(nextProvider?.recorder.seq).toBe(2)
+		const nextProvider = host.require(ZhipuProviderPlugin)
+		expect(nextProvider.seq).toBe(2)
+		expect(nextProvider.recorder.seq).toBe(2)
 		expect(nextProvider === firstProvider).toBe(false)
 	})
 })

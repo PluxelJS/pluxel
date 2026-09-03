@@ -9,6 +9,7 @@ import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
 	StaticRuntimeDefinition,
+	StaticRuntimeStartupReport,
 	StaticRuntimeStartupContext,
 } from '../types.ts'
 
@@ -48,20 +49,39 @@ export async function startStaticRuntimeApplication<
 		createWorkbenchBackend: options.createWorkbenchBackend,
 		product: options.product ?? null,
 	})
+	let startupReport: StaticRuntimeStartupReport
 	try {
 		await application.prepare?.({ host, startup: options.startup })
-		await host.start()
+		startupReport = await host.start()
 	} catch (error) {
-		await host.stop().catch((): undefined => undefined)
+		try {
+			await host.stop()
+		} catch (cleanupError) {
+			throw new AggregateError(
+				[error, cleanupError],
+				'[runtime-static] application startup and cleanup both failed',
+				{ cause: cleanupError },
+			)
+		}
 		throw error
 	}
 
 	return {
 		ctx: host.ctx,
+		startupReport: freezeStaticRuntimeStartupReport(startupReport),
 		fetch: (request, env, ctx) => host.fetch(request, env, ctx),
 		start: () => host.start(),
 		stop: () => host.stop(),
 	}
+}
+
+function freezeStaticRuntimeStartupReport(
+	report: StaticRuntime['startupReport'],
+): StaticRuntime['startupReport'] {
+	return Object.freeze({
+		runtime: report.runtime,
+		entries: Object.freeze(report.entries.map((entry) => Object.freeze({ ...entry }))),
+	})
 }
 
 export function toStaticRuntimeDefinition(

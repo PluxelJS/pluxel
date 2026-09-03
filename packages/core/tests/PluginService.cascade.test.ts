@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CorePluginGraphVerificationError, requirePluginService } from '@pluxel/core/internal'
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 @Plugin({ displayName: 'Cascade provider' })
 class CascadeProvider extends BasePlugin {}
@@ -14,7 +15,7 @@ class CascadeConsumer extends BasePlugin {
 
 describe('required dependent closure', () => {
 	it('restarts required dependents exactly once', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			host.add([CascadeProvider, CascadeConsumer])
 			await host.commit()
@@ -35,7 +36,7 @@ describe('required dependent closure', () => {
 	})
 
 	it('rejects a non-cascading removal that leaves a missing dependency', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CascadeProvider, CascadeConsumer])
 			await host.commit()
 			host.remove(CascadeProvider, { cascadeDependents: false })

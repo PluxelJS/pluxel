@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginDefinitionAddressOf, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, createCoreTestHost, Plugin, pluginDefinitionAddressOf } from '@pluxel/core/test'
 import {
 	__setPluginDefinition,
 	lowerTestReplacement,
@@ -34,15 +34,12 @@ describe('@pluxel/test/unsafe', () => {
 			pluginDefinitionAddressOf(OriginalPlugin),
 		)
 
-		await withCoreHost(async (host) => {
-			host.add(OriginalPlugin)
-			await host.commit()
-			expect(host.require(OriginalPlugin).revision).toBe('original')
+		await using host = createCoreTestHost()
+		await host.add(OriginalPlugin)
+		expect(host.require(OriginalPlugin).revision).toBe('original')
 
-			host.replace(OriginalPlugin, ReplacementPlugin)
-			await host.commit()
-			expect(host.require(OriginalPlugin)).toBeInstanceOf(ReplacementPlugin)
-			expect(host.require(OriginalPlugin).revision).toBe('replacement')
-		})
+		await host.replaceDefinition(OriginalPlugin, ReplacementPlugin)
+		expect(host.require(ReplacementPlugin)).toBeInstanceOf(ReplacementPlugin)
+		expect(host.require(ReplacementPlugin).revision).toBe('replacement')
 	})
 })

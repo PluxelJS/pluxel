@@ -134,27 +134,30 @@ libuv slot，同时额外占用 runtime Worker，并复制输入和字体。剩�
 ## 配置边界
 
 ```ts
-host.cfg(TakumiPlugin).set({
-	defaultDevicePixelRatio: 1,
-	maxDevicePixelRatio: 4,
-	maxWidth: 8192,
-	maxHeight: 8192,
-	maxPixels: 16_777_216,
-	maxContentBytes: 1024 * 1024,
-	maxContentNodes: 10_000,
-	maxTextCharacters: 1_000_000,
-	maxStylesheets: 64,
-	maxStylesheetBytes: 1024 * 1024,
-	maxImages: 256,
-	maxImageBytes: 32 * 1024 * 1024,
-	maxFonts: 256,
-	maxFontBytes: 128 * 1024 * 1024,
-	maxOutputBytes: 64 * 1024 * 1024,
-	cacheMaxBytes: 16 * 1024 * 1024,
-	maxRenderDurationMs: 30_000,
-	maxConcurrentRenders: 2,
-	maxQueuedRenders: 32,
-	maxQueuedRendersPerConsumer: 8,
+await host.start(TakumiPlugin, {
+	initialConfig: {
+		defaultDevicePixelRatio: 1,
+		maxDevicePixelRatio: 4,
+		maxWidth: 8192,
+		maxHeight: 8192,
+		maxPixels: 16_777_216,
+		maxContentBytes: 1024 * 1024,
+		maxContentNodes: 10_000,
+		maxTextCharacters: 1_000_000,
+		maxStylesheets: 64,
+		maxStylesheetBytes: 1024 * 1024,
+		maxImages: 256,
+		maxImageBytes: 32 * 1024 * 1024,
+		maxFonts: 256,
+		maxFontBytes: 128 * 1024 * 1024,
+		maxOutputBytes: 64 * 1024 * 1024,
+		cacheMaxBytes: 16 * 1024 * 1024,
+		maxRenderDurationMs: 30_000,
+		maxConcurrentRenders: 2,
+		maxQueuedRenders: 32,
+		maxQueuedRendersPerConsumer: 8,
+	},
+	catalog: [FontsPlugin],
 })
 ```
 

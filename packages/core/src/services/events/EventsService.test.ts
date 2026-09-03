@@ -8,7 +8,7 @@ import {
 	type EventsService,
 } from '@pluxel/core'
 import { resolveCoreRootInputs } from '@pluxel/core/internal'
-import { withCoreHost } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 declare module '@pluxel/core' {
 	interface Events {
@@ -70,7 +70,7 @@ class AmbientListener extends BasePlugin {
 
 describe('event boundaries', () => {
 	it('keeps named channels and owner-scoped subscriptions', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([ChannelOwner, ChannelConsumer])
 			await host.commit()
 			const owner = host.require(ChannelOwner)
@@ -113,7 +113,7 @@ describe('event boundaries', () => {
 	})
 
 	it('keeps augmented ambient events loose-coupled and owner-scoped', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			expect(ambientHostConfig.events.events).toEqual(['test:ambient-changed'])
 			const configuredEvents: (keyof Events)[] = ['test:ambient-changed']
 			const inputs = resolveCoreRootInputs({

@@ -72,17 +72,19 @@ override init() {
 不能取消已经开始的文件读取。
 
 ```ts
-host.cfg(FontsPlugin).set({
-	defaultFamily: 'Noto Sans',
-	maxRegistrationsPerConsumer: 32,
-	maxNativeRegistrations: 512,
-	maxTotalFontBytes: 256 * 1024 * 1024,
-	maxConcurrentFontTasks: 4,
-	maxQueuedFontTasks: 32,
-	maxQueuedFontTasksPerConsumer: 8,
-	maxPendingManagedTasks: 32,
-	maxManagedFonts: 64,
-	maxFontBytes: 16 * 1024 * 1024,
+await host.start(FontsPlugin, {
+	initialConfig: {
+		defaultFamily: 'Noto Sans',
+		maxRegistrationsPerConsumer: 32,
+		maxNativeRegistrations: 512,
+		maxTotalFontBytes: 256 * 1024 * 1024,
+		maxConcurrentFontTasks: 4,
+		maxQueuedFontTasks: 32,
+		maxQueuedFontTasksPerConsumer: 8,
+		maxPendingManagedTasks: 32,
+		maxManagedFonts: 64,
+		maxFontBytes: 16 * 1024 * 1024,
+	},
 })
 ```
 

@@ -196,19 +196,19 @@ function 或超过 16 个参数时必须提供 `key()`。
 ## Provider 配置与 backend
 
 ```ts
-host.cfg(CachePlugin).set({
-	ttlMs: 300_000,
-	maxEntries: 1_000,
-	maxInFlight: 256,
-	readPolicy: 'cache-first',
-	backendFailure: 'required',
+await host.commit((change) => {
+	change.start(MemoryCacheBackendPlugin)
+	change.start(CachePlugin, {
+		initialConfig: {
+			ttlMs: 300_000,
+			maxEntries: 1_000,
+			maxInFlight: 256,
+			readPolicy: 'cache-first',
+			backendFailure: 'required',
+		},
+	})
+	change.start(AccountsPlugin)
 })
-```
-
-纯内存 host：
-
-```ts
-host.add([MemoryCacheBackendPlugin, CachePlugin, AccountsPlugin])
 ```
 
 Redis host：
@@ -216,8 +216,12 @@ Redis host：
 ```ts
 import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
+await host.start([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
 ```
+
+这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；需要同一边界内原子设置多个
+Plugin 时使用同步 `commit()` callback，首次配置放在 `initialConfig`。production static/dynamic host 通过自己的
+ConfigService 和 RuntimeState 管理相同 topology 与 config。
 
 Workbench 通过 `CachePlugin(CacheBackend)` constructor dependency 使用标准 provider 选择，不需要 cache 专属 UI。
 
@@ -230,8 +234,10 @@ managed prefix、backend failure 必须 reject。结构化 owner envelope 由 `C
 默认 memory backend 是纯内存且不会创建 persistence 成本。需要 warm start 时配置：
 
 ```ts
-host.cfg(MemoryCacheBackendPlugin).set({
-	persistence: { mode: 'durable' },
+await host.start(MemoryCacheBackendPlugin, {
+	initialConfig: {
+		persistence: { mode: 'durable' },
+	},
 })
 ```
 

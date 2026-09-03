@@ -29,7 +29,7 @@ const WretchExampleConfig = v.object({
 	),
 })
 
-const WretchExampleWorkbench = workbench.define({
+export const WretchExampleWorkbench = workbench.define({
 	http: WretchWorkbench.settings.place(
 		workbench.tab({ label: 'HTTP', icon: workbench.icons.Settings }),
 	),

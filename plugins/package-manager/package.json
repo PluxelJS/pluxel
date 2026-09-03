@@ -55,6 +55,7 @@
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"tsdown": "catalog:build",
+		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
 		"vitest": "catalog:test"

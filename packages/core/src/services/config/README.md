@@ -50,6 +50,8 @@ object record。已有 file config 是权威来源；environment 只初始化新
 
 ## 测试策略
 
-优先用经过 semantic lowering 的 core/runtime test host 走真实 Plugin 启动流程：通过 `host.cfg(PluginCtor)` 设置 config，
-并在 `init()` 或之后读取声明 field。另行覆盖 invalid schema、defaults、cache revision、structured owner isolation 与 runtime
-persistence；所有路径都消费同一个 lowered object-schema fact。
+优先用经过 semantic lowering 的 Core/Runtime test host 走真实 Plugin 启动流程。首次 lifecycle 前的 fixture config 通过
+`host.add(PluginCtor, { initialConfig })`（Runtime 对应 `host.start(...)`）建立；Runtime 已提交的 config 必须通过
+`host.config.patch()` 走 production persistence 与 generation notification。Core 内部若要直接观察 raw revision、cache 或 rollback，使用
+`@pluxel/core/internal/test`，不把 root ConfigService authority 暴露给 Plugin 作者。另行覆盖 invalid schema、defaults、cache revision、
+structured owner isolation 与 runtime persistence；所有路径都消费同一个 lowered object-schema fact。

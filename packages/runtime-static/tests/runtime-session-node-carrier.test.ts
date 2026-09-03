@@ -12,7 +12,11 @@ import {
 } from '@pluxel/runtime'
 import { newWebSocketRpcSession, type RpcStub } from '@pluxel/runtime/capnweb'
 import { type ElysiaApplicationCarrier, requireRuntimeHttpService } from '@pluxel/runtime/internal'
-import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
 import {
 	RUNTIME_SESSION_PATH,
 	type RuntimeSessionEvent,
@@ -26,7 +30,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
-import { openRuntimeSessionTestConnection } from '@pluxel/runtime-static/test'
+import { openRuntimeSessionTestConnection } from '@pluxel/runtime-static/internal/test'
 
 import { runStaticNodeWorkbenchApplication } from '../src/internal/node-workbench-application'
 
@@ -115,7 +119,7 @@ class RuntimeSessionPublication extends BasePlugin {
 }
 
 class RuntimeSessionNodeHarness {
-	readonly host: RuntimeHost
+	readonly host: RuntimeInternalTestHost
 	readonly nodeCarrier: NodeElysiaApplicationCarrier
 	readonly server: Server
 	upgradeCount = 0
@@ -124,10 +128,10 @@ class RuntimeSessionNodeHarness {
 	private listening = false
 
 	constructor() {
-		this.host = createRuntimeHost({ workbench: { enabled: true } })
+		this.host = createRuntimeInternalTestHost({ workbench: { enabled: true } })
 		const http = requireRuntimeHttpService(this.host.ctx)
 		this.nodeCarrier = new NodeElysiaApplicationCarrier({
-			fetch: (request) => this.host.fetch(request),
+			fetch: (request) => this.host.http.fetch(request),
 			matches: (request) => http.matchesWebSocketRoute(request),
 			metadata: () => {
 				const address = this.server.address() as AddressInfo
@@ -164,10 +168,7 @@ class RuntimeSessionNodeHarness {
 	}
 
 	async start(): Promise<void> {
-		this.host.add([RuntimeSessionAuthentication, RuntimeSessionPublication])
-		this.host.start(RuntimeSessionAuthentication)
-		this.host.start(RuntimeSessionPublication)
-		await this.host.commit()
+		await this.host.start([RuntimeSessionAuthentication, RuntimeSessionPublication])
 		this.server.listen(0, '127.0.0.1')
 		await once(this.server, 'listening')
 		this.listening = true
@@ -276,8 +277,7 @@ describe('Runtime Session over the production Node carrier', () => {
 		expect(harness.upgradeCount).toBe(1)
 		expect(harness.nodeCarrier.pending(CONTROL_OWNER)).toBe(1)
 		const firstClosed = waitForClose(first.socket)
-		harness.host.stop(RuntimeSessionPublication)
-		await harness.host.commit()
+		await harness.host.stop(RuntimeSessionPublication)
 		await expect(withTimeout(firstInvalidation.promise)).resolves.toEqual({
 			kind: 'epoch-invalidated',
 			cause: 'workbench',

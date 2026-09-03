@@ -2,14 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
+import { BasePlugin, Plugin } from '@pluxel/core/test'
 import {
-	BasePlugin,
 	type CommitSummary,
-	Plugin,
 	assertPluginLifecycleIssue,
 	pluginLifecycleIssuePlugins,
-	withCoreHost,
-} from '@pluxel/core/test'
+	withCoreInternalTestHost,
+} from '@pluxel/core/internal/test'
 
 @Plugin({ displayName: 'STRICT-FAIL-A' })
 class StrictFailPlugin extends BasePlugin {
@@ -89,7 +88,7 @@ class InitRollbackFailure extends BasePlugin {
 
 describe('PluginService failure reporting', () => {
 	it('keeps the construction cause and reports rollback cleanup failure separately', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add(ConstructionRollbackFailure)
 			const summary = await host.commitAllowFail()
 
@@ -108,7 +107,7 @@ describe('PluginService failure reporting', () => {
 	})
 
 	it('keeps config injection failure and rollback drain failure, then constructs a fresh retry', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			configRollbackConstructions = 0
 			host.add(ConfigRollbackFailure)
 			const failed = await host.commitAllowFail()
@@ -134,7 +133,7 @@ describe('PluginService failure reporting', () => {
 	})
 
 	it('keeps init failure and its rollback drain failure in the same report', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add(InitRollbackFailure)
 			const summary = await host.commitAllowFail()
 
@@ -153,7 +152,7 @@ describe('PluginService failure reporting', () => {
 	})
 
 	it('commitStrict publishes failure details through runtimeCommitted before returning an error', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			const committed: CommitSummary[] = []
 
@@ -193,7 +192,7 @@ describe('PluginService failure reporting', () => {
 	})
 
 	it('reports only the failed dependency subtree while leaving independent plugins running', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			independentStarted = 0
 			host.add([FailingProvider, BlockedConsumer, IndependentPlugin])

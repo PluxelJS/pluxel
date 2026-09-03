@@ -12,7 +12,7 @@ import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-	plugins: [dynamicRuntimeVitePlugin({ config: './src/pluxel.dynamic.ts' })],
+	plugins: [dynamicRuntimeVitePlugin({ entry: './src/pluxel.dynamic.ts' })],
 })
 ```
 
@@ -84,12 +84,20 @@ dependency 路径，Plugin import 仍与 `ctx.elysia` 保持引用相等。priva
 
 `@pluxel/runtime-dynamic/hmr` 是 `/vite` 与 route tests 使用的 host bridge；workspace diagnostics 只从
 `@pluxel/runtime-dynamic/hmr/diagnose` 导出。应用宿主优先使用 `/vite`，根入口只公开 config、direct launcher 和
-`DynamicPluginSource`；direct launcher 接收 config module path，并在启动时才加载 Vite/route internals：
+`DynamicPluginSource`；direct launcher 接收 config module path，并在启动时才加载 Vite/route internals。factory resolve 时
+Vite listener、initial reconciliation 与 HMR 已 ready；返回资源拥有 listener、Runtime effects 与 watcher：
 
 ```ts
-const runtime = await createDynamicDevRuntime({ config: 'src/pluxel.dynamic.ts' })
-await runtime.start()
+await using runtime = await startDynamicDevRuntime({
+	entry: new URL('./src/pluxel.dynamic.ts', import.meta.url),
+})
+
+const response = await fetch(new URL('/health', runtime.origin))
 ```
+
+相对 string `entry` 在 Vite plugin 中相对最终 `root`，在 direct launcher 中相对调用 factory 时捕获的 cwd；跨 cwd
+脚本优先传 `file:` URL。可选 `signal` 只取消 startup，reject 前会关闭已取得的资源；factory 成功后由幂等
+`dispose()` / `[Symbol.asyncDispose]()` 管理 lifetime。
 
 source update 必须进入 core runtime update/replacement/commit；dynamic route 不直接修改 running Plugin instance，也不复制 lifecycle。
 成功的 mutable source batch 更新正常 catalog slots；provider generation 变化由 core optional restart plan 处理，不存在 runtime
@@ -99,7 +107,7 @@ optional request、loader retry 或隐式 package installation。
 
 ```ts
 dynamicRuntimeVitePlugin({
-	config: './src/pluxel.dynamic.ts',
+	entry: './src/pluxel.dynamic.ts',
 	mode: 'distribution',
 })
 ```

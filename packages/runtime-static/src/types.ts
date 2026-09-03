@@ -161,6 +161,7 @@ export type StaticRuntimeHost = {
 
 export type StaticRuntime = {
 	readonly ctx: Context
+	readonly startupReport: StaticRuntimeStartupReport
 	fetch: RuntimeFetch
 	start(): Promise<StaticRuntimeStartupReport>
 	stop(): Promise<void>
@@ -192,6 +193,10 @@ export type StaticRuntimeReportEntry = {
 export type StaticRuntimeStartupReport = {
 	readonly runtime: string
 	readonly entries: readonly StaticRuntimeReportEntry[]
+}
+
+/** @internal Runtime/Vite report retaining process-local Core planning facts. */
+export type StaticRuntimeInternalStartupReport = StaticRuntimeStartupReport & {
 	readonly commit?: CommitSummary
 }
 
@@ -199,6 +204,11 @@ export type StaticRuntimeHmrReport = StaticRuntimeStartupReport & {
 	readonly added: readonly PluginNodeAddress[]
 	readonly removed: readonly PluginNodeAddress[]
 	readonly replaced: readonly PluginNodeAddress[]
+}
+
+/** @internal Vite/HMR report retaining process-local Core planning facts. */
+export type StaticRuntimeInternalHmrReport = StaticRuntimeHmrReport & {
+	readonly commit?: CommitSummary
 }
 
 export type StaticRuntimeCatalogEntry = {

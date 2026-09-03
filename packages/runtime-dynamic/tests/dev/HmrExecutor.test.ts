@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 
 import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 import { HmrExecutor, prefetchTransforms } from '../../src/hmr/engine/pipeline'
@@ -14,7 +14,7 @@ type ExecutorOptions = {
 }
 
 function createExecutor(options: ExecutorOptions) {
-	const host = createRuntimeHost(
+	const host = createRuntimeInternalTestHost(
 		{ workbench: false },
 		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
 	)

@@ -38,6 +38,7 @@
 	"devDependencies": {
 		"@pluxel/cache": "workspace:*",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/rates": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",

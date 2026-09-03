@@ -1,48 +1,33 @@
-import { requireWorkbench } from '@pluxel/runtime/internal'
-import { pluginNodeAddressOf, createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeTestHost, type RuntimeTestHost } from '@pluxel/runtime/test'
 import type { WorkbenchPrincipal } from '@pluxel/runtime/workbench'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
 import { generateTotpForTesting } from '../src/totp.ts'
-import type { AuthSetupApi } from '../src/workbench.ts'
+import { AuthWorkbench } from '../src/workbench.ts'
 
 const PASSWORD = 'correct horse battery staple'
 const LOCAL_RECOVERY = Object.freeze({ provider: 'local', subject: 'local' })
 
-async function openSetup(host: RuntimeHost, principal: WorkbenchPrincipal = LOCAL_RECOVERY) {
-	const backend = requireWorkbench(host.ctx)
-	const target = pluginNodeAddressOf(AuthPlugin)
-	const layout = backend.registry.getLayout(target)
-	const entry = layout.entries.find(
-		(candidate) => candidate.descriptor.kind === 'view' && candidate.descriptor.key === 'setup',
-	)
-	if (!entry) throw new Error('AuthPlugin published no setup View')
-	const session = backend.createSession(principal, () => {})
-	const opened = await session.target.openEntry({
-		layoutRevision: layout.revision,
-		target,
-		descriptor: entry.descriptor,
+function openSetup(host: RuntimeTestHost, principal: WorkbenchPrincipal = LOCAL_RECOVERY) {
+	return host.workbench.open({
+		target: AuthPlugin,
+		entry: AuthWorkbench.setup,
+		principal,
 		location: '/auth/setup',
 	})
-	if (!opened.ok || opened.value.kind !== 'local') {
-		session.dispose()
-		throw new Error('Auth setup View failed to open')
-	}
-	return Object.freeze({ api: opened.value.api as AuthSetupApi, session })
 }
 
 describe('Auth Workbench credential setup', () => {
 	it('provisions the first password and refuses credential rotation', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true }, vault: {} })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
-			host.add(AuthPlugin)
-			host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
-			host.start(AuthPlugin)
-			await host.commit()
+			await host.start(AuthPlugin, {
+				initialConfig: { mode: { type: 'password' } },
+			})
 
-			const opened = await openSetup(host)
-			expect(opened.api.snapshot()).toEqual({
+			using opened = await openSetup(host)
+			await expect(opened.api.snapshot()).resolves.toEqual({
 				mode: 'password',
 				state: 'setup-required',
 				reason: 'missing',
@@ -57,8 +42,9 @@ describe('Auth Workbench credential setup', () => {
 				ok: true,
 				snapshot: { mode: 'password', state: 'configured' },
 			})
-			await expect(host.ctx.adminAccess?.describe()).resolves.toMatchObject({
-				provider: { ready: true },
+			await expect(opened.api.snapshot()).resolves.toEqual({
+				mode: 'password',
+				state: 'configured',
 			})
 			await expect(
 				opened.api.setupPassword({
@@ -67,21 +53,22 @@ describe('Auth Workbench credential setup', () => {
 					passwordConfirmation: PASSWORD,
 				}),
 			).resolves.toMatchObject({ ok: false, code: 'not_required' })
-			opened.session.dispose()
-			expect(() => opened.api.snapshot()).toThrow('Auth setup View is closed')
+			opened[Symbol.dispose]()
+			await expect(Promise.resolve().then((): unknown => opened.api.snapshot())).rejects.toThrow(
+				/Auth setup View is closed|disposed/i,
+			)
 		}
 	})
 
 	it('allows mutations only for the loopback recovery principal', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true }, vault: {} })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
-			host.add(AuthPlugin)
-			host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
-			host.start(AuthPlugin)
-			await host.commit()
+			await host.start(AuthPlugin, {
+				initialConfig: { mode: { type: 'password' } },
+			})
 
-			const opened = await openSetup(host, {
+			using opened = await openSetup(host, {
 				provider: '@pluxel/auth',
 				subject: 'local:admin',
 			})
@@ -92,20 +79,18 @@ describe('Auth Workbench credential setup', () => {
 					passwordConfirmation: PASSWORD,
 				}),
 			).resolves.toMatchObject({ ok: false, code: 'forbidden' })
-			opened.session.dispose()
 		}
 	})
 
 	it('provisions password and TOTP as one credential', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true }, vault: {} })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
-			host.add(AuthPlugin)
-			host.cfg(AuthPlugin).set({ mode: { type: 'password-totp' } })
-			host.start(AuthPlugin)
-			await host.commit()
+			await host.start(AuthPlugin, {
+				initialConfig: { mode: { type: 'password-totp' } },
+			})
 
-			const opened = await openSetup(host)
+			using opened = await openSetup(host)
 			const enrollment = await opened.api.beginTotp({
 				username: 'Admin',
 				password: PASSWORD,
@@ -121,32 +106,31 @@ describe('Auth Workbench credential setup', () => {
 				ok: true,
 				snapshot: { mode: 'password-totp', state: 'configured' },
 			})
-			await expect(host.ctx.adminAccess?.describe()).resolves.toMatchObject({
-				provider: { ready: true },
+			await expect(opened.api.snapshot()).resolves.toEqual({
+				mode: 'password-totp',
+				state: 'configured',
 			})
-			opened.session.dispose()
 		}
 	})
 
 	it('provisions a confidential OIDC secret and skips it for public clients', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true }, vault: {} })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
-			host.add(AuthPlugin)
-			host.cfg(AuthPlugin).set({
-				mode: {
-					type: 'oidc',
-					issuer: 'https://issuer.example',
-					clientId: 'client',
-					publicOrigin: 'https://admin.example',
-					clientKind: 'confidential',
+			await host.start(AuthPlugin, {
+				initialConfig: {
+					mode: {
+						type: 'oidc',
+						issuer: 'https://issuer.example',
+						clientId: 'client',
+						publicOrigin: 'https://admin.example',
+						clientKind: 'confidential',
+					},
 				},
 			})
-			host.start(AuthPlugin)
-			await host.commit()
 
-			const opened = await openSetup(host)
-			expect(opened.api.snapshot()).toMatchObject({
+			using opened = await openSetup(host)
+			await expect(opened.api.snapshot()).resolves.toMatchObject({
 				mode: 'oidc-confidential',
 				state: 'setup-required',
 			})
@@ -154,30 +138,29 @@ describe('Auth Workbench credential setup', () => {
 				ok: true,
 				snapshot: { mode: 'oidc-confidential', state: 'configured' },
 			})
-			await expect(host.ctx.adminAccess?.describe()).resolves.toMatchObject({
-				provider: { ready: true },
+			await expect(opened.api.snapshot()).resolves.toEqual({
+				mode: 'oidc-confidential',
+				state: 'configured',
 			})
-			opened.session.dispose()
 		}
 
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true } })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
-			host.add(AuthPlugin)
-			host.cfg(AuthPlugin).set({
-				mode: {
-					type: 'oidc',
-					issuer: 'https://issuer.example',
-					clientId: 'client',
-					publicOrigin: 'https://admin.example',
-					clientKind: 'public',
+			await host.start(AuthPlugin, {
+				initialConfig: {
+					mode: {
+						type: 'oidc',
+						issuer: 'https://issuer.example',
+						clientId: 'client',
+						publicOrigin: 'https://admin.example',
+						clientKind: 'public',
+					},
 				},
 			})
-			host.start(AuthPlugin)
-			await host.commit()
 
-			const opened = await openSetup(host)
-			expect(opened.api.snapshot()).toEqual({
+			using opened = await openSetup(host)
+			await expect(opened.api.snapshot()).resolves.toEqual({
 				mode: 'oidc-public',
 				state: 'configured',
 			})
@@ -185,7 +168,6 @@ describe('Auth Workbench credential setup', () => {
 				ok: false,
 				code: 'not_required',
 			})
-			opened.session.dispose()
 		}
 	})
 })

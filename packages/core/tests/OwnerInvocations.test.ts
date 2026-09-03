@@ -1,4 +1,5 @@
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { createOwnerContext } from '../src/context/context-factory'
 import { closeOwnerInvocations, enterOwnerInvocation } from '../src/internal'
 import { describe, expect, it } from 'vitest'
@@ -26,7 +27,7 @@ class InvokedPlugin extends BasePlugin {
 
 describe('owner invocations', () => {
 	it('closes admission, aborts active leases, and waits for their release', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = createOwnerContext(host.ctx, 'owner')
 			const lease = enterOwnerInvocation(owner)
 			const reason = new Error('owner stopped')
@@ -48,7 +49,7 @@ describe('owner invocations', () => {
 	})
 
 	it('closes an unused owner synchronously without allocating an invocation gate', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = createOwnerContext(host.ctx, 'unused-owner')
 
 			expect(closeOwnerInvocations(owner)).toBeUndefined()
@@ -57,7 +58,7 @@ describe('owner invocations', () => {
 	})
 
 	it('combines call cancellation without closing the owner gate', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = createOwnerContext(host.ctx, 'owner')
 			const call = new AbortController()
 			const lease = enterOwnerInvocation(owner, call.signal)
@@ -72,7 +73,7 @@ describe('owner invocations', () => {
 	})
 
 	it('closes an idle gate synchronously and preserves the supplied reason', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = createOwnerContext(host.ctx, 'idle-owner')
 			const lease = enterOwnerInvocation(owner)
 			lease.dispose()
@@ -86,7 +87,7 @@ describe('owner invocations', () => {
 	})
 
 	it('closes and drains owner invocations before generation cleanup', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			ownerDrainOrder.length = 0
 			ownerDrainLease = undefined
 			host.add(InvokedPlugin)

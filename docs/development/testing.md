@@ -1,13 +1,12 @@
 ---
 title: 测试 Pluxel 插件
-description: 用真实构建流程和对应的测试宿主验证依赖、配置、HTTP 与资源回收。
+description: 选择最小测试边界，用真实构建语义验证依赖、配置、HTTP、Workbench 与资源回收。
 ---
 
-Plugin 测试应当经过与生产构建一致的语义处理，包括装饰器转换、构造器依赖提取、配置 schema 提取和包根入口解析。直接 `new` 一个实例或模拟 Context 只能验证普通业务逻辑，不能证明这个 Plugin 可以被宿主正确加载和停止。
+Plugin 测试应经过与生产构建一致的语义处理，包括装饰器转换、构造器依赖提取、配置 schema 提取和包根入口解析。直接 `new`
+实例或模拟 Context 只适合测试普通业务对象，不能证明 Plugin 能被宿主正确加载、组合和停止。
 
-## 选择测试宿主
-
-### 安装与 Vitest preset
+## 安装 Vitest preset
 
 ```sh package-install
 npx nypm add -D @pluxel/test @pluxel/core vitest oxlint
@@ -19,43 +18,54 @@ npx nypm add -D @pluxel/test @pluxel/core vitest oxlint
 export { default } from '@pluxel/test/vitest'
 ```
 
-需要自定义 include 或额外 Vite plugin 时：
+需要自定义 include 或增加 Vite plugin 时：
 
 ```ts twoslash
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestConfig({
-	test: {
-		include: ['tests/**/*.test.ts'],
-	},
+	test: { include: ['tests/**/*.test.ts'] },
 })
 ```
 
-preset 在 TypeScript 擦除前运行 Pluxel semantic lowering，并执行 build-correctness lint。不要关闭这一步来“简化”测试。
+preset 在 TypeScript 擦除前运行 Pluxel semantic lowering、build-correctness lint，并注册 lifecycle matcher。把
+`vitest.config.ts` 纳入项目的 `tsconfig.include`，TypeScript 才能从同一个 import 看到 matcher augmentation。不要在每个 test file
+重复导入 setup，也不要关闭 lowering 来“简化”测试。
 
-### 选择测试边界
+`@pluxel/test` 没有根入口。它只从明确 subpath 提供 runner、fixture 和 unsafe lowering 工具；test host 从所验证层的 package 导入。
 
-| 需要验证                                                   | 入口                              |
-| ---------------------------------------------------------- | --------------------------------- |
-| dependency graph、failure、replacement、effects            | `@pluxel/test` 的 core host       |
-| runtime config、HTTP、database、vault、commands、Workbench | `@pluxel/runtime/test`            |
-| static canonical entry 与 fixed catalog                    | `@pluxel/runtime-static/test`     |
-| dynamic source discovery、Vite loader 与 HMR               | dynamic route test host/真实 Vite |
-| package metadata、Workbench/worker/database artifact       | `pluxel build` integration        |
+## 先选择最小边界
 
-`@pluxel/test` 是 public dev-only core test surface，不会注册 runtime services。需要 `ctx.elysia` 或 `ctx.database` 时使用 runtime test entry。
-两种 test host 都只公开面向 Plugin 的 graph 操作与只读查询，不暴露 `PluginService`、graph 或 transaction internals；Core 自身的白盒
-测试显式从 `@pluxel/core/internal` 取得内部 authority。Core host 通过 `add/remove/restart/replace/fork/override/commit` 直接测试目标 graph，
-其中 `start(Plugin)` 只是 `add + commit + require` 的一次性便利方法，不是 Runtime 生命周期命令。Runtime host 额外提供 staged
-`start/stop/restart`，其会话语义见下文。
+| 需要验证                                                         | 唯一默认入口                                                          |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 纯函数、普通对象                                                 | 不使用 host                                                           |
+| Core graph、config、lifecycle、effects                           | `@pluxel/core/test`                                                   |
+| Plugin 与 Runtime capability                                     | `@pluxel/runtime/test`                                                |
+| fixed static application 的 configure、prepare、bindings、冷启动 | `@pluxel/runtime-static/test`                                         |
+| dynamic source、Vite/HMR、HTTP 或 WebSocket carrier              | 项目 Vite command 或 `@pluxel/runtime-dynamic` 的 production launcher |
+| static deployment artifact、filesystem、assets、TLS              | 启动真实 artifact                                                     |
+| Workbench renderer 与 Shell                                      | React/browser test                                                    |
 
-## 常用测试
+删除外层 application、source 或 carrier 后仍成立的断言，应回到更小的 host。同一 Plugin behavior 不要在 Runtime、static 和 dynamic
+三层重复测试。
 
-### Core lifecycle
+所有 public host 都由创建它的测试拥有：
 
-```ts twoslash
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
-import { describe, expect, it, vi } from 'vitest'
+```ts no-twoslash
+await using host = createRuntimeTestHost()
+```
+
+host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不支持 explicit resource management 时，在 `finally` 中调用
+`await host.dispose()`。
+
+## Core：立即修改 graph
+
+Core 没有 Runtime session intent 或 durable auto-start policy。`add/remove/restart/replaceDefinition` 都会立即提交并等待 lifecycle
+稳定；方法 resolve 后可以直接断言，不再额外调用无参数 `commit()`。
+
+```ts no-twoslash
+import { BasePlugin, createCoreTestHost, Plugin } from '@pluxel/core/test'
+import { expect, it, vi } from 'vitest'
 
 const cleanup = vi.fn()
 
@@ -73,52 +83,43 @@ class ConsumerPlugin extends BasePlugin {
 	}
 }
 
-it('starts dependency order and drains effects', async () => {
-	await withHost(async (host) => {
-		host.add([ProviderPlugin, ConsumerPlugin])
+it('starts providers first and drains the graph', async () => {
+	await using host = createCoreTestHost()
 
-		await host.commit()
-		expect(host.isRunning(ConsumerPlugin)).toBe(true)
+	const [provider, consumer] = await host.add([ProviderPlugin, ConsumerPlugin])
+	expect(provider).toBe(host.require(ProviderPlugin))
+	expect(consumer.provider).toBe(provider)
 
-		host.remove(ProviderPlugin)
-		await host.commit()
-		expect(cleanup).toHaveBeenCalledOnce()
+	await host.commit((change) => {
+		change.remove(ConsumerPlugin)
+		change.remove(ProviderPlugin)
+	})
+
+	expect(cleanup).toHaveBeenCalledOnce()
+})
+```
+
+单个目标使用顶层 command；只有多个变化必须共享一个 graph boundary 时才用 callback：
+
+```ts no-twoslash
+await host.commit((change) => {
+	change.add(ProviderPlugin)
+	change.add(ConsumerPlugin, {
+		initialConfig: { endpoint: 'https://api.example.test' },
 	})
 })
 ```
 
-Core test host 没有 Runtime policy 或 session intent：`host.add/remove` 直接修改待提交的 Core graph，config handle 只修改配置。
-`await host.commit()` 才统一应用新的 graph plan。`commit()` 是 strict：
-有 start failure 时抛出；预期失败并需要 summary 时使用 `commitAllowFail()`。
+callback 只同步描述变化。不要把它声明为 `async`、在其中 `await`、返回值、嵌套 commit，或把 `change` 保存到外部。互相矛盾的 command
+会在 production work 开始前失败；需要观察两个先后状态时，写两个明确 awaited operation。
 
-测试 HMR/replacement 时，replacement 必须像真实模块求值一样拥有目标 canonical definition facts，test host 不会把任意
-subclass 偷偷改址。专门测试替身可以从 unsafe test entry 显式 lower：
+## Runtime：立即表达本次进程意图
+
+Runtime test host 的 `start/stop/restart/replaceDefinition` 同样立即提交。`start()` 会让目标 implementation 进入 test catalog、建立本次
+进程的 running intent、启动 required provider closure，并返回当前实例；它不会修改下次冷启动的 auto-start policy。
 
 ```ts no-twoslash
-import { InngestPlugin } from '@acme/inngest'
-import { createRuntimeHost } from '@pluxel/runtime/test'
-import { lowerTestReplacement } from '@pluxel/test/unsafe'
-
-class TestInngestPlugin extends InngestPlugin {
-	protected override async init() {}
-}
-
-lowerTestReplacement(InngestPlugin, TestInngestPlugin)
-
-await using host = createRuntimeHost()
-host.add(InngestPlugin)
-host.replace(InngestPlugin, TestInngestPlugin)
-await host.commit()
-```
-
-替身若改变 constructor dependency，必须通过 `requires` 明确写出本次 evaluation 的 edge；不要复制旧 candidate metadata，
-也不要给 RuntimeHost 增加 constructor/address fallback。这个 helper 只属于 `@pluxel/test/unsafe`，生产 replacement facts 始终来自
-Vite/Rolldown semantic lowering。
-
-### Runtime capability
-
-```ts twoslash
-import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { expect, it } from 'vitest'
 
 @Plugin()
@@ -128,142 +129,191 @@ class HealthPlugin extends BasePlugin {
 	}
 }
 
-it('publishes and removes its Elysia application', async () => {
-	await using host = createRuntimeHost({ workbench: false })
-	host.add(HealthPlugin)
-	host.start(HealthPlugin)
-	await host.commit()
+it('publishes and withdraws its route', async () => {
+	await using host = createRuntimeTestHost()
+	await host.start(HealthPlugin)
 
-	const url = 'http://local.test/health'
-	const response = await host.fetch(new Request(url))
+	const url = new URL('/health', host.http.origin)
+	const response = await host.http.fetch(url)
 	expect(await response.json()).toEqual({ ok: true })
 
-	host.remove(HealthPlugin)
-	await host.commit()
-	expect((await host.fetch(new Request(url))).status).toBe(404)
+	await host.stop(HealthPlugin)
+	expect((await host.http.fetch(url)).status).toBe(404)
 })
 ```
 
-`host.fetch()` 经过真实 immutable route directory、generation admission 和已经 seal 的 Elysia app，但不打开物理端口。
-`await using` 在当前作用域结束后自动调用 host 的异步释放协议；无法使用 explicit resource management 语法时，必须在
-`finally` 中调用 `await host.dispose()`。
-Runtime test host 的 `start/stop/restart` 都只暂存本进程生命周期命令，由下一次 `commit()` 与 catalog、config 和 RuntimeState
-变更一起提交；它们不修改 `autoStart`。需要验证冷启动策略时才调用 `host.cfg(Plugin).setAutoStart(...)`，并明确断言修改策略不会
-改变当前进程的 desired state。
+`host.http.fetch()` 经过真实 route directory、generation admission 和已 seal 的 Elysia app，但不打开物理端口。`host.http.origin`
+是逻辑 origin，不是可连接 listener。WebSocket Upgrade、disconnect、close code 和 backpressure 必须走真实 carrier。
 
-`host.fetch()` 不执行 HTTP Upgrade，因此不能据此推断 WebSocket、disconnect、close code、backpressure 或 HMR arbitration。
-Node production、static Vite 与 dynamic Vite 的基础业务 WebSocket 已通过各自的 ephemeral real-listener test；其他 carrier 与完整
-socket parity 仍需独立 conformance。Elysia 2 beta 的 external `setup()` / `cleanup()` attach seam 也尚未完成；完整边界见
-[插件 HTTP](../runtime/http.md)。
-
-### Config
+有 required provider 时，只把 implementation candidate 加入 `catalog`；依赖 edge 仍只来自 consumer constructor：
 
 ```ts no-twoslash
-host.add(WorkerPlugin)
-host.cfg(WorkerPlugin).set({ concurrency: 8 })
-host.start(WorkerPlugin)
-await host.commit()
-
-expect(host.require(WorkerPlugin).observedConcurrency).toBe(8)
+const consumer = await host.start(ConsumerPlugin, {
+	catalog: [ProviderPlugin],
+})
 ```
 
-config handle 接受 Plugin constructor/address，不接受 display name。覆盖：
-
-- 空 record 应用 schema defaults；
-- 显式合法值产生 normalized output；
-- 非法值让 Plugin start failed；
-- replacement 后读取新 snapshot，旧 generation 被清理。
-
-不要直接给实例 private field 赋值，那会绕过 runtime validation 和作者 contract。
-
-### PluginPart business surface
-
-`PluginPart` 的 Context、immediate host 和 composition DSL 是 protected。测试不要通过类型断言或额外 accessor 泄露这些
-framework-owned occurrence facts。通过 Part/owner 明确声明的最小 public 查询验证业务状态，通过真实 capability catalog 验证
-registration 与回收，通过 `PluginLifecycleErrorInfo.partPath` 验证 construction/init/cleanup 归因。
-
-只有 Core 自身的白盒测试可以使用未从 package entry 导出的 occurrence helper。Plugin package 不应为测试恢复通用 Context/path
-getter；如果一个 projection 对业务也没有意义，优先断言外部效果。
-
-标准 Part 写法和不应暴露的 surface 见[使用 PluginPart 组织内部资源](../getting-started/plugin-parts.md#测试正确边界)。
-
-## Failure 与 cleanup
-
-### 断言失败与 blocked dependency
+多个独立 root 可以一次启动，并保持 tuple 推导：
 
 ```ts no-twoslash
-import { assertPluginLifecycleIssue } from '@pluxel/runtime/test'
+const [api, worker] = await host.start([ApiPlugin, WorkerPlugin])
+```
 
-const summary = await host.commitAllowFail()
+不同目标需要不同首次配置时，使用一个同步 callback：
 
-assertPluginLifecycleIssue(summary, ProviderPlugin, {
+```ts no-twoslash
+await host.commit((change) => {
+	change.start(ApiPlugin, { initialConfig: { port: 8080 } })
+	change.start(WorkerPlugin, { initialConfig: { concurrency: 4 } })
+})
+```
+
+## 区分首次配置和运行期更新
+
+`initialConfig` 只建立 node 第一次进入 lifecycle 前的 fixture state：
+
+```ts no-twoslash
+const worker = await host.start(WorkerPlugin, {
+	initialConfig: {
+		endpoint: 'https://api.example.test',
+		concurrency: 2,
+	},
+})
+```
+
+node 已经拥有 committed config 或进入过 lifecycle 后，使用 production-like mutation：
+
+```ts no-twoslash
+const result = await host.config.patch(WorkerPlugin, {
+	endpoint: 'https://api.example.test',
+	concurrency: 8,
+})
+
+expect(result).toMatchObject({ ok: true, application: 'applied' })
+```
+
+`config.patch()` 经过真实 validation、persistence、desired revision 和 listener notification。它不会隐式 restart；只能通过完整重建安全应用
+配置的 Plugin，应在 patch 后显式调用 `await host.restart(WorkerPlugin)`。不要直接给实例 private field 赋值，也不要用 bootstrap helper
+绕过运行期配置语义。
+
+Core 没有 Runtime persistence/config driver；需要在一个 Core graph boundary 中改变 desired config 时使用 callback
+`change.config.patch()`。Runtime 的 live `host.config.patch()` 才代表完整宿主配置 mutation。
+
+## 断言 lifecycle failure
+
+成功路径的 lifecycle command 是 strict：请求的 postcondition 未满足时抛出 `PluginLifecycleAssertionError`，并保留 slot-free
+`summary.lifecycleReport`。预期 start、blocked 或 drain failure 时使用 `commitExpectFail()`：
+
+```ts no-twoslash
+const failure = await host.commitExpectFail((change) => {
+	change.start(ConsumerPlugin, { catalog: [BrokenProviderPlugin] })
+})
+
+expect(failure).toHavePluginLifecycleIssue(BrokenProviderPlugin, {
 	kind: 'start-failed',
 })
-assertPluginLifecycleIssue(summary, ConsumerPlugin, {
+expect(failure).toHavePluginLifecycleIssue(ConsumerPlugin, {
 	kind: 'dependency-blocked',
+	blockedBy: BrokenProviderPlugin,
 })
 ```
 
-测试不应只断言 rejected message。结构化 summary 可以区分 start failure、dependency blocked、cleanup/drain failure 和未启动原因。
+`commitExpectFail()` 只有观察到 lifecycle issue 才成功返回；完全成功会作为 assertion error 拒绝。programming error、invalid graph、配置
+输入错误、persistence failure 或 capability disabled 仍直接抛出。测试分支依赖稳定的 `phase/kind/blockedBy`，不要依赖完整 message。
 
-同时放入一个无关 Plugin，确认 provider failure 没有错误地阻止整个 graph。
+## Fork 与 replacement
 
-### Optional integration
-
-至少覆盖三个状态：
-
-1. provider absent：consumer running，callback 未执行；
-2. provider added/running：consumer closure restart，callback 执行；
-3. provider removed/replaced：旧 callback cleanup 完成，不持有旧 provider。
-
-不要在一个 test 中手动直接调用 `plugins.use()` callback；让 graph commit 驱动它。
-
-### Cleanup 与 rollback
-
-为每类长期资源建立可观察断言：
-
-- timer 被 clear；
-- watcher/queue/worker 的 `dispose()` 已 settle；
-- HTTP route、command、Workbench publication 不再可见；
-- database/cache/Redis 等旧 owner handle 拒绝继续使用；
-- `init()` 中途失败时，之前 acquire 的资源仍被释放。
-
-cleanup test 要等待 host commit/dispose Promise，不能只检查是否调用过 `abort()`。
-
-## 扩展边界
-
-### Workbench enabled 与 disabled
-
-业务 Plugin 至少在 `workbench: false` 下跑一次。它证明 HTTP、database、commands 和核心 lifecycle 没有暗中依赖 UI backend。
-
-需要验证 Definition/View/Attachment publication 时再启用默认 Runtime Workbench，并测试：
-
-- publication 只在 Plugin running 后进入 layout；
-- 每次 `openEntry()` 返回与所选 Content/View 匹配的 fresh handle；interactive Content 和 View 在 close/owner stop 时会 abort
-  signal 并释放 observer/root，纯 Markdown Content 不创建 root；
-- browser-safe definition 与 renderer graph 没有 server import；
-- Attachment provider/consumer owner 与 placement 保持准确；
-- replacement 不复活旧 socket epoch、opened handle 或 API root。
-
-### Forks
-
-Runtime test host 支持按 fork address 配置多个实例；示例中的 concrete `ConnectorPlugin` 必须用
-`@Plugin({ forkable: true })` 显式声明它能够安全地同时运行多个 node：
+Fork 是独立于 host 的 typed value。concrete Plugin 必须用 `@Plugin({ forkable: true })` 声明可并行运行多个 node：
 
 ```ts no-twoslash
-const East = host.fork(ConnectorPlugin, 'east')
-const West = host.fork(ConnectorPlugin, 'west')
+import { definePluginFork } from '@pluxel/runtime/test'
 
-host.cfg(East).set({ region: 'east' })
-host.cfg(West).set({ region: 'west' })
-host.start(East)
-host.start(West)
-await host.commit()
+const East = definePluginFork(ConnectorPlugin, 'east')
+const West = definePluginFork(ConnectorPlugin, 'west')
+
+await host.commit((change) => {
+	change.start(East, { initialConfig: { region: 'east' } })
+	change.start(West, { initialConfig: { region: 'west' } })
+})
 ```
 
-测试 config、logs、persistence/cache caller ownership 不会在 fork 之间串线。
+`definePluginFork()` 不读 host、不修改 catalog，也不启动 Plugin。definition replacement 后，旧 constructor 和旧 fork ref 都会 stale；
+用新 implementation 和同一 fork ID 重建 ref。
 
-### 文件系统 fixture
+测试 replacement 时，替身必须像真实模块求值一样拥有目标 canonical definition facts：
+
+```ts no-twoslash
+import { createRuntimeTestHost } from '@pluxel/runtime/test'
+import { lowerTestReplacement } from '@pluxel/test/unsafe'
+import { InngestPlugin } from '@acme/inngest'
+
+class TestInngestPlugin extends InngestPlugin {
+	protected override async init() {}
+}
+
+lowerTestReplacement(InngestPlugin, TestInngestPlugin)
+
+await using host = createRuntimeTestHost()
+await host.start(InngestPlugin)
+await host.replaceDefinition(InngestPlugin, TestInngestPlugin)
+```
+
+替身若改变 constructor dependency，必须通过 unsafe helper 的 `requires` 明确写出本次 evaluation edge。生产 replacement facts 始终来自
+Vite/Rolldown semantic lowering。
+
+## 使用 Runtime drivers
+
+public author host 不暴露 root `ctx`、raw service、transaction 或 backend admin。通过返回的 Plugin instance 观察公开业务状态；通过 driver
+观察 Plugin 发布的 inbound surface：
+
+- `host.http.origin/fetch`：in-process Fetch，不验证 WebSocket carrier；
+- `host.commands.execute/list`：真实 command catalog、validation、owner registration 和 withdrawal；
+- `host.workbench.open`：真实 publication、session、layout 与 local Cap'n Web membrane；
+- `host.config.patch`：production-like config mutation。
+
+Workbench 默认关闭；只在测试发布行为时显式开启，并为每次 open 提供 principal：
+
+```ts no-twoslash
+await using host = createRuntimeTestHost({
+	vault: {},
+	workbench: { enabled: true },
+})
+
+await host.start(ConnectorPlugin)
+
+using opened = await host.workbench.open({
+	target: ConnectorPlugin,
+	entry: ConnectorWorkbench.credentials,
+	principal: ADMIN,
+})
+
+const result = await opened.root.run('replace', { authKey: 'test-secret' })
+expect(result.action).toMatchObject({ ok: true })
+```
+
+`open()` 不模拟 renderer 或点击。React 控件、router 和 Shell state 在 browser test 中验证；WebSocket handshake、Origin、framing 与 disconnect
+在 real-carrier test 中验证。Workbench disabled 时 driver 会明确拒绝，不会偷偷安装 capability。
+
+Vault、database、persistence 和 worker 不自动变成 root test backdoor。需要白盒验证 Plugin-owned 数据时，从当前 running instance 取得
+owner-bound handle；restart/replacement 后重新取得新 instance 和 handle。大量业务 seed 由具体 Plugin package 提供领域 fixture。
+
+## PluginPart、optional integration 与 cleanup
+
+`PluginPart` 的 Context、immediate host 和 composition DSL 是 protected。通过 Part/owner 声明的最小 public 查询验证业务状态，通过真实
+capability catalog 验证 registration 与回收；只有 framework internal test 才读取 occurrence authority。
+
+Optional integration 至少覆盖：
+
+1. provider absent：consumer running，callback 不执行；
+2. provider running：consumer closure restart，callback 执行；
+3. provider removed/replaced：旧 callback cleanup 完成，不持有旧 provider。
+
+不要直接调用 `plugins.use()` callback；让 graph commit 驱动它。
+
+每类长期资源都应有可观察 cleanup 断言：timer 已 clear、watcher/worker 已 settle、HTTP/command/Workbench publication 已撤销、旧 owner
+handle 已拒绝使用。等待 lifecycle command 或 host disposal 的 Promise，不能只检查是否调用过 `abort()`。
+
+## Filesystem fixture
 
 纯文件操作使用 VFS fixture：
 
@@ -277,24 +327,42 @@ await using fixture = await createFixture({
 expect(fixture.fs.existsSync(fixture.getPath('packages/a/src/index.ts'))).toBe(true)
 ```
 
-只有真实 watcher、child process 或工具链需要 native filesystem 时才用 disk fixture，并依赖 fixture disposal 清理临时目录。
+只有真实 watcher、child process 或工具链需要 native filesystem 时才使用 disk fixture，并由 fixture disposal 清理临时目录。
 
-### Static 与 dynamic integration
+## Static application 与 dynamic smoke
 
-Static canonical entry：
+完整 fixed static application 使用 ready-on-return 的 test host：
 
-```ts twoslash
-import {
-	createStaticRuntimeTestHost,
-	openRuntimeSessionTestConnection,
-} from '@pluxel/runtime-static/test'
+```ts no-twoslash
+import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
+import application from '../src/pluxel.static.ts'
+
+await using host = await startStaticApplicationTestHost(application)
+expect(host.isRunning(OrdersPlugin)).toBe(true)
+
+const response = await host.http.fetch(new URL('/orders', host.http.origin))
 ```
 
-需要从 Node 测试真实 WS-only control plane 时，用 `openRuntimeSessionTestConnection(origin)` 建立带同源
-`Origin` 的 production-carrier connection，并通过 `await using` 释放 socket 与 Cap’n Web root；不要为测试关闭
-Runtime Session 的 origin 校验，也不要回退到 HTTP/SSE transport。
+这个 host 验证 `defineStaticRuntime()` 的 configure、prepare、bindings、fixed catalog 和 cold boot。它没有 Plugin lifecycle mutation、root
+`ctx`、HMR 或 physical listener；`startupReport` 保存 static partial startup 事实。
 
-Dynamic HMR 集成测试通过真实 `dynamicRuntimeVitePlugin()` 加载 source，不直接调用内部 loader method。覆盖 initial commit、add/change/unlink、failed replacement 保留旧 generation 和 source recovery。
+Dynamic source/HMR 或物理 carrier 使用 production 入口，不建立第二个 test launcher：
+
+```ts no-twoslash
+import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
+
+await using runtime = await startDynamicDevRuntime({
+	entry: new URL('../fixtures/pluxel.dynamic.ts', import.meta.url),
+})
+
+const response = await fetch(new URL('/health', runtime.origin))
+```
+
+factory resolve 时 Vite、initial reconciliation、HMR、carrier 与 listener 都已 ready。`signal` 只取消尚未完成的 startup；resolve 后 lifetime
+只由 returned resource 拥有。项目已有完整 Vite config、assets 或 browser graph 时，直接运行项目的 Vite command。
+
+Static deployment 的 filesystem、assets、TLS 和 signal ownership 必须由真实 freezer artifact smoke 验证，不能由 in-process application host
+代替。
 
 ## CI 顺序
 
@@ -306,4 +374,4 @@ pnpm test
 pnpm build
 ```
 
-`test` 证明 runtime behavior，`build` 证明 package root、metadata 和 artifacts 能真正发布；两者不能互相替代。
+`test` 证明 runtime behavior，`build` 证明 package root、metadata 和 artifacts 可以真正发布；两者不能互相替代。

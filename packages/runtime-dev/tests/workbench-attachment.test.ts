@@ -1,12 +1,12 @@
-import { createRuntimeContext } from '@pluxel/runtime/test'
 import { createOwnerContext } from '@pluxel/core/internal'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { describe, expect, it, vi } from 'vitest'
 
 import { attachPluginArtifactCompiler } from '../src/workbench'
 
 describe('attachPluginArtifactCompiler', () => {
 	it('attaches one semantic-plan compiler owner to the Runtime root', async () => {
-		const runtime = createRuntimeContext()
+		const runtime = createRuntimeInternalTestHost()
 		const { ctx } = runtime
 		const attachSourceBinder = vi.spyOn(ctx.nodeModules, 'attachSourceBinder')
 

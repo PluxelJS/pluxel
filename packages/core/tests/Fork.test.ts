@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 @Plugin({ forkable: true })
 class Forkable extends BasePlugin {}
@@ -16,13 +17,13 @@ class NonForkable extends BasePlugin {}
 
 describe('fork node identity', () => {
 	it('rejects non-forkable Plugins', async () => {
-		await withCoreHost((host) => {
+		await withCoreInternalTestHost((host) => {
 			expect(() => host.fork(NonForkable as never, 'a')).toThrow(/does not allow fork/i)
 		})
 	})
 
 	it('runs fork nodes with isolated Context and structured addresses', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add(Forkable)
 			const A = host.fork(Forkable, 'a')
 			const B = host.fork(Forkable, 'b')
@@ -47,7 +48,7 @@ describe('fork node identity', () => {
 	})
 
 	it('selects a fork through slot-based dependency overrides', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.fork(Forkable, 'a')
 			const B = host.fork(Forkable, 'b')
 			host.add(ForkConsumer)

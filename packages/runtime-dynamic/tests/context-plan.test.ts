@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { describe, expect, it } from 'vitest'
 import {
 	createDynamicRouteContextCapabilities,
@@ -12,7 +12,7 @@ const contextTypeHasNoDynamicRouteKeys: DynamicRouteContextKeys extends never ? 
 
 describe('dynamic route Context capabilities', () => {
 	it('keeps route services out of the public Context contract', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHost({ workbench: false })
 		try {
 			expect(contextTypeHasNoDynamicRouteKeys).toBe(true)
 			expect('loader' in host.ctx).toBe(false)
@@ -28,7 +28,7 @@ describe('dynamic route Context capabilities', () => {
 
 	it('resolves installed services through stable internal descriptors', async () => {
 		const workspaceRoot = '/virtual/pluxel-workspace'
-		const host = createRuntimeHost(
+		const host = createRuntimeInternalTestHost(
 			{ workbench: false },
 			{
 				routeContextCapabilities: createDynamicRouteContextCapabilities({ workspaceRoot }),

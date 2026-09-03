@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin, pluginNodeAddressOf, type PluginDefinitionAddress } from '@pluxel/core'
 import { consumePluginDefinitionCandidate, requirePluginService } from '@pluxel/core/internal'
-import { createCoreContext } from '@pluxel/core/test'
+import { createCoreInternalTestContext } from '@pluxel/core/internal/test'
 import { __definePluginRef, __setPluginDefinition } from '@pluxel/core/toolchain'
 import { Bench } from 'tinybench'
 
@@ -76,7 +76,7 @@ const providerRef = __definePluginRef<CallerViewBenchProvider>({
 	definition: providerDefinition,
 })
 
-const benchmarkContext = createCoreContext({ name: 'caller-view-benchmark' })
+const benchmarkContext = createCoreInternalTestContext({ name: 'caller-view-benchmark' })
 const ctx = benchmarkContext.ctx
 const registry = requirePluginService(ctx)
 const update = registry.beginUpdate({ reason: 'core-caller-view-benchmark' })

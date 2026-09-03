@@ -60,7 +60,7 @@ export class WorkerPlugin extends BasePlugin {
 任意属性 trap。
 
 TypeScript 的 `private`/`protected` 可以使用；限制针对真正的 `#private` runtime slot。
-`configs` 本身是 Plugin/Part subclass 内的 protected declaration DSL；宿主与测试通过 config handle 和显式业务 projection 操作配置，
+`configs` 本身是 Plugin/Part subclass 内的 protected declaration DSL；宿主与测试通过明确的 bootstrap/live config API 和业务 projection 操作配置，
 不从实例外调用它。
 
 ## 默认值只写一次
@@ -263,20 +263,31 @@ Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织�
 
 ## 宿主如何设置配置
 
-测试和宿主通过 Plugin identity 设置 raw record，不直接修改实例字段。测试中使用 host config handle：
+测试和宿主通过 Plugin identity 设置 raw record，不直接修改实例字段。首次 lifecycle 前的 fixture config 使用 `initialConfig`：
 
 ```ts no-twoslash
-host.add([WorkerPlugin])
-host.cfg(WorkerPlugin).set({
-	endpoint: 'https://api.example.com',
-	concurrency: 8,
+const worker = await host.start(WorkerPlugin, {
+	initialConfig: {
+		endpoint: 'https://api.example.com',
+		concurrency: 8,
+	},
 })
-host.start(WorkerPlugin)
-await host.commit()
 ```
 
-static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存与显式 restart 是两个独立操作；运行中的
-原地更新只通过 `configs.onUpdate()` 通知。
+node 已拥有 committed config 或进入过 lifecycle 后，使用 Runtime 的 production-like live mutation：
+
+```ts no-twoslash
+const result = await host.config.patch(WorkerPlugin, {
+	endpoint: 'https://api.example.com',
+	concurrency: 12,
+})
+
+expect(result).toMatchObject({ ok: true, application: 'applied' })
+```
+
+`initialConfig` 不会根据当前状态偷偷变成 live update；越过 bootstrap boundary 后继续传它会明确失败。static 与 dynamic host 的持久化和
+reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存与显式 restart 是两个独立操作，`host.config.patch()` 不会隐式重启；
+运行中的原地更新只通过 `configs.onUpdate()` 通知。
 
 ## 用部署环境初始化 static config
 

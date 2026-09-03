@@ -4,8 +4,8 @@ import {
 	definePluginRef,
 	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
-	withCoreHost,
 } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
@@ -112,7 +112,7 @@ describe('static optional Plugin integration', () => {
 	})
 
 	it('does not resolve an abstract provider default through a concrete-only PluginRef', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			host.add([ConcreteAbstractOptionalProvider, AbstractOptionalConsumer])
 			await host.commit()
@@ -137,7 +137,7 @@ describe('static optional Plugin integration', () => {
 	})
 
 	it('does not disturb consumers on absent -> absent retries and restarts them on real transitions', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			await host.start(OptionalConsumer)
 			const initiallyAbsent = host.require(OptionalConsumer)
 			expect(observedGenerations).toEqual([])
@@ -189,7 +189,7 @@ describe('static optional Plugin integration', () => {
 	})
 
 	it('restarts one consumer generation for provider replacement', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			host.add([OptionalProviderCtor, OptionalConsumer])
 			await host.commit()
@@ -208,7 +208,7 @@ describe('static optional Plugin integration', () => {
 	})
 
 	it('restarts optional consumers outside a required removal cascade', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			host.add([OptionalProviderCtor, RequiredOptionalProviderConsumer, NestedOptionalConsumer])
 			await host.commit()
@@ -228,7 +228,7 @@ describe('static optional Plugin integration', () => {
 	})
 
 	it('unions overlapping provider transitions so each consumer restarts once', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			await host.start(OptionalConsumer)
 			host.add([OptionalProviderCtor, SecondOptionalProviderCtor])

@@ -19,9 +19,9 @@ configure: () => ({
 然后加入并启动 `AuthPlugin`：
 
 ```ts no-twoslash
-host.add(AuthPlugin)
-host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
-host.start(AuthPlugin)
+await host.start(AuthPlugin, {
+	initialConfig: { mode: { type: 'password' } },
+})
 ```
 
 ## 浏览器如何认证

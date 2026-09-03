@@ -1,10 +1,5 @@
-import {
-	BasePlugin,
-	Plugin,
-	definePluginRef,
-	pluginNodeAddressOf,
-	withCoreHost,
-} from '@pluxel/core/test'
+import { BasePlugin, Plugin, definePluginRef, pluginNodeAddressOf } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { comparePluginNodeAddress } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
@@ -33,7 +28,7 @@ class AdjacencyIsolated extends BasePlugin {}
 
 describe('PluginService committed dependency adjacency', () => {
 	it('projects canonical required and optional address edges including isolated nodes', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			host.add([
 				AdjacencyProvider,

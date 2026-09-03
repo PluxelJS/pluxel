@@ -1,6 +1,7 @@
 # Dynamic Runtime smoke boundary
 
-> 状态：设计已冻结，尚未实现。本文收敛 coding agent 的真实 dev smoke 路径，不建立第二套 test-owned launcher。当前行为以
+> 状态：架构原则已冻结，public surface 为 release candidate，尚未实现。规范性资源与取消契约见 [`CONTRACT.md`](CONTRACT.md)。
+> 本文收敛 coding agent 的真实 dev smoke 路径，不建立第二套 test-owned launcher。当前行为以
 > [`../../../packages/runtime-dynamic/README.md`](../../../packages/runtime-dynamic/README.md) 为准。
 
 ## 修正后的决策
@@ -72,6 +73,7 @@ export interface DynamicDevRuntime extends AsyncDisposable {
 export function startDynamicDevRuntime(
 	options: Readonly<{
 		entry: string | URL
+		signal?: AbortSignal
 	}>,
 ): Promise<DynamicDevRuntime>
 ```
@@ -80,6 +82,8 @@ export function startDynamicDevRuntime(
 
 - 删除 `createDynamicDevRuntime()`、`.start()` 与 `.stop()`，不留 alias；
 - `startDynamicDevRuntime()` resolve 时 config、Vite graph、initial reconciliation、HMR、carrier 与 listener 已 ready；
+- `signal` 只取消 factory readiness/startup；abort 后 factory 在 reject 前关闭已取得的 Vite、listener、Runtime 与 watcher 资源。factory resolve 后
+  resource lifetime 只由 `dispose()` 拥有，后续 abort 原 signal 不会自动关闭一个已交付的 runtime；
 - startup 失败在 reject 前回收部分资源；
 - `dispose()` 与 `[Symbol.asyncDispose]()` 是同一个幂等 operation；
 - `origin` 从 Vite 实际 socket address 得到，不复制端口配置；
@@ -145,7 +149,8 @@ Pluxel-specific test driver。
 
 ## Timeout、teardown 与状态安全
 
-launcher 不内置 test timeout。compiler、migration、Plugin startup 与 drain 的期限由调用环境或 production cancellation contract 决定；
+launcher 不内置 test timeout。caller 可用 factory `signal` 取消尚未完成的 startup；compiler、migration、Plugin startup 与 drain 的期限仍由
+调用环境或 production domain contract 决定；
 Vitest 可设置 test/hook timeout，eventual assertion 使用 `expect.poll()`/`vi.waitFor()`。隐藏的 5 秒或 30 秒 deadline 会让合法长任务变成
 随机基础设施失败。
 

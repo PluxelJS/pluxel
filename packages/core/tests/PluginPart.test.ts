@@ -1,12 +1,6 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import {
-	BasePlugin,
-	createCoreHost,
-	definePluginRef,
-	Plugin,
-	PluginPart,
-	withCoreHost,
-} from '@pluxel/core/test'
+import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/core/test'
+import { createCoreInternalTestHost, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { consumePluginDefinitionCandidate } from '../src/internal'
 import { pluginPartContextOf } from '../src/plugins/composition/PluginPart'
@@ -412,7 +406,7 @@ describe('owner-bound PluginPart', () => {
 
 	it('builds nested occurrences, injects config slices and cleans up in inverse ownership order', async () => {
 		trace = []
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.cfg(OwnerPlugin).set({
 				ownerValue: 'owner-custom',
 				branch: { branchValue: 11, leaf: { leafValue: 21 } },
@@ -463,7 +457,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('creates one instance and effects scope per occurrence', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = await host.start(RepeatedOwner)
 			expect(owner.first).toBeInstanceOf(RepeatedPart)
 			expect(owner.second).toBeInstanceOf(RepeatedPart)
@@ -479,7 +473,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('lifts root and Part requirements into one graph edge with scoped facades', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([PartRequiredProvider, RequiredPartsOwner])
 			await host.commit()
 
@@ -511,7 +505,7 @@ describe('owner-bound PluginPart', () => {
 
 	it('starts an aggregated Part provider before constructing and initializing the owner', async () => {
 		providerFirstOrder.length = 0
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([PartOrderingOwner, PartOrderingProvider])
 			await host.commit()
 			expect(providerFirstOrder).toEqual(['provider', 'part'])
@@ -519,19 +513,19 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('attributes graph cycle edges to their owner and Part request sources', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CyclePartOwner, CyclePartConsumer])
 			await expect(host.commit()).rejects.toThrow(/Part api constructor \(required\)/)
 		})
 
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([CycleOptionalOwner, CycleOptionalProvider])
 			await expect(host.commit()).rejects.toThrow(/owner init plugins\.use\(\) \(optional\)/)
 		})
 	})
 
 	it('applies one owner override to every Part occurrence facade', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const fork = host.fork(PartRequiredProvider, 'parts')
 			host.add(RequiredPartsOwner)
 			host.override(RequiredPartsOwner, PartRequiredProvider, fork)
@@ -554,7 +548,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('restarts the owner once and invalidates every Part facade on provider replacement', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([PartRequiredProvider, RequiredPartsOwner])
 			await host.commit()
 			const oldOwner = host.require(RequiredPartsOwner)
@@ -591,7 +585,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('invalidates cached Part dependency facades when the owner generation restarts', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([PartRequiredProvider, RequiredPartsOwner])
 			await host.commit()
 			const oldOwner = host.require(RequiredPartsOwner)
@@ -617,7 +611,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('drains an in-flight Part dependency call before completing owner teardown', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([SlowPartProvider, SlowPartOwner])
 			await host.commit()
 			const release = Promise.withResolvers<void>()
@@ -642,7 +636,7 @@ describe('owner-bound PluginPart', () => {
 
 	it('keeps Part dependency facades usable by generation cleanup before invalidation', async () => {
 		partCleanupCaller = undefined
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([PartRequiredProvider, CleanupUsesProviderOwner])
 			await host.commit()
 			const part = host.require(CleanupUsesProviderOwner).cleanup
@@ -653,7 +647,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('reports Part constructor failure on the owning Plugin with its path', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([PartRequiredProvider, ThrowingConstructorOwner])
 			const summary = await host.commitAllowFail()
 
@@ -667,7 +661,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('preserves a nested constructor path and restores the construction stack after failure', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([PartRequiredProvider, NestedThrowingOwner])
 			const failed = await host.commitAllowFail()
 			const issue = failed.lifecycleReport.issues.find(
@@ -683,7 +677,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('blocks the whole owner when a Part required provider fails', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([FailingPartRequiredProvider, BlockedRequiredPartOwner])
 			const summary = await host.commitAllowFail()
 
@@ -698,7 +692,7 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('attributes Part cleanup failures without creating a Part lifecycle state', async () => {
-		const host = createCoreHost()
+		const host = createCoreInternalTestHost()
 		try {
 			await host.start(CleanupFailureOwner)
 			host.remove(CleanupFailureOwner)
@@ -713,7 +707,7 @@ describe('owner-bound PluginPart', () => {
 
 	it('fails the owning Plugin and rolls back the Part scope when Part init rejects', async () => {
 		failureTrace = []
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add(FailingOwner)
 			const summary = await host.commitAllowFail()
 			expect(host.isRunning(FailingOwner)).toBe(false)
@@ -728,7 +722,7 @@ describe('owner-bound PluginPart', () => {
 		optionalOwnerStarts = 0
 		optionalIntegrations = 0
 		optionalCleanups = 0
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			await host.start(PartOptionalOwner)
 			expect(optionalOwnerStarts).toBe(1)
 			expect(optionalIntegrations).toBe(0)
@@ -747,7 +741,7 @@ describe('owner-bound PluginPart', () => {
 
 	it('immediately disposes a cleanup returned after the owning generation timed out', async () => {
 		resetLatePart()
-		await withCoreHost(
+		await withCoreInternalTestHost(
 			async (host) => {
 				host.add(LatePartOwner)
 				await host.commitAllowFail()

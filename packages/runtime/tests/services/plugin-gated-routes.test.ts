@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Elysia } from 'elysia'
 
-import { createRuntimeContext } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import {
 	createPluginGatedRouter,
 	getPluginRoutingSnapshot,
@@ -40,7 +40,7 @@ const routes: PluginGatedModuleDef[] = [
 describe('plugin gated routes', () => {
 	it('returns 404 when plugin is stopped', async () => {
 		{
-			await using runtimeContext = createRuntimeContext({})
+			await using runtimeContext = createRuntimeInternalTestHost({})
 			const ctx = runtimeContext.ctx
 
 			const api = createPluginGatedRouter(ctx, routes, { isPluginRunning: () => false })
@@ -54,7 +54,7 @@ describe('plugin gated routes', () => {
 
 	it('handles request when plugin is running', async () => {
 		{
-			await using runtimeContext = createRuntimeContext({})
+			await using runtimeContext = createRuntimeInternalTestHost({})
 			const ctx = runtimeContext.ctx
 
 			const api = createPluginGatedRouter(ctx, routes, {
@@ -71,7 +71,7 @@ describe('plugin gated routes', () => {
 
 	it('computes a runtime snapshot of running plugins/routes', () => {
 		return (async () => {
-			await using runtimeContext = createRuntimeContext({})
+			await using runtimeContext = createRuntimeInternalTestHost({})
 			const ctx = runtimeContext.ctx
 
 			const snap = getPluginRoutingSnapshot(ctx, routes, {

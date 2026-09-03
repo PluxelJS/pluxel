@@ -24,7 +24,7 @@ class AssetsPlugin extends BasePlugin {
 	}
 }
 
-host.add([S3Plugin, AssetsPlugin])
+await host.start([S3Plugin, AssetsPlugin])
 ```
 
 `S3Bucket.client` 锚定 s3mini 1.x 的 bucket、listing、typed/stream read、PUT、multipart、copy/move、delete 与 presign
@@ -36,39 +36,43 @@ caller prefix；业务 key、metadata schema 和删除所有权属于 consumer�
 没有配置时默认使用本地 backend，适合开发：
 
 ```ts
-host.cfg(S3Plugin).set({
-	buckets: [
-		{
-			id: 'assets',
-			backend: {
-				type: 'local',
-				rootDir: '/var/lib/my-app/s3',
-				bucketName: 'assets',
-				syncWrites: true,
+await host.start(S3Plugin, {
+	initialConfig: {
+		buckets: [
+			{
+				id: 'assets',
+				backend: {
+					type: 'local',
+					rootDir: '/var/lib/my-app/s3',
+					bucketName: 'assets',
+					syncWrites: true,
+				},
 			},
-		},
-	],
+		],
+	},
 })
 ```
 
 真实 S3 仍配置同一个插件。公开 bucket 显式选择 anonymous：
 
 ```ts
-host.cfg(S3Plugin).set({
-	buckets: [
-		{
-			id: 'public-assets',
-			backend: {
-				type: 'remote',
-				endpoint: 'https://public-assets.s3.example.com',
-				region: 'auto',
-				credentials: { type: 'anonymous' },
-				requestSizeInBytes: 8 * 1024 * 1024,
-				requestAbortTimeout: 30_000,
-				minPartSize: 8 * 1024 * 1024,
+await host.start(S3Plugin, {
+	initialConfig: {
+		buckets: [
+			{
+				id: 'public-assets',
+				backend: {
+					type: 'remote',
+					endpoint: 'https://public-assets.s3.example.com',
+					region: 'auto',
+					credentials: { type: 'anonymous' },
+					requestSizeInBytes: 8 * 1024 * 1024,
+					requestAbortTimeout: 30_000,
+					minPartSize: 8 * 1024 * 1024,
+				},
 			},
-		},
-	],
+		],
+	},
 })
 ```
 
@@ -84,22 +88,24 @@ const credentials = {
 S3 配置只保存引用：
 
 ```ts
-host.cfg(S3Plugin).set({
-	buckets: [
-		{
-			id: 'assets',
-			backend: {
-				type: 'remote',
-				endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
-				region: 'us-east-1',
-				credentials: {
-					type: 'vault',
-					namespace: 'production-secrets',
-					key: 'assets.s3',
+await host.start(S3Plugin, {
+	initialConfig: {
+		buckets: [
+			{
+				id: 'assets',
+				backend: {
+					type: 'remote',
+					endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
+					region: 'us-east-1',
+					credentials: {
+						type: 'vault',
+						namespace: 'production-secrets',
+						key: 'assets.s3',
+					},
 				},
 			},
-		},
-	],
+		],
+	},
 })
 ```
 

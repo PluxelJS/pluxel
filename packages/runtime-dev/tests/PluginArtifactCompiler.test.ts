@@ -14,7 +14,7 @@ import {
 	createWorkbenchFederationProducerPlan,
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
-import { createHost } from '@pluxel/test'
+import { createCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { dirname, join } from 'pathe'
 import * as React from 'react'
@@ -102,7 +102,7 @@ function createContentCompilation(root: string, heading: string) {
 	}
 }
 
-function createWorkbenchStores(host: ReturnType<typeof createHost>) {
+function createWorkbenchStores(host: ReturnType<typeof createCoreInternalTestHost>) {
 	const federation = new WorkbenchArtifactService(host.ctx)
 	const content = new WorkbenchContentArtifactService(host.ctx)
 	const coordinator = new WorkbenchArtifactCoordinator(host.ctx, federation, content)
@@ -131,7 +131,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
 		const infoLog = vi.spyOn(host.ctx.logger, 'info')
 		const compiler = new PluginArtifactCompiler(
@@ -201,7 +201,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { federation, coordinator } = createWorkbenchStores(host)
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
@@ -231,7 +231,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { coordinator } = createWorkbenchStores(host)
 		const infoLog = vi.spyOn(host.ctx.logger, 'info')
 		const options = {
@@ -277,7 +277,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
 		const errorLog = vi.spyOn(host.ctx.logger, 'error')
 		const compiler = new PluginArtifactCompiler(
@@ -347,7 +347,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { federation, coordinator } = createWorkbenchStores(host)
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
@@ -392,7 +392,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator } = createWorkbenchStores(host)
 		const addWatchFiles = vi.fn()
 		const compiler = new PluginArtifactCompiler(
@@ -430,7 +430,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator } = createWorkbenchStores(host)
 		const commitCandidate = vi.spyOn(coordinator, 'commitCandidate')
 		const compiler = new PluginArtifactCompiler(
@@ -482,7 +482,7 @@ describe('PluginArtifactCompiler', () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator } = createWorkbenchStores(host)
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
@@ -519,7 +519,7 @@ describe('PluginArtifactCompiler', () => {
 			'plugin.ts': 'export const plugin = true\n',
 			'task.ts': 'export const version = 1\n',
 		})
-		const host = createHost()
+		const host = createCoreInternalTestHost()
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{},

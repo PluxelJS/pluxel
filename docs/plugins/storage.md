@@ -60,20 +60,22 @@ export class AssetsPlugin extends BasePlugin {
 ```ts no-twoslash
 import { S3Plugin } from '@pluxel/storage'
 
-host.add([S3Plugin, AssetsPlugin])
-host.cfg(S3Plugin).set({
-	buckets: [
-		{
-			id: 'assets',
-			backend: {
-				type: 'local',
-				rootDir: '/var/lib/my-app/s3',
-				bucketName: 'assets',
-				syncWrites: true,
+await host.start(S3Plugin, {
+	initialConfig: {
+		buckets: [
+			{
+				id: 'assets',
+				backend: {
+					type: 'local',
+					rootDir: '/var/lib/my-app/s3',
+					bucketName: 'assets',
+					syncWrites: true,
+				},
 			},
-		},
-	],
+		],
+	},
 })
+await host.start(AssetsPlugin)
 ```
 
 local backend 支持 CRUD、typed/stream/range/conditional reads、delimiter/prefix listing、opaque pagination、copy/move、批量删除和显式 multipart upload。`putAnyObject()` 会流式写入临时 container，校验声明长度，计算 SHA-256 ETag，按需 fsync，最后 atomic rename；失败的写入不会发布成完整对象。
@@ -87,21 +89,23 @@ local backend 支持 CRUD、typed/stream/range/conditional reads、delimiter/pre
 同一个 provider 可以创建真实 `S3mini` client：
 
 ```ts no-twoslash
-host.cfg(S3Plugin).set({
-	buckets: [
-		{
-			id: 'public-assets',
-			backend: {
-				type: 'remote',
-				endpoint: 'https://public-assets.s3.example.com',
-				region: 'auto',
-				credentials: { type: 'anonymous' },
-				requestSizeInBytes: 8 * 1024 * 1024,
-				requestAbortTimeout: 30_000,
-				minPartSize: 8 * 1024 * 1024,
+await host.start(S3Plugin, {
+	initialConfig: {
+		buckets: [
+			{
+				id: 'public-assets',
+				backend: {
+					type: 'remote',
+					endpoint: 'https://public-assets.s3.example.com',
+					region: 'auto',
+					credentials: { type: 'anonymous' },
+					requestSizeInBytes: 8 * 1024 * 1024,
+					requestAbortTimeout: 30_000,
+					minPartSize: 8 * 1024 * 1024,
+				},
 			},
-		},
-	],
+		],
+	},
 })
 ```
 
@@ -125,22 +129,24 @@ const credentials = {
 然后在 S3 config 中只保存引用：
 
 ```ts no-twoslash
-host.cfg(S3Plugin).set({
-	buckets: [
-		{
-			id: 'assets',
-			backend: {
-				type: 'remote',
-				endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
-				region: 'us-east-1',
-				credentials: {
-					type: 'vault',
-					namespace: 'production-secrets',
-					key: 'assets.s3',
+await host.start(S3Plugin, {
+	initialConfig: {
+		buckets: [
+			{
+				id: 'assets',
+				backend: {
+					type: 'remote',
+					endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
+					region: 'us-east-1',
+					credentials: {
+						type: 'vault',
+						namespace: 'production-secrets',
+						key: 'assets.s3',
+					},
 				},
 			},
-		},
-	],
+		],
+	},
 })
 ```
 

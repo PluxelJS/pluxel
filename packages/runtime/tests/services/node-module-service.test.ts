@@ -3,14 +3,15 @@ import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
 import { defineNodeModule } from '@pluxel/runtime'
-import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const declaration = defineNodeModule(import.meta.url, './fixtures/task.ts')
 
 describe('NodeModuleService', () => {
 	it('makes the first build/setup failure fail plugin startup', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHost({ workbench: false })
 		try {
 			host.ctx.nodeModules.attachSourceBinder(async () => {
 				throw new Error('node build failed')
@@ -24,10 +25,13 @@ describe('NodeModuleService', () => {
 			}
 
 			lowerTestPlugin(NodeModuleFailure)
-			host.add(NodeModuleFailure)
-			host.cfg(NodeModuleFailure).setAutoStart(true)
-			host.start(NodeModuleFailure)
-			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
+			const failure = await host.commitExpectFail((change) => {
+				change.start(NodeModuleFailure)
+			})
+			expect(failure).toHavePluginLifecycleIssue(NodeModuleFailure, {
+				kind: 'start-failed',
+				message: 'node build failed',
+			})
 			expect(host.isRunning(NodeModuleFailure)).toBe(false)
 		} finally {
 			await host.dispose()
@@ -35,7 +39,7 @@ describe('NodeModuleService', () => {
 	})
 
 	it('stages updates, keeps the last good consumer, and cleans up with its owner', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHost({ workbench: false })
 		try {
 			let publish!: (url: URL) => void | Promise<void>
 			let sourceDisposals = 0
@@ -60,10 +64,7 @@ describe('NodeModuleService', () => {
 			}
 
 			lowerTestPlugin(NodeModuleConsumer)
-			host.add(NodeModuleConsumer)
-			host.cfg(NodeModuleConsumer).setAutoStart(true)
-			host.start(NodeModuleConsumer)
-			await host.commit()
+			await host.start(NodeModuleConsumer)
 			expect(host.isRunning(NodeModuleConsumer)).toBe(true)
 			await publish(new URL('file:///cache/task-b.mjs'))
 			await publish(new URL('file:///cache/bad.mjs'))
@@ -74,8 +75,7 @@ describe('NodeModuleService', () => {
 				'setup:/cache/bad.mjs',
 			])
 
-			host.remove(NodeModuleConsumer)
-			await host.commit()
+			await host.commit((change) => change.catalog.remove(NodeModuleConsumer))
 			expect(events.at(-1)).toBe('cleanup:/cache/task-b.mjs')
 			expect(sourceDisposals).toBe(1)
 		} finally {
@@ -84,7 +84,7 @@ describe('NodeModuleService', () => {
 	})
 
 	it('drains a pending update and late cleanup when the owner stops after source detach', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHost({ workbench: false })
 		try {
 			let publish!: (url: URL) => void | Promise<void>
 			let releaseSetup!: () => void
@@ -120,22 +120,20 @@ describe('NodeModuleService', () => {
 			}
 
 			lowerTestPlugin(PendingNodeModuleConsumer)
-			host.add(PendingNodeModuleConsumer)
-			host.cfg(PendingNodeModuleConsumer).setAutoStart(true)
-			host.start(PendingNodeModuleConsumer)
-			await host.commit()
+			await host.start(PendingNodeModuleConsumer)
 			const pendingUpdate = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
 			await didStartSetup
 
 			detach()
 			expect(events).toEqual(['setup:/cache/initial.mjs', 'setup:/cache/next.mjs'])
 
-			host.remove(PendingNodeModuleConsumer)
 			let stopped = false
-			const stopping = host.commit().then((): void => {
+			const stopping = host
+				.commit((change) => change.catalog.remove(PendingNodeModuleConsumer))
+				.then((): void => {
 				stopped = true
 				return undefined
-			})
+				})
 			await didDisposeSource
 			expect(stopped).toBe(false)
 
@@ -164,7 +162,10 @@ describe('NodeModuleService', () => {
 			'./fixtures/task.ts',
 			'node-fixture',
 		) as typeof declaration
-		const host = createRuntimeHost({ workbench: false, nodeModuleArtifactRoot: artifactRoot })
+		const host = createRuntimeInternalTestHost({
+			workbench: false,
+			nodeModuleArtifactRoot: artifactRoot,
+		})
 		try {
 			let received: URL | undefined
 			@Plugin({ displayName: 'PackagedNodeModule' })
@@ -174,10 +175,7 @@ describe('NodeModuleService', () => {
 				}
 			}
 			lowerTestPlugin(PackagedNodeModule)
-			host.add(PackagedNodeModule)
-			host.cfg(PackagedNodeModule).setAutoStart(true)
-			host.start(PackagedNodeModule)
-			await host.commit()
+			await host.start(PackagedNodeModule)
 			expect(host.isRunning(PackagedNodeModule)).toBe(true)
 			expect(received?.href).toBe(
 				pathToFileURL(`${fixture.path}/artifacts/node/node-fixture.mjs`).href,

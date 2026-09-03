@@ -14,6 +14,14 @@ import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
+const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
+const packageManagerConfig = {
+	rootDir: '.pluxel/managed-plugins',
+	ignoreScripts: true,
+	allowBuilds: [],
+	minimumReleaseAgeMinutes: 1_440,
+}
+
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
 	plugins: [PackageManagerPlugin],
@@ -24,31 +32,31 @@ export default defineDynamicRuntimeConfig({
 			include: ['*.mjs'],
 		},
 	],
+	configService: {
+		snapshot: {
+			plugins: [{ owner: packageManagerNode, config: packageManagerConfig }],
+		},
+	},
 	runtimeState: {
-		snapshot: { autoStart: [pluginNodeAddressOf(PackageManagerPlugin)] },
+		snapshot: { autoStart: [packageManagerNode] },
 	},
 	workbench: { enabled: true },
 })
 ```
 
-三处配置缺一不可：
+四处配置缺一不可：
 
 1. `plugins` 把 Package Manager 放进 fixed catalog；
-2. `runtimeState` 显式让它随宿主自动启动；
-3. `sources` 声明它被允许生产的 directory source。
+2. `configService` 为它提供 Plugin config；
+3. `runtimeState` 显式让它随宿主自动启动；
+4. `sources` 声明它被允许生产的 directory source。
 
 source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；static host 会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 
 ## 配置安全默认值
 
-```ts no-twoslash
-host.cfg(PackageManagerPlugin).set({
-	rootDir: '.pluxel/managed-plugins',
-	ignoreScripts: true,
-	allowBuilds: [],
-	minimumReleaseAgeMinutes: 1_440,
-})
-```
+上例的 `packageManagerConfig` 同时展示了安全默认值。运行中的配置更新由宿主 ConfigService 负责，不通过测试 fixture API 修改
+production host。
 
 | 字段                       | 默认值                    | 含义                                               |
 | -------------------------- | ------------------------- | -------------------------------------------------- |

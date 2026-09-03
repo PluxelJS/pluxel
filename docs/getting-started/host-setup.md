@@ -239,7 +239,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
 	plugins: [
 		dynamicRuntimeVitePlugin({
-			config: './src/pluxel.dynamic.ts',
+			entry: './src/pluxel.dynamic.ts',
 		}),
 	],
 })
@@ -250,6 +250,25 @@ Dynamic route 只拥有 file/source lifecycle：watch、OXC resolution、module 
 Dynamic `root` 是 source、runtime storage 与 module resolution 的显式路径基准，不会改变 Vite 进程的 working directory。Plugin 配置中注明“相对当前工作目录”的路径仍以 launcher cwd 为准；如果 dynamic `root` 与它不同，应在配置模块中生成绝对路径。
 
 运行期安装 package 时显式装配官方 [Package Manager Plugin](../plugins/package-manager.md)；它把受管 package 原子发布成 `.mjs` source entry，dynamic route 只观察这些文件。
+
+### Programmatic dev runtime
+
+脚本或 integration test 需要在进程内拥有真实 Vite server 时，使用同一个 production launcher：
+
+```ts no-twoslash
+import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
+
+await using runtime = await startDynamicDevRuntime({
+	entry: new URL('./src/pluxel.dynamic.ts', import.meta.url),
+})
+
+const response = await fetch(new URL('/health', runtime.origin))
+```
+
+factory resolve 时 config、initial reconciliation、HMR、carrier 和 listener 已 ready，不需要再调用 `.start()`。返回资源的
+`dispose()` 与异步释放协议幂等；可选 `signal` 只取消尚未完成的 startup，resolve 后不会自动关闭已经交付的 runtime。项目需要验证自己的
+Vite plugins、assets 或 browser graph 时，直接运行项目的 Vite command；只验证 Plugin behavior 时使用更小的
+`createRuntimeTestHost()`。
 
 ### Source 约束
 
@@ -267,7 +286,7 @@ Dynamic `root` 是 source、runtime storage 与 module resolution 的显式路�
 
 ```ts no-twoslash
 dynamicRuntimeVitePlugin({
-	config: './src/pluxel.dynamic.ts',
+	entry: './src/pluxel.dynamic.ts',
 	mode: 'distribution',
 })
 ```
@@ -420,10 +439,15 @@ Plugin 不调用 `process.exit()`，也不根据 static/dynamic route 自行改�
 Static application 测试使用：
 
 ```ts twoslash
-import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
 ```
 
-普通 runtime Plugin 测试使用 `@pluxel/runtime/test` 的 `createRuntimeHost()`，并由 `await using` 或 `finally` 明确拥有其生命周期。完整选择见 [测试插件](../development/testing.md)。
+`startStaticApplicationTestHost(application)` resolve 时已经完成 configure、prepare、bindings 与 cold boot；它只提供
+`startupReport`、只读 Plugin query 和 Runtime drivers，不提供 Plugin lifecycle mutation、root `ctx` 或 physical listener。
+
+普通 Runtime Plugin 测试使用 `@pluxel/runtime/test` 的 `createRuntimeTestHost()`；Core-only graph 测试使用
+`@pluxel/core/test` 的 `createCoreTestHost()`。两者都由 `await using` 或 `finally` 明确拥有生命周期。顶层 lifecycle command 会立即提交，
+首次配置使用 `initialConfig`，运行期更新使用 `host.config.patch()`。完整选择见 [测试插件](../development/testing.md)。
 
 ### 启动前检查
 

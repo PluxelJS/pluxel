@@ -1,11 +1,14 @@
 import '@pluxel/runtime'
 import type { Context } from '@pluxel/core'
 import type { RuntimeHostConfig } from '@pluxel/runtime/internal/static-host'
-import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
 import { createDynamicRouteContextCapabilities } from '../../src/context-plan'
 
-export function createTestDynamicHost(config: RuntimeHostConfig = {}): RuntimeHost {
-	return createRuntimeHost(
+export function createTestDynamicHost(config: RuntimeHostConfig = {}): RuntimeInternalTestHost {
+	return createRuntimeInternalTestHost(
 		{
 			workbench: false,
 			persistence: { mode: 'memory' },
@@ -18,7 +21,7 @@ export function createTestDynamicHost(config: RuntimeHostConfig = {}): RuntimeHo
 }
 
 export async function withTestDynamicContext<T>(
-	fn: (ctx: Context, host: RuntimeHost) => Promise<T> | T,
+	fn: (ctx: Context, host: RuntimeInternalTestHost) => Promise<T> | T,
 	config: RuntimeHostConfig = {},
 ): Promise<T> {
 	const host = createTestDynamicHost(config)

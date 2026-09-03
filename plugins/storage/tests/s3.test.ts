@@ -1,5 +1,4 @@
-import type { PluginConstructor } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, createRuntimeTestHost } from '@pluxel/runtime/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {
@@ -20,7 +19,7 @@ vi.mock('s3mini', () => ({
 	},
 }))
 
-import { S3, S3CredentialsError, S3NotRunningError, S3Plugin } from '../src/index.ts'
+import { S3, S3NotRunningError, S3Plugin } from '../src/index.ts'
 
 @Plugin()
 class S3Consumer extends BasePlugin {
@@ -45,11 +44,6 @@ class S3ConsumerB extends BasePlugin {
 
 @Plugin()
 class S3VaultSeeder extends BasePlugin {}
-
-function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
-	host.add(plugins)
-	for (const PluginClass of plugins) host.start(PluginClass)
-}
 
 beforeEach(() => {
 	s3Mock.clients.length = 0
@@ -78,10 +72,9 @@ describe('S3Plugin remote backend', () => {
 
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
 		{
-			await using host = createRuntimeHost({ vault: {} })
+			await using host = createRuntimeTestHost({ vault: {} })
 
-			addStarted(host, [S3VaultSeeder])
-			await host.commit()
+			await host.start(S3VaultSeeder)
 			await host
 				.require(S3VaultSeeder)
 				.ctx.vault!.kv({ namespace: 'shared-secrets' })
@@ -90,15 +83,14 @@ describe('S3Plugin remote backend', () => {
 					secretAccessKey: 'secret-value',
 				})
 
-			addStarted(host, [S3Plugin, S3Consumer])
-			host.cfg(S3Plugin).set({
-				...remoteConfig({
+			await host.start(S3Plugin, {
+				initialConfig: remoteConfig({
 					type: 'vault',
 					key: 'assets.s3',
 					namespace: 'shared-secrets',
 				}),
 			})
-			await host.commit()
+			await host.start(S3Consumer)
 			expect(s3Mock.configs.at(-1)).toMatchObject({
 				accessKeyId: 'access-id',
 				secretAccessKey: 'secret-value',
@@ -108,17 +100,17 @@ describe('S3Plugin remote backend', () => {
 
 	it('provides O(1) named bucket selection and owner-bound handles', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [S3Plugin, S3ConsumerA, S3ConsumerB])
-			host.cfg(S3Plugin).set({
-				buckets: [
-					remoteBucket('east', { type: 'anonymous' }, 'https://east-bucket.s3.example.com'),
-					remoteBucket('west', { type: 'anonymous' }, 'https://west-bucket.s3.example.com'),
-				],
+			await host.start(S3Plugin, {
+				initialConfig: {
+					buckets: [
+						remoteBucket('east', { type: 'anonymous' }, 'https://east-bucket.s3.example.com'),
+						remoteBucket('west', { type: 'anonymous' }, 'https://west-bucket.s3.example.com'),
+					],
+				},
 			})
-
-			await host.commit()
+			await host.start([S3ConsumerA, S3ConsumerB])
 			const eastCapability = host.require(S3ConsumerA).s3.bucket('east')
 			const westCapability = host.require(S3ConsumerB).s3.bucket('west')
 			const eastClient = eastCapability.client
@@ -133,8 +125,7 @@ describe('S3Plugin remote backend', () => {
 				'https://east-bucket.s3.example.com',
 				'https://west-bucket.s3.example.com',
 			])
-			host.stop(S3ConsumerA)
-			await host.commit()
+			await host.stop(S3ConsumerA)
 			expect(() => eastCapability.client).toThrow('Plugin owner stopped')
 			expect(westCapability.client).toBe(westClient)
 		}
@@ -142,19 +133,18 @@ describe('S3Plugin remote backend', () => {
 
 	it('fails lifecycle when a configured Vault reference is missing', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [S3Plugin, S3Consumer])
-			host.cfg(S3Plugin).set({
-				...remoteConfig({ type: 'vault', key: 'missing.s3' }),
+			const failure = await host.commitExpectFail((change) => {
+				change.catalog.add([S3Plugin, S3Consumer])
+				change.config.seed(S3Plugin, remoteConfig({ type: 'vault', key: 'missing.s3' }))
+				change.start(S3Plugin)
+				change.start(S3Consumer)
 			})
-			const commit = await host.commitAllowFail()
 			expect(host.isRunning(S3Plugin)).toBe(false)
-			expect(
-				commit.lifecycleReport.issues.some(
-					(issue) => issue.error?.name === S3CredentialsError.name,
-				),
-			).toBe(true)
+			expect(failure).toHavePluginLifecycleIssue(S3Plugin, {
+				kind: 'start-failed',
+			})
 		}
 	})
 
@@ -170,11 +160,12 @@ describe('S3Plugin remote backend', () => {
 		vi.stubGlobal('fetch', fetchMock)
 
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [S3Plugin, S3Consumer])
-			host.cfg(S3Plugin).set(remoteConfig({ type: 'anonymous' }))
-			await host.commit()
+			await host.start(S3Plugin, {
+				initialConfig: remoteConfig({ type: 'anonymous' }),
+			})
+			await host.start(S3Consumer)
 			const capability = host.require(S3Consumer).s3
 			const client = s3Mock.clients.at(-1)!
 			const config = s3Mock.configs.at(-1)!
@@ -183,8 +174,7 @@ describe('S3Plugin remote backend', () => {
 			const pending = bucket.client.getObject('key')
 			await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
 
-			host.stop(S3Plugin)
-			await host.commit()
+			await host.stop(S3Plugin)
 			await expect(pending).rejects.toBeInstanceOf(S3NotRunningError)
 			expect(() => bucket.client).toThrow('Plugin owner stopped')
 		}
@@ -218,11 +208,12 @@ async function withRemoteS3(
 	run: (s3: S3, client: Record<string, any>, config: Record<string, any>) => void | Promise<void>,
 ): Promise<void> {
 	{
-		await using host = createRuntimeHost()
+		await using host = createRuntimeTestHost()
 
-		addStarted(host, [S3Plugin, S3Consumer])
-		host.cfg(S3Plugin).set(remoteConfig({ type: 'anonymous' }))
-		await host.commit()
+		await host.start(S3Plugin, {
+			initialConfig: remoteConfig({ type: 'anonymous' }),
+		})
+		await host.start(S3Consumer)
 		await run(host.require(S3Consumer).s3, s3Mock.clients.at(-1)!, s3Mock.configs.at(-1)!)
 	}
 }

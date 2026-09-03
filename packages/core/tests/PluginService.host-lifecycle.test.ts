@@ -7,14 +7,16 @@ import {
 } from '@pluxel/core/internal'
 import {
 	BasePlugin,
-	createCoreHost,
 	definePluginRef,
 	Plugin,
 	PluginPart,
 	pluginNodeAddressOf,
-	type CoreHostOptions,
-	assertPluginLifecycleIssue,
 } from '@pluxel/core/test'
+import {
+	createCoreInternalTestHost,
+	type CoreInternalTestHostOptions,
+	assertPluginLifecycleIssue,
+} from '@pluxel/core/internal/test'
 import { createContextHost, type RootContext } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -111,7 +113,9 @@ class SettledOptionalDependent extends BasePlugin {
 	}
 }
 
-function createRootFactory(hooks: CorePluginLifecycleHooks): CoreHostOptions['createRootContext'] {
+function createRootFactory(
+	hooks: CorePluginLifecycleHooks,
+): CoreInternalTestHostOptions['createRootContext'] {
 	return (config) => {
 		const inputs = resolveCoreRootInputs(config)
 		const contextHost = createContextHost({
@@ -129,7 +133,7 @@ describe('Core host lifecycle seams', () => {
 		let publication!: CoreCommitPublication
 		let preparedPublication: CoreCommitPublication | undefined
 		let finalizerOperation: object | undefined
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -201,7 +205,7 @@ describe('Core host lifecycle seams', () => {
 	it('treats finalizer failure as start failure and rolls back generation effects', async () => {
 		lifecycleTrace = []
 		let publication!: CoreCommitPublication
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -246,7 +250,7 @@ describe('Core host lifecycle seams', () => {
 	it('does not finalize a generation when Part init fails', async () => {
 		let finalizations = 0
 		let publication!: CoreCommitPublication
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -279,7 +283,7 @@ describe('Core host lifecycle seams', () => {
 	it('does not run a finalizer after late init loses the generation', async () => {
 		resetLateInit()
 		let finalizations = 0
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{ plugins: { drainTimeoutMs: 20 } },
 			{
 				createRootContext: createRootFactory({
@@ -310,7 +314,7 @@ describe('Core host lifecycle seams', () => {
 		const gate = Promise.withResolvers<void>()
 		let finalizerSignal: AbortSignal | undefined
 		let publication!: CoreCommitPublication
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{ plugins: { startTimeoutMs: 20, drainTimeoutMs: 20 } },
 			{
 				createRootContext: createRootFactory({
@@ -349,7 +353,7 @@ describe('Core host lifecycle seams', () => {
 		const completions: string[] = []
 		const settled: string[][] = []
 		let publication!: CoreCommitPublication
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{ plugins: { startConcurrency: 2 } },
 			{
 				createRootContext: createRootFactory({
@@ -400,7 +404,7 @@ describe('Core host lifecycle seams', () => {
 		optionalSettlementCleanups = 0
 		const settlementBatches: Array<{ started: string[]; stopped: string[] }> = []
 		let publication!: CoreCommitPublication
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -470,7 +474,7 @@ describe('Core host lifecycle seams', () => {
 		let registry!: ReturnType<typeof requirePluginService>
 		let queued: Promise<void> | undefined
 		let reentrantUpdateError: unknown
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -533,7 +537,7 @@ describe('Core host lifecycle seams', () => {
 		}> = []
 		const preparations: CoreCommitPublication[] = []
 		const publications: CoreCommitPublication[] = []
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -571,7 +575,7 @@ describe('Core host lifecycle seams', () => {
 
 	it('rejects the original host publication error before summary or watcher visibility', async () => {
 		const publicationError = new Error('host pointer exchange failed')
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -608,7 +612,7 @@ describe('Core host lifecycle seams', () => {
 	it('poisons the root when final commit preparation fails before pointer publication', async () => {
 		const preparationError = new Error('dispatcher build failed')
 		let published = false
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -644,7 +648,7 @@ describe('Core host lifecycle seams', () => {
 		const invalidPublication = (async () => {}) as unknown as NonNullable<
 			CorePluginLifecycleHooks['publishCommit']
 		>
-		const host = createCoreHost(
+		const host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({ publishCommit: invalidPublication }),

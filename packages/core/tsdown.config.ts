@@ -21,6 +21,7 @@ export default defineConfig({
 	entry: {
 		federation: 'src/federation.ts',
 		internal: 'src/internal.ts',
+		'internal/test': 'src/internal-test.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',

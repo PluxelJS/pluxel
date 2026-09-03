@@ -6,9 +6,9 @@ import {
 	v,
 } from '@pluxel/runtime'
 import {
-	assertPluginLifecycleIssue,
-	type RuntimeHost,
-	createRuntimeHost,
+	createRuntimeTestHost,
+	type RawPluginConfig,
+	type RuntimeTestHost,
 } from '@pluxel/runtime/test'
 import { detachWorkbenchPortableValue } from '@pluxel/runtime/workbench/client'
 import { ProxyAgent } from 'undici'
@@ -29,9 +29,16 @@ import { openWretchSettings } from './workbench-helpers.ts'
 let fetchA: FetchLike
 let fetchB: FetchLike
 
-function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
-	host.add(plugins)
-	for (const Plugin of plugins) host.start(Plugin)
+async function startWretchFixture(
+	host: RuntimeTestHost,
+	plugins: readonly PluginConstructor[],
+	initialConfig?: RawPluginConfig,
+): Promise<void> {
+	await host.commit((change) => {
+		change.catalog.add(plugins)
+		if (initialConfig !== undefined) change.config.seed(WretchPlugin, initialConfig)
+		change.start(plugins)
+	})
 }
 
 function jsonResponse(value: unknown, status = 200): Response {
@@ -115,12 +122,11 @@ describe('WretchPlugin', () => {
 	it('separates same-display-name consumers by node address and persists the full owner', async () => {
 		const persistence = trackedSettingsPersistence()
 		{
-			await using host = createRuntimeHost({
+			await using host = createRuntimeTestHost({
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
-			addStarted(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 			const a = host.require(ConsumerA)
 			const late = host.require(ConsumerLateSettings)
 			using aSettings = await openWretchSettings(host, ConsumerA)
@@ -145,10 +151,9 @@ describe('WretchPlugin', () => {
 
 	it('emits portable settings snapshots without undefined optional fields', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 			using settings = await openWretchSettings(host, ConsumerA)
 
 			const headersOnly = await detachWorkbenchPortableValue(
@@ -173,7 +178,7 @@ describe('WretchPlugin', () => {
 			expect(timeoutOnly.settings).toEqual({ headers: {}, timeoutMs: 1_000 })
 			expect(Object.hasOwn(timeoutOnly.settings, 'proxyUrl')).toBe(false)
 
-			const queried = detachWorkbenchPortableValue(settings.api.snapshot())
+			const queried = detachWorkbenchPortableValue(await settings.api.snapshot())
 			expect(queried).toEqual(timeoutOnly)
 		}
 	})
@@ -184,12 +189,11 @@ describe('WretchPlugin', () => {
 		let expectedOwner!: PluginNodeAddress
 		let wrongOwner: unknown
 		{
-			await using host = createRuntimeHost({
+			await using host = createRuntimeTestHost({
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
-			addStarted(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 			using settings = await openWretchSettings(host, ConsumerA)
 			await settings.api.update({ headers: {} })
 			key = [...persistence.writes.keys()][0]!
@@ -208,14 +212,16 @@ describe('WretchPlugin', () => {
 		await persistence.put(key, JSON.stringify({ ...stored, owner: wrongOwner }))
 
 		{
-			await using host = createRuntimeHost({
+			await using host = createRuntimeTestHost({
 				workbench: false,
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			const summary = await host.commitAllowFail()
-			assertPluginLifecycleIssue(summary, ConsumerA, {
+			const failure = await host.commitExpectFail((change) => {
+				change.catalog.add([WretchPlugin, ConsumerA])
+				change.start([WretchPlugin, ConsumerA])
+			})
+			expect(failure).toHavePluginLifecycleIssue(ConsumerA, {
 				kind: 'start-failed',
 				message: 'owner does not match',
 			})
@@ -224,10 +230,9 @@ describe('WretchPlugin', () => {
 
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost({ workbench: false })
 
-			addStarted(host, [WretchPlugin, ConsumerA, ConsumerB])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerB])
 
 			const a = await host.require(ConsumerA).client.get('/users').json<{
 				url: string
@@ -255,10 +260,9 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 			const consumer = host.require(ConsumerA)
 			const client = consumer.client
 			using settings = await openWretchSettings(host, ConsumerA)
@@ -275,13 +279,11 @@ describe('WretchPlugin', () => {
 				hasProxyDispatcher: true,
 			})
 
-			host.stop(ConsumerA)
-			await host.commit()
-			host.start(ConsumerA)
-			await host.commit()
+			await host.stop(ConsumerA)
+			await host.start(ConsumerA)
 
 			using restarted = await openWretchSettings(host, ConsumerA)
-			expect(restarted.api.snapshot().settings).toMatchObject({
+			expect((await restarted.api.snapshot()).settings).toMatchObject({
 				headers: { 'accept-language': 'zh-HK', 'x-consumer': 'managed' },
 				proxyUrl: 'http://proxy.example:8080/',
 				timeoutMs: 5_000,
@@ -291,11 +293,9 @@ describe('WretchPlugin', () => {
 
 	it('rejects unsafe proxy, header, and timeout settings', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			host.cfg(WretchPlugin).set({ timeoutMs: 1_000 })
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 1_000 })
 			using settings = await openWretchSettings(host, ConsumerA)
 
 			await expect(
@@ -331,10 +331,9 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [WretchPlugin, ConsumerLateSettings])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
 
 			const consumer = host.require(ConsumerLateSettings)
 			using settings = await openWretchSettings(host, ConsumerLateSettings)
@@ -352,12 +351,11 @@ describe('WretchPlugin', () => {
 		const persistence = gatedSettingsPersistence()
 
 		{
-			await using host = createRuntimeHost({
+			await using host = createRuntimeTestHost({
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
-			addStarted(host, [WretchPlugin, ConsumerB])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerB])
 
 			const http = host.require(ConsumerB).http
 			const first = http.enableManagedSettings()
@@ -367,7 +365,7 @@ describe('WretchPlugin', () => {
 			persistence.release()
 			await Promise.all([first, second])
 			using settings = await openWretchSettings(host, ConsumerB)
-			expect(settings.api.snapshot().settings.headers).toEqual({})
+			expect((await settings.api.snapshot()).settings.headers).toEqual({})
 		}
 	})
 
@@ -375,25 +373,22 @@ describe('WretchPlugin', () => {
 		const persistence = gatedSettingsPersistence()
 
 		{
-			await using host = createRuntimeHost({
+			await using host = createRuntimeTestHost({
 				workbench: false,
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
-			addStarted(host, [WretchPlugin, ConsumerB])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerB])
 
 			const http = host.require(ConsumerB).http
 			const stale = http.enableManagedSettings()
 			await waitFor(() => expect(persistence.reads()).toBe(1))
-			host.restart(WretchPlugin)
-			const restart = host.commit()
+			const restart = host.restart(WretchPlugin)
 			persistence.release()
 			await restart
 
 			await expect(stale).resolves.toBeUndefined()
-			host.restart(WretchPlugin)
-			await host.commit()
+			await host.restart(WretchPlugin)
 			await expect(host.require(ConsumerB).http.enableManagedSettings()).resolves.toBeUndefined()
 			expect(persistence.reads()).toBe(2)
 		}
@@ -408,11 +403,11 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost({ workbench: false })
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			host.cfg(WretchPlugin).set({ allowedOrigins: ['https://allowed.example'] })
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
+				allowedOrigins: ['https://allowed.example'],
+			})
 
 			await expect(host.require(ConsumerA).client.get('/blocked').json()).rejects.toThrow(
 				'origin is not allowed',
@@ -430,11 +425,12 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost({ workbench: false })
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			host.cfg(WretchPlugin).set({ maxConcurrentRequests: 1, maxQueuedRequests: 1 })
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
+				maxConcurrentRequests: 1,
+				maxQueuedRequests: 1,
+			})
 
 			const client = host.require(ConsumerA).client
 			const first = client.get('/one').json()
@@ -459,23 +455,19 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost({ workbench: false })
 
-			addStarted(host, [WretchPlugin, ConsumerB])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerB])
 
 			const callerClient = host.require(ConsumerB).client
-			host.stop(ConsumerB)
-			await host.commit()
+			await host.stop(ConsumerB)
 			await expect(
 				Promise.resolve().then(() => callerClient.get('/stale-caller').json()),
 			).rejects.toThrow('stopped or replaced plugin generation')
 
-			host.start(ConsumerB)
-			await host.commit()
+			await host.start(ConsumerB)
 			const providerClient = host.require(ConsumerB).client
-			host.restart(WretchPlugin)
-			await host.commit()
+			await host.restart(WretchPlugin)
 			await expect(
 				Promise.resolve().then(() => providerClient.get('/stale-provider').json()),
 			).rejects.toThrow('stopped or replaced plugin generation')
@@ -488,17 +480,15 @@ describe('WretchPlugin', () => {
 
 	it('revokes cached managed-settings RPC with its caller generation', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
 			using settings = await openWretchSettings(host, ConsumerA)
 			const commands = settings.api
-			host.stop(ConsumerA)
-			await host.commit()
+			await host.stop(ConsumerA)
 
-			expect(() => commands.snapshot()).toThrow('stopped or replaced plugin generation')
+			await expect(commands.snapshot()).rejects.toThrow('stopped or replaced plugin generation')
 			await expect(commands.update({ headers: {} })).rejects.toThrow(
 				'stopped or replaced plugin generation',
 			)
@@ -507,10 +497,9 @@ describe('WretchPlugin', () => {
 
 	it('revokes a settings capability when its View closes', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
 			const settings = await openWretchSettings(host, ConsumerA)
 			const api = settings.api
@@ -518,11 +507,13 @@ describe('WretchPlugin', () => {
 			expect(independentSettings.api).not.toBe(api)
 			settings[Symbol.dispose]()
 
-			expect(() => api.snapshot()).toThrow('stopped or replaced plugin generation')
+			await expect(Promise.resolve().then(() => api.snapshot())).rejects.toThrow(
+				'stopped or replaced plugin generation',
+			)
 			await expect(api.update({ headers: {} })).rejects.toThrow(
 				'stopped or replaced plugin generation',
 			)
-			expect(independentSettings.api.snapshot().settings.headers).toEqual({})
+			expect((await independentSettings.api.snapshot()).settings.headers).toEqual({})
 		}
 	})
 
@@ -530,10 +521,9 @@ describe('WretchPlugin', () => {
 		const close = vi.spyOn(ProxyAgent.prototype, 'close')
 		try {
 			{
-				await using host = createRuntimeHost()
+				await using host = createRuntimeTestHost()
 
-				addStarted(host, [WretchPlugin, ConsumerA])
-				await host.commit()
+				await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
 				using settings = await openWretchSettings(host, ConsumerA)
 				await settings.api.update({
@@ -541,8 +531,7 @@ describe('WretchPlugin', () => {
 					proxyUrl: 'http://proxy.example:8080',
 				})
 				const before = close.mock.calls.length
-				host.restart(WretchPlugin)
-				await host.commit()
+				await host.restart(WretchPlugin)
 				expect(close.mock.calls.length).toBeGreaterThan(before)
 			}
 		} finally {
@@ -563,11 +552,12 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost({ workbench: false })
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			host.cfg(WretchPlugin).set({ maxConcurrentRequests: 1, maxQueuedRequests: 1 })
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
+				maxConcurrentRequests: 1,
+				maxQueuedRequests: 1,
+			})
 
 			const client = host.require(ConsumerA).client
 			const first = client
@@ -586,8 +576,7 @@ describe('WretchPlugin', () => {
 					(error: unknown) => error,
 				)
 
-			host.stop(WretchPlugin)
-			await host.commit()
+			await host.stop(WretchPlugin)
 			const [activeError, queuedError] = await Promise.all([first, queued])
 			expect(activeError).toMatchObject({
 				message: expect.stringContaining('stopped or replaced plugin generation'),
@@ -631,11 +620,9 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost({ workbench: false })
 
-			addStarted(host, [WretchPlugin, ConsumerA])
-			host.cfg(WretchPlugin).set({ timeoutMs: 5 })
-			await host.commit()
+			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 5 })
 
 			await expect(host.require(ConsumerA).client.get('/slow').json()).rejects.toMatchObject({
 				name: 'TimeoutError',

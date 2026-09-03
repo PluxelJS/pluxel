@@ -17,7 +17,7 @@ export default defineConfig({
 	},
 	plugins: [
 		dynamicRuntimeVitePlugin({
-			config: './src/pluxel.dynamic.ts',
+			entry: './src/pluxel.dynamic.ts',
 		}),
 	],
 })

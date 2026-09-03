@@ -9,17 +9,24 @@ Plugin graph、commands、tool policy 和生命周期。
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { PiAgentPlugin } from '@pluxel/pi-agent'
 
-host.cfg(AgentToolsPlugin).set({
-	toolsets: [{ id: 'notes', label: 'Notes', commandNames: ['notes.read'] }],
-	agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['notes'] }],
+await host.start(AgentToolsPlugin, {
+	initialConfig: {
+		toolsets: [{ id: 'notes', label: 'Notes', commandNames: ['notes.read'] }],
+		agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['notes'] }],
+	},
 })
-host.cfg(PiAgentPlugin).set({ defaultToolSetupId: 'assistant' })
+await host.start(PiAgentPlugin, {
+	initialConfig: { defaultToolSetupId: 'assistant' },
+})
 
 const session = await host.require(PiAgentPlugin).createSession()
 session.setGoal('Summarize the notes')
 const result = await session.prompt('Complete the current goal')
 await session.dispose()
 ```
+
+这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续更新使用
+`host.config.patch()`。production deployment 通过自己的 ConfigService 管理相同 records。
 
 Pi built-in filesystem/shell tools and default extension, skill, prompt-template and context discovery are disabled。每个
 Pluxel command 被映射为 provider-safe Pi tool name，但执行 closure 始终调用同一个 bound `AgentCommandCatalog.execute()`。

@@ -184,21 +184,27 @@ const prepared = text.prepareText({ text: 'Hello', fontSize: 24 })
 ## 配置与职责
 
 ```ts no-twoslash
-host.cfg(CanvasPlugin).set({
-	maxWidth: 8192,
-	maxHeight: 8192,
-	maxPixels: 16_777_216,
-	maxImageBytes: 32 * 1024 * 1024,
-	maxConcurrentDecodes: 2,
-	maxQueuedDecodes: 32,
-	maxQueuedDecodesPerConsumer: 8,
-	maxConcurrentDecodesPerWorkerAdapter: 1,
-	maxQueuedDecodesPerWorkerAdapter: 32,
-	maxTextCharacters: 100_000,
-	maxRichTextItems: 2_048,
-	maxTextCacheCharacters: 1_000_000,
+await host.start(CanvasPlugin, {
+	catalog: [FontsPlugin],
+	initialConfig: {
+		maxWidth: 8192,
+		maxHeight: 8192,
+		maxPixels: 16_777_216,
+		maxImageBytes: 32 * 1024 * 1024,
+		maxConcurrentDecodes: 2,
+		maxQueuedDecodes: 32,
+		maxQueuedDecodesPerConsumer: 8,
+		maxConcurrentDecodesPerWorkerAdapter: 1,
+		maxQueuedDecodesPerWorkerAdapter: 32,
+		maxTextCharacters: 100_000,
+		maxRichTextItems: 2_048,
+		maxTextCacheCharacters: 1_000_000,
+	},
 })
 ```
+
+这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
+`host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
 
 | 字段                                   |       默认值 | 检查对象                                      |
 | -------------------------------------- | -----------: | --------------------------------------------- |

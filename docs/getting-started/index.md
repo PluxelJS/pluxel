@@ -3,7 +3,7 @@ title: 编写第一个插件
 description: 从 CLI 模板完成配置、HTTP 路由和生命周期测试。
 ---
 
-本教程从 CLI 生成的单文件 Plugin 开始，加入配置和 HTTP 路由，再用真实 runtime host 验证启动与清理。
+本教程从 CLI 生成的单文件 Plugin 开始，加入配置和 HTTP 路由，再用真实 Runtime test host 验证启动与清理。
 
 ## 创建项目
 
@@ -77,19 +77,18 @@ export class StatusPlugin extends BasePlugin {
 用下面的内容替换 `tests/status.test.ts`：
 
 ```ts no-twoslash
-import { createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeTestHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { StatusPlugin } from '@acme/pluxel-plugin-status'
 
 describe('StatusPlugin', () => {
 	it('starts with config and mounts its route', async () => {
-		await using host = createRuntimeHost({ workbench: false })
-		host.add(StatusPlugin)
-		host.cfg(StatusPlugin).set({ label: 'healthy', intervalMs: 1_000 })
-		host.start(StatusPlugin)
-		await host.commit()
+		await using host = createRuntimeTestHost()
+		await host.start(StatusPlugin, {
+			initialConfig: { label: 'healthy', intervalMs: 1_000 },
+		})
 
-		const response = await host.fetch(new Request('http://local.test/status'))
+		const response = await host.http.fetch(new URL('/status', host.http.origin))
 
 		expect(response.status).toBe(200)
 		expect(await response.json()).toMatchObject({ label: 'healthy', samples: 0 })
@@ -97,9 +96,11 @@ describe('StatusPlugin', () => {
 })
 ```
 
-`createRuntimeHost()` 使用真实配置校验、依赖图和 lifecycle；`await using` 在作用域结束后关闭 host。`ctx.elysia` 是当前
-generation 的真实 Elysia 2 application，`/status` 就是最终产品路径。Plugin 与它的 Part 完成 `init()` 后，Runtime
-会 compile/seal app 并原子发布；路由和 timer 都随该 generation 在 shutdown、replacement 或 rollback 时清理。
+`createRuntimeTestHost()` 使用真实配置校验、依赖图和 lifecycle。`start()` 立即提交并等待稳定，`initialConfig` 只建立首次
+lifecycle 前的 fixture config；后续更新使用 `host.config.patch()`。`await using` 在作用域结束后关闭 host。
+`ctx.elysia` 是当前 generation 的真实 Elysia 2 application，`/status` 就是最终产品路径。Plugin 与它的 Part 完成 `init()` 后，Runtime
+会 compile/seal app 并原子发布；`host.http.fetch()` 经过同一个 in-process directory，路由和 timer 都随 generation 在 shutdown、
+replacement 或 rollback 时清理。
 
 运行完整检查：
 

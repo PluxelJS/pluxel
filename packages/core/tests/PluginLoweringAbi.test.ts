@@ -8,7 +8,7 @@ import {
 	type PluginDefinitionLoweringPayload,
 } from '../src/plugins/runtime/definition'
 import { consumePluginDefinitionCandidate } from '../src/internal'
-import { createCoreHost } from '../src/test'
+import { createCoreInternalTestHost } from '../src/internal-test'
 import {
 	__setPluginConfig,
 	__setPluginDefinition,
@@ -259,8 +259,8 @@ describe('Plugin lowering ABI v2', () => {
 			definition: address('CrossHostPlugin'),
 		})
 		const candidate = consumePluginDefinitionCandidate(CrossHostPlugin)
-		const first = createCoreHost()
-		const second = createCoreHost()
+		const first = createCoreInternalTestHost()
+		const second = createCoreInternalTestHost()
 		try {
 			const fork = first.fork(CrossHostPlugin, 'isolated')
 			first.add(CrossHostPlugin)

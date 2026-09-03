@@ -1,6 +1,7 @@
 # Direct RPC testing
 
-> 状态：设计已冻结，尚未实现。本文不表示 Runtime 当前已经提供通用的 Elysia RPC mount API。
+> 状态：架构原则已冻结，public surface 为 release candidate，尚未实现。精确 ownership 见 [`CONTRACT.md`](CONTRACT.md)。
+> 本文不表示 Runtime 当前已经提供通用的 Elysia RPC mount API。
 
 ## 决策问题
 
@@ -80,6 +81,10 @@ using api = createLocalRpcClient<OrdersApi>(new OrdersTarget(service))
 helper 内部只构造 Cap'n Web local `RpcStub` 并把其原生 disposable contract 原样返回。它不 deep-mock target，不 catch/reclassify method
 failure，也不创建 Runtime Context。名称使用 `local`，明确它没有物理 transport；不使用 `mockRpc()`，因为执行的 target 和 Cap'n Web
 capability membrane都是真实实现。
+
+传入的 `target` 是 borrowed value：helper 不调用 target 自身的 `dispose()`，也不取得 target 所引用 service 的 ownership。返回的
+`RpcStub` 只拥有本地 client capability graph；dispose client 会释放 root/child/callback stub，但 caller 仍负责 target/service 的领域资源。
+若 target 必须随 client 结束，应由 caller 用同一 `using` scope 显式拥有两者，不能让 helper 根据对象是否“看起来 disposable”猜 ownership。
 
 ### 为什么需要 helper 而不是直接调用 target
 

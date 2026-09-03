@@ -53,28 +53,35 @@ span、event、link、status、baggage、log body、severity、`eventName` 和 a
 默认配置启用三种 OTLP signal，关闭 Prometheus：
 
 ```ts no-twoslash
-host.add([OtelPlugin, CatalogPlugin])
-host.cfg(OtelPlugin).set({
-	otlp: ['metrics', 'traces', 'logs'],
-	prometheus: false,
+await host.start(OtelPlugin, {
+	catalog: [CatalogPlugin],
+	initialConfig: {
+		otlp: ['metrics', 'traces', 'logs'],
+		prometheus: false,
+	},
 })
+await host.start(CatalogPlugin)
 ```
 
 `otlp` 可以只包含所需 signal。Prometheus 只读取 metrics，也可以和 OTLP metrics 同时启用：
 
 ```ts no-twoslash
-host.cfg(OtelPlugin).set({
-	otlp: ['traces', 'logs'],
-	prometheus: { path: '/metrics' },
+await host.start(OtelPlugin, {
+	initialConfig: {
+		otlp: ['traces', 'logs'],
+		prometheus: { path: '/metrics' },
+	},
 })
 ```
 
 只做 Prometheus pull：
 
 ```ts no-twoslash
-host.cfg(OtelPlugin).set({
-	otlp: [],
-	prometheus: {},
+await host.start(OtelPlugin, {
+	initialConfig: {
+		otlp: [],
+		prometheus: {},
+	},
 })
 ```
 

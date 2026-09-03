@@ -2,7 +2,7 @@ import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LoggerService } from '../src/logger/LoggerService'
 import { readPluginLogIdentity } from '../src/logger/categories'
-import { withCoreContext } from '../src/test'
+import { withCoreInternalTestContext } from '../src/internal-test'
 import { parsePluginNodeAddress } from '../src/plugins'
 import { createGenerationContext } from '../src/context/context-factory'
 
@@ -39,7 +39,7 @@ describe('LoggerService', () => {
 	afterEach(() => resetSync())
 
 	it('binds runtime identity to the configured root', () =>
-		withCoreContext(
+		withCoreInternalTestContext(
 			(ctx) => {
 				ctx.logger.info('hello', { id: 1 })
 				const record = records.find((item) => item.rawMessage === 'hello')
@@ -50,7 +50,7 @@ describe('LoggerService', () => {
 		))
 
 	it('encodes plugin identity in the category instead of record properties', () =>
-		withCoreContext(
+		withCoreInternalTestContext(
 			(root) => {
 				const ctx = createGenerationContext(root, 'plugin-test')
 				installLoggerTestPluginInfo(ctx)
@@ -90,7 +90,7 @@ describe('LoggerService', () => {
 	})
 
 	it('encodes debug topic segments and preserves plugin ownership', () =>
-		withCoreContext(
+		withCoreInternalTestContext(
 			(root) => {
 				const ctx = createGenerationContext(root, 'plugin-test')
 				installLoggerTestPluginInfo(ctx)

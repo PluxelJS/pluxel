@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
 import {
-	BasePlugin,
-	Plugin,
 	assertPluginLifecycleIssue,
 	pluginLifecycleIssuePlugins,
-	withCoreHost,
-} from '@pluxel/core/test'
+	withCoreInternalTestHost,
+} from '@pluxel/core/internal/test'
 
 const teardownEvents: string[] = []
 
@@ -42,7 +41,7 @@ class DrainFailure extends BasePlugin {
 
 describe('effects-only generation teardown', () => {
 	it('drains dependent effects before provider effects', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			teardownEvents.length = 0
 			host.add([TeardownProvider, TeardownConsumer])
 			await host.commit()
@@ -53,7 +52,7 @@ describe('effects-only generation teardown', () => {
 	})
 
 	it('reports cleanup failures while continuing teardown', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			host.add(DrainFailure)
 			await host.commit()

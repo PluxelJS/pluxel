@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
-import { createRuntimeContext } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { isPluginAutoStartEnabled, requireRuntimeStateStore } from '@pluxel/runtime/internal'
 import { requireConfigService } from '@pluxel/core/internal'
 
@@ -21,7 +21,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const prev = process.cwd()
 		try {
 			process.chdir(fixture.path)
-			const runtime = createRuntimeContext({
+			const runtime = createRuntimeInternalTestHost({
 				configService: { mode: 'memory' },
 			})
 			const ctx = runtime.ctx
@@ -40,7 +40,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const prev = process.cwd()
 		try {
 			process.chdir(fixture.path)
-			const runtime = createRuntimeContext({
+			const runtime = createRuntimeInternalTestHost({
 				configService: {
 					mode: 'readonly',
 					snapshot: {
@@ -69,7 +69,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 	})
 
 	it('initializes typed nested plugin config from the host environment', async () => {
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestHost({
 			configService: {
 				mode: 'memory',
 				snapshot: {
@@ -106,7 +106,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 	it('rejects malformed structured Plugin config environment snapshots', () => {
 		expect(() =>
 			requireConfigService(
-				createRuntimeContext({
+				createRuntimeInternalTestHost({
 					configService: {
 						mode: 'memory',
 						environment: { PLUXEL_CONFIG: '{"version":1,"plugins":[]}' },
@@ -121,7 +121,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const environment = {
 			PLUXEL_CONFIG: environmentSnapshot({ publicUrl: 'https://first.example.test' }),
 		}
-		const first = createRuntimeContext({
+		const first = createRuntimeInternalTestHost({
 			persistence: fixture.path,
 			configService: {
 				mode: 'file',
@@ -138,7 +138,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			await first.dispose()
 		}
 
-		const second = createRuntimeContext({
+		const second = createRuntimeInternalTestHost({
 			persistence: fixture.path,
 			configService: {
 				mode: 'file',

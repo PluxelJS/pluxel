@@ -26,7 +26,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { websocket } from 'elysia/websocket'
 import { workbench } from '@pluxel/runtime/workbench'
 import { defineStaticRuntime, type StaticRuntimePluginStatus } from '@pluxel/runtime-static'
-import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import { startStaticApplicationInternalTestHost } from '@pluxel/runtime-static/internal/test'
 import * as runtimeStaticVite from '@pluxel/runtime-static/vite'
 
 import { reloadStaticRuntime } from '../src/hmr'
@@ -435,11 +435,11 @@ describe('@pluxel/runtime-static', () => {
 
 	it('rejects unmarked applications and preserves typed startup bindings', async () => {
 		await expect(
-			createStaticRuntimeTestHost({ name: 'unmarked', plugins: [] } as never),
+			startStaticApplicationInternalTestHost({ name: 'unmarked', plugins: [] } as never),
 		).rejects.toThrow('must be created with defineStaticRuntime')
 
 		let bindingValue = ''
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'bindings',
 				plugins: [],
@@ -470,7 +470,7 @@ describe('@pluxel/runtime-static', () => {
 			configure: () => ({ workbench: { enabled: true, [field]: value } }) as never,
 		})
 
-		await expect(createStaticRuntimeTestHost(application)).rejects.toThrow(
+		await expect(startStaticApplicationInternalTestHost(application)).rejects.toThrow(
 			new RegExp(`unsupported "${field}"`, 'i'),
 		)
 	})
@@ -489,7 +489,7 @@ describe('@pluxel/runtime-static', () => {
 				}) as never,
 		})
 
-		await expect(createStaticRuntimeTestHost(application)).rejects.toThrow(
+		await expect(startStaticApplicationInternalTestHost(application)).rejects.toThrow(
 			/database\.pool includes unsupported "legacy"/i,
 		)
 	})
@@ -497,7 +497,7 @@ describe('@pluxel/runtime-static', () => {
 	it('uses config snapshot v3 from the reserved environment and exposes lowered schema source', async () => {
 		configuredValue = undefined
 		const owner = addressOf(ConfiguredPlugin)
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'static-environment-config',
 				plugins: [ConfiguredPlugin],
@@ -732,13 +732,13 @@ describe('@pluxel/runtime-static', () => {
 			},
 		)
 		try {
-			const report = await host.start()
+			await host.start()
 			expect(statusOf(host, StartFail)).toBe('start-failed')
 			expect(messageOf(host, StartFail)).toContain('boom')
 			expect(statusOf(host, StartOk)).toBe('started')
 			expect(statusOf(host, ProviderFail)).toBe('start-failed')
 			expect(statusOf(host, ConsumerBlocked)).toBe('dependency-failed')
-			const failed = report.commit?.lifecycleReport.issues.find(
+			const failed = requirePluginService(host.ctx).lastCommit?.lifecycleReport.issues.find(
 				(issue) => issue.kind === 'start-failed',
 			)
 			expect(failed && requirePluginService(host.ctx).nodeAddressOf(failed.plugin)).toEqual(
@@ -901,7 +901,7 @@ describe('@pluxel/runtime-static', () => {
 	})
 
 	it('serves explicit Plugin HTTP when Workbench is disabled', async () => {
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'static-http',
 				plugins: [DirectHttp],
@@ -922,7 +922,7 @@ describe('@pluxel/runtime-static', () => {
 
 	it('tears down a prepared host when application startup policy fails', async () => {
 		await expect(
-			createStaticRuntimeTestHost(
+			startStaticApplicationInternalTestHost(
 				defineStaticRuntime({
 					name: 'prepare-failure',
 					plugins: [],
@@ -940,7 +940,7 @@ describe('@pluxel/runtime-static', () => {
 	})
 
 	it('applies top-level defaults for runtime services', async () => {
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'default-services',
 				plugins: [],
@@ -964,7 +964,7 @@ describe('@pluxel/runtime-static', () => {
 
 	it('installs Workbench once at the host boundary', async () => {
 		managedWorkbenchMounted = false
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'with-workbench',
 				plugins: [ManagedWebGate],
@@ -1019,7 +1019,7 @@ describe('@pluxel/runtime-static', () => {
 
 	it('bootstraps vault before startup after explicit import', async () => {
 		await import('@pluxel/runtime/services/vault')
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'explicit-vault',
 				plugins: [],

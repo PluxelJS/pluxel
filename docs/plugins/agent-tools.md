@@ -17,16 +17,19 @@ Toolset 保存稳定 command name，Agent 得到所分配 Toolset 的并集。�
 ```ts no-twoslash
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 
-host.cfg(AgentToolsPlugin).set({
-	toolsets: [
-		{ id: 'notes-read', label: 'Notes read', commandNames: ['notes.read'] },
-		{ id: 'notes-write', label: 'Notes write', commandNames: ['notes.create'] },
-	],
-	agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['notes-read'] }],
+await host.start(AgentToolsPlugin, {
+	initialConfig: {
+		toolsets: [
+			{ id: 'notes-read', label: 'Notes read', commandNames: ['notes.read'] },
+			{ id: 'notes-write', label: 'Notes write', commandNames: ['notes.create'] },
+		],
+		agents: [{ agentId: 'assistant', label: 'Assistant', toolsetIds: ['notes-read'] }],
+	},
 })
 ```
 
-这是测试 host 的配置写法；production host 通过 ConfigService 管理同一个 Plugin record。配置使用标准
+`initialConfig` 只用于测试 fixture 首次启动；之后的测试配置更新使用 `host.config.patch()`。production host 通过 ConfigService
+管理同一个 Plugin record。配置使用标准
 Plugin schema，所以会自动得到持久化、服务端校验、运行中更新和通用 Plugin 配置页面。
 
 Workbench 启用时，插件还会发布只读 Agent tools 页面，分组展示当前 commands、Toolsets、缺失 command、

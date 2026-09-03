@@ -1,6 +1,11 @@
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
 import { formatPluginNodeReference, type PluginConstructor, v } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
+import {
+	BasePlugin,
+	createRuntimeTestHost,
+	Plugin,
+	type RuntimeTestHost,
+} from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -72,9 +77,11 @@ class RedisRatesConsumer extends BasePlugin {
 	}
 }
 
-function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
-	host.add(plugins)
-	for (const PluginClass of plugins) host.start(PluginClass)
+async function startPlugins(
+	host: RuntimeTestHost,
+	plugins: readonly PluginConstructor[],
+): Promise<void> {
+	await host.start(plugins)
 }
 
 const policies = [
@@ -94,19 +101,19 @@ describe('@pluxel/redis rates backend', () => {
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [
-				FakeRatesRedisPlugin,
-				RedisRatesBackendPlugin,
-				RatesPlugin,
-				RedisRatesConsumer,
-			])
-			host.cfg(RedisRatesBackendPlugin).set({
-				connectionId: 'rates',
-				keyPrefix: 'pluxel:{rates}:',
+			await host.commit((change) => {
+				change.start(FakeRatesRedisPlugin)
+				change.start(RedisRatesBackendPlugin, {
+					initialConfig: {
+						connectionId: 'rates',
+						keyPrefix: 'pluxel:{rates}:',
+					},
+				})
+				change.start(RatesPlugin)
+				change.start(RedisRatesConsumer)
 			})
-			await host.commit()
 			const consumer = host.require(RedisRatesConsumer)
 			const redis = host.require(FakeRatesRedisPlugin).fake
 			let slidingLogSource = ''
@@ -144,15 +151,14 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [
+			await startPlugins(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
 				RatesPlugin,
 				RedisRatesConsumer,
 			])
-			await host.commit()
 			const limiter = host.require(RedisRatesConsumer).rates.use('stable', policies[0]!)
 			const redis = host.require(FakeRatesRedisPlugin).fake
 			await limiter.consume('first')
@@ -172,15 +178,14 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [
+			await startPlugins(host, [
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
 				RatesPlugin,
 				RedisRatesConsumer,
 			])
-			await host.commit()
 			const limiter = host.require(RedisRatesConsumer).rates.use('conflict', policies[1]!)
 			const redis = host.require(FakeRatesRedisPlugin).fake
 			redis.reply = [-1, 'token-bucket', 10, 60_000, 20]

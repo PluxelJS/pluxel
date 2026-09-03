@@ -1,6 +1,7 @@
 # Testing API redesign proposals
 
-> 状态：设计已冻结，尚未实现。这里的内容不是当前 API 权威；当前测试方式仍以
+> 状态：架构原则已冻结，public surface 为 release candidate，尚未实现。只有
+> [`CONTRACT.md`](CONTRACT.md) 中列出的 contract probes 与代表性迁移通过后，签名和错误契约才视为冻结。这里的内容不是当前 API 权威；当前测试方式仍以
 > [`../../../docs/development/testing.md`](../../../docs/development/testing.md) 为准。
 
 这个目录集中记录 Pluxel test API 的重新设计。目标不是给现有测试 helper 逐个增加 alias，而是让 Plugin 作者和
@@ -51,6 +52,10 @@ Workbench 等 Runtime capability，就使用 Runtime host，不在 Core host 中
 
 ## 当前提案
 
+- [`CONTRACT.md`](CONTRACT.md)：本目录唯一的规范性摘要。发生表述冲突时以这里的 package ownership、public shape、failure、resource 和
+  migration classification 为准；其他文件保留领域解释、反例和验收依据。
+- [`MIGRATION.md`](MIGRATION.md)：旧调用分类、`host.ctx` authority ledger、代表性迁移与 executable zero gate。
+
 - [`COMPOSABLE_HOST.md`](COMPOSABLE_HOST.md)：重新设计 Core/Runtime test host；Core 使用真实 `add/remove`，Runtime 使用真实
   `start/stop`，共同以立即完成的常用行为和 callback-scoped `commit` 取代长期 staging，并分开 public author host 与 framework
   internal harness；strict success 只返回完成信号，official Vitest adapter 提供唯一的 lifecycle issue matcher。
@@ -80,8 +85,9 @@ Workbench 等 Runtime capability，就使用 Runtime host，不在 Core host 中
 | `@pluxel/runtime-static/internal/test` | raw static startup/HMR commit facts；不从 public/test entry export        |
 | `@pluxel/runtime-dynamic`              | production `startDynamicDevRuntime()`；不存在 dynamic test launcher       |
 
-`@pluxel/test` 根入口不再 re-export Core/Runtime host，旧 `createHost/withHost` 随 breaking migration 删除。Plugin test 从所验证的最小
-package 导入 host；使用 `definePluxelVitestConfig` 的项目由 preset setup 自动注册 matcher，不要求每个 test file 再做 side-effect import。
+`@pluxel/test` 根入口随 breaking migration 删除；它当前的 Core 作者符号、host 和 setup side effect 均不保留。Core test 从
+`@pluxel/core/test` 导入，Runtime test 从 `@pluxel/runtime/test` 导入；Vitest、fixture 与 unsafe lowering 只从上表的明确 subpath 导入。
+旧 `createHost/withHost` 随迁移删除。使用 `definePluxelVitestConfig` 的项目由 preset setup 自动注册 matcher，不要求每个 test file 再做 side-effect import。
 包含 matcher 的 TypeScript 项目把 `vitest.config.ts` 纳入 `tsconfig.include`，让同一个 preset import 提供 module augmentation；runner-neutral
 host package 不依赖 Vitest。
 

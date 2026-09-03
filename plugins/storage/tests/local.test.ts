@@ -1,8 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { PluginConstructor } from '@pluxel/runtime'
-import { BasePlugin, Plugin, type RuntimeHost, createRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, createRuntimeTestHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
 
@@ -14,11 +13,6 @@ class LocalS3Consumer extends BasePlugin {
 }
 
 const temporaryRoots: string[] = []
-
-function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
-	host.add(plugins)
-	for (const PluginClass of plugins) host.start(PluginClass)
-}
 
 afterEach(async () => {
 	await Promise.all(
@@ -195,28 +189,28 @@ describe('S3Plugin local backend', () => {
 	it('revokes the caller facade and captured local client on provider stop', async () => {
 		const root = await temporaryRoot()
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [S3Plugin, LocalS3Consumer])
-			host.cfg(S3Plugin).set({
-				buckets: [
-					{
-						id: 'default',
-						backend: {
-							type: 'local',
-							rootDir: root,
-							bucketName: 'test-bucket',
-							syncWrites: false,
+			await host.start(S3Plugin, {
+				initialConfig: {
+					buckets: [
+						{
+							id: 'default',
+							backend: {
+								type: 'local',
+								rootDir: root,
+								bucketName: 'test-bucket',
+								syncWrites: false,
+							},
 						},
-					},
-				],
+					],
+				},
 			})
-			await host.commit()
+			await host.start(LocalS3Consumer)
 			const capability = host.require(LocalS3Consumer).s3
 			const bucket = capability.bucket()
 			const client = bucket.client
-			host.stop(S3Plugin)
-			await host.commit()
+			await host.stop(S3Plugin)
 			expect(() => bucket.client).toThrow('Plugin owner stopped')
 			await expect(client.bucketExists()).rejects.toBeInstanceOf(S3NotRunningError)
 		}
@@ -231,23 +225,24 @@ async function temporaryRoot(): Promise<string> {
 
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
 	{
-		await using host = createRuntimeHost()
+		await using host = createRuntimeTestHost()
 
-		addStarted(host, [S3Plugin, LocalS3Consumer])
-		host.cfg(S3Plugin).set({
-			buckets: [
-				{
-					id: 'default',
-					backend: {
-						type: 'local',
-						rootDir,
-						bucketName: 'test-bucket',
-						syncWrites: false,
+		await host.start(S3Plugin, {
+			initialConfig: {
+				buckets: [
+					{
+						id: 'default',
+						backend: {
+							type: 'local',
+							rootDir,
+							bucketName: 'test-bucket',
+							syncWrites: false,
+						},
 					},
-				},
-			],
+				],
+			},
 		})
-		await host.commit()
+		await host.start(LocalS3Consumer)
 		await run(host.require(LocalS3Consumer).s3)
 	}
 }

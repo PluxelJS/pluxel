@@ -1,7 +1,10 @@
 import { afterEach } from 'vitest'
 import type { Context, PluginNodeAddress } from '@pluxel/core'
 import type { RuntimeStateSnapshot } from '@pluxel/runtime/internal'
-import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
 import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 
 export type HmrTestState = {
@@ -14,7 +17,7 @@ export type HmrTestState = {
 export type HmrTestContext = {
 	core: Context
 	ctx: Context
-	host: RuntimeHost
+	host: RuntimeInternalTestHost
 	dispose: () => Promise<void>
 }
 
@@ -28,7 +31,7 @@ afterEach(async () => {
 
 export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 	const persisted = state.runtimeState ?? {}
-	const host = createRuntimeHost(
+	const host = createRuntimeInternalTestHost(
 		{
 			workbench: false,
 			persistence: { mode: 'memory' },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import * as runtimeDynamic from '@pluxel/runtime-dynamic'
-import { createDynamicDevRuntime, defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { defineDynamicRuntimeConfig, startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
 import * as runtimeDynamicHmr from '@pluxel/runtime-dynamic/hmr'
 import * as runtimeDynamicVite from '@pluxel/runtime-dynamic/vite'
 
@@ -15,10 +15,10 @@ const demoAddress = {
 
 describe('@pluxel/runtime-dynamic/vite', () => {
 	it('exposes only the explicit dynamic dev/HMR direct launcher', () => {
-		expect(runtimeDynamic.createDynamicDevRuntime).toBe(createDynamicDevRuntime)
+		expect(runtimeDynamic.startDynamicDevRuntime).toBe(startDynamicDevRuntime)
 		expect(Object.keys(runtimeDynamic).sort()).toEqual([
-			'createDynamicDevRuntime',
 			'defineDynamicRuntimeConfig',
+			'startDynamicDevRuntime',
 		])
 	})
 
@@ -157,7 +157,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 
 	it('exposes a serve-only route plugin plus route-neutral source semantics', () => {
 		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
-			config: './pluxel.dynamic.ts',
+			entry: './pluxel.dynamic.ts',
 		}) as Array<{
 			name?: string
 			apply?: unknown
@@ -208,7 +208,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 
 	it('uses built package exports and Workbench assets in distribution mode', () => {
 		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
-			config: './pluxel.dynamic.ts',
+			entry: './pluxel.dynamic.ts',
 			mode: 'distribution',
 		}) as Array<{
 			name?: string

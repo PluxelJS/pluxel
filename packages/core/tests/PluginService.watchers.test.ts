@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
-import { BasePlugin, Plugin, pluginNodeAddressOf, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 let observedSequence = 0
 
@@ -11,7 +12,7 @@ class ObservedPlugin extends BasePlugin {
 
 describe('PluginService watchInstance()', () => {
 	it('publishes exact slot availability across restart and removal', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			observedSequence = 0
 			const seen: Array<number | undefined> = []

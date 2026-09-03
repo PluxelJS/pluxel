@@ -1,7 +1,6 @@
 import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemetry/api'
 import { formatPluginNodeReference, v } from '@pluxel/runtime'
-import { createRuntimeHost } from '@pluxel/runtime/test'
-import { BasePlugin, Plugin } from '@pluxel/test'
+import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OtelConfig, OtelPlugin } from '../src/index.ts'
 
@@ -40,19 +39,18 @@ describe('OtelPlugin', () => {
 	it('exposes native caller-scoped OTel instruments through Prometheus pull', async () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
-			await using host = createRuntimeHost({ workbench: false })
-
-			host.add([OtelPlugin, Consumer])
-			host.cfg(OtelPlugin).set({ otlp: [], prometheus: { path: '/metrics' } })
-			host.start(OtelPlugin)
-			host.start(Consumer)
-			await host.commit()
+			await using host = createRuntimeTestHost({ workbench: false })
+			await host.start(OtelPlugin, {
+				catalog: [Consumer],
+				initialConfig: { otlp: [], prometheus: { path: '/metrics' } },
+			})
+			await host.start(Consumer)
 
 			const consumer = host.require(Consumer)
 			expect(consumer.meters[0]).toBe(consumer.meters[1])
 			consumer.record()
 
-			const response = await host.fetch(new Request('http://local.test/metrics'))
+			const response = await host.http.fetch(new URL('/metrics', host.http.origin))
 			expect(response.status).toBe(200)
 			expect(response.headers.get('content-type')).toContain('text/plain')
 			const body = await response.text()

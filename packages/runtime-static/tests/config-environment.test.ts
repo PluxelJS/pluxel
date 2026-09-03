@@ -8,7 +8,7 @@ import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 
 import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
-import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import { startStaticApplicationInternalTestHost } from '@pluxel/runtime-static/internal/test'
 
 import { resolveStaticRuntimeHostOptions } from '../src/application'
 import { resolveConfigEnvironmentBootstrap } from '../src/config-environment'
@@ -261,7 +261,7 @@ describe('static config environment bootstrap', () => {
 				},
 			}),
 		})
-		const runtime = await createStaticRuntimeTestHost(application, {
+		const runtime = await startStaticApplicationInternalTestHost(application, {
 			env: {
 				APP_SHARED_TEXT: 'https://service.example.test',
 				APP_NULLABLE: 'null',
@@ -298,7 +298,7 @@ describe('static config environment bootstrap', () => {
 	it('passes present raw input through the Plugin schema transform before injection', async () => {
 		transformedOutput = undefined
 		const owner = ownerOf(TransformPlugin)
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'schema-transform',
 				plugins: [TransformPlugin],
@@ -432,7 +432,7 @@ describe('static config environment bootstrap', () => {
 				runtimeState: { mode: 'memory', snapshot: { autoStart: [owner] } },
 			}),
 		})
-		const runtime = await createStaticRuntimeTestHost(application, {
+		const runtime = await startStaticApplicationInternalTestHost(application, {
 			env: {
 				APP_TEXT: 'environment',
 				APP_LEFT: 'environment-left',
@@ -471,7 +471,9 @@ describe('static config environment bootstrap', () => {
 		})
 
 		for (const value of ['first', 'second']) {
-			const runtime = await createStaticRuntimeTestHost(application, { env: { APP_TEXT: value } })
+			const runtime = await startStaticApplicationInternalTestHost(application, {
+				env: { APP_TEXT: value },
+			})
 			try {
 				expect(requireConfigService(runtime.ctx).getRawConfig(owner)).toEqual({ text: value })
 			} finally {
@@ -483,7 +485,7 @@ describe('static config environment bootstrap', () => {
 	it('keeps the seeded config editable through the existing restart path', async () => {
 		environmentOutput = undefined
 		const owner = ownerOf(EnvironmentPlugin)
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'editable-bootstrap',
 				plugins: [EnvironmentPlugin],
@@ -530,12 +532,12 @@ describe('static config environment bootstrap', () => {
 				}),
 			})
 
-		const first = await createStaticRuntimeTestHost(application(false), {
+		const first = await startStaticApplicationInternalTestHost(application(false), {
 			env: { APP_TEXT: 'persisted-first' },
 		})
 		await first.stop()
 
-		const second = await createStaticRuntimeTestHost(application(true), {
+		const second = await startStaticApplicationInternalTestHost(application(true), {
 			env: {
 				APP_TEXT: 'later-environment',
 				PLUXEL_CONFIG: snapshotEnvironment(owner, { text: 'later-pluxel-config' }),
@@ -555,7 +557,7 @@ describe('static config environment bootstrap', () => {
 		const malformed = 'persisted-file-must-not-hide-this-private-value'
 		let startupError: unknown
 		try {
-			await createStaticRuntimeTestHost(application(true), {
+			await startStaticApplicationInternalTestHost(application(true), {
 				env: { APP_SUBTREE: malformed },
 			})
 		} catch (error) {
@@ -569,7 +571,7 @@ describe('static config environment bootstrap', () => {
 	it('uses a readonly seed when the file is absent without creating the file', async () => {
 		await using fixture = await createDiskFixture()
 		const owner = ownerOf(EnvironmentPlugin)
-		const runtime = await createStaticRuntimeTestHost(
+		const runtime = await startStaticApplicationInternalTestHost(
 			defineStaticRuntime({
 				name: 'readonly-absent',
 				plugins: [EnvironmentPlugin],

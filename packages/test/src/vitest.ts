@@ -7,12 +7,30 @@ import {
 	lintGuardPlugin,
 } from '@pluxel/rolldown/plugins'
 import { databaseSourceVitePlugin } from '@pluxel/rolldown/vite'
+import type { PluginTestLifecycleIssue, PluginTestTarget } from '@pluxel/core/test'
 import {
 	defineConfig,
 	mergeConfig,
 	type ViteUserConfig,
 	type ViteUserConfigExport,
 } from 'vitest/config'
+
+export type PluginLifecycleIssueExpectation = Readonly<{
+	phase?: PluginTestLifecycleIssue['phase']
+	kind?: PluginTestLifecycleIssue['kind']
+	blockedBy?: PluginTestTarget
+	/** Diagnostic-only substring or regular-expression match. Do not branch on error prose. */
+	message?: string | RegExp
+}>
+
+declare module 'vitest' {
+	interface Matchers<T = any> {
+		toHavePluginLifecycleIssue(
+			target: PluginTestTarget,
+			expected?: PluginLifecycleIssueExpectation,
+		): void
+	}
+}
 
 export type PluxelVitestOptions = {
 	/** Include patterns for configSource extraction (default: only src/tests). */
@@ -110,7 +128,7 @@ function normalizeGlobs(patterns: string[]): string[] {
  * Opinionated Vitest preset for Pluxel monorepo tests:
  * - resolves plugin, neutral-development, then framework-source entries in that order
  * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
- * - runs the local core-only `@pluxel/test/setup` module once per worker
+ * - runs the package-private matcher/service setup module once per worker
  */
 export function definePluxelVitestConfig(
 	overrides: ViteUserConfigExport = {},

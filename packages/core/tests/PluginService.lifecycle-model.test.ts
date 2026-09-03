@@ -1,4 +1,5 @@
-import { BasePlugin, Plugin, definePluginRef, withCoreHost, type CoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/test'
+import { withCoreInternalTestHost, type CoreInternalTestHost } from '@pluxel/core/internal/test'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 
@@ -272,7 +273,7 @@ describe('PluginService lifecycle model traces', () => {
 	})
 
 	it('rejects an overlapping transaction and converges after the active commit', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add([LifecycleModelQueuedProvider, LifecycleModelQueuedConsumer])
 			const initialCommit = host.commit()
 			await queuedInitStarted
@@ -298,7 +299,7 @@ describe('PluginService lifecycle model traces', () => {
 	})
 
 	it('drains reentrant cleanups registered during generation teardown', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.add(LifecycleModelReentrantCleanup)
 			await host.commit()
 			host.remove(LifecycleModelReentrantCleanup)
@@ -310,7 +311,7 @@ describe('PluginService lifecycle model traces', () => {
 	})
 
 	it('does not publish a generation after late init settlement wins a timeout', async () => {
-		await withCoreHost(
+		await withCoreInternalTestHost(
 			async (host) => {
 				host.add(LifecycleModelLateInit)
 				await host.commitAllowFail()
@@ -329,7 +330,7 @@ async function runTrace(trace: Trace): Promise<void> {
 	resetLifecycleModelState()
 	const executed: Action[] = []
 	try {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			for (const action of trace.actions) {
 				executed.push(action)
 				await applyAction(host, action)
@@ -347,7 +348,7 @@ async function runTrace(trace: Trace): Promise<void> {
 	}
 }
 
-async function applyAction(host: CoreHost, action: Action): Promise<void> {
+async function applyAction(host: CoreInternalTestHost, action: Action): Promise<void> {
 	switch (action) {
 		case 'add-provider':
 			host.add(LifecycleModelProvider)
@@ -384,7 +385,7 @@ async function applyAction(host: CoreHost, action: Action): Promise<void> {
 	}
 }
 
-function assertLifecycleInvariants(host: CoreHost, label: string): void {
+function assertLifecycleInvariants(host: CoreInternalTestHost, label: string): void {
 	const running = readRunningProjection(host)
 
 	for (const name of ['provider', 'required', 'optional', 'independent'] as const) {
@@ -425,7 +426,7 @@ function assertLifecycleInvariants(host: CoreHost, label: string): void {
 	}
 }
 
-function readRunningProjection(host: CoreHost): Set<NodeName> {
+function readRunningProjection(host: CoreInternalTestHost): Set<NodeName> {
 	const running = new Set<NodeName>()
 	if (host.isRunning(LifecycleModelProvider)) running.add('provider')
 	if (host.isRunning(LifecycleModelRequiredConsumer)) running.add('required')

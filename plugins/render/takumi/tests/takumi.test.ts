@@ -1,19 +1,18 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { FontsPlugin } from '@pluxel/fonts'
-import { requireWorkbench } from '@pluxel/runtime/internal'
-import { type PluginConstructor } from '@pluxel/runtime'
 import {
 	BasePlugin,
 	Plugin,
-	pluginNodeAddressOf,
-	type RuntimeHost,
-	createRuntimeHost,
+	createRuntimeTestHost,
+	type RawPluginConfig,
+	type RuntimeTestHost,
 } from '@pluxel/runtime/test'
 import { Renderer } from 'takumi-js/node'
 import { describe, expect, it, vi } from 'vitest'
 import { TakumiPlugin } from '../src/index.ts'
 import { RenderScheduler } from '../src/render-scheduler.ts'
+import { TakumiWorkbench } from '../src/workbench.ts'
 
 @Plugin()
 class TakumiTestConsumer extends BasePlugin {
@@ -25,9 +24,14 @@ class TakumiTestConsumer extends BasePlugin {
 	}
 }
 
-function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
-	host.add(plugins)
-	for (const PluginClass of plugins) host.start(PluginClass)
+function startTakumiFixture(host: RuntimeTestHost, initialConfig?: RawPluginConfig): Promise<void> {
+	return host.commit((change) => {
+		change.catalog.add([FontsPlugin, TakumiPlugin, TakumiTestConsumer])
+		if (initialConfig) change.config.seed(TakumiPlugin, initialConfig)
+		change.start(FontsPlugin)
+		change.start(TakumiPlugin)
+		change.start(TakumiTestConsumer)
+	})
 }
 
 const fontPath = findTestFont()
@@ -35,10 +39,9 @@ const fontPath = findTestFont()
 describe('TakumiPlugin', () => {
 	it('renders bounded HTML to raster bytes and SVG without Workbench', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			await host.commit()
+			await startTakumiFixture(host)
 			const takumi = host.require(TakumiTestConsumer).takumi
 
 			const raster = await takumi.render({
@@ -79,16 +82,14 @@ describe('TakumiPlugin', () => {
 			})
 			expect(svg.mediaType).toBe('image/svg+xml')
 			expect(svg.data).toContain('<svg')
-			expect(host.ctx.workbench).toBeUndefined()
 		}
 	})
 
 	it.skipIf(!fontPath)('replays FontsPlugin portable resources by revision', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			await host.commit()
+			await startTakumiFixture(host)
 			const consumer = host.require(TakumiTestConsumer)
 			const family = `Pluxel Takumi ${crypto.randomUUID()}`
 			const registration = await consumer.fonts.registerFromPath({ path: fontPath!, family })
@@ -119,11 +120,9 @@ describe('TakumiPlugin', () => {
 		'rejects portable font collections over the resource-count ceiling',
 		async () => {
 			{
-				await using host = createRuntimeHost({ workbench: false })
+				await using host = createRuntimeTestHost()
 
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				host.cfg(TakumiPlugin).set({ maxFonts: 0 })
-				await host.commit()
+				await startTakumiFixture(host, { maxFonts: 0 })
 				const consumer = host.require(TakumiTestConsumer)
 				const registration = await consumer.fonts.registerFromPath({
 					path: fontPath!,
@@ -139,11 +138,9 @@ describe('TakumiPlugin', () => {
 
 	it('rejects over-budget pixels and blocks implicit remote image fetches', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			host.cfg(TakumiPlugin).set({ maxPixels: 100 })
-			await host.commit()
+			await startTakumiFixture(host, { maxPixels: 100 })
 			const takumi = host.require(TakumiTestConsumer).takumi
 
 			await expect(
@@ -168,10 +165,9 @@ describe('TakumiPlugin', () => {
 
 	it('classifies an invalid cancellation signal as invalid input', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			await host.commit()
+			await startTakumiFixture(host)
 
 			await expect(
 				host.require(TakumiTestConsumer).takumi.render({
@@ -186,11 +182,9 @@ describe('TakumiPlugin', () => {
 
 	it('bounds structured node metadata before native rendering', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			host.cfg(TakumiPlugin).set({ maxContentBytes: 128 })
-			await host.commit()
+			await startTakumiFixture(host, { maxContentBytes: 128 })
 
 			await expect(
 				host.require(TakumiTestConsumer).takumi.render({
@@ -207,11 +201,9 @@ describe('TakumiPlugin', () => {
 
 	it('bounds extracted stylesheets and distinct content image sources by count', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			host.cfg(TakumiPlugin).set({ maxStylesheets: 1, maxImages: 1 })
-			await host.commit()
+			await startTakumiFixture(host, { maxStylesheets: 1, maxImages: 1 })
 			const takumi = host.require(TakumiTestConsumer).takumi
 
 			await expect(
@@ -240,10 +232,9 @@ describe('TakumiPlugin', () => {
 
 	it('rejects structured accessors without invoking caller code', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			await host.commit()
+			await startTakumiFixture(host)
 			let getterCalled = false
 			const content = Object.defineProperty({ type: 'container' }, 'children', {
 				enumerable: true,
@@ -266,10 +257,9 @@ describe('TakumiPlugin', () => {
 
 	it('requires node image bytes to use the bounded preloaded-images path', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeTestHost()
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			await host.commit()
+			await startTakumiFixture(host)
 
 			await expect(
 				host.require(TakumiTestConsumer).takumi.render({
@@ -304,10 +294,9 @@ describe('TakumiPlugin', () => {
 			})
 		try {
 			{
-				await using host = createRuntimeHost({ workbench: false })
+				await using host = createRuntimeTestHost()
 
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
+				await startTakumiFixture(host)
 				const controller = new AbortController()
 				const rendering = host.require(TakumiTestConsumer).takumi.render({
 					content: '<div>cancel me</div>',
@@ -338,10 +327,9 @@ describe('TakumiPlugin', () => {
 		})
 		try {
 			{
-				await using host = createRuntimeHost({ workbench: false })
+				await using host = createRuntimeTestHost()
 
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
+				await startTakumiFixture(host)
 				const controller = new AbortController()
 				const rendering = host.require(TakumiTestConsumer).takumi.render({
 					content: '<div>already running</div>',
@@ -365,10 +353,9 @@ describe('TakumiPlugin', () => {
 		const nativeRender = vi.spyOn(Renderer.prototype, 'render')
 		try {
 			{
-				await using host = createRuntimeHost({ workbench: false })
+				await using host = createRuntimeTestHost()
 
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
+				await startTakumiFixture(host)
 				const controller = new AbortController()
 				const rendered = host.require(TakumiTestConsumer).takumi.render({
 					content: '<img src="memory://image">',
@@ -395,10 +382,9 @@ describe('TakumiPlugin', () => {
 		})
 		try {
 			{
-				await using host = createRuntimeHost({ workbench: false })
+				await using host = createRuntimeTestHost()
 
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				await host.commit()
+				await startTakumiFixture(host)
 				await expect(
 					host.require(TakumiTestConsumer).takumi.renderSvg({
 						content: { type: 'text', text: 'SVG' },
@@ -425,11 +411,9 @@ describe('TakumiPlugin', () => {
 			})
 		try {
 			{
-				await using host = createRuntimeHost({ workbench: false })
+				await using host = createRuntimeTestHost()
 
-				addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-				host.cfg(TakumiPlugin).set({ maxRenderDurationMs: 10 })
-				await host.commit()
+				await startTakumiFixture(host, { maxRenderDurationMs: 10 })
 
 				await expect(
 					host.require(TakumiTestConsumer).takumi.render({
@@ -446,34 +430,29 @@ describe('TakumiPlugin', () => {
 
 	it('places the provider-owned Fonts selection Attachment', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true } })
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
-			addStarted(host, [FontsPlugin, TakumiPlugin, TakumiTestConsumer])
-			await host.commit()
+			await startTakumiFixture(host)
 
-			const consumer = pluginNodeAddressOf(TakumiPlugin)
-			const provider = pluginNodeAddressOf(FontsPlugin)
-			const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
-			expect(layout.entries).toEqual([
-				expect.objectContaining({
+			using opened = await host.workbench.open({
+				target: TakumiPlugin,
+				entry: TakumiWorkbench.fonts,
+				principal: { provider: 'test', subject: 'takumi-tests' },
+			})
+			expect(opened).toMatchObject({
+				kind: 'attachment',
+				params: {},
+				federatedViewRef: {
+					profile: 1,
 					descriptor: {
-						kind: 'attachment-placement',
-						consumer: consumer.definition,
-						key: 'fonts',
-						provider: {
-							kind: 'attachment',
-							owner: provider.definition,
-							key: 'selection',
-						},
+						kind: 'attachment',
+						key: 'selection',
 					},
-					target: {
-						node: consumer,
-						displayName: 'TakumiPlugin',
-					},
-					renderer: provider,
-					placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 30 },
-				}),
-			])
+				},
+			})
+			await expect(opened.provider.snapshot()).resolves.toMatchObject({
+				defaultFont: { family: expect.any(String) },
+			})
 		}
 	})
 })

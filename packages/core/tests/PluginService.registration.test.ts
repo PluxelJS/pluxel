@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, definePluginRef, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 @Plugin({ displayName: 'REG-B' })
 class RegistrationB extends BasePlugin {}
@@ -18,7 +19,7 @@ class RegistrationA extends BasePlugin {
 describe('PluginService registration state', () => {
 	it('fails explicitly when a raw runner bypasses semantic lowering', async () => {
 		const rawDefinePluginRef = definePluginRef
-		await withCoreHost((host) => {
+		await withCoreInternalTestHost((host) => {
 			@Plugin({ displayName: 'Raw Plugin' })
 			class RawPlugin extends BasePlugin {}
 
@@ -28,7 +29,7 @@ describe('PluginService registration state', () => {
 	})
 
 	it('updates registered plugin set across commits', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const readPluginSet = () => new Set<any>(host.plugins())
 
 			host.add([RegistrationB, RegistrationC, RegistrationA])

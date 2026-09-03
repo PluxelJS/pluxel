@@ -1952,6 +1952,9 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rates':
         specifier: workspace:*
         version: link:../rates

@@ -5,9 +5,9 @@ Pluxel 官方 Management authentication provider。它在 Workbench 唯一的 Ca
 ```ts
 import { AuthPlugin } from '@pluxel/auth'
 
-host.add(AuthPlugin)
-host.cfg(AuthPlugin).set({ mode: { type: 'password' } })
-host.start(AuthPlugin)
+await host.start(AuthPlugin, {
+	initialConfig: { mode: { type: 'password' } },
+})
 ```
 
 Host 必须安装 Management Plane。`password`、`password-totp` 与 confidential OIDC 使用 Vault；public OIDC 不保存 client secret，因此可以不安装 Vault。当前进程仍只允许一个 active Management authentication provider。
@@ -26,15 +26,17 @@ Password/TOTP challenge、session bootstrap 和 logout 都属于 control object 
 ## OIDC
 
 ```ts
-host.cfg(AuthPlugin).set({
-	mode: {
-		type: 'oidc',
-		issuer: 'https://id.example.com',
-		clientId: 'pluxel-admin',
-		publicOrigin: 'https://admin.example.com',
-		clientKind: 'public',
-		scopes: ['openid', 'profile', 'email'],
-		requiredClaims: { groups: 'pluxel-admins' },
+await host.start(AuthPlugin, {
+	initialConfig: {
+		mode: {
+			type: 'oidc',
+			issuer: 'https://id.example.com',
+			clientId: 'pluxel-admin',
+			publicOrigin: 'https://admin.example.com',
+			clientKind: 'public',
+			scopes: ['openid', 'profile', 'email'],
+			requiredClaims: { groups: 'pluxel-admins' },
+		},
 	},
 })
 ```

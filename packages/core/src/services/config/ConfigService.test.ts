@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { PluginNodeAddress } from '../../plugins/runtime/identity'
@@ -32,7 +33,7 @@ class SnapshotConfigService extends ConfigService {
 
 describe('ConfigService', () => {
 	it('injects one validated object config per Plugin node', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.cfg(P).set({ answer: 42 })
 			await host.start(P)
 			const plugin = host.require(P)
@@ -45,7 +46,7 @@ describe('ConfigService', () => {
 	})
 
 	it('clears the applied revision when the running generation stops', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			host.cfg(P).set({ answer: 42 })
 			await host.start(P)
 			const owner = host.cfg(P).owner
@@ -58,7 +59,7 @@ describe('ConfigService', () => {
 	})
 
 	it('does not bump revision for no-op patches or unsets', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const handle = host.cfg(P)
 			handle.set({ answer: 1 })
 			const first = handle.rev()
@@ -74,7 +75,7 @@ describe('ConfigService', () => {
 	})
 
 	it('clones and freezes raw nested patches so revision-bound caches cannot drift', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const handle = host.cfg(P)
 			const input = { values: ['first'] }
 			handle.set({ nested: input })
@@ -101,7 +102,7 @@ describe('ConfigService', () => {
 	})
 
 	it('rejects executable, hidden and non-portable patch data without invoking accessors', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = host.cfg(P).owner
 			const configService = requireConfigService(host.ctx)
 			let reads = 0
@@ -151,7 +152,7 @@ describe('ConfigService', () => {
 	})
 
 	it('binds a validated cache entry to both revision and candidate authority', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			let validationRuns = 0
 			const schema: StandardSchemaV1<unknown, { answer?: number }> = {
 				'~standard': {
@@ -179,7 +180,7 @@ describe('ConfigService', () => {
 	})
 
 	it('stages normalized data until durable confirmation and rejects stale publication', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = host.cfg(P).owner
 			const configService = requireConfigService(host.ctx)
 			const authority = Object.freeze({ schema: ObjectSchema })
@@ -211,7 +212,7 @@ describe('ConfigService', () => {
 	})
 
 	it('deep-freezes a normalized schema transform before generation injection', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const owner = host.cfg(P).owner
 			const configService = requireConfigService(host.ctx)
 			const schema: StandardSchemaV1<unknown, { nested: { values: string[] } }> = {
@@ -253,7 +254,7 @@ describe('ConfigService', () => {
 	})
 
 	it('stores unmaterialized fork config by canonical address without interning a Core node slot', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const definition = host.cfg(P).owner.definition
 			const owner = Object.freeze({
 				definition,

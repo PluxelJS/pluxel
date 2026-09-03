@@ -22,7 +22,7 @@ const server = await createServer({
 	cacheDir,
 	logLevel: 'silent',
 	optimizeDeps: { noDiscovery: true, include: [] },
-	plugins: dynamicRuntimeVitePlugin({ config: configPath }),
+	plugins: dynamicRuntimeVitePlugin({ entry: configPath }),
 	server: {
 		host: '127.0.0.1',
 		strictPort: false,

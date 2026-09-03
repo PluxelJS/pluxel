@@ -1,5 +1,8 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -7,7 +10,7 @@ import {
 	type PluginCatalogLayoutEntry,
 } from '../../src/services/management/PluginCatalogLayoutService'
 
-const hosts: RuntimeHost[] = []
+const hosts: RuntimeInternalTestHost[] = []
 
 afterEach(async () => {
 	await Promise.all(hosts.splice(0).map((host) => host.dispose()))
@@ -38,14 +41,14 @@ function entry(
 }
 
 function createLayout(): PluginCatalogLayoutService {
-	const host = createRuntimeHost({ workbench: false, management: true })
+	const host = createRuntimeInternalTestHost({ workbench: false, management: true })
 	hosts.push(host)
 	return host.ctx.root.pluginCatalogLayout!
 }
 
 describe('Management Plugin catalog layout', () => {
 	it('allocates no service or preference file when Management is disabled', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHost({ workbench: false })
 		hosts.push(host)
 		expect(host.ctx.root.pluginCatalogLayout).toBeUndefined()
 		await expect(
@@ -272,7 +275,7 @@ describe('Management Plugin catalog layout', () => {
 	})
 
 	it('rejects old preference versions and ignores preferences for absent definitions', async () => {
-		const legacyHost = createRuntimeHost({ workbench: false })
+		const legacyHost = createRuntimeInternalTestHost({ workbench: false })
 		hosts.push(legacyHost)
 		await legacyHost.ctx.root.persistence
 			.namespace('management')
@@ -284,7 +287,7 @@ describe('Management Plugin catalog layout', () => {
 			'preferences version must be 4',
 		)
 
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHost({ workbench: false })
 		hosts.push(host)
 		const orphan = sourceDefinition('src/orphan/index.ts', 'Orphan')
 		await host.ctx.root.persistence.namespace('management').put(

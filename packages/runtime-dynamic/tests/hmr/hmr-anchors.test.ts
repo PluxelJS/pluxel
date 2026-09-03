@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
-import { BasePlugin, Plugin } from '@pluxel/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { join } from 'pathe'
 import { requireLoaderService, requireScanService } from '../../src/context-plan'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'

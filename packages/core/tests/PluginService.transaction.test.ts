@@ -1,4 +1,5 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 
@@ -16,7 +17,7 @@ type FaultInjectableRegistry = {
 
 describe('Core Plugin transaction fail-safe', () => {
 	it('publishes graph confirmation synchronously once before lifecycle summary', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
 			let confirmations = 0
 			let published: unknown
@@ -49,7 +50,7 @@ describe('Core Plugin transaction fail-safe', () => {
 	})
 
 	it('rolls back an unexpected pre-commit failure and admits the next transaction', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx) as unknown as FaultInjectableRegistry
 			const execute = registry.executePreparedCommit
 			registry.executePreparedCommit = async () => {
@@ -68,7 +69,7 @@ describe('Core Plugin transaction fail-safe', () => {
 	})
 
 	it('commits prepared facts after the point of no return and leaves a retryable node', async () => {
-		await withCoreHost(async (host) => {
+		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx) as unknown as FaultInjectableRegistry
 			const execute = registry.executePreparedCommit
 			registry.executePreparedCommit = async (_action, _meta, onPointOfNoReturn) => {

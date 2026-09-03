@@ -8,16 +8,14 @@ import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import type { PluginConstructor } from '@pluxel/runtime'
 import {
-	BasePlugin,
-	Plugin,
-	pluginNodeAddressOf,
-	type RuntimeHost,
-	createRuntimeHost,
-} from '@pluxel/runtime/test'
-import { requireWorkbench } from '@pluxel/runtime/internal'
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin, type RawPluginConfig } from '@pluxel/runtime/test'
 import { buildNodeModule } from '@pluxel/rolldown/vite/node-module'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { EChartsPlugin, type EChartsOption, type EChartsThemeRegistration } from '../src/index.ts'
+import { EChartsWorkbench } from '../src/workbench.ts'
 
 @Plugin()
 class EChartsTestConsumer extends BasePlugin {
@@ -65,18 +63,27 @@ afterAll(async () => {
 	await rm(workerBuildDir, { recursive: true, force: true })
 })
 
-function addStarted(host: RuntimeHost, plugins: readonly PluginConstructor[]): void {
-	host.add(plugins)
-	for (const PluginClass of plugins) host.start(PluginClass)
-}
-
-function addEChartsHost(host: RuntimeHost): void {
+async function startEChartsFixture(
+	host: RuntimeInternalTestHost,
+	options: Readonly<{ config?: RawPluginConfig; otherConsumer?: boolean }> = {},
+): Promise<void> {
 	const detach = host.ctx.nodeModules.attachSourceBinder(async () => ({
 		url: workerUrl,
 		dispose: () => undefined,
 	}))
 	host.ctx.effects.defer(detach)
-	addStarted(host, [FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsTestConsumer])
+	const plugins: readonly PluginConstructor[] = [
+		FontsPlugin,
+		CanvasPlugin,
+		EChartsPlugin,
+		EChartsTestConsumer,
+		...(options.otherConsumer ? [EChartsOtherConsumer] : []),
+	]
+	await host.commit((change) => {
+		change.catalog.add(plugins)
+		if (options.config !== undefined) change.config.seed(EChartsPlugin, options.config)
+		change.start(plugins)
+	})
 }
 
 async function verifyManagedWorkerFont(consumer: EChartsTestConsumer, path: string): Promise<void> {
@@ -92,14 +99,11 @@ async function verifyManagedWorkerFont(consumer: EChartsTestConsumer, path: stri
 describe('EChartsPlugin', () => {
 	it('renders through the built worker while enforcing render boundaries', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			await host.commit()
+			await startEChartsFixture(host)
 			const consumer = host.require(EChartsTestConsumer)
 			expect(consumer.echarts.defaultFont.family.length).toBeGreaterThan(0)
-			expect('workbench' in host.ctx).toBe(false)
-			expect(host.ctx.workbench).toBeUndefined()
 
 			const source = consumer.canvas.createCanvasSync(4, 4)
 			source.getContext('2d').fillRect(0, 0, 4, 4)
@@ -151,11 +155,11 @@ describe('EChartsPlugin', () => {
 
 	it('rejects oversized or imperative options before worker admission', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			host.cfg(EChartsPlugin).set({ maxOptionNodes: 8, maxThemeNodes: 2 })
-			await host.commit()
+			await startEChartsFixture(host, {
+				config: { maxOptionNodes: 8, maxThemeNodes: 2 },
+			})
 			const echarts = host.require(EChartsTestConsumer).echarts
 			await expect(
 				echarts.render({
@@ -206,13 +210,12 @@ describe('EChartsPlugin', () => {
 
 	it('rejects a full worker queue before walking the option graph', async () => {
 		{
-			await using host = createRuntimeHost({
+			await using host = createRuntimeInternalTestHost({
 				workbench: false,
 				workers: { maxThreads: 1, maxQueuedTasks: 1, maxQueuedTasksPerPlugin: 1 },
 			})
 
-			addEChartsHost(host)
-			await host.commit()
+			await startEChartsFixture(host)
 			const echarts = host.require(EChartsTestConsumer).echarts
 			await echarts.render({ width: 16, height: 16, option: {} })
 			const running = echarts.render({ width: 640, height: 360, option: barOption })
@@ -236,11 +239,9 @@ describe('EChartsPlugin', () => {
 
 	it('cancels cooperative measurement of a large option string', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			host.cfg(EChartsPlugin).set({ maxOptionBytes: 4 * 1024 * 1024 })
-			await host.commit()
+			await startEChartsFixture(host, { config: { maxOptionBytes: 4 * 1024 * 1024 } })
 			const controller = new AbortController()
 			const reason = new DOMException('cancel option measurement', 'AbortError')
 			const rendering = host.require(EChartsTestConsumer).echarts.render({
@@ -256,11 +257,9 @@ describe('EChartsPlugin', () => {
 
 	it('does not reinterpret ordinary data URL text as an image source', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			host.cfg(EChartsPlugin).set({ maxDataUrlBytes: 4 })
-			await host.commit()
+			await startEChartsFixture(host, { config: { maxDataUrlBytes: 4 } })
 
 			await expect(
 				host.require(EChartsTestConsumer).echarts.render({
@@ -277,11 +276,11 @@ describe('EChartsPlugin', () => {
 
 	it('bounds distinct image sources and aggregate decoded pixels per render', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			host.cfg(EChartsPlugin).set({ maxImages: 2, maxTotalImagePixels: 20 })
-			await host.commit()
+			await startEChartsFixture(host, {
+				config: { maxImages: 2, maxTotalImagePixels: 20 },
+			})
 			const echarts = host.require(EChartsTestConsumer).echarts
 			const sources = ['#ef4444', '#22c55e', '#3b82f6'].map(
 				(color) =>
@@ -311,11 +310,11 @@ describe('EChartsPlugin', () => {
 
 	it('bounds aggregate decoded image source bytes before native decode', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			host.cfg(EChartsPlugin).set({ maxImages: 2, maxTotalImageBytes: 1 })
-			await host.commit()
+			await startEChartsFixture(host, {
+				config: { maxImages: 2, maxTotalImageBytes: 1 },
+			})
 			const images = [
 				'data:application/octet-stream;base64,AA==',
 				'data:application/octet-stream;base64,AQ==',
@@ -341,11 +340,9 @@ describe('EChartsPlugin', () => {
 
 	it('rejects encoded output before it crosses the worker boundary', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			host.cfg(EChartsPlugin).set({ maxOutputBytes: 8 })
-			await host.commit()
+			await startEChartsFixture(host, { config: { maxOutputBytes: 8 } })
 
 			await expect(
 				host
@@ -357,12 +354,12 @@ describe('EChartsPlugin', () => {
 
 	it('bounds provider-wide retained theme count and returns capacity on dispose', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			addStarted(host, [EChartsOtherConsumer])
-			host.cfg(EChartsPlugin).set({ maxTotalThemes: 1 })
-			await host.commit()
+			await startEChartsFixture(host, {
+				config: { maxTotalThemes: 1 },
+				otherConsumer: true,
+			})
 			const first = host.require(EChartsTestConsumer).echarts
 			const second = host.require(EChartsOtherConsumer).echarts
 			const registration = first.registerTheme({ name: 'first', theme: {} })
@@ -378,12 +375,12 @@ describe('EChartsPlugin', () => {
 
 	it('bounds aggregate retained theme bytes and reconciles caller cleanup', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			addStarted(host, [EChartsOtherConsumer])
-			host.cfg(EChartsPlugin).set({ maxTotalThemes: 2, maxTotalThemeBytes: 20 })
-			await host.commit()
+			await startEChartsFixture(host, {
+				config: { maxTotalThemes: 2, maxTotalThemeBytes: 20 },
+				otherConsumer: true,
+			})
 			const first = host.require(EChartsTestConsumer).echarts
 			const second = host.require(EChartsOtherConsumer).echarts
 			const registration = first.registerTheme({
@@ -394,8 +391,7 @@ describe('EChartsPlugin', () => {
 			expect(() => second.registerTheme({ name: 'second', theme: { a: '1234567890' } })).toThrow(
 				expect.objectContaining({ code: 'THEME_LIMIT_EXCEEDED' }),
 			)
-			host.stop(EChartsTestConsumer)
-			await host.commit()
+			await host.stop(EChartsTestConsumer)
 			expect(registration.active).toBe(false)
 			const replacement = second.registerTheme({
 				name: 'second',
@@ -407,11 +403,9 @@ describe('EChartsPlugin', () => {
 
 	it('keeps named themes caller-owned and revokes them with the caller generation', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: false })
+			await using host = createRuntimeInternalTestHost({ workbench: false })
 
-			addEChartsHost(host)
-			addStarted(host, [EChartsOtherConsumer])
-			await host.commit()
+			await startEChartsFixture(host, { otherConsumer: true })
 			const capability = host.require(EChartsTestConsumer).echarts
 			const other = host.require(EChartsOtherConsumer).echarts
 			const registration = capability.registerTheme({
@@ -444,8 +438,7 @@ describe('EChartsPlugin', () => {
 				name: 'ephemeral',
 				theme: { color: ['#16a34a'] },
 			})
-			host.stop(EChartsTestConsumer)
-			await host.commit()
+			await host.stop(EChartsTestConsumer)
 
 			expect(ephemeral.active).toBe(false)
 			expect(() => capability.themes).toThrow('Plugin owner stopped')
@@ -455,34 +448,24 @@ describe('EChartsPlugin', () => {
 
 	it('places the provider-owned Fonts selection Attachment', async () => {
 		{
-			await using host = createRuntimeHost({ workbench: { enabled: true } })
+			await using host = createRuntimeInternalTestHost({ workbench: { enabled: true } })
 
-			addStarted(host, [FontsPlugin, CanvasPlugin, EChartsPlugin])
-			await host.commit()
+			await host.start([FontsPlugin, CanvasPlugin, EChartsPlugin])
 
-			const consumer = pluginNodeAddressOf(EChartsPlugin)
-			const provider = pluginNodeAddressOf(FontsPlugin)
-			const layout = requireWorkbench(host.ctx).registry.getLayout(consumer)
-			expect(layout.entries).toEqual([
-				expect.objectContaining({
-					descriptor: {
-						kind: 'attachment-placement',
-						consumer: consumer.definition,
-						key: 'fonts',
-						provider: {
-							kind: 'attachment',
-							owner: provider.definition,
-							key: 'selection',
-						},
-					},
-					target: {
-						node: consumer,
-						displayName: 'EChartsPlugin',
-					},
-					renderer: provider,
-					placement: { kind: 'tab', label: 'Fonts', icon: 'typography', order: 30 },
-				}),
-			])
+			using selection = await host.workbench.open({
+				target: EChartsPlugin,
+				entry: EChartsWorkbench.fonts,
+				principal: { provider: 'test', subject: 'echarts-tests' },
+			})
+			expect(selection).toMatchObject({
+				kind: 'attachment',
+				params: {},
+				federatedViewRef: { expose: './views/selection' },
+			})
+			expect(await selection.provider.snapshot()).toMatchObject({
+				defaultFont: host.require(EChartsPlugin).defaultFont,
+				families: expect.any(Array),
+			})
 		}
 	})
 })

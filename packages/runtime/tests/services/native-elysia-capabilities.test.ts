@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, createRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { Elysia, t } from 'elysia'
 import { describe, expect, it } from 'vitest'
 
@@ -66,23 +66,22 @@ class NativeElysiaIsolationB extends BasePlugin {
 describe('native Elysia authoring capability', () => {
 	it('preserves function plugins, async modules, context, schemas, errors and mounts', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			host.add(NativeElysiaCapabilities).start(NativeElysiaCapabilities)
-			await host.commit()
+			await host.start(NativeElysiaCapabilities)
 
 			await expect(
-				host
+				host.http
 					.fetch(new Request('http://local/native-capabilities/function-plugin'))
 					.then((response) => response.text()),
 			).resolves.toBe('function-plugin')
 			await expect(
-				host
+				host.http
 					.fetch(new Request('http://local/native-capabilities/lazy/42'))
 					.then((response) => response.text()),
 			).resolves.toBe('42')
 
-			const context = await host.fetch(
+			const context = await host.http.fetch(
 				new Request('http://local/native-capabilities/context', {
 					headers: { 'x-marker': 'native' },
 				}),
@@ -92,7 +91,7 @@ describe('native Elysia authoring capability', () => {
 				requestMarker: 'native',
 			})
 
-			const valid = await host.fetch(
+			const valid = await host.http.fetch(
 				new Request('http://local/native-capabilities/schema', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
@@ -102,7 +101,7 @@ describe('native Elysia authoring capability', () => {
 			expect(valid.status).toBe(201)
 			expect(await valid.json()).toEqual({ value: 'accepted' })
 
-			const invalid = await host.fetch(
+			const invalid = await host.http.fetch(
 				new Request('http://local/native-capabilities/schema', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
@@ -111,11 +110,13 @@ describe('native Elysia authoring capability', () => {
 			)
 			expect(invalid.status).toBe(422)
 
-			const mappedError = await host.fetch(new Request('http://local/native-capabilities/error'))
+			const mappedError = await host.http.fetch(
+				new Request('http://local/native-capabilities/error'),
+			)
 			expect(mappedError.status).toBe(418)
 			expect(await mappedError.text()).toBe('mapped-native-error')
 
-			const mounted = await host.fetch(
+			const mounted = await host.http.fetch(
 				new Request('http://local/native-capabilities/mounted/child'),
 			)
 			expect(await mounted.json()).toEqual({ pathname: '/child' })
@@ -124,22 +125,17 @@ describe('native Elysia authoring capability', () => {
 
 	it('keeps decorators and hooks local to each generation application', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeTestHost()
 
-			host.add([NativeElysiaIsolationA, NativeElysiaIsolationB])
-			host.cfg(NativeElysiaIsolationA).setAutoStart(true)
-			host.start(NativeElysiaIsolationA)
-			host.cfg(NativeElysiaIsolationB).setAutoStart(true)
-			host.start(NativeElysiaIsolationB)
-			await host.commit()
+			await host.start([NativeElysiaIsolationA, NativeElysiaIsolationB])
 
 			await expect(
-				host
+				host.http
 					.fetch(new Request('http://local/native-isolation/a'))
 					.then((response) => response.text()),
 			).resolves.toBe('a')
 			await expect(
-				host
+				host.http
 					.fetch(new Request('http://local/native-isolation/b'))
 					.then((response) => response.text()),
 			).resolves.toBe('b')
