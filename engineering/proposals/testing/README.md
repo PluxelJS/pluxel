@@ -1,6 +1,6 @@
 # Testing API redesign proposals
 
-> 状态：研究中。这里的内容尚未实现，也不是当前 API 权威。当前测试方式仍以
+> 状态：设计已冻结，尚未实现。这里的内容不是当前 API 权威；当前测试方式仍以
 > [`../../../docs/development/testing.md`](../../../docs/development/testing.md) 为准。
 
 这个目录集中记录 Pluxel test API 的重新设计。目标不是给现有测试 helper 逐个增加 alias，而是让 Plugin 作者和
@@ -56,18 +56,63 @@ API 一致性不等于抹平测试边界。重新设计仍应区分：
 - [`RUNTIME_SURFACE_ALIGNMENT.md`](RUNTIME_SURFACE_ALIGNMENT.md)：定义通用 test host、static application test 与 dynamic Runtime 应共享的
   ready/disposal/driver vocabulary，并明确拒绝为表面对称建立万能 host 或额外 static launcher。
 
-## 后续议题
+## 实施 package map
 
-后续提案应分别回答问题，不在第一个 helper 中预留未经证明的抽象：
+实现不得为了 import 方便跨 package 重复 export host 或 matcher：
 
-- internal Core/Runtime test harness 的最终 subpath 与非稳定性标注；public host 已选择只保留 explicit disposable factory；
+| Entry                                  | 唯一职责                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| `@pluxel/core/test`                    | runner-neutral `createCoreTestHost()`、Core types 与同一 fork ref factory |
+| `@pluxel/runtime/test`                 | runner-neutral `createRuntimeTestHost()`、Runtime drivers、local RPC      |
+| `@pluxel/runtime-static/test`          | `startStaticRuntimeTestHost()`，组合 Runtime driver facades               |
+| `@pluxel/test/vitest`                  | Vitest/Vite preset、matcher registration 与 module augmentation           |
+| `@pluxel/test/fixtures`                | filesystem fixture utilities，与 Plugin host 无关                         |
+| `@pluxel/test/unsafe`                  | 显式构造 synthetic lowering/replacement facts；不由 host 自动调用         |
+| `@pluxel/core/internal/test`           | Core framework white-box harness；不稳定 internal contract                |
+| `@pluxel/runtime/internal/test`        | Runtime framework white-box harness；不稳定 internal contract             |
+| `@pluxel/runtime-static/internal/test` | raw static startup/HMR commit facts；不从 public/test entry export        |
+| `@pluxel/runtime-dynamic`              | production `startDynamicDevRuntime()`；不存在 dynamic test launcher       |
+
+`@pluxel/test` 根入口不再 re-export Core/Runtime host，旧 `createHost/withHost` 随 breaking migration 删除。Plugin test 从所验证的最小
+package 导入 host；使用 `definePluxelVitestConfig` 的项目由 preset setup 自动注册 matcher，不要求每个 test file 再做 side-effect import。
+包含 matcher 的 TypeScript 项目把 `vitest.config.ts` 纳入 `tsconfig.include`，让同一个 preset import 提供 module augmentation；runner-neutral
+host package 不依赖 Vitest。
+
+Core 定义共享的 `PluginForkRef`、`definePluginFork`、lifecycle failure summary 与 `PluginLifecycleAssertionError`；Runtime test entry 可以
+re-export **同一个 symbol/type**，让 Runtime test 从单一 package import。这里允许 ownership-preserving re-export，但不允许重新实现、重新 brand
+或把 Core/Runtime host 从 `@pluxel/test` 聚合导出。
+
+## Prototype gates
+
+Public surface 已按上述文档收口。下面只允许验证实现可行性，不为它们预留新的 author API：
+
 - Plugin fork 未来的产品删除决策；本次 test v2 已选择暂时保留并使用无 mutation typed ref；
-- external HTTP/database/worker/clock fixture 的最小标准 seam；
-- 各 domain 已有 cancellation/deadline 是否足够覆盖长任务，哪些地方仍缺少可注入 clock 或 readiness seam；
-- static artifact integration 与 dynamic dev server 在真实调用点中是否出现足够相同的 lease contract，值得提取 carrier-neutral 命名；
-- callback-scoped commit、teardown 聚合与 diagnostics 的 prototype 是否能保持已有 structured failure facts。
+- callback draft 的 runtime escape guard 与 Core/Runtime conflict algebra 能否共享 implementation；
+- Workbench local RPC capability transfer/dup 与 leaked-child diagnostics 能否无损 teardown；
+- concurrent mutation/query/dispose 能否遵守 fail-fast、settlement 与 aggregate failure contract；
+- Vitest matcher receiver validation和 module augmentation 能否只由 preset 提供且不污染 runner-neutral packages；
+- representative migrations 是否发现当前 surface 无法表达的真实 author behavior。
 
-只有真实调用点和重复样板证明需求后，才为这些议题增加公共 surface。
+external HTTP、database、worker 与 clock 继续使用各 domain 的 production seam；static/dynamic physical smoke 继续使用各自 production launcher。
+prototype 不得顺手增加 global fake clock、backend admin、carrier-neutral lease、Node test host 或其他“以后可能有用”的 public surface。只有至少两个
+真实 author 调用点或一个不可替代的 correctness boundary 才能重新打开 API review。
+
+## 实施顺序与 zero gate
+
+按依赖方向落地，避免迁移期用临时 alias 粘合：
+
+1. 在 Core 建立 shared target/fork/failure/error 与 callback draft primitive，再实现 Core author host 和 internal harness；
+2. Runtime 组合 Core primitive，实现 session lifecycle、config/HTTP/commands drivers、capability defaults 与 internal harness；
+3. `@pluxel/test/vitest` 注册唯一 matcher，完成 augmentation/type fixture，再迁移 expected-failure calls；
+4. 实现 Workbench/local RPC lease，先迁移 S3、Fonts 等已存在的重复 wiring；
+5. 用共享 Runtime driver facade 实现 `startStaticRuntimeTestHost()`，把 raw static commit report移入 internal；
+6. 最后重构 production dynamic launcher 与 static/dynamic Vite `{ entry }`，用 physical conformance 验证没有第二套 boot path；
+7. 全量迁移 packages/plugins/projects/templates/docs，添加各受影响 public package 的 pending Tegami major changelog。
+
+合并前用 `rg` 和 package export/type tests 保证以下旧 public symbols/形状为零：`createHost/withHost`、`createRuntimeHost/withRuntimeHost`、
+`createStaticRuntimeTestHost`、`openRuntimeSessionTestConnection`、`createDynamicDevRuntime`、无 target 的 resource `.start()/.stop()`、无 callback
+的 staged `commit()/commitAllowFail()`、`cfg()`、mutable `host.fork()`、`assert/findPluginLifecycleIssue` 与 dynamic Vite `{ config }`。internal
+implementation 的同名 production transaction 不计入 gate，必须按 import path/receiver type 精确检查，不能用会误报的纯文本删除。
 
 ## 提案完成规则
 

@@ -1,7 +1,8 @@
 # Composable Plugin test host API
 
-> 状态：总体候选设计，尚未采纳或实现。本文会影响 public test API、资源生命周期与测试教程；实现前仍需 prototype、调用点迁移
-> 和独立 API review。当前行为以 [`../../../docs/development/testing.md`](../../../docs/development/testing.md) 为准。
+> 状态：设计已冻结，尚未实现。本文会影响 public test API、资源生命周期与测试教程；prototype 只验证
+> 实现可行性，只有 correctness blocker 或代表性迁移的反证才能重开 public surface。当前行为仍以
+> [`../../../docs/development/testing.md`](../../../docs/development/testing.md) 为准。
 
 ## 决策问题
 
@@ -22,7 +23,7 @@ session intent、config record 和 durable policy，但多数 Plugin 测试只�
 
 > 用这份 config 和这些可用 provider 启动目标 Plugin，并在成功后取得运行实例。
 
-候选结论是：
+冻结结论是：
 
 1. test host 保留产品语义，但不要求普通测试手工编排内部 reconciliation 步骤；
 2. Runtime 高频行为使用立即执行并等待稳定的 `host.start/stop/restart()`；Core 使用诚实的
@@ -117,7 +118,7 @@ Workbench RPC writes credential to Vault
 public API 不出现第六种“有时 staging、有时立即执行”的 method。同一个 receiver 上，返回 `Promise` 的 lifecycle command 已稳定；
 `change` 上返回 `undefined` 的 command 只属于外层 commit。这条语法必须在 type tests 中固定。
 
-## 候选 public surface 一览
+## 冻结的 public surface 一览
 
 除非 prototype 的真实迁移矩阵给出反证，最终 author-facing surface 固定为：
 
@@ -128,7 +129,7 @@ public API 不出现第六种“有时 staging、有时立即执行”的 method
 | `createRuntimeTestHost()`  | 返回 async-disposable `RuntimeTestHost`                                          | callback lifetime wrapper、physical listener                     |
 | Runtime host 顶层          | `start/stop/restart/replaceDefinition/commit/commitExpectFail/require/isRunning` | staged mutation、`add/remove/fork`、重建的 `status`              |
 | `runtimeHost.config`       | `patch`                                                                          | raw ConfigService、field-path UI protocol、test-only `reset/set` |
-| `runtimeHost.http`         | `fetch`                                                                          | WebSocket Upgrade、通用 RPC codec                                |
+| `runtimeHost.http`         | `origin/fetch`                                                                   | WebSocket Upgrade、通用 RPC codec                                |
 | `runtimeHost.commands`     | `execute/list`                                                                   | `register/createMount`                                           |
 | `runtimeHost.workbench`    | `open`                                                                           | UI action、registry、transport mode                              |
 | Plugin database assertion  | owner-bound `PluginDatabaseHandle.read()`                                        | `host.database`、raw PGlite/backend admin                        |
@@ -143,14 +144,14 @@ public API 不出现第六种“有时 staging、有时立即执行”的 method
 
 测试 API 的简洁不能删除以下产品事实：
 
-| 概念                      | 含义                                                    | 候选 test API                                     |
-| ------------------------- | ------------------------------------------------------- | ------------------------------------------------- |
-| catalog availability      | host 是否拥有某个 concrete implementation candidate     | advanced change 的 `catalog.add/remove`           |
-| session intent            | 本次进程明确希望 node running/stopped                   | `host.start/stop`；advanced `change.start/stop`   |
-| durable auto-start policy | 下次 cold boot 是否自动希望 node running                | framework internal harness                        |
-| actual lifecycle          | 当前 generation 是否 running、failed、blocked、draining | `host.isRunning/require` 与原始 commit summary    |
-| desired Plugin config     | 已保存、等待或已经应用的 raw record/revision            | fixture `initialConfig`；live `host.config.patch` |
-| applied Plugin config     | 当前 generation 已确认的 snapshot/revision              | config result 与 Plugin public behavior           |
+| 概念                      | 含义                                                    | test API                                              |
+| ------------------------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| catalog availability      | host 是否拥有某个 concrete implementation candidate     | advanced change 的 `catalog.add/remove`               |
+| session intent            | 本次进程明确希望 node running/stopped                   | `host.start/stop`；advanced `change.start/stop`       |
+| durable auto-start policy | 下次 cold boot 是否自动希望 node running                | framework internal harness                            |
+| actual lifecycle          | 当前 generation 是否 running、failed、blocked、draining | `host.isRunning/require` 与 slot-free failure summary |
+| desired Plugin config     | 已保存、等待或已经应用的 raw record/revision            | fixture `initialConfig`；live `host.config.patch`     |
+| applied Plugin config     | 当前 generation 已确认的 snapshot/revision              | config result 与 Plugin public behavior               |
 
 因此不提供：
 
@@ -165,13 +166,13 @@ public author `change` 也不提供 `policy.setAutoStart()`。当前真实调用
 framework tests；Plugin 不拥有自己的 durable launch policy。相关测试进入 Runtime internal harness，普通 Plugin 测试只表达本进程
 `start/stop`。这也让“public `start()` 永不修改 auto-start policy”成为更容易验证的单向边界。
 
-## 候选 Runtime API
+## 冻结的 Runtime API
 
 Plugin lifecycle 改为 host 顶层主能力，不再经过 `plugins` namespace。`createRuntimeTestHost()` 创建的就是 Plugin Runtime test
 host；对它而言 `start(Plugin)` 不是次级 driver，而是最高频的核心行为。在每个 lifecycle assertion 前重复 `plugins.` 虽然在
 领域归属上能辩护，但没有为 caller 增加新的决策信息。
 
-候选分层因此是：
+分层因此是：
 
 - 顶层只放 Plugin world 的核心 fixture/lifecycle/query：`start/stop/restart/replaceDefinition/commit/require/isRunning`；
 - 二级 driver 保留领域 namespace：`config.patch`、`http.fetch`、`commands.execute`、`workbench.open`；
@@ -192,7 +193,7 @@ import { createRuntimeTestHost } from '@pluxel/runtime/test'
 await using host = createRuntimeTestHost()
 ```
 
-候选 host 实现 `AsyncDisposable`，并保留显式 `dispose()` 作为同一幂等 operation。最终 public surface 只保留
+host 实现 `AsyncDisposable`，并保留显式 `dispose()` 作为同一幂等 operation。最终 public surface 只保留
 `createCoreTestHost()` / `createRuntimeTestHost()`；删除 `withHost()`、`withRuntimeHost()`、旧 `createHost()` 与
 `createRuntimeHost()`，不留下两种 lifetime 教程或 compatibility alias。仓库已经使用 explicit resource management，嵌套 callback wrapper
 不再提供独立价值。
@@ -203,8 +204,8 @@ operation 仍返回 Promise。`AsyncDisposable` 描述 teardown，而不意味�
 
 ### Capability 默认值逐项保持真实
 
-Runtime capability 不是同一种开关，不能为了 options 外观整齐而统一成“全部默认关闭”。候选 test host 接受一个
-`RuntimeTestHostConfig` 对象，复用 production config value；不再接受第二个包含 internal root seam 的 public options 参数。候选 config 只投影
+Runtime capability 不是同一种开关，不能为了 options 外观整齐而统一成“全部默认关闭”。test host 接受一个
+`RuntimeTestHostConfig` 对象，复用 production config value；不再接受第二个包含 internal root seam 的 public options 参数。config 只投影
 Plugin 作者确实需要的 `name/logger/events/plugins/persistence/database/workers/management/workbench/vault`；`configService/runtimeState` snapshot、
 route capability installation、request address、artifact resolver 等进入 internal/specialized host。默认固定为：
 
@@ -221,6 +222,10 @@ test world 自身的 control/config/runtime-state store 始终是每 host 隔离
 authority 的实现资源，不是 Plugin capability。`persistence` 未传时则显式规范化为 production 已支持的 `{ mode: 'memory' }`，避免 implicit-memory
 warning，同时保持真实 namespace、flush、revision 和 writable semantics；调用方传入 production `persistence` config 时原样覆盖。factory 不读取或
 复用进程级默认目录，因此两个 test host 不得共享隐式状态。
+
+host disposal 只关闭自己取得的 service/connection，不删除调用方显式传入的 persistence path、Postgres database 或其他 durable data。需要磁盘
+隔离时由 `@pluxel/test/fixtures` 创建并拥有临时目录；需要 database cleanup 时由具体 integration fixture 管理。`dispose()` 不能因“这是测试”就
+把 caller-owned backend 当成可递归删除的资源。
 
 测试只为真正 optional 的能力明确开启所需项：
 
@@ -261,7 +266,7 @@ const worker = await host.start(WorkerPlugin, {
 2. seed 目标 node 的 initial raw config（若提供）；
 3. 为目标 node 添加本进程 `running` session intent；
 4. 提交一次 strict reconciliation 并等待稳定；
-5. start failure 时抛出携带原始 summary 的 `PluginLifecycleAssertionError`；
+5. start failure 时抛出携带 slot-free lifecycle failure projection 的 `PluginLifecycleAssertionError`；
 6. 成功时返回当前运行 instance。
 
 它明确**不**设置 auto-start policy。test host disposal 仍停止完整 dependency closure。
@@ -306,18 +311,34 @@ const consumer = await host.start(ConsumerPlugin, {
 
 `catalog` 表示“这些 implementation 在 host 中可用”，不是重复声明 dependency。真实 dependency edge 仍只来自 constructor lowering；
 Core graph 根据 Consumer 的 required edge 启动 Provider。使用 `dependencies`、`providers` 或 `with` 会误导调用方以为 test API 在声明或
-覆盖 dependency，因此候选名称选择 `catalog`。
+覆盖 dependency，因此名称选择 `catalog`。
 
-候选签名：
+冻结签名：
 
 ```ts
 type RawPluginConfig = Readonly<Record<string, unknown>>
 
-type LifecycleFailureCommitSummary = Omit<CommitSummary, 'lifecycleReport'> &
+type PluginTestLifecycleIssue = Readonly<{
+	plugin: PluginNodeAddress
+	phase: PluginLifecycleIssuePhase
+	kind: PluginLifecycleIssueKind
+	message: string
+	error?: PluginLifecycleErrorInfo
+	blockedBy?: PluginNodeAddress
+}>
+
+type PluginTestCommitSummary = Readonly<{
+	lifecycleReport: Readonly<{
+		ok: boolean
+		issues: readonly PluginTestLifecycleIssue[]
+	}>
+}>
+
+type LifecycleFailureCommitSummary = PluginTestCommitSummary &
 	Readonly<{
 		lifecycleReport: Readonly<{
 			ok: false
-			issues: readonly [PluginLifecycleIssue, ...PluginLifecycleIssue[]]
+			issues: readonly [PluginTestLifecycleIssue, ...PluginTestLifecycleIssue[]]
 		}>
 	}>
 
@@ -374,11 +395,12 @@ type RuntimePluginBatchStartOptions = Readonly<{
 	catalog?: readonly PluginConstructor[]
 }>
 
-interface RuntimeConfigTestDriver {
-	patch(target: PluginTestTarget, patch: RawPluginConfig): Promise<PluginConfigResult>
+interface RuntimeConfigTestDriver<TTarget extends PluginTestTarget = PluginTestTarget> {
+	patch(target: TTarget, patch: RawPluginConfig): Promise<PluginConfigResult>
 }
 
 interface RuntimeHttpTestDriver {
+	readonly origin: string
 	fetch(input: Request | URL | string, init?: RequestInit): Promise<Response>
 }
 
@@ -428,6 +450,10 @@ type RuntimeTestHostConfig = Pick<
 
 declare function createRuntimeTestHost(config?: RuntimeTestHostConfig): RuntimeTestHost
 ```
+
+这里继承的 `config.plugins` 是 production `PluginServiceConfig`（`startTimeoutMs/drainTimeoutMs/startConcurrency/stopConcurrency`），不是 Plugin
+constructor list 或 catalog seed。类型文档必须直接写出这一点；candidate availability 仍只有 `start(..., { catalog })` 与对应 draft command。
+不要为了消除字段重名在 test API 中另造 `lifecycle` alias。
 
 单个 constructor/fork ref 返回精确 instance；target array 表示同一次 Runtime session commit 中的多个 explicit roots，并按输入顺序返回 readonly
 typed tuple。空 array、重复 root 在 validate 阶段拒绝。这个 overload 有真实 workspace helper 作为证据，不扩展成 `startAll()` 平行词汇。
@@ -510,6 +536,20 @@ await host.replaceDefinition(WorkerPlugin, WorkerPluginV2)
 - 方法返回的 Promise resolve 时，operation 已稳定且 cleanup 已 settle 或进入结构化 drain report；
 - host driver 不提供同步 staged versions，因此调用后忘记 commit 不会产生“断言旧状态但测试仍通过”的错误。
 
+`replaceDefinition(Current, Next)` 不会把任意 `Next` constructor 偷偷改写为 `Current` 的 canonical identity。真实 loader/HMR test 通过 source
+重新求值得到 replacement facts；只测试 lifecycle replacement 的 synthetic fixture 显式声明：
+
+```ts
+import { lowerTestReplacement } from '@pluxel/test/unsafe'
+
+lowerTestReplacement(Current, Next)
+await host.replaceDefinition(Current, Next)
+```
+
+这个 helper 必须在 replacement command 前执行，并验证 Next 的 dependency/config lowering facts；它不由 host 自动调用，也不从
+`@pluxel/core/test`、`@pluxel/runtime/test` re-export。coding agent 因此能看出测试正在伪造一次 module evaluation，而普通 replacement API
+仍保持 production identity guard。
+
 catalog removal 是较低频且语义不同的操作，不使用顶层 `remove()` 模糊 stop 与 unavailable。它进入 advanced change：
 
 ```ts
@@ -543,7 +583,10 @@ callback 是同步、短生命周期的 draft authority：
 - callback throw 时整个 draft rollback；
 - operation 完成前另一项 host mutation 立即失败，不在隐藏 queue 中等待；
 - public target 只接受 constructor/`PluginForkRef`，不接受 display name、address 或手写 key；
-- strict commit 成功只返回完成信号；预期 lifecycle failure 的 commit 返回生产 summary。
+- strict commit 成功只返回完成信号；预期 lifecycle failure 的 commit 返回 slot-free、结构化的 production report projection。
+
+第二项 mutation 的 concurrency error 应根据调用形状建议 batch `start([A, B])` 或 callback `commit()`；不能只报告“busy”，迫使 coding agent
+猜正确组合方式。`Promise.all([host.start(A), host.start(B)])` 明确无效，因为哪个 operation 先取得 authority 不应决定 test graph。
 
 `change` 与 host 共享核心 command vocabulary，但不伪装成同一种执行对象：
 
@@ -562,15 +605,25 @@ await host.commit((change) => {
 - `catalog/config/forks/dependencies` 只保留 author 高级变化所需的正交领域命令，不迫使常见 lifecycle 改写成
   `change.session.start()`。
 
-mutation exclusivity 只约束 fixture authority；HTTP/RPC/command 等已开始或并发进入的 inbound work 继续遵循真实 generation admission、drain
-与 cancellation 语义。需要精确操纵 reconciliation 内部阶段的测试属于 framework internal harness。
+mutation exclusivity 覆盖所有直接的 author-side host state command：顶层 lifecycle/commit 与 `host.config.patch()` 共享一个 fail-fast gate。
+`Promise.all([host.config.patch(...), host.restart(...)])` 没有稳定顺序，必须写成两个明确 awaited operations。HTTP/RPC/command 等已开始或并发
+进入的 inbound work 继续遵循真实 generation admission、drain 与 cancellation 语义；通过这些产品入口触发的领域工作不被 test gate 改写。
+需要精确操纵 reconciliation 内部阶段的测试属于 framework internal harness。
 
-候选类型使用 `callback: (change) => undefined`，而不是 TypeScript 宽松的 `=> void`，使 `async` callback 和意外 return 优先在编辑器报错。
+同步 `require()/isRunning()` 在 mutation 进行中同样 fail-fast；不能返回 operation 开始前的 committed snapshot，让 caller 误以为它观察到
+刚提交的结果。mutation Promise resolve 后 query 才重新可用。driver/inbound work 不受这条 fixture query lock 约束，它们继续观察生产
+generation admission 语义。
+
+冻结类型使用 `callback: (change) => undefined`，而不是 TypeScript 宽松的 `=> void`，使 `async` callback 和意外 return 优先在编辑器报错。
 draft command 同样声明返回 `undefined`，因此 block callback 和 `change => change.start(A)` 都可以 typecheck；若声明为 `void`，后者会与
 callback return contract 冲突。
 JavaScript、`any` 或显式 cast 仍可绕过类型，因此 runtime 也必须检查 callback return；任何非 `undefined` 结果（包括 thenable）都 rollback 并
 抛出明确 programming error。callback 退出时立刻把 draft authority 标为 inactive，任何被保存到外部后调用的方法都必须 fail-fast。正确性
 不能只依赖类型或文档约定。
+
+若返回 thenable，implementation 在同步标记 draft inactive 和 rollback 后必须附加 rejection observer，避免被禁止的 async callback 稍后形成
+unhandled rejection；outer `commit()` 仍立即以“callback must be synchronous” programming error reject，不等待或执行 thenable 作为第二种
+commit path。async continuation 对 draft 的调用只会得到 inactive-authority error。
 
 完全没有 command 的 `commit(() => {})`，以及任何接收 empty target array 的 command，在 prepare 前作为 programming error 拒绝。新 API 不把 empty
 commit 保留为“再 reconcile 一次”的隐式指令；failed target 使用显式 `start(target)` retry，running target 使用 `restart(target)`。一个有效
@@ -618,7 +671,7 @@ await host.commit()
 
 它让 mutation boundary 隐藏在任意测试语句之间，也让忘记 `commit()` 成为合法但无效的测试。
 
-候选 draft surface：
+冻结的 draft surface：
 
 ```ts
 interface RuntimePluginTestChange {
@@ -664,15 +717,18 @@ const failure = await host.commitExpectFail((change) => {
 })
 ```
 
-`commit()` 是 strict 路径；`commitExpectFail()` 要求 reconciliation 产生至少一个 lifecycle failed/blocked/drain issue，然后将其作为
-`CommitSummary` 返回。这包含已归属到 Plugin generation 的 `resolve-failed/config-failed/start-failed/blocked/drain` issue。它仍然对
-callback programming error、invalid graph、fixture config input validation 与 persistence commit failure 抛错，也不改变 apply、rollback 或 report 内容。
+`commit()` 是 strict 路径；`commitExpectFail()` 要求 reconciliation 产生至少一个 lifecycle failed/blocked/drain issue，然后返回
+`LifecycleFailureCommitSummary`。它包含已归属到 Plugin generation 的 `resolve-failed/config-failed/start-failed/dependency-blocked/drain-failed`
+issue。它仍然对
+callback programming error、invalid graph、fixture config input validation 与 persistence commit failure 抛错，也不改变 apply、rollback 或
+underlying production report；projection 只发生在 author-facing return boundary。
 
 如果 commit 完全成功，helper 以 assertion error reject，防止预期失败的测试因忘记检查 summary 而假通过。
 `commit()` 成功只返回 `void`：author 测试没有检查 reconciliation planning facts 的稳定需求，返回 `pluginChanges` 还会重新暴露
-`PluginNodeSlot`。`commitExpectFail()` 返回的 `LifecycleFailureCommitSummary` 固定 `ok: false` 和 non-empty issues tuple，因为 failure facts
-正是该操作的测试目标。不再把控制流差异藏在 options object 或仅靠文档解释。Core/Runtime framework tests 若需检查 successful commit 的
-restart/availability delta，使用 internal harness 取得完整 production summary。
+`PluginNodeSlot`。`commitExpectFail()` 返回的 `LifecycleFailureCommitSummary` 固定 `ok: false` 和 non-empty issues tuple，并把 issue 的
+`plugin/blockedBy` 从 internal slot 投影为 frozen canonical `PluginNodeAddress`。它不包含 `pluginChanges/runtimeUpdate`，因为 failure facts 才是该操作
+的测试目标。不再把控制流差异藏在 options object 或仅靠文档解释。Core/Runtime framework tests 若需检查 successful/failed commit 的
+restart/availability delta 或 raw slots，使用 internal harness 取得完整 production summary。
 
 ### Live config 使用 production mutation
 
@@ -721,7 +777,7 @@ test driver 才镜像同一 operation。
 
 ## Core host 使用自己的真实动词
 
-Core 没有 session intent；只要 node 在 graph 中，它就是 lifecycle planning 的一部分。因此 `@pluxel/test` 不提供会伪装 session 的
+Core 没有 session intent；只要 node 在 graph 中，它就是 lifecycle planning 的一部分。因此 `@pluxel/core/test` 不提供会伪装 session 的
 `start/stop()`，而使用立即完成的 `add/remove()`：
 
 ```ts
@@ -742,7 +798,7 @@ await host.commit((change) => {
 })
 ```
 
-候选签名与 Runtime 的差异直接出现在类型上：
+冻结签名与 Runtime 的差异直接出现在类型上：
 
 ```ts
 type CorePluginAddOptions = PluginInitialConfigOptions
@@ -789,7 +845,9 @@ interface CorePluginTestChange {
 }
 ```
 
-候选 Core draft 以同步 `add/remove/restart/replaceDefinition` 共享 host 命令词汇，只额外提供 `config.patch` 与
+Core 的 `config.plugins` 同样只是 `PluginServiceConfig` lifecycle executor tuning，不是 initial graph。Core graph 仍只由 `add()`/draft `add()` 建立。
+
+Core draft 以同步 `add/remove/restart/replaceDefinition` 共享 host 命令词汇，只额外提供 `config.patch` 与
 `dependencies.setDefault/setOverride`。Core 没有 catalog、session intent、
 durable auto-start policy、Runtime persistence 或 Management config mutation，因此不得为了 API 外观加入空实现。
 
@@ -820,10 +878,11 @@ host.isRunning(Plugin) // boolean convenience
 也不新增一个从多个内部来源重建的 `status()` snapshot。即时问题“现在是否 running”由 `isRunning()` 回答；failed/blocked/drain 的因果证据属于
 `commitExpectFail()` 返回值或 `PluginLifecycleAssertionError.summary`。这避免 caller 拿一个脱离 commit 边界、可能已经 stale 的简化状态猜原因。
 
-Core/Runtime 自身需要 root authority 的测试迁移到明确 internal 的 test harness（候选 subpath：`@pluxel/core/test/internal`、
-`@pluxel/runtime/test/internal`）。该 harness 可以暴露 root context、raw service、staged transaction 和 failure injection，但不被
+Core/Runtime 自身需要 root authority 的测试迁移到明确 internal 的 test harness：`@pluxel/core/internal/test` 与
+`@pluxel/runtime/internal/test`。该 harness 可以暴露 root context、raw service、staged transaction 和 failure injection，但不被
 `@pluxel/test`、`@pluxel/runtime/test` 主入口 re-export，也不进入 Plugin 作者文档。跨 package 的 framework conformance fixture 也依赖这个
-internal contract，而不是迫使所有 Plugin 作者得到 service locator。
+internal contract，而不是迫使所有 Plugin 作者得到 service locator。两个 subpath 明确是 framework-internal、无独立 semver guarantee；跨 package
+使用仍必须由 workspace typecheck/conformance 覆盖，不能退回相对路径穿越 package boundary。
 
 这不是减少测试能力：它让 author API 优化“验证 Plugin 行为”，让 framework harness 优化“验证 Runtime 实现”，两边都不再背负另一边的
 偶然调用模式。
@@ -850,12 +909,19 @@ host.isRunning(...)
 ### HTTP
 
 ```ts
-const response = await host.http.fetch(new Request('http://local.test/orders/42'))
+const response = await host.http.fetch(new Request(new URL('/orders/42', host.http.origin)))
 ```
 
 它提供标准 Fetch-like `(input: Request | URL | string, init?: RequestInit) => Promise<Response>` 签名，string 必须是 absolute URL，因此可以直接注入
 Plugin 自己的 HTTP/RPC client。driver 总是返回 Promise，不暴露当前 Elysia dispatcher 偶尔同步返回的实现差异，也不保留 `env/ctx` 测试后门。
-它仍经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口。`http` namespace 初始实现只包含 `fetch()`。
+它仍经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口。`origin` 是 immutable normalized string，固定为 logical
+`http://local.test`；它不是可连接的 listener address，也不接受 test option。需要 Host/Origin admission 特例时向 `fetch()` 传自己的 absolute URL。
+`http` namespace 初始实现只包含 `origin/fetch`。
+
+driver 必须保留 Response body lifecycle：body consume/close/cancel 前，对应 request 仍可能持有 generation admission。host 追踪未结束的 returned
+body，并在 host disposal 时 best-effort cancel；这类没有显式 disposable handle 的 body 不计为 leaked child lease，cancel failure 仍进入 teardown
+aggregate。测试 streaming、client abort 或 stop/drain 时应显式消费 body，或调用 `await response.body?.cancel()`/中止原 Request signal，不能靠
+host 最终 disposal 代替被测行为。
 
 WebSocket 不进入这个 driver，因为它需要真实 Upgrade/carrier。
 
@@ -999,13 +1065,15 @@ const saved = await credentials.root.run('replace', { authKey: secret })
 expect(saved.action).toMatchObject({ ok: true })
 expect(JSON.stringify(saved)).not.toContain(secret)
 
-const response = await host.http.fetch(new Request('http://local.test/connector/probe'))
+const response = await host.http.fetch(new Request(new URL('/connector/probe', host.http.origin)))
 expect(await response.json()).toEqual({ authenticated: true })
 
 expect(await connector.ctx.vault!.kv().get('auth-key')).toBe(secret)
 
 await host.stop(ConnectorPlugin)
-expect((await host.http.fetch(new Request('http://local.test/connector/probe'))).status).toBe(404)
+expect(
+	(await host.http.fetch(new Request(new URL('/connector/probe', host.http.origin)))).status,
+).toBe(404)
 await expect(credentials.root.load()).rejects.toThrow()
 ```
 
@@ -1037,13 +1105,22 @@ phase/kind/blockedBy；对尚无 stable cause code 的错误保留 optional `mes
 Plugin 作者理解 slot/address，并复用 Vitest 的 matcher reporting。当前测试调用没有使用旧 assert 的返回值，因此 matcher 返回 `void` 不损失真实
 能力。
 
-matcher 由 `@pluxel/test` 的 Vitest setup 自动注册并提供 module augmentation；runner-neutral 的 `@pluxel/core/test` 与
-`@pluxel/runtime/test` 不依赖 Vitest。identity resolver 是 matcher implementation/internal harness 的共享内部能力，不再 public export
+matcher 由 `@pluxel/test/vitest` preset 安装的 setup 自动注册；module augmentation 同样由该 entry 的 types 提供。runner-neutral 的
+`@pluxel/core/test` 与 `@pluxel/runtime/test` 不依赖 Vitest，test file 也不逐个导入 side-effect setup。identity resolver 是 matcher
+implementation/internal harness 的共享内部能力，不再 public export
 `assertPluginLifecycleIssue/findPluginLifecycleIssue/pluginLifecycleIssuePlugins`。除此之外不增加 `toBePluginRunning()`、
-`toHavePluginConfig()`、asymmetric lifecycle matcher、snapshot serializer 或 Plugin target global equality tester；`isRunning()`、returned
-instance、标准 Vitest matcher 与 domain result 已经提供足够证据。
+`toHavePluginConfig()`、snapshot serializer 或 Plugin target global equality tester；`isRunning()`、returned instance、标准 Vitest matcher 与
+domain result 已经提供足够证据。
 
-候选 adapter declaration 只扩展 Vitest matcher，不把 `expect` 注入 host package：
+Vitest `expect.extend()` 会按 upstream contract 自动把 custom matcher 投影到 asymmetric matcher surface；实现不另造第二个 asymmetric API，也不把
+它作为教程路径，但不能声称它不存在或尝试用私有 patch 禁用。type/runtime conformance 至少证明该机械投影不会崩溃；主要行为和 diagnostics
+仍以 `expect(failure).toHavePluginLifecycleIssue(...)` 为权威。
+
+TypeScript 必须能看到同一个 preset import 才能加载 augmentation。canonical 项目把导入 `@pluxel/test/vitest` 的 `vitest.config.ts` 纳入
+`tsconfig.include`；workspace template 与迁移脚本同步修正，不要求 test files 添加额外 import，也不通过 runner-neutral host 偷渡 Vitest type
+dependency。compile-only fixture 必须证明仅使用 preset 的新项目能发现 matcher。
+
+adapter declaration 只扩展 Vitest matcher，不把 `expect` 注入 host package：
 
 ```ts
 type PluginLifecycleIssueExpectation = Readonly<{
@@ -1083,13 +1160,14 @@ class PluginLifecycleAssertionError extends Error {
 		| 'commit'
 		| 'commitExpectFail'
 	readonly targets: readonly PluginTestTarget[]
-	readonly summary: CommitSummary
+	readonly summary: PluginTestCommitSummary
 }
 ```
 
-它只表示“mutation 已执行，但请求的 lifecycle/cleanup postcondition 未满足”，例如 requested root 未 running、generation config injection 失败或本次
-drain 出现 error。它不包装 callback programming error、invalid graph、fixture config validation、persistence commit failure、capability disabled 或 teardown
-failure。预期 lifecycle failure 的测试仍
+它只表示“mutation 已执行，但请求的 lifecycle/cleanup postcondition 未满足”，例如 requested root 未 running、generation config injection 失败、
+本次 drain 出现 error，或 `commitExpectFail()` 实际完全成功。其 `summary` 始终是 slot-free `PluginTestCommitSummary`；strict lifecycle failure 时
+自然满足 failure subtype，unexpected success 时则为 `{ ok: true, issues: [] }`。它不包装 callback programming error、invalid graph、fixture config
+validation、persistence commit failure、capability disabled 或 teardown failure。预期 lifecycle failure 的测试仍
 使用 `commitExpectFail()`，不以 catch 作为普通控制流；error class 的价值是让意外 strict failure 保留完整诊断，并允许 runner/reporter
 显示 summary。
 
@@ -1103,7 +1181,8 @@ failure。预期 lifecycle failure 的测试仍
 - `initialConfig` 已越过 bootstrap boundary 时，建议 `host.config.patch()`；Workbench disabled 时，指出对应 host creation option；
 - programming error、invalid graph、persistence failure、lifecycle assertion failure 与 teardown failure 保持可区分；除上述唯一 wrapper 外，
   不用一个通用 `PluginTestError` 抹平已有 discriminant；
-- config value、Vault secret、auth key、RPC payload 与 provider credential 不进入 message、snapshot 或 serialized cause；
+- helper 自己生成的 diagnostics 不插值 config value、Vault secret、auth key、RPC payload 或 provider credential；Plugin 自己抛出的
+  `message/stack/cause` 可能包含业务数据，调用方不应在未脱敏时 snapshot 或发布 failure summary；
 - helper 不做隐藏 retry、sleep 或超时延长。需要 retry/deadline 的产品行为由该 domain 的显式 API 表达。
 
 错误文本用于人和 agent 定位，测试逻辑仍只依赖已有 stable code/kind/report，不依赖整段英文 message。
@@ -1114,18 +1193,23 @@ host、Workbench entry、standalone local RPC client 和未来 real-carrier hand
 路径。host 只登记由自己的 driver 创建的 child lease；standalone `createLocalRpcClient()` 不反向绑定任意 host。registry 只是为了兜底和诊断，
 不把资源所有权变成隐式。
 
-`host[Symbol.asyncDispose]()` 与 `host.dispose()` 指向同一幂等 operation，并按固定顺序：
+`host[Symbol.asyncDispose]()` 与 `host.dispose()` 指向同一幂等 operation；并发调用共享同一个 settlement。teardown 按固定顺序：
 
 1. 将 host 标记为 closing，拒绝新的 mutation、request 与 `open()`；
-2. 以反向创建顺序关闭尚存的 Workbench/RPC/carrier child leases，阻止新 session work；
-3. withdraw Plugin publications，停止完整 graph，并等待现有 generation admission/drain；
-4. flush/close persistence 与 optional capability backends；
-5. dispose root-owned services；
-6. 完成全部 best-effort cleanup 后，集中抛出 leak、drain 和 cleanup failures，保留每个原始 cause。
+2. 若已有 fixture mutation，等待它按自身 production contract settle；dispose 不在 apply 中途制造第二种 rollback/cancel 语义；
+3. cancel 尚未结束的 in-process HTTP response bodies，并以反向创建顺序关闭 Workbench/RPC/carrier child leases，阻止新 session work；
+4. withdraw Plugin publications，停止完整 graph，并等待现有 generation admission/drain；
+5. flush/close persistence 与 optional capability backends；
+6. dispose root-owned services；
+7. 完成全部 best-effort cleanup 后，集中抛出 leak、drain 和 cleanup failures，保留每个原始 cause。
 
 teardown 不在遇到第一个 failure 后跳过剩余资源，也不静默吞错。显式 disposable child lease 若直到 host disposal 仍未关闭，算作 test leak：host
 会先将其关闭，再让 disposal reject，并仅报告非敏感的 driver kind、target 与创建位置（可取得时）。这使忘写 `using` 成为稳定失败，而不是依赖
-进程退出的偶发问题。正常的重复 `dispose()` 是 no-op，不重复报告已经消费过的结果。
+进程退出的偶发问题。所有重复/并发 `dispose()` 调用取得同一个 Promise 与同一 fulfillment/rejection；implementation 不重新执行 teardown，也不
+复制 aggregate causes。
+
+host 进入 closing 后，除重复 `dispose()` 外的所有新 query、mutation 和 driver open/request 都以 closed-resource setup error 拒绝；已经返回的
+child capability 则按各 production protocol 进入 broken/aborted 状态。不要让部分 facade 抛、部分 facade 静默返回 empty/404。
 
 测试 runner 同时已有 assertion failure 时，应使用语言/runtime 的 suppressed/aggregate error 机制保留两者；不得用 teardown message 覆盖原始
 测试失败。实现必须覆盖 child cleanup failure、Plugin drain failure、多个 failure 聚合、重复 dispose 和 leaked lease 的 contract tests。
@@ -1133,7 +1217,7 @@ teardown 不在遇到第一个 failure 后跳过剩余资源，也不静默吞�
 ## Plugin fork 保留为 typed value
 
 本次 test API 重构明确保留 fork。[`../REMOVE_PLUGIN_FORKS.md`](../REMOVE_PLUGIN_FORKS.md) 若未来被采纳，届时同步 breaking 删除 test fork
-surface；现在不用一个半支持的 union 预演未来。候选入口是纯 value constructor：
+surface；现在不用一个半支持的 union 预演未来。冻结入口是纯 value constructor：
 
 ```ts
 const East = definePluginFork(RedisPlugin, 'east')
@@ -1186,8 +1270,9 @@ consumer/provider 都可以是 fork ref。`change.forks.remove(ref)` 表达删�
 `stop(ref)` 只改 session intent，不删 fork。Core 没有 durable fork registry，直接使用 `add(ref)` / `remove(ref)` materialize/dematerialize。
 
 implementation replacement 始终 definition-wide，因此 `replaceDefinition(Current, Next)` 只接受 constructor，不接受 fork ref，也不返回某一
-family member 的 instance。constructor/ref 都与 expected implementation 绑定；replacement 后旧 target 用于会构造、返回或访问 typed generation 的
-`start/restart/require/config/workbench.open` 必须拒绝为 stale，caller 用 next constructor 重建同 forkId 的 ref：
+family member 的 instance。constructor/ref 都与 expected implementation 绑定；replacement 完成后，旧 target 传给任何 public target-taking
+lifecycle/query/driver/draft command（包括 `start/stop/restart/require/isRunning/config/workbench/catalog`）都必须 stale-reject。否则
+`isRunning(Old)` 可能对 Next generation 返回 true，`stop(Old)` 还会意外控制新实现。caller 必须用 next constructor 重建同 forkId 的 ref：
 
 ```ts
 await host.replaceDefinition(RedisPluginV1, RedisPluginV2)
@@ -1204,14 +1289,14 @@ ref 中的 canonical definition + forkId，不要求 current candidate。这个�
 ## 无兼容层的迁移原则
 
 这是一次明确的 breaking redesign。目标分支合并时 workspace 和 public exports 只能剩一套模型，不发布 deprecated alias，也不安排跨版本
-兼容窗口。为了避免在全量机械迁移中才发现设计错误，候选顺序是：
+兼容窗口。为了避免在全量机械迁移中才发现设计错误，实施顺序是：
 
 1. 先以未导出的 prototype 实现 Core `add/remove/commit`、Runtime `start/stop/commit`、batch overload 与 teardown；
 2. 在 prototype 上迁移代表矩阵，而不是只挑最短 happy path：single config、2–4 explicit roots、required/optional provider、expected failure、
    config live update、restart/replacement、HTTP、commands、Workbench/Vault、database、long-running cleanup 和 framework white-box；
 3. 用真实迁移记录检查调用行数、autocomplete、错误修复信息、类型退化、资源泄漏和是否仍需 internal import；发现结构问题时只修改
    prototype，不增加 alias；
-4. 在代表迁移中验证 fork ref、definition replacement、failure 和 disposal contract，再冻结签名；
+4. 在代表迁移中验证 fork ref、definition replacement、failure 和 disposal contract；若发现 correctness blocker，停止全量迁移并先重开设计审查；
 5. 一次性迁移 workspace，并为重复 stack 建立 package-owned fixture function，而不是把业务拓扑塞进 generic host；
 6. 同一变更删除旧顶层 staged mutation semantics、`cfg`、有 mutation 副作用的 `host.fork`、`with*Host`、author-facing
    `create/with*Context`、public `host.ctx` 与旧 exports；
@@ -1222,50 +1307,50 @@ ref 中的 canonical definition + forkId，不要求 current candidate。这个�
 
 机械迁移只处理能保持语义的模式；其余必须人工选择边界：
 
-| 旧模式                                                | 新模式                                                      |
-| ----------------------------------------------------- | ----------------------------------------------------------- |
-| Core `add(A); commit(); require(A)`                   | `await host.add(A)`                                         |
-| Runtime `add([P, C]); start(C); commit()`             | `await host.start(C, { catalog: [P] })`                     |
-| Runtime `addStarted([A, B, C]); commit()`             | `await host.start([A, B, C])`                               |
-| pre-start `cfg(A).set(value)`                         | single `initialConfig`；multi-root 使用 callback `commit`   |
-| running `cfg(A).set(value); commit()`                 | `await host.config.patch(A, value)`                         |
-| staged `commitAllowFail()`                            | callback-scoped `commitExpectFail(change => ...)`           |
-| `assertPluginLifecycleIssue(summary, P, expected)`    | `expect(summary).toHavePluginLifecycleIssue(P, expected)`   |
-| author-side `setAutoStart(...)`                       | Runtime internal harness                                    |
-| `const F = host.fork(P, 'f')` + `start(F)`            | `const F = definePluginFork(P, 'f')`; `await host.start(F)` |
-| dependency-only `host.fork(P, 'f')`                   | `change.forks.ensure(F)` + dependency override              |
-| `replace(P, Next)`                                    | `await host.replaceDefinition(P, Next)`                     |
-| `host.fetch(request)`                                 | `host.http.fetch(request)`                                  |
-| `host.require/isRunning`                              | 保留顶层，但只查询已提交状态                                |
-| `host.ctx.commands.list/execute`                      | `host.commands.list/execute`                                |
-| internal Workbench registry/session wiring            | `host.workbench.open({ target, entry, principal })`         |
-| root service、transaction、artifact/failure injection | framework internal harness                                  |
+| 旧模式                                                | 新模式                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| Core `add(A); commit(); require(A)`                   | `await host.add(A)`                                                    |
+| Runtime `add([P, C]); start(C); commit()`             | `await host.start(C, { catalog: [P] })`                                |
+| Runtime `addStarted([A, B, C]); commit()`             | `await host.start([A, B, C])`                                          |
+| pre-start `cfg(A).set(value)`                         | single `initialConfig`；multi-root 使用 callback `commit`              |
+| running `cfg(A).set(value); commit()`                 | `await host.config.patch(A, value)`                                    |
+| staged `commitAllowFail()`                            | callback-scoped `commitExpectFail(change => ...)`                      |
+| `assertPluginLifecycleIssue(summary, P, expected)`    | `expect(summary).toHavePluginLifecycleIssue(P, expected)`              |
+| author-side `setAutoStart(...)`                       | Runtime internal harness                                               |
+| `const F = host.fork(P, 'f')` + `start(F)`            | `const F = definePluginFork(P, 'f')`; `await host.start(F)`            |
+| dependency-only `host.fork(P, 'f')`                   | `change.forks.ensure(F)` + dependency override                         |
+| `lowerTestReplacement(P, Next); replace(P, Next)`     | `lowerTestReplacement(P, Next); await host.replaceDefinition(P, Next)` |
+| `host.fetch(request)`                                 | `host.http.fetch(request)`                                             |
+| `host.require/isRunning`                              | 保留顶层，但只查询已提交状态                                           |
+| `host.ctx.commands.list/execute`                      | `host.commands.list/execute`                                           |
+| internal Workbench registry/session wiring            | `host.workbench.open({ target, entry, principal })`                    |
+| root service、transaction、artifact/failure injection | framework internal harness                                             |
 
 不能仅从相邻语句推断 `add([P, C])` 中 P 是 supporting catalog candidate 还是独立 session root；codemod 必须利用 constructor dependency facts，
 无法证明时留下人工迁移项。也不能把所有旧 `cfg().set()` 机械改为 live `config.patch()`，必须按首次 lifecycle boundary 分类。
 
-## Coding agent 盲测冻结门槛
+## Coding agent 盲测验收门槛
 
-“对 agent 清晰”不以 API 设计者的直觉验收。在 public export 前，准备一个只含候选 `.d.ts`、一页 quick start、代表性 fixture Plugin
+“对 agent 清晰”不以 API 设计者的直觉验收。在 public export 前，准备一个只含冻结 `.d.ts`、一页 quick start、代表性 fixture Plugin
 与编译/测试命令的隔离 package；不给 agent 内部实现、旧 test helper 或本 proposal。用相同 prompt 和相同 correction budget 完成：
 
-| 任务                                 | 必须自主选择的边界                                   |
-| ------------------------------------ | ---------------------------------------------------- |
-| Runtime single root + initial config | `start` 而不是 staged commit/live patch              |
-| 2–4 个独立 roots                     | batch `start` 与 typed tuple                         |
-| required provider                    | `{ catalog }` 而不是伪造 dependency declaration      |
-| default + forks 混合 roots           | `definePluginFork` + batch `start`                   |
-| dependency-only fork                 | `forks.ensure` + consumer override                   |
-| definition replacement               | `replaceDefinition` + next-bound fork ref            |
-| 多个 root 的异构 bootstrap config    | callback-scoped `commit`                             |
-| expected provider failure            | `commitExpectFail` + structured issue assertion      |
-| live config + new generation         | `config.patch` 后显式 `restart`                      |
-| HTTP route / mounted HTTP RPC        | `http.fetch`                                         |
-| mounted WebSocket RPC                | real carrier，不是 `http.fetch` 或 local object RPC  |
-| Workbench credential                 | `workbench.open` + Vault/business behavior，不是 DOM |
-| database persistence                 | owner-bound handle `read` + standard matcher         |
-| Core Plugin                          | `add/remove`，不是 Runtime `start/stop`              |
-| cleanup                              | `await using`/lease disposal，不是 sleep             |
+| 任务                                 | 必须自主选择的边界                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| Runtime single root + initial config | `start` 而不是 staged commit/live patch                                  |
+| 2–4 个独立 roots                     | batch `start` 与 typed tuple                                             |
+| required provider                    | `{ catalog }` 而不是伪造 dependency declaration                          |
+| default + forks 混合 roots           | `definePluginFork` + batch `start`                                       |
+| dependency-only fork                 | `forks.ensure` + consumer override                                       |
+| definition replacement               | explicit replacement fixture + `replaceDefinition` + next-bound fork ref |
+| 多个 root 的异构 bootstrap config    | callback-scoped `commit`                                                 |
+| expected provider failure            | `commitExpectFail` + structured issue assertion                          |
+| live config + new generation         | `config.patch` 后显式 `restart`                                          |
+| HTTP route / mounted HTTP RPC        | `http.fetch`                                                             |
+| mounted WebSocket RPC                | real carrier，不是 `http.fetch` 或 local object RPC                      |
+| Workbench credential                 | `workbench.open` + Vault/business behavior，不是 DOM                     |
+| database persistence                 | owner-bound handle `read` + standard matcher                             |
+| Core Plugin                          | `add/remove`，不是 Runtime `start/stop`                                  |
+| cleanup                              | `await using`/lease disposal，不是 sleep                                 |
 
 对 lifecycle 归属做受控 A/B，至少比较顶层 `host.start(Plugin)`、`host.plugins.start(Plugin)` 与
 `host.lifecycle.start(Plugin)`。不比较字符数，而记录：
@@ -1276,11 +1361,11 @@ ref 中的 canonical definition + forkId，不要求 current candidate。这个�
 - 编译器与 runtime diagnostic 修正轮数；
 - 是否只靠 autocomplete 找到 batch、`catalog`、`initialConfig`、`commitExpectFail` 与 driver boundary。
 
-顶层形状只在完成率不低于 namespace 形状，且不增加“误把 Plugin start 当成 host/server start”时冻结。`commitExpectFail`
-只在 agent 不会误以为它吞掉 programming/persistence errors，且能理解“无 lifecycle issue 也是 assertion failure”时冻结。否则必须换名并重跑同一矩阵。所有候选只允许一个 canonical
-写法，不用 alias 让 A/B 结果失真。
+顶层形状的完成率必须不低于 namespace 对照，且不增加“误把 Plugin start 当成 host/server start”。agent 不得把
+`commitExpectFail` 误解为吞掉 programming/persistence errors，并必须理解“无 lifecycle issue 也是 assertion failure”。未通过时把结果
+视为重开设计审查的 blocker，不在迁移中加 alias 掩盖问题。A/B 对照中每个形状只允许一个 canonical 写法。
 
-候选声明还必须单独通过 compile-only contract matrix，不能只依赖运行时迁移碰巧覆盖类型：block callback 与 expression callback
+冻结声明还必须单独通过 compile-only contract matrix，不能只依赖运行时迁移碰巧覆盖类型：block callback 与 expression callback
 应通过，async/有返回值 callback 应拒绝；single target 与 default/fork mixed literal batch 应分别推导精确 instance/readonly tuple；batch
 `initialConfig`、fork 作为 global default、fork 传给 `replaceDefinition`、raw node address 和已 destructure driver 的错误调用都应在预期位置
 拒绝。driver method destructure 后的合法调用必须通过，显式 `dispose()` 与 `AsyncDisposable` 则必须在 runtime contract test 中证明是同一幂等
@@ -1326,7 +1411,7 @@ test-host type assertion DSL，也不要让仅用于推导的 lifecycle expressi
 - provider default/override 是否覆盖代表性 abstract provider 迁移；
 - fork ref 的 candidate-staleness guard 能否在所有 target-taking facade 上共享，而不重新暴露 node address；
 - live config API 是否复用 Management use case，还是提取一个不绑定 RPC 的 application service；
-- internal test harness 的最终 subpath 与稳定性标注。
 
-这些问题允许调整具体签名，但不能破坏本文的核心区分：常用行为立即完成，复杂变化显式成组，optional capability 不被偷偷安装，
-不同测试层不互相冒充。
+这些问题只允许调整 internal implementation。若它们证明冻结签名无法诚实实现，必须以具体反证重开 public API review，
+不在迁移过程中就地增加 alias、option 或 overload。无论如何都不能破坏核心区分：常用行为立即完成，复杂变化显式成组，
+optional capability 不被偷偷安装，不同测试层不互相冒充。

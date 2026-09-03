@@ -1,6 +1,6 @@
 # Dynamic Runtime smoke boundary
 
-> 状态：候选设计，尚未采纳或实现。本文收敛 coding agent 的真实 dev smoke 路径，不建立第二套 test-owned launcher。当前行为以
+> 状态：设计已冻结，尚未实现。本文收敛 coding agent 的真实 dev smoke 路径，不建立第二套 test-owned launcher。当前行为以
 > [`../../../packages/runtime-dynamic/README.md`](../../../packages/runtime-dynamic/README.md) 为准。
 
 ## 修正后的决策
@@ -44,7 +44,7 @@ try {
 ```
 
 这个 API 已经是现有的 production direct launcher，但 create/start/stop ceremony 不适合一次启动即 ready 的资源，也没有提供物理请求所需
-的 origin。与其在 `/test` 再包一层，候选 breaking refactor 应直接改善这个唯一 launcher：
+的 origin。与其在 `/test` 再包一层，breaking refactor 直接改善这个唯一 launcher：
 
 ```ts
 import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
@@ -57,14 +57,14 @@ const response = await fetch(new URL('/health', runtime.origin))
 expect(response.status).toBe(200)
 ```
 
-候选最小 contract：
+冻结的最小 contract：
 
 ```ts
 export interface DynamicDevRuntime extends AsyncDisposable {
 	/** Available after the factory resolves. */
 	readonly ctx: Context
-	/** Actual loopback HTTP origin selected by Vite. */
-	readonly origin: URL
+	/** Actual normalized loopback HTTP origin selected by Vite. */
+	readonly origin: string
 	/** Idempotently releases all resources owned by this direct launcher. */
 	dispose(): Promise<void>
 }
@@ -83,12 +83,18 @@ export function startDynamicDevRuntime(
 - startup 失败在 reject 前回收部分资源；
 - `dispose()` 与 `[Symbol.asyncDispose]()` 是同一个幂等 operation；
 - `origin` 从 Vite 实际 socket address 得到，不复制端口配置；
+- `origin` 是不带 path/query/fragment 和 trailing slash 的 HTTP origin string，resource dispose 后仍可用于 diagnostics，但连接必须失败；
 - direct launcher 固定 loopback 与 OS-assigned ephemeral port；部署监听选项继续属于 Vite/application host；
 - `ctx` 是现有 production host authority，不由 test package 复制；smoke assertion 应优先经过 `origin`。
+- resource 进入 closing 后读取 `ctx` 必须抛 closed-resource error，不返回已失效的 root authority。
 
 `entry` 的 string 遵循 production Vite plugin 的明确 path base；test 和跨 cwd 脚本推荐 file `URL`。实现前必须让 direct launcher、Vite
 plugin 与 config diagnostics 对 URL/path normalization 使用同一底层函数，不能让两种宿主解释出不同 module。`entry` 与 static Vite plugin
 统一表达“由 Vite 加载的 canonical Runtime module”，不会把 module locator 与模块内部 config value 混为一谈。
+
+具体规则不留给实现猜测：Vite plugin 的 relative string 始终相对 resolved Vite `root`；direct-launch profile 未提供自定义 Vite
+config/root，因此它的 relative string 相对 factory 调用时捕获的 `process.cwd()`。`URL` 必须是 `file:` URL，并直接转为 absolute
+filesystem path。空值、非 `file:` URL 与不可加载的 module 在启动阶段拒绝；不回退到另一个 cwd。
 
 ## 唯一的 Vite 运行语义
 

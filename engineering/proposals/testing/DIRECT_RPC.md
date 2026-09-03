@@ -1,13 +1,13 @@
 # Direct RPC testing
 
-> 状态：问题分层与候选最小 API，尚未采纳或实现。本文不表示 Runtime 当前已经提供通用的 Elysia RPC mount API。
+> 状态：设计已冻结，尚未实现。本文不表示 Runtime 当前已经提供通用的 Elysia RPC mount API。
 
 ## 决策问题
 
 不经过 Workbench、由业务 Plugin 自己暴露的 RPC 应如何测试？尤其是 Plugin 在 `ctx.elysia` 上注册 endpoint 时，哪些测试可以
 进程内完成，哪些测试必须启动真实 carrier？
 
-候选结论是：不要把“纯 RPC”作为一个测试层。它至少包含两个独立契约：
+冻结结论是：不要把“纯 RPC”作为一个测试层。它至少包含两个独立契约：
 
 ```text
 RpcTarget object contract
@@ -52,7 +52,7 @@ RPC registry。
 
 它不验证 Elysia、URL、HTTP Upgrade、WebSocket 或 Plugin lifecycle。
 
-### 候选 API
+### 冻结的 API
 
 在 `@pluxel/runtime/test` 提供一个独立于 host 的 helper：
 
@@ -64,7 +64,7 @@ using api = createLocalRpcClient<OrdersApi>(new OrdersTarget(service))
 await expect(api.order('42')).resolves.toEqual({ id: '42' })
 ```
 
-候选签名：
+冻结签名：
 
 ```ts
 export function createLocalRpcClient<Api extends RpcTarget>(target: Api): RpcStub<Api>
@@ -125,7 +125,7 @@ await using host = createRuntimeTestHost()
 await host.start(OrdersPlugin)
 
 const response = await host.http.fetch(
-	new Request('http://local.test/orders/rpc', {
+	new Request(new URL('/orders/rpc', host.http.origin), {
 		method: 'POST',
 		body: encodedRpcRequest,
 	}),
@@ -137,7 +137,7 @@ expect(response.status).toBe(200)
 如果协议已经有 framework-neutral client，它应允许注入 `fetch`：
 
 ```ts
-const client = createOrdersRpcClient({ fetch: host.http.fetch, origin: 'http://local.test' })
+const client = createOrdersRpcClient({ fetch: host.http.fetch, origin: host.http.origin })
 ```
 
 这里优先改善具体 RPC client 的 Fetch injection，而不是给 Runtime host 增加一个不知道 codec 的 `rpc()` 方法。测试仍经过 immutable
@@ -162,19 +162,10 @@ Plugin ctx.elysia WebSocket route
 
 - 验证 dynamic config、Vite source graph/HMR 与 carrier 的 smoke 使用项目 Vite command 或
   [production dynamic launcher](DEV_SERVER_SMOKE.md)，再用 endpoint 自己的 production WebSocket/RPC client 连接实际 origin；
-- 只验证 Node carrier 与显式 Plugin fixture 的测试，未来可在 Node-owned test entry 设计一个 real-listener host，例如候选：
+- 只验证 Node carrier 与显式 Plugin fixture 的测试，继续使用 package/framework internal real-listener fixture。
 
-```ts
-import { createNodeRuntimeTestHost } from '@pluxel/runtime-node/test'
-
-await using host = createNodeRuntimeTestHost()
-await host.start(OrdersPlugin)
-using api = await host.websocket.rpc<OrdersApi>('/orders/rpc')
-await expect(api.order('42')).resolves.toEqual({ id: '42' })
-```
-
-第二种只是未来 API 的形状约束，不是当前采纳提案。production dynamic launcher 也不会因此增加通用 RPC codec。只有以下前置条件成立后才设计
-Node host 的具体签名：
+本次重构不为第二种预留 `createNodeRuntimeTestHost()`、`host.websocket.rpc()` 或其他 public 签名。production dynamic launcher 也不会因此
+增加通用 RPC codec。未来只有以下前置条件成立后才重新开启 Node test entry 的 API review：
 
 1. 至少两个真实 Plugin 以同一个受支持 Cap'n Web/Elysia mount contract 暴露业务 WebSocket RPC；
 2. Node test host 已能以 production carrier 启动 ephemeral listener 并可靠 cleanup；
@@ -182,7 +173,7 @@ Node host 的具体签名：
 4. helper 返回的 stub、socket、listener 和 host 有无歧义的 teardown 顺序；
 5. static/dynamic route 与 Node production 是否需要共同 conformance 已决定。
 
-在这些条件前，具体 Plugin 可以保留一条 package integration fixture，通过真实 Node listener 和
+在这些条件前，具体 Plugin 可以保留一条 package-local integration fixture，通过真实 Node listener 和
 `newWebSocketRpcSession<Api>()` 连接；不要把 feasibility adapter 提升成公共 Runtime API。
 
 ## Plugin lifecycle 的测试组合

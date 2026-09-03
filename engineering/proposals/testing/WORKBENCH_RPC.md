@@ -1,6 +1,6 @@
 # Workbench RPC test API
 
-> 状态：候选设计，尚未采纳或实现。当前公开入口没有本文提出的 `host.workbench.open()`；现行测试必须遵循
+> 状态：设计已冻结，尚未实现。当前公开入口没有本文提出的 `host.workbench.open()`；现行测试必须遵循
 > [`../../../docs/development/testing.md`](../../../docs/development/testing.md)。
 
 ## 决策问题
@@ -8,7 +8,7 @@
 Plugin 如何在不启动浏览器、不打开 WebSocket listener、也不导入 Workbench internal registry 的情况下，测试自己发布的
 Content、View 或 Attachment RPC？
 
-候选结论是：
+冻结结论是：
 
 1. 在 `@pluxel/runtime/test` 的 `RuntimeTestHost` 上提供唯一的 `host.workbench.open()` test driver；
 2. 调用方传目标 Plugin 与 authored Workbench entry object，不传字符串 descriptor、definition key tuple 或 internal identity；
@@ -68,7 +68,7 @@ React renderer
 Shell 组件测试负责证明 presentation plan 会生成正确控件并发出对应 RPC。每个 Plugin 再模拟点击不会增加 server contract 的
 可信度，只会引入 DOM selector、timing 和样式耦合。
 
-## 候选作者 API
+## 冻结的作者 API
 
 调用点应只出现一个新概念：打开 Plugin 已发布的 entry。
 
@@ -111,7 +111,7 @@ Workbench disabled 时立即抛出明确 setup error；它不得创建 backend�
 ### 为什么选择 `host.workbench.open()`
 
 - `host` 已经拥有目标 runtime、catalog、lifecycle 和 cleanup boundary；额外传 host 给 standalone helper 是重复信息。
-- `workbench` namespace 明确区分 Plugin graph 操作和 UI-plane RPC，且给未来经真实需求证明的 `layout()` 留下自然位置。
+- `workbench` namespace 明确区分 Plugin graph 操作和 UI-plane RPC；本次 surface 仍只有 `open()`。
 - `open` 与 production protocol 的 `openEntry()` 使用相同动词，但省略重复的 `Entry` 后缀。
 - 不使用 `mock` 或 `simulate`，因为 framework、publication、session、target 和 validation 都是真实实现。
 - 不叫 `click`、`submit` 或 `fill`，因为 API 不包含 browser 行为。
@@ -121,16 +121,19 @@ Workbench disabled 时立即抛出明确 setup error；它不得创建 backend�
 ### 输入类型
 
 ```ts
-type WorkbenchTestOpenOptions<Entry extends WorkbenchEntry> = Readonly<{
-	target: PluginTestTarget
+type WorkbenchTestOpenOptions<
+	Entry extends WorkbenchEntry,
+	TTarget extends PluginTestTarget = PluginTestTarget,
+> = Readonly<{
+	target: TTarget
 	entry: Entry
 	principal: WorkbenchPrincipal
 	location?: string
 }>
 
-interface RuntimeWorkbenchTestDriver {
+interface RuntimeWorkbenchTestDriver<TTarget extends PluginTestTarget = PluginTestTarget> {
 	open<const Entry extends WorkbenchEntry>(
-		options: WorkbenchTestOpenOptions<Entry>,
+		options: WorkbenchTestOpenOptions<Entry, TTarget>,
 	): Promise<OpenedWorkbenchTestEntry<Entry>>
 }
 ```
@@ -254,12 +257,12 @@ const rpc = new RpcStub(session.target)
 
 ## 打开算法与失败
 
-候选实现顺序固定为：
+实现顺序固定为：
 
 1. 解析 `target` 为 canonical Plugin node address；
 2. 确认 Runtime host 未 dispose 且 Workbench enabled；
 3. 读取 authored entry metadata，并确认它属于该 target 当前 active publication；
-4. 用传入或默认 principal 创建 Workbench server session；
+4. 用必填的 `principal` 创建 Workbench server session；
 5. 建立本地 `RpcStub`，通过 RPC 读取 target layout；
 6. 以 server-issued owner/kind/key identity 找到唯一 layout entry；
 7. 通过 RPC 调用 `openEntry()`，传递当前 layout revision 与 optional location；
@@ -366,7 +369,7 @@ credential missing
 11. 保留至少一组 real WebSocket Runtime Session test，证明本 helper 没有替代 carrier conformance；
 12. 更新 `docs/development/testing.md`，明确 Plugin RPC test 与 Workbench Shell UI test 的选择边界。
 
-## 未决实现细节
+## Prototype 实现问题
 
 以下问题可以在 prototype 中决定，不应改变作者 mental model：
 
