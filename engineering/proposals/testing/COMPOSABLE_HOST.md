@@ -123,6 +123,7 @@ public API 不出现第六种“有时 staging、有时立即执行”的 method
 | `runtimeHost.http`         | `fetch`                                                                          | WebSocket Upgrade、通用 RPC codec                                |
 | `runtimeHost.commands`     | `execute/list`                                                                   | `register/createMount`                                           |
 | `runtimeHost.workbench`    | `open`                                                                           | UI action、registry、transport mode                              |
+| Plugin database assertion  | owner-bound `PluginDatabaseHandle.read()`                                        | `host.database`、raw PGlite/backend admin                        |
 | fork value                 | `definePluginFork(Plugin, forkId)`                                               | host mutation、raw node address                                  |
 | standalone local RPC       | `createLocalRpcClient`                                                           | Runtime host、URL、physical carrier                              |
 | official Vitest assertion  | `expect(failure).toHavePluginLifecycleIssue(target, expected)`                   | 通用 matcher suite、snapshot serializer、global equality tester  |
@@ -912,6 +913,36 @@ host.workers.runAs(Plugin, task)
 
 这允许 credential RPC 写 Vault 后立即用 HTTP/command 验证，也不会建立跨 Plugin 的万能 service locator。
 
+### Database 默认值与内容断言
+
+`database` option 缺席时，Runtime test host 安装真实 `DatabaseService`，但不立即 import 或创建数据库。第一个 Plugin 调用
+`ctx.database.use(definition)` 时才惰性建立该 host 的 PGlite coordinator；由于 test host 的默认 persistence 已显式规范化为
+`{ mode: 'memory' }`，adapter 使用 `memory://`。每个 host 拥有独立 coordinator，各 Plugin/default fork 按 production owner schema 隔离，host
+disposal 关闭 PGlite。`database: false` 必须保持零 adapter；Postgres-specific contract 则显式传 production Postgres config。
+
+Plugin 行为测试优先通过领域 API、HTTP、command 或 RPC 观察结果。确实需要验证 rows/indexed state 等 package-owned persistence fact 时，从当前
+running instance 重新取得同一个 owner-bound database handle，并使用 Drizzle query + Vitest 标准 matcher：
+
+```ts
+const plugin = host.require(OrdersPlugin)
+const database = await plugin.ctx.database.use(OrdersDatabase)
+
+const rows = await database.read((db) =>
+	db.select({ id: orders.id, state: orders.state }).from(orders).orderBy(orders.id),
+)
+
+expect(rows).toEqual([{ id: 'order-1', state: 'ready' }])
+```
+
+`use()` 对同一 Plugin generation 和同一 authored definition 返回其既有 handle；传错 definition 会沿用 production guard 拒绝。`read()` 保留
+owner role、scheduler、drain 和 readonly boundary，因此不能替换为 root client、PGlite instance 或物理 schema 查询。测试需要 seed 大量领域
+fixture 时可以在具体 Plugin package 内通过同一 handle 的 `transaction()` 建立显式 helper，但 generic host 不提供 `seedTable/expectRows()`；否则会
+绕过 table schema、owner isolation 和 Plugin 业务 invariant。
+
+restart/replacement 后必须从新 instance 的 Context 重新 acquire handle，再断言持久化结果；旧 generation 的 cached handle 应按 production
+semantics 拒绝。stop 后检查 physical schema、migration bookkeeping、cross-owner isolation 或 adapter cleanup 属于 DatabaseService/driver internal
+contract test，不为了它们给 author host 增加 backend admin authority。
+
 ## 外部依赖与可控时间
 
 可组合不等于所有东西使用真实网络和真实时间。
@@ -1224,6 +1255,7 @@ ref 中的 canonical definition + forkId，不要求 current candidate。这个�
 | HTTP route / mounted HTTP RPC        | `http.fetch`                                         |
 | mounted WebSocket RPC                | real carrier，不是 `http.fetch` 或 local object RPC  |
 | Workbench credential                 | `workbench.open` + Vault/business behavior，不是 DOM |
+| database persistence                 | owner-bound handle `read` + standard matcher         |
 | Core Plugin                          | `add/remove`，不是 Runtime `start/stop`              |
 | cleanup                              | `await using`/lease disposal，不是 sleep             |
 
@@ -1264,7 +1296,8 @@ test-host type assertion DSL，也不要让仅用于推导的 lifecycle expressi
 7. `commitExpectFail` 要求至少一个 lifecycle issue，完全成功时拒绝，且不吞 programming/persistence/invalid graph error；official Vitest
    matcher 支持 target/fork、blockedBy、`.not`、soft assertion 与结构化安全诊断；
 8. config 参数不伪造 constructor-level 类型关系；`initialConfig` 与 live mutation 不隐式换语义；未有 production/author 证据前不提供 reset；
-9. Workbench/Vault disabled 时零 backend；Database 默认惰性 PGlite且 `database: false` 真正零 backend；driver 不自动安装 capability；
+9. Workbench/Vault disabled 时零 backend；Database 默认每 host 隔离、惰性的 memory PGlite，`database: false` 真正零 adapter；内容断言经过
+   owner-bound handle，driver 不自动安装 capability 或暴露 backend admin；
 10. HTTP、commands、Workbench driver 都观察同一 Plugin generation 和 withdrawal；
 11. Workbench `principal` 必填，local RPC、real WebSocket carrier 与 browser test 不互相冒充；
 12. public author host 不暴露 root `ctx`，framework white-box tests 仍有明确 internal harness；
