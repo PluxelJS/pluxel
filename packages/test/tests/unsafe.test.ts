@@ -1,4 +1,9 @@
-import { BasePlugin, createCoreTestHost, Plugin, pluginDefinitionAddressOf } from '@pluxel/core/test'
+import {
+	BasePlugin,
+	createCoreTestHost,
+	Plugin,
+	pluginDefinitionAddressOf,
+} from '@pluxel/core/test'
 import {
 	__setPluginDefinition,
 	lowerTestReplacement,

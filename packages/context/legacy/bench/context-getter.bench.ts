@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest'
+import { test } from 'vitest'
 import { Context } from '../src/Context'
 import type { ServiceClass } from '../src/service-types'
 
@@ -139,7 +139,8 @@ const getSvcNew = (ctx: CtxLike, sk: symbol, key: string, ctor: AnyCtor) => {
 	return inst
 }
 
-describe('Context getter micro-bench', () => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('Context getter micro-bench', async ({ bench }) => {
 	const root = new Context({ name: 'root' })
 	const child = root.extend({ name: 'child' })
 	const child2 = root.extend({ name: 'child2' })
@@ -155,46 +156,6 @@ describe('Context getter micro-bench', () => {
 	void isoChild.benchSvc
 	root.benchPing()
 
-	bench('getter hit (root, shared)', () => {
-		void root.benchSvc
-	})
-
-	bench('getter hit (shared + ctx rebind: root<->child)', () => {
-		void root.benchSvc
-		void child.benchSvc
-	})
-
-	bench('getter hit (shared + ctx rebind: root<->child2)', () => {
-		void root.benchSvc
-		void child2.benchSvc
-	})
-
-	bench('getter hit (iso, isolated instance)', () => {
-		void iso.benchIsoSvc
-	})
-
-	bench('getter hit (isolated + ctx rebind: iso<->iso child)', () => {
-		void iso.benchIsoSvc
-		void isoChild.benchIsoSvc
-	})
-
-	bench('getter hit (iso, shared service via proto chain)', () => {
-		void iso.benchSvc
-	})
-
-	bench('getter hit (iso child, shared service via proto chain)', () => {
-		void isoChild.benchSvc
-	})
-
-	bench('getter hit (iso shared + ctx rebind: iso<->iso child)', () => {
-		void iso.benchSvc
-		void isoChild.benchSvc
-	})
-
-	bench('method proxy (ctx.benchPing())', () => {
-		root.benchPing()
-	})
-
 	const gOld = makeCtxGraph()
 	const gNew = makeCtxGraph()
 
@@ -204,33 +165,61 @@ describe('Context getter micro-bench', () => {
 	void getSvcNew(gNew.root, gNew.skShared, 'benchShared', gNew.SharedSvc)
 	void getSvcNew(gNew.iso, gNew.skIso, 'benchIso', gNew.IsoSvc)
 
-	bench('algo old: hit (shared + rebind: root<->child)', () => {
-		void getSvcOld(gOld.root, gOld.skShared, 'benchShared', gOld.SharedSvc)
-		void getSvcOld(gOld.child, gOld.skShared, 'benchShared', gOld.SharedSvc)
-	})
-
-	bench('algo new: hit (shared + rebind: root<->child)', () => {
-		void getSvcNew(gNew.root, gNew.skShared, 'benchShared', gNew.SharedSvc)
-		void getSvcNew(gNew.child, gNew.skShared, 'benchShared', gNew.SharedSvc)
-	})
-
-	bench('algo old: hit (iso shared + rebind: root<->iso)', () => {
-		void getSvcOld(gOld.root, gOld.skShared, 'benchShared', gOld.SharedSvc)
-		void getSvcOld(gOld.iso, gOld.skShared, 'benchShared', gOld.SharedSvc)
-	})
-
-	bench('algo new: hit (iso shared + rebind: root<->iso)', () => {
-		void getSvcNew(gNew.root, gNew.skShared, 'benchShared', gNew.SharedSvc)
-		void getSvcNew(gNew.iso, gNew.skShared, 'benchShared', gNew.SharedSvc)
-	})
-
-	bench('algo old: hit (iso isolated + rebind: iso<->iso child)', () => {
-		void getSvcOld(gOld.iso, gOld.skIso, 'benchIso', gOld.IsoSvc)
-		void getSvcOld(gOld.isoChild, gOld.skIso, 'benchIso', gOld.IsoSvc)
-	})
-
-	bench('algo new: hit (iso isolated + rebind: iso<->iso child)', () => {
-		void getSvcNew(gNew.iso, gNew.skIso, 'benchIso', gNew.IsoSvc)
-		void getSvcNew(gNew.isoChild, gNew.skIso, 'benchIso', gNew.IsoSvc)
-	})
+	await bench.compare(
+		bench('getter hit (root, shared)', () => {
+			void root.benchSvc
+		}),
+		bench('getter hit (shared + ctx rebind: root<->child)', () => {
+			void root.benchSvc
+			void child.benchSvc
+		}),
+		bench('getter hit (shared + ctx rebind: root<->child2)', () => {
+			void root.benchSvc
+			void child2.benchSvc
+		}),
+		bench('getter hit (iso, isolated instance)', () => {
+			void iso.benchIsoSvc
+		}),
+		bench('getter hit (isolated + ctx rebind: iso<->iso child)', () => {
+			void iso.benchIsoSvc
+			void isoChild.benchIsoSvc
+		}),
+		bench('getter hit (iso, shared service via proto chain)', () => {
+			void iso.benchSvc
+		}),
+		bench('getter hit (iso child, shared service via proto chain)', () => {
+			void isoChild.benchSvc
+		}),
+		bench('getter hit (iso shared + ctx rebind: iso<->iso child)', () => {
+			void iso.benchSvc
+			void isoChild.benchSvc
+		}),
+		bench('method proxy (ctx.benchPing())', () => {
+			root.benchPing()
+		}),
+		bench('algo old: hit (shared + rebind: root<->child)', () => {
+			void getSvcOld(gOld.root, gOld.skShared, 'benchShared', gOld.SharedSvc)
+			void getSvcOld(gOld.child, gOld.skShared, 'benchShared', gOld.SharedSvc)
+		}),
+		bench('algo new: hit (shared + rebind: root<->child)', () => {
+			void getSvcNew(gNew.root, gNew.skShared, 'benchShared', gNew.SharedSvc)
+			void getSvcNew(gNew.child, gNew.skShared, 'benchShared', gNew.SharedSvc)
+		}),
+		bench('algo old: hit (iso shared + rebind: root<->iso)', () => {
+			void getSvcOld(gOld.root, gOld.skShared, 'benchShared', gOld.SharedSvc)
+			void getSvcOld(gOld.iso, gOld.skShared, 'benchShared', gOld.SharedSvc)
+		}),
+		bench('algo new: hit (iso shared + rebind: root<->iso)', () => {
+			void getSvcNew(gNew.root, gNew.skShared, 'benchShared', gNew.SharedSvc)
+			void getSvcNew(gNew.iso, gNew.skShared, 'benchShared', gNew.SharedSvc)
+		}),
+		bench('algo old: hit (iso isolated + rebind: iso<->iso child)', () => {
+			void getSvcOld(gOld.iso, gOld.skIso, 'benchIso', gOld.IsoSvc)
+			void getSvcOld(gOld.isoChild, gOld.skIso, 'benchIso', gOld.IsoSvc)
+		}),
+		bench('algo new: hit (iso isolated + rebind: iso<->iso child)', () => {
+			void getSvcNew(gNew.iso, gNew.skIso, 'benchIso', gNew.IsoSvc)
+			void getSvcNew(gNew.isoChild, gNew.skIso, 'benchIso', gNew.IsoSvc)
+		}),
+	)
 })

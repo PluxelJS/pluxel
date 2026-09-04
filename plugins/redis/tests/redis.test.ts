@@ -1,4 +1,9 @@
-import { formatPluginNodeReference, type PluginConstructor, v } from '@pluxel/runtime'
+import {
+	formatPluginNodeReference,
+	pluginNodeAddressOf,
+	type PluginConstructor,
+	v,
+} from '@pluxel/runtime'
 import {
 	BasePlugin,
 	createRuntimeTestHost,
@@ -293,9 +298,12 @@ describe('@pluxel/redis', () => {
 			})
 			expect(host.isRunning(RedisPlugin)).toBe(false)
 			expect(redisMock.client.destroy).toHaveBeenCalledOnce()
-			expect(failure).toHavePluginLifecycleIssue(RedisPlugin, {
-				kind: 'start-failed',
-			})
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(RedisPlugin),
+					kind: 'start-failed',
+				}),
+			)
 			expect(
 				failure.lifecycleReport.issues.some(
 					(issue) => issue.error?.name === RedisConnectionError.name,

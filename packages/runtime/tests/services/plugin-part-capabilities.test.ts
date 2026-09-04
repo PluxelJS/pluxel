@@ -88,9 +88,7 @@ describe('PluginPart runtime capabilities', () => {
 			expect(await mounted.text()).toBe('part-route')
 
 			await host.commit((change) => change.catalog.remove(CapabilityOwner))
-			expect(host.commands.list().some(({ name }) => name === 'part.capability.read')).toBe(
-				false,
-			)
+			expect(host.commands.list().some(({ name }) => name === 'part.capability.read')).toBe(false)
 			const removed = await host.http.fetch(new Request('http://local/part-capability'))
 			expect(removed.status).toBe(404)
 		}

@@ -238,9 +238,11 @@
 			"outputLogs": "new-only",
 		},
 		"test": {
-			// The shared Vitest preset is loaded through its built package export. Do not make every
-			// workspace test depend on the runtime build: Vitest resolves runtime imports through the
-			// source condition, and a global edge invalidates every test cache on any runtime change.
+			// Vite evaluates vitest.config before the preset can install workspace source conditions,
+			// so bootstrap the shared preset through its built package export. Do not replace this with
+			// relative source imports or a process-wide condition: test-module resolution below the
+			// config still uses @pluxel/source/@pluxel/hmr, without making every test depend on a
+			// runtime build or invalidating every cache on each runtime change.
 			"dependsOn": ["@pluxel/test#build"],
 			"outputs": [],
 			"inputs": [
@@ -278,11 +280,12 @@
 			"dependsOn": ["build", "@pluxel/test#build"],
 		},
 		"@pluxel/echarts#test": {
-			// The render contract builds and executes a real worker module.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+			// The render contract boots a built worker through the production dynamic launcher.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@pluxel/runtime-dynamic#build"],
 		},
 		"@pluxel/workbench-app#test": {
-			// The UI package intentionally tests the published Workbench contract modules.
+			// The UI package exercises current Workbench contract source through Vite's
+			// package-export conditions.
 			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
 		},
 		"@pluxel/rolldown#test": {
@@ -327,6 +330,10 @@
 		"@pluxel/package-manager#typecheck": {
 			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
 			// and HMR host subpaths while plugin TypeScript stays on the @pluxel/hmr condition.
+			"dependsOn": ["@pluxel/runtime-dynamic#build"],
+		},
+		"@pluxel/echarts#typecheck": {
+			// The dynamic artifact smoke typechecks its public launcher import against dist.
 			"dependsOn": ["@pluxel/runtime-dynamic#build"],
 		},
 		"@pluxel/workbench-app#typecheck": {

@@ -1,31 +1,37 @@
-import { readFile, readdir } from 'node:fs/promises'
-import { relative, resolve } from 'node:path'
-import { parse } from 'yaml'
+import { access, readFile, readdir } from 'node:fs/promises'
+import { basename, dirname, relative, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const scanRoots = ['packages', 'plugins', 'projects', 'docs']
+const activeRoots = ['packages', 'plugins', 'projects', 'scripts', 'vendor', 'local-projects']
 const ignoredDirectories = new Set([
-	'.git',
-	'.pluxel',
-	'.turbo',
+	'.artifacts',
 	'.cache',
+	'.git',
+	'.next',
+	'.pluxel',
+	'.pnpm-store',
+	'.sources',
+	'.turbo',
+	'build',
 	'coverage',
 	'dist',
 	'node_modules',
+	'out',
+	'target',
 ])
 const sourceExtensions = /\.(?:[cm]?[jt]sx?)$/
-const documentationExtensions = /\.(?:mdx?|jsonc?)$/
+const vitestConfigName = /^vitest(?:\.workspace)?\.config\.(?:[cm]?[jt]sx?)$/
 const failures = []
 
-const forbiddenPublicImports = new Map([
+const forbiddenTestImports = new Map([
 	[
 		'@pluxel/core/test',
 		new Set([
 			'CoreHost',
 			'CoreHostConfigHandle',
 			'CoreHostConfigPatch',
-			'CoreTestContext',
 			'CoreHostLifecycleIssueExpectation',
+			'CoreTestContext',
 			'assertPluginLifecycleIssue',
 			'createCoreContext',
 			'createCoreHost',
@@ -60,15 +66,16 @@ const forbiddenPublicImports = new Map([
 	['@pluxel/runtime-dynamic', new Set(['createDynamicDevRuntime'])],
 ])
 
-const canonicalHostFactories = new Set([
-	'createCoreTestHost',
-	'createRuntimeTestHost',
-	'startStaticApplicationTestHost',
-])
-const canonicalHostTypes = new Set(['CoreTestHost', 'RuntimeTestHost', 'StaticApplicationTestHost'])
-const forbiddenHostMembers = new Set(['cfg', 'commitAllowFail', 'ctx', 'fetch', 'fork'])
-const dynamicEntryFunctions = new Set(['dynamicRuntimeVitePlugin', 'startDynamicDevRuntime'])
-const publicEntryForbiddenSymbols = new Map([
+const authoritativeDocumentation = [
+	'engineering/TESTING.md',
+	'docs/development/testing.md',
+	'docs/development/source-workspaces.md',
+	'packages/test/README.md',
+	'engineering/README.md',
+	'engineering/proposals/README.md',
+]
+
+const publicEntryChecks = new Map([
 	[
 		'packages/core/src/test.ts',
 		['createCoreContext', 'createCoreHost', 'withCoreContext', 'withCoreHost'],
@@ -81,250 +88,313 @@ const publicEntryForbiddenSymbols = new Map([
 		'packages/runtime-static/src/test.ts',
 		['createStaticRuntimeTestHost', 'openRuntimeSessionTestConnection'],
 	],
-	['packages/runtime-dynamic/src/index.ts', ['createDynamicDevRuntime']],
 ])
 
-const files = (
-	await Promise.all(scanRoots.map((directory) => collectFiles(resolve(root, directory))))
-).flat()
+const collected = { code: [], locks: [], manifests: [], workspaces: [] }
+for (const directory of activeRoots) await collectFiles(resolve(root, directory), collected)
 
-for (const path of files) {
+const codeFiles = uniquePaths(collected.code)
+const manifestPaths = uniquePaths([resolve(root, 'package.json'), ...collected.manifests])
+const lockPaths = uniquePaths(collected.locks)
+const workspacePaths = uniquePaths([resolve(root, 'pnpm-workspace.yaml'), ...collected.workspaces])
+
+for (const path of codeFiles) {
 	const source = await readFile(path, 'utf8')
-	const displayPath = relative(root, path).replaceAll('\\', '/')
-	if (sourceExtensions.test(path)) inspectSource(displayPath, source)
-	else if (documentationExtensions.test(path)) inspectDocumentation(displayPath, source)
+	const displayPath = display(path)
+	inspectRemovedImports(displayPath, source)
+	inspectPublicTestEntry(displayPath, source)
+	if (vitestConfigName.test(basename(path))) inspectVitestConfig(displayPath, source)
 }
 
-await inspectPackageExports()
-await inspectTegamiIntent()
+await inspectTestPackageBoundary()
+await inspectPresetBoundary()
+await inspectTurboTaskGraph()
+await inspectManifests()
+await inspectVitestBaselines()
+await inspectDocumentation()
+await inspectProposalRemoval()
 
 if (failures.length > 0) {
 	process.stderr.write(`Testing v2 migration gate failed:\n- ${failures.toSorted().join('\n- ')}\n`)
 	process.exitCode = 1
 } else {
-	process.stdout.write(`Testing v2 migration gate passed (${files.length} files checked)\n`)
+	process.stdout.write(
+		`Testing v2 migration gate passed (${codeFiles.length} source files, ${manifestPaths.length} manifests checked)\n`,
+	)
 }
 
-function inspectSource(displayPath, source) {
-	const factoryBindings = new Set()
-	const hostTypeBindings = new Set()
-	const dynamicBindings = new Set()
-	const namespaceBindings = new Map()
-	const allForbiddenImports = new Set(
-		[...forbiddenPublicImports.values()].flatMap((symbols) => [...symbols]),
-	)
-	const importPattern = /(?:^|\n)\s*import\s+(?:type\s+)?([\s\S]*?)\s+from\s+(['"])([^'"]+)\2/g
-	for (const match of source.matchAll(importPattern)) {
-		const clause = match[1]
-		const moduleName = match[3]
-		if (moduleName === '@pluxel/test') {
-			reportAt(displayPath, source, match.index, 'removed @pluxel/test root import')
-		}
-		const namespace = /\*\s+as\s+([A-Za-z_$][\w$]*)/.exec(clause)?.[1]
-		if (namespace) namespaceBindings.set(namespace, moduleName)
-		const named = /\{([\s\S]*?)\}/.exec(clause)?.[1]
-		if (!named) continue
-		for (const rawSpecifier of named.split(',')) {
-			const specifier = rawSpecifier.replace(/\/\*[\s\S]*?\*\//g, '').trim()
-			if (!specifier) continue
-			const normalized = specifier.replace(/^type\s+/, '').trim()
-			const [imported, local = imported] = normalized.split(/\s+as\s+/)
-			if (!imported || !local) continue
-			const isRelativeTestEntry =
-				moduleName.startsWith('.') && /(?:^|\/)(?:src\/)?(?:internal-)?test(?:\.[cm]?ts)?$/.test(moduleName)
-			if (
-				forbiddenPublicImports.get(moduleName)?.has(imported) ||
-				(isRelativeTestEntry && allForbiddenImports.has(imported))
-			) {
-				reportAt(displayPath, source, match.index, `removed ${moduleName}.${imported} import`)
-		}
-			if (canonicalHostFactories.has(imported)) factoryBindings.add(local)
-			if (canonicalHostTypes.has(imported)) hostTypeBindings.add(local)
-			if (dynamicEntryFunctions.has(imported)) dynamicBindings.add(local)
-		}
+function inspectRemovedImports(displayPath, source) {
+	for (const match of source.matchAll(
+		/(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)(['"])@pluxel\/test\1/g,
+	)) {
+		reportAt(displayPath, source, match.index, 'removed @pluxel/test root import')
 	}
 	for (const match of source.matchAll(/(?:^|\n)\s*import\s*(['"])@pluxel\/test\1/g)) {
 		reportAt(displayPath, source, match.index, 'removed @pluxel/test root import')
 	}
-	for (const match of source.matchAll(/\bimport\s*\(\s*(['"])@pluxel\/test\1\s*\)/g)) {
-		reportAt(displayPath, source, match.index, 'removed dynamic @pluxel/test root import')
+	for (const match of source.matchAll(
+		/(?:^|\n)\s*import\s+(?:type\s+)?\{([\s\S]*?)\}\s+from\s+(['"])([^'"]+)\2/g,
+	)) {
+		const forbidden = forbiddenTestImports.get(match[3])
+		if (!forbidden) continue
+		for (const rawSpecifier of match[1].split(',')) {
+			const normalized = rawSpecifier
+				.replaceAll(/\/\*[\s\S]*?\*\//g, '')
+				.replace(/^\s*type\s+/, '')
+				.trim()
+			const imported = normalized.split(/\s+as\s+/)[0]?.trim()
+			if (imported && forbidden.has(imported)) {
+				reportAt(displayPath, source, match.index, `removed ${match[3]}.${imported} import`)
+			}
+		}
 	}
+}
 
-	const hostBindings = new Set()
-	for (const typeName of hostTypeBindings) {
-		const pattern = new RegExp(`\\b([A-Za-z_$][\\w$]*)\\s*:\\s*${escapeRegExp(typeName)}\\b`, 'g')
-		for (const match of source.matchAll(pattern)) hostBindings.add(match[1])
-	}
-	for (const factory of factoryBindings) {
-		const pattern = new RegExp(
-			`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)[^=;\\n]*=\\s*(?:await\\s+)?${escapeRegExp(factory)}\\s*\\(`,
-			'g',
-		)
-		for (const match of source.matchAll(pattern)) hostBindings.add(match[1])
-	}
-	for (const namespace of namespaceBindings.keys()) {
-		for (const factory of canonicalHostFactories) {
-			const pattern = new RegExp(
-				`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)[^=;\\n]*=\\s*(?:await\\s+)?${escapeRegExp(namespace)}\\s*\\.\\s*${factory}\\s*\\(`,
-				'g',
-			)
-			for (const match of source.matchAll(pattern)) hostBindings.add(match[1])
-		}
-	}
-	for (const host of hostBindings) {
-		for (const member of forbiddenHostMembers) {
-			const pattern = new RegExp(`\\b${escapeRegExp(host)}\\s*\\.\\s*${member}\\b`, 'g')
-			for (const match of source.matchAll(pattern)) {
-				reportAt(displayPath, source, match.index, `removed public host member .${member}`)
-		}
-		}
-		const parameterlessCommit = new RegExp(
-			`\\b${escapeRegExp(host)}\\s*\\.\\s*commit\\s*\\(\\s*\\)`,
-			'g',
-		)
-		for (const match of source.matchAll(parameterlessCommit)) {
-			reportAt(displayPath, source, match.index, 'parameterless staged host.commit()')
-		}
-	}
-	for (const [namespace, moduleName] of namespaceBindings) {
-		for (const symbol of forbiddenPublicImports.get(moduleName) ?? []) {
-			const pattern = new RegExp(`\\b${escapeRegExp(namespace)}\\s*\\.\\s*${symbol}\\b`, 'g')
-			for (const match of source.matchAll(pattern)) {
-				reportAt(displayPath, source, match.index, `removed ${moduleName}.${symbol} access`)
-			}
-		}
-	}
-	const dynamicCallNames = new Set(dynamicBindings)
-	for (const namespace of namespaceBindings.keys()) {
-		for (const entry of dynamicEntryFunctions) dynamicCallNames.add(`${namespace}\\s*\\.\\s*${entry}`)
-	}
-	for (const name of dynamicCallNames) {
-		const pattern = new RegExp(`\\b${name}\\s*\\(\\s*\\{`, 'g')
-		for (const match of source.matchAll(pattern)) {
-			const objectStart = source.indexOf('{', match.index)
-			const configProperty = findTopLevelObjectProperty(source, objectStart, 'config')
-			if (configProperty !== undefined) {
-				reportAt(
-					displayPath,
-					source,
-					configProperty,
-					'dynamic runtime options must use entry, not config',
-				)
-			}
-		}
-	}
-	for (const symbol of publicEntryForbiddenSymbols.get(displayPath) ?? []) {
+function inspectPublicTestEntry(displayPath, source) {
+	for (const symbol of publicEntryChecks.get(displayPath) ?? []) {
 		const pattern = new RegExp(`\\b${escapeRegExp(symbol)}\\b`, 'g')
 		for (const match of source.matchAll(pattern)) {
-			reportAt(displayPath, source, match.index, `removed public entry symbol ${symbol}`)
+			failures.push(
+				`${displayPath}:${lineAt(source, match.index)}: removed public test entry symbol ${symbol}`,
+			)
 		}
 	}
 }
 
-function inspectDocumentation(displayPath, source) {
-	const checks = [
-		[/from\s+['"]@pluxel\/test['"]/g, 'removed @pluxel/test root import'],
-		[/\bcreateRuntimeHost\b/g, 'removed createRuntimeHost symbol'],
-		[/\bcreateCoreHost\b/g, 'removed createCoreHost symbol'],
-		[/\bcreateStaticRuntimeTestHost\b/g, 'removed createStaticRuntimeTestHost symbol'],
-		[/\bopenRuntimeSessionTestConnection\b/g, 'removed static Runtime Session test helper'],
-		[/\bcreateDynamicDevRuntime\b/g, 'removed createDynamicDevRuntime symbol'],
-		[/\bcommitAllowFail\s*\(/g, 'removed commitAllowFail() call'],
-		[/\.(?:cfg|fork)\s*\(/g, 'removed staged host helper'],
-		[/dynamicRuntimeVitePlugin\s*\(\s*\{\s*config\s*:/g, 'dynamic Vite options must use entry'],
-	]
-	for (const [pattern, message] of checks) {
-		for (const match of source.matchAll(pattern)) {
-			const line = source.slice(0, match.index).split('\n').length
-			failures.push(`${displayPath}:${line}: ${message}`)
+function inspectVitestConfig(displayPath, source) {
+	for (const match of source.matchAll(/@pluxel\/test\/(?:setup|lifecycle-matcher)\b/g)) {
+		failures.push(
+			`${displayPath}:${lineAt(source, match.index)}: removed preset setup/matcher import`,
+		)
+	}
+	for (const match of source.matchAll(
+		/(?:\bfrom\s+|\bimport\s*\(\s*)(['"])[^'"]*\/src\/vitest(?:\.[cm]?[jt]sx?)?\1/g,
+	)) {
+		failures.push(`${displayPath}:${lineAt(source, match.index)}: relative source preset import`)
+	}
+	for (const openParen of findCalls(source, 'definePluxelVitestConfig')) {
+		if (hasTopLevelComma(source, openParen)) {
+			failures.push(
+				`${displayPath}:${lineAt(source, openParen)}: definePluxelVitestConfig() accepts one config object`,
+			)
 		}
 	}
 }
 
-async function inspectPackageExports() {
-	const manifestPath = resolve(root, 'packages/test/package.json')
-	const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+async function inspectTestPackageBoundary() {
+	const path = resolve(root, 'packages/test/package.json')
+	const manifest = await readJson(path)
+	const scripts = manifest.scripts ?? {}
+	if (
+		typeof scripts.test !== 'string' ||
+		scripts.test.includes('source:test-bootstrap') ||
+		/\bpnpm\s+run\s+build\b/.test(scripts.test)
+	) {
+		failures.push(
+			'packages/test/package.json: test must consume the Turbo-built preset instead of rebuilding it',
+		)
+	}
+	if (Object.hasOwn(scripts, 'source:test-bootstrap')) {
+		failures.push(
+			'packages/test/package.json: source:test-bootstrap would create a second preset build path',
+		)
+	}
 	for (const legacyField of ['main', 'module', 'types', 'typings']) {
 		if (Object.hasOwn(manifest, legacyField)) {
 			failures.push(
-				`packages/test/package.json: ${legacyField} would recreate a removed package root entry`,
+				`packages/test/package.json: ${legacyField} would recreate a removed root entry`,
 			)
 		}
 	}
-	const allowedEntries = new Set(['./fixtures', './unsafe', './vitest', './package.json'])
-	for (const [field, exports] of [
+	const allowed = new Set(['./fixtures', './unsafe', './vitest', './package.json'])
+	for (const [label, entries] of [
 		['exports', manifest.exports],
 		['publishConfig.exports', manifest.publishConfig?.exports],
 	]) {
-		if (!exports || typeof exports !== 'object') {
-			failures.push(`packages/test/package.json: ${field} must be an exports object`)
+		if (!entries || typeof entries !== 'object') {
+			failures.push(`packages/test/package.json: ${label} must be an exports object`)
 			continue
 		}
-		for (const removed of ['.', './setup']) {
-			if (Object.hasOwn(exports, removed)) {
+		for (const entry of Object.keys(entries)) {
+			if (!allowed.has(entry))
+				failures.push(`packages/test/package.json: unexpected ${label} entry ${entry}`)
+		}
+		for (const entry of allowed) {
+			if (!Object.hasOwn(entries, entry))
+				failures.push(`packages/test/package.json: missing ${label} entry ${entry}`)
+		}
+	}
+	for (const removedFile of [
+		'packages/test/src/setup.ts',
+		'packages/test/src/lifecycle-matcher.ts',
+	]) {
+		if (await exists(resolve(root, removedFile)))
+			failures.push(`${removedFile}: removed test setup still exists`)
+	}
+}
+
+async function inspectPresetBoundary() {
+	const source = await readFile(resolve(root, 'packages/test/src/vitest.ts'), 'utf8')
+	if (
+		!source.includes('export type PluxelVitestConfig') ||
+		!source.includes('pluxel?: PluxelVitestToolchainConfig')
+	) {
+		failures.push('packages/test/src/vitest.ts: missing one-object PluxelVitestConfig namespace')
+	}
+	const declaration = source.indexOf('export function definePluxelVitestConfig')
+	const openParen = declaration < 0 ? -1 : source.indexOf('(', declaration)
+	if (openParen < 0 || hasTopLevelComma(source, openParen)) {
+		failures.push('packages/test/src/vitest.ts: definePluxelVitestConfig() must have one parameter')
+	}
+	for (const token of [
+		'setupFiles',
+		'toHavePluginLifecycleIssue',
+		'expect.extend',
+		'lifecycle-matcher',
+	]) {
+		if (source.includes(token))
+			failures.push(`packages/test/src/vitest.ts: preset must not install ${token}`)
+	}
+}
+
+async function inspectTurboTaskGraph() {
+	const source = await readFile(resolve(root, 'turbo.jsonc'), 'utf8')
+	const match = /"test"\s*:\s*\{([\s\S]*?)\n\t\t\},/.exec(source)
+	if (!match || !/"dependsOn"\s*:\s*\[\s*"@pluxel\/test#build"\s*\]/.test(match[1])) {
+		failures.push('turbo.jsonc: every default test task must wait for @pluxel/test#build')
+	}
+}
+
+async function inspectManifests() {
+	for (const path of manifestPaths) {
+		const manifest = await readJson(path)
+		const displayPath = display(path)
+		const scripts = manifest.scripts ?? {}
+		for (const [name, command] of Object.entries(scripts)) {
+			if (typeof command !== 'string') continue
+			if (
+				(name.includes('test') || command.includes('vitest')) &&
+				command.includes('--conditions')
+			) {
+				failures.push(`${displayPath}: test script ${name} must not set process-wide --conditions`)
+			}
+		}
+		for (const section of [
+			manifest.dependencies,
+			manifest.devDependencies,
+			manifest.peerDependencies,
+			manifest.optionalDependencies,
+		]) {
+			const version = section?.vitest
+			if (version === undefined) continue
+			if (version !== 'catalog:test' && !isVitestFive(String(version))) {
+				failures.push(`${displayPath}: Vitest must use 5.x (found ${version})`)
+			}
+		}
+		if (await exists(resolve(dirname(path), 'pluxel.sources.jsonc'))) {
+			const bootstrap = scripts['source:test-bootstrap']
+			if (
+				typeof bootstrap !== 'string' ||
+				!bootstrap.includes('pluxel source build --package @pluxel/test')
+			) {
 				failures.push(
-					`packages/test/package.json: ${field} still publishes removed ${removed} entry`,
+					`${displayPath}: source workspace needs precise @pluxel/test config bootstrap`,
+				)
+			}
+			if (typeof scripts.test !== 'string' || !scripts.test.includes('source:test-bootstrap')) {
+				failures.push(`${displayPath}: test must run source:test-bootstrap before Vitest`)
+			}
+		}
+	}
+}
+
+async function inspectVitestBaselines() {
+	for (const path of workspacePaths) {
+		const source = await readFile(path, 'utf8')
+		for (const match of source.matchAll(/^\s*vitest:\s*['"]?([^\s#'"]+)/gm)) {
+			if (!isVitestFive(match[1])) {
+				failures.push(
+					`${display(path)}:${lineAt(source, match.index)}: Vitest catalog must use 5.x`,
 				)
 			}
 		}
-		for (const entry of Object.keys(exports)) {
-			if (!allowedEntries.has(entry)) {
-				failures.push(`packages/test/package.json: ${field} contains unexpected entry ${entry}`)
+	}
+	for (const path of lockPaths) {
+		const source = await readFile(path, 'utf8')
+		// This is the executable runner resolution. `@vitest/*` can also be a private
+		// transitive dependency of an unrelated tool (for example Storybook), so it
+		// is not itself a project runner contract.
+		for (const match of source.matchAll(/(?:^|[\s'"])vitest@[0-4](?:\.\d+)*(?=[:(\s]|$)/gm)) {
+			failures.push(
+				`${display(path)}:${lineAt(source, match.index)}: pre-Vitest-5 runner lock entry`,
+			)
+		}
+	}
+}
+
+async function inspectDocumentation() {
+	const checks = [
+		[/from\s+['"]@pluxel\/test['"]/g, 'removed @pluxel/test root import'],
+		[/@pluxel\/test\/(?:setup|lifecycle-matcher)\b/g, 'removed preset setup/matcher entry'],
+		[
+			/\b(?:toHavePluginLifecycleIssue|PluxelVitestOptions|definePluxelVitestWorkspaceConfig)\b/g,
+			'removed Testing v1 API',
+		],
+		[
+			/\b(?:createRuntimeHost|createCoreHost|createStaticRuntimeTestHost|openRuntimeSessionTestConnection)\b/g,
+			'removed public test host API',
+		],
+		[/['"][^'"]*\/src\/vitest(?:\.[cm]?[jt]sx?)?['"]/g, 'relative source preset import'],
+		[/engineering\/proposals\/testing\b/g, 'removed testing proposal reference'],
+	]
+	for (const documentPath of authoritativeDocumentation) {
+		const path = resolve(root, documentPath)
+		const source = await readFile(path, 'utf8')
+		for (const [pattern, message] of checks) {
+			for (const match of source.matchAll(pattern)) {
+				failures.push(`${documentPath}:${lineAt(source, match.index)}: ${message}`)
+			}
+		}
+		for (const openParen of findCalls(source, 'definePluxelVitestConfig')) {
+			if (hasTopLevelComma(source, openParen)) {
+				failures.push(
+					`${documentPath}:${lineAt(source, openParen)}: definePluxelVitestConfig() accepts one config object`,
+				)
 			}
 		}
 	}
 }
 
-async function inspectTegamiIntent() {
-	const required = new Set([
-		'@pluxel/core',
-		'@pluxel/runtime',
-		'@pluxel/test',
-		'@pluxel/runtime-static',
-		'@pluxel/runtime-dynamic',
-	])
-	const entries = await readdir(resolve(root, '.tegami'), { withFileTypes: true })
-	for (const entry of entries) {
-		if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-		const source = await readFile(resolve(root, '.tegami', entry.name), 'utf8')
-		const match = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(source)
-		if (!match) continue
-		const frontmatter = parse(match[1])
-		const packages = frontmatter?.packages ?? frontmatter
-		for (const name of required) {
-			const value = packages?.[name]
-			const type = typeof value === 'string' ? value : value?.type
-			if (type === 'major') required.delete(name)
-		}
+async function inspectProposalRemoval() {
+	if (await exists(resolve(root, 'engineering/proposals/testing'))) {
+		failures.push(
+			'engineering/proposals/testing: current Testing v2 must be declarative documentation',
+		)
 	}
-	for (const name of required) failures.push(`.tegami: missing pending major intent for ${name}`)
 }
 
-function reportAt(displayPath, source, index, message) {
-	const prefix = source.slice(0, index)
-	const previousLines = prefix.split('\n').slice(-3, -1)
-	if (previousLines.some((line) => line.includes('@ts-expect-error'))) return
-	const line = prefix.split('\n').length
-	const lastNewline = prefix.lastIndexOf('\n')
-	const column = index - lastNewline
-	failures.push(`${displayPath}:${line}:${column}: ${message}`)
+function findCalls(source, name) {
+	const calls = []
+	for (
+		let index = source.indexOf(name);
+		index >= 0;
+		index = source.indexOf(name, index + name.length)
+	) {
+		const before = source[index - 1]
+		const after = source[index + name.length]
+		if ((before && /[\w$]/.test(before)) || (after && /[\w$]/.test(after))) continue
+		let cursor = index + name.length
+		while (/\s/.test(source[cursor] ?? '')) cursor += 1
+		if (source[cursor] === '(') calls.push(cursor)
+	}
+	return calls
 }
 
-function escapeRegExp(value) {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/**
- * Finds an own property on a call's object-literal argument without scanning into later source.
- * This is deliberately a small lexical check rather than a TypeScript AST dependency: the
- * repository compiler package no longer exposes the legacy parser API used by governance scripts.
- */
-function findTopLevelObjectProperty(source, objectStart, property) {
-	if (objectStart < 0 || source[objectStart] !== '{') return undefined
-	let braces = 0
+function hasTopLevelComma(source, openParen) {
 	let parentheses = 0
+	let braces = 0
 	let brackets = 0
-	for (let index = objectStart; index < source.length; index += 1) {
+	for (let index = openParen; index < source.length; index += 1) {
 		const character = source[index]
 		const next = source[index + 1]
 		if (character === '/' && next === '/') {
@@ -339,33 +409,17 @@ function findTopLevelObjectProperty(source, objectStart, property) {
 			index = skipQuoted(source, index, character)
 			continue
 		}
-		if (character === '{') braces += 1
-		else if (character === '}') {
-			braces -= 1
-			if (braces === 0) return undefined
-		} else if (character === '(') parentheses += 1
-		else if (character === ')') parentheses -= 1
+		if (character === '(') parentheses += 1
+		else if (character === ')') {
+			parentheses -= 1
+			if (parentheses === 0) return false
+		} else if (character === '{') braces += 1
+		else if (character === '}') braces -= 1
 		else if (character === '[') brackets += 1
 		else if (character === ']') brackets -= 1
-		else if (
-			braces === 1 &&
-			parentheses === 0 &&
-			brackets === 0 &&
-			isIdentifierStart(character)
-		) {
-			let end = index + 1
-			while (isIdentifierPart(source[end])) end += 1
-			if (source.slice(index, end) === property) {
-				const previous = previousSignificantCharacter(source, index - 1)
-				const after = nextSignificantCharacter(source, end)
-				if ((previous === '{' || previous === ',') && (after === ':' || after === ',' || after === '}')) {
-					return index
-				}
-			}
-			index = end - 1
-		}
+		else if (character === ',' && parentheses === 1 && braces === 0 && brackets === 0) return true
 	}
-	return undefined
+	return true
 }
 
 function skipLineComment(source, index) {
@@ -389,42 +443,68 @@ function skipQuoted(source, index, quote) {
 	return source.length
 }
 
-function previousSignificantCharacter(source, index) {
-	while (index >= 0 && /\s/.test(source[index])) index -= 1
-	return source[index]
+function reportAt(displayPath, source, index, message) {
+	if (isExpectedError(source, index)) return
+	failures.push(`${displayPath}:${lineAt(source, index)}: ${message}`)
 }
 
-function nextSignificantCharacter(source, index) {
-	while (index < source.length && /\s/.test(source[index])) index += 1
-	return source[index]
+function isExpectedError(source, index) {
+	const lineStart = source.lastIndexOf('\n', index - 1) + 1
+	const before = source.slice(Math.max(0, source.lastIndexOf('\n', lineStart - 2) + 1), lineStart)
+	return before.includes('@ts-expect-error')
 }
 
-function isIdentifierStart(character) {
-	return character !== undefined && /[A-Za-z_$]/.test(character)
+function lineAt(source, index) {
+	return source.slice(0, index).split('\n').length
 }
 
-function isIdentifierPart(character) {
-	return character !== undefined && /[\w$]/.test(character)
+function isVitestFive(version) {
+	return /^[~^]?5(?:\.\d+){0,2}(?:[-+].*)?$/.test(version)
 }
 
-async function collectFiles(directory) {
+function escapeRegExp(value) {
+	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function display(path) {
+	return relative(root, path).replaceAll('\\', '/')
+}
+
+function uniquePaths(paths) {
+	return [...new Set(paths)]
+}
+
+async function readJson(path) {
+	return JSON.parse(await readFile(path, 'utf8'))
+}
+
+async function exists(path) {
+	try {
+		await access(path)
+		return true
+	} catch {
+		return false
+	}
+}
+
+async function collectFiles(directory, result) {
 	let entries
 	try {
 		entries = await readdir(directory, { withFileTypes: true })
 	} catch (error) {
-		if (error?.code === 'ENOENT') return []
+		if (error?.code === 'ENOENT') return
 		throw error
 	}
-	const nested = await Promise.all(
-		entries.map((entry) => {
-			const path = resolve(directory, entry.name)
-			if (entry.isDirectory()) {
-				return ignoredDirectories.has(entry.name) ? [] : collectFiles(path)
-			}
-			return sourceExtensions.test(entry.name) || documentationExtensions.test(entry.name)
-				? [path]
-				: []
-		}),
-	)
-	return nested.flat()
+	for (const entry of entries) {
+		const path = resolve(directory, entry.name)
+		if (entry.isDirectory()) {
+			if (!ignoredDirectories.has(entry.name)) await collectFiles(path, result)
+			continue
+		}
+		if (!entry.isFile()) continue
+		if (sourceExtensions.test(entry.name)) result.code.push(path)
+		if (entry.name === 'package.json') result.manifests.push(path)
+		if (entry.name === 'pnpm-lock.yaml') result.locks.push(path)
+		if (entry.name === 'pnpm-workspace.yaml') result.workspaces.push(path)
+	}
 }

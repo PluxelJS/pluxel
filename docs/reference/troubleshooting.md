@@ -82,10 +82,10 @@ initializer 无副作用，并把该 integration 的 registration、资源和 cl
 - stop、replacement 或 rollback 后旧 generation 的 handler 不应继续服务。
 
 先查看 commit/lifecycle summary，确认 Plugin 正在 running 且 finalization 没有因 reserved path、route conflict、lazy module 或 compile
-失败。测试时直接请求最终地址，例如 `host.fetch(new Request('http://local.test/orders/1'))`。
+失败。测试时直接请求最终地址，例如 `host.http.fetch(new URL('/orders/1', host.http.origin))`。
 
 当前 Node production、static Vite 与 dynamic Vite carrier 已支持并验证基础业务 WebSocket；若 `.ws()` 返回 404，除 route
-publication 外还要确认请求经过真实 Upgrade listener，而不是 `host.fetch()`。external setup/cleanup attach、第二个非 Node carrier、
+publication 外还要确认请求经过真实 Upgrade listener，而不是 `host.http.fetch()`。external setup/cleanup attach、第二个非 Node carrier、
 完整 socket parity 与 canonical-equivalent route collision 仍缺少稳定 public seam；不要依赖仅参数名不同的 route pattern 自动获得完整冲突诊断。
 
 参见 [插件 HTTP](../runtime/http.md) 与 [管理工作台](../workbench/index.md)。

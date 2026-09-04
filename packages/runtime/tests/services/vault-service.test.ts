@@ -1,12 +1,11 @@
-import {
-	BasePlugin,
-	createRuntimeContext,
-	Plugin,
-	createRuntimeHost,
-	type RuntimeHost,
-} from '@pluxel/runtime/test'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { prepareRuntimeRootContext } from '@pluxel/runtime/internal'
+import {
+	createRuntimeInternalTestContext,
+	createRuntimeInternalTestHarness,
+	type RuntimeInternalTestHarness,
+} from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { pluginNodePhysicalKey } from '../../src/runtime/plugin-address'
@@ -15,10 +14,12 @@ import type { VaultAdminService } from '../../src/services/vault/VaultService'
 import type { VaultStorageApi } from '../../src/services/vault/types'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
-type RuntimeHostLike = RuntimeHost
+type RuntimeHostLike = RuntimeInternalTestHarness
 
-function createVaultRuntimeHost(config: Parameters<typeof createRuntimeHost>[0] = {}): RuntimeHost {
-	return createRuntimeHost({ ...config, vault: config.vault ?? {} })
+function createVaultRuntimeHost(
+	config: Parameters<typeof createRuntimeInternalTestHarness>[0] = {},
+): RuntimeInternalTestHarness {
+	return createRuntimeInternalTestHarness({ ...config, vault: config.vault ?? {} })
 }
 
 async function sealVaultForTesting(vault: unknown): Promise<void> {
@@ -47,7 +48,7 @@ async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
 
 describe('VaultService (shared mount runtime)', () => {
 	it('keeps optional capability types and disabled plans honest', async () => {
-		const disabled = createRuntimeContext({ workbench: false, vault: false })
+		const disabled = createRuntimeInternalTestContext({ workbench: false, vault: false })
 		try {
 			expectTypeOf(disabled.ctx.vault).toEqualTypeOf<VaultStorageApi | undefined>()
 			expectTypeOf(disabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminService | undefined>()
@@ -59,7 +60,7 @@ describe('VaultService (shared mount runtime)', () => {
 			await disabled.dispose()
 		}
 
-		const enabled = createRuntimeContext({ workbench: false, vault: {} })
+		const enabled = createRuntimeInternalTestContext({ workbench: false, vault: {} })
 		try {
 			await prepareRuntimeRootContext(enabled.ctx)
 			if (!enabled.ctx.vault || !enabled.ctx.vaultAdmin) {
@@ -75,7 +76,7 @@ describe('VaultService (shared mount runtime)', () => {
 	})
 
 	it('deduplicates concurrent Runtime preparation and retries a failed attempt', async () => {
-		const concurrent = createRuntimeContext({ workbench: false, vault: {} })
+		const concurrent = createRuntimeInternalTestContext({ workbench: false, vault: {} })
 		try {
 			const admin = concurrent.ctx.vaultAdmin
 			if (!admin) throw new Error('Vault capability was not installed')
@@ -101,7 +102,7 @@ describe('VaultService (shared mount runtime)', () => {
 			await concurrent.dispose()
 		}
 
-		const retry = createRuntimeContext({ workbench: false, vault: {} })
+		const retry = createRuntimeInternalTestContext({ workbench: false, vault: {} })
 		try {
 			const admin = retry.ctx.vaultAdmin
 			if (!admin) throw new Error('Vault capability was not installed')

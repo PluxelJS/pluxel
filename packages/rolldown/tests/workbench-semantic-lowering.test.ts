@@ -1034,8 +1034,10 @@ export default async function Settings() {
 	const { MixedWorkbench } = await import('./mixed')
 	return MixedWorkbench.settings
 }
-`,
+			`,
 			helper: undefined,
+			expectedError:
+				/src\/settings\.tsx[\s\S]*dynamic import[\s\S]*"\.\/mixed"[\s\S]*createWorkbenchRenderer\(MixedWorkbench\.settings\)/,
 		},
 		{
 			name: 'an indirect definition import',
@@ -1046,15 +1048,41 @@ export default function Settings() { return descriptor }
 			helper: `
 import { MixedWorkbench } from './mixed'
 export const descriptor = MixedWorkbench.settings
-`,
+			`,
+			expectedError:
+				/src\/settings-helper\.ts[\s\S]*"\.\/mixed"[\s\S]*does not bind a renderer scope[\s\S]*createWorkbenchRenderer\(MixedWorkbench\.settings\)/,
 		},
-	])('rejects $name from a renderer graph', async ({ settings, helper }) => {
-		const files = fixtureFiles()
-		files['src/guide.md'] = '# Guide\n'
-		files['src/settings.tsx'] = settings
-		if (helper) files['src/settings-helper.ts'] = helper
-		await using fixture = await createFixture(files)
-		const code = `
+		{
+			name: 'multiple server-definition boundaries',
+			settings: `
+import { first } from './settings-helper-a'
+import { second } from './settings-helper-b'
+export default function Settings() { return first ?? second }
+`,
+			helper: undefined,
+			extraFiles: {
+				'src/settings-helper-a.ts': `
+import { MixedWorkbench } from './mixed'
+export const first = MixedWorkbench.settings
+`,
+				'src/settings-helper-b.ts': `
+import { MixedWorkbench } from './mixed'
+export const second = MixedWorkbench.settings
+`,
+			},
+			expectedError:
+				/exactly one direct server definition import[\s\S]*settings-helper-a\.ts[\s\S]*settings-helper-b\.ts[\s\S]*createWorkbenchRenderer\(MixedWorkbench\.settings\)/,
+		},
+	])(
+		'rejects $name from a renderer graph',
+		async ({ settings, helper, extraFiles, expectedError }) => {
+			const files = fixtureFiles()
+			files['src/guide.md'] = '# Guide\n'
+			files['src/settings.tsx'] = settings
+			if (helper) files['src/settings-helper.ts'] = helper
+			if (extraFiles) Object.assign(files, extraFiles)
+			await using fixture = await createFixture(files)
+			const code = `
 import { workbench } from '@pluxel/runtime/workbench'
 export const MixedWorkbench = workbench.define({
 	guide: workbench.content({
@@ -1071,12 +1099,11 @@ class SemanticPlugin {
 	init() { this.ctx.workbench.publish(MixedWorkbench, { guide: () => ({}), settings: () => ({}) }) }
 }
 `
-		const lowering = createWorkbenchSemanticLowering(fixture.path)
-		await collectModule(lowering, fixture.path, 'src/mixed.ts', code)
-		await expect(lowering.plans()).rejects.toThrow(
-			'renderer may reference its server definition only through a direct static import',
-		)
-	})
+			const lowering = createWorkbenchSemanticLowering(fixture.path)
+			await collectModule(lowering, fixture.path, 'src/mixed.ts', code)
+			await expect(lowering.plans()).rejects.toThrow(expectedError)
+		},
+	)
 
 	it('builds a workspace producer from its package root into the host deployment root', async () => {
 		const files = fixtureFiles()

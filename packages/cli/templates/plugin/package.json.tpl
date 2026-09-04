@@ -17,6 +17,9 @@
 			"onFail": "error"
 		}
 	},
+	"engines": {
+		"node": ">=24"
+	},
 	"files": [
 		"dist",
 		"!**/*.map"
@@ -44,6 +47,7 @@
 		"oxlint": "catalog:",
 		"tsdown": "catalog:",
 		"typescript": "catalog:",
+		"vite": "catalog:",
 		"vitest": "catalog:"
 	}
 }

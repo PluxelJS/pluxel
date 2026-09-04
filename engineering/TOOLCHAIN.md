@@ -86,6 +86,8 @@ overlay、构建与 lockfile 仍由唯一的 `pluxel source` 实现拥有。
 不声明 `pluxel.sources.jsonc` 的 registry-managed local project 也使用同一 launcher；该分支直接在项目根目录
 运行 pnpm install，不生成 source registry、overlay 或链接。source install options 只接受于声明了 source
 配置的项目，避免同一个 flag 在两条安装路径上产生模糊语义。
+`pluxel source build --package <name>` 可以重复传入 source closure 内确实需要 artifact 的精确 target；它只用于需要先使一个
+package export 可执行的窄 bootstrap，例如 Vitest config 的 `@pluxel/test`。不带 `--package` 才构建整个 selected artifact closure。
 上游构建优先把精确目标交给其 Turbo task graph，不用 `package...` filter 强制扩张依赖；无 Turbo 时
 回落到 pnpm recursive filter，不在消费仓库复制 package filter。`build` script 本身不代表 source
 consumer 需要产物：CLI 只选择 live manifest 引用顶层标准构建目录或暴露 executable bin 的 package，

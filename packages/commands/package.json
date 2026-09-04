@@ -66,5 +66,8 @@
 		"@pluxel/test": "workspace:*",
 		"@sinclair/parsebox": "catalog:dev",
 		"@types/node": "catalog:types"
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

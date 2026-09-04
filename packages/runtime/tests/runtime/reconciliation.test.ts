@@ -25,7 +25,8 @@ import {
 	type RuntimeStateCoordinatorStore,
 	type RuntimeStateSnapshot,
 } from '@pluxel/runtime/internal'
-import { BasePlugin, createRuntimeHost, Plugin as PluginDecorator } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin as PluginDecorator } from '@pluxel/runtime/test'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 import { describe, expect, it } from 'vitest'
 
@@ -1035,8 +1036,8 @@ describe('runtime-common pinned mutation admission', () => {
 
 describe('runtime host-owned graph state', () => {
 	it('isolates coordinators by root and removes a disposed host identity', async () => {
-		const first = createRuntimeHost()
-		const second = createRuntimeHost()
+		const first = createRuntimeInternalTestHarness()
+		const second = createRuntimeInternalTestHarness()
 		const firstCoordinator = requireRuntimePluginGraphCoordinator(first.ctx)
 		const child = createOwnerContext(first.ctx, 'child')
 		try {
@@ -1052,8 +1053,8 @@ describe('runtime host-owned graph state', () => {
 	})
 
 	it('isolates immutable route snapshots and skips disposed lower installations', async () => {
-		const first = createRuntimeHost()
-		const second = createRuntimeHost()
+		const first = createRuntimeInternalTestHarness()
+		const second = createRuntimeInternalTestHarness()
 		const child = createOwnerContext(first.ctx, 'child')
 		const base = {
 			dynamicPluginSources: { hasFile: () => true, hasDirectory: () => true },
@@ -1085,7 +1086,7 @@ describe('runtime host-owned graph state', () => {
 		@PluginDecorator({ forkable: true })
 		class Orphan extends BasePlugin {}
 		lowerTestPlugin(Orphan)
-		const host = createRuntimeHost()
+		const host = createRuntimeInternalTestHarness()
 		const base = node(pluginDefinitionAddressOf(Orphan))
 		const fork = host.fork(Orphan, 'stopped')
 		try {

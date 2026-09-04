@@ -46,9 +46,9 @@ import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import { BadgePlugin } from '@acme/badge'
 
-host.add([FontsPlugin, CanvasPlugin, BadgePlugin])
-host.start(BadgePlugin)
-await host.commit()
+await host.start(BadgePlugin, {
+	catalog: [FontsPlugin, CanvasPlugin],
+})
 ```
 
 `createCanvasSync()` 返回上游 native Canvas。名称明确表示 allocation、2D context、绘图和 measure 会占用调用线程；

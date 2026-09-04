@@ -36,7 +36,7 @@
 	"scripts": {
 		"build": "tsdown",
 		"test": "pnpm exec vitest run",
-		"typecheck": "tsc --noEmit --pretty false"
+		"typecheck": "tsc -p tsconfig.vitest.json --pretty false"
 	},
 	"dependencies": {
 		"valibot": "catalog:validation"
@@ -98,5 +98,8 @@
 		"react-dom": {
 			"optional": true
 		}
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

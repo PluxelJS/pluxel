@@ -55,5 +55,8 @@
 	"devDependencies": {
 		"@types/node": "catalog:types",
 		"tinybench": "catalog:dev"
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

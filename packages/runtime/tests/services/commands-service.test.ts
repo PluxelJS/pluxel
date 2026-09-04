@@ -1,7 +1,8 @@
 import { defineCommand } from '@pluxel/commands'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
@@ -18,7 +19,7 @@ function valueCommand(value: string, name = 'example.value.get') {
 
 describe('CommandsService', () => {
 	it('aborts and drains owner commands before the plugin stop hook', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			const order: string[] = []
 			let captured!: { execute(candidate: unknown, context?: {}): Promise<unknown> }
@@ -75,7 +76,7 @@ describe('CommandsService', () => {
 	})
 
 	it('publishes the built-in plugin management catalog once', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			expect(host.ctx.commands.list().map(({ name }) => name)).toEqual([
 				'plugin.auto-start.set',
@@ -92,7 +93,7 @@ describe('CommandsService', () => {
 	})
 
 	it('delegates stable catalog snapshots and publication subscriptions to the registry', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			const initial = host.ctx.commands.snapshot()
 			expect(host.ctx.commands.snapshot()).toBe(initial)
@@ -125,7 +126,7 @@ describe('CommandsService', () => {
 	})
 
 	it('moves retained installed handles to a compatible replacement without stale ownership', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			let retained!: {
 				readonly descriptor: { readonly name: string }
@@ -177,7 +178,7 @@ describe('CommandsService', () => {
 	})
 
 	it('manual dispose revokes cached command wrappers without cancelling entered work', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			let disposeManual!: () => void
 			let captured!: { execute(candidate: unknown, context?: {}): Promise<unknown> }
@@ -237,7 +238,7 @@ describe('CommandsService', () => {
 	})
 
 	it('rolls back registrations when plugin startup fails', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			@Plugin({ displayName: 'BrokenCommandOwner' })
 			class BrokenCommandOwner extends BasePlugin {
@@ -261,7 +262,7 @@ describe('CommandsService', () => {
 	})
 
 	it('keeps cached service views and cleanup isolated between plugin owners', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			@Plugin({ displayName: 'CommandOwnerA' })
 			class CommandOwnerA extends BasePlugin {
@@ -305,7 +306,7 @@ describe('CommandsService', () => {
 	})
 
 	it('executes management commands through the existing lifecycle use case', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			@Plugin({ displayName: 'ManagedPlugin' })
 			class ManagedPlugin extends BasePlugin {}
@@ -350,7 +351,7 @@ describe('CommandsService', () => {
 	})
 
 	it('restarts the required dependent closure through management commands', async () => {
-		const host = createRuntimeHost({ workbench: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			let providerStarts = 0
 			let consumerStarts = 0

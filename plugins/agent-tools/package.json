@@ -45,5 +45,8 @@
 	"peerDependencies": {
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/runtime": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

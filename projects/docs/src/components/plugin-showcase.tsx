@@ -99,23 +99,18 @@ class StatusPlugin extends BasePlugin {
 declare class StatusPlugin {
   status(): { ready: true; label: string }
 }
-declare interface RuntimeHost {
-  add<T>(plugin: PluginClass<T>): void
-  start<T>(plugin: PluginClass<T>): void
-  commit(): Promise<void>
+declare interface RuntimeTestHost {
+  start<T>(plugin: PluginClass<T>): Promise<T>
   require<T>(plugin: PluginClass<T>): T
   [Symbol.asyncDispose](): Promise<void>
 }
-declare const createRuntimeHost: () => RuntimeHost
+declare const createRuntimeTestHost: () => RuntimeTestHost
 // ---cut---
 import { expect, it } from 'vitest'
 
 it('运行完整的 Plugin graph', async () => {
-  await using host = createRuntimeHost()
-  host.add(StatusPlugin)
-  host.start(StatusPlugin)
-  await host.commit()
-  const status = host.require(StatusPlugin).status()
+  await using host = createRuntimeTestHost()
+  const status = (await host.start(StatusPlugin)).status()
   //    ^?
   expect(status).toEqual({ ready: true, label: 'ready' })
 })

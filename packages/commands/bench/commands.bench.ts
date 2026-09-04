@@ -1,4 +1,4 @@
-import { afterAll, bench, describe } from 'vitest'
+import { afterAll, test } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
 import { createArgvRouter } from '../src/argv'
 import { createCommandRegistry, defineCommand } from '../src/index'
@@ -99,18 +99,13 @@ for (let index = 0; index < catalog.length; index += 1) {
 	catalogRouter1000.bind(command, binding)
 }
 
-describe('command definition', () => {
-	bench(
-		'define with cached schema identities',
-		() => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('command definition', async ({ bench }) => {
+	await bench.compare(
+		bench('define with cached schema identities', () => {
 			consume(defineUpdate())
-		},
-		options,
-	)
-
-	bench(
-		'define with fresh schemas',
-		() => {
+		}),
+		bench('define with fresh schemas', () => {
 			consume(
 				defineCommand({
 					name: 'item.fresh',
@@ -121,151 +116,110 @@ describe('command definition', () => {
 					execute: ({ value }) => ({ value }),
 				}),
 			)
-		},
+		}),
 		options,
 	)
 })
 
-describe('validated execution, small JSON', () => {
-	bench(
-		'direct execute, small JSON',
-		async () => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('validated execution, small JSON', async ({ bench }) => {
+	await bench.compare(
+		bench('direct execute, small JSON', async () => {
 			consume(await update.execute(input))
-		},
-		options,
-	)
-
-	bench(
-		'direct execute with deadline, small JSON',
-		async () => {
+		}),
+		bench('direct execute with deadline, small JSON', async () => {
 			consume(await update.execute(input, { deadlineMs: Number.MAX_SAFE_INTEGER }))
-		},
-		options,
-	)
-
-	bench(
-		'registry execute, small JSON',
-		async () => {
+		}),
+		bench('registry execute, small JSON', async () => {
 			consume(await registry.execute('item.update', input))
-		},
+		}),
 		options,
 	)
 })
 
-describe('validated execution, payload scaling', () => {
-	bench(
-		'direct execute, 1-item JSON round trip',
-		async () => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('validated execution, payload scaling', async ({ bench }) => {
+	await bench.compare(
+		bench('direct execute, 1-item JSON round trip', async () => {
 			consume(await bulk.execute({ items: smallPayload }))
-		},
-		options,
-	)
-
-	bench(
-		'direct execute, 100-item JSON round trip',
-		async () => {
+		}),
+		bench('direct execute, 100-item JSON round trip', async () => {
 			consume(await bulk.execute({ items: largePayload }))
-		},
+		}),
 		options,
 	)
 })
 
-describe('shared ParseBox DSL', () => {
-	bench(
-		'direct execute with ParseBox transform',
-		async () => {
-			consume(await searchPlayers.execute({ query: 'warnings >= 3', limit: 25 }))
-		},
-		options,
-	)
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('shared ParseBox DSL', async ({ bench }) => {
+	await bench('direct execute with ParseBox transform', async () => {
+		consume(await searchPlayers.execute({ query: 'warnings >= 3', limit: 25 }))
+	}).run(options)
 })
 
-describe('catalog hot paths', () => {
-	bench(
-		'1,000 registry cached lists',
-		() => {
-			let current
-			for (let index = 0; index < 1_000; index += 1) current = registry.list()
-			consume(current)
-		},
-		options,
-	)
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('catalog hot paths', async ({ bench }) => {
+	await bench('1,000 registry cached lists', () => {
+		let current
+		for (let index = 0; index < 1_000; index += 1) current = registry.list()
+		consume(current)
+	}).run(options)
 })
 
-describe('argv resolution scaling', () => {
-	bench(
-		'100 resolves among 1 route',
-		() => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('argv resolution scaling', async ({ bench }) => {
+	await bench.compare(
+		bench('100 resolves among 1 route', () => {
 			let current
 			for (let index = 0; index < 100; index += 1) {
 				current = router.resolve('item update item-42 --count 42')
 			}
 			consume(current)
-		},
-		options,
-	)
-
-	bench(
-		'100 resolves among 100 routes',
-		() => {
+		}),
+		bench('100 resolves among 100 routes', () => {
 			let current
 			for (let index = 0; index < 100; index += 1) {
 				current = catalogRouter100.resolve('item update-99 item-42 --count 42')
 			}
 			consume(current)
-		},
-		options,
-	)
-
-	bench(
-		'100 resolves among 1,000 routes',
-		() => {
+		}),
+		bench('100 resolves among 1,000 routes', () => {
 			let current
 			for (let index = 0; index < 100; index += 1) {
 				current = catalogRouter1000.resolve('item update-999 item-42 --count 42')
 			}
 			consume(current)
-		},
+		}),
 		options,
 	)
 })
 
-describe('registry construction scaling', () => {
-	bench(
-		'register 10 commands',
-		() => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('registry construction scaling', async ({ bench }) => {
+	await bench.compare(
+		bench('register 10 commands', () => {
 			const current = createCommandRegistry()
 			for (let index = 0; index < 10; index += 1) current.register(catalog[index]!)
 			consume(current)
-		},
-		options,
-	)
-
-	bench(
-		'register 100 commands',
-		() => {
+		}),
+		bench('register 100 commands', () => {
 			const current = createCommandRegistry()
 			for (let index = 0; index < 100; index += 1) current.register(catalog[index]!)
 			consume(current)
-		},
-		options,
-	)
-
-	bench(
-		'register 1,000 commands',
-		() => {
+		}),
+		bench('register 1,000 commands', () => {
 			const current = createCommandRegistry()
 			for (const command of catalog) current.register(command)
 			consume(current)
-		},
+		}),
 		options,
 	)
 })
 
-describe('argv construction scaling', () => {
-	bench(
-		'bind 10 argv routes transactionally',
-		() => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('argv construction scaling', async ({ bench }) => {
+	await bench.compare(
+		bench('bind 10 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < 10; index += 1) {
 				current.bind(catalog[index]!, {
@@ -274,13 +228,8 @@ describe('argv construction scaling', () => {
 				})
 			}
 			consume(current)
-		},
-		options,
-	)
-
-	bench(
-		'bind 100 argv routes transactionally',
-		() => {
+		}),
+		bench('bind 100 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < 100; index += 1) {
 				current.bind(catalog[index]!, {
@@ -289,13 +238,8 @@ describe('argv construction scaling', () => {
 				})
 			}
 			consume(current)
-		},
-		options,
-	)
-
-	bench(
-		'bind 1,000 argv routes transactionally',
-		() => {
+		}),
+		bench('bind 1,000 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < catalog.length; index += 1) {
 				current.bind(catalog[index]!, {
@@ -304,7 +248,7 @@ describe('argv construction scaling', () => {
 				})
 			}
 			consume(current)
-		},
+		}),
 		options,
 	)
 })

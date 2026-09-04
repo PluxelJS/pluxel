@@ -29,7 +29,7 @@ catalogs:
     '@pluxel/runtime-static': ^1.0.0
     '@pluxel/test': ^1.0.0
   test:
-    vitest: ^4.1.10
+    vitest: 5.0.0
   tooling:
     '@types/node': ^25.0.0
     oxfmt: ^0.58.0

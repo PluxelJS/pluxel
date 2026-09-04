@@ -1,7 +1,8 @@
 /**
  * Unsafe / low-level exports for specialized tests.
  *
- * DO NOT use these for normal plugin tests — prefer the high-level Host API from `@pluxel/test`.
+ * DO NOT use these for normal plugin tests — prefer the smallest public host from
+ * `@pluxel/core/test` or `@pluxel/runtime/test`.
  * These exist only for cases where you are explicitly testing lowered definition/config facts.
  */
 
@@ -29,8 +30,8 @@ export type LowerTestReplacementOptions = Readonly<{
  * Model a fresh semantic evaluation of an existing canonical Plugin export.
  *
  * The replacement class must be undecorated and must not already have lowering facts. This helper
- * deliberately writes the target definition address onto the candidate itself; RuntimeHost never
- * rewrites a foreign candidate or clones facts from the previous implementation.
+ * deliberately writes the target definition address onto the candidate itself. The public Runtime
+ * test host never rewrites a foreign candidate or clones facts from the previous implementation.
  */
 export function lowerTestReplacement<T extends PluginConstructor>(
 	previous: PluginConstructor,

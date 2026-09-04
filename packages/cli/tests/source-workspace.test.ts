@@ -24,6 +24,7 @@ import {
 	createSourceInstallArgs,
 	ensureSourcePnpmfileBootstrap,
 	materializeSourceOverrides,
+	selectSourceBuildTargets,
 	sourcePnpmfileBootstrapContents,
 } from '../src/source/execution'
 import {
@@ -207,6 +208,33 @@ describe('source workspace planning', () => {
 			'run',
 			'build',
 		])
+
+		const artifact = {
+			name: '@acme/artifact',
+			dir: '/source/artifact',
+			manifestPath: '/source/artifact/package.json',
+			manifest: {
+				scripts: { build: 'tsdown' },
+				exports: { '.': { default: './dist/index.mjs' } },
+			},
+		}
+		const sourceOnly = {
+			name: '@acme/source-only',
+			dir: '/source/source-only',
+			manifestPath: '/source/source-only/package.json',
+			manifest: {
+				scripts: { build: 'vite build' },
+				exports: { '.': './src/index.ts' },
+			},
+		}
+		const sourcePlan = { selectedPackages: [artifact, sourceOnly] }
+		expect(selectSourceBuildTargets(sourcePlan, ['@acme/artifact', '@acme/artifact'])).toEqual([
+			artifact,
+		])
+		expect(() => selectSourceBuildTargets(sourcePlan, ['@acme/missing'])).toThrow(/not selected/i)
+		expect(() => selectSourceBuildTargets(sourcePlan, ['@acme/source-only'])).toThrow(
+			/does not expose a required build artifact/i,
+		)
 	})
 
 	it('includes a source workspace root and resolves singletons from selected owners only', async () => {

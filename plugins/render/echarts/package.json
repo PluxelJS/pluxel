@@ -42,8 +42,10 @@
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "catalog:build",
+		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
 	},
@@ -51,6 +53,9 @@
 		"@pluxel/canvas": "workspace:^",
 		"@pluxel/fonts": "workspace:^",
 		"@pluxel/runtime": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
 	},
 	"pluxel": {
 		"pluginPackages": {

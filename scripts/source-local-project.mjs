@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const developmentRoot = dirname(repositoryRoot)
 const localProjectsRoot = resolve(repositoryRoot, 'local-projects')
+const sourceCheckoutsRoot = resolve(developmentRoot, 'source-checkouts')
 const { consumerRoot, sourceArgs } = parseArguments(process.argv.slice(2))
 
 const relativeConsumer = relative(localProjectsRoot, consumerRoot)
@@ -32,14 +34,17 @@ if (!existsSync(resolve(consumerRoot, 'pluxel.sources.jsonc'))) {
 
 ensureWorkspaceCli()
 
-// This launcher intentionally selects the checkouts colocated in this Pluxel development tree.
-// Registering them here makes a fresh local-project checkout independent from global PATH state.
+// This launcher intentionally selects the source providers colocated in this development tree.
+// A full source checkout wins over a local-project consumer mirror with the same Git identity;
+// otherwise a partial consumer can overwrite the provider and make its own overlay recursive.
+const registeredRepositories = new Set()
 registerCheckout(repositoryRoot)
+for (const checkout of childGitCheckouts(sourceCheckoutsRoot)) registerCheckout(checkout)
 for (const entry of readdirSync(localProjectsRoot, { withFileTypes: true })) {
 	if (!entry.isDirectory()) continue
 	const checkout = resolve(localProjectsRoot, entry.name)
+	if (checkout === consumerRoot) continue
 	if (!existsSync(resolve(checkout, 'package.json'))) continue
-	if (!hasGitOrigin(checkout)) continue
 	registerCheckout(checkout)
 }
 
@@ -90,19 +95,43 @@ function ensureWorkspaceCli() {
 }
 
 function registerCheckout(checkout) {
+	const repository = checkoutRepository(checkout)
+	if (!repository || registeredRepositories.has(repository)) return
 	run(
 		process.execPath,
 		[resolve(repositoryRoot, 'packages/cli/dist/cli.mjs'), 'source', 'register', checkout],
 		repositoryRoot,
 	)
+	registeredRepositories.add(repository)
 }
 
-function hasGitOrigin(checkout) {
-	return (
-		spawnSync('git', ['-C', checkout, 'remote', 'get-url', 'origin'], {
-			stdio: 'ignore',
-		}).status === 0
-	)
+function childGitCheckouts(root) {
+	if (!existsSync(root)) return []
+	return readdirSync(root, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => resolve(root, entry.name))
+}
+
+function checkoutRepository(checkout) {
+	const result = spawnSync('git', ['-C', checkout, 'remote', 'get-url', 'origin'], {
+		encoding: 'utf8',
+	})
+	if (result.status !== 0 || !result.stdout.trim()) return undefined
+	return normalizeRepositoryIdentity(result.stdout.trim())
+}
+
+// Keep this small bootstrap script independent from the CLI source modules it may need to build.
+function normalizeRepositoryIdentity(input) {
+	let value = input.trim().replace(/^git\+/, '')
+	const scp = value.includes('://') ? undefined : value.match(/^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/)
+	if (scp && !/^[A-Za-z]:[\\/]/.test(value)) value = `https://${scp[1]}/${scp[2]}`
+	if (!/^[a-z][a-z\d+.-]*:\/\//i.test(value)) value = `https://${value.replace(/^\/+/, '')}`
+	const url = new URL(value)
+	const path = url.pathname
+		.replace(/\/+$/, '')
+		.replace(/\.git$/i, '')
+		.replace(/^\/+/, '')
+	return `https://${url.host.toLowerCase()}/${path}`
 }
 
 function run(command, args, cwd) {

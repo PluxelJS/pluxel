@@ -23,7 +23,7 @@ generation-scoped `ctx.elysia`。
 
 这不代表完整的跨 runtime Elysia Server parity：
 
-- `host.fetch()` 是 Fetch dispatcher 测试入口，不执行真实 WebSocket upgrade；
+- 内部 Fetch dispatcher fixture 不执行真实 WebSocket upgrade；
 - 尚无第二个 Bun、Deno 或 Worker carrier conformance；
 - crossws 没有可移植的主动 `pong()`，send/backpressure 返回语义也未与所有 runtime 精确对齐；
 - application-level WebSocket payload、compression、idle timeout 等 tuning 尚未完整投影到共享 carrier；

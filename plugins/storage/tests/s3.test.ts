@@ -1,3 +1,4 @@
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { BasePlugin, Plugin, createRuntimeTestHost } from '@pluxel/runtime/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -142,9 +143,12 @@ describe('S3Plugin remote backend', () => {
 				change.start(S3Consumer)
 			})
 			expect(host.isRunning(S3Plugin)).toBe(false)
-			expect(failure).toHavePluginLifecycleIssue(S3Plugin, {
-				kind: 'start-failed',
-			})
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(S3Plugin),
+					kind: 'start-failed',
+				}),
+			)
 		}
 	})
 

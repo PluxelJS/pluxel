@@ -5,10 +5,7 @@ import { RpcStub } from 'capnweb'
 import { pluginConfigPatch } from '../api/usecases/pluginConfig'
 import { requireRuntimeHttpService } from '../context/runtime-http-capability'
 import { requireWorkbench } from '../services/workbench'
-import {
-	openWorkbenchEntry,
-	readWorkbenchLayout,
-} from '../workbench/client'
+import { openWorkbenchEntry, readWorkbenchLayout } from '../workbench/client'
 import {
 	readWorkbenchOpenedContentHandle,
 	readWorkbenchOpenedViewHandle,
@@ -40,8 +37,7 @@ export type RuntimeTestDriverScopeOptions<TTarget extends PluginTestTarget> = Re
  * Runtime and static application test hosts compose this scope instead of duplicating driver
  * normalization, mutation exclusion, Workbench ownership, or response-body cleanup.
  */
-export interface RuntimeTestDriverScope<TTarget extends PluginTestTarget>
-	extends AsyncDisposable {
+export interface RuntimeTestDriverScope<TTarget extends PluginTestTarget> extends AsyncDisposable {
 	readonly config: RuntimeConfigTestDriver<TTarget>
 	readonly http: RuntimeHttpTestDriver
 	readonly commands: RuntimeCommandsTestDriver
@@ -180,7 +176,7 @@ export function createRuntimeTestDriverScope<TTarget extends PluginTestTarget>(
 	const dispose = () =>
 		gate.dispose(async () => {
 			const errors: unknown[] = []
-			for (const body of [...bodies]) {
+			for (const body of bodies) {
 				try {
 					await body.cancel()
 				} catch (error) {
@@ -247,11 +243,13 @@ function trackResponseBody(response: Response, bodies: Set<TrackedBody>): Respon
 	tracked = Object.freeze({
 		async cancel(): Promise<void> {
 			if (!active) return
-			try {
-				await reader.cancel(new Error('[pluxel/test] Runtime test host disposed'))
-			} finally {
-				finish()
-			}
+			finish()
+			// A Fetch implementation may leave cancellation pending while an upstream
+			// stream is never pulled. Host teardown still signals cancellation, but it
+			// must not turn that non-cooperative stream into an unbounded test hang.
+			void reader
+				.cancel(new Error('[pluxel/test] Runtime test host disposed'))
+				.catch((): undefined => undefined)
 		},
 	})
 	bodies.add(tracked)
@@ -352,7 +350,10 @@ function createTrackedWorkbenchLease(input: {
 }): Readonly<{ lease: TrackedWorkbenchLease; dispose(): void }> {
 	let active = true
 	let lease!: TrackedWorkbenchLease
-	const createdAt = new Error().stack?.split('\n').slice(2, 7).join('\n')
+	const createdAt = new Error('[pluxel/test] Workbench entry created').stack
+		?.split('\n')
+		.slice(2, 7)
+		.join('\n')
 	const dispose = () => {
 		if (!active) return
 		active = false

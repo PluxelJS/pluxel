@@ -18,7 +18,7 @@ import {
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
 import { createDiskFixture } from '@pluxel/test/fixtures'
-import { createRuntimeHost } from '@pluxel/runtime/test'
+import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import * as React from 'react'
 import * as ReactDom from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -378,7 +378,7 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
@@ -419,7 +419,9 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeHost({ workbenchArtifactRoot: fixture.getPath('workbench') })
+			await using host = createRuntimeInternalTestHarness({
+				workbenchArtifactRoot: fixture.getPath('workbench'),
+			})
 
 			await host.commit()
 			const artifacts = requireWorkbench(host.ctx).artifacts
@@ -466,7 +468,9 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeHost({ workbenchArtifactRoot: fixture.getPath('workbench') })
+			await using host = createRuntimeInternalTestHarness({
+				workbenchArtifactRoot: fixture.getPath('workbench'),
+			})
 
 			await host.commit()
 			const contentService = requireWorkbench(host.ctx).content
@@ -509,7 +513,9 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeHost({ workbenchArtifactRoot: fixture.getPath('workbench') })
+			await using host = createRuntimeInternalTestHarness({
+				workbenchArtifactRoot: fixture.getPath('workbench'),
+			})
 
 			const backend = requireWorkbench(host.ctx)
 			const commits = vi.fn()

@@ -9,8 +9,11 @@ Plugin 测试应经过与生产构建一致的语义处理，包括装饰器转�
 ## 安装 Vitest preset
 
 ```sh package-install
-npx nypm add -D @pluxel/test @pluxel/core vitest oxlint
+npx nypm add -D @pluxel/test @pluxel/core vitest@5.0.0 oxlint
 ```
+
+Testing v2 固定使用 Vitest `5.0.0`；它要求 Node.js `>=22.12.0` 和 Vite `>=6.4.0`。Pluxel workspace
+当前要求 Node.js `>=24`，新项目也应保持至少这个版本，不要以 `clearMocks: false` 或旧 runner entry 恢复 Vitest 4 行为。
 
 最小 `vitest.config.ts`：
 
@@ -24,15 +27,31 @@ export { default } from '@pluxel/test/vitest'
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestConfig({
-	test: { include: ['tests/**/*.test.ts'] },
+	// Vitest owns test discovery and runner policy.
+	test: { include: ['tests/**/*.test.ts'], passWithNoTests: false },
+	// Pluxel owns source lowering/config extraction and consumes this field before Vite sees it.
+	pluxel: { include: ['src/**/*.ts', 'tests/**/*.ts'] },
 })
 ```
 
-preset 在 TypeScript 擦除前运行 Pluxel semantic lowering、build-correctness lint，并注册 lifecycle matcher。把
-`vitest.config.ts` 纳入项目的 `tsconfig.include`，TypeScript 才能从同一个 import 看到 matcher augmentation。不要在每个 test file
-重复导入 setup，也不要关闭 lowering 来“简化”测试。
+preset 在 TypeScript 擦除前运行 Pluxel semantic lowering 和 build-correctness lint。把 `vitest.config.ts` 纳入项目的
+`tsconfig.include`，让 TypeScript 检查同一份 Vite/Vitest config；它不会注册 test setup 或自定义 matcher。不要关闭 lowering 来“简化”测试。
+
+`test.include` 是 Vitest 的测试发现范围；`pluxel.include` / `exclude` 是 Pluxel source toolchain 的变换范围，例如被测试
+间接导入的 fixture Plugin 也可能需要后者覆盖。两者不要混用。要在 semantic lowering 前增加 Vite transform，使用
+`pluxel.prePlugins`；其余 Vite plugin 保持在顶层 `plugins`。
 
 `@pluxel/test` 没有根入口。它只从明确 subpath 提供 runner、fixture 和 unsafe lowering 工具；test host 从所验证层的 package 导入。
+
+使用本地 source overlay 时，Vitest 需要先从已构建的 `@pluxel/test/vitest` 读取 config bootstrap，因为 config 本身早于
+Vite conditions 求值。普通测试脚本应先运行：
+
+```sh
+pluxel source build --package @pluxel/test
+```
+
+这只构建 preset 的 artifact 及其自身 build graph 前置；config 加载后，测试模块仍通过 `@pluxel/source` / `@pluxel/hmr` 读取当前源码。
+不要改用相对 `src` import 或给整个 Vitest 进程加 condition。需要验证 production launcher/artifact 的测试才额外构建它自己的 owner。
 
 ## 先选择最小边界
 
@@ -205,21 +224,30 @@ Core 没有 Runtime persistence/config driver；需要在一个 Core graph bound
 `summary.lifecycleReport`。预期 start、blocked 或 drain failure 时使用 `commitExpectFail()`：
 
 ```ts no-twoslash
+import { pluginNodeAddressOf } from '@pluxel/core/test'
+
 const failure = await host.commitExpectFail((change) => {
 	change.start(ConsumerPlugin, { catalog: [BrokenProviderPlugin] })
 })
 
-expect(failure).toHavePluginLifecycleIssue(BrokenProviderPlugin, {
-	kind: 'start-failed',
-})
-expect(failure).toHavePluginLifecycleIssue(ConsumerPlugin, {
-	kind: 'dependency-blocked',
-	blockedBy: BrokenProviderPlugin,
-})
+expect(failure.lifecycleReport.issues).toContainEqual(
+	expect.objectContaining({
+		plugin: pluginNodeAddressOf(BrokenProviderPlugin),
+		kind: 'start-failed',
+	}),
+)
+expect(failure.lifecycleReport.issues).toContainEqual(
+	expect.objectContaining({
+		plugin: pluginNodeAddressOf(ConsumerPlugin),
+		kind: 'dependency-blocked',
+		blockedBy: pluginNodeAddressOf(BrokenProviderPlugin),
+	}),
+)
 ```
 
 `commitExpectFail()` 只有观察到 lifecycle issue 才成功返回；完全成功会作为 assertion error 拒绝。programming error、invalid graph、配置
-输入错误、persistence failure 或 capability disabled 仍直接抛出。测试分支依赖稳定的 `phase/kind/blockedBy`，不要依赖完整 message。
+输入错误、persistence failure 或 capability disabled 仍直接抛出。测试分支依赖 stable `plugin/phase/kind/blockedBy`，不要依赖完整
+message；Vitest 5 的 `expect.objectContaining()` 和 `expect.stringContaining()` 足以表达这些 structured assertions。
 
 ## Fork 与 replacement
 
@@ -293,6 +321,31 @@ expect(result.action).toMatchObject({ ok: true })
 
 `open()` 不模拟 renderer 或点击。React 控件、router 和 Shell state 在 browser test 中验证；WebSocket handshake、Origin、framing 与 disconnect
 在 real-carrier test 中验证。Workbench disabled 时 driver 会明确拒绝，不会偷偷安装 capability。
+
+### Pure `RpcTarget` object contract
+
+不经过 host 的 target object 可以通过本地 Cap'n Web membrane 验证参数/返回值复制和 capability 语义：
+
+```ts no-twoslash
+import { createLocalRpcClient } from '@pluxel/runtime/test'
+import { RpcTarget } from '@pluxel/runtime/capnweb'
+
+interface CounterApi extends RpcTarget {
+	read(): { count: number }
+}
+
+class CounterTarget extends RpcTarget implements CounterApi {
+	read() {
+		return { count: 1 }
+	}
+}
+
+using api = createLocalRpcClient<CounterApi>(new CounterTarget())
+expect(await api.read()).toEqual({ count: 1 })
+```
+
+`createLocalRpcClient()` 借用 target：释放返回的 stub 不会释放 target 或它的领域服务。它不验证 Elysia mount、HTTP Upgrade、WebSocket、Origin
+或 disconnect；mounted HTTP endpoint 使用 `host.http.fetch()`，WebSocket carrier 使用真实 listener。
 
 Vault、database、persistence 和 worker 不自动变成 root test backdoor。需要白盒验证 Plugin-owned 数据时，从当前 running instance 取得
 owner-bound handle；restart/replacement 后重新取得新 instance 和 handle。大量业务 seed 由具体 Plugin package 提供领域 fixture。

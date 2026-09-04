@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "tsdown.config.ts"],
+	"include": ["src", "tests", "tsdown.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
 		"outDir": "dist",
 		"types": ["node"]

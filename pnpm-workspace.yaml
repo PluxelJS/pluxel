@@ -30,6 +30,9 @@ minimumReleaseAgeExclude:
   - '@pnpm/napi@12.0.0-rc.0'
   - elysia@2.0.0-beta.7
   - '@module-federation/vite@1.21.1'
+  - '@vitest/mocker@5.0.0'
+  - '@vitest/spy@5.0.0'
+  - vitest@5.0.0
 
 onlyBuiltDependencies:
   - esbuild
@@ -221,7 +224,7 @@ catalogs:
     wretch: ^3.0.9
     yaml: ^2.9.0
   test:
-    vitest: ^4.1.11
+    vitest: 5.0.0
   types:
     '@types/mdast': 4.0.4
     '@types/mdx': 2.0.14

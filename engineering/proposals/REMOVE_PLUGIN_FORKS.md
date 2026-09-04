@@ -43,7 +43,7 @@ fork 不是配置对象副本。当前模型把它提升为完整 Plugin node：
 - Workbench、日志、引用、URL route、catalog layout、status projection 和 dependency graph 都必须识别 fork identity；
 - fork removal 必须串行停止 node、清理其 outbound policy、Config record、logging policy，再删除 durable family entry。
 
-因此 fork 的成本不在一个 `host.fork()` 方法，而在它要求所有 Plugin node consumer 永久支持 `default | fork` 两种身份和
+因此 fork 的成本不在一次 `definePluginFork()` 之类的 helper 调用，而在它要求所有 Plugin node consumer 永久支持 `default | fork` 两种身份和
 多份持久状态的一致性。
 
 ## 为什么重新评估

@@ -371,6 +371,9 @@ describe('scaffold template rendering', () => {
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
 			"'@pluxel/runtime': ^1.0.0",
 		)
+		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
+			'vitest: 5.0.0',
+		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
 		const source = fixture.fs.readFileSync(resolve(targetDir, 'src/hello-world.ts'), 'utf8')
@@ -384,9 +387,11 @@ describe('scaffold template rendering', () => {
 		expect(pluginTest).toContain("from 'pluxel-plugin-hello-world'")
 		expect(pluginTest).not.toContain("from '../src/")
 		expect(source).not.toContain('export default')
-		expect(pluginTest).toContain('await host.commit()')
-		expect(pluginTest).toContain('workbench: false')
-		expect(pluginTest).toContain('host.start(HelloWorldPlugin)')
+		expect(pluginTest).toContain('createRuntimeTestHost')
+		expect(pluginTest).toContain("initialConfig: { message: 'configured' }")
+		expect(pluginTest).not.toContain('createRuntimeHost')
+		expect(pluginTest).not.toContain('host.cfg(')
+		expect(manifest.engines).toEqual({ node: '>=24' })
 		const tsconfigSource = String(
 			fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.json'), 'utf8'),
 		)

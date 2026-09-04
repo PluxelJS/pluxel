@@ -1,10 +1,10 @@
 ---
-title: 插件间 UI 组合
-description: 用官方 FontsPlugin、provider 设置、多 collection 与 BotManager 说明 Attachment 的最小正确形状。
+title: Attachment：跨 Plugin UI
+description: 让 provider 拥有 UI/API、consumer 只拥有 placement 的跨 Plugin UI 配方。
 ---
 
 Attachment 适合“provider 拥有界面，consumer 决定把它放在哪里”的场景。它只组合每次打开所需的
-Cap’n Web roots，不建立新的依赖注入、状态存储或领域模型。
+Cap’n Web roots，不建立新的依赖注入、状态存储或领域模型。这是跨 Plugin 复用 UI 的唯一默认路径。
 
 先确认确实需要跨 Plugin 复用 UI。如果 consumer 只在服务端调用 provider，就使用普通 constructor dependency；
 如果 consumer 自己完全拥有页面和 API，就使用本地 View。
@@ -350,7 +350,7 @@ const fontCatalogQuery = collectionPickerScope.query(({ provider }) => ({
 }))
 const fontSelectionQuery = collectionPickerScope.query(({ consumer }) => ({
 	queryKey: ['fonts', 'consumer-selection'] as const,
-	queryFn: () => consumer.current(),
+	queryFn: () => consumer.snapshot(),
 }))
 
 function FontCollectionPicker() {

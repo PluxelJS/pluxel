@@ -2,7 +2,6 @@
 	"extends": "../../tsconfig.src.json",
 	"include": ["src", "tests/**/*.types.ts", "vitest.config.ts"],
 	"compilerOptions": {
-		"customConditions": [],
 		"paths": {
 			"@pluxel/test/*": ["./src/*"]
 		}

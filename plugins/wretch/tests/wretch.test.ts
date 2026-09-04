@@ -1,5 +1,6 @@
 import {
 	createMemoryPersistenceBackend,
+	pluginNodeAddressOf,
 	type PersistenceBackend,
 	type PluginConstructor,
 	type PluginNodeAddress,
@@ -43,6 +44,15 @@ async function startWretchFixture(
 
 function jsonResponse(value: unknown, status = 200): Response {
 	return Response.json(value, { status })
+}
+
+async function settledCall(operation: () => unknown): Promise<{ ok: true } | { ok: false }> {
+	try {
+		await operation()
+		return { ok: true }
+	} catch {
+		return { ok: false }
+	}
 }
 
 function gatedSettingsPersistence(): {
@@ -123,6 +133,7 @@ describe('WretchPlugin', () => {
 		const persistence = trackedSettingsPersistence()
 		{
 			await using host = createRuntimeTestHost({
+				workbench: { enabled: true },
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
@@ -151,7 +162,7 @@ describe('WretchPlugin', () => {
 
 	it('emits portable settings snapshots without undefined optional fields', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 			using settings = await openWretchSettings(host, ConsumerA)
@@ -190,6 +201,7 @@ describe('WretchPlugin', () => {
 		let wrongOwner: unknown
 		{
 			await using host = createRuntimeTestHost({
+				workbench: { enabled: true },
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
@@ -221,10 +233,13 @@ describe('WretchPlugin', () => {
 				change.catalog.add([WretchPlugin, ConsumerA])
 				change.start([WretchPlugin, ConsumerA])
 			})
-			expect(failure).toHavePluginLifecycleIssue(ConsumerA, {
-				kind: 'start-failed',
-				message: 'owner does not match',
-			})
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(ConsumerA),
+					kind: 'start-failed',
+					message: expect.stringContaining('owner does not match'),
+				}),
+			)
 		}
 	})
 
@@ -260,7 +275,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeTestHost()
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 			const consumer = host.require(ConsumerA)
@@ -283,7 +298,8 @@ describe('WretchPlugin', () => {
 			await host.start(ConsumerA)
 
 			using restarted = await openWretchSettings(host, ConsumerA)
-			expect((await restarted.api.snapshot()).settings).toMatchObject({
+			const restartedSnapshot = await restarted.api.snapshot()
+			expect(restartedSnapshot.settings).toMatchObject({
 				headers: { 'accept-language': 'zh-HK', 'x-consumer': 'managed' },
 				proxyUrl: 'http://proxy.example:8080/',
 				timeoutMs: 5_000,
@@ -293,7 +309,7 @@ describe('WretchPlugin', () => {
 
 	it('rejects unsafe proxy, header, and timeout settings', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 1_000 })
 			using settings = await openWretchSettings(host, ConsumerA)
@@ -331,7 +347,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = createRuntimeTestHost()
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
 
@@ -352,6 +368,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = createRuntimeTestHost({
+				workbench: { enabled: true },
 				persistence: { mode: 'custom', backend: persistence.backend },
 			})
 
@@ -365,7 +382,8 @@ describe('WretchPlugin', () => {
 			persistence.release()
 			await Promise.all([first, second])
 			using settings = await openWretchSettings(host, ConsumerB)
-			expect((await settings.api.snapshot()).settings.headers).toEqual({})
+			const settingsSnapshot = await settings.api.snapshot()
+			expect(settingsSnapshot.settings.headers).toEqual({})
 		}
 	})
 
@@ -480,7 +498,7 @@ describe('WretchPlugin', () => {
 
 	it('revokes cached managed-settings RPC with its caller generation', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
@@ -497,7 +515,7 @@ describe('WretchPlugin', () => {
 
 	it('revokes a settings capability when its View closes', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
@@ -507,13 +525,10 @@ describe('WretchPlugin', () => {
 			expect(independentSettings.api).not.toBe(api)
 			settings[Symbol.dispose]()
 
-			await expect(Promise.resolve().then(() => api.snapshot())).rejects.toThrow(
-				'stopped or replaced plugin generation',
-			)
-			await expect(api.update({ headers: {} })).rejects.toThrow(
-				'stopped or replaced plugin generation',
-			)
-			expect((await independentSettings.api.snapshot()).settings.headers).toEqual({})
+			expect(await settledCall(() => api.snapshot())).toEqual({ ok: false })
+			expect(await settledCall(() => api.update({ headers: {} }))).toEqual({ ok: false })
+			const independentSnapshot = await independentSettings.api.snapshot()
+			expect(independentSnapshot.settings.headers).toEqual({})
 		}
 	})
 
@@ -521,7 +536,7 @@ describe('WretchPlugin', () => {
 		const close = vi.spyOn(ProxyAgent.prototype, 'close')
 		try {
 			{
-				await using host = createRuntimeTestHost()
+				await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 
 				await startWretchFixture(host, [WretchPlugin, ConsumerA])
 

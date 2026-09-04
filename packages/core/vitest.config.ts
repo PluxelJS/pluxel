@@ -40,11 +40,5 @@ export default defineConfig({
 	test: {
 		environment: 'node',
 		exclude: ['node_modules/**', 'dist/**', '**/*.d.ts', '.*/**'],
-		deps: {
-			optimizer: {
-				ssr: { enabled: false },
-				web: { enabled: false },
-			},
-		},
 	},
 })

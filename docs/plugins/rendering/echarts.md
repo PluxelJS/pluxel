@@ -44,9 +44,9 @@ import { EChartsPlugin } from '@pluxel/echarts'
 import { FontsPlugin } from '@pluxel/fonts'
 import { ReportsPlugin } from '@acme/reports'
 
-host.add([FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlugin])
-host.start(ReportsPlugin)
-await host.commit()
+await host.start(ReportsPlugin, {
+	catalog: [FontsPlugin, CanvasPlugin, EChartsPlugin],
+})
 ```
 
 ## render 输入与结果

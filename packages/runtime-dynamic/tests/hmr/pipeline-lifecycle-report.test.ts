@@ -18,7 +18,7 @@ import {
 import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../support/lowered-plugin'
 import { pluginsAutoStartPatch, isAutoStartEnabled } from '../support/runtime-state'
 
-function createRuntimeHost(config: RuntimeHostConfig = {}) {
+function createDynamicInternalTestHost(config: RuntimeHostConfig = {}) {
 	return createRuntimeInternalTestHost(
 		{ workbench: false, ...config },
 		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
@@ -55,7 +55,7 @@ function createExecutor(
 
 describe('HmrExecutor transactions', () => {
 	it('imports /@fs ids while keeping clean module ownership', async () => {
-		const host = createRuntimeHost()
+		const host = createDynamicInternalTestHost()
 		try {
 			const cleanId = '/repo/plugins/a/src/index.ts'
 			const calls: string[] = []
@@ -89,7 +89,7 @@ describe('HmrExecutor transactions', () => {
 	})
 
 	it('publishes the replacement generation before one deduplicated dependent restart', async () => {
-		const host = createRuntimeHost()
+		const host = createDynamicInternalTestHost()
 		try {
 			let consumerStarts = 0
 
@@ -152,7 +152,7 @@ describe('HmrExecutor transactions', () => {
 		}
 		lowerTestPlugin(Broken, { requires: [Missing] })
 
-		const host = createRuntimeHost({
+		const host = createDynamicInternalTestHost({
 			runtimeState: {
 				mode: 'memory',
 				snapshot: { autoStart: [pluginNodeAddressOf(Broken)] },
@@ -176,7 +176,7 @@ describe('HmrExecutor transactions', () => {
 	})
 
 	it('rolls back the entire source batch when evaluation fails', async () => {
-		const host = createRuntimeHost()
+		const host = createDynamicInternalTestHost()
 		try {
 			@Plugin()
 			class Stable extends BasePlugin {}

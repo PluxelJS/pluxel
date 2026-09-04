@@ -5,13 +5,11 @@ import {
 	requirePluginService,
 } from '@pluxel/core/internal'
 import {
-	BasePlugin,
-	createRuntimeContext,
-	createRuntimeHost,
-	Plugin,
-	PluginPart,
-	type RuntimeHost,
-} from '@pluxel/runtime/test'
+	createRuntimeInternalTestContext,
+	createRuntimeInternalTestHarness,
+	type RuntimeInternalTestHarness,
+} from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SuperJSON } from 'superjson'
 import { v } from '../../src/config'
@@ -275,7 +273,7 @@ class WithdrawnConfigOwner extends BasePlugin {
 	}
 }
 
-const hosts: RuntimeHost[] = []
+const hosts: RuntimeInternalTestHarness[] = []
 
 afterEach(async () => {
 	for (const host of hosts.splice(0)) await host.dispose()
@@ -797,7 +795,7 @@ describe('ConfigService persistence', () => {
 			plugins: [{ owner, config: { value: 'persisted' } }],
 		})
 		await backend.namespace('config').put('config.json', persisted)
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestContext({
 			persistence: { mode: 'readonly', backend },
 			configService: { environment: false },
 		})
@@ -815,7 +813,7 @@ describe('ConfigService persistence', () => {
 	it('keeps the startup config snapshot when a readonly file is absent', async () => {
 		const backend = createMemoryPersistenceBackend()
 		const owner = pluginNodeAddressOf(ConfigOwner)
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestContext({
 			persistence: { mode: 'readonly', backend },
 			configService: {
 				environment: false,
@@ -838,7 +836,7 @@ describe('ConfigService persistence', () => {
 	])('fails fast on %s readonly config without isolating or rewriting it', async (_case, text) => {
 		const backend = createMemoryPersistenceBackend()
 		await backend.namespace('config').put('config.json', text)
-		const runtime = createRuntimeContext({
+		const runtime = createRuntimeInternalTestContext({
 			persistence: { mode: 'readonly', backend },
 			configService: { environment: false },
 		})
@@ -903,8 +901,10 @@ describe('ConfigService persistence', () => {
 	})
 })
 
-function runtimeHost(config: Parameters<typeof createRuntimeHost>[0] = {}): RuntimeHost {
-	const host = createRuntimeHost({ workbench: false, ...config })
+function runtimeHost(
+	config: Parameters<typeof createRuntimeInternalTestHarness>[0] = {},
+): RuntimeInternalTestHarness {
+	const host = createRuntimeInternalTestHarness({ workbench: false, ...config })
 	hosts.push(host)
 	return host
 }

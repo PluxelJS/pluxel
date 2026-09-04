@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { defineWorkerTask } from '@pluxel/runtime'
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
-import { afterAll, beforeAll, bench, describe } from 'vitest'
+import { afterAll, beforeAll, test } from 'vitest'
 import { lowerTestPlugin } from '../tests/helpers/lowered-plugin'
 
 type TransferInput = Readonly<{ bytes: Uint8Array }>
@@ -44,14 +44,16 @@ beforeAll(async () => {
 
 afterAll(async () => host.dispose())
 
-describe('shared worker binary transport', () => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('shared worker binary transport', async ({ bench }) => {
 	const copied = new Uint8Array(byteLength)
 
-	bench('copy 8 MiB structured-clone input', async () => {
-		await worker.run(copied)
-	})
-
-	bench('transfer 8 MiB owned input', async () => {
-		await worker.run(new Uint8Array(byteLength), true)
-	})
+	await bench.compare(
+		bench('copy 8 MiB structured-clone input', async () => {
+			await worker.run(copied)
+		}),
+		bench('transfer 8 MiB owned input', async () => {
+			await worker.run(new Uint8Array(byteLength), true)
+		}),
+	)
 })

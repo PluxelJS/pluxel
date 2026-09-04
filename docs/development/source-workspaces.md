@@ -27,7 +27,19 @@ pluxel source doctor
 pnpm dev
 ```
 
+`source install` 也同步本机 overlay 到 `pluxel.source-lock.json` 指定的 checkout。首次注册、移动或更新 source lock 后必须再运行一次；已接入 checkout 内的普通源码修改不需要重装。
+
 CLI 扫描每个 checkout 自己的 workspace 和 manifest，按实际依赖闭包创建代理。source package 的 devDependencies 仍属于它自己的 checkout，不进入消费方 closure。
+
+`pluxel source build` 默认构建本次 closure 中所有确实发布 artifact 的 package。只需要让 Vitest preset 在 config 求值前可用时，使用可重复的
+`--package` 精确选择：
+
+```sh
+pluxel source build --package @pluxel/test
+```
+
+CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被选 package 自己的 Turbo/pnpm task graph 仍决定必要前置。这个窄构建不安装依赖、
+不改 consumer lockfile，也不替代 production build 或 source install。
 
 `singletons` 只用于具有 nominal/private identity 的 direct dependency，而且必须能从本次选中的 source package 中推导出唯一 owner。不要把 node_modules 绝对路径写进配置。
 

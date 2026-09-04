@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { GlobalFonts } from '@napi-rs/canvas'
-import { createMemoryPersistenceBackend } from '@pluxel/runtime'
+import { createMemoryPersistenceBackend, pluginNodeAddressOf } from '@pluxel/runtime'
 import { BasePlugin, Plugin, createRuntimeTestHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
@@ -371,10 +371,13 @@ describe('FontsPlugin', () => {
 					change.start(FontsPlugin)
 					change.start(FontsLazyConsumer)
 				})
-				expect(failure).toHavePluginLifecycleIssue(FontsPlugin, {
-					kind: 'start-failed',
-					message,
-				})
+				expect(failure.lifecycleReport.issues).toContainEqual(
+					expect.objectContaining({
+						plugin: pluginNodeAddressOf(FontsPlugin),
+						kind: 'start-failed',
+						message: expect.stringContaining(message),
+					}),
+				)
 				expect(host.isRunning(FontsPlugin)).toBe(false)
 				expect(host.isRunning(FontsLazyConsumer)).toBe(false)
 			}

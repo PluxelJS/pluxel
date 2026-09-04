@@ -627,13 +627,13 @@ Vite HMR WebSocket 与业务 WebSocket 的 path arbitration 必须有 integratio
 
 ### Test host
 
-测试不再通过 `ctx.http.fetch` 访问 root service。Runtime/static test host 直接暴露 host carrier：
+测试不再通过 `ctx.http.fetch` 访问 root service。Runtime/static test host 通过 namespaced HTTP driver 暴露 host carrier：
 
 ```ts
-const response = await host.fetch(new Request('http://local.test/orders/1'))
+const response = await host.http.fetch(new Request('http://local.test/orders/1'))
 ```
 
-`host.fetch` 走真实 directory、owner admission 和 sealed Elysia generation，但不打开端口。WebSocket、client disconnect、backpressure
+`host.http.fetch` 走真实 directory、owner admission 和 sealed Elysia generation，但不打开端口。WebSocket、client disconnect、backpressure
 与 carrier conformance 使用真实 ephemeral listener；纯 fake socket 只能覆盖领域 callback，不能替代 upgrade integration。
 
 ## Elysia dependency 与 package 边界
@@ -805,7 +805,7 @@ public 作者面只进行了一次不兼容切换，没有保留两套并行 con
 - owner Server view、HTTP/stream admission、abort/drain、immutable directory 和 atomic pointer swap；
 - Node production srvx carrier、crossws/Elysia WS bridge、request metadata、client disconnect、owner topic 隔离与 1012 drain；
 - Node-backed static/dynamic Vite 的共享 Fetch dispatcher 与 business/HMR upgrade arbitration；
-- `ctx.elysia` 单一作者入口、`host.fetch` 测试边界、workspace/starter 迁移与旧 Plugin HTTP publication API 删除；
+- `ctx.elysia` 单一作者入口、`host.http.fetch` 测试边界、workspace/starter 迁移与旧 Plugin HTTP publication API 删除；
 - management/control application 与 business contribution 隔离。
 
 ### 已明确降级为 fail-fast

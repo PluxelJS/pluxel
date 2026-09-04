@@ -6,6 +6,9 @@ description: 用 Content、Direct View API、Attachment 和 Cap’n Web 为 Plug
 Workbench 用于给 Plugin 增加说明、轻量运维界面、管理页面和对象编辑器。文档、状态、按钮与一次性表单使用
 host-rendered Content；自定义布局和复杂交互使用完整 View。宿主负责认证、WebSocket session、布局、内容交付和页面生命周期。
 
+> 编写新功能时，先从一个[标准配方](#如何选择)开始。此页保留完整 API、生命周期和部署参考；不要为了普通页面先引入
+> callback capability、`queryFamily` 或低层 remote-value API。
+
 Workbench-enabled host 固定使用 Cap’n Web over WebSocket。完整 View/Attachment 固定使用 Module Federation 2.0 和
 React Bridge；Content 由 Shell 直接渲染，不生成 Plugin JavaScript。Plugin 不选择 transport、loader 或 renderer。
 Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
@@ -17,21 +20,20 @@ Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
 
 ## 如何选择
 
-- 普通、非敏感的 Plugin 配置：直接声明 `configs.use()`，使用 Workbench 已有的标准 Config UI，不再创建
-  Content 或 View。
-- 展示说明、bounded live state、按钮或一次性 Valibot 表单：使用 `workbench.content()`。
+- 普通、非敏感的 Plugin 配置：直接声明 `configs.use()`，使用 Workbench 已有的标准 Config UI，不再创建 Content 或 View。
+- 展示说明、bounded live state、按钮或一次性 Valibot 表单：使用 [Content 标准配方](./content.md)。
 - Secret 不进入普通 config。Config 只保存 Vault 引用；Plugin 已有明确的 provisioning/rotation 契约，且一次表单即可完成时，
   用 Content action 写入 Vault。多步骤 enrollment、OAuth、progress 或 recovery state machine 使用完整 View。
-- 需要自定义布局、progress/cancel、分页、high-rate stream 或任意组件：使用 `workbench.view<Api>()`。
-- 完整 View 主要是 snapshot/watch + mutation：使用 renderer scope 的 query/mutation；callback、progress、cancel 或 lossless stream
-  才下沉到领域 Cap’n Web capability。
-- 页面和 API 由 provider 拥有，但是否出现、出现在哪里由 consumer 决定：使用 Attachment。
+- 需要自定义布局、progress/cancel、分页、high-rate stream 或任意组件：使用 [View 标准配方](./view.md)。
+- 页面和 API 由 provider 拥有，但是否出现、出现在哪里由 consumer 决定：使用 [Attachment：跨 Plugin UI](./composition.md)。
 - 同一页面编辑不同对象：使用一个 parameterized route，不为每个对象创建 entry。
 - 列表、collection、bot account、字体等动态数据：放进 Plugin API 返回值，不建立动态 Workbench 定义。
-- 只需要跨 Plugin 的服务端能力：继续使用 constructor dependency，不添加 UI composition。
+- 只需要跨 Plugin 的服务端能力：继续使用 constructor dependency，不添加跨 Plugin UI。
 
 例如 Redis 的连接状态和 PING、S3 的 Vault credential replacement 都适合 Content；Agent session 的 streaming、goal、
 subagent 与 abort 则是完整 View。Content 不复制通用 Config UI，也不把一次性 secret form 扩展成通用 Vault editor。
+
+三个配方各自只描述一个默认路径；本页以下内容是它们共享的完整契约与高级用法参考。
 
 ## Host-rendered Content
 
@@ -134,7 +136,10 @@ initial `load()`。
 纯 Markdown Content 省略 slots，并继续 `publish(ServiceWorkbench)`，不创建 root、不占 opened-entry quota，也不生成 MF
 producer/Bridge。需要 lossless events、独立并发状态、progress/cancel、server pagination 或任意 React UI 时使用完整 View。
 
-## 最小完整示例
+## 完整 View 参考：server push 与 custom callback
+
+下面的例子刻意包含 `watch()` 和 server-side callback target，用于说明跨调用 observer 的 ownership。它不是普通
+snapshot + mutation 页面的起点；没有已证实的实时更新需求时，使用[View 标准配方](./view.md)。
 
 ### 1. 声明 API 和 View
 
@@ -407,6 +412,9 @@ Query 把 API result 放入 cache 前会验证 portable data、深拷贝、深�
 标记 stale/error。`workbench.subscribe` 一旦保留 callback，就必须同步返回或异步 resolve 到 `Disposable`；API
 方法通常声明返回 child `RpcTarget`，其 browser-side `RpcPromise` / `RpcStub` 满足该清理契约。
 
+renderer scope 负责 browser-side subscription 的 retain、abort 与 dispose。只有服务端自定义 callback target 才需要自己
+`dup()` observer、释放每次 callback result，并在 open signal abort 时 unsubscribe；普通 latest snapshot 不应复制这段样板。
+
 ### Query 与 mutation 契约
 
 | 选项或操作                   | 当前语义                                                                                                                                                                                                                                                      |
@@ -528,7 +536,7 @@ Document renderer 可以用 `host.document?.params`、`setTitle()` 和 `setDirty
 ## Attachment
 
 Attachment 让 provider 复用一套设置或选择界面，同时让 consumer 保留 placement ownership。完整样例见
-[插件间 UI 组合](./composition.md)。最小形状是：
+[Attachment：跨 Plugin UI](./composition.md)。最小形状是：
 
 ```ts
 // provider package
@@ -631,4 +639,4 @@ HTTPS 的 application carrier。多实例部署还需要让 control socket、OID
 - 反向代理保留 Upgrade、同源 cookie 和短期 handoff 的实例归属；
 - 页面没有备用 API transport 或 reconnect 分支。
 
-插件间组合范式与完整 API 示例见[组合模式](./composition.md)。
+跨 Plugin UI 的完整范式与 API 示例见[Attachment：跨 Plugin UI](./composition.md)。

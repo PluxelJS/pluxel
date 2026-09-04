@@ -45,10 +45,12 @@
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"crossws": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"tsdown": "catalog:build",
@@ -76,5 +78,8 @@
 		"react-dom": {
 			"optional": true
 		}
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

@@ -290,6 +290,7 @@ dist
 .env.test.local
 .env.production.Local
 .turbo
+.vitest/
 .vercel/
 .tmp
 tmp

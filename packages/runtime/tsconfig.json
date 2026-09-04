@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.workspace.json",
-	"include": ["src"],
+	"include": ["src", "vitest.config.ts"],
 	"compilerOptions": {
 		"noEmit": false,
 		"outDir": "dist",

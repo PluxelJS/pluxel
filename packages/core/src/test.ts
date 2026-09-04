@@ -234,11 +234,11 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 				}
 				return
 			}
-			const config = plan.configs.get(key)
+			const plannedConfig = plan.configs.get(key)
 			if (
-				config &&
+				plannedConfig &&
 				initialConfig !== undefined &&
-				!configValuesEqual(config.value, initialConfig)
+				!configValuesEqual(plannedConfig.value, initialConfig)
 			) {
 				throw conflictError('add/config.patch', target, 'different bootstrap config values')
 			}
@@ -421,9 +421,9 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 		try {
 			applyGraphPlan(plan, update, registry)
 			const prepared = update.prepare()
-			for (const [key, config] of plan.configs) {
-				const address = resolvePluginTestTarget(config.target).address
-				configService.patchConfig(address, config.value)
+			for (const [key, configPatch] of plan.configs) {
+				const address = resolvePluginTestTarget(configPatch.target).address
+				configService.patchConfig(address, configPatch.value)
 				configuredTargets.add(key)
 			}
 			for (const [key, add] of plan.adds) {

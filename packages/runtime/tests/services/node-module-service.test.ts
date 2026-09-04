@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
-import { defineNodeModule } from '@pluxel/runtime'
+import { defineNodeModule, pluginNodeAddressOf } from '@pluxel/runtime'
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
@@ -28,10 +28,13 @@ describe('NodeModuleService', () => {
 			const failure = await host.commitExpectFail((change) => {
 				change.start(NodeModuleFailure)
 			})
-			expect(failure).toHavePluginLifecycleIssue(NodeModuleFailure, {
-				kind: 'start-failed',
-				message: 'node build failed',
-			})
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(NodeModuleFailure),
+					kind: 'start-failed',
+					message: expect.stringContaining('node build failed'),
+				}),
+			)
 			expect(host.isRunning(NodeModuleFailure)).toBe(false)
 		} finally {
 			await host.dispose()
@@ -131,8 +134,8 @@ describe('NodeModuleService', () => {
 			const stopping = host
 				.commit((change) => change.catalog.remove(PendingNodeModuleConsumer))
 				.then((): void => {
-				stopped = true
-				return undefined
+					stopped = true
+					return undefined
 				})
 			await didDisposeSource
 			expect(stopped).toBe(false)

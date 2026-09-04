@@ -373,10 +373,10 @@ portable parity 或 tuning 的应用应等待对应 conformance 完成。
 
 ## 测试
 
-Runtime test host 的 `host.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
+Runtime test host 的 `host.http.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
 
 ```ts no-twoslash
-const response = await host.fetch(new Request('http://local.test/orders/42'))
+const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
 ```
 
 至少验证：
@@ -388,7 +388,7 @@ const response = await host.fetch(new Request('http://local.test/orders/42'))
 - auth/signature failure 不泄露内部错误；
 - Workbench disabled 时业务 route 仍工作。
 
-`host.fetch()` 不执行 HTTP Upgrade，也不证明真实 listener disconnect、WebSocket close code、backpressure 或 HMR arbitration。需要这些
+`host.http.fetch()` 不执行 HTTP Upgrade，也不证明真实 listener disconnect、WebSocket close code、backpressure 或 HMR arbitration。需要这些
 carrier 能力时必须使用 Node production、static Vite 或 dynamic Vite 对应的 ephemeral real-listener integration test；不能用普通 Fetch
 response 代替。完整 test host 配置见[测试 Pluxel 插件](../development/testing.md)。
 出站请求可以使用官方 [Wretch Plugin](../plugins/wretch.md) 或领域 HTTP client，不要与入站 Elysia application ownership 混在一起。

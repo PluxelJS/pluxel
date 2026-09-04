@@ -6,7 +6,6 @@ export default defineConfig({
 	// This package ships as a bundled dev tool (Vitest preset + transforms).
 	exports: {
 		devExports: '@pluxel/source',
-		exclude: ['setup'],
 		legacy: false,
 	},
 	deps: {
@@ -15,7 +14,6 @@ export default defineConfig({
 	},
 	entry: {
 		fixtures: './src/fixtures.ts',
-		setup: './src/setup.ts',
 		vitest: './src/vitest.ts',
 		unsafe: './src/unsafe.ts',
 	},

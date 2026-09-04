@@ -17,11 +17,7 @@ export type ConsumerInvocationAdmission = OwnerInvocationGate
 class OwnerInvocationGate {
 	private readonly lifetime = new AbortController()
 	private active = 0
-	private idle?: {
-		promise: Promise<void>
-		resolve(value?: void | PromiseLike<void>): void
-		reject(reason?: unknown): void
-	}
+	private idle?: Deferred<void>
 
 	assertOpen(callSignal?: AbortSignal): void {
 		if (this.lifetime.signal.aborted) throw abortReason(this.lifetime.signal)
@@ -59,9 +55,26 @@ class OwnerInvocationGate {
 			this.lifetime.abort(reason === undefined ? new Error('Plugin owner stopped') : reason)
 		}
 		if (this.active === 0) return
-		this.idle ??= Promise.withResolvers<void>()
+		this.idle ??= createDeferred<void>()
 		return this.idle.promise
 	}
+}
+
+type Deferred<T> = Readonly<{
+	promise: Promise<T>
+	resolve(value: T | PromiseLike<T>): void
+}>
+
+/**
+ * The drain gate only creates this deferred once an owner is closing with active calls.
+ * Keep it local instead of requiring a newer ambient Promise lib in every consumer's typecheck.
+ */
+function createDeferred<T>(): Deferred<T> {
+	let resolve!: (value: T | PromiseLike<T>) => void
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise
+	})
+	return Object.freeze({ promise, resolve })
 }
 
 class OwnerInvocationLeaseImpl implements OwnerInvocationLease {

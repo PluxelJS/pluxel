@@ -24,8 +24,12 @@ and hosts and leases expose deterministic disposal contracts.
 Move Core graph tests to `@pluxel/core/test`, Runtime capability tests to `@pluxel/runtime/test`, static
 application wiring tests to `@pluxel/runtime-static/test`, and dynamic carrier tests to the production
 `@pluxel/runtime-dynamic` launcher. Remove the `@pluxel/test` root entry and keep only its explicit Vitest,
-fixture, and unsafe-lowering subpaths. The Vitest preset now registers one identity-aware
-`toHavePluginLifecycleIssue()` matcher with constructor and fork support and redacted failure diagnostics.
+fixture, and unsafe-lowering subpaths. Lifecycle failure assertions consume the slot-free structured
+`lifecycleReport` returned by `commitExpectFail()` rather than registering a Vitest matcher or setup module.
+
+`definePluxelVitestConfig()` now accepts one Vite-compatible object. Native runner settings stay under
+`test`, while Pluxel source lowering, extraction scope, and pre-toolchain plugins live under the consumed
+`pluxel` namespace; the former positional second options argument is removed.
 
 Update official Plugin tests, projects, generated templates, package guides, and user documentation to use
 the new boundaries without compatibility aliases.

@@ -1,9 +1,5 @@
 import type { CommandContext, CommandDescriptor } from '@pluxel/commands'
-import type {
-	PluginForkRef,
-	PluginTestTarget,
-	RawPluginConfig,
-} from '@pluxel/core/test'
+import type { PluginTestTarget, RawPluginConfig } from '@pluxel/core/test'
 import type { RpcStub, RpcTarget } from '../capnweb'
 import type { PluginConfigResult } from '../api/usecases/pluginConfig'
 import type {
@@ -21,9 +17,7 @@ import type {
 } from '../workbench/client-protocol'
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
 
-export interface RuntimeConfigTestDriver<
-	TTarget extends PluginTestTarget = PluginTestTarget,
-> {
+export interface RuntimeConfigTestDriver<TTarget extends PluginTestTarget = PluginTestTarget> {
 	/**
 	 * Applies a shallow raw-config patch through the production persistence and running-generation
 	 * notification path. Fixture bootstrap config belongs on `host.start()` instead.
@@ -107,9 +101,7 @@ type OpenedWorkbenchContentTestValue<Slots extends WorkbenchContentSlotMap> =
 
 export type OpenedWorkbenchTestEntry<Entry extends WorkbenchTestOpenableEntry> =
 	Entry extends Readonly<{ kind: 'view' }>
-		? OpenedWorkbenchTestLease<
-				OpenedWorkbenchViewTestValue<WorkbenchDescriptorApi<Entry>>
-			>
+		? OpenedWorkbenchTestLease<OpenedWorkbenchViewTestValue<WorkbenchDescriptorApi<Entry>>>
 		: Entry extends Readonly<{ kind: 'attachment-placement' }>
 			? OpenedWorkbenchTestLease<
 					OpenedWorkbenchAttachmentTestValue<
@@ -121,16 +113,9 @@ export type OpenedWorkbenchTestEntry<Entry extends WorkbenchTestOpenableEntry> =
 				? OpenedWorkbenchTestLease<OpenedWorkbenchContentTestValue<Slots>>
 				: never
 
-export interface RuntimeWorkbenchTestDriver<
-	TTarget extends PluginTestTarget = PluginTestTarget,
-> {
+export interface RuntimeWorkbenchTestDriver<TTarget extends PluginTestTarget = PluginTestTarget> {
 	/** Opens an active authored entry through a real local Cap'n Web Workbench session. */
 	open<const Entry extends WorkbenchTestOpenableEntry>(
 		options: WorkbenchTestOpenOptions<Entry, TTarget>,
 	): Promise<OpenedWorkbenchTestEntry<Entry>>
 }
-
-/** A target type accepted by a catalog-constrained host, including declared forks. */
-export type RuntimeStaticPluginTestTarget<TPlugin extends import('@pluxel/core').PluginConstructor> =
-	| TPlugin
-	| PluginForkRef<TPlugin>

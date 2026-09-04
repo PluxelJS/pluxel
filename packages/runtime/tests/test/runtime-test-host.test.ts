@@ -8,6 +8,7 @@ import {
 	Plugin,
 } from '@pluxel/runtime/test'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { workbench } from '@pluxel/runtime/workbench'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -33,6 +34,30 @@ class ForkableFixture extends BasePlugin {}
 @Plugin({ displayName: 'Replacement v1' })
 class ReplacementV1 extends BasePlugin {
 	readonly version: number = 1
+}
+
+const WorkbenchLeaseDefinition = workbench.define({
+	lease: workbench.content({
+		document: workbench.markdown(import.meta.url, './fixtures/runtime-test-host-lease.md'),
+		placement: workbench.tab({ label: 'Lease' }),
+	}),
+})
+
+@Plugin({ displayName: 'Workbench lease fixture' })
+class WorkbenchLeaseFixture extends BasePlugin {
+	protected override init(): void {
+		this.ctx.workbench?.publish(WorkbenchLeaseDefinition)
+	}
+}
+
+const rollbackCleanup = vi.fn()
+
+@Plugin({ displayName: 'Rollback fixture' })
+class RollbackFixture extends BasePlugin {
+	protected override init(): void {
+		this.ctx.effects.defer(rollbackCleanup)
+		throw new Error('expected public host rollback')
+	}
 }
 
 class BorrowedTarget extends RpcTarget {
@@ -106,18 +131,14 @@ describe('runtime testing v2 host', () => {
 		const host = createRuntimeInternalTestHost()
 		try {
 			await host.start(PublicFixture)
-			await expect(
-				host.start(PublicFixture, { catalog: [SupportingFixture] }),
-			).rejects.toThrow(/already-running.*host\.commit/i)
-			const key = pluginDefinitionIndexKey(
-				host.coordinator.catalogSnapshot().entries[0]!.address,
+			await expect(host.start(PublicFixture, { catalog: [SupportingFixture] })).rejects.toThrow(
+				/already-running.*host\.commit/i,
 			)
+			const key = pluginDefinitionIndexKey(host.coordinator.catalogSnapshot().entries[0]!.address)
 			expect(
 				host.coordinator
 					.catalogSnapshot()
-					.byDefinition.has(
-						pluginDefinitionIndexKey(pluginDefinitionAddressOf(SupportingFixture)),
-					),
+					.byDefinition.has(pluginDefinitionIndexKey(pluginDefinitionAddressOf(SupportingFixture))),
 			).toBe(false)
 			expect(host.coordinator.catalogSnapshot().byDefinition.has(key)).toBe(true)
 			expect(host.coordinator.catalogSnapshot().entries).toHaveLength(1)
@@ -181,6 +202,62 @@ describe('runtime testing v2 host', () => {
 			expect(() => host.isRunning(ReplacementV1)).toThrow(/stale/i)
 		} finally {
 			await host.dispose()
+		}
+	})
+
+	it('drains an expected lifecycle failure and accepts the next operation after its requested intent is cleared', async () => {
+		const host = createRuntimeTestHost()
+		rollbackCleanup.mockClear()
+		try {
+			const failure = await host.commitExpectFail((change) => change.start(RollbackFixture))
+
+			expect(failure.lifecycleReport.issues).toHaveLength(1)
+			expect(failure.lifecycleReport.issues[0]).toMatchObject({
+				kind: 'start-failed',
+				message: 'expected public host rollback',
+			})
+			expect(rollbackCleanup).toHaveBeenCalledOnce()
+			expect(host.isRunning(RollbackFixture)).toBe(false)
+
+			await host.stop(RollbackFixture)
+			await host.start(PublicFixture)
+			expect(host.isRunning(PublicFixture)).toBe(true)
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('reports and closes a leaked public Workbench lease during host disposal', async () => {
+		const host = createRuntimeTestHost({ workbench: { enabled: true } })
+		let disposalAttempted = false
+		try {
+			await host.start(WorkbenchLeaseFixture)
+			const opened = await host.workbench.open({
+				target: WorkbenchLeaseFixture,
+				entry: WorkbenchLeaseDefinition.lease,
+				principal: { provider: 'test', subject: 'runtime-test-host' },
+			})
+
+			disposalAttempted = true
+			const error = await host.dispose().catch((cause: unknown) => cause)
+			expect(error).toBeInstanceOf(AggregateError)
+			expect(error).toMatchObject({
+				message: expect.stringContaining('Runtime test host disposal failed'),
+			})
+			expect((error as AggregateError).errors).toEqual([
+				expect.objectContaining({ message: expect.stringContaining('Leaked Workbench entry') }),
+			])
+
+			expect(() => opened[Symbol.dispose]()).not.toThrow()
+			await expect(
+				host.workbench.open({
+					target: WorkbenchLeaseFixture,
+					entry: WorkbenchLeaseDefinition.lease,
+					principal: { provider: 'test', subject: 'runtime-test-host' },
+				}),
+			).rejects.toThrow(/closing or closed/i)
+		} finally {
+			if (!disposalAttempted) await host.dispose().catch(() => undefined)
 		}
 	})
 

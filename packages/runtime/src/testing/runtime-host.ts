@@ -64,10 +64,7 @@ import type {
 	RuntimeWorkbenchTestDriver,
 } from './contracts'
 import { createRuntimeTestDriverScope } from './driver-scope'
-import {
-	createRuntimeTestRoot,
-	type RuntimeInternalTestRootOptions,
-} from './runtime-root'
+import { createRuntimeTestRoot, type RuntimeInternalTestRootOptions } from './runtime-root'
 
 export type RuntimePluginStartOptions = PluginInitialConfigOptions &
 	Readonly<{
@@ -82,10 +79,7 @@ export type RuntimePluginBatchStartOptions = Readonly<{
 
 export interface RuntimePluginTestChange {
 	start(target: PluginTestTarget, options?: RuntimePluginStartOptions): undefined
-	start(
-		targets: readonly PluginTestTarget[],
-		options?: RuntimePluginBatchStartOptions,
-	): undefined
+	start(targets: readonly PluginTestTarget[], options?: RuntimePluginBatchStartOptions): undefined
 	stop(target: PluginTestTarget): undefined
 	restart(target: PluginTestTarget): undefined
 	replaceDefinition(current: PluginConstructor, next: PluginConstructor): undefined
@@ -205,10 +199,7 @@ type RuntimeDraftPlan = {
 	readonly forkEnsures: Map<string, TargetCommand>
 	readonly forkRemoves: Map<string, TargetCommand>
 	readonly replacements: Map<string, ReplacementCommand>
-	readonly seeds: Map<
-		string,
-		Readonly<{ target: PluginTestTarget; values: RawPluginConfig[] }>
-	>
+	readonly seeds: Map<string, Readonly<{ target: PluginTestTarget; values: RawPluginConfig[] }>>
 	readonly defaults: Map<string, DefaultCommand>
 	readonly overrides: Map<string, OverrideCommand>
 	readonly targets: Map<string, PluginTestTarget>
@@ -313,10 +304,7 @@ function createChange(
 		if (options?.initialConfig !== undefined) recordSeed(target, options.initialConfig)
 	}
 
-	function start(
-		target: PluginTestTarget,
-		options?: RuntimePluginStartOptions,
-	): undefined
+	function start(target: PluginTestTarget, options?: RuntimePluginStartOptions): undefined
 	function start(
 		targets: readonly PluginTestTarget[],
 		options?: RuntimePluginBatchStartOptions,
@@ -358,10 +346,7 @@ function createChange(
 		return undefined
 	}
 
-	const replaceDefinition = (
-		current: PluginConstructor,
-		next: PluginConstructor,
-	): undefined => {
+	const replaceDefinition = (current: PluginConstructor, next: PluginConstructor): undefined => {
 		authority.recordCommand('change.replaceDefinition()')
 		const currentResolved = resolvePluginTestTarget(current)
 		const candidate = consumePluginDefinitionCandidate(next)
@@ -382,17 +367,12 @@ function createChange(
 		if (previous && (previous.current !== current || previous.next !== next)) {
 			throw conflictError('replaceDefinition', current, 'two different replacements')
 		}
-		plan.replacements.set(
-			key,
-			Object.freeze({ current, next, definition, candidate }),
-		)
+		plan.replacements.set(key, Object.freeze({ current, next, definition, candidate }))
 		plan.targets.set(pluginNodeIndexKey(currentResolved.address), current)
 		return undefined
 	}
 
-	const catalogAdd = (
-		input: PluginConstructor | readonly PluginConstructor[],
-	): undefined => {
+	const catalogAdd = (input: PluginConstructor | readonly PluginConstructor[]): undefined => {
 		authority.recordCommand('change.catalog.add()')
 		const values = typeof input === 'function' ? [input] : input
 		assertNonEmpty(values, 'change.catalog.add()')
@@ -400,9 +380,7 @@ function createChange(
 		return undefined
 	}
 
-	const catalogRemove = (
-		input: PluginConstructor | readonly PluginConstructor[],
-	): undefined => {
+	const catalogRemove = (input: PluginConstructor | readonly PluginConstructor[]): undefined => {
 		authority.recordCommand('change.catalog.remove()')
 		const values = typeof input === 'function' ? [input] : input
 		assertNonEmpty(values, 'change.catalog.remove()')
@@ -587,7 +565,10 @@ function createRuntimeHostWorld(
 			address.forkId,
 		)
 		if (result.ok === false) {
-			throw Object.assign(new Error(`[pluxel/test] forks.remove() failed: ${result.message}`), result)
+			throw Object.assign(
+				new Error(`[pluxel/test] forks.remove() failed: ${result.message}`),
+				result,
+			)
 		}
 		const summary =
 			'report' in result && result.report.core.status === 'committed'
@@ -754,15 +735,15 @@ function createRuntimeHostWorld(
 			batch ? [...input] : [input as PluginTestTarget],
 		) as readonly PluginTestTarget[]
 		if (batch && Object.hasOwn(options ?? {}, 'initialConfig')) {
-			return Promise.reject(new TypeError('[pluxel/test] batch start() does not accept initialConfig'))
+			return Promise.reject(
+				new TypeError('[pluxel/test] batch start() does not accept initialConfig'),
+			)
 		}
 		const optionsSnapshot = snapshotStartOptions(options)
 		return runBuild(
 			'start',
 			(change) =>
-				batch
-					? change.start(targets, optionsSnapshot)
-					: change.start(targets[0]!, optionsSnapshot),
+				batch ? change.start(targets, optionsSnapshot) : change.start(targets[0]!, optionsSnapshot),
 			(commit) => {
 				assertStrict('start', commit, targets)
 				const instances = targets.map((target) => readRequired(target))
@@ -790,10 +771,7 @@ function createRuntimeHostWorld(
 			},
 		)
 
-	const replaceDefinition = (
-		current: PluginConstructor,
-		next: PluginConstructor,
-	): Promise<void> =>
+	const replaceDefinition = (current: PluginConstructor, next: PluginConstructor): Promise<void> =>
 		runBuild(
 			'replaceDefinition',
 			(change) => change.replaceDefinition(current, next),
@@ -804,11 +782,7 @@ function createRuntimeHostWorld(
 					.catalogSnapshot()
 					.byDefinition.get(pluginDefinitionIndexKey(definition))
 				if (replacement?.candidate.implementation !== next) {
-					throw new PluginLifecycleAssertionError(
-						'replaceDefinition',
-						[current],
-						commit.summary,
-					)
+					throw new PluginLifecycleAssertionError('replaceDefinition', [current], commit.summary)
 				}
 			},
 		)
@@ -821,11 +795,7 @@ function createRuntimeHostWorld(
 	): Promise<LifecycleFailureCommitSummary> =>
 		runBuild('commitExpectFail', build, (result) => {
 			if (result.summary.lifecycleReport.issues.length === 0) {
-				throw new PluginLifecycleAssertionError(
-					'commitExpectFail',
-					result.targets,
-					result.summary,
-				)
+				throw new PluginLifecycleAssertionError('commitExpectFail', result.targets, result.summary)
 			}
 			return result.summary as LifecycleFailureCommitSummary
 		})
@@ -937,10 +907,17 @@ function normalizeRuntimeTestConfig(
 ): RuntimeHostConfig {
 	return {
 		...config,
-		name: config.name ?? 'test',
-		persistence: config.persistence ?? { mode: 'memory' },
-		configService: forceMemoryStores ? { mode: 'memory' } : (config.configService ?? { mode: 'memory' }),
-		runtimeState: forceMemoryStores ? { mode: 'memory' } : (config.runtimeState ?? { mode: 'memory' }),
+		...(Object.hasOwn(config, 'name') ? {} : { name: 'test' }),
+		...(Object.hasOwn(config, 'persistence') ? {} : { persistence: { mode: 'memory' } }),
+		...(forceMemoryStores
+			? {
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory' },
+				}
+			: {
+					...(Object.hasOwn(config, 'configService') ? {} : { configService: { mode: 'memory' } }),
+					...(Object.hasOwn(config, 'runtimeState') ? {} : { runtimeState: { mode: 'memory' } }),
+				}),
 	}
 }
 
@@ -1110,8 +1087,7 @@ function statePatchOperations(plan: RuntimeDraftPlan): RuntimeStatePatchOperatio
 		operations.push({
 			type: 'set-provider-default',
 			token: pluginDefinitionAddressOf(command.requirement),
-			provider:
-				command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
+			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		})
 	}
 	for (const command of plan.overrides.values()) {
@@ -1119,8 +1095,7 @@ function statePatchOperations(plan: RuntimeDraftPlan): RuntimeStatePatchOperatio
 			type: 'set-dependency-override',
 			consumer: resolvePluginTestTarget(command.consumer).address,
 			requirement: pluginDefinitionAddressOf(command.requirement),
-			provider:
-				command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
+			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		})
 	}
 	return operations
@@ -1173,9 +1148,10 @@ function forkExists(
 ): boolean {
 	const key = pluginDefinitionIndexKey(address.definition)
 	return (
-		store.snapshot().forks.find(
-			(entry) => pluginDefinitionIndexKey(entry.definition) === key,
-		)?.forkIds.includes(address.forkId) === true
+		store
+			.snapshot()
+			.forks.find((entry) => pluginDefinitionIndexKey(entry.definition) === key)
+			?.forkIds.includes(address.forkId) === true
 	)
 }
 
@@ -1305,11 +1281,7 @@ function clonePortable(value: unknown, ancestors: Set<object>, path: string): un
 		}
 		const out: Record<string, unknown> = {}
 		for (const key of Object.keys(value)) {
-			out[key] = clonePortable(
-				(value as Record<string, unknown>)[key],
-				ancestors,
-				`${path}.${key}`,
-			)
+			out[key] = clonePortable((value as Record<string, unknown>)[key], ancestors, `${path}.${key}`)
 		}
 		return Object.freeze(out)
 	} finally {
@@ -1358,7 +1330,11 @@ function staleTarget(target: unknown): Error {
 	)
 }
 
-function conflictError(operation: string, target: unknown, detail = 'contradictory commands'): Error {
+function conflictError(
+	operation: string,
+	target: unknown,
+	detail = 'contradictory commands',
+): Error {
 	return new Error(`[pluxel/test] Conflicting ${operation} for ${targetLabel(target)}: ${detail}`)
 }
 

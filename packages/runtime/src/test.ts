@@ -9,7 +9,6 @@ export type {
 	RuntimeCommandsTestDriver,
 	RuntimeConfigTestDriver,
 	RuntimeHttpTestDriver,
-	RuntimeStaticPluginTestTarget,
 	RuntimeWorkbenchTestDriver,
 	WorkbenchTestOpenableEntry,
 	WorkbenchTestOpenOptions,

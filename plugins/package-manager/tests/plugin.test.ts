@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { createRuntimeTestHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PackageManagerPlugin } from '../src/index.ts'
@@ -32,10 +33,13 @@ describe('PackageManagerPlugin', () => {
 				})
 			})
 
-			expect(failure).toHavePluginLifecycleIssue(PackageManagerPlugin, {
-				kind: 'start-failed',
-				message: 'dynamic runtime host',
-			})
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(PackageManagerPlugin),
+					kind: 'start-failed',
+					message: expect.stringContaining('dynamic runtime host'),
+				}),
+			)
 			expect(host.isRunning(PackageManagerPlugin)).toBe(false)
 			expect(existsSync(managedRoot)).toBe(false)
 			expect(host.commands.list().some(({ name }) => name === 'package.install')).toBe(false)

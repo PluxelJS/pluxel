@@ -332,6 +332,15 @@ export const sourceWorkspaceArgs = {
 	},
 } as const
 
+export const sourceBuildArgs = {
+	...sourceWorkspaceArgs,
+	package: {
+		type: 'string',
+		multiple: true,
+		description: 'Only build this selected source package artifact (repeatable)',
+	},
+} as const
+
 export const sourceRegisterArgs = {
 	checkout: { type: 'positional', description: 'Source checkout root', default: '.' },
 	repository: {
@@ -362,7 +371,7 @@ export const sourceBuildDefinition = {
 	name: 'build',
 	description: 'Build only required source artifacts for this workspace',
 	toKebab: true,
-	args: sourceWorkspaceArgs,
+	args: sourceBuildArgs,
 } as const
 
 export const sourceInstallDefinition = {

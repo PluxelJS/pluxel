@@ -61,6 +61,9 @@
 		"@pluxel/fonts": "workspace:^",
 		"@pluxel/runtime": "workspace:^"
 	},
+	"engines": {
+		"node": ">=24"
+	},
 	"pluxel": {
 		"pluginPackages": {
 			"@pluxel/fonts": "required"

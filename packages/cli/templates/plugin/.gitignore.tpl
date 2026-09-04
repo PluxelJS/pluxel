@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .pluxel/
+.vitest/
 *.log
 *.tsbuildinfo
 .env

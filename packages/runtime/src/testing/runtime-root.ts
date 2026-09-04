@@ -1,12 +1,6 @@
-import {
-	workbenchFederationExpose,
-	workbenchFederationProducerName,
-} from '@pluxel/core/federation'
+import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import type { RootContext } from '@pluxel/core'
-import {
-	createRuntimeRootContext,
-	type RuntimeRootContextOptions,
-} from '../context/runtime-plan'
+import { createRuntimeRootContext, type RuntimeRootContextOptions } from '../context/runtime-plan'
 import type { RuntimeHostConfig } from '../context/runtime-contract'
 import { WorkbenchBackend } from '../services/workbench'
 import type { WorkbenchArtifactLookup } from '../services/workbench/WorkbenchArtifactService'

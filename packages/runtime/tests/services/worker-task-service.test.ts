@@ -2,7 +2,11 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { defineWorkerTask, type WorkerTaskError } from '@pluxel/runtime'
-import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHarness,
+	type RuntimeInternalTestHarness,
+} from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 
 type TaskInput = Readonly<{ label: string; delay: number }>
 type TaskOutput = Readonly<{
@@ -83,16 +87,16 @@ class WorkerTaskConsumerB extends BasePlugin {
 }
 
 function createWorkerHost(
-	workers: NonNullable<Parameters<typeof createRuntimeHost>[0]>['workers'] = {},
+	workers: NonNullable<Parameters<typeof createRuntimeInternalTestHarness>[0]>['workers'] = {},
 ) {
-	return createRuntimeHost({
+	return createRuntimeInternalTestHarness({
 		workbench: false,
 		nodeModuleArtifactRoot: artifactRoot,
 		workers,
 	})
 }
 
-async function resetWorkerHost(host: RuntimeHost): Promise<void> {
+async function resetWorkerHost(host: RuntimeInternalTestHarness): Promise<void> {
 	const plugins = host.plugins()
 	if (plugins.length === 0) return
 	host.remove(plugins)
@@ -107,7 +111,7 @@ type WorkerTaskRootStateProbe = {
 	}
 }
 
-function holdCurrentWorkerTermination(host: RuntimeHost): Readonly<{
+function holdCurrentWorkerTermination(host: RuntimeInternalTestHarness): Readonly<{
 	state: WorkerTaskRootStateProbe
 	release(): void
 }> {
@@ -124,7 +128,7 @@ function holdCurrentWorkerTermination(host: RuntimeHost): Readonly<{
 }
 
 describe('WorkerTaskService', () => {
-	let workerHost: RuntimeHost
+	let workerHost: RuntimeInternalTestHarness
 
 	beforeAll(() => {
 		workerHost = createWorkerHost({ maxThreads: 1 })

@@ -1,6 +1,6 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
-import { bench, describe } from 'vitest'
+import { test } from 'vitest'
 import {
 	createPluginRouteCatalogSnapshot,
 	reconcilePluginGraph,
@@ -63,21 +63,19 @@ const removal = runtimeStatePatch(
 	})),
 )
 
-describe('RuntimeState indexed mutation', () => {
-	bench(
-		'remove 1,000 consumers from 5,000 overrides',
-		() => {
-			const next = applyRuntimeStatePatch(state, removal)
-			if (next.dependencyOverrides.length !== consumerCount - removalCount) {
-				throw new Error('RuntimeState benchmark produced an invalid result')
-			}
-		},
-		{ iterations: 5, warmupIterations: 1 },
-	)
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('RuntimeState indexed mutation', async ({ bench }) => {
+	await bench('remove 1,000 consumers from 5,000 overrides', () => {
+		const next = applyRuntimeStatePatch(state, removal)
+		if (next.dependencyOverrides.length !== consumerCount - removalCount) {
+			throw new Error('RuntimeState benchmark produced an invalid result')
+		}
+	}).run({ iterations: 5, warmupIterations: 1 })
 })
 
-describe('stopped durable fork projection', () => {
-	for (const size of forkProjectionSizes) {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('stopped durable fork projection', async ({ bench }) => {
+	const projections = forkProjectionSizes.map((size) => {
 		const runtimeState: RuntimeStateSnapshot = Object.freeze({
 			autoStart: Object.freeze([]),
 			forks: Object.freeze([
@@ -90,23 +88,21 @@ describe('stopped durable fork projection', () => {
 			dependencyOverrides: Object.freeze([]),
 		})
 
-		bench(
-			`project ${size} stopped durable fork${size === 1 ? '' : 's'} without Core operations`,
-			() => {
-				const plan = reconcilePluginGraph({
-					catalog: forkProjectionCatalog,
-					runtimeState,
-					runtimeStateRevision: 1,
-				})
-				if (
-					plan.coreOperations.length > 0 ||
-					plan.applied.nodes.size > 0 ||
-					plan.blocked.length > 0
-				) {
-					throw new Error('Stopped durable fork projection allocated applied Core work')
-				}
-			},
-			{ iterations: 10, warmupIterations: 2 },
-		)
-	}
+		return bench(`project ${size} stopped durable fork${size === 1 ? '' : 's'} without Core operations`, () => {
+			const plan = reconcilePluginGraph({
+				catalog: forkProjectionCatalog,
+				runtimeState,
+				runtimeStateRevision: 1,
+			})
+			if (
+				plan.coreOperations.length > 0 ||
+				plan.applied.nodes.size > 0 ||
+				plan.blocked.length > 0
+			) {
+				throw new Error('Stopped durable fork projection allocated applied Core work')
+			}
+		})
+	})
+
+	await bench.compare(...projections, { iterations: 10, warmupIterations: 2 })
 })

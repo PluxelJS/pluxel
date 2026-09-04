@@ -57,6 +57,9 @@
 			"optional": true
 		}
 	},
+	"engines": {
+		"node": ">=24"
+	},
 	"pluxel": {
 		"pluginPackages": {
 			"@pluxel/fonts": "required"

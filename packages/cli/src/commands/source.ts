@@ -3,6 +3,7 @@ import { type ArgValues, define } from 'gunshi'
 import { resolve } from 'pathe'
 import {
 	sourceBuildDefinition,
+	sourceBuildArgs,
 	sourceCommandDefinition,
 	sourceDoctorDefinition,
 	sourceInstallDefinition,
@@ -22,6 +23,7 @@ import { registerSourceCheckout } from '../source/registry'
 import { sourcePackageNeedsBuild } from '../source/workspace'
 
 type SourceWorkspaceValues = ArgValues<typeof sourceWorkspaceArgs>
+type SourceBuildValues = ArgValues<typeof sourceBuildArgs>
 type SourceRegisterValues = ArgValues<typeof sourceRegisterArgs>
 
 export const sourceRegisterCommand = define({
@@ -65,8 +67,13 @@ export const sourceDoctorCommand = define({
 export const sourceBuildCommand = define({
 	...sourceBuildDefinition,
 	async run(ctx) {
-		const plan = await loadCheckedPlan(ctx.values as SourceWorkspaceValues)
-		await buildSourceWorkspace({ plan, log: ctx.log })
+		const values = ctx.values as SourceBuildValues
+		const plan = await loadCheckedPlan(values)
+		await buildSourceWorkspace({
+			plan,
+			packages: normalizeSourceBuildPackages(values.package),
+			log: ctx.log,
+		})
 	},
 })
 
@@ -108,6 +115,14 @@ function loadPlan(values: SourceWorkspaceValues) {
 		configPath: values.config,
 		registryPath: resolveSourceRegistryPath(values.registry),
 	})
+}
+
+function normalizeSourceBuildPackages(value: SourceBuildValues['package']): string[] | undefined {
+	if (!value) return undefined
+	const packages = (Array.isArray(value) ? value : [value])
+		.map((name) => name.trim())
+		.filter(Boolean)
+	return packages.length > 0 ? [...new Set(packages)] : undefined
 }
 
 function printPlan(log: (...args: unknown[]) => void, plan: Awaited<ReturnType<typeof loadPlan>>) {

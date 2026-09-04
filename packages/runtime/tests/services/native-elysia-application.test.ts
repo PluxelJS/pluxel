@@ -1,10 +1,6 @@
-import {
-	assertPluginLifecycleIssue,
-	BasePlugin,
-	Plugin,
-	PluginPart,
-	createRuntimeHost,
-} from '@pluxel/runtime/test'
+import { assertPluginLifecycleIssue } from '@pluxel/core/internal/test'
+import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime/test'
 import { Elysia } from 'elysia'
 import { websocket } from 'elysia/websocket'
 import { requireRuntimeHttpService, type ElysiaApplicationCarrier } from '@pluxel/runtime/internal'
@@ -143,7 +139,7 @@ describe('native generation Elysia application', () => {
 		partApplication = undefined
 
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			host.add(NativeApplicationPlugin).start(NativeApplicationPlugin)
 			await host.commit()
@@ -184,7 +180,7 @@ describe('native generation Elysia application', () => {
 
 	it('rejects reserved and conflicting routes before atomic publication', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			host.add(ReservedNativeApplicationPlugin)
 			host.cfg(ReservedNativeApplicationPlugin).setAutoStart(true)
@@ -218,7 +214,7 @@ describe('native generation Elysia application', () => {
 
 	it('preserves exact Elysia method/path semantics in selection and collision checks', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			host
 				.add(NativeExactRouteSemantics)
@@ -272,7 +268,7 @@ describe('native generation Elysia application', () => {
 
 	it('hard-excludes the control namespace from HTTP and WebSocket wildcard owners', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			host.add(NativeReservedWildcard).start(NativeReservedWildcard)
 			await host.commit()
@@ -320,7 +316,7 @@ describe('native generation Elysia application', () => {
 	it('keeps isolated, generation-stable Server metadata when physical lifecycle is rejected', async () => {
 		lifecycleApplication = undefined
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			host.add(NativePhysicalLifecycleGuard).start(NativePhysicalLifecycleGuard)
 			await host.commit()
@@ -369,7 +365,7 @@ describe('native generation Elysia application', () => {
 
 	it('fails generation start when a Plugin directly registers Elysia lifecycle hooks', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			host.add(NativeUnsupportedLifecycleHook)
 			host.cfg(NativeUnsupportedLifecycleHook).setAutoStart(true)
@@ -385,7 +381,7 @@ describe('native generation Elysia application', () => {
 
 	it('aborts and drains an entered streaming response with its generation', async () => {
 		{
-			await using host = createRuntimeHost()
+			await using host = createRuntimeInternalTestHarness()
 
 			host.add(NativeStreamingApplicationPlugin).start(NativeStreamingApplicationPlugin)
 			await host.commit()

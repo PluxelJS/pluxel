@@ -4,7 +4,16 @@ export default defineConfig({
 	entry: {
 		create: './src/create.ts',
 	},
-	copy: ['template', '../../docs'],
+	copy: [
+		{
+			// The fixed starter is a product asset. Local package installs are not: Vitest can
+			// create node_modules/.vite-temp while template tests run, so copying the directory
+			// would race those ephemeral files and accidentally publish local dependencies.
+			from: ['template/**/*', '!template/**/node_modules/**'],
+			flatten: false,
+		},
+		'../../docs',
+	],
 	dts: false,
 	exports: {
 		bin: {

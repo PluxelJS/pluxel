@@ -343,7 +343,7 @@ export function createCoreInternalTestHost(
 			const candidate = candidateFor(next)
 			if (!pluginDefinitionAddressEqual(candidate.declaration.address, address)) {
 				throw new TypeError(
-					'CoreHost replacement must be lowered with the target Plugin definition address',
+					'[pluxel/core/internal/test] replacement must be lowered with the target Plugin definition address',
 				)
 			}
 			currentUpdate().replaceDefinition(address, candidate, replaceOptions)

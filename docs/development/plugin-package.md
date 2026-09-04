@@ -149,35 +149,18 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 
 ## Workbench 内容
 
-只需说明、部署提示、少量 live data、按钮或一次性表单时，优先声明 host-rendered Content：
+Workbench 的 declaration/API 放在 browser-safe `workbench.ts`，Plugin implementation 与 `publish()` 放在 `index.ts`。新页面只从
+一条标准路径开始：
 
-```ts no-twoslash
-export const OrdersWorkbench = workbench.define({
-	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md', {
-			status: workbench.data(OrderStatusSchema),
-			refresh: workbench.action({ label: 'Refresh' }),
-		}),
-		placement: workbench.tab({ label: 'Guide' }),
-	}),
-})
-```
+- 说明、bounded live state、按钮或一次性表单：[Content 配方](../workbench/content.md)；
+- 自定义 React UI、分页、progress/cancel 或复杂交互：[View 配方](../workbench/view.md)；
+- provider-owned UI 由 consumer 决定 placement：[Attachment 配方](../workbench/composition.md)。
 
-Markdown 使用 `:slot[key]` 放置 inline scalar data、`::slot[key]` 放置 block data 或 action。`pluxel build` 在 TypeScript
-擦除前提取 literal source 和 slot topology，把受支持的 CommonMark/GFM 降为有界 portable plan。Content-only package 不加载
-Federation builder、不生成 remote entry，也不要求 React/Mantine compatibility；schema 与 handler 只存在于 server binding。
-发布 package 保留预编译 Content artifact 即可，production host 不依赖 `src/*.md`。
+不要为普通 config 复制一套页面；使用 `configs.use()` 的标准 Config UI。动态 item、权限和业务状态通过 Plugin API 返回，
+不通过动态增删 Workbench entry 表达。
 
-需要自定义布局、复杂状态、progress/cancel 或任意交互时，在 browser-safe `workbench.ts` 中声明完整 View 和 literal renderer entry：
-
-```ts no-twoslash
-export const OrdersWorkbench = workbench.define({
-	overview: workbench.view<OrdersApi>({
-		renderer: workbench.entry(import.meta.url, './ui/overview.tsx'),
-		placement: workbench.tab({ label: 'Orders' }),
-	}),
-})
-```
+Content-only package 不加载 Federation builder、不生成 remote entry，也不要求 React/Mantine compatibility；schema 与 handler
+只存在于 server binding。完整 View 的 browser graph 不得导入 Node builtin、database handle、secret 或 Plugin implementation。
 
 `pluxel build` 在 TypeScript 擦除前提取 owning Plugin definition、entry key 和 literal source，生成一个标准 MF2
 producer、每个 declaration 的 React Bridge expose 和 `mf-manifest.json`。作者不手写 remote name、expose、shared

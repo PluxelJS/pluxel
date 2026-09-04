@@ -11,7 +11,11 @@ import {
 	type PluginDatabaseHandle,
 } from '@pluxel/runtime/database'
 import type { DatabaseArtifact } from '../../src/database-internal'
-import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHarness,
+	type RuntimeInternalTestHarness,
+} from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import {
 	attachPostgresPoolErrorHandler,
 	subscribeDatabaseHandle,
@@ -149,7 +153,7 @@ function resetDatabaseFixture(sql: string) {
 	}
 }
 
-async function resetRuntimeHost(host: RuntimeHost): Promise<void> {
+async function resetRuntimeHost(host: RuntimeInternalTestHarness): Promise<void> {
 	const plugins = host.plugins()
 	if (plugins.length === 0) return
 	host.remove(plugins)
@@ -157,10 +161,10 @@ async function resetRuntimeHost(host: RuntimeHost): Promise<void> {
 }
 
 describe('DatabaseService', () => {
-	let databaseHost: RuntimeHost
+	let databaseHost: RuntimeInternalTestHarness
 
 	beforeAll(() => {
-		databaseHost = createRuntimeHost({
+		databaseHost = createRuntimeInternalTestHarness({
 			workbench: false,
 			database: { driver: 'pglite', dataDir: 'memory://' },
 		})
@@ -312,7 +316,7 @@ describe('DatabaseService', () => {
 
 	it('fails honestly when the host disables database capability', async () => {
 		const definition = databaseFixture()
-		const host = createRuntimeHost({ workbench: false, database: false })
+		const host = createRuntimeInternalTestHarness({ workbench: false, database: false })
 		try {
 			@Plugin({ displayName: 'DisabledDatabasePlugin' })
 			class DisabledDatabasePlugin extends BasePlugin {
@@ -337,7 +341,7 @@ describe('DatabaseService', () => {
 		const dataDir = join(root, 'pglite')
 		let instanceId: string
 		try {
-			const firstHost = createRuntimeHost({
+			const firstHost = createRuntimeInternalTestHarness({
 				workbench: false,
 				database: { driver: 'pglite', dataDir },
 			})
@@ -362,7 +366,7 @@ describe('DatabaseService', () => {
 				await firstHost.dispose()
 			}
 
-			const secondHost = createRuntimeHost({
+			const secondHost = createRuntimeInternalTestHarness({
 				workbench: false,
 				database: { driver: 'pglite', dataDir },
 			})
@@ -396,7 +400,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture('default-persistence')
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-default-'))
 		const persistence = join(root, 'nested', 'persistence')
-		const host = createRuntimeHost({ workbench: false, persistence })
+		const host = createRuntimeInternalTestHarness({ workbench: false, persistence })
 		try {
 			@Plugin({ displayName: 'DefaultPersistenceDatabasePlugin' })
 			class DefaultPersistenceDatabasePlugin extends BasePlugin {

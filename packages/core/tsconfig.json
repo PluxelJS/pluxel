@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests"],
+	"include": ["src", "tests", "vitest.config.ts"],
 	"compilerOptions": {
 		"rootDir": ".",
 		"outDir": "dist",

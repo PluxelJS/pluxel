@@ -1455,9 +1455,14 @@ async function collectRendererProjectionGraph(
 		for (const item of module.imports) {
 			if (item.typeOnly || item.target !== definitionFile) continue
 			if (item.kind !== 'static') {
-				throw new Error(
-					`[workbench-semantic] renderer may reference its server definition only through a direct static import: ${rendererPath}`,
-				)
+				throw rendererScopeError({
+					rendererPath,
+					definition: definitionObject,
+					identity,
+					message:
+						'renderer may reference its server definition only through a direct static import; ' +
+						`found a dynamic import in ${module.path} via ${JSON.stringify(item.specifier)}`,
+				})
 			}
 			definitionImports.push({ module, item })
 		}
@@ -1467,16 +1472,28 @@ async function collectRendererProjectionGraph(
 	}
 	if (definitionImports.length === 0) {
 		if (rendererCalls.length > 0) {
-			throw new Error(
-				`[workbench-semantic] createWorkbenchRenderer() must bind the exact directly imported descriptor for ${identity.key}: ${rendererPath}`,
-			)
+			throw rendererScopeError({
+				rendererPath,
+				definition: definitionObject,
+				identity,
+				message:
+					'createWorkbenchRenderer() must bind the exact directly imported descriptor; ' +
+					`found a renderer scope call in ${rendererCalls[0]!.module.path} without a server-definition import`,
+			})
 		}
 		return undefined
 	}
 	if (definitionImports.length !== 1) {
-		throw new Error(
-			`[workbench-semantic] renderer graph must have exactly one direct server definition import: ${rendererPath}`,
-		)
+		throw rendererScopeError({
+			rendererPath,
+			definition: definitionObject,
+			identity,
+			message:
+				'renderer graph must have exactly one direct server definition import; found ' +
+				definitionImports
+					.map(({ module, item }) => `${module.path} via ${JSON.stringify(item.specifier)}`)
+					.join(', '),
+		})
 	}
 	const boundary = definitionImports[0]!
 	const statement = rendererImportStatement(boundary.module.ast, boundary.item)
@@ -1488,9 +1505,14 @@ async function collectRendererProjectionGraph(
 	assertProjectionImport(statement, definitionObject, boundary.module.path)
 	if (rendererCalls.length === 0) {
 		if (boundary.module.path !== renderer) {
-			throw new Error(
-				`[workbench-semantic] renderer may reference its server definition only through a direct static import: ${rendererPath}`,
-			)
+			throw rendererScopeError({
+				rendererPath,
+				definition: definitionObject,
+				identity,
+				message:
+					'renderer may reference its server definition only through a direct static import; ' +
+					`the import in ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)} does not bind a renderer scope`,
+			})
 		}
 	} else {
 		if (
@@ -1504,9 +1526,15 @@ async function collectRendererProjectionGraph(
 				identity.key,
 			)
 		) {
-			throw new Error(
-				`[workbench-semantic] renderer graph must contain one createWorkbenchRenderer() bound to ${definitionObject.exportName}.${identity.key}: ${rendererPath}`,
-			)
+			throw rendererScopeError({
+				rendererPath,
+				definition: definitionObject,
+				identity,
+				message:
+					'renderer graph must contain one createWorkbenchRenderer() bound to ' +
+					`${definitionObject.exportName}.${identity.key}; ` +
+					`scope call/import boundary is ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)}`,
+			})
 		}
 	}
 
@@ -1532,9 +1560,12 @@ async function collectRendererProjectionGraph(
 		}
 	}
 	if (!clonePaths.has(renderer)) {
-		throw new Error(
-			`[workbench-semantic] renderer scope is not statically reachable from its entry: ${rendererPath}`,
-		)
+		throw rendererScopeError({
+			rendererPath,
+			definition: definitionObject,
+			identity,
+			message: `renderer scope in ${boundary.module.path} is not statically reachable from its entry`,
+		})
 	}
 	return Object.freeze({
 		modules,
@@ -1542,6 +1573,27 @@ async function collectRendererProjectionGraph(
 		rendererPath: renderer,
 		definitionPath: definitionFile,
 	})
+}
+
+/**
+ * Keep renderer-scope failures actionable without widening the author contract. A coding agent
+ * needs the violating import and the standard repair shape, not a second renderer API.
+ */
+function rendererScopeError(
+	input: Readonly<{
+		rendererPath: string
+		definition: Definition
+		identity: WorkbenchFederationDescriptorIdentity
+		message: string
+	}>,
+): Error {
+	const descriptor = `${input.definition.exportName}.${input.identity.key}`
+	return new Error(
+		`[workbench-semantic] ${input.rendererPath}: renderer scope for ${descriptor}: ${input.message}. ` +
+			`For the standard scope form, use one reachable boundary with createWorkbenchRenderer(${descriptor}); ` +
+			'other renderer modules must import that scope or its resources instead of the server definition. ' +
+			`A low-level useWorkbench(${descriptor}) boundary must remain directly in the renderer entry.`,
+	)
 }
 
 function isModuleConstInitializer(ast: Program, call: Node): boolean {

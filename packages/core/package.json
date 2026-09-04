@@ -118,6 +118,9 @@
 		"tinybench": "catalog:dev",
 		"unplugin-macros": "catalog:build"
 	},
+	"engines": {
+		"node": ">=24"
+	},
 	"inlinedDependencies": {
 		"option-t": "56.1.2"
 	}

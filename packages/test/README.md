@@ -9,7 +9,7 @@ Pluxel 的 runner/toolchain 测试支持包。它不再提供 Plugin test host �
 
 本包只保留三个面向调用方的职责：
 
-- `@pluxel/test/vitest`：Vitest/Vite preset 与 lifecycle matcher registration
+- `@pluxel/test/vitest`：Vitest/Vite preset 与 Pluxel source toolchain
 - `@pluxel/test/fixtures`：VFS/disk filesystem fixture
 - `@pluxel/test/unsafe`：显式 synthetic lowering/replacement facts
 
@@ -17,6 +17,9 @@ Pluxel 的 runner/toolchain 测试支持包。它不再提供 Plugin test host �
 [`LLM_TESTING_GUIDE.md`](LLM_TESTING_GUIDE.md)。
 
 ## Vitest preset
+
+此 preset 固定对应 Vitest `5.0.0`（upstream 要求 Node.js `>=22.12.0`、Vite `>=6.4.0`）；Pluxel package 与生成项目
+统一要求 Node.js `>=24`。不要把版本范围降回 Vitest 4，或用 `clearMocks: false` 恢复旧的 mock history 语义。
 
 ```ts
 // vitest.config.ts
@@ -29,13 +32,20 @@ export { default } from '@pluxel/test/vitest'
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestConfig({
-	test: { include: ['tests/**/*.test.ts'] },
+	// Native Vitest discovery and runner options.
+	test: { include: ['tests/**/*.test.ts'], passWithNoTests: false },
+	// Pluxel source transforms; this namespace is consumed before Vite sees the config.
+	pluxel: { include: ['src/**/*.ts', 'tests/**/*.ts'] },
 })
 ```
 
-preset 在 TypeScript 擦除前执行 Plugin semantic lowering，并注册唯一的
-`toHavePluginLifecycleIssue()` matcher。使用 matcher 的项目应把 `vitest.config.ts` 纳入 `tsconfig.include`，使同一个 preset import 同时提供
-Vitest module augmentation。Core/Runtime test entries 不依赖 Vitest。
+preset 在 TypeScript 擦除前执行 Plugin semantic lowering。lifecycle failure 直接断言
+`commitExpectFail()` 返回的 structured `lifecycleReport`，不向 consumer 注册 Vitest matcher 或 `setupFiles`。Core/Runtime
+test entries 不依赖 Vitest。
+
+`test.include` 决定 Vitest 发现哪些测试；`pluxel.include` / `exclude` 决定哪些源码经过 Pluxel lowering 和 config
+extraction，两者不能互相替代。需要在 lowering 前运行额外 Vite transform 时使用 `pluxel.prePlugins`；普通 Vite plugin
+仍写在顶层 `plugins`。
 
 ## Filesystem fixture
 

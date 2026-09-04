@@ -18,6 +18,7 @@
    - [`DATABASE.md`](DATABASE.md)：PostgreSQL/Drizzle、PGlite/PG、migration、隔离与 outbox。
    - [`LOGGING.md`](LOGGING.md)：single active root、Context identity、plugin policy、sinks 与大基数预算。
    - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和 Workbench 投影。
+   - [`TESTING.md`](TESTING.md)：测试边界、Vitest preset bootstrap 与验证入口。
    - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
    - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。

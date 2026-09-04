@@ -1,5 +1,5 @@
 import { createCanvasWorkerAdapter, type CanvasWorkerSnapshot } from '@pluxel/canvas/worker'
-import { afterAll, bench, describe } from 'vitest'
+import { afterAll, test } from 'vitest'
 import {
 	renderECharts,
 	type RenderCanvasAdapter,
@@ -44,8 +44,9 @@ const input = {
 
 afterAll(async () => canvas.close())
 
-describe('ECharts worker render engine', () => {
-	bench('owned option traversal', async () => {
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('ECharts worker render engine', async ({ bench }) => {
+	await bench('owned option traversal', async () => {
 		await renderECharts(input, canvas as unknown as RenderCanvasAdapter, signal)
-	})
+	}).run()
 })

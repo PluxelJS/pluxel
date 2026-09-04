@@ -32,6 +32,7 @@ describe('runtime Management plane installation', () => {
 				new Request('http://runtime.test/__pluxel/runtime/meta'),
 			)
 			expect(oldDynamicPath.status).toBe(404)
+			expect(await oldDynamicPath.text()).toContain('Not Found')
 		} finally {
 			await host.dispose()
 		}
@@ -52,6 +53,13 @@ describe('runtime Management plane installation', () => {
 		} finally {
 			await host.dispose()
 		}
+	})
+
+	it('does not wait indefinitely for an unread in-process response during host disposal', async () => {
+		const host = createRuntimeInternalTestHost({ workbench: false, management: true })
+		const response = await host.http.fetch(new Request('http://runtime.test/__pluxel/runtime/meta'))
+		expect(response.status).toBe(404)
+		await expect(host.dispose()).resolves.toBeUndefined()
 	})
 
 	it('rejects unsupported management configuration fields', () => {

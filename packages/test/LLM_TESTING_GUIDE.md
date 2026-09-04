@@ -2,14 +2,14 @@
 
 先问：删除哪一层以后，断言不再成立？选择仍不可删除的最小边界。
 
-| 事实 | 入口 |
-| --- | --- |
-| 普通函数/对象 | 无 host |
-| Core graph、DI、config composition、lifecycle、effects | `createCoreTestHost()` from `@pluxel/core/test` |
-| Plugin + HTTP、commands、database、Vault、Workbench | `createRuntimeTestHost()` from `@pluxel/runtime/test` |
-| static application configure/prepare/bindings/cold boot | `startStaticApplicationTestHost()` |
-| dynamic source、Vite/HMR、physical HTTP/WebSocket | 项目 Vite command 或 `startDynamicDevRuntime()` |
-| Workbench React/Shell | browser/React test |
+| 事实                                                    | 入口                                                  |
+| ------------------------------------------------------- | ----------------------------------------------------- |
+| 普通函数/对象                                           | 无 host                                               |
+| Core graph、DI、config composition、lifecycle、effects  | `createCoreTestHost()` from `@pluxel/core/test`       |
+| Plugin + HTTP、commands、database、Vault、Workbench     | `createRuntimeTestHost()` from `@pluxel/runtime/test` |
+| static application configure/prepare/bindings/cold boot | `startStaticApplicationTestHost()`                    |
+| dynamic source、Vite/HMR、physical HTTP/WebSocket       | 项目 Vite command 或 `startDynamicDevRuntime()`       |
+| Workbench React/Shell                                   | browser/React test                                    |
 
 ## Canonical patterns
 
@@ -36,8 +36,8 @@ await host.commit((change) => {
 })
 ```
 
-callback 内不使用 `await`、不 return value、不读取 host 状态。预期 lifecycle failure 使用 `commitExpectFail()`，并用
-`toHavePluginLifecycleIssue()` 断言；它不会吞 programming、graph 或 persistence error。
+callback 内不使用 `await`、不 return value、不读取 host 状态。预期 lifecycle failure 使用 `commitExpectFail()`，并直接断言
+返回的 structured `lifecycleReport`；它不会吞 programming、graph 或 persistence error。
 
 `initialConfig` 只用于首次 lifecycle 前的 fixture bootstrap。运行中或已经进入过 lifecycle 的 Plugin 使用
 `await host.config.patch(Plugin, patch)`；需要新 generation 时再显式 `restart()`。

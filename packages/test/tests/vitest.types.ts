@@ -1,23 +1,27 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
-import type { LifecycleFailureCommitSummary } from '@pluxel/core/test'
-import { expect } from 'vitest'
-import type { PluginLifecycleIssueExpectation } from '../src/vitest'
+import { definePluxelVitestConfig, type PluxelVitestConfig } from '@pluxel/test/vitest'
 
-@Plugin()
-class TypeTarget extends BasePlugin {}
-declare const failure: LifecycleFailureCommitSummary
+const vitestConfig = {
+	test: { include: ['tests/**/*.test.ts'], passWithNoTests: false },
+	pluxel: { include: ['src/**/*.ts', 'tests/**/*.ts'] },
+} satisfies PluxelVitestConfig
 
-expect(failure).toHavePluginLifecycleIssue(TypeTarget)
-expect(failure).toHavePluginLifecycleIssue(TypeTarget, {
-	phase: 'dependency',
-	kind: 'dependency-blocked',
-	blockedBy: TypeTarget,
-	message: /blocked/,
-} satisfies PluginLifecycleIssueExpectation)
+definePluxelVitestConfig(vitestConfig)
 
-// @ts-expect-error A Plugin target is a constructor/fork ref, not a node-address-shaped object.
-expect(failure).toHavePluginLifecycleIssue({ variant: 'default' })
-// @ts-expect-error Kind values are the closed Core lifecycle issue vocabulary.
-expect(failure).toHavePluginLifecycleIssue(TypeTarget, { kind: 'failed' })
+type Equal<Actual, Expected> =
+	(<Value>() => Value extends Actual ? 1 : 2) extends <Value>() => Value extends Expected ? 1 : 2
+		? true
+		: false
+type Assert<Condition extends true> = Condition
 
-expect.toHavePluginLifecycleIssue(TypeTarget, { kind: 'start-failed' })
+// The preset accepts exactly one optional Vite-compatible config object; its former second
+// toolchain options argument must not reappear as a parallel configuration path.
+type _definePluxelVitestConfigTakesOneObject = Assert<
+	Equal<Parameters<typeof definePluxelVitestConfig>, [config?: PluxelVitestConfig]>
+>
+
+definePluxelVitestConfig({
+	pluxel: {
+		// @ts-expect-error Test discovery belongs to Vitest's native `test` namespace.
+		passWithNoTests: false,
+	},
+})

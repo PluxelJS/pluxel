@@ -2,7 +2,6 @@ import { createRuntimeTestHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { HttpPlugin } from '@example/http-plugin'
 import { TodoPlugin } from '@example/todo-plugin'
-import { Elysia } from 'elysia'
 
 describe('HttpPlugin', () => {
 	it('exposes a validated Todo API backed by a required Plugin dependency', async () => {
@@ -11,8 +10,6 @@ describe('HttpPlugin', () => {
 			change.config.seed(TodoPlugin, { maxItems: 2, seedTitle: 'First task' })
 			change.start(HttpPlugin, { catalog: [TodoPlugin] })
 		})
-
-		expect(host.require(HttpPlugin).ctx.elysia).toBeInstanceOf(Elysia)
 
 		const list = await host.http.fetch(new URL('/api/example/todos', host.http.origin))
 		expect(list.status).toBe(200)

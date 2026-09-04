@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src"],
+	"include": ["src", "vitest.config.ts"],
 	"compilerOptions": {
 		"jsx": "react-jsx",
 		"experimentalDecorators": true,

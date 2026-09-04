@@ -1,4 +1,8 @@
-import { createMemoryPersistenceBackend, type PersistenceBackend } from '@pluxel/runtime'
+import {
+	createMemoryPersistenceBackend,
+	pluginNodeAddressOf,
+	type PersistenceBackend,
+} from '@pluxel/runtime'
 import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
@@ -159,10 +163,13 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 					},
 				})
 			})
-			expect(failure).toHavePluginLifecycleIssue(MemoryCacheBackendPlugin, {
-				kind: 'start-failed',
-				message: 'ephemeral',
-			})
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(MemoryCacheBackendPlugin),
+					kind: 'start-failed',
+					message: expect.stringContaining('ephemeral'),
+				}),
+			)
 		}
 	})
 
@@ -195,10 +202,13 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 					},
 				})
 			})
-			expect(failure).toHavePluginLifecycleIssue(MemoryCacheBackendPlugin, {
-				kind: 'start-failed',
-				message: 'could not be restored',
-			})
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(MemoryCacheBackendPlugin),
+					kind: 'start-failed',
+					message: expect.stringContaining('could not be restored'),
+				}),
+			)
 		}
 	})
 

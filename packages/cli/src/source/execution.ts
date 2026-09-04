@@ -20,7 +20,7 @@ import {
 	type ResolvedSourceCheckout,
 	type SourceWorkspacePlan,
 } from './plan'
-import { sourcePackageNeedsBuild } from './workspace'
+import { sourcePackageNeedsBuild, type SourceWorkspacePackage } from './workspace'
 
 export interface SourcePlanDiagnostics {
 	errors: string[]
@@ -77,11 +77,50 @@ export async function installSourceWorkspace(options: {
 
 export async function buildSourceWorkspace(options: {
 	plan: SourceWorkspacePlan
+	packages?: readonly string[]
 	log: (...args: unknown[]) => void
 }) {
+	if (options.packages && options.packages.length > 0) {
+		const targets = selectSourceBuildTargets(options.plan, options.packages)
+		const targetNames = new Set(targets.map((target) => target.name))
+		for (const checkout of options.plan.checkouts) {
+			const selected = (options.plan.selectedByRepository.get(checkout.repository) ?? []).filter(
+				(pkg) => targetNames.has(pkg.name),
+			)
+			if (selected.length === 0) continue
+			await buildSourceCheckout(checkout, options.plan, options.log, selected)
+		}
+		return
+	}
 	for (const checkout of options.plan.checkouts) {
 		await buildSourceCheckout(checkout, options.plan, options.log)
 	}
+}
+
+/**
+ * Select explicit build artifacts from the source closure without widening it to every linked
+ * package. The selected package's own Turbo/pnpm task graph remains the authority for its build
+ * prerequisites.
+ */
+export function selectSourceBuildTargets(
+	plan: Pick<SourceWorkspacePlan, 'selectedPackages'>,
+	packageNames: readonly string[],
+): SourceWorkspacePackage[] {
+	const packages = new Map(plan.selectedPackages.map((pkg) => [pkg.name, pkg]))
+	const targets: SourceWorkspacePackage[] = []
+	for (const name of new Set(packageNames)) {
+		const pkg = packages.get(name)
+		if (!pkg) {
+			throw new Error(
+				`Source build target ${name} is not selected by this consumer's source dependency closure`,
+			)
+		}
+		if (!sourcePackageNeedsBuild(pkg.manifest)) {
+			throw new Error(`Source build target ${name} does not expose a required build artifact`)
+		}
+		targets.push(pkg)
+	}
+	return targets
 }
 
 export function createSourceInstallArgs(overrides: Record<string, string>, frozenLockfile = false) {
@@ -325,9 +364,10 @@ async function buildSourceCheckout(
 	checkout: ResolvedSourceCheckout,
 	plan: SourceWorkspacePlan,
 	log: (...args: unknown[]) => void,
+	selected?: readonly SourceWorkspacePackage[],
 ) {
-	const targets = (plan.selectedByRepository.get(checkout.repository) ?? []).filter((pkg) =>
-		sourcePackageNeedsBuild(pkg.manifest),
+	const targets = (selected ?? plan.selectedByRepository.get(checkout.repository) ?? []).filter(
+		(pkg) => sourcePackageNeedsBuild(pkg.manifest),
 	)
 	if (targets.length === 0) {
 		log(`→ No build artifacts required from ${checkout.repository}`)

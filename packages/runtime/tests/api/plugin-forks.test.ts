@@ -4,7 +4,11 @@ import {
 	pluginNodeAddressEqual,
 } from '@pluxel/core'
 import { requireConfigService } from '@pluxel/core/internal'
-import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHarness,
+	type RuntimeInternalTestHarness,
+} from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
@@ -43,7 +47,7 @@ class DrainFailureForkProvider extends BasePlugin {
 	}
 }
 
-const hosts: RuntimeHost[] = []
+const hosts: RuntimeInternalTestHarness[] = []
 
 afterEach(async () => {
 	for (const host of hosts.splice(0)) await host.dispose()
@@ -337,7 +341,7 @@ describe('Plugin fork control plane', () => {
 		const logging = createRuntimeLogging(loggingPlan())
 		await logging.install()
 		await logging.initializePolicy(loggingStore)
-		const host = createRuntimeHost(
+		const host = createRuntimeInternalTestHarness(
 			{ workbench: false, logger: logging.contextBinding },
 			{ logging },
 		)
@@ -381,8 +385,10 @@ describe('Plugin fork control plane', () => {
 	})
 })
 
-function runtimeHost(config: Parameters<typeof createRuntimeHost>[0] = {}): RuntimeHost {
-	const host = createRuntimeHost({ workbench: false, ...config })
+function runtimeHost(
+	config: Parameters<typeof createRuntimeInternalTestHarness>[0] = {},
+): RuntimeInternalTestHarness {
+	const host = createRuntimeInternalTestHarness({ workbench: false, ...config })
 	hosts.push(host)
 	return host
 }
