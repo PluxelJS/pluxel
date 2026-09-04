@@ -1869,6 +1869,9 @@ importers:
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.13
       typescript:
         specifier: catalog:dev
         version: 7.0.2
