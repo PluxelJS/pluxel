@@ -25,8 +25,11 @@ coding agent 能从所验证的产品边界直接推导出最短、正确的测�
    不能在 root 创建后补装 capability。
 7. **Agent 的局部信息足够**：常规测试应能依靠 TypeScript autocomplete 和一个短示例完成；不要求先搜索 internal tests
    复制 registry、observer、canonical address 或 Cap'n Web disposal 样板。
-8. **复用 runner 已有语言**：Core/Runtime host 保持 runner-neutral；official Vitest preset 只为 runner 无法理解的 Plugin lifecycle
-   identity 增加一个 matcher。普通 object/error/poll/type assertion 不建立 Pluxel wrapper。
+8. **复用 runner 已有语言**：所有 workspace test、test config、runner extension 与 CLI 统一以**精确的 Vitest `5.0.0`**为
+   baseline；不保留 Vitest 4 兼容写法、polyfill 或版本范围。Core/Runtime host 保持 runner-neutral；official Vitest preset 只为 runner
+   无法理解的 Plugin lifecycle identity 增加一个 matcher。普通 object/error/poll/type assertion 不建立 Pluxel wrapper。完整的 runner
+   migration contract 与 exhaustive checklist 见 [`CONTRACT.md`](CONTRACT.md#3-vitest-500-runner-baseline) 和
+   [`MIGRATION.md`](MIGRATION.md#vitest-500-runner-migration)。
 9. **test 不再创建第二台 dev server**：真实 smoke 运行项目 Vite command，或直接复用 production dynamic launcher；需要程序化 ownership
    时改良现有 launcher 的 ready/disposable contract，不在 `/test` 再包一个入口。
 
@@ -55,6 +58,7 @@ Workbench 等 Runtime capability，就使用 Runtime host，不在 Core host 中
 - [`CONTRACT.md`](CONTRACT.md)：本目录唯一的规范性摘要。发生表述冲突时以这里的 package ownership、public shape、failure、resource 和
   migration classification 为准；其他文件保留领域解释、反例和验收依据。
 - [`MIGRATION.md`](MIGRATION.md)：旧调用分类、`host.ctx` authority ledger、代表性迁移与 executable zero gate。
+  它也包含 Vitest 5.0.0 的全量 runner migration checklist；任何 API migration 都不能以保留 v4 写法为代价。
 
 - [`COMPOSABLE_HOST.md`](COMPOSABLE_HOST.md)：重新设计 Core/Runtime test host；Core 使用真实 `add/remove`，Runtime 使用真实
   `start/stop`，共同以立即完成的常用行为和 callback-scoped `commit` 取代长期 staging，并分开 public author host 与 framework
@@ -114,19 +118,23 @@ prototype 不得顺手增加 global fake clock、backend admin、carrier-neutral
 
 按依赖方向落地，避免迁移期用临时 alias 粘合：
 
-1. 在 Core 建立 shared target/fork/failure/error 与 callback draft primitive，再实现 Core author host 和 internal harness；
-2. Runtime 组合 Core primitive，实现 session lifecycle、config/HTTP/commands drivers、capability defaults 与 internal harness；
-3. `@pluxel/test/vitest` 注册唯一 matcher，完成 augmentation/type fixture，再迁移 expected-failure calls；
-4. 实现 Workbench/local RPC lease，先迁移 S3、Fonts 等已存在的重复 wiring；
-5. 用共享 Runtime driver facade 实现 `startStaticApplicationTestHost()`，把 raw static commit report移入 internal；
-6. 最后重构 production dynamic launcher 与 static/dynamic Vite `{ entry }`，用 physical conformance 验证没有第二套 boot path；
-7. 全量迁移 packages/plugins/projects/templates/docs，添加各受影响 public package 的 pending Tegami major changelog。
+1. 先将 catalog、lockfile、Node/Vite baseline、runner extension、test source/config/CLI 迁移到精确 Vitest `5.0.0`，并通过
+   [`MIGRATION.md`](MIGRATION.md#vitest-500-runner-migration) 的全量 checklist；不得把 v4 compatibility option 留给后续阶段；
+2. 在 Core 建立 shared target/fork/failure/error 与 callback draft primitive，再实现 Core author host 和 internal harness；
+3. Runtime 组合 Core primitive，实现 session lifecycle、config/HTTP/commands drivers、capability defaults 与 internal harness；
+4. `@pluxel/test/vitest` 注册唯一 matcher，完成 v5 augmentation/type fixture，再迁移 expected-failure calls；
+5. 实现 Workbench/local RPC lease，先迁移 S3、Fonts 等已存在的重复 wiring；
+6. 用共享 Runtime driver facade 实现 `startStaticApplicationTestHost()`，把 raw static commit report移入 internal；
+7. 最后重构 production dynamic launcher 与 static/dynamic Vite `{ entry }`，用 physical conformance 验证没有第二套 boot path；
+8. 全量迁移 packages/plugins/projects/templates/docs，添加各受影响 public package 的 pending Tegami major changelog。
 
 合并前用 `rg` 和 package export/type tests 保证以下旧 public symbols/形状为零：`createHost/withHost`、`createRuntimeHost/withRuntimeHost`、
 `createStaticRuntimeTestHost`、`openRuntimeSessionTestConnection`、`createDynamicDevRuntime`、无 target 的 resource
 `.start()/.stop()`、无 callback
 的 staged `commit()/commitAllowFail()`、`cfg()`、mutable `host.fork()`、`assert/findPluginLifecycleIssue` 与 dynamic Vite `{ config }`。internal
 implementation 的同名 production transaction 不计入 gate，必须按 import path/receiver type 精确检查，不能用会误报的纯文本删除。
+Vitest runner 的 `5.0.0` version gate 与所有 removed/deprecated syntax/config/import 的 zero gate 同样是合并条件，不能仅让 API
+surface migration 通过而继续执行 v4 语义。
 
 ## 提案完成规则
 

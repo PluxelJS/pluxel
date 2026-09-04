@@ -1145,17 +1145,19 @@ type PluginLifecycleIssueExpectation = Readonly<{
 }>
 
 declare module 'vitest' {
-	interface Matchers<T = any> {
+	interface Matchers<R, T> {
 		toHavePluginLifecycleIssue(
 			target: PluginTestTarget,
 			expected?: PluginLifecycleIssueExpectation,
-		): void
+		): R
 	}
 }
 ```
 
-Vitest 的 matcher augmentation 无法仅凭 `T` 完美隐藏错误 receiver，因此 implementation 必须验证 received 是 failure summary，并给出明确
-usage error；type tests 仍应尽可能把 method 限制到 compatible receiver。不要为了实现 receiver-sensitive autocomplete 再引入
+这是 Vitest `5.0.0` 的 `Matchers<R, T>` augmentation：`R` 让普通 assertion 返回 `void`，并让 `resolves`、`rejects`、`expect.poll` 等
+async assertion 保留 `Promise<void>`。Vitest 的 matcher augmentation 无法仅凭 `T` 完美隐藏错误 receiver，因此 implementation 必须验证
+received 是 failure summary，并给出明确 usage error；type tests 仍应尽可能把 method 限制到 compatible receiver。不要为了实现
+receiver-sensitive autocomplete 再引入
 `expectPluginFailure(summary)` wrapper，那会重新产生第二套 assertion 语言。
 
 当前实现只有 structured `CommitSummary`，strict helper 抛出的普通 Error 会丢失它；同时本提案删除 `last()`，因此需要一个且仅一个
