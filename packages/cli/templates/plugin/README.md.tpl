@@ -3,8 +3,8 @@
 {{description}}
 
 Before changing plugin code or package/build configuration, consult the documentation matching the
-installed Pluxel version. A full offline documentation snapshot is included when starting a workspace
-with `pnpm create @pluxel`.
+installed Pluxel version. Run `pnpm exec pluxel docs` for the canonical upstream documentation entry;
+keep this package README focused on its own contract instead of copying framework documentation.
 
 ## Install
 

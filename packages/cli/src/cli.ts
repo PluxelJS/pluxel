@@ -5,6 +5,7 @@ import {
 	buildCommandDefinition,
 	databaseCommandDefinition,
 	distributionCommandDefinition,
+	docsCommandDefinition,
 	hmrCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
@@ -14,6 +15,13 @@ import {
 import { formatOfficialCapabilityError, OfficialCapabilityError } from './capability-loader'
 
 const commands = new Map<string, SubCommandable>([
+	[
+		'docs',
+		lazy(
+			() => import('./commands/docs').then((module) => module.docsCommand),
+			docsCommandDefinition,
+		),
+	],
 	[
 		'new',
 		lazy(() => import('./scaffold').then((module) => module.newCommand), newCommandDefinition),

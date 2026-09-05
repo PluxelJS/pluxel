@@ -5,11 +5,11 @@ Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 ## CLI distribution and capability ownership
 
 `@pluxel/cli` 是静态命令目录与用户交互 adapter，不是 runtime、构建、HMR 或发行协议的所有者。
-`@pluxel/create` 是独立的 workspace initializer：它发布一个固定、无插值的 example monorepo，并把发布时的
-`docs/` 静态快照原字节复制到新项目 `docs/pluxel/`。create 不加载 CLI、不解释 plugin template contract，也不从
+`@pluxel/create` 是独立的 workspace initializer：它发布一个固定、无插值的 example monorepo。框架文档保持在
+上游唯一真源，starter 通过普通 Git 链接和项目本地 `pluxel docs` 定位，不复制会漂移的快照。create 不加载 CLI、不解释 plugin template contract，也不从
 Git/registry 获取 starter。create 自身使用 TypeScript entry；tsdown 的 `exports.bin` 显式生成 npm
-`create-pluxel` executable、保留 shebang 并输出单个 Node 24 ESM chunk，同时用标准 `copy` 配置把 `template/` 与仓库
-`docs/` 物化到发布 `dist/`。这里不使用 `exe`：该选项是实验性的 Node SEA，不是 npm CLI contract。目标必须不存在
+`create-pluxel` executable、保留 shebang 并输出单个 Node 24 ESM chunk，同时用标准 `copy` 配置把 `template/`
+物化到发布 `dist/`。这里不使用 `exe`：该选项是实验性的 Node SEA，不是 npm CLI contract。目标必须不存在
 或为空；生成先在同级临时目录完成，再原子落到最终目录。
 
 固定 starter 是 create package 的产品资产，不是 CLI template。它使用中性的 `@example/*` workspace package、无
@@ -23,6 +23,8 @@ root 预装 `pncat`，`pncat.config.ts` 是 catalog 分组策略，所有 catalo
 仍逐包声明直接依赖，不把 root hoist 当成 Plugin 的隐式依赖来源。static
 application 的 package root 是
 `host/`，所以 `host/tsdown.config.ts` 是唯一 freezer authority；monorepo root 只通过 Turbo 编排。
+starter 的 `governance:check` 先运行 `pluxel workspace doctor` 校验 pnpm 与 source bootstrap 等共享契约，再运行
+项目内脚本校验 starter 特有的目录和 catalog 所有权；CLI 不吸收产品专属治理规则。
 
 `@example/host` build 先用同一 config 完成 `host/web/dist` browser build，再运行 freezer；tsdown 在 host build 末尾把 Web
 输出复制到 `host/dist/public`。由于 static assembly 已在 Rolldown `writeBundle` finalization，package script 随后必须

@@ -65,6 +65,7 @@ npx nypm add -D @pluxel/market
 | 目标                                | 命令                                          |
 | ----------------------------------- | --------------------------------------------- |
 | 生成固定 example workspace          | `pnpm create @pluxel [directory]`             |
+| 定位上游当前文档                    | `pluxel docs [path]`                          |
 | 在 workspace 生成 Plugin package    | `pluxel new`                                  |
 | 构建当前 Plugin package             | `pluxel build`                                |
 | 生成/检查/rebase database migration | `pluxel database generate/check/rebase`       |
@@ -76,6 +77,9 @@ npx nypm add -D @pluxel/market
 | 管理 source workspace               | `pluxel workspace`                            |
 
 确切参数通过 `pluxel <command> --help` 查看。
+
+`pluxel workspace doctor` 校验框架共同拥有的 workspace 契约：pnpm 主版本、workspace 文件以及 source
+overlay 的 `.pnpmfile.cjs` bootstrap。产品自己的依赖方向和目录规则仍由项目 `governance:check` 负责。
 
 ## 自定义本地 Plugin 模板
 

@@ -72,6 +72,9 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 内部依赖范围和 Tegami 发布集合。治理检查与 Tegami 从 `scripts/repository-packages.mjs` 读取同一份 inventory；
 `private`、目录类型和发布排除列表不再分别维护。该命令是 `pnpm verify` 的前置步骤。
 
+生成的独立 workspace 先通过 `pluxel workspace doctor` 校验框架共同拥有的 pnpm major、workspace authority 与
+source `.pnpmfile.cjs` bootstrap，再由仓库自己的 governance script 校验产品目录和依赖方向。通用 CLI 不推断产品领域规则。
+
 workspace 单元测试统一由 Vitest 执行；package `test` script 不调用 `node --test`。需要验证纯 Node 边界时可以
 保留独立 fixture 或 test directory，但仍由 Vitest 的 Node environment 编排，避免不同 runner 的 hook、过滤、
 reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它不构成第二套 test runner。

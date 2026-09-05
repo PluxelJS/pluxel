@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import pncatConfig from '../template/pncat.config.ts'
 
 const packageRoot = resolve(import.meta.dirname, '..')
-const repositoryRoot = resolve(packageRoot, '../..')
 const bin = resolve(packageRoot, 'dist/create.mjs')
 let temporaryRoot
 
@@ -58,7 +57,7 @@ describe('create-pluxel', () => {
 		assert.equal(binStat.mode & 0o111, 0o111)
 	})
 
-	it('copies the fixed starter and the versioned documentation byte-for-byte', async () => {
+	it('copies the fixed starter with governed tooling and canonical documentation links', async () => {
 		const result = await run([bin, 'starter', '--no-install'], temporaryRoot)
 		assert.equal(result.code, 0, result.stderr)
 
@@ -67,6 +66,11 @@ describe('create-pluxel', () => {
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
 		assert.equal(manifest.name, undefined)
 		assert.equal(manifest.private, true)
+		assert.equal(manifest.packageManager, 'pnpm@11.25.0')
+		assert.equal(
+			manifest.scripts['governance:check'],
+			'pluxel workspace doctor && node scripts/check-workspace-governance.mjs',
+		)
 		const webManifest = JSON.parse(
 			await readFile(resolve(generated, 'host/web/package.json'), 'utf8'),
 		)
@@ -116,16 +120,12 @@ describe('create-pluxel', () => {
 			code: 'ENOENT',
 		})
 
-		const sourceFiles = await listFiles(resolve(repositoryRoot, 'docs'))
-		const generatedFiles = await listFiles(resolve(generated, 'docs/pluxel'))
-		assert.deepEqual(generatedFiles, sourceFiles)
-		for (const path of sourceFiles) {
-			const [source, copied] = await Promise.all([
-				readFile(resolve(repositoryRoot, 'docs', path)),
-				readFile(resolve(generated, 'docs/pluxel', path)),
-			])
-			assert.deepEqual(copied, source, `documentation bytes differ: ${path}`)
-		}
+		await assert.rejects(readFile(resolve(generated, 'docs/pluxel/index.md')), { code: 'ENOENT' })
+		assert.match(
+			await readFile(resolve(generated, 'README.md'), 'utf8'),
+			/https:\/\/github\.com\/PluxelJS\/pluxel\/blob\/main\/docs\/index\.md/,
+		)
+		await assert.rejects(readFile(resolve(generated, '.pnpmfile.cjs')), { code: 'ENOENT' })
 	})
 
 	it('does not overwrite a non-empty destination', async () => {
@@ -182,18 +182,6 @@ function catalogFor(packageName) {
 				typeof matcher === 'string' ? matcher === packageName : matcher.test(packageName),
 			),
 		)?.name
-}
-
-async function listFiles(root, current = '') {
-	const entries = await readdir(resolve(root, current), { withFileTypes: true })
-	const files = []
-	for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-		const path = current ? `${current}/${entry.name}` : entry.name
-		if (entry.isDirectory()) files.push(...(await listFiles(root, path)))
-		else if (entry.isFile()) files.push(path)
-		else throw new Error(`Unexpected entry in test fixture: ${path}`)
-	}
-	return files
 }
 
 async function run(args, cwd) {

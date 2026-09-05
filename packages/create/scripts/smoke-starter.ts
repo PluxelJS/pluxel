@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -46,7 +46,7 @@ try {
 	)
 	await runProcess(createBin, [generatedRoot, '--no-install'], installRoot)
 	await assertGeneratedGitIgnore(generatedRoot)
-	await verifyCopiedDocs(repositoryRoot, generatedRoot)
+	await verifyDocumentationLink(generatedRoot)
 	await appendOverrides(resolve(generatedRoot, 'pnpm-workspace.yaml'), overrides)
 
 	await runPnpm(['install', '--frozen-lockfile=false'], generatedRoot)
@@ -134,7 +134,14 @@ async function appendOverrides(path: string, overrides: Record<string, string>):
 	const lines = Object.entries(overrides)
 		.sort(([left], [right]) => left.localeCompare(right))
 		.map(([name, specifier]) => `  '${name}': '${specifier}'`)
-	await writeFile(path, `${source.trimEnd()}\n\noverrides:\n${lines.join('\n')}\n`)
+	const block = `${lines.join('\n')}\n`
+	const marker = 'overrides:\n'
+	await writeFile(
+		path,
+		source.includes(marker)
+			? source.replace(marker, `${marker}${block}`)
+			: `${source.trimEnd()}\n\n${marker}${block}`,
+	)
 }
 
 async function assertGeneratedGitIgnore(root: string): Promise<void> {
@@ -144,37 +151,17 @@ async function assertGeneratedGitIgnore(root: string): Promise<void> {
 	}
 }
 
-async function verifyCopiedDocs(root: string, generated: string): Promise<void> {
-	const sourceRoot = resolve(root, 'docs')
-	const copiedRoot = resolve(generated, 'docs/pluxel')
-	const [sourceFiles, copiedFiles] = await Promise.all([
-		listRelativeFiles(sourceRoot),
-		listRelativeFiles(copiedRoot),
-	])
-	if (JSON.stringify(copiedFiles) !== JSON.stringify(sourceFiles)) {
-		throw new Error('Created documentation file list differs from the repository snapshot')
+async function verifyDocumentationLink(generated: string): Promise<void> {
+	const readme = await readFile(resolve(generated, 'README.md'), 'utf8')
+	if (!readme.includes('https://github.com/PluxelJS/pluxel/blob/main/docs/index.md')) {
+		throw new Error('Created README does not link to canonical upstream documentation')
 	}
-	for (const file of sourceFiles) {
-		const [source, copied] = await Promise.all([
-			readFile(resolve(sourceRoot, file)),
-			readFile(resolve(copiedRoot, file)),
-		])
-		if (!copied.equals(source)) throw new Error(`Created documentation bytes differ: ${file}`)
+	try {
+		await readFile(resolve(generated, 'docs/pluxel/index.md'))
+		throw new Error('Created workspace must not copy Pluxel documentation')
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
 	}
-}
-
-async function listRelativeFiles(root: string): Promise<string[]> {
-	const files: string[] = []
-	const visit = async (directory: string) => {
-		for (const entry of await readdir(directory, { withFileTypes: true })) {
-			const path = resolve(directory, entry.name)
-			if (entry.isDirectory()) await visit(path)
-			else if (entry.isFile()) files.push(relative(root, path))
-			else throw new Error(`Unexpected non-regular file: ${path}`)
-		}
-	}
-	await visit(root)
-	return files.sort()
 }
 
 async function verifyFrozenApplicationDistribution(root: string): Promise<void> {
@@ -208,7 +195,7 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	const smoke = [
 		'const app = await import(process.argv[1])',
 		'try {',
-		"\tif (app.ctx.workbench !== undefined) throw new Error('Workbench should be disabled by default')",
+		"\tif (app.ctx.workbench === undefined) throw new Error('Workbench should be enabled by default')",
 		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
 		'\tconst initial = await fetch(`${origin}/api/example/todos`)',
 		"\tif (!initial.ok || (await initial.json()).items[0]?.title !== 'Trace a Todo from React to a Plugin') throw new Error(`Frozen Todo route returned ${initial.status}`)",

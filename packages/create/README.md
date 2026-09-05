@@ -9,16 +9,16 @@ pnpm create @pluxel my-workspace --no-install
 
 The package has no runtime dependencies and does not load `@pluxel/cli`. Its typed initializer is a
 dedicated tsdown npm CLI entry: tsdown validates/generates the `create-pluxel` bin, preserves its
-shebang, emits one Node 24 ESM chunk and uses the standard `copy` option to publish two immutable asset
-trees:
+shebang, emits one Node 24 ESM chunk and uses the standard `copy` option to publish one immutable asset
+tree:
 
 - `dist/template/`: a neutral `@example/*` monorepo with an independent `host/web` workspace package, one
   host-owned Vite config, root-owned `pncat` catalog policy, static/dynamic modes, a same-origin Todo API,
-  tests and build governance;
-- `dist/docs/`: the repository user documentation snapshot from the same publication.
+  tests and build governance.
 
-Creation copies the starter byte-for-byte, maps the package-safe `gitignore` asset to `.gitignore`,
-and places documentation at `docs/pluxel/`. The destination must be missing or empty. Assets are
+Creation copies the starter byte-for-byte and maps the package-safe `gitignore` asset to `.gitignore`.
+It links to the canonical upstream documentation instead of copying a snapshot that drifts after
+generation. The destination must be missing or empty. Assets are
 validated as regular files without symlinks and staged in a sibling temporary directory before the
 final rename.
 
@@ -36,6 +36,6 @@ pnpm --filter @pluxel/create test
 pnpm --filter @pluxel/create test:starter
 ```
 
-The packed smoke installs the generated workspace outside the repository, compares all copied docs
-bytes, runs `pnpm verify`, starts the frozen static distribution and exercises both runtime modes of
+The packed smoke installs the generated workspace outside the repository, verifies its documentation
+link, runs `pnpm verify`, starts the frozen static distribution and exercises both runtime modes of
 the unified Vite application.

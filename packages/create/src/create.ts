@@ -24,7 +24,6 @@ type CreateOptions = {
 
 type StarterAssets = {
 	template: string
-	docs: string
 }
 
 type PlannedFile = {
@@ -53,7 +52,7 @@ try {
 	const destination = resolve(process.cwd(), options.directory)
 	await createProject(assets, destination)
 	console.info(`\nCreated the Pluxel example workspace at ${destination}`)
-	console.info('Versioned Pluxel documentation is available in docs/pluxel/.')
+	console.info('Current Pluxel documentation: pnpm exec pluxel docs')
 
 	if (options.install) {
 		console.info('\nInstalling dependencies with pnpm…')
@@ -101,7 +100,7 @@ function parseArguments(args: readonly string[]): CreateOptions {
 function printHelp(): void {
 	console.info(`create-pluxel [directory] [options]
 
-Create the fixed Pluxel example monorepo and its version-matched documentation.
+Create the fixed Pluxel example monorepo with upstream documentation links.
 
 Options:
   --install       Install dependencies with pnpm (default)
@@ -114,17 +113,13 @@ async function resolveAssets(): Promise<StarterAssets> {
 	const candidates = [
 		{
 			template: resolve(packageRoot, 'dist/template'),
-			docs: resolve(packageRoot, 'dist/docs'),
 		},
 		{
 			template: resolve(packageRoot, 'template'),
-			docs: resolve(packageRoot, '../../docs'),
 		},
 	]
 	for (const candidate of candidates) {
-		if ((await isDirectory(candidate.template)) && (await isDirectory(candidate.docs))) {
-			return candidate
-		}
+		if (await isDirectory(candidate.template)) return candidate
 	}
 	throw new Error('Starter assets are missing. Reinstall @pluxel/create or run its build first.')
 }
@@ -136,7 +131,6 @@ async function createProject(assets: StarterAssets, destination: string): Promis
 	const staging = await mkdtemp(resolve(parent, '.create-pluxel-'))
 	try {
 		await copyTree(assets.template, staging, (path) => (path === 'gitignore' ? '.gitignore' : path))
-		await copyTree(assets.docs, resolve(staging, 'docs/pluxel'))
 		if (destinationState === 'empty-directory') {
 			await rmdir(destination)
 		}

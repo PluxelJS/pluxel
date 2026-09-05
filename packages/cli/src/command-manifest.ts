@@ -1,5 +1,19 @@
 import { lazy, type SubCommandable } from 'gunshi'
 
+export const docsCommandArgs = {
+	path: {
+		type: 'positional',
+		description: 'Path below the upstream docs directory',
+		default: 'index.md',
+	},
+} as const
+
+export const docsCommandDefinition = {
+	name: 'docs',
+	description: 'Print the canonical upstream Pluxel documentation URL',
+	args: docsCommandArgs,
+} as const
+
 export const newCommandArgs = {
 	dest: {
 		type: 'positional',
@@ -502,6 +516,13 @@ export const workspaceScanDefinition = {
 	args: workspaceScanArgs,
 } as const
 
+export const workspaceDoctorDefinition = {
+	name: 'doctor',
+	description: 'Validate shared Pluxel workspace and source-bootstrap policy',
+	toKebab: true,
+	args: workspaceRootArgs,
+} as const
+
 export const workspaceSubCommands = new Map<string, SubCommandable>([
 	[
 		'prompt',
@@ -545,11 +566,18 @@ export const workspaceSubCommands = new Map<string, SubCommandable>([
 			workspaceScanDefinition,
 		),
 	],
+	[
+		'doctor',
+		lazy(
+			() => import('./commands/workspace').then((module) => module.workspaceDoctorCommand),
+			workspaceDoctorDefinition,
+		),
+	],
 ])
 
 export const workspaceCommandDefinition = {
 	name: 'workspace',
-	description: 'Manage workspaces (pnpm / yarn)',
+	description: 'Manage and diagnose workspaces',
 	toKebab: true,
 	args: workspaceRootArgs,
 	subCommands: workspaceSubCommands,

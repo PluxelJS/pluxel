@@ -22,8 +22,9 @@ pnpm dev
 pnpm create @pluxel my-workspace --no-install
 ```
 
-create package 不依赖 CLI，也不联网下载模板。它把发布包中的 starter 复制到空目标，并把该版本发布时的完整用户
-文档原字节复制到 `docs/pluxel/`。因此新项目在离线环境中也有与 starter 匹配的 API、测试和工具链说明。
+create package 不依赖 CLI，也不联网下载模板。它只把发布包中的 starter 复制到空目标；框架文档保持在
+[上游唯一真源](https://github.com/PluxelJS/pluxel/blob/main/docs/index.md)，生成项目可用
+`pnpm exec pluxel docs [path]` 打印对应链接。项目自己的 `docs/` 只记录产品契约，不保存需要反复同步的框架快照。
 
 ## 目录与依赖方向
 
@@ -40,7 +41,6 @@ host/
   tsdown.config.ts          staticApplication() + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
 pluxel.loader.hmr.jsonc     dynamic loader 的最小 example profile
-docs/pluxel/                create 发布时的 Pluxel 文档快照
 pncat.config.ts             catalog 分组和迁移的唯一策略入口
 ```
 
@@ -154,5 +154,5 @@ starter root 安装 `@pluxel/cli` 是为了后续工具命令，不代表 create
 pnpm exec pluxel new --name @your-scope/your-plugin plugins
 ```
 
-CLI 只生成 Plugin package；它不会再次生成 starter，也不会复制 `docs/pluxel/`。Plugin package 的发布形状见
+CLI 只生成 Plugin package；它不会再次生成 starter或复制框架文档。Plugin package 的发布形状见
 [开发和发布插件包](./plugin-package.md)。

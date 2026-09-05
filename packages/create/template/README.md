@@ -4,7 +4,8 @@ This is a fixed, neutral example workspace for learning Pluxel plugin developmen
 package names and class names are intentionally not generated: rename them only when the example has
 become your own application.
 
-Start with the versioned documentation copied into [`docs/pluxel/`](docs/pluxel/README.md), then run:
+Start with the [current upstream Pluxel documentation](https://github.com/PluxelJS/pluxel/blob/main/docs/index.md),
+or print a focused link with `pnpm exec pluxel docs development/testing.md`, then run:
 
 ```sh
 pnpm dev

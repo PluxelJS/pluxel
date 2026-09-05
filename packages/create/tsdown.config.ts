@@ -9,10 +9,15 @@ export default defineConfig({
 			// The fixed starter is a product asset. Local package installs are not: Vitest can
 			// create node_modules/.vite-temp while template tests run, so copying the directory
 			// would race those ephemeral files and accidentally publish local dependencies.
-			from: ['template/**/*', '!template/**/node_modules/**'],
+			from: [
+				'template/**/*',
+				'template/.github/**/*',
+				'template/.oxfmtrc.json',
+				'!template/**/node_modules/**',
+			],
+			to: 'dist/template',
 			flatten: false,
 		},
-		'../../docs',
 	],
 	dts: false,
 	exports: {

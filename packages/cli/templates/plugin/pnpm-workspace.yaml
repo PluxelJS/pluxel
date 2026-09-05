@@ -16,5 +16,3 @@ catalog:
 
 allowBuilds:
   esbuild: true
-
-managePackageManagerVersions: false

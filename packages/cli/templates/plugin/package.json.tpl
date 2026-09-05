@@ -4,17 +4,11 @@
 	"description": {{json description}},
 	"version": "0.1.0",
 	"type": "module",
+	"packageManager": "pnpm@11.25.0",
 	"exports": {
 		".": {
 			"@pluxel/hmr": "./src/{{pluginName}}.ts",
 			"default": "./dist/index.mjs"
-		}
-	},
-	"devEngines": {
-		"packageManager": {
-			"name": "pnpm",
-			"version": ">=11 <12",
-			"onFail": "error"
 		}
 	},
 	"engines": {
@@ -30,10 +24,11 @@
 		"lint:fix": "pnpm lint --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --check .",
+		"governance:check": "pluxel workspace doctor",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit --pretty false",
-		"verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+		"verify": "pnpm governance:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
 	"peerDependencies": {
 		"@pluxel/runtime": "catalog:"

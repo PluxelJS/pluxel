@@ -14,13 +14,14 @@ Pluxel CLI（对外发布包之一）。
 
 ```sh
 pluxel build
+pluxel docs development/testing.md
 pluxel hmr
 pluxel new
 pluxel source doctor
 pluxel distribution inspect ./dist
 ```
 
-`pluxel new` 只在已有 workspace 或指定 destination 中创建可发布 Plugin package。官方 `plugin` 模板固定 pnpm 11，
+`pluxel new` 只在已有 workspace 或指定 destination 中创建可发布 Plugin package。官方 `plugin` 模板固定当前受支持的 pnpm 11，
 默认安装依赖；传入 `--no-install` 可以只生成文件。local template 默认不执行安装，只有显式 `--install` 才会运行其
 package manager lifecycle scripts。非交互调用使用 manifest 显式声明的 prompt default，缺少 default 时直接失败。
 
@@ -30,7 +31,8 @@ package manager lifecycle scripts。非交互调用使用 manifest 显式声明�
 pnpm create @pluxel my-workspace
 ```
 
-create 发布并复制固定 starter 与 `docs/pluxel/` 文档快照，不加载 CLI，也不共享 Plugin template。生成的 starter
+create 只发布固定 starter，不加载 CLI，也不共享 Plugin template；生成项目通过 `pluxel docs` 定位上游当前文档，
+不复制会随时间漂移的 `docs/pluxel/` 快照。生成的 starter
 把 `@pluxel/cli` 作为项目开发工具安装，后续可在其中运行 `pluxel new`。两个入口的输出有意不同，不存在 parity
 contract。
 

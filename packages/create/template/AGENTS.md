@@ -1,8 +1,8 @@
 # Repository instructions for coding agents
 
 Before changing files under `plugins/`, plugin-facing contracts, Pluxel host configuration, or
-`oxlint.config.ts`, start at `docs/pluxel/README.md`. Those files are copied verbatim from the Pluxel
-user documentation shipped with `@pluxel/create`; do not fork their API guidance locally.
+`oxlint.config.ts`, start with `pnpm exec pluxel docs` and follow the canonical upstream user
+documentation. Keep product-specific notes here; do not copy or fork Pluxel API guidance locally.
 
 Keep these boundaries intact:
 

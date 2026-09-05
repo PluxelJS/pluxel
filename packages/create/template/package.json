@@ -10,7 +10,7 @@
 		"catalog:check": "pncat detect --yes",
 		"catalog:clean": "pncat clean --yes",
 		"catalog:migrate": "pncat migrate --force --yes",
-		"governance:check": "node scripts/check-workspace-governance.mjs",
+		"governance:check": "pluxel workspace doctor && node scripts/check-workspace-governance.mjs",
 		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error host packages plugins scripts oxlint.config.ts pncat.config.ts",
 		"lint:fix": "pnpm lint --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --write .",
@@ -29,15 +29,9 @@
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:test"
 	},
-	"devEngines": {
-		"packageManager": {
-			"name": "pnpm",
-			"version": ">=11 <12",
-			"onFail": "error"
-		}
-	},
 	"engines": {
 		"node": ">=24",
 		"pnpm": ">=11 <12"
-	}
+	},
+	"packageManager": "pnpm@11.25.0"
 }

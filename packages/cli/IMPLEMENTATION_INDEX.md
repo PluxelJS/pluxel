@@ -29,8 +29,8 @@ Scaffold 内部边界：
 
 这些模块没有 package export，也不是第三方 generator API。
 
-CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完整 example workspace、固定 starter 与
-`docs/pluxel/` 快照归 `@pluxel/create`，不经过这些模块。
+CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完整 example workspace 与固定 starter
+归 `@pluxel/create`；上游文档由 `docs` 命令定位，不复制到生成项目。
 
 可选能力：
 

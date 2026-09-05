@@ -5,7 +5,6 @@ packages:
   - vendor/split-like-vscode/packages/core
   - vendor/split-like-vscode/packages/react
   - projects/*
-managePackageManagerVersions: false
 
 allowBuilds:
   '@google/genai': false
