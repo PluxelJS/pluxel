@@ -15,6 +15,7 @@ export {
 	type ViteBusinessWebSocketUpgrade,
 	type ViteNodeElysiaApplicationCarrierOptions,
 } from './vite-node-carrier.ts'
+export { installPluxelViteUrlPrinter, type PluxelViteUrlPrinterOptions } from './vite-urls.ts'
 
 const PLUXEL_SSR_MODULE_RUNNER_STATE = Symbol.for('pluxel.viteSsrModuleRunnerState')
 const PLUXEL_SSR_MODULE_RUNNER_EXTERNALIZER = Symbol.for('pluxel.viteSsrModuleRunnerExternalizer')

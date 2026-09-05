@@ -14,7 +14,9 @@ tree:
 
 - `dist/template/`: a neutral `@example/*` monorepo with an independent `host/web` workspace package, one
   host-owned Vite config, root-owned `pncat` catalog policy, static/dynamic modes, a same-origin Todo API,
-  tests and build governance.
+  tests and build governance. Its local pinned Portless dependency gives `pnpm dev` a stable
+  `https://<directory>.localhost` origin while the application and Workbench remain two paths on the one
+  Vite listener; `dev:direct` and `PORTLESS=0` provide explicit bypasses.
 
 Creation copies the starter byte-for-byte and maps the package-safe `gitignore` asset to `.gitignore`.
 It links to the canonical upstream documentation instead of copying a snapshot that drifts after

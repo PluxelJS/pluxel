@@ -226,6 +226,11 @@ class HttpBackend {
 		return this.config.workbench && this.config.uiBasePath === '/'
 	}
 
+	/** @internal Vite route launchers use this for user-facing development URLs. */
+	workbenchUiBasePath(): string | undefined {
+		return this.config.workbench ? this.config.uiBasePath : undefined
+	}
+
 	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void {
 		if (this.applicationCarrier) {
 			throw new Error('[pluxel/runtime] An Elysia application carrier is already attached')
@@ -722,6 +727,11 @@ export class HttpService {
 
 	workbenchOwnsRootNavigation(): boolean {
 		return this.#backend.workbenchOwnsRootNavigation()
+	}
+
+	/** @internal Vite route launchers use this for user-facing development URLs. */
+	workbenchUiBasePath(): string | undefined {
+		return this.#backend.workbenchUiBasePath()
 	}
 
 	/** @internal Launchers attach the physical platform bridge after creating the root. */

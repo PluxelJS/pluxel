@@ -15,7 +15,7 @@ The default host is static. It imports an auditable fixed catalog and uses the s
 Vite development and the production freezer. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
 configuration, installs the workspace Plugins and serves the page and Plugin routes on
-`http://127.0.0.1:3310`.
+the stable Portless application origin printed at startup.
 
 The root installs `pncat` as the only catalog-management interface. Versions are grouped by
 `pncat.config.ts`; use `pnpm catalog:add -- <package>`, `pnpm catalog:migrate`, and
@@ -31,12 +31,16 @@ uses `staticApplication()` and copies `host/web/dist` into `host/dist/public`. T
 `pluxel distribution create` after that write so the distribution manifest covers browser assets.
 
 Workbench is enabled by default. It shares the Vite process but owns the non-root
-`http://127.0.0.1:3310/__pluxel/workbench` path, leaving the product SPA at `/`. Set
+`https://<workspace-directory>.localhost/__pluxel/workbench` path, leaving the product SPA at
+`https://<workspace-directory>.localhost/`. Both URLs use one origin and one Vite listener. Set
 `PLUXEL_WORKBENCH=false` when the host should run without the management UI.
 
 ```sh
 PLUXEL_WORKBENCH=false pnpm dev
 ```
+
+The listener Portless allocates is an implementation detail. To bypass the named development ingress,
+run `pnpm dev:direct` or `PORTLESS=0 pnpm dev`.
 
 The repository also includes a dynamic host configuration:
 
@@ -60,7 +64,7 @@ Both modes use the same Plugin classes and runtime state. Dynamic mode additiona
 - `host/vite.config.ts` serves that source and lets generation-scoped Elysia routes claim `/api` before SPA fallback.
 - `host` records `@example/web` as a build input, installs the workspace Plugins and switches static/dynamic route policy by Vite mode.
 
-Open `http://127.0.0.1:3310` after `pnpm dev`. The Todo UI calls the same-origin Plugin-owned
+Open the `Application` URL printed by `pnpm dev`. The Todo UI calls the same-origin Plugin-owned
 `/api/example/todos` routes to list, create, complete and remove items.
 
 ## Verify the complete workspace

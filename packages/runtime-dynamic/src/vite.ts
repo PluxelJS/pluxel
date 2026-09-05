@@ -2,10 +2,12 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
+import { hostEnv } from '@pluxel/runtime/environment'
 import { createPluginSourceVitePipeline } from '../../rolldown/src/vite/index.ts'
 import {
 	collectViteSsrImportFiles,
 	createHostModuleVitePlugin,
+	installPluxelViteUrlPrinter,
 	createViteNodeElysiaApplicationCarrier,
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
@@ -221,6 +223,13 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 				throw new Error('[runtime-dynamic/vite] only one dynamicRuntimeVitePlugin is allowed')
 			}
 			marked[DYNAMIC_RUNTIME_SERVER_KEY] = true
+			installPluxelViteUrlPrinter(server, {
+				publicOrigin: hostEnv.portlessOrigin,
+				workbenchBasePath: () => {
+					const ctx = state.controller?.booted.ctx
+					return ctx ? requireRuntimeHttpService(ctx).workbenchUiBasePath() : undefined
+				},
+			})
 			state.server = server
 			state.applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
 				fetch: (request) => {

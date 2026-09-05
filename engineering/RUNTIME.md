@@ -70,6 +70,10 @@ launcher 安装 runtime-private `ElysiaApplicationCarrier`，负责 physical met
 Node production 由 `@pluxel/runtime-node` 通过 srvx Node listener 与 crossws 实现，Vite binding 复用同一 Node carrier 并保留
 Vite HMR upgrade 的优先权。
 
+Portless 是可选的开发期 ingress/name adapter，不是 Runtime capability，也不拥有第二个 listener。只有存在合法 HTTP(S)
+`PORTLESS_URL` 时，host environment 才采用其 child `HOST`/`PORT`；显式 `PLUXEL_HOST_BIND`/`PLUXEL_HOST_PORT` 继续拥有最高优先级。
+业务 SPA 与 Workbench 共用该 listener/origin，并通过 `/` 与显式非根 `workbench.uiBasePath` 区分。
+
 已接纳 request 取得 generation lease；返回 streaming `Response` 时 lease 延伸到 body close/cancel/error。WebSocket
 upgrade 把 immutable owner token 与 lease 转移给 carrier，owner stop/replacement 只关闭该 owner socket 并使用 1012 drain，
 不关闭共享 listener 或其他 owner。

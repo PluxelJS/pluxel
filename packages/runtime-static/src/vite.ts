@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { env as runtimeEnvironment } from '@pluxel/runtime/environment'
+import { env as runtimeEnvironment, hostEnv } from '@pluxel/runtime/environment'
 import {
 	attachSrvxViteNodeCarrier,
 	collectViteSsrImportFiles,
 	createHostModuleVitePlugin,
+	installPluxelViteUrlPrinter,
 	createViteNodeElysiaApplicationCarrier,
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
@@ -230,6 +231,15 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				throw new Error('[runtime-static/vite] only one staticRuntimeVitePlugin is allowed')
 			}
 			marked[STATIC_RUNTIME_SERVER_KEY] = true
+			installPluxelViteUrlPrinter(server, {
+				publicOrigin: hostEnv.portlessOrigin,
+				workbenchBasePath: () => {
+					const activeHost = state.host
+					return activeHost
+						? requireRuntimeHttpService(activeHost.ctx).workbenchUiBasePath()
+						: undefined
+				},
+			})
 			state.server = server
 			state.applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
 				fetch: (request) => {

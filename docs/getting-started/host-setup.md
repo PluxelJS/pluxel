@@ -111,6 +111,36 @@ Vite SSR 加载 canonical entry。Plugin module 变化执行 catalog HMR；entry
 
 React、业务 alias 和普通 Vite plugin 属于 host `vite.config.ts`。不要复制 Pluxel semantic transform、SSR package classifier 或 runtime source alias。
 
+包含业务 SPA 的 host 应把 Workbench 安装到非根路径，保持一份 Vite listener、一套 HMR graph 和一个浏览器 origin：
+
+```ts no-twoslash
+workbench: {
+	enabled: true,
+	uiBasePath: '/__pluxel/workbench',
+}
+```
+
+此时 `/` 是 Application，`/__pluxel/workbench` 是 Workbench。它们是同一 origin 上的两个绝对 URL pathname，不是两个端口；
+Workbench 的 cookie、认证、Cap'n Web WebSocket、Module Federation assets 和 Vite HMR 因而不需要跨源代理。Workbench-only host
+仍可让 Workbench 拥有 `/`。
+
+开发 workspace 可以用 [Portless](https://github.com/vercel-labs/portless) 为这一个 listener 提供稳定的命名入口。`portless`
+在 child process 中注入合法的 `PORTLESS_URL`、`HOST` 和 `PORT` 后，Pluxel 会让 Vite 监听该物理地址，并显示两个可访问入口：
+
+```text
+➜  Application: https://rhythm.localhost/
+➜  Workbench:   https://rhythm.localhost/__pluxel/workbench
+```
+
+Portless 只负责开发期 ingress 和名称，不创建第二个 runtime listener。listener 优先级为 application 默认值 < Portless
+`HOST`/`PORT` < 显式 `PLUXEL_HOST_BIND`/`PLUXEL_HOST_PORT`；只有 `PORTLESS_URL` 是不带 path、query、fragment 或凭据的
+HTTP(S) origin 时，普通 `HOST`/`PORT` 才会被视为 Portless 注入。需要直接运行 Vite 时使用项目提供的 `dev:direct`，或以
+`PORTLESS=0 pnpm dev` 临时绕过 Portless。
+
+如果产品 SPA 本身部署在 `/xxx/`，必须同时把 Vite asset `base` 和 Router basename/history base 配为该 mount point，并让
+服务器对 `/xxx/*` 做 history fallback。浏览器看到的 `/xxx/aaa` 是相对于域名根的绝对 pathname；Router 不会从反向代理自动推断
+`/xxx`。这与 Workbench 独立占用 `/__pluxel/workbench` 的路径仲裁是两个不同配置，不应靠相对 URL 偶然工作。
+
 ### Production application
 
 ```ts twoslash
@@ -158,7 +188,8 @@ declare module '@pluxel/runtime/environment' {
 | --------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `PLUXEL_DATA_ROOT`                      | 共享 Host data root；默认 `.pluxel`，Pluxel persistence 位于其 `persistence/` 子目录           |
 | `PLUXEL_WORKBENCH`                      | 严格为 `true` 或 `false`；覆盖 Workbench startup policy，但不能开启 headless 产物中不存在的 UI |
-| `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | Node/Vite physical listener；port 必须为 `0..65535` 整数                                       |
+| `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | Node/Vite physical listener；port 必须为 `0..65535` 整数；显式值覆盖 Portless 注入             |
+| `PORTLESS_URL` / `HOST` / `PORT`        | Portless development ingress；URL 必须是 HTTP(S) origin，URL 有效时才采用其 listener bind/port |
 
 外部 database、cache 或 sidecar 需要与 Pluxel 放在同一数据树时直接消费 `hostEnv.dataRoot`，并相对同一个 Host root 使用自己拥有的子目录（例如 `database/`）；不要读取 `env.PLUXEL_DATA_ROOT` 并自行补默认值。应用显式选择不同的 persistence path/backend 表示有意偏离共享 root；部署希望统一时设置 `PLUXEL_DATA_ROOT`。
 

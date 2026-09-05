@@ -61,6 +61,10 @@ React transform/refresh 也只有一个 owner：dynamic development 的 `dynamic
 仅在存在 browser client entry 时安装。Starter smoke 必须同时验证静态、动态入口图和 `/@react-refresh` 的 JavaScript
 响应，避免 plugin stack 重复或缺失形成空 MIME/404。
 
+Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevServer` 注入的物理 listener；它不创建第二个 HMR graph。
+业务 SPA、Workbench、Cap'n Web WebSocket、MF assets 与 Vite HMR 保持同源，分别由既有 path/upgrade 仲裁。Workbench 与业务前端
+因此可以同时显示两个 URL，但不能据此拆成两个 server port。
+
 ## Static 与 dynamic route
 
 `staticRuntimeVitePlugin({ entry })` 通过 ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 Plugin

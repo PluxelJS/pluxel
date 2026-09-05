@@ -93,7 +93,15 @@ copy 把 Web 输出放入 `host/dist/public`。最后显式执行 `pluxel distri
 PLUXEL_WORKBENCH=false pnpm dev
 ```
 
-开发时只有 `host/vite.config.ts` 启动一个 `3310` server。它把 Vite `root` 指向 `host/web/`；Pluxel middleware 先认领
+开发时 `pnpm dev` 通过项目本地固定版本的 Portless 提供稳定入口，并由 `host/vite.config.ts` 启动唯一 Vite server：
+
+```text
+➜  Application: https://my-workspace.localhost/
+➜  Workbench:   https://my-workspace.localhost/__pluxel/workbench
+```
+
+实际随机 listener port 是 ingress 实现细节，不是应用契约。`pnpm dev:direct` 可绕过命名入口直接启动 Vite；也可临时使用
+`PORTLESS=0 pnpm dev`。Vite 把 `root` 指向 `host/web/`；Pluxel middleware 先认领
 generation-scoped Elysia route `/api/example/todos`，其余 browser module、asset 和 navigation 继续交给 Vite SPA。没有 alias、proxy、CORS
 或第二套 HMR graph。production 则由 frozen host 从同一 origin 提供 `public/` fallback，调用相同 Plugin routes。
 

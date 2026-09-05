@@ -13,6 +13,7 @@ describe('Pluxel environment', () => {
 		expect(env).toBe(standardEnvironment)
 		expectTypeOf(env.PLUXEL_WORKBENCH).toEqualTypeOf<'true' | 'false' | undefined>()
 		expectTypeOf(env.PLUXEL_HOST_PORT).toEqualTypeOf<string | undefined>()
+		expectTypeOf(env.PORTLESS_URL).toEqualTypeOf<string | undefined>()
 		expectTypeOf(env.APPLICATION_REGION).toEqualTypeOf<string | undefined>()
 	})
 
@@ -39,6 +40,33 @@ describe('Pluxel environment', () => {
 		expect(resolveHostEnv({})).toEqual({ dataRoot: '.pluxel' })
 	})
 
+	it('adopts Portless listener values without overriding explicit Pluxel host policy', () => {
+		expect(
+			resolveHostEnv({
+				PORTLESS_URL: 'https://rhythm.localhost',
+				HOST: '127.0.0.1',
+				PORT: '4321',
+			}),
+		).toEqual({
+			dataRoot: '.pluxel',
+			hostBind: '127.0.0.1',
+			hostPort: 4321,
+			portlessOrigin: 'https://rhythm.localhost',
+		})
+		expect(
+			resolveHostEnv({
+				PORTLESS_URL: 'https://rhythm.localhost/',
+				HOST: '127.0.0.1',
+				PORT: '4321',
+				PLUXEL_HOST_BIND: '0.0.0.0',
+				PLUXEL_HOST_PORT: '3310',
+			}),
+		).toMatchObject({ hostBind: '0.0.0.0', hostPort: 3310 })
+		expect(resolveHostEnv({ HOST: '127.0.0.1', PORT: '4321' })).toEqual({
+			dataRoot: '.pluxel',
+		})
+	})
+
 	it('rejects malformed explicit values', () => {
 		expect(() => resolveHostEnv({ PLUXEL_WORKBENCH: 'yes' })).toThrow(
 			'PLUXEL_WORKBENCH must be "true" or "false"',
@@ -49,6 +77,15 @@ describe('Pluxel environment', () => {
 		expect(() => resolveHostEnv({ PLUXEL_DATA_ROOT: '  ' })).toThrow(
 			'PLUXEL_DATA_ROOT must not be empty',
 		)
+		expect(() => resolveHostEnv({ PORTLESS_URL: 'rhythm.localhost' })).toThrow(
+			'PORTLESS_URL must be an HTTP(S) origin',
+		)
+		expect(() =>
+			resolveHostEnv({ PORTLESS_URL: 'https://rhythm.localhost/path', PORT: '4321' }),
+		).toThrow('PORTLESS_URL must be an HTTP(S) origin')
+		expect(() =>
+			resolveHostEnv({ PORTLESS_URL: 'https://rhythm.localhost', PORT: 'auto' }),
+		).toThrow('PORT must be an integer')
 	})
 
 	it('returns a deeply frozen non-secret platform snapshot', () => {

@@ -62,6 +62,7 @@ export default defineConfig({
 				'oxfmt',
 				'oxlint',
 				'pncat',
+				'portless',
 				'sass-embedded',
 				'tsdown',
 				'turbo',

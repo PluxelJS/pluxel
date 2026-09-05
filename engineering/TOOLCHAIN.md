@@ -23,6 +23,8 @@ root 预装 `pncat`，`pncat.config.ts` 是 catalog 分组策略，所有 catalo
 仍逐包声明直接依赖，不把 root hoist 当成 Plugin 的隐式依赖来源。static
 application 的 package root 是
 `host/`，所以 `host/tsdown.config.ts` 是唯一 freezer authority；monorepo root 只通过 Turbo 编排。
+starter 也固定项目本地 Portless 版本：默认 `dev` 给唯一 host-owned Vite listener 分配稳定的 `*.localhost` origin，`dev:direct`
+和 `PORTLESS=0` 是显式绕过。Portless 不成为 CLI/runtime capability，不建立第二份 application server、route graph 或配置 authority。
 starter 的 `governance:check` 先运行 `pluxel workspace doctor` 校验 pnpm 与已激活的 machine-local source overlay 等共享契约，再运行
 项目内脚本校验 starter 特有的目录和 catalog 所有权；CLI 不吸收产品专属治理规则。
 
@@ -349,6 +351,10 @@ Workbench Shell、producer 和 Content plan 是 browser-facing outputs，不内�
 表示产物具备能力；是否在某次启动安装 Workbench 仍由 application `configure()` 返回值决定。
 headless 与 workbench 使用分离的 internal Node adapter；headless dependency graph 不解析 Workbench installer/backend，
 不是只依赖 minifier 删除未用分支。
+
+开发 route 的 URL 输出由 `runtime-dev` 的共享 presenter 负责，static/dynamic 不各自推断 ingress。存在 Portless origin 时它显示同一
+origin 上的 Application `/` 与 Workbench `uiBasePath`；没有 Portless 时保留 Vite 原生 listener URL，并只追加 Workbench mount。
+Workbench-only host 若让 UI 拥有 `/`，不得虚构第二个 Application root。
 
 ## Workbench source declaration
 

@@ -2,8 +2,9 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "pnpm --filter @example/host dev",
-		"dev:dynamic": "pnpm --filter @example/host dev:dynamic",
+		"dev": "portless",
+		"dev:direct": "pnpm --filter @example/host dev",
+		"dev:dynamic": "portless run pnpm --filter @example/host dev:dynamic",
 		"start": "pnpm --filter @example/host start",
 		"build": "turbo run build",
 		"catalog:add": "pncat add",
@@ -25,6 +26,7 @@
 		"oxfmt": "catalog:tooling",
 		"oxlint": "catalog:tooling",
 		"pncat": "catalog:tooling",
+		"portless": "catalog:tooling",
 		"turbo": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:test"
@@ -33,5 +35,8 @@
 		"node": ">=24",
 		"pnpm": ">=11 <12"
 	},
-	"packageManager": "pnpm@11.25.0"
+	"packageManager": "pnpm@11.25.0",
+	"portless": {
+		"script": "dev:direct"
+	}
 }
