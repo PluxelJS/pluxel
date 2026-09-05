@@ -91,7 +91,7 @@ describe('pluxel bin launcher', () => {
 		expect(payload.direct).toBe(false)
 	})
 
-	it('does not fall back to the global CLI when a declared local CLI is not installed', async () => {
+	it('does not fall back to the current CLI for ordinary commands when a declared local CLI is not installed', async () => {
 		const root = await createProject({
 			'package.json': JSON.stringify({
 				name: 'fixture',
@@ -104,5 +104,70 @@ describe('pluxel bin launcher', () => {
 
 		expect(result.code).toBe(1)
 		expect(result.stderr).toContain('declares @pluxel/cli, but it is not installed')
+	})
+
+	it('uses the current independent CLI to bootstrap source workspaces before the local CLI is installed', async () => {
+		const root = await createProject({
+			'package.json': JSON.stringify({
+				name: 'fixture',
+				version: '1.0.0',
+				devDependencies: { '@pluxel/cli': '0.1.0' },
+			}),
+		})
+
+		const result = await runNode([pluxelBin, 'source', '--help'], root)
+
+		expect(result.code).toBe(0)
+		expect(result.stderr).toBe('')
+		expect(result.stdout).toContain('Use registered source checkouts')
+	})
+
+	it('does not hide an incomplete installed local CLI during source bootstrap', async () => {
+		const root = await createProject({
+			'package.json': JSON.stringify({
+				name: 'fixture',
+				version: '1.0.0',
+				devDependencies: { '@pluxel/cli': '0.1.0' },
+			}),
+			'node_modules/@pluxel/cli/package.json': JSON.stringify({
+				name: '@pluxel/cli',
+				version: '0.1.0',
+				type: 'module',
+				bin: { pluxel: 'bin/pluxel.mjs' },
+			}),
+		})
+
+		const result = await runNode([pluxelBin, 'source', '--help'], root)
+
+		expect(result.code).toBe(1)
+		expect(result.stderr).toContain('Resolved project-local @pluxel/cli bin, but it is missing')
+	})
+
+	it('does not resolve a CLI from outside the nearest independent project boundary', async () => {
+		const root = await createProject({
+			'node_modules/@pluxel/cli/package.json': JSON.stringify({
+				name: '@pluxel/cli',
+				version: '9.0.0',
+				type: 'module',
+				bin: { pluxel: 'bin/pluxel.mjs' },
+			}),
+			'node_modules/@pluxel/cli/bin/pluxel.mjs': 'process.stdout.write("unexpected parent CLI")\n',
+			'consumer/.git/HEAD': 'ref: refs/heads/main\n',
+			'consumer/package.json': JSON.stringify({
+				name: 'consumer',
+				version: '1.0.0',
+				devDependencies: { '@pluxel/cli': '0.1.0' },
+			}),
+		})
+		const consumer = resolve(root, 'consumer')
+
+		const source = await runNode([pluxelBin, 'source', '--help'], consumer)
+		const ordinary = await runNode([pluxelBin, '--version'], consumer)
+
+		expect(source.code).toBe(0)
+		expect(source.stdout).toContain('Use registered source checkouts')
+		expect(source.stdout).not.toContain('unexpected parent CLI')
+		expect(ordinary.code).toBe(1)
+		expect(ordinary.stderr).toContain('declares @pluxel/cli, but it is not installed')
 	})
 })

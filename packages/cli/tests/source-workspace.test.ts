@@ -164,7 +164,8 @@ describe('source workspace planning', () => {
 		const bootstrap = sourcePnpmfileBootstrapContents()
 		expect(written).toBe(bootstrap)
 		expect(bootstrap).toContain('Source overlay is missing')
-		expect(bootstrap).toContain('source-local-project.mjs')
+		expect(bootstrap).toContain('pluxel source install')
+		expect(bootstrap).not.toContain('source-local-project.mjs')
 		expect(bootstrap).not.toContain('{ hooks: {} }')
 	})
 

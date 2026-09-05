@@ -44,7 +44,6 @@
 		"verify": "pnpm run governance:check && pnpm run lint && pnpm run format:check && pnpm exec turbo run typecheck build test --concurrency=50% && pnpm source-declarations:check",
 		"source-declarations:check": "node scripts/check-source-declarations.mjs",
 		"tegami": "node scripts/tegami.mts",
-		"source:local": "node scripts/source-local-project.mjs",
 		"plugin-host:dynamic": "pnpm --filter @pluxel/plugins-host dynamic",
 		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static"
 	},

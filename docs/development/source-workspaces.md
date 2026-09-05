@@ -21,13 +21,21 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 ## 安装和运行
 
+每台机器先用独立安装的 CLI 登记实际 checkout；机器路径只写入用户 registry：
+
 ```sh
+pluxel source register /path/to/pluxel
+pluxel source register /path/to/chatbot
 pluxel source install
 pluxel source doctor
 pnpm dev
 ```
 
-`source install` 也同步本机 overlay 到 `pluxel.source-lock.json` 指定的 checkout。首次注册、移动或更新 source lock 后必须再运行一次；已接入 checkout 内的普通源码修改不需要重装。
+即使消费项目声明了 `@pluxel/cli` 但还没有 `node_modules`，`pluxel source` 也会继续使用当前全局安装或
+`pnpm dlx` CLI；`source install` 安装完成后，其他命令自动恢复使用项目固定版本。这个例外只覆盖 source
+自举，不允许 build、HMR 或发布绕过项目 lockfile。
+
+移动 checkout 或修改 `pluxel.sources.jsonc` 后需要重新登记并运行 `source install`；已接入 checkout 内的普通源码修改不需要重装。
 
 CLI 扫描每个 checkout 自己的 workspace 和 manifest，按实际依赖闭包创建代理。source package 的 devDependencies 仍属于它自己的 checkout，不进入消费方 closure。
 

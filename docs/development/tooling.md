@@ -29,7 +29,10 @@ npx nypm add -g @pluxel/cli
 
 `@pluxel/cli` 是统一 executable，但不是所有能力的安装闭包。项目 `package.json` 直接声明
 `@pluxel/cli` 时，全局 `pluxel` 会优先使用这个项目本地版本；声明了但尚未安装时会失败并提示先安装，
-不会悄悄回退到全局版本。CI 和 package scripts 应继续使用本地 `pluxel` 或 `pnpm exec pluxel`。
+不会悄悄回退到全局版本。唯一例外是 `pluxel source` 命令族：它可以在首次安装前继续使用当前全局或
+`pnpm dlx` CLI，以建立 source overlay 并安装项目固定版本。CI 和 package scripts 应继续使用本地
+`pluxel` 或 `pnpm exec pluxel`。CLI 只在最近的 Git/workspace/lockfile 项目边界内寻找本地安装；嵌套在
+另一个 checkout 里的独立项目不会借用父项目的 CLI。
 
 按命令安装可选能力：
 

@@ -46,8 +46,11 @@ starter inventory、docs 字节、完整 workspace verify、static distribution 
 不建立 parity contract。
 
 全局 `pluxel` launcher 在加载命令框架前，从启动 `cwd` 向上查找最近一个直接声明 `@pluxel/cli` 的
-`package.json`。找到时委托该项目 executable；声明存在但安装不完整时失败，不回退到全局版本。CI、package
-scripts 和生成的 workspace 仍固定项目本地 CLI，避免全局升级越过 lockfile。
+`package.json`。找到且已安装时委托该项目 executable；声明存在但安装不完整时，只有 `source` 命令族继续使用
+当前独立 CLI，其他命令失败。这个窄例外让 `source register/doctor/install/build` 能建立包含项目 CLI 自身的
+source overlay，不为 build、HMR、发布或 package scripts 提供全局版本回退。CI、package scripts 和生成的 workspace
+仍固定项目本地 CLI，避免全局升级越过 lockfile。已安装判定只在最近的 Git、workspace 或 package-manager lockfile
+边界内逐级查找 `node_modules`；合法 hoist 和 source symlink 可用，物理嵌套的独立仓库不会误用父项目依赖。
 
 命令目录保持静态。只有用户选择命令后，CLI 才从启动 `cwd` 的 Node dependency graph 解析已知的官方 owner，
 检查其版本是否满足 CLI 的 optional peer range，并 lazy import 对应 public subpath。命令的 `--root` 是领域输入，
@@ -77,15 +80,11 @@ pnpm override 是一次安装的生成细节，不进入项目 workspace 配置�
 machine registry 和 package link。source package 若包含 consumer root 会被拒绝，因为这种所有权拓扑无法形成无环代理。每个 checkout 始终按自己的依赖闭包生成
 overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。
 
-Pluxel checkout 内的 `local-projects/*` 使用仓库拥有的 `scripts/source-local-project.mjs` 作为首次安装入口。
-launcher 在 consumer pnpm 生命周期之外运行，必要时先安装并构建当前 checkout 的 CLI，再登记同一开发树中的
-Pluxel 与 local repository checkout，最后委托正常的 `pluxel source install`。不得把首次 bootstrap 放进
-consumer 的 pnpm script：pnpm 可能在执行 script 前先做 dependency-status install，此时 source overlay 尚未生成，
-会把私有 source package 错误解析到 registry。launcher 只解决 in-tree 开发 checkout 的可达性；package closure、
-overlay、构建与 lockfile 仍由唯一的 `pluxel source` 实现拥有。
-不声明 `pluxel.sources.jsonc` 的 registry-managed local project 也使用同一 launcher；该分支直接在项目根目录
-运行 pnpm install，不生成 source registry、overlay 或链接。source install options 只接受于声明了 source
-配置的项目，避免同一个 flag 在两条安装路径上产生模糊语义。
+首次安装由独立的全局或 `pnpm dlx` CLI 直接执行标准 `pluxel source` 命令：操作者先显式 `source register`
+每个 checkout，再在 consumer 中运行 `source install`。机器路径仍只进入用户 registry，CLI 不从目录邻接、父仓库
+或同机其他 checkout 猜测 repository identity。不得把首次 bootstrap 放进 consumer 的 pnpm script：pnpm 可能在
+执行 script 前先做 dependency-status install，此时 source overlay 尚未生成，会把私有 source package 错误解析到
+registry。package closure、overlay、构建与 lockfile 始终由唯一的 `pluxel source` 实现拥有。
 `pluxel source build --package <name>` 可以重复传入 source closure 内确实需要 artifact 的精确 target；它只用于需要先使一个
 package export 可执行的窄 bootstrap，例如 Vitest config 的 `@pluxel/test`。不带 `--package` 才构建整个 selected artifact closure。
 上游构建优先把精确目标交给其 Turbo task graph，不用 `package...` filter 强制扩张依赖；无 Turbo 时

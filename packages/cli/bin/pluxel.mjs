@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -10,11 +9,20 @@ const distCli = resolve(__dirname, '../dist/cli.mjs')
 const startupCwd = process.cwd()
 const startupCwdSymbol = Symbol.for('pluxel.cli.startupCwd')
 const directModeSymbol = Symbol.for('pluxel.cli.direct')
+const PROJECT_BOUNDARY_MARKERS = [
+	'.git',
+	'pnpm-workspace.yaml',
+	'pnpm-lock.yaml',
+	'package-lock.json',
+	'yarn.lock',
+	'bun.lock',
+	'bun.lockb',
+]
 
 globalThis[startupCwdSymbol] ??= startupCwd
 
 if (!globalThis[directModeSymbol]) {
-	const delegated = await delegateToProjectLocalCli(startupCwd)
+	const delegated = await delegateToProjectLocalCli(startupCwd, process.argv.slice(2))
 	if (delegated) {
 		await import(pathToFileURL(delegated).href)
 	} else {
@@ -34,12 +42,18 @@ async function runCurrentCli() {
 	}
 }
 
-async function delegateToProjectLocalCli(cwd) {
+async function delegateToProjectLocalCli(cwd, args) {
 	const projectManifest = await findNearestCliDeclaration(cwd)
 	if (!projectManifest) return undefined
 
 	const currentExecutable = await realpath(fileURLToPath(import.meta.url))
 	const localExecutable = await resolveDeclaredCliBin(projectManifest)
+	if (!localExecutable) {
+		if (isSourceCommand(args)) return undefined
+		console.error(`[pluxel] ${projectManifest.path} declares @pluxel/cli, but it is not installed.`)
+		console.error('Run the project package manager install before invoking `pluxel`.')
+		process.exit(1)
+	}
 	let localRealpath
 	try {
 		localRealpath = await realpath(localExecutable)
@@ -80,15 +94,8 @@ function declaresLocalCli(manifest) {
 }
 
 async function resolveDeclaredCliBin(projectManifest) {
-	const require = createRequire(projectManifest.path)
-	let cliManifestPath
-	try {
-		cliManifestPath = require.resolve('@pluxel/cli/package.json')
-	} catch {
-		console.error(`[pluxel] ${projectManifest.path} declares @pluxel/cli, but it is not installed.`)
-		console.error('Run the project package manager install before invoking `pluxel`.')
-		process.exit(1)
-	}
+	const cliManifestPath = findInstalledCliManifest(projectManifest.dir)
+	if (!cliManifestPath) return undefined
 
 	const cliManifestRoot = dirname(cliManifestPath)
 	const cliManifest = JSON.parse(await readFile(cliManifestPath, 'utf8'))
@@ -103,6 +110,33 @@ async function resolveDeclaredCliBin(projectManifest) {
 		process.exit(1)
 	}
 	return resolve(cliManifestRoot, bin)
+}
+
+function findInstalledCliManifest(startDir) {
+	const boundary = findProjectBoundary(startDir)
+	let dir = startDir
+	while (true) {
+		const manifestPath = resolve(dir, 'node_modules/@pluxel/cli/package.json')
+		if (existsSync(manifestPath)) return manifestPath
+		if (dir === boundary) return undefined
+		const parent = dirname(dir)
+		if (parent === dir) return undefined
+		dir = parent
+	}
+}
+
+function findProjectBoundary(startDir) {
+	let dir = startDir
+	while (true) {
+		if (PROJECT_BOUNDARY_MARKERS.some((marker) => existsSync(resolve(dir, marker)))) return dir
+		const parent = dirname(dir)
+		if (parent === dir) return startDir
+		dir = parent
+	}
+}
+
+function isSourceCommand(args) {
+	return args[0] === 'source'
 }
 
 function hasOwn(value, key) {
