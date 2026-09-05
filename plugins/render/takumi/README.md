@@ -61,6 +61,16 @@ HTML 的 `fromHtml()` 仍是上游同步 parser；它在 scheduler admission 后
 content ceiling 与 node/text/stylesheet/image-source 上限约束这段剩余主线程风险，node walk 和大 byte copy 则会分段让出
 event loop；SVG output 的 UTF-8 byte check 同样 cooperative。
 
+## 文档 adapter
+
+普通调用继续使用 `render()` / `renderSvg()`。需要在 Takumi admission 之后、最终 native render 之前执行有界文档准备的
+官方 adapter 使用 `reserveRender()`：它取得一次 caller-owned、一次性的 fair slot，并在其 `signal` 下完成准备，再只调用一次
+`reservation.render()` 或 `reservation.renderSvg()`。未 commit 的 `close()` 立即释放 slot；commit 后会取消结果但等待 native work
+真正结束才归还容量。这个窄 seam 不暴露 scheduler、owner key 或可复用 permit。
+
+`@pluxel/takumi-markdown` 是首个消费者，提供 GFM 表格、固定代码高亮和可选受限 Typst 数学；业务 Plugin 通常应直接使用它的
+`createRenderer()`，而不是自行操作 reservation。
+
 配置默认限制 8192×8192 physical dimensions、16,777,216 pixels、64 total stylesheets、256 distinct image sources、
 32 MiB image inputs、256 个 / 128 MiB portable fonts、64 MiB output、30 秒 request deadline、2 个 concurrent
 renders 和 32 个 queued renders。完整配置与行为见

@@ -457,6 +457,103 @@ describe('TakumiPlugin', () => {
 	})
 })
 
+describe('Takumi render reservations', () => {
+	it('holds fair capacity before preparation and releases an uncommitted reservation', async () => {
+		await using host = createRuntimeTestHost()
+		await startTakumiFixture(host, {
+			maxConcurrentRenders: 1,
+			maxQueuedRenders: 0,
+			maxQueuedRendersPerConsumer: 0,
+		})
+		const takumi = host.require(TakumiTestConsumer).takumi
+		const reservation = await takumi.reserveRender()
+		try {
+			await expect(takumi.reserveRender()).rejects.toMatchObject({ code: 'RENDER_BUSY' })
+		} finally {
+			await reservation.close()
+		}
+
+		const replacement = await takumi.reserveRender()
+		await replacement.close()
+	})
+
+	it('releases an aborted uncommitted reservation and rejects its commit with the abort reason', async () => {
+		await using host = createRuntimeTestHost()
+		await startTakumiFixture(host)
+		const controller = new AbortController()
+		const reservation = await host
+			.require(TakumiTestConsumer)
+			.takumi.reserveRender({ signal: controller.signal })
+		const reason = new DOMException('reservation cancelled', 'AbortError')
+		controller.abort(reason)
+
+		await expect(
+			reservation.render({ content: '<div>cancelled</div>', width: 10, height: 10 }),
+		).rejects.toBe(reason)
+		await reservation.close()
+		const replacement = await host.require(TakumiTestConsumer).takumi.reserveRender()
+		await replacement.close()
+	})
+
+	it('withdraws reservation handles when their caller generation restarts', async () => {
+		await using host = createRuntimeTestHost()
+		await startTakumiFixture(host)
+		const reservation = await host.require(TakumiTestConsumer).takumi.reserveRender()
+
+		await host.restart(TakumiTestConsumer)
+		await expect(
+			reservation.render({ content: '<div>stale</div>', width: 10, height: 10 }),
+		).rejects.toMatchObject({ code: 'NOT_RUNNING' })
+		await reservation.close()
+		const replacement = await host.require(TakumiTestConsumer).takumi.reserveRender()
+		await replacement.close()
+	})
+
+	it('keeps committed capacity until non-preemptible native work settles', async () => {
+		let releaseNative!: () => void
+		const nativeRender = vi.spyOn(Renderer.prototype, 'render').mockImplementation(async () => {
+			await new Promise<void>((resolve) => {
+				releaseNative = resolve
+			})
+			return Buffer.from([1, 2, 3])
+		})
+		try {
+			await using host = createRuntimeTestHost()
+			await startTakumiFixture(host, {
+				maxConcurrentRenders: 1,
+				maxQueuedRenders: 0,
+				maxQueuedRendersPerConsumer: 0,
+			})
+			const takumi = host.require(TakumiTestConsumer).takumi
+			const reservation = await takumi.reserveRender()
+			const rendering = reservation.render({
+				content: '<div>native work</div>',
+				width: 10,
+				height: 10,
+			})
+			await vi.waitFor(() => expect(nativeRender).toHaveBeenCalledOnce())
+
+			let closed = false
+			const closing = reservation.close().then((): void => {
+				closed = true
+				return undefined
+			})
+			await Promise.resolve()
+			expect(closed).toBe(false)
+			await expect(takumi.reserveRender()).rejects.toMatchObject({ code: 'RENDER_BUSY' })
+
+			releaseNative()
+			await expect(rendering).rejects.toMatchObject({ code: 'NOT_RUNNING' })
+			await closing
+			expect(closed).toBe(true)
+			const replacement = await takumi.reserveRender()
+			await replacement.close()
+		} finally {
+			nativeRender.mockRestore()
+		}
+	})
+})
+
 describe('RenderScheduler', () => {
 	it('bounds queues per owner and dispatches waiting owners round-robin', async () => {
 		const scheduler = new RenderScheduler(1, 3, 2)

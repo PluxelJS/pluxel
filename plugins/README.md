@@ -59,9 +59,11 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 - [`@pluxel/otel`](otel/README.md)：原生 OpenTelemetry Meter/Tracer/Logger，支持三种 OTLP transport 与 Prometheus pull。
 - [`render/`](render/README.md)：服务端渲染能力链。
   - [`@pluxel/fonts`](render/fonts/README.md)：统一拥有系统字体发现、上传持久化、默认选择、caller 注册和 Fonts Selection Attachment。
-  - [`@pluxel/canvas`](render/canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas，并以 Fonts 插件管理字体。
+  - [`@pluxel/canvas`](render/canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas、Pretext 文字准备与静态表格子路径，并以 Fonts 插件管理字体。
   - [`@pluxel/echarts`](render/echarts/README.md)：基于 Canvas/Fonts 的 Apache ECharts 6 服务端渲染、caller-owned 主题与 Fonts Attachment。
   - [`@pluxel/takumi`](render/takumi/README.md)：基于 Takumi 的有界 HTML/node-tree raster/SVG 渲染，并消费 Fonts 可移植资源。
+  - [`@pluxel/takumi-markdown`](render/takumi-markdown/README.md)：基于 Takumi reservation 的 GFM、表格和固定 Rangi 静态代码高亮图片渲染。
+  - [`@pluxel/takumi-markdown-typst`](render/takumi-markdown-typst/README.md)：可选、受限的 Typst 数学 SVG Markdown extension，使用共享 Worker。
 
 仍标记为 private 的官方插件会先在真实 consumer 中稳定 contract；开放发布的插件也保持普通 package 与公开作者
 API，不获得 runtime 特例。`@pluxel/wretch` 提供原生 immutable Wretch base、最小宿主级出站策略和可选的统一

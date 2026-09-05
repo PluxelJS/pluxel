@@ -9,14 +9,9 @@ import {
 import { describe, expect, it } from 'vitest'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
-import {
-	CanvasConfig,
-	CanvasError,
-	CanvasPlugin,
-	layoutWithLines,
-	measureRichInlineStats,
-} from '../src/index.ts'
+import { CanvasConfig, CanvasError, CanvasPlugin } from '../src/index.ts'
 import { createCanvasWorkerAdapter } from '../src/worker.ts'
+import { layoutWithLines, measureRichInlineStats } from '../src/pretext.ts'
 import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
 import { CanvasWorkbench } from '../src/workbench.ts'
 

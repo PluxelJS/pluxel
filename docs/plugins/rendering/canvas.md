@@ -1,9 +1,9 @@
 ---
 title: 服务端 Canvas
-description: 在服务端绘制位图与 SVG，解码图片，并用资源预算约束原生内存。
+description: 在服务端绘制位图与 SVG，解码图片、排版文字和生成静态数据表，并用资源预算约束原生内存。
 ---
 
-`@pluxel/canvas` 基于 `@napi-rs/canvas` 提供服务端绘图能力，包括位图 Canvas、SVG Canvas、图片解码和 Pretext 文字布局。宿主会在分配原生内存前检查资源预算，避免单个 Plugin 无限制占用内存。
+`@pluxel/canvas` 基于 `@napi-rs/canvas` 提供服务端绘图能力，包括位图 Canvas、SVG Canvas、图片解码、Pretext 文字布局和静态数据表。宿主会在分配原生内存前检查资源预算，避免单个 Plugin 无限制占用内存。
 
 `CanvasPlugin` 必须依赖 `FontsPlugin`，也为 `EChartsPlugin` 提供底层绘图能力。业务 Plugin 直接绘图时只需注入 `CanvasPlugin`。
 
@@ -108,6 +108,8 @@ CanvasPlugin root 不提供裸 Image placeholder factory；native `src` setter �
 Canvas 将 `@chenglou/pretext` 的文字准备连接到 native measurement context：
 
 ```ts no-twoslash
+import { layoutWithLines } from '@pluxel/canvas/pretext'
+
 const prepared = this.canvas.prepareTextSync({
 	text: 'A progressively wrapped paragraph',
 	fontSize: 18,
@@ -127,9 +129,51 @@ const layout = layoutWithLines(prepared, 360, 24)
 
 省略 `font` 时使用当前 Pluxel 默认 family，可通过 `fontSize` 指定字号，默认 16px。传完整 Canvas `font` shorthand 时不能再传 `fontSize`。准备结果是不可变快照；默认字体之后发生变化，不会重写旧结果。
 
-包根还重新导出 Pretext 的纯布局 helper，包括 `layoutWithLines()`、`layoutNextLine()`、`measureLineStats()`、`measureNaturalWidth()`、line range walkers，以及对应 rich-inline helper。准备步骤读取 native 字体；之后的布局计算是纯 arithmetic。
+`@pluxel/canvas/pretext` 导出 Pretext 的纯布局 helper，包括 `layoutWithLines()`、`layoutNextLine()`、`measureLineStats()`、`measureNaturalWidth()`、line range walkers，以及对应 rich-inline helper。准备步骤读取 native 字体；之后的布局计算是纯 arithmetic。
 
 共享 measurement cache 会在 Fonts revision 改变或累计准备字符达到 `maxTextCacheCharacters` 时清空。
+
+## 生成静态数据表
+
+当输出是报告、榜单或审计表格时，使用 `@pluxel/canvas/table`。它只处理 Canvas 最后一公里的列宽、单元格、Pretext 断行和默认省略；排序、筛选、数值本地化、二维码、图表和文件输出仍应由调用方或各自成熟工具负责。
+
+```ts no-twoslash
+import { drawTable, layoutTable } from '@pluxel/canvas/table'
+
+const table = layoutTable({
+	width: 640,
+	columns: [
+		{ header: 'Service', weight: 2 },
+		{ header: 'Status', width: 112, textAlign: 'center' },
+		{ header: 'P95', width: 88, textAlign: 'right' },
+	],
+	rows: [
+		['API gateway', 'Healthy', '18 ms'],
+		['Background worker', 'Delayed', '81 ms'],
+	],
+	body: {
+		font: '14px ' + this.canvas.defaultFont.cssFamily,
+		lineHeight: 20,
+		padding: 6,
+	},
+	header: {
+		font: '700 14px ' + this.canvas.defaultFont.cssFamily,
+		background: '#e2e8f0',
+	},
+	prepareText: (input) => this.canvas.prepareTextWithSegmentsSync(input),
+})
+
+const height = Math.ceil(table.bounds.height)
+this.canvas.assertDimensions(640, height)
+const surface = this.canvas.createCanvasSync(640, height)
+drawTable(surface.getContext('2d'), table)
+```
+
+没有 `width` 的列按 `weight`（默认 `1`）分走余宽；若所有列都是 fixed，它们必须恰好占满总宽。每个 row 的 cell 数必须等于 columns 数。`body.font` 和 `body.lineHeight` 是必填项，确保 Pretext 测量与 native `fillText()` 使用同一 font。默认 `maxLines: 1`、`overflow: 'ellipsis'`；设置 `maxLines` 或 `overflow: 'clip'` 可改为多行或直接裁切。
+
+`layoutTable()` 返回不可变 snapshot，不创建 Canvas 或编码数据。调用方先取得实际高度，再用 `assertDimensions()` / factory 执行既有 host budget；过长报表应由调用方按页拆分，而不是让 table 工具暗中分配超大 surface。它同样可在 worker 中使用：将 `prepareText` 换成 `createCanvasWorkerTextLayout(snapshot).prepareTextWithSegments`，再向 worker adapter 创建的 context 调用 `drawTable()`。
+
+可选 `drawTable(context, table, { paintCell })` callback 在每个 cell 的 background 后、默认文本前执行；返回 `'skip-text'` 可完全接管该 cell 的内容。每次 callback 后都会恢复 Canvas state，避免影响其他 cell；callback 只属于本次 draw pass，不注册 Plugin、事件或持久化资源。
 
 ## 在 worker 中使用
 
@@ -179,7 +223,7 @@ const text = createCanvasWorkerTextLayout(snapshot)
 const prepared = text.prepareText({ text: 'Hello', fontSize: 24 })
 ```
 
-这避免 ECharts 等不使用 Pretext 的 worker artifact 承担其代码与 cache 成本。两个 worker 子入口都不提供 Plugin、Context、Workbench 或字体 mutation。
+`@pluxel/canvas/worker/pretext` 只提供受限 preparation；纯 layout/walker 始终从 `@pluxel/canvas/pretext` 导入。这避免 ECharts 等不使用 Pretext 的 worker artifact 承担其代码与 cache 成本。两个 worker 子入口都不提供 Plugin、Context、Workbench 或字体 mutation。
 
 ## 配置与职责
 

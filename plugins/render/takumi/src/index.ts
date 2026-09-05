@@ -86,9 +86,45 @@ export type TakumiSvgRenderResult = Readonly<{
 	fontRevision: number
 }>
 
+/**
+ * Per-request ceilings captured when a render reservation is admitted.
+ *
+ * The values are a read-only generation snapshot rather than a queue or renderer handle.
+ */
+export type TakumiRenderLimits = Readonly<
+	Pick<
+		TakumiPluginConfig,
+		| 'defaultDevicePixelRatio'
+		| 'maxDevicePixelRatio'
+		| 'maxWidth'
+		| 'maxHeight'
+		| 'maxPixels'
+		| 'maxContentBytes'
+		| 'maxContentNodes'
+		| 'maxTextCharacters'
+		| 'maxStylesheetBytes'
+		| 'maxStylesheets'
+		| 'maxImageBytes'
+		| 'maxImages'
+		| 'maxOutputBytes'
+		| 'maxRenderDurationMs'
+	>
+>
+
+export type TakumiRenderReservation = Readonly<{
+	/** Linked caller, reservation and deadline signal. */
+	readonly signal: AbortSignal
+	readonly limits: TakumiRenderLimits
+	render(input: Omit<TakumiRenderInput, 'signal'>): Promise<TakumiRenderResult>
+	renderSvg(input: Omit<TakumiSvgRenderInput, 'signal'>): Promise<TakumiSvgRenderResult>
+	/** Idempotently releases an uncommitted reservation or waits for committed native work to settle. */
+	close(): Promise<void>
+}>
+
 type TakumiGeneration = Readonly<{
 	scheduler: RenderScheduler
 	controller: AbortController
+	limits: TakumiRenderLimits
 	rendererBuilds: Map<number, Promise<PreparedRenderer>>
 	state: { renderer?: PreparedRenderer }
 }>
@@ -137,6 +173,12 @@ type RenderRequest = Readonly<{
 	output: NormalizedRenderInput['output']
 }>
 
+type InternalRenderReservation = Readonly<{
+	public: TakumiRenderReservation
+	completion: Promise<void>
+	setRelease(release: Promise<unknown>): void
+}>
+
 @Plugin()
 export class TakumiPlugin extends BasePlugin {
 	private readonly config = this.configs.use(TakumiConfig)
@@ -168,6 +210,7 @@ export class TakumiPlugin extends BasePlugin {
 				this.config.maxQueuedRendersPerConsumer,
 			),
 			controller: new AbortController(),
+			limits: createRenderLimits(this.config),
 			rendererBuilds: new Map(),
 			state: {},
 		})
@@ -200,56 +243,233 @@ export class TakumiPlugin extends BasePlugin {
 
 	/** Renders bounded HTML or a Takumi node tree to PNG, JPEG or WebP. */
 	async render(input: TakumiRenderInput): Promise<TakumiRenderResult> {
-		const lease = this.requireLease()
-		const request = this.normalizeRenderRequest(input)
-		const deadline = createRenderDeadline(this.config.maxRenderDurationMs)
-		const abortLink = linkAbortSignals([lease.controller.signal, input.signal, deadline.signal])
+		this.normalizeRenderRequest(input)
+		const reservation = await this.reserveRender({ signal: input.signal })
 		try {
-			return await lease.generation.scheduler.run(
-				lease.schedulerOwner,
-				abortLink.signal,
-				async () =>
-					this.executeRaster(
-						await this.snapshotRenderInput(request, abortLink.signal),
-						abortLink.signal,
-						lease.generation,
-					),
-			)
-		} catch (cause) {
-			if (cause instanceof TakumiError) throw cause
-			if (abortLink.signal.aborted) throw abortReason(abortLink.signal)
-			throw new TakumiError('RENDER_FAILED', 'Takumi raster rendering failed', { cause })
+			return await reservation.render(toReservedRasterInput(input))
 		} finally {
-			abortLink.dispose()
-			deadline.dispose()
+			await reservation.close()
 		}
 	}
 
 	/** Renders bounded HTML or a Takumi node tree to a vector SVG document. */
 	async renderSvg(input: TakumiSvgRenderInput): Promise<TakumiSvgRenderResult> {
-		const lease = this.requireLease()
-		const request = this.normalizeRenderRequest(input, 1)
-		const deadline = createRenderDeadline(this.config.maxRenderDurationMs)
-		const abortLink = linkAbortSignals([lease.controller.signal, input.signal, deadline.signal])
+		this.normalizeRenderRequest(input, 1)
+		const reservation = await this.reserveRender({ signal: input.signal })
 		try {
-			return await lease.generation.scheduler.run(
-				lease.schedulerOwner,
-				abortLink.signal,
-				async () =>
-					this.executeSvg(
-						await this.snapshotRenderInput(request, abortLink.signal),
-						abortLink.signal,
-						lease.generation,
-					),
+			return await reservation.renderSvg(toReservedSvgInput(input))
+		} finally {
+			await reservation.close()
+		}
+	}
+
+	/**
+	 * Reserves one fair Takumi admission slot for a single bounded render.
+	 *
+	 * The reservation starts its deadline while queued. Call close() when a document adapter elects
+	 * not to commit; a committed reservation holds capacity until native work has actually settled.
+	 */
+	async reserveRender(
+		options: Readonly<{ signal?: AbortSignal }> = {},
+	): Promise<TakumiRenderReservation> {
+		const lease = this.requireLease()
+		const callerSignal = normalizeReservationOptions(options)
+		const deadline = createRenderDeadline(this.config.maxRenderDurationMs)
+		const controller = new AbortController()
+		const abortLink = linkAbortSignals([
+			lease.controller.signal,
+			callerSignal,
+			controller.signal,
+			deadline.signal,
+		])
+		let reservation: InternalRenderReservation | undefined
+		let resolveAdmission!: (value: TakumiRenderReservation) => void
+		let rejectAdmission!: (reason: unknown) => void
+		const admitted = new Promise<TakumiRenderReservation>((resolve, reject) => {
+			resolveAdmission = resolve
+			rejectAdmission = reject
+		})
+		let scheduled!: Promise<void>
+		scheduled = lease.generation.scheduler.run(lease.schedulerOwner, abortLink.signal, async () => {
+			reservation = this.createRenderReservation({
+				controller,
+				generation: lease.generation,
+				signal: abortLink.signal,
+			})
+			reservation.setRelease(scheduled)
+			resolveAdmission(reservation.public)
+			await reservation.completion
+		})
+		void scheduled.then(
+			(): void => {
+				abortLink.dispose()
+				deadline.dispose()
+				if (!reservation) {
+					rejectAdmission(
+						new TakumiError('NOT_RUNNING', 'Takumi render reservation stopped before admission'),
+					)
+				}
+				return undefined
+			},
+			(cause: unknown): void => {
+				abortLink.dispose()
+				deadline.dispose()
+				if (!reservation) rejectAdmission(this.normalizeReservationFailure(cause, abortLink.signal))
+				return undefined
+			},
+		)
+		return await admitted
+	}
+
+	private createRenderReservation(
+		input: Readonly<{
+			controller: AbortController
+			generation: TakumiGeneration
+			signal: AbortSignal
+		}>,
+	): InternalRenderReservation {
+		let state: 'reserved' | 'committed' | 'settled' | 'closed' = 'reserved'
+		let closedReason: Error | undefined
+		let release: Promise<void> | undefined
+		let settled = false
+		let resolveCompletion!: () => void
+		let rejectCompletion!: (reason: unknown) => void
+		const completion = new Promise<void>((resolve, reject) => {
+			resolveCompletion = resolve
+			rejectCompletion = reject
+		})
+		const onAbort = () => {
+			const reason = abortReason(input.signal)
+			if (state === 'reserved') {
+				state = 'closed'
+				closedReason = reason
+				settleFailure(reason)
+				return
+			}
+			if (state === 'committed') {
+				state = 'closed'
+				closedReason = reason
+			}
+		}
+		const settleSuccess = () => {
+			if (settled) return
+			settled = true
+			if (state !== 'closed') state = 'settled'
+			input.signal.removeEventListener('abort', onAbort)
+			resolveCompletion()
+		}
+		const settleFailure = (cause: unknown) => {
+			if (settled) return
+			settled = true
+			if (state !== 'closed') state = 'settled'
+			input.signal.removeEventListener('abort', onAbort)
+			rejectCompletion(cause)
+		}
+		input.signal.addEventListener('abort', onAbort, { once: true })
+		if (input.signal.aborted) onAbort()
+
+		const awaitRelease = async (): Promise<void> => {
+			await (release ?? Promise.resolve())
+		}
+		const close = async (): Promise<void> => {
+			if (state === 'settled' || state === 'closed') {
+				await awaitRelease()
+				return
+			}
+			const wasCommitted = state === 'committed'
+			closedReason = new TakumiError(
+				'NOT_RUNNING',
+				'Takumi render reservation was closed before it could complete',
+			)
+			state = 'closed'
+			input.controller.abort(closedReason)
+			// A committed renderer may still be inside non-preemptible native work. Keep the
+			// scheduler permit until that execution settles; only an uncommitted reservation
+			// can release it immediately.
+			if (!wasCommitted && !settled) settleFailure(closedReason)
+			await awaitRelease()
+		}
+		const commit = <T>(task: () => Promise<T>): Promise<T> => {
+			if (state !== 'reserved') {
+				return Promise.reject(
+					closedReason ??
+						new TakumiError(
+							'INVALID_INPUT',
+							'A Takumi render reservation accepts exactly one render or renderSvg call',
+						),
+				)
+			}
+			state = 'committed'
+			const execution = Promise.resolve().then(task)
+			void execution.then(settleSuccess, settleFailure)
+			return execution
+		}
+		const publicReservation: TakumiRenderReservation = Object.freeze({
+			signal: input.signal,
+			limits: input.generation.limits,
+			render: (renderInput) =>
+				commit(() => this.executeReservedRaster(renderInput, input.signal, input.generation)),
+			renderSvg: (renderInput) =>
+				commit(() => this.executeReservedSvg(renderInput, input.signal, input.generation)),
+			close,
+		})
+		return Object.freeze({
+			public: publicReservation,
+			completion,
+			setRelease(value) {
+				release = Promise.resolve(value).then(
+					(): void => undefined,
+					(): void => undefined,
+				)
+			},
+		})
+	}
+
+	private async executeReservedRaster(
+		input: Omit<TakumiRenderInput, 'signal'>,
+		signal: AbortSignal,
+		generation: TakumiGeneration,
+	): Promise<TakumiRenderResult> {
+		try {
+			assertReservedRenderInput(input)
+			const request = this.normalizeRenderRequest(input)
+			return await this.executeRaster(
+				await this.snapshotRenderInput(request, signal),
+				signal,
+				generation,
 			)
 		} catch (cause) {
-			if (cause instanceof TakumiError) throw cause
-			if (abortLink.signal.aborted) throw abortReason(abortLink.signal)
-			throw new TakumiError('RENDER_FAILED', 'Takumi SVG rendering failed', { cause })
-		} finally {
-			abortLink.dispose()
-			deadline.dispose()
+			throw this.normalizeReservationFailure(cause, signal, 'raster')
 		}
+	}
+
+	private async executeReservedSvg(
+		input: Omit<TakumiSvgRenderInput, 'signal'>,
+		signal: AbortSignal,
+		generation: TakumiGeneration,
+	): Promise<TakumiSvgRenderResult> {
+		try {
+			assertReservedRenderInput(input)
+			const request = this.normalizeRenderRequest(input, 1)
+			return await this.executeSvg(
+				await this.snapshotRenderInput(request, signal),
+				signal,
+				generation,
+			)
+		} catch (cause) {
+			throw this.normalizeReservationFailure(cause, signal, 'SVG')
+		}
+	}
+
+	private normalizeReservationFailure(
+		cause: unknown,
+		signal: AbortSignal,
+		kind: 'raster' | 'SVG' | 'reservation' = 'reservation',
+	): Error {
+		if (cause instanceof TakumiError) return cause
+		if (signal.aborted) return abortReason(signal)
+		const label = kind === 'reservation' ? 'reservation' : kind
+		return new TakumiError('RENDER_FAILED', 'Takumi ' + label + ' rendering failed', { cause })
 	}
 
 	private async executeRaster(
@@ -1007,6 +1227,72 @@ function bufferView(data: Uint8Array): Buffer {
 	return data.buffer instanceof ArrayBuffer
 		? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
 		: Buffer.from(data)
+}
+
+function createRenderLimits(config: TakumiPluginConfig): TakumiRenderLimits {
+	return Object.freeze({
+		defaultDevicePixelRatio: config.defaultDevicePixelRatio,
+		maxDevicePixelRatio: config.maxDevicePixelRatio,
+		maxWidth: config.maxWidth,
+		maxHeight: config.maxHeight,
+		maxPixels: config.maxPixels,
+		maxContentBytes: config.maxContentBytes,
+		maxContentNodes: config.maxContentNodes,
+		maxTextCharacters: config.maxTextCharacters,
+		maxStylesheetBytes: config.maxStylesheetBytes,
+		maxStylesheets: config.maxStylesheets,
+		maxImageBytes: config.maxImageBytes,
+		maxImages: config.maxImages,
+		maxOutputBytes: config.maxOutputBytes,
+		maxRenderDurationMs: config.maxRenderDurationMs,
+	})
+}
+
+function normalizeReservationOptions(value: unknown): AbortSignal | undefined {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new TakumiError('INVALID_INPUT', 'reserveRender() options must be an object')
+	}
+	const options = value as Readonly<{ signal?: unknown }>
+	const signal = options.signal
+	if (signal === undefined) return undefined
+	if (!isAbortSignal(signal)) {
+		throw new TakumiError('INVALID_INPUT', 'reserveRender() signal must be an AbortSignal')
+	}
+	return signal
+}
+
+function assertReservedRenderInput(value: unknown): void {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new TakumiError('INVALID_INPUT', 'Reserved Takumi render input must be an object')
+	}
+	if ('signal' in value) {
+		throw new TakumiError(
+			'INVALID_INPUT',
+			'Reserved Takumi render receives its signal from reserveRender()',
+		)
+	}
+}
+
+function toReservedRasterInput(input: TakumiRenderInput): Omit<TakumiRenderInput, 'signal'> {
+	return Object.freeze({
+		content: input.content,
+		width: input.width,
+		height: input.height,
+		...(input.devicePixelRatio === undefined ? {} : { devicePixelRatio: input.devicePixelRatio }),
+		...(input.stylesheets === undefined ? {} : { stylesheets: input.stylesheets }),
+		...(input.images === undefined ? {} : { images: input.images }),
+		...(input.output === undefined ? {} : { output: input.output }),
+	})
+}
+
+function toReservedSvgInput(input: TakumiSvgRenderInput): Omit<TakumiSvgRenderInput, 'signal'> {
+	return Object.freeze({
+		content: input.content,
+		width: input.width,
+		height: input.height,
+		...(input.stylesheets === undefined ? {} : { stylesheets: input.stylesheets }),
+		...(input.images === undefined ? {} : { images: input.images }),
+	})
 }
 
 function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readonly<{

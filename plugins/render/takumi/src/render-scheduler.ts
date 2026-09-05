@@ -61,20 +61,24 @@ export class RenderScheduler {
 					signal.removeEventListener('abort', render.onAbort)
 					this.activeRenders += 1
 					const execution = Promise.resolve().then(task)
-					void execution.then(
-						(value) => settle(() => resolve(value)),
-						(error: unknown) => settle(() => reject(error)),
-					)
 					let completion!: Promise<void>
 					completion = execution
 						.then(
-							(): void => undefined,
-							(): void => undefined,
+							(value): void => {
+								this.activeRenders -= 1
+								this.dispatch()
+								settle(() => resolve(value))
+								return undefined
+							},
+							(error: unknown): void => {
+								this.activeRenders -= 1
+								this.dispatch()
+								settle(() => reject(error))
+								return undefined
+							},
 						)
 						.finally((): void => {
 							this.activeCompletions.delete(completion)
-							this.activeRenders -= 1
-							this.dispatch()
 						})
 					this.activeCompletions.add(completion)
 				},

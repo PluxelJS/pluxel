@@ -11,6 +11,8 @@ FontsPlugin (process resource owner)
    ├─ CanvasPlugin (explicit synchronous primitives + worker adapters)
    │      └─ EChartsPlugin (worker-only renderer)
    └─ TakumiPlugin (bounded/cooperative JS preparation + async native renderer)
+          └─ TakumiMarkdownPlugin (admitted document preparation + one final render)
+                 └─ TypstMathPlugin (optional Worker SVG math extension)
 ```
 
 | 能力        | 宿主线程                                                                                          | Worker/native 边界                                                       | Admission owner                  |
@@ -19,6 +21,9 @@ FontsPlugin (process resource owner)
 | Canvas root | 名称带 `Sync` 的 allocation/drawing/text primitive                                                | `decodeImage()` native async；`./worker` adapter 供独立 task 使用        | Canvas generation fair scheduler |
 | ECharts     | 小型 contract validation、含大字符串的 cooperative option walk、有界 transport serialization      | layout、ZRender、image decode、encode 全部在共享 Worker                  | Runtime root worker pool         |
 | Takumi      | `fromHtml()`、borrowed graph validation、cooperative preparation、N-API input/stylesheet lowering | raster/SVG/font registration 使用共享 libuv pool 的 N-API async work     | Takumi generation fair scheduler |
+
+Takumi Markdown 先取得一次 Takumi reservation，才执行 GFM parse、Rangi static highlighting、asset copy 和 caller extension；随后只调用一次
+Takumi render。可选 Typst 数学只在 Runtime shared Worker 生成 cloneable SVG，再作为这次 final render 的 image asset，不创建嵌套 renderer。
 
 Worker 是 event-loop isolation 和统一 thread admission，不是安全边界。native crash、内存分配和 CPU 饱和仍可影响
 整个进程。反过来，返回 Promise 也不证明工作离开 event loop；同步 native 调用和 Promise 第一次 `await` 前的 JS
@@ -35,6 +40,8 @@ libuv worker slot；上游另有 lazy owned Rayon pool，但只供本 Plugin 未
   shared fair admission 后，`postMessage` serialization 仍是有界宿主线程工作。
 - Takumi 的 content、stylesheets 和 images 同样借用到 render settle。结构化 content 验证后直接使用 borrowed graph，不做
   第二次同步 clone；重 byte copy 和 UTF-8 计量发生在 fair scheduler admission 之后，并按固定内部 chunk 让出 event loop。
+- Takumi Markdown 的 source/AST/HTML walk、Rangi 和 trusted extension factory 必须在 reservation admission 后运行；queue full
+  不执行这些准备。Typst worker 输出是 cloneable SVG bytes，通过 Markdown asset sink 进入同一次 Takumi image input，而不是 data URL 或嵌套 render。
 - Canvas/Fonts 的 borrowed bytes 在 async 方法 settle 前不得修改。明确 `owned` 的 Canvas decode 永久接管 storage。
 
 所有权模式只在确实消除大 copy 时公开；普通 immutable string、small metadata 和返回 snapshot 不增加平行模式。
@@ -72,6 +79,9 @@ Takumi 不占用 Worker slot；其 `maxConcurrentRenders/maxQueuedRenders/maxQue
 libuv pool 的 native work。默认并发为 2，给 Node 的 filesystem、crypto、DNS 和其他 N-API work 留出默认 pool 容量；
 高吞吐 host 应联合设置启动时的 `UV_THREADPOOL_SIZE` 与 Plugin 并发，而不是只提高一个上限。把 Takumi 再套进 Worker
 仍会占用同一 libuv slot，并额外占住 Runtime Worker，因此不解决这种竞争。
+
+Markdown reservation 未 commit 时立刻释放 capacity；commit 后的 cancellation/replacement 必须等待 native task 真正 settle 才释放。
+Typst 只占 Runtime shared Worker 的独立 task slot，不会让 Worker 等待 Takumi native task，因此没有反向等待环。
 
 Canvas 不创建 thread pool；root native decode 只用 package-local fair admission，并在不可取消 work 真正 settle 前保留
 slot，默认并发 2。worker adapter 从 snapshot 建立独立 decode admission，默认每 adapter 并发 1；默认 4 个 Runtime workers

@@ -16,6 +16,9 @@
 - `Path2D`、DOM geometry 和 path enums 是无 lifecycle 的 value primitives，可从本包直接导入；`GlobalFonts`、
   `FontKey`、裸 `Canvas` constructor 和上游全局 cache 不导出。
 - root 不公开裸 Image placeholder factory，因为 native `src` setter 无法拦截，会绕过 `decodeImage()` budget。
+- `@pluxel/canvas/table` 是 plugin-free 的静态表格子入口。它只接受 caller 的 Pretext preparation callback 与 native
+  context，计算 column/cell snapshot 并执行 draw；不分配 surface、编码文件、拉取图片或持有字体/Context。它不是排序、分页、
+  二维码或图表 renderer。
 
 ## Worker boundary
 
@@ -40,8 +43,8 @@ placeholder，直到 Promise settle 前都独占该对象，避免“先 decode�
 默认并发 1，因为 Runtime worker pool 已经提供外层并行，避免默认 4 workers 再各提交 4 个 libuv work。该入口不是面向
 不可信输入的资源边界，Worker 本身也不是安全 sandbox。
 
-`@pluxel/canvas/worker/pretext` 单独提供 `createCanvasWorkerTextLayout()` 和纯 layout/walker exports。它与主 CanvasPlugin
-复用同一个输入校验、font revision invalidation、字符预算和 1×1 measurement shim；拆分子入口确保只做 Canvas raster 的
+`@pluxel/canvas/worker/pretext` 只提供 `createCanvasWorkerTextLayout()`；纯 layout/walker 从 worker-safe 的
+`@pluxel/canvas/pretext` 导入。它与主 CanvasPlugin 复用同一个输入校验、font revision invalidation、字符预算和 1×1 measurement shim；拆分子入口确保只做 Canvas raster 的
 worker artifact 不加载 Pretext。worker thread 退出会自然回收其 ESM/native/Pretext cache，不需要模拟 owner generation lifecycle。
 
 ## Pretext 排版
@@ -49,7 +52,7 @@ worker artifact 不加载 Pretext。worker thread 退出会自然回收其 ESM/n
 `@chenglou/pretext` 0.0.8 的测量入口仍只寻找 browser `OffscreenCanvas` / DOM。Canvas 在第一次受控 prepare 时临时
 安装一个只允许 1×1 measurement canvas 的 shim，让 Pretext 缓存 native 2D context 后立即恢复原 global property；不向
 进程暴露可任意分配的 OffscreenCanvas constructor。prepare API 由 CanvasPlugin 承担 lifecycle、文本/inline item 输入
-限制和默认 font shorthand，纯 layout/materialize/walk helper 直接作为无资源 value operation 导出。
+限制和默认 font shorthand，纯 layout/materialize/walk helper 从 `@pluxel/canvas/pretext` 作为无资源 value operation 导出。
 
 Pretext 自己的 segment/font cache 是进程共享且无大小参数。Canvas 以累计输入字符限制其存活窗口，并在达到预算时调用
 上游 `clearCache()`。FontsPlugin 提供 native registry/default revision；revision 改变时也清 cache，避免同 family alias

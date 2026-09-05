@@ -1,0 +1,6 @@
+{
+	"version": 2,
+	"profile": "test",
+	"defaults": { "roots": [] },
+	"profiles": { "test": { "enabled": [] } },
+}

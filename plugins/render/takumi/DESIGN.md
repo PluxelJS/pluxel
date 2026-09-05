@@ -57,6 +57,18 @@ registration 按 revision 在 generation 内共享，不能安全地绑定任一
 不接受 signal。generation signal 会在 registration 之间或完成后的 checkpoint 停止 build；generation-local cache 保证旧
 build 不能回写下一代 renderer state。
 
+### Document-adapter reservation
+
+`reserveRender()` 是给有真实准备阶段的 document adapter 的最小 public seam。它先走已有 caller-aware fair scheduler，只有
+取得一个 slot 后才返回 one-shot reservation；因此满队列不会先执行 Markdown parse、code highlight、asset copy 或 Typst worker
+dispatch。reservation 固定 generation/caller/deadline 的 linked signal 与只读 render ceilings，只允许互斥的一次 `render()` 或
+`renderSvg()`。
+
+未 commit 时 `close()` 使 reservation task settle，立刻归还 slot。已 commit 时 `close()` / caller abort 会让 caller-visible
+结果取消，但 task 继续等待 `executeRaster`/`executeSvg` 的真实 native settlement 后才让 scheduler 归还 capacity。这个区别避免
+replacement work 与仍在 libuv `compute()` 中的 native work 重叠。它不暴露 scheduler、queue owner、native Renderer 或可重复使用
+的 permit；普通业务仍使用 convenience render 方法。`@pluxel/takumi-markdown` 是该 seam 的具体消费者。
+
 `fromHtml()` 是上游同步 parser，单次调用期间无法被 scheduler 或 AbortSignal 抢占；默认 1 MiB content ceiling、总
 stylesheet/node/text/image-source 预算和 wall-clock benchmark 共同限制这段剩余 host-thread 风险。把完整 Takumi render 再套
 一层 Worker 会重复占用 Worker 与 Takumi/libuv native slot 并复制字体/输入，因此当前边界保留这个明确、受限的同步段。

@@ -131,6 +131,15 @@ libuv slot，同时额外占用 runtime Worker，并复制输入和字体。剩�
 后运行并受默认 1 MiB content ceiling 约束，但单次调用不能被 signal 抢占。结构 walk 与大 byte copy 会 cooperative yield。
 大 HTML/node/stylesheet 与 SVG output 的 UTF-8 byte 计量也按 64 Ki characters 分片，可在 checkpoint 取消。
 
+## 渲染 Markdown 文档
+
+需要 GFM、Markdown table 或静态代码块时，使用 [`@pluxel/takumi-markdown`](./takumi-markdown.md)，不要先在业务 Plugin 中解析
+Markdown 再调用 Takumi。它会先取得 Takumi 的同一 fair admission，再执行有界转换，最后仍只进行一次 Takumi render；满队列时不会白做
+解析、高亮、资产 copy 或可选数学编译。
+
+`TakumiPlugin.reserveRender()` 是该类 document adapter 的窄 public seam。它是一次性、caller-owned reservation：未提交时 `close()`
+释放 slot；已经提交的 native render 即使被取消也会先真实 settle 才归还容量。普通页面/卡片渲染继续使用 `render()` / `renderSvg()`，不需要直接管理 reservation。
+
 ## 配置边界
 
 ```ts

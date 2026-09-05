@@ -1,12 +1,12 @@
 {
-	"name": "@pluxel/canvas",
-	"version": "1.0.0",
-	"description": "Official bounded server-side Canvas capability for Pluxel plugins",
+	"name": "@pluxel/takumi-markdown-typst",
+	"version": "0.1.0",
+	"description": "Optional restricted Typst math extension for Pluxel Takumi Markdown rendering",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
-		"directory": "plugins/render/canvas"
+		"directory": "plugins/render/takumi-markdown-typst"
 	},
 	"files": [
 		"dist",
@@ -19,64 +19,46 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./pretext": {
-			"@pluxel/hmr": "./src/pretext.ts",
-			"default": "./dist/pretext.mjs"
-		},
-		"./table": {
-			"@pluxel/hmr": "./src/table.ts",
-			"default": "./dist/table.mjs"
-		},
-		"./worker": {
-			"@pluxel/hmr": "./src/worker.ts",
-			"default": "./dist/worker.mjs"
-		},
-		"./worker/pretext": {
-			"@pluxel/hmr": "./src/worker-pretext.ts",
-			"default": "./dist/worker/pretext.mjs"
-		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./pretext": "./dist/pretext.mjs",
-			"./table": "./dist/table.mjs",
-			"./worker": "./dist/worker.mjs",
-			"./worker/pretext": "./dist/worker/pretext.mjs",
 			"./package.json": "./package.json"
 		}
 	},
 	"scripts": {
-		"bench:native-capacity": "node bench/native-capacity.mjs",
 		"build": "pluxel build",
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@chenglou/pretext": "catalog:prod",
-		"@napi-rs/canvas": "catalog:prod"
+		"@myriaddreamin/typst-ts-node-compiler": "0.7.0"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
+		"@pluxel/takumi": "workspace:*",
+		"@pluxel/takumi-markdown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "catalog:build",
+		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/fonts": "workspace:^",
-		"@pluxel/runtime": "workspace:^"
+		"@pluxel/runtime": "workspace:^",
+		"@pluxel/takumi-markdown": "workspace:^"
 	},
 	"engines": {
 		"node": ">=24"
 	},
 	"pluxel": {
 		"pluginPackages": {
-			"@pluxel/fonts": "required"
+			"@pluxel/takumi-markdown": "required"
 		}
 	}
 }

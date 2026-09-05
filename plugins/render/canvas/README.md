@@ -1,7 +1,7 @@
 # @pluxel/canvas
 
 `@pluxel/canvas` 基于 [Brooooooklyn/canvas](https://github.com/Brooooooklyn/canvas)（npm 包
-`@napi-rs/canvas`）提供有宿主资源预算的服务端 Canvas capability，并把 `@pluxel/fonts` 作为 required dependency。
+`@napi-rs/canvas`）提供有宿主资源预算的服务端 Canvas capability，并把 `@pluxel/fonts` 作为 required dependency；无状态的静态表格工具从 `@pluxel/canvas/table` 单独导入。
 
 ```ts
 import { CanvasPlugin, Path2D } from '@pluxel/canvas'
@@ -67,8 +67,8 @@ export default async ({ canvas: snapshot }: Input) => {
 ```
 
 adapter 在线程内创建原生 Canvas/Image/SVG、解码图片并重新执行 host budget；具体选择的已安装 family 也会在 native
-registry 中验证。需要 Pretext 时单独从 `@pluxel/canvas/worker/pretext` 导入 `createCanvasWorkerTextLayout()`，避免 ECharts
-等不使用 Pretext 的 artifact 承担其代码和 cache 成本。两个子入口都没有 Plugin、Context、Workbench 或字体 mutation。
+registry 中验证。需要受限文字 preparation 时单独从 `@pluxel/canvas/worker/pretext` 导入 `createCanvasWorkerTextLayout()`；纯 layout/walker 从
+`@pluxel/canvas/pretext` 导入，避免 ECharts 等不使用 Pretext 的 artifact 承担其代码和 cache 成本。两个子入口都没有 Plugin、Context、Workbench 或字体 mutation。
 同一线程内连续使用相同 limits/font revision 时会复用 normalized snapshot；每次调用仍创建 caller-owned adapter，
 任务结束时必须 `await adapter.close()`，以拒绝排队 decode 并等待不可取消的 native decode 真正 settle。已经返回的
 原生 surface 仍由调用方持有，不会被 adapter close 隐式销毁。
@@ -80,7 +80,33 @@ budget 的裸 Image factory。
 
 Canvas 同时集成 `@chenglou/pretext` 的服务端测量桥。`prepareTextSync()` / `prepareTextWithSegmentsSync()` /
 `prepareRichInlineSync()` 负责选择 Pluxel 默认 family、检查输入预算并在 Node 上提供 native measurement context；
-`layoutWithLines()`、`measureLineStats()`、rich-inline walkers 等纯 arithmetic helper 从本包直接导出。Pretext 的共享
+`layoutWithLines()`、`measureLineStats()`、rich-inline walkers 等纯 arithmetic helper 从 `@pluxel/canvas/pretext` 导出。Pretext 的共享
 cache 会在字体 registry revision 改变或累计字符达到配置预算时清空，避免动态字体替换后继续复用旧宽度。
 
+## 静态表格
+
+`@pluxel/canvas/table` 只计算和绘制静态数据表；它不创建 surface、不编码文件，也不实现自己的文字换行。把受限的 Pretext preparation callback 显式传入，因此同一调用可在 Canvas root 或 worker text adapter 中运行：
+
+```ts
+import { drawTable, layoutTable } from '@pluxel/canvas/table'
+
+const table = layoutTable({
+	width: 640,
+	columns: [
+		{ header: 'Service', weight: 2 },
+		{ header: 'P95', width: 96, textAlign: 'right' },
+	],
+	rows: [['API gateway', '18 ms']],
+	body: {
+		font: `14px ${this.canvas.defaultFont.cssFamily}`,
+		lineHeight: 20,
+	},
+	prepareText: (input) => this.canvas.prepareTextWithSegmentsSync(input),
+})
+this.canvas.assertDimensions(640, Math.ceil(table.bounds.height))
+const surface = this.canvas.createCanvasSync(640, Math.ceil(table.bounds.height))
+drawTable(surface.getContext('2d'), table)
+```
+
+未声明 `width` 的列按 `weight` 分配余宽；每个 row 必须与 columns 等宽。默认每格一行并以 `…` 截断，可通过 `maxLines` / `overflow` 调整。可选 `paintCell` callback 在 cell background 后、默认文字前执行；返回 `'skip-text'` 可自行绘制该 cell。
 完整用户路径见 [`docs/plugins/rendering/canvas.md`](../../../docs/plugins/rendering/canvas.md)，设计不变量见 [`DESIGN.md`](DESIGN.md)。
