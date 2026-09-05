@@ -40,7 +40,7 @@ export function diagnoseWorkspaceGovernance(root: string): WorkspaceGovernanceDi
 	if (existsSync(resolve(root, 'pluxel.sources.jsonc'))) {
 		const pnpmfilePath = resolve(root, '.pnpmfile.cjs')
 		if (!existsSync(pnpmfilePath)) {
-			errors.push('Source workspace bootstrap is missing; run `pluxel source install`')
+			warnings.push('Source overlay is inactive; run `pluxel source install` before using it')
 		} else if (readFileSync(pnpmfilePath, 'utf8') !== sourcePnpmfileBootstrapContents()) {
 			errors.push('Source workspace bootstrap is stale or custom; run `pluxel source install`')
 		}

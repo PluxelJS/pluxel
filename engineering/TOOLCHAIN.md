@@ -23,7 +23,7 @@ root 预装 `pncat`，`pncat.config.ts` 是 catalog 分组策略，所有 catalo
 仍逐包声明直接依赖，不把 root hoist 当成 Plugin 的隐式依赖来源。static
 application 的 package root 是
 `host/`，所以 `host/tsdown.config.ts` 是唯一 freezer authority；monorepo root 只通过 Turbo 编排。
-starter 的 `governance:check` 先运行 `pluxel workspace doctor` 校验 pnpm 与 source bootstrap 等共享契约，再运行
+starter 的 `governance:check` 先运行 `pluxel workspace doctor` 校验 pnpm 与已激活的 machine-local source overlay 等共享契约，再运行
 项目内脚本校验 starter 特有的目录和 catalog 所有权；CLI 不吸收产品专属治理规则。
 
 `@example/host` build 先用同一 config 完成 `host/web/dist` browser build，再运行 freezer；tsdown 在 host build 末尾把 Web
@@ -76,11 +76,12 @@ checkout，不进入消费方 closure。
 本次实际选中的源码 package 中有唯一 direct dependency owner 的名称，并在该 owner checkout 安装后
 解析物理实例；不得把 owner 的 `node_modules` 相对路径写进项目配置。
 
-pnpm override 是一次安装的生成细节，不进入项目 workspace 配置。CLI 在 `.pluxel/` 原子生成 pnpmfile
+pnpm override 是一次安装的生成细节，不进入项目 workspace 配置。CLI 生成 machine-local `.pnpmfile.cjs`，并在 `.pluxel/` 原子生成 pnpmfile
 和 `repository-hash/package-slug-package-hash` package link；lockfile 因而只记录可审查的稳定代理路径，保留外部依赖可复现性且不泄漏机器
 目录。代理只暴露实际依赖的 package，不把整个 checkout 嵌入 consumer 文件树；移动 checkout 或 package 目录只更新
 machine registry 和 package link。source package 若包含 consumer root 会被拒绝，因为这种所有权拓扑无法形成无环代理。每个 checkout 始终按自己的依赖闭包生成
-overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。
+overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。根 bootstrap 与
+`.pluxel/` 一样由 CLI 管理并被 Git 忽略；workspace governance 只在它存在时验证 canonical 内容。
 
 首次安装由独立的全局或 `pnpm dlx` CLI 直接执行标准 `pluxel source` 命令：操作者先显式 `source register`
 每个 checkout，再在 consumer 中运行 `source install`。机器路径仍只进入用户 registry，CLI 不从目录邻接、父仓库
@@ -89,10 +90,12 @@ overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被
 registry。package closure、overlay、构建与 lockfile 始终由唯一的 `pluxel source` 实现拥有。
 `pluxel source build --package <name>` 可以重复传入 source closure 内确实需要 artifact 的精确 target；它只用于需要先使一个
 package export 可执行的窄 bootstrap，例如 Vitest config 的 `@pluxel/test`。不带 `--package` 才构建整个 selected artifact closure。
-上游构建优先把精确目标交给其 Turbo task graph，不用 `package...` filter 强制扩张依赖；无 Turbo 时
+上游构建优先把精确目标交给其 Turbo task graph，并默认尊重该 checkout 自己的 cache；显式 `--force` 才绕过。
+repository 执行层级从 selected package dependency edge 与 nested source edge 推导，同层独立 checkout 可以并行。无 Turbo 时
 回落到 pnpm recursive filter，不在消费仓库复制 package filter。`build` script 本身不代表 source
 consumer 需要产物：CLI 只选择 live manifest 引用顶层标准构建目录或暴露 executable bin 的 package，
-直接导出 `src` 的 package 保持零构建；上游任务图仍拥有目标内部的 artifact prerequisites。
+直接导出 `src` 的 package 保持零构建；上游任务图仍拥有目标内部的 artifact prerequisites。非标准 artifact contract
+可用 package manifest 的 `pluxel.sourceBuild` 明确覆盖推断。
 CLI 已经为 checkout 选择并启动 pnpm，因此调用 Turbo 时关闭它重复执行的 package-manager 检查；这只避免
 Turbo 把合法的 `devEngines` pnpm range 当成无效精确版本，不绕过 CLI 的 pnpm 校验或 checkout 自己的 lockfile。
 CLI 同时移除 consumer 进程的 `COREPACK_ROOT` 标记，让独立 checkout 及其 nested workspace 能按最近的精确

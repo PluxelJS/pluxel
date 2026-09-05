@@ -34,6 +34,10 @@ export interface SourcePackageManifest {
 	devDependencies?: Record<string, string>
 	optionalDependencies?: Record<string, string>
 	peerDependencies?: Record<string, string>
+	pluxel?: {
+		sourceBuild?: boolean
+		[key: string]: unknown
+	}
 }
 
 export interface SourceWorkspacePackage {
@@ -99,6 +103,7 @@ export function collectManifestDependencyNames(
 }
 
 export function sourcePackageNeedsBuild(manifest: SourcePackageManifest) {
+	if (typeof manifest.pluxel?.sourceBuild === 'boolean') return manifest.pluxel.sourceBuild
 	if (typeof manifest.scripts?.build !== 'string') return false
 	if (typeof manifest.bin === 'string' || Object.keys(manifest.bin ?? {}).length > 0) return true
 	const targets = [

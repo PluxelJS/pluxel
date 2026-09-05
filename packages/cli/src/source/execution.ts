@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import {
+	closeSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
+	openSync,
 	readFileSync,
 	readdirSync,
 	readlinkSync,
@@ -10,9 +12,10 @@ import {
 	renameSync,
 	rmSync,
 	symlinkSync,
+	unlinkSync,
 	writeFileSync,
 } from 'node:fs'
-import { basename, dirname, relative, resolve } from 'pathe'
+import { basename, dirname, isAbsolute, relative, resolve } from 'pathe'
 import { runCommand } from '../utils/exec'
 import { normalizeRepositoryIdentity } from './config'
 import {
@@ -29,6 +32,7 @@ export interface SourcePlanDiagnostics {
 
 export async function diagnoseSourceWorkspacePlan(
 	plan: SourceWorkspacePlan,
+	options: { checkOverlay?: boolean } = {},
 ): Promise<SourcePlanDiagnostics> {
 	const errors: string[] = []
 	const warnings: string[] = []
@@ -41,6 +45,15 @@ export async function diagnoseSourceWorkspacePlan(
 				`Registered checkout has the wrong repository: expected ${checkout.repository}, found ${actual} at ${checkout.root}`,
 			)
 		}
+	}
+	if (options.checkOverlay !== false) {
+		for (const checkout of plan.checkouts) {
+			const overrides = sourceCheckoutInstallOverrides(checkout, plan)
+			if (Object.keys(overrides).length > 0) {
+				diagnoseSourceOverlay(checkout.root, overrides, plan.checkouts, errors)
+			}
+		}
+		diagnoseSourceOverlay(plan.root, plan.overrides, plan.checkouts, errors)
 	}
 	return { errors, warnings }
 }
@@ -60,40 +73,84 @@ export async function installSourceWorkspace(options: {
 	frozenLockfile: boolean
 	log: (...args: unknown[]) => void
 }) {
-	for (const checkout of options.plan.checkouts) {
-		const overrides = sourceCheckoutInstallOverrides(checkout, options.plan)
-		options.log(`\n→ Installing source checkout ${checkout.repository}`)
-		await runPnpmInstall(checkout.root, overrides, options.plan.checkouts, options.frozenLockfile)
-		if (options.build) await buildSourceCheckout(checkout, options.plan, options.log)
-	}
-	options.log('\n→ Installing consumer workspace with source overlay')
-	await runPnpmInstall(
+	const releaseLocks = acquireSourceInstallLocks([
 		options.plan.root,
-		options.plan.overrides,
-		options.plan.checkouts,
-		options.frozenLockfile,
+		...options.plan.checkouts.map((checkout) => checkout.root),
+	])
+	try {
+		await Promise.all(
+			[options.plan.root, ...options.plan.checkouts.map((checkout) => checkout.root)].map(
+				ensureSourceBootstrapIgnored,
+			),
+		)
+		for (const level of options.plan.executionLevels) {
+			await Promise.all(
+				level.map(async (checkout) => {
+					const overrides = sourceCheckoutInstallOverrides(checkout, options.plan)
+					options.log(`\n→ Installing source checkout ${checkout.repository}`)
+					await runPnpmInstall(
+						checkout.root,
+						overrides,
+						options.plan.checkouts,
+						options.frozenLockfile,
+					)
+					if (options.build) await buildSourceCheckout(checkout, options.plan, options.log)
+				}),
+			)
+		}
+		options.log('\n→ Installing consumer workspace with source overlay')
+		await runPnpmInstall(
+			options.plan.root,
+			options.plan.overrides,
+			options.plan.checkouts,
+			options.frozenLockfile,
+		)
+	} finally {
+		releaseLocks()
+	}
+}
+
+async function ensureSourceBootstrapIgnored(root: string) {
+	const result = await runCommand('git', ['-C', root, 'rev-parse', '--git-path', 'info/exclude'])
+	if (result.code !== 0 || !result.stdout.trim()) return
+	const rawPath = result.stdout.trim()
+	const path = isAbsolute(rawPath) ? rawPath : resolve(root, rawPath)
+	const current = existsSync(path) ? readFileSync(path, 'utf8') : ''
+	if (current.split(/\r?\n/).includes('.pnpmfile.cjs')) return
+	writeFileAtomic(
+		path,
+		`${current}${current && !current.endsWith('\n') ? '\n' : ''}.pnpmfile.cjs\n`,
 	)
 }
 
 export async function buildSourceWorkspace(options: {
 	plan: SourceWorkspacePlan
 	packages?: readonly string[]
+	force?: boolean
 	log: (...args: unknown[]) => void
 }) {
 	if (options.packages && options.packages.length > 0) {
 		const targets = selectSourceBuildTargets(options.plan, options.packages)
 		const targetNames = new Set(targets.map((target) => target.name))
-		for (const checkout of options.plan.checkouts) {
-			const selected = (options.plan.selectedByRepository.get(checkout.repository) ?? []).filter(
-				(pkg) => targetNames.has(pkg.name),
+		for (const level of options.plan.executionLevels) {
+			await Promise.all(
+				level.map(async (checkout) => {
+					const selected = (
+						options.plan.selectedByRepository.get(checkout.repository) ?? []
+					).filter((pkg) => targetNames.has(pkg.name))
+					if (selected.length === 0) return
+					await buildSourceCheckout(checkout, options.plan, options.log, selected, options.force)
+				}),
 			)
-			if (selected.length === 0) continue
-			await buildSourceCheckout(checkout, options.plan, options.log, selected)
 		}
 		return
 	}
-	for (const checkout of options.plan.checkouts) {
-		await buildSourceCheckout(checkout, options.plan, options.log)
+	for (const level of options.plan.executionLevels) {
+		await Promise.all(
+			level.map((checkout) =>
+				buildSourceCheckout(checkout, options.plan, options.log, undefined, options.force),
+			),
+		)
 	}
 }
 
@@ -124,10 +181,7 @@ export function selectSourceBuildTargets(
 }
 
 export function createSourceInstallArgs(overrides: Record<string, string>, frozenLockfile = false) {
-	if (frozenLockfile || Object.keys(overrides).length === 0) {
-		return ['install', '--frozen-lockfile']
-	}
-	return ['install']
+	return frozenLockfile ? ['install', '--frozen-lockfile'] : ['install']
 }
 
 export function createPnpmInvocation(packageManager: string | undefined, args: string[]) {
@@ -139,17 +193,14 @@ export function createPnpmInvocation(packageManager: string | undefined, args: s
 	return exactVersion ? { command: 'corepack', args: ['pnpm', ...args] } : { command: 'pnpm', args }
 }
 
-export function createSourceBuildArgs(packageNames: string[], hasTurbo: boolean) {
+export function createSourceBuildArgs(packageNames: string[], hasTurbo: boolean, force = false) {
 	return hasTurbo
 		? [
 				'exec',
 				'turbo',
 				'run',
 				'build',
-				// Source overlays live outside the consumer workspace, so a consumer cache key cannot
-				// prove their restored output directories are exact. Execute the selected source builds;
-				// their own build tools clean outputs before emitting the linked artifacts.
-				'--force',
+				...(force ? ['--force'] : []),
 				// The source orchestrator already selected pnpm for this checkout. Turbo otherwise
 				// rejects valid devEngines ranges such as "pnpm@>=11 <12" as non-exact specs.
 				'--dangerously-disable-package-manager-check',
@@ -187,9 +238,7 @@ export function materializeSourceOverrides(
 	for (const [name, specifier] of Object.entries(overrides)) {
 		if (!specifier.startsWith('link:')) throw new Error(`Unsupported source override: ${specifier}`)
 		const sourcePackageDir = resolve(specifier.slice('link:'.length))
-		const checkout = checkouts
-			.filter((candidate) => isInside(candidate.root, sourcePackageDir))
-			.sort((a, b) => b.root.length - a.root.length)[0]
+		const checkout = findOwningCheckout(checkouts, sourcePackageDir)
 		if (!checkout) throw new Error(`Source package ${name} is outside every declared checkout`)
 		const sourceLink = ensureSourceTargetLink(root, checkout, name, sourcePackageDir)
 		const repositoryRoot = dirname(sourceLink)
@@ -198,13 +247,96 @@ export function materializeSourceOverrides(
 		desiredLinks.set(repositoryRoot, desired)
 		stable[name] = `link:${relativePath(root, sourceLink)}`
 	}
-	pruneStaleSourceTargetLinks(desiredLinks)
+	pruneStaleSourceTargetLinks(root, desiredLinks)
+	return stable
+}
+
+function diagnoseSourceOverlay(
+	root: string,
+	overrides: Record<string, string>,
+	checkouts: ResolvedSourceCheckout[],
+	errors: string[],
+) {
+	const bootstrap = resolve(root, '.pnpmfile.cjs')
+	if (!existsSync(bootstrap)) {
+		errors.push(`Source overlay is not installed in ${root}; run \`pluxel source install\``)
+		return
+	}
+	if (readFileSync(bootstrap, 'utf8') !== sourcePnpmfileBootstrapContents()) {
+		errors.push(`Source overlay bootstrap is stale or custom: ${bootstrap}`)
+	}
+
+	const stable = expectedStableOverrides(root, overrides, checkouts, errors)
+	const generated = resolve(root, '.pluxel/source-pnpmfile.cjs')
+	if (!existsSync(generated)) {
+		errors.push(`Source overlay config is missing: ${generated}`)
+	} else if (readFileSync(generated, 'utf8') !== sourcePnpmfileContents(stable)) {
+		errors.push(`Source overlay config does not match the current package closure: ${generated}`)
+	}
+}
+
+function expectedStableOverrides(
+	root: string,
+	overrides: Record<string, string>,
+	checkouts: ResolvedSourceCheckout[],
+	errors: string[],
+) {
+	const stable: Record<string, string> = {}
+	const expectedPaths = new Set<string>()
+	for (const [name, specifier] of Object.entries(overrides)) {
+		if (!specifier.startsWith('link:')) {
+			errors.push(`Unsupported source override: ${specifier}`)
+			continue
+		}
+		const sourcePackageDir = resolve(specifier.slice('link:'.length))
+		const checkout = findOwningCheckout(checkouts, sourcePackageDir)
+		if (!checkout) {
+			errors.push(`Source package ${name} is outside every declared checkout`)
+			continue
+		}
+		const path = sourceTargetPath(root, checkout, name)
+		expectedPaths.add(path)
+		stable[name] = `link:${relativePath(root, path)}`
+		let stat: ReturnType<typeof lstatSync> | undefined
+		try {
+			stat = lstatSync(path)
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+		}
+		if (!stat?.isSymbolicLink()) {
+			errors.push(`Source package proxy is missing: ${path}`)
+			continue
+		}
+		const actual = resolve(dirname(path), readlinkSync(path))
+		const expectedTarget = existsSync(sourcePackageDir)
+			? realpathSync(sourcePackageDir)
+			: sourcePackageDir
+		if (actual !== expectedTarget) {
+			errors.push(`Source package proxy is stale: ${path} -> ${actual}`)
+		}
+	}
+	for (const path of findUnexpectedSourceProxyPaths(root, expectedPaths)) {
+		errors.push(`Stale source package proxy: ${path}`)
+	}
 	return stable
 }
 
 export function writeSourcePnpmfile(root: string, overrides: Record<string, string>) {
 	const path = resolve(root, '.pluxel/source-pnpmfile.cjs')
-	const contents = [
+	const contents = sourcePnpmfileContents(overrides)
+	mkdirSync(dirname(path), { recursive: true })
+	const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
+	try {
+		writeFileSync(temporary, contents, 'utf8')
+		renameSync(temporary, path)
+	} finally {
+		rmSync(temporary, { force: true })
+	}
+	return path
+}
+
+function sourcePnpmfileContents(overrides: Record<string, string>) {
+	return [
 		'// Generated by `pluxel source install`; machine-local and safe to delete.',
 		`const sourceOverrides = ${JSON.stringify(overrides, null, 2)}`,
 		'module.exports = {',
@@ -217,20 +349,11 @@ export function writeSourcePnpmfile(root: string, overrides: Record<string, stri
 		'}',
 		'',
 	].join('\n')
-	mkdirSync(dirname(path), { recursive: true })
-	const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
-	try {
-		writeFileSync(temporary, contents, 'utf8')
-		renameSync(temporary, path)
-	} finally {
-		rmSync(temporary, { force: true })
-	}
-	return path
 }
 
 export function ensureSourcePnpmfileBootstrap(root: string) {
 	const path = resolve(root, '.pnpmfile.cjs')
-	const marker = '// Generated by `pluxel source install`; commit this path-independent bootstrap.'
+	const marker = '// Generated by `pluxel source install`; machine-local and safe to delete.'
 	const contents = sourcePnpmfileBootstrapContents(marker)
 	if (existsSync(path)) {
 		const current = readFileSync(path, 'utf8')
@@ -249,7 +372,7 @@ export function ensureSourcePnpmfileBootstrap(root: string) {
 }
 
 export function sourcePnpmfileBootstrapContents(
-	marker = '// Generated by `pluxel source install`; commit this path-independent bootstrap.',
+	marker = '// Generated by `pluxel source install`; machine-local and safe to delete.',
 ) {
 	return [
 		marker,
@@ -290,12 +413,9 @@ function ensureSourceTargetLink(
 		)
 	}
 
-	const repositoryId = createHash('sha256').update(checkout.repository).digest('hex').slice(0, 12)
-	const packageHash = createHash('sha256').update(name).digest('hex').slice(0, 12)
-	const packageSlug = name.replace(/^@/, '').replaceAll('/', '+')
-	const packageId = `${packageSlug}-${packageHash}`
 	const linksRoot = resolve(root, '.pluxel/sources')
-	const repositoryRoot = resolve(linksRoot, repositoryId)
+	const path = sourceTargetPath(root, checkout, name)
+	const repositoryRoot = dirname(path)
 	mkdirSync(linksRoot, { recursive: true })
 
 	let repositoryStat: ReturnType<typeof lstatSync> | undefined
@@ -312,7 +432,6 @@ function ensureSourceTargetLink(
 	}
 	mkdirSync(repositoryRoot, { recursive: true })
 
-	const path = resolve(repositoryRoot, packageId)
 	let stat: ReturnType<typeof lstatSync> | undefined
 	try {
 		stat = lstatSync(path)
@@ -337,17 +456,53 @@ function ensureSourceTargetLink(
 	return path
 }
 
-function pruneStaleSourceTargetLinks(desiredLinks: ReadonlyMap<string, ReadonlySet<string>>) {
-	for (const [repositoryRoot, desired] of desiredLinks) {
+function sourceTargetPath(root: string, checkout: ResolvedSourceCheckout, name: string) {
+	const repositoryId = createHash('sha256').update(checkout.repository).digest('hex').slice(0, 12)
+	const packageHash = createHash('sha256').update(name).digest('hex').slice(0, 12)
+	const packageSlug = name.replace(/^@/, '').replaceAll('/', '+')
+	return resolve(root, '.pluxel/sources', repositoryId, `${packageSlug}-${packageHash}`)
+}
+
+function findOwningCheckout(checkouts: ResolvedSourceCheckout[], sourcePackageDir: string) {
+	return checkouts
+		.filter((candidate) => isInside(candidate.root, sourcePackageDir))
+		.sort((a, b) => b.root.length - a.root.length)[0]
+}
+
+function pruneStaleSourceTargetLinks(
+	root: string,
+	desiredLinks: ReadonlyMap<string, ReadonlySet<string>>,
+) {
+	const expected = new Set(
+		[...desiredLinks].flatMap(([repositoryRoot, names]) =>
+			[...names].map((name) => resolve(repositoryRoot, name)),
+		),
+	)
+	for (const path of findUnexpectedSourceProxyPaths(root, expected)) {
+		const stat = lstatSync(path)
+		if (!stat.isSymbolicLink()) {
+			throw new Error(`Refusing to remove non-symlink stale source path: ${path}`)
+		}
+		rmSync(path)
+	}
+}
+
+function findUnexpectedSourceProxyPaths(root: string, expected: ReadonlySet<string>) {
+	const linksRoot = resolve(root, '.pluxel/sources')
+	if (!existsSync(linksRoot)) return []
+	const unexpected: string[] = []
+	for (const repository of readdirSync(linksRoot, { withFileTypes: true })) {
+		const repositoryRoot = resolve(linksRoot, repository.name)
+		if (!repository.isDirectory()) {
+			if (!expected.has(repositoryRoot)) unexpected.push(repositoryRoot)
+			continue
+		}
 		for (const entry of readdirSync(repositoryRoot, { withFileTypes: true })) {
-			if (desired.has(entry.name)) continue
 			const path = resolve(repositoryRoot, entry.name)
-			if (!entry.isSymbolicLink()) {
-				throw new Error(`Refusing to remove non-symlink stale source path: ${path}`)
-			}
-			rmSync(path)
+			if (!expected.has(path)) unexpected.push(path)
 		}
 	}
+	return unexpected.sort()
 }
 
 function isInside(root: string, path: string) {
@@ -364,6 +519,7 @@ async function buildSourceCheckout(
 	plan: SourceWorkspacePlan,
 	log: (...args: unknown[]) => void,
 	selected?: readonly SourceWorkspacePackage[],
+	force = false,
 ) {
 	const targets = (selected ?? plan.selectedByRepository.get(checkout.repository) ?? []).filter(
 		(pkg) => sourcePackageNeedsBuild(pkg.manifest),
@@ -379,8 +535,46 @@ async function buildSourceCheckout(
 	const args = createSourceBuildArgs(
 		targets.map((pkg) => pkg.name),
 		hasTurbo,
+		force,
 	)
 	await runPnpm(args, checkout.root, checkout.workspace.rootManifest.packageManager)
+}
+
+function acquireSourceInstallLocks(roots: string[]): () => void {
+	const locks: Array<{ descriptor: number; path: string }> = []
+	try {
+		for (const root of [...new Set(roots.map((candidate) => resolve(candidate)))].sort()) {
+			const directory = resolve(root, '.pluxel')
+			const path = resolve(directory, 'source-install.lock')
+			mkdirSync(directory, { recursive: true })
+			let descriptor: number
+			try {
+				descriptor = openSync(path, 'wx', 0o600)
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+					throw new Error(`Another source install owns ${path}`)
+				}
+				throw error
+			}
+			writeFileSync(descriptor, `${process.pid}\n`, 'utf8')
+			locks.push({ descriptor, path })
+		}
+	} catch (error) {
+		releaseSourceInstallLocks(locks)
+		throw error
+	}
+	return () => releaseSourceInstallLocks(locks)
+}
+
+function releaseSourceInstallLocks(locks: Array<{ descriptor: number; path: string }>) {
+	for (const lock of locks.reverse()) {
+		closeSync(lock.descriptor)
+		try {
+			unlinkSync(lock.path)
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+		}
+	}
 }
 
 async function runPnpm(args: string[], cwd: string, packageManager = readPackageManager(cwd)) {

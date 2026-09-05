@@ -2,6 +2,7 @@ node_modules/
 .turbo/
 dist/
 .pluxel/
+.pnpmfile.cjs
 data/
 logs/
 *.log

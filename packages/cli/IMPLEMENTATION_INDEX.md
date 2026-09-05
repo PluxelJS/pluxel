@@ -16,6 +16,7 @@
 - `src/cli.ts`：root wiring，只静态加载命令 manifest。
 - `src/command-manifest.ts`：帮助文本、参数和 lazy command 映射。
 - `src/commands/`、`src/scaffold/`：仅在对应命令执行时加载。
+- `src/source/`：source checkout 扫描、package/repository DAG、machine-local pnpm overlay、诊断与有锁执行。
 
 Scaffold 内部边界：
 

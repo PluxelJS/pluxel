@@ -26,6 +26,15 @@ describe('workspace governance', () => {
 		expect(diagnoseWorkspaceGovernance(root).errors).toEqual([])
 	})
 
+	it('treats a missing machine-local source overlay as inactive instead of invalid', async () => {
+		const root = await fixture({ packageManager: 'pnpm@11.25.0' })
+		await writeFile(resolve(root, 'pluxel.sources.jsonc'), '{"version":1,"sources":[]}\n')
+		expect(diagnoseWorkspaceGovernance(root)).toEqual({
+			errors: [],
+			warnings: ['Source overlay is inactive; run `pluxel source install` before using it'],
+		})
+	})
+
 	it('rejects unsupported package managers and stale source bootstrap files', async () => {
 		const root = await fixture({ packageManager: 'pnpm@12.0.0' })
 		await writeFile(

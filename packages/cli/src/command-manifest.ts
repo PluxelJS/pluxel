@@ -353,6 +353,11 @@ export const sourceBuildArgs = {
 		multiple: true,
 		description: 'Only build this selected source package artifact (repeatable)',
 	},
+	force: {
+		type: 'boolean',
+		description: 'Ignore an upstream Turbo build cache hit',
+		default: false,
+	},
 } as const
 
 export const sourceRegisterArgs = {

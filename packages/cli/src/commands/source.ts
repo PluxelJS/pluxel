@@ -72,6 +72,7 @@ export const sourceBuildCommand = define({
 		await buildSourceWorkspace({
 			plan,
 			packages: normalizeSourceBuildPackages(values.package),
+			force: values.force,
 			log: ctx.log,
 		})
 	},
@@ -104,7 +105,7 @@ export const sourceCommand = define({
 
 async function loadCheckedPlan(values: SourceWorkspaceValues) {
 	const plan = await loadPlan(values)
-	const diagnostics = await diagnoseSourceWorkspacePlan(plan)
+	const diagnostics = await diagnoseSourceWorkspacePlan(plan, { checkOverlay: false })
 	if (diagnostics.errors.length > 0) throw new Error(diagnostics.errors.join('\n'))
 	return plan
 }

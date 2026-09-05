@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .pluxel/
+.pnpmfile.cjs
 .vitest/
 *.log
 *.tsbuildinfo

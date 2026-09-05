@@ -22,10 +22,12 @@ import {
 	createPnpmInvocation,
 	createSourceBuildArgs,
 	createSourceInstallArgs,
+	diagnoseSourceWorkspacePlan,
 	ensureSourcePnpmfileBootstrap,
 	materializeSourceOverrides,
 	selectSourceBuildTargets,
 	sourcePnpmfileBootstrapContents,
+	writeSourcePnpmfile,
 } from '../src/source/execution'
 import {
 	createSourceWorkspacePlan,
@@ -146,6 +148,9 @@ describe('source workspace planning', () => {
 			'https://github.com/acme/upstream',
 			'https://github.com/acme/middle',
 		])
+		expect(
+			plan.executionLevels.map((level) => level.map((checkout) => checkout.repository)),
+		).toEqual([['https://github.com/acme/upstream'], ['https://github.com/acme/middle']])
 		expect(plan.selectedPackages.map((pkg) => pkg.name)).toEqual(['@acme/a', '@acme/b'])
 		expect(plan.overrides).toEqual({
 			'@acme/a': `link:${resolve(upstream, 'a')}`,
@@ -155,6 +160,75 @@ describe('source workspace planning', () => {
 			'@acme/a': `link:${resolve(upstream, 'a')}`,
 		})
 		expect(plan.overrides).not.toHaveProperty('@acme/unused')
+
+		const beforeInstall = await diagnoseSourceWorkspacePlan(plan)
+		expect(beforeInstall.errors).toEqual(
+			expect.arrayContaining([expect.stringContaining('Source overlay is not installed')]),
+		)
+		for (const checkout of plan.checkouts) {
+			const overrides = sourceCheckoutInstallOverrides(checkout, plan)
+			if (Object.keys(overrides).length === 0) continue
+			const stable = materializeSourceOverrides(checkout.root, overrides, plan.checkouts)
+			ensureSourcePnpmfileBootstrap(checkout.root)
+			writeSourcePnpmfile(checkout.root, stable)
+		}
+		const stable = materializeSourceOverrides(consumer, plan.overrides, plan.checkouts)
+		ensureSourcePnpmfileBootstrap(consumer)
+		writeSourcePnpmfile(consumer, stable)
+		expect((await diagnoseSourceWorkspacePlan(plan)).errors).toEqual([])
+	})
+
+	it('orders repositories from selected package dependencies and prunes unused sources', async () => {
+		const root = await createTemporaryRoot()
+		const provider = resolve(root, 'provider')
+		const dependent = resolve(root, 'dependent')
+		const unused = resolve(root, 'unused')
+		const consumer = resolve(root, 'consumer')
+		await createWorkspace(provider, {
+			'b/package.json': { name: '@acme/b', version: '1.0.0' },
+		})
+		await createWorkspace(dependent, {
+			'a/package.json': {
+				name: '@acme/a',
+				version: '1.0.0',
+				dependencies: { '@acme/b': '^1.0.0' },
+			},
+		})
+		await createWorkspace(unused, {
+			'unused/package.json': { name: '@acme/unused', version: '1.0.0' },
+		})
+		await createWorkspace(
+			consumer,
+			{
+				'app/package.json': {
+					name: '@acme/app',
+					version: '1.0.0',
+					dependencies: { '@acme/a': '^1.0.0' },
+				},
+			},
+			[
+				'https://github.com/acme/dependent',
+				'https://github.com/acme/provider',
+				'https://github.com/acme/unused',
+			],
+		)
+		const registryPath = resolve(root, 'source-checkouts.json')
+		await writeJson(registryPath, {
+			version: 1,
+			checkouts: {
+				'https://github.com/acme/dependent': dependent,
+				'https://github.com/acme/provider': provider,
+				'https://github.com/acme/unused': unused,
+			},
+		})
+
+		const plan = await createSourceWorkspacePlan({ root: consumer, registryPath })
+		expect(plan.checkouts.map((checkout) => checkout.repository)).not.toContain(
+			'https://github.com/acme/unused',
+		)
+		expect(
+			plan.executionLevels.map((level) => level.map((checkout) => checkout.repository)),
+		).toEqual([['https://github.com/acme/provider'], ['https://github.com/acme/dependent']])
 	})
 
 	it('fails before pnpm resolves private source packages when the overlay is absent', async () => {
@@ -171,7 +245,8 @@ describe('source workspace planning', () => {
 
 	it('derives install and build commands from source artifact contracts', () => {
 		expect(createSourceInstallArgs({ '@acme/app': 'link:/src/app' })).toEqual(['install'])
-		expect(createSourceInstallArgs({})).toEqual(['install', '--frozen-lockfile'])
+		expect(createSourceInstallArgs({})).toEqual(['install'])
+		expect(createSourceInstallArgs({}, true)).toEqual(['install', '--frozen-lockfile'])
 		expect(createPnpmInvocation('pnpm@11.12.0', ['install'])).toEqual({
 			command: 'corepack',
 			args: ['pnpm', 'install'],
@@ -193,15 +268,29 @@ describe('source workspace planning', () => {
 		expect(sourcePackageNeedsBuild({ scripts: { build: 'tsdown' }, bin: './bin/cli.mjs' })).toBe(
 			true,
 		)
+		expect(
+			sourcePackageNeedsBuild({
+				scripts: { build: 'custom-build' },
+				exports: './generated-custom/index.mjs',
+				pluxel: { sourceBuild: true },
+			}),
+		).toBe(true)
+		expect(
+			sourcePackageNeedsBuild({
+				scripts: { build: 'tsdown' },
+				exports: './dist/index.mjs',
+				pluxel: { sourceBuild: false },
+			}),
+		).toBe(false)
 		expect(createSourceBuildArgs(['@acme/app'], true)).toEqual([
 			'exec',
 			'turbo',
 			'run',
 			'build',
-			'--force',
 			'--dangerously-disable-package-manager-check',
 			'--filter=@acme/app',
 		])
+		expect(createSourceBuildArgs(['@acme/app'], true, true)).toContain('--force')
 		expect(createSourceBuildArgs(['@acme/app'], false)).toEqual([
 			'--filter',
 			'@acme/app...',
