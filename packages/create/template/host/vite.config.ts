@@ -23,7 +23,8 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => {
 		appType: 'spa',
 		server: {
 			host: hostEnv.hostBind ?? '127.0.0.1',
-			port: hostEnv.hostPort ?? 3310,
+			port: hostEnv.hostPort,
+			strictPort: hostEnv.hostPort !== undefined,
 		},
 		build: {
 			outDir: 'dist',
