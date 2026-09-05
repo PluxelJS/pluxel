@@ -2,9 +2,9 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "portless",
+		"dev": "portless proxy start --port 1355 --no-tls && portless",
 		"dev:direct": "pnpm --filter @example/host dev",
-		"dev:dynamic": "portless run pnpm --filter @example/host dev:dynamic",
+		"dev:dynamic": "portless proxy start --port 1355 --no-tls && portless run pnpm --filter @example/host dev:dynamic",
 		"start": "pnpm --filter @example/host start",
 		"build": "turbo run build",
 		"catalog:add": "pncat add",

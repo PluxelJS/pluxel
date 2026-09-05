@@ -132,14 +132,18 @@ navigation 才进入 Vite SPA fallback。Pluxel 不强制 `/api` 前缀，也不
 在 child process 中注入合法的 `PORTLESS_URL`、`HOST` 和 `PORT` 后，Pluxel 会让 Vite 监听该物理地址，并显示两个可访问入口：
 
 ```text
-➜  Application: https://rhythm.localhost/
-➜  Workbench:   https://rhythm.localhost/__pluxel/workbench
+➜  Application: http://rhythm.localhost:1355/
+➜  Workbench:   http://rhythm.localhost:1355/__pluxel/workbench
 ```
 
 Portless 只负责开发期 ingress 和名称，不创建第二个 runtime listener。listener 优先级为 application 默认值 < Portless
 `HOST`/`PORT` < 显式 `PLUXEL_HOST_BIND`/`PLUXEL_HOST_PORT`；只有 `PORTLESS_URL` 是不带 path、query、fragment 或凭据的
 HTTP(S) origin 时，普通 `HOST`/`PORT` 才会被视为 Portless 注入。需要直接运行 Vite 时使用项目提供的 `dev:direct`，或以
 `PORTLESS=0 pnpm dev` 临时绕过 Portless。
+
+Pluxel starter 默认先执行 `portless proxy start --port 1355 --no-tls`，避免占用特权端口、sudo 和本地 CA/OpenSSL 依赖。普通 loopback
+开发、Vite HMR、同源 Application/Workbench/Plugin route 与非 `Secure` cookie 不需要 TLS。只有需要验证 `Secure` cookie、
+`SameSite=None`、远程 Management carrier 或第三方 OAuth HTTPS callback 时，才应显式启动 HTTPS ingress。
 
 如果产品 SPA 本身部署在 `/xxx/`，必须同时把 Vite asset `base` 和 Router basename/history base 配为该 mount point，并让
 服务器对 `/xxx/*` 做 history fallback。浏览器看到的 `/xxx/aaa` 是相对于域名根的绝对 pathname；Router 不会从反向代理自动推断
