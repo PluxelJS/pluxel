@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { request as httpRequest } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -203,6 +204,13 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 		'\tif (created.status !== 201 || (await created.json()).items.length !== 2) throw new Error(`Frozen Todo mutation returned ${created.status}`)',
 		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
 		'\tif (!page.ok || !(await page.text()).includes(\'<div id="root"></div>\')) throw new Error(`Frozen SPA fallback returned ${page.status}`)',
+		"\tconst workbench = await app.fetch(new Request(`${origin}/__pluxel/workbench/plugins`, { headers: { accept: 'text/html' } }))",
+		'\tconst workbenchHtml = await workbench.text()',
+		'\tif (!workbench.ok || !workbenchHtml.includes(\'content="/__pluxel/workbench"\')) throw new Error(`Frozen Workbench navigation returned ${workbench.status}: ${workbenchHtml.slice(0, 240)}`)',
+		'\tconst shellEntry = workbenchHtml.match(/<script type="module" src="([^"]+)"/)?.[1]',
+		"\tif (!shellEntry?.startsWith('/__pluxel/workbench/assets/')) throw new Error(`Frozen Workbench asset escaped the reserved namespace: ${shellEntry}`)",
+		'\tconst shellAsset = await fetch(new URL(shellEntry, origin))',
+		'\tif (!shellAsset.ok) throw new Error(`Frozen Workbench asset returned ${shellAsset.status}`)',
 		'} finally {',
 		'\tawait app.stop()',
 		'}',
@@ -244,11 +252,14 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 		}
 
 		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
-		const page = await fetch(`http://127.0.0.1:${port}/`)
+		const page = await fetch(`http://127.0.0.1:${port}/nested/page`, {
+			headers: { accept: 'text/html' },
+		})
 		const pageSource = await page.text()
 		if (!page.ok || !pageSource.includes('<div id="root"></div>')) {
 			throw new Error(`Unified Vite page returned ${page.status}`)
 		}
+		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
 	} finally {
 		await stopVite(vite)
 	}
@@ -269,11 +280,14 @@ async function verifyDynamicViteHost(root: string): Promise<void> {
 			throw new Error(`Dynamic Todo route returned ${response.status}`)
 		}
 		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
-		const page = await fetch(`http://127.0.0.1:${port}/`)
+		const page = await fetch(`http://127.0.0.1:${port}/nested/page`, {
+			headers: { accept: 'text/html' },
+		})
 		const pageSource = await page.text()
 		if (!page.ok || !pageSource.includes('<div id="root"></div>')) {
 			throw new Error(`Dynamic unified Vite page returned ${page.status}`)
 		}
+		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
 	} finally {
 		await stopVite(vite)
 	}
@@ -293,6 +307,67 @@ async function verifyViteBrowserGraph(origin: string): Promise<void> {
 	await Promise.all(
 		imports.map((specifier) => waitForResponse(new URL(specifier, origin).href, 30_000)),
 	)
+}
+
+async function verifyWorkbenchNavigation(origin: string): Promise<void> {
+	const response = await waitForDocumentResponse(`${origin}/__pluxel/workbench/plugins`, 30_000)
+	const source = response.text
+	if (!source.includes('content="/__pluxel/workbench"')) {
+		throw new Error('Workbench navigation did not preserve its configured router base path')
+	}
+	const entry = source.match(/<script type="module" src="([^"]+)"/)?.[1]
+	if (!entry) throw new Error('Workbench navigation did not expose a browser entry')
+	const browserEntry = await waitForResponse(new URL(entry, origin).href, 30_000)
+	if (!browserEntry.headers.get('content-type')?.includes('javascript')) {
+		throw new Error(`Workbench browser entry is not JavaScript: ${entry}`)
+	}
+}
+
+async function waitForDocumentResponse(
+	url: string,
+	timeoutMs: number,
+): Promise<{ status: number; text: string }> {
+	const deadline = Date.now() + timeoutMs
+	let lastError: unknown
+	while (Date.now() < deadline) {
+		try {
+			const response = await requestDocument(url)
+			if (response.status >= 200 && response.status < 300) return response
+			lastError = new Error(`HTTP ${response.status}`)
+		} catch (error) {
+			lastError = error
+		}
+		await new Promise((accept) => setTimeout(accept, 250))
+	}
+	throw new Error(`Timed out waiting for document ${url}: ${String(lastError)}`)
+}
+
+function requestDocument(url: string): Promise<{ status: number; text: string }> {
+	return new Promise((resolveResponse, reject) => {
+		const request = httpRequest(
+			url,
+			{
+				headers: {
+					accept: 'text/html',
+					'sec-fetch-dest': 'document',
+					'sec-fetch-mode': 'navigate',
+				},
+			},
+			(response) => {
+				const chunks: Buffer[] = []
+				response.on('data', (chunk: Buffer) => chunks.push(chunk))
+				response.once('error', reject)
+				response.once('end', () => {
+					resolveResponse({
+						status: response.statusCode ?? 0,
+						text: Buffer.concat(chunks).toString('utf8'),
+					})
+				})
+			},
+		)
+		request.once('error', reject)
+		request.end()
+	})
 }
 
 function startVite(

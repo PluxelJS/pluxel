@@ -56,6 +56,10 @@ pattern 不在已证明 contract 中，因为 Runtime 不复制 Elysia matcher g
 lease；Node production 与 Node-backed Vite 已通过 srvx/crossws carrier 运行真实 WS，但 Bun/Deno 第二 carrier 与 portable
 WS conformance 尚未完成。
 
+`/__pluxel/**` 是唯一 framework-reserved URL namespace。业务 contribution 精确命中后优先于 Workbench/product SPA fallback；
+未命中才继续进入 host-owned document fallback。`/api`、webhook、OAuth 或独立 UI mount 是 application convention，不进入 Plugin
+API 限制，也不按 Plugin identity 自动生成。
+
 Plugin 不拥有物理 listener：`listen()` / `stop()` 与 Server view 的 physical controls 明确 fail-fast。beta.7 也没有
 external application attach/detach public epoch，因此 `setup()` / `cleanup()` 当前在调用点 fail-fast；不读 `~ext` 私有
 callback 来伪装支持。dynamic loader 已统一 Elysia runtime identity，但 published Plugin 的 Elysia peer-range admission 尚未

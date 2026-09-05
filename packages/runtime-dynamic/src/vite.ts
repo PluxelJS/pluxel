@@ -89,6 +89,7 @@ type DynamicViteApplicationCarrier = ReturnType<typeof createViteNodeElysiaAppli
 
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
 	const mode = options.mode ?? 'development'
+	const workbenchClientEntry = resolveDevWorkbenchClientEntryUrl()
 	const sourcePipeline = createPluginSourceVitePipeline({
 		name: 'pluxel:dynamic-runtime-source',
 		packageMode: mode,
@@ -150,7 +151,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		const booted = await bootPlannedLoaderHmrHost(plan, {
 			viteServer: server,
 			product: loaded.product,
-			workbenchAssets: mode === 'distribution' ? 'built' : 'source',
+			workbenchAssets: mode === 'distribution' || !workbenchClientEntry ? 'built' : 'source',
 			workbenchArtifactCacheDir:
 				mode === 'distribution'
 					? resolve(plan.runtimeStorage.persistenceDir, '..', 'workbench-artifacts')
@@ -203,8 +204,8 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		apply: 'serve',
 		config(config) {
 			const workbenchClient =
-				mode === 'development'
-					? createWorkbenchViteClientConfig(resolveDevWorkbenchClientEntryUrl())
+				mode === 'development' && workbenchClientEntry
+					? createWorkbenchViteClientConfig(workbenchClientEntry)
 					: {}
 			return {
 				...workbenchClient,
@@ -244,7 +245,11 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			})
 			try {
 				await startController(server)
-				installDynamicHttpMiddleware(state, server, mode === 'development')
+				installDynamicHttpMiddleware(
+					state,
+					server,
+					mode === 'development' && Boolean(workbenchClientEntry),
+				)
 			} catch (error) {
 				await state.applicationCarrier.close().catch((): undefined => undefined)
 				state.applicationCarrier = undefined

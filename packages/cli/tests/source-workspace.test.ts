@@ -175,7 +175,8 @@ describe('source workspace planning', () => {
 		const stable = materializeSourceOverrides(consumer, plan.overrides, plan.checkouts)
 		ensureSourcePnpmfileBootstrap(consumer)
 		writeSourcePnpmfile(consumer, stable)
-		expect((await diagnoseSourceWorkspacePlan(plan)).errors).toEqual([])
+		const afterInstall = await diagnoseSourceWorkspacePlan(plan)
+		expect(afterInstall.errors).toEqual([])
 	})
 
 	it('orders repositories from selected package dependencies and prunes unused sources', async () => {

@@ -47,6 +47,25 @@ this.ctx.elysia.group('/orders', (app) =>
 fork 或多个 Plugin 若要同时提供 HTTP，必须声明彼此不冲突的最终路径。不要从 Plugin identity 或 fork id 猜测 URL；路径本身
 就是产品 contract。
 
+### 与产品 SPA 和 Workbench 共用 origin
+
+Runtime 只保留 `/__pluxel`；不会强制业务路由使用 `/api` 或其他前缀。同一 listener 上的请求按以下边界仲裁：
+
+```text
+/__pluxel/**                 -> Runtime / Workbench
+匹配 Plugin HTTP/WS route    -> owning Plugin generation
+Workbench document path     -> Workbench shell
+其余 navigation             -> 产品 SPA fallback
+```
+
+因此 Plugin 显式声明 `GET /settings` 时会优先于产品 SPA 的 `/settings`。这是产品选择的最终路径所有权，不是 Runtime 可以从两个
+独立 Router 自动判定的冲突。应用可以约定 `/api`、`/webhooks` 等首段来降低误用，但 Pluxel 不把团队惯例升级为框架限制；真正需要
+提供独立产品页面的 Plugin 也可以拥有明确的 mount point，并自行配置该前端的 Router basename 与 asset base。
+
+Workbench contribution 不通过业务 HTTP route 抢占产品页面。Shell 在 `workbench.uiBasePath` 下组织其逻辑路由，框架 API、session、
+federation artifact 与 Shell asset 均留在 `/__pluxel/**`。包含产品 SPA 的 host 通常使用
+`workbench.uiBasePath: '/__pluxel/workbench'`。
+
 ## 直接使用 Elysia 能力
 
 `ctx.elysia` 是上游 `Elysia` instance，不是 facade 或 Proxy。schema、model、macro、hook、guard、derive、resolve、error handler、

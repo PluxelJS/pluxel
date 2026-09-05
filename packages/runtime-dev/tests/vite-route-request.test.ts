@@ -44,5 +44,12 @@ describe('Runtime Vite request arbitration', () => {
 		expect(matchesMountedRoute).toHaveBeenCalledWith('/business/file.ts')
 		expect(shouldHandle('/plugin-graph/node.ts', { workbenchEnabled: false })).toBe(false)
 		expect(shouldHandle('/plugin-graph/node.ts', { method: 'POST' })).toBe(false)
+		expect(
+			shouldHandle('/__pluxel/workbench/assets/client.js', {
+				accept: '*/*',
+				workbenchEnabled: false,
+			}),
+		).toBe(true)
+		expect(shouldHandle('/__pluxel?inspect=1', { workbenchEnabled: false })).toBe(true)
 	})
 })

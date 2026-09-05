@@ -33,7 +33,7 @@ function toViteFsPath(absPath: string): string {
 	return normalized.startsWith('/') ? `/@fs${normalized}` : `/@fs/${normalized}`
 }
 
-export function resolveDevWorkbenchClientEntryUrl(): string {
+export function resolveDevWorkbenchClientEntryUrl(): string | undefined {
 	const candidates = [
 		resolve(moduleDir, '../../../workbench-app/src/client.tsx'),
 		resolve(moduleDir, '../../workbench-app/src/client.tsx'),
@@ -43,13 +43,15 @@ export function resolveDevWorkbenchClientEntryUrl(): string {
 		if (existsSync(candidate)) return toViteFsPath(candidate)
 	}
 
-	return '/packages/workbench-app/src/client.tsx'
+	return undefined
 }
 
-export const DEV_ASSETS: Assets = {
-	js: resolveDevWorkbenchClientEntryUrl(),
-	css: [],
-	preload: [],
+export function resolveDevAssets(): Assets {
+	const js = resolveDevWorkbenchClientEntryUrl()
+	if (!js) {
+		throw new Error('Workbench source entry is unavailable; use the packaged Workbench assets')
+	}
+	return { js, css: [], preload: [] }
 }
 
 const pickEntry = (manifest: Manifest, entry = '../workbench-app/src/client.tsx') =>

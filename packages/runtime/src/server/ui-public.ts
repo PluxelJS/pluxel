@@ -4,7 +4,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { dirname, extname, resolve } from 'pathe'
 
-import { UI_PUBLIC_BASE } from '../web/paths'
+import { UI_PUBLIC_ASSET_BASE, UI_PUBLIC_BASE } from '../web/paths'
 export { UI_PUBLIC_BASE } from '../web/paths'
 
 export type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
@@ -118,7 +118,7 @@ export function createUiPublicAssetHandler(options: {
 		}
 
 		const { pathname } = new URL(request.url)
-		if (!pathname.startsWith(`${UI_PUBLIC_BASE}/`)) return null
+		if (!pathname.startsWith(`${UI_PUBLIC_ASSET_BASE}/`)) return null
 
 		let decodedPath: string
 		try {

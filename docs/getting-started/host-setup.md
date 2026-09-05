@@ -124,6 +124,10 @@ workbench: {
 Workbench 的 cookie、认证、Cap'n Web WebSocket、Module Federation assets 和 Vite HMR 因而不需要跨源代理。Workbench-only host
 仍可让 Workbench 拥有 `/`。
 
+`/__pluxel/**` 是唯一由框架强制保留的路径空间。Plugin 精确命中的业务 HTTP/WS route 优先于产品 SPA；未命中的 document
+navigation 才进入 Vite SPA fallback。Pluxel 不强制 `/api` 前缀，也不按 Plugin identity 改写产品 URL。完整边界见
+[Plugin HTTP 与产品 SPA 共用 origin](../runtime/http.md#与产品-spa-和-workbench-共用-origin)。
+
 开发 workspace 可以用 [Portless](https://github.com/vercel-labs/portless) 为这一个 listener 提供稳定的命名入口。`portless`
 在 child process 中注入合法的 `PORTLESS_URL`、`HOST` 和 `PORT` 后，Pluxel 会让 Vite 监听该物理地址，并显示两个可访问入口：
 

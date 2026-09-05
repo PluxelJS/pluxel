@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEV_ASSETS } from '../../src/server/assets'
+import { resolveDevAssets } from '../../src/server/assets'
 import { createDevRenderer } from '../../src/server/dev'
 import { createHmrRenderer } from '../../src/server/hmr'
 import { renderRuntimeUiHtml } from '../../src/server/html'
@@ -26,6 +26,7 @@ describe('runtime UI HTML rendering', () => {
 	})
 
 	it('keeps dev and HMR renderers independent of React refresh', async () => {
+		const devAssets = resolveDevAssets()
 		const [devHtml, hmrHtml] = await Promise.all([
 			Promise.resolve(createDevRenderer()(new Request('http://local.test/'))).then((response) =>
 				response.text(),
@@ -37,7 +38,7 @@ describe('runtime UI HTML rendering', () => {
 
 		for (const html of [devHtml, hmrHtml]) {
 			expect(html).toContain('<meta name="pluxel-workbench-ui-base-path" content="/" />')
-			expect(html).toContain(`<script type="module" src="${DEV_ASSETS.js}"></script>`)
+			expect(html).toContain(`<script type="module" src="${devAssets.js}"></script>`)
 			expect(html).not.toContain('/@react-refresh')
 			expect(html).not.toContain('window.$RefreshReg$')
 		}

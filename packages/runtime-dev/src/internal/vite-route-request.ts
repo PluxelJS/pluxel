@@ -1,5 +1,3 @@
-import { UI_PUBLIC_BASE } from '@pluxel/runtime/internal'
-
 export function shouldHandleRuntimeViteRequest(input: {
 	url: string
 	method: string | undefined
@@ -9,8 +7,7 @@ export function shouldHandleRuntimeViteRequest(input: {
 	matchesWorkbenchUiRoute: (pathname: string) => boolean
 }): boolean {
 	const pathname = requestPathname(input.url)
-	if (input.url.startsWith('/__pluxel/')) return true
-	if (input.workbenchEnabled && pathname.startsWith(`${UI_PUBLIC_BASE}/`)) return true
+	if (pathname === '/__pluxel' || pathname.startsWith('/__pluxel/')) return true
 	if (input.matchesMountedRoute(pathname)) return true
 
 	// Vite owns its internal module and dependency paths even when a browser requests them directly.

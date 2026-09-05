@@ -7,7 +7,7 @@ import type { RenderHandler } from '../../server/types'
 import {
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_WORKBENCH_FEDERATION_BASE,
-	UI_PUBLIC_BASE,
+	UI_PUBLIC_ASSET_BASE,
 } from '../../web/paths'
 import { isAdminAccessHandoffPath } from '../admin-access/transport'
 import { responseWithLease } from '../admin-access/response-lifetime'
@@ -479,7 +479,7 @@ class HttpBackend {
 			const business = await this.applications.dispatch(request)
 			if (business) return business
 
-			if (path.startsWith(`${UI_PUBLIC_BASE}/`)) {
+			if (path.startsWith(`${UI_PUBLIC_ASSET_BASE}/`)) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
 				const uiPublic = await this.uiPublic()
 				if (!uiPublic) return new Response('Not Found', { status: 404 })

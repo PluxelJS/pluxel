@@ -187,7 +187,7 @@ async function dispatch(
 	try {
 		const result = await runtime.fetch(input)
 		const applicationAsset =
-			result.status === 404 && options.serveApplicationPublic
+			result.status === 404 && options.serveApplicationPublic && !isRuntimeReservedRequest(input)
 				? await resolveApplicationAsset(input, options.applicationPublicDir)
 				: null
 		return applicationAsset ?? result
@@ -195,6 +195,11 @@ async function dispatch(
 		if (signal.aborted) throw error
 		return new Response('Internal server error', { status: 500 })
 	}
+}
+
+function isRuntimeReservedRequest(request: Request): boolean {
+	const path = new URL(request.url).pathname
+	return path === '/__pluxel' || path.startsWith('/__pluxel/')
 }
 
 function requestWithSignal(request: Request, signal: AbortSignal): Request {

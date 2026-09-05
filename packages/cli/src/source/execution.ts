@@ -552,7 +552,7 @@ function acquireSourceInstallLocks(roots: string[]): () => void {
 				descriptor = openSync(path, 'wx', 0o600)
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-					throw new Error(`Another source install owns ${path}`)
+					throw new Error(`Another source install owns ${path}`, { cause: error })
 				}
 				throw error
 			}
@@ -567,7 +567,7 @@ function acquireSourceInstallLocks(roots: string[]): () => void {
 }
 
 function releaseSourceInstallLocks(locks: Array<{ descriptor: number; path: string }>) {
-	for (const lock of locks.reverse()) {
+	for (const lock of locks.toReversed()) {
 		closeSync(lock.descriptor)
 		try {
 			unlinkSync(lock.path)

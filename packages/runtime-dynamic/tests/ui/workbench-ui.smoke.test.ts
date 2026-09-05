@@ -20,7 +20,7 @@ const compatibility = createWorkbenchFederationCompatibilitySet({
 })
 
 describe('HMR UI smoke', () => {
-	it('renders dev UI with a Vite-accessible source entry and rejects stale /dist/public asset requests', async () => {
+	it('renders dev UI with a Vite-accessible source entry and rejects stale built asset requests', async () => {
 		{
 			await using runtimeContext = createRuntimeInternalTestHost({
 				configService: { mode: 'memory' },
@@ -37,10 +37,10 @@ describe('HMR UI smoke', () => {
 			expect(htmlRes.status).toBe(200)
 			const html = await htmlRes.text()
 			expect(html).toContain('<script type="module" src="/@fs/')
-			expect(html).not.toContain('/dist/public/assets/')
+			expect(html).not.toContain('/__pluxel/workbench/assets/')
 
 			const staleAsset = await requireRuntimeHttpService(ctx).fetch(
-				new Request('http://local/dist/public/assets/mf-runtime-stale.js'),
+				new Request('http://local/__pluxel/workbench/assets/mf-runtime-stale.js'),
 			)
 			expect(staleAsset.status).toBe(404)
 			expect(await staleAsset.text()).toContain('Not Found')
@@ -80,14 +80,14 @@ describe('HMR UI smoke', () => {
 				uiPublicDir: publicDir,
 			})
 			const asset = await requireRuntimeHttpService(ctx).fetch(
-				new Request('http://local/dist/public/assets/hello.js'),
+				new Request('http://local/__pluxel/workbench/assets/hello.js'),
 			)
 			expect(asset.status).toBe(200)
 			expect(asset.headers.get('content-type')).toContain('application/javascript')
 
 			// Regression: missing assets must not fall through to an HTML SPA fallback.
 			const missingAsset = await requireRuntimeHttpService(ctx).fetch(
-				new Request('http://local/dist/public/assets/missing.css'),
+				new Request('http://local/__pluxel/workbench/assets/missing.css'),
 			)
 			expect(missingAsset.status).toBe(404)
 			expect(await missingAsset.text()).toContain('Not Found')
@@ -95,8 +95,8 @@ describe('HMR UI smoke', () => {
 			const firstHtml = await requireRuntimeHttpService(ctx)
 				.fetch(new Request('http://local/', { headers: { accept: 'text/html' } }))
 				.then((res) => res.text())
-			expect(firstHtml).toContain('/dist/public/assets/client-old.js')
-			expect(firstHtml).toContain('/dist/public/assets/client-old.css')
+			expect(firstHtml).toContain('/__pluxel/workbench/assets/client-old.js')
+			expect(firstHtml).toContain('/__pluxel/workbench/assets/client-old.css')
 
 			await writeFile(
 				resolve(publicDir, '.vite/manifest.json'),
@@ -117,9 +117,9 @@ describe('HMR UI smoke', () => {
 			const secondHtml = await requireRuntimeHttpService(ctx)
 				.fetch(new Request('http://local/', { headers: { accept: 'text/html' } }))
 				.then((res) => res.text())
-			expect(secondHtml).toContain('/dist/public/assets/client-new.js')
-			expect(secondHtml).toContain('/dist/public/assets/client-new.css')
-			expect(secondHtml).not.toContain('/dist/public/assets/client-old.js')
+			expect(secondHtml).toContain('/__pluxel/workbench/assets/client-new.js')
+			expect(secondHtml).toContain('/__pluxel/workbench/assets/client-new.css')
+			expect(secondHtml).not.toContain('/__pluxel/workbench/assets/client-old.js')
 		}
 	})
 
@@ -144,7 +144,7 @@ describe('HMR UI smoke', () => {
 			expect(dashboard.status).toBe(404)
 
 			const workbench = await requireRuntimeHttpService(ctx).fetch(
-				new Request('http://local/__pluxel/workbench/', {
+				new Request('http://local/__pluxel/workbench/plugins', {
 					headers: { accept: 'text/html' },
 				}),
 			)

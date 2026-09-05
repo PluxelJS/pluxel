@@ -356,6 +356,11 @@ headless 与 workbench 使用分离的 internal Node adapter；headless dependen
 origin 上的 Application `/` 与 Workbench `uiBasePath`；没有 Portless 时保留 Vite 原生 listener URL，并只追加 Workbench mount。
 Workbench-only host 若让 UI 拥有 `/`，不得虚构第二个 Application root。
 
+Workbench Shell 的 browser asset URL 使用 `/__pluxel/workbench/assets/**`；磁盘仍由 distribution 内部的 `workbench/public/`
+inventory 提供。URL namespace 与 artifact filesystem layout 不耦合，也不得退回会与产品 public tree 竞争的 `/dist/public/**`。
+Vite 只有在当前安装中确实存在 Workbench source entry 时才接入它的 client graph；独立消费 workspace 使用
+`@pluxel/runtime` 随包交付的 built assets，不能生成只在 Pluxel monorepo 内成立的 `/packages/workbench-app/**` URL。
+
 ## Workbench source declaration
 
 Browser-safe declaration 使用：

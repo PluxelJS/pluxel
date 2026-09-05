@@ -79,6 +79,7 @@ export type {
 export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
 export {
 	RUNTIME_INTERNAL_API_BASE,
+	UI_PUBLIC_ASSET_BASE,
 	UI_PUBLIC_BASE,
 	runtimeWorkbenchFederationArtifactBasePath,
 	runtimeWorkbenchFederationArtifactPath,

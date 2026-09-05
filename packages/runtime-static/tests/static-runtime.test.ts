@@ -1076,6 +1076,63 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
+	it('keeps packaged Workbench navigation and assets ahead of the application SPA fallback', async () => {
+		await using fixture = await createDiskFixture({
+			'public/index.html': '<title>Static App</title>',
+			'workbench/pluxel-workbench-producers.json': JSON.stringify({
+				version: 1,
+				profile: 1,
+				buildContract: 2,
+				producers: [],
+			}),
+			'workbench/public/.vite/manifest.json': JSON.stringify({
+				'src/client.tsx': { file: 'assets/client.js', isEntry: true },
+			}),
+			'workbench/public/assets/client.js': 'export const ready = true',
+		})
+		const runtime = await runStaticNodeApplication(
+			defineStaticRuntime({
+				name: 'static-node-workbench-spa',
+				plugins: [],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [] } },
+					workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
+				}),
+			}),
+			{
+				env: { PLUXEL_HOST_PORT: '0' },
+				deployment: { root: fixture.path, target: 'node', variant: 'workbench' },
+				createWorkbenchBackend,
+			},
+		)
+		try {
+			const origin = `http://${runtime.address.host}:${runtime.address.port}`
+			const directWorkbenchPage = await runtime.fetch(
+				new Request(`${origin}/__pluxel/workbench/plugins`, {
+					headers: { accept: 'text/html' },
+				}),
+			)
+			expect(await directWorkbenchPage.text()).toContain(
+				'<meta name="pluxel-workbench-ui-base-path" content="/__pluxel/workbench" />',
+			)
+			const page = await fetch(`${origin}/nested/route`, { headers: { accept: 'text/html' } })
+			expect(await page.text()).toContain('Static App')
+
+			const workbenchPage = await fetch(`${origin}/__pluxel/workbench/plugins`, {
+				headers: { accept: 'text/html' },
+			})
+			expect(workbenchPage.status).toBe(404)
+			expect(await workbenchPage.text()).not.toContain('Static App')
+
+			const workbenchAsset = await fetch(`${origin}/__pluxel/workbench/assets/client.js`)
+			expect(workbenchAsset.status).toBe(200)
+			expect(await workbenchAsset.text()).toContain('ready = true')
+		} finally {
+			await runtime.stop()
+		}
+	})
+
 	it('round-trips a POST body through the real srvx Node listener', async () => {
 		await using fixture = await createDiskFixture()
 		const runtime = await runStaticNodeApplication(

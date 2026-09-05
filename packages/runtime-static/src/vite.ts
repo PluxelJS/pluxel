@@ -68,6 +68,7 @@ export type StaticRuntimeVitePluginOptions = {
 }
 
 export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions): PluginOption[] {
+	const workbenchClientEntry = resolveDevWorkbenchClientEntryUrl()
 	const sourcePipeline = createPluginSourceVitePipeline({
 		name: 'pluxel:static-runtime-source',
 	})
@@ -126,7 +127,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			createWorkbenchBackend,
 			product,
 			...(config.workbench !== false && config.workbench?.enabled === true
-				? { http: { uiAssets: 'dev-server' } }
+				? { http: { uiAssets: workbenchClientEntry ? 'dev-server' : 'static-built' } }
 				: {}),
 		})
 		try {
@@ -221,7 +222,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		apply: 'serve',
 		config(config) {
 			return {
-				...createWorkbenchViteClientConfig(resolveDevWorkbenchClientEntryUrl()),
+				...(workbenchClientEntry ? createWorkbenchViteClientConfig(workbenchClientEntry) : {}),
 				...(config.cacheDir === undefined ? { cacheDir: STATIC_RUNTIME_CACHE_DIR } : {}),
 			}
 		},
@@ -262,7 +263,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				await logStaticRuntimeStarted(host, startup, state.configFiles)
 
 				state.carrier = attachSrvxViteNodeCarrier(server, {
-					transformViteHtml: true,
+					transformViteHtml: Boolean(workbenchClientEntry),
 					fetch(request) {
 						const activeHost = state.host
 						if (!activeHost) {
