@@ -373,7 +373,11 @@ function pluginNodeStatus(
 }
 
 function resolutionLabel(via: 'direct' | 'provider-default' | 'dependency-override'): string {
-	return via === 'direct' ? '直接实现' : via === 'provider-default' ? '提供方默认' : '当前依赖覆盖'
+	return via === 'direct'
+		? '默认实例'
+		: via === 'provider-default'
+			? '跟随全局默认'
+			: '当前插件指定'
 }
 
 function InspectorShell({

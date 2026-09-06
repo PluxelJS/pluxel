@@ -20,17 +20,12 @@ export const managementQueryKeys = {
 	securityOverview: () => [...managementQueryKeys.all, 'security', 'overview'] as const,
 	securityEvents: () => [...managementQueryKeys.all, 'security', 'events'] as const,
 	loggingPolicy: () => [...managementQueryKeys.all, 'logging', 'policy'] as const,
+	dependencies: () => [...managementQueryKeys.all, 'dependencies'] as const,
 	providerPolicy: (owner: PluginNodeAddress) =>
-		[
-			...managementQueryKeys.all,
-			'dependencies',
-			'provider-policy',
-			pluginNodeIndexKey(owner),
-		] as const,
+		[...managementQueryKeys.dependencies(), 'provider-policy', pluginNodeIndexKey(owner)] as const,
 	consumerRequirements: (owner: PluginNodeAddress) =>
 		[
-			...managementQueryKeys.all,
-			'dependencies',
+			...managementQueryKeys.dependencies(),
 			'consumer-requirements',
 			pluginNodeIndexKey(owner),
 		] as const,
@@ -82,4 +77,11 @@ export function ManagementQueryProvider({ children }: { children: ReactNode }) {
 		}
 	}, [client])
 	return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
+
+// Refresh active dependency editors together; inactive entries remain stale until opened.
+export async function refreshDependencyQueries(client: QueryClient): Promise<void> {
+	const queryKey = managementQueryKeys.dependencies()
+	await client.cancelQueries({ queryKey })
+	await client.invalidateQueries({ queryKey })
 }

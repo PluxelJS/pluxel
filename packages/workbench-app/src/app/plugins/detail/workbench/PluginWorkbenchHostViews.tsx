@@ -3,7 +3,6 @@ import { IconChevronDown } from '@tabler/icons-react'
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta } from '../context'
-import { ProviderPolicyCard } from '../cards/ProviderPolicyCard'
 import { PluginDependencyDetailCard } from '../cards/PluginDependencyDetailCard'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
 import { PluginRuntimeSummaryCard } from '../cards/PluginRuntimeSummaryCard'
@@ -58,7 +57,6 @@ export function PluginWorkbenchSidebar() {
 					<WorkbenchScrollPane>
 						<PluginRuntimeSummaryCard description={description} status={status} />
 						<PluginDependencyDetailCard />
-						<ProviderPolicyCard />
 						<SidebarOutlineSection visible={assistVisible} onHostChange={setAssistHost} />
 					</WorkbenchScrollPane>
 				),

@@ -5,14 +5,14 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
 	runtimeErrorMessage,
 	useRuntimeManagementClient,
 	type PluginConsumerRequirementState,
 } from '../../../runtime'
 import { usePluginScope } from './context'
-import { managementQueryKeys } from '../../managementQuery'
+import { managementQueryKeys, refreshDependencyQueries } from '../../managementQuery'
 
 export const FOLLOW_DEFAULT_VALUE = 'follow-default'
 const PROVIDER_VALUE_PREFIX = 'provider:'
@@ -60,12 +60,15 @@ export function buildConsumerOverrideSelection(row: PluginConsumerRequirementSta
 					disabled: true,
 				}
 			: null
+	const defaultLabel = row.kind === 'abstract' ? '跟随全局默认' : '默认实例'
 	const inheritedProviderLabel = providerAddressDisplayName(row.inheritedProvider, row.options)
 	return Object.freeze({
 		data: Object.freeze([
 			{
 				value: FOLLOW_DEFAULT_VALUE,
-				label: row.inheritedProvider ? `跟随默认 · ${inheritedProviderLabel}` : '跟随默认解析',
+				label: row.inheritedProvider
+					? `${defaultLabel} · ${inheritedProviderLabel}`
+					: `${defaultLabel} · 未解析`,
 				disabled: false,
 			},
 			...optionEntries.map(({ option, value }) => ({
@@ -90,6 +93,7 @@ export function buildConsumerOverrideSelection(row: PluginConsumerRequirementSta
 export function usePluginDependencyControls() {
 	const { owner, refetch } = usePluginScope()
 	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const ownerKey = pluginNodeIndexKey(owner)
 	const requirementsQuery = useQuery<readonly PluginConsumerRequirementState[]>({
 		queryKey: managementQueryKeys.consumerRequirements(owner),
@@ -111,8 +115,8 @@ export function usePluginDependencyControls() {
 	}, [])
 
 	const refreshAll = useCallback(async () => {
-		await Promise.all([requirementsQuery.refetch(), refetch()])
-	}, [refetch, requirementsQuery])
+		await Promise.all([refreshDependencyQueries(queryClient), refetch()])
+	}, [refetch, queryClient])
 
 	const runPending = useCallback(
 		async <T>(key: string, operation: () => Promise<T>): Promise<T> => {

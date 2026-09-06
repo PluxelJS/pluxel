@@ -16,6 +16,7 @@ import {
 	formatPluginDefinitionReference,
 	formatPluginNodeReference,
 	pluginDefinitionIndexKey,
+	pluginDefinitionAddressEqual,
 	pluginNodeIndexKey,
 } from '@pluxel/core'
 import { IconPlus, IconRefresh, IconTopologyStar3, IconTrash } from '@tabler/icons-react'
@@ -37,6 +38,7 @@ import {
 } from '../usePluginDependencyControls'
 import { runtimeErrorMessage } from '../../../../runtime'
 import { useNotify } from '../../../hooks/useNotify'
+import { PluginProvidedCapability, usePluginProviderPolicy } from './PluginProvidedCapability'
 
 type DetailLinkComponent = ElementType<{
 	to: string
@@ -47,8 +49,8 @@ type DetailLinkComponent = ElementType<{
 }>
 
 const VIA_LABEL = {
-	'provider-default': '跟随默认',
-	'dependency-override': '节点覆盖',
+	'provider-default': '跟随全局默认',
+	'dependency-override': '当前插件指定',
 } as const
 
 type RelationBadge = Readonly<{
@@ -188,7 +190,14 @@ function EndpointRelationRow({
 	LinkComponent: DetailLinkComponent
 	children?: ReactNode
 }) {
-	const name = endpoint ? endpointDisplayName(endpoint) : edge.requirement.exportName
+	const providerName = endpoint ? endpointDisplayName(endpoint) : null
+	const providerDefinition = endpoint
+		? (endpoint.state === 'status' ? endpoint.node.status.address : endpoint.address).definition
+		: null
+	const name =
+		providerDefinition && !pluginDefinitionAddressEqual(providerDefinition, edge.requirement)
+			? `${edge.requirement.exportName} → ${providerName}`
+			: (providerName ?? edge.requirement.exportName)
 	const reference = endpoint
 		? endpointReference(endpoint)
 		: formatPluginDefinitionReference(edge.requirement)
@@ -348,10 +357,12 @@ export function PluginDependencyDetailContent({
 	detail,
 	LinkComponent,
 	requiredControl,
+	providedCapability,
 }: {
 	detail: PluginDependencyDetail
 	LinkComponent: DetailLinkComponent
 	requiredControl?: (dependency: PluginDependencyDetail['required'][number]) => ReactNode
+	providedCapability?: ReactNode
 }) {
 	return (
 		<div className="plx-pluginDependencyDetail">
@@ -361,6 +372,7 @@ export function PluginDependencyDetailContent({
 				controlFor={requiredControl}
 			/>
 			<OptionalRelations detail={detail} LinkComponent={LinkComponent} />
+			{providedCapability}
 			<Dependents detail={detail} LinkComponent={LinkComponent} />
 		</div>
 	)
@@ -369,6 +381,7 @@ export function PluginDependencyDetailContent({
 export function PluginDependencyDetailCard() {
 	const graph = usePluginDependencyDetail()
 	const controls = usePluginDependencyControls()
+	const providerPolicy = usePluginProviderPolicy(controls.refresh)
 	const notify = useNotify()
 	const renderRequiredControl = (dependency: PluginDependencyDetail['required'][number]) => {
 		const key = pluginDefinitionIndexKey(dependency.edge.requirement)
@@ -376,14 +389,14 @@ export function PluginDependencyDetailCard() {
 		if (!row || !isConsumerOverrideConfigurable(row)) return null
 		return <DependencyImplementationControl row={row} controls={controls} notify={notify} />
 	}
-	const loading = graph.isLoading || controls.isLoading
+	const loading = graph.isLoading || controls.isLoading || providerPolicy.loading
 	return (
 		<Paper withBorder radius="sm" p="sm" shadow="none">
 			<Stack gap="sm">
 				<Group justify="space-between" align="center" wrap="nowrap">
 					<Group gap={6} wrap="wrap">
 						<Text size="sm" fw={600}>
-							依赖关系
+							依赖管理
 						</Text>
 						{graph.isStale ? (
 							<Badge variant="outline" color="yellow" size="xs">
@@ -397,7 +410,7 @@ export function PluginDependencyDetailCard() {
 							variant="subtle"
 							onClick={() => void controls.refresh()}
 							disabled={loading}
-							aria-label="刷新依赖关系"
+							aria-label="刷新依赖管理"
 						>
 							{loading ? <Loader size={13} /> : <IconRefresh size={14} />}
 						</ActionIcon>
@@ -409,6 +422,7 @@ export function PluginDependencyDetailCard() {
 						detail={graph.detail}
 						LinkComponent={RouterLinkAdapter}
 						requiredControl={renderRequiredControl}
+						providedCapability={<PluginProvidedCapability control={providerPolicy} />}
 					/>
 				) : graph.isLoading ? (
 					<Group gap="xs" wrap="nowrap">
@@ -422,6 +436,7 @@ export function PluginDependencyDetailCard() {
 						{graph.error ?? '暂无依赖图数据'}
 					</Text>
 				)}
+				{!graph.detail ? <PluginProvidedCapability control={providerPolicy} /> : null}
 				{graph.detail && graph.error ? (
 					<Text size="xs" c="yellow">
 						刷新失败，当前显示上一次成功读取的数据：{graph.error}
@@ -513,10 +528,11 @@ function DependencyImplementationControl({
 
 	return (
 		<Stack gap={5}>
-			<Group gap={5} wrap="nowrap" align="center">
+			<Group gap={5} wrap="nowrap" align="flex-end">
 				<Select
 					size="xs"
-					aria-label={`设置 ${row.requirement.exportName} 的依赖覆盖`}
+					aria-label={`设置当前插件的 ${row.requirement.exportName} 实现`}
+					label="当前插件使用"
 					data={selection.data}
 					value={selection.value}
 					disabled={consumerOverridePending || createPending}
@@ -534,15 +550,15 @@ function DependencyImplementationControl({
 								const result = await controls.setConsumerOverride(row.requirement, provider)
 								if (result.ok === false) throw new Error(result.error || result.code || '操作失败')
 								notify({
-									title: '依赖覆盖已更新',
+									title: '当前插件的依赖实现已更新',
 									message: provider
 										? providerAddressDisplayName(provider, row.options)
-										: '已恢复跟随默认',
+										: selection.data[0].label,
 									color: 'green',
 								})
 							} catch (error) {
 								notify({
-									title: '更新依赖覆盖失败',
+									title: '更新依赖实现失败',
 									message: runtimeErrorMessage(error, '操作失败'),
 									color: 'red',
 								})

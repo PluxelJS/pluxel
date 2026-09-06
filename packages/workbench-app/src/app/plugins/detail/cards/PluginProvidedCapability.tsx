@@ -1,12 +1,11 @@
-import { ActionIcon, Badge, Box, Group, Paper, Select, Stack, Text, Tooltip } from '@mantine/core'
+import { Badge, Box, Group, Select, Stack, Text } from '@mantine/core'
 import {
 	formatPluginDefinitionReference,
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { IconRefresh, IconStar } from '@tabler/icons-react'
-import { useCallback, useEffect, useMemo } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useMemo } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
 	runtimeErrorMessage,
 	useRuntimeManagementClient,
@@ -14,15 +13,14 @@ import {
 } from '../../../../runtime'
 import { useNotify } from '../../../hooks/useNotify'
 import { usePluginScope } from '../context'
-import { managementQueryKeys, refetchManagementQuery } from '../../../managementQuery'
+import { managementQueryKeys } from '../../../managementQuery'
 
-export function ProviderPolicyCard() {
-	const { owner, refetch } = usePluginScope()
+export function usePluginProviderPolicy(refresh: () => Promise<void>) {
+	const { owner } = usePluginScope()
 	const ownerKey = pluginNodeIndexKey(owner)
 	const management = useRuntimeManagementClient()
-	const queryClient = useQueryClient()
 	const notify = useNotify()
-	const policyQuery = useQuery<PluginProviderPolicyInfo>({
+	const policyQuery = useQuery<PluginProviderPolicyInfo | null>({
 		queryKey: managementQueryKeys.providerPolicy(owner),
 		queryFn: async () => {
 			const result = await management.dependencies.inspectProviderPolicy(owner)
@@ -32,14 +30,6 @@ export function ProviderPolicyCard() {
 	})
 	const policy = policyQuery.data ?? null
 	const loading = policyQuery.isFetching
-	useEffect(() => {
-		if (!policyQuery.error) return
-		notify({
-			title: '读取提供方策略失败',
-			message: runtimeErrorMessage(policyQuery.error, '无法读取提供方策略'),
-			color: 'red',
-		})
-	}, [notify, policyQuery.error])
 
 	const optionsByKey = useMemo(
 		() =>
@@ -75,17 +65,11 @@ export function ProviderPolicyCard() {
 				provider,
 			})
 			if (result.ok === false) {
-				if (result.state === 'unknown') {
-					await Promise.all([policyQuery.refetch(), refetch()])
-				}
 				throw new Error(result.error || result.code || '操作失败')
 			}
-			await Promise.all([
-				refetchManagementQuery(queryClient, managementQueryKeys.providerPolicy(owner)),
-				refetch(),
-			])
 			return provider
 		},
+		onSettled: () => refresh(),
 		onSuccess: (provider) => {
 			notify({
 				title: '已更新默认实现',
@@ -118,69 +102,63 @@ export function ProviderPolicyCard() {
 		[optionsByKey, pending, policy, updatePolicy],
 	)
 
-	if (!policy) return null
-	const tokenLabel = formatPluginDefinitionReference(policy.token)
-	const currentLabel = policy.defaultProvider
-		? (optionsByKey.get(pluginNodeIndexKey(policy.defaultProvider))?.displayName ??
-			policy.defaultProvider.definition.exportName)
-		: '未设置'
+	return { policy, loading, pending, selectData, handleChange, error: policyQuery.error }
+}
 
+export function PluginProvidedCapability({
+	control,
+}: {
+	control: ReturnType<typeof usePluginProviderPolicy>
+}) {
+	const { policy, loading, pending, selectData, handleChange, error } = control
+	if (!policy && !loading && !error) return null
+	const tokenLabel = policy ? formatPluginDefinitionReference(policy.token) : undefined
 	return (
-		<Paper
-			withBorder
-			radius="sm"
-			p="sm"
-			shadow="none"
-			style={{
-				borderColor: policy.policyOwnerIsDefault
-					? 'var(--plx-accent)'
-					: 'var(--plx-panel-border-strong)',
-			}}
-		>
-			<Group justify="space-between" align="flex-start" wrap="nowrap">
-				<Stack gap={4} style={{ minWidth: 0 }}>
-					<Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-						<Badge
-							variant={policy.policyOwnerIsDefault ? 'filled' : 'light'}
-							color={policy.policyOwnerIsDefault ? 'green' : 'gray'}
-							radius="sm"
-							size="sm"
-							leftSection={policy.policyOwnerIsDefault ? <IconStar size={12} /> : undefined}
-						>
-							提供方默认
-						</Badge>
-						<Text size="sm" fw={600} lineClamp={1} title={tokenLabel}>
+		<section className="plx-pluginDependencyDetail__section">
+			<div className="plx-pluginDependencyDetail__sectionHeader">
+				<Text component="h3" className="plx-pluginDependencyDetail__sectionTitle">
+					提供的能力
+				</Text>
+			</div>
+			{error ? (
+				<Text size="xs" c="red">
+					{runtimeErrorMessage(error, '读取提供的能力失败')}
+				</Text>
+			) : null}
+			{!policy && loading ? (
+				<Text size="xs" c="dimmed">
+					加载中…
+				</Text>
+			) : null}
+			{policy ? (
+				<Stack gap="xs">
+					<Group gap="xs">
+						<Text size="sm" fw={600} title={tokenLabel}>
 							{policy.token.exportName}
 						</Text>
+						{policy.policyOwnerIsDefault ? (
+							<Badge color="green" size="xs" radius="sm">
+								全局默认提供者
+							</Badge>
+						) : null}
 					</Group>
-					<Text size="xs" c="dimmed" lineClamp={2}>
-						当前全局默认：{currentLabel}。供未设置消费覆盖的 Plugin 跟随。
-					</Text>
+					<Box>
+						<Select
+							size="xs"
+							label="全局默认实现"
+							description="影响所有依赖此能力且未单独指定实现的插件。"
+							data={selectData}
+							value={policy.defaultProvider ? pluginNodeIndexKey(policy.defaultProvider) : null}
+							onChange={handleChange}
+							disabled={loading || pending}
+							clearable
+							searchable
+							placeholder="未设置"
+							nothingFoundMessage="暂无可选项"
+						/>
+					</Box>
 				</Stack>
-				<Tooltip label={loading ? '加载中…' : '刷新'} withArrow>
-					<ActionIcon
-						size="sm"
-						variant="subtle"
-						onClick={() => void policyQuery.refetch()}
-						disabled={loading || pending}
-					>
-						<IconRefresh size={14} />
-					</ActionIcon>
-				</Tooltip>
-			</Group>
-			<Box mt="sm">
-				<Select
-					size="sm"
-					label="全局默认实现"
-					data={selectData}
-					value={policy.defaultProvider ? pluginNodeIndexKey(policy.defaultProvider) : null}
-					onChange={(value) => void handleChange(value)}
-					disabled={loading || pending}
-					clearable
-					searchable
-					nothingFoundMessage="暂无可选项"
-				/>
-			</Box>
-		</Paper>
+			) : null}
+		</section>
 	)
 }

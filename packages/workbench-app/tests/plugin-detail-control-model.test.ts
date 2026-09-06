@@ -29,7 +29,7 @@ describe('plugin detail control presentation', () => {
 
 		expect(selection.value).toBe(FOLLOW_DEFAULT_VALUE)
 		expect(selection.data).toEqual([
-			{ value: FOLLOW_DEFAULT_VALUE, label: '跟随默认 · Memory', disabled: false },
+			{ value: FOLLOW_DEFAULT_VALUE, label: '跟随全局默认 · Memory', disabled: false },
 			{
 				value: `provider:${pluginNodeIndexKey(memory)}`,
 				label: 'Memory',
@@ -62,7 +62,7 @@ describe('plugin detail control presentation', () => {
 
 		expect(selection.data[0]).toEqual({
 			value: FOLLOW_DEFAULT_VALUE,
-			label: '跟随默认 · Memory',
+			label: '默认实例 · Memory',
 			disabled: false,
 		})
 	})

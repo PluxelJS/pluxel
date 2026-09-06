@@ -39,7 +39,10 @@ describe('plugin dependency detail', () => {
 					effective: false as const,
 				}),
 				resolvedEdge(owner, absent, 'optional', false),
-				resolvedEdge(owner, provider, 'required', true, 'dependency-override'),
+				{
+					...resolvedEdge(owner, provider, 'required', true, 'dependency-override'),
+					requirement: definition('Cache'),
+				},
 			]),
 		}) satisfies PluginDependencyGraphSnapshot
 		const detail = selectPluginDependencyDetail(buildPluginDependencyGraphProjection(graph), owner)
@@ -64,7 +67,7 @@ describe('plugin dependency detail', () => {
 		expect(markup).toContain('被依赖')
 		expect(markup).toContain('1 生效')
 		expect(markup).toContain('1 未生效')
-		expect(markup).toContain('Provider Plugin')
+		expect(markup).toContain('Cache → Provider Plugin')
 		expect(markup).toContain('Dependent Plugin')
 		expect(markup).toContain('Inactive Dependent')
 		expect(markup).not.toContain('Qualified Provider Plugin')
@@ -73,7 +76,7 @@ describe('plugin dependency detail', () => {
 		expect(markup).toContain('未解析')
 		expect(markup).toContain('缺失')
 		expect(markup).toContain('未生效')
-		expect(markup).toContain('节点覆盖')
+		expect(markup).toContain('当前插件指定')
 		expect(markup).not.toContain('运行中')
 		expect(markup).not.toContain('有效节点')
 		expect(markup).not.toContain('直接解析')
@@ -83,7 +86,7 @@ describe('plugin dependency detail', () => {
 		expect(markup).toContain(`href="/plugins/${status(dependent).route}"`)
 		expect(markup).not.toContain(`href="/plugins/${status(absent).route}"`)
 		expect(markup.match(/aria-label="在依赖图中定位/g)).toHaveLength(5)
-		expect(markup).toContain(`href="${buildPluginGraphEdgeHref(owner, provider.definition)}"`)
+		expect(markup).toContain(`href="${buildPluginGraphEdgeHref(owner, definition('Cache'))}"`)
 		expect(markup).toContain(`href="${buildPluginGraphEdgeHref(dependent, owner.definition)}"`)
 	})
 })
