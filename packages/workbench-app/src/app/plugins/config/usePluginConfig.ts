@@ -60,7 +60,13 @@ async function readSavedConfig(
 	owner: PluginNodeAddress,
 ): Promise<Record<string, unknown>> {
 	const result = await client.config.get(owner)
-	if (result.ok === false) throw new Error(result.message ?? result.code ?? '配置加载失败')
+	if (result.ok === false) {
+		// A Plugin without a config declaration has no persisted config to read. The
+		// presentation query reports that as an empty form, so keep both reads in
+		// agreement instead of turning the Config tab into a load failure.
+		if (result.code === 'config_not_found') return {}
+		throw new Error(result.message ?? result.code ?? '配置加载失败')
+	}
 	return result.config ?? {}
 }
 

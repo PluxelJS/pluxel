@@ -31,6 +31,53 @@ afterEach(async () => {
 })
 
 describe('plugin config queries', () => {
+	it('treats a Plugin without a config schema as an empty config state', async () => {
+		const presentation = vi.fn().mockResolvedValue({
+			ok: false,
+			code: 'presentation_not_found',
+			message: 'No config schema is registered for this Plugin node.',
+		})
+		const get = vi.fn().mockResolvedValue({
+			ok: false,
+			code: 'config_not_found',
+			state: 'unchanged',
+			message: 'No config schema is registered for this Plugin node.',
+		})
+		const client = { config: { presentation, get } } as unknown as RuntimeManagementClient
+		const queryClient = createManagementQueryClient()
+		let latest: PluginConfigState | undefined
+
+		function Probe() {
+			latest = usePluginConfig(firstOwner)
+			return null
+		}
+
+		const root = createRoot(document.body.appendChild(document.createElement('div')))
+		mounted.push(root)
+		await act(async () => {
+			root.render(
+				<RuntimeManagementClientProvider client={client}>
+					<QueryClientProvider client={queryClient}>
+						<Probe />
+					</QueryClientProvider>
+				</RuntimeManagementClientProvider>,
+			)
+			await Promise.resolve()
+		})
+		await act(async () => {
+			await vi.waitFor(() =>
+				expect(latest?.data).toMatchObject({
+					fields: [],
+					savedConfig: {},
+				}),
+			)
+		})
+
+		expect(latest?.error).toBeUndefined()
+		expect(presentation).toHaveBeenCalledOnce()
+		expect(get).toHaveBeenCalledOnce()
+	})
+
 	it('shares reads by owner and lets authoritative mutation data update every consumer', async () => {
 		const presentation = vi.fn().mockResolvedValue({
 			ok: true,
