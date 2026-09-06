@@ -38,27 +38,77 @@ const pluginAddressInput = obj({
 	address: pluginNodeAddress,
 })
 
-const pluginSource = Type.Union([
+const moduleArtifact = Type.Union([
 	obj({
-		kind: Type.Literal('package'),
-		moduleId: Type.String(),
-		packageName: Type.String(),
-		version: Type.Union([Type.String(), Type.Null()]),
-		tag: Type.Union([Type.String(), Type.Null()]),
+		kind: Type.Literal('source-module'),
 	}),
 	obj({
-		kind: Type.Literal('hmr'),
-		moduleId: Type.String(),
-		packageName: Type.Null(),
-		version: Type.Null(),
-		tag: Type.Null(),
+		kind: Type.Literal('built-module'),
 	}),
 	obj({
-		kind: Type.Literal('unknown'),
-		moduleId: Type.Null(),
-		packageName: Type.Null(),
-		version: Type.Null(),
-		tag: Type.Null(),
+		kind: Type.Literal('unreported'),
+	}),
+])
+
+const pluginExecution = Type.Union([
+	obj({
+		kind: Type.Literal('static-bundle'),
+		artifact: obj({ kind: Type.Literal('application-bundle') }),
+		update: obj({ kind: Type.Literal('deployment') }),
+	}),
+	obj({
+		kind: Type.Literal('static-catalog'),
+		artifact: moduleArtifact,
+		update: Type.Union([
+			obj({ kind: Type.Literal('catalog-hmr') }),
+			obj({ kind: Type.Literal('manual') }),
+		]),
+	}),
+	obj({
+		kind: Type.Literal('dynamic-fixed'),
+		artifact: moduleArtifact,
+		update: obj({ kind: Type.Literal('host-reload') }),
+	}),
+	obj({
+		kind: Type.Literal('dynamic-entry'),
+		artifact: obj({ kind: Type.Literal('source-module') }),
+		update: obj({ kind: Type.Literal('definition-hmr'), scope: Type.Literal('source-graph') }),
+	}),
+	obj({
+		kind: Type.Literal('dynamic-entry'),
+		artifact: Type.Union([
+			obj({ kind: Type.Literal('built-module') }),
+			obj({ kind: Type.Literal('unreported') }),
+		]),
+		update: obj({ kind: Type.Literal('definition-hmr'), scope: Type.Literal('entry-only') }),
+	}),
+	obj({
+		kind: Type.Literal('unreported'),
+		artifact: obj({ kind: Type.Literal('unreported') }),
+		update: obj({ kind: Type.Literal('unreported') }),
+	}),
+])
+
+const updateTiming = {
+	sequence: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+	durationMs: Type.Number({ minimum: 0 }),
+}
+const pluginRecentUpdate = Type.Union([
+	obj({ outcome: Type.Literal('applied'), phase: Type.Null(), ...updateTiming }),
+	obj({
+		outcome: Type.Literal('applied-with-issues'),
+		phase: Type.Union([Type.Literal('lifecycle'), Type.Literal('commit')]),
+		...updateTiming,
+	}),
+	obj({
+		outcome: Type.Literal('retained-previous'),
+		phase: Type.Union([Type.Literal('evaluate'), Type.Literal('inject'), Type.Literal('commit')]),
+		...updateTiming,
+	}),
+	obj({
+		outcome: Type.Literal('restored-previous'),
+		phase: Type.Literal('application-reload'),
+		...updateTiming,
 	}),
 ])
 
@@ -102,7 +152,8 @@ const pluginSnapshot = obj({
 			message: Type.String(),
 		}),
 	),
-	source: pluginSource,
+	execution: pluginExecution,
+	recentUpdate: Type.Union([pluginRecentUpdate, Type.Null()]),
 })
 
 const pluginsOutput = obj({

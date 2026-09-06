@@ -128,7 +128,7 @@ export type StaticRuntimeHostOptions = {
 	 * @default In-memory persistence. Node hosts can pass a string root path.
 	 */
 	persistence?: PersistenceServiceConfig
-	/** Shared lazy PostgreSQL capability. Omit for persistent local PGlite. */
+	/** Shared lazy PostgreSQL capability. Omit for local PGlite development/test use. */
 	database?: DatabaseConfig
 	/** Shared bounded worker-task execution policy. */
 	workers?: WorkersConfig

@@ -20,6 +20,17 @@ provider absent、当前未运行或 start-failed 不阻塞 consumer，running g
 definition address 标识源码实现，node address 再区分 default/fork 部署；对应 Slot 只是同一 address 在 Core registry 内的
 引用 key。公开诊断/CLI 使用可逆 reference，HTTP/Workbench 使用可读 v1 route，短 label 只在当前 catalog revision 内用于展示。
 
+Management status 保持 identity 与 execution 分离：package/source label、搜索和 canonical reference 都从 `address` 派生；
+`execution` 只描述当前 definition 来自 static bundle、fixed catalog、dynamic fixed import 还是 mutable entry，以及更新边界是
+deployment、catalog HMR、host reload、manual reload 或 definition HMR。`source-graph` 表示源码依赖图参与 HMR，`entry-only` 表示只承诺 entry
+替换，不承诺 package 内部源码热更新。Source/built 分类只接受 raw lowering 或 active built closure 的 exact positive semantic
+fact；文件扩展名、路径和“未匹配 source”都不能充当证据，缺失或冲突时保持 `unreported`。
+
+`recentUpdate` 区分成功 `applied`、旧 catalog 仍为 authority 的 `retained-previous`、新 catalog 已为 authority 但 commit/lifecycle
+有异常的 `applied-with-issues`，以及 full application reload 通过 fresh compensation host 恢复 previous definition 的
+`restored-previous`。失败 artifact fact generation 会 rollback，失败 Plugin generation 的 partial effects 也会清理；两者都不改变
+canonical identity。这些是只读诊断，不提供在线 execution-mode 切换，也不向 browser 暴露 filesystem path 或 module ID。
+
 插件通过 owner-bound `ctx.commands.register(command)` 发布命令。返回值同时是保留精确 input/output 类型的 executable
 registration 与幂等 disposer；registration 自动进入当前 generation effects，也可手动撤销。每个 root 只有一个 command
 registry，Runtime 的 `list()`、`snapshot()`、`subscribe()` 和 throwing `execute()` 直接委托它，不复制 catalog 状态。

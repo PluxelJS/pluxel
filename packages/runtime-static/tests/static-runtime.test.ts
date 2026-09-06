@@ -18,6 +18,7 @@ import {
 } from '@pluxel/test/unsafe'
 import {
 	getActiveRuntimeLogging,
+	readRuntimePluginStatusOverview,
 	requireRuntimePluginGraphCoordinator,
 } from '@pluxel/runtime/internal'
 import { createWorkbenchBackend } from '@pluxel/runtime/internal/static'
@@ -559,6 +560,48 @@ describe('@pluxel/runtime-static', () => {
 			expect(statusOf(host, ghost)).toBe('unknown-config-entry')
 			expect(requirePluginService(host.ctx).isRunning(StaticA)).toBe(true)
 			expect(requirePluginService(host.ctx).isRunning(StaticB)).toBe(false)
+			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+				pluginNodeAddressEqual(entry.address, addressOf(StaticA)),
+			)
+			expect(status).toMatchObject({
+				execution: {
+					kind: 'static-catalog',
+					artifact: { kind: 'unreported' },
+					update: { kind: 'manual' },
+				},
+				recentUpdate: null,
+			})
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('reports production definitions as application-bundle deployment artifacts', async () => {
+		await using fixture = await createDiskFixture()
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-deployment', plugins: [StaticA] }),
+			{
+				configService: { mode: 'memory' },
+				runtimeState: { mode: 'memory' },
+			},
+			{
+				deployment: {
+					root: fixture.path,
+					nodeModulesDir: fixture.getPath('artifacts/node'),
+					workbenchIncluded: false,
+				},
+			},
+		)
+		try {
+			await host.start()
+			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+				pluginNodeAddressEqual(entry.address, addressOf(StaticA)),
+			)
+			expect(status?.execution).toEqual({
+				kind: 'static-bundle',
+				artifact: { kind: 'application-bundle' },
+				update: { kind: 'deployment' },
+			})
 		} finally {
 			await host.stop()
 		}
@@ -769,6 +812,104 @@ describe('@pluxel/runtime-static', () => {
 			expect(report.replaced).toEqual([stableAddress])
 			expect(hotRuns).toEqual(['v1', 'v2'])
 			expect(requirePluginService(host.ctx).getInstance(HotStaticV1)).toBeInstanceOf(HotStaticV2)
+			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+				pluginNodeAddressEqual(entry.address, stableAddress),
+			)
+			expect(status?.recentUpdate).toMatchObject({
+				outcome: 'applied',
+				phase: null,
+				sequence: 1,
+			})
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('reports a rejected post-commit reload as applied instead of retained', async () => {
+		hotRuns.length = 0
+		const stableAddress = addressOf(HotStaticV1)
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-hmr-post-commit', plugins: [HotStaticV1] }),
+			{
+				configService: { mode: 'memory' },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [stableAddress] } },
+			},
+		)
+		const coordinator = requireRuntimePluginGraphCoordinator(host.ctx)
+		const update = coordinator.update.bind(coordinator)
+		const updateSpy = vi.spyOn(coordinator, 'update').mockImplementation(async (request) => {
+			const report = await update(request)
+			if (request.reason === 'static-hmr') throw new Error('post-commit fixture failure')
+			return report
+		})
+		try {
+			await host.start()
+			await expect(
+				reloadStaticRuntime({
+					host,
+					definition: defineStaticRuntime({
+						name: 'static-hmr-post-commit',
+						plugins: [HotStaticV2],
+					}),
+				}),
+			).rejects.toThrow('post-commit fixture failure')
+
+			expect(host.definition.plugins).toEqual([HotStaticV2])
+			expect(requirePluginService(host.ctx).getInstance(stableAddress)).toBeInstanceOf(HotStaticV2)
+			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+				pluginNodeAddressEqual(entry.address, stableAddress),
+			)
+			expect(status?.recentUpdate).toMatchObject({
+				outcome: 'applied-with-issues',
+				phase: 'commit',
+				sequence: 1,
+			})
+		} finally {
+			updateSpy.mockRestore()
+			await host.stop()
+		}
+	})
+
+	it('records a post-PONR report failure as an applied commit issue', async () => {
+		hotRuns.length = 0
+		const stableAddress = addressOf(HotStaticV1)
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-hmr-report-failure', plugins: [HotStaticV1] }),
+			{
+				configService: { mode: 'memory' },
+				runtimeState: { mode: 'memory', snapshot: { autoStart: [stableAddress] } },
+			},
+		)
+		try {
+			await host.start()
+			const reportSpy = vi
+				.spyOn(
+					host as unknown as { currentReport(): Promise<unknown> },
+					'currentReport',
+				)
+				.mockRejectedValueOnce(new Error('report projection fixture failure'))
+
+			await expect(
+				reloadStaticRuntime({
+					host,
+					definition: defineStaticRuntime({
+						name: 'static-hmr-report-failure',
+						plugins: [HotStaticV2],
+					}),
+				}),
+			).rejects.toThrow('report projection fixture failure')
+
+			expect(host.definition.plugins).toEqual([HotStaticV2])
+			expect(requirePluginService(host.ctx).getInstance(stableAddress)).toBeInstanceOf(HotStaticV2)
+			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+				pluginNodeAddressEqual(entry.address, stableAddress),
+			)
+			expect(status?.recentUpdate).toMatchObject({
+				outcome: 'applied-with-issues',
+				phase: 'commit',
+				sequence: 1,
+			})
+			reportSpy.mockRestore()
 		} finally {
 			await host.stop()
 		}
@@ -863,6 +1004,14 @@ describe('@pluxel/runtime-static', () => {
 			expect(invalid.replaced).toEqual([address])
 			expect(statusOf(host, address)).toBe('config-invalid')
 			expect(requirePluginService(host.ctx).isRunning(HotConfigV2)).toBe(false)
+			const invalidStatus = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find(
+				(entry) => pluginNodeAddressEqual(entry.address, address),
+			)
+			expect(invalidStatus?.recentUpdate).toMatchObject({
+				outcome: 'applied-with-issues',
+				phase: 'lifecycle',
+				sequence: 1,
+			})
 
 			requireConfigService(host.ctx).patchConfig(address, {
 				value: 'ok',

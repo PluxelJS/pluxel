@@ -33,6 +33,13 @@ Structural reject 保留旧 catalog revision。第一次关闭旧 generation adm
 failure 形成新 revision 的 lifecycle facts，不尝试复活旧 implementation。Optional provider 出现、消失或 replacement
 也走同一个 consumer closure stop/start plan。
 
+Route 可以为受影响 definition 记录进程内 `recentUpdate`。`retained-previous` 只用于 point of no return 之前的
+`evaluate`、`inject` 或 `commit` rejection，表示旧 definition 仍是 committed authority。若 candidate catalog 已成为 authority
+后 update 才 rejection，记录 `applied-with-issues / commit`；若 commit 已返回但新 generation 的 lifecycle report 有 issue，记录
+`applied-with-issues / lifecycle`。两者都不能声称 catalog 已回滚；失败 generation 自己已注册的部分 effects 仍按正常 startup
+rollback 清理。无 issue 的成功 replacement 记录 `applied`。`sequence` 与 `durationMs` 用于关联同一进程内的批次和成本；没有被
+route 观察或报告的更新保持 `null`，它不是成功或失败的推断。
+
 Database handle 固定引用一个 active instance。Replacement 先拒绝旧 handle 的新操作并等待已接纳操作排空；同 lineage
 新 generation 复用 instance，schema-derived lineage 改变时构建空 candidate 并原子激活。Database backend、pool、instance
 registry 和 durable rows 属于 root。
@@ -56,6 +63,14 @@ Runtime-dev classifier 固定优先级：
 Bare specifier 与 `/@fs/` 边界使用同一 classifier，workspace alias 不能绕过分类。Project 不注入第二份 Vite
 `InlineConfig` 或自定义 bridge policy。
 
+Artifact classifier 也只消费三态正向证据：raw source lowering 对 exact definition 的事实才能产生 `source-module`；active
+module closure 中 toolchain setter 的 exact literal definition 事实才能产生 `built-module`。文件扩展名、package 路径、未命中
+source transform 或其他 negative match 都不是 built/source 证据；事实缺失或冲突必须是 `unreported`。每次 route update 把这些
+事实放进一个 artifact generation，candidate 接纳后才 commit；evaluate、inject 或 host replacement 失败必须 rollback generation，
+不能让失败 candidate 污染下一次 active classification。候选 transform、evaluation 与 classification 必须运行在该
+generation 的异步 scope 内；不在该 scope 内的并发 ambient transform 仍是独立 authority。Commit 按 module 校验
+generation 开始时的 ambient version，已有更新 ambient 事实的 module 不被旧 candidate 覆盖；rollback 也不撤销这些并发事实。
+
 React transform/refresh 也只有一个 owner：dynamic development 的 `dynamicRuntimeVitePlugin()` 自带
 `@vitejs/plugin-react`，starter 不再重复安装；static host 由应用配置安装；distribution mode 不安装；独立 HMR server
 仅在存在 browser client entry 时安装。Starter smoke 必须同时验证静态、动态入口图和 `/@react-refresh` 的 JavaScript
@@ -69,12 +84,33 @@ Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevS
 
 `staticRuntimeVitePlugin({ entry })` 通过 ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 Plugin
 dependency 变化精确失效 importer graph；application entry/configure graph 变化重建 host。Single-active logging root
-要求先停止旧 host；新 application start 失败时可以从上一次成功 application definition 创建一个新 host，以便开发服务器
-继续重试，但不会保留旧 running generation。
+要求先停止旧 host；新 application start 失败时先停止并清理失败的新 host，再从上一次成功 application definition 创建一个
+fresh host。只有补偿 host 成功启动才记录 `restored-previous / application-reload`。这是 full-host replacement 的 compensation，
+不是保留或复活旧 running generation，也不把同一进程内的普通 definition transaction 改成可回滚；补偿本身失败时不得报告
+restored。
+
+Management status 将当前 committed definition 的执行方式投影为 route-owned `execution` fact，而不是从文件扩展名、
+`displayName` 或 package label 猜测。production static freezer 产物固定为 `static-bundle / application-bundle / deployment`；
+Vite static catalog 仅根据上述 source/built 正向 semantic fact 报告 `source-module` 或 `built-module`，无法证明时使用
+`unreported`，三者的更新方式都是 `catalog-hmr`。它表示 application module closure 变化会在当前 host 内提交 live catalog
+transaction；canonical entry、应用 metadata 或只影响 `configure()` 的依赖变化仍会重建 host。不经过 Vite 的通用 static catalog
+使用 `manual`。Artifact 与更新机制是正交事实：不能用 `source-module` 推断 HMR，也不能因 artifact 未报告而隐藏 route 已知的
+catalog HMR。这些值不提供把 running definition 在线切换到另一种 route/mode 的控制 API。
 
 Dynamic route 先提交 fixed baseline，再处理显式 mutable sources。Source 只接受精确文件或不能逃逸 source directory 的
 正向 include glob，结果最多 10,000 entries。Initial discovery 与 watcher add/change/unlink 共用同一 batch 路径；
 普通 import dependency 变化沿 importer graph 回到 source anchor。
+
+Vite 主 watcher 继续全局忽略 `.pluxel`，避免 persistence、安装目录和 artifact cache 进入通用 module watcher。Dynamic route
+仅为配置已声明且位于 `.pluxel` 下的 source watch root 建立 route-owned supplemental watcher；它不扩大 source 集合，事件仍须通过
+精确 file 或正向 include glob 才进入同一 batch。补充 watcher 在 route shutdown 的 admission barrier 中同步停收并随后关闭。
+
+Dynamic fixed plugin 报告 `dynamic-fixed / host-reload`。Mutable entry 若 semantic collector 以正向事实证明 definition 来自当前 Vite
+source graph，则报告 `dynamic-entry / source-module / definition-hmr:source-graph`；这表示 entry 及其被跟踪的源码依赖都属于
+definition HMR invalidation scope。只有 active closure 中存在 exact built semantic fact 才报告 `built-module`；否则 route 报告
+`unreported`，两者的更新边界都是 `dynamic-entry / definition-hmr:entry-only`。Route 仍监听 producer 原子发布或替换的 entry，
+但不承诺监听 package 内部源码。开发模式安装的外部 package 因此通常是 `entry-only`，并不会仅因 `.mjs` 扩展名、package
+路径或 host 运行在 HMR 模式就获得 built/source 分类或 package source-graph HMR。
 
 Dynamic host 的扫描、存储、module resolution 与日志路径都显式锚定 resolved `root`。启动和 replacement 不得调用
 `process.chdir()`；同进程 Vite 持有自己的 config/root 解析上下文，Plugin 中明确声明为“相对当前工作目录”的路径则继续以
@@ -84,8 +120,10 @@ Source producer 只原子发布普通 ESM entry；package acquisition、lockfile
 Plugin。Dynamic batch 拥有一次 update 内的 unpublished draft，commit 后唯一 authority 是 coordinator immutable snapshot。
 不保留第二份 committed registry 或 post-commit route callback。
 
-Shutdown 顺序是：停止 watcher/batch admission → 丢弃未开始 debounce → 等待 active batch → Core lifecycle/effects
-cleanup → Vite hooks → ModuleRunner close。
+Shutdown 顺序是：停止 watcher/batch/direct-call admission → 等待已接纳的 startup → 丢弃未开始 debounce → 排空 active batch、
+direct execute/warmup 与 Workbench Content refresh 的共享 execution lane → Core lifecycle/effects cleanup → Vite hooks →
+ModuleRunner close。关闭开始后，已接纳的 Content refresh 可以完成原子发布，但不能再发送 browser full reload；跨越关闭边界才取得
+execution lane 的 direct call 必须以 `HmrClosedError` 失败，不能触碰 baseline、semantic source 或 executor。
 
 ## Workbench producer build
 
@@ -145,6 +183,11 @@ Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 
 
 - definition-wide default/fork replacement 不出现 mixed constructor generation；
 - structural reject 保留旧 catalog，PONR 后 failure 只报告 lifecycle facts；
+- execution snapshot 只允许 route/artifact/update 的合法组合，`entry-only` 不误报 package source graph；
+- source/built 只来自 exact positive semantic facts，失败 artifact generation rollback 后不污染 active facts；
+- recent update 区分 retained previous、commit/lifecycle applied-with-issues 与 application-reload restored previous；
+- full-host replacement 只在 fresh compensation host 成功启动后报告 restored previous；
+- Management DTO 不包含 absolute path、`file:` URL、`/@fs/` 或 Vite module ID；
 - optional provider replacement 正确重启 consumer closure；
 - database accepted operations 在 replacement 前 drain；
 - static/dynamic 共享一个 ModuleRunner 与 source classifier；

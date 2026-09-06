@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { FLAT_VIRTUAL_OVERSCAN, type RowDensity } from '../constants'
 import { iid } from '../controllerModel'
-import { SortableRow } from './SortableRow'
+import { SortableRow, type RowMeta } from './SortableRow'
 
 type LinkLikeProps = {
 	to: string
@@ -31,7 +31,7 @@ type FlatPluginListProps = {
 	onSelect: (event: MouseEvent, pluginId: string, mode?: 'click' | 'context' | 'toggle') => void
 	LinkComp?: ComponentType<LinkLikeProps>
 	getName: (id: string) => string
-	getMeta: (id: string) => { tag?: string; version?: string }
+	getMeta: (id: string) => RowMeta
 	dh: RowDensity
 	emptyLabel: string
 	listLabel: string

@@ -5,23 +5,12 @@ import {
 } from '../../internal/reconciliation'
 import {
 	readRuntimeRouteCapabilities,
-	type RuntimePluginSource,
-	unknownPluginSource,
 } from '../../runtime/capabilities'
-import type { PluginSourceSnapshot, PluginStatusSnapshot } from '../../web/protocol'
+import type { PluginStatusSnapshot } from '../../web/protocol'
 import {
 	projectedPluginByAddress,
 	projectPluginCatalogFromView,
 } from '../features/plugins/catalog-projection'
-
-function plainSource(source: RuntimePluginSource): PluginSourceSnapshot {
-	const { __typename: _type, ...rest } = source
-	return rest as PluginSourceSnapshot
-}
-
-function resolvePluginSource(ctx: Context, address: PluginNodeAddress): RuntimePluginSource {
-	return readRuntimeRouteCapabilities(ctx)?.source?.resolveSource(address) ?? unknownPluginSource()
-}
 
 export async function pluginStatus(
 	ctx: Context,
@@ -52,11 +41,10 @@ export async function pluginStatusOverview(ctx: Context): Promise<PluginStatusOv
 export function portablePluginStatus(
 	entry: import('../features/plugins/catalog-projection').PluginCatalogProjectionEntry,
 ): PluginStatusSnapshot {
-	const { nodeKey: _nodeKey, source, issues, ...snapshot } = entry
+	const { nodeKey: _nodeKey, issues, ...snapshot } = entry
 	return {
 		...snapshot,
 		issues: [...issues],
-		source: plainSource(source),
 	}
 }
 
@@ -69,12 +57,6 @@ export function projectCommittedPluginCatalog(ctx: Context, view: RuntimePluginG
 		desiredControl: view.desiredControl,
 		coreNodes: view.coreAdjacency.nodes,
 		runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
-		source: readRuntimeRouteCapabilities(ctx)?.source,
+		recentUpdate: readRuntimeRouteCapabilities(ctx)?.recentUpdate,
 	})
-}
-
-export function pluginSource(ctx: Context, address: PluginNodeAddress) {
-	const source = resolvePluginSource(ctx, address)
-	const { __typename: _type, ...rest } = source
-	return rest
 }

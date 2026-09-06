@@ -1,6 +1,8 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { readFile, realpath } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import {
+	parsePluginDefinitionAddress,
 	pluginDefinitionIndexKey,
 	type PluginDefinitionAddress,
 	type PluginEntryAddress,
@@ -43,6 +45,26 @@ export type PluginSemantics = {
 	readonly transformedCode?: string
 }
 
+export type PluginDefinitionArtifactKind = 'source-module' | 'built-module' | 'unreported'
+
+export type PluginArtifactGeneration = Readonly<{
+	/** Runs evaluation and classification against this generation's isolated artifact-fact view. */
+	run<T>(operation: () => T): T
+	/** Keeps artifact facts collected since this generation began. Idempotent after settlement. */
+	commit(): void
+	/** Discards this generation's artifact facts. Idempotent after settlement. */
+	rollback(): void
+}>
+
+type ArtifactGenerationState = {
+	status: 'active' | 'committed' | 'rolled-back'
+	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>
+	builtDefinitionsByModule: Map<string, ReadonlySet<string>>
+	/** Ambient versions captured with the candidate view when the generation began. */
+	baseVersions: ReadonlyMap<string, number>
+	touchedModules: Set<string>
+}
+
 export type PluginSemanticsPluginOptions = {
 	include?: string | string[]
 	exclude?: string | string[]
@@ -60,6 +82,17 @@ export type PluginSemanticsCollector = {
 	plugin: ViteCompatPlugin
 	snapshot(): Map<string, PluginDependencyMode>
 	definitions(): readonly PluginSemanticDefinition[]
+	/**
+	 * Classifies one definition using only exact lowering facts in the selected module closure.
+	 * Built evidence requires an explicit active module closure; conflicting or absent evidence
+	 * remains unreported.
+	 */
+	classifyDefinitionArtifact(
+		definition: PluginDefinitionAddress,
+		activeModules?: Iterable<string>,
+	): PluginDefinitionArtifactKind
+	/** Begins one non-nested transaction over source/built artifact facts. */
+	beginArtifactGeneration(): PluginArtifactGeneration
 	/** Final canonical Workbench producer plans for this compilation. */
 	workbenchPlans(): Promise<readonly WorkbenchFederationProducerPlan[]>
 	/** Source-only build inputs paired with those exact canonical plans. */
@@ -156,6 +189,7 @@ const AUTHORING_PACKAGES = new Set([
 	'@pluxel/runtime/test',
 	'@pluxel/test',
 ])
+const TOOLCHAIN_PACKAGES = new Set(['@pluxel/core/toolchain', '@pluxel/runtime/toolchain'])
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'] as const
 
 /**
@@ -184,7 +218,10 @@ export function createPluginSemanticsPlugin(
 			'[pluxel:plugin-semantics] helperImportSource must name a /toolchain subpath',
 		)
 	}
-	const collectedDefinitions = new Map<string, PluginSemanticDefinition>()
+	const definitionsByModule = new Map<string, ReadonlyMap<string, PluginSemanticDefinition>>()
+	const builtDefinitionsByModule = new Map<string, ReadonlySet<string>>()
+	const artifactModuleVersions = new Map<string, number>()
+	const artifactGenerationContext = new AsyncLocalStorage<ArtifactGenerationState>()
 	const dependencyInventory = new Map<string, DependencyInventoryNode>()
 	const requiredImports = new Map<string, Set<string>>()
 	const packageOwnerCache = new Map<string, Promise<string | undefined>>()
@@ -192,13 +229,54 @@ export function createPluginSemanticsPlugin(
 	const sourceFileRealpaths = new Map<string, Promise<string>>()
 	let resolvedSourceSpaces: Promise<readonly ResolvedSourceSpace[]> | undefined
 	let packagePlan: PackagePlan | undefined
+	let activeArtifactGeneration: ArtifactGenerationState | undefined
+
+	const mutateArtifactModuleFacts = (
+		moduleId: string,
+		mutation: (
+			definitions: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+			builtDefinitions: Map<string, ReadonlySet<string>>,
+		) => void,
+	): void => {
+		const generation = artifactGenerationContext.getStore()
+		if (generation) {
+			// Async work may outlive settlement. It must never fall through into the ambient facts or
+			// a later generation merely because its original generation has already closed.
+			if (generation !== activeArtifactGeneration || generation.status !== 'active') return
+			mutation(generation.definitionsByModule, generation.builtDefinitionsByModule)
+			const key = semanticModuleKey(moduleId)
+			generation.touchedModules.add(key)
+			return
+		}
+
+		mutation(definitionsByModule, builtDefinitionsByModule)
+		const key = semanticModuleKey(moduleId)
+		artifactModuleVersions.set(key, (artifactModuleVersions.get(key) ?? 0) + 1)
+	}
+
+	const currentArtifactFacts = (): Readonly<{
+		definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>
+		builtDefinitionsByModule: ReadonlyMap<string, ReadonlySet<string>>
+	}> => {
+		const generation = artifactGenerationContext.getStore()
+		return generation === activeArtifactGeneration && generation?.status === 'active'
+			? generation
+			: { definitionsByModule, builtDefinitionsByModule }
+	}
 
 	const plugin: ViteCompatPlugin = {
 		name: 'pluxel:plugin-semantics',
 		enforce: 'pre',
 		async buildStart() {
+			if (activeArtifactGeneration) {
+				this.error(
+					'[pluxel:plugin-semantics] cannot reset semantic facts with an active artifact generation',
+				)
+			}
 			workbenchLowering.reset()
-			collectedDefinitions.clear()
+			definitionsByModule.clear()
+			builtDefinitionsByModule.clear()
+			artifactModuleVersions.clear()
 			dependencyInventory.clear()
 			requiredImports.clear()
 			packageOwnerCache.clear()
@@ -210,10 +288,15 @@ export function createPluginSemanticsPlugin(
 				? await createPackagePlan(options.packageJsonPath, (message) => this.error(message))
 				: undefined
 		},
-		watchChange() {
+		watchChange(id, change) {
 			// Renderer-only edits do not re-run the Plugin transform, but they do change
 			// the immutable producer revision computed by the Workbench lowering pass.
 			workbenchLowering.invalidate()
+			if (change.event === 'delete') {
+				mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
+					clearArtifactModuleFacts(definitions, builtDefinitions, id),
+				)
+			}
 		},
 		transform: {
 			filter: {
@@ -221,10 +304,39 @@ export function createPluginSemanticsPlugin(
 			},
 			async handler(code, rawId) {
 				const id = stripQuery(rawId)
-				if (code.includes('// [pluxel-plugin-semantics] Injected facts')) return null
-				if (!semanticHint(code)) return null
+				const mightContainBuiltFacts = code.includes('__setPluginDefinition')
+				const mightContainSourceFacts = semanticHint(code)
+				if (!mightContainBuiltFacts && !mightContainSourceFacts) {
+					mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
+						clearArtifactModuleFacts(definitions, builtDefinitions, id),
+					)
+					return null
+				}
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[pluxel:plugin-semantics] failed to parse ${id}`)
+				if (mightContainBuiltFacts) {
+					const builtDefinitions = extractPreloweredDefinitionKeys(ast)
+					if (builtDefinitions.size > 0) {
+						mutateArtifactModuleFacts(id, (definitions, currentBuiltDefinitions) =>
+							replaceBuiltModuleDefinitions(
+								definitions,
+								currentBuiltDefinitions,
+								id,
+								builtDefinitions,
+							),
+						)
+						return null
+					}
+				}
+				if (
+					code.includes('// [pluxel-plugin-semantics] Injected facts') ||
+					!mightContainSourceFacts
+				) {
+					mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
+						clearArtifactModuleFacts(definitions, builtDefinitions, id),
+					)
+					return null
+				}
 				const analysis = analyzeModule(ast)
 				const inferredPackagePlan = packagePlan
 					? undefined
@@ -260,9 +372,6 @@ export function createPluginSemanticsPlugin(
 					},
 				})
 
-				for (const definition of result.definitions) {
-					collectedDefinitions.set(definitionKey(definition.definition), definition)
-				}
 				for (const node of result.dependencyInventory) {
 					dependencyInventory.set(node.key, node)
 				}
@@ -281,6 +390,9 @@ export function createPluginSemanticsPlugin(
 						return resolved?.id ? stripQuery(resolved.id) : undefined
 					},
 				})
+				mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
+					replaceSourceModuleDefinitions(definitions, builtDefinitions, id, result.definitions),
+				)
 				if (result.requiredSources.size > 0) {
 					requiredImports.set(id, result.requiredSources)
 					requiredImports.set(rawId, result.requiredSources)
@@ -295,7 +407,9 @@ export function createPluginSemanticsPlugin(
 		},
 		buildEnd() {
 			if (packagePlan) {
-				for (const definition of collectedDefinitions.values()) {
+				for (const definition of collectedSemanticDefinitions(
+					currentArtifactFacts().definitionsByModule,
+				)) {
 					if (definition.definition.entry.kind === 'package-root') continue
 					this.error(
 						`[pluxel:plugin-package] ${definition.className} was not mapped to the package root`,
@@ -309,12 +423,260 @@ export function createPluginSemanticsPlugin(
 		plugin,
 		snapshot: () =>
 			collectReachablePackageDependencies(dependencyInventory, packagePlan?.packageName),
-		definitions: () => [...collectedDefinitions.values()],
+		definitions: () => collectedSemanticDefinitions(currentArtifactFacts().definitionsByModule),
+		classifyDefinitionArtifact: (definition, activeModules) => {
+			const facts = currentArtifactFacts()
+			return classifyCollectedDefinitionArtifact(
+				facts.definitionsByModule,
+				facts.builtDefinitionsByModule,
+				definition,
+				activeModules,
+			)
+		},
+		beginArtifactGeneration: () => {
+			if (activeArtifactGeneration) {
+				throw new Error('[pluxel:plugin-semantics] artifact generation is already active')
+			}
+			const generation: ArtifactGenerationState = {
+				status: 'active',
+				definitionsByModule: new Map(definitionsByModule),
+				builtDefinitionsByModule: new Map(builtDefinitionsByModule),
+				baseVersions: new Map(artifactModuleVersions),
+				touchedModules: new Set(),
+			}
+			activeArtifactGeneration = generation
+			const settle = (rollback: boolean): void => {
+				if (generation.status !== 'active') return
+				if (activeArtifactGeneration !== generation) {
+					throw new Error('[pluxel:plugin-semantics] artifact generation is no longer active')
+				}
+				generation.status = rollback ? 'rolled-back' : 'committed'
+				activeArtifactGeneration = undefined
+				if (rollback) return
+				for (const moduleKey of generation.touchedModules) {
+					const baseVersion = generation.baseVersions.get(moduleKey) ?? 0
+					// A later ambient transform/watch event owns this key. Preserve it instead of
+					// publishing the generation's older candidate fact over newer external state.
+					if ((artifactModuleVersions.get(moduleKey) ?? 0) !== baseVersion) continue
+					copyArtifactModuleFacts(
+						definitionsByModule,
+						builtDefinitionsByModule,
+						generation.definitionsByModule,
+						generation.builtDefinitionsByModule,
+						moduleKey,
+					)
+					artifactModuleVersions.set(moduleKey, baseVersion + 1)
+				}
+			}
+			return Object.freeze({
+				run: <T>(operation: () => T): T => {
+					if (generation.status !== 'active' || activeArtifactGeneration !== generation) {
+						throw new Error('[pluxel:plugin-semantics] artifact generation is already settled')
+					}
+					return artifactGenerationContext.run(generation, operation)
+				},
+				commit: () => settle(false),
+				rollback: () => settle(true),
+			})
+		},
 		workbenchPlans: () => workbenchLowering.plans(),
 		workbenchCompilations: () => workbenchLowering.compilations(),
 		workbenchContentCompilations: () => workbenchLowering.contentCompilations(),
 		invalidateWorkbench: () => workbenchLowering.invalidate(),
 	}
+}
+
+function replaceSourceModuleDefinitions(
+	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+	builtDefinitionsByModule: Map<string, ReadonlySet<string>>,
+	moduleId: string,
+	definitions: readonly PluginSemanticDefinition[],
+): void {
+	const moduleKey = semanticModuleKey(moduleId)
+	builtDefinitionsByModule.delete(moduleKey)
+	if (definitions.length === 0) {
+		definitionsByModule.delete(moduleKey)
+		return
+	}
+	definitionsByModule.set(
+		moduleKey,
+		new Map(definitions.map((definition) => [definitionKey(definition.definition), definition])),
+	)
+}
+
+function replaceBuiltModuleDefinitions(
+	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+	builtDefinitionsByModule: Map<string, ReadonlySet<string>>,
+	moduleId: string,
+	definitions: ReadonlySet<string>,
+): void {
+	const moduleKey = semanticModuleKey(moduleId)
+	definitionsByModule.delete(moduleKey)
+	builtDefinitionsByModule.set(moduleKey, new Set(definitions))
+}
+
+function clearArtifactModuleFacts(
+	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+	builtDefinitionsByModule: Map<string, ReadonlySet<string>>,
+	moduleId: string,
+): void {
+	const moduleKey = semanticModuleKey(moduleId)
+	definitionsByModule.delete(moduleKey)
+	builtDefinitionsByModule.delete(moduleKey)
+}
+
+function copyArtifactModuleFacts(
+	targetDefinitions: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+	targetBuiltDefinitions: Map<string, ReadonlySet<string>>,
+	sourceDefinitions: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+	sourceBuiltDefinitions: ReadonlyMap<string, ReadonlySet<string>>,
+	moduleKey: string,
+): void {
+	targetDefinitions.delete(moduleKey)
+	targetBuiltDefinitions.delete(moduleKey)
+	const definitions = sourceDefinitions.get(moduleKey)
+	const builtDefinitions = sourceBuiltDefinitions.get(moduleKey)
+	if (definitions) targetDefinitions.set(moduleKey, definitions)
+	if (builtDefinitions) targetBuiltDefinitions.set(moduleKey, builtDefinitions)
+}
+
+function collectedSemanticDefinitions(
+	definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+): PluginSemanticDefinition[] {
+	const byDefinition = new Map<string, PluginSemanticDefinition>()
+	for (const definitions of definitionsByModule.values()) {
+		for (const [key, definition] of definitions) byDefinition.set(key, definition)
+	}
+	return [...byDefinition.values()]
+}
+
+function classifyCollectedDefinitionArtifact(
+	definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>,
+	builtDefinitionsByModule: ReadonlyMap<string, ReadonlySet<string>>,
+	definition: PluginDefinitionAddress,
+	activeModules: Iterable<string> | undefined,
+): PluginDefinitionArtifactKind {
+	const key = definitionKey(definition)
+	const active =
+		activeModules === undefined ? undefined : new Set([...activeModules].map(semanticModuleKey))
+	let source = false
+	let built = false
+	for (const [moduleId, definitions] of definitionsByModule) {
+		if ((active === undefined || active.has(moduleId)) && definitions.has(key)) source = true
+	}
+	for (const [moduleId, definitions] of builtDefinitionsByModule) {
+		if ((active === undefined || active.has(moduleId)) && definitions.has(key)) built = true
+	}
+	if (active === undefined && built) return 'unreported'
+	if (source === built) return 'unreported'
+	return source ? 'source-module' : 'built-module'
+}
+
+function extractPreloweredDefinitionKeys(ast: Program): ReadonlySet<string> {
+	const imports = collectImports(ast)
+	const definitions = new Set<string>()
+	walkAst(ast, (node) => {
+		if (
+			node.type !== 'CallExpression' ||
+			!isToolchainCall(node, '__setPluginDefinition', imports)
+		) {
+			return
+		}
+		const args = arrayOf(node.arguments).map((argument) => argument as AstNode)
+		if (
+			args.length !== 2 ||
+			args.some((argument) => argument.type === 'SpreadElement') ||
+			!readIdentifier(args[0])
+		) {
+			return
+		}
+		const payload = readStaticJsonValue(args[1])
+		if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
+		const record = payload as Readonly<Record<string, unknown>>
+		if (
+			record.abiVersion !== PLUGIN_LOWERING_ABI_VERSION ||
+			(record.kind !== 'plugin' && record.kind !== 'abstract')
+		) {
+			return
+		}
+		try {
+			definitions.add(definitionKey(parsePluginDefinitionAddress(record.definition)))
+		} catch {
+			// An invalid or non-static payload is not positive artifact evidence.
+		}
+	})
+	return definitions
+}
+
+const UNREADABLE_STATIC_VALUE = Symbol('unreadable-static-value')
+
+function readStaticJsonValue(node: AstNode | undefined): unknown | typeof UNREADABLE_STATIC_VALUE {
+	if (!node) return UNREADABLE_STATIC_VALUE
+	if (node.type === 'Literal') {
+		return node.value === null ||
+			typeof node.value === 'string' ||
+			typeof node.value === 'number' ||
+			typeof node.value === 'boolean'
+			? node.value
+			: UNREADABLE_STATIC_VALUE
+	}
+	if (node.type === 'ArrayExpression') {
+		const values: unknown[] = []
+		for (const rawElement of arrayOf(node.elements)) {
+			const element = rawElement as AstNode | null
+			if (!element || element.type === 'SpreadElement') return UNREADABLE_STATIC_VALUE
+			const value = readStaticJsonValue(element)
+			if (value === UNREADABLE_STATIC_VALUE) return UNREADABLE_STATIC_VALUE
+			values.push(value)
+		}
+		return values
+	}
+	if (node.type !== 'ObjectExpression') return UNREADABLE_STATIC_VALUE
+	const record: Record<string, unknown> = Object.create(null) as Record<string, unknown>
+	for (const rawProperty of arrayOf(node.properties)) {
+		const property = rawProperty as AstNode
+		if (
+			property.type !== 'Property' ||
+			property.computed === true ||
+			property.kind === 'get' ||
+			property.kind === 'set' ||
+			property.method === true ||
+			property.shorthand === true
+		) {
+			return UNREADABLE_STATIC_VALUE
+		}
+		const key = propertyName(property.key)
+		if (!key || key === '__proto__' || Object.hasOwn(record, key)) {
+			return UNREADABLE_STATIC_VALUE
+		}
+		const value = readStaticJsonValue(property.value as AstNode | undefined)
+		if (value === UNREADABLE_STATIC_VALUE) return UNREADABLE_STATIC_VALUE
+		record[key] = value
+	}
+	return record
+}
+
+function isToolchainCall(
+	call: AstNode,
+	importedName: string,
+	imports: ReadonlyMap<string, ImportBinding>,
+): boolean {
+	const callee = call.callee as AstNode | undefined
+	if (callee?.type === 'Identifier') {
+		const binding = imports.get(readIdentifier(callee) ?? '')
+		return Boolean(
+			binding &&
+			!binding.namespace &&
+			!binding.typeOnly &&
+			binding.imported === importedName &&
+			TOOLCHAIN_PACKAGES.has(binding.source),
+		)
+	}
+	if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== importedName) {
+		return false
+	}
+	const binding = imports.get(readIdentifier(callee.object) ?? '')
+	return Boolean(binding?.namespace && !binding.typeOnly && TOOLCHAIN_PACKAGES.has(binding.source))
 }
 
 /** Pure AST view used by focused tests and diagnostics. */
@@ -1837,8 +2199,12 @@ function definitionKey(address: PluginDefinitionAddress): string {
 	return pluginDefinitionIndexKey(address)
 }
 
+function semanticModuleKey(id: string): string {
+	return resolve(stripQuery(id))
+}
+
 function originKey(id: string, className: string): string {
-	return `${resolve(stripQuery(id))}\0${className}`
+	return `${semanticModuleKey(id)}\0${className}`
 }
 
 function stripQuery(id: string): string {

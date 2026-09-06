@@ -193,12 +193,11 @@ function status(
 		lifecycleState,
 		availability,
 		issues: [],
-		source: {
-			kind: 'unknown',
-			moduleId: null,
-			packageName: null,
-			version: null,
-			tag: null,
+		execution: {
+			kind: 'unreported',
+			artifact: { kind: 'unreported' },
+			update: { kind: 'unreported' },
 		},
+		recentUpdate: null,
 	}
 }

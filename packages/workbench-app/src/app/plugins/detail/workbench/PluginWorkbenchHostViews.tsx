@@ -19,7 +19,7 @@ import { ProviderPolicyCard } from '../cards/ProviderPolicyCard'
 import { PluginDependencyDetailCard } from '../cards/PluginDependencyDetailCard'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
 import { describePluginControl } from '../controls/pluginControlModel'
-import { formatCompactSource } from '../rightPaneState'
+import { describePluginRuntime } from '../../pluginExecutionPresentation'
 import {
 	type PluginWorkbenchView,
 	PluginWorkbenchViewContainer,
@@ -183,19 +183,10 @@ function AssistHostMount({
 }
 
 function PluginContextSummaryCard() {
-	const { pluginLabel, source, status } = usePluginScope()
+	const { status } = usePluginScope()
 	const control = describePluginControl(status)
-	const sourcePreview = useMemo(
-		() =>
-			formatCompactSource(
-				source.moduleId ?? null,
-				source.packageName ?? null,
-				source.version ?? null,
-			),
-		[source.moduleId, source.packageName, source.version],
-	)
-	const sourceBadge = source.kind === 'hmr' ? 'HMR' : source.kind === 'package' ? '包' : '未知'
-	const copyValue = source.moduleId ?? source.packageName ?? null
+	const runtime = describePluginRuntime(status)
+	const { definition, execution, recentUpdate } = runtime
 
 	return (
 		<Paper withBorder radius="sm" p="sm" shadow="none">
@@ -227,46 +218,80 @@ function PluginContextSummaryCard() {
 				</div>
 
 				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">来源</span>
+					<span className="plx-pluginWorkbench__summaryLabel">身份</span>
 					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
-						<Badge size="xs" variant="light" color={source.kind === 'hmr' ? 'blue' : 'gray'}>
-							{sourceBadge}
-						</Badge>
-						{copyValue ? (
-							<CopyButton value={copyValue}>
-								{({ copied, copy }) => (
-									<Tooltip
-										label={
-											copied ? '已复制' : (source.moduleId ?? source.packageName ?? '未知来源')
-										}
-										multiline
-										maw={360}
+						<CopyButton value={runtime.canonicalReference}>
+							{({ copied, copy }) => (
+								<Tooltip
+									label={copied ? 'canonical reference 已复制' : runtime.canonicalReference}
+									multiline
+									maw={360}
+								>
+									<Button
+										type="button"
+										variant="subtle"
+										size="compact-xs"
+										className="plx-pluginWorkbench__metaChip"
+										onClick={copy}
 									>
-										<Button
-											type="button"
-											variant="subtle"
-											size="compact-xs"
-											className="plx-pluginWorkbench__metaChip"
-											onClick={copy}
-										>
-											{sourcePreview}
-										</Button>
-									</Tooltip>
-								)}
-							</CopyButton>
-						) : (
-							<Text className="plx-pluginWorkbench__summaryText" size="sm">
-								{sourcePreview}
-							</Text>
-						)}
+										{runtime.canonicalReference}
+									</Button>
+								</Tooltip>
+							)}
+						</CopyButton>
 					</div>
 				</div>
 
-				<Group gap={6} wrap="wrap">
-					<Badge size="xs" variant="light" color="gray">
-						{pluginLabel}
-					</Badge>
-				</Group>
+				<div className="plx-pluginWorkbench__summaryRow">
+					<span className="plx-pluginWorkbench__summaryLabel">定义</span>
+					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
+						<Badge
+							size="xs"
+							variant="outline"
+							color={definition.entryKind === 'source-entry' ? 'blue' : 'gray'}
+						>
+							{definition.kindLabel}
+						</Badge>
+						<Tooltip label={definition.detailLabel} multiline maw={360}>
+							<Text className="plx-pluginWorkbench__summaryText" size="sm">
+								{definition.detailLabel}
+							</Text>
+						</Tooltip>
+					</div>
+				</div>
+
+				<div className="plx-pluginWorkbench__summaryRow">
+					<span className="plx-pluginWorkbench__summaryLabel">当前执行</span>
+					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
+						<Badge size="xs" variant="light" color={execution.badgeTone}>
+							{execution.badgeLabel}
+						</Badge>
+						<Text className="plx-pluginWorkbench__summaryText" size="sm">
+							{execution.currentLabel} · {execution.artifactLabel}
+						</Text>
+					</div>
+				</div>
+
+				<div className="plx-pluginWorkbench__summaryRow">
+					<span className="plx-pluginWorkbench__summaryLabel">更新方式</span>
+					<Text className="plx-pluginWorkbench__summaryText" size="sm">
+						{execution.updateLabel}
+					</Text>
+				</div>
+
+				<div className="plx-pluginWorkbench__summaryRow">
+					<span className="plx-pluginWorkbench__summaryLabel">最近结果</span>
+					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
+						<Badge size="xs" variant="light" color={recentUpdate.tone}>
+							{recentUpdate.label}
+						</Badge>
+						{recentUpdate.meta ? (
+							<Text className="plx-pluginWorkbench__summaryText" size="xs">
+								{recentUpdate.meta}
+							</Text>
+						) : null}
+					</div>
+				</div>
 
 				{status.issues.length > 0 ? (
 					<Stack gap={4} className="plx-pluginWorkbench__statusIssues">

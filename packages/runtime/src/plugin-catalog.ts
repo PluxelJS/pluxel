@@ -1,12 +1,18 @@
 export {
 	readRuntimePluginStatusOverview,
 	requireRouteCapability,
-	unknownPluginSource,
-	type PluginSourceRead,
+	type PluginRecentUpdateRead,
 	type RuntimeModuleCacheEntry,
 	type RuntimeModuleRuntime,
-	type RuntimePluginSource,
 	type RuntimePluginStatusOverview,
 	type RuntimePluginStatusSnapshot,
 	type RuntimeRouteCapabilities,
 } from './runtime/capabilities'
+export {
+	clonePluginExecutionSnapshot,
+	clonePluginRecentUpdateSnapshot,
+	UNREPORTED_PLUGIN_EXECUTION,
+	type PluginArtifactSnapshot,
+	type PluginExecutionSnapshot,
+	type PluginRecentUpdateSnapshot,
+} from './plugin-execution'

@@ -149,12 +149,11 @@ function status(address: PluginNodeAddress, running = true): PluginStatusSnapsho
 		lifecycleState: running ? 'running' : 'stopped',
 		availability: 'available',
 		issues: [],
-		source: {
-			kind: 'unknown',
-			moduleId: null,
-			packageName: null,
-			version: null,
-			tag: null,
+		execution: {
+			kind: 'unreported',
+			artifact: { kind: 'unreported' },
+			update: { kind: 'unreported' },
 		},
+		recentUpdate: null,
 	}
 }

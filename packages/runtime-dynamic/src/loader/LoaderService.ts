@@ -8,9 +8,12 @@ import {
 	installRuntimeRouteCapabilities,
 	requireRuntimePluginGraphCoordinator,
 } from '@pluxel/runtime/internal'
-import { createLoaderRuntimeRoute } from '../catalog/LoaderRuntimeRoute'
 import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
-import { createPluginCatalogDraft } from './PluginCatalogDraft'
+import {
+	createPluginCatalogDraft,
+	type DynamicPluginExecutionResolver,
+	unreportedDynamicPluginExecution,
+} from './PluginCatalogDraft'
 import {
 	type LoaderBatch,
 	LoaderAnchors,
@@ -26,6 +29,7 @@ export type { LoaderApi, LoaderBatch, LoaderBatchCommitOptions } from './support
 
 export class LoaderService {
 	private readonly moduleReplacer = new ModuleReplacer()
+	private resolveExecution: DynamicPluginExecutionResolver = unreportedDynamicPluginExecution
 	public readonly api: LoaderApi
 
 	constructor(public readonly ctx: PluxelContext) {
@@ -36,14 +40,23 @@ export class LoaderService {
 			anchors: new LoaderAnchors(this.ctx),
 			control: new LoaderControl(this.ctx),
 		}
-		const uninstallRoute = installRuntimeRouteCapabilities(
-			this.ctx,
-			createLoaderRuntimeRoute(this.api),
-		)
+		const uninstallRoute = installRuntimeRouteCapabilities(this.ctx, {})
 		this.ctx.effects.defer(uninstallRoute, {
 			tag: 'RuntimeRouteCapabilities',
 			phase: 'shutdown',
 		})
+	}
+
+	/** @internal Installs the HMR route's immutable catalog-provenance classifier. */
+	configureExecutionResolver(resolveExecution: DynamicPluginExecutionResolver): () => void {
+		const previous = this.resolveExecution
+		this.resolveExecution = resolveExecution
+		let active = true
+		return () => {
+			if (!active) return
+			active = false
+			if (this.resolveExecution === resolveExecution) this.resolveExecution = previous
+		}
 	}
 
 	/** Publish the immutable catalog owned by one evaluated config generation. */
@@ -94,7 +107,11 @@ export class LoaderService {
 
 	beginBatch(): LoaderBatch {
 		const catalog = requireRuntimePluginGraphCoordinator(this.ctx).catalogSnapshot()
-		return new LoaderBatchSession(this.moduleReplacer, createPluginCatalogDraft(catalog), this.ctx)
+		return new LoaderBatchSession(
+			this.moduleReplacer,
+			createPluginCatalogDraft(catalog, this.resolveExecution),
+			this.ctx,
+		)
 	}
 
 	async pruneModule(moduleId: string): Promise<void> {

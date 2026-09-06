@@ -110,7 +110,7 @@
 	align-items: flex-start;
 	display: grid;
 	gap: 6px;
-	grid-template-columns: 36px minmax(0, 1fr);
+	grid-template-columns: 52px minmax(0, 1fr);
 }
 
 .plx-pluginWorkbench__summaryLabel {
@@ -118,6 +118,7 @@
 	font-size: 11px;
 	font-weight: 600;
 	line-height: 1.7;
+	white-space: nowrap;
 }
 
 .plx-pluginWorkbench__summaryValue {
@@ -130,6 +131,10 @@
 
 .plx-pluginWorkbench__summaryValue[data-wrap='true'] {
 	align-items: flex-start;
+}
+
+.plx-pluginWorkbench__summaryValue .plx-pluginWorkbench__metaChip {
+	max-width: 100%;
 }
 
 .plx-pluginWorkbench__summaryText {

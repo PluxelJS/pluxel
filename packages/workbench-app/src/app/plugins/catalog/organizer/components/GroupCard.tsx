@@ -13,7 +13,7 @@ import {
 import type { GroupConfig } from '../types'
 import type { RowDensity } from '../constants'
 import { DroppableContainer } from './DroppableContainer'
-import { SortableRow } from './SortableRow'
+import { SortableRow, type RowMeta } from './SortableRow'
 
 type Props = {
 	g: GroupConfig
@@ -37,7 +37,7 @@ type Props = {
 	isCollapsed: boolean
 	toggleCollapse: () => void
 	getName: (id: string) => string
-	getMeta: (id: string) => { tag?: string; version?: string }
+	getMeta: (id: string) => RowMeta
 	getItemSortableId: (id: string) => UniqueIdentifier
 	dh: RowDensity
 	locked: boolean

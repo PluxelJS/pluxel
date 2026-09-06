@@ -1,19 +1,8 @@
 // context.tsx
 import { createContext, useContext, type ReactNode } from 'react'
-import type { PluginSourceSnapshot } from '../../../runtime'
 import type { PluginStatusEntry } from '../pluginOverview'
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { PluginDependencyDetail } from '../pluginDependencyGraphSelectors'
-
-export type PluginSourceKind = PluginSourceSnapshot['kind']
-
-export type PluginSourceInfo = {
-	kind: PluginSourceKind
-	moduleId: string | null
-	packageName: string | null
-	version: string | null
-	tag: string | null
-}
 
 export interface PluginScopeContextValue {
 	owner: PluginNodeAddress
@@ -27,7 +16,6 @@ export interface PluginScopeContextValue {
 		error?: string
 	}>
 	status: PluginStatusEntry
-	source: PluginSourceInfo
 	refetch: () => Promise<void>
 }
 
@@ -57,7 +45,6 @@ export function usePluginMeta() {
 		pluginLabel: ctx.pluginLabel,
 		description: ctx.description,
 		status: ctx.status,
-		source: ctx.source,
 	}
 }
 

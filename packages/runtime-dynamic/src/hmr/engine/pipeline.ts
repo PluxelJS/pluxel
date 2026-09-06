@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { formatPluginNodeReference, type Context, type PluginNodeAddress } from '@pluxel/core'
+import {
+	formatPluginNodeReference,
+	type CommitSummary,
+	type Context,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { dirname, join } from 'pathe'
 import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
@@ -41,6 +46,8 @@ function formatErrorMessage(error: unknown): string {
 
 export type HmrExecutionResult = {
 	commitResult: RuntimeCommitResult
+	/** Exact core summary returned by this execution's LoaderBatch commit, when core committed. */
+	commitSummary?: CommitSummary
 	commitMs: number
 	affectedModules: readonly string[]
 	syncedModules: readonly string[]
@@ -396,9 +403,11 @@ class HmrRuntimeCommitScheduler {
 	async commitBatch(batch: LoaderBatch): Promise<HmrExecutionResult> {
 		const endCommit = startTimer()
 		let commitResult: RuntimeCommitResult
+		let commitSummary: CommitSummary | undefined
 		try {
 			await this.beforeCommit?.()
-			await batch.commit({ reason: 'hmr' })
+			const report = await batch.commit({ reason: 'hmr' })
+			commitSummary = report.core.status === 'committed' ? report.core.summary : undefined
 			commitResult = { ok: true, val: null }
 		} catch (error) {
 			commitResult = createRuntimeCommitFailureResult(error)
@@ -408,6 +417,7 @@ class HmrRuntimeCommitScheduler {
 		const commitMs = endCommit()
 		return {
 			commitResult,
+			...(commitSummary ? { commitSummary } : {}),
 			commitMs,
 			affectedModules: [],
 			syncedModules: [],
@@ -800,7 +810,11 @@ export class HmrBatchProcessor {
 		this.variantsClean = this.path.variantsClean ?? this.path.variants
 	}
 
-	async process(files: readonly string[], epoch: number): Promise<HmrBatchSummary | null> {
+	async process(
+		files: readonly string[],
+		epoch: number,
+		onExecution?: (result: HmrExecutionResult | undefined) => void,
+	): Promise<HmrBatchSummary | null> {
 		const changed = dedupeIds(files)
 		if (changed.length === 0) return null
 
@@ -856,6 +870,9 @@ export class HmrBatchProcessor {
 			true,
 			ignored ? [] : removed,
 		)
+		// Hand the exact result to the owner before fallible operational projection. This keeps
+		// commit attribution request-scoped even when another runtime mutation commits concurrently.
+		onExecution?.(executed)
 		const commitMs = executed ? roundHmrMs(executed.commitMs) : null
 		const affectedModules = executed?.affectedModules ?? []
 		const syncedModules = executed?.syncedModules ?? []

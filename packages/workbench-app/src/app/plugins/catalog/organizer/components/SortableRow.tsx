@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import {
 	ActionIcon,
 	Anchor,
+	Badge,
 	Box,
 	Group,
 	Text,
@@ -10,7 +11,7 @@ import {
 	useMantineTheme,
 	rgba,
 } from '@mantine/core'
-import { IconCheck, IconGripVertical } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCheck, IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
 	memo,
@@ -20,9 +21,18 @@ import {
 	type MouseEvent,
 	type ReactNode,
 } from 'react'
+import type { PluginPresentationTone } from '../../../pluginExecutionPresentation'
 import type { RowDensity } from '../constants'
 
-type RowMeta = { tag?: string; version?: string }
+export type RowMeta = {
+	definition?: string
+	executionLabel?: string
+	executionTone?: PluginPresentationTone
+	executionDescription?: string
+	recentUpdateWarningLabel?: string
+	recentUpdateWarningTone?: PluginPresentationTone
+	recentUpdateWarningDescription?: string
+}
 type LinkLikeProps = {
 	to: string
 	children: ReactNode
@@ -95,13 +105,10 @@ const SortableRowComponent = ({
 	})
 
 	const metaLabel = useMemo(() => {
-		const tag = meta?.tag?.trim()
-		const version = meta?.version?.trim()
-		if (tag && version) return `${tag}@${version}`
-		if (tag) return tag
-		if (version) return version
-		return ''
-	}, [meta?.tag, meta?.version])
+		return meta?.definition?.trim() ?? ''
+	}, [meta?.definition])
+	const executionLabel = meta?.executionLabel?.trim() ?? ''
+	const recentUpdateWarningLabel = meta?.recentUpdateWarningLabel?.trim() ?? ''
 
 	const href = `/plugins/${pid}`
 
@@ -281,6 +288,42 @@ const SortableRowComponent = ({
 				)}
 			</Box>
 
+			{recentUpdateWarningLabel ? (
+				<Tooltip
+					label={meta?.recentUpdateWarningDescription ?? recentUpdateWarningLabel}
+					withinPortal
+					withArrow
+					openDelay={200}
+				>
+					<Text
+						component="span"
+						c={meta?.recentUpdateWarningTone ?? 'yellow'}
+						aria-label={recentUpdateWarningLabel}
+						style={{ display: 'inline-flex', flexShrink: 0 }}
+					>
+						<IconAlertTriangle size={12} stroke={2.2} aria-hidden="true" />
+					</Text>
+				</Tooltip>
+			) : null}
+
+			{executionLabel ? (
+				<Tooltip
+					label={meta?.executionDescription ?? executionLabel}
+					withinPortal
+					withArrow
+					openDelay={200}
+				>
+					<Badge
+						size="xs"
+						variant="light"
+						color={meta?.executionTone ?? 'gray'}
+						style={{ flexShrink: 0, textTransform: 'none' }}
+					>
+						{executionLabel}
+					</Badge>
+				</Tooltip>
+			) : null}
+
 			{typeof running === 'boolean' && (
 				<Group gap={showStatusLabel ? 6 : 4} wrap="nowrap" aria-label={statusLabel}>
 					<Tooltip
@@ -329,8 +372,15 @@ const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
 	if (prev.dh.px !== next.dh.px) return false
 	if (prev.dh.py !== next.dh.py) return false
 	if (prev.dh.font !== next.dh.font) return false
-	if (prev.meta?.tag !== next.meta?.tag) return false
-	if (prev.meta?.version !== next.meta?.version) return false
+	if (prev.meta?.definition !== next.meta?.definition) return false
+	if (prev.meta?.executionLabel !== next.meta?.executionLabel) return false
+	if (prev.meta?.executionTone !== next.meta?.executionTone) return false
+	if (prev.meta?.executionDescription !== next.meta?.executionDescription) return false
+	if (prev.meta?.recentUpdateWarningLabel !== next.meta?.recentUpdateWarningLabel) return false
+	if (prev.meta?.recentUpdateWarningTone !== next.meta?.recentUpdateWarningTone) return false
+	if (prev.meta?.recentUpdateWarningDescription !== next.meta?.recentUpdateWarningDescription) {
+		return false
+	}
 	return true
 }
 

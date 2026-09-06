@@ -23,12 +23,21 @@ function createExecutor(options: ExecutorOptions) {
 	}
 	logger.error = (message: string, props?: unknown) => options.errorLogs.push({ message, props })
 	const loader = requireLoaderService(host.ctx)
+	const unchangedReport = Object.freeze({
+		catalogRevision: 0,
+		runtimeStateRevision: 0,
+		reconciliation: Object.freeze([]),
+		core: Object.freeze({ status: 'unchanged' as const }),
+	})
 	loader.beginBatch = () =>
 		({
 			replaceModule: options.replaceModule ?? vi.fn(async () => ({})),
 			removeModule: vi.fn(),
 			rollback: options.batchRollback,
-			commit: options.commit ?? vi.fn(),
+			commit: async () => {
+				await options.commit?.()
+				return unchangedReport
+			},
 		}) as ReturnType<typeof loader.beginBatch>
 	const executor = new HmrExecutor(
 		host.ctx,

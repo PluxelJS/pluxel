@@ -1,6 +1,7 @@
 import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,
+	formatPluginNodeReference,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
 	pluginDefinitionIndexKey,
@@ -60,6 +61,7 @@ import type {
 	RuntimePluginLogLevel,
 	VersionedPluginLogPolicySnapshot,
 } from './protocol'
+import { clonePluginExecutionSnapshot, clonePluginRecentUpdateSnapshot } from '../plugin-execution'
 import {
 	parseConfigPresentationPlanV1,
 	parseRuntimePortableData,
@@ -670,7 +672,8 @@ function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapsh
 			'lifecycleState',
 			'availability',
 			'issues',
-			'source',
+			'execution',
+			'recentUpdate',
 		],
 		[],
 		label,
@@ -678,9 +681,14 @@ function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapsh
 	const projectedLabel = object(value.label, `${label}.label`)
 	shape(projectedLabel, ['title', 'text'], ['qualifier'], `${label}.label`)
 	const control = pluginControlSnapshot(value, label)
+	const address = nodeAddress(value.address, `${label}.address`)
+	const reference = text(value.reference, `${label}.reference`)
+	if (reference !== formatPluginNodeReference(address)) {
+		fail(`${label}.reference must match its canonical address`)
+	}
 	return Object.freeze({
-		address: nodeAddress(value.address, `${label}.address`),
-		reference: text(value.reference, `${label}.reference`),
+		address,
+		reference,
 		route: text(value.route, `${label}.route`),
 		displayName: text(value.displayName, `${label}.displayName`),
 		label: Object.freeze({
@@ -702,7 +710,11 @@ function pluginStatusSnapshot(input: unknown, label: string): PluginStatusSnapsh
 				pluginStatusIssue(item, `${label}.issues[${index}]`),
 			),
 		),
-		source: pluginSourceSnapshot(value.source, `${label}.source`),
+		execution: pluginExecutionSnapshot(value.execution, `${label}.execution`),
+		recentUpdate:
+			value.recentUpdate === null
+				? null
+				: pluginRecentUpdateSnapshot(value.recentUpdate, `${label}.recentUpdate`),
 	})
 }
 
@@ -782,46 +794,23 @@ function pluginStatusIssue(input: unknown, label: string): PluginStatusIssue {
 	})
 }
 
-function pluginSourceSnapshot(input: unknown, label: string): PluginStatusSnapshot['source'] {
-	const value = object(input, label)
-	const kind = literal(value.kind, ['package', 'hmr', 'unknown'], `${label}.kind`)
-	shape(value, ['kind', 'moduleId', 'packageName', 'version', 'tag'], [], label)
-	if (kind === 'package') {
-		return Object.freeze({
-			kind,
-			moduleId: text(value.moduleId, `${label}.moduleId`),
-			packageName: text(value.packageName, `${label}.packageName`),
-			version: nullableText(value.version, `${label}.version`),
-			tag: nullableText(value.tag, `${label}.tag`),
-		})
+function pluginExecutionSnapshot(input: unknown, label: string): PluginStatusSnapshot['execution'] {
+	try {
+		return clonePluginExecutionSnapshot(input, label)
+	} catch (error) {
+		fail(error instanceof Error ? error.message : `${label} is invalid`)
 	}
-	if (kind === 'hmr') {
-		if (value.packageName !== null || value.version !== null || value.tag !== null) {
-			fail(`${label} hmr source must have null packageName, version, and tag`)
-		}
-		return Object.freeze({
-			kind,
-			moduleId: text(value.moduleId, `${label}.moduleId`),
-			packageName: null,
-			version: null,
-			tag: null,
-		})
+}
+
+function pluginRecentUpdateSnapshot(
+	input: unknown,
+	label: string,
+): NonNullable<PluginStatusSnapshot['recentUpdate']> {
+	try {
+		return clonePluginRecentUpdateSnapshot(input, label)
+	} catch (error) {
+		fail(error instanceof Error ? error.message : `${label} is invalid`)
 	}
-	if (
-		value.moduleId !== null ||
-		value.packageName !== null ||
-		value.version !== null ||
-		value.tag !== null
-	) {
-		fail(`${label} unknown source must contain only null source fields`)
-	}
-	return Object.freeze({
-		kind,
-		moduleId: null,
-		packageName: null,
-		version: null,
-		tag: null,
-	})
 }
 
 function pluginCatalogSection(input: unknown, label: string): PluginCatalogSection {
@@ -1921,10 +1910,6 @@ function shape(
 function text(input: unknown, label: string): string {
 	if (typeof input !== 'string') fail(`${label} must be a string`)
 	return input
-}
-
-function nullableText(input: unknown, label: string): string | null {
-	return input === null ? null : text(input, label)
 }
 
 function boolean(input: unknown, label: string): boolean {

@@ -3,10 +3,9 @@ import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
 import { memo, useCallback, useMemo } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
-import type { PluginStatusEntry } from '../pluginOverview'
 import { usePluginConfig } from '../config/usePluginConfig'
 import { useWorkbenchDocumentPathname } from '../../workbench/context'
-import { PluginScopeProvider, type PluginSourceKind } from './context'
+import { PluginScopeProvider } from './context'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 import { WorkbenchTargetProvider } from '../../../workbench/runtime'
 import { usePluginDetail } from './usePluginDetail'
@@ -73,23 +72,6 @@ export interface PluginScreenProps {
 	pluginRoute: string
 }
 
-function resolvePluginSource(status: PluginStatusEntry | null): {
-	kind: PluginSourceKind
-	moduleId: string | null
-	packageName: string | null
-	version: string | null
-	tag: string | null
-} {
-	const rawSource = status?.source ?? null
-	return {
-		kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
-		moduleId: rawSource?.moduleId ?? null,
-		packageName: rawSource?.packageName ?? null,
-		version: rawSource?.version ?? null,
-		tag: rawSource?.tag ?? null,
-	}
-}
-
 export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginScreenProps) {
 	const theme = useMantineTheme()
 	// 更早进入纵向堆叠，确保右侧配置区域在窄屏下可读
@@ -140,7 +122,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 			description,
 			dependencyGraph,
 			status: statusEntry,
-			source: resolvePluginSource(statusEntry),
 			refetch: handleRefetch,
 		}
 	}, [

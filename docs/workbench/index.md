@@ -18,6 +18,37 @@ Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
 > host-private 实现：它按 authenticated document session 管理普通 DTO snapshot。两者虽然共用一条 Cap’n Web socket，
 > 但不共享 QueryClient、cache、resource owner 或公共 facade。
 
+## 内置 Plugin 目录诊断
+
+目录行把 definition identity 与 execution 分开显示：包名或源码位置来自 canonical
+`address.definition.entry`，旁边只有一个简短 badge，用来说明更新边界；artifact 则在详情中单独展示。Static Plugin 因此仍会显示自己的
+package/source 定义位置，不再因为缺少 HMR module ID 而显示成“未知来源”；badge 也不重复充当包名或制品标签。
+
+Static Vite catalog 的 badge 是“目录 HMR”，不会因 artifact 是构建 module 或未报告而伪装成“应用重载”或“未知更新”。详情中的
+更新方式说明为“应用模块图变化时热替换插件目录；entry/应用配置边界变化时重建应用”。整宿主补偿的实际结果仍只通过最近更新的
+`restored-previous / application-reload` 表达。
+
+Plugin 详情会分别展示可复制的 canonical reference、定义位置、当前 execution、artifact、更新方式和最近一次进程内更新结果。
+“更新已应用” (`applied`) 表示更新已应用且没有结构化异常；“更新失败 · 已保留上一版本” (`retained-previous`) 表示旧 catalog 始终是
+authority；“新版本已提交 · 生命周期异常/提交后异常”
+(`applied-with-issues / lifecycle|commit`) 表示新 catalog 已经生效，只是 lifecycle 或 post-commit path 有问题。失败 Plugin
+generation 的 partial effects 会清理，但不因此回滚已经发布的 catalog。“应用重载失败 · 已用上一应用定义恢复”
+(`restored-previous / application-reload`) 则表示 full-host candidate 失败后，previous application definition 创建出的 fresh
+compensation host 已成功启动；它不是旧 running generation 被原地保留。最近结果不会改变 canonical identity，页面也不会展示或复制
+Vite module ID、绝对文件路径、`file:` URL 或 package install root。
+
+目录搜索支持以下字段；多个 token 使用 AND：
+
+- 普通关键词：名称、定义位置、导出名、canonical reference 和 execution 词；
+- `@包名`：只匹配 definition address 中的 package name；
+- `ref:关键词`：只匹配 canonical reference；
+- `exec:关键词`：只匹配制品、更新方式和最近结果，例如 `hmr`、`entry-only`、`bundle`、`restored-previous` 或“失败”。
+
+Dynamic dev 中从 package address 加载的外部入口或外部包通常显示“入口 HMR”：producer 原子替换 entry 时仍会触发 definition HMR，但 package 内部源码
+不在 HMR graph 中。只有 raw lowering 的 exact positive fact 能证明源码范围时，badge 才显示“源码 HMR”；只有 active closure 中
+toolchain 提供的 exact built fact 才显示构建 module。文件扩展名、package 路径和没有 source match 都不能推断 provenance，证据
+不足时会诚实显示未报告。
+
 ## 如何选择
 
 - 普通、非敏感的 Plugin 配置：直接声明 `configs.use()`，使用 Workbench 已有的标准 Config UI，不再创建 Content 或 View。
@@ -583,6 +614,10 @@ Plugin package 内，等出现多个独立真实调用方再考虑抽象。
 Renderer 不取得 generic HTTP client、任意 URL navigation、Shell router/store 或 raw WebSocket。需要三栏任务布局时，
 从 `@pluxel/runtime/workbench/react` 使用 `WorkbenchPaneLayout` 和 `WorkbenchPane`；宿主负责 responsive drawer、
 resize、focus 和 workspace persistence。
+
+Pane Kit 的三段语义固定为 `navigation | primary | inspector`：两侧可由当前标签页头部的标准控件显示、隐藏或在窄屏
+打开为 drawer；中间控件用于聚焦 primary 并恢复先前两侧。`primary` 始终可见，不能被隐藏。官方插件详情页中的
+plugin rail、辅助栏和底部 dock 属于另一套宿主私有布局，不应被 View 当作 Pane Kit role 或自行复制其 chrome。
 
 ## 生命周期和故障
 

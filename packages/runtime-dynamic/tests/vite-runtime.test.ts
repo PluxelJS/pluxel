@@ -11,7 +11,16 @@ const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const runner = fileURLToPath(new URL('./support/vite-runtime-runner.mts', import.meta.url))
 
 describe('dynamic Vite runtime', () => {
-	it('keeps business HTTP and WebSocket publication atomic across mutable-source HMR', async () => {
+	it('keeps mutable-source HMR atomic and watches managed entries in the outer Vite route', async () => {
+		const managedPackageName = '@fixture/vite-managed-external'
+		const managedExportName = 'ManagedExternalPlugin'
+		const managedRuntimeBridgeName = 'pluxel.test.runtime-dynamic.vite-managed-external'
+		const managedWrapper = [
+			`export * from ${JSON.stringify(managedPackageName)}`,
+			`import * as pluginModule from ${JSON.stringify(managedPackageName)}`,
+			'export default pluginModule.default',
+			'',
+		].join('\n')
 		await using fixture = await createDiskFixture(
 			{
 				'pnpm-workspace.yaml': 'packages: []\n',
@@ -21,6 +30,29 @@ describe('dynamic Vite runtime', () => {
 					defaults: { roots: [] },
 					profiles: { test: { enabled: [] } },
 				}),
+				'.pluxel/managed-plugins/entries/managed.mjs': managedWrapper,
+				'.pluxel/managed-plugins/node_modules/@fixture/vite-managed-external/package.json':
+					JSON.stringify({
+						name: managedPackageName,
+						type: 'module',
+						exports: './dist/index.mjs',
+					}),
+				'.pluxel/managed-plugins/node_modules/@fixture/vite-managed-external/dist/index.mjs': [
+					`const fixtureRuntime = globalThis[Symbol.for(${JSON.stringify(managedRuntimeBridgeName)})]`,
+					"if (!fixtureRuntime) throw new Error('managed external fixture runtime is unavailable')",
+					'const { BasePlugin, Plugin, setPluginDefinition } = fixtureRuntime',
+					`class ${managedExportName} extends BasePlugin {}`,
+					`Plugin({ displayName: 'Managed external' })(${managedExportName})`,
+					`setPluginDefinition(${managedExportName}, {`,
+					'  abiVersion: 2,',
+					"  kind: 'plugin',",
+					`  definition: { entry: { kind: 'package-root', packageName: ${JSON.stringify(managedPackageName)} }, exportName: ${JSON.stringify(managedExportName)} },`,
+					'  constructorRequires: [],',
+					'  optional: [],',
+					'})',
+					`export { ${managedExportName} }`,
+					'',
+				].join('\n'),
 			},
 			{ tempDir: resolve(workspaceRoot, 'packages/runtime-dynamic/tests') },
 		)
@@ -33,7 +65,10 @@ describe('dynamic Vite runtime', () => {
 				`  root: ${JSON.stringify(fixture.path)},`,
 				"  configPath: 'pluxel.loader.hmr.jsonc',",
 				"  profile: 'test',",
-				"  sources: [{ kind: 'file', path: 'entries/dynamic-http.ts' }],",
+				'  sources: [',
+				"    { kind: 'file', path: 'entries/dynamic-http.ts' },",
+				"    { kind: 'directory', path: '.pluxel/managed-plugins/entries', include: ['*.mjs'] },",
+				'  ],',
 				"  configService: { mode: 'memory' },",
 				"  runtimeState: { mode: 'memory' },",
 				'  workbench: false,',

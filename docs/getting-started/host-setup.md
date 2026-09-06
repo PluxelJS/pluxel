@@ -109,6 +109,18 @@ export default defineConfig({
 
 Vite SSR 加载 canonical entry。Plugin module 变化执行 catalog HMR；entry/configure dependency 变化重建 host；Workbench remote 由开发 compiler 增量构建。
 
+管理界面的执行诊断会把这里的 Plugin 标为 `static-catalog`，并根据 exact positive semantic fact 区分源码 module、已构建 module
+或无法证明；freezer 产出的 production application 则是 `static-bundle`。`.ts`/`.mjs` 扩展名、package 路径或没有命中 source
+transform 都不能证明 artifact 类型。Plugin 的 package/source 名称仍由 canonical address 决定，因此“static”不等于“未知来源”，
+execution 信息也不是运行期切换构建形态的开关，浏览器诊断不会收到 module ID 或绝对路径。Vite 下三种 artifact 都显示
+`catalog-hmr`（“目录 HMR”）：应用模块图变化时热替换插件目录；entry/应用配置边界变化时重建应用。
+
+Plugin module 的 catalog HMR 会以 `applied` 表示更新已应用且没有结构化异常；失败或异常时，Workbench 会区分旧 catalog 仍生效的
+`retained-previous`，以及新 catalog 已提交但
+commit/lifecycle 有异常的 `applied-with-issues`。Entry/configure 触发 full-host replacement 时旧 host 已经停止；若 candidate host
+启动失败，route 会清理 candidate，再用 previous application definition 创建 fresh compensation host。只有补偿成功才显示
+`restored-previous / application-reload`，它不代表旧 running generation 被原地保留或复活。
+
 React、业务 alias 和普通 Vite plugin 属于 host `vite.config.ts`。不要复制 Pluxel semantic transform、SSR package classifier 或 runtime source alias。
 
 包含业务 SPA 的 host 应把 Workbench 安装到非根路径，保持一份 Vite listener、一套 HMR graph 和一个浏览器 origin：
@@ -203,7 +215,7 @@ declare module '@pluxel/runtime/environment' {
 
 变量优先级为 Pluxel/build 默认值 < application string path/Workbench policy < 显式 `PLUXEL_DATA_ROOT`/`PLUXEL_WORKBENCH`。环境值非法时启动 fail-fast；不会静默回退。
 
-freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使 `configure()` 可以在启动时选择任一 backend。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
+freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使本机开发/测试可选择 PGlite、部署可选择 PostgreSQL。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
 
 ```ts twoslash
 export default staticApplication({
@@ -289,6 +301,12 @@ Dynamic route 只拥有 file/source lifecycle：watch、OXC resolution、module 
 Dynamic `root` 是 source、runtime storage 与 module resolution 的显式路径基准，不会改变 Vite 进程的 working directory。Plugin 配置中注明“相对当前工作目录”的路径仍以 launcher cwd 为准；如果 dynamic `root` 与它不同，应在配置模块中生成绝对路径。
 
 运行期安装 package 时显式装配官方 [Package Manager Plugin](../plugins/package-manager.md)；它把受管 package 原子发布成 `.mjs` source entry，dynamic route 只观察这些文件。
+
+这类受管 `.mjs` entry 仍可在文件被替换时触发 definition HMR，但 `.mjs` 本身不证明它是 built artifact。只有 active closure 中的
+exact built semantic fact 才显示 `built-module / entry-only`；没有证据时显示 `unreported / entry-only`。两者都只承诺观察 entry，
+不会因为 host 处于开发模式就监听已安装 package 的内部源码。只有 raw source lowering 的 exact fact 能证明 definition 来自当前
+源码图时才显示 `source-module / source-graph`。失败 update 的 semantic fact generation 会 rollback；package/source 名称始终从
+canonical address 派生，不从 HMR 状态猜测。
 
 ### Programmatic dev runtime
 

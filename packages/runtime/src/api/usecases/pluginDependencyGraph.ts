@@ -13,11 +13,14 @@ import {
 	type RuntimePluginGraphCommittedView,
 } from '../../internal/reconciliation'
 import { readRuntimeRouteCapabilities } from '../../runtime/capabilities'
+import {
+	clonePluginExecutionSnapshot,
+	clonePluginRecentUpdateSnapshot,
+} from '../../plugin-execution'
 import type {
 	PluginDependencyGraphEdge,
 	PluginDependencyGraphNode,
 	PluginDependencyGraphSnapshot,
-	PluginSourceSnapshot,
 	PluginStatusSnapshot,
 } from '../../web/protocol'
 import {
@@ -44,7 +47,7 @@ export function projectPluginDependencyGraph(
 		desiredControl: view.desiredControl,
 		coreNodes: view.coreAdjacency.nodes,
 		runningNodeKeys,
-		source: readRuntimeRouteCapabilities(ctx)?.source,
+		recentUpdate: readRuntimeRouteCapabilities(ctx)?.recentUpdate,
 	})
 	const appliedNodeKeys = new Set(view.applied.nodes.keys())
 	const coreNodeKeys = new Set(view.coreAdjacency.nodes.map(pluginNodeIndexKey))
@@ -181,14 +184,15 @@ function projectRequiredEdge(input: {
 }
 
 function freezePluginStatus(entry: PluginCatalogProjectionEntry): PluginStatusSnapshot {
-	const { nodeKey: _nodeKey, source, issues, label, address, ...status } = entry
-	const { __typename: _typename, ...plainSource } = source
+	const { nodeKey: _nodeKey, execution, recentUpdate, issues, label, address, ...status } = entry
 	return Object.freeze({
 		...status,
 		address: cloneNodeAddress(address),
 		label: Object.freeze({ ...label }),
 		issues: Object.freeze(issues.map((issue) => Object.freeze({ ...issue }))),
-		source: Object.freeze({ ...plainSource }) as PluginSourceSnapshot,
+		execution: clonePluginExecutionSnapshot(execution),
+		recentUpdate:
+			recentUpdate === null ? null : clonePluginRecentUpdateSnapshot(recentUpdate),
 	})
 }
 

@@ -20,7 +20,10 @@ describe('static Vite runtime', () => {
 		const pluginPath = fixture.getPath('packages/vite-static/src/index.ts')
 		const pluginRoot = fixture.getPath('packages/vite-static')
 		const pluginLink = fixture.getPath('node_modules/@fixture/vite-static')
+		const builtPluginRoot = fixture.getPath('packages/vite-built')
+		const builtPluginLink = fixture.getPath('node_modules/@fixture/vite-built')
 		await mkdir(fixture.getPath('packages/vite-static/src'), { recursive: true })
+		await mkdir(fixture.getPath('packages/vite-built/dist'), { recursive: true })
 		await fixture.writeFile(
 			'packages/vite-static/package.json',
 			JSON.stringify({
@@ -35,8 +38,18 @@ describe('static Vite runtime', () => {
 			}),
 		)
 		await fixture.writeFile('packages/vite-static/src/index.ts', pluginSource('v1', true))
+		await fixture.writeFile(
+			'packages/vite-built/package.json',
+			JSON.stringify({
+				name: '@fixture/vite-built',
+				type: 'module',
+				exports: { '.': './dist/index.mjs' },
+			}),
+		)
+		await fixture.writeFile('packages/vite-built/dist/index.mjs', builtPluginSource())
 		await mkdir(fixture.getPath('node_modules/@fixture'), { recursive: true })
 		await symlink(pluginRoot, pluginLink, 'dir')
+		await symlink(builtPluginRoot, builtPluginLink, 'dir')
 		await fixture.writeFile(
 			'pluxel.static.ts',
 			[
@@ -86,6 +99,9 @@ describe('static Vite runtime', () => {
 					PLUXEL_VITE_SMOKE_ROOT: fixture.path,
 					PLUXEL_VITE_SMOKE_ENTRY: entryPath,
 					PLUXEL_VITE_SMOKE_PLUGIN: pluginPath,
+					PLUXEL_VITE_SMOKE_BUILT_PLUGIN: fixture.getPath(
+						'packages/vite-built/dist/index.mjs',
+					),
 					PLUXEL_VITE_SMOKE_CACHE: fixture.getPath('.vite-cache'),
 					VITE_STATIC_LABEL: 'configured-through-vite',
 				},
@@ -99,6 +115,7 @@ function pluginSource(version: string, available: boolean): string {
 	return [
 		"import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'",
 		"import { websocket } from 'elysia/websocket'",
+		"import { BuiltStatic } from '@fixture/vite-built'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		"@Plugin({ displayName: 'Vite static', forkable: true })",
 		'export class ViteStatic extends BasePlugin {',
@@ -128,7 +145,24 @@ function pluginSource(version: string, available: boolean): string {
 		"  injected = ''",
 		'  protected override init() { this.injected = this.required.marker() }',
 		'}',
-		`export const runtimePlugins = ${available ? '[ViteStatic, ConfiguredPlugin, PartProvider, PartOwner]' : '[ConfiguredPlugin, PartProvider, PartOwner]'}`,
+		`export const runtimePlugins = ${available ? '[ViteStatic, ConfiguredPlugin, PartProvider, PartOwner, BuiltStatic]' : '[ConfiguredPlugin, PartProvider, PartOwner, BuiltStatic]'}`,
+		'',
+	].join('\n')
+}
+
+function builtPluginSource(): string {
+	return [
+		'// [pluxel-plugin-semantics] Injected facts',
+		"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+		"import { __setPluginDefinition } from '@pluxel/runtime/toolchain'",
+		'class BuiltStatic extends BasePlugin {}',
+		"Plugin({ displayName: 'Built static' })(BuiltStatic)",
+		'__setPluginDefinition(BuiltStatic, {',
+		'  abiVersion: 2,',
+		"  kind: 'plugin',",
+		"  definition: { entry: { kind: 'package-root', packageName: '@fixture/vite-built' }, exportName: 'BuiltStatic' },",
+		'})',
+		'export { BuiltStatic }',
 		'',
 	].join('\n')
 }

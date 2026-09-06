@@ -16,32 +16,12 @@ import {
 } from '../internal/reconciliation'
 import { runtimeStateReadIndex } from '../services/RuntimeStateHelpers'
 import type { RuntimeStateSnapshot } from '../services/RuntimeStateStore'
-
-export type RuntimePluginSource =
-	| {
-			__typename: 'PluginSourceInfo'
-			kind: 'package'
-			moduleId: string
-			packageName: string
-			version: string | null
-			tag: string | null
-	  }
-	| {
-			__typename: 'PluginSourceInfo'
-			kind: 'hmr'
-			moduleId: string
-			packageName: null
-			version: null
-			tag: null
-	  }
-	| {
-			__typename: 'PluginSourceInfo'
-			kind: 'unknown'
-			moduleId: null
-			packageName: null
-			version: null
-			tag: null
-	  }
+import {
+	clonePluginRecentUpdateSnapshot,
+	UNREPORTED_PLUGIN_EXECUTION,
+	type PluginExecutionSnapshot,
+	type PluginRecentUpdateSnapshot,
+} from '../plugin-execution'
 
 export type RuntimePluginAvailability = 'available' | 'unavailable'
 export type RuntimePluginReconciliationCode =
@@ -75,7 +55,8 @@ export type RuntimePluginStatusSnapshot = RuntimePluginCatalogEntry & {
 	lifecycleState: 'running' | 'stopped'
 	availability: RuntimePluginAvailability
 	issues: readonly RuntimePluginStatusIssue[]
-	source: RuntimePluginSource
+	execution: PluginExecutionSnapshot
+	recentUpdate: PluginRecentUpdateSnapshot | null
 }
 
 export type RuntimePluginStatusOverview = {
@@ -83,8 +64,8 @@ export type RuntimePluginStatusOverview = {
 	summary: { total: number; running: number; stopped: number; autoStart: number }
 }
 
-export interface PluginSourceRead {
-	resolveSource(address: PluginNodeAddress): RuntimePluginSource
+export interface PluginRecentUpdateRead {
+	resolveRecentUpdate(address: PluginNodeAddress): PluginRecentUpdateSnapshot | null
 }
 
 /** @internal Fixed inputs shared by status and dependency-graph projection. */
@@ -96,7 +77,7 @@ export type RuntimePluginStatusProjectionView = Readonly<{
 	desiredControl: ReadonlyMap<string, RuntimePluginDesiredControl>
 	coreNodes: readonly PluginNodeAddress[]
 	runningNodeKeys: ReadonlySet<string>
-	source: PluginSourceRead | undefined
+	recentUpdate: PluginRecentUpdateRead | undefined
 }>
 
 export interface RuntimeModuleCacheEntry {
@@ -113,7 +94,7 @@ export interface RuntimeModuleRuntime {
 }
 
 export type RuntimeRouteCapabilities = {
-	source?: PluginSourceRead
+	recentUpdate?: PluginRecentUpdateRead
 	modules?: RuntimeModuleRuntime
 	dynamicPluginSources?: {
 		hasFile(path: string): boolean
@@ -179,17 +160,6 @@ export function runtimeModuleRuntime(ctx: Context): RuntimeModuleRuntime {
 	return readRuntimeRouteCapabilities(ctx)?.modules ?? identityModuleRuntime
 }
 
-export function unknownPluginSource(): RuntimePluginSource {
-	return {
-		__typename: 'PluginSourceInfo',
-		kind: 'unknown',
-		moduleId: null,
-		packageName: null,
-		version: null,
-		tag: null,
-	}
-}
-
 function createRuntimePluginStatusProjectionFromView(view: RuntimePluginStatusProjectionView) {
 	const catalog = view.catalog
 	const state = view.state
@@ -226,7 +196,7 @@ function createRuntimePluginStatusProjectionFromView(view: RuntimePluginStatusPr
 		sessionIntents: view.sessionIntents,
 		desiredControl: view.desiredControl,
 		coreNodes: view.coreNodes,
-		source: view.source,
+		recentUpdate: view.recentUpdate,
 	}
 }
 
@@ -258,6 +228,7 @@ function projectRuntimePluginStatus(
 			}),
 		)
 	}
+	const recentUpdate = projection.recentUpdate?.resolveRecentUpdate(entry.address) ?? null
 	return {
 		...entry,
 		autoStart,
@@ -267,7 +238,14 @@ function projectRuntimePluginStatus(
 		lifecycleState,
 		availability: available ? 'available' : 'unavailable',
 		issues: Object.freeze(issues),
-		source: projection.source?.resolveSource(entry.address) ?? unknownPluginSource(),
+		execution: definition?.provenance.execution ?? UNREPORTED_PLUGIN_EXECUTION,
+		recentUpdate:
+			recentUpdate === null
+				? null
+				: clonePluginRecentUpdateSnapshot(
+						recentUpdate,
+						`Recent update for ${pluginNodeIndexKey(entry.address)}`,
+					),
 	}
 }
 
@@ -283,7 +261,7 @@ export async function readRuntimePluginStatusOverview(
 			desiredControl: view.desiredControl,
 			coreNodes: view.coreAdjacency.nodes,
 			runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
-			source: readRuntimeRouteCapabilities(ctx)?.source,
+			recentUpdate: readRuntimeRouteCapabilities(ctx)?.recentUpdate,
 		}),
 	)
 }

@@ -16,6 +16,11 @@ Rolldown/Vite 工具链入口：
   `pluginSourceVitePlugins()` 与 `pluxelRuntimeSourceVitePlugins()` 支持显式 `sourceSpaces` 映射；配置、`realpath`
   containment 和 identity 边界见
   [`../../docs/development/tooling.md`](../../docs/development/tooling.md#source-build-boundary)。
+  Route 必须在 `beginArtifactGeneration().run(...)` 中完成候选 transform、evaluation 与分类，只在候选被接纳后
+  `commit()`；`rollback()` 只丢弃该异步 scope 内的候选事实。并发但不在该 scope 内的 ambient transform
+  保持独立 authority，commit 不会覆盖 generation 开始后已更新的同 module 事实。
+  通用 Vite source adapter 始终让主 watcher 忽略 `.pluxel`；确实消费 generated source 的 runtime route 必须自己只为
+  明确声明的 root 建补充 watcher，并继续执行精确 file 或正向 include filter 准入。
 - `@pluxel/rolldown/distribution`：static artifact-set finalizer、in-toto/DSSE helper、offline verifier 和 inert delivery
   marker；raw v1 schema 位于 `@pluxel/rolldown/distribution/schema.json`。用户流程见
   [`../../docs/development/distribution.md`](../../docs/development/distribution.md)，维护约束见

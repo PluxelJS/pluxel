@@ -187,6 +187,11 @@ describe('LoaderService', () => {
 			requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot().entries[0]?.provenance,
 		).toEqual({
 			moduleId: 'catalog.ts',
+			execution: {
+				kind: 'unreported',
+				artifact: { kind: 'unreported' },
+				update: { kind: 'unreported' },
+			},
 		})
 	})
 

@@ -15,8 +15,12 @@ export const DEFAULT_STATUS_FILTER: StatusFilterState = {
 type SearchablePluginStatus = {
 	name?: string
 	packageName?: string
-	tag?: string
-	version?: string
+	sourceSpace?: string
+	sourcePath?: string
+	exportName?: string
+	reference?: string
+	executionSearchTerms?: readonly string[]
+	recentUpdateSearchTerms?: readonly string[]
 	availability?: 'available' | 'unavailable'
 	lifecycleState?: 'running' | 'stopped'
 }
@@ -25,9 +29,8 @@ export function hasActiveSearchTokens(tokens: SearchTokens): boolean {
 	return (
 		tokens.plain.length > 0 ||
 		tokens.pkg.length > 0 ||
-		tokens.tag.length > 0 ||
-		tokens.version.length > 0 ||
-		tokens.id.length > 0
+		tokens.reference.length > 0 ||
+		tokens.execution.length > 0
 	)
 }
 
@@ -40,16 +43,21 @@ export function matchesGroupSearch(name: string, tokens: SearchTokens): boolean 
 }
 
 export function matchesPluginSearch(
-	pluginId: string,
+	_pluginId: string,
 	status: SearchablePluginStatus | undefined,
 	tokens: SearchTokens,
 	filter: StatusFilterState,
 ): boolean {
 	const name = (status?.name || '').toLowerCase()
 	const pkg = (status?.packageName || '').toLowerCase()
-	const tag = (status?.tag || '').toLowerCase()
-	const version = (status?.version || '').toLowerCase()
-	const idValue = pluginId.toLowerCase()
+	const sourceSpace = (status?.sourceSpace || '').toLowerCase()
+	const sourcePath = (status?.sourcePath || '').toLowerCase()
+	const exportName = (status?.exportName || '').toLowerCase()
+	const reference = (status?.reference || '').toLowerCase()
+	const runtimeFields = [
+		...(status?.executionSearchTerms ?? []),
+		...(status?.recentUpdateSearchTerms ?? []),
+	].map((field) => field.toLowerCase())
 
 	const available = status?.availability !== 'unavailable'
 	const running = available && status?.lifecycleState === 'running'
@@ -61,15 +69,15 @@ export function matchesPluginSearch(
 		(filter.unavailable && unavailable)
 	if (!statusOk) return false
 
-	const plainOk = tokens.plain.every((term) =>
-		[name, pkg, tag, version, idValue].some((field) => field.includes(term)),
-	)
+	const plainFields = [name, pkg, sourceSpace, sourcePath, exportName, reference, ...runtimeFields]
+	const plainOk = tokens.plain.every((term) => plainFields.some((field) => field.includes(term)))
 	const pkgOk = tokens.pkg.every((term) => pkg.includes(term))
-	const tagOk = tokens.tag.every((term) => tag.includes(term))
-	const versionOk = tokens.version.every((term) => version.includes(term))
-	const idOk = tokens.id.every((term) => idValue.includes(term))
+	const referenceOk = tokens.reference.every((term) => reference.includes(term))
+	const executionOk = tokens.execution.every((term) =>
+		runtimeFields.some((field) => field.includes(term)),
+	)
 
-	return plainOk && pkgOk && tagOk && versionOk && idOk
+	return plainOk && pkgOk && referenceOk && executionOk
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {

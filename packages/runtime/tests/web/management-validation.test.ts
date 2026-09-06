@@ -44,7 +44,7 @@ const report = {
 
 const plugin = {
 	address,
-	reference: '@fixture/management-validation:FixturePlugin',
+	reference: 'package:@fixture/management-validation::FixturePlugin',
 	route: '/v1/package/FixturePlugin/@fixture/management-validation',
 	displayName: 'Fixture Plugin',
 	label: { title: 'Fixture Plugin', text: 'Fixture Plugin' },
@@ -56,13 +56,12 @@ const plugin = {
 	lifecycleState: 'stopped',
 	availability: 'available',
 	issues: [],
-	source: {
-		kind: 'package',
-		moduleId: '@fixture/management-validation',
-		packageName: '@fixture/management-validation',
-		version: '1.0.0',
-		tag: null,
+	execution: {
+		kind: 'static-bundle',
+		artifact: { kind: 'application-bundle' },
+		update: { kind: 'deployment' },
 	},
+	recentUpdate: null,
 } as const
 
 const section = {
@@ -235,6 +234,134 @@ describe('management protocol validation', () => {
 			revision: 3,
 			persistence: 'dirty',
 		})
+	})
+
+	it('validates portable execution diagnostics without exposing physical module identity', () => {
+		const result = parsePluginStatusQueryResult({
+			ok: true,
+			value: {
+				...plugin,
+				execution: {
+					kind: 'dynamic-entry',
+					artifact: { kind: 'built-module' },
+					update: { kind: 'definition-hmr', scope: 'entry-only' },
+				},
+				recentUpdate: {
+					outcome: 'restored-previous',
+					phase: 'application-reload',
+					sequence: 7,
+					durationMs: 4.5,
+				},
+			},
+		})
+		expect(result).toMatchObject({
+			ok: true,
+			value: {
+				execution: {
+					kind: 'dynamic-entry',
+					artifact: { kind: 'built-module' },
+					update: { kind: 'definition-hmr', scope: 'entry-only' },
+				},
+				recentUpdate: {
+					outcome: 'restored-previous',
+					phase: 'application-reload',
+				},
+			},
+		})
+		if (!result.ok || !result.value) throw new Error('expected one Plugin status')
+		expect(Object.isFrozen(result.value.execution)).toBe(true)
+		expect(Object.isFrozen(result.value.execution.artifact)).toBe(true)
+		expect(Object.isFrozen(result.value.execution.update)).toBe(true)
+		expect(Object.isFrozen(result.value.recentUpdate)).toBe(true)
+		const serialized = JSON.stringify(result.value)
+		expect(serialized).not.toContain('moduleId')
+		expect(serialized).not.toContain('file://')
+		expect(serialized).not.toContain('/@fs/')
+		expect(serialized).not.toContain('/private/host')
+
+		expect(() =>
+			parsePluginStatusQueryResult({
+				ok: true,
+				value: {
+					...plugin,
+					execution: {
+						kind: 'dynamic-entry',
+						artifact: {
+							kind: 'built-module',
+							moduleId: 'file:///private/host/plugin.mjs',
+						},
+						update: { kind: 'definition-hmr', scope: 'entry-only' },
+					},
+				},
+			}),
+		).toThrow(/unsupported field moduleId/)
+		expect(() =>
+			parsePluginStatusQueryResult({
+				ok: true,
+				value: {
+					...plugin,
+					execution: {
+						kind: 'dynamic-entry',
+						artifact: { kind: 'source-module' },
+						update: { kind: 'definition-hmr', scope: 'entry-only' },
+					},
+				},
+			}),
+		).toThrow(/invalid execution, artifact, and update combination/)
+		expect(() =>
+			parsePluginStatusQueryResult({
+				ok: true,
+				value: {
+					...plugin,
+					recentUpdate: {
+						outcome: 'applied',
+						phase: null,
+						sequence: 0,
+						durationMs: -1,
+					},
+				},
+			}),
+		).toThrow(/sequence must be a positive safe integer/)
+		expect(() =>
+			parsePluginStatusQueryResult({
+				ok: true,
+				value: {
+					...plugin,
+					recentUpdate: {
+						outcome: 'applied-with-lifecycle-issues',
+						phase: 'lifecycle',
+						sequence: 1,
+						durationMs: 1,
+					},
+				},
+			}),
+		).toThrow(/outcome must be one of/)
+		expect(() =>
+			parsePluginStatusQueryResult({
+				ok: true,
+				value: {
+					...plugin,
+					recentUpdate: {
+						outcome: 'restored-previous',
+						phase: 'commit',
+						sequence: 1,
+						durationMs: 1,
+					},
+				},
+			}),
+		).toThrow(/phase must be application-reload/)
+	})
+
+	it('rejects a display reference that contradicts the canonical Plugin address', () => {
+		expect(() =>
+			parsePluginStatusQueryResult({
+				ok: true,
+				value: {
+					...plugin,
+					reference: '@fixture/other:FixturePlugin',
+				},
+			}),
+		).toThrow(/reference must match its canonical address/)
 	})
 
 	it('rejects open shapes, dangerous fields, malformed addresses, and dishonest states', () => {

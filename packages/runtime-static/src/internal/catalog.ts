@@ -1,8 +1,14 @@
-import { formatPluginNodeReference, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
+import {
+	formatPluginNodeReference,
+	pluginNodeIndexKey,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
 import {
 	createPluginRouteCatalogSnapshot,
 	pluginCatalogEntry,
+	type PluginExecutionSnapshot,
 	type PluginRouteCatalogEntry,
 	type PluginRouteCatalogSnapshot,
 } from '@pluxel/runtime/internal'
@@ -17,6 +23,9 @@ type ConfigShape = Readonly<{
 
 export type StaticRuntimeCatalog = PluginRouteCatalogSnapshot
 export type StaticRuntimeCatalogEntryInternal = PluginRouteCatalogEntry
+export type StaticRuntimeExecutionResolver = (
+	definition: PluginDefinitionAddress,
+) => PluginExecutionSnapshot
 
 export type StaticRuntimeCatalogDiff = Readonly<{
 	readonly added: readonly PluginNodeAddress[]
@@ -27,13 +36,19 @@ export type StaticRuntimeCatalogDiff = Readonly<{
 export function buildCatalog(
 	definition: StaticRuntimeDefinition,
 	revision: number,
+	resolveExecution: StaticRuntimeExecutionResolver,
 ): StaticRuntimeCatalog {
 	return createPluginRouteCatalogSnapshot(
 		revision,
-		definition.plugins.map((implementation) => ({
-			candidate: readCandidate(implementation),
-			provenance: Object.freeze({}),
-		})),
+		definition.plugins.map((implementation) => {
+			const candidate = readCandidate(implementation)
+			return {
+				candidate,
+				provenance: Object.freeze({
+					execution: resolveExecution(candidate.declaration.address),
+				}),
+			}
+		}),
 	)
 }
 

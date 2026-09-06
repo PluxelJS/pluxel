@@ -262,7 +262,7 @@ describe('Runtime Session over the production Node carrier', () => {
 			const layout = await ready.workbench.layout({ target: null })
 			try {
 				expect(management).toMatchObject({
-					protocol: { name: 'pluxel.management', major: 3 },
+					protocol: { name: 'pluxel.management', major: 4 },
 					workbench: { enabled: true },
 				})
 				expect(layout).toMatchObject({ profile: 1, target: null, entries: [] })
@@ -372,7 +372,7 @@ describe('Runtime Session over the production Node carrier', () => {
 				const layout = await ready.workbench.layout({ target: null })
 				try {
 					expect(management).toMatchObject({
-						protocol: { name: 'pluxel.management', major: 3 },
+						protocol: { name: 'pluxel.management', major: 4 },
 						workbench: { enabled: true },
 					})
 					expect(layout).toMatchObject({ profile: 1, target: null, entries: [] })

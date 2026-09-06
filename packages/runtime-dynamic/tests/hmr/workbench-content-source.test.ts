@@ -8,6 +8,7 @@ import {
 	LoaderHmrService,
 	refreshLoaderHmrWorkbenchArtifacts,
 } from '../../src/hmr/engine/LoaderHmrService'
+import { createHmrTestContext } from '../support/hmr-context'
 
 describe('Loader HMR Workbench Content sources', () => {
 	it('tracks exact Markdown sources outside the TypeScript module graph', async () => {
@@ -58,6 +59,7 @@ describe('Loader HMR Workbench Content sources', () => {
 			path: { toClean: normalizeId },
 			toolkit: { pathFilter: () => false },
 			debouncer: { push },
+			execLock: { run: (operation: () => Promise<void>) => operation() },
 			ssrEnv: undefined,
 			normalizeId,
 			isAnchorClean: () => false,
@@ -89,5 +91,61 @@ describe('Loader HMR Workbench Content sources', () => {
 		await Promise.resolve()
 		expect(publish).toHaveBeenCalledTimes(2)
 		expect(send).toHaveBeenCalledOnce()
+	})
+
+	it('drains an admitted content refresh during close without sending a late browser reload', async () => {
+		const { ctx } = createHmrTestContext()
+		const service = new LoaderHmrService(ctx, {
+			roots: [],
+			entries: [],
+			fixedModuleId: 'pluxel:fixed:/workspace/pluxel.dynamic.ts',
+		})
+		const tracked = '/workspace/plugin/guide.md'
+		const publish = vi.fn(async () => undefined)
+		const forwardReload = vi.fn()
+		Reflect.set(service, 'forwardWorkbenchFullReload', forwardReload)
+		let compilationCount = 0
+		let enterRefresh = (): void => {}
+		const refreshEntered = new Promise<void>((resolve) => {
+			enterRefresh = resolve
+		})
+		let releaseRefresh = (): void => {}
+		const refreshGate = new Promise<void>((resolve) => {
+			releaseRefresh = resolve
+		})
+		attachLoaderHmrWorkbenchArtifactPublisher(service, publish)
+		configureLoaderHmrWorkbenchArtifactSource(service, {
+			compilations: async () => {
+				compilationCount += 1
+				if (compilationCount === 2) {
+					enterRefresh()
+					await refreshGate
+				}
+				return {
+					producers: [],
+					content: [{ sources: [tracked] }],
+				} as unknown as WorkbenchArtifactCompilations
+			},
+		})
+		await refreshLoaderHmrWorkbenchArtifacts(service)
+		const enqueueFileChange = Reflect.get(LoaderHmrService.prototype, 'enqueueFileChange') as (
+			this: LoaderHmrService,
+			file: string,
+		) => boolean
+
+		expect(enqueueFileChange.call(service, tracked)).toBe(true)
+		await refreshEntered
+		let closeSettled = false
+		const closing = service.close().then(() => {
+			closeSettled = true
+		})
+		await Promise.resolve()
+		expect(closeSettled).toBe(false)
+
+		releaseRefresh()
+		await closing
+		expect(publish).toHaveBeenCalledTimes(2)
+		expect(forwardReload).not.toHaveBeenCalled()
+		expect(closeSettled).toBe(true)
 	})
 })

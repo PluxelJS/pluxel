@@ -77,7 +77,7 @@ function endpointDisplayName(endpoint: PluginDependencyEndpoint): string {
 
 function endpointReference(endpoint: PluginDependencyEndpoint): string {
 	return endpoint.state === 'status'
-		? endpoint.node.status.reference
+		? formatPluginNodeReference(endpoint.node.status.address)
 		: formatPluginNodeReference(endpoint.address)
 }
 
@@ -276,7 +276,7 @@ function DependentRow({
 	return (
 		<RelationRow
 			name={status.displayName}
-			reference={status.reference}
+			reference={formatPluginNodeReference(status.address)}
 			detailHref={`/plugins/${status.route}`}
 			badges={badges}
 			edge={dependent.edge}
@@ -304,7 +304,7 @@ function Dependents({
 		<RelationSection title="被依赖" count={dependents.length} summary={summary || undefined}>
 			{dependents.map((dependent) => (
 				<DependentRow
-					key={`${dependent.consumer.status.reference}:${formatPluginDefinitionReference(dependent.edge.requirement)}`}
+					key={`${formatPluginNodeReference(dependent.consumer.status.address)}:${formatPluginDefinitionReference(dependent.edge.requirement)}`}
 					dependent={dependent}
 					LinkComponent={LinkComponent}
 				/>

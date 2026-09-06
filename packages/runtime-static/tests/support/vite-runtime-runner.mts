@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
-import { writeFile } from 'node:fs/promises'
-import type { PluginConstructor } from '@pluxel/core'
+import { readFile, unlink, writeFile } from 'node:fs/promises'
+import { pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
-import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
+import {
+	readRuntimePluginStatusOverview,
+	requireRuntimeHttpService,
+} from '@pluxel/runtime/internal'
 import type { StaticRuntimeHost } from '@pluxel/runtime-static'
 import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
 import { createServer, normalizePath, type HmrContext, type Plugin as VitePlugin } from 'vite'
@@ -10,6 +13,7 @@ import { createServer, normalizePath, type HmrContext, type Plugin as VitePlugin
 const root = requiredEnv('PLUXEL_VITE_SMOKE_ROOT')
 const entryPath = requiredEnv('PLUXEL_VITE_SMOKE_ENTRY')
 const pluginPath = requiredEnv('PLUXEL_VITE_SMOKE_PLUGIN')
+const builtPluginPath = requiredEnv('PLUXEL_VITE_SMOKE_BUILT_PLUGIN')
 const cacheDir = requiredEnv('PLUXEL_VITE_SMOKE_CACHE')
 
 let host: StaticRuntimeHost | undefined
@@ -35,7 +39,11 @@ const server = await createServer({
 	logLevel: 'silent',
 	optimizeDeps: { noDiscovery: true, include: [] },
 	plugins,
-	server: { host: '127.0.0.1', strictPort: false },
+	server: {
+		host: '127.0.0.1',
+		strictPort: false,
+		perEnvironmentWatchChangeDuringDev: true,
+	},
 })
 
 await server.listen()
@@ -58,6 +66,10 @@ const partOwnerAddress = capturedHost
 	.describeCatalog()
 	.plugins.find((plugin) => plugin.address.definition.exportName === 'PartOwner')?.address
 assert.ok(partOwnerAddress, 'Part owner is absent from the startup catalog')
+const builtAddress = capturedHost
+	.describeCatalog()
+	.plugins.find((plugin) => plugin.address.definition.exportName === 'BuiltStatic')?.address
+assert.ok(builtAddress, 'built Plugin is absent from the startup catalog')
 assert.deepEqual(address.definition.entry, {
 	kind: 'package-root',
 	packageName: '@fixture/vite-static',
@@ -71,6 +83,27 @@ const runtimeUrl = `http://127.0.0.1:${listenerAddress.port}`
 const sockets: WebSocket[] = []
 
 try {
+	const startupStatuses = (await readRuntimePluginStatusOverview(capturedHost.ctx)).statuses
+	const startupSourceStatus = startupStatuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)
+	const startupBuiltStatus = startupStatuses.find((status) =>
+		pluginNodeAddressEqual(status.address, builtAddress),
+	)
+	assert.deepEqual(startupSourceStatus?.execution, {
+		kind: 'static-catalog',
+		artifact: { kind: 'source-module' },
+		update: { kind: 'catalog-hmr' },
+	})
+	assert.equal(startupSourceStatus?.recentUpdate, null)
+	assert.deepEqual(startupBuiltStatus?.execution, {
+		kind: 'static-catalog',
+		artifact: { kind: 'built-module' },
+		update: { kind: 'catalog-hmr' },
+	})
+	assert.equal(JSON.stringify(startupSourceStatus?.execution).includes(root), false)
+	assert.equal(JSON.stringify(startupBuiltStatus?.execution).includes(root), false)
+
 	const startupInstances = [address, east, west].map((node) => pluginService.getInstance(node))
 	assert.ok(startupInstances[0], JSON.stringify(capturedHost.lastReport()))
 	assert.deepEqual(
@@ -110,7 +143,7 @@ try {
 			.lastReport()
 			?.replaced.map((node) => node.definition.exportName)
 			.sort(),
-		['ConfiguredPlugin', 'PartOwner', 'PartProvider', 'ViteStatic'],
+		['BuiltStatic', 'ConfiguredPlugin', 'PartOwner', 'PartProvider', 'ViteStatic'],
 	)
 	const replacementInstances = [address, east, west].map((node) => pluginService.getInstance(node))
 	assert.deepEqual(
@@ -122,6 +155,14 @@ try {
 	for (const instance of replacementInstances) {
 		assert.equal(instance?.constructor, replacementImplementation)
 	}
+	const appliedStatus = (await readRuntimePluginStatusOverview(capturedHost.ctx)).statuses.find(
+		(status) => pluginNodeAddressEqual(status.address, address),
+	)
+	assert.equal(appliedStatus?.execution.artifact.kind, 'source-module')
+	assert.equal(appliedStatus?.execution.update.kind, 'catalog-hmr')
+	assert.equal(appliedStatus?.recentUpdate?.outcome, 'applied')
+	assert.equal(appliedStatus?.recentUpdate?.phase, null)
+	assert.ok((appliedStatus?.recentUpdate?.sequence ?? 0) > 0)
 	assert.equal(
 		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
 		'part-provider-v2',
@@ -135,9 +176,34 @@ try {
 	sockets.push(replacementSocket.socket)
 	assert.equal(await replacementSocket.nextMessage(), 'v2')
 	const replacementSocketClosed = replacementSocket.closed
+	const originalBuiltPlugin = await readFile(builtPluginPath, 'utf8')
+	await writeFile(builtPluginPath, 'export const invalidBuiltPlugin =')
+	await assert.rejects(() => invokeHotUpdate(routePlugin, builtPluginPath))
+	const statusesAfterBuiltFailure = (await readRuntimePluginStatusOverview(capturedHost.ctx))
+		.statuses
+	const retainedBuiltStatus = statusesAfterBuiltFailure.find((status) =>
+		pluginNodeAddressEqual(status.address, builtAddress),
+	)
+	assert.equal(retainedBuiltStatus?.recentUpdate?.outcome, 'retained-previous')
+	assert.equal(retainedBuiltStatus?.recentUpdate?.phase, 'evaluate')
+	assert.equal(retainedBuiltStatus?.execution.artifact.kind, 'built-module')
+	assert.equal(retainedBuiltStatus?.execution.update.kind, 'catalog-hmr')
+	assert.ok(
+		(retainedBuiltStatus?.recentUpdate?.sequence ?? 0) >
+			(appliedStatus?.recentUpdate?.sequence ?? 0),
+	)
+	await writeFile(builtPluginPath, originalBuiltPlugin)
 
 	await writeFile(pluginPath, 'export const invalidReplacement =')
 	await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
+	const retainedStatus = (await readRuntimePluginStatusOverview(capturedHost.ctx)).statuses.find(
+		(status) => pluginNodeAddressEqual(status.address, address),
+	)
+	assert.equal(retainedStatus?.recentUpdate?.outcome, 'retained-previous')
+	assert.equal(retainedStatus?.recentUpdate?.phase, 'evaluate')
+	assert.ok(
+		(retainedStatus?.recentUpdate?.sequence ?? 0) > (appliedStatus?.recentUpdate?.sequence ?? 0),
+	)
 	const lastKnownGoodResponse = await fetch(`${runtimeUrl}/configured/version`)
 	assert.equal(await lastKnownGoodResponse.text(), 'v2')
 	assert.equal(replacementSocket.socket.readyState, WebSocket.OPEN)
@@ -205,6 +271,113 @@ try {
 	assert.equal(await restoredSocket.nextMessage(), 'v3')
 	restoredSocket.socket.close()
 	await restoredSocket.closed
+
+	const beforeReplacementStatuses = (await readRuntimePluginStatusOverview(capturedHost.ctx))
+		.statuses
+	const beforeReplacementSource = beforeReplacementStatuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)?.execution
+	const beforeReplacementBuilt = beforeReplacementStatuses.find((status) =>
+		pluginNodeAddressEqual(status.address, builtAddress),
+	)?.execution
+	const originalEntry = await readFile(entryPath, 'utf8')
+	const failingEntry = originalEntry.replace(
+		'  configure() {',
+		"  configure() { throw new Error('replacement configure failed')",
+	)
+	assert.notEqual(failingEntry, originalEntry)
+	await writeFile(entryPath, failingEntry)
+	await assert.rejects(
+		() => invokeHotUpdate(routePlugin, entryPath),
+		/replacement configure failed/,
+	)
+	const compensatedHost = host
+	assert.ok(compensatedHost, 'previous application was not restored after replacement failure')
+	assert.notEqual(compensatedHost, capturedHost)
+	const compensatedStatuses = (await readRuntimePluginStatusOverview(compensatedHost.ctx)).statuses
+	const compensatedSource = compensatedStatuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)
+	const compensatedBuilt = compensatedStatuses.find((status) =>
+		pluginNodeAddressEqual(status.address, builtAddress),
+	)
+	assert.deepEqual(compensatedSource?.execution, beforeReplacementSource)
+	assert.deepEqual(compensatedBuilt?.execution, beforeReplacementBuilt)
+	assert.equal(compensatedSource?.recentUpdate?.outcome, 'restored-previous')
+	assert.equal(compensatedSource?.recentUpdate?.phase, 'application-reload')
+	assert.equal(compensatedBuilt?.recentUpdate?.outcome, 'restored-previous')
+	assert.equal(
+		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
+		'v3',
+	)
+
+	await writeFile(entryPath, originalEntry)
+	await invokeHotUpdate(routePlugin, entryPath)
+	const replacementHost = host
+	assert.ok(replacementHost, 'valid application did not replace the compensated host')
+	assert.notEqual(replacementHost, compensatedHost)
+	const finalStatus = (await readRuntimePluginStatusOverview(replacementHost.ctx)).statuses.find(
+		(status) => pluginNodeAddressEqual(status.address, address),
+	)
+	assert.equal(finalStatus?.recentUpdate?.outcome, 'applied')
+	assert.equal(
+		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
+		'v3',
+	)
+
+	await writeFile(pluginPath, pluginSource('v4', true))
+	await Promise.all([
+		invokeHotUpdate(routePlugin, pluginPath),
+		invokeHotUpdate(routePlugin, pluginPath),
+	])
+	const serializedHost = host
+	assert.ok(serializedHost, 'serialized source updates lost the active host')
+	assert.equal(serializedHost, replacementHost)
+	const serializedStatus = (
+		await readRuntimePluginStatusOverview(serializedHost.ctx)
+	).statuses.find((status) => pluginNodeAddressEqual(status.address, address))
+	assert.equal(serializedStatus?.recentUpdate?.outcome, 'applied')
+	assert.ok(
+		(serializedStatus?.recentUpdate?.sequence ?? 0) >=
+			(finalStatus?.recentUpdate?.sequence ?? 0) + 2,
+	)
+	assert.equal(
+		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
+		'v4',
+	)
+
+	const originalSourcePlugin = await readFile(pluginPath, 'utf8')
+	const catalogBeforeUnlink = serializedHost.describeCatalog().plugins
+	try {
+		await unlink(pluginPath)
+		await invokeViteWatchChange(pluginPath, 'delete')
+		await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
+		assert.equal(host, serializedHost)
+
+		const statusesAfterUnlink = (await readRuntimePluginStatusOverview(serializedHost.ctx)).statuses
+		const unlinkSequences = new Set<number>()
+		for (const catalogPlugin of catalogBeforeUnlink) {
+			const status = statusesAfterUnlink.find((candidate) =>
+				pluginNodeAddressEqual(candidate.address, catalogPlugin.address),
+			)
+			const recentUpdate = status?.recentUpdate
+			assert.ok(
+				recentUpdate,
+				`${catalogPlugin.definition.exportName} has no static unlink update attribution`,
+			)
+			assert.equal(recentUpdate.outcome, 'retained-previous')
+			assert.equal(recentUpdate.phase, 'evaluate')
+			unlinkSequences.add(recentUpdate.sequence)
+		}
+		assert.equal(unlinkSequences.size, 1)
+		const unlinkSequence = unlinkSequences.values().next().value
+		assert.ok(
+			(unlinkSequence ?? 0) > (serializedStatus?.recentUpdate?.sequence ?? 0),
+			'static unlink did not record one newer catalog-wide update',
+		)
+	} finally {
+		await writeFile(pluginPath, originalSourcePlugin)
+	}
 } finally {
 	for (const socket of sockets) {
 		if (socket.readyState === WebSocket.OPEN) socket.close()
@@ -223,6 +396,13 @@ async function invokeHotUpdate(route: VitePlugin, changedFile: string): Promise<
 		read: () => Promise.resolve(''),
 		timestamp: Date.now(),
 	} satisfies HmrContext)
+}
+
+async function invokeViteWatchChange(
+	changedFile: string,
+	event: 'create' | 'update' | 'delete',
+): Promise<void> {
+	await server.environments.ssr.pluginContainer.watchChange(normalizePath(changedFile), { event })
 }
 
 function requiredEnv(name: string): string {
@@ -269,6 +449,7 @@ function pluginSource(version: string, available: boolean): string {
 	return [
 		"import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'",
 		"import { websocket } from 'elysia/websocket'",
+		"import { BuiltStatic } from '@fixture/vite-built'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		"@Plugin({ displayName: 'Vite static', forkable: true })",
 		'export class ViteStatic extends BasePlugin {',
@@ -298,7 +479,7 @@ function pluginSource(version: string, available: boolean): string {
 		"  injected = ''",
 		'  protected override init() { this.injected = this.required.marker() }',
 		'}',
-		`export const runtimePlugins = ${available ? '[ViteStatic, ConfiguredPlugin, PartProvider, PartOwner]' : '[ConfiguredPlugin, PartProvider, PartOwner]'}`,
+		`export const runtimePlugins = ${available ? '[ViteStatic, ConfiguredPlugin, PartProvider, PartOwner, BuiltStatic]' : '[ConfiguredPlugin, PartProvider, PartOwner, BuiltStatic]'}`,
 		'',
 	].join('\n')
 }

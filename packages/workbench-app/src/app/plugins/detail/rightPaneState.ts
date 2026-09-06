@@ -56,17 +56,3 @@ export function buildRightPaneTabGroups(
 		(left, right) => left.order - right.order || left.id.localeCompare(right.id),
 	)
 }
-
-export function formatCompactSource(
-	moduleId: string | null,
-	packageName: string | null,
-	version: string | null,
-) {
-	if (packageName) return `${packageName}${version ? `@${version}` : ''}`
-	return moduleId ? shortenPathSegments(moduleId) : '未知来源'
-}
-
-export function shortenPathSegments(path: string, keep = 3) {
-	const segments = path.split(/[/\\]+/).filter(Boolean)
-	return segments.length <= keep ? path : `…/${segments.slice(-keep).join('/')}`
-}

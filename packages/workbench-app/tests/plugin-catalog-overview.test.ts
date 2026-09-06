@@ -6,19 +6,37 @@ import type { PluginStatusEntry } from '../src/app/plugins/pluginOverview'
 
 describe('plugin catalog overview', () => {
 	it('computes the same mutually exclusive status counts used by the filters', () => {
-		const running = status('Running', 'available', 'running')
+		const running: PluginStatusEntry = {
+			...status('Running', 'available', 'running'),
+			recentUpdate: {
+				outcome: 'restored-previous',
+				phase: 'application-reload',
+				sequence: 2,
+				durationMs: 14,
+			},
+		}
 		const stopped = status('Stopped', 'available', 'stopped')
 		const unavailable = status('Unavailable', 'unavailable', 'running')
 
 		const overview = buildOverview({
 			statuses: [running, stopped, unavailable],
-			groups: [],
+			sections: [],
 			summary: { total: 3 },
 		})
 
 		expect(overview.statusCounts).toEqual({ running: 1, stopped: 1, unavailable: 1 })
 		expect(overview.total).toBe(3)
 		expect(overview).not.toHaveProperty('autoStart')
+		expect(overview.statuses[running.id]).toMatchObject({
+			packageName: '@fixture/catalog',
+			definitionLabel: '@fixture/catalog',
+			exportName: 'Running',
+			executionLabel: '更新未报告',
+			recentUpdateSearchTerms: expect.arrayContaining(['restored-previous', '补偿']),
+			recentUpdateWarningLabel: '应用重载失败 · 已用上一应用定义恢复',
+			recentUpdateWarningTone: 'yellow',
+			recentUpdateWarningDescription: expect.stringContaining('全新补偿宿主'),
+		})
 	})
 })
 
@@ -49,12 +67,11 @@ function status(
 		lifecycleState,
 		availability,
 		issues: [],
-		source: {
-			kind: 'unknown',
-			moduleId: null,
-			packageName: null,
-			version: null,
-			tag: null,
+		execution: {
+			kind: 'unreported',
+			artifact: { kind: 'unreported' },
+			update: { kind: 'unreported' },
 		},
+		recentUpdate: null,
 	}
 }

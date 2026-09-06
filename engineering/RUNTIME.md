@@ -164,7 +164,7 @@ Workbench 等 owner-only capability 通过 Core internal occurrence membership �
 
 ## Catalog、RuntimeState 与 reconciliation
 
-runtime 保持五个平面：route catalog 保存 candidate 与 module/source provenance，RuntimeState 保存 durable `autoStart` policy，coordinator
+runtime 保持五个平面：route catalog 保存 candidate、封闭 execution provenance 与 server-only module locator，RuntimeState 保存 durable `autoStart` policy，coordinator
 保存 process-local session intent，Core 保存已验证的 materialized graph，running projection 保存 generation 与 lifecycle facts。catalog
 presence 不等于自动启动或当前 desired；不在 effective desired graph 中的 default/fork 只参与 read model，不创建 Core record、Context、
 effects 或 artifact lease。
@@ -228,6 +228,57 @@ running config patch 直接查找 addressed generation config binding 并通知�
 
 control plane 的 auto-start、session lifecycle、fork、provider selection 与 dependency override 只能提交 coordinator mutation。route 不拥有第二套
 policy/intent/fork/provider/binding authority，Core 也不保存 module/source/artifact provenance。
+
+### Execution provenance 与 recent update
+
+Plugin status 中的 identity 与 execution 是两个正交事实。完整 `address` 是 identity、canonical reference 和 definition family 的
+唯一 authority；package/source origin、label 与对应搜索字段从 `address.definition.entry` 派生。`execution` 只回答“当前 committed
+definition 由哪类 route/artifact 执行，以及什么变化会让它更新”。不能从 `execution.kind` 反推 package identity，也不能用 package
+label 推断是否正在 source HMR。
+
+`PluginExecutionSnapshot` 是封闭 union，route publication 时复制、校验并深度冻结；只允许以下组合：
+
+| `kind`           | `artifact.kind`                                 | `update`                               | 精确含义                                                                          |
+| ---------------- | ----------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------- |
+| `static-bundle`  | `application-bundle`                            | `deployment`                           | definition 已进入 application deployment bundle，更新需要新部署                   |
+| `static-catalog` | `source-module` / `built-module` / `unreported` | `catalog-hmr` / `manual`               | Vite 监听 application module closure 并热替换 catalog；通用 host 由调用方手动替换 |
+| `dynamic-fixed`  | `source-module` / `built-module` / `unreported` | `host-reload`                          | dynamic config 显式 import 的 fixed plugin，变化通过整个 host reload 生效         |
+| `dynamic-entry`  | `source-module`                                 | `definition-hmr`, scope `source-graph` | mutable entry 与已证明的源码依赖图共同参与 definition HMR                         |
+| `dynamic-entry`  | `built-module` / `unreported`                   | `definition-hmr`, scope `entry-only`   | mutable entry 可替换，但不承诺跟踪其消费 package 的内部源码                       |
+| `unreported`     | `unreported`                                    | `unreported`                           | route 没有足够事实，client 必须保持未知而不是猜测                                 |
+
+Static Vite 的 `catalog-hmr` 是 route 已知的更新机制，与 artifact 分类正交：`built-module` 和 artifact `unreported` 仍可由同一
+application module closure 触发 catalog HMR。普通 Plugin module 变化在当前 host 内提交 live catalog transaction；canonical entry、
+应用 metadata 或只影响 `configure()` 的边界变化则重建 application host。不能用 `source-module` 推断 HMR，也不能因 artifact 未报告而
+把已知的 catalog HMR 降级成未知更新方式。
+
+`source-graph` 是 semantic collector 对当前 active module graph 的肯定事实，不等同于“进程运行在 dev/HMR mode”。Package Manager
+等 producer 发布的 `.mjs` entry 可以在 HMR batch 中被替换，但其构建 package internals 通常仍是 `entry-only`。Runtime 不提供在线
+切换 `source-module`、built module 或 deployment bundle 的 management mutation；新的 route declaration、host reload 或 deployment
+自然发布新的 execution fact。
+
+`source-module` 与 `built-module` 都要求正向、exact semantic fact。前者来自 raw source lowering，后者来自 active module closure
+中 toolchain setter 的 literal definition；不能用 `.ts`/`.mjs` 扩展名、package 目录、source transform 未命中或其他 negative
+match 推断。证据缺失或 source/built 冲突时只能发布 `unreported`。Collector 以 artifact generation 隔离一次 candidate 的事实，
+route 必须在 generation 异步 scope 内运行 candidate transform、evaluation 与 classification，只在 candidate 接纳后
+commit。该 scope 外并发的 ambient transform 保持独立 authority；commit 按 module 开始版本避免覆盖更新 ambient
+事实，失败路径 rollback 也只丢弃 scope 内的候选事实。
+
+`recentUpdate` 是独立的进程内操作诊断，不是 identity 或长期历史。它为 `null` 时只表示尚无 route-owned result。成功且无 lifecycle
+issue 为 `applied`。若 `evaluate`、`inject` 或 pre-publication `commit` 被拒绝且旧 catalog 仍是 authority，结果为
+`retained-previous`。Candidate catalog 已经发布后才出现 commit-path rejection 时，结果为
+`applied-with-issues / commit`；commit 返回 lifecycle issues 时为 `applied-with-issues / lifecycle`。这两种情况都保留新 definition
+authority，但失败 generation 自己的 partial startup/effects 仍由 lifecycle rollback 清理，不能把 generation cleanup 误写成 catalog
+rollback。
+
+`restored-previous / application-reload` 只描述 full-host replacement 的补偿结果：旧 host 已停止，candidate host 启动失败且被清理，
+随后 previous application definition 创建出的 fresh host 成功启动。它不是原 running generation 被保留或复活，也不是普通
+definition HMR 的 rollback；补偿 host 也失败时不能发布 restored result。每条非 null 记录携带正 safe-integer `sequence` 与非负有限
+`durationMs`。
+
+Route catalog 可以在 server 内保留 module ID 以完成 invalidation，但 Management/Workbench projection 只携带 canonical address、上述
+封闭 execution snapshot 与 recent result。absolute filesystem path、`file:` URL、`/@fs/` path、Vite module ID、package install root
+和类似物理 locator 不得进入 browser DTO；UI 搜索、分组与复制操作必须继续从 address 派生。
 
 新 auto-start、session start、fork create、binding 与 provider selection 必须在 coordinator queue 内针对 pinned catalog/state admission；
 关闭 auto-start、session stop、删除或完全相同的既有 intent 允许清理/保留暂时 absent 的 address。所有 plugin RPC 参数在 transport boundary

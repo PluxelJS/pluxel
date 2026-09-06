@@ -7,9 +7,15 @@ import type {
 } from '@pluxel/core'
 import type { HostApplicationMeta } from '../product-contract'
 import type { PluxelPlatformSnapshot } from '../environment'
+import type { PluginExecutionSnapshot, PluginRecentUpdateSnapshot } from '../plugin-execution'
+export type {
+	PluginArtifactSnapshot,
+	PluginExecutionSnapshot,
+	PluginRecentUpdateSnapshot,
+} from '../plugin-execution'
 export type { VaultKeyPair } from '../services/vault/types'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 3 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 4 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -29,7 +35,7 @@ export type RuntimeMeta = Readonly<{
 	ready: true
 	protocol: Readonly<{
 		name: 'pluxel.management'
-		major: 3
+		major: 4
 		capabilities: readonly RuntimeManagementCapability[]
 	}>
 	application: HostApplicationMeta
@@ -37,29 +43,6 @@ export type RuntimeMeta = Readonly<{
 	platform: PluxelPlatformSnapshot
 	workbench: Readonly<{ enabled: boolean }>
 }>
-
-export type PluginSourceSnapshot =
-	| Readonly<{
-			kind: 'package'
-			moduleId: string
-			packageName: string
-			version: string | null
-			tag: string | null
-	  }>
-	| Readonly<{
-			kind: 'hmr'
-			moduleId: string
-			packageName: null
-			version: null
-			tag: null
-	  }>
-	| Readonly<{
-			kind: 'unknown'
-			moduleId: null
-			packageName: null
-			version: null
-			tag: null
-	  }>
 
 export type PluginStatusIssue = Readonly<{
 	id: string
@@ -95,7 +78,8 @@ export type PluginStatusSnapshot = PluginControlSnapshot &
 		rootExportName: string
 		availability: 'available' | 'unavailable'
 		issues: readonly PluginStatusIssue[]
-		source: PluginSourceSnapshot
+		execution: PluginExecutionSnapshot
+		recentUpdate: PluginRecentUpdateSnapshot | null
 	}>
 
 export type PluginCatalogSectionBasis =

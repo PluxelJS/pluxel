@@ -108,6 +108,11 @@ export class LoaderRegistryView {
 
 	constructor(private readonly ctx: Context) {}
 
+	/** @internal One coordinator-owned immutable snapshot for route diagnostics. */
+	catalogSnapshot(): PluginRouteCatalogSnapshot {
+		return this.catalog()
+	}
+
 	listRegistered(): readonly LoaderCatalogEntry[] {
 		const catalog = this.catalog()
 		if (catalog === this.cachedCatalog) return this.cachedEntries

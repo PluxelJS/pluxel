@@ -3,6 +3,7 @@ import {
 	pluginNodeAddressEqual,
 	type Context,
 	type CommitSummary,
+	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
@@ -16,7 +17,7 @@ import {
 	requireRuntimeStateStore,
 	type ElysiaCarrierRequestAddress,
 	type PluginApplyReport,
-	type RuntimeRouteCapabilities,
+	type PluginExecutionSnapshot,
 } from '@pluxel/runtime/internal'
 import {
 	createContextPluginLogPolicyStore,
@@ -35,7 +36,10 @@ import {
 	diffCatalog,
 	readConfigSnapshot,
 	type StaticRuntimeCatalog,
+	type StaticRuntimeCatalogDiff,
+	type StaticRuntimeExecutionResolver,
 } from './catalog.ts'
+import { StaticRuntimeRecentUpdateTracker } from './recent-update.ts'
 import type {
 	StaticRuntimeCatalogSnapshot,
 	StaticRuntimeDefinition,
@@ -46,6 +50,14 @@ import type {
 	StaticRuntimeInternalStartupReport,
 	StaticRuntimeReportEntry,
 } from '../types.ts'
+
+type StaticRuntimeViteReloadOutcome =
+	| Readonly<{ status: 'applied'; report: StaticRuntimeInternalHmrReport }>
+	| Readonly<{ status: 'failed'; error: unknown; catalogCommitted: boolean }>
+
+type StaticRuntimeReloadSettlement = {
+	catalogCommitted: boolean
+}
 
 export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public readonly ctx: Context
@@ -58,11 +70,13 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	private stopPromise: Promise<void> | undefined
 	private report: StaticRuntimeInternalStartupReport | undefined
 	private readonly coordinator
+	private readonly resolveExecution: StaticRuntimeExecutionResolver
+	private readonly recentUpdates: StaticRuntimeRecentUpdateTracker
 
 	public readonly hmr: StaticRuntimeHmrController & {
 		reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeInternalHmrReport>
 	} = {
-		reload: (definition) => this.reload(definition),
+		reload: (definition) => this.reload(definition, performance.now()),
 	}
 
 	readonly fetch = (request: Request, env?: unknown, fetchContext?: unknown) =>
@@ -74,7 +88,11 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		private readonly logging: RuntimeLogging,
 		internal: StaticRuntimeHostInternalOptions,
 	) {
-		this.startupCatalog = buildCatalog(definition, 1)
+		this.resolveExecution =
+			internal.resolveExecution ??
+			(() => (internal.deployment ? STATIC_DEPLOYMENT_EXECUTION : STATIC_MANUAL_CATALOG_EXECUTION))
+		this.recentUpdates = internal.recentUpdates ?? new StaticRuntimeRecentUpdateTracker()
+		this.startupCatalog = buildCatalog(definition, 1, this.resolveExecution)
 		this.runtimeName = definition.name
 		this.ctx = createRuntimeRootContext(
 			createStaticRuntimeHostConfig(definition, options, logging, internal),
@@ -92,7 +110,9 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			tag: 'RuntimeLogging',
 			phase: 'shutdown',
 		})
-		const uninstallRoute = installRuntimeRouteCapabilities(this.ctx, this.createRuntimeRoute())
+		const uninstallRoute = installRuntimeRouteCapabilities(this.ctx, {
+			recentUpdate: this.recentUpdates,
+		})
 		this.ctx.effects.defer(uninstallRoute, {
 			tag: 'RuntimeRouteCapabilities',
 			phase: 'shutdown',
@@ -105,21 +125,6 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			name: this.runtimeName,
 			plugins: Object.freeze(catalog.entries.map((entry) => entry.candidate.implementation)),
 		})
-	}
-
-	private createRuntimeRoute(): RuntimeRouteCapabilities {
-		return {
-			source: {
-				resolveSource: () => ({
-					__typename: 'PluginSourceInfo',
-					kind: 'unknown',
-					moduleId: null,
-					packageName: null,
-					version: null,
-					tag: null,
-				}),
-			},
-		}
 	}
 
 	async prepare(): Promise<void> {
@@ -203,27 +208,112 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		throwStaticRuntimeErrors(errors, '[runtime-static] host shutdown failed')
 	}
 
-	private reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeInternalHmrReport> {
+	private reload(
+		definition: StaticRuntimeDefinition,
+		startedAt: number,
+		settlement?: StaticRuntimeReloadSettlement,
+	): Promise<StaticRuntimeInternalHmrReport> {
 		if (this.stopRequested || this.disposed) {
 			return Promise.reject(new Error('[runtime-static] cannot reload a disposed host'))
 		}
-		return this.enqueueOperation(() => this.reloadExclusive(definition))
+		return this.enqueueOperation(() => this.reloadExclusive(definition, startedAt, settlement))
+	}
+
+	/** @internal Preserves Vite evaluation time and reports the exact catalog publication point. */
+	async reloadFromVite(
+		definition: StaticRuntimeDefinition,
+		startedAt: number,
+	): Promise<StaticRuntimeViteReloadOutcome> {
+		const settlement: StaticRuntimeReloadSettlement = { catalogCommitted: false }
+		try {
+			return Object.freeze({
+				status: 'applied',
+				report: await this.reload(definition, startedAt, settlement),
+			})
+		} catch (error) {
+			return Object.freeze({
+				status: 'failed',
+				error,
+				catalogCommitted: settlement.catalogCommitted,
+			})
+		}
 	}
 
 	private async reloadExclusive(
 		definition: StaticRuntimeDefinition,
+		startedAt: number,
+		settlement?: StaticRuntimeReloadSettlement,
 	): Promise<StaticRuntimeInternalHmrReport> {
 		const previous = this.coordinator.catalogSnapshot()
-		const next = buildCatalog(definition, previous.revision + 1)
+		let next: StaticRuntimeCatalog
+		try {
+			next = buildCatalog(definition, previous.revision + 1, this.resolveExecution)
+		} catch (error) {
+			const proposedImplementations = new Set(definition.plugins)
+			this.recentUpdates.record(
+				previous.entries
+					.filter((entry) => !proposedImplementations.has(entry.candidate.implementation))
+					.map((entry) => entry.address),
+				{
+					outcome: 'retained-previous',
+					phase: 'inject',
+					durationMs: elapsedRuntimeUpdateMs(startedAt),
+				},
+			)
+			throw error
+		}
 		const diff = diffCatalog(previous, next)
-		const applied = await this.coordinator.update({
-			catalog: next,
-			reason: 'static-hmr',
-			mode: 'live',
-		})
+		let applied: PluginApplyReport<CommitSummary>
+		try {
+			applied = await this.coordinator.update({
+				catalog: next,
+				reason: 'static-hmr',
+				mode: 'live',
+			})
+		} catch (error) {
+			const committed = this.coordinator.catalogSnapshot() === next
+			if (settlement) settlement.catalogCommitted = committed
+			if (committed) {
+				// Core cannot structurally roll back after teardown starts. Its graph-commit callback
+				// publishes this exact catalog before any later await, so a rejected update may still
+				// have made the proposed definition generation authoritative.
+				this.runtimeName = definition.name
+				this.started = true
+			}
+			this.recentUpdates.record(
+				definitionsFromCatalogDiff(diff),
+				committed
+					? {
+							outcome: 'applied-with-issues',
+							phase: 'commit',
+							durationMs: elapsedRuntimeUpdateMs(startedAt),
+						}
+					: {
+							outcome: 'retained-previous',
+							phase: 'commit',
+							durationMs: elapsedRuntimeUpdateMs(startedAt),
+						},
+			)
+			throw error
+		}
+		if (settlement) settlement.catalogCommitted = this.coordinator.catalogSnapshot() === next
 		this.runtimeName = definition.name
 		this.started = true
-		const base = await this.currentReport(applied, diff.removed)
+		const affectedDefinitions = this.collectAppliedReloadDefinitions(diff, applied)
+		let base: StaticRuntimeInternalStartupReport
+		try {
+			base = await this.currentReport(applied, diff.removed)
+		} catch (error) {
+			// The catalog is already authoritative. A report projection failure is a post-PONR
+			// diagnostic issue, not evidence that the previous Plugin generation was retained.
+			this.recentUpdates.record(affectedDefinitions, {
+				outcome: 'applied-with-issues',
+				phase: 'commit',
+				durationMs: elapsedRuntimeUpdateMs(startedAt),
+			})
+			throw error
+		}
+		this.recordAppliedReload(affectedDefinitions, applied, startedAt)
 		const report: StaticRuntimeInternalHmrReport = {
 			...base,
 			added: diff.added,
@@ -232,6 +322,60 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		}
 		this.report = report
 		return report
+	}
+
+	private collectAppliedReloadDefinitions(
+		diff: StaticRuntimeCatalogDiff,
+		applied: PluginApplyReport<CommitSummary>,
+	): PluginDefinitionAddress[] {
+		const definitions = definitionsFromCatalogDiff(diff)
+		if (applied.core.status === 'committed') {
+			const registry = requirePluginService(this.ctx)
+			const add = (address: PluginNodeAddress): void => {
+				definitions.push(address.definition)
+			}
+			for (const slot of applied.core.summary.pluginChanges.added) {
+				add(registry.nodeAddressOf(slot))
+			}
+			for (const replacement of applied.core.summary.pluginChanges.replaced) {
+				add(registry.nodeAddressOf(replacement.from))
+				add(registry.nodeAddressOf(replacement.to))
+			}
+			for (const slot of applied.core.summary.pluginChanges.removed) {
+				add(registry.nodeAddressOf(slot))
+			}
+			for (const slot of applied.core.summary.pluginChanges.restarted) {
+				add(registry.nodeAddressOf(slot))
+			}
+			for (const slot of applied.core.summary.pluginChanges.availabilityChanged) {
+				add(registry.nodeAddressOf(slot))
+			}
+			for (const issue of applied.core.summary.lifecycleReport.issues) {
+				add(registry.nodeAddressOf(issue.plugin))
+			}
+		}
+		return definitions
+	}
+
+	private recordAppliedReload(
+		definitions: Iterable<PluginDefinitionAddress>,
+		applied: PluginApplyReport<CommitSummary>,
+		startedAt: number,
+	): void {
+		this.recentUpdates.record(
+			definitions,
+			applied.core.status === 'committed' && !applied.core.summary.lifecycleReport.ok
+				? {
+						outcome: 'applied-with-issues',
+						phase: 'lifecycle',
+						durationMs: elapsedRuntimeUpdateMs(startedAt),
+					}
+				: {
+						outcome: 'applied',
+						phase: null,
+						durationMs: elapsedRuntimeUpdateMs(startedAt),
+					},
+		)
 	}
 
 	private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -335,10 +479,12 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	catalogSnapshotForVite(): readonly Readonly<{
 		address: PluginNodeAddress
 		implementation: unknown
+		execution: PluginExecutionSnapshot
 	}>[] {
 		return this.catalogSnapshot().entries.map((entry) => ({
 			address: { definition: entry.address, variant: 'default' },
 			implementation: entry.candidate.implementation,
+			execution: entry.provenance.execution ?? STATIC_MANUAL_CATALOG_EXECUTION,
 		}))
 	}
 
@@ -366,6 +512,8 @@ export async function createStaticRuntimeHost(
 		createWorkbenchBackend?: WorkbenchBackendFactory
 		product?: ProductDescriptor | null
 		http?: RuntimeHostConfig['http']
+		resolveExecution?: StaticRuntimeExecutionResolver
+		recentUpdates?: StaticRuntimeRecentUpdateTracker
 		/** @internal Test-only physical peer seam. */
 		requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 	} = {},
@@ -410,8 +558,30 @@ type StaticRuntimeHostInternalOptions = Readonly<{
 	createWorkbenchBackend?: WorkbenchBackendFactory
 	product?: ProductDescriptor | null
 	http?: RuntimeHostConfig['http']
+	resolveExecution?: StaticRuntimeExecutionResolver
+	recentUpdates?: StaticRuntimeRecentUpdateTracker
 	requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 }>
+
+const STATIC_DEPLOYMENT_EXECUTION = Object.freeze({
+	kind: 'static-bundle' as const,
+	artifact: Object.freeze({ kind: 'application-bundle' as const }),
+	update: Object.freeze({ kind: 'deployment' as const }),
+}) satisfies PluginExecutionSnapshot
+
+const STATIC_MANUAL_CATALOG_EXECUTION = Object.freeze({
+	kind: 'static-catalog' as const,
+	artifact: Object.freeze({ kind: 'unreported' as const }),
+	update: Object.freeze({ kind: 'manual' as const }),
+}) satisfies PluginExecutionSnapshot
+
+function definitionsFromCatalogDiff(diff: StaticRuntimeCatalogDiff): PluginDefinitionAddress[] {
+	return [...diff.added, ...diff.removed, ...diff.replaced].map((address) => address.definition)
+}
+
+function elapsedRuntimeUpdateMs(startedAt: number): number {
+	return Math.max(0, performance.now() - startedAt)
+}
 
 function resolveStaticRuntimeLoggingInput(
 	definition: StaticRuntimeDefinition,

@@ -22,7 +22,11 @@ import {
 } from '@pluxel/runtime/internal'
 import { env } from '@pluxel/runtime/environment'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
-import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watch'
+import {
+	DEFAULT_VITE_WATCH_IGNORED,
+	GENERATED_STATE_VITE_WATCH_IGNORED,
+	VITE_WATCH_USE_POLLING,
+} from '../vite-watch'
 import { ELYSIA_SINGLETON_BRIDGE_MODULES } from '../../elysia-singleton'
 
 /**
@@ -204,7 +208,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 			middlewareMode: false,
 			preTransformRequests: false,
 			watch: {
-				ignored: [...DEFAULT_VITE_WATCH_IGNORED],
+				ignored: [...DEFAULT_VITE_WATCH_IGNORED, GENERATED_STATE_VITE_WATCH_IGNORED],
 				usePolling: VITE_WATCH_USE_POLLING,
 			},
 			fs: {

@@ -1,11 +1,15 @@
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
+import { watch } from 'chokidar'
 import {
 	type CommitSummary,
 	type Context,
 	formatPluginNodeReference,
+	pluginDefinitionIndexKey,
+	type PluginDefinitionAddress,
 	type PluginConstructor,
+	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
@@ -20,12 +24,16 @@ import {
 } from 'vite'
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
+	clonePluginRecentUpdateSnapshot,
 	findNearestPackageRoot,
 	requireRuntimeStateStore,
 	requireRuntimeHttpService,
 	resolveGlobPatterns,
 	setPkgrootCacheLimit,
 	startTimer,
+	type PluginExecutionSnapshot,
+	type PluginRecentUpdateSnapshot,
+	type PluginRouteCatalogSnapshot,
 } from '@pluxel/runtime/internal'
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
 import type { WorkbenchArtifactCompilations } from '@pluxel/runtime-dev/workbench'
@@ -54,11 +62,57 @@ import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from
 import { WorkspaceEntryResolver } from './workspace-entry-resolver'
 import { createFetchHmrServerPlugin } from '../vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from '../runtime-route-request'
+import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watch'
 import { requireLoaderService, requireScanService } from '../../context-plan'
 import type { LoaderService } from '../../loader/LoaderService'
 import type { ScanService } from '../../scan/ScanService'
 
 type OwnedElysiaApplicationCarrier = ReturnType<typeof createViteNodeElysiaApplicationCarrier>
+
+export type LoaderHmrDefinitionSource = Readonly<{
+	classifyDefinitionArtifact(
+		definition: PluginDefinitionAddress,
+		activeModules?: Iterable<string>,
+	): 'source-module' | 'built-module' | 'unreported'
+	beginArtifactGeneration?(): LoaderHmrArtifactGeneration
+	fixedModules?: () => Iterable<string>
+}>
+
+type LoaderHmrArtifactGeneration = Readonly<{
+	run<T>(operation: () => T): T
+	commit(): void
+	rollback(): void
+}>
+
+const definitionSourceByService = new WeakMap<LoaderHmrService, LoaderHmrDefinitionSource>()
+const recentUpdatesByService = new WeakMap<
+	LoaderHmrService,
+	Map<string, PluginRecentUpdateSnapshot>
+>()
+const MAX_RECENT_PLUGIN_UPDATES = 512
+const SUPPLEMENTAL_WATCH_IGNORED = [
+	'**/node_modules/**',
+	'**/.git/**',
+	...DEFAULT_VITE_WATCH_IGNORED,
+]
+
+/** @internal Connects the exact semantic collector that transforms this HMR route. */
+export function configureLoaderHmrDefinitionSource(
+	service: LoaderHmrService,
+	source: LoaderHmrDefinitionSource,
+): void {
+	definitionSourceByService.set(service, source)
+}
+
+/** @internal Reads the bounded, path-free diagnostic projected by the HMR route. */
+export function readLoaderHmrRecentUpdate(
+	service: LoaderHmrService,
+	address: PluginNodeAddress,
+): PluginRecentUpdateSnapshot | null {
+	return (
+		recentUpdatesByService.get(service)?.get(pluginDefinitionIndexKey(address.definition)) ?? null
+	)
+}
 
 function assertHmrExecutionOk(
 	result: HmrExecutionResult | undefined,
@@ -74,6 +128,50 @@ function assertHmrExecutionOk(
 	throw new Error(`${label} failed during ${stage}: ${message}`, {
 		cause: commitError,
 	})
+}
+
+function pluginExecutionEqual(
+	left: PluginExecutionSnapshot | undefined,
+	right: PluginExecutionSnapshot | undefined,
+): boolean {
+	if (left === right) return true
+	if (!left || !right) return false
+	if (left.kind !== right.kind || left.artifact.kind !== right.artifact.kind) return false
+	if (left.update.kind !== right.update.kind) return false
+	if (left.update.kind !== 'definition-hmr') return true
+	return right.update.kind === 'definition-hmr' && left.update.scope === right.update.scope
+}
+
+function runInArtifactGeneration<T>(
+	generation: LoaderHmrArtifactGeneration | undefined,
+	operation: () => T,
+): T {
+	return generation ? generation.run(operation) : operation()
+}
+
+function createHmrClosedError(): Error {
+	return Object.assign(new Error('[hmr] LoaderHmrService is closed'), {
+		name: 'HmrClosedError',
+	})
+}
+
+function hmrFailureMessage(error: unknown): string {
+	if (error instanceof Error) return error.message || error.name
+	return String(error)
+}
+
+function isGeneratedStateRoot(path: string): boolean {
+	return normalizePath(path).split('/').includes('.pluxel')
+}
+
+function generatedStateAnchor(path: string): string | null {
+	const segments = normalizePath(path).split('/')
+	const generatedSegment = segments.indexOf('.pluxel')
+	return generatedSegment < 0 ? null : segments.slice(0, generatedSegment + 1).join('/')
+}
+
+function pathAtOrWithin(path: string, root: string): boolean {
+	return path === root || path.startsWith(`${root}/`)
 }
 
 export interface LoaderHmrConfig {
@@ -326,7 +424,9 @@ export class LoaderHmrService {
 	private warmupPromise?: Promise<void>
 
 	private debouncer!: BatchDebouncer
-	private readonly watcherDisposers: Array<() => void> = []
+	private readonly watcherDisposers: Array<() => void | Promise<void>> = []
+	private supplementalWatcherReady: Promise<void> = Promise.resolve()
+	private supplementalWatcherSetupError: unknown
 	private ownedApplicationCarrier?: OwnedElysiaApplicationCarrier
 	private detachOwnedApplicationCarrier?: () => void
 
@@ -352,8 +452,7 @@ export class LoaderHmrService {
 	public readonly api: HmrRuntimeApi
 	private lastBatchSummary: HmrBatchSummary | null = null
 	private readonly batchWaiters = new Set<HmrBatchWaiter>()
-	private inFlightBatchEpoch: number | null = null
-	private readonly commitByBatchEpoch = new Map<number, CommitSummary>()
+	private readonly disposeExecutionResolver: () => void
 
 	constructor(
 		public ctx: Context,
@@ -363,6 +462,14 @@ export class LoaderHmrService {
 		this.hostRoot = normalizePath(resolve(this.config.hostRoot ?? process.cwd()))
 		this.loader = requireLoaderService(this.ctx)
 		this.scanService = requireScanService(this.ctx)
+		recentUpdatesByService.set(this, new Map())
+		this.disposeExecutionResolver = this.loader.configureExecutionResolver((definition, moduleId) =>
+			this.resolvePluginExecution(definition, moduleId),
+		)
+		this.ctx.effects.defer(this.disposeExecutionResolver, {
+			tag: 'LoaderHmrService.executionProvenance',
+			phase: 'shutdown',
+		})
 		if (!Array.isArray(this.config.entries)) {
 			throw new TypeError(
 				'[hmr] loaderHmr.entries must be string[] (explicit cold-start entry list)',
@@ -434,7 +541,6 @@ export class LoaderHmrService {
 			waitForIdle: (options) => this.waitForIdle(options),
 		}
 
-		this.attachCommitTracker()
 		this.attachResolverCacheInvalidation()
 		this.ctx.effects.defer(() => this.close(), {
 			tag: 'LoaderHmrService',
@@ -478,14 +584,31 @@ export class LoaderHmrService {
 	 * trigger evaluation without reaching into private fields.
 	 */
 	public async executeFiles(filesPath: readonly string[], keepOrder = true): Promise<void> {
+		this.assertOpen()
 		if (!this.executor) {
 			throw new Error('LoaderHmrService not initialized (Vite server not configured yet)')
 		}
-		await this.ensureBaseline()
 		await this.execLock.run(async () => {
+			// A call admitted before close() may have queued behind another execution. Re-check when
+			// it actually owns the execution lane so shutdown cannot dispose resources underneath it.
+			this.assertOpen()
+			await this.ensureBaseline()
 			this.timing.clear()
-			const executed = await this.executor.runAndLoadAll(filesPath, keepOrder)
-			assertHmrExecutionOk(executed, 'HMR executeFiles')
+			const catalogBefore = this.loaderCatalogSnapshot()
+			const generation = definitionSourceByService.get(this)?.beginArtifactGeneration?.()
+			try {
+				const executed = await runInArtifactGeneration(generation, () =>
+					this.executor.runAndLoadAll(filesPath, keepOrder),
+				)
+				const catalogApplied = this.loaderCatalogSnapshot() !== catalogBefore
+				if (!executed || (!executed.commitResult.ok && !catalogApplied)) generation?.rollback()
+				else generation?.commit()
+				assertHmrExecutionOk(executed, 'HMR executeFiles')
+			} catch (error) {
+				if (this.loaderCatalogSnapshot() !== catalogBefore) generation?.commit()
+				else generation?.rollback()
+				throw error
+			}
 		})
 		void this.logOperationalReport('update').catch((error) => {
 			this.ctx.logger.warn('HMR report failed', { error })
@@ -499,24 +622,25 @@ export class LoaderHmrService {
 	 * (workspace profiles / CLI / host) and passed explicitly.
 	 */
 	public async warmup(opts?: { bestEffort?: boolean }): Promise<void> {
+		this.assertOpen()
 		const bestEffort = opts?.bestEffort ?? true
 		if (!this.executor) {
 			throw new Error('LoaderHmrService not initialized (Vite server not configured yet)')
 		}
-		await this.ensureBaseline()
 		const p = (this.warmupPromise ??= this.performWarmup())
 		try {
 			await p
 		} catch (error) {
 			// Allow retry after failure.
 			this.warmupPromise = undefined
+			if (this.closed || (error instanceof Error && error.name === 'HmrClosedError')) throw error
 			if (!bestEffort) throw error
 			this.ctx.logger.error('warmup failed', { error })
 		}
 	}
 
 	public start(): Promise<void> {
-		if (this.closed) return Promise.reject(new Error('[hmr] LoaderHmrService is closed'))
+		if (this.closed) return Promise.reject(createHmrClosedError())
 		if (this.startPromise) return this.startPromise
 		const p = this.startImpl()
 		this.startPromise = p.catch((error) => {
@@ -530,21 +654,51 @@ export class LoaderHmrService {
 		if (this.closePromise) return this.closePromise
 		this.closed = true
 		this.closePromise = (async () => {
+			const closeErrors: unknown[] = []
+			// Stop every watcher admission path synchronously before awaiting external resources.
+			const watcherCloseTasks: Promise<void>[] = []
+			for (const dispose of this.watcherDisposers.splice(0)) {
+				try {
+					watcherCloseTasks.push(Promise.resolve(dispose()))
+				} catch (error) {
+					closeErrors.push(error)
+				}
+			}
+			// Startup owns setup work that can run outside the execution lane. Let it observe `closed`
+			// and settle before resolving the final server/carrier handles to dispose.
+			await this.startPromise?.catch((): undefined => undefined)
+			const watcherCloseResults = await Promise.allSettled(watcherCloseTasks)
+			for (const result of watcherCloseResults) {
+				if (result.status === 'rejected') closeErrors.push(result.reason)
+			}
 			const server = (this as unknown as { vite?: ViteDevServer }).vite
-			for (const dispose of this.watcherDisposers.splice(0)) dispose()
 			if (server) {
 				try {
-					await server.watcher.unwatch(this.scanRootsAbs)
+					await server.watcher.unwatch(
+						this.scanRootsAbs.filter((root) => !isGeneratedStateRoot(root)),
+					)
 				} catch {
 					// The server may already have closed its watcher.
 				}
 			}
 			const debouncer = this.debouncer as BatchDebouncer | undefined
-			if (typeof debouncer?.close === 'function') await debouncer.close()
+			try {
+				if (typeof debouncer?.close === 'function') await debouncer.close()
+			} catch (error) {
+				closeErrors.push(error)
+			}
+			try {
+				// Direct executeFiles/warmup calls share this lane but are not owned by the debouncer.
+				// The no-op runs only after active work has finished and queued work has re-checked closed.
+				await this.execLock.run(async () => {})
+			} catch (error) {
+				closeErrors.push(error)
+			}
+			this.disposeExecutionResolver()
+			definitionSourceByService.delete(this)
+			recentUpdatesByService.delete(this)
 
-			const closedError = Object.assign(new Error('[hmr] LoaderHmrService is closed'), {
-				name: 'HmrClosedError',
-			})
+			const closedError = createHmrClosedError()
 			for (const waiter of this.batchWaiters) {
 				waiter.cleanup()
 				waiter.reject(closedError)
@@ -552,39 +706,41 @@ export class LoaderHmrService {
 
 			const applicationCarrier = this.ownedApplicationCarrier
 			applicationCarrier?.stopAccepting()
-			let serverError: unknown
 			try {
 				if (server && this.ownsViteServer) await server.close()
 			} catch (error) {
-				serverError = error
+				closeErrors.push(error)
 			}
 			this.detachOwnedApplicationCarrier?.()
 			this.detachOwnedApplicationCarrier = undefined
 			this.ownedApplicationCarrier = undefined
-			let carrierError: unknown
 			try {
 				await applicationCarrier?.close()
 			} catch (error) {
-				carrierError = error
+				closeErrors.push(error)
 			}
-			if (serverError !== undefined && carrierError !== undefined) {
-				throw new AggregateError(
-					[serverError, carrierError],
-					'[hmr] Vite and Elysia application carrier shutdown failed',
-				)
-			}
-			if (serverError !== undefined) throw serverError
-			if (carrierError !== undefined) throw carrierError
 			this.startPromise = undefined
+			if (closeErrors.length === 1) throw closeErrors[0]
+			if (closeErrors.length > 1) {
+				throw new AggregateError(closeErrors, '[hmr] LoaderHmrService shutdown failed')
+			}
 		})()
 		return this.closePromise
 	}
 
+	private assertOpen(): void {
+		if (this.closed) throw createHmrClosedError()
+	}
+
 	private async startImpl(): Promise<void> {
 		if (this.vite) {
+			await this.waitForWatchersReady()
 			await refreshLoaderHmrWorkbenchArtifacts(this)
+			this.assertOpen()
 			await this.ensureBaseline()
+			this.assertOpen()
 			await this.loadInitialEntries()
+			this.assertOpen()
 			void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
 			void this.logOperationalReport('startup').catch((error) => {
 				this.ctx.logger.warn('HMR report failed', { error })
@@ -606,6 +762,7 @@ export class LoaderHmrService {
 			root: this.hostRoot,
 			name: 'pluxel:dynamic-runtime-source',
 		})
+		configureLoaderHmrDefinitionSource(this, sourcePipeline.semantics)
 		configureLoaderHmrWorkbenchArtifactSource(this, {
 			compilations: async () => {
 				sourcePipeline.semantics.invalidateWorkbench()
@@ -665,10 +822,14 @@ export class LoaderHmrService {
 			// Parallelize Vite listen and fixed-baseline establishment.
 			// so overall startup latency is closer to the slower of the two.
 			await server.listen()
+			await this.waitForWatchersReady()
+			this.assertOpen()
 			await refreshLoaderHmrWorkbenchArtifacts(this)
+			this.assertOpen()
 			// Fail-fast on bridge/fixed-catalog correctness errors. If this throws,
 			// the host process should crash rather than limping along with a broken HMR runtime.
 			await this.ensureBaseline()
+			this.assertOpen()
 		} catch (error) {
 			applicationCarrier.stopAccepting()
 			await server.close().catch((): undefined => undefined)
@@ -679,6 +840,7 @@ export class LoaderHmrService {
 			throw error
 		}
 		await this.loadInitialEntries()
+		this.assertOpen()
 
 		if (this.config.printUrls !== false) server.printUrls()
 		void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
@@ -727,6 +889,65 @@ export class LoaderHmrService {
 			},
 		}
 		return plugin
+	}
+
+	private resolvePluginExecution(
+		definition: PluginDefinitionAddress,
+		moduleId: string,
+	): PluginExecutionSnapshot {
+		const fixed = moduleId.startsWith('pluxel:fixed:')
+		const source = definitionSourceByService.get(this)
+		let artifact: 'source-module' | 'built-module' | 'unreported' = 'unreported'
+		if (source) {
+			const activeModules = fixed ? source.fixedModules?.() : this.activeModuleFiles(moduleId)
+			if (activeModules !== undefined) {
+				artifact = source.classifyDefinitionArtifact(definition, activeModules)
+			}
+		}
+
+		if (fixed) {
+			return Object.freeze({
+				kind: 'dynamic-fixed',
+				artifact: Object.freeze({ kind: artifact }),
+				update: Object.freeze({ kind: 'host-reload' }),
+			})
+		}
+		if (artifact === 'source-module') {
+			return Object.freeze({
+				kind: 'dynamic-entry',
+				artifact: Object.freeze({ kind: artifact }),
+				update: Object.freeze({ kind: 'definition-hmr', scope: 'source-graph' }),
+			})
+		}
+		return Object.freeze({
+			kind: 'dynamic-entry',
+			artifact: Object.freeze({ kind: artifact }),
+			update: Object.freeze({ kind: 'definition-hmr', scope: 'entry-only' }),
+		})
+	}
+
+	private activeModuleFiles(moduleId: string): Iterable<string> | undefined {
+		type ModuleLike = { id?: string; file?: string | null; importedModules?: Set<ModuleLike> }
+		const graph = this.ssrEnv?.moduleGraph
+		if (!graph) return undefined
+		const queue: ModuleLike[] = []
+		for (const variant of this.path.variants(moduleId)) {
+			const direct = graph.getModuleById(variant)
+			if (direct) queue.push(direct as ModuleLike)
+			for (const entry of graph.getModulesByFile(variant) ?? []) queue.push(entry as ModuleLike)
+		}
+		if (queue.length === 0) return undefined
+		const files = new Set<string>()
+		const seen = new Set<ModuleLike>()
+		while (queue.length > 0) {
+			const current = queue.shift()!
+			if (seen.has(current)) continue
+			seen.add(current)
+			if (current.id) files.add(current.id)
+			if (current.file) files.add(current.file)
+			for (const imported of current.importedModules ?? []) queue.push(imported)
+		}
+		return files
 	}
 
 	private configureServer(server: ViteDevServer): void {
@@ -864,16 +1085,86 @@ export class LoaderHmrService {
 		this.debouncer = new BatchDebouncer(
 			async (files, epoch) => {
 				await this.ensureBaseline()
-				this.inFlightBatchEpoch = epoch
-				try {
-					const summary = await this.execLock.run(() => this.batchProcessor.process(files, epoch))
-					if (!summary) return
-					const enriched = this.enrichBatchSummary(summary, epoch)
-					this.onBatchSummary(enriched)
-				} finally {
-					this.inFlightBatchEpoch = null
-					this.commitByBatchEpoch.delete(epoch)
-				}
+				const enriched = await this.execLock.run(async () => {
+					const catalogBefore = this.loaderCatalogSnapshot()
+					const generation = definitionSourceByService.get(this)?.beginArtifactGeneration?.()
+					const startedAt = performance.now()
+					let generationSettled = false
+					let execution: HmrExecutionResult | undefined
+					const settleGeneration = (commit: boolean): void => {
+						if (generationSettled) return
+						generationSettled = true
+						if (commit) generation?.commit()
+						else generation?.rollback()
+					}
+					try {
+						const summary = await runInArtifactGeneration(generation, () =>
+							this.batchProcessor.process(files, epoch, (result) => {
+								execution = result
+							}),
+						)
+						if (!summary) {
+							settleGeneration(false)
+							return undefined
+						}
+						const catalogAfter = this.loaderCatalogSnapshot()
+						const catalogApplied = this.didExecutionApplyCatalog(
+							execution,
+							catalogBefore,
+							catalogAfter,
+						)
+						if (summary.ok || catalogApplied) {
+							settleGeneration(true)
+						} else {
+							settleGeneration(false)
+						}
+						const exactCommit = execution?.commitSummary
+						const result = this.enrichBatchSummary(summary, exactCommit)
+						this.recordRecentUpdates(result, catalogBefore, exactCommit, catalogApplied)
+						return result
+					} catch (error) {
+						const catalogAfter = this.loaderCatalogSnapshot()
+						const catalogApplied = this.didExecutionApplyCatalog(
+							execution,
+							catalogBefore,
+							catalogAfter,
+						)
+						settleGeneration(catalogApplied)
+						const durationMs = roundHmrMs(performance.now() - startedAt)
+						const exactCommit = execution?.commitSummary
+						let result = this.createFailedBatchSummary({
+							files,
+							epoch,
+							durationMs,
+							error,
+							execution,
+						})
+						try {
+							result = this.enrichBatchSummary(result, exactCommit)
+							if (catalogApplied) {
+								this.recordPostCommitFailure({
+									files,
+									epoch,
+									durationMs,
+									catalogBefore,
+									catalogAfter,
+									commit: exactCommit,
+								})
+							} else {
+								this.recordRecentUpdates(result, catalogBefore, exactCommit, false)
+							}
+						} catch (reportError) {
+							this.ctx.logger.warn('failed to project HMR batch failure', { reportError })
+						}
+						this.ctx.logger.error('batch processing failed', {
+							epoch,
+							catalogApplied,
+							error,
+						})
+						return result
+					}
+				})
+				if (enriched) this.onBatchSummary(enriched)
 			},
 			BATCH_DEBOUNCE_MS,
 			BATCH_MAX_WAIT_MS,
@@ -883,12 +1174,100 @@ export class LoaderHmrService {
 	}
 
 	private registerWatchers(server: ViteDevServer) {
-		server.watcher.add(this.scanRootsAbs)
+		const viteRoots = this.scanRootsAbs.filter((root) => !isGeneratedStateRoot(root))
+		if (viteRoots.length > 0) server.watcher.add(viteRoots)
 		const events = ['change', 'add', 'unlink'] as const
 		for (const event of events) {
-			const listener = (file: string) => this.enqueueFileChange(file)
+			const listener = (file: string) => {
+				// `.pluxel` has one watcher owner even if an outer Vite configuration accidentally
+				// surfaces a generated event. This also collapses Vite + supplemental rename duplicates.
+				if (isGeneratedStateRoot(file)) return
+				this.enqueueFileChange(file)
+			}
 			server.watcher.on(event, listener)
-			this.watcherDisposers.push(() => server.watcher.off(event, listener))
+			this.watcherDisposers.push(() => {
+				server.watcher.off(event, listener)
+			})
+		}
+
+		// Generated state remains globally ignored by Vite. A source producer may nevertheless declare
+		// an exact `.pluxel` entry root (for example managed package wrappers), so fill only that explicit
+		// hole with a route-owned watcher. The normal path filter remains the final admission boundary.
+		const generatedRoots = this.scanRootsAbs.filter(isGeneratedStateRoot)
+		if (generatedRoots.length === 0 || server.config.server.watch === null) return
+		const generatedAnchors = unique(
+			generatedRoots.flatMap((root) => {
+				const anchor = generatedStateAnchor(root)
+				return anchor ? [anchor] : []
+			}),
+		)
+
+		const watcher = watch(generatedAnchors, {
+			ignoreInitial: true,
+			atomic: BATCH_MAX_WAIT_MS,
+			awaitWriteFinish: {
+				stabilityThreshold: BATCH_MAX_WAIT_MS,
+				pollInterval: 20,
+			},
+			ignored: [
+				...SUPPLEMENTAL_WATCH_IGNORED,
+				(path: string) => {
+					const clean = normalizePath(path)
+					return !generatedRoots.some(
+						(root) => pathAtOrWithin(clean, root) || pathAtOrWithin(root, clean),
+					)
+				},
+			],
+			usePolling: VITE_WATCH_USE_POLLING,
+		})
+		let ready = false
+		let settleReady = (): void => {}
+		this.supplementalWatcherReady = new Promise<void>((resolveReady) => {
+			settleReady = resolveReady
+		})
+		const onReady = (): void => {
+			ready = true
+			settleReady()
+		}
+		const onError = (error: unknown): void => {
+			if (!ready) {
+				this.supplementalWatcherSetupError ??= error
+				settleReady()
+				return
+			}
+			this.ctx.logger.error('supplemental generated-source watcher failed', { error })
+		}
+		const listeners = events.map((event) => {
+			const listener = (file: string): void => {
+				this.enqueueFileChange(file)
+			}
+			watcher.on(event, listener)
+			return { event, listener }
+		})
+		watcher.once('ready', onReady)
+		watcher.on('error', onError)
+		this.watcherDisposers.push(async () => {
+			for (const { event, listener } of listeners) watcher.off(event, listener)
+			watcher.off('ready', onReady)
+			// Unblock startup before awaiting close; it will observe `closed` at the next assertion.
+			settleReady()
+			try {
+				await watcher.close()
+			} finally {
+				// Keep the error listener installed while close is still settling so an asynchronous watcher
+				// failure cannot become an unhandled EventEmitter `error`.
+				watcher.off('error', onError)
+			}
+		})
+	}
+
+	private async waitForWatchersReady(): Promise<void> {
+		await this.supplementalWatcherReady
+		this.assertOpen()
+		if (this.supplementalWatcherSetupError !== undefined) {
+			throw new Error('[hmr] failed to initialize generated-source watcher', {
+				cause: this.supplementalWatcherSetupError,
+			})
 		}
 	}
 
@@ -896,14 +1275,19 @@ export class LoaderHmrService {
 		if (this.closed) return false
 		const clean = this.path.toClean(file)
 		if (isLoaderHmrWorkbenchContentSource(this, clean)) {
-			void refreshLoaderHmrWorkbenchArtifacts(this)
-				.then(() => this.forwardWorkbenchFullReload())
-				.catch((error) => {
+			// Admission is synchronous: execLock reserves this work before close() can append its
+			// drain barrier. An admitted refresh may publish, but it never reloads the browser after close.
+			void this.execLock.run(async () => {
+				try {
+					await refreshLoaderHmrWorkbenchArtifacts(this)
+					if (!this.closed) this.forwardWorkbenchFullReload()
+				} catch (error) {
 					this.ctx.logger.error('failed to rebuild Workbench Content artifact', {
 						file: clean,
 						error,
 					})
-				})
+				}
+			})
 			return true
 		}
 		if (this.toolkit.pathFilter(clean)) {
@@ -944,18 +1328,6 @@ export class LoaderHmrService {
 		return this.loader.api.anchors.has(clean)
 	}
 
-	private attachCommitTracker() {
-		const unsubscribe = requirePluginService(this.ctx).subscribeCommitted(
-			(summary: CommitSummary) => {
-				const epoch = this.inFlightBatchEpoch
-				if (epoch !== null) {
-					this.commitByBatchEpoch.set(epoch, summary)
-				}
-			},
-		)
-		this.ctx.effects.defer(unsubscribe, { tag: 'LoaderHmrService.commitTracker' })
-	}
-
 	private attachResolverCacheInvalidation() {
 		const unsubscribe = this.scanService.subscribeResolverInvalidated((detail) => {
 			// When ScanService clears its resolver cache, our derived caches may become stale:
@@ -974,8 +1346,10 @@ export class LoaderHmrService {
 		return formatPluginNodeReference(requirePluginService(this.ctx).nodeAddressOf(id))
 	}
 
-	private enrichBatchSummary(summary: HmrBatchSummary, epoch: number): HmrBatchSummary {
-		const commit = this.commitByBatchEpoch.get(epoch)
+	private enrichBatchSummary(
+		summary: HmrBatchSummary,
+		commit: CommitSummary | undefined,
+	): HmrBatchSummary {
 		if (!commit) return summary
 
 		const added = commit.pluginChanges.added.map((id) => this.formatIdentifier(id))
@@ -1010,6 +1384,199 @@ export class LoaderHmrService {
 			pluginChanges,
 			pluginLifecycleReport,
 		}
+	}
+
+	private createFailedBatchSummary(input: {
+		files: readonly string[]
+		epoch: number
+		durationMs: number
+		error: unknown
+		execution: HmrExecutionResult | undefined
+	}): HmrBatchSummary {
+		const execution = input.execution
+		return {
+			epoch: input.epoch,
+			changed: [...input.files],
+			targets: [],
+			affectedModules: execution?.affectedModules ?? [],
+			syncedModules: execution?.syncedModules ?? [],
+			desiredButStopped: [],
+			affected: 0,
+			fallbackRoots: 0,
+			invalidated: { vite: 0, runner: 0 },
+			activeServices: 0,
+			plugins: { loaded: 0, desired: 0, running: 0 },
+			commitMs: execution ? roundHmrMs(execution.commitMs) : null,
+			batchMs: input.durationMs,
+			ok: false,
+			...(execution?.executeError
+				? { executeError: execution.executeError }
+				: execution?.injectError
+					? { injectError: execution.injectError }
+					: { commitError: hmrFailureMessage(input.error) }),
+			prefetchFailed: 0,
+		}
+	}
+
+	private didExecutionApplyCatalog(
+		execution: HmrExecutionResult | undefined,
+		catalogBefore: PluginRouteCatalogSnapshot,
+		catalogAfter: PluginRouteCatalogSnapshot,
+	): boolean {
+		if (!execution) return false
+		// A resolved commit is authoritative for this request. The identity comparison is retained
+		// only for the rare case where core throws after publishing the graph at its PONR.
+		return execution.commitResult.ok || catalogAfter !== catalogBefore
+	}
+
+	private recordRecentUpdates(
+		summary: HmrBatchSummary,
+		catalogBefore: PluginRouteCatalogSnapshot,
+		commit: CommitSummary | undefined,
+		catalogApplied = this.loaderCatalogSnapshot() !== catalogBefore,
+	): void {
+		const definitionKeys = new Set<string>()
+		const relatedModules = [
+			...summary.changed,
+			...summary.targets,
+			...summary.affectedModules,
+			...summary.syncedModules,
+		]
+		this.collectCatalogDefinitionKeys(catalogBefore, relatedModules, definitionKeys)
+		this.collectCatalogDefinitionKeys(this.loaderCatalogSnapshot(), relatedModules, definitionKeys)
+		if (commit) this.collectCommitDefinitionKeys(commit, definitionKeys)
+		const update: PluginRecentUpdateSnapshot = clonePluginRecentUpdateSnapshot(
+			!summary.ok
+				? catalogApplied
+					? {
+							sequence: summary.epoch,
+							outcome: 'applied-with-issues',
+							phase: 'commit',
+							durationMs: summary.batchMs,
+						}
+					: {
+							sequence: summary.epoch,
+							outcome: 'retained-previous',
+							phase: summary.executeError ? 'evaluate' : summary.injectError ? 'inject' : 'commit',
+							durationMs: summary.batchMs,
+						}
+				: commit && !commit.lifecycleReport.ok
+					? {
+							sequence: summary.epoch,
+							outcome: 'applied-with-issues',
+							phase: 'lifecycle',
+							durationMs: summary.batchMs,
+						}
+					: {
+							sequence: summary.epoch,
+							outcome: 'applied',
+							phase: null,
+							durationMs: summary.batchMs,
+						},
+		)
+
+		this.storeRecentUpdates(definitionKeys, update)
+	}
+
+	private recordPostCommitFailure(input: {
+		files: readonly string[]
+		epoch: number
+		durationMs: number
+		catalogBefore: PluginRouteCatalogSnapshot
+		catalogAfter: PluginRouteCatalogSnapshot
+		commit: CommitSummary | undefined
+	}): void {
+		const definitionKeys = new Set<string>()
+		this.collectCatalogDefinitionKeys(input.catalogBefore, input.files, definitionKeys)
+		this.collectCatalogDefinitionKeys(input.catalogAfter, input.files, definitionKeys)
+		this.collectCatalogDeltaDefinitionKeys(input.catalogBefore, input.catalogAfter, definitionKeys)
+		if (input.commit) this.collectCommitDefinitionKeys(input.commit, definitionKeys)
+		this.storeRecentUpdates(
+			definitionKeys,
+			clonePluginRecentUpdateSnapshot({
+				sequence: input.epoch,
+				outcome: 'applied-with-issues',
+				phase: 'commit',
+				durationMs: input.durationMs,
+			}),
+		)
+	}
+
+	private collectCatalogDeltaDefinitionKeys(
+		before: PluginRouteCatalogSnapshot,
+		after: PluginRouteCatalogSnapshot,
+		output: Set<string>,
+	): void {
+		for (const entry of before.entries) {
+			const next = after.byDefinition.get(entry.indexKey)
+			if (
+				!next ||
+				next.candidate !== entry.candidate ||
+				next.provenance.moduleId !== entry.provenance.moduleId ||
+				!pluginExecutionEqual(next.provenance.execution, entry.provenance.execution)
+			) {
+				output.add(entry.indexKey)
+			}
+		}
+		for (const entry of after.entries) {
+			if (!before.byDefinition.has(entry.indexKey)) output.add(entry.indexKey)
+		}
+	}
+
+	private storeRecentUpdates(
+		definitionKeys: ReadonlySet<string>,
+		update: PluginRecentUpdateSnapshot,
+	): void {
+		if (definitionKeys.size === 0) return
+		const store = recentUpdatesByService.get(this)
+		if (!store) return
+		for (const key of definitionKeys) {
+			store.delete(key)
+			store.set(key, update)
+		}
+		while (store.size > MAX_RECENT_PLUGIN_UPDATES) {
+			const oldest = store.keys().next().value as string | undefined
+			if (oldest === undefined) break
+			store.delete(oldest)
+		}
+	}
+
+	private collectCatalogDefinitionKeys(
+		catalog: PluginRouteCatalogSnapshot,
+		moduleIds: readonly string[],
+		output: Set<string>,
+	): void {
+		const related = new Set<string>()
+		for (const moduleId of moduleIds) {
+			for (const variant of this.path.variants(moduleId)) related.add(this.path.toClean(variant))
+		}
+		for (const entry of catalog.entries) {
+			const moduleId = entry.provenance.moduleId
+			if (!moduleId) continue
+			if (this.path.variants(moduleId).some((variant) => related.has(this.path.toClean(variant)))) {
+				output.add(entry.indexKey)
+			}
+		}
+	}
+
+	private collectCommitDefinitionKeys(commit: CommitSummary, output: Set<string>): void {
+		const plugins = requirePluginService(this.ctx)
+		const add = (slot: PluginNodeSlot): void => {
+			output.add(pluginDefinitionIndexKey(plugins.nodeAddressOf(slot).definition))
+		}
+		for (const slot of commit.pluginChanges.added) add(slot)
+		for (const replacement of commit.pluginChanges.replaced) {
+			add(replacement.from)
+			add(replacement.to)
+		}
+		for (const slot of commit.pluginChanges.removed) add(slot)
+		for (const slot of commit.pluginChanges.restarted) add(slot)
+		for (const slot of commit.pluginChanges.availabilityChanged) add(slot)
+		for (const issue of commit.lifecycleReport.issues) add(issue.plugin)
+	}
+
+	private loaderCatalogSnapshot(): PluginRouteCatalogSnapshot {
+		return this.loader.api.registry.catalogSnapshot()
 	}
 
 	private onBatchSummary(summary: HmrBatchSummary) {
@@ -1140,6 +1707,8 @@ export class LoaderHmrService {
 
 	private async performWarmup() {
 		await this.execLock.run(async () => {
+			this.assertOpen()
+			await this.ensureBaseline()
 			this.timing.clear()
 			const endAll = startTimer()
 			const endScan = startTimer()
@@ -1156,36 +1725,51 @@ export class LoaderHmrService {
 			}
 
 			const endWarmup = startTimer()
+			const catalogBefore = this.loaderCatalogSnapshot()
+			const generation = definitionSourceByService.get(this)?.beginArtifactGeneration?.()
 			let prefetchMs: number | undefined
 			let prefetchFailed: number | undefined
 			let prefetchPromise: Promise<PrefetchTransformResult> | undefined
 			let endPrefetch: (() => number) | undefined
-			if (this.shouldWarmupPrefetch(coldFiles.length)) {
-				endPrefetch = startTimer()
-				prefetchPromise = prefetchTransforms({
-					env: this.ssrEnv,
-					ids: coldFiles,
-					timing: this.timing,
-					concurrency: this.resolveWarmupPrefetchConcurrency(coldFiles.length),
-				})
-			}
+			let executed: HmrExecutionResult | undefined
+			try {
+				await runInArtifactGeneration(generation, async () => {
+					if (this.shouldWarmupPrefetch(coldFiles.length)) {
+						endPrefetch = startTimer()
+						prefetchPromise = prefetchTransforms({
+							env: this.ssrEnv,
+							ids: coldFiles,
+							timing: this.timing,
+							concurrency: this.resolveWarmupPrefetchConcurrency(coldFiles.length),
+						})
+					}
 
-			if (debugWarmup) {
-				dbgWarmup.debug((l) => {
-					const prettyFiles = coldFiles.map((f) => this.path.pretty(f))
-					return l`files (${prettyFiles.length})\n${prettyFiles.map((f) => `    ${f}`).join('\n')}`
-				})
-			}
+					if (debugWarmup) {
+						dbgWarmup.debug((l) => {
+							const prettyFiles = coldFiles.map((f) => this.path.pretty(f))
+							return l`files (${prettyFiles.length})\n${prettyFiles.map((f) => `    ${f}`).join('\n')}`
+						})
+					}
 
-			const executed = await this.executor.runAndLoadAllClean(coldFiles, true)
-			if (prefetchPromise) {
-				// Overlap transform prefetch with evaluation to reduce warmup wall time.
-				// Await it after evaluation so we don't leave background work behind.
-				const prefetch = await prefetchPromise.catch((): undefined => undefined)
-				prefetchFailed = prefetch?.failed || undefined
-				prefetchMs = roundHmrMs(endPrefetch?.() ?? 0)
+					executed = await this.executor.runAndLoadAllClean(coldFiles, true)
+					if (prefetchPromise) {
+						// Overlap transform prefetch with evaluation to reduce warmup wall time.
+						// Await it after evaluation so we don't leave background work behind.
+						const prefetch = await prefetchPromise.catch((): undefined => undefined)
+						prefetchFailed = prefetch?.failed || undefined
+						prefetchMs = roundHmrMs(endPrefetch?.() ?? 0)
+					}
+				})
+				const catalogApplied = this.loaderCatalogSnapshot() !== catalogBefore
+				if (!executed || (!executed.commitResult.ok && !catalogApplied)) generation?.rollback()
+				else generation?.commit()
+				assertHmrExecutionOk(executed, 'HMR warmup')
+			} catch (error) {
+				await prefetchPromise?.catch((): undefined => undefined)
+				if (this.loaderCatalogSnapshot() !== catalogBefore) generation?.commit()
+				else generation?.rollback()
+				throw error
 			}
-			assertHmrExecutionOk(executed, 'HMR warmup')
 			const commitMs = executed ? roundHmrMs(executed.commitMs) : null
 
 			const warmupMs = roundHmrMs(endWarmup())

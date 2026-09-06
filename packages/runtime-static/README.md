@@ -57,6 +57,13 @@ Binding 只形成 ConfigService bootstrap seed；优先级是 `configure snapsho
 
 Static catalog、RuntimeState、config owner 与 HMR 都使用 lowering 生成的结构化 Plugin node address；class name 和 `displayName` 只用于展示。`configure()` 在 canonical entry 完成求值后执行，因此可以在回调中通过 `pluginNodeAddressOf()` 取得 address。源码移动或 root export 重命名会产生新的 identity，并使用对应的当前格式持久化 owner。
 
+Management diagnostics 不把 static 等同于“未知来源”。Vite catalog 根据 semantic graph 报告 `static-catalog` 的
+`source-module`、`built-module` 或诚实的 `unreported`，更新方式统一报告 `catalog-hmr`；production freezer 产物固定报告
+`static-bundle / application-bundle / deployment`。Source 只来自 raw lowering 的 exact fact，built 只来自 active closure 中的
+toolchain literal fact；扩展名、package 路径或没有 source match 都不能推断 artifact。失败 artifact generation rollback 后不会污染
+active facts。这些 execution facts 不改变由 definition address 决定的 package/source identity，也不提供在 running host 内切换
+artifact 的控制 API；Management DTO 不携带 module ID、file URL 或 absolute path。
+
 ## Vite development
 
 ```ts
@@ -68,7 +75,12 @@ export default defineConfig({
 })
 ```
 
-Vite SSR 加载 canonical entry。插件模块变化执行 catalog HMR；entry 或只影响 `configure()` 的依赖变化会重建 host；Workbench UI 由开发 compiler 增量构建。
+Vite SSR 加载 canonical entry。插件模块变化执行 catalog HMR；entry 或只影响 `configure()` 的依赖变化会重建 host；Workbench UI 由开发 compiler 增量构建。Workbench badge 显示“目录 HMR”，artifact 详情仍独立区分源码 module、构建 module 与未报告。
+
+Catalog HMR 成功且没有结构化异常时报告 `applied`。旧 catalog 保持 authority 时报告 `retained-previous`；新 catalog 已提交但 commit path 或 generation lifecycle 有异常时
+报告 `applied-with-issues / commit|lifecycle`，失败 generation 的 partial effects 会按 startup rollback 清理。Full-host replacement
+必须先停止旧 host；candidate host 启动失败时先清理 candidate，再从 previous application definition 创建 fresh compensation host。
+只有 compensation 成功启动才报告 `restored-previous / application-reload`，它不表示旧 running generation 被保留或复活。
 
 ## Production application
 

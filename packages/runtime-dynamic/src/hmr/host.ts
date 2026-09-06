@@ -43,9 +43,13 @@ import {
 import {
 	attachLoaderHmrWorkbenchArtifactPublisher,
 	LoaderHmrService,
+	readLoaderHmrRecentUpdate,
 	type LoaderHmrConfig,
 } from './engine/LoaderHmrService'
-export { configureLoaderHmrWorkbenchArtifactSource } from './engine/LoaderHmrService'
+export {
+	configureLoaderHmrDefinitionSource,
+	configureLoaderHmrWorkbenchArtifactSource,
+} from './engine/LoaderHmrService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 import { resolveDynamicPluginSources, type DynamicPluginSource } from '../sources'
@@ -521,6 +525,9 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		...baseRoute,
 		dynamicPluginSources: createDynamicPluginSourceReader(plan.dynamicSources),
 		modules: hmr,
+		recentUpdate: {
+			resolveRecentUpdate: (address) => readLoaderHmrRecentUpdate(hmr, address),
+		},
 	})
 	ctx.effects.defer(uninstallRoute, { tag: 'LoaderHmrRouteCapabilities', phase: 'shutdown' })
 

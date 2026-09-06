@@ -1335,6 +1335,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: catalog:build
         version: 6.1.1(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      chokidar:
+        specifier: catalog:node
+        version: 5.0.0
       crossws:
         specifier: catalog:prod
         version: 0.4.12(srvx@0.12.7)

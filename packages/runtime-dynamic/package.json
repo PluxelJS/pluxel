@@ -58,6 +58,7 @@
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/runtime": "workspace:^",
 		"@vitejs/plugin-react": "catalog:build",
+		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
 		"elysia": "catalog:prod",
 		"jsonc-parser": "catalog:prod",
@@ -87,9 +88,5 @@
 	},
 	"engines": {
 		"node": ">=24"
-	},
-	"inlinedDependencies": {
-		"chokidar": "5.0.0",
-		"readdirp": "5.1.1"
 	}
 }

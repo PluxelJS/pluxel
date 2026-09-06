@@ -73,6 +73,8 @@ describe('staticApplication', () => {
 			'pluxel:runtime-source',
 		])
 		expect(pipeline.semantics.workbenchPlans).toBeTypeOf('function')
+		expect(pipeline.semantics.classifyDefinitionArtifact).toBeTypeOf('function')
+		expect(pipeline.semantics.beginArtifactGeneration).toBeTypeOf('function')
 	})
 
 	it('runs the final output guard after caller-supplied compiler plugins', () => {

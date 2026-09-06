@@ -4,6 +4,10 @@ import {
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
 import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
+import {
+	clonePluginExecutionSnapshot,
+	type PluginExecutionSnapshot,
+} from '../../plugin-execution'
 
 export type PluginCatalogErrorCode =
 	| 'plugin_definition_collision'
@@ -23,8 +27,8 @@ export class PluginCatalogError extends Error {
 export type PluginRouteCatalogProvenance = Readonly<{
 	/** Route-owned module identity. It never enters Core identity or graph state. */
 	moduleId?: string
-	/** Route-owned source projection used only by diagnostics/control-plane reads. */
-	source?: unknown
+	/** Immutable execution fact projected to management clients without physical module identity. */
+	execution?: PluginExecutionSnapshot
 	/** Route-owned artifact/build input. Core must never receive this value. */
 	artifactInput?: unknown
 }>
@@ -90,11 +94,22 @@ export function createPluginRouteCatalogSnapshot(
 			abstractRoles.set(tokenKey, provides)
 		}
 
+		const provenance = input.provenance
 		const entry = Object.freeze({
 			address,
 			indexKey,
 			candidate: input.candidate,
-			provenance: Object.freeze({ ...input.provenance }),
+			provenance: Object.freeze({
+				...provenance,
+				...(provenance?.execution === undefined
+					? {}
+					: {
+							execution: clonePluginExecutionSnapshot(
+								provenance.execution,
+								`Plugin catalog execution for ${formatPluginDefinitionReference(address)}`,
+							),
+						}),
+			}),
 		})
 		concreteRoles.add(indexKey)
 		entries.push(entry)

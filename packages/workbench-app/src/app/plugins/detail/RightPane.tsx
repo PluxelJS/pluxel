@@ -1,4 +1,4 @@
-import { Badge, Box, Center, Loader, Stack, Tabs, Text } from '@mantine/core'
+import { Badge, Box, Center, Loader, Stack, Tabs, Text, Tooltip } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 
@@ -13,6 +13,7 @@ import { LogLevelsCard } from './cards/LogLevelsCard'
 import { PluginPanel } from './cards/PluginPanel'
 import { ActionBar } from './controls/ActionBar'
 import { usePluginMeta } from './context'
+import { describePluginExecution } from '../pluginExecutionPresentation'
 import { buildRightPaneTabGroups, normalizeRestPath } from './rightPaneState'
 import { PluginWorkbenchTabActivityProvider } from './workbench/tabActivity'
 
@@ -37,7 +38,7 @@ function PaneTabPanel({ children, value }: { children: ReactNode; value: string 
 }
 
 export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
-	const { owner, pluginRoute, pluginLabel, source } = usePluginMeta()
+	const { owner, pluginRoute, pluginLabel, status } = usePluginMeta()
 	const { nodes: tabNodes, entries: tabEntries } = useWorkbenchTabs()
 	const tabGroups = useMemo(
 		() => buildRightPaneTabGroups(pluginLabel, tabEntries, tabNodes as ReactNode[]),
@@ -54,8 +55,10 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	useEffect(() => {
 		if (showRouteTab) setActiveTab('route')
 	}, [restPath, showRouteTab])
-	const sourceLabel =
-		source.kind === 'hmr' ? 'HMR' : source.kind === 'package' ? '包安装' : '未知来源'
+	const execution = useMemo(
+		() => describePluginExecution(status.execution),
+		[status.address.definition.entry, status.execution],
+	)
 
 	return (
 		<PluginPanel className="plx-pluginWorkbench__contentPanel" padding={4} gap={4}>
@@ -72,9 +75,14 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						<div className="plx-pluginWorkbench__commandBar">
 							<div className="plx-pluginWorkbench__commandTitle">
 								<span className="plx-pluginWorkbench__commandName">{pluginLabel}</span>
-								<Badge size="sm" variant="light">
-									{sourceLabel}
-								</Badge>
+								<Tooltip
+									label={`${execution.currentLabel} · ${execution.artifactLabel}；${execution.updateLabel}`}
+									withArrow
+								>
+									<Badge size="sm" variant="light" color={execution.badgeTone}>
+										{execution.badgeLabel}
+									</Badge>
+								</Tooltip>
 							</div>
 							<ActionBar />
 						</div>
@@ -172,7 +180,7 @@ function ConfigContent({
 			<EmptyState
 				icon={<IconSettingsOff size={28} />}
 				title="暂无可配置项"
-				description="该插件未提供配置展示计划。"
+				description="该插件未声明可在 Workbench 中编辑的配置。"
 				minHeight={200}
 			/>
 		)

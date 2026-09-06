@@ -36,7 +36,11 @@ import {
 } from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
-import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './hmr/vite-watch'
+import {
+	DEFAULT_VITE_WATCH_IGNORED,
+	GENERATED_STATE_VITE_WATCH_IGNORED,
+	VITE_WATCH_USE_POLLING,
+} from './hmr/vite-watch'
 import { isPackageInstalledFrom } from './host-package'
 import { isPublicElysiaSingletonSpecifier } from './elysia-singleton'
 
@@ -142,6 +146,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		await previous?.stop()
 		const {
 			bootPlannedLoaderHmrHost,
+			configureLoaderHmrDefinitionSource,
 			configureLoaderHmrWorkbenchArtifactSource,
 			planLoaderHmrHostFromConfig,
 		} = await loadDynamicHmrHostModule(server)
@@ -156,6 +161,11 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 				mode === 'distribution'
 					? resolve(plan.runtimeStorage.persistenceDir, '..', 'workbench-artifacts')
 					: undefined,
+		})
+		configureLoaderHmrDefinitionSource(booted.hmr, {
+			classifyDefinitionArtifact: sourcePipeline.semantics.classifyDefinitionArtifact,
+			beginArtifactGeneration: sourcePipeline.semantics.beginArtifactGeneration,
+			fixedModules: (): Iterable<string> => state.configFiles ?? [],
 		})
 		configureLoaderHmrWorkbenchArtifactSource(booted.hmr, {
 			compilations: async () => {
@@ -212,7 +222,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 				...(config.cacheDir === undefined ? { cacheDir: DYNAMIC_RUNTIME_CACHE_DIR } : {}),
 				server: {
 					watch: {
-						ignored: [...DEFAULT_VITE_WATCH_IGNORED],
+						ignored: [...DEFAULT_VITE_WATCH_IGNORED, GENERATED_STATE_VITE_WATCH_IGNORED],
 						usePolling: VITE_WATCH_USE_POLLING,
 					},
 				},
@@ -485,6 +495,7 @@ async function loadDynamicHmrHostModule(
 	Pick<
 		typeof import('./hmr/host'),
 		| 'bootPlannedLoaderHmrHost'
+		| 'configureLoaderHmrDefinitionSource'
 		| 'configureLoaderHmrWorkbenchArtifactSource'
 		| 'planLoaderHmrHostFromConfig'
 	>

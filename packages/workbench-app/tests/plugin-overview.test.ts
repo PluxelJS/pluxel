@@ -26,13 +26,12 @@ const catalog = {
 			lifecycleState: 'running',
 			availability: 'available',
 			issues: [],
-			source: {
-				kind: 'package',
-				moduleId: '@pluxel/example',
-				packageName: '@pluxel/example',
-				version: '1.0.0',
-				tag: null,
+			execution: {
+				kind: 'static-catalog',
+				artifact: { kind: 'built-module' },
+				update: { kind: 'catalog-hmr' },
 			},
+			recentUpdate: null,
 		},
 	],
 	sections: [

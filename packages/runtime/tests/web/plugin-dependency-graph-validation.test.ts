@@ -39,13 +39,12 @@ function status(
 		lifecycleState: 'stopped' as const,
 		availability: available ? ('available' as const) : ('unavailable' as const),
 		issues: [],
-		source: {
-			kind: 'unknown' as const,
-			moduleId: null,
-			packageName: null,
-			version: null,
-			tag: null,
+		execution: {
+			kind: 'unreported' as const,
+			artifact: { kind: 'unreported' as const },
+			update: { kind: 'unreported' as const },
 		},
+		recentUpdate: null,
 	}
 }
 

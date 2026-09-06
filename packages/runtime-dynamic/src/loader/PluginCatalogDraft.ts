@@ -2,6 +2,7 @@ import {
 	formatPluginNodeReference,
 	pluginDefinitionIndexKey,
 	type PluginConstructor,
+	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
@@ -10,12 +11,21 @@ import {
 } from '@pluxel/core/internal'
 import {
 	createPluginRouteCatalogSnapshot,
+	UNREPORTED_PLUGIN_EXECUTION,
+	type PluginExecutionSnapshot,
 	type PluginRouteCatalogProvenance,
 	type PluginRouteCatalogSnapshot,
 } from '@pluxel/runtime/internal'
 
 export type ModuleId = string
 export type ExportKey = string
+export type DynamicPluginExecutionResolver = (
+	definition: PluginDefinitionAddress,
+	moduleId: ModuleId,
+) => PluginExecutionSnapshot
+
+export const unreportedDynamicPluginExecution: DynamicPluginExecutionResolver = () =>
+	UNREPORTED_PLUGIN_EXECUTION
 
 type DraftItem = Readonly<{
 	candidate: ConcretePluginDefinitionCandidate
@@ -41,8 +51,11 @@ export interface PluginCatalogDraft {
  * The draft owns only batch-local mutable indexes. Once accepted, the coordinator snapshot is the
  * sole committed catalog; no route registry or publication callback exists after the transaction.
  */
-export function createPluginCatalogDraft(base: PluginRouteCatalogSnapshot): PluginCatalogDraft {
-	return new PluginCatalogDraftImpl(base)
+export function createPluginCatalogDraft(
+	base: PluginRouteCatalogSnapshot,
+	resolveExecution: DynamicPluginExecutionResolver = unreportedDynamicPluginExecution,
+): PluginCatalogDraft {
+	return new PluginCatalogDraftImpl(base, resolveExecution)
 }
 
 class PluginCatalogDraftImpl implements PluginCatalogDraft {
@@ -51,7 +64,10 @@ class PluginCatalogDraftImpl implements PluginCatalogDraft {
 	private readonly definitionsByModule = new Map<ModuleId, Set<string>>()
 	private closed = false
 
-	constructor(base: PluginRouteCatalogSnapshot) {
+	constructor(
+		base: PluginRouteCatalogSnapshot,
+		private readonly resolveExecution: DynamicPluginExecutionResolver,
+	) {
 		this.baseRevision = base.revision
 		for (const entry of base.entries) {
 			const moduleId = entry.provenance.moduleId
@@ -107,7 +123,10 @@ class PluginCatalogDraftImpl implements PluginCatalogDraft {
 		this.addItem(definitionKey, {
 			candidate,
 			moduleId,
-			provenance: Object.freeze({ moduleId }),
+			provenance: Object.freeze({
+				moduleId,
+				execution: this.resolveExecution(declaration.address, moduleId),
+			}),
 		})
 		return address
 	}

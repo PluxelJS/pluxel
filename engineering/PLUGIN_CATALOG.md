@@ -16,6 +16,13 @@
 catalog、偏好与布局使用 canonical definition/node address 及其 index key。读取 stopped、暂时消失或偏好中的 orphan
 只能做 non-creating lookup/decode，不得 materialize Core slot、Context、effects 或 artifact lease。
 
+Status 中的 package/source origin 同样只从 `address.definition.entry` 派生。`execution` 是正交的 route fact：它区分
+`static-bundle`、`static-catalog`、`dynamic-fixed`、`dynamic-entry` 与 `unreported`，但不参与 section identity、默认分区或
+canonical reference。尤其 `dynamic-entry` 可以消费 package-root identity 的 built artifact；这时 package 分区仍来自 address，
+而 `entry-only` 只说明 entry 可 HMR、package 内部源码不在承诺的 source graph 中。Source/built artifact 必须来自 route 的正向
+semantic fact；文件扩展名、路径或没有匹配 source fact 都不能参与 section 或 artifact 猜测。完整组合与 `recentUpdate` 语义见
+[`RUNTIME.md`](RUNTIME.md#execution-provenance-与-recent-update)。
+
 ## Enabling Management
 
 Workbench 启用时自动安装 Management Plane。无 Workbench 的宿主只能用布尔 flag 显式安装：
@@ -39,7 +46,7 @@ Runtime 对每个 concrete Plugin definition 按以下优先级选择一个默�
 | 3      | definition entry 是 `source-entry` | `source-directory` | 直接父目录的最后一段              |
 
 规则是 first-match，不混合多个依据：provider role 优先于 Plugin 自己的 package/source provenance。package 分区读取
-definition address 中的 package-root，不读取 runtime source snapshot 上可变的 `packageName`。source 分区使用完整
+definition address 中的 package-root，不读取 execution snapshot 或 route module metadata。source 分区使用完整
 `sourceSpace + direct parent path` 作为身份；`src/render/canvas.ts` 与 `src/render/fonts.ts` 同区，
 `src/render/internal/debug.ts` 则属于 `src/render/internal`，不会按祖先目录、关键词或任意深度猜测合并。entry 没有父目录时，
 以 `sourceSpace` 作为分区身份和展示名。
@@ -97,10 +104,15 @@ section 不能删除它。client 应回传所有当前 section（包括空 secti
 偏好文件使用 `management` persistence namespace 的 `plugin-catalog.json`，不进入 RuntimeState 或 Workbench backend。
 reader/writer 只接受严格的 version 4 shape；没有旧版本 reader、migration 或名称/布局猜测。
 
-Management protocol major 3 提供一个目录能力：
+Management protocol major 4 提供一个目录能力，并在每个 Plugin status 中携带严格校验的 `execution` 与 nullable
+`recentUpdate`：
 
 - `client.catalog.snapshot()`：返回同一 pinned revision 的 `plugins`、`sections` 和 `summary`；
 - `client.catalog.updateLayout({ sections })`：保存 placement/order 覆盖并返回解析后的 sections。
+
+`recentUpdate` 不改变 node membership、分区或 canonical identity。它区分成功 `applied`、旧 catalog 仍为 authority 的
+`retained-previous`、新 catalog 已为 authority 的 `applied-with-issues`（`commit | lifecycle`），以及 full application reload
+通过 fresh compensation host 恢复 previous definition 的 `restored-previous / application-reload`。
 
 不存在独立 Plugin status list 与 section list 的组合读取，也不存在宿主分类配置。
 
@@ -116,3 +128,5 @@ Management protocol major 3 提供一个目录能力：
 - orphan preference 不 materialize node，相同 address 返回时恢复偏好；
 - v4 round-trip，任何旧版本与非法 address 直接拒绝；
 - protocol snapshot 的 node membership、唯一性、summary 一致性和 portable-data budgets。
+- package/source label、搜索与 copy reference 只从 address 派生，execution 不改变 section identity；
+- execution/recentUpdate union 严格拒绝非法组合，browser snapshot 不泄露 absolute path、module ID 或 file URL。

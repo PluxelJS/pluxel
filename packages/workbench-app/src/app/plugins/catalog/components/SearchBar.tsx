@@ -107,7 +107,7 @@ export function SearchBar({
 	return (
 		<TextInput
 			ref={inputRef}
-			placeholder="搜索名称 / ID / @包"
+			placeholder="搜索名称 / @包 / ref: / exec:"
 			value={value}
 			onChange={(e) => onChange(e.currentTarget.value)}
 			leftSection={<IconSearch size={14} />}

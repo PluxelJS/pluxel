@@ -67,7 +67,7 @@ import { DroppableContainer } from './components/DroppableContainer'
 import { FlatPluginList } from './components/FlatPluginList'
 import { GroupPlacementModal } from './components/GroupPlacementModal'
 import { GroupCard } from './components/GroupCard'
-import { SortableRow } from './components/SortableRow'
+import { SortableRow, type RowMeta } from './components/SortableRow'
 import { cid, gid, iid } from './controllerModel'
 import { DENSITY, FILTERED_FLAT_VIRTUALIZE_THRESHOLD, type Density } from './constants'
 import type { GroupConfig, PluginStatuses } from './types'
@@ -172,7 +172,18 @@ export function PluginOrganizer({
 	}, [statuses])
 	const getName = useCallback((id: string) => statuses[id]?.name ?? id, [statuses])
 	const getMeta = useCallback(
-		(id: string) => ({ tag: statuses[id]?.tag, version: statuses[id]?.version }),
+		(id: string): RowMeta => {
+			const status = statuses[id]
+			return {
+				definition: status?.definitionLabel,
+				executionLabel: status?.executionLabel,
+				executionTone: status?.executionTone,
+				executionDescription: status?.executionDescription,
+				recentUpdateWarningLabel: status?.recentUpdateWarningLabel,
+				recentUpdateWarningTone: status?.recentUpdateWarningTone,
+				recentUpdateWarningDescription: status?.recentUpdateWarningDescription,
+			}
+		},
 		[statuses],
 	)
 

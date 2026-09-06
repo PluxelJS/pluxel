@@ -1,6 +1,11 @@
 import type { PluginCatalogSection } from '../../../runtime'
-import { pluginNodeIndexKey } from '@pluxel/core'
+import { formatPluginNodeReference, pluginNodeIndexKey } from '@pluxel/core'
 import type { PluginStatusEntry } from '../pluginOverview'
+import {
+	describePluginDefinition,
+	describePluginExecution,
+	describePluginRecentUpdate,
+} from '../pluginExecutionPresentation'
 import type { GroupConfig, PluginStatuses } from './organizer/types'
 
 export type OverviewSnapshot = {
@@ -32,16 +37,31 @@ const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] |
 	for (const entry of entries ?? []) {
 		const id = entry?.id
 		if (!id) continue
-		const source = entry?.source
+		const definition = describePluginDefinition(entry.address.definition)
+		const execution = describePluginExecution(entry.execution)
+		const recentUpdate = describePluginRecentUpdate(entry.recentUpdate)
+		const hasRecentUpdateWarning =
+			entry.recentUpdate !== null && entry.recentUpdate.outcome !== 'applied'
 		snapshot[id] = {
 			id,
 			address: entry.address,
+			reference: formatPluginNodeReference(entry.address),
 			name: entry.label ?? entry.displayName ?? id,
-			packageName: source?.packageName ?? undefined,
-			version: source?.version ?? undefined,
-			tag: source?.tag ?? undefined,
-			sourceKind: source?.kind ?? 'unknown',
-			moduleId: source?.moduleId ?? null,
+			definitionLabel: definition.compactLabel,
+			packageName: definition.packageName ?? undefined,
+			sourceSpace: definition.sourceSpace ?? undefined,
+			sourcePath: definition.path ?? undefined,
+			exportName: definition.exportName,
+			executionLabel: execution.badgeLabel,
+			executionTone: execution.badgeTone,
+			executionDescription: `${execution.currentLabel} · ${execution.artifactLabel}；${execution.updateLabel}`,
+			executionSearchTerms: execution.searchTerms,
+			recentUpdateSearchTerms: recentUpdate.searchTerms,
+			recentUpdateWarningLabel: hasRecentUpdateWarning ? recentUpdate.label : undefined,
+			recentUpdateWarningTone: hasRecentUpdateWarning ? recentUpdate.tone : undefined,
+			recentUpdateWarningDescription: hasRecentUpdateWarning
+				? `${recentUpdate.label}${recentUpdate.meta ? ` · ${recentUpdate.meta}` : ''}`
+				: undefined,
 			availability: entry.availability,
 			autoStart: entry.autoStart,
 			desiredState: entry.desiredState,

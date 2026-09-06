@@ -4,8 +4,11 @@ import { rolldown } from 'rolldown'
 import { describe, expect, it } from 'vitest'
 import { createPluginSemanticsPlugin } from '../../src/rolldown/plugins/pluginSemanticsPlugin'
 
-async function transformWithCollector(code: string, id = import.meta.filename) {
-	const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
+async function transformWithExistingCollector(
+	collector: ReturnType<typeof createPluginSemanticsPlugin>,
+	code: string,
+	id = import.meta.filename,
+) {
 	const hook = collector.plugin.transform as {
 		handler: (this: unknown, code: string, id: string) => unknown
 	}
@@ -21,12 +24,33 @@ async function transformWithCollector(code: string, id = import.meta.filename) {
 		code,
 		id,
 	)) as { code: string; map: null } | null
+	return result
+}
+
+async function transformWithCollector(code: string, id = import.meta.filename) {
+	const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
+	const result = await transformWithExistingCollector(collector, code, id)
 	return { collector, result }
 }
 
 async function transform(code: string, id = import.meta.filename) {
 	const transformed = await transformWithCollector(code, id)
 	return transformed.result
+}
+
+function preloweredDefinitionSource(
+	definition: object,
+	options: { abiVersion?: number; toolchain?: string } = {},
+): string {
+	return `import{__setPluginDefinition as s}from${JSON.stringify(options.toolchain ?? '@pluxel/runtime/toolchain')};class BuiltPlugin{}s(BuiltPlugin,${JSON.stringify(
+		{
+			abiVersion: options.abiVersion ?? 2,
+			kind: 'plugin',
+			definition,
+			constructorRequires: [],
+			optional: [],
+		},
+	)});`
 }
 
 describe('plugin semantic lowering', () => {
@@ -110,6 +134,235 @@ describe('plugin semantic lowering', () => {
 		)
 		expect(result?.code).not.toContain('optionalPlugin')
 		expect(result?.code).not.toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
+	})
+
+	it('replaces raw-source facts atomically and filters them by the active module closure', async () => {
+		const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
+		const moduleId = import.meta.filename
+		const inactiveModuleId = new URL('./plugins.test.ts', import.meta.url).pathname
+
+		await transformWithExistingCollector(
+			collector,
+			`
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class FirstPlugin extends BasePlugin {}
+			`,
+			`${moduleId}?generation=1`,
+		)
+		const first = collector.definitions()[0]!.definition
+		expect(collector.classifyDefinitionArtifact(first)).toBe('source-module')
+		expect(collector.classifyDefinitionArtifact(first, [`${moduleId}?active=1`])).toBe(
+			'source-module',
+		)
+		expect(collector.classifyDefinitionArtifact(first, [inactiveModuleId])).toBe('unreported')
+
+		await transformWithExistingCollector(
+			collector,
+			`
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class SecondPlugin extends BasePlugin {}
+			`,
+			`${moduleId}?generation=2`,
+		)
+		const definitions = collector.definitions()
+		expect(definitions).toHaveLength(1)
+		expect(definitions[0]?.className).toBe('SecondPlugin')
+		expect(collector.classifyDefinitionArtifact(first)).toBe('unreported')
+		expect(collector.classifyDefinitionArtifact(definitions[0]!.definition, [moduleId])).toBe(
+			'source-module',
+		)
+	})
+
+	it('reports built modules only from exact pre-lowered definition facts', async () => {
+		const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
+		const source = `
+			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			@Plugin() export class TrackedPlugin extends BasePlugin {}
+		`
+		await transformWithExistingCollector(collector, source)
+		const definition = collector.definitions()[0]!.definition
+
+		await transformWithExistingCollector(collector, 'export const ordinary = true')
+		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
+
+		await transformWithExistingCollector(collector, source)
+		await transformWithExistingCollector(collector, preloweredDefinitionSource(definition))
+		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
+		expect(collector.classifyDefinitionArtifact(definition, [import.meta.filename])).toBe(
+			'built-module',
+		)
+		expect(collector.definitions()).toEqual([])
+		await transformWithExistingCollector(
+			collector,
+			`export * from '@acme/installed-plugin'
+			import * as pluginModule from '@acme/installed-plugin'
+			export default pluginModule.default`,
+		)
+		expect(collector.classifyDefinitionArtifact(definition, [import.meta.filename])).toBe(
+			'unreported',
+		)
+
+		const lookalikeModule = `${import.meta.filename}.mjs`
+		await transformWithExistingCollector(
+			collector,
+			`const __setPluginDefinition = () => undefined
+			__setPluginDefinition(null, ${JSON.stringify({ definition })})`,
+			lookalikeModule,
+		)
+		expect(collector.classifyDefinitionArtifact(definition, [lookalikeModule])).toBe('unreported')
+
+		await transformWithExistingCollector(
+			collector,
+			preloweredDefinitionSource(definition, { abiVersion: 1 }),
+		)
+		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
+
+		await transformWithExistingCollector(
+			collector,
+			preloweredDefinitionSource(definition, { toolchain: '@acme/fake-toolchain' }),
+		)
+		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
+
+		await transformWithExistingCollector(collector, source)
+		const watchChange = collector.plugin.watchChange as (
+			id: string,
+			change: { event: 'delete' },
+		) => void
+		watchChange(import.meta.filename, { event: 'delete' })
+		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
+	})
+
+	it('uses the active closure to disambiguate the same source and built definition', async () => {
+		const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
+		const sourceModule = import.meta.filename
+		const builtModule = new URL('./plugins.test.ts', import.meta.url).pathname
+		await transformWithExistingCollector(
+			collector,
+			`
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class SharedPlugin extends BasePlugin {}
+			`,
+			sourceModule,
+		)
+		const definition = collector.definitions()[0]!.definition
+		await transformWithExistingCollector(
+			collector,
+			preloweredDefinitionSource(definition),
+			builtModule,
+		)
+
+		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
+		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
+		expect(collector.classifyDefinitionArtifact(definition, [`${builtModule}?v=2`])).toBe(
+			'built-module',
+		)
+		expect(collector.classifyDefinitionArtifact(definition, ['/tmp/unrelated.mjs'])).toBe(
+			'unreported',
+		)
+	})
+
+	it('rolls back or commits one artifact fact generation atomically', async () => {
+		const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
+		const sourceModule = import.meta.filename
+		const builtModule = new URL('./plugins.test.ts', import.meta.url).pathname
+		const source = `
+			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			@Plugin() export class TransactionPlugin extends BasePlugin {}
+		`
+		await transformWithExistingCollector(collector, source, sourceModule)
+		const definition = collector.definitions()[0]!.definition
+		await transformWithExistingCollector(
+			collector,
+			preloweredDefinitionSource(definition),
+			builtModule,
+		)
+
+		const rolledBack = collector.beginArtifactGeneration()
+		expect(() => collector.beginArtifactGeneration()).toThrow('already active')
+		await rolledBack.run(async () => {
+			await transformWithExistingCollector(collector, 'export const ordinary = true', sourceModule)
+			await transformWithExistingCollector(collector, 'export const ordinary = true', builtModule)
+			expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('unreported')
+			expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('unreported')
+		})
+		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
+		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('built-module')
+		rolledBack.rollback()
+		rolledBack.rollback()
+		expect((): void => {
+			rolledBack.run((): void => undefined)
+		}).toThrow('already settled')
+		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
+		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('built-module')
+
+		const committed = collector.beginArtifactGeneration()
+		await committed.run(() =>
+			transformWithExistingCollector(collector, 'export const ordinary = true', builtModule),
+		)
+		committed.commit()
+		committed.commit()
+		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
+		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('unreported')
+	})
+
+	it('isolates concurrent ambient artifact mutations and never overwrites a newer same-key fact', async () => {
+		const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
+		const sourceModule = import.meta.filename
+		const builtModule = new URL('./plugins.test.ts', import.meta.url).pathname
+		const source = `
+			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			@Plugin() export class ConcurrentPlugin extends BasePlugin {}
+		`
+		await transformWithExistingCollector(collector, source, sourceModule)
+		const definition = collector.definitions()[0]!.definition
+		await transformWithExistingCollector(
+			collector,
+			preloweredDefinitionSource(definition),
+			builtModule,
+		)
+		const watchChange = collector.plugin.watchChange as (
+			id: string,
+			change: { event: 'delete' },
+		) => void
+
+		const rollbackReady = Promise.withResolvers<void>()
+		const resumeRollback = Promise.withResolvers<void>()
+		const rolledBack = collector.beginArtifactGeneration()
+		const rollbackWork = rolledBack.run(async () => {
+			await transformWithExistingCollector(collector, 'export const candidate = true', sourceModule)
+			rollbackReady.resolve()
+			await resumeRollback.promise
+			expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('unreported')
+			expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('built-module')
+		})
+		await rollbackReady.promise
+		watchChange(builtModule, { event: 'delete' })
+		resumeRollback.resolve()
+		await rollbackWork
+		rolledBack.rollback()
+		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
+		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('unreported')
+
+		const commitReady = Promise.withResolvers<void>()
+		const resumeCommit = Promise.withResolvers<void>()
+		const committed = collector.beginArtifactGeneration()
+		const commitWork = committed.run(async () => {
+			await transformWithExistingCollector(collector, 'export const candidate = 1', sourceModule)
+			commitReady.resolve()
+			await resumeCommit.promise
+			// A second scoped write must not regain ownership after the ambient conflict.
+			await transformWithExistingCollector(collector, 'export const candidate = 2', sourceModule)
+		})
+		await commitReady.promise
+		await transformWithExistingCollector(
+			collector,
+			preloweredDefinitionSource(definition),
+			sourceModule,
+		)
+		resumeCommit.resolve()
+		await commitWork
+		committed.commit()
+		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('built-module')
 	})
 
 	describe('optional Plugin ref authoring boundaries', () => {

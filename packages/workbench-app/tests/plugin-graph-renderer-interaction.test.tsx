@@ -323,12 +323,11 @@ function status(address: PluginNodeAddress, label: string): PluginStatusSnapshot
 		lifecycleState: 'running',
 		availability: 'available',
 		issues: [],
-		source: {
-			kind: 'unknown',
-			moduleId: null,
-			packageName: null,
-			version: null,
-			tag: null,
+		execution: {
+			kind: 'unreported',
+			artifact: { kind: 'unreported' },
+			update: { kind: 'unreported' },
 		},
+		recentUpdate: null,
 	}
 }

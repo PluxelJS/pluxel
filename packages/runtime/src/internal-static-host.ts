@@ -16,7 +16,7 @@ export {
 } from './internal-config-validation'
 
 export { isPluginAutoStartEnabled, setPluginAutoStart } from './services/RuntimeStateHelpers'
-export type { RuntimePluginSource, RuntimeRouteCapabilities } from './runtime/capabilities'
+export type { RuntimeRouteCapabilities } from './runtime/capabilities'
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export { readHostProduct } from './product-internal'
 export {

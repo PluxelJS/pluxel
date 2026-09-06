@@ -21,7 +21,7 @@ describe('plugin catalog controls', () => {
 			</MantineProvider>,
 		)
 
-		expect(markup).toContain('placeholder="搜索名称 / ID / @包"')
+		expect(markup).toContain('placeholder="搜索名称 / @包 / ref: / exec:"')
 		expect(markup).toContain('title="运行中 2 个 · Alt+1"')
 		expect(markup).toContain('title="已停止 11 个 · Alt+2"')
 		expect(markup).toContain('title="不可用 1 个 · Alt+3"')

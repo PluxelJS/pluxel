@@ -27,6 +27,8 @@ export type PluginSourceVitePipeline = Readonly<{
 		PluginSemanticsCollector,
 		| 'snapshot'
 		| 'definitions'
+		| 'classifyDefinitionArtifact'
+		| 'beginArtifactGeneration'
 		| 'workbenchPlans'
 		| 'workbenchCompilations'
 		| 'workbenchContentCompilations'
@@ -176,6 +178,10 @@ export function createPluginSourceVitePipeline(
 	const semantics = Object.freeze({
 		snapshot: () => requireCollector().snapshot(),
 		definitions: () => requireCollector().definitions(),
+		classifyDefinitionArtifact: (
+			...args: Parameters<PluginSemanticsCollector['classifyDefinitionArtifact']>
+		) => requireCollector().classifyDefinitionArtifact(...args),
+		beginArtifactGeneration: () => requireCollector().beginArtifactGeneration(),
 		workbenchPlans: () => requireCollector().workbenchPlans(),
 		workbenchCompilations: () => requireCollector().workbenchCompilations(),
 		workbenchContentCompilations: () => requireCollector().workbenchContentCompilations(),

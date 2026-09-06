@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict'
-import { rm, writeFile } from 'node:fs/promises'
-import { formatPluginNodeReference } from '@pluxel/core'
+import { rename, rm, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { formatPluginNodeReference, pluginNodeAddressEqual } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
-import { requireRuntimeHttpService } from '@pluxel/runtime/internal'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import {
+	readRuntimePluginStatusOverview,
+	requireRuntimeHttpService,
+} from '@pluxel/runtime/internal'
+import { __setPluginDefinition } from '@pluxel/runtime/toolchain'
 import { createServer } from 'vite'
 
 import { requireLoaderService } from '../../src/context-plan.ts'
@@ -13,6 +19,23 @@ const root = requiredEnv('PLUXEL_DYNAMIC_VITE_ROOT')
 const configPath = requiredEnv('PLUXEL_DYNAMIC_VITE_CONFIG')
 const pluginPath = requiredEnv('PLUXEL_DYNAMIC_VITE_PLUGIN')
 const cacheDir = requiredEnv('PLUXEL_DYNAMIC_VITE_CACHE')
+const managedPackageName = '@fixture/vite-managed-external'
+const managedExportName = 'ManagedExternalPlugin'
+const managedRuntimeBridgeKey = Symbol.for('pluxel.test.runtime-dynamic.vite-managed-external')
+const managedEntryPath = resolve(root, '.pluxel/managed-plugins/entries/managed.mjs')
+const managedStagedPath = resolve(root, '.pluxel/managed-plugins/entries/managed.mjs.next')
+const managedWrapper = [
+	`export * from ${JSON.stringify(managedPackageName)}`,
+	`import * as pluginModule from ${JSON.stringify(managedPackageName)}`,
+	'export default pluginModule.default',
+	'',
+].join('\n')
+
+Reflect.set(globalThis, managedRuntimeBridgeKey, {
+	BasePlugin,
+	Plugin,
+	setPluginDefinition: __setPluginDefinition,
+})
 
 await writeFile(pluginPath, pluginSource('v1'))
 
@@ -31,6 +54,11 @@ const server = await createServer({
 })
 
 await server.listen()
+const watcherIgnored = server.config.server.watch?.ignored
+assert.ok(
+	Array.isArray(watcherIgnored) && watcherIgnored.includes('**/.pluxel/**'),
+	'outer Vite watcher must keep generated .pluxel state globally ignored',
+)
 
 const controller = (server as unknown as Record<PropertyKey, { booted?: BootedLoaderHmrHost }>)[
 	Symbol.for('pluxel.dynamicRuntimeController')
@@ -43,8 +71,43 @@ const catalogEntry = loader.api.registry
 	.listRegistered()
 	.find((candidate) => candidate.rootExportName === 'DynamicHttpPlugin')
 assert.ok(catalogEntry, 'DynamicHttpPlugin is absent from the startup catalog')
+const managedCatalogEntry = loader.api.registry
+	.listRegistered()
+	.find((candidate) => candidate.rootExportName === managedExportName)
+assert.ok(managedCatalogEntry, `${managedExportName} is absent from the startup catalog`)
 const address = catalogEntry.address
+const managedAddress = managedCatalogEntry.address
 const addressReference = formatPluginNodeReference(address)
+const startupStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+	pluginNodeAddressEqual(status.address, address),
+)
+assert.ok(startupStatus, 'DynamicHttpPlugin has no startup status')
+assert.deepEqual(startupStatus.execution, {
+	kind: 'dynamic-entry',
+	artifact: { kind: 'source-module' },
+	update: { kind: 'definition-hmr', scope: 'source-graph' },
+})
+assert.equal(startupStatus.recentUpdate, null)
+assert.equal(JSON.stringify(startupStatus).includes(root), false)
+assert.deepEqual(managedAddress.definition, {
+	entry: { kind: 'package-root', packageName: managedPackageName },
+	exportName: managedExportName,
+})
+assert.equal(
+	formatPluginNodeReference(managedAddress),
+	`package:${managedPackageName}::${managedExportName}`,
+)
+const managedStartupStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+	pluginNodeAddressEqual(status.address, managedAddress),
+)
+assert.ok(managedStartupStatus, `${managedExportName} has no startup status`)
+assert.deepEqual(managedStartupStatus.execution, {
+	kind: 'dynamic-entry',
+	artifact: { kind: 'unreported' },
+	update: { kind: 'definition-hmr', scope: 'entry-only' },
+})
+assert.equal(managedStartupStatus.recentUpdate, null)
+assert.equal(JSON.stringify(managedStartupStatus).includes(root), false)
 const listenerAddress = server.httpServer?.address()
 assert.ok(listenerAddress && typeof listenerAddress !== 'string')
 const runtimeUrl = `http://127.0.0.1:${listenerAddress.port}`
@@ -70,6 +133,14 @@ try {
 		),
 		true,
 	)
+	const replacementStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)
+	assert.deepEqual(replacementStatus?.execution, startupStatus.execution)
+	assert.equal(replacementStatus?.recentUpdate?.outcome, 'applied')
+	assert.equal(replacementStatus?.recentUpdate?.phase, null)
+	assert.ok((replacementStatus?.recentUpdate?.sequence ?? 0) > 0)
+	assert.equal(JSON.stringify(replacementStatus).includes(root), false)
 	assert.equal(await readVersion(runtimeUrl), 'v2')
 	assert.deepEqual(await v1SocketClosed, { code: 1012, reason: 'Service Restart' })
 	const v2Socket = await openWebSocket(socketUrl)
@@ -85,6 +156,17 @@ try {
 	const invalid = await invalidBatch
 	assert.equal(invalid.ok, false)
 	assert.ok(invalid.executeError)
+	const retainedStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)
+	assert.deepEqual(retainedStatus?.execution, startupStatus.execution)
+	assert.equal(retainedStatus?.recentUpdate?.outcome, 'retained-previous')
+	assert.equal(retainedStatus?.recentUpdate?.phase, 'evaluate')
+	assert.ok(
+		(retainedStatus?.recentUpdate?.sequence ?? 0) >
+			(replacementStatus?.recentUpdate?.sequence ?? 0),
+	)
+	assert.equal(JSON.stringify(retainedStatus).includes(root), false)
 	assert.equal(await readVersion(runtimeUrl), 'v2')
 	assert.equal(v2Socket.socket.readyState, WebSocket.OPEN)
 	v2Socket.socket.send('rollback-retained')
@@ -149,11 +231,34 @@ try {
 	assert.equal(await v3Socket.nextMessage(), 'v3')
 	v3Socket.socket.close(1000, 'test complete')
 	assert.deepEqual(await v3Socket.closed, { code: 1000, reason: 'test complete' })
+
+	const managedBeforeUpdate = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, managedAddress),
+	)
+	assert.equal(managedBeforeUpdate?.recentUpdate, null)
+	const managedReplacementBatch = hmr.api.waitForStable({
+		afterEpoch: restored.epoch,
+		timeoutMs: 15_000,
+	})
+	await writeFile(managedStagedPath, `${managedWrapper}// atomically republished\n`)
+	await rename(managedStagedPath, managedEntryPath)
+	const managedReplacement = await managedReplacementBatch
+	assert.equal(managedReplacement.ok, true, JSON.stringify(managedReplacement, null, 2))
+	assert.equal(managedReplacement.epoch, restored.epoch + 1)
+	const managedReplacementStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find(
+		(status) => pluginNodeAddressEqual(status.address, managedAddress),
+	)
+	assert.deepEqual(managedReplacementStatus?.execution, managedStartupStatus.execution)
+	assert.equal(managedReplacementStatus?.recentUpdate?.sequence, managedReplacement.epoch)
+	assert.equal(managedReplacementStatus?.recentUpdate?.outcome, 'applied')
+	assert.equal(managedReplacementStatus?.recentUpdate?.phase, null)
+	assert.equal(JSON.stringify(managedReplacementStatus).includes(root), false)
 } finally {
 	for (const socket of sockets) {
 		if (socket.readyState === WebSocket.OPEN) socket.close()
 	}
 	await server.close()
+	Reflect.deleteProperty(globalThis, managedRuntimeBridgeKey)
 }
 
 function requiredEnv(name: string): string {

@@ -14,7 +14,7 @@ const metadata = Object.freeze({
 	ready: true as const,
 	protocol: Object.freeze({
 		name: 'pluxel.management' as const,
-		major: 3 as const,
+		major: 4 as const,
 		capabilities: RUNTIME_MANAGEMENT_CAPABILITIES,
 	}),
 	application: Object.freeze({ product: null }),
