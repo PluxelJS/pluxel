@@ -538,6 +538,10 @@ Remote 不取得 generic HTTP client、raw socket、Shell store 或 unrestricted
 `WorkbenchPaneLayout` / `WorkbenchPane` 声明 navigation、primary、inspector 三栏；宿主拥有 resize、drawer、focus
 和 workspace persistence。
 
+官方 Shell 把当前标签页的 Pane Kit 操作投影为头部的 navigation toggle、primary focus/restore 和 inspector toggle。
+这是同一份 per-tab visibility state 的另一种入口，不新增 Remote layout state；primary 仍不可隐藏。Plugin detail 的
+plugin rail、assist 与 bottom dock 是 host-private 四区 chrome，不映射为 Pane Kit role。
+
 ## 资源所有权与清理
 
 下列事件会使整个 socket epoch 或已经打开的 handle 失效：

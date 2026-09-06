@@ -24,6 +24,11 @@ import {
 	type SplitViewLayout,
 	type SplitViewPane,
 } from './split'
+import type {
+	PaneLayoutControlRegistration,
+	PaneLayoutControlRegistry,
+	PaneLayoutHeaderControls,
+} from './PaneLayoutControlRegistry'
 
 const PANE_STATE_VERSION = 1
 const MEDIUM_BREAKPOINT = 1_100
@@ -36,7 +41,14 @@ type PersistedPaneState = Readonly<{
 	visibility: Readonly<Record<string, boolean>>
 }>
 
-type HostRemotePaneLayoutProps = WorkbenchPaneLayoutRendererProps
+export type RemotePaneLayoutHeaderRegistration = Readonly<{
+	registry: PaneLayoutControlRegistry
+	tabId: string
+}>
+
+type HostRemotePaneLayoutProps = WorkbenchPaneLayoutRendererProps & {
+	headerRegistration?: RemotePaneLayoutHeaderRegistration
+}
 
 const RemotePaneStateContext = createContext<WorkbenchViewState | undefined>(undefined)
 
@@ -56,12 +68,15 @@ export function HostRemotePaneLayout({
 	className,
 	style,
 	label,
+	headerRegistration,
 }: HostRemotePaneLayoutProps) {
 	const locale = document.documentElement.lang || navigator.language || 'en'
 	const labels = paneHostLabels(locale)
 	const hostState = useContext(RemotePaneStateContext)
 	const hostRef = useRef<HTMLDivElement | null>(null)
 	const splitRef = useRef<SplitViewHandle | null>(null)
+	const focusSnapshotRef = useRef<Readonly<Record<string, boolean>> | undefined>(undefined)
+	const headerControlRegistrationRef = useRef<PaneLayoutControlRegistration | undefined>(undefined)
 	const [mode, setMode] = useState<WorkbenchPaneLayoutMode>('wide')
 	const [activeDrawer, setActiveDrawer] = useState<string | null>(null)
 	const [memoryState, setMemoryState] = useState<PersistedPaneState>(() => defaultState(panes))
@@ -138,16 +153,45 @@ export function HostRemotePaneLayout({
 				setActiveDrawer((current) => (current === paneId ? null : paneId))
 				return
 			}
-			const visible = stateRef.current.visibility[paneId] ?? pane.defaultVisible !== false
+			const visible = isPersistedPaneVisible(stateRef.current, pane)
 			writeState(withVisibility(stateRef.current, paneId, !visible))
 		},
 		[mode, panes, writeState],
 	)
 	const reset = useCallback(() => {
+		focusSnapshotRef.current = undefined
 		writeState(defaultState(panes))
 		splitRef.current?.reset()
 		setActiveDrawer(null)
 	}, [panes, writeState])
+	const collapsibleSides = useMemo(() => panes.filter(isCollapsibleSidePane), [panes])
+	const focusActive =
+		collapsibleSides.length > 0 &&
+		activeDrawer === null &&
+		collapsibleSides.every((pane) => !isPersistedPaneVisible(state, pane))
+	const toggleFocus = useCallback(() => {
+		if (collapsibleSides.length === 0) return
+		if (focusActive) {
+			const visibility =
+				focusSnapshotRef.current ??
+				Object.fromEntries(collapsibleSides.map((pane) => [pane.id, pane.defaultVisible !== false]))
+			focusSnapshotRef.current = undefined
+			writeState(withVisibilities(stateRef.current, visibility))
+		} else {
+			focusSnapshotRef.current = Object.freeze(
+				Object.fromEntries(
+					collapsibleSides.map((pane) => [pane.id, isPersistedPaneVisible(stateRef.current, pane)]),
+				),
+			)
+			writeState(
+				withVisibilities(
+					stateRef.current,
+					Object.fromEntries(collapsibleSides.map((pane) => [pane.id, false])),
+				),
+			)
+		}
+		setActiveDrawer(null)
+	}, [collapsibleSides, focusActive, writeState])
 	const controls = useMemo<WorkbenchPaneLayoutControls>(
 		() => ({ mode, activeDrawer, show, hide, toggle, reset }),
 		[activeDrawer, hide, mode, reset, show, toggle],
@@ -156,6 +200,47 @@ export function HostRemotePaneLayout({
 		() => panes.filter((pane) => isResponsiveDrawer(pane, mode)),
 		[mode, panes],
 	)
+	const headerControls = useMemo<PaneLayoutHeaderControls>(
+		() =>
+			Object.freeze({
+				id,
+				label,
+				sides: Object.freeze(
+					collapsibleSides.map((pane) =>
+						Object.freeze({
+							id: pane.id,
+							role: pane.role,
+							title: pane.title,
+							visible: isResponsiveDrawer(pane, mode)
+								? activeDrawer === pane.id
+								: isPersistedPaneVisible(state, pane),
+						}),
+					),
+				),
+				focusActive,
+				toggle,
+				toggleFocus,
+			}),
+		[activeDrawer, collapsibleSides, focusActive, id, label, mode, state, toggle, toggleFocus],
+	)
+	const headerControlsRef = useRef(headerControls)
+	headerControlsRef.current = headerControls
+	const headerRegistry = headerRegistration?.registry
+	const headerTabId = headerRegistration?.tabId
+	useEffect(() => {
+		if (!headerRegistry || !headerTabId) return undefined
+		const registration = headerRegistry.register(headerTabId, headerControlsRef.current)
+		headerControlRegistrationRef.current = registration
+		return () => {
+			if (headerControlRegistrationRef.current === registration) {
+				headerControlRegistrationRef.current = undefined
+			}
+			registration.dispose()
+		}
+	}, [headerRegistry, headerTabId])
+	useEffect(() => {
+		headerControlRegistrationRef.current?.update(headerControls)
+	}, [headerControls])
 	const drawerOpen = activeDrawer !== null
 	const renderedPanes = useMemo<readonly SplitViewPane[]>(
 		() =>
@@ -163,9 +248,7 @@ export function HostRemotePaneLayout({
 				const responsive = isResponsiveDrawer(pane, mode)
 				const open = responsive && activeDrawer === pane.id
 				const persistedVisible =
-					pane.role === 'primary'
-						? true
-						: (state.visibility[pane.id] ?? pane.defaultVisible !== false)
+					pane.role === 'primary' ? true : isPersistedPaneVisible(state, pane)
 				return {
 					id: pane.id,
 					defaultSize: pane.defaultSize ?? defaultPaneSize(pane),
@@ -432,10 +515,22 @@ function withVisibility(
 	paneId: string,
 	visible: boolean,
 ): PersistedPaneState {
+	return withVisibilities(state, { [paneId]: visible })
+}
+
+function withVisibilities(
+	state: PersistedPaneState,
+	visibility: Readonly<Record<string, boolean>>,
+): PersistedPaneState {
 	return Object.freeze({
 		...state,
-		visibility: Object.freeze({ ...state.visibility, [paneId]: visible }),
+		visibility: Object.freeze({ ...state.visibility, ...visibility }),
 	})
+}
+
+function isPersistedPaneVisible(state: PersistedPaneState, pane: WorkbenchPaneDescriptor): boolean {
+	const defaultVisible = pane.defaultVisible !== false
+	return state.visibility[pane.id] ?? defaultVisible
 }
 
 function defaultPaneSize(pane: WorkbenchPaneDescriptor) {
@@ -455,6 +550,12 @@ function defaultCollapseAt(pane: WorkbenchPaneDescriptor) {
 
 function canCollapse(pane: WorkbenchPaneDescriptor) {
 	return pane.role !== 'primary' && pane.collapsible !== false
+}
+
+function isCollapsibleSidePane(
+	pane: WorkbenchPaneDescriptor,
+): pane is WorkbenchPaneDescriptor & { role: 'navigation' | 'inspector' } {
+	return canCollapse(pane)
 }
 
 function isResponsiveDrawer(

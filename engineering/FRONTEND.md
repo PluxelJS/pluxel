@@ -173,6 +173,10 @@ Remote 需要 navigation/primary/inspector 三栏时，使用 `WorkbenchPaneLayo
 稳定 ID、role、尺寸约束和内容；Shell 拥有 split driver、responsive drawer、keyboard、focus 和 workspace persistence。
 每种 role 最多一个，并且恰好有一个 primary。容器宽度变化不卸载 pane children。
 
+官方 Shell 将当前标签页的 Pane Kit 控件放入头部：navigation 与 inspector 各自切换，中央控件聚焦 primary 或恢复
+先前的周边 pane。primary 永远可见，不能被这个或任何其他控件隐藏；窄屏仍使用同一状态的 responsive drawer。
+Plugin 不复制这组 chrome，也不把宿主私有的 plugin rail、assist 或 bottom dock 误当作 Pane Kit role。
+
 `split-like-vscode` 是独立 UI library，不知道 Plugin、View、route 或 persistence。Pluxel adapter 收敛在
 `packages/workbench-app/src/app/workbench/split/`。Remote bundle 不 import Worksplit、宿主 router、split adapter 或
 workspace store。

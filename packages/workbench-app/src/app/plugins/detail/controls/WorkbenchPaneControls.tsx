@@ -16,9 +16,8 @@ import {
 	WORKBENCH_HOTKEY_SEQUENCES,
 } from '../../../workbench/shortcuts'
 import {
-	WorkbenchLayoutButton,
-	WorkbenchLayoutControls,
-	WorkbenchLayoutToggleButton,
+	WorkbenchLayoutControlGroup,
+	type WorkbenchLayoutControl,
 } from '../../../workbench/LayoutControls'
 import { usePluginWorkbenchLayout } from '../workbench/context'
 
@@ -99,21 +98,24 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 		preventDefault: true,
 	})
 
-	const layoutToggles = [
-		leftPaneAvailable
-			? {
-					key: 'left',
-					hiddenIcon: <IconLayoutSidebarLeftCollapse size={18} />,
-					hideLabel: '隐藏插件列表',
-					onClick: toggleLeftPane,
-					shortcut: WORKBENCH_HOTKEY_LABELS.togglePluginRail,
-					showIcon: <IconLayoutSidebarLeftExpand size={18} />,
-					showLabel: '显示插件列表',
-					visible: leftPaneVisible,
-				}
-			: null,
+	const controls: WorkbenchLayoutControl[] = []
+	if (leftPaneAvailable) {
+		controls.push({
+			id: 'left',
+			kind: 'toggle',
+			hiddenIcon: <IconLayoutSidebarLeftCollapse size={18} />,
+			hideLabel: '隐藏插件列表',
+			onClick: toggleLeftPane,
+			shortcut: WORKBENCH_HOTKEY_LABELS.togglePluginRail,
+			showIcon: <IconLayoutSidebarLeftExpand size={18} />,
+			showLabel: '显示插件列表',
+			visible: leftPaneVisible,
+		})
+	}
+	controls.push(
 		{
-			key: 'right',
+			id: 'right',
+			kind: 'toggle',
 			hiddenIcon: <IconLayoutSidebarRightCollapse size={18} />,
 			hideLabel: '隐藏辅助侧栏',
 			onClick: toggleRightPane,
@@ -123,7 +125,8 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 			visible: rightPaneVisible,
 		},
 		{
-			key: 'dock',
+			id: 'dock',
+			kind: 'toggle',
 			hiddenIcon: <IconLayoutBottombarCollapse size={18} />,
 			hideLabel: '隐藏底部面板',
 			onClick: toggleDock,
@@ -132,22 +135,16 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 			showLabel: '显示底部面板',
 			visible: dockVisible,
 		},
-	].filter(Boolean)
-
-	return (
-		<WorkbenchLayoutControls>
-			{layoutToggles.map(({ key, ...toggle }) => (
-				<WorkbenchLayoutToggleButton key={key} {...toggle} />
-			))}
-
-			<WorkbenchLayoutButton
-				active={focusMode}
-				label={focusMode ? '恢复周边面板' : '聚焦工作区'}
-				onClick={toggleFocusMode}
-				shortcut={WORKBENCH_HOTKEY_LABELS.toggleFocusMode}
-			>
-				<IconLayout2 size={18} />
-			</WorkbenchLayoutButton>
-		</WorkbenchLayoutControls>
+		{
+			active: focusMode,
+			children: <IconLayout2 size={18} />,
+			id: 'focus',
+			kind: 'action',
+			label: focusMode ? '恢复周边面板' : '聚焦工作区',
+			onClick: toggleFocusMode,
+			shortcut: WORKBENCH_HOTKEY_LABELS.toggleFocusMode,
+		},
 	)
+
+	return <WorkbenchLayoutControlGroup controls={controls} />
 })

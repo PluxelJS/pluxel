@@ -40,6 +40,7 @@ import {
 	WorkbenchHotkeys,
 	WorkbenchTopbarTools,
 } from './shell/WorkbenchShellViews'
+import { RemotePaneLayoutControls } from './RemotePaneLayoutControls'
 import { WorkbenchStatePersistence } from './shell/WorkbenchStatePersistence'
 import { WorkspaceEditorGrid } from './shell/WorkspaceEditorGrid'
 import './styles.scss'
@@ -335,7 +336,15 @@ export function WorkbenchShell() {
 												<span className="plx-workbench__subtitle">{sectionTitle.subtitle}</span>
 											) : null}
 										</div>
-										<WorkbenchTopbarTools isPluginDetail={isPluginDetail} />
+										<WorkbenchTopbarTools
+											isPluginDetail={isPluginDetail}
+											remotePaneControls={
+												<RemotePaneLayoutControls
+													registry={workspace.paneLayoutControls}
+													tabId={activeTabId}
+												/>
+											}
+										/>
 									</div>
 
 									{isPluginsSection || editorGroups.length > 1 ? (

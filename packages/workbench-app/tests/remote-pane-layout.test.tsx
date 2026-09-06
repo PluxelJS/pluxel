@@ -9,7 +9,10 @@ import {
 	HostRemotePaneLayout,
 	RemotePaneLayoutStateProvider,
 	sanitizeRemotePaneState,
+	type RemotePaneLayoutHeaderRegistration,
 } from '../src/app/workbench/RemotePaneLayout'
+import { PaneLayoutControlRegistry } from '../src/app/workbench/PaneLayoutControlRegistry'
+import { RemotePaneLayoutControls } from '../src/app/workbench/RemotePaneLayoutControls'
 
 const mounted: Array<ReturnType<typeof createRoot>> = []
 let observedWidth = 1_400
@@ -165,6 +168,91 @@ describe('remote Pane Kit host renderer', () => {
 		expect(hostState.write).toHaveBeenCalledTimes(1)
 	})
 
+	it('publishes navigation, primary-focus, and inspector controls to the document header', async () => {
+		const registry = new PaneLayoutControlRegistry()
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		const root = createRoot(container)
+		mounted.push(root)
+		await act(async () =>
+			root.render(
+				<>
+					<RemotePaneLayoutControls registry={registry} tabId="bot-tab" />
+					<Fixture headerRegistration={{ registry, tabId: 'bot-tab' }}>
+						<span data-primary-probe="true">main</span>
+					</Fixture>
+				</>,
+			),
+		)
+
+		const navigation = () =>
+			container.querySelector<HTMLButtonElement>('[aria-label="隐藏 Fixture 的 Scenario"]')
+		const inspector = () =>
+			container.querySelector<HTMLButtonElement>('[aria-label="隐藏 Fixture 的 Inspection"]')
+		const focus = () =>
+			container.querySelector<HTMLButtonElement>('[aria-label="聚焦 Fixture 的主区"]')
+
+		expect(navigation()).not.toBeNull()
+		expect(inspector()).not.toBeNull()
+		expect(focus()).not.toBeNull()
+		await act(async () => navigation()?.click())
+		expect(container.querySelector('[aria-label="显示 Fixture 的 Scenario"]')).not.toBeNull()
+		expect(container.querySelector('[data-primary-probe="true"]')).not.toBeNull()
+
+		await act(async () => focus()?.click())
+		expect(container.querySelector('[aria-label="显示 Fixture 的 Scenario"]')).not.toBeNull()
+		expect(container.querySelector('[aria-label="显示 Fixture 的 Inspection"]')).not.toBeNull()
+		expect(container.querySelector('[aria-label="恢复 Fixture 的周边面板"]')).not.toBeNull()
+		expect(container.querySelector('[data-primary-probe="true"]')).not.toBeNull()
+
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('[aria-label="恢复 Fixture 的周边面板"]')?.click(),
+		)
+		expect(container.querySelector('[aria-label="显示 Fixture 的 Scenario"]')).not.toBeNull()
+		expect(inspector()).not.toBeNull()
+
+		await act(async () =>
+			root.render(<RemotePaneLayoutControls registry={registry} tabId="bot-tab" />),
+		)
+		expect(container.querySelector('.plx-workbench__remotePaneControls')).toBeNull()
+	})
+
+	it('uses the same header controls to open responsive drawers', async () => {
+		observedWidth = 390
+		const registry = new PaneLayoutControlRegistry()
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		const root = createRoot(container)
+		mounted.push(root)
+		await act(async () =>
+			root.render(
+				<>
+					<RemotePaneLayoutControls registry={registry} tabId="bot-tab" />
+					<Fixture headerRegistration={{ registry, tabId: 'bot-tab' }}>
+						<span>main</span>
+					</Fixture>
+				</>,
+			),
+		)
+
+		await act(async () =>
+			container
+				.querySelector<HTMLButtonElement>('[aria-label="显示 Fixture 的 Scenario"]')
+				?.click(),
+		)
+		expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Scenario')
+		expect(container.querySelector('[aria-label="隐藏 Fixture 的 Scenario"]')).not.toBeNull()
+
+		await act(async () =>
+			container
+				.querySelector<HTMLButtonElement>('[aria-label="显示 Fixture 的 Inspection"]')
+				?.click(),
+		)
+		expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe(
+			'Inspection',
+		)
+	})
+
 	it('rejects malformed restored percentages and forces primary visibility', () => {
 		const panes = descriptors()
 		expect(
@@ -184,7 +272,15 @@ describe('remote Pane Kit host renderer', () => {
 	})
 })
 
-function Fixture({ children, hostState }: { children: ReactNode; hostState?: WorkbenchViewState }) {
+function Fixture({
+	children,
+	hostState,
+	headerRegistration,
+}: {
+	children: ReactNode
+	hostState?: WorkbenchViewState
+	headerRegistration?: RemotePaneLayoutHeaderRegistration
+}) {
 	const panes: WorkbenchPaneDescriptor[] = [
 		{ id: 'scenario', role: 'navigation', title: 'Scenario', content: 'scenario' },
 		{ id: 'main', role: 'primary', title: 'Main', content: children },
@@ -192,7 +288,12 @@ function Fixture({ children, hostState }: { children: ReactNode; hostState?: Wor
 	]
 	return (
 		<RemotePaneLayoutStateProvider state={hostState}>
-			<HostRemotePaneLayout id="fixture" panes={panes} label="Fixture" />
+			<HostRemotePaneLayout
+				id="fixture"
+				panes={panes}
+				label="Fixture"
+				headerRegistration={headerRegistration}
+			/>
 		</RemotePaneLayoutStateProvider>
 	)
 }

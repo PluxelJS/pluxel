@@ -24,6 +24,19 @@ describe('workbench topbar controls', () => {
 		expect(layoutIndex).toBeGreaterThan(themeIndex)
 	})
 
+	it('accepts standard Pane Kit controls for the active document header', () => {
+		const markup = renderToStaticMarkup(
+			<WorkbenchTopbarTools
+				isPluginDetail={false}
+				remotePaneControls={<span data-remote-pane-controls="true" />}
+			/>,
+		)
+
+		const themeIndex = markup.indexOf('aria-label="切换工作台明暗模式"')
+		const paneIndex = markup.indexOf('data-remote-pane-controls="true"')
+		expect(paneIndex).toBeGreaterThan(themeIndex)
+	})
+
 	it('has one plugin rail toggle source and leaves task actions on the trailing side', () => {
 		const markup = renderToStaticMarkup(<PluginQuickOpenAction focusWorkbenchSearch={vi.fn()} />)
 

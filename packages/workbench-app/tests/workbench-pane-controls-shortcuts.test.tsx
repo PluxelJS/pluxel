@@ -71,4 +71,23 @@ describe('workbench pane control shortcuts', () => {
 		expect(markup).toContain('隐藏底部面板 (Ctrl+J)')
 		expect(markup).toContain('聚焦工作区 (Ctrl+K Z)')
 	})
+
+	it('keeps the plugin workbench controls in their existing rail, side, dock, and focus order', () => {
+		const markup = renderToStaticMarkup(<WorkbenchPaneControls />)
+		const labels = [
+			'隐藏插件列表 (Ctrl+B)',
+			'隐藏辅助侧栏 (Ctrl+Alt+B)',
+			'隐藏底部面板 (Ctrl+J)',
+			'聚焦工作区 (Ctrl+K Z)',
+		]
+
+		let previousPosition = -1
+		for (const label of labels) {
+			const position = markup.indexOf(`title="${label}"`)
+			expect(position).toBeGreaterThan(previousPosition)
+			previousPosition = position
+		}
+		expect(markup).toContain('class="plx-workbench__layoutControls"')
+		expect(markup.match(/plx-workbench__toolbarButton--layout/g)).toHaveLength(4)
+	})
 })

@@ -1,4 +1,5 @@
 import { Store } from '@tanstack/react-store'
+import { PaneLayoutControlRegistry } from './PaneLayoutControlRegistry'
 import { hasSameLayout } from './split/storage'
 import type { EditorGridLayout } from './split/view'
 import { type WorkbenchState, type WorkbenchTab, readWorkbenchState } from './state'
@@ -365,6 +366,8 @@ function createAdjacentWorkbenchStoreTab(store: Store<WorkbenchState>, groupId?:
 
 export class WorkspaceController {
 	readonly store: Store<WorkbenchState>
+	/** Mounted Pane Kit layouts publish transient header chrome here; serialized state stays in tabState. */
+	readonly paneLayoutControls = new PaneLayoutControlRegistry()
 	private pendingNavigations: Array<{ to: string; instanceId: string; groupId: string }> = []
 
 	constructor(initialPathname?: string) {

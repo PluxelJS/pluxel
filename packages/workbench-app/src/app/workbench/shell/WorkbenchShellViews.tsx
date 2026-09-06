@@ -5,6 +5,7 @@ import {
 	IconLayoutSidebarLeftExpand,
 	IconSearch,
 } from '@tabler/icons-react'
+import type { ReactNode } from 'react'
 import { ColorSchemeToggle } from '../../../theme'
 import { useProduct } from '../../product'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
@@ -151,7 +152,13 @@ function isExternalHref(href: string): boolean {
 	return !href.startsWith('/')
 }
 
-export function WorkbenchTopbarTools({ isPluginDetail }: { isPluginDetail: boolean }) {
+export function WorkbenchTopbarTools({
+	isPluginDetail,
+	remotePaneControls,
+}: {
+	isPluginDetail: boolean
+	remotePaneControls?: ReactNode
+}) {
 	return (
 		<div className="plx-workbench__topbarTools" role="toolbar" aria-label="工作台外观与布局">
 			<ColorSchemeToggle
@@ -161,6 +168,7 @@ export function WorkbenchTopbarTools({ isPluginDetail }: { isPluginDetail: boole
 				radius="sm"
 				className="plx-workbench__themeToggle"
 			/>
+			{remotePaneControls}
 			{isPluginDetail ? <WorkbenchPaneControls /> : null}
 		</div>
 	)

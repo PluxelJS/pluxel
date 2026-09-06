@@ -46,6 +46,7 @@ import {
 import {
 	HostRemotePaneLayout,
 	RemotePaneLayoutStateProvider,
+	type RemotePaneLayoutHeaderRegistration,
 } from '../app/workbench/RemotePaneLayout'
 import { WorkbenchErrorBoundary } from './ErrorBoundary'
 import {
@@ -377,7 +378,17 @@ function ReadyFederatedWorkbenchEntryView({
 				: undefined,
 		[entry.target.node, frame, navigation, resolveShellPath],
 	)
-	const paneLayoutRenderer = useMemo(() => createPaneLayoutRenderer(viewState), [viewState])
+	const paneHeaderRegistration = useMemo<RemotePaneLayoutHeaderRegistration | undefined>(
+		() =>
+			frame === 'shell' && activeTabId
+				? Object.freeze({ registry: workspace.paneLayoutControls, tabId: activeTabId })
+				: undefined,
+		[activeTabId, frame, workspace],
+	)
+	const paneLayoutRenderer = useMemo(
+		() => createPaneLayoutRenderer(viewState, paneHeaderRegistration),
+		[paneHeaderRegistration, viewState],
+	)
 	const activation = useMemo(
 		() =>
 			createFederatedEntryActivation({
@@ -629,11 +640,12 @@ export function WorkbenchContentEntryView({
 
 function createPaneLayoutRenderer(
 	state: ReturnType<typeof useHostWorkbenchViewState>,
+	headerRegistration?: RemotePaneLayoutHeaderRegistration,
 ): WorkbenchPaneLayoutRenderer {
 	return function WorkbenchPaneLayout(props: WorkbenchPaneLayoutRendererProps) {
 		return (
 			<RemotePaneLayoutStateProvider state={state}>
-				<HostRemotePaneLayout {...props} />
+				<HostRemotePaneLayout {...props} headerRegistration={headerRegistration} />
 			</RemotePaneLayoutStateProvider>
 		)
 	}
