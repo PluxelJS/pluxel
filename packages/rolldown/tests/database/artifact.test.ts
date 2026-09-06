@@ -6,6 +6,11 @@ import { join } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
 import { findDatabasePackageRoot, loadDatabaseArtifact } from '../../src/database/artifact.ts'
+import {
+	checkDatabaseMigrations,
+	generateDatabaseMigrations,
+	rebaseDatabaseMigrations,
+} from '../../src/database/index.ts'
 import { generateResetDatabaseArtifact } from '../../src/database/reset-artifact.ts'
 
 describe('database migration artifact', () => {
@@ -129,4 +134,50 @@ describe('database migration artifact', () => {
 			await rm(root, { recursive: true, force: true })
 		}
 	}, 15_000)
+
+	it('rejects a checked-in migration manifest for a reset database', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-history-test-'))
+		const schema = join(root, 'src/database.ts')
+		try {
+			await mkdir(join(root, 'src'), { recursive: true })
+			await mkdir(join(root, 'drizzle'), { recursive: true })
+			await writeFile(schema, 'export {}\n', 'utf8')
+			await writeFile(join(root, 'drizzle/pluxel-migrations.json'), '{}\n', 'utf8')
+
+			await expect(generateResetDatabaseArtifact({ root, schema })).rejects.toThrow(
+				'reset-on-schema-change does not use a checked-in migration manifest',
+			)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('keeps reset-on-schema-change out of the checked-in migration workflow', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-tools-test-'))
+		try {
+			await mkdir(join(root, 'src'), { recursive: true })
+			await writeFile(
+				join(root, 'src/database.ts'),
+				[
+					'import { defineDatabase } from "@pluxel/runtime/database"',
+					'export const database = defineDatabase({ schema: {}, evolution: "reset-on-schema-change" })',
+				].join('\n'),
+				'utf8',
+			)
+
+			const options = { root, schema: 'src/database.ts' }
+			await expect(generateDatabaseMigrations(options)).rejects.toThrow(
+				'reset-on-schema-change has no checked-in migration history',
+			)
+			await expect(checkDatabaseMigrations(options)).rejects.toThrow(
+				'reset-on-schema-change has no checked-in migration history',
+			)
+			await expect(rebaseDatabaseMigrations({ ...options, lineage: 'fresh' })).rejects.toThrow(
+				'reset-on-schema-change has no checked-in migration history',
+			)
+			expect(existsSync(join(root, 'drizzle'))).toBe(false)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
 })

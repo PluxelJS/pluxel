@@ -243,20 +243,8 @@ class DatabaseCoordinator {
 					throw new Error('[pluxel/database] database handle instance has been replaced')
 				}
 				await tx.execute(sql.raw(`SET LOCAL ROLE ${quoteIdent(instance.ownerRole)}`))
-				await tx.execute(
-					sql.raw(`SET LOCAL search_path TO ${quoteIdent(instance.ownerSchema)}, pg_catalog`),
-				)
-				await tx.execute(sql.raw(`SET LOCAL statement_timeout TO '30000ms'`))
-				await tx.execute(sql.raw(`SET LOCAL lock_timeout TO '5000ms'`))
-				await tx.execute(sql.raw(`SET LOCAL idle_in_transaction_session_timeout TO '30000ms'`))
-				if (!readonly) {
-					await tx.execute(
-						sql.raw(
-							`SELECT set_config('pluxel.transaction_id', ${quoteLiteral(randomUUID())}, true)`,
-						),
-					)
-					changed = true
-				}
+				await configureOperationContext(tx, instance, readonly ? undefined : randomUUID())
+				if (!readonly) changed = true
 				return await callback(tx)
 			})
 			if (changed) this.requestDispatch()
@@ -868,6 +856,23 @@ function instanceMatches(
 		instance.artifactFingerprint === fingerprint &&
 		instance.runtimeVersion === DATABASE_INSTANCE_RUNTIME_VERSION
 	)
+}
+
+async function configureOperationContext(
+	db: AnyDatabase,
+	instance: PreparedDatabaseInstance,
+	transactionId: string | undefined,
+): Promise<void> {
+	const settings = [
+		`set_config('search_path', ${quoteLiteral(`${quoteIdent(instance.ownerSchema)}, pg_catalog`)}, true)`,
+		"set_config('statement_timeout', '30000ms', true)",
+		"set_config('lock_timeout', '5000ms', true)",
+		"set_config('idle_in_transaction_session_timeout', '30000ms', true)",
+		...(transactionId
+			? [`set_config('pluxel.transaction_id', ${quoteLiteral(transactionId)}, true)`]
+			: []),
+	]
+	await db.execute(sql.raw(`SELECT ${settings.join(', ')}`))
 }
 
 async function lockDatabaseOwner(

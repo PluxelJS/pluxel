@@ -26,6 +26,12 @@ export async function generateResetDatabaseArtifact(options: {
 	const root = resolve(options.root)
 	const schema = resolve(root, options.schema)
 	if (!existsSync(schema)) throw new Error(`[database] schema module not found: ${schema}`)
+	const checkedManifest = join(root, 'drizzle', databaseManifestFile)
+	if (existsSync(checkedManifest)) {
+		throw new Error(
+			'[database] reset-on-schema-change does not use a checked-in migration manifest; remove drizzle/pluxel-migrations.json or change evolution to "migrations"',
+		)
+	}
 	const stagingParent = join(root, '.pluxel')
 	await mkdir(stagingParent, { recursive: true })
 	const stagingRoot = await mkdtemp(join(stagingParent, 'database-reset-'))

@@ -30,9 +30,9 @@ transaction 中确认 instance 仍 active，再设置 instance role、`search_pa
 - `{ driver: 'postgres', connectionString, pool, tls }`：共享远端 pool；
 - `false`：完全关闭，任何 `use()` 都使对应 plugin 启动失败。
 
-没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox backend。PGlite 是开发和本机默认；
-在 filesystem flush 与 fault-injection 验收完成前，不把它描述为生产级掉电 durable。生产并发、锁、deadlock、
-pool exhaustion 和 connection-loss 门禁必须运行在真正 PostgreSQL。
+没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox backend。PGlite 是本机开发/测试默认；它的持久目录只支持正常关闭后的便利重启，不是部署存储 contract。
+
+Pluxel 不计划通过 filesystem flush 或 fault-injection 验收把 PGlite 提升为 production backend。生产并发、锁、deadlock、pool exhaustion 和 connection-loss 门禁必须运行在真正 PostgreSQL。
 
 ## Schema evolution
 
@@ -58,7 +58,7 @@ manifest `lineage` 是插件唯一的存储换代意图。同 lineage 必须保�
 
 可丢弃或可重新生成的数据显式声明 `evolution: 'reset-on-schema-change'`。production compiler 每次从空 schema 生成临时
 baseline，以去掉随机 snapshot identity 后的规范化 Drizzle schema snapshot 计算稳定 lineage，并只把 SQL 与 manifest 发布到
-`dist`。作者不创建或提交 `drizzle/`；相同 physical schema 继续复用 active instance，schema fingerprint 改变时才走相同的
+`dist`。作者不创建或提交 `drizzle/`；`pluxel database generate/check/rebase` 只接受 `migrations`，遇到 reset definition 会拒绝而不是留下构建时被忽略的 artifact。相同 physical schema 继续复用 active instance，schema fingerprint 改变时才走相同的
 candidate prepare、atomic promotion 与 archive 流程并得到空数据。SQL 格式或 toolchain 输出变化不改变 schema lineage，
 runtime 也不把 reset baseline 当作可追加 history。该策略是对未来 schema 变化均允许丢数据的持续声明，不是自动 data
 migration。
@@ -81,7 +81,7 @@ table replica 或通用 patch protocol。
 
 ## Resource control
 
-PGlite 的所有 operation 经单连接 scheduler；远端 PG 的 admission concurrency 等于 pool 上限。scheduler 按 owner
+PGlite 的所有 operation 经单连接 scheduler；`concurrency: 1` 反映 driver 的单连接事实，不是可调连接池。远端 PG 的 admission concurrency 等于 pool 上限。scheduler 按 owner
 轮询、公平取队列，限制每 owner pending 数并使排队超时。owner stop 先拒绝新 operation，再等待已接纳的运行中和排队
 operation 排空；内部 invalidation listener 随 owner cleanup 撤销。同 lineage replacement 复用 active instance，
 新 lineage replacement 得到新 instance。archive 会占用宿主存储，但 plugin 无权删除宿主备份或绕过配额策略。

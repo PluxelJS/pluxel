@@ -79,13 +79,14 @@ export const databaseGenerateArgs = {
 
 export const databaseGenerateDefinition = {
 	name: 'generate',
-	description: 'Generate a checked-in PostgreSQL migration',
+	description: 'Generate a checked-in PostgreSQL migration (migrations evolution only)',
 	args: databaseGenerateArgs,
 } as const
 
 export const databaseCheckDefinition = {
 	name: 'check',
-	description: 'Validate migration history, checksums, and schema drift',
+	description:
+		'Validate migration history, checksums, and schema drift (migrations evolution only)',
 	args: databaseCommonArgs,
 } as const
 
@@ -96,7 +97,8 @@ export const databaseRebaseArgs = {
 
 export const databaseRebaseDefinition = {
 	name: 'rebase',
-	description: 'Start a fresh database lineage while preserving deployed instances',
+	description:
+		'Start a fresh database lineage while preserving deployed instances (migrations evolution only)',
 	args: databaseRebaseArgs,
 } as const
 

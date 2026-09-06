@@ -314,6 +314,36 @@ describe('DatabaseService', () => {
 		}
 	}, 30_000)
 
+	it('keeps read callbacks read-only after owner context setup', async () => {
+		const definition = databaseFixture('read-only-context')
+		const host = databaseHost
+		try {
+			@Plugin({ displayName: 'ReadOnlyDatabasePlugin' })
+			class ReadOnlyDatabasePlugin extends BasePlugin {
+				db!: PluginDatabaseHandle<typeof definition.database>
+				override async init() {
+					this.db = await this.ctx.database.use(definition.database)
+				}
+			}
+
+			lowerTestPlugin(ReadOnlyDatabasePlugin)
+			host.add(ReadOnlyDatabasePlugin)
+			host.cfg(ReadOnlyDatabasePlugin).setAutoStart(true)
+			host.start(ReadOnlyDatabasePlugin)
+			await host.commit()
+			const database = host.require(ReadOnlyDatabasePlugin).db
+
+			await expect(
+				database.read((db) =>
+					db.insert(definition.items).values({ id: 'forbidden', value: 'forbidden' }),
+				),
+			).rejects.toBeInstanceOf(Error)
+			await expect(database.read((db) => db.select().from(definition.items))).resolves.toEqual([])
+		} finally {
+			await resetRuntimeHost(host)
+		}
+	}, 30_000)
+
 	it('fails honestly when the host disables database capability', async () => {
 		const definition = databaseFixture()
 		const host = createRuntimeInternalTestHarness({ workbench: false, database: false })

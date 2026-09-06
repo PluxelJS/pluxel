@@ -62,19 +62,19 @@ npx nypm add -D @pluxel/market
 
 ## 当前 CLI 命令地图
 
-| 目标                                | 命令                                          |
-| ----------------------------------- | --------------------------------------------- |
-| 生成固定 example workspace          | `pnpm create @pluxel [directory]`             |
-| 定位上游当前文档                    | `pluxel docs [path]`                          |
-| 在 workspace 生成 Plugin package    | `pluxel new`                                  |
-| 构建当前 Plugin package             | `pluxel build`                                |
-| 生成/检查/rebase database migration | `pluxel database generate/check/rebase`       |
-| 创建/检查/验证 static distribution  | `pluxel distribution create/inspect/verify`   |
-| 写入/关联 delivery marker           | `pluxel distribution mark/correlate`          |
-| 发布 npm package 并通知 market      | `pluxel publish`                              |
-| Dynamic loader 诊断                 | `pluxel hmr prompt/doctor/enabled`            |
-| 跨仓库 source checkout              | `pluxel source register/doctor/build/install` |
-| 管理 source workspace               | `pluxel workspace`                            |
+| 目标                                                     | 命令                                          |
+| -------------------------------------------------------- | --------------------------------------------- |
+| 生成固定 example workspace                               | `pnpm create @pluxel [directory]`             |
+| 定位上游当前文档                                         | `pluxel docs [path]`                          |
+| 在 workspace 生成 Plugin package                         | `pluxel new`                                  |
+| 构建当前 Plugin package                                  | `pluxel build`                                |
+| 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`       |
+| 创建/检查/验证 static distribution                       | `pluxel distribution create/inspect/verify`   |
+| 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`          |
+| 发布 npm package 并通知 market                           | `pluxel publish`                              |
+| Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`            |
+| 跨仓库 source checkout                                   | `pluxel source register/doctor/build/install` |
+| 管理 source workspace                                    | `pluxel workspace`                            |
 
 确切参数通过 `pluxel <command> --help` 查看。
 

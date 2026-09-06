@@ -22,7 +22,7 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 
 ## Managed Plugin database
 
-选择 managed database 后，正式部署使用 native PostgreSQL；PGlite 用于本地开发、自动化测试、demo 和简单低负载运行。两者统一的是 PostgreSQL 作者 contract，不是性能、并发和 durability 等价。
+选择 managed database 后，正式部署使用 native PostgreSQL；PGlite 只用于本机开发和自动化测试。两者统一的是 PostgreSQL 作者 contract，不是性能、并发和 durability 等价。
 
 ## 定义 Plugin schema
 
@@ -76,19 +76,40 @@ export class NotesPlugin extends BasePlugin {
 
 schema module 是 server-only。Workbench API/browser bundle 不能导入它。Plugin package 依赖受支持的 `drizzle-orm`，不依赖 `pg`、PGlite 或其他 driver。
 
+`defineDatabase()` 必须作为 module-level `const` 的直接 initializer，显式 `evolution` 必须写在直接 object literal 中。不要把它包进 function、branch 或 config factory；compiler 必须静态看到 package 唯一的 definition，才能注入对应 artifact。
+
 同一个 Twoslash block 同时验证 schema definition、相对 import、handle 泛型和 query/transaction 的返回类型。`use()` 在返回前完成 active instance 选择和 migration prepare。handle 绑定当前 Plugin owner/generation，stop/replacement 后旧 handle 失效。
 
 读操作放进 `read()`，写操作放进完整 `transaction()` callback。callback 内是标准 Drizzle database/transaction；不要缓存 callback 参数或 row lock，也不要在 transaction 中等待网络、用户交互或 worker task。
 
 一个 Plugin 只能 `use()` 一个 definition。definition 可以作为 schema 模板由多个 Plugin 复用，但每个 owner 都有独立数据、role 和 operation queue；不能跨 Plugin 共享 handle 或 transaction。
 
-## 跨 Plugin 数据关系
+`PluginPart` 也不拥有第二个 definition；它的表和 migration 都归属根 Plugin 的这一个 definition。Part 只帮助组织代码和资源，不创造新的数据边界。
+
+## 跨 Plugin 数据关系与扩展
+
+独立发布的 Plugin 不能修改另一个 Plugin 的表模型：不要向其 `pgTable()` 加列、生成 `ALTER TABLE`、添加 foreign key/index，也不要把对方 table object 当作自己的 schema import。表结构和 migration 是 owner 可独立替换的存储 contract；允许第三方修改会把安装顺序、卸载、rebase 和 rollback 耦合在一起。
+
+| 需求                                                                                | 正确做法                                                                                                     |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 为另一个 Plugin 的实体保存本 Plugin 专属数据                                        | extension Plugin 自己拥有表，以 provider 公开的稳定 entity ID 关联，并通过 typed capability 验证或操作该实体 |
+| 需要 join、foreign key、跨表原子 transaction，或 provider 必须直接查询/索引扩展字段 | 将整组表放进同一 application-private database，由同一个应用团队迁移                                          |
+| 需要可插拔的自定义字段                                                              | provider 只在存在具体产品需求时发布自己的领域 extension protocol；不要增加通用“改别人表”的能力               |
+
+第一种方式的两个写入是两个 transaction；需要一致性时，extension 应设计可重试、幂等的领域流程，而不是绕过 owner boundary。若这个代价不能接受，说明这些表本来就不应是独立 Plugin 数据。
 
 跨 Plugin workflow 通过 typed capability/RPC，并接受它是两个 transaction。真正必须满足 foreign key、join 或原子 transaction 的表应该归同一 owner。
 
 不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench target 也只能调用所属 Plugin 的领域 service，再返回 detached DTO；它不是跨 owner 数据库入口。
 
 ## Migration evolution
+
+每个 definition 只走一条表演进流程；不要在两者之间混用 artifact 或命令：
+
+| `evolution`              | 改表后的作者动作                                           | repository 中的 artifact                                    |
+| ------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------- |
+| `migrations`（默认）     | 修改 schema → `generate --name` → `check` → 提交 → `build` | 提交 `drizzle/`；history 只能追加                           |
+| `reset-on-schema-change` | 修改 schema → `build`/测试                                 | 不创建 `drizzle/`；`generate`、`check`、`rebase` 会明确拒绝 |
 
 ### 保留权威数据
 
@@ -128,7 +149,7 @@ export const SearchDatabase = defineDatabase({
 })
 ```
 
-这种 definition 只运行 `pluxel build`，不创建或提交 `drizzle/`。构建器从当前 schema 生成 baseline：相同 schema 保留数据，table/column/index/constraint 改变时建立空 candidate，准备成功后替换 active instance 并归档旧数据。
+这种 definition 只运行 `pluxel build`，不创建或提交 `drizzle/`；`generate`、`check`、`rebase` 会明确拒绝它。构建器从当前 schema 生成 baseline：相同 schema 保留数据，table/column/index/constraint 改变时建立空 candidate，准备成功后替换 active instance 并归档旧数据。
 
 这个声明意味着未来任何 schema 变化都允许清空数据。需要保留或转换旧数据时必须使用 migrations。
 
@@ -259,17 +280,17 @@ Workbench 不解析 table identity，也不成为 database lifecycle owner。完
 
 ## 选择 native PostgreSQL 或 PGlite
 
-| 部署或验证目标                                   | Backend                |
-| ------------------------------------------------ | ---------------------- |
-| 正式部署、持续负载或多个 Plugin 频繁访问数据库   | native PostgreSQL      |
-| 本地开发、自动化测试、demo、简单低负载的单机运行 | PGlite                 |
-| row lock、deadlock、pool exhaustion、连接中断    | 必须验证 native PG     |
-| 多进程并发 migration、advisory lock 和故障恢复   | 必须验证 native PG     |
-| throughput、latency、容量规划或生产硬件性能验收  | 必须使用目标 native PG |
+| 部署或验证目标                                     | Backend                |
+| -------------------------------------------------- | ---------------------- |
+| 正式部署、持续用户数据或多个 Plugin 频繁访问数据库 | native PostgreSQL      |
+| 本机开发、自动化测试                               | PGlite                 |
+| row lock、deadlock、pool exhaustion、连接中断      | 必须验证 native PG     |
+| 多进程并发 migration、advisory lock 和故障恢复     | 必须验证 native PG     |
+| throughput、latency、容量规划或生产硬件性能验收    | 必须使用目标 native PG |
 
 PGlite 是执行真实 PostgreSQL 语义的本地 backend，不是 query mock；它适合快速验证 schema、migration、CRUD、owner isolation 和 Plugin lifecycle。但是 Pluxel 会把共享 PGlite 上的所有 database operation 串行调度，因此一个 host 中的 Plugin 会共同受到单连接吞吐上限影响。不要用 PGlite benchmark 推断 native PostgreSQL 性能。
 
-在 filesystem flush 与 fault-injection 验收完成前，不把 PGlite 作为 production durability baseline。资源受限但仍需正式部署时，优先在目标设备上调低 native PostgreSQL connection/pool budget 并实测，而不是假设 PGlite 更快或更可靠。真正无法承载 native PostgreSQL 的设备，需要把整个 Node host、存储和故障模型一起重新评估。
+PGlite 的 data directory 只为本机工作流提供正常关闭后的便利重启，不是部署存储承诺。Pluxel 不以补充 filesystem flush 或 fault-injection 测试的方式把它升级为 production baseline；需要正式部署时使用 native PostgreSQL。资源受限时，应在目标设备上调低 PostgreSQL connection/pool budget 并实测，而不是把 PGlite 带入部署。
 
 连接字符串、TLS、pool 与 PGlite data directory 是 host startup policy，不是 Plugin config。Plugin schema/query 不根据 backend 分支。
 
@@ -277,7 +298,7 @@ PGlite 是执行真实 PostgreSQL 语义的本地 backend，不是 query mock；
 
 `@pluxel/test/vitest` 会对 database declaration 运行与开发/生产相同的 artifact transform：migration strategy 校验已提交 history，reset strategy 生成临时 baseline。
 
-日常测试可以使用 `memory://` PGlite；生产门禁增加真实 PostgreSQL integration suite。PGlite 覆盖语义与生命周期，native PostgreSQL suite 覆盖并发、锁、连接池和故障行为。
+日常测试使用 `memory://` PGlite；部署门禁增加真实 PostgreSQL integration suite。PGlite 覆盖语义与生命周期，native PostgreSQL suite 覆盖并发、锁、连接池和故障行为。
 
 至少验证：
 
