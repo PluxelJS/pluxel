@@ -52,6 +52,13 @@ override init() {
 target 只把当前页面需要的领域 API 投影为 `RpcTarget`。按 principal 或 route admission 在 factory 中完成；target 持有的 task、observer
 或 subscription 必须随 `signal` 或自身 disposer 清理。
 
+`RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
+`createLocalRpcClient()` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。
+复用的是 contract、target class 和底层领域 service，不是已经打开的 target 实例：每个 session/open 都必须创建 fresh
+target，并由新的挂载方自己提供认证、授权、输入预算、取消和释放语义，不能假定 Workbench session 的保障仍然存在。
+只有出现这种真实的第二消费者时，才将共用 DTO/API 从 `workbench.ts` 提取到中立 contract module 或独立 package subpath；
+仅供 Workbench 使用时保持当前结构。
+
 每个 renderer 声明一个 module-scoped scope 和资源：
 
 ```ts

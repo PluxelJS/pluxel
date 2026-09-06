@@ -346,6 +346,10 @@ expect(await api.read()).toEqual({ count: 1 })
 
 `createLocalRpcClient()` 借用 target：释放返回的 stub 不会释放 target 或它的领域服务。它不验证 Elysia mount、HTTP Upgrade、WebSocket、Origin
 或 disconnect；mounted HTTP endpoint 使用 `host.http.fetch()`，WebSocket carrier 使用真实 listener。
+直接调用 target instance 只能证明本地 class 行为，不能证明 RPC contract；需要作为 Workbench View、CLI 或其他
+Cap’n Web session 入口的 target，至少用上述 local membrane 覆盖其 portable 参数/返回值、callback 和 child capability 所有权。
+同一 target class 被多个入口使用时可以复用这组 object-contract 测试；各入口的认证、admission、取消和 transport lifecycle
+则在该入口自己的 integration test 中验证。
 
 Vault、database、persistence 和 worker 不自动变成 root test backdoor。需要白盒验证 Plugin-owned 数据时，从当前 running instance 取得
 owner-bound handle；restart/replacement 后重新取得新 instance 和 handle。大量业务 seed 由具体 Plugin package 提供领域 fixture。
