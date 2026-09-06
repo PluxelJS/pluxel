@@ -2,9 +2,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import {
 	ActionIcon,
 	Anchor,
-	Badge,
 	Box,
-	Group,
 	Text,
 	Tooltip,
 	useComputedColorScheme,
@@ -26,6 +24,8 @@ import type { RowDensity } from '../constants'
 
 export type RowMeta = {
 	definition?: string
+	exportName?: string
+	reference?: string
 	executionLabel?: string
 	executionTone?: PluginPresentationTone
 	executionDescription?: string
@@ -75,7 +75,6 @@ const SortableRowComponent = ({
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const isDark = scheme === 'dark'
 	const brand = theme.colors.brand ?? theme.colors.indigo
-	const showStatusLabel = dh.rowH >= 30
 	const rowGap = dh.rowH <= 26 ? 4 : 6
 	const handleSize = dh.rowH <= 26 ? 16 : 20
 	const handleIconSize = dh.rowH <= 26 ? 14 : 16
@@ -84,7 +83,6 @@ const SortableRowComponent = ({
 	const selectedBg = selected ? (isDark ? rgba(brand[5], 0.12) : rgba(brand[0], 0.92)) : undefined
 	const rowBackground = active ? activeBg : selected ? selectedBg : undefined
 	const rowColorValue = 'var(--plx-text)'
-	const metaColorValue = active ? 'var(--plx-accent-strong)' : 'var(--plx-text-muted)'
 	const separatorColor = 'color-mix(in srgb, var(--plx-panel-border) 84%, transparent)'
 	const statusLabel =
 		available === false ? '不可用' : running ? '运行中' : desiredRunning ? '等待运行' : '已停止'
@@ -109,6 +107,16 @@ const SortableRowComponent = ({
 	}, [meta?.definition])
 	const executionLabel = meta?.executionLabel?.trim() ?? ''
 	const recentUpdateWarningLabel = meta?.recentUpdateWarningLabel?.trim() ?? ''
+	const nameDescription = (
+		<PluginRowHoverCard
+			name={name}
+			definition={metaLabel}
+			exportName={meta?.exportName}
+			reference={meta?.reference}
+			executionLabel={executionLabel}
+			statusLabel={statusLabel}
+		/>
+	)
 
 	const href = `/plugins/${pid}`
 
@@ -220,7 +228,13 @@ const SortableRowComponent = ({
 					<LinkComp
 						to={href}
 						data-plugin-link="true"
-						style={{ textDecoration: 'none', display: 'block', color: rowColorValue, minWidth: 0 }}
+						style={{
+							textDecoration: 'none',
+							display: 'block',
+							color: rowColorValue,
+							minWidth: 0,
+							flex: 1,
+						}}
 						onClick={(e: any) => {
 							e.stopPropagation()
 							if (e.shiftKey || e.metaKey || e.ctrlKey) {
@@ -229,7 +243,15 @@ const SortableRowComponent = ({
 							}
 						}}
 					>
-						<Tooltip label={name} withinPortal withArrow openDelay={200}>
+						<Tooltip
+							label={nameDescription}
+							multiline
+							maw={440}
+							events={{ hover: true, focus: true, touch: false }}
+							withinPortal
+							withArrow
+							openDelay={200}
+						>
 							<Text
 								size={dh.font}
 								style={{
@@ -245,13 +267,23 @@ const SortableRowComponent = ({
 						</Tooltip>
 					</LinkComp>
 				) : (
-					<Tooltip label={name} withinPortal withArrow openDelay={200}>
+					<Tooltip
+						label={nameDescription}
+						multiline
+						maw={440}
+						events={{ hover: true, focus: true, touch: false }}
+						withinPortal
+						withArrow
+						openDelay={200}
+					>
 						<Anchor
 							size={dh.font}
 							href={href}
 							underline="never"
 							data-plugin-link="true"
 							style={{
+								flex: 1,
+								minWidth: 0,
 								whiteSpace: 'nowrap',
 								overflow: 'hidden',
 								textOverflow: 'ellipsis',
@@ -269,22 +301,6 @@ const SortableRowComponent = ({
 							{name}
 						</Anchor>
 					</Tooltip>
-				)}
-				{metaLabel && (
-					<Text
-						size="xs"
-						style={{
-							fontSize: 10,
-							whiteSpace: 'nowrap',
-							flexShrink: 0,
-							maxWidth: 120,
-							overflow: 'hidden',
-							textOverflow: 'ellipsis',
-							color: metaColorValue,
-						}}
-					>
-						{metaLabel}
-					</Text>
 				)}
 			</Box>
 
@@ -308,48 +324,46 @@ const SortableRowComponent = ({
 
 			{executionLabel ? (
 				<Tooltip
-					label={meta?.executionDescription ?? executionLabel}
+					label={`${executionLabel}${meta?.executionDescription ? ` · ${meta.executionDescription}` : ''}`}
+					multiline
+					maw={360}
+					events={{ hover: true, focus: true, touch: false }}
 					withinPortal
 					withArrow
 					openDelay={200}
 				>
-					<Badge
-						size="xs"
-						variant="light"
-						color={meta?.executionTone ?? 'gray'}
-						style={{ flexShrink: 0, textTransform: 'none' }}
+					<Text
+						component="span"
+						c={meta?.executionTone ?? 'gray'}
+						className="plx-pluginCatalog__executionIndicator"
+						aria-label={executionLabel}
+						role="img"
+						tabIndex={0}
 					>
-						{executionLabel}
-					</Badge>
+						<span aria-hidden="true" />
+					</Text>
 				</Tooltip>
 			) : null}
 
 			{typeof running === 'boolean' && (
-				<Group gap={showStatusLabel ? 6 : 4} wrap="nowrap" aria-label={statusLabel}>
-					<Tooltip
-						label={statusLabel}
-						withinPortal
-						withArrow
-						disabled={showStatusLabel}
-						openDelay={200}
+				<Tooltip
+					label={statusLabel}
+					withinPortal
+					withArrow
+					openDelay={200}
+					events={{ hover: true, focus: true, touch: false }}
+				>
+					<Box
+						component="span"
+						aria-label={statusLabel}
+						role="img"
+						tabIndex={0}
+						className="plx-pluginCatalog__statusIndicator"
+						style={{ color: statusColor }}
 					>
-						<Box
-							component="span"
-							aria-hidden
-							style={{
-								width: 6,
-								height: 6,
-								borderRadius: 6,
-								background: statusColor,
-							}}
-						/>
-					</Tooltip>
-					{showStatusLabel && (
-						<Text size="xs" style={{ color: rowColorValue }}>
-							{statusLabel}
-						</Text>
-					)}
-				</Group>
+						<span aria-hidden="true" />
+					</Box>
+				</Tooltip>
 			)}
 		</Box>
 	)
@@ -373,6 +387,8 @@ const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
 	if (prev.dh.py !== next.dh.py) return false
 	if (prev.dh.font !== next.dh.font) return false
 	if (prev.meta?.definition !== next.meta?.definition) return false
+	if (prev.meta?.exportName !== next.meta?.exportName) return false
+	if (prev.meta?.reference !== next.meta?.reference) return false
 	if (prev.meta?.executionLabel !== next.meta?.executionLabel) return false
 	if (prev.meta?.executionTone !== next.meta?.executionTone) return false
 	if (prev.meta?.executionDescription !== next.meta?.executionDescription) return false
@@ -382,6 +398,44 @@ const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
 		return false
 	}
 	return true
+}
+
+function PluginRowHoverCard({
+	name,
+	definition,
+	exportName,
+	reference,
+	executionLabel,
+	statusLabel,
+}: {
+	name: string
+	definition: string
+	exportName?: string
+	reference?: string
+	executionLabel: string
+	statusLabel: string
+}) {
+	return (
+		<div className="plx-pluginCatalog__hoverCard">
+			<strong className="plx-pluginCatalog__hoverTitle">{name}</strong>
+			<div className="plx-pluginCatalog__hoverFacts">
+				{definition ? <HoverFact label="来源" value={definition} /> : null}
+				{exportName ? <HoverFact label="导出" value={exportName} /> : null}
+				<HoverFact label="状态" value={statusLabel} />
+				{executionLabel ? <HoverFact label="更新" value={executionLabel} /> : null}
+			</div>
+			{reference ? <code className="plx-pluginCatalog__hoverReference">{reference}</code> : null}
+		</div>
+	)
+}
+
+function HoverFact({ label, value }: { label: string; value: string }) {
+	return (
+		<>
+			<span>{label}</span>
+			<b>{value}</b>
+		</>
+	)
 }
 
 export const SortableRow = memo(SortableRowComponent, areRowPropsEqual)

@@ -176,6 +176,8 @@ export function PluginOrganizer({
 			const status = statuses[id]
 			return {
 				definition: status?.definitionLabel,
+				exportName: status?.exportName,
+				reference: status?.reference,
 				executionLabel: status?.executionLabel,
 				executionTone: status?.executionTone,
 				executionDescription: status?.executionDescription,

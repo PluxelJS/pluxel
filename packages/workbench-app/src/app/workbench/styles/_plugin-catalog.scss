@@ -151,6 +151,73 @@
 	padding: 3px 6px;
 }
 
+.plx-pluginCatalog__executionIndicator,
+.plx-pluginCatalog__statusIndicator {
+	align-items: center;
+	cursor: help;
+	display: inline-flex;
+	flex: 0 0 12px;
+	height: 16px;
+	justify-content: center;
+	width: 12px;
+}
+
+.plx-pluginCatalog__hoverCard {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: min(300px, 72vw);
+	padding: 2px;
+}
+
+.plx-pluginCatalog__hoverTitle {
+	font-size: 13px;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+}
+
+.plx-pluginCatalog__hoverFacts {
+	display: grid;
+	font-size: 11px;
+	gap: 4px 10px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	line-height: 1.4;
+}
+
+.plx-pluginCatalog__hoverFacts > span {
+	color: color-mix(in srgb, currentColor 68%, transparent);
+}
+
+.plx-pluginCatalog__hoverFacts > b {
+	font-weight: 500;
+	overflow-wrap: anywhere;
+}
+
+.plx-pluginCatalog__hoverReference {
+	border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+	color: color-mix(in srgb, currentColor 72%, transparent);
+	font-size: 10px;
+	overflow-wrap: anywhere;
+	padding-top: 7px;
+	white-space: normal;
+}
+
+.plx-pluginCatalog__executionIndicator > span,
+.plx-pluginCatalog__statusIndicator > span {
+	background: currentColor;
+	height: 6px;
+	width: 6px;
+}
+
+.plx-pluginCatalog__executionIndicator > span {
+	border-radius: 1px;
+	transform: rotate(45deg);
+}
+
+.plx-pluginCatalog__statusIndicator > span {
+	border-radius: 50%;
+}
+
 .plx-pluginCatalog__rowSelector {
 	align-items: center;
 	background: transparent;
