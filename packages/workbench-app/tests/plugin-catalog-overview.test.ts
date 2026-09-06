@@ -9,10 +9,14 @@ describe('plugin catalog overview', () => {
 		const running: PluginStatusEntry = {
 			...status('Running', 'available', 'running'),
 			recentUpdate: {
-				outcome: 'restored-previous',
-				phase: 'application-reload',
-				sequence: 2,
-				durationMs: 14,
+				batch: {
+					scope: 'application',
+					outcome: 'restored-previous',
+					phase: 'application-reload',
+					sequence: 2,
+					durationMs: 14,
+				},
+				lifecycle: null,
 			},
 		}
 		const stopped = status('Stopped', 'available', 'stopped')

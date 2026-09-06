@@ -99,9 +99,7 @@ describe('static Vite runtime', () => {
 					PLUXEL_VITE_SMOKE_ROOT: fixture.path,
 					PLUXEL_VITE_SMOKE_ENTRY: entryPath,
 					PLUXEL_VITE_SMOKE_PLUGIN: pluginPath,
-					PLUXEL_VITE_SMOKE_BUILT_PLUGIN: fixture.getPath(
-						'packages/vite-built/dist/index.mjs',
-					),
+					PLUXEL_VITE_SMOKE_BUILT_PLUGIN: fixture.getPath('packages/vite-built/dist/index.mjs'),
 					PLUXEL_VITE_SMOKE_CACHE: fixture.getPath('.vite-cache'),
 					VITE_STATIC_LABEL: 'configured-through-vite',
 				},

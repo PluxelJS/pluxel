@@ -250,7 +250,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			next = buildCatalog(definition, previous.revision + 1, this.resolveExecution)
 		} catch (error) {
 			const proposedImplementations = new Set(definition.plugins)
-			this.recentUpdates.record(
+			this.recentUpdates.recordDefinitions(
 				previous.entries
 					.filter((entry) => !proposedImplementations.has(entry.candidate.implementation))
 					.map((entry) => entry.address),
@@ -280,7 +280,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 				this.runtimeName = definition.name
 				this.started = true
 			}
-			this.recentUpdates.record(
+			this.recentUpdates.recordDefinitions(
 				definitionsFromCatalogDiff(diff),
 				committed
 					? {
@@ -299,18 +299,32 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		if (settlement) settlement.catalogCommitted = this.coordinator.catalogSnapshot() === next
 		this.runtimeName = definition.name
 		this.started = true
-		const affectedDefinitions = this.collectAppliedReloadDefinitions(diff, applied)
+		const affectedDefinitions = definitionsFromCatalogDiff(diff)
 		let base: StaticRuntimeInternalStartupReport
 		try {
 			base = await this.currentReport(applied, diff.removed)
 		} catch (error) {
 			// The catalog is already authoritative. A report projection failure is a post-PONR
 			// diagnostic issue, not evidence that the previous Plugin generation was retained.
-			this.recentUpdates.record(affectedDefinitions, {
-				outcome: 'applied-with-issues',
-				phase: 'commit',
-				durationMs: elapsedRuntimeUpdateMs(startedAt),
-			})
+			this.recentUpdates.recordDefinitions(
+				affectedDefinitions,
+				{
+					outcome: 'applied-with-issues',
+					phase: 'commit',
+					durationMs: elapsedRuntimeUpdateMs(startedAt),
+				},
+				{
+					scope: 'definitions',
+					...(applied.core.status === 'committed'
+						? {
+								lifecycle: {
+									commit: applied.core.summary,
+									addressOf: (slot) => requirePluginService(this.ctx).nodeAddressOf(slot),
+								},
+							}
+						: {}),
+				},
+			)
 			throw error
 		}
 		this.recordAppliedReload(affectedDefinitions, applied, startedAt)
@@ -324,45 +338,12 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		return report
 	}
 
-	private collectAppliedReloadDefinitions(
-		diff: StaticRuntimeCatalogDiff,
-		applied: PluginApplyReport<CommitSummary>,
-	): PluginDefinitionAddress[] {
-		const definitions = definitionsFromCatalogDiff(diff)
-		if (applied.core.status === 'committed') {
-			const registry = requirePluginService(this.ctx)
-			const add = (address: PluginNodeAddress): void => {
-				definitions.push(address.definition)
-			}
-			for (const slot of applied.core.summary.pluginChanges.added) {
-				add(registry.nodeAddressOf(slot))
-			}
-			for (const replacement of applied.core.summary.pluginChanges.replaced) {
-				add(registry.nodeAddressOf(replacement.from))
-				add(registry.nodeAddressOf(replacement.to))
-			}
-			for (const slot of applied.core.summary.pluginChanges.removed) {
-				add(registry.nodeAddressOf(slot))
-			}
-			for (const slot of applied.core.summary.pluginChanges.restarted) {
-				add(registry.nodeAddressOf(slot))
-			}
-			for (const slot of applied.core.summary.pluginChanges.availabilityChanged) {
-				add(registry.nodeAddressOf(slot))
-			}
-			for (const issue of applied.core.summary.lifecycleReport.issues) {
-				add(registry.nodeAddressOf(issue.plugin))
-			}
-		}
-		return definitions
-	}
-
 	private recordAppliedReload(
 		definitions: Iterable<PluginDefinitionAddress>,
 		applied: PluginApplyReport<CommitSummary>,
 		startedAt: number,
 	): void {
-		this.recentUpdates.record(
+		this.recentUpdates.recordDefinitions(
 			definitions,
 			applied.core.status === 'committed' && !applied.core.summary.lifecycleReport.ok
 				? {
@@ -375,6 +356,17 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 						phase: null,
 						durationMs: elapsedRuntimeUpdateMs(startedAt),
 					},
+			{
+				scope: 'definitions',
+				...(applied.core.status === 'committed'
+					? {
+							lifecycle: {
+								commit: applied.core.summary,
+								addressOf: (slot) => requirePluginService(this.ctx).nodeAddressOf(slot),
+							},
+						}
+					: {}),
+			},
 		)
 	}
 

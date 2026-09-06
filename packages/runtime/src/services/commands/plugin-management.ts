@@ -90,10 +90,11 @@ const pluginExecution = Type.Union([
 ])
 
 const updateTiming = {
+	scope: Type.Union([Type.Literal('application'), Type.Literal('definitions')]),
 	sequence: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
 	durationMs: Type.Number({ minimum: 0 }),
 }
-const pluginRecentUpdate = Type.Union([
+const pluginUpdateBatch = Type.Union([
 	obj({ outcome: Type.Literal('applied'), phase: Type.Null(), ...updateTiming }),
 	obj({
 		outcome: Type.Literal('applied-with-issues'),
@@ -111,6 +112,35 @@ const pluginRecentUpdate = Type.Union([
 		...updateTiming,
 	}),
 ])
+
+const pluginRecentUpdate = obj({
+	batch: pluginUpdateBatch,
+	lifecycle: Type.Union([
+		Type.Null(),
+		obj({
+			issues: Type.Array(
+				obj({
+					phase: Type.Union([
+						Type.Literal('resolve'),
+						Type.Literal('config'),
+						Type.Literal('start'),
+						Type.Literal('dependency'),
+						Type.Literal('drain'),
+					]),
+					kind: Type.Union([
+						Type.Literal('resolve-failed'),
+						Type.Literal('config-failed'),
+						Type.Literal('start-failed'),
+						Type.Literal('dependency-blocked'),
+						Type.Literal('drain-failed'),
+					]),
+					message: Type.String(),
+					blockedBy: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+				}),
+			),
+		}),
+	]),
+})
 
 const pluginSnapshot = obj({
 	address: pluginNodeAddress,
@@ -169,6 +199,14 @@ const pluginsOutput = obj({
 function mutablePluginSnapshot(snapshot: PluginStatusSnapshot) {
 	return {
 		...snapshot,
+		recentUpdate: snapshot.recentUpdate
+			? {
+					batch: { ...snapshot.recentUpdate.batch },
+					lifecycle: snapshot.recentUpdate.lifecycle
+						? { issues: snapshot.recentUpdate.lifecycle.issues.map((issue) => ({ ...issue })) }
+						: null,
+				}
+			: null,
 		issues: snapshot.issues.map((issue) => ({ ...issue })),
 	}
 }

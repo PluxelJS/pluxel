@@ -12,10 +12,12 @@ export type {
 	PluginArtifactSnapshot,
 	PluginExecutionSnapshot,
 	PluginRecentUpdateSnapshot,
+	PluginUpdateBatchSnapshot,
+	PluginUpdateLifecycleIssue,
 } from '../plugin-execution'
 export type { VaultKeyPair } from '../services/vault/types'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 4 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 5 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -35,7 +37,7 @@ export type RuntimeMeta = Readonly<{
 	ready: true
 	protocol: Readonly<{
 		name: 'pluxel.management'
-		major: 4
+		major: 5
 		capabilities: readonly RuntimeManagementCapability[]
 	}>
 	application: HostApplicationMeta

@@ -148,3 +148,5 @@ export {
 	type RuntimeLoggingState,
 	type RuntimeStoreSinkInput,
 } from './logger/logging'
+
+export { PluginRecentUpdateTracker } from './internal/recent-update'

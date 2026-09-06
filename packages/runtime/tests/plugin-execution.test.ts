@@ -147,42 +147,75 @@ describe('Plugin execution snapshots', () => {
 
 	it('accepts, detaches, and freezes every recent-update outcome', () => {
 		const updates = [
-			{ outcome: 'applied', phase: null, sequence: 1, durationMs: 0 },
 			{
-				outcome: 'applied-with-issues',
-				phase: 'lifecycle',
-				sequence: 2,
-				durationMs: 1.25,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied',
+					phase: null,
+					sequence: 1,
+					durationMs: 0,
+				},
+				lifecycle: null,
 			},
 			{
-				outcome: 'applied-with-issues',
-				phase: 'commit',
-				sequence: 3,
-				durationMs: 1.5,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'lifecycle',
+					sequence: 2,
+					durationMs: 1.25,
+				},
+				lifecycle: null,
 			},
 			{
-				outcome: 'retained-previous',
-				phase: 'evaluate',
-				sequence: 4,
-				durationMs: 2,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'commit',
+					sequence: 3,
+					durationMs: 1.5,
+				},
+				lifecycle: null,
 			},
 			{
-				outcome: 'retained-previous',
-				phase: 'inject',
-				sequence: 5,
-				durationMs: 3,
+				batch: {
+					scope: 'definitions',
+					outcome: 'retained-previous',
+					phase: 'evaluate',
+					sequence: 4,
+					durationMs: 2,
+				},
+				lifecycle: null,
 			},
 			{
-				outcome: 'retained-previous',
-				phase: 'commit',
-				sequence: 6,
-				durationMs: 4,
+				batch: {
+					scope: 'definitions',
+					outcome: 'retained-previous',
+					phase: 'inject',
+					sequence: 5,
+					durationMs: 3,
+				},
+				lifecycle: null,
 			},
 			{
-				outcome: 'restored-previous',
-				phase: 'application-reload',
-				sequence: 7,
-				durationMs: 5,
+				batch: {
+					scope: 'definitions',
+					outcome: 'retained-previous',
+					phase: 'commit',
+					sequence: 6,
+					durationMs: 4,
+				},
+				lifecycle: null,
+			},
+			{
+				batch: {
+					scope: 'application',
+					outcome: 'restored-previous',
+					phase: 'application-reload',
+					sequence: 7,
+					durationMs: 5,
+				},
+				lifecycle: null,
 			},
 		] as const
 
@@ -196,45 +229,134 @@ describe('Plugin execution snapshots', () => {
 	})
 
 	it.each([
-		{ outcome: 'applied', phase: 'commit', sequence: 1, durationMs: 1 },
 		{
-			outcome: 'applied-with-lifecycle-issues',
-			phase: 'lifecycle',
-			sequence: 1,
-			durationMs: 1,
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied',
+				phase: 'commit',
+				sequence: 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
 		},
-		{ outcome: 'applied-with-issues', phase: null, sequence: 1, durationMs: 1 },
-		{ outcome: 'applied-with-issues', phase: 'evaluate', sequence: 1, durationMs: 1 },
 		{
-			outcome: 'retained-previous',
-			phase: 'lifecycle',
-			sequence: 1,
-			durationMs: 1,
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied-with-lifecycle-issues',
+				phase: 'lifecycle',
+				sequence: 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
 		},
-		{ outcome: 'restored-previous', phase: 'commit', sequence: 1, durationMs: 1 },
-		{ outcome: 'applied', phase: null, sequence: 0, durationMs: 1 },
-		{ outcome: 'applied', phase: null, sequence: 1.5, durationMs: 1 },
-		{ outcome: 'applied', phase: null, sequence: Number.MAX_SAFE_INTEGER + 1, durationMs: 1 },
-		{ outcome: 'applied', phase: null, sequence: 1, durationMs: -1 },
-		{ outcome: 'applied', phase: null, sequence: 1, durationMs: Number.POSITIVE_INFINITY },
-		{ outcome: 'applied', phase: null, sequence: 1, durationMs: 1, error: '/private/root' },
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied-with-issues',
+				phase: null,
+				sequence: 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
+		},
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied-with-issues',
+				phase: 'evaluate',
+				sequence: 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
+		},
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'retained-previous',
+				phase: 'lifecycle',
+				sequence: 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
+		},
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'restored-previous',
+				phase: 'commit',
+				sequence: 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
+		},
+		{
+			batch: { scope: 'definitions', outcome: 'applied', phase: null, sequence: 0, durationMs: 1 },
+			lifecycle: null,
+		},
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied',
+				phase: null,
+				sequence: 1.5,
+				durationMs: 1,
+			},
+			lifecycle: null,
+		},
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied',
+				phase: null,
+				sequence: Number.MAX_SAFE_INTEGER + 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
+		},
+		{
+			batch: { scope: 'definitions', outcome: 'applied', phase: null, sequence: 1, durationMs: -1 },
+			lifecycle: null,
+		},
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied',
+				phase: null,
+				sequence: 1,
+				durationMs: Number.POSITIVE_INFINITY,
+			},
+			lifecycle: null,
+		},
+		{
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied',
+				phase: null,
+				sequence: 1,
+				durationMs: 1,
+				error: '/private/root',
+			},
+			lifecycle: null,
+		},
 	])('rejects malformed recent-update snapshot %#', (input) => {
 		expect(() => clonePluginRecentUpdateSnapshot(input)).toThrow(/unsupported|must be/)
 	})
 
 	it('rejects accessor-backed and non-plain recent-update records', () => {
 		const accessorBacked = {
-			outcome: 'applied',
-			phase: null,
-			sequence: 1,
-			durationMs: 1,
+			batch: { scope: 'definitions', outcome: 'applied', phase: null, sequence: 1, durationMs: 1 },
+			lifecycle: null,
 		}
-		Object.defineProperty(accessorBacked, 'durationMs', { get: () => 1, enumerable: true })
+		Object.defineProperty(accessorBacked.batch, 'durationMs', { get: () => 1, enumerable: true })
 		const nonPlain = Object.assign(Object.create({ inherited: true }), {
-			outcome: 'restored-previous',
-			phase: 'application-reload',
-			sequence: 1,
-			durationMs: 1,
+			batch: {
+				scope: 'application',
+				outcome: 'restored-previous',
+				phase: 'application-reload',
+				sequence: 1,
+				durationMs: 1,
+			},
+			lifecycle: null,
 		})
 
 		expect(() => clonePluginRecentUpdateSnapshot(accessorBacked)).toThrow(/data property/)

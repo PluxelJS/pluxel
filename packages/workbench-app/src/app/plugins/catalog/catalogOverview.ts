@@ -40,8 +40,7 @@ const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] |
 		const definition = describePluginDefinition(entry.address.definition)
 		const execution = describePluginExecution(entry.execution)
 		const recentUpdate = describePluginRecentUpdate(entry.recentUpdate)
-		const hasRecentUpdateWarning =
-			entry.recentUpdate !== null && entry.recentUpdate.outcome !== 'applied'
+		const hasRecentUpdateWarning = recentUpdate.warning
 		snapshot[id] = {
 			id,
 			address: entry.address,

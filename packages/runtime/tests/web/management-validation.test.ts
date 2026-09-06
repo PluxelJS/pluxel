@@ -247,10 +247,14 @@ describe('management protocol validation', () => {
 					update: { kind: 'definition-hmr', scope: 'entry-only' },
 				},
 				recentUpdate: {
-					outcome: 'restored-previous',
-					phase: 'application-reload',
-					sequence: 7,
-					durationMs: 4.5,
+					batch: {
+						scope: 'application',
+						outcome: 'restored-previous',
+						phase: 'application-reload',
+						sequence: 7,
+						durationMs: 4.5,
+					},
+					lifecycle: null,
 				},
 			},
 		})
@@ -263,8 +267,12 @@ describe('management protocol validation', () => {
 					update: { kind: 'definition-hmr', scope: 'entry-only' },
 				},
 				recentUpdate: {
-					outcome: 'restored-previous',
-					phase: 'application-reload',
+					batch: {
+						scope: 'application',
+						outcome: 'restored-previous',
+						phase: 'application-reload',
+					},
+					lifecycle: null,
 				},
 			},
 		})
@@ -314,10 +322,14 @@ describe('management protocol validation', () => {
 				value: {
 					...plugin,
 					recentUpdate: {
-						outcome: 'applied',
-						phase: null,
-						sequence: 0,
-						durationMs: -1,
+						batch: {
+							scope: 'definitions',
+							outcome: 'applied',
+							phase: null,
+							sequence: 0,
+							durationMs: -1,
+						},
+						lifecycle: null,
 					},
 				},
 			}),
@@ -328,10 +340,14 @@ describe('management protocol validation', () => {
 				value: {
 					...plugin,
 					recentUpdate: {
-						outcome: 'applied-with-lifecycle-issues',
-						phase: 'lifecycle',
-						sequence: 1,
-						durationMs: 1,
+						batch: {
+							scope: 'definitions',
+							outcome: 'applied-with-lifecycle-issues',
+							phase: 'lifecycle',
+							sequence: 1,
+							durationMs: 1,
+						},
+						lifecycle: null,
 					},
 				},
 			}),
@@ -342,10 +358,14 @@ describe('management protocol validation', () => {
 				value: {
 					...plugin,
 					recentUpdate: {
-						outcome: 'restored-previous',
-						phase: 'commit',
-						sequence: 1,
-						durationMs: 1,
+						batch: {
+							scope: 'application',
+							outcome: 'restored-previous',
+							phase: 'commit',
+							sequence: 1,
+							durationMs: 1,
+						},
+						lifecycle: null,
 					},
 				},
 			}),

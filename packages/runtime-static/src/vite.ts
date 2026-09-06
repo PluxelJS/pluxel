@@ -239,13 +239,14 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				applicationCarrier,
 			)
 			state.detachApplicationCarrier = detachApplicationCarrier
-			const startup = await next.start()
+			const startedHost = next
+			const startup = await startedHost.start()
 			state.host = next
 			state.application = application
 			state.product = product
 			state.configFiles = new Set(configFiles)
 			if (updateStartedAt !== undefined) {
-				recentUpdates.record(
+				recentUpdates.recordDefinitions(
 					[
 						...previousDefinitions,
 						...next.describeCatalog().plugins.map((entry) => entry.definition),
@@ -261,6 +262,17 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 								phase: null,
 								durationMs: elapsedStaticRuntimeUpdateMs(updateStartedAt),
 							},
+					{
+						scope: 'application',
+						...(startup.commit
+							? {
+									lifecycle: {
+										commit: startup.commit,
+										addressOf: (slot) => requirePluginService(startedHost.ctx).nodeAddressOf(slot),
+									},
+								}
+							: {}),
+					},
 				)
 			}
 			return startup
@@ -287,17 +299,33 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 					state.detachApplicationCarrier = requireRuntimeHttpService(
 						restored.ctx,
 					).attachApplicationCarrier(applicationCarrier)
-					await restored.start()
+					const restoredHost = restored
+					const restoredStartup = await restoredHost.start()
 					state.host = restored
 					state.application = previousApplication
 					state.product = previousProduct
 					state.configFiles = previousConfigFiles
 					if (updateStartedAt !== undefined) {
-						recentUpdates.record(previousDefinitions, {
-							outcome: 'restored-previous',
-							phase: 'application-reload',
-							durationMs: elapsedStaticRuntimeUpdateMs(updateStartedAt),
-						})
+						recentUpdates.recordDefinitions(
+							previousDefinitions,
+							{
+								outcome: 'restored-previous',
+								phase: 'application-reload',
+								durationMs: elapsedStaticRuntimeUpdateMs(updateStartedAt),
+							},
+							{
+								scope: 'application',
+								...(restoredStartup.commit
+									? {
+											lifecycle: {
+												commit: restoredStartup.commit,
+												addressOf: (slot) =>
+													requirePluginService(restoredHost.ctx).nodeAddressOf(slot),
+											},
+										}
+									: {}),
+							},
+						)
 					}
 				} catch (rollbackError) {
 					await restored?.stop().catch((): undefined => undefined)
@@ -495,7 +523,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 							// Vite reports an unlink to watchChange before this hook. That removes the
 							// deleted module's semantic facts, so an evaluation failure can leave no exact
 							// targets even though the previous static catalog is still authoritative.
-							recentUpdates.record(
+							recentUpdates.recordDefinitions(
 								evaluationTargets.length > 0 ? evaluationTargets : previousStaticDefinitions,
 								{
 									outcome: 'retained-previous',

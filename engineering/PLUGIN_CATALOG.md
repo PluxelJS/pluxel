@@ -104,7 +104,7 @@ section 不能删除它。client 应回传所有当前 section（包括空 secti
 偏好文件使用 `management` persistence namespace 的 `plugin-catalog.json`，不进入 RuntimeState 或 Workbench backend。
 reader/writer 只接受严格的 version 4 shape；没有旧版本 reader、migration 或名称/布局猜测。
 
-Management protocol major 4 提供一个目录能力，并在每个 Plugin status 中携带严格校验的 `execution` 与 nullable
+Management protocol major 5 提供一个目录能力，并在每个 Plugin status 中携带严格校验的 `execution` 与 nullable
 `recentUpdate`：
 
 - `client.catalog.snapshot()`：返回同一 pinned revision 的 `plugins`、`sections` 和 `summary`；
@@ -130,3 +130,6 @@ Management protocol major 4 提供一个目录能力，并在每个 Plugin statu
 - protocol snapshot 的 node membership、唯一性、summary 一致性和 portable-data budgets。
 - package/source label、搜索与 copy reference 只从 address 派生，execution 不改变 section identity；
 - execution/recentUpdate union 严格拒绝非法组合，browser snapshot 不泄露 absolute path、module ID 或 file URL。
+
+更新记录将批次结果放在 `recentUpdate.batch`，逐节点生命周期历史放在 `recentUpdate.lifecycle`。归因与生命周期语义见
+[HMR](HMR.md#definition-replacement)；管理客户端按 protocol major 拒绝不兼容的数据形状。

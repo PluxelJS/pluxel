@@ -49,8 +49,8 @@ export type PluginExecutionSnapshot =
 			update: Readonly<{ kind: 'unreported' }>
 	  }>
 
-/** Most recent definition update observed for a Plugin family during this process lifetime. */
-export type PluginRecentUpdateSnapshot =
+/** Transaction result shared by every definition participating in one route update. */
+export type PluginUpdateBatchResult =
 	| Readonly<{
 			outcome: 'applied'
 			phase: null
@@ -75,6 +75,26 @@ export type PluginRecentUpdateSnapshot =
 			sequence: number
 			durationMs: number
 	  }>
+
+export type PluginUpdateBatchSnapshot = PluginUpdateBatchResult &
+	Readonly<{
+		/** Full application replacement or an in-host definition transaction. */
+		scope: 'application' | 'definitions'
+	}>
+
+/** Node-local historical facts, never inferred from the transaction's overall outcome. */
+export type PluginUpdateLifecycleIssue = Readonly<{
+	phase: 'resolve' | 'config' | 'start' | 'dependency' | 'drain'
+	kind: 'resolve-failed' | 'config-failed' | 'start-failed' | 'dependency-blocked' | 'drain-failed'
+	message: string
+	blockedBy: string | null
+}>
+
+export type PluginRecentUpdateSnapshot = Readonly<{
+	batch: PluginUpdateBatchSnapshot
+	/** Null means no completed lifecycle report for this node in this batch. It does not mean success. */
+	lifecycle: Readonly<{ issues: readonly PluginUpdateLifecycleIssue[] }> | null
+}>
 
 const UNREPORTED_ARTIFACT = Object.freeze({ kind: 'unreported' as const })
 const UNREPORTED_UPDATE = Object.freeze({ kind: 'unreported' as const })
@@ -143,11 +163,11 @@ export function clonePluginExecutionSnapshot(
 }
 
 /** Validate, detach, and deeply freeze a route-provided recent-update snapshot. */
-export function clonePluginRecentUpdateSnapshot(
+export function clonePluginUpdateBatchSnapshot(
 	input: unknown,
 	label = 'Plugin recent update',
-): PluginRecentUpdateSnapshot {
-	const value = exactRecord(input, ['outcome', 'phase', 'sequence', 'durationMs'], label)
+): PluginUpdateBatchSnapshot {
+	const value = exactRecord(input, ['scope', 'outcome', 'phase', 'sequence', 'durationMs'], label)
 	const outcome = oneOf(
 		value.outcome,
 		['applied', 'applied-with-issues', 'retained-previous', 'restored-previous'],
@@ -164,6 +184,7 @@ export function clonePluginRecentUpdateSnapshot(
 		invalid(`${label}.durationMs must be a finite non-negative number`)
 	}
 	const shared = {
+		scope: oneOf(value.scope, ['application', 'definitions'], `${label}.scope`),
 		sequence: value.sequence as number,
 		durationMs: value.durationMs as number,
 	}
@@ -176,6 +197,8 @@ export function clonePluginRecentUpdateSnapshot(
 		return Object.freeze({ outcome, phase, ...shared })
 	}
 	if (outcome === 'restored-previous') {
+		if (shared.scope !== 'application')
+			invalid(`${label}.scope must be application for compensation`)
 		if (value.phase !== 'application-reload') {
 			invalid(`${label}.phase must be application-reload when outcome is restored-previous`)
 		}
@@ -183,6 +206,51 @@ export function clonePluginRecentUpdateSnapshot(
 	}
 	const phase = oneOf(value.phase, ['evaluate', 'inject', 'commit'], `${label}.phase`)
 	return Object.freeze({ outcome, phase, ...shared })
+}
+
+/** Validate the wire boundary without conflating batch outcome with node lifecycle health. */
+export function clonePluginRecentUpdateSnapshot(
+	input: unknown,
+	label = 'Plugin recent update',
+): PluginRecentUpdateSnapshot {
+	const value = exactRecord(input, ['batch', 'lifecycle'], label)
+	const batch = clonePluginUpdateBatchSnapshot(value.batch, `${label}.batch`)
+	if (value.lifecycle === null) return Object.freeze({ batch, lifecycle: null })
+	if (batch.outcome === 'retained-previous')
+		invalid(`${label}.lifecycle must be null for a retained definition`)
+	const lifecycle = exactRecord(value.lifecycle, ['issues'], `${label}.lifecycle`)
+	if (!Array.isArray(lifecycle.issues)) invalid(`${label}.lifecycle.issues must be an array`)
+	const issues = lifecycle.issues.map((issueInput: unknown) => {
+		const issue = exactRecord(
+			issueInput,
+			['phase', 'kind', 'message', 'blockedBy'],
+			`${label}.issue`,
+		)
+		const phase = oneOf(
+			issue.phase,
+			['resolve', 'config', 'start', 'dependency', 'drain'],
+			`${label}.issue.phase`,
+		)
+		const kind = oneOf(
+			issue.kind,
+			['resolve-failed', 'config-failed', 'start-failed', 'dependency-blocked', 'drain-failed'],
+			`${label}.issue.kind`,
+		)
+		if (kind !== (phase === 'dependency' ? 'dependency-blocked' : `${phase}-failed`))
+			invalid(`${label}.issue contains invalid phase/kind`)
+		if (typeof issue.message !== 'string') invalid(`${label}.issue.message must be a string`)
+		if (issue.blockedBy !== null && (typeof issue.blockedBy !== 'string' || !issue.blockedBy))
+			invalid(`${label}.issue.blockedBy must be a non-empty reference or null`)
+		return Object.freeze({
+			phase,
+			kind,
+			message: issue.message,
+			blockedBy: issue.blockedBy as string | null,
+		})
+	})
+	if (issues.length > 0 && batch.outcome === 'applied')
+		invalid(`${label}.batch must report lifecycle issues`)
+	return Object.freeze({ batch, lifecycle: Object.freeze({ issues: Object.freeze(issues) }) })
 }
 
 function artifactKind(input: unknown, label: string): PluginArtifactSnapshot['kind'] {

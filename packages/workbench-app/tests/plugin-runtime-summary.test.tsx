@@ -88,7 +88,10 @@ describe('plugin runtime summary', () => {
 		const summaryRows = [...container.querySelectorAll('.plx-pluginWorkbench__summaryRow')].filter(
 			(row) => !details.contains(row),
 		)
-		expect(summaryRows.map((row) => row.textContent)).toEqual(['状态运行中', '来源@fixture/tools'])
+		expect(summaryRows.map((row) => row.textContent)).toEqual([
+			'当前状态运行中',
+			'来源@fixture/tools',
+		])
 		expect(container.textContent).not.toContain('暂无描述')
 		expect(container.textContent).not.toContain('本进程暂无更新记录')
 		expect(details.textContent).toContain('构建模块')
@@ -97,8 +100,8 @@ describe('plugin runtime summary', () => {
 
 	it.each([
 		{ outcome: 'retained-previous', phase: 'evaluate', label: '更新失败 · 已保留上一版本' },
-		{ outcome: 'applied-with-issues', phase: 'lifecycle', label: '新版本已提交 · 生命周期异常' },
-		{ outcome: 'applied-with-issues', phase: 'commit', label: '新版本已提交 · 提交后异常' },
+		{ outcome: 'applied-with-issues', phase: 'lifecycle', label: '上次更新 · 启动失败' },
+		{ outcome: 'applied-with-issues', phase: 'commit', label: '本批更新已提交 · 提交后异常' },
 		{
 			outcome: 'restored-previous',
 			phase: 'application-reload',
@@ -109,7 +112,27 @@ describe('plugin runtime summary', () => {
 		async ({ label, ...update }) => {
 			const { container } = await mount({
 				...status,
-				recentUpdate: { ...update, sequence: 3, durationMs: 12 },
+				recentUpdate: {
+					batch: {
+						...update,
+						scope: update.outcome === 'restored-previous' ? 'application' : 'definitions',
+						sequence: 3,
+						durationMs: 12,
+					},
+					lifecycle:
+						update.phase === 'lifecycle'
+							? {
+									issues: [
+										{
+											phase: 'start',
+											kind: 'start-failed',
+											message: 'Startup failed',
+											blockedBy: null,
+										},
+									],
+								}
+							: null,
+				},
 				issues: [{ id: 'missing', code: 'missing_required_provider', message: '缺少必需依赖' }],
 			})
 			const warning = container.querySelector('[role="status"]')!
@@ -127,7 +150,16 @@ describe('plugin runtime summary', () => {
 	it('copies the canonical reference and bounded diagnosis without display text or raw issue messages', async () => {
 		const current: PluginStatusEntry = {
 			...status,
-			recentUpdate: { outcome: 'applied', phase: null, sequence: 4, durationMs: 8 },
+			recentUpdate: {
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied',
+					phase: null,
+					sequence: 4,
+					durationMs: 8,
+				},
+				lifecycle: null,
+			},
 			issues: [
 				{
 					id: 'missing',

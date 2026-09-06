@@ -80,10 +80,14 @@ describe('plugin catalog search', () => {
 
 	it('searches recent update outcome and phase without changing the current execution badge', () => {
 		const recentUpdate = describePluginRecentUpdate({
-			outcome: 'restored-previous',
-			phase: 'application-reload',
-			sequence: 4,
-			durationMs: 18,
+			batch: {
+				scope: 'application',
+				outcome: 'restored-previous',
+				phase: 'application-reload',
+				sequence: 4,
+				durationMs: 18,
+			},
+			lifecycle: null,
 		})
 		const status = {
 			name: 'Recovered renderer',

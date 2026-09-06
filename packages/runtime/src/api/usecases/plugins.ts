@@ -3,9 +3,7 @@ import {
 	requireRuntimePluginGraphCoordinator,
 	type RuntimePluginGraphCommittedView,
 } from '../../internal/reconciliation'
-import {
-	readRuntimeRouteCapabilities,
-} from '../../runtime/capabilities'
+import { readRuntimeRouteCapabilities } from '../../runtime/capabilities'
 import type { PluginStatusSnapshot } from '../../web/protocol'
 import {
 	projectedPluginByAddress,

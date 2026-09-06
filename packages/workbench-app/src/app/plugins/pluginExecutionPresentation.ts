@@ -33,6 +33,9 @@ export type PluginExecutionPresentation = Readonly<{
 }>
 
 export type PluginRecentUpdatePresentation = Readonly<{
+	warning: boolean
+	batchLabel: string | null
+	details: readonly string[]
 	label: string
 	tone: PluginPresentationTone
 	meta: string | null
@@ -206,6 +209,55 @@ export function describePluginExecution(
 export function describePluginRecentUpdate(
 	update: PluginRecentUpdateSnapshot | null,
 ): PluginRecentUpdatePresentation {
+	const batch = describeUpdateBatch(update?.batch ?? null)
+	if (!update) return { ...batch, warning: false, batchLabel: null, details: [] }
+	const scope = update.batch.scope === 'application' ? '应用重载' : '插件批次更新'
+	const batchLabel = `${scope}：${batch.label}`
+	const issues = update.lifecycle?.issues ?? []
+	if (issues.length > 0) {
+		const first = issues[0]!
+		const stages = {
+			resolve: '依赖解析失败',
+			config: '配置校验失败',
+			start: '启动失败',
+			dependency: '被依赖阻塞',
+			drain: '资源清理异常',
+		} as const
+		return {
+			label: `上次更新 · ${stages[first.phase]}`,
+			tone: 'red',
+			warning: true,
+			batchLabel,
+			meta: batch.meta,
+			details: issues.map(
+				(issue) =>
+					`${stages[issue.phase]}：${issue.message}${issue.blockedBy ? `（依赖：${issue.blockedBy}）` : ''}`,
+			),
+			searchTerms: [
+				...batch.searchTerms,
+				...issues.flatMap((issue) => [issue.kind, issue.phase, issue.message]),
+			],
+		}
+	}
+	if (
+		update.batch.outcome === 'applied' ||
+		(update.batch.outcome === 'applied-with-issues' && update.batch.phase === 'lifecycle')
+	) {
+		return {
+			...batch,
+			label: update.lifecycle ? '本插件更新完成' : '定义已更新 · 生命周期未报告',
+			tone: update.lifecycle ? 'teal' : 'gray',
+			warning: false,
+			batchLabel,
+			details: [],
+		}
+	}
+	return { ...batch, warning: true, batchLabel, details: [] }
+}
+
+function describeUpdateBatch(
+	update: PluginRecentUpdateSnapshot['batch'] | null,
+): Omit<PluginRecentUpdatePresentation, 'warning' | 'batchLabel' | 'details'> {
 	if (!update) {
 		return {
 			label: '本进程暂无更新记录',
@@ -227,7 +279,7 @@ export function describePluginRecentUpdate(
 		case 'applied-with-issues': {
 			const lifecycleIssue = update.phase === 'lifecycle'
 			return {
-				label: lifecycleIssue ? '新版本已提交 · 生命周期异常' : '新版本已提交 · 提交后异常',
+				label: lifecycleIssue ? '本批更新已提交 · 部分生命周期异常' : '本批更新已提交 · 提交后异常',
 				tone: 'red',
 				meta: `${attempt} · ${lifecycleIssue ? '生命周期阶段' : '提交阶段'}`,
 				searchTerms: [
@@ -277,7 +329,7 @@ function artifactLabel(kind: PluginExecutionSnapshot['artifact']['kind']): strin
 }
 
 function failurePhaseLabel(
-	phase: Extract<PluginRecentUpdateSnapshot, { outcome: 'retained-previous' }>['phase'],
+	phase: Extract<PluginRecentUpdateSnapshot['batch'], { outcome: 'retained-previous' }>['phase'],
 ): string {
 	switch (phase) {
 		case 'evaluate':

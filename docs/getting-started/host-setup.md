@@ -118,8 +118,10 @@ execution 信息也不是运行期切换构建形态的开关，浏览器诊断�
 Plugin module 的 catalog HMR 会以 `applied` 表示更新已应用且没有结构化异常；失败或异常时，Workbench 会区分旧 catalog 仍生效的
 `retained-previous`，以及新 catalog 已提交但
 commit/lifecycle 有异常的 `applied-with-issues`。Entry/configure 触发 full-host replacement 时旧 host 已经停止；若 candidate host
-启动失败，route 会清理 candidate，再用 previous application definition 创建 fresh compensation host。只有补偿成功才显示
+创建或启动流程抛出错误，route 会清理 candidate，再用 previous application definition 创建 fresh compensation host。只有补偿成功才显示
 `restored-previous / application-reload`，它不代表旧 running generation 被原地保留或复活。
+若启动返回部分插件的 lifecycle issue，则保留已提交的新宿主并按节点报告，不进入宿主补偿。
+插件源码修改后的运行意图保留、自动恢复及旧实例保留范围见 [HMR 失败与自动恢复](../development/tooling.md#hmr-失败与自动恢复)。
 
 React、业务 alias 和普通 Vite plugin 属于 host `vite.config.ts`。不要复制 Pluxel semantic transform、SSR package classifier 或 runtime source alias。
 

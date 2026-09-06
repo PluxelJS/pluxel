@@ -191,8 +191,7 @@ function freezePluginStatus(entry: PluginCatalogProjectionEntry): PluginStatusSn
 		label: Object.freeze({ ...label }),
 		issues: Object.freeze(issues.map((issue) => Object.freeze({ ...issue }))),
 		execution: clonePluginExecutionSnapshot(execution),
-		recentUpdate:
-			recentUpdate === null ? null : clonePluginRecentUpdateSnapshot(recentUpdate),
+		recentUpdate: recentUpdate === null ? null : clonePluginRecentUpdateSnapshot(recentUpdate),
 	})
 }
 

@@ -71,7 +71,7 @@ export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 	if (protocol.name !== 'pluxel.management') {
 		fail('runtime metadata.protocol.name must be pluxel.management')
 	}
-	if (protocol.major !== 4) fail('runtime metadata.protocol.major must be 4')
+	if (protocol.major !== 5) fail('runtime metadata.protocol.major must be 5')
 	const capabilities = closedStringArray<RuntimeManagementCapability>(
 		protocol.capabilities,
 		RUNTIME_MANAGEMENT_CAPABILITIES,
@@ -106,7 +106,7 @@ export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 		ready: true as const,
 		protocol: Object.freeze({
 			name: 'pluxel.management' as const,
-			major: 4 as const,
+			major: 5 as const,
 			capabilities,
 		}),
 		application: Object.freeze({ product }),

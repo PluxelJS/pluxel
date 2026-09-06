@@ -138,6 +138,7 @@ describe('Loader HMR Workbench Content sources', () => {
 		let closeSettled = false
 		const closing = service.close().then(() => {
 			closeSettled = true
+			return undefined
 		})
 		await Promise.resolve()
 		expect(closeSettled).toBe(false)

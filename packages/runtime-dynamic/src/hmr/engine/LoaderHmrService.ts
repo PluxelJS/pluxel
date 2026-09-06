@@ -6,7 +6,6 @@ import {
 	type CommitSummary,
 	type Context,
 	formatPluginNodeReference,
-	pluginDefinitionIndexKey,
 	type PluginDefinitionAddress,
 	type PluginConstructor,
 	type PluginNodeAddress,
@@ -24,7 +23,8 @@ import {
 } from 'vite'
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
-	clonePluginRecentUpdateSnapshot,
+	clonePluginUpdateBatchSnapshot,
+	PluginRecentUpdateTracker,
 	findNearestPackageRoot,
 	requireRuntimeStateStore,
 	requireRuntimeHttpService,
@@ -33,6 +33,7 @@ import {
 	startTimer,
 	type PluginExecutionSnapshot,
 	type PluginRecentUpdateSnapshot,
+	type PluginUpdateBatchSnapshot,
 	type PluginRouteCatalogSnapshot,
 } from '@pluxel/runtime/internal'
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
@@ -85,11 +86,7 @@ type LoaderHmrArtifactGeneration = Readonly<{
 }>
 
 const definitionSourceByService = new WeakMap<LoaderHmrService, LoaderHmrDefinitionSource>()
-const recentUpdatesByService = new WeakMap<
-	LoaderHmrService,
-	Map<string, PluginRecentUpdateSnapshot>
->()
-const MAX_RECENT_PLUGIN_UPDATES = 512
+const recentUpdatesByService = new WeakMap<LoaderHmrService, PluginRecentUpdateTracker>()
 const SUPPLEMENTAL_WATCH_IGNORED = [
 	'**/node_modules/**',
 	'**/.git/**',
@@ -109,9 +106,7 @@ export function readLoaderHmrRecentUpdate(
 	service: LoaderHmrService,
 	address: PluginNodeAddress,
 ): PluginRecentUpdateSnapshot | null {
-	return (
-		recentUpdatesByService.get(service)?.get(pluginDefinitionIndexKey(address.definition)) ?? null
-	)
+	return recentUpdatesByService.get(service)?.resolveRecentUpdate(address) ?? null
 }
 
 function assertHmrExecutionOk(
@@ -462,7 +457,7 @@ export class LoaderHmrService {
 		this.hostRoot = normalizePath(resolve(this.config.hostRoot ?? process.cwd()))
 		this.loader = requireLoaderService(this.ctx)
 		this.scanService = requireScanService(this.ctx)
-		recentUpdatesByService.set(this, new Map())
+		recentUpdatesByService.set(this, new PluginRecentUpdateTracker())
 		this.disposeExecutionResolver = this.loader.configureExecutionResolver((definition, moduleId) =>
 			this.resolvePluginExecution(definition, moduleId),
 		)
@@ -1444,17 +1439,18 @@ export class LoaderHmrService {
 		]
 		this.collectCatalogDefinitionKeys(catalogBefore, relatedModules, definitionKeys)
 		this.collectCatalogDefinitionKeys(this.loaderCatalogSnapshot(), relatedModules, definitionKeys)
-		if (commit) this.collectCommitDefinitionKeys(commit, definitionKeys)
-		const update: PluginRecentUpdateSnapshot = clonePluginRecentUpdateSnapshot(
+		const update: PluginUpdateBatchSnapshot = clonePluginUpdateBatchSnapshot(
 			!summary.ok
 				? catalogApplied
 					? {
+							scope: 'definitions',
 							sequence: summary.epoch,
 							outcome: 'applied-with-issues',
 							phase: 'commit',
 							durationMs: summary.batchMs,
 						}
 					: {
+							scope: 'definitions',
 							sequence: summary.epoch,
 							outcome: 'retained-previous',
 							phase: summary.executeError ? 'evaluate' : summary.injectError ? 'inject' : 'commit',
@@ -1462,12 +1458,14 @@ export class LoaderHmrService {
 						}
 				: commit && !commit.lifecycleReport.ok
 					? {
+							scope: 'definitions',
 							sequence: summary.epoch,
 							outcome: 'applied-with-issues',
 							phase: 'lifecycle',
 							durationMs: summary.batchMs,
 						}
 					: {
+							scope: 'definitions',
 							sequence: summary.epoch,
 							outcome: 'applied',
 							phase: null,
@@ -1475,7 +1473,7 @@ export class LoaderHmrService {
 						},
 		)
 
-		this.storeRecentUpdates(definitionKeys, update)
+		this.storeRecentUpdates(definitionKeys, update, commit)
 	}
 
 	private recordPostCommitFailure(input: {
@@ -1490,15 +1488,16 @@ export class LoaderHmrService {
 		this.collectCatalogDefinitionKeys(input.catalogBefore, input.files, definitionKeys)
 		this.collectCatalogDefinitionKeys(input.catalogAfter, input.files, definitionKeys)
 		this.collectCatalogDeltaDefinitionKeys(input.catalogBefore, input.catalogAfter, definitionKeys)
-		if (input.commit) this.collectCommitDefinitionKeys(input.commit, definitionKeys)
 		this.storeRecentUpdates(
 			definitionKeys,
-			clonePluginRecentUpdateSnapshot({
+			clonePluginUpdateBatchSnapshot({
+				scope: 'definitions',
 				sequence: input.epoch,
 				outcome: 'applied-with-issues',
 				phase: 'commit',
 				durationMs: input.durationMs,
 			}),
+			input.commit,
 		)
 	}
 
@@ -1525,20 +1524,22 @@ export class LoaderHmrService {
 
 	private storeRecentUpdates(
 		definitionKeys: ReadonlySet<string>,
-		update: PluginRecentUpdateSnapshot,
+		batch: PluginUpdateBatchSnapshot,
+		commit?: CommitSummary,
 	): void {
-		if (definitionKeys.size === 0) return
-		const store = recentUpdatesByService.get(this)
-		if (!store) return
-		for (const key of definitionKeys) {
-			store.delete(key)
-			store.set(key, update)
-		}
-		while (store.size > MAX_RECENT_PLUGIN_UPDATES) {
-			const oldest = store.keys().next().value as string | undefined
-			if (oldest === undefined) break
-			store.delete(oldest)
-		}
+		recentUpdatesByService.get(this)?.record({
+			definitionKeys,
+			batch,
+			...(commit
+				? {
+						lifecycle: {
+							commit,
+							addressOf: (slot: PluginNodeSlot) =>
+								requirePluginService(this.ctx).nodeAddressOf(slot),
+						},
+					}
+				: {}),
+		})
 	}
 
 	private collectCatalogDefinitionKeys(
@@ -1557,22 +1558,6 @@ export class LoaderHmrService {
 				output.add(entry.indexKey)
 			}
 		}
-	}
-
-	private collectCommitDefinitionKeys(commit: CommitSummary, output: Set<string>): void {
-		const plugins = requirePluginService(this.ctx)
-		const add = (slot: PluginNodeSlot): void => {
-			output.add(pluginDefinitionIndexKey(plugins.nodeAddressOf(slot).definition))
-		}
-		for (const slot of commit.pluginChanges.added) add(slot)
-		for (const replacement of commit.pluginChanges.replaced) {
-			add(replacement.from)
-			add(replacement.to)
-		}
-		for (const slot of commit.pluginChanges.removed) add(slot)
-		for (const slot of commit.pluginChanges.restarted) add(slot)
-		for (const slot of commit.pluginChanges.availabilityChanged) add(slot)
-		for (const issue of commit.lifecycleReport.issues) add(issue.plugin)
 	}
 
 	private loaderCatalogSnapshot(): PluginRouteCatalogSnapshot {

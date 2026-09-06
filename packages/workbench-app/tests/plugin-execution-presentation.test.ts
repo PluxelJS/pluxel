@@ -151,10 +151,14 @@ describe('plugin execution presentation', () => {
 	it('does not conflate retained, restored, and committed-with-issues outcomes', () => {
 		expect(
 			describePluginRecentUpdate({
-				outcome: 'retained-previous',
-				phase: 'evaluate',
-				sequence: 7,
-				durationMs: 12,
+				batch: {
+					scope: 'definitions',
+					outcome: 'retained-previous',
+					phase: 'evaluate',
+					sequence: 7,
+					durationMs: 12,
+				},
+				lifecycle: null,
 			}),
 		).toMatchObject({
 			label: '更新失败 · 已保留上一版本',
@@ -163,34 +167,47 @@ describe('plugin execution presentation', () => {
 		})
 		expect(
 			describePluginRecentUpdate({
-				outcome: 'applied-with-issues',
-				phase: 'lifecycle',
-				sequence: 8,
-				durationMs: 2.5,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'lifecycle',
+					sequence: 8,
+					durationMs: 2.5,
+				},
+				lifecycle: null,
 			}),
 		).toMatchObject({
-			label: '新版本已提交 · 生命周期异常',
-			tone: 'red',
+			label: '定义已更新 · 生命周期未报告',
+			tone: 'gray',
+			warning: false,
 			meta: '#8 · 2.5 ms · 生命周期阶段',
 		})
 		expect(
 			describePluginRecentUpdate({
-				outcome: 'applied-with-issues',
-				phase: 'commit',
-				sequence: 9,
-				durationMs: 3,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'commit',
+					sequence: 9,
+					durationMs: 3,
+				},
+				lifecycle: null,
 			}),
 		).toMatchObject({
-			label: '新版本已提交 · 提交后异常',
+			label: '本批更新已提交 · 提交后异常',
 			tone: 'red',
 			meta: '#9 · 3 ms · 提交阶段',
 		})
 		expect(
 			describePluginRecentUpdate({
-				outcome: 'restored-previous',
-				phase: 'application-reload',
-				sequence: 10,
-				durationMs: 125,
+				batch: {
+					scope: 'application',
+					outcome: 'restored-previous',
+					phase: 'application-reload',
+					sequence: 10,
+					durationMs: 125,
+				},
+				lifecycle: null,
 			}),
 		).toMatchObject({
 			label: '应用重载失败 · 已用上一应用定义恢复',
@@ -198,5 +215,19 @@ describe('plugin execution presentation', () => {
 			meta: '#10 · 125 ms · 已启动全新补偿宿主，未复活旧运行代',
 		})
 		expect(describePluginRecentUpdate(null).label).toBe('本进程暂无更新记录')
+	})
+	it('does not turn a healthy node red because its application update contains another failure', () => {
+		const result = describePluginRecentUpdate({
+			batch: {
+				scope: 'application',
+				outcome: 'applied-with-issues',
+				phase: 'lifecycle',
+				sequence: 1,
+				durationMs: 5,
+			},
+			lifecycle: { issues: [] },
+		})
+		expect(result).toMatchObject({ warning: false, tone: 'teal', label: '本插件更新完成' })
+		expect(result.batchLabel).toContain('部分生命周期异常')
 	})
 })

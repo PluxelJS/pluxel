@@ -78,7 +78,8 @@ assert.ok(managedCatalogEntry, `${managedExportName} is absent from the startup 
 const address = catalogEntry.address
 const managedAddress = managedCatalogEntry.address
 const addressReference = formatPluginNodeReference(address)
-const startupStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+const startupStatusOverview = await readRuntimePluginStatusOverview(ctx)
+const startupStatus = startupStatusOverview.statuses.find((status) =>
 	pluginNodeAddressEqual(status.address, address),
 )
 assert.ok(startupStatus, 'DynamicHttpPlugin has no startup status')
@@ -97,7 +98,8 @@ assert.equal(
 	formatPluginNodeReference(managedAddress),
 	`package:${managedPackageName}::${managedExportName}`,
 )
-const managedStartupStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+const managedStartupStatusOverview = await readRuntimePluginStatusOverview(ctx)
+const managedStartupStatus = managedStartupStatusOverview.statuses.find((status) =>
 	pluginNodeAddressEqual(status.address, managedAddress),
 )
 assert.ok(managedStartupStatus, `${managedExportName} has no startup status`)
@@ -133,13 +135,14 @@ try {
 		),
 		true,
 	)
-	const replacementStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+	const replacementStatusOverview = await readRuntimePluginStatusOverview(ctx)
+	const replacementStatus = replacementStatusOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
 	)
 	assert.deepEqual(replacementStatus?.execution, startupStatus.execution)
-	assert.equal(replacementStatus?.recentUpdate?.outcome, 'applied')
-	assert.equal(replacementStatus?.recentUpdate?.phase, null)
-	assert.ok((replacementStatus?.recentUpdate?.sequence ?? 0) > 0)
+	assert.equal(replacementStatus?.recentUpdate?.batch.outcome, 'applied')
+	assert.equal(replacementStatus?.recentUpdate?.batch.phase, null)
+	assert.ok((replacementStatus?.recentUpdate?.batch.sequence ?? 0) > 0)
 	assert.equal(JSON.stringify(replacementStatus).includes(root), false)
 	assert.equal(await readVersion(runtimeUrl), 'v2')
 	assert.deepEqual(await v1SocketClosed, { code: 1012, reason: 'Service Restart' })
@@ -156,15 +159,16 @@ try {
 	const invalid = await invalidBatch
 	assert.equal(invalid.ok, false)
 	assert.ok(invalid.executeError)
-	const retainedStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+	const retainedStatusOverview = await readRuntimePluginStatusOverview(ctx)
+	const retainedStatus = retainedStatusOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
 	)
 	assert.deepEqual(retainedStatus?.execution, startupStatus.execution)
-	assert.equal(retainedStatus?.recentUpdate?.outcome, 'retained-previous')
-	assert.equal(retainedStatus?.recentUpdate?.phase, 'evaluate')
+	assert.equal(retainedStatus?.recentUpdate?.batch.outcome, 'retained-previous')
+	assert.equal(retainedStatus?.recentUpdate?.batch.phase, 'evaluate')
 	assert.ok(
-		(retainedStatus?.recentUpdate?.sequence ?? 0) >
-			(replacementStatus?.recentUpdate?.sequence ?? 0),
+		(retainedStatus?.recentUpdate?.batch.sequence ?? 0) >
+			(replacementStatus?.recentUpdate?.batch.sequence ?? 0),
 	)
 	assert.equal(JSON.stringify(retainedStatus).includes(root), false)
 	assert.equal(await readVersion(runtimeUrl), 'v2')
@@ -174,7 +178,7 @@ try {
 
 	// A polling watcher may report consecutive batches while the source remains invalid. Prove that
 	// another real file edit still preserves the last-known-good generation, then use the settled
-	// epoch as the boundary for the following unlink.
+	// epoch as the boundary for the following repair.
 	const repeatedInvalidBatch = hmr.api.waitForStable({
 		afterEpoch: invalid.epoch,
 		timeoutMs: 15_000,
@@ -188,13 +192,24 @@ try {
 	v2Socket.socket.send('repeated-failure-retained')
 	assert.equal(await v2Socket.nextMessage(), 'v2:repeated-failure-retained')
 
+	const repairBatch = hmr.api.waitForStable({
+		afterEpoch: repeatedInvalid.epoch,
+		timeoutMs: 15_000,
+	})
+	await writeFile(pluginPath, pluginSource('syntax-fixed'))
+	const repair = await repairBatch
+	assert.equal(repair.ok, true, JSON.stringify(repair, null, 2))
+	assert.equal(requirePluginService(ctx).isRunning(address), true)
+	assert.equal(await readVersion(runtimeUrl), 'syntax-fixed')
+	assert.deepEqual(await v2SocketClosed, { code: 1012, reason: 'Service Restart' })
+
 	const rollbackSocket = await openWebSocket(socketUrl)
 	sockets.push(rollbackSocket.socket)
-	assert.equal(await rollbackSocket.nextMessage(), 'v2')
+	assert.equal(await rollbackSocket.nextMessage(), 'syntax-fixed')
 	const rollbackSocketClosed = rollbackSocket.closed
 
 	const removalBatch = hmr.api.waitForStable({
-		afterEpoch: repeatedInvalid.epoch,
+		afterEpoch: repair.epoch,
 		timeoutMs: 15_000,
 	})
 	await rm(pluginPath)
@@ -232,7 +247,8 @@ try {
 	v3Socket.socket.close(1000, 'test complete')
 	assert.deepEqual(await v3Socket.closed, { code: 1000, reason: 'test complete' })
 
-	const managedBeforeUpdate = (await readRuntimePluginStatusOverview(ctx)).statuses.find((status) =>
+	const managedBeforeUpdateOverview = await readRuntimePluginStatusOverview(ctx)
+	const managedBeforeUpdate = managedBeforeUpdateOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, managedAddress),
 	)
 	assert.equal(managedBeforeUpdate?.recentUpdate, null)
@@ -245,14 +261,78 @@ try {
 	const managedReplacement = await managedReplacementBatch
 	assert.equal(managedReplacement.ok, true, JSON.stringify(managedReplacement, null, 2))
 	assert.equal(managedReplacement.epoch, restored.epoch + 1)
-	const managedReplacementStatus = (await readRuntimePluginStatusOverview(ctx)).statuses.find(
-		(status) => pluginNodeAddressEqual(status.address, managedAddress),
+	const managedReplacementStatusOverview = await readRuntimePluginStatusOverview(ctx)
+	const managedReplacementStatus = managedReplacementStatusOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, managedAddress),
 	)
 	assert.deepEqual(managedReplacementStatus?.execution, managedStartupStatus.execution)
-	assert.equal(managedReplacementStatus?.recentUpdate?.sequence, managedReplacement.epoch)
-	assert.equal(managedReplacementStatus?.recentUpdate?.outcome, 'applied')
-	assert.equal(managedReplacementStatus?.recentUpdate?.phase, null)
+	assert.equal(managedReplacementStatus?.recentUpdate?.batch.sequence, managedReplacement.epoch)
+	assert.equal(managedReplacementStatus?.recentUpdate?.batch.outcome, 'applied')
+	assert.equal(managedReplacementStatus?.recentUpdate?.batch.phase, null)
 	assert.equal(JSON.stringify(managedReplacementStatus).includes(root), false)
+
+	await loader.api.control.start(managedAddress)
+	const managedInstance = requirePluginService(ctx).getInstance(managedAddress)
+	assert.ok(managedInstance)
+	const beforeInitFailure = await openWebSocket(socketUrl)
+	sockets.push(beforeInitFailure.socket)
+	assert.equal(await beforeInitFailure.nextMessage(), 'v3')
+	const initFailureBatch = hmr.api.waitForStable({
+		afterEpoch: managedReplacement.epoch,
+		timeoutMs: 15_000,
+	})
+	await writeFile(pluginPath, pluginSource('init-broken', true))
+	const initFailure = await initFailureBatch
+	// The catalog is committed, but init failed. No partially installed route may escape.
+	assert.equal(requirePluginService(ctx).isRunning(address), false)
+	const failedRouteResponse = await fetch(`${runtimeUrl}/dynamic/version`)
+	assert.equal(failedRouteResponse.status, 404)
+	assert.equal(
+		requireRuntimeHttpService(ctx).matchesWebSocketRoute(upgradeRequest(runtimeUrl)),
+		false,
+	)
+	assert.deepEqual(await beforeInitFailure.closed, { code: 1012, reason: 'Service Restart' })
+	assert.equal(requirePluginService(ctx).getInstance(managedAddress), managedInstance)
+	const initFailureOverview = await readRuntimePluginStatusOverview(ctx)
+	const failedStatus = initFailureOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)
+	assert.equal(failedStatus?.recentUpdate?.batch.outcome, 'applied-with-issues')
+	assert.equal(failedStatus?.recentUpdate?.batch.phase, 'lifecycle')
+	assert.ok(
+		failedStatus?.recentUpdate?.lifecycle?.issues.some((issue) => issue.kind === 'start-failed'),
+	)
+
+	const initRepairBatch = hmr.api.waitForStable({
+		afterEpoch: initFailure.epoch,
+		timeoutMs: 15_000,
+	})
+	await writeFile(pluginPath, pluginSource('init-fixed'))
+	const initRepair = await initRepairBatch
+	assert.equal(initRepair.ok, true, JSON.stringify(initRepair, null, 2))
+	assert.equal(requirePluginService(ctx).isRunning(address), true)
+	assert.equal(await readVersion(runtimeUrl), 'init-fixed')
+	assert.equal(requirePluginService(ctx).getInstance(managedAddress), managedInstance)
+	const initRepairOverview = await readRuntimePluginStatusOverview(ctx)
+	const recoveredStatus = initRepairOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)
+	assert.equal(recoveredStatus?.recentUpdate?.batch.outcome, 'applied')
+	assert.deepEqual(recoveredStatus?.recentUpdate?.lifecycle, { issues: [] })
+
+	// An explicit Stop changes intent; a subsequent source edit must honor that choice.
+	await loader.api.control.stop(address)
+	const stoppedEditBatch = hmr.api.waitForStable({
+		afterEpoch: initRepair.epoch,
+		timeoutMs: 15_000,
+	})
+	await writeFile(pluginPath, pluginSource('stopped-edit'))
+	const stoppedEdit = await stoppedEditBatch
+	assert.equal(stoppedEdit.ok, true, JSON.stringify(stoppedEdit, null, 2))
+	assert.equal(requirePluginService(ctx).isRunning(address), false)
+	const stoppedRouteResponse = await fetch(`${runtimeUrl}/dynamic/version`)
+	assert.equal(stoppedRouteResponse.status, 404)
+	assert.equal(requirePluginService(ctx).getInstance(managedAddress), managedInstance)
 } finally {
 	for (const socket of sockets) {
 		if (socket.readyState === WebSocket.OPEN) socket.close()
@@ -306,21 +386,21 @@ async function openWebSocket(url: string): Promise<{
 		nextMessage: () => {
 			const message = messages.shift()
 			return message === undefined
-				? new Promise<string>((resolve) => waiters.push(resolve))
+				? new Promise<string>((resolveMessage) => waiters.push(resolveMessage))
 				: Promise.resolve(message)
 		},
 		closed: closed.promise,
 	}
 }
 
-function pluginSource(version: string): string {
+function pluginSource(version: string, failInit = false): string {
 	return [
 		"import { BasePlugin, Plugin } from '@pluxel/runtime'",
 		"import { websocket } from 'elysia/websocket'",
 		"@Plugin({ displayName: 'Dynamic HTTP' })",
 		'export class DynamicHttpPlugin extends BasePlugin {',
 		`  readonly version = ${JSON.stringify(version)}`,
-		`  protected override init() { this.ctx.elysia.use(websocket()).get('/dynamic/version', () => ${JSON.stringify(version)}).ws('/dynamic/socket', { open(socket) { socket.send(${JSON.stringify(version)}) }, message(socket, message) { socket.send(${JSON.stringify(`${version}:`)} + String(message)) } }) }`,
+		`  protected override init() { this.ctx.elysia.use(websocket()).get('/dynamic/version', () => ${JSON.stringify(version)}).ws('/dynamic/socket', { open(socket) { socket.send(${JSON.stringify(version)}) }, message(socket, message) { socket.send(${JSON.stringify(`${version}:`)} + String(message)) } }); ${failInit ? "throw new Error('dynamic init failed')" : ''} }`,
 		'}',
 		'',
 	].join('\n')

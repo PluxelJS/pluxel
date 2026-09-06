@@ -173,6 +173,12 @@ const HotConfigV2 = class HotConfigV2 extends BasePlugin {
 	}
 }
 
+const HotConfigV3 = class HotConfigV3 extends BasePlugin {
+	override init(): void {
+		hotConfigRuns.push('v3')
+	}
+}
+
 const InactiveHotV1 = class InactiveHotV1 extends BasePlugin {}
 
 const InactiveHotV2 = class InactiveHotV2 extends BasePlugin {
@@ -209,6 +215,12 @@ beforeAll(() => {
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		fieldName: 'config',
 		schema: RequiredObjectSchema,
+	})
+	Plugin({ displayName: 'Hot Config Fixed' })(HotConfigV3)
+	__setPluginDefinition(HotConfigV3, {
+		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+		kind: 'plugin',
+		definition: pluginDefinitionAddressOf(HotConfigV1),
 	})
 	lowerReplacementPair(InactiveHotV1, InactiveHotV2, 'inactive-hot', [
 		'Inactive Hot',
@@ -560,7 +572,8 @@ describe('@pluxel/runtime-static', () => {
 			expect(statusOf(host, ghost)).toBe('unknown-config-entry')
 			expect(requirePluginService(host.ctx).isRunning(StaticA)).toBe(true)
 			expect(requirePluginService(host.ctx).isRunning(StaticB)).toBe(false)
-			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+			const statusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const status = statusOverview.statuses.find((entry) =>
 				pluginNodeAddressEqual(entry.address, addressOf(StaticA)),
 			)
 			expect(status).toMatchObject({
@@ -594,7 +607,8 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			await host.start()
-			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+			const statusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const status = statusOverview.statuses.find((entry) =>
 				pluginNodeAddressEqual(entry.address, addressOf(StaticA)),
 			)
 			expect(status?.execution).toEqual({
@@ -812,13 +826,12 @@ describe('@pluxel/runtime-static', () => {
 			expect(report.replaced).toEqual([stableAddress])
 			expect(hotRuns).toEqual(['v1', 'v2'])
 			expect(requirePluginService(host.ctx).getInstance(HotStaticV1)).toBeInstanceOf(HotStaticV2)
-			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+			const statusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const status = statusOverview.statuses.find((entry) =>
 				pluginNodeAddressEqual(entry.address, stableAddress),
 			)
 			expect(status?.recentUpdate).toMatchObject({
-				outcome: 'applied',
-				phase: null,
-				sequence: 1,
+				batch: { scope: 'definitions', outcome: 'applied', phase: null, sequence: 1 },
 			})
 		} finally {
 			await host.stop()
@@ -856,13 +869,17 @@ describe('@pluxel/runtime-static', () => {
 
 			expect(host.definition.plugins).toEqual([HotStaticV2])
 			expect(requirePluginService(host.ctx).getInstance(stableAddress)).toBeInstanceOf(HotStaticV2)
-			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+			const statusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const status = statusOverview.statuses.find((entry) =>
 				pluginNodeAddressEqual(entry.address, stableAddress),
 			)
 			expect(status?.recentUpdate).toMatchObject({
-				outcome: 'applied-with-issues',
-				phase: 'commit',
-				sequence: 1,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'commit',
+					sequence: 1,
+				},
 			})
 		} finally {
 			updateSpy.mockRestore()
@@ -883,10 +900,7 @@ describe('@pluxel/runtime-static', () => {
 		try {
 			await host.start()
 			const reportSpy = vi
-				.spyOn(
-					host as unknown as { currentReport(): Promise<unknown> },
-					'currentReport',
-				)
+				.spyOn(host as unknown as { currentReport(): Promise<unknown> }, 'currentReport')
 				.mockRejectedValueOnce(new Error('report projection fixture failure'))
 
 			await expect(
@@ -901,13 +915,17 @@ describe('@pluxel/runtime-static', () => {
 
 			expect(host.definition.plugins).toEqual([HotStaticV2])
 			expect(requirePluginService(host.ctx).getInstance(stableAddress)).toBeInstanceOf(HotStaticV2)
-			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((entry) =>
+			const statusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const status = statusOverview.statuses.find((entry) =>
 				pluginNodeAddressEqual(entry.address, stableAddress),
 			)
 			expect(status?.recentUpdate).toMatchObject({
-				outcome: 'applied-with-issues',
-				phase: 'commit',
-				sequence: 1,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'commit',
+					sequence: 1,
+				},
 			})
 			reportSpy.mockRestore()
 		} finally {
@@ -979,52 +997,66 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('keeps a config-blocked HMR generation retryable at the same node address', async () => {
-		hotConfigRuns.length = 0
-		const address = addressOf(HotConfigV1)
-		const nextDefinition = defineStaticRuntime({
-			name: 'hmr-config',
-			plugins: [HotConfigV2],
-		})
-		const host = await createStaticRuntimeHost(
-			defineStaticRuntime({ name: 'hmr-config', plugins: [HotConfigV1] }),
-			{
-				configService: {
-					mode: 'memory',
-					snapshot: { plugins: [{ owner: address, config: {} }] },
+	it.each([
+		{ stopAfterFailure: false, expectedStatus: 'started', expectedRuns: ['v1', 'v3'] },
+		{ stopAfterFailure: true, expectedStatus: 'stopped', expectedRuns: ['v1'] },
+	])(
+		'recovers a config-blocked source edit with stopAfterFailure=$stopAfterFailure',
+		async ({ stopAfterFailure, expectedStatus, expectedRuns }) => {
+			hotConfigRuns.length = 0
+			const address = addressOf(HotConfigV1)
+			const nextDefinition = defineStaticRuntime({
+				name: 'hmr-config',
+				plugins: [HotConfigV2],
+			})
+			const host = await createStaticRuntimeHost(
+				defineStaticRuntime({ name: 'hmr-config', plugins: [HotConfigV1] }),
+				{
+					configService: {
+						mode: 'memory',
+						snapshot: { plugins: [{ owner: address, config: {} }] },
+					},
+					runtimeState: { mode: 'memory', snapshot: { autoStart: [address] } },
 				},
-				runtimeState: { mode: 'memory', snapshot: { autoStart: [address] } },
-			},
-		)
-		try {
-			await host.start()
-			expect(hotConfigRuns).toEqual(['v1'])
-
-			const invalid = await reloadStaticRuntime({ host, definition: nextDefinition })
-			expect(invalid.replaced).toEqual([address])
-			expect(statusOf(host, address)).toBe('config-invalid')
-			expect(requirePluginService(host.ctx).isRunning(HotConfigV2)).toBe(false)
-			const invalidStatus = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find(
-				(entry) => pluginNodeAddressEqual(entry.address, address),
 			)
-			expect(invalidStatus?.recentUpdate).toMatchObject({
-				outcome: 'applied-with-issues',
-				phase: 'lifecycle',
-				sequence: 1,
-			})
+			try {
+				await host.start()
+				expect(hotConfigRuns).toEqual(['v1'])
 
-			requireConfigService(host.ctx).patchConfig(address, {
-				value: 'ok',
-			})
-			await requireRuntimePluginGraphCoordinator(host.ctx).startNode(address)
-			const recovered = await reloadStaticRuntime({ host, definition: nextDefinition })
-			expect(recovered.replaced).toEqual([])
-			expect(statusOf(host, address)).toBe('started')
-			expect(hotConfigRuns).toEqual(['v1', 'v2:ok'])
-		} finally {
-			await host.stop()
-		}
-	})
+				const invalid = await reloadStaticRuntime({ host, definition: nextDefinition })
+				expect(invalid.replaced).toEqual([address])
+				expect(statusOf(host, address)).toBe('config-invalid')
+				expect(requirePluginService(host.ctx).isRunning(HotConfigV2)).toBe(false)
+				const invalidStatusOverview = await readRuntimePluginStatusOverview(host.ctx)
+				const invalidStatus = invalidStatusOverview.statuses.find((entry) =>
+					pluginNodeAddressEqual(entry.address, address),
+				)
+				expect(invalidStatus?.recentUpdate).toMatchObject({
+					batch: {
+						scope: 'definitions',
+						outcome: 'applied-with-issues',
+						phase: 'lifecycle',
+						sequence: 1,
+					},
+				})
+
+				if (stopAfterFailure) {
+					await requireRuntimePluginGraphCoordinator(host.ctx).stopNode(address)
+				}
+				// The next source edit fixes the schema. Recovery must not require a Start command.
+				const recovered = await reloadStaticRuntime({
+					host,
+					definition: defineStaticRuntime({ name: 'hmr-config', plugins: [HotConfigV3] }),
+				})
+				expect(recovered.replaced).toEqual([address])
+				expect(statusOf(host, address)).toBe(expectedStatus)
+				expect(requirePluginService(host.ctx).isRunning(address)).toBe(!stopAfterFailure)
+				expect(hotConfigRuns).toEqual(expectedRuns)
+			} finally {
+				await host.stop()
+			}
+		},
+	)
 
 	it('does not validate a stopped replacement generation during HMR', async () => {
 		const address = addressOf(InactiveHotV1)

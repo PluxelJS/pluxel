@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
-import { pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
+import {
+	formatPluginNodeReference,
+	pluginNodeAddressEqual,
+	type PluginConstructor,
+} from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import {
 	readRuntimePluginStatusOverview,
@@ -66,6 +70,10 @@ const partOwnerAddress = capturedHost
 	.describeCatalog()
 	.plugins.find((plugin) => plugin.address.definition.exportName === 'PartOwner')?.address
 assert.ok(partOwnerAddress, 'Part owner is absent from the startup catalog')
+const partProviderAddress = capturedHost
+	.describeCatalog()
+	.plugins.find((plugin) => plugin.address.definition.exportName === 'PartProvider')?.address
+assert.ok(partProviderAddress, 'Part provider is absent from the startup catalog')
 const builtAddress = capturedHost
 	.describeCatalog()
 	.plugins.find((plugin) => plugin.address.definition.exportName === 'BuiltStatic')?.address
@@ -83,7 +91,8 @@ const runtimeUrl = `http://127.0.0.1:${listenerAddress.port}`
 const sockets: WebSocket[] = []
 
 try {
-	const startupStatuses = (await readRuntimePluginStatusOverview(capturedHost.ctx)).statuses
+	const startupStatusesOverview = await readRuntimePluginStatusOverview(capturedHost.ctx)
+	const startupStatuses = startupStatusesOverview.statuses
 	const startupSourceStatus = startupStatuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
 	)
@@ -155,14 +164,15 @@ try {
 	for (const instance of replacementInstances) {
 		assert.equal(instance?.constructor, replacementImplementation)
 	}
-	const appliedStatus = (await readRuntimePluginStatusOverview(capturedHost.ctx)).statuses.find(
-		(status) => pluginNodeAddressEqual(status.address, address),
+	const appliedStatusOverview = await readRuntimePluginStatusOverview(capturedHost.ctx)
+	const appliedStatus = appliedStatusOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
 	)
 	assert.equal(appliedStatus?.execution.artifact.kind, 'source-module')
 	assert.equal(appliedStatus?.execution.update.kind, 'catalog-hmr')
-	assert.equal(appliedStatus?.recentUpdate?.outcome, 'applied')
-	assert.equal(appliedStatus?.recentUpdate?.phase, null)
-	assert.ok((appliedStatus?.recentUpdate?.sequence ?? 0) > 0)
+	assert.equal(appliedStatus?.recentUpdate?.batch.outcome, 'applied')
+	assert.equal(appliedStatus?.recentUpdate?.batch.phase, null)
+	assert.ok((appliedStatus?.recentUpdate?.batch.sequence ?? 0) > 0)
 	assert.equal(
 		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
 		'part-provider-v2',
@@ -179,30 +189,32 @@ try {
 	const originalBuiltPlugin = await readFile(builtPluginPath, 'utf8')
 	await writeFile(builtPluginPath, 'export const invalidBuiltPlugin =')
 	await assert.rejects(() => invokeHotUpdate(routePlugin, builtPluginPath))
-	const statusesAfterBuiltFailure = (await readRuntimePluginStatusOverview(capturedHost.ctx))
-		.statuses
+	const statusesAfterBuiltFailureOverview = await readRuntimePluginStatusOverview(capturedHost.ctx)
+	const statusesAfterBuiltFailure = statusesAfterBuiltFailureOverview.statuses
 	const retainedBuiltStatus = statusesAfterBuiltFailure.find((status) =>
 		pluginNodeAddressEqual(status.address, builtAddress),
 	)
-	assert.equal(retainedBuiltStatus?.recentUpdate?.outcome, 'retained-previous')
-	assert.equal(retainedBuiltStatus?.recentUpdate?.phase, 'evaluate')
+	assert.equal(retainedBuiltStatus?.recentUpdate?.batch.outcome, 'retained-previous')
+	assert.equal(retainedBuiltStatus?.recentUpdate?.batch.phase, 'evaluate')
 	assert.equal(retainedBuiltStatus?.execution.artifact.kind, 'built-module')
 	assert.equal(retainedBuiltStatus?.execution.update.kind, 'catalog-hmr')
 	assert.ok(
-		(retainedBuiltStatus?.recentUpdate?.sequence ?? 0) >
-			(appliedStatus?.recentUpdate?.sequence ?? 0),
+		(retainedBuiltStatus?.recentUpdate?.batch.sequence ?? 0) >
+			(appliedStatus?.recentUpdate?.batch.sequence ?? 0),
 	)
 	await writeFile(builtPluginPath, originalBuiltPlugin)
 
 	await writeFile(pluginPath, 'export const invalidReplacement =')
 	await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
-	const retainedStatus = (await readRuntimePluginStatusOverview(capturedHost.ctx)).statuses.find(
-		(status) => pluginNodeAddressEqual(status.address, address),
+	const retainedStatusOverview = await readRuntimePluginStatusOverview(capturedHost.ctx)
+	const retainedStatus = retainedStatusOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
 	)
-	assert.equal(retainedStatus?.recentUpdate?.outcome, 'retained-previous')
-	assert.equal(retainedStatus?.recentUpdate?.phase, 'evaluate')
+	assert.equal(retainedStatus?.recentUpdate?.batch.outcome, 'retained-previous')
+	assert.equal(retainedStatus?.recentUpdate?.batch.phase, 'evaluate')
 	assert.ok(
-		(retainedStatus?.recentUpdate?.sequence ?? 0) > (appliedStatus?.recentUpdate?.sequence ?? 0),
+		(retainedStatus?.recentUpdate?.batch.sequence ?? 0) >
+			(appliedStatus?.recentUpdate?.batch.sequence ?? 0),
 	)
 	const lastKnownGoodResponse = await fetch(`${runtimeUrl}/configured/version`)
 	assert.equal(await lastKnownGoodResponse.text(), 'v2')
@@ -216,6 +228,62 @@ try {
 	await lastKnownGoodSocket.closed
 	replacementSocket.socket.close()
 	await replacementSocketClosed
+
+	// A valid source edit after evaluation failure must activate without a Start command.
+	await writeFile(pluginPath, pluginSource('syntax-fixed', true))
+	await invokeHotUpdate(routePlugin, pluginPath)
+	assert.equal(pluginService.isRunning(address), true)
+	assert.equal(
+		await fetch(`${runtimeUrl}/configured/version`).then((response) => response.text()),
+		'syntax-fixed',
+	)
+
+	// Init failure happens after the old dependency closure has stopped. Healthy siblings run,
+	// and a later source edit must recover both provider and required consumer automatically.
+	await writeFile(pluginPath, pluginSource('init-broken', true, true))
+	await invokeHotUpdate(routePlugin, pluginPath)
+	assert.equal(pluginService.isRunning(partProviderAddress), false)
+	assert.equal(pluginService.isRunning(partOwnerAddress), false)
+	assert.equal(pluginService.isRunning(configuredAddress), true)
+	const failedOverview = await readRuntimePluginStatusOverview(capturedHost.ctx)
+	const failedProvider = failedOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, partProviderAddress),
+	)
+	const blockedConsumer = failedOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, partOwnerAddress),
+	)
+	assert.equal(failedProvider?.recentUpdate?.batch.outcome, 'applied-with-issues')
+	assert.equal(failedProvider?.recentUpdate?.batch.phase, 'lifecycle')
+	assert.ok(
+		failedProvider?.recentUpdate?.lifecycle?.issues.some((issue) => issue.kind === 'start-failed'),
+	)
+	assert.ok(
+		blockedConsumer?.recentUpdate?.lifecycle?.issues.some(
+			(issue) =>
+				issue.kind === 'dependency-blocked' &&
+				issue.blockedBy === formatPluginNodeReference(partProviderAddress),
+		),
+	)
+	assert.equal(
+		await fetch(`${runtimeUrl}/configured/version`).then((response) => response.text()),
+		'init-broken',
+	)
+	await writeFile(pluginPath, pluginSource('v2', true))
+	await invokeHotUpdate(routePlugin, pluginPath)
+	assert.equal(pluginService.isRunning(partProviderAddress), true)
+	assert.equal(pluginService.isRunning(partOwnerAddress), true)
+	assert.equal(
+		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
+		'part-provider-v2',
+	)
+	const recoveredOverview = await readRuntimePluginStatusOverview(capturedHost.ctx)
+	for (const recoveredAddress of [partProviderAddress, partOwnerAddress]) {
+		const recoveredStatus = recoveredOverview.statuses.find((status) =>
+			pluginNodeAddressEqual(status.address, recoveredAddress),
+		)
+		assert.equal(recoveredStatus?.recentUpdate?.batch.outcome, 'applied')
+		assert.deepEqual(recoveredStatus?.recentUpdate?.lifecycle, { issues: [] })
+	}
 
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
@@ -272,8 +340,8 @@ try {
 	restoredSocket.socket.close()
 	await restoredSocket.closed
 
-	const beforeReplacementStatuses = (await readRuntimePluginStatusOverview(capturedHost.ctx))
-		.statuses
+	const beforeReplacementStatusesOverview = await readRuntimePluginStatusOverview(capturedHost.ctx)
+	const beforeReplacementStatuses = beforeReplacementStatusesOverview.statuses
 	const beforeReplacementSource = beforeReplacementStatuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
 	)?.execution
@@ -294,7 +362,8 @@ try {
 	const compensatedHost = host
 	assert.ok(compensatedHost, 'previous application was not restored after replacement failure')
 	assert.notEqual(compensatedHost, capturedHost)
-	const compensatedStatuses = (await readRuntimePluginStatusOverview(compensatedHost.ctx)).statuses
+	const compensatedStatusesOverview = await readRuntimePluginStatusOverview(compensatedHost.ctx)
+	const compensatedStatuses = compensatedStatusesOverview.statuses
 	const compensatedSource = compensatedStatuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
 	)
@@ -303,9 +372,9 @@ try {
 	)
 	assert.deepEqual(compensatedSource?.execution, beforeReplacementSource)
 	assert.deepEqual(compensatedBuilt?.execution, beforeReplacementBuilt)
-	assert.equal(compensatedSource?.recentUpdate?.outcome, 'restored-previous')
-	assert.equal(compensatedSource?.recentUpdate?.phase, 'application-reload')
-	assert.equal(compensatedBuilt?.recentUpdate?.outcome, 'restored-previous')
+	assert.equal(compensatedSource?.recentUpdate?.batch.outcome, 'restored-previous')
+	assert.equal(compensatedSource?.recentUpdate?.batch.phase, 'application-reload')
+	assert.equal(compensatedBuilt?.recentUpdate?.batch.outcome, 'restored-previous')
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
 		'v3',
@@ -316,10 +385,11 @@ try {
 	const replacementHost = host
 	assert.ok(replacementHost, 'valid application did not replace the compensated host')
 	assert.notEqual(replacementHost, compensatedHost)
-	const finalStatus = (await readRuntimePluginStatusOverview(replacementHost.ctx)).statuses.find(
-		(status) => pluginNodeAddressEqual(status.address, address),
+	const finalStatusOverview = await readRuntimePluginStatusOverview(replacementHost.ctx)
+	const finalStatus = finalStatusOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
 	)
-	assert.equal(finalStatus?.recentUpdate?.outcome, 'applied')
+	assert.equal(finalStatus?.recentUpdate?.batch.outcome, 'applied')
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
 		'v3',
@@ -333,13 +403,14 @@ try {
 	const serializedHost = host
 	assert.ok(serializedHost, 'serialized source updates lost the active host')
 	assert.equal(serializedHost, replacementHost)
-	const serializedStatus = (
-		await readRuntimePluginStatusOverview(serializedHost.ctx)
-	).statuses.find((status) => pluginNodeAddressEqual(status.address, address))
-	assert.equal(serializedStatus?.recentUpdate?.outcome, 'applied')
+	const serializedStatusOverview = await readRuntimePluginStatusOverview(serializedHost.ctx)
+	const serializedStatus = serializedStatusOverview.statuses.find((status) =>
+		pluginNodeAddressEqual(status.address, address),
+	)
+	assert.equal(serializedStatus?.recentUpdate?.batch.outcome, 'applied')
 	assert.ok(
-		(serializedStatus?.recentUpdate?.sequence ?? 0) >=
-			(finalStatus?.recentUpdate?.sequence ?? 0) + 2,
+		(serializedStatus?.recentUpdate?.batch.sequence ?? 0) >=
+			(finalStatus?.recentUpdate?.batch.sequence ?? 0) + 2,
 	)
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
@@ -354,7 +425,8 @@ try {
 		await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
 		assert.equal(host, serializedHost)
 
-		const statusesAfterUnlink = (await readRuntimePluginStatusOverview(serializedHost.ctx)).statuses
+		const statusesAfterUnlinkOverview = await readRuntimePluginStatusOverview(serializedHost.ctx)
+		const statusesAfterUnlink = statusesAfterUnlinkOverview.statuses
 		const unlinkSequences = new Set<number>()
 		for (const catalogPlugin of catalogBeforeUnlink) {
 			const status = statusesAfterUnlink.find((candidate) =>
@@ -365,14 +437,14 @@ try {
 				recentUpdate,
 				`${catalogPlugin.definition.exportName} has no static unlink update attribution`,
 			)
-			assert.equal(recentUpdate.outcome, 'retained-previous')
-			assert.equal(recentUpdate.phase, 'evaluate')
-			unlinkSequences.add(recentUpdate.sequence)
+			assert.equal(recentUpdate.batch.outcome, 'retained-previous')
+			assert.equal(recentUpdate.batch.phase, 'evaluate')
+			unlinkSequences.add(recentUpdate.batch.sequence)
 		}
 		assert.equal(unlinkSequences.size, 1)
 		const unlinkSequence = unlinkSequences.values().next().value
 		assert.ok(
-			(unlinkSequence ?? 0) > (serializedStatus?.recentUpdate?.sequence ?? 0),
+			(unlinkSequence ?? 0) > (serializedStatus?.recentUpdate?.batch.sequence ?? 0),
 			'static unlink did not record one newer catalog-wide update',
 		)
 	} finally {
@@ -445,7 +517,7 @@ async function openWebSocket(url: string): Promise<{
 	}
 }
 
-function pluginSource(version: string, available: boolean): string {
+function pluginSource(version: string, available: boolean, failProvider = false): string {
 	return [
 		"import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'",
 		"import { websocket } from 'elysia/websocket'",
@@ -468,6 +540,9 @@ function pluginSource(version: string, available: boolean): string {
 		'@Plugin()',
 		'export class PartProvider extends BasePlugin {',
 		`  readonly marker = ${JSON.stringify(`part-provider-${version}`)}`,
+		...(failProvider
+			? ["  protected override init() { throw new Error('provider init failed') }"]
+			: []),
 		'}',
 		'class RequiredPart extends PluginPart<PartOwner> {',
 		'  constructor(private readonly provider: PartProvider) { super() }',

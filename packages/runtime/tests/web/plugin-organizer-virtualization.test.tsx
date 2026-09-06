@@ -115,8 +115,7 @@ function buildStatuses(count: number): PluginStatuses {
 			executionTone: index % 5 === 0 ? 'blue' : 'gray',
 			executionDescription:
 				index % 5 === 0 ? '动态插件入口 · 源码模块；源码依赖图 HMR' : '应用静态构建',
-			executionSearchTerms:
-				index % 5 === 0 ? ['dynamic-entry', 'source-graph'] : ['static-bundle'],
+			executionSearchTerms: index % 5 === 0 ? ['dynamic-entry', 'source-graph'] : ['static-bundle'],
 			availability: index % 7 === 0 ? 'unavailable' : 'available',
 			autoStart: index % 2 === 0,
 			desiredState: index % 3 === 0 ? 'running' : 'stopped',

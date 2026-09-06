@@ -33,12 +33,23 @@ Structural reject 保留旧 catalog revision。第一次关闭旧 generation adm
 failure 形成新 revision 的 lifecycle facts，不尝试复活旧 implementation。Optional provider 出现、消失或 replacement
 也走同一个 consumer closure stop/start plan。
 
-Route 可以为受影响 definition 记录进程内 `recentUpdate`。`retained-previous` 只用于 point of no return 之前的
-`evaluate`、`inject` 或 `commit` rejection，表示旧 definition 仍是 committed authority。若 candidate catalog 已成为 authority
-后 update 才 rejection，记录 `applied-with-issues / commit`；若 commit 已返回但新 generation 的 lifecycle report 有 issue，记录
-`applied-with-issues / lifecycle`。两者都不能声称 catalog 已回滚；失败 generation 自己已注册的部分 effects 仍按正常 startup
-rollback 清理。无 issue 的成功 replacement 记录 `applied`。`sequence` 与 `durationMs` 用于关联同一进程内的批次和成本；没有被
-route 观察或报告的更新保持 `null`，它不是成功或失败的推断。
+运行意图与运行事实分离：post-commit start/config failure 不写入 session stop，也不删除 autoStart policy。下一次有效
+definition replacement 通过同一 coordinator/Core plan 自动启动仍在 desired graph 中的失败节点及 required consumer，
+不依赖 Workbench 的 Start command。显式 Stop 则从 desired graph 移除节点，后续源码修复不能覆盖它。纯 catalog no-op
+不强制创建 Core transaction，也不增加 timer retry loop；只有实际更新或明确 lifecycle command 才触发对应执行。
+
+Route 为受影响 definition 记录进程内 `recentUpdate`，由 Runtime internal 的 `PluginRecentUpdateTracker` 统一保存。
+快照分成 `batch` 与 `lifecycle`：前者含 `scope`（application / definitions）、outcome、phase、sequence、durationMs；后者只含
+当前 node 的生命周期 issue，未观察到该节点的完整报告时为 null。空 issues 表示该批执行没有报告此节点的生命周期错误，不代表当前一定运行。
+
+`batch.retained-previous` 只用于 point of no return 之前的 evaluate、inject 或 commit rejection。Catalog 已成为 authority 后的
+rejection 记录 `applied-with-issues / commit`，提交返回但生命周期有 issue 则记录 `applied-with-issues / lifecycle`；这些是整批事实，
+不能广播成每个节点的失败。实际生命周期归因只消费该请求的 exact CommitSummary，按 node address（包括 fork）投影 phase、kind、message、blockedBy，
+不读取全局“最后一次 commit”。未知节点或新 fork 不继承同 definition 其他节点的 lifecycle。成功补偿宿主使用 `restored-previous / application-reload`，
+仍附带补偿启动的逐节点事实。
+
+记录器限制 definition 与 node 保留数量，先验证整条记录再发布；同批次后续诊断可替换记录，但不得靠相同 sequence 复用旧节点错误。
+后续插件重试或运行状态变化不篡改更新历史。Workbench 的红色生命周期提示只来自节点 issue；批次异常和当前运行问题有独立展示位置。
 
 Database handle 固定引用一个 active instance。Replacement 先拒绝旧 handle 的新操作并等待已接纳操作排空；同 lineage
 新 generation 复用 instance，schema-derived lineage 改变时构建空 candidate 并原子激活。Database backend、pool、instance
@@ -84,10 +95,10 @@ Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevS
 
 `staticRuntimeVitePlugin({ entry })` 通过 ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 Plugin
 dependency 变化精确失效 importer graph；application entry/configure graph 变化重建 host。Single-active logging root
-要求先停止旧 host；新 application start 失败时先停止并清理失败的新 host，再从上一次成功 application definition 创建一个
+要求先停止旧 host；新 application 创建或 start 抛出错误时先停止并清理失败的新 host，再从上一次成功 application definition 创建一个
 fresh host。只有补偿 host 成功启动才记录 `restored-previous / application-reload`。这是 full-host replacement 的 compensation，
 不是保留或复活旧 running generation，也不把同一进程内的普通 definition transaction 改成可回滚；补偿本身失败时不得报告
-restored。
+restored。Start 正常返回的部分节点 lifecycle issue 保留新 host 并逐节点报告，不触发宿主补偿。
 
 Management status 将当前 committed definition 的执行方式投影为 route-owned `execution` fact，而不是从文件扩展名、
 `displayName` 或 package label 猜测。production static freezer 产物固定为 `static-bundle / application-bundle / deployment`；
@@ -183,9 +194,13 @@ Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 
 
 - definition-wide default/fork replacement 不出现 mixed constructor generation；
 - structural reject 保留旧 catalog，PONR 后 failure 只报告 lifecycle facts；
+- 连续失败的源码求值保留旧 HTTP/WebSocket generation，修复后自动替换；
+- config/init 失败后的有效 replacement 自动恢复 required closure，未修改的 consumer 也能重新启动；
+- 显式 Stop 保持停止，前一次更新 rejection 不堵住排队的修复更新；
 - execution snapshot 只允许 route/artifact/update 的合法组合，`entry-only` 不误报 package source graph；
 - source/built 只来自 exact positive semantic facts，失败 artifact generation rollback 后不污染 active facts；
 - recent update 区分 retained previous、commit/lifecycle applied-with-issues 与 application-reload restored previous；
+- 同一批次的 node/fork 历史不串线，批次异常不等于每个节点异常；
 - full-host replacement 只在 fresh compensation host 成功启动后报告 restored previous；
 - Management DTO 不包含 absolute path、`file:` URL、`/@fs/` 或 Vite module ID；
 - optional provider replacement 正确重启 consumer closure；

@@ -313,9 +313,12 @@ describe('Loader HMR execution provenance', () => {
 				update: { kind: 'definition-hmr', scope: 'entry-only' },
 			})
 			expect(readLoaderHmrRecentUpdate(hmr, address)).toMatchObject({
-				outcome: 'applied-with-issues',
-				phase: 'commit',
-				sequence: 1,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'commit',
+					sequence: 1,
+				},
 			})
 		} finally {
 			await hmr.close()
@@ -336,7 +339,12 @@ describe('Loader HMR execution provenance', () => {
 		@Plugin()
 		class Current extends BasePlugin {}
 		lowerTestPlugin(Current, { exportName: 'ExactCommitPlugin' })
-		await loader.replaceModule(moduleId, { ExactCommitPlugin: Current })
+		@Plugin()
+		class HealthyPeer extends BasePlugin {}
+		lowerTestPlugin(HealthyPeer)
+		await loader.replaceModule(moduleId, { ExactCommitPlugin: Current, HealthyPeer })
+		const peerAddress = pluginNodeAddressOf(HealthyPeer)
+		const peerSlot = requirePluginService(ctx).internNodeAddress(peerAddress)
 		const address = pluginNodeAddressOf(Current)
 		const slot = requirePluginService(ctx).internNodeAddress(address)
 
@@ -350,7 +358,7 @@ describe('Loader HMR execution provenance', () => {
 				replaced: [],
 				removed: [],
 				restarted: [],
-				availabilityChanged: [slot],
+				availabilityChanged: [slot, peerSlot],
 			},
 			runtimeUpdate: {},
 			lifecycleReport: {
@@ -384,7 +392,10 @@ describe('Loader HMR execution provenance', () => {
 			const batch = await observedBatch
 			await harness.debouncer.waitForIdle({ timeoutMs: 2_000 })
 
-			expect(batch.pluginChanges?.availabilityChanged).toEqual([formatPluginNodeReference(address)])
+			expect(batch.pluginChanges?.availabilityChanged).toEqual([
+				formatPluginNodeReference(address),
+				formatPluginNodeReference(peerAddress),
+			])
 			expect(batch.pluginLifecycleReport).toMatchObject({
 				ok: false,
 				issues: [
@@ -395,10 +406,17 @@ describe('Loader HMR execution provenance', () => {
 				formatPluginNodeReference(concurrentAddress),
 			)
 			expect(readLoaderHmrRecentUpdate(hmr, address)).toMatchObject({
-				outcome: 'applied-with-issues',
-				phase: 'lifecycle',
-				sequence: 1,
+				batch: {
+					scope: 'definitions',
+					outcome: 'applied-with-issues',
+					phase: 'lifecycle',
+					sequence: 1,
+				},
 			})
+			expect(readLoaderHmrRecentUpdate(hmr, peerAddress)?.lifecycle).toEqual({ issues: [] })
+			expect(readLoaderHmrRecentUpdate(hmr, address)?.lifecycle?.issues[0]?.message).toBe(
+				'exact HMR lifecycle issue',
+			)
 		} finally {
 			await hmr.close()
 		}
@@ -424,10 +442,14 @@ describe('Loader HMR execution provenance', () => {
 
 		harness.recordRecentUpdates(summary(moduleId, 1), catalog, undefined)
 		expect(readLoaderHmrRecentUpdate(hmr, address)).toEqual({
-			outcome: 'applied',
-			phase: null,
-			sequence: 1,
-			durationMs: 2.5,
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied',
+				phase: null,
+				sequence: 1,
+				durationMs: 2.5,
+			},
+			lifecycle: null,
 		})
 
 		for (const [epoch, phase, failure] of [
@@ -441,10 +463,14 @@ describe('Loader HMR execution provenance', () => {
 				undefined,
 			)
 			expect(readLoaderHmrRecentUpdate(hmr, address)).toEqual({
-				outcome: 'retained-previous',
-				phase,
-				sequence: epoch,
-				durationMs: 2.5,
+				batch: {
+					scope: 'definitions',
+					outcome: 'retained-previous',
+					phase,
+					sequence: epoch,
+					durationMs: 2.5,
+				},
+				lifecycle: null,
 			})
 		}
 
@@ -454,10 +480,14 @@ describe('Loader HMR execution provenance', () => {
 			undefined,
 		)
 		expect(readLoaderHmrRecentUpdate(hmr, address)).toEqual({
-			outcome: 'applied-with-issues',
-			phase: 'commit',
-			sequence: 5,
-			durationMs: 2.5,
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied-with-issues',
+				phase: 'commit',
+				sequence: 5,
+				durationMs: 2.5,
+			},
+			lifecycle: null,
 		})
 
 		const plugin = requirePluginService(ctx).internNodeAddress(address)
@@ -478,19 +508,37 @@ describe('Loader HMR execution provenance', () => {
 						phase: 'start',
 						kind: 'start-failed',
 						message: 'fixture lifecycle failure',
+						error: {
+							name: 'Error',
+							message: 'fixture lifecycle failure',
+							stack: '/private/host/lifecycle.ts',
+						},
 					},
 				],
 			},
 		}
 		harness.recordRecentUpdates(summary(moduleId, 6), catalog, lifecycleCommit)
 		expect(readLoaderHmrRecentUpdate(hmr, address)).toEqual({
-			outcome: 'applied-with-issues',
-			phase: 'lifecycle',
-			sequence: 6,
-			durationMs: 2.5,
+			batch: {
+				scope: 'definitions',
+				outcome: 'applied-with-issues',
+				phase: 'lifecycle',
+				sequence: 6,
+				durationMs: 2.5,
+			},
+			lifecycle: {
+				issues: [
+					{
+						phase: 'start',
+						kind: 'start-failed',
+						message: 'fixture lifecycle failure',
+						blockedBy: null,
+					},
+				],
+			},
 		})
 		expect(JSON.stringify(readLoaderHmrRecentUpdate(hmr, address))).not.toContain(
-			'fixture lifecycle failure',
+			'/private/host/lifecycle.ts',
 		)
 
 		await hmr.close()
@@ -553,6 +601,7 @@ describe('Loader HMR shutdown', () => {
 		let closeSettled = false
 		const closing = hmr.close().then(() => {
 			closeSettled = true
+			return undefined
 		})
 		await Promise.resolve()
 		expect(closeSettled).toBe(false)
@@ -593,6 +642,7 @@ describe('Loader HMR shutdown', () => {
 		let closeSettled = false
 		const closing = hmr.close().then(() => {
 			closeSettled = true
+			return undefined
 		})
 		await Promise.resolve()
 		expect(closeSettled).toBe(false)

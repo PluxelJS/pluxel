@@ -11,6 +11,8 @@ export {
 export {
 	clonePluginExecutionSnapshot,
 	clonePluginRecentUpdateSnapshot,
+	clonePluginUpdateBatchSnapshot,
+	type PluginUpdateBatchSnapshot,
 	UNREPORTED_PLUGIN_EXECUTION,
 	type PluginArtifactSnapshot,
 	type PluginExecutionSnapshot,

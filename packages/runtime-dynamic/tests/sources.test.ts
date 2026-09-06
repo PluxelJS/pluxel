@@ -251,7 +251,8 @@ describe('dynamic plugin sources', () => {
 			})
 			expect(formatPluginNodeReference(address)).toBe(`package:${packageName}::${exportName}`)
 
-			const status = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find((candidate) =>
+			const statusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const status = statusOverview.statuses.find((candidate) =>
 				pluginNodeAddressEqual(candidate.address, address),
 			)
 			expect(status).toBeDefined()
@@ -292,14 +293,19 @@ describe('dynamic plugin sources', () => {
 			expect(replacement.ok).toBe(true)
 			expect(replacement.epoch).toBe(1)
 
-			const replacementStatus = (await readRuntimePluginStatusOverview(host.ctx)).statuses.find(
-				(candidate) => pluginNodeAddressEqual(candidate.address, address),
+			const replacementStatusOverview = await readRuntimePluginStatusOverview(host.ctx)
+			const replacementStatus = replacementStatusOverview.statuses.find((candidate) =>
+				pluginNodeAddressEqual(candidate.address, address),
 			)
 			expect(replacementStatus).toMatchObject({
 				recentUpdate: {
-					sequence: replacement.epoch,
-					outcome: 'applied',
-					phase: null,
+					batch: {
+						scope: 'definitions',
+						sequence: replacement.epoch,
+						outcome: 'applied',
+						phase: null,
+					},
+					lifecycle: null,
 				},
 				execution: {
 					kind: 'dynamic-entry',

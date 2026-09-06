@@ -4,10 +4,7 @@ import {
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
 import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
-import {
-	clonePluginExecutionSnapshot,
-	type PluginExecutionSnapshot,
-} from '../../plugin-execution'
+import { clonePluginExecutionSnapshot, type PluginExecutionSnapshot } from '../../plugin-execution'
 
 export type PluginCatalogErrorCode =
 	| 'plugin_definition_collision'

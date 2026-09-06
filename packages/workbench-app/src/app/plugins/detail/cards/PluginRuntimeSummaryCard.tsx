@@ -24,12 +24,23 @@ export function PluginRuntimeSummaryCard({
 }) {
 	const control = describePluginControl(status)
 	const { canonicalReference, definition, execution, recentUpdate } = describePluginRuntime(status)
-	const updateWarning = status.recentUpdate !== null && status.recentUpdate.outcome !== 'applied'
+	const updateWarning = recentUpdate.warning
 	const diagnostic = JSON.stringify(
 		{
 			reference: canonicalReference,
 			execution: status.execution,
-			recentUpdate: status.recentUpdate,
+			recentUpdate: status.recentUpdate
+				? {
+						batch: status.recentUpdate.batch,
+						lifecycle: status.recentUpdate.lifecycle
+							? {
+									issues: status.recentUpdate.lifecycle.issues.map(
+										({ phase, kind, blockedBy }) => ({ phase, kind, blockedBy }),
+									),
+								}
+							: null,
+					}
+				: null,
 			autoStart: status.autoStart,
 			sessionIntent: status.sessionIntent,
 			desiredState: status.desiredState,
@@ -50,7 +61,7 @@ export function PluginRuntimeSummaryCard({
 						{description}
 					</Text>
 				) : null}
-				<SummaryRow label="状态">
+				<SummaryRow label="当前状态">
 					<Tooltip
 						label={`${control.desiredStateLabel}；${control.sessionIntentLabel}；${control.activationReasonLabel}`}
 					>
@@ -96,6 +107,19 @@ export function PluginRuntimeSummaryCard({
 						</Text>
 					</Group>
 				) : null}
+				{recentUpdate.details.length > 0 ? (
+					<Stack gap={4}>
+						{recentUpdate.details.map((detail, index) => (
+							<Text key={index} size="xs">
+								{detail}
+							</Text>
+						))}
+						<Text size="xs" c="dimmed">
+							以上为上次更新记录；是否已恢复请看当前状态。
+						</Text>
+					</Stack>
+				) : null}
+
 				{status.issues.length > 0 ? (
 					<Stack gap={4} className="plx-pluginWorkbench__statusIssues">
 						{status.issues.map((issue) => (
@@ -121,10 +145,13 @@ export function PluginRuntimeSummaryCard({
 							自动启动{status.autoStart ? '已开启' : '已关闭'} · {control.desiredStateLabel}
 						</SummaryRow>
 						{status.recentUpdate ? (
-							<SummaryRow label="最近更新">
+							<SummaryRow label="本插件上次更新">
 								{recentUpdate.label}
 								{recentUpdate.meta ? ` · ${recentUpdate.meta}` : ''}
 							</SummaryRow>
+						) : null}
+						{recentUpdate.batchLabel ? (
+							<SummaryRow label="所属更新批次">{recentUpdate.batchLabel}</SummaryRow>
 						) : null}
 						<CopyButton value={diagnostic}>
 							{({ copied, copy }) => (
