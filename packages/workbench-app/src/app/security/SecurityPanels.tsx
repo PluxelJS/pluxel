@@ -2,7 +2,7 @@ import { Badge, Button, Group, Paper, Stack, Table, Text, Textarea, TextInput } 
 import { IconHistory, IconKey, IconRefresh, IconShieldCheck } from '@tabler/icons-react'
 import type { SecurityOverview, VaultAdminState, VaultKeyPair } from '../../runtime'
 import { EmptyState } from '../../components'
-import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import {
 	labelForAccessState,
 	labelForUnlockSource,

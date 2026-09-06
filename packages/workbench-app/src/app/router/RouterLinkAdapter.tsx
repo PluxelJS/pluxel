@@ -6,7 +6,7 @@ import {
 	type ReactNode,
 } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { useWorkbenchDocumentPathname, useWorkbenchNavigation } from './workbench/context'
+import { useWorkbenchNavigation } from '../workbench/context'
 
 export type RouterLinkAdapterProps = {
 	to: string
@@ -17,20 +17,24 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 	({ to, children, onClick, target, rel, ...rest }, ref) => {
 		const router = useRouter()
 		const { navigate } = useWorkbenchNavigation()
-		const documentPathname = useWorkbenchDocumentPathname()
+		const isWorkbenchPath = to.startsWith('/') && !to.startsWith('//') && !to.includes('\\')
 
 		let href = to
-		try {
-			href = router.buildLocation({ to }).href
-		} catch {
-			// 保底回退到原始 to
+		if (isWorkbenchPath) {
+			try {
+				href = router.buildLocation({ to }).href
+			} catch {
+				// Preserve the original href if the router cannot resolve it.
+			}
 		}
 
 		const handleClick = useCallback(
 			(event: MouseEvent<HTMLAnchorElement>) => {
 				onClick?.(event)
 				if (
+					!isWorkbenchPath ||
 					event.defaultPrevented ||
+					event.currentTarget.hasAttribute('download') ||
 					event.button !== 0 ||
 					(target && target !== '_self') ||
 					event.metaKey ||
@@ -41,22 +45,11 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 					return
 				}
 
-				const targetIsCurrent = (() => {
-					try {
-						const targetUrl = new URL(href, window.location.origin)
-						return targetUrl.pathname === documentPathname
-					} catch {
-						return false
-					}
-				})()
-				if (targetIsCurrent && to !== '/') {
-					event.preventDefault()
-					return
-				}
+				// Workspace navigation owns deduplication and focus, including links in inactive panes.
 				event.preventDefault()
 				navigate(to)
 			},
-			[documentPathname, href, navigate, onClick, target, to],
+			[isWorkbenchPath, navigate, onClick, target, to],
 		)
 
 		return (

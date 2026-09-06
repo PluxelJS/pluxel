@@ -184,6 +184,13 @@ workspace store。
 Workspace controller 独立拥有 tabs、editor groups、focus 和递归 grid。URL 只镜像 focused document；打开同一完整
 document path 会聚焦已有 tab。Plugin 不感知 tab group、drag/drop 或 split topology。
 
+Shell 的路由适配与错误边界集中在 `app/router/`。链接由 workspace navigation 统一处理去重和编辑组聚焦；站外链接、下载、
+修饰键和新窗口行为交给浏览器。单个 document 的渲染错误由自己的边界显示并允许重试，不卸载其他编辑区或全局 Shell。
+
+Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写盘或触发 React 重渲染。连续变化合并为一次 idle/timeout
+写入，写入时读取最新且经过持久化清洗的状态；`pagehide`、页面隐藏与 teardown 会补写尚未保存的变化。序列化结果相同时不重复写盘，
+存储不可用不阻塞工作台；这不是对浏览器强制终止或存储故障的数据持久性保证。
+
 ## Module Federation policy
 
 每个 Workbench document 只有一个 MF Runtime。Shell 先建立 exact singleton shared winners，再以 `loaded-first` 按需注册 producer：
@@ -208,6 +215,8 @@ building 状态。后台 producer 成功后提交完整 tuple 并触发完整 do
 ## React state correctness
 
 - module-scoped session 和 bootstrap promise 保证 StrictMode 不重复连接；
+- 正常路由切换保留根错误边界、Shell 与 session providers；错误恢复按 pathname 清空 error，不能用 pathname key 重建整棵应用；
+- Plugin detail 只按 canonical node route 重置 owner-local 表单与视图，同一 Plugin 的子路由不重置整个 Plugin 工作台；
 - layout runtime、Content/View activation 和 handle/Bridge cleanup 用 mount count + microtask cleanup 吸收 effect replay；
 - 跨组件共享事实使用 `subscribe/getSnapshot` store；
 - 空 array/object 和 Context value 保持稳定 identity；

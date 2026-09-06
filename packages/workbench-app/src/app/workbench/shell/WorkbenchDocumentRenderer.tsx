@@ -1,4 +1,5 @@
 import { formatPluginNodeRoute } from '@pluxel/core'
+import { RouteErrorBoundary } from '../../router/RouteErrorBoundary'
 import { LiveLog } from '../../log_viewer/LiveLog'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 import { PluginScreen } from '../../plugins/detail/PluginScreen'
@@ -16,6 +17,14 @@ import {
 
 /** Host-owned document router: renders any Tab path independently of the browser location. */
 export function WorkbenchDocumentRenderer({ pathname }: { pathname: string }) {
+	return (
+		<RouteErrorBoundary pathname={pathname}>
+			<WorkbenchDocumentContent pathname={pathname} />
+		</RouteErrorBoundary>
+	)
+}
+
+function WorkbenchDocumentContent({ pathname }: { pathname: string }) {
 	if (pathname === '/') return <HomeScreen />
 	if (pathname === '/logs') return <LiveLog />
 	if (pathname === '/security') return <SecurityScreen />
@@ -32,7 +41,11 @@ export function WorkbenchDocumentRenderer({ pathname }: { pathname: string }) {
 	}
 
 	const pluginDetail = parsePluginDetailHref(pathname)
-	if (pluginDetail) return <PluginScreen pluginRoute={formatPluginNodeRoute(pluginDetail.target)} />
+	if (pluginDetail) {
+		// A different owner gets fresh form/view state; routes within that owner retain the workspace.
+		const pluginRoute = formatPluginNodeRoute(pluginDetail.target)
+		return <PluginScreen key={pluginRoute} pluginRoute={pluginRoute} />
+	}
 
 	const workbenchRoute = parseWorkbenchHref(pathname)
 	if (workbenchRoute?.frame === 'shell') {

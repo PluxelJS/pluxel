@@ -145,6 +145,23 @@
 	white-space: nowrap;
 }
 
+.plx-pluginWorkbench__diagnostics {
+	border-top: 1px solid var(--plx-border);
+	font-size: 11px;
+	padding-top: 6px;
+}
+
+.plx-pluginWorkbench__diagnostics > summary {
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.plx-pluginWorkbench__diagnostics .plx-pluginWorkbench__summaryValue {
+	display: block;
+	overflow-wrap: anywhere;
+}
+
 .plx-pluginWorkbench__statusIssues {
 	background: color-mix(in srgb, var(--mantine-color-yellow-1) 44%, transparent);
 	border: 1px solid color-mix(in srgb, var(--mantine-color-yellow-6) 34%, var(--plx-border));

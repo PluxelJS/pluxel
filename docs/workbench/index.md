@@ -20,22 +20,25 @@ Headless host 可以完全不安装 Workbench，所以业务能力仍应通过
 
 ## 内置 Plugin 目录诊断
 
-目录行把 definition identity 与 execution 分开显示：包名或源码位置来自 canonical
-`address.definition.entry`，旁边只有一个简短 badge，用来说明更新边界；artifact 则在详情中单独展示。Static Plugin 因此仍会显示自己的
-package/source 定义位置，不再因为缺少 HMR module ID 而显示成“未知来源”；badge 也不重复充当包名或制品标签。
+目录行显示包名或源码位置，旁边只保留一个更新方式 badge，例如“源码 HMR”“入口 HMR”或“部署更新”。来源取自插件定义，
+不会因为没有 HMR 信息而变成“未知来源”；静态内置插件也可能使用构建模块，来源与是否 HMR 是两件事。
 
-Static Vite catalog 的 badge 是“目录 HMR”，不会因 artifact 是构建 module 或未报告而伪装成“应用重载”或“未知更新”。详情中的
-更新方式说明为“应用模块图变化时热替换插件目录；entry/应用配置边界变化时重建应用”。整宿主补偿的实际结果仍只通过最近更新的
-`restored-previous / application-reload` 表达。
+Plugin 详情默认只展示简短说明（有则显示）、状态和来源。来源旁可以复制插件引用；执行方式、制品、更新边界、启动策略与
+最近更新放在默认折叠的“调试信息”中，没有更新记录时不显示空占位。“复制诊断信息”可一次复制引用、执行和更新事实、
+运行状态及问题代码，便于排查；不会复制 Vite module ID、绝对文件路径或包安装目录。
 
-Plugin 详情会分别展示可复制的 canonical reference、定义位置、当前 execution、artifact、更新方式和最近一次进程内更新结果。
-“更新已应用” (`applied`) 表示更新已应用且没有结构化异常；“更新失败 · 已保留上一版本” (`retained-previous`) 表示旧 catalog 始终是
-authority；“新版本已提交 · 生命周期异常/提交后异常”
-(`applied-with-issues / lifecycle|commit`) 表示新 catalog 已经生效，只是 lifecycle 或 post-commit path 有问题。失败 Plugin
-generation 的 partial effects 会清理，但不因此回滚已经发布的 catalog。“应用重载失败 · 已用上一应用定义恢复”
-(`restored-previous / application-reload`) 则表示 full-host candidate 失败后，previous application definition 创建出的 fresh
-compensation host 已成功启动；它不是旧 running generation 被原地保留。最近结果不会改变 canonical identity，页面也不会展示或复制
-Vite module ID、绝对文件路径、`file:` URL 或 package install root。
+更新失败和运行问题始终可见，不随调试信息折叠。更新结果区分“已保留上一版本”“新版本已提交但有异常”与
+“已用上一应用定义恢复”：最后一种表示新建补偿宿主成功，不代表旧运行实例被原地保留。
+
+“目录 HMR”表示应用模块图变化时热替换插件目录；入口或应用配置边界变化仍需重建应用。外部包通常显示“入口 HMR”：
+替换插件入口可以触发更新，但不会监听包内部源码；只有确认源码在监听图中时才显示“源码 HMR”。制品信息无法确定时显示“未报告”，
+不从扩展名或包路径猜测。
+
+正常切换插件、日志等路由不会重建整个工作台。切到另一插件时只重置对应插件的表单和视图，同一插件子路由保留工作台状态；
+会话失效或插件发布更新导致的完整刷新仍遵循原有生命周期规则。
+
+单个页面渲染失败会在对应编辑区显示错误与“重试”，其他编辑区和工作台导航保持可用。标签、分栏和布局变化会合并保存到浏览器本地，
+切到后台或离开页面时补写待保存的布局；这不保存未提交的插件配置或表单草稿。
 
 目录搜索支持以下字段；多个 token 使用 AND：
 
@@ -43,11 +46,6 @@ Vite module ID、绝对文件路径、`file:` URL 或 package install root。
 - `@包名`：只匹配 definition address 中的 package name；
 - `ref:关键词`：只匹配 canonical reference；
 - `exec:关键词`：只匹配制品、更新方式和最近结果，例如 `hmr`、`entry-only`、`bundle`、`restored-previous` 或“失败”。
-
-Dynamic dev 中从 package address 加载的外部入口或外部包通常显示“入口 HMR”：producer 原子替换 entry 时仍会触发 definition HMR，但 package 内部源码
-不在 HMR graph 中。只有 raw lowering 的 exact positive fact 能证明源码范围时，badge 才显示“源码 HMR”；只有 active closure 中
-toolchain 提供的 exact built fact 才显示构建 module。文件扩展名、package 路径和没有 source match 都不能推断 provenance，证据
-不足时会诚实显示未报告。
 
 ## 如何选择
 

@@ -27,7 +27,7 @@ import type {
 	PluginDependent,
 } from '../../pluginDependencyGraphSelectors'
 import { usePluginDependencyDetail } from '../context'
-import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
+import { RouterLinkAdapter } from '../../../router/RouterLinkAdapter'
 import { buildPluginGraphEdgeHref } from '../../../plugin-graph/pluginGraphRoute'
 import {
 	buildConsumerOverrideSelection,

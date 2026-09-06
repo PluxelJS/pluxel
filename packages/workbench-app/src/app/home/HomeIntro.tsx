@@ -9,7 +9,7 @@ import {
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import type { PluxelPlatformSnapshot } from '@pluxel/runtime/environment'
-import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { useRuntimeMeta } from '../product'
 

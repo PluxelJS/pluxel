@@ -1,25 +1,12 @@
-import {
-	ActionIcon,
-	Badge,
-	Button,
-	Collapse,
-	CopyButton,
-	Group,
-	Paper,
-	ScrollArea,
-	Stack,
-	Text,
-	Tooltip,
-} from '@mantine/core'
-import { IconAlertTriangle, IconChevronDown } from '@tabler/icons-react'
+import { ActionIcon, Collapse, Group, Paper, ScrollArea, Stack, Text } from '@mantine/core'
+import { IconChevronDown } from '@tabler/icons-react'
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
-import { usePluginMeta, usePluginScope } from '../context'
+import { usePluginMeta } from '../context'
 import { ProviderPolicyCard } from '../cards/ProviderPolicyCard'
 import { PluginDependencyDetailCard } from '../cards/PluginDependencyDetailCard'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
-import { describePluginControl } from '../controls/pluginControlModel'
-import { describePluginRuntime } from '../../pluginExecutionPresentation'
+import { PluginRuntimeSummaryCard } from '../cards/PluginRuntimeSummaryCard'
 import {
 	type PluginWorkbenchView,
 	PluginWorkbenchViewContainer,
@@ -59,31 +46,8 @@ function WorkbenchScrollPane({
 	)
 }
 
-function PluginDescriptionCard({ description }: { description?: string | null }) {
-	return (
-		<Paper withBorder radius="sm" p="sm" shadow="none" style={{ overflow: 'hidden' }}>
-			<Stack gap={4}>
-				<Text size="sm" fw={600}>
-					插件详情
-				</Text>
-				{description ? (
-					<Tooltip label={description} multiline maw={320}>
-						<Text size="xs" c="dimmed" lineClamp={2}>
-							{description}
-						</Text>
-					</Tooltip>
-				) : (
-					<Text size="xs" c="dimmed">
-						暂无描述
-					</Text>
-				)}
-			</Stack>
-		</Paper>
-	)
-}
-
 export function PluginWorkbenchSidebar() {
-	const { description } = usePluginMeta()
+	const { description, status } = usePluginMeta()
 	const { assistVisible, setAssistHost } = usePluginWorkbenchAside()
 	const views = useMemo<PluginWorkbenchView[]>(
 		() => [
@@ -92,8 +56,7 @@ export function PluginWorkbenchSidebar() {
 				label: '概览',
 				content: (
 					<WorkbenchScrollPane>
-						<PluginDescriptionCard description={description} />
-						<PluginContextSummaryCard />
+						<PluginRuntimeSummaryCard description={description} status={status} />
 						<PluginDependencyDetailCard />
 						<ProviderPolicyCard />
 						<SidebarOutlineSection visible={assistVisible} onHostChange={setAssistHost} />
@@ -101,7 +64,7 @@ export function PluginWorkbenchSidebar() {
 				),
 			},
 		],
-		[assistVisible, description, setAssistHost],
+		[assistVisible, description, setAssistHost, status],
 	)
 
 	return (
@@ -180,137 +143,6 @@ function AssistHostMount({
 	}, [onHostChange])
 
 	return <div className="plx-pluginWorkbench__assistHost" ref={hostRef} />
-}
-
-function PluginContextSummaryCard() {
-	const { status } = usePluginScope()
-	const control = describePluginControl(status)
-	const runtime = describePluginRuntime(status)
-	const { definition, execution, recentUpdate } = runtime
-
-	return (
-		<Paper withBorder radius="sm" p="sm" shadow="none">
-			<Stack gap={8}>
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">运行</span>
-					<div className="plx-pluginWorkbench__summaryValue">
-						<Badge size="xs" variant="light" color={control.statusTone}>
-							{control.statusLabel}
-						</Badge>
-						<Badge size="xs" variant="outline" color="gray">
-							{control.desiredStateLabel}
-						</Badge>
-					</div>
-				</div>
-
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">会话</span>
-					<Text className="plx-pluginWorkbench__summaryText" size="sm">
-						{control.sessionIntentLabel} · 激活来源：{control.activationReasonLabel}
-					</Text>
-				</div>
-
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">策略</span>
-					<Text className="plx-pluginWorkbench__summaryText" size="sm">
-						自动启动{status.autoStart ? '已开启' : '已关闭'}
-					</Text>
-				</div>
-
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">身份</span>
-					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
-						<CopyButton value={runtime.canonicalReference}>
-							{({ copied, copy }) => (
-								<Tooltip
-									label={copied ? 'canonical reference 已复制' : runtime.canonicalReference}
-									multiline
-									maw={360}
-								>
-									<Button
-										type="button"
-										variant="subtle"
-										size="compact-xs"
-										className="plx-pluginWorkbench__metaChip"
-										onClick={copy}
-									>
-										{runtime.canonicalReference}
-									</Button>
-								</Tooltip>
-							)}
-						</CopyButton>
-					</div>
-				</div>
-
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">定义</span>
-					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
-						<Badge
-							size="xs"
-							variant="outline"
-							color={definition.entryKind === 'source-entry' ? 'blue' : 'gray'}
-						>
-							{definition.kindLabel}
-						</Badge>
-						<Tooltip label={definition.detailLabel} multiline maw={360}>
-							<Text className="plx-pluginWorkbench__summaryText" size="sm">
-								{definition.detailLabel}
-							</Text>
-						</Tooltip>
-					</div>
-				</div>
-
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">当前执行</span>
-					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
-						<Badge size="xs" variant="light" color={execution.badgeTone}>
-							{execution.badgeLabel}
-						</Badge>
-						<Text className="plx-pluginWorkbench__summaryText" size="sm">
-							{execution.currentLabel} · {execution.artifactLabel}
-						</Text>
-					</div>
-				</div>
-
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">更新方式</span>
-					<Text className="plx-pluginWorkbench__summaryText" size="sm">
-						{execution.updateLabel}
-					</Text>
-				</div>
-
-				<div className="plx-pluginWorkbench__summaryRow">
-					<span className="plx-pluginWorkbench__summaryLabel">最近结果</span>
-					<div className="plx-pluginWorkbench__summaryValue" data-wrap="true">
-						<Badge size="xs" variant="light" color={recentUpdate.tone}>
-							{recentUpdate.label}
-						</Badge>
-						{recentUpdate.meta ? (
-							<Text className="plx-pluginWorkbench__summaryText" size="xs">
-								{recentUpdate.meta}
-							</Text>
-						) : null}
-					</div>
-				</div>
-
-				{status.issues.length > 0 ? (
-					<Stack gap={4} className="plx-pluginWorkbench__statusIssues">
-						<Group gap={5} wrap="nowrap">
-							<IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" />
-							<Text size="xs" fw={650}>
-								{status.issues.length} 项协调问题
-							</Text>
-						</Group>
-						{status.issues.map((issue) => (
-							<Text key={issue.id} size="xs" c="dimmed">
-								{issue.message}
-							</Text>
-						))}
-					</Stack>
-				) : null}
-			</Stack>
-		</Paper>
-	)
 }
 
 export function PluginWorkbenchPanel() {

@@ -24,7 +24,7 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { formatPluginDefinitionReference } from '@pluxel/core'
 import { EmptyState, ErrorState } from '../../components'
-import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import { usePluginDependencyGraph } from '../plugins/pluginDependencyGraph'
 import {
 	buildPluginGraphVisualModel,

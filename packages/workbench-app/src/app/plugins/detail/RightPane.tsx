@@ -53,12 +53,11 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const showRouteTab = Boolean(restPath && restPath !== '/config')
 	const [activeTab, setActiveTab] = useState(showRouteTab ? 'route' : 'config')
 	useEffect(() => {
-		if (showRouteTab) setActiveTab('route')
+		setActiveTab((current) =>
+			showRouteTab ? 'route' : restPath === '/config' || current === 'route' ? 'config' : current,
+		)
 	}, [restPath, showRouteTab])
-	const execution = useMemo(
-		() => describePluginExecution(status.execution),
-		[status.address.definition.entry, status.execution],
-	)
+	const execution = useMemo(() => describePluginExecution(status.execution), [status.execution])
 
 	return (
 		<PluginPanel className="plx-pluginWorkbench__contentPanel" padding={4} gap={4}>
@@ -75,10 +74,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						<div className="plx-pluginWorkbench__commandBar">
 							<div className="plx-pluginWorkbench__commandTitle">
 								<span className="plx-pluginWorkbench__commandName">{pluginLabel}</span>
-								<Tooltip
-									label={`${execution.currentLabel} · ${execution.artifactLabel}；${execution.updateLabel}`}
-									withArrow
-								>
+								<Tooltip label={execution.updateLabel} withArrow>
 									<Badge size="sm" variant="light" color={execution.badgeTone}>
 										{execution.badgeLabel}
 									</Badge>
