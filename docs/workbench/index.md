@@ -700,3 +700,5 @@ HTTPS 的 application carrier。多实例部署还需要让 control socket、OID
 - 页面没有备用 API transport 或 reconnect 分支。
 
 跨 Plugin UI 的完整范式与 API 示例见[Attachment：跨 Plugin UI](./composition.md)。
+
+插件管理列表支持[依赖自动分组与人工分组文件](./plugin-groups.md)，无配置时直接生成布局，也可由界面或 coding agent 调整。

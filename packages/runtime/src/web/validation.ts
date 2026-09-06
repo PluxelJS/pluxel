@@ -1,5 +1,6 @@
 import {
 	RUNTIME_MANAGEMENT_CAPABILITIES,
+	RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,
 	type ConfigPresentationBranchFieldV1,
 	type ConfigPresentationFieldV1,
 	type ConfigPresentationFieldMetaV1,
@@ -71,7 +72,8 @@ export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 	if (protocol.name !== 'pluxel.management') {
 		fail('runtime metadata.protocol.name must be pluxel.management')
 	}
-	if (protocol.major !== 5) fail('runtime metadata.protocol.major must be 5')
+	if (protocol.major !== RUNTIME_MANAGEMENT_PROTOCOL_MAJOR)
+		fail(`runtime metadata.protocol.major must be ${RUNTIME_MANAGEMENT_PROTOCOL_MAJOR}`)
 	const capabilities = closedStringArray<RuntimeManagementCapability>(
 		protocol.capabilities,
 		RUNTIME_MANAGEMENT_CAPABILITIES,
@@ -106,7 +108,7 @@ export function parseRuntimeMeta(input: unknown): RuntimeMeta {
 		ready: true as const,
 		protocol: Object.freeze({
 			name: 'pluxel.management' as const,
-			major: 5 as const,
+			major: RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,
 			capabilities,
 		}),
 		application: Object.freeze({ product }),

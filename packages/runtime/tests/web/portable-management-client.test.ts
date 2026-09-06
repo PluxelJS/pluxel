@@ -14,7 +14,7 @@ const metadata = Object.freeze({
 	ready: true as const,
 	protocol: Object.freeze({
 		name: 'pluxel.management' as const,
-		major: 5 as const,
+		major: 6 as const,
 		capabilities: RUNTIME_MANAGEMENT_CAPABILITIES,
 	}),
 	application: Object.freeze({ product: null }),
@@ -82,6 +82,8 @@ describe('injected Runtime Management client', () => {
 			ok: true,
 			sections: [],
 		})
+		await client.catalog.updateLayout({ sections: null })
+		expect(target.updatePluginCatalogLayout).toHaveBeenLastCalledWith({ sections: null })
 		await expect(client.logs.streams()).resolves.toEqual({ streams: [logMeta] })
 		await expect(
 			client.logs.range('default', { epoch: 1, fromSeq: '1', limit: 100 }),

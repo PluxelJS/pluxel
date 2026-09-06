@@ -67,7 +67,7 @@ const plugin = {
 const section = {
 	sectionId: 'package:@fixture/management-validation',
 	name: 'Fixture',
-	basis: { kind: 'package', packageName: '@fixture/management-validation' },
+	basis: { kind: 'manual' },
 	nodes: [address],
 } as const
 
@@ -510,7 +510,7 @@ describe('management protocol validation', () => {
 					{
 						sectionId: 'source:app/src/other',
 						name: 'other',
-						basis: { kind: 'source-directory', sourceSpace: 'app', path: 'src/other' },
+						basis: { kind: 'manual' },
 						nodes: [{ definition, variant: 'fork', forkId: 'other' }],
 					},
 				],

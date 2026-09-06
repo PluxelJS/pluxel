@@ -830,24 +830,16 @@ function pluginCatalogSection(input: unknown, label: string): PluginCatalogSecti
 
 function pluginCatalogSectionBasis(input: unknown, label: string): PluginCatalogSectionBasis {
 	const value = object(input, label)
-	const kind = literal(value.kind, ['provider', 'package', 'source-directory'], `${label}.kind`)
-	if (kind === 'provider') {
+	const kind = literal(value.kind, ['dependency', 'shared', 'manual'], `${label}.kind`)
+	if (kind === 'dependency') {
 		shape(value, ['kind', 'definition'], [], label)
 		return Object.freeze({
 			kind,
 			definition: definitionAddress(value.definition, `${label}.definition`),
 		})
 	}
-	if (kind === 'package') {
-		shape(value, ['kind', 'packageName'], [], label)
-		return Object.freeze({ kind, packageName: text(value.packageName, `${label}.packageName`) })
-	}
-	shape(value, ['kind', 'sourceSpace', 'path'], [], label)
-	return Object.freeze({
-		kind,
-		sourceSpace: text(value.sourceSpace, `${label}.sourceSpace`),
-		path: text(value.path, `${label}.path`),
-	})
+	shape(value, ['kind'], [], label)
+	return Object.freeze({ kind })
 }
 
 function validatePluginCatalogSections(

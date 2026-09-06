@@ -1,49 +1,11 @@
-// src/components/PluginOrganizer.tsx
-/**
- * PluginOrganizer
- * -----------------------------------------------------------------------------
- * 设计目标
- * 1) 布局：上（未分组）与下（宿主/包分类）按内容弹性分配
- *    - 无分类或筛选时：只保留一个占满空间的列表
- *    - 有分类时：少量未分组项按内容收缩，否则按可见行数分配空间；二者各自可滚动
- *
- * 2) 状态流转（本地优先）
- *    - 仅在首次挂载时读取 external initialGroups；之后完全本地化
- *    - 外部变更仅通过 onGroupsChange 单向“提交”出去；提交位置统一在微任务队列
- *    - 当插件全集（statuses 的 keys）变化时：清洗组内/未分组的无效 ID；新 ID 默认进入未分组尾部
- *
- * 3) 搜索（混合搜索）
- *    - 输入字符串在前端本地低延迟匹配
- *    - 命中规则：组名包含 q || 组内任意插件(名称/ID)包含 q
- *      命中组名时：不裁剪该组插件（展示完整），只命中插件时：裁剪为命中子集
- *    - 未分组区则直接按插件维度匹配
- *
- * 4) DnD 体验 & 性能
- *    - dnd-kit：限制垂直轴、closestCorners、droppable MeasuringStrategy.Always（折叠/过滤时稳定）
- *    - 允许在空容器/折叠容器投放（minDropHeight 占位）
- *    - 支持多选块移动（右键选择；Ctrl/Cmd 多选；Shift 区间）
- *    - 拖拽结束后只触发一次外部提交，并在微任务队列中进行
- *
- * 5) 可达性与可维护性
- *    - 为列表/项/容器添加 role/aria 标注；键盘传感器可排序
- *    - 关键子项 memo 化（GroupCard / SortableRow），传入 props 最小化
- *    - 折叠状态持久化 localStorage，仅存储为 true 的折叠组 ID
- *
- * 6) 可扩展性
- *    - 预留 className/style 便于放入任意父布局（父级给到 height:100% 即可）
- *    - 可选 LinkComponent 适配路由（Wouter/React-Router 等）
- *
- * 注意
- * - 若列表超大（上千条）且需要极致性能，可接入 @tanstack/react-virtual 实现行级虚拟化；
- *   与 dnd-kit 结合需额外的测量缓存与占位策略，这里暂不内置。
- * -----------------------------------------------------------------------------
- */
+/** Plugin catalog layout, selection, filtering and drag-and-drop organization. */
 
+import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { closestCorners, DndContext, DragOverlay, MeasuringStrategy } from '@dnd-kit/core'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ActionIcon, Badge, Box, Card, ScrollArea, Stack, Text, Tooltip } from '@mantine/core'
-import { IconArrowsShuffle, IconFolderMinus } from '@tabler/icons-react'
+import { IconArrowsShuffle, IconFolderMinus, IconFolders } from '@tabler/icons-react'
 import {
 	useCallback,
 	useEffect,
@@ -65,6 +27,7 @@ import {
 import { parseSearchTokens } from '../searchTokens'
 import { DroppableContainer } from './components/DroppableContainer'
 import { FlatPluginList } from './components/FlatPluginList'
+import { GroupEditorModal } from './components/GroupEditorModal'
 import { GroupPlacementModal } from './components/GroupPlacementModal'
 import { GroupCard } from './components/GroupCard'
 import { SortableRow, type RowMeta } from './components/SortableRow'
@@ -88,6 +51,7 @@ type Props = {
 	statuses: PluginStatuses
 	initialGroups: GroupConfig[]
 	onGroupsChange: (groups: GroupConfig[]) => void
+	onResetGroups?: () => void
 	filterQuery?: string
 	statusFilter?: StatusFilter
 	LinkComponent?: ComponentType<
@@ -131,6 +95,7 @@ export function PluginOrganizer({
 	statuses,
 	initialGroups,
 	onGroupsChange,
+	onResetGroups,
 	filterQuery = '',
 	statusFilter,
 	LinkComponent,
@@ -190,6 +155,20 @@ export function PluginOrganizer({
 	)
 
 	const allIds = useMemo(() => Object.keys(statuses), [statuses])
+	const expandFamilies = useCallback(
+		(ids: string[]) => {
+			const definitions = new Set(
+				ids
+					.map((id) => statuses[id])
+					.filter(Boolean)
+					.map((status) => pluginDefinitionIndexKey(status.address.definition)),
+			)
+			return allIds.filter((id) =>
+				definitions.has(pluginDefinitionIndexKey(statuses[id]!.address.definition)),
+			)
+		},
+		[allIds, statuses],
+	)
 	const { groups: saneGroups, ungrouped: saneUngrouped } = useMemo(
 		() => sanitize(allIds, initialGroups),
 		[allIds, initialGroups],
@@ -199,6 +178,7 @@ export function PluginOrganizer({
 	const [groups, setGroups] = useState<GroupConfig[]>(() => saneGroups)
 	const [ungroupedOrder, setUngroupedOrder] = useState<string[]>(() => saneUngrouped)
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => readCollapsedState())
+	const [editorOpen, setEditorOpen] = useState(false)
 	const [placementModalOpen, setPlacementModalOpen] = useState(false)
 
 	// Refs for stable, local-first updates
@@ -414,7 +394,7 @@ export function PluginOrganizer({
 		(targetGroupId: string) => {
 			if (selectedIds.length === 0) return
 			const orderedPluginIds = sortPluginIdsByOrder(
-				selectedIds,
+				expandFamilies(selectedIds),
 				groupsRef.current,
 				ungroupedRef.current,
 			)
@@ -429,12 +409,13 @@ export function PluginOrganizer({
 			emitGroupsChange(nextState.groups)
 			setPlacementModalOpen(false)
 		},
-		[emitGroupsChange, selectedIds],
+		[emitGroupsChange, expandFamilies, selectedIds],
 	)
 
 	const { dragActiveId, groupIdsSortable, handleDragEnd, handleDragStart, sensors } =
 		usePluginOrganizerDnd({
 			groups,
+			expandFamilies,
 			groupsRef,
 			ungroupedRef,
 			selectedIds,
@@ -521,6 +502,17 @@ export function PluginOrganizer({
 							</Text>
 						</div>
 						<Box className="plx-pluginCatalog__sectionActions">
+							<Tooltip label="编辑分组" withinPortal>
+								<ActionIcon
+									aria-label="编辑分组"
+									size="sm"
+									variant="subtle"
+									disabled={locked || isFiltering}
+									onClick={() => setEditorOpen(true)}
+								>
+									<IconFolders size={14} />
+								</ActionIcon>
+							</Tooltip>
 							{selectedCount > 0 ? (
 								<>
 									<Tooltip label="移动到其他分组" withinPortal withArrow openDelay={200}>
@@ -706,6 +698,26 @@ export function PluginOrganizer({
 					</div>
 				) : null}
 			</DragOverlay>
+			<GroupEditorModal
+				opened={editorOpen}
+				groups={groups}
+				onReset={
+					onResetGroups
+						? () => {
+								setEditorOpen(false)
+								onResetGroups()
+							}
+						: undefined
+				}
+				onClose={() => setEditorOpen(false)}
+				onSubmit={(next) => {
+					const assigned = new Set(next.flatMap((group) => group.pluginIds))
+					setGroups(next)
+					setUngroupedOrder(allIds.filter((id) => !assigned.has(id)))
+					emitGroupsChange(next)
+					setEditorOpen(false)
+				}}
+			/>
 			<GroupPlacementModal
 				opened={placementModalOpen}
 				count={selectedCount}

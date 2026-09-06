@@ -13,7 +13,6 @@ import { portablePluginStatus, projectCommittedPluginCatalog } from '../../useca
 
 export async function readPluginCatalog(ctx: Context): Promise<PluginCatalogSnapshot> {
 	const layout = requirePluginCatalogLayout(ctx)
-	await layout.ready
 	const pinned = await readPinnedCatalog(ctx)
 	const sections = await layout.listSections(pinned.layoutEntries)
 	return toSnapshot(pinned, sections)
@@ -46,6 +45,8 @@ async function readPinnedCatalog(ctx: Context) {
 			)?.candidate.declaration
 			return Object.freeze({
 				address: entry.address,
+				displayName: entry.displayName,
+				requires: declaration?.requires ?? [],
 				...(declaration?.provides === undefined ? {} : { provides: declaration.provides }),
 			})
 		})

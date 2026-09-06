@@ -742,9 +742,15 @@ function parseRpcPluginCatalogLayout(
 	| Readonly<{ ok: true; value: PluginCatalogLayoutInput }>
 	| Readonly<{ ok: false; error: string }> {
 	const layout = readRpcRecord(input)
-	if (!layout || !hasExactKeys(layout, ['sections']) || !Array.isArray(layout.sections)) {
-		return { ok: false, error: 'Plugin catalog layout must contain only a sections array' }
+	if (!layout || !hasExactKeys(layout, ['sections'])) {
+		return {
+			ok: false,
+			error: 'Plugin catalog layout must contain only sections (an array or null)',
+		}
 	}
+	if (layout.sections === null) return { ok: true, value: { sections: null } }
+	if (!Array.isArray(layout.sections))
+		return { ok: false, error: 'sections must be an array or null' }
 	if (layout.sections.length > MAX_PLUGIN_CATALOG_SECTIONS) {
 		return {
 			ok: false,
@@ -752,14 +758,15 @@ function parseRpcPluginCatalogLayout(
 		}
 	}
 	let totalNodes = 0
-	const sections: PluginCatalogLayoutInput['sections'][number][] = []
+	const sections: NonNullable<PluginCatalogLayoutInput['sections']>[number][] = []
 	for (const [index, value] of layout.sections.entries()) {
 		const section = readRpcRecord(value)
-		if (!section || !hasExactKeys(section, ['sectionId', 'nodes'])) {
+		if (!section || !hasExactKeys(section, ['sectionId', 'name', 'nodes'])) {
 			return { ok: false, error: `sections[${index}] must be a closed section object` }
 		}
 		const sectionId = boundedRpcText(section.sectionId, MAX_PLUGIN_CATALOG_SECTION_ID)
-		if (!sectionId || !Array.isArray(section.nodes)) {
+		const name = boundedRpcText(section.name, 16_384)
+		if (!sectionId || !name || !Array.isArray(section.nodes)) {
 			return { ok: false, error: `sections[${index}] has invalid fields` }
 		}
 		totalNodes += section.nodes.length
@@ -780,7 +787,7 @@ function parseRpcPluginCatalogLayout(
 			}
 			nodes.push(node)
 		}
-		sections.push(Object.freeze({ sectionId, nodes: Object.freeze(nodes) }))
+		sections.push(Object.freeze({ sectionId, name, nodes: Object.freeze(nodes) }))
 	}
 	return {
 		ok: true,

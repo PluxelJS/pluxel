@@ -139,10 +139,14 @@ export function createRuntimeManagementClient(
 				call(
 					(root) =>
 						root.updatePluginCatalogLayout({
-							sections: input.sections.map((section) => ({
-								sectionId: section.sectionId,
-								nodes: [...section.nodes],
-							})),
+							sections:
+								input.sections === null
+									? null
+									: input.sections.map((section) => ({
+											sectionId: section.sectionId,
+											name: section.name,
+											nodes: [...section.nodes],
+										})),
 						}),
 					parsePluginCatalogLayoutMutationResult,
 				),

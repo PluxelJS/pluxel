@@ -38,7 +38,7 @@ const catalog = {
 		{
 			sectionId: 'package:@pluxel/example',
 			name: '@pluxel/example',
-			basis: { kind: 'package', packageName: '@pluxel/example' },
+			basis: { kind: 'manual' },
 			nodes: [address],
 		},
 	],

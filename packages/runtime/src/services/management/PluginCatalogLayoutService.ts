@@ -1,549 +1,230 @@
 import {
 	formatPluginDefinitionReference,
-	parsePluginDefinitionAddress,
+	parsePluginDefinitionReference,
 	parsePluginNodeAddress,
-	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type Context,
-	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { PersistenceError, type PersistenceNamespace } from '../persistence/PersistenceService'
+import {
+	automaticCatalogGroups,
+	catalogFamilies,
+	type CatalogFamily,
+	type CatalogGroup,
+	type PluginCatalogLayoutEntry,
+} from './catalog-groups'
+import type { PluginCatalogSectionBasis } from '../../web/protocol'
 
-const PREFERENCE_KEY = 'plugin-catalog.json'
-
-export type PluginCatalogSectionBasis =
-	| Readonly<{ kind: 'provider'; definition: PluginDefinitionAddress }>
-	| Readonly<{ kind: 'package'; packageName: string }>
-	| Readonly<{ kind: 'source-directory'; sourceSpace: string; path: string }>
-
-export type PluginCatalogSectionLayout = Readonly<{
-	sectionId: string
-	name: string
-	basis: PluginCatalogSectionBasis
-	nodes: readonly PluginNodeAddress[]
-}>
-
-export type PluginCatalogLayoutEntry = Readonly<{
-	address: PluginNodeAddress
-	provides?: PluginDefinitionAddress
-}>
-
+export type { PluginCatalogLayoutEntry, PluginCatalogSectionBasis }
+export type PluginCatalogSectionLayout = Readonly<CatalogGroup>
 export type PluginCatalogSectionInput = Readonly<{
 	sectionId: string
+	name: string
 	nodes: readonly PluginNodeAddress[]
 }>
 
-type PluginCatalogPreferencesSnapshot = Readonly<{
-	version: 4
-	placements: readonly Readonly<{
-		definition: PluginDefinitionAddress
-		sectionId: string | null
-	}>[]
-	sectionOrder: readonly string[]
-	definitionOrder: readonly Readonly<{
-		sectionId: string
-		definitions: readonly PluginDefinitionAddress[]
-	}>[]
-}>
-
-type PluginCatalogPreferences = {
-	placements: Map<
-		string,
-		Readonly<{ definition: PluginDefinitionAddress; sectionId: string | null }>
-	>
-	sectionOrder: string[]
-	definitionOrder: Map<string, PluginDefinitionAddress[]>
+type GroupDocument = {
+	version: 1
+	groups: { id: string; name: string; plugins: string[] }[]
+	ungrouped: string[]
 }
-
-type CatalogEntry = Readonly<{
-	address: PluginNodeAddress
-	nodeKey: string
-	definition: PluginDefinitionAddress
-	definitionKey: string
-	section: RegisteredSection
-}>
-
-type RegisteredSection = Readonly<{
-	id: string
-	name: string
-	basis: PluginCatalogSectionBasis
-}>
+const FILE = 'plugin-groups.json'
+const emptyDocument = (): GroupDocument => ({ version: 1, groups: [], ungrouped: [] })
+const manualId = (id: string) => `manual:${encodeURIComponent(id)}`
 
 export class PluginCatalogLayoutError extends Error {
 	readonly code = 'INVALID_PLUGIN_CATALOG_LAYOUT'
-
 	constructor(message: string) {
 		super(message)
 		this.name = 'PluginCatalogLayoutError'
 	}
 }
 
-/** Management-owned preferences over sections derived exclusively from immutable catalog facts. */
+/** Management owns the document; reads never create catalog nodes or write generated defaults. */
 export class PluginCatalogLayoutService {
-	readonly ready: Promise<void>
-
 	private readonly storage: PersistenceNamespace
-	private preferences: PluginCatalogPreferences = emptyPreferences()
-	private mutationTail: Promise<void> = Promise.resolve()
+	private document = emptyDocument()
+	private source: string | undefined
+	private tail: Promise<unknown> = Promise.resolve()
 
 	constructor(root: Context) {
 		this.storage = root.root.persistence.namespace('management')
-		this.ready = this.load()
 	}
 
-	async listSections(
+	listSections(
 		input: readonly PluginCatalogLayoutEntry[],
 	): Promise<readonly PluginCatalogSectionLayout[]> {
-		await this.ready
-		await this.mutationTail
-		return this.resolveLayout(normalizeEntries(input)).sections
+		return this.serial(async () => {
+			await this.refresh()
+			return resolveGroups(this.document, catalogFamilies(input))
+		})
 	}
 
 	updateSections(
-		sections: readonly PluginCatalogSectionInput[],
+		sections: readonly PluginCatalogSectionInput[] | null,
 		input: readonly PluginCatalogLayoutEntry[],
 	): Promise<readonly PluginCatalogSectionLayout[]> {
-		const task = this.mutationTail
-			.catch((): void => undefined)
-			.then(async () => {
-				await this.ready
-				return await this.applyUpdate(sections, normalizeEntries(input))
+		return this.serial(async () => {
+			const families = catalogFamilies(input)
+			if (sections === null) {
+				const next = emptyDocument()
+				await this.persist(next)
+				return resolveGroups(next, families)
+			}
+			await this.refresh()
+			const knownNodes = new Set(input.map((entry) => pluginNodeIndexKey(entry.address)))
+			const seenNodes = new Set<string>()
+			const assigned = new Map<string, string>()
+			const seenIds = new Set<string>()
+			const previous = new Map(this.document.groups.map((group) => [manualId(group.id), group]))
+			if (!Array.isArray(sections)) throw invalid('sections must be an array')
+			const groups = sections.map((section) => {
+				const sectionId = text(section.sectionId, 'sectionId')
+				const old = previous.get(sectionId)
+				// Auto sections become explicit groups on save; manually supplied keys remain readable.
+				const id =
+					old?.id ?? (sectionId.startsWith('manual:') ? decodeManualId(sectionId) : sectionId)
+				if (seenIds.has(id)) throw invalid('duplicate section')
+				seenIds.add(id)
+				const name = text(section.name, 'name')
+				if (!Array.isArray(section.nodes)) throw invalid('nodes must be an array')
+				const plugins: string[] = []
+				for (const rawNode of section.nodes) {
+					const node = parsePluginNodeAddress(rawNode)
+					const key = pluginNodeIndexKey(node)
+					if (!knownNodes.has(key)) throw invalid('unknown Plugin node')
+					if (seenNodes.has(key)) throw invalid('duplicate Plugin node')
+					seenNodes.add(key)
+					const ref = formatPluginDefinitionReference(node.definition)
+					const target = assigned.get(ref)
+					if (target !== undefined && target !== id)
+						throw invalid('fork variants cannot be split across sections')
+					if (target === undefined) plugins.push(ref)
+					assigned.set(ref, id)
+				}
+				// A snapshot omits absent plugins. Preserve their placement in surviving groups.
+				plugins.push(...(old?.plugins.filter((ref) => !families.has(ref)) ?? []))
+				return { id, name, plugins }
 			})
-		this.mutationTail = task.then(
+			for (const family of families.values()) {
+				if (
+					assigned.has(family.reference) &&
+					family.nodes.some((node) => !seenNodes.has(pluginNodeIndexKey(node)))
+				) {
+					throw invalid('fork variants cannot be split between a section and ungrouped')
+				}
+			}
+			const ungrouped = [
+				...this.document.ungrouped.filter((ref) => !families.has(ref)),
+				...[...families.keys()].filter((ref) => !assigned.has(ref)).sort(),
+			]
+			const next = parseDocument({ version: 1, groups, ungrouped })
+			await this.persist(next)
+			return resolveGroups(next, families)
+		})
+	}
+
+	private async persist(next: GroupDocument): Promise<void> {
+		const content = `${JSON.stringify(next, null, 2)}\n`
+		if (content.length > 2_000_000) throw invalid('group file exceeds 2 MB')
+		try {
+			await this.storage.put(FILE, content, { atomic: true })
+		} catch (cause) {
+			if (cause instanceof PersistenceError) throw cause
+			throw new PersistenceError('IO', 'Failed to persist Plugin groups', { cause })
+		}
+		this.document = next
+		this.source = content
+	}
+
+	private serial<T>(operation: () => Promise<T>): Promise<T> {
+		const task = this.tail.then(operation, operation)
+		this.tail = task.then(
 			(): void => undefined,
 			(): void => undefined,
 		)
 		return task
 	}
 
-	private async applyUpdate(
-		sections: readonly PluginCatalogSectionInput[],
-		entries: CatalogEntry[],
-	): Promise<readonly PluginCatalogSectionLayout[]> {
-		if (!Array.isArray(sections)) throw invalid('sections must be an array')
-		const current = this.resolveLayout(entries)
-		const knownNodes = new Set(entries.map((entry) => entry.nodeKey))
-		const seenNodes = new Set<string>()
-		const desired = new Map<string, string>()
-		const sectionOrder: string[] = []
-		const definitionOrder = new Map<string, PluginDefinitionAddress[]>()
-
-		for (const rawSection of sections) {
-			if (!rawSection || typeof rawSection !== 'object' || Array.isArray(rawSection)) {
-				throw invalid('every section must be an object')
-			}
-			const sectionId = layoutText('sectionId', rawSection.sectionId)
-			if (!current.registered.has(sectionId)) throw invalid(`unknown section "${sectionId}"`)
-			if (sectionOrder.includes(sectionId)) throw invalid(`duplicate section "${sectionId}"`)
-			sectionOrder.push(sectionId)
-			if (!Array.isArray(rawSection.nodes)) {
-				throw invalid(`section "${sectionId}" nodes must be an array`)
-			}
-
-			const order: PluginDefinitionAddress[] = []
-			for (const rawNode of rawSection.nodes) {
-				let node: PluginNodeAddress
-				try {
-					node = parsePluginNodeAddress(rawNode)
-				} catch (error) {
-					throw invalid(`section "${sectionId}" contains an invalid Plugin node address`, error)
-				}
-				const nodeKey = pluginNodeIndexKey(node)
-				if (!knownNodes.has(nodeKey)) {
-					throw invalid(`section "${sectionId}" contains an unknown Plugin node`)
-				}
-				if (seenNodes.has(nodeKey)) throw invalid('a Plugin node cannot appear more than once')
-				seenNodes.add(nodeKey)
-
-				const definitionKey = pluginDefinitionIndexKey(node.definition)
-				const previousSection = desired.get(definitionKey)
-				if (previousSection && previousSection !== sectionId) {
-					throw invalid('fork variants of one Plugin definition cannot be split across sections')
-				}
-				if (!previousSection) {
-					desired.set(definitionKey, sectionId)
-					order.push(node.definition)
-				}
-			}
-			definitionOrder.set(sectionId, order)
-		}
-
-		const placements = new Map(this.preferences.placements)
-		for (const entry of uniqueDefinitionEntries(entries)) {
-			placements.delete(entry.definitionKey)
-			const desiredSection = desired.get(entry.definitionKey) ?? null
-			const defaultSection = entry.section.id
-			if (desiredSection !== defaultSection) {
-				placements.set(entry.definitionKey, {
-					definition: entry.definition,
-					sectionId: desiredSection,
-				})
-			}
-		}
-
-		this.preferences = { placements, sectionOrder, definitionOrder }
-		await this.save()
-		return this.resolveLayout(entries).sections
-	}
-
-	private resolveLayout(entries: CatalogEntry[]): {
-		sections: readonly PluginCatalogSectionLayout[]
-		registered: Map<string, RegisteredSection>
-	} {
-		const registered = registeredSections(entries)
-		const members = new Map<string, CatalogEntry[]>()
-		for (const sectionId of registered.keys()) members.set(sectionId, [])
-
-		for (const entry of entries) {
-			const override = this.preferences.placements.get(entry.definitionKey)
-			const preferredSection = override?.sectionId
-			const sectionId =
-				preferredSection === null
-					? null
-					: preferredSection && registered.has(preferredSection)
-						? preferredSection
-						: entry.section.id
-			if (sectionId) members.get(sectionId)!.push(entry)
-		}
-
-		for (const [sectionId, memberEntries] of members) {
-			const order = this.preferences.definitionOrder.get(sectionId) ?? []
-			const rank = new Map(
-				order.map((definition, index) => [pluginDefinitionIndexKey(definition), index]),
-			)
-			memberEntries.sort(
-				(left, right) =>
-					(rank.get(left.definitionKey) ?? Number.MAX_SAFE_INTEGER) -
-						(rank.get(right.definitionKey) ?? Number.MAX_SAFE_INTEGER) ||
-					left.nodeKey.localeCompare(right.nodeKey),
-			)
-		}
-
-		const preferred = new Map(this.preferences.sectionOrder.map((id, index) => [id, index]))
-		const sections = Object.freeze(
-			[...registered.values()]
-				.sort(
-					(left, right) =>
-						(preferred.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
-							(preferred.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
-						sectionKindRank(left.basis.kind) - sectionKindRank(right.basis.kind) ||
-						left.name.localeCompare(right.name) ||
-						left.id.localeCompare(right.id),
-				)
-				.map((section) =>
-					Object.freeze({
-						sectionId: section.id,
-						name: section.name,
-						basis: section.basis,
-						nodes: Object.freeze((members.get(section.id) ?? []).map((entry) => entry.address)),
-					}),
-				),
-		)
-		return { sections, registered }
-	}
-
-	private async load(): Promise<void> {
-		const raw = await this.storage.getText(PREFERENCE_KEY)
-		if (raw === undefined) return
-		this.preferences = preferencesFromSnapshot(parsePreferencesSnapshot(JSON.parse(raw) as unknown))
-	}
-
-	private async save(): Promise<void> {
-		const content = JSON.stringify(preferencesSnapshot(this.preferences))
-		try {
-			await this.storage.put(PREFERENCE_KEY, content)
-		} catch (error) {
-			if (error instanceof PersistenceError) throw error
-			throw new PersistenceError(
-				'IO',
-				'[management.pluginCatalogLayout] Failed to persist Plugin catalog layout preferences',
-				{ cause: error },
-			)
-		}
+	private async refresh(): Promise<void> {
+		const source = await this.storage.getText(FILE)
+		if (source === this.source) return
+		if (source !== undefined && source.length > 2_000_000) throw invalid('group file exceeds 2 MB')
+		const next =
+			source === undefined ? emptyDocument() : parseDocument(JSON.parse(source) as unknown)
+		this.document = next
+		this.source = source
 	}
 }
 
-function normalizeEntries(input: readonly PluginCatalogLayoutEntry[]): CatalogEntry[] {
-	if (!Array.isArray(input)) throw new TypeError('Plugin catalog layout entries must be an array')
-	const seenNodes = new Set<string>()
-	const sectionsByDefinition = new Map<string, RegisteredSection>()
-	return input.map((entry) => {
-		const address = parsePluginNodeAddress(entry.address)
-		const definition = address.definition
-		const nodeKey = pluginNodeIndexKey(address)
-		if (seenNodes.has(nodeKey)) {
-			throw new TypeError('Plugin catalog layout entries contain a duplicate Plugin node')
-		}
-		seenNodes.add(nodeKey)
-		const definitionKey = pluginDefinitionIndexKey(definition)
-		const provides =
-			entry.provides === undefined ? undefined : parsePluginDefinitionAddress(entry.provides)
-		const section = deriveDefaultSection(definition, provides)
-		const existingSection = sectionsByDefinition.get(definitionKey)
-		if (existingSection && !sameSection(existingSection, section)) {
-			throw new TypeError(
-				'Plugin catalog layout entries contain inconsistent facts for one Plugin definition',
-			)
-		}
-		sectionsByDefinition.set(definitionKey, section)
-		return Object.freeze({
-			address,
-			nodeKey,
-			definition,
-			definitionKey,
-			section,
-		})
-	})
-}
-
-function registeredSections(entries: readonly CatalogEntry[]): Map<string, RegisteredSection> {
-	const sections = new Map<string, RegisteredSection>()
-	for (const entry of uniqueDefinitionEntries(entries)) {
-		const section = entry.section
-		const previous = sections.get(section.id)
-		if (previous && !sameSection(previous, section)) {
-			throw new Error('[management.pluginCatalogLayout] derived section identity collision')
-		}
-		sections.set(section.id, section)
-	}
-	return sections
-}
-
-function deriveDefaultSection(
-	definition: PluginDefinitionAddress,
-	provides?: PluginDefinitionAddress,
-): RegisteredSection {
-	if (provides) {
-		return Object.freeze({
-			id: `provider:${formatPluginDefinitionReference(provides)}`,
-			name: provides.exportName,
-			basis: Object.freeze({ kind: 'provider', definition: provides }),
-		})
-	}
-	const origin = definition.entry
-	if (origin.kind === 'package-root') {
-		return Object.freeze({
-			id: `package:${origin.packageName}`,
-			name: origin.packageName,
-			basis: Object.freeze({ kind: 'package', packageName: origin.packageName }),
-		})
-	}
-	const slash = origin.path.lastIndexOf('/')
-	const directory = slash < 0 ? '' : origin.path.slice(0, slash)
-	return Object.freeze({
-		id: sourceSectionId(origin.sourceSpace, directory),
-		name: directory ? directory.slice(directory.lastIndexOf('/') + 1) : origin.sourceSpace,
-		basis: Object.freeze({
-			kind: 'source-directory',
-			sourceSpace: origin.sourceSpace,
-			path: directory,
+function resolveGroups(
+	document: GroupDocument,
+	families: Map<string, CatalogFamily>,
+): CatalogGroup[] {
+	const remaining = new Map(families)
+	for (const ref of document.ungrouped) remaining.delete(ref)
+	const groups: CatalogGroup[] = document.groups.map((group) => ({
+		sectionId: manualId(group.id),
+		name: group.name,
+		basis: { kind: 'manual' },
+		nodes: group.plugins.flatMap((ref) => {
+			remaining.delete(ref)
+			return families.get(ref)?.nodes ?? []
 		}),
-	})
+	}))
+	return [...groups, ...automaticCatalogGroups(remaining)]
 }
 
-function sourceSectionId(sourceSpace: string, path: string): string {
-	const encodedPath = path
-		.split('/')
-		.filter(Boolean)
-		.map((segment) => encodeURIComponent(segment))
-		.join('/')
-	return `source:${encodeURIComponent(sourceSpace)}${encodedPath ? `/${encodedPath}` : ''}`
-}
-
-function sameSection(left: RegisteredSection, right: RegisteredSection): boolean {
-	if (left.id !== right.id || left.name !== right.name || left.basis.kind !== right.basis.kind) {
-		return false
-	}
-	if (left.basis.kind === 'provider' && right.basis.kind === 'provider') {
-		return (
-			pluginDefinitionIndexKey(left.basis.definition) ===
-			pluginDefinitionIndexKey(right.basis.definition)
-		)
-	}
-	if (left.basis.kind === 'package' && right.basis.kind === 'package') {
-		return left.basis.packageName === right.basis.packageName
-	}
-	return (
-		left.basis.kind === 'source-directory' &&
-		right.basis.kind === 'source-directory' &&
-		left.basis.sourceSpace === right.basis.sourceSpace &&
-		left.basis.path === right.basis.path
-	)
-}
-
-function sectionKindRank(kind: PluginCatalogSectionBasis['kind']): number {
-	if (kind === 'provider') return 0
-	if (kind === 'source-directory') return 1
-	return 2
-}
-
-function parsePreferencesSnapshot(input: unknown): PluginCatalogPreferencesSnapshot {
-	const raw = exactRecord(
-		input,
-		['version', 'placements', 'sectionOrder', 'definitionOrder'],
-		'preferences',
-	)
-	if (raw.version !== 4) {
-		throw new TypeError('[management.pluginCatalogLayout] preferences version must be 4')
-	}
-	if (!Array.isArray(raw.placements)) {
-		throw new TypeError('[management.pluginCatalogLayout] placements must be an array')
-	}
-	if (!Array.isArray(raw.sectionOrder)) {
-		throw new TypeError('[management.pluginCatalogLayout] sectionOrder must be an array')
-	}
-	if (!Array.isArray(raw.definitionOrder)) {
-		throw new TypeError('[management.pluginCatalogLayout] definitionOrder must be an array')
-	}
-
-	const seenPlacements = new Set<string>()
-	const placements = raw.placements.map((inputPlacement, index) => {
-		const placement = exactRecord(
-			inputPlacement,
-			['definition', 'sectionId'],
-			`placements[${index}]`,
-		)
-		const definition = parsePluginDefinitionAddress(placement.definition)
-		const key = pluginDefinitionIndexKey(definition)
-		if (seenPlacements.has(key)) throw new TypeError('placements contains a duplicate definition')
-		seenPlacements.add(key)
-		const sectionId =
-			placement.sectionId === null
-				? null
-				: requiredText(`placements[${index}].sectionId`, placement.sectionId)
-		return Object.freeze({ definition, sectionId })
-	})
-
-	const sectionOrder = strictUniqueStrings(raw.sectionOrder, 'sectionOrder')
-	const seenOrderSections = new Set<string>()
-	const orderedDefinitions = new Set<string>()
-	const definitionOrder = raw.definitionOrder.map((inputOrder, index) => {
-		const order = exactRecord(inputOrder, ['sectionId', 'definitions'], `definitionOrder[${index}]`)
-		const sectionId = requiredText(`definitionOrder[${index}].sectionId`, order.sectionId)
-		if (seenOrderSections.has(sectionId)) {
-			throw new TypeError(`duplicate definitionOrder section "${sectionId}"`)
-		}
-		seenOrderSections.add(sectionId)
-		if (!Array.isArray(order.definitions)) {
-			throw new TypeError(`definitionOrder[${index}].definitions must be an array`)
-		}
-		const definitions = order.definitions.map((inputDefinition) => {
-			const definition = parsePluginDefinitionAddress(inputDefinition)
-			const key = pluginDefinitionIndexKey(definition)
-			if (orderedDefinitions.has(key)) {
-				throw new TypeError('definitionOrder contains a duplicate Plugin definition')
-			}
-			orderedDefinitions.add(key)
-			return definition
+function parseDocument(input: unknown): GroupDocument {
+	const doc = record(input, ['version', 'groups', 'ungrouped'])
+	if (doc.version !== 1) throw invalid('group file version must be 1')
+	if (!Array.isArray(doc.groups) || doc.groups.length > 1000)
+		throw invalid('groups must be an array of at most 1000 groups')
+	const ids = new Set<string>()
+	const membership = new Set<string>()
+	const references = (values: unknown): string[] => {
+		if (!Array.isArray(values)) throw invalid('plugins and ungrouped must be arrays')
+		return values.map((value) => {
+			const ref = formatPluginDefinitionReference(
+				parsePluginDefinitionReference(text(value, 'Plugin reference')),
+			)
+			if (membership.has(ref)) throw invalid('duplicate Plugin membership')
+			membership.add(ref)
+			if (membership.size > 10_000) throw invalid('group file exceeds 10000 plugins')
+			return ref
 		})
-		return Object.freeze({ sectionId, definitions: Object.freeze(definitions) })
+	}
+	const groups = doc.groups.map((value) => {
+		const group = record(value, ['id', 'name', 'plugins'])
+		const id = text(group.id, 'group id')
+		if (ids.has(id)) throw invalid('duplicate group id')
+		ids.add(id)
+		return { id, name: text(group.name, 'group name'), plugins: references(group.plugins) }
 	})
-
-	return Object.freeze({
-		version: 4,
-		placements: Object.freeze(placements),
-		sectionOrder: Object.freeze(sectionOrder),
-		definitionOrder: Object.freeze(definitionOrder),
-	})
+	return { version: 1, groups, ungrouped: references(doc.ungrouped) }
 }
-
-function preferencesFromSnapshot(
-	snapshot: PluginCatalogPreferencesSnapshot,
-): PluginCatalogPreferences {
-	return {
-		placements: new Map(
-			snapshot.placements.map(({ definition, sectionId }) => [
-				pluginDefinitionIndexKey(definition),
-				{ definition, sectionId },
-			]),
-		),
-		sectionOrder: [...snapshot.sectionOrder],
-		definitionOrder: new Map(
-			snapshot.definitionOrder.map(({ sectionId, definitions }) => [sectionId, [...definitions]]),
-		),
-	}
-}
-
-function preferencesSnapshot(
-	preferences: PluginCatalogPreferences,
-): PluginCatalogPreferencesSnapshot {
-	return Object.freeze({
-		version: 4,
-		placements: Object.freeze(
-			[...preferences.placements.values()].map(({ definition, sectionId }) =>
-				Object.freeze({ definition, sectionId }),
-			),
-		),
-		sectionOrder: Object.freeze([...preferences.sectionOrder]),
-		definitionOrder: Object.freeze(
-			[...preferences.definitionOrder].map(([sectionId, definitions]) =>
-				Object.freeze({ sectionId, definitions: Object.freeze([...definitions]) }),
-			),
-		),
-	})
-}
-
-function emptyPreferences(): PluginCatalogPreferences {
-	return { placements: new Map(), sectionOrder: [], definitionOrder: new Map() }
-}
-
-function exactRecord(
-	input: unknown,
-	keys: readonly string[],
-	label: string,
-): Record<string, unknown> {
-	if (!input || typeof input !== 'object' || Array.isArray(input)) {
-		throw new TypeError(`[management.pluginCatalogLayout] ${label} must be an object`)
-	}
-	const record = input as Record<string, unknown>
-	const expected = new Set(keys)
-	for (const key of Object.keys(record)) {
-		if (!expected.has(key)) {
-			throw new TypeError(`[management.pluginCatalogLayout] ${label} has unknown field ${key}`)
-		}
-	}
-	for (const key of keys) {
-		if (!(key in record)) {
-			throw new TypeError(`[management.pluginCatalogLayout] ${label} is missing ${key}`)
-		}
-	}
-	return record
-}
-
-function uniqueDefinitionEntries(entries: readonly CatalogEntry[]): CatalogEntry[] {
-	const seen = new Set<string>()
-	return entries.filter((entry) => {
-		if (seen.has(entry.definitionKey)) return false
-		seen.add(entry.definitionKey)
-		return true
-	})
-}
-
-function invalid(message: string, cause?: unknown): PluginCatalogLayoutError {
-	return new PluginCatalogLayoutError(
-		`[management.pluginCatalogLayout] ${message}${cause instanceof Error ? `: ${cause.message}` : ''}`,
-	)
-}
-
-function layoutText(field: string, value: unknown): string {
-	if (typeof value !== 'string' || !value.trim()) throw invalid(`${field} must be text`)
-	return value.trim()
-}
-
-function requiredText(field: string, value: unknown): string {
-	if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${field} must be text`)
-	return value.trim()
-}
-
-function strictUniqueStrings(input: readonly unknown[], field: string): string[] {
-	const result: string[] = []
-	const seen = new Set<string>()
-	for (const [index, value] of input.entries()) {
-		const text = requiredText(`${field}[${index}]`, value)
-		if (seen.has(text)) throw new TypeError(`${field} contains duplicate "${text}"`)
-		seen.add(text)
-		result.push(text)
-	}
+function record(input: unknown, keys: string[]): Record<string, unknown> {
+	if (!input || typeof input !== 'object' || Array.isArray(input))
+		throw invalid('expected an object')
+	const result = input as Record<string, unknown>
+	if (Object.keys(result).length !== keys.length || keys.some((key) => !Object.hasOwn(result, key)))
+		throw invalid(`expected fields: ${keys.join(', ')}`)
 	return result
+}
+function text(input: unknown, label: string): string {
+	if (typeof input !== 'string' || !input.trim() || input.length > 16_384)
+		throw invalid(`${label} must be non-empty text of at most 16384 characters`)
+	return input.trim()
+}
+function invalid(message: string): PluginCatalogLayoutError {
+	return new PluginCatalogLayoutError(`[management.pluginGroups] ${message}`)
+}
+
+function decodeManualId(sectionId: string): string {
+	try {
+		return decodeURIComponent(sectionId.slice(7))
+	} catch {
+		throw invalid('invalid manual section ID encoding')
+	}
 }

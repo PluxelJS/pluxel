@@ -163,6 +163,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	const [draftGroups, setDraftGroups] = useState<GroupConfig[] | null>(null)
 	const lastSyncedRef = useRef<GroupConfig[]>([])
 	const [bulkBusy, setBulkBusy] = useState(false)
+	const [layoutSaving, setLayoutSaving] = useState(false)
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
 	const notify = useNotify()
 
@@ -210,26 +211,46 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return
 		}
 		pendingCommitRef.current = null
-		const task = management.catalog
-			.updateLayout({
-				sections: pending.map((group) => ({
-					sectionId: group.groupId,
-					nodes: group.pluginIds.map((id) => {
-						const status = overview.statuses[id]
-						if (!status) throw new Error(`Plugin section references unknown catalog id: ${id}`)
-						return status.address
-					}),
-				})),
-			})
-			.then((result): undefined => {
+		const task = Promise.resolve()
+			.then(() =>
+				management.catalog.updateLayout({
+					sections: pending.map((group) => ({
+						sectionId: group.groupId,
+						name: group.name,
+						nodes: group.pluginIds.map((id) => {
+							const status = overview.statuses[id]
+							if (!status) throw new Error(`Plugin section references unknown catalog id: ${id}`)
+							return status.address
+						}),
+					})),
+				}),
+			)
+			.then(async (result): Promise<undefined> => {
 				if (result.ok === false) {
 					if (result.code === 'persistence_failed') {
 						throw new PluginCatalogLayoutPersistenceUnknownError(result.error)
 					}
 					throw new Error(result.error)
 				}
-				lastSyncedRef.current = cloneGroups(pending)
-				void refetchOverview()
+				const idsByAddress = new Map(
+					Object.values(overview.statuses).map((status) => [
+						pluginNodeIndexKey(status.address),
+						status.id,
+					]),
+				)
+				lastSyncedRef.current = result.sections.map((section) => ({
+					groupId: section.sectionId,
+					name: section.name,
+					pluginIds: section.nodes.flatMap((node) => {
+						const id = idsByAddress.get(pluginNodeIndexKey(node))
+						return id === undefined ? [] : [id]
+					}),
+				}))
+				await refetchOverview()
+				if (!pendingCommitRef.current) {
+					setDraftGroups(null)
+					setOrganizerResetToken((n) => n + 1)
+				}
 				return undefined
 			})
 			.catch(async (error: unknown): Promise<void> => {
@@ -254,6 +275,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				if (queuedCommitRef.current || pendingCommitRef.current) {
 					queuedCommitRef.current = false
 					flushGroupCommit()
+				} else {
+					setLayoutSaving(false)
 				}
 			})
 		inflightCommitRef.current = task
@@ -261,7 +284,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {
-			if (areGroupsEqual(next, lastSyncedRef.current) && !pendingCommitRef.current) return
+			setLayoutSaving(true)
 			pendingCommitRef.current = cloneGroups(next)
 			setDraftGroups(next)
 			if (commitTimerRef.current) window.clearTimeout(commitTimerRef.current)
@@ -269,6 +292,22 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		},
 		[flushGroupCommit],
 	)
+
+	const resetGroups = useCallback(async () => {
+		if (inflightCommitRef.current || pendingCommitRef.current) return
+		setBulkBusy(true)
+		try {
+			const result = await management.catalog.updateLayout({ sections: null })
+			if (result.ok === false) throw new Error(result.error)
+			await refetchOverview()
+			setDraftGroups(null)
+			setOrganizerResetToken((n) => n + 1)
+		} catch (error) {
+			notify({ title: '恢复自动分组失败', message: runtimeErrorMessage(error), color: 'red' })
+		} finally {
+			setBulkBusy(false)
+		}
+	}, [management.catalog, notify, refetchOverview])
 
 	useEffect(() => {
 		return () => {
@@ -467,13 +506,16 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				initialGroups={groupsForView}
 				activeId={pluginRoute}
 				onGroupsChange={handleGroupsChange}
+				onResetGroups={() => {
+					void resetGroups()
+				}}
 				selectedIds={selectedIds}
 				onSelectedIdsChange={setSelectedIds}
 				filterQuery={filterQuery}
 				statusFilter={statusFilter}
 				LinkComponent={RouterLinkAdapter}
 				density="ultra"
-				locked={syncing || bulkBusy}
+				locked={syncing || bulkBusy || layoutSaving}
 			/>
 		)
 	}

@@ -130,7 +130,10 @@ async function renderOrganizer(props: {
 	initialGroups?: GroupConfig[]
 	filterQuery?: string
 	activeId?: string | null
+	selectedIds?: string[]
 	onSelectedIdsChange?: (ids: string[]) => void
+	onGroupsChange?: (groups: GroupConfig[]) => void
+	onResetGroups?: () => void
 	clicked?: Array<{ to: string }>
 }) {
 	const container = document.createElement('div')
@@ -164,14 +167,16 @@ async function renderOrganizer(props: {
 
 	await act(async () => {
 		root.render(
-			<MantineProvider>
+			<MantineProvider env="test">
 				<div style={{ height: '480px' }}>
 					<PluginOrganizer
 						statuses={props.statuses}
 						initialGroups={props.initialGroups ?? []}
-						onGroupsChange={() => {}}
+						onGroupsChange={props.onGroupsChange ?? (() => {})}
+						onResetGroups={props.onResetGroups}
 						filterQuery={props.filterQuery}
 						activeId={props.activeId}
+						selectedIds={props.selectedIds}
 						onSelectedIdsChange={props.onSelectedIdsChange}
 						LinkComponent={LinkComponent}
 					/>
@@ -215,4 +220,102 @@ describe('PluginOrganizer virtualization', () => {
 		expect(container.querySelector('[role="group"][aria-label="分组 Alpha"]')).not.toBeNull()
 		expect(container.querySelectorAll('[data-plugin-row="true"]')).toHaveLength(6)
 	})
+})
+
+describe('plugin group editing', () => {
+	it('keeps an unconfigured catalog flat and allows creating the first group', async () => {
+		const changes: GroupConfig[][] = []
+		const container = await renderOrganizer({
+			statuses: buildStatuses(3),
+			onGroupsChange: (groups) => {
+				changes.push(groups)
+			},
+		})
+		expect(container.textContent).toContain('全部插件')
+		expect(container.textContent).not.toContain('插件分类')
+		await act(async () => {
+			container.querySelector<HTMLButtonElement>('[aria-label="编辑分组"]')!.click()
+		})
+		const button = (label: string) =>
+			[...document.querySelectorAll<HTMLButtonElement>('button')].find(
+				(candidate) => candidate.textContent === label,
+			)!
+		await act(async () => {
+			button('新增分组').click()
+		})
+		await act(async () => {
+			button('保存').click()
+		})
+		expect(changes.at(-1)).toEqual([
+			{ groupId: expect.stringMatching(/^manual:/), name: '新分组', pluginIds: [] },
+		])
+	})
+	it('deletes manual groups back to the flat list and exposes an explicit automatic reset', async () => {
+		const changes: GroupConfig[][] = []
+		let resets = 0
+		const container = await renderOrganizer({
+			statuses: buildStatuses(2),
+			initialGroups: [
+				{ groupId: 'manual:one', name: '业务', pluginIds: ['plugin-000', 'plugin-001'] },
+			],
+			onGroupsChange: (groups) => {
+				changes.push(groups)
+			},
+			onResetGroups: () => {
+				resets++
+			},
+		})
+		await act(async () => {
+			container.querySelector<HTMLButtonElement>('[aria-label="编辑分组"]')!.click()
+		})
+		expect(document.body.textContent).toContain('编辑插件分组')
+		expect(
+			[...document.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
+		).toContain('删除分组 业务')
+		await act(async () => {
+			document.querySelector<HTMLButtonElement>('[aria-label="删除分组 业务"]')!.click()
+		})
+		await act(async () => {
+			;[...document.querySelectorAll<HTMLButtonElement>('button')]
+				.find((button) => button.textContent === '保存')!
+				.click()
+		})
+		expect(changes.at(-1)).toEqual([])
+		expect(container.textContent).toContain('全部插件')
+		await act(async () => {
+			container.querySelector<HTMLButtonElement>('[aria-label="编辑分组"]')!.click()
+		})
+		await act(async () => {
+			;[...document.querySelectorAll<HTMLButtonElement>('button')]
+				.find((button) => button.textContent === '恢复自动分组')!
+				.click()
+		})
+		expect(resets).toBe(1)
+	})
+})
+
+it('moves an entire fork family when a selected member is moved to ungrouped', async () => {
+	const statuses = buildStatuses(3)
+	statuses['plugin-001']!.address = {
+		definition: statuses['plugin-000']!.address.definition,
+		variant: 'fork',
+		forkId: 'east',
+	}
+	const changes: GroupConfig[][] = []
+	const container = await renderOrganizer({
+		statuses,
+		selectedIds: ['plugin-001'],
+		initialGroups: [{ groupId: 'manual:one', name: '业务', pluginIds: Object.keys(statuses) }],
+		onGroupsChange: (groups) => {
+			changes.push(groups)
+		},
+	})
+	await act(async () => {
+		container
+			.querySelector<HTMLElement>('[aria-label="插件列表与分组"]')!
+			.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', bubbles: true }))
+	})
+	expect(changes.at(-1)).toEqual([
+		{ groupId: 'manual:one', name: '业务', pluginIds: ['plugin-002'] },
+	])
 })

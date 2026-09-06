@@ -51,7 +51,7 @@ describe('@pluxel/runtime/web framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 5,
+				major: 6,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },
@@ -75,7 +75,7 @@ describe('@pluxel/runtime/web framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 5,
+				major: 6,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },

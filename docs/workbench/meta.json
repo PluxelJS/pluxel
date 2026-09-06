@@ -3,6 +3,7 @@
 	"defaultOpen": true,
 	"pages": [
 		"index",
+		"plugin-groups",
 		"---标准配方---",
 		"content",
 		"view",

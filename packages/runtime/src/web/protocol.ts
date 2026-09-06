@@ -17,7 +17,7 @@ export type {
 } from '../plugin-execution'
 export type { VaultKeyPair } from '../services/vault/types'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 5 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 6 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -37,7 +37,7 @@ export type RuntimeMeta = Readonly<{
 	ready: true
 	protocol: Readonly<{
 		name: 'pluxel.management'
-		major: 5
+		major: typeof RUNTIME_MANAGEMENT_PROTOCOL_MAJOR
 		capabilities: readonly RuntimeManagementCapability[]
 	}>
 	application: HostApplicationMeta
@@ -85,12 +85,12 @@ export type PluginStatusSnapshot = PluginControlSnapshot &
 	}>
 
 export type PluginCatalogSectionBasis =
-	| Readonly<{ kind: 'provider'; definition: PluginDefinitionAddress }>
-	| Readonly<{ kind: 'package'; packageName: string }>
-	| Readonly<{ kind: 'source-directory'; sourceSpace: string; path: string }>
+	| Readonly<{ kind: 'dependency'; definition: PluginDefinitionAddress }>
+	| Readonly<{ kind: 'shared' }>
+	| Readonly<{ kind: 'manual' }>
 
 export type PluginCatalogSection = Readonly<{
-	/** Server-generated opaque identity; clients return it unchanged when updating layout. */
+	/** Return existing IDs unchanged; new manual groups use `manual:` followed by a UUID. */
 	sectionId: string
 	name: string
 	basis: PluginCatalogSectionBasis
@@ -534,11 +534,15 @@ export type PluginControlBatchResult =
 	  }>
 export type PluginDependencyKind = 'plugin' | 'abstract'
 
+/** A complete manual layout; `sections: null` clears all manual choices and recomputes defaults. */
 export type PluginCatalogLayoutInput = Readonly<{
-	sections: readonly Readonly<{
-		sectionId: string
-		nodes: readonly PluginNodeAddress[]
-	}>[]
+	sections:
+		| readonly Readonly<{
+				sectionId: string
+				name: string
+				nodes: readonly PluginNodeAddress[]
+		  }>[]
+		| null
 }>
 
 export type PluginCatalogLayoutMutationResult =
