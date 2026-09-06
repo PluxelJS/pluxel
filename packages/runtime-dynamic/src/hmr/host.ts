@@ -110,6 +110,8 @@ export type BootedLoaderHmrHost = {
 }
 
 export type BootLoaderHmrHostOptions = {
+	/** @internal Capture bounded logs for the opt-in Vite development console. */
+	devConsole?: boolean
 	viteServer?: ViteDevServer
 	product?: ProductDescriptor | null
 	/** @internal Route-owned Workbench asset selection. */
@@ -302,7 +304,9 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	options: BootLoaderHmrHostOptions = {},
 ): Promise<BootedLoaderHmrHost> {
 	await plan.fs.promises.mkdir(plan.runtimeStorage.logsDir, { recursive: true })
-	const logging = createRuntimeLogging(resolveLoaderRuntimeLoggingInput(plan))
+	const logging = createRuntimeLogging(
+		resolveLoaderRuntimeLoggingInput(plan, options.devConsole === true),
+	)
 	await logging.install()
 	let ctx: Context | undefined
 
@@ -389,6 +393,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 
 function resolveLoaderRuntimeLoggingInput(
 	plan: PlannedLoaderHmrHost<LoaderHmrWorkspaceSnapshot>,
+	devConsole: boolean,
 ): RuntimeLoggingInput {
 	if (plan.logging) return plan.logging
 	const root = { profile: plan.snapshot.activeProfile, debugTopics: plan.debug }
@@ -399,7 +404,7 @@ function resolveLoaderRuntimeLoggingInput(
 			routes: { runtime: [], plugins: [], debug: [], meta: [] },
 		}
 	}
-	const withStore = isWorkbenchEnabled(plan.runtimeConfig.workbench)
+	const withStore = devConsole || isWorkbenchEnabled(plan.runtimeConfig.workbench)
 	const sinks: RuntimeLoggingInput['sinks'] = {
 		console: {
 			kind: 'console',

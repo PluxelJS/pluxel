@@ -589,3 +589,103 @@ export const workspaceCommandDefinition = {
 	args: workspaceRootArgs,
 	subCommands: workspaceSubCommands,
 } as const
+
+export const devCommonArgs = {
+	root: {
+		type: 'string',
+		description:
+			'Project directory (defaults to the nearest package root; printed as a real path in diagnostics)',
+	},
+	instance: {
+		type: 'string',
+		description: 'Select an exact instance ID from dev instances in the same project',
+	},
+} as const
+
+export const devInstancesArgs = { root: devCommonArgs.root } as const
+
+export const devInstancesDefinition = {
+	name: 'instances',
+	description: 'Discover all running development consoles in one project as JSON',
+	args: devInstancesArgs,
+} as const
+
+export const devRunArgs = {
+	...devCommonArgs,
+	file: {
+		type: 'positional',
+		required: true,
+		description: 'Project-local TypeScript module to execute',
+	},
+	export: { type: 'string', default: 'default', description: 'Exported function to call' },
+	input: { type: 'string', description: 'JSON input passed to the execution context' },
+	'input-file': { type: 'string', description: 'Read JSON input from this file' },
+	detach: {
+		type: 'boolean',
+		default: false,
+		description: 'Return the run receipt without waiting',
+	},
+	timeout: {
+		type: 'string',
+		default: '30000',
+		description: 'Cooperative run deadline in milliseconds (1–300000)',
+	},
+} as const
+
+export const devRunDefinition = {
+	name: 'run',
+	description:
+		'Execute inside the selected Vite host; print final JSON and an accepted receipt on stderr',
+	toKebab: true,
+	args: devRunArgs,
+} as const
+
+export const devRunIdArgs = {
+	...devCommonArgs,
+	id: { type: 'positional', required: true, description: 'Run ID returned by dev run' },
+} as const
+
+export const devResultDefinition = {
+	name: 'result',
+	description: 'Read the current state or retained result of a run as JSON',
+	args: devRunIdArgs,
+} as const
+
+export const devCancelDefinition = {
+	name: 'cancel',
+	description: 'Request cooperative cancellation of a run and print its state as JSON',
+	args: devRunIdArgs,
+} as const
+
+export const devCommandDefinition = {
+	name: 'dev',
+	description: 'Operate an explicitly enabled development console in a running Vite host',
+	args: devInstancesArgs,
+	subCommands: new Map<string, SubCommandable>([
+		[
+			'instances',
+			lazy(
+				() => import('./commands/dev').then((module) => module.devInstancesCommand),
+				devInstancesDefinition,
+			),
+		],
+		[
+			'run',
+			lazy(() => import('./commands/dev').then((module) => module.devRunCommand), devRunDefinition),
+		],
+		[
+			'result',
+			lazy(
+				() => import('./commands/dev').then((module) => module.devResultCommand),
+				devResultDefinition,
+			),
+		],
+		[
+			'cancel',
+			lazy(
+				() => import('./commands/dev').then((module) => module.devCancelCommand),
+				devCancelDefinition,
+			),
+		],
+	]),
+} as const

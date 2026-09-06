@@ -12,6 +12,7 @@ export default defineConfig({
 	plugins: [
 		staticRuntimeVitePlugin({
 			entry: './src/pluxel.static.ts',
+			devConsole: true,
 		}),
 	],
 })

@@ -4,6 +4,7 @@
 		"starter-monorepo",
 		"plugin-package",
 		"testing",
+		"dev-console",
 		"tooling",
 		"source-workspaces",
 		"distribution"

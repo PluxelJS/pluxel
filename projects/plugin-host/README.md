@@ -80,6 +80,28 @@ Report Studio: a required `EvtChannel` edge and optional-provider attach/detach.
 lifecycle and logs are visible in the Workbench. The other examples remain in `src/demo` as focused
 source references and tests without cluttering the default runtime catalog.
 
+## Coding agent runtime operations
+
+Both Vite dev configs explicitly enable the development console. Coding agents must use this
+console for runtime inspection, config edits, Plugin methods, Workbench RPC, data and logs.
+The current local transport supports Unix systems; on Windows disable `devConsole` in these
+configs to run the host without the console.
+
+From the repository root, discover the already running host and use its returned instance ID:
+
+```sh
+pnpm exec pluxel dev instances --root projects/plugin-host
+pnpm exec pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <id>
+```
+
+Static and dynamic can run together under this same project root, so always keep the selected
+instance ID for subsequent `run`, `result` and `cancel` commands. Add ordinary named exports to
+project-local `dev/*.ts` files for further operations; edits do not restart the dev host or replay
+previous operations. The bundled `inspect.ts` only returns current Plugin status.
+
+Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
+Workbench, logs and recovery. Isolated regressions continue to use the test host.
+
 ## Loader HMR Tools
 
 ```sh

@@ -7,7 +7,7 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 	return specifier === pattern || specifier.startsWith(`${pattern}/`)
 }
 
-type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
+type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch' | 'barrier'
 const defaultBatchDebounceErrorHandler = (error: unknown) => {
 	console.error('[pluxel:hmr] batch flush failed', error)
 }
@@ -37,6 +37,12 @@ export class BatchDebouncer {
 		return (
 			this.pending.size === 0 && this.t === null && this.tMax === null && this.inFlightCount === 0
 		)
+	}
+
+	/** Flushes the currently observed changes and captures their finite completion boundary. */
+	flushObserved(): Promise<void> {
+		this.flush('barrier')
+		return this.inFlight
 	}
 
 	waitForIdle(options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<void> {

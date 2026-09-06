@@ -152,7 +152,8 @@ try {
 			.lastReport()
 			?.replaced.map((node) => node.definition.exportName)
 			.sort(),
-		['BuiltStatic', 'ConfiguredPlugin', 'PartOwner', 'PartProvider', 'ViteStatic'],
+		// Unchanged imports retain their constructor; source HMR must not replace BuiltStatic.
+		['ConfiguredPlugin', 'PartOwner', 'PartProvider', 'ViteStatic'],
 	)
 	const replacementInstances = [address, east, west].map((node) => pluginService.getInstance(node))
 	assert.deepEqual(

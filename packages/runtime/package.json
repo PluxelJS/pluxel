@@ -37,6 +37,10 @@
 			"@pluxel/source": "./src/database.ts",
 			"default": "./dist/database.mjs"
 		},
+		"./dev": {
+			"@pluxel/source": "./src/dev.ts",
+			"default": "./dist/dev.mjs"
+		},
 		"./environment": {
 			"@pluxel/source": "./src/environment.ts",
 			"default": "./dist/environment.mjs"
@@ -132,6 +136,7 @@
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./database": "./dist/database.mjs",
+			"./dev": "./dist/dev.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/config-validation": "./dist/internal/config-validation.mjs",

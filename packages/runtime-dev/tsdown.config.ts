@@ -23,6 +23,7 @@ export default defineConfig({
 		workbench: 'src/workbench.ts',
 		'hmr-log': 'src/hmr-log.ts',
 		vite: 'src/vite.ts',
+		console: 'src/console.ts',
 	},
 	dts: {
 		// TS7's native declaration generator uses the config directory as rootDir. This root-level,

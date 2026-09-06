@@ -307,3 +307,7 @@ core 不包含 formatter、sink、policy persistence、host env resolution 或 L
 - 不引入通用 policy language、processor chain 或 LogTape config merge framework；
 - 不经 `ctx.elysia`、Plugin route 或第二条 live transport 暴露 Runtime logs；
 - 修改 category、Context service、launcher boot order或 policy hot path 时，必须同步更新本文件和对应 benchmark/tests。
+
+## Trusted development scripts
+
+Vite 显式开启 devConsole 时，默认 launcher 也会配置 bounded store，不依赖 Workbench；显式 custom/silent logging 保持优先。RuntimeLogging.flushStores 刷出物理 store sink 缓冲，控制台 cursor/read 保留 stream 的配置 retention、epoch 和 gap 语义。可信本机脚本可在进程内读取并返回有界快照，不经 ctx.elysia 安装日志接口，也不增加远程 live follow 通道。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

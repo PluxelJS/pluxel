@@ -513,3 +513,7 @@ Node；Worker/Fetch target 必须等待 runtime services 具备真正 platform-n
 进程日志由 launcher-owned `RuntimeLogging` 统一安装。一个进程只有一个 active root；plugin identity 编码在
 category，动态等级由 root-owned O(1) policy 控制。完整不变量、启动顺序和大插件基数预算见
 [`LOGGING.md`](LOGGING.md)。
+
+## Development console scope
+
+`@pluxel/runtime/dev` 定义由 Vite 执行器注入的在线操作界面。每次脚本借用当前 root，通过生产 use case 读取/修改配置、控制插件、打开 Workbench session、调用 commands/HTTP 并读日志。scope 只拥有临时资源，生命周期仍由既有 coordinator 驱动；不暴露 test catalog/fixture authority，不安装第二个 runtime。详细约束见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

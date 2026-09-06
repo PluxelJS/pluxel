@@ -85,6 +85,15 @@ type LoaderHmrArtifactGeneration = Readonly<{
 	rollback(): void
 }>
 
+const consolePreparationByService = new WeakMap<LoaderHmrService, () => Promise<void>>()
+
+/** @internal Captures pending watcher batches and the current finite execution boundary. */
+export function prepareLoaderHmrConsoleUpdate(service: LoaderHmrService): Promise<void> {
+	const prepare = consolePreparationByService.get(service)
+	if (!prepare) throw new Error('[hmr] console preparation is unavailable')
+	return prepare()
+}
+
 const definitionSourceByService = new WeakMap<LoaderHmrService, LoaderHmrDefinitionSource>()
 const recentUpdatesByService = new WeakMap<LoaderHmrService, PluginRecentUpdateTracker>()
 const SUPPLEMENTAL_WATCH_IGNORED = [
@@ -535,6 +544,14 @@ export class LoaderHmrService {
 			waitForStable: (options) => this.waitForStable(options),
 			waitForIdle: (options) => this.waitForIdle(options),
 		}
+
+		consolePreparationByService.set(this, () => {
+			this.assertOpen()
+			// Capture before yielding: subsequent watcher events do not prolong this barrier.
+			const batches = this.debouncer.flushObserved()
+			const executions = this.execLock.run(async () => {})
+			return Promise.all([batches, executions]).then(() => this.assertOpen())
+		})
 
 		this.attachResolverCacheInvalidation()
 		this.ctx.effects.defer(() => this.close(), {

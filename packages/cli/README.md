@@ -15,11 +15,17 @@ Pluxel CLI（对外发布包之一）。
 ```sh
 pluxel build
 pluxel docs development/testing.md
+pluxel dev instances
 pluxel hmr
 pluxel new
 pluxel source doctor
 pluxel distribution inspect ./dist
 ```
+
+Coding agent 操作正在运行的 Vite 宿主时，使用 `pluxel dev`：先通过 `instances --root <vite-root>`
+确认目标，再以同一 `--root` 和 `--instance` 提交 TS 导出函数、查询结果或请求取消。配置、插件方法、
+Workbench RPC 和日志都在当前宿主执行。完整流程见 [开发控制台](../../docs/development/dev-console.md)，
+也可运行 `pluxel docs development/dev-console.md`。CLI 不替你启动宿主；Vite integration 需显式开启 `devConsole: true`。
 
 `pluxel new` 只在已有 workspace 或指定 destination 中创建可发布 Plugin package。官方 `plugin` 模板固定当前受支持的 pnpm 11，
 默认安装依赖；传入 `--no-install` 可以只生成文件。local template 默认不执行安装，只有显式 `--install` 才会运行其

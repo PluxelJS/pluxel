@@ -6,6 +6,8 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 Plugin 测试应经过与生产构建一致的语义处理，包括装饰器转换、构造器依赖提取、配置 schema 提取和包根入口解析。直接 `new`
 实例或模拟 Context 只适合测试普通业务对象，不能证明 Plugin 能被宿主正确加载、组合和停止。
 
+如果目标是操作眼前正在运行的 dev 实例，coding agent 必须使用 [开发控制台](./dev-console.md)。本页的 test host 用于独立的回归测试，不连接当前 dev，也不共享它的数据目录。
+
 ## 安装 Vitest preset
 
 ```sh package-install

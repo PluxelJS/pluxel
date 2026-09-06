@@ -2,6 +2,42 @@ import { describe, expect, it, vi } from 'vitest'
 import { BatchDebouncer } from '../../src/hmr/engine/internals'
 
 describe('BatchDebouncer waitForIdle', () => {
+	it('captures observed changes without waiting for later batches or their debounce window', async () => {
+		const active = Promise.withResolvers<void>()
+		const later = Promise.withResolvers<void>()
+		const started = Promise.withResolvers<void>()
+		const flushed: string[][] = []
+		const d = new BatchDebouncer(
+			async (files) => {
+				flushed.push(files)
+				if (files.includes('observed')) {
+					started.resolve()
+					await active.promise
+				} else await later.promise
+			},
+			60_000,
+			60_000,
+			10,
+		)
+		try {
+			d.push('observed')
+			const barrier = d.flushObserved()
+			await started.promise
+			d.push('later')
+			const next = d.flushObserved()
+			active.resolve()
+			await barrier
+			expect(d.isIdle()).toBe(false)
+			later.resolve()
+			await next
+			expect(flushed).toEqual([['observed'], ['later']])
+		} finally {
+			active.resolve()
+			later.resolve()
+			await d.close()
+		}
+	})
+
 	it('rejects with a timeout error when inFlight never settles', async () => {
 		vi.useFakeTimers()
 		try {

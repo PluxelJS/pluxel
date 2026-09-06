@@ -148,6 +148,8 @@ export type RuntimeLogging = {
 	initializePolicy(store?: PluginLogPolicyStore): Promise<void>
 	describe(): RuntimeLoggingDescription
 	flush(): Promise<void>
+	/** Flush buffered store records without waiting for unrelated policy persistence. */
+	flushStores(): void
 	dispose(): Promise<void>
 }
 
@@ -344,6 +346,7 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 	public readonly policy: RuntimePluginLogPolicy
 	private readonly input: RuntimeLoggingInput
 	private readonly debugMatcher: DebugMatcher
+	private readonly storeFlushers: Array<() => void> = []
 	private storesValue: RuntimeLogStoreRegistry | undefined
 	private installPromise: Promise<void> | undefined
 	private initializePromise: Promise<void> | undefined
@@ -421,7 +424,12 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 		}
 	}
 
+	flushStores(): void {
+		for (const flush of this.storeFlushers) flush()
+	}
+
 	async flush(): Promise<void> {
+		this.flushStores()
 		await this.policy.flush()
 	}
 
@@ -479,6 +487,8 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 						: input.kind === 'store'
 							? createRuntimeLogSink({ ...input, registry: this.stores })
 							: input.sink
+			if (input.kind === 'store')
+				this.storeFlushers.push((physical as ReturnType<typeof createRuntimeLogSink>).flush)
 			compiled.set(id, { input, physical })
 			sinks[`resource:${id}`] = physical
 		}

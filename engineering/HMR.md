@@ -213,3 +213,7 @@ Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 
 - 新 document 不复用旧 roots、Bridge、host facade 或 MF registration；
 - Workbench-disabled host 不加载 MF builder；
 - Node module staged setup 保持 last-known-good。
+
+## Development console execution
+
+显式启用的 dev console 使用同一个 SSR runner，执行根不是 Plugin catalog entry。脚本等待真实 watcher 接纳已知依赖修改，再等待 route 的有限更新序列；执行期间不锁住整个 HMR coordinator。full-host replacement 撤回旧 run scope，后续提交获取新 epoch。源码观察、finite barrier 与资源边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

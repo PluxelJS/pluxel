@@ -150,3 +150,5 @@ export {
 } from './logger/logging'
 
 export { PluginRecentUpdateTracker } from './internal/recent-update'
+
+export { createDevConsoleScope, type DevConsoleScope } from './internal/dev-console'

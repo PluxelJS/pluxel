@@ -206,6 +206,22 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
 	})
 
+	it('rejects console activation outside development and malformed flags', () => {
+		expect(() =>
+			runtimeDynamicVite.dynamicRuntimeVitePlugin({
+				entry: './pluxel.dynamic.ts',
+				mode: 'distribution',
+				devConsole: true,
+			}),
+		).toThrow(/requires development mode/)
+		expect(() =>
+			runtimeDynamicVite.dynamicRuntimeVitePlugin({
+				entry: './pluxel.dynamic.ts',
+				devConsole: 'true' as never,
+			}),
+		).toThrow(/must be a boolean/)
+	})
+
 	it('uses built package exports and Workbench assets in distribution mode', () => {
 		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
 			entry: './pluxel.dynamic.ts',

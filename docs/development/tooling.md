@@ -5,6 +5,8 @@ description: 了解脚手架、插件构建、静态应用、HMR、源码联调�
 
 `@pluxel/cli` 把脚手架、构建和诊断命令组织在一起；具体的 Vite、构建和运行时 API 仍由对应的包提供。CLI 是开发工具，不是应用运行时，因此业务代码不应从中导入运行时或构建辅助函数。
 
+Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；先发现并固定项目和实例，再执行 TypeScript 操作。
+
 ## 安装分层
 
 ```sh
@@ -72,6 +74,7 @@ npx nypm add -D @pluxel/market
 | 创建/检查/验证 static distribution                       | `pluxel distribution create/inspect/verify`   |
 | 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`          |
 | 发布 npm package 并通知 market                           | `pluxel publish`                              |
+| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`      |
 | Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`            |
 | 跨仓库 source checkout                                   | `pluxel source register/doctor/build/install` |
 | 管理 source workspace                                    | `pluxel workspace`                            |

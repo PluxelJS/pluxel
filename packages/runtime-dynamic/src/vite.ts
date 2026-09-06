@@ -1,6 +1,14 @@
+import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
+import {
+	normalizePath,
+	type HmrContext,
+	type ModuleNode,
+	type Plugin,
+	type PluginOption,
+	type ViteDevServer,
+} from 'vite'
 import react from '@vitejs/plugin-react'
 import { hostEnv } from '@pluxel/runtime/environment'
 import { createPluginSourceVitePipeline } from '../../rolldown/src/vite/index.ts'
@@ -14,6 +22,8 @@ import {
 	invalidateViteModuleGraphFiles,
 	registerViteSsrExternalModuleUrls,
 } from '../../runtime-dev/src/vite.ts'
+import { attachDevConsole, type DevConsoleAttachment } from '../../runtime-dev/src/console.ts'
+import { prepareLoaderHmrConsoleUpdate } from './hmr/engine/LoaderHmrService.ts'
 import { resolveDevWorkbenchClientEntryUrl } from '../../runtime/src/server/assets.ts'
 import {
 	getCachedResolver,
@@ -69,6 +79,8 @@ const CONTEXT_DIST_ROOT = normalizePath(
 )
 
 export type DynamicRuntimeVitePluginOptions = {
+	/** Enable trusted local TypeScript operations. Only available in development mode. @default false */
+	devConsole?: boolean
 	/** Canonical config module. Relative strings resolve from the final Vite root. */
 	entry: string | URL
 	/**
@@ -93,6 +105,25 @@ type DynamicViteApplicationCarrier = ReturnType<typeof createViteNodeElysiaAppli
 
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
 	const mode = options.mode ?? 'development'
+	if (options.devConsole !== undefined && typeof options.devConsole !== 'boolean') {
+		throw new TypeError('[runtime-dynamic/vite] devConsole must be a boolean')
+	}
+	if (options.devConsole && mode !== 'development') {
+		throw new Error('[runtime-dynamic/vite] devConsole requires development mode')
+	}
+	const hostEpochs = new WeakMap<DynamicRuntimeController, string>()
+	let devConsole: DevConsoleAttachment | undefined
+	let detachConsoleWatcher: (() => void) | undefined
+	let closing = false
+	let hotUpdateTail: Promise<void> = Promise.resolve()
+	const enqueueHotUpdate = <T>(operation: () => Promise<T>): Promise<T> => {
+		const result = hotUpdateTail.then(operation)
+		hotUpdateTail = result.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return result
+	}
 	const workbenchClientEntry = resolveDevWorkbenchClientEntryUrl()
 	const sourcePipeline = createPluginSourceVitePipeline({
 		name: 'pluxel:dynamic-runtime-source',
@@ -141,6 +172,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	const startController = async (server: ViteDevServer): Promise<DynamicRuntimeController> => {
 		const loaded = await loadConfig()
 		const previous = state.controller
+		if (previous) await devConsole?.hostChanged()
 		state.controller = undefined
 		delete (server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY]
 		await previous?.stop()
@@ -155,6 +187,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		})
 		const booted = await bootPlannedLoaderHmrHost(plan, {
 			viteServer: server,
+			devConsole: options.devConsole,
 			product: loaded.product,
 			workbenchAssets: mode === 'distribution' || !workbenchClientEntry ? 'built' : 'source',
 			workbenchArtifactCacheDir:
@@ -196,6 +229,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					return stopPromise
 				},
 			}
+			hostEpochs.set(controller, randomUUID())
 			state.controller = controller
 			;(server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY] =
 				controller
@@ -207,6 +241,34 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			await booted.stop().finally(detachApplicationCarrier)
 			throw error
 		}
+	}
+
+	const handleHotUpdate = (ctx: HmrContext): Promise<ModuleNode[] | void> => {
+		if (closing) return Promise.resolve(undefined)
+		// Vite has finished watchChange. Mark the version without invalidating a committed namespace.
+		devConsole?.observed(ctx.file)
+		return enqueueHotUpdate(async () => {
+			if (state.configFiles?.has(normalizePath(ctx.file))) {
+				state.server = ctx.server
+				invalidateViteModuleGraphFiles(ctx.server, state.configFiles)
+				const previousProduct = state.controller?.product ?? null
+				const next = await startController(ctx.server)
+				if (!sameProduct(previousProduct, next.product)) {
+					ctx.server.ws.send({ type: 'full-reload' })
+				}
+				return []
+			}
+			const controller = state.controller
+			if (!controller) return
+			if (requireRuntimeHttpService(controller.booted.ctx).consumeFullReloadRequest()) {
+				ctx.server.ws.send({ type: 'full-reload' })
+				return []
+			}
+			return callViteHook<[HmrContext], Promise<ModuleNode[] | void> | ModuleNode[] | void>(
+				controller.booted.hmr.vitePlugin.handleHotUpdate,
+				ctx,
+			)
+		})
 	}
 
 	const routePlugin: Plugin = {
@@ -242,6 +304,16 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 				},
 			})
 			state.server = server
+			if (options.devConsole) {
+				// The loader observes the watcher directly. Invalidate before its synchronous admission,
+				// never from the later Vite hook after a replacement may already have committed.
+				const invalidate = (file: string) => devConsole?.invalidate(file)
+				const events = ['change', 'add', 'unlink'] as const
+				for (const event of events) server.watcher.on(event, invalidate)
+				detachConsoleWatcher = () => {
+					for (const event of events) server.watcher.off(event, invalidate)
+				}
+			}
 			state.applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
 				fetch: (request) => {
 					const ctx = state.controller?.booted.ctx
@@ -260,31 +332,38 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					server,
 					mode === 'development' && Boolean(workbenchClientEntry),
 				)
+				if (options.devConsole) {
+					devConsole = await attachDevConsole({
+						server,
+						getHost: () =>
+							state.controller && {
+								ctx: state.controller.booted.ctx.root,
+								epoch: hostEpochs.get(state.controller)!,
+							},
+						prepare: async (_file, signal) => {
+							const observedRoute = hotUpdateTail
+							await observedRoute
+							const hmr = state.controller?.booted.hmr
+							if (hmr) await prepareLoaderHmrConsoleUpdate(hmr)
+							signal.throwIfAborted()
+						},
+					})
+				}
 			} catch (error) {
+				detachConsoleWatcher?.()
+				detachConsoleWatcher = undefined
+				await devConsole?.close().catch((): undefined => undefined)
+				await state.closeHttp?.().catch((): undefined => undefined)
+				state.closeHttp = undefined
+				await state.controller?.stop().catch((): undefined => undefined)
+				state.controller = undefined
+				delete (server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY]
 				await state.applicationCarrier.close().catch((): undefined => undefined)
 				state.applicationCarrier = undefined
 				throw error
 			}
 		},
-		async handleHotUpdate(ctx) {
-			if (state.configFiles?.has(normalizePath(ctx.file))) {
-				state.server = ctx.server
-				invalidateViteModuleGraphFiles(ctx.server, state.configFiles)
-				const previousProduct = state.controller?.product ?? null
-				const next = await startController(ctx.server)
-				if (!sameProduct(previousProduct, next.product)) {
-					ctx.server.ws.send({ type: 'full-reload' })
-				}
-				return []
-			}
-			const controller = state.controller
-			if (!controller) return
-			if (requireRuntimeHttpService(controller.booted.ctx).consumeFullReloadRequest()) {
-				ctx.server.ws.send({ type: 'full-reload' })
-				return []
-			}
-			return callViteHook(controller.booted.hmr.vitePlugin.handleHotUpdate, ctx)
-		},
+		handleHotUpdate,
 		resolveId(id, importer, hookOptions) {
 			return callViteHook(
 				state.controller?.booted.hmr.vitePlugin.resolveId,
@@ -297,6 +376,17 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			return callViteHook(state.controller?.booted.hmr.vitePlugin.load, id, hookOptions)
 		},
 		async closeBundle() {
+			closing = true
+			detachConsoleWatcher?.()
+			detachConsoleWatcher = undefined
+			let consoleError: unknown
+			try {
+				await devConsole?.close()
+			} catch (error) {
+				consoleError = error
+			}
+			devConsole = undefined
+			await hotUpdateTail
 			const applicationCarrier = state.applicationCarrier
 			applicationCarrier?.stopAccepting()
 			const controller = state.controller
@@ -326,7 +416,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			} catch (error) {
 				carrierError = error
 			}
-			const errors = [controllerError, httpError, carrierError].filter(
+			const errors = [consoleError, controllerError, httpError, carrierError].filter(
 				(error) => error !== undefined,
 			)
 			if (errors.length === 1) throw errors[0]

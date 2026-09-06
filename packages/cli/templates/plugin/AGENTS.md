@@ -22,3 +22,12 @@ Keep these boundaries intact:
 - business HTTP and core lifecycle must work with Workbench Plane disabled;
 - plugin tests use `@pluxel/test/vitest` and the smallest matching core/runtime test host;
 - run `pnpm verify` after changes and do not bypass Pluxel lint rules without a documented reason.
+
+## Live development operations
+
+For operations on an already running Pluxel Vite host, coding agents must use `pluxel dev` and
+`@pluxel/runtime/dev`. Read `pnpm exec pluxel docs development/dev-console.md` first. Discover the
+host and keep its absolute `--root` and exact `--instance` on every run/result/cancel command.
+Use ordinary TS module exports for config edits, Plugin methods, Workbench RPC, data and logs;
+keep isolated regression tests on the test host. Enable `devConsole: true` in the host's Vite
+integration when needed; do not create another runtime or reopen its database to inspect live state.

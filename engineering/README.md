@@ -19,6 +19,7 @@
    - [`LOGGING.md`](LOGGING.md)：single active root、Context identity、plugin policy、sinks 与大基数预算。
    - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和 Workbench 投影。
    - [`TESTING.md`](TESTING.md)：测试边界、Vitest preset bootstrap 与验证入口。
+   - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：面向 coding agent 的在线 TypeScript 操作、Vite 更新、配置、Workbench 与日志。
    - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
    - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。

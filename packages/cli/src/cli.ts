@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { cli, define, lazy, type SubCommandable } from 'gunshi'
 import pkg from '../package.json'
+import { renderCliHeader } from './render-header'
 import {
 	buildCommandDefinition,
 	databaseCommandDefinition,
+	devCommandDefinition,
 	distributionCommandDefinition,
 	docsCommandDefinition,
 	hmrCommandDefinition,
@@ -15,6 +17,10 @@ import {
 import { formatOfficialCapabilityError, OfficialCapabilityError } from './capability-loader'
 
 const commands = new Map<string, SubCommandable>([
+	[
+		'dev',
+		lazy(() => import('./commands/dev').then((module) => module.devCommand), devCommandDefinition),
+	],
 	[
 		'docs',
 		lazy(
@@ -90,6 +96,7 @@ async function main() {
 		await cli(nextArgv, rootCommand, {
 			name: pkg.name ?? 'pluxel',
 			version: pkg.version,
+			renderHeader: renderCliHeader,
 			subCommands: commands,
 		})
 	} catch (error) {

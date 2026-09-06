@@ -506,11 +506,15 @@ export async function createStaticRuntimeHost(
 		http?: RuntimeHostConfig['http']
 		resolveExecution?: StaticRuntimeExecutionResolver
 		recentUpdates?: StaticRuntimeRecentUpdateTracker
+		/** @internal Capture bounded logs for the opt-in Vite development console. */
+		devConsole?: boolean
 		/** @internal Test-only physical peer seam. */
 		requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 	} = {},
 ): Promise<StaticRuntimeHostImpl> {
-	const logging = createRuntimeLogging(resolveStaticRuntimeLoggingInput(definition, options))
+	const logging = createRuntimeLogging(
+		resolveStaticRuntimeLoggingInput(definition, options, internal.devConsole === true),
+	)
 	await logging.install()
 	let host: StaticRuntimeHostImpl | undefined
 	try {
@@ -578,6 +582,7 @@ function elapsedRuntimeUpdateMs(startedAt: number): number {
 function resolveStaticRuntimeLoggingInput(
 	definition: StaticRuntimeDefinition,
 	options: StaticRuntimeHostOptions,
+	devConsole: boolean,
 ): RuntimeLoggingInput {
 	if (options.logging !== undefined && options.logging !== false) return options.logging
 	const root = {
@@ -591,7 +596,7 @@ function resolveStaticRuntimeLoggingInput(
 			routes: { runtime: [], plugins: [], debug: [], meta: [] },
 		}
 	}
-	const withStore = isWorkbenchEnabled(options.workbench)
+	const withStore = devConsole || isWorkbenchEnabled(options.workbench)
 	const sinks: RuntimeLoggingInput['sinks'] = {
 		console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
 	}

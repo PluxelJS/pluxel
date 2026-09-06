@@ -12,5 +12,5 @@
 		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
 		"types": ["vite/client"]
 	},
-	"include": ["./**/*.ts", "./**/*.tsx", "../vitest.config.ts"]
+	"include": ["./**/*.ts", "./**/*.tsx", "../vitest.config.ts", "../dev/**/*.ts"]
 }

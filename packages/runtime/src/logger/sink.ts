@@ -255,7 +255,9 @@ function toRuntimeLogLineInput(
  * Create a LogTape sink that normalizes records into `RuntimeLogLine` and appends
  * to the in-memory runtime log store.
  */
-export function createRuntimeLogSink(options: RuntimeLogSinkOptions): Sink & Disposable {
+export function createRuntimeLogSink(
+	options: RuntimeLogSinkOptions,
+): Sink & Disposable & { flush(): void } {
 	const registry = options.registry
 	const streamId = options.streamId ?? 'default'
 	const minLevel = options.minLevel ?? 'trace'
@@ -315,7 +317,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions): Sink & Dis
 		timer = setTimeout(flush, flushIntervalMs)
 	}
 
-	const sink: Sink & Disposable = (record) => {
+	const sink: Sink & Disposable & { flush(): void } = (record) => {
 		try {
 			if (compareLogLevel(record.level, minLevel) < 0) return
 
@@ -343,6 +345,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions): Sink & Dis
 			// Ignore.
 		}
 	}
+	sink.flush = flush
 	sink[Symbol.dispose] = flush
 	return sink
 }

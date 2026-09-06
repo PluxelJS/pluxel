@@ -297,6 +297,7 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
 - `@pluxel/agent-tools`：可选官方 Plugin，以标准 Plugin config 在唯一 command registry 上投影 Agent allowlist；
 - `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
+- `@pluxel/runtime/dev`：在线开发脚本的独立操作类型；由 Vite opt-in 执行器借用当前 root，不安装 Plugin Context capability；
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/runtime` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；
 - `@pluxel/runtime/capnweb`：固定 Cap’n Web object model 与 WebSocket session bridge；
