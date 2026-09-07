@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { createServer, type IncomingHttpHeaders } from 'node:http'
-import test from 'node:test'
 import * as grpc from '@grpc/grpc-js'
 import {
 	context,
@@ -19,6 +18,7 @@ import {
 	type ResourceMetrics,
 } from '@opentelemetry/sdk-metrics'
 import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base'
+import { test } from 'vitest'
 import { createOtlpMetricReader, type OtlpExportState } from '../src/otlp.ts'
 import { createOtelRuntime } from '../src/sdk.ts'
 
@@ -156,6 +156,11 @@ test('exports native metrics, traces, and logs with caller scopes and trace corr
 		span.setAttribute('catalog.result', 'fresh')
 		span.end()
 	})
+
+	await runtime.forceFlush()
+	assert.ok(metrics.exports.some(({ scopeMetrics }) => scopeMetrics.length > 0))
+	assert.ok(spans.exports.flat().some(({ name }) => name === 'catalog.refresh'))
+	assert.ok(logs.exports.flat().some(({ body }) => body === 'catalog refreshed'))
 
 	await runtime.shutdown()
 	active.removeCallback(observe)

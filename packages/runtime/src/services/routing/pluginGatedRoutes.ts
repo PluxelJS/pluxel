@@ -1,42 +1,36 @@
-import type { Context } from '@pluxel/core'
-import { isPluginEnabled as isRuntimePluginEnabled } from '../RuntimeStateStore'
+import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 
-export type PluginId = string
+export type PluginOwner = PluginNodeAddress
 export type RouteId = string
 
 export interface PluginGatedDef {
 	id: RouteId
-	plugin: PluginId
+	plugin: PluginOwner
 }
 
-export type IsPluginEnabled = (plugin: PluginId, ctx: Context) => boolean
+export type IsPluginRunning = (plugin: PluginOwner, ctx: Context) => boolean
 
 export interface PluginGatedOptions {
 	/**
-	 * Resolve whether a plugin is enabled.
+	 * Resolve whether a Plugin generation is currently running.
 	 *
-	 * Default: `ctx.runtimeState?.snapshot().enabled.includes(plugin) ?? true`
+	 * Default: the committed Core lifecycle projection.
 	 */
-	isPluginEnabled?: IsPluginEnabled
+	isPluginRunning?: IsPluginRunning
 }
 
 export interface PluginRoutingSnapshot {
-	enabledPlugins: PluginId[]
-	enabledRouteIds: RouteId[]
+	runningPlugins: PluginOwner[]
+	runningRouteIds: RouteId[]
 }
 
-function defaultIsPluginEnabled(plugin: PluginId, ctx: Context): boolean {
-	const runtimeState = (ctx as unknown as { runtimeState?: unknown }).runtimeState as
-		| { snapshot?: () => Parameters<typeof isRuntimePluginEnabled>[0] }
-		| undefined
-	const snapshot = runtimeState?.snapshot
-	return typeof snapshot === 'function'
-		? isRuntimePluginEnabled(snapshot.call(runtimeState), plugin)
-		: true
+function defaultIsPluginRunning(plugin: PluginOwner, ctx: Context): boolean {
+	return requirePluginService(ctx).isRunning(plugin)
 }
 
-export function resolveIsPluginEnabled(options: PluginGatedOptions | undefined): IsPluginEnabled {
-	return options?.isPluginEnabled ?? defaultIsPluginEnabled
+export function resolveIsPluginRunning(options: PluginGatedOptions | undefined): IsPluginRunning {
+	return options?.isPluginRunning ?? defaultIsPluginRunning
 }
 
 export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
@@ -44,18 +38,18 @@ export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
 	routes: readonly T[],
 	options: PluginGatedOptions = {},
 ): PluginRoutingSnapshot {
-	const isPluginEnabled = resolveIsPluginEnabled(options)
-	const enabledPlugins = new Set<PluginId>()
-	const enabledRouteIds: RouteId[] = []
+	const isPluginRunning = resolveIsPluginRunning(options)
+	const runningPlugins = new Map<string, PluginOwner>()
+	const runningRouteIds: RouteId[] = []
 
 	for (const route of routes) {
-		if (!isPluginEnabled(route.plugin, ctx)) continue
-		enabledPlugins.add(route.plugin)
-		enabledRouteIds.push(route.id)
+		if (!isPluginRunning(route.plugin, ctx)) continue
+		runningPlugins.set(pluginNodeIndexKey(route.plugin), route.plugin)
+		runningRouteIds.push(route.id)
 	}
 
 	return {
-		enabledPlugins: [...enabledPlugins].sort(),
-		enabledRouteIds: enabledRouteIds.sort(),
+		runningPlugins: [...runningPlugins.values()],
+		runningRouteIds: runningRouteIds.sort(),
 	}
 }

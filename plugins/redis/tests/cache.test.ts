@@ -1,11 +1,13 @@
 import { v } from '@pluxel/runtime'
-import { Plugin, withHost } from '@pluxel/test'
+import { createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
 	RedisCacheBackendConfig,
 	RedisCacheBackendPlugin,
 	type RedisClient,
+	type RedisConnection,
+	RedisScripts,
 } from '../src/index.ts'
 
 type FakeSetOptions = { expiration?: { type: 'PX'; value: number } }
@@ -72,12 +74,30 @@ function literalPrefix(pattern: string): string {
 	return withoutWildcard.replaceAll(/\\(.)/g, '$1')
 }
 
-@Plugin(Redis, { name: 'FakeRedisPlugin' })
+@Plugin(Redis)
 class FakeRedisPlugin extends Redis {
 	readonly fake = new FakeRedisClient()
+	readonly selectedIds: string[] = []
+	private readonly connections = new Map<string, RedisConnection>(
+		['default', 'cache'].map((id) => [
+			id,
+			{
+				id,
+				client: this.fake as unknown as RedisClient,
+				scripts: new RedisScripts(() => this.fake as unknown as RedisClient),
+			},
+		]),
+	)
 
-	override get client(): RedisClient {
-		return this.fake as unknown as RedisClient
+	override connection(connectionId = 'default'): RedisConnection {
+		this.selectedIds.push(connectionId)
+		const connection = this.connections.get(connectionId)
+		if (!connection) throw new Error('Unknown fake connection')
+		return connection
+	}
+
+	override connectionIds(): readonly string[] {
+		return [...this.connections.keys()]
 	}
 }
 
@@ -87,12 +107,19 @@ describe('@pluxel/redis cache backend', () => {
 			true,
 		)
 		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud800:' }).success).toBe(false)
+		expect(v.safeParse(RedisCacheBackendConfig, { connectionId: 'Invalid ID' }).success).toBe(false)
 	})
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
-		await withHost(async (host) => {
-			host.add([FakeRedisPlugin, RedisCacheBackendPlugin])
-			await host.commit()
+		{
+			await using host = createRuntimeTestHost()
+
+			await host.commit((change) => {
+				change.start(FakeRedisPlugin)
+				change.start(RedisCacheBackendPlugin, {
+					initialConfig: { connectionId: 'cache' },
+				})
+			})
 			const backend = host.require(RedisCacheBackendPlugin)
 			const redis = host.require(FakeRedisPlugin).fake
 			const value = {
@@ -115,16 +142,24 @@ describe('@pluxel/redis cache backend', () => {
 			await backend.set('forever', value, { ttlMs: 0 })
 			expect(redis.ttls.has('pluxel:cache:forever')).toBe(false)
 			expect(await backend.get<typeof value>('forever')).toEqual({ value, ttlMs: 0 })
-		})
+			expect(host.require(FakeRedisPlugin).selectedIds.every((id) => id === 'cache')).toBe(true)
+		}
 	})
 
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
-		await withHost(async (host) => {
-			host.add([FakeRedisPlugin, RedisCacheBackendPlugin])
-			host.cfg(RedisCacheBackendPlugin).set({
-				config: { keyPrefix: 'pluxel[prod]:cache:', scanCount: 3, deleteBatchSize: 2 },
+		{
+			await using host = createRuntimeTestHost()
+
+			await host.commit((change) => {
+				change.start(FakeRedisPlugin)
+				change.start(RedisCacheBackendPlugin, {
+					initialConfig: {
+						keyPrefix: 'pluxel[prod]:cache:',
+						scanCount: 3,
+						deleteBatchSize: 2,
+					},
+				})
 			})
-			await host.commit()
 			const backend = host.require(RedisCacheBackendPlugin)
 			const redis = host.require(FakeRedisPlugin).fake
 			for (const key of ['scope:a', 'scope:b', 'scope:c', 'scope:d', 'other:a']) {
@@ -136,6 +171,6 @@ describe('@pluxel/redis cache backend', () => {
 			expect(redis.scanCalls).toEqual([{ MATCH: 'pluxel\\[prod\\]:cache:scope:*', COUNT: 3 }])
 			expect(redis.unlinkCalls.every((batch) => batch.length <= 2)).toBe(true)
 			expect([...redis.values.keys()]).toEqual(['pluxel[prod]:cache:other:a'])
-		})
+		}
 	})
 })

@@ -1,153 +1,113 @@
 import {
-	checkPluginDecorator,
-	getClassParams,
-	getPluginInfo,
-	getRequiredPluginDependencies,
-	type PluginIdentifier,
+	formatPluginNodeReference,
+	pluginNodeIndexKey,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 } from '@pluxel/core'
-import type {
-	StaticRuntimeCatalogEntry,
-	StaticRuntimeDefinition,
-	StaticRuntimeReportEntry,
-} from '../types'
+import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
+import {
+	createPluginRouteCatalogSnapshot,
+	pluginCatalogEntry,
+	type PluginExecutionSnapshot,
+	type PluginRouteCatalogEntry,
+	type PluginRouteCatalogSnapshot,
+} from '@pluxel/runtime/internal'
+import type { StaticRuntimeDefinition } from '../types.ts'
 
-type ConfigShape = {
-	plugins: Record<string, Record<string, unknown>>
+type ConfigShape = Readonly<{
+	plugins: readonly Readonly<{
+		owner: PluginNodeAddress
+		config: Readonly<Record<string, unknown>>
+	}>[]
+}>
+
+export type StaticRuntimeCatalog = PluginRouteCatalogSnapshot
+export type StaticRuntimeCatalogEntryInternal = PluginRouteCatalogEntry
+export type StaticRuntimeExecutionResolver = (
+	definition: PluginDefinitionAddress,
+) => PluginExecutionSnapshot
+
+export type StaticRuntimeCatalogDiff = Readonly<{
+	readonly added: readonly PluginNodeAddress[]
+	readonly removed: readonly PluginNodeAddress[]
+	readonly replaced: readonly PluginNodeAddress[]
+}>
+
+export function buildCatalog(
+	definition: StaticRuntimeDefinition,
+	revision: number,
+	resolveExecution: StaticRuntimeExecutionResolver,
+): StaticRuntimeCatalog {
+	return createPluginRouteCatalogSnapshot(
+		revision,
+		definition.plugins.map((implementation) => {
+			const candidate = readCandidate(implementation)
+			return {
+				candidate,
+				provenance: Object.freeze({
+					execution: resolveExecution(candidate.declaration.address),
+				}),
+			}
+		}),
+	)
 }
 
-export type StaticRuntimeCatalogEntryInternal = StaticRuntimeCatalogEntry & {
-	readonly info: ReturnType<typeof getPluginInfo>
-	readonly deps: readonly PluginIdentifier[]
-}
-
-export type StaticRuntimeCatalog = {
-	readonly entries: readonly StaticRuntimeCatalogEntryInternal[]
-	readonly byName: ReadonlyMap<string, StaticRuntimeCatalogEntryInternal>
-	readonly byPlugin: ReadonlyMap<PluginIdentifier, StaticRuntimeCatalogEntryInternal>
-	readonly diagnostics: readonly StaticRuntimeReportEntry[]
-}
-
-export type StaticRuntimeCatalogDiff = {
-	readonly added: readonly string[]
-	readonly removed: readonly string[]
-	readonly replaced: readonly string[]
-}
-
-export function buildCatalog(definition: StaticRuntimeDefinition): StaticRuntimeCatalog {
-	const entries: StaticRuntimeCatalogEntryInternal[] = []
-	const diagnostics: StaticRuntimeReportEntry[] = []
-	const byName = new Map<string, StaticRuntimeCatalogEntryInternal>()
-	const byPlugin = new Map<PluginIdentifier, StaticRuntimeCatalogEntryInternal>()
-
-	for (const plugin of definition.plugins) {
-		if (!checkPluginDecorator(plugin)) {
-			diagnostics.push({
-				name: plugin.name || '<anonymous>',
-				status: 'catalog-drift',
-				message: 'plugin constructor is missing @Plugin metadata',
-			})
-			continue
-		}
-
-		const info = getPluginInfo(plugin)
-		const name = info.id
-		if (byName.has(name)) {
-			diagnostics.push({
-				name,
-				status: 'catalog-drift',
-				message: 'duplicate plugin name in static catalog',
-			})
-			continue
-		}
-
-		const deps = uniquePluginDeps([
-			...getClassParams<PluginIdentifier>(plugin),
-			...getRequiredPluginDependencies(plugin, { inherit: true }),
-		])
-		const entry = { name, plugin, info, deps }
-		entries.push(entry)
-		byName.set(name, entry)
-		byPlugin.set(plugin, entry)
-		if (info.base) byPlugin.set(info.base as PluginIdentifier, entry)
-	}
-
-	return { entries, byName, byPlugin, diagnostics }
+function readCandidate(implementation: StaticRuntimeDefinition['plugins'][number]) {
+	return consumePluginDefinitionCandidate(implementation)
 }
 
 export function diffCatalog(
 	previous: StaticRuntimeCatalog,
 	next: StaticRuntimeCatalog,
 ): StaticRuntimeCatalogDiff {
-	const added: string[] = []
-	const removed: string[] = []
-	const replaced: string[] = []
-
-	for (const [name, entry] of next.byName) {
-		const prev = previous.byName.get(name)
-		if (!prev) added.push(name)
-		else if (prev.plugin !== entry.plugin) replaced.push(name)
+	const added: PluginNodeAddress[] = []
+	const removed: PluginNodeAddress[] = []
+	const replaced: PluginNodeAddress[] = []
+	for (const entry of next.entries) {
+		const address: PluginNodeAddress = { definition: entry.address, variant: 'default' }
+		const prior = previous.byDefinition.get(entry.indexKey)
+		if (!prior) added.push(address)
+		else if (prior.candidate !== entry.candidate) replaced.push(address)
 	}
-	for (const [name] of previous.byName) {
-		if (!next.byName.has(name)) removed.push(name)
+	for (const entry of previous.entries) {
+		if (!next.byDefinition.has(entry.indexKey)) {
+			removed.push({ definition: entry.address, variant: 'default' })
+		}
 	}
-
-	return { added, removed, replaced }
-}
-
-export function firstMissingDependency(
-	entry: StaticRuntimeCatalogEntryInternal,
-	catalog: StaticRuntimeCatalog,
-	enabled: ReadonlySet<string>,
-	blocked: ReadonlySet<string>,
-): string | undefined {
-	for (const dep of entry.deps) {
-		const depEntry = catalog.byPlugin.get(dep)
-		if (!depEntry) return describeDependency(dep)
-		if (!enabled.has(depEntry.name) || blocked.has(depEntry.name)) return depEntry.name
-	}
-	return undefined
+	return Object.freeze({
+		added: Object.freeze(added),
+		removed: Object.freeze(removed),
+		replaced: Object.freeze(replaced),
+	})
 }
 
 export type ConfigSnapshotReader = {
-	getConfigSnapshot?: () => ConfigShape
+	getConfigSnapshot(): ConfigShape
 }
 
 export function readConfigSnapshot(configService: ConfigSnapshotReader): ConfigShape {
-	if (typeof configService.getConfigSnapshot === 'function')
-		return configService.getConfigSnapshot()
-	return {
-		plugins: Object.create(null),
-	}
+	return configService.getConfigSnapshot()
 }
 
 export function collectUnknownConfigEntries(
 	snapshot: ConfigShape,
-	known: ReadonlyMap<string, unknown>,
-	enabled: Iterable<string> = [],
-): string[] {
-	const out = new Set<string>()
-	for (const name of enabled) {
-		if (!known.has(name)) out.add(name)
-	}
-	for (const name of Object.keys(snapshot.plugins)) {
-		if (!known.has(name)) out.add(name)
-	}
-	return [...out].sort((a, b) => a.localeCompare(b))
+	catalog: StaticRuntimeCatalog,
+	knownControlNodes: Iterable<PluginNodeAddress> = [],
+): PluginNodeAddress[] {
+	const unknown = new Map<string, PluginNodeAddress>()
+	for (const address of knownControlNodes) collectUnknownNode(address, catalog, unknown)
+	for (const record of snapshot.plugins) collectUnknownNode(record.owner, catalog, unknown)
+	return [...unknown.values()].sort((left, right) =>
+		formatPluginNodeReference(left).localeCompare(formatPluginNodeReference(right)),
+	)
 }
 
-function uniquePluginDeps(deps: readonly PluginIdentifier[]): readonly PluginIdentifier[] {
-	const out: PluginIdentifier[] = []
-	const seen = new Set<PluginIdentifier>()
-	for (const dep of deps) {
-		if (!dep || seen.has(dep)) continue
-		seen.add(dep)
-		out.push(dep)
-	}
-	return out
-}
-
-function describeDependency(dep: PluginIdentifier): string {
-	if (typeof dep !== 'function') return String(dep)
-	if (!checkPluginDecorator(dep)) return dep.name || '<anonymous>'
-	return getPluginInfo(dep).id
+function collectUnknownNode(
+	address: PluginNodeAddress,
+	catalog: StaticRuntimeCatalog,
+	unknown: Map<string, PluginNodeAddress>,
+): void {
+	const definition = pluginCatalogEntry(catalog, address.definition)
+	if (definition) return
+	unknown.set(pluginNodeIndexKey(address), address)
 }

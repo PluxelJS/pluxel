@@ -1,4 +1,4 @@
-import type { InlineConfig } from 'tsdown'
+import type { InlineConfig, TsdownPluginOption } from 'tsdown'
 import Macros from 'unplugin-macros/rolldown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
@@ -10,7 +10,10 @@ import { createPluginDependencyMetadataHook } from './plugin-metadata'
 import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
 
-type TsdownInputOptions = NonNullable<InlineConfig['inputOptions']>
+type TsdownInputOptions = Exclude<
+	NonNullable<InlineConfig['inputOptions']>,
+	(...args: any[]) => unknown
+>
 type TsdownTransformOptions = NonNullable<TsdownInputOptions['transform']>
 
 export type PluginBuildPipelineOptions = {
@@ -34,15 +37,17 @@ export type PluginBuildPipelineOptions = {
 }
 
 export type PluginPackageOptions = PluginBuildPipelineOptions & {
-	packageMetadata?: {
+	packageMetadata: {
 		packageJsonPath: string
 		manifestField: string
-		prefixes: string[]
 		log: BuildLogger
 	}
 }
 
-export type PluginBuildPipeline = Pick<InlineConfig, 'plugins' | 'inputOptions'>
+export type PluginBuildPipeline = {
+	plugins: TsdownPluginOption[]
+	inputOptions: TsdownInputOptions
+}
 
 /**
  * Shared production compiler semantics for plugin sources.
@@ -53,25 +58,21 @@ export type PluginBuildPipeline = Pick<InlineConfig, 'plugins' | 'inputOptions'>
 export function createPluginBuildPipeline(
 	options: PluginBuildPipelineOptions,
 ): PluginBuildPipeline {
-	return createPipeline(options, createPluginSemanticsPlugin().plugin)
+	const semantics = createPluginSemanticsPlugin({ root: options.root })
+	return createPipeline(options, semantics)
 }
 
 function createPipeline(
 	options: PluginBuildPipelineOptions,
-	semanticsPlugin: InlineConfig['plugins'],
+	semantics: ReturnType<typeof createPluginSemanticsPlugin>,
 ): PluginBuildPipeline {
 	const workbench = options.workbench ?? {}
 	const workbenchOptions = workbench === false ? {} : workbench
 	return {
 		plugins: [
 			PreprocessorDirectives(),
-			semanticsPlugin,
-			Macros({
-				viteConfig: {
-					configFile: false,
-					root: options.root,
-				},
-			}),
+			semantics.plugin,
+			Macros(),
 			options.lint === false ? undefined : lintGuardPlugin({ cwd: options.root }),
 			configSourcePlugin(),
 			pluginArtifactBuildPlugin({
@@ -82,6 +83,8 @@ function createPipeline(
 						? false
 						: {
 								minify: workbenchOptions.minify,
+								compilations: () => semantics.workbenchCompilations(),
+								contentCompilations: () => semantics.workbenchContentCompilations(),
 							},
 				node: options.node,
 			}),
@@ -95,10 +98,12 @@ function createPipeline(
 }
 
 /** Standard tsdown overlay for independently published plugin packages. */
-export function pluginPackage(options: PluginPackageOptions): InlineConfig {
+export function pluginPackage(
+	options: PluginPackageOptions,
+): Omit<InlineConfig, 'inputOptions' | 'plugins'> & PluginBuildPipeline {
 	const semantics = createPluginSemanticsPlugin({
-		prefixes: options.packageMetadata?.prefixes,
-		optionalImportMode: 'external',
+		root: options.root,
+		packageJsonPath: options.packageMetadata.packageJsonPath,
 	})
 	return {
 		exports: {
@@ -109,17 +114,13 @@ export function pluginPackage(options: PluginPackageOptions): InlineConfig {
 		deps: {
 			neverBundle: [/^@pluxel\//],
 		},
-		...createPipeline(options, semantics.plugin),
-		...(options.packageMetadata
-			? {
-					onSuccess: createPluginDependencyMetadataHook({
-						packageJsonPath: options.packageMetadata.packageJsonPath,
-						manifestField: options.packageMetadata.manifestField,
-						log: options.packageMetadata.log,
-						collectPlugins: () => semantics.snapshot(),
-					}),
-				}
-			: {}),
+		...createPipeline(options, semantics),
+		onSuccess: createPluginDependencyMetadataHook({
+			packageJsonPath: options.packageMetadata.packageJsonPath,
+			manifestField: options.packageMetadata.manifestField,
+			log: options.packageMetadata.log,
+			collectPlugins: () => semantics.snapshot(),
+		}),
 	}
 }
 
@@ -130,7 +131,7 @@ function createPluginTransformOptions(): TsdownTransformOptions {
 		},
 		decorator: {
 			legacy: true,
-			emitDecoratorMetadata: true,
+			emitDecoratorMetadata: false,
 		},
 		typescript: {
 			removeClassFieldsWithoutInitializer: true,
@@ -171,7 +172,7 @@ function hasUnloweredDecorators(value: unknown): boolean {
 	return Object.values(node).some(hasUnloweredDecorators)
 }
 
-function toPluginArray(plugins: InlineConfig['plugins']): unknown[] {
+function toPluginArray(plugins: InlineConfig['plugins']): TsdownPluginOption[] {
 	if (!plugins) return []
 	return Array.isArray(plugins) ? plugins : [plugins]
 }

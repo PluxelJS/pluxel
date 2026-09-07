@@ -28,13 +28,13 @@ export function sanitizeSecuritySplitLayout(layout: Record<string, number>) {
 
 export function toneForReason(reason?: string): string {
 	switch (reason) {
-		case 'private':
-			return 'gray'
-		case 'missing_oidc':
-		case 'invalid_token':
+		case 'local_setup_required':
+		case 'invalid_credentials':
 		case 'forbidden':
 			return 'red'
-		case 'unauthenticated':
+		case 'authentication_required':
+		case 'authentication_unavailable':
+		case 'secure_transport_required':
 			return 'orange'
 		case 'unlock_required':
 			return 'blue'
@@ -44,20 +44,10 @@ export function toneForReason(reason?: string): string {
 }
 
 export function labelForAccessState(adminAccess: SecurityOverview['adminAccess']): string {
-	if (adminAccess.allow && adminAccess.exposure === 'private') return 'private'
-	if (adminAccess.allow) return 'admin allowed'
-	switch (adminAccess.reason) {
-		case 'missing_oidc':
-			return 'missing oidc'
-		case 'unauthenticated':
-			return 'unauthenticated'
-		case 'invalid_token':
-			return 'invalid token'
-		case 'forbidden':
-			return 'forbidden'
-		default:
-			return 'blocked'
-	}
+	if (!adminAccess.provider) return 'local recovery only'
+	return adminAccess.provider.ready
+		? `${adminAccess.provider.method} ready`
+		: `${adminAccess.provider.method} setup required`
 }
 
 export function labelForVaultState(vault: VaultAdminState): string {

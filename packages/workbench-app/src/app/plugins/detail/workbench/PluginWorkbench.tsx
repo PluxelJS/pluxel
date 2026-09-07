@@ -98,7 +98,7 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 			snap: true,
 			visible: rightPaneVisible,
 			onVisibleChange: setRightPaneVisible,
-			children: <PluginWorkbenchSidebar />,
+			children: rightPaneVisible ? <PluginWorkbenchSidebar /> : null,
 		}),
 		[horizontalLayout, rightPaneVisible, setRightPaneVisible],
 	)

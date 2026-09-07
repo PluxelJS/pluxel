@@ -1,22 +1,23 @@
-import '../../src/register-services'
 import { afterEach } from 'vitest'
-import { createHost, type Host } from '@pluxel/test'
-import type { Context } from '@pluxel/core'
-import { setPluginsEnabled } from '@pluxel/runtime/internal'
+import type { Context, PluginNodeAddress } from '@pluxel/core'
+import type { RuntimeStateSnapshot } from '@pluxel/runtime/internal'
+import {
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
+import { createDynamicRouteContextCapabilities, requireLoaderService } from '../../src/context-plan'
 
 export type HmrTestState = {
-	enabled?: Set<string>
-	runtimeState?: {
-		forks?: Record<string, string[]>
-		baseProviders?: Record<string, string>
-		dependencyOverrides?: Record<string, Record<number, string>>
-	}
+	autoStart?: readonly PluginNodeAddress[]
+	runtimeState?: Partial<
+		Pick<RuntimeStateSnapshot, 'forks' | 'providerDefaults' | 'dependencyOverrides'>
+	>
 }
 
 export type HmrTestContext = {
 	core: Context
 	ctx: Context
-	host: Host
+	host: RuntimeInternalTestHost
 	dispose: () => Promise<void>
 }
 
@@ -29,35 +30,26 @@ afterEach(async () => {
 })
 
 export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
-	const enabled = state.enabled ?? new Set<string>()
-	state.enabled = enabled
-	state.runtimeState ??= {}
-	const loaderHmr = { normalizeId: (id: string) => id }
-	const host = createHost({
-		persistence: { mode: 'memory' },
-		configService: { mode: 'memory' },
-		runtimeState: { mode: 'memory' },
-		root: { loaderHmr },
-	} as Context.Config)
+	const persisted = state.runtimeState ?? {}
+	const host = createRuntimeInternalTestHost(
+		{
+			workbench: false,
+			persistence: { mode: 'memory' },
+			configService: { mode: 'memory' },
+			runtimeState: {
+				mode: 'memory',
+				snapshot: {
+					autoStart: state.autoStart ?? [],
+					forks: persisted.forks ?? [],
+					providerDefaults: persisted.providerDefaults ?? [],
+					dependencyOverrides: persisted.dependencyOverrides ?? [],
+				},
+			},
+		},
+		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
+	)
 	const ctx = host.ctx
-	const runtimeState = ctx.runtimeState
-	const updateRuntimeState = runtimeState.update.bind(runtimeState)
-	runtimeState.update = (run) => {
-		updateRuntimeState(run)
-		syncExternalState(ctx, state)
-	}
-
-	runtimeState.update((draft) => {
-		setPluginsEnabled(draft, enabled, true)
-		const persisted = state.runtimeState ?? {}
-		if (persisted.forks) draft.forks = cloneRecordOfArrays(persisted.forks)
-		if (persisted.baseProviders) draft.baseProviders = cloneStringRecord(persisted.baseProviders)
-		if (persisted.dependencyOverrides) {
-			draft.dependencyOverrides = cloneNestedStringRecord(persisted.dependencyOverrides)
-		}
-	})
-	syncExternalState(ctx, state)
-
+	void requireLoaderService(ctx)
 	const fixture: HmrTestContext = {
 		core: ctx,
 		ctx,
@@ -69,49 +61,4 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 	}
 	active.add(fixture)
 	return fixture
-}
-
-function syncExternalState(ctx: Context, state: HmrTestState): void {
-	const snapshot = ctx.runtimeState.snapshot()
-	const enabled = (state.enabled ??= new Set<string>())
-	enabled.clear()
-	for (const name of snapshot.enabled) enabled.add(name)
-
-	const runtimeState = (state.runtimeState ??= {})
-	runtimeState.forks = cloneRecordOfArrays(snapshot.forks)
-	runtimeState.baseProviders = { ...snapshot.baseProviders }
-	runtimeState.dependencyOverrides = cloneNestedStringRecord(snapshot.dependencyOverrides)
-}
-
-function cloneRecordOfArrays(value: unknown): Record<string, string[]> {
-	const out: Record<string, string[]> = Object.create(null)
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return out
-	for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-		if (!Array.isArray(raw)) continue
-		out[key] = raw.filter((item): item is string => typeof item === 'string')
-	}
-	return out
-}
-
-function cloneStringRecord(value: unknown): Record<string, string> {
-	const out: Record<string, string> = Object.create(null)
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return out
-	for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-		if (typeof raw === 'string') out[key] = raw
-	}
-	return out
-}
-
-function cloneNestedStringRecord(value: unknown): Record<string, Record<number, string>> {
-	const out: Record<string, Record<number, string>> = Object.create(null)
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return out
-	for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-		const entry: Record<number, string> = Object.create(null)
-		for (const [index, target] of Object.entries(raw as Record<string, unknown>)) {
-			if (typeof target === 'string') entry[Number(index)] = target
-		}
-		out[key] = entry
-	}
-	return out
 }

@@ -239,9 +239,42 @@ const configsUseNoRedefault = createRule(
 	}),
 )
 
+const configsUseSingleObjectSchema = createRule(
+	{
+		type: 'problem',
+		docs: { description: 'Require at most one object config schema per Plugin' },
+		messages: {
+			multiple:
+				'Each Plugin may declare at most one `this.configs.use(ObjectSchema)` field; nest related settings in one object schema.',
+			nonObject: '`this.configs.use(...)` must receive an object schema.',
+		},
+	},
+	(context) => ({
+		ClassBody(node) {
+			const fields = collectConfigUseFields(node)
+			if (fields.size > 1) {
+				for (const field of fields.values()) report(context, field, 'multiple')
+			}
+		},
+		CallExpression(node) {
+			if (!isThisConfigsUseCall(node)) return
+			const args = Array.isArray(node.arguments) ? node.arguments : []
+			const schema = unwrapExpression(args[0])
+			if (!schema || schema.type !== 'CallExpression') return
+			const callee = unwrapExpression(schema.callee)
+			if (callee?.type !== 'MemberExpression') return
+			const factory = getStaticPropertyName(callee.property, Boolean(callee.computed))
+			if (factory && factory !== 'object' && factory !== 'objectAsync') {
+				report(context, schema, 'nonObject')
+			}
+		},
+	}),
+)
+
 export const configsRules: Record<string, OxRule> = {
 	'configs-use-top-level-class': configsUseTopLevelClass,
 	'configs-use-no-private-field': configsUseNoPrivateField,
 	'configs-use-no-early-read': configsUseNoEarlyRead,
 	'configs-use-no-redefault': configsUseNoRedefault,
+	'configs-use-single-object-schema': configsUseSingleObjectSchema,
 }

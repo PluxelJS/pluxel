@@ -1,6 +1,14 @@
-import '../../src/register-services'
-import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHost,
+	type RuntimeInternalTestHost,
+} from '@pluxel/runtime/internal/test'
 import type { LoaderBatch } from '../../src/loader/support'
+import type { ScanService } from '../../src/scan/ScanService'
+import {
+	createDynamicRouteContextCapabilities,
+	requireLoaderService,
+	requireScanService,
+} from '../../src/context-plan'
 
 export type ErrorLog = { msg: string; obj: unknown }
 export type LoaderModuleCapture = {
@@ -15,16 +23,19 @@ export function createHmrTestHost(options?: {
 	errorLogs?: ErrorLog[]
 	scanService?: ScanServiceOverride
 }) {
-	const host = createRuntimeHost()
+	const host = createRuntimeInternalTestHost(
+		{ workbench: false },
+		{ routeContextCapabilities: createDynamicRouteContextCapabilities() },
+	)
 	if (options?.errorLogs) captureLoggerErrors(host, options.errorLogs)
 	if (options?.scanService) {
-		;(host.ctx.scanService as typeof host.ctx.scanService & ScanServiceOverride).resolveEntry =
+		;(requireScanService(host.ctx) as ScanService & ScanServiceOverride).resolveEntry =
 			options.scanService.resolveEntry
 	}
 	return host
 }
 
-export function captureLoggerErrors(host: RuntimeHost, errorLogs: ErrorLog[]) {
+export function captureLoggerErrors(host: RuntimeInternalTestHost, errorLogs: ErrorLog[]) {
 	const logger = host.ctx.logger as typeof host.ctx.logger & {
 		error: (messageOrObj: unknown, maybeProps?: unknown) => void
 	}
@@ -39,8 +50,8 @@ export function captureLoggerErrors(host: RuntimeHost, errorLogs: ErrorLog[]) {
 	}
 }
 
-export function captureLoaderModules(host: RuntimeHost, capture: LoaderModuleCapture) {
-	const loader = host.ctx.loader as typeof host.ctx.loader & {
+export function captureLoaderModules(host: RuntimeInternalTestHost, capture: LoaderModuleCapture) {
+	const loader = requireLoaderService(host.ctx) as ReturnType<typeof requireLoaderService> & {
 		beginBatch: () => LoaderBatch
 	}
 	const originalBeginBatch = loader.beginBatch.bind(loader)

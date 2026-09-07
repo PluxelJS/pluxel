@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "plugin",
+	"packageManager": {
+		"name": "pnpm",
+	},
+	"prompts": [
+		{
+			"name": "description",
+			"type": "text",
+			"message": "Package description",
+			"default": "Pluxel plugin: {{ className }}Plugin",
+		},
+	],
+}

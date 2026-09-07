@@ -2,6 +2,7 @@ import { configsRules } from './rules/configs.ts'
 import { importsRules } from './rules/imports.ts'
 import { loggingRules } from './rules/logging.ts'
 import { pluginsRules } from './rules/plugins.ts'
+import { pluginPartsRules } from './rules/plugin-parts.ts'
 import type { OxPlugin } from './types.ts'
 
 export const pluxelRules = {
@@ -9,6 +10,7 @@ export const pluxelRules = {
 	...configsRules,
 	...importsRules,
 	...pluginsRules,
+	...pluginPartsRules,
 }
 
 export type PluxelRuleCategory = 'correctness' | 'logging'
@@ -46,34 +48,14 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'fix',
 	},
+	'configs-use-single-object-schema': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
 	'no-direct-logtape-get-logger': {
 		category: 'logging',
 		buildCritical: false,
-		remediation: 'diagnostic',
-	},
-	'no-workspace-root-import': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-use-top-level-class': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-load-no-class-field': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-load-requires-defined-spec': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-load-no-static-load': {
-		category: 'correctness',
-		buildCritical: true,
 		remediation: 'diagnostic',
 	},
 	'plugin-base-class-requires-plugin-registration': {
@@ -86,10 +68,20 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'plugin-constructor-no-type-only-imports': {
+	'plugin-constructor-canonical-dependencies': {
 		category: 'correctness',
 		buildCritical: true,
-		remediation: 'fix',
+		remediation: 'diagnostic',
+	},
+	'plugin-part-static-occurrences': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
+	'plugin-part-class-contract': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
 	},
 } as const satisfies Record<
 	keyof typeof pluxelRules,

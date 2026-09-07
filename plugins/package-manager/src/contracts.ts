@@ -1,3 +1,5 @@
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+
 export type ManagedPackage = Readonly<{
 	name: string
 	requested: string
@@ -33,7 +35,7 @@ export type PackageManagerSnapshot = Readonly<{
 	dependenciesWithBuildScripts: readonly string[]
 }>
 
-export interface PackageManagerCommands {
+export interface PackageManagerApi extends RpcTarget {
 	snapshot(): Promise<PackageManagerSnapshot>
 	install(specs: readonly string[]): Promise<PackageMutationResult>
 	remove(names: readonly string[]): Promise<PackageMutationResult>

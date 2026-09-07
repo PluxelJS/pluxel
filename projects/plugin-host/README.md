@@ -1,18 +1,22 @@
-# Plugins Host Samples
+# Pluxel Architecture Lab
 
-> Status: internal workspace app (examples + smoke). Not part of the published package set.
+> Status: internal workspace application and end-to-end architecture smoke. It is not published.
 
-`projects/plugin-host` keeps runnable samples for the dynamic and static runtime routes.
+`projects/plugin-host` is the runnable reference host for Pluxel. It loads every official Plugin,
+starts the dependency chains that work without external infrastructure, and exposes the important
+architecture choices through the Workbench instead of leaving them in logs-only toy examples.
 
-Recommended entries:
+The product identity in both routes is **Pluxel Architecture Lab**:
 
-- `dynamic`: host-owned Vite server with `@pluxel/runtime-dynamic/vite`
-- `static`: host-owned Vite server with `@pluxel/runtime-static/vite`
+- `dynamic`: host-owned Vite server, all 18 official concrete Plugins source-loaded through loader
+  HMR, including the dynamic-only Package Manager;
+- `static`: host-owned Vite server and production freezer, the other 17 official Plugins. Package
+  Manager is intentionally absent because its source-producer contract is dynamic-only.
 
-The dynamic Vite config is [vite.dynamic.config.ts](./vite.dynamic.config.ts). The route config is
-[src/pluxel.dynamic.ts](./src/pluxel.dynamic.ts).
-The static Vite config is [vite.static.config.ts](./vite.static.config.ts). The static runtime
-config is [src/pluxel.static.ts](./src/pluxel.static.ts).
+Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default. Pi Agent
+also remains stopped until an Agent Tools assignment and model choice are intentional. This keeps the
+host useful without external infrastructure while preserving real implementation choices in the
+Workbench. Memory is the explicit default for both backend tokens.
 
 ## Run
 
@@ -30,6 +34,74 @@ pnpm plugin-host:static
 pnpm --filter @pluxel/plugins-host static
 ```
 
+Open the Workbench and select **Architecture Lab**. One report generation exercises this graph:
+
+```text
+Rates -> admission Part
+Cache -> rendering Part -> ShowcaseRenderer
+                         ├─ ECharts -> Canvas -> Fonts
+                         ├─ Takumi ----------> Fonts
+                         └─ Canvas ----------> Fonts
+S3 bucket:drafts   -> publishing Part
+S3 bucket:releases -> ReleaseArchivePlugin
+Wretch      -> provider-owned HTTP settings Attachment
+Otel        -> report metrics at /showcase/metrics
+```
+
+The page shows the exact injected nodes, cache/rate facts, generated image, draft object key and
+the Workbench location of each architecture surface. Preview metadata stays small over Cap’n Web;
+the image itself is read from the stored artifact route. The same Plugin also registers:
+
+- HTTP: `GET /showcase/status`, `POST /showcase/generate/:title`,
+  `GET /showcase/artifacts/:id`;
+- Commands: `showcase.report.generate`, `showcase.cache.clear`;
+- Workbench: a Direct View with a fresh Cap'n Web target and observer, plus Wretch's provider-owned
+  Attachment;
+- nested PluginPart config for admission, rendering and publishing.
+
+## Choices worth changing in the Workbench
+
+- Change the `ShowcaseRenderer` dependency between ECharts, Takumi and Canvas. The consumer and its
+  dependent closure restart with a newly bound caller facade.
+- Inspect the single `S3Plugin` provider. Its bounded `drafts` and `releases` bucket catalog keeps
+  the two storage domains explicit without provider forks or dependency overrides.
+- Change `CacheBackend` or `RatesBackend` from Memory to a Redis implementation after configuring
+  and starting Redis. A failed external provider blocks only its required branch.
+- Edit the Report Studio Part config, Wretch Attachment settings, Fonts selection, auth setup and
+  official Plugin config forms.
+- Configure Agent toolsets and assignments through the ordinary `AgentToolsPlugin` config form.
+  External Agent adapters consume its bound catalog; Runtime and Workbench do not own an Agent
+  protocol or dedicated Agent page.
+- Inspect plugin graph, lifecycle and logs; these are host-owned projections of the same runtime
+  state used by the showcase.
+
+The catalog keeps only two focused legacy scenarios that add semantics not already covered by
+Report Studio: a required `EvtChannel` edge and optional-provider attach/detach. Their graph,
+lifecycle and logs are visible in the Workbench. The other examples remain in `src/demo` as focused
+source references and tests without cluttering the default runtime catalog.
+
+## Coding agent runtime operations
+
+Both Vite dev configs explicitly enable the development console. Coding agents must use this
+console for runtime inspection, config edits, Plugin methods, Workbench RPC, data and logs.
+The current local transport supports Unix systems; on Windows disable `devConsole` in these
+configs to run the host without the console.
+
+From the repository root, discover the already running host and use its returned instance ID:
+
+```sh
+pnpm exec pluxel dev instances --root projects/plugin-host
+pnpm exec pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <id>
+```
+
+Static and dynamic can run together under this same project root, so always keep the selected
+instance ID for subsequent `run`, `result` and `cancel` commands. Add ordinary named exports to
+project-local `dev/*.ts` files for further operations; edits do not restart the dev host or replay
+previous operations. The bundled `inspect.ts` only returns current Plugin status.
+
+Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
+Workbench, logs and recovery. Isolated regressions continue to use the test host.
+
 ## Loader HMR Tools
 
 ```sh
@@ -39,13 +111,24 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 
 ## Boundary
 
-- Dynamic uses a host-owned Vite server and wires loader HMR through `dynamicRuntimeVitePlugin`.
+- Dynamic and static use the same official/showcase catalog and auto-start policy, except for the
+  explicit Package Manager boundary.
+- Dynamic uses a host-owned Vite server and wires loader HMR through `dynamicRuntimeVitePlugin`;
+  official packages, host showcases and managed packages are ordinary mutable sources.
 - Static uses a host-owned Vite server and wires the fixed catalog through `staticRuntimeVitePlugin`.
 - Plugin source is always evaluated by the Pluxel Vite/Rolldown transform chain; raw TypeScript
   runners are intentionally not runtime entries.
+- Workbench MF2 producers, exposes and shared policy are generated from definitions. This project
+  does not hand-author a Module Federation config.
 
-The host proves that the same plugin API can run under dynamic HMR and static fixed-catalog
-semantics.
+## Verify
 
-Capability-specific demos that need local state, such as `PluginVaultDemo`, stay in `src/demo` for
-discovery/manual enablement but are not part of the default enabled set.
+```sh
+pnpm --filter @pluxel/plugins-host typecheck
+pnpm --filter @pluxel/plugins-host test
+pnpm --filter @pluxel/plugins-host dynamic:doctor
+pnpm --filter @pluxel/plugins-host build:static
+```
+
+The tests assert the 18/17 official catalog boundary, safe provider defaults, stopped Redis/Pi policy,
+the S3 named-bucket catalog, real render/cache behavior and isolated draft/release storage.

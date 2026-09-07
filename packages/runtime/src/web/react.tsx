@@ -1,59 +1,36 @@
-import { createContext, type ReactNode, useContext, useEffect, useRef } from 'react'
-import {
-	createRuntimeTransportClient,
-	type RuntimeTransportClient,
-	type RuntimeTransportClientOptions,
-} from './client'
+import { createContext, type ReactNode, useContext, useRef } from 'react'
+import { type RuntimeManagementClient } from '../web/client'
 
-const RuntimeTransportClientContext = createContext<RuntimeTransportClient | null>(null)
+const RuntimeManagementClientContext = createContext<RuntimeManagementClient | null>(null)
 
-export type RuntimeTransportClientProviderProps = {
+export type RuntimeManagementClientProviderProps = {
 	children: ReactNode
-	options?: RuntimeTransportClientOptions
-	client?: RuntimeTransportClient
+	client: RuntimeManagementClient
 }
 
-/**
- * Host-only provider for the runtime transport client.
- *
- * Design:
- * - The app owns exactly one client instance (context is required).
- * - No global fetch patching and no hidden singleton fallback.
- */
-export function RuntimeTransportClientProvider({
-	options,
+/** React binding for one host-owned, framework-neutral management client. */
+export function RuntimeManagementClientProvider({
 	client,
 	children,
-}: RuntimeTransportClientProviderProps) {
-	const ref = useRef<RuntimeTransportClient | null>(null)
-	const ownsClient = useRef(false)
-	if (!ref.current) {
-		ref.current = client ?? createRuntimeTransportClient(options)
-		ownsClient.current = !client
+}: RuntimeManagementClientProviderProps) {
+	const ref = useRef<RuntimeManagementClient | null>(null)
+	if (!ref.current) ref.current = client
+	if (ref.current !== client) {
+		throw new Error('RuntimeManagementClientProvider client cannot change within one document')
 	}
-
-	useEffect(() => {
-		return () => {
-			if (ownsClient.current) ref.current?.dispose()
-		}
-	}, [])
-
 	return (
-		<RuntimeTransportClientContext.Provider value={ref.current}>
+		<RuntimeManagementClientContext.Provider value={ref.current}>
 			{children}
-		</RuntimeTransportClientContext.Provider>
+		</RuntimeManagementClientContext.Provider>
 	)
 }
 
-/**
- * Read the host-owned runtime transport client.
- *
- * Throws when used outside `RuntimeTransportClientProvider`.
- */
-export function useRuntimeTransportClient(): RuntimeTransportClient {
-	const client = useContext(RuntimeTransportClientContext)
+export function useRuntimeManagementClient(): RuntimeManagementClient {
+	const client = useContext(RuntimeManagementClientContext)
 	if (!client) {
-		throw new Error('useRuntimeTransportClient must be used within RuntimeTransportClientProvider')
+		throw new Error(
+			'useRuntimeManagementClient must be used within RuntimeManagementClientProvider',
+		)
 	}
 	return client
 }

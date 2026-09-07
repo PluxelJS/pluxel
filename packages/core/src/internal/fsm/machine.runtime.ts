@@ -1,7 +1,7 @@
 // file: src/machine.runtime.ts
 
 import * as cb from './callbacks'
-import { defineMachine } from './defineMachine.macro'
+import { defineMachine } from './defineMachine.macro.ts'
 
 export const fsm = defineMachine({
 	states: ['idle', 'running', 'stopped'] as const,

@@ -4,20 +4,19 @@ Pluxel 官方 Redis capability，同时自带 `RedisCacheBackendPlugin`、`Redis
 依赖抽象 `Redis`；host 选择默认 standalone provider、Vault-aware provider、Sentinel、Cluster 或平台 binding 实现。
 
 ```ts
-import { Redis, RedisPlugin } from '@pluxel/redis'
+import { Redis } from '@pluxel/redis'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'QueuePlugin' })
+@Plugin()
 class QueuePlugin extends BasePlugin {
 	constructor(readonly redis: Redis) {
 		super()
 	}
 
 	push(value: string) {
-		return this.redis.client.lPush('queue', value)
+		return this.redis.connection('queue').client.lPush('queue', value)
 	}
 }
-
-host.add([RedisPlugin, QueuePlugin])
 ```
 
 `Redis` 是 raw server capability，不自动添加 caller namespace。使用普通 Redis command、transaction、stream 或
@@ -26,23 +25,37 @@ pub/sub 的插件需要定义自己的 key/channel contract。需要 caller-awar
 ## 默认 standalone provider
 
 ```ts
-host.cfg(RedisPlugin).set({
-	config: {
-		url: 'redis://127.0.0.1:6379',
-		database: 0,
-		connectTimeoutMs: 10_000,
-		commandQueueMaxLength: 10_000,
-		disableOfflineQueue: true,
-		pingIntervalMs: 0,
-	},
+import { RedisPlugin } from '@pluxel/redis'
+
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [
+				{
+					id: 'queue',
+					url: 'redis://127.0.0.1:6379',
+					database: 0,
+					connectTimeoutMs: 10_000,
+					commandQueueMaxLength: 10_000,
+					disableOfflineQueue: true,
+					pingIntervalMs: 0,
+				},
+			],
+		},
+	})
+	change.start(QueuePlugin)
 })
 ```
+
+这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
+application boundary；production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
 
 - `commandQueueMaxLength` 防止断线或高压期间积累无界 client queue；
 - `disableOfflineQueue: true` 默认让断线期间 command 快速失败，而不是等待不确定时长；
 - `pingIntervalMs: 0` 默认不创建额外 keepalive command，正数时交给 node-redis 周期 PING；
-- client name 自动使用 `pluxel:<runtime-plugin-id>`，便于 Redis 侧诊断；
-- initial connect 失败会让 plugin lifecycle 失败，required consumers 被正常阻塞；
+- client name 自动使用 `pluxel:<runtime-plugin-id>:<connection-id>`，便于 Redis 侧诊断；
+- catalog 限制为 1–64 个唯一 ID，启动时并行连接并建立 O(1) lookup；
+- 任一 initial connect 失败会让整个 provider lifecycle 失败，required consumers 被正常阻塞；
 - stop、replacement、rollback 与 shutdown 都通过 owner effects 关闭连接。
 
 ## Secret 与部署形态
@@ -50,24 +63,15 @@ host.cfg(RedisPlugin).set({
 默认 `RedisPlugin` 只接受无 username/password、无 database path 的 `redis://` 或 `rediss://` endpoint。
 credential 不进入普通 plugin config、Workbench、日志或 persistence。
 
-认证、Sentinel、Cluster、云平台 binding 或自定义 TLS 的应用提供另一个实现：
-
-```ts
-@Plugin(Redis, { name: 'PlatformRedisPlugin' })
-class PlatformRedisPlugin extends Redis {
-	get client(): RedisClient {
-		return this.platformClient
-	}
-}
-```
-
-该 provider 自己通过 Vault 或平台 secret binding 创建 client，并遵守同样的 lifecycle cleanup。consumer 与
+认证、Sentinel、Cluster、云平台 binding 或自定义 TLS 的应用可以提供另一个 `@Plugin(Redis)` 实现。custom provider
+实现相同的 `connection(id)` / `connectionIds()` catalog contract，通过 Vault 或平台 secret binding 创建 client，并遵守同样的
+lifecycle cleanup。consumer 与
 `RedisCacheBackendPlugin`、`RedisRatesBackendPlugin` 都不需要修改。
 
 ## Lua script helper
 
 普通 command 继续直接调用原生 client；需要 Lua 时用 `defineRedisScript()` 声明一次，再通过
-`redis.scripts.use()` 获得稳定 typed runner：
+`redis.connection(id).scripts.use()` 获得稳定 typed runner：
 
 ```ts
 const Increment = defineRedisScript<readonly [string], readonly [string], number>({
@@ -81,22 +85,25 @@ const Increment = defineRedisScript<readonly [string], readonly [string], number
 	},
 })
 
-const increment = redis.scripts.use(Increment)
+const increment = redis.connection('queue').scripts.use(Increment)
 const value = await increment({ keys: ['counter'], arguments: ['2'] })
 ```
 
 definition 自动计算 SHA1、可校验 key 数量并集中 decode reply。runner 优先发送 EVALSHA，遇到 NOSCRIPT 自动回退
 EVAL，所以 Redis restart、failover 或 SCRIPT FLUSH 后不要求 consumer 重新注册。`use()` 对同一 definition 返回同一
-runner；偶发调用也可以直接使用 `redis.scripts.run(definition, call)`。
+runner；偶发调用也可以直接使用 `redis.connection(id).scripts.run(definition, call)`。
 
 只读脚本可以设置 `readOnly: true`，helper 会使用 Redis 7+ 的 EVALSHA_RO/EVAL_RO，便于 Cluster/replica routing；
 需要兼容旧 Redis server 时保持默认 `false`。
 
 ## 多连接
 
-`Redis` opt-in `ForkablePlugin`，因此同一 host 可以创建 cache、queue、session 等多个 Redis connection fork，并为每个
-fork 配置不同 endpoint/database。consumer 或内置 backend 通过正常 dependency override 选择具体 fork，
-不需要在 Redis API 中增加 connection name 参数。
+`RedisPlugin` 在一个 generation 内拥有有界的 named connection catalog。ID 是稳定领域标识，endpoint/database 是该 ID 的配置；
+consumer 通过 `redis.connection(id)` 显式选择，不自行维护 client registry。重复调用对同一 consumer 和 ID 返回同一个
+owner-bound handle，consumer 或 provider 停止后该 handle 会被撤销。
+
+Catalog 是原子 lifecycle 单元：所有配置连接并行启动，任一连接失败都会回滚全部连接。需要独立部署、故障域或扩缩容的 Redis
+服务应成为独立进程/host，而不是在同一 runtime 内复制 Plugin identity。
 
 ## 内置 cache backend
 
@@ -104,22 +111,33 @@ fork 配置不同 endpoint/database。consumer 或内置 backend 通过正常 de
 import { CachePlugin } from '@pluxel/cache'
 import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
-
-host.cfg(RedisCacheBackendPlugin).set({
-	config: {
-		keyPrefix: 'pluxel:cache:',
-		scanCount: 200,
-		deleteBatchSize: 200,
-	},
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [{ id: 'cache', url: 'redis://127.0.0.1:6379' }],
+		},
+	})
+	change.start(RedisCacheBackendPlugin, {
+		initialConfig: {
+			connectionId: 'cache',
+			keyPrefix: 'pluxel:cache:',
+			scanCount: 200,
+			deleteBatchSize: 200,
+		},
+	})
+	change.start(CachePlugin)
+	change.start(AccountsPlugin)
 })
 ```
 
 adapter 使用上述 script helper 原子读取 GET + PTTL，处理 TTL、structured value codec、SCAN 与有界 UNLINK。
-`@pluxel/redis` 直接依赖轻量的 `@pluxel/cache`，因此不需要第三个集成包；`@pluxel/cache` 反向不依赖 Redis，
+`@pluxel/redis` 通过 peer dependency 复用 `@pluxel/cache` 与 `@pluxel/rates` 的 provider contract，
+因此 adapter 与宿主使用同一份 Plugin identity，也不需要第三个集成包。`@pluxel/cache` 反向不依赖 Redis，
 memory-only host 仍不会安装 node-redis。
 
 - cache caller/scope prefix 继续由 `CachePlugin` 生成，`keyPrefix` 只隔离 Redis cache keyspace；
+- cache opaque value 保留 `CachePlugin` 写入的完整结构化 owner envelope，Redis adapter 不解释或删除它；
+- rates state metadata 保存完整 owner address 并由 Lua 校验，Redis 物理 key 只保留 canonical request digest；
 - cache/rates `keyPrefix` 必须是 well-formed Unicode，不接受未配对 surrogate；
 - Cache canonical key 直接追加到 managed prefix，不再 URI 二次转义，保持 byte bound 与 Redis key 紧凑；
 - `ttlMs: 0` 表示无 expiry，正 TTL 使用 millisecond PX；
@@ -137,10 +155,20 @@ adapter 遵循通用 `CacheBackend` contract：`undefined` 只表示 miss，`nul
 import { RatesPlugin } from '@pluxel/rates'
 import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
-
-host.cfg(RedisRatesBackendPlugin).set({
-	config: { keyPrefix: 'pluxel:rates:' },
+await host.commit((change) => {
+	change.start(RedisPlugin, {
+		initialConfig: {
+			connections: [{ id: 'rates', url: 'redis://127.0.0.1:6379' }],
+		},
+	})
+	change.start(RedisRatesBackendPlugin, {
+		initialConfig: {
+			connectionId: 'rates',
+			keyPrefix: 'pluxel:rates:',
+		},
+	})
+	change.start(RatesPlugin)
+	change.start(MessagingPlugin)
 })
 ```
 
@@ -154,11 +182,16 @@ sliding window log 的正常 allow 只读取固定大小的 metadata/边界信�
 10,000 条的 bounded read 计算 `retryAfterMs` 并核对 live cost 总和。rates storage key 必须由 adapter 独占，不能由
 其他 Redis writer 修改。
 
-## Workbench 多态选择
+## Workbench 连接状态与多态选择
 
-Workbench 的 host-owned“依赖注入”卡片会根据 constructor 中的抽象 `Redis` 自动列出全部
-`@Plugin(Redis, ...)` providers。选择结果属于 RuntimeState，commit 会重启被修改 plugin 及其 dependent closure。
-`@pluxel/redis` 不注册专属 Workbench extension，headless host 使用同一 graph contract。
+Workbench-enabled host 会为默认 `RedisPlugin` 显示一张固定的 host-rendered `Content`，以 bounded rows 投影全部 connection ID、
+database、`ready | reconnecting | closed` 状态和最近一次 bounded error type，并允许按 ID 发送原生 `PING`。连接数量不会增加
+Workbench entry、RPC root 或 socket。PING 的 transient payload 最多 256 个字符，只用于一次 round trip，不进入状态、日志或
+持久化；界面不复制 endpoint，也不提供任意 command 或 key browser。
+
+Workbench 的 host-owned“依赖注入”卡片仍根据 constructor 中的抽象 `Redis` 列出不同实现 provider；connection 选择则是 consumer
+自己的领域配置，不进入 RuntimeState dependency override。
+Workbench disabled 时不增加 Redis event listener，headless host 使用同一 graph contract。
 
 同一个卡片也会根据 `CachePlugin(CacheBackend)`、`RatesPlugin(RatesBackend)` 列出 memory 与本包 Redis provider，
 因此 host 可以独立选择 cache backend、rates backend 和底层 Redis provider。

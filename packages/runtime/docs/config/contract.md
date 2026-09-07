@@ -1,56 +1,64 @@
 # Plugin Config (Runtime Contract)
 
-这份文档描述的是 **runtime 与 host/UI** 在“插件配置”上的实现契约；设计原则与推荐写法见仓库级设计文档 `docs/CONFIG.md`。
+这份文档描述 runtime 与 host/UI 的 Plugin config contract。作者声明见
+[`../../../../docs/getting-started/configuration.md`](../../../../docs/getting-started/configuration.md#声明规则)，架构不变量见
+[`../../../../engineering/CONFIG.md`](../../../../engineering/CONFIG.md)。
 
-## `plugin.schema()` 返回值
+## Author fact
 
-Host 通过 `plugin.schema()` 获取：
+每个具体 Plugin 和每个 direct `PluginPart` subclass 各自最多一个普通 class field：
 
-- `schemaSource: Record<schemaKey, string>`
-  Valibot schema 的源码字符串（供 UI/调试展示等）。
-- `defaults: Record<schemaKey, unknown>`
-  Schema 归一化后的默认值快照。
-- `layout?: BuiltinMarkdownPart[] | null`
-  可选的 cfg layout parts，用于 Host 侧自定义配置页排版。
+```ts
+private readonly config = this.configs.use(PluginConfig)
+```
 
-`layout` 是构建期从 `this.configs.use(cfg(schemaMap)\`...\`)` 提取并注入的；未提供时 Host 使用默认布局。
+参数必须是完整 object schema。Part config 位于 occurrence field path；raw/config revision/persistence/application owner 仍只有 owning
+Plugin 一个。runtime 不接受额外 namespace、binding/layout map 或 template DSL。
 
-## Build Metadata Flow
+Plugin/Part 可以在自己的 `init()` 中用 `this.configs.onUpdate(this.config, listener)` 注册一次 generation-bound update listener。
+Control-plane mutation 先验证并持久化 desired composite；running generation 只有在所有变化 declaration 都有 listener 时才按
+children-before-owner 顺序收到通知。全部 listener resolve 后 Core 更新 config fields 与 applied revision；listener 缺失或失败不隐式
+restart，也不回滚 Plugin 已经产生的普通字段、资源或外部副作用。
 
-构建期 `configSourcePlugin` 只分析启动前静态声明，并注入：
+## Presentation result
 
-- `__setConfigSource__(Ctor, key, schemaSource)`
-- `__registerConfigSchema__(Ctor, key, schema)`
-- `__registerConfigBinding__(Ctor, field, keys)`
-- `__setConfigLayout__(Ctor, field, layoutParts)`
+Host 通过 `RuntimeManagementClient.config.presentation(owner)` 查询结构化 `PluginNodeAddress`。成功结果是 versioned、
+serializable plan：
 
-core 快照把这些 metadata 组织到 `configSourceMap / configBindingsMap / configLayoutMap`。
-runtime 的 `plugin.schema()` 再把 Host 真正需要的部分整理成：
+```ts
+{
+	ok: true
+	plan: {
+		version: 1
+		fieldName: string
+		defaults: Record<string, JSONValue>
+		fields: readonly ConfigPresentationFieldV1[]
+		sections: readonly {
+			path: readonly string[]
+			fieldName: string
+			defaults: Record<string, JSONValue>
+			fields: readonly ConfigPresentationFieldV1[]
+		}[]
+	}
+}
+```
 
-- `schemaSource`
-- `defaults`
-- `layout`
+`fieldName` 是工具链验证过的声明 field；`fields` 只包含可移植的 field kind、path、约束和 presentation hint；`defaults` 是
+normalized JSON snapshot。Host 不执行 schema source、`new Function()` 或官方 Mantine renderer。无法无损表示的 schema node
+投影为显式 read-only `unsupported` field；server schema 仍是 validation/default/transform 的唯一权威。
 
-如果存在多个 layout 绑定，runtime 会优先选择“覆盖全部 schema keys”的那个绑定；否则退回到确定性的首个绑定。
+`sections` 包含 root owner（空 path）和拥有 config declaration 的 Part path。宿主可以选择 tabs 或其他布局，但所有 patch、
+persistence、revision 和 application confirmation 仍指向同一个 Plugin node owner。
 
-## `layout` parts
+## Build metadata flow
 
-`BuiltinMarkdownPart` 只有 3 种：
+`configSourcePlugin()` 在 TypeScript class field lowering 前：
 
-- `{ kind: 'md', text }`：纯静态 markdown 文本片段
-- `{ kind: 'schema', key }`：渲染单个 `schemaKey` 的配置表单
-- `{ kind: 'schemas', keys: string[] | null }`：
-  - `keys: string[]`：按顺序渲染指定 keys
-  - `keys: null`：渲染“剩余未放置”的 keys（推荐在末尾放一个避免漏项）
+1. 识别具体 `@Plugin`/`PluginPart` 的 `this.configs.use(ObjectSchema)`；
+2. 拒绝 `#private` field、非 object schema 和同一 owner class 的第二次声明；
+3. 注入 Plugin/Part config facts，并从 `parts.use()` facts 建立 occurrence path；
+4. core 在实例构造后、任何 `init()` 前按 node slot 校验 aggregate，并向每个 owner 注入 normalized slice；
+5. runtime control plane 使用同一 schema 完成 defaults、validate、patch、field patch 和 reset。
 
-约束：
-
-- 同一个 schema key 不能重复放置
-- `schemas()` 只能出现一次，且必须是最后一个 schema-placement token
-
-Host 渲染时应跟踪“已放置 key”，并把未放置的 key 追加到页面末尾（例如 `Unplaced Schemas`），保证配置始终可编辑。
-
-## Builtin Doc 里的 `schema/schemas`
-
-运行期 builtin doc 的 markdown layout 也复用同一套 `{ kind: 'schema' | 'schemas' }` 语义，
-仅用于“在文档里嵌入配置表单”。doc 本身不参与启动前 schema 提取。
+Config record owner 始终是 canonical node address；Core materialization 使用 slot，但 Config/HTTP/RPC/file/environment lookup
+不为读取创建或保留 slot。Workbench 只渲染这个事实，不拥有另一份 config layout 或 validation engine。

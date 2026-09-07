@@ -29,43 +29,43 @@
 	},
 	"scripts": {
 		"build": "pluxel build",
-		"test": "vitest run --config vitest.config.ts && node --test tests-node/*.test.ts",
+		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@grpc/grpc-js": "catalog:",
-		"@opentelemetry/context-async-hooks": "catalog:",
-		"@opentelemetry/core": "catalog:",
-		"@opentelemetry/exporter-logs-otlp-grpc": "catalog:",
-		"@opentelemetry/exporter-logs-otlp-http": "catalog:",
-		"@opentelemetry/exporter-logs-otlp-proto": "catalog:",
-		"@opentelemetry/exporter-metrics-otlp-grpc": "catalog:",
-		"@opentelemetry/exporter-metrics-otlp-http": "catalog:",
-		"@opentelemetry/exporter-metrics-otlp-proto": "catalog:",
-		"@opentelemetry/exporter-prometheus": "catalog:",
-		"@opentelemetry/exporter-trace-otlp-grpc": "catalog:",
-		"@opentelemetry/exporter-trace-otlp-http": "catalog:",
-		"@opentelemetry/exporter-trace-otlp-proto": "catalog:",
-		"@opentelemetry/resources": "catalog:",
-		"@opentelemetry/sdk-logs": "catalog:",
-		"@opentelemetry/sdk-metrics": "catalog:",
-		"@opentelemetry/sdk-trace-base": "catalog:"
+		"@grpc/grpc-js": "catalog:prod",
+		"@opentelemetry/context-async-hooks": "catalog:prod",
+		"@opentelemetry/core": "catalog:prod",
+		"@opentelemetry/exporter-logs-otlp-grpc": "catalog:prod",
+		"@opentelemetry/exporter-logs-otlp-http": "catalog:prod",
+		"@opentelemetry/exporter-logs-otlp-proto": "catalog:prod",
+		"@opentelemetry/exporter-metrics-otlp-grpc": "catalog:prod",
+		"@opentelemetry/exporter-metrics-otlp-http": "catalog:prod",
+		"@opentelemetry/exporter-metrics-otlp-proto": "catalog:prod",
+		"@opentelemetry/exporter-prometheus": "catalog:prod",
+		"@opentelemetry/exporter-trace-otlp-grpc": "catalog:prod",
+		"@opentelemetry/exporter-trace-otlp-http": "catalog:prod",
+		"@opentelemetry/exporter-trace-otlp-proto": "catalog:prod",
+		"@opentelemetry/resources": "catalog:prod",
+		"@opentelemetry/sdk-logs": "catalog:prod",
+		"@opentelemetry/sdk-metrics": "catalog:prod",
+		"@opentelemetry/sdk-trace-base": "catalog:prod"
 	},
 	"devDependencies": {
-		"@opentelemetry/api": "catalog:",
-		"@opentelemetry/api-logs": "catalog:",
+		"@opentelemetry/api": "catalog:dev",
+		"@opentelemetry/api-logs": "catalog:dev",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/node": "^25.9.3",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"@types/node": "catalog:types",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@opentelemetry/api": "catalog:",
-		"@opentelemetry/api-logs": "catalog:",
-		"@pluxel/runtime": "workspace:*"
+		"@opentelemetry/api": "catalog:peer",
+		"@opentelemetry/api-logs": "catalog:peer",
+		"@pluxel/runtime": "workspace:^"
 	}
 }

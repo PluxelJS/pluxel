@@ -17,10 +17,28 @@ const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
 		packageMetadata: {
 			packageJsonPath: context.packageJsonPath,
 			manifestField: context.manifestField,
-			prefixes: context.pluginPrefixes,
 			log: () => {},
 		},
 	})
+
+function fixturePackage(name: string, version: string, exports: readonly string[]) {
+	return {
+		[`node_modules/${name}/package.json`]: JSON.stringify({
+			name,
+			version,
+			type: 'module',
+			exports: Object.fromEntries(
+				exports.map((subpath) => [subpath, subpath === '.' ? './index.js' : `${subpath}.js`]),
+			),
+		}),
+		...Object.fromEntries(
+			exports.map((subpath) => [
+				`node_modules/${name}/${subpath === '.' ? 'index.js' : `${subpath.slice(2)}.js`}`,
+				'export {}\n',
+			]),
+		),
+	}
+}
 
 const buildFixtures = {
 	basic: {
@@ -29,6 +47,9 @@ const buildFixtures = {
 				name: 'pluxel-cli-build-fixture',
 				version: '1.0.0',
 				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 				dependencies: {
 					'pluxel-plugin-alpha': '^1.0.0',
 				},
@@ -43,9 +64,9 @@ const buildFixtures = {
 				},
 				optionalDependencies: {},
 				pluxel: {
-					dependOn: {
-						required: ['pluxel-plugin-stale'],
-						optional: ['pluxel-plugin-beta'],
+					pluginPackages: {
+						'pluxel-plugin-stale': 'required',
+						'pluxel-plugin-beta': 'optional',
 					},
 				},
 			},
@@ -79,13 +100,21 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/runtime'",
 			"import { AlphaPlugin } from 'pluxel-plugin-alpha'",
+			"import type { AlphaPlugin as OptionalAlphaPlugin } from 'pluxel-plugin-alpha'",
+			"import type { BetaPlugin } from 'pluxel-plugin-beta'",
 			'',
-			"const Beta = optionalPlugin(() => import('pluxel-plugin-beta').then(({ BetaPlugin }) => BetaPlugin))",
-			"@Plugin({ name: 'FixturePlugin' })",
-			'export class FixturePlugin extends BasePlugin {',
+			'const Alpha = definePluginRef<OptionalAlphaPlugin>()',
+			'const Beta = definePluginRef<BetaPlugin>()',
+			'class AlphaPart extends PluginPart<FixturePlugin> {',
 			'  constructor(readonly alpha: AlphaPlugin) { super() }',
+			'  init() { this.plugins.use(Alpha, () => undefined) }',
+			'}',
+			"@Plugin({ displayName: 'FixturePlugin' })",
+			'export class FixturePlugin extends BasePlugin {',
+			'  readonly first = this.parts.use(AlphaPart)',
+			'  readonly second = this.parts.use(AlphaPart)',
 			'  init() { this.plugins.use(Beta, () => undefined) }',
 			'}',
 			'',
@@ -97,6 +126,9 @@ const buildFixtures = {
 				name: 'pluxel-cli-build-fixture-custom',
 				version: '1.0.0',
 				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 				dependencies: {
 					'acme-plugin-alpha': '1.2.3',
 				},
@@ -138,11 +170,12 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'",
 			"import { AlphaPlugin } from 'acme-plugin-alpha'",
+			"import type { BetaPlugin } from 'acme-plugin-beta'",
 			'',
-			"const Beta = optionalPlugin(() => import('acme-plugin-beta').then(({ BetaPlugin }) => BetaPlugin))",
-			"@Plugin({ name: 'CustomFixturePlugin' })",
+			'const Beta = definePluginRef<BetaPlugin>()',
+			"@Plugin({ displayName: 'CustomFixturePlugin' })",
 			'export class CustomFixturePlugin extends BasePlugin {',
 			'  constructor(readonly alpha: AlphaPlugin) { super() }',
 			'  init() { this.plugins.use(Beta, () => undefined) }',
@@ -151,11 +184,63 @@ const buildFixtures = {
 		].join('\n'),
 	},
 	runtimeUi: {
+		...fixturePackage('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...fixturePackage('react-dom', '19.2.8', ['.', './client']),
+		...fixturePackage('@mantine/core', '9.5.2', ['.']),
+		...fixturePackage('@mantine/hooks', '9.5.2', ['.']),
+		...fixturePackage('@pluxel/runtime', '1.0.0', [
+			'.',
+			'./capnweb',
+			'./internal/workbench-react',
+			'./workbench',
+			'./workbench/client',
+			'./workbench/react',
+		]),
+		'node_modules/@pluxel/runtime/index.js':
+			'export class BasePlugin {}\nexport function Plugin() { return () => {} }\n',
+		'node_modules/@pluxel/runtime/index.d.ts':
+			'export declare class BasePlugin { ctx: any }\nexport declare function Plugin(input?: unknown): any\n',
+		'node_modules/@pluxel/runtime/capnweb.js': 'export class RpcTarget {}\n',
+		'node_modules/@pluxel/runtime/capnweb.d.ts':
+			'export declare class RpcTarget { [Symbol.dispose](): void }\n',
+		'node_modules/@pluxel/runtime/workbench.js': `
+export const workbench = Object.freeze({
+	entry: (_base, path) => ({ path }),
+	view: (value) => value,
+	tab: (value) => value,
+	define: (value) => Object.freeze(value),
+})
+`,
+		'node_modules/@pluxel/runtime/workbench.d.ts': `
+export declare const workbench: {
+	entry(base: string, path: string): Readonly<{ path: string }>
+	view<Api>(value: Record<string, unknown>): unknown
+	tab(value?: Record<string, unknown>): unknown
+	define<const Entries extends Record<string, unknown>>(value: Entries): Readonly<Entries>
+}
+`,
+		'node_modules/@pluxel/runtime/internal/workbench-react.js': `
+export function createWorkbenchBridge(identity, Renderer) {
+	return Object.freeze({ identity, Renderer })
+}
+`,
+		'node_modules/@pluxel/runtime/internal/workbench-react.d.ts':
+			'export declare function createWorkbenchBridge(identity: unknown, Renderer: unknown): unknown\n',
 		'package.json': JSON.stringify(
 			{
 				name: 'pluxel-cli-build-fixture-runtime-ui',
 				version: '1.0.0',
 				type: 'module',
+				dependencies: {
+					'@mantine/core': '9.5.2',
+					'@mantine/hooks': '9.5.2',
+					'@pluxel/runtime': '1.0.0',
+					react: '19.2.8',
+					'react-dom': '19.2.8',
+				},
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 			},
 			null,
 			2,
@@ -188,26 +273,35 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
+			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+			"import { RpcTarget } from '@pluxel/runtime/capnweb'",
 			"import { workbench } from '@pluxel/runtime/workbench'",
-			"import { workbenchContract } from '@pluxel/runtime/workbench/contract'",
 			'',
-			"const extension = workbench.extension({ contract: workbenchContract.define({}), entry: workbench.entry(import.meta.url, './ui/index.ts') })",
-			"const secondExtension = workbench.extension({ contract: workbenchContract.define({}), entry: workbench.entry(import.meta.url, './ui/second.ts') })",
+			"const first = workbench.entry(import.meta.url, './ui/index.ts')",
+			"const second = workbench.entry(import.meta.url, './ui/second.ts')",
+			'export const DemoWorkbench = workbench.define({',
+			'	first: workbench.view<any>({ renderer: first, placement: workbench.tab() }),',
+			'	second: workbench.view<any>({ renderer: second, placement: workbench.tab() }),',
+			'})',
 			'',
-			'export function registerWorkbench(gate: any) {',
-			'\treturn gate.mount(extension, {})',
+			"@Plugin({ displayName: 'RuntimeUiFixturePlugin' })",
+			'export class RuntimeUiFixturePlugin extends BasePlugin {',
+			'\tinit() {',
+			'\t\tthis.ctx.workbench.publish(DemoWorkbench, {',
+			'\t\t\tfirst: () => new RpcTarget(),',
+			'\t\t\tsecond: () => new RpcTarget(),',
+			'\t\t})',
+			'\t}',
 			'}',
-			'export { secondExtension }',
-			'',
 		].join('\n'),
 		'src/ui/index.ts': [
 			"export const UI_ONLY_MARKER = '__PLUXEL_UI_ONLY_MARKER__'",
-			'export default { views: {} }',
+			'export default function First() { return UI_ONLY_MARKER }',
 			'',
 		].join('\n'),
 		'src/ui/second.ts': [
 			"export const SECOND_UI_ONLY_MARKER = '__PLUXEL_SECOND_UI_ONLY_MARKER__'",
-			'export default { views: {} }',
+			'export default function Second() { return SECOND_UI_ONLY_MARKER }',
 			'',
 		].join('\n'),
 	},
@@ -217,6 +311,9 @@ const buildFixtures = {
 				name: 'pluxel-cli-build-fixture-decorated-plugin',
 				version: '1.0.0',
 				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 			},
 			null,
 			2,
@@ -260,10 +357,10 @@ const buildFixtures = {
 			'declare const __FIXTURE_INPUT__: string',
 			'export const inputOverride = __FIXTURE_INPUT__',
 			'',
-			"@Plugin({ name: 'FixtureProvider' })",
+			"@Plugin({ displayName: 'FixtureProvider' })",
 			'export class FixtureProvider extends BasePlugin {}',
 			'',
-			"@Plugin({ name: 'FixtureConsumer' })",
+			"@Plugin({ displayName: 'FixtureConsumer' })",
 			'export class FixtureConsumer extends BasePlugin {',
 			'\tconstructor(readonly provider: FixtureProvider) {',
 			'\t\tsuper()',
@@ -368,7 +465,7 @@ async function withBuildFixture<T>(
 }
 
 describe('build command', () => {
-	it('synchronizes detected pluxel imports into package.json metadata', async () => {
+	it('dedupes repeated Part requirements and keeps required metadata over optional use', async () => {
 		await withBuildFixture('basic', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 			expect(runtime.projectRoot).toBe(fixtureDir)
@@ -396,7 +493,6 @@ describe('build command', () => {
 				'pluxel-plugin-alpha': 'required',
 				'pluxel-plugin-beta': 'optional',
 			})
-			expect(pkg.pluxel?.dependOn).toBeUndefined()
 
 			const firstManifest = await readFile(runtime.packageJsonPath, 'utf8')
 			await runWithTsdown({
@@ -410,7 +506,7 @@ describe('build command', () => {
 				resolve(fixtureDir, 'src/index.ts'),
 				[
 					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-					"@Plugin({ name: 'FixturePlugin' })",
+					"@Plugin({ displayName: 'FixturePlugin' })",
 					'export class FixturePlugin extends BasePlugin {}',
 				].join('\n'),
 			)
@@ -457,10 +553,36 @@ describe('build command', () => {
 		})
 	})
 
-	it('respects custom env config for prefixes and manifest fields', async () => {
+	it('preserves an all-external tsdown override when merging the plugin preset', async () => {
+		await withBuildFixture('basic', async (fixtureDir) => {
+			await writeFile(
+				resolve(fixtureDir, 'tsdown.config.ts'),
+				[
+					'export default {',
+					"  entry: 'src/index.ts',",
+					"  format: ['esm'],",
+					'  dts: false,',
+					'  deps: { neverBundle: true },',
+					'}',
+				].join('\n'),
+			)
+			const runtime = await resolveBuildContext({})
+
+			await runWithTsdown({
+				context: runtime,
+				log: () => {},
+				extraConfig: pluginPackageOverlay(runtime),
+			})
+
+			expect(await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf8')).toMatch(
+				/from ["']@pluxel\/runtime["']/,
+			)
+		})
+	})
+
+	it('respects custom manifest field config', async () => {
 		try {
 			await withBuildFixture('custom', async (_fixtureDir) => {
-				vi.stubEnv(BuildEnvKeys.pluginPrefix, 'acme-plugin')
 				vi.stubEnv(BuildEnvKeys.manifestField, 'customField')
 
 				const runtime = await resolveBuildContext({})
@@ -521,7 +643,7 @@ describe('build command', () => {
 		}
 	})
 
-	it('preserves pure Workbench declarations and explicit mounting', async () => {
+	it('lowers one direct Workbench definition into one multi-expose MF producer', async () => {
 		await withBuildFixture('runtimeUi', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 
@@ -533,18 +655,27 @@ describe('build command', () => {
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
-			expect(output).toContain('gate.mount')
+			expect(output).toContain('this.ctx.workbench.publish')
 			expect(output).toContain('@pluxel/runtime/workbench')
 			expect(output).not.toContain('.bind(')
 			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
-			const artifactNames = [...output.matchAll(/artifact-[a-f0-9]{12}/g)].map((match) => match[0])
-			expect(new Set(artifactNames).size).toBe(2)
-
 			const workbenchRoot = resolve(fixtureDir, 'dist/workbench')
+			const inventory = JSON.parse(
+				await readFile(resolve(workbenchRoot, 'pluxel-workbench-producers.json'), 'utf-8'),
+			) as {
+				producers: readonly {
+					artifactRoot: string
+					plan: { producer: string; buildRevision: string; entries: readonly unknown[] }
+				}[]
+			}
+			expect(inventory.producers).toHaveLength(1)
+			expect(inventory.producers[0]?.plan.producer).toMatch(/^pluxel_workbench_[a-f0-9]{32}$/)
+			expect(inventory.producers[0]?.plan.entries).toHaveLength(2)
+			const firstProducer = inventory.producers[0]!
 			const files = await readdir(workbenchRoot, { recursive: true })
-			expect(files.filter((file) => String(file).endsWith('mf-manifest.json'))).toHaveLength(2)
-			expect(files.filter((file) => String(file).endsWith('remoteEntry.js'))).toHaveLength(2)
+			expect(files.filter((file) => String(file).endsWith('mf-manifest.json'))).toHaveLength(1)
+			expect(files.filter((file) => String(file).endsWith('remoteEntry.js'))).toHaveLength(1)
 			expect(files.some((file) => String(file).endsWith('.map'))).toBe(false)
 			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
 			const uiOutput = await Promise.all(
@@ -553,12 +684,6 @@ describe('build command', () => {
 			expect(uiOutput.join('\n')).toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(uiOutput.join('\n')).toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
 
-			const cacheRoot = resolve(fixtureDir, '.pluxel/workbench-build')
-			const cacheFiles = await readdir(cacheRoot, { recursive: true })
-			const stamp = cacheFiles.find((file) => String(file).endsWith('pluxel-workbench.json'))
-			expect(stamp).toBeDefined()
-			const firstStamp = await stat(resolve(cacheRoot, String(stamp)))
-
 			await runWithTsdown({
 				context: runtime,
 				onSuccess: async () => {},
@@ -566,17 +691,25 @@ describe('build command', () => {
 				extraConfig: pluginPackageOverlay,
 			})
 
-			const secondStamp = await stat(resolve(cacheRoot, String(stamp)))
-			expect(secondStamp.mtimeMs).toBe(firstStamp.mtimeMs)
 			expect(await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')).not.toContain(
 				'__PLUXEL_UI_ONLY_MARKER__',
 			)
-			const republishedFiles = await readdir(workbenchRoot, { recursive: true })
-			expect(republishedFiles.some((file) => String(file).endsWith('mf-manifest.json'))).toBe(true)
+			const repeatedInventory = JSON.parse(
+				await readFile(resolve(workbenchRoot, 'pluxel-workbench-producers.json'), 'utf-8'),
+			) as typeof inventory
+			expect(repeatedInventory.producers).toEqual([firstProducer])
+			const repeatedManifest = await stat(
+				resolve(fixtureDir, 'dist', firstProducer.artifactRoot, 'mf-manifest.json'),
+			)
+			expect(repeatedManifest.isFile()).toBe(true)
 
 			await writeFile(
-				resolve(fixtureDir, 'package-lock.json'),
-				JSON.stringify({ lockfileVersion: 3, packages: { '': { version: '1.0.1' } } }),
+				resolve(fixtureDir, 'src/ui/index.ts'),
+				[
+					"export const UI_ONLY_MARKER = '__PLUXEL_UI_ONLY_MARKER_V2__'",
+					'export default function First() { return UI_ONLY_MARKER }',
+					'',
+				].join('\n'),
 			)
 			await runWithTsdown({
 				context: runtime,
@@ -584,14 +717,21 @@ describe('build command', () => {
 				log: () => {},
 				extraConfig: pluginPackageOverlay,
 			})
-			const invalidatedCacheFiles = await readdir(cacheRoot, { recursive: true })
-			expect(
-				invalidatedCacheFiles.filter((file) => String(file).endsWith('pluxel-workbench.json')),
-			).toHaveLength(4)
+			const invalidatedInventory = JSON.parse(
+				await readFile(resolve(workbenchRoot, 'pluxel-workbench-producers.json'), 'utf-8'),
+			) as typeof inventory
+			const invalidatedProducer = invalidatedInventory.producers[0]!
+			expect(invalidatedProducer.plan.producer).toBe(firstProducer.plan.producer)
+			expect(invalidatedProducer.plan.buildRevision).not.toBe(firstProducer.plan.buildRevision)
+			expect(invalidatedProducer.artifactRoot).not.toBe(firstProducer.artifactRoot)
+			const invalidatedManifest = await stat(
+				resolve(fixtureDir, 'dist', invalidatedProducer.artifactRoot, 'mf-manifest.json'),
+			)
+			expect(invalidatedManifest.isFile()).toBe(true)
 		})
-	}, 45_000)
+	}, 120_000)
 
-	it('always lowers legacy plugin decorators and emits constructor metadata', async () => {
+	it('lowers plugin definitions and required dependency facts without reflection metadata', async () => {
 		await withBuildFixture('decoratedPlugin', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 			await runWithTsdown({
@@ -603,7 +743,7 @@ describe('build command', () => {
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
 			expect(output).not.toMatch(/@Plugin\b/)
-			expect(output).toContain('design:paramtypes')
+			expect(output).not.toContain('design:paramtypes')
 			expect(output).toContain('FixtureProvider')
 			expect(output).toContain('FixtureConsumer')
 			expect(output).toContain('preserved')

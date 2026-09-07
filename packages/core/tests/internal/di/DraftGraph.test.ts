@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
 	classProvider,
 	DraftGraph,
@@ -101,6 +101,474 @@ describe('DraftGraph', () => {
 		const built = draft.build()
 		expect(built.ok).toBe(false)
 		if ('err' in built) expectBuildError(built.err, 'CircularDependency')
+	})
+
+	it('reports cycles formed by required and optional ordering edges', () => {
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: A, deps: [B], use: A }))
+		draft.put(classProvider({ key: B, optionalDeps: [A], use: B }))
+
+		const built = draft.build()
+		expect(built.ok).toBe(false)
+		if ('err' in built) expectBuildError(built.err, 'CircularDependency')
+	})
+
+	it('builds a 12,000-node dependency chain without using the JavaScript call stack', () => {
+		const draft = createDeepDraft(12_000, false)
+		const built = draft.build()
+		expect(built.ok).toBe(true)
+	})
+
+	it('reports a 12,000-node cycle without leaking RangeError', () => {
+		const draft = createDeepDraft(12_000, true)
+		const built = draft.build()
+		expect(built.ok).toBe(false)
+		if (!('err' in built)) throw new Error('expected the deep cycle build to fail')
+		expect(built.err).not.toBeInstanceOf(RangeError)
+		const cycle = built.err.issues.find((issue) => issue.kind === 'CircularDependency')
+		expect(cycle?.kind === 'CircularDependency' ? cycle.chain : []).toHaveLength(12_001)
+	})
+
+	it('collects a multi-root shared-tail cascade once in committed and pending drafts', () => {
+		const ROOT_A = Symbol('ROOT_A')
+		const ROOT_B = Symbol('ROOT_B')
+		const LEFT = Symbol('LEFT')
+		const RIGHT = Symbol('RIGHT')
+		const SHARED = Symbol('SHARED')
+		const TAIL = Symbol('TAIL')
+		const PENDING = Symbol('PENDING')
+		const draft = new DraftGraph()
+		for (const [key, deps] of [
+			[ROOT_A, []],
+			[ROOT_B, []],
+			[LEFT, [ROOT_A]],
+			[RIGHT, [ROOT_B]],
+			[SHARED, [LEFT, RIGHT]],
+			[TAIL, [SHARED]],
+		] as const) {
+			draft.put(factoryProvider({ key, deps, use: (): undefined => undefined }))
+		}
+		const built = draft.build()
+		if ('err' in built) throw built.err
+		built.val.commit()
+
+		const dependentReads = vi.spyOn(draft.graph, 'dependentSlotsOf')
+		expect(draft.collectCascadeTargetsFrom([ROOT_A, ROOT_B])).toEqual(
+			new Set([ROOT_A, ROOT_B, LEFT, RIGHT, SHARED, TAIL]),
+		)
+		expect(dependentReads).toHaveBeenCalledTimes(6)
+		for (const key of [SHARED, TAIL]) {
+			const slot = draft.graph.slotOf(key)!
+			expect(dependentReads.mock.calls.filter(([read]) => read === slot)).toHaveLength(1)
+		}
+
+		draft.put(factoryProvider({ key: PENDING, deps: [TAIL], use: (): undefined => undefined }))
+		expect(draft.collectCascadeTargetsFrom([ROOT_A, ROOT_B])).toEqual(
+			new Set([ROOT_A, ROOT_B, LEFT, RIGHT, SHARED, TAIL, PENDING]),
+		)
+	})
+
+	it('accepts a missing optional token and links its consumer when a provider appears', () => {
+		const OPTIONAL = Symbol('OPTIONAL')
+		class OptionalProvider {}
+		class OptionalConsumer {}
+		const draft = new DraftGraph()
+		draft.put(
+			classProvider({ key: OptionalConsumer, optionalDeps: [OPTIONAL], use: OptionalConsumer }),
+		)
+
+		const absent = draft.build()
+		expect(absent.ok).toBe(true)
+		if (!absent.ok) return
+		expect(absent.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([])
+		absent.val.commit()
+
+		draft.put(classProvider({ key: OptionalProvider, tokens: [OPTIONAL], use: OptionalProvider }))
+		const present = draft.build()
+		expect(present.ok).toBe(true)
+		if (!present.ok) return
+		expect(present.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([OptionalProvider])
+		expect(present.val.graph.optionalDependentsOf(OptionalProvider)).toEqual([OptionalConsumer])
+		expect(present.val.delta.affected).toContain(OptionalConsumer)
+		expect(absent.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([])
+		present.val.commit()
+
+		draft.remove(OptionalProvider)
+		const removed = draft.build()
+		expect(removed.ok).toBe(true)
+		if (!removed.ok) return
+		expect(removed.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([])
+		expect(removed.val.graph.optionalDependentsOf(OptionalProvider)).toEqual([])
+		expect(removed.val.delta.affected).toContain(OptionalConsumer)
+		expect(present.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([OptionalProvider])
+		expect(present.val.graph.optionalDependentsOf(OptionalProvider)).toEqual([OptionalConsumer])
+	})
+
+	it('retargets optional consumers when an implicit key token appears incrementally', () => {
+		const OPTIONAL = Symbol('OPTIONAL')
+		class OptionalConsumer {}
+		const draft = new DraftGraph()
+		draft.put(
+			classProvider({ key: OptionalConsumer, optionalDeps: [OPTIONAL], use: OptionalConsumer }),
+		)
+
+		const absent = draft.build()
+		expect(absent.ok).toBe(true)
+		if (!absent.ok) return
+		absent.val.commit()
+
+		draft.put(valueProvider({ key: OPTIONAL, use: 42 }))
+		const present = draft.build()
+		expect(present.ok).toBe(true)
+		if (!present.ok) return
+		expect(present.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([OPTIONAL])
+		expect(present.val.graph.optionalDependentsOf(OPTIONAL)).toEqual([OptionalConsumer])
+		expect(new Set(present.val.delta.affected)).toEqual(new Set([OPTIONAL, OptionalConsumer]))
+	})
+
+	it('reuses optional indexes when an incremental build does not touch optional edges', () => {
+		class RequiredProvider {}
+		class RequiredConsumer {}
+		class Independent {}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: RequiredProvider, use: RequiredProvider }))
+		draft.put(
+			classProvider({
+				key: RequiredConsumer,
+				deps: [RequiredProvider],
+				use: RequiredConsumer,
+			}),
+		)
+
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		const optionalDeps = first.val.graph.optionalDepsBySlot()
+		const optionalDependents = first.val.graph.optionalDependentsBySlot()
+		const optionalConsumers = first.val.graph.optionalTokenConsumerSlots()
+
+		draft.put(classProvider({ key: Independent, use: Independent }))
+		const second = draft.build()
+		expect(second.ok).toBe(true)
+		if (!second.ok) return
+
+		expect(second.val.graph.optionalDepsBySlot()).toBe(optionalDeps)
+		expect(second.val.graph.optionalDependentsBySlot()).toBe(optionalDependents)
+		expect(second.val.graph.optionalTokenConsumerSlots()).toBe(optionalConsumers)
+	})
+
+	it('copies touched optional indexes without mutating the committed snapshot', () => {
+		const TOKEN = Symbol('TOKEN')
+		class Provider {}
+		class RequiredConsumer {}
+		class OptionalConsumer {}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: Provider, tokens: [TOKEN], use: Provider }))
+		draft.put(classProvider({ key: RequiredConsumer, deps: [TOKEN], use: RequiredConsumer }))
+		draft.put(
+			classProvider({
+				key: OptionalConsumer,
+				optionalDeps: [TOKEN],
+				use: OptionalConsumer,
+			}),
+		)
+
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		const committed = first.val.graph
+		const optionalDeps = committed.optionalDepsBySlot()
+		const optionalDependents = committed.optionalDependentsBySlot()
+		const optionalConsumers = committed.optionalTokenConsumerSlots()
+
+		draft.replace(RequiredConsumer, classProvider({ key: RequiredConsumer, use: RequiredConsumer }))
+		draft.replace(OptionalConsumer, classProvider({ key: OptionalConsumer, use: OptionalConsumer }))
+
+		const second = draft.build()
+		expect(second.ok).toBe(true)
+		if (!second.ok) return
+
+		expect(second.val.graph.optionalDepsBySlot()).not.toBe(optionalDeps)
+		expect(second.val.graph.optionalDependentsBySlot()).not.toBe(optionalDependents)
+		expect(second.val.graph.optionalTokenConsumerSlots()).not.toBe(optionalConsumers)
+		expect(second.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([])
+		expect(second.val.graph.optionalDependentsOf(Provider)).toEqual([])
+		expect(second.val.graph.optionalConsumers(TOKEN)).toEqual([])
+
+		expect(committed.depsOf(RequiredConsumer)).toEqual([Provider])
+		expect(committed.optionalDepsOf(OptionalConsumer)).toEqual([Provider])
+		expect(committed.optionalDependentsOf(Provider)).toEqual([OptionalConsumer])
+		expect(committed.optionalConsumers(TOKEN)).toEqual([OptionalConsumer])
+	})
+
+	it('does not mutate shared empty dependent lists during replacement retargeting', () => {
+		const TOKEN = Symbol('TOKEN')
+		class Provider {}
+		class ProviderReplacement {}
+		class RequiredConsumer {}
+		class OptionalConsumer {}
+		class Independent {}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: Provider, tokens: [TOKEN], use: Provider }))
+		draft.put(classProvider({ key: RequiredConsumer, deps: [TOKEN], use: RequiredConsumer }))
+		draft.put(
+			classProvider({
+				key: OptionalConsumer,
+				optionalDeps: [TOKEN],
+				use: OptionalConsumer,
+			}),
+		)
+		draft.put(classProvider({ key: Independent, use: Independent }))
+
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		draft.replace(
+			Provider,
+			classProvider({ key: Provider, tokens: [TOKEN], use: ProviderReplacement }),
+		)
+		const second = draft.build()
+		expect(second.ok).toBe(true)
+		if (!second.ok) return
+
+		expect(second.val.graph.dependentsOf(Provider)).toEqual([RequiredConsumer])
+		expect(second.val.graph.optionalDependentsOf(Provider)).toEqual([OptionalConsumer])
+		expect(second.val.graph.dependentsOf(RequiredConsumer)).toEqual([])
+		expect(second.val.graph.optionalDependentsOf(RequiredConsumer)).toEqual([])
+		expect(second.val.graph.dependentsOf(OptionalConsumer)).toEqual([])
+		expect(second.val.graph.optionalDependentsOf(OptionalConsumer)).toEqual([])
+		expect(second.val.graph.dependentsOf(Independent)).toEqual([])
+		expect(second.val.graph.optionalDependentsOf(Independent)).toEqual([])
+	})
+
+	it('reuses the token owner index when replacement keeps the same key and aliases', () => {
+		const SERVICE = Symbol('SERVICE')
+		const ALIAS = Symbol('ALIAS')
+		class ServiceV1 {}
+		class ServiceV2 {}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: SERVICE, tokens: [ALIAS], use: ServiceV1 }))
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		const tokenOwners = first.val.graph.tokenOwnerSlots()
+		draft.replace(SERVICE, classProvider({ key: SERVICE, tokens: [ALIAS], use: ServiceV2 }))
+
+		const second = draft.build()
+		expect(second.ok).toBe(true)
+		if (!second.ok) return
+
+		expect(second.val.graph.tokenOwnerSlots()).toBe(tokenOwners)
+		expect(second.val.graph.resolve(ALIAS)).toBe(SERVICE)
+		expect(second.val.runtime.ensure(SERVICE)).toBeInstanceOf(ServiceV2)
+	})
+
+	it('builds a fixed-size replacement without enumerating committed snapshot tables', () => {
+		class TargetV1 {}
+		class TargetV2 {}
+		class Consumer {
+			constructor(public readonly target: TargetV1 | TargetV2) {}
+		}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: TargetV1, use: TargetV1 }))
+		draft.put(classProvider({ key: Consumer, deps: [TargetV1], use: Consumer }))
+		let farBackground: symbol | undefined
+		for (let index = 0; index < 512; index++) {
+			const key = Symbol(`background-${index}`)
+			farBackground = key
+			draft.put(valueProvider({ key, use: index }))
+		}
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		const graph = first.val.graph
+		const coldRuntime = first.val.runtime as unknown as {
+			resolvingMarks: number[]
+			retainedKnown: number[]
+		}
+		expect(graph.slotCount()).toBe(514)
+		expect(coldRuntime.resolvingMarks).toHaveLength(0)
+		expect(coldRuntime.retainedKnown).toHaveLength(0)
+		const failBulkRead = () => {
+			throw new Error('incremental build enumerated a committed snapshot table')
+		}
+		const declarationsBySlot = graph.declarationsBySlot.bind(graph)
+		const createsBySlot = graph.createsBySlot.bind(graph)
+		const depsBySlot = graph.depsBySlot.bind(graph)
+		const dependentsBySlot = graph.dependentsBySlot.bind(graph)
+		const tokenConsumerSlots = graph.tokenConsumerSlots.bind(graph)
+		graph.declarationsBySlot = failBulkRead as typeof graph.declarationsBySlot
+		graph.createsBySlot = failBulkRead as typeof graph.createsBySlot
+		graph.depsBySlot = failBulkRead as typeof graph.depsBySlot
+		graph.dependentsBySlot = failBulkRead as typeof graph.dependentsBySlot
+		graph.tokenConsumerSlots = failBulkRead as typeof graph.tokenConsumerSlots
+
+		try {
+			draft.replace(TargetV1, classProvider({ key: TargetV1, use: TargetV2 }))
+			const second = draft.build()
+			expect(second.ok).toBe(true)
+			if (!second.ok) return
+			const targetSlot = graph.slotOf(TargetV1)!
+			const backgroundSlot = graph.slotOf(farBackground!)!
+			expect(second.val.graph.declarationsBySlot().pageIdentity(targetSlot)).not.toBe(
+				declarationsBySlot().pageIdentity(targetSlot),
+			)
+			expect(second.val.graph.declarationsBySlot().pageIdentity(backgroundSlot)).toBe(
+				declarationsBySlot().pageIdentity(backgroundSlot),
+			)
+			expect(second.val.graph.depsBySlot().pageIdentity(backgroundSlot)).toBe(
+				depsBySlot().pageIdentity(backgroundSlot),
+			)
+			expect(second.val.delta.affected).toEqual([TargetV1, Consumer])
+			expect(second.val.runtime.ensure<Consumer>(Consumer).target).toBeInstanceOf(TargetV2)
+		} finally {
+			graph.declarationsBySlot = declarationsBySlot
+			graph.createsBySlot = createsBySlot
+			graph.depsBySlot = depsBySlot
+			graph.dependentsBySlot = dependentsBySlot
+			graph.tokenConsumerSlots = tokenConsumerSlots
+		}
+	})
+
+	it('still validates value providers on the token owner reuse path', () => {
+		const SERVICE = Symbol('SERVICE')
+		const DEPENDENCY = Symbol('DEPENDENCY')
+		const draft = new DraftGraph()
+
+		draft.put(valueProvider({ key: SERVICE, use: 1 }))
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		draft.replace(SERVICE, valueProvider({ key: SERVICE, deps: [DEPENDENCY], use: 2 }))
+		const second = draft.build()
+		expect(second.ok).toBe(false)
+		if ('err' in second) expectBuildError(second.err, 'InvalidDeclaration')
+	})
+
+	it('keeps token owner snapshots immutable across incremental add, conflict, and remove', () => {
+		const TOKEN_A = Symbol('TOKEN_A')
+		const TOKEN_B = Symbol('TOKEN_B')
+		class ProviderA {}
+		class ProviderB {}
+		class ConflictingProvider {}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: ProviderA, tokens: [TOKEN_A], use: ProviderA }))
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		draft.put(classProvider({ key: ProviderB, tokens: [TOKEN_B], use: ProviderB }))
+		const second = draft.build()
+		expect(second.ok).toBe(true)
+		if (!second.ok) return
+		expect(first.val.graph.resolve(TOKEN_B)).toBeUndefined()
+		expect(second.val.graph.resolve(TOKEN_B)).toBe(ProviderB)
+		expect(second.val.graph.tokenOwnerSlots().size).toBe(2)
+		second.val.commit()
+
+		draft.put(
+			classProvider({ key: ConflictingProvider, tokens: [TOKEN_A], use: ConflictingProvider }),
+		)
+		const conflict = draft.build()
+		expect(conflict.ok).toBe(false)
+		if ('err' in conflict) expectBuildError(conflict.err, 'TokenConflict')
+		expect(second.val.graph.resolve(TOKEN_A)).toBe(ProviderA)
+
+		draft.reset()
+		draft.remove(ProviderB)
+		const third = draft.build()
+		expect(third.ok).toBe(true)
+		if (!third.ok) return
+		expect(second.val.graph.resolve(TOKEN_B)).toBe(ProviderB)
+		expect(third.val.graph.resolve(TOKEN_B)).toBeUndefined()
+		expect([...third.val.graph.tokenOwnerSlots()]).toEqual([
+			[TOKEN_A, third.val.graph.slotOf(ProviderA)],
+		])
+	})
+
+	it('rejects an incremental key that conflicts with an existing explicit token owner', () => {
+		const TOKEN = Symbol('TOKEN')
+		class ExplicitOwner {}
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: ExplicitOwner, tokens: [TOKEN], use: ExplicitOwner }))
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		draft.put(valueProvider({ key: TOKEN, use: 42 }))
+		const conflict = draft.build()
+		expect(conflict.ok).toBe(false)
+		if ('err' in conflict) expectBuildError(conflict.err, 'TokenConflict')
+		expect(first.val.graph.resolve(TOKEN)).toBe(ExplicitOwner)
+	})
+
+	it('compacts token owner changes across commits without changing map semantics', () => {
+		const ROOT_TOKEN = Symbol('ROOT_TOKEN')
+		const STABLE_TOKEN = Symbol('STABLE_TOKEN')
+		class Provider {}
+		class StableProvider {}
+		class ReplacementProvider {}
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: Provider, tokens: [ROOT_TOKEN], use: Provider }))
+		draft.put(classProvider({ key: StableProvider, tokens: [STABLE_TOKEN], use: StableProvider }))
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		draft.replace(Provider, classProvider({ key: Provider, use: Provider }))
+		draft.put(
+			classProvider({
+				key: ReplacementProvider,
+				tokens: [ROOT_TOKEN],
+				use: ReplacementProvider,
+			}),
+		)
+		const replaced = draft.build()
+		expect(replaced.ok).toBe(true)
+		if (!replaced.ok) return
+		replaced.val.commit()
+
+		const additions = Array.from({ length: 65 }, (_, index) => ({
+			key: Symbol(`provider-${index}`),
+			token: Symbol(`token-${index}`),
+		}))
+		for (const { key, token } of additions) {
+			draft.put(classProvider({ key, tokens: [token], use: Provider }))
+			const added = draft.build()
+			expect(added.ok).toBe(true)
+			if (!added.ok) return
+			added.val.commit()
+		}
+
+		const owners = draft.graph.tokenOwnerSlots()
+		expect(owners.size).toBe(67)
+		expect([...owners.keys()]).toEqual([
+			STABLE_TOKEN,
+			ROOT_TOKEN,
+			...additions.map(({ token }) => token),
+		])
+		for (const { key, token } of additions) expect(draft.graph.resolve(token)).toBe(key)
 	})
 
 	it('reports token conflicts against implicit self tokens', () => {
@@ -339,3 +807,19 @@ describe('DraftGraph', () => {
 		expect(draft.graph.has(UsesLogger)).toBe(true)
 	})
 })
+
+function createDeepDraft(length: number, cyclic: boolean): DraftGraph {
+	const keys = Array.from({ length }, (_, index) => Symbol(`deep-${index}`))
+	const draft = new DraftGraph()
+	for (let index = 0; index < keys.length; index++) {
+		const dependency = index + 1 < keys.length ? keys[index + 1] : cyclic ? keys[0] : undefined
+		draft.put(
+			factoryProvider({
+				key: keys[index]!,
+				...(dependency === undefined ? {} : { deps: [dependency] }),
+				use: (): undefined => undefined,
+			}),
+		)
+	}
+	return draft
+}

@@ -1,11 +1,10 @@
 import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemetry/api'
-import { PLUGIN_HTTP_BASE, v } from '@pluxel/runtime'
-import { withRuntimeHost } from '@pluxel/runtime/test'
-import { BasePlugin, Plugin } from '@pluxel/test'
+import { formatPluginNodeReference, v } from '@pluxel/runtime'
+import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OtelConfig, OtelPlugin } from '../src/index.ts'
 
-@Plugin({ name: 'OtelConsumer' })
+@Plugin({ displayName: 'OtelConsumer' })
 class Consumer extends BasePlugin {
 	private counter!: Counter
 	private duration!: Histogram
@@ -39,34 +38,32 @@ afterEach(() => vi.unstubAllEnvs())
 describe('OtelPlugin', () => {
 	it('exposes native caller-scoped OTel instruments through Prometheus pull', async () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
-		await withRuntimeHost(
-			async (host) => {
-				host.add([OtelPlugin, Consumer])
-				host.cfg(OtelPlugin).set({ config: { otlp: [], prometheus: { path: '/metrics' } } })
-				host.cfg(OtelPlugin).enable()
-				host.cfg(Consumer).enable()
-				await host.commit()
+		{
+			await using host = createRuntimeTestHost({ workbench: false })
+			await host.start(OtelPlugin, {
+				catalog: [Consumer],
+				initialConfig: { otlp: [], prometheus: { path: '/metrics' } },
+			})
+			await host.start(Consumer)
 
-				const consumer = host.require(Consumer)
-				expect(consumer.meters[0]).toBe(consumer.meters[1])
-				consumer.record()
+			const consumer = host.require(Consumer)
+			expect(consumer.meters[0]).toBe(consumer.meters[1])
+			consumer.record()
 
-				const response = await host.ctx.http.fetch(
-					new Request(`http://local.test${PLUGIN_HTTP_BASE}/OtelPlugin/metrics`),
-				)
-				expect(response.status).toBe(200)
-				expect(response.headers.get('content-type')).toContain('text/plain')
-				const body = await response.text()
-				expect(body).toContain('orders_processed')
-				expect(body).toContain('orders_duration')
-				expect(body).toContain('queue_depth')
-				expect(body).toContain('workers_active')
-				expect(body).toContain('otel_scope_name="OtelConsumer"')
-				expect(body).toContain('region="hk"')
-				expect(body).toContain('outcome="ok"')
-			},
-			{ workbench: false },
-		)
+			const response = await host.http.fetch(new URL('/metrics', host.http.origin))
+			expect(response.status).toBe(200)
+			expect(response.headers.get('content-type')).toContain('text/plain')
+			const body = await response.text()
+			expect(body).toContain('orders_processed')
+			expect(body).toContain('orders_duration')
+			expect(body).toContain('queue_depth')
+			expect(body).toContain('workers_active')
+			expect(body).toContain(
+				`otel_scope_name="${formatPluginNodeReference(consumer.ctx.pluginInfo.nodeAddress)}"`,
+			)
+			expect(body).toContain('region="hk"')
+			expect(body).toContain('outcome="ok"')
+		}
 	})
 
 	it('validates exporter selection and pull paths', () => {

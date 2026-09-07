@@ -1,12 +1,13 @@
 # @pluxel/runtime-static
 
-Static route 以一个 `defineStaticRuntime()` 默认导出固定插件 catalog。Vite 开发和 production build 都消费同一入口；插件 API、core lifecycle、runtime services 和 Workbench contract 与 dynamic route 共用。
+Static route 以一个 `defineStaticRuntime()` 默认导出固定插件 catalog。Vite 开发和 production build 都消费同一入口；插件 API、core lifecycle、runtime services，以及 Workbench 的 Direct View/Attachment publication 和 Cap’n Web session 与 dynamic route 共用。
 
 ## Canonical entry
 
 ```ts
 // src/pluxel.static.ts
 import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineProduct } from '@pluxel/runtime/product'
 import { DemoPlugin } from './DemoPlugin.ts'
 
@@ -18,14 +19,12 @@ export const product = defineProduct({
 export default defineStaticRuntime({
 	name: 'app',
 	plugins: [DemoPlugin],
-	configure({ env, deployment }) {
+	configure() {
 		return {
-			runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
-			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
-			workbench:
-				env.PLUXEL_WORKBENCH === 'false'
-					? false
-					: { enabled: true, access: { exposure: 'private' } },
+			runtimeState: {
+				snapshot: { autoStart: [pluginNodeAddressOf(DemoPlugin)] },
+			},
+			persistence: '.pluxel/persistence',
 		}
 	},
 })
@@ -34,7 +33,36 @@ export default defineStaticRuntime({
 可选 named export `product` 是 route-neutral 的应用展示信息。它不进入 `defineStaticRuntime()`；缺失时为 `null`，非法值会使
 entry 加载失败。Vite 与 production bootstrap 都从同一个 ESM module namespace 读取它，标准 re-export 也有效。
 
-`plugins` 是 build-time fixed code graph。`configure()` 的代码会进入 bundle，但会在每次宿主启动时重新读取 env、bindings 和 deployment；plugin config records、runtime enabled state、persistence、logging 与 HTTP 配置仍是运行时数据。
+`plugins` 是 build-time fixed code graph。`configure()` 的代码会进入 bundle，但会在每次宿主启动时重新读取 env、bindings 和 deployment；Plugin config records、RuntimeState 自动启动策略、persistence、logging 与 HTTP 配置仍是运行时数据。
+
+需要用部署变量初始化 Plugin config 时，导出 Plugin 实际使用的 schema，并在 canonical entry 直接声明 binding：
+
+```ts
+import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+import { DemoConfig, DemoPlugin } from './DemoPlugin.ts'
+
+export default defineStaticRuntime({
+	name: 'app',
+	plugins: [DemoPlugin],
+	configEnvironmentBootstrap: [
+		bindConfigEnvironment(DemoPlugin, DemoConfig, {
+			endpoint: 'DEMO_ENDPOINT',
+			timeoutMs: 'DEMO_TIMEOUT_MS',
+		}),
+	],
+})
+```
+
+Binding 只形成 ConfigService bootstrap seed；优先级是 `configure snapshot < binding seed < PLUXEL_CONFIG < existing file`。缺失变量不产生 raw path，transport 从 schema raw input 推导，默认值/transform/validation 仍由同一个 schema 独占。`PLUXEL_*` 名称保留给 framework，secret 不应进入普通 Plugin config。
+
+Static catalog、RuntimeState、config owner 与 HMR 都使用 lowering 生成的结构化 Plugin node address；class name 和 `displayName` 只用于展示。`configure()` 在 canonical entry 完成求值后执行，因此可以在回调中通过 `pluginNodeAddressOf()` 取得 address。源码移动或 root export 重命名会产生新的 identity，并使用对应的当前格式持久化 owner。
+
+Management diagnostics 不把 static 等同于“未知来源”。Vite catalog 根据 semantic graph 报告 `static-catalog` 的
+`source-module`、`built-module` 或诚实的 `unreported`，更新方式统一报告 `catalog-hmr`；production freezer 产物固定报告
+`static-bundle / application-bundle / deployment`。Source 只来自 raw lowering 的 exact fact，built 只来自 active closure 中的
+toolchain literal fact；扩展名、package 路径或没有 source match 都不能推断 artifact。失败 artifact generation rollback 后不会污染
+active facts。这些 execution facts 不改变由 definition address 决定的 package/source identity，也不提供在 running host 内切换
+artifact 的控制 API；Management DTO 不携带 module ID、file URL 或 absolute path。
 
 ## Vite development
 
@@ -47,7 +75,12 @@ export default defineConfig({
 })
 ```
 
-Vite SSR 加载 canonical entry。插件模块变化执行 catalog HMR；entry 或只影响 `configure()` 的依赖变化会重建 host；Workbench UI 由开发 compiler 增量构建。
+Vite SSR 加载 canonical entry。插件模块变化执行 catalog HMR；entry 或只影响 `configure()` 的依赖变化会重建 host；Workbench UI 由开发 compiler 增量构建。Workbench badge 显示“目录 HMR”，artifact 详情仍独立区分源码 module、构建 module 与未报告。
+
+Catalog HMR 成功且没有结构化异常时报告 `applied`。旧 catalog 保持 authority 时报告 `retained-previous`；新 catalog 已提交但 commit path 或 generation lifecycle 有异常时
+报告 `applied-with-issues / commit|lifecycle`，失败 generation 的 partial effects 会按 startup rollback 清理。Full-host replacement
+必须先停止旧 host；candidate host 启动失败时先清理 candidate，再从 previous application definition 创建 fresh compensation host。
+只有 compensation 成功启动才报告 `restored-previous / application-reload`，它不表示旧 running generation 被保留或复活。
 
 ## Production application
 
@@ -62,15 +95,28 @@ export default staticApplication({
 })
 ```
 
-构建产物包含 server entry、fixed plugins、`runtime-static` 与所需 runtime/core closure、deployment manifest，以及 variant 选择的 `workbench/public` shell 和 extension remotes。freezer 生成 namespace-based bootstrap，执行 canonical entry 后分别消费 default application 与 `product`，不静态求值或复制产品字段。业务 SPA 可以独立输出到 `public/`。Node native 或动态依赖由 `nf3` 追踪到产物自己的 `node_modules`；目标机不安装 Pluxel packages。
+构建产物包含 server entry、fixed plugins、`runtime-static` 与所需 runtime/core closure、deployment manifest，以及 variant 选择的 `workbench/public` shell 和 immutable MF producers。freezer 生成 namespace-based bootstrap，执行 canonical entry 后分别消费 default application 与 `product`，不静态求值或复制产品字段。业务 SPA 可以独立输出到 `public/`。Node native 或动态依赖由 `nf3` 追踪到产物自己的 `node_modules`；目标机不安装 Pluxel packages。
 
-`variant` 决定 artifact 是否存在，启动时的 `workbench` 配置决定是否启用。`headless` 产物不能在启动时开启 Workbench。当前 freezer 只生成 Node application，并拥有 HTTP listener 与 signal shutdown；在 runtime services 拆出真正 platform-neutral closure 前不开放 Fetch/Worker target。
+freezer 总会生成 root `.env.example`，包含 Pluxel host 变量；存在 config environment binding 时，再从 direct declaration 和 exported schema facts 追加 Plugin bootstrap 变量。它只写说明和注释 placeholder，不读取 build environment，不生成真实 `.env`；该文件自然进入 distribution inventory。
+
+`variant` 决定 artifact 是否存在；Workbench variant 与 static Vite 默认启用，`PLUXEL_WORKBENCH=false` 可在启动时关闭。`headless` 产物不能在启动时开启 Workbench。Host 从唯一环境入口 `@pluxel/runtime/environment` 导入 universal `env`；需要校验后的行为与默认 data root 时读取 `hostEnv`，不要直接依赖 `process.env`。当前 freezer 只生成 Node application，并拥有 HTTP listener 与 signal shutdown；在 runtime services 拆出真正 platform-neutral closure 前不开放 Fetch/Worker target。
 headless 与 workbench 使用独立的 production adapter，因此 headless server closure 不解析 Workbench backend。
 
-测试使用 `createStaticRuntimeTestHost()`：
+只有断言依赖完整 static application 的 `configure()`、`prepare()`、bindings 或 cold boot 时，才使用 application test host；
+普通 Plugin 行为继续使用 `@pluxel/runtime/test`：
 
 ```ts
-import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
+
+await using host = await startStaticApplicationTestHost(application)
+
+expect(host.startupReport.runtime).toBe('app')
+const response = await host.http.fetch(new URL('/health', host.http.origin))
 ```
 
-用户配置见 [`../../user-docs/host-setup.md`](../../user-docs/host-setup.md)，内部边界见 [`../../docs/RUNTIME.md`](../../docs/RUNTIME.md)。
+factory resolve 时 application cold boot 已完成。返回值只提供冻结的 startup report、fixed-catalog `require()` / `isRunning()`
+查询和共享 Runtime drivers；它没有 root Context、fixture lifecycle mutation、HMR authority 或 physical listener。显式 bindings 的
+application 会在类型层要求传入 `{ bindings }`，省略 `env` 固定使用空对象，不读取测试进程环境。`dispose()` 与
+`[Symbol.asyncDispose]()` 是同一个幂等 teardown。
+
+用户配置见 [`../../docs/getting-started/host-setup.md`](../../docs/getting-started/host-setup.md)，内部边界见 [`../../engineering/RUNTIME.md`](../../engineering/RUNTIME.md)。

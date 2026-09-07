@@ -8,7 +8,7 @@ Pluxel 官方 caller-aware admission control 插件。它对一次 `identity + c
 import { Rates, type RateLimiter } from '@pluxel/rates'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'MessagingPlugin' })
+@Plugin()
 class MessagingPlugin extends BasePlugin {
 	private messages!: RateLimiter
 
@@ -61,7 +61,8 @@ backend 成功判定时只有 allow 和 deny。`remaining` 是判定后可立即
 
 ## Caller 与 global
 
-`rates.use()` 默认把 caller plugin ID 编入 quota namespace。只有多个插件明确共享同一 quota contract 时才使用：
+`rates.use()` 默认按 caller 的 opaque node slot 隔离 quota；backend key 使用结构化 node address 的 SHA-256，并在 backend
+state 中保存、校验完整 owner address。只有多个插件明确共享同一 quota contract 时才使用：
 
 ```ts
 this.egress = this.rates.global.use('platform.tenant-egress', policy)
@@ -76,8 +77,13 @@ global registration 要求所有 owner 使用完全相同的 policy，但 handle
 ```ts
 import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
 
-host.add([MemoryRatesBackendPlugin, RatesPlugin, MessagingPlugin])
-host.cfg(MemoryRatesBackendPlugin).set({ config: { maxIdentities: 10_000 } })
+await host.commit((change) => {
+	change.start(MemoryRatesBackendPlugin, {
+		initialConfig: { maxIdentities: 10_000 },
+	})
+	change.start(RatesPlugin)
+	change.start(MessagingPlugin)
+})
 ```
 
 Memory 不淘汰有效 state；容量满时抛出带可选 `retryAfterMs` 的 `RatesUnavailableError`。进程重启会重置额度。
@@ -88,10 +94,14 @@ Memory 不淘汰有效 state；容量满时抛出带可选 `retryAfterMs` 的 `R
 import { RatesPlugin } from '@pluxel/rates'
 import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 
-host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
+await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 ```
 
-第三方 adapter 从 `@pluxel/rates/backend` 导入 `RatesBackend` 和 request contract；返回值不是 exact、safe-integer 且
+这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。`start()` 会立即提交并等待稳定，`initialConfig` 只用于首次 lifecycle；
+production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
+
+第三方 adapter 从 `@pluxel/rates` 根入口导入 `RatesBackend` 和 request contract；request 的 `owner` 是完整
+`PluginNodeAddress`，显式 global limiter 为 `null`，adapter 持久化 state 时必须保存并校验它。返回值不是 exact、safe-integer 且
 符合 resolved policy capacity bound 的 `RateDecision` 时，coordinator 以 `RATES_UNAVAILABLE` 拒绝。Redis adapter 对 canonical key 做 SHA-256，在一个
 server-timed 单 key Lua 调用中完成 policy check、状态转移和 TTL。
 

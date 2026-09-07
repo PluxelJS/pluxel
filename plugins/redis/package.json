@@ -2,7 +2,7 @@
 	"name": "@pluxel/redis",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Official Redis capability, Lua helpers, cache backend, and rates backend for Pluxel plugins",
+	"description": "Official named Redis connection catalog, Lua helpers, cache backend, and rates backend",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -33,20 +33,23 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@pluxel/cache": "workspace:*",
-		"@pluxel/rates": "workspace:*",
-		"redis": "catalog:"
+		"redis": "catalog:backend"
 	},
 	"devDependencies": {
+		"@pluxel/cache": "workspace:*",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/rates": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/cache": "workspace:^",
+		"@pluxel/rates": "workspace:^",
+		"@pluxel/runtime": "workspace:^"
 	}
 }

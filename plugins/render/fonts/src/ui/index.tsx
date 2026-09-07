@@ -14,18 +14,10 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { createWorkbenchUi, type WorkbenchRpcClient } from '@pluxel/runtime/workbench/ui'
 import { IconRefresh, IconTrash, IconUpload } from '@tabler/icons-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FontsManagerSnapshot, FontsWorkbenchCommands } from '../manager-contract.ts'
-import {
-	FontsSelectionPort,
-	type FontSelectionCommands,
-	type FontSelectionSnapshot,
-} from '../workbench-contract.ts'
-import { FontsWorkbenchUi } from '../workbench-renderer-contract.ts'
+import { useMemo, useState } from 'react'
+import type { FontSelectionSnapshot, FontsManagerSnapshot } from '../workbench-contracts.ts'
 
-const ui = createWorkbenchUi(FontsWorkbenchUi)
 const FONT_ACCEPT = '.ttf,.otf,.ttc,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2'
 
 function messageOf(error: unknown): string {
@@ -56,7 +48,7 @@ function defaultFontOptions(snapshot: FontSelectionSnapshot | undefined) {
 			label: `${item.family} · ${item.source === 'system' ? 'system' : 'registered'}`,
 		})
 	}
-	const selected = snapshot?.defaultFont.workbenchFamily
+	const selected = snapshot?.defaultFont.preferredFamily
 	if (selected && !options.has(selected)) {
 		options.set(selected, { value: selected, label: `${selected} · unavailable` })
 	}
@@ -64,39 +56,28 @@ function defaultFontOptions(snapshot: FontSelectionSnapshot | undefined) {
 }
 
 type FontManagerContentProps = Readonly<{
-	fonts: WorkbenchRpcClient<FontsWorkbenchCommands>
+	snapshot: FontsManagerSnapshot | undefined
+	loading: boolean
+	saving: boolean
+	error: unknown | null
+	onRefresh(): void
+	onPreferredFamilyChange(family: string | null): void
+	onInstall(file: File, family: string): Promise<boolean>
+	onRemove(id: string): void
 }>
 
-function FontManagerContent({ fonts }: FontManagerContentProps) {
-	const requestId = useRef(0)
-	const [snapshot, setSnapshot] = useState<FontsManagerSnapshot>()
+export function FontManagerContent({
+	snapshot,
+	loading,
+	saving,
+	error,
+	onRefresh,
+	onPreferredFamilyChange,
+	onInstall,
+	onRemove,
+}: FontManagerContentProps) {
 	const [file, setFile] = useState<File | null>(null)
 	const [family, setFamily] = useState('')
-	const [loading, setLoading] = useState(true)
-	const [saving, setSaving] = useState(false)
-	const [error, setError] = useState<string>()
-
-	const refresh = useCallback(async () => {
-		const current = ++requestId.current
-		setLoading(true)
-		try {
-			const next = await fonts.snapshot()
-			if (requestId.current !== current) return
-			setSnapshot(next)
-			setError(undefined)
-		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setLoading(false)
-		}
-	}, [fonts])
-
-	useEffect(() => {
-		void refresh()
-		return () => {
-			requestId.current += 1
-		}
-	}, [refresh])
 
 	const managedBytes = useMemo(
 		() => snapshot?.managedFonts.reduce((total, font) => total + font.byteLength, 0) ?? 0,
@@ -104,60 +85,11 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 	)
 	const defaultOptions = useMemo(() => defaultFontOptions(snapshot), [snapshot])
 
-	const setDefaultFamily = async (value: string | null) => {
-		const current = ++requestId.current
-		setSaving(true)
-		try {
-			const next = await fonts.setDefaultFamily(value)
-			if (requestId.current !== current) return
-			setSnapshot(next)
-			setError(undefined)
-		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setSaving(false)
-		}
-	}
-
 	const install = async () => {
-		if (!file || !snapshot) return
-		if (file.size > snapshot.limits.maxFontBytes) {
-			setError(`字体文件超过 ${bytesLabel(snapshot.limits.maxFontBytes)} 上限`)
-			return
-		}
-		const current = ++requestId.current
-		setSaving(true)
-		try {
-			const data = new Uint8Array(await file.arrayBuffer())
-			const next = await fonts.install({
-				fileName: file.name,
-				family: family.trim() || undefined,
-				data,
-			})
-			if (requestId.current !== current) return
-			setSnapshot(next)
+		if (!file) return
+		if (await onInstall(file, family)) {
 			setFile(null)
 			setFamily('')
-			setError(undefined)
-		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setSaving(false)
-		}
-	}
-
-	const remove = async (id: string) => {
-		const current = ++requestId.current
-		setSaving(true)
-		try {
-			const next = await fonts.remove(id)
-			if (requestId.current !== current) return
-			setSnapshot(next)
-			setError(undefined)
-		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setSaving(false)
 		}
 	}
 
@@ -176,13 +108,13 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 					leftSection={<IconRefresh size={14} />}
 					loading={loading}
 					disabled={saving}
-					onClick={() => void refresh()}
+					onClick={onRefresh}
 				>
 					刷新
 				</Button>
 			</Group>
 
-			{error ? <Alert color="red">{error}</Alert> : null}
+			{error ? <Alert color="red">{messageOf(error)}</Alert> : null}
 
 			<Card withBorder radius="md">
 				<Stack gap="sm">
@@ -196,7 +128,7 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 						{snapshot ? <Badge variant="light">{snapshot.defaultFont.source}</Badge> : null}
 					</Group>
 					<Select
-						label="Workbench override"
+						label="Managed preference"
 						description={
 							snapshot
 								? `当前解析为 ${snapshot.defaultFont.family}；清空后恢复 host 配置或系统自动选择。`
@@ -204,11 +136,11 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 						}
 						placeholder="使用 host / system 默认值"
 						data={defaultOptions}
-						value={snapshot?.defaultFont.workbenchFamily ?? null}
+						value={snapshot?.defaultFont.preferredFamily ?? null}
 						disabled={!snapshot || loading || saving}
 						searchable
 						clearable
-						onChange={(value) => void setDefaultFamily(value)}
+						onChange={onPreferredFamilyChange}
 					/>
 				</Stack>
 			</Card>
@@ -306,7 +238,7 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 												size="compact-xs"
 												aria-label={`删除 ${font.fileName}`}
 												disabled={loading || saving}
-												onClick={() => void remove(font.id)}
+												onClick={() => onRemove(font.id)}
 											>
 												<IconTrash size={14} />
 											</Button>
@@ -332,59 +264,24 @@ function FontManagerContent({ fonts }: FontManagerContentProps) {
 	)
 }
 
-export function Fonts() {
-	const { fonts } = ui.useResources()
-	return <FontManagerContent fonts={fonts} />
-}
-
 type FontSelectionContentProps = Readonly<{
-	selection: WorkbenchRpcClient<FontSelectionCommands>
+	snapshot: FontSelectionSnapshot | undefined
+	loading: boolean
+	saving: boolean
+	error: unknown | null
+	onRefresh(): void
+	onPreferredFamilyChange(family: string | null): void
 }>
 
-function FontSelectionContent({ selection }: FontSelectionContentProps) {
-	const requestId = useRef(0)
-	const [snapshot, setSnapshot] = useState<FontSelectionSnapshot>()
-	const [loading, setLoading] = useState(true)
-	const [saving, setSaving] = useState(false)
-	const [error, setError] = useState<string>()
-
-	const refresh = useCallback(async () => {
-		const current = ++requestId.current
-		setLoading(true)
-		try {
-			const next = await selection.snapshot()
-			if (requestId.current !== current) return
-			setSnapshot(next)
-			setError(undefined)
-		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setLoading(false)
-		}
-	}, [selection])
-
-	useEffect(() => {
-		void refresh()
-		return () => {
-			requestId.current += 1
-		}
-	}, [refresh])
-
+export function FontSelectionContent({
+	snapshot,
+	loading,
+	saving,
+	error,
+	onRefresh,
+	onPreferredFamilyChange,
+}: FontSelectionContentProps) {
 	const options = useMemo(() => defaultFontOptions(snapshot), [snapshot])
-	const setDefaultFamily = async (family: string | null) => {
-		const current = ++requestId.current
-		setSaving(true)
-		try {
-			const next = await selection.setDefaultFamily(family)
-			if (requestId.current !== current) return
-			setSnapshot(next)
-			setError(undefined)
-		} catch (caught) {
-			if (requestId.current === current) setError(messageOf(caught))
-		} finally {
-			if (requestId.current === current) setSaving(false)
-		}
-	}
 
 	return (
 		<Stack gap="md" p="md">
@@ -401,13 +298,13 @@ function FontSelectionContent({ selection }: FontSelectionContentProps) {
 					leftSection={<IconRefresh size={14} />}
 					loading={loading}
 					disabled={saving}
-					onClick={() => void refresh()}
+					onClick={onRefresh}
 				>
 					刷新
 				</Button>
 			</Group>
 
-			{error ? <Alert color="red">{error}</Alert> : null}
+			{error ? <Alert color="red">{messageOf(error)}</Alert> : null}
 			<Card withBorder radius="md">
 				<Select
 					label="Pluxel 默认字体"
@@ -418,20 +315,13 @@ function FontSelectionContent({ selection }: FontSelectionContentProps) {
 					}
 					placeholder="使用 host / system 默认值"
 					data={options}
-					value={snapshot?.defaultFont.workbenchFamily ?? null}
+					value={snapshot?.defaultFont.preferredFamily ?? null}
 					disabled={!snapshot || loading || saving}
 					searchable
 					clearable
-					onChange={(value) => void setDefaultFamily(value)}
+					onChange={onPreferredFamilyChange}
 				/>
 			</Card>
 		</Stack>
 	)
 }
-
-export function FontSelection() {
-	const { selection } = ui.usePort(FontsSelectionPort)
-	return <FontSelectionContent selection={selection} />
-}
-
-export default ui.define({ Fonts, FontSelection })

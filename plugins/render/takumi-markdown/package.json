@@ -1,0 +1,63 @@
+{
+	"name": "@pluxel/takumi-markdown",
+	"version": "1.0.0",
+	"description": "Official bounded Markdown-to-Takumi rendering capability for Pluxel plugins",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/render/takumi-markdown"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"rangi": "2.2.0",
+		"satteri": "0.10.5"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/fonts": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/takumi": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@pluxel/runtime": "workspace:^",
+		"@pluxel/takumi": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/takumi": "required"
+		}
+	}
+}

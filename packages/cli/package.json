@@ -1,7 +1,8 @@
 {
 	"name": "@pluxel/cli",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "Pluxel CLI",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -22,42 +23,46 @@
 	"publishConfig": {
 		"exports": {
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"dev": "pnpm run build && node dist/cli.mjs new --dry-run --no-install",
 		"build": "tsdown",
 		"test": "pnpm exec vitest run",
-		"test:templates": "node scripts/smoke-app-monorepo.ts"
+		"test:templates": "node scripts/smoke-plugin.ts",
+		"typecheck": "tsc --noEmit --pretty false --composite false --customConditions development"
 	},
 	"dependencies": {
-		"@clack/prompts": "^1.0.1",
-		"gunshi": "^0.29.2",
-		"jsonc-parser": "^3.3.1",
-		"package-manager-detector": "^1.6.0",
-		"pathe": "^2.0.3",
-		"picomatch": "^4.0.3",
-		"pkg-types": "^2.3.0",
-		"yaml": "^2.8.2"
+		"@clack/prompts": "catalog:prod",
+		"gunshi": "catalog:prod",
+		"jsonc-parser": "catalog:prod",
+		"package-manager-detector": "catalog:prod",
+		"pathe": "catalog:node",
+		"picomatch": "catalog:prod",
+		"pkg-types": "catalog:node",
+		"semver": "catalog:prod",
+		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
-		"@pluxel/market": "catalog:",
+		"@pluxel/market": "catalog:dev",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/picomatch": "^4.0.2",
-		"@types/react": "catalog:",
-		"ink": "^6.8.0",
-		"react": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:"
+		"@types/picomatch": "catalog:types",
+		"@types/react": "catalog:types",
+		"@types/semver": "catalog:types",
+		"ink": "catalog:dev",
+		"react": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev"
 	},
 	"peerDependencies": {
-		"@pluxel/market": "catalog:",
-		"@pluxel/rolldown": "^0.1.0",
-		"@pluxel/runtime-dynamic": "^0.3.0",
-		"oxlint": "^1.58.0",
-		"tsdown": "catalog:"
+		"@pluxel/market": "catalog:peer",
+		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/runtime-dynamic": "workspace:^",
+		"oxlint": "catalog:peer",
+		"tsdown": "catalog:build"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/market": {
@@ -75,5 +80,8 @@
 		"tsdown": {
 			"optional": true
 		}
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

@@ -1,8 +1,10 @@
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
-import { type Context as PluxelContext, Injectable, RootService } from '@pluxel/core'
+import type { Context as PluxelContext } from '@pluxel/core'
+import { pinOwnerContext } from '../../context/owner-view'
 import { basename, join } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
+import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 import { recordSecurityEvent } from '../security/audit'
 import type {
 	VaultAdminState,
@@ -22,9 +24,6 @@ import type {
 	VaultStatusError,
 	VaultUnlockSource,
 } from './types'
-
-const serviceName = 'vault' as const
-const adminServiceName = 'vaultAdmin' as const
 
 export class VaultError extends Error {
 	public readonly code:
@@ -55,7 +54,6 @@ type VaultStore = {
 }
 
 type MountRuntime = {
-	cacheKey: string
 	dir: string
 	keysPath: string
 	statePath: string
@@ -135,6 +133,12 @@ type MountCacheEntry = {
 	}
 }
 
+type VaultRootBacking = Readonly<{
+	store: VaultStore
+	runtime: MountRuntime
+	entry: MountCacheEntry
+}>
+
 function isUnlockedState(
 	state: MountCacheState,
 ): state is Extract<MountCacheState, { status: 'unlocked' }> {
@@ -157,8 +161,6 @@ class AsyncLock {
 	}
 }
 
-const CACHE_SYMBOL = Symbol.for('pluxel:vault:mount-cache')
-const CACHE_IDS_SYMBOL = Symbol.for('pluxel:vault:mount-cache-ids')
 const STATE_MAGIC = textEncode('PVLT2')
 const NONCE_BYTES = 12
 const SHARED_MOUNT = 'global'
@@ -339,21 +341,15 @@ function splitMaterialLines(raw: string): string[] {
 		.filter((line) => line.length > 0 && !line.startsWith('#'))
 }
 
-function getConfig(ctx: PluxelContext): VaultServiceConfig {
-	return ctx.config.vault ?? {}
-}
-
-function resolveRuntime(ctx: PluxelContext): MountRuntime {
-	const cfg = getConfig(ctx)
+function resolveRuntime(config: VaultServiceConfig = {}): MountRuntime {
 	const dir = SHARED_MOUNT
 	return {
-		cacheKey: getMountCacheKey(ctx),
 		dir,
 		keysPath: join(dir, 'keys.age'),
 		statePath: join(dir, 'state.enc'),
 		blobsDir: join(dir, 'blobs'),
-		flushDebounceMs: cfg.flushDebounceMs ?? DEFAULT_FLUSH_DEBOUNCE_MS,
-		deployIdentityEnv: cfg.deployIdentityEnv?.trim() || DEFAULT_DEPLOY_IDENTITY_ENV,
+		flushDebounceMs: config.flushDebounceMs ?? DEFAULT_FLUSH_DEBOUNCE_MS,
+		deployIdentityEnv: config.deployIdentityEnv?.trim() || DEFAULT_DEPLOY_IDENTITY_ENV,
 	}
 }
 
@@ -489,7 +485,7 @@ async function hasHostIdentity(store: VaultStore): Promise<boolean> {
 
 async function resolveManagedRecipients(
 	store: VaultStore,
-	runtime: MountRuntime,
+	_runtime: MountRuntime,
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
 ): Promise<string[]> {
@@ -565,42 +561,12 @@ async function decryptDek(
 	}
 }
 
-function getMountCache(): Map<string, MountCacheEntry> {
-	const g = globalThis as Record<symbol, unknown>
-	const existing = g[CACHE_SYMBOL]
-	if (existing instanceof Map) return existing as Map<string, MountCacheEntry>
-	const created = new Map<string, MountCacheEntry>()
-	g[CACHE_SYMBOL] = created
-	return created
-}
-
-function getMountCacheKey(ctx: PluxelContext): string {
-	const g = globalThis as Record<symbol, unknown> & { __pluxelVaultMountCacheSeq?: number }
-	let ids = g[CACHE_IDS_SYMBOL]
-	if (!(ids instanceof WeakMap)) {
-		ids = new WeakMap<object, string>()
-		g[CACHE_IDS_SYMBOL] = ids
-	}
-	const owner = ctx.root.persistence as unknown as object
-	const existing = ids.get(owner)
-	if (existing) return existing
-	g.__pluxelVaultMountCacheSeq = (g.__pluxelVaultMountCacheSeq ?? 0) + 1
-	const next = `persistence:${g.__pluxelVaultMountCacheSeq}`
-	ids.set(owner, next)
-	return next
-}
-
-function getOrCreateMountCache(key: string): MountCacheEntry {
-	const cache = getMountCache()
-	const existing = cache.get(key)
-	if (existing) return existing
-	const created: MountCacheEntry = {
+function createMountCacheEntry(): MountCacheEntry {
+	return {
 		lock: new AsyncLock(),
 		state: { status: 'locked' },
 		status: { phase: 'sealed', dirty: false },
 	}
-	cache.set(key, created)
-	return created
 }
 
 async function isMountPresent(store: VaultStore, runtime: MountRuntime): Promise<boolean> {
@@ -621,8 +587,8 @@ async function toRuntimeStatus(
 }
 
 function updateStatus(
-	store: VaultStore,
-	runtime: MountRuntime,
+	_store: VaultStore,
+	_runtime: MountRuntime,
 	entry: MountCacheEntry,
 	patch: Partial<MountCacheEntry['status']>,
 ): void {
@@ -669,11 +635,10 @@ function setStatusFailure(
 }
 
 function namespaceFrom(ctx: PluxelContext, options?: VaultNamespaceOptions): string {
-	return normalizeSegment(options?.namespace ?? ctx.pluginInfo?.id ?? 'default')
-}
-
-function findNamespaceState(snapshot: VaultSnapshot, namespace: string) {
-	return snapshot.namespaces[namespace]
+	const address = ctx.pluginInfo?.nodeAddress
+	return normalizeSegment(
+		options?.namespace ?? (address ? `plugin-${pluginNodePhysicalKey(address)}` : 'default'),
+	)
 }
 
 async function loadMountState(
@@ -715,8 +680,7 @@ async function createMountKey(
 	return dek
 }
 
-async function createDeployKeyPair(ctx: PluxelContext): Promise<VaultKeyPair> {
-	const runtime = resolveRuntime(ctx)
+async function createDeployKeyPair(runtime: MountRuntime): Promise<VaultKeyPair> {
 	const envName = runtime.deployIdentityEnv
 	const privateKey = await generateIdentity()
 	return {
@@ -789,15 +753,26 @@ function blobPath(runtime: MountRuntime, namespace: string, name: string): strin
  * - hot data (`kv` + `docs`) stays in memory and flushes to a symmetric snapshot
  * - blobs are separate symmetric files keyed by the same DEK
  */
-@Injectable({ key: serviceName })
 export class VaultService {
-	constructor(public ctx: PluxelContext) {}
+	private managed?: ManagedVault
+
+	constructor(
+		public readonly ctx: PluxelContext,
+		config: VaultServiceConfig = {},
+		private readonly backing: VaultRootBacking = createVaultRootBacking(ctx, config),
+	) {
+		pinOwnerContext(this, ctx)
+	}
+
+	/** @internal Create an owner projection over the root-owned mount state. */
+	forOwner(owner: PluxelContext): VaultService {
+		return owner === this.ctx ? this : new VaultService(owner, {}, this.backing)
+	}
 
 	managedVault(): ManagedVault {
+		if (this.managed) return this.managed
 		const ctx = this.ctx
-		const store = createVaultStore(ctx.root.persistence.namespace('vault'))
-		const runtime = resolveRuntime(ctx)
-		const entry = getOrCreateMountCache(runtime.cacheKey)
+		const { store, runtime, entry } = this.backing
 
 		const currentStatus = () => toRuntimeStatus(store, runtime, entry)
 
@@ -904,7 +879,7 @@ export class VaultService {
 			if (isUnlockedState(entry.state)) return entry.state
 			throw new VaultError(
 				'ACCESS_DENIED',
-				`Vault mount "${SHARED_MOUNT}" is not prepared. Call ctx.root.vaultAdmin.preflight() before plugin startup.`,
+				`Vault mount "${SHARED_MOUNT}" is not prepared; the host must complete Context capability preparation before plugin startup.`,
 			)
 		}
 
@@ -1082,16 +1057,13 @@ export class VaultService {
 
 		const kv = (namespaceOptions?: VaultNamespaceOptions): VaultKvHandle => {
 			const namespace = namespaceFrom(ctx, namespaceOptions)
+			const stateOf = (snapshot: VaultSnapshot) => snapshot.namespaces[namespace]
 
 			return {
 				get: async <T>(key: string) =>
-					await readSnapshot(
-						(snapshot) => findNamespaceState(snapshot, namespace)?.kv[key] as T | undefined,
-					),
+					await readSnapshot((snapshot) => stateOf(snapshot)?.kv[key] as T | undefined),
 				has: async (key: string) =>
-					await readSnapshot(
-						(snapshot) => key in (findNamespaceState(snapshot, namespace)?.kv ?? {}),
-					),
+					await readSnapshot((snapshot) => key in (stateOf(snapshot)?.kv ?? {})),
 				set: async (key: string, value: unknown) => {
 					await mutateNamespace(namespace, async (namespaceState) => {
 						namespaceState.kv[key] = value
@@ -1122,15 +1094,10 @@ export class VaultService {
 					})
 				},
 				keys: async () =>
-					await readSnapshot((snapshot) =>
-						Object.keys(findNamespaceState(snapshot, namespace)?.kv ?? {}).sort(),
-					),
+					await readSnapshot((snapshot) => Object.keys(stateOf(snapshot)?.kv ?? {}).sort()),
 				entries: async <T = unknown>() =>
 					await readSnapshot(
-						(snapshot) =>
-							Object.entries(findNamespaceState(snapshot, namespace)?.kv ?? {}) as Array<
-								[string, T]
-							>,
+						(snapshot) => Object.entries(stateOf(snapshot)?.kv ?? {}) as Array<[string, T]>,
 					),
 				batch: async <T>(run: (tx: VaultKvTransaction) => T | Promise<T>) => {
 					const result = await mutateNamespace(namespace, async (namespaceState) => {
@@ -1165,6 +1132,7 @@ export class VaultService {
 
 		const docs = (namespaceOptions?: VaultNamespaceOptions): VaultDocsHandle => {
 			const namespace = namespaceFrom(ctx, namespaceOptions)
+			const stateOf = (snapshot: VaultSnapshot) => snapshot.namespaces[namespace]
 
 			return {
 				collection: <TDoc extends Record<string, unknown> = Record<string, unknown>>(
@@ -1178,9 +1146,7 @@ export class VaultService {
 							get: async () =>
 								await readSnapshot(
 									(snapshot) =>
-										findNamespaceState(snapshot, namespace)?.docs[collectionName]?.[docId] as
-											| TDoc
-											| undefined,
+										stateOf(snapshot)?.docs[collectionName]?.[docId] as TDoc | undefined,
 								),
 							set: async (value: TDoc) => {
 								await mutateNamespace(namespace, async (namespaceState) => {
@@ -1209,8 +1175,7 @@ export class VaultService {
 							},
 							exists: async () =>
 								await readSnapshot(
-									(snapshot) =>
-										docId in (findNamespaceState(snapshot, namespace)?.docs[collectionName] ?? {}),
+									(snapshot) => docId in (stateOf(snapshot)?.docs[collectionName] ?? {}),
 								),
 						}
 					}
@@ -1223,14 +1188,11 @@ export class VaultService {
 						delete: async (id: string) => await docHandle(id).delete(),
 						ids: async () =>
 							await readSnapshot((snapshot) =>
-								Object.keys(
-									findNamespaceState(snapshot, namespace)?.docs[collectionName] ?? {},
-								).sort(),
+								Object.keys(stateOf(snapshot)?.docs[collectionName] ?? {}).sort(),
 							),
 						list: async () =>
 							await readSnapshot((snapshot) => {
-								const docsState =
-									findNamespaceState(snapshot, namespace)?.docs[collectionName] ?? {}
+								const docsState = stateOf(snapshot)?.docs[collectionName] ?? {}
 								return Object.entries(docsState).map(([id, value]) => ({
 									id,
 									value: value as TDoc,
@@ -1255,7 +1217,6 @@ export class VaultService {
 					const path = blobPath(runtime, namespace, name)
 					const readBytes = async () => {
 						const dek = await readDek(false)
-						if (!(await store.exists(path))) return undefined
 						const encrypted = await store.readBytes(path)
 						return encrypted ? await aesDecrypt(dek, encrypted) : undefined
 					}
@@ -1282,8 +1243,7 @@ export class VaultService {
 							)
 						},
 						remove: async () => {
-							if (!(await store.exists(path))) return
-							await store.delete(path)
+							if (await store.exists(path)) await store.delete(path)
 						},
 						describe: () => ({ path }),
 					}
@@ -1297,9 +1257,8 @@ export class VaultService {
 							throw error
 						}
 					})
-					const namespaceDir = join(runtime.blobsDir, namespace)
-					const names = await store.listChildren(namespaceDir)
-					return names
+					const blobNames = await store.listChildren(join(runtime.blobsDir, namespace))
+					return blobNames
 						.filter((blobName) => blobName.endsWith('.blob'))
 						.map((blobName) => blobName.slice(0, -'.blob'.length))
 						.sort()
@@ -1308,7 +1267,8 @@ export class VaultService {
 		}
 
 		const namespaceHandle = (name?: string): VaultNamespace => {
-			const resolvedNamespace = namespaceFrom(ctx, { namespace: name })
+			const namespaceOptions = name === undefined ? undefined : { namespace: name }
+			const resolvedNamespace = namespaceFrom(ctx, namespaceOptions)
 			const batch = async <T>(run: (tx: VaultNamespaceTransaction) => T | Promise<T>) => {
 				const result = await mutateNamespace(resolvedNamespace, async (namespaceState) => {
 					let changed = false
@@ -1381,9 +1341,9 @@ export class VaultService {
 			}
 			return {
 				name: resolvedNamespace,
-				kv: () => kv({ namespace: resolvedNamespace }),
-				docs: () => docs({ namespace: resolvedNamespace }),
-				blobs: () => blobs({ namespace: resolvedNamespace }),
+				kv: () => kv(namespaceOptions),
+				docs: () => docs(namespaceOptions),
+				blobs: () => blobs(namespaceOptions),
 				batch,
 			}
 		}
@@ -1607,6 +1567,7 @@ export class VaultService {
 			},
 			describe,
 		}
+		this.managed = vault
 		return vault
 	}
 
@@ -1630,17 +1591,27 @@ export class VaultService {
 		return this.managedVault().flush()
 	}
 
-	private async sealMountForTesting(): Promise<void> {
+	/** @internal Root admin projection reuses the immutable mount runtime inputs. */
+	generateDeployKey(): Promise<VaultKeyPair> {
+		return createDeployKeyPair(this.backing.runtime)
+	}
+
+	/** @internal */
+	async sealMountForTesting(): Promise<void> {
 		await this.managedVault().sealForRuntime()
 	}
 }
 
-@RootService({ key: adminServiceName, eager: true })
 export class VaultAdminService {
-	constructor(public ctx: PluxelContext) {}
+	constructor(
+		public readonly ctx: PluxelContext,
+		private readonly vault: VaultService,
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	private managedVault(): ManagedVault {
-		return (this.ctx.root.vault as unknown as VaultService).managedVault()
+		return this.vault.managedVault()
 	}
 
 	preflight(): Promise<VaultAdminState> {
@@ -1657,7 +1628,7 @@ export class VaultAdminService {
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error)
 			throw new Error(
-				`[runtime:vault] Vault is enabled but not ready. The runtime imported @pluxel/runtime/services/vault, so vault must be unlocked before plugins start. Reason: ${reason}. To find vault consumers, run: rg "@pluxel/runtime/services/vault|ctx\\\\.vault" .`,
+				`[runtime:vault] Vault is enabled but not ready. It must be unlocked before plugins start. Reason: ${reason}.`,
 				{ cause: error },
 			)
 		}
@@ -1684,6 +1655,17 @@ export class VaultAdminService {
 	}
 
 	generateDeployKey(): Promise<VaultKeyPair> {
-		return createDeployKeyPair(this.ctx)
+		return this.vault.generateDeployKey()
 	}
+}
+
+function createVaultRootBacking(ctx: PluxelContext, config: VaultServiceConfig): VaultRootBacking {
+	if (ctx !== ctx.root) {
+		throw new TypeError('[runtime:vault] Vault root backing requires the root Context')
+	}
+	return Object.freeze({
+		store: createVaultStore(ctx.root.persistence.namespace('vault')),
+		runtime: resolveRuntime(config),
+		entry: createMountCacheEntry(),
+	})
 }

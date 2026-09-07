@@ -1,46 +1,39 @@
-import { localStorageColorSchemeManager, MantineProvider } from '@mantine/core'
 import { type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { useState } from 'react'
-import { getRuntimeTransportClient, RuntimeTransportClientProvider } from '../runtime'
+import {
+	createRuntimeManagementClient,
+	type RuntimeClientBootstrap,
+	RuntimeManagementClientProvider,
+} from '../runtime'
 import './bootstrap'
 import '../styles/index.scss'
-import { appCssVariablesResolver, useAppTheme } from '../theme'
-import { PluxelGQLensProvider } from './gqlens'
 import { ProductProvider } from './product'
 import { createAppRouter } from './router'
 import { WorkspaceControllerProvider } from './workbench/context'
 import { WorkspaceController } from './workbench/store'
+import { WorkbenchSessionProvider } from '../workbench/runtime'
+import { ManagementQueryProvider } from './managementQuery'
 
 export interface AppProps {
+	bootstrap: Extract<RuntimeClientBootstrap, { kind: 'workbench' }>
 	history?: RouterHistory
 }
 
-export function App({ history }: AppProps = {}) {
+export function App({ bootstrap, history }: AppProps) {
 	const [router] = useState(() => createAppRouter({ history }))
-	const [transportClient] = useState(() => getRuntimeTransportClient())
+	const [managementClient] = useState(() => createRuntimeManagementClient(bootstrap.management))
 	const [workspace] = useState(() => new WorkspaceController(router.state.location.pathname))
-	const { theme } = useAppTheme()
 	return (
-		<MantineProvider
-			theme={theme}
-			colorSchemeManager={colorSchemeManager}
-			defaultColorScheme="auto"
-			withCssVariables
-			cssVariablesResolver={appCssVariablesResolver}
-		>
-			<RuntimeTransportClientProvider client={transportClient}>
-				<ProductProvider transport={transportClient}>
-					<PluxelGQLensProvider>
+		<RuntimeManagementClientProvider client={managementClient}>
+			<ManagementQueryProvider>
+				<WorkbenchSessionProvider session={bootstrap.workbench}>
+					<ProductProvider client={managementClient}>
 						<WorkspaceControllerProvider controller={workspace}>
 							<RouterProvider router={router} />
 						</WorkspaceControllerProvider>
-					</PluxelGQLensProvider>
-				</ProductProvider>
-			</RuntimeTransportClientProvider>
-		</MantineProvider>
+					</ProductProvider>
+				</WorkbenchSessionProvider>
+			</ManagementQueryProvider>
+		</RuntimeManagementClientProvider>
 	)
 }
-
-const colorSchemeManager = localStorageColorSchemeManager({
-	key: 'pluxel-color-scheme',
-})

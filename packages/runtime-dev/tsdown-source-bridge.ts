@@ -13,3 +13,17 @@ export function pluxelViteSourceBridgeExternal(): Plugin {
 		},
 	}
 }
+
+/** Rewrites runtime-dev's monorepo carrier source bridge to its published package boundary. */
+export function pluxelRuntimeNodeSourceBridgeExternal(): Plugin {
+	return {
+		name: 'pluxel:externalize-runtime-node-source-bridge',
+		enforce: 'pre',
+		resolveId: {
+			filter: { id: /^\.\.\/\.\.\/runtime-node\/src\/index\.ts$/ },
+			handler() {
+				return { id: '@pluxel/runtime-node', external: true }
+			},
+		},
+	}
+}

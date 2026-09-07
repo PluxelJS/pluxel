@@ -1,0 +1,35 @@
+{
+	"name": "@example/todo-plugin",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@example/domain": "workspace:*",
+		"@pluxel/runtime": "catalog:pluxel"
+	},
+	"devDependencies": {
+		"@example/audit-plugin": "workspace:*",
+		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/test": "catalog:pluxel",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@example/audit-plugin": "*"
+	},
+	"peerDependenciesMeta": {
+		"@example/audit-plugin": {
+			"optional": true
+		}
+	}
+}

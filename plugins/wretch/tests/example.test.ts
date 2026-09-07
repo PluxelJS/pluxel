@@ -1,13 +1,8 @@
-import { PLUGIN_HTTP_BASE } from '@pluxel/runtime'
-import { withRuntimeHost } from '@pluxel/runtime/test'
-import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
-} from '@pluxel/runtime/web/paths'
+import { createRuntimeTestHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
-import { WretchExamplePlugin } from '../src/example/index.ts'
+import { WretchExamplePlugin, WretchExampleWorkbench } from './fixtures/wretch-example.ts'
+import { openWretchSettings } from './workbench-helpers.ts'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -20,62 +15,57 @@ describe('WretchExamplePlugin', () => {
 			}),
 		)
 
-		await withRuntimeHost(
-			async (host) => {
-				host.add([WretchPlugin, WretchExamplePlugin])
-				host.cfg(WretchPlugin).enable()
-				host.cfg(WretchExamplePlugin).set({
-					config: {
-						baseUrl: 'https://example.test/api',
-						inspectPath: '/inspect-me',
-						retryAttempts: 0,
-					},
-				})
-				host.cfg(WretchExamplePlugin).enable()
-				await host.commit()
+		{
+			await using host = createRuntimeTestHost({ workbench: false })
+			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
+			await host.start(WretchExamplePlugin, {
+				initialConfig: {
+					baseUrl: 'https://example.test/api',
+					inspectPath: '/inspect-me',
+					retryAttempts: 0,
+				},
+			})
 
-				await expect(host.require(WretchExamplePlugin).inspect()).resolves.toMatchObject({
-					url: 'https://example.test/api/inspect-me',
-					headers: {
-						accept: 'application/json',
-						'x-pluxel-client': 'WretchExamplePlugin',
-					},
-				})
+			await expect(host.require(WretchExamplePlugin).inspect()).resolves.toMatchObject({
+				url: 'https://example.test/api/inspect-me',
+				headers: {
+					accept: 'application/json',
+					'x-pluxel-client': 'WretchExamplePlugin',
+				},
+			})
 
-				const response = await host.ctx.http.fetch(
-					new Request(`http://local.test${PLUGIN_HTTP_BASE}/WretchExamplePlugin/inspect`),
-				)
-				expect(response.status).toBe(200)
-				expect(await response.json()).toMatchObject({
-					url: 'https://example.test/api/inspect-me',
-				})
-			},
-			{ workbench: false },
-		)
+			const response = await host.http.fetch(new URL('/wretch-example/inspect', host.http.origin))
+			expect(response.status).toBe(200)
+			expect(await response.json()).toMatchObject({
+				url: 'https://example.test/api/inspect-me',
+			})
+		}
 	})
 
-	it('mounts the shared HTTP settings renderer in a Workbench-enabled runtime', async () => {
-		await withRuntimeHost(async (host) => {
-			host.add([WretchPlugin, WretchExamplePlugin])
-			host.cfg(WretchPlugin).enable()
-			host.cfg(WretchExamplePlugin).enable()
-			await host.commit()
+	it('places and opens the provider-owned settings Attachment', async () => {
+		{
+			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
+			await host.start(WretchExamplePlugin)
 
 			expect(host.isRunning(WretchPlugin)).toBe(true)
 			expect(host.isRunning(WretchExamplePlugin)).toBe(true)
 
-			const response = await host.ctx.http.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/WretchExamplePlugin`,
-				),
+			using settings = await openWretchSettings(
+				host,
+				WretchExamplePlugin,
+				WretchExampleWorkbench.http,
 			)
-			const layout = (await response.json()) as WorkbenchLayout
-			expect(layout.items[0]).toMatchObject({
-				ownerPluginId: 'WretchPlugin',
-				targetPluginId: 'WretchExamplePlugin',
-				viewId: 'HttpSettings',
-				port: { id: '@pluxel/wretch.settings' },
+			expect(settings).toMatchObject({
+				kind: 'attachment',
+				params: {},
+				federatedViewRef: { expose: './views/settings' },
 			})
-		})
+			expect(await settings.api.snapshot()).toMatchObject({
+				settings: { headers: {} },
+				hostTimeoutMs: 30_000,
+				effectiveTimeoutMs: 30_000,
+			})
+		}
 	})
 })

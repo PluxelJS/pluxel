@@ -7,7 +7,7 @@
 
 ## 基础用法
 
-`valibot-form` 通过在 Valibot schema 上附加 `*Meta` 来描述表单渲染偏好：
+字段标题、说明和渲染偏好集中写在 `formMeta()`；requiredness、选项、格式和范围继续由 Valibot schema 与 validation 描述：
 
 ```ts
 import * as v from 'valibot'
@@ -15,7 +15,7 @@ import * as f from 'valibot-form'
 
 const schema = v.pipe(
 	v.string(),
-	f.formMeta({ label: '用户名' }),
+	f.formMeta({ title: '用户名' }),
 	f.stringMeta({ placeholder: '请输入用户名' }),
 )
 ```
@@ -28,7 +28,7 @@ const schema = v.pipe(
 | --------------------------- | -------------- | ----------- | ------------------------------------------- |
 | `v.string()`                | `stringMeta`   | TextInput   | `control` 可切换 textarea / password / code |
 | `v.number()`                | `numberMeta`   | NumberInput | 仅数字输入（无 slider）                     |
-| `v.boolean()`               | `booleanMeta`  | Switch      | 仅 Switch（不提供 checkbox）                |
+| `v.boolean()`               | —              | Switch      | 无需额外 metadata                           |
 | `v.picklist()`              | `picklistMeta` | Select      | 可切换 segmented / radio                    |
 | `v.array()`                 | `arrayMeta`    | List        | 可切换 grid / picker                        |
 | `v.record()`                | `recordMeta`   | Table       | 可切换 list                                 |
@@ -39,26 +39,32 @@ const schema = v.pipe(
 
 ## 通用字段元数据 (formMeta)
 
-所有字段都可以使用 `formMeta` 添加通用配置：
+`formMeta()` 会把 `title` 和 `description` 写入 Valibot 标准 `metadata()` action，并在同一 action 中携带表单展示策略：
 
 ```ts
-f.formMeta({
-	label: '字段标签',
-	description: '显示在控件上方的说明',
-	help: '显示在控件下方的帮助文本',
-	hint: '悬停提示（tooltip）',
-	badge: '新', // 或 { label: '新', color: 'blue' }
-	hidden: false,
-	disabled: false,
-	readOnly: false,
-	section: 'basic',
-	layout: {
-		span: 2,
-		full: true,
-		align: 'start',
-	},
-})
+v.pipe(
+	v.string(),
+	f.formMeta({
+		title: '字段标题',
+		description: '显示在控件上方的说明',
+		help: '显示在控件下方的帮助文本',
+		hint: '悬停提示（tooltip）',
+		badge: '新', // 或 { label: '新', color: 'blue' }
+		hidden: false,
+		disabled: false,
+		readOnly: false,
+		section: 'basic',
+		layout: {
+			span: 2,
+			full: true,
+			align: 'start',
+		},
+	}),
+)
 ```
+
+原生 `v.title()`、`v.description()` 与 `v.metadata({ title, description })` 仍可被读取；同一字段重复声明时按 pipe
+顺序由最后一个对应属性生效。标准用法优先用一次 `formMeta()` 集中描述。
 
 ---
 
@@ -67,7 +73,7 @@ f.formMeta({
 ```ts
 v.pipe(
 	v.string(),
-	f.formMeta({ label: '用户名' }),
+	f.formMeta({ title: '用户名' }),
 	f.stringMeta({
 		control: 'text', // text | textarea | password | code
 		placeholder: '请输入用户名',
@@ -78,7 +84,7 @@ v.pipe(
 多行文本：
 
 ```ts
-v.pipe(v.string(), f.formMeta({ label: '简介' }), f.stringMeta({ control: 'textarea', rows: 4 }))
+v.pipe(v.string(), f.formMeta({ title: '简介' }), f.stringMeta({ control: 'textarea', rows: 4 }))
 ```
 
 Valibot 校验会自动提取 `minLength` / `maxLength` 等限制。  
@@ -91,21 +97,22 @@ Valibot 校验会自动提取 `minLength` / `maxLength` 等限制。
 ```ts
 v.pipe(
 	v.number(),
-	f.formMeta({ label: '价格' }),
-	f.numberMeta({
-		min: 0,
-		max: 9999,
-		step: 0.01,
-	}),
+	v.minValue(0),
+	v.maxValue(9999),
+	f.formMeta({ title: '价格' }),
+	f.numberMeta({ step: 0.01 }),
 )
 ```
 
+范围、整数和倍数约束分别使用 `v.minValue()`、`v.maxValue()`、`v.integer()` 和
+`v.multipleOf()`；`numberMeta.step` 只控制输入步进。
+
 ---
 
-## 布尔字段 (booleanMeta)
+## 布尔字段
 
 ```ts
-v.pipe(v.boolean(), f.formMeta({ label: '启用通知' }), f.booleanMeta({}))
+v.pipe(v.boolean(), f.formMeta({ title: '启用通知' }))
 ```
 
 ---
@@ -115,7 +122,7 @@ v.pipe(v.boolean(), f.formMeta({ label: '启用通知' }), f.booleanMeta({}))
 ```ts
 v.pipe(
 	v.picklist(['dev', 'prod'] as const),
-	f.formMeta({ label: '环境' }),
+	f.formMeta({ title: '环境' }),
 	f.picklistMeta({
 		labels: { dev: '开发', prod: '生产' },
 		placeholder: '选择环境',
@@ -138,7 +145,7 @@ v.pipe(
 			}),
 		),
 	),
-	f.formMeta({ label: '权限' }),
+	f.formMeta({ title: '权限' }),
 	f.arrayMeta({ layout: 'picker' }),
 )
 ```
@@ -152,13 +159,13 @@ v.pipe(
 ```ts
 v.pipe(
 	v.array(v.string()),
-	f.formMeta({ label: '标签' }),
+	v.minLength(1),
+	v.maxLength(10),
+	f.formMeta({ title: '标签' }),
 	f.arrayMeta({
 		layout: 'list', // list | grid | picker
 		addLabel: '添加标签',
 		itemLabel: '标签',
-		min: 1,
-		max: 10,
 	}),
 )
 ```
@@ -172,7 +179,7 @@ v.pipe(
 ```ts
 v.pipe(
 	v.record(v.string(), v.number()),
-	f.formMeta({ label: '阈值表' }),
+	f.formMeta({ title: '阈值表' }),
 	f.recordMeta({
 		layout: 'table', // table | list
 		key: { label: 'Key', placeholder: '如 api-key' },
@@ -191,10 +198,10 @@ Record 会根据 value schema 渲染对应控件。
 ```ts
 v.pipe(
 	v.object({
-		name: v.pipe(v.string(), f.formMeta({ label: '姓名' })),
-		age: v.pipe(v.number(), f.formMeta({ label: '年龄' })),
+		name: v.pipe(v.string(), f.formMeta({ title: '姓名' })),
+		age: v.pipe(v.number(), f.formMeta({ title: '年龄' })),
 	}),
-	f.formMeta({ label: '用户信息' }),
+	f.formMeta({ title: '用户信息' }),
 	f.objectMeta({
 		variant: 'card', // card | stack
 		columns: 2,
@@ -213,7 +220,7 @@ v.pipe(
 		v.object({ type: v.literal('http'), url: v.string() }),
 		v.object({ type: v.literal('ws'), endpoint: v.string() }),
 	]),
-	f.formMeta({ label: '连接类型' }),
+	f.formMeta({ title: '连接类型' }),
 	f.unionMeta({
 		discriminator: 'type',
 		control: 'segmented',

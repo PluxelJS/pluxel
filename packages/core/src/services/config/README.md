@@ -2,62 +2,56 @@
 
 ## 目标
 
-`ConfigService` 是唯一的内存配置引擎：保存 raw record 与 revision，在插件启动前**确保配置已校验并回填默认值**，并维护 normalized snapshot 缓存。
+`ConfigService` 是唯一的内存配置引擎：按 canonical `PluginNodeAddress` index key 保存 raw record 与 revision，在 Plugin `init()` 前
+校验完整 object schema、回填默认值并缓存 normalized snapshot。
 
-- Core 只负责：已声明配置字段的注入时机/规则、在插件 Context 下按插件名取配置。
-- 插件用 class field initializer 声明字段，例如 `field = this.configs.use(schema)` 或 `field = this.configs.use(cfg(schemaMap))`；schema/source 以及可选 layout 由工具链注册。
-- 上层（App/HMR/Loader）负责：持久化、启用策略的解释、以及 UI/RPC 侧的“schema defaults / patch validation”等业务编排（这些在 core 里提供为纯函数 helper，不需要走 service）。
-- runtime 的 `ConfigService` 直接继承此引擎，只增加 persistence load/save、readonly policy 与 write coalescing；不复制 record、revision 或 validation 状态。
+Plugin 只用一个普通 class field 声明配置：
 
-## Schema 合同（Standard Schema v1）
+```ts
+private readonly config = this.configs.use(PluginConfig)
+```
 
-`ConfigService.ensureValidated(...)` 采用 **Standard Schema v1** 作为“唯一校验合同”：schema 只要实现 `~standard.validate(...)` 即可被校验与归一化（valibot 原生支持）。
+工具链将 field name、Standard Schema 对象和可选 source 注册到 Plugin definition facts。Core 负责注入时机和校验；runtime
+子类只增加 persistence load/save、readonly policy 与 write coalescing，不复制 record、revision 或 validation 状态。
 
-实现上，core 依赖 `@standard-schema/spec`（类型包）来引用该合同定义。
+## Schema contract
 
-这带来两个好处：
+`ConfigService.ensureValidated(address, authority, options)` 接受携带 Standard Schema v1 的 immutable config-definition authority。
+每个具体 Plugin 最多一个 object schema；嵌套对象表达 section 和层级，不存在额外 schema-key namespace、binding map 或 layout template。
 
-- Core 不需要感知/绑定任何具体校验库（不需要 “adapter registry”）。
-- HMR/app 不需要额外的 runtime service：直接调用 `configService.ensureValidated(...)` 即可。
+纯函数 helper：
 
-## UI/RPC helper（纯函数）
+- `collectConfigDefaults(schema, { missingObjectDefault })`：取得完整 object defaults；
+- `validateConfigRecord(schema, record)`：校验并返回 normalized object。
 
-UI/RPC 往往需要：
-
-- 从 schema 推导“默认值快照”
-- 校验局部 patch（只校验变更的 tab/key）
-
-对应 helper：
-
-- `collectConfigDefaults(schemaMap, { missingObjectDefault })`
-- `validateConfigPatch(schemaMap, patch)`
+schema output 必须是可持久化的 plain object/array tree，leaf 只允许 JSON-compatible primitive。validation boundary 会 deep clone、
+deep freeze 并拒绝 cycle、accessor、`Date`、`Map`、`Set`、class instance、function、symbol 等携带隐藏 identity 或 behavior 的值；缓存和
+generation 只读取这份 immutable snapshot。
 
 ## 关键语义
 
-- `getValidatedConfig()` 默认用 `ctx.pluginInfo?.id` 作为 key：**只有在插件 Context 里调用才有意义**。它不会隐式回退 raw：若未 `ensureValidated(...)`，会抛错（避免静默读取未校验配置）。
-- `getRawConfig(name)` 永远返回持久层原始快照（可能包含未知 key/未填充默认值），用于调试/迁移/底层实现。
-- `ensureValidated(pluginName, schemaMap)` **是幂等的**：当 raw revision 未变化且 schema 稳定（同一对象引用；或 schemaMap 仅被重新创建但复用同一批 schema 引用）时，会直接返回缓存的 validated 快照（避免 loader/runtime 重复校验）。
-- `patchConfig(name, patch)` 是“对某个插件名的配置快照打补丁”，用于测试/加载器模拟/持久化写入。
-- `unsetConfigKeys(name, keys)` 用于“重置到默认值”的语义：先删除 key，再由 `ConfigService.ensureValidated(...)` 回填。
-- `batch(run)` 在 core 中只是同步执行；runtime 子类用它合并持久化写入，不提供事务回滚语义。
+- owner 是 `ctx.pluginInfo.nodeAddress` 或 control plane 提交的 canonical `PluginNodeAddress`；ConfigService 不 intern Core slot，
+  因此 unmaterialized definition/fork 的 durable config 不会创建 Core tombstone。
+- `getValidatedConfig(address, authority)` 不回退 raw；revision 或 candidate authority 不匹配、或未先完成 validation 时抛错。
+- `getRawConfig(address)` 返回持久层 raw snapshot，用于 runtime control plane。
+- `ensureValidated(address, authority)` 只在 raw revision 与 immutable candidate authority 都未变化时复用 cache。
+- control plane 第一次校验成功后先 stage normalized desired record 与 validated snapshot，persistence flush 成功后才 confirm 为新的
+  revision；随后 Core generation 注入复用同一对象，不再次执行可能非确定的 schema transform。confirm 同时检查校验前 revision，拒绝覆盖
+  并发的新 record；flush 失败的 staged revision 对 Core 不可见。
+- `patchConfig(address, patch)` 与 `unsetConfigKeys(address, keys)` 修改同一个 owner record；`batch()` 只用于 runtime 合并持久化写入，
+  不承诺事务回滚。
+- config sentinel 在实例构造后、`init()` 前替换；constructor 和其他 field initializer 不得读取它。
 
-## 扩展点（上层可覆盖）
+## Runtime adapter
 
-如果你需要：
-
-- 从磁盘/远端加载配置
-- 支持 schema 校验、默认值、环境变量、热更新
-- 把 enable/disable 变成真正的启动策略
-
-上层运行时通过继承 `ConfigService` 并覆盖受保护的加载、可变策略与 mutation hook 增加 I/O。record/revision/validation 状态必须继续由 core 基类持有，避免出现第二套配置引擎。
-
-当前 persistent runtime 还会把 host 提供的 `PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]`
-environment record 合并进初始 snapshot；这仍只是 raw record 的启动来源，校验、默认回填和 revision 全部由本 core
-service 处理。已有 file config 在加载后替换启动 snapshot。
+runtime 可以从 disk/readonly backend 或 host snapshot初始化 records。Node host 的 environment 入口是单一
+`PLUXEL_CONFIG` JSON，其中当前 writer 使用 `version: 3`、`plugins[]` 的 `owner` 是结构化 `PluginNodeAddress`，`config` 是一个
+object record。已有 file config 是权威来源；environment 只初始化新 store。reader 只接受 v3，不按旧 owner shape 猜测或迁移。
 
 ## 测试策略
 
-优先用 core test host 走真实插件启动流程：
-
-- 通过 `host.cfg(pluginCtor).set(record)` 构造注入快照
-- 在插件里调用 `ctx.configService.getValidatedConfig()` 或读取 `this.configs.use(...)` 声明的字段并断言
+优先用经过 semantic lowering 的 Core/Runtime test host 走真实 Plugin 启动流程。首次 lifecycle 前的 fixture config 通过
+`host.add(PluginCtor, { initialConfig })`（Runtime 对应 `host.start(...)`）建立；Runtime 已提交的 config 必须通过
+`host.config.patch()` 走 production persistence 与 generation notification。Core 内部若要直接观察 raw revision、cache 或 rollback，使用
+`@pluxel/core/internal/test`，不把 root ConfigService authority 暴露给 Plugin 作者。另行覆盖 invalid schema、defaults、cache revision、
+structured owner isolation 与 runtime persistence；所有路径都消费同一个 lowered object-schema fact。

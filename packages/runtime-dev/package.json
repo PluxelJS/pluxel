@@ -14,6 +14,10 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./console": {
+			"@pluxel/source": "./src/console.ts",
+			"default": "./dist/console.mjs"
+		},
 		"./hmr-log": {
 			"@pluxel/source": "./src/hmr-log.ts",
 			"default": "./dist/hmr-log.mjs"
@@ -31,6 +35,7 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./console": "./dist/console.mjs",
 			"./hmr-log": "./dist/hmr-log.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workbench": "./dist/workbench.mjs",
@@ -39,23 +44,28 @@
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
-		"build": "tsdown"
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
 		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"chokidar": "^5.0.0",
-		"pathe": "^2.0.3"
+		"@pluxel/runtime-node": "workspace:*",
+		"chokidar": "catalog:node",
+		"pathe": "catalog:node",
+		"srvx": "catalog:prod"
 	},
 	"devDependencies": {
-		"@logtape/logtape": "^2.0.2",
+		"@logtape/logtape": "catalog:dev",
 		"@pluxel/test": "workspace:*",
-		"typescript": "catalog:",
-		"vite": "^8.0.0-beta.18"
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
-		"vite": ">=8.0.0-beta.18 <9"
+		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"vite": {

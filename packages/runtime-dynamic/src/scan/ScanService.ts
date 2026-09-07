@@ -1,5 +1,4 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
-import type { ResolverCacheInvalidatedEvent } from '@pluxel/core/services'
+import { type Context as PluxelContext } from '@pluxel/core'
 import { dirname, normalize, resolve as r } from 'pathe'
 import {
 	clearOxcResolveCache,
@@ -31,19 +30,6 @@ import {
 	type WorkspaceEntryInfo,
 } from './types'
 
-const serviceName = 'scanService' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: ScanService
-		}
-		interface Config {
-			[serviceName]?: ScanServiceConfig
-		}
-	}
-}
-
 export type { PackageSelector } from './selectors'
 export type { ScanSnapshot } from './snapshot'
 export type {
@@ -70,6 +56,11 @@ export interface ScanServiceConfig {
 	fs?: WorkspaceFs
 }
 
+export type ResolverCacheInvalidatedDetail = Readonly<{
+	by?: string
+	reason?: string
+}>
+
 /**
  * 扫描工作区并解析包入口的核心服务。
  *
@@ -77,7 +68,6 @@ export interface ScanServiceConfig {
  * - 内置缓存，避免重复构建扫描图，提高 CLI 与服务常驻模式的性能。
  * - 支持按需聚焦特定包、条件导出和 TS 回退文件收集。
  */
-@Injectable({ key: serviceName })
 export class ScanService {
 	public ctx: PluxelContext
 	private defaults: ResolvedScanOptions
@@ -89,6 +79,9 @@ export class ScanService {
 	private readonly snapshotCache = new Map<string, Promise<ScanSnapshot>>()
 	private installedResolver: OxcResolver
 	private installedNodeModulesDir: string
+	private readonly resolverInvalidationListeners = new Set<
+		(detail: ResolverCacheInvalidatedDetail | undefined) => void
+	>()
 
 	constructor(ctx: PluxelContext, config: ScanServiceConfig = {}) {
 		this.ctx = ctx
@@ -176,12 +169,18 @@ export class ScanService {
 	/**
 	 * 仅清空模块解析缓存，适合在依赖安装/升级后调用。
 	 */
-	invalidateResolverCache(detail?: ResolverCacheInvalidatedEvent) {
+	subscribeResolverInvalidated(
+		listener: (detail: ResolverCacheInvalidatedDetail | undefined) => void,
+	): () => void {
+		this.resolverInvalidationListeners.add(listener)
+		return () => this.resolverInvalidationListeners.delete(listener)
+	}
+
+	invalidateResolverCache(detail?: ResolverCacheInvalidatedDetail) {
 		this.entryResolver.clear()
 		clearOxcResolveCache(this.resolveCache)
 
-		// Notify long-lived runtime services so they can drop derived resolution caches.
-		this.ctx.internalEvent.resolverCacheInvalidated.emit(detail)
+		for (const listener of this.resolverInvalidationListeners) listener(detail)
 	}
 
 	private snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {

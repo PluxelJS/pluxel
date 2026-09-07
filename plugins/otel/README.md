@@ -15,7 +15,7 @@ import { SeverityNumber } from '@opentelemetry/api-logs'
 import { OtelPlugin } from '@pluxel/otel'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'CatalogPlugin' })
+@Plugin()
 class CatalogPlugin extends BasePlugin {
 	private refreshed!: Counter
 
@@ -45,7 +45,7 @@ class CatalogPlugin extends BasePlugin {
 ```
 
 三个 getter 分别返回标准 `@opentelemetry/api` `Meter`、`Tracer` 和 `@opentelemetry/api-logs` `Logger`。
-instrumentation scope name 自动固定为 caller Plugin ID；同一 caller generation 重复读取返回同一实例。原生 instrument、span、
+instrumentation scope name 使用 caller 的Plugin node reference；同一 caller generation 重复读取返回同一实例。原生 instrument、span、
 event、link、status、baggage、log body、severity、`eventName` 和 attributes 均不经过 Pluxel wrapper。active span 中直接 emit 的 log
 会带上 trace/span correlation。
 
@@ -57,8 +57,8 @@ producer 仍须定义稳定的数据字典、attribute allowlist、基数和隐�
 默认向 OTLP 推送 metrics、traces 和 logs，并关闭 Prometheus：
 
 ```ts
-host.cfg(OtelPlugin).set({
-	config: {
+await host.start(OtelPlugin, {
+	initialConfig: {
 		otlp: ['metrics', 'traces', 'logs'],
 		prometheus: false,
 	},
@@ -68,8 +68,8 @@ host.cfg(OtelPlugin).set({
 `otlp` 可选择任意子集。Prometheus 只读取 metrics，也可以与 metrics OTLP push 同时开启：
 
 ```ts
-host.cfg(OtelPlugin).set({
-	config: {
+await host.start(OtelPlugin, {
+	initialConfig: {
 		otlp: ['metrics', 'traces', 'logs'],
 		prometheus: { path: '/metrics' },
 	},
@@ -79,8 +79,14 @@ host.cfg(OtelPlugin).set({
 只做 Prometheus pull 时使用 `{ otlp: [], prometheus: {} }`。配置至少保留一个输出；被关闭的 signal 不加载 exporter、不读取它的
 endpoint，也不会返回一个看似工作的 no-op API。访问关闭 signal 的 getter 会立即报错。
 
-默认 pull URL 是 `GET /__pluxel/plugins/OtelPlugin/metrics`。它复用 Pluxel HTTP service，不启动第二个 listener。并发 scrape
-合并为同一次 collection；OTLP periodic reader 与 Prometheus reader 相互独立。
+Workbench-enabled host 会显示一个 host-rendered `Content`：它展示 metrics/traces/logs 的 disabled、waiting、healthy 或
+failing 状态、Prometheus 的监听路径，并提供“立即导出待处理 telemetry”按钮。Exporter 状态变化通过现有 Workbench
+Cap’n Web session 推送最新值；按钮调用各 active provider 的 `forceFlush()`。界面只显示 bounded `errorType`，不会投影
+endpoint、headers、payload、certificate、secret 或未保存的 Config draft。Workbench 关闭时不影响 provider、exporter 或业务 API。
+
+默认 pull URL 是显式产品协议 `GET /metrics`。`OtelPlugin` 直接在自己的 generation-scoped `ctx.elysia`
+上声明该 route，由宿主现有 carrier 提供服务，不启动第二个 listener。并发 scrape 合并为同一次 collection；OTLP periodic
+reader 与 Prometheus reader 相互独立。
 
 ## OTLP transports 与环境变量
 
@@ -128,8 +134,8 @@ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://victoriametrics:8428/opentelemetry/v1
 OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://victorialogs:9428/insert/opentelemetry/v1/logs
 ```
 
-VictoriaMetrics 的 Prometheus scrape 也可直接抓取 plugin-scoped `/metrics` route。生产部署仍需按 Victoria 版本启用相应 OTLP ingest
-功能并配置租户/auth headers。
+VictoriaMetrics 的 Prometheus scrape 也可直接抓取 `OtelPlugin` generation 声明的最终 `/metrics` Elysia route。生产部署仍需按
+Victoria 版本启用相应 OTLP ingest 功能并配置租户/auth headers。
 
 ## 边界
 

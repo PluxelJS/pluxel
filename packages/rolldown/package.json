@@ -1,7 +1,8 @@
 {
 	"name": "@pluxel/rolldown",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Pluxel Rolldown/Vite/tsdown toolchain helpers",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -12,12 +13,7 @@
 		"!**/*.map"
 	],
 	"type": "module",
-	"types": "./dist/index.d.mts",
 	"exports": {
-		".": {
-			"@pluxel/source": "./src/index.ts",
-			"default": "./dist/index.mjs"
-		},
 		"./build": {
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
@@ -29,6 +25,10 @@
 		"./distribution": {
 			"@pluxel/source": "./src/distribution/index.ts",
 			"default": "./dist/distribution.mjs"
+		},
+		"./internal/static-config-environment-vite": {
+			"@pluxel/source": "./src/vite/static-config-environment.ts",
+			"default": "./dist/internal/static-config-environment-vite.mjs"
 		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
@@ -74,10 +74,6 @@
 			"@pluxel/source": "./src/workbench/artifact.ts",
 			"default": "./dist/workbench/artifact.mjs"
 		},
-		"./workspace": {
-			"@pluxel/source": "./src/workspace/index.ts",
-			"default": "./dist/workspace.mjs"
-		},
 		"./workspace/fs": {
 			"@pluxel/source": "./src/workspace/fs-entry.ts",
 			"default": "./dist/workspace/fs.mjs"
@@ -95,10 +91,10 @@
 	},
 	"publishConfig": {
 		"exports": {
-			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
+			"./internal/static-config-environment-vite": "./dist/internal/static-config-environment-vite.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
@@ -110,44 +106,58 @@
 			"./vite/source-graph": "./dist/vite/source-graph.mjs",
 			"./vite/workbench-ui": "./dist/vite/workbench-ui.mjs",
 			"./workbench/artifact": "./dist/workbench/artifact.mjs",
-			"./workspace": "./dist/workspace.mjs",
 			"./workspace/fs": "./dist/workspace/fs.mjs",
 			"./workspace/info": "./dist/workspace/info.mjs",
 			"./workspace/vite": "./dist/workspace/vite.mjs",
 			"./package.json": "./package.json",
 			"./distribution/schema.json": "./dist/schemas/pluxel-distribution-v1.schema.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
-		"build": "tsdown"
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false"
 	},
 	"dependencies": {
-		"@inlang/paraglide-js": "^2.15.1",
-		"@module-federation/vite": "^1.16.16",
-		"@pluxel/core": "workspace:*",
-		"drizzle-kit": "^0.31.5",
-		"nf3": "^0.3.22",
-		"oxc-parser": "^0.115.0",
-		"oxc-resolver": "^11.21.3",
-		"unplugin-macros": "^0.20.2",
-		"unplugin-preprocessor-directives": "^1.2.0"
+		"@inlang/paraglide-js": "catalog:prod",
+		"@module-federation/bridge-react": "catalog:frontend",
+		"@module-federation/sdk": "catalog:prod",
+		"@module-federation/vite": "catalog:build",
+		"@pluxel/core": "workspace:^",
+		"drizzle-kit": "catalog:backend",
+		"mdast-util-directive": "catalog:prod",
+		"mdast-util-from-markdown": "catalog:prod",
+		"mdast-util-gfm": "catalog:prod",
+		"micromark-extension-directive": "catalog:prod",
+		"micromark-extension-gfm": "catalog:prod",
+		"nf3": "catalog:prod",
+		"oxc-parser": "catalog:prod",
+		"oxc-resolver": "catalog:prod",
+		"typescript": "catalog:prod",
+		"unplugin-macros": "catalog:build",
+		"unplugin-preprocessor-directives": "catalog:build",
+		"unrun": "catalog:build",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
-		"@rolldown/pluginutils": "^1.0.0-rc.5",
-		"fdir": "^6.5.0",
-		"fs-fixture": "^2.13.0",
-		"oxlint": "^1.73.0",
-		"pathe": "^2.0.3",
-		"rolldown": "^1.0.0-rc.5",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vite": "^8.0.0-beta.18"
+		"@pluxel/test": "workspace:*",
+		"@rolldown/pluginutils": "catalog:build",
+		"@types/mdast": "catalog:types",
+		"@types/node": "catalog:types",
+		"fdir": "catalog:dev",
+		"fs-fixture": "catalog:dev",
+		"oxlint": "catalog:dev",
+		"pathe": "catalog:node",
+		"rolldown": "catalog:build",
+		"tsdown": "catalog:build",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
-		"rolldown": "^1.0.0-rc.5",
-		"tsdown": "catalog:",
-		"vite": ">=8.0.0-beta.18 <9"
+		"rolldown": "catalog:build",
+		"tsdown": "catalog:build",
+		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"rolldown": {
@@ -159,6 +169,9 @@
 		"vite": {
 			"optional": true
 		}
+	},
+	"engines": {
+		"node": ">=24"
 	},
 	"inlinedDependencies": {
 		"@rolldown/pluginutils": "1.0.1",

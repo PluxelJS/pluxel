@@ -1,14 +1,9 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
-
-const serviceName = 'internalApiValidation' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: InternalApiValidationService
-		}
-	}
-}
+import {
+	formatPluginNodeReference,
+	type Context as PluxelContext,
+	type PluginNodeAddress,
+} from '@pluxel/core'
+import { pinOwnerContext } from '../../context/owner-view'
 
 export type InternalApiValidationContext = {
 	path: string
@@ -24,24 +19,33 @@ export type InternalApiValidationResult =
 	| { allow: true }
 	| {
 			allow: false
-			pluginName: string
+			owner: PluginNodeAddress | null
 	  }
 
 type ActiveValidator = {
-	pluginName: string
+	owner: PluginNodeAddress | null
 	validate: InternalApiValidator
 	removeFromScope: () => void
 }
 
-@Injectable({ key: serviceName })
 export class InternalApiValidationService {
-	private readonly validators = new Set<ActiveValidator>()
+	private readonly validators: Set<ActiveValidator>
 	private readonly logger: NonNullable<PluxelContext['logger']>
 
-	constructor(public ctx: PluxelContext) {
-		this.logger = ctx.logger!
+	constructor(
+		public readonly ctx: PluxelContext,
+		root?: InternalApiValidationService,
+	) {
+		pinOwnerContext(this, ctx)
+		if (root) {
+			this.validators = root.validators
+			this.logger = root.logger
+			return
+		}
+		this.validators = new Set()
+		this.logger = ctx.logger
 		this.validators.add({
-			pluginName: 'hmr:internalApiValidation',
+			owner: null,
 			removeFromScope: () => {},
 			validate: ({ url, headers }) => {
 				const site = (headers.get('sec-fetch-site') ?? '').trim().toLowerCase()
@@ -60,6 +64,11 @@ export class InternalApiValidationService {
 		})
 	}
 
+	/** @internal Bind registration ownership while sharing the root validator set. */
+	forOwner(owner: PluxelContext): InternalApiValidationService {
+		return new InternalApiValidationService(owner, this)
+	}
+
 	hasValidators(): boolean {
 		return this.validators.size > 0
 	}
@@ -69,10 +78,11 @@ export class InternalApiValidationService {
 			throw new TypeError('[InternalApiValidationService] register(validate) is required.')
 		}
 
-		const pluginId = this.ctx.pluginInfo?.id ?? 'unknown'
+		const owner = this.ctx.pluginInfo?.nodeAddress
+		if (!owner) throw new Error('[InternalApiValidationService] Plugin node owner is required')
 
 		const active: ActiveValidator = {
-			pluginName: pluginId,
+			owner,
 			validate,
 			removeFromScope: () => {},
 		}
@@ -91,16 +101,16 @@ export class InternalApiValidationService {
 			try {
 				const ok = await v.validate(input)
 				if (!ok) {
-					return { allow: false, pluginName: v.pluginName }
+					return { allow: false, owner: v.owner }
 				}
 			} catch (error) {
 				this.logger.error('Internal API validator threw', {
 					error,
-					pluginId: v.pluginName,
+					plugin: v.owner ? formatPluginNodeReference(v.owner) : 'runtime',
 					path: input.path,
 					method: input.method,
 				})
-				return { allow: false, pluginName: v.pluginName }
+				return { allow: false, owner: v.owner }
 			}
 		}
 

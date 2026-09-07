@@ -1,37 +1,22 @@
 // context.tsx
 import { createContext, useContext, type ReactNode } from 'react'
-import type {
-	PluginDependency,
-	PluginSourceInfo as GqlPluginSourceInfo,
-	PluginSourceInfoKind,
-	PluginStatusEntry,
-	PluginStatusEntryLifecycleStage,
-} from '../../gqlens'
-
-export type PluginSourceKind = PluginSourceInfoKind
-
-export type PluginSourceInfo = Omit<GqlPluginSourceInfo, '__typename' | 'kind'> & {
-	kind: PluginSourceKind
-}
+import type { PluginStatusEntry } from '../pluginOverview'
+import type { PluginNodeAddress } from '@pluxel/core'
+import type { PluginDependencyDetail } from '../pluginDependencyGraphSelectors'
 
 export interface PluginScopeContextValue {
-	pluginName: string
+	owner: PluginNodeAddress
+	pluginRoute: string
+	pluginLabel: string
 	description: string
-	dependencies: readonly PluginDependency[]
-	knownPluginNames: ReadonlySet<string>
-	statusSnapshot: readonly PluginStatusEntry[]
-	status: PluginStatusEntry | null
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: PluginStatusEntryLifecycleStage
-	isSyncing: boolean
-	source: PluginSourceInfo
+	dependencyGraph: Readonly<{
+		detail: PluginDependencyDetail | null
+		isLoading: boolean
+		isStale: boolean
+		error?: string
+	}>
+	status: PluginStatusEntry
 	refetch: () => Promise<void>
-	setStatusOverride?: (next: {
-		isRunning: boolean
-		isEnabled: boolean
-		lifecycleStage: PluginStatusEntryLifecycleStage
-	}) => void
 }
 
 const Ctx = createContext<PluginScopeContextValue | null>(null)
@@ -55,28 +40,14 @@ export function usePluginScope(): PluginScopeContextValue {
 export function usePluginMeta() {
 	const ctx = usePluginScope()
 	return {
-		pluginName: ctx.pluginName,
+		owner: ctx.owner,
+		pluginRoute: ctx.pluginRoute,
+		pluginLabel: ctx.pluginLabel,
 		description: ctx.description,
 		status: ctx.status,
-		isRunning: ctx.isRunning,
-		isEnabled: ctx.isEnabled,
-		lifecycleStage: ctx.lifecycleStage,
-		isSyncing: ctx.isSyncing,
-		source: ctx.source,
 	}
 }
 
-export function usePluginStatus() {
-	const ctx = usePluginScope()
-	return {
-		status: ctx.status,
-		isRunning: ctx.isRunning,
-		isEnabled: ctx.isEnabled,
-		lifecycleStage: ctx.lifecycleStage,
-		source: ctx.source,
-	}
-}
-
-export function usePluginDependencies() {
-	return usePluginScope().dependencies
+export function usePluginDependencyDetail() {
+	return usePluginScope().dependencyGraph
 }

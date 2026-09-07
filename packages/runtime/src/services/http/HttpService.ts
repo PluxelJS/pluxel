@@ -1,41 +1,35 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
+import type { Context as PluxelContext } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
-import {
-	canAccessSecurityAdmin,
-	createAdminAccessBlockedHeaders,
-	createAdminAccessBlockedPayload,
-	resolveAdminAccessRedirectPath,
-	type AdminAccessBlockedKind,
-	type AdminAccessReason,
-} from '../../shared/admin-access-http'
+import type { AdminAccessReason } from '../admin-access/types'
 import type { RenderHandler } from '../../server/types'
-import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
-import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
-import { resolveAdminAccessConfig } from '../admin-access/model'
 import {
-	matchesWorkbenchUiBasePath,
-	normalizeWorkbenchUiBasePath,
-	resolveWorkbenchUiBasePath,
-} from '../../workbench-config'
-import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_WORKBENCH_FEDERATION_BASE,
+	UI_PUBLIC_ASSET_BASE,
+} from '../../web/paths'
+import { isAdminAccessHandoffPath } from '../admin-access/transport'
+import { responseWithLease } from '../admin-access/response-lifetime'
+import { matchesWorkbenchUiBasePath, normalizeWorkbenchUiBasePath } from '../../workbench-config'
+import {
+	matchesRuntimeSessionUpgrade,
+	RuntimeSessionIngress,
+	validateRuntimeSessionOrigin,
+} from '../../web/session/ingress'
+import { RUNTIME_SESSION_PATH } from '../../web/session/protocol'
+import {
+	createHostElysiaApp,
+	type AnyHostElysiaApp,
+	type CreateHostElysiaAppOptions,
+} from './elysia'
+import type { ElysiaApplicationDirectory } from './ElysiaApplicationDirectory'
+import type {
+	ElysiaApplicationCarrier,
+	ElysiaCarrierRequestAddress,
+} from './elysia-application-carrier'
 
-const serviceName = 'http' as const
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Services {
-			[serviceName]: HttpService
-		}
-	}
-}
-
-export type HttpHandler = (
-	req: Request,
-	env?: unknown,
-	ctx?: unknown,
-) => Response | Promise<Response>
+type HttpHandler = (req: Request, env?: unknown, ctx?: unknown) => Response | Promise<Response>
 
 /**
  * Any WinterTC-style fetch boundary.
@@ -43,94 +37,63 @@ export type HttpHandler = (
  * Elysia is the preferred authoring model for plugin routes, but mounting stays framework-agnostic
  * so plugin integrations can still provide any fetch-compatible boundary.
  */
-export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
-
-export interface HttpServiceConfig {
-	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from workbench RPC/SSE/UI. */
-	graphql?: boolean
-}
+type MountedFetchBoundary = HttpHandler | { fetch: HttpHandler }
 
 type RuntimeHttpUiAssetMode = 'dev-server' | 'static-built' | 'disabled'
 
-type RuntimeHttpServiceConfig = HttpServiceConfig & {
-	controlPlane?: {
-		web?: boolean
-		rpc?: boolean
-		sse?: boolean
-	}
+/** @internal Workbench distribution inputs resolved by static/dynamic launchers. */
+export type RuntimeHttpAssetConfig = Readonly<{
 	uiAssets?: RuntimeHttpUiAssetMode
-	/**
-	 * Directory for serving built UI assets (mounted under `UI_PUBLIC_BASE` when `uiAssets=static-built`).
-	 *
-	 * Defaults to the package's `dist/public` (when present).
-	 */
 	uiPublicDir?: string
-	/** Browser path owned by the Workbench shell. Route launchers derive it from WorkbenchConfig. */
-	uiBasePath?: string
-}
+}>
+
+export type RuntimeHttpHostConfig = RuntimeHttpAssetConfig &
+	Readonly<{
+		management: boolean
+		workbench: boolean
+		/**
+		 * Directory for serving built UI assets (mounted under `UI_PUBLIC_BASE` when `uiAssets=static-built`).
+		 *
+		 * Defaults to the package's `dist/public` (when present).
+		 */
+		uiPublicDir?: string
+		/** Browser path owned by the Workbench shell. Route launchers derive it from WorkbenchConfig. */
+		uiBasePath: string
+		/** @internal Test-only peer seam used only when no physical carrier is attached. */
+		requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
+	}>
 
 interface MountedBoundarySpec {
 	id: string
 	base: string
-	boundary: HttpBoundary
+	boundary: MountedFetchBoundary
 }
 
-export interface HttpBoundaryHandle {
-	replace(boundary: HttpBoundary): void
+interface MountedFetchBoundaryHandle {
+	replace(boundary: MountedFetchBoundary): void
 	dispose(): void
 }
 
-type BaseElysiaApp = AnyElysiaApp
+type BaseElysiaApp = AnyHostElysiaApp
 
 type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
 type InternalApiOptions = {
-	web?: boolean
-	rpc?: boolean
-	sse?: boolean
-	graphql?: boolean
+	workbench: boolean
 }
 type ResolvedHttpServiceConfig = {
-	controlPlane: {
-		web: boolean
-		rpc: boolean
-		sse: boolean
-	}
-	graphql: boolean
+	management: boolean
+	workbench: boolean
 	uiAssets: RuntimeHttpUiAssetMode
 	uiPublicDir: string
 	uiBasePath: string
 }
 
-export type ElysiaBoundaryBuilder = (app: BaseElysiaApp) => HttpBoundary
+export type HostElysiaBuilder = (app: BaseElysiaApp) => MountedFetchBoundary
 
-export interface ElysiaRouteMountOptions {
-	app?: CreateElysiaAppOptions
-}
-
-export interface ElysiaRouteHandle extends HttpBoundaryHandle {
-	replaceRoutes(build: ElysiaBoundaryBuilder): void
-}
-
-export interface HostHttpMountSpec {
+interface HostHttpMountSpec {
 	id: string
 	path: string
-	boundary: HttpBoundary
-}
-
-export interface PluginHttpMountOptions extends ElysiaRouteMountOptions {
-	path?: string
-	/**
-	 * Mounts this plugin-owned boundary at a stable runtime-root path instead of the
-	 * default `/__pluxel/plugins/<plugin-id>` namespace. This changes routing only;
-	 * authentication remains the plugin's responsibility.
-	 */
-	publicPath?: string
-	id?: string
-}
-
-export interface HostHttpRouteOptions extends ElysiaRouteMountOptions {
-	id: string
-	path: string
+	boundary: MountedFetchBoundary
 }
 
 type MountedBoundary = {
@@ -139,33 +102,10 @@ type MountedBoundary = {
 	install: (app: BaseElysiaApp) => BaseElysiaApp
 }
 
-export const PLUGIN_HTTP_BASE = '/__pluxel/plugins'
-
 function normalizeMountBase(base: string): string {
 	const raw = base.trim()
 	if (!raw || raw === '/') return '/'
 	return raw.startsWith('/') ? raw.replace(/\/+$/, '') || '/' : `/${raw.replace(/\/+$/, '')}`
-}
-
-function normalizePluginPath(path = '/'): string {
-	const raw = path.trim()
-	if (!raw || raw === '/') return '/'
-	return raw.startsWith('/') ? raw.replace(/\/+$/, '') || '/' : `/${raw.replace(/\/+$/, '')}`
-}
-
-function normalizePluginPublicPath(path: string): string {
-	const raw = path.trim()
-	if (!raw.startsWith('/')) throw new Error('Plugin publicPath must be an absolute path')
-	const normalized = normalizeMountBase(raw)
-	if (normalized === '/') throw new Error('Plugin publicPath cannot own the runtime root')
-	if (normalized === '/__pluxel' || normalized.startsWith('/__pluxel/')) {
-		throw new Error('Plugin publicPath cannot use the reserved /__pluxel namespace')
-	}
-	return normalized
-}
-
-function encodePathSegment(input: string): string {
-	return encodeURIComponent(input)
 }
 
 function currentWorkingDirectory(): string {
@@ -173,8 +113,7 @@ function currentWorkingDirectory(): string {
 	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
 }
 
-@Injectable({ key: serviceName })
-export class HttpService {
+class HttpBackend {
 	private fullReloadRequested = false
 	private readonly mounted = new Map<string, MountedBoundary>()
 	private mountedIndex: MountedBoundary[] = []
@@ -186,73 +125,39 @@ export class HttpService {
 	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
 	private readonly config: ResolvedHttpServiceConfig
+	private readonly applications: ElysiaApplicationDirectory
+	private readonly requestAddress?: RuntimeHttpHostConfig['requestAddress']
+	private applicationCarrier?: ElysiaApplicationCarrier
+	private readonly runtimeSessions = new Set<RuntimeSessionIngress>()
 
 	constructor(
-		public ctx: PluxelContext,
-		config: HttpServiceConfig = {},
+		ctx: PluxelContext,
+		config: RuntimeHttpHostConfig,
+		applications: ElysiaApplicationDirectory,
 	) {
-		const runtimeConfig = config as RuntimeHttpServiceConfig
 		this.hostCtx = ctx.root
+		this.applications = applications
+		this.requestAddress = config.requestAddress
 		this.logger = this.hostCtx.logger!
-		const adminAccessConfig = resolveAdminAccessConfig(this.hostCtx.config.adminAccess)
-		const adminAccessEnabled = adminAccessConfig.enabled
-		if (adminAccessEnabled && adminAccessConfig.exposure === 'public' && !adminAccessConfig.oidc) {
-			throw new Error('Public admin access requires adminAccess.oidc.')
-		}
-		const useDefaultControlPlane = adminAccessEnabled && runtimeConfig.controlPlane === undefined
-		const graphql = config.graphql !== false
 		this.config = {
-			controlPlane: {
-				web:
-					adminAccessEnabled &&
-					(useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
-				rpc:
-					adminAccessEnabled &&
-					(useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
-				sse:
-					adminAccessEnabled &&
-					(useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
-			},
-			graphql,
-			uiAssets: adminAccessEnabled ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
-			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
-			uiBasePath:
-				runtimeConfig.uiBasePath === undefined
-					? resolveWorkbenchUiBasePath(this.hostCtx.config.workbench)
-					: normalizeWorkbenchUiBasePath(runtimeConfig.uiBasePath),
-		}
-		if (adminAccessEnabled) {
-			this.mountHostBoundary({
-				id: 'pluxel:admin-access',
-				path: ADMIN_ACCESS_PAGE_PATH,
-				boundary: this.createLazyAdminAccessBoundary(),
-			})
+			management: config.management,
+			workbench: config.workbench,
+			uiAssets: config.workbench ? (config.uiAssets ?? 'static-built') : 'disabled',
+			uiPublicDir: config.uiPublicDir ?? '',
+			uiBasePath: normalizeWorkbenchUiBasePath(config.uiBasePath),
 		}
 		this.rebuildRootApp()
-		const controlPlaneEnabled =
-			this.config.controlPlane.web || this.config.controlPlane.rpc || this.config.controlPlane.sse
-		if (controlPlaneEnabled) {
+		if (config.management) {
 			this.mountHostBoundary({
 				id: 'hmr:internal-api',
 				path: RUNTIME_INTERNAL_API_BASE,
-				boundary: this.createLazyInternalApiBoundary({
-					web: this.config.controlPlane.web,
-					rpc: this.config.controlPlane.rpc,
-					sse: this.config.controlPlane.sse,
-					graphql: this.config.graphql,
-				}),
-			})
-		} else if (this.config.graphql) {
-			this.mountHostBoundary({
-				id: 'pluxel:internal-graphql',
-				path: RUNTIME_INTERNAL_API_BASE,
-				boundary: this.createLazyGraphqlBoundary(),
+				boundary: this.createLazyInternalApiBoundary({ workbench: config.workbench }),
 			})
 		}
 	}
 
 	get fetch() {
-		return this.fetchPtr
+		return (request: Request, env?: unknown, ctx?: unknown) => this.fetchIngress(request, env, ctx)
 	}
 
 	/**
@@ -302,43 +207,54 @@ export class HttpService {
 
 	matchesMountedRoute(pathname: string): boolean {
 		const path = normalizeMountBase(pathname)
-		return this.mountedIndex.some((slot) => {
-			if (slot.base === '/') return true
-			return path === slot.base || path.startsWith(`${slot.base}/`)
-		})
+		return (
+			this.applications.matchesHttpRoute(pathname) ||
+			this.mountedIndex.some((slot) => {
+				if (slot.base === '/') return true
+				return path === slot.base || path.startsWith(`${slot.base}/`)
+			})
+		)
 	}
 
-	get plugin() {
-		const pluginCtx = this.ctx
-		const pluginId = this.requirePluginId(pluginCtx)
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(pluginCtx, options)
-		return {
-			id: pluginId,
-			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees so
-			// callers follow Elysia's chaining model and can replace mounted trees safely.
-			elysia,
-			app: elysia,
-			base: (path = '/') => this.resolvePluginBase(pluginId, path),
-			routes: (build: ElysiaBoundaryBuilder, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginRoutes(pluginCtx, pluginId, build, options),
-			mount: (boundary: HttpBoundary, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginBoundary(pluginCtx, pluginId, boundary, options),
+	/** @internal Route launchers use the resolved host snapshot instead of reading Context config. */
+	matchesWorkbenchUiRoute(pathname: string): boolean {
+		return this.config.workbench && matchesWorkbenchUiBasePath(pathname, this.config.uiBasePath)
+	}
+
+	/** @internal Node static hosts use this to arbitrate the application root fallback. */
+	workbenchOwnsRootNavigation(): boolean {
+		return this.config.workbench && this.config.uiBasePath === '/'
+	}
+
+	/** @internal Vite route launchers use this for user-facing development URLs. */
+	workbenchUiBasePath(): string | undefined {
+		return this.config.workbench ? this.config.uiBasePath : undefined
+	}
+
+	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void {
+		if (this.applicationCarrier) {
+			throw new Error('[pluxel/runtime] An Elysia application carrier is already attached')
+		}
+		this.applicationCarrier = carrier
+		const detachDirectory = this.applications.attachApplicationCarrier(carrier)
+		let active = true
+		return () => {
+			if (!active) return
+			active = false
+			for (const session of this.runtimeSessions) session.close()
+			detachDirectory()
+			if (this.applicationCarrier === carrier) this.applicationCarrier = undefined
 		}
 	}
 
-	get host() {
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(this.hostCtx, options)
-		return {
-			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees.
-			elysia,
-			app: elysia,
-			routes: (build: ElysiaBoundaryBuilder, options: HostHttpRouteOptions) =>
-				this.mountHostRoutes(build, options),
-			mount: (spec: HostHttpMountSpec) => this.mountHostBoundary(spec),
-		}
+	matchesWebSocketRoute(request: Request): boolean {
+		return (
+			(this.config.management && matchesRuntimeSessionUpgrade(request)) ||
+			this.applications.matchesWebSocketRoute(request)
+		)
 	}
 
-	private mountHostBoundary(spec: HostHttpMountSpec): HttpBoundaryHandle {
+	private mountHostBoundary(spec: HostHttpMountSpec): MountedFetchBoundaryHandle {
 		return this.mountAtPath(this.hostCtx, {
 			id: spec.id,
 			base: spec.path,
@@ -346,31 +262,14 @@ export class HttpService {
 		})
 	}
 
-	private createLazyAdminAccessBoundary(): HttpHandler {
-		let appPromise: Promise<BaseElysiaApp> | undefined
-		return async (request) => {
-			appPromise ??= import('../admin-access/http').then(({ createAdminAccessRoutes }) =>
-				createAdminAccessRoutes(
-					this.hostCtx,
-					this.createApp(this.hostCtx, {
-						aot: true,
-						name: 'pluxel.http.admin-access',
-					}),
-				),
-			)
-			const app = await appPromise
-			return app.fetch(request)
-		}
-	}
-
 	private createLazyInternalApiBoundary(options: InternalApiOptions): HttpHandler {
-		let boundaryPromise: Promise<HttpBoundary> | undefined
+		let boundaryPromise: Promise<MountedFetchBoundary> | undefined
 		return async (request) => {
 			boundaryPromise ??= import('./internalApi').then(({ createInternalApiRoutes }) => {
 				const build = createInternalApiRoutes(this.hostCtx, options)
 				return build(
 					this.createApp(this.hostCtx, {
-						aot: true,
+						precompile: true,
 						name: 'pluxel.http.internal',
 					}),
 				)
@@ -380,80 +279,16 @@ export class HttpService {
 		}
 	}
 
-	private createLazyGraphqlBoundary(): HttpHandler {
-		let boundaryPromise: Promise<HttpBoundary> | undefined
-		return async (request) => {
-			boundaryPromise ??= Promise.resolve(this.hostCtx.internalGraphql.plugin())
-			const boundary = await boundaryPromise
-			return this.toFetch(boundary)(request)
-		}
-	}
-
-	private mountPluginBoundary(
-		pluginCtx: PluxelContext,
-		pluginId: string,
-		boundary: HttpBoundary,
-		options: PluginHttpMountOptions = {},
-	): HttpBoundaryHandle {
-		if (options.path !== undefined && options.publicPath !== undefined) {
-			throw new Error('Plugin HTTP mount cannot combine path and publicPath')
-		}
-		const path = normalizePluginPath(options.path)
-		const base =
-			options.publicPath === undefined
-				? this.resolvePluginBase(pluginId, path)
-				: normalizePluginPublicPath(options.publicPath)
-		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path, options.publicPath)
-		return this.mountAtPath(pluginCtx, {
-			id: routeId,
-			base,
-			boundary,
-		})
-	}
-
-	private mountPluginRoutes(
-		pluginCtx: PluxelContext,
-		pluginId: string,
-		build: ElysiaBoundaryBuilder,
-		options: PluginHttpMountOptions = {},
-	): ElysiaRouteHandle {
-		const { app: appOptions, ...mountOptions } = options
-		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(pluginCtx, appOptions))
-		const handle = this.mountPluginBoundary(
-			pluginCtx,
-			pluginId,
-			createBoundary(build),
-			mountOptions,
-		)
-
-		return {
-			...handle,
-			replaceRoutes: (nextBuild) => handle.replace(createBoundary(nextBuild)),
-		}
-	}
-
-	private mountHostRoutes(
-		build: ElysiaBoundaryBuilder,
-		options: HostHttpRouteOptions,
-	): ElysiaRouteHandle {
-		const { app: appOptions, ...mountSpec } = options
-		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(this.hostCtx, appOptions))
-		const handle = this.mountHostBoundary({
-			...mountSpec,
-			boundary: createBoundary(build),
-		})
-
-		return {
-			...handle,
-			replaceRoutes: (nextBuild) => handle.replace(createBoundary(nextBuild)),
-		}
-	}
-
-	private mountAtPath(ownerCtx: PluxelContext, spec: MountedBoundarySpec): HttpBoundaryHandle {
-		const slot = this.upsertMounted(spec)
+	private mountAtPath(
+		ownerCtx: PluxelContext,
+		spec: MountedBoundarySpec,
+	): MountedFetchBoundaryHandle {
+		let slot: MountedBoundary | undefined
+		let active = true
 		const dispose = () => {
+			if (!active) return
+			active = false
+			if (!slot || this.mounted.get(slot.id) !== slot) return
 			if (this.mounted.delete(slot.id)) {
 				this.refreshMountedIndex()
 				this.rebuildRootApp()
@@ -461,10 +296,19 @@ export class HttpService {
 			}
 		}
 		const guard = ownerCtx.effects.defer(dispose)
+		try {
+			slot = this.upsertMounted(spec)
+		} catch (error) {
+			guard.cancel()
+			throw error
+		}
 
 		return {
 			replace: (boundary) => {
-				this.upsertMounted({ ...spec, boundary })
+				if (!active || !guard.active || !slot || this.mounted.get(slot.id) !== slot) {
+					throw new Error('[pluxel/http] HTTP route handle is disposed')
+				}
+				slot = this.upsertMounted({ ...spec, boundary })
 				this.requestFullReload()
 			},
 			dispose: () => guard.dispose(),
@@ -492,9 +336,138 @@ export class HttpService {
 		return this.uiPublicHandler
 	}
 
+	private async fetchIngress(request: Request, env?: unknown, ctx?: unknown): Promise<Response> {
+		const url = new URL(request.url)
+		const path = url.pathname
+		const method = request.method.toUpperCase()
+		const facts = this.requestFacts(request)
+		if (path === RUNTIME_SESSION_PATH) {
+			return await this.fetchRuntimeSession(request, facts.local, facts.secure)
+		}
+
+		if (this.config.management && isAdminAccessHandoffPath(path)) {
+			const adminAccess = this.hostCtx.root.adminAccess
+			if (!adminAccess) throw new Error('[pluxel/runtime] Management entry requires adminAccess')
+			return await adminAccess.handleEntryRequest(request, facts.local, facts.secure)
+		}
+
+		if (!this.isProtectedArtifactPath(path)) return await this.fetchPtr(request, env, ctx)
+		const adminAccess = this.hostCtx.root.adminAccess
+		if (!adminAccess) throw new Error('[pluxel/runtime] Management request requires adminAccess')
+		const admission = await adminAccess.admit(request, facts.local, facts.secure)
+		if (admission.state.allow === false) {
+			return this.buildArtifactAccessDeniedResponse(path, method, admission.state.reason)
+		}
+
+		const admittedRequest = requestWithSignal(request, admission.signal)
+		try {
+			const response = await this.fetchPtr(admittedRequest, env, ctx)
+			return admission.state.method === 'provider'
+				? responseWithLease(response, {
+						signal: admission.signal,
+						dispose: admission.release,
+					})
+				: response
+		} catch (error) {
+			admission.release()
+			throw error
+		}
+	}
+
+	private async fetchRuntimeSession(
+		request: Request,
+		local: boolean,
+		secure: boolean,
+	): Promise<Response> {
+		const noStore = { 'cache-control': 'no-store' }
+		if (!this.config.management) {
+			return new Response('Not Found', { status: 404, headers: noStore })
+		}
+		if (!matchesRuntimeSessionUpgrade(request)) {
+			return new Response('This endpoint only accepts a WebSocket upgrade.', {
+				status: 400,
+				headers: noStore,
+			})
+		}
+		if ((!local && !secure) || !validateRuntimeSessionOrigin(request, secure)) {
+			return new Response('Runtime session ingress rejected.', {
+				status: 403,
+				headers: noStore,
+			})
+		}
+		const carrier = this.applicationCarrier
+		const adminAccess = this.hostCtx.root.adminAccess
+		if (!carrier || !adminAccess) {
+			return new Response('Runtime session carrier unavailable.', {
+				status: 503,
+				headers: noStore,
+			})
+		}
+
+		let ingress!: RuntimeSessionIngress
+		ingress = new RuntimeSessionIngress({
+			ctx: this.hostCtx,
+			adminAccess,
+			request,
+			local,
+			secure,
+			workbench: this.config.workbench,
+			onRelease: () => this.runtimeSessions.delete(ingress),
+		})
+		this.runtimeSessions.add(ingress)
+		const accepted = carrier.upgrade(
+			Object.freeze({
+				request,
+				upgradeRequest: request,
+				ownerKey: 'pluxel.runtime.control',
+				data: ingress.data,
+				signal: ingress.signal,
+				release: () => ingress.release(),
+			}),
+		)
+		if (!accepted) {
+			ingress.release()
+			return new Response('Runtime session upgrade unavailable.', {
+				status: 503,
+				headers: noStore,
+			})
+		}
+		return new Response(null, { status: 204, headers: noStore })
+	}
+
+	private isProtectedArtifactPath(path: string): boolean {
+		if (!this.config.management || !this.config.workbench) return false
+		const base = `${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_FEDERATION_BASE}`
+		return path === base || path.startsWith(`${base}/`)
+	}
+
+	private requestFacts(request: Request): Readonly<{ local: boolean; secure: boolean }> {
+		let address: ElysiaCarrierRequestAddress | null = null
+		try {
+			address = this.applicationCarrier
+				? this.applicationCarrier.requestIP(request)
+				: (this.requestAddress?.(request) ?? null)
+		} catch {
+			address = null
+		}
+		let secure = false
+		try {
+			if (this.applicationCarrier) {
+				const metadata = this.applicationCarrier.metadata
+				secure = metadata.url.protocol === 'https:'
+			} else {
+				const url = new URL(request.url)
+				secure = url.protocol === 'https:'
+			}
+		} catch {
+			secure = false
+		}
+		return Object.freeze({ local: isLoopbackAddress(address?.address), secure })
+	}
+
 	private rebuildRootApp() {
-		const root = createElysiaApp(this.hostCtx, {
-			aot: true,
+		const root = createHostElysiaApp(this.hostCtx, {
+			precompile: true,
 			name: 'pluxel.http.root',
 		})
 
@@ -503,12 +476,11 @@ export class HttpService {
 		const fallback = async ({ request }: { request: Request }) => {
 			const url = new URL(request.url)
 			const path = url.pathname
-			const method = (request.method ?? 'GET').toUpperCase()
+			const business = await this.applications.dispatch(request)
+			if (business) return business
 
-			if (path.startsWith(`${UI_PUBLIC_BASE}/`)) {
+			if (path.startsWith(`${UI_PUBLIC_ASSET_BASE}/`)) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
-				const denied = await this.guardUiRequest(request, path, method, 'ui')
-				if (denied) return denied
 				const uiPublic = await this.uiPublic()
 				if (!uiPublic) return new Response('Not Found', { status: 404 })
 				return (await uiPublic(request)) ?? new Response('Not Found', { status: 404 })
@@ -519,8 +491,6 @@ export class HttpService {
 				matchesWorkbenchUiBasePath(path, this.config.uiBasePath)
 			) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
-				const denied = await this.guardUiRequest(request, path, method, 'ui')
-				if (denied) return denied
 				return this.render(request)
 			}
 
@@ -532,70 +502,23 @@ export class HttpService {
 		this.fetchPtr = (request) => root.fetch(request)
 	}
 
-	private async guardUiRequest(
-		request: Request,
+	private buildArtifactAccessDeniedResponse(
 		path: string,
 		method: string,
-		kind: AdminAccessBlockedKind,
-	): Promise<Response | undefined> {
-		const state = await this.hostCtx.root.adminAccess.authorize({
-			headers: request.headers,
-			request,
-			url: request.url,
-		})
-		const isSecurityRoute =
-			path === RUNTIME_SECURITY_BASE || path.startsWith(`${RUNTIME_SECURITY_BASE}/`)
-		const isSecurityCarrier = path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
-		if ((isSecurityRoute || isSecurityCarrier) && canAccessSecurityAdmin(state)) return undefined
-		if (isSecurityRoute) {
-			this.logger.warn('Blocked host security admin route', {
-				kind,
-				path,
-				method,
-				reason: state.reason,
-			})
-			return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
-		}
-		if (state.allow) return undefined
-
-		this.logger.warn('Blocked admin access gate', {
-			kind,
-			path,
-			method,
-			reason: state.reason,
-		})
-
-		return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
-	}
-
-	private buildAdminAccessDeniedResponse(
-		request: Request,
-		path: string,
-		method: string,
-		kind: AdminAccessBlockedKind,
-		reason?: AdminAccessReason,
+		reason: AdminAccessReason,
 	): Response {
-		const redirectPath = resolveAdminAccessRedirectPath(
-			buildAdminAccessRedirectPath,
-			request,
-			kind,
-			reason,
-		)
-		if (kind === 'ui') {
-			return new Response(null, {
-				status: 302,
-				headers: {
-					Location: redirectPath,
-					'Cache-Control': 'no-store',
-				},
-			})
-		}
-
+		this.logger.warn('Blocked immutable Workbench artifact request', { path, method, reason })
+		const status =
+			reason === 'authentication_unavailable'
+				? 503
+				: reason === 'secure_transport_required' || reason === 'forbidden'
+					? 403
+					: 401
 		return Response.json(
-			createAdminAccessBlockedPayload(path, method, kind, redirectPath, reason),
+			{ code: 'artifact_access_denied', reason },
 			{
-				status: 401,
-				headers: createAdminAccessBlockedHeaders(redirectPath, reason),
+				status,
+				headers: { 'cache-control': 'no-store' },
 			},
 		)
 	}
@@ -653,7 +576,7 @@ export class HttpService {
 		}
 	}
 
-	private toInstaller(id: string, base: string, boundary: HttpBoundary) {
+	private toInstaller(id: string, base: string, boundary: MountedFetchBoundary) {
 		if (this.isElysiaBoundary(boundary)) {
 			const plugin = this.wrapMountedPlugin(id, base, boundary)
 			return (app: BaseElysiaApp) => app.use(plugin)
@@ -669,45 +592,20 @@ export class HttpService {
 
 	private wrapMountedPlugin(id: string, base: string, boundary: BaseElysiaApp): BaseElysiaApp {
 		const prefix = base === '/' ? undefined : base
-		return createElysiaApp(this.hostCtx, {
-			aot: true,
+		return createHostElysiaApp(this.hostCtx, {
+			precompile: true,
 			name: `pluxel.http.boundary.${id}`,
 			prefix,
 		}).use(boundary)
 	}
 
-	private toFetch(boundary: HttpBoundary): HttpHandler {
+	private toFetch(boundary: MountedFetchBoundary): HttpHandler {
 		if (typeof boundary === 'function') return boundary
 		return boundary.fetch.bind(boundary)
 	}
 
-	private isElysiaBoundary(boundary: HttpBoundary): boundary is BaseElysiaApp {
+	private isElysiaBoundary(boundary: MountedFetchBoundary): boundary is BaseElysiaApp {
 		return boundary instanceof Elysia
-	}
-
-	private requirePluginId(ctx: PluxelContext): string {
-		const pluginId = String(ctx.pluginInfo?.id ?? '').trim()
-		if (!pluginId) throw new Error('Plugin-scoped HTTP routes require ctx.pluginInfo.id')
-		return pluginId
-	}
-
-	private resolvePluginBase(pluginId: string, path = '/'): string {
-		const suffix = normalizePluginPath(path)
-		const base = `${PLUGIN_HTTP_BASE}/${encodePathSegment(pluginId)}`
-		return suffix === '/' ? base : `${base}${suffix}`
-	}
-
-	private defaultPluginBoundaryId(
-		pluginId: string,
-		path: string,
-		publicPath: string | undefined,
-	): string {
-		if (publicPath !== undefined) {
-			return `${pluginId}:http:public:${normalizePluginPublicPath(publicPath).slice(1).replaceAll('/', ':')}`
-		}
-		return path === '/'
-			? `${pluginId}:http`
-			: `${pluginId}:http:${path.slice(1).replaceAll('/', ':')}`
 	}
 
 	private requestFullReload() {
@@ -718,8 +616,8 @@ export class HttpService {
 		this.mountedIndex = [...this.mounted.values()].sort((a, b) => b.base.length - a.base.length)
 	}
 
-	private createApp(ctx: PluxelContext, options?: CreateElysiaAppOptions) {
-		return createElysiaApp(ctx, options)
+	private createApp(ctx: PluxelContext, options?: CreateHostElysiaAppOptions) {
+		return createHostElysiaApp(ctx, options)
 	}
 
 	private async createRenderer(): Promise<RenderHandler> {
@@ -740,5 +638,109 @@ export class HttpService {
 	private async render(request: Request) {
 		const handler = await (this.renderer ??= this.createRenderer())
 		return handler(request)
+	}
+}
+
+function requestWithSignal(request: Request, signal: AbortSignal): Request {
+	if (request.signal === signal) return request
+	const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
+	return new Request(request.url, {
+		method: request.method,
+		headers: request.headers,
+		body: hasBody ? request.body : undefined,
+		signal,
+		...(hasBody && request.body ? { duplex: 'half' } : {}),
+	} as RequestInit)
+}
+
+/** Socket-peer loopback check. Host and forwarding headers are deliberately irrelevant. */
+export function isLoopbackAddress(input: string | undefined): boolean {
+	if (!input) return false
+	let address = input.trim().toLowerCase()
+	if (!address) return false
+	if (address.startsWith('[') && address.endsWith(']')) address = address.slice(1, -1)
+	address = address.split('%', 1)[0] ?? ''
+	const ipv4 = address.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+	if (ipv4) {
+		const octets = ipv4.slice(1).map(Number)
+		return octets.every((octet) => octet >= 0 && octet <= 255) && octets[0] === 127
+	}
+	if (address === '::1' || address === '0:0:0:0:0:0:0:1') return true
+	const mappedIpv4 = address.match(/^(?:::ffff:|0:0:0:0:0:ffff:)(\d+\.\d+\.\d+\.\d+)$/)
+	if (mappedIpv4) return isLoopbackAddress(mappedIpv4[1])
+	const mappedHex = address.match(/^(?:::ffff:|0:0:0:0:0:ffff:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+	if (!mappedHex) return false
+	const high = Number.parseInt(mappedHex[1]!, 16)
+	const low = Number.parseInt(mappedHex[2]!, 16)
+	return high >= 0 && high <= 0xffff && low >= 0 && low <= 0xffff && high >>> 8 === 0x7f
+}
+
+/**
+ * Immutable owner view over the root HTTP backend.
+ *
+ * Every Context caches one ordinary view object. Server state, route indexes and rendering state
+ * remain in the single root backend; the view only carries the Context that owns registrations.
+ */
+export class HttpService {
+	readonly #backend: HttpBackend
+
+	private constructor(
+		public readonly ctx: PluxelContext,
+		backend: HttpBackend,
+	) {
+		this.#backend = backend
+		Object.freeze(this)
+	}
+
+	/** @internal Runtime host composition creates the sole HTTP backend. */
+	static createRoot(
+		ctx: PluxelContext,
+		config: RuntimeHttpHostConfig,
+		applications: ElysiaApplicationDirectory,
+	): HttpService {
+		return new HttpService(ctx, new HttpBackend(ctx, config, applications))
+	}
+
+	get fetch(): HttpHandler {
+		return this.#backend.fetch
+	}
+
+	reconfigureUiAssets(config: {
+		uiAssets?: RuntimeHttpUiAssetMode
+		uiPublicDir?: string
+		uiBasePath?: string
+	}): void {
+		this.#backend.reconfigureUiAssets(config)
+	}
+
+	consumeFullReloadRequest(): boolean {
+		return this.#backend.consumeFullReloadRequest()
+	}
+
+	matchesMountedRoute(pathname: string): boolean {
+		return this.#backend.matchesMountedRoute(pathname)
+	}
+
+	matchesWorkbenchUiRoute(pathname: string): boolean {
+		return this.#backend.matchesWorkbenchUiRoute(pathname)
+	}
+
+	workbenchOwnsRootNavigation(): boolean {
+		return this.#backend.workbenchOwnsRootNavigation()
+	}
+
+	/** @internal Vite route launchers use this for user-facing development URLs. */
+	workbenchUiBasePath(): string | undefined {
+		return this.#backend.workbenchUiBasePath()
+	}
+
+	/** @internal Launchers attach the physical platform bridge after creating the root. */
+	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void {
+		return this.#backend.attachApplicationCarrier(carrier)
+	}
+
+	/** @internal Vite/Node upgrade arbiters use the native Elysia directory matcher. */
+	matchesWebSocketRoute(request: Request): boolean {
+		return this.#backend.matchesWebSocketRoute(request)
 	}
 }

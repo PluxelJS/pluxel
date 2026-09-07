@@ -1,258 +1,312 @@
-import { rename, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import {
-	WORKBENCH_FEDERATION_EXPOSE,
-	workbenchFederationBuildOutDir,
+	WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
-	WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
-	WORKBENCH_FEDERATION_SHARE_STRATEGY,
-	workbenchFederationRemoteName,
+	WORKBENCH_PROFILE_VERSION,
+	createWorkbenchFederationProducerPlan,
+	workbenchFederationBuildOutDir,
+	type WorkbenchFederationProducerPlan,
+	type WorkbenchFederationTypeAssetPolicy,
 } from '@pluxel/core/federation'
-import { resolve } from 'pathe'
-import { paraglideVitePlugin } from '@inlang/paraglide-js'
-import { federation, type ModuleFederationOptions } from '@module-federation/vite'
-import { build, type InlineConfig, type PluginOption } from 'vite'
-import { resolveWorkbenchFederationShared } from '../workbench/build-contract.ts'
+import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import {
+	assertWorkbenchFederationProducerCompatibility,
+	resolveWorkbenchFederationBridgeEntry,
+	resolveWorkbenchFederationShared,
+	type ResolvedFederationShared,
+} from '../workbench/build-contract.ts'
+import {
+	runWorkbenchBuildCacheTransaction,
 	runWorkbenchFederationBuild,
 	runWorkbenchOutputTransaction,
 } from '../workbench/build-scheduler.ts'
 import { resolveParaglideIntegration } from './paraglide.ts'
-import { pluginSourceVitePlugins } from './plugin-source.ts'
-import { validateWorkbenchUiArtifact } from '../workbench/artifact.ts'
+import { validateWorkbenchFederationArtifact } from '../workbench/artifact.ts'
+import { runWorkbenchViteBuild, type WorkbenchViteBuildOptions } from './workbench-vite-build.ts'
 
-export type BuildWorkbenchUiRemoteOptions = {
-	pluginName: string
-	entryPath: string
+export type BuildWorkbenchFederationProducerOptions = Readonly<{
+	plan: WorkbenchFederationProducerPlan
+	/** Package root used to resolve generated Bridge entries and producer source dependencies. */
 	root?: string
+	/** Host application root that provides the fixed shared winners. @defaultValue root */
+	applicationRoot?: string
+	/** Selects source exports for development or built package exports for distribution assembly. */
+	packageMode: 'development' | 'distribution'
 	outDir?: string
+	/**
+	 * Root for Vite and declaration incremental caches.
+	 * Development defaults to `.pluxel/vite-workbench-ui-cache` under `root`.
+	 * Distribution uses an ephemeral cache unless this is provided.
+	 */
+	cacheDir?: string
 	minify?: boolean
 	sourcemap?: boolean
-	publicPath?: string
-}
+	/**
+	 * Selects whether dynamic type artifacts are part of this producer candidate.
+	 * Development defaults to a runtime-only producer; distribution defaults to strict types.
+	 */
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
+	/**
+	 * Prevents a queued Federation build from starting or publishing after abort. An already-running
+	 * Vite build finishes before this operation rejects because Vite has no build cancellation API.
+	 */
+	signal?: AbortSignal
+}>
 
-export {
-	resolveWorkbenchFederationShared,
-	type ResolvedFederationShared,
-} from '../workbench/build-contract.ts'
-
-type SerializedParaglideConfig = {
-	project: string
-	outdir: string
-}
-
-type WorkbenchUiBuildPayload = {
-	root: string
+export type WorkbenchFederationProducerBuild = Readonly<{
 	outDir: string
-	entryPath: string
-	remoteName: string
-	cacheDir: string
-	shared: ModuleFederationOptions['shared']
-	publicPath: string
-	minify: boolean
-	sourcemap: boolean
-	paraglide: SerializedParaglideConfig | null
-}
+	manifestPath: string
+	compatibilitySignature: string
+}>
 
-const inflightBuilds = new Map<string, Promise<{ outDir: string; manifestPath: string }>>()
-const MFE_VITE_NO_TEST_ENV_CHECK = 'true'
+const PRODUCER_STAMP_FILE = 'pluxel-producer.json'
+type ProducerStamp = Readonly<{
+	profile: typeof WORKBENCH_PROFILE_VERSION
+	buildContract: typeof WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION
+	packageMode: BuildWorkbenchFederationProducerOptions['packageMode']
+	producer: string
+	buildRevision: string
+	exposes: readonly string[]
+	compatibilitySignature: string
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
+}>
 
-export async function buildWorkbenchUiRemote(
-	options: BuildWorkbenchUiRemoteOptions,
-): Promise<{ outDir: string; manifestPath: string }> {
+export async function buildWorkbenchFederationProducer(
+	options: BuildWorkbenchFederationProducerOptions,
+): Promise<WorkbenchFederationProducerBuild> {
 	const root = resolve(options.root ?? process.cwd())
-	const outDir = resolve(root, options.outDir ?? workbenchFederationBuildOutDir(options.pluginName))
-	const entryPath = resolve(root, options.entryPath)
-	const remoteName = workbenchFederationRemoteName(options.pluginName)
-	const publicPath = options.publicPath ?? '/'
-	const resolvedShared = resolveWorkbenchFederationShared(root)
-	const paraglide = resolveParaglideIntegration(root)
-	const result = {
+	const applicationRoot = resolve(options.applicationRoot ?? root)
+	const plan = assertPlan(options.plan)
+	const typeAssets = resolveTypeAssetPolicy(options)
+	const outDir = resolve(root, options.outDir ?? workbenchFederationBuildOutDir(plan))
+	const resolvedShared = resolveWorkbenchFederationShared(applicationRoot)
+	if (root !== applicationRoot) {
+		assertWorkbenchFederationProducerCompatibility(root, resolvedShared.compatibility)
+	}
+	const compatibilitySignature = resolvedShared.signature
+	const result = Object.freeze({
 		outDir,
 		manifestPath: resolve(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE),
-	}
+		compatibilitySignature,
+	})
 
-	const buildKey = [
-		root,
-		outDir,
-		entryPath,
-		remoteName,
-		resolvedShared.signature,
-		publicPath,
-		String(options.minify ?? true),
-		String(options.sourcemap ?? false),
-		paraglide?.project ?? '',
-		paraglide?.outdir ?? '',
-	].join('\u0000')
-	const existing = inflightBuilds.get(buildKey)
-	if (existing) return existing
+	return runWorkbenchOutputTransaction(outDir, async () => {
+		if (await isCommittedRevision(outDir, plan, resolvedShared, options.packageMode, typeAssets)) {
+			return result
+		}
+		if (await exists(outDir)) {
+			throw new Error(
+				`[workbench-ui] immutable producer revision already exists but does not match its plan: ${outDir}`,
+			)
+		}
 
-	const task = runWorkbenchOutputTransaction(outDir, async () => {
-		const buildId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-		const stagedOutDir = `${outDir}.tmp-${buildId}`
-		await rm(stagedOutDir, { recursive: true, force: true })
+		const buildId = randomUUID()
+		const candidateDir = `${outDir}.candidate-${buildId}`
+		const cache = resolveBuildCacheDir(root, plan, options, typeAssets, buildId)
 		try {
-			await runWorkbenchFederationBuild(() =>
-				runViteBuild({
-					root,
-					outDir: stagedOutDir,
-					entryPath,
-					remoteName,
-					cacheDir: resolve(root, '.pluxel/vite-workbench-ui-cache', `${remoteName}-${buildId}`),
-					shared: resolvedShared.shared,
-					publicPath,
-					minify: options.minify ?? true,
-					sourcemap: options.sourcemap ?? false,
-					paraglide: paraglide
-						? {
-								project: paraglide.project,
-								outdir: paraglide.outdir,
-							}
-						: null,
+			const paraglide = resolveParaglideIntegration(root)
+			const viteBuild: WorkbenchViteBuildOptions = {
+				producerRoot: root,
+				applicationRoot,
+				packageMode: options.packageMode,
+				declarationRoot: commonDirectory(root, applicationRoot),
+				outDir: candidateDir,
+				producer: plan.producer,
+				exposes: Object.fromEntries(
+					plan.entries.map((entry) => [entry.expose, resolve(root, entry.bridgeEntryPath)]),
+				),
+				cacheDir: cache.dir,
+				shared: resolvedShared.shared,
+				bridgeReactEntry: resolveWorkbenchFederationBridgeEntry(),
+				minify: options.minify ?? true,
+				sourcemap: options.sourcemap ?? false,
+				typeAssets,
+				paraglide: paraglide ? { project: paraglide.project, outdir: paraglide.outdir } : null,
+			}
+			if (options.signal?.aborted) throw options.signal.reason
+			await runWorkbenchBuildCacheTransaction(cache.dir, () =>
+				runWorkbenchFederationBuild(applicationRoot, () => {
+					if (options.signal?.aborted) throw options.signal.reason
+					return runWorkbenchViteBuild(viteBuild)
 				}),
 			)
-			const validation = await validateWorkbenchUiArtifact(stagedOutDir, options.pluginName)
-			if (!validation.valid) {
+			if (options.signal?.aborted) throw options.signal.reason
+			const validation = await validateWorkbenchFederationArtifact(candidateDir, {
+				plan,
+				compatibility: resolvedShared.compatibility,
+				typeAssets,
+			})
+			if (validation.valid === false) {
 				throw new Error(
-					`[workbench-ui] incomplete federation artifact: ${'reason' in validation ? validation.reason : 'unknown validation failure'}`,
+					`[workbench-ui] invalid federation producer candidate: ${validation.reason}`,
 				)
 			}
-			await publishDirectory(stagedOutDir, outDir, buildId)
+			await writeFile(
+				resolve(candidateDir, PRODUCER_STAMP_FILE),
+				`${JSON.stringify(createStamp(plan, compatibilitySignature, options.packageMode, typeAssets))}\n`,
+				'utf-8',
+			)
+			await mkdir(dirname(outDir), { recursive: true })
+			await rename(candidateDir, outDir)
+			return result
 		} catch (error) {
-			await rm(stagedOutDir, { recursive: true, force: true })
+			await rm(candidateDir, { recursive: true, force: true })
 			throw error
-		}
-	})
-
-	const resultTask = task.then(() => result)
-	inflightBuilds.set(buildKey, resultTask)
-	return resultTask.finally(() => {
-		if (inflightBuilds.get(buildKey) === resultTask) {
-			inflightBuilds.delete(buildKey)
+		} finally {
+			if (cache.ephemeral) await rm(cache.dir, { recursive: true, force: true })
 		}
 	})
 }
 
-async function publishDirectory(staged: string, target: string, buildId: string): Promise<void> {
-	const previous = `${target}.previous-${buildId}`
-	await rm(previous, { recursive: true, force: true })
-	let movedPrevious = false
-	try {
-		await rename(target, previous)
-		movedPrevious = true
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+function commonDirectory(left: string, right: string): string {
+	const target = resolve(right)
+	let current = resolve(left)
+	for (;;) {
+		const path = relative(current, target)
+		if (!isAbsolute(path) && path !== '..' && !path.startsWith('../')) return current
+		const parent = dirname(current)
+		if (parent === current) return current
+		current = parent
 	}
-	try {
-		await rename(staged, target)
-	} catch (error) {
-		if (movedPrevious) await rename(previous, target).catch((): undefined => undefined)
-		throw error
-	}
-	if (movedPrevious) await rm(previous, { recursive: true, force: true })
 }
 
-function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {
-	return (
-		env.NODE_ENV === 'test' ||
-		(env.VITEST !== null && env.VITEST !== undefined) ||
-		(env.JEST_WORKER_ID !== null && env.JEST_WORKER_ID !== undefined)
+async function isCommittedRevision(
+	outDir: string,
+	plan: WorkbenchFederationProducerPlan,
+	shared: ResolvedFederationShared,
+	packageMode: BuildWorkbenchFederationProducerOptions['packageMode'],
+	typeAssets: WorkbenchFederationTypeAssetPolicy,
+): Promise<boolean> {
+	let stamp: ProducerStamp
+	try {
+		stamp = JSON.parse(
+			await readFile(resolve(outDir, PRODUCER_STAMP_FILE), 'utf-8'),
+		) as ProducerStamp
+	} catch {
+		return false
+	}
+	if (
+		JSON.stringify(stamp) !==
+		JSON.stringify(createStamp(plan, shared.signature, packageMode, typeAssets))
+	) {
+		return false
+	}
+	const validation = await validateWorkbenchFederationArtifact(outDir, {
+		plan,
+		compatibility: shared.compatibility,
+		typeAssets,
+	})
+	return validation.valid
+}
+
+function createStamp(
+	plan: WorkbenchFederationProducerPlan,
+	compatibilitySignature: string,
+	packageMode: BuildWorkbenchFederationProducerOptions['packageMode'],
+	typeAssets: WorkbenchFederationTypeAssetPolicy,
+): ProducerStamp {
+	return {
+		profile: WORKBENCH_PROFILE_VERSION,
+		buildContract: WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION,
+		packageMode,
+		producer: plan.producer,
+		buildRevision: plan.buildRevision,
+		exposes: plan.entries.map((entry) => entry.expose),
+		compatibilitySignature,
+		...(typeAssets === 'required' ? {} : { typeAssets }),
+	}
+}
+
+function resolveTypeAssetPolicy(
+	options: BuildWorkbenchFederationProducerOptions,
+): WorkbenchFederationTypeAssetPolicy {
+	const typeAssets =
+		options.typeAssets ?? (options.packageMode === 'development' ? 'optional' : 'required')
+	if (typeAssets !== 'required' && typeAssets !== 'optional') {
+		throw new TypeError('[workbench-ui] invalid Workbench federation type asset policy')
+	}
+	return typeAssets
+}
+
+function resolveBuildCacheDir(
+	root: string,
+	plan: WorkbenchFederationProducerPlan,
+	options: BuildWorkbenchFederationProducerOptions,
+	typeAssets: WorkbenchFederationTypeAssetPolicy,
+	buildId: string,
+): Readonly<{ dir: string; ephemeral: boolean }> {
+	const cacheRoot = options.cacheDir
+		? resolve(root, options.cacheDir)
+		: resolve(root, '.pluxel/vite-workbench-ui-cache')
+	const persistent = options.packageMode === 'development' || Boolean(options.cacheDir)
+	if (persistent) {
+		return Object.freeze({
+			dir: resolve(cacheRoot, options.packageMode, typeAssets, plan.producer),
+			ephemeral: false,
+		})
+	}
+	return Object.freeze({
+		dir: resolve(cacheRoot, 'ephemeral', `${plan.producer}-${buildId}`),
+		ephemeral: true,
+	})
+}
+
+function assertPlan(input: WorkbenchFederationProducerPlan): WorkbenchFederationProducerPlan {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError('[workbench-ui] invalid Workbench federation producer plan')
+	}
+	const expectedPlanKeys = ['profile', 'definition', 'buildRevision', 'producer', 'entries']
+	if (!hasExactKeys(input as unknown as Record<string, unknown>, expectedPlanKeys)) {
+		throw new TypeError('[workbench-ui] invalid Workbench federation producer plan fields')
+	}
+	if (input.profile !== WORKBENCH_PROFILE_VERSION || !Array.isArray(input.entries)) {
+		throw new TypeError('[workbench-ui] invalid Workbench federation producer plan profile')
+	}
+	for (const entry of input.entries) {
+		if (
+			!entry ||
+			typeof entry !== 'object' ||
+			Array.isArray(entry) ||
+			!hasExactKeys(entry as unknown as Record<string, unknown>, [
+				'descriptor',
+				'expose',
+				'bridgeEntryPath',
+			])
+		) {
+			throw new TypeError('[workbench-ui] invalid Workbench federation producer entry fields')
+		}
+	}
+	const canonical = createWorkbenchFederationProducerPlan({
+		definition: input.definition,
+		buildRevision: input.buildRevision,
+		entries: input.entries.map((entry) => ({
+			descriptor: entry.descriptor,
+			bridgeEntryPath: entry.bridgeEntryPath,
+		})),
+	})
+	if (
+		input.producer !== canonical.producer ||
+		input.entries.length !== canonical.entries.length ||
+		input.entries.some(
+			(entry, index) =>
+				entry.expose !== canonical.entries[index]?.expose ||
+				entry.bridgeEntryPath !== canonical.entries[index]?.bridgeEntryPath,
+		)
+	) {
+		throw new TypeError('[workbench-ui] non-canonical Workbench federation producer plan')
+	}
+	return canonical
+}
+
+function hasExactKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
+	const keys = Object.keys(record)
+	return keys.length === expected.length && keys.every((key) => expected.includes(key))
+}
+
+async function exists(path: string): Promise<boolean> {
+	return access(path).then(
+		(): true => true,
+		(): false => false,
 	)
-}
-
-async function runViteBuild(payload: WorkbenchUiBuildPayload): Promise<void> {
-	const buildConfig: InlineConfig = {
-		configFile: false,
-		root: payload.root,
-		cacheDir: payload.cacheDir,
-		publicDir: false,
-		clearScreen: false,
-		logLevel: 'error',
-		resolve: {
-			preserveSymlinks: false,
-			tsconfigPaths: true,
-		},
-		plugins: createWorkbenchUiBuildPlugins(payload),
-		build: {
-			outDir: payload.outDir,
-			emptyOutDir: true,
-			target: 'chrome89',
-			manifest: false,
-			minify: payload.minify,
-			cssCodeSplit: true,
-			sourcemap: payload.sourcemap,
-			rollupOptions: {
-				input: payload.entryPath,
-			},
-		},
-		server: { watch: null },
-	}
-	try {
-		await build(buildConfig)
-	} catch (error) {
-		await rm(payload.outDir, { recursive: true, force: true })
-		throw error
-	} finally {
-		await rm(payload.cacheDir, { recursive: true, force: true })
-	}
-}
-
-function createWorkbenchUiBuildPlugins(payload: WorkbenchUiBuildPayload): PluginOption[] {
-	const plugins: PluginOption[] = pluginSourceVitePlugins({
-		root: payload.root,
-		lintGuard: false,
-		configSource: false,
-	})
-	if (payload.paraglide) {
-		plugins.push(
-			...toPluginArray(
-				paraglideVitePlugin({
-					project: payload.paraglide.project,
-					outdir: payload.paraglide.outdir,
-				}),
-			),
-		)
-	}
-	plugins.push(...createFederationPlugin(payload))
-	return plugins
-}
-
-function createFederationPlugin(payload: WorkbenchUiBuildPayload): PluginOption[] {
-	const create = () =>
-		toPluginArray(
-			federation({
-				name: payload.remoteName,
-				filename: WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
-				exposes: {
-					[WORKBENCH_FEDERATION_EXPOSE]: payload.entryPath,
-				},
-				manifest: {
-					fileName: WORKBENCH_FEDERATION_MANIFEST_FILE,
-				},
-				dts: false,
-				publicPath: payload.publicPath,
-				shared: payload.shared,
-				shareStrategy: WORKBENCH_FEDERATION_SHARE_STRATEGY,
-			}),
-		)
-
-	if (!isTestLikeProcessEnv(process.env)) return create()
-
-	// @module-federation/vite intentionally skips itself under test runners unless this is set.
-	const previous = process.env.MFE_VITE_NO_TEST_ENV_CHECK
-	process.env.MFE_VITE_NO_TEST_ENV_CHECK = MFE_VITE_NO_TEST_ENV_CHECK
-	try {
-		return create()
-	} finally {
-		if (previous === undefined) {
-			delete process.env.MFE_VITE_NO_TEST_ENV_CHECK
-		} else {
-			process.env.MFE_VITE_NO_TEST_ENV_CHECK = previous
-		}
-	}
-}
-
-function toPluginArray(input: PluginOption | undefined): PluginOption[] {
-	if (Array.isArray(input)) return input.flatMap((item) => toPluginArray(item))
-	if (!input) return []
-	return [input]
 }

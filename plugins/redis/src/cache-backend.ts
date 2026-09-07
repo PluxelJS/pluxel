@@ -1,9 +1,9 @@
 import { deserialize, serialize } from 'node:v8'
 import { CacheBackend, type CacheValue } from '@pluxel/cache'
 import { Plugin, v } from '@pluxel/runtime'
-import { Redis } from './client.ts'
+import { Redis, type RedisConnection } from './client.ts'
 import { defineRedisScript } from './scripts.ts'
-import { isWellFormedUnicode } from './validation.ts'
+import { isRedisConnectionId, isWellFormedUnicode } from './validation.ts'
 
 const REDIS_CACHE_FORMAT = 'pluxel-cache:v1:'
 
@@ -36,6 +36,10 @@ return {redis.call('PTTL', KEYS[1]), value}
 })
 
 export const RedisCacheBackendConfig = v.object({
+	connectionId: v.optional(
+		v.pipe(v.string(), v.check(isRedisConnectionId, 'connectionId must be a valid Redis ID')),
+		'default',
+	),
 	keyPrefix: v.optional(
 		v.pipe(v.string(), v.check(isWellFormedUnicode, 'keyPrefix must be well-formed Unicode')),
 		'pluxel:cache:',
@@ -47,16 +51,17 @@ export const RedisCacheBackendConfig = v.object({
 export type RedisCacheBackendPluginConfig = v.InferOutput<typeof RedisCacheBackendConfig>
 
 /** CacheBackend adapter shipped with @pluxel/redis. */
-@Plugin(CacheBackend, { name: 'RedisCacheBackendPlugin' })
+@Plugin(CacheBackend)
 export class RedisCacheBackendPlugin extends CacheBackend {
 	private readonly config = this.configs.use(RedisCacheBackendConfig)
+	private connectionHandle?: RedisConnection
 
 	constructor(private readonly redis: Redis) {
 		super()
 	}
 
 	async get<V>(key: string): Promise<CacheValue<V> | undefined> {
-		return (await this.redis.scripts.run(GetCacheValue, {
+		return (await this.connection().scripts.run(GetCacheValue, {
 			keys: [this.redisKey(key)],
 		})) as CacheValue<V> | undefined
 	}
@@ -68,19 +73,20 @@ export class RedisCacheBackendPlugin extends CacheBackend {
 		}
 		const redisKey = this.redisKey(key)
 		const encoded = encodeRedisCacheValue(value)
-		if (ttlMs === 0) await this.redis.client.set(redisKey, encoded)
+		const client = this.connection().client
+		if (ttlMs === 0) await client.set(redisKey, encoded)
 		else
-			await this.redis.client.set(redisKey, encoded, {
+			await client.set(redisKey, encoded, {
 				expiration: { type: 'PX', value: ttlMs },
 			})
 	}
 
 	async delete(key: string): Promise<void> {
-		await this.redis.client.unlink(this.redisKey(key))
+		await this.connection().client.unlink(this.redisKey(key))
 	}
 
 	async clear(prefix: string): Promise<void> {
-		const client = this.redis.client
+		const client = this.connection().client
 		const match = `${escapeRedisGlob(this.redisKey(prefix))}*`
 		if ('masters' in client) {
 			// Cluster clients scan each master separately. Delete keys individually because a single
@@ -121,6 +127,10 @@ export class RedisCacheBackendPlugin extends CacheBackend {
 
 	private redisKey(key: string): string {
 		return `${this.config.keyPrefix}${key}`
+	}
+
+	private connection(): RedisConnection {
+		return (this.connectionHandle ??= this.redis.connection(this.config.connectionId))
 	}
 }
 

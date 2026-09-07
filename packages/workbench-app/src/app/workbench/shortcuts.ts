@@ -1,22 +1,40 @@
+import { formatForDisplay, type Hotkey } from '@tanstack/react-hotkeys'
+
 export const WORKBENCH_HOTKEYS = {
 	togglePluginRail: 'Mod+B',
-	focusSearch: 'Mod+K',
+	toggleDock: 'Mod+J',
+	toggleRightPane: 'Mod+Alt+B',
+	focusSearch: 'Mod+P',
 	closeActiveTab: 'Mod+W',
 	prevTab: 'Mod+Shift+BracketLeft',
 	nextTab: 'Mod+Shift+BracketRight',
 } as const
 
-export const WORKBENCH_HOTKEY_LABELS = {
-	togglePluginRail: '⌘B',
-	focusSearch: '⌘K',
-	closeActiveTab: '⌘W',
-	prevTab: '⌘⇧[',
-	nextTab: '⌘⇧]',
+const TOGGLE_FOCUS_MODE_SEQUENCE: [Hotkey, Hotkey] = ['Mod+K', 'Z']
+
+export const WORKBENCH_HOTKEY_SEQUENCES = {
+	toggleFocusMode: TOGGLE_FOCUS_MODE_SEQUENCE,
 } as const
 
+export const WORKBENCH_HOTKEY_LABELS = {
+	togglePluginRail: formatForDisplay(WORKBENCH_HOTKEYS.togglePluginRail),
+	toggleDock: formatForDisplay(WORKBENCH_HOTKEYS.toggleDock),
+	toggleRightPane: formatForDisplay(WORKBENCH_HOTKEYS.toggleRightPane),
+	toggleFocusMode: WORKBENCH_HOTKEY_SEQUENCES.toggleFocusMode
+		.map((hotkey) => formatForDisplay(hotkey))
+		.join(' '),
+	focusSearch: formatForDisplay(WORKBENCH_HOTKEYS.focusSearch),
+	closeActiveTab: formatForDisplay(WORKBENCH_HOTKEYS.closeActiveTab),
+	prevTab: formatForDisplay(WORKBENCH_HOTKEYS.prevTab),
+	nextTab: formatForDisplay(WORKBENCH_HOTKEYS.nextTab),
+}
+
 export const WORKBENCH_SHORTCUT_ITEMS = [
-	['Ctrl/⌘ + K', '打开插件搜索'],
+	['Ctrl/⌘ + P', '打开插件搜索'],
 	['Ctrl/⌘ + B', '显示或隐藏插件列表'],
+	['Ctrl/⌘ + Alt + B', '显示或隐藏辅助侧栏'],
+	['Ctrl/⌘ + J', '显示或隐藏底部面板'],
+	['Ctrl/⌘ + K → Z', '进入或退出聚焦工作区'],
 	['Ctrl/⌘ + W', '关闭当前工作标签'],
 	['Ctrl/⌘ + Shift + [', '切到上一个工作标签'],
 	['Ctrl/⌘ + Shift + ]', '切到下一个工作标签'],
@@ -42,10 +60,10 @@ export const PLUGIN_DETAIL_HOTKEYS = {
 } as const
 
 export const PLUGIN_DETAIL_HOTKEY_LABELS = {
-	saveCurrentConfig: '⌘S',
-	saveAllConfig: '⌘⇧S',
-	restartPlugin: '⌘⌥R',
-} as const
+	saveCurrentConfig: formatForDisplay(PLUGIN_DETAIL_HOTKEYS.saveCurrentConfig),
+	saveAllConfig: formatForDisplay(PLUGIN_DETAIL_HOTKEYS.saveAllConfig),
+	restartPlugin: formatForDisplay(PLUGIN_DETAIL_HOTKEYS.restartPlugin),
+}
 
 export const PLUGIN_DETAIL_SHORTCUT_ITEMS = [
 	['Ctrl/⌘ + S', '保存当前配置页'],

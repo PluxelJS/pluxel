@@ -2,7 +2,11 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { defineWorkerTask, type WorkerTaskError } from '@pluxel/runtime'
-import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	createRuntimeInternalTestHarness,
+	type RuntimeInternalTestHarness,
+} from '@pluxel/runtime/internal/test'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 
 type TaskInput = Readonly<{ label: string; delay: number }>
 type TaskOutput = Readonly<{
@@ -33,10 +37,34 @@ const transferDeclaration = (defineWorkerTask as unknown as (...args: unknown[])
 ) as ReturnType<typeof defineWorkerTask<TransferTaskInput, TransferTaskOutput>>
 const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs', import.meta.url)))
 
-@Plugin({ name: 'WorkerTaskConsumerA' })
+@Plugin()
 class WorkerTaskConsumerA extends BasePlugin {
+	workerView() {
+		return this.ctx.workers
+	}
+
 	run(input: TaskInput, signal?: AbortSignal): Promise<TaskOutput> {
 		return this.ctx.workers.run(declaration, input, { signal })
+	}
+
+	borrow(input: TaskInput): Promise<TaskOutput> {
+		return this.ctx.workers.run(declaration, input, { inputOwnership: 'borrowed' })
+	}
+
+	prepare(
+		prepare: (signal: AbortSignal) => TaskInput | Promise<TaskInput>,
+		signal?: AbortSignal,
+	): Promise<TaskOutput> {
+		return this.ctx.workers.runPrepared(declaration, prepare, {
+			signal,
+			inputOwnership: 'borrowed',
+		})
+	}
+
+	prepareWithTransfer(): Promise<TaskOutput> {
+		return this.ctx.workers.runPrepared(declaration, async () => ({ label: 'invalid', delay: 0 }), {
+			transfer: [],
+		} as never)
 	}
 
 	transfer(
@@ -47,38 +75,95 @@ class WorkerTaskConsumerA extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'WorkerTaskConsumerB' })
+@Plugin()
 class WorkerTaskConsumerB extends BasePlugin {
+	workerView() {
+		return this.ctx.workers
+	}
+
 	run(input: TaskInput): Promise<TaskOutput> {
 		return this.ctx.workers.run(declaration, input)
 	}
 }
 
 function createWorkerHost(
-	workers: NonNullable<Parameters<typeof createRuntimeHost>[0]>['workers'] = {},
+	workers: NonNullable<Parameters<typeof createRuntimeInternalTestHarness>[0]>['workers'] = {},
 ) {
-	return createRuntimeHost({
+	return createRuntimeInternalTestHarness({
 		workbench: false,
 		nodeModuleArtifactRoot: artifactRoot,
 		workers,
 	})
 }
 
-async function resetWorkerHost(host: RuntimeHost): Promise<void> {
+async function resetWorkerHost(host: RuntimeInternalTestHarness): Promise<void> {
 	const plugins = host.plugins()
 	if (plugins.length === 0) return
 	host.remove(plugins)
 	await host.commit()
 }
 
+type WorkerTaskRootStateProbe = {
+	activeTasks: number
+	queuedTasks: number
+	pool: {
+		slots: Set<{ worker: { terminate(): Promise<number> } }>
+	}
+}
+
+function holdCurrentWorkerTermination(host: RuntimeInternalTestHarness): Readonly<{
+	state: WorkerTaskRootStateProbe
+	release(): void
+}> {
+	const state = (host.ctx.workers as unknown as { state: WorkerTaskRootStateProbe }).state
+	const worker = [...state.pool.slots][0]!.worker
+	const terminate = worker.terminate.bind(worker)
+	let release!: () => void
+	const gate = new Promise<void>((resolve) => void (release = resolve))
+	worker.terminate = async () => {
+		await gate
+		return terminate()
+	}
+	return { state, release }
+}
+
 describe('WorkerTaskService', () => {
-	let workerHost: RuntimeHost
+	let workerHost: RuntimeInternalTestHarness
 
 	beforeAll(() => {
 		workerHost = createWorkerHost({ maxThreads: 1 })
 	})
 
 	afterAll(() => workerHost.dispose())
+
+	it('creates cold owner views per consumer while sharing one root coordinator', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerB).setAutoStart(true)
+			host.start(WorkerTaskConsumerB)
+			await host.commit()
+
+			const rootView = host.ctx.workers
+			const a = host.require(WorkerTaskConsumerA)
+			const b = host.require(WorkerTaskConsumerB)
+			const aView = a.workerView()
+			const bView = b.workerView()
+
+			expect(aView).not.toBe(rootView)
+			expect(bView).not.toBe(rootView)
+			expect(aView).not.toBe(bView)
+			expect(a.workerView()).toBe(aView)
+			expect(b.workerView()).toBe(bView)
+			expect(aView.ctx).toBe(a.ctx)
+			expect(bView.ctx).toBe(b.ctx)
+			expect((rootView as unknown as { state?: { pool?: unknown } }).state?.pool).toBeUndefined()
+		} finally {
+			await host.dispose()
+		}
+	})
 
 	it('lazily runs cloneable task data in a worker thread', async () => {
 		const host = createWorkerHost({ maxThreads: 1 })
@@ -88,7 +173,8 @@ describe('WorkerTaskService', () => {
 			}
 			expect(rootWorkers.state?.pool).toBeUndefined()
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 
 			const result = await host.require(WorkerTaskConsumerA).run({ label: 'worker', delay: 0 })
@@ -110,7 +196,8 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const bytes = new Uint8Array(64 * 1024)
 			bytes[0] = 17
@@ -130,11 +217,51 @@ describe('WorkerTaskService', () => {
 		}
 	})
 
+	it('distinguishes admission snapshots from explicitly borrowed input', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			const occupied = consumer.run({ label: 'occupied', delay: 50 })
+			const snapshotInput = { label: 'snapshot', delay: 0 }
+			const borrowedInput = { label: 'borrowed', delay: 0 }
+			const snapshot = consumer.run(snapshotInput)
+			const borrowed = consumer.borrow(borrowedInput)
+			snapshotInput.label = 'mutated snapshot'
+			borrowedInput.label = 'mutated borrowed'
+
+			await occupied
+			await expect(snapshot).resolves.toMatchObject({ label: 'snapshot' })
+			await expect(borrowed).resolves.toMatchObject({ label: 'mutated borrowed' })
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('rejects transfer ownership on deferred input preparation', async () => {
+		const host = createWorkerHost()
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			await host.commit()
+			await expect(host.require(WorkerTaskConsumerA).prepareWithTransfer()).rejects.toMatchObject<
+				Partial<WorkerTaskError>
+			>({ code: 'INVALID_INPUT' })
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('validates transfer ownership before detaching caller buffers', async () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const bytes = new Uint8Array(16)
 			const buffer = bytes.buffer
@@ -152,8 +279,10 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
-			host.cfg(WorkerTaskConsumerA).enable()
-			host.cfg(WorkerTaskConsumerB).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerB).setAutoStart(true)
+			host.start(WorkerTaskConsumerB)
 			await host.commit()
 			const a = host.require(WorkerTaskConsumerA)
 			const b = host.require(WorkerTaskConsumerB)
@@ -189,7 +318,8 @@ describe('WorkerTaskService', () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const running = consumer.run({ label: 'running', delay: 20 })
@@ -221,7 +351,8 @@ describe('WorkerTaskService', () => {
 		})
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const reserved = consumer.run({ label: 'reserved', delay: 0 })
@@ -247,7 +378,8 @@ describe('WorkerTaskService', () => {
 		})
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const running = consumer.run({ label: 'running', delay: 20 })
@@ -269,8 +401,10 @@ describe('WorkerTaskService', () => {
 		})
 		try {
 			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
-			host.cfg(WorkerTaskConsumerA).enable()
-			host.cfg(WorkerTaskConsumerB).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerB).setAutoStart(true)
+			host.start(WorkerTaskConsumerB)
 			await host.commit()
 			const a = host.require(WorkerTaskConsumerA)
 			const b = host.require(WorkerTaskConsumerB)
@@ -290,11 +424,77 @@ describe('WorkerTaskService', () => {
 		}
 	})
 
+	it('starts deferred input preparation only after fair queue admission and dispatch', async () => {
+		const host = createWorkerHost({
+			maxThreads: 1,
+			maxQueuedTasks: 1,
+			maxQueuedTasksPerPlugin: 8,
+		})
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			await consumer.run({ label: 'warm', delay: 0 })
+			const running = consumer.run({ label: 'running', delay: 30 })
+			let preparations = 0
+			const prepared = consumer.prepare(async (signal) => {
+				preparations += 1
+				signal.throwIfAborted()
+				return { label: 'prepared', delay: 0 }
+			})
+			await expect(
+				consumer.prepare(async () => {
+					preparations += 1
+					return { label: 'rejected', delay: 0 }
+				}),
+			).rejects.toMatchObject<Partial<WorkerTaskError>>({ code: 'QUEUE_FULL' })
+
+			await Promise.resolve()
+			expect(preparations).toBe(0)
+			await running
+			await expect(prepared).resolves.toMatchObject({ label: 'prepared' })
+			expect(preparations).toBe(1)
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('aborts active deferred preparation and drains it when the owner stops', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			await host.commit()
+			let entered!: () => void
+			const prepared = new Promise<void>((resolve) => {
+				entered = resolve
+			})
+			const task = host.require(WorkerTaskConsumerA).prepare(async (signal) => {
+				entered()
+				await new Promise<never>((_resolve, reject) => {
+					signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+				})
+				return { label: 'unreachable', delay: 0 }
+			})
+			await prepared
+
+			host.remove(WorkerTaskConsumerA)
+			await host.commit()
+			await expect(task).rejects.toMatchObject<Partial<WorkerTaskError>>({ code: 'NOT_RUNNING' })
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('removes a cancelled queue slot so the owner can submit again', async () => {
 		const host = workerHost
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
 			const consumer = host.require(WorkerTaskConsumerA)
 			const running = consumer.run({ label: 'running', delay: 20 })
@@ -312,19 +512,68 @@ describe('WorkerTaskService', () => {
 		}
 	})
 
-	it('aborts accepted work and waits for it when its plugin owner stops', async () => {
+	it('retains an active slot until the aborted worker has actually terminated', async () => {
 		const host = workerHost
+		let releaseTermination = (): void => undefined
 		try {
 			host.add(WorkerTaskConsumerA)
-			host.cfg(WorkerTaskConsumerA).enable()
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
 			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			await consumer.run({ label: 'warm', delay: 0 })
+			const held = holdCurrentWorkerTermination(host)
+			releaseTermination = held.release
+			const controller = new AbortController()
+			const reason = new Error('cancel active')
+			const active = consumer.run({ label: 'active', delay: 10_000 }, controller.signal)
+			controller.abort(reason)
+
+			await expect(active).rejects.toBe(reason)
+			let nextSettled = false
+			const next = consumer
+				.run({ label: 'after-termination', delay: 0 })
+				.finally(() => void (nextSettled = true))
+			await Promise.resolve()
+			expect(nextSettled).toBe(false)
+			expect(held.state.activeTasks).toBe(1)
+			expect(held.state.queuedTasks).toBe(1)
+
+			releaseTermination()
+			await expect(next).resolves.toMatchObject({
+				label: 'after-termination',
+			})
+		} finally {
+			releaseTermination()
+			await resetWorkerHost(host)
+		}
+	})
+
+	it('aborts accepted work and waits for it when its plugin owner stops', async () => {
+		const host = workerHost
+		let releaseTermination = (): void => undefined
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
+			host.start(WorkerTaskConsumerA)
+			await host.commit()
+			await host.require(WorkerTaskConsumerA).run({ label: 'warm', delay: 0 })
+			const held = holdCurrentWorkerTermination(host)
+			releaseTermination = held.release
 			const task = host.require(WorkerTaskConsumerA).run({ label: 'long', delay: 10_000 })
 			host.remove(WorkerTaskConsumerA)
-			await host.commit()
+			let commitSettled = false
+			const committing = host.commit().finally(() => void (commitSettled = true))
 			await expect(task).rejects.toMatchObject<Partial<WorkerTaskError>>({
 				code: 'NOT_RUNNING',
 			})
+			await Promise.resolve()
+			expect(commitSettled).toBe(false)
+
+			releaseTermination()
+			await committing
 		} finally {
+			releaseTermination()
 			await resetWorkerHost(host)
 		}
 	})

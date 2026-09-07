@@ -1,13 +1,11 @@
 import react from '@vitejs/plugin-react'
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
-export default definePluxelVitestConfig(
-	{
-		test: {
-			environment: 'jsdom',
-		},
+export default definePluxelVitestConfig({
+	test: {
+		environment: 'jsdom',
 	},
-	{
+	pluxel: {
 		prePlugins: [react()],
 		include: [
 			'src/**/*.ts',
@@ -21,4 +19,4 @@ export default definePluxelVitestConfig(
 		],
 		exclude: ['node_modules/**', 'dist/**', '**/*.d.ts', '.*/**'],
 	},
-)
+})

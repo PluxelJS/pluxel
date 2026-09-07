@@ -1,16 +1,18 @@
 export {
-	isPluginEnabled,
+	isPluginAutoStartEnabled,
 	listForkIds,
-	replaceEnabledPlugins,
-	setPluginEnabled,
-	setPluginsEnabled,
+	replaceAutoStartPlugins,
+	setPluginAutoStart,
+	setPluginsAutoStart,
 } from './services/RuntimeStateHelpers'
 
 export type {
-	PluginGroupState,
 	RuntimeStateDraft,
 	RuntimeStateFile,
 	RuntimeStateSnapshot,
 	RuntimeStateStoreConfig,
 	RuntimeStateStoreMode,
+	RuntimeStateVersionedSnapshot,
 } from './services/RuntimeStateStore'
+
+export { RuntimeStateRevisionConflictError } from './services/RuntimeStateStore'

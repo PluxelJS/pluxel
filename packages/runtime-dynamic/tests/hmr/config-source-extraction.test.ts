@@ -12,10 +12,10 @@ import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } fr
 import { buildLoaderHmrViteConfig, resolveFsAllowList } from '../../src/hmr/engine/config'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 
-type CoreApi = {
-	getConfigSource: (ctor: unknown) => Record<string, unknown> | null
-	getRequiredPluginDependencies: (ctor: unknown) => unknown[]
-	getUsedFeatures: (ctor: unknown) => Array<{ name: string }>
+type CoreInternalApi = {
+	consumePluginDefinitionCandidate: (ctor: unknown) => {
+		declaration: { config?: { fieldName: string; source?: string } }
+	}
 }
 
 async function withPluginRunner<T>(
@@ -23,7 +23,7 @@ async function withPluginRunner<T>(
 		execute: (pluginEntry: string) => Promise<{
 			capture: LoaderModuleCapture
 			errorLogs: ErrorLog[]
-			core: CoreApi
+			coreInternal: CoreInternalApi
 		}>,
 	) => Promise<T>,
 	opts?: {
@@ -58,7 +58,8 @@ async function withPluginRunner<T>(
 
 	const serverConfig = mergeConfig(
 		buildLoaderHmrViteConfig({
-			root,
+			viteRoot: root,
+			sourceRoot: root,
 			fsAllow,
 			runnerPlugin,
 			httpPlugin: { name: 'noop' },
@@ -79,8 +80,10 @@ async function withPluginRunner<T>(
 			capture.replaceModuleCalls = 0
 			errorLogs.length = 0
 			await hmr.executeFiles([pluginEntry])
-			const core = (await (hmr as any).runner.import('@pluxel/core')) as CoreApi
-			return { capture, errorLogs, core }
+			const coreInternal = (await (hmr as any).runner.import(
+				'@pluxel/core/internal',
+			)) as CoreInternalApi
+			return { capture, errorLogs, coreInternal }
 		})
 	} finally {
 		await server.close()
@@ -89,48 +92,34 @@ async function withPluginRunner<T>(
 }
 
 describe('configSourcePlugin integration', () => {
-	it('extracts config and feature metadata for fixture entries', async () => {
+	it('extracts one object config definition for fixture entries', async () => {
 		const root = workspaceRoot
 		await withPluginRunner(async (execute) => {
 			{
 				const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginB.ts')
-				const { capture, errorLogs, core } = await execute(pluginEntry)
+				const { capture, errorLogs, coreInternal } = await execute(pluginEntry)
 
 				expect(errorLogs).toEqual([])
 				expect(capture.lastModule).toBeTruthy()
 				const ctor = (capture.lastModule as { PluginB?: unknown } | null)?.PluginB
 				expect(typeof ctor).toBe('function')
-				const map = core.getConfigSource(ctor)
-				expect(map).toBeTruthy()
-				expect(Object.keys(map ?? {})).toContain('a')
-				expect(Object.keys(map ?? {})).toContain('ba')
+				const config = coreInternal.consumePluginDefinitionCandidate(ctor).declaration.config
+				expect(config?.fieldName).toBe('config')
+				expect(config?.source).toContain('a:')
+				expect(config?.source).toContain('ba:')
 			}
 
 			{
 				const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginConfigUse.ts')
-				const { capture, errorLogs, core } = await execute(pluginEntry)
+				const { capture, errorLogs, coreInternal } = await execute(pluginEntry)
 
 				expect(errorLogs).toEqual([])
 				expect(capture.lastModule).toBeTruthy()
 				const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
 				expect(typeof ctor).toBe('function')
-				const map = core.getConfigSource(ctor)
-				expect(map).toBeTruthy()
-				expect(Object.keys(map ?? {})).toContain('foo')
-			}
-
-			{
-				const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginFeatureUse.ts')
-				const { capture, errorLogs, core } = await execute(pluginEntry)
-
-				expect(errorLogs).toEqual([])
-				expect(capture.lastModule).toBeTruthy()
-				const ctor = (capture.lastModule as { PluginFeatureUse?: unknown } | null)?.PluginFeatureUse
-				expect(typeof ctor).toBe('function')
-				const kv = (capture.lastModule as { KvPlugin?: unknown } | null)?.KvPlugin
-				expect(typeof kv).toBe('function')
-				expect(core.getRequiredPluginDependencies(ctor)).toContain(kv)
-				expect(core.getUsedFeatures(ctor).map((x) => x.name)).toContain('CacheFeature')
+				const config = coreInternal.consumePluginDefinitionCandidate(ctor).declaration.config
+				expect(config?.fieldName).toBe('foo')
+				expect(config?.source).toContain('enabled:')
 			}
 		})
 	}, 20_000)
@@ -148,15 +137,15 @@ describe('configSourcePlugin integration', () => {
 			const pluginEntry = join(root, rootsRel, 'PluginConfigUse.ts')
 			await withPluginRunner(
 				async (execute) => {
-					const { capture, errorLogs, core } = await execute(pluginEntry)
+					const { capture, errorLogs, coreInternal } = await execute(pluginEntry)
 
 					expect(errorLogs).toEqual([])
 					expect(capture.lastModule).toBeTruthy()
 					const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
 					expect(typeof ctor).toBe('function')
-					const map = core.getConfigSource(ctor)
-					expect(map).toBeTruthy()
-					expect(Object.keys(map ?? {})).toContain('foo')
+					const config = coreInternal.consumePluginDefinitionCandidate(ctor).declaration.config
+					expect(config?.fieldName).toBe('foo')
+					expect(config?.source).toContain('enabled:')
 				},
 				{
 					rootsRelFromWorkspace: rootsRel,

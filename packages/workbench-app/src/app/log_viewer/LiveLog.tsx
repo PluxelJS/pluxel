@@ -1,13 +1,17 @@
 import {
-	getRuntimeSecurityClient,
 	type LogFilter,
 	type LogRangeOk,
-	type LogSseEvent,
 	type LogStreamMeta,
+	type RuntimeLogEvent,
 	type RuntimeLogLine,
-	resolveAdminAccessLandingPath,
-	useRuntimeTransportClient,
+	useRuntimeManagementClient,
 } from '../../runtime'
+import {
+	formatPluginNodeReference,
+	parsePluginNodeAddress,
+	pluginNodeAddressEqual,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
 	memo,
@@ -25,7 +29,7 @@ import { type PlxLogTheme, useThemeModel } from '../../theme'
 import { stringifyUnknown } from '../../utils/unknown'
 
 interface Props {
-	module?: string
+	owner?: PluginNodeAddress
 	showName?: boolean
 	filter?: LogFilter
 	/**
@@ -93,7 +97,7 @@ function normalizeFilter(filter: LogFilter | undefined): LogFilter {
 		return s ? s : undefined
 	}
 	return {
-		pluginId: trimOrUndef(filter?.pluginId),
+		plugin: filter?.plugin ? parsePluginNodeAddress(filter.plugin) : undefined,
 		context: trimOrUndef(filter?.context),
 		displayName: trimOrUndef(filter?.displayName),
 		category: trimOrUndef(filter?.category),
@@ -102,7 +106,10 @@ function normalizeFilter(filter: LogFilter | undefined): LogFilter {
 
 function sameFilter(a: LogFilter, b: LogFilter): boolean {
 	return (
-		(a.pluginId ?? '') === (b.pluginId ?? '') &&
+		((a.plugin === undefined && b.plugin === undefined) ||
+			(a.plugin !== undefined &&
+				b.plugin !== undefined &&
+				pluginNodeAddressEqual(a.plugin, b.plugin))) &&
 		(a.context ?? '') === (b.context ?? '') &&
 		(a.displayName ?? '') === (b.displayName ?? '') &&
 		(a.category ?? '') === (b.category ?? '')
@@ -111,7 +118,7 @@ function sameFilter(a: LogFilter, b: LogFilter): boolean {
 
 function filterSummary(filter: LogFilter): string | null {
 	const parts = [
-		filter.pluginId ? `plugin=${filter.pluginId}` : null,
+		filter.plugin ? `plugin=${formatPluginNodeReference(filter.plugin)}` : null,
 		filter.context ? `context=${filter.context}` : null,
 		filter.displayName ? `display=${filter.displayName}` : null,
 		filter.category ? `category=${filter.category}` : null,
@@ -509,6 +516,7 @@ const LogList = memo(function LogList(props: {
 	apiRef: { current: LogListApi | null }
 	palette: PlxLogTheme
 	metaCount?: number
+	emptyMessage?: string
 }) {
 	const {
 		store,
@@ -526,6 +534,7 @@ const LogList = memo(function LogList(props: {
 		apiRef,
 		palette,
 		metaCount,
+		emptyMessage,
 	} = props
 
 	const _version = useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion)
@@ -701,7 +710,7 @@ const LogList = memo(function LogList(props: {
 							padding: 16,
 						}}
 					>
-						{metaCount ? '暂无可见日志（可能在加载/被过滤）' : '暂无日志'}
+						{emptyMessage ?? (metaCount ? '暂无可见日志（可能在加载/被过滤）' : '暂无日志')}
 					</div>
 				) : null}
 			</div>
@@ -709,11 +718,12 @@ const LogList = memo(function LogList(props: {
 	)
 })
 
-export function LiveLog({ module, showName = true, filter, variant = 'full' }: Props) {
-	const transport = useRuntimeTransportClient()
+export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Props) {
+	const management = useRuntimeManagementClient()
 	const plxScheme = useThemeModel()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
 	const [connected, setConnected] = useState(false)
+	const [connectionError, setConnectionError] = useState<string | null>(null)
 	const [follow, setFollow] = useState(true)
 	const [newSincePause, setNewSincePause] = useState(0)
 	const [selectedSeq, setSelectedSeq] = useState<string | null>(null)
@@ -733,12 +743,12 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	const defaultsFilter = useMemo(
 		() =>
 			normalizeFilter({
-				pluginId: filter?.pluginId ?? module,
+				plugin: filter?.plugin ?? owner,
 				context: filter?.context,
 				displayName: filter?.displayName,
 				category: filter?.category,
 			}),
-		[module, filter?.pluginId, filter?.context, filter?.displayName, filter?.category],
+		[owner, filter?.plugin, filter?.context, filter?.displayName, filter?.category],
 	)
 
 	const [draftFilter, setDraftFilter] = useState<LogFilter>(() => defaultsFilter)
@@ -766,15 +776,6 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		return () => clearTimeout(t)
 	}, [dirty, draftFilter])
 
-	const filterQuery = useMemo(() => {
-		const params = new URLSearchParams()
-		if (activeFilter.pluginId) params.set('pluginId', activeFilter.pluginId)
-		if (activeFilter.context) params.set('context', activeFilter.context)
-		if (activeFilter.displayName) params.set('displayName', activeFilter.displayName)
-		if (activeFilter.category) params.set('category', activeFilter.category)
-		return params.toString()
-	}, [activeFilter])
-
 	const ringRef = useRef(createRingStore<RuntimeLogLine>(CLIENT_RING_CAP))
 	const listApiRef = useRef<LogListApi | null>(null)
 	const followRef = useRef(true)
@@ -782,21 +783,16 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	const rafRef = useRef<number | null>(null)
 	const pendingLinesRef = useRef<RuntimeLogLine[]>([])
 
-	// —— 快照 + SSE（仅跟随 filterQuery 变化） —— //
-	const abortRef = useRef<AbortController | null>(null)
-	const adminAccessProbeInFlightRef = useRef<Promise<boolean> | null>(null)
-	const lastAdminAccessProbeAtRef = useRef<number>(0)
-
 	const refreshStreams = useCallback(async () => {
 		try {
-			const payload = await transport.http.logs.streams()
+			const payload = await management.logs.streams()
 			const ids = payload.streams.map((stream) => stream.streamId).filter(Boolean)
 			ids.sort((a: string, b: string) => a.localeCompare(b))
 			if (ids.length > 0) setStreams(ids)
 		} catch {
 			// ignore
 		}
-	}, [transport.http.logs])
+	}, [management.logs])
 
 	useEffect(() => {
 		if (variant !== 'full') return
@@ -805,62 +801,36 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 	useEffect(() => {
 		let disposed = false
+		let subscription: Disposable | undefined
+		let initialized = false
+		const bufferedEvents: RuntimeLogEvent[] = []
+		let bootstrapOverflow = false
+		const seenSequences = new Set<string>()
 
-		// reset state
-		if (abortRef.current) {
-			abortRef.current.abort()
-			abortRef.current = null
-		}
 		if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
 		rafRef.current = null
 		pendingLinesRef.current.length = 0
 		ringRef.current.clear()
 		setMeta(null)
 		setConnected(false)
+		setConnectionError(null)
 		setNewSincePause(0)
 		setSelectedSeq(null)
 		setSelectedLine(null)
 
-		// —— 拉快照 —— //
-		const ac = new AbortController()
-		abortRef.current = ac
-
-		const probeAdminAccessBlocked = async (): Promise<boolean> => {
-			const now = Date.now()
-			if (now - lastAdminAccessProbeAtRef.current < 1500) return false
-			lastAdminAccessProbeAtRef.current = now
-			try {
-				const payload = await getRuntimeSecurityClient().readOverview()
-				if (payload.adminAccess.allow === true) return false
-				if (typeof window !== 'undefined') {
-					const next = resolveAdminAccessLandingPath(payload.adminAccess.reason)
-					window.location.assign(next)
-				}
-				return true
-			} catch {
-				return false
-			}
-		}
-
-		const fetchMeta = async (): Promise<LogStreamMeta> => {
-			return transport.http.logs.meta(streamId, { signal: ac.signal })
-		}
+		const fetchMeta = async (): Promise<LogStreamMeta> => management.logs.meta(streamId)
 
 		const fetchRange = async (
 			m: LogStreamMeta,
 			fromSeq: string,
 			limit: number,
 		): Promise<LogRangeOk> => {
-			const payload = await transport.http.logs.range(
-				streamId,
-				{
-					epoch: m.epoch,
-					from: fromSeq,
-					limit,
-					...activeFilter,
-				},
-				{ signal: ac.signal },
-			)
+			const payload = await management.logs.range(streamId, {
+				epoch: m.epoch,
+				fromSeq,
+				limit,
+				filter: activeFilter,
+			})
 			if (!isRecord(payload) || payload.ok !== true) throw new Error('Invalid range response')
 			return payload as LogRangeOk
 		}
@@ -878,119 +848,126 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			rafRef.current = requestAnimationFrame(flush)
 		}
 
-		const onAppendLines = (lines: RuntimeLogLine[]) => {
-			if (disposed || ac.signal.aborted) return
+		const onAppendLines = (lines: readonly RuntimeLogLine[]) => {
+			if (disposed) return
 			if (lines.length === 0) return
-			pendingLinesRef.current.push(...lines)
+			const unseen = lines.filter((line) => {
+				if (seenSequences.has(line.seq)) return false
+				seenSequences.add(line.seq)
+				if (seenSequences.size > CLIENT_RING_CAP * 2) {
+					const oldest = seenSequences.values().next().value
+					if (oldest !== undefined) seenSequences.delete(oldest)
+				}
+				return true
+			})
+			if (unseen.length === 0) return
+			pendingLinesRef.current.push(...unseen)
 			scheduleFlush()
 		}
 
-		const connectFollow = (m: LogStreamMeta, fromSeq: string) => {
-			const params = new URLSearchParams(filterQuery)
-			params.set('epoch', String(m.epoch))
-			params.set('from', fromSeq)
-			const url = transport.http.logs.followUrl(streamId, params)
-			const es = new EventSource(url)
+		const handleEvent = (event: RuntimeLogEvent) => {
+			if (disposed) return
+			if (event.type === 'reset') {
+				setMeta(event)
+				ringRef.current.clear()
+				pendingLinesRef.current.length = 0
+				seenSequences.clear()
+				setNewSincePause(0)
+				setSelectedSeq(null)
+				setSelectedLine(null)
+				return
+			}
+			if (event.type === 'append') {
+				onAppendLines(event.lines)
+				return
+			}
 
-			es.onopen = () => setConnected(true)
-
-			const onMsg = (ev: MessageEvent) => {
-				let msg: LogSseEvent | null = null
+			const stop = addSeq(event.missingTo, 1n)
+			if (!stop) return
+			let cursor = event.missingFrom
+			void (async () => {
 				try {
-					msg = JSON.parse(ev.data) as LogSseEvent
-				} catch {
-					return
-				}
-				if (!msg || typeof msg !== 'object') return
-
-				if (msg.type === 'reset') {
-					setMeta(msg)
-					ringRef.current.clear()
-					pendingLinesRef.current.length = 0
-					setNewSincePause(0)
-					setSelectedSeq(null)
-					setSelectedLine(null)
-					return
-				}
-
-				if (msg.type === 'append') {
-					onAppendLines(msg.lines ?? [])
-					return
-				}
-
-				if (msg.type === 'gap') {
-					const stop = addSeq(msg.missingTo, 1n)
-					if (!stop) return
-
-					let cursor = msg.missingFrom
-					const loop = async () => {
-						if (disposed || ac.signal.aborted) return
-						try {
-							const mm = (await fetchMeta()) as LogStreamMeta
-							setMeta(mm)
-							while (cursor !== stop && !disposed && !ac.signal.aborted) {
-								const out = await fetchRange(mm, cursor, RANGE_LIMIT)
-								cursor = out.nextSeq
-								onAppendLines(out.lines)
-							}
-						} catch {
-							// ignore
-						}
+					const current = await fetchMeta()
+					if (disposed) return
+					setMeta(current)
+					while (cursor !== stop && !disposed) {
+						const range = await fetchRange(current, cursor, RANGE_LIMIT)
+						if (range.nextSeq === cursor) break
+						cursor = range.nextSeq
+						onAppendLines(range.lines)
 					}
-					void loop()
+				} catch (error: unknown) {
+					setConnected(false)
+					setConnectionError(stringifyUnknown(error, '日志缺口回填失败'))
 				}
-			}
-
-			es.addEventListener('reset', (ev) => onMsg(ev as MessageEvent))
-			es.addEventListener('append', (ev) => onMsg(ev as MessageEvent))
-			es.addEventListener('gap', (ev) => onMsg(ev as MessageEvent))
-
-			es.onerror = () => {
-				setConnected(false)
-				if (adminAccessProbeInFlightRef.current !== null) return
-				adminAccessProbeInFlightRef.current = probeAdminAccessBlocked().finally(() => {
-					adminAccessProbeInFlightRef.current = null
-				})
-				void adminAccessProbeInFlightRef.current.then((blocked): undefined => {
-					if (blocked) es.close()
-					return undefined
-				})
-			}
-
-			return es
+			})()
 		}
 
-		let es: EventSource | null = null
 		void (async () => {
 			try {
+				subscription = await management.logs.follow({ streamId, filter: activeFilter }, (event) => {
+					if (!initialized) {
+						if (bufferedEvents.length < 1024) bufferedEvents.push(event)
+						else {
+							bootstrapOverflow = true
+							bufferedEvents.length = 0
+						}
+					} else handleEvent(event)
+				})
+				if (disposed) {
+					subscription[Symbol.dispose]()
+					return
+				}
+				setConnected(true)
+				setConnectionError(null)
 				const m = await fetchMeta()
-				if (disposed || ac.signal.aborted) return
+				if (disposed) return
 				setMeta(m)
 
 				const tail = seqToBigint(m.tailSeq) ?? 0n
 				const head = seqToBigint(m.headSeq) ?? 1n
 				const start = tail > 0n ? tail - BigInt(Math.max(1, SNAPSHOT_MAX - 1)) + 1n : head
 				const from = (start < head ? head : start).toString(10)
-				// Single source of truth: follow SSE (it will send reset + catch-up appends).
-				es = connectFollow(m, from)
-			} catch {
-				// ignore
-			} finally {
-				abortRef.current = null
+				const snapshot = await fetchRange(m, from, SNAPSHOT_MAX)
+				if (disposed) return
+				onAppendLines(snapshot.lines)
+				initialized = true
+				if (bootstrapOverflow) {
+					const current = await fetchMeta()
+					if (disposed) return
+					setMeta(current)
+					const currentTail = seqToBigint(current.tailSeq) ?? 0n
+					const currentHead = seqToBigint(current.headSeq) ?? 1n
+					const recoveryStart =
+						currentTail > 0n
+							? currentTail - BigInt(Math.max(1, SNAPSHOT_MAX - 1)) + 1n
+							: currentHead
+					const recovery = await fetchRange(
+						current,
+						(recoveryStart < currentHead ? currentHead : recoveryStart).toString(10),
+						SNAPSHOT_MAX,
+					)
+					if (disposed) return
+					onAppendLines(recovery.lines)
+				} else {
+					for (const event of bufferedEvents.splice(0)) handleEvent(event)
+				}
+			} catch (error: unknown) {
+				subscription?.[Symbol.dispose]()
+				subscription = undefined
+				bufferedEvents.length = 0
+				setConnected(false)
+				setConnectionError(stringifyUnknown(error, '日志连接失败'))
 			}
 		})()
 
 		return () => {
 			disposed = true
-			if (abortRef.current) {
-				abortRef.current.abort()
-				abortRef.current = null
-			}
 			if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
 			rafRef.current = null
-			es?.close()
+			subscription?.[Symbol.dispose]()
 		}
-	}, [activeFilter, filterQuery, transport, streamId])
+	}, [activeFilter, management, streamId])
 
 	useEffect(() => {
 		followRef.current = follow
@@ -1109,6 +1086,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 								{connected ? 'connected' : 'disconnected'}
 								{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
 							</div>
+							{connectionError ? (
+								<div style={{ color: palette.errorText }}>{connectionError}</div>
+							) : null}
 						</>
 					) : (
 						<>
@@ -1117,6 +1097,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 								{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
 								{activeFilterSummary ? ` · ${activeFilterSummary}` : ''}
 							</div>
+							{connectionError ? (
+								<div style={{ color: palette.errorText }}>{connectionError}</div>
+							) : null}
 							<button type="button" onClick={clearLogs} style={controlButtonStyle(palette)}>
 								clear
 							</button>
@@ -1147,6 +1130,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 					apiRef={listApiRef}
 					palette={palette}
 					metaCount={meta?.count}
+					emptyMessage={connectionError ?? undefined}
 				/>
 
 				{showSidePanel ? (
@@ -1235,23 +1219,8 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 													if (e.key === 'Enter') applyNow()
 												}}
 												spellCheck={false}
-												placeholder="name / pluginId / context"
+												placeholder="display name"
 												style={fieldStyle(palette, 260)}
-											/>
-											<input
-												value={draftFilter.pluginId ?? ''}
-												onChange={(e) =>
-													setDraftFilter((f) => ({
-														...f,
-														pluginId: e.currentTarget.value || undefined,
-													}))
-												}
-												onKeyDown={(e) => {
-													if (e.key === 'Enter') applyNow()
-												}}
-												spellCheck={false}
-												placeholder="pluginId"
-												style={fieldStyle(palette, 180)}
 											/>
 											<input
 												value={draftFilter.context ?? ''}

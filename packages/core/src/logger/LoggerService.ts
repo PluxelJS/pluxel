@@ -1,10 +1,11 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context as PluxelContext, Injectable } from '@pluxel/context'
+import type { Context as PluxelContext } from '../context/Context'
+import { pinOwnerContext } from '../context/owner-view'
 import { debugLogCategory, pluginLogCategory, runtimeLogCategory } from './categories'
-import { findPluginId } from './context'
+import { findPluginLogContext } from './context'
+import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
-const serviceName = 'logger' as const
-const RESERVED_CONTEXT_PROPERTY = 'context'
+const RESERVED_PROPERTY_KEYS = new Set(['context', 'pluginDisplayName'])
 const unmanagedRootIds = new WeakMap<object, string>()
 let unmanagedRootIdSequence = 0
 
@@ -13,20 +14,10 @@ export type LoggerServiceConfig = Readonly<{
 	rootId: string
 }>
 
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Config {
-			[serviceName]?: LoggerServiceConfig
-		}
-		interface Services {
-			[serviceName]: LoggerService
-		}
-	}
-}
-
 type ContextLoggerIdentity = Readonly<{
 	rootId: string
-	pluginId?: string
+	plugin?: PluginNodeAddress
+	pluginDisplayName?: string
 	context: string
 	debugTopic?: string
 }>
@@ -42,20 +33,14 @@ function fallbackRootId(ctx: PluxelContext): string {
 }
 
 function rootIdFor(ctx: PluxelContext, config?: LoggerServiceConfig): string {
-	const value =
-		config?.rootId ??
-		(
-			(ctx.root?.config as Record<string, unknown> | undefined)?.logger as
-				| LoggerServiceConfig
-				| undefined
-		)?.rootId
+	const value = config?.rootId
 	return typeof value === 'string' && value ? value : fallbackRootId(ctx)
 }
 
 function stripReservedProperties(value: Record<string, unknown>): Record<string, unknown> {
-	if (!Object.hasOwn(value, RESERVED_CONTEXT_PROPERTY)) return value
+	if (![...RESERVED_PROPERTY_KEYS].some((key) => Object.hasOwn(value, key))) return value
 	const out = { ...value }
-	delete out[RESERVED_CONTEXT_PROPERTY]
+	for (const key of RESERVED_PROPERTY_KEYS) delete out[key]
 	return out
 }
 
@@ -118,13 +103,14 @@ export class ContextLogger {
 		this.identity = identity
 		this.properties = properties
 		const category = identity.debugTopic
-			? debugLogCategory(identity.rootId, identity.debugTopic, identity.pluginId)
-			: identity.pluginId
-				? pluginLogCategory(identity.rootId, identity.pluginId)
+			? debugLogCategory(identity.rootId, identity.debugTopic, identity.plugin)
+			: identity.plugin
+				? pluginLogCategory(identity.rootId, identity.plugin)
 				: runtimeLogCategory(identity.rootId)
 		this.logtape = getLogger(category as string[]).with({
 			...properties,
 			context: identity.context,
+			...(identity.pluginDisplayName ? { pluginDisplayName: identity.pluginDisplayName } : {}),
 		})
 	}
 
@@ -151,17 +137,18 @@ for (const level of ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as cons
 	})
 }
 
-@Injectable({ key: serviceName })
 export class LoggerService extends ContextLogger {
 	public readonly ctx: PluxelContext
 
 	constructor(ctx: PluxelContext, config?: LoggerServiceConfig) {
-		const pluginId = findPluginId(ctx)
+		const plugin = findPluginLogContext(ctx)
 		super({
 			rootId: rootIdFor(ctx, config),
-			pluginId,
+			plugin: plugin?.nodeAddress,
+			pluginDisplayName: plugin?.displayName,
 			context: ctx.name,
 		})
 		this.ctx = ctx
+		pinOwnerContext(this, ctx)
 	}
 }

@@ -2,8 +2,9 @@ import { Center, Stack, Text, Title } from '@mantine/core'
 import { EmptyState } from '../../../components'
 import { useCurrentPathname } from '../useCurrentRoute'
 
-export function NotFoundScreen() {
-	const path = useCurrentPathname()
+export function NotFoundScreen({ pathname }: { pathname?: string } = {}) {
+	const routerPathname = useCurrentPathname()
+	const path = pathname ?? routerPathname
 	return (
 		<Center style={{ flex: 1 }}>
 			<Stack align="center" gap="xs" maw={520}>

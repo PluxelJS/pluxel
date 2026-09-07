@@ -2,21 +2,16 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'pathe'
 
-export type PluginArtifactTarget = 'workbench' | 'node'
-
-/** Stable declaration identity shared by production lowering and development compilation. */
-export function resolvePluginArtifactKey(
-	target: PluginArtifactTarget,
+/** Stable Node declaration identity shared by production lowering and development compilation. */
+export function resolveNodeModuleArtifactKey(
 	root: string,
 	declarationFile: string,
 	entryPath: string,
 ): string {
-	const prefix = target === 'node' ? 'node' : 'artifact'
-	const length = target === 'node' ? 16 : 12
-	return `${prefix}-${createHash('sha256')
+	return `node-${createHash('sha256')
 		.update(`${canonicalDeclarationModuleId(root, declarationFile)}\0${entryPath}`)
 		.digest('hex')
-		.slice(0, length)}`
+		.slice(0, 16)}`
 }
 
 export function resolveNodeModuleBuildSignature(input: { minify?: boolean }): string {

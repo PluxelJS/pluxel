@@ -13,11 +13,5 @@ export default defineConfig({
 		include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
 		exclude: ['node_modules/**', 'dist/**', '**/*.d.ts', '.*/**'],
 		passWithNoTests: false,
-		deps: {
-			optimizer: {
-				ssr: { enabled: false },
-				web: { enabled: false },
-			},
-		},
 	},
 })

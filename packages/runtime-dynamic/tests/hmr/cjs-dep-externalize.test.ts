@@ -34,7 +34,8 @@ async function runHmr(root: string, hmr: LoaderHmrService) {
 	const hmrPort = await getFreePort()
 	const serverConfig = mergeConfig(
 		buildLoaderHmrViteConfig({
-			root,
+			viteRoot: root,
+			sourceRoot: root,
 			fsAllow,
 			runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
 			httpPlugin: { name: 'noop' },

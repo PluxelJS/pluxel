@@ -1,13 +1,17 @@
-import { Button, Group, Paper, SimpleGrid, Text, Title } from '@mantine/core'
+import { Alert, Badge, Button, Group, Paper, SimpleGrid, Text, Title } from '@mantine/core'
 import {
 	IconArrowRight,
+	IconCloud,
 	IconHistory,
+	IconInfoCircle,
 	IconPlugConnected,
 	IconShieldCheck,
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
-import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import type { PluxelPlatformSnapshot } from '@pluxel/runtime/environment'
+import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import { usePluginOverview } from '../plugins/pluginOverview'
+import { useRuntimeMeta } from '../product'
 
 type WorkspaceLink = {
 	title: string
@@ -43,15 +47,17 @@ const WORKSPACE_LINKS: WorkspaceLink[] = [
 
 export function HomeIntro() {
 	const overview = usePluginOverview()
+	const runtimeMeta = useRuntimeMeta()
+	const platform = runtimeMeta?.platform
 	const summary = overview.overview?.status.summary
 	const statuses = overview.overview?.status.statuses ?? []
-	const runningPlugins = statuses.filter((plugin) => plugin.isRunning)
-	const attentionPlugins = statuses.filter((plugin) => !plugin.isRunning || !plugin.isEnabled)
+	const runningPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'running')
+	const stoppedPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'stopped')
 	const metrics = [
 		{ label: '插件总数', value: summary?.total },
 		{ label: '正在运行', value: summary?.running, tone: 'running' },
 		{ label: '已停止', value: summary?.stopped },
-		{ label: '已禁用', value: summary?.disabled, tone: 'disabled' },
+		{ label: '自动启动', value: summary?.autoStart, tone: 'auto-start' },
 	]
 
 	return (
@@ -65,6 +71,7 @@ export function HomeIntro() {
 					<Text className="plx-home__description">
 						管理插件、依赖与运行日志，常用操作集中在当前页面。
 					</Text>
+					<PlatformSummary platform={platform} />
 					<Group gap="sm" className="plx-home__heroActions">
 						<Button
 							component={RouterLinkAdapter}
@@ -133,15 +140,69 @@ export function HomeIntro() {
 						error={overview.error}
 					/>
 					<PluginQueue
-						title="需要处理"
-						plugins={attentionPlugins}
-						empty="当前没有停止或禁用的插件"
+						title="当前未运行"
+						plugins={stoppedPlugins}
+						empty="当前没有已停止的插件"
 						loading={!overview.hasSnapshot && overview.isLoading}
 						error={overview.error}
 					/>
 				</SimpleGrid>
 			</section>
 		</main>
+	)
+}
+
+export function platformNotice(platform: PluxelPlatformSnapshot | undefined): string | null {
+	if (!platform) return null
+	if (platform.runtime.name === 'workerd') {
+		return '当前 Workbench 运行在 Cloudflare Workers runtime；文件系统、长连接与持久化能力由部署适配器决定。'
+	}
+	if (platform.runtime.name && platform.runtime.name !== 'node') {
+		return `当前 Workbench 运行在 ${platform.runtime.name}；部分 Node 专属能力可能不可用。`
+	}
+	if (platform.deployment.provider === 'cloudflare_workers') {
+		return '检测到 Cloudflare Workers 部署环境；请确认 WebSocket 与持久化绑定符合宿主配置。'
+	}
+	return null
+}
+
+function PlatformSummary({ platform }: { platform: PluxelPlatformSnapshot | undefined }) {
+	if (!platform) return null
+	const notice = platformNotice(platform)
+	const runtimeLabel = [platform.runtime.name ?? 'unknown runtime', platform.runtime.version]
+		.filter(Boolean)
+		.join(' ')
+	return (
+		<div className="plx-home__platform">
+			<Group gap={6} wrap="wrap" aria-label="宿主环境">
+				<Badge variant="light" leftSection={<IconInfoCircle size={12} />}>
+					{runtimeLabel}
+				</Badge>
+				{platform.platform ? <Badge variant="default">{platform.platform}</Badge> : null}
+				{platform.deployment.provider ? (
+					<Badge color="cyan" variant="light" leftSection={<IconCloud size={12} />}>
+						{platform.deployment.provider.replaceAll('_', ' ')}
+					</Badge>
+				) : null}
+				<Badge color={platform.mode === 'production' ? 'green' : 'gray'} variant="light">
+					{platform.mode}
+				</Badge>
+				{platform.deployment.ci ? (
+					<Badge color="violet" variant="light">
+						CI
+					</Badge>
+				) : null}
+			</Group>
+			{notice ? (
+				<Alert
+					color="orange"
+					icon={<IconInfoCircle size={16} />}
+					className="plx-home__platformNotice"
+				>
+					{notice}
+				</Alert>
+			) : null}
+		</div>
 	)
 }
 
@@ -179,7 +240,13 @@ function PluginQueue({
 	empty: string
 	error?: string
 	loading: boolean
-	plugins: Array<{ name: string; isEnabled: boolean; isRunning: boolean }>
+	plugins: Array<{
+		route: string
+		label: string
+		availability: 'available' | 'unavailable'
+		desiredState: 'running' | 'stopped'
+		lifecycleState: 'running' | 'stopped'
+	}>
 	title: string
 }) {
 	const visiblePlugins = plugins.slice(0, 6)
@@ -197,19 +264,31 @@ function PluginQueue({
 				{visiblePlugins.length > 0 ? (
 					visiblePlugins.map((plugin) => (
 						<RouterLinkAdapter
-							key={plugin.name}
-							to={`/plugins/${encodeURIComponent(plugin.name)}`}
+							key={plugin.route}
+							to={`/plugins/${plugin.route}`}
 							className="plx-home__queueRow"
 						>
 							<span
 								className="plx-home__statusDot"
 								data-status={
-									!plugin.isEnabled ? 'disabled' : plugin.isRunning ? 'running' : 'stopped'
+									plugin.availability === 'unavailable'
+										? 'unavailable'
+										: plugin.lifecycleState === 'running'
+											? 'running'
+											: plugin.desiredState === 'running'
+												? 'pending'
+												: 'stopped'
 								}
 							/>
-							<span className="plx-home__queueName">{plugin.name}</span>
+							<span className="plx-home__queueName">{plugin.label}</span>
 							<span className="plx-home__queueStatus">
-								{!plugin.isEnabled ? '已禁用' : plugin.isRunning ? '运行中' : '已停止'}
+								{plugin.availability === 'unavailable'
+									? '不可用'
+									: plugin.lifecycleState === 'running'
+										? '运行中'
+										: plugin.desiredState === 'running'
+											? '等待运行'
+											: '已停止'}
 							</span>
 							<IconArrowRight size={15} aria-hidden="true" />
 						</RouterLinkAdapter>

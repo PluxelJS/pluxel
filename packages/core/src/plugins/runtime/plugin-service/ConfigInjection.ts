@@ -1,46 +1,56 @@
-import { callFeatureConfigInjector } from '../../composition/featureConfigInjection'
-import type { PluginInfo } from '../../decorators/decorator/types'
+import type { PluginConfigDefinition } from '../definition'
+import { assignPluginGenerationPartConfig, type BasePlugin } from '../../composition/BasePlugin'
+import {
+	abortPluginConfigGeneration,
+	assignPluginConfigField,
+	beginPluginConfigGeneration,
+	finishPluginConfigGeneration,
+} from '../../composition/ConfigUpdate'
 
-type ConfigBindingMap = NonNullable<PluginInfo['configBindingsMap']>
-
-export function hasConfigBindings(
-	bindings: ConfigBindingMap | undefined,
-): bindings is ConfigBindingMap {
-	if (!bindings) return false
-	for (const field in bindings) {
-		if (Object.hasOwn(bindings, field)) return true
-	}
-	return false
-}
-
-export function assignValidatedConfigBindings(
+/** Install the one validated object value produced for configs.use(schema). */
+export function assignValidatedPluginConfig(
 	target: object,
-	bindings: ConfigBindingMap,
-	record: unknown,
+	definition: PluginConfigDefinition,
+	value: unknown,
 ): void {
-	const targetRecord = target as Record<string, unknown>
-	const sourceRecord = record as Record<string, unknown>
-
-	for (const field of Object.keys(bindings)) {
-		targetRecord[field] = createConfigBindingValue(sourceRecord, bindings[field])
+	const plugin = target as BasePlugin
+	const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+	const frame = beginPluginConfigGeneration(plugin)
+	try {
+		if (definition.parts.length === 0) {
+			assignPluginConfigField({
+				target,
+				fieldName: definition.fieldName,
+				value: Object.freeze({ ...record }),
+				ctx: plugin.ctx,
+				path: Object.freeze([]),
+				childKeys: Object.freeze([]),
+			})
+			finishPluginConfigGeneration(frame)
+			return
+		}
+		assignPluginGenerationPartConfig(plugin, record)
+		if (definition.owner) {
+			const rootPartKeys = definition.parts
+				.filter((part) => part.path.length === 1)
+				.map((part) => part.path[0]!)
+			const rootPartKeySet = new Set(rootPartKeys)
+			const own: Record<string, unknown> = {}
+			for (const [key, item] of Object.entries(record)) {
+				if (!rootPartKeySet.has(key)) own[key] = item
+			}
+			assignPluginConfigField({
+				target,
+				fieldName: definition.owner.fieldName,
+				value: Object.freeze(own),
+				ctx: plugin.ctx,
+				path: Object.freeze([]),
+				childKeys: rootPartKeys,
+			})
+		}
+		finishPluginConfigGeneration(frame)
+	} catch (error) {
+		abortPluginConfigGeneration(frame)
+		throw error
 	}
-}
-
-export function injectFeatureConfigsFromHostPlugin(features: unknown): void {
-	callFeatureConfigInjector(features)
-}
-
-function createConfigBindingValue(
-	source: Record<string, unknown>,
-	keys: readonly string[] | undefined,
-): unknown {
-	if (!keys || keys.length === 0) return Object.create(null)
-	if (keys.length === 1) return source[keys[0]!]
-
-	const view: Record<string, unknown> = Object.create(null)
-	for (let i = 0; i < keys.length; i++) {
-		const key = keys[i]!
-		view[key] = source[key]
-	}
-	return view
 }

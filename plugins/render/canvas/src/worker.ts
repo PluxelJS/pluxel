@@ -2,7 +2,6 @@ import {
 	Image as NativeImage,
 	SvgExportFlag,
 	createCanvas as createNativeCanvas,
-	loadImage as loadNativeImage,
 } from '@napi-rs/canvas'
 import {
 	CanvasError,
@@ -10,27 +9,47 @@ import {
 	type CanvasWorkerSnapshot,
 	type DecodeImageOptions,
 } from './contracts.ts'
+import { DecodeScheduler } from './decode-scheduler.ts'
 import {
 	assertCanvasDimensions,
 	normalizeCanvasWorkerSnapshot,
 	resolveImageDataOwnership,
 } from './worker-internal.ts'
 
-let lastAdapter: CanvasWorkerAdapter | undefined
+const neverAbortSignal = new AbortController().signal
 
-/** Create a thread-local native Canvas adapter from a detached host policy snapshot. */
+/** Create a caller-owned native Canvas adapter from a detached host policy snapshot. */
 export function createCanvasWorkerAdapter(snapshot: CanvasWorkerSnapshot): CanvasWorkerAdapter {
 	const normalized = normalizeCanvasWorkerSnapshot(snapshot)
-	if (lastAdapter?.snapshot === normalized) return lastAdapter
+	const scheduler = new DecodeScheduler(
+		normalized.decodeLimits.maxConcurrent,
+		normalized.decodeLimits.maxQueued,
+		normalized.decodeLimits.maxQueued,
+	)
+	const schedulerOwner = scheduler.createOwner()
+	let active = true
+	const requireActive = (): void => {
+		if (!active) throw new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed')
+	}
 	const adapter: CanvasWorkerAdapter = {
 		snapshot: normalized,
+		async close() {
+			if (!active) {
+				await scheduler.close(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+				return
+			}
+			active = false
+			await scheduler.close(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+		},
 		createCanvas(width, height) {
+			requireActive()
 			assertCanvasDimensions(width, height, normalized.limits)
 			const canvas = createNativeCanvas(width, height)
 			canvas.getContext('2d').font = `10px ${normalized.font.cssFamily}`
 			return canvas
 		},
 		createSvgCanvas(width, height, options = {}) {
+			requireActive()
 			assertCanvasDimensions(width, height, normalized.limits)
 			const flags =
 				options.mode === 'text-to-paths'
@@ -43,21 +62,41 @@ export function createCanvasWorkerAdapter(snapshot: CanvasWorkerSnapshot): Canva
 			return canvas
 		},
 		createImage() {
+			requireActive()
 			return new NativeImage()
 		},
+		decodeImageInto(image, data, options = {}) {
+			if (!active) {
+				return Promise.reject(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+			}
+			if (!(image instanceof NativeImage)) {
+				return Promise.reject(
+					new CanvasError(
+						'INVALID_IMAGE',
+						'decodeImageInto() requires a worker-local Canvas Image',
+					),
+				)
+			}
+			return decodeImage(image, data, normalized, scheduler, schedulerOwner, options)
+		},
 		decodeImage(data, options = {}) {
-			return decodeImage(data, normalized, options)
+			if (!active) {
+				return Promise.reject(new CanvasError('NOT_RUNNING', 'Canvas worker adapter is closed'))
+			}
+			return decodeImage(new NativeImage(), data, normalized, scheduler, schedulerOwner, options)
 		},
 	}
-	lastAdapter = Object.freeze(adapter)
-	return lastAdapter
+	return Object.freeze(adapter)
 }
 
 async function decodeImage(
+	image: NativeImage,
 	data: Uint8Array,
 	snapshot: CanvasWorkerSnapshot,
+	scheduler: DecodeScheduler,
+	schedulerOwner: ReturnType<DecodeScheduler['createOwner']>,
 	options: DecodeImageOptions,
-) {
+): Promise<NativeImage> {
 	if (!(data instanceof Uint8Array) || data.byteLength <= 0) {
 		throw new CanvasError('INVALID_IMAGE', 'decodeImage() requires non-empty Uint8Array data')
 	}
@@ -68,29 +107,54 @@ async function decodeImage(
 		)
 	}
 	const dataOwnership = resolveImageDataOwnership(options)
-	if (options.signal?.aborted) throw abortReason(options.signal)
-	let task
-	try {
-		task = loadNativeImage(dataOwnership === 'owned' ? data : Buffer.from(data))
-	} catch (cause) {
-		throw new CanvasError('INVALID_IMAGE', 'Native image decoder rejected the image data', {
-			cause,
-		})
+	if (options.signal !== undefined && !isAbortSignal(options.signal)) {
+		throw new CanvasError('INVALID_IMAGE', 'signal must be an AbortSignal')
 	}
-	const image = await waitForDecode(
-		task.catch((cause: unknown) => {
+	const signal = options.signal ?? neverAbortSignal
+	return scheduler.run(schedulerOwner, signal, async (hold): Promise<NativeImage> => {
+		const source = dataOwnership === 'owned' ? data : Buffer.from(data)
+		const task = decodeNativeImageInto(image, source).catch((cause: unknown) => {
 			throw new CanvasError('INVALID_IMAGE', 'Native image decoder rejected the image data', {
 				cause,
 			})
-		}),
-		options.signal,
-	)
-	assertCanvasDimensions(image.width, image.height, snapshot.limits)
-	return image
+		})
+		hold(task)
+		const decoded = await waitForDecode(task, signal)
+		assertCanvasDimensions(decoded.width, decoded.height, snapshot.limits)
+		return decoded
+	})
 }
 
-async function waitForDecode<T>(task: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-	if (!signal) return task
+function decodeNativeImageInto(image: NativeImage, source: Uint8Array): Promise<NativeImage> {
+	return new Promise<NativeImage>((resolve, reject) => {
+		let settled = false
+		const settle = (callback: () => void): void => {
+			if (settled) return
+			settled = true
+			image.onload = undefined
+			image.onerror = undefined
+			callback()
+		}
+		image.onload = () => {
+			// Canvas 1.0.8 keeps the native image mutably borrowed while invoking onload.
+			// Defer decode until the callback returns so the borrow has been released.
+			void Promise.resolve()
+				.then(() => image.decode())
+				.then(
+					() => settle(() => resolve(image)),
+					(cause: unknown) => settle(() => reject(cause)),
+				)
+		}
+		image.onerror = (cause) => settle(() => reject(cause))
+		try {
+			image.src = source
+		} catch (cause) {
+			settle(() => reject(cause))
+		}
+	})
+}
+
+async function waitForDecode<T>(task: Promise<T>, signal: AbortSignal): Promise<T> {
 	if (signal.aborted) throw abortReason(signal)
 	let rejectAbort!: (reason: Error) => void
 	const aborted = new Promise<never>((_resolve, reject) => void (rejectAbort = reject))
@@ -101,6 +165,16 @@ async function waitForDecode<T>(task: Promise<T>, signal: AbortSignal | undefine
 	} finally {
 		signal.removeEventListener('abort', listener)
 	}
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+	return Boolean(
+		value &&
+		typeof value === 'object' &&
+		typeof (value as AbortSignal).aborted === 'boolean' &&
+		typeof (value as AbortSignal).addEventListener === 'function' &&
+		typeof (value as AbortSignal).removeEventListener === 'function',
+	)
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -115,6 +189,7 @@ export type {
 	CanvasResourceLimits,
 	CanvasTextResourceLimits,
 	CanvasWorkerAdapter,
+	CanvasWorkerDecodeLimits,
 	CanvasWorkerFontSnapshot,
 	CanvasWorkerSnapshot,
 	DecodeImageOptions,

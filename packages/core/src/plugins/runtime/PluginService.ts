@@ -1,32 +1,36 @@
-// PluginService.ts
-// Runtime orchestrator for the plugin system.
-//
-// Design notes:
-// - Non‑transactional commit: container definition switches even if some plugins fail.
-// - "Failed" means "not running this cycle", *not* unregistered. As long as a plugin
-//   remains registered in the container, future commits may retry it.
-// - Performance first: heavy work is split into pure helpers without changing
-//   construction/lifecycle hot paths.
-
-import { Injectable, type Context as PluxelContext, type ServiceClass } from '@pluxel/context'
+import type { Context as PluxelContext, PluginContext } from '../../context/Context'
+import { pinOwnerContext } from '../../context/owner-view'
+import { createGenerationContext } from '../../context/context-factory'
+import type { GraphBuildError } from '../../internal/di'
 import { createErr, createOk } from 'option-t/plain_result'
-import { isProduction } from 'std-env'
-import { LoggerService } from '../../logger/LoggerService'
-import { EffectsService } from '../../services/effects/EffectsService'
+import { requireConfigService } from '../../internal/config-service'
 import type { BasePlugin } from '../composition/BasePlugin'
-import type { PluginInfo } from '../decorators/decorator/types'
-import { getPluginInfo } from '../decorators/PluginDecorator'
-// Optional dependency API removed in favor of feature composition (BaseFeature).
-import type {
-	ForkablePluginConstructor,
-	PluginConstructor,
-	PluginIdentifier,
-	PluginInstance,
-} from '../types'
+import { getPluginGenerationContext } from '../composition/BasePlugin'
+import { createCallerGenerationView } from '../composition/caller-view'
+import type { PluginToken } from '../types'
 import { computeInitPlan, type InitPlan, startPluginsTopo, stopPluginsTopo } from './commit'
-import { forkPlugin, getForkedCtor, listForks } from './fork'
-import { runtimePluginKeyOfCtor, type RuntimePluginHandle, type RuntimePluginKey } from './identity'
-import { PluginDefinitions, type PluginGraph, type PluginRuntime } from './PluginDefinitions'
+import {
+	pluginDefinitionAddressOf,
+	type ConcretePluginDefinitionCandidate,
+	type PluginRef,
+} from './definition'
+import {
+	comparePluginNodeAddress,
+	formatPluginNodeReference,
+	isPluginNodeSlot,
+	parsePluginDefinitionAddress,
+	type PluginDefinitionAddress,
+	type PluginDefinitionSlot,
+	type PluginNodeAddress,
+	type PluginNodeSlot,
+} from './identity'
+import {
+	PluginDefinitions,
+	PluginGenerationConstructionError,
+	requirePluginGenerationInfo,
+	type PluginGraph,
+	type PluginRuntime,
+} from './PluginDefinitions'
 import {
 	collectRuntimeEvictions,
 	createCommitExecutionPlan,
@@ -34,47 +38,40 @@ import {
 	createRuntimeUpdateSummary,
 	EMPTY_DELTA,
 	EMPTY_PLUGIN_COMMIT_CHANGES,
-	hasCommitWork,
 	isCommitExecutionPlanEmpty,
 	type CommitExecutionDelta,
 	type CommitExecutionPlan,
 	type CommitSummary,
 } from './plugin-service/CommitPlan'
-import {
-	assignValidatedConfigBindings,
-	hasConfigBindings,
-	injectFeatureConfigsFromHostPlugin,
-} from './plugin-service/ConfigInjection'
+import { assignValidatedPluginConfig } from './plugin-service/ConfigInjection'
 import { DependentClosureCollector } from './plugin-service/DependentClosureCollector'
 import { InstanceWatcherRegistry } from './plugin-service/InstanceWatcherRegistry'
 import { LifecycleManager } from './plugin-service/LifecycleManager'
+import {
+	EMPTY_CORE_PLUGIN_LIFECYCLE_HOOKS,
+	freezeCorePluginLifecycleHooks,
+	type CoreCommitPublication,
+	type CorePluginLifecycleHooks,
+	type CorePluginLifecycleOperation,
+} from './plugin-service/HostLifecycle'
 import {
 	collectPluginLifecycleNotStarted,
 	createLifecycleReport,
 	EMPTY_LIFECYCLE_REPORT,
 	errorMessage,
 	finalizeLifecycleReport,
+	observeLifecycleReport,
 	PLUGIN_LIFECYCLE_ISSUE_KIND,
 	recordLifecycleIssue,
 	serializeLifecycleError,
 	type MutableLifecycleReport,
 } from './plugin-service/LifecycleReport'
 import {
-	RuntimeDependencyOverrides,
-	type RuntimeDependencyOverrideList,
-	type RuntimeDependencyOverrideSnapshot,
-} from './plugin-service/RuntimeDependencyOverrides'
-import {
-	RuntimeModuleRegistry,
-	type RuntimeModuleDeclaration,
-	type RuntimeModuleDeclarationItem,
-	type RuntimeModuleSnapshot,
-} from './plugin-service/RuntimeModuleRegistry'
-import {
-	createPluginsFailedToStartError,
 	PluginRuntimeUpdateTransaction,
 	type CascadeOptions,
-	type ReplacePluginOptions,
+	type PreparedRuntimeUpdateCommitOptions,
+	type PreparedRuntimeUpdate,
+	type ReplaceDefinitionOptions,
 	type RuntimeUpdateCommitMeta,
 	type RuntimeUpdateController,
 	type RuntimeUpdateOptions,
@@ -88,293 +85,509 @@ export type {
 	RuntimeUpdateCommitSummary,
 } from './plugin-service/CommitPlan'
 
-/* ─────────────────────────── Types ─────────────────────────── */
-
-type FeatureDeclarationPolicy = 'off' | 'warn' | 'error'
-
-type PluginServiceConfig = {
-	pluginCTXIsolate?: AnyServiceClass[]
+export type PluginServiceConfig = {
 	startTimeoutMs?: number
-	stopTimeoutMs?: number
+	drainTimeoutMs?: number
 	startConcurrency?: number
 	stopConcurrency?: number
-	featureDeclarationPolicy?: FeatureDeclarationPolicy
 }
 
-type AnyServiceClass = ServiceClass<new (ctx: PluxelContext, cfg?: unknown) => unknown>
-type PluginMutationAction = 'restart' | 'replace'
+type RuntimeUpdateCommitResult =
+	| { ok: true; val: { graph: PluginGraph; delta: CommitExecutionDelta } }
+	| { ok: false; err: unknown }
 
 type RuntimeUpdateCheckpoint = {
-	pendingStart: Set<RuntimePluginKey>
-	pendingRestart: Set<RuntimePluginKey>
-	dependencyOverrides: RuntimeDependencyOverrideSnapshot
+	pendingStart: Set<PluginNodeSlot>
+	pendingRestart: Set<PluginNodeSlot>
 }
-type RuntimeUpdateCommitResult = Awaited<ReturnType<PluginService['commit']>>
+
+type PreparedDefinitionBuild = Extract<ReturnType<PluginDefinitions['build']>, { ok: true }>['val']
+
+export type CommittedPluginDependencyEdge = Readonly<{
+	consumer: PluginNodeAddress
+	provider: PluginNodeAddress
+}>
+
+export type CommittedPluginDependencyAdjacency = Readonly<{
+	nodes: readonly PluginNodeAddress[]
+	required: readonly CommittedPluginDependencyEdge[]
+	optional: readonly CommittedPluginDependencyEdge[]
+}>
 
 const DEFAULT_START_TIMEOUT_MS = 1_500
-const DEFAULT_STOP_TIMEOUT_MS = 3_000
+const DEFAULT_DRAIN_TIMEOUT_MS = 3_000
 const DEFAULT_START_CONCURRENCY = 8
 const DEFAULT_STOP_CONCURRENCY = 1
-const FEATURE_DECLARATION_POLICY_KEY = 'pluxel:feature:declarationPolicy'
-const DEFAULT_FEATURE_DECLARATION_POLICY_DEV: FeatureDeclarationPolicy = 'warn'
-const DEFAULT_FEATURE_DECLARATION_POLICY_PROD: FeatureDeclarationPolicy = 'off'
-const STRICT_COMMIT_FEATURE_DECLARATION_POLICY: FeatureDeclarationPolicy = 'error'
-const PLUGIN_START_TIMEOUT_METADATA_KEY = 'startTimeoutMs'
-const PLUGIN_STOP_TIMEOUT_METADATA_KEY = 'stopTimeoutMs'
-const INSTANCE_WATCHER_ERROR_MESSAGE = 'instance watcher error'
 const RUNTIME_UPDATE_ALREADY_ACTIVE_MESSAGE =
-	'Cannot begin runtime update while another runtime update is active'
+	'Cannot begin a Core Plugin update while another update is active'
 const RUNTIME_UPDATE_PENDING_DRAFT_MESSAGE =
-	'Cannot begin runtime update while registry draft has pending changes'
-const SERVICE_VERIFICATION_FAILED_MESSAGE = 'service verification failed'
-const SHUTDOWN_OUTSIDE_PLUGIN_CONTEXT_MESSAGE = 'Cannot shutdown: not in a plugin context'
+	'Cannot begin a Core Plugin update while a registry draft is pending'
+const STALE_PREPARED_UPDATE_MESSAGE = 'Prepared Core Plugin update is stale'
 
 function ensureError(error: unknown): Error {
 	return error instanceof Error ? error : new Error(String(error), { cause: error })
 }
 
-/* ─────────────────────────── Module Augmentation ─────────────────────────── */
+function compareCommittedDependencyEdges(
+	left: CommittedPluginDependencyEdge,
+	right: CommittedPluginDependencyEdge,
+): number {
+	return (
+		comparePluginNodeAddress(left.consumer, right.consumer) ||
+		comparePluginNodeAddress(left.provider, right.provider)
+	)
+}
 
-const serviceName = 'registry' as const
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Config {
-			[serviceName]?: PluginServiceConfig
-		}
-		interface Services {
-			[serviceName]: PluginService
-		}
-	}
-	interface Context {
-		pluginInfo: PluginInfo
-		parent?: Context
-		caller?: Context
+/** @internal Stable package-private signal for a rejected Core Plugin graph update. */
+export class CorePluginGraphVerificationError extends Error {
+	override readonly cause: GraphBuildError
+	readonly issues: GraphBuildError['issues']
+
+	constructor(cause: GraphBuildError) {
+		super(`Core Plugin graph verification failed:\n${cause.format()}`, { cause })
+		this.name = 'CorePluginGraphVerificationError'
+		this.cause = cause
+		this.issues = cause.issues
+		Object.setPrototypeOf(this, CorePluginGraphVerificationError.prototype)
 	}
 }
 
-/* ─────────────────────────── Service ─────────────────────────── */
-
-@Injectable({ key: serviceName })
 export class PluginService {
 	private readonly definitions: PluginDefinitions
-
 	private _commitLock: Promise<unknown> = Promise.resolve()
 	private readonly startTimeoutMs: number
-	private readonly stopTimeoutMs: number
+	private readonly drainTimeoutMs: number
 	private readonly startConcurrency: number
 	private readonly stopConcurrency: number
 	private _lastCommit?: CommitSummary
-	/** Active draft graph during commit() before confirm(). */
 	private _activeGraph?: PluginGraph
 	private _activeRuntime?: PluginRuntime
-	/** Plugins that should be (re)started on the next commit. */
-	private _pendingStart = new Set<RuntimePluginKey>()
-	/** Plugins that should be restarted (re-instantiated) on the next commit. */
-	private _pendingRestart = new Set<RuntimePluginKey>()
+	private readonly commitListeners = new Set<(summary: CommitSummary) => void>()
+	private _pendingStart = new Set<PluginNodeSlot>()
+	private _pendingRestart = new Set<PluginNodeSlot>()
 	private activeRuntimeUpdate?: RuntimeUpdateTransaction<RuntimeUpdateCommitResult>
 	private readonly runtimeUpdateCheckpoints = new WeakMap<
 		RuntimeUpdateTransaction<RuntimeUpdateCommitResult>,
 		RuntimeUpdateCheckpoint
 	>()
-	private readonly runtimeModules = new RuntimeModuleRegistry()
-	private readonly runtimeDependencyOverrides = new RuntimeDependencyOverrides()
+	private commitRevision = 0
 	private order = 0
-	private readonly featureDeclarationPolicyDefault: FeatureDeclarationPolicy
-	private readonly featureDeclarationPolicyExplicit: boolean
-	private nextCommitFeatureDeclarationPolicy: FeatureDeclarationPolicy | null = null
+	private readonly lifecycleManager: LifecycleManager
 	private readonly watcherRegistry: InstanceWatcherRegistry
 	private readonly dependentClosure: DependentClosureCollector
-	private readonly resolveGraphKeyForCommit = (
-		graph: PluginGraph | undefined,
-		id: RuntimePluginHandle,
-	): RuntimePluginKey | undefined => this.resolveGraphKey(graph, id)
+	private readonly lifecycleHooks: CorePluginLifecycleHooks
+	private hostInvariantFailed = false
+	private hostInvariantFailure: unknown
+	private publishingHostCommit = false
+
 	private readonly runtimeUpdateController: RuntimeUpdateController<RuntimeUpdateCommitResult> = {
-		lastCommitSummary: () => this.lastCommit,
-		register: (Plugin, opts) => this.register(Plugin, opts),
-		unregister: (id, opts) => this.unregister(id, opts),
-		replace: (target, next, opts) => this.replace(target, next, opts),
-		restart: (id, opts) => this.restart(id, opts),
-		commitDraft: (meta) => this.commitRuntimeUpdate(meta),
-		completeTransaction: (tx) => this.clearRuntimeUpdateCheckpoint(tx),
+		materializeNode: (address, candidate) => this.materializeNode(address, candidate),
+		dematerializeNode: (address, options) => this.dematerializeNode(address, options),
+		restartNode: (address, options) => this.restartNode(address, options),
+		replaceDefinition: (address, candidate, options) =>
+			this.replaceDefinition(address, candidate, options),
+		setProviderDefault: (token, provider) => this.setProviderDefault(token, provider),
+		setDependencyOverride: (consumer, requirement, provider) =>
+			this.setDependencyOverride(consumer, requirement, provider),
+		prepareDraft: (tx, meta) => this.prepareRuntimeUpdate(tx, meta),
 		rollbackDraft: (tx) => this.rollbackRuntimeUpdate(tx),
-		snapshotRuntimeModule: (moduleId) => this.snapshotRuntimeModule(moduleId),
-		restoreRuntimeModule: (moduleId, snapshot) => this.restoreRuntimeModule(moduleId, snapshot),
-		upsertRuntimeModule: (module) => this.upsertRuntimeModule(module),
-		removeRuntimeModule: (moduleId) => this.removeRuntimeModule(moduleId),
 	}
-
-	private static readonly FEATURE_DECLARATION_POLICY = Symbol.for(FEATURE_DECLARATION_POLICY_KEY)
-
-	// Internal helpers (single instances; no per‑commit allocations).
-	private readonly lifecycleManager: LifecycleManager
 
 	constructor(
-		public ctx: PluxelContext,
-		config: PluginServiceConfig,
+		public readonly ctx: PluxelContext,
+		config: PluginServiceConfig = {},
+		lifecycleHooks: CorePluginLifecycleHooks = EMPTY_CORE_PLUGIN_LIFECYCLE_HOOKS,
 	) {
-		this.startTimeoutMs = config?.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
-		this.stopTimeoutMs = config?.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS
-		this.startConcurrency = config?.startConcurrency ?? DEFAULT_START_CONCURRENCY
-		this.stopConcurrency = config?.stopConcurrency ?? DEFAULT_STOP_CONCURRENCY
-		this.featureDeclarationPolicyExplicit =
-			config?.featureDeclarationPolicy !== null && config?.featureDeclarationPolicy !== undefined
-		this.featureDeclarationPolicyDefault =
-			config?.featureDeclarationPolicy ??
-			(isProduction
-				? DEFAULT_FEATURE_DECLARATION_POLICY_PROD
-				: DEFAULT_FEATURE_DECLARATION_POLICY_DEV)
-
-		const isolated = this.resolvePluginIsolatedServices(config)
-		this.definitions = new PluginDefinitions(() => this.createPluginContext(isolated), {
-			resolveDependencyToken: (token) => this.runtimeModules.resolveDependencyToken(token),
-			resolveDependencyTokenOverrides: (pluginId) => this.runtimeDependencyOverrides.get(pluginId),
-		})
-
-		this.lifecycleManager = new LifecycleManager(this.ctx, this.startTimeoutMs, this.stopTimeoutMs)
-		this.dependentClosure = new DependentClosureCollector((graph, id) =>
-			this.resolveGraphKey(graph, id),
+		pinOwnerContext(this, ctx)
+		this.startTimeoutMs = config.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
+		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS
+		this.startConcurrency = config.startConcurrency ?? DEFAULT_START_CONCURRENCY
+		this.stopConcurrency = config.stopConcurrency ?? DEFAULT_STOP_CONCURRENCY
+		this.lifecycleHooks = freezeCorePluginLifecycleHooks(lifecycleHooks)
+		this.definitions = new PluginDefinitions(() => this.createPluginContext())
+		this.lifecycleManager = new LifecycleManager(
+			this.ctx,
+			this.definitions.slots,
+			this.startTimeoutMs,
+			this.drainTimeoutMs,
+		)
+		this.dependentClosure = new DependentClosureCollector((graph, address) =>
+			this.resolveGraphKey(graph, address),
 		)
 		this.watcherRegistry = new InstanceWatcherRegistry(
-			(graph, id) => this.resolveRuntimeReadKey(graph, id),
-			(id) => this.getRunningRuntimeInstance(id),
-			(error) => {
-				this.ctx.logger.error(INSTANCE_WATCHER_ERROR_MESSAGE, { error })
-			},
+			(graph, address) => this.resolveGraphKey(graph, address),
+			(node) => this.getRunningRuntimeInstance(node),
+			(error) => this.ctx.logger.error('Plugin instance watcher error', { error }),
 		)
 	}
 
-	private resolvePluginIsolatedServices(
-		config: PluginServiceConfig | undefined,
-	): AnyServiceClass[] {
-		const isolated: AnyServiceClass[] = []
-		const seen = new Set<AnyServiceClass>()
-		for (const svc of config?.pluginCTXIsolate ?? []) {
-			const s = svc as unknown as AnyServiceClass
-			if (seen.has(s)) continue
-			seen.add(s)
-			isolated.push(s)
-		}
-		const effectsSvc = EffectsService as unknown as AnyServiceClass
-		if (!seen.has(effectsSvc)) {
-			seen.add(effectsSvc)
-			isolated.push(effectsSvc)
-		}
-		const loggerSvc = LoggerService as unknown as AnyServiceClass
-		if (!seen.has(loggerSvc)) {
-			seen.add(loggerSvc)
-			isolated.push(loggerSvc)
-		}
-		return isolated
+	get graph(): PluginGraph {
+		return this.definitions.lastGraph
 	}
 
-	private createPluginContext(isolated: readonly AnyServiceClass[]): PluxelContext {
-		const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
-		this.applyFeatureDeclarationPolicy(pluginCTX)
-		this.pinPluginEffects(pluginCTX)
-		return pluginCTX
+	get lastCommit(): CommitSummary | undefined {
+		return this._lastCommit
 	}
 
-	private applyFeatureDeclarationPolicy(pluginCTX: PluxelContext): void {
-		const override = this.nextCommitFeatureDeclarationPolicy
-		if (!this.featureDeclarationPolicyExplicit && (override === null || override === undefined)) {
-			return
+	beginUpdate(
+		options: RuntimeUpdateOptions = {},
+	): RuntimeUpdateTransaction<RuntimeUpdateCommitResult> {
+		if (this.hostInvariantFailed) {
+			throw new Error('Cannot update a Core Plugin root after host commit publication failed', {
+				cause: this.hostInvariantFailure,
+			})
 		}
+		if (this.activeRuntimeUpdate) throw new Error(RUNTIME_UPDATE_ALREADY_ACTIVE_MESSAGE)
+		if (this.definitions.hasPendingChanges()) throw new Error(RUNTIME_UPDATE_PENDING_DRAFT_MESSAGE)
+		const tx = new PluginRuntimeUpdateTransaction(this.runtimeUpdateController, options)
+		this.runtimeUpdateCheckpoints.set(tx, {
+			pendingStart: new Set(this._pendingStart),
+			pendingRestart: new Set(this._pendingRestart),
+		})
+		this.activeRuntimeUpdate = tx
+		return tx
+	}
 
-		const policy = override ?? this.featureDeclarationPolicyDefault
-		Object.defineProperty(pluginCTX, PluginService.FEATURE_DECLARATION_POLICY, {
-			value: policy,
-			writable: false,
-			enumerable: false,
-			configurable: true,
+	isMaterialized(input: PluginNodeAddress): boolean {
+		return this.definitions.resolveCommittedNode(input) !== undefined
+	}
+
+	isRunning(input: PluginNodeAddress | PluginNodeSlot | PluginToken): boolean {
+		const node = this.resolveGraphKey(this._activeGraph ?? this.graph, input)
+		return Boolean(node && this.lifecycleManager.isRunning(this.getRuntimeInstance(node)))
+	}
+
+	getInstance<T extends PluginToken>(input: T): InstanceType<T> | undefined
+	getInstance(input: PluginNodeAddress | PluginNodeSlot): BasePlugin | undefined
+	getInstance(input: PluginNodeAddress | PluginNodeSlot | PluginToken): BasePlugin | undefined {
+		const node = this.resolveGraphKey(this._activeGraph ?? this.graph, input)
+		return this.getRunningRuntimeInstance(node)
+	}
+
+	resolvedDependencies(input: PluginNodeAddress): readonly PluginNodeAddress[] {
+		const graph = this._activeGraph ?? this.graph
+		const node = this.resolveGraphKey(graph, input)
+		if (!node) return Object.freeze([])
+		const slot = graph.slotOf(node)
+		if (slot === undefined) return Object.freeze([])
+		return Object.freeze(
+			graph
+				.depSlotsOf(slot)
+				.map((dependency) => graph.keyOf(dependency))
+				.filter(isPluginNodeSlot)
+				.map((dependency) => this.definitions.slots.nodeAddress(dependency)),
+		)
+	}
+
+	/**
+	 * @internal Read the address-level adjacency of the last committed graph.
+	 *
+	 * This deliberately has no address input: iteration starts from existing graph slots and only
+	 * projects their canonical addresses, so an observation cannot intern or materialize an absent
+	 * Plugin. The returned node set includes committed nodes without dependencies.
+	 */
+	readCommittedDependencyAdjacency(): CommittedPluginDependencyAdjacency {
+		const graph = this.graph
+		const nodes: PluginNodeAddress[] = []
+		const required: CommittedPluginDependencyEdge[] = []
+		const optional: CommittedPluginDependencyEdge[] = []
+		for (const key of graph.keys()) {
+			if (!isPluginNodeSlot(key)) {
+				throw new Error('[pluxel/core] Committed Plugin graph contains a non-Plugin node')
+			}
+			const slot = graph.slotOf(key)
+			if (slot === undefined) {
+				throw new Error('[pluxel/core] Committed Plugin graph node has no active slot')
+			}
+			const consumer = this.nodeAddressOf(key)
+			nodes.push(consumer)
+			for (const dependencySlot of graph.depSlotsOf(slot)) {
+				const provider = graph.keyOf(dependencySlot)
+				if (!isPluginNodeSlot(provider)) {
+					throw new Error('[pluxel/core] Committed required Plugin dependency has no provider node')
+				}
+				required.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
+			}
+			for (const dependencySlot of graph.optionalDepSlotsOf(slot)) {
+				const provider = graph.keyOf(dependencySlot)
+				if (!isPluginNodeSlot(provider)) {
+					throw new Error('[pluxel/core] Committed optional Plugin dependency has no provider node')
+				}
+				optional.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
+			}
+		}
+		nodes.sort(comparePluginNodeAddress)
+		required.sort(compareCommittedDependencyEdges)
+		optional.sort(compareCommittedDependencyEdges)
+		return Object.freeze({
+			nodes: Object.freeze(nodes),
+			required: Object.freeze(required),
+			optional: Object.freeze(optional),
 		})
 	}
 
-	private pinPluginEffects(pluginCTX: PluxelContext): void {
-		// Effects are per-plugin by design and used heavily for lifecycle cleanups.
-		// Pinning avoids Context service-getter overhead and keeps identity stable.
-		try {
-			const effects = pluginCTX.effects
-			if (effects) {
-				Object.defineProperty(pluginCTX, 'effects', {
-					value: effects,
-					writable: false,
-					enumerable: false,
-					configurable: true,
-				})
-			}
-		} catch {
-			// If effects service was overridden/removed, fall back silently.
+	resolvePluginNode(
+		input: PluginNodeAddress | PluginNodeSlot | PluginToken,
+	): PluginNodeSlot | undefined {
+		return this.resolveGraphKey(this._activeGraph ?? this.graph, input)
+	}
+
+	internNodeAddress(address: PluginNodeAddress): PluginNodeSlot {
+		return this.definitions.internNode(address)
+	}
+
+	internDefinitionAddress(address: PluginDefinitionAddress): PluginDefinitionSlot {
+		return this.definitions.internDefinition(address)
+	}
+
+	definitionAddressOf(slot: PluginDefinitionSlot): PluginDefinitionAddress {
+		return this.definitions.slots.definitionAddress(slot)
+	}
+
+	nodeAddressOf(slot: PluginNodeSlot): PluginNodeAddress {
+		return this.definitions.slots.nodeAddress(slot)
+	}
+
+	resolvePluginRef<T>(ref: PluginRef<T>, consumer: PluxelContext): T | undefined {
+		const graph = this._activeGraph ?? this.graph
+		const definition = this.definitions.lookupDefinition(ref.definition)
+		if (!definition) return undefined
+		const resolved = graph.resolve(definition)
+		if (!isPluginNodeSlot(resolved) || resolved.variant !== 'default') return undefined
+		const node = this.definitions.committedNodeRecord(resolved)
+		if (node?.definition.slot !== definition) return undefined
+		const provider = this.getRunningRuntimeInstance(resolved)
+		return provider ? (createCallerGenerationView(provider, consumer) as T) : undefined
+	}
+
+	/** @internal Resolve an author constructor token without making it a graph key. */
+	resolveAuthorDependency<T extends BasePlugin>(
+		token: PluginToken,
+		consumer: PluxelContext,
+	): T | undefined {
+		const definition = this.definitions.lookupDefinition(pluginDefinitionAddressOf(token))
+		if (!definition) return undefined
+		const graph = this._activeGraph ?? this.graph
+		const resolved = graph.resolve(definition)
+		if (!isPluginNodeSlot(resolved)) return undefined
+		const provider = this.getRunningRuntimeInstance(resolved)
+		return provider ? (createCallerGenerationView(provider, consumer) as T) : undefined
+	}
+
+	watchInstance(
+		input: PluginNodeAddress | PluginNodeSlot | PluginToken,
+		callback: (instance: BasePlugin | undefined) => void,
+	): () => void {
+		return isPluginNodeSlot(input)
+			? this.watcherRegistry.watch(this._activeGraph ?? this.graph, input, callback)
+			: typeof input === 'function'
+				? this.watcherRegistry.watch(this._activeGraph ?? this.graph, input, callback)
+				: this.watcherRegistry.watch(this._activeGraph ?? this.graph, input, callback)
+	}
+
+	subscribeCommitted(listener: (summary: CommitSummary) => void): () => void {
+		this.commitListeners.add(listener)
+		return () => this.commitListeners.delete(listener)
+	}
+
+	afterCurrentCommit<T>(run: () => T | Promise<T>): Promise<T> {
+		return this._commitLock.then(run)
+	}
+
+	resetDraft(): void {
+		if (this.activeRuntimeUpdate) this.activeRuntimeUpdate.rollback()
+		else this.definitions.resetDraft()
+	}
+
+	private materializeNode(
+		address: PluginNodeAddress,
+		candidate: ConcretePluginDefinitionCandidate,
+	): void {
+		const node = this.definitions.materializeNode(address, candidate)
+		this._pendingStart.add(node)
+	}
+
+	private dematerializeNode(address: PluginNodeAddress, options?: CascadeOptions): void {
+		const node = this.definitions.resolvePlanningNode(address)
+		if (!node) return
+		const targets =
+			options?.cascadeDependents === false
+				? new Set([node])
+				: this.definitions.collectPlanningCascadeTargets([node])
+		for (const target of targets) this.definitions.dematerializeNode(this.nodeAddressOf(target))
+		this.clearPendingOperations(targets)
+	}
+
+	private restartNode(address: PluginNodeAddress, options?: CascadeOptions): void {
+		const node = this.definitions.restartNode(address)
+		const targets = this.collectPlanningCascadeTargets([node], options?.cascadeDependents ?? true)
+		for (const target of targets) this._pendingRestart.add(target)
+	}
+
+	private replaceDefinition(
+		address: PluginDefinitionAddress,
+		candidate: ConcretePluginDefinitionCandidate,
+		options?: ReplaceDefinitionOptions,
+	): void {
+		const canonicalAddress = parsePluginDefinitionAddress(address)
+		const roots = this.definitions.materializedNodes(canonicalAddress)
+		const targets = this.collectPlanningCascadeTargets(roots, options?.cascadeDependents ?? true)
+		this.definitions.replaceDefinition(canonicalAddress, candidate)
+		for (const target of targets) this._pendingRestart.add(target)
+	}
+
+	private setProviderDefault(
+		tokenAddress: PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): void {
+		const token = this.definitions.lookupDefinition(tokenAddress)
+		if (!token && provider === null) return
+		const graph = this.currentPlanningGraph()
+		const consumers = token ? (graph?.consumers(token).filter(isPluginNodeSlot) ?? []) : []
+		this.definitions.setProviderDefault(tokenAddress, provider)
+		if (consumers.length === 0) return
+		for (const target of this.collectPlanningCascadeTargets(consumers, true)) {
+			this._pendingRestart.add(target)
 		}
 	}
 
-	private async injectConfig(plugin: PluginInstance): Promise<void> {
-		const pluginCtx = plugin.ctx
-		const info: PluginInfo = pluginCtx.pluginInfo
-		// Fast path: toolchain injection (configSourcePlugin) produced a configMap/bindings at decoration time.
-		const schemaMap = info.configMap ?? undefined
-		const bindings = info.configBindingsMap ?? undefined
-		if (!schemaMap) return
-
-		const id = info.id
-
-		// Validate + fill defaults before injection (HMR already does this in the loader).
-		// Surface any error as a start failure; plugins should not start with invalid config.
-		await pluginCtx.configService.ensureValidated(id, schemaMap, { missingObjectDefault: {} })
-
-		// Only inject instance fields when the plugin declared bindings.
-		// Some plugins only declare schemas via composed features and don't have any config fields themselves,
-		// but still need validation so features can read from the validated snapshot.
-		if (hasConfigBindings(bindings)) {
-			const record = pluginCtx.configService.getValidatedConfig(id)
-			assignValidatedConfigBindings(plugin, bindings, record)
+	private setDependencyOverride(
+		consumerAddress: PluginNodeAddress,
+		requirement: PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): void {
+		const consumer = this.definitions.resolvePlanningNode(consumerAddress)
+		if (!consumer) throw new Error('[pluxel/core] Dependency override consumer is absent')
+		this.definitions.setDependencyOverride(consumerAddress, requirement, provider)
+		for (const target of this.collectPlanningCascadeTargets([consumer], true)) {
+			this._pendingRestart.add(target)
 		}
+	}
 
-		// Feature instances may be constructed during plugin field initialization (before config injection).
-		// After validation + plugin injection, re-run feature config injection so feature fields are updated
-		// from the validated snapshot (never from raw).
-		try {
-			injectFeatureConfigsFromHostPlugin(plugin.features)
-		} catch (error) {
-			const logger = pluginCtx.logger ?? this.ctx.logger
-			logger.error('feature config inject error', { error })
+	private prepareRuntimeUpdate(
+		tx: RuntimeUpdateTransaction<RuntimeUpdateCommitResult>,
+		meta: RuntimeUpdateCommitMeta,
+	): PreparedRuntimeUpdate<RuntimeUpdateCommitResult> {
+		if (this.activeRuntimeUpdate !== tx) throw new Error(STALE_PREPARED_UPDATE_MESSAGE)
+		const action = this.definitions.build()
+		if (!action.ok) {
+			throw new CorePluginGraphVerificationError(action.err.err)
 		}
+		const expectedRevision = this.commitRevision
+		let state: 'prepared' | 'committing' | 'closed' = 'prepared'
+		return {
+			reason: meta.reason,
+			commit: (options?: PreparedRuntimeUpdateCommitOptions) => {
+				if (state !== 'prepared') throw new Error('Prepared Core Plugin update is closed')
+				state = 'committing'
+				return this.enqueuePreparedCommit(action.val, meta, tx, expectedRevision, options).finally(
+					() => {
+						state = 'closed'
+					},
+				)
+			},
+			rollback: () => {
+				if (state !== 'prepared') return
+				state = 'closed'
+				this.rollbackRuntimeUpdate(tx)
+			},
+		}
+	}
+
+	private enqueuePreparedCommit(
+		action: PreparedDefinitionBuild,
+		meta: RuntimeUpdateCommitMeta,
+		tx: RuntimeUpdateTransaction<RuntimeUpdateCommitResult>,
+		expectedRevision: number,
+		options?: PreparedRuntimeUpdateCommitOptions,
+	): Promise<RuntimeUpdateCommitResult> {
+		const next = this._commitLock.then(async () => {
+			if (this.commitRevision !== expectedRevision || this.activeRuntimeUpdate !== tx) {
+				throw new Error(STALE_PREPARED_UPDATE_MESSAGE)
+			}
+			let pointOfNoReturn = false
+			let graphCommitted = false
+			const confirmGraph = () => {
+				if (graphCommitted) return
+				action.confirm()
+				this.commitRevision += 1
+				graphCommitted = true
+				options?.onGraphCommitted?.()
+			}
+			try {
+				const result = await this.executePreparedCommit(
+					action,
+					meta,
+					() => {
+						pointOfNoReturn = true
+					},
+					confirmGraph,
+				)
+				this.completeRuntimeUpdate(tx)
+				return result
+			} catch (caughtError) {
+				let resultError = caughtError
+				if (!pointOfNoReturn) {
+					this.rollbackRuntimeUpdate(tx)
+				} else {
+					// Teardown has begun, so structural rollback is no longer valid. Force the
+					// already-prepared graph to become fact, then leave every non-running node
+					// eligible for a later reconciliation retry.
+					try {
+						confirmGraph()
+					} catch (confirmError) {
+						resultError = new AggregateError(
+							[caughtError, confirmError],
+							'Core Plugin update failed after teardown and graph confirmation also failed',
+						)
+					}
+					this.definitions.resetDraft()
+					this.recoverPendingStarts()
+					this.completeRuntimeUpdate(tx)
+				}
+				return createErr(resultError)
+			} finally {
+				;(tx as PluginRuntimeUpdateTransaction<RuntimeUpdateCommitResult>).markCommitted()
+			}
+		})
+		this._commitLock = next.catch((): undefined => undefined)
+		return next.catch((error) => createErr(error))
+	}
+
+	private rollbackRuntimeUpdate(tx: RuntimeUpdateTransaction<RuntimeUpdateCommitResult>): void {
+		if (this.activeRuntimeUpdate !== tx) return
+		const checkpoint = this.runtimeUpdateCheckpoints.get(tx)
+		this.definitions.resetDraft()
+		if (checkpoint) {
+			this._pendingStart = new Set(checkpoint.pendingStart)
+			this._pendingRestart = new Set(checkpoint.pendingRestart)
+		}
+		this.completeRuntimeUpdate(tx)
+	}
+
+	private completeRuntimeUpdate(tx: RuntimeUpdateTransaction<RuntimeUpdateCommitResult>): void {
+		this.runtimeUpdateCheckpoints.delete(tx)
+		if (this.activeRuntimeUpdate === tx) this.activeRuntimeUpdate = undefined
+	}
+
+	private createPluginContext(): PluxelContext {
+		return createGenerationContext(this.ctx.root, `${this.order++}`)
 	}
 
 	private resolveGraphKey(
 		graph: PluginGraph | undefined,
-		id: RuntimePluginHandle,
-	): RuntimePluginKey | undefined {
-		if (typeof id === 'string') {
-			if (!graph || graph.has(id)) return id as RuntimePluginKey
-			const resolved = graph.resolve(id)
-			return typeof resolved === 'string'
-				? (resolved as RuntimePluginKey)
-				: (id as RuntimePluginKey)
+		input: PluginNodeAddress | PluginNodeSlot | PluginToken,
+	): PluginNodeSlot | undefined {
+		if (typeof input === 'function') {
+			const definition = this.definitions.lookupDefinition(pluginDefinitionAddressOf(input))
+			if (!definition) return undefined
+			const resolved = graph?.resolve(definition)
+			if (isPluginNodeSlot(resolved)) return resolved
+			return undefined
 		}
-		try {
-			const key = runtimePluginKeyOfCtor(id)
-			if (!graph || graph.has(key)) return key
-		} catch {
-			// Base/abstract tokens may be undecorated; fall back to graph aliases.
-		}
-		const resolved = graph?.resolve(id)
-		if (typeof resolved === 'string') return resolved as RuntimePluginKey
-		return undefined
-	}
-
-	private resolveRuntimeReadKey(
-		graph: PluginGraph | undefined,
-		id: PluginIdentifier,
-	): RuntimePluginKey | undefined {
-		const resolved = this.resolveGraphKey(graph, id)
-		if (resolved && graph?.has(resolved)) return resolved
-		const owner = this.runtimeModules.resolveDependencyToken(id)
-		if (!owner || owner === resolved) return resolved
-		return this.resolveGraphKey(graph, owner)
-	}
-
-	private activeRuntime(): PluginRuntime {
-		return this._activeRuntime ?? this.definitions.runtime
+		const node = isPluginNodeSlot(input) ? input : this.definitions.slots.lookupNode(input)
+		if (!node) return undefined
+		return !graph || graph.has(node) ? node : undefined
 	}
 
 	private currentPlanningGraph(): PluginGraph | undefined {
@@ -382,450 +595,398 @@ export class PluginService {
 		return this.definitions.hasPendingChanges() ? undefined : this.graph
 	}
 
-	private resolvePlanningKey(id: RuntimePluginHandle): RuntimePluginKey | undefined {
+	private collectPlanningCascadeTargets(
+		nodes: Iterable<PluginNodeSlot>,
+		cascadeDependents: boolean,
+	): Set<PluginNodeSlot> {
+		if (!cascadeDependents) return new Set(nodes)
 		const graph = this.currentPlanningGraph()
 		return graph
-			? this.resolveGraphKey(graph, id)
-			: (this.definitions.resolvePlanningHandle(id) ?? this.resolveGraphKey(undefined, id))
+			? this.dependentClosure.collect(graph, nodes)
+			: this.definitions.collectPlanningCascadeTargets(nodes)
 	}
 
-	private resolveRegisteredPlanningKey(
-		id: RuntimePluginHandle,
-		action: PluginMutationAction,
-	): RuntimePluginKey {
-		const key = this.tryResolveRegisteredPlanningKey(id)
-		if (!key) throw createUnloadedPluginError(action, id)
-		return key
-	}
-
-	private assertPlanningContains(id: RuntimePluginHandle, action: PluginMutationAction): void {
-		if (!this.tryResolveRegisteredPlanningKey(id)) throw createUnloadedPluginError(action, id)
-	}
-
-	private tryResolveRegisteredPlanningKey(id: RuntimePluginHandle): RuntimePluginKey | undefined {
-		const graph = this.currentPlanningGraph()
-		if (!graph) return this.definitions.resolvePlanningHandle(id)
-		const key = this.resolveGraphKey(graph, id)
-		return key && graph.has(key) ? key : undefined
-	}
-
-	private collectPlanningCascadeTargets(
-		id: RuntimePluginHandle,
-		cascadeDependents = true,
-	): Set<RuntimePluginKey> {
-		if (!cascadeDependents) {
-			const key = this.resolvePlanningKey(id)
-			return key ? new Set([key]) : new Set()
+	private clearPendingOperations(nodes: Iterable<PluginNodeSlot>): void {
+		for (const node of nodes) {
+			this._pendingStart.delete(node)
+			this._pendingRestart.delete(node)
 		}
-		const graph = this.currentPlanningGraph()
-		if (graph) {
-			const key = this.resolveGraphKey(graph, id)
-			if (key) {
-				const slot = graph.slotOf(key)
-				if (slot !== undefined && graph.dependentSlotsOf(slot).length === 0) {
-					return new Set([key])
+	}
+
+	private createLifecycleOperation(meta: RuntimeUpdateCommitMeta): CorePluginLifecycleOperation {
+		return Object.freeze({
+			revision: this.commitRevision + 1,
+			reason: meta.reason,
+		})
+	}
+
+	private captureRunningGenerationContexts(
+		runtime: PluginRuntime,
+		nodes: Iterable<PluginNodeSlot>,
+		out: Set<PluginContext>,
+	): void {
+		for (const node of nodes) {
+			const instance = runtime.peekByKey<BasePlugin>(node)
+			if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+			out.add(getPluginGenerationContext(instance) as PluginContext)
+		}
+	}
+
+	private stableNodeOrder(graph: PluginGraph, nodes: Iterable<PluginNodeSlot>): PluginNodeSlot[] {
+		const unique = new Set<PluginNodeSlot>()
+		for (const node of nodes) {
+			if (graph.has(node)) unique.add(node)
+		}
+		return [...unique].sort((left, right) =>
+			comparePluginNodeAddress(this.nodeAddressOf(left), this.nodeAddressOf(right)),
+		)
+	}
+
+	private stableStartOrder(graph: PluginGraph, nodes: Iterable<PluginNodeSlot>): PluginNodeSlot[] {
+		const orderedNodes = this.stableNodeOrder(graph, nodes)
+		const included = new Set(orderedNodes)
+		const remaining = new Map<PluginNodeSlot, number>()
+		const dependents = new Map<PluginNodeSlot, PluginNodeSlot[]>()
+		for (const node of orderedNodes) {
+			remaining.set(node, 0)
+			dependents.set(node, [])
+		}
+		for (const node of orderedNodes) {
+			const slot = graph.slotOf(node)
+			if (slot === undefined) continue
+			for (const dependencySlot of graph.orderDepSlotsOf(slot)) {
+				const dependency = graph.keyOf(dependencySlot)
+				if (!isPluginNodeSlot(dependency) || !included.has(dependency)) continue
+				remaining.set(node, remaining.get(node)! + 1)
+				dependents.get(dependency)!.push(node)
+			}
+		}
+
+		const compare = (left: PluginNodeSlot, right: PluginNodeSlot) =>
+			comparePluginNodeAddress(this.nodeAddressOf(left), this.nodeAddressOf(right))
+		let frontier = orderedNodes.filter((node) => remaining.get(node) === 0)
+		const out: PluginNodeSlot[] = []
+		while (frontier.length > 0) {
+			frontier.sort(compare)
+			const next = new Set<PluginNodeSlot>()
+			for (const node of frontier) {
+				out.push(node)
+				for (const dependent of dependents.get(node)!) {
+					const count = remaining.get(dependent)! - 1
+					remaining.set(dependent, count)
+					if (count === 0) next.add(dependent)
 				}
 			}
-			return this.dependentClosure.collect(graph, [id])
+			frontier = [...next]
 		}
-		return this.definitions.collectPlanningCascadeTargets(id)
+		const emitted = new Set(out)
+		const leftovers = orderedNodes.filter((node) => !emitted.has(node)).sort(compare)
+		out.push(...leftovers)
+		return out
 	}
 
-	private clearPendingOperations(ids: Iterable<RuntimePluginKey>): void {
-		for (const id of ids) {
-			this._pendingStart.delete(id)
-			this._pendingRestart.delete(id)
+	private collectStartedGenerationContexts(
+		graph: PluginGraph,
+		runtime: PluginRuntime,
+		nodes: Iterable<PluginNodeSlot>,
+		failed: ReadonlySet<PluginNodeSlot>,
+	): readonly PluginContext[] {
+		const started = new Set<PluginContext>()
+		for (const node of this.stableStartOrder(graph, nodes)) {
+			if (failed.has(node)) continue
+			const instance = runtime.peekByKey<BasePlugin>(node)
+			if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+			started.add(getPluginGenerationContext(instance) as PluginContext)
 		}
+		return Object.freeze([...started])
 	}
 
-	/* ─────────────────────────── State Query ─────────────────────────── */
-
-	isRunning(id: PluginIdentifier): boolean {
-		const graph = this._activeGraph ?? this.graph
-		const key = this.resolveRuntimeReadKey(graph, id)
-		if (!key) return false
-		const instance = this.getRuntimeInstance(key)
-		return this.lifecycleManager.isRunning(instance)
+	private collectFailedNodes(
+		graph: PluginGraph,
+		nodes: Iterable<PluginNodeSlot>,
+		failed: ReadonlySet<PluginNodeSlot>,
+	): readonly PluginNodeSlot[] {
+		return Object.freeze(this.stableStartOrder(graph, nodes).filter((node) => failed.has(node)))
 	}
 
-	/** Whether an identifier is registered in the current draft container. */
-	isRegistered(id: PluginIdentifier): boolean {
-		return this.definitions.isRegistered(id)
+	private stableContextOrder(contexts: Iterable<PluginContext>): readonly PluginContext[] {
+		return Object.freeze(
+			[...new Set(contexts)].sort((left, right) =>
+				comparePluginNodeAddress(left.pluginInfo.nodeAddress, right.pluginInfo.nodeAddress),
+			),
+		)
 	}
 
-	public get lastCommit(): CommitSummary | undefined {
-		return this._lastCommit
-	}
-
-	public listRuntimeModuleItems(moduleId: string): readonly RuntimeModuleDeclarationItem[] {
-		return this.runtimeModules.listItems(moduleId)
-	}
-
-	public replaceRuntimeDependencyOverrides(
-		plugin: PluginIdentifier | string,
-		overrides: RuntimeDependencyOverrideList | undefined,
-	): void {
-		const pluginId =
-			typeof plugin === 'string' ? plugin : getPluginInfo(plugin as PluginConstructor).id
-		const { changed, previous } = this.runtimeDependencyOverrides.replace(pluginId, overrides)
-		if (!changed) return
-		this.recordRuntimeDependencyOverrideSnapshot(pluginId, previous)
-
-		const current = this.resolveRuntimeDependencyOverrideOwner(plugin, pluginId)
-		if (!current) return
-		const canonical = this.tryResolveRegisteredPlanningKey(current)
-		if (!canonical) return
-		const provideBase = this.resolveCurrentProvideBase(current, canonical)
-		this.definitions.replace(canonical, current, {
-			provideBase,
-		})
-		for (const target of this.collectPlanningCascadeTargets(canonical, true)) {
-			this._pendingRestart.add(target)
+	private collectRequiredFailureClosure(
+		graph: PluginGraph,
+		roots: readonly PluginNodeSlot[],
+	): Readonly<{
+		nodes: Set<PluginNodeSlot>
+		blockedBy: Map<PluginNodeSlot, PluginNodeSlot>
+	}> {
+		const nodes = new Set<PluginNodeSlot>()
+		const blockedBy = new Map<PluginNodeSlot, PluginNodeSlot>()
+		const queue: Array<Readonly<{ node: PluginNodeSlot; root: PluginNodeSlot }>> = []
+		for (const root of roots) {
+			if (nodes.has(root)) continue
+			nodes.add(root)
+			queue.push({ node: root, root })
 		}
-	}
-
-	private resolveRuntimeDependencyOverrideOwner(
-		plugin: PluginIdentifier | string,
-		pluginId: string,
-	): PluginConstructor | undefined {
-		if (typeof plugin === 'function') return plugin as PluginConstructor
-
-		const runtimeModuleOwner = this.runtimeModules.ctorForName(pluginId)
-		if (runtimeModuleOwner) return runtimeModuleOwner
-
-		const graph = this._activeGraph ?? this.graph
-		const canonical = this.resolveGraphKey(graph, pluginId)
-		const owner = canonical ? graph.declaration(canonical)?.meta?.class : undefined
-		return typeof owner === 'function' ? (owner as PluginConstructor) : undefined
-	}
-
-	private resolveCurrentProvideBase(
-		ctor: PluginConstructor,
-		canonical: RuntimePluginKey,
-	): boolean | undefined {
-		let base: PluginIdentifier | undefined
-		try {
-			base = getPluginInfo(ctor).base as PluginIdentifier | undefined
-		} catch {
-			return undefined
+		for (let cursor = 0; cursor < queue.length; cursor++) {
+			const current = queue[cursor]!
+			const slot = graph.slotOf(current.node)
+			if (slot === undefined) continue
+			for (const dependentSlot of graph.dependentSlotsOf(slot)) {
+				const dependent = graph.keyOf(dependentSlot)
+				if (!isPluginNodeSlot(dependent) || nodes.has(dependent)) continue
+				nodes.add(dependent)
+				blockedBy.set(dependent, current.root)
+				queue.push({ node: dependent, root: current.root })
+			}
 		}
-		if (!base) return undefined
-
-		const graph = this._activeGraph ?? this.graph
-		const declaration = graph.declaration(canonical)
-		if (!declaration) return undefined
-		return declaration.tokens.includes(base)
+		return { nodes, blockedBy }
 	}
 
-	public getRuntimeModuleId(id: PluginIdentifier | string): string | undefined {
-		const graph = this._activeGraph ?? this.graph
-		const resolved = typeof id === 'string' ? undefined : this.resolveGraphKey(graph, id)
-		return this.runtimeModules.getModuleId(id, resolved)
-	}
+	private async settleHostGenerations(args: {
+		operation: CorePluginLifecycleOperation
+		graph: PluginGraph
+		runtime: PluginRuntime
+		plan: CommitExecutionPlan
+		failed: Set<PluginNodeSlot>
+		report: MutableLifecycleReport
+		stopped: Set<PluginContext>
+	}): Promise<void> {
+		const settle = this.lifecycleHooks.settleGenerations
+		if (!settle) return
+		const { operation, graph, runtime, plan, failed, report, stopped } = args
+		const settled = new Set<PluginContext>()
 
-	/**
-	 * Resolve a public plugin handle to the committed runtime graph key.
-	 *
-	 * Constructor handles are compatibility/read-model inputs; they are not stored
-	 * as graph tokens unless they are abstract/base aliases.
-	 */
-	public resolveRuntimeKey(id: PluginIdentifier | string): RuntimePluginKey | undefined {
-		const graph = this._activeGraph ?? this.graph
-		const key = this.resolveRuntimeReadKey(graph, id as PluginIdentifier)
-		return key && graph.has(key) ? key : undefined
-	}
+		while (true) {
+			const candidates: PluginContext[] = []
+			const nodeByContext = new Map<PluginContext, PluginNodeSlot>()
+			for (const node of this.stableStartOrder(graph, plan.toStart)) {
+				if (failed.has(node)) continue
+				const instance = runtime.peekByKey<BasePlugin>(node)
+				if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+				const ctx = getPluginGenerationContext(instance) as PluginContext
+				if (settled.has(ctx)) continue
+				settled.add(ctx)
+				candidates.push(ctx)
+				nodeByContext.set(ctx, node)
+			}
+			if (candidates.length === 0) return
 
-	/**
-	 * Get the current singleton instance for an identifier if it is running.
-	 * This does not instantiate or start anything; it only reads the runtime cache + running state.
-	 */
-	public getInstance<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
-		const graph = this._activeGraph ?? this.graph
-		const key = this.resolveRuntimeReadKey(graph, id)
-		if (!key) return undefined
-		return this.getRunningRuntimeInstance(key) as InstanceType<T> | undefined
-	}
+			let returned: unknown
+			try {
+				returned = await settle(
+					Object.freeze({
+						operation,
+						started: Object.freeze(candidates),
+						stopped: this.stableContextOrder(stopped),
+					}),
+				)
+			} catch (error) {
+				this.poisonHost(error)
+			}
+			if (returned === undefined) continue
+			if (!Array.isArray(returned)) {
+				this.poisonHost(
+					new TypeError('[pluxel/core] settleGenerations must return an array of rejections'),
+				)
+			}
+			if (returned.length === 0) continue
 
-	/**
-	 * Watch the runtime instance behind a plugin identifier.
-	 *
-	 * - The callback is invoked immediately with the current *running* instance (or `undefined`).
-	 * - On commits, it is only re-evaluated when the resolved target's availability changes.
-	 * - If identifier resolution changes across commits (aliases/replacements), the watcher auto-rebinds.
-	 */
-	public watchInstance<T extends PluginIdentifier>(
-		id: T,
-		cb: (instance: InstanceType<T> | undefined) => void,
-	): () => void {
-		return this.watcherRegistry.watch(this._activeGraph ?? this.graph, id, cb)
-	}
-
-	/** @internal Schedule route-owned work after the currently queued commit settles. */
-	public afterCurrentCommit<T>(run: () => T | Promise<T>): Promise<T> {
-		return this._commitLock.then(run)
-	}
-
-	/* ─────────────────────────── Forks ─────────────────────────── */
-
-	/**
-	 * Create (or reuse) a fork ctor for a ForkablePlugin.
-	 * This does not register it into the container.
-	 */
-	public fork<T extends ForkablePluginConstructor>(ctor: T, forkId: string): PluginConstructor {
-		return forkPlugin(ctor, forkId)
-	}
-
-	/**
-	 * Convenience: fork + register into the current draft container.
-	 * The fork will be started on the next commit().
-	 */
-	public registerFork<T extends ForkablePluginConstructor>(
-		ctor: T,
-		forkId: string,
-		opts?: { provideBase?: boolean },
-	): PluginConstructor {
-		const ForkCtor = forkPlugin(ctor, forkId)
-		this.register(ForkCtor, opts)
-		return ForkCtor
-	}
-
-	/** Get a running fork instance if present; otherwise undefined. */
-	public getFork<T extends PluginIdentifier>(ctor: T, forkId: string): InstanceType<T> | undefined {
-		const ForkCtor = getForkedCtor(ctor, forkId)
-		if (!ForkCtor) return undefined
-		return this.getRunningRuntimeInstance(runtimePluginKeyOfCtor(ForkCtor)) as
-			| InstanceType<T>
-			| undefined
-	}
-
-	/** List all fork ctors created for a given original ctor. */
-	public listForks<T extends PluginIdentifier>(ctor: T): PluginConstructor[] {
-		return listForks(ctor)
-	}
-
-	/* ─────────────────────────── Declaration Layer ─────────────────────────── */
-
-	/** Last committed DI graph. */
-	public get graph(): PluginGraph {
-		return this.definitions.lastGraph
-	}
-
-	/** Roll back draft registrations since last confirmed container. */
-	public resetDraft(): void {
-		this.definitions.resetDraft()
-	}
-
-	/**
-	 * Start a bounded runtime declaration update.
-	 *
-	 * This is intentionally a top-level transaction: PluginDefinitions currently only supports
-	 * rollback to the last confirmed graph, so nested updates or updates opened on top of existing
-	 * draft mutations would make rollback semantics ambiguous.
-	 */
-	public beginUpdate(
-		options: RuntimeUpdateOptions = {},
-	): RuntimeUpdateTransaction<RuntimeUpdateCommitResult> {
-		if (this.activeRuntimeUpdate) {
-			throw new Error(RUNTIME_UPDATE_ALREADY_ACTIVE_MESSAGE)
-		}
-		if (this.definitions.hasPendingChanges()) {
-			throw new Error(RUNTIME_UPDATE_PENDING_DRAFT_MESSAGE)
-		}
-		const tx = new PluginRuntimeUpdateTransaction(this.runtimeUpdateController, options)
-		this.runtimeUpdateCheckpoints.set(tx, this.createRuntimeUpdateCheckpoint())
-		this.activeRuntimeUpdate = tx
-		return tx
-	}
-
-	private clearRuntimeUpdateCheckpoint(
-		tx: RuntimeUpdateTransaction<RuntimeUpdateCommitResult>,
-	): void {
-		this.runtimeUpdateCheckpoints.delete(tx)
-		if (this.activeRuntimeUpdate === tx) this.activeRuntimeUpdate = undefined
-	}
-
-	private rollbackRuntimeUpdate(tx: RuntimeUpdateTransaction<RuntimeUpdateCommitResult>): void {
-		const checkpoint = this.runtimeUpdateCheckpoints.get(tx)
-		this.runtimeUpdateCheckpoints.delete(tx)
-		if (this.activeRuntimeUpdate === tx) this.activeRuntimeUpdate = undefined
-		this.definitions.resetDraft()
-		if (checkpoint) {
-			this.restoreRuntimeDependencyOverrides(checkpoint.dependencyOverrides)
-			this._pendingStart = new Set(checkpoint.pendingStart)
-			this._pendingRestart = new Set(checkpoint.pendingRestart)
-		}
-	}
-
-	private createRuntimeUpdateCheckpoint(): RuntimeUpdateCheckpoint {
-		return {
-			pendingStart: new Set(this._pendingStart),
-			pendingRestart: new Set(this._pendingRestart),
-			dependencyOverrides: new Map(),
-		}
-	}
-
-	private recordRuntimeDependencyOverrideSnapshot(
-		pluginId: string,
-		previous: RuntimeDependencyOverrideList | undefined,
-	): void {
-		const tx = this.activeRuntimeUpdate
-		if (!tx) return
-		const checkpoint = this.runtimeUpdateCheckpoints.get(tx)
-		if (!checkpoint || checkpoint.dependencyOverrides.has(pluginId)) return
-		checkpoint.dependencyOverrides.set(pluginId, previous)
-	}
-
-	private restoreRuntimeDependencyOverrides(snapshots: RuntimeDependencyOverrideSnapshot): void {
-		this.runtimeDependencyOverrides.restore(snapshots)
-	}
-
-	public upsertRuntimeModule(module: RuntimeModuleDeclaration): void {
-		this.runtimeModules.upsert(module)
-	}
-
-	public removeRuntimeModule(moduleId: string): void {
-		this.runtimeModules.remove(moduleId)
-	}
-
-	private snapshotRuntimeModule(moduleId: string): RuntimeModuleSnapshot {
-		return this.runtimeModules.snapshot(moduleId)
-	}
-
-	private restoreRuntimeModule(moduleId: string, snapshot: RuntimeModuleSnapshot): void {
-		this.runtimeModules.restore(moduleId, snapshot)
-	}
-
-	/** Register a plugin ctor into the draft container. */
-	public register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void {
-		this.definitions.register(Plugin, opts)
-	}
-
-	/**
-	 * Unregister a plugin from the declaration layer.
-	 * Default behavior cascades to dependents to keep DI verification valid.
-	 */
-	public unregister(id: PluginIdentifier, opts?: CascadeOptions): void {
-		const canonical = this.resolvePlanningKey(id)
-		if (!canonical) return
-		const targets = this.collectPlanningCascadeTargets(canonical, opts?.cascadeDependents ?? true)
-		for (const t of targets) this.definitions.unregister(t)
-		this.clearPendingOperations(targets)
-		this._pendingStart.delete(canonical)
-		this._pendingRestart.delete(canonical)
-	}
-
-	/**
-	 * Shutdown (unload) the current plugin (and optionally its dependents) from within a plugin context.
-	 *
-	 * This is an orchestration-layer operation and intentionally lives on PluginService (registry),
-	 * not on `effects`. The commit is scheduled and cannot be awaited from the owner call being stopped.
-	 */
-	public shutdownSelf(opts?: CascadeOptions): void {
-		const pluginInfo = (this.ctx as unknown as { pluginInfo?: { class?: unknown } }).pluginInfo
-		if (!pluginInfo?.class) {
-			throw new Error(SHUTDOWN_OUTSIDE_PLUGIN_CONTEXT_MESSAGE)
-		}
-		this.unregister(pluginInfo.class as PluginIdentifier, opts)
-		// Self-shutdown cannot be awaited from an owner invocation: lifecycle stop must first wait
-		// for that invocation lease. Queue the commit and let the current call return.
-		void this.commit()
-	}
-
-	/**
-	 * Restart a registered plugin (and optionally its dependents) on next commit.
-	 * This does not change registrations; it only re-instantiates instances.
-	 */
-	public restart(id: PluginIdentifier, opts?: CascadeOptions): void {
-		const canonical = this.resolveRegisteredPlanningKey(id, 'restart')
-		const targets = this.collectPlanningCascadeTargets(canonical, opts?.cascadeDependents ?? true)
-		for (const key of targets) {
-			this.assertPlanningContains(key, 'restart')
-			this._pendingRestart.add(key)
-		}
-	}
-
-	/**
-	 * Replace a plugin implementation (HMR) and restart the affected subtree on next commit.
-	 */
-	public replace(
-		target: PluginIdentifier,
-		next: PluginConstructor,
-		opts?: ReplacePluginOptions,
-	): void {
-		const canonical = this.resolveRegisteredPlanningKey(target, 'replace')
-		const targets = this.collectPlanningCascadeTargets(canonical, opts?.cascadeDependents ?? true)
-
-		this.definitions.replace(canonical, next, {
-			provideBase: opts?.provideBase,
-			aliases: [canonical],
-		})
-
-		// Runtime intent: restart affected plugins so they observe the new provider instance.
-		for (const t of targets) this._pendingRestart.add(t)
-	}
-
-	/* ─────────────────────────── Commit Internals ─────────────────────────── */
-
-	private enqueueCommit(
-		policyOverride: FeatureDeclarationPolicy | null,
-		meta: RuntimeUpdateCommitMeta | null = null,
-	) {
-		const next = this._commitLock
-			.then(async () => {
-				const prev = this.nextCommitFeatureDeclarationPolicy
-				this.nextCommitFeatureDeclarationPolicy = policyOverride
-				try {
-					return await this.executeCommit(meta)
-				} finally {
-					this.nextCommitFeatureDeclarationPolicy = prev
+			const rejectionByNode = new Map<PluginNodeSlot, unknown>()
+			for (const rejection of returned) {
+				if (!rejection || typeof rejection !== 'object') {
+					this.poisonHost(
+						new TypeError('[pluxel/core] settleGenerations returned an invalid rejection'),
+					)
 				}
+				const node = nodeByContext.get(rejection.ctx)
+				if (!node || rejectionByNode.has(node)) {
+					this.poisonHost(
+						new TypeError(
+							'[pluxel/core] settleGenerations must reject each current candidate at most once',
+						),
+					)
+				}
+				rejectionByNode.set(node, rejection.error)
+			}
+
+			const rejected = this.stableStartOrder(graph, rejectionByNode.keys())
+			const rejectedSet = new Set(rejected)
+			for (const node of rejected) {
+				const error = ensureError(rejectionByNode.get(node))
+				recordLifecycleIssue(report, {
+					plugin: node,
+					phase: 'start',
+					kind: PLUGIN_LIFECYCLE_ISSUE_KIND.StartFailed,
+					message: error.message,
+					error: serializeLifecycleError(error),
+				})
+			}
+
+			const requiredFailure = this.collectRequiredFailureClosure(graph, rejected)
+			const requiredClosure = requiredFailure.nodes
+			const requiredInOrder = this.stableStartOrder(graph, requiredClosure)
+			for (const node of requiredInOrder) {
+				if (rejectedSet.has(node) || failed.has(node)) continue
+				const blockedBy = requiredFailure.blockedBy.get(node)!
+				recordLifecycleIssue(report, {
+					plugin: node,
+					phase: 'dependency',
+					kind: PLUGIN_LIFECYCLE_ISSUE_KIND.DependencyBlocked,
+					blockedBy,
+					message: `Plugin ${this.label(node)} was withdrawn because dependency ${this.label(blockedBy)} failed host settlement.`,
+				})
+			}
+			for (const node of requiredClosure) failed.add(node)
+			for (const node of requiredClosure) {
+				plan.toStop.add(node)
+				plan.toStart.add(node)
+			}
+
+			const requiredStopSlots = new Set<number>()
+			for (const node of requiredInOrder) {
+				const instance = runtime.peekByKey<BasePlugin>(node)
+				if (!instance || !this.lifecycleManager.isRunning(instance)) continue
+				const slot = graph.slotOf(node)
+				if (slot !== undefined) requiredStopSlots.add(slot)
+			}
+			this.captureRunningGenerationContexts(runtime, requiredInOrder, stopped)
+			await this.applyTeardown(graph, requiredStopSlots, report)
+			runtime.deleteMany(requiredClosure)
+
+			const optionalRestart = this.stableStartOrder(
+				graph,
+				this.dependentClosure.collectOrdering(graph, rejected),
+			).filter((node) => {
+				if (requiredClosure.has(node) || failed.has(node)) return false
+				return this.isRunningInRuntime(runtime, node)
 			})
-			.catch((error) => {
-				void this.ctx.logger.with({ error }).error`commit 内部异常`
-				return createErr(error)
-			})
+			if (optionalRestart.length === 0) continue
 
-		this._commitLock = next
-		return next
+			const restartSlots = new Set<number>()
+			for (const node of optionalRestart) {
+				const instance = runtime.peekByKey<BasePlugin>(node)
+				if (instance) {
+					const ctx = getPluginGenerationContext(instance) as PluginContext
+					stopped.add(ctx)
+				}
+				const slot = graph.slotOf(node)
+				if (slot !== undefined) restartSlots.add(slot)
+				plan.toStop.add(node)
+				plan.toStart.add(node)
+			}
+			await this.applyTeardown(graph, restartSlots, report)
+			runtime.deleteMany(optionalRestart)
+			for (const node of await this.startSlotSet(runtime, graph, restartSlots, report, operation)) {
+				failed.add(node)
+			}
+		}
 	}
 
-	private async stopPlugin(id: RuntimePluginKey, report: MutableLifecycleReport): Promise<void> {
-		// Important: don't call container.get() here; it may instantiate plugins just to stop them.
-		// Only stop plugins that were actually constructed (and thus may be running).
-		const plugin = this.getRuntimeInstance(id)
-		if (!plugin) return
-		const snapshot = await this.lifecycleManager.stopLifecycle(id, plugin, {
-			timeoutMs: this.resolveStopTimeoutMs(plugin),
-		})
-		const context = snapshot?.context as { failedStep?: string; err?: unknown } | undefined
-		if (context?.failedStep !== 'stop') return
-		recordLifecycleIssue(report, {
-			plugin: id,
-			phase: 'stop',
-			kind: PLUGIN_LIFECYCLE_ISSUE_KIND.StopFailed,
-			message: context.err ? errorMessage(context.err) : `Plugin ${String(id)} failed to stop`,
-			error: context.err ? serializeLifecycleError(context.err) : undefined,
-		})
+	private poisonHost(error: unknown): never {
+		this.hostInvariantFailed = true
+		this.hostInvariantFailure = error
+		throw error
 	}
 
-	private resolveStartTimeoutMs(plugin: BasePlugin): number | undefined {
-		const info = plugin.ctx.pluginInfo
-		return readFinitePositiveMsFromMeta(info.metadata, PLUGIN_START_TIMEOUT_METADATA_KEY)
+	private async prepareHostCommit(publication: CoreCommitPublication): Promise<void> {
+		const prepare = this.lifecycleHooks.prepareCommit
+		if (!prepare) return
+		try {
+			await prepare(publication)
+		} catch (error) {
+			this.poisonHost(error)
+		}
 	}
 
-	private resolveStopTimeoutMs(plugin: BasePlugin): number | undefined {
-		const info = plugin.ctx.pluginInfo
-		return readFinitePositiveMsFromMeta(info.metadata, PLUGIN_STOP_TIMEOUT_METADATA_KEY)
+	private publishHostCommit(publication: CoreCommitPublication): void {
+		const publish = this.lifecycleHooks.publishCommit
+		if (!publish) return
+		if (this.publishingHostCommit) {
+			this.poisonHost(new Error('[pluxel/core] Host commit publication cannot be reentrant'))
+		}
+		this.publishingHostCommit = true
+		try {
+			const result: unknown = publish(publication)
+			if (result !== undefined) {
+				if (
+					result !== null &&
+					(typeof result === 'object' || typeof result === 'function') &&
+					typeof (result as { then?: unknown }).then === 'function'
+				) {
+					void Promise.resolve(result).catch((): undefined => undefined)
+				}
+				throw new TypeError(
+					'[pluxel/core] Host commit publication must be synchronous and return undefined',
+				)
+			}
+		} catch (error) {
+			this.poisonHost(error)
+		} finally {
+			this.publishingHostCommit = false
+		}
 	}
 
-	private getRuntimeInstance(id: RuntimePluginKey | undefined): BasePlugin | undefined {
-		if (!id) return undefined
-		return this.activeRuntime().peekByKey(id) as BasePlugin | undefined
+	private activeRuntime(): PluginRuntime {
+		return this._activeRuntime ?? this.definitions.runtime
 	}
 
-	private getRunningRuntimeInstance(id: RuntimePluginKey | undefined): BasePlugin | undefined {
-		const instance = this.getRuntimeInstance(id)
+	private getRuntimeInstance(node: PluginNodeSlot | undefined): BasePlugin | undefined {
+		return node ? (this.activeRuntime().peekByKey(node) as BasePlugin | undefined) : undefined
+	}
+
+	private getRunningRuntimeInstance(node: PluginNodeSlot | undefined): BasePlugin | undefined {
+		const instance = this.getRuntimeInstance(node)
 		return instance && this.lifecycleManager.isRunning(instance) ? instance : undefined
+	}
+
+	private async injectConfig(plugin: BasePlugin): Promise<number | null> {
+		const info = requirePluginGenerationInfo(plugin.ctx)
+		if (!info.config) return null
+		const configService = requireConfigService(plugin.ctx)
+		const value = await configService.ensureValidated(
+			plugin.ctx.pluginInfo.nodeAddress,
+			info.config,
+			{ missingObjectDefault: {} },
+		)
+		assignValidatedPluginConfig(plugin, info.config, value)
+		return configService.getConfigRevision(plugin.ctx.pluginInfo.nodeAddress)
+	}
+
+	private async stopPlugin(node: PluginNodeSlot, report: MutableLifecycleReport): Promise<void> {
+		const plugin = this.getRuntimeInstance(node)
+		if (!plugin) return
+		const configOwner = requirePluginGenerationInfo(plugin.ctx).config
+			? plugin.ctx.pluginInfo.nodeAddress
+			: undefined
+		try {
+			const snapshot = await this.lifecycleManager.stopLifecycle(node, plugin)
+			const context = snapshot?.context as { failedStep?: string; err?: unknown } | undefined
+			if (context?.failedStep !== 'drain') return
+			recordLifecycleIssue(report, {
+				plugin: node,
+				phase: 'drain',
+				kind: PLUGIN_LIFECYCLE_ISSUE_KIND.DrainFailed,
+				message: context.err
+					? errorMessage(context.err)
+					: `Plugin ${this.label(node)} failed to drain`,
+				error: context.err ? serializeLifecycleError(context.err) : undefined,
+			})
+		} catch (error) {
+			recordLifecycleIssue(report, {
+				plugin: node,
+				phase: 'drain',
+				kind: PLUGIN_LIFECYCLE_ISSUE_KIND.DrainFailed,
+				message: errorMessage(error),
+				error: serializeLifecycleError(error),
+			})
+		} finally {
+			if (configOwner) requireConfigService(this.ctx).clearConfigApplied(configOwner)
+		}
 	}
 
 	private async applyTeardown(
@@ -834,13 +995,12 @@ export class PluginService {
 		report: MutableLifecycleReport,
 	): Promise<void> {
 		if (!graph || toStop.size === 0) return
-		// Default concurrency is 1 (sequential) to preserve legacy stop behavior.
 		await stopPluginsTopo(
-			(slot) => graph.dependentSlotsOf(slot),
+			(slot) => graph.orderDependentSlotsOf(slot),
 			toStop,
 			async (slot) => {
-				const id = graph.keyOf(slot)
-				if (id !== undefined) await this.stopPlugin(id as RuntimePluginKey, report)
+				const node = graph.keyOf(slot)
+				if (isPluginNodeSlot(node)) await this.stopPlugin(node, report)
 			},
 			{ concurrency: this.stopConcurrency },
 		)
@@ -848,107 +1008,157 @@ export class PluginService {
 
 	private async instantiateAndStart(
 		runtime: PluginRuntime,
-		id: RuntimePluginKey,
+		node: PluginNodeSlot,
 		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
 	): Promise<boolean> {
-		const instance = this.resolvePluginInstance(runtime, id, report)
+		const instance = await this.resolveGeneration(runtime, node, report)
 		if (!instance) return false
-		if (!(await this.injectPluginConfig(id, instance, report))) return false
-		return this.startPluginInstance(runtime, id, instance, report)
+		const configRevision = await this.injectPluginConfig(runtime, node, instance, report)
+		if (configRevision === undefined) return false
+		const started = await this.startGeneration(runtime, node, instance, report, operation)
+		if (started && configRevision !== null) {
+			requireConfigService(this.ctx).markConfigApplied(this.nodeAddressOf(node), configRevision)
+		}
+		return started
 	}
 
-	private resolvePluginInstance(
-		runtime: PluginRuntime,
-		id: RuntimePluginKey,
+	private recordDrainFailure(
 		report: MutableLifecycleReport,
-	): PluginInstance | undefined {
+		node: PluginNodeSlot,
+		error: unknown,
+	): void {
+		recordLifecycleIssue(report, {
+			plugin: node,
+			phase: 'drain',
+			kind: PLUGIN_LIFECYCLE_ISSUE_KIND.DrainFailed,
+			message: errorMessage(error),
+			error: serializeLifecycleError(error),
+		})
+	}
+
+	private async drainFailedGeneration(
+		node: PluginNodeSlot,
+		instance: BasePlugin,
+		report: MutableLifecycleReport,
+	): Promise<void> {
 		try {
-			return runtime.ensureByKey(id) as PluginInstance
+			const drainError = await this.lifecycleManager.drainUnstartedGeneration(node, instance)
+			if (drainError !== undefined) this.recordDrainFailure(report, node, drainError)
 		} catch (error) {
-			const err = ensureError(error)
+			this.recordDrainFailure(report, node, error)
+		}
+	}
+
+	private async resolveGeneration(
+		runtime: PluginRuntime,
+		node: PluginNodeSlot,
+		report: MutableLifecycleReport,
+	): Promise<BasePlugin | undefined> {
+		try {
+			return runtime.ensureByKey(node) as BasePlugin
+		} catch (error) {
+			let constructionCleanupError: unknown
+			if (error instanceof PluginGenerationConstructionError) {
+				try {
+					await error.cleanup
+				} catch (cleanupError) {
+					constructionCleanupError = cleanupError
+				}
+			}
+			const err = ensureError(
+				error instanceof PluginGenerationConstructionError ? error.cause : error,
+			)
 			recordLifecycleIssue(report, {
-				plugin: id,
+				plugin: node,
 				phase: 'resolve',
 				kind: PLUGIN_LIFECYCLE_ISSUE_KIND.ResolveFailed,
 				message: err.message,
 				error: serializeLifecycleError(err),
 			})
-			try {
-				this.ctx.emit('resolveError', id, err)
-			} catch {
-				// ignore: events service may be overridden
+			if (constructionCleanupError !== undefined) {
+				this.recordDrainFailure(report, node, constructionCleanupError)
 			}
-			void this.ctx.logger.with({ error: err }).error`解析 ${String(id)} 失败`
 			return undefined
 		}
 	}
 
 	private async injectPluginConfig(
-		id: RuntimePluginKey,
-		instance: PluginInstance,
+		runtime: PluginRuntime,
+		node: PluginNodeSlot,
+		instance: BasePlugin,
 		report: MutableLifecycleReport,
-	): Promise<boolean> {
-		const pluginCtx = instance.ctx
-
-		// Core responsibility: inject declared config fields before plugin init().
-		// Doing it directly avoids an extra event hop on every plugin start.
+	): Promise<number | null | undefined> {
 		try {
-			await this.injectConfig(instance)
-			return true
+			return await this.injectConfig(instance)
 		} catch (error) {
 			const err = ensureError(error)
 			recordLifecycleIssue(report, {
-				plugin: id,
+				plugin: node,
 				phase: 'config',
 				kind: PLUGIN_LIFECYCLE_ISSUE_KIND.ConfigFailed,
 				message: err.message,
 				error: serializeLifecycleError(err),
 			})
-			try {
-				// Treat config injection/validation failures as start errors so callers can observe the root cause.
-				this.ctx.emit('startError', pluginCtx, err)
-			} catch {
-				// ignore: events service may be overridden
-			}
-			const logger = pluginCtx.logger ?? this.ctx.logger
-			void logger.with({ error: err }).error`注入/校验配置到 ${String(id)} 失败`
-			await this.disposePluginEffects(pluginCtx)
-			return false
+			await this.drainFailedGeneration(node, instance, report)
+			runtime.delete(node)
+			return undefined
 		}
 	}
 
-	private async startPluginInstance(
+	private async startGeneration(
 		runtime: PluginRuntime,
-		id: RuntimePluginKey,
-		instance: PluginInstance,
+		node: PluginNodeSlot,
+		instance: BasePlugin,
 		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
 	): Promise<boolean> {
-		const pluginCtx = instance.ctx
 		try {
-			await this.lifecycleManager.startLifecycle(id, instance, this.resolveStartTimeoutMs(instance))
-			return true
+			const result = await this.lifecycleManager.startLifecycle(node, instance, {
+				timeoutMs: requirePluginGenerationInfo(instance.ctx).startTimeoutMs,
+				finalizeGeneration: this.lifecycleHooks.finalizeGeneration
+					? (signal) =>
+							this.lifecycleHooks.finalizeGeneration!({
+								operation,
+								ctx: getPluginGenerationContext(instance) as PluginContext,
+								signal,
+							})
+					: undefined,
+				onLateError: (error, phase) =>
+					recordLifecycleIssue(report, {
+						plugin: node,
+						phase,
+						kind:
+							phase === 'drain'
+								? PLUGIN_LIFECYCLE_ISSUE_KIND.DrainFailed
+								: PLUGIN_LIFECYCLE_ISSUE_KIND.StartFailed,
+						message: errorMessage(error),
+						error: serializeLifecycleError(error),
+					}),
+			})
+			if (result.ok === true) return true
+			recordLifecycleIssue(report, {
+				plugin: node,
+				phase: 'start',
+				kind: PLUGIN_LIFECYCLE_ISSUE_KIND.StartFailed,
+				message: errorMessage(result.startError),
+				error: serializeLifecycleError(result.startError),
+			})
+			if (result.drainError !== undefined) {
+				this.recordDrainFailure(report, node, result.drainError)
+			}
 		} catch (error) {
 			recordLifecycleIssue(report, {
-				plugin: id,
+				plugin: node,
 				phase: 'start',
 				kind: PLUGIN_LIFECYCLE_ISSUE_KIND.StartFailed,
 				message: errorMessage(error),
 				error: serializeLifecycleError(error),
 			})
-			const logger = pluginCtx.logger ?? this.ctx.logger
-			void logger.with({ error }).error`启动 ${String(id)} 失败`
-			await this.disposePluginEffects(pluginCtx)
-			runtime.delete(id)
-			return false
+			await this.drainFailedGeneration(node, instance, report)
 		}
-	}
-
-	private async disposePluginEffects(pluginCtx: PluxelContext): Promise<void> {
-		try {
-			await pluginCtx.effects.dispose()
-		} catch {
-			/* ignored */
-		}
+		runtime.delete(node)
+		return false
 	}
 
 	private startPlugins(
@@ -956,167 +1166,236 @@ export class PluginService {
 		graph: PluginGraph,
 		plan: InitPlan<number>,
 		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
 	): Promise<Set<number>> {
 		for (const slot of plan.leftovers) {
-			const id = graph.keyOf(slot)
-			if (id === undefined) continue
+			const node = graph.keyOf(slot)
+			if (!isPluginNodeSlot(node)) continue
 			recordLifecycleIssue(report, {
-				plugin: id as RuntimePluginKey,
+				plugin: node,
 				phase: 'dependency',
 				kind: PLUGIN_LIFECYCLE_ISSUE_KIND.DependencyBlocked,
-				message: `Plugin ${String(id)} could not be scheduled because its dependency graph is cyclic.`,
+				message: `Plugin ${this.label(node)} could not be scheduled because its dependency graph is cyclic.`,
 			})
 		}
 		return startPluginsTopo(
 			plan,
 			(slot) => {
-				const id = graph.keyOf(slot)
-				return id === undefined
-					? Promise.resolve(false)
-					: this.instantiateAndStart(runtime, id as RuntimePluginKey, report)
+				const node = graph.keyOf(slot)
+				return isPluginNodeSlot(node)
+					? this.instantiateAndStart(runtime, node, report, operation)
+					: Promise.resolve(false)
 			},
 			{
 				concurrency: this.startConcurrency,
+				blocks: (slot, dependency) =>
+					graph.depSlotsOf(slot as number).includes(dependency as number),
 				onDependencyBlocked: (slot, dependency) => {
-					const id = graph.keyOf(slot as number)
-					const dep = graph.keyOf(dependency as number)
-					if (id === undefined || dep === undefined) return
+					const node = graph.keyOf(slot as number)
+					const blockedBy = graph.keyOf(dependency as number)
+					if (!isPluginNodeSlot(node) || !isPluginNodeSlot(blockedBy)) return
 					recordLifecycleIssue(report, {
-						plugin: id as RuntimePluginKey,
+						plugin: node,
 						phase: 'dependency',
 						kind: PLUGIN_LIFECYCLE_ISSUE_KIND.DependencyBlocked,
-						blockedBy: dep as RuntimePluginKey,
-						message: `Plugin ${String(id)} was not started because dependency ${String(dep)} failed.`,
+						blockedBy,
+						message: `Plugin ${this.label(node)} was not started because dependency ${this.label(blockedBy)} failed.`,
 					})
 				},
 			},
 		)
 	}
 
-	/**
-	 * 非事务化提交：
-	 * - 停机：对 remove/replace 逆拓扑停机
-	 * - 启动：对 add/replace 拓扑分批启动；失败只影响其依赖链
-	 * - 失败插件从 singletons 中清理（下次 commit 仍会尝试重启）
-	 */
-	commit() {
-		return this.enqueueCommit(null)
+	private async startSlotSet(
+		runtime: PluginRuntime,
+		graph: PluginGraph,
+		slots: Set<number>,
+		report: MutableLifecycleReport,
+		operation: CorePluginLifecycleOperation,
+	): Promise<Set<PluginNodeSlot>> {
+		const failed = new Set<PluginNodeSlot>()
+		if (slots.size === 0) return failed
+		const plan = computeInitPlan(slots, (slot) => graph.orderDepSlotsOf(slot))
+		for (const slot of await this.startPlugins(runtime, graph, plan, report, operation)) {
+			const node = graph.keyOf(slot)
+			if (isPluginNodeSlot(node)) failed.add(node)
+		}
+		return failed
 	}
 
-	private commitRuntimeUpdate(meta: RuntimeUpdateCommitMeta) {
-		return this.enqueueCommit(null, meta)
+	private isRunningInRuntime(runtime: PluginRuntime, node: PluginNodeSlot): boolean {
+		return this.lifecycleManager.isRunning(runtime.peekByKey<BasePlugin>(node))
 	}
 
-	/**
-	 * Strict commit:
-	 * - runs a commit with feature declaration policy set to `error` for this cycle;
-	 * - if any plugins failed to start, returns an error result.
-	 */
-	async commitStrict() {
-		const commitResult = await this.enqueueCommit(STRICT_COMMIT_FEATURE_DECLARATION_POLICY)
-		if (!commitResult.ok) return commitResult
-		const summary = this._lastCommit
-		const failed = collectPluginLifecycleNotStarted(summary?.lifecycleReport)
-		if (failed.length > 0) {
-			return createErr(createPluginsFailedToStartError(failed))
+	private expandPreStopAvailabilityClosure(
+		plan: CommitExecutionPlan,
+		oldGraph: PluginGraph,
+		graph: PluginGraph,
+		oldRuntime: PluginRuntime,
+		oldRunning: Set<PluginNodeSlot>,
+	): void {
+		const roots: PluginNodeSlot[] = []
+		for (const slot of plan.toStopSlots) {
+			const node = oldGraph.keyOf(slot)
+			if (!isPluginNodeSlot(node) || !this.isRunningInRuntime(oldRuntime, node)) continue
+			oldRunning.add(node)
+			for (const dependentSlot of oldGraph.orderDependentSlotsOf(slot)) {
+				if (plan.toStopSlots.has(dependentSlot)) continue
+				const dependent = oldGraph.keyOf(dependentSlot)
+				if (isPluginNodeSlot(dependent)) roots.push(dependent)
+			}
 		}
-		return commitResult
+		if (roots.length === 0) return
+		for (const node of this.dependentClosure.collectOrdering(oldGraph, roots)) {
+			if (!this.isRunningInRuntime(oldRuntime, node)) continue
+			oldRunning.add(node)
+			const oldSlot = oldGraph.slotOf(node)
+			if (oldSlot !== undefined) {
+				plan.toStop.add(node)
+				plan.toStopSlots.add(oldSlot)
+			}
+			const nextSlot = graph.slotOf(node)
+			if (nextSlot !== undefined) {
+				plan.toStart.add(node)
+				plan.toStartSlots.add(nextSlot)
+			}
+		}
 	}
 
-	private async executeCommit(meta: RuntimeUpdateCommitMeta | null = null) {
-		const runtimeUpdate = createRuntimeUpdateSummary(meta)
-		if (
-			!hasCommitWork(
-				this.definitions.hasPendingChanges(),
-				this._pendingStart.size,
-				this._pendingRestart.size,
-			)
-		) {
-			const graph = this.graph
-			this.publishCommitSummary({
-				graph,
-				runtimeUpdate,
-				pluginChanges: EMPTY_PLUGIN_COMMIT_CHANGES,
-				lifecycleReport: EMPTY_LIFECYCLE_REPORT,
-			})
-			return createOk({ graph, delta: EMPTY_DELTA })
+	private capturePostStartAvailabilityState(
+		plan: CommitExecutionPlan,
+		graph: PluginGraph,
+		oldRuntime: PluginRuntime,
+		oldRunning: Set<PluginNodeSlot>,
+	): void {
+		const roots: PluginNodeSlot[] = []
+		for (const node of plan.toStart) {
+			if (this.isRunningInRuntime(oldRuntime, node)) oldRunning.add(node)
+			else {
+				const slot = graph.slotOf(node)
+				if (slot !== undefined && graph.orderDependentSlotsOf(slot).length > 0) roots.push(node)
+			}
 		}
-
-		const action = this.definitions.build()
-		if (!action.ok) {
-			action.err.reset()
-			void this.ctx.logger.with({ error: action.err.err, detail: String(action.err.err) })
-				.error`插件在依赖项解析时失败`
-			return createErr(new Error(SERVICE_VERIFICATION_FAILED_MESSAGE, { cause: action.err.err }))
+		for (const node of this.dependentClosure.collectOrdering(graph, roots)) {
+			if (this.isRunningInRuntime(oldRuntime, node)) oldRunning.add(node)
 		}
+	}
 
-		const { delta, graph, runtime, confirm } = action.val
+	private collectPostStartAvailabilityClosure(
+		plan: CommitExecutionPlan,
+		graph: PluginGraph,
+		oldRunning: ReadonlySet<PluginNodeSlot>,
+		failed: ReadonlySet<PluginNodeSlot>,
+	): Set<PluginNodeSlot> {
+		const becameRunning = new Set<PluginNodeSlot>()
+		for (const node of plan.toStart) {
+			if (!oldRunning.has(node) && !failed.has(node) && this.getRunningRuntimeInstance(node)) {
+				becameRunning.add(node)
+			}
+		}
+		const restart = new Set<PluginNodeSlot>()
+		for (const node of this.dependentClosure.collectOrdering(graph, becameRunning)) {
+			if (becameRunning.has(node) || plan.toStart.has(node)) continue
+			if (oldRunning.has(node) && this.getRunningRuntimeInstance(node)) restart.add(node)
+		}
+		return restart
+	}
+
+	private async executePreparedCommit(
+		action: PreparedDefinitionBuild,
+		meta: RuntimeUpdateCommitMeta,
+		onPointOfNoReturn: () => void,
+		confirmGraph: () => void,
+	): Promise<RuntimeUpdateCommitResult> {
+		const oldGraph = this.graph
+		const oldRuntime = this.definitions.runtime
+		const { delta, graph, runtime } = action
+		const operation = this.createLifecycleOperation(meta)
 		this._activeGraph = graph
 		this._activeRuntime = runtime
 		try {
-			const oldGraph = this.graph
 			const plan = this.buildCommitPlan(oldGraph, graph, delta)
-
-			// No-op commit: still report state (after applying pending restarts/retries).
+			const oldRunning = new Set<PluginNodeSlot>()
+			this.expandPreStopAvailabilityClosure(plan, oldGraph, graph, oldRuntime, oldRunning)
 			if (isCommitExecutionPlanEmpty(delta, plan)) {
-				confirm()
+				onPointOfNoReturn()
+				confirmGraph()
 				this.replacePendingStarts([])
-				this.publishCommitSummary({
-					graph: this.graph,
-					runtimeUpdate,
+				if (this.lifecycleHooks.prepareCommit || this.lifecycleHooks.publishCommit) {
+					const publication: CoreCommitPublication = Object.freeze({
+						operation,
+						started: Object.freeze([]),
+						stopped: Object.freeze([]),
+						failed: Object.freeze([]),
+					})
+					await this.prepareHostCommit(publication)
+					this.publishHostCommit(publication)
+				}
+				this.publishCommitSummary(this.graph, {
+					runtimeUpdate: createRuntimeUpdateSummary(meta),
 					pluginChanges: EMPTY_PLUGIN_COMMIT_CHANGES,
 					lifecycleReport: EMPTY_LIFECYCLE_REPORT,
 				})
-				return createOk({ graph: this.graph, delta })
+				return createOk({ graph: this.graph, delta: EMPTY_DELTA })
 			}
 
-			this.ctx.logger.info('插件变更', () => ({
-				remove: [...plan.removed].map(String),
-				replace: plan.replaced.map(({ from, to }) => `${String(from)} -> ${String(to)}`),
-				add: [...plan.added].map(String),
-				restart:
-					plan.restartRequested.size > 0 ? [...plan.restartRequested].map(String) : undefined,
-			}))
-			const lifecycleReport = createLifecycleReport()
-			await this.applyTeardown(oldGraph, plan.toStopSlots, lifecycleReport)
-			confirm()
-
-			// Ensure fresh instances for restarts/replacements.
+			this.capturePostStartAvailabilityState(plan, graph, oldRuntime, oldRunning)
+			const report = createLifecycleReport()
+			const stopped = new Set<PluginContext>()
+			this.captureRunningGenerationContexts(oldRuntime, plan.toStop, stopped)
+			onPointOfNoReturn()
+			await this.applyTeardown(oldGraph, plan.toStopSlots, report)
+			// Point of no return: every structural check completed in prepare().
+			confirmGraph()
 			runtime.deleteMany(collectRuntimeEvictions(plan))
+			const failed = await this.startSlotSet(runtime, graph, plan.toStartSlots, report, operation)
+			if (failed.size > 0) runtime.deleteMany(failed)
 
-			const failed = new Set<RuntimePluginKey>()
-			if (plan.toStartSlots.size > 0) {
-				const initPlan = computeInitPlan(
-					plan.toStartSlots,
-					(slot) => graph.depSlotsOf(slot) as readonly number[],
-				)
-				const failedSlots = await this.startPlugins(runtime, graph, initPlan, lifecycleReport)
-				for (const slot of failedSlots) {
-					const id = graph.keyOf(slot)
-					if (id !== undefined) failed.add(id as RuntimePluginKey)
+			const postStart = this.collectPostStartAvailabilityClosure(plan, graph, oldRunning, failed)
+			if (postStart.size > 0) {
+				const slots = new Set<number>()
+				for (const node of postStart) {
+					const slot = graph.slotOf(node)
+					if (slot !== undefined) slots.add(slot)
+					plan.toStop.add(node)
+					plan.toStart.add(node)
+				}
+				this.captureRunningGenerationContexts(runtime, postStart, stopped)
+				await this.applyTeardown(graph, slots, report)
+				runtime.deleteMany(postStart)
+				for (const node of await this.startSlotSet(runtime, graph, slots, report, operation)) {
+					failed.add(node)
 				}
 			}
-			// Ensure failed plugins are not observable as "available" for this commit.
-			// (They may have been instantiated but not successfully started.)
-			if (failed.size > 0) {
-				runtime.deleteMany(failed)
-			}
-
-			const lifecycleReportResult = finalizeLifecycleReport(lifecycleReport)
-			this.publishCommitSummary({
-				graph: this.graph,
-				runtimeUpdate,
-				pluginChanges: createPluginCommitChanges(plan, failed),
-				lifecycleReport: lifecycleReportResult,
+			await this.settleHostGenerations({
+				operation,
+				graph,
+				runtime,
+				plan,
+				failed,
+				report,
+				stopped,
 			})
 
-			// update pending retry set
+			const lifecycleReport = finalizeLifecycleReport(report)
+			const pluginChanges = createPluginCommitChanges(plan, failed)
 			this.replacePendingStarts(failed)
-
-			if (!lifecycleReportResult.ok) {
-				this.ctx.logger.warn('插件生命周期报告包含错误', { lifecycleReport: lifecycleReportResult })
+			if (this.lifecycleHooks.prepareCommit || this.lifecycleHooks.publishCommit) {
+				const publication: CoreCommitPublication = Object.freeze({
+					operation,
+					started: this.collectStartedGenerationContexts(graph, runtime, plan.toStart, failed),
+					stopped: this.stableContextOrder(stopped),
+					failed: this.collectFailedNodes(graph, plan.toStart, failed),
+				})
+				await this.prepareHostCommit(publication)
+				this.publishHostCommit(publication)
 			}
-
+			const summary = this.publishCommitSummary(this.graph, {
+				runtimeUpdate: createRuntimeUpdateSummary(meta),
+				pluginChanges,
+				lifecycleReport,
+			})
+			this.observeLateLifecycleIssues(report, summary)
 			return createOk({ graph: this.graph, delta })
 		} finally {
 			this._activeGraph = undefined
@@ -1129,7 +1408,6 @@ export class PluginService {
 		graph: PluginGraph,
 		delta: CommitExecutionDelta,
 	): CommitExecutionPlan {
-		// Restart requests are author intent; normalize them against both the previous and next graph.
 		const restartRequested = new Set(this._pendingRestart)
 		this._pendingRestart.clear()
 		return createCommitExecutionPlan({
@@ -1138,32 +1416,79 @@ export class PluginService {
 			delta,
 			restartRequested,
 			pendingStart: this._pendingStart,
-			resolveGraphKey: this.resolveGraphKeyForCommit,
+			resolveGraphKey: (current, node) => this.resolveGraphKey(current, node),
 		})
 	}
 
-	private publishCommitSummary(summary: CommitSummary): void {
-		this._lastCommit = summary
-		this.watcherRegistry.publish(summary)
-		this.ctx.internalEvent.runtimeCommitted.emit(summary)
+	private publishCommitSummary(graph: PluginGraph, summary: CommitSummary): CommitSummary {
+		const publicSummary: CommitSummary = Object.freeze({
+			pluginChanges: summary.pluginChanges,
+			runtimeUpdate: summary.runtimeUpdate,
+			lifecycleReport: summary.lifecycleReport,
+		})
+		this._lastCommit = publicSummary
+		this.watcherRegistry.publish({ graph, pluginChanges: publicSummary.pluginChanges })
+		for (const listener of this.commitListeners) {
+			try {
+				listener(publicSummary)
+			} catch (error) {
+				this.ctx.logger.error('Plugin commit listener failed', { error })
+			}
+		}
+		return publicSummary
 	}
 
-	private replacePendingStarts(ids: Iterable<RuntimePluginKey>): void {
+	private observeLateLifecycleIssues(
+		report: MutableLifecycleReport,
+		initialSummary: CommitSummary,
+	): void {
+		let latestSummary = initialSummary
+		observeLifecycleReport(report, () => {
+			const previous = latestSummary
+			const successor: CommitSummary = Object.freeze({
+				pluginChanges: previous.pluginChanges,
+				runtimeUpdate: previous.runtimeUpdate,
+				lifecycleReport: finalizeLifecycleReport(report),
+			})
+			latestSummary = successor
+			if (this._lastCommit === previous) this._lastCommit = successor
+			for (const listener of this.commitListeners) {
+				try {
+					listener(successor)
+				} catch (error) {
+					this.ctx.logger.error('Plugin commit listener failed', { error })
+				}
+			}
+		})
+	}
+
+	private replacePendingStarts(nodes: Iterable<PluginNodeSlot>): void {
 		this._pendingStart.clear()
-		for (const id of ids) this._pendingStart.add(id)
+		for (const node of nodes) this._pendingStart.add(node)
+	}
+
+	private recoverPendingStarts(): void {
+		this._pendingRestart.clear()
+		this._pendingStart.clear()
+		for (const node of this.graph.keys()) {
+			if (isPluginNodeSlot(node) && !this.getRunningRuntimeInstance(node)) {
+				this._pendingStart.add(node)
+			}
+		}
+	}
+
+	private label(node: PluginNodeSlot): string {
+		return formatPluginNodeReference(this.nodeAddressOf(node))
 	}
 }
 
-function isFinitePositiveMs(value: unknown): value is number {
-	return typeof value === 'number' && Number.isFinite(value) && value > 0
+export function createPluginsFailedToStartError(failed: readonly PluginNodeSlot[]): Error {
+	return new Error(
+		`Some plugins failed to start: ${failed.map((node) => node.definition.exportName).join(', ')}`,
+	)
 }
 
-function readFinitePositiveMsFromMeta(metadata: unknown, key: string): number | undefined {
-	if (!metadata || typeof metadata !== 'object') return undefined
-	const value = (metadata as Record<string, unknown>)[key]
-	return isFinitePositiveMs(value) ? value : undefined
-}
-
-function createUnloadedPluginError(action: PluginMutationAction, id: unknown): Error {
-	return new Error(`You can not ${action} an unloaded Plugin: ${String(id)}`)
+export function assertCommitStarted(summary: CommitSummary): void {
+	const failed = collectPluginLifecycleNotStarted(summary.lifecycleReport)
+	if (failed.length > 0) throw createPluginsFailedToStartError(failed)
 }

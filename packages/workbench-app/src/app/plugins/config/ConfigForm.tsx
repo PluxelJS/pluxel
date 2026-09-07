@@ -1,420 +1,256 @@
 import { Box, ScrollArea } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getDefaults, type ObjectSchema } from 'valibot'
-import { EmptyState } from '../../../components'
-import { SegmentedButtons } from 'valibot-form/web'
-import { useNotify } from '../../hooks/useNotify'
-import { commitPluginConfig } from './usePluginConfig'
-import { patchPluginConfig, useRuntimeTransportClient, type ConfigResult } from '../../../runtime'
-import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
-import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './ConfigTab'
-import { ConfigActionDock } from './components/ConfigActionDock'
-import { compareSchemaKeys, formatSchemaGroupLabel, splitSchemaKey } from './schemaKey'
-import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
-import { stringifyUnknown } from '../../../utils/unknown'
+import { useQueryClient } from '@tanstack/react-query'
+import type { FieldNode } from 'valibot-form'
 
-export interface ConfigFormProps {
-	pluginName: string
-	schemas: Record<string, ObjectSchema<any, any>>
-	/** 已保存的配置 */
+import { useRuntimeManagementClient } from '../../../runtime'
+import { useNotify } from '../../hooks/useNotify'
+import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
+import { refreshPluginReadModels } from '../pluginReadModels'
+import { type ConfigFormBridge, type ConfigFormState, ConfigTabContent } from './ConfigTab'
+import { ConfigActionDock } from './components/ConfigActionDock'
+import { buildEditableConfigPatch } from './presentationAdapter'
+import {
+	commitPluginConfig,
+	refreshPluginConfig,
+	type PluginConfigSection,
+} from './usePluginConfig'
+
+const EMPTY_CONFIG_SECTIONS: readonly PluginConfigSection[] = []
+const EMPTY_FORM_STATE: ConfigFormState = {
+	dirty: false,
+	canSubmit: false,
+	submitting: false,
+	values: {},
+}
+
+type ConfigFormProps = {
+	owner: PluginNodeAddress
+	displayName: string
+	fields: readonly FieldNode[]
 	savedConfig: Record<string, unknown>
-	/** schema 默认值 */
 	defaults: Record<string, unknown>
 	active?: boolean
-	activeKey?: string
-	draftValues?: Record<string, Record<string, unknown>>
-	onActiveKeyChange?: (key: string) => void
 	onDirtyChange?: (dirty: boolean) => void
-	onDraftChange?: (drafts: Record<string, Record<string, unknown>>) => void
+	sections?: readonly PluginConfigSection[]
+}
+
+type SectionItem = {
+	key: string
+	label: string
+	path: readonly string[]
+	fields: readonly FieldNode[]
+	defaultValue: Record<string, unknown>
+	savedValue: Record<string, unknown>
+	initialValue: Record<string, unknown>
 }
 
 export function ConfigForm(props: ConfigFormProps) {
-	const configIdentity = `${props.pluginName}\n${Object.keys(props.schemas ?? {})
-		.sort(compareSchemaKeys)
-		.join('\n')}`
-
-	return <ConfigFormInstance key={configIdentity} {...props} />
-}
-
-type FormBridge = ConfigFormBridge
-type FormState = ConfigFormState
-type TabValue = Record<string, unknown>
-type FieldIssue = { message?: unknown; path?: unknown }
-type FieldErrors = Record<string, FieldIssue[]>
-type MutableFormLike = {
-	state: { values?: unknown }
-	setFieldValue: (fieldName: string, value: unknown) => void
-}
-type FormLike = {
-	setFieldMeta: (fieldName: string, updater: (meta: unknown) => unknown) => void
-}
-
-const EMPTY_SCHEMAS: Record<string, ObjectSchema<any, any>> = {}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-	return isRecord(value) ? value : {}
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-	if (Object.is(a, b)) return true
-	if (Array.isArray(a) && Array.isArray(b)) {
-		if (a.length !== b.length) return false
-		for (let i = 0; i < a.length; i += 1) {
-			if (!deepEqual(a[i], b[i])) return false
-		}
-		return true
-	}
-	if (isRecord(a) && isRecord(b)) {
-		const aKeys = Object.keys(a)
-		const bKeys = Object.keys(b)
-		if (aKeys.length !== bKeys.length) return false
-		for (const key of aKeys) {
-			if (!(key in b)) return false
-			if (!deepEqual(a[key], b[key])) return false
-		}
-		return true
-	}
-	return false
-}
-
-function toIssueArray(value: unknown): FieldIssue[] {
-	return Array.isArray(value) ? (value as FieldIssue[]) : []
-}
-
-function replaceFormValues(form: MutableFormLike, values: Record<string, unknown>): void {
-	const current = toRecord(form.state.values)
-	const keys = new Set([...Object.keys(current), ...Object.keys(values)])
-	for (const key of keys) form.setFieldValue(key, values[key])
+	const sections = props.sections ?? EMPTY_CONFIG_SECTIONS
+	const identity = `${JSON.stringify(props.owner)}\0${(sections.length > 0
+		? sections
+		: [{ path: [] }]
+	)
+		.map((section) => section.path.join('.'))
+		.join('\0')}`
+	return <ConfigFormInstance key={identity} {...props} sections={sections} />
 }
 
 function ConfigFormInstance({
-	pluginName,
-	schemas,
+	owner,
+	displayName,
+	fields,
 	savedConfig,
 	defaults,
 	active = true,
-	activeKey: activeKeyProp,
-	draftValues,
-	onActiveKeyChange,
 	onDirtyChange,
-	onDraftChange,
-}: ConfigFormProps) {
-	const transport = useRuntimeTransportClient()
-	const safeSchemas = schemas ?? EMPTY_SCHEMAS
-	const keys = useMemo(() => Object.keys(safeSchemas).sort(compareSchemaKeys), [safeSchemas])
-	const [activeKey, setActiveKey] = useState(keys[0] || '')
-	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
-	const [savingAll, setSavingAll] = useState(false)
+	sections,
+}: ConfigFormProps & { sections: readonly PluginConfigSection[] }) {
+	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const notify = useNotify()
-	const scrollHostsRef = useRef<Record<string, HTMLDivElement | null>>({})
-	const [scrollHostVersion, setScrollHostVersion] = useState(0)
-	const formBridgeRef = useRef<Record<string, FormBridge>>({})
-	const [formStates, setFormStates] = useState<Record<string, FormState>>({})
-	const formStatesRef = useRef<Record<string, FormState>>({})
-	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
-	const markSaved = useCallback((key: string) => {
-		const savedAt = Date.now()
-		setSavedAtMap((m) => ({ ...m, [key]: savedAt }))
-	}, [])
-	useEffect(() => {
-		const keySet = new Set(keys)
-		setSavedAtMap((prev) => {
-			const next = Object.fromEntries(
-				Object.entries(prev).filter(([key]) => keySet.has(key)),
-			) as Record<string, number | undefined>
-			return deepEqual(prev, next) ? prev : next
-		})
-		setFormStates((prev) => {
-			const next = Object.fromEntries(
-				Object.entries(prev).filter(([key]) => keySet.has(key)),
-			) as Record<string, FormState>
-			formStatesRef.current = next
-			return deepEqual(prev, next) ? prev : next
-		})
-	}, [keys, savedConfig])
-
-	useEffect(() => {
-		const next = keys[0] ?? ''
-		const prop = typeof activeKeyProp === 'string' && activeKeyProp ? activeKeyProp : ''
-
-		if (prop) {
-			if (keys.includes(prop)) {
-				setActiveKey(prop)
-				return
-			}
-			if (next && onActiveKeyChange) {
-				onActiveKeyChange(next)
-			}
-		}
-
-		setActiveKey((prev) => {
-			if (prev && keys.includes(prev)) return prev
-			return next
-		})
-	}, [activeKeyProp, keys, onActiveKeyChange])
-
-	const schemaItems = useMemo(() => {
-		return keys.map((key) => {
-			const schema = safeSchemas[key]!
-			const schemaDefaults = toRecord(getDefaults(schema))
-			const defaultValue = { ...schemaDefaults, ...toRecord(defaults[key]) }
-			const savedValue = toRecord(savedConfig[key])
-			return {
-				key,
-				schema,
-				savedValue,
-				defaultValue,
-				initialValue: { ...defaultValue, ...savedValue },
-			}
-		})
-	}, [safeSchemas, savedConfig, defaults, keys])
-
-	const resolvedActiveKey =
-		typeof activeKeyProp === 'string' && keys.includes(activeKeyProp) ? activeKeyProp : activeKey
-
-	const hasConfig = schemaItems.length > 0
-	const hasMultipleSchemas = schemaItems.length > 1
-	const groups = useMemo(() => {
-		const byGroup = new Map<string, string[]>()
-		for (const key of keys) {
-			const group = splitSchemaKey(key).group
-			const existing = byGroup.get(group)
-			if (existing) existing.push(key)
-			else byGroup.set(group, [key])
-		}
-		const ordered = Array.from(byGroup.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-		return ordered.map(([group, groupKeys]) => ({
-			group,
-			keys: groupKeys.sort(compareSchemaKeys),
-		}))
-	}, [keys])
-	const hasMultipleGroups = groups.length > 1
-	const resolvedActiveGroup = useMemo(() => {
-		const g = splitSchemaKey(resolvedActiveKey).group
-		if (g && groups.some((x) => x.group === g)) return g
-		return groups[0]?.group ?? ''
-	}, [groups, resolvedActiveKey])
-	const activeGroupKeys = useMemo(() => {
-		return groups.find((g) => g.group === resolvedActiveGroup)?.keys ?? []
-	}, [groups, resolvedActiveGroup])
-	const activeGroupHasMultipleSchemas = activeGroupKeys.length > 1
-
-	const registerForm = useCallback((key: string, bridge: FormBridge) => {
-		formBridgeRef.current[key] = bridge
-		return () => {
-			if (formBridgeRef.current[key] === bridge) delete formBridgeRef.current[key]
-		}
-	}, [])
-
-	const reportState = useCallback((key: string, next: FormState) => {
-		setFormStates((prev) => {
-			const existing = prev[key]
-			if (
-				existing &&
-				existing.dirty === next.dirty &&
-				existing.canSubmit === next.canSubmit &&
-				existing.submitting === next.submitting &&
-				deepEqual(existing.values, next.values)
-			) {
-				return prev
-			}
-			const updated = { ...prev, [key]: next }
-			formStatesRef.current = updated
-			return updated
-		})
-	}, [])
-
-	const applyFieldErrors = useCallback((form: FormLike, fieldErrors: FieldErrors) => {
-		for (const [fieldName, issues] of Object.entries(fieldErrors)) {
-			if (fieldName === '_root' || fieldName === '_unknown') continue
-			form.setFieldMeta(fieldName, (meta) => {
-				const metaObj = toRecord(meta)
-				const errorMap = toRecord(metaObj.errorMap)
-				const first = issues[0]
-				const dotPath = Array.isArray(first?.path) ? (first?.path as unknown[]) : []
-				const message = issues
-					.map((i) => stringifyUnknown(i?.message))
-					.filter((x) => x.length > 0)
-					.join('; ')
+	const visibleSections = useMemo<readonly PluginConfigSection[]>(
+		() => (sections.length > 0 ? sections : [{ path: [], fields, defaults, fieldName: '' }]),
+		[defaults, fields, sections],
+	)
+	const sectionItems = useMemo<SectionItem[]>(
+		() =>
+			visibleSections.map((section) => {
+				const savedValue = recordAtPath(savedConfig, section.path)
 				return {
-					...metaObj,
-					errorMap: {
-						...errorMap,
-						onSubmit: { message, dotPath },
-					},
+					key: sectionKey(section.path),
+					label: sectionLabel(section.path),
+					path: section.path,
+					fields: section.fields,
+					defaultValue: section.defaults,
+					savedValue,
+					initialValue: { ...section.defaults, ...savedValue },
 				}
-			})
+			}),
+		[savedConfig, visibleSections],
+	)
+	const [activeKey, setActiveKey] = useState(sectionItems[0]?.key ?? '')
+	const [formStates, setFormStates] = useState<Record<string, ConfigFormState>>({})
+	const [savingAll, setSavingAll] = useState(false)
+	const formBridgesRef = useRef<Record<string, ConfigFormBridge>>({})
+
+	useEffect(() => {
+		if (sectionItems.some((section) => section.key === activeKey)) return
+		setActiveKey(sectionItems[0]?.key ?? '')
+	}, [activeKey, sectionItems])
+
+	const registerForm = useCallback((key: string, bridge: ConfigFormBridge) => {
+		formBridgesRef.current[key] = bridge
+		return () => {
+			if (formBridgesRef.current[key] === bridge) delete formBridgesRef.current[key]
 		}
 	}, [])
+
+	const reportState = useCallback((key: string, state: ConfigFormState) => {
+		setFormStates((current) => {
+			const previous = current[key]
+			if (previous && sameFormState(previous, state)) return current
+			return { ...current, [key]: state }
+		})
+	}, [])
+
+	const dirtyKeys = useMemo(
+		() =>
+			sectionItems
+				.filter((section) => formStates[section.key]?.dirty)
+				.map((section) => section.key),
+		[formStates, sectionItems],
+	)
+	const dirtyLabels = useMemo(
+		() =>
+			sectionItems
+				.filter((section) => formStates[section.key]?.dirty)
+				.map((section) => section.label),
+		[formStates, sectionItems],
+	)
+	const activeSection = sectionItems.find((section) => section.key === activeKey) ?? sectionItems[0]
+	const resolvedActiveKey = activeSection?.key ?? ''
+	const activeState = formStates[resolvedActiveKey] ?? EMPTY_FORM_STATE
+	const canSaveAll = dirtyKeys.every((key) => {
+		const state = formStates[key]
+		return Boolean(state?.canSubmit && !state.submitting)
+	})
+
+	useEffect(() => {
+		onDirtyChange?.(dirtyKeys.length > 0)
+	}, [dirtyKeys.length, onDirtyChange])
+
+	const submitCurrent = useCallback(() => {
+		if (!activeState.dirty || !activeState.canSubmit || activeState.submitting || savingAll) return
+		formBridgesRef.current[resolvedActiveKey]?.submit()
+	}, [activeState, resolvedActiveKey, savingAll])
+
+	const resetCurrent = useCallback(() => {
+		if (activeState.submitting || savingAll) return
+		const bridge = formBridgesRef.current[resolvedActiveKey]
+		if (!bridge || !activeSection) return
+		bridge.reset(activeSection.initialValue)
+	}, [activeSection, activeState.submitting, resolvedActiveKey, savingAll])
+
+	const resetToDefaults = useCallback(() => {
+		if (activeState.submitting || savingAll) return
+		const bridge = formBridgesRef.current[resolvedActiveKey]
+		if (!bridge || !activeSection) return
+		const editableDefaults = buildEditableConfigPatch(
+			activeSection.fields,
+			activeSection.defaultValue,
+			activeSection.initialValue,
+		)
+		for (const [key, value] of Object.entries(editableDefaults)) {
+			bridge.form.setFieldValue(key, value)
+		}
+	}, [activeSection, activeState.submitting, resolvedActiveKey, savingAll])
 
 	const saveAll = useCallback(async () => {
-		if (savingAll || !hasMultipleSchemas) return
-		const bridges = formBridgeRef.current
-		const patch: Record<string, TabValue> = {}
-		for (const item of schemaItems) {
-			const bridge = bridges[item.key]
-			if (!bridge) continue
-			if (!bridge.form?.state?.isDirty) continue
-			const values = bridge.form?.state?.values
-			patch[item.key] = toRecord(values)
-		}
-
-		if (Object.keys(patch).length === 0) {
-			notify({ title: '无需提交', message: '没有变更的配置', color: 'blue' })
-			return
-		}
+		if (savingAll || dirtyKeys.length === 0 || !canSaveAll) return
+		const dirtySet = new Set(dirtyKeys)
+		const patch = buildCombinedConfigPatch(savedConfig, sectionItems, formStates, dirtySet)
+		if (Object.keys(patch).length === 0) return
 
 		setSavingAll(true)
 		try {
-			const result = (await transport.withRpc((rpc) =>
-				patchPluginConfig(rpc, pluginName, patch),
-			)) as ConfigResult
+			const result = await management.config.patch(owner, patch)
 			if (result.ok === false) {
-				if (result.code === 'validation_failed' && result.errors) {
-					const errorsByTab = isRecord(result.errors) ? result.errors : {}
-					for (const [tabKey, errors] of Object.entries(errorsByTab)) {
-						const bridge = bridges[tabKey]
-						if (!bridge) continue
-						const form = bridge.form as unknown
-						if (!isRecord(form) || typeof form.setFieldMeta !== 'function') continue
-						const fieldErrors = isRecord(errors) ? errors : {}
-						const normalized: FieldErrors = {}
-						for (const [fieldName, issues] of Object.entries(fieldErrors)) {
-							normalized[fieldName] = toIssueArray(issues)
-						}
-						applyFieldErrors(form as FormLike, normalized)
-					}
+				if (result.state === 'unknown') {
+					await Promise.all([
+						refreshPluginConfig(queryClient, owner),
+						refreshPluginReadModels(queryClient),
+					])
 				}
 				notify({
-					title: '提交失败',
+					title: '全部保存失败',
 					message: result.message ?? result.code ?? '未知错误',
 					color: 'red',
 				})
 				return
 			}
 
-			commitPluginConfig(pluginName, result.config)
-			const savedAt = Date.now()
-			setSavedAtMap((prev) => {
-				const next = { ...prev }
-				for (const key of Object.keys(patch)) next[key] = savedAt
-				return next
-			})
-			for (const [key, bridge] of Object.entries(bridges)) {
-				if (!patch[key]) continue
-				bridge.reset(patch[key] ?? {})
+			commitPluginConfig(queryClient, owner, result.config)
+			await refreshPluginReadModels(queryClient)
+			for (const key of dirtyKeys) {
+				const state = formStates[key]
+				if (state) formBridgesRef.current[key]?.reset(state.values)
 			}
-			notify({ title: '提交成功', message: '已保存全部配置', color: 'green' })
+			if (result.application === 'saved-not-applied') {
+				notify({
+					title: '配置已保存，但尚未应用',
+					message:
+						result.saved === true ? result.applyFailure.message : '运行中的插件尚未应用当前配置。',
+					color: 'yellow',
+				})
+			} else {
+				notify({
+					title: '全部保存成功',
+					message:
+						result.application === 'deferred'
+							? '配置已保存，将在插件启动时应用'
+							: `已保存 ${dirtyKeys.length} 个配置分区`,
+					color: 'green',
+				})
+			}
+		} catch (cause) {
+			await Promise.allSettled([
+				refreshPluginConfig(queryClient, owner),
+				refreshPluginReadModels(queryClient),
+			])
+			notify({
+				title: '全部保存失败',
+				message: cause instanceof Error ? cause.message : '无法连接运行时',
+				color: 'red',
+			})
 		} finally {
 			setSavingAll(false)
 		}
-	}, [applyFieldErrors, hasMultipleSchemas, transport, notify, pluginName, savingAll, schemaItems])
-
-	const submitCurrent = useCallback(() => {
-		const bridge = formBridgeRef.current[resolvedActiveKey]
-		if (!bridge?.submit) return
-		bridge.submit()
-	}, [resolvedActiveKey])
-
-	const resetCurrent = useCallback(() => {
-		const bridge = formBridgeRef.current[resolvedActiveKey]
-		const current = schemaItems.find((item) => item.key === resolvedActiveKey)
-		if (!bridge || !current) return
-		bridge.reset(current.initialValue)
-	}, [resolvedActiveKey, schemaItems])
-
-	const resetToDefaults = useCallback(() => {
-		const bridge = formBridgeRef.current[resolvedActiveKey]
-		const current = schemaItems.find((item) => item.key === resolvedActiveKey)
-		if (!bridge || !current) return
-		if (deepEqual(current.initialValue, current.defaultValue)) {
-			bridge.reset(current.initialValue)
-			return
-		}
-		replaceFormValues(bridge.form as MutableFormLike, current.defaultValue)
-	}, [resolvedActiveKey, schemaItems])
-
-	const setScrollHost = useCallback((key: string, node: HTMLDivElement | null) => {
-		if (!node || scrollHostsRef.current[key] === node) return
-		node.dataset.configScrollRoot = 'true'
-		scrollHostsRef.current[key] = node
-		setScrollHostVersion((v) => v + 1)
-	}, [])
-
-	const dirtyKeys = useMemo(() => {
-		return schemaItems.filter((item) => formStates[item.key]?.dirty).map((item) => item.key)
-	}, [formStates, schemaItems])
-
-	useEffect(() => {
-		onDirtyChange?.(dirtyKeys.length > 0)
-	}, [dirtyKeys.length, onDirtyChange])
-
-	useEffect(() => {
-		const nextDrafts: Record<string, Record<string, unknown>> = {}
-		for (const [key, state] of Object.entries(formStates)) {
-			if (!state?.dirty) continue
-			nextDrafts[key] = toRecord(state.values)
-		}
-		if (!onDraftChange) return undefined
-		if (deepEqual(lastDraftsRef.current, nextDrafts)) return undefined
-		const handle = window.setTimeout(() => {
-			lastDraftsRef.current = nextDrafts
-			onDraftChange(nextDrafts)
-		}, 120)
-		return () => window.clearTimeout(handle)
-	}, [formStates, onDraftChange])
-
-	const activeState = formStates[resolvedActiveKey] ?? {
-		dirty: false,
-		canSubmit: false,
-		submitting: false,
-		values: {},
-	}
-	const showSchemaSwitcher =
-		(hasMultipleSchemas && activeGroupHasMultipleSchemas) ||
-		(!hasMultipleGroups && hasMultipleSchemas)
-
-	const schemaOptions = useMemo(() => {
-		const activeSet = new Set(activeGroupKeys)
-		return schemaItems
-			.filter((item) => activeSet.has(item.key))
-			.map((item) => {
-				const state = formStates[item.key]
-				const dirty = Boolean(state?.dirty)
-				const savedAt = savedAtMap[item.key]
-				const { group, sub } = splitSchemaKey(item.key)
-				const displayKey =
-					!hasMultipleGroups && group !== '__plugin__'
-						? sub === 'config'
-							? '配置'
-							: sub
-						: formatSchemaKeyLabel(item.key)
-				const statusSuffix = dirty ? ' •' : savedAt ? '' : ''
-
-				return { value: item.key, label: `${displayKey}${statusSuffix}` }
-			})
-	}, [activeGroupKeys, formStates, hasMultipleGroups, savedAtMap, schemaItems])
-
-	const groupOptions = useMemo(() => {
-		if (!hasMultipleGroups) return []
-		const keyToDirty = (key: string) => Boolean(formStates[key]?.dirty)
-		return groups.map((g) => {
-			const dirty = g.keys.some(keyToDirty)
-			return {
-				value: g.group,
-				label: `${formatSchemaGroupLabel(g.group)}${dirty ? ' •' : ''}`,
-			}
-		})
-	}, [formStates, groups, hasMultipleGroups])
+	}, [
+		canSaveAll,
+		dirtyKeys,
+		formStates,
+		management,
+		notify,
+		owner,
+		queryClient,
+		savedConfig,
+		savingAll,
+		sectionItems,
+	])
 
 	useHotkeys(
-		active && hasMultipleSchemas
+		active
 			? [
+					[
+						PLUGIN_DETAIL_HOTKEYS.saveCurrentConfig,
+						(event: KeyboardEvent) => {
+							event.preventDefault()
+							submitCurrent()
+						},
+					],
 					[
 						PLUGIN_DETAIL_HOTKEYS.saveAllConfig,
 						(event: KeyboardEvent) => {
@@ -424,141 +260,186 @@ function ConfigFormInstance({
 					],
 				]
 			: [],
+		[],
+		true,
 	)
 
+	if (!activeSection) return null
+
 	return (
-		<Box style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
-			{!hasConfig ? (
-				<Box style={{ flex: 1, minHeight: 0 }}>
-					<EmptyState
-						title="暂无可填写的配置"
-						description="该插件当前未公开任何配置 schema。"
-						icon={null}
-						minHeight="auto"
+		<Box className="plx-pluginWorkbench__configForm">
+			{active ? (
+				<Box className="plx-pluginWorkbench__configToolbar">
+					<ConfigActionDock
+						activeKey={resolvedActiveKey}
+						activeLabel={activeSection.label}
+						activeState={activeState}
+						dirtyLabels={dirtyLabels}
+						hasMultipleSections={sectionItems.length > 1}
+						savingAll={savingAll}
+						canSaveAll={canSaveAll}
+						sectionOptions={sectionItems.map((section) => ({
+							value: section.key,
+							label: `${section.label}${formStates[section.key]?.dirty ? ' •' : ''}`,
+						}))}
+						onActiveKeyChange={setActiveKey}
+						onSubmitCurrent={submitCurrent}
+						onSubmitAll={() => void saveAll()}
+						onResetCurrent={resetCurrent}
+						onResetDefaults={resetToDefaults}
 					/>
 				</Box>
-			) : (
-				<Box
-					style={{
-						display: 'flex',
-						flexDirection: 'column',
-						flex: 1,
-						minHeight: 0,
-						overflow: 'hidden',
-					}}
-				>
-					{hasMultipleGroups || showSchemaSwitcher || active ? (
-						<Box className="plx-pluginWorkbench__configToolbar">
-							<div className="plx-pluginWorkbench__configToolbarNav">
-								{hasMultipleGroups ? (
-									<div className="plx-pluginWorkbench__configToolbarScroller">
-										<SegmentedButtons
-											size="xs"
-											value={resolvedActiveGroup}
-											onChange={(v) => {
-												const nextGroup = String(v)
-												const nextKey = groups.find((g) => g.group === nextGroup)?.keys?.[0] ?? ''
-												if (!nextKey) return
-												setActiveKey(nextKey)
-												onActiveKeyChange?.(nextKey)
-											}}
-											data={groupOptions}
-											fullWidth={false}
-										/>
-									</div>
-								) : null}
+			) : null}
 
-								{hasMultipleGroups && showSchemaSwitcher ? (
-									<div aria-hidden="true" className="plx-pluginWorkbench__configToolbarDivider" />
-								) : null}
-
-								{showSchemaSwitcher ? (
-									<div className="plx-pluginWorkbench__configToolbarScroller">
-										<SegmentedButtons
-											size="xs"
-											value={resolvedActiveKey}
-											onChange={(v) => {
-												const nextKey = String(v)
-												setActiveKey(nextKey)
-												onActiveKeyChange?.(nextKey)
-											}}
-											data={schemaOptions}
-											fullWidth={false}
-										/>
-									</div>
-								) : null}
-							</div>
-
-							{active ? (
-								<ConfigActionDock
-									activeKey={resolvedActiveKey}
-									activeState={activeState}
-									activeSavedAt={savedAtMap[resolvedActiveKey]}
-									dirtyKeys={dirtyKeys}
-									hasMultipleSchemas={hasMultipleSchemas}
-									savingAll={savingAll}
-									schemaOptions={showSchemaSwitcher ? schemaOptions : []}
-									onActiveKeyChange={(nextKey) => {
-										setActiveKey(nextKey)
-										onActiveKeyChange?.(nextKey)
-									}}
-									onSubmitCurrent={submitCurrent}
-									onSubmitAll={() => void saveAll()}
-									onResetCurrent={resetCurrent}
-									onResetDefaults={resetToDefaults}
-								/>
-							) : null}
-						</Box>
-					) : null}
-
-					{schemaItems.map(({ key, schema, savedValue, defaultValue }) => {
-						const isActive = key === resolvedActiveKey
-						const showOverlay = active && isActive
-						return (
-							<ScrollArea
-								key={`${pluginName}-${key}`}
-								type="auto"
-								scrollbarSize={10}
-								offsetScrollbars
-								style={{
-									display: isActive ? 'block' : 'none',
-									flex: 1,
-									minHeight: 0,
-								}}
-								viewportRef={(node) => setScrollHost(key, node)}
-							>
-								<ConfigTabPanel
-									pluginName={pluginName}
-									tabKey={key}
-									schema={schema}
-									savedValue={savedValue}
-									defaultValue={defaultValue}
-									draftValue={toRecord(draftValues?.[key])}
-									onSaved={markSaved}
-									showToc={showOverlay}
-									active={showOverlay}
-									sectionIdPrefix={makeSectionAnchorPrefix(pluginName, key)}
-									fieldIdPrefix={makeFieldAnchorPrefix(pluginName, key)}
-									scrollHost={scrollHostsRef.current[key]}
-									scrollHostVersion={scrollHostVersion}
-									registerForm={registerForm}
-									reportState={reportState}
-								/>
-							</ScrollArea>
-						)
-					})}
-				</Box>
-			)}
+			{sectionItems.map((section) => {
+				const isActive = section.key === resolvedActiveKey
+				return (
+					<ConfigSectionPane
+						key={section.key}
+						active={active && isActive}
+						displayName={displayName}
+						isVisible={isActive}
+						owner={owner}
+						registerForm={registerForm}
+						reportState={reportState}
+						section={section}
+					/>
+				)
+			})}
 		</Box>
 	)
 }
 
-function formatSchemaKeyLabel(key: string): string {
-	const dot = key.indexOf('.')
-	if (dot === -1) return key
-	const head = key.slice(0, dot)
-	const tail = key.slice(dot + 1)
-	if (!head || !tail) return key
-	if (tail === 'config') return head
-	return `${head}:${tail}`
+function ConfigSectionPane({
+	active,
+	displayName,
+	isVisible,
+	owner,
+	registerForm,
+	reportState,
+	section,
+}: {
+	active: boolean
+	displayName: string
+	isVisible: boolean
+	owner: PluginNodeAddress
+	registerForm: (key: string, bridge: ConfigFormBridge) => void | (() => void)
+	reportState: (key: string, state: ConfigFormState) => void
+	section: SectionItem
+}) {
+	const [scrollHost, setScrollHost] = useState<HTMLDivElement | null>(null)
+	const setViewport = useCallback((node: HTMLDivElement | null) => {
+		if (node) node.dataset.configScrollRoot = 'true'
+		setScrollHost(node)
+	}, [])
+
+	return (
+		<ScrollArea
+			type="auto"
+			scrollbarSize={10}
+			offsetScrollbars
+			className="plx-pluginWorkbench__configScrollArea"
+			style={{ display: isVisible ? 'block' : 'none' }}
+			viewportRef={setViewport}
+		>
+			<ConfigTabContent
+				owner={owner}
+				displayName={displayName}
+				fields={section.fields}
+				savedValue={section.savedValue}
+				persistedValue={section.savedValue}
+				defaultValue={section.defaultValue}
+				path={section.path}
+				showToc={active}
+				scrollHost={scrollHost}
+				registerForm={registerForm}
+				reportState={reportState}
+			/>
+		</ScrollArea>
+	)
+}
+
+function sectionKey(path: readonly string[]): string {
+	return path.join('.') || 'config'
+}
+
+function sectionLabel(path: readonly string[]): string {
+	return path.length === 0 ? '常规' : path.join(' / ')
+}
+
+function recordAtPath(record: Record<string, unknown>, path: readonly string[]) {
+	let value: unknown = record
+	for (const segment of path) {
+		value = isRecord(value) ? value[segment] : undefined
+	}
+	return isRecord(value) ? value : {}
+}
+
+function sameFormState(left: ConfigFormState, right: ConfigFormState): boolean {
+	return (
+		left.dirty === right.dirty &&
+		left.canSubmit === right.canSubmit &&
+		left.submitting === right.submitting &&
+		deepEqual(left.values, right.values)
+	)
+}
+
+function deepEqual(left: unknown, right: unknown): boolean {
+	if (Object.is(left, right)) return true
+	if (Array.isArray(left) && Array.isArray(right)) {
+		return (
+			left.length === right.length && left.every((value, index) => deepEqual(value, right[index]))
+		)
+	}
+	if (!isRecord(left) || !isRecord(right)) return false
+	const leftKeys = Object.keys(left)
+	const rightKeys = Object.keys(right)
+	return (
+		leftKeys.length === rightKeys.length &&
+		leftKeys.every((key) => key in right && deepEqual(left[key], right[key]))
+	)
+}
+
+function buildCombinedConfigPatch(
+	savedConfig: Record<string, unknown>,
+	sections: readonly SectionItem[],
+	states: Readonly<Record<string, ConfigFormState>>,
+	dirtyKeys: ReadonlySet<string>,
+): Record<string, unknown> {
+	const candidate = structuredClone(savedConfig)
+	const changedRootKeys = new Set<string>()
+
+	for (const section of sections) {
+		if (!dirtyKeys.has(section.key)) continue
+		const state = states[section.key]
+		if (!state) continue
+		const editablePatch = buildEditableConfigPatch(section.fields, state.values, section.savedValue)
+		if (section.path.length === 0) {
+			for (const [key, value] of Object.entries(editablePatch)) {
+				candidate[key] = value
+				changedRootKeys.add(key)
+			}
+			continue
+		}
+
+		const target = ensureRecordAtPath(candidate, section.path)
+		Object.assign(target, editablePatch)
+		changedRootKeys.add(section.path[0]!)
+	}
+
+	return Object.fromEntries([...changedRootKeys].map((key) => [key, candidate[key]]))
+}
+
+function ensureRecordAtPath(root: Record<string, unknown>, path: readonly string[]) {
+	let current = root
+	for (const segment of path) {
+		const next = isRecord(current[segment]) ? current[segment] : {}
+		current[segment] = next
+		current = next
+	}
+	return current
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }

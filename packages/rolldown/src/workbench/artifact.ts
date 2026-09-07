@@ -1,42 +1,65 @@
 import { readFile, stat } from 'node:fs/promises'
 import {
-	WORKBENCH_FEDERATION_EXPOSE,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
-	WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
-	workbenchFederationModuleId,
-	workbenchFederationRemoteName,
+	assertWorkbenchFederationSnapshotContract,
+	parseWorkbenchFederationDeploymentInventory,
+	parseWorkbenchFederationManifestContract,
+	workbenchFederationDeploymentInventoryPath,
+	type WorkbenchFederationDeploymentInventory,
+	type WorkbenchFederationCompatibilitySet,
+	type WorkbenchFederationManifestExpectation,
+	type WorkbenchFederationProducerPlan,
+	type WorkbenchFederationTypeAssetPolicy,
 } from '@pluxel/core/federation'
+import {
+	generateSnapshotFromManifest,
+	type Manifest,
+	type ProviderModuleInfo,
+} from '@module-federation/sdk'
 import { join } from 'pathe'
 
-type FederationAssetGroup = {
-	js?: { sync?: string[]; async?: string[] }
-	css?: { sync?: string[]; async?: string[] }
-}
-
-type FederationManifest = {
-	name?: string
-	metaData?: {
-		name?: string
-		remoteEntry?: { name?: string }
-	}
-	exposes?: Array<{
-		name?: string
-		assets?: FederationAssetGroup
-	}>
-}
+export type WorkbenchFederationArtifactExpectation = Readonly<{
+	plan: WorkbenchFederationProducerPlan
+	compatibility: WorkbenchFederationCompatibilitySet
+	/** @defaultValue 'required' */
+	typeAssets?: WorkbenchFederationTypeAssetPolicy
+}>
 
 export type WorkbenchArtifactValidation =
-	| Readonly<{ valid: true; manifest: FederationManifest }>
+	| Readonly<{ valid: true; manifest: Manifest; snapshot: ProviderModuleInfo }>
 	| Readonly<{ valid: false; reason: string }>
 
-export async function validateWorkbenchUiArtifact(
+/** Reads the canonical host-owned producer inventory from one deployment root. */
+export async function readWorkbenchFederationDeploymentInventory(
+	deploymentRoot: string,
+): Promise<WorkbenchFederationDeploymentInventory> {
+	const path = join(deploymentRoot, workbenchFederationDeploymentInventoryPath(''))
+	let input: unknown
+	try {
+		input = JSON.parse(await readFile(path, 'utf-8'))
+	} catch (error) {
+		throw new Error(`[workbench-ui] cannot read deployment producer inventory: ${path}`, {
+			cause: error,
+		})
+	}
+	return parseWorkbenchFederationDeploymentInventory(input)
+}
+
+/** Validates the standard MF Manifest/Snapshot and its exact Profile 1 declared inventory. */
+export async function validateWorkbenchFederationArtifact(
 	outDir: string,
-	pluginName?: string,
+	expected: WorkbenchFederationArtifactExpectation,
 ): Promise<WorkbenchArtifactValidation> {
 	const manifestPath = join(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE)
-	let manifest: FederationManifest
+	let manifest: Manifest
+	let files: readonly string[]
 	try {
-		manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as FederationManifest
+		const input = JSON.parse(await readFile(manifestPath, 'utf-8')) as unknown
+		files = parseWorkbenchFederationManifestContract(
+			input,
+			expected satisfies WorkbenchFederationManifestExpectation,
+		).files
+		manifest = input as Manifest
 	} catch (error) {
 		return {
 			valid: false,
@@ -44,110 +67,25 @@ export async function validateWorkbenchUiArtifact(
 		}
 	}
 
-	const remoteEntry = manifest.metaData?.remoteEntry?.name
-	if (remoteEntry !== WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE) {
+	for (const asset of files) {
+		if (!(await isFile(join(outDir, asset)))) {
+			return { valid: false, reason: `artifact asset missing: ${asset}` }
+		}
+	}
+
+	let snapshot: ProviderModuleInfo
+	try {
+		snapshot = generateSnapshotFromManifest(manifest, {
+			version: expected.plan.buildRevision,
+		})
+		assertWorkbenchFederationSnapshotContract(snapshot, expected.plan)
+	} catch (error) {
 		return {
 			valid: false,
-			reason: `manifest remote entry must be ${WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE}`,
+			reason: `manifest cannot produce a standard Snapshot: ${message(error)}`,
 		}
 	}
-	if (!(await isFile(join(outDir, remoteEntry)))) {
-		return { valid: false, reason: `missing remote entry: ${remoteEntry}` }
-	}
-
-	if (pluginName) {
-		const expected = workbenchFederationRemoteName(pluginName)
-		const actual = manifest.name ?? manifest.metaData?.name
-		if (actual && actual !== expected) {
-			return { valid: false, reason: `manifest remote name must be ${expected}, got ${actual}` }
-		}
-	}
-
-	const exposed = manifest.exposes?.find(
-		(item) =>
-			item.name === WORKBENCH_FEDERATION_EXPOSE ||
-			item.name === workbenchFederationModuleId(WORKBENCH_FEDERATION_EXPOSE),
-	)
-	if (!exposed) {
-		return {
-			valid: false,
-			reason: `manifest expose missing: ${WORKBENCH_FEDERATION_EXPOSE}; found ${JSON.stringify(
-				manifest.exposes?.map((item) => item.name) ?? [],
-			)}`,
-		}
-	}
-	const graphValidation = await validateAssetGraph(outDir, [
-		remoteEntry,
-		...collectAssets(exposed.assets),
-	])
-	if (graphValidation) {
-		return { valid: false, reason: graphValidation }
-	}
-
-	return { valid: true, manifest }
-}
-
-async function validateAssetGraph(outDir: string, entries: string[]): Promise<string | null> {
-	const queue = [...entries]
-	const visited = new Set<string>()
-	while (queue.length > 0) {
-		const raw = queue.shift()!
-		const asset = normalizeAssetPath(raw)
-		if (!asset) return `invalid artifact asset path: ${raw}`
-		if (visited.has(asset)) continue
-		visited.add(asset)
-		const path = join(outDir, asset)
-		if (!(await isFile(path))) return `artifact asset missing: ${asset}`
-		if (!/\.(?:js|mjs|css)$/i.test(asset)) continue
-		const content = await readFile(path, 'utf-8').catch((): null => null)
-		if (!content) return `artifact asset unreadable: ${asset}`
-		for (const reference of collectLocalAssetReferences(content)) {
-			const nested = normalizeAssetPath(
-				reference.startsWith('assets/') ? reference : join(asset, '..', reference),
-			)
-			if (!nested) return `invalid artifact asset reference in ${asset}: ${reference}`
-			if (!visited.has(nested)) queue.push(nested)
-		}
-	}
-	return null
-}
-
-function collectLocalAssetReferences(content: string): string[] {
-	return [
-		...content.matchAll(
-			/["'`]([^"'`?#]+\.(?:js|mjs|css|woff2?|ttf|otf|png|jpe?g|gif|webp|svg))(?:[?#][^"'`]*)?["'`]/gi,
-		),
-	]
-		.map((match) => match[1]!)
-		.filter(
-			(value) => value.startsWith('./') || value.startsWith('../') || value.startsWith('assets/'),
-		)
-}
-
-function normalizeAssetPath(input: string): string | null {
-	const normalized = String(input ?? '')
-		.replaceAll('\\', '/')
-		.replace(/^\.\//, '')
-	const parts: string[] = []
-	for (const part of normalized.split('/')) {
-		if (!part || part === '.') continue
-		if (part === '..') {
-			if (parts.length === 0) return null
-			parts.pop()
-			continue
-		}
-		parts.push(part)
-	}
-	return parts.length > 0 ? parts.join('/') : null
-}
-
-function collectAssets(group: FederationAssetGroup | undefined): string[] {
-	return [
-		...(group?.js?.sync ?? []),
-		...(group?.js?.async ?? []),
-		...(group?.css?.sync ?? []),
-		...(group?.css?.async ?? []),
-	].filter((item) => typeof item === 'string' && item.length > 0)
+	return { valid: true, manifest, snapshot }
 }
 
 async function isFile(path: string): Promise<boolean> {

@@ -1,7 +1,8 @@
 {
 	"name": "@pluxel/runtime-static",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Pluxel runtime static route (fixed plugin catalog, startup reports, and drift checks)",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -34,6 +35,10 @@
 			"@pluxel/source": "./src/internal/node-workbench-application.ts",
 			"default": "./dist/internal/node-workbench-application.mjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
 		"./test": {
 			"@pluxel/source": "./src/test.ts",
 			"default": "./dist/test.mjs"
@@ -51,28 +56,39 @@
 			"./internal/fetch-workbench-application": "./dist/internal/fetch-workbench-application.mjs",
 			"./internal/node-application": "./dist/internal/node-application.mjs",
 			"./internal/node-workbench-application": "./dist/internal/node-workbench-application.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
 			"./test": "./dist/test.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
-		"build": "tsdown"
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
-		"@pluxel/core": "workspace:*",
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/core": "workspace:^",
+		"@pluxel/runtime": "workspace:^",
+		"@standard-schema/spec": "catalog:prod",
+		"crossws": "catalog:prod",
+		"elysia": "catalog:prod",
+		"pathe": "catalog:node",
+		"srvx": "catalog:prod",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime-dev": "workspace:*",
+		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"vite": "^8.0.0-beta.18"
+		"tsx": "catalog:dev",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
-		"@pluxel/rolldown": ">=0.1.0 <1",
-		"vite": ">=8.0.0-beta.18 <9"
+		"@pluxel/rolldown": "workspace:^",
+		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/rolldown": {
@@ -82,9 +98,11 @@
 			"optional": true
 		}
 	},
+	"engines": {
+		"node": ">=24"
+	},
 	"inlinedDependencies": {
 		"chokidar": "5.0.0",
-		"pathe": "2.0.3",
-		"readdirp": "5.0.0"
+		"readdirp": "5.1.1"
 	}
 }

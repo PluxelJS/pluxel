@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
-import { CommandError, defineCommand, validation, type Command } from '../src/index'
+import {
+	CommandError,
+	defineCommand,
+	validation,
+	type Command,
+	type CommandContext,
+} from '../src/index'
 import { createArgvRouter, tail } from '../src/argv'
 import { Type, obj } from '../src/typebox'
 
@@ -40,6 +46,23 @@ describe('@pluxel/commands argv', () => {
 		const retagInput = (_command: Command<{ missing: string }>): void => {}
 		// @ts-expect-error Command input types are invariant and cannot be relabeled for argv binding.
 		retagInput(deploy)
+
+		const dynamicRouter = createArgvRouter()
+		dynamicRouter.bind(deploy, { routes: ['deploy'] })
+		const dynamicResolution = dynamicRouter.resolve('deploy')
+		if (dynamicResolution) {
+			// @ts-expect-error A heterogeneous router cannot promise one command's output type.
+			const output: Promise<{ ok: boolean }> = dynamicResolution.command.execute({})
+			void output
+		}
+
+		const homogeneousRouter = createArgvRouter<CommandContext, { ok: boolean }>()
+		homogeneousRouter.bind(deploy, { routes: ['deploy'] })
+		const homogeneousResolution = homogeneousRouter.resolve('deploy')
+		if (homogeneousResolution) {
+			const output: Promise<{ ok: boolean }> = homogeneousResolution.command.execute({})
+			void output
+		}
 	}
 	void assertTextTailTypes
 
@@ -65,10 +88,11 @@ describe('@pluxel/commands argv', () => {
 		expect(
 			router.resolve(['service', 'deploy', 'api worker', '--environment', 'prod'])?.candidate,
 		).toEqual({ service: 'api worker', environment: 'prod' })
-		expect(router.help('service.deploy')?.usage).toContain('deploy <service>')
-		expect(router.help('service deploy')?.usage).toContain('--environment <string>')
-		expect(router.help('service.deploy')?.parameters[0]).not.toHaveProperty('schema')
-		expect(router.help('service.deploy')?.parameters).toEqual(
+		const descriptor = router.list()[0]!
+		expect(descriptor.usage).toContain('deploy <service>')
+		expect(descriptor.usage).toContain('--environment <string>')
+		expect(descriptor.parameters[0]).not.toHaveProperty('schema')
+		expect(descriptor.parameters).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
 					key: 'environment',
@@ -105,12 +129,7 @@ describe('@pluxel/commands argv', () => {
 				suggestions: ['prod'],
 			},
 		})
-		await expect(
-			router.dispatchOrThrow('service deplo api --environment prod'),
-		).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
-			details: { suggestions: ['service deploy'] },
-		})
+		expect(router.resolve('service deplo api --environment prod')).toBeUndefined()
 	})
 
 	it('validates router limits when the router is created', () => {
@@ -118,6 +137,15 @@ describe('@pluxel/commands argv', () => {
 		expect(() => createArgvRouter({ maxTextLength: Number.NaN })).toThrow(/positive safe integer/)
 		const router = createArgvRouter({ maxTextLength: 3 })
 		expect(() => router.resolve('four')).toThrow(/exceeds 3 characters/)
+	})
+
+	it('returns an immutable idempotent route registration', () => {
+		const router = createArgvRouter()
+		const registration = router.bind(deploy, { routes: ['deploy'] })
+		expect(Object.isFrozen(registration)).toBe(true)
+		registration.dispose()
+		registration.dispose()
+		expect(router.list()).toEqual([])
 	})
 
 	it('ends option parsing with -- before consuming remaining positionals and tail', () => {
@@ -201,7 +229,7 @@ describe('@pluxel/commands argv', () => {
 		expect(router.resolve('retry configure --retry-count 2')?.candidate).toEqual({ retryCount: 2 })
 		expect(router.resolve('retry configure --RETRY-COUNT 2')?.candidate).toEqual({ retryCount: 2 })
 		expect(router.resolve('retry configure --retry_count 2')?.candidate).toEqual({ retryCount: 2 })
-		expect(router.help('retry.configure')?.parameters).toEqual([
+		expect(router.list()[0]?.parameters).toEqual([
 			expect.objectContaining({ name: 'retry-count', aliases: [] }),
 		])
 		expect(() => router.resolve('retry configure --retryCount 2')).toThrow(/Unknown option/)
@@ -221,7 +249,7 @@ describe('@pluxel/commands argv', () => {
 		const router = createArgvRouter()
 		router.bind(command, { routes: ['cache configure'] })
 
-		expect(router.help('cache.configure')?.usage).toContain('--no-cache')
+		expect(router.list()[0]?.usage).toContain('--no-cache')
 		expect(router.resolve('cache configure --no-cache')?.candidate).toEqual({ noCache: true })
 		expect(router.resolve('cache configure --no-cache=false')?.candidate).toEqual({
 			noCache: false,
@@ -305,7 +333,10 @@ describe('@pluxel/commands argv', () => {
 			routes: ['players filter'],
 			options: { query: { aliases: ['q'] }, limit: { aliases: ['l'] } },
 		})
-		await optionRouter.dispatchOrThrow('players filter --query "playtime < 10" --limit 25')
+		const optionResolution = optionRouter.resolve(
+			'players filter --query "playtime < 10" --limit 25',
+		)!
+		await optionResolution.command.execute(optionResolution.candidate)
 		expect(received).toMatchObject({
 			query: { expression: { field: 'playtime', operator: '<', threshold: 10 } },
 		})
@@ -316,22 +347,21 @@ describe('@pluxel/commands argv', () => {
 			options: { limit: { aliases: ['l'] } },
 			tail: tail.text('query', '<filter-expression>'),
 		})
-		await textTailRouter.dispatchOrThrow('players search --limit 25 --   playtime < 10')
+		const tailResolution = textTailRouter.resolve('players search --limit 25 --   playtime < 10')!
+		await tailResolution.command.execute(tailResolution.candidate)
 		expect(received).toMatchObject({ query: { source: 'playtime < 10' }, limit: 25 })
-		await expect(command.executeOrThrow({ query: 'warnings >= 3 trailing' })).rejects.toMatchObject(
-			{
-				code: 'INPUT_VALIDATION',
-				details: {
-					issues: [
-						{
-							path: ['query'],
-							message: 'Unexpected query input: trailing',
-							code: 'invalid_query',
-						},
-					],
-				},
+		await expect(command.execute({ query: 'warnings >= 3 trailing' })).rejects.toMatchObject({
+			code: 'INPUT_VALIDATION',
+			details: {
+				issues: [
+					{
+						path: ['query'],
+						message: 'Unexpected query input: trailing',
+						code: 'invalid_query',
+					},
+				],
 			},
-		)
+		})
 	})
 
 	it('builds route changes atomically when a conflict is rejected', () => {

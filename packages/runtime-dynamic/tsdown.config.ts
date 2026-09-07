@@ -8,6 +8,7 @@ const runtimeDevWorkbench = fileURLToPath(
 )
 const runtimeDevHmrLog = fileURLToPath(new URL('../runtime-dev/src/hmr-log.ts', import.meta.url))
 const runtimeDevVite = fileURLToPath(new URL('../runtime-dev/src/vite.ts', import.meta.url))
+const runtimeNodeEntry = fileURLToPath(new URL('../runtime-node/src/index.ts', import.meta.url))
 
 export default defineConfig({
 	exports: {
@@ -27,13 +28,14 @@ export default defineConfig({
 			'vite',
 			'vite/*',
 		],
-		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*'],
+		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*', '@pluxel/runtime-node'],
 	},
 	alias: {
 		'@pluxel/runtime-dev': runtimeDevEntry,
 		'@pluxel/runtime-dev/workbench': runtimeDevWorkbench,
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevVite,
+		'@pluxel/runtime-node': runtimeNodeEntry,
 	},
 	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {
@@ -44,6 +46,7 @@ export default defineConfig({
 		'source-producer': 'src/source-producer.ts',
 	},
 	dts: {
+		tsconfig: '../../tsconfig.runtime-dynamic-dts.json',
 		sourcemap: true,
 		eager: true,
 	},

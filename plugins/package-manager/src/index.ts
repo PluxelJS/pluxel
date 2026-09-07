@@ -4,42 +4,41 @@ import { Type, obj } from '@pluxel/commands/typebox'
 import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { requireDynamicPluginSource } from '@pluxel/runtime-dynamic/source-producer'
-import { workbench } from '@pluxel/runtime/workbench'
 import type {
-	PackageManagerCommands,
+	PackageManagerApi,
 	PackageManagerSnapshot,
 	PackageMutationResult,
 } from './contracts.ts'
 import { loadPnpmEngine } from './pnpm-engine.ts'
 import { ManagedPackageStore } from './store.ts'
-import { PackageManagerWorkbench } from './workbench-extension.ts'
+import { PackageManagerWorkbench } from './workbench.ts'
 
 export const PackageManagerConfig = v.object({
 	rootDir: v.pipe(
 		v.optional(v.string(), '.pluxel/managed-plugins'),
 		f.formMeta({
-			label: 'Managed package root',
+			title: 'Managed package root',
 			description: 'Dedicated pnpm project used to materialize dynamically loaded plugin packages.',
 		}),
 	),
 	ignoreScripts: v.pipe(
 		v.optional(v.boolean(), true),
 		f.formMeta({
-			label: 'Ignore dependency scripts',
+			title: 'Ignore dependency scripts',
 			description: 'Safe by default. Disable only together with an explicit build allow-list.',
 		}),
 	),
 	allowBuilds: v.pipe(
 		v.optional(v.array(v.string()), []),
 		f.formMeta({
-			label: 'Allowed build packages',
+			title: 'Allowed build packages',
 			description: 'Exact package names allowed to execute dependency build scripts.',
 		}),
 	),
 	minimumReleaseAgeMinutes: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 1_440),
 		f.formMeta({
-			label: 'Minimum release age',
+			title: 'Minimum release age',
 			description: 'Reject package releases newer than this many minutes.',
 		}),
 	),
@@ -71,8 +70,8 @@ const mutationOutput = obj({
 	failed: Type.Array(mutationFailureOutput),
 })
 
-@Plugin({ name: 'PackageManagerPlugin', startTimeoutMs: 120_000 })
-export class PackageManagerPlugin extends BasePlugin implements PackageManagerCommands {
+@Plugin({ startTimeoutMs: 120_000 })
+export class PackageManagerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(PackageManagerConfig)
 	private store?: ManagedPackageStore
 
@@ -115,8 +114,8 @@ export class PackageManagerPlugin extends BasePlugin implements PackageManagerCo
 				execute: async ({ specs }) => toCommandMutation(await store.remove(specs)),
 			}),
 		)
-		this.ctx.workbench.mount(PackageManagerWorkbench, {
-			manager: workbench.bind.rpc(() => new PackageManagerRpc(store)),
+		this.ctx.workbench?.publish(PackageManagerWorkbench, {
+			manager: () => new PackageManagerTarget(store),
 		})
 	}
 
@@ -146,7 +145,7 @@ function toCommandMutation(result: PackageMutationResult) {
 	}
 }
 
-class PackageManagerRpc extends RpcTarget implements PackageManagerCommands {
+class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 	constructor(private readonly store: ManagedPackageStore) {
 		super()
 	}
@@ -166,7 +165,7 @@ class PackageManagerRpc extends RpcTarget implements PackageManagerCommands {
 
 export type {
 	ManagedPackage,
-	PackageManagerCommands,
+	PackageManagerApi,
 	PackageManagerSnapshot,
 	PackageMutationFailure,
 	PackageMutationResult,

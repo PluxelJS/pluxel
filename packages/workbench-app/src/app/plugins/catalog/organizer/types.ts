@@ -1,15 +1,30 @@
+import type { PluginNodeAddress } from '@pluxel/core'
+import type { PluginPresentationTone } from '../../pluginExecutionPresentation'
+
 export type PluginStatuses = { [name: string]: PluginStatus }
 
 export interface PluginStatus {
 	id: string
+	address: PluginNodeAddress
+	reference: string
 	name?: string
+	definitionLabel: string
 	packageName?: string
-	version?: string
-	tag?: string
-	sourceKind?: 'hmr' | 'package' | 'unknown'
-	moduleId?: string | null
-	isRunning: boolean
-	isEnabled?: boolean
+	sourceSpace?: string
+	sourcePath?: string
+	exportName: string
+	executionLabel: string
+	executionTone: PluginPresentationTone
+	executionDescription: string
+	executionSearchTerms: readonly string[]
+	recentUpdateSearchTerms: readonly string[]
+	recentUpdateWarningLabel?: string
+	recentUpdateWarningTone?: PluginPresentationTone
+	recentUpdateWarningDescription?: string
+	availability: 'available' | 'unavailable'
+	autoStart: boolean
+	desiredState: 'running' | 'stopped'
+	lifecycleState: 'running' | 'stopped'
 }
 
 export interface GroupConfig {

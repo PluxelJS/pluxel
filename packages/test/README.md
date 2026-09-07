@@ -1,26 +1,53 @@
 # @pluxel/test
 
-> Status: published dev-only. It is intended for tests/tooling, not for production runtime dependencies.
+Pluxel 的 runner/toolchain 测试支持包。它不再提供 Plugin test host 根入口；从所验证的最小产品边界导入 host：
 
-Plugin authors should start with the repository-level
-[`user-docs/testing.md`](../../user-docs/testing.md). It explains the standard Vitest setup, how to
-choose between the core-only and runtime test hosts, lifecycle failure assertions, cleanup, HTTP,
-Workbench Plane and fixture strategy.
+- Core graph/config/lifecycle：`@pluxel/core/test`
+- Runtime capability：`@pluxel/runtime/test`
+- static application wiring：`@pluxel/runtime-static/test`
+- dynamic Vite/HMR/carrier：项目 Vite command 或 `@pluxel/runtime-dynamic`
 
-Core-side test surface for Pluxel plugin semantics:
+本包只保留三个面向调用方的职责：
 
-- Automatic core service registration on import
-- A minimal core Host/Context API for integration/unit tests
-- An opinionated Vitest preset (optional)
+- `@pluxel/test/vitest`：Vitest/Vite preset 与 Pluxel source toolchain
+- `@pluxel/test/fixtures`：VFS/disk filesystem fixture
+- `@pluxel/test/unsafe`：显式 synthetic lowering/replacement facts
 
-Runtime/HMR tests that need loader, config enabled bits, HTTP, vault, or runtime services should use
-`@pluxel/runtime/test`. This package intentionally does not register runtime services by default.
-The Host API is backed by `@pluxel/core/test`, so core lifecycle semantics have one shared
-implementation across test packages.
+完整用户教程见 [`docs/development/testing.md`](../../docs/development/testing.md)，coding agent 的局部选择规则见
+[`LLM_TESTING_GUIDE.md`](LLM_TESTING_GUIDE.md)。
 
-Workspace tests can use `@pluxel/test/fixtures` for VFS-backed fixtures. External consumers should still prefer bringing their own fixture/fs library.
-Each fixture owns its own filesystem instance. Prefer `await using fixture = await createFixture(...)`, then pass `fixture.fs` / `fixture.fsp` into the code under test.
-Use `createDiskFixture(...)` only when a real watcher, process, or toolchain requires native filesystem semantics. Disk fixture disposal retries transient recursive-removal failures from late-closing file handles.
+## Vitest preset
+
+此 preset 固定对应 Vitest `5.0.0`（upstream 要求 Node.js `>=22.12.0`、Vite `>=6.4.0`）；Pluxel package 与生成项目
+统一要求 Node.js `>=24`。不要把版本范围降回 Vitest 4，或用 `clearMocks: false` 恢复旧的 mock history 语义。
+
+```ts
+// vitest.config.ts
+export { default } from '@pluxel/test/vitest'
+```
+
+需要配置时：
+
+```ts
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
+
+export default definePluxelVitestConfig({
+	// Native Vitest discovery and runner options.
+	test: { include: ['tests/**/*.test.ts'], passWithNoTests: false },
+	// Pluxel source transforms; this namespace is consumed before Vite sees the config.
+	pluxel: { include: ['src/**/*.ts', 'tests/**/*.ts'] },
+})
+```
+
+preset 在 TypeScript 擦除前执行 Plugin semantic lowering。lifecycle failure 直接断言
+`commitExpectFail()` 返回的 structured `lifecycleReport`，不向 consumer 注册 Vitest matcher 或 `setupFiles`。Core/Runtime
+test entries 不依赖 Vitest。
+
+`test.include` 决定 Vitest 发现哪些测试；`pluxel.include` / `exclude` 决定哪些源码经过 Pluxel lowering 和 config
+extraction，两者不能互相替代。需要在 lowering 前运行额外 Vite transform 时使用 `pluxel.prePlugins`；普通 Vite plugin
+仍写在顶层 `plugins`。
+
+## Filesystem fixture
 
 ```ts
 import { createFixture } from '@pluxel/test/fixtures'
@@ -30,129 +57,10 @@ await using fixture = await createFixture({
 })
 
 await fixture.fsp.writeFile(fixture.getPath('tmp.txt'), 'ok\n', 'utf8')
-expect(fixture.fs.existsSync(fixture.getPath('tmp.txt'))).toBe(true)
 ```
 
-LLM-facing guide: `packages/test/LLM_TESTING_GUIDE.md`.
+默认使用 VFS；只有 watcher、child process 或原生工具链确实需要磁盘时才使用 disk fixture。fixture 拥有并释放自己创建的 filesystem resource。
 
-Toolchain/lint design: `docs/TOOLCHAIN.md`.
+## Unsafe lowering
 
-## Host
-
-```ts
-import { Plugin, BasePlugin, withHost } from '@pluxel/test'
-
-await withHost(async (host) => {
-	@Plugin({ name: 'P' })
-	class P extends BasePlugin {}
-
-	host.add(P) // or host.add([P1, P2, ...])
-	await host.commit()
-
-	const p = host.require(P)
-})
-```
-
-The host above is core-only: it exercises `Context` + `PluginService` lifecycle semantics without
-bootstrapping runtime services. Use `@pluxel/runtime/test` for tests whose behavior depends on the
-runtime host.
-
-### Draft vs commit
-
-- `host.add(P)` / `host.add([P1, P2, ...])` only change the _draft_.
-- `host.remove(P)` / `host.remove([P1, P2, ...])` only change the _draft_.
-- `await host.commit()` applies the draft and is **strict** (throws if any plugin fails to start).
-- If you expect failures and want a summary instead: `await host.commitAllowFail()`.
-
-### Config
-
-```ts
-host.cfg(P).set({ answer: 42 })
-host.cfg(P).unset('answer')
-host.cfg('P').enable()
-host.cfg('P').set({ answer: 42 })
-```
-
-### Forks
-
-```ts
-const ForkA = host.fork(P, 'a')
-host.cfg(ForkA).set({ v: 'A' })
-```
-
-## Vitest
-
-`vitest.config.ts`:
-
-```ts
-export { default } from '@pluxel/test/vitest'
-```
-
-Because the preset runs Pluxel build-correctness lint before transforms, the test project should
-also install `oxlint` as a dev dependency.
-
-Note: `@pluxel/core` installs a lightweight reflection provider (`@abraham/reflection`) and adds a small
-compat shim so importing `reflect-metadata` later does not crash.
-
-If a dependency truly requires `reflect-metadata`'s full semantics (key enumeration/deletion, etc),
-import `reflect-metadata` explicitly in _your_ app/test entry **before** any decorated classes are evaluated.
-
-### Workspace (monorepo)
-
-If you have many workspace packages and want a single root `vitest.config.ts`:
-
-```ts
-import { defineConfig } from 'vitest/config'
-
-export default defineConfig({
-	test: {
-		// Vitest Projects: treat each package config as a separate project.
-		projects: ['packages/**/vitest.config.ts'],
-	},
-})
-```
-
-Each package can keep its own `vitest.config.ts` (typically
-`export { default } from '@pluxel/test/vitest'`).
-
-By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avoid breaking local workspace runs
-when some packages have no tests.
-
-The preset resolves development entries in a fixed order: plugin packages through `@pluxel/hmr`,
-framework-neutral packages through the community `development` condition, then Pluxel internals through
-`@pluxel/source`. Externalized Node dependencies keep production-like conditions.
-
-If you prefer automatic discovery instead of maintaining globs:
-
-```ts
-import { definePluxelVitestWorkspaceConfig } from '@pluxel/test/vitest'
-
-export default definePluxelVitestWorkspaceConfig({
-	test: {
-		// optional: cap workers for very large workspaces
-		fileParallelism: false,
-		minWorkers: 1,
-		maxWorkers: 1,
-	},
-})
-```
-
-If you need to add extra Vite plugins:
-
-```ts
-import { definePluxelVitestConfig } from '@pluxel/test/vitest'
-import SomeTransform from 'some-transform/vite'
-
-export default definePluxelVitestConfig(
-	{ plugins: [SomeTransform()] }, // after Pluxel toolchain plugins
-	{ prePlugins: [SomeTransform()] }, // before Pluxel toolchain plugins
-)
-```
-
-## Unsafe exports
-
-Toolchain/decorator-level APIs are intentionally separated:
-
-```ts
-import { __registerConfigSchema__ } from '@pluxel/test/unsafe'
-```
+`@pluxel/test/unsafe` 只用于明确模拟 module evaluation/replacement facts。普通 Plugin 测试不能用它绕过 semantic lowering、identity 或 lifecycle。

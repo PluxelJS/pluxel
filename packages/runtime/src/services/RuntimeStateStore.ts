@@ -1,95 +1,108 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
-import { hash as ohash } from 'ohash'
+import {
+	type Context as PluxelContext,
+	parsePluginDefinitionAddress,
+	parsePluginNodeAddress,
+	pluginDefinitionIndexKey,
+	pluginNodeIndexKey,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { SuperJSON } from 'superjson'
+import { pinOwnerContext } from '../context/owner-view'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
-export type PluginGroupState = {
-	groupId: string
-	name: string
-	pluginIds: string[]
-}
-
 export type RuntimeStateSnapshot = Readonly<{
-	enabled: readonly string[]
-	forks: Readonly<Record<string, readonly string[]>>
-	baseProviders: Readonly<Record<string, string>>
-	dependencyOverrides: Readonly<Record<string, Readonly<Record<number, string>>>>
-	optionalKnown: Readonly<Record<string, 1>>
-	/** @deprecated Legacy input read once by Workbench catalog preference migration. */
-	pluginGroups: readonly PluginGroupState[]
+	autoStart: readonly PluginNodeAddress[]
+	forks: readonly RuntimeForkState[]
+	providerDefaults: readonly RuntimeProviderDefaultState[]
+	dependencyOverrides: readonly RuntimeDependencyOverrideState[]
 }>
 
+export type RuntimeStateVersionedSnapshot = Readonly<{
+	revision: number
+	state: RuntimeStateSnapshot
+}>
+
+export class RuntimeStateRevisionConflictError extends Error {
+	public readonly code = 'runtime_state_revision_conflict' as const
+
+	constructor(
+		public readonly expectedRevision: number,
+		public readonly actualRevision: number,
+	) {
+		super(`[RuntimeStateStore] revision changed from ${expectedRevision} to ${actualRevision}`)
+		this.name = 'RuntimeStateRevisionConflictError'
+	}
+}
+
 export type RuntimeStateDraft = {
-	enabled: Set<string>
-	forks: Record<string, string[]>
-	baseProviders: Record<string, string>
-	dependencyOverrides: Record<string, Record<number, string>>
-	optionalKnown: Record<string, 1>
-	pluginGroups: PluginGroupState[]
+	autoStart: PluginNodeAddress[]
+	forks: RuntimeForkState[]
+	providerDefaults: RuntimeProviderDefaultState[]
+	dependencyOverrides: RuntimeDependencyOverrideState[]
+}
+
+export type RuntimeForkState = {
+	definition: PluginDefinitionAddress
+	forkIds: readonly string[]
+}
+
+export type RuntimeProviderDefaultState = {
+	token: PluginDefinitionAddress
+	provider: PluginNodeAddress
+}
+
+export type RuntimeDependencyOverrideState = {
+	consumerAddress: PluginNodeAddress
+	requirementAddress: PluginDefinitionAddress
+	providerAddress: PluginNodeAddress
 }
 
 export type RuntimeStateFile = {
-	version: 2
-	enabled: string[]
-	forks?: Record<string, string[]>
-	baseProviders?: Record<string, string>
-	dependencyOverrides?: Record<string, Record<number, string>>
-	optionalKnown?: Record<string, 1>
-	/** @deprecated Legacy Workbench group layout retained for non-destructive migration. */
-	pluginGroups?: PluginGroupState[]
+	version: 5
+	autoStart: PluginNodeAddress[]
+	forks: RuntimeForkState[]
+	providerDefaults: RuntimeProviderDefaultState[]
+	dependencyOverrides: RuntimeDependencyOverrideState[]
 }
 
 export type RuntimeStateStoreMode = 'file' | 'memory' | 'readonly'
 
 export interface RuntimeStateStoreConfig {
 	mode?: RuntimeStateStoreMode
-	snapshot?: Partial<RuntimeStateSnapshot> & { enabled?: Iterable<string> | string[] }
-}
-
-export {
-	isPluginEnabled,
-	listForkIds,
-	replaceEnabledPlugins,
-	setPluginEnabled,
-	setPluginsEnabled,
-} from './RuntimeStateHelpers'
-
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Config {
-			runtimeState?: RuntimeStateStoreConfig
-		}
-		interface Services {
-			runtimeState: RuntimeStateStore
-		}
+	snapshot?: Omit<Partial<RuntimeStateSnapshot>, 'autoStart'> & {
+		autoStart?: Iterable<PluginNodeAddress>
 	}
 }
 
-@Injectable({ key: 'runtimeState' })
+export {
+	isPluginAutoStartEnabled,
+	listForkIds,
+	replaceAutoStartPlugins,
+	setPluginAutoStart,
+	setPluginsAutoStart,
+} from './RuntimeStateHelpers'
+
 export class RuntimeStateStore {
 	public readonly ready: Promise<void>
 	public isReady = false
 
 	private readonly data: RuntimeStateDraft = createDefaultDraft()
+	private revision = 0
+	private snapshotCache!: RuntimeStateSnapshot
+	private versionedSnapshotCache!: RuntimeStateVersionedSnapshot
 	private readonly file: string
-	private readonly saveDelayMs = 200
 	private readonly mode: RuntimeStateStoreMode
 	private readonly readonlyMode: boolean
-	private saveTimer: ReturnType<typeof setTimeout> | null = null
-	private saveScheduled = false
-	private saveInFlight: Promise<void> | null = null
-	private saveAgain = false
-	private pendingWriteDigest: string | undefined
-	private lastWrittenDigest: string | undefined
 	private disposed = false
-	private batching = 0
-	private pendingSave = false
+	private durableCommitInFlight = false
 	private readonly storage: PersistenceNamespace
 
 	constructor(
 		public readonly ctx: PluxelContext,
 		cfg: RuntimeStateStoreConfig = {},
 	) {
+		pinOwnerContext(this, ctx)
 		const implicitMode = defaultRuntimeStateStoreMode(ctx.root.persistence.capability)
 		this.mode = cfg.mode ?? implicitMode
 		this.readonlyMode = this.mode === 'readonly'
@@ -98,8 +111,9 @@ export class RuntimeStateStore {
 		this.file = 'state.json'
 
 		if (cfg.snapshot) applySnapshot(this.data, cfg.snapshot)
+		this.refreshSnapshotCache()
 
-		if (this.mode === 'file') {
+		if (this.mode !== 'memory') {
 			this.ready = this.loadFromDisk(this.file).finally(() => {
 				this.isReady = true
 			})
@@ -112,84 +126,59 @@ export class RuntimeStateStore {
 	}
 
 	snapshot(): RuntimeStateSnapshot {
-		return freezeSnapshot(this.data)
+		return this.snapshotCache
 	}
 
-	update(run: (draft: RuntimeStateDraft) => void): void {
-		this.assertMutable('update')
-		this.batch(() => run(this.data))
+	versionedSnapshot(): RuntimeStateVersionedSnapshot {
+		return this.versionedSnapshotCache
 	}
 
-	batch(run: () => void): void {
-		this.batching++
+	/** Atomically persists and publishes graph policy after a coordinator prepare. */
+	async commitVersioned(
+		expectedRevision: number,
+		next: RuntimeStateSnapshot,
+	): Promise<RuntimeStateVersionedSnapshot> {
+		this.assertMutable('commitVersioned')
+		if (this.durableCommitInFlight) {
+			throw new Error('[RuntimeStateStore] nested durable graph transaction is not allowed')
+		}
+		this.assertRevision(expectedRevision)
+		const normalized = canonicalRuntimeStateSnapshot(next)
+		this.durableCommitInFlight = true
 		try {
-			run()
+			this.assertRevision(expectedRevision)
+			if (this.mode === 'file') await this.persistDraft(this.file, normalized)
+			replaceDraft(this.data, normalized)
+			this.revision++
+			this.refreshSnapshotCache(normalized)
+			return this.versionedSnapshotCache
 		} finally {
-			this.batching--
-			if (this.batching === 0 && this.pendingSave) {
-				this.pendingSave = false
-				this.scheduleSave()
-			}
-		}
-		if (this.batching === 0) this.requestSave()
-		else this.pendingSave = true
-	}
-
-	async flush(options: { force?: boolean } = {}): Promise<void> {
-		if (this.mode !== 'file') return
-		const force = options.force ?? false
-		const hadScheduled = this.saveScheduled || !!this.saveTimer
-		this.cancelScheduledSave()
-		if (this.saveInFlight) await this.saveInFlight.catch((): void => undefined)
-		if (hadScheduled || this.pendingSave) {
-			this.saveScheduled = false
-			this.pendingSave = false
-			await this.saveToDisk(this.file, { force }).catch((): void => undefined)
+			this.durableCommitInFlight = false
 		}
 	}
 
-	async dispose(): Promise<void> {
+	dispose(): void {
 		if (this.disposed) return
 		this.disposed = true
-		this.cancelScheduledSave()
-		await this.flush({ force: true }).catch((): void => undefined)
 	}
 
 	private assertMutable(action: string) {
+		if (this.disposed) throw new Error(`[RuntimeStateStore] ${action} is disabled after dispose.`)
 		if (!this.readonlyMode) return
 		throw new Error(`[RuntimeStateStore] ${action} is disabled in readonly mode.`)
 	}
 
-	private requestSave() {
-		if (this.mode !== 'file') return
-		if (this.disposed) return
-		if (this.batching > 0) {
-			this.pendingSave = true
-			return
-		}
-		this.scheduleSave()
+	private assertRevision(expectedRevision: number): void {
+		if (expectedRevision === this.revision) return
+		throw new RuntimeStateRevisionConflictError(expectedRevision, this.revision)
 	}
 
-	private scheduleSave() {
-		if (this.disposed) return
-		this.saveScheduled = true
-		if (this.saveTimer) return
-		this.saveTimer = setTimeout(() => {
-			this.saveTimer = null
-			if (!this.saveScheduled) return
-			this.saveScheduled = false
-			void this.saveToDisk(this.file).catch((error: unknown) => {
-				this.ctx.logger.error('RuntimeStateStore background save failed', { error })
-			})
-		}, this.saveDelayMs)
-	}
-
-	private cancelScheduledSave() {
-		this.saveScheduled = false
-		if (this.saveTimer) {
-			clearTimeout(this.saveTimer)
-			this.saveTimer = null
-		}
+	private refreshSnapshotCache(snapshot = freezeTrustedRuntimeStateSnapshot(this.data)): void {
+		this.snapshotCache = snapshot
+		this.versionedSnapshotCache = Object.freeze({
+			revision: this.revision,
+			state: this.snapshotCache,
+		})
 	}
 
 	private async loadFromDisk(file: string) {
@@ -198,67 +187,42 @@ export class RuntimeStateStore {
 		if (primary !== undefined) {
 			txt = primary
 		} else {
-			await this.saveToDisk(file)
+			if (!this.readonlyMode) await this.persistDraft(file, this.data)
 			return
 		}
-
-		const txtDigest = ohash(txt)
-		if (txtDigest === this.pendingWriteDigest || txtDigest === this.lastWrittenDigest) return
 
 		let parsed: unknown
 		try {
 			parsed = SuperJSON.parse(txt)
 		} catch (error) {
+			if (this.readonlyMode) {
+				throw new Error('[RuntimeStateStore] Persisted readonly state is malformed.', {
+					cause: error,
+				})
+			}
 			this.ctx.logger.warn('RuntimeStateStore parse failed; isolating broken state', {
 				file,
 				error,
 			})
 			await this.isolateBrokenStateFile(file, txt)
 			replaceDraft(this.data, createDefaultDraft())
-			await this.saveToDisk(file)
+			this.revision++
+			this.refreshSnapshotCache()
+			await this.persistDraft(file, this.data)
 			return
 		}
 
 		replaceDraft(this.data, coerceRuntimeStateFile(parsed))
+		this.revision++
+		this.refreshSnapshotCache()
 	}
 
-	private async saveToDisk(file: string, options: { force?: boolean } = {}): Promise<void> {
-		const force = options.force ?? false
-		if (!force && this.batching > 0) return
-
-		if (this.saveInFlight) {
-			this.saveAgain = true
-			await this.saveInFlight.catch((): void => undefined)
-			if (this.saveAgain) {
-				this.saveAgain = false
-				await this.saveToDisk(file, options)
-			}
-			return
-		}
-
-		const content = SuperJSON.stringify(toRuntimeStateFile(this.data))
-		const nextDigest = ohash(content)
-		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(file))) return
-
-		this.pendingWriteDigest = nextDigest
-		const task = this.storage
-			.put(file, content)
-			.then((): undefined => {
-				this.lastWrittenDigest = nextDigest
-				return undefined
-			})
-			.finally(() => {
-				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined
-			})
-		this.saveInFlight = task.finally(() => {
-			this.saveInFlight = null
-		})
-		await this.saveInFlight
-
-		if (this.saveAgain) {
-			this.saveAgain = false
-			await this.saveToDisk(file, options)
-		}
+	private async persistDraft(
+		file: string,
+		draft: RuntimeStateDraft | RuntimeStateSnapshot,
+	): Promise<void> {
+		const content = SuperJSON.stringify(toRuntimeStateFile(draft))
+		await this.storage.put(file, content)
 	}
 
 	private async isolateBrokenStateFile(file: string, content: string) {
@@ -278,204 +242,399 @@ export class RuntimeStateStore {
 
 function createDefaultDraft(): RuntimeStateDraft {
 	return {
-		enabled: new Set(),
-		forks: Object.create(null),
-		baseProviders: Object.create(null),
-		dependencyOverrides: Object.create(null),
-		optionalKnown: Object.create(null),
-		pluginGroups: [],
+		autoStart: [],
+		forks: [],
+		providerDefaults: [],
+		dependencyOverrides: [],
 	}
 }
 
-function replaceDraft(target: RuntimeStateDraft, source: RuntimeStateDraft): void {
-	target.enabled.clear()
-	for (const name of source.enabled) target.enabled.add(name)
-	replaceRecord(target.forks, source.forks)
-	replaceRecord(target.baseProviders, source.baseProviders)
-	replaceRecord(target.dependencyOverrides, source.dependencyOverrides)
-	replaceRecord(target.optionalKnown, source.optionalKnown)
-	target.pluginGroups = source.pluginGroups.map(clonePluginGroup)
+function cloneSnapshot(snapshot: RuntimeStateSnapshot): RuntimeStateDraft {
+	return {
+		autoStart: snapshot.autoStart.map(cloneNodeAddress),
+		forks: snapshot.forks.map(cloneForkState),
+		providerDefaults: snapshot.providerDefaults.map(cloneProviderDefault),
+		dependencyOverrides: snapshot.dependencyOverrides.map(cloneDependencyOverride),
+	}
+}
+
+function normalizeDraft(draft: RuntimeStateDraft): RuntimeStateDraft {
+	return {
+		autoStart: parseUniqueNodes(draft.autoStart, 'autoStart'),
+		forks: parseForks(draft.forks, 'forks'),
+		providerDefaults: parseProviderDefaults(draft.providerDefaults, 'providerDefaults'),
+		dependencyOverrides: parseDependencyOverrides(draft.dependencyOverrides, 'dependencyOverrides'),
+	}
+}
+
+const canonicalSnapshots = new WeakSet<RuntimeStateSnapshot>()
+
+/** @internal Validates, sorts, clones, and deep-freezes one canonical revision snapshot. */
+export function canonicalRuntimeStateSnapshot(state: RuntimeStateSnapshot): RuntimeStateSnapshot {
+	if (canonicalSnapshots.has(state)) return state
+	return freezeTrustedRuntimeStateSnapshot(normalizeDraft(cloneSnapshot(state)))
+}
+
+function replaceDraft(
+	target: RuntimeStateDraft,
+	source: RuntimeStateDraft | RuntimeStateSnapshot,
+): void {
+	target.autoStart = source.autoStart.map(cloneNodeAddress)
+	target.forks = source.forks.map(cloneForkState)
+	target.providerDefaults = source.providerDefaults.map(cloneProviderDefault)
+	target.dependencyOverrides = source.dependencyOverrides.map(cloneDependencyOverride)
 }
 
 function applySnapshot(
 	draft: RuntimeStateDraft,
-	snapshot: Partial<RuntimeStateSnapshot> & { enabled?: Iterable<string> | string[] },
+	snapshot: NonNullable<RuntimeStateStoreConfig['snapshot']>,
 ): void {
-	if (snapshot.enabled) {
-		draft.enabled.clear()
-		for (const name of snapshot.enabled) {
-			if (typeof name === 'string' && name) draft.enabled.add(name)
-		}
+	assertClosedRecord(
+		snapshot,
+		['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
+		'runtimeState.snapshot',
+		false,
+	)
+	if (snapshot.autoStart) {
+		draft.autoStart = parseUniqueNodes([...snapshot.autoStart], 'runtimeState.snapshot.autoStart')
 	}
-	if (snapshot.forks) replaceRecord(draft.forks, coerceForks(snapshot.forks))
-	if (snapshot.baseProviders)
-		replaceRecord(draft.baseProviders, coerceStringRecord(snapshot.baseProviders))
+	if (snapshot.forks) draft.forks = parseForks(snapshot.forks, 'runtimeState.snapshot.forks')
+	if (snapshot.providerDefaults) {
+		draft.providerDefaults = parseProviderDefaults(
+			snapshot.providerDefaults,
+			'runtimeState.snapshot.providerDefaults',
+		)
+	}
 	if (snapshot.dependencyOverrides) {
-		replaceRecord(draft.dependencyOverrides, coerceDepOverrides(snapshot.dependencyOverrides))
+		draft.dependencyOverrides = parseDependencyOverrides(
+			snapshot.dependencyOverrides,
+			'runtimeState.snapshot.dependencyOverrides',
+		)
 	}
-	if (snapshot.optionalKnown)
-		replaceRecord(draft.optionalKnown, coerceKnownRecord(snapshot.optionalKnown))
-	if (snapshot.pluginGroups) draft.pluginGroups = coercePluginGroups(snapshot.pluginGroups)
 }
 
-function freezeSnapshot(draft: RuntimeStateDraft): RuntimeStateSnapshot {
-	return Object.freeze({
-		enabled: Object.freeze([...draft.enabled]),
-		forks: freezeRecordOfArrays(draft.forks),
-		baseProviders: Object.freeze({ ...draft.baseProviders }),
-		dependencyOverrides: freezeNestedRecord(draft.dependencyOverrides),
-		optionalKnown: Object.freeze({ ...draft.optionalKnown }),
-		pluginGroups: Object.freeze(draft.pluginGroups.map(clonePluginGroup)),
+/** @internal Deep-freezes already-admitted state and imposes canonical serialization order. */
+export function freezeTrustedRuntimeStateSnapshot(
+	draft: RuntimeStateDraft | RuntimeStateSnapshot,
+): RuntimeStateSnapshot {
+	const snapshot: RuntimeStateSnapshot = Object.freeze({
+		autoStart: Object.freeze(sortByKey(draft.autoStart.map(freezeNodeAddress), pluginNodeIndexKey)),
+		forks: Object.freeze(
+			sortByKey(
+				draft.forks.map((entry) =>
+					Object.freeze({
+						definition: freezeDefinitionAddress(entry.definition),
+						forkIds: Object.freeze([...entry.forkIds].sort()),
+					}),
+				),
+				(entry) => pluginDefinitionIndexKey(entry.definition),
+			),
+		),
+		providerDefaults: Object.freeze(
+			sortByKey(
+				draft.providerDefaults.map((entry) =>
+					Object.freeze({
+						token: freezeDefinitionAddress(entry.token),
+						provider: freezeNodeAddress(entry.provider),
+					}),
+				),
+				(entry) => pluginDefinitionIndexKey(entry.token),
+			),
+		),
+		dependencyOverrides: Object.freeze(
+			sortByKey(
+				draft.dependencyOverrides.map((entry) =>
+					Object.freeze({
+						consumerAddress: freezeNodeAddress(entry.consumerAddress),
+						requirementAddress: freezeDefinitionAddress(entry.requirementAddress),
+						providerAddress: freezeNodeAddress(entry.providerAddress),
+					}),
+				),
+				(entry) => overrideIndexKey(entry.consumerAddress, entry.requirementAddress),
+			),
+		),
 	})
+	canonicalSnapshots.add(snapshot)
+	return snapshot
 }
 
-function toRuntimeStateFile(draft: RuntimeStateDraft): RuntimeStateFile {
+function overrideIndexKey(
+	consumer: PluginNodeAddress,
+	requirement: PluginDefinitionAddress,
+): string {
+	return `${pluginNodeIndexKey(consumer)}:${pluginDefinitionIndexKey(requirement)}`
+}
+
+function sortByKey<T>(values: T[], keyOf: (value: T) => string): T[] {
+	return values
+		.map((value, order) => ({ value, key: keyOf(value), order }))
+		.sort((left, right) => left.key.localeCompare(right.key) || left.order - right.order)
+		.map(({ value }) => value)
+}
+
+function toRuntimeStateFile(draft: RuntimeStateDraft | RuntimeStateSnapshot): RuntimeStateFile {
 	return {
-		version: 2,
-		enabled: [...draft.enabled],
-		forks: cloneRecordOfArrays(draft.forks),
-		baseProviders: { ...draft.baseProviders },
-		dependencyOverrides: cloneNestedRecord(draft.dependencyOverrides),
-		optionalKnown: { ...draft.optionalKnown },
-		pluginGroups: draft.pluginGroups.map(clonePluginGroup),
+		version: 5,
+		autoStart: draft.autoStart.map(cloneNodeAddress),
+		forks: draft.forks.map(cloneForkState),
+		providerDefaults: draft.providerDefaults.map(cloneProviderDefault),
+		dependencyOverrides: draft.dependencyOverrides.map(cloneDependencyOverride),
 	}
 }
 
 function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
-	const out = createDefaultDraft()
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	const raw = input as Omit<Partial<RuntimeStateFile>, 'version'> & {
-		version?: unknown
-		/** Runtime-state v1 field intentionally discarded during migration. */
-		builtinsKnown?: unknown
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw invalidState('persisted state must be an object')
 	}
-	if (raw.version !== 1 && raw.version !== 2) {
-		throw new Error(
-			`[RuntimeStateStore] Unsupported persisted state version: ${String(raw.version)}`,
+	const raw = input as Record<string, unknown>
+	if (raw.version !== 5) {
+		throw invalidState(`unsupported persisted state version: ${String(raw.version)}`)
+	}
+	assertClosedRecord(
+		raw,
+		['version', 'autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
+		'persisted state',
+	)
+	if (!Array.isArray(raw.autoStart)) throw invalidState('autoStart must be an array')
+	if (!Array.isArray(raw.forks)) throw invalidState('forks must be an array')
+	if (!Array.isArray(raw.providerDefaults)) {
+		throw invalidState('providerDefaults must be an array')
+	}
+	if (!Array.isArray(raw.dependencyOverrides)) {
+		throw invalidState('dependencyOverrides must be an array')
+	}
+	return {
+		autoStart: parseUniqueNodes(raw.autoStart, 'autoStart'),
+		forks: parseForks(raw.forks, 'forks'),
+		providerDefaults: parseProviderDefaults(raw.providerDefaults, 'providerDefaults'),
+		dependencyOverrides: parseDependencyOverrides(raw.dependencyOverrides, 'dependencyOverrides'),
+	}
+}
+
+function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddress[] {
+	const out: PluginNodeAddress[] = []
+	const seen = new Set<string>()
+	for (let i = 0; i < input.length; i++) {
+		const node = parseNode(input[i], `${at}[${i}]`)
+		const key = pluginNodeIndexKey(node)
+		if (seen.has(key)) {
+			throw invalidState(`${at}[${i}] duplicates an earlier node`)
+		}
+		seen.add(key)
+		out.push(node)
+	}
+	return out.sort((left, right) =>
+		pluginNodeIndexKey(left).localeCompare(pluginNodeIndexKey(right)),
+	)
+}
+
+function parseForks(input: readonly unknown[], at: string): RuntimeForkState[] {
+	const out: RuntimeForkState[] = []
+	const seen = new Set<string>()
+	for (let i = 0; i < input.length; i++) {
+		const raw = closedRecord(input[i], `${at}[${i}]`, ['definition', 'forkIds'])
+		const definition = parseDefinition(raw.definition, `${at}[${i}].definition`)
+		if (!Array.isArray(raw.forkIds)) throw invalidState(`${at}[${i}].forkIds must be an array`)
+		const forkIds = raw.forkIds.map((value, index) =>
+			parseForkId(value, definition, `${at}[${i}].forkIds[${index}]`),
 		)
-	}
-	if (Array.isArray(raw.enabled)) {
-		for (const name of raw.enabled) {
-			if (typeof name === 'string' && name) out.enabled.add(name)
+		if (new Set(forkIds).size !== forkIds.length) {
+			throw invalidState(`${at}[${i}].forkIds contains duplicates`)
 		}
-	}
-	if (raw.forks) replaceRecord(out.forks, coerceForks(raw.forks))
-	if (raw.baseProviders) replaceRecord(out.baseProviders, coerceStringRecord(raw.baseProviders))
-	if (raw.dependencyOverrides) {
-		replaceRecord(out.dependencyOverrides, coerceDepOverrides(raw.dependencyOverrides))
-	}
-	if (raw.optionalKnown) replaceRecord(out.optionalKnown, coerceKnownRecord(raw.optionalKnown))
-	if (raw.pluginGroups) out.pluginGroups = coercePluginGroups(raw.pluginGroups)
-	return out
-}
-
-function replaceRecord<T>(target: Record<string, T>, source: Record<string, T>): void {
-	for (const key in target) delete target[key]
-	Object.assign(target, source)
-}
-
-function coerceForks(input: unknown): Record<string, string[]> {
-	const out: Record<string, string[]> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-		if (!Array.isArray(value)) continue
-		const items = value.filter((item): item is string => typeof item === 'string' && !!item)
-		if (items.length > 0) out[key] = items
-	}
-	return out
-}
-
-function coerceStringRecord(input: unknown): Record<string, string> {
-	const out: Record<string, string> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-		if (typeof value === 'string' && value) out[key] = value
-	}
-	return out
-}
-
-function coerceDepOverrides(input: unknown): Record<string, Record<number, string>> {
-	const out: Record<string, Record<number, string>> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [consumer, rawOverrides] of Object.entries(input as Record<string, unknown>)) {
-		if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) continue
-		const entry: Record<number, string> = Object.create(null)
-		for (const [rawIndex, target] of Object.entries(rawOverrides as Record<string, unknown>)) {
-			const index = Number(rawIndex)
-			if (!Number.isFinite(index) || index < 0) continue
-			if (typeof target === 'string' && target) entry[index] = target
+		const key = pluginDefinitionIndexKey(definition)
+		if (seen.has(key)) {
+			throw invalidState(`${at}[${i}] duplicates a definition`)
 		}
-		if (Object.keys(entry).length > 0) out[consumer] = entry
+		seen.add(key)
+		out.push({ definition, forkIds: forkIds.sort() })
 	}
-	return out
+	return out.sort((left, right) =>
+		pluginDefinitionIndexKey(left.definition).localeCompare(
+			pluginDefinitionIndexKey(right.definition),
+		),
+	)
 }
 
-function coerceKnownRecord(input: unknown): Record<string, 1> {
-	const out: Record<string, 1> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-		if (value === 1) out[key] = 1
+function parseProviderDefaults(
+	input: readonly unknown[],
+	at: string,
+): RuntimeProviderDefaultState[] {
+	const out: RuntimeProviderDefaultState[] = []
+	const seen = new Set<string>()
+	for (let i = 0; i < input.length; i++) {
+		const raw = closedRecord(input[i], `${at}[${i}]`, ['token', 'provider'])
+		const token = parseDefinition(raw.token, `${at}[${i}].token`)
+		const provider = parseNode(raw.provider, `${at}[${i}].provider`)
+		const key = pluginDefinitionIndexKey(token)
+		if (seen.has(key)) {
+			throw invalidState(`${at}[${i}] duplicates a provider token`)
+		}
+		seen.add(key)
+		out.push({ token, provider })
 	}
-	return out
+	return out.sort((left, right) =>
+		pluginDefinitionIndexKey(left.token).localeCompare(pluginDefinitionIndexKey(right.token)),
+	)
 }
 
-function coercePluginGroups(input: unknown): PluginGroupState[] {
-	if (!Array.isArray(input)) return []
-	return input.flatMap((item): PluginGroupState[] => {
-		if (!item || typeof item !== 'object' || Array.isArray(item)) return []
-		const raw = item as Record<string, unknown>
-		if (typeof raw.groupId !== 'string' || typeof raw.name !== 'string') return []
-		if (!Array.isArray(raw.pluginIds)) return []
-		return [
-			{
-				groupId: raw.groupId,
-				name: raw.name,
-				pluginIds: raw.pluginIds.filter((id): id is string => typeof id === 'string'),
-			},
-		]
+function parseDependencyOverrides(
+	input: readonly unknown[],
+	at: string,
+): RuntimeDependencyOverrideState[] {
+	const out: RuntimeDependencyOverrideState[] = []
+	const seen = new Set<string>()
+	for (let i = 0; i < input.length; i++) {
+		const raw = closedRecord(input[i], `${at}[${i}]`, [
+			'consumerAddress',
+			'requirementAddress',
+			'providerAddress',
+		])
+		const consumerAddress = parseNode(raw.consumerAddress, `${at}[${i}].consumerAddress`)
+		const requirementAddress = parseDefinition(
+			raw.requirementAddress,
+			`${at}[${i}].requirementAddress`,
+		)
+		const providerAddress = parseNode(raw.providerAddress, `${at}[${i}].providerAddress`)
+		const key = `${pluginNodeIndexKey(consumerAddress)}:${pluginDefinitionIndexKey(requirementAddress)}`
+		if (seen.has(key)) {
+			throw invalidState(`${at}[${i}] duplicates a consumer requirement`)
+		}
+		seen.add(key)
+		out.push({ consumerAddress, requirementAddress, providerAddress })
+	}
+	return out.sort((left, right) => {
+		const leftKey = `${pluginNodeIndexKey(left.consumerAddress)}:${pluginDefinitionIndexKey(left.requirementAddress)}`
+		const rightKey = `${pluginNodeIndexKey(right.consumerAddress)}:${pluginDefinitionIndexKey(right.requirementAddress)}`
+		return leftKey.localeCompare(rightKey)
 	})
 }
 
-function clonePluginGroup(group: PluginGroupState): PluginGroupState {
-	return { groupId: group.groupId, name: group.name, pluginIds: [...group.pluginIds] }
-}
-
-function cloneRecordOfArrays(input: Record<string, readonly string[]>): Record<string, string[]> {
-	const out: Record<string, string[]> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) out[key] = [...value]
-	return out
-}
-
-function cloneNestedRecord(
-	input: Record<string, Readonly<Record<number, string>>>,
-): Record<string, Record<number, string>> {
-	const out: Record<string, Record<number, string>> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) {
-		out[key] = Object.assign(Object.create(null), value)
+function parseDefinition(value: unknown, at: string): PluginDefinitionAddress {
+	try {
+		return parsePluginDefinitionAddress(value)
+	} catch (error) {
+		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
 	}
-	return out
 }
 
-function freezeRecordOfArrays(
-	input: Record<string, readonly string[]>,
-): Readonly<Record<string, readonly string[]>> {
-	const out: Record<string, readonly string[]> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) out[key] = Object.freeze([...value])
-	return Object.freeze(out)
-}
-
-function freezeNestedRecord(
-	input: Record<string, Readonly<Record<number, string>>>,
-): Readonly<Record<string, Readonly<Record<number, string>>>> {
-	const out: Record<string, Readonly<Record<number, string>>> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) {
-		out[key] = Object.freeze(Object.assign(Object.create(null), value))
+function parseNode(value: unknown, at: string): PluginNodeAddress {
+	try {
+		return parsePluginNodeAddress(value)
+	} catch (error) {
+		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
 	}
-	return Object.freeze(out)
+}
+
+function closedRecord(
+	value: unknown,
+	at: string,
+	keys: readonly string[],
+): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw invalidState(`${at} must be an object`)
+	}
+	const record = value as Record<string, unknown>
+	assertClosedRecord(record, keys, at)
+	return record
+}
+
+function assertClosedRecord(
+	record: object,
+	keys: readonly string[],
+	at: string,
+	requireAll = true,
+): void {
+	const expected = new Set(keys)
+	for (const key of Object.keys(record)) {
+		if (!expected.has(key)) throw invalidState(`${at} has unknown field ${key}`)
+	}
+	if (!requireAll) return
+	for (const key of keys) {
+		if (!Object.hasOwn(record, key)) throw invalidState(`${at} is missing field ${key}`)
+	}
+}
+
+function parseForkId(value: unknown, definition: PluginDefinitionAddress, at: string): string {
+	try {
+		const node = parsePluginNodeAddress({ definition, variant: 'fork', forkId: value })
+		if (node.variant !== 'fork') throw new TypeError('Plugin node must be a fork')
+		return node.forkId
+	} catch (error) {
+		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
+	}
+}
+
+function invalidState(message: string): Error {
+	return new Error(`[RuntimeStateStore] ${message}`)
+}
+
+function cloneDefinitionAddress(definition: PluginDefinitionAddress): PluginDefinitionAddress {
+	return {
+		entry:
+			definition.entry.kind === 'package-root'
+				? { kind: 'package-root', packageName: definition.entry.packageName }
+				: {
+						kind: 'source-entry',
+						sourceSpace: definition.entry.sourceSpace,
+						path: definition.entry.path,
+					},
+		exportName: definition.exportName,
+	}
+}
+
+function cloneNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
+	return node.variant === 'default'
+		? { definition: cloneDefinitionAddress(node.definition), variant: 'default' }
+		: {
+				definition: cloneDefinitionAddress(node.definition),
+				variant: 'fork',
+				forkId: node.forkId,
+			}
+}
+
+function cloneForkState(entry: RuntimeForkState): RuntimeForkState {
+	return { definition: cloneDefinitionAddress(entry.definition), forkIds: [...entry.forkIds] }
+}
+
+function cloneProviderDefault(entry: RuntimeProviderDefaultState): RuntimeProviderDefaultState {
+	return {
+		token: cloneDefinitionAddress(entry.token),
+		provider: cloneNodeAddress(entry.provider),
+	}
+}
+
+function cloneDependencyOverride(
+	entry: RuntimeDependencyOverrideState,
+): RuntimeDependencyOverrideState {
+	return {
+		consumerAddress: cloneNodeAddress(entry.consumerAddress),
+		requirementAddress: cloneDefinitionAddress(entry.requirementAddress),
+		providerAddress: cloneNodeAddress(entry.providerAddress),
+	}
+}
+
+function freezeDefinitionAddress(definition: PluginDefinitionAddress): PluginDefinitionAddress {
+	const entry = Object.freeze({ ...definition.entry })
+	return Object.freeze({
+		entry,
+		exportName: definition.exportName,
+	}) as PluginDefinitionAddress
+}
+
+function freezeNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
+	return Object.freeze(
+		node.variant === 'default'
+			? { definition: freezeDefinitionAddress(node.definition), variant: 'default' as const }
+			: {
+					definition: freezeDefinitionAddress(node.definition),
+					variant: 'fork' as const,
+					forkId: node.forkId,
+				},
+	)
 }
 
 function defaultRuntimeStateStoreMode(
-	capability: PluxelContext.RootServices['persistence']['capability'],
+	capability: PluxelContext['root']['persistence']['capability'],
 ): RuntimeStateStoreMode {
 	if (capability === 'readonly') return 'readonly'
 	return 'file'

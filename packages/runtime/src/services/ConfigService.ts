@@ -1,13 +1,20 @@
-import { type Context as PluxelContext, Injectable, OverrideOf } from '@pluxel/core'
-import { ConfigService as CoreConfigService } from '@pluxel/core/services'
+import { type Context as PluxelContext, type PluginNodeAddress } from '@pluxel/core'
+import {
+	ConfigService as CoreConfigService,
+	type PluginConfigRecordSnapshot,
+} from '@pluxel/core/services'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
-import { configRecordsFromEnvironment, mergeConfigRecords } from './config-environment'
+import {
+	coercePluginConfigRecords,
+	configRecordsFromEnvironment,
+	mergeConfigRecords,
+} from './config-environment'
 
 export interface PluginConfigFile {
-	version: 1
-	plugins: Record<string, Record<string, unknown>>
+	version: 3
+	plugins: readonly PluginConfigRecordSnapshot[]
 }
 
 export type ConfigServiceMode = 'file' | 'memory' | 'readonly'
@@ -15,11 +22,11 @@ export type ConfigServiceMode = 'file' | 'memory' | 'readonly'
 export interface ConfigServiceConfig {
 	mode?: ConfigServiceMode
 	snapshot?: Partial<{
-		plugins: Record<string, Record<string, unknown>>
+		plugins: readonly PluginConfigRecordSnapshot[]
 	}>
 	/**
 	 * Host startup environment used to initialize a new config store from
-	 * `PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]` entries.
+	 * the `PLUXEL_CONFIG` structured snapshot.
 	 * Static and dynamic Node hosts provide their startup environment when this is omitted;
 	 * set `false` only when a custom host must disable environment initialization.
 	 * Existing file-backed config remains authoritative.
@@ -27,17 +34,16 @@ export interface ConfigServiceConfig {
 	environment?: false | Readonly<Record<string, string | undefined>>
 }
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Config {
-			configService?: ConfigServiceConfig
-		}
+export class ConfigMutationRejectedError extends Error {
+	public readonly code = 'config_mutation_rejected' as const
+
+	constructor(action: string) {
+		super(`[ConfigService] ${action} is disabled in readonly mode.`)
+		this.name = 'ConfigMutationRejectedError'
 	}
 }
 
 /** Persistent runtime adapter over core's single config state and validation engine. */
-@Injectable
-@OverrideOf(CoreConfigService)
 export class ConfigService extends CoreConfigService {
 	private readonly file = 'config.json'
 	private readonly saveDelayMs = 200
@@ -65,17 +71,17 @@ export class ConfigService extends CoreConfigService {
 			configRecordsFromEnvironment(cfg.environment),
 		)
 		if (Object.keys(initialPlugins).length > 0) this.replaceConfigRecords(initialPlugins)
-		if (this.mode === 'file') this.setReadyTask(this.loadFromDisk())
+		if (this.mode !== 'memory') this.setReadyTask(this.loadFromDisk())
 
 		this.ctx.effects.defer(() => this.dispose(), { tag: 'ConfigService' })
 	}
 
 	protected override assertConfigMutable(action: string): void {
 		if (!this.readonlyMode) return
-		throw new Error(`[ConfigService] ${action} is disabled in readonly mode.`)
+		throw new ConfigMutationRejectedError(action)
 	}
 
-	protected override onConfigChanged(_name: string): void {
+	protected override onConfigChanged(_owner: PluginNodeAddress): void {
 		this.requestSave()
 	}
 
@@ -110,6 +116,7 @@ export class ConfigService extends CoreConfigService {
 			if (!this.saveScheduled) return
 			this.saveScheduled = false
 			void this.saveToDisk().catch((error: unknown) => {
+				this.saveScheduled = true
 				this.ctx.logger.error('ConfigService background save failed', { error })
 			})
 		}, this.saveDelayMs)
@@ -123,39 +130,58 @@ export class ConfigService extends CoreConfigService {
 	}
 
 	/** Flush pending disk writes. Use force while disposing inside a batch. */
-	async flush(options: { force?: boolean } = {}): Promise<void> {
+	override async flush(options: { force?: boolean } = {}): Promise<void> {
 		if (this.mode !== 'file') return
-		const hadScheduled = this.saveScheduled || this.saveTimer !== null
-		this.cancelScheduledSave()
-		if (this.saveInFlight) await this.saveInFlight.catch((): void => undefined)
-		if (!hadScheduled && !this.pendingSave) return
-		this.pendingSave = false
-		await this.saveToDisk({ force: options.force }).catch((): void => undefined)
+		try {
+			const hadScheduled = this.saveScheduled || this.saveTimer !== null
+			this.cancelScheduledSave()
+			if (this.saveInFlight) await this.saveInFlight
+			if (!hadScheduled && !this.pendingSave) return
+			this.pendingSave = false
+			await this.saveToDisk({ force: options.force })
+		} catch (error) {
+			this.saveScheduled = true
+			throw error
+		}
 	}
 
 	private async loadFromDisk(): Promise<void> {
 		const text = await this.storage.getText(this.file)
 		if (text === undefined) {
-			await this.saveToDisk()
+			if (!this.readonlyMode) await this.saveToDisk()
 			return
 		}
 
 		this.lastWrittenDigest = ohash(text)
-		let parsed: Partial<PluginConfigFile>
+		let parsed: Record<string, unknown>
 		try {
-			parsed = SuperJSON.parse(text) as Partial<PluginConfigFile>
+			const value = SuperJSON.parse(text) as unknown
+			if (!value || typeof value !== 'object' || Array.isArray(value)) {
+				throw new Error('persisted config must be an object')
+			}
+			parsed = value as Record<string, unknown>
 		} catch (error) {
+			if (this.readonlyMode) {
+				throw new Error('[ConfigService] Persisted readonly config is malformed.', {
+					cause: error,
+				})
+			}
 			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', {
 				file: this.file,
 				error,
 			})
 			await this.isolateBrokenConfigFile(text)
-			this.replaceConfigRecords({})
+			this.replaceConfigRecords([])
 			await this.saveToDisk()
 			return
 		}
 
-		this.replaceConfigRecords(parsed.plugins ? coercePlugins(parsed.plugins) : {})
+		if (parsed.version !== 3) {
+			throw new Error(
+				`[ConfigService] Unsupported persisted config version: ${String(parsed.version)}`,
+			)
+		}
+		this.replaceConfigRecords(coercePluginConfigRecords(parsed.plugins))
 	}
 
 	private async isolateBrokenConfigFile(content: string): Promise<void> {
@@ -177,7 +203,7 @@ export class ConfigService extends CoreConfigService {
 
 		if (this.saveInFlight) {
 			this.saveAgain = true
-			await this.saveInFlight.catch((): void => undefined)
+			await this.saveInFlight
 			if (this.saveAgain) {
 				this.saveAgain = false
 				await this.saveToDisk(options)
@@ -186,13 +212,13 @@ export class ConfigService extends CoreConfigService {
 		}
 
 		const content = SuperJSON.stringify({
-			version: 1,
+			version: 3,
 			plugins: this.getConfigSnapshot().plugins,
 		} satisfies PluginConfigFile)
 		const nextDigest = ohash(content)
 		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(this.file))) return
 
-		const task = this.storage.put(this.file, content).then((): undefined => {
+		const task = this.storage.put(this.file, content, { atomic: true }).then((): undefined => {
 			this.lastWrittenDigest = nextDigest
 			return undefined
 		})
@@ -215,21 +241,7 @@ export class ConfigService extends CoreConfigService {
 }
 
 function defaultConfigServiceMode(
-	capability: PluxelContext.RootServices['persistence']['capability'],
+	capability: PluxelContext['root']['persistence']['capability'],
 ): ConfigServiceMode {
 	return capability === 'readonly' ? 'readonly' : 'file'
-}
-
-function coercePlugins(input: Record<string, unknown>): Record<string, Record<string, unknown>> {
-	const out: Record<string, Record<string, unknown>> = Object.create(null)
-	for (const [name, raw] of Object.entries(input)) {
-		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-		const maybe = raw as Record<string, unknown>
-		const record = maybe.configRecord
-		out[name] = Object.assign(
-			Object.create(null),
-			record && typeof record === 'object' && !Array.isArray(record) ? record : raw,
-		)
-	}
-	return out
 }

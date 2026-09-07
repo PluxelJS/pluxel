@@ -15,7 +15,11 @@ import {
 	type LoggerConfig,
 	type Sink,
 } from '@logtape/logtape'
-import { pluxelCategoryFamilies, type LoggerServiceConfig } from '@pluxel/core/logger'
+import {
+	pluxelCategoryFamilies,
+	readPluginLogIdentity,
+	type LoggerServiceConfig,
+} from '@pluxel/core/logger'
 import type { Context } from '@pluxel/core'
 import { dirname } from 'pathe'
 import { createDailyTimeRotatingFileSink } from './file'
@@ -30,8 +34,10 @@ import { createRuntimeLogSink, type RuntimeLogSinkOptions } from './sink'
 import { RuntimeLogStoreRegistry } from './store'
 import { captureCaller } from './host'
 import { createRuntimePrettyConsoleSink } from './pretty'
+import { assertRuntimeLoggingInput } from '../context/runtime-config-validation'
 
 const ACTIVE_RUNTIME_LOGGING = Symbol.for('pluxel:runtime:active-logging')
+const CONTEXT_RUNTIME_LOGGING = new WeakMap<object, RuntimeLogging>()
 const MAX_DEBUG_PATTERNS = 256
 const MAX_DIAGNOSTIC_COUNT = Number.MAX_SAFE_INTEGER
 
@@ -142,6 +148,8 @@ export type RuntimeLogging = {
 	initializePolicy(store?: PluginLogPolicyStore): Promise<void>
 	describe(): RuntimeLoggingDescription
 	flush(): Promise<void>
+	/** Flush buffered store records without waiting for unrelated policy persistence. */
+	flushStores(): void
 	dispose(): Promise<void>
 }
 
@@ -338,6 +346,7 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 	public readonly policy: RuntimePluginLogPolicy
 	private readonly input: RuntimeLoggingInput
 	private readonly debugMatcher: DebugMatcher
+	private readonly storeFlushers: Array<() => void> = []
 	private storesValue: RuntimeLogStoreRegistry | undefined
 	private installPromise: Promise<void> | undefined
 	private initializePromise: Promise<void> | undefined
@@ -415,7 +424,12 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 		}
 	}
 
+	flushStores(): void {
+		for (const flush of this.storeFlushers) flush()
+	}
+
 	async flush(): Promise<void> {
+		this.flushStores()
 		await this.policy.flush()
 	}
 
@@ -473,6 +487,8 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 						: input.kind === 'store'
 							? createRuntimeLogSink({ ...input, registry: this.stores })
 							: input.sink
+			if (input.kind === 'store')
+				this.storeFlushers.push((physical as ReturnType<typeof createRuntimeLogSink>).flush)
 			compiled.set(id, { input, physical })
 			sinks[`resource:${id}`] = physical
 		}
@@ -539,15 +555,16 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 
 	private allowsPluginRecord(record: LogRecord): boolean {
 		const category = record.category
-		if (category.length !== 4 || category[0] !== 'pluxel' || category[1] !== 'plugins') {
+		const identity = readPluginLogIdentity(category)
+		if (!identity || category[1] !== 'plugins' || identity.topicOffset !== category.length) {
 			this.incrementMalformed()
 			return false
 		}
-		if (category[2] !== this.resolved.root.id) {
+		if (identity.rootId !== this.resolved.root.id) {
 			this.incrementWrongRoot()
 			return false
 		}
-		return this.policy.allows(category[3]!, record.level)
+		return this.policy.allows(identity.node, record.level)
 	}
 
 	private allowsDebugRecord(record: LogRecord): boolean {
@@ -562,13 +579,14 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 		}
 		const origin = category[3]
 		if (origin === 'runtime') return matchesDebugTopic(this.debugMatcher, category, 4)
-		if (origin !== 'plugin' || category.length < 6) {
+		const identity = readPluginLogIdentity(category)
+		if (origin !== 'plugin' || !identity || identity.topicOffset >= category.length) {
 			this.incrementMalformed()
 			return false
 		}
 		return (
-			this.policy.allows(category[4]!, record.level) &&
-			matchesDebugTopic(this.debugMatcher, category, 5)
+			this.policy.allows(identity.node, record.level) &&
+			matchesDebugTopic(this.debugMatcher, category, identity.topicOffset)
 		)
 	}
 
@@ -637,6 +655,7 @@ function findAddedProcessExitListeners(
 }
 
 export function createRuntimeLogging(input: RuntimeLoggingInput): RuntimeLogging {
+	assertRuntimeLoggingInput(input)
 	return new RuntimeLoggingImpl(input)
 }
 
@@ -650,10 +669,34 @@ export function requireActiveRuntimeLogging(): RuntimeLogging {
 	return logging
 }
 
+/** @internal Bind one immutable root identity to its launcher-owned logging manager. */
+export function bindContextRuntimeLogging(ctx: Context, logging: RuntimeLogging): () => void {
+	const root = ctx.root
+	const active = getActiveRuntimeLogging()
+	if (active !== logging) {
+		throw new Error('Cannot bind Context to a RuntimeLogging manager that is not active')
+	}
+	const previous = CONTEXT_RUNTIME_LOGGING.get(root)
+	if (previous && previous !== logging) {
+		throw new Error('Context root is already bound to a different RuntimeLogging manager')
+	}
+	CONTEXT_RUNTIME_LOGGING.set(root, logging)
+	let bound = true
+	return () => {
+		if (!bound) return
+		bound = false
+		if (CONTEXT_RUNTIME_LOGGING.get(root) === logging) CONTEXT_RUNTIME_LOGGING.delete(root)
+	}
+}
+
+export function getContextRuntimeLogging(ctx: Context): RuntimeLogging | undefined {
+	const logging = CONTEXT_RUNTIME_LOGGING.get(ctx.root)
+	return logging && logging === getActiveRuntimeLogging() ? logging : undefined
+}
+
 export function requireContextRuntimeLogging(ctx: Context): RuntimeLogging {
-	const logging = requireActiveRuntimeLogging()
-	const rootId = (ctx.root.config.logger as LoggerServiceConfig | undefined)?.rootId
-	if (rootId !== logging.resolved.root.id) {
+	const logging = getContextRuntimeLogging(ctx)
+	if (!logging) {
 		throw new Error('Context is not bound to the active RuntimeLogging root')
 	}
 	return logging

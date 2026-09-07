@@ -1,16 +1,18 @@
 name: Release
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
+  pull-requests: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 defaults:
@@ -23,25 +25,71 @@ env:
 
 jobs:
   publish:
-    name: Publish
+    name: Version or publish
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
           submodules: recursive
 
+      - name: Verify release commit
+        id: release-commit
+        run: |
+          git fetch --no-tags origin main
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "The successful CI run is no longer the current main commit; a newer run will release."
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install toolchain
-        uses: jdx/mise-action@v4
+        if: steps.release-commit.outputs.current == 'true'
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
           cache: true
           install: true
 
+      - name: Resolve pnpm store
+        if: steps.release-commit.outputs.current == 'true'
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store
+        if: steps.release-commit.outputs.current == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ runner.os }}-pnpm-files-v3-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-files-v3-
+
+      - name: Restore verified build cache
+        if: steps.release-commit.outputs.current == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.workflow_run.head_sha }}-release
+          restore-keys: |
+            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.workflow_run.head_sha }}-
+            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-
+
       - name: Install dependencies
+        if: steps.release-commit.outputs.current == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Verify, smoke test, and publish changed packages
-        run: pnpm run release:publish
+      - name: Version or publish packages
+        if: steps.release-commit.outputs.current == 'true'
+        run: pnpm tegami ci
         env:
-          NPM_CONFIG_PROVENANCE: 'true'
+          GITHUB_TOKEN: ${{ github.token }}
+          NPM_CONFIG_PROVENANCE: ${{ github.event.repository.private && 'false' || 'true' }}

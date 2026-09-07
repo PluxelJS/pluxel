@@ -1,15 +1,16 @@
 # @pluxel/echarts
 
-`@pluxel/echarts` uses Apache ECharts 6 and `@pluxel/canvas` to render charts on the server. Normal
+`@pluxel/echarts` uses Apache ECharts 6 and `@pluxel/canvas` to render charts on the server. All
 renders run through Pluxel's root-owned shared worker pool, so layout, text measurement, ZRender flush
-and native encoding do not block the main event loop. Canvas owns resource limits; Fonts supplies the
-managed registry, provider-wide default family, and Fonts Selection Port.
+and native encoding do not occupy the main event loop. The host still performs a cooperative option-budget
+walk and bounded worker transport serialization. Canvas owns resource limits; Fonts supplies the
+managed registry, provider-wide default family, and provider-owned Fonts selection Attachment.
 
 ```ts
 import { EChartsPlugin } from '@pluxel/echarts'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'ReportsPlugin' })
+@Plugin()
 export class ReportsPlugin extends BasePlugin {
 	constructor(private readonly charts: EChartsPlugin) {
 		super()
@@ -30,12 +31,16 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-The host catalog contains `[FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlugin]`. `render()`
-defaults to `execution: 'worker'` and uses the host-wide `ctx.workers` thread/queue budget. The worker
+The host catalog contains `[FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlugin]`. `render()` is
+worker-only and uses the host-wide `ctx.workers` thread/queue budget. The worker
 reconstructs the bounded `@pluxel/canvas/worker` adapter from `canvas.workerSnapshot`, initializes
 ECharts in SSR mode, waits for tracked images, flushes, encodes, and disposes the instance in
-`finally`. ECharts does not initialize another CanvasPlugin or directly depend on the native binding.
-The worker rewrites only its private structured-cloned option graph; caller input is unchanged. PNG
+`finally`. It then closes the caller-owned Canvas adapter, which cancels queued image work and waits
+already-submitted native decodes before the handler releases its Worker. ECharts does not initialize
+another CanvasPlugin or directly depend on the native binding.
+The option graph is borrowed without mutation until the render settles. Bytes/value/depth budgets
+run only after shared fair admission, so queue rejection does not first walk the graph; they bound
+dispatch serialization, including cooperative chunks for one large string, and the worker rewrites only its private transport clone. PNG
 is the default; JPEG/WebP and DPR are explicit options.
 
 ## Themes and fonts
@@ -56,26 +61,36 @@ theme.dispose() // optional; caller stop also removes it
 Named themes are JSON values stored in a caller-owned Pluxel registry. They are deliberately not
 written to ECharts' process-global `registerTheme()` table, which has no unregister API. Different
 callers may reuse the same local name, and caller stop/replacement deactivates its registrations.
-Inline theme objects and ECharts' built-in `default`/`dark` names are also accepted.
+Inline theme objects and ECharts' built-in `default`/`dark` names are also accepted. Theme bytes,
+value count and nesting depth are bounded before the JSON snapshot is retained. Named registrations
+also share provider-wide retained count/byte ceilings; dispose and caller stop return that capacity.
 
 When neither the option nor theme explicitly supplies `textStyle.fontFamily`, each render injects
-the current `FontsPlugin.defaultFont.cssFamily`. Therefore Fonts Workbench changes affect subsequent
-renders without rewriting registered themes. The ECharts plugin detail mounts a selector-only Fonts
-Port supplied by FontsPlugin; the canonical FontsPlugin page alone uploads and removes fonts. The
+the current `FontsPlugin.defaultFont.cssFamily`. Therefore provider preference changes affect subsequent
+renders without rewriting registered themes. The ECharts plugin detail places the provider-owned Fonts
+selection Attachment; the canonical FontsPlugin page alone uploads and removes fonts. The
 single managed collection remains server-process-only and survives Canvas/ECharts consumer stops.
 
 ## Images and outbound policy
 
 Data URL image strings in plain `image` fields and `image://data:` values are replaced with short
 render-local keys before they reach ZRender, decoded through the Canvas worker adapter, and subject
-to both ECharts and Canvas byte/dimension budgets. Ordinary text beginning with `data:` is left untouched.
-A native Image or formatter function cannot cross the structured-clone worker boundary. Callers that
-need those ECharts escape hatches must explicitly set `execution: 'inline'`; this compatibility mode
-can block the event loop and still uses CanvasPlugin budgets.
+to per-source bytes, distinct-source count, aggregate source bytes, aggregate decoded pixels, and Canvas
+byte/dimension budgets. The trusted placeholder is decoded in place once; a source is not decoded into a
+temporary Image and then decoded again through `src`. Ordinary text beginning with `data:` is left untouched.
+A render-local failure aborts the other image tasks and suppresses late callbacks. Canvas worker decode
+admission defaults to one per adapter, while the Runtime worker pool supplies outer parallelism; the two
+limits are local admission rather than ownership of the process-wide libuv pool.
+A native Image, formatter function, accessor, class instance or shared mutable buffer cannot cross the
+declarative worker boundary and is rejected without an inline fallback.
+
+Encoded raster bytes are checked against `maxOutputBytes` inside the worker before result transport;
+the ceiling limits returned data but cannot undo encoder work already completed.
 
 HTTP(S) URLs and server file paths are rejected. Fetch bytes first through an outbound HTTP
-capability, call `CanvasPlugin.decodeImage()`, and use that Image in the option. This keeps redirect,
-authentication, proxy, retry, origin, and cancellation policy outside a drawing library.
+capability, enforce its download budget, and encode a bounded data URL for the declarative option.
+Native Canvas/Image objects cannot cross this worker-only boundary. This keeps redirect, authentication,
+proxy, retry, origin, and cancellation policy outside a drawing library.
 
 See [`DESIGN.md`](DESIGN.md) for global-state and concurrency invariants and
-[`user-docs/echarts.md`](../../user-docs/echarts.md) for the full author path.
+[`docs/plugins/rendering/echarts.md`](../../../docs/plugins/rendering/echarts.md) for the full author path.

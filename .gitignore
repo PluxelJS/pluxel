@@ -203,9 +203,13 @@ web_modules/
 # Module Federation Vite temporary directories
 **/.__mf__temp/
 **/node_modules/__mf__virtual/
+**/.mf/
 
 # Next.js build output
 .next
+projects/docs/.source
+projects/docs/public/playground-types.json
+projects/docs/public/playground-types/
 out
 
 # Nuxt.js build / generate output
@@ -286,6 +290,8 @@ dist
 .env.test.local
 .env.production.Local
 .turbo
+.vitest/
+.vercel/
 .tmp
 tmp
 .bench-results/
@@ -311,6 +317,3 @@ packages/*/data/
 
 # Temporary type probes (elysia typing checks)
 **/.tmp-elysia-typing-check.ts
-
-# tsdown/rolldown-plugin-dts intermediate outputs
-packages/runtime/packages/

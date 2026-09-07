@@ -1,0 +1,16 @@
+{
+	"title": "Pluxel 用户文档",
+	"pages": [
+		"index",
+		"why-pluxel",
+		"---开始使用---",
+		"getting-started",
+		"---功能指南---",
+		"runtime",
+		"workbench",
+		"plugins",
+		"---工程与参考---",
+		"development",
+		"reference"
+	]
+}

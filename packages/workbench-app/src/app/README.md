@@ -5,21 +5,19 @@ This folder contains the Pluxel runtime UI application shell.
 ## Major Areas
 
 - `router/`
-  Route creation, route helpers, route-level screens, and file-route entries.
+  Route creation, link adaptation, recoverable route error boundaries, and thin file-route entries.
 - `workbench/`
-  Global shell chrome, panel layout state, tab state, and workbench navigation behavior.
+  Workspace state and layout; `shell/` owns chrome, document rendering, editor groups, and persistence.
 - `plugins/`
   Plugin list, organizer, detail workbench, and config UI.
-- `packages/`
-  Package workbench screen and package-specific UI helpers.
+- `plugin-graph/`, `home/`, `security/`, `log_viewer/`
+  Host-owned screens and their domain-local models. Package management belongs to its Plugin, not this Shell.
 - `frames/`
   App-wide providers and standalone shell wrappers.
 - `notifications/`
   Notification bridge and provider wiring.
 - `hooks/`
   App-level hooks only. Keep domain-specific hooks in their domain folder.
-- `gqlens/`
-  Generated GQLens accessors, type bindings, and runtime fetcher wiring.
 - `bootstrap.ts`
   Global runtime bootstrap for schema vendors and app startup side effects.
 
@@ -40,8 +38,11 @@ This folder contains the Pluxel runtime UI application shell.
 5. Public barrels are intentional; internal detours are not.
    Keep a barrel only for real package exports. Avoid internal `index.ts` files that only forward one file for one caller.
 
-6. Keep server state in GQLens.
-   Domain hooks may derive renderable projections from a shared GQLens session, but must not mirror GraphQL data into another writable store. Keep local optimistic drafts local and invalidate the owning GQLens selection after a successful write. RPC-only data stays in a domain resource only when it has multiple consumers; do not add global topic-based invalidation or non-reactive TTL caches.
+6. Keep server state behind the public management client.
+   Domain hooks may retain the last immutable snapshot while a refresh is in flight, but must not mirror it into another writable global store. Keep local optimistic drafts local and refresh the owning management domain after a successful write.
+
+7. Scope failures and state to their owners.
+   Each workspace document has its own route error boundary. Path changes reset errors, not the Shell. Persist only sanitized workspace UI state, coalesce writes, and flush pending changes on page hide or teardown.
 
 ## LLM Edit Protocol
 

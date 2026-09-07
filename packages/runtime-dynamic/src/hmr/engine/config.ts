@@ -1,8 +1,15 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
+import react from '@vitejs/plugin-react'
 import { dirname, resolve } from 'pathe'
-import { type InlineConfig, normalizePath, type Plugin, searchForWorkspaceRoot } from 'vite'
+import {
+	type InlineConfig,
+	normalizePath,
+	type Plugin,
+	type PluginOption,
+	searchForWorkspaceRoot,
+} from 'vite'
 import {
 	PLUXEL_CONDITION_HMR,
 	PLUXEL_CONDITION_SOURCE,
@@ -13,8 +20,14 @@ import {
 	resolveModulePath,
 	toBasePackage,
 } from '@pluxel/runtime/internal'
+import { env } from '@pluxel/runtime/environment'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
-import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watch'
+import {
+	DEFAULT_VITE_WATCH_IGNORED,
+	GENERATED_STATE_VITE_WATCH_IGNORED,
+	VITE_WATCH_USE_POLLING,
+} from '../vite-watch'
+import { ELYSIA_SINGLETON_BRIDGE_MODULES } from '../../elysia-singleton'
 
 /**
  * Modules that are required to be singletons between the host process and the runner.
@@ -22,19 +35,35 @@ import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watc
  * These are internal invariants rather than host configuration: changing the set can evaluate a
  * second Context/runtime implementation inside the runner.
  */
-export const LOADER_HMR_BRIDGE_MODULES = [
-	'@pluxel/context',
+const REQUIRED_LOADER_HMR_BRIDGE_MODULES = [
+	...ELYSIA_SINGLETON_BRIDGE_MODULES,
 	'@pluxel/core',
+	'@pluxel/core/internal',
+	'@pluxel/core/toolchain',
 	'@pluxel/core/services',
 	'@pluxel/runtime',
+	'@pluxel/runtime/toolchain',
 	'@pluxel/runtime/internal',
 	'@pluxel/runtime/web',
 	'@pluxel/runtime/capnweb',
 ] as const
 
-export const LOADER_HMR_BRIDGE_PROVIDERS = Object.freeze({
-	'@pluxel/context': '@pluxel/core',
-} satisfies Record<string, string>)
+/**
+ * Standalone Context is progressive: Core embeds its own kernel, so route consumers do not need to
+ * install `@pluxel/context`. When the host application does install it, however, config and plugin
+ * modules must observe the same evaluated public/internal entries.
+ */
+export const LOADER_HMR_OPTIONAL_BRIDGE_MODULES = [
+	'@pluxel/context',
+	'@pluxel/context/internal',
+] as const
+
+export const LOADER_HMR_BRIDGE_MODULES = [
+	...REQUIRED_LOADER_HMR_BRIDGE_MODULES,
+	...LOADER_HMR_OPTIONAL_BRIDGE_MODULES,
+] as const
+
+export const LOADER_HMR_BRIDGE_PROVIDERS = Object.freeze({} satisfies Record<string, string>)
 
 const REQUIRED_DEDUPE_PACKAGES = [
 	...new Set([...LOADER_HMR_BRIDGE_MODULES.map(toBasePackage), '@pluxel/rolldown']),
@@ -90,8 +119,8 @@ export const BASE_LOADER_HMR_RESOLVE_CONDITIONS = [
 const DEFAULT_RESOLVE_CONDITIONS = ['import', 'module', 'browser', 'production', 'default']
 const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
-export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
-	const extras = env && !DEFAULT_RESOLVE_CONDITIONS.includes(env) ? [env] : []
+export function buildHmrResolveConditions(mode = env.NODE_ENV): string[] {
+	const extras = mode && !DEFAULT_RESOLVE_CONDITIONS.includes(mode) ? [mode] : []
 	return [
 		...new Set([...BASE_LOADER_HMR_RESOLVE_CONDITIONS, ...DEFAULT_RESOLVE_CONDITIONS, ...extras]),
 	]
@@ -132,11 +161,16 @@ export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 }
 
 export interface HmrViteConfigOptions {
-	root: string
+	/** Vite's browser/UI project root. */
+	viteRoot: string
+	/** Host root mapped to the stable `app` plugin source space. */
+	sourceRoot: string
 	fsAllow: string[]
 	clientEntries?: string[]
 	runnerPlugin: Plugin
 	httpPlugin: Plugin
+	/** Exact source pipeline owned by the caller, including its semantic collector. */
+	sourcePlugins?: readonly PluginOption[]
 	port?: number
 }
 
@@ -154,7 +188,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 	// Keep the condition order identical in both HMR environments. Package exports remain responsible
 	// for exposing only browser-safe source entries to the client environment.
 	const clientConditions = ssrConditions
-	const clientEntries = resolveClientEntries(opts.root, opts.clientEntries)
+	const clientEntries = resolveClientEntries(opts.viteRoot, opts.clientEntries)
 	const hasClientEntries = clientEntries.length > 0
 	const dedupePackages = [...new Set([...REQUIRED_DEDUPE_PACKAGES, ...DEFAULT_CLIENT_DEDUPE])]
 
@@ -168,13 +202,13 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		: []
 
 	const internalConfig: InlineConfig = {
-		root: opts.root,
+		root: opts.viteRoot,
 		server: {
 			port: opts.port ?? 3000,
 			middlewareMode: false,
 			preTransformRequests: false,
 			watch: {
-				ignored: [...DEFAULT_VITE_WATCH_IGNORED],
+				ignored: [...DEFAULT_VITE_WATCH_IGNORED, GENERATED_STATE_VITE_WATCH_IGNORED],
 				usePolling: VITE_WATCH_USE_POLLING,
 			},
 			fs: {
@@ -206,10 +240,12 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		},
 		plugins: [
 			clientNodeImportGuardPlugin(),
-			...pluxelRuntimeSourceVitePlugins({
-				name: 'pluxel:dynamic-runtime-source',
-				root: opts.root,
-			}),
+			...(hasClientEntries ? react() : []),
+			...(opts.sourcePlugins ??
+				pluxelRuntimeSourceVitePlugins({
+					name: 'pluxel:dynamic-runtime-source',
+					root: opts.sourceRoot,
+				})),
 			opts.runnerPlugin,
 			opts.httpPlugin,
 		],

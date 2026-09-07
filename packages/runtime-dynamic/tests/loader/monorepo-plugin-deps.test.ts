@@ -1,86 +1,86 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
+import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
-import { enablePlugins } from '../support/runtime-state'
-
-function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
-	;(
-		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
-	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
-}
+import { lowerTestAbstract, lowerTestPlugin, lowerTestReplacement } from '../support/lowered-plugin'
+import { pluginsAutoStartPatch } from '../support/runtime-state'
 
 describe('monorepo plugin dependencies', () => {
 	it('commits successfully when dependent plugin modules are both loaded (separate moduleIds)', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+		const { host, ctx } = createHmrTestContext()
+		const loader = requireLoaderService(ctx)
 
-		@Plugin({ name: 'Provider' })
+		@Plugin()
 		class Provider extends BasePlugin {}
+		lowerTestPlugin(Provider)
 
-		@Plugin({ name: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(_dep: Provider) {
 				super()
 			}
 		}
-		// In tests we explicitly set DI tokens (no reflect-metadata).
-		setParamToken(Consumer, 0, Provider)
-
-		enablePlugins(ctx, 'Provider', 'Consumer')
+		lowerTestPlugin(Consumer, { requires: [Provider] })
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('packages/provider/src/entry.ts', { Provider })
 		await batch.replaceModule('packages/consumer/src/entry.ts', { Consumer })
-		const res = await core.registry.commit()
-		expect(res.ok).toBe(true)
-		batch.commit()
+		await batch.commit({ statePatch: pluginsAutoStartPatch(true, Provider, Consumer) })
 
-		expect(core.registry.isRunning(Provider)).toBe(true)
-		expect(core.registry.isRunning(Consumer)).toBe(true)
+		expect(host.isRunning(Provider)).toBe(true)
+		expect(host.isRunning(Consumer)).toBe(true)
 	})
 
-	it('fails commit when a runtime-enabled plugin depends on another plugin that is not loaded via entries', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-
-		@Plugin({ name: 'Provider' })
+	it('fails commit when an auto-start plugin depends on another plugin that is not loaded via entries', async () => {
+		@Plugin()
 		class Provider extends BasePlugin {}
+		lowerTestPlugin(Provider)
 
-		@Plugin({ name: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(_dep: Provider) {
 				super()
 			}
 		}
-		setParamToken(Consumer, 0, Provider)
+		lowerTestPlugin(Consumer, { requires: [Provider] })
+		const { ctx } = createHmrTestContext({ autoStart: [pluginNodeAddressOf(Consumer)] })
+		const loader = requireLoaderService(ctx)
 
 		// Simulate: profile selected Consumer's package entry, but not Provider's package entry.
-		// Runtime config enables Consumer anyway -> DI commit must fail.
-		enablePlugins(ctx, 'Consumer')
+		// Cold-boot state retains the absent Consumer intent; live catalog admission must reject a
+		// newly available but structurally blocked Consumer atomically.
+		await loader.beginBatch().commit({ reason: 'test-cold-boot' })
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('packages/consumer/src/entry.ts', { Consumer })
-		const res = await core.registry.commit()
-		expect(res.ok).toBe(false)
-		batch.rollback()
-		core.registry.resetDraft()
+		await expect(batch.commit()).rejects.toMatchObject({
+			code: 'graph_rejected',
+			issues: [{ kind: 'missing_required_provider' }],
+		})
+		expect(loader.api.registry.listRegistered()).toEqual([])
 	})
 
 	it('supports project-local packages where a consumer depends on an abstract base provider', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+		const { host, ctx } = createHmrTestContext()
+		const loader = requireLoaderService(ctx)
 		let billingSeq = 0
 		let providerSeq = 0
 
 		abstract class UsageRecorderPlugin extends BasePlugin {
 			abstract readonly seq: number
 		}
+		lowerTestAbstract(UsageRecorderPlugin)
 
+		@Plugin(UsageRecorderPlugin, { displayName: 'Usage billing' })
 		class UsageBillingPlugin extends UsageRecorderPlugin {
 			readonly seq = ++billingSeq
 		}
-		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPlugin)
+		lowerTestPlugin(UsageBillingPlugin, {
+			provides: pluginDefinitionAddressOf(UsageRecorderPlugin),
+		})
 
+		@Plugin({ displayName: 'Zhipu provider' })
 		class ZhipuProviderPlugin extends BasePlugin {
 			readonly seq = ++providerSeq
 
@@ -88,11 +88,7 @@ describe('monorepo plugin dependencies', () => {
 				super()
 			}
 		}
-		defineParamTypes(ZhipuProviderPlugin, [UsageRecorderPlugin])
-		Plugin({ name: 'ZhipuProviderPlugin' })(ZhipuProviderPlugin)
-		setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
-
-		enablePlugins(ctx, 'UsageBillingPlugin', 'ZhipuProviderPlugin')
+		lowerTestPlugin(ZhipuProviderPlugin, { requires: [UsageRecorderPlugin] })
 
 		{
 			const batch = loader.beginBatch()
@@ -102,39 +98,33 @@ describe('monorepo plugin dependencies', () => {
 			await batch.replaceModule('projects/example-app/plugins/provider/src/index.ts', {
 				ZhipuProviderPlugin,
 			})
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(true)
-			batch.commit()
+			await batch.commit({
+				statePatch: pluginsAutoStartPatch(true, UsageBillingPlugin, ZhipuProviderPlugin),
+			})
 		}
 
-		const firstProvider = core.registry.getInstance(ZhipuProviderPlugin)
-		expect(core.registry.isRunning(UsageRecorderPlugin)).toBe(true)
-		expect(firstProvider?.seq).toBe(1)
-		expect(firstProvider?.recorder.seq).toBe(1)
+		const firstProvider = host.require(ZhipuProviderPlugin)
+		expect(host.isRunning(UsageBillingPlugin)).toBe(true)
+		expect(firstProvider.seq).toBe(1)
+		expect(firstProvider.recorder.seq).toBe(1)
 
+		@Plugin(UsageRecorderPlugin, { displayName: 'Usage billing next' })
 		class UsageBillingPluginNext extends UsageRecorderPlugin {
 			readonly seq = ++billingSeq
 		}
-		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPluginNext)
+		lowerTestReplacement(UsageBillingPlugin, UsageBillingPluginNext, {
+			provides: pluginDefinitionAddressOf(UsageRecorderPlugin),
+		})
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('projects/example-app/plugins/billing/src/index.ts', {
 			UsageBillingPlugin: UsageBillingPluginNext,
 		})
-		expect(new Set(batch.getAffectedModules())).toEqual(
-			new Set([
-				'projects/example-app/plugins/billing/src/index.ts',
-				'projects/example-app/plugins/provider/src/index.ts',
-			]),
-		)
-		await batch.syncModules(batch.getAffectedModules())
-		const res = await core.registry.commit()
-		expect(res.ok).toBe(true)
-		batch.commit()
+		await batch.commit()
 
-		const nextProvider = core.registry.getInstance(ZhipuProviderPlugin)
-		expect(nextProvider?.seq).toBe(2)
-		expect(nextProvider?.recorder.seq).toBe(2)
-		expect(nextProvider).not.toBe(firstProvider)
+		const nextProvider = host.require(ZhipuProviderPlugin)
+		expect(nextProvider.seq).toBe(2)
+		expect(nextProvider.recorder.seq).toBe(2)
+		expect(nextProvider === firstProvider).toBe(false)
 	})
 })

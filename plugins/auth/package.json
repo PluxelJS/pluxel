@@ -1,0 +1,86 @@
+{
+	"name": "@pluxel/auth",
+	"version": "1.0.0",
+	"description": "Official management authentication provider for Pluxel",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/auth"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./workbench": {
+			"@pluxel/hmr": "./src/workbench.ts",
+			"default": "./dist/workbench.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./workbench": "./dist/workbench.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"jose": "catalog:prod"
+	},
+	"devDependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-node": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@tabler/icons-react": "catalog:icons",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"crossws": "catalog:prod",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@pluxel/runtime": "workspace:^",
+		"@tabler/icons-react": "catalog:icons",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
+	},
+	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@tabler/icons-react": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

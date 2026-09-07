@@ -6,7 +6,7 @@
 PackageManagerPlugin
   ├─ @pnpm/napi adapter + managed manifest/lockfile/node_modules
   ├─ package.install / package.remove commands
-  ├─ owner-bound Workbench RPC + /packages view
+  ├─ owner-bound Direct View target + /packages route
   └─ atomic entries/*.mjs publication
                          │ file add/change/unlink
                          ▼
@@ -19,7 +19,7 @@ plugin instance。
 
 插件只允许在声明了 `rootDir/entries` 与 `['*.mjs']` 的 dynamic host generation 中运行。`init()` 先解析目标目录并通过
 `@pluxel/runtime-dynamic/source-producer` 校验声明，之后才加载 `@pnpm/napi`、创建 managed project、发布 entry 或注册
-commands/RPC/Workbench。校验只读取 route generation 的 resolved declaration，不扫描文件系统，也不返回 loader handle。
+commands/Workbench publication。校验只读取 route generation 的 resolved declaration，不扫描文件系统，也不返回 loader handle。
 
 ## Mutation model
 
@@ -37,14 +37,15 @@ engine 已完成而后续 filesystem publication 失败，持久 manifest 保留
 发布 entries。插件不暴露 `reinstall`：native `update: true` 是全图更新，
 不能诚实实现 selected-package reinstall，也不能把已请求 range 静默改成 `latest`。
 
-wrapper re-export named exports，并把 package default export 继续作为 default。它不注入 Pluxel metadata、不决定 enablement，
+wrapper re-export named exports，并把 package default export 继续作为 default。它不注入 Pluxel metadata、不决定 auto-start policy 或 session lifecycle，
 也不建立第二份 plugin inventory。可信 package source、catalog、lifecycle 和 status 仍由 runtime graph 投影。
 
 ## Capability 与 UI
 
-业务路径是两个 owner-bound commands；Workbench RPC 只服务插件自己的管理页面。runtime common protocol 不含 package
-DTO、handle factory、route 或 navigation。插件停止/replacement 时 command registration、RPC grant 和 view mount 都随 owner
-effects 撤销。Workbench disabled 不影响 headless commands 和 package store。
+业务路径是两个 owner-bound commands；Workbench Direct View target 只服务插件自己的管理页面。Runtime session protocol
+不增加 package-specific method、DTO 或 navigation kind。插件停止/replacement 时 command registration 和 View publication
+随 owner effects 撤销；已打开 target 的 signal 会 abort，新的调用由 owner admission gate 拒绝。Workbench disabled 不影响
+headless commands 和 package store。
 
 snapshot 只返回 package name、requested/installed version、entry filename、受管目录、engine version 和 native engine 明确
 报告的 build-script dependency identifiers。不得返回 registry URL、auth header、proxy credential、pnpm raw event 或任意
@@ -63,11 +64,11 @@ native engine callback 默认不转发日志，因为事件可能携带 registry
 
 ## 不变量
 
-- 安装、enablement、lifecycle 是三个独立事实；
+- 安装、auto-start policy、session lifecycle 和 observed lifecycle 是彼此独立的事实；
 - package mutation 不直接调用 dynamic/core internals；
 - dynamic runtime 不依赖 package-manager package；
 - static/普通 test host 和 source 声明不匹配在任何 native/filesystem/UI 副作用前失败；
 - failed install 不发布新 entry；
 - successful source batch 由 dynamic runtime 统一触发 optional availability retry；
-- Workbench 是插件自带的可选投影，不是 runtime 内置控制面；
+- Workbench 页面是插件自带的可选投影，不是 Management API 的 package-manager 特例；
 - market discovery、登录、支付、审核和推荐都属于其他插件或服务。

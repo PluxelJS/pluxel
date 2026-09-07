@@ -1,8 +1,8 @@
 {
 	"name": "@pluxel/echarts",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Official server-side Apache ECharts capability for Pluxel plugins",
-	"license": "MIT",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -25,29 +25,43 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
-		"build": "pluxel build",
 		"bench:render": "vitest bench bench/render.bench.ts --config vitest.config.ts",
+		"build": "pluxel build",
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@pluxel/canvas": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
-		"echarts": "catalog:"
+		"echarts": "catalog:prod"
 	},
 	"devDependencies": {
+		"@pluxel/canvas": "workspace:*",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"tsdown": "catalog:build",
+		"tsx": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/canvas": "workspace:^",
+		"@pluxel/fonts": "workspace:^",
+		"@pluxel/runtime": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/canvas": "required",
+			"@pluxel/fonts": "required"
+		}
 	}
 }

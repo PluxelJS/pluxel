@@ -5,6 +5,7 @@ const BUILD_PACKAGES: (string | RegExp)[] = ['@hono/vite-dev-server', '@rolldown
 const FRONTEND_PACKAGES: (string | RegExp)[] = [
 	/^@mantine\//,
 	/^@dnd-kit\//,
+	'@tanstack/query-core',
 	'@tanstack/react-form',
 	'@tanstack/react-router',
 	'@tanstack/react-virtual',
@@ -13,16 +14,6 @@ const BACKEND_PACKAGES: (string | RegExp)[] = [
 	'hono',
 	'@hono/node-server',
 	'@hono/valibot-validator',
-]
-const GRAPHQL_PACKAGES: (string | RegExp)[] = [
-	'@gqlens/codegen',
-	'@gqlens/core',
-	'@gqlens/react',
-	'@gqloom/core',
-	'@gqloom/valibot',
-	'graphql',
-	'graphql-scalars',
-	'graphql-yoga',
 ]
 const VALIDATION_PACKAGES: (string | RegExp)[] = [
 	'valibot',
@@ -42,6 +33,8 @@ const WORKFLOW_PACKAGES: (string | RegExp)[] = ['knitwork', '@tanstack/pacer', '
 const NODE_RUNTIME_PACKAGES: (string | RegExp)[] = ['chokidar', 'pathe', 'pkg-types']
 
 export default defineConfig({
+	// pnpm supports parent>child overrides, but catalog specifiers cannot resolve that selector.
+	exclude: ['@esbuild-kit/core-utils>esbuild', 'tegami'],
 	catalogRules: mergeCatalogRules([
 		{
 			name: 'build',
@@ -59,11 +52,6 @@ export default defineConfig({
 			name: 'backend',
 			match: BACKEND_PACKAGES,
 			priority: 40,
-		},
-		{
-			name: 'graphql',
-			match: GRAPHQL_PACKAGES,
-			priority: 32,
 		},
 		{
 			name: 'validation',

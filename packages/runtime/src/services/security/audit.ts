@@ -16,16 +16,19 @@ type AuditState = {
 	events: SecurityEvent[]
 }
 
-const AUDIT_SYMBOL = Symbol.for('pluxel:runtime:security-audit')
+const AUDIT_STATE_BY_ROOT = new WeakMap<PluxelContext['root'], AuditState>()
 const MAX_EVENTS = 200
 
 function resolveState(ctx: PluxelContext): AuditState {
-	const root = ctx.root as PluxelContext & { [AUDIT_SYMBOL]?: AuditState }
-	root[AUDIT_SYMBOL] ??= {
+	const root = ctx.root
+	let state = AUDIT_STATE_BY_ROOT.get(root)
+	if (state) return state
+	state = {
 		seq: 0,
 		events: [],
 	}
-	return root[AUDIT_SYMBOL]!
+	AUDIT_STATE_BY_ROOT.set(root, state)
+	return state
 }
 
 export function recordSecurityEvent(

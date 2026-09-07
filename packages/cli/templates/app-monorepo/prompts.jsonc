@@ -1,8 +1,0 @@
-[
-	{
-		"type": "input",
-		"name": "description",
-		"message": "Application description",
-		"default": "A clean Pluxel application monorepo",
-	},
-]

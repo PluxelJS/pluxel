@@ -1,564 +1,499 @@
 import {
+	formatPluginNodeReference,
+	pluginNodeAddressEqual,
+	type Context,
 	type CommitSummary,
-	ForkablePlugin,
-	isPluginLifecycleNotStartedIssue,
-	type PluginConstructor,
-	type PluginIdentifier,
-	type PluginLifecycleIssue,
-	Context,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
 } from '@pluxel/core'
+import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-
+import {
+	createPluginRouteCatalogSnapshot,
+	installRuntimePluginGraphCoordinator,
+	installRuntimeRouteCapabilities,
+	readRuntimePluginStatusOverview,
+	requireRuntimeHttpService,
+	requireRuntimeStateStore,
+	type ElysiaCarrierRequestAddress,
+	type PluginApplyReport,
+	type PluginExecutionSnapshot,
+} from '@pluxel/runtime/internal'
 import {
 	createContextPluginLogPolicyStore,
+	createRuntimeRootContext,
 	createRuntimeLogging,
-	isPluginEnabled,
 	isWorkbenchEnabled,
-	setPluginEnabled,
-	workbenchAdminAccess,
-	withWorkbenchPluginContext,
-	type RuntimePluginDependencyInfo,
-	type RuntimePluginSource,
-	type RuntimeRouteCapabilities,
+	prepareRuntimeRootContext,
+	type RuntimeHostConfig,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
 } from '@pluxel/runtime/internal/static-host'
+import type { WorkbenchBackendFactory } from '@pluxel/runtime/internal/static'
 import {
 	buildCatalog,
 	collectUnknownConfigEntries,
 	diffCatalog,
-	firstMissingDependency,
 	readConfigSnapshot,
-	type ConfigSnapshotReader,
 	type StaticRuntimeCatalog,
 	type StaticRuntimeCatalogDiff,
-} from './catalog'
+	type StaticRuntimeExecutionResolver,
+} from './catalog.ts'
+import { StaticRuntimeRecentUpdateTracker } from './recent-update.ts'
 import type {
 	StaticRuntimeCatalogSnapshot,
 	StaticRuntimeDefinition,
 	StaticRuntimeHmrController,
-	StaticRuntimeHmrReport,
 	StaticRuntimeHost,
 	StaticRuntimeHostOptions,
+	StaticRuntimeInternalHmrReport,
+	StaticRuntimeInternalStartupReport,
 	StaticRuntimeReportEntry,
-	StaticRuntimeStartupReport,
-} from '../types'
+} from '../types.ts'
 
-type StaticRuntimePlanOptions =
-	| { reason: 'startup' }
-	| {
-			reason: 'hmr'
-			diff: StaticRuntimeCatalogDiff
-	  }
+type StaticRuntimeViteReloadOutcome =
+	| Readonly<{ status: 'applied'; report: StaticRuntimeInternalHmrReport }>
+	| Readonly<{ status: 'failed'; error: unknown; catalogCommitted: boolean }>
 
-type StaticRuntimeDraftOperation =
-	| {
-			readonly type: 'register'
-			readonly name: string
-			readonly plugin: PluginConstructor
-	  }
-	| {
-			readonly type: 'replace'
-			readonly name: string
-			readonly from: PluginConstructor
-			readonly to: PluginConstructor
-	  }
-	| {
-			readonly type: 'unregister'
-			readonly name: string
-			readonly plugin: PluginConstructor
-	  }
-
-type StaticRuntimeCatalogPlan = {
-	readonly reason: StaticRuntimePlanOptions['reason']
-	readonly catalog: StaticRuntimeCatalog
-	readonly enabled: ReadonlySet<string>
-	readonly blocked: ReadonlySet<string>
-	readonly operations: readonly StaticRuntimeDraftOperation[]
-	readonly entries: StaticRuntimeReportEntry[]
+type StaticRuntimeReloadSettlement = {
+	catalogCommitted: boolean
 }
 
 export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public readonly ctx: Context
-	private catalog: StaticRuntimeCatalog
-	private readonly registeredByName = new Map<string, PluginConstructor>()
+	private readonly startupCatalog: StaticRuntimeCatalog
+	private runtimeName: string
 	private started = false
 	private disposed = false
-	private report: StaticRuntimeStartupReport | undefined
+	private stopRequested = false
+	private operationTail: Promise<void> = Promise.resolve()
+	private stopPromise: Promise<void> | undefined
+	private report: StaticRuntimeInternalStartupReport | undefined
+	private readonly coordinator
+	private readonly resolveExecution: StaticRuntimeExecutionResolver
+	private readonly recentUpdates: StaticRuntimeRecentUpdateTracker
 
-	public readonly hmr: StaticRuntimeHmrController = {
-		reload: (definition) => this.reload(definition),
+	public readonly hmr: StaticRuntimeHmrController & {
+		reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeInternalHmrReport>
+	} = {
+		reload: (definition) => this.reload(definition, performance.now()),
 	}
 
-	public constructor(
-		public definition: StaticRuntimeDefinition,
-		public readonly options: StaticRuntimeHostOptions,
+	readonly fetch = (request: Request, env?: unknown, fetchContext?: unknown) =>
+		requireRuntimeHttpService(this.ctx).fetch(request, env, fetchContext)
+
+	constructor(
+		definition: StaticRuntimeDefinition,
+		options: StaticRuntimeHostOptions,
 		private readonly logging: RuntimeLogging,
+		internal: StaticRuntimeHostInternalOptions,
 	) {
-		const context = createStaticRuntimeContextConfig(options, logging)
-		this.catalog = buildCatalog(definition)
-		this.ctx = new Context({
-			name: definition.name,
-			...context,
-		})
+		this.resolveExecution =
+			internal.resolveExecution ??
+			(() => (internal.deployment ? STATIC_DEPLOYMENT_EXECUTION : STATIC_MANUAL_CATALOG_EXECUTION))
+		this.recentUpdates = internal.recentUpdates ?? new StaticRuntimeRecentUpdateTracker()
+		this.startupCatalog = buildCatalog(definition, 1, this.resolveExecution)
+		this.runtimeName = definition.name
+		this.ctx = createRuntimeRootContext(
+			createStaticRuntimeHostConfig(definition, options, logging, internal),
+			{
+				logging,
+				product: internal.product ?? null,
+				...(internal.requestAddress ? { requestAddress: internal.requestAddress } : {}),
+				...(internal.createWorkbenchBackend
+					? { workbench: { createBackend: internal.createWorkbenchBackend } }
+					: {}),
+			},
+		)
+		this.coordinator = installRuntimePluginGraphCoordinator(this.ctx)
 		this.ctx.effects.defer(() => logging.dispose(), {
 			tag: 'RuntimeLogging',
 			phase: 'shutdown',
 		})
-		this.ctx.runtimeRoute = this.createRuntimeRoute()
-	}
-
-	private createRuntimeRoute(): RuntimeRouteCapabilities {
-		const unknownSource = (): RuntimePluginSource => ({
-			__typename: 'PluginSourceInfo',
-			kind: 'unknown',
-			moduleId: null,
-			packageName: null,
-			version: null,
-			tag: null,
+		const uninstallRoute = installRuntimeRouteCapabilities(this.ctx, {
+			recentUpdate: this.recentUpdates,
 		})
-
-		const route: RuntimeRouteCapabilities = {
-			catalog: {
-				resolve: (target) => {
-					if (typeof target === 'string') {
-						return this.catalog.byName.get(target)?.plugin ?? this.registeredByName.get(target)
-					}
-					return this.catalog.byPlugin.get(target)?.plugin ?? target
-				},
-				resolveOrRegistered: (name) =>
-					this.registeredByName.get(name) ?? this.catalog.byName.get(name)?.plugin,
-				require: (name) => {
-					const ctor = route.catalog.resolveOrRegistered(name)
-					if (!ctor) throw new Error(`Plugin not found: ${name}`)
-					return ctor
-				},
-				listRegistered: () =>
-					new Map(this.catalog.entries.map((entry) => [entry.name, entry.plugin])),
-				listLoadedNames: () => this.catalog.entries.map((entry) => entry.name),
-			},
-			lifecycle: {
-				isRunning: (target) => {
-					const ctor = route.catalog.resolve(target)
-					return ctor ? this.ctx.registry.isRunning(ctor) : false
-				},
-				enable: (name, ctor) => {
-					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
-					this.ctx.registry.register(ctor)
-					this.registeredByName.set(name, ctor)
-				},
-				enablePersisted: (name) => {
-					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
-				},
-				deactivate: (name, ctor, options) => {
-					this.ctx.registry.unregister(ctor)
-					this.registeredByName.delete(name)
-					if (!options.runtimeOnly) {
-						this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, false))
-					}
-				},
-				stop: (name, ctor) => {
-					this.ctx.registry.unregister(ctor)
-					this.registeredByName.delete(name)
-				},
-			},
-			configMetadata: {
-				getSchema: (name) => this.catalog.byName.get(name)?.info.configMap ?? undefined,
-				getSchemaSource: (name) => this.catalog.byName.get(name)?.info.configSourceMap ?? undefined,
-				getConfigLayout: (name) => this.catalog.byName.get(name)?.info.configLayoutMap ?? undefined,
-			},
-			dependencies: {
-				listDependencies: (ctor): RuntimePluginDependencyInfo => {
-					const entry = this.catalog.byPlugin.get(ctor)
-					if (!entry) return []
-					return entry.deps.map((dep) => {
-						const depEntry = this.catalog.byPlugin.get(dep)
-						const depCtor = depEntry?.plugin ?? dep
-						return {
-							name: depEntry?.name ?? describeStaticDependency(dep),
-							isRunning: this.ctx.registry.isRunning(depCtor),
-						}
-					})
-				},
-				ensureForkBase: (baseName) => {
-					const baseCtor = route.catalog.resolve(baseName)
-					if (!baseCtor) return undefined
-					const proto = (baseCtor as { prototype?: unknown }).prototype
-					if (!proto || !(proto instanceof ForkablePlugin)) return undefined
-					return baseCtor
-				},
-			},
-			source: {
-				resolveSource: () => unknownSource(),
-			},
-		}
-
-		return route
+		this.ctx.effects.defer(uninstallRoute, {
+			tag: 'RuntimeRouteCapabilities',
+			phase: 'shutdown',
+		})
 	}
 
-	public async prepare(): Promise<void> {
-		this.assertWorkbenchAvailable()
-		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
+	get definition(): StaticRuntimeDefinition {
+		const catalog = this.catalogSnapshot()
+		return Object.freeze({
+			name: this.runtimeName,
+			plugins: Object.freeze(catalog.entries.map((entry) => entry.candidate.implementation)),
+		})
+	}
+
+	async prepare(): Promise<void> {
+		await Promise.all([
+			requireConfigService(this.ctx).ready,
+			requireRuntimeStateStore(this.ctx).ready,
+		])
 		await this.logging.initializePolicy(createContextPluginLogPolicyStore(this.ctx))
-		await this.ctx.prepareServices()
+		await prepareRuntimeRootContext(this.ctx.root)
 	}
 
-	public describeCatalog(): StaticRuntimeCatalogSnapshot {
+	describeCatalog(): StaticRuntimeCatalogSnapshot {
+		const catalog = this.catalogSnapshot()
 		return {
-			runtime: this.definition.name,
-			plugins: this.catalog.entries.map(({ name, plugin }) => ({ name, plugin })),
-		}
-	}
-
-	public lastReport(): StaticRuntimeStartupReport | undefined {
-		return this.report
-	}
-
-	private assertWorkbenchAvailable(): void {
-		if (!staticHostNeedsWorkbench(this.ctx.config)) return
-		if (this.ctx.workbench.enabled) return
-		throw new Error(
-			'[runtime-static:workbench] enabled configuration was not installed before host startup.',
-		)
-	}
-
-	public async start(): Promise<StaticRuntimeStartupReport> {
-		if (this.disposed) throw new Error('[runtime-static] cannot start a disposed host')
-		if (this.started) return this.report ?? this.createNoopReport()
-		this.started = true
-		const plan = await this.createCatalogPlan(this.catalog, { reason: 'startup' })
-		this.report = await this.applyCatalogPlan(plan)
-		return this.report
-	}
-
-	public async stop(): Promise<void> {
-		if (this.disposed) return
-		this.disposed = true
-		try {
-			this.ctx.registry.resetDraft()
-			const update = this.ctx.registry.beginUpdate({ reason: 'config' })
-			try {
-				for (const plugin of this.registeredByName.values()) {
-					if (this.ctx.registry.isRegistered(plugin)) update.unregister(plugin)
-				}
-				const result = await update.commit({ rollbackOnFailure: false })
-				if (!result.ok) update.rollback()
-			} catch {
-				update.rollback()
-			}
-		} finally {
-			this.registeredByName.clear()
-			this.ctx.registry.resetDraft()
-			try {
-				await this.ctx.effects.dispose()
-			} finally {
-				await this.logging.dispose()
-			}
-		}
-	}
-
-	private async reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeHmrReport> {
-		if (this.disposed) throw new Error('[runtime-static] cannot reload a disposed host')
-		const previous = this.catalog
-		const next = buildCatalog(definition)
-		const diff = diffCatalog(previous, next)
-
-		this.definition = definition
-		this.catalog = next
-
-		const plan = await this.createCatalogPlan(next, {
-			reason: 'hmr',
-			diff,
-		})
-		const report = await this.applyCatalogPlan(plan)
-		const hmrReport: StaticRuntimeHmrReport = {
-			...report,
-			added: diff.added,
-			removed: diff.removed,
-			replaced: diff.replaced,
-		}
-		this.report = hmrReport
-		return hmrReport
-	}
-
-	private createNoopReport(): StaticRuntimeStartupReport {
-		return {
-			runtime: this.definition.name,
-			entries: this.catalog.entries.map(({ name }) => ({
-				name,
-				status: isPluginEnabled(this.ctx.runtimeState.snapshot(), name) ? 'started' : 'disabled',
+			runtime: this.runtimeName,
+			plugins: catalog.entries.map((entry) => ({
+				address: { definition: entry.address, variant: 'default' },
+				definition: entry.address,
+				displayName: entry.candidate.declaration.displayName,
+				rootExportName: entry.address.exportName,
+				provenance: entry.address.entry,
 			})),
 		}
 	}
 
-	private async createCatalogPlan(
-		catalog: StaticRuntimeCatalog,
-		options: StaticRuntimePlanOptions,
-	): Promise<StaticRuntimeCatalogPlan> {
-		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
-
-		const entries: StaticRuntimeReportEntry[] = [...catalog.diagnostics]
-		const configSnapshot = readConfigSnapshot(
-			this.ctx.configService as unknown as ConfigSnapshotReader,
-		)
-		for (const unknown of collectUnknownConfigEntries(
-			configSnapshot,
-			catalog.byName,
-			this.ctx.runtimeState.snapshot().enabled,
-		)) {
-			entries.push({ name: unknown, status: 'unknown-config-entry' })
-		}
-
-		if (options.reason === 'hmr') {
-			for (const name of options.diff.removed) {
-				entries.push({
-					name,
-					status: 'catalog-drift',
-					message: 'plugin was removed from the static catalog',
-				})
-			}
-		}
-
-		const enabled = new Set<string>()
-		const runtimeState = this.ctx.runtimeState.snapshot()
-		for (const { name } of catalog.entries) {
-			if (isPluginEnabled(runtimeState, name)) enabled.add(name)
-		}
-
-		for (const { name } of catalog.entries) {
-			if (!enabled.has(name)) entries.push({ name, status: 'disabled' })
-		}
-
-		const validateNames = this.collectValidationTargets(catalog, enabled, options)
-		const blocked = await this.validatePlugins(catalog, validateNames, entries)
-		this.applyDependencyBlocks(catalog, enabled, blocked, entries)
-
-		return {
-			reason: options.reason,
-			catalog,
-			entries,
-			enabled,
-			blocked,
-			operations: this.createDraftOperations(catalog, enabled, blocked, options),
-		}
+	lastReport(): StaticRuntimeInternalStartupReport | undefined {
+		return this.report
 	}
 
-	private collectValidationTargets(
-		catalog: StaticRuntimeCatalog,
-		enabled: ReadonlySet<string>,
-		options: StaticRuntimePlanOptions,
-	): Set<string> {
-		const names = new Set<string>()
-		if (options.reason === 'startup') {
-			for (const name of enabled) names.add(name)
-			return names
+	start(): Promise<StaticRuntimeInternalStartupReport> {
+		if (this.stopRequested || this.disposed) {
+			return Promise.reject(new Error('[runtime-static] cannot start a disposed host'))
 		}
-
-		for (const { name, plugin } of catalog.entries) {
-			if (!enabled.has(name)) continue
-			const current = this.registeredByName.get(name)
-			if (!current || current !== plugin) names.add(name)
-		}
-		return names
+		return this.enqueueOperation(() => this.startExclusive())
 	}
 
-	private async validatePlugins(
-		catalog: StaticRuntimeCatalog,
-		names: ReadonlySet<string>,
-		entries: StaticRuntimeReportEntry[],
-	): Promise<Set<string>> {
-		const blocked = new Set<string>()
-		for (const { name, info } of catalog.entries) {
-			if (!names.has(name)) continue
-			const schemaMap = info.configMap
-			if (!schemaMap) continue
-			try {
-				await this.ctx.configService.ensureValidated(name, schemaMap, {
-					missingObjectDefault: {},
-				})
-			} catch (error) {
-				blocked.add(name)
-				entries.push({
-					name,
-					status: 'config-invalid',
-					message: errorMessage(error),
-				})
-			}
-		}
-		return blocked
+	private async startExclusive(): Promise<StaticRuntimeInternalStartupReport> {
+		if (this.started) return this.report ?? (await this.currentReport())
+		const applied = await this.coordinator.reconcileStartup(this.startupCatalog)
+		this.started = true
+		this.report = await this.currentReport(applied)
+		return this.report
 	}
 
-	private applyDependencyBlocks(
-		catalog: StaticRuntimeCatalog,
-		enabled: ReadonlySet<string>,
-		blocked: Set<string>,
-		entries: StaticRuntimeReportEntry[],
-	): void {
-		let changed = true
-		while (changed) {
-			changed = false
-			for (const entry of catalog.entries) {
-				if (!enabled.has(entry.name) || blocked.has(entry.name)) continue
-				const missing = firstMissingDependency(entry, catalog, enabled, blocked)
-				if (!missing) continue
-				blocked.add(entry.name)
-				entries.push({
-					name: entry.name,
-					status: 'dependency-missing',
-					message: `missing dependency: ${missing}`,
-				})
-				changed = true
-			}
-		}
+	stop(): Promise<void> {
+		if (this.stopPromise) return this.stopPromise
+		if (this.disposed) return Promise.resolve()
+		this.stopRequested = true
+		const stopped = this.enqueueOperation(() => this.stopExclusive())
+		this.stopPromise = stopped
+		return stopped
 	}
 
-	private createDraftOperations(
-		catalog: StaticRuntimeCatalog,
-		enabled: ReadonlySet<string>,
-		blocked: ReadonlySet<string>,
-		options: StaticRuntimePlanOptions,
-	): StaticRuntimeDraftOperation[] {
-		const operations: StaticRuntimeDraftOperation[] = []
-
-		if (options.reason === 'hmr') {
-			for (const name of options.diff.removed) {
-				const current = this.registeredByName.get(name)
-				if (!current) continue
-				operations.push({ type: 'unregister', name, plugin: current })
-			}
-		}
-
-		for (const entry of catalog.entries) {
-			const current = this.registeredByName.get(entry.name)
-			if (!enabled.has(entry.name) || blocked.has(entry.name)) {
-				if (current) operations.push({ type: 'unregister', name: entry.name, plugin: current })
-				continue
-			}
-
-			if (!current) {
-				operations.push({ type: 'register', name: entry.name, plugin: entry.plugin })
-				continue
-			}
-			if (current !== entry.plugin) {
-				operations.push({
-					type: 'replace',
-					name: entry.name,
-					from: current,
-					to: entry.plugin,
-				})
-			}
-		}
-
-		return operations
-	}
-
-	private async applyCatalogPlan(
-		plan: StaticRuntimeCatalogPlan,
-	): Promise<StaticRuntimeStartupReport> {
-		const update = this.ctx.registry.beginUpdate({
-			reason: plan.reason,
-		})
-		let commit: CommitSummary | undefined
+	private async stopExclusive(): Promise<void> {
+		if (this.disposed) return
+		this.disposed = true
+		const errors: unknown[] = []
 		try {
-			this.applyDraftOperations(plan.operations, update)
-			commit = await this.commitPlan(plan, update)
+			const empty = createPluginRouteCatalogSnapshot(
+				this.coordinator.catalogSnapshot().revision + 1,
+				[],
+			)
+			await this.coordinator.update({
+				catalog: empty,
+				reason: 'shutdown',
+				mode: 'live',
+			})
 		} catch (error) {
-			update.rollback()
+			errors.push(error)
+		}
+		try {
+			await this.ctx.effects.dispose()
+		} catch (error) {
+			errors.push(error)
+		}
+		try {
+			await this.logging.dispose()
+		} catch (error) {
+			errors.push(error)
+		}
+		throwStaticRuntimeErrors(errors, '[runtime-static] host shutdown failed')
+	}
+
+	private reload(
+		definition: StaticRuntimeDefinition,
+		startedAt: number,
+		settlement?: StaticRuntimeReloadSettlement,
+	): Promise<StaticRuntimeInternalHmrReport> {
+		if (this.stopRequested || this.disposed) {
+			return Promise.reject(new Error('[runtime-static] cannot reload a disposed host'))
+		}
+		return this.enqueueOperation(() => this.reloadExclusive(definition, startedAt, settlement))
+	}
+
+	/** @internal Preserves Vite evaluation time and reports the exact catalog publication point. */
+	async reloadFromVite(
+		definition: StaticRuntimeDefinition,
+		startedAt: number,
+	): Promise<StaticRuntimeViteReloadOutcome> {
+		const settlement: StaticRuntimeReloadSettlement = { catalogCommitted: false }
+		try {
+			return Object.freeze({
+				status: 'applied',
+				report: await this.reload(definition, startedAt, settlement),
+			})
+		} catch (error) {
+			return Object.freeze({
+				status: 'failed',
+				error,
+				catalogCommitted: settlement.catalogCommitted,
+			})
+		}
+	}
+
+	private async reloadExclusive(
+		definition: StaticRuntimeDefinition,
+		startedAt: number,
+		settlement?: StaticRuntimeReloadSettlement,
+	): Promise<StaticRuntimeInternalHmrReport> {
+		const previous = this.coordinator.catalogSnapshot()
+		let next: StaticRuntimeCatalog
+		try {
+			next = buildCatalog(definition, previous.revision + 1, this.resolveExecution)
+		} catch (error) {
+			const proposedImplementations = new Set(definition.plugins)
+			this.recentUpdates.recordDefinitions(
+				previous.entries
+					.filter((entry) => !proposedImplementations.has(entry.candidate.implementation))
+					.map((entry) => entry.address),
+				{
+					outcome: 'retained-previous',
+					phase: 'inject',
+					durationMs: elapsedRuntimeUpdateMs(startedAt),
+				},
+			)
 			throw error
 		}
-		if (commit) this.confirmDraftOperations(plan.operations)
-		this.applyCommitResult(plan, commit)
-
-		return {
-			runtime: this.definition.name,
-			entries: compactReportEntries(plan.entries),
-			commit,
-		}
-	}
-
-	private applyDraftOperations(
-		operations: readonly StaticRuntimeDraftOperation[],
-		update: ReturnType<Context['registry']['beginUpdate']>,
-	): void {
-		for (const operation of operations) {
-			if (operation.type === 'register') {
-				update.register(operation.plugin)
-				continue
-			}
-			if (operation.type === 'replace') {
-				if (this.ctx.registry.isRegistered(operation.from)) {
-					update.replace(operation.from, operation.to, { cascadeDependents: true })
-				} else {
-					update.register(operation.to)
-				}
-				continue
-			}
-			if (this.ctx.registry.isRegistered(operation.plugin)) {
-				update.unregister(operation.plugin, { cascadeDependents: true })
-			}
-		}
-	}
-
-	private confirmDraftOperations(operations: readonly StaticRuntimeDraftOperation[]): void {
-		for (const operation of operations) {
-			if (operation.type === 'register') {
-				this.registeredByName.set(operation.name, operation.plugin)
-			} else if (operation.type === 'replace') {
-				this.registeredByName.set(operation.name, operation.to)
-			} else {
-				this.registeredByName.delete(operation.name)
-			}
-		}
-	}
-
-	private async commitPlan(
-		plan: StaticRuntimeCatalogPlan,
-		update: ReturnType<Context['registry']['beginUpdate']>,
-	): Promise<CommitSummary | undefined> {
-		const result = await update.commit({ rollbackOnFailure: false })
-		if (result.ok) return this.ctx.registry.lastCommit
-
-		update.rollback()
-		const message = errorMessage(result.err)
-		if (plan.operations.length === 0) {
-			plan.entries.push({
-				name: this.definition.name,
-				status: 'catalog-drift',
-				message,
+		const diff = diffCatalog(previous, next)
+		let applied: PluginApplyReport<CommitSummary>
+		try {
+			applied = await this.coordinator.update({
+				catalog: next,
+				reason: 'static-hmr',
+				mode: 'live',
 			})
-			return undefined
+		} catch (error) {
+			const committed = this.coordinator.catalogSnapshot() === next
+			if (settlement) settlement.catalogCommitted = committed
+			if (committed) {
+				// Core cannot structurally roll back after teardown starts. Its graph-commit callback
+				// publishes this exact catalog before any later await, so a rejected update may still
+				// have made the proposed definition generation authoritative.
+				this.runtimeName = definition.name
+				this.started = true
+			}
+			this.recentUpdates.recordDefinitions(
+				definitionsFromCatalogDiff(diff),
+				committed
+					? {
+							outcome: 'applied-with-issues',
+							phase: 'commit',
+							durationMs: elapsedRuntimeUpdateMs(startedAt),
+						}
+					: {
+							outcome: 'retained-previous',
+							phase: 'commit',
+							durationMs: elapsedRuntimeUpdateMs(startedAt),
+						},
+			)
+			throw error
 		}
-
-		for (const operation of plan.operations) {
-			plan.entries.push({ name: operation.name, status: 'dependency-missing', message })
+		if (settlement) settlement.catalogCommitted = this.coordinator.catalogSnapshot() === next
+		this.runtimeName = definition.name
+		this.started = true
+		const affectedDefinitions = definitionsFromCatalogDiff(diff)
+		let base: StaticRuntimeInternalStartupReport
+		try {
+			base = await this.currentReport(applied, diff.removed)
+		} catch (error) {
+			// The catalog is already authoritative. A report projection failure is a post-PONR
+			// diagnostic issue, not evidence that the previous Plugin generation was retained.
+			this.recentUpdates.recordDefinitions(
+				affectedDefinitions,
+				{
+					outcome: 'applied-with-issues',
+					phase: 'commit',
+					durationMs: elapsedRuntimeUpdateMs(startedAt),
+				},
+				{
+					scope: 'definitions',
+					...(applied.core.status === 'committed'
+						? {
+								lifecycle: {
+									commit: applied.core.summary,
+									addressOf: (slot) => requirePluginService(this.ctx).nodeAddressOf(slot),
+								},
+							}
+						: {}),
+				},
+			)
+			throw error
 		}
-		return undefined
+		this.recordAppliedReload(affectedDefinitions, applied, startedAt)
+		const report: StaticRuntimeInternalHmrReport = {
+			...base,
+			added: diff.added,
+			removed: diff.removed,
+			replaced: diff.replaced,
+		}
+		this.report = report
+		return report
 	}
 
-	private applyCommitResult(
-		plan: StaticRuntimeCatalogPlan,
-		commit: CommitSummary | undefined,
+	private recordAppliedReload(
+		definitions: Iterable<PluginDefinitionAddress>,
+		applied: PluginApplyReport<CommitSummary>,
+		startedAt: number,
 	): void {
-		const issueByPlugin = new Map<string, PluginLifecycleIssue>()
-		for (const issue of commit?.lifecycleReport.issues ?? []) {
-			if (isPluginLifecycleNotStartedIssue(issue) && !issueByPlugin.has(String(issue.plugin))) {
-				issueByPlugin.set(String(issue.plugin), issue)
+		this.recentUpdates.recordDefinitions(
+			definitions,
+			applied.core.status === 'committed' && !applied.core.summary.lifecycleReport.ok
+				? {
+						outcome: 'applied-with-issues',
+						phase: 'lifecycle',
+						durationMs: elapsedRuntimeUpdateMs(startedAt),
+					}
+				: {
+						outcome: 'applied',
+						phase: null,
+						durationMs: elapsedRuntimeUpdateMs(startedAt),
+					},
+			{
+				scope: 'definitions',
+				...(applied.core.status === 'committed'
+					? {
+							lifecycle: {
+								commit: applied.core.summary,
+								addressOf: (slot) => requirePluginService(this.ctx).nodeAddressOf(slot),
+							},
+						}
+					: {}),
+			},
+		)
+	}
+
+	private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.operationTail.then(operation)
+		this.operationTail = result.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return result
+	}
+
+	private async currentReport(
+		applied?: PluginApplyReport<CommitSummary>,
+		removed: readonly PluginNodeAddress[] = [],
+	): Promise<StaticRuntimeInternalStartupReport> {
+		const issues = applied?.reconciliation ?? []
+		const lifecycleIssues =
+			applied?.core.status === 'committed' ? applied.core.summary.lifecycleReport.issues : []
+		const registry = requirePluginService(this.ctx)
+		const removedKeys = new Set(removed.map((address) => formatPluginNodeReference(address)))
+		const reportedRemoved = new Set<string>()
+		const overview = await readRuntimePluginStatusOverview(this.ctx)
+		const entries: StaticRuntimeReportEntry[] = overview.statuses.map((status) => {
+			const reference = formatPluginNodeReference(status.address)
+			if (removedKeys.has(reference)) {
+				reportedRemoved.add(reference)
+				return {
+					address: status.address,
+					displayName: status.displayName,
+					rootExportName: status.rootExportName,
+					status: 'catalog-drift',
+					message: 'Plugin was removed from the static catalog',
+				}
 			}
-		}
-		for (const { name, plugin } of plan.catalog.entries) {
-			if (!plan.enabled.has(name) || plan.blocked.has(name)) continue
-			const issue = issueByPlugin.get(name)
-			if (issue) {
-				plan.entries.push({
-					name,
-					status: issue.kind === 'dependency-blocked' ? 'dependency-failed' : 'start-failed',
-					message: issue.message,
+			const issue = issues.find(
+				(candidate) =>
+					'consumer' in candidate && pluginNodeAddressEqual(candidate.consumer, status.address),
+			)
+			const lifecycleIssue = lifecycleIssues.find((candidate) =>
+				pluginNodeAddressEqual(registry.nodeAddressOf(candidate.plugin), status.address),
+			)
+			const entry: StaticRuntimeReportEntry = {
+				address: status.address,
+				displayName: status.displayName,
+				rootExportName: status.rootExportName,
+				status:
+					status.desiredState === 'stopped'
+						? 'stopped'
+						: status.availability === 'unavailable'
+							? 'unavailable'
+							: status.lifecycleState === 'running'
+								? 'started'
+								: issue?.kind === 'missing_required_provider'
+									? 'dependency-missing'
+									: lifecycleIssue?.kind === 'config-failed'
+										? 'config-invalid'
+										: lifecycleIssue?.kind === 'dependency-blocked'
+											? 'dependency-failed'
+											: 'start-failed',
+			}
+			if (issue) return Object.assign(entry, { message: issue.message })
+			if (lifecycleIssue) {
+				return Object.assign(entry, {
+					message: lifecycleIssue.error?.message ?? lifecycleIssue.message,
 				})
-			} else if (this.ctx.registry.isRunning(plugin)) {
-				plan.entries.push({ name, status: 'started' })
 			}
+			return entry
+		})
+		const unknown = collectUnknownConfigEntries(
+			readConfigSnapshot(requireConfigService(this.ctx)),
+			this.coordinator.catalogSnapshot(),
+			overview.statuses.map((status) => status.address),
+		)
+		for (const address of unknown) {
+			if (removed.some((candidate) => pluginNodeAddressEqual(candidate, address))) continue
+			entries.push({
+				address,
+				displayName: address.definition.exportName,
+				rootExportName: address.definition.exportName,
+				status: 'unknown-config-entry',
+			})
+		}
+		for (const address of removed) {
+			if (reportedRemoved.has(formatPluginNodeReference(address))) continue
+			entries.push({
+				address,
+				displayName: address.definition.exportName,
+				rootExportName: address.definition.exportName,
+				status: 'catalog-drift',
+				message: 'Plugin was removed from the static catalog',
+			})
+		}
+		return {
+			runtime: this.runtimeName,
+			entries,
+			...(applied?.core.status === 'committed' ? { commit: applied.core.summary } : {}),
 		}
 	}
+
+	/** @internal */
+	catalogSnapshotForVite(): readonly Readonly<{
+		address: PluginNodeAddress
+		implementation: unknown
+		execution: PluginExecutionSnapshot
+	}>[] {
+		return this.catalogSnapshot().entries.map((entry) => ({
+			address: { definition: entry.address, variant: 'default' },
+			implementation: entry.candidate.implementation,
+			execution: entry.provenance.execution ?? STATIC_MANUAL_CATALOG_EXECUTION,
+		}))
+	}
+
+	private catalogSnapshot(): StaticRuntimeCatalog {
+		const committed = this.coordinator.catalogSnapshot()
+		return committed.revision === 0 && !this.started ? this.startupCatalog : committed
+	}
+}
+
+/** @internal Vite-only implementation lookup; constructors never enter the public catalog view. */
+export function readStaticRuntimeImplementations(
+	host: StaticRuntimeHost,
+): readonly Readonly<{ address: PluginNodeAddress; implementation: unknown }>[] {
+	if (!(host instanceof StaticRuntimeHostImpl)) {
+		throw new TypeError('[runtime-static] host was not created by the static runtime adapter')
+	}
+	return host.catalogSnapshotForVite()
 }
 
 export async function createStaticRuntimeHost(
@@ -566,32 +501,44 @@ export async function createStaticRuntimeHost(
 	options: StaticRuntimeHostOptions = {},
 	internal: {
 		deployment?: StaticRuntimeHostDeployment
-		installWorkbench?: StaticRuntimeWorkbenchInstaller
+		createWorkbenchBackend?: WorkbenchBackendFactory
 		product?: ProductDescriptor | null
+		http?: RuntimeHostConfig['http']
+		resolveExecution?: StaticRuntimeExecutionResolver
+		recentUpdates?: StaticRuntimeRecentUpdateTracker
+		/** @internal Capture bounded logs for the opt-in Vite development console. */
+		devConsole?: boolean
+		/** @internal Test-only physical peer seam. */
+		requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
 	} = {},
-): Promise<StaticRuntimeHost> {
-	const logging = createRuntimeLogging(resolveStaticRuntimeLoggingInput(definition, options))
+): Promise<StaticRuntimeHostImpl> {
+	const logging = createRuntimeLogging(
+		resolveStaticRuntimeLoggingInput(definition, options, internal.devConsole === true),
+	)
 	await logging.install()
 	let host: StaticRuntimeHostImpl | undefined
 	try {
-		host = new StaticRuntimeHostImpl(
-			definition,
-			withStaticRuntimeDeployment(options, internal.deployment),
-			logging,
-		)
-		if (isWorkbenchEnabled(options.workbench)) {
-			if (!internal.installWorkbench) {
-				throw new Error('[runtime-static] Workbench installer is not available for this host')
-			}
-			internal.installWorkbench(host.ctx, { product: internal.product ?? null })
-		}
+		host = new StaticRuntimeHostImpl(definition, options, logging, internal)
 		await host.prepare()
 		return host
 	} catch (error) {
-		if (host) await host.stop().catch((): undefined => undefined)
-		else await logging.dispose().catch((): undefined => undefined)
+		try {
+			if (host) await host.stop()
+			else await logging.dispose()
+		} catch (cleanupError) {
+			throw new AggregateError(
+				[error, cleanupError],
+				'[runtime-static] host startup and cleanup both failed',
+				{ cause: cleanupError },
+			)
+		}
 		throw error
 	}
+}
+
+function throwStaticRuntimeErrors(errors: readonly unknown[], message: string): void {
+	if (errors.length === 1) throw errors[0]
+	if (errors.length > 1) throw new AggregateError(errors, message)
 }
 
 export type StaticRuntimeHostDeployment = {
@@ -602,40 +549,45 @@ export type StaticRuntimeHostDeployment = {
 	workbenchIncluded: boolean
 }
 
-export type StaticRuntimeWorkbenchInstaller = (
-	ctx: Context,
-	options: { product: ProductDescriptor | null },
-) => void
+type StaticRuntimeHostInternalOptions = Readonly<{
+	deployment?: StaticRuntimeHostDeployment
+	createWorkbenchBackend?: WorkbenchBackendFactory
+	product?: ProductDescriptor | null
+	http?: RuntimeHostConfig['http']
+	resolveExecution?: StaticRuntimeExecutionResolver
+	recentUpdates?: StaticRuntimeRecentUpdateTracker
+	requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
+}>
 
-function withStaticRuntimeDeployment(
-	options: StaticRuntimeHostOptions,
-	deployment: StaticRuntimeHostDeployment | undefined,
-): StaticRuntimeHostOptions {
-	if (!deployment) return options
-	const context = options.context ?? {}
-	const http = options.http
-	return {
-		...options,
-		http: {
-			...(http && typeof http === 'object' ? http : {}),
-			...(deployment.publicDir ? { uiPublicDir: deployment.publicDir } : {}),
-		} as StaticRuntimeHostOptions['http'],
-		context: {
-			...context,
-			nodeModuleArtifactRoot: deployment.nodeModulesDir,
-			...(deployment.workbenchDir ? { workbenchArtifactRoot: deployment.workbenchDir } : {}),
-		} as StaticRuntimeHostOptions['context'],
-	}
+const STATIC_DEPLOYMENT_EXECUTION = Object.freeze({
+	kind: 'static-bundle' as const,
+	artifact: Object.freeze({ kind: 'application-bundle' as const }),
+	update: Object.freeze({ kind: 'deployment' as const }),
+}) satisfies PluginExecutionSnapshot
+
+const STATIC_MANUAL_CATALOG_EXECUTION = Object.freeze({
+	kind: 'static-catalog' as const,
+	artifact: Object.freeze({ kind: 'unreported' as const }),
+	update: Object.freeze({ kind: 'manual' as const }),
+}) satisfies PluginExecutionSnapshot
+
+function definitionsFromCatalogDiff(diff: StaticRuntimeCatalogDiff): PluginDefinitionAddress[] {
+	return [...diff.added, ...diff.removed, ...diff.replaced].map((address) => address.definition)
+}
+
+function elapsedRuntimeUpdateMs(startedAt: number): number {
+	return Math.max(0, performance.now() - startedAt)
 }
 
 function resolveStaticRuntimeLoggingInput(
 	definition: StaticRuntimeDefinition,
 	options: StaticRuntimeHostOptions,
+	devConsole: boolean,
 ): RuntimeLoggingInput {
 	if (options.logging !== undefined && options.logging !== false) return options.logging
 	const root = {
 		profile: options.profile ?? definition.name,
-		debugTopics: resolveStaticDebugTopics(options.context?.debug),
+		debugTopics: resolveStaticDebugTopics(options.debug),
 	}
 	if (options.logging === false) {
 		return {
@@ -644,14 +596,9 @@ function resolveStaticRuntimeLoggingInput(
 			routes: { runtime: [], plugins: [], debug: [], meta: [] },
 		}
 	}
-	const withStore = isWorkbenchEnabled(options.workbench)
+	const withStore = devConsole || isWorkbenchEnabled(options.workbench)
 	const sinks: RuntimeLoggingInput['sinks'] = {
-		console: {
-			kind: 'console',
-			format: 'pretty',
-			caller: false,
-			timezone: 'local',
-		},
+		console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
 	}
 	if (withStore) sinks.store = { kind: 'store', streamId: 'default', caller: true }
 	const storeRoute = withStore ? [{ sink: 'store', minLevel: 'trace' as const }] : []
@@ -673,66 +620,33 @@ function resolveStaticDebugTopics(value: unknown): readonly string[] {
 		: []
 }
 
-function compactReportEntries(
-	entries: readonly StaticRuntimeReportEntry[],
-): StaticRuntimeReportEntry[] {
-	const out: StaticRuntimeReportEntry[] = []
-	const seen = new Set<string>()
-	for (const entry of entries) {
-		const key = `${entry.name}\0${entry.status}\0${entry.message ?? ''}`
-		if (seen.has(key)) continue
-		seen.add(key)
-		out.push(entry)
-	}
-	return out
-}
-
-function errorMessage(error: unknown): string {
-	if (error instanceof Error) return error.message
-	return String(error)
-}
-
-function describeStaticDependency(dep: PluginIdentifier): string {
-	if (typeof dep !== 'function') return String(dep)
-	return dep.name || '<anonymous>'
-}
-
-function staticHostNeedsWorkbench(ctxConfig: unknown): boolean {
-	if (!ctxConfig || typeof ctxConfig !== 'object') return false
-	const cfg = ctxConfig as {
-		workbench?: { enabled?: unknown } | false
-	}
-	return cfg.workbench !== false && cfg.workbench?.enabled === true
-}
-
-function createStaticRuntimeContextConfig(
+function createStaticRuntimeHostConfig(
+	definition: StaticRuntimeDefinition,
 	options: StaticRuntimeHostOptions,
 	logging: RuntimeLogging,
-): import('@pluxel/core').Context.Config {
-	const context = options.context ?? {}
+	internal: StaticRuntimeHostInternalOptions,
+): RuntimeHostConfig {
+	const { logging: _logging, profile: _profile, ...runtime } = options
 	const configService = options.configService
-	const http = options.http
-	const workbench = options.workbench ?? false
-	const adminAccess = workbenchAdminAccess(workbench)
-	const persistence = options.persistence
-	const database = options.database
-	const profile = options.profile
 	const inheritedRuntimeState =
 		!options.runtimeState && configService?.mode ? { mode: configService.mode } : undefined
-	const runtimeState = options.runtimeState ?? inheritedRuntimeState
-
-	return withWorkbenchPluginContext({
-		...context,
+	return {
+		...runtime,
+		name: definition.name,
 		http: {
-			...(http && typeof http === 'object' ? http : {}),
+			...internal.http,
+			...(internal.deployment?.publicDir ? { uiPublicDir: internal.deployment.publicDir } : {}),
 		},
-		adminAccess,
-		workbench,
-		profile,
 		configService,
-		runtimeState,
-		persistence,
-		database,
+		runtimeState: options.runtimeState ?? inheritedRuntimeState,
 		logger: logging.contextBinding,
-	})
+		...(internal.deployment
+			? {
+					nodeModuleArtifactRoot: internal.deployment.nodeModulesDir,
+					...(internal.deployment.workbenchDir
+						? { workbenchArtifactRoot: internal.deployment.workbenchDir }
+						: {}),
+				}
+			: {}),
+	}
 }

@@ -1,64 +1,136 @@
+// Type-only re-exports keep the source entry's Context shape complete without installing services.
+export type { RuntimeHostConfig } from './context/runtime-contract'
+
 export * from './shared'
 export * from './plugin-catalog'
 export * from './runtime-state'
-export type * from './web/protocol'
-export { runtimeModuleRuntime } from './runtime/capabilities'
+export * from './internal/reconciliation'
+export { requireRuntimeStateStore } from './internal/runtime-state'
+export { requireRuntimeHttpService } from './context/runtime-http-capability'
+export type {
+	ElysiaCarrierMetadata,
+	ElysiaCarrierRequestAddress,
+	ElysiaApplicationCarrier,
+	ElysiaWebSocketUpgrade,
+} from './services/http/elysia-application-carrier'
+export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
+export {
+	getPluginRoutingSnapshot,
+	type PluginRoutingSnapshot,
+	type RouteId,
+} from './services/routing/pluginGatedRoutes'
+export {
+	installRuntimeRouteCapabilities,
+	readRuntimeRouteCapabilities,
+	requireRouteCapability,
+	runtimeModuleRuntime,
+} from './runtime/capabilities'
+export type { RuntimeRouteCapabilities } from './runtime/capabilities'
 export type { RuntimeModuleCacheEntry, RuntimeModuleRuntime } from './runtime/capabilities'
 
 export type { RuntimeStorageLayout, RuntimeStoragePaths } from './runtime/paths'
 export { resolveRuntimeStoragePaths } from './runtime/paths'
-export {
-	findRuntimeModuleId,
-	resolveModuleIdBaseDir,
-	resolveModuleIdPath,
-} from './runtime/module-id'
+export { resolveModuleIdBaseDir, resolveModuleIdPath } from './runtime/module-id'
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
 export {
 	isWorkbenchEnabled,
 	matchesWorkbenchUiBasePath,
 	resolveWorkbenchUiBasePath,
-	workbenchAdminAccess,
 } from './workbench-config'
-export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
-export { withPluginConfigEnvironment } from './services/config-environment'
-export { CommandsService, withCommandsPluginContext } from './services/CommandsService'
+export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './runtime-plane'
+export { mergeConfigRecords, withPluginConfigEnvironment } from './services/config-environment'
+export { CommandsService } from './services/CommandsService'
 export {
 	NodeModuleService,
-	withNodeModulePluginContext,
 	type NodeModuleSourceBinder,
 	type NodeModuleSourceSubscription,
 } from './node-artifact/NodeModuleService'
-export { WorkerTaskService, withWorkerTaskPluginContext } from './node-artifact/WorkerTaskService'
+export { WorkerTaskService } from './node-artifact/WorkerTaskService'
 export { readNodeModuleDeclaration } from './node-artifact/node-module'
 export { readHostProduct, sameProduct } from './product-internal'
+export { subscribeDatabaseHandle, databaseHandleOwnsTables } from './services/DatabaseService'
 export {
-	withDatabasePluginContext,
-	subscribeDatabaseHandle,
-	databaseHandleOwnsTables,
-} from './services/DatabaseService'
+	createRuntimeRootContext,
+	prepareRuntimeRootContext,
+	type RuntimeRootContextOptions,
+} from './context/runtime-plan'
 export {
 	readDatabaseDefinition,
 	type DatabaseArtifact,
 	type DatabaseMigration,
 } from './database-internal'
-export { readWorkbenchUiEntry } from './workbench/ui-entry'
-export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
-
-// HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
-export type { WorkbenchArtifactService } from './services/workbench/WorkbenchArtifactService'
-export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
 export {
+	readWorkbenchDefinition,
+	readWorkbenchContentSlot,
+	readWorkbenchDescriptor,
+	readWorkbenchMarkdownDocument,
+	readWorkbenchRendererEntry,
+} from './workbench/definition'
+export type {
+	WorkbenchDefinitionMetadata,
+	WorkbenchContentActionMetadata,
+	WorkbenchContentDataMetadata,
+	WorkbenchContentSlotMetadata,
+	WorkbenchDescriptorMetadata,
+	WorkbenchMarkdownDocumentMetadata,
+	WorkbenchRendererEntryMetadata,
+} from './workbench/definition'
+export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
+export {
+	RUNTIME_INTERNAL_API_BASE,
+	UI_PUBLIC_ASSET_BASE,
+	UI_PUBLIC_BASE,
+	runtimeWorkbenchFederationArtifactBasePath,
+	runtimeWorkbenchFederationArtifactPath,
+} from './web/paths'
+export { RUNTIME_SESSION_PATH } from './web/session/protocol'
+
+// Host/toolchain-only federation inventory (kept out of the Plugin author surface).
+export {
+	WorkbenchArtifactService,
+	type WorkbenchArtifactCandidate,
+	type WorkbenchArtifactCommit,
+	type WorkbenchArtifactEntry,
+	type WorkbenchArtifactFile,
+	type WorkbenchArtifactLookup,
+	type WorkbenchArtifactRevision,
+	type WorkbenchResolvedArtifactEntry,
+} from './services/workbench/WorkbenchArtifactService'
+export {
+	WorkbenchArtifactCoordinator,
+	type WorkbenchArtifactBatchCandidate,
+	type WorkbenchArtifactBatchCommit,
+} from './services/workbench/WorkbenchArtifactCoordinator'
+export {
+	WorkbenchContentArtifactService,
+	type WorkbenchContentArtifactCandidate,
+	type WorkbenchContentArtifactCommit,
+	type WorkbenchContentArtifactEntry,
+	type WorkbenchContentArtifactLookup,
+	type WorkbenchContentArtifactRevision,
+	type WorkbenchResolvedContentArtifact,
+} from './services/workbench/WorkbenchContentArtifactService'
+export {
+	WorkbenchProducerStatusService,
+	type WorkbenchProducerBuildIdentity,
+	type WorkbenchProducerStatus,
+	type WorkbenchProducerStatusLookup,
+	type WorkbenchProducerStatusReporter,
+} from './services/workbench/WorkbenchProducerStatusService'
+export {
+	loadPackagedWorkbenchDeployment,
 	resolvePackagedNodeModule,
-	resolvePackagedWorkbenchManifest,
 } from './services/workbench/packaged-artifact'
 export {
-	installWorkbench,
+	createWorkbenchBackend,
 	requireWorkbench,
+	type WorkbenchBackendFactory,
 	type WorkbenchInstallOptions,
 } from './services/workbench'
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export {
+	bindContextRuntimeLogging,
 	createRuntimeLogging,
 	getActiveRuntimeLogging,
 	requireActiveRuntimeLogging,
@@ -76,3 +148,7 @@ export {
 	type RuntimeLoggingState,
 	type RuntimeStoreSinkInput,
 } from './logger/logging'
+
+export { PluginRecentUpdateTracker } from './internal/recent-update'
+
+export { createDevConsoleScope, type DevConsoleScope } from './internal/dev-console'

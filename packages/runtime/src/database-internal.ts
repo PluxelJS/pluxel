@@ -1,4 +1,4 @@
-import type { DatabaseDefinition } from './database'
+import type { DatabaseDefinition, DatabaseEvolution } from './database'
 
 const databaseDefinitionMarker = Symbol.for('pluxel.database.definition')
 
@@ -7,8 +7,6 @@ export type DatabaseMigration = Readonly<{
 	checksum: string
 	sql: string
 }>
-
-export type DatabaseEvolution = 'migrations' | 'reset-on-schema-change'
 
 export type DatabaseArtifact = Readonly<{
 	evolution: DatabaseEvolution

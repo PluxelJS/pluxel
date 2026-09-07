@@ -1,0 +1,15 @@
+{
+	"title": "Workbench 与配置",
+	"defaultOpen": true,
+	"pages": [
+		"index",
+		"plugin-groups",
+		"---标准配方---",
+		"content",
+		"view",
+		"composition",
+		"---配置表单---",
+		"configuration-playground",
+		"valibot-form"
+	]
+}

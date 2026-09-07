@@ -1,161 +1,283 @@
-import { type Context as PluxelContext, Injectable, symbols } from '@pluxel/context'
+import type { Context as PluxelContext } from '../../context/Context'
 import {
-	EvtChannel as BaseEvtChannel,
+	Eventure,
+	type EmitSettledRecord,
+	type ErrorPolicy,
 	type EventArgs,
 	type EventDescriptor,
-	type EventEmitterOptions,
 	type EventListener,
-	Eventure,
-	type IEventMap,
-	type OnOptions,
+	type EventResult,
+	type EventureOptions,
+	type EventureWaitForOptions,
+	type EventureWaitForPromise,
 	type Unsubscribe,
 } from 'eventure'
-import type {
-	CommitSummary,
-	PluginIdentifier,
-	PluginInstance,
-	RuntimePluginKey,
-} from '../../plugins'
+import { pinOwnerContext } from '../../context/owner-view'
+import { deferEventCleanup, withEventLogger } from './event-support'
 
-const serviceName = 'events' as const
+/**
+ * Ambient event vocabulary shared by a Core host.
+ *
+ * Plugin packages extend this interface through module augmentation of `@pluxel/core`.
+ */
+export interface Events {}
 
-export type ResolverCacheInvalidatedEvent = {
-	by?: string
-	reason?: string
-	targets?: readonly string[]
+export type EventsServiceConfig = Readonly<{
+	readonly events?: readonly (keyof Events)[]
+	readonly catchPromiseError?: boolean
+	readonly checkSyncFuncReturnPromise?: boolean
+	readonly errorPolicy?: ErrorPolicy
+}>
+
+type OnOptions = Readonly<{ prepend?: boolean; signal?: AbortSignal }>
+
+type EventPredicate<D extends EventDescriptor> = (...args: EventArgs<D>) => boolean | void
+
+export interface EventsWhenGuard<D extends EventDescriptor> {
+	once(listener: EventListener<D>): Unsubscribe
+	onceFront(listener: EventListener<D>): Unsubscribe
+	many(times: number, listener: EventListener<D>): Unsubscribe
+	manyFront(times: number, listener: EventListener<D>): Unsubscribe
 }
 
-type InternalEvents = {
-	runtimeCommitted: EvtChannel<[summary: CommitSummary]>
-	resolverCacheInvalidated: EvtChannel<[event?: ResolverCacheInvalidatedEvent]>
-}
-
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Config {
-			[serviceName]?: EventEmitterOptions<Events>
-		}
-		interface Services {
-			[serviceName]: EventsService
-		}
-	}
-	interface Context {
-		readonly internalEvent: EventsService['internalEvent']
-		on: EventsService['on']
-		onFront: EventsService['onFront']
-		emit: EventsService['emit']
-		emitWithContext: EventsService['emitWithContext']
-	}
-}
-
-@Injectable({
-	key: serviceName,
-	methods: ['on', 'onFront', 'emit', 'emitWithContext'] as const,
-	props: ['internalEvent'] as const,
-})
-export class EventsService extends Eventure<Events> {
-	readonly internalEvent: InternalEvents
-
-	constructor(
-		public ctx: PluxelContext,
-		config?: EventEmitterOptions<Events>,
-	) {
-		super(withEventLogger<Events>(ctx, config))
-		this.internalEvent = {
-			runtimeCommitted: new EvtChannel(() => this.ctx),
-			resolverCacheInvalidated: new EvtChannel(() => this.ctx),
-		}
-	}
-
-	protected override _register<K$1 extends keyof Events>(
-		event: K$1,
-		listener: EventListener<Events[K$1]>,
+export interface EventsService {
+	readonly ctx: PluxelContext
+	on<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
 		opts?: OnOptions,
-		forcePrepend?: boolean,
-	): Unsubscribe {
-		;(listener as unknown as { [symbols.ATTACH]?: PluxelContext })[symbols.ATTACH] = this.ctx
-		const ret = super._register(event, listener, opts, forcePrepend)
-		const effects = this.ctx.caller?.effects ?? this.ctx.effects
-		effects.defer(ret as unknown as () => void)
-		return ret
-	}
-
-	emitWithContext<K extends keyof Events>(
-		thisArg: unknown,
+	): Unsubscribe
+	onFront<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+		opts?: Omit<OnOptions, 'prepend'>,
+	): Unsubscribe
+	onAt<K extends keyof Events>(
+		event: K,
+		options: {
+			at: number | ((ctx: { count: number; event: K }) => number)
+			signal?: AbortSignal
+		},
+		listener: EventListener<Events[K]>,
+	): Unsubscribe
+	off<K extends keyof Events>(event: K, listener: EventListener<Events[K]>): boolean
+	once<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe
+	onceFront<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe
+	many<K extends keyof Events>(
+		event: K,
+		times: number,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe
+	manyFront<K extends keyof Events>(
+		event: K,
+		times: number,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe
+	when<K extends keyof Events>(
+		event: K,
+		predicate?: EventPredicate<Events[K]>,
+	): EventsWhenGuard<Events[K]>
+	waitFor<K extends keyof Events>(
+		event: K,
+		options?: EventureWaitForOptions<Events, K>,
+	): EventureWaitForPromise<Events, K>
+	emit<K extends keyof Events>(event: K, ...args: EventArgs<Events[K]>): number
+	emitAll<K extends keyof Events>(
 		event: K,
 		...args: EventArgs<Events[K]>
-	): this {
-		const filterFn = (thisArg as unknown as { [symbols.FILTER]?: FilterFunction })[symbols.FILTER]
-		const listeners = this.queryListeners(event)
-		if (listeners.length === 0) return this
-
-		const attachSym = symbols.ATTACH
-
-		for (let i = 0; i < listeners.length; i++) {
-			const fn = listeners[i]
-			const attachedCtx =
-				((fn as unknown as { [symbols.ATTACH]?: PluxelContext })[attachSym] as
-					| PluxelContext
-					| undefined) ?? this.ctx
-
-			if (!filterFn || filterFn.call(thisArg, attachedCtx)) {
-				fn.call(thisArg, ...args)
-			}
-		}
-
-		return this
-	}
+	): Promise<Awaited<EventResult<Events[K]>>[]>
+	emitSettled<K extends keyof Events>(
+		event: K,
+		...args: EventArgs<Events[K]>
+	): Promise<EmitSettledRecord<EventListener<Events[K]>, Awaited<EventResult<Events[K]>>>[]>
 }
 
-type ContextProvider = PluxelContext | (() => PluxelContext)
+/**
+ * One owner-bound view over the root ambient event bus.
+ *
+ * Emission is host-wide; every subscription is owned by the registering Context effects scope.
+ */
+class EventsServiceView implements EventsService {
+	readonly ctx!: PluxelContext
+	readonly #backend: Eventure<Events>
 
-export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
-	private readonly getCtx: () => PluxelContext
-
-	constructor(ctx: ContextProvider, config?: EventEmitterOptions<Record<string, D>>) {
-		const getCtx = toContextProvider(ctx)
-		super(withEventLogger<Record<string, D>>(getCtx(), config))
-		this.getCtx = getCtx
+	constructor(ctx: PluxelContext, backend: Eventure<Events>) {
+		pinOwnerContext(this, ctx)
+		this.#backend = backend
+		Object.preventExtensions(this)
 	}
 
-	protected override _register(
-		listener: EventListener<D>,
+	on<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
 		opts?: OnOptions,
-		prepend?: boolean,
 	): Unsubscribe {
-		const ctx = this.ctx
-		;(listener as unknown as { [symbols.ATTACH]?: PluxelContext })[symbols.ATTACH] = ctx
-		const ret = super._register(listener, opts, prepend)
-		const effects = ctx.caller?.effects ?? ctx.effects
-		effects.defer(ret as unknown as () => void)
-		return ret
+		return opts?.prepend
+			? this.onFront(event, listener, { signal: opts.signal })
+			: this.ownSubscription(this.#backend.on(event, listener, opts))
 	}
 
-	get ctx() {
-		return this.getCtx()
+	onFront<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+		opts?: Omit<OnOptions, 'prepend'>,
+	): Unsubscribe {
+		return this.ownSubscription(this.#backend.at(event, 'front').on(listener, opts))
+	}
+
+	onAt<K extends keyof Events>(
+		event: K,
+		options: {
+			at: number | ((ctx: { count: number; event: K }) => number)
+			signal?: AbortSignal
+		},
+		listener: EventListener<Events[K]>,
+	): Unsubscribe {
+		return this.ownSubscription(
+			this.#backend.at(event, options.at).on(listener, { signal: options.signal }),
+		)
+	}
+
+	off<K extends keyof Events>(event: K, listener: EventListener<Events[K]>): boolean {
+		return this.#backend.off(event, listener)
+	}
+
+	once<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe {
+		return this.ownSubscription(
+			predicate
+				? this.#backend.when(event, predicate).once(listener)
+				: this.#backend.once(event, listener),
+		)
+	}
+
+	onceFront<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe {
+		const scope = this.#backend.at(event, 'front')
+		return this.ownSubscription(
+			predicate ? scope.when(predicate).once(listener) : scope.once(listener),
+		)
+	}
+
+	many<K extends keyof Events>(
+		event: K,
+		times: number,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe {
+		return this.ownSubscription(
+			predicate
+				? this.#backend.when(event, predicate).many(times, listener)
+				: this.#backend.many(event, times, listener),
+		)
+	}
+
+	manyFront<K extends keyof Events>(
+		event: K,
+		times: number,
+		listener: EventListener<Events[K]>,
+		predicate?: EventPredicate<Events[K]>,
+	): Unsubscribe {
+		const scope = this.#backend.at(event, 'front')
+		return this.ownSubscription(
+			predicate ? scope.when(predicate).many(times, listener) : scope.many(times, listener),
+		)
+	}
+
+	when<K extends keyof Events>(
+		event: K,
+		predicate?: EventPredicate<Events[K]>,
+	): EventsWhenGuard<Events[K]> {
+		const condition = predicate ?? (() => true)
+		return Object.freeze({
+			once: (listener: EventListener<Events[K]>) =>
+				this.ownSubscription(this.#backend.when(event, condition).once(listener)),
+			onceFront: (listener: EventListener<Events[K]>) =>
+				this.ownSubscription(this.#backend.at(event, 'front').when(condition).once(listener)),
+			many: (times: number, listener: EventListener<Events[K]>) =>
+				this.ownSubscription(this.#backend.when(event, condition).many(times, listener)),
+			manyFront: (times: number, listener: EventListener<Events[K]>) =>
+				this.ownSubscription(
+					this.#backend.at(event, 'front').when(condition).many(times, listener),
+				),
+		})
+	}
+
+	waitFor<K extends keyof Events>(
+		event: K,
+		options?: EventureWaitForOptions<Events, K>,
+	): EventureWaitForPromise<Events, K> {
+		const pending = this.#backend.waitFor(event, options)
+		this.ownCleanup(pending.cancel)
+		return pending
+	}
+
+	emit<K extends keyof Events>(event: K, ...args: EventArgs<Events[K]>): number {
+		return this.#backend.emit(event, ...args)
+	}
+
+	emitAll<K extends keyof Events>(
+		event: K,
+		...args: EventArgs<Events[K]>
+	): Promise<Awaited<EventResult<Events[K]>>[]> {
+		return this.#backend.emitAll(event, ...args)
+	}
+
+	emitSettled<K extends keyof Events>(
+		event: K,
+		...args: EventArgs<Events[K]>
+	): Promise<EmitSettledRecord<EventListener<Events[K]>, Awaited<EventResult<Events[K]>>>[]> {
+		return this.#backend.emitSettled(event, ...args)
+	}
+
+	private ownSubscription(unsubscribe: Unsubscribe): Unsubscribe {
+		this.ownCleanup(unsubscribe)
+		return unsubscribe
+	}
+
+	private ownCleanup(cleanup: () => void): void {
+		deferEventCleanup(this.ctx.caller ?? this.ctx, cleanup)
 	}
 }
 
-export interface Events {
-	onLoad: [string]
-	beforeStart: [PluginInstance] // 启动前
-	afterStart: [PluxelContext] // 启动成功
-	startError: [PluxelContext, Error] // 启动失败
-	resolveError: [PluginIdentifier | RuntimePluginKey, Error] // 构造/依赖解析失败（无 plugin ctx）
-}
-
-type FilterFunction = (attachedCtx: PluxelContext) => boolean
-
-function withEventLogger<T extends IEventMap<T>>(
+/** @internal Root backing factory used by the compiled Core Context plan. */
+export function createEventsBackend(
 	ctx: PluxelContext,
-	config?: EventEmitterOptions<T>,
-): EventEmitterOptions<T> {
-	return {
-		...config,
-		logger: ctx.logger.with({ service: 'eventure' }) as unknown as EventEmitterOptions<T>['logger'],
+	config?: EventsServiceConfig,
+): Eventure<Events> {
+	let backendConfig: EventureOptions<Events> | undefined
+	if (config) {
+		const { events, catchPromiseError, checkSyncFuncReturnPromise, ...options } = config
+		backendConfig = {
+			...options,
+			captureRejections: catchPromiseError,
+			captureReturnedPromises: checkSyncFuncReturnPromise,
+			...(events ? { preallocateEvents: [...events] } : {}),
+		}
 	}
+	return new Eventure(withEventLogger(ctx, backendConfig))
 }
 
-function toContextProvider(ctx: ContextProvider): () => PluxelContext {
-	return typeof ctx === 'function' ? ctx : () => ctx
+/** @internal Owner-view factory used by the compiled Core Context plan. */
+export function createEventsServiceView(
+	backend: Eventure<Events>,
+	ctx: PluxelContext,
+): EventsService {
+	return new EventsServiceView(ctx, backend)
 }

@@ -1,4 +1,18 @@
-import { lazy } from 'gunshi'
+import { lazy, type SubCommandable } from 'gunshi'
+
+export const docsCommandArgs = {
+	path: {
+		type: 'positional',
+		description: 'Path below the upstream docs directory',
+		default: 'index.md',
+	},
+} as const
+
+export const docsCommandDefinition = {
+	name: 'docs',
+	description: 'Print the canonical upstream Pluxel documentation URL',
+	args: docsCommandArgs,
+} as const
 
 export const newCommandArgs = {
 	dest: {
@@ -7,17 +21,19 @@ export const newCommandArgs = {
 		description: 'Destination base dir (relative to --root; auto when omitted)',
 	},
 	root: { type: 'string', description: 'Workspace root (auto-detect by default)' },
-	template: { type: 'string', description: 'Template name or path (auto/prompt by default)' },
+	template: {
+		type: 'string',
+		description: 'Bundled template name or explicit local path (auto/prompt by default)',
+	},
 	pm: {
 		type: 'enum',
 		description: 'Package manager (auto-detect by default)',
-		choices: ['pnpm', 'npm', 'yarn'],
+		choices: ['pnpm', 'npm', 'yarn', 'bun'],
 	},
 	force: { type: 'boolean', description: 'Overwrite existing files', default: false },
 	install: {
 		type: 'boolean',
-		description: 'Install dependencies after generation',
-		default: true,
+		description: 'Install dependencies (default: bundled templates only)',
 		negatable: true,
 	},
 	'dry-run': {
@@ -63,13 +79,14 @@ export const databaseGenerateArgs = {
 
 export const databaseGenerateDefinition = {
 	name: 'generate',
-	description: 'Generate a checked-in PostgreSQL migration',
+	description: 'Generate a checked-in PostgreSQL migration (migrations evolution only)',
 	args: databaseGenerateArgs,
 } as const
 
 export const databaseCheckDefinition = {
 	name: 'check',
-	description: 'Validate migration history, checksums, and schema drift',
+	description:
+		'Validate migration history, checksums, and schema drift (migrations evolution only)',
 	args: databaseCommonArgs,
 } as const
 
@@ -80,11 +97,12 @@ export const databaseRebaseArgs = {
 
 export const databaseRebaseDefinition = {
 	name: 'rebase',
-	description: 'Start a fresh database lineage while preserving deployed instances',
+	description:
+		'Start a fresh database lineage while preserving deployed instances (migrations evolution only)',
 	args: databaseRebaseArgs,
 } as const
 
-export const databaseSubCommands = new Map([
+export const databaseSubCommands = new Map<string, SubCommandable>([
 	[
 		'generate',
 		lazy(
@@ -173,7 +191,7 @@ export const distributionCorrelateDefinition = {
 	args: distributionCorrelateArgs,
 } as const
 
-export const distributionSubCommands = new Map([
+export const distributionSubCommands = new Map<string, SubCommandable>([
 	[
 		'create',
 		lazy(
@@ -285,7 +303,7 @@ export const loaderHmrEnabledDefinition = {
 	args: loaderHmrSetArgs,
 } as const
 
-export const hmrSubCommands = new Map([
+export const hmrSubCommands = new Map<string, SubCommandable>([
 	[
 		'prompt',
 		lazy(
@@ -317,28 +335,60 @@ export const hmrCommandDefinition = {
 	subCommands: hmrSubCommands,
 } as const
 
-export const sourceWorkspaceArgs = {
-	root: { type: 'string', description: 'Consumer workspace root', default: '.' },
-	config: {
-		type: 'string',
-		description: 'Semantic source declaration',
-		default: 'pluxel.sources.jsonc',
-	},
+const sourceRegistryArgs = {
 	registry: {
 		type: 'string',
 		description: 'Machine-local checkout registry (auto-detected by default)',
 	},
 } as const
 
+export const sourceWorkspaceArgs = {
+	...sourceRegistryArgs,
+	root: { type: 'string', description: 'Consumer workspace root', default: '.' },
+	config: {
+		type: 'string',
+		description: 'Semantic source declaration',
+		default: 'pluxel.sources.jsonc',
+	},
+} as const
+
+export const sourceBuildArgs = {
+	...sourceWorkspaceArgs,
+	package: {
+		type: 'string',
+		multiple: true,
+		description: 'Only build this selected source package artifact (repeatable)',
+	},
+	force: {
+		type: 'boolean',
+		description: 'Ignore an upstream Turbo build cache hit',
+		default: false,
+	},
+} as const
+
 export const sourceRegisterArgs = {
+	...sourceRegistryArgs,
 	checkout: { type: 'positional', description: 'Source checkout root', default: '.' },
 	repository: {
 		type: 'string',
 		description: 'Repository URL (auto-detected from package.json or Git origin)',
 	},
-	registry: {
-		type: 'string',
-		description: 'Machine-local checkout registry (auto-detected by default)',
+} as const
+
+export const sourceListDefinition = {
+	name: 'list',
+	description: 'List registered and automatically discovered source checkouts',
+	toKebab: true,
+	args: sourceRegistryArgs,
+} as const
+
+export const sourceUnregisterDefinition = {
+	name: 'unregister',
+	description: 'Remove a checkout registration without deleting its files',
+	toKebab: true,
+	args: {
+		...sourceRegistryArgs,
+		repository: { type: 'positional', required: true, description: 'Repository URL to unregister' },
 	},
 } as const
 
@@ -360,7 +410,7 @@ export const sourceBuildDefinition = {
 	name: 'build',
 	description: 'Build only required source artifacts for this workspace',
 	toKebab: true,
-	args: sourceWorkspaceArgs,
+	args: sourceBuildArgs,
 } as const
 
 export const sourceInstallDefinition = {
@@ -383,7 +433,21 @@ export const sourceInstallDefinition = {
 	},
 } as const
 
-export const sourceSubCommands = new Map([
+export const sourceSubCommands = new Map<string, SubCommandable>([
+	[
+		'list',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceListCommand),
+			sourceListDefinition,
+		),
+	],
+	[
+		'unregister',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceUnregisterCommand),
+			sourceUnregisterDefinition,
+		),
+	],
 	[
 		'register',
 		lazy(
@@ -491,7 +555,14 @@ export const workspaceScanDefinition = {
 	args: workspaceScanArgs,
 } as const
 
-export const workspaceSubCommands = new Map([
+export const workspaceDoctorDefinition = {
+	name: 'doctor',
+	description: 'Validate shared Pluxel workspace and source-bootstrap policy',
+	toKebab: true,
+	args: workspaceRootArgs,
+} as const
+
+export const workspaceSubCommands = new Map<string, SubCommandable>([
 	[
 		'prompt',
 		lazy(
@@ -534,12 +605,119 @@ export const workspaceSubCommands = new Map([
 			workspaceScanDefinition,
 		),
 	],
+	[
+		'doctor',
+		lazy(
+			() => import('./commands/workspace').then((module) => module.workspaceDoctorCommand),
+			workspaceDoctorDefinition,
+		),
+	],
 ])
 
 export const workspaceCommandDefinition = {
 	name: 'workspace',
-	description: 'Manage workspaces (pnpm / yarn)',
+	description: 'Manage and diagnose workspaces',
 	toKebab: true,
 	args: workspaceRootArgs,
 	subCommands: workspaceSubCommands,
+} as const
+
+export const devCommonArgs = {
+	root: {
+		type: 'string',
+		description:
+			'Project directory (defaults to the nearest package root; printed as a real path in diagnostics)',
+	},
+	instance: {
+		type: 'string',
+		description: 'Select an exact instance ID from dev instances in the same project',
+	},
+} as const
+
+export const devInstancesArgs = { root: devCommonArgs.root } as const
+
+export const devInstancesDefinition = {
+	name: 'instances',
+	description: 'Discover all running development consoles in one project as JSON',
+	args: devInstancesArgs,
+} as const
+
+export const devRunArgs = {
+	...devCommonArgs,
+	file: {
+		type: 'positional',
+		required: true,
+		description: 'Project-local TypeScript module to execute',
+	},
+	export: { type: 'string', default: 'default', description: 'Exported function to call' },
+	input: { type: 'string', description: 'JSON input passed to the execution context' },
+	'input-file': { type: 'string', description: 'Read JSON input from this file' },
+	detach: {
+		type: 'boolean',
+		default: false,
+		description: 'Return the run receipt without waiting',
+	},
+	timeout: {
+		type: 'string',
+		default: '30000',
+		description: 'Cooperative run deadline in milliseconds (1–300000)',
+	},
+} as const
+
+export const devRunDefinition = {
+	name: 'run',
+	description:
+		'Execute inside the selected Vite host; print final JSON and an accepted receipt on stderr',
+	toKebab: true,
+	args: devRunArgs,
+} as const
+
+export const devRunIdArgs = {
+	...devCommonArgs,
+	id: { type: 'positional', required: true, description: 'Run ID returned by dev run' },
+} as const
+
+export const devResultDefinition = {
+	name: 'result',
+	description: 'Read the current state or retained result of a run as JSON',
+	args: devRunIdArgs,
+} as const
+
+export const devCancelDefinition = {
+	name: 'cancel',
+	description: 'Request cooperative cancellation of a run and print its state as JSON',
+	args: devRunIdArgs,
+} as const
+
+export const devCommandDefinition = {
+	name: 'dev',
+	description: 'Operate an explicitly enabled development console in a running Vite host',
+	args: devInstancesArgs,
+	subCommands: new Map<string, SubCommandable>([
+		[
+			'instances',
+			lazy(
+				() => import('./commands/dev').then((module) => module.devInstancesCommand),
+				devInstancesDefinition,
+			),
+		],
+		[
+			'run',
+			lazy(() => import('./commands/dev').then((module) => module.devRunCommand), devRunDefinition),
+		],
+		[
+			'result',
+			lazy(
+				() => import('./commands/dev').then((module) => module.devResultCommand),
+				devResultDefinition,
+			),
+		],
+		[
+			'cancel',
+			lazy(
+				() => import('./commands/dev').then((module) => module.devCancelCommand),
+				devCancelDefinition,
+			),
+		],
+	]),
 } as const

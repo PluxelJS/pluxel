@@ -1,7 +1,8 @@
 import type { LogLevel } from '@logtape/logtape'
+import { pluginNodeAddressEqual, type PluginNodeAddress } from '@pluxel/core'
 
 export type LogFilter = {
-	pluginId?: string
+	plugin?: PluginNodeAddress
 	context?: string
 	displayName?: string
 	/** Category string, e.g. "pluxel.plugins" or "pluxel.runtime". Supports "prefix.*". */
@@ -10,7 +11,7 @@ export type LogFilter = {
 
 export type CompiledLogFilter = {
 	hasFilter: boolean
-	pluginId?: string
+	plugin?: PluginNodeAddress
 	context?: string
 	displayName?: string
 	categoryKey?: string
@@ -37,7 +38,7 @@ export type RuntimeLogLine = {
 	streamId: string
 
 	epoch: number
-	/** uint64 string (SSE-friendly, future-proof beyond JS safe integers). */
+	/** uint64 string, encoded as text to remain exact beyond JS safe integers. */
 	seq: string
 
 	/** Epoch milliseconds. */
@@ -47,7 +48,9 @@ export type RuntimeLogLine = {
 
 	/** HMR-friendly origin hints (optional). */
 	name?: string
-	pluginId?: string
+	plugin?: PluginNodeAddress
+	pluginReference?: string
+	pluginLabel?: string
 	context?: string
 
 	/** Fast, single-line message for the primary list. */
@@ -100,16 +103,16 @@ export type LogRangeErr = {
 
 export type LogRangeResult = LogRangeOk | LogRangeErr
 
-export type LogSseAppend = {
+export type RuntimeLogAppend = {
 	type: 'append'
 	streamId: string
 	epoch: number
 	fromSeq: string
 	nextSeq: string
-	lines: RuntimeLogLine[]
+	lines: readonly RuntimeLogLine[]
 }
 
-export type LogSseGap = {
+export type RuntimeLogGap = {
 	type: 'gap'
 	streamId: string
 	epoch: number
@@ -117,7 +120,7 @@ export type LogSseGap = {
 	missingTo: string
 }
 
-export type LogSseReset = {
+export type RuntimeLogReset = {
 	type: 'reset'
 	streamId: string
 	bootId: string
@@ -129,11 +132,11 @@ export type LogSseReset = {
 	retention: { windowLines: number }
 }
 
-export type LogSseEvent = LogSseAppend | LogSseGap | LogSseReset
+export type RuntimeLogEvent = RuntimeLogAppend | RuntimeLogGap | RuntimeLogReset
 
 export function compileLogFilter(filter: LogFilter | undefined): CompiledLogFilter {
 	if (!filter) return { hasFilter: false }
-	const pluginId = filter.pluginId ?? undefined
+	const plugin = filter.plugin ?? undefined
 	const context = filter.context ?? undefined
 	const displayName = filter.displayName ?? undefined
 	const rawCategory = filter.category ?? undefined
@@ -144,10 +147,10 @@ export function compileLogFilter(filter: LogFilter | undefined): CompiledLogFilt
 			: rawCategory
 		: undefined
 	const categoryParts = categoryKey ? categoryKey.split('.') : undefined
-	const hasFilter = !!(pluginId || context || displayName || categoryKey)
+	const hasFilter = !!(plugin || context || displayName || categoryKey)
 	return {
 		hasFilter,
-		pluginId,
+		plugin,
 		context,
 		displayName,
 		categoryKey,
@@ -161,7 +164,11 @@ export function matchesLogFilterCompiled(
 	compiled: CompiledLogFilter,
 ): boolean {
 	if (!compiled.hasFilter) return true
-	if (compiled.pluginId && record.pluginId !== compiled.pluginId) return false
+	if (
+		compiled.plugin &&
+		(!record.plugin || !pluginNodeAddressEqual(record.plugin, compiled.plugin))
+	)
+		return false
 	if (compiled.context && record.context !== compiled.context) return false
 	if (compiled.displayName && record.name !== compiled.displayName) return false
 	if (compiled.categoryKey) {
@@ -178,7 +185,8 @@ export function matchesLogFilterCompiled(
 }
 
 export function matchesLogFilter(record: RuntimeLogLine, filter: LogFilter): boolean {
-	if (filter.pluginId && record.pluginId !== filter.pluginId) return false
+	if (filter.plugin && (!record.plugin || !pluginNodeAddressEqual(record.plugin, filter.plugin)))
+		return false
 	if (filter.context && record.context !== filter.context) return false
 	if (filter.displayName && record.name !== filter.displayName) return false
 	if (filter.category) {

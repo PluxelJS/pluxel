@@ -3,60 +3,70 @@
 // Extracted from PluginService to keep commit logic readable while preserving
 // identical runtime behavior.
 
-import type { Context } from '@pluxel/context'
-import { BasePlugin } from '../../composition/BasePlugin'
-import type { PluginIdentifier } from '../../types'
-import type { RuntimePluginKey } from '../identity'
+import type { Context } from '../../../context/Context'
+import { BasePlugin, getPluginLifecycleAdapter } from '../../composition/BasePlugin'
+import {
+	formatPluginNodeReference,
+	type PluginNodeSlot,
+	type PluginSlotRegistry,
+} from '../identity'
 import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from '../PluginActor'
 
-const PLUGIN_LIFECYCLE_SLOT_KEY = 'pluxel:plugin:lifecycle'
-const PLUGIN_LIFECYCLE_SLOT = Symbol.for(PLUGIN_LIFECYCLE_SLOT_KEY)
+export type LifecycleStartOptions = Readonly<{
+	timeoutMs?: number
+	onLateError?: (error: unknown, phase: 'start' | 'drain') => void
+	finalizeGeneration?: (signal: AbortSignal) => void | Promise<void>
+}>
+
+const lifecycles = new WeakMap<BasePlugin, PluginLifecycleActor>()
+
+export type LifecycleStartResult =
+	| Readonly<{ ok: true }>
+	| Readonly<{
+			ok: false
+			startError: Error
+			drainError?: unknown
+	  }>
+
+const LIFECYCLE_STARTED: LifecycleStartResult = Object.freeze({ ok: true })
 
 export class LifecycleManager {
 	constructor(
 		private readonly ctx: Context,
+		private readonly slots: PluginSlotRegistry,
 		private readonly startTimeoutMs: number,
-		private readonly stopTimeoutMs: number,
+		private readonly drainTimeoutMs: number,
 	) {}
 
 	/* ─────────────────────────── Lifecycle Slot ─────────────────────────── */
 
-	private ensureLifecycleSlot(plugin: BasePlugin): {
-		[PLUGIN_LIFECYCLE_SLOT]: PluginLifecycleActor | null
-	} {
-		if (!Object.hasOwn(plugin, PLUGIN_LIFECYCLE_SLOT)) {
-			Object.defineProperty(plugin, PLUGIN_LIFECYCLE_SLOT, {
-				value: null,
-				writable: true,
-				configurable: false,
-				enumerable: false,
-			})
-		}
-		return plugin as unknown as { [PLUGIN_LIFECYCLE_SLOT]: PluginLifecycleActor | null }
-	}
-
 	private getLifecycle(plugin: BasePlugin): PluginLifecycleActor | undefined {
-		return this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE_SLOT] ?? undefined
+		return lifecycles.get(plugin)
 	}
 
 	private setLifecycle(plugin: BasePlugin, ref?: PluginLifecycleActor) {
-		this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE_SLOT] = ref ?? null
+		if (ref) lifecycles.set(plugin, ref)
+		else lifecycles.delete(plugin)
 	}
 
 	private createLifecycle(
-		id: PluginIdentifier | RuntimePluginKey,
+		id: PluginNodeSlot,
 		plugin: BasePlugin,
+		options: LifecycleStartOptions = {},
 	): PluginLifecycleActor {
+		const runtime = getPluginLifecycleAdapter(plugin)
 		const ref = new PluginLifecycleActor(
-			{ autoStart: false, useErrorChannel: true },
-			{ id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
+			{ autoStart: false, useErrorChannel: true, onLateError: options.onLateError },
+			{
+				id,
+				runtime: options.finalizeGeneration
+					? { ...runtime, finalize: options.finalizeGeneration }
+					: runtime,
+			},
 		)
 		ref.subscribe({
 			error: (err) => {
-				const label =
-					typeof id === 'function'
-						? ((id as { readonly name?: string }).name ?? String(id))
-						: String(id)
+				const label = formatPluginNodeReference(this.slots.nodeAddress(id))
 				this.ctx.logger.error('actor {actor} unhandled error', {
 					actor: label,
 					error: err,
@@ -69,15 +79,16 @@ export class LifecycleManager {
 	}
 
 	private ensureLifecycle(
-		id: PluginIdentifier | RuntimePluginKey,
+		id: PluginNodeSlot,
 		plugin: BasePlugin,
+		options: LifecycleStartOptions = {},
 	): PluginLifecycleActor {
 		const existing = this.getLifecycle(plugin)
 		if (existing) {
 			if (!lifecycleSelectors.isStopped(existing.getSnapshot?.())) return existing
 			this.setLifecycle(plugin)
 		}
-		return this.createLifecycle(id, plugin)
+		return this.createLifecycle(id, plugin, options)
 	}
 
 	getSnapshot(plugin: BasePlugin): LifecycleSnapshot | undefined {
@@ -92,34 +103,34 @@ export class LifecycleManager {
 	/* ─────────────────────────── Lifecycle Workbench ─────────────────────────── */
 
 	async startLifecycle(
-		id: PluginIdentifier | RuntimePluginKey,
+		id: PluginNodeSlot,
 		plugin: BasePlugin,
-		timeoutMs?: number,
-	): Promise<void> {
-		const ref = this.ensureLifecycle(id, plugin)
-		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return
+		options: LifecycleStartOptions = {},
+	): Promise<LifecycleStartResult> {
+		const ref = this.ensureLifecycle(id, plugin, options)
+		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return LIFECYCLE_STARTED
 
 		ref.send({ type: 'START' })
 
-		const startTimeoutMs = normalizeTimeoutMs(timeoutMs, this.startTimeoutMs)
+		const startTimeoutMs = normalizeTimeoutMs(options.timeoutMs, this.startTimeoutMs)
 
 		let snapshot: LifecycleSnapshot
 		try {
 			snapshot = await ref.waitForStable(startTimeoutMs)
-		} catch (error) {
-			await this.stopLifecycle(id, plugin, { ref })
-			throw new Error(`Plugin ${String(id)} start timeout after ${startTimeoutMs}ms`, {
-				cause: error,
-			})
+		} catch (cause) {
+			return await this.failedStart(
+				id,
+				plugin,
+				ref,
+				new Error(
+					`Plugin ${formatPluginNodeReference(this.slots.nodeAddress(id))} start timeout after ${startTimeoutMs}ms`,
+					{ cause },
+				),
+			)
 		}
 
 		if (lifecycleSelectors.isRunning(snapshot)) {
-			try {
-				this.ctx.emit('afterStart', plugin.ctx)
-			} catch {
-				// ignore: events service may be overridden
-			}
-			return
+			return LIFECYCLE_STARTED
 		}
 
 		const refSnap = ref.getSnapshot?.() as unknown as
@@ -129,26 +140,47 @@ export class LifecycleManager {
 		const capturedErr: unknown =
 			refSnap?.context?.err ?? stableSnap.context?.err ?? stableSnap.error
 
-		await this.stopLifecycle(id, plugin, { ref })
-
-		const pluginCtx = plugin.ctx
 		const err =
 			capturedErr instanceof Error
 				? capturedErr
 				: capturedErr !== null && capturedErr !== undefined
 					? new Error(String(capturedErr), { cause: capturedErr })
-					: new Error(`Plugin ${String(id)} failed to start`)
+					: new Error(
+							`Plugin ${formatPluginNodeReference(this.slots.nodeAddress(id))} failed to start`,
+						)
+		return await this.failedStart(id, plugin, ref, err)
+	}
 
+	/** Drain a constructed generation that failed before lifecycle start admission. */
+	async drainUnstartedGeneration(id: PluginNodeSlot, plugin: BasePlugin): Promise<unknown> {
+		const ref = this.ensureLifecycle(id, plugin)
+		const snapshot = await this.stopLifecycle(id, plugin, { ref })
+		return lifecycleDrainError(ref, snapshot)
+	}
+
+	private async failedStart(
+		id: PluginNodeSlot,
+		plugin: BasePlugin,
+		ref: PluginLifecycleActor,
+		startError: Error,
+	): Promise<LifecycleStartResult> {
+		let snapshot: LifecycleSnapshot | undefined
+		let drainError: unknown
 		try {
-			this.ctx.emit('startError', pluginCtx, err)
-		} catch {
-			// ignore: events service may be overridden
+			snapshot = await this.stopLifecycle(id, plugin, { ref })
+			drainError = lifecycleDrainError(ref, snapshot)
+		} catch (error) {
+			drainError = error
 		}
-		throw err
+		return Object.freeze({
+			ok: false,
+			startError,
+			...(drainError === undefined ? {} : { drainError }),
+		})
 	}
 
 	async stopLifecycle(
-		_id: PluginIdentifier | RuntimePluginKey,
+		_id: PluginNodeSlot,
 		plugin: BasePlugin,
 		opts?: { ref?: PluginLifecycleActor; timeoutMs?: number },
 	): Promise<LifecycleSnapshot | undefined> {
@@ -161,7 +193,7 @@ export class LifecycleManager {
 			/* ignore */
 		}
 
-		const timeoutMs = normalizeTimeoutMs(opts?.timeoutMs, this.stopTimeoutMs)
+		const timeoutMs = normalizeTimeoutMs(opts?.timeoutMs, this.drainTimeoutMs)
 		const snapshot = await this.waitUntilStopped(lifecycle, timeoutMs)
 		this.setLifecycle(plugin)
 		return snapshot
@@ -175,11 +207,35 @@ export class LifecycleManager {
 		if (lifecycleSelectors.isStopped(current)) return current
 		try {
 			return await ref.waitForStopped(timeoutMs)
-		} catch {
-			/* ignore */
+		} catch (cause) {
+			const latest = ref.getSnapshot?.()
+			if (!latest) return undefined
+			const drainError = ref.getDrainError()
+			const error =
+				drainError === undefined
+					? new Error(`Plugin generation drain timeout after ${timeoutMs}ms`, { cause })
+					: drainError instanceof Error
+						? drainError
+						: new Error(String(drainError), { cause: drainError })
+			return {
+				...latest,
+				context: { ...latest.context, err: error, failedStep: 'drain' },
+			}
 		}
-		return ref.getSnapshot?.()
 	}
+}
+
+function lifecycleDrainError(
+	ref: PluginLifecycleActor,
+	snapshot: LifecycleSnapshot | undefined,
+): unknown {
+	const drainError = ref.getDrainError()
+	if (drainError !== undefined) return drainError
+	if (snapshot?.context.failedStep !== 'drain') return undefined
+	return (
+		snapshot.context.err ??
+		new Error(`Plugin generation ${String(snapshot.context.id)} failed to drain`)
+	)
 }
 
 function normalizeTimeoutMs(value: number | undefined, fallback: number): number {

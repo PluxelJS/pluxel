@@ -1,7 +1,8 @@
 {
 	"name": "@pluxel/runtime",
-	"version": "0.3.0",
-	"description": "Pluxel runtime kernel (includes control plane, web SDK, and frozen export)",
+	"version": "1.0.0",
+	"description": "Pluxel runtime kernel, control plane, and web SDK",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -13,6 +14,16 @@
 	],
 	"type": "module",
 	"types": "./dist/index.d.mts",
+	"imports": {
+		"#pluxel/database-driver/pglite": {
+			"@pluxel/source": "./src/services/database-adapters/pglite.ts",
+			"default": "./dist/internal/database/pglite.mjs"
+		},
+		"#pluxel/database-driver/postgres": {
+			"@pluxel/source": "./src/services/database-adapters/postgres.ts",
+			"default": "./dist/internal/database/postgres.mjs"
+		}
+	},
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
@@ -26,13 +37,29 @@
 			"@pluxel/source": "./src/database.ts",
 			"default": "./dist/database.mjs"
 		},
-		"./events": {
-			"@pluxel/source": "./src/events.ts",
-			"default": "./dist/events.mjs"
+		"./dev": {
+			"@pluxel/source": "./src/dev.ts",
+			"default": "./dist/dev.mjs"
+		},
+		"./environment": {
+			"@pluxel/source": "./src/environment.ts",
+			"default": "./dist/environment.mjs"
 		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
+		},
+		"./internal/config-validation": {
+			"@pluxel/source": "./src/internal-config-validation.ts",
+			"default": "./dist/internal/config-validation.mjs"
+		},
+		"./internal/database/pglite": {
+			"@pluxel/source": "./src/services/database-adapters/pglite.ts",
+			"default": "./dist/internal/database/pglite.mjs"
+		},
+		"./internal/database/postgres": {
+			"@pluxel/source": "./src/services/database-adapters/postgres.ts",
+			"default": "./dist/internal/database/postgres.mjs"
 		},
 		"./internal/static": {
 			"@pluxel/source": "./src/internal-static.ts",
@@ -41,6 +68,14 @@
 		"./internal/static-host": {
 			"@pluxel/source": "./src/internal-static-host.ts",
 			"default": "./dist/internal/static-host.mjs"
+		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
+		"./internal/workbench-react": {
+			"@pluxel/source": "./src/workbench/react-internal.tsx",
+			"default": "./dist/internal/workbench-react.mjs"
 		},
 		"./logger": {
 			"@pluxel/source": "./src/logger.ts",
@@ -66,110 +101,142 @@
 			"@pluxel/source": "./src/web.ts",
 			"default": "./dist/web.mjs"
 		},
-		"./web/paths": {
-			"@pluxel/source": "./src/web/paths.ts",
-			"default": "./dist/web/paths.mjs"
+		"./web/react": {
+			"@pluxel/source": "./src/web-react.ts",
+			"default": "./dist/web/react.mjs"
+		},
+		"./web/session": {
+			"@pluxel/source": "./src/web/session/index.ts",
+			"default": "./dist/web/session.mjs"
 		},
 		"./workbench": {
 			"@pluxel/source": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
 		},
-		"./workbench/contract": {
-			"@pluxel/source": "./src/workbench-contract.ts",
-			"default": "./dist/workbench/contract.mjs"
+		"./workbench/client": {
+			"@pluxel/source": "./src/workbench/client.ts",
+			"default": "./dist/workbench/client.mjs"
 		},
-		"./workbench/ui": {
-			"@pluxel/source": "./src/workbench-ui.ts",
-			"default": "./dist/workbench/ui.mjs"
+		"./workbench/federation": {
+			"@pluxel/source": "./src/workbench/federation.ts",
+			"default": "./dist/workbench/federation.mjs"
 		},
-		"./workbench/ui/internal": {
-			"@pluxel/source": "./src/workbench-ui-internal.ts",
-			"default": "./dist/workbench/ui/internal.mjs"
+		"./workbench/react": {
+			"@pluxel/source": "./src/workbench/react.tsx",
+			"default": "./dist/workbench/react.mjs"
 		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
+		"imports": {
+			"#pluxel/database-driver/pglite": "./dist/internal/database/pglite.mjs",
+			"#pluxel/database-driver/postgres": "./dist/internal/database/postgres.mjs"
+		},
 		"exports": {
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./database": "./dist/database.mjs",
-			"./events": "./dist/events.mjs",
+			"./dev": "./dist/dev.mjs",
+			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/config-validation": "./dist/internal/config-validation.mjs",
+			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
+			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
+			"./internal/workbench-react": "./dist/internal/workbench-react.mjs",
 			"./logger": "./dist/logger.mjs",
 			"./product": "./dist/product.mjs",
 			"./services/vault": "./dist/services/vault.mjs",
 			"./test": "./dist/test.mjs",
 			"./toolchain": "./dist/toolchain.mjs",
 			"./web": "./dist/web.mjs",
-			"./web/paths": "./dist/web/paths.mjs",
+			"./web/react": "./dist/web/react.mjs",
+			"./web/session": "./dist/web/session.mjs",
 			"./workbench": "./dist/workbench.mjs",
-			"./workbench/contract": "./dist/workbench/contract.mjs",
-			"./workbench/ui": "./dist/workbench/ui.mjs",
-			"./workbench/ui/internal": "./dist/workbench/ui/internal.mjs",
+			"./workbench/client": "./dist/workbench/client.mjs",
+			"./workbench/federation": "./dist/workbench/federation.mjs",
+			"./workbench/react": "./dist/workbench/react.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"bench:logger": "pnpm exec vitest bench bench/logger.bench.ts",
+		"bench:runtime-state": "pnpm exec vitest bench bench/runtime-state.bench.ts",
 		"bench:workers": "pnpm exec vitest bench bench/worker-task.bench.ts",
 		"build": "pnpm run build:web && pnpm run build:lib",
 		"build:lib": "tsdown",
-		"build:web": "vite build"
+		"build:web": "vite build",
+		"typecheck": "tsc --noEmit --pretty false --composite false"
 	},
 	"dependencies": {
-		"@electric-sql/pglite": "^0.5.4",
-		"@elysiajs/eden": "^1.4.8",
-		"@gqloom/core": "^0.16.1",
-		"@gqloom/valibot": "^0.15.1",
-		"@logtape/file": "^2.0.2",
-		"@logtape/logtape": "^2.0.2",
-		"@logtape/pretty": "^2.0.2",
-		"@pluxel/commands": "workspace:*",
-		"@pluxel/core": "workspace:*",
-		"@sinclair/typebox": "^0.34.48",
-		"age-encryption": "^0.3.0",
-		"better-sse": "^0.16.1",
-		"capnweb": "^0.5.0",
-		"drizzle-orm": "catalog:",
-		"elysia": "^1.4.27",
-		"graphql": "^16.13.0",
-		"graphql-yoga": "^5.18.0",
-		"jose": "^6.2.3",
-		"ohash": "^2.0.11",
-		"oxc-resolver": "^11.21.3",
-		"pathe": "^2.0.3",
-		"pg": "^8.22.0",
-		"std-env": "^4.0.0-rc.1",
-		"superjson": "^2.2.6",
-		"tinypool": "catalog:",
-		"valibot": "^1.2.0"
+		"@electric-sql/pglite": "catalog:prod",
+		"@logtape/file": "catalog:prod",
+		"@logtape/logtape": "catalog:prod",
+		"@logtape/pretty": "catalog:prod",
+		"@module-federation/bridge-react": "catalog:frontend",
+		"@module-federation/runtime": "catalog:prod",
+		"@module-federation/sdk": "catalog:prod",
+		"@pluxel/commands": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@sinclair/typebox": "catalog:prod",
+		"@tanstack/query-core": "catalog:frontend",
+		"age-encryption": "catalog:prod",
+		"capnweb": "catalog:prod",
+		"drizzle-orm": "catalog:backend",
+		"elysia": "catalog:prod",
+		"jose": "catalog:prod",
+		"ohash": "catalog:prod",
+		"oxc-resolver": "catalog:prod",
+		"pathe": "catalog:node",
+		"pg": "catalog:backend",
+		"std-env": "catalog:prod",
+		"superjson": "catalog:validation",
+		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
-		"@gqlens/vite": "workspace:*",
-		"@mantine/core": "catalog:",
-		"@mantine/notifications": "catalog:",
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"@mantine/notifications": "catalog:frontend",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@tabler/icons-react": "catalog:",
-		"@types/pg": "^8.20.0",
-		"@types/react": "catalog:",
-		"@types/react-dom": "catalog:",
-		"fs-fixture": "^2.13.0",
-		"postcss": "^8.5.6",
-		"postcss-preset-mantine": "^1.18.0",
-		"postcss-simple-vars": "^7.0.1",
-		"react": "catalog:",
-		"react-dom": "catalog:",
+		"@tabler/icons-react": "catalog:icons",
+		"@types/pg": "catalog:types",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"fs-fixture": "catalog:dev",
+		"postcss": "catalog:dev",
+		"postcss-preset-mantine": "catalog:dev",
+		"postcss-simple-vars": "catalog:dev",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
 		"valibot-form": "workspace:*",
-		"vite": "^8.0.0-beta.18"
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
-		"@tabler/icons-react": "catalog:"
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
 	},
-	"pluxel": {
-		"workbenchContractProtocol": 2
+	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@mantine/hooks": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

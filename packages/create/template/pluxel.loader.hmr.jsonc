@@ -1,0 +1,13 @@
+{
+	"version": 2,
+	"profile": "example",
+	"defaults": {
+		"roots": "auto",
+		"exclude": ["**/node_modules/**", "**/dist/**", "**/.turbo/**", "**/*.map"],
+	},
+	"profiles": {
+		"example": {
+			"enabled": [],
+		},
+	},
+}

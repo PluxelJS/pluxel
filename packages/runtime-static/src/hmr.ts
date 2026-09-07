@@ -1,4 +1,4 @@
-import type { StaticRuntimeDefinition, StaticRuntimeHmrReport, StaticRuntimeHost } from './index'
+import type { StaticRuntimeDefinition, StaticRuntimeHmrReport, StaticRuntimeHost } from './index.ts'
 
 export type ReloadStaticRuntimeOptions = {
 	host: StaticRuntimeHost
@@ -9,9 +9,9 @@ export type ReloadStaticRuntimeOptions = {
  * Apply a static runtime definition update to an already-running static host.
  *
  * The caller owns how the definition was imported (for example Vite SSR import).
- * This function only compares the fixed catalog by plugin name, revalidates
- * enabled plugins through the host config service, and delegates lifecycle
- * changes to core commit.
+ * This function compares the fixed catalog by lowered Plugin node address, revalidates
+ * auto-start policy through RuntimeState, and delegates lifecycle changes to the coordinator.
+ * Concurrent reloads are committed serially in call order.
  */
 export function reloadStaticRuntime(
 	options: ReloadStaticRuntimeOptions,

@@ -1,19 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { Injectable, type Context as CoreContext } from '@pluxel/core'
+import { formatPluginNodeReference, type Context as CoreContext } from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
-import type { Pool } from 'pg'
+import { attachPostgresPoolErrorHandler } from './database-adapters/shared'
 import {
 	readDatabaseDefinition,
 	type DatabaseArtifact,
 	type DatabaseMigration,
 } from '../database-internal'
 import type { DatabaseDefinition, PluginDatabaseHandle } from '../database'
+import type { PersistenceServiceConfig } from './persistence/PersistenceService'
+import { pinOwnerContext } from '../context/owner-view'
 
-const serviceName = 'database' as const
 const SYSTEM_SCHEMA = 'pluxel_system'
 
 export type DatabaseConfig =
@@ -29,6 +28,12 @@ export type DatabaseConfig =
 			}>
 			tls?: 'require' | 'verify-full'
 	  }>
+
+/** @internal Immutable host inputs shared by all owner views of one database coordinator. */
+export type DatabaseServiceHostOptions = Readonly<{
+	database?: DatabaseConfig
+	persistence?: PersistenceServiceConfig
+}>
 
 type AnyDatabase = PgDatabase<PgQueryResultHKT, any>
 
@@ -188,7 +193,10 @@ class DatabaseCoordinator {
 	private checkpoint = 0
 	private disposed = false
 
-	constructor(private readonly root: CoreContext) {
+	constructor(
+		private readonly root: CoreContext,
+		private readonly options: DatabaseServiceHostOptions,
+	) {
 		root.effects.defer(() => this.dispose(), { tag: 'DatabaseCoordinator' })
 	}
 
@@ -196,14 +204,15 @@ class DatabaseCoordinator {
 		owner: CoreContext,
 		definition: Definition,
 	): Promise<PluginDatabaseHandle<Definition>> {
-		if (this.root.config.database === false) {
+		const address = owner.pluginInfo?.nodeAddress
+		if (!address) throw new Error('[pluxel/database] database use requires a plugin Context')
+		if (this.options.database === false) {
 			throw new Error(
-				`[pluxel/database] database capability is disabled for plugin "${owner.pluginInfo.id}"`,
+				`[pluxel/database] database capability is disabled for plugin "${formatPluginNodeReference(address)}"`,
 			)
 		}
 		const artifact = readDatabaseDefinition(definition)
-		const ownerId = String(owner.pluginInfo.id ?? '').trim()
-		if (!ownerId) throw new Error('[pluxel/database] database use requires a plugin Context')
+		const ownerId = formatPluginNodeReference(address)
 		const instance = await this.prepare(ownerId, definition, artifact)
 		return new OwnerDatabaseHandle(this, owner, definition, instance)
 	}
@@ -234,20 +243,8 @@ class DatabaseCoordinator {
 					throw new Error('[pluxel/database] database handle instance has been replaced')
 				}
 				await tx.execute(sql.raw(`SET LOCAL ROLE ${quoteIdent(instance.ownerRole)}`))
-				await tx.execute(
-					sql.raw(`SET LOCAL search_path TO ${quoteIdent(instance.ownerSchema)}, pg_catalog`),
-				)
-				await tx.execute(sql.raw(`SET LOCAL statement_timeout TO '30000ms'`))
-				await tx.execute(sql.raw(`SET LOCAL lock_timeout TO '5000ms'`))
-				await tx.execute(sql.raw(`SET LOCAL idle_in_transaction_session_timeout TO '30000ms'`))
-				if (!readonly) {
-					await tx.execute(
-						sql.raw(
-							`SELECT set_config('pluxel.transaction_id', ${quoteLiteral(randomUUID())}, true)`,
-						),
-					)
-					changed = true
-				}
+				await configureOperationContext(tx, instance, readonly ? undefined : randomUUID())
+				if (!readonly) changed = true
 				return await callback(tx)
 			})
 			if (changed) this.requestDispatch()
@@ -336,9 +333,8 @@ class DatabaseCoordinator {
 						`SELECT set_config('pluxel.transaction_id', ${quoteLiteral(randomUUID())}, true)`,
 					),
 				)
-				let active = await readActiveInstance(tx, ownerId)
+				const active = await readActiveInstance(tx, ownerId)
 				if (active && instanceMatches(active, artifact.lineage, fingerprint)) return active
-				if (!active) active = await this.adoptLegacyInstance(tx, ownerId)
 				if (active?.lineage === artifact.lineage) {
 					return await this.upgradeInstance(tx, active, definition, artifact, fingerprint, tables)
 				}
@@ -467,41 +463,6 @@ class DatabaseCoordinator {
 		)
 	}
 
-	private async adoptLegacyInstance(
-		tx: AnyDatabase,
-		ownerId: string,
-	): Promise<PreparedDatabaseInstance | undefined> {
-		const lineage = 'main'
-		const ownerSchema = legacyPhysicalSchemaFor(ownerId)
-		if (!(await databaseSchemaExists(tx, ownerSchema))) return undefined
-		const instanceId = randomUUID()
-		const ownerRole = physicalRoleForArtifact(ownerSchema)
-		await tx.execute(
-			sql.raw(
-				`INSERT INTO ${SYSTEM_SCHEMA}.database_instances (instance_id, owner_id, lineage, physical_schema, physical_role, artifact_fingerprint, runtime_version, state, activated_at) VALUES (${quoteLiteral(instanceId)}, ${quoteLiteral(ownerId)}, ${quoteLiteral(lineage)}, ${quoteLiteral(ownerSchema)}, ${quoteLiteral(ownerRole)}, '', 0, 'active', now())`,
-			),
-		)
-		const legacyTable = await tx.execute(
-			sql.raw(`SELECT to_regclass('${SYSTEM_SCHEMA}.plugin_migrations') AS name`),
-		)
-		if (resultRows(legacyTable)[0]?.name) {
-			await tx.execute(
-				sql.raw(
-					`INSERT INTO ${SYSTEM_SCHEMA}.database_migrations (instance_id, migration_id, checksum, applied_at) SELECT ${quoteLiteral(instanceId)}, migration_id, checksum, applied_at FROM ${SYSTEM_SCHEMA}.plugin_migrations WHERE owner_schema = ${quoteLiteral(ownerSchema)} ON CONFLICT DO NOTHING`,
-				),
-			)
-		}
-		return {
-			instanceId,
-			ownerId,
-			lineage,
-			ownerSchema,
-			ownerRole,
-			artifactFingerprint: '',
-			runtimeVersion: 0,
-		}
-	}
-
 	private ensureSystem(): Promise<void> {
 		this.systemReady ??= this.initializeSystem()
 		return this.systemReady
@@ -620,13 +581,9 @@ class DatabaseCoordinator {
 	}
 
 	private adapter(): Promise<DatabaseAdapter> {
-		this.adapterTask ??= createAdapter(
-			this.root.config.database,
-			this.root.config.persistence,
-			(error) => {
-				this.root.logger.error('database PostgreSQL pool connection failed', { error })
-			},
-		)
+		this.adapterTask ??= createAdapter(this.options.database, this.options.persistence, (error) => {
+			this.root.logger.error('database PostgreSQL pool connection failed', { error })
+		})
 		return this.adapterTask
 	}
 
@@ -662,7 +619,7 @@ class OwnerDatabaseHandle<
 
 	constructor(
 		private readonly coordinator: DatabaseCoordinator,
-		private readonly owner: CoreContext,
+		owner: CoreContext,
 		private readonly definition: Definition,
 		private readonly instance: PreparedDatabaseInstance,
 	) {
@@ -698,7 +655,7 @@ class OwnerDatabaseHandle<
 			return Promise.reject(new TypeError('[pluxel/database] operation requires a callback'))
 		}
 		return this.coordinator.operation(
-			String(this.owner.pluginInfo.id),
+			this.instance.ownerId,
 			this.token,
 			this.instance,
 			readonly,
@@ -719,26 +676,16 @@ class OwnerDatabaseHandle<
 
 const coordinators = new WeakMap<CoreContext, DatabaseCoordinator>()
 
-declare module '@pluxel/core' {
-	namespace Context {
-		interface Config {
-			database?: DatabaseConfig
-		}
-		interface Services {
-			[serviceName]: DatabaseService
-		}
-	}
-}
-
-@Injectable({ key: serviceName })
 export class DatabaseService {
 	private handle?: PluginDatabaseHandle
 	private definition?: DatabaseDefinition
 
 	constructor(
 		public readonly ctx: CoreContext,
-		_cfg: unknown,
-	) {}
+		private readonly options: DatabaseServiceHostOptions,
+	) {
+		pinOwnerContext(this, ctx)
+	}
 
 	async use<Definition extends DatabaseDefinition>(
 		definition: Definition,
@@ -751,7 +698,7 @@ export class DatabaseService {
 		}
 		this.definition = definition
 		try {
-			this.handle = await coordinatorFor(this.ctx).acquire(this.ctx, definition)
+			this.handle = await coordinatorFor(this.ctx, this.options).acquire(this.ctx, definition)
 			return this.handle as PluginDatabaseHandle<Definition>
 		} catch (error) {
 			this.definition = undefined
@@ -760,39 +707,27 @@ export class DatabaseService {
 	}
 }
 
-function coordinatorFor(ctx: CoreContext): DatabaseCoordinator {
+function coordinatorFor(
+	ctx: CoreContext,
+	options: DatabaseServiceHostOptions,
+): DatabaseCoordinator {
 	const root = ctx.root
 	let coordinator = coordinators.get(root)
 	if (!coordinator) {
-		coordinator = new DatabaseCoordinator(root)
+		coordinator = new DatabaseCoordinator(root, options)
 		coordinators.set(root, coordinator)
 	}
 	return coordinator
 }
 
-export function withDatabasePluginContext<T extends CoreContext.Config>(config: T): T {
-	const registry =
-		config.registry && typeof config.registry === 'object'
-			? (config.registry as Record<string, unknown>)
-			: {}
-	const current = Array.isArray(registry.pluginCTXIsolate)
-		? (registry.pluginCTXIsolate as unknown[])
-		: []
-	if (current.includes(DatabaseService)) return config
-	return {
-		...config,
-		registry: { ...registry, pluginCTXIsolate: [...current, DatabaseService] },
-	} as T
-}
-
-/** @internal Workbench live-query bridge. */
+/** @internal Owner-scoped table invalidation primitive. */
 export function subscribeDatabaseHandle(
 	handle: PluginDatabaseHandle,
 	tables: readonly unknown[],
 	listener: () => void,
 ): () => void {
 	if (!(handle instanceof OwnerDatabaseHandle)) {
-		throw new TypeError('[pluxel/database] liveQuery requires a Pluxel database handle')
+		throw new TypeError('[pluxel/database] subscription requires a Pluxel database handle')
 	}
 	const names = new Set(tables.map(readTableName))
 	return handle.subscribe(names, listener)
@@ -837,15 +772,6 @@ async function installOutboxTrigger(db: AnyDatabase, ownerSchema: string, table:
 			EXECUTE FUNCTION ${SYSTEM_SCHEMA}.capture_change();
 		`,
 	)
-}
-
-function legacyPhysicalSchemaFor(ownerId: string): string {
-	const slug = ownerId
-		.toLowerCase()
-		.replaceAll(/[^a-z0-9]+/g, '_')
-		.replaceAll(/^_+|_+$/g, '')
-	const hash = createHash('sha256').update(ownerId).digest('hex').slice(0, 16)
-	return `pluxel_${slug.slice(0, 36) || 'plugin'}_${hash}`
 }
 
 function physicalSchemaForInstance(ownerId: string, instanceId: string): string {
@@ -932,6 +858,23 @@ function instanceMatches(
 	)
 }
 
+async function configureOperationContext(
+	db: AnyDatabase,
+	instance: PreparedDatabaseInstance,
+	transactionId: string | undefined,
+): Promise<void> {
+	const settings = [
+		`set_config('search_path', ${quoteLiteral(`${quoteIdent(instance.ownerSchema)}, pg_catalog`)}, true)`,
+		"set_config('statement_timeout', '30000ms', true)",
+		"set_config('lock_timeout', '5000ms', true)",
+		"set_config('idle_in_transaction_session_timeout', '30000ms', true)",
+		...(transactionId
+			? [`set_config('pluxel.transaction_id', ${quoteLiteral(transactionId)}, true)`]
+			: []),
+	]
+	await db.execute(sql.raw(`SELECT ${settings.join(', ')}`))
+}
+
 async function lockDatabaseOwner(
 	db: AnyDatabase,
 	ownerId: string,
@@ -1016,15 +959,6 @@ function assertMigrationHistory(
 	}
 }
 
-async function databaseSchemaExists(db: AnyDatabase, schema: string): Promise<boolean> {
-	const result = await db.execute(
-		sql.raw(
-			`SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = ${quoteLiteral(schema)} LIMIT 1`,
-		),
-	)
-	return resultRows(result).length > 0
-}
-
 async function grantOwnerTables(
 	db: AnyDatabase,
 	ownerSchema: string,
@@ -1041,73 +975,23 @@ async function grantOwnerTables(
 
 async function createAdapter(
 	config: DatabaseConfig | undefined,
-	persistence: CoreContext.Config['persistence'],
+	persistence: PersistenceServiceConfig | undefined,
 	onPostgresPoolError: (error: Error) => void,
 ): Promise<DatabaseAdapter> {
 	if (config && config.driver === 'postgres') {
-		const [{ Pool }, { drizzle }] = await Promise.all([
-			import('pg'),
-			import('drizzle-orm/node-postgres'),
-		])
-		const pool = new Pool({
-			connectionString: config.connectionString,
-			max: config.pool?.max ?? 10,
-			idleTimeoutMillis: config.pool?.idleTimeoutMs,
-			connectionTimeoutMillis: config.pool?.connectionTimeoutMs,
-			ssl:
-				config.tls === undefined
-					? undefined
-					: config.tls === 'verify-full'
-						? { rejectUnauthorized: true }
-						: { rejectUnauthorized: false },
-		})
-		attachPostgresPoolErrorHandler(pool, onPostgresPoolError)
-		return {
-			driver: 'postgres',
-			db: drizzle(pool) as AnyDatabase,
-			concurrency: config.pool?.max ?? 10,
-			close: async () => await pool.end(),
-		}
+		const { createPostgresDatabaseAdapter } = await import('#pluxel/database-driver/postgres')
+		return createPostgresDatabaseAdapter(config, onPostgresPoolError)
 	}
 
-	const [{ PGlite }, { drizzle }] = await Promise.all([
-		import('@electric-sql/pglite'),
-		import('drizzle-orm/pglite'),
-	])
-	const configured = config && config.driver === 'pglite' ? config.dataDir : undefined
-	const dataDir = configured ?? defaultPgliteDataDir(persistence)
-	if (!dataDir.includes('://')) await mkdir(dirname(dataDir), { recursive: true })
-	const client = new PGlite(dataDir)
-	await client.waitReady
-	return {
-		driver: 'pglite',
-		db: drizzle(client) as AnyDatabase,
-		concurrency: 1,
-		close: async () => await client.close(),
-	}
+	const { createPgliteDatabaseAdapter } = await import('#pluxel/database-driver/pglite')
+	return createPgliteDatabaseAdapter(
+		config && config.driver === 'pglite' ? config : undefined,
+		persistence,
+	)
 }
 
 /** @internal Keeps pg-pool idle-client failures operational instead of process-fatal. */
-export function attachPostgresPoolErrorHandler(
-	pool: Pick<Pool, 'on'>,
-	report: (error: Error) => void,
-): void {
-	pool.on('error', (error) => {
-		try {
-			report(error)
-		} catch {
-			// EventEmitter treats a thrown `error` listener as process-fatal too. Reporting must be a
-			// terminal boundary because pg-pool has already removed the failed idle client.
-		}
-	})
-}
-
-function defaultPgliteDataDir(persistence: CoreContext.Config['persistence']): string {
-	if (typeof persistence === 'string') return join(persistence, 'database', 'pglite')
-	if (persistence && typeof persistence === 'object' && persistence.mode === 'memory')
-		return 'memory://'
-	return join('.pluxel', 'persistence', 'database', 'pglite')
-}
+export { attachPostgresPoolErrorHandler }
 
 function resultRows(result: unknown): Array<Record<string, unknown>> {
 	if (Array.isArray(result)) return result as Array<Record<string, unknown>>

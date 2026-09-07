@@ -1,4 +1,21 @@
-export * from './Context'
-export * from './Service'
-export * from './service-types'
-export * from './symbols'
+export {
+	createContextHost,
+	defineContextCapability,
+	installOwnerViewCapability,
+	installRootCapability,
+	installScopeCapability,
+	resolveContextCapability,
+	type Context,
+	type ContextCapability,
+	type ContextCapabilityInstallation,
+	type ContextHost,
+	type ContextHostOptions,
+	type ContextOf,
+	type ContextProjection,
+	type OwnerViewCapabilityInstallation,
+	type RootCapabilityInstallation,
+	type RootContext,
+	type RootContextProjection,
+	type RootContextOf,
+	type ScopeCapabilityInstallation,
+} from './kernel'

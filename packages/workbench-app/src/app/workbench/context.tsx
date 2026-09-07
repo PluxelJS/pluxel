@@ -1,7 +1,13 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import { useStore } from '@tanstack/react-store'
-import type { WorkbenchViewState } from '@pluxel/runtime/workbench/ui/internal'
+import { useCurrentPathname } from '../router/useCurrentRoute'
 import type { WorkspaceController } from './store'
+
+export type WorkbenchViewState = Readonly<{
+	read(scope: string): unknown
+	write(scope: string, value: unknown): void
+	subscribe(scope: string, listener: () => void): () => void
+}>
 
 export type WorkbenchLayoutContextValue = {
 	leftPaneAvailable: boolean
@@ -25,6 +31,7 @@ const FALLBACK_LAYOUT_CONTEXT: WorkbenchLayoutContextValue = {
 const WorkbenchLayoutContext = createContext<WorkbenchLayoutContextValue | null>(null)
 const WorkbenchNavigationContext = createContext<WorkbenchNavigationContextValue | null>(null)
 const WorkspaceControllerContext = createContext<WorkspaceController | null>(null)
+const WorkbenchDocumentContext = createContext<{ pathname: string; tabId: string } | null>(null)
 
 export function WorkspaceControllerProvider({
 	controller,
@@ -64,6 +71,21 @@ export function WorkbenchNavigationProvider({
 	)
 }
 
+export function WorkbenchDocumentScope({
+	pathname,
+	tabId,
+	children,
+}: {
+	pathname: string
+	tabId: string
+	children: ReactNode
+}) {
+	const value = useMemo(() => ({ pathname, tabId }), [pathname, tabId])
+	return (
+		<WorkbenchDocumentContext.Provider value={value}>{children}</WorkbenchDocumentContext.Provider>
+	)
+}
+
 export function useWorkbenchLayout() {
 	return useContext(WorkbenchLayoutContext) ?? FALLBACK_LAYOUT_CONTEXT
 }
@@ -86,7 +108,21 @@ export function useWorkspaceController(): WorkspaceController {
 
 export function useActiveWorkbenchTabId(): string | null {
 	const controller = useWorkspaceController()
-	return useStore(controller.store, (state) => state.uiState.activeTabId)
+	const scopedDocument = useContext(WorkbenchDocumentContext)
+	const activeTabId = useStore(controller.store, (state) => {
+		const activeGroup = state.uiState.editor.groups.find(
+			(group) => group.id === state.uiState.editor.activeGroupId,
+		)
+		return activeGroup?.activeTabId ?? null
+	})
+	return scopedDocument?.tabId ?? activeTabId
+}
+
+/** The path rendered by the current editor pane, falling back to the browser location. */
+export function useWorkbenchDocumentPathname(): string {
+	const scopedDocument = useContext(WorkbenchDocumentContext)
+	const browserPathname = useCurrentPathname()
+	return scopedDocument?.pathname ?? browserPathname
 }
 
 export function useWorkbenchViewState(

@@ -1,71 +1,64 @@
 import type { Context } from '@pluxel/runtime'
 import { defineDynamicRuntimeConfig } from './config'
+import { resolveDynamicRuntimeEntry } from './entry'
 
 export { defineDynamicRuntimeConfig }
 export type { DynamicRuntimeConfig, DynamicRuntimeStorageOptions } from './config'
 export type { DynamicPluginSource } from './sources'
 
-export type DynamicDevRuntime = {
-	/** Available only after `start()` resolves. */
+export interface DynamicDevRuntime extends AsyncDisposable {
+	/** The production root Context. Access after disposal throws. */
 	readonly ctx: Context
-	/** Starts the owned Vite/HMR server and initial runtime. Repeated successful calls are idempotent. */
-	start(): Promise<void>
-	/** Stops all runtime effects and owned server resources. Repeated calls are idempotent. */
-	stop(): Promise<void>
+	/** Normalized loopback HTTP origin of the ready Vite listener, without a trailing slash. */
+	readonly origin: string
+	/** Idempotently releases the listener, Runtime effects, HMR graph, and Vite resources. */
+	dispose(): Promise<void>
 }
 
-/** Plans an unstarted dynamic runtime. Call `start()` before reading its Context. */
-export async function createDynamicDevRuntime(
-	options: Readonly<{ config: string }>,
+/**
+ * Starts the canonical dynamic Vite route and resolves only after its physical listener is ready.
+ *
+ * Relative string entries use the working directory captured when this function is called. A URL
+ * must use the `file:` protocol. `signal` cancels startup; it is detached once the resource is ready.
+ * Startup rejection first closes every Vite and Runtime resource acquired by this launcher.
+ */
+export async function startDynamicDevRuntime(
+	options: Readonly<{ entry: string | URL; signal?: AbortSignal }>,
 ): Promise<DynamicDevRuntime> {
-	const configPath = String(options?.config ?? '').trim()
-	if (!configPath)
-		throw new TypeError('[runtime-dynamic] createDynamicDevRuntime config is required')
-	let server: import('vite').ViteDevServer | undefined
-	let startPromise: Promise<void> | undefined
-	let stopped = false
-
-	const start = async (): Promise<void> => {
-		if (stopped) throw new Error('[runtime-dynamic] cannot start a stopped runtime')
-		if (server) return
-		startPromise ??= import('./launcher-internal')
-			.then(({ startOwnedDynamicRuntimeViteServer }) =>
-				startOwnedDynamicRuntimeViteServer({ config: configPath }),
-			)
-			.then((result) => {
-				server = result
-				return undefined
-			})
-			.catch((error) => {
-				startPromise = undefined
-				throw error
-			})
-		await startPromise
+	const root = process.cwd()
+	const entry = resolveDynamicRuntimeEntry(options?.entry, root, 'runtime-dynamic')
+	throwIfAborted(options.signal)
+	const { startOwnedDynamicRuntimeViteServer } = await import('./launcher-internal')
+	throwIfAborted(options.signal)
+	const owned = await startOwnedDynamicRuntimeViteServer({
+		entry,
+		root,
+		...(options.signal ? { signal: options.signal } : {}),
+	})
+	let disposed = false
+	let disposePromise: Promise<void> | undefined
+	const dispose = (): Promise<void> => {
+		disposed = true
+		return (disposePromise ??= owned.server.close())
 	}
-
-	return {
+	return Object.freeze({
 		get ctx() {
-			if (stopped) {
-				throw new Error('[runtime-dynamic] runtime has stopped; its Context is no longer available')
-			}
-			if (!server) {
-				throw new Error(
-					'[runtime-dynamic] runtime has not started; call await runtime.start() before accessing ctx',
-				)
-			}
-			const controller = readDynamicRuntimeController(server)
+			if (disposed)
+				throw new Error('[runtime-dynamic] runtime is closed; its Context is no longer available')
+			const controller = readDynamicRuntimeController(owned.server)
 			if (!controller)
 				throw new Error('[runtime-dynamic] dynamic runtime controller is unavailable')
 			return controller.booted.ctx as Context
 		},
-		start,
-		stop: async () => {
-			if (stopped) return
-			stopped = true
-			if (startPromise) await startPromise.catch((): void => undefined)
-			await server?.close()
-		},
-	}
+		origin: owned.origin,
+		dispose,
+		[Symbol.asyncDispose]: dispose,
+	})
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+	if (!signal?.aborted) return
+	throw signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
 }
 
 function readDynamicRuntimeController(

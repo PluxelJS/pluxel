@@ -1,69 +1,58 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
-import { getStatusOverview } from '../../../runtime/src/api/features/pluginStatus/service'
+import { pluginNodeAddressEqual, pluginNodeAddressOf, type PluginNodeAddress } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
+import {
+	readRuntimePluginStatusOverview,
+	requireRuntimePluginGraphCoordinator,
+	runtimeStatePatch,
+} from '@pluxel/runtime/internal'
+import { requireLoaderService } from '../../src/context-plan'
 import { createHmrTestContext } from '../support/hmr-context'
+import { lowerTestPlugin } from '../support/lowered-plugin'
+
+function hasAddress(addresses: readonly PluginNodeAddress[], target: PluginNodeAddress): boolean {
+	return addresses.some((address) => pluginNodeAddressEqual(address, target))
+}
 
 describe('pluginStatus forks', () => {
-	it('includes fork plugins from runtime and from catalog', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+	it('includes structured runtime and persisted fork addresses', async () => {
+		const { ctx } = createHmrTestContext()
 
-		class DemoWorker extends ForkablePlugin {}
-		Plugin({ name: 'DemoWorker' })(DemoWorker)
+		@Plugin({ displayName: 'Demo worker', forkable: true })
+		class DemoWorker extends BasePlugin {}
+		lowerTestPlugin(DemoWorker)
 
-		const batch = loader.beginBatch()
-		await batch.replaceModule('A.ts', { DemoWorker })
-		{
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(true)
-			batch.commit()
-		}
+		await requireLoaderService(ctx).replaceModule('A.ts', { DemoWorker })
+		const base = pluginNodeAddressOf(DemoWorker)
+		const runtimeFork = { definition: base.definition, variant: 'fork', forkId: 'aaa' } as const
+		const persistedFork = { definition: base.definition, variant: 'fork', forkId: 'bbb' } as const
+		await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
+			runtimeStatePatch(
+				{ type: 'ensure-fork', definition: base.definition, forkId: 'aaa' },
+				{ type: 'ensure-fork', definition: base.definition, forkId: 'bbb' },
+				{ type: 'set-auto-start', node: runtimeFork, autoStart: true },
+			),
+		)
 
-		// Create + start a runtime fork (not declared in loader registry map).
-		const ForkA = core.registry.fork(DemoWorker, 'aaa')
-		await loader.api.control.enable('DemoWorker#aaa', ForkA)
-		{
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(true)
-		}
-
-		// Persist another fork in the catalog, without starting it.
-		ctx.runtimeState.update((draft) => {
-			draft.forks = { DemoWorker: ['bbb'] }
-		})
-
-		const overview = getStatusOverview(ctx)
-		const names = overview.statuses.map((s) => s?.name).filter(Boolean)
-
-		expect(names).toContain('DemoWorker')
-		expect(names).toContain('DemoWorker#aaa')
-		expect(names).toContain('DemoWorker#bbb')
+		const statusOverview = await readRuntimePluginStatusOverview(ctx)
+		const addresses = statusOverview.statuses.map((status) => status.address)
+		expect(hasAddress(addresses, base)).toBe(true)
+		expect(hasAddress(addresses, runtimeFork)).toBe(true)
+		expect(hasAddress(addresses, persistedFork)).toBe(true)
 	})
 
-	it('enabling the same plugin twice is idempotent', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+	it('starting the same address twice is idempotent', async () => {
+		const { ctx } = createHmrTestContext()
 
+		@Plugin()
 		class Alpha extends BasePlugin {}
-		Plugin({ name: 'Alpha' })(Alpha)
+		lowerTestPlugin(Alpha)
 
-		// Load module (does not auto-enable without config).
-		const batch = loader.beginBatch()
-		await batch.replaceModule('A.ts', { Alpha })
-		{
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(true)
-			batch.commit()
-		}
-
-		// Duplicate enable calls should not throw or unregister.
-		await loader.api.control.enable('Alpha', Alpha)
-		await loader.api.control.enable('Alpha', Alpha)
-		{
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(true)
-		}
-
-		expect(core.registry.isRunning(Alpha)).toBe(true)
+		await requireLoaderService(ctx).replaceModule('A.ts', { Alpha })
+		const address = pluginNodeAddressOf(Alpha)
+		await requireLoaderService(ctx).api.control.start(address)
+		await requireLoaderService(ctx).api.control.start(address)
+		expect(requirePluginService(ctx).isRunning(address)).toBe(true)
 	})
 })

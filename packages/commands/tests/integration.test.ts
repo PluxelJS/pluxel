@@ -6,7 +6,6 @@ import {
 	type CommandContext,
 } from '../src/index'
 import { createArgvRouter } from '../src/argv'
-import { toToolDescriptors } from '../src/tool'
 import { Type, obj } from '../src/typebox'
 
 type HostContext = CommandContext & {
@@ -49,38 +48,32 @@ describe('@pluxel/commands host integration', () => {
 			routes: ['resource read'],
 			positionals: ['name'],
 		})
-		const executeAsHost = (name: string, input: unknown, context: HostContext) => {
+		const executeAsHost = async (name: string, input: unknown, context: HostContext) => {
 			const descriptor = registry.list().find((candidate) => candidate.name === name)
 			if (descriptor?.behavior.kind === 'mutation' && !context.principal.canWrite) {
-				return Promise.resolve({
-					ok: false as const,
-					error: new CommandError('FORBIDDEN', 'Command is not allowed', {
-						details: { permission: 'resource.write' },
-					}),
+				throw new CommandError('FORBIDDEN', 'Command is not allowed', {
+					details: { permission: 'resource.write' },
 				})
 			}
 			return registry.execute(name, input, context)
 		}
 
-		const published = toToolDescriptors(
-			registry.list().filter((descriptor) => descriptor.behavior.kind === 'query'),
-		)
+		const published = registry.list().filter((descriptor) => descriptor.behavior.kind === 'query')
 		expect(published.map(({ name }) => name)).toEqual(['resource.read'])
 
 		const reader = { principal: { id: 'reader-1', canWrite: false } }
-		await expect(router.dispatchOrThrow(['resource', 'read', 'alpha'], reader)).resolves.toEqual({
+		const resolution = router.resolve(['resource', 'read', 'alpha'])!
+		await expect(resolution.command.execute(resolution.candidate, reader)).resolves.toEqual({
 			owner: 'reader-1',
 		})
-		await expect(executeAsHost('resource.write', { name: 'alpha' }, reader)).resolves.toMatchObject(
-			{
-				ok: false,
-				error: { code: 'FORBIDDEN', details: { permission: 'resource.write' } },
-			},
-		)
+		await expect(executeAsHost('resource.write', { name: 'alpha' }, reader)).rejects.toMatchObject({
+			code: 'FORBIDDEN',
+			details: { permission: 'resource.write' },
+		})
 
 		const writer = { principal: { id: 'writer-1', canWrite: true } }
 		await expect(
-			registry.executeOrThrow('resource.write', { name: 'alpha' }, writer),
+			registry.execute('resource.write', { name: 'alpha' }, writer),
 		).resolves.toBeUndefined()
 		expect(reads).toEqual(['alpha'])
 		expect(writes).toEqual(['alpha'])

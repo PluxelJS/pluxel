@@ -1,38 +1,44 @@
 import { fileURLToPath } from 'node:url'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
-import { PackageManagerPlugin } from '@pluxel/package-manager'
+import { env } from '@pluxel/runtime/environment'
 import { dirname, resolve } from 'pathe'
+import {
+	createHostConfigRecords,
+	createHostRuntimeState,
+	packageManagerNode,
+	product,
+} from './showcase/policy'
+
+export { product }
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../../..')
-const activeProfile = process.env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
-const configPath = process.env.PLUXEL_HMR_CONFIG ?? 'projects/plugin-host/pluxel.loader.hmr.jsonc'
-const enabledDemoPlugins = [
-	'PackageManagerPlugin',
-	'PluginEventsDeclaredProducer',
-	'PluginEventsDeclaredConsumer',
-	'PluginFeatureDepsProvider',
-	'PluginFeatureDepsConsumer',
-	'PluginHttpRoutesDemo',
-	'PluginHttpWorkerDemo',
-] as const
+const managedPackagesRoot = resolve(repoRoot, '.pluxel/managed-plugins')
+const activeProfile = env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
+const configPath = env.PLUXEL_HMR_CONFIG ?? 'projects/plugin-host/pluxel.loader.hmr.jsonc'
 
 export default defineDynamicRuntimeConfig({
 	root: repoRoot,
 	configPath,
 	profile: activeProfile,
 	logsDir: 'projects/plugin-host/logs',
-	plugins: [PackageManagerPlugin],
 	sources: [
 		{
 			kind: 'directory',
-			path: '.pluxel/managed-plugins/entries',
+			path: resolve(managedPackagesRoot, 'entries'),
 			include: ['*.mjs'],
 		},
 	],
-	runtimeState: {
+	configService: {
 		mode: 'memory',
-		snapshot: { enabled: enabledDemoPlugins },
+		snapshot: {
+			plugins: [
+				...createHostConfigRecords(resolve(repoRoot, '.pluxel/showcase/s3')),
+				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
+			],
+		},
 	},
-	workbench: { enabled: true, access: { exposure: 'private' } },
+	runtimeState: { mode: 'memory', snapshot: createHostRuntimeState(true) },
+	workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
+	vault: {},
 })

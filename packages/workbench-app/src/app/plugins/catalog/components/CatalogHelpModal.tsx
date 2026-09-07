@@ -11,11 +11,10 @@ type CatalogHelpModalProps = {
 }
 
 const searchTokens = [
-	['普通关键词', '匹配插件名、ID、包名、tag、版本；多个词为 AND'],
-	['@包名', '仅匹配 packageName'],
-	['#tag', '仅匹配 tag'],
-	['v:版本', '仅匹配 version'],
-	['id:关键词', '仅匹配插件 ID'],
+	['普通关键词', '匹配插件名、定义位置、导出名、身份与执行方式；多个词为 AND'],
+	['@包名', '仅匹配定义地址中的 packageName'],
+	['ref:关键词', '仅匹配 canonical plugin reference'],
+	['exec:关键词', '仅匹配执行、更新方式与最近结果，例如 hmr、bundle、失败'],
 ]
 
 export function CatalogHelpModal({ opened, onClose }: CatalogHelpModalProps) {

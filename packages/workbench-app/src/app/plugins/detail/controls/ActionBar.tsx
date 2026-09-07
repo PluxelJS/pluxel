@@ -1,494 +1,232 @@
-// ActionBar.tsx
-
-import { ActionIcon, Button, Group, Switch, Text, Tooltip } from '@mantine/core'
+import { Badge, Button, Group, Switch, Text, Tooltip } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
-import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
-import { useCallback, useRef, useState } from 'react'
-import { PluginStatusEntryLifecycleStage } from '../../../gqlens'
+import { IconPlayerPlay, IconPlayerStop, IconRotateClockwise } from '@tabler/icons-react'
+import { useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { formatPluginDefinitionReference, formatPluginNodeReference } from '@pluxel/core'
 import { useNotify } from '../../../hooks/useNotify'
+import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../../runtime'
 import {
-	runPluginStatusAction,
-	useRuntimeTransportClient,
-	type PluginStatusAction,
-} from '../../../../runtime'
-import { buildStartPlan, executeStartPlan } from '../../pluginStatusActions'
+	applyPluginLifecycleCommand,
+	setPluginAutoStart,
+	type PluginLifecycleCommand,
+} from '../../pluginStatusActions'
 import { usePluginScope } from '../context'
-import { resolveKnownPluginName } from '../rightPaneState'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
+import { describePluginControl, describePluginLifecycleOutcome } from './pluginControlModel'
 
-export interface ActionBarProps {
-	compact?: boolean
-	prominent?: boolean
-}
-
-const ACTION_LABEL: Record<PluginStatusAction, string> = {
-	start: '启动',
-	stop: '终止',
-	restart: '重启',
-	enable: '启用',
-	'enable-persisted': '持久启用',
-	disable: '禁用',
-}
-
-type ActionBarButtonProps = {
-	action: 'restart' | 'start' | 'stop'
-	busy: boolean
-	canToggle: boolean
-	compact: boolean
-	isRunning: boolean
-	onAction: (action: PluginStatusAction) => void
-	prominent: boolean
-}
-
-function ActionBarButton({
-	action,
-	busy,
-	canToggle,
-	compact,
-	isRunning,
-	onAction,
-	prominent,
-}: ActionBarButtonProps) {
-	const isRestart = action === 'restart'
-	const isStart = action === 'start'
-	const disabled = !canToggle || (isStart ? isRunning : !isRunning)
-	const label = busy
-		? '同步中…'
-		: isRestart
-			? `重启 (${PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin})`
-			: ACTION_LABEL[action]
-	const iconSize = prominent ? 16 : compact ? 16 : 18
-	const buttonSize = compact ? 'md' : 'lg'
-	const icon =
-		action === 'start' ? (
-			<IconPlayerPlay size={iconSize} />
-		) : action === 'stop' ? (
-			<IconSquareX size={iconSize} />
-		) : (
-			<IconRotateClockwise size={iconSize} />
-		)
-
-	if (prominent) {
-		return (
-			<Tooltip label={label}>
-				<Button
-					className={
-						isStart
-							? 'plx-pluginWorkbench__actionButton plx-pluginWorkbench__actionButton--primary'
-							: 'plx-pluginWorkbench__actionButton'
-					}
-					variant={isStart ? 'filled' : isRestart ? 'default' : 'light'}
-					color={action === 'stop' ? 'red' : undefined}
-					size="compact-sm"
-					leftSection={icon}
-					onClick={() => onAction(action)}
-					disabled={disabled}
-				>
-					{ACTION_LABEL[action]}
-					{isRestart ? (
-						<span className="plx-pluginWorkbench__actionKeyHint">
-							{PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin}
-						</span>
-					) : null}
-				</Button>
-			</Tooltip>
-		)
-	}
-
-	return (
-		<Tooltip label={label}>
-			<ActionIcon
-				variant="light"
-				size={buttonSize}
-				color={action === 'stop' ? 'red' : isRestart ? 'green' : undefined}
-				onClick={() => onAction(action)}
-				disabled={disabled}
-			>
-				{icon}
-			</ActionIcon>
-		</Tooltip>
-	)
-}
-
-export function ActionBar({ compact = false, prominent = false }: ActionBarProps) {
-	const transport = useRuntimeTransportClient()
-	const {
-		pluginName,
-		dependencies,
-		knownPluginNames,
-		statusSnapshot,
-		isRunning,
-		isEnabled,
-		lifecycleStage,
-		isSyncing,
-		refetch,
-		setStatusOverride,
-	} = usePluginScope()
-
-	// 乱序防护：只接受最后一次操作的结果
-	const seqRef = useRef(0)
-	const [isLoading, setIsLoading] = useState(false)
-
+export function ActionBar() {
+	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
+	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
 	const notify = useNotify()
+	const autoStartPendingRef = useRef(false)
+	const lifecyclePendingRef = useRef(false)
+	const [autoStartPending, setAutoStartPending] = useState(false)
+	const [lifecyclePending, setLifecyclePending] = useState<PluginLifecycleCommand | null>(null)
+	const presentation = describePluginControl(status, lifecyclePending)
 
-	const applyOptimistic = useCallback(
-		(action: PluginStatusAction) => {
-			if (!pluginName) return
-			if (!setStatusOverride) return
-			const currentEnabled = Boolean(isEnabled)
-			const currentRunning = Boolean(isRunning)
-			let nextRunning = currentRunning
-			let nextEnabled = currentEnabled
-			let nextStage = lifecycleStage
-			switch (action) {
-				case 'start':
-				case 'restart':
-					nextRunning = true
-					nextEnabled = true
-					nextStage = PluginStatusEntryLifecycleStage.running
-					break
-				case 'stop':
-					nextRunning = false
-					nextStage = currentEnabled
-						? PluginStatusEntryLifecycleStage.stopped
-						: PluginStatusEntryLifecycleStage.disabled
-					break
-				case 'disable':
-					nextRunning = false
-					nextEnabled = false
-					nextStage = PluginStatusEntryLifecycleStage.disabled
-					break
-				case 'enable':
-					nextEnabled = true
-					nextRunning = true
-					nextStage = PluginStatusEntryLifecycleStage.running
-					break
-				case 'enable-persisted':
-					nextEnabled = true
-					nextStage = currentRunning
-						? PluginStatusEntryLifecycleStage.running
-						: PluginStatusEntryLifecycleStage.stopped
-					break
-				default:
-					break
-			}
-			setStatusOverride({
-				isRunning: nextRunning,
-				isEnabled: nextEnabled,
-				lifecycleStage: nextStage,
-			})
-		},
-		[pluginName, setStatusOverride, isEnabled, isRunning, lifecycleStage],
-	)
-
-	const syncAfterSuccess = useCallback(async () => {
-		await refetch()
-	}, [refetch])
-
-	const performAction = async (action: PluginStatusAction) => {
-		if (!pluginName) return
-		const mySeq = ++seqRef.current
-
-		// ① 全局乐观：立即写入运行/同步态
-		applyOptimistic(action)
-		setIsLoading(true)
-
+	const performAutoStart = async (autoStart: boolean) => {
+		if (autoStartPendingRef.current) return
+		autoStartPendingRef.current = true
+		setAutoStartPending(true)
 		try {
-			const res = await transport.withRpc((rpc) => runPluginStatusAction(rpc, pluginName, action))
-			if (mySeq !== seqRef.current) return
-
-			if (res.ok === false) {
+			const result = await setPluginAutoStart(management, queryClient, owner, autoStart)
+			if (result.ok === false) {
 				notify({
-					title: '插件状态更新失败',
-					message: res.error || res.commitError || '操作失败，请稍后重试',
+					title: '自动启动策略更新失败',
+					message: result.error || '操作失败，请稍后重试',
 					color: 'red',
 				})
-				// 失败直接以真实数据为准（无需手写回滚）：拉齐一次
-				await refetch()
 				return
 			}
-
-			// ② 成功：让返回覆盖乐观态，再进行一次精准对齐
-			await syncAfterSuccess()
-
 			notify({
-				title: '插件状态已更新',
-				message: `${pluginName} ${ACTION_LABEL[action]}成功`,
+				title: autoStart ? '已开启自动启动' : '已关闭自动启动',
+				message: autoStart
+					? `${pluginLabel} 将在宿主启动时自动请求运行；当前会话状态不变。`
+					: `${pluginLabel} 当前会话状态不变。`,
 				color: 'green',
 			})
-		} catch (e: any) {
-			if (mySeq !== seqRef.current) return
+		} catch (error: unknown) {
 			notify({
-				title: '插件状态更新失败',
-				message: e?.message ?? '操作失败，请稍后重试',
+				title: '自动启动策略更新失败',
+				message: runtimeErrorMessage(error, '操作失败，请稍后重试'),
 				color: 'red',
 			})
 			await refetch()
 		} finally {
-			setIsLoading(false)
+			autoStartPendingRef.current = false
+			setAutoStartPending(false)
 		}
 	}
 
-	const cascadeStart = async (deps: string[], action: PluginStatusAction) => {
-		if (!pluginName) return
-		const mySeq = ++seqRef.current
-		setIsLoading(true)
-
+	const performLifecycleCommand = async (command: PluginLifecycleCommand) => {
+		if (lifecyclePendingRef.current) return
+		lifecyclePendingRef.current = true
+		setLifecyclePending(command)
 		try {
-			const plan = await buildStartPlan([...deps, pluginName], {
-				includeTargets: true,
-				includeRunningTargets: action === 'restart',
-				requireConfiguredFor: 'dependencies',
-				statusSnapshot,
-			})
-
-			if (plan.missing.length > 0) {
+			const result = await applyPluginLifecycleCommand(management, queryClient, owner, command)
+			if (result.ok === false) {
 				notify({
-					title: '部分依赖未找到',
-					message: `已跳过：${plan.missing.join('，')}`,
-					color: 'yellow',
-				})
-			}
-
-			if (plan.blockedByConfig.length > 0) {
-				notify({
-					title: '级联启动已取消',
-					message: `以下依赖尚未配置：${plan.blockedByConfig.join('，')}`,
-					color: 'yellow',
-				})
-				return
-			}
-
-			if (plan.order.length === 0) {
-				if (plan.missing.length === 0) {
-					notify({
-						title: '依赖已就绪',
-						message: '所有依赖均已运行，无需级联启动。',
-						color: 'blue',
-					})
-				}
-				return
-			}
-
-			const results = await executeStartPlan(plan.order, action === 'restart' ? 'restart' : 'start')
-			if (mySeq !== seqRef.current) return
-			const failed = results.filter((r) => !r.ok)
-			if (failed.length > 0) {
-				notify({
-					title: '部分依赖启动失败',
-					message: failed.map((f) => f.name).join('，') || '启动失败',
+					title: '生命周期命令执行失败',
+					message: result.error || '操作失败，请稍后重试',
 					color: 'red',
 				})
-				await refetch()
 				return
 			}
-
-			await syncAfterSuccess()
+			notify(describePluginLifecycleOutcome(pluginLabel, command, result))
+		} catch (error: unknown) {
 			notify({
-				title: '已级联启动',
-				message: `已按依赖顺序${ACTION_LABEL[action]}：${plan.order.join(' → ')}`,
-				color: 'green',
-			})
-		} catch (e: any) {
-			if (mySeq !== seqRef.current) return
-			notify({
-				title: '级联启动失败',
-				message: e?.message ?? '操作失败，请稍后重试',
+				title: '生命周期命令执行失败',
+				message: runtimeErrorMessage(error, '操作失败，请稍后重试'),
 				color: 'red',
 			})
 			await refetch()
 		} finally {
-			setIsLoading(false)
+			lifecyclePendingRef.current = false
+			setLifecyclePending(null)
 		}
 	}
 
-	const handleAction = (action: PluginStatusAction) => {
-		const needsDependencyCheck = action === 'start' || action === 'restart'
-		const missing = needsDependencyCheck
-			? Array.from(
-					new Map(
-						dependencies
-							.filter((dep) => !dep.isRunning)
-							.map((dep) => {
-								const label = dep.name?.trim()
-								const target = label ? resolveKnownPluginName(knownPluginNames, label) : undefined
-								return label && target ? [target, { label, target }] : null
-							})
-							.filter(Boolean)
-							.map((entry) => entry as [string, { label: string; target: string }]),
-					).values(),
-				)
-			: []
-
-		const proceed = (): void => {
-			void performAction(action)
-		}
-
-		if (missing.length > 0) {
-			openConfirmModal({
-				title: '前置依赖未启动',
-				children: (
-					<div>
-						<div>可尝试级联启动已配置的依赖链，然后启动当前插件。</div>
-						<div style={{ marginTop: 10 }}>
-							以下依赖尚未运行：{missing.map((item) => item.label).join('，')}
-						</div>
-					</div>
-				),
-				labels: { confirm: '级联启动', cancel: '取消' },
-				onConfirm: () =>
-					void cascadeStart(
-						missing.map((item) => item.target),
-						action,
+	const handleLifecycleCommand = (command: PluginLifecycleCommand) => {
+		if (command === 'stop') {
+			const effectiveDependents = [...(dependencyGraph.detail?.dependents.effective ?? [])].filter(
+				(dependent) => dependent.edge.mode === 'required',
+			)
+			if (effectiveDependents.length > 0) {
+				openConfirmModal({
+					title: '停止 Plugin？',
+					children: (
+						<Text size="sm">
+							停止本次会话会影响 {effectiveDependents.length} 个当前生效的必须依赖方；
+							自动启动策略不会改变。
+						</Text>
 					),
-				closeOnConfirm: true,
-			})
-		} else {
-			proceed()
+					labels: { confirm: '停止', cancel: '取消' },
+					confirmProps: { color: 'red' },
+					onConfirm: () => void performLifecycleCommand(command),
+				})
+				return
+			}
+			void performLifecycleCommand(command)
+			return
 		}
-	}
 
-	const busy = isLoading || isSyncing
-	const canToggle = !busy
-	const persistDisabled = busy
-	const switchSize = compact ? 'sm' : 'md'
-
-	useHotkeys(
-		prominent
-			? [
-					[
-						PLUGIN_DETAIL_HOTKEYS.restartPlugin,
-						(event: KeyboardEvent) => {
-							event.preventDefault()
-							if (!canToggle || !isRunning) return
-							handleAction('restart')
-						},
-					],
-				]
-			: [],
-	)
-
-	if (prominent) {
-		return (
-			<Group
-				gap={8}
-				justify="flex-end"
-				wrap="nowrap"
-				className="plx-pluginWorkbench__actionBar"
-				data-prominent="true"
-			>
-				<div className="plx-pluginWorkbench__actionPersist">
-					<div className="plx-pluginWorkbench__actionPersistText">
-						<Text size="xs" fw={600}>
-							持久启用
-						</Text>
-						<Text size="xs" c="dimmed">
-							{busy ? '状态同步中…' : isEnabled ? '重启后继续保持启用' : '仅本次运行生效'}
-						</Text>
+		const unavailable = (dependencyGraph.detail?.required ?? []).filter((dependency) => {
+			if (!dependency.provider || dependency.provider.state === 'absent') return true
+			return dependency.provider.node.status.availability !== 'available'
+		})
+		if (unavailable.length === 0) {
+			void performLifecycleCommand(command)
+			return
+		}
+		openConfirmModal({
+			title: '前置依赖不可用',
+			children: (
+				<div>
+					<div>运行时会协调启动可用但尚未运行的依赖；以下依赖当前无法启动：</div>
+					<div style={{ marginTop: 10 }}>
+						{unavailable
+							.map((item) => {
+								if (!item.provider) return formatPluginDefinitionReference(item.edge.requirement)
+								return item.provider.state === 'status'
+									? item.provider.node.status.label.text
+									: formatPluginNodeReference(item.provider.address)
+							})
+							.join('，')}
 					</div>
-					<Tooltip
-						label={
-							busy
-								? '同步中…'
-								: isEnabled
-									? '禁用后将停止运行并移除持久启用'
-									: '启用后可持久保留该插件'
-						}
-					>
-						<Switch
-							size="sm"
-							checked={isEnabled}
-							disabled={persistDisabled}
-							onChange={(event) =>
-								void performAction(event.currentTarget.checked ? 'enable' : 'disable')
-							}
-						/>
-					</Tooltip>
 				</div>
-
-				<ActionBarButton
-					action="start"
-					busy={busy}
-					canToggle={canToggle}
-					compact={compact}
-					isRunning={isRunning}
-					onAction={handleAction}
-					prominent
-				/>
-				<ActionBarButton
-					action="stop"
-					busy={busy}
-					canToggle={canToggle}
-					compact={compact}
-					isRunning={isRunning}
-					onAction={handleAction}
-					prominent
-				/>
-				<ActionBarButton
-					action="restart"
-					busy={busy}
-					canToggle={canToggle}
-					compact={compact}
-					isRunning={isRunning}
-					onAction={handleAction}
-					prominent
-				/>
-			</Group>
-		)
+			),
+			labels: { confirm: command === 'restart' ? '继续重启' : '继续启动', cancel: '取消' },
+			onConfirm: () => void performLifecycleCommand(command),
+		})
 	}
+
+	useHotkeys([
+		[
+			PLUGIN_DETAIL_HOTKEYS.restartPlugin,
+			(event: KeyboardEvent) => {
+				event.preventDefault()
+				if (!presentation.canStartOrRestart || status.lifecycleState !== 'running') return
+				handleLifecycleCommand('restart')
+			},
+		],
+	])
+
+	const primaryIcon =
+		presentation.primaryCommand === 'restart' ? (
+			<IconRotateClockwise size={15} />
+		) : (
+			<IconPlayerPlay size={15} />
+		)
 
 	return (
-		<Group
-			gap={compact ? 6 : 'xs'}
-			justify="flex-end"
-			wrap="nowrap"
-			className="plx-pluginWorkbench__actionBar"
-		>
+		<Group gap={6} justify="flex-end" wrap="nowrap" className="plx-pluginWorkbench__actionBar">
+			<Tooltip label={presentation.statusDescription}>
+				<Badge variant="light" color={presentation.statusTone} radius="sm" size="sm">
+					{presentation.statusLabel}
+				</Badge>
+			</Tooltip>
 			<Tooltip
-				label={
-					busy ? '同步中…' : isEnabled ? '禁用后将停止运行并移除持久启用' : '启用后可持久保留该插件'
-				}
+				label={autoStartPending ? '正在保存自动启动策略…' : presentation.autoStartDescription}
 			>
 				<Switch
-					size={switchSize}
-					checked={isEnabled}
-					onLabel={compact ? '' : '启用'}
-					offLabel={compact ? '' : '禁用'}
-					disabled={persistDisabled}
-					onChange={(event) =>
-						void performAction(event.currentTarget.checked ? 'enable' : 'disable')
-					}
+					className="plx-pluginWorkbench__actionPolicy"
+					size="sm"
+					color="green"
+					label="自动启动"
+					labelPosition="left"
+					checked={status.autoStart}
+					disabled={autoStartPending || !presentation.canChangeAutoStart}
+					aria-label={presentation.autoStartActionLabel}
+					aria-busy={autoStartPending}
+					onChange={(event) => void performAutoStart(event.currentTarget.checked)}
 				/>
 			</Tooltip>
 
-			<ActionBarButton
-				action="start"
-				busy={busy}
-				canToggle={canToggle}
-				compact={compact}
-				isRunning={isRunning}
-				onAction={handleAction}
-				prominent={false}
-			/>
-			<ActionBarButton
-				action="stop"
-				busy={busy}
-				canToggle={canToggle}
-				compact={compact}
-				isRunning={isRunning}
-				onAction={handleAction}
-				prominent={false}
-			/>
-			<ActionBarButton
-				action="restart"
-				busy={busy}
-				canToggle={canToggle}
-				compact={compact}
-				isRunning={isRunning}
-				onAction={handleAction}
-				prominent={false}
-			/>
+			<Button.Group
+				className="plx-pluginWorkbench__lifecycleActions"
+				aria-label="当前会话生命周期操作"
+			>
+				{presentation.showStop ? (
+					<Button
+						className="plx-pluginWorkbench__actionButton"
+						variant="light"
+						color="red"
+						radius="md"
+						size="compact-sm"
+						leftSection={<IconPlayerStop size={15} />}
+						disabled={!presentation.canStop}
+						onClick={() => handleLifecycleCommand('stop')}
+					>
+						{lifecyclePending === 'stop' ? '停止中…' : '停止'}
+					</Button>
+				) : null}
+
+				<Tooltip
+					label={
+						presentation.primaryCommand === 'restart'
+							? `${presentation.primaryLabel} (${PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin})`
+							: presentation.primaryLabel
+					}
+				>
+					<Button
+						className="plx-pluginWorkbench__actionButton"
+						variant={presentation.running ? 'light' : 'filled'}
+						color={presentation.primaryTone}
+						radius="md"
+						size="compact-sm"
+						leftSection={primaryIcon}
+						disabled={!presentation.canStartOrRestart}
+						onClick={() => handleLifecycleCommand(presentation.primaryCommand)}
+					>
+						{lifecyclePending === presentation.primaryCommand
+							? '执行中…'
+							: presentation.primaryLabel}
+					</Button>
+				</Tooltip>
+			</Button.Group>
 		</Group>
 	)
 }

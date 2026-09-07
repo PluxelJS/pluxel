@@ -2,14 +2,17 @@ import { tmpdir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { cp, mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'pathe'
+import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 import {
 	databaseManifestFile,
 	listMigrationSqlFiles,
 	loadDatabaseArtifact,
 	migrationChecksum,
 	validDatabaseLineage,
+	type DatabaseEvolutionArtifact,
 	type DatabaseMigrationManifest,
 } from './artifact.ts'
+import { extractDatabaseDeclarations } from './declaration.ts'
 import { runDrizzleKit } from './drizzle-kit.ts'
 
 export type DatabaseToolOptions = Readonly<{
@@ -23,6 +26,7 @@ export type DatabaseRebaseOptions = DatabaseToolOptions & Readonly<{ lineage: st
 
 export async function generateDatabaseMigrations(options: DatabaseToolOptions = {}): Promise<void> {
 	const plan = await resolvePlan(options)
+	assertMigrationWorkflow(plan)
 	await mkdir(plan.out, { recursive: true })
 	const manifestPath = join(plan.out, databaseManifestFile)
 	if (existsSync(manifestPath)) await loadDatabaseArtifact(plan.out)
@@ -33,6 +37,7 @@ export async function generateDatabaseMigrations(options: DatabaseToolOptions = 
 
 export async function rebaseDatabaseMigrations(options: DatabaseRebaseOptions): Promise<void> {
 	const plan = await resolvePlan(options)
+	assertMigrationWorkflow(plan)
 	if (!validDatabaseLineage(options.lineage)) {
 		throw new Error(
 			'[database] lineage must start with an alphanumeric character and contain at most 64 letters, digits, dots, underscores, or hyphens',
@@ -76,6 +81,7 @@ export async function rebaseDatabaseMigrations(options: DatabaseRebaseOptions): 
 
 export async function checkDatabaseMigrations(options: DatabaseToolOptions = {}): Promise<void> {
 	const plan = await resolvePlan(options)
+	assertMigrationWorkflow(plan)
 	const artifact = await loadDatabaseArtifact(plan.out)
 	if (artifact.migrations.length === 0) {
 		throw new Error('[database] a database definition must carry at least one migration')
@@ -100,13 +106,37 @@ export async function checkDatabaseMigrations(options: DatabaseToolOptions = {})
 	}
 }
 
-type ResolvedPlan = Readonly<{ root: string; schema: string; out: string }>
+type ResolvedPlan = Readonly<{
+	root: string
+	schema: string
+	out: string
+	evolution: DatabaseEvolutionArtifact
+}>
 
 async function resolvePlan(options: DatabaseToolOptions): Promise<ResolvedPlan> {
 	const root = resolve(options.root ?? process.cwd())
 	const schema = options.schema ? resolve(root, options.schema) : await discoverDatabaseSchema(root)
 	if (!existsSync(schema)) throw new Error(`[database] schema module not found: ${schema}`)
-	return { root, schema, out: resolve(root, options.out ?? 'drizzle') }
+	const source = await readFile(schema, 'utf8')
+	const ast = parseStandaloneWithLang(source, schema)
+	if (!ast) throw new Error('[database] failed to parse database declaration module')
+	const declarations = extractDatabaseDeclarations(ast, source, schema)
+	if (declarations.length !== 1) {
+		throw new Error('[database] expected exactly one module-level defineDatabase() declaration')
+	}
+	return {
+		root,
+		schema,
+		out: resolve(root, options.out ?? 'drizzle'),
+		evolution: declarations[0]!.evolution,
+	}
+}
+
+function assertMigrationWorkflow(plan: ResolvedPlan): void {
+	if (plan.evolution === 'migrations') return
+	throw new Error(
+		'[database] reset-on-schema-change has no checked-in migration history; edit the schema and run `pluxel build` instead',
+	)
 }
 
 async function discoverDatabaseSchema(root: string): Promise<string> {

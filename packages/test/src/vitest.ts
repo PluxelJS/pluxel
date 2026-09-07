@@ -1,22 +1,23 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { extname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
-import { databaseSourceVitePlugin } from '@pluxel/rolldown/vite'
+import { resolve } from 'node:path'
 import {
-	defineConfig,
-	mergeConfig,
-	type ViteUserConfig,
-	type ViteUserConfigExport,
-} from 'vitest/config'
+	configSourcePlugin,
+	createPluginSemanticsPlugin,
+	lintGuardPlugin,
+} from '@pluxel/rolldown/plugins'
+import { databaseSourceVitePlugin } from '@pluxel/rolldown/vite'
+import { mergeConfig, type ViteUserConfig } from 'vitest/config'
 
-export type PluxelVitestOptions = {
-	/** Include patterns for configSource extraction (default: only src/tests). */
-	include?: string | string[]
-	/** Exclude patterns for configSource extraction. */
-	exclude?: string | string[]
-	/** Override Vitest's local default for packages without matching tests. */
-	passWithNoTests?: boolean
+/**
+ * Preset settings that control Pluxel's source toolchain rather than Vitest test discovery.
+ *
+ * They are supplied under `definePluxelVitestConfig({ pluxel: … })` and are consumed before
+ * the resulting config reaches Vite/Vitest.
+ */
+export type PluxelVitestToolchainConfig = Readonly<{
+	/** Include patterns for Pluxel semantic lowering and config extraction (default: src/tests). */
+	include?: string | readonly string[]
+	/** Exclude patterns for Pluxel semantic lowering and config extraction. */
+	exclude?: string | readonly string[]
 	/**
 	 * Extra Vite plugins to run BEFORE Pluxel toolchain plugins.
 	 *
@@ -24,13 +25,19 @@ export type PluxelVitestOptions = {
 	 * before `configSourcePlugin` runs.
 	 */
 	prePlugins?: NonNullable<ViteUserConfig['plugins']>
+}>
+
+/**
+ * One Vitest/Vite config object with an explicit Pluxel-owned namespace.
+ *
+ * `test` and every other Vite field retain native Vite/Vitest semantics. `pluxel` only controls
+ * the preset's source toolchain and is removed before Vite receives the resolved config.
+ */
+export type PluxelVitestConfig = ViteUserConfig & {
+	pluxel?: PluxelVitestToolchainConfig
 }
 
-export const PLUXEL_BASE_RESOLVE_CONDITIONS = [
-	'@pluxel/hmr',
-	'development',
-	'@pluxel/source',
-] as const
+const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/hmr', 'development', '@pluxel/source'] as const
 
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
@@ -47,7 +54,17 @@ const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 // them to ESM that intentionally relies on extension rewriting or bundling.
 const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
-export function buildPluxelResolveConditions(env = process.env.NODE_ENV): string[] {
+// `*.typecheck.*` files are compile-only API probes. They intentionally use declarations that
+// are not executable Plugin source and therefore must stay out of the Vite source transforms.
+// TypeScript still includes them through the package tsconfig.
+const COMPILE_ONLY_TYPECHECK_EXCLUDES = [
+	'**/*.typecheck.ts',
+	'**/*.typecheck.tsx',
+	'**/*.typecheck.mts',
+	'**/*.typecheck.cts',
+] as const
+
+function buildPluxelResolveConditions(env = process.env.NODE_ENV): string[] {
 	const extras = env && !DEFAULT_NODE_RESOLVE_CONDITIONS.includes(env as any) ? [env] : []
 	return uniqStrings([
 		...PLUXEL_BASE_RESOLVE_CONDITIONS,
@@ -56,9 +73,9 @@ export function buildPluxelResolveConditions(env = process.env.NODE_ENV): string
 	])
 }
 
-function toArray(value: string | string[] | undefined): string[] | undefined {
+function toArray(value: string | readonly string[] | undefined): string[] | undefined {
 	if (value === undefined) return undefined
-	return Array.isArray(value) ? value : [value]
+	return typeof value === 'string' ? [value] : [...value]
 }
 
 function asPluginArray(value: ViteUserConfig['plugins']): NonNullable<ViteUserConfig['plugins']> {
@@ -68,20 +85,6 @@ function asPluginArray(value: ViteUserConfig['plugins']): NonNullable<ViteUserCo
 
 function uniqStrings(values: string[]): string[] {
 	return Array.from(new Set(values))
-}
-
-function asStringArray(value: unknown): string[] {
-	if (!value) return []
-	if (Array.isArray(value)) return value.filter((x): x is string => typeof x === 'string')
-	return typeof value === 'string' ? [value] : []
-}
-
-function isThenable<T>(value: unknown): value is PromiseLike<T> {
-	return (
-		(typeof value === 'object' || typeof value === 'function') &&
-		value !== null &&
-		typeof (value as { then?: unknown }).then === 'function'
-	)
 }
 
 function normalizeGlob(pattern: string): string {
@@ -106,20 +109,17 @@ function normalizeGlobs(patterns: string[]): string[] {
  * Opinionated Vitest preset for Pluxel monorepo tests:
  * - resolves plugin, neutral-development, then framework-source entries in that order
  * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
- * - runs the local core-only `@pluxel/test/setup` module once per worker
  */
-export function definePluxelVitestConfig(
-	overrides: ViteUserConfigExport = {},
-	options: PluxelVitestOptions = {},
-): ViteUserConfigExport {
+export function definePluxelVitestConfig(config: PluxelVitestConfig = {}): ViteUserConfig {
+	const { pluxel = {}, ...overrides } = config
 	const include = normalizeGlobs(
-		toArray(options.include) ?? ['packages/**/src/**/*.ts', 'packages/**/tests/**/*.ts'],
+		toArray(pluxel.include) ?? ['src/**/*.ts', 'src/**/*.tsx', 'tests/**/*.ts', 'tests/**/*.tsx'],
 	)
-	const exclude = normalizeGlobs(toArray(options.exclude) ?? ['**/node_modules/**', '**/*.d.ts'])
+	const exclude = normalizeGlobs([
+		...(toArray(pluxel.exclude) ?? ['**/node_modules/**', '**/*.d.ts']),
+		...COMPILE_ONLY_TYPECHECK_EXCLUDES,
+	])
 	const baseConditions = buildPluxelResolveConditions()
-	const setupFile = fileURLToPath(
-		new URL(`./setup${extname(fileURLToPath(import.meta.url))}`, import.meta.url),
-	)
 
 	const base: ViteUserConfig = {
 		resolve: {
@@ -131,24 +131,16 @@ export function definePluxelVitestConfig(
 				conditions: baseConditions,
 				externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 			},
-			// Generated metadata imports must share the same source-mode core instance as tests.
-			noExternal: ['@pluxel/runtime/toolchain'],
+			// Generated metadata imports must share the same source-mode runtime instance as tests.
+			noExternal: ['@pluxel/runtime'],
 		},
 		test: {
 			environment: 'node',
-			setupFiles: [setupFile],
 			// Monorepos commonly have packages without tests. Keep local runs friendly,
 			// but still allow CI to fail if a project unexpectedly has no tests.
-			passWithNoTests: options.passWithNoTests ?? !process.env.CI,
-			// Avoid Vite deps optimizer OOMs in large monorepos (node tests don't need it).
-			deps: {
-				optimizer: {
-					ssr: { enabled: false },
-					web: { enabled: false },
-				},
-			},
+			passWithNoTests: !process.env.CI,
 			server: {
-				deps: { inline: ['@pluxel/runtime/toolchain'] },
+				deps: { inline: ['@pluxel/runtime'] },
 			},
 		},
 	}
@@ -159,8 +151,9 @@ export function definePluxelVitestConfig(
 		const merged = mergeConfig(base, rest as ViteUserConfig) as ViteUserConfig
 		const projectRoot = resolve(merged.root ?? process.cwd())
 		const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
-			...asPluginArray(options.prePlugins),
+			...asPluginArray(pluxel.prePlugins),
 			databaseSourceVitePlugin({ root: projectRoot }),
+			createPluginSemanticsPlugin({ root: projectRoot, include, exclude }).plugin,
 			lintGuardPlugin({ cwd: projectRoot }),
 			configSourcePlugin({ include, exclude }),
 		]
@@ -179,169 +172,13 @@ export function definePluxelVitestConfig(
 			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 		}
 
-		// Always keep core setup in place. Caller can add more setup files.
-		merged.test = merged.test ?? {}
-		merged.test.setupFiles = uniqStrings([setupFile, ...asStringArray(merged.test.setupFiles)])
-
 		// Compose plugins with explicit order control.
 		merged.plugins = [...toolchainPlugins, ...overridePlugins]
 
 		return merged
 	}
 
-	if (typeof overrides === 'function') {
-		return defineConfig(async (env) => {
-			const resolved = (await overrides(env as any)) as ViteUserConfig
-			return finalize(resolved ?? {})
-		})
-	}
-
-	if (isThenable<ViteUserConfig>(overrides)) {
-		return defineConfig(overrides.then((resolved) => finalize(resolved ?? {})))
-	}
-
-	return defineConfig(finalize((overrides ?? {}) as ViteUserConfig))
+	return finalize(overrides)
 }
 
 export default definePluxelVitestConfig()
-
-type WorkspacePackage = { name: string; dir: string }
-type WorkspaceDirent = { name: string; isDirectory: () => boolean; isFile: () => boolean }
-
-export type PluxelVitestWorkspaceOptions = {
-	/**
-	 * Workspace directories to scan for packages (defaults to common Pluxel layouts).
-	 * Each directory is relative to `process.cwd()`.
-	 */
-	roots?: readonly string[]
-	/** Per-project Vitest test config overrides. */
-	projectTest?: Omit<
-		NonNullable<ViteUserConfig['test']>,
-		'name' | 'include' | 'exclude' | 'setupFiles'
-	>
-	/** Top-level Vitest test config (e.g. worker limits). */
-	test?: Omit<NonNullable<ViteUserConfig['test']>, 'projects'>
-	/** Test file include globs (relative to each package root). */
-	includeTests?: readonly string[]
-	/** Test file exclude globs (relative to each package root). */
-	excludeTests?: readonly string[]
-	/** Include patterns for toolchain extraction (relative to each package root). */
-	includeToolchain?: readonly string[]
-	/** Exclude patterns for toolchain extraction (relative to each package root). */
-	excludeToolchain?: readonly string[]
-	/** Optional filter to include/exclude workspace packages. */
-	filter?: (pkg: WorkspacePackage) => boolean
-}
-
-function tryReadWorkspacePkgInfo(dir: string): WorkspacePackage | null {
-	try {
-		const json = readFileSync(join(dir, 'package.json'), 'utf-8')
-		const pkg = JSON.parse(json) as { name?: unknown }
-		if (typeof pkg.name !== 'string') return null
-		return { name: pkg.name, dir }
-	} catch {
-		return null
-	}
-}
-
-function hasTestFiles(dir: string): boolean {
-	try {
-		const entries = readdirSync(dir, { withFileTypes: true }) as unknown as WorkspaceDirent[]
-		for (const e of entries) {
-			if (!e.isDirectory() && !e.isFile()) continue
-			if (e.isFile() && (e.name.endsWith('.test.ts') || e.name.endsWith('.spec.ts'))) return true
-			if (e.isDirectory()) {
-				if (e.name === 'node_modules' || e.name === 'dist' || e.name.startsWith('.')) continue
-				if (e.name === 'tests') return true
-				if (hasTestFiles(join(dir, e.name))) return true
-			}
-		}
-		return false
-	} catch {
-		return false
-	}
-}
-
-function collectWorkspacePackages(roots: readonly string[]): WorkspacePackage[] {
-	const root = process.cwd()
-	const out: WorkspacePackage[] = []
-
-	for (const r of roots) {
-		const base = join(root, r)
-		let entries: WorkspaceDirent[]
-		try {
-			entries = readdirSync(base, { withFileTypes: true }) as unknown as WorkspaceDirent[]
-		} catch {
-			continue
-		}
-		for (const entry of entries) {
-			if (!entry.isDirectory()) continue
-			const dir = join(base, entry.name)
-			const info = tryReadWorkspacePkgInfo(dir)
-			if (info && hasTestFiles(dir)) out.push(info)
-		}
-	}
-
-	return out
-}
-
-export function collectPluxelVitestWorkspaceProjects(
-	options: Pick<PluxelVitestWorkspaceOptions, 'roots' | 'filter'> = {},
-): WorkspacePackage[] {
-	const roots =
-		options.roots ??
-		(['packages', 'plugins', 'builtin-plugins', 'render-plugins', 'chatbots'] as const)
-	return collectWorkspacePackages(roots).filter((p) => options.filter?.(p) ?? true)
-}
-
-/**
- * Convenience helper for monorepos:
- * - discovers workspace packages with test files
- * - builds one Vitest project per package
- * - applies Pluxel toolchain transforms so plugin metadata extraction works in tests
- */
-export function definePluxelVitestWorkspaceConfig(
-	options: PluxelVitestWorkspaceOptions = {},
-): ViteUserConfigExport {
-	const includeTests = options.includeTests ?? (['**/*.test.ts', '**/*.spec.ts'] as const)
-	const excludeTests =
-		options.excludeTests ?? (['**/node_modules/**', '**/dist/**', '**/.*/**'] as const)
-
-	const includeToolchain =
-		options.includeToolchain ??
-		([
-			'src/**/*.ts',
-			'src/**/*.tsx',
-			'tests/**/*.ts',
-			'tests/**/*.tsx',
-			'fsm/**/*.ts',
-			'fsm/**/*.tsx',
-			'parts/**/*.ts',
-			'parts/**/*.tsx',
-		] as const)
-	const excludeToolchain =
-		options.excludeToolchain ?? (['node_modules/**', 'dist/**', '**/*.d.ts'] as const)
-
-	const pkgs = collectPluxelVitestWorkspaceProjects(options)
-	const projects = pkgs.map((p) => {
-		return definePluxelVitestConfig(
-			{
-				root: p.dir,
-				test: {
-					name: p.name,
-					include: [...includeTests],
-					exclude: [...excludeTests],
-					...options.projectTest,
-				},
-			},
-			{ include: [...includeToolchain], exclude: [...excludeToolchain] },
-		)
-	})
-
-	return defineConfig({
-		test: {
-			...options.test,
-			projects,
-		},
-	})
-}

@@ -1,88 +1,60 @@
-import type { Context } from '@pluxel/core'
-
-import { readStatusSnapshot, resolvePluginSource } from '../features/pluginStatus/service'
+import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import {
-	requireRouteCapability,
-	type RuntimePluginSource,
-	type RuntimePluginStatusSnapshot,
-} from '../../runtime/capabilities'
+	requireRuntimePluginGraphCoordinator,
+	type RuntimePluginGraphCommittedView,
+} from '../../internal/reconciliation'
+import { readRuntimeRouteCapabilities } from '../../runtime/capabilities'
+import type { PluginStatusSnapshot } from '../../web/protocol'
+import {
+	projectedPluginByAddress,
+	projectPluginCatalogFromView,
+} from '../features/plugins/catalog-projection'
 
-type PluginSourceSnapshot = RuntimePluginSource extends infer Source
-	? Source extends RuntimePluginSource
-		? Omit<Source, '__typename'>
-		: never
-	: never
-
-export type PluginStatusSnapshot = Omit<RuntimePluginStatusSnapshot, 'source'> & {
-	name: string
-	source: PluginSourceSnapshot
+export async function pluginStatus(
+	ctx: Context,
+	address: PluginNodeAddress,
+): Promise<PluginStatusSnapshot | null> {
+	const projected = await requireRuntimePluginGraphCoordinator(ctx).readCommitted((view) =>
+		projectedPluginByAddress(projectCommittedPluginCatalog(ctx, view), address),
+	)
+	if (!projected) return null
+	return portablePluginStatus(projected)
 }
 
-export type PluginsListOutput = {
-	plugins: PluginStatusSnapshot[]
-	summary: {
-		total: number
-		running: number
-		stopped: number
-		disabled: number
-	}
-}
+export type PluginStatusOverview = Readonly<{
+	plugins: readonly PluginStatusSnapshot[]
+	summary: Readonly<{ total: number; running: number; stopped: number; autoStart: number }>
+}>
 
-export function pluginStatus(ctx: Context, name: string): PluginStatusSnapshot | null {
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const ctor = catalog.resolveOrRegistered(name)
-	if (!ctor) return null
-	const snap = readStatusSnapshot(ctx, name, ctor)
-	const source =
-		(snap as any).source && typeof (snap as any).source === 'object'
-			? (() => {
-					const { __typename: _t, ...rest } = (snap as any).source
-					return rest
-				})()
-			: snap.source
-	return { name, ...snap, source } as any
-}
-
-export function pluginsList(ctx: Context): PluginsListOutput {
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const out: PluginStatusSnapshot[] = []
-	for (const [name, ctor] of catalog.listRegistered()) {
-		const snap = readStatusSnapshot(ctx, name, ctor)
-		const source =
-			(snap as any).source && typeof (snap as any).source === 'object'
-				? (() => {
-						const { __typename: _t, ...rest } = (snap as any).source
-						return rest
-					})()
-				: snap.source
-		out.push({ name, ...snap, source } as any)
-	}
-	out.sort((a, b) => a.name.localeCompare(b.name))
-
-	let running = 0
-	let disabled = 0
-	for (const e of out) {
-		if (e.isRunning) running += 1
-		if (e.isEnabled === false) disabled += 1
-	}
-
+export async function pluginStatusOverview(ctx: Context): Promise<PluginStatusOverview> {
+	const overview = await requireRuntimePluginGraphCoordinator(ctx).readCommitted((view) =>
+		projectCommittedPluginCatalog(ctx, view),
+	)
 	return {
-		plugins: out,
-		summary: {
-			total: out.length,
-			running,
-			disabled,
-			stopped: out.length - running - disabled,
-		},
+		plugins: overview.entries.map(portablePluginStatus),
+		summary: overview.summary,
 	}
 }
 
-export function pluginSource(ctx: Context, name: string) {
-	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(name)
-	const src: any = resolvePluginSource(ctx, name, ctor)
-	if (src && typeof src === 'object') {
-		const { __typename: _t, ...rest } = src
-		return rest
+export function portablePluginStatus(
+	entry: import('../features/plugins/catalog-projection').PluginCatalogProjectionEntry,
+): PluginStatusSnapshot {
+	const { nodeKey: _nodeKey, issues, ...snapshot } = entry
+	return {
+		...snapshot,
+		issues: [...issues],
 	}
-	return src
+}
+
+export function projectCommittedPluginCatalog(ctx: Context, view: RuntimePluginGraphCommittedView) {
+	return projectPluginCatalogFromView(ctx.root, {
+		catalog: view.catalog,
+		state: view.runtimeState.state,
+		reconciliation: view.reconciliation,
+		sessionIntents: view.sessionIntents,
+		desiredControl: view.desiredControl,
+		coreNodes: view.coreAdjacency.nodes,
+		runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
+		recentUpdate: readRuntimeRouteCapabilities(ctx)?.recentUpdate,
+	})
 }

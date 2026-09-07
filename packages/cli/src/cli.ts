@@ -1,18 +1,33 @@
 #!/usr/bin/env node
-import { cli, define, lazy } from 'gunshi'
+import { cli, define, lazy, type SubCommandable } from 'gunshi'
 import pkg from '../package.json'
+import { renderCliHeader } from './render-header'
 import {
 	buildCommandDefinition,
 	databaseCommandDefinition,
+	devCommandDefinition,
 	distributionCommandDefinition,
+	docsCommandDefinition,
 	hmrCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
 	sourceCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
+import { formatOfficialCapabilityError, OfficialCapabilityError } from './capability-loader'
 
-const commands = new Map([
+const commands = new Map<string, SubCommandable>([
+	[
+		'dev',
+		lazy(() => import('./commands/dev').then((module) => module.devCommand), devCommandDefinition),
+	],
+	[
+		'docs',
+		lazy(
+			() => import('./commands/docs').then((module) => module.docsCommand),
+			docsCommandDefinition,
+		),
+	],
 	[
 		'new',
 		lazy(() => import('./scaffold').then((module) => module.newCommand), newCommandDefinition),
@@ -81,36 +96,20 @@ async function main() {
 		await cli(nextArgv, rootCommand, {
 			name: pkg.name ?? 'pluxel',
 			version: pkg.version,
+			renderHeader: renderCliHeader,
 			subCommands: commands,
 		})
 	} catch (error) {
-		const msg = formatCliError(error, process.argv[2])
+		const msg = formatCliError(error)
 		process.stderr.write(`${msg}\n`)
 		process.exitCode = 1
 	}
 }
 
-function formatCliError(error: unknown, command: string | undefined): string {
+function formatCliError(error: unknown): string {
+	if (error instanceof OfficialCapabilityError) return formatOfficialCapabilityError(error)
 	const message = error instanceof Error ? error.message : String(error)
-	const dependencyByCommand: Record<string, string> = {
-		build: '@pluxel/rolldown',
-		database: '@pluxel/rolldown',
-		distribution: '@pluxel/rolldown',
-		hmr: '@pluxel/runtime-dynamic',
-		workspace: '@pluxel/rolldown',
-	}
-	const dependency = command ? dependencyByCommand[command] : undefined
-	if (
-		dependency &&
-		(error as NodeJS.ErrnoException | undefined)?.code === 'ERR_MODULE_NOT_FOUND' &&
-		message.includes(dependency)
-	) {
-		return [
-			`The \`pluxel ${command}\` command requires the optional ${dependency} package.`,
-			`Install it in this project with \`pnpm add -D ${dependency}\`.`,
-		].join('\n')
-	}
 	return message
 }
 
-void main()
+await main()

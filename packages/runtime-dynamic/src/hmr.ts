@@ -1,5 +1,3 @@
-import './register-services'
-
 export {
 	bootPlannedLoaderHmrHost,
 	planLoaderHmrHost,

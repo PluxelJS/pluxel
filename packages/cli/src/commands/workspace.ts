@@ -16,6 +16,7 @@ import {
 	workspaceRootArgs,
 	workspaceScanArgs,
 	workspaceScanDefinition,
+	workspaceDoctorDefinition,
 } from '../command-manifest'
 import { detectPm, runPackageManager } from '../utils/pm'
 import {
@@ -30,6 +31,7 @@ import {
 	removeWorkspacePattern,
 	resolveRelative,
 } from '../workspace/state'
+import { diagnoseWorkspaceGovernance } from '../workspace/governance'
 
 type WorkspaceRootArgs = typeof workspaceRootArgs
 type WorkspaceRootValues = ArgValues<WorkspaceRootArgs>
@@ -122,6 +124,17 @@ export const workspaceScanCommand = define({
 		const paths = await scanWorkspaceDirs(workspaceRoot, base)
 		const updated = upsertWorkspaceCandidates(workspaceRoot, paths, existing, 'scan')
 		ctx.log(`Recorded ${paths.length} candidate(s). Total tracked: ${updated.entries.length}.`)
+	},
+})
+
+export const workspaceDoctorCommand = define({
+	...workspaceDoctorDefinition,
+	run(ctx) {
+		const root = resolveWorkspaceRoot(ctx.values as WorkspaceRootValues)
+		const diagnostics = diagnoseWorkspaceGovernance(root)
+		for (const warning of diagnostics.warnings) ctx.log(`warning: ${warning}`)
+		if (diagnostics.errors.length > 0) throw new Error(diagnostics.errors.join('\n'))
+		ctx.log(`Workspace governance is valid: ${root}`)
 	},
 })
 

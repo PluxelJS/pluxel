@@ -1,16 +1,7 @@
 import { existsSync } from 'node:fs'
-import {
-	backupAndRewriteLoaderHmrConfigV2,
-	buildLoaderHmrWorkspaceFromScan,
-	createDefaultLoaderHmrConfigV2,
-	discoverPluginsFromPackages,
-	mergeLoaderHmrProfile,
-	type PluxelLoaderHmrConfigV2,
-	readLoaderHmrConfigV2,
-	resolveLoaderHmrRootsExpanded,
-	scanWorkspacePackages,
-	type LoaderHmrWorkspace,
-	writeLoaderHmrConfigV2,
+import type {
+	LoaderHmrWorkspace,
+	PluxelLoaderHmrConfigV2,
 } from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { Box, render, Text, useInput, useStdout } from 'ink'
 import { resolve } from 'pathe'
@@ -25,6 +16,8 @@ type PromptResult = { action: 'exit' }
 type ConfigScope = 'profile' | 'defaults'
 
 type Overlay = 'profiles' | 'help' | null
+type LoaderHmrDiagnoseModule = typeof import('@pluxel/runtime-dynamic/hmr/diagnose')
+type ScanWorkspacePackages = LoaderHmrDiagnoseModule['scanWorkspacePackages']
 
 function clamp(n: number, min: number, max: number) {
 	return Math.max(min, Math.min(max, n))
@@ -118,6 +111,7 @@ type Modal =
 function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 	const { stdout } = useStdout()
 	const rows = stdout?.rows ?? 24
+	const columns = stdout?.columns ?? 80
 	const height = Math.max(Math.min(rows - 4, 12), 6)
 
 	const [value, setValue] = useState(
@@ -188,9 +182,9 @@ function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 	return (
 		<Box
 			position="absolute"
-			top={Math.floor((rows - height) / 2)}
-			left={2}
-			right={2}
+			marginTop={Math.floor((rows - height) / 2)}
+			marginLeft={2}
+			width={Math.max(columns - 4, 1)}
 			height={height}
 			borderStyle="round"
 			borderColor="yellow"
@@ -250,7 +244,7 @@ function ScreenMask(props: { visible: boolean }) {
 	}, [props.visible, rows, cols])
 	if (!props.visible) return null
 	return (
-		<Box position="absolute" top={0} left={0} width={cols} height={rows} backgroundColor="black">
+		<Box position="absolute" width={cols} height={rows} backgroundColor="black">
 			<Text>{fill}</Text>
 		</Box>
 	)
@@ -597,7 +591,7 @@ type ScanState =
 			rootsExpandedAbs: string[]
 			discovered: Array<{ name: string; entry: string; pkgDir: string }>
 			discoveredForUi: PickPackagesDiscoveredPlugin[]
-			packages: Awaited<ReturnType<typeof scanWorkspacePackages>>['packages']
+			packages: Awaited<ReturnType<ScanWorkspacePackages>>['packages']
 	  }
 	| { status: 'error'; error: string }
 
@@ -615,6 +609,7 @@ function LoaderHmrPromptApp(props: {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
+	diagnose: LoaderHmrDiagnoseModule
 	skipPackages: Set<string>
 	initialCfg: PluxelLoaderHmrConfigV2
 	initialProfile: string
@@ -628,6 +623,16 @@ function LoaderHmrPromptApp(props: {
 	const rows = stdout?.rows ?? 24
 
 	const [tab, setTab] = useState<TabKey>(props.initialTab ?? 'packages')
+	const {
+		backupAndRewriteLoaderHmrConfigV2,
+		buildLoaderHmrWorkspaceFromScan,
+		createDefaultLoaderHmrConfigV2,
+		discoverPluginsFromPackages,
+		mergeLoaderHmrProfile,
+		resolveLoaderHmrRootsExpanded,
+		scanWorkspacePackages,
+		writeLoaderHmrConfigV2,
+	} = props.diagnose
 	const [pathsFocus, setPathsFocus] = useState<PathsFocus>(() => {
 		if (props.initialOpen?.kind === 'paths') return props.initialOpen.focus ?? 'roots'
 		return 'roots'
@@ -666,7 +671,7 @@ function LoaderHmrPromptApp(props: {
 	}
 
 	useEffect(() => {
-		if (!toast) return
+		if (!toast) return undefined
 		const t = setTimeout(() => setToast(''), 2500)
 		return () => clearTimeout(t)
 	}, [toast])
@@ -808,8 +813,10 @@ function LoaderHmrPromptApp(props: {
 	// Snapshot build: derived from scan + merged; debounce to avoid thrash while selecting packages.
 	useEffect(() => {
 		let cancelled = false
-		if (!merged) return
-		if (scan.status !== 'ready') return
+		if (!merged) return undefined
+		if (scan.status !== 'ready') return undefined
+		const currentMerged = merged
+		const readyScan = scan
 		setSnapshot({ status: 'building' })
 
 		const t = setTimeout(() => {
@@ -818,17 +825,17 @@ function LoaderHmrPromptApp(props: {
 					const rootDirAbs = resolve(props.rootDir)
 					const snapshotRes = await buildLoaderHmrWorkspaceFromScan({
 						rootDir: rootDirAbs,
-						merged,
-						rootsExpandedAbs: scan.rootsExpandedAbs,
-						packages: scan.packages.map((p) => ({
+						merged: currentMerged,
+						rootsExpandedAbs: readyScan.rootsExpandedAbs,
+						packages: readyScan.packages.map((p) => ({
 							name: p.name,
 							deps: p.deps,
 							pkgDirAbs: p.pkgDirAbs,
 						})),
-						discovered: scan.discovered,
+						discovered: readyScan.discovered,
 					})
 					if (cancelled) return
-					if (!snapshotRes.ok) {
+					if (snapshotRes.ok === false) {
 						setSnapshot({
 							status: 'error',
 							errors: snapshotRes.errors,
@@ -1707,6 +1714,7 @@ function ProfilesOverlay(props: {
 }) {
 	const { stdout } = useStdout()
 	const rows = stdout?.rows ?? 24
+	const columns = stdout?.columns ?? 80
 	const height = Math.max(Math.min(rows - 4, 16), 10)
 
 	const [query, setQuery] = useState('')
@@ -1778,9 +1786,9 @@ function ProfilesOverlay(props: {
 	return (
 		<Box
 			position="absolute"
-			top={1}
-			left={2}
-			right={2}
+			marginTop={1}
+			marginLeft={2}
+			width={Math.max(columns - 4, 1)}
 			height={height}
 			borderStyle="round"
 			borderColor="cyan"
@@ -1833,6 +1841,7 @@ function HelpKey(props: { children: string }) {
 function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	const { stdout } = useStdout()
 	const rows = stdout?.rows ?? 24
+	const columns = stdout?.columns ?? 80
 	const height = Math.max(Math.min(rows - 4, 14), 10)
 
 	useInput((input, key) => {
@@ -1865,9 +1874,9 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	return (
 		<Box
 			position="absolute"
-			top={1}
-			left={2}
-			right={2}
+			marginTop={1}
+			marginLeft={2}
+			width={Math.max(columns - 4, 1)}
 			height={height}
 			borderStyle="round"
 			borderColor="magenta"
@@ -1894,6 +1903,7 @@ export async function runLoaderHmrPromptTui(params: {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
+	diagnose: LoaderHmrDiagnoseModule
 	skipPackages: Set<string>
 	initialTab?: TabKey
 	initialOpen?: InitialOpen
@@ -1908,15 +1918,15 @@ export async function runLoaderHmrPromptTui(params: {
 	let initialParseError: string | null = null
 
 	if (!existsSync(params.configPath)) {
-		initialCfg = createDefaultLoaderHmrConfigV2()
+		initialCfg = params.diagnose.createDefaultLoaderHmrConfigV2()
 		initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		initialDirty = true
 	} else {
 		try {
-			initialCfg = readLoaderHmrConfigV2(params.configPath)
+			initialCfg = params.diagnose.readLoaderHmrConfigV2(params.configPath)
 			initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		} catch (e) {
-			initialCfg = createDefaultLoaderHmrConfigV2()
+			initialCfg = params.diagnose.createDefaultLoaderHmrConfigV2()
 			initialProfile = initialCfg.profile
 			initialDirty = false
 			initialParseError = e instanceof Error ? e.message : String(e)
@@ -1944,6 +1954,7 @@ export async function runLoaderHmrPromptTui(params: {
 				rootDir={params.rootDir}
 				configPath={params.configPath}
 				env={params.env}
+				diagnose={params.diagnose}
 				skipPackages={params.skipPackages}
 				initialCfg={initialCfg}
 				initialProfile={initialProfile}

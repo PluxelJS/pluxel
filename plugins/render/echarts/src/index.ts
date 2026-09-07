@@ -1,6 +1,5 @@
-import { CanvasPlugin, type CanvasWorkerSnapshot } from '@pluxel/canvas'
+import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
-import { FontsSelectionPort } from '@pluxel/fonts/workbench'
 import {
 	BasePlugin,
 	defineWorkerTask,
@@ -8,22 +7,19 @@ import {
 	type Context,
 	WorkerTaskError,
 } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import type { EChartsOption, SetOptionOpts } from 'echarts'
 import { EChartsConfig, type EChartsPluginConfig } from './config.ts'
 import { EChartsError, type EChartsErrorCode } from './errors.ts'
 import {
 	assertEChartsVersion,
-	renderECharts,
-	type RenderCanvasAdapter,
 	type RenderEngineInput,
 	type RenderEngineResult,
 } from './render-engine.ts'
+import { assertRenderDataBudget } from './render-input.ts'
 import type { EChartsWorkerInput, EChartsWorkerOutput } from './worker.ts'
+import { EChartsWorkbench } from './workbench.ts'
 
 const MAX_THEME_NAME_LENGTH = 128
-const MAX_THEME_DEPTH = 64
 const BUILTIN_THEMES = new Set(['default', 'dark'])
 const EMPTY_THEME: EChartsTheme = Object.freeze({})
 
@@ -31,15 +27,6 @@ const renderTask = defineWorkerTask<EChartsWorkerInput, EChartsWorkerOutput>(
 	import.meta.url,
 	'./worker.ts',
 )
-
-const EChartsWorkbench = workbench.portOutlet({
-	id: 'Fonts',
-	port: FontsSelectionPort,
-	placement: workbenchContract.tab({
-		label: 'Fonts',
-		icon: workbenchContract.icons.Typography,
-	}),
-})
 
 export type EChartsThemeValue =
 	| null
@@ -83,7 +70,7 @@ export type EChartsRasterOutput =
 export type EChartsRenderInput = Readonly<{
 	width: number
 	height: number
-	/** Read without mutation; worker execution additionally requires structured-clone-compatible values. */
+	/** Borrowed without mutation until render settles; must contain only declarative cloneable data. */
 	option: EChartsOption
 	/** Caller-owned registered name, built-in `default`/`dark`, or an inline JSON theme. Omission uses the default-font base theme. */
 	theme?: string | EChartsTheme
@@ -95,9 +82,7 @@ export type EChartsRenderInput = Readonly<{
 	setOption?: Readonly<SetOptionOpts>
 	/** Raster encoding policy. Omission produces PNG. */
 	output?: EChartsRasterOutput
-	/** Worker is bounded and non-blocking; inline supports functions/native objects. @defaultValue 'worker' */
-	execution?: 'worker' | 'inline'
-	/** Cancels admission or worker execution; inline mode observes cancellation at renderer checkpoints. */
+	/** Cancels worker admission or execution. */
 	signal?: AbortSignal
 }>
 
@@ -120,9 +105,16 @@ type OwnedTheme = Readonly<{
 	handle: ThemeRegistrationHandle
 }>
 
+type EChartsGeneration = Readonly<{
+	themeBudget: {
+		count: number
+		bytes: number
+	}
+}>
+
 type EChartsLease = {
 	readonly owner: Context
-	readonly generation: object
+	readonly generation: EChartsGeneration
 	readonly controller: AbortController
 	readonly themes: Map<string, OwnedTheme>
 	active: boolean
@@ -137,10 +129,9 @@ type NormalizedRenderInput = Readonly<{
 	locale?: string
 	setOption?: Readonly<SetOptionOpts>
 	output: Readonly<{ format: 'png' | 'jpeg' | 'webp'; quality?: number }>
-	execution: 'worker' | 'inline'
 }>
 
-@Plugin({ name: 'EChartsPlugin' })
+@Plugin()
 export class EChartsPlugin extends BasePlugin {
 	private readonly config = this.configs.use(EChartsConfig)
 	private readonly themeFontCache = new WeakMap<
@@ -149,7 +140,7 @@ export class EChartsPlugin extends BasePlugin {
 	>()
 	private readonly leases = new Set<EChartsLease>()
 	private readonly leasesByOwner = new WeakMap<Context, EChartsLease>()
-	private generation?: object
+	private generation?: EChartsGeneration
 
 	constructor(
 		private readonly canvas: CanvasPlugin,
@@ -166,17 +157,21 @@ export class EChartsPlugin extends BasePlugin {
 				'defaultDevicePixelRatio must not exceed maxDevicePixelRatio',
 			)
 		}
-		const generation = Object.freeze({})
+		const generation: EChartsGeneration = Object.freeze({
+			themeBudget: { count: 0, bytes: 0 },
+		})
 		this.generation = generation
 		this.ctx.effects.defer(
 			() => {
 				if (this.generation === generation) this.generation = undefined
-				for (const lease of this.leases) this.closeLease(lease)
+				for (const lease of this.leases) {
+					if (lease.generation === generation) this.closeLease(lease)
+				}
 			},
 			{ tag: 'echarts-generation' },
 		)
-		this.ctx.workbench.mount(EChartsWorkbench, {
-			selection: workbench.bind.rpc(() => this.fonts.selectionManager()),
+		this.ctx.workbench?.publish(EChartsWorkbench, {
+			fonts: { provider: this.fonts },
 		})
 	}
 
@@ -215,54 +210,59 @@ export class EChartsPlugin extends BasePlugin {
 				`Theme owner reached its ${this.config.maxThemesPerConsumer} theme limit`,
 			)
 		}
-		const theme = normalizeTheme(input.theme, this.config.maxThemeBytes)
+		if (lease.generation.themeBudget.count >= this.config.maxTotalThemes) {
+			throw new EChartsError(
+				'THEME_LIMIT_EXCEEDED',
+				`EChartsPlugin reached its ${this.config.maxTotalThemes} retained theme limit`,
+			)
+		}
+		const theme = normalizeTheme(input.theme, {
+			maxBytes: this.config.maxThemeBytes,
+			maxNodes: this.config.maxThemeNodes,
+			maxDepth: this.config.maxThemeDepth,
+		})
+		const budget = lease.generation.themeBudget
+		if (theme.byteLength > this.config.maxTotalThemeBytes - budget.bytes) {
+			throw new EChartsError(
+				'THEME_LIMIT_EXCEEDED',
+				`Retained themes would exceed the configured ${this.config.maxTotalThemeBytes} byte limit`,
+			)
+		}
 		let owned!: OwnedTheme
 		const handle = new ThemeRegistrationHandle(name, () => {
 			if (lease.themes.get(name) !== owned) return
 			lease.themes.delete(name)
+			budget.count -= 1
+			budget.bytes -= owned.theme.byteLength
 			handle.deactivate()
 		})
 		owned = Object.freeze({ theme, handle })
 		lease.themes.set(name, owned)
+		budget.count += 1
+		budget.bytes += theme.byteLength
 		return handle
 	}
 
-	/** Render through the shared worker pool by default, or explicitly inline for non-cloneable options. */
+	/** Render declarative options through the shared worker pool. */
 	async render(input: EChartsRenderInput): Promise<EChartsRenderResult> {
 		const lease = this.requireLease()
+		if (!input || typeof input !== 'object' || Array.isArray(input)) {
+			throw new EChartsError('INVALID_INPUT', 'render() requires an input object')
+		}
+		if (input?.signal !== undefined && !isAbortSignal(input.signal)) {
+			throw new EChartsError('INVALID_INPUT', 'signal must be an AbortSignal')
+		}
 		const normalized = this.normalizeRenderInput(input)
+		const physicalWidth = Math.ceil(normalized.width * normalized.devicePixelRatio)
+		const physicalHeight = Math.ceil(normalized.height * normalized.devicePixelRatio)
+		this.canvas.assertDimensions(physicalWidth, physicalHeight)
 		const abortLink = linkAbortSignals([lease.controller.signal, input.signal])
 		try {
 			if (abortLink.signal.aborted) throw abortReason(abortLink.signal)
-			const canvasSnapshot = this.canvas.workerSnapshot
-			const fontRevision = canvasSnapshot.font.revision
-			const defaultFontCssFamily = rendererFontFamily(canvasSnapshot.font.cssFamily, fontRevision)
-			const resolvedTheme = this.resolveTheme(lease, normalized.theme, defaultFontCssFamily)
-			const physicalWidth = Math.ceil(normalized.width * normalized.devicePixelRatio)
-			const physicalHeight = Math.ceil(normalized.height * normalized.devicePixelRatio)
-			this.canvas.assertDimensions(physicalWidth, physicalHeight)
-			const render: RenderEngineInput = Object.freeze({
-				width: normalized.width,
-				height: normalized.height,
-				devicePixelRatio: normalized.devicePixelRatio,
-				option: normalized.option,
-				theme: resolvedTheme.value,
-				injectOptionFont: resolvedTheme.injectOptionFont,
-				defaultFontCssFamily,
-				fontRevision,
-				...(normalized.locale === undefined ? {} : { locale: normalized.locale }),
-				...(normalized.setOption === undefined ? {} : { setOption: normalized.setOption }),
-				output: normalized.output,
-				maxDataUrlBytes: this.config.maxDataUrlBytes,
-			})
-			const result =
-				normalized.execution === 'inline'
-					? await renderECharts(
-							render,
-							this.canvas as unknown as RenderCanvasAdapter,
-							abortLink.signal,
-						)
-					: await this.renderInWorker(render, abortLink.signal, canvasSnapshot)
+			const result = await this.renderInWorker(
+				(signal) => this.prepareWorkerInput(lease, normalized, signal),
+				abortLink.signal,
+			)
 			return toPublicResult(result)
 		} catch (cause) {
 			if (cause instanceof EChartsError) throw cause
@@ -274,26 +274,21 @@ export class EChartsPlugin extends BasePlugin {
 	}
 
 	private async renderInWorker(
-		render: RenderEngineInput,
+		prepare: (signal: AbortSignal) => Promise<EChartsWorkerInput>,
 		signal: AbortSignal,
-		canvas: CanvasWorkerSnapshot,
 	): Promise<RenderEngineResult> {
 		let response: EChartsWorkerOutput
 		try {
-			response = await this.ctx.workers.run(
-				renderTask,
-				{
-					render,
-					canvas,
-				},
-				{ signal },
-			)
+			response = await this.ctx.workers.runPrepared(renderTask, prepare, {
+				signal,
+				inputOwnership: 'borrowed',
+			})
 		} catch (cause) {
 			if (signal.aborted) throw abortReason(signal)
 			if (cause instanceof WorkerTaskError && cause.code === 'INVALID_INPUT') {
 				throw new EChartsError(
 					'WORKER_INPUT_UNSUPPORTED',
-					'ECharts worker mode requires options compatible with structured clone; use execution: "inline" for formatter functions or native Canvas objects',
+					'ECharts options must contain only declarative structured-clone-compatible data',
 					{ cause },
 				)
 			}
@@ -309,6 +304,44 @@ export class EChartsPlugin extends BasePlugin {
 			throw new EChartsError(response.error.code, response.error.message)
 		}
 		return response.result
+	}
+
+	private async prepareWorkerInput(
+		lease: EChartsLease,
+		input: NormalizedRenderInput,
+		signal: AbortSignal,
+	): Promise<EChartsWorkerInput> {
+		await assertRenderDataBudget(
+			[input.option, ...(input.setOption === undefined ? [] : [input.setOption])],
+			{
+				maxBytes: this.config.maxOptionBytes,
+				maxNodes: this.config.maxOptionNodes,
+				maxDepth: this.config.maxOptionDepth,
+			},
+			signal,
+		)
+		const canvas = this.canvas.workerSnapshot
+		const fontRevision = canvas.font.revision
+		const defaultFontCssFamily = rendererFontFamily(canvas.font.cssFamily, fontRevision)
+		const resolvedTheme = this.resolveTheme(lease, input.theme, defaultFontCssFamily)
+		const render: RenderEngineInput = Object.freeze({
+			width: input.width,
+			height: input.height,
+			devicePixelRatio: input.devicePixelRatio,
+			option: input.option,
+			theme: resolvedTheme.value,
+			injectOptionFont: resolvedTheme.injectOptionFont,
+			defaultFontCssFamily,
+			...(input.locale === undefined ? {} : { locale: input.locale }),
+			...(input.setOption === undefined ? {} : { setOption: input.setOption }),
+			output: input.output,
+			maxDataUrlBytes: this.config.maxDataUrlBytes,
+			maxImages: this.config.maxImages,
+			maxTotalImageBytes: this.config.maxTotalImageBytes,
+			maxTotalImagePixels: this.config.maxTotalImagePixels,
+			maxOutputBytes: this.config.maxOutputBytes,
+		})
+		return Object.freeze({ render, canvas })
 	}
 
 	private resolveTheme(
@@ -336,7 +369,11 @@ export class EChartsPlugin extends BasePlugin {
 			}
 			throw new EChartsError('THEME_NOT_FOUND', `Theme "${name}" is not registered by this caller`)
 		}
-		const normalized = normalizeTheme(theme, this.config.maxThemeBytes)
+		const normalized = normalizeTheme(theme, {
+			maxBytes: this.config.maxThemeBytes,
+			maxNodes: this.config.maxThemeNodes,
+			maxDepth: this.config.maxThemeDepth,
+		})
 		return Object.freeze({
 			value: this.themeWithDefaultFont(normalized.value, defaultFontCssFamily),
 			injectOptionFont: false,
@@ -384,13 +421,6 @@ export class EChartsPlugin extends BasePlugin {
 		) {
 			throw new EChartsError('INVALID_INPUT', 'locale must be a valid ECharts locale name')
 		}
-		if (
-			input.execution !== undefined &&
-			input.execution !== 'worker' &&
-			input.execution !== 'inline'
-		) {
-			throw new EChartsError('INVALID_INPUT', 'execution must be worker or inline')
-		}
 		return Object.freeze({
 			width: input.width,
 			height: input.height,
@@ -400,7 +430,6 @@ export class EChartsPlugin extends BasePlugin {
 			...(input.locale === undefined ? {} : { locale: input.locale.trim() }),
 			...(input.setOption === undefined ? {} : { setOption: input.setOption }),
 			output: normalizeOutput(input.output),
-			execution: input.execution ?? 'worker',
 		})
 	}
 
@@ -444,8 +473,7 @@ export class EChartsPlugin extends BasePlugin {
 		lease.controller.abort(
 			new EChartsError('NOT_RUNNING', 'ECharts capability belongs to a stopped plugin generation'),
 		)
-		for (const { handle } of lease.themes.values()) handle.deactivate()
-		lease.themes.clear()
+		for (const { handle } of lease.themes.values()) handle.dispose()
 		this.leases.delete(lease)
 		if (this.leasesByOwner.get(lease.owner) === lease) this.leasesByOwner.delete(lease.owner)
 	}
@@ -477,32 +505,53 @@ function normalizeThemeName(value: unknown): string {
 	return name
 }
 
-function normalizeTheme(value: unknown, maxBytes: number): NormalizedTheme {
+function normalizeTheme(
+	value: unknown,
+	limits: Readonly<{ maxBytes: number; maxNodes: number; maxDepth: number }>,
+): NormalizedTheme {
 	if (!isPlainRecord(value)) {
 		throw new EChartsError('INVALID_THEME', 'Theme must be a plain JSON object')
 	}
 	const seen = new WeakSet<object>()
-	const normalized = cloneThemeValue(value, seen, 0) as EChartsTheme
-	const byteLength = Buffer.byteLength(JSON.stringify(normalized), 'utf8')
-	if (byteLength > maxBytes) {
-		throw new EChartsError(
-			'THEME_TOO_LARGE',
-			`Theme is ${byteLength} bytes; the configured limit is ${maxBytes}`,
-		)
-	}
-	return Object.freeze({ value: deepFreeze(normalized), byteLength })
+	const budget = { bytes: 0, nodes: 0 }
+	const normalized = cloneThemeValue(value, seen, 0, limits, budget) as EChartsTheme
+	return Object.freeze({ value: deepFreeze(normalized), byteLength: budget.bytes })
 }
 
-function cloneThemeValue(value: unknown, seen: WeakSet<object>, depth: number): EChartsThemeValue {
-	if (depth > MAX_THEME_DEPTH) {
-		throw new EChartsError('INVALID_THEME', `Theme nesting exceeds ${MAX_THEME_DEPTH} levels`)
+function cloneThemeValue(
+	value: unknown,
+	seen: WeakSet<object>,
+	depth: number,
+	limits: Readonly<{ maxBytes: number; maxNodes: number; maxDepth: number }>,
+	budget: { bytes: number; nodes: number },
+): EChartsThemeValue {
+	budget.nodes += 1
+	if (budget.nodes > limits.maxNodes) {
+		throw new EChartsError(
+			'THEME_TOO_LARGE',
+			`Theme exceeds the configured ${limits.maxNodes} value limit`,
+		)
 	}
-	if (value === null) return null
-	if (typeof value === 'string' || typeof value === 'boolean') return value
+	if (depth > limits.maxDepth) {
+		throw new EChartsError('INVALID_THEME', `Theme nesting exceeds ${limits.maxDepth} levels`)
+	}
+	if (value === null) {
+		addThemeBytes(budget, 4, limits.maxBytes)
+		return null
+	}
+	if (typeof value === 'string') {
+		addThemeBytes(budget, Buffer.byteLength(JSON.stringify(value), 'utf8'), limits.maxBytes)
+		return value
+	}
+	if (typeof value === 'boolean') {
+		addThemeBytes(budget, value ? 4 : 5, limits.maxBytes)
+		return value
+	}
 	if (typeof value === 'number') {
 		if (!Number.isFinite(value)) {
 			throw new EChartsError('INVALID_THEME', 'Theme numbers must be finite')
 		}
+		addThemeBytes(budget, Buffer.byteLength(String(value), 'utf8'), limits.maxBytes)
 		return value
 	}
 	if (!value || typeof value !== 'object') {
@@ -512,23 +561,63 @@ function cloneThemeValue(value: unknown, seen: WeakSet<object>, depth: number): 
 	seen.add(value)
 	try {
 		if (Array.isArray(value)) {
-			return value.map((item) => cloneThemeValue(item, seen, depth + 1))
+			addThemeBytes(budget, value.length === 0 ? 2 : value.length + 1, limits.maxBytes)
+			if (budget.nodes + value.length > limits.maxNodes) {
+				throw new EChartsError(
+					'THEME_TOO_LARGE',
+					`Theme exceeds the configured ${limits.maxNodes} value limit`,
+				)
+			}
+			const result: EChartsThemeValue[] = []
+			for (let index = 0; index < value.length; index += 1) {
+				const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+				if (!descriptor || !('value' in descriptor)) {
+					throw new EChartsError(
+						'INVALID_THEME',
+						'Theme arrays must be dense and must not contain accessors',
+					)
+				}
+				result.push(cloneThemeValue(descriptor.value, seen, depth + 1, limits, budget))
+			}
+			return result
 		}
 		if (!isPlainRecord(value)) {
 			throw new EChartsError('INVALID_THEME', 'Theme values must use plain objects and arrays')
 		}
 		const result: Record<string, EChartsThemeValue> = {}
-		for (const [key, item] of Object.entries(value)) {
+		const keys = Object.keys(value)
+		addThemeBytes(budget, keys.length === 0 ? 2 : keys.length + 1, limits.maxBytes)
+		for (const symbol of Object.getOwnPropertySymbols(value)) {
+			if (Object.getOwnPropertyDescriptor(value, symbol)?.enumerable) {
+				throw new EChartsError(
+					'INVALID_THEME',
+					'Theme must not contain enumerable symbol properties',
+				)
+			}
+		}
+		for (const key of keys) {
+			const descriptor = Object.getOwnPropertyDescriptor(value, key)!
+			if (!('value' in descriptor)) {
+				throw new EChartsError('INVALID_THEME', 'Theme must not contain accessor properties')
+			}
+			addThemeBytes(budget, Buffer.byteLength(JSON.stringify(key), 'utf8') + 1, limits.maxBytes)
 			Object.defineProperty(result, key, {
 				configurable: true,
 				enumerable: true,
-				value: cloneThemeValue(item, seen, depth + 1),
+				value: cloneThemeValue(descriptor.value, seen, depth + 1, limits, budget),
 				writable: true,
 			})
 		}
 		return result
 	} finally {
 		seen.delete(value)
+	}
+}
+
+function addThemeBytes(budget: { bytes: number }, bytes: number, maxBytes: number): void {
+	budget.bytes += bytes
+	if (!Number.isSafeInteger(budget.bytes) || budget.bytes > maxBytes) {
+		throw new EChartsError('THEME_TOO_LARGE', `Theme exceeds the configured ${maxBytes} byte limit`)
 	}
 }
 
@@ -616,6 +705,16 @@ function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readon
 			for (const { signal, listener } of listeners) signal.removeEventListener('abort', listener)
 		},
 	})
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+	return Boolean(
+		value &&
+		typeof value === 'object' &&
+		typeof (value as AbortSignal).aborted === 'boolean' &&
+		typeof (value as AbortSignal).addEventListener === 'function' &&
+		typeof (value as AbortSignal).removeEventListener === 'function',
+	)
 }
 
 function abortReason(signal: AbortSignal): Error {

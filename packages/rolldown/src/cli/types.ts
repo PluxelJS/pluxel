@@ -6,7 +6,6 @@ export type BuildSuccessHook = (config: ResolvedConfig, signal: AbortSignal) => 
 export interface BuildRuntimeConfig {
 	projectRoot: string
 	packageJsonPath: string
-	pluginPrefixes: string[]
 	manifestField: string
 	watch: boolean
 	debug: boolean

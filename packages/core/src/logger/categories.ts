@@ -1,3 +1,17 @@
+import {
+	formatPluginNodeRoute,
+	parsePluginNodeRoute,
+	type PluginNodeAddress,
+} from '../plugins/runtime/identity'
+
+export type PluginLogIdentity = Readonly<{
+	rootId: string
+	node: PluginNodeAddress
+	topicOffset: number
+}>
+
+const pluginIdentityByCategory = new WeakMap<readonly string[], PluginLogIdentity | null>()
+
 export const pluxelCategoryFamilies = {
 	runtime: ['pluxel', 'runtime'],
 	plugins: ['pluxel', 'plugins'],
@@ -8,25 +22,28 @@ export type PluxelCategoryFamily =
 	(typeof pluxelCategoryFamilies)[keyof typeof pluxelCategoryFamilies]
 
 export function runtimeLogCategory(rootId: string): readonly ['pluxel', 'runtime', string] {
-	return ['pluxel', 'runtime', rootId]
+	return Object.freeze(['pluxel', 'runtime', rootId])
 }
 
-export function pluginLogCategory(
-	rootId: string,
-	pluginId: string,
-): readonly ['pluxel', 'plugins', string, string] {
-	return ['pluxel', 'plugins', rootId, pluginId]
+function addressSegments(address: PluginNodeAddress): string[] {
+	return formatPluginNodeRoute(address).split('/')
+}
+
+export function pluginLogCategory(rootId: string, address: PluginNodeAddress): readonly string[] {
+	return Object.freeze(['pluxel', 'plugins', rootId, ...addressSegments(address)])
 }
 
 export function debugLogCategory(
 	rootId: string,
 	topic: string,
-	pluginId?: string,
+	address?: PluginNodeAddress,
 ): readonly string[] {
 	const segments = splitDebugTopic(topic)
-	return pluginId
-		? ['pluxel', 'debug', rootId, 'plugin', pluginId, ...segments]
-		: ['pluxel', 'debug', rootId, 'runtime', ...segments]
+	return Object.freeze(
+		address
+			? ['pluxel', 'debug', rootId, 'plugin', ...addressSegments(address), ...segments]
+			: ['pluxel', 'debug', rootId, 'runtime', ...segments],
+	)
 }
 
 export function splitDebugTopic(topic: string): string[] {
@@ -45,15 +62,31 @@ export function splitDebugTopic(topic: string): string[] {
 	return segments
 }
 
-export function readPluginLogIdentity(
-	category: readonly string[],
-): { rootId: string; pluginId: string } | undefined {
-	if (category[0] !== 'pluxel') return undefined
-	if (category.length === 4 && category[1] === 'plugins') {
-		return { rootId: category[2]!, pluginId: category[3]! }
+export function readPluginLogIdentity(category: readonly string[]): PluginLogIdentity | undefined {
+	const cached = pluginIdentityByCategory.get(category)
+	if (cached !== undefined) return cached ?? undefined
+	if (category[0] !== 'pluxel') {
+		pluginIdentityByCategory.set(category, null)
+		return undefined
 	}
-	if (category.length >= 6 && category[1] === 'debug' && category[3] === 'plugin') {
-		return { rootId: category[2]!, pluginId: category[4]! }
+	let offset: number
+	if (category[1] === 'plugins') offset = 3
+	else if (category[1] === 'debug' && category[3] === 'plugin') offset = 4
+	else {
+		pluginIdentityByCategory.set(category, null)
+		return undefined
 	}
-	return undefined
+	try {
+		const parsed = parsePluginNodeRoute(category.slice(offset))
+		const identity = Object.freeze({
+			rootId: category[2]!,
+			node: parsed.nodeAddress,
+			topicOffset: offset + parsed.consumedSegments,
+		})
+		pluginIdentityByCategory.set(category, identity)
+		return identity
+	} catch {
+		pluginIdentityByCategory.set(category, null)
+		return undefined
+	}
 }

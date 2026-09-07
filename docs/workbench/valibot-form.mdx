@@ -1,0 +1,259 @@
+---
+title: Valibot 配置表单
+description: 用一个 Valibot object schema 同时驱动 Plugin 配置、字段信息和 Web 表单。
+---
+
+Pluxel 的配置只需要一份 Valibot object schema，Plugin 通过 `private readonly config = this.configs.use(Config)` 注册它。
+
+这份 schema 同时提供 TypeScript 类型、默认值、运行时校验，以及配置界面需要的字段结构。`formMeta()` 把标题、说明和
+表单展示偏好集中在一次声明中；底层仍是 Valibot 标准 metadata，不会创建第二套配置语言。
+
+## 最小配置与渲染结果
+
+这一个 schema 覆盖常见配置控件：开关、分段选择、URL 文本、整数输入、嵌套对象和可重复列表。先阅读源码，再展开下方预览操作同一份 schema 生成的表单，并检查原始 Input 与 Valibot Output。
+
+<ConfigurationExampleLayout>
+
+```ts twoslash
+import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+
+function startServer(_port: number, _options: { enabled: boolean }) {}
+
+// ---cut---
+
+const Config = v.object({
+	enabled: v.optional(
+		v.pipe(
+			v.boolean(),
+			f.formMeta({
+				title: '启用示例服务',
+				description: 'schema 默认值会进入 normalized config',
+				section: { id: 'runtime', title: '运行时' },
+			}),
+		),
+		true,
+	),
+	mode: v.optional(
+		v.pipe(
+			v.picklist(['development', 'production'] as const),
+			f.formMeta({ title: '运行环境', section: 'runtime' }),
+			f.picklistMeta({
+				control: 'segmented',
+				labels: { development: '开发', production: '生产' },
+			}),
+		),
+		'development',
+	),
+	endpoint: v.optional(
+		v.pipe(
+			v.string(),
+			v.url(),
+			f.formMeta({
+				title: '上游地址',
+				description: 'URL 约束来自 schema；表单只负责编辑。',
+				section: { id: 'network', title: '网络与重试' },
+			}),
+			f.stringMeta({ placeholder: 'https://api.example.com' }),
+		),
+		'https://api.example.com',
+	),
+	port: v.optional(
+		v.pipe(
+			v.number(),
+			v.integer(),
+			v.minValue(1),
+			v.maxValue(65535),
+			f.formMeta({ title: '监听端口', section: 'network' }),
+			f.numberMeta({ step: 1 }),
+		),
+		8787,
+	),
+	retry: v.optional(
+		v.pipe(
+			v.object({
+				attempts: v.optional(
+					v.pipe(
+						v.number(),
+						v.integer(),
+						v.minValue(1),
+						v.maxValue(10),
+						f.formMeta({ title: '最大次数' }),
+						f.numberMeta({ step: 1 }),
+					),
+					3,
+				),
+				backoffMs: v.optional(
+					v.pipe(
+						v.number(),
+						v.integer(),
+						v.minValue(100),
+						f.formMeta({ title: '退避时间（毫秒）' }),
+						f.numberMeta({ step: 100 }),
+					),
+					250,
+				),
+			}),
+			f.formMeta({ title: '重试策略', section: 'network' }),
+			f.objectMeta({ variant: 'card', columns: 2 }),
+		),
+		{
+			attempts: 3,
+			backoffMs: 250,
+		},
+	),
+	allowedOrigins: v.optional(
+		v.pipe(
+			v.array(v.pipe(v.string(), v.url())),
+			f.formMeta({ title: '允许的 Origin', section: 'network' }),
+			f.arrayMeta({
+				layout: 'list',
+				itemLabel: 'Origin',
+				addLabel: '添加 Origin',
+				defaultItem: 'https://api.example.com',
+			}),
+		),
+		['https://api.example.com'],
+	),
+})
+
+@Plugin({ displayName: 'Example' })
+export class ExamplePlugin extends BasePlugin {
+	private readonly config = this.configs.use(Config)
+
+	override init() {
+		startServer(this.config.port, { enabled: this.config.enabled })
+	}
+}
+```
+
+<ConfigurationPreviewLoader />
+
+</ConfigurationExampleLayout>
+
+当字段既有默认值又有表单 metadata 时，让 `v.optional()` 包住完成后的 `v.pipe()`：`v.optional(v.pipe(base, constraints, metadata), default)`。这样默认值属于外层可选语义，字段 extractor 解包 optional 后仍能读取内层 metadata；不要写成 `v.pipe(v.optional(base, default), metadata)`。
+
+注意：`configs.use()` 要放在 Plugin class 的普通顶层 field；不要在 constructor 读取 config，不要使用 `#private`，每个具体 Plugin 只声明一个 object schema。
+
+## metadata 做什么
+
+`valibot-form` 的 core entry 不依赖 React/Mantine，适合 runtime config、CLI prompt、配置文件编辑器和 schema inspection：
+
+```ts twoslash
+import * as v from 'valibot'
+import * as f from 'valibot-form'
+
+const Config = v.object({
+	mode: v.pipe(
+		v.picklist(['development', 'production'] as const),
+		f.formMeta({ title: '运行环境' }),
+		f.picklistMeta({
+			control: 'segmented',
+			labels: { development: '开发', production: '生产' },
+		}),
+	),
+})
+
+const fields = f.extractFormFields(Config)
+```
+
+常用映射：
+
+| Valibot schema        | metadata       | 默认 web 控件    |
+| --------------------- | -------------- | ---------------- |
+| `v.string()`          | `stringMeta`   | TextInput        |
+| `v.number()`          | `numberMeta`   | NumberInput      |
+| `v.boolean()`         | —              | Switch           |
+| `v.picklist()`        | `picklistMeta` | Select           |
+| `v.array()`           | `arrayMeta`    | List             |
+| `v.record()`          | `recordMeta`   | Table            |
+| `v.object()`          | `objectMeta`   | Card/stack       |
+| `v.variant()` / union | `unionMeta`    | Select/segmented |
+
+### 类型入口
+
+类型直接从 package 源码导出。下面的示例由 Twoslash 对当前 workspace 类型检查，不在文档中维护另一份类型声明：
+
+```ts twoslash
+import type { FormMeta, ObjectLikeSchema } from 'valibot-form'
+import type { AutoFormProps } from 'valibot-form/web'
+
+type MetadataKeys = keyof FormMeta
+//   ^?
+
+type FormProps = keyof AutoFormProps<ObjectLikeSchema>
+//   ^?
+```
+
+`formMeta()` 的 `title` / `description` 使用 Valibot 标准 metadata，help、section、layout、disabled、readOnly 和 hidden
+仍是表单展示偏好；类型对应的 `*Meta()` 只负责控件偏好。requiredness、选项、格式和范围仍来自 Valibot schema，例如
+`v.optional()`、`v.url()`、`v.minValue()`、`v.maxValue()` 和 `v.integer()`。原生 `v.title()`、`v.description()` 与
+`v.metadata({ title, description })` 也会按 pipe 顺序互操作，但标准示例使用一次 `formMeta()` 集中声明。
+
+需要编辑 schema 或查看类型补全时，打开独立的[配置 Playground](./configuration-playground.md)。
+
+## Web adapter
+
+只有需要 React 表单时才从 `valibot-form/web` 导入。它依赖 React、Mantine、TanStack Form、Tabler Icons 和 dnd-kit peer：
+
+```sh package-install
+npx nypm add valibot-form valibot react react-dom @mantine/core @mantine/hooks @tanstack/react-form @tabler/icons-react @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+```
+
+```tsx twoslash
+import { MantineProvider } from '@mantine/core'
+import '@mantine/core/styles.css'
+import * as v from 'valibot'
+import { AutoForm } from 'valibot-form/web'
+
+const Config = v.object({
+	mode: v.picklist(['development', 'production']),
+})
+
+async function saveConfig(_value: v.InferOutput<typeof Config>) {}
+
+// ---cut---
+
+export function ConfigEditor() {
+	return (
+		<MantineProvider>
+			<AutoForm
+				schema={Config}
+				formOpts={{
+					defaultValues: { mode: 'development' },
+					onSubmit: async ({ value }) => saveConfig(value),
+				}}
+			>
+				<AutoForm.Fields />
+				<AutoForm.Actions>
+					{({ submit, reset, dirty, canSubmit, submitting }) => (
+						<div>
+							<button type="button" onClick={() => reset()} disabled={!dirty || submitting}>
+								重置
+							</button>
+							<button type="button" onClick={submit} disabled={!canSubmit || submitting}>
+								保存
+							</button>
+						</div>
+					)}
+				</AutoForm.Actions>
+			</AutoForm>
+		</MantineProvider>
+	)
+}
+```
+
+`AutoForm` 负责根据 schema metadata 规划和渲染字段；配置 authority 仍然是 runtime 的 `configs.use()` 校验流程。把表单值送回 host API 前，服务端必须再次用同一个 schema 校验，不能把浏览器表单当作信任边界。
+
+## 与 Pluxel 配置界面的边界
+
+`valibot-form` 提供 schema metadata、字段提取和可选 Web adapter，不提供 Pluxel Plugin 发现、配置传输或持久化 API。自定义配置界面应直接接收 browser-safe 的 schema，并通过应用自己的服务端接口提交修改；服务端继续使用同一 schema 校验输入。
+
+Pluxel Workbench 内置的 Plugin 配置页由宿主读取 runtime config metadata。Plugin 作者只声明 `this.configs.use(Config)`，不调用 Workbench 内部的 schema projection 或配置 patch 实现。
+
+## 检查清单
+
+- schema 是 object 或 intersect，适合 `AutoForm`。
+- 默认值写在 `v.optional(v.pipe(...metadata), default)`，没有业务 fallback，也不会在解包 optional 时丢失 metadata。
+- `configs.use()` 是 class 顶层普通 field，且 Plugin 只有一个 config field。
+- server runtime 是最终校验者；browser 表单只提供编辑体验。
+- core 工具需要 schema 时只 import `valibot-form`，不把 React/Mantine 带入 server bundle。

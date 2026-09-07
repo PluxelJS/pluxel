@@ -1,0 +1,25 @@
+{
+	"name": "@example/audit-plugin",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@pluxel/runtime": "catalog:pluxel"
+	},
+	"devDependencies": {
+		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/test": "catalog:pluxel",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:test"
+	}
+}

@@ -1,68 +1,52 @@
-import { type Context, getPluginInfo } from '@pluxel/core'
+import { type CommitSummary, type Context, type PluginNodeAddress } from '@pluxel/core'
 import {
-	ConfigValidationError,
-	collectConfigDefaults,
-	validateConfigPatch,
-} from '@pluxel/core/services'
-import type { BuiltinMarkdownPart } from '../../workbench/document-contracts'
-import type { ConfigFieldMutation } from '../../web/protocol'
-import { requireRouteCapability } from '../../runtime/capabilities'
+	notifyRunningPluginConfigUpdate,
+	requireConfigService,
+	requirePluginService,
+} from '@pluxel/core/internal'
+import { collectConfigDefaults, validateConfigRecord } from '@pluxel/core/services'
+import type { ConfigPresentationResult, ConfigResult, PluginApplyReport } from '../../web/protocol'
+import {
+	pluginCatalogEntry,
+	requireRuntimePluginGraphCoordinator,
+	type PluginRouteCatalogSnapshot,
+	type RuntimePluginGraphExclusiveSession,
+} from '../../internal/reconciliation'
+import { requireRuntimeStateStore } from '../../internal/runtime-state'
+import { listForkIds } from '../../services/RuntimeStateHelpers'
+import type { RuntimeStateSnapshot } from '../../services/RuntimeStateStore'
+import { ConfigMutationRejectedError } from '../../services/ConfigService'
+import { projectPluginApplyReport } from '../presenters/pluginApplyReport'
+import { compileConfigPresentationPlanV1 } from '../presenters/configPresentation'
+import { parseConfigFieldPathSegments } from '../../web/validation'
 
-export type PluginSchemaResult =
-	| {
-			ok: true
-			schemaSource: Readonly<Record<string, string>>
-			defaults: Record<string, unknown>
-			layout?: BuiltinMarkdownPart[] | null
-	  }
-	| { ok: false; code: string; message: string }
+export type PluginConfigPresentationResult = ConfigPresentationResult
 
-export type PluginConfigResult =
-	| {
-			ok: true
-			saved: boolean
-			config: Record<string, unknown>
-			defaults: Record<string, unknown>
-	  }
-	| {
-			ok: false
-			code: string
-			message: string
-			errors?: unknown
-			defaults?: Record<string, unknown>
-	  }
+export type PluginConfigPresentationSection = Readonly<{
+	path: readonly string[]
+	fieldName: string
+	schema: Parameters<typeof compileConfigPresentationPlanV1>[0]['schema']
+	defaults: Record<string, unknown>
+}>
 
-function normalizePlainObject(record: unknown): Record<string, unknown> {
-	if (!record || typeof record !== 'object') return {}
-	return Object.assign({}, record as Record<string, unknown>)
-}
+export type PluginConfigResult = ConfigResult
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	if (!value || typeof value !== 'object') return false
-	if (Array.isArray(value)) return false
-	const proto = Object.getPrototypeOf(value)
-	return proto === Object.prototype || proto === null
+function plainRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === 'object' && !Array.isArray(value)
+		? { ...(value as Record<string, unknown>) }
+		: {}
 }
 
 function writeNestedField(
 	source: Record<string, unknown>,
-	path: string,
+	segments: readonly string[],
 	value: unknown,
 ): Record<string, unknown> {
-	const segments = path
-		.split('.')
-		.map((segment) => segment.trim())
-		.filter(Boolean)
-	if (segments.length === 0) return source
-
-	const out: Record<string, unknown> = { ...source }
-	let cursor: Record<string, unknown> = out
-	for (let i = 0; i < segments.length - 1; i += 1) {
-		const key = segments[i]!
-		const next =
-			cursor[key] && typeof cursor[key] === 'object' && !Array.isArray(cursor[key])
-				? { ...(cursor[key] as Record<string, unknown>) }
-				: {}
+	const out = { ...source }
+	let cursor = out
+	for (let index = 0; index < segments.length - 1; index++) {
+		const key = segments[index]!
+		const next = plainRecord(cursor[key])
 		cursor[key] = next
 		cursor = next
 	}
@@ -70,220 +54,351 @@ function writeNestedField(
 	return out
 }
 
-export async function pluginSchema(ctx: Context, name: string): Promise<PluginSchemaResult> {
-	const configMetadata = requireRouteCapability(ctx, 'configMetadata')
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const schemaMap = configMetadata.getSchema(name)
-	if (!schemaMap) {
+type ConfigLookup =
+	| Readonly<{
+			ok: true
+			config: NonNullable<
+				ReturnType<typeof pluginCatalogEntry>
+			>['candidate']['declaration']['config'] & {}
+	  }>
+	| Readonly<{
+			ok: false
+			code: 'node_unavailable' | 'config_not_found'
+			state: 'unchanged'
+			message: string
+	  }>
+
+function configLookup(
+	catalog: PluginRouteCatalogSnapshot,
+	state: RuntimeStateSnapshot,
+	owner: PluginNodeAddress,
+): ConfigLookup {
+	const entry = pluginCatalogEntry(catalog, owner.definition)
+	if (
+		!entry ||
+		(owner.variant === 'fork' &&
+			(!entry.candidate.declaration.forkable ||
+				!listForkIds(state, owner.definition).includes(owner.forkId)))
+	) {
 		return {
 			ok: false,
-			code: 'schema_not_found',
-			message: 'No config schema registered for this plugin.',
+			code: 'node_unavailable',
+			state: 'unchanged',
+			message: 'Plugin node is unavailable in the committed runtime graph policy.',
 		}
 	}
-
-	const schemaSource = configMetadata.getSchemaSource(name)
-	if (!schemaSource || Object.keys(schemaSource).length === 0) {
+	const config = entry.candidate.declaration.config
+	if (!config) {
 		return {
 			ok: false,
-			code: 'schema_source_missing',
-			message: `Schema source not available for plugin "${name}". Ensure configSourcePlugin is configured and the plugin declares config via @Config(schema) or class-field config declaration (field = this.configs.use(schema) / field = this.configs.use(cfg(schemaMap))).`,
+			code: 'config_not_found',
+			state: 'unchanged',
+			message: 'No config schema is registered for this Plugin node.',
 		}
 	}
+	return { ok: true, config }
+}
 
-	const layoutMap = configMetadata.getConfigLayout(name) ?? null
-	let layout: BuiltinMarkdownPart[] | null = null
-	if (layoutMap && Object.keys(layoutMap).length > 0) {
-		const ctor = catalog.resolveOrRegistered(name)
-		// Prefer the layout attached to the cfg-binding that covers all schema keys.
-		// Fallback to deterministic first entry.
-		const bindingsMap = ctor ? getPluginInfo(ctor).configBindingsMap : null
+function currentConfigLookup(ctx: Context, owner: PluginNodeAddress): ConfigLookup {
+	return configLookup(
+		requireRuntimePluginGraphCoordinator(ctx).catalogSnapshot(),
+		requireRuntimeStateStore(ctx).snapshot(),
+		owner,
+	)
+}
 
-		const schemaKeys = Object.keys(schemaMap ?? {})
-		const coversAll = (field: string): boolean => {
-			if (!bindingsMap) return false
-			const list = bindingsMap[field]
-			if (!Array.isArray(list)) return false
-			const set = new Set(list.map(String))
-			return schemaKeys.every((k) => set.has(k))
-		}
-
-		const entries = Object.entries(layoutMap).filter(([, v]) => Array.isArray(v) && v.length > 0)
-		const preferred = entries.find(([field]) => coversAll(field))
-		if (preferred) layout = preferred[1] as any
-		else {
-			entries.sort((a, b) => a[0].localeCompare(b[0]))
-			layout = (entries[0]?.[1] as any) ?? null
+export async function pluginConfigPresentation(
+	ctx: Context,
+	owner: PluginNodeAddress,
+): Promise<PluginConfigPresentationResult> {
+	const lookup = currentConfigLookup(ctx, owner)
+	if (lookup.ok === false) {
+		return {
+			ok: false,
+			code: lookup.code === 'config_not_found' ? 'presentation_not_found' : lookup.code,
+			message: lookup.message,
 		}
 	}
-
+	const config = lookup.config
+	const declarations = [
+		...(config.owner ? [{ path: Object.freeze([] as string[]), declaration: config.owner }] : []),
+		...config.parts.flatMap((part) =>
+			part.declaration ? [{ path: part.path, declaration: part.declaration }] : [],
+		),
+	]
+	const sections = await Promise.all(
+		declarations.map(async ({ path, declaration }): Promise<PluginConfigPresentationSection> =>
+			Object.freeze({
+				path: Object.freeze([...path]),
+				fieldName: declaration.fieldName,
+				schema: declaration.schema,
+				defaults: await collectConfigDefaults(declaration.schema, {
+					missingObjectDefault: {},
+				}),
+			}),
+		),
+	)
 	return {
 		ok: true,
-		schemaSource,
-		defaults: await collectConfigDefaults(schemaMap, { missingObjectDefault: {} }),
-		layout,
+		plan: compileConfigPresentationPlanV1({
+			fieldName: config.fieldName,
+			schema: config.schema,
+			defaults: await collectConfigDefaults(config.schema, { missingObjectDefault: {} }),
+			sections,
+		}),
 	}
 }
 
-export async function pluginConfigGet(ctx: Context, name: string): Promise<PluginConfigResult> {
-	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
-	const defaults = schema ? await collectConfigDefaults(schema, { missingObjectDefault: {} }) : {}
-	const rawConfig = ctx.configService.getRawConfig(name)
-	return { ok: true, saved: false, config: normalizePlainObject(rawConfig), defaults }
+function configApplicationState(ctx: Context, owner: PluginNodeAddress) {
+	const configService = requireConfigService(ctx)
+	const desiredRevision = configService.getConfigRevision(owner)
+	const appliedRevision = configService.getAppliedConfigRevision(owner)
+	return {
+		desiredRevision,
+		appliedRevision,
+		application: !requirePluginService(ctx).isRunning(owner)
+			? ('deferred' as const)
+			: appliedRevision === desiredRevision
+				? ('applied' as const)
+				: ('saved-not-applied' as const),
+	}
+}
+
+export async function pluginConfigGet(
+	ctx: Context,
+	owner: PluginNodeAddress,
+): Promise<PluginConfigResult> {
+	const configService = requireConfigService(ctx)
+	const lookup = currentConfigLookup(ctx, owner)
+	if (lookup.ok === false) return lookup
+	return {
+		ok: true,
+		saved: false,
+		...configApplicationState(ctx, owner),
+		config: plainRecord(configService.getRawConfig(owner)),
+		defaults: await collectConfigDefaults(lookup.config.schema, {
+			missingObjectDefault: {},
+		}),
+	}
 }
 
 export async function pluginConfigValidate(
 	ctx: Context,
-	name: string,
+	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
-	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
-	if (!schema)
-		return {
-			ok: false,
-			code: 'config_not_found',
-			message: 'No config schema registered for this plugin.',
-		}
-
+	const configService = requireConfigService(ctx)
+	const lookup = currentConfigLookup(ctx, owner)
+	if (lookup.ok === false) return lookup
+	const current = plainRecord(configService.getRawConfig(owner))
+	const candidate = { ...current, ...patch }
 	const [defaults, validation] = await Promise.all([
-		collectConfigDefaults(schema, { missingObjectDefault: {} }),
-		validateConfigPatch(schema, patch),
+		collectConfigDefaults(lookup.config.schema, { missingObjectDefault: {} }),
+		validateConfigRecord(lookup.config.schema, candidate),
 	])
-
 	if (validation.ok === false) {
 		return {
 			ok: false,
 			code: 'validation_failed',
+			state: 'unchanged',
 			message: 'Validation failed',
 			errors: validation.errors,
 			defaults,
 		}
 	}
-
 	return {
 		ok: true,
 		saved: false,
-		config: { ...normalizePlainObject(ctx.configService.getRawConfig(name)), ...validation.output },
+		...configApplicationState(ctx, owner),
+		config: validation.output,
 		defaults,
 	}
+}
+
+async function applyDesiredConfig(
+	ctx: Context,
+	owner: PluginNodeAddress,
+	session: RuntimePluginGraphExclusiveSession<CommitSummary>,
+	desired: Readonly<Record<string, unknown>>,
+	desiredRevision: number,
+): Promise<
+	| {
+			application: 'applied' | 'deferred'
+			report: PluginApplyReport
+	  }
+	| {
+			application: 'saved-not-applied'
+			report: PluginApplyReport
+			applyFailure: {
+				code: 'listener_not_registered' | 'listener_failed' | 'generation_changed'
+				message: string
+			}
+	  }
+> {
+	if (!requirePluginService(ctx).isRunning(owner)) {
+		return { application: 'deferred', report: projectPluginApplyReport(ctx, session.report()) }
+	}
+	const notification = await notifyRunningPluginConfigUpdate(
+		requirePluginService(ctx),
+		owner,
+		desired,
+		desiredRevision,
+	)
+	const projected = projectPluginApplyReport(ctx, session.report())
+	if (notification.status === 'applied') {
+		return { application: 'applied', report: projected }
+	}
+	const messages = {
+		listener_not_registered: 'A changed config declaration has no update listener.',
+		listener_failed: 'A Plugin config update listener failed.',
+		generation_changed: 'The Plugin generation changed before the config update was confirmed.',
+	} as const
+	return {
+		application: 'saved-not-applied',
+		report: projected,
+		applyFailure: {
+			code: notification.status,
+			message: messages[notification.status],
+		},
+	}
+}
+
+async function mutatePluginConfig(
+	ctx: Context,
+	owner: PluginNodeAddress,
+	reason: string,
+	buildCandidate: (current: Record<string, unknown>) => Record<string, unknown>,
+): Promise<PluginConfigResult> {
+	const coordinator = requireRuntimePluginGraphCoordinator(ctx)
+	return await coordinator.runExclusive(reason, async (session) => {
+		const configService = requireConfigService(ctx)
+		const lookup = configLookup(
+			coordinator.catalogSnapshot(),
+			session.runtimeStateSnapshot(),
+			owner,
+		)
+		if (lookup.ok === false) return lookup
+		const current = plainRecord(configService.getRawConfig(owner))
+		const expectedRevision = configService.getConfigRevision(owner)
+		const candidate = buildCandidate(current)
+		const validation = await validateConfigRecord(lookup.config.schema, candidate)
+		if (validation.ok === false) {
+			return {
+				ok: false,
+				code: 'validation_failed',
+				state: 'unchanged',
+				message: 'Validation failed.',
+				errors: validation.errors,
+			}
+		}
+		let staged: ReturnType<typeof configService.stageValidatedConfig>
+		try {
+			staged = configService.stageValidatedConfig({
+				owner,
+				authority: lookup.config,
+				expectedRevision,
+				value: validation.output,
+			})
+		} catch (error) {
+			if (error instanceof ConfigMutationRejectedError) {
+				return {
+					ok: false,
+					code: 'mutation_rejected',
+					state: 'unchanged',
+					message: error.message,
+				}
+			}
+			throw error
+		}
+		try {
+			await configService.flush()
+		} catch (error) {
+			return {
+				ok: false,
+				code: 'persistence_failed',
+				state: 'unknown',
+				message: errorText(error),
+				config: plainRecord(configService.getRawConfig(owner)),
+			}
+		}
+		const desired = configService.confirmValidatedConfig(staged)
+		const applied = await applyDesiredConfig(ctx, owner, session, desired, staged.revision)
+		return {
+			ok: true,
+			saved: true,
+			...applied,
+			desiredRevision: configService.getConfigRevision(owner),
+			appliedRevision: configService.getAppliedConfigRevision(owner),
+			config: plainRecord(configService.getRawConfig(owner)),
+		}
+	})
 }
 
 export async function pluginConfigPatch(
 	ctx: Context,
-	name: string,
+	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
-	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
-	if (!schema)
-		return {
-			ok: false,
-			code: 'config_not_found',
-			message: 'No config schema registered for this plugin.',
-		}
-
-	const [defaults, validation] = await Promise.all([
-		collectConfigDefaults(schema, { missingObjectDefault: {} }),
-		validateConfigPatch(schema, patch),
-	])
-
-	if (validation.ok === false) {
-		return {
-			ok: false,
-			code: 'validation_failed',
-			message: 'Validation failed',
-			errors: validation.errors,
-			defaults,
-		}
-	}
-
-	if (Object.keys(validation.output).length > 0) {
-		ctx.configService.patchConfig(name, validation.output)
-	}
-
-	try {
-		await ctx.configService.ensureValidated(name, schema, { missingObjectDefault: {} })
-	} catch (error) {
-		if (error instanceof ConfigValidationError) {
-			return {
-				ok: false,
-				code: 'validation_failed',
-				message: 'Validation failed',
-				errors: error.errors,
-				defaults,
-			}
-		}
-		throw error
-	}
-
-	return {
-		ok: true,
-		saved: true,
-		config: normalizePlainObject(ctx.configService.getRawConfig(name)),
-		defaults,
-	}
+	return await mutatePluginConfig(ctx, owner, 'plugin-config-patch', (current) => ({
+		...current,
+		...patch,
+	}))
 }
 
 export async function pluginConfigPatchField(
 	ctx: Context,
-	name: string,
-	input: ConfigFieldMutation,
+	owner: PluginNodeAddress,
+	input: unknown,
 ): Promise<PluginConfigResult> {
-	const schemaKey = String(input.schemaKey ?? '').trim()
-	const fieldPath = String(input.fieldPath ?? '').trim()
-	if (!schemaKey || !fieldPath) {
+	const parsed = parseConfigFieldMutation(input)
+	if (parsed.ok === false) {
 		return {
 			ok: false,
-			code: 'validation_failed',
-			message: 'schemaKey and fieldPath are required',
+			code: 'invalid_input',
+			state: 'unchanged',
+			message: parsed.message,
 		}
 	}
+	return await mutatePluginConfig(ctx, owner, 'plugin-config-patch-field', (current) =>
+		writeNestedField(current, parsed.segments, parsed.value),
+	)
+}
 
-	const current = normalizePlainObject(ctx.configService.getRawConfig(name))
-	const currentSchemaValue = isPlainObject(current[schemaKey])
-		? (current[schemaKey] as Record<string, unknown>)
-		: {}
-	const nextSchemaValue = writeNestedField(currentSchemaValue, fieldPath, input.value)
-	return await pluginConfigPatch(ctx, name, {
-		[schemaKey]: nextSchemaValue,
-	})
+function parseConfigFieldMutation(
+	input: unknown,
+):
+	| Readonly<{ ok: true; segments: readonly string[]; value: unknown }>
+	| Readonly<{ ok: false; message: string }> {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		return { ok: false, message: 'Config field mutation must be an object.' }
+	}
+	const record = input as Record<string, unknown>
+	if (typeof record.fieldPath !== 'string') {
+		return { ok: false, message: 'fieldPath is required.' }
+	}
+	try {
+		return {
+			ok: true,
+			segments: parseConfigFieldPathSegments(record.fieldPath),
+			value: record.value,
+		}
+	} catch (error) {
+		return { ok: false, message: error instanceof Error ? error.message : 'Invalid fieldPath.' }
+	}
 }
 
 export async function pluginConfigReset(
 	ctx: Context,
-	name: string,
+	owner: PluginNodeAddress,
 	keys?: string[],
 ): Promise<PluginConfigResult> {
-	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
-	if (!schema)
-		return {
-			ok: false,
-			code: 'config_not_found',
-			message: 'No config schema registered for this plugin.',
-		}
+	return await mutatePluginConfig(ctx, owner, 'plugin-config-reset', (current) => {
+		const candidate = { ...current }
+		for (const key of keys?.length ? keys : Object.keys(candidate)) delete candidate[key]
+		return candidate
+	})
+}
 
-	const targetKeys = Array.isArray(keys) && keys.length > 0 ? keys : Object.keys(schema)
-	ctx.configService.unsetConfigKeys(name, targetKeys)
-
-	const defaults = await collectConfigDefaults(schema, { missingObjectDefault: {} })
-	try {
-		await ctx.configService.ensureValidated(name, schema, { missingObjectDefault: {} })
-	} catch (error) {
-		if (error instanceof ConfigValidationError) {
-			return {
-				ok: false,
-				code: 'validation_failed',
-				message: 'Validation failed',
-				errors: error.errors,
-				defaults,
-			}
-		}
-		throw error
-	}
-
-	return {
-		ok: true,
-		saved: true,
-		config: normalizePlainObject(ctx.configService.getRawConfig(name)),
-		defaults,
-	}
+function errorText(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
 }

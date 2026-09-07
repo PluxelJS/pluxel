@@ -17,17 +17,18 @@ core/runtime。
 
 ## 目录与能力边界
 
-- `plugins/*`：独立领域的具体 `@Plugin` 实现及其包内 Workbench extension。
+- `plugins/*`：独立领域的具体 `@Plugin` 实现及其包内 Workbench Definition。
 - `plugins/<domain>/*`：共享明确能力链的具体插件；领域目录只做仓库分类，不引入聚合插件或第二套作者 API。
 - `packages/*`：不声明具体插件生命周期的通用 contract、adapter 和框架库。
 - `projects/plugin-host`：框架维护者的动态/静态真实 host 验证场所。
 - 独立产品 workspace：通过 `pluxel source` 验证多个插件的产品级组合。
 - 官方插件只使用 `@pluxel/runtime` 的公开入口，不使用 toolchain 或 host installation internal helper。
-- 必需 capability 写成 constructor dependency；可选集成使用 `plugins.use()`。
+- 必需 capability 写成 constructor dependency；可选集成使用非导出的 module-level
+  `definePluginRef<T>()` 与 `init()` 中的 `plugins.use(ref, setup)`。
 - 调用方状态从依赖注入时绑定的 `ctx.caller` 推导。共享 provider 状态不得依赖可变的全局“当前调用方”。
-- Workbench 是可选且由宿主拥有的能力。它可以投影配置、状态、诊断和 typed resource，但关闭后不得影响
+- Workbench 是可选且由宿主拥有的能力。它可以通过 Direct View API 投影配置、状态和诊断，但关闭后不得影响
   业务能力与核心生命周期。
-- secret 只以安全引用表示，并由适当的宿主能力解析；不得复制到 Workbench contract、日志或普通持久化
+- secret 只以安全引用表示，并由适当的宿主能力解析；不得复制到 Workbench DTO、日志或普通持久化
   配置中。
 
 ## 反哺流程
@@ -46,19 +47,24 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 
 ## 首批插件
 
+- [`@pluxel/agent-tools`](agent-tools/README.md)：以标准 Plugin config 组合 command Toolset，并向外部 Agent adapter 提供 fail-closed 受限 catalog。
+- [`@pluxel/pi-agent`](pi-agent/README.md)：把 Pi 作为 embedded engine，复用 AgentTools policy，并提供内存 session、goal 与 bounded subagent。
+- [`@pluxel/auth`](auth/README.md)：Management 官方认证 provider，支持 OIDC、password 与 password+TOTP，凭据进入 owner Vault。
 - [`@pluxel/cache`](cache/README.md)：显式 scope、同步 local cache、多态异步 backend 与进程内请求合并。
 - [`@pluxel/rates`](rates/README.md)：caller-aware 四算法 admission control、原子 decision 与 memory backend。
 - [`@pluxel/redis`](redis/README.md)：Redis capability、standalone provider、Lua helper 与内置 cache/rates backend。
 - [`@pluxel/storage`](storage/README.md)：以 s3mini API 为契约、通过配置选择 local/remote 的单一 S3 provider。
 - [`@pluxel/wretch`](wretch/README.md)：基于 Wretch 的出站 HTTP capability。
-  - `@pluxel/wretch/example`：随包构建的标准 consumer 与 static runtime smoke 入口。
 - [`@pluxel/package-manager`](package-manager/README.md)：基于 pnpm Rust engine 的受控插件包安装、原子 source publication 与可选 Workbench 管理页。
 - [`@pluxel/otel`](otel/README.md)：原生 OpenTelemetry Meter/Tracer/Logger，支持三种 OTLP transport 与 Prometheus pull。
 - [`render/`](render/README.md)：服务端渲染能力链。
-  - [`@pluxel/fonts`](render/fonts/README.md)：统一拥有系统字体发现、上传持久化、默认选择、caller 注册和 Fonts Selection Port。
-  - [`@pluxel/canvas`](render/canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas，并以 Fonts 插件管理字体。
-  - [`@pluxel/echarts`](render/echarts/README.md)：基于 Canvas/Fonts 的 Apache ECharts 6 服务端渲染、caller-owned 主题与字体选择 Port。
+  - [`@pluxel/fonts`](render/fonts/README.md)：统一拥有系统字体发现、上传持久化、默认选择、caller 注册和 Fonts Selection Attachment。
+  - [`@pluxel/canvas`](render/canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas、Pretext 文字准备与静态表格子路径，并以 Fonts 插件管理字体。
+  - [`@pluxel/echarts`](render/echarts/README.md)：基于 Canvas/Fonts 的 Apache ECharts 6 服务端渲染、caller-owned 主题与 Fonts Attachment。
+  - [`@pluxel/takumi`](render/takumi/README.md)：基于 Takumi 的有界 HTML/node-tree raster/SVG 渲染，并消费 Fonts 可移植资源。
+  - [`@pluxel/takumi-markdown`](render/takumi-markdown/README.md)：基于 Takumi reservation 的 GFM、表格和固定 Rangi 静态代码高亮图片渲染。
+  - [`@pluxel/takumi-markdown-typst`](render/takumi-markdown-typst/README.md)：可选、受限的 Typst 数学 SVG Markdown extension，使用共享 Worker。
 
 仍标记为 private 的官方插件会先在真实 consumer 中稳定 contract；开放发布的插件也保持普通 package 与公开作者
 API，不获得 runtime 特例。`@pluxel/wretch` 提供原生 immutable Wretch base、最小宿主级出站策略和可选的统一
-Workbench HTTP 设置 Port。
+Workbench HTTP 设置 Attachment。

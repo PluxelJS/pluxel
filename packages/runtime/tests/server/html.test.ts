@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { resolveDevAssets } from '../../src/server/assets'
 import { createDevRenderer } from '../../src/server/dev'
 import { createHmrRenderer } from '../../src/server/hmr'
 import { renderRuntimeUiHtml } from '../../src/server/html'
@@ -11,9 +12,8 @@ const assets = {
 }
 
 describe('runtime UI HTML rendering', () => {
-	it('keeps static UI HTML free of React refresh preamble', () => {
+	it('renders the runtime UI document without assuming a React refresh endpoint', () => {
 		const html = renderRuntimeUiHtml(assets, {
-			target: 'static-built',
 			uiBasePath: '/__pluxel/workbench',
 		})
 
@@ -25,7 +25,8 @@ describe('runtime UI HTML rendering', () => {
 		expect(html).not.toContain('window.$RefreshReg$')
 	})
 
-	it('adds React refresh preamble for dev and HMR renderers', async () => {
+	it('keeps dev and HMR renderers independent of React refresh', async () => {
+		const devAssets = resolveDevAssets()
 		const [devHtml, hmrHtml] = await Promise.all([
 			Promise.resolve(createDevRenderer()(new Request('http://local.test/'))).then((response) =>
 				response.text(),
@@ -37,9 +38,9 @@ describe('runtime UI HTML rendering', () => {
 
 		for (const html of [devHtml, hmrHtml]) {
 			expect(html).toContain('<meta name="pluxel-workbench-ui-base-path" content="/" />')
-			expect(html).toContain('import { injectIntoGlobalHook } from "/@react-refresh"')
-			expect(html).toContain('window.$RefreshReg$ = () => {}')
-			expect(html).toContain('window.$RefreshSig$ = () => (type) => type')
+			expect(html).toContain(`<script type="module" src="${devAssets.js}"></script>`)
+			expect(html).not.toContain('/@react-refresh')
+			expect(html).not.toContain('window.$RefreshReg$')
 		}
 	})
 })

@@ -6,10 +6,43 @@ import {
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
+import { requireConfigService } from '@pluxel/core/internal'
+import { requireRuntimeStateStore } from '@pluxel/runtime/internal'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR runtime persistence storage', () => {
+	it('lets PLUXEL_DATA_ROOT override an application string persistence path', async () => {
+		await using fixture = await createFixture({
+			'pnpm-workspace.yaml': 'packages: []\n',
+			'pluxel.loader.hmr.jsonc': JSON.stringify({
+				version: 2,
+				profile: 'dev',
+				defaults: { roots: [] },
+				profiles: { dev: { enabled: [] } },
+			}),
+		})
+
+		const plan = await planLoaderHmrHostFromConfig({
+			root: fixture.path,
+			fs: fixture.fs,
+			persistence: './application-state',
+			env: { PLUXEL_DATA_ROOT: './deployment-state' },
+		})
+
+		expect(plan.runtimeStorage.persistenceDir).toBe(
+			resolve(fixture.path, 'deployment-state/persistence'),
+		)
+		expect(plan.runtimeConfig.persistence).toBeUndefined()
+	})
+
 	it('initializes plugin config from the dynamic host environment', async () => {
+		const owner = {
+			definition: {
+				entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/example.ts' },
+				exportName: 'ExamplePlugin',
+			},
+			variant: 'default',
+		} as const
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.loader.hmr.jsonc': [
@@ -26,18 +59,20 @@ describe('HMR runtime persistence storage', () => {
 		const plan = await planLoaderHmrHostFromConfig({
 			root: fixture.path,
 			fs: fixture.fs,
-			chdir: false,
 			logging: false,
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			env: {
-				PLUXEL_CONFIG__ExamplePlugin__config__endpoint: 'https://api.example.test',
+				PLUXEL_CONFIG: JSON.stringify({
+					version: 3,
+					plugins: [{ owner, config: { endpoint: 'https://api.example.test' } }],
+				}),
 			},
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
-			expect(host.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
-				config: { endpoint: 'https://api.example.test' },
+			expect(requireConfigService(host.ctx).getRawConfig(owner)).toEqual({
+				endpoint: 'https://api.example.test',
 			})
 		} finally {
 			await host.stop()
@@ -91,8 +126,8 @@ describe('HMR runtime persistence storage', () => {
 			})
 			ctx = host.ctx
 
-			await host.ctx.root.configService.ready
-			await host.ctx.root.runtimeState.ready
+			await requireConfigService(host.ctx).ready
+			await requireRuntimeStateStore(host.ctx).ready
 
 			expect(
 				fixture.fs.existsSync(resolve(fixture.path, '.pluxel/persistence/config/config.json')),
@@ -145,7 +180,7 @@ describe('HMR runtime persistence storage', () => {
 			})
 			ctx = host.ctx
 
-			await host.ctx.root.configService.ready
+			await requireConfigService(host.ctx).ready
 
 			expect(
 				fixture.fs.existsSync(

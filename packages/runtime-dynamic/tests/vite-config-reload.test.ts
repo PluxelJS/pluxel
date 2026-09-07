@@ -5,6 +5,7 @@ import { dynamicRuntimeVitePlugin } from '../src/vite.ts'
 
 describe('dynamic Vite config generations', () => {
 	it('retries a config generation after startup failure and awaits host cleanup on close', async () => {
+		const viteProcessCwd = process.cwd()
 		await using fixture = await createDiskFixture(
 			{
 				'pnpm-workspace.yaml': 'packages: []\n',
@@ -19,10 +20,11 @@ describe('dynamic Vite config generations', () => {
 		)
 		const root = fixture.path
 		const configPath = fixture.getPath('pluxel.dynamic.ts')
+		const runtimeDynamicEntry = new URL('../src/index.ts', import.meta.url).href
 		await fixture.writeFile(
 			'pluxel.dynamic.ts',
 			[
-				"import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'",
+				`import { defineDynamicRuntimeConfig } from ${JSON.stringify(runtimeDynamicEntry)}`,
 				'export default defineDynamicRuntimeConfig({',
 				`  root: ${JSON.stringify(root)},`,
 				"  configPath: 'pluxel.loader.hmr.jsonc',",
@@ -39,7 +41,7 @@ describe('dynamic Vite config generations', () => {
 		let generations = 0
 		let disposed = 0
 		const plugins = dynamicRuntimeVitePlugin({
-			config: configPath,
+			entry: configPath,
 			// This test owns config-generation teardown, not the Workbench client graph. Distribution
 			// mode keeps Vite's background dependency optimizer from racing fixture disposal.
 			mode: 'distribution',
@@ -72,6 +74,7 @@ describe('dynamic Vite config generations', () => {
 		})
 
 		try {
+			expect(process.cwd()).toBe(viteProcessCwd)
 			expect(generations).toBe(1)
 			expect(readController(server)).toBeDefined()
 
@@ -81,14 +84,17 @@ describe('dynamic Vite config generations', () => {
 			expect(generations).toBe(2)
 			expect(disposed).toBe(2)
 			expect(readController(server)).toBeUndefined()
+			expect(process.cwd()).toBe(viteProcessCwd)
 
 			await expect(callHotUpdate(route, server, configPath)).resolves.toEqual([])
 			expect(generations).toBe(3)
 			expect(readController(server)).toBeDefined()
+			expect(process.cwd()).toBe(viteProcessCwd)
 		} finally {
 			await server.close()
 		}
 		expect(disposed).toBe(3)
+		expect(process.cwd()).toBe(viteProcessCwd)
 	}, 30_000)
 })
 

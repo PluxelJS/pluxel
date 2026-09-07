@@ -5,12 +5,20 @@ import { pluxelViteSourceBridgeExternal } from '../runtime-dev/tsdown-source-bri
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
 const runtimeDevHmrLog = fileURLToPath(new URL('../runtime-dev/src/hmr-log.ts', import.meta.url))
 const runtimeDevViteEntry = fileURLToPath(new URL('../runtime-dev/src/vite.ts', import.meta.url))
+const runtimeNodeEntry = fileURLToPath(new URL('../runtime-node/src/index.ts', import.meta.url))
 
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	deps: {
+		alwaysBundle: [
+			'@pluxel/runtime-dev',
+			'@pluxel/runtime-dev/*',
+			'@pluxel/runtime-node',
+			'valibot-form',
+			'valibot-form/*',
+		],
 		neverBundle: [
 			'@pluxel/core',
 			'@pluxel/rolldown',
@@ -18,16 +26,15 @@ export default defineConfig({
 			'@pluxel/runtime',
 			'@pluxel/runtime/*',
 			'@pluxel/runtime/internal',
-			'@pluxel/runtime/web/paths',
 			'vite',
 			'vite/*',
 		],
-		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*'],
 	},
 	alias: {
 		'@pluxel/runtime-dev': runtimeDevEntry,
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevViteEntry,
+		'@pluxel/runtime-node': runtimeNodeEntry,
 	},
 	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {
@@ -36,10 +43,12 @@ export default defineConfig({
 		'internal/fetch-workbench-application': 'src/internal/fetch-workbench-application.ts',
 		'internal/node-application': 'src/internal/node-application.ts',
 		'internal/node-workbench-application': 'src/internal/node-workbench-application.ts',
+		'internal/test': 'src/internal-test.ts',
 		test: 'src/test.ts',
 		vite: 'src/vite.ts',
 	},
 	dts: {
+		tsconfig: '../../tsconfig.runtime-static-dts.json',
 		sourcemap: true,
 		eager: true,
 	},

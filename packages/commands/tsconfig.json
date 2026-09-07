@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "bench"],
+	"include": ["src", "tests", "bench", "vitest.config.ts"],
 	"compilerOptions": {
 		"outDir": "dist",
 		"emitDeclarationOnly": true,

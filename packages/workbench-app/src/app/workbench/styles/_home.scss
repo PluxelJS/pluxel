@@ -53,6 +53,20 @@
 	max-width: 620px;
 }
 
+.plx-home__platform {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 13px;
+}
+
+.plx-home__platformNotice {
+	font-size: 12px;
+	line-height: 1.45;
+	max-width: 680px;
+	padding: 8px 10px;
+}
+
 .plx-home__heroActions {
 	margin-top: 15px;
 }
@@ -78,8 +92,8 @@
 	border-color: color-mix(in srgb, var(--mantine-color-teal-6) 42%, var(--plx-border));
 }
 
-.plx-home__metric[data-tone='disabled'] {
-	border-color: color-mix(in srgb, var(--mantine-color-orange-6) 36%, var(--plx-border));
+.plx-home__metric[data-tone='auto-start'] {
+	border-color: color-mix(in srgb, var(--mantine-color-blue-6) 36%, var(--plx-border));
 }
 
 .plx-home__metricLabel {
@@ -249,8 +263,12 @@
 	background: var(--mantine-color-teal-6);
 }
 
-.plx-home__statusDot[data-status='disabled'] {
-	background: var(--mantine-color-orange-6);
+.plx-home__statusDot[data-status='pending'] {
+	background: var(--mantine-color-yellow-6);
+}
+
+.plx-home__statusDot[data-status='unavailable'] {
+	background: var(--mantine-color-red-6);
 }
 
 .plx-home__queueName {

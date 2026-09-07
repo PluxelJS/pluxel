@@ -13,12 +13,15 @@
 cache-aside 与进程内 single-flight。`@Cached` / `@Memoized` 只是简单 method 的便利入口，不定义第二套缓存模型。
 
 `@pluxel/cache` 是普通 Pluxel plugin。所有 caller 共享一个 local coordinator 和同一个 async backend，但默认
-有效 key 自动包含 `ctx.caller.pluginInfo.id`：
+namespace 在进程内按 opaque `PluginNodeSlot` 隔离。进入 backend 时，`PluginNodeAddress` 的统一 canonical bytes
+只用于计算 SHA-256 物理前缀，不形成公开 address string grammar：
 
 ```text
-plugin:AccountsPlugin:user:1
-plugin:BillingPlugin:user:1
+cache:v3:plugin:<owner-address-sha256>:<canonical-key>
 ```
+
+backend value envelope 同时保存完整结构化 owner address；读取时必须与当前 owner 比对。global namespace 的 owner
+明确为 `null`。hash 碰撞、错接 key、旧裸 value 或损坏 envelope 都会 fail closed，不提供旧格式 reader。
 
 `cache.global` 显式移除 caller value namespace 隔离，供确认 value contract 相同的插件共享。global handle 仍绑定发起
 caller Context；caller stop/replacement 后旧 handle 撤销，最后一个 owner 停止后释放进程内 registration。backend value
@@ -94,8 +97,9 @@ local scope registration 属于 caller effects。caller stop、Cache/backend rep
 encoding：primitive 保留类型与 `-0`，tuple 保留位置，record 按字段名 code-unit order 排序；拒绝 nested object、accessor、
 symbol、非 plain object、非 finite number 和包含未配对 surrogate 的 string。canonical key 最多 1,024 UTF-8 bytes。
 
-backend key 是 managed namespace prefix 加 canonical key。canonical codec 已经通过版本、类型和 length framing 保证
-无歧义，因此不再做 URI 二次转义；这避免非 ASCII 和 delimiter 被放大，也让公开 byte bound 对应实际 key 主体。
+backend key 是含 owner address digest 的 managed namespace prefix 加 canonical key。canonical codec 已经通过版本、类型和
+length framing 保证无歧义，因此不再做 URI 二次转义；这避免非 ASCII 和 delimiter 被放大，也让公开 byte bound 对应实际 key
+主体。owner digest 只是物理寻址；完整结构化 address 随 value 保存并校验。
 
 decorator 的零/多参数默认 key 使用同一 bounded codec；包含 object、function 或其他非 key 参数时必须显式提供 `key()`。
 cache key 不是 secret protection contract，credential/token 不得作为 key。

@@ -1,25 +1,13 @@
-export {
-	BaseFeature,
-	BasePlugin,
-	cfg,
-	Config,
-	Context,
-	defineLazyFeature,
-	f,
-	ForkablePlugin,
-	HostBoundFeature,
-	Plugin,
-	v,
-	type ConfigSchemaMap,
-} from '@pluxel/runtime'
+export { BasePlugin, Plugin, v } from '@pluxel/runtime'
+export type { Context } from '@pluxel/runtime'
 
 export type {
+	ConfigEnvironmentBinding,
 	StaticRuntime,
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
 	StaticRuntimeCatalogEntry,
 	StaticRuntimeCatalogSnapshot,
-	StaticRuntimeContextConfig,
 	StaticRuntimeDeployment,
 	StaticRuntimeDefinition,
 	StaticRuntimeEnvironment,
@@ -30,5 +18,6 @@ export type {
 	StaticRuntimeReportEntry,
 	StaticRuntimeStartupContext,
 	StaticRuntimeStartupReport,
-} from './types'
-export { defineStaticRuntime } from './application'
+} from './types.ts'
+export { bindConfigEnvironment } from './config-environment.ts'
+export { defineStaticRuntime } from './application.ts'

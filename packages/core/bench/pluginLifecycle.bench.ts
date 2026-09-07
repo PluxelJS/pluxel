@@ -15,10 +15,11 @@ import {
 	tolerancePct,
 	verboseBench,
 } from './pluginLifecycle/env.ts'
-import { TASK_METADATA } from './pluginLifecycle/catalog.ts'
+import { TASK_METADATA, WORKLOAD_ID, type TaskMetadata } from './pluginLifecycle/catalog.ts'
 import { createScenario } from './pluginLifecycle/scenario.ts'
 import { registerPluginLifecycleBenchmarks } from './pluginLifecycle/tasks.ts'
 import {
+	assessReferenceCompatibility,
 	buildComparison,
 	collectRows,
 	loadReferenceReport,
@@ -65,6 +66,7 @@ const bench = new Bench({
 })
 
 const scenario = createScenario(scenarioSizes)
+const taskMetadata: Record<string, TaskMetadata> = TASK_METADATA
 
 const restore = silencePluginLogs()
 const disposeBenchContexts = registerPluginLifecycleBenchmarks(bench, scenario)
@@ -98,15 +100,20 @@ if (debugBench && referenceEnvPath) {
 	console.log('[bench] reference report resolved to:', resolvedReferencePath ?? '(not found)')
 }
 
-const referenceReport = selectReferenceTasks(
+const referenceCompatibility = assessReferenceCompatibility(
 	loadReferenceReport(resolvedReferencePath),
-	selectedTaskNames,
+	{
+		id: WORKLOAD_ID,
+		scenario: scenario.sizes,
+	},
 )
+const referenceReport = selectReferenceTasks(referenceCompatibility.report, selectedTaskNames)
 const comparison = buildComparison(rows, referenceReport)
 
 const mainReport = toMainReport({
 	recordedAt,
 	runtime,
+	workloadId: WORKLOAD_ID,
 	options: {
 		scenario: scenario.sizes,
 		selectedTasks: selectedTaskNames,
@@ -115,15 +122,15 @@ const mainReport = toMainReport({
 		warmupIterations: benchOptions.warmupIterations,
 		minIterations: Number.isFinite(benchOptions.iterations) ? benchOptions.iterations : null,
 	},
-	taskMetadata: TASK_METADATA,
+	taskMetadata,
 	tasks: rows,
 	comparison,
-	referenceRecordedAt: referenceReport?.recordedAt ?? null,
+	referenceCompatibility,
 })
 
 const markdown = renderMarkdown({
 	report: mainReport,
-	taskMetadata: TASK_METADATA,
+	taskMetadata,
 	regressionTolerancePct: tolerancePct,
 })
 
@@ -155,7 +162,9 @@ if (measuredComparison.length > 0 && verboseBench) {
 	)
 }
 
-const regressions = comparison.filter((item) => isLatencyRegression(item, tolerancePct))
+const regressions = comparison.filter((item) =>
+	isLatencyRegression(item, tolerancePct, taskMetadata[item.name]),
+)
 
 if (regressions.length > 0) {
 	console.warn(`\nLatency regressions (>${tolerancePct}%):`)

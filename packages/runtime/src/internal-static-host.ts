@@ -2,18 +2,26 @@ export {
 	isWorkbenchEnabled,
 	matchesWorkbenchUiBasePath,
 	resolveWorkbenchUiBasePath,
-	workbenchAdminAccess,
 } from './workbench-config'
-export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
-export { isPluginEnabled, setPluginEnabled } from './services/RuntimeStateHelpers'
-export type {
-	RuntimePluginDependencyInfo,
-	RuntimePluginSource,
-	RuntimeRouteCapabilities,
-} from './runtime/capabilities'
+export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './runtime-plane'
+export { createRuntimeRootContext, prepareRuntimeRootContext } from './context/runtime-plan'
+export type { RuntimeHostConfig } from './context/runtime-contract'
+export {
+	assertRuntimeHostConfig,
+	assertRuntimeLoggingInput,
+	assertRuntimeServiceConfigFields,
+	assertKnownConfigFields,
+	closedConfigFields,
+	type ExactConfigShape,
+} from './internal-config-validation'
+
+export { isPluginAutoStartEnabled, setPluginAutoStart } from './services/RuntimeStateHelpers'
+export type { RuntimeRouteCapabilities } from './runtime/capabilities'
 export { createContextPluginLogPolicyStore } from './logger/levels'
+export { readHostProduct } from './product-internal'
 export {
 	createRuntimeLogging,
+	bindContextRuntimeLogging,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
 } from './logger/logging'

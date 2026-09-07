@@ -1,0 +1,40 @@
+{
+	"name": "@pluxel/create",
+	"version": "1.0.0",
+	"description": "Pluxel project initializer",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/create"
+	},
+	"bin": {
+		"create-pluxel": "./dist/create.mjs"
+	},
+	"files": [
+		"dist"
+	],
+	"type": "module",
+	"exports": {
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"test": "pnpm run build && vitest run tests/*.test.mjs",
+		"test:starter": "node scripts/smoke-starter.ts",
+		"typecheck": "tsc --noEmit --pretty false",
+		"prepack": "pnpm run build"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:types",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

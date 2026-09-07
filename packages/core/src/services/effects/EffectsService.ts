@@ -1,4 +1,7 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/context'
+import type { Context as PluxelContext } from '../../context/Context'
+import { pinOwnerContext } from '../../context/owner-view'
+import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
+import { attachErrorPartPath, EFFECTS_PART_PATH } from '../../internal/effects-part-path'
 
 export type Cleanup = () => void | Promise<void>
 /** A resource handle whose async disposal settles only after its owned work has stopped. */
@@ -25,15 +28,6 @@ export class EffectsFrozenError extends Error {
 	}
 }
 
-const serviceName = 'effects' as const
-declare module '@pluxel/context' {
-	namespace Context {
-		interface Services {
-			[serviceName]: EffectsService
-		}
-	}
-}
-
 const ServiceState = {
 	LIVE: 0,
 	DISPOSING: 1,
@@ -57,7 +51,6 @@ type EntryState = (typeof EntryState)[keyof typeof EntryState]
 
 const PHASES: readonly Phase[] = ['shutdown', 'runtime', 'final'] as const
 const DEFAULT_PHASE: Phase = 'runtime'
-
 // Stack stores a "handle" = token * HANDLE_STRIDE + id, so id reuse is safe.
 const HANDLE_ID_BITS = 20
 const HANDLE_STRIDE = 2 ** HANDLE_ID_BITS
@@ -279,10 +272,10 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		return value
 	}
 
-	scope(meta?: EffectsMeta, opts?: RegisterOpts): EffectsScope {
+	scope(meta?: EffectsMeta, opts?: RegisterOpts, ownerCtx: PluxelContext = this.ctx): EffectsScope {
 		this.assertRegisterAllowed(opts)
 		// Child scopes are owned by default so parent disposal propagates.
-		return new EffectsScopeImpl(this.ctx, { parent: this, meta, registerOpts: opts })
+		return new EffectsScopeImpl(ownerCtx, { parent: this, meta, registerOpts: opts })
 	}
 
 	async transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R> {
@@ -470,7 +463,14 @@ class EffectsImpl implements Effects, EffectGuardHost {
 						try {
 							await this.runAsync(id, token)
 						} catch (error) {
-							errors.push(error)
+							const partPath = (
+								meta as
+									| (EffectsMeta & {
+											[EFFECTS_PART_PATH]?: readonly string[]
+									  })
+									| null
+							)?.[EFFECTS_PART_PATH]
+							errors.push(partPath ? attachErrorPartPath(error, partPath) : error)
 							this.ctx.logger.error('effects dispose error', {
 								error,
 								tag: meta?.tag,
@@ -497,6 +497,7 @@ class EffectsScopeImpl implements EffectsScope {
 		public readonly ctx: PluxelContext,
 		opts?: { parent?: EffectsImpl; meta?: EffectsMeta; registerOpts?: RegisterOpts },
 	) {
+		pinOwnerContext(this, ctx)
 		this.impl = new EffectsImpl(ctx, opts)
 	}
 
@@ -512,6 +513,11 @@ class EffectsScopeImpl implements EffectsScope {
 	scope(meta?: EffectsMeta): EffectsScope {
 		return this.impl.scope(meta)
 	}
+
+	/** @internal Create a child scope whose diagnostics and nested registrations retain owner ctx. */
+	[EFFECTS_CHILD_SCOPE](ctx: PluxelContext, meta?: EffectsMeta): EffectsScope {
+		return this.impl.scope(meta, undefined, ctx)
+	}
 	transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R> {
 		return this.impl.transaction(fn)
 	}
@@ -524,7 +530,6 @@ class EffectsScopeImpl implements EffectsScope {
 	}
 }
 
-@Injectable({ key: serviceName })
 export class EffectsService extends EffectsScopeImpl {
 	constructor(ctx: PluxelContext, _cfg: unknown) {
 		super(ctx)

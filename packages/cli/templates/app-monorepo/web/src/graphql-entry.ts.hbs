@@ -1,9 +1,0 @@
-import { defineGQLensEntry } from '@gqlens/vite/entry'
-import { greetingSchemaSDL } from '{{packageName}}-domain'
-
-export default defineGQLensEntry({
-	schema: () => greetingSchemaSDL,
-	handler: () => {
-		throw new Error('GraphQL is served by the Pluxel plugin; GQLens middleware is disabled.')
-	},
-})

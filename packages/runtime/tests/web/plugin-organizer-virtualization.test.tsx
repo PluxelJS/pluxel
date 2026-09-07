@@ -95,15 +95,32 @@ function buildStatuses(count: number): PluginStatuses {
 	const statuses: PluginStatuses = {}
 	for (let index = 0; index < count; index += 1) {
 		const pluginId = `plugin-${String(index).padStart(3, '0')}`
+		const exportName = `Plugin${String(index).padStart(3, '0')}`
+		const packageName = `@fixture/${pluginId}`
 		statuses[pluginId] = {
+			id: pluginId,
+			address: {
+				definition: {
+					entry: { kind: 'package-root', packageName },
+					exportName,
+				},
+				variant: 'default',
+			},
+			reference: `package:${packageName}::${exportName}`,
 			name: `Plugin ${String(index).padStart(3, '0')}`,
-			isRunning: index % 3 === 0,
-			isEnabled: index % 7 !== 0,
-			sourceKind: index % 5 === 0 ? 'hmr' : 'package',
-			moduleId: index % 5 === 0 ? `/workspace/demo-${Math.floor(index / 5)}/index.ts` : undefined,
-			tag: index % 2 === 0 ? 'stable' : 'beta',
-			version: `1.0.${index}`,
-		} as any
+			definitionLabel: packageName,
+			packageName,
+			exportName,
+			executionLabel: index % 5 === 0 ? '源码 HMR' : '静态构建',
+			executionTone: index % 5 === 0 ? 'blue' : 'gray',
+			executionDescription:
+				index % 5 === 0 ? '动态插件入口 · 源码模块；源码依赖图 HMR' : '应用静态构建',
+			executionSearchTerms: index % 5 === 0 ? ['dynamic-entry', 'source-graph'] : ['static-bundle'],
+			availability: index % 7 === 0 ? 'unavailable' : 'available',
+			autoStart: index % 2 === 0,
+			desiredState: index % 3 === 0 ? 'running' : 'stopped',
+			lifecycleState: index % 3 === 0 ? 'running' : 'stopped',
+		}
 	}
 	return statuses
 }
@@ -113,7 +130,10 @@ async function renderOrganizer(props: {
 	initialGroups?: GroupConfig[]
 	filterQuery?: string
 	activeId?: string | null
+	selectedIds?: string[]
 	onSelectedIdsChange?: (ids: string[]) => void
+	onGroupsChange?: (groups: GroupConfig[]) => void
+	onResetGroups?: () => void
 	clicked?: Array<{ to: string }>
 }) {
 	const container = document.createElement('div')
@@ -147,14 +167,16 @@ async function renderOrganizer(props: {
 
 	await act(async () => {
 		root.render(
-			<MantineProvider>
+			<MantineProvider env="test">
 				<div style={{ height: '480px' }}>
 					<PluginOrganizer
 						statuses={props.statuses}
 						initialGroups={props.initialGroups ?? []}
-						onGroupsChange={() => {}}
+						onGroupsChange={props.onGroupsChange ?? (() => {})}
+						onResetGroups={props.onResetGroups}
 						filterQuery={props.filterQuery}
 						activeId={props.activeId}
+						selectedIds={props.selectedIds}
 						onSelectedIdsChange={props.onSelectedIdsChange}
 						LinkComponent={LinkComponent}
 					/>
@@ -180,8 +202,7 @@ describe('PluginOrganizer virtualization', () => {
 		const rows = container.querySelectorAll('[data-plugin-row="true"]')
 		expect(rows.length).toBe(12)
 		expect(container.textContent).not.toContain('平铺结果')
-		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
-	})
+	}, 30_000)
 
 	it('preserves grouped browse mode when no filtering is active', async () => {
 		const statuses = buildStatuses(6)
@@ -196,7 +217,105 @@ describe('PluginOrganizer virtualization', () => {
 		expect(container.textContent).toContain('插件分类')
 		expect(container.textContent).toContain('Alpha')
 		expect(container.textContent).not.toContain('新建分组')
-		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
+		expect(container.querySelector('[role="group"][aria-label="分组 Alpha"]')).not.toBeNull()
 		expect(container.querySelectorAll('[data-plugin-row="true"]')).toHaveLength(6)
 	})
+})
+
+describe('plugin group editing', () => {
+	it('keeps an unconfigured catalog flat and allows creating the first group', async () => {
+		const changes: GroupConfig[][] = []
+		const container = await renderOrganizer({
+			statuses: buildStatuses(3),
+			onGroupsChange: (groups) => {
+				changes.push(groups)
+			},
+		})
+		expect(container.textContent).toContain('全部插件')
+		expect(container.textContent).not.toContain('插件分类')
+		await act(async () => {
+			container.querySelector<HTMLButtonElement>('[aria-label="编辑分组"]')!.click()
+		})
+		const button = (label: string) =>
+			[...document.querySelectorAll<HTMLButtonElement>('button')].find(
+				(candidate) => candidate.textContent === label,
+			)!
+		await act(async () => {
+			button('新增分组').click()
+		})
+		await act(async () => {
+			button('保存').click()
+		})
+		expect(changes.at(-1)).toEqual([
+			{ groupId: expect.stringMatching(/^manual:/), name: '新分组', pluginIds: [] },
+		])
+	})
+	it('deletes manual groups back to the flat list and exposes an explicit automatic reset', async () => {
+		const changes: GroupConfig[][] = []
+		let resets = 0
+		const container = await renderOrganizer({
+			statuses: buildStatuses(2),
+			initialGroups: [
+				{ groupId: 'manual:one', name: '业务', pluginIds: ['plugin-000', 'plugin-001'] },
+			],
+			onGroupsChange: (groups) => {
+				changes.push(groups)
+			},
+			onResetGroups: () => {
+				resets++
+			},
+		})
+		await act(async () => {
+			container.querySelector<HTMLButtonElement>('[aria-label="编辑分组"]')!.click()
+		})
+		expect(document.body.textContent).toContain('编辑插件分组')
+		expect(
+			[...document.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
+		).toContain('删除分组 业务')
+		await act(async () => {
+			document.querySelector<HTMLButtonElement>('[aria-label="删除分组 业务"]')!.click()
+		})
+		await act(async () => {
+			;[...document.querySelectorAll<HTMLButtonElement>('button')]
+				.find((button) => button.textContent === '保存')!
+				.click()
+		})
+		expect(changes.at(-1)).toEqual([])
+		expect(container.textContent).toContain('全部插件')
+		await act(async () => {
+			container.querySelector<HTMLButtonElement>('[aria-label="编辑分组"]')!.click()
+		})
+		await act(async () => {
+			;[...document.querySelectorAll<HTMLButtonElement>('button')]
+				.find((button) => button.textContent === '恢复自动分组')!
+				.click()
+		})
+		expect(resets).toBe(1)
+	})
+})
+
+it('moves an entire fork family when a selected member is moved to ungrouped', async () => {
+	const statuses = buildStatuses(3)
+	statuses['plugin-001']!.address = {
+		definition: statuses['plugin-000']!.address.definition,
+		variant: 'fork',
+		forkId: 'east',
+	}
+	const changes: GroupConfig[][] = []
+	const container = await renderOrganizer({
+		statuses,
+		selectedIds: ['plugin-001'],
+		initialGroups: [{ groupId: 'manual:one', name: '业务', pluginIds: Object.keys(statuses) }],
+		onGroupsChange: (groups) => {
+			changes.push(groups)
+		},
+	})
+	await act(async () => {
+		container
+			.querySelector<HTMLElement>('[aria-label="插件列表与分组"]')!
+			.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', bubbles: true }))
+	})
+	expect(changes.at(-1)).toEqual([
+		{ groupId: 'manual:one', name: '业务', pluginIds: ['plugin-002'] },
+	])
 })

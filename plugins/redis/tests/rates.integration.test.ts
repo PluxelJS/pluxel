@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { RedisPlugin, RedisRatesBackendPlugin } from '../src/index.ts'
 
 const redisUrl = process.env.PLUXEL_REDIS_TEST_URL
 
-@Plugin({ name: 'RedisRatesIntegrationConsumer' })
+@Plugin({ displayName: 'RedisRatesIntegrationConsumer' })
 class IntegrationConsumer extends BasePlugin {
 	constructor(readonly rates: Rates) {
 		super()
@@ -23,13 +23,22 @@ const algorithms = [
 describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
-		await withHost(async (host) => {
-			host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, IntegrationConsumer])
-			host.cfg(RedisPlugin).set({ config: { url: redisUrl! } })
-			host.cfg(RedisRatesBackendPlugin).set({ config: { keyPrefix: prefix } })
-			await host.commit()
+		{
+			await using host = createRuntimeTestHost()
+
+			await host.commit((change) => {
+				change.start(RedisPlugin, {
+					initialConfig: { connections: [{ id: 'default', url: redisUrl! }] },
+				})
+				change.start(RedisRatesBackendPlugin, {
+					initialConfig: { keyPrefix: prefix },
+				})
+				change.start(RatesPlugin)
+				change.start(IntegrationConsumer)
+			})
 			const consumer = host.require(IntegrationConsumer)
-			const redis = host.require(RedisPlugin).client as unknown as IntegrationRedisClient
+			const redis = host.require(RedisPlugin).connection()
+				.client as unknown as IntegrationRedisClient
 			try {
 				for (const policy of algorithms) {
 					const limiter = consumer.rates.use(`integration.${policy.algorithm}`, policy)
@@ -93,14 +102,27 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					limit: 2,
 					windowMs: 60_000,
 				} as const)
-				await backend.consume({ key: 'cross-type-policy', policy: logPolicy, cost: 1 })
+				await backend.consume({ key: 'cross-type-policy', owner: null, policy: logPolicy, cost: 1 })
 				await expect(
-					backend.consume({ key: 'cross-type-policy', policy: fixed, cost: 1 }),
+					backend.consume({ key: 'cross-type-policy', owner: null, policy: fixed, cost: 1 }),
 				).rejects.toMatchObject({ code: 'RATES_POLICY_CONFLICT', active: logPolicy })
+				await backend.consume({ key: 'owner-mismatch', owner: null, policy: fixed, cost: 1 })
+				await expect(
+					backend.consume({
+						key: 'owner-mismatch',
+						owner: consumer.ctx.pluginInfo.nodeAddress,
+						policy: fixed,
+						cost: 1,
+					}),
+				).rejects.toMatchObject({
+					name: 'RedisScriptDecodeError',
+					cause: new TypeError('Stored rates state is corrupt or uses an unsupported format.'),
+				})
 
 				const expiringKey = 'expired-policy'
 				await backend.consume({
 					key: expiringKey,
+					owner: null,
 					policy: Object.freeze({ algorithm: 'fixed-window', limit: 1, windowMs: 20 }),
 					cost: 1,
 				})
@@ -108,6 +130,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				await expect(
 					backend.consume({
 						key: expiringKey,
+						owner: null,
 						policy: Object.freeze({
 							algorithm: 'token-bucket',
 							limit: 1,
@@ -127,12 +150,13 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				const rollbackStorageKey = storageKey(prefix, rollbackLogicalKey)
 				const future = Date.now() + 5_000
 				await redis.hSet(rollbackStorageKey, {
-					version: '1',
+					version: '2',
 					algorithm: 'token-bucket',
 					limit: '2',
 					window: '1000',
 					burst: '2',
 					observedAt: String(future),
+					owner: 'global',
 					balance: '0',
 					updatedAt: String(future),
 				})
@@ -140,6 +164,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				await expect(
 					backend.consume({
 						key: rollbackLogicalKey,
+						owner: null,
 						policy: Object.freeze({
 							algorithm: 'token-bucket',
 							limit: 2,
@@ -158,15 +183,16 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				const malformedHashLogicalKey = 'malformed-hash-state'
 				const malformedHashKey = storageKey(prefix, malformedHashLogicalKey)
 				await redis.hSet(malformedHashKey, {
-					version: '1',
+					version: '2',
 					algorithm: 'fixed-window',
 					limit: '2',
 					window: '60000',
 					burst: '0',
 					observedAt: String(Date.now()),
+					owner: 'global',
 				})
 				await expect(
-					backend.consume({ key: malformedHashLogicalKey, policy: fixed, cost: 1 }),
+					backend.consume({ key: malformedHashLogicalKey, owner: null, policy: fixed, cost: 1 }),
 				).rejects.toThrow('invalid reply')
 				expect(await redis.exists(malformedHashKey)).toBe(1)
 
@@ -176,7 +202,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				await redis.zAdd(malformedLogKey, [
 					{
 						score: -1,
-						value: `m|1|sliding-window-log|2|60000|1|${observed}|${observed}|0`,
+						value: `m|2|sliding-window-log|2|60000|1|${observed}|${observed}|0|global`,
 					},
 					{ score: observed - 1, value: `e|${observed - 1}|0|1` },
 					{ score: observed, value: `e|${observed}|0|1` },
@@ -184,6 +210,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				await expect(
 					backend.consume({
 						key: malformedLogLogicalKey,
+						owner: null,
 						policy: Object.freeze({
 							algorithm: 'sliding-window-log',
 							limit: 2,
@@ -196,7 +223,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 			} finally {
 				await unlinkPrefix(redis, prefix)
 			}
-		})
+		}
 	})
 })
 
@@ -211,7 +238,7 @@ type IntegrationRedisClient = {
 }
 
 function storageKey(prefix: string, logicalKey: string): string {
-	return `${prefix}v1:${createHash('sha256').update(logicalKey).digest('hex')}`
+	return `${prefix}v3:${createHash('sha256').update(logicalKey).digest('hex')}`
 }
 
 async function unlinkPrefix(client: IntegrationRedisClient, prefix: string): Promise<void> {

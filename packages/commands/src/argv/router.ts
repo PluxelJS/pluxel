@@ -1,17 +1,9 @@
 import { deepFreeze } from '../internal/freeze'
 import { compareStrings } from '../internal/compare'
-import {
-	CommandError,
-	type Command,
-	type CommandContext,
-	type CommandContextArgs,
-	type CommandResult,
-	type Registration,
-} from '../types'
+import { CommandError, type Command, type CommandContext, type Registration } from '../types'
 import { compileEntry, configError, type CompiledEntry } from './compile'
 import { tokenizeArgv } from './tokenize'
 import { parseCandidate, syntaxError } from './parse'
-import { closestSuggestions, suggestionSuffix, type SuggestionCandidate } from './suggest'
 import type {
 	ArgvBinding,
 	ArgvCommandDescriptor,
@@ -28,7 +20,7 @@ type TrieNode<Ctx extends CommandContext> = {
 	consumed?: number
 }
 
-export class ArgvRouter<Ctx extends CommandContext = CommandContext> {
+export class ArgvRouter<Ctx extends CommandContext = CommandContext, Output = unknown> {
 	private readonly caseInsensitive: boolean
 	private readonly maxTextLength: number
 	private readonly entries = new Map<string, CompiledEntry<Ctx>>()
@@ -49,7 +41,7 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext> {
 		this.maxTextLength = maxTextLength
 	}
 
-	bind<I, O>(command: Command<I, O, Ctx>, binding: ArgvBinding<I>): Registration {
+	bind<I, O extends Output>(command: Command<I, O, Ctx>, binding: ArgvBinding<I>): Registration {
 		const name = command.name
 		if (this.entries.has(name)) {
 			throw configError(
@@ -65,7 +57,7 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext> {
 		this.entries.set(name, entry)
 		this.bumpRevision()
 		let active = true
-		return {
+		return Object.freeze({
 			name,
 			dispose: () => {
 				if (!active) return
@@ -75,10 +67,10 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext> {
 				this.removeRoutes(entry)
 				this.bumpRevision()
 			},
-		}
+		})
 	}
 
-	resolve(input: ArgvInput): ArgvResolution<Ctx> | undefined {
+	resolve(input: ArgvInput): ArgvResolution<Ctx, Output> | undefined {
 		const prepared = prepareArgvInput(input)
 		if (prepared.source.length > this.maxTextLength) {
 			throw syntaxError(`Command input exceeds ${this.maxTextLength} characters`, {
@@ -88,43 +80,11 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext> {
 		const { source, tokens } = prepared
 		const matched = this.match(tokens)
 		if (!matched) return undefined
-		const routeEnd = tokens[matched.consumed - 1]?.end ?? 0
 		return {
-			command: matched.entry.command,
+			command: matched.entry.command as Command<any, Output, Ctx>,
 			route: matched.route,
 			candidate: parseCandidate(matched.entry, tokens, matched.consumed, source),
-			rawArgs: source.slice(routeEnd).trimStart(),
 		}
-	}
-
-	async dispatch(
-		input: ArgvInput,
-		...context: CommandContextArgs<Ctx>
-	): Promise<CommandResult<unknown>> {
-		try {
-			return { ok: true, value: await this.dispatchOrThrow(input, ...context) }
-		} catch (error) {
-			return {
-				ok: false,
-				error:
-					error instanceof CommandError
-						? error
-						: new CommandError('INTERNAL', 'Command failed', { cause: error }),
-			}
-		}
-	}
-
-	async dispatchOrThrow(input: ArgvInput, ...context: CommandContextArgs<Ctx>): Promise<unknown> {
-		const resolution = this.resolve(input)
-		if (!resolution) {
-			const suggestions = this.suggestRoutes(input)
-			const source = argvInputSource(input)
-			throw new CommandError('COMMAND_NOT_FOUND', 'Command not found', {
-				message: `No command route matched "${source}"${suggestionSuffix(suggestions)}`,
-				details: { input: source, ...(suggestions.length > 0 ? { suggestions } : {}) },
-			})
-		}
-		return resolution.command.executeOrThrow(resolution.candidate, ...context)
 	}
 
 	list(): readonly ArgvCommandDescriptor[] {
@@ -136,38 +96,6 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext> {
 		)
 		this.listRevision = this.revision
 		return this.listCache
-	}
-
-	help(nameOrRoute: string): ArgvCommandDescriptor | undefined {
-		const value = nameOrRoute.trim()
-		const byName = this.entries.get(value)
-		if (byName) return byName.descriptor
-		if (!value) return undefined
-		let node = this.root
-		for (const token of value.split(/\s+/)) {
-			const next = node.next.get(this.normalize(token))
-			if (!next) return undefined
-			node = next
-		}
-		return node.entry?.descriptor
-	}
-
-	private suggestRoutes(input: ArgvInput): string[] {
-		const { tokens } = prepareArgvInput(input)
-		const candidates: SuggestionCandidate[] = []
-		for (const entry of this.entries.values()) {
-			for (const route of entry.descriptor.routes) {
-				const consumed = route.split(' ').length
-				candidates.push({
-					compare: tokens
-						.slice(0, consumed)
-						.map((token) => token.value)
-						.join(' '),
-					display: route,
-				})
-			}
-		}
-		return closestSuggestions(candidates, { normalize: (value) => this.normalize(value) })
 	}
 
 	private normalize(value: string): string {
@@ -270,8 +198,8 @@ function argvInputSource(input: ArgvInput): string {
 	return typeof input === 'string' ? input : input.join(' ')
 }
 
-export function createArgvRouter<Ctx extends CommandContext = CommandContext>(
+export function createArgvRouter<Ctx extends CommandContext = CommandContext, Output = unknown>(
 	options?: ArgvRouterOptions,
-): ArgvRouter<Ctx> {
-	return new ArgvRouter<Ctx>(options)
+): ArgvRouter<Ctx, Output> {
+	return new ArgvRouter<Ctx, Output>(options)
 }

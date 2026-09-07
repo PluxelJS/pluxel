@@ -1,8 +1,11 @@
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/test'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖；PluginC/PluginD 只是运行期附加能力
 import { PluginB } from './PluginB'
 import { PluginC, PluginD } from './PluginC'
+
+const PluginCRef = definePluginRef<PluginC>()
+const PluginDRef = definePluginRef<PluginD>()
 
 @Plugin()
 export class PluginA extends BasePlugin {
@@ -11,9 +14,8 @@ export class PluginA extends BasePlugin {
 	}
 
 	init(): void {
-		// Optional dependency pattern (plan A): resolve if running; otherwise ignore.
-		this.ctx.registry.getInstance(PluginC)?.doExampleLog()
-		this.ctx.registry.getInstance(PluginD)?.doSomethingElse()
+		this.plugins.use(PluginCRef, (plugin) => plugin.doExampleLog())
+		this.plugins.use(PluginDRef, (plugin) => plugin.doSomethingElse())
 
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB

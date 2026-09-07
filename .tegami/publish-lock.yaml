@@ -1,0 +1,106 @@
+core:changelogs:
+  - content: "---\npackages:\n  \"@pluxel/cli\":\n    type: major\n  \"@pluxel/commands\":\n    type: major\n  \"@pluxel/context\":\n    type: major\n  \"@pluxel/core\":\n    type: major\n  \"@pluxel/create\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/runtime\":\n    type: major\n  \"@pluxel/runtime-dynamic\":\n    type: major\n  \"@pluxel/runtime-static\":\n    type: major\n  \"@pluxel/test\":\n    type: major\n  valibot-form:\n    type: major\n  \"@pluxel/agent-tools\":\n    type: major\n  \"@pluxel/auth\":\n    type: major\n  \"@pluxel/wretch\":\n    type: major\n  \"@pluxel/canvas\":\n    type: major\n  \"@pluxel/echarts\":\n    type: major\n  \"@pluxel/fonts\":\n    type: major\n  \"@pluxel/takumi\":\n    type: major\n  \"@pluxel/takumi-markdown\":\n    type: major\n  \"@pluxel/takumi-markdown-typst\":\n    type: major\n---\n\n## Initial open-source release\n\nPublish the supported Pluxel packages together at 1.0.0. Current package contracts and development workflows are documented in the repository.\n"
+    filename: initial-open-source-release.md
+    v: 0.0.0
+core:packages:
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/cli
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/commands
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/context
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/core
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/create
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/rolldown
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/runtime
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/runtime-dynamic
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/runtime-static
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/test
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:valibot-form
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/agent-tools
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/auth
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/wretch
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/canvas
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/echarts
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/fonts
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/takumi
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/takumi-markdown
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/takumi-markdown-typst
+    updated: true
+npm:packages:
+  - id: npm:@pluxel/cli
+  - id: npm:@pluxel/commands
+  - id: npm:@pluxel/context
+  - id: npm:@pluxel/core
+  - id: npm:@pluxel/create
+  - id: npm:@pluxel/rolldown
+  - id: npm:@pluxel/runtime
+  - id: npm:@pluxel/runtime-dynamic
+  - id: npm:@pluxel/runtime-static
+  - id: npm:@pluxel/test
+  - id: npm:valibot-form
+  - id: npm:@pluxel/agent-tools
+  - id: npm:@pluxel/auth
+  - id: npm:@pluxel/wretch
+  - id: npm:@pluxel/canvas
+  - id: npm:@pluxel/echarts
+  - id: npm:@pluxel/fonts
+  - id: npm:@pluxel/takumi
+  - id: npm:@pluxel/takumi-markdown
+  - id: npm:@pluxel/takumi-markdown-typst

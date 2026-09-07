@@ -4,7 +4,7 @@ const FooSchema = v.object({
 	enabled: v.optional(v.boolean(), true),
 })
 
-@Plugin({ name: 'PluginConfigUse' })
+@Plugin({ displayName: 'Config use' })
 export class PluginConfigUse extends BasePlugin {
 	foo = this.configs.use(FooSchema)
 }

@@ -1,7 +1,8 @@
 {
 	"name": "@pluxel/commands",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Schema-first command kernel for agent tools, CLIs, and message adapters",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -28,11 +29,6 @@
 			"import": "./dist/argv.mjs",
 			"require": "./dist/argv.cjs"
 		},
-		"./tool": {
-			"@pluxel/source": "./src/tool.ts",
-			"import": "./dist/tool.mjs",
-			"require": "./dist/tool.cjs"
-		},
 		"./typebox": {
 			"@pluxel/source": "./src/typebox.ts",
 			"import": "./dist/typebox.mjs",
@@ -50,16 +46,13 @@
 				"import": "./dist/argv.mjs",
 				"require": "./dist/argv.cjs"
 			},
-			"./tool": {
-				"import": "./dist/tool.mjs",
-				"require": "./dist/tool.cjs"
-			},
 			"./typebox": {
 				"import": "./dist/typebox.mjs",
 				"require": "./dist/typebox.cjs"
 			},
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
@@ -68,11 +61,14 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@sinclair/typebox": "^0.34.48"
+		"@sinclair/typebox": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/test": "workspace:*",
-		"@sinclair/parsebox": "^0.11.6",
-		"@types/node": "^25.9.3"
+		"@sinclair/parsebox": "catalog:dev",
+		"@types/node": "catalog:types"
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

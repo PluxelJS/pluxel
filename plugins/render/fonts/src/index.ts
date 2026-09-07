@@ -1,31 +1,31 @@
-import { statSync } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
 import { BasePlugin, Plugin, type Context, type PersistenceNamespace } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
 import { FontsConfig, type FontsPluginConfig } from './config.ts'
+import { FontsError, type FontsErrorCode } from './errors.ts'
+import { FontTaskScheduler, type FontTaskSchedulerOwner } from './font-task-scheduler.ts'
 import {
 	decodeManagedFont,
 	encodeManagedFont,
+	MANAGED_FONT_RECORD_OVERHEAD_LIMIT,
 	managedFontId,
 	managedFontKey,
 	toManagedFontSnapshot,
 	type StoredManagedFont,
 } from './managed-record.ts'
-import type {
-	FontsManagerSnapshot,
-	FontsWorkbenchCommands,
-	InstallManagedFontInput,
-	ManagedFontSnapshot,
-} from './manager-contract.ts'
-import type {
-	DefaultFontSnapshot,
-	FontSelectionCommands,
-	FontSelectionSnapshot,
-	FontFamilySnapshot,
-} from './workbench-contract.ts'
-import { FontsWorkbench } from './workbench-extension.ts'
+import {
+	FontsWorkbench,
+	type DefaultFontSnapshot,
+	type FontFamilySnapshot,
+	type FontSelectionApi,
+	type FontSelectionSnapshot,
+	type FontsManagerApi,
+	type FontsManagerSnapshot,
+	type InstallManagedFontInput,
+	type ManagedFontSnapshot,
+} from './workbench.ts'
 
 const STORAGE_NAMESPACE = '@pluxel/fonts'
 const DEFAULT_FONT_KEY = 'settings/default-font.json'
@@ -36,16 +36,21 @@ const GENERIC_FAMILIES = new Set(['serif', 'sans-serif', 'monospace'])
 let nativeRegistryRevision = 0
 
 export type FontRegistrationInput = Readonly<{
+	/** Borrowed until registration settles; the plugin snapshots it cooperatively. */
 	data: Uint8Array
 	/** Optional family alias used by CSS canvas font strings. */
 	family?: string
+	/** Cancels byte snapshotting or file IO; native registration already in progress cannot stop. */
+	signal?: AbortSignal
 }>
 
 export type FontPathRegistrationInput = Readonly<{
-	/** Absolute server path. The file is read synchronously by the native font registry. */
+	/** Absolute server path read asynchronously before registration. */
 	path: string
 	/** Optional family alias used by CSS canvas font strings. */
 	family?: string
+	/** Cancels file IO; native registration already in progress cannot stop. */
+	signal?: AbortSignal
 }>
 
 export interface FontRegistration {
@@ -56,37 +61,127 @@ export interface FontRegistration {
 	dispose(): void
 }
 
-export type FontsErrorCode =
-	| 'NOT_RUNNING'
-	| 'INVALID_INPUT'
-	| 'INVALID_FONT'
-	| 'FONT_TOO_LARGE'
-	| 'FONT_LIMIT_EXCEEDED'
-	| 'FONT_NOT_FOUND'
-	| 'CORRUPT_FONT_STORAGE'
+/** Metadata for font bytes that can be replayed into a renderer-local registry. */
+export type PortableFontResourceSnapshot = Readonly<{
+	/** Content-addressed identity for the bytes and optional family override. */
+	id: string
+	/** Requested family override. Omitted when the font's embedded metadata is authoritative. */
+	family?: string
+	/** Families observed when the resource entered the native Canvas registry. */
+	resolvedFamilies: readonly string[]
+	byteLength: number
+}>
 
-export class FontsError extends Error {
-	override readonly name = 'FontsError'
-
-	constructor(
-		readonly code: FontsErrorCode,
-		message: string,
-		options?: ErrorOptions,
-	) {
-		super(message, options)
-	}
-}
+/** Frozen metadata snapshot; resource bytes are read separately to avoid copying on every poll. */
+export type PortableFontsSnapshot = Readonly<{
+	/** Changes only when the replayable resource set changes. */
+	revision: number
+	fonts: readonly PortableFontResourceSnapshot[]
+}>
 
 type OwnedRegistration = Readonly<{
 	key: FontKey
 	owner: Context
 	handle: FontRegistrationHandle
+	portableId: string
+	byteLength: number
 }>
+
+type PortableFontSource = Readonly<{
+	id: string
+	family?: string
+	data: Uint8Array
+}>
+
+type PortableFontEntry = {
+	readonly source: PortableFontSource
+	resolvedFamilies: readonly string[]
+	registrations: number
+}
+
+type PortableFontsState = {
+	readonly entries: Map<string, PortableFontEntry>
+	revision: number
+	cached?: PortableFontsSnapshot
+}
+
+type NativeRegistrationBudget = {
+	bytes: number
+}
+
+function attachPortableFont(
+	state: PortableFontsState,
+	source: PortableFontSource,
+	resolvedFamilies: readonly string[],
+): void {
+	const existing = state.entries.get(source.id)
+	if (existing) {
+		existing.registrations += 1
+		const merged = Object.freeze(
+			[...new Set([...existing.resolvedFamilies, ...resolvedFamilies])].toSorted(),
+		)
+		if (
+			merged.length !== existing.resolvedFamilies.length ||
+			merged.some((family, index) => family !== existing.resolvedFamilies[index])
+		) {
+			existing.resolvedFamilies = merged
+			state.revision += 1
+			state.cached = undefined
+		}
+		return
+	}
+	state.entries.set(source.id, {
+		source,
+		resolvedFamilies: Object.freeze([...resolvedFamilies]),
+		registrations: 1,
+	})
+	state.revision += 1
+	state.cached = undefined
+}
+
+function detachPortableFont(state: PortableFontsState, id: string): void {
+	const existing = state.entries.get(id)
+	if (!existing) return
+	existing.registrations -= 1
+	if (existing.registrations > 0) return
+	state.entries.delete(id)
+	state.revision += 1
+	state.cached = undefined
+}
+
+function releaseOwnedRegistration(
+	registrations: Set<OwnedRegistration>,
+	registrationsByOwner: WeakMap<Context, Set<OwnedRegistration>>,
+	portableFonts: PortableFontsState,
+	nativeBudget: NativeRegistrationBudget,
+	registration: OwnedRegistration,
+): void {
+	if (!registration.handle.active) return
+	registration.handle.deactivate()
+	registrations.delete(registration)
+	registrationsByOwner.get(registration.owner)?.delete(registration)
+	GlobalFonts.remove(registration.key)
+	detachPortableFont(portableFonts, registration.portableId)
+	nativeBudget.bytes -= registration.byteLength
+	nativeRegistryRevision += 1
+}
 
 type ManagedRuntimeFont = Readonly<{
 	stored: StoredManagedFont
 	snapshot: ManagedFontSnapshot
 	registration: OwnedRegistration
+}>
+
+type FontsGeneration = Readonly<{
+	scheduler: FontTaskScheduler
+}>
+
+type FontsOwnerLease = Readonly<{
+	owner: Context
+	generation: FontsGeneration
+	controller: AbortController
+	schedulerOwner: FontTaskSchedulerOwner
+	state: { active: boolean }
 }>
 
 type ManagedState = {
@@ -95,61 +190,103 @@ type ManagedState = {
 	readonly prefix: string
 	readonly fonts: Map<string, ManagedRuntimeFont>
 	active: boolean
+	pendingTasks: number
 	tail: Promise<void>
 }
 
 type DefaultFontState = {
 	readonly systemFamilies: Set<string>
 	configuredFamily?: string
-	workbenchFamily?: string
+	preferredFamily?: string
 	storage?: PersistenceNamespace
 	resolvedDefault?: Readonly<{ revision: number; snapshot: DefaultFontSnapshot }>
 	resolvedFamilies?: Readonly<{ revision: number; snapshot: readonly FontFamilySnapshot[] }>
 	tail: Promise<void>
 }
 
-@Plugin({ name: 'FontsPlugin' })
+@Plugin()
 export class FontsPlugin extends BasePlugin {
 	private readonly config = this.configs.use(FontsConfig)
 	private readonly registrations = new Set<OwnedRegistration>()
 	private readonly registrationsByOwner = new WeakMap<Context, Set<OwnedRegistration>>()
+	private readonly leases = new Set<FontsOwnerLease>()
+	private readonly ownerLeases = new WeakMap<Context, FontsOwnerLease>()
+	private readonly portableFontsState: PortableFontsState = {
+		entries: new Map(),
+		revision: 0,
+	}
+	private readonly nativeBudget: NativeRegistrationBudget = { bytes: 0 }
 	private readonly defaults: DefaultFontState = {
 		systemFamilies: new Set(),
 		tail: Promise.resolve(),
 	}
 	private managed?: ManagedState
+	private generation?: FontsGeneration
 	private running = false
+	private lifecycleRevision = 0
 
 	override async init(): Promise<void> {
+		if (this.config.maxQueuedFontTasksPerConsumer > this.config.maxQueuedFontTasks) {
+			throw new FontsError(
+				'INVALID_INPUT',
+				'maxQueuedFontTasksPerConsumer must not exceed maxQueuedFontTasks',
+			)
+		}
+		this.lifecycleRevision += 1
 		const storage = this.ctx.root.persistence.namespace(STORAGE_NAMESPACE)
 		const systemFamilies = new Set(GlobalFonts.families.map(({ family }) => family))
 		const configuredDefaultFamily =
 			this.config.defaultFamily === undefined
 				? undefined
 				: normalizeFamily(this.config.defaultFamily)
-		const workbenchDefaultFamily = await loadDefaultFamily(storage)
+		const preferredFamily = await loadDefaultFamily(storage)
 		this.defaults.systemFamilies.clear()
 		for (const family of systemFamilies) this.defaults.systemFamilies.add(family)
 		this.defaults.configuredFamily = configuredDefaultFamily
-		this.defaults.workbenchFamily = workbenchDefaultFamily
+		this.defaults.preferredFamily = preferredFamily
 		this.defaults.storage = storage
 		this.defaults.resolvedDefault = undefined
 		this.defaults.resolvedFamilies = undefined
 		nativeRegistryRevision += 1
+		const generation: FontsGeneration = Object.freeze({
+			scheduler: new FontTaskScheduler(
+				this.config.maxConcurrentFontTasks,
+				this.config.maxQueuedFontTasks,
+				this.config.maxQueuedFontTasksPerConsumer,
+			),
+		})
+		this.generation = generation
 		this.running = true
 		this.ctx.effects.defer(
-			() => {
-				this.running = false
+			async () => {
+				const stopped = new FontsError(
+					'NOT_RUNNING',
+					'Fonts capability belongs to a stopped plugin generation',
+				)
+				if (this.generation === generation) {
+					this.generation = undefined
+					this.running = false
+					this.lifecycleRevision += 1
+				}
+				const managed = this.managed
+				if (managed) managed.active = false
+				for (const lease of this.leases) {
+					if (lease.generation === generation) this.closeOwnerLease(lease, stopped)
+				}
+				await Promise.allSettled([
+					generation.scheduler.close(stopped),
+					managed?.tail ?? Promise.resolve(),
+					this.defaults.tail,
+				])
 				this.defaults.configuredFamily = undefined
-				this.defaults.workbenchFamily = undefined
+				this.defaults.preferredFamily = undefined
 				this.defaults.storage = undefined
 				this.defaults.resolvedDefault = undefined
 				this.defaults.resolvedFamilies = undefined
 				this.defaults.systemFamilies.clear()
-				if (this.managed) {
-					this.managed.active = false
-					this.managed.fonts.clear()
-					this.managed = undefined
+				if (managed) {
+					managed.fonts.clear()
+					if (this.managed === managed) this.managed = undefined
 				}
 				const active = [...this.registrations]
 				this.registrations.clear()
@@ -159,59 +296,84 @@ export class FontsPlugin extends BasePlugin {
 				}
 				if (active.length > 0) {
 					GlobalFonts.removeBatch(active.map(({ key }) => key))
+					this.nativeBudget.bytes = 0
 					nativeRegistryRevision += 1
+				}
+				if (this.portableFontsState.entries.size > 0) {
+					this.portableFontsState.entries.clear()
+					this.portableFontsState.revision += 1
+					this.portableFontsState.cached = undefined
 				}
 			},
 			{ tag: 'fonts-registry' },
 		)
 		this.managed = await this.initializeManagedFonts(storage)
-		this.ctx.workbench.mount(FontsWorkbench, {
-			fonts: workbench.bind.rpc(() => this.createWorkbenchManager()),
+		this.ctx.workbench?.publish(FontsWorkbench, {
+			manager: () => this.createWorkbenchManager(),
+			selection: () => this.createSelectionTarget(),
 		})
 	}
 
 	/** Registers font bytes for the current caller generation. */
-	register(input: FontRegistrationInput): FontRegistration {
-		this.assertRunning()
+	async register(input: FontRegistrationInput): Promise<FontRegistration> {
+		const lifecycleRevision = this.requireLifecycleRevision()
 		if (!input || !(input.data instanceof Uint8Array)) {
 			throw new FontsError('INVALID_INPUT', 'Font data must be a Uint8Array')
 		}
+		const signal = normalizeSignal(input.signal)
 		const family = normalizeFamily(input.family)
 		this.assertFontSize(input.data.byteLength)
-		const owner = this.ctx.caller ?? this.ctx
-		return this.registerBytes(owner, input.data, family).handle
+		const ownerLease = this.requireOwnerLease()
+		this.assertOwnerCapacity(ownerLease.owner)
+		return this.runFontTask(ownerLease, signal, async (activeSignal) => {
+			this.assertLifecycleRevision(lifecycleRevision)
+			this.assertOwnerLease(ownerLease)
+			this.assertOwnerCapacity(ownerLease.owner)
+			const data = await snapshotBytes(input.data, activeSignal)
+			const id = await managedFontId(data, family, activeSignal)
+			if (activeSignal.aborted) {
+				throw abortReason(activeSignal, 'Font registration aborted')
+			}
+			this.assertLifecycleRevision(lifecycleRevision)
+			this.assertOwnerLease(ownerLease)
+			return this.registerBytes(ownerLease.owner, data, id, family).handle
+		})
 	}
 
 	/** Registers one font from an absolute server path for the current caller generation. */
-	registerFromPath(input: FontPathRegistrationInput): FontRegistration {
-		this.assertRunning()
+	async registerFromPath(input: FontPathRegistrationInput): Promise<FontRegistration> {
+		const lifecycleRevision = this.requireLifecycleRevision()
 		if (!input || typeof input.path !== 'string' || !isAbsolute(input.path)) {
 			throw new FontsError('INVALID_INPUT', 'Font path must be an absolute server path')
 		}
+		const signal = normalizeSignal(input.signal)
+		if (signal?.aborted) throw abortReason(signal, 'Font registration aborted')
 		const family = normalizeFamily(input.family)
-		let size: number
-		try {
-			const stat = statSync(input.path)
-			if (!stat.isFile()) throw new Error('Path is not a file')
-			size = stat.size
-		} catch (cause) {
-			throw new FontsError('INVALID_INPUT', `Cannot read font file at ${input.path}`, { cause })
-		}
-		this.assertFontSize(size)
-		const owner = this.ctx.caller ?? this.ctx
-		this.assertOwnerCapacity(owner)
-		const before = familySignatures()
-		let key: FontKey | null
-		try {
-			key = GlobalFonts.registerFromPath(input.path, family)
-		} catch (cause) {
-			throw new FontsError('INVALID_FONT', `Native font registration failed for ${input.path}`, {
-				cause,
-			})
-		}
-		if (!key)
-			throw new FontsError('INVALID_FONT', `Native font registration failed for ${input.path}`)
-		return this.ownNativeRegistration(owner, key, changedFamilies(before)).handle
+		const ownerLease = this.requireOwnerLease()
+		this.assertOwnerCapacity(ownerLease.owner)
+		return this.runFontTask(ownerLease, signal, async (activeSignal) => {
+			this.assertLifecycleRevision(lifecycleRevision)
+			this.assertOwnerLease(ownerLease)
+			this.assertOwnerCapacity(ownerLease.owner)
+			let data: Buffer
+			try {
+				data = await readBoundedFontFile(input.path, this.config.maxFontBytes, activeSignal)
+			} catch (cause) {
+				if (activeSignal.aborted) {
+					throw abortReason(activeSignal, 'Font registration aborted')
+				}
+				if (cause instanceof FontsError) throw cause
+				throw new FontsError('INVALID_INPUT', `Cannot read font file at ${input.path}`, { cause })
+			}
+			this.assertFontSize(data.byteLength)
+			const id = await managedFontId(data, family, activeSignal)
+			if (activeSignal.aborted) {
+				throw abortReason(activeSignal, 'Font registration aborted')
+			}
+			this.assertLifecycleRevision(lifecycleRevision)
+			this.assertOwnerLease(ownerLease)
+			return this.registerBytes(ownerLease.owner, data, id, family).handle
+		})
 	}
 
 	/** Returns a detached snapshot of every family visible to the native renderer. */
@@ -232,31 +394,98 @@ export class FontsPlugin extends BasePlugin {
 		return nativeRegistryRevision
 	}
 
-	private createWorkbenchManager(): RpcTarget & FontsWorkbenchCommands {
+	/**
+	 * Returns frozen metadata for managed and caller-registered font bytes. Platform-discovered
+	 * system fonts are intentionally absent because their files are not owned by FontsPlugin.
+	 */
+	get portableFonts(): PortableFontsSnapshot {
 		this.assertRunning()
-		const state = this.managed
-		if (!state?.active) {
-			throw new FontsError('NOT_RUNNING', 'Managed font collection is not available')
+		const state = this.portableFontsState
+		if (state.cached?.revision === state.revision) return state.cached
+		const snapshot = Object.freeze({
+			revision: state.revision,
+			fonts: Object.freeze(
+				[...state.entries.values()]
+					.map(({ source, resolvedFamilies }) =>
+						Object.freeze({
+							id: source.id,
+							...(source.family ? { family: source.family } : {}),
+							resolvedFamilies,
+							byteLength: source.data.byteLength,
+						}),
+					)
+					.toSorted((left, right) => left.id.localeCompare(right.id)),
+			),
+		})
+		state.cached = snapshot
+		return snapshot
+	}
+
+	/** Returns a detached byte copy for one ID from the current `portableFonts` snapshot. */
+	async readPortableFont(
+		id: string,
+		options: Readonly<{ signal?: AbortSignal }> = {},
+	): Promise<Uint8Array> {
+		const lifecycleRevision = this.requireLifecycleRevision()
+		const ownerLease = this.requireOwnerLease()
+		if (!options || typeof options !== 'object') {
+			throw new FontsError('INVALID_INPUT', 'Portable font read options must be an object')
 		}
+		const signal = normalizeSignal(options.signal)
+		if (typeof id !== 'string' || !MANAGED_ID.test(id)) {
+			throw new FontsError('INVALID_INPUT', 'Portable font ID is invalid')
+		}
+		return this.runFontTask(ownerLease, signal, async (activeSignal) => {
+			this.assertLifecycleRevision(lifecycleRevision)
+			this.assertOwnerLease(ownerLease)
+			const source = this.portableFontsState.entries.get(id)?.source
+			if (!source) throw new FontsError('FONT_NOT_FOUND', `Portable font ${id} does not exist`)
+			const snapshot = await snapshotBytes(source.data, activeSignal)
+			this.assertLifecycleRevision(lifecycleRevision)
+			this.assertOwnerLease(ownerLease)
+			if (this.portableFontsState.entries.get(id)?.source !== source) {
+				throw new FontsError('FONT_NOT_FOUND', `Portable font ${id} no longer exists`)
+			}
+			return snapshot
+		})
+	}
+
+	/** Updates the provider-wide preference without requiring Workbench. */
+	async setPreferredFamily(family: string | null): Promise<DefaultFontSnapshot> {
+		const state = this.requireManagedState()
+		return this.setPreferredDefaultFamily(state, family)
+	}
+
+	private createWorkbenchManager(): FontsManagerApi {
+		this.assertRunning()
+		const state = this.requireManagedState()
 		return new FontsManagerRpc(
 			() => this.readManagedSnapshot(state),
-			(family) => this.setWorkbenchDefaultFamily(state, family),
+			async (family) => {
+				await this.setPreferredDefaultFamily(state, family)
+			},
 			(input) => this.installManagedFont(state, input),
 			(id) => this.removeManagedFont(state, id),
 		)
 	}
 
-	/** Returns the provider-owned default selector used by `FontsSelectionPort` outlets. */
-	selectionManager(): RpcTarget & FontSelectionCommands {
+	private createSelectionTarget(): FontSelectionApi {
+		const state = this.requireManagedState()
+		return new FontSelectionRpc(
+			async () => toSelectionSnapshot(await this.readManagedSnapshot(state)),
+			async (family) => {
+				await this.setPreferredDefaultFamily(state, family)
+			},
+		)
+	}
+
+	private requireManagedState(): ManagedState {
 		this.assertRunning()
 		const state = this.managed
 		if (!state?.active) {
 			throw new FontsError('NOT_RUNNING', 'Managed font collection is not available')
 		}
-		return new FontSelectionRpc(
-			async () => toSelectionSnapshot(await this.readManagedSnapshot(state)),
-			async (family) => toSelectionSnapshot(await this.setWorkbenchDefaultFamily(state, family)),
-		)
+		return state
 	}
 
 	private async initializeManagedFonts(storage: PersistenceNamespace): Promise<ManagedState> {
@@ -266,6 +495,7 @@ export class FontsPlugin extends BasePlugin {
 			prefix: 'managed',
 			fonts: new Map(),
 			active: true,
+			pendingTasks: 0,
 			tail: Promise.resolve(),
 		}
 		try {
@@ -285,9 +515,16 @@ export class FontsPlugin extends BasePlugin {
 				if (!value) {
 					throw new FontsError('CORRUPT_FONT_STORAGE', `Managed font disappeared: ${entry.key}`)
 				}
+				if (value.byteLength > this.config.maxFontBytes + MANAGED_FONT_RECORD_OVERHEAD_LIMIT) {
+					throw new FontsError(
+						'FONT_TOO_LARGE',
+						`Managed font record exceeds the configured ${this.config.maxFontBytes} font byte limit`,
+					)
+				}
 				let stored: StoredManagedFont
 				try {
-					stored = decodeManagedFont(value, id)
+					await new Promise<void>((resolve) => setImmediate(resolve))
+					stored = await decodeManagedFont(value, id)
 				} catch (cause) {
 					throw new FontsError('CORRUPT_FONT_STORAGE', `Managed font is corrupt: ${entry.key}`, {
 						cause,
@@ -295,7 +532,13 @@ export class FontsPlugin extends BasePlugin {
 				}
 				this.assertFontSize(stored.byteLength)
 				this.assertManagedStateActive(state)
-				const registration = this.registerBytes(state.owner, stored.data, stored.family, false)
+				const registration = this.registerBytes(
+					state.owner,
+					stored.data,
+					stored.id,
+					stored.family,
+					false,
+				)
 				const snapshot = toManagedFontSnapshot(stored, registration.handle.families)
 				state.fonts.set(id, { stored, snapshot, registration })
 			}
@@ -313,10 +556,10 @@ export class FontsPlugin extends BasePlugin {
 		return this.enqueueManaged(state, async () => this.snapshot(state))
 	}
 
-	private setWorkbenchDefaultFamily(
+	private setPreferredDefaultFamily(
 		state: ManagedState,
 		family: string | null,
-	): Promise<FontsManagerSnapshot> {
+	): Promise<DefaultFontSnapshot> {
 		return this.enqueueManaged(state, async () => {
 			if (family !== null && typeof family !== 'string') {
 				throw new FontsError('INVALID_INPUT', 'Default font family must be text or null')
@@ -329,7 +572,7 @@ export class FontsPlugin extends BasePlugin {
 			await this.enqueueDefault(async () => {
 				this.assertManagedStateActive(state)
 				const storage = this.requireDefaultStorage()
-				const previous = this.defaults.workbenchFamily
+				const previous = this.defaults.preferredFamily
 				await persistDefaultFamily(storage, selected)
 				try {
 					this.assertManagedStateActive(state)
@@ -337,22 +580,24 @@ export class FontsPlugin extends BasePlugin {
 					await persistDefaultFamily(storage, previous).catch((): void => undefined)
 					throw error
 				}
-				this.defaults.workbenchFamily = selected
+				this.defaults.preferredFamily = selected
 				if (previous !== selected) nativeRegistryRevision += 1
 			})
-			return this.snapshot(state)
+			return this.resolveDefaultFont()
 		})
 	}
 
-	private installManagedFont(
-		state: ManagedState,
-		input: InstallManagedFontInput,
-	): Promise<FontsManagerSnapshot> {
+	private installManagedFont(state: ManagedState, input: InstallManagedFontInput): Promise<void> {
 		return this.enqueueManaged(state, async () => {
-			const normalized = normalizeManagedInput(input)
+			const borrowed = normalizeManagedInput(input)
+			const normalized = Object.freeze({
+				...borrowed,
+				data: await snapshotBytes(borrowed.data, undefined),
+			})
 			this.assertFontSize(normalized.data.byteLength)
-			const id = managedFontId(normalized.data, normalized.family)
-			if (state.fonts.has(id)) return this.snapshot(state)
+			const id = await managedFontId(normalized.data, normalized.family)
+			this.assertManagedStateActive(state)
+			if (state.fonts.has(id)) return
 			if (state.fonts.size >= this.config.maxManagedFonts) {
 				throw new FontsError(
 					'FONT_LIMIT_EXCEEDED',
@@ -368,15 +613,16 @@ export class FontsPlugin extends BasePlugin {
 				installedAt,
 				data: normalized.data,
 			})
-			const registration = this.registerBytes(state.owner, stored.data, stored.family, false)
+			const registration = this.registerBytes(state.owner, stored.data, id, stored.family, false)
 			try {
-				await state.storage.put(managedFontKey(state.prefix, id), encodeManagedFont(stored), {
+				const encoded = await encodeManagedFont(stored)
+				this.assertManagedStateActive(state)
+				await state.storage.put(managedFontKey(state.prefix, id), encoded, {
 					atomic: true,
 				})
 				this.assertManagedStateActive(state)
 				const snapshot = toManagedFontSnapshot(stored, registration.handle.families)
 				state.fonts.set(id, { stored, snapshot, registration })
-				return this.snapshot(state)
 			} catch (error) {
 				this.releaseRegistration(registration)
 				if (!state.active) {
@@ -387,7 +633,7 @@ export class FontsPlugin extends BasePlugin {
 		})
 	}
 
-	private removeManagedFont(state: ManagedState, id: string): Promise<FontsManagerSnapshot> {
+	private removeManagedFont(state: ManagedState, id: string): Promise<void> {
 		return this.enqueueManaged(state, async () => {
 			if (!MANAGED_ID.test(id)) throw new FontsError('INVALID_INPUT', 'Managed font ID is invalid')
 			const font = state.fonts.get(id)
@@ -396,19 +642,33 @@ export class FontsPlugin extends BasePlugin {
 			this.assertManagedStateActive(state)
 			state.fonts.delete(id)
 			this.releaseRegistration(font.registration)
-			return this.snapshot(state)
 		})
 	}
 
 	private enqueueManaged<T>(state: ManagedState, task: () => Promise<T>): Promise<T> {
+		try {
+			this.assertManagedStateActive(state)
+		} catch (cause) {
+			return Promise.reject(cause)
+		}
+		if (state.pendingTasks >= this.config.maxPendingManagedTasks) {
+			return Promise.reject(
+				new FontsError(
+					'FONT_BUSY',
+					`Managed font queue reached its ${this.config.maxPendingManagedTasks} pending task limit`,
+				),
+			)
+		}
+		state.pendingTasks += 1
 		const result = state.tail.then(async () => {
 			this.assertManagedStateActive(state)
 			return task()
 		})
-		state.tail = result.then(
-			(): void => undefined,
-			(): void => undefined,
-		)
+		const releasePending = (): undefined => {
+			state.pendingTasks -= 1
+			return undefined
+		}
+		state.tail = result.then(releasePending, releasePending)
 		return result
 	}
 
@@ -444,20 +704,20 @@ export class FontsPlugin extends BasePlugin {
 	private resolveDefaultFont(): DefaultFontSnapshot {
 		const cached = this.defaults.resolvedDefault
 		if (cached?.revision === nativeRegistryRevision) return cached.snapshot
-		const workbenchFamily = this.defaults.workbenchFamily
+		const preferredFamily = this.defaults.preferredFamily
 		const configuredFamily = this.defaults.configuredFamily
-		const selectedWorkbenchFamily = workbenchFamily
-			? findAvailableFamily(workbenchFamily)
+		const selectedPreferredFamily = preferredFamily
+			? findAvailableFamily(preferredFamily)
 			: undefined
 		const selectedConfiguredFamily = configuredFamily
 			? findAvailableFamily(configuredFamily)
 			: undefined
 		const automaticFamily =
-			selectedWorkbenchFamily || selectedConfiguredFamily
+			selectedPreferredFamily || selectedConfiguredFamily
 				? undefined
 				: findAutomaticSystemFamily(this.defaults.systemFamilies)
-		const resolved = selectedWorkbenchFamily
-			? { family: selectedWorkbenchFamily, source: 'workbench' as const }
+		const resolved = selectedPreferredFamily
+			? { family: selectedPreferredFamily, source: 'preference' as const }
 			: selectedConfiguredFamily
 				? { family: selectedConfiguredFamily, source: 'config' as const }
 				: automaticFamily
@@ -466,7 +726,7 @@ export class FontsPlugin extends BasePlugin {
 		const snapshot = Object.freeze({
 			...resolved,
 			cssFamily: toCssFamily(resolved.family),
-			...(workbenchFamily ? { workbenchFamily } : {}),
+			...(preferredFamily ? { preferredFamily } : {}),
 			...(configuredFamily ? { configuredFamily } : {}),
 		})
 		this.defaults.resolvedDefault = Object.freeze({
@@ -490,10 +750,13 @@ export class FontsPlugin extends BasePlugin {
 	private registerBytes(
 		owner: Context,
 		data: Uint8Array,
+		id: string,
 		family?: string,
 		enforceOwnerLimit = true,
 	): OwnedRegistration {
 		if (enforceOwnerLimit) this.assertOwnerCapacity(owner)
+		this.assertNativeCapacity(data.byteLength)
+		const source = Object.freeze({ id, ...(family ? { family } : {}), data })
 		const before = familySignatures()
 		let key: FontKey | null
 		try {
@@ -505,32 +768,60 @@ export class FontsPlugin extends BasePlugin {
 		}
 		if (!key)
 			throw new FontsError('INVALID_FONT', 'Native font registration rejected the font data')
-		return this.ownNativeRegistration(owner, key, changedFamilies(before))
+		let families: readonly string[]
+		try {
+			families = changedFamilies(before)
+		} catch (cause) {
+			GlobalFonts.remove(key)
+			throw new FontsError('INVALID_FONT', 'Native font registration could not be inspected', {
+				cause,
+			})
+		}
+		return this.ownNativeRegistration(owner, key, families, source)
 	}
 
 	private ownNativeRegistration(
 		owner: Context,
 		key: FontKey,
 		families: readonly string[],
+		source: PortableFontSource,
 	): OwnedRegistration {
+		const registrations = this.registrations
+		const registrationsByOwner = this.registrationsByOwner
+		const portableFonts = this.portableFontsState
+		const nativeBudget = this.nativeBudget
 		let registration!: OwnedRegistration
-		const handle = new FontRegistrationHandle(families, () =>
-			this.releaseRegistration(registration),
-		)
-		registration = Object.freeze({ key, owner, handle })
-		this.registrations.add(registration)
-		let ownerRegistrations = this.registrationsByOwner.get(owner)
+		const release = () =>
+			releaseOwnedRegistration(
+				registrations,
+				registrationsByOwner,
+				portableFonts,
+				nativeBudget,
+				registration,
+			)
+		const handle = new FontRegistrationHandle(families, release)
+		registration = Object.freeze({
+			key,
+			owner,
+			handle,
+			portableId: source.id,
+			byteLength: source.data.byteLength,
+		})
+		registrations.add(registration)
+		attachPortableFont(portableFonts, source, families)
+		nativeBudget.bytes += source.data.byteLength
+		let ownerRegistrations = registrationsByOwner.get(owner)
 		if (!ownerRegistrations) {
 			ownerRegistrations = new Set()
-			this.registrationsByOwner.set(owner, ownerRegistrations)
+			registrationsByOwner.set(owner, ownerRegistrations)
 		}
 		ownerRegistrations.add(registration)
 		try {
-			owner.effects.defer(() => this.releaseRegistration(registration), {
+			owner.effects.defer(release, {
 				tag: 'font-registration',
 			})
 		} catch (cause) {
-			this.releaseRegistration(registration)
+			release()
 			throw new FontsError('NOT_RUNNING', 'Font owner is stopped or being replaced', { cause })
 		}
 		nativeRegistryRevision += 1
@@ -538,12 +829,13 @@ export class FontsPlugin extends BasePlugin {
 	}
 
 	private releaseRegistration(registration: OwnedRegistration): void {
-		if (!registration.handle.active) return
-		registration.handle.deactivate()
-		this.registrations.delete(registration)
-		this.registrationsByOwner.get(registration.owner)?.delete(registration)
-		GlobalFonts.remove(registration.key)
-		nativeRegistryRevision += 1
+		releaseOwnedRegistration(
+			this.registrations,
+			this.registrationsByOwner,
+			this.portableFontsState,
+			this.nativeBudget,
+			registration,
+		)
 	}
 
 	private assertOwnerCapacity(owner: Context): void {
@@ -553,6 +845,89 @@ export class FontsPlugin extends BasePlugin {
 				'FONT_LIMIT_EXCEEDED',
 				`Font owner reached its ${this.config.maxRegistrationsPerConsumer} registration limit`,
 			)
+		}
+	}
+
+	private assertNativeCapacity(byteLength: number): void {
+		if (this.registrations.size >= this.config.maxNativeRegistrations) {
+			throw new FontsError(
+				'FONT_LIMIT_EXCEEDED',
+				`FontsPlugin reached its ${this.config.maxNativeRegistrations} native registration limit`,
+			)
+		}
+		if (byteLength > this.config.maxTotalFontBytes - this.nativeBudget.bytes) {
+			throw new FontsError(
+				'FONT_LIMIT_EXCEEDED',
+				`Native registrations would exceed the configured ${this.config.maxTotalFontBytes} byte limit`,
+			)
+		}
+	}
+
+	private requireOwnerLease(): FontsOwnerLease {
+		const generation = this.generation
+		if (!generation) throw new FontsError('NOT_RUNNING', 'FontsPlugin is not running')
+		const owner = this.ctx.caller ?? this.ctx
+		const existing = this.ownerLeases.get(owner)
+		if (existing) {
+			this.assertOwnerLease(existing)
+			if (existing.generation !== generation) {
+				throw new FontsError('NOT_RUNNING', 'Font owner belongs to a stopped plugin generation')
+			}
+			return existing
+		}
+		const lease: FontsOwnerLease = Object.freeze({
+			owner,
+			generation,
+			controller: new AbortController(),
+			schedulerOwner: generation.scheduler.createOwner(),
+			state: { active: true },
+		})
+		this.leases.add(lease)
+		this.ownerLeases.set(owner, lease)
+		try {
+			owner.effects.defer(() => this.closeOwnerLease(lease), { tag: 'fonts-caller' })
+		} catch (cause) {
+			this.closeOwnerLease(lease)
+			throw new FontsError('NOT_RUNNING', 'Font owner is stopped or being replaced', { cause })
+		}
+		return lease
+	}
+
+	private assertOwnerLease(lease: FontsOwnerLease): void {
+		if (
+			!lease.state.active ||
+			this.ownerLeases.get(lease.owner) !== lease ||
+			this.generation !== lease.generation
+		) {
+			throw new FontsError('NOT_RUNNING', 'Font owner is stopped or being replaced')
+		}
+	}
+
+	private closeOwnerLease(lease: FontsOwnerLease, reason?: Error): void {
+		if (!lease.state.active) return
+		lease.state.active = false
+		const stopped =
+			reason ?? new FontsError('NOT_RUNNING', 'Font owner is stopped or being replaced')
+		lease.controller.abort(stopped)
+		lease.generation.scheduler.closeOwner(lease.schedulerOwner, stopped)
+		this.leases.delete(lease)
+		if (this.ownerLeases.get(lease.owner) === lease) this.ownerLeases.delete(lease.owner)
+	}
+
+	private async runFontTask<T>(
+		lease: FontsOwnerLease,
+		callerSignal: AbortSignal | undefined,
+		task: (signal: AbortSignal) => Promise<T>,
+	): Promise<T> {
+		const abortLink = linkAbortSignals([lease.controller.signal, callerSignal])
+		try {
+			return await lease.generation.scheduler.run(
+				lease.schedulerOwner,
+				abortLink.signal,
+				async () => task(abortLink.signal),
+			)
+		} finally {
+			abortLink.dispose()
 		}
 	}
 
@@ -585,6 +960,17 @@ export class FontsPlugin extends BasePlugin {
 	private assertRunning(): void {
 		if (!this.running) throw new FontsError('NOT_RUNNING', 'FontsPlugin is not running')
 	}
+
+	private requireLifecycleRevision(): number {
+		this.assertRunning()
+		return this.lifecycleRevision
+	}
+
+	private assertLifecycleRevision(revision: number): void {
+		if (!this.running || revision !== this.lifecycleRevision) {
+			throw new FontsError('NOT_RUNNING', 'Fonts capability belongs to a stopped plugin generation')
+		}
+	}
 }
 
 class FontRegistrationHandle implements FontRegistration {
@@ -607,12 +993,12 @@ class FontRegistrationHandle implements FontRegistration {
 	}
 }
 
-class FontsManagerRpc extends RpcTarget implements FontsWorkbenchCommands {
+class FontsManagerRpc extends RpcTarget implements FontsManagerApi {
 	constructor(
 		private readonly read: () => Promise<FontsManagerSnapshot>,
-		private readonly selectDefault: (family: string | null) => Promise<FontsManagerSnapshot>,
-		private readonly add: (input: InstallManagedFontInput) => Promise<FontsManagerSnapshot>,
-		private readonly drop: (id: string) => Promise<FontsManagerSnapshot>,
+		private readonly selectDefault: (family: string | null) => Promise<void>,
+		private readonly add: (input: InstallManagedFontInput) => Promise<void>,
+		private readonly drop: (id: string) => Promise<void>,
 	) {
 		super()
 	}
@@ -621,23 +1007,23 @@ class FontsManagerRpc extends RpcTarget implements FontsWorkbenchCommands {
 		return this.read()
 	}
 
-	setDefaultFamily(family: string | null): Promise<FontsManagerSnapshot> {
+	setPreferredFamily(family: string | null): Promise<void> {
 		return this.selectDefault(family)
 	}
 
-	install(input: InstallManagedFontInput): Promise<FontsManagerSnapshot> {
+	install(input: InstallManagedFontInput): Promise<void> {
 		return this.add(input)
 	}
 
-	remove(id: string): Promise<FontsManagerSnapshot> {
+	remove(id: string): Promise<void> {
 		return this.drop(id)
 	}
 }
 
-class FontSelectionRpc extends RpcTarget implements FontSelectionCommands {
+class FontSelectionRpc extends RpcTarget implements FontSelectionApi {
 	constructor(
 		private readonly read: () => Promise<FontSelectionSnapshot>,
-		private readonly selectDefault: (family: string | null) => Promise<FontSelectionSnapshot>,
+		private readonly selectDefault: (family: string | null) => Promise<void>,
 	) {
 		super()
 	}
@@ -646,7 +1032,7 @@ class FontSelectionRpc extends RpcTarget implements FontSelectionCommands {
 		return this.read()
 	}
 
-	setDefaultFamily(family: string | null): Promise<FontSelectionSnapshot> {
+	setPreferredFamily(family: string | null): Promise<void> {
 		return this.selectDefault(family)
 	}
 }
@@ -673,7 +1059,7 @@ function normalizeManagedInput(
 	return Object.freeze({
 		fileName,
 		...(family ? { family } : {}),
-		data: Uint8Array.from(input.data),
+		data: input.data,
 	})
 }
 
@@ -685,6 +1071,108 @@ function normalizeFamily(value: unknown): string | undefined {
 		throw new FontsError('INVALID_INPUT', 'Font family alias is invalid')
 	}
 	return family
+}
+
+function normalizeSignal(value: unknown): AbortSignal | undefined {
+	if (value === undefined) return undefined
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		typeof (value as AbortSignal).aborted !== 'boolean' ||
+		typeof (value as AbortSignal).addEventListener !== 'function' ||
+		typeof (value as AbortSignal).removeEventListener !== 'function'
+	) {
+		throw new FontsError('INVALID_INPUT', 'signal must be an AbortSignal')
+	}
+	return value as AbortSignal
+}
+
+function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readonly<{
+	signal: AbortSignal
+	dispose(): void
+}> {
+	const controller = new AbortController()
+	const listeners: Array<Readonly<{ signal: AbortSignal; listener: () => void }>> = []
+	for (const signal of signals) {
+		if (!signal) continue
+		if (signal.aborted) {
+			controller.abort(signal.reason)
+			break
+		}
+		const listener = () => controller.abort(signal.reason)
+		signal.addEventListener('abort', listener, { once: true })
+		listeners.push({ signal, listener })
+	}
+	return Object.freeze({
+		signal: controller.signal,
+		dispose(): void {
+			for (const { signal, listener } of listeners) signal.removeEventListener('abort', listener)
+		},
+	})
+}
+
+async function readBoundedFontFile(
+	path: string,
+	maxBytes: number,
+	signal: AbortSignal,
+): Promise<Buffer> {
+	signal.throwIfAborted()
+	const handle = await open(path, 'r')
+	try {
+		const file = await handle.stat()
+		if (!file.isFile()) throw new TypeError('Path is not a file')
+		if (!Number.isSafeInteger(file.size) || file.size <= 0) {
+			throw new FontsError('INVALID_INPUT', 'Font file must not be empty')
+		}
+		if (file.size > maxBytes) {
+			throw new FontsError(
+				'FONT_TOO_LARGE',
+				`Font is ${file.size} bytes; the configured limit is ${maxBytes}`,
+			)
+		}
+		const data = Buffer.allocUnsafe(file.size)
+		const chunkBytes = 1024 * 1024
+		let offset = 0
+		while (offset < data.byteLength) {
+			signal.throwIfAborted()
+			const { bytesRead } = await handle.read(
+				data,
+				offset,
+				Math.min(chunkBytes, data.byteLength - offset),
+				offset,
+			)
+			if (bytesRead === 0) throw new Error('Font file changed while it was being read')
+			offset += bytesRead
+		}
+		signal.throwIfAborted()
+		const probe = Buffer.allocUnsafe(1)
+		const probeResult = await handle.read(probe, 0, 1, data.byteLength)
+		if (probeResult.bytesRead !== 0) {
+			throw new Error('Font file changed while it was being read')
+		}
+		return data
+	} finally {
+		await handle.close()
+	}
+}
+
+async function snapshotBytes(
+	data: Uint8Array,
+	signal: AbortSignal | undefined,
+): Promise<Uint8Array> {
+	if (signal?.aborted) throw abortReason(signal, 'Font byte snapshot aborted')
+	const snapshot = new Uint8Array(data.byteLength)
+	const chunkBytes = 1024 * 1024
+	for (let offset = 0; offset < data.byteLength; offset += chunkBytes) {
+		if (offset > 0) await new Promise<void>((resolve) => setImmediate(resolve))
+		if (signal?.aborted) throw abortReason(signal, 'Font byte snapshot aborted')
+		snapshot.set(data.subarray(offset, Math.min(offset + chunkBytes, data.byteLength)), offset)
+	}
+	return snapshot
+}
+
+function abortReason(signal: AbortSignal, fallback: string): Error {
+	return signal.reason instanceof Error ? signal.reason : new DOMException(fallback, 'AbortError')
 }
 
 function hasControlCharacters(value: string): boolean {
@@ -819,9 +1307,5 @@ function changedFamilies(before: ReadonlyMap<string, string>): readonly string[]
 	)
 }
 
-export { FontsConfig, type FontsPluginConfig }
-export type {
-	DefaultFontSnapshot,
-	FontFamilySnapshot,
-	FontStyleSnapshot,
-} from './workbench-contract.ts'
+export { FontsConfig, FontsError, type FontsErrorCode, type FontsPluginConfig }
+export type { DefaultFontSnapshot, FontFamilySnapshot, FontStyleSnapshot } from './workbench.ts'

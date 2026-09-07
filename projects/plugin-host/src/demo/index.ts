@@ -1,6 +1,6 @@
 // Start here: the smallest, most standard authoring paths.
-export * from './PluginFeatureConfigDemo'
-export * from './PluginFeatureDepsDemo'
+export * from './PluginCompositionConfigDemo'
+export * from './PluginOptionalIntegrationDemo'
 
 // Capability-specific communication and UI integration.
 export * from './PluginContributionFontDemo'

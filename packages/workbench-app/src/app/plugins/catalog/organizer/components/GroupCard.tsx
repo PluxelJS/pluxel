@@ -1,5 +1,5 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ActionIcon, Badge, Box, Collapse, Flex, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { ActionIcon, Box, Collapse, Flex, Group, Stack, Text, Tooltip } from '@mantine/core'
 import { IconChevronDown, IconChevronRight, IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
@@ -13,13 +13,14 @@ import {
 import type { GroupConfig } from '../types'
 import type { RowDensity } from '../constants'
 import { DroppableContainer } from './DroppableContainer'
-import { SortableRow } from './SortableRow'
+import { SortableRow, type RowMeta } from './SortableRow'
 
 type Props = {
 	g: GroupConfig
 	visibleIds: string[]
 	runningSet: Set<string>
-	enabledSet: Set<string>
+	availableSet: Set<string>
+	desiredRunningSet: Set<string>
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	focusedId: string | null
@@ -36,7 +37,7 @@ type Props = {
 	isCollapsed: boolean
 	toggleCollapse: () => void
 	getName: (id: string) => string
-	getMeta: (id: string) => { tag?: string; version?: string }
+	getMeta: (id: string) => RowMeta
 	getItemSortableId: (id: string) => UniqueIdentifier
 	dh: RowDensity
 	locked: boolean
@@ -47,7 +48,8 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 		g,
 		visibleIds,
 		runningSet,
-		enabledSet,
+		availableSet,
+		desiredRunningSet,
 		selectedSet,
 		activeSet,
 		focusedId,
@@ -112,14 +114,21 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 							</Text>
 						</Tooltip>
 					</Box>
-					<Badge
-						size="xs"
-						variant="light"
-						color={stat.running > 0 ? 'brand' : 'gray'}
-						style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+					<Tooltip
+						label={`运行中 ${stat.running} / 共 ${stat.total} 个插件`}
+						withinPortal
+						withArrow
 					>
-						{stat.running}/{stat.total}
-					</Badge>
+						<Text
+							component="span"
+							size="xs"
+							c="dimmed"
+							style={{ flexShrink: 0 }}
+							aria-label={`运行中 ${stat.running} / 共 ${stat.total} 个插件`}
+						>
+							{stat.total}
+						</Text>
+					</Tooltip>
 				</Group>
 
 				<Group gap={2} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
@@ -180,7 +189,8 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 									pid={id}
 									name={getName(id)}
 									running={runningSet.has(id)}
-									enabled={enabledSet.has(id)}
+									available={availableSet.has(id)}
+									desiredRunning={desiredRunningSet.has(id)}
 									selected={selectedSet.has(id)}
 									active={activeSet.has(id)}
 									focused={focusedId === id}

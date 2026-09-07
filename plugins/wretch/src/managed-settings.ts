@@ -1,6 +1,11 @@
-import type { PersistenceNamespace } from '@pluxel/runtime'
+import {
+	parsePluginNodeAddress,
+	pluginNodeAddressEqual,
+	type PersistenceNamespace,
+	type PluginNodeAddress,
+} from '@pluxel/runtime'
 import type { Dispatcher } from 'undici'
-import type { WretchManagedSettings } from './workbench-contract.ts'
+import type { WretchManagedSettings } from './workbench.ts'
 
 const MAX_HEADERS = 32
 const MAX_HEADER_VALUE_LENGTH = 4_096
@@ -23,6 +28,7 @@ const TRANSPORT_HEADERS = new Set([
 ])
 
 export type ManagedSettingsState = {
+	readonly owner: PluginNodeAddress
 	current: WretchManagedSettings
 	dispatcher?: Dispatcher
 	lock: AsyncLock
@@ -105,11 +111,12 @@ export function normalizeManagedSettings(input: unknown): WretchManagedSettings 
 		}
 		timeoutMs = value.timeoutMs
 	}
+	const proxyUrl = normalizedProxyUrl(value.proxyUrl)
 
 	return Object.freeze({
 		headers: Object.freeze(headers),
-		proxyUrl: normalizedProxyUrl(value.proxyUrl),
-		timeoutMs,
+		...(proxyUrl === undefined ? {} : { proxyUrl }),
+		...(timeoutMs === undefined ? {} : { timeoutMs }),
 	})
 }
 
@@ -122,12 +129,15 @@ async function dispatcherFor(proxyUrl?: string): Promise<Dispatcher | undefined>
 export async function loadManagedSettings(
 	storage: PersistenceNamespace,
 	key: string,
+	owner: PluginNodeAddress,
 ): Promise<ManagedSettingsState> {
+	const normalizedOwner = parsePluginNodeAddress(owner)
 	const text = await storage.getText(key)
-	const current = text === undefined ? emptySettings() : normalizeManagedSettings(JSON.parse(text))
+	const settings = text === undefined ? emptySettings() : parseStoredSettings(text, normalizedOwner)
 	return {
-		current,
-		dispatcher: await dispatcherFor(current.proxyUrl),
+		owner: normalizedOwner,
+		current: settings,
+		dispatcher: await dispatcherFor(settings.proxyUrl),
 		lock: new AsyncLock(),
 	}
 }
@@ -146,7 +156,7 @@ export async function replaceManagedSettings(
 	return state.lock.run(async () => {
 		const dispatcher = await dispatcherFor(next.proxyUrl)
 		try {
-			await storage.put(key, JSON.stringify(next), { atomic: true })
+			await storage.put(key, serializeStoredSettings(state.owner, next), { atomic: true })
 		} catch (error) {
 			await dispatcher?.close()
 			throw error
@@ -156,6 +166,46 @@ export async function replaceManagedSettings(
 		state.dispatcher = dispatcher
 		await previous?.close()
 		return state.current
+	})
+}
+
+function parseStoredSettings(
+	text: string,
+	expectedOwner: PluginNodeAddress,
+): WretchManagedSettings {
+	const input = JSON.parse(text) as unknown
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError('Managed Wretch settings file must be an object')
+	}
+	const record = input as Record<string, unknown>
+	const keys = Object.keys(record)
+	if (
+		keys.length !== 4 ||
+		!keys.includes('format') ||
+		!keys.includes('version') ||
+		!keys.includes('owner') ||
+		!keys.includes('settings') ||
+		record.format !== 'pluxel-wretch-managed-settings' ||
+		record.version !== 2
+	) {
+		throw new TypeError('Managed Wretch settings file has an unsupported format')
+	}
+	const owner = parsePluginNodeAddress(record.owner)
+	if (!pluginNodeAddressEqual(owner, expectedOwner)) {
+		throw new TypeError('Managed Wretch settings owner does not match its storage key')
+	}
+	return normalizeManagedSettings(record.settings)
+}
+
+function serializeStoredSettings(
+	owner: PluginNodeAddress,
+	settings: WretchManagedSettings,
+): string {
+	return JSON.stringify({
+		format: 'pluxel-wretch-managed-settings',
+		version: 2,
+		owner,
+		settings,
 	})
 }
 

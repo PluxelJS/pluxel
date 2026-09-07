@@ -1,6 +1,6 @@
 # valibot-form
 
-Valibot schema metadata for software configuration forms.
+Valibot schema-driven field planning for software configuration forms.
 
 The package is split into a lightweight core entry and optional UI adapters:
 
@@ -18,12 +18,12 @@ export const configSchema = v.object({
 		v.number(),
 		v.minValue(1),
 		v.maxValue(65535),
-		f.formMeta({ label: 'Port', description: 'HTTP listen port' }),
+		f.formMeta({ title: 'Port', description: 'HTTP listen port' }),
 		f.numberMeta({ step: 1 }),
 	),
 	mode: v.pipe(
 		v.picklist(['development', 'production'] as const),
-		f.formMeta({ label: 'Mode' }),
+		f.formMeta({ title: 'Mode' }),
 		f.picklistMeta({
 			control: 'segmented',
 			labels: {
@@ -35,6 +35,12 @@ export const configSchema = v.object({
 })
 ```
 
+`formMeta()` groups `title` and `description` with form presentation preferences. It emits a standard
+Valibot `metadata()` action, so schema tooling and the form planner read the same title and description.
+Requiredness, choices, formats, and validation bounds still come directly from Valibot schemas and
+validation actions. Type-specific metadata factories only add presentation choices such as layout,
+placeholders, and control variants.
+
 For renderers or tools, inspect the schema without importing React or Mantine:
 
 ```ts
@@ -42,6 +48,20 @@ import { extractFormFields } from 'valibot-form'
 
 const fields = extractFormFields(configSchema)
 ```
+
+Host/build tooling that needs to transport one raw input path can use the same core entry without running validation or defaults:
+
+```ts
+import { projectRawInput } from 'valibot-form'
+
+const projection = projectRawInput(configSchema, ['port'])
+if (projection.ok) {
+	console.log(projection.transport) // number
+	console.log(projection.inputDescription) // number (finite, >= 1, <= 65535)
+}
+```
+
+`projectRawInput()` stays on the pre-transform side of a Valibot schema. It structurally derives `string`, `number`, `boolean`, or `json` transport plus portable descriptions/constraints; it never calls validation, transforms, lazy getters, or default getters. Missing, ambiguous, custom, `unknown`, and otherwise non-unique scalar targets return a discriminated failure instead of guessing a codec.
 
 ## Web Adapter
 
@@ -69,16 +89,3 @@ export function ConfigEditor() {
 	)
 }
 ```
-
-## TUI Adapter Direction
-
-A terminal UI should be a separate adapter rather than a replacement for `valibot-form/web`.
-
-Recommended shape:
-
-- Keep `valibot-form` as the shared schema metadata and field planning layer.
-- Add a separate package or subpath, for example `valibot-form/tui`.
-- Depend on a terminal renderer there, such as Ink for React-style TUIs or a prompt library for simple sequential setup flows.
-- Reuse `extractFormFields()` so web, TUI, CLI, and config-file tooling interpret schemas the same way.
-
-This keeps startup configuration lightweight while still allowing richer web configuration screens where Mantine already exists in the host app.

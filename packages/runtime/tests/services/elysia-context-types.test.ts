@@ -1,16 +1,14 @@
 import '@pluxel/runtime/test'
 
-import type { Context as PluginContext } from '@pluxel/core'
+import type { PluginContext, RootContext } from '@pluxel/core'
+import type { Elysia } from 'elysia'
 import { expectTypeOf, it } from 'vitest'
 
-import { createElysiaApp } from '@pluxel/runtime'
-
-it('decorates plugin context onto Elysia handlers', () => {
+it('exposes native Elysia only on Plugin generation contexts', () => {
 	const pluginCtx = {} as PluginContext
-	const app = createElysiaApp(pluginCtx)
+	expectTypeOf(pluginCtx.elysia).toEqualTypeOf<Elysia>()
 
-	app.get('/probe', (c) => {
-		expectTypeOf(c.pluginCtx).toEqualTypeOf<PluginContext>()
-		return 'ok'
-	})
+	const root = {} as RootContext
+	// @ts-expect-error Root Context does not author a Plugin generation application.
+	void root.elysia
 })

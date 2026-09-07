@@ -1,39 +1,38 @@
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import {
-	FontSettingsPort,
-	type FontSetDoc,
-	type FontSettingsCommands,
-} from './PluginContributionFontDemo.contract'
-import { jsonObjectSchema } from './wire-schema'
+import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import { workbench } from '@pluxel/runtime/workbench'
+import type { FontRef, FontSet } from './PluginContributionFontDemo.shared'
 
-export const FontManagerUi = workbenchContract.define({
-	resources: {
-		fontSets: workbenchContract.liveQuery({ row: jsonObjectSchema<FontSetDoc>(), key: 'id' }),
-	},
-	views: {
-		FontSettings: {
-			accepts: FontSettingsPort,
-		},
-	},
+export interface FontCatalogApi extends RpcTarget {
+	list(): readonly FontSet[]
+}
+
+export interface FontSelectionApi extends RpcTarget {
+	current(): FontRef | null
+	set(ref: FontRef | null): void
+}
+
+const selectionRenderer = workbench.entry(
+	import.meta.url,
+	'./PluginContributionFontDemo/ui/selection.tsx',
+)
+
+export const FontManagerWorkbench = workbench.define({
+	selection: workbench.attachment<FontCatalogApi, FontSelectionApi>({
+		renderer: selectionRenderer,
+	}),
 })
 
-export const FontConsumerUi = workbenchContract.define({
-	resources: { commands: workbenchContract.rpc<FontSettingsCommands>() },
-	views: {},
-	outlets: ({ resources }) => ({
-		AppearanceFont: {
-			placement: workbenchContract.tab({
-				order: 40,
+export const FontConsumerWorkbench = workbench.define({
+	appearanceFont: FontManagerWorkbench.selection.place(
+		workbench.tab({
+			label: 'Typography',
+			icon: workbench.icons.Typography,
+			group: {
+				id: 'typography',
 				label: 'Typography',
-				icon: workbenchContract.icons.Typography,
-				group: {
-					id: 'typography',
-					label: 'Typography',
-					icon: workbenchContract.icons.Typography,
-				},
-			}),
-			port: FontSettingsPort,
-			provide: { settings: resources.commands },
-		},
-	}),
+				icon: workbench.icons.Typography,
+			},
+			order: 40,
+		}),
+	),
 })

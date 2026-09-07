@@ -1,18 +1,32 @@
 # Fonts 插件设计
 
-`@pluxel/fonts` 是服务端渲染进程中字体事实与管理状态的唯一 owner。当前 native backend 是
-`@napi-rs/canvas` 的进程级 `GlobalFonts`。
+`@pluxel/fonts` 是服务端渲染进程中字体事实与管理状态的唯一 owner。Canvas native backend 是
+`@napi-rs/canvas` 的进程级 `GlobalFonts`；managed/caller sources 另外投影成 renderer-neutral portable bytes。
 
 ## 两类资源所有权
 
-- provider-owned managed collection：Workbench 上传、删除、统一默认值和持久化全部属于 FontsPlugin。provider
+- provider-owned managed collection：字体、统一 preference 和持久化全部属于 FontsPlugin。provider
   启动自动恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
   graph 语义被阻塞。
 - caller-owned programmatic registration：业务包随代码携带的字体可调用 `register()` / `registerFromPath()`，但
   native key 仍封装在 FontsPlugin 内。caller stop/replacement 自动删除，handle 只提供幂等提前 `dispose()`。
 
-两类资源分别使用 `maxManagedFonts` 和 `maxRegistrationsPerConsumer`，不会让某个 renderer 的代码字体挤占统一上传
-集合，也不会因 Canvas/ECharts stop 卸载所有 renderer 正在使用的 managed font。
+两类资源分别使用 `maxManagedFonts` 和 `maxRegistrationsPerConsumer`，并共同受 provider node 的
+`maxNativeRegistrations` 与 `maxTotalFontBytes` 约束；某个 renderer 的代码字体不会挤占统一上传集合，也不会因 Canvas/ECharts stop 卸载
+其他 renderer 正在使用的 managed font。
+
+程序化 `register()` / `registerFromPath()` 和 `readPortableFont()` 是可取消 async contract：路径用 opened handle 先检查
+file type/size，再按 1 MiB chunk 读入固定上限 Buffer，并检测读取期间的 truncate/grow；不使用 stat 后无界 `readFile()`。
+大 byte snapshot、内容寻址 hash 和 managed record 编解码分片让出 event loop，并在真正 registry mutation 前再次检查
+caller/provider generation 与 capacity。最终
+`GlobalFonts.register()`/remove 是进程 registry 的有界同步 commit，不伪装成可取消 native task。
+
+caller-triggered register/path-read/portable-read 在任何 copy、文件 IO 或 hash 前进入 generation-local owner-fair scheduler，
+同时约束 active、global queue 与 per-owner queue。caller stop 会 abort active cooperative task 并 O(1) 撤销 queued item；
+provider stop 拒绝 queue、等待 active task 与 managed/default serialization tail，再清理 native keys，避免新旧 generation
+的 registry mutation 重叠。
+Managed mutation 继续使用单独的 serialized tail，以保持 storage/registry transaction 顺序；该 tail 的 accepted
+operation 数受 `maxPendingManagedTasks` 限制，queue full 不先 snapshot upload bytes。
 
 provider restart、rollback 或 shutdown 会批量移除仍存活的 key，但绝不调用 `GlobalFonts.removeAll()`，因此不会破坏
 系统字体或进程中不属于 Pluxel 的注册。`families` 是 detached snapshot，不是可修改 native registry。
@@ -23,7 +37,7 @@ provider restart、rollback 或 shutdown 会批量移除仍存活的 key，但�
 provider generation 启动时捕获 baseline，并在 `families[].source` 中区分后续 registration。不建立第二套目录
 scanner/watcher；进程中后来安装的系统字体在 provider/process restart 后出现。
 
-默认 family 解析顺序为：持久化 Workbench override、host `defaultFamily`、操作系统已安装字体优先表、
+默认 family 解析顺序为：持久化 provider preference、host `defaultFamily`、操作系统已安装字体优先表、
 `sans-serif` generic。`defaultFont` 同时给出 raw family 与 CSS-safe family。选择 mutation 在 provider queue 中串行并
 原子持久化；选择暂时不可用时保留 preference、运行期降级，family 重现后自动恢复。
 
@@ -33,18 +47,38 @@ caller-local shadow。`revision` 跟随 FontsPlugin 管理的 native registratio
 `defaultFont` 与 detached `families` snapshot 按该 revision 缓存并冻结；重复 renderer 调用不再扫描 native registry，
 registration/selection 变化仍会在下一次读取时原子生成新 snapshot。
 
-## Workbench 与 Port
+## 可移植 renderer 资源
 
-FontsPlugin 的正常 Workbench View 持有内部 manager RPC，只有这里提供上传和删除；完整 manager contract 不从包的
-Workbench 子入口导出。`FontsSelectionPort` 是复用同一 renderer bundle 的窄投影：Canvas、ECharts 或第三方 consumer
-选择 placement，绑定 `selectionManager()`，Port UI 只列出 FontsPlugin 的候选并修改统一默认值。
+managed record 和 caller registration 保存内容寻址 source；同一 bytes + family alias 共享 portable ID/refcount。持久化恢复先按
+`maxFontBytes + envelope overhead` 拒绝过大 record，decoder 再在分配/copy/hash payload 前验证 key ID、声明长度与
+`installedAt`，使损坏数据快速失败。
+`portableFonts` 只返回按 resource revision 缓存的 frozen metadata，`readPortableFont(id)` 才复制 bytes，避免 renderer
+轮询 revision 时复制整个 collection。最后一个 registration 释放时撤销 source；provider stop 清除当前 generation
+全部 source。System discovery 不暴露可信 file path/bytes，因此 system-only family 不进入 portable snapshot。
 
-因此 Port outlet 的 resource grant/placement 属于 consumer，字体集合与 mutation 实现仍属于 provider；关闭
-Workbench 只消除 UI artifact、resource 和 transport，不影响 managed collection、默认选择或服务端渲染。
+这条 contract 服务所有拥有独立 font registry 的 renderer，不暴露 `GlobalFonts` 或 Takumi type。没有为字体创建
+Runtime Context special case：Fonts 仍是正常 Plugin capability，consumer 通过 required edge、caller facade 与 lifecycle
+使用它。
+
+## Workbench View 与 Attachment
+
+`FontsWorkbench.manager` 是 FontsPlugin 自己放置的 direct View；`FontsWorkbench.selection` 是 provider-owned、
+provider-only Attachment。Canvas、ECharts、Takumi 或第三方 consumer 只调用 `selection.place(...)` 并绑定其 required
+`FontsPlugin` handle，不创建无状态 consumer target。两个 renderer 都是零 props component，并使用各自的
+descriptor-bound scope/query/mutation 取得 exact Cap'n Web root；DTO detach/dispose、远端请求关闭与 mutation 后刷新
+由 scope owner 负责。Manager 只为 `File.arrayBuffer()` 保留本地 operation/unmount guard：该浏览器 API 不接受
+`AbortSignal`，guard 在读取完成后阻止 late RPC，但不声称能中止已开始的文件读取。
+
+Workbench mutation 是 command：成功只返回 `void`。完整 catalog/selection snapshot 只由 query 传输；mutation settle
+后失效对应 query，避免同一次写入把大 DTO 作为 mutation result 和 refetch result 发送两遍。
+
+Managed collection 是 Fonts domain state，不是 Workbench 概念。Definition 不按字体/collection 动态增长，字体 CRUD
+不会创建 View、Attachment、MF expose 或 layout revision。关闭 Workbench 只消除 UI publication 和 opened roots，不影响
+collection 恢复、`setPreferredFamily()`、portable bytes 或服务端渲染。
 
 ## 有意不包含
 
-- per-renderer 上传集合或按 consumer 复制字体 bytes；
+- per-renderer 上传集合；portable bytes 只在 consumer 明确 read 时生成 detached copy；
 - Workbench 服务端路径选择、URL 下载或浏览器字体分发；
 - `GlobalFonts`、`FontKey`、`removeAll()` 或可变 registry 的公开逃生口；
 - 为单个 native backend 增加 runtime/core 特例。

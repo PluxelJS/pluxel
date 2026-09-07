@@ -1,6 +1,8 @@
 import { getConsoleSink, type LogRecord, type Sink } from '@logtape/logtape'
 import { getPrettyFormatter } from '@logtape/pretty'
+import { formatPluginNodeReference } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
+import { formatPluginNodeStandaloneLabel } from '../runtime/plugin-label'
 import { formatPrettyTimestamp, isReservedLogProperty } from './host'
 import { toPlainObject } from './serialization'
 
@@ -14,6 +16,7 @@ export function createRuntimePrettyConsoleSink(options: {
 		timestampColor: null,
 		timestampStyle: null,
 		categoryStyle: null,
+		categoryTruncate: false,
 		messageStyle: null,
 		properties: true,
 	})
@@ -23,7 +26,7 @@ export function createRuntimePrettyConsoleSink(options: {
 			const caller = options.caller ? readCaller(record) : undefined
 			const rendered = formatter({
 				...record,
-				category: displayCategory(record.category),
+				category: displayCategory(record),
 				properties: displayProperties(record),
 			})
 			return caller ? `${rendered}  ⤷ ${caller}` : rendered
@@ -31,15 +34,34 @@ export function createRuntimePrettyConsoleSink(options: {
 	})
 }
 
-function displayCategory(category: readonly string[]): string[] {
+function displayCategory(record: LogRecord): string[] {
+	const category = record.category
 	if (category[0] === 'pluxel' && category[1] === 'debug') {
-		const topicStart = category[3] === 'plugin' ? 5 : 4
-		return ['debug', category.slice(topicStart).join(':')]
+		const plugin = readPluginLogIdentity(category)
+		const topicStart = plugin?.topicOffset ?? 4
+		return plugin
+			? [
+					'plugin',
+					displayPluginIdentity(record, plugin.node),
+					'debug',
+					category.slice(topicStart).join(':'),
+				]
+			: ['debug', category.slice(topicStart).join(':')]
 	}
 	const plugin = readPluginLogIdentity(category)
-	if (plugin) return ['plugin', plugin.pluginId]
+	if (plugin) return ['plugin', displayPluginIdentity(record, plugin.node)]
 	if (category[0] === 'pluxel' && category[1] === 'runtime') return ['runtime']
 	return [...category]
+}
+
+function displayPluginIdentity(
+	record: LogRecord,
+	nodeAddress: import('@pluxel/core').PluginNodeAddress,
+): string {
+	const displayName = record.properties.pluginDisplayName
+	return typeof displayName === 'string'
+		? formatPluginNodeStandaloneLabel(nodeAddress, displayName)
+		: formatPluginNodeReference(nodeAddress)
 }
 
 function displayProperties(record: LogRecord): Record<string, unknown> {

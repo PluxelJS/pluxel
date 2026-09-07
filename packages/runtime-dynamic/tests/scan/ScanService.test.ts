@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createHost } from '@pluxel/test'
 import { createDiskFixture, createFixture } from '@pluxel/test/fixtures'
+import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { normalize } from 'pathe'
 import { type EntryResolutionOk, ScanService } from '../../src/scan/ScanService'
 
@@ -58,7 +58,7 @@ function createService(
 	root: string,
 	overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {},
 ): ScanService & AsyncDisposable {
-	const host = createHost()
+	const host = createRuntimeInternalTestHost({ workbench: false })
 	const service = new ScanService(host.ctx, {
 		roots: root,
 		installedBase: root,
@@ -76,18 +76,20 @@ function asPosix(input: string) {
 }
 
 describe('ScanService', () => {
-	it('emits resolverCacheInvalidated through internalEvent', async () => {
+	it('notifies explicit resolver invalidation subscribers', async () => {
 		const internalEmit = vi.fn()
 		await using service = createService('/tmp')
-		service.ctx.internalEvent.resolverCacheInvalidated.on(internalEmit)
+		const unsubscribe = service.subscribeResolverInvalidated(internalEmit)
 
-		service.invalidateResolverCache({ by: 'test', reason: 'unit', targets: ['x'] })
+		service.invalidateResolverCache({ by: 'test', reason: 'unit' })
 		const detail = {
 			by: 'test',
 			reason: 'unit',
-			targets: ['x'],
 		}
 		expect(internalEmit).toHaveBeenCalledWith(detail)
+		unsubscribe()
+		service.invalidateResolverCache({ by: 'test', reason: 'after-unsubscribe' })
+		expect(internalEmit).toHaveBeenCalledTimes(1)
 	})
 
 	it('resolves entry by package name inside workspace', async () => {

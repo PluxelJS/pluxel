@@ -3,16 +3,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { traceNodeModules } from 'nf3'
 import { describe, expect, it, vi } from 'vitest'
-import {
-	WORKBENCH_SHELL_BUILD_INFO_FILE,
-	WORKBENCH_SHELL_BUILD_INFO_VERSION,
-} from '@pluxel/core/federation'
 
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
-import {
-	assertWorkbenchShellContractProtocol,
-	staticApplication,
-} from '../src/cli/static-application.ts'
+import { staticApplication } from '../src/cli/static-application.ts'
+import { readPublicElysiaSpecifiers } from '../src/cli/elysia-singleton.ts'
+import { createPluginSourceVitePipeline } from '../src/vite/plugin-source.ts'
 
 vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
 
@@ -25,7 +20,14 @@ function pluginNames(config: { plugins?: unknown }): string[] {
 describe('staticApplication', () => {
 	it('exposes one standard plugin package preset and shared source pipeline', () => {
 		const pipeline = createPluginBuildPipeline({ root: '/tmp/pluxel-plugin-package' })
-		const config = pluginPackage({ root: '/tmp/pluxel-plugin-package' })
+		const config = pluginPackage({
+			root: '/tmp/pluxel-plugin-package',
+			packageMetadata: {
+				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
+				manifestField: 'pluxel',
+				log: () => undefined,
+			},
+		})
 
 		expect(pluginNames(config)).toEqual(pluginNames(pipeline))
 		expect(pluginNames(config)).toEqual([
@@ -41,7 +43,7 @@ describe('staticApplication', () => {
 		expect(config.exports).toEqual({ devExports: '@pluxel/hmr' })
 		expect(config.inputOptions?.transform?.decorator).toEqual({
 			legacy: true,
-			emitDecoratorMetadata: true,
+			emitDecoratorMetadata: false,
 		})
 	})
 
@@ -51,12 +53,28 @@ describe('staticApplication', () => {
 			packageMetadata: {
 				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
 				manifestField: 'pluxel',
-				prefixes: ['pluxel-plugin'],
 				log: () => undefined,
 			},
 		})
 		expect(pluginNames(config).filter((name) => name === 'pluxel:plugin-semantics')).toHaveLength(1)
 		expect(config.onSuccess).toBeTypeOf('function')
+	})
+
+	it('exposes one concrete Vite source pipeline and its sole semantic collector', () => {
+		const pipeline = createPluginSourceVitePipeline({
+			root: '/tmp/pluxel-plugin-source',
+			lintGuard: false,
+			configSource: false,
+		})
+		expect(pluginNames(pipeline)).toEqual([
+			'unplugin-preprocessor-directives',
+			'pluxel:database-source',
+			'pluxel:plugin-semantics',
+			'pluxel:runtime-source',
+		])
+		expect(pipeline.semantics.workbenchPlans).toBeTypeOf('function')
+		expect(pipeline.semantics.classifyDefinitionArtifact).toBeTypeOf('function')
+		expect(pipeline.semantics.beginArtifactGeneration).toBeTypeOf('function')
 	})
 
 	it('runs the final output guard after caller-supplied compiler plugins', () => {
@@ -76,6 +94,8 @@ describe('staticApplication', () => {
 			entry: './src/pluxel.static.ts',
 			variant: 'headless',
 			target: 'node',
+			sourcemap: true,
+			sourcemapExcludeSources: true,
 			lint: false,
 		})
 
@@ -83,11 +103,204 @@ describe('staticApplication', () => {
 		expect(config.target).toBe('node24')
 		expect(pluginNames(config)).toContain('pluxel:nf3-externals')
 		expect(pluginNames(config)).toContain('pluxel:decorator-output-guard')
+		expect(pluginNames(config).indexOf('pluxel:static-elysia-singleton')).toBeLessThan(
+			pluginNames(config).indexOf('unplugin-preprocessor-directives'),
+		)
 		expect(config.inputOptions?.transform?.decorator).toEqual({
 			legacy: true,
-			emitDecoratorMetadata: true,
+			emitDecoratorMetadata: false,
 		})
 		expect(config.entry).toEqual({ app: 'pluxel:static-application-bootstrap' })
+		expect(config.sourcemap).toBe(true)
+		expect(config.outputOptions).toMatchObject({ sourcemapExcludeSources: true })
+	})
+
+	it('assembles Node artifacts from every package reachable through the server bundle', async () => {
+		const applicationArtifactKey = 'node-1111111111111111'
+		const dependencyArtifactKey = 'node-2222222222222222'
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-static-node-artifacts-'))
+		const outDir = join(root, 'dist')
+		const dependencyRoot = join(root, 'dependency')
+		const dependencyEntry = join(dependencyRoot, 'dist/index.mjs')
+		const applicationEntry = join(root, 'src/pluxel.static.ts')
+		try {
+			await mkdir(join(outDir, 'artifacts/node'), { recursive: true })
+			await mkdir(dirname(applicationEntry), { recursive: true })
+			await mkdir(dirname(dependencyEntry), { recursive: true })
+			await mkdir(join(dependencyRoot, 'dist/artifacts/node'), { recursive: true })
+			await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'fixture-application' }))
+			await writeFile(
+				join(dependencyRoot, 'package.json'),
+				JSON.stringify({ name: 'fixture-dependency' }),
+			)
+			await writeFile(
+				applicationEntry,
+				[
+					"import { defineStaticRuntime } from '@pluxel/runtime-static'",
+					"export default defineStaticRuntime({ name: 'fixture-application', plugins: [] })",
+				].join('\n'),
+			)
+			await writeFile(dependencyEntry, 'export const dependency = true\n')
+			await writeFile(
+				join(dependencyRoot, `dist/artifacts/node/${dependencyArtifactKey}.mjs`),
+				'export default function dependencyWorker() {}\n',
+			)
+			await writeFile(join(outDir, 'app.mjs'), 'export const start = () => undefined\n')
+			await writeFile(
+				join(outDir, `artifacts/node/${applicationArtifactKey}.mjs`),
+				'export default function applicationWorker() {}\n',
+			)
+
+			const config = staticApplication({
+				cwd: root,
+				entry: './src/pluxel.static.ts',
+				outDir,
+				variant: 'headless',
+				lint: false,
+			})
+			const declarationPlugin = (
+				config.plugins as Array<{ name?: string; buildStart?: unknown }>
+			).find((candidate) => candidate?.name === 'pluxel-static-application-declaration')
+			await (
+				declarationPlugin?.buildStart as
+					| ((this: { error(message: string): never }) => Promise<void>)
+					| undefined
+			)?.call({
+				error(message): never {
+					throw new Error(message)
+				},
+			})
+			const plugin = (config.plugins as Array<{ name?: string; writeBundle?: unknown }>).find(
+				(candidate) => candidate?.name === 'pluxel-static-application-assembly',
+			)
+			const writeBundle = (
+				plugin?.writeBundle as
+					| {
+							handler?: (options: object, bundle: object) => Promise<void>
+					  }
+					| undefined
+			)?.handler
+
+			await writeBundle?.(
+				{},
+				{
+					'app.mjs': {
+						type: 'chunk',
+						fileName: 'app.mjs',
+						isEntry: true,
+						imports: [],
+						dynamicImports: [],
+						modules: { [dependencyEntry]: {} },
+						code: `export const artifacts = [${JSON.stringify(applicationArtifactKey)}, ${JSON.stringify(dependencyArtifactKey)}]\n`,
+					},
+				},
+			)
+
+			const deployment = JSON.parse(
+				await readFile(join(outDir, 'pluxel-deployment.json'), 'utf8'),
+			) as {
+				capabilities: { nodeModules: { artifacts: Array<{ key: string }> } }
+			}
+			expect(deployment.capabilities.nodeModules.artifacts.map(({ key }) => key)).toEqual([
+				applicationArtifactKey,
+				dependencyArtifactKey,
+			])
+			await expect(
+				readFile(join(outDir, `artifacts/node/${dependencyArtifactKey}.mjs`), 'utf8'),
+			).resolves.toContain('dependencyWorker')
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('bridges every explicit public Elysia runtime export except package data', () => {
+		expect([
+			...readPublicElysiaSpecifiers({
+				exports: {
+					'.': './dist/index.mjs',
+					'./type': './dist/type.mjs',
+					'./websocket': './dist/websocket.mjs',
+					'./package.json': './package.json',
+					'./private/*': './dist/private/*.mjs',
+				},
+			}),
+		]).toEqual(['elysia', 'elysia/type', 'elysia/websocket'])
+	})
+
+	it('resolves Elysia public entries through the Runtime-owned package', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-static-elysia-'))
+		const runtimeManifest = join(root, 'runtime/package.json')
+		const elysiaManifest = join(root, 'runtime/node_modules/elysia/package.json')
+		const typeEntry = join(root, 'runtime/node_modules/elysia/dist/type/exports.mjs')
+		const typeboxValueEntry = join(root, 'runtime/node_modules/typebox/build/value/index.mjs')
+		const exactMirrorEntry = join(root, 'runtime/node_modules/exact-mirror/dist/index.mjs')
+		try {
+			await mkdir(dirname(elysiaManifest), { recursive: true })
+			await writeFile(
+				elysiaManifest,
+				JSON.stringify({ exports: { '.': './dist/index.mjs', './type': './dist/type.mjs' } }),
+			)
+			const config = staticApplication({
+				cwd: root,
+				entry: './src/pluxel.static.ts',
+				lint: false,
+			})
+			const plugin = (
+				config.plugins as Array<{
+					name?: string
+					buildStart?: unknown
+					resolveId?: unknown
+				}>
+			).find((candidate) => candidate?.name === 'pluxel:static-elysia-singleton')
+			const resolve = vi.fn(async (id: string, importer: string | undefined) => {
+				if (id === '@pluxel/runtime/package.json') return { id: runtimeManifest }
+				if (id === 'elysia/package.json') return { id: elysiaManifest }
+				if (id === 'elysia/type') return { id: typeEntry, external: true }
+				if (id === 'typebox/value') return { id: typeboxValueEntry, external: true }
+				if (id === 'exact-mirror') return { id: exactMirrorEntry, external: true }
+				throw new Error(`Unexpected resolution: ${id} from ${importer}`)
+			})
+			const context = {
+				resolve,
+				error(message: string): never {
+					throw new Error(message)
+				},
+			}
+			await (plugin?.buildStart as ((this: typeof context) => Promise<void>) | undefined)?.call(
+				context,
+			)
+			const resolveId = (plugin?.resolveId as { handler?: unknown } | undefined)?.handler as
+				| ((
+						this: typeof context,
+						id: string,
+						importer: string,
+						options: object,
+				  ) => Promise<unknown> | null)
+				| undefined
+			await expect(
+				resolveId?.call(context, 'elysia/type', join(root, 'plugin.ts'), {}),
+			).resolves.toEqual({ id: typeEntry, external: false })
+			expect(
+				resolveId?.call(context, 'elysia/package.json', join(root, 'plugin.ts'), {}),
+			).toBeNull()
+			await expect(
+				resolveId?.call(context, 'typebox/value', join(root, 'plugin.ts'), {}),
+			).resolves.toEqual({ id: typeboxValueEntry, external: false })
+			await expect(
+				resolveId?.call(context, 'exact-mirror', join(root, 'plugin.ts'), {}),
+			).resolves.toEqual({ id: exactMirrorEntry, external: false })
+			expect(resolve).toHaveBeenCalledWith('elysia/type', runtimeManifest, {
+				skipSelf: true,
+			})
+			expect(resolve).toHaveBeenCalledWith('typebox/value', elysiaManifest, {
+				skipSelf: true,
+			})
+			expect(resolve).toHaveBeenCalledWith('exact-mirror', elysiaManifest, {
+				skipSelf: true,
+			})
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 
 	it('rejects an unknown launcher instead of silently opening a listener', () => {
@@ -115,14 +328,52 @@ describe('staticApplication', () => {
 			}>
 		).find((candidate) => candidate?.name === 'pluxel-static-application-entry')
 		const resolved = plugin?.resolveId?.('pluxel:static-application-bootstrap')
-		const source = await plugin?.load?.(String(resolved))
+		const source = String(await plugin?.load?.(String(resolved)))
 
 		expect(resolved).toBe('\0pluxel:static-application-bootstrap')
 		expect(source).toContain('import * as __pluxelHostModule')
 		expect(source).toContain('/tmp/pluxel-static-node/src/pluxel.static.ts')
 		expect(source).toContain('readHostProduct as __readHostProduct')
+		expect(source.indexOf("import 'pluxel:static-elysia-wiring'")).toBeLessThan(
+			source.indexOf("from '@pluxel/runtime/internal/static-host'"),
+		)
+		expect(source.indexOf("from '@pluxel/runtime/internal/static-host'")).toBeLessThan(
+			source.indexOf('import * as __pluxelHostModule'),
+		)
 		expect(source).toContain('__pluxelHostModule.default')
 		expect(source).toContain('product: __pluxelProduct')
+	})
+
+	it('statically wires every Elysia TypeBox runtime namespace before the user module', async () => {
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-node',
+			entry: './src/pluxel.static.ts',
+			lint: false,
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				resolveId?: (id: string) => unknown
+				load?: (id: string) => unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel:static-elysia-singleton')
+		const resolveId = (plugin?.resolveId as { handler?: (id: string) => unknown } | undefined)
+			?.handler
+		const resolved = await resolveId?.('pluxel:static-elysia-wiring')
+		const source = String(await plugin?.load?.(String(resolved)))
+
+		expect(resolved).toBe('\0pluxel:static-elysia-wiring')
+		expect(source).toContain("from 'exact-mirror'")
+		for (const specifier of [
+			'typebox/compile',
+			'typebox/schema',
+			'typebox/system',
+			'typebox/type',
+			'typebox/value',
+		]) {
+			expect(source).toContain(`from '${specifier}'`)
+		}
+		expect(source).toContain('__setupTypebox({')
 	})
 
 	it('emits a fetch-only production bootstrap without a listener address', async () => {
@@ -175,6 +426,107 @@ describe('staticApplication', () => {
 			resolveId?.call({ resolve }, 'pg', '/tmp/pluxel-static-node/src/app.ts', {}),
 		).resolves.toMatchObject({ id: 'pg', external: true })
 		expect(resolve).toHaveBeenCalledWith('pg', '/tmp/pluxel-static-node/src/app.ts', {})
+	})
+
+	it('lowers disabled managed database drivers to explicit absent modules', async () => {
+		vi.mocked(traceNodeModules).mockClear()
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-private-database',
+			entry: './src/pluxel.static.ts',
+			variant: 'headless',
+			managedDatabaseDrivers: [],
+			lint: false,
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				resolveId?: unknown
+				load?: unknown
+				writeBundle?: unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel:nf3-externals')
+		const resolveId = plugin?.resolveId as
+			| ((
+					this: { resolve: ReturnType<typeof vi.fn> },
+					id: string,
+					importer: string,
+					options: object,
+			  ) => Promise<unknown>)
+			| undefined
+		const load = plugin?.load as ((id: string) => string | null) | undefined
+		const writeBundle = (
+			plugin?.writeBundle as { handler?: (this: object) => Promise<void> } | undefined
+		)?.handler
+		const resolve = vi.fn()
+
+		for (const [driver, entry, exportName] of [
+			['pglite', '#pluxel/database-driver/pglite', 'createPgliteDatabaseAdapter'],
+			['postgres', '#pluxel/database-driver/postgres', 'createPostgresDatabaseAdapter'],
+		] as const) {
+			const resolved = await resolveId?.call(
+				{ resolve },
+				entry,
+				'/tmp/pluxel-static-private-database/src/app.ts',
+				{},
+			)
+			expect(resolved).toBe(`\0pluxel:omitted-managed-database:${driver}`)
+			const source = load?.(String(resolved))
+			expect(source).toContain(`export async function ${exportName}()`)
+			expect(source).toContain(`managed database driver \\"${driver}\\" is not included`)
+		}
+		await writeBundle?.call({})
+
+		expect(resolve).not.toHaveBeenCalled()
+		expect(traceNodeModules).not.toHaveBeenCalled()
+	})
+
+	it('still traces application-private driver imports when managed drivers are omitted', async () => {
+		vi.mocked(traceNodeModules).mockClear()
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-private-postgres',
+			entry: './src/pluxel.static.ts',
+			managedDatabaseDrivers: [],
+			lint: false,
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				resolveId?: unknown
+				writeBundle?: unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel:nf3-externals')
+		const resolveId = plugin?.resolveId as
+			| ((
+					this: { resolve: ReturnType<typeof vi.fn> },
+					id: string,
+					importer: string,
+					options: object,
+			  ) => Promise<unknown>)
+			| undefined
+		const writeBundle = (
+			plugin?.writeBundle as { handler?: (this: object) => Promise<void> } | undefined
+		)?.handler
+		const entry = '/tmp/node_modules/pg/esm/index.mjs'
+		const resolve = vi.fn(async () => ({ id: entry }))
+
+		await expect(
+			resolveId?.call({ resolve }, 'pg', '/tmp/pluxel-static-private-postgres/src/app.ts', {}),
+		).resolves.toMatchObject({ id: 'pg', external: true })
+		await writeBundle?.call({})
+
+		expect(traceNodeModules).toHaveBeenCalledWith(
+			[entry],
+			expect.objectContaining({ rootDir: '/tmp/pluxel-static-private-postgres' }),
+		)
+	})
+
+	it('rejects unknown managed database drivers', () => {
+		expect(() =>
+			staticApplication({
+				entry: './src/pluxel.static.ts',
+				managedDatabaseDrivers: ['sqlite' as never],
+			}),
+		).toThrow('managedDatabaseDrivers[0] must be "pglite" or "postgres"')
 	})
 
 	it('traces declared runtime packages that are absent from the module graph', async () => {
@@ -303,41 +655,14 @@ describe('staticApplication', () => {
 		).toThrow('only the node target is currently supported')
 	})
 
-	it('rejects a stale Workbench shell contract protocol during static assembly', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-workbench-shell-'))
-		try {
-			await expect(assertWorkbenchShellContractProtocol(root, 2)).rejects.toThrow(
-				'build info is missing or invalid',
-			)
-			await writeFile(
-				join(root, WORKBENCH_SHELL_BUILD_INFO_FILE),
-				JSON.stringify({
-					version: WORKBENCH_SHELL_BUILD_INFO_VERSION,
-					contractProtocol: 1,
-				}),
-			)
-			await expect(assertWorkbenchShellContractProtocol(root, 2)).rejects.toThrow(
-				'expected 2, built 1',
-			)
-			await writeFile(
-				join(root, WORKBENCH_SHELL_BUILD_INFO_FILE),
-				JSON.stringify({
-					version: WORKBENCH_SHELL_BUILD_INFO_VERSION,
-					contractProtocol: 2,
-				}),
-			)
-			await expect(assertWorkbenchShellContractProtocol(root, 2)).resolves.toBeUndefined()
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
-	})
-
 	it('keeps production bootstrap imports inside the directly installed route package', async () => {
 		const source = await import('node:fs/promises').then(({ readFile: readSourceFile }) =>
 			readSourceFile(new URL('../src/cli/static-application.ts', import.meta.url), 'utf8'),
 		)
 
 		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
+		expect(source).not.toContain("from '@pluxel/runtime/internal'")
+		expect(source).toContain("from '@pluxel/runtime/internal/static-host'")
 		expect(source).toContain('@pluxel/runtime-static/internal/node-workbench-application')
 		expect(source).toContain('runStaticNodeWorkbenchApplication')
 		expect(source).toContain('...RuntimeFullTracePackages')

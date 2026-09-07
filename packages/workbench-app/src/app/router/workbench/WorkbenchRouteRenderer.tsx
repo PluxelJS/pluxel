@@ -2,10 +2,12 @@ import { Center, Stack, Text } from '@mantine/core'
 import { type ReactNode } from 'react'
 import type { WorkbenchResolvedRoute, WorkbenchTargetSnapshot } from '../../../workbench/client'
 import { WorkbenchRoute, useWorkbenchRuntime } from '../../../workbench/runtime'
-import { WorkbenchRouteStateFallback, WorkbenchRouteStatusBanner } from './WorkbenchRouteStatus'
+import { WorkbenchRouteStateFallback } from './WorkbenchRouteStatus'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 
 export function WorkbenchRouteRenderer(props: {
-	pluginName: string
+	target: PluginNodeAddress
+	displayName: string
 	displayPath: string
 	pathname: string
 	route: WorkbenchResolvedRoute | undefined
@@ -13,9 +15,9 @@ export function WorkbenchRouteRenderer(props: {
 	backContent?: ReactNode
 	wrapContent?: (content: ReactNode) => ReactNode
 }) {
-	const { pluginName, displayPath, route, snapshot, backContent, wrapContent } = props
+	const { target, displayName, displayPath, route, snapshot, backContent, wrapContent } = props
 	const host = useWorkbenchRuntime()
-	const pluginRunning = host.runningPlugins.has(pluginName)
+	const pluginRunning = host.runningPluginKeys.has(pluginNodeIndexKey(target))
 
 	if (!pluginRunning && host.runningPluginsReady) {
 		return (
@@ -23,7 +25,7 @@ export function WorkbenchRouteRenderer(props: {
 				<Stack gap="xs" align="center">
 					<Text fw={600}>插件未运行</Text>
 					<Text c="dimmed" size="sm" ta="center">
-						请先启动插件 {pluginName}，才能访问 {displayPath}
+						请先启动插件 {displayName}，才能访问 {displayPath}
 					</Text>
 					{backContent ?? null}
 				</Stack>
@@ -32,7 +34,7 @@ export function WorkbenchRouteRenderer(props: {
 	}
 
 	if (snapshot.state !== 'ready' && !snapshot.layout) {
-		return <WorkbenchRouteStateFallback pluginName={pluginName} snapshot={snapshot} />
+		return <WorkbenchRouteStateFallback displayName={displayName} snapshot={snapshot} />
 	}
 
 	if (!route) {
@@ -49,12 +51,7 @@ export function WorkbenchRouteRenderer(props: {
 		)
 	}
 
-	const content = (
-		<>
-			<WorkbenchRouteStatusBanner pluginName={pluginName} />
-			<WorkbenchRoute target={pluginName} route={route} />
-		</>
-	)
+	const content = <WorkbenchRoute route={route} snapshot={snapshot} />
 
 	return <>{wrapContent ? wrapContent(content) : content}</>
 }

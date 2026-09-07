@@ -1,122 +1,73 @@
-import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { isStandardSchemaV1 } from '../../../services/config/standardSchema'
 import { BasePlugin } from '../../composition/BasePlugin'
-import type { PluginIdentifier, SubclassOf } from '../../types'
-import {
-	__DEV__,
-	$freeze,
-	type AnyCtor,
-	EMPTY_ARR,
-	isSubclassOf,
-	nameOf,
-	rebuildInfoSnapshot,
-	S,
-} from './shared'
-import {
-	type ConfigSchemaList,
-	type DeclaredMetaView,
-	PARAM_TYPES,
-	type PluginMetadata,
-} from './types'
-import { __registerUsedFeatures__ } from './api'
+import type { PluginToken, SubclassOf } from '../../types'
+import { registerPluginMarker } from './marker'
+import type { PluginOptions } from './types'
 
-/** 收集实例字段配置（@Plugin 统一聚合） */
-export function Config(schema: StandardSchemaV1): PropertyDecorator {
-	if (!isStandardSchemaV1(schema)) {
-		throw new Error(
-			'Invalid @Config schema: must implement Standard Schema v1 (~standard.validate).',
-		)
+function validateOptions(input: PluginOptions | undefined): PluginOptions {
+	if (input === undefined) return Object.freeze({})
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError('[pluxel/core] @Plugin options must be an object')
 	}
-	return (target: object, key: string | symbol) => {
-		if (typeof target === 'function') throw new Error('@Config 只能用于实例字段(非 static)')
-		const ctor = (target as { constructor: AnyCtor }).constructor
-		const s = S(ctor)
-		const bucket = s.pending ?? Object.create(null)
-		const fieldName = String(key)
-		bucket[fieldName] = schema
-		s.pending = bucket
-
-		// Bind decorated config fields as `{ field: [field] }` so runtime injection
-		// doesn't need any toolchain side effects to work.
-		const bindDst = (s.configBindings ?? Object.create(null)) as Record<string, readonly string[]>
-		if (!bindDst[fieldName]) {
-			const next = Object.assign(Object.create(null), bindDst)
-			next[fieldName] = __DEV__ ? $freeze([fieldName]) : [fieldName]
-			s.configBindings = next
+	for (const key of Object.keys(input)) {
+		if (key !== 'displayName' && key !== 'startTimeoutMs' && key !== 'forkable') {
+			throw new TypeError(`[pluxel/core] @Plugin options has unknown field ${key}`)
 		}
 	}
+	const displayName = input.displayName
+	if (
+		displayName !== undefined &&
+		(typeof displayName !== 'string' ||
+			displayName.length === 0 ||
+			displayName.trim() !== displayName)
+	) {
+		throw new TypeError('[pluxel/core] @Plugin displayName must be a non-empty string literal')
+	}
+	const startTimeoutMs = input.startTimeoutMs
+	if (
+		startTimeoutMs !== undefined &&
+		(!Number.isFinite(startTimeoutMs) || !Number.isInteger(startTimeoutMs) || startTimeoutMs <= 0)
+	) {
+		throw new TypeError('[pluxel/core] @Plugin startTimeoutMs must be a positive finite integer')
+	}
+	const forkable = input.forkable
+	if (forkable !== undefined && forkable !== true) {
+		throw new TypeError('[pluxel/core] @Plugin forkable must be the literal true')
+	}
+	return Object.freeze({
+		...(displayName === undefined ? {} : { displayName }),
+		...(startTimeoutMs === undefined ? {} : { startTimeoutMs }),
+		...(forkable === undefined ? {} : { forkable }),
+	})
 }
 
-/**
- * 声明插件（可选基类）：
- * - 校验继承关系
- * - 预取 design:paramtypes → rtypes（热路径不再触碰 Reflect）
- * - 聚合 pending @Config → config
- * - 构建对外快照
- */
-export function Plugin(meta?: PluginMetadata): ClassDecorator
-export function Plugin<B extends PluginIdentifier>(
-	base: B,
-	meta?: PluginMetadata,
+function isBasePluginSubclass(value: unknown): value is PluginToken {
+	return (
+		typeof value === 'function' &&
+		(value === BasePlugin || BasePlugin.prototype.isPrototypeOf((value as Function).prototype))
+	)
+}
+
+export function Plugin(options?: PluginOptions): ClassDecorator
+export function Plugin<B extends PluginToken>(
+	provider: B,
+	options?: PluginOptions,
 ): <C extends SubclassOf<B>>(ctor: C) => void
-export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata) {
-	const withBase = typeof a === 'function'
-	const base = (withBase ? (a as PluginIdentifier) : null) as PluginIdentifier | null
-	const meta = (
-		withBase ? ((b as PluginMetadata) ?? {}) : ((a as PluginMetadata) ?? {})
-	) as PluginMetadata
-
-	return (ctor: AnyCtor) => {
-		if (base) {
-			const baseLabel =
-				typeof base === 'function' ? nameOf(base as unknown as AnyCtor) : String(base)
-			if (!isSubclassOf(base as unknown as AnyCtor, BasePlugin as unknown as AnyCtor)) {
-				throw new Error(`@Plugin(${baseLabel}) 失败：抽象基类未继承 BasePlugin`)
-			}
-			if (!isSubclassOf(ctor, base as unknown as AnyCtor)) {
-				throw new Error(`@Plugin(${baseLabel}) 失败：${nameOf(ctor)} 未继承 ${baseLabel}`)
-			}
+export function Plugin(a?: PluginOptions | PluginToken, b?: PluginOptions) {
+	const provider = typeof a === 'function' ? a : undefined
+	const options = validateOptions(provider ? b : (a as PluginOptions | undefined))
+	if (provider && !isBasePluginSubclass(provider)) {
+		throw new TypeError('[pluxel/core] @Plugin abstract provider must extend BasePlugin')
+	}
+	return (ctor: Function) => {
+		if (!isBasePluginSubclass(ctor)) {
+			throw new TypeError('[pluxel/core] @Plugin target must extend BasePlugin')
 		}
-
-		const s = S(ctor)
-
-		// Constructor DI remains the canonical authoring model. Explicit token
-		// overrides are applied separately by the low-level metadata API.
-		const rt = (Reflect.getMetadata(PARAM_TYPES, ctor) as unknown[]) ?? EMPTY_ARR
-		s.rtypes = Array.isArray(rt) ? rt : [...rt]
-
-		// 存储 ctor 引用
-		s.ctor = ctor as PluginIdentifier
-
-		// 提取并存储 declaredName
-		const { name: declaredName, features, ...restMeta } = meta
-		s.declaredName = declaredName || nameOf(ctor)
-		const mergedMeta =
-			s.declaredMeta && Object.keys(restMeta).length > 0
-				? ({ ...s.declaredMeta, ...restMeta } as DeclaredMetaView)
-				: s.declaredMeta
-					? s.declaredMeta
-					: Object.keys(restMeta).length > 0
-						? (restMeta as DeclaredMetaView)
-						: null
-		s.declaredMeta = mergedMeta ? (__DEV__ ? $freeze(mergedMeta) : mergedMeta) : null
-		for (const feature of features ?? EMPTY_ARR) {
-			if (typeof feature !== 'function')
-				throw new TypeError('@Plugin features must be constructors')
-			__registerUsedFeatures__(ctor, feature as AnyCtor)
+		if (provider && !provider.prototype.isPrototypeOf(ctor.prototype)) {
+			throw new TypeError('[pluxel/core] @Plugin target must extend its abstract provider')
 		}
-
-		s.base = base
-
-		// 聚合 pending @Config
-		if (s.pending && Object.keys(s.pending).length > 0) {
-			s.config = __DEV__ ? $freeze(s.pending as ConfigSchemaList) : (s.pending as ConfigSchemaList)
-			s.pending = null
-		} else {
-			s.config = null
-		}
-
-		// 构建对外快照
-		rebuildInfoSnapshot(ctor, s)
+		registerPluginMarker(
+			ctor,
+			Object.freeze({ options, ...(provider === undefined ? {} : { providerClass: provider }) }),
+		)
 	}
 }

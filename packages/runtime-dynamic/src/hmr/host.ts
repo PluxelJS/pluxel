@@ -1,25 +1,34 @@
 import { existsSync } from 'node:fs'
-import { isAbsolute, resolve } from 'pathe'
+import { isAbsolute, join, resolve } from 'pathe'
 import type { ViteDevServer } from 'vite'
 
-import '../register-services'
-import type { Context as CoreContext, PluginConstructor, PluginIdentifier } from '@pluxel/core'
+import type { Context, PluginConstructor } from '@pluxel/core'
+import { requireConfigService } from '@pluxel/core/internal'
 import {
 	createContextPluginLogPolicyStore,
 	createNodeWorkspaceFsBackend,
+	createRuntimeRootContext,
 	createRuntimeLogging,
+	installRuntimeRouteCapabilities,
 	isWorkbenchEnabled,
-	resolvePackagedWorkbenchManifest,
+	prepareRuntimeRootContext,
+	readRuntimeRouteCapabilities,
+	requireRuntimeStateStore,
 	resolvePackagedNodeModule,
 	resolveRuntimeStoragePaths,
-	workbenchAdminAccess,
 	withPluginConfigEnvironment,
-	withWorkbenchPluginContext,
+	type RuntimeHostConfig,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
-import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import { createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import {
+	describePluxelPlatform,
+	env as runtimeEnvironment,
+	hostEnv as defaultHostEnvironment,
+	resolveHostEnv,
+} from '@pluxel/runtime/environment'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { attachPluginArtifactCompiler } from '@pluxel/runtime-dev/workbench'
 import type { DynamicRuntimeStorageOptions } from '../config'
@@ -31,10 +40,20 @@ import {
 	type LoaderHmrWorkspaceFs,
 	type WorkspaceSnapshot,
 } from './diagnose'
-import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
+import {
+	attachLoaderHmrWorkbenchArtifactPublisher,
+	LoaderHmrService,
+	readLoaderHmrRecentUpdate,
+	type LoaderHmrConfig,
+} from './engine/LoaderHmrService'
+export {
+	configureLoaderHmrDefinitionSource,
+	configureLoaderHmrWorkbenchArtifactSource,
+} from './engine/LoaderHmrService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 import { resolveDynamicPluginSources, type DynamicPluginSource } from '../sources'
+import { createDynamicRouteContextCapabilities, requireLoaderService } from '../context-plan'
 
 const nodeHostFs = nodeLoaderHmrWorkspaceFs
 
@@ -44,7 +63,6 @@ export type LoaderHmrHostOptions<
 	TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot,
 > = {
 	root?: string
-	chdir?: boolean
 	fs?: LoaderHmrWorkspaceFs
 	debug?: readonly string[]
 	snapshot: TSnapshot
@@ -56,15 +74,20 @@ export type LoaderHmrHostOptions<
 	logsDir?: string
 	logFile?: string
 	storage?: LoaderHmrHostStorageOptions
-	registry?: Record<string, unknown>
-	context?: CoreContext.Config
+	configService?: RuntimeHostConfig['configService']
+	runtimeState?: RuntimeHostConfig['runtimeState']
+	persistence?: RuntimeHostConfig['persistence']
+	database?: RuntimeHostConfig['database']
+	workers?: RuntimeHostConfig['workers']
+	management?: RuntimeHostConfig['management']
+	workbench?: RuntimeHostConfig['workbench']
+	vault?: RuntimeHostConfig['vault']
 }
 
 export type PlannedLoaderHmrHost<
 	TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot,
 > = {
 	root: string
-	chdir: boolean
 	fs: LoaderHmrWorkspaceFs
 	debug: readonly string[]
 	snapshot: TSnapshot
@@ -75,8 +98,7 @@ export type PlannedLoaderHmrHost<
 	printUrls?: boolean
 	logging?: false | RuntimeLoggingInput
 	runtimeStorage: RuntimeStoragePaths
-	registry?: Record<string, unknown>
-	context?: CoreContext.Config
+	runtimeConfig: RuntimeHostConfig
 }
 
 export type BootedLoaderHmrHost = {
@@ -88,6 +110,8 @@ export type BootedLoaderHmrHost = {
 }
 
 export type BootLoaderHmrHostOptions = {
+	/** @internal Capture bounded logs for the opt-in Vite development console. */
+	devConsole?: boolean
 	viteServer?: ViteDevServer
 	product?: ProductDescriptor | null
 	/** @internal Route-owned Workbench asset selection. */
@@ -104,13 +128,6 @@ export type LoaderHmrHostConfigInput = Omit<
 	profile?: string
 	env?: Record<string, string | undefined>
 	omitPackages?: string[]
-	configService?: CoreContext.Config['configService']
-	runtimeState?: CoreContext.Config['runtimeState']
-	persistence?: CoreContext.Config['persistence']
-	database?: CoreContext.Config['database']
-	http?: CoreContext.Config['http']
-	workbench?: CoreContext.Config['workbench']
-	logging?: false | RuntimeLoggingInput
 	sources?: readonly DynamicPluginSource[]
 }
 
@@ -127,7 +144,7 @@ function planRuntimeStorage(
 	runtimeStorage: RuntimeStoragePaths
 } {
 	const runtimeStorage = resolveRuntimeStoragePaths(root, {
-		persistenceDir: storage?.persistenceDir ?? '.pluxel/persistence',
+		persistenceDir: storage?.persistenceDir ?? join(defaultHostEnvironment.dataRoot, 'persistence'),
 		...(logs.logsDir ? { logsDir: logs.logsDir } : {}),
 		...(logs.logFile ? { logFile: logs.logFile } : {}),
 	})
@@ -160,7 +177,6 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 	return {
 		root,
-		chdir: opts.chdir !== false,
 		fs,
 		debug: opts.debug ?? ['hmr:*', 'bundler', 'workbench:compile'],
 		snapshot,
@@ -171,8 +187,17 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		printUrls: opts.printUrls,
 		logging: opts.logging,
 		runtimeStorage,
-		registry: opts.registry,
-		context: opts.context,
+		runtimeConfig: compactRuntimeHostConfig({
+			configService: opts.configService,
+			runtimeState: opts.runtimeState,
+			persistence: opts.persistence,
+			database: opts.database,
+			workers: opts.workers,
+			management: opts.management,
+			workbench: opts.workbench,
+			vault: opts.vault,
+			debug: opts.debug,
+		}),
 	}
 }
 
@@ -186,14 +211,7 @@ export async function planLoaderHmrHostFromConfig(
 		env: envOverrides,
 		omitPackages,
 		configService,
-		runtimeState,
-		persistence,
-		database,
-		http,
-		workbench,
-		logging,
 		sources,
-		context,
 		...hostOpts
 	} = opts
 
@@ -203,9 +221,33 @@ export async function planLoaderHmrHostFromConfig(
 		return resolveDefaultLoaderHmrConfigPath(rootDir)
 	})()
 	const env: Record<string, string | undefined> = {
-		...process.env,
+		...runtimeEnvironment,
 		...(profile ? { PLUXEL_HMR_PROFILE: profile } : {}),
 		...envOverrides,
+	}
+	const pluxelEnvironment = resolveHostEnv(env)
+	const resolvedHostOptions: typeof hostOpts = {
+		...hostOpts,
+		...(env.PLUXEL_DATA_ROOT !== undefined &&
+		(hostOpts.persistence === undefined || typeof hostOpts.persistence === 'string')
+			? {
+					storage: {
+						...hostOpts.storage,
+						persistenceDir: join(pluxelEnvironment.dataRoot, 'persistence'),
+					},
+					...(typeof hostOpts.persistence === 'string' ? { persistence: undefined } : {}),
+				}
+			: {}),
+		...(pluxelEnvironment.workbench === undefined
+			? {}
+			: {
+					workbench: pluxelEnvironment.workbench
+						? {
+								...(typeof hostOpts.workbench === 'object' ? hostOpts.workbench : {}),
+								enabled: true,
+							}
+						: false,
+				}),
 	}
 
 	const diagnosed = await diagnoseWorkspace({
@@ -236,19 +278,11 @@ export async function planLoaderHmrHostFromConfig(
 
 	return planLoaderHmrHost(
 		{
-			...hostOpts,
+			...resolvedHostOptions,
 			root: rootDir,
 			snapshot,
 			warnings: diagnosed.warnings,
-			context: mergeContextConfig(context, {
-				configService: withPluginConfigEnvironment(configService, env),
-				runtimeState,
-				persistence,
-				database,
-				http,
-				workbench,
-			}),
-			logging,
+			configService: withPluginConfigEnvironment(configService, env),
 		},
 		{
 			configModuleId: internal.configModuleId,
@@ -269,18 +303,18 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	options: BootLoaderHmrHostOptions = {},
 ): Promise<BootedLoaderHmrHost> {
-	if (plan.chdir) process.chdir(plan.root)
 	await plan.fs.promises.mkdir(plan.runtimeStorage.logsDir, { recursive: true })
-	const logging = createRuntimeLogging(resolveLoaderRuntimeLoggingInput(plan))
+	const logging = createRuntimeLogging(
+		resolveLoaderRuntimeLoggingInput(plan, options.devConsole === true),
+	)
 	await logging.install()
 	let ctx: Context | undefined
 
 	try {
 		const runtimeFsBackend = createNodeWorkspaceFsBackend(plan.fs)
-		const defaultContext: CoreContext.Config = {
+		const defaultConfig: RuntimeHostConfig = {
+			name: plan.snapshot.activeProfile,
 			debug: plan.debug,
-			registry: plan.registry,
-			profile: plan.snapshot.activeProfile,
 			logger: logging.contextBinding,
 			persistence: {
 				mode: 'custom',
@@ -288,40 +322,57 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 					root: plan.runtimeStorage.persistenceDir,
 				}),
 			},
-			workbenchArtifactResolver: resolvePackagedWorkbenchManifest,
 			nodeModuleArtifactResolver: resolvePackagedNodeModule,
 		}
-		const contextConfig = withWorkbenchPluginContext(
-			mergeContextConfig(defaultContext, plan.context),
-		)
-		contextConfig.logger = logging.contextBinding
-		contextConfig.adminAccess = workbenchAdminAccess(contextConfig.workbench)
-		if (isWorkbenchEnabled(contextConfig.workbench)) {
-			contextConfig.http = withWorkbenchHttpConfig(
-				contextConfig.http,
+		const runtimeConfig = mergeRuntimeHostConfig(defaultConfig, plan.runtimeConfig)
+		if (isWorkbenchEnabled(runtimeConfig.workbench)) {
+			runtimeConfig.http = withWorkbenchHttpConfig(
+				runtimeConfig.http,
 				options.workbenchAssets ?? 'source',
 			)
 		}
-		ctx = new Context(contextConfig)
+		const runtimeInternal = isWorkbenchEnabled(runtimeConfig.workbench)
+			? await import('@pluxel/runtime/internal')
+			: undefined
+		const workbench = runtimeInternal
+			? { createBackend: runtimeInternal.createWorkbenchBackend }
+			: undefined
+		ctx = createRuntimeRootContext(runtimeConfig, {
+			logging,
+			product: options.product ?? null,
+			routeContextCapabilities: createDynamicRouteContextCapabilities({
+				workspaceRoot: plan.root,
+				fs: plan.fs,
+			}),
+			...(workbench ? { workbench } : {}),
+		})
 		ctx.effects.defer(() => logging.dispose(), {
 			tag: 'RuntimeLogging',
 			phase: 'shutdown',
 		})
-		if (isWorkbenchEnabled(contextConfig.workbench)) {
-			const { installWorkbench } = await import('@pluxel/runtime/internal')
-			installWorkbench(ctx, { product: options.product ?? null })
-		}
-		await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
+		await Promise.all([requireConfigService(ctx).ready, requireRuntimeStateStore(ctx).ready])
 		await logging.initializePolicy(createContextPluginLogPolicyStore(ctx))
-		await ctx.prepareServices()
-		void ctx.loader
+		await prepareRuntimeRootContext(ctx.root)
+		void requireLoaderService(ctx)
 
 		const hmr = await startLoaderHmr(
 			ctx,
 			plan,
 			options.viteServer,
 			options.workbenchArtifactCacheDir,
+			options.workbenchAssets === 'built' ? 'distribution' : 'development',
 		)
+		const platform = describePluxelPlatform()
+		ctx.logger.info('Runtime started', {
+			profile: plan.snapshot.activeProfile,
+			workbench: ctx.workbench !== undefined,
+			persistenceRoot: plan.runtimeStorage.persistenceDir,
+			runtime: platform.runtime.name,
+			runtimeVersion: platform.runtime.version,
+			deploymentProvider: platform.deployment.provider,
+			ci: platform.deployment.ci,
+			mode: platform.mode,
+		})
 
 		return {
 			root: plan.root,
@@ -342,6 +393,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 
 function resolveLoaderRuntimeLoggingInput(
 	plan: PlannedLoaderHmrHost<LoaderHmrWorkspaceSnapshot>,
+	devConsole: boolean,
 ): RuntimeLoggingInput {
 	if (plan.logging) return plan.logging
 	const root = { profile: plan.snapshot.activeProfile, debugTopics: plan.debug }
@@ -352,7 +404,7 @@ function resolveLoaderRuntimeLoggingInput(
 			routes: { runtime: [], plugins: [], debug: [], meta: [] },
 		}
 	}
-	const withStore = isWorkbenchEnabled(plan.context?.workbench)
+	const withStore = devConsole || isWorkbenchEnabled(plan.runtimeConfig.workbench)
 	const sinks: RuntimeLoggingInput['sinks'] = {
 		console: {
 			kind: 'console',
@@ -419,54 +471,29 @@ function createLoaderRuntimeStop(
 }
 
 async function stopRuntimePluginGraph(ctx: Context): Promise<void> {
-	ctx.registry.resetDraft()
-	const update = ctx.registry.beginUpdate({ reason: 'shutdown' })
-	try {
-		const plugins = ctx.registry.graph
-			.declarationsBySlot()
-			.map((declaration) => declaration?.meta?.class)
-			.filter((plugin): plugin is PluginIdentifier => typeof plugin === 'function')
-		for (const plugin of plugins) {
-			if (ctx.registry.isRegistered(plugin)) update.unregister(plugin)
-		}
-		const result = await update.commit({ rollbackOnFailure: false })
-		if (!result.ok) {
-			update.rollback()
-			throw new Error('[loader-hmr-host] plugin shutdown commit failed', {
-				cause: result.err,
-			})
-		}
-	} catch (error) {
-		update.rollback()
-		throw error
-	} finally {
-		ctx.registry.resetDraft()
-	}
+	await requireLoaderService(ctx).shutdown()
 }
 
-function mergeContextConfig(
-	base: CoreContext.Config | undefined,
-	override: CoreContext.Config | undefined,
-): CoreContext.Config {
-	if (!base) return compactContextConfig(override)
-	if (!override) return compactContextConfig(base)
-	return compactContextConfig({
+function mergeRuntimeHostConfig(
+	base: RuntimeHostConfig,
+	override: RuntimeHostConfig,
+): RuntimeHostConfig {
+	return compactRuntimeHostConfig({
 		...base,
 		...override,
 		configService: mergeRecord(base.configService, override.configService),
 		runtimeState: mergeRecord(base.runtimeState, override.runtimeState),
-		persistence: mergeRecord(base.persistence, override.persistence),
+		persistence: override.persistence ?? base.persistence,
 		database: override.database !== undefined ? override.database : base.database,
 		http: mergeRecord(base.http, override.http),
 		workbench: override.workbench ?? base.workbench,
 	})
 }
 
-function compactContextConfig(config: CoreContext.Config | undefined): CoreContext.Config {
-	if (!config) return {}
+function compactRuntimeHostConfig(config: RuntimeHostConfig): RuntimeHostConfig {
 	return Object.fromEntries(
 		Object.entries(config).filter(([, value]) => value !== undefined),
-	) as CoreContext.Config
+	) as RuntimeHostConfig
 }
 
 function mergeRecord<T>(base: T | undefined, override: T | undefined): T | undefined {
@@ -485,39 +512,40 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	viteServer: ViteDevServer | undefined,
 	workbenchArtifactCacheDir: string | undefined,
+	workbenchPackageMode: 'development' | 'distribution',
 ): Promise<LoaderHmrService> {
-	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules) {
+	const baseRoute = readRuntimeRouteCapabilities(ctx)
+	if (baseRoute?.modules) {
 		throw new Error('[loader-hmr-host] Context already has loader HMR runtime state')
 	}
 
 	const loaderHmr = resolveLoaderHmrConfig(plan)
-	ctx.config.loaderHmr = loaderHmr
-	const baseRoute = ctx.runtimeRoute
 	if (!baseRoute) {
 		throw new Error(
 			'[loader-hmr-host] Loader route capabilities must be registered before HMR starts',
 		)
 	}
-	ctx.runtimeRoute = {
+	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
+	const uninstallRoute = installRuntimeRouteCapabilities(ctx, {
 		...baseRoute,
 		dynamicPluginSources: createDynamicPluginSourceReader(plan.dynamicSources),
-	}
-
-	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
-
-	const routeWithSources = ctx.runtimeRoute
-	ctx.runtimeRoute = {
-		...routeWithSources,
 		modules: hmr,
-	}
-	ctx.effects.defer(() => {
-		ctx.runtimeRoute = baseRoute
+		recentUpdate: {
+			resolveRecentUpdate: (address) => readLoaderHmrRecentUpdate(hmr, address),
+		},
 	})
+	ctx.effects.defer(uninstallRoute, { tag: 'LoaderHmrRouteCapabilities', phase: 'shutdown' })
 
-	attachPluginArtifactCompiler(ctx, {
-		cacheDir: workbenchArtifactCacheDir,
+	const artifactCompiler = attachPluginArtifactCompiler(ctx, {
+		cacheDir: workbenchArtifactCacheDir ?? resolve(plan.root, '.pluxel/plugin-artifacts'),
+		packageMode: workbenchPackageMode,
 		viteServer: viteServer ?? hmr.vite,
 	})
+	if (ctx.workbench) {
+		attachLoaderHmrWorkbenchArtifactPublisher(hmr, (input) =>
+			artifactCompiler.publishWorkbenchArtifacts(input),
+		)
+	}
 
 	return hmr
 }
@@ -551,13 +579,12 @@ function createDynamicPluginSourceReader(sources: readonly DynamicPluginSource[]
 }
 
 function withWorkbenchHttpConfig(
-	config: CoreContext.Config['http'] | undefined,
+	config: RuntimeHostConfig['http'] | undefined,
 	assets: 'source' | 'built',
-): CoreContext.Config['http'] {
+): RuntimeHostConfig['http'] {
 	const next = {
 		...config,
-		controlPlane: { web: true, rpc: true, sse: true },
-		uiAssets: assets === 'built' ? 'static-built' : 'dev-server',
+		uiAssets: assets === 'built' ? ('static-built' as const) : ('dev-server' as const),
 	}
 	return next
 }
@@ -566,6 +593,7 @@ function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 ): LoaderHmrConfig {
 	return applyLoaderHmrEnvOverrides({
+		hostRoot: plan.root,
 		roots: plan.snapshot.watchRoots,
 		printUrls: plan.printUrls ?? true,
 		include:

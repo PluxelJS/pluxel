@@ -1,41 +1,30 @@
-import { resolve } from 'node:path'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
-import { PluginEventsDeclaredConsumer, PluginEventsDeclaredProducer } from './demo/PluginEventsDemo'
-import { PluginFeatureDepsConsumer, PluginFeatureDepsProvider } from './demo/PluginFeatureDepsDemo'
-import { PluginHttpRoutesDemo } from './demo/PluginHttpRoutesDemo'
+import {
+	createHostConfigRecords,
+	createHostRuntimeState,
+	product,
+	staticHostPlugins,
+} from './showcase/catalog'
 
-export const staticDemoPlugins = [
-	PluginEventsDeclaredProducer,
-	PluginEventsDeclaredConsumer,
-	PluginFeatureDepsProvider,
-	PluginFeatureDepsConsumer,
-	PluginHttpRoutesDemo,
-] as const
-
-export const staticDemoEnabledPlugins = [
-	'PluginEventsDeclaredProducer',
-	'PluginEventsDeclaredConsumer',
-	'PluginFeatureDepsProvider',
-	'PluginFeatureDepsConsumer',
-	'PluginHttpRoutesDemo',
-] as const
+export { product }
+export { staticHostPlugins as staticDemoPlugins }
 
 export default defineStaticRuntime({
-	name: 'plugins-host-static',
-	plugins: staticDemoPlugins,
-	configure({ env, deployment }) {
-		const staticDataRoot = env.PLUXEL_STATIC_DATA_ROOT
-			? resolve(env.PLUXEL_STATIC_DATA_ROOT)
-			: resolve(deployment?.root ?? resolve(import.meta.dirname, '..'), '.pluxel/static')
+	name: 'pluxel-architecture-lab-static',
+	plugins: staticHostPlugins,
+	configure() {
 		return {
-			runtimeState: {
-				snapshot: { enabled: staticDemoEnabledPlugins },
+			configService: {
+				mode: 'memory',
+				snapshot: { plugins: createHostConfigRecords() },
 			},
-			workbench:
-				env.PLUXEL_WORKBENCH === 'false'
-					? false
-					: { enabled: true, access: { exposure: 'private' } },
-			persistence: resolve(staticDataRoot, 'persistence'),
+			runtimeState: {
+				mode: 'memory',
+				snapshot: createHostRuntimeState(false),
+			},
+			workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
+			persistence: '.pluxel/static/persistence',
+			vault: {},
 		}
 	},
 })

@@ -16,7 +16,7 @@ describe('plugin catalog filter model', () => {
 		expect(
 			hasActiveStatusFilter({
 				...DEFAULT_STATUS_FILTER,
-				disabled: false,
+				unavailable: false,
 			}),
 		).toBe(true)
 	})
@@ -27,14 +27,15 @@ describe('plugin catalog filter model', () => {
 	})
 
 	it('applies the same AND semantics across text and status filters', () => {
-		const tokens = parseSearchTokens('alpha @demo #stable v:1.2 id:plugin')
+		const tokens = parseSearchTokens('alpha @demo ref:plugin exec:source-graph')
 		const status = {
 			name: 'Alpha Runner',
 			packageName: '@demo/plugin-alpha',
-			tag: 'stable',
-			version: '1.2.3',
-			isRunning: true,
-			isEnabled: true,
+			exportName: 'AlphaPlugin',
+			reference: 'package:@demo/plugin-alpha::AlphaPlugin',
+			executionSearchTerms: ['dynamic-entry', 'source-graph', 'source-module'],
+			availability: 'available' as const,
+			lifecycleState: 'running' as const,
 		}
 
 		expect(matchesPluginSearch('plugin-alpha', status, tokens, DEFAULT_STATUS_FILTER)).toBe(true)
@@ -43,7 +44,7 @@ describe('plugin catalog filter model', () => {
 				'plugin-alpha',
 				{
 					...status,
-					tag: 'beta',
+					executionSearchTerms: ['dynamic-entry', 'entry-only', 'built-module'],
 				},
 				tokens,
 				DEFAULT_STATUS_FILTER,
@@ -53,7 +54,7 @@ describe('plugin catalog filter model', () => {
 			matchesPluginSearch('plugin-alpha', status, tokens, {
 				running: false,
 				stopped: true,
-				disabled: false,
+				unavailable: false,
 			}),
 		).toBe(false)
 	})

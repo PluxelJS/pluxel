@@ -1,24 +1,14 @@
 {
 	"extends": "../../tsconfig.workspace.json",
-	"include": ["src"],
+	"include": ["src", "vitest.config.ts"],
 	"compilerOptions": {
 		"noEmit": false,
-		"paths": {
-			"@pluxel/runtime": ["packages/runtime/src/index.ts"],
-			"@pluxel/runtime/*": ["packages/runtime/src/*"],
-			"@pluxel/runtime/web": ["packages/runtime/src/web.ts"],
-			"@pluxel/runtime/capnweb": ["packages/runtime/src/capnweb.ts"],
-			"@pluxel/runtime/logger": ["packages/runtime/src/logger.ts"],
-			"@pluxel/runtime/events": ["packages/runtime/src/events.ts"],
-			"@pluxel/runtime/services/*": ["packages/runtime/src/services/*"]
-		},
 		"outDir": "dist",
 		"jsx": "react-jsx",
 		"lib": ["ES2023", "DOM"],
 		"types": ["vite/client"],
 		"allowArbitraryExtensions": true,
 		"emitDeclarationOnly": true,
-		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true
+		"experimentalDecorators": true
 	}
 }

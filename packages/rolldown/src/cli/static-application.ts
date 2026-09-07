@@ -1,18 +1,28 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import {
-	WORKBENCH_SHELL_BUILD_INFO_FILE,
-	WORKBENCH_SHELL_BUILD_INFO_VERSION,
-} from '@pluxel/core/federation'
 import { FullTracePackages, NodeNativePackages, NonBundleablePackages } from 'nf3/db'
+import type { ExternalsTraceOptions } from 'nf3'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import type { OutputBundle, OutputChunk, Plugin } from 'rolldown'
 import type { UserConfig } from 'tsdown'
-import { parseWithLang } from '../rolldown/plugins/pluginUtils'
 import { createDistributionManifest } from '../distribution'
-import { createPluginBuildPipeline } from './plugin-build'
+import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/staticConfigEnvironmentPlugin'
+import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler'
+import {
+	assembleWorkbenchDeploymentArtifacts,
+	assembleWorkbenchContentDeploymentArtifacts,
+	collectWorkbenchDeploymentArtifacts,
+	collectWorkbenchContentDeploymentArtifacts,
+} from '../workbench/deployment-assembly'
+import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
+import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
+import { staticElysiaSingletonPlugin } from './elysia-singleton'
+import {
+	renderStaticApplicationEnvironmentExample,
+	writeStaticConfigEnvironmentExample,
+} from './static-config-environment-output'
 
 export type StaticApplicationBuildOptions = {
 	entry: string
@@ -22,11 +32,17 @@ export type StaticApplicationBuildOptions = {
 	/** Runtime adapter emitted by the production bootstrap. @default 'node' */
 	launcher?: 'node' | 'fetch'
 	target?: 'node'
+	/** Managed database drivers carried by this deployment. @default ['pglite', 'postgres'] */
+	managedDatabaseDrivers?: readonly StaticApplicationManagedDatabaseDriver[]
 	residualDependencies?: StaticApplicationResidualDependencies
 	minify?: boolean
 	sourcemap?: boolean
+	/** Keep mappings and source paths without embedding full source text. @default false */
+	sourcemapExcludeSources?: boolean
 	lint?: boolean
 }
+
+export type StaticApplicationManagedDatabaseDriver = 'pglite' | 'postgres'
 
 export type StaticApplicationResidualDependencies = {
 	packages?: readonly string[]
@@ -35,6 +51,8 @@ export type StaticApplicationResidualDependencies = {
 
 type StaticApplicationBuildState = {
 	name?: string
+	environmentExample?: string
+	environmentExampleOwned: boolean
 	residualPackages: string[]
 }
 
@@ -45,12 +63,31 @@ type DeclaredWorkspacePackage = {
 	packageJson: Record<string, unknown>
 }
 
-const RuntimeResidualPackages = ['@electric-sql/pglite', 'pg'] as const
+type TracedPackages = Parameters<
+	NonNullable<NonNullable<ExternalsTraceOptions['hooks']>['tracedPackages']>
+>[0]
+type TracedPackageVersion = TracedPackages[string]['versions'][string]
+
+const ManagedDatabasePackages = {
+	pglite: '@electric-sql/pglite',
+	postgres: 'pg',
+} as const satisfies Record<StaticApplicationManagedDatabaseDriver, string>
+const ManagedDatabaseEntries = {
+	pglite: '#pluxel/database-driver/pglite',
+	postgres: '#pluxel/database-driver/postgres',
+} as const satisfies Record<StaticApplicationManagedDatabaseDriver, string>
+const ManagedDatabaseDrivers = Object.freeze(
+	Object.keys(ManagedDatabasePackages) as StaticApplicationManagedDatabaseDriver[],
+)
+const RuntimeResidualPackages = Object.freeze(Object.values(ManagedDatabasePackages))
 const RuntimeFullTracePackages = ['tslib', '@electric-sql/pglite'] as const
+const OMITTED_MANAGED_DATABASE_PREFIX = '\0pluxel:omitted-managed-database:'
 const STATIC_APPLICATION_BOOTSTRAP_ID = 'pluxel:static-application-bootstrap'
 const RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID = `\0${STATIC_APPLICATION_BOOTSTRAP_ID}`
 
-export function staticApplication(options: StaticApplicationBuildOptions): UserConfig {
+export function staticApplication(
+	options: StaticApplicationBuildOptions,
+): Omit<UserConfig, 'inputOptions'> & Pick<PluginBuildPipeline, 'inputOptions'> {
 	const cwd = resolve(options.cwd ?? process.cwd())
 	const entry = resolve(cwd, options.entry)
 	const outDir = resolve(cwd, options.outDir ?? 'dist')
@@ -62,8 +99,16 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 	const target = String(options.target ?? 'node')
 	if (target !== 'node')
 		throw new Error('[static-application] only the node target is currently supported')
+	const managedDatabaseDrivers = resolveManagedDatabaseDrivers(options.managedDatabaseDrivers)
 	const residualDependencies = resolveResidualDependencies(options.residualDependencies)
-	const state: StaticApplicationBuildState = { residualPackages: [] }
+	const omittedManagedDatabaseDrivers = ManagedDatabaseDrivers.filter(
+		(driver) => !managedDatabaseDrivers.includes(driver),
+	)
+	const state: StaticApplicationBuildState = {
+		environmentExample: renderStaticApplicationEnvironmentExample(),
+		environmentExampleOwned: false,
+		residualPackages: [],
+	}
 	const artifactNativeResiduals = new Map<string, Set<string>>()
 	const buildDir = relative(cwd, outDir) || '.'
 	const sourcePipeline = createPluginBuildPipeline({
@@ -100,6 +145,9 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 		clean: true,
 		minify: options.minify ?? true,
 		sourcemap: options.sourcemap ?? false,
+		outputOptions: {
+			sourcemapExcludeSources: options.sourcemapExcludeSources ?? false,
+		},
 		treeshake: true,
 		hash: true,
 		deps: {
@@ -107,6 +155,16 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 			onlyBundle: false,
 		},
 		plugins: [
+			staticConfigEnvironmentDeclarationPlugin({
+				entry,
+				onDeclaration(facts) {
+					state.name = facts.name
+					state.environmentExample = renderStaticApplicationEnvironmentExample(
+						facts.environmentExample,
+					)
+				},
+			}),
+			staticElysiaSingletonPlugin(cwd),
 			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({
 				cwd,
@@ -119,6 +177,7 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 				],
 				declaredPackages: residualDependencies.packages,
 				declaredFullTracePackages: residualDependencies.fullTrace,
+				omittedManagedDatabaseDrivers,
 				conditions: ['node', 'import', 'default'],
 				fullTraceInclude: [
 					...FullTracePackages,
@@ -148,12 +207,16 @@ function nf3ExternalsPlugin(options: {
 	include: readonly string[]
 	declaredPackages: readonly string[]
 	declaredFullTracePackages: readonly string[]
+	omittedManagedDatabaseDrivers: readonly StaticApplicationManagedDatabaseDriver[]
 	conditions: string[]
 	fullTraceInclude: string[]
 	artifactNativeResiduals: ReadonlyMap<string, ReadonlySet<string>>
-	onTracedPackages(packages: Record<string, unknown>): void
+	onTracedPackages(packages: TracedPackages): void
 }): Plugin {
 	const include = new Set(options.include)
+	const omittedManagedDatabaseEntries = new Map<string, StaticApplicationManagedDatabaseDriver>(
+		options.omittedManagedDatabaseDrivers.map((driver) => [ManagedDatabaseEntries[driver], driver]),
+	)
 	const tracedPaths = new Set<string>()
 	const declaredWorkspacePackages = new Map<string, DeclaredWorkspacePackage>()
 	return {
@@ -190,6 +253,8 @@ function nf3ExternalsPlugin(options: {
 			}
 		},
 		async resolveId(id, importer, resolveOptions) {
+			const omittedDriver = omittedManagedDatabaseEntries.get(id)
+			if (omittedDriver) return `${OMITTED_MANAGED_DATABASE_PREFIX}${omittedDriver}`
 			const packageName = readPackageName(id)
 			if (!packageName || !include.has(packageName)) return null
 			const resolved = await this.resolve(id, importer, resolveOptions)
@@ -200,6 +265,19 @@ function nf3ExternalsPlugin(options: {
 				external: true,
 				id,
 			}
+		},
+		load(id) {
+			if (!id.startsWith(OMITTED_MANAGED_DATABASE_PREFIX)) return null
+			const driver = id.slice(
+				OMITTED_MANAGED_DATABASE_PREFIX.length,
+			) as StaticApplicationManagedDatabaseDriver
+			const exportName =
+				driver === 'pglite' ? 'createPgliteDatabaseAdapter' : 'createPostgresDatabaseAdapter'
+			return [
+				`export async function ${exportName}() {`,
+				`  throw new Error(${JSON.stringify(`[static-application] managed database driver "${driver}" is not included in this deployment`)})`,
+				'}',
+			].join('\n')
 		},
 		writeBundle: {
 			order: 'post',
@@ -257,15 +335,13 @@ function nf3ExternalsPlugin(options: {
 									files,
 									resolve(options.outDir, 'node_modules', declaredPackage.name),
 								)
-								const existing = packages[declaredPackage.name] as
-									| { name?: string; versions?: Record<string, unknown> }
-									| undefined
+								const existing = packages[declaredPackage.name]
 								packages[declaredPackage.name] = {
 									name: declaredPackage.name,
 									versions: {
 										...existing?.versions,
 										[declaredPackage.version]: {
-											pkgJSON: declaredPackage.packageJson,
+											pkgJSON: declaredPackage.packageJson as TracedPackageVersion['pkgJSON'],
 											path: declaredPackage.root,
 											files,
 										},
@@ -357,6 +433,26 @@ function resolveResidualDependencies(
 	}
 }
 
+function resolveManagedDatabaseDrivers(
+	value: readonly StaticApplicationManagedDatabaseDriver[] | undefined,
+): StaticApplicationManagedDatabaseDriver[] {
+	if (value === undefined) return [...ManagedDatabaseDrivers]
+	if (!Array.isArray(value)) {
+		throw new TypeError('[static-application] managedDatabaseDrivers must be an array')
+	}
+	const requested = new Set(
+		value.map((driver, index) => {
+			if (!ManagedDatabaseDrivers.includes(driver)) {
+				throw new TypeError(
+					`[static-application] managedDatabaseDrivers[${index}] must be "pglite" or "postgres"`,
+				)
+			}
+			return driver
+		}),
+	)
+	return ManagedDatabaseDrivers.filter((driver) => requested.has(driver))
+}
+
 function readResidualPackageList(value: readonly string[] | undefined, field: string): string[] {
 	if (value === undefined) return []
 	if (!Array.isArray(value)) {
@@ -403,42 +499,6 @@ function staticApplicationEntryPlugin(options: {
 			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
 			return buildBootstrap(options.entry, options.variant, options.launcher)
 		},
-		transform(code, rawId) {
-			const id = rawId.split('?', 1)[0]
-			if (resolve(id) !== options.entry) return null
-			const ast = parseWithLang(this, code, id)
-			if (!ast) this.error(`[static-application] failed to parse entry: ${id}`)
-			const defaults = ast.body.filter((node) => node.type === 'ExportDefaultDeclaration')
-			if (defaults.length !== 1) {
-				this.error('[static-application] entry must contain exactly one default export')
-			}
-			const declaration = defaults[0] as unknown as {
-				start: number
-				end: number
-				declaration?: {
-					type?: string
-					start?: number
-					end?: number
-					callee?: { type?: string; name?: string }
-					arguments?: unknown[]
-				}
-			}
-			const expression = declaration.declaration
-			if (
-				expression?.type !== 'CallExpression' ||
-				expression.callee?.type !== 'Identifier' ||
-				expression.callee.name !== 'defineStaticRuntime'
-			) {
-				this.error(
-					'[static-application] entry must default-export defineStaticRuntime(...) directly',
-				)
-			}
-			if (typeof expression.start !== 'number' || typeof expression.end !== 'number') {
-				this.error('[static-application] cannot locate defineStaticRuntime(...) source range')
-			}
-			options.state.name = readApplicationName(expression.arguments?.[0])
-			return null
-		},
 	}
 }
 
@@ -464,12 +524,14 @@ function buildBootstrap(
 					]
 				: ['@pluxel/runtime-static/internal/node-application', 'runStaticNodeApplication']
 	return `
+import 'pluxel:static-elysia-wiring'
+import { readHostProduct as __readHostProduct } from '@pluxel/runtime/internal/static-host'
+import { env as __pluxelEnvironment } from '@pluxel/runtime/environment'
 import * as __pluxelHostModule from ${JSON.stringify(entry)}
-import { readHostProduct as __readHostProduct } from '@pluxel/runtime/internal'
 import { ${runner} as __runStaticApplication } from ${JSON.stringify(runnerModule)}
 const __pluxelProduct = __readHostProduct(__pluxelHostModule, ${JSON.stringify(`[static-application] ${entry}`)})
 const __pluxelStaticRuntime = await __runStaticApplication(__pluxelHostModule.default, {
-	env: process.env,
+	env: __pluxelEnvironment,
 	deployment: ${deployment},
 	product: __pluxelProduct,
 })
@@ -479,33 +541,6 @@ export const start = __pluxelStaticRuntime.start
 export const stop = __pluxelStaticRuntime.stop
 ${launcher === 'node' ? 'export const address = __pluxelStaticRuntime.address' : ''}
 `
-}
-
-function readApplicationName(value: unknown): string | undefined {
-	if (!value || typeof value !== 'object') return undefined
-	const object = value as {
-		type?: string
-		properties?: Array<{
-			type?: string
-			key?: { type?: string; name?: string; value?: unknown }
-			value?: { type?: string; value?: unknown }
-		}>
-	}
-	if (object.type !== 'ObjectExpression') return undefined
-	for (const property of object.properties ?? []) {
-		if (property.type !== 'Property') continue
-		const key =
-			property.key?.type === 'Identifier'
-				? property.key.name
-				: property.key?.type === 'Literal'
-					? property.key.value
-					: undefined
-		if (key !== 'name') continue
-		return property.value?.type === 'Literal' && typeof property.value.value === 'string'
-			? property.value.value
-			: undefined
-	}
-	return undefined
 }
 
 function staticApplicationAssemblyPlugin(options: {
@@ -521,23 +556,48 @@ function staticApplicationAssemblyPlugin(options: {
 			async handler(_, bundle) {
 				assertBundledPluxelClosure(bundle)
 				await mkdir(options.outDir, { recursive: true })
+				const packageRoots = await collectBundledPackageRoots(bundle)
+				await assembleNodeModuleDeploymentArtifacts({
+					destinationRoot: resolve(options.outDir, 'artifacts/node'),
+					dependencyRoots: packageRoots.map((packageRoot) =>
+						resolve(packageRoot, 'dist/artifacts/node'),
+					),
+					requiredArtifactKeys: collectBundledNodeArtifactKeys(bundle),
+				})
+				options.state.environmentExampleOwned = await writeStaticConfigEnvironmentExample({
+					outDir: options.outDir,
+					bundle,
+					content: options.state.environmentExample,
+					ownedExisting: options.state.environmentExampleOwned,
+				})
+				let workbenchInventories = null
 				if (options.variant === 'workbench') {
-					const runtime = resolveRuntimeWorkbenchDistribution(options.cwd)
-					await assertWorkbenchShellContractProtocol(runtime.publicDir, runtime.contractProtocol)
-					await cp(runtime.publicDir, resolve(options.outDir, 'workbench/public'), {
+					const publicDir = resolveRuntimeWorkbenchPublicDir(options.cwd)
+					await cp(publicDir, resolve(options.outDir, 'workbench/public'), {
 						recursive: true,
 						force: true,
 					})
-					await copyBundledPackageWorkbenchArtifacts(bundle, resolve(options.outDir, 'workbench'))
+					workbenchInventories = await assembleBundledPackageWorkbenchArtifacts(
+						packageRoots,
+						resolve(options.outDir, 'workbench'),
+					)
 				}
 				const entry = Object.values(bundle).find(
 					(item): item is OutputChunk => item.type === 'chunk' && item.isEntry,
 				)
 				if (!entry) throw new Error('[static-application] server entry chunk was not generated')
-				const artifacts =
-					options.variant === 'workbench'
-						? await collectWorkbenchArtifacts(resolve(options.outDir, 'workbench'))
-						: []
+				const artifacts = workbenchInventories
+					? await collectWorkbenchDeploymentArtifacts(
+							resolve(options.outDir, 'workbench'),
+							workbenchInventories.producers,
+						)
+					: []
+				const content = workbenchInventories
+					? await collectWorkbenchContentDeploymentArtifacts(
+							resolve(options.outDir, 'workbench'),
+							workbenchInventories.content,
+						)
+					: []
 				const nodeModules = await collectNodeModuleArtifacts(
 					resolve(options.outDir, 'artifacts/node'),
 				)
@@ -574,6 +634,7 @@ function staticApplicationAssemblyPlugin(options: {
 									included: options.variant === 'workbench',
 									publicRoot: options.variant === 'workbench' ? 'workbench/public' : null,
 									artifacts,
+									content,
 								},
 							},
 							residualDependencies: {
@@ -592,10 +653,27 @@ function staticApplicationAssemblyPlugin(options: {
 	}
 }
 
-async function copyBundledPackageWorkbenchArtifacts(
-	bundle: OutputBundle,
+async function assembleBundledPackageWorkbenchArtifacts(
+	packageRoots: readonly string[],
 	destinationRoot: string,
-): Promise<void> {
+): Promise<
+	Readonly<{
+		producers: Awaited<ReturnType<typeof assembleWorkbenchDeploymentArtifacts>>
+		content: Awaited<ReturnType<typeof assembleWorkbenchContentDeploymentArtifacts>>
+	}>
+> {
+	return runWorkbenchOutputTransaction(destinationRoot, async () => {
+		const input = {
+			destinationRoot,
+			dependencyRoots: packageRoots.map((packageRoot) => resolve(packageRoot, 'dist/workbench')),
+		}
+		const producers = await assembleWorkbenchDeploymentArtifacts(input)
+		const content = await assembleWorkbenchContentDeploymentArtifacts(input)
+		return Object.freeze({ producers, content })
+	})
+}
+
+async function collectBundledPackageRoots(bundle: OutputBundle): Promise<string[]> {
 	const packageRoots = new Set<string>()
 	for (const item of Object.values(bundle)) {
 		if (item.type !== 'chunk') continue
@@ -606,31 +684,16 @@ async function copyBundledPackageWorkbenchArtifacts(
 			if (packageRoot) packageRoots.add(packageRoot)
 		}
 	}
+	return [...packageRoots].sort()
+}
 
-	for (const packageRoot of packageRoots) {
-		const sourceRoot = resolve(packageRoot, 'dist/workbench')
-		if (sourceRoot === destinationRoot) continue
-		const entries = await readdir(sourceRoot, { withFileTypes: true }).catch(() => [])
-		for (const entry of entries) {
-			if (!entry.isDirectory()) continue
-			const source = resolve(sourceRoot, entry.name)
-			const sourceManifest = resolve(source, 'mf-manifest.json')
-			if (!existsSync(sourceManifest)) continue
-			const destination = resolve(destinationRoot, entry.name)
-			const destinationManifest = resolve(destination, 'mf-manifest.json')
-			if (existsSync(destinationManifest)) {
-				const [sourceContent, destinationContent] = await Promise.all([
-					readFile(sourceManifest),
-					readFile(destinationManifest),
-				])
-				if (!sourceContent.equals(destinationContent)) {
-					throw new Error(`[static-application] Workbench artifact collision: ${entry.name}`)
-				}
-				continue
-			}
-			await cp(source, destination, { recursive: true, force: true })
-		}
+function collectBundledNodeArtifactKeys(bundle: OutputBundle): string[] {
+	const keys = new Set<string>()
+	for (const item of Object.values(bundle)) {
+		if (item.type !== 'chunk') continue
+		for (const match of item.code.matchAll(/\bnode-[0-9a-f]{16}\b/g)) keys.add(match[0])
 	}
+	return [...keys].sort()
 }
 
 async function findNearestPackageRoot(file: string): Promise<string | null> {
@@ -656,78 +719,22 @@ function assertBundledPluxelClosure(bundle: OutputBundle): void {
 	}
 }
 
-function resolveRuntimeWorkbenchDistribution(cwd: string): {
-	publicDir: string
-	contractProtocol: number
-} {
+function resolveRuntimeWorkbenchPublicDir(cwd: string): string {
 	const applicationRequire = createRequire(resolve(cwd, 'package.json'))
 	const routeRoot = dirname(applicationRequire.resolve('@pluxel/runtime-static/package.json'))
 	const routeRequire = createRequire(resolve(routeRoot, 'package.json'))
 	const packageJsonPath = routeRequire.resolve('@pluxel/runtime/package.json')
 	const packageRoot = dirname(packageJsonPath)
-	const metadata = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
-		pluxel?: { workbenchContractProtocol?: unknown }
-	}
-	const contractProtocol = metadata.pluxel?.workbenchContractProtocol
-	if (!Number.isInteger(contractProtocol) || Number(contractProtocol) <= 0) {
-		throw new Error(
-			'[static-application] @pluxel/runtime does not declare pluxel.workbenchContractProtocol',
-		)
-	}
 	for (const candidate of [resolve(packageRoot, 'dist/public'), resolve(packageRoot, 'public')]) {
-		if (existsSync(candidate)) {
-			return { publicDir: candidate, contractProtocol: Number(contractProtocol) }
-		}
+		if (existsSync(candidate)) return candidate
 	}
 	throw new Error(
 		'[static-application] Workbench variant requires the built @pluxel/runtime public shell',
 	)
 }
 
-export async function assertWorkbenchShellContractProtocol(
-	publicDir: string,
-	expectedProtocol: number,
-): Promise<void> {
-	const buildInfoPath = resolve(publicDir, WORKBENCH_SHELL_BUILD_INFO_FILE)
-	let buildInfo: { version?: unknown; contractProtocol?: unknown }
-	try {
-		buildInfo = JSON.parse(await readFile(buildInfoPath, 'utf-8')) as typeof buildInfo
-	} catch {
-		throw new Error(
-			`[static-application] Workbench shell build info is missing or invalid: ${buildInfoPath}; rebuild @pluxel/runtime`,
-		)
-	}
-	if (
-		buildInfo.version !== WORKBENCH_SHELL_BUILD_INFO_VERSION ||
-		buildInfo.contractProtocol !== expectedProtocol
-	) {
-		throw new Error(
-			`[static-application] Workbench shell contract protocol mismatch: expected ${expectedProtocol}, built ${String(buildInfo.contractProtocol ?? '<missing>')}; rebuild @pluxel/runtime`,
-		)
-	}
-}
-
-async function collectWorkbenchArtifacts(root: string): Promise<unknown[]> {
-	const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
-	const artifacts: unknown[] = []
-	for (const entry of entries) {
-		if (!entry.isDirectory()) continue
-		const manifest = resolve(root, entry.name, 'mf-manifest.json')
-		if (!existsSync(manifest)) continue
-		const content = await readFile(manifest, 'utf-8')
-		artifacts.push({
-			name: entry.name,
-			manifest: relative(dirname(root), manifest),
-			sha256: createHash('sha256').update(content).digest('hex'),
-		})
-	}
-	return artifacts.sort((a, b) =>
-		String((a as { name: string }).name).localeCompare(String((b as { name: string }).name)),
-	)
-}
-
 async function collectNodeModuleArtifacts(root: string): Promise<unknown[]> {
-	const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+	const entries = await readdir(root, { withFileTypes: true }).catch((): never[] => [])
 	const artifacts: Array<{ key: string; file: string; sha256: string }> = []
 	for (const entry of entries) {
 		if (!entry.isFile() || !entry.name.endsWith('.mjs')) continue

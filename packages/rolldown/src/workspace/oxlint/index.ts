@@ -36,6 +36,7 @@ export { pluxelOxlintIgnorePatterns } from './config.ts'
 export { importsRules } from './rules/imports.ts'
 export { loggingRules } from './rules/logging.ts'
 export { pluginsRules } from './rules/plugins.ts'
+export { pluginPartsRules } from './rules/plugin-parts.ts'
 export type {
 	OxDiagnostic,
 	OxNode,

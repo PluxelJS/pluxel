@@ -6,16 +6,31 @@ export {
 	createHostModuleVitePlugin,
 	type HostModuleClassifier,
 	type HostModuleDecision,
-} from './host-modules'
+} from './host-modules.ts'
+export {
+	attachSrvxViteNodeCarrier,
+	createViteNodeElysiaApplicationCarrier,
+	type SrvxViteNodeCarrierAttachment,
+	type SrvxViteNodeCarrierOptions,
+	type ViteBusinessWebSocketUpgrade,
+	type ViteNodeElysiaApplicationCarrierOptions,
+} from './vite-node-carrier.ts'
+export { installPluxelViteUrlPrinter, type PluxelViteUrlPrinterOptions } from './vite-urls.ts'
 
-const pluxelSsrModuleRunners = new WeakMap<ViteDevServer, ModuleRunner>()
-const pluxelSsrModuleRunnerClosePatched = new WeakSet<ViteDevServer>()
+const PLUXEL_SSR_MODULE_RUNNER_STATE = Symbol.for('pluxel.viteSsrModuleRunnerState')
+const PLUXEL_SSR_MODULE_RUNNER_EXTERNALIZER = Symbol.for('pluxel.viteSsrModuleRunnerExternalizer')
 
-const WORKBENCH_CLIENT_OPTIMIZE_DEPS = [
-	'@tabler/icons-react',
-	'@pluxel/runtime > @elysiajs/eden',
-	'@pluxel/runtime > capnweb',
-] as const
+type ViteSsrModuleRunnerState = {
+	runner?: ModuleRunner
+	closePatched: boolean
+	externalModules: Set<ViteSsrExternalModuleRegistration>
+}
+
+type ViteSsrExternalModuleRegistration = {
+	modules: ReadonlyMap<string, string>
+}
+
+const WORKBENCH_CLIENT_OPTIMIZE_DEPS = ['@tabler/icons-react', '@pluxel/runtime > capnweb'] as const
 
 export type ImportViteSsrModuleOptions = {
 	/**
@@ -62,7 +77,9 @@ type ViteSsrModuleGraphEntry = {
 
 export function collectViteSsrImportFiles(server: ViteDevServer, entry: string): Set<string> {
 	const files = new Set<string>([normalizePath(entry)])
-	const queue = [...(server.moduleGraph.getModulesByFile(entry) ?? [])] as ViteSsrModuleGraphEntry[]
+	const queue = [
+		...(server.environments.ssr.moduleGraph.getModulesByFile(entry) ?? []),
+	] as ViteSsrModuleGraphEntry[]
 
 	while (queue.length > 0) {
 		const module = queue.shift()!
@@ -78,10 +95,11 @@ export function invalidateViteModuleGraphFiles(
 	server: ViteDevServer,
 	files: Iterable<string>,
 ): number {
+	const graph = server.environments.ssr.moduleGraph
 	let invalidated = 0
 	for (const file of files) {
-		for (const module of server.moduleGraph.getModulesByFile(file) ?? []) {
-			server.moduleGraph.invalidateModule(module)
+		for (const module of graph.getModulesByFile(file) ?? []) {
+			graph.invalidateModule(module)
 			invalidated++
 		}
 	}
@@ -112,7 +130,8 @@ export function createWorkbenchViteClientConfig(clientEntryUrl: string): UserCon
 
 /** Returns the single Pluxel-owned SSR runner/evaluated namespace for a Vite server. */
 export function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunner {
-	const existing = pluxelSsrModuleRunners.get(server)
+	const state = getViteSsrModuleRunnerState(server)
+	const existing = state.runner
 	if (existing && !existing.isClosed()) return existing
 
 	const environment = server.environments.ssr
@@ -123,13 +142,14 @@ export function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunne
 		hmr: false,
 		sourcemapInterceptor: 'prepareStackTrace',
 	})
-	pluxelSsrModuleRunners.set(server, runner)
-	if (!pluxelSsrModuleRunnerClosePatched.has(server)) {
-		pluxelSsrModuleRunnerClosePatched.add(server)
+	state.runner = runner
+	installViteSsrModuleExternalizer(runner, state.externalModules)
+	if (!state.closePatched) {
+		state.closePatched = true
 		const close = server.close.bind(server)
 		server.close = async () => {
-			const current = pluxelSsrModuleRunners.get(server)
-			pluxelSsrModuleRunners.delete(server)
+			const current = state.runner
+			state.runner = undefined
 			try {
 				await close()
 			} finally {
@@ -138,4 +158,66 @@ export function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunne
 		}
 	}
 	return runner
+}
+
+/**
+ * Preserves native ESM identity for exact SSR request URL → canonical URL mappings.
+ * The map only handles second-stage ModuleRunner fetches; normal Vite resolution remains in charge
+ * of selecting and authorizing the entries placed in it. The returned unregister function is
+ * idempotent and does not close the server-owned runner.
+ */
+export function registerViteSsrExternalModuleUrls(
+	server: ViteDevServer,
+	modules: ReadonlyMap<string, string>,
+): () => void {
+	const state = getViteSsrModuleRunnerState(server)
+	const registration = { modules }
+	state.externalModules.add(registration)
+	getPluxelViteSsrModuleRunner(server)
+	return () => {
+		state.externalModules.delete(registration)
+	}
+}
+
+function getViteSsrModuleRunnerState(server: ViteDevServer): ViteSsrModuleRunnerState {
+	const record = server as unknown as Record<PropertyKey, unknown>
+	const existing = record[PLUXEL_SSR_MODULE_RUNNER_STATE] as ViteSsrModuleRunnerState | undefined
+	if (existing) return existing
+	const state: ViteSsrModuleRunnerState = {
+		closePatched: false,
+		externalModules: new Set(),
+	}
+	record[PLUXEL_SSR_MODULE_RUNNER_STATE] = state
+	return state
+}
+
+function installViteSsrModuleExternalizer(
+	runner: ModuleRunner,
+	externalModules: ReadonlySet<ViteSsrExternalModuleRegistration>,
+): void {
+	const transport = (runner as unknown as { transport?: unknown }).transport
+	if (!transport || typeof transport !== 'object') {
+		throw new TypeError('[runtime-dev/vite] Vite SSR ModuleRunner transport is unavailable')
+	}
+	const record = transport as Record<PropertyKey, unknown>
+	if (record[PLUXEL_SSR_MODULE_RUNNER_EXTERNALIZER]) return
+	const invoke = record.invoke
+	if (typeof invoke !== 'function') {
+		throw new TypeError('[runtime-dev/vite] Vite SSR ModuleRunner transport cannot be invoked')
+	}
+	const originalInvoke = (invoke as (name: string, data: unknown) => Promise<unknown>).bind(
+		transport,
+	)
+	record[PLUXEL_SSR_MODULE_RUNNER_EXTERNALIZER] = true
+	record.invoke = (name: string, data: unknown) => {
+		if (name === 'fetchModule' && Array.isArray(data) && typeof data[0] === 'string') {
+			for (const registration of externalModules) {
+				const canonicalUrl = registration.modules.get(data[0])
+				if (canonicalUrl) {
+					return Promise.resolve({ externalize: canonicalUrl, type: 'module' })
+				}
+			}
+		}
+		return originalInvoke(name, data)
+	}
 }

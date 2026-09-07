@@ -1,12 +1,19 @@
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { v } from '@pluxel/runtime'
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { formatPluginNodeReference, type PluginConstructor, v } from '@pluxel/runtime'
+import {
+	BasePlugin,
+	createRuntimeTestHost,
+	Plugin,
+	type RuntimeTestHost,
+} from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
 	RedisRatesBackendConfig,
 	RedisRatesBackendPlugin,
 	type RedisClient,
+	type RedisConnection,
+	RedisScripts,
 } from '../src/index.ts'
 
 type ScriptOptions = { keys: string[]; arguments: string[] }
@@ -36,19 +43,45 @@ function cloneOptions(options: ScriptOptions): ScriptOptions {
 	return { keys: [...options.keys], arguments: [...options.arguments] }
 }
 
-@Plugin(Redis, { name: 'FakeRatesRedisPlugin' })
+@Plugin(Redis)
 class FakeRatesRedisPlugin extends Redis {
 	readonly fake = new FakeRatesRedisClient()
-	override get client(): RedisClient {
-		return this.fake as unknown as RedisClient
+	readonly selectedIds: string[] = []
+	private readonly connections = new Map<string, RedisConnection>(
+		['default', 'rates'].map((id) => [
+			id,
+			{
+				id,
+				client: this.fake as unknown as RedisClient,
+				scripts: new RedisScripts(() => this.fake as unknown as RedisClient),
+			},
+		]),
+	)
+
+	override connection(connectionId = 'default'): RedisConnection {
+		this.selectedIds.push(connectionId)
+		const connection = this.connections.get(connectionId)
+		if (!connection) throw new Error('Unknown fake connection')
+		return connection
+	}
+
+	override connectionIds(): readonly string[] {
+		return [...this.connections.keys()]
 	}
 }
 
-@Plugin({ name: 'RedisRatesConsumer' })
+@Plugin()
 class RedisRatesConsumer extends BasePlugin {
 	constructor(readonly rates: Rates) {
 		super()
 	}
+}
+
+async function startPlugins(
+	host: RuntimeTestHost,
+	plugins: readonly PluginConstructor[],
+): Promise<void> {
+	await host.start(plugins)
 }
 
 const policies = [
@@ -64,12 +97,23 @@ describe('@pluxel/redis rates backend', () => {
 			true,
 		)
 		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud800:' }).success).toBe(false)
+		expect(v.safeParse(RedisRatesBackendConfig, { connectionId: 'Invalid ID' }).success).toBe(false)
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
-		await withHost(async (host) => {
-			host.add([FakeRatesRedisPlugin, RedisRatesBackendPlugin, RatesPlugin, RedisRatesConsumer])
-			host.cfg(RedisRatesBackendPlugin).set({ config: { keyPrefix: 'pluxel:{rates}:' } })
-			await host.commit()
+		{
+			await using host = createRuntimeTestHost()
+
+			await host.commit((change) => {
+				change.start(FakeRatesRedisPlugin)
+				change.start(RedisRatesBackendPlugin, {
+					initialConfig: {
+						connectionId: 'rates',
+						keyPrefix: 'pluxel:{rates}:',
+					},
+				})
+				change.start(RatesPlugin)
+				change.start(RedisRatesConsumer)
+			})
 			const consumer = host.require(RedisRatesConsumer)
 			const redis = host.require(FakeRatesRedisPlugin).fake
 			let slidingLogSource = ''
@@ -85,12 +129,13 @@ describe('@pluxel/redis rates backend', () => {
 				expect(call.source).toContain("redis.call('PEXPIRE'")
 				if (policy.algorithm === 'sliding-window-log') slidingLogSource = call.source
 				expect(call.options.keys).toHaveLength(1)
-				expect(call.options.keys[0]).toMatch(/^pluxel:\{rates\}:v1:[a-f0-9]{64}$/)
+				expect(call.options.keys[0]).toMatch(/^pluxel:\{rates\}:v3:[a-f0-9]{64}$/)
 				expect(call.options.keys[0]).not.toContain('secret-tenant')
 				expect(call.options.arguments).toEqual([
 					String(policy.limit),
 					String(policy.windowMs),
 					String(policy.algorithm === 'token-bucket' ? policy.burst : 0),
+					formatPluginNodeReference(consumer.ctx.pluginInfo.nodeAddress),
 					'1',
 				])
 			}
@@ -100,13 +145,20 @@ describe('@pluxel/redis rates backend', () => {
 			expect(slidingLogSource).toContain("'(' .. cutoff, '+inf', 'WITHSCORES'")
 			expect(redis.evalShaCalls).toHaveLength(4)
 			expect(redis.evalCalls).toHaveLength(4)
-		})
+			expect(host.require(FakeRatesRedisPlugin).selectedIds).toEqual(['rates'])
+		}
 	})
 
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
-		await withHost(async (host) => {
-			host.add([FakeRatesRedisPlugin, RedisRatesBackendPlugin, RatesPlugin, RedisRatesConsumer])
-			await host.commit()
+		{
+			await using host = createRuntimeTestHost()
+
+			await startPlugins(host, [
+				FakeRatesRedisPlugin,
+				RedisRatesBackendPlugin,
+				RatesPlugin,
+				RedisRatesConsumer,
+			])
 			const limiter = host.require(RedisRatesConsumer).rates.use('stable', policies[0]!)
 			const redis = host.require(FakeRatesRedisPlugin).fake
 			await limiter.consume('first')
@@ -121,13 +173,19 @@ describe('@pluxel/redis rates backend', () => {
 			redis.scriptLoaded = false
 			await limiter.consume('third')
 			expect(redis.evalCalls).toHaveLength(2)
-		})
+		}
 	})
 
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
-		await withHost(async (host) => {
-			host.add([FakeRatesRedisPlugin, RedisRatesBackendPlugin, RatesPlugin, RedisRatesConsumer])
-			await host.commit()
+		{
+			await using host = createRuntimeTestHost()
+
+			await startPlugins(host, [
+				FakeRatesRedisPlugin,
+				RedisRatesBackendPlugin,
+				RatesPlugin,
+				RedisRatesConsumer,
+			])
 			const limiter = host.require(RedisRatesConsumer).rates.use('conflict', policies[1]!)
 			const redis = host.require(FakeRatesRedisPlugin).fake
 			redis.reply = [-1, 'token-bucket', 10, 60_000, 20]
@@ -138,6 +196,6 @@ describe('@pluxel/redis rates backend', () => {
 			})
 			redis.reply = [-2]
 			await expect(limiter.consume('other')).rejects.toMatchObject({ code: 'RATES_UNAVAILABLE' })
-		})
+		}
 	})
 })

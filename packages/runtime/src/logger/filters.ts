@@ -1,12 +1,18 @@
 import type { LogFilter } from './protocol'
+import { parsePluginNodeAddress } from '@pluxel/core'
 
 export function parseLogFilter(search: URLSearchParams): LogFilter {
 	return {
-		pluginId: search.get('pluginId') ?? undefined,
+		plugin: parsePlugin(search.get('plugin')),
 		context: search.get('context') ?? undefined,
 		displayName: search.get('displayName') ?? undefined,
 		category: search.get('category') ?? undefined,
 	}
+}
+
+function parsePlugin(raw: string | null) {
+	if (!raw) return undefined
+	return parsePluginNodeAddress(JSON.parse(raw))
 }
 
 function parseSeq(raw: string | null | undefined): string | undefined {

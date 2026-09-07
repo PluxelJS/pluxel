@@ -1,31 +1,15 @@
-import type { Context as CoreContext, PluginConstructor } from '@pluxel/core'
-import type { WorkbenchConfig } from '@pluxel/runtime'
+import type { PluginConstructor } from '@pluxel/core'
+import {
+	assertKnownConfigFields,
+	assertRuntimeServiceConfigFields,
+	closedConfigFields,
+	type ExactConfigShape,
+	type RuntimeHostConfig,
+} from '@pluxel/runtime/internal/config-validation'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import { assertDynamicPluginSources, type DynamicPluginSource } from './sources'
 
 const DYNAMIC_RUNTIME_CONFIG_MARKER = Symbol.for('pluxel.dynamicRuntimeConfig')
-const DYNAMIC_RUNTIME_CONFIG_FIELDS = new Set([
-	'root',
-	'configPath',
-	'profile',
-	'env',
-	'omitPackages',
-	'logsDir',
-	'logFile',
-	'storage',
-	'printUrls',
-	'plugins',
-	'sources',
-	'configService',
-	'runtimeState',
-	'persistence',
-	'database',
-	'http',
-	'workbench',
-	'logging',
-])
-const DYNAMIC_RUNTIME_STORAGE_FIELDS = new Set(['persistenceDir'])
-
 export type DynamicRuntimeStorageOptions = Readonly<{
 	/** Directory for config/runtime-state persistence, relative to `root` unless absolute. */
 	persistenceDir?: string
@@ -41,27 +25,65 @@ export type DynamicRuntimeConfig = {
 	logFile?: string
 	storage?: DynamicRuntimeStorageOptions
 	printUrls?: boolean
-	/** Fixed catalog constructors. Availability does not implicitly enable a plugin. */
+	/** Fixed catalog constructors. Availability does not create auto-start policy or session intent. */
 	plugins?: readonly PluginConstructor[]
 	/**
 	 * Exact files or explicitly filtered directories whose entries form the mutable catalog.
 	 * When omitted, only entries selected by the workspace HMR profile are loaded.
 	 */
 	sources?: readonly DynamicPluginSource[]
-	configService?: CoreContext.Config['configService']
-	runtimeState?: CoreContext.Config['runtimeState']
-	persistence?: CoreContext.Config['persistence']
-	database?: CoreContext.Config['database']
-	http?: CoreContext.Config['http']
-	workbench?: WorkbenchConfig
+	configService?: RuntimeHostConfig['configService']
+	runtimeState?: RuntimeHostConfig['runtimeState']
+	persistence?: RuntimeHostConfig['persistence']
+	database?: RuntimeHostConfig['database']
+	workers?: RuntimeHostConfig['workers']
+	management?: RuntimeHostConfig['management']
+	workbench?: RuntimeHostConfig['workbench']
+	vault?: RuntimeHostConfig['vault']
+	debug?: RuntimeHostConfig['debug']
 	logging?: false | RuntimeLoggingInput
 }
+
+const DYNAMIC_RUNTIME_CONFIG_FIELDS = closedConfigFields<DynamicRuntimeConfig>({
+	root: true,
+	configPath: true,
+	profile: true,
+	env: true,
+	omitPackages: true,
+	logsDir: true,
+	logFile: true,
+	storage: true,
+	printUrls: true,
+	plugins: true,
+	sources: true,
+	configService: true,
+	runtimeState: true,
+	persistence: true,
+	database: true,
+	workers: true,
+	management: true,
+	workbench: true,
+	vault: true,
+	debug: true,
+	logging: true,
+})
+const DYNAMIC_RUNTIME_STORAGE_FIELDS = closedConfigFields<DynamicRuntimeStorageOptions>({
+	persistenceDir: true,
+})
 
 type MarkedDynamicRuntimeConfig = DynamicRuntimeConfig & {
 	readonly [DYNAMIC_RUNTIME_CONFIG_MARKER]?: true
 }
 
-export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(config: T): T {
+type ExactDynamicRuntimeConfigConstraint<Config> = [Config] extends [DynamicRuntimeConfig]
+	? [Config] extends [ExactConfigShape<Config, DynamicRuntimeConfig>]
+		? unknown
+		: never
+	: never
+
+export function defineDynamicRuntimeConfig<const T>(
+	config: T & ExactDynamicRuntimeConfigConstraint<T>,
+): T {
 	assertDynamicRuntimeConfig(config)
 	Object.defineProperty(config, DYNAMIC_RUNTIME_CONFIG_MARKER, {
 		value: true,
@@ -97,14 +119,14 @@ export function assertDynamicRuntimeConfig(
 			'[runtime-dynamic] Dynamic runtime config must not include "cjsExternal"; CommonJS and native host modules are detected automatically.',
 		)
 	}
-	assertKnownFields(
+	assertKnownConfigFields(
 		config,
 		DYNAMIC_RUNTIME_CONFIG_FIELDS,
 		'[runtime-dynamic] Dynamic runtime config',
 	)
 	const runtimeConfig = config as DynamicRuntimeConfig
-	assertPublicHttpConfig(runtimeConfig.http, '[runtime-dynamic] Dynamic runtime config')
 	assertStorageConfig(runtimeConfig.storage)
+	assertRuntimeServiceConfigFields(config, '[runtime-dynamic] Dynamic runtime config')
 	assertFixedPlugins(runtimeConfig.plugins)
 	assertDynamicPluginSources(runtimeConfig.sources)
 }
@@ -116,12 +138,6 @@ function assertFixedPlugins(value: unknown): asserts value is readonly PluginCon
 	}
 }
 
-function assertKnownFields(value: object, allowed: ReadonlySet<string>, label: string): void {
-	const unknown = Object.keys(value).filter((key) => !allowed.has(key))
-	if (unknown.length === 0) return
-	throw new Error(`${label} includes unsupported ${unknown.map((key) => `"${key}"`).join(', ')}`)
-}
-
 export function isDynamicRuntimeConfig(value: unknown): value is DynamicRuntimeConfig {
 	return Boolean(
 		value &&
@@ -130,23 +146,12 @@ export function isDynamicRuntimeConfig(value: unknown): value is DynamicRuntimeC
 	)
 }
 
-function assertPublicHttpConfig(http: unknown, label: string): void {
-	if (!http || typeof http !== 'object') return
-	const forbidden = ['workbench', 'controlPlane', 'uiAssets', 'uiPublicDir'].filter(
-		(key) => key in http,
-	)
-	if (forbidden.length === 0) return
-	throw new Error(
-		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "workbench" and let the route launcher own workbench internals.`,
-	)
-}
-
 function assertStorageConfig(storage: unknown): void {
 	if (storage === undefined) return
 	if (!storage || typeof storage !== 'object' || Array.isArray(storage)) {
 		throw new TypeError('[runtime-dynamic] storage must be an object')
 	}
-	assertKnownFields(storage, DYNAMIC_RUNTIME_STORAGE_FIELDS, '[runtime-dynamic] storage')
+	assertKnownConfigFields(storage, DYNAMIC_RUNTIME_STORAGE_FIELDS, '[runtime-dynamic] storage')
 	const persistenceDir = (storage as Record<string, unknown>).persistenceDir
 	if (
 		persistenceDir !== undefined &&

@@ -112,6 +112,8 @@ export function computeInitPlan<T>(
 
 export type StartOptions = {
 	concurrency?: number
+	/** Whether a failed dependency blocks the consumer. Optional ordering edges return false. */
+	blocks?: (id: unknown, dependency: unknown) => boolean
 	/** Called when a node is skipped because one of its dependencies failed. */
 	onDependencyBlocked?: (id: unknown, dependency: unknown) => void
 }
@@ -139,6 +141,7 @@ export async function startPluginsTopo<T>(
 		failed,
 		concurrency,
 		opts.onDependencyBlocked,
+		opts.blocks,
 	)
 	return failed
 }
@@ -149,6 +152,7 @@ async function startPluginsReadyQueue<T>(
 	failed: Set<T>,
 	concurrency: number,
 	onDependencyBlocked?: (id: T, dependency: T) => void,
+	blocks: (id: T, dependency: T) => boolean = () => true,
 ): Promise<void> {
 	const nodes = plan.nodes
 	if (nodes.length === 0) return
@@ -166,7 +170,7 @@ async function startPluginsReadyQueue<T>(
 
 	for (let i = 0; i < nodes.length; i++) {
 		const id = nodes[i]!
-		const blocker = failedDependencyOf(id, plan.dependencies, failed)
+		const blocker = failedDependencyOf(id, plan.dependencies, failed, blocks)
 		if (blocker !== undefined) {
 			markBlockedNode(id, hasFailedDep, blockedQueued, blocked)
 			onDependencyBlocked?.(id, blocker)
@@ -181,7 +185,7 @@ async function startPluginsReadyQueue<T>(
 			const child = children[i]!
 			const next = (remainingDeps.get(child) ?? 0) - 1
 			remainingDeps.set(child, next)
-			if (!ok) {
+			if (!ok && blocks(child, id)) {
 				markBlockedNode(child, hasFailedDep, blockedQueued, blocked)
 				onDependencyBlocked?.(child, id)
 			}
@@ -232,11 +236,12 @@ function failedDependencyOf<T>(
 	id: T,
 	dependencies: ReadonlyMap<T, readonly T[]>,
 	failed: ReadonlySet<T>,
+	blocks: (id: T, dependency: T) => boolean,
 ): T | undefined {
 	const deps = dependencies.get(id) ?? []
 	for (let i = 0; i < deps.length; i++) {
 		const dep = deps[i]!
-		if (failed.has(dep)) return dep
+		if (failed.has(dep) && blocks(id, dep)) return dep
 	}
 	return undefined
 }
@@ -258,7 +263,7 @@ function markBlockedNode<T>(
 export type TeardownStrategyOptions = {
 	/**
 	 * Bounded concurrency for stopping independent subtrees.
-	 * Default is 1 to preserve legacy "sequential stop" behavior.
+	 * Default is 1 for deterministic sequential teardown.
 	 */
 	concurrency?: number
 }

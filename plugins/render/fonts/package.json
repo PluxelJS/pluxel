@@ -1,8 +1,8 @@
 {
 	"name": "@pluxel/fonts",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Official provider-owned server font management capability for Pluxel plugins",
-	"license": "MIT",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -20,7 +20,7 @@
 			"default": "./dist/index.mjs"
 		},
 		"./workbench": {
-			"@pluxel/hmr": "./src/workbench-contract.ts",
+			"@pluxel/hmr": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
 		},
 		"./package.json": "./package.json"
@@ -30,7 +30,8 @@
 			".": "./dist/index.mjs",
 			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"build": "pluxel build",
@@ -38,29 +39,30 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@napi-rs/canvas": "catalog:"
+		"@napi-rs/canvas": "catalog:prod"
 	},
 	"devDependencies": {
-		"@mantine/core": "catalog:",
+		"@mantine/core": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@tabler/icons-react": "catalog:",
-		"@types/react": "catalog:",
-		"react": "catalog:",
-		"react-dom": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vite": "^8.0.0-beta.18",
-		"vitest": "catalog:"
+		"@tabler/icons-react": "catalog:icons",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@mantine/core": "catalog:",
-		"@pluxel/runtime": "workspace:*",
-		"@tabler/icons-react": "catalog:",
-		"react": "catalog:",
-		"react-dom": "catalog:"
+		"@mantine/core": "catalog:frontend",
+		"@pluxel/runtime": "workspace:^",
+		"@tabler/icons-react": "catalog:icons",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
 		"@mantine/core": {
@@ -75,5 +77,8 @@
 		"react-dom": {
 			"optional": true
 		}
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

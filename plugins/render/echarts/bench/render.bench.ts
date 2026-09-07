@@ -1,5 +1,5 @@
 import { createCanvasWorkerAdapter, type CanvasWorkerSnapshot } from '@pluxel/canvas/worker'
-import { bench, describe } from 'vitest'
+import { afterAll, test } from 'vitest'
 import {
 	renderECharts,
 	type RenderCanvasAdapter,
@@ -18,6 +18,7 @@ const canvas = createCanvasWorkerAdapter({
 		maxRichTextItems: 2_048,
 		maxTextCacheCharacters: 1_000_000,
 	},
+	decodeLimits: { maxConcurrent: 1, maxQueued: 8 },
 	font: { cssFamily: 'sans-serif', revision: 0 },
 } satisfies CanvasWorkerSnapshot)
 const signal = new AbortController().signal
@@ -33,17 +34,19 @@ const input = {
 	theme: { textStyle: { fontFamily: 'sans-serif' } },
 	injectOptionFont: false,
 	defaultFontCssFamily: 'sans-serif',
-	fontRevision: 0,
 	output: { format: 'png' },
 	maxDataUrlBytes: 32 * 1024 * 1024,
+	maxImages: 32,
+	maxTotalImageBytes: 32 * 1024 * 1024,
+	maxTotalImagePixels: 16_777_216,
+	maxOutputBytes: 64 * 1024 * 1024,
 } satisfies RenderEngineInput
 
-describe('ECharts render engine ownership', () => {
-	bench('borrowed option clone', async () => {
-		await renderECharts(input, canvas as unknown as RenderCanvasAdapter, signal, 'borrowed')
-	})
+afterAll(async () => canvas.close())
 
-	bench('worker-owned option traversal', async () => {
-		await renderECharts(input, canvas as unknown as RenderCanvasAdapter, signal, 'owned')
-	})
+// oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
+test('ECharts worker render engine', async ({ bench }) => {
+	await bench('owned option traversal', async () => {
+		await renderECharts(input, canvas as unknown as RenderCanvasAdapter, signal)
+	}).run()
 })

@@ -1,0 +1,65 @@
+{
+	"name": "@pluxel/takumi-markdown-typst",
+	"version": "1.0.0",
+	"description": "Optional restricted Typst math extension for Pluxel Takumi Markdown rendering",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/render/takumi-markdown-typst"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@myriaddreamin/typst-ts-node-compiler": "0.7.0"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/fonts": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
+		"@pluxel/takumi": "workspace:*",
+		"@pluxel/takumi-markdown": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"tsdown": "catalog:build",
+		"tsx": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@pluxel/runtime": "workspace:^",
+		"@pluxel/takumi-markdown": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/takumi-markdown": "required"
+		}
+	}
+}

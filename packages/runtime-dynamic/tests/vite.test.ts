@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
 import * as runtimeDynamic from '@pluxel/runtime-dynamic'
-import { createDynamicDevRuntime, defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { defineDynamicRuntimeConfig, startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
 import * as runtimeDynamicHmr from '@pluxel/runtime-dynamic/hmr'
 import * as runtimeDynamicVite from '@pluxel/runtime-dynamic/vite'
 
+const demoAddress = {
+	definition: {
+		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugins/demo.ts' },
+		exportName: 'DemoPlugin',
+	},
+	variant: 'default',
+} as const
+
 describe('@pluxel/runtime-dynamic/vite', () => {
 	it('exposes only the explicit dynamic dev/HMR direct launcher', () => {
-		expect(runtimeDynamic.createDynamicDevRuntime).toBe(createDynamicDevRuntime)
+		expect(runtimeDynamic.startDynamicDevRuntime).toBe(startDynamicDevRuntime)
 		expect(Object.keys(runtimeDynamic).sort()).toEqual([
-			'createDynamicDevRuntime',
 			'defineDynamicRuntimeConfig',
+			'startDynamicDevRuntime',
 		])
 	})
 
@@ -27,11 +35,11 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
-			runtimeState: { mode: 'memory', snapshot: { enabled: ['DemoPlugin'] } },
+			runtimeState: { mode: 'memory', snapshot: { autoStart: [demoAddress] } },
 		})
 
 		expect(Object.keys(config)).toEqual(['root', 'configPath', 'profile', 'runtimeState'])
-		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
+		expect(config.runtimeState?.snapshot?.autoStart).toEqual([demoAddress])
 		expect(() => defineDynamicRuntimeConfig(null as never)).toThrow(/must be an object/i)
 		expect(() =>
 			defineDynamicRuntimeConfig({
@@ -62,7 +70,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 				root: '/repo',
 				http: { controlPlane: { rpc: true } },
 			} as never),
-		).toThrow(/http must not include "controlPlane"/i)
+		).toThrow(/includes unsupported "http"/i)
 	})
 
 	it('keeps runtime context config at the same top level as static route config', () => {
@@ -70,22 +78,44 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
-			runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
+			runtimeState: { snapshot: { autoStart: [demoAddress] } },
 			workbench: {
 				enabled: true,
-				access: { exposure: 'private' },
 				uiBasePath: '/__pluxel/workbench',
 			},
 			logging: false,
 		})
 
-		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
+		expect(config.runtimeState?.snapshot?.autoStart).toEqual([demoAddress])
 		expect(config.workbench).toEqual({
 			enabled: true,
-			access: { exposure: 'private' },
 			uiBasePath: '/__pluxel/workbench',
 		})
 		expect(config.context).toBeUndefined()
+	})
+
+	it.each([
+		['access', { exposure: 'private' }],
+		['pluginGroups', []],
+	] as const)('rejects removed workbench.%s at the config boundary', (field, value) => {
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				root: '/repo',
+				workbench: { enabled: true, [field]: value },
+			} as never),
+		).toThrow(new RegExp(`unsupported "${field}"`, 'i'))
+	})
+
+	it('rejects unknown fields in Runtime service configuration', () => {
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				database: {
+					driver: 'postgres',
+					connectionString: 'postgres://localhost/db',
+					pool: { max: 4, legacy: true },
+				},
+			} as never),
+		).toThrow(/database\.pool includes unsupported "legacy"/i)
 	})
 
 	it('accepts explicit mutable file sources without package-manager configuration', () => {
@@ -127,7 +157,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 
 	it('exposes a serve-only route plugin plus route-neutral source semantics', () => {
 		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
-			config: './pluxel.dynamic.ts',
+			entry: './pluxel.dynamic.ts',
 		}) as Array<{
 			name?: string
 			apply?: unknown
@@ -149,6 +179,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			'pluxel-config-source',
 			'pluxel:dynamic-runtime-source',
 			'pluxel:host-modules',
+			'vite:react-babel',
+			'vite:react:refresh-wrapper',
+			'vite:react:config-post',
+			'vite:react-refresh-fbm',
+			'vite:react-refresh',
+			'vite:react-virtual-preamble',
 			'pluxel:dynamic-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
@@ -163,15 +199,32 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
 			'cacheDir',
 		)
-		expect(plugins.at(-3)?.config?.({})?.resolve?.dedupe).toEqual(
-			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
-		)
+		expect(
+			plugins.find((plugin) => plugin.name === 'pluxel:dynamic-runtime-source')?.config?.({})
+				?.resolve?.dedupe,
+		).toEqual(expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']))
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
+	})
+
+	it('rejects console activation outside development and malformed flags', () => {
+		expect(() =>
+			runtimeDynamicVite.dynamicRuntimeVitePlugin({
+				entry: './pluxel.dynamic.ts',
+				mode: 'distribution',
+				devConsole: true,
+			}),
+		).toThrow(/requires development mode/)
+		expect(() =>
+			runtimeDynamicVite.dynamicRuntimeVitePlugin({
+				entry: './pluxel.dynamic.ts',
+				devConsole: 'true' as never,
+			}),
+		).toThrow(/must be a boolean/)
 	})
 
 	it('uses built package exports and Workbench assets in distribution mode', () => {
 		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
-			config: './pluxel.dynamic.ts',
+			entry: './pluxel.dynamic.ts',
 			mode: 'distribution',
 		}) as Array<{
 			name?: string
@@ -179,6 +232,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		}>
 		const source = plugins.find((plugin) => plugin.name === 'pluxel:dynamic-runtime-source')
 		const route = plugins.at(-1)
+		expect(plugins.some((plugin) => plugin.name?.startsWith('vite:react'))).toBe(false)
 		const sourceConfig = source?.config?.({}) as {
 			resolve?: { conditions?: string[] }
 			ssr?: { resolve?: { conditions?: string[] } }

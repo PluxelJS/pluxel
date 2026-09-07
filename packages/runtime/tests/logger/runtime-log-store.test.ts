@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { RuntimeLogStore } from '@pluxel/runtime/logger'
 
+const pluginA = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/a' },
+		exportName: 'Plugin',
+	},
+	variant: 'default',
+} as const
+
+const pluginB = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/b' },
+		exportName: 'Plugin',
+	},
+	variant: 'default',
+} as const
+
 function lineInput(i: number, extra?: Partial<any>) {
 	return {
 		ts: 1700000000000 + i,
@@ -44,15 +60,15 @@ describe('RuntimeLogStore', () => {
 	it('filters without breaking cursor semantics', () => {
 		const store = new RuntimeLogStore({ streamId: 't', windowLines: 50, epoch: 1 })
 		store.append([
-			lineInput(1, { pluginId: 'a' }),
-			lineInput(2, { pluginId: 'b' }),
-			lineInput(3, { pluginId: 'a' }),
-			lineInput(4, { pluginId: 'b' }),
-			lineInput(5, { pluginId: 'a' }),
-			lineInput(6, { pluginId: 'b' }),
+			lineInput(1, { plugin: pluginA }),
+			lineInput(2, { plugin: pluginB }),
+			lineInput(3, { plugin: pluginA }),
+			lineInput(4, { plugin: pluginB }),
+			lineInput(5, { plugin: pluginA }),
+			lineInput(6, { plugin: pluginB }),
 		])
 
-		const out = store.range({ epoch: 1, fromSeq: '1', limit: 2, filter: { pluginId: 'a' } })
+		const out = store.range({ epoch: 1, fromSeq: '1', limit: 2, filter: { plugin: pluginA } })
 		expect(out.ok).toBe(true)
 		if (!out.ok) return
 		expect(out.lines.map((l) => l.seq)).toEqual(['1', '3'])
@@ -69,12 +85,12 @@ describe('RuntimeLogStore', () => {
 
 	it('can skip whole chunks when filters cannot match', () => {
 		const store = new RuntimeLogStore({ streamId: 't', windowLines: 2000, epoch: 1 })
-		const a = Array.from({ length: 1100 }, (_, i) => lineInput(i + 1, { pluginId: 'a' }))
-		const x = Array.from({ length: 10 }, (_, i) => lineInput(1100 + i + 1, { pluginId: 'x' }))
+		const a = Array.from({ length: 1100 }, (_, i) => lineInput(i + 1, { plugin: pluginA }))
+		const x = Array.from({ length: 10 }, (_, i) => lineInput(1100 + i + 1, { plugin: pluginB }))
 		store.append(a)
 		store.append(x)
 
-		const out = store.range({ epoch: 1, fromSeq: '1', limit: 1, filter: { pluginId: 'x' } })
+		const out = store.range({ epoch: 1, fromSeq: '1', limit: 1, filter: { plugin: pluginB } })
 		expect(out.ok).toBe(true)
 		if (!out.ok) return
 		expect(out.lines.map((l) => l.seq)).toEqual(['1101'])

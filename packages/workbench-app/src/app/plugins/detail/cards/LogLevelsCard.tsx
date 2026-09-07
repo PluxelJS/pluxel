@@ -1,17 +1,31 @@
 import { Badge, Button, Code, Group, ScrollArea, Select, Stack, Text, Title } from '@mantine/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-	rpcErrorMessage,
-	useRuntimeTransportClient,
+	formatPluginNodeReference,
+	pluginNodeAddressEqual,
+	pluginNodeIndexKey,
+	type PluginNodeAddress,
+} from '@pluxel/core'
+import { useMemo } from 'react'
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+	runtimeErrorMessage,
+	useRuntimeManagementClient,
 	type LogLevel,
 	type RuntimePluginLogLevel,
 	type VersionedPluginLogPolicySnapshot,
 } from '../../../../runtime'
+import { managementQueryKeys } from '../../../managementQuery'
 
 type Snapshot = VersionedPluginLogPolicySnapshot
+type Mutation = Pick<Snapshot, 'revision' | 'persistence'>
+type PolicyCommand =
+	| Readonly<{ kind: 'plugin'; owner: PluginNodeAddress; level: RuntimePluginLogLevel | null }>
+	| Readonly<{ kind: 'default'; level: RuntimePluginLogLevel }>
+	| Readonly<{ kind: 'reset' }>
 
 const LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const
 const LEVEL_SET = new Set<string>(LEVELS)
+const LOG_POLICY_MUTATION_KEY = ['management', 'logging', 'update-policy'] as const
 
 const LEVEL_OPTIONS: Array<{ value: LogLevel; label: string }> = [
 	{ value: 'trace', label: 'trace' },
@@ -27,152 +41,109 @@ function isLogLevel(value: string): value is LogLevel {
 }
 
 export function LogLevelsCard({
-	pluginId,
+	owner,
 	compact = false,
 }: {
-	pluginId: string
+	owner: PluginNodeAddress
 	compact?: boolean
 }) {
-	const transport = useRuntimeTransportClient()
-	const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-	const [loading, setLoading] = useState(false)
-	const [saving, setSaving] = useState(false)
-	const [error, setError] = useState<string | null>(null)
-
-	const refresh = useCallback(async () => {
-		setLoading(true)
-		setError(null)
-		try {
-			const res: VersionedPluginLogPolicySnapshot = await transport.withRpc((rpc) =>
-				rpc.logging().getPolicy(),
+	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
+	const policyQuery = useQuery({
+		queryKey: managementQueryKeys.loggingPolicy(),
+		queryFn: () => management.logging.getPolicy(),
+	})
+	const snapshot = policyQuery.data ?? null
+	const policyMutation = useMutation({
+		mutationKey: LOG_POLICY_MUTATION_KEY,
+		// Every write consumes the shared revision. Serializing within this session
+		// lets a queued write observe the cache committed by the preceding one.
+		scope: { id: 'management:logging-policy' },
+		mutationFn: async (command: PolicyCommand): Promise<Snapshot> => {
+			const current = queryClient.getQueryData<Snapshot>(managementQueryKeys.loggingPolicy())
+			if (!current) throw new Error('Plugin log policy is not loaded')
+			if (command.kind === 'reset') return management.logging.resetPolicy(current.revision)
+			let updated: Mutation
+			if (command.kind === 'default') {
+				updated = await management.logging.setDefaultLevel(current.revision, command.level)
+				return { ...current, ...updated, defaultLevel: command.level }
+			}
+			updated = command.level
+				? await management.logging.setPluginLevel(current.revision, command.owner, command.level)
+				: await management.logging.clearPluginLevel(current.revision, command.owner)
+			const overrides = current.overrides.filter(
+				(entry) => !pluginNodeAddressEqual(entry.owner, command.owner),
 			)
-			setSnapshot(res)
-		} catch (e) {
-			setError(rpcErrorMessage(e))
-		} finally {
-			setLoading(false)
-		}
-	}, [transport])
-
-	useEffect(() => {
-		void refresh()
-	}, [refresh])
+			if (command.level) overrides.push({ owner: command.owner, level: command.level })
+			return { ...current, ...updated, overrides }
+		},
+		onSuccess: (next) => {
+			queryClient.setQueryData(managementQueryKeys.loggingPolicy(), next)
+		},
+		onError: async () => {
+			await queryClient.invalidateQueries({
+				queryKey: managementQueryKeys.loggingPolicy(),
+				exact: true,
+				refetchType: 'all',
+			})
+		},
+	})
+	const loading = policyQuery.isFetching
+	const saving = useIsMutating({ mutationKey: LOG_POLICY_MUTATION_KEY, exact: true }) > 0
+	const errorCause = policyMutation.error ?? policyQuery.error
+	const error = errorCause ? runtimeErrorMessage(errorCause) : null
 
 	const currentDefault = snapshot?.defaultLevel ?? 'info'
-	const currentPlugin = snapshot?.overrides?.[pluginId]
+	const currentPlugin = snapshot?.overrides.find((entry) =>
+		pluginNodeAddressEqual(entry.owner, owner),
+	)?.level
 
 	const pluginSelectValue = currentPlugin === undefined ? '__inherit__' : currentPlugin
 	const defaultSelectValue = currentDefault
 
-	const setPluginLevel = useCallback(
-		async (next: string | null) => {
-			setSaving(true)
-			setError(null)
-			try {
-				const updated = await transport.withRpc(async (rpc) => {
-					const api = rpc.logging()
-					if (!snapshot) throw new Error('Plugin log policy is not loaded')
-					if (next === '__inherit__') return await api.clearPluginLevel(snapshot.revision, pluginId)
-					if (next === '__off__')
-						return await api.setPluginLevel(snapshot.revision, pluginId, 'off')
-					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					return await api.setPluginLevel(snapshot.revision, pluginId, next)
-				})
-				setSnapshot((previous) => {
-					if (!previous) return previous
-					const overrides = { ...previous.overrides }
-					if (next === '__inherit__') delete overrides[pluginId]
-					else overrides[pluginId] = next === '__off__' ? 'off' : (next as LogLevel)
-					return { ...previous, ...updated, overrides }
-				})
-			} catch (e) {
-				setError(rpcErrorMessage(e))
-			} finally {
-				setSaving(false)
-			}
-		},
-		[transport, pluginId, snapshot],
-	)
+	const setPluginLevel = (next: string | null) => {
+		if (next === '__inherit__') {
+			policyMutation.mutate({ kind: 'plugin', owner, level: null })
+			return
+		}
+		if (next === '__off__') {
+			policyMutation.mutate({ kind: 'plugin', owner, level: 'off' })
+			return
+		}
+		if (!next || !isLogLevel(next)) return
+		policyMutation.mutate({ kind: 'plugin', owner, level: next })
+	}
 
-	const deleteRule = useCallback(
-		async (id: string) => {
-			setSaving(true)
-			setError(null)
-			try {
-				if (!snapshot) throw new Error('Plugin log policy is not loaded')
-				const updated = await transport.withRpc((rpc) =>
-					rpc.logging().clearPluginLevel(snapshot.revision, id),
-				)
-				setSnapshot((previous) => {
-					if (!previous) return previous
-					const overrides = { ...previous.overrides }
-					delete overrides[id]
-					return { ...previous, ...updated, overrides }
-				})
-			} catch (e) {
-				setError(rpcErrorMessage(e))
-			} finally {
-				setSaving(false)
-			}
-		},
-		[transport, snapshot],
-	)
+	const deleteRule = (ruleOwner: PluginNodeAddress) => {
+		policyMutation.mutate({ kind: 'plugin', owner: ruleOwner, level: null })
+	}
 
-	const setDefaultLevel = useCallback(
-		async (next: string | null) => {
-			setSaving(true)
-			setError(null)
-			try {
-				const updated = await transport.withRpc(async (rpc) => {
-					const api = rpc.logging()
-					if (!snapshot) throw new Error('Plugin log policy is not loaded')
-					if (next === '__off__') return await api.setDefaultLevel(snapshot.revision, 'off')
-					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					return await api.setDefaultLevel(snapshot.revision, next)
-				})
-				setSnapshot((previous) =>
-					previous
-						? {
-								...previous,
-								...updated,
-								defaultLevel: next === '__off__' ? 'off' : (next as LogLevel),
-							}
-						: previous,
-				)
-			} catch (e) {
-				setError(rpcErrorMessage(e))
-			} finally {
-				setSaving(false)
-			}
-		},
-		[transport, snapshot],
-	)
+	const setDefaultLevel = (next: string | null) => {
+		if (next === '__off__') {
+			policyMutation.mutate({ kind: 'default', level: 'off' })
+			return
+		}
+		if (!next || !isLogLevel(next)) return
+		policyMutation.mutate({ kind: 'default', level: next })
+	}
 
 	const overrides = useMemo(() => {
 		const levels = snapshot?.overrides
 		if (!levels) return []
-		const out: Array<{ id: string; level: RuntimePluginLogLevel }> = []
-		for (const id in levels) {
-			if (!Object.hasOwn(levels, id)) continue
-			out.push({ id, level: levels[id] })
-		}
-		out.sort((a, b) => a.id.localeCompare(b.id))
+		const out: Array<{
+			owner: PluginNodeAddress
+			label: string
+			level: RuntimePluginLogLevel
+		}> = levels.map((entry) => ({
+			owner: entry.owner,
+			label: formatPluginNodeReference(entry.owner),
+			level: entry.level,
+		}))
+		out.sort((a, b) => a.label.localeCompare(b.label))
 		return out
 	}, [snapshot])
 
-	const clearAll = useCallback(async () => {
-		setSaving(true)
-		setError(null)
-		try {
-			if (!snapshot) throw new Error('Plugin log policy is not loaded')
-			const next = await transport.withRpc((rpc) => rpc.logging().resetPolicy(snapshot.revision))
-			setSnapshot(next)
-		} catch (e) {
-			setError(rpcErrorMessage(e))
-		} finally {
-			setSaving(false)
-		}
-	}, [transport, snapshot])
+	const clearAll = () => policyMutation.mutate({ kind: 'reset' })
 
 	return (
 		<Stack gap={compact ? 'xs' : 'sm'} style={compact ? { minHeight: 0 } : undefined}>
@@ -190,7 +161,7 @@ export function LogLevelsCard({
 						variant="default"
 						loading={loading}
 						disabled={saving}
-						onClick={() => void refresh()}
+						onClick={() => void policyQuery.refetch()}
 					>
 						刷新
 					</Button>
@@ -209,7 +180,7 @@ export function LogLevelsCard({
 			{compact ? null : (
 				<Text size="sm" c="dimmed">
 					per-plugin level 由 HMR 面板管理并持久化；不会为每个插件创建 category/logger config（只做
-					pluginId 查表过滤）。
+					插件节点地址查表过滤）。
 				</Text>
 			)}
 
@@ -239,7 +210,7 @@ export function LogLevelsCard({
 							当前插件
 						</Text>
 						<Badge variant="light" color="gray">
-							<Code>{pluginId}</Code>
+							<Code>{formatPluginNodeReference(owner)}</Code>
 						</Badge>
 					</Group>
 					<Select
@@ -275,11 +246,16 @@ export function LogLevelsCard({
 					>
 						<Stack gap={4} p={2}>
 							{overrides.map((r) => (
-								<Group key={r.id} gap="xs" justify="space-between" wrap="nowrap">
+								<Group
+									key={pluginNodeIndexKey(r.owner)}
+									gap="xs"
+									justify="space-between"
+									wrap="nowrap"
+								>
 									<Code
 										style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
 									>
-										{r.id}
+										{r.label}
 									</Code>
 									<Group gap="xs" wrap="nowrap">
 										<Badge variant="light" color={r.level === 'off' ? 'red' : 'blue'}>
@@ -290,7 +266,7 @@ export function LogLevelsCard({
 											variant="subtle"
 											color="gray"
 											disabled={saving}
-											onClick={() => void deleteRule(r.id)}
+											onClick={() => void deleteRule(r.owner)}
 										>
 											移除
 										</Button>

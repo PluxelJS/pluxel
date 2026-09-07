@@ -1,11 +1,11 @@
 import type { BasePlugin } from '../../composition/BasePlugin'
-import type { PluginIdentifier } from '../../types'
-import type { RuntimePluginKey } from '../identity'
+import type { PluginToken } from '../../types'
+import type { PluginNodeAddress, PluginNodeSlot } from '../identity'
 import type { PluginGraph } from '../PluginDefinitions'
 
 type InstanceWatcher = {
-	id: PluginIdentifier
-	resolvedKey: RuntimePluginKey | undefined
+	id: PluginNodeAddress | PluginNodeSlot | PluginToken
+	resolvedKey: PluginNodeSlot | undefined
 	lastInstance: BasePlugin | undefined
 	lastPublishSeq: number
 	callback: (instance: BasePlugin | undefined) => void
@@ -14,13 +14,13 @@ type InstanceWatcher = {
 type InstanceWatcherCommitSummary = {
 	graph: PluginGraph
 	pluginChanges: {
-		availabilityChanged: readonly RuntimePluginKey[]
+		availabilityChanged: readonly PluginNodeSlot[]
 	}
 }
 
 export class InstanceWatcherRegistry {
 	private readonly watchersByResolvedKey = new Map<
-		RuntimePluginKey | undefined,
+		PluginNodeSlot | undefined,
 		Set<InstanceWatcher>
 	>()
 	private publishSeq = 0
@@ -28,18 +28,33 @@ export class InstanceWatcherRegistry {
 	public constructor(
 		private readonly resolveGraphKey: (
 			graph: PluginGraph | undefined,
-			id: PluginIdentifier,
-		) => RuntimePluginKey | undefined,
+			id: PluginNodeAddress | PluginNodeSlot | PluginToken,
+		) => PluginNodeSlot | undefined,
 		private readonly getRunningRuntimeInstance: (
-			id: RuntimePluginKey | undefined,
+			id: PluginNodeSlot | undefined,
 		) => BasePlugin | undefined,
 		private readonly logError: (error: unknown) => void,
 	) {}
 
-	public watch<T extends PluginIdentifier>(
+	public watch(
+		graph: PluginGraph | undefined,
+		id: PluginNodeAddress,
+		cb: (instance: BasePlugin | undefined) => void,
+	): () => void
+	public watch<T extends PluginToken>(
 		graph: PluginGraph | undefined,
 		id: T,
 		cb: (instance: InstanceType<T> | undefined) => void,
+	): () => void
+	public watch(
+		graph: PluginGraph | undefined,
+		id: PluginNodeSlot,
+		cb: (instance: BasePlugin | undefined) => void,
+	): () => void
+	public watch(
+		graph: PluginGraph | undefined,
+		id: PluginNodeAddress | PluginNodeSlot | PluginToken,
+		cb: (instance: BasePlugin | undefined) => void,
 	): () => void {
 		const resolved = this.resolveGraphKey(graph, id)
 		const entry: InstanceWatcher = {
@@ -80,7 +95,7 @@ export class InstanceWatcherRegistry {
 
 		const retargeted: InstanceWatcher[] = []
 		for (const [resolvedKey, set] of this.watchersByResolvedKey) {
-			if (availabilityChangedSet.has(resolvedKey)) continue
+			if (resolvedKey !== undefined && availabilityChangedSet.has(resolvedKey)) continue
 			for (const entry of set) {
 				const nextResolved = this.resolveGraphKey(summary.graph, entry.id)
 				if (nextResolved !== entry.resolvedKey) retargeted.push(entry)

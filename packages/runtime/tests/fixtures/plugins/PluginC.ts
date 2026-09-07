@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { test1 } from './testconfig'
 
-@Plugin({ name: 'PluginC', type: 'hook' })
+@Plugin({ displayName: 'Plugin C' })
 export class PluginC extends BasePlugin {
 	private test1 = this.configs.use(test1)
 	override init(): void {

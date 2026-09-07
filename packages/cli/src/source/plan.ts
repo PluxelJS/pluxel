@@ -2,11 +2,11 @@ import { existsSync } from 'node:fs'
 import { relative, resolve } from 'pathe'
 import {
 	normalizeRepositoryIdentity,
-	readSourceCheckoutRegistry,
 	readSourceProjectConfig,
 	SOURCE_CONFIG_FILE,
 	tryReadSourceProjectConfig,
 } from './config'
+import { resolveSourceCheckouts } from './registry'
 import {
 	collectManifestDependencyNames,
 	scanSourceWorkspace,
@@ -17,6 +17,7 @@ import {
 export interface ResolvedSourceCheckout {
 	repository: string
 	root: string
+	origin: 'registered' | 'cli'
 	workspace: ScannedSourceWorkspace
 	sources: string[]
 	singletons: string[]
@@ -29,6 +30,7 @@ export interface SourceWorkspacePlan {
 	checkouts: ResolvedSourceCheckout[]
 	selectedPackages: SourceWorkspacePackage[]
 	selectedByRepository: Map<string, SourceWorkspacePackage[]>
+	executionLevels: ResolvedSourceCheckout[][]
 	overrides: Record<string, string>
 }
 
@@ -40,7 +42,9 @@ export async function createSourceWorkspacePlan(options: {
 	const root = resolve(options.root)
 	const configPath = options.configPath ?? SOURCE_CONFIG_FILE
 	const config = readSourceProjectConfig(root, configPath)
-	const registry = readSourceCheckoutRegistry(options.registryPath)
+	const available = new Map(
+		resolveSourceCheckouts(options.registryPath).map((checkout) => [checkout.repository, checkout]),
+	)
 	const checkouts = new Map<string, ResolvedSourceCheckout>()
 	const visiting = new Set<string>()
 
@@ -50,12 +54,13 @@ export async function createSourceWorkspacePlan(options: {
 		if (visiting.has(normalized)) {
 			throw new Error(`Source repository cycle includes ${normalized}`)
 		}
-		const checkoutRoot = registry.checkouts[normalized]
-		if (!checkoutRoot) {
+		const checkout = available.get(normalized)
+		if (!checkout) {
 			throw new Error(
 				`Source checkout is not registered: ${normalized}\nRun \`pluxel source register <path>\`.`,
 			)
 		}
+		const checkoutRoot = checkout.root
 		if (!existsSync(checkoutRoot)) {
 			throw new Error(`Registered source checkout does not exist: ${normalized} -> ${checkoutRoot}`)
 		}
@@ -66,6 +71,7 @@ export async function createSourceWorkspacePlan(options: {
 		checkouts.set(normalized, {
 			repository: normalized,
 			root: checkoutRoot,
+			origin: checkout.origin,
 			workspace,
 			sources: nested?.sources ?? [],
 			singletons: nested?.singletons ?? [],
@@ -89,8 +95,17 @@ export async function createSourceWorkspacePlan(options: {
 	for (const list of selectedByRepository.values()) {
 		list.sort((a, b) => a.name.localeCompare(b.name))
 	}
+	const executionLevels = createRepositoryExecutionLevels(
+		resolvedCheckouts,
+		packageOwners,
+		selected,
+	)
+	const activeRepositories = new Set(executionLevels.flat().map((checkout) => checkout.repository))
+	const activeCheckouts = resolvedCheckouts.filter((checkout) =>
+		activeRepositories.has(checkout.repository),
+	)
 
-	const overrides = Object.fromEntries(
+	const overrides: Record<string, string> = Object.fromEntries(
 		[...selected.values()]
 			.sort((a, b) => a.name.localeCompare(b.name))
 			.map((pkg) => [pkg.name, `link:${normalizeLinkPath(pkg.dir)}`]),
@@ -98,20 +113,86 @@ export async function createSourceWorkspacePlan(options: {
 	for (const singleton of config.singletons) {
 		overrides[singleton] = resolveSingletonOverride(
 			singleton,
-			resolvedCheckouts,
+			activeCheckouts,
 			new Set(selected.keys()),
 		)
 	}
+	const sortedOverrides = Object.fromEntries(
+		Object.entries(overrides).sort(([left], [right]) => left.localeCompare(right)),
+	)
 
 	return {
 		root,
 		configPath: resolve(root, configPath),
 		registryPath: options.registryPath,
-		checkouts: resolvedCheckouts,
+		checkouts: activeCheckouts,
 		selectedPackages: [...selected.values()].sort((a, b) => a.name.localeCompare(b.name)),
 		selectedByRepository,
-		overrides,
+		executionLevels,
+		overrides: sortedOverrides,
 	}
+}
+
+function createRepositoryExecutionLevels(
+	checkouts: ResolvedSourceCheckout[],
+	owners: Map<string, { checkout: ResolvedSourceCheckout; pkg: SourceWorkspacePackage }>,
+	selected: Map<string, SourceWorkspacePackage>,
+): ResolvedSourceCheckout[][] {
+	const byRepository = new Map(checkouts.map((checkout) => [checkout.repository, checkout]))
+	const active = new Set<string>()
+	const include = (repository: string) => {
+		if (active.has(repository)) return
+		active.add(repository)
+		for (const source of byRepository.get(repository)?.sources ?? []) {
+			include(normalizeRepositoryIdentity(source))
+		}
+	}
+	for (const name of selected.keys()) include(owners.get(name)!.checkout.repository)
+
+	const dependencies = new Map<string, Set<string>>()
+	for (const repository of active) {
+		const checkout = byRepository.get(repository)!
+		dependencies.set(
+			repository,
+			new Set(
+				checkout.sources
+					.map(normalizeRepositoryIdentity)
+					.filter((dependency) => active.has(dependency)),
+			),
+		)
+	}
+	for (const [name, pkg] of selected) {
+		const repository = owners.get(name)!.checkout.repository
+		for (const dependencyName of collectManifestDependencyNames(pkg.manifest, {
+			includeDev: false,
+		})) {
+			const dependency = owners.get(dependencyName)?.checkout.repository
+			if (dependency && dependency !== repository && active.has(dependency)) {
+				dependencies.get(repository)!.add(dependency)
+			}
+		}
+	}
+
+	const levels: ResolvedSourceCheckout[][] = []
+	const completed = new Set<string>()
+	while (completed.size < active.size) {
+		const ready = [...active]
+			.filter(
+				(repository) =>
+					!completed.has(repository) &&
+					[...(dependencies.get(repository) ?? [])].every((dependency) =>
+						completed.has(dependency),
+					),
+			)
+			.sort()
+		if (ready.length === 0) {
+			const remaining = [...active].filter((repository) => !completed.has(repository)).sort()
+			throw new Error(`Source package dependency cycle includes ${remaining.join(', ')}`)
+		}
+		levels.push(ready.map((repository) => byRepository.get(repository)!))
+		for (const repository of ready) completed.add(repository)
+	}
+	return levels
 }
 
 export function sourceCheckoutInstallOverrides(

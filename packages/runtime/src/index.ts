@@ -1,15 +1,86 @@
-import './context-augment'
-import './events'
-import './services'
-import './services/debug'
+import './context/runtime-contract'
 
-export * from '@pluxel/core'
-export { Config, type ConfigSchemaMap } from './base'
+export {
+	BasePlugin,
+	EvtChannel,
+	OptionalPluginBindings,
+	Plugin,
+	PluginConfigs,
+	PluginPart,
+	collectPluginLifecycleBlocked,
+	collectPluginLifecycleDrainErrors,
+	collectPluginLifecycleIssuePlugins,
+	collectPluginLifecycleNotStarted,
+	comparePluginDefinitionAddress,
+	comparePluginNodeAddress,
+	definePluginRef,
+	encodePluginDefinitionAddressBytes,
+	encodePluginNodeAddressBytes,
+	formatPluginDefinitionReference,
+	formatPluginNodeReference,
+	formatPluginNodeRoute,
+	isPluginLifecycleBlockedIssue,
+	isPluginLifecycleDrainErrorIssue,
+	isPluginLifecycleNotStartedIssue,
+	parsePluginDefinitionAddress,
+	parsePluginDefinitionReference,
+	parsePluginEntryAddress,
+	parsePluginNodeAddress,
+	parsePluginNodeReference,
+	parsePluginNodeRoute,
+	pluginDefinitionAddressEqual,
+	pluginDefinitionAddressOf,
+	pluginDefinitionIndexKey,
+	pluginMethodDecorator,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
+	pluginNodeIndexKey,
+} from '@pluxel/core'
+export type {
+	Cleanup,
+	CommitSummary,
+	ConfigUpdate,
+	ConfigUpdateListener,
+	ConfigSnapshot,
+	Context,
+	DisposableLike,
+	Effects,
+	EffectsScope,
+	Events,
+	EventsService,
+	EventsServiceConfig,
+	EventsWhenGuard,
+	ParsedPluginNodeRoute,
+	PluginCleanup,
+	PluginCommitChanges,
+	PluginConstructor,
+	PluginContextOf,
+	PluginDefinitionAddress,
+	PluginDefinitionSlot,
+	PluginEntryAddress,
+	PluginLifecycleErrorInfo,
+	PluginLifecycleIssue,
+	PluginLifecycleIssueKind,
+	PluginLifecycleIssuePhase,
+	PluginLifecycleIssuePredicate,
+	PluginLifecycleReport,
+	PluginNodeAddress,
+	PluginNodeInfo,
+	PluginNodeSlot,
+	PluginOptions,
+	PluginPartClass,
+	PluginRef,
+	PluginReplacement,
+	PluginToken,
+	RuntimeUpdateCommitSummary,
+} from '@pluxel/core'
 export {
 	defineWorkerTask,
 	WorkerTaskError,
 	type WorkerTaskDeclaration,
 	type WorkerTaskHandler,
+	type WorkerInputPreparation,
+	type WorkerPreparedRunOptions,
 	type WorkerRunOptions,
 	type WorkersConfig,
 	type WorkerTaskErrorCode,
@@ -17,7 +88,6 @@ export {
 export { defineNodeModule, type NodeModuleDeclaration } from './node-artifact/node-module'
 export type { DatabaseConfig } from './services/DatabaseService'
 export { f, v } from './config'
-export type { RuntimeEvents } from './events'
 export {
 	PersistenceError,
 	createMemoryPersistenceBackend,
@@ -35,33 +105,27 @@ export {
 	type WorkspacePersistenceBackendOptions,
 } from './services/persistence/PersistenceService'
 export type { ConfigServiceConfig } from './services/ConfigService'
-export type { CommandCatalogSnapshot } from './services/CommandsService'
-export {
-	type AgentCommandCatalog,
-	type AgentCommandCatalogSnapshot,
-	type AgentToolAssignment,
-	type AgentToolsAdminSnapshot,
-	type AgentToolsPolicy,
-	type AgentToolsPolicyInput,
-	type CommandInventoryItem,
-	type CommandToolset,
-} from './agent-tools'
-export {
-	PLUGIN_HTTP_BASE,
-	type ElysiaRouteHandle,
-	type HttpServiceConfig,
-	type HttpHandler,
-} from './services/http/HttpService'
-export {
-	createElysiaApp,
-	type AnyElysiaApp,
-	type CreateElysiaAppOptions,
-} from './services/http/elysia'
-export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
-export { createInternalGraphQLSchemaSDL } from './services/http/internalGraphqlSchema'
-export {
-	getPluginRoutingSnapshot,
-	type PluginRoutingSnapshot,
-	type RouteId,
-} from './services/routing/pluginGatedRoutes'
-export type { WorkbenchConfig, WorkbenchPluginGroupConfig } from './workbench-config'
+export type { CommandCatalogSnapshot, CommandMount } from './services/CommandsService'
+export type { VaultServiceConfig } from './services/vault/types'
+export type {
+	ManagementAccessMethod,
+	ManagementAccessPrincipal,
+	ManagementAccessProvider,
+	ManagementAccessProviderStatus,
+	ManagementAccessRegistration,
+	ManagementAccessRequestContext,
+	ManagementAuthenticationChallenge,
+	ManagementAuthenticationCookieCommit,
+	ManagementAuthenticationFailureCode,
+	ManagementAuthenticationProviderSession,
+	ManagementAuthenticationProviderStep,
+} from './services/admin-access/types'
+export type { WorkbenchConfig } from './workbench-config'
+export type {
+	RuntimeDependencyOverrideState,
+	RuntimeForkState,
+	RuntimeProviderDefaultState,
+	RuntimeStateSnapshot,
+	RuntimeStateStoreConfig,
+	RuntimeStateStoreMode,
+} from './services/RuntimeStateStore'

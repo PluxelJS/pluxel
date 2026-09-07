@@ -1,2 +1,3 @@
 export * from './internal-static-host'
-export { installWorkbench } from './services/workbench'
+export { createWorkbenchBackend } from './services/workbench'
+export type { WorkbenchBackendFactory, WorkbenchInstallOptions } from './services/workbench'

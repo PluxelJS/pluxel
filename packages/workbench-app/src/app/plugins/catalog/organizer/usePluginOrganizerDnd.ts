@@ -18,6 +18,7 @@ import {
 	type MutableRefObject,
 	type SetStateAction,
 } from 'react'
+import { sortPluginIdsByOrder } from './groupOperations'
 import { assertNoDup } from './organizerModel'
 import {
 	buildContainers,
@@ -33,6 +34,7 @@ import type { GroupConfig } from './types'
 
 type UsePluginOrganizerDndArgs = {
 	groups: GroupConfig[]
+	expandFamilies: (ids: string[]) => string[]
 	groupsRef: MutableRefObject<GroupConfig[]>
 	ungroupedRef: MutableRefObject<string[]>
 	selectedIds: string[]
@@ -90,6 +92,7 @@ const computeTargetIndex = (
 
 export function usePluginOrganizerDnd({
 	groups,
+	expandFamilies,
 	groupsRef,
 	ungroupedRef,
 	selectedIds,
@@ -154,17 +157,14 @@ export function usePluginOrganizerDnd({
 			if (!isIid(activeId)) return
 
 			const draggingPluginId = fromIid(String(activeId))
-			const movingIds =
-				selectedIds.length > 1 && selectedIds.includes(draggingPluginId)
-					? selectedIds
-					: [draggingPluginId]
+			const movingIds = sortPluginIdsByOrder(
+				expandFamilies(selectedIds.includes(draggingPluginId) ? selectedIds : [draggingPluginId]),
+				groupsRef.current,
+				ungroupedRef.current,
+			)
 			const movingSet = new Set(movingIds)
 			const originContainer = containers.itemToContainer.get(draggingPluginId)
 			if (!originContainer) return
-
-			const orderedMoving = (containers.containerToItems.get(originContainer) ?? []).filter((id) =>
-				movingSet.has(id),
-			)
 
 			const targetContainer = isCid(overId)
 				? fromCid(String(overId))
@@ -173,73 +173,38 @@ export function usePluginOrganizerDnd({
 					: undefined
 			if (!targetContainer) return
 
-			if (originContainer === targetContainer) {
-				const full = containers.containerToItems.get(originContainer) ?? []
-				const targetId = isIid(overId) ? fromIid(String(overId)) : undefined
-				const selfBehavior: 'before' | 'after' | undefined =
-					targetId && movingSet.has(targetId)
-						? (delta?.y ?? 0) < 0
-							? 'before'
-							: 'after'
-						: undefined
-				const targetIndex = computeTargetIndex(full, movingSet, targetId, { selfBehavior })
-				const nextList = insertKeepOrder(full, movingSet, orderedMoving, targetIndex)
-
-				if (originContainer === 'ROOT_UNGROUPED') {
-					setUngroupedOrder(nextList)
-				} else {
-					setGroups((prev) =>
-						prev.map((group) =>
-							group.groupId === originContainer ? { ...group, pluginIds: nextList } : group,
-						),
-					)
-				}
-
-				queueMicrotask(() => {
-					assertNoDup(groupsRef.current, ungroupedRef.current)
-					onGroupsChangeRef.current(groupsRef.current)
-				})
-				return
-			}
-
-			const originItems = containers.containerToItems.get(originContainer) ?? []
 			const targetItems = containers.containerToItems.get(targetContainer) ?? []
 			const targetId = isIid(overId) ? fromIid(String(overId)) : undefined
-			const targetIndex = computeTargetIndex(targetItems, movingSet, targetId)
-
-			if (originContainer === 'ROOT_UNGROUPED') {
-				setUngroupedOrder(originItems.filter((id) => !movingSet.has(id)))
-			} else {
-				setGroups((prev) =>
-					prev.map((group) =>
-						group.groupId === originContainer
-							? { ...group, pluginIds: group.pluginIds.filter((id) => !movingSet.has(id)) }
-							: group,
-					),
-				)
-			}
-
-			if (targetContainer === 'ROOT_UNGROUPED') {
-				setUngroupedOrder((prev) => insertKeepOrder(prev, movingSet, movingIds, targetIndex))
-			} else {
-				setGroups((prev) =>
-					prev.map((group) =>
-						group.groupId === targetContainer
-							? {
-									...group,
-									pluginIds: insertKeepOrder(group.pluginIds, movingSet, movingIds, targetIndex),
-								}
-							: group,
-					),
-				)
-			}
-
-			queueMicrotask(() => {
-				assertNoDup(groupsRef.current, ungroupedRef.current)
-				onGroupsChangeRef.current(groupsRef.current)
+			const targetIndex = computeTargetIndex(targetItems, movingSet, targetId, {
+				selfBehavior: (delta?.y ?? 0) < 0 ? 'before' : 'after',
 			})
+			const nextGroups = groupsRef.current.map((group) => ({
+				...group,
+				pluginIds:
+					group.groupId === targetContainer
+						? insertKeepOrder(group.pluginIds, movingSet, movingIds, targetIndex)
+						: group.pluginIds.filter((id) => !movingSet.has(id)),
+			}))
+			const nextUngrouped =
+				targetContainer === 'ROOT_UNGROUPED'
+					? insertKeepOrder(ungroupedRef.current, movingSet, movingIds, targetIndex)
+					: ungroupedRef.current.filter((id) => !movingSet.has(id))
+			assertNoDup(nextGroups, nextUngrouped)
+			groupsRef.current = nextGroups
+			ungroupedRef.current = nextUngrouped
+			setGroups(nextGroups)
+			setUngroupedOrder(nextUngrouped)
+			queueMicrotask(() => onGroupsChangeRef.current(nextGroups))
 		},
-		[groupsRef, onGroupsChangeRef, selectedIds, setGroups, setUngroupedOrder, ungroupedRef],
+		[
+			expandFamilies,
+			groupsRef,
+			onGroupsChangeRef,
+			selectedIds,
+			setGroups,
+			setUngroupedOrder,
+			ungroupedRef,
+		],
 	)
 
 	return {

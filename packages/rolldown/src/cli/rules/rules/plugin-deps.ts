@@ -26,12 +26,7 @@ export function pluginDependencyRule(pkg: WorkspacePackageJson, context: RuleCon
 		messages.push(`peerDependenciesMeta updated ${peerMetaChanges.join(', ')}`)
 	}
 
-	const manifestUpdate = syncPluginPackages(
-		pkg,
-		context.pluginUsages,
-		context.manifestField,
-		MANIFEST_PLUGIN_PACKAGES_FIELD,
-	)
+	const manifestUpdate = syncPluginPackages(pkg, context.pluginUsages, context.manifestField)
 	if (manifestUpdate) {
 		messages.push(
 			`${context.manifestField}.${MANIFEST_PLUGIN_PACKAGES_FIELD} updated (${Object.entries(
@@ -92,11 +87,6 @@ function readGeneratedPluginPackages(pkg: WorkspacePackageJson, manifestField: s
 	if (isRecord(manifest[MANIFEST_PLUGIN_PACKAGES_FIELD])) {
 		for (const name of Object.keys(manifest[MANIFEST_PLUGIN_PACKAGES_FIELD])) names.add(name)
 	}
-	const legacy = isRecord(manifest.dependOn) ? manifest.dependOn : undefined
-	for (const mode of ['required', 'optional'] as const) {
-		if (!Array.isArray(legacy?.[mode])) continue
-		for (const name of legacy[mode]) if (typeof name === 'string' && name) names.add(name)
-	}
 	return [...names]
 }
 
@@ -154,7 +144,6 @@ function syncPluginPackages(
 	pkg: WorkspacePackageJson,
 	facts: RuleContext['pluginUsages'],
 	manifestField: string,
-	pluginPackagesField: string,
 ): Record<string, 'required' | 'optional'> | undefined {
 	const next = Object.fromEntries(
 		[...facts.entries()].sort(([a], [b]) => a.localeCompare(b)),
@@ -162,16 +151,14 @@ function syncPluginPackages(
 	const manifest = isRecord(pkg[manifestField])
 		? (pkg[manifestField] as Record<string, unknown>)
 		: {}
-	const previous = isRecord(manifest[pluginPackagesField])
-		? (manifest[pluginPackagesField] as Record<string, unknown>)
+	const previous = isRecord(manifest[MANIFEST_PLUGIN_PACKAGES_FIELD])
+		? (manifest[MANIFEST_PLUGIN_PACKAGES_FIELD] as Record<string, unknown>)
 		: {}
-	const hasLegacy = 'dependOn' in manifest
-	if (recordsEqual(previous, next) && !hasLegacy) return undefined
+	if (recordsEqual(previous, next)) return undefined
 
 	const updated = { ...manifest }
-	delete updated.dependOn
-	if (Object.keys(next).length === 0) delete updated[pluginPackagesField]
-	else updated[pluginPackagesField] = next
+	if (Object.keys(next).length === 0) delete updated[MANIFEST_PLUGIN_PACKAGES_FIELD]
+	else updated[MANIFEST_PLUGIN_PACKAGES_FIELD] = next
 	if (Object.keys(updated).length === 0) delete pkg[manifestField]
 	else pkg[manifestField] = updated
 	return next

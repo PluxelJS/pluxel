@@ -34,8 +34,6 @@ export function createAppRouter(options: CreateRouterOptions = {}) {
 	} as never)
 }
 
-const _routerForTypes = createAppRouter()
-
 function readWorkbenchUiBasePath(): string {
 	if (typeof document === 'undefined') return '/'
 	return (
@@ -46,6 +44,6 @@ function readWorkbenchUiBasePath(): string {
 
 declare module '@tanstack/react-router' {
 	interface Register {
-		router: typeof _routerForTypes
+		router: ReturnType<typeof createAppRouter>
 	}
 }

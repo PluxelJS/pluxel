@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/runtime'
 
+import { requireLoaderService } from '../../src/context-plan'
 import { withTestDynamicContext } from '../support/context'
 
-@Plugin({ name: 'NonEnumerableExportPlugin' })
+@Plugin({ displayName: 'Non-enumerable export Plugin' })
 class NonEnumerableExportPlugin extends BasePlugin {}
 
 describe('ModuleReplacer export scanning', () => {
@@ -17,12 +18,13 @@ describe('ModuleReplacer export scanning', () => {
 			})
 
 			const moduleId = '/repo/non-enum.ts'
-			const result = await ctx.loader.replaceModule(moduleId, mod)
+			const result = await requireLoaderService(ctx).replaceModule(moduleId, mod)
+			const address = pluginNodeAddressOf(NonEnumerableExportPlugin)
 
 			expect(result.isAnchor).toBe(true)
-			expect(ctx.loader.api.anchors.has(moduleId)).toBe(true)
-			expect(ctx.loader.api.registry.findModuleId('NonEnumerableExportPlugin')).toBe(moduleId)
-			expect(ctx.loader.api.registry.getExportKey('NonEnumerableExportPlugin')).toBe(
+			expect(requireLoaderService(ctx).api.anchors.has(moduleId)).toBe(true)
+			expect(requireLoaderService(ctx).api.registry.findModuleId(address)).toBe(moduleId)
+			expect(requireLoaderService(ctx).api.registry.getExportKey(address)).toBe(
 				'NonEnumerableExportPlugin',
 			)
 		})

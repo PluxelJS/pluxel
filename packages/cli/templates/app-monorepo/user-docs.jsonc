@@ -1,4 +1,0 @@
-{
-	// Copy the complete user-docs bundle shipped with this CLI version.
-	"target": "docs/pluxel",
-}

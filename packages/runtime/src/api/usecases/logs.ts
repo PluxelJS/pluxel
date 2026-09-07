@@ -4,8 +4,10 @@ import {
 	type LogFilter,
 	type LogRangeResult,
 	type LogStreamMeta,
+	type RuntimeLogEvent,
 	type RuntimeLogLine,
 } from '../../logger/protocol'
+import { pluginNodeAddressEqual } from '@pluxel/core'
 import { requireActiveRuntimeLogging } from '../../logger/logging'
 import type { RuntimeLogStore } from '../../logger/store'
 
@@ -14,6 +16,8 @@ export type LogsMetaInput = {
 }
 
 export type LogsMetaOutput = LogStreamMeta
+
+export type LogsIndexOutput = Readonly<{ streams: readonly LogStreamMeta[] }>
 
 export type LogsRangeInput = {
 	streamId?: string
@@ -48,6 +52,21 @@ export type LogsWaitInput = LogsLatestInput & {
 	signal?: AbortSignal
 }
 
+export type LogsFollowInput = Readonly<{
+	streamId?: string
+	filter?: LogFilter
+}>
+
+export function logsIndex(): LogsIndexOutput {
+	return Object.freeze({
+		streams: Object.freeze(
+			requireActiveRuntimeLogging()
+				.stores.list()
+				.map((store) => Object.freeze(store.meta())),
+		),
+	})
+}
+
 function toStreamId(input?: string): string {
 	return input?.trim() ? input : 'default'
 }
@@ -66,11 +85,6 @@ function resolveStream(input?: string): ResolvedLogStream {
 	if (requested === 'default') return { streamId: 'default', store: defaultStore, virtual: false }
 	const existing = stores.get(requested)
 	if (existing) return { streamId: requested, store: existing, virtual: false }
-	if (requested.startsWith('plugin:')) {
-		const pluginId = requested.slice('plugin:'.length)
-		if (!pluginId) throw new Error('Invalid plugin stream id')
-		return { streamId: requested, store: defaultStore, virtual: true, derivedFilter: { pluginId } }
-	}
 	if (requested.startsWith('context:')) {
 		const context = requested.slice('context:'.length)
 		if (!context) throw new Error('Invalid context stream id')
@@ -100,12 +114,12 @@ function assignDefined<T extends object>(out: T, k: keyof T, v: unknown) {
 function mergeFilters(a: LogFilter | undefined, b: LogFilter | undefined): LogFilter | null {
 	if (!a) return b ?? {}
 	if (!b) return a
-	if (a.pluginId && b.pluginId && a.pluginId !== b.pluginId) return null
+	if (a.plugin && b.plugin && !pluginNodeAddressEqual(a.plugin, b.plugin)) return null
 	if (a.context && b.context && a.context !== b.context) return null
 	if (a.displayName && b.displayName && a.displayName !== b.displayName) return null
 	if (a.category && b.category && a.category !== b.category) return null
 	const out: LogFilter = { ...a }
-	assignDefined(out, 'pluginId', b.pluginId)
+	assignDefined(out, 'plugin', b.plugin)
 	assignDefined(out, 'context', b.context)
 	assignDefined(out, 'displayName', b.displayName)
 	assignDefined(out, 'category', b.category)
@@ -144,6 +158,40 @@ export function logsRange(input: LogsRangeInput): LogsRangeOutput {
 		streamId: resolved.streamId,
 		lines: mapLinesStreamId(out.lines, resolved.streamId),
 	}
+}
+
+/** Subscribe to one resolved store. Queueing and backpressure remain transport-owned. */
+export function logsFollow(
+	input: LogsFollowInput,
+	listener: (event: RuntimeLogEvent) => void,
+): () => void {
+	const resolved = resolveStream(input.streamId)
+	const filter = mergeFilters(input.filter, resolved.derivedFilter)
+	if (filter === null) throw new TypeError('Conflicting log filters')
+	const compiled = compileLogFilter(filter)
+	return resolved.store.subscribe((event) => {
+		if (event.type === 'reset') {
+			listener(
+				resolved.virtual
+					? Object.freeze({ ...event, streamId: resolved.streamId })
+					: Object.freeze({ ...event }),
+			)
+			return
+		}
+		const lines = compiled.hasFilter
+			? event.lines.filter((line) => matchesLogFilterCompiled(line, compiled))
+			: event.lines
+		if (lines.length === 0) return
+		listener(
+			Object.freeze({
+				...event,
+				streamId: resolved.streamId,
+				lines: Object.freeze(
+					resolved.virtual ? mapLinesStreamId(lines, resolved.streamId) : [...lines],
+				),
+			}),
+		)
+	})
 }
 
 /**
@@ -189,7 +237,7 @@ export function logsLatest(input: LogsLatestInput = {}): LogsLatestOutput {
 /**
  * Wait for logs matching filter/cursor.
  *
- * Transport-neutral polling helper: clients can call it in a loop to simulate SSE tailing.
+ * Transport-neutral wait helper for non-streaming internal consumers.
  */
 export async function logsWaitFor(input: LogsWaitInput = {}): Promise<LogsLatestOutput> {
 	const first = logsLatest(input)

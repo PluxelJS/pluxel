@@ -9,15 +9,14 @@ const pause = (milliseconds = 20) =>
 	new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
 describe('workbench build scheduler', () => {
-	it('treats the Federation builder as a process-wide exclusive resource', async () => {
+	it('bounds same-application builds', async () => {
 		let active = 0
-		let maximumActive = 0
-
+		let maximum = 0
 		await Promise.all(
 			Array.from({ length: 3 }, () =>
-				runWorkbenchFederationBuild(async () => {
+				runWorkbenchFederationBuild('/application/a', async () => {
 					active += 1
-					maximumActive = Math.max(maximumActive, active)
+					maximum = Math.max(maximum, active)
 					try {
 						await pause()
 					} finally {
@@ -26,18 +25,46 @@ describe('workbench build scheduler', () => {
 				}),
 			),
 		)
+		expect(maximum).toBe(2)
+	})
 
-		expect(maximumActive).toBe(1)
+	it('never overlaps roots or lets a later same-root task skip a waiting cohort', async () => {
+		let activeRoot: string | undefined
+		let crossedRoots = false
+		const order: string[] = []
+		const run = (root: string, label: string) =>
+			runWorkbenchFederationBuild(root, async () => {
+				if (activeRoot !== undefined && activeRoot !== root) crossedRoots = true
+				activeRoot = root
+				order.push(label)
+				try {
+					await pause()
+				} finally {
+					activeRoot = undefined
+				}
+			})
+
+		await Promise.all([
+			run('/application/a', 'a-first'),
+			run('/application/b', 'b'),
+			run('/application/a', 'a-later'),
+		])
+		expect(crossedRoots).toBe(false)
+		expect(order).toEqual(['a-first', 'b', 'a-later'])
+	})
+
+	it('continues with the next application root after a Federation build fails', async () => {
+		await expect(
+			runWorkbenchFederationBuild('/application/failure', async () => {
+				throw new Error('expected Federation failure')
+			}),
+		).rejects.toThrow('expected Federation failure')
+		await expect(
+			runWorkbenchFederationBuild('/application/recovery', async () => 'recovered'),
+		).resolves.toBe('recovered')
 	})
 
 	it('continues scheduling after a failed Federation build', async () => {
-		await expect(
-			runWorkbenchFederationBuild(async () => {
-				throw new Error('expected build failure')
-			}),
-		).rejects.toThrow('expected build failure')
-		await expect(runWorkbenchFederationBuild(async () => {})).resolves.toBeUndefined()
-
 		await expect(
 			runWorkbenchOutputTransaction('/tmp/pluxel-failed-target', async () => {
 				throw new Error('expected transaction failure')

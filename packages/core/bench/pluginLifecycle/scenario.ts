@@ -1,7 +1,38 @@
-import { __registerConfigSchema__, BasePlugin, Context, Plugin, setParamTokens } from '@pluxel/core'
+import {
+	BasePlugin,
+	pluginDefinitionAddressOf,
+	pluginNodeAddressOf,
+	Plugin,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+	type RootContext,
+} from '@pluxel/core'
+import {
+	consumePluginDefinitionCandidate,
+	createCoreRootContext,
+	requirePluginService,
+	type ConcretePluginDefinitionCandidate,
+} from '@pluxel/core/internal'
+import { __setPluginConfig, __setPluginDefinition } from '@pluxel/core/toolchain'
 
-export type Ctx = InstanceType<typeof Context>
-type CommitResult = Awaited<ReturnType<Ctx['registry']['commit']>>
+export type Ctx = RootContext
+export type Registry = ReturnType<typeof requirePluginService>
+export type Update = ReturnType<Registry['beginUpdate']>
+type CommitResult = Awaited<ReturnType<Update['commit']>>
+
+export type BenchHost = Readonly<{
+	ctx: Ctx
+	plugins: Registry
+}>
+
+export type PluginCtor = new (...args: unknown[]) => BasePlugin
+
+export type PluginFixture = Readonly<{
+	ctor: PluginCtor
+	definitionAddress: PluginDefinitionAddress
+	nodeAddress: PluginNodeAddress
+	candidate: ConcretePluginDefinitionCandidate
+}>
 
 const passthroughSchema = {
 	'~standard': {
@@ -16,28 +47,47 @@ export const ensureOk = (result: CommitResult) => {
 	}
 }
 
-export type PluginCtor = new (...args: unknown[]) => BasePlugin
-
-function definePlugin(name: string, deps?: unknown[]): PluginCtor {
+function definePlugin(name: string, deps?: readonly PluginFixture[]): PluginFixture {
 	class P extends BasePlugin {}
-	if (deps?.length) setParamTokens(P, deps as any)
-	Plugin({ name })(P)
-	return P
+	Plugin({ displayName: name })(P)
+	__setPluginDefinition(P, {
+		abiVersion: 2,
+		kind: 'plugin',
+		definition: {
+			entry: {
+				kind: 'source-entry',
+				sourceSpace: 'app',
+				path: `core-bench/plugin-lifecycle/${name}`,
+			},
+			exportName: name,
+		},
+		constructorRequires: deps?.map((dependency) => dependency.definitionAddress),
+	})
+	return pluginFixture(P)
 }
 
-function createIndependent(prefix: string, count: number): PluginCtor[] {
-	const list = Array<PluginCtor>(count)
+function pluginFixture(ctor: PluginCtor): PluginFixture {
+	return Object.freeze({
+		ctor,
+		definitionAddress: pluginDefinitionAddressOf(ctor),
+		nodeAddress: pluginNodeAddressOf(ctor),
+		candidate: consumePluginDefinitionCandidate(ctor),
+	})
+}
+
+function createIndependent(prefix: string, count: number): PluginFixture[] {
+	const list = Array<PluginFixture>(count)
 	for (let i = 0; i < count; i++) list[i] = definePlugin(`${prefix}${i}`)
 	return list
 }
 
 function createChain(length: number) {
-	const chain = Array<PluginCtor>(length)
-	let prev: PluginCtor | undefined
+	const chain = Array<PluginFixture>(length)
+	let previous: PluginFixture | undefined
 	for (let i = 0; i < length; i++) {
-		const ctor = definePlugin(`BenchChain_${i}`, prev ? [prev] : undefined)
-		chain[i] = ctor
-		prev = ctor
+		const plugin = definePlugin(`BenchChain_${i}`, previous ? [previous] : undefined)
+		chain[i] = plugin
+		previous = plugin
 	}
 	return {
 		chain,
@@ -48,16 +98,18 @@ function createChain(length: number) {
 }
 
 function createStar(leaves: number) {
-	// Same plugin id, different ctor: replace().
+	// Same definition address, different implementation candidate: replaceDefinition().
 	const rootV1 = definePlugin('BenchStarRoot')
 	const rootV2 = definePlugin('BenchStarRoot')
 
 	const hotLeafV1 = definePlugin('BenchStarHotLeaf', [rootV1])
 	const hotLeafV2 = definePlugin('BenchStarHotLeaf', [rootV1])
 
-	const leafCtors = Array<PluginCtor>(leaves)
-	leafCtors[0] = hotLeafV1
-	for (let i = 1; i < leaves; i++) leafCtors[i] = definePlugin(`BenchStarLeaf_${i}`, [rootV1])
+	const leafFixtures = Array<PluginFixture>(leaves)
+	leafFixtures[0] = hotLeafV1
+	for (let i = 1; i < leaves; i++) {
+		leafFixtures[i] = definePlugin(`BenchStarLeaf_${i}`, [rootV1])
+	}
 
 	const addLeaf = definePlugin('BenchStarAddLeaf', [rootV1])
 
@@ -66,72 +118,127 @@ function createStar(leaves: number) {
 		rootV2,
 		hotLeafV1,
 		hotLeafV2,
-		leaves: leafCtors,
+		leaves: leafFixtures,
 		addLeaf,
 	}
 }
 
-function createConfigHeavy(keys: number) {
+function createConfiguredPlugin() {
 	class P extends BasePlugin {}
 
-	// Register schemas before @Plugin so configMap is captured.
-	for (let i = 0; i < keys; i++) __registerConfigSchema__(P, `k${i}`, passthroughSchema)
-	Plugin({ name: 'BenchConfigHeavy' })(P)
+	Plugin({ displayName: 'BenchConfigured' })(P)
+	__setPluginDefinition(P, {
+		abiVersion: 2,
+		kind: 'plugin',
+		definition: {
+			entry: {
+				kind: 'source-entry',
+				sourceSpace: 'app',
+				path: 'core-bench/plugin-lifecycle/BenchConfigured',
+			},
+			exportName: 'BenchConfigured',
+		},
+	})
+	__setPluginConfig(P, { abiVersion: 2, fieldName: 'config', schema: passthroughSchema })
 
-	const record: Record<string, unknown> = Object.create(null)
-	for (let i = 0; i < keys; i++) record[`k${i}`] = i
-
-	return { ctor: P as PluginCtor, id: 'BenchConfigHeavy', record }
+	return {
+		plugin: pluginFixture(P),
+		record: Object.freeze({ value: 1 }) as Readonly<Record<string, unknown>>,
+	}
 }
 
 export type ScenarioSizes = {
 	starLeaves: number
 	chainLength: number
 	bigIndependent: number
-	configKeys: number
 }
 
 export type Scenario = ReturnType<typeof createScenario>
+
+export function createBenchHost(name: string): BenchHost {
+	const ctx = createCoreRootContext({ name })
+	return Object.freeze({ ctx, plugins: requirePluginService(ctx) })
+}
+
+export function beginUpdate(host: BenchHost, reason: string): Update {
+	return host.plugins.beginUpdate({ reason })
+}
+
+export function materialize(update: Update, plugin: PluginFixture): void {
+	update.materializeNode(plugin.nodeAddress, plugin.candidate)
+}
+
+export function dematerialize(
+	update: Update,
+	plugin: PluginFixture,
+	options?: { cascadeDependents?: boolean },
+): void {
+	update.dematerializeNode(plugin.nodeAddress, options)
+}
+
+export function restart(update: Update, plugin: PluginFixture): void {
+	update.restartNode(plugin.nodeAddress)
+}
+
+export function replace(update: Update, target: PluginFixture, next: PluginFixture): void {
+	update.replaceDefinition(target.definitionAddress, next.candidate)
+}
+
+export function isMaterialized(host: BenchHost, plugin: PluginFixture): boolean {
+	return host.plugins.isMaterialized(plugin.nodeAddress)
+}
+
+export async function commit(update: Update): Promise<void> {
+	try {
+		ensureOk(await update.commit())
+	} catch (error) {
+		update.rollback()
+		throw error
+	}
+}
 
 export function createScenario(sizes: ScenarioSizes) {
 	const star = createStar(sizes.starLeaves)
 	const chain = createChain(sizes.chainLength)
 	const bigIndependent = createIndependent('BenchBig_', sizes.bigIndependent)
-	const configHeavy = createConfigHeavy(sizes.configKeys)
+	const configured = createConfiguredPlugin()
 
-	const registerStar = (ctx: Ctx) => {
-		ctx.registry.register(star.rootV1)
-		for (let i = 0; i < star.leaves.length; i++) ctx.registry.register(star.leaves[i])
+	const registerStar = (update: Update) => {
+		materialize(update, star.rootV1)
+		for (const leaf of star.leaves) materialize(update, leaf)
 	}
 
-	const registerChain = (ctx: Ctx) => {
-		for (let i = 0; i < chain.chain.length; i++) ctx.registry.register(chain.chain[i])
+	const registerChain = (update: Update) => {
+		for (const plugin of chain.chain) materialize(update, plugin)
 	}
 
-	const registerBigIndependent = (ctx: Ctx) => {
-		for (let i = 0; i < bigIndependent.length; i++) ctx.registry.register(bigIndependent[i])
+	const registerBigIndependent = (update: Update) => {
+		for (const plugin of bigIndependent) materialize(update, plugin)
 	}
 
-	const setupStarGraph = async (name: string): Promise<Ctx> => {
-		const ctx = new Context({ name })
-		registerStar(ctx)
-		ensureOk(await ctx.registry.commit())
-		return ctx
+	const setupStarGraph = async (name: string): Promise<BenchHost> => {
+		const host = createBenchHost(name)
+		const update = beginUpdate(host, 'core-lifecycle-benchmark-setup-star')
+		registerStar(update)
+		await commit(update)
+		return host
 	}
 
-	const setupChainGraph = async (name: string): Promise<Ctx> => {
-		const ctx = new Context({ name })
-		registerChain(ctx)
-		ensureOk(await ctx.registry.commit())
-		return ctx
+	const setupChainGraph = async (name: string): Promise<BenchHost> => {
+		const host = createBenchHost(name)
+		const update = beginUpdate(host, 'core-lifecycle-benchmark-setup-chain')
+		registerChain(update)
+		await commit(update)
+		return host
 	}
 
-	const setupBigStarGraph = async (name: string): Promise<Ctx> => {
-		const ctx = new Context({ name })
-		registerBigIndependent(ctx)
-		registerStar(ctx)
-		ensureOk(await ctx.registry.commit())
-		return ctx
+	const setupBigStarGraph = async (name: string): Promise<BenchHost> => {
+		const host = createBenchHost(name)
+		const update = beginUpdate(host, 'core-lifecycle-benchmark-setup-large')
+		registerBigIndependent(update)
+		registerStar(update)
+		await commit(update)
+		return host
 	}
 
 	return {
@@ -139,7 +246,7 @@ export function createScenario(sizes: ScenarioSizes) {
 		star,
 		chain,
 		bigIndependent,
-		configHeavy,
+		configured,
 		registerStar,
 		registerChain,
 		registerBigIndependent,

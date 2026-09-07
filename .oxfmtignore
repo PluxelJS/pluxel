@@ -6,7 +6,6 @@ vendor/
 **/*.hbs
 packages/core/benchmarks/
 packages/core-di/benchmarks/
-packages/workbench-app/src/app/gqlens/
 packages/workbench-app/src/app/router/routeTree.gen.ts
 projects/plugin-host/pluxel.loader.hmr.discovered.jsonc
-packages/plugins/static-commercial-demo/web/gqlens/
+projects/docs/next-env.d.ts

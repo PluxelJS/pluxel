@@ -1,4 +1,4 @@
-import type { AnyCommand, CommandContext } from '../types'
+import type { Command, CommandContext } from '../types'
 
 /** Raw command text or argv tokens already split by a shell/runtime. */
 export type ArgvInput = string | readonly string[]
@@ -94,10 +94,8 @@ export type ArgvCommandDescriptor = {
 	readonly tail?: { readonly mode: 'text' | 'json'; readonly placeholder: string }
 }
 
-export type ArgvResolution<Ctx extends CommandContext = CommandContext> = {
-	command: AnyCommand<Ctx>
+export type ArgvResolution<Ctx extends CommandContext = CommandContext, Output = unknown> = {
+	command: Command<any, Output, Ctx>
 	route: string
 	candidate: Record<string, unknown>
-	/** Original text, or a space-joined diagnostic view when `ArgvInput` was already tokenized. */
-	rawArgs: string
 }

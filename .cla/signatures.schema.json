@@ -1,0 +1,65 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/PluxelJS/pluxel/.cla/signatures.schema.json",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["version", "signatures"],
+	"properties": {
+		"version": {
+			"const": 1
+		},
+		"signatures": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": [
+					"host",
+					"username",
+					"acceptedAt",
+					"claSha256",
+					"repository",
+					"pullRequest",
+					"headSha",
+					"evidenceUrl"
+				],
+				"properties": {
+					"host": {
+						"type": "string",
+						"minLength": 1,
+						"examples": ["github.com", "codeberg.org"]
+					},
+					"username": {
+						"type": "string",
+						"minLength": 1
+					},
+					"acceptedAt": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"claSha256": {
+						"type": "string",
+						"pattern": "^[a-fA-F0-9]{64}$"
+					},
+					"repository": {
+						"type": "string",
+						"pattern": "^[^/\\s]+/[^/\\s]+$"
+					},
+					"pullRequest": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"headSha": {
+						"type": "string",
+						"pattern": "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"
+					},
+					"evidenceUrl": {
+						"type": "string",
+						"format": "uri",
+						"pattern": "^https://"
+					}
+				}
+			}
+		}
+	}
+}

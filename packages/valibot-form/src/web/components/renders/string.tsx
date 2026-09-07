@@ -32,6 +32,7 @@ export function StringField(props: RendererProps) {
 					maxLength,
 					disabled: inputProps.disabled,
 					readOnly: inputProps.readOnly,
+					'aria-label': node.meta.label,
 				})}
 				styles={
 					isCode ? { input: { fontFamily: 'var(--mantine-font-family-monospace)' } } : undefined
@@ -51,6 +52,7 @@ export function StringField(props: RendererProps) {
 					disabled: inputProps.disabled,
 					readOnly: inputProps.readOnly,
 					type: control === 'password' ? 'password' : 'text',
+					'aria-label': node.meta.label,
 				})}
 			/>
 		)

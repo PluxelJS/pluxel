@@ -40,11 +40,7 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(createWorkbenchViteClientConfig('/@fs/workspace/workbench/client.tsx')).toEqual({
 			optimizeDeps: {
 				entries: ['/workspace/workbench/client.tsx'],
-				include: [
-					'@tabler/icons-react',
-					'@pluxel/runtime > @elysiajs/eden',
-					'@pluxel/runtime > capnweb',
-				],
+				include: ['@tabler/icons-react', '@pluxel/runtime > capnweb'],
 				noDiscovery: false,
 				holdUntilCrawlEnd: true,
 				ignoreOutdatedRequests: true,
@@ -81,7 +77,7 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
 		expect(config.ssr?.external).toContain('@pluxel/core')
 		expect(config.oxc?.decorator?.legacy).toBe(true)
-		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(true)
+		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(false)
 	})
 
 	it('leaves distribution bare packages to the Node host', () => {
@@ -156,7 +152,10 @@ describe('runtime-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
+				plugins: pluxelRuntimeSourceVitePlugins({
+					lintGuard: false,
+					configSource: false,
+				}),
 			},
 			async (server) => {
 				const mod = await importViteSsrModule<{ selected: string }>(server, entryPath)
@@ -168,10 +167,26 @@ describe('runtime-dev Vite plugin stack', () => {
 	it('classifies CommonJS and native packages for Node externalization', async () => {
 		await using fixture = await createDiskFixture()
 		const root = fixture.path
+		const legacyEsmRoot = join(root, 'node_modules', 'fixture-legacy-esm')
 		await Promise.all([
 			writePackage(root, 'fixture-commonjs', { type: 'commonjs', main: './index.js' }),
 			writePackage(root, 'fixture-native', { type: 'module', napi: { name: 'fixture-native' } }),
 			writePackage(root, 'fixture-esm', { type: 'module', main: './index.js' }),
+			writePackage(root, 'fixture-legacy-esm', {
+				type: 'commonjs',
+				main: './build/src/index.js',
+				module: './build/esm/index.js',
+			}),
+			mkdir(join(legacyEsmRoot, 'build', 'src'), { recursive: true }).then(() =>
+				writeFile(join(legacyEsmRoot, 'build', 'src', 'index.js'), 'module.exports = true\n'),
+			),
+			mkdir(join(legacyEsmRoot, 'build', 'esm'), { recursive: true }).then(() =>
+				Promise.all([
+					writeFile(join(legacyEsmRoot, 'build', 'esm', 'index.js'), 'export default true\n'),
+					writeFile(join(legacyEsmRoot, 'build', 'esm', 'internal.js'), 'export default true\n'),
+					writeFile(join(legacyEsmRoot, 'build', 'esm', 'compat.cjs'), 'module.exports = true\n'),
+				]),
+			),
 		])
 		const classifier = createHostModuleClassifier({ root })
 		expect(
@@ -179,12 +194,23 @@ describe('runtime-dev Vite plugin stack', () => {
 				classifier.classifySpecifier('fixture-commonjs'),
 				classifier.classifySpecifier('fixture-native'),
 				classifier.classifySpecifier('fixture-esm'),
+				classifier.classifySpecifier('fixture-legacy-esm'),
 			]),
 		).toEqual([
 			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
 			expect.objectContaining({ reason: 'native' }),
 			null,
+			null,
 		])
+		expect(
+			await classifier.classifyFile(join(legacyEsmRoot, 'build', 'esm', 'internal.js')),
+		).toBeNull()
+		expect(
+			await classifier.classifyFile(join(legacyEsmRoot, 'build', 'esm', 'compat.cjs')),
+		).toEqual(expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }))
+		expect(await classifier.classifyFile(join(legacyEsmRoot, 'build', 'src', 'index.js'))).toEqual(
+			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
+		)
 	})
 
 	it('prefers the ESM side of dual import/require exports in the real Vite runner', async () => {
@@ -308,21 +334,74 @@ describe('runtime-dev Vite plugin stack', () => {
 		await server.close()
 	})
 
-	it('emits constructor dependency metadata through the real Vite module runner', async () => {
+	it('lowers root and PluginPart constructor dependencies through the Vite Module Runner', async () => {
 		await using fixture = await createDiskFixture({}, { tempDir: process.cwd() })
 		const root = fixture.path
 		const modulePath = join(root, 'plugin.ts')
+		await writePackage(
+			root,
+			'@pluxel/runtime',
+			{
+				name: '@pluxel/runtime',
+				type: 'module',
+				exports: {
+					'.': './index.js',
+					'./internal': './internal.js',
+					'./toolchain': './toolchain.js',
+				},
+			},
+			[
+				"import { addresses } from './state.js'",
+				'export class BasePlugin {}',
+				'export class PluginPart {}',
+				'export function Plugin() { return (target) => target }',
+				'export function pluginDefinitionAddressOf(target) { const value = addresses.get(target); if (!value) throw new Error("missing address"); return value }',
+			].join('\n'),
+		)
+		await Promise.all([
+			writeFile(
+				join(root, 'node_modules', '@pluxel/runtime', 'state.js'),
+				[
+					'export const facts = new WeakMap()',
+					'export const addresses = new WeakMap()',
+					'export const partRequires = new WeakMap()',
+					'export const partOccurrences = new WeakMap()',
+					'',
+				].join('\n'),
+			),
+			writeFile(
+				join(root, 'node_modules', '@pluxel/runtime', 'toolchain.js'),
+				[
+					"import { addresses, facts, partOccurrences, partRequires } from './state.js'",
+					'export function __setPluginDefinition(target, value) { facts.set(target, value); addresses.set(target, value.definition) }',
+					'export function __setPluginParts(target, value) { partOccurrences.set(target, value.occurrences) }',
+					'export function __setPluginPartRequires(target, value) { partRequires.set(target, value.requires) }',
+				].join('\n'),
+			),
+			writeFile(
+				join(root, 'node_modules', '@pluxel/runtime', 'internal.js'),
+				[
+					"import { facts, partOccurrences, partRequires } from './state.js'",
+					'function collectPartRequires(owner, output) { for (const occurrence of partOccurrences.get(owner) ?? []) { output.push(...(partRequires.get(occurrence.Part) ?? [])); collectPartRequires(occurrence.Part, output) } }',
+					'export function consumePluginDefinitionCandidate(target) { const value = facts.get(target); if (!value) throw new Error("missing candidate"); facts.delete(target); const constructorRequires = value.constructorRequires ?? []; const lifted = [...constructorRequires]; collectPartRequires(target, lifted); const seen = new Set(); const requires = lifted.filter((item) => { const key = JSON.stringify(item); if (seen.has(key)) return false; seen.add(key); return true }); return { implementation: target, declaration: { address: value.definition, constructorRequires, requires } } }',
+				].join('\n'),
+			),
+		])
 		await writeFile(
 			modulePath,
 			[
-				'const metadata = new WeakMap<object, Map<string, unknown>>()',
-				';(Reflect as any).metadata = (key: string, value: unknown) => (target: object) => { const values = metadata.get(target) ?? new Map(); values.set(key, value); metadata.set(target, values) }',
-				';(Reflect as any).getMetadata = (key: string, target: object) => metadata.get(target)?.get(key)',
-				'function Plugin(): ClassDecorator { return () => {} }',
-				'export class Provider {}',
+				"import { BasePlugin, pluginDefinitionAddressOf, Plugin, PluginPart } from '@pluxel/runtime'",
+				"import { consumePluginDefinitionCandidate } from '@pluxel/runtime/internal'",
 				'@Plugin()',
-				'export class Consumer { constructor(readonly provider: Provider) {} }',
-				"export const params = Reflect.getMetadata('design:paramtypes', Consumer)",
+				'export class Provider extends BasePlugin {}',
+				'@Plugin()',
+				'export class Consumer extends BasePlugin { constructor(readonly provider: Provider) { super() } }',
+				'class ProviderPart extends PluginPart<PartConsumer> { constructor(readonly provider: Provider) { super() } }',
+				'@Plugin()',
+				'export class PartConsumer extends BasePlugin { readonly first = this.parts.use(ProviderPart); readonly second = this.parts.use(ProviderPart) }',
+				'export function providerDefinition() { return pluginDefinitionAddressOf(Provider) }',
+				'export function consumerRequires() { return consumePluginDefinitionCandidate(Consumer).declaration.requires }',
+				'export function partConsumerFacts() { return consumePluginDefinitionCandidate(PartConsumer).declaration }',
 				'',
 			].join('\n'),
 		)
@@ -333,11 +412,23 @@ describe('runtime-dev Vite plugin stack', () => {
 				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
-				const mod = await importViteSsrModule<{ Provider: unknown; params: unknown[] }>(
-					server,
-					modulePath,
-				)
-				expect(mod.params).toEqual([mod.Provider])
+				const mod = await importViteSsrModule<{
+					providerDefinition(): {
+						entry: { kind: string; sourceSpace: string; path: string }
+						exportName: string
+					}
+					consumerRequires(): unknown[]
+					partConsumerFacts(): { constructorRequires: unknown[]; requires: unknown[] }
+				}>(server, modulePath)
+				expect(mod.providerDefinition()).toEqual({
+					entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugin.ts' },
+					exportName: 'Provider',
+				})
+				expect(mod.consumerRequires()).toEqual([mod.providerDefinition()])
+				expect(mod.partConsumerFacts()).toMatchObject({
+					constructorRequires: [],
+					requires: [mod.providerDefinition()],
+				})
 			},
 		)
 	})

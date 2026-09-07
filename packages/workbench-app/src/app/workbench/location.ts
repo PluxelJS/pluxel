@@ -1,6 +1,6 @@
-import { parseWorkbenchHref } from '../../workbench/paths'
+import { parsePluginDetailHref, parseWorkbenchHref } from '../../workbench/paths'
 
-export type BuiltinWorkbenchIcon = 'home' | 'logs' | 'security' | 'agent-tools' | 'plugins'
+export type BuiltinWorkbenchIcon = 'home' | 'logs' | 'security' | 'plugins' | 'plugin-graph'
 
 export type WorkbenchLocationHeader = Readonly<{
 	eyebrow: string
@@ -55,19 +55,23 @@ export const BUILTIN_WORKBENCH_ROUTES: readonly BuiltinWorkbenchRoute[] = Object
 		navigation: false,
 	},
 	{
-		path: '/agent-tools',
-		title: 'Agent 工具',
-		meta: 'Runtime',
-		header: { eyebrow: 'Agents', title: 'Agent 工具', subtitle: '工具集与 Agent 能力分配' },
-		icon: 'agent-tools',
-		navigation: true,
-	},
-	{
 		path: '/plugins',
 		title: '插件',
 		meta: 'Overview',
 		header: { eyebrow: 'Plugins', title: '插件', subtitle: '浏览、配置与运行验证' },
 		icon: 'plugins',
+		navigation: true,
+	},
+	{
+		path: '/plugin-graph',
+		title: '依赖图',
+		meta: 'Plugins',
+		header: {
+			eyebrow: 'Plugins',
+			title: '依赖图',
+			subtitle: '查看 Plugin provider 与 consumer 关系',
+		},
+		icon: 'plugin-graph',
 		navigation: true,
 	},
 ])
@@ -80,30 +84,22 @@ function builtinRoute(path: string): BuiltinWorkbenchRoute {
 	return route
 }
 
-function decodeSegment(value: string) {
-	try {
-		return decodeURIComponent(value)
-	} catch {
-		return value
-	}
-}
-
 export function resolveWorkbenchLocation(pathname: string): WorkbenchLocationDescriptor {
 	const path = pathname || '/'
 	const builtin = builtinRouteByPath.get(path)
 	if (builtin) return builtin
 
-	const pluginMatch = path.match(/^\/plugins\/([^/]+)(?:\/(.*))?$/)
-	if (pluginMatch) {
-		const pluginName = decodeSegment(pluginMatch[1] ?? '')
-		const tail = pluginMatch[2] ?? ''
+	const pluginRoute = parsePluginDetailHref(path)
+	if (pluginRoute) {
+		const title = pluginRoute.target.definition.exportName
+		const tail = pluginRoute.path.slice(1)
 		return {
 			path,
-			title: pluginName,
+			title,
 			meta: tail ? (tail === 'config' ? '配置' : tail.replaceAll('/', ' / ')) : '概览',
 			header: {
 				eyebrow: 'Plugins',
-				title: pluginName,
+				title,
 				subtitle: tail === 'config' ? '配置与运行上下文' : '插件工作页',
 			},
 		}
@@ -112,11 +108,11 @@ export function resolveWorkbenchLocation(pathname: string): WorkbenchLocationDes
 	if (path.startsWith('/plugins/')) {
 		return { ...builtinRoute('/plugins'), path }
 	}
+	if (path.startsWith('/plugin-graph/')) {
+		return { ...builtinRoute('/plugin-graph'), path }
+	}
 	if (path.startsWith('/security/')) {
 		return { ...builtinRoute('/security'), path }
-	}
-	if (path.startsWith('/agent-tools/')) {
-		return { ...builtinRoute('/agent-tools'), path }
 	}
 	if (path.startsWith('/logs/')) {
 		return { ...builtinRoute('/logs'), path }
@@ -126,11 +122,11 @@ export function resolveWorkbenchLocation(pathname: string): WorkbenchLocationDes
 	if (workbenchRoute?.frame === 'shell') {
 		return {
 			path,
-			title: workbenchRoute.pluginName,
+			title: workbenchRoute.target.definition.exportName,
 			meta: 'Workbench',
 			header: {
 				eyebrow: 'Workbench',
-				title: workbenchRoute.pluginName,
+				title: workbenchRoute.target.definition.exportName,
 				subtitle: workbenchRoute.path || '插件页面',
 			},
 		}

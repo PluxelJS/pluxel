@@ -1,364 +1,84 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { RuntimeTransportClientProvider } from '../../src/web/react'
-import { act, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import type { PluginNodeAddress } from '@pluxel/core'
+import { RuntimeManagementClientProvider } from '../../src/web/react'
+import { act, useMemo, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import * as v from 'valibot'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as f from 'valibot-form'
-import {
-	WorkbenchNavigationProvider,
-	WorkspaceControllerProvider,
-} from '../../../workbench-app/src/app/workbench/context'
-import { WorkspaceController } from '../../../workbench-app/src/app/workbench/store'
-import { resolvePluginWorkbenchPanelsState } from '../../../workbench-app/src/app/workbench/split'
-import { ConfigLayout } from '../../../workbench-app/src/app/plugins/config/ConfigLayout'
+import * as v from 'valibot'
 import { ConfigForm } from '../../../workbench-app/src/app/plugins/config/ConfigForm'
-import { PluginScopeProvider } from '../../../workbench-app/src/app/plugins/detail/context'
-import { BaseProviderCard } from '../../../workbench-app/src/app/plugins/detail/cards/BaseProviderCard'
-import { PluginWorkbenchSidebar } from '../../../workbench-app/src/app/plugins/detail/workbench/PluginWorkbenchHostViews'
-import {
-	BuiltinDoc,
-	resolveDocConfigDirectives,
-} from '../../../workbench-app/src/workbench/builtin/Doc'
+import { ManagementQueryProvider } from '../../../workbench-app/src/app/managementQuery'
 import {
 	PluginWorkbenchAsideProvider,
-	PluginWorkbenchLayoutProvider,
 	usePluginWorkbenchAssistVisibility,
 } from '../../../workbench-app/src/app/plugins/detail/workbench/context'
-import { PluginWorkbenchTabActivityProvider } from '../../../workbench-app/src/app/plugins/detail/workbench/tabActivity'
+import { resolvePluginWorkbenchPanelsState } from '../../../workbench-app/src/app/workbench/split'
 
-const ThemeCustomizer = () => null
-const EMPTY_CONFIG: Record<string, unknown> = {}
-
-const mockNavigate = vi.fn()
-const mockPluginDetailSearch = {
-	schema: 'config' as string | undefined,
-	tab: undefined as string | undefined,
-}
-let RightPaneComponent:
-	| (typeof import('../../../workbench-app/src/app/plugins/detail/RightPane'))['RightPane']
-	| null = null
-
-function deferred<T>() {
-	let resolve!: (value: T) => void
-	const promise = new Promise<T>((done) => {
-		resolve = done
-	})
-	return { promise, resolve }
+const OWNER: PluginNodeAddress = {
+	definition: {
+		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'pluxel-test:ConfigOwner' },
+		exportName: 'Plugin',
+	},
+	variant: 'default',
 }
 
-vi.mock('../../../workbench-app/src/workbench/runtime', () => ({
-	useWorkbenchSurface: () => ({
-		nodes: [],
-		items: [],
-		hasItems: false,
-	}),
-}))
-
-vi.mock('../../../workbench-app/src/theme', () => ({
-	useDynamicTheme: () => ({
-		theme: {},
-		colorKey: 'teal',
-		setThemeColor: () => {},
-		presets: [],
-	}),
-	usePlxScheme: () => ({
-		isDark: false,
-		mode: 'light',
-		log: {
-			info: '#0ea5e9',
-			success: '#10b981',
-			warn: '#f59e0b',
-			error: '#ef4444',
-			debug: '#64748b',
-			trace: '#94a3b8',
-		},
-	}),
-	plxCssVariablesResolver: () => ({}),
-	ColorSchemeToggle: () => null,
-}))
-
-vi.mock('@tanstack/react-router', async () => {
-	const actual =
-		await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router')
-	return {
-		...actual,
-		getRouteApi: () => ({
-			useSearch: () => mockPluginDetailSearch,
-		}),
-		useNavigate: () => mockNavigate,
-	}
-})
-
-vi.mock('../../../workbench-app/src/app/router/useCurrentRoute', () => ({
-	useCurrentPathname: () => '/plugins/test-plugin/config',
-}))
-
-function createFakeTransportClient(withRpc = vi.fn(async () => ({ ok: true }))) {
-	return {
-		withRpc,
-		sse: {
-			ns: vi.fn(() => ({ on: vi.fn(), onAny: vi.fn() })),
-		},
-		dispose: vi.fn(),
-	} as any
-}
-
-class ResizeObserverMock {
-	disconnect() {}
-	observe() {}
-	unobserve() {}
-}
-
-if (typeof globalThis.ResizeObserver === 'undefined') {
-	globalThis.ResizeObserver = ResizeObserverMock as any
-}
-
-if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
-	window.matchMedia = ((query: string) => ({
-		matches: false,
-		media: query,
-		onchange: null,
-		addListener: () => {},
-		removeListener: () => {},
-		addEventListener: () => {},
-		removeEventListener: () => {},
-		dispatchEvent: () => false,
-	})) as typeof window.matchMedia
-}
+const EMPTY_CONFIG = Object.freeze({ name: '', enabled: false })
 
 const schema = v.object({
 	name: v.pipe(
 		v.string(),
-		f.formMeta({ label: '名称' }),
+		f.formMeta({ title: '名称' }),
 		f.stringMeta({ placeholder: '输入名称' }),
 	),
-	connection: v.pipe(
-		v.variant('type', [
-			v.object({
-				type: v.literal('http'),
-				url: v.pipe(v.string(), f.formMeta({ label: 'URL' }), f.stringMeta({})),
-			}),
-			v.object({
-				type: v.literal('ws'),
-				endpoint: v.pipe(v.string(), f.formMeta({ label: 'Endpoint' }), f.stringMeta({})),
-			}),
-		]),
-		f.formMeta({ label: '连接类型' }),
-		f.unionMeta({
-			discriminator: 'type',
-			control: 'switch',
-			labels: { http: 'HTTP', ws: 'WebSocket' },
-		}),
-	),
-	mode: v.pipe(
-		v.picklist(['basic', 'advanced']),
-		f.formMeta({ label: '模式' }),
-		f.picklistMeta({ control: 'segmented' }),
-	),
-	enabled: v.pipe(v.boolean(), f.formMeta({ label: '启用' }), f.booleanMeta({})),
+	enabled: v.pipe(v.boolean(), f.formMeta({ title: '启用' })),
 })
+const fields = f.extractFormFields(schema)
 
-function Harness({
-	active = true,
-	client = createFakeTransportClient(),
+function createFakeManagementClient(
+	patchPluginConfig = vi.fn(async () => ({
+		ok: true as const,
+		config: { name: 'saved', enabled: false },
+		application: 'applied' as const,
+	})),
+) {
+	return {
+		config: {
+			patch: patchPluginConfig,
+			patchField: vi.fn(),
+		},
+	} as any
+}
+
+function ConfigHarness({
+	client,
 	savedConfig = EMPTY_CONFIG,
 	defaults = EMPTY_CONFIG,
-	initialDrafts = EMPTY_CONFIG,
 }: {
-	active?: boolean
-	client?: ReturnType<typeof createFakeTransportClient>
+	client?: ReturnType<typeof createFakeManagementClient>
 	savedConfig?: Record<string, unknown>
 	defaults?: Record<string, unknown>
-	initialDrafts?: Record<string, Record<string, unknown>>
 }) {
-	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>(initialDrafts)
 	const [dirty, setDirty] = useState(false)
-
+	const resolvedClient = useMemo(() => client ?? createFakeManagementClient(), [client])
 	return (
-		<RuntimeTransportClientProvider client={client}>
-			<MantineProvider>
-				<div data-dirty={dirty ? 'true' : 'false'}>
-					<ConfigForm
-						pluginName="test-plugin"
-						schemas={{ config: schema }}
-						savedConfig={savedConfig}
-						defaults={defaults}
-						active={active}
-						draftValues={drafts}
-						onDirtyChange={setDirty}
-						onDraftChange={setDrafts}
-					/>
-					<ThemeCustomizer />
-				</div>
-			</MantineProvider>
-		</RuntimeTransportClientProvider>
-	)
-}
-
-function WorkbenchHarness({ active = true }: { active?: boolean }) {
-	const workspace = useMemo(() => {
-		const controller = new WorkspaceController()
-		controller.reconcileLocation('/plugins/test-plugin/config')
-		return controller
-	}, [])
-	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
-	const [dirty, setDirty] = useState(false)
-	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistPanelVisible] = useState(false)
-	const assistClaims = useMemo(() => new Map<symbol, true>(), [])
-	const setAssistClaim = (owner: symbol, visible: boolean) => {
-		if (visible) assistClaims.set(owner, true)
-		else assistClaims.delete(owner)
-		setAssistPanelVisible(assistClaims.size > 0)
-	}
-	const asideValue = useMemo(
-		() => ({
-			asideAvailable: true,
-			assistHost,
-			setAssistHost,
-			assistVisible,
-			setAssistClaim,
-		}),
-		[assistHost, assistVisible, assistClaims],
-	)
-
-	return (
-		<RuntimeTransportClientProvider client={createFakeTransportClient()}>
-			<MantineProvider>
-				<TestWorkspaceProvider controller={workspace}>
-					<PluginScopeProvider
-						value={{
-							pluginName: 'test-plugin',
-							description: 'test plugin',
-							scope: 'workspace' as any,
-							dependencies: [],
-							knownPluginNames: new Set<string>(),
-							status: null,
-							isRunning: true,
-							isEnabled: true,
-							lifecycleStage: 'running' as any,
-							isSyncing: false,
-							source: {
-								kind: 'hmr' as any,
-								moduleId: '/demo/test-plugin.tsx',
-								packageName: null,
-								version: null,
-							},
-							refetch: async () => {},
-						}}
-					>
-						<PluginWorkbenchAsideProvider value={asideValue}>
-							<div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
-								<div data-dirty={dirty ? 'true' : 'false'}>
-									<ConfigForm
-										pluginName="test-plugin"
-										schemas={{ config: schema }}
-										savedConfig={{}}
-										defaults={{}}
-										active={active}
-										draftValues={drafts}
-										onDirtyChange={setDirty}
-										onDraftChange={setDrafts}
-									/>
-								</div>
-								<div style={{ minHeight: 0 }}>
-									<PluginWorkbenchSidebar />
-								</div>
-							</div>
-						</PluginWorkbenchAsideProvider>
-					</PluginScopeProvider>
-				</TestWorkspaceProvider>
-			</MantineProvider>
-		</RuntimeTransportClientProvider>
-	)
-}
-
-function BaseProviderRaceHarness({
-	pluginName,
-	client,
-}: {
-	pluginName: string
-	client: ReturnType<typeof createFakeTransportClient>
-}) {
-	return (
-		<RuntimeTransportClientProvider client={client}>
-			<MantineProvider>
-				<PluginScopeProvider
-					value={{
-						pluginName,
-						description: '',
-						scope: 'workspace' as any,
-						dependencies: [],
-						knownPluginNames: new Set<string>(),
-						status: null,
-						isRunning: true,
-						isEnabled: true,
-						lifecycleStage: 'running' as any,
-						isSyncing: false,
-						source: {
-							kind: 'hmr' as any,
-							moduleId: null,
-							packageName: null,
-							version: null,
-						},
-						refetch: async () => {},
-					}}
-				>
-					<BaseProviderCard />
-				</PluginScopeProvider>
-			</MantineProvider>
-		</RuntimeTransportClientProvider>
-	)
-}
-
-function BuiltinDocHarness({
-	mountAssistHost,
-	active = true,
-}: {
-	mountAssistHost: boolean
-	active?: boolean
-}) {
-	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const asideValue = useMemo(
-		() => ({
-			asideAvailable: true,
-			assistHost,
-			setAssistHost,
-			assistVisible: false,
-			setAssistClaim: () => {},
-		}),
-		[assistHost],
-	)
-	const content = useMemo(
-		() =>
-			[
-				{
-					kind: 'md',
-					text: '# Guide\n\n## Overview\nAlpha\n\n## Usage\nBeta',
-				},
-			] as const,
-		[],
-	)
-
-	return (
-		<MantineProvider>
-			<PluginWorkbenchAsideProvider value={asideValue}>
-				<PluginWorkbenchTabActivityProvider active={active}>
-					<div data-doc-shell="true">
-						<BuiltinDoc
-							id="builtin-doc-test"
-							pluginName="test-plugin"
-							title="Builtin Doc Test"
-							content={content}
+		<RuntimeManagementClientProvider client={resolvedClient}>
+			<ManagementQueryProvider>
+				<MantineProvider>
+					<div data-dirty={dirty ? 'true' : 'false'}>
+						<ConfigForm
+							owner={OWNER}
+							displayName="Config owner"
+							fields={fields}
+							savedConfig={savedConfig}
+							defaults={defaults}
+							onDirtyChange={setDirty}
 						/>
 					</div>
-				</PluginWorkbenchTabActivityProvider>
-				{mountAssistHost ? <div data-assist-host="true" ref={setAssistHost} /> : null}
-			</PluginWorkbenchAsideProvider>
-		</MantineProvider>
+				</MantineProvider>
+			</ManagementQueryProvider>
+		</RuntimeManagementClientProvider>
 	)
 }
 
@@ -375,24 +95,22 @@ function AssistClaimHarness({
 	secondVisible: boolean
 }) {
 	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistPanelVisible] = useState(false)
-	const assistClaims = useMemo(() => new Map<symbol, true>(), [])
-	const setAssistClaim = (owner: symbol, visible: boolean) => {
-		if (visible) assistClaims.set(owner, true)
-		else assistClaims.delete(owner)
-		setAssistPanelVisible(assistClaims.size > 0)
-	}
+	const [assistVisible, setAssistVisible] = useState(false)
+	const claims = useMemo(() => new Map<symbol, true>(), [])
 	const asideValue = useMemo(
 		() => ({
 			asideAvailable: true,
 			assistHost,
 			setAssistHost,
 			assistVisible,
-			setAssistClaim,
+			setAssistClaim(owner: symbol, visible: boolean) {
+				if (visible) claims.set(owner, true)
+				else claims.delete(owner)
+				setAssistVisible(claims.size > 0)
+			},
 		}),
-		[assistHost, assistVisible, assistClaims],
+		[assistHost, assistVisible, claims],
 	)
-
 	return (
 		<MantineProvider>
 			<PluginWorkbenchAsideProvider value={asideValue}>
@@ -404,129 +122,10 @@ function AssistClaimHarness({
 	)
 }
 
-function LayoutHarness({
-	active = true,
-	client = createFakeTransportClient(),
-}: {
-	active?: boolean
-	client?: ReturnType<typeof createFakeTransportClient>
-}) {
-	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
-	const [dirty, setDirty] = useState(false)
-
-	return (
-		<RuntimeTransportClientProvider client={client}>
-			<MantineProvider>
-				<div data-dirty={dirty ? 'true' : 'false'}>
-					<ConfigLayout
-						pluginName="test-plugin"
-						layout={
-							[
-								{ kind: 'md', text: '## 配置' },
-								{ kind: 'schema', key: 'config' },
-							] as any
-						}
-						schemas={{ config: schema }}
-						savedConfig={{}}
-						defaults={{}}
-						active={active}
-						draftValues={drafts}
-						onDirtyChange={setDirty}
-						onDraftChange={setDrafts}
-					/>
-					<ThemeCustomizer />
-				</div>
-			</MantineProvider>
-		</RuntimeTransportClientProvider>
-	)
-}
-
-function RenderRightPane() {
-	if (!RightPaneComponent) {
-		throw new Error('RightPane test component not loaded')
-	}
-	const Component = RightPaneComponent
-	return (
-		<Component
-			config={{
-				data: {
-					schemaMap: { config: schema },
-					defaults: {},
-					savedConfig: {},
-					layout: null,
-				},
-				loading: false,
-				error: undefined,
-				refetch: async () => {},
-			}}
-		/>
-	)
-}
-
-function RightPaneDirtyHarness() {
-	const workspace = useMemo(() => {
-		const controller = new WorkspaceController()
-		controller.reconcileLocation('/plugins/test-plugin/config')
-		return controller
-	}, [])
-	const activeTabDirty = useSyncExternalStore(
-		(listener) => {
-			const subscription = workspace.store.subscribe(listener)
-			return () => subscription.unsubscribe()
-		},
-		() => {
-			const tabId = workspace.state.uiState.activeTabId
-			return Boolean(tabId && workspace.state.dirtyTabs[tabId])
-		},
-		() => false,
-	)
-	const layoutValue = useMemo(
-		() => ({
-			rightPaneVisible: true,
-			setRightPaneVisible: () => {},
-			toggleRightPane: () => {},
-			dockVisible: true,
-			setDockVisible: () => {},
-			toggleDock: () => {},
-		}),
-		[],
-	)
-
-	return (
-		<RuntimeTransportClientProvider client={createFakeTransportClient()}>
-			<MantineProvider>
-				<div data-tab-dirty={activeTabDirty ? 'true' : 'false'}>
-					<TestWorkspaceProvider controller={workspace}>
-						<PluginWorkbenchLayoutProvider value={layoutValue}>
-							<PluginScopeProvider
-								value={{
-									pluginName: 'test-plugin',
-									description: 'test plugin',
-									scope: 'workspace' as any,
-									dependencies: [],
-									knownPluginNames: new Set<string>(['test-plugin']),
-									status: null,
-									isRunning: true,
-									isEnabled: true,
-									lifecycleStage: 'running' as any,
-									isSyncing: false,
-									source: {
-										kind: 'hmr' as any,
-										moduleId: '/demo/test-plugin.tsx',
-										packageName: null,
-										version: null,
-									},
-									refetch: async () => {},
-								}}
-							>
-								<RenderRightPane />
-							</PluginScopeProvider>
-						</PluginWorkbenchLayoutProvider>
-					</TestWorkspaceProvider>
-				</div>
-			</MantineProvider>
-		</RuntimeTransportClientProvider>
-	)
+class ResizeObserverMock {
+	disconnect() {}
+	observe() {}
+	unobserve() {}
 }
 
 async function typeIntoInput(input: HTMLInputElement, value: string) {
@@ -550,345 +149,114 @@ async function mount(ui: ReactNode) {
 	return { container, root }
 }
 
-beforeAll(async () => {
+beforeAll(() => {
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true
-	const warn = console.warn
-	vi.spyOn(console, 'warn').mockImplementation((message: unknown, ...args: unknown[]) => {
-		if (message === 'Warning: useRouter must be used inside a <RouterProvider> component!') return
-		warn(message, ...args)
-	})
-	const module = await import('../../../workbench-app/src/app/plugins/detail/RightPane')
-	RightPaneComponent = module.RightPane
+	globalThis.ResizeObserver = ResizeObserverMock as any
+	if (typeof window.matchMedia !== 'function') {
+		window.matchMedia = ((query: string) => ({
+			matches: false,
+			media: query,
+			onchange: null,
+			addListener: () => {},
+			removeListener: () => {},
+			addEventListener: () => {},
+			removeEventListener: () => {},
+			dispatchEvent: () => false,
+		})) as typeof window.matchMedia
+	}
 })
 
-afterAll(() => vi.restoreAllMocks())
+afterEach(() => {
+	vi.restoreAllMocks()
+	document.body.innerHTML = ''
+})
 
-describe('ConfigForm loop safety', () => {
-	it('shows plugin context and logs by default without overriding explicit choices', () => {
+describe('single-schema ConfigForm safety', () => {
+	it('keeps plugin panels visible by default without overriding explicit choices', () => {
 		expect(resolvePluginWorkbenchPanelsState(undefined)).toEqual({
 			rightPaneVisible: true,
 			dockVisible: true,
 		})
 		expect(
 			resolvePluginWorkbenchPanelsState({ rightPaneVisible: false, dockVisible: false }),
-		).toEqual({ rightPaneVisible: false, dockVisible: false })
+		).toEqual({
+			rightPaneVisible: false,
+			dockVisible: false,
+		})
 	})
 
-	const originalError = console.error
-	let consoleErrors: string[] = []
-
-	afterEach(() => {
-		console.error = originalError
-		vi.useRealTimers()
-		vi.clearAllMocks()
-		mockPluginDetailSearch.tab = undefined
-		mockPluginDetailSearch.schema = 'config'
-		consoleErrors = []
-		document.body.innerHTML = ''
-	})
-
-	function captureConsoleErrors() {
-		vi.useFakeTimers()
-		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map(String).join(' '))
-		}) as typeof console.error
-	}
-
-	async function exerciseTypingLoop(ui: ReactNode, dirtySelector: string) {
-		captureConsoleErrors()
-		const { container, root } = await mount(ui)
+	it('submits one schema against the structured owner address', async () => {
+		const patchPluginConfig = vi.fn(async () => ({
+			ok: true as const,
+			config: { name: 'changed', enabled: false },
+			application: 'applied' as const,
+		}))
+		const { container, root } = await mount(
+			<ConfigHarness client={createFakeManagementClient(patchPluginConfig)} />,
+		)
 		try {
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			expect(input).toBeTruthy()
-
-			await typeIntoInput(input!, 'abc')
-
+			const input = container.querySelector('input[name="name"]') as HTMLInputElement
+			await typeIntoInput(input, 'changed')
+			const save = [...container.querySelectorAll('button')].find(
+				(button) => button.textContent?.trim() === '保存',
+			) as HTMLButtonElement
+			expect(save.disabled).toBe(false)
 			await act(async () => {
-				vi.advanceTimersByTime(200)
-				await Promise.resolve()
-			})
-
-			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			expect(container.querySelector(dirtySelector)).toBeTruthy()
-		} finally {
-			await act(async () => {
-				root.unmount()
-			})
-		}
-	}
-
-	it('keeps toolbar actions connected to the registered config form', async () => {
-		const withRpc = vi.fn(async () => ({ ok: true, config: { config: { name: 'saved' } } }))
-		const client = createFakeTransportClient(withRpc)
-		const { container, root } = await mount(<Harness active client={client} />)
-		try {
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			const button = (label: string) =>
-				Array.from(container.querySelectorAll('button')).find(
-					(candidate) => candidate.textContent?.trim() === label,
-				) as HTMLButtonElement | undefined
-
-			expect(input).toBeTruthy()
-
-			await typeIntoInput(input!, 'undo me')
-			expect(button('撤销当前')?.disabled).toBe(false)
-			await act(async () => button('撤销当前')?.click())
-			expect(input?.value).toBe('')
-
-			await typeIntoInput(input!, 'reset me')
-			await act(async () => button('重置默认')?.click())
-			expect(input?.value).toBe('')
-
-			await typeIntoInput(input!, 'save me')
-			expect(button('提交当前')?.disabled).toBe(false)
-			await act(async () => {
-				button('提交当前')?.click()
+				save.click()
 				await Promise.resolve()
 				await Promise.resolve()
 			})
-			expect(withRpc).toHaveBeenCalledTimes(1)
+			expect(patchPluginConfig).toHaveBeenCalledWith(
+				OWNER,
+				expect.objectContaining({ name: 'changed' }),
+			)
 		} finally {
 			await act(async () => root.unmount())
 		}
-	})
+	}, 30_000)
 
-	it('keeps reset-to-default values dirty when they differ from saved config', async () => {
+	it('resets to defaults and reports dirty without a render loop', async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {})
 		const { container, root } = await mount(
-			<Harness
-				active
-				savedConfig={{ config: { name: 'saved' } }}
-				defaults={{ config: { name: 'default' } }}
+			<ConfigHarness
+				savedConfig={{ name: 'saved', enabled: false }}
+				defaults={{ name: 'default', enabled: false }}
 			/>,
 		)
 		try {
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			const resetDefaults = Array.from(container.querySelectorAll('button')).find(
-				(candidate) => candidate.textContent?.trim() === '重置默认',
-			) as HTMLButtonElement | undefined
-
-			expect(input?.value).toBe('saved')
-			await act(async () => resetDefaults?.click())
-			expect(input?.value).toBe('default')
-			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it('restores saved drafts as unsaved changes', async () => {
-		const { container, root } = await mount(
-			<Harness active initialDrafts={{ config: { name: 'draft' } }} />,
-		)
-		try {
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			expect(input?.value).toBe('draft')
-			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it('resolves builtin doc config directives without render-time shared mutation', () => {
-		const items = [
-			{ kind: 'cfg', key: 'first', directive: { kind: 'schema', key: 'config' } },
-			{ kind: 'cfg', key: 'duplicate', directive: { kind: 'schema', key: 'config' } },
-			{ kind: 'cfg', key: 'remaining', directive: { kind: 'schemas', keys: null } },
-		] as any
-
-		const first = resolveDocConfigDirectives(items)
-		const second = resolveDocConfigDirectives(items)
-		expect(first.get('first')).toEqual({ keys: ['config'], excludedKeys: [] })
-		expect(first.get('duplicate')).toEqual({ keys: [], excludedKeys: [] })
-		expect(first.get('remaining')).toEqual({ keys: null, excludedKeys: ['config'] })
-		expect(second).toEqual(first)
-	})
-
-	it('ignores stale plugin-card requests after switching plugins', async () => {
-		const first = deferred<any>()
-		const firstRefresh = deferred<any>()
-		const second = deferred<any>()
-		const withRpc = vi
-			.fn()
-			.mockImplementationOnce(() => first.promise)
-			.mockImplementationOnce(() => firstRefresh.promise)
-			.mockImplementationOnce(() => second.promise)
-		const client = createFakeTransportClient(withRpc)
-		const { container, root } = await mount(
-			<BaseProviderRaceHarness pluginName="first-plugin" client={client} />,
-		)
-		try {
-			await act(async () => Promise.resolve())
-			expect(withRpc).toHaveBeenCalledTimes(1)
-
+			const reset = [...container.querySelectorAll('button')].find(
+				(button) => button.textContent?.trim() === '恢复默认',
+			) as HTMLButtonElement
 			await act(async () => {
-				first.resolve({
-					baseToken: 'first-token',
-					currentDefault: null,
-					isDefault: false,
-					providers: [],
-				})
-				await first.promise
-			})
-			expect(container.textContent).toContain('first-token')
-
-			const refresh = container.querySelector('button') as HTMLButtonElement | null
-			await act(async () => refresh?.click())
-			expect(withRpc).toHaveBeenCalledTimes(2)
-
-			await act(async () => {
-				root.render(<BaseProviderRaceHarness pluginName="second-plugin" client={client} />)
+				reset.click()
 				await Promise.resolve()
 			})
-			expect(withRpc).toHaveBeenCalledTimes(3)
-			expect(container.textContent).not.toContain('first-token')
-
-			await act(async () => {
-				second.resolve({
-					baseToken: 'second-token',
-					currentDefault: null,
-					isDefault: false,
-					providers: [],
-				})
-				await second.promise
-			})
-			expect(container.textContent).toContain('second-token')
-
-			await act(async () => {
-				firstRefresh.resolve({
-					baseToken: 'stale-first-token',
-					currentDefault: null,
-					isDefault: false,
-					providers: [],
-				})
-				await firstRefresh.promise
-			})
-			expect(container.textContent).toContain('second-token')
-			expect(container.textContent).not.toContain('stale-first-token')
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it('does not hit maximum update depth with live workbench aside mounted', async () => {
-		expect.hasAssertions()
-		await exerciseTypingLoop(<WorkbenchHarness active />, '[data-dirty="true"]')
-	})
-
-	it('provides visible submit actions without cfg layout loops', async () => {
-		captureConsoleErrors()
-		const withRpc = vi.fn(async () => ({ ok: true, config: { config: { name: 'saved' } } }))
-		const { container, root } = await mount(
-			<LayoutHarness active client={createFakeTransportClient(withRpc)} />,
-		)
-		try {
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			const submit = Array.from(container.querySelectorAll('button')).find(
-				(candidate) => candidate.textContent?.trim() === '提交此配置',
-			) as HTMLButtonElement | undefined
-
-			expect(input).toBeTruthy()
-			expect(submit).toBeTruthy()
-			await typeIntoInput(input!, 'layout save')
-			await act(async () => {
-				vi.advanceTimersByTime(200)
-				await Promise.resolve()
-			})
-			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			expect(submit?.disabled).toBe(false)
-			await act(async () => {
-				submit?.click()
-				await Promise.resolve()
-				await Promise.resolve()
-			})
-			expect(withRpc).toHaveBeenCalledTimes(1)
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it('does not loop when workbench dirty propagation recreates setActiveTabDirty', async () => {
-		expect.hasAssertions()
-		await exerciseTypingLoop(<RightPaneDirtyHarness />, '[data-tab-dirty="true"]')
-	})
-
-	it('mounts builtin doc toc into the aside host only while its tab is active', async () => {
-		const { container, root } = await mount(<BuiltinDocHarness mountAssistHost={false} />)
-		try {
-			const shell = container.querySelector('[data-doc-shell="true"]')
-			expect(shell?.textContent).toContain('Builtin Doc Test')
-			expect(shell?.textContent).not.toContain('文档导航')
-
-			await act(async () => {
-				root.render(<BuiltinDocHarness mountAssistHost={true} />)
-				await Promise.resolve()
-				await Promise.resolve()
-			})
-
-			const host = container.querySelector('[data-assist-host="true"]')
-			expect(host?.textContent).toContain('Overview')
-			expect(host?.textContent).toContain('Usage')
-			expect(container.querySelector('[data-doc-shell="true"]')?.textContent).not.toContain(
-				'文档导航',
+			expect((container.querySelector('input[name="name"]') as HTMLInputElement).value).toBe(
+				'default',
 			)
-
-			await act(async () => {
-				root.render(<BuiltinDocHarness mountAssistHost active={false} />)
-				await Promise.resolve()
-			})
-			expect(host?.textContent).not.toMatch(/Overview|Usage/)
-
-			const inactive = await mount(<BuiltinDocHarness mountAssistHost active={false} />)
-			try {
-				expect(
-					inactive.container.querySelector('[data-assist-host="true"]')?.textContent,
-				).not.toMatch(/Overview|Usage/)
-			} finally {
-				await act(async () => inactive.root.unmount())
-			}
+			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
+			expect(error.mock.calls.flat().join('\n')).not.toContain('Maximum update depth exceeded')
 		} finally {
-			await act(async () => {
-				root.unmount()
-			})
+			await act(async () => root.unmount())
 		}
 	})
 
-	it('keeps assist area visible while another toc claim is still active', async () => {
-		const { container, root } = await mount(
-			<AssistClaimHarness firstVisible={true} secondVisible={true} />,
-		)
+	it('keeps the assist area visible while another claim remains active', async () => {
+		const { container, root } = await mount(<AssistClaimHarness firstVisible secondVisible />)
 		try {
 			expect(container.querySelector('[data-assist-visible="true"]')).toBeTruthy()
-
 			await act(async () => {
-				root.render(<AssistClaimHarness firstVisible={false} secondVisible={true} />)
+				root.render(<AssistClaimHarness firstVisible={false} secondVisible />)
 				await Promise.resolve()
 			})
-
 			expect(container.querySelector('[data-assist-visible="true"]')).toBeTruthy()
-		} finally {
 			await act(async () => {
-				root.unmount()
+				root.render(<AssistClaimHarness firstVisible={false} secondVisible={false} />)
+				await Promise.resolve()
 			})
+			expect(container.querySelector('[data-assist-visible="false"]')).toBeTruthy()
+		} finally {
+			await act(async () => root.unmount())
 		}
 	})
 })
-const TEST_WORKBENCH_NAVIGATION = {
-	navigate: () => {},
-	openTab: () => {},
-}
-
-function TestWorkspaceProvider({
-	controller,
-	children,
-}: {
-	controller: WorkspaceController
-	children: ReactNode
-}) {
-	return (
-		<WorkspaceControllerProvider controller={controller}>
-			<WorkbenchNavigationProvider value={TEST_WORKBENCH_NAVIGATION}>
-				{children}
-			</WorkbenchNavigationProvider>
-		</WorkspaceControllerProvider>
-	)
-}

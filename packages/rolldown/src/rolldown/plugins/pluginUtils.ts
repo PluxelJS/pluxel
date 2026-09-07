@@ -21,6 +21,18 @@ const AST_METADATA_KEYS = new Set([
 
 export type Lang = 'ts' | 'tsx' | 'js' | 'jsx'
 
+type ParsedProgramCacheEntry = Readonly<{
+	code: string
+	program: Program
+}>
+
+// All Pluxel source passes are read-only AST consumers. Keep the most recent parse for each
+// module so the semantic, config, and route-specific passes do not ask OXC to parse identical
+// source independently. Exact source equality makes invalidation automatic in Vite/watch mode;
+// the bound prevents a long-lived development server from retaining every module revision.
+const PARSED_PROGRAM_CACHE_LIMIT = 256
+const parsedProgramCache = new Map<string, ParsedProgramCacheEntry>()
+
 export function getLangFromId(id: string): Lang {
 	if (id.endsWith('.tsx')) return 'tsx'
 	if (id.endsWith('.ts') || id.endsWith('.mts') || id.endsWith('.cts')) return 'ts'
@@ -38,13 +50,16 @@ export function normalizePatterns(
 }
 
 export function parseWithLang(ctx: unknown, code: string, id: string): Program | null {
+	const lang = getLangFromId(id)
+	const cached = readCachedProgram(id, lang, code)
+	if (cached) return cached
 	const parse = (ctx as { parse?: (code: string, opts?: unknown) => Program } | null)?.parse
 	if (typeof parse === 'function') {
 		try {
-			return parse.call(ctx, code, { lang: getLangFromId(id) }) as Program
+			return cacheProgram(id, lang, code, parse.call(ctx, code, { lang }) as Program)
 		} catch {
 			try {
-				return parse.call(ctx, code) as Program
+				return cacheProgram(id, lang, code, parse.call(ctx, code) as Program)
 			} catch {
 				// Fall through to standalone OXC parsers below.
 			}
@@ -56,12 +71,37 @@ export function parseWithLang(ctx: unknown, code: string, id: string): Program |
 
 export function parseStandaloneWithLang(code: string, id: string): Program | null {
 	const lang = getLangFromId(id)
+	const cached = readCachedProgram(id, lang, code)
+	if (cached) return cached
 
 	try {
-		return parseSync(id, code, { sourceType: 'module', lang }).program ?? null
+		const program = parseSync(id, code, { sourceType: 'module', lang }).program ?? null
+		return program ? cacheProgram(id, lang, code, program) : null
 	} catch {
 		return null
 	}
+}
+
+function readCachedProgram(id: string, lang: Lang, code: string): Program | undefined {
+	const key = `${lang}\0${id}`
+	const cached = parsedProgramCache.get(key)
+	if (!cached || cached.code !== code) return undefined
+	// Refresh insertion order so active modules survive bounded eviction.
+	parsedProgramCache.delete(key)
+	parsedProgramCache.set(key, cached)
+	return cached.program
+}
+
+function cacheProgram(id: string, lang: Lang, code: string, program: Program): Program {
+	const key = `${lang}\0${id}`
+	parsedProgramCache.delete(key)
+	parsedProgramCache.set(key, { code, program })
+	while (parsedProgramCache.size > PARSED_PROGRAM_CACHE_LIMIT) {
+		const oldest = parsedProgramCache.keys().next().value
+		if (oldest === undefined) break
+		parsedProgramCache.delete(oldest)
+	}
+	return program
 }
 
 export function walkAst(value: unknown, visit: (node: AstNode) => void): void {

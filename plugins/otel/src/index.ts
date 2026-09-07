@@ -1,11 +1,12 @@
 import type { Meter, Tracer } from '@opentelemetry/api'
 import type { Logger } from '@opentelemetry/api-logs'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
 import type { PrometheusPullReader } from './prometheus.ts'
 import type { OtelRuntime } from './sdk.ts'
+import { OtelWorkbench, type OtelWorkbenchStatus } from './workbench.ts'
 
 export { OtelConfig } from './config.ts'
 export type { OtelPluginConfig, OtelSignal } from './config.ts'
@@ -17,27 +18,29 @@ type FailureState = { failing: boolean; loggedAt: number }
 /**
  * Caller-scoped native OpenTelemetry access with host-owned OTLP push and Prometheus pull.
  */
-@Plugin({ name: 'OtelPlugin' })
+@Plugin()
 export class OtelPlugin extends BasePlugin {
 	private readonly config = this.configs.use(OtelConfig)
 	private readonly meters = new WeakMap<object, Meter>()
 	private readonly tracers = new WeakMap<object, Tracer>()
 	private readonly loggers = new WeakMap<object, Logger>()
 	private readonly otlpFailures = new Map<OtelSignal, FailureState>()
+	private readonly otlpStates = new Map<OtelSignal, OtlpExportState>()
+	private readonly workbenchDataListeners = new Set<() => void>()
 	private runtime: OtelRuntime | undefined
 	private prometheusFailureLogAt = Number.NEGATIVE_INFINITY
 
-	/** Standard OTel Meter scoped to the caller Plugin ID. */
+	/** Standard OTel Meter scoped to the caller Plugin node address. */
 	get meter(): Meter {
 		return this.getCallerScoped(this.meters, (runtime, scope) => runtime.getMeter(scope))
 	}
 
-	/** Standard OTel Tracer scoped to the caller Plugin ID. */
+	/** Standard OTel Tracer scoped to the caller Plugin node address. */
 	get tracer(): Tracer {
 		return this.getCallerScoped(this.tracers, (runtime, scope) => runtime.getTracer(scope))
 	}
 
-	/** Standard OTel Logger scoped to the caller Plugin ID. */
+	/** Standard OTel Logger scoped to the caller Plugin node address. */
 	get logger(): Logger {
 		return this.getCallerScoped(this.loggers, (runtime, scope) => runtime.getLogger(scope))
 	}
@@ -65,10 +68,30 @@ export class OtelPlugin extends BasePlugin {
 			}
 			throw error
 		}
-	}
-
-	protected override stop(): void {
-		this.runtime = undefined
+		this.ctx.workbench?.publish(OtelWorkbench, {
+			operations: ({ signal, dataChanged }) => {
+				const release = () => this.workbenchDataListeners.delete(dataChanged)
+				this.workbenchDataListeners.add(dataChanged)
+				signal.addEventListener('abort', release, { once: true })
+				if (signal.aborted) release()
+				return {
+					load: () => ({ status: this.workbenchStatus() }),
+					actions: {
+						flush: async () => {
+							try {
+								await this.requireRuntime().forceFlush()
+								return { ok: true as const, message: '待处理 telemetry 已提交给 exporter' }
+							} catch (error) {
+								this.warn('OpenTelemetry manual flush failed', {
+									errorType: safeErrorType(error),
+								})
+								return { ok: false as const, message: '导出未完成，请查看 Plugin 日志' }
+							}
+						},
+					},
+				}
+			},
+		})
 	}
 
 	private getCallerScoped<T>(
@@ -81,13 +104,42 @@ export class OtelPlugin extends BasePlugin {
 		const key = owner as object
 		const existing = cache.get(key)
 		if (existing) return existing
-		const value = create(runtime, owner.pluginInfo.id)
+		const value = create(runtime, formatPluginNodeReference(owner.pluginInfo.nodeAddress))
 		cache.set(key, value)
 		return value
 	}
 
+	private requireRuntime(): OtelRuntime {
+		const runtime = this.runtime
+		if (!runtime) throw new Error('OtelPlugin is not running')
+		return runtime
+	}
+
+	private workbenchStatus(): OtelWorkbenchStatus {
+		const signal = (name: OtelSignal): OtelWorkbenchStatus['metrics'] => {
+			if (!this.config.otlp.includes(name)) {
+				return { state: 'disabled' as const, errorType: null }
+			}
+			const state = this.otlpStates.get(name)
+			if (!state) return { state: 'waiting' as const, errorType: null }
+			return 'errorType' in state
+				? { state: 'failing', errorType: state.errorType }
+				: { state: 'healthy', errorType: null }
+		}
+		const prometheus = this.config.prometheus
+		return {
+			metrics: signal('metrics'),
+			traces: signal('traces'),
+			logs: signal('logs'),
+			prometheus:
+				prometheus === false
+					? { state: 'disabled' as const, path: null }
+					: { state: 'listening' as const, path: prometheus.path },
+		}
+	}
+
 	private mountPrometheus(reader: PrometheusPullReader, path: string): void {
-		this.ctx.http.plugin.routes((app) => app.get(path, () => this.scrapePrometheus(reader)))
+		this.ctx.elysia.get(path, () => this.scrapePrometheus(reader))
 	}
 
 	private async scrapePrometheus(reader: PrometheusPullReader): Promise<Response> {
@@ -120,6 +172,11 @@ export class OtelPlugin extends BasePlugin {
 	}
 
 	private onOtlpExportState(state: OtlpExportState): void {
+		const previous = this.otlpStates.get(state.signal)
+		this.otlpStates.set(state.signal, state)
+		if (!sameExportState(previous, state)) {
+			for (const changed of this.workbenchDataListeners) changed()
+		}
 		const failure = this.otlpFailures.get(state.signal) ?? {
 			failing: false,
 			loggedAt: Number.NEGATIVE_INFINITY,
@@ -164,4 +221,12 @@ export class OtelPlugin extends BasePlugin {
 			// Diagnostics cannot affect telemetry or application code.
 		}
 	}
+}
+
+function sameExportState(previous: OtlpExportState | undefined, current: OtlpExportState): boolean {
+	if (!previous || previous.ok !== current.ok) return false
+	if (previous.ok === false && current.ok === false) {
+		return previous.errorType === current.errorType
+	}
+	return true
 }

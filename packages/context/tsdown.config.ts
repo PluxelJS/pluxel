@@ -4,7 +4,10 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	entry: './src/index.ts',
+	entry: {
+		index: './src/index.ts',
+		internal: './src/internal.ts',
+	},
 	dts: {
 		sourcemap: true,
 		eager: true,

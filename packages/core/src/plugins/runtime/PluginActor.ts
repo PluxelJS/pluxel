@@ -2,9 +2,10 @@
 // Runtime lifecycle state machine for a single plugin instance.
 // This module is performance‑sensitive: it avoids allocations on hot transitions.
 
-import { bakeMachine } from '../../internal/fsm/defineMachine.macro' with { type: 'macro' }
-import { hydrateMachine, type MachineImpl } from '../../internal/fsm/defineMachine.macro'
-import type { PluginLifecycleRuntime } from '../composition/BasePlugin'
+import { bakeMachine } from '../../internal/fsm/defineMachine.macro.ts' with { type: 'macro' }
+import { hydrateMachine, type MachineImpl } from '../../internal/fsm/defineMachine.macro.ts'
+import type { PluginLifecycleAdapter } from '../composition/BasePlugin'
+import { LATE_INIT_CLEANUP_ERROR } from '../composition/symbols'
 
 /* ────────────────────────── 外部事件 ────────────────────────── */
 export type LifecycleEvent =
@@ -17,10 +18,10 @@ export type LifecycleEvent =
 
 export interface LifecycleInput {
 	id: unknown
-	runtime: PluginLifecycleRuntime
+	runtime: PluginLifecycleAdapter
 }
 
-type FailedStep = 'start' | 'stop' | 'runtime' | undefined
+type FailedStep = 'start' | 'drain' | 'runtime' | undefined
 
 interface LifecycleCtx extends LifecycleInput {
 	attempt: number // 连续失败次数（成功后清零）
@@ -35,6 +36,8 @@ export interface LifecycleOptions {
 	autoStart?: boolean
 	/** 运行态是否订阅插件侧的错误上报（用于延迟抛错） */
 	useErrorChannel?: boolean
+	/** Receives init settlement errors after stop/drain has already won the generation. */
+	onLateError?: (error: unknown, phase: 'start' | 'drain') => void
 }
 
 export interface LifecycleSnapshot {
@@ -91,7 +94,7 @@ const bakedLifecycle = bakeMachine({
 	init: 'idle',
 	transitions: [
 		['idle', 'start', 'starting', 'onStart'],
-		['idle', 'stop', 'stopped', 'onStop'],
+		['idle', 'stop', 'stopping', 'onStop'],
 		['starting', 'startOk', 'running'],
 		['starting', 'startErr', 'failing'],
 		['starting', 'stop', 'stopping', 'onStop'],
@@ -120,8 +123,9 @@ export class PluginLifecycleActor {
 	private queue = Promise.resolve()
 	private errorUnsub: (() => void) | undefined
 	private startAbort: AbortController | null = null
-	private stopAbort: AbortController | null = null
 	private pendingStop = false
+	private drainTask: Promise<void> | null = null
+	private drainError: unknown
 	private readonly machine
 	private readonly E
 	private readonly S
@@ -151,8 +155,9 @@ export class PluginLifecycleActor {
 							this.startAbort.abort()
 							return
 						}
-						runtime.beforeStart?.()
 						if (runtime.init) await runtime.init(this.startAbort.signal)
+						if (this.startAbort.signal.aborted || this.pendingStop) return
+						if (runtime.finalize) await runtime.finalize(this.startAbort.signal)
 						if (this.startAbort.signal.aborted || this.pendingStop) return
 						if (!this.ctx.startedAt) this.ctx.startedAt = Date.now()
 						this.ctx.err = undefined
@@ -162,7 +167,16 @@ export class PluginLifecycleActor {
 							await dispatch(E.startOk)
 						}
 					} catch (e) {
-						if (this.startAbort.signal.aborted && this.pendingStop) return
+						if (this.startAbort.signal.aborted && this.pendingStop) {
+							const phase =
+								e &&
+								typeof e === 'object' &&
+								(e as { [LATE_INIT_CLEANUP_ERROR]?: unknown })[LATE_INIT_CLEANUP_ERROR]
+									? 'drain'
+									: 'start'
+							this.opts.onLateError?.(e, phase)
+							return
+						}
 						this.ctx.err = toError(e)
 						this.ctx.failedStep = 'start'
 						this.ctx.attempt++
@@ -176,31 +190,15 @@ export class PluginLifecycleActor {
 				onStop: async () => {
 					this.pendingStop = true
 					if (this.startAbort) this.startAbort.abort()
-					this.stopAbort = new AbortController()
-					const { runtime } = this.ctx
-					let stopErr: unknown
-					let disposeErr: unknown
-					try {
-						const stopping = runtime.stop?.(this.stopAbort.signal)
-						if (stopping) await stopping
-					} catch (e) {
-						stopErr = e
-					}
-					try {
-						await runtime.dispose?.()
-					} catch (e) {
-						disposeErr = e
-					}
-					const err = stopErr ?? disposeErr
-					if (err) {
-						if (!this.ctx.err) this.ctx.err = toError(err)
-						if (!this.ctx.failedStep) this.ctx.failedStep = 'stop'
+					await this.beginDrain()
+					if (this.drainError) {
+						if (!this.ctx.err) this.ctx.err = toError(this.drainError)
+						if (!this.ctx.failedStep) this.ctx.failedStep = 'drain'
 						this.ctx.attempt++
 						await dispatch(E.stopErr)
 					} else {
 						await dispatch(E.stopOk)
 					}
-					this.stopAbort = null
 					this.pendingStop = false
 				},
 				onAsyncError: (err: unknown) => {
@@ -323,6 +321,7 @@ export class PluginLifecycleActor {
 					/* ignore */
 				}
 			}
+			void this.beginDrain()
 		}
 		if (event.type === 'START' && (current === 'running' || current === 'starting')) return
 		this.queue = this.queue
@@ -330,6 +329,18 @@ export class PluginLifecycleActor {
 			.catch((err) => {
 				this.notifyError(err)
 			})
+	}
+
+	private beginDrain(): Promise<void> {
+		return (this.drainTask ??= Promise.resolve()
+			.then(() => this.ctx.runtime.drain())
+			.catch((error) => {
+				this.drainError = error
+			}))
+	}
+
+	getDrainError(): unknown {
+		return this.drainError
 	}
 
 	private toEvent(type: LifecycleEvent['type']): number {

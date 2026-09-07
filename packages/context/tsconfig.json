@@ -1,10 +1,9 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests"],
+	"include": ["src", "tests", "bench", "legacy"],
 	"compilerOptions": {
-		// Specify an output folder for all emitted files.
 		"outDir": "dist",
-		// Only output d.ts files and not JavaScript files.
-		"emitDeclarationOnly": true
+		"emitDeclarationOnly": true,
+		"types": ["node"]
 	}
 }

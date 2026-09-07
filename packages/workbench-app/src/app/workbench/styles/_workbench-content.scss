@@ -1,0 +1,309 @@
+.plx-workbenchContent {
+	color: var(--plx-text);
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: auto;
+}
+
+.plx-workbenchContent__document {
+	box-sizing: border-box;
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	margin: 0 auto;
+	max-width: 920px;
+	overflow-wrap: break-word;
+	padding: clamp(20px, 4vw, 48px);
+	padding-top: clamp(18px, 3vw, 36px);
+	width: 100%;
+}
+
+.plx-workbenchContent__document > :first-child {
+	margin-top: 0;
+}
+
+.plx-workbenchContent__document > :last-child {
+	margin-bottom: 0;
+}
+
+.plx-workbenchContent__document h1,
+.plx-workbenchContent__document h2,
+.plx-workbenchContent__document h3,
+.plx-workbenchContent__document h4,
+.plx-workbenchContent__document h5,
+.plx-workbenchContent__document h6 {
+	color: var(--plx-text);
+	font-weight: 650;
+	letter-spacing: -0.015em;
+	line-height: 1.25;
+	margin: 1.7em 0 0.65em;
+	scroll-margin-top: 16px;
+}
+
+.plx-workbenchContent__document h1 {
+	font-size: clamp(1.7rem, 3vw, 2.15rem);
+}
+
+.plx-workbenchContent__document h2 {
+	border-bottom: 1px solid var(--plx-border);
+	font-size: 1.4rem;
+	padding-bottom: 0.35em;
+}
+
+.plx-workbenchContent__document h3 {
+	font-size: 1.18rem;
+}
+
+.plx-workbenchContent__document h4,
+.plx-workbenchContent__document h5,
+.plx-workbenchContent__document h6 {
+	font-size: 1rem;
+}
+
+.plx-workbenchContent__document h1:focus,
+.plx-workbenchContent__document h2:focus,
+.plx-workbenchContent__document h3:focus,
+.plx-workbenchContent__document h4:focus,
+.plx-workbenchContent__document h5:focus,
+.plx-workbenchContent__document h6:focus {
+	outline: none;
+}
+
+.plx-workbenchContent__document h1:focus-visible,
+.plx-workbenchContent__document h2:focus-visible,
+.plx-workbenchContent__document h3:focus-visible,
+.plx-workbenchContent__document h4:focus-visible,
+.plx-workbenchContent__document h5:focus-visible,
+.plx-workbenchContent__document h6:focus-visible {
+	outline: 2px solid var(--plx-selected-border);
+	outline-offset: 3px;
+}
+
+.plx-workbenchContent__document p,
+.plx-workbenchContent__document blockquote,
+.plx-workbenchContent__document ol,
+.plx-workbenchContent__document ul,
+.plx-workbenchContent__document pre,
+.plx-workbenchContent__tableScroll {
+	margin: 0 0 1em;
+}
+
+.plx-workbenchContent__document ol,
+.plx-workbenchContent__document ul {
+	padding-inline-start: 1.6rem;
+}
+
+.plx-workbenchContent__document li + li {
+	margin-top: 0.25em;
+}
+
+.plx-workbenchContent__document li > :last-child {
+	margin-bottom: 0;
+}
+
+.plx-workbenchContent__document blockquote {
+	border-inline-start: 3px solid var(--plx-selected-border);
+	color: var(--plx-text-muted);
+	padding: 0.25em 1em;
+}
+
+.plx-workbenchContent__document a {
+	color: var(--plx-accent-strong);
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.18em;
+}
+
+.plx-workbenchContent__document a:hover {
+	text-decoration-thickness: 2px;
+}
+
+.plx-workbenchContent__document :not(pre) > code {
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 4px;
+	font-size: 0.88em;
+	padding: 0.1em 0.35em;
+}
+
+.plx-workbenchContent__document pre {
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 7px;
+	overflow: auto;
+	padding: 0.9rem 1rem;
+	tab-size: 4;
+}
+
+.plx-workbenchContent__document pre code {
+	font-size: 0.84rem;
+	line-height: 1.55;
+	white-space: pre;
+}
+
+.plx-workbenchContent__document hr {
+	border: 0;
+	border-top: 1px solid var(--plx-border);
+	margin: 1.5rem 0;
+}
+
+.plx-workbenchContent__tableScroll {
+	overflow-x: auto;
+}
+
+.plx-workbenchContent__document table {
+	border-collapse: collapse;
+	font-size: 0.875rem;
+	min-width: min(100%, 32rem);
+	width: 100%;
+}
+
+.plx-workbenchContent__document th,
+.plx-workbenchContent__document td {
+	border: 1px solid var(--plx-border);
+	padding: 0.5rem 0.65rem;
+	text-align: start;
+	vertical-align: top;
+}
+
+.plx-workbenchContent__document th {
+	background: var(--plx-surface-muted);
+	font-weight: 650;
+}
+
+.plx-workbenchContent__document :is(th, td)[data-align='center'] {
+	text-align: center;
+}
+
+.plx-workbenchContent__document :is(th, td)[data-align='right'] {
+	text-align: end;
+}
+
+.plx-workbenchContent__inlineStatus,
+.plx-workbenchContent__inlineValue {
+	align-items: baseline;
+	display: inline-flex;
+	gap: 0.35em;
+}
+
+.plx-workbenchContent__inlineStatus {
+	color: var(--plx-text-muted);
+}
+
+.plx-workbenchContent__inlineStatus button {
+	background: none;
+	border: 0;
+	color: var(--plx-accent-strong);
+	cursor: pointer;
+	font: inherit;
+	padding: 0;
+	text-decoration: underline;
+}
+
+.plx-workbenchContent__inlineValue[data-stale='true'] {
+	color: var(--plx-text-muted);
+}
+
+.plx-workbenchContent__staleMark,
+.plx-workbenchContent__slotUnavailable,
+.plx-workbenchContent__empty {
+	color: var(--plx-text-muted);
+}
+
+.plx-workbenchContent__staleMark {
+	font-size: 0.82em;
+}
+
+.plx-workbenchContent__dataSlot,
+.plx-workbenchContent__actionSlot {
+	display: grid;
+	gap: 0.75rem;
+	margin: 0 0 1rem;
+}
+
+.plx-workbenchContent__slotLoading {
+	align-items: center;
+	color: var(--plx-text-muted);
+	display: flex;
+	gap: 0.6rem;
+	min-height: 3rem;
+}
+
+.plx-workbenchContent__dataCard,
+.plx-workbenchContent__actionForm {
+	background: var(--plx-surface);
+	border: 1px solid var(--plx-border);
+	border-radius: 8px;
+	padding: 1rem;
+}
+
+.plx-workbenchContent__dataHeader {
+	display: grid;
+	gap: 0.15rem;
+	margin-bottom: 0.75rem;
+}
+
+.plx-workbenchContent__dataHeader > span {
+	color: var(--plx-text-muted);
+	font-size: 0.85rem;
+}
+
+.plx-workbenchContent__scalar {
+	white-space: pre-wrap;
+}
+
+.plx-workbenchContent__dataGrid {
+	display: grid;
+	gap: 0;
+	margin: 0;
+}
+
+.plx-workbenchContent__dataGrid > div {
+	border-top: 1px solid var(--plx-border);
+	display: grid;
+	gap: 0.75rem;
+	grid-template-columns: minmax(8rem, 0.35fr) minmax(0, 1fr);
+	padding: 0.6rem 0;
+}
+
+.plx-workbenchContent__dataGrid > div:first-child {
+	border-top: 0;
+}
+
+.plx-workbenchContent__dataGrid dt {
+	color: var(--plx-text-muted);
+	font-weight: 550;
+}
+
+.plx-workbenchContent__dataGrid dd {
+	margin: 0;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.plx-workbenchContent__dataList {
+	margin: 0;
+	padding-inline-start: 1.5rem;
+}
+
+.plx-workbenchContent__dataList > li + li {
+	border-top: 1px solid var(--plx-border);
+	margin-top: 0.5rem;
+	padding-top: 0.5rem;
+}
+
+.plx-workbenchContent__actionFeedback {
+	margin: 0;
+}
+
+@media (max-width: 47.99em) {
+	.plx-workbenchContent__document {
+		font-size: 0.9rem;
+		padding: 18px 16px 28px;
+	}
+
+	.plx-workbenchContent__dataGrid > div {
+		gap: 0.2rem;
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

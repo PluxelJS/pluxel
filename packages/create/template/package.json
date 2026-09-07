@@ -1,0 +1,42 @@
+{
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "portless proxy start --port 1355 --no-tls && portless",
+		"dev:direct": "pnpm --filter @example/host dev",
+		"dev:dynamic": "portless proxy start --port 1355 --no-tls && portless run pnpm --filter @example/host dev:dynamic",
+		"start": "pnpm --filter @example/host start",
+		"build": "turbo run build",
+		"catalog:add": "pncat add",
+		"catalog:check": "pncat detect --yes",
+		"catalog:clean": "pncat clean --yes",
+		"catalog:migrate": "pncat migrate --force --yes",
+		"governance:check": "pluxel workspace doctor && node scripts/check-workspace-governance.mjs",
+		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error host packages plugins scripts oxlint.config.ts pncat.config.ts",
+		"lint:fix": "pnpm lint --fix",
+		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --write .",
+		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --check .",
+		"test": "turbo run test --concurrency=50%",
+		"typecheck": "turbo run typecheck",
+		"verify": "pnpm governance:check && pnpm format:check && pnpm lint && turbo run typecheck test build --concurrency=50%"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "catalog:pluxel",
+		"@pluxel/rolldown": "catalog:pluxel",
+		"oxfmt": "catalog:tooling",
+		"oxlint": "catalog:tooling",
+		"pncat": "catalog:tooling",
+		"portless": "catalog:tooling",
+		"turbo": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:test"
+	},
+	"engines": {
+		"node": ">=24",
+		"pnpm": ">=11 <12"
+	},
+	"packageManager": "pnpm@11.25.0",
+	"portless": {
+		"script": "dev:direct"
+	}
+}

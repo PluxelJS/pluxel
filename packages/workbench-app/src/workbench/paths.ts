@@ -1,5 +1,7 @@
+import { formatPluginNodeRoute, parsePluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
 export const WORKBENCH_ROUTE_PREFIX = '/workbench' as const
 export const WORKBENCH_STANDALONE_ROUTE_PREFIX = '/workbench-standalone' as const
+export const PLUGIN_DETAIL_ROUTE_PREFIX = '/plugins' as const
 
 export type WorkbenchFrame = 'shell' | 'standalone'
 export type WorkbenchRoutePrefix =
@@ -34,24 +36,38 @@ export function normalizeWorkbenchPath(path: string): string {
 }
 
 export function buildWorkbenchHref(
-	pluginName: string,
+	target: PluginNodeAddress,
 	path: string,
 	frame: WorkbenchFrame = 'shell',
 ): string {
 	const normalizedPath = normalizeWorkbenchPath(path)
-	const encodedName = (() => {
-		try {
-			return encodeURIComponent(pluginName)
-		} catch {
-			return pluginName
-		}
-	})()
 	const prefix = getWorkbenchRoutePrefix(frame)
-	return `${prefix}/${encodedName}${normalizedPath}`
+	return `${prefix}/${formatPluginNodeRoute(target)}${normalizedPath}`
+}
+
+export function buildPluginDetailHref(target: PluginNodeAddress, path = ''): string {
+	return `${PLUGIN_DETAIL_ROUTE_PREFIX}/${formatPluginNodeRoute(target)}${normalizeWorkbenchPath(path)}`
+}
+
+export function parsePluginDetailHref(
+	pathname: string,
+): Readonly<{ target: PluginNodeAddress; path: string }> | undefined {
+	const marker = `${PLUGIN_DETAIL_ROUTE_PREFIX}/`
+	if (!pathname.startsWith(marker)) return undefined
+	const rawSegments = pathname.slice(marker.length).split('/')
+	try {
+		const { nodeAddress: target, consumedSegments } = parsePluginNodeRoute(rawSegments)
+		return Object.freeze({
+			target,
+			path: normalizeWorkbenchPath(rawSegments.slice(consumedSegments).join('/')),
+		})
+	} catch {
+		return undefined
+	}
 }
 
 export type ParsedWorkbenchHref = Readonly<{
-	pluginName: string
+	target: PluginNodeAddress
 	path: string
 	frame: WorkbenchFrame
 }>
@@ -71,17 +87,13 @@ function parseWorkbenchHrefWithPrefix(
 	const marker = `${prefix}/`
 	if (!pathname.startsWith(marker)) return undefined
 	const tail = pathname.slice(marker.length)
-	const separator = tail.indexOf('/')
-	const encodedPluginName = separator === -1 ? tail : tail.slice(0, separator)
-	if (!encodedPluginName) return undefined
-	const path = separator === -1 ? '' : normalizeWorkbenchPath(tail.slice(separator))
-	return Object.freeze({ pluginName: decodeSegment(encodedPluginName), path, frame })
-}
-
-function decodeSegment(value: string): string {
+	if (!tail) return undefined
+	const rawSegments = tail.split('/')
 	try {
-		return decodeURIComponent(value)
+		const { nodeAddress: target, consumedSegments } = parsePluginNodeRoute(rawSegments)
+		const path = normalizeWorkbenchPath(rawSegments.slice(consumedSegments).join('/'))
+		return Object.freeze({ target, path, frame })
 	} catch {
-		return value
+		return undefined
 	}
 }

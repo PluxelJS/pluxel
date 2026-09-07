@@ -12,7 +12,7 @@ library replaceable and prevents its low-level event shapes from becoming applic
 ## Files
 
 - `view.tsx`
-  `@worksplit/react` adapter and split view primitives.
+  `@worksplit/react` adapter, split view primitives, and the recursive editor-grid facade.
 - `storage.ts`
   layout normalization, persistence helpers, and sync hooks.
 - `tabState.ts`
@@ -46,11 +46,25 @@ Remote WorkbenchPane declarations
         -> WorkbenchSplitView adapter
 ```
 
+The native editor grid follows a separate host-owned path:
+
+```text
+WorkspaceController tabs + editor groups
+        -> WorkbenchEditorGrid adapter
+        -> @worksplit/react recursive editor topology
+        -> committed topology/size snapshot
+        -> WorkspaceController persistence
+```
+
+Pluxel owns drag/drop semantics, group focus, empty-group collapse, route mirroring, and per-Tab
+document rendering. Worksplit never receives a Pluxel route or document identity.
+
 ## Rules
 
 - Route and screen components should import from `workbench/split`.
 - Only `view.tsx` may import `@worksplit/react` or its stylesheet directly.
-- Layouts are stored as percentages, not pixels.
+- Section and Pane Kit layouts are stored as percentages. Recursive editor-grid snapshots keep
+  Worksplit's topology and committed CSS pixel sizes, which resize proportionally with the host.
 - `WorkbenchSplitView` receives the current percentage `layout` and emits `onLayoutCommit` only
   after user pointer or keyboard resizing commits.
 - Pane visibility state is scoped to the active workbench tab unless explicitly section-owned.

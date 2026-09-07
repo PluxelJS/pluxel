@@ -4,6 +4,8 @@ export default defineConfig({
 	tsconfig: './tsconfig.json',
 	entry: {
 		index: 'src/index.ts',
+		pretext: 'src/pretext.ts',
+		table: 'src/table.ts',
 		worker: 'src/worker.ts',
 		'worker/pretext': 'src/worker-pretext.ts',
 	},

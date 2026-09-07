@@ -1,6 +1,7 @@
-/** Host-owned plugin search, organization, bulk actions, and group persistence. */
+/** Derived Plugin catalog search, organization, bulk actions, and layout persistence. */
 
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
+import { pluginNodeIndexKey } from '@pluxel/core'
 import {
 	IconChevronLeft,
 	IconCornerUpLeft,
@@ -9,18 +10,17 @@ import {
 	IconSearchOff,
 } from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { JSX } from 'react/jsx-runtime'
 import { PluginOrganizer } from './organizer/PluginOrganizer'
 import type { GroupConfig } from './organizer/types'
 import { EmptyState, ErrorState } from '../../../components'
 import { useNotify } from '../../hooks/useNotify'
-import { RouterLinkAdapter } from '../../RouterLinkAdapter'
+import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
-import { api, defineInvalidation, useMutation } from '../../gqlens'
-import { updatePluginStatuses } from '../pluginStatusActions'
+import { setPluginAutoStarts } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
-import type { PluginStatusAction } from '../../../runtime'
-import { stringifyUnknown } from '../../../utils/unknown'
+import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -44,22 +44,16 @@ import { SearchBar } from './components/SearchBar'
 
 interface PluginCatalogProps {
 	onCollapse?: () => void
-	pluginName?: string
+	pluginRoute?: string
 }
 
-const ACTION_LABEL: Record<PluginStatusAction, string> = {
-	start: '启动',
-	stop: '终止',
-	restart: '重启',
-	enable: '启用',
-	'enable-persisted': '持久启用',
-	disable: '禁用',
-}
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
-const PLUGIN_GROUPS_INVALIDATION = defineInvalidation((query) => query.pluginCatalog.groups.ids)
 
-export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginName }) => {
-	const updatePluginGroups = useMutation(api.pluginGroups.update)
+class PluginCatalogLayoutPersistenceUnknownError extends Error {}
+
+export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginRoute }) => {
+	const management = useRuntimeManagementClient()
+	const queryClient = useQueryClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
 			return DEFAULT_STATUS_FILTER
@@ -71,7 +65,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return {
 				running: parsed.running !== false,
 				stopped: parsed.stopped !== false,
-				disabled: parsed.disabled !== false,
+				unavailable: parsed.unavailable !== false,
 			}
 		} catch {
 			return DEFAULT_STATUS_FILTER
@@ -116,6 +110,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		setSearch('')
 		setStatusFilter(DEFAULT_STATUS_FILTER)
 	}, [])
+	const resetStatusFilter = useCallback(() => {
+		setStatusFilter(DEFAULT_STATUS_FILTER)
+	}, [])
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const editableTarget = isEditableTarget(e.target)
@@ -128,7 +125,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setHelpOpened(true)
 			} else if (!editableTarget && e.altKey && ['1', '2', '3'].includes(e.key)) {
 				e.preventDefault()
-				const key = e.key === '1' ? 'running' : e.key === '2' ? 'stopped' : ('disabled' as const)
+				const key = e.key === '1' ? 'running' : e.key === '2' ? 'stopped' : ('unavailable' as const)
 				setStatusFilter((prev) => ({ ...prev, [key]: !prev[key] }))
 			} else if (e.key === 'Escape') {
 				if (helpOpened) {
@@ -166,6 +163,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	const [draftGroups, setDraftGroups] = useState<GroupConfig[] | null>(null)
 	const lastSyncedRef = useRef<GroupConfig[]>([])
 	const [bulkBusy, setBulkBusy] = useState(false)
+	const [layoutSaving, setLayoutSaving] = useState(false)
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
 	const notify = useNotify()
 
@@ -176,7 +174,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		try {
 			return buildOverview({
 				statuses: overviewState.overview?.status?.statuses,
-				groups: overviewState.overview?.groups,
+				sections: overviewState.overview?.sections,
 				summary: overviewState.overview?.status?.summary,
 			})
 		} catch (error) {
@@ -184,7 +182,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return EMPTY_OVERVIEW
 		}
 	}, [
-		overviewState.overview?.groups,
+		overviewState.overview?.sections,
 		overviewState.overview?.status?.statuses,
 		overviewState.overview?.status?.summary,
 	])
@@ -213,28 +211,59 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return
 		}
 		pendingCommitRef.current = null
-		const task = updatePluginGroups(
-			{ groups: pending },
-			{ invalidates: [PLUGIN_GROUPS_INVALIDATION] },
-		)
-			.then((result): undefined => {
-				const nextGroups = result.map((group) => ({
-					groupId: group.groupId,
-					name: group.name,
-					pluginIds: [...group.pluginIds],
+		const task = Promise.resolve()
+			.then(() =>
+				management.catalog.updateLayout({
+					sections: pending.map((group) => ({
+						sectionId: group.groupId,
+						name: group.name,
+						nodes: group.pluginIds.map((id) => {
+							const status = overview.statuses[id]
+							if (!status) throw new Error(`Plugin section references unknown catalog id: ${id}`)
+							return status.address
+						}),
+					})),
+				}),
+			)
+			.then(async (result): Promise<undefined> => {
+				if (result.ok === false) {
+					if (result.code === 'persistence_failed') {
+						throw new PluginCatalogLayoutPersistenceUnknownError(result.error)
+					}
+					throw new Error(result.error)
+				}
+				const idsByAddress = new Map(
+					Object.values(overview.statuses).map((status) => [
+						pluginNodeIndexKey(status.address),
+						status.id,
+					]),
+				)
+				lastSyncedRef.current = result.sections.map((section) => ({
+					groupId: section.sectionId,
+					name: section.name,
+					pluginIds: section.nodes.flatMap((node) => {
+						const id = idsByAddress.get(pluginNodeIndexKey(node))
+						return id === undefined ? [] : [id]
+					}),
 				}))
-				lastSyncedRef.current = cloneGroups(nextGroups)
+				await refetchOverview()
+				if (!pendingCommitRef.current) {
+					setDraftGroups(null)
+					setOrganizerResetToken((n) => n + 1)
+				}
 				return undefined
 			})
-			.catch((error: unknown): void => {
-				const message =
-					error && typeof error === 'object' && 'message' in error
-						? stringifyUnknown(
-								(error as { message?: unknown }).message,
-								'分组同步失败，请稍后重试。',
-							)
-						: '分组同步失败，请稍后重试。'
+			.catch(async (error: unknown): Promise<void> => {
+				const message = runtimeErrorMessage(error, '分组同步失败，请稍后重试。')
 				notify({ title: '同步失败', message, color: 'red' })
+				if (error instanceof PluginCatalogLayoutPersistenceUnknownError) {
+					await refetchOverview()
+					if (!pendingCommitRef.current) {
+						setDraftGroups(null)
+						setOrganizerResetToken((n) => n + 1)
+					}
+					return
+				}
 				if (!pendingCommitRef.current) {
 					const rollback = cloneGroups(lastSyncedRef.current)
 					setDraftGroups(rollback)
@@ -246,14 +275,16 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				if (queuedCommitRef.current || pendingCommitRef.current) {
 					queuedCommitRef.current = false
 					flushGroupCommit()
+				} else {
+					setLayoutSaving(false)
 				}
 			})
 		inflightCommitRef.current = task
-	}, [notify, updatePluginGroups])
+	}, [management.catalog, notify, overview.statuses, refetchOverview])
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {
-			if (areGroupsEqual(next, lastSyncedRef.current) && !pendingCommitRef.current) return
+			setLayoutSaving(true)
 			pendingCommitRef.current = cloneGroups(next)
 			setDraftGroups(next)
 			if (commitTimerRef.current) window.clearTimeout(commitTimerRef.current)
@@ -262,105 +293,131 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		[flushGroupCommit],
 	)
 
+	const resetGroups = useCallback(async () => {
+		if (inflightCommitRef.current !== null || pendingCommitRef.current) return
+		setBulkBusy(true)
+		try {
+			const result = await management.catalog.updateLayout({ sections: null })
+			if (result.ok === false) throw new Error(result.error)
+			await refetchOverview()
+			setDraftGroups(null)
+			setOrganizerResetToken((n) => n + 1)
+		} catch (error) {
+			notify({ title: '恢复自动分组失败', message: runtimeErrorMessage(error), color: 'red' })
+		} finally {
+			setBulkBusy(false)
+		}
+	}, [management.catalog, notify, refetchOverview])
+
 	useEffect(() => {
 		return () => {
 			if (commitTimerRef.current) window.clearTimeout(commitTimerRef.current)
 		}
 	}, [])
 
-	const handleBulkStatus = useCallback(
-		async (action: Exclude<PluginStatusAction, 'start' | 'restart' | 'enable-persisted'>) => {
+	const handleBulkAutoStart = useCallback(
+		async (autoStart: boolean) => {
 			if (selectedIds.length === 0) return
-			const batch = [...selectedIds]
+			const batch = selectedIds.map((id) => {
+				const status = overview.statuses[id]
+				if (!status) throw new Error(`Unknown catalog plugin id: ${id}`)
+				return status
+			})
+			const displayNameByAddress = new Map(
+				batch.map((status) => [pluginNodeIndexKey(status.address), status.name ?? status.id]),
+			)
 			setBulkBusy(true)
 			try {
-				const results = await updatePluginStatuses(batch.map((name) => ({ name, action })))
-				if (results.some((result) => result.ok)) refetchOverview()
+				const results = await setPluginAutoStarts(
+					management,
+					queryClient,
+					batch.map(({ address }) => ({ address, autoStart })),
+				)
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notify({
 						title: '操作完成但部分失败',
-						message: failed.map((f) => f.name).join('，') || '操作失败',
+						message:
+							failed
+								.map((result) => displayNameByAddress.get(pluginNodeIndexKey(result.address)))
+								.filter(Boolean)
+								.join('，') || '操作失败',
 						color: 'red',
 					})
 				} else {
-					if (action === 'disable' || action === 'stop') {
-						const undoAction: PluginStatusAction = action === 'disable' ? 'enable' : 'start'
-						notify({
-							title: '批量操作成功',
-							message: (
-								<Group gap={6} align="center" wrap="nowrap">
-									<Box component="span">
-										{batch.length} 个插件已 {ACTION_LABEL[action]}
-									</Box>
-									<ActionIcon
-										size="sm"
-										variant="subtle"
-										title="撤销"
-										aria-label="撤销"
-										onClick={() => {
-											void (async () => {
-												setBulkBusy(true)
-												try {
-													const undoResults = await updatePluginStatuses(
-														batch.map((name) => ({ name, action: undoAction })),
-													)
-													if (undoResults.some((result) => result.ok)) {
-														refetchOverview()
-													}
-													const undoFailed = undoResults.filter((r) => !r.ok)
-													if (undoFailed.length > 0) {
-														notify({
-															title: '撤销失败',
-															message: undoFailed.map((f) => f.name).join('，') || '撤销失败',
-															color: 'red',
-														})
-													} else {
-														notify({
-															title: '已撤销',
-															message: `${batch.length} 个插件已 ${ACTION_LABEL[undoAction]}`,
-															color: 'green',
-														})
-													}
-												} catch (error: any) {
+					notify({
+						title: autoStart ? '已批量开启自动启动' : '已批量关闭自动启动',
+						message: (
+							<Group gap={6} align="center" wrap="nowrap">
+								<Box component="span">{batch.length} 个 Plugin 的当前会话状态保持不变</Box>
+								<ActionIcon
+									size="sm"
+									variant="subtle"
+									title="恢复原自动启动策略"
+									aria-label="恢复原自动启动策略"
+									onClick={() => {
+										void (async () => {
+											setBulkBusy(true)
+											try {
+												const undoResults = await setPluginAutoStarts(
+													management,
+													queryClient,
+													batch.map(({ address, autoStart: previousAutoStart }) => ({
+														address,
+														autoStart: previousAutoStart,
+													})),
+												)
+												const undoFailed = undoResults.filter((result) => !result.ok)
+												if (undoFailed.length > 0) {
 													notify({
-														title: '撤销失败',
-														message: error?.message ?? '撤销失败，请稍后重试。',
+														title: '部分策略恢复失败',
+														message:
+															undoFailed
+																.map((result) =>
+																	displayNameByAddress.get(pluginNodeIndexKey(result.address)),
+																)
+																.filter(Boolean)
+																.join('，') || '恢复失败',
 														color: 'red',
 													})
-												} finally {
-													setBulkBusy(false)
+												} else {
+													notify({
+														title: '已恢复原策略',
+														message: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
+														color: 'green',
+													})
 												}
-											})()
-										}}
-									>
-										<IconCornerUpLeft size={14} />
-									</ActionIcon>
-								</Group>
-							),
-							color: 'green',
-							autoClose: 4000,
-						})
-					} else {
-						notify({
-							title: '批量操作成功',
-							message: `${batch.length} 个插件已 ${ACTION_LABEL[action]}`,
-							color: 'green',
-						})
-					}
-					if (action === 'disable' || action === 'stop') setSelectedIds([])
+											} catch (error: unknown) {
+												notify({
+													title: '恢复失败',
+													message: runtimeErrorMessage(error, '恢复失败，请稍后重试。'),
+													color: 'red',
+												})
+											} finally {
+												setBulkBusy(false)
+											}
+										})()
+									}}
+								>
+									<IconCornerUpLeft size={14} />
+								</ActionIcon>
+							</Group>
+						),
+						color: 'green',
+						autoClose: 5000,
+					})
 				}
-			} catch (error: any) {
+			} catch (error: unknown) {
 				notify({
 					title: '操作失败',
-					message: error?.message ?? '批量操作失败，请稍后重试。',
+					message: runtimeErrorMessage(error, '批量操作失败，请稍后重试。'),
 					color: 'red',
 				})
 			} finally {
 				setBulkBusy(false)
 			}
 		},
-		[selectedIds, notify, refetchOverview],
+		[management, selectedIds, notify, overview.statuses, queryClient],
 	)
 
 	const handleBulkAction = useCallback(
@@ -369,9 +426,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setSelectedIds([])
 				return
 			}
-			void handleBulkStatus(action)
+			void handleBulkAutoStart(action === 'auto-start-on')
 		},
-		[handleBulkStatus],
+		[handleBulkAutoStart],
 	)
 
 	// —— 视图渲染 —— //
@@ -382,7 +439,6 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	const groupsForView = draftGroups ?? overview.groups
 	const searchTokens = useMemo(() => parseSearchTokens(filterQuery), [filterQuery])
 	const hasStatusFilter = hasActiveStatusFilter(statusFilter)
-	const hasActiveFilters = filterQuery.length > 0 || hasStatusFilter
 
 	// 搜索过程中的过渡状态，用于降低视觉闪烁
 	const isTransitioning = search.trim() !== deferredSearch
@@ -448,15 +504,18 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				key={organizerResetToken}
 				statuses={overview.statuses}
 				initialGroups={groupsForView}
-				activeId={pluginName}
+				activeId={pluginRoute}
 				onGroupsChange={handleGroupsChange}
+				onResetGroups={() => {
+					void resetGroups()
+				}}
 				selectedIds={selectedIds}
 				onSelectedIdsChange={setSelectedIds}
 				filterQuery={filterQuery}
 				statusFilter={statusFilter}
 				LinkComponent={RouterLinkAdapter}
 				density="ultra"
-				locked={syncing || bulkBusy}
+				locked={syncing || bulkBusy || layoutSaving}
 			/>
 		)
 	}
@@ -464,32 +523,19 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	return (
 		<Stack className="plx-pluginCatalog" w="100%">
 			<div className="plx-pluginCatalog__header">
-				<div className="plx-pluginCatalog__titleBlock">
-					<div className="plx-pluginCatalog__titleLine">
-						<span className="plx-workbench__eyebrow">Plugins</span>
-						<span className="plx-workbench__title">插件导览</span>
-						<div className="plx-pluginCatalog__metaGroup" aria-live="polite">
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								总数 <strong>{overview.total}</strong>
-							</Box>
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								运行 <strong>{overview.running}</strong>
-							</Box>
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								禁用 <strong>{overview.disabled}</strong>
-							</Box>
-							{selectedIds.length > 0 ? (
-								<Box component="span" className="plx-pluginCatalog__metaPill">
-									已选 <strong>{selectedIds.length}</strong>
-								</Box>
-							) : null}
-							{hasActiveFilters ? (
-								<Box component="span" className="plx-pluginCatalog__metaPill">
-									筛选 <strong>{filterQuery ? '搜索' : '状态'}</strong>
-								</Box>
-							) : null}
-						</div>
-					</div>
+				<div className="plx-pluginCatalog__titleLine">
+					<span className="plx-workbench__eyebrow">Plugins</span>
+					<span className="plx-workbench__title">插件导览</span>
+					{overview.total > 0 ? (
+						<span
+							className="plx-pluginCatalog__titleCount"
+							title={`共 ${overview.total} 个插件`}
+							aria-label={`共 ${overview.total} 个插件`}
+							aria-live="polite"
+						>
+							{overview.total}
+						</span>
+					) : null}
 				</div>
 				<div className="plx-pluginCatalog__headerActions">
 					<button
@@ -519,9 +565,10 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 					onChange={handleSearchChange}
 					inputRef={inputRef}
 					statusFilter={statusFilter}
+					statusCounts={overview.statusCounts}
 					onToggleStatus={toggleStatusFilter}
-					onResetFilters={resetFilters}
-					hasActiveFilters={hasActiveFilters}
+					onResetStatusFilter={resetStatusFilter}
+					hasActiveStatusFilter={hasStatusFilter}
 				/>
 			</div>
 

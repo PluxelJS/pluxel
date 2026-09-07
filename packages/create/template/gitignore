@@ -1,0 +1,13 @@
+node_modules/
+.turbo/
+dist/
+.pluxel/
+.pnpmfile.cjs
+data/
+logs/
+*.log
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+!.env.example

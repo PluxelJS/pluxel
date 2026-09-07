@@ -1,69 +1,63 @@
 import { describe, expect, it } from 'vitest'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
+@Plugin({ forkable: true })
+class Forkable extends BasePlugin {}
 
-describe('Forkable plugins', () => {
-	it('rejects forking non‑forkable plugins', () => {
-		return withCoreHost((host) => {
-			@Plugin({ name: 'NotForkable' })
-			class NotForkable extends BasePlugin {}
+@Plugin({ displayName: 'Fork consumer' })
+class ForkConsumer extends BasePlugin {
+	constructor(readonly dependency: Forkable) {
+		super()
+	}
+}
 
-			expect(() => host.fork(NotForkable as any, 'a')).toThrow(/is not forkable/)
+@Plugin()
+class NonForkable extends BasePlugin {}
+
+describe('fork node identity', () => {
+	it('rejects non-forkable Plugins', async () => {
+		await withCoreInternalTestHost((host) => {
+			expect(() => host.fork(NonForkable as never, 'a')).toThrow(/does not allow fork/i)
 		})
 	})
 
-	it('runs multiple forks with isolated ctx and identity', async () => {
-		await withCoreHost(async (host) => {
-			const events: string[] = []
-
-			@Plugin({ name: 'Forkee' })
-			class Forkee extends ForkablePlugin {
-				override init(): void {
-					events.push(this.ctx.pluginInfo.id)
-				}
-			}
-
-			const A = host.fork(Forkee, 'a')
-			const B = host.fork(Forkee, 'b')
+	it('runs fork nodes with isolated Context and structured addresses', async () => {
+		await withCoreInternalTestHost(async (host) => {
+			host.add(Forkable)
+			const A = host.fork(Forkable, 'a')
+			const B = host.fork(Forkable, 'b')
 			await host.commit()
-
-			expect(new Set(events)).toEqual(new Set(['Forkee#a', 'Forkee#b']))
-
-			const a = host.get(A)
-			const b = host.get(B)
-			expect(a).toBeDefined()
-			expect(b).toBeDefined()
+			const defaultNode = host.require(Forkable)
+			const a = host.require(A)
+			const b = host.require(B)
 			expect(a).not.toBe(b)
-			expect(a!.ctx).not.toBe(b!.ctx)
-			expect(a!.ctx.pluginInfo.id).toBe('Forkee#a')
-			expect(b!.ctx.pluginInfo.id).toBe('Forkee#b')
+			expect(a.ctx).not.toBe(b.ctx)
+			expect(defaultNode.constructor).toBe(Forkable)
+			expect(a.constructor).toBe(Forkable)
+			expect(b.constructor).toBe(Forkable)
+			expect(a.ctx.pluginInfo.definitionRevision).toBe(
+				defaultNode.ctx.pluginInfo.definitionRevision,
+			)
+			expect(b.ctx.pluginInfo.definitionRevision).toBe(
+				defaultNode.ctx.pluginInfo.definitionRevision,
+			)
+			expect(a.ctx.pluginInfo.nodeAddress).toMatchObject({ variant: 'fork', forkId: 'a' })
+			expect(b.ctx.pluginInfo.nodeAddress).toMatchObject({ variant: 'fork', forkId: 'b' })
 		})
 	})
 
-	it('allows setParamToken to inject a specific fork', async () => {
-		await withCoreHost(async (host) => {
-			@Plugin({ name: 'Dep' })
-			class Dep extends ForkablePlugin {}
-
-			const _DepA = host.fork(Dep, 'a')
-			const DepB = host.fork(Dep, 'b')
-
-			@Plugin({ name: 'Consumer' })
-			class Consumer extends BasePlugin {
-				public dep: Dep
-				constructor(dep: Dep) {
-					super()
-					this.dep = dep
-				}
-			}
-
-			setParamToken(Consumer, 0, DepB)
-
-			host.add(Consumer)
+	it('selects a fork through slot-based dependency overrides', async () => {
+		await withCoreInternalTestHost(async (host) => {
+			host.fork(Forkable, 'a')
+			const B = host.fork(Forkable, 'b')
+			host.add(ForkConsumer)
+			host.override(ForkConsumer, Forkable, B)
 			await host.commit()
-
-			const consumer = host.require(Consumer) as Consumer
-			expect(consumer.dep.ctx.pluginInfo.id).toBe('Dep#b')
+			expect(host.require(ForkConsumer).dependency.ctx.pluginInfo.nodeAddress).toMatchObject({
+				variant: 'fork',
+				forkId: 'b',
+			})
 		})
 	})
 })

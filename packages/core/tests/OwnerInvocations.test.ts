@@ -1,11 +1,34 @@
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { createOwnerContext } from '../src/context/context-factory'
 import { closeOwnerInvocations, enterOwnerInvocation } from '../src/internal'
 import { describe, expect, it } from 'vitest'
 
+const ownerDrainOrder: string[] = []
+let ownerDrainLease: ReturnType<typeof enterOwnerInvocation> | undefined
+
+@Plugin()
+class InvokedPlugin extends BasePlugin {
+	override init() {
+		ownerDrainLease = enterOwnerInvocation(this.ctx)
+		ownerDrainLease.signal.addEventListener(
+			'abort',
+			() => {
+				ownerDrainOrder.push('abort')
+				ownerDrainLease?.dispose()
+			},
+			{ once: true },
+		)
+		return () => {
+			ownerDrainOrder.push('cleanup')
+		}
+	}
+}
+
 describe('owner invocations', () => {
 	it('closes admission, aborts active leases, and waits for their release', async () => {
-		await withCoreHost(async (host) => {
-			const owner = host.ctx.extend({ name: 'owner' })
+		await withCoreInternalTestHost(async (host) => {
+			const owner = createOwnerContext(host.ctx, 'owner')
 			const lease = enterOwnerInvocation(owner)
 			const reason = new Error('owner stopped')
 			const closing = closeOwnerInvocations(owner, reason)
@@ -26,8 +49,8 @@ describe('owner invocations', () => {
 	})
 
 	it('closes an unused owner synchronously without allocating an invocation gate', async () => {
-		await withCoreHost(async (host) => {
-			const owner = host.ctx.extend({ name: 'unused-owner' })
+		await withCoreInternalTestHost(async (host) => {
+			const owner = createOwnerContext(host.ctx, 'unused-owner')
 
 			expect(closeOwnerInvocations(owner)).toBeUndefined()
 			expect(() => enterOwnerInvocation(owner)).toThrow('Plugin owner stopped')
@@ -35,8 +58,8 @@ describe('owner invocations', () => {
 	})
 
 	it('combines call cancellation without closing the owner gate', async () => {
-		await withCoreHost(async (host) => {
-			const owner = host.ctx.extend({ name: 'owner' })
+		await withCoreInternalTestHost(async (host) => {
+			const owner = createOwnerContext(host.ctx, 'owner')
 			const call = new AbortController()
 			const lease = enterOwnerInvocation(owner, call.signal)
 			call.abort(new Error('request cancelled'))
@@ -50,8 +73,8 @@ describe('owner invocations', () => {
 	})
 
 	it('closes an idle gate synchronously and preserves the supplied reason', async () => {
-		await withCoreHost(async (host) => {
-			const owner = host.ctx.extend({ name: 'idle-owner' })
+		await withCoreInternalTestHost(async (host) => {
+			const owner = createOwnerContext(host.ctx, 'idle-owner')
 			const lease = enterOwnerInvocation(owner)
 			lease.dispose()
 			const reason = new Error('idle owner stopped')
@@ -63,35 +86,15 @@ describe('owner invocations', () => {
 		})
 	})
 
-	it('closes and drains owner invocations before the plugin stop hook', async () => {
-		await withCoreHost(async (host) => {
-			const order: string[] = []
-			let lease: ReturnType<typeof enterOwnerInvocation> | undefined
-
-			@Plugin({ name: 'InvokedPlugin' })
-			class InvokedPlugin extends BasePlugin {
-				override init(): void {
-					lease = enterOwnerInvocation(this.ctx)
-					lease.signal.addEventListener(
-						'abort',
-						() => {
-							order.push('abort')
-							lease?.dispose()
-						},
-						{ once: true },
-					)
-				}
-
-				override stop(): void {
-					order.push('stop')
-				}
-			}
-
+	it('closes and drains owner invocations before generation cleanup', async () => {
+		await withCoreInternalTestHost(async (host) => {
+			ownerDrainOrder.length = 0
+			ownerDrainLease = undefined
 			host.add(InvokedPlugin)
 			await host.commit()
 			host.remove(InvokedPlugin)
 			await host.commit()
-			expect(order).toEqual(['abort', 'stop'])
+			expect(ownerDrainOrder).toEqual(['abort', 'cleanup'])
 		})
 	})
 })

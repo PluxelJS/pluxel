@@ -1,20 +1,44 @@
-import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
-import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
+import { randomUUID } from 'node:crypto'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+	normalizePath,
+	type HmrContext,
+	type ModuleNode,
+	type Plugin,
+	type PluginOption,
+	type ViteDevServer,
+} from 'vite'
+import react from '@vitejs/plugin-react'
+import { hostEnv } from '@pluxel/runtime/environment'
+import { createPluginSourceVitePipeline } from '../../rolldown/src/vite/index.ts'
 import {
 	collectViteSsrImportFiles,
 	createHostModuleVitePlugin,
+	installPluxelViteUrlPrinter,
+	createViteNodeElysiaApplicationCarrier,
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteModuleGraphFiles,
+	registerViteSsrExternalModuleUrls,
 } from '../../runtime-dev/src/vite.ts'
+import { attachDevConsole, type DevConsoleAttachment } from '../../runtime-dev/src/console.ts'
+import { prepareLoaderHmrConsoleUpdate } from './hmr/engine/LoaderHmrService.ts'
 import { resolveDevWorkbenchClientEntryUrl } from '../../runtime/src/server/assets.ts'
-import { readHostProduct, sameProduct } from '@pluxel/runtime/internal'
+import {
+	getCachedResolver,
+	getOxcResolveCache,
+	PLUXEL_DIST_EXPORT_CONDITIONS,
+	readHostProduct,
+	requireRuntimeHttpService,
+	resolveModulePath,
+	sameProduct,
+	type OxcResolver,
+} from '@pluxel/runtime/internal'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
+import { resolveDynamicRuntimeEntry } from './entry'
 import {
 	assertDynamicRuntimeConfig,
 	isDynamicRuntimeConfig,
@@ -22,21 +46,43 @@ import {
 } from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
-import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './hmr/vite-watch'
+import {
+	DEFAULT_VITE_WATCH_IGNORED,
+	GENERATED_STATE_VITE_WATCH_IGNORED,
+	VITE_WATCH_USE_POLLING,
+} from './hmr/vite-watch'
+import { isPackageInstalledFrom } from './host-package'
+import { isPublicElysiaSingletonSpecifier } from './elysia-singleton'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
 const DYNAMIC_RUNTIME_CONTROLLER_KEY = Symbol.for('pluxel.dynamicRuntimeController')
 const DYNAMIC_RUNTIME_CACHE_DIR = '.pluxel/vite/dynamic-runtime-v2'
-const requireFromRuntimeDynamic = createRequire(import.meta.url)
+const HOST_SINGLETON_VIRTUAL_PREFIX = '\0pluxel:dynamic-host-singleton:'
+const moduleDir = dirname(fileURLToPath(import.meta.url))
 const RUNTIME_SOURCE_ROOT = normalizePath(
 	resolve(fileURLToPath(new URL('../../runtime/src/', import.meta.url))),
+)
+const RUNTIME_DIST_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../runtime/dist/', import.meta.url))),
 )
 const CORE_SOURCE_ROOT = normalizePath(
 	resolve(fileURLToPath(new URL('../../core/src/', import.meta.url))),
 )
+const CORE_DIST_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../core/dist/', import.meta.url))),
+)
+const CONTEXT_SOURCE_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../context/src/', import.meta.url))),
+)
+const CONTEXT_DIST_ROOT = normalizePath(
+	resolve(fileURLToPath(new URL('../../context/dist/', import.meta.url))),
+)
 
 export type DynamicRuntimeVitePluginOptions = {
-	config: string
+	/** Enable trusted local TypeScript operations. Only available in development mode. @default false */
+	devConsole?: boolean
+	/** Canonical config module. Relative strings resolve from the final Vite root. */
+	entry: string | URL
 	/**
 	 * `development` resolves source exports and serves the Workbench source graph.
 	 * `distribution` resolves built package exports and serves the packaged Workbench bundle.
@@ -55,14 +101,47 @@ type DynamicRuntimeController = {
 	stop(): Promise<void>
 }
 
+type DynamicViteApplicationCarrier = ReturnType<typeof createViteNodeElysiaApplicationCarrier>
+
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
 	const mode = options.mode ?? 'development'
+	if (options.devConsole !== undefined && typeof options.devConsole !== 'boolean') {
+		throw new TypeError('[runtime-dynamic/vite] devConsole must be a boolean')
+	}
+	if (options.devConsole && mode !== 'development') {
+		throw new Error('[runtime-dynamic/vite] devConsole requires development mode')
+	}
+	const hostEpochs = new WeakMap<DynamicRuntimeController, string>()
+	let devConsole: DevConsoleAttachment | undefined
+	let detachConsoleWatcher: (() => void) | undefined
+	let closing = false
+	let hotUpdateTail: Promise<void> = Promise.resolve()
+	const enqueueHotUpdate = <T>(operation: () => Promise<T>): Promise<T> => {
+		const result = hotUpdateTail.then(operation)
+		hotUpdateTail = result.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return result
+	}
+	const workbenchClientEntry = resolveDevWorkbenchClientEntryUrl()
+	const sourcePipeline = createPluginSourceVitePipeline({
+		name: 'pluxel:dynamic-runtime-source',
+		packageMode: mode,
+	})
+	let singletonHostRoot: string | null = null
+	let singletonHostResolver: OxcResolver | null = null
+	let contextHostHasContext: boolean | undefined
+	const canonicalElysiaUrls = new Map<string, string>()
+	let unregisterElysiaExternalModules: (() => void) | undefined
 	const state: {
 		server?: ViteDevServer
 		configPath?: string
 		configFiles?: Set<string>
 		controller?: DynamicRuntimeController
 		httpInstalled?: boolean
+		applicationCarrier?: DynamicViteApplicationCarrier
+		closeHttp?: () => Promise<void>
 	} = {}
 
 	const loadConfig = async (): Promise<{
@@ -71,10 +150,10 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	}> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-dynamic/vite] Vite server is not configured')
-		const configPath = (state.configPath ??= resolveRuntimeConfigPath(
-			server,
-			options.config,
-			'runtime-dynamic',
+		const configPath = (state.configPath ??= resolveDynamicRuntimeEntry(
+			options.entry,
+			server.config.root,
+			'runtime-dynamic/vite',
 		))
 		let mod: Record<string, unknown>
 		try {
@@ -93,32 +172,64 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	const startController = async (server: ViteDevServer): Promise<DynamicRuntimeController> => {
 		const loaded = await loadConfig()
 		const previous = state.controller
+		if (previous) await devConsole?.hostChanged()
 		state.controller = undefined
 		delete (server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY]
 		await previous?.stop()
-		const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } =
-			await loadDynamicHmrHostModule(server)
+		const {
+			bootPlannedLoaderHmrHost,
+			configureLoaderHmrDefinitionSource,
+			configureLoaderHmrWorkbenchArtifactSource,
+			planLoaderHmrHostFromConfig,
+		} = await loadDynamicHmrHostModule(server)
 		const plan = await planLoaderHmrHostFromConfig(loaded.config, {
 			configModuleId: state.configPath,
 		})
 		const booted = await bootPlannedLoaderHmrHost(plan, {
 			viteServer: server,
+			devConsole: options.devConsole,
 			product: loaded.product,
-			workbenchAssets: mode === 'distribution' ? 'built' : 'source',
+			workbenchAssets: mode === 'distribution' || !workbenchClientEntry ? 'built' : 'source',
 			workbenchArtifactCacheDir:
 				mode === 'distribution'
 					? resolve(plan.runtimeStorage.persistenceDir, '..', 'workbench-artifacts')
 					: undefined,
 		})
+		configureLoaderHmrDefinitionSource(booted.hmr, {
+			classifyDefinitionArtifact: sourcePipeline.semantics.classifyDefinitionArtifact,
+			beginArtifactGeneration: sourcePipeline.semantics.beginArtifactGeneration,
+			fixedModules: (): Iterable<string> => state.configFiles ?? [],
+		})
+		configureLoaderHmrWorkbenchArtifactSource(booted.hmr, {
+			compilations: async () => {
+				sourcePipeline.semantics.invalidateWorkbench()
+				const [producers, content] = await Promise.all([
+					sourcePipeline.semantics.workbenchCompilations(),
+					sourcePipeline.semantics.workbenchContentCompilations(),
+				])
+				return { producers, content }
+			},
+		})
+		const applicationCarrier = state.applicationCarrier
+		if (!applicationCarrier) {
+			await booted.stop()
+			throw new Error('[runtime-dynamic/vite] Elysia application carrier is not configured')
+		}
+		const detachApplicationCarrier = requireRuntimeHttpService(booted.ctx).attachApplicationCarrier(
+			applicationCarrier,
+		)
+		let stopPromise: Promise<void> | undefined
 		try {
 			await options.prepareHost?.(booted)
 			const controller: DynamicRuntimeController = {
 				booted,
 				product: loaded.product,
-				stop: async () => {
-					await booted.stop()
+				stop: () => {
+					stopPromise ??= booted.stop().finally(detachApplicationCarrier)
+					return stopPromise
 				},
 			}
+			hostEpochs.set(controller, randomUUID())
 			state.controller = controller
 			;(server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY] =
 				controller
@@ -127,41 +238,16 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		} catch (error) {
 			state.controller = undefined
 			delete (server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY]
-			await booted.stop()
+			await booted.stop().finally(detachApplicationCarrier)
 			throw error
 		}
 	}
 
-	const routePlugin: Plugin = {
-		name: 'pluxel:dynamic-runtime',
-		apply: 'serve',
-		config(config) {
-			const workbenchClient =
-				mode === 'development'
-					? createWorkbenchViteClientConfig(resolveDevWorkbenchClientEntryUrl())
-					: {}
-			return {
-				...workbenchClient,
-				...(config.cacheDir === undefined ? { cacheDir: DYNAMIC_RUNTIME_CACHE_DIR } : {}),
-				server: {
-					watch: {
-						ignored: [...DEFAULT_VITE_WATCH_IGNORED],
-						usePolling: VITE_WATCH_USE_POLLING,
-					},
-				},
-			}
-		},
-		async configureServer(server) {
-			const marked = server as ViteDevServer & { [DYNAMIC_RUNTIME_SERVER_KEY]?: true }
-			if (marked[DYNAMIC_RUNTIME_SERVER_KEY]) {
-				throw new Error('[runtime-dynamic/vite] only one dynamicRuntimeVitePlugin is allowed')
-			}
-			marked[DYNAMIC_RUNTIME_SERVER_KEY] = true
-			state.server = server
-			await startController(server)
-			installDynamicHttpMiddleware(state, server, mode === 'development')
-		},
-		async handleHotUpdate(ctx) {
+	const handleHotUpdate = (ctx: HmrContext): Promise<ModuleNode[] | void> => {
+		if (closing) return Promise.resolve(undefined)
+		// Vite has finished watchChange. Mark the version without invalidating a committed namespace.
+		devConsole?.observed(ctx.file)
+		return enqueueHotUpdate(async () => {
 			if (state.configFiles?.has(normalizePath(ctx.file))) {
 				state.server = ctx.server
 				invalidateViteModuleGraphFiles(ctx.server, state.configFiles)
@@ -174,12 +260,110 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			}
 			const controller = state.controller
 			if (!controller) return
-			if (controller.booted.ctx.http.consumeFullReloadRequest()) {
+			if (requireRuntimeHttpService(controller.booted.ctx).consumeFullReloadRequest()) {
 				ctx.server.ws.send({ type: 'full-reload' })
 				return []
 			}
-			return callViteHook(controller.booted.hmr.vitePlugin.handleHotUpdate, ctx)
+			return callViteHook<[HmrContext], Promise<ModuleNode[] | void> | ModuleNode[] | void>(
+				controller.booted.hmr.vitePlugin.handleHotUpdate,
+				ctx,
+			)
+		})
+	}
+
+	const routePlugin: Plugin = {
+		name: 'pluxel:dynamic-runtime',
+		apply: 'serve',
+		config(config) {
+			const workbenchClient =
+				mode === 'development' && workbenchClientEntry
+					? createWorkbenchViteClientConfig(workbenchClientEntry)
+					: {}
+			return {
+				...workbenchClient,
+				...(config.cacheDir === undefined ? { cacheDir: DYNAMIC_RUNTIME_CACHE_DIR } : {}),
+				server: {
+					watch: {
+						ignored: [...DEFAULT_VITE_WATCH_IGNORED, GENERATED_STATE_VITE_WATCH_IGNORED],
+						usePolling: VITE_WATCH_USE_POLLING,
+					},
+				},
+			}
 		},
+		async configureServer(server) {
+			const marked = server as ViteDevServer & { [DYNAMIC_RUNTIME_SERVER_KEY]?: true }
+			if (marked[DYNAMIC_RUNTIME_SERVER_KEY]) {
+				throw new Error('[runtime-dynamic/vite] only one dynamicRuntimeVitePlugin is allowed')
+			}
+			marked[DYNAMIC_RUNTIME_SERVER_KEY] = true
+			installPluxelViteUrlPrinter(server, {
+				publicOrigin: hostEnv.portlessOrigin,
+				workbenchBasePath: () => {
+					const ctx = state.controller?.booted.ctx
+					return ctx ? requireRuntimeHttpService(ctx).workbenchUiBasePath() : undefined
+				},
+			})
+			state.server = server
+			if (options.devConsole) {
+				// The loader observes the watcher directly. Invalidate before its synchronous admission,
+				// never from the later Vite hook after a replacement may already have committed.
+				const invalidate = (file: string) => devConsole?.invalidate(file)
+				const events = ['change', 'add', 'unlink'] as const
+				for (const event of events) server.watcher.on(event, invalidate)
+				detachConsoleWatcher = () => {
+					for (const event of events) server.watcher.off(event, invalidate)
+				}
+			}
+			state.applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
+				fetch: (request) => {
+					const ctx = state.controller?.booted.ctx
+					if (!ctx) return new Response('Dynamic runtime is not ready', { status: 503 })
+					return requireRuntimeHttpService(ctx).fetch(request)
+				},
+				matches: (request) => {
+					const ctx = state.controller?.booted.ctx
+					return Boolean(ctx && requireRuntimeHttpService(ctx).matchesWebSocketRoute(request))
+				},
+			})
+			try {
+				await startController(server)
+				installDynamicHttpMiddleware(
+					state,
+					server,
+					mode === 'development' && Boolean(workbenchClientEntry),
+				)
+				if (options.devConsole) {
+					devConsole = await attachDevConsole({
+						server,
+						getHost: () =>
+							state.controller && {
+								ctx: state.controller.booted.ctx.root,
+								epoch: hostEpochs.get(state.controller)!,
+							},
+						prepare: async (_file, signal) => {
+							const observedRoute = hotUpdateTail
+							await observedRoute
+							const hmr = state.controller?.booted.hmr
+							if (hmr) await prepareLoaderHmrConsoleUpdate(hmr)
+							signal.throwIfAborted()
+						},
+					})
+				}
+			} catch (error) {
+				detachConsoleWatcher?.()
+				detachConsoleWatcher = undefined
+				await devConsole?.close().catch((): undefined => undefined)
+				await state.closeHttp?.().catch((): undefined => undefined)
+				state.closeHttp = undefined
+				await state.controller?.stop().catch((): undefined => undefined)
+				state.controller = undefined
+				delete (server as unknown as Record<PropertyKey, unknown>)[DYNAMIC_RUNTIME_CONTROLLER_KEY]
+				await state.applicationCarrier.close().catch((): undefined => undefined)
+				state.applicationCarrier = undefined
+				throw error
+			}
+		},
+		handleHotUpdate,
 		resolveId(id, importer, hookOptions) {
 			return callViteHook(
 				state.controller?.booted.hmr.vitePlugin.resolveId,
@@ -192,6 +376,19 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			return callViteHook(state.controller?.booted.hmr.vitePlugin.load, id, hookOptions)
 		},
 		async closeBundle() {
+			closing = true
+			detachConsoleWatcher?.()
+			detachConsoleWatcher = undefined
+			let consoleError: unknown
+			try {
+				await devConsole?.close()
+			} catch (error) {
+				consoleError = error
+			}
+			devConsole = undefined
+			await hotUpdateTail
+			const applicationCarrier = state.applicationCarrier
+			applicationCarrier?.stopAccepting()
 			const controller = state.controller
 			state.controller = undefined
 			if (state.server) {
@@ -199,36 +396,117 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 					DYNAMIC_RUNTIME_CONTROLLER_KEY
 				]
 			}
-			await controller?.stop()
+			let controllerError: unknown
+			try {
+				await controller?.stop()
+			} catch (error) {
+				controllerError = error
+			}
+			let httpError: unknown
+			try {
+				await state.closeHttp?.()
+			} catch (error) {
+				httpError = error
+			}
+			state.closeHttp = undefined
+			state.applicationCarrier = undefined
+			let carrierError: unknown
+			try {
+				await applicationCarrier?.close()
+			} catch (error) {
+				carrierError = error
+			}
+			const errors = [consoleError, controllerError, httpError, carrierError].filter(
+				(error) => error !== undefined,
+			)
+			if (errors.length === 1) throw errors[0]
+			if (errors.length > 1) {
+				throw new AggregateError(errors, '[runtime-dynamic/vite] carrier shutdown failed')
+			}
 		},
 	}
 	const singletonBridgePlugin: Plugin = {
 		name: 'pluxel:dynamic-singleton-bridge',
 		enforce: 'pre',
-		applyToEnvironment(environment) {
-			return environment.name === 'ssr' || environment.config.consumer === 'server'
+		config() {
+			return {
+				resolve: {
+					dedupe: ['elysia'],
+				},
+				ssr: {
+					external: ['@pluxel/context', '@pluxel/core', '@pluxel/runtime'],
+				},
+			}
+		},
+		configResolved(config) {
+			singletonHostRoot = config.root
+			contextHostHasContext = undefined
+			singletonHostResolver = null
+			canonicalElysiaUrls.clear()
+		},
+		configureServer(server) {
+			unregisterElysiaExternalModules?.()
+			unregisterElysiaExternalModules = registerViteSsrExternalModuleUrls(
+				server,
+				canonicalElysiaUrls,
+			)
 		},
 		resolveId(id, _importer, hookOptions) {
 			if (!hookOptions?.ssr) return null
-			const specifier = resolveSingletonBridgeSpecifier(id)
-			if (specifier) return { id: requireFromRuntimeDynamic.resolve(specifier), external: true }
-			return null
+			if (!singletonHostRoot) return null
+			const getResolver = () =>
+				(singletonHostResolver ??= getCachedResolver(
+					getOxcResolveCache(),
+					'dynamic:host-singleton-bridge',
+					[singletonHostRoot!, moduleDir],
+					{ limit: 8 },
+				))
+			if (
+				isPublicElysiaSingletonSpecifier(id, (specifier) =>
+					Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+				)
+			) {
+				const hostEntry = resolveSingletonHostEntry(getResolver(), id)
+				if (!hostEntry) return null
+				const hostUrl = pathToFileURL(hostEntry).href
+				canonicalElysiaUrls.set(hostUrl, hostUrl)
+				return { id: hostUrl, external: true }
+			}
+			const specifier = resolveSingletonBridgeSpecifier(id, getResolver)
+			if (!specifier) return null
+			if (isContextBridgeSpecifier(specifier)) {
+				contextHostHasContext ??= isPackageInstalledFrom(singletonHostRoot, '@pluxel/context')
+				if (!contextHostHasContext) return null
+			}
+			if (id === specifier) return null
+			return `${HOST_SINGLETON_VIRTUAL_PREFIX}${specifier}`
+		},
+		load(id) {
+			if (!id.startsWith(HOST_SINGLETON_VIRTUAL_PREFIX)) return null
+			const specifier = id.slice(HOST_SINGLETON_VIRTUAL_PREFIX.length)
+			return `export * from ${JSON.stringify(specifier)}`
+		},
+		closeBundle() {
+			unregisterElysiaExternalModules?.()
+			unregisterElysiaExternalModules = undefined
 		},
 	}
 
 	return [
 		singletonBridgePlugin,
-		...pluxelRuntimeSourceVitePlugins({
-			name: 'pluxel:dynamic-runtime-source',
-			packageMode: mode,
-		}),
+		...sourcePipeline.plugins,
 		createHostModuleVitePlugin(),
+		...(mode === 'development' ? react() : []),
 		routePlugin,
 	]
 }
 
-function resolveSingletonBridgeSpecifier(id: string): string | null {
+function resolveSingletonBridgeSpecifier(
+	id: string,
+	getResolver: () => OxcResolver,
+): string | null {
 	if (
+		isContextBridgeSpecifier(id) ||
 		id === '@pluxel/core' ||
 		id.startsWith('@pluxel/core/') ||
 		id === '@pluxel/runtime' ||
@@ -236,42 +514,83 @@ function resolveSingletonBridgeSpecifier(id: string): string | null {
 	) {
 		return id
 	}
-	const clean = normalizePath(id.split('?', 1)[0]!)
+	const clean = cleanSingletonBridgeId(id)
 	return (
-		sourcePathToPublicSpecifier(clean, RUNTIME_SOURCE_ROOT, '@pluxel/runtime') ??
-		sourcePathToPublicSpecifier(clean, CORE_SOURCE_ROOT, '@pluxel/core')
+		sourcePathToPublicSpecifier(
+			clean,
+			CONTEXT_SOURCE_ROOT,
+			'@pluxel/context',
+			isContextBridgeSpecifier,
+		) ??
+		sourcePathToPublicSpecifier(
+			clean,
+			CONTEXT_DIST_ROOT,
+			'@pluxel/context',
+			isContextBridgeSpecifier,
+		) ??
+		sourcePathToPublicSpecifier(clean, RUNTIME_SOURCE_ROOT, '@pluxel/runtime', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		) ??
+		sourcePathToPublicSpecifier(clean, RUNTIME_DIST_ROOT, '@pluxel/runtime', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		) ??
+		sourcePathToPublicSpecifier(clean, CORE_SOURCE_ROOT, '@pluxel/core', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		) ??
+		sourcePathToPublicSpecifier(clean, CORE_DIST_ROOT, '@pluxel/core', (specifier) =>
+			Boolean(resolveSingletonHostEntry(getResolver(), specifier)),
+		)
 	)
+}
+
+function cleanSingletonBridgeId(id: string): string {
+	const raw = id.split('?', 1)[0]!
+	if (raw.startsWith('file://')) {
+		try {
+			return normalizePath(fileURLToPath(raw))
+		} catch {
+			return normalizePath(raw)
+		}
+	}
+	return normalizePath(raw.startsWith('/@fs/') ? raw.slice('/@fs'.length) : raw)
+}
+
+function isContextBridgeSpecifier(specifier: string): boolean {
+	return specifier === '@pluxel/context' || specifier === '@pluxel/context/internal'
+}
+
+function resolveSingletonHostEntry(resolver: OxcResolver, specifier: string): string | null {
+	return resolveModulePath(resolver, specifier, {
+		mode: 'distPreferEsm',
+		conditions: ['node', ...PLUXEL_DIST_EXPORT_CONDITIONS],
+	})
 }
 
 function sourcePathToPublicSpecifier(
 	id: string,
 	sourceRoot: string,
 	packageName: string,
+	accept: (specifier: string) => boolean,
 ): string | null {
 	const prefix = sourceRoot.endsWith('/') ? sourceRoot : `${sourceRoot}/`
 	if (!id.startsWith(prefix)) return null
-	const relative = id.slice(prefix.length).replace(/\.(?:[cm]?ts|tsx)$/, '')
+	const relative = id.slice(prefix.length).replace(/\.(?:[cm]?[jt]s|tsx)$/, '')
 	const specifier = relative === 'index' ? packageName : `${packageName}/${relative}`
-	try {
-		requireFromRuntimeDynamic.resolve(specifier)
-		return specifier
-	} catch {
-		return null
-	}
+	return accept(specifier) ? specifier : null
 }
 
 async function loadDynamicHmrHostModule(
 	_server: ViteDevServer,
 ): Promise<
-	Pick<typeof import('./hmr/host'), 'bootPlannedLoaderHmrHost' | 'planLoaderHmrHostFromConfig'>
+	Pick<
+		typeof import('./hmr/host'),
+		| 'bootPlannedLoaderHmrHost'
+		| 'configureLoaderHmrDefinitionSource'
+		| 'configureLoaderHmrWorkbenchArtifactSource'
+		| 'planLoaderHmrHostFromConfig'
+	>
 > {
 	return import('./hmr/host')
-}
-
-function resolveRuntimeConfigPath(server: ViteDevServer, config: string, route: string): string {
-	const raw = String(config ?? '').trim()
-	if (!raw) throw new Error(`[${route}/vite] config is required`)
-	return normalizePath(resolve(server.config.root, raw))
 }
 
 function validateDynamicRuntimeConfigModule(
@@ -304,9 +623,14 @@ function validateDynamicRuntimeConfigModule(
 }
 
 function installDynamicHttpMiddleware(
-	state: { controller?: DynamicRuntimeController; httpInstalled?: boolean },
+	state: {
+		controller?: DynamicRuntimeController
+		httpInstalled?: boolean
+		applicationCarrier?: DynamicViteApplicationCarrier
+		closeHttp?: () => Promise<void>
+	},
 	server: ViteDevServer,
-	injectClientScript: boolean,
+	transformHtml: boolean,
 ): void {
 	if (state.httpInstalled) return
 	state.httpInstalled = true
@@ -323,16 +647,32 @@ function installDynamicHttpMiddleware(
 			const ctx = state.controller?.booted.ctx
 			if (!ctx)
 				return Promise.resolve(new Response('Dynamic runtime is not ready', { status: 503 }))
-			return ctx.http.fetch(req)
+			return requireRuntimeHttpService(ctx).fetch(req)
 		},
 		shouldHandle: (req) => {
 			const ctx = state.controller?.booted.ctx
 			return Boolean(ctx && isRuntimeHttpRouteRequest(req, ctx))
 		},
-		injectClientScript,
+		...(server.httpServer && state.applicationCarrier
+			? {
+					businessWebSocket: {
+						matches: (request: import('node:http').IncomingMessage) =>
+							state.applicationCarrier?.matchesUpgrade(request) ?? false,
+						handle: (
+							request: import('node:http').IncomingMessage,
+							socket: import('node:stream').Duplex,
+							head: Buffer,
+						) => state.applicationCarrier?.handleUpgrade(request, socket, head),
+					},
+				}
+			: {}),
+		transformHtml,
 	})
 	callViteHook(plugin.configResolved, server.config)
 	callViteHook(plugin.configureServer, server)
+	state.closeHttp = async () => {
+		await callViteHook<[], void | Promise<void>>(plugin.closeBundle)
+	}
 }
 
 function callViteHook<TArgs extends unknown[], TResult>(

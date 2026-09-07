@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { FLAT_VIRTUAL_OVERSCAN, type RowDensity } from '../constants'
 import { iid } from '../controllerModel'
-import { SortableRow } from './SortableRow'
+import { SortableRow, type RowMeta } from './SortableRow'
 
 type LinkLikeProps = {
 	to: string
@@ -23,14 +23,15 @@ type FlatPluginListProps = {
 	ids: string[]
 	virtualize: boolean
 	runningSet: Set<string>
-	enabledSet: Set<string>
+	availableSet: Set<string>
+	desiredRunningSet: Set<string>
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	focusedId: string | null
 	onSelect: (event: MouseEvent, pluginId: string, mode?: 'click' | 'context' | 'toggle') => void
 	LinkComp?: ComponentType<LinkLikeProps>
 	getName: (id: string) => string
-	getMeta: (id: string) => { tag?: string; version?: string }
+	getMeta: (id: string) => RowMeta
 	dh: RowDensity
 	emptyLabel: string
 	listLabel: string
@@ -40,7 +41,8 @@ export function FlatPluginList({
 	ids,
 	virtualize,
 	runningSet,
-	enabledSet,
+	availableSet,
+	desiredRunningSet,
 	selectedSet,
 	activeSet,
 	focusedId,
@@ -128,7 +130,8 @@ export function FlatPluginList({
 								pid={item.id}
 								name={getName(item.id)}
 								running={runningSet.has(item.id)}
-								enabled={enabledSet.has(item.id)}
+								available={availableSet.has(item.id)}
+								desiredRunning={desiredRunningSet.has(item.id)}
 								selected={selectedSet.has(item.id)}
 								active={activeSet.has(item.id)}
 								onSelect={onSelect}
@@ -188,7 +191,8 @@ export function FlatPluginList({
 									pid={item.id}
 									name={getName(item.id)}
 									running={runningSet.has(item.id)}
-									enabled={enabledSet.has(item.id)}
+									available={availableSet.has(item.id)}
+									desiredRunning={desiredRunningSet.has(item.id)}
 									selected={selectedSet.has(item.id)}
 									active={activeSet.has(item.id)}
 									onSelect={onSelect}

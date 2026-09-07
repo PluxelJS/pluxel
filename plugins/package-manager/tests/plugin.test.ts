@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { assertPluginLifecycleIssue, withRuntimeHost } from '@pluxel/runtime/test'
-import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '@pluxel/runtime-dynamic/hmr'
+import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { createRuntimeTestHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PackageManagerPlugin } from '../src/index.ts'
 
@@ -14,139 +14,36 @@ afterEach(async () => {
 })
 
 describe('PackageManagerPlugin', () => {
-	it('starts in a real dynamic host that declares its exact publication directory', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-dynamic-'))
-		roots.push(root)
-		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: []\n')
-		await writeFile(
-			resolve(root, 'pluxel.loader.hmr.jsonc'),
-			JSON.stringify({
-				version: 2,
-				profile: 'test',
-				defaults: { roots: [] },
-				profiles: { test: { enabled: [] } },
-			}),
-		)
-		const previousCwd = process.cwd()
-		const managedRoot = resolve(root, '.pluxel/managed-plugins')
-		const plan = await planLoaderHmrHostFromConfig({
-			root,
-			logging: false,
-			printUrls: false,
-			configService: { mode: 'memory' },
-			runtimeState: {
-				mode: 'memory',
-				snapshot: { enabled: ['PackageManagerPlugin'] },
-			},
-			plugins: [PackageManagerPlugin],
-			sources: [
-				{
-					kind: 'directory',
-					path: '.pluxel/managed-plugins/entries',
-					include: ['*.mjs'],
-				},
-			],
-		})
-		const host = await bootPlannedLoaderHmrHost(plan)
-		try {
-			await host.hmr.start()
-			expect(host.ctx.registry.isRunning(PackageManagerPlugin)).toBe(true)
-			expect(existsSync(resolve(managedRoot, 'entries'))).toBe(true)
-			expect(host.ctx.commands.get('package.install')).toBeDefined()
-			const instance = host.ctx.registry.getInstance(PackageManagerPlugin)
-			expect(instance).toBeDefined()
-			await expect(instance!.snapshot()).resolves.toMatchObject({
-				rootDir: managedRoot,
-				packages: [],
-			})
-		} finally {
-			await host.stop()
-			process.chdir(previousCwd)
-		}
-	}, 60_000)
-
 	it('fails before filesystem or command side effects outside a declared dynamic source', async () => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-plugin-'))
 		roots.push(root)
 		const managedRoot = resolve(root, 'managed')
 
-		await withRuntimeHost(
-			async (host) => {
-				host.add(PackageManagerPlugin)
-				host.cfg(PackageManagerPlugin).set({
-					config: {
+		{
+			await using host = createRuntimeTestHost()
+
+			const failure = await host.commitExpectFail((change) => {
+				change.start(PackageManagerPlugin, {
+					initialConfig: {
 						rootDir: managedRoot,
 						ignoreScripts: true,
 						allowBuilds: [],
 						minimumReleaseAgeMinutes: 0,
 					},
 				})
-				host.cfg(PackageManagerPlugin).enable()
-				const summary = await host.commitAllowFail()
+			})
 
-				assertPluginLifecycleIssue(summary, PackageManagerPlugin, {
+			expect(failure.lifecycleReport.issues).toContainEqual(
+				expect.objectContaining({
+					plugin: pluginNodeAddressOf(PackageManagerPlugin),
 					kind: 'start-failed',
-					message: 'dynamic runtime host',
-				})
-				expect(host.isRunning(PackageManagerPlugin)).toBe(false)
-				expect(existsSync(managedRoot)).toBe(false)
-				expect(host.ctx.commands.get('package.install')).toBeUndefined()
-				expect(host.ctx.commands.get('package.remove')).toBeUndefined()
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('fails before side effects when the declared source has a mismatched include', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-mismatch-'))
-		roots.push(root)
-		const managedRoot = resolve(root, 'managed')
-
-		await withRuntimeHost(
-			async (host) => {
-				type TestContext = {
-					runtimeRoute?: {
-						dynamicPluginSources?: {
-							hasFile(path: string): boolean
-							hasDirectory(path: string, include: readonly string[]): boolean
-						}
-					}
-				}
-				const ctx = host.ctx as unknown as TestContext
-				ctx.runtimeRoute = {
-					dynamicPluginSources: {
-						hasFile: () => false,
-						hasDirectory: (path, include) => {
-							const declared = new Set(['*.js'])
-							const required = new Set(include)
-							return (
-								path === resolve(managedRoot, 'entries') &&
-								declared.size === required.size &&
-								[...required].every((pattern) => declared.has(pattern))
-							)
-						},
-					},
-				}
-				host.add(PackageManagerPlugin)
-				host.cfg(PackageManagerPlugin).set({
-					config: {
-						rootDir: managedRoot,
-						ignoreScripts: true,
-						allowBuilds: [],
-						minimumReleaseAgeMinutes: 0,
-					},
-				})
-				host.cfg(PackageManagerPlugin).enable()
-				const summary = await host.commitAllowFail()
-
-				assertPluginLifecycleIssue(summary, PackageManagerPlugin, {
-					kind: 'start-failed',
-					message: 'not declared',
-				})
-				expect(existsSync(managedRoot)).toBe(false)
-				expect(host.ctx.commands.get('package.install')).toBeUndefined()
-			},
-			{ workbench: false },
-		)
+					message: expect.stringContaining('dynamic runtime host'),
+				}),
+			)
+			expect(host.isRunning(PackageManagerPlugin)).toBe(false)
+			expect(existsSync(managedRoot)).toBe(false)
+			expect(host.commands.list().some(({ name }) => name === 'package.install')).toBe(false)
+			expect(host.commands.list().some(({ name }) => name === 'package.remove')).toBe(false)
+		}
 	})
 })

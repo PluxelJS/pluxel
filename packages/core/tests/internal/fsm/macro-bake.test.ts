@@ -7,8 +7,8 @@ import { rolldown } from 'rolldown'
 import Macros from 'unplugin-macros/rolldown'
 
 const macroEntrySource = [
-	"import { bakeMachine } from '../../defineMachine.macro' with { type: 'macro' }",
-	"import { hydrateMachine } from '../../defineMachine.macro'",
+	"import { bakeMachine } from '../../defineMachine.macro.ts' with { type: 'macro' }",
+	"import { hydrateMachine } from '../../defineMachine.macro.ts'",
 	'',
 	'export function onStart(name: string) {',
 	'\t// no-op',

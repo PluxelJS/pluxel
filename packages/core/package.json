@@ -1,7 +1,8 @@
 {
 	"name": "@pluxel/core",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "Pluxel plugin graph, lifecycle, Context, and core services",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -31,6 +32,11 @@
 			"import": "./dist/internal.mjs",
 			"require": "./dist/internal.cjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"import": "./dist/internal/test.mjs",
+			"require": "./dist/internal/test.cjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
 			"import": "./dist/logger.mjs",
@@ -45,6 +51,11 @@
 			"@pluxel/source": "./src/test.ts",
 			"import": "./dist/test.mjs",
 			"require": "./dist/test.cjs"
+		},
+		"./toolchain": {
+			"@pluxel/source": "./src/toolchain.ts",
+			"import": "./dist/toolchain.mjs",
+			"require": "./dist/toolchain.cjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -62,6 +73,10 @@
 				"import": "./dist/internal.mjs",
 				"require": "./dist/internal.cjs"
 			},
+			"./internal/test": {
+				"import": "./dist/internal/test.mjs",
+				"require": "./dist/internal/test.cjs"
+			},
 			"./logger": {
 				"import": "./dist/logger.mjs",
 				"require": "./dist/logger.cjs"
@@ -74,32 +89,42 @@
 				"import": "./dist/test.mjs",
 				"require": "./dist/test.cjs"
 			},
+			"./toolchain": {
+				"import": "./dist/toolchain.mjs",
+				"require": "./dist/toolchain.cjs"
+			},
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
 		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
+		"bench:caller-view": "pnpm run build && node --experimental-strip-types bench/pluginCallerView.bench.ts",
+		"bench:fork-cost": "pnpm run build && node --expose-gc --experimental-strip-types bench/pluginForkCost.bench.ts",
 		"bench:di": "pnpm exec tsdown bench/vendor/diod/src/index.ts --no-config --format esm --out-dir bench/vendor/diod/dist --minify && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},
 	"dependencies": {
-		"@logtape/logtape": "^2.0.2",
-		"@standard-schema/spec": "^1.1.0",
-		"eventure": "^0.4.4",
-		"std-env": "^4.0.0-rc.1"
+		"@logtape/logtape": "catalog:prod",
+		"@standard-schema/spec": "catalog:prod",
+		"eventure": "catalog:prod",
+		"std-env": "catalog:prod"
 	},
 	"devDependencies": {
-		"@abraham/reflection": "^0.13.0",
 		"@pluxel/context": "workspace:*",
-		"option-t": "^55.1.2",
-		"rolldown": "^1.1.5",
-		"tinybench": "^6.0.0",
-		"unplugin-macros": "^0.20.2"
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"option-t": "catalog:validation",
+		"rolldown": "catalog:build",
+		"tinybench": "catalog:dev",
+		"unplugin-macros": "catalog:build"
+	},
+	"engines": {
+		"node": ">=24"
 	},
 	"inlinedDependencies": {
-		"@abraham/reflection": "0.13.0",
-		"option-t": "55.1.2"
+		"option-t": "56.1.2"
 	}
 }

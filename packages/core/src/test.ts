@@ -1,444 +1,899 @@
 import './services/index'
+import { createCoreRootContext } from './context/core-plan'
+import type { CoreHostConfig } from './context/Context'
+import { requireConfigService } from './internal/config-service'
+import { requirePluginService } from './internal/plugin-service'
+import { immutableConfigRecord } from './services/config/immutable'
 import {
-	checkPluginDecorator,
-	getPluginInfo,
-	type BasePlugin,
-	type CommitSummary,
-	Context,
-	type ForkablePluginConstructor,
-	type PluginLifecycleIssue,
-	type PluginLifecycleIssueKind,
-	type PluginLifecycleIssuePhase,
-	type PluginConstructor,
-	type PluginIdentifier,
-	type PluginService,
-	type RuntimePluginKey,
-} from './index'
+	consumePluginDefinitionCandidate,
+	pluginDefinitionAddressOf,
+} from './plugins/runtime/definition'
+import {
+	pluginDefinitionAddressEqual,
+	pluginDefinitionIndexKey,
+	isPluginNodeSlot,
+	pluginNodeIndexKey,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+} from './plugins/runtime/identity'
+import type { RuntimeUpdateTransaction } from './plugins/runtime/plugin-service/RuntimeUpdateTransaction'
+import type { PluginService } from './plugins/runtime/PluginService'
+import type { PluginConstructor, PluginToken } from './plugins/types'
+import {
+	assertPluginTestTargetCurrent,
+	collectPluginTestDraft,
+	definePluginFork,
+	PluginLifecycleAssertionError,
+	PluginTestOperationGate,
+	projectPluginTestCommitSummary,
+	resolvePluginTestTarget,
+	type LifecycleFailureCommitSummary,
+	type PluginForkRef,
+	type PluginInstanceFor,
+	type PluginInstances,
+	type PluginLifecycleAssertionOperation,
+	type PluginTestCommitSummary,
+	type PluginTestDraftAuthority,
+	type PluginTestLifecycleIssue,
+	type PluginTestTarget,
+	type RawPluginConfig,
+} from './testing/test-primitives'
 
 export {
-	BaseFeature,
 	BasePlugin,
-	Config,
-	defineLazyFeature,
-	FeatureHost,
-	ForkablePlugin,
-	HostBoundFeature,
-	optionalPlugin,
 	Plugin,
-	checkPluginDecorator,
-	clearParamToken,
-	collectPluginLifecycleBlocked,
-	collectPluginLifecycleIssuePlugins,
-	collectPluginLifecycleNotStarted,
-	collectPluginLifecycleStoppedWithErrors,
-	getPluginInfo,
-	isPluginLifecycleBlockedIssue,
-	isPluginLifecycleNotStartedIssue,
-	isPluginLifecycleStoppedWithErrorIssue,
-	setParamToken,
-	setParamTokens,
+	PluginPart,
+	definePluginRef,
+	pluginDefinitionAddressOf,
+	pluginNodeAddressOf,
 } from './index'
-export { Context } from './index'
 export type {
-	CommitSummary,
-	ForkablePluginConstructor,
-	PluginCommitChanges,
-	PluginReplacement,
-	PluginLifecycleIssue,
+	PluginConstructor,
+	PluginDefinitionAddress,
+	PluginLifecycleErrorInfo,
 	PluginLifecycleIssueKind,
 	PluginLifecycleIssuePhase,
-	PluginLifecycleIssuePredicate,
-	PluginConstructor,
-	PluginIdentifier,
-	RuntimeUpdateCommitSummary,
-	RuntimePluginKey,
+	PluginNodeAddress,
+	PluginRef,
+	PluginToken,
 } from './index'
-
-type NamespacedConfigKey = `${string}.${string}`
-type CoreHostConfigTarget = PluginConstructor | string
-
-type NonFunctionPropertyNames<T extends object> = {
-	[K in keyof T]-?: T[K] extends (...args: any[]) => any ? never : K
-}[keyof T]
-
-type PluginOwnFields<T extends PluginConstructor> = Omit<InstanceType<T>, keyof BasePlugin>
-
-export type CoreHostConfigPatch<T extends PluginConstructor> = Partial<
-	Pick<PluginOwnFields<T>, NonFunctionPropertyNames<PluginOwnFields<T>>>
-> &
-	Partial<Record<string | NamespacedConfigKey, unknown>>
-
-export type CoreHostConfigPatchByName = Record<string, unknown>
-
-export type CoreHostConfigPatchFor<TTarget extends CoreHostConfigTarget> =
-	TTarget extends PluginConstructor ? CoreHostConfigPatch<TTarget> : CoreHostConfigPatchByName
-
-export type CoreHostConfigHandle<TTarget extends CoreHostConfigTarget> = {
-	readonly name: string
-	set: (patch: CoreHostConfigPatchFor<TTarget>) => void
-	unset: (...keys: string[]) => void
-	rev: () => number
-	enable: () => void
-	disable: () => void
-	enabled: () => boolean
+export { definePluginFork, PluginLifecycleAssertionError }
+export type {
+	LifecycleFailureCommitSummary,
+	PluginForkRef,
+	PluginInstanceFor,
+	PluginInstances,
+	PluginLifecycleAssertionOperation,
+	PluginTestCommitSummary,
+	PluginTestLifecycleIssue,
+	PluginTestTarget,
+	RawPluginConfig,
 }
 
-export interface CoreHost {
-	readonly ctx: Context
+export type DependencyOverrideTarget = Readonly<{
+	consumer: PluginTestTarget
+	requirement: PluginToken
+}>
 
-	add(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): CoreHost
-	add(Plugins: readonly PluginConstructor[], opts?: { provideBase?: boolean }): CoreHost
-	remove(id: PluginIdentifier): CoreHost
-	remove(ids: readonly PluginIdentifier[]): CoreHost
-	restart: (id: PluginIdentifier, opts?: { cascadeDependents?: boolean }) => CoreHost
-	replace: (
-		id: PluginIdentifier,
-		next: PluginConstructor,
-		opts?: { cascadeDependents?: boolean; provideBase?: boolean },
-	) => CoreHost
-	fork: <T extends ForkablePluginConstructor>(
-		Plugin: T,
-		forkId: string,
-		opts?: { provideBase?: boolean },
-	) => T
+export type DependencyOverrideInput = DependencyOverrideTarget &
+	Readonly<{ provider: PluginTestTarget }>
 
-	commit(): Promise<CommitSummary>
-	commitAllowFail(): Promise<CommitSummary>
+export type ProviderDefaultInput = Readonly<{
+	requirement: PluginToken
+	provider: PluginConstructor
+}>
 
-	isRunning: (id: PluginIdentifier) => boolean
-	get: <T extends PluginIdentifier>(id: T) => InstanceType<T> | undefined
-	require: <T extends PluginIdentifier>(id: T) => InstanceType<T>
+export type PluginInitialConfigOptions = Readonly<{
+	/** Bootstrap config, accepted only before this node first enters lifecycle. */
+	initialConfig?: RawPluginConfig
+}>
 
-	cfg<T extends PluginConstructor>(target: T): CoreHostConfigHandle<T>
-	cfg(target: string): CoreHostConfigHandle<string>
+export type CorePluginAddOptions = PluginInitialConfigOptions
 
-	start: <T extends PluginConstructor>(
-		Plugin: T,
-		opts?: { provideBase?: boolean },
-	) => Promise<InstanceType<T>>
-
-	last: () => CommitSummary | undefined
-	services: () => unknown[]
-	plugins: () => PluginConstructor[]
-	has: (id: unknown) => boolean
-
-	dispose: () => Promise<void>
+export interface CorePluginTestChange {
+	add(target: PluginTestTarget, options?: CorePluginAddOptions): undefined
+	add(targets: readonly PluginTestTarget[]): undefined
+	remove(target: PluginTestTarget): undefined
+	restart(target: PluginTestTarget): undefined
+	replaceDefinition(current: PluginConstructor, next: PluginConstructor): undefined
+	readonly config: {
+		patch(target: PluginTestTarget, value: RawPluginConfig): undefined
+	}
+	readonly dependencies: {
+		setDefault(input: ProviderDefaultInput): undefined
+		clearDefault(requirement: PluginToken): undefined
+		setOverride(input: DependencyOverrideInput): undefined
+		clearOverride(input: DependencyOverrideTarget): undefined
+	}
 }
 
-export type CoreTestContext = {
-	readonly ctx: Context
-	dispose: () => Promise<void>
+export interface CoreTestHost extends AsyncDisposable {
+	add<TTarget extends PluginTestTarget>(
+		target: TTarget,
+		options?: CorePluginAddOptions,
+	): Promise<PluginInstanceFor<TTarget>>
+	add<const TTargets extends readonly PluginTestTarget[]>(
+		targets: TTargets,
+	): Promise<PluginInstances<TTargets>>
+	remove(target: PluginTestTarget): Promise<void>
+	restart<TTarget extends PluginTestTarget>(target: TTarget): Promise<PluginInstanceFor<TTarget>>
+	replaceDefinition(current: PluginConstructor, next: PluginConstructor): Promise<void>
+	commit(build: (change: CorePluginTestChange) => undefined): Promise<void>
+	commitExpectFail(
+		build: (change: CorePluginTestChange) => undefined,
+	): Promise<LifecycleFailureCommitSummary>
+	require<TTarget extends PluginTestTarget>(target: TTarget): PluginInstanceFor<TTarget>
+	isRunning(target: PluginTestTarget): boolean
+	dispose(): Promise<void>
 }
 
-export type CoreHostOptions = {
-	prepareCommit?: (ctx: Context) => Promise<void> | void
+/**
+ * Core-only test host configuration. `plugins` tunes the production lifecycle executor; it is not
+ * a Plugin constructor catalog. Omitted fields use the same defaults as a Core root.
+ */
+export type CoreTestHostConfig = Pick<CoreHostConfig, 'name' | 'logger' | 'events' | 'plugins'>
+
+type AddCommand = Readonly<{
+	target: PluginTestTarget
+	address: PluginNodeAddress
+	implementation: PluginConstructor
+	initialConfig?: RawPluginConfig
+}>
+
+type TargetCommand = Readonly<{ target: PluginTestTarget; address: PluginNodeAddress }>
+
+type ReplacementCommand = Readonly<{
+	current: PluginConstructor
+	next: PluginConstructor
+	definition: PluginDefinitionAddress
+}>
+
+type DefaultCommand =
+	| Readonly<{
+			kind: 'set'
+			requirement: PluginToken
+			provider: PluginConstructor
+	  }>
+	| Readonly<{ kind: 'clear'; requirement: PluginToken }>
+
+type OverrideCommand =
+	| Readonly<{
+			kind: 'set'
+			consumer: PluginTestTarget
+			requirement: PluginToken
+			provider: PluginTestTarget
+	  }>
+	| Readonly<{
+			kind: 'clear'
+			consumer: PluginTestTarget
+			requirement: PluginToken
+	  }>
+
+type CoreDraftPlan = {
+	readonly adds: Map<string, AddCommand>
+	readonly removes: Map<string, TargetCommand>
+	readonly restarts: Map<string, TargetCommand>
+	readonly replacements: Map<string, ReplacementCommand>
+	readonly configs: Map<string, Readonly<{ target: PluginTestTarget; value: RawPluginConfig }>>
+	readonly defaults: Map<string, DefaultCommand>
+	readonly overrides: Map<string, OverrideCommand>
+	readonly targets: Map<string, PluginTestTarget>
 }
 
-type RuntimeStateLike = {
-	snapshot: () => { enabled: readonly string[] }
-	update: (run: (draft: { enabled: Set<string> }) => void) => void
-}
+type RawCommit = Readonly<{
+	summary: PluginTestCommitSummary
+	targets: readonly PluginTestTarget[]
+}>
 
-function runtimeStateOf(ctx: Context): RuntimeStateLike | undefined {
-	const runtimeState = (ctx as unknown as { runtimeState?: unknown }).runtimeState
-	if (!runtimeState || typeof runtimeState !== 'object') return undefined
-	const candidate = runtimeState as Partial<RuntimeStateLike>
-	return typeof candidate.snapshot === 'function' && typeof candidate.update === 'function'
-		? (candidate as RuntimeStateLike)
-		: undefined
-}
+/** Create an isolated Core Plugin world without starting or materializing any Plugin. */
+export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHost {
+	const root = createCoreRootContext({ ...config, name: config.name ?? 'test' })
+	const registry = requirePluginService(root)
+	const configService = requireConfigService(root)
+	const gate = new PluginTestOperationGate()
+	const enteredLifecycle = new Set<string>()
+	const configuredTargets = new Set<string>()
+	const explicitProviderDefaults = new Map<string, PluginDefinitionAddress>()
 
-export type CoreHostLifecycleIssueExpectation = {
-	phase?: PluginLifecycleIssuePhase
-	kind?: PluginLifecycleIssueKind
-	blockedBy?: PluginConstructor | string
-	message?: string | RegExp
-}
+	const createPlan = (): CoreDraftPlan => ({
+		adds: new Map(),
+		removes: new Map(),
+		restarts: new Map(),
+		replacements: new Map(),
+		configs: new Map(),
+		defaults: new Map(),
+		overrides: new Map(),
+		targets: new Map(),
+	})
 
-function normalizeConfig(config: Context.Config): Context.Config {
-	return Object.assign({}, config, {
-		root: config.root ?? {},
-		fs: Object.assign({ mode: 'memory' }, config.fs),
-	}) as Context.Config
-}
+	const createChange = (
+		plan: CoreDraftPlan,
+		authority: PluginTestDraftAuthority,
+	): CorePluginTestChange => {
+		const recordTarget = (target: PluginTestTarget): TargetCommand => {
+			authority.assertActive('Plugin target command')
+			const resolved = resolvePluginTestTarget(target)
+			plan.targets.set(pluginNodeIndexKey(resolved.address), target)
+			return Object.freeze({ target, address: resolved.address })
+		}
 
-function assertCommitSummary(
-	result: Awaited<ReturnType<PluginService['commit']>>,
-	registry: PluginService,
-): CommitSummary {
-	if (!result.ok) throw result.err instanceof Error ? result.err : new Error(String(result.err))
-	const summary = registry.lastCommit
-	if (!summary) throw new Error('commit succeeded but lastCommit is missing')
-	return summary
-}
+		const addOne = (target: PluginTestTarget, options: CorePluginAddOptions = {}) => {
+			authority.recordCommand('change.add()')
+			const resolved = resolvePluginTestTarget(target)
+			const key = pluginNodeIndexKey(resolved.address)
+			assertNoTargetConflict(plan, key, 'add')
+			assertNoReplacementConflict(plan, resolved.address.definition, 'add')
+			const initialConfig =
+				options.initialConfig === undefined
+					? undefined
+					: immutableConfigRecord(options.initialConfig)
+			const previous = plan.adds.get(key)
+			if (previous) {
+				if (!configValuesEqual(previous.initialConfig, initialConfig)) {
+					throw conflictError('add', target, 'two different initialConfig values')
+				}
+				return
+			}
+			const plannedConfig = plan.configs.get(key)
+			if (
+				plannedConfig &&
+				initialConfig !== undefined &&
+				!configValuesEqual(plannedConfig.value, initialConfig)
+			) {
+				throw conflictError('add/config.patch', target, 'different bootstrap config values')
+			}
+			plan.targets.set(key, target)
+			plan.adds.set(
+				key,
+				Object.freeze({
+					target,
+					address: resolved.address,
+					implementation: resolved.implementation,
+					...(initialConfig === undefined ? {} : { initialConfig }),
+				}),
+			)
+		}
 
-function pluginKey(target: PluginConstructor | string): RuntimePluginKey {
-	return (typeof target === 'string' ? target : getPluginInfo(target).id) as RuntimePluginKey
-}
+		function add(target: PluginTestTarget, options?: CorePluginAddOptions): undefined
+		function add(targets: readonly PluginTestTarget[]): undefined
+		function add(
+			input: PluginTestTarget | readonly PluginTestTarget[],
+			options?: CorePluginAddOptions,
+		): undefined {
+			authority.assertActive('change.add()')
+			if (Array.isArray(input)) {
+				assertNonEmptyUniqueTargets(input, 'change.add()')
+				for (const target of input) addOne(target)
+			} else {
+				addOne(input as PluginTestTarget, options)
+			}
+			return undefined
+		}
 
-export function findPluginLifecycleIssue(
-	summary: CommitSummary,
-	plugin: PluginConstructor | string,
-	expected: CoreHostLifecycleIssueExpectation = {},
-): PluginLifecycleIssue | undefined {
-	const key = pluginKey(plugin)
-	const blockedBy = expected.blockedBy ? pluginKey(expected.blockedBy) : undefined
-	return summary.lifecycleReport.issues.find((issue) => {
-		if (issue.plugin !== key) return false
-		if (expected.phase && issue.phase !== expected.phase) return false
-		if (expected.kind && issue.kind !== expected.kind) return false
-		if (blockedBy && issue.blockedBy !== blockedBy) return false
-		if (expected.message instanceof RegExp) return expected.message.test(issue.message)
-		if (typeof expected.message === 'string') return issue.message.includes(expected.message)
-		return true
+		const remove = (target: PluginTestTarget): undefined => {
+			authority.recordCommand('change.remove()')
+			const command = recordTarget(target)
+			const key = pluginNodeIndexKey(command.address)
+			assertNoTargetConflict(plan, key, 'remove')
+			assertNoReplacementConflict(plan, command.address.definition, 'remove')
+			plan.removes.set(key, command)
+			return undefined
+		}
+
+		const restart = (target: PluginTestTarget): undefined => {
+			authority.recordCommand('change.restart()')
+			const command = recordTarget(target)
+			const key = pluginNodeIndexKey(command.address)
+			assertNoTargetConflict(plan, key, 'restart')
+			assertNoReplacementConflict(plan, command.address.definition, 'restart')
+			plan.restarts.set(key, command)
+			return undefined
+		}
+
+		const replaceDefinition = (current: PluginConstructor, next: PluginConstructor): undefined => {
+			authority.recordCommand('change.replaceDefinition()')
+			const currentAddress = resolvePluginTestTarget(current).address.definition
+			const nextAddress = resolvePluginTestTarget(next).address.definition
+			if (!pluginDefinitionAddressEqual(currentAddress, nextAddress)) {
+				throw new TypeError(
+					'[pluxel/test] replaceDefinition() constructors must have the same canonical definition address',
+				)
+			}
+			const key = pluginDefinitionIndexKey(currentAddress)
+			assertDefinitionHasNoTargetCommands(plan, currentAddress, 'replaceDefinition')
+			const previous = plan.replacements.get(key)
+			if (previous && (previous.current !== current || previous.next !== next)) {
+				throw conflictError('replaceDefinition', current, 'two different replacements')
+			}
+			plan.replacements.set(key, Object.freeze({ current, next, definition: currentAddress }))
+			plan.targets.set(pluginNodeIndexKey(resolvePluginTestTarget(current).address), current)
+			return undefined
+		}
+
+		const patch = (target: PluginTestTarget, input: RawPluginConfig): undefined => {
+			authority.recordCommand('change.config.patch()')
+			const command = recordTarget(target)
+			const key = pluginNodeIndexKey(command.address)
+			assertNoReplacementConflict(plan, command.address.definition, 'config.patch')
+			if (plan.removes.has(key)) throw conflictError('config.patch/remove', target)
+			const value = immutableConfigRecord(input)
+			const previous = plan.configs.get(key)
+			if (previous && !configValuesEqual(previous.value, value)) {
+				throw conflictError('config.patch', target, 'two different values')
+			}
+			const addCommand = plan.adds.get(key)
+			if (addCommand?.initialConfig && !configValuesEqual(addCommand.initialConfig, value)) {
+				throw conflictError('add/config.patch', target, 'different bootstrap config values')
+			}
+			plan.configs.set(key, Object.freeze({ target, value }))
+			return undefined
+		}
+
+		const setDefault = (input: ProviderDefaultInput): undefined => {
+			authority.recordCommand('change.dependencies.setDefault()')
+			const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))
+			const previous = plan.defaults.get(key)
+			if (
+				previous &&
+				(previous.kind !== 'set' || !samePluginTarget(previous.provider, input.provider))
+			) {
+				throw conflictError('dependencies.setDefault', input.requirement)
+			}
+			plan.defaults.set(key, Object.freeze({ kind: 'set', ...input }))
+			const provider = resolvePluginTestTarget(input.provider)
+			plan.targets.set(pluginNodeIndexKey(provider.address), input.provider)
+			return undefined
+		}
+
+		const clearDefault = (requirement: PluginToken): undefined => {
+			authority.recordCommand('change.dependencies.clearDefault()')
+			const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(requirement))
+			const previous = plan.defaults.get(key)
+			if (previous && previous.kind !== 'clear') {
+				throw conflictError('dependencies.setDefault/clearDefault', requirement)
+			}
+			plan.defaults.set(key, Object.freeze({ kind: 'clear', requirement }))
+			return undefined
+		}
+
+		const overrideKey = (input: DependencyOverrideTarget) => {
+			const consumer = resolvePluginTestTarget(input.consumer).address
+			return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))}`
+		}
+
+		const setOverride = (input: DependencyOverrideInput): undefined => {
+			authority.recordCommand('change.dependencies.setOverride()')
+			const key = overrideKey(input)
+			const previous = plan.overrides.get(key)
+			if (
+				previous &&
+				(previous.kind !== 'set' ||
+					!samePluginTarget(previous.consumer, input.consumer) ||
+					!samePluginTarget(previous.provider, input.provider))
+			) {
+				throw conflictError('dependencies.setOverride', input.consumer)
+			}
+			plan.overrides.set(key, Object.freeze({ kind: 'set', ...input }))
+			for (const target of [input.consumer, input.provider]) {
+				const resolved = resolvePluginTestTarget(target)
+				plan.targets.set(pluginNodeIndexKey(resolved.address), target)
+			}
+			return undefined
+		}
+
+		const clearOverride = (input: DependencyOverrideTarget): undefined => {
+			authority.recordCommand('change.dependencies.clearOverride()')
+			const key = overrideKey(input)
+			const previous = plan.overrides.get(key)
+			if (previous && previous.kind !== 'clear') {
+				throw conflictError('dependencies.setOverride/clearOverride', input.consumer)
+			}
+			plan.overrides.set(key, Object.freeze({ kind: 'clear', ...input }))
+			const consumer = resolvePluginTestTarget(input.consumer)
+			plan.targets.set(pluginNodeIndexKey(consumer.address), input.consumer)
+			return undefined
+		}
+
+		return Object.freeze({
+			add,
+			remove,
+			restart,
+			replaceDefinition,
+			config: Object.freeze({ patch }),
+			dependencies: Object.freeze({
+				setDefault,
+				clearDefault,
+				setOverride,
+				clearOverride,
+			}),
+		})
+	}
+
+	const collect = (build: (change: CorePluginTestChange) => undefined): CoreDraftPlan =>
+		collectPluginTestDraft(build, (authority) => {
+			const plan = createPlan()
+			return Object.freeze({ change: createChange(plan, authority), plan })
+		})
+
+	const commitPlan = async (plan: CoreDraftPlan): Promise<RawCommit> => {
+		validatePlan(plan, registry, enteredLifecycle, configuredTargets)
+		const update = registry.beginUpdate({ reason: 'core-test' })
+		try {
+			applyGraphPlan(plan, update, registry)
+			const prepared = update.prepare()
+			for (const [key, configPatch] of plan.configs) {
+				const address = resolvePluginTestTarget(configPatch.target).address
+				configService.patchConfig(address, configPatch.value)
+				configuredTargets.add(key)
+			}
+			for (const [key, add] of plan.adds) {
+				if (add.initialConfig === undefined || plan.configs.has(key)) continue
+				configService.patchConfig(add.address, add.initialConfig)
+				configuredTargets.add(key)
+			}
+			const result = await prepared.commit()
+			if (result.ok === false) {
+				throw result.err instanceof Error ? result.err : new Error(String(result.err))
+			}
+			const committed = registry.lastCommit
+			if (!committed) throw new Error('[pluxel/test] Core commit completed without a summary')
+			for (const key of plan.adds.keys()) enteredLifecycle.add(key)
+			for (const command of plan.defaults.values()) {
+				const requirement = pluginDefinitionAddressOf(command.requirement)
+				const key = pluginDefinitionIndexKey(requirement)
+				if (command.kind === 'set') explicitProviderDefaults.set(key, requirement)
+				else explicitProviderDefaults.delete(key)
+			}
+			return Object.freeze({
+				summary: projectPluginTestCommitSummary(committed, registry),
+				targets: Object.freeze([...plan.targets.values()]),
+			})
+		} catch (error) {
+			update.rollback()
+			throw error
+		}
+	}
+
+	const assertStrict = (
+		operation: PluginLifecycleAssertionOperation,
+		commit: RawCommit,
+		requiredRunning: readonly PluginTestTarget[] = [],
+	) => {
+		if (
+			commit.summary.lifecycleReport.issues.length > 0 ||
+			requiredRunning.some((target) => !registry.isRunning(resolvePluginTestTarget(target).address))
+		) {
+			throw new PluginLifecycleAssertionError(operation, commit.targets, commit.summary)
+		}
+	}
+
+	const runBuild = <T>(
+		operation: PluginLifecycleAssertionOperation,
+		build: (change: CorePluginTestChange) => undefined,
+		finish: (commit: RawCommit) => T,
+	): Promise<T> =>
+		gate.runMutation(operation, async () => {
+			const committed = await commitPlan(collect(build))
+			return finish(committed)
+		})
+
+	function add<TTarget extends PluginTestTarget>(
+		target: TTarget,
+		options?: CorePluginAddOptions,
+	): Promise<PluginInstanceFor<TTarget>>
+	function add<const TTargets extends readonly PluginTestTarget[]>(
+		targets: TTargets,
+	): Promise<PluginInstances<TTargets>>
+	function add(
+		input: PluginTestTarget | readonly PluginTestTarget[],
+		options?: CorePluginAddOptions,
+	): Promise<unknown> {
+		const batch = Array.isArray(input)
+		const targets = Object.freeze(
+			batch ? [...input] : [input as PluginTestTarget],
+		) as readonly PluginTestTarget[]
+		const optionsSnapshot =
+			options?.initialConfig === undefined
+				? undefined
+				: Object.freeze({ initialConfig: immutableConfigRecord(options.initialConfig) })
+		return runBuild(
+			'add',
+			(change) => (batch ? change.add(targets) : change.add(targets[0]!, optionsSnapshot)),
+			(commit) => {
+				assertStrict('add', commit, targets)
+				const instances = targets.map((target) => readRequired(target))
+				return batch ? Object.freeze(instances) : instances[0]
+			},
+		)
+	}
+
+	const remove = (target: PluginTestTarget): Promise<void> =>
+		runBuild(
+			'remove',
+			(change) => change.remove(target),
+			(commit) => assertStrict('remove', commit),
+		)
+
+	const restart = <TTarget extends PluginTestTarget>(
+		target: TTarget,
+	): Promise<PluginInstanceFor<TTarget>> =>
+		runBuild(
+			'restart',
+			(change) => change.restart(target),
+			(commit) => {
+				assertStrict('restart', commit, [target])
+				return readRequired(target)
+			},
+		)
+
+	const replaceDefinition = (current: PluginConstructor, next: PluginConstructor): Promise<void> =>
+		runBuild(
+			'replaceDefinition',
+			(change) => change.replaceDefinition(current, next),
+			(commit) => assertStrict('replaceDefinition', commit),
+		)
+
+	const commit = (build: (change: CorePluginTestChange) => undefined): Promise<void> =>
+		runBuild('commit', build, (result) => assertStrict('commit', result))
+
+	const commitExpectFail = (
+		build: (change: CorePluginTestChange) => undefined,
+	): Promise<LifecycleFailureCommitSummary> =>
+		runBuild('commitExpectFail', build, (result) => {
+			if (result.summary.lifecycleReport.issues.length === 0) {
+				throw new PluginLifecycleAssertionError('commitExpectFail', result.targets, result.summary)
+			}
+			return result.summary as LifecycleFailureCommitSummary
+		})
+
+	const readRequired = <TTarget extends PluginTestTarget>(
+		target: TTarget,
+	): PluginInstanceFor<TTarget> => {
+		const address = assertPluginTestTargetCurrent(registry, target)
+		const instance = registry.getInstance(address)
+		if (!instance) {
+			throw new Error('[pluxel/test] Required Plugin target is not running')
+		}
+		return instance as PluginInstanceFor<TTarget>
+	}
+
+	const requirePlugin = <TTarget extends PluginTestTarget>(
+		target: TTarget,
+	): PluginInstanceFor<TTarget> => {
+		gate.assertReadable('require()')
+		return readRequired(target)
+	}
+
+	const isRunning = (target: PluginTestTarget): boolean => {
+		gate.assertReadable('isRunning()')
+		const resolved = resolvePluginTestTarget(target)
+		if (!registry.isMaterialized(resolved.address)) {
+			const current = findDefinitionImplementation(registry, resolved.address.definition)
+			if (current && current !== resolved.implementation) {
+				assertPluginTestTargetCurrent(registry, target)
+			}
+			return false
+		}
+		const address = assertPluginTestTargetCurrent(registry, target)
+		return registry.isRunning(address)
+	}
+
+	const dispose = (): Promise<void> =>
+		gate.dispose(async () => {
+			const failures: unknown[] = []
+			try {
+				const nodes = [...registry.graph.keys()].filter(
+					(value): value is import('./index').PluginNodeSlot =>
+						Boolean(value && typeof value === 'object' && 'definition' in value),
+				)
+				if (nodes.length > 0) {
+					const update = registry.beginUpdate({ reason: 'core-test-dispose' })
+					for (const requirement of explicitProviderDefaults.values()) {
+						update.setProviderDefault(requirement, null)
+					}
+					for (const node of nodes) {
+						update.dematerializeNode(registry.nodeAddressOf(node), {
+							cascadeDependents: false,
+						})
+					}
+					const result = await update.commit()
+					if (result.ok === false) failures.push(result.err)
+					else if (registry.lastCommit?.lifecycleReport.issues.length) {
+						for (const issue of registry.lastCommit.lifecycleReport.issues) {
+							failures.push(
+								new Error(
+									`[pluxel/test] ${issue.kind} during Core host disposal: ${issue.message}`,
+									{ cause: issue.error },
+								),
+							)
+						}
+					}
+				}
+			} catch (error) {
+				failures.push(error)
+			}
+			try {
+				await root.effects.dispose()
+			} catch (error) {
+				failures.push(error)
+			}
+			if (failures.length > 0) {
+				throw new AggregateError(failures, '[pluxel/test] Core test host disposal failed')
+			}
+		})
+
+	return Object.freeze({
+		add,
+		remove,
+		restart,
+		replaceDefinition,
+		commit,
+		commitExpectFail,
+		require: requirePlugin,
+		isRunning,
+		dispose,
+		[Symbol.asyncDispose]: dispose,
 	})
 }
 
-export function pluginLifecycleIssuePlugins(
-	summary: CommitSummary,
-	expected: CoreHostLifecycleIssueExpectation = {},
-): RuntimePluginKey[] {
-	const blockedBy = expected.blockedBy ? pluginKey(expected.blockedBy) : undefined
-	const plugins = new Set<RuntimePluginKey>()
-	for (const issue of summary.lifecycleReport.issues) {
-		if (expected.phase && issue.phase !== expected.phase) continue
-		if (expected.kind && issue.kind !== expected.kind) continue
-		if (blockedBy && issue.blockedBy !== blockedBy) continue
-		if (expected.message instanceof RegExp && !expected.message.test(issue.message)) continue
-		if (typeof expected.message === 'string' && !issue.message.includes(expected.message)) {
-			continue
+function validatePlan(
+	plan: CoreDraftPlan,
+	registry: PluginService,
+	enteredLifecycle: ReadonlySet<string>,
+	configuredTargets: ReadonlySet<string>,
+): void {
+	for (const [key, add] of plan.adds) {
+		assertPluginTestTargetCurrent(registry, add.target, { allowAbsent: true })
+		if (
+			add.initialConfig !== undefined &&
+			(enteredLifecycle.has(key) ||
+				configuredTargets.has(key) ||
+				registry.isMaterialized(add.address))
+		) {
+			throw new Error(
+				'[pluxel/test] initialConfig is only available before a Plugin node first enters lifecycle; use change.config.patch() for later Core desired config',
+			)
 		}
-		plugins.add(issue.plugin)
 	}
-	return [...plugins]
+	for (const command of plan.removes.values()) {
+		assertPluginTestTargetCurrent(registry, command.target)
+		if (!registry.isMaterialized(command.address)) invalidTarget('remove', command.target)
+	}
+	for (const command of plan.restarts.values()) {
+		assertPluginTestTargetCurrent(registry, command.target)
+		if (!registry.isRunning(command.address))
+			invalidTarget('restart', command.target, 'is not running')
+	}
+	for (const replacement of plan.replacements.values()) {
+		assertPluginTestTargetCurrent(registry, replacement.current)
+		if (!findDefinitionImplementation(registry, replacement.definition)) {
+			invalidTarget('replaceDefinition', replacement.current, 'definition is not materialized')
+		}
+	}
+	for (const config of plan.configs.values()) {
+		const resolved = resolvePluginTestTarget(config.target)
+		if (!willExist(plan, registry, resolved.address)) invalidTarget('config.patch', config.target)
+		assertCurrentOrPlanned(plan, registry, config.target)
+	}
+	for (const command of plan.defaults.values()) {
+		if (command.kind === 'clear') continue
+		const provider = resolvePluginTestTarget(command.provider)
+		if (!willExist(plan, registry, provider.address)) {
+			invalidTarget('dependencies.setDefault', command.provider, 'provider is not materialized')
+		}
+		assertCurrentOrPlanned(plan, registry, command.provider)
+	}
+	for (const command of plan.overrides.values()) {
+		const consumer = resolvePluginTestTarget(command.consumer)
+		if (!willExist(plan, registry, consumer.address)) {
+			invalidTarget('dependencies override', command.consumer, 'consumer is not materialized')
+		}
+		assertCurrentOrPlanned(plan, registry, command.consumer)
+		if (command.kind === 'set') {
+			const provider = resolvePluginTestTarget(command.provider)
+			if (!willExist(plan, registry, provider.address)) {
+				invalidTarget('dependencies.setOverride', command.provider, 'provider is not materialized')
+			}
+			assertCurrentOrPlanned(plan, registry, command.provider)
+		}
+	}
 }
 
-export function assertPluginLifecycleIssue(
-	summary: CommitSummary,
-	plugin: PluginConstructor | string,
-	expected: CoreHostLifecycleIssueExpectation = {},
-): PluginLifecycleIssue {
-	const issue = findPluginLifecycleIssue(summary, plugin, expected)
-	if (issue) return issue
-	const key = pluginKey(plugin)
-	const details = [
-		expected.phase ? `phase=${expected.phase}` : undefined,
-		expected.kind ? `kind=${expected.kind}` : undefined,
-		expected.blockedBy ? `blockedBy=${pluginKey(expected.blockedBy)}` : undefined,
-		expected.message ? `message=${String(expected.message)}` : undefined,
-	]
-		.filter(Boolean)
-		.join(', ')
+function applyGraphPlan(
+	plan: CoreDraftPlan,
+	update: RuntimeUpdateTransaction<unknown>,
+	registry: PluginService,
+): void {
+	for (const add of plan.adds.values()) {
+		if (registry.isMaterialized(add.address)) continue
+		update.materializeNode(add.address, consumePluginDefinitionCandidate(add.implementation))
+	}
+	for (const replacement of plan.replacements.values()) {
+		update.replaceDefinition(
+			replacement.definition,
+			consumePluginDefinitionCandidate(replacement.next),
+		)
+	}
+	for (const command of plan.defaults.values()) {
+		update.setProviderDefault(
+			pluginDefinitionAddressOf(command.requirement),
+			command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
+		)
+	}
+	for (const command of plan.overrides.values()) {
+		update.setDependencyOverride(
+			resolvePluginTestTarget(command.consumer).address,
+			pluginDefinitionAddressOf(command.requirement),
+			command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
+		)
+	}
+	for (const command of plan.restarts.values()) update.restartNode(command.address)
+	for (const command of plan.removes.values()) update.dematerializeNode(command.address)
+}
+
+function assertCurrentOrPlanned(
+	plan: CoreDraftPlan,
+	registry: PluginService,
+	target: PluginTestTarget,
+): void {
+	const resolved = resolvePluginTestTarget(target)
+	const planned = plan.adds.get(pluginNodeIndexKey(resolved.address))
+	if (planned) {
+		if (planned.implementation !== resolved.implementation) {
+			throw new Error('[pluxel/test] Conflicting Plugin implementations for one target')
+		}
+		return
+	}
+	assertPluginTestTargetCurrent(registry, target)
+}
+
+function willExist(
+	plan: CoreDraftPlan,
+	registry: PluginService,
+	address: PluginNodeAddress,
+): boolean {
+	const key = pluginNodeIndexKey(address)
+	return !plan.removes.has(key) && (plan.adds.has(key) || registry.isMaterialized(address))
+}
+
+function findDefinitionImplementation(
+	registry: PluginService,
+	definition: PluginDefinitionAddress,
+): PluginConstructor | undefined {
+	for (const key of registry.graph.keys()) {
+		if (!isPluginNodeSlot(key)) continue
+		const address = registry.nodeAddressOf(key)
+		if (!pluginDefinitionAddressEqual(address.definition, definition)) continue
+		return registry.graph.declaration(key)?.meta?.definition.implementation
+	}
+	return undefined
+}
+
+function assertNonEmptyUniqueTargets(targets: readonly PluginTestTarget[], action: string): void {
+	if (targets.length === 0)
+		throw new TypeError(`[pluxel/test] ${action} target array must not be empty`)
+	const seen = new Set<string>()
+	for (const target of targets) {
+		const key = pluginNodeIndexKey(resolvePluginTestTarget(target).address)
+		if (seen.has(key)) throw conflictError(action, target, 'duplicate target in one batch')
+		seen.add(key)
+	}
+}
+
+function assertNoTargetConflict(plan: CoreDraftPlan, key: string, operation: string): void {
+	const conflicts = [
+		plan.adds.has(key) ? 'add' : undefined,
+		plan.removes.has(key) ? 'remove' : undefined,
+		plan.restarts.has(key) ? 'restart' : undefined,
+	].filter((value): value is string => Boolean(value && value !== operation))
+	if (conflicts.length > 0) {
+		throw new Error(
+			`[pluxel/test] Conflicting ${conflicts[0]} and ${operation} commands for one Plugin target; use two awaited commits for observable ordering`,
+		)
+	}
+}
+
+function assertNoReplacementConflict(
+	plan: CoreDraftPlan,
+	definition: PluginDefinitionAddress,
+	operation: string,
+): void {
+	if (!plan.replacements.has(pluginDefinitionIndexKey(definition))) return
 	throw new Error(
-		`Expected lifecycle issue for ${String(key)}${details ? ` (${details})` : ''}. ` +
-			`Actual issues: ${summary.lifecycleReport.issues
-				.map((item) => `${item.plugin}:${item.kind}:${item.message}`)
-				.join('; ')}`,
+		`[pluxel/test] Conflicting replaceDefinition and ${operation} commands for one Plugin definition`,
 	)
 }
 
-export function createCoreHost(
-	config: Context.Config = {},
-	options: CoreHostOptions = {},
-): CoreHost {
-	let host!: CoreHost
-
-	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
-	const registry = ctx.registry as PluginService
-	const configService = ctx.configService
-	const localEnabled = new Set<string>()
-	const setEnabled = (name: string, enabled: boolean) => {
-		const runtimeState = runtimeStateOf(ctx)
-		if (runtimeState) {
-			runtimeState.update((draft) => {
-				if (enabled) draft.enabled.add(name)
-				else draft.enabled.delete(name)
-			})
-			return
-		}
-		if (enabled) localEnabled.add(name)
-		else localEnabled.delete(name)
-	}
-	const isEnabled = (name: string) => {
-		const runtimeState = runtimeStateOf(ctx)
-		return runtimeState ? runtimeState.snapshot().enabled.includes(name) : localEnabled.has(name)
-	}
-
-	const last = () => registry.lastCommit
-	const services = () => [...(last()?.graph.keys() ?? [])]
-	const plugins = () =>
-		(last()?.graph.declarationsBySlot() ?? [])
-			.map((decl) => decl?.meta?.class)
-			.filter(
-				(id): id is PluginConstructor =>
-					typeof id === 'function' && checkPluginDecorator(id as PluginConstructor),
-			)
-	const has = (id: unknown) => {
-		const graph = last()?.graph
-		if (!graph) return false
-		if (typeof id === 'string') return graph.has(id)
-		if (typeof id === 'function')
-			return registry.resolveRuntimeKey(id as PluginIdentifier) !== undefined
-		return false
-	}
-
-	const get = <T extends PluginIdentifier>(id: T) => registry.getInstance(id)
-	const require = <T extends PluginIdentifier>(id: T) => {
-		const instance = get(id)
-		if (!instance) {
+function assertDefinitionHasNoTargetCommands(
+	plan: CoreDraftPlan,
+	definition: PluginDefinitionAddress,
+	operation: string,
+): void {
+	for (const command of [
+		...plan.adds.values(),
+		...plan.removes.values(),
+		...plan.restarts.values(),
+	]) {
+		if (pluginDefinitionAddressEqual(command.address.definition, definition)) {
 			throw new Error(
-				`Plugin instance not running: ${String(id)} (did you forget to add+commit, or did it fail to start?)`,
+				`[pluxel/test] Conflicting ${operation} and lifecycle command for one Plugin definition`,
 			)
 		}
-		return instance
 	}
-
-	async function commit(): Promise<CommitSummary> {
-		await options.prepareCommit?.(ctx)
-		return assertCommitSummary(await registry.commitStrict(), registry)
-	}
-
-	async function commitAllowFail(): Promise<CommitSummary> {
-		await options.prepareCommit?.(ctx)
-		return assertCommitSummary(await registry.commit(), registry)
-	}
-
-	const cfgHandle = <TTarget extends CoreHostConfigTarget>(
-		name: string,
-	): CoreHostConfigHandle<TTarget> => ({
-		name,
-		set: (patch) => configService.patchConfig(name, patch as Record<string, unknown>),
-		unset: (...keys) => configService.unsetConfigKeys(name, keys),
-		rev: () => configService.getConfigRevision(name),
-		enable: () => setEnabled(name, true),
-		disable: () => setEnabled(name, false),
-		enabled: () => isEnabled(name),
-	})
-
-	const resolveCfgName = (target: CoreHostConfigTarget) =>
-		typeof target === 'string' ? target : getPluginInfo(target).id
-
-	function add(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): CoreHost
-	function add(Plugins: readonly PluginConstructor[], opts?: { provideBase?: boolean }): CoreHost
-	function add(
-		PluginOrPlugins: PluginConstructor | readonly PluginConstructor[],
-		opts?: { provideBase?: boolean },
-	): CoreHost {
-		if (typeof PluginOrPlugins === 'function') {
-			registry.register(PluginOrPlugins, opts)
-			return host
+	for (const config of plan.configs.values()) {
+		if (
+			pluginDefinitionAddressEqual(
+				resolvePluginTestTarget(config.target).address.definition,
+				definition,
+			)
+		) {
+			throw new Error(
+				`[pluxel/test] Conflicting ${operation} and config.patch command for one Plugin definition`,
+			)
 		}
-		for (const Plugin of PluginOrPlugins) registry.register(Plugin, opts)
-		return host
-	}
-
-	function remove(id: PluginIdentifier): CoreHost
-	function remove(ids: readonly PluginIdentifier[]): CoreHost
-	function remove(idOrIds: PluginIdentifier | readonly PluginIdentifier[]): CoreHost {
-		if (Array.isArray(idOrIds)) {
-			for (const id of idOrIds) registry.unregister(id)
-			return host
-		}
-		registry.unregister(idOrIds as PluginIdentifier)
-		return host
-	}
-
-	host = {
-		ctx,
-
-		add,
-		remove,
-		restart: (id, opts) => {
-			registry.restart(id, opts)
-			return host
-		},
-		replace: (id, next, opts) => {
-			registry.replace(id, next, opts)
-			return host
-		},
-		fork: (Plugin, forkId, opts) => {
-			return registry.registerFork(Plugin, forkId, opts) as unknown as typeof Plugin
-		},
-
-		commit,
-		commitAllowFail,
-
-		isRunning: registry.isRunning.bind(registry),
-		get,
-		require,
-
-		cfg: ((target: PluginConstructor | string) =>
-			cfgHandle(resolveCfgName(target))) as CoreHost['cfg'],
-
-		start: async (Plugin, opts) => {
-			host.add(Plugin, opts)
-			await host.commit()
-			return host.require(Plugin)
-		},
-
-		last,
-		services,
-		plugins,
-		has,
-
-		dispose: async () => {
-			try {
-				registry.resetDraft()
-				for (const id of plugins()) registry.unregister(id)
-				if (last()) {
-					try {
-						await host.commitAllowFail()
-					} catch {
-						/* best-effort cleanup */
-					}
-				}
-			} finally {
-				registry.resetDraft()
-				await ctx.effects.dispose()
-			}
-		},
-	}
-
-	return host
-}
-
-export async function withCoreHost<T>(
-	fn: (host: CoreHost) => Promise<T> | T,
-	config: Context.Config = {},
-	options: CoreHostOptions = {},
-): Promise<T> {
-	const host = createCoreHost(config, options)
-	try {
-		return await fn(host)
-	} finally {
-		await host.dispose()
 	}
 }
 
-export function createCoreContext(config: Context.Config = {}): CoreTestContext {
-	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
-	return {
-		ctx,
-		dispose: async () => {
-			try {
-				ctx.registry.resetDraft()
-				await ctx.effects.dispose()
-				ctx.registry.resetDraft()
-			} catch {
-				/* ignore */
-			}
-		},
-	}
+function configValuesEqual(left: RawPluginConfig | undefined, right: RawPluginConfig | undefined) {
+	if (left === right) return true
+	if (!left || !right) return false
+	return deepEqualPortable(left, right)
 }
 
-export async function withCoreContext<T>(
-	fn: (ctx: Context) => Promise<T> | T,
-	config: Context.Config = {},
-): Promise<T> {
-	const t = createCoreContext(config)
-	try {
-		return await fn(t.ctx)
-	} finally {
-		await t.dispose()
+function samePluginTarget(left: PluginTestTarget, right: PluginTestTarget): boolean {
+	const resolvedLeft = resolvePluginTestTarget(left)
+	const resolvedRight = resolvePluginTestTarget(right)
+	return (
+		resolvedLeft.implementation === resolvedRight.implementation &&
+		pluginNodeIndexKey(resolvedLeft.address) === pluginNodeIndexKey(resolvedRight.address)
+	)
+}
+
+function deepEqualPortable(left: unknown, right: unknown): boolean {
+	if (Object.is(left, right)) return true
+	if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false
+	if (Array.isArray(left) || Array.isArray(right)) {
+		return (
+			Array.isArray(left) &&
+			Array.isArray(right) &&
+			left.length === right.length &&
+			left.every((item, index) => deepEqualPortable(item, right[index]))
+		)
 	}
+	const leftKeys = Object.keys(left)
+	const rightKeys = Object.keys(right)
+	return (
+		leftKeys.length === rightKeys.length &&
+		leftKeys.every(
+			(key) =>
+				Object.hasOwn(right, key) &&
+				deepEqualPortable(
+					(left as Record<string, unknown>)[key],
+					(right as Record<string, unknown>)[key],
+				),
+		)
+	)
+}
+
+function conflictError(
+	operation: string,
+	target: PluginTestTarget | PluginToken,
+	detail = '',
+): Error {
+	if (typeof target === 'function') {
+		return new Error(
+			`[pluxel/test] Conflicting ${operation} commands for ${pluginDefinitionAddressOf(target).exportName}${detail ? `: ${detail}` : ''}`,
+		)
+	}
+	const resolved = resolvePluginTestTarget(target)
+	return new Error(
+		`[pluxel/test] Conflicting ${operation} commands for ${resolved.address.definition.exportName}${resolved.address.variant === 'fork' ? `#${resolved.address.forkId}` : ''}${detail ? `: ${detail}` : ''}`,
+	)
+}
+
+function invalidTarget(operation: string, target: PluginTestTarget, detail = 'is absent'): never {
+	const resolved = resolvePluginTestTarget(target)
+	throw new Error(
+		`[pluxel/test] Invalid target for ${operation}: ${resolved.address.definition.exportName}${resolved.address.variant === 'fork' ? `#${resolved.address.forkId}` : ''} ${detail}`,
+	)
 }
