@@ -5,20 +5,40 @@ on:
     branches: [main]
     paths:
       - 'packages/core/**'
-      - 'packages/build/**'
+      - 'packages/context/**'
+      # Test and documentation edits do not change the measured runtime or workload.
+      - '!packages/core/tests/**'
+      - '!packages/context/tests/**'
+      - '!packages/core/**/*.test.*'
+      - '!packages/context/**/*.test.*'
+      - '!packages/core/**/*.spec.*'
+      - '!packages/context/**/*.spec.*'
+      - '!packages/core/**/*.md'
+      - '!packages/context/**/*.md'
       - 'scripts/core-bench-compare.sh'
       - 'scripts/core-bench-reference-bridge.mjs'
       - 'scripts/core-bench-node-runner.mjs'
       - 'pnpm-lock.yaml'
+      - 'turbo.jsonc'
       - '.github/workflows/core-bench.yml'
   pull_request:
     paths:
       - 'packages/core/**'
-      - 'packages/build/**'
+      - 'packages/context/**'
+      # Test and documentation edits do not change the measured runtime or workload.
+      - '!packages/core/tests/**'
+      - '!packages/context/tests/**'
+      - '!packages/core/**/*.test.*'
+      - '!packages/context/**/*.test.*'
+      - '!packages/core/**/*.spec.*'
+      - '!packages/context/**/*.spec.*'
+      - '!packages/core/**/*.md'
+      - '!packages/context/**/*.md'
       - 'scripts/core-bench-compare.sh'
       - 'scripts/core-bench-reference-bridge.mjs'
       - 'scripts/core-bench-node-runner.mjs'
       - 'pnpm-lock.yaml'
+      - 'turbo.jsonc'
       - '.github/workflows/core-bench.yml'
   workflow_dispatch:
     inputs:

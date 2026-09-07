@@ -36,6 +36,7 @@ hash，把 CLI 或 test helper 放回根依赖会让一次 core 测试修改清�
 
 CI 按整个 PR 相对目标分支的变化选择包，在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
 Turbo task summary，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
+Core benchmark 跟踪 core、Context、基准场景与构建依赖变化；仅修改测试或 Markdown 文档不触发完整的同 runner 对比。
 
 在改变 shared test surface、package export、runner config 或 test host lifecycle 后，先运行直接 owner test，再运行
 `pnpm testing-v2:check`；稳定合并边界运行 `pnpm verify`。测试数量不是目标：每个 case 都应保护一个当前 public contract、资源所有权或
