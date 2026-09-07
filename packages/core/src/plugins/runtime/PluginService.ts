@@ -1321,14 +1321,16 @@ export class PluginService {
 				onPointOfNoReturn()
 				confirmGraph()
 				this.replacePendingStarts([])
-				const publication: CoreCommitPublication = Object.freeze({
-					operation,
-					started: Object.freeze([]),
-					stopped: Object.freeze([]),
-					failed: Object.freeze([]),
-				})
-				await this.prepareHostCommit(publication)
-				this.publishHostCommit(publication)
+				if (this.lifecycleHooks.prepareCommit || this.lifecycleHooks.publishCommit) {
+					const publication: CoreCommitPublication = Object.freeze({
+						operation,
+						started: Object.freeze([]),
+						stopped: Object.freeze([]),
+						failed: Object.freeze([]),
+					})
+					await this.prepareHostCommit(publication)
+					this.publishHostCommit(publication)
+				}
 				this.publishCommitSummary(this.graph, {
 					runtimeUpdate: createRuntimeUpdateSummary(meta),
 					pluginChanges: EMPTY_PLUGIN_COMMIT_CHANGES,
@@ -1378,14 +1380,16 @@ export class PluginService {
 			const lifecycleReport = finalizeLifecycleReport(report)
 			const pluginChanges = createPluginCommitChanges(plan, failed)
 			this.replacePendingStarts(failed)
-			const publication: CoreCommitPublication = Object.freeze({
-				operation,
-				started: this.collectStartedGenerationContexts(graph, runtime, plan.toStart, failed),
-				stopped: this.stableContextOrder(stopped),
-				failed: this.collectFailedNodes(graph, plan.toStart, failed),
-			})
-			await this.prepareHostCommit(publication)
-			this.publishHostCommit(publication)
+			if (this.lifecycleHooks.prepareCommit || this.lifecycleHooks.publishCommit) {
+				const publication: CoreCommitPublication = Object.freeze({
+					operation,
+					started: this.collectStartedGenerationContexts(graph, runtime, plan.toStart, failed),
+					stopped: this.stableContextOrder(stopped),
+					failed: this.collectFailedNodes(graph, plan.toStart, failed),
+				})
+				await this.prepareHostCommit(publication)
+				this.publishHostCommit(publication)
+			}
 			const summary = this.publishCommitSummary(this.graph, {
 				runtimeUpdate: createRuntimeUpdateSummary(meta),
 				pluginChanges,

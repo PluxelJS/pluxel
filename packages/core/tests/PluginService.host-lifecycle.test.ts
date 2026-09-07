@@ -127,6 +127,63 @@ function createRootFactory(
 }
 
 describe('Core host lifecycle seams', () => {
+	it.each(['none', 'prepareCommit', 'publishCommit'] as const)(
+		'preserves changed and empty commits with %s publication consumer',
+		async (consumer) => {
+			const publications: CoreCommitPublication[] = []
+			const hooks: CorePluginLifecycleHooks =
+				consumer === 'none'
+					? {}
+					: {
+							[consumer]: (fact: CoreCommitPublication): undefined => {
+								publications.push(fact)
+							},
+						}
+			const host = createCoreInternalTestHost({}, { createRootContext: createRootFactory(hooks) })
+			try {
+				const registry = requirePluginService(host.ctx)
+				const summaries = vi.fn()
+				host.ctx.effects.defer(registry.subscribeCommitted(summaries))
+				host.add(OrderedPlugin)
+				await host.commit()
+				const first = host.require(OrderedPlugin)
+				host.restart(OrderedPlugin)
+				await host.commit()
+				const second = host.require(OrderedPlugin)
+				expect(second).not.toBe(first)
+				await registry.beginUpdate({ reason: 'empty-publication-test' }).commit()
+				expect(host.require(OrderedPlugin)).toBe(second)
+				expect(summaries).toHaveBeenCalledTimes(3)
+				const expected =
+					consumer === 'none'
+						? []
+						: [
+								{
+									operation: { revision: 1, reason: 'core-test' },
+									started: [first.ctx],
+									stopped: [],
+									failed: [],
+								},
+								{
+									operation: { revision: 2, reason: 'core-test' },
+									started: [second.ctx],
+									stopped: [first.ctx],
+									failed: [],
+								},
+								{
+									operation: { revision: 3, reason: 'empty-publication-test' },
+									started: [],
+									stopped: [],
+									failed: [],
+								},
+							]
+				expect(publications).toEqual(expected)
+			} finally {
+				await host.dispose()
+			}
+		},
+	)
+
 	it('finalizes after Part and Plugin init, then publishes before stable readers', async () => {
 		lifecycleTrace = []
 		let registry!: ReturnType<typeof requirePluginService>
