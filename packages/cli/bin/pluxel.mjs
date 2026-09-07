@@ -21,8 +21,8 @@ const PROJECT_BOUNDARY_MARKERS = [
 
 globalThis[startupCwdSymbol] ??= startupCwd
 
-if (!globalThis[directModeSymbol]) {
-	const delegated = await delegateToProjectLocalCli(startupCwd, process.argv.slice(2))
+if (!globalThis[directModeSymbol] && !isSourceCommand(process.argv.slice(2))) {
+	const delegated = await delegateToProjectLocalCli(startupCwd)
 	if (delegated) {
 		await import(pathToFileURL(delegated).href)
 	} else {
@@ -42,14 +42,13 @@ async function runCurrentCli() {
 	}
 }
 
-async function delegateToProjectLocalCli(cwd, args) {
+async function delegateToProjectLocalCli(cwd) {
 	const projectManifest = await findNearestCliDeclaration(cwd)
 	if (!projectManifest) return undefined
 
 	const currentExecutable = await realpath(fileURLToPath(import.meta.url))
 	const localExecutable = await resolveDeclaredCliBin(projectManifest)
 	if (!localExecutable) {
-		if (isSourceCommand(args)) return undefined
 		console.error(`[pluxel] ${projectManifest.path} declares @pluxel/cli, but it is not installed.`)
 		console.error('Run the project package manager install before invoking `pluxel`.')
 		process.exit(1)

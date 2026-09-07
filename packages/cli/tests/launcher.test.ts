@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -122,7 +123,7 @@ describe('pluxel bin launcher', () => {
 		expect(result.stdout).toContain('Use registered source checkouts')
 	})
 
-	it('does not hide an incomplete installed local CLI during source bootstrap', async () => {
+	it('uses the calling CLI for source bootstrap even when an installed local CLI is incomplete', async () => {
 		const root = await createProject({
 			'package.json': JSON.stringify({
 				name: 'fixture',
@@ -139,8 +140,34 @@ describe('pluxel bin launcher', () => {
 
 		const result = await runNode([pluxelBin, 'source', '--help'], root)
 
-		expect(result.code).toBe(1)
-		expect(result.stderr).toContain('Resolved project-local @pluxel/cli bin, but it is missing')
+		expect(result.code).toBe(0)
+		expect(result.stderr).toBe('')
+		expect(result.stdout).toContain('Use registered source checkouts')
+	})
+
+	it('lists the symlinked calling CLI checkout without registration even when a local CLI is installed', async () => {
+		const root = await createProject({
+			'package.json': JSON.stringify({
+				name: 'fixture',
+				devDependencies: { '@pluxel/cli': '0.1.0' },
+			}),
+			'node_modules/@pluxel/cli/package.json': JSON.stringify({
+				name: '@pluxel/cli',
+				type: 'module',
+				bin: { pluxel: 'bin/pluxel.mjs' },
+			}),
+			'node_modules/@pluxel/cli/bin/pluxel.mjs': 'throw new Error("unexpected local CLI")\n',
+		})
+		const registryPath = resolve(root, 'config/source-checkouts.json')
+		const linkedBin = resolve(root, 'pluxel.mjs')
+		await symlink(pluxelBin, linkedBin)
+		const result = await runNode([linkedBin, 'source', 'list', '--registry', registryPath], root)
+
+		expect(result.code).toBe(0)
+		expect(result.stderr).toBe('')
+		expect(result.stdout).toContain('https://github.com/PluxelJS/pluxel (cli)')
+		expect(result.stdout).toContain(`checkout: ${resolve(dirname(pluxelBin), '../../..')}`)
+		expect(existsSync(registryPath)).toBe(false)
 	})
 
 	it('does not resolve a CLI from outside the nearest independent project boundary', async () => {

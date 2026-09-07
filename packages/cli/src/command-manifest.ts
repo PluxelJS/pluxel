@@ -335,16 +335,20 @@ export const hmrCommandDefinition = {
 	subCommands: hmrSubCommands,
 } as const
 
+const sourceRegistryArgs = {
+	registry: {
+		type: 'string',
+		description: 'Machine-local checkout registry (auto-detected by default)',
+	},
+} as const
+
 export const sourceWorkspaceArgs = {
+	...sourceRegistryArgs,
 	root: { type: 'string', description: 'Consumer workspace root', default: '.' },
 	config: {
 		type: 'string',
 		description: 'Semantic source declaration',
 		default: 'pluxel.sources.jsonc',
-	},
-	registry: {
-		type: 'string',
-		description: 'Machine-local checkout registry (auto-detected by default)',
 	},
 } as const
 
@@ -363,14 +367,28 @@ export const sourceBuildArgs = {
 } as const
 
 export const sourceRegisterArgs = {
+	...sourceRegistryArgs,
 	checkout: { type: 'positional', description: 'Source checkout root', default: '.' },
 	repository: {
 		type: 'string',
 		description: 'Repository URL (auto-detected from package.json or Git origin)',
 	},
-	registry: {
-		type: 'string',
-		description: 'Machine-local checkout registry (auto-detected by default)',
+} as const
+
+export const sourceListDefinition = {
+	name: 'list',
+	description: 'List registered and automatically discovered source checkouts',
+	toKebab: true,
+	args: sourceRegistryArgs,
+} as const
+
+export const sourceUnregisterDefinition = {
+	name: 'unregister',
+	description: 'Remove a checkout registration without deleting its files',
+	toKebab: true,
+	args: {
+		...sourceRegistryArgs,
+		repository: { type: 'positional', required: true, description: 'Repository URL to unregister' },
 	},
 } as const
 
@@ -416,6 +434,20 @@ export const sourceInstallDefinition = {
 } as const
 
 export const sourceSubCommands = new Map<string, SubCommandable>([
+	[
+		'list',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceListCommand),
+			sourceListDefinition,
+		),
+	],
+	[
+		'unregister',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceUnregisterCommand),
+			sourceUnregisterDefinition,
+		),
+	],
 	[
 		'register',
 		lazy(

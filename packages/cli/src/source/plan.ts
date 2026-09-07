@@ -2,11 +2,11 @@ import { existsSync } from 'node:fs'
 import { relative, resolve } from 'pathe'
 import {
 	normalizeRepositoryIdentity,
-	readSourceCheckoutRegistry,
 	readSourceProjectConfig,
 	SOURCE_CONFIG_FILE,
 	tryReadSourceProjectConfig,
 } from './config'
+import { resolveSourceCheckouts } from './registry'
 import {
 	collectManifestDependencyNames,
 	scanSourceWorkspace,
@@ -17,6 +17,7 @@ import {
 export interface ResolvedSourceCheckout {
 	repository: string
 	root: string
+	origin: 'registered' | 'cli'
 	workspace: ScannedSourceWorkspace
 	sources: string[]
 	singletons: string[]
@@ -41,7 +42,9 @@ export async function createSourceWorkspacePlan(options: {
 	const root = resolve(options.root)
 	const configPath = options.configPath ?? SOURCE_CONFIG_FILE
 	const config = readSourceProjectConfig(root, configPath)
-	const registry = readSourceCheckoutRegistry(options.registryPath)
+	const available = new Map(
+		resolveSourceCheckouts(options.registryPath).map((checkout) => [checkout.repository, checkout]),
+	)
 	const checkouts = new Map<string, ResolvedSourceCheckout>()
 	const visiting = new Set<string>()
 
@@ -51,12 +54,13 @@ export async function createSourceWorkspacePlan(options: {
 		if (visiting.has(normalized)) {
 			throw new Error(`Source repository cycle includes ${normalized}`)
 		}
-		const checkoutRoot = registry.checkouts[normalized]
-		if (!checkoutRoot) {
+		const checkout = available.get(normalized)
+		if (!checkout) {
 			throw new Error(
 				`Source checkout is not registered: ${normalized}\nRun \`pluxel source register <path>\`.`,
 			)
 		}
+		const checkoutRoot = checkout.root
 		if (!existsSync(checkoutRoot)) {
 			throw new Error(`Registered source checkout does not exist: ${normalized} -> ${checkoutRoot}`)
 		}
@@ -67,6 +71,7 @@ export async function createSourceWorkspacePlan(options: {
 		checkouts.set(normalized, {
 			repository: normalized,
 			root: checkoutRoot,
+			origin: checkout.origin,
 			workspace,
 			sources: nested?.sources ?? [],
 			singletons: nested?.singletons ?? [],

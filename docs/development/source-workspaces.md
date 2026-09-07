@@ -21,21 +21,31 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 ## 安装和运行
 
-每台机器先用独立安装的 CLI 登记实际 checkout；机器路径只写入用户 registry：
+从 Pluxel Git checkout 运行 CLI 时（包括全局符号链接），CLI 会根据自身文件的真实路径自动识别该 checkout，无需登记 Pluxel。其他仓库使用 `register` 登记；机器路径只写入用户 registry：
 
 ```sh
-pluxel source register /path/to/pluxel
 pluxel source register /path/to/chatbot
+pluxel source list
 pluxel source install
 pluxel source doctor
 pnpm dev
 ```
 
-即使消费项目声明了 `@pluxel/cli` 但还没有 `node_modules`，`pluxel source` 也会继续使用当前全局安装或
-`pnpm dlx` CLI；`source install` 安装完成后，其他命令自动恢复使用项目固定版本。这个例外只覆盖 source
-自举，不允许 build、HMR 或发布绕过项目 lockfile。
+`source` 命令族始终使用实际调用的 CLI，因此项目尚未安装依赖、安装不完整或固定了另一个 CLI 版本，都不影响源码自举。普通命令仍使用项目固定版本。使用 npm 安装的 CLI 时没有可自动识别的源码 checkout，需要另外运行 `pluxel source register /path/to/pluxel`。
 
-移动 checkout 或修改 `pluxel.sources.jsonc` 后需要重新登记并运行 `source install`；已接入 checkout 内的普通源码修改不需要重装。
+显式登记的同一 repository 优先于自动发现。`pluxel source list` 可在任意目录运行，显示当前可用的路径及来源（`registered` 或 `cli`），路径不存在时标记 `missing`。自动发现不写入 registry，也不从当前目录、相邻目录或父项目猜测源码位置；Git worktree 和入口符号链接同样可用。
+
+移除过期登记：
+
+```sh
+pluxel source unregister https://github.com/PluxelJS/chatbot
+```
+
+`unregister` 只删除登记记录，不删除 checkout 或已有项目 overlay；移除 Pluxel 的显式登记后，CLI 自身 checkout 仍会自动出现。`register`、`list`、`unregister` 和其他 source 命令均支持 `--registry <path>`，也可用 `PLUXEL_SOURCE_REGISTRY` 环境变量选择独立 registry。
+
+新电脑从 clone 到安装的完整示例见[源码开发启动脚本](./source-bootstrap.md)，以依赖 Pluxel 与 Chatbot 的 `bot-new-omni` 为例。
+
+移动显式登记的 checkout 后需要重新登记；移动自动发现的 Pluxel checkout 后需更新外部入口链接。修改路径或 `pluxel.sources.jsonc` 后运行 `source install`；已接入 checkout 内的普通源码修改不需要重装。
 `.pnpmfile.cjs` 与 `.pluxel/` 都是 CLI 生成的机器本地 overlay，应被 Git 忽略，不是需要提交的 workspace 配置。
 因此新 checkout 可以先运行 Corepack、`pnpm store path` 等不安装依赖的命令，再由独立 CLI 激活 source overlay。
 

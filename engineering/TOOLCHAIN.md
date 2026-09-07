@@ -50,8 +50,7 @@ starter inventory、docs 字节、完整 workspace verify、static distribution 
 不建立 parity contract。
 
 全局 `pluxel` launcher 在加载命令框架前，从启动 `cwd` 向上查找最近一个直接声明 `@pluxel/cli` 的
-`package.json`。找到且已安装时委托该项目 executable；声明存在但安装不完整时，只有 `source` 命令族继续使用
-当前独立 CLI，其他命令失败。这个窄例外让 `source register/doctor/install/build` 能建立包含项目 CLI 自身的
+`package.json`。普通命令找到且已安装时委托该项目 executable，声明存在但安装不完整时失败。`source` 命令族在委托前直接使用当前 CLI，让 checkout discovery 不受 consumer 的安装状态影响，并能建立包含项目 CLI 自身的
 source overlay，不为 build、HMR、发布或 package scripts 提供全局版本回退。CI、package scripts 和生成的 workspace
 仍固定项目本地 CLI，避免全局升级越过 lockfile。已安装判定只在最近的 Git、workspace 或 package-manager lockfile
 边界内逐级查找 `node_modules`；合法 hoist 和 source symlink 可用，物理嵌套的独立仓库不会误用父项目依赖。
@@ -85,8 +84,8 @@ machine registry 和 package link。source package 若包含 consumer root 会�
 overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。根 bootstrap 与
 `.pluxel/` 一样由 CLI 管理并被 Git 忽略；workspace governance 只在它存在时验证 canonical 内容。
 
-首次安装由独立的全局或 `pnpm dlx` CLI 直接执行标准 `pluxel source` 命令：操作者先显式 `source register`
-每个 checkout，再在 consumer 中运行 `source install`。机器路径仍只进入用户 registry，CLI 不从目录邻接、父仓库
+首次安装由独立的全局或 `pnpm dlx` CLI 直接执行标准 `pluxel source` 命令：操作者用 `source register`
+登记其他 checkout，再在 consumer 中运行 `source install`。源码运行的 CLI 根据自身模块 realpath、最近 CLI package 与 Pluxel workspace/Git 标记自动发现核心 checkout；显式 registry 同 identity 记录优先。发现结果不落盘，`source list` 显示来源，`source unregister` 只删除显式登记。CLI 不从 cwd、目录邻接、父仓库
 或同机其他 checkout 猜测 repository identity。不得把首次 bootstrap 放进 consumer 的 pnpm script：pnpm 可能在
 执行 script 前先做 dependency-status install，此时 source overlay 尚未生成，会把私有 source package 错误解析到
 registry。package closure、overlay、构建与 lockfile 始终由唯一的 `pluxel source` 实现拥有。

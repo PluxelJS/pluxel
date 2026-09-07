@@ -31,8 +31,7 @@ npx nypm add -g @pluxel/cli
 
 `@pluxel/cli` 是统一 executable，但不是所有能力的安装闭包。项目 `package.json` 直接声明
 `@pluxel/cli` 时，全局 `pluxel` 会优先使用这个项目本地版本；声明了但尚未安装时会失败并提示先安装，
-不会悄悄回退到全局版本。唯一例外是 `pluxel source` 命令族：它可以在首次安装前继续使用当前全局或
-`pnpm dlx` CLI，以建立 source overlay 并安装项目固定版本。CI 和 package scripts 应继续使用本地
+不会悄悄回退到全局版本。唯一例外是 `pluxel source` 命令族：它始终使用实际调用的 CLI，以建立 source overlay 并安装项目固定版本；从源码 checkout 运行时还会自动识别 Pluxel 源码位置。CI 和 package scripts 应继续使用本地
 `pluxel` 或 `pnpm exec pluxel`。CLI 只在最近的 Git/workspace/lockfile 项目边界内寻找本地安装；嵌套在
 另一个 checkout 里的独立项目不会借用父项目的 CLI。
 
@@ -64,20 +63,20 @@ npx nypm add -D @pluxel/market
 
 ## 当前 CLI 命令地图
 
-| 目标                                                     | 命令                                          |
-| -------------------------------------------------------- | --------------------------------------------- |
-| 生成固定 example workspace                               | `pnpm create @pluxel [directory]`             |
-| 定位上游当前文档                                         | `pluxel docs [path]`                          |
-| 在 workspace 生成 Plugin package                         | `pluxel new`                                  |
-| 构建当前 Plugin package                                  | `pluxel build`                                |
-| 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`       |
-| 创建/检查/验证 static distribution                       | `pluxel distribution create/inspect/verify`   |
-| 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`          |
-| 发布 npm package 并通知 market                           | `pluxel publish`                              |
-| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`      |
-| Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`            |
-| 跨仓库 source checkout                                   | `pluxel source register/doctor/build/install` |
-| 管理 source workspace                                    | `pluxel workspace`                            |
+| 目标                                                     | 命令                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| 生成固定 example workspace                               | `pnpm create @pluxel [directory]`                             |
+| 定位上游当前文档                                         | `pluxel docs [path]`                                          |
+| 在 workspace 生成 Plugin package                         | `pluxel new`                                                  |
+| 构建当前 Plugin package                                  | `pluxel build`                                                |
+| 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`                       |
+| 创建/检查/验证 static distribution                       | `pluxel distribution create/inspect/verify`                   |
+| 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
+| 发布 npm package 并通知 market                           | `pluxel publish`                                              |
+| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
+| Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`                            |
+| 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
+| 管理 source workspace                                    | `pluxel workspace`                                            |
 
 确切参数通过 `pluxel <command> --help` 查看。
 

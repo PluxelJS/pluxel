@@ -392,6 +392,7 @@ describe('source workspace planning', () => {
 			{
 				repository: 'https://github.com/acme/parent',
 				root: parent,
+				origin: 'registered',
 				workspace: {} as never,
 				sources: [],
 				singletons: [],
@@ -399,6 +400,7 @@ describe('source workspace planning', () => {
 			{
 				repository: childRepository,
 				root: child,
+				origin: 'registered',
 				workspace: {} as never,
 				sources: [],
 				singletons: [],
@@ -447,6 +449,7 @@ describe('source workspace planning', () => {
 				{
 					repository: 'https://github.com/acme/source',
 					root: sourcePackage,
+					origin: 'registered',
 					workspace: {} as never,
 					sources: [],
 					singletons: [],

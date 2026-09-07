@@ -7,6 +7,8 @@ import {
 	sourceCommandDefinition,
 	sourceDoctorDefinition,
 	sourceInstallDefinition,
+	sourceListDefinition,
+	sourceUnregisterDefinition,
 	sourceRegisterArgs,
 	sourceRegisterDefinition,
 	sourceWorkspaceArgs,
@@ -19,12 +21,47 @@ import {
 	installSourceWorkspace,
 } from '../source/execution'
 import { createSourceWorkspacePlan, describeSourcePath } from '../source/plan'
-import { registerSourceCheckout } from '../source/registry'
+import {
+	registerSourceCheckout,
+	resolveSourceCheckouts,
+	unregisterSourceCheckout,
+} from '../source/registry'
 import { sourcePackageNeedsBuild } from '../source/workspace'
 
 type SourceWorkspaceValues = ArgValues<typeof sourceWorkspaceArgs>
 type SourceBuildValues = ArgValues<typeof sourceBuildArgs>
 type SourceRegisterValues = ArgValues<typeof sourceRegisterArgs>
+
+export const sourceListCommand = define({
+	...sourceListDefinition,
+	run(ctx) {
+		const registryPath = resolveSourceRegistryPath(ctx.values.registry)
+		ctx.log(`registry: ${registryPath}`)
+		const checkouts = resolveSourceCheckouts(registryPath)
+		if (checkouts.length === 0) ctx.log('No source checkouts. Run `pluxel source register <path>`.')
+		for (const checkout of checkouts) {
+			ctx.log(
+				`${checkout.repository} (${checkout.origin}${existsSync(checkout.root) ? '' : ', missing'})`,
+			)
+			ctx.log(`  checkout: ${checkout.root}`)
+		}
+	},
+})
+
+export const sourceUnregisterCommand = define({
+	...sourceUnregisterDefinition,
+	run(ctx) {
+		const repository = normalizeRepositoryIdentity(ctx.values.repository)
+		const removed = unregisterSourceCheckout({
+			registryPath: resolveSourceRegistryPath(ctx.values.registry),
+			repository,
+		})
+		ctx.log(removed ? `Unregistered ${repository}` : `No registration for ${repository}`)
+		ctx.log(
+			'CLI checkout discovery still applies; run `pluxel source list` to see available sources.',
+		)
+	},
+})
 
 export const sourceRegisterCommand = define({
 	...sourceRegisterDefinition,
@@ -135,6 +172,7 @@ function printPlan(log: (...args: unknown[]) => void, plan: Awaited<ReturnType<t
 		const selected = plan.selectedByRepository.get(checkout.repository) ?? []
 		log(`  - ${checkout.repository}`)
 		log(`    checkout: ${checkout.root}`)
+		log(`    origin: ${checkout.origin}`)
 		log(`    packages: ${selected.map((pkg) => pkg.name).join(', ') || '(none)'}`)
 		log(
 			`    artifacts: ${
