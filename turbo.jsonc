@@ -258,6 +258,13 @@
 			],
 			"outputLogs": "errors-only",
 		},
+		"@pluxel/redis#test": {
+			// Pass the CI service URL through strict env filtering and keep integration results
+			// separate from local runs where the Redis suite is skipped.
+			"dependsOn": ["@pluxel/test#build"],
+			"outputs": [],
+			"env": ["PLUXEL_REDIS_TEST_URL"],
+		},
 		"@pluxel/runtime#test": {
 			// Runtime compiler/worker fixtures cross the package export boundary. Keep declarations
 			// stable instead of testing while the runtime build cleans and replaces dist.

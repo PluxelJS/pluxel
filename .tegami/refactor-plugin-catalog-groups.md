@@ -2,8 +2,6 @@
 packages:
   '@pluxel/runtime':
     type: major
-  '@pluxel/workbench-app':
-    type: minor
 ---
 
 ## Group plugins by dependencies and edit layouts in a standalone document

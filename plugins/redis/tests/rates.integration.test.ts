@@ -114,7 +114,10 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 						policy: fixed,
 						cost: 1,
 					}),
-				).rejects.toThrow('unsupported format')
+				).rejects.toMatchObject({
+					name: 'RedisScriptDecodeError',
+					cause: new TypeError('Stored rates state is corrupt or uses an unsupported format.'),
+				})
 
 				const expiringKey = 'expired-policy'
 				await backend.consume({
@@ -153,7 +156,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					window: '1000',
 					burst: '2',
 					observedAt: String(future),
-					owner: 'null',
+					owner: 'global',
 					balance: '0',
 					updatedAt: String(future),
 				})
@@ -186,7 +189,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					window: '60000',
 					burst: '0',
 					observedAt: String(Date.now()),
-					owner: 'null',
+					owner: 'global',
 				})
 				await expect(
 					backend.consume({ key: malformedHashLogicalKey, owner: null, policy: fixed, cost: 1 }),
@@ -199,7 +202,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				await redis.zAdd(malformedLogKey, [
 					{
 						score: -1,
-						value: `m|2|sliding-window-log|2|60000|1|${observed}|${observed}|0|null`,
+						value: `m|2|sliding-window-log|2|60000|1|${observed}|${observed}|0|global`,
 					},
 					{ score: observed - 1, value: `e|${observed - 1}|0|1` },
 					{ score: observed, value: `e|${observed}|0|1` },

@@ -138,15 +138,17 @@ jobs:
         env:
           BASE_REF: ${{ env.BASE_REF }}
           HEAD_REF: ${{ env.HEAD_REF }}
+          BENCHMARK_OUTCOME: ${{ steps.benchmark.outcome }}
         with:
           script: |
             const fs = require('fs')
             const path = require('path')
             const marker = '<!-- pluxel-core-bench -->'
             const reportPath = path.join(process.cwd(), '.bench-results/core/head/plugin-lifecycle.md')
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             let body = fs.existsSync(reportPath)
               ? fs.readFileSync(reportPath, 'utf8')
-              : 'Benchmark report not found.'
+              : `Benchmark ${process.env.BENCHMARK_OUTCOME}: comparison stopped before the head report was generated. See [run logs and partial benchmark artifacts](${runUrl}) for the failing stage.`
             body = [
               marker,
               `Same runner: base \`${process.env.BASE_REF}\` -> head \`${process.env.HEAD_REF}\`.`,

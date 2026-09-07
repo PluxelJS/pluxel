@@ -6,14 +6,14 @@ not a generic document compiler, font provider, renderer adapter or file/network
 
 ## execution path
 
-~~~text
+```text
 accepted Takumi reservation
   -> Satteri parses Markdown math node
   -> Typst extension validates formula
   -> Runtime shared Worker compiles fixed Typst wrapper to cloneable SVG bytes
   -> Markdown asset sink copies bytes under its render budget
   -> one final Takumi image/SVG render
-~~~
+```
 
 The Worker declaration is module-level and uses defineWorkerTask(); no Plugin creates an
 independent worker pool. The Worker only receives formula text and fixed scalar limits. The final

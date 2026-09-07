@@ -294,7 +294,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	)
 
 	const resetGroups = useCallback(async () => {
-		if (inflightCommitRef.current || pendingCommitRef.current) return
+		if (inflightCommitRef.current !== null || pendingCommitRef.current) return
 		setBulkBusy(true)
 		try {
 			const result = await management.catalog.updateLayout({ sections: null })

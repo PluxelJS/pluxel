@@ -7,12 +7,9 @@ Takumi render lay it out once.
 
 It intentionally does not expose a general Typst document compiler.
 
-~~~ts
+```ts
 import { TypstMathPlugin } from '@pluxel/takumi-markdown-typst'
-import {
-	TakumiMarkdownPlugin,
-	type MarkdownRenderer,
-} from '@pluxel/takumi-markdown'
+import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin()
@@ -32,7 +29,7 @@ export class MathDocumentPlugin extends BasePlugin {
 		})
 	}
 }
-~~~
+```
 
 The extension enables Satteri math and accepts a deliberately small formula dialect: ordinary
 letters, numbers, math symbols, whitespace, grouping and common expression punctuation. It rejects

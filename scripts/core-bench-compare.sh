@@ -159,12 +159,12 @@ if [ -z "$BASE_WORKLOAD_ID" ] && \
 		git worktree add --detach "$BRIDGE_DIR" "$BRIDGE_RUNTIME_SHA" >/dev/null
 		run_bench "bridge legacy workload" "$BRIDGE_DIR" "$BRIDGE_LEGACY_RESULT_DIR"
 
-		# Run the head workload against the exact same bridge runtime. Only benchmark sources are
-		# overlaid; the already checked-out and built runtime remains unchanged.
-		cp "$HEAD_DIR/packages/core/bench/pluginLifecycle.bench.ts" \
-			"$BRIDGE_DIR/packages/core/bench/pluginLifecycle.bench.ts"
-		cp "$HEAD_DIR"/packages/core/bench/pluginLifecycle/*.ts \
-			"$BRIDGE_DIR/packages/core/bench/pluginLifecycle/"
+		# Use the migration's v2 harness, which supports this historical runtime's ABI.
+		# HEAD may use a newer plugin ABI even when its benchmark workload is unchanged.
+		# The head report still validates the bridged workload identity and scenario.
+		git archive "$BRIDGE_SWITCH_SHA" \
+			packages/core/bench/pluginLifecycle.bench.ts packages/core/bench/pluginLifecycle | \
+			tar -x -C "$BRIDGE_DIR"
 		run_bench "bridge current workload" "$BRIDGE_DIR" "$BRIDGE_CURRENT_RESULT_DIR"
 
 		node "$ROOT/scripts/core-bench-reference-bridge.mjs" \

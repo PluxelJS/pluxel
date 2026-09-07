@@ -455,13 +455,13 @@ function inferDiscriminatorKey(branches: readonly Schema[]): string | undefined 
 	}
 
 	const requiredCount = entryMaps.length
-	const validCandidates = Array.from(candidate.entries()).filter(([_, values]) => {
+	const validCandidates = Array.from(candidate.entries()).filter(([, values]) => {
 		if (values.length !== requiredCount) return false
 		return new Set(values.map((v) => `${v}`)).size === requiredCount
 	})
 	if (validCandidates.length === 0) return undefined
 
-	const booleanCandidate = validCandidates.find(([_, values]) =>
+	const booleanCandidate = validCandidates.find(([, values]) =>
 		values.every((v) => BOOLEANISH.has(v)),
 	)
 	if (booleanCandidate) return booleanCandidate[0]

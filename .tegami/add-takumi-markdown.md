@@ -3,9 +3,9 @@ packages:
   '@pluxel/takumi':
     type: minor
   '@pluxel/takumi-markdown':
-    type: minor
+    type: major
   '@pluxel/takumi-markdown-typst':
-    type: minor
+    type: major
 ---
 
 ## Add bounded Markdown and optional Typst math rendering

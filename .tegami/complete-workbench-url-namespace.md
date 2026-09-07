@@ -2,8 +2,6 @@
 packages:
   '@pluxel/runtime':
     type: minor
-  '@pluxel/runtime-dev':
-    type: patch
   '@pluxel/runtime-static':
     type: minor
   '@pluxel/runtime-dynamic':
