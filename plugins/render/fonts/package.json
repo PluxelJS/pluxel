@@ -30,7 +30,8 @@
 			".": "./dist/index.mjs",
 			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"build": "pluxel build",

@@ -94,7 +94,8 @@
 				"require": "./dist/toolchain.cjs"
 			},
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",

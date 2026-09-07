@@ -46,7 +46,8 @@
 				"require": "./dist/vitest.cjs"
 			},
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"build": "tsdown",

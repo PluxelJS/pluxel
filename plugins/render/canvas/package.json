@@ -45,7 +45,8 @@
 			"./worker": "./dist/worker.mjs",
 			"./worker/pretext": "./dist/worker/pretext.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"bench:native-capacity": "node bench/native-capacity.mjs",

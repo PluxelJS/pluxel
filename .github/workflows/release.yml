@@ -92,4 +92,4 @@ jobs:
         run: pnpm tegami ci
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          NPM_CONFIG_PROVENANCE: 'true'
+          NPM_CONFIG_PROVENANCE: ${{ github.event.repository.private && 'false' || 'true' }}

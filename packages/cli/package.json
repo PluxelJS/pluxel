@@ -23,7 +23,8 @@
 	"publishConfig": {
 		"exports": {
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"dev": "pnpm run build && node dist/cli.mjs new --dry-run --no-install",

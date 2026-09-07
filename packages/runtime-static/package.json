@@ -60,7 +60,8 @@
 			"./test": "./dist/test.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",

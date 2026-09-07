@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/takumi",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Official bounded Takumi HTML and node-tree rendering capability for Pluxel plugins",
 	"license": "AGPL-3.0-only",
 	"repository": {
@@ -25,7 +25,8 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"build": "pluxel build",

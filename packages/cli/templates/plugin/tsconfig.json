@@ -5,7 +5,7 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"moduleDetection": "force",
-		"lib": ["ES2023"],
+		"lib": ["ES2023", "ESNext.Disposable"],
 		"strict": true,
 		"noEmit": true,
 		"skipLibCheck": true,

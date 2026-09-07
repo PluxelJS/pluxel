@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/auth",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Official management authentication provider for Pluxel",
 	"license": "AGPL-3.0-only",
 	"repository": {
@@ -30,7 +30,8 @@
 			".": "./dist/index.mjs",
 			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"build": "pluxel build",

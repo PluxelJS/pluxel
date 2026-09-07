@@ -205,6 +205,9 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 	}
 
 	if (isPublic) {
+		if (manifest.publishConfig?.access !== 'public') {
+			errors.push(`${manifest.name} publishConfig.access must be public`)
+		}
 		if (!isSemver(manifest.version)) {
 			errors.push(`${manifest.name} version must be valid semver, got ${manifest.version}`)
 		}

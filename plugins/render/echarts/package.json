@@ -25,7 +25,8 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"bench:render": "vitest bench bench/render.bench.ts --config vitest.config.ts",

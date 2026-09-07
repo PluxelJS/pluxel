@@ -45,7 +45,8 @@
 			"./source-producer": "./dist/source-producer.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",

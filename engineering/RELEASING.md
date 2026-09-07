@@ -37,7 +37,7 @@ Explain the observable behavior and any migration requirement.
 `.tegami/publish-lock.yaml`。
 
 `.tegami/` 只保存开源发布线中尚未 version 的变化。开源前的开发记录保留在 Git 历史和当前设计文档中，
-不复制为 Tegami changelog，也不参与首次公开发行的版本计算。submodule 和 vendor workspace 拥有独立的
+不复制为 Tegami changelog，也不参与首次公开发行的版本计算。1.0.0 只保留一条首发说明和覆盖全部公开包的发布锁，不携带开发期日志；成功发布后由 Tegami 清理 pending lock。submodule 和 vendor workspace 拥有独立的
 仓库与发布历史；根仓库 Tegami 不读取、转换或发布它们的 release metadata。
 
 ## 自动流程
@@ -67,15 +67,41 @@ publish lock 是发布事实来源。部分包发布失败时保留原 lock，�
 ## Trusted Publishing
 
 npm trusted publisher 绑定 `PluxelJS/pluxel` 和 `.github/workflows/release.yml`，发布使用 GitHub OIDC，
-不保存长期 `NPM_TOKEN`。首次发布尚未在 npm registry 建立的包时，维护者在已有 publish lock 后执行：
+不保存长期 `NPM_TOKEN`。私有 GitHub repository 同样支持 OIDC，但 npm provenance 仅支持公开 repository；
+Release workflow 按 repository visibility 开关 provenance。
+
+首次设置需要 npm package write 权限、账号已启用 2FA，以及交互式 npm 登录。使用 mise 安装的工具链：
+当前 Node 24.18.0 自带 npm 11.16.0，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧的全局 npm，
+也不要使用 bypass-2FA granular token 配置信任。
+
+首次 1.0.0 使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包；在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。
 
 ```sh
-pnpm tegami npm pretrust --dry-run
-pnpm tegami npm pretrust
+mise install
+mise exec -- pnpm install --frozen-lockfile
+mise exec -- npm login
+mise exec -- node scripts/prepare-npm-publishing.mts
+mise exec -- node scripts/prepare-npm-publishing.mts --apply
 ```
+
+默认只预览。`--apply` 先确认 npm 登录，再通过 Tegami `npm pretrust` 为缺失的包发布
+`0.0.0-tegami-trusted-publish-setup` 空占位版本到 `temp` dist-tag；真正的 `1.0.0` 内容仍由 CI 发布。
+随后脚本检查全部公开包，仅补齐缺少的 `PluxelJS/pluxel` / `release.yml` / 无 environment 限制 / 允许 publish
+的 trusted publisher，并重新读取结果确认。已有正确配置会跳过，其他信任配置不会被自动删除。
+
+账号必须有每个包的 write 权限以及创建 `@pluxel` scope 包的权限。初始化需要交互式 2FA；首次网页验证可选择
+未来 5 分钟跳过重复 2FA，脚本在包之间等待 2 秒。无需逐包打开 npm settings，也不需要给 CI 保存 npm token。
+脚本失败会明确退出；修复登录或权限后重跑，已经创建的占位包及已匹配的信任会被复用。
+
+Tegami 可能更新本地 publish lock，运行后检查并提交这些生成的变更，不要手改 lock。最好在合并发布准备提交前
+完成初始化；若 main 的 Release 已因缺少信任而失败，完成初始化后重跑最新 main 对应的 Release 即可，已成功发布的包会被跳过。
+该脚本面向整批首发初始化；后续单个新包可以使用 Tegami `npm pretrust` 和 npm `trust` 命令。
 
 GitHub repository 必须允许 GitHub Actions 创建 pull request；workflow 的 `contents: write`、
 `pull-requests: write` 和 `id-token: write` 权限不得降低。
+
+参考：[npm trusted publishers](https://docs.npmjs.com/trusted-publishers/)、
+[`npm trust` 的权限与批量设置要求](https://docs.npmjs.com/cli/v11/commands/npm-trust)。
 
 ## 本地检查
 

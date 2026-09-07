@@ -18,6 +18,9 @@
 	"exports": {
 		"./package.json": "./package.json"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"build": "tsdown",
 		"test": "pnpm run build && vitest run tests/*.test.mjs",

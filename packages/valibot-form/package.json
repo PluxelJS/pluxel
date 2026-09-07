@@ -31,7 +31,8 @@
 			".": "./dist/index.mjs",
 			"./web": "./dist/web.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"build": "tsdown",

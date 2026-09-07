@@ -159,7 +159,8 @@
 			"./workbench/federation": "./dist/workbench/federation.mjs",
 			"./workbench/react": "./dist/workbench/react.mjs",
 			"./package.json": "./package.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",

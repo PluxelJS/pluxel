@@ -1,4 +1,4 @@
-## @pluxel/runtime@1.0.0
+## @pluxel/agent-tools@1.0.0
 
 ### Initial open-source release
 

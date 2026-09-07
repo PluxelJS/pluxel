@@ -111,7 +111,8 @@
 			"./workspace/vite": "./dist/workspace/vite.mjs",
 			"./package.json": "./package.json",
 			"./distribution/schema.json": "./dist/schemas/pluxel-distribution-v1.schema.json"
-		}
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",

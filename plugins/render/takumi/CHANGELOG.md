@@ -1,4 +1,4 @@
-## @pluxel/runtime@1.0.0
+## @pluxel/takumi@1.0.0
 
 ### Initial open-source release
 
