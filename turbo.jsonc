@@ -265,6 +265,14 @@
 			"outputs": [],
 			"env": ["PLUXEL_REDIS_TEST_URL"],
 		},
+		"@pluxel/cli#test": {
+			// Launcher tests execute bin/pluxel.mjs, which loads the built CLI entry.
+			"dependsOn": ["build", "@pluxel/test#build"],
+		},
+		"@pluxel/create#test": {
+			// Standalone tests build their own launcher; serialize against Turbo's clean build.
+			"dependsOn": ["build", "@pluxel/test#build"],
+		},
 		"@pluxel/runtime#test": {
 			// Runtime compiler/worker fixtures cross the package export boundary. Keep declarations
 			// stable instead of testing while the runtime build cleans and replaces dist.
@@ -272,6 +280,10 @@
 		},
 		"@pluxel/runtime-dev#test": {
 			// Real Vite runners exercise Node-facing runtime package exports.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/runtime-node#test": {
+			// Native Vitest tests import runtime subpaths through their built package exports.
 			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
 		},
 		"@pluxel/runtime-dynamic#test": {
@@ -349,6 +361,10 @@
 		},
 		"@pluxel/echarts#typecheck": {
 			// The dynamic artifact smoke typechecks its public launcher import against dist.
+			"dependsOn": ["@pluxel/runtime-dynamic#build"],
+		},
+		"@pluxel/takumi-markdown-typst#typecheck": {
+			// The dynamic worker fixture typechecks its launcher import against dist declarations.
 			"dependsOn": ["@pluxel/runtime-dynamic#build"],
 		},
 		"@pluxel/workbench-app#typecheck": {
