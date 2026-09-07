@@ -7,7 +7,6 @@
 		"dev-console",
 		"tooling",
 		"source-workspaces",
-		"source-bootstrap",
 		"distribution"
 	]
 }

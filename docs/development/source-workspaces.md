@@ -43,7 +43,7 @@ pluxel source unregister https://github.com/PluxelJS/chatbot
 
 `unregister` 只删除登记记录，不删除 checkout 或已有项目 overlay；移除 Pluxel 的显式登记后，CLI 自身 checkout 仍会自动出现。`register`、`list`、`unregister` 和其他 source 命令均支持 `--registry <path>`，也可用 `PLUXEL_SOURCE_REGISTRY` 环境变量选择独立 registry。
 
-新电脑从 clone 到安装的完整示例见[源码开发启动脚本](./source-bootstrap.md)，以依赖 Pluxel 与 Chatbot 的 `bot-new-omni` 为例。
+应用应在自己的仓库维护开发环境启动脚本、工具版本与服务前提；Pluxel CLI 只负责通用的源码发现、登记和安装。依赖 Pluxel 与 Chatbot 的完整例子见 [bot-new-omni 开发指南](https://github.com/PluxelJS/bot-new-omni#develop)：由应用维护的脚本通过 mise 安装 Git 与工具链，准备 `pluxel/local-projects/{chatbot,bot-new-omni}` 布局。
 
 移动显式登记的 checkout 后需要重新登记；移动自动发现的 Pluxel checkout 后需更新外部入口链接。修改路径或 `pluxel.sources.jsonc` 后运行 `source install`；已接入 checkout 内的普通源码修改不需要重装。
 `.pnpmfile.cjs` 与 `.pluxel/` 都是 CLI 生成的机器本地 overlay，应被 Git 忽略，不是需要提交的 workspace 配置。
