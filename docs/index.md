@@ -6,6 +6,8 @@ icon: BookOpen
 
 Pluxel 用 TypeScript 插件组织业务能力。插件声明依赖和配置，框架管理它们的启动、热更新与资源清理。
 
+想先了解设计动机、Cordis 对比和具体取舍，可以阅读[为什么是 Pluxel](./why-pluxel.md)；想先体验应用，继续下面的创建步骤。
+
 ## 先运行一个项目
 
 准备 Node.js 24+ 和 pnpm 11，然后执行：
@@ -34,7 +36,7 @@ pnpm dev
 | 测试、发布插件或部署应用           | [测试](./development/testing.md)、[插件包](./development/plugin-package.md)、[应用交付](./development/distribution.md)  |
 | 定位一个错误或查找准确的 import    | [排错](./reference/troubleshooting.md)、[Package 矩阵](./reference/package-matrix.md)                                   |
 
-遇到宿主模式、内部资源拆分等具体需求时，再阅读[宿主配置](./getting-started/host-setup.md)和 [PluginPart](./getting-started/plugin-parts.md)。想了解适用场景和设计取舍，阅读[为什么是 Pluxel](./why-pluxel.md)。
+遇到宿主模式、内部资源拆分等具体需求时，再阅读[宿主配置](./getting-started/host-setup.md)和 [PluginPart](./getting-started/plugin-parts.md)。
 
 ## 与 coding agent 一起开发
 
