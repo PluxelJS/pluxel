@@ -106,7 +106,8 @@ run_bench() {
 	else
 		: >"$log_file"
 	fi
-	if ! pnpm --filter @pluxel/core build >>"$log_file" 2>&1; then
+	# Build declared workspace prerequisites (including Context) before core's declarations.
+	if ! pnpm --filter @pluxel/core... build >>"$log_file" 2>&1; then
 		tail -200 "$log_file"
 		return 1
 	fi

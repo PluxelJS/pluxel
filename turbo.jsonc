@@ -290,6 +290,14 @@
 			// The render contract boots a built worker through the production dynamic launcher.
 			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@pluxel/runtime-dynamic#build"],
 		},
+		"@pluxel/package-manager#test": {
+			// Dynamic host fixtures launch a child process through runtime-dynamic's dist export.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime-dynamic#build"],
+		},
+		"@pluxel/takumi-markdown-typst#test": {
+			// The worker smoke test also imports the production dynamic launcher in a child process.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime-dynamic#build"],
+		},
 		"@pluxel/workbench-app#test": {
 			// The UI package exercises current Workbench contract source through Vite's
 			// package-export conditions.
