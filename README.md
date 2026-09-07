@@ -10,7 +10,7 @@
 [![CI](https://github.com/PluxelJS/pluxel/actions/workflows/ci.yml/badge.svg)](https://github.com/PluxelJS/pluxel/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-663399.svg)](./LICENSE)
 
-[文档](https://pluxel.dev) · [设计初心](./docs/why-pluxel.md) · [参与贡献](./CONTRIBUTING.md) · [许可](./LICENSE)
+[文档](https://www.pluxel.dev) · [设计初心](./docs/why-pluxel.md) · [参与贡献](./CONTRIBUTING.md) · [许可](./LICENSE)
 
 </div>
 
@@ -47,8 +47,8 @@ Plugin 不需要感知宿主模式。无论来自固定清单还是动态文件�
 
 ## 📚 了解更多
 
-- [用户文档](https://pluxel.dev) — 入门、Plugin 开发、宿主装配与能力指南
-- [Package 与公开入口](https://pluxel.dev/docs/reference/package-matrix) — package 职责和可用入口
+- [用户文档](https://www.pluxel.dev) — 入门、Plugin 开发、宿主装配与能力指南
+- [Package 与公开入口](https://www.pluxel.dev/docs/reference/package-matrix) — package 职责和可用入口
 - [工程文档](./engineering/README.md) — Agent 与维护者使用的设计原则、内部边界和发布流程
 - [贡献指南](./CONTRIBUTING.md) — 开发环境、测试、Tegami changelog 与 Pull Request
 

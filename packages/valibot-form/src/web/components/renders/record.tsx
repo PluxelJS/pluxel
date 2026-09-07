@@ -208,7 +208,7 @@ export function RecordField(props: RendererProps) {
 	useEffect(() => {
 		if (!inlineAddEnabled) return undefined
 		const handle = requestAnimationFrame(() => {
-			draftKeyRef.current?.focus()
+			draftKeyRef.current?.focus({ preventScroll: true })
 		})
 		return () => cancelAnimationFrame(handle)
 	}, [inlineAddEnabled, rows.length])

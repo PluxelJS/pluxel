@@ -9,6 +9,8 @@ import { fumadocsMdx } from 'fumapress/adapters/mdx'
 import { metaSchema, pageSchema } from 'fumapress/adapters/mdx/schema'
 import { createHomeLayout } from 'fumapress/layouts/home'
 import { createNotebookLayoutPage } from 'fumapress/layouts/notebook'
+import { takumiPlugin } from 'fumapress/plugins/takumi'
+import { generateOgImage } from './src/components/og-image'
 import { linkValidationPlugin } from 'fumapress/plugins/link-validation'
 import { createRelativeLink } from 'fumadocs-ui/mdx'
 import { defineDocs } from 'fumadocs-mdx/macro'
@@ -126,7 +128,7 @@ const config = defineConfig({
 	preset: 'recommended',
 	renderPage: (props) => <NotebookLayout {...props} />,
 	site: {
-		baseUrl: 'https://pluxel.dev',
+		baseUrl: 'https://www.pluxel.dev',
 		git: {
 			branch: 'main',
 			repo: 'pluxel',
@@ -135,7 +137,7 @@ const config = defineConfig({
 			rootDir: docsProjectRoot,
 			user: 'PluxelJS',
 		},
-		name: 'pluxel.dev',
+		name: 'www.pluxel.dev',
 	},
 	translations,
 })
@@ -151,6 +153,11 @@ const config = defineConfig({
 		}),
 	)
 	.plugins(
+		takumiPlugin({
+			generate(page) {
+				return generateOgImage({ ...page.data, site: this.siteConfig.name })
+			},
+		}),
 		linkValidationPlugin(),
 		mcpPlugin(),
 		changelogPlugin({

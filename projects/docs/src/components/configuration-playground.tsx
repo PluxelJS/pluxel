@@ -458,27 +458,22 @@ export function ConfigurationPlayground() {
 					配置 Playground
 				</Title>
 
-				<AutoForm schema={schema} formOpts={formOptions} resetKey={revision}>
+				<AutoForm
+					schema={schema}
+					formOpts={formOptions}
+					resetKey={revision}
+					formProps={{ className: 'configuration-playground-form' }}
+				>
 					<div className="configuration-playground-layout">
 						<Stack
 							className="configuration-playground-pane configuration-playground-editor-pane"
-							gap="md"
+							gap="sm"
 						>
-							<div>
-								<Title order={3} size="h4">
+							<Group justify="space-between" gap="xs">
+								<Title order={2} size="h4">
 									Schema
 								</Title>
-							</div>
-
-							<div className="configuration-playground-editor-frame overflow-hidden rounded-lg border">
-								<div ref={editorContainerRef} className="configuration-playground-editor" />
-							</div>
-
-							<Group justify="space-between" align="center">
-								<Text size="xs" c="dimmed">
-									草稿仅保存在当前浏览器，不会发送到服务端。
-								</Text>
-								<Group gap="xs">
+								<Group gap={8}>
 									<Select
 										aria-label="Config 预设"
 										data={[
@@ -492,7 +487,7 @@ export function ConfigurationPlayground() {
 										onChange={(value) => {
 											if (value && isPresetId(value)) setEditorCode(presets[value].code, value)
 										}}
-										w={150}
+										w={130}
 									/>
 									<Button
 										variant="default"
@@ -511,8 +506,16 @@ export function ConfigurationPlayground() {
 								</Group>
 							</Group>
 
+							<div className="configuration-playground-editor-frame overflow-hidden rounded-lg border">
+								<div ref={editorContainerRef} className="configuration-playground-editor" />
+							</div>
 							{error ? <Alert color="red">{error}</Alert> : null}
-							<Text size="xs" c="dimmed" aria-live="polite">
+							<Text
+								size="xs"
+								c="dimmed"
+								aria-live="polite"
+								title="草稿仅保存在当前浏览器，不会发送到服务端。"
+							>
 								{status}
 							</Text>
 
@@ -523,33 +526,26 @@ export function ConfigurationPlayground() {
 
 						<Stack
 							className="configuration-playground-pane configuration-playground-preview-pane"
-							gap="md"
+							gap="sm"
 						>
 							<div>
 								<Title order={3} size="h4">
-									预览
+									生成的表单
 								</Title>
 							</div>
 
-							<Accordion defaultValue="form" variant="contained" order={4}>
-								<Accordion.Item value="form">
-									<Accordion.Control>生成的表单</Accordion.Control>
-									<Accordion.Panel>
-										<Stack gap="md">
-											<AutoForm.Fields />
-											<AutoForm.Actions>
-												{({ reset, dirty: formDirty }) => (
-													<Group justify="flex-end">
-														<Button variant="default" disabled={!formDirty} onClick={() => reset()}>
-															恢复默认值
-														</Button>
-													</Group>
-												)}
-											</AutoForm.Actions>
-										</Stack>
-									</Accordion.Panel>
-								</Accordion.Item>
-							</Accordion>
+							<Stack gap="md">
+								<AutoForm.Fields />
+								<AutoForm.Actions>
+									{({ reset, dirty: formDirty }) => (
+										<Group justify="flex-end">
+											<Button variant="default" disabled={!formDirty} onClick={() => reset()}>
+												恢复默认值
+											</Button>
+										</Group>
+									)}
+								</AutoForm.Actions>
+							</Stack>
 						</Stack>
 					</div>
 				</AutoForm>

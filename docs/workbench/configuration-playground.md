@@ -13,9 +13,11 @@ Valibot schema
 
 打开 [配置 Playground](/playground) 即可开始操作。编辑器中的 `v` 对应文档当前使用的 `valibot`，`f` 对应 `valibot-form`。输入 `v.` 或 `f.` 可以查看由真实包生成的补全、参数类型和文档；Playground 不维护另一份容易过期的类型副本。
 
+宽屏下，左侧编辑 schema，右侧操作生成的表单，两侧独立滚动；窄屏下改为上下排列。Input / Output 位于编辑器下方，可按需展开查看。数组和记录的新增输入框取得焦点时不会自动滚动页面。
+
 运行代码后：
 
-- 下方表单由返回的 object/intersect schema 生成；
+- 表单由返回的 object/intersect schema 生成，直接展开，无需点击折叠标题；
 - Input 显示表单当前持有的原始值；
 - Output 显示 `v.safeParse()` 应用默认值、transform 和 validation 后的结果；
 - schema 执行失败或不是 object/intersect 时保留上一次可用表单。

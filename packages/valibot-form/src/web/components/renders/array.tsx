@@ -423,11 +423,11 @@ function ArrayFieldMain(props: RendererProps) {
 		if (!inlineAddEnabled) return
 		requestAnimationFrame(() => {
 			if (draftFocusRef.current) {
-				draftFocusRef.current.focus()
+				draftFocusRef.current.focus({ preventScroll: true })
 				return
 			}
 			const picklistInput = draftPicklistRef.current?.querySelector('input')
-			picklistInput?.focus()
+			picklistInput?.focus({ preventScroll: true })
 		})
 	}, [inlineAddEnabled, items.length])
 
