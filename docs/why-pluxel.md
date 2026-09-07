@@ -1,4 +1,5 @@
 ---
+icon: Lightbulb
 title: 为什么是 Pluxel？
 description: 从 Koishi 与 Cordis 的实践出发，理解 Pluxel 对依赖身份、Context、生命周期和构建语义的选择。
 ---

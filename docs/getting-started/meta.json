@@ -1,4 +1,5 @@
 {
+	"icon": "Rocket",
 	"title": "入门",
 	"defaultOpen": true,
 	"pages": ["index", "first-plugin", "plugin-model", "plugin-parts", "configuration", "host-setup"]

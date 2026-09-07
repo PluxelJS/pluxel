@@ -1,4 +1,5 @@
 {
+	"icon": "GitBranch",
 	"title": "开发与交付",
 	"pages": [
 		"starter-monorepo",

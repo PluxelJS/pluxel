@@ -1,4 +1,5 @@
 {
+	"icon": "Library",
 	"title": "参考",
 	"pages": ["troubleshooting", "package-matrix", "plugin-best-practices", "oxlint", "context-hosts"]
 }

@@ -1,4 +1,5 @@
 {
+	"icon": "PanelsTopLeft",
 	"title": "服务端渲染",
 	"pages": ["index", "fonts", "canvas", "echarts", "takumi", "takumi-markdown"]
 }

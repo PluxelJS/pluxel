@@ -86,21 +86,33 @@ const config = defineConfig({
 	defaultLayoutProps: {
 		links: [
 			{
-				text: '文档',
+				text: (
+					<span className="inline-flex items-center gap-2">
+						<BookOpen aria-hidden="true" className="size-4 shrink-0" />
+						文档
+					</span>
+				),
 				url: '/docs',
-				icon: <BookOpen />,
 				active: 'nested-url',
 			},
 			{
-				text: '更新日志',
+				text: (
+					<span className="inline-flex items-center gap-2">
+						<History aria-hidden="true" className="size-4 shrink-0" />
+						更新日志
+					</span>
+				),
 				url: '/changelog',
-				icon: <History />,
 			},
 			{
 				type: 'button',
-				text: '配置 Playground',
+				text: (
+					<span className="inline-flex items-center gap-2">
+						<FlaskConical aria-hidden="true" className="size-4 shrink-0" />
+						配置 Playground
+					</span>
+				),
 				url: '/playground',
-				icon: <FlaskConical />,
 			},
 		],
 		nav: {
