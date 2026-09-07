@@ -30,6 +30,8 @@ import {
 import { DevScope } from '../dev/scope'
 import { createDevLogs } from '../dev/logs'
 import { createDevWorkbench } from '../dev/workbench'
+import { createDevForks } from '../dev/forks'
+import { createDevDependencies } from '../dev/dependencies'
 
 export interface DevConsoleScope {
 	readonly dev: DevConsole
@@ -94,6 +96,8 @@ export function createDevConsoleScope(
 				}),
 			status: (target: DevPluginTarget) =>
 				scope.run(() => pluginStatus(ctx, resolveTarget(target))),
+			isRunning: (target: DevPluginTarget) =>
+				requirePluginService(ctx).isRunning(resolveTarget(target)),
 			start: (target: DevPluginTarget) => lifecycle(target, 'start'),
 			stop: (target: DevPluginTarget) => lifecycle(target, 'stop'),
 			restart: (target: DevPluginTarget) => lifecycle(target, 'restart'),
@@ -109,6 +113,8 @@ export function createDevConsoleScope(
 				return instance as DevPluginInstance<T>
 			},
 		}),
+		forks: createDevForks(ctx, scope, resolveTarget),
+		dependencies: createDevDependencies(ctx, scope, resolveTarget),
 		config: Object.freeze({
 			get: (target: DevPluginTarget) =>
 				scope.run(() => pluginConfigGet(ctx, resolveTarget(target))),

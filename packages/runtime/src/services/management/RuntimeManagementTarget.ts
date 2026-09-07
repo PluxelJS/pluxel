@@ -246,7 +246,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			}
 		}
 		const result = await ensureFork(this.ctx, base, record.forkId, {
-			autoStart: record.autoStart as boolean | undefined,
+			autoStart: record.autoStart === true,
 			...(selectFor.value === undefined ? {} : { selectFor: selectFor.value }),
 		})
 		if (result.ok === true) {

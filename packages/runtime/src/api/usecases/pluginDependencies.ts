@@ -178,6 +178,15 @@ export async function setPluginProviderPolicyDefault(
 			error: 'Plugin node does not own an abstract provider policy',
 		}
 	}
+	return setPluginProviderDefault(ctx, token, provider)
+}
+
+/** Shared token-based policy mutation for host control surfaces. */
+export async function setPluginProviderDefault(
+	ctx: Context,
+	token: PluginDefinitionAddress,
+	provider: PluginNodeAddress | null,
+): Promise<PluginDependencyMutationResult> {
 	try {
 		const report = await requireRuntimePluginGraphCoordinator(ctx).updateRuntimeState(
 			runtimeStatePatch({ type: 'set-provider-default', token, provider }),

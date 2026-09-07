@@ -1,4 +1,9 @@
-import type { PluginConstructor, PluginNodeAddress } from '@pluxel/core'
+import type {
+	PluginConstructor,
+	PluginNodeAddress,
+	PluginDefinitionAddress,
+	PluginToken,
+} from '@pluxel/core'
 import type { CommandContext, CommandDescriptor } from '@pluxel/commands'
 import type { RpcStub, RpcTarget } from '../capnweb'
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
@@ -21,6 +26,10 @@ import type {
 	ConfigPresentationResult,
 	PluginControlMutationResult,
 	PluginStatusSnapshot,
+	PluginConsumerRequirementsInspectionResult,
+	PluginDependencyMutationResult,
+	EnsureForkResult,
+	RemoveForkResult,
 } from '../web/protocol'
 import type { LogFilter, LogRangeErr, LogStreamMeta, RuntimeLogLine } from '../logger/protocol'
 
@@ -28,6 +37,19 @@ import type { LogFilter, LogRangeErr, LogStreamMeta, RuntimeLogLine } from '../l
 export type DevTypedPluginTarget<P extends PluginConstructor = PluginConstructor> =
 	| P
 	| Readonly<{ plugin: P; forkId: string }>
+/** Requirement identity; abstract tokens identify a contract, never a running node. */
+export type DevPluginRequirement = PluginToken | PluginDefinitionAddress
+export type DevDependencyOverrideTarget = Readonly<{
+	consumer: DevPluginTarget
+	requirement: DevPluginRequirement
+}>
+export type DevProviderDefaultInput = Readonly<{
+	requirement: DevPluginRequirement
+	provider: PluginConstructor | Extract<PluginNodeAddress, { variant: 'default' }>
+}>
+export type DevPluginForkTarget =
+	| Readonly<{ plugin: PluginConstructor; forkId: string }>
+	| Extract<PluginNodeAddress, { variant: 'fork' }>
 export type DevPluginTarget = DevTypedPluginTarget | PluginNodeAddress
 export type DevPluginInstance<T extends DevTypedPluginTarget> = T extends PluginConstructor
 	? InstanceType<T>
@@ -77,12 +99,28 @@ export type DevLogWaitResult = Readonly<{
 export interface DevConsole {
 	readonly plugins: {
 		list(): Promise<readonly PluginStatusSnapshot[]>
+		isRunning(target: DevPluginTarget): boolean
 		status(target: DevPluginTarget): Promise<PluginStatusSnapshot | null>
 		start(target: DevPluginTarget): Promise<PluginControlMutationResult>
 		stop(target: DevPluginTarget): Promise<PluginControlMutationResult>
 		restart(target: DevPluginTarget): Promise<PluginControlMutationResult>
 		/** Real current object, not a revocable proxy; reacquire after HMR or restart. */
 		require<T extends DevTypedPluginTarget>(target: T): DevPluginInstance<T>
+	}
+	readonly forks: {
+		/** Ensure durable identity without starting it or changing existing auto-start policy. */
+		ensure(target: DevPluginForkTarget): Promise<EnsureForkResult>
+		remove(target: DevPluginForkTarget): Promise<RemoveForkResult>
+	}
+	readonly dependencies: {
+		/** Current required edges, saved selection, inherited provider, and available options. */
+		inspect(consumer: DevPluginTarget): Promise<PluginConsumerRequirementsInspectionResult>
+		setDefault(input: DevProviderDefaultInput): Promise<PluginDependencyMutationResult>
+		clearDefault(requirement: DevPluginRequirement): Promise<PluginDependencyMutationResult>
+		setOverride(
+			input: DevDependencyOverrideTarget & Readonly<{ provider: DevPluginTarget }>,
+		): Promise<PluginDependencyMutationResult>
+		clearOverride(input: DevDependencyOverrideTarget): Promise<PluginDependencyMutationResult>
 	}
 	readonly config: {
 		/** Saved raw values, defaults, and desired/applied revisions. */

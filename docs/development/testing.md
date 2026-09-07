@@ -253,6 +253,35 @@ expect(failure.lifecycleReport.issues).toContainEqual(
 输入错误、persistence failure 或 capability disabled 仍直接抛出。测试分支依赖 stable `plugin/phase/kind/blockedBy`，不要依赖完整
 message；Vitest 5 的 `expect.objectContaining()` 和 `expect.stringContaining()` 足以表达这些 structured assertions。
 
+## 抽象 provider 与 consumer override
+
+抽象 Plugin 是 dependency requirement；通过 concrete provider 实现它，再从 consumer 验证真实注入。不要对抽象 token 调用 `require()`。下面的 token 应从 fixture 或被测 package 导入，`ConnectorPlugin` 必须声明实现 `Connector`：
+
+```ts no-twoslash
+await host.commit((change) => {
+	change.catalog.add([ConnectorPlugin, ConsumerPlugin])
+	change.dependencies.setDefault({
+		requirement: Connector,
+		provider: ConnectorPlugin,
+	})
+	change.start(ConsumerPlugin)
+})
+
+expect(host.require(ConsumerPlugin).connector.ctx.pluginInfo.nodeAddress).toEqual(
+	host.require(ConnectorPlugin).ctx.pluginInfo.nodeAddress,
+)
+```
+
+此例使用 Runtime host；Core host 同样在 `commit` callback 中使用 `change.dependencies`，通过 `change.add()` 加入目标。
+全局 default 只能选 concrete Plugin，不能选 fork。为特定 consumer 选择 fork 时，使用 `definePluginFork()` 得到 target，再调用
+`change.dependencies.setOverride({ consumer: ConsumerPlugin, requirement: Connector, provider: East })`。
+`clearDefault(Connector)` 和 `clearOverride({ consumer: ConsumerPlugin, requirement: Connector })` 分别清除选择。
+requirement 按 definition identity 识别；依赖修改经过 graph，重启受影响 consumer 及其 dependent closure，操作后重新 `require()` 取得实例。
+
+Runtime 的 `change.forks.ensure(East)` 可以先建立 fork，再显式 `change.start(East)`；`change.forks.remove(East)` 移除 fork。
+fixture/catalog/replacement 与 strict assertion 是测试专属。操作在线应用时，对应使用 `dev.dependencies`、`dev.forks` 与 `dev.plugins`；
+console 还提供当前依赖 inspection、配置字段描述和真实日志，具体差异见[基础能力对齐表](./dev-console.md#与-test-host-的基础能力对齐)。
+
 ## Fork 与 replacement
 
 Fork 是独立于 host 的 typed value。concrete Plugin 必须用 `@Plugin({ forkable: true })` 声明可并行运行多个 node：

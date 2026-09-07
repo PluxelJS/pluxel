@@ -93,6 +93,7 @@ export async function ensureFork(
 	base: PluginNodeAddress,
 	forkId: string,
 	options: {
+		/** Omitted preserves existing policy; a new fork remains disabled for auto-start. */
 		autoStart?: boolean
 		selectFor?: Readonly<{
 			consumer: PluginNodeAddress
@@ -104,11 +105,12 @@ export async function ensureFork(
 	if (!node) return invalidFork('Fork base or forkId is invalid')
 	const coordinator = requireRuntimePluginGraphCoordinator(ctx)
 	try {
-		const autoStart = options.autoStart === true
 		const report = await coordinator.updateRuntimeState(
 			runtimeStatePatch(
 				{ type: 'ensure-fork', definition: node.definition, forkId: node.forkId },
-				{ type: 'set-auto-start', node, autoStart },
+				...(options.autoStart === undefined
+					? []
+					: [{ type: 'set-auto-start' as const, node, autoStart: options.autoStart }]),
 				...(options.selectFor
 					? [
 							{

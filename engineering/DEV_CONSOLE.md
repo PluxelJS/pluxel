@@ -44,6 +44,12 @@ Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回�
 
 `plugins.require()` 对 typed constructor/`{plugin,forkId}` 做当前 catalog identity 检查；地址只用于管理操作，不用来声称具体实例类型。普通 JS 实例没有通用撤销语义，跨 await 使用过期对象的限制需诚实说明。
 
+`plugins.isRunning()` 与 test host 一样同步读取当前 running 状态。基础能力覆盖 concrete/fork 实例、生命周期、dependency selection、fork management 与 production-backed drivers；不继承 test host，也不暴露 fixture/catalog/replacement 或 strict assertion 控制面。
+
+`dependencies.inspect(consumer)` 返回 `{ ok: true, items }` 或领域 failure；set/clearDefault 与 set/clearOverride 复用生产依赖配置和 apply report。requirement 接受 PluginToken/definition address，并按 definition identity 解析，允许 abstract token；不要求抽象定义存在 concrete catalog entry。default provider 只能是 concrete 默认 node，override provider 可以是 fork。依赖变化由 coordinator 重启受影响 consumer 及 dependent closure，不只替换 provider 而保留旧 caller view。
+
+`forks.ensure/remove` 接受 `{ plugin, forkId }` 或 fork node address；test `definePluginFork()` 的值结构兼容，无需新 helper。ensure 保存 fork 记录但不隐式表达 session start；新 fork 的 auto-start 关闭，已有 policy 保留。启动显式走 `plugins.start()`。两组 mutation 都持久化到当前宿主，沿原有 scope admission/drain 和生产验证路径执行，不另建 graph 或事务权威。
+
 配置 get/describe/validate/patch/patchField/reset 使用现有配置契约。describe 返回 portable presentation plan，包含准确字段路径与约束；不暴露 raw schema function 或写私有字段。Workbench 使用 exact descriptor、显式 principal 和本地 Cap’n Web session；不验证浏览器登录或 renderer。返回对象/数组 DTO 时使用既有 detachWorkbenchPortableValue 完成普通数据复制与顶层 transport result 释放。
 
 每 run 的 DevScope 在 abort 时关闭 admission、撤回 leases；dispose 等待已接纳 driver 与异步 cleanup。commands/HTTP 合并 run signal；已接纳的 config/lifecycle mutation 沿生产路径 settle，不声称可强制中断。Workbench 仍是原有 RpcStub，所有 RPC 都要求 await，不增加第二层 Proxy 模拟任意方法拦截。直接 Plugin 方法和用户自行创建的 native resource 也不能承诺自动取消/回收。

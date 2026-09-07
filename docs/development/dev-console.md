@@ -107,7 +107,7 @@ pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-h
 
 `await dev.plugins.list()` 返回当前管理状态及稳定 PluginNodeAddress。`status/start/stop/restart`、配置和日志过滤既接受地址，也接受 Plugin constructor。根据列表里的 definition entry/exportName，从项目源码或 package root import 对应 Plugin 后，就能用 `require()` 得到精确类型。
 
-已有 fork 可用 `{ plugin: TodoPlugin, forkId: 'east' }` 表达。它不创建 fork。`require()` 只接受 typed target；不要拿一个地址强制断言成 Plugin 实例类型。
+fork 可用 `{ plugin: ConnectorPlugin, forkId: 'east' }` 表达，其中 concrete Plugin 必须声明 `@Plugin({ forkable: true })`。这个值本身不创建 fork；创建使用 `dev.forks.ensure()`。`require()` 只接受 typed target；不要拿一个地址强制断言成 Plugin 实例类型。
 
 ```ts no-twoslash
 const stopped = await dev.plugins.stop(TodoPlugin)
@@ -116,6 +116,57 @@ return { stopped, started, current: await dev.plugins.status(TodoPlugin) }
 ```
 
 控制接口返回真实执行结果与 apply report，不像 test host 那样注册临时 catalog 或自动把未达成状态转换成断言失败。读取领域结果中的 `ok`、实际状态和 lifecycle issues；CLI 成功执行脚本不代表业务操作一定成功。
+
+## 抽象依赖与 fork
+
+抽象 Plugin 是 requirement，不是 running instance。`dev.dependencies` 接受抽象或具体 `PluginToken`，也接受稳定 definition address；按 definition identity 识别 requirement，不把抽象 constructor 当成待启动的 concrete implementation。`plugins.require()` 仍只接受具体 typed target，不能用抽象 token 自动取得 provider。
+
+先 inspect consumer，查看 requirement 与可选 provider，再修改选择。以下示例假设项目有 `Connector` 抽象契约、实现它的 forkable `ConnectorPlugin` 和依赖该契约的 `ConsumerPlugin`；将这些 token 从项目实际 package root 导入：
+
+```ts no-twoslash
+export async function useEast(dev: DevConsole) {
+	const before = await dev.dependencies.inspect(ConsumerPlugin)
+	if (!before.ok) return before
+
+	const east = { plugin: ConnectorPlugin, forkId: 'east' }
+	const ensured = await dev.forks.ensure(east)
+	if (!ensured.ok) return ensured
+	const started = await dev.plugins.start(east)
+	if (!started.ok) return started
+	const selected = await dev.dependencies.setOverride({
+		consumer: ConsumerPlugin,
+		requirement: Connector,
+		provider: east,
+	})
+	return {
+		selected,
+		dependencies: await dev.dependencies.inspect(ConsumerPlugin),
+		running: dev.plugins.isRunning(east),
+	}
+}
+```
+
+`inspect(consumer)` 成功返回 `{ ok: true, items }`；consumer 地址或 fork 不存在时返回 `ok: false`、`code: 'consumer_unavailable'`、`state: 'unchanged'` 和 `error`，需要先检查 `ok`。过期 typed target 与已关闭 run scope 仍抛出 `DevConsoleError`。`plugins.isRunning(target)` 同步查询当前状态，与 test host 的 `isRunning()` 对齐；它不启动目标。
+
+全局默认选择使用 `dev.dependencies.setDefault({ requirement: Connector, provider: ConnectorPlugin })`，清除使用 `clearDefault(Connector)`。default provider 只接受 concrete constructor 或默认 node address，不能选择 fork。特定 consumer 的 `setOverride({ consumer, requirement, provider })` 可以选择 concrete 默认 node 或 fork；`clearOverride({ consumer, requirement })` 恢复正常选择规则。consumer 和 override provider 均支持 typed target 或 node address。
+
+依赖选择通过宿主的生产配置路径保存，不会随 run 结束撤销；应用选择时由 graph coordinator 重启受影响的 consumer 及其 dependent closure。检查 mutation 的领域结果和 apply report，之后重新取得实例，避免继续使用重启前注入的 provider。
+
+`dev.forks.ensure(east)` 建立 fork 的持久配置记录，不为新 fork 打开 auto-start，也不表达本次进程的启动意图；已有 fork 的 auto-start policy 保持不变。要运行它，显式调用 `plugins.start(east)`。`dev.forks.remove(east)` 通过生产路径移除 fork，检查返回的领域结果与 apply report。两者也接受 fork node address，不接受默认 node。`definePluginFork()` 在测试中生成的值结构兼容这个 typed target，可以直接复用；无需为 console 定义第二种 fork helper。
+
+## 与 test host 的基础能力对齐
+
+| 能力                                                                       | Runtime test host                 | Dev console                                      |
+| -------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------ |
+| 具体实例与 running 状态                                                    | `require` / `isRunning`           | `plugins.require` / `plugins.isRunning`          |
+| 启动、停止、重启 concrete / fork                                           | 顶层方法或 `commit`               | `plugins.start/stop/restart`                     |
+| 默认 provider 与 consumer override                                         | `commit` 内 `change.dependencies` | `dependencies`，另有 `inspect`                   |
+| 建立、移除 fork                                                            | `commit` 内 `change.forks`        | `forks.ensure/remove`                            |
+| 运行期配置修改、commands、HTTP、Workbench                                  | production-backed drivers         | 当前宿主的同类 drivers                           |
+| fixture、临时 catalog、definition replacement、strict lifecycle assertions | 测试专属                          | 使用当前 catalog、真实更新与领域报告             |
+| 当前宿主管理列表、配置字段描述、日志游标与等待                             | 隔离测试无需在线发现              | `plugins.list/status`、`config.describe`、`logs` |
+
+基础语义共享，但 API 不互相继承。测试可以把多个变化放在同一同步 `commit` callback 中并严格断言最终状态；一段 dev 脚本里的多个 awaited 操作不是全局事务。Console 的 HMR 来自现有 Vite，不提供测试替身注册入口。
 
 ## 编辑配置
 
