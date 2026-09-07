@@ -491,14 +491,20 @@ export function ConfigurationPlayground() {
 									/>
 									<Button
 										variant="default"
+										disabled={!dirty}
 										onClick={() => {
-											const preset = selection === 'custom' ? 'service' : selection
-											setEditorCode(presets[preset].code, preset)
+											const preset = Object.entries(presets).find(
+												([, preset]) => preset.code === lastRunCodeRef.current,
+											)?.[0]
+											setEditorCode(
+												lastRunCodeRef.current,
+												preset && isPresetId(preset) ? preset : 'custom',
+											)
 											setError(undefined)
-											setStatus(`已恢复「${presets[preset].label}」预设，运行后更新预览。`)
+											setStatus('已撤销未运行的修改，表单保持不变。')
 										}}
 									>
-										重置
+										撤销未运行修改
 									</Button>
 									<Button disabled={!dirty} onClick={run}>
 										运行 schema
@@ -509,43 +515,43 @@ export function ConfigurationPlayground() {
 							<div className="configuration-playground-editor-frame overflow-hidden rounded-lg border">
 								<div ref={editorContainerRef} className="configuration-playground-editor" />
 							</div>
-							{error ? <Alert color="red">{error}</Alert> : null}
+							{error ? (
+								<Alert color="red" role="alert">
+									{error}
+								</Alert>
+							) : null}
 							<Text
 								size="xs"
 								c="dimmed"
 								aria-live="polite"
 								title="草稿仅保存在当前浏览器，不会发送到服务端。"
 							>
-								{status}
+								{dirty ? '代码有未运行的修改，生成的表单仍使用上次运行的 Schema。' : status}
 							</Text>
-
-							<Accordion multiple variant="contained" order={4}>
-								<ValueInspector schema={schema} />
-							</Accordion>
 						</Stack>
 
 						<Stack
 							className="configuration-playground-pane configuration-playground-preview-pane"
 							gap="sm"
 						>
-							<div>
-								<Title order={3} size="h4">
+							<Group justify="space-between" gap="xs">
+								<Title order={2} size="h4">
 									生成的表单
 								</Title>
-							</div>
-
-							<Stack gap="md">
-								<AutoForm.Fields />
 								<AutoForm.Actions>
 									{({ reset, dirty: formDirty }) => (
-										<Group justify="flex-end">
-											<Button variant="default" disabled={!formDirty} onClick={() => reset()}>
-												恢复默认值
-											</Button>
-										</Group>
+										<Button variant="subtle" disabled={!formDirty} onClick={() => reset()}>
+											恢复默认值
+										</Button>
 									)}
 								</AutoForm.Actions>
-							</Stack>
+							</Group>
+
+							<AutoForm.Fields />
+
+							<Accordion multiple variant="contained" order={4}>
+								<ValueInspector schema={schema} />
+							</Accordion>
 						</Stack>
 					</div>
 				</AutoForm>

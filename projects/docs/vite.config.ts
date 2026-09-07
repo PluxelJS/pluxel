@@ -1,12 +1,19 @@
 import tailwindcss from '@tailwindcss/vite'
 import { fumadocsMdx } from 'fumadocs-mdx/vite'
 import press from 'fumapress/vite'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 
 function bundleModernMonacoTypeScriptWorker(): Plugin {
 	return {
 		name: 'bundle-modern-monaco-typescript-worker',
 		enforce: 'pre',
+		resolveId(source, importer) {
+			// Modern Monaco needs the classic JS Compiler API, which TS 7 does not expose.
+			if (source === 'typescript' && importer?.includes('/modern-monaco/dist/lsp/typescript/')) {
+				return this.resolve('typescript-legacy', fileURLToPath(import.meta.url))
+			}
+		},
 		transform(code, id) {
 			if (!id.includes('/modern-monaco/dist/lsp/typescript/setup.mjs')) return undefined
 
@@ -30,9 +37,12 @@ function getWorker`,
 }
 
 export default defineConfig({
+	worker: {
+		plugins: () => [bundleModernMonacoTypeScriptWorker()],
+	},
 	optimizeDeps: {
 		exclude: ['lucide-react', 'modern-monaco/lsp/typescript/setup'],
-		include: ['typescript'],
+		include: ['typescript-legacy'],
 	},
 	plugins: [bundleModernMonacoTypeScriptWorker(), press(), fumadocsMdx(), tailwindcss()],
 	// The canonical docs source lives outside this Vite root, so Rolldown needs

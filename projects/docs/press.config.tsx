@@ -105,7 +105,6 @@ const config = defineConfig({
 				url: '/changelog',
 			},
 			{
-				type: 'button',
 				text: (
 					<span className="inline-flex items-center gap-2">
 						<FlaskConical aria-hidden="true" className="size-4 shrink-0" />
@@ -113,6 +112,7 @@ const config = defineConfig({
 					</span>
 				),
 				url: '/playground',
+				active: 'nested-url',
 			},
 		],
 		nav: {
