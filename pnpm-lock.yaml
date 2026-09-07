@@ -873,15 +873,6 @@ importers:
       '@fumapress/tegami':
         specifier: catalog:dev
         version: 1.1.2(785fe7f4da0445e230c904a5f80703dd)
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:packages/cli
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:packages/rolldown
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:packages/test
       '@tsdown/css':
         specifier: catalog:build
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.26)(sass-embedded@1.103.1)(sass@1.103.1)(tsdown@0.22.14)(tsx@4.23.13)(yaml@2.9.0)
@@ -1029,6 +1020,12 @@ importers:
       '@pluxel/context':
         specifier: workspace:*
         version: link:../context
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
       option-t:
         specifier: catalog:validation
         version: 56.1.2
@@ -1120,6 +1117,9 @@ importers:
         specifier: workspace:^
         version: link:../valibot-form
     devDependencies:
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
       '@rolldown/pluginutils':
         specifier: catalog:build
         version: 1.0.1
@@ -1493,6 +1493,9 @@ importers:
       '@mantine/hooks':
         specifier: catalog:frontend
         version: 9.5.2(react@19.2.8)
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)

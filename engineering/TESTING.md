@@ -29,6 +29,14 @@ closure 或 Runtime。config 已加载后，preset 为 test module graph 设置 
 `scripts/check-testing-v2-migration.mjs` 保护已删除 API、Vitest 5 baseline、public test boundaries、official package/template migration 和
 relative preset bootstrap。它是防回归门禁，不替代 product behavior tests。
 
+## CI scheduling and cache
+
+根目录只声明外部编排工具；workspace 工具依赖由实际消费包声明。Turbo 会把根目录 workspace 依赖的传递源码计入所有任务的全局
+hash，把 CLI 或 test helper 放回根依赖会让一次 core 测试修改清空整个仓库的缓存。仓库根 CLI 入口使用 `pnpm pluxel`。
+
+CI 按整个 PR 相对目标分支的变化选择包，在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
+Turbo task summary，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
+
 在改变 shared test surface、package export、runner config 或 test host lifecycle 后，先运行直接 owner test，再运行
 `pnpm testing-v2:check`；稳定合并边界运行 `pnpm verify`。测试数量不是目标：每个 case 都应保护一个当前 public contract、资源所有权或
 已观察的失败模式。

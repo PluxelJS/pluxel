@@ -113,6 +113,8 @@
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/test": "workspace:*",
 		"option-t": "catalog:validation",
 		"rolldown": "catalog:build",
 		"tinybench": "catalog:dev",

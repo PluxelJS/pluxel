@@ -30,6 +30,72 @@
 			],
 			"outputLogs": "new-only",
 		},
+		"@pluxel/core#build": {
+			// Core bundles Context; test-only tooling does not participate in its artifact build.
+			"dependsOn": ["@pluxel/context#build"],
+			"outputs": ["dist/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+				"!bench/**",
+				"!**/bench/**",
+				"!test/**",
+				"!tests/**",
+				"!**/test/**",
+				"!**/tests/**",
+				"!**/*.test.*",
+				"!**/*.spec.*",
+			],
+			"outputLogs": "new-only",
+		},
+		"valibot-form#build": {
+			// The form library only consumes external production dependencies.
+			"dependsOn": [],
+			"outputs": ["dist/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+				"!bench/**",
+				"!**/bench/**",
+				"!test/**",
+				"!tests/**",
+				"!**/test/**",
+				"!**/tests/**",
+				"!**/*.test.*",
+				"!**/*.spec.*",
+			],
+			"outputLogs": "new-only",
+		},
+		"@pluxel/rolldown#build": {
+			// Build production dependencies before tooling; its test helper depends on this artifact.
+			"dependsOn": ["@pluxel/core#build", "valibot-form#build"],
+			"outputs": ["dist/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+				"!bench/**",
+				"!**/bench/**",
+				"!test/**",
+				"!tests/**",
+				"!**/test/**",
+				"!**/tests/**",
+				"!**/*.test.*",
+				"!**/*.spec.*",
+			],
+			"outputLogs": "new-only",
+		},
 		"@pluxel/test#build": {
 			// `@pluxel/test` is a dev-only helper package. It compiles against the
 			// source-export surface of core/runtime and must not pull those build
@@ -171,7 +237,7 @@
 		"@pluxel/cli#typecheck": {
 			// The CLI loads toolchain capabilities through package exports. Typecheck the same dist
 			// boundary used in production after the capability owners have emitted declarations.
-			"dependsOn": ["@pluxel/rolldown#build", "@pluxel/runtime-dynamic#build"],
+			"dependsOn": ["^build"],
 			"outputs": [],
 		},
 		"@pluxel/create#build": {
@@ -241,9 +307,9 @@
 			// Vite evaluates vitest.config before the preset can install workspace source conditions,
 			// so bootstrap the shared preset through its built package export. Do not replace this with
 			// relative source imports or a process-wide condition: test-module resolution below the
-			// config still uses @pluxel/source/@pluxel/hmr, without making every test depend on a
-			// runtime build or invalidating every cache on each runtime change.
-			"dependsOn": ["@pluxel/test#build"],
+			// config still uses @pluxel/source/@pluxel/hmr. Workspace dependency builds also carry
+			// source-consumer cache hashes, so upstream changes invalidate dependent tests.
+			"dependsOn": ["^build", "@pluxel/test#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -261,63 +327,38 @@
 		"@pluxel/redis#test": {
 			// Pass the CI service URL through strict env filtering and keep integration results
 			// separate from local runs where the Redis suite is skipped.
-			"dependsOn": ["@pluxel/test#build"],
+			"dependsOn": ["^build"],
 			"outputs": [],
 			"env": ["PLUXEL_REDIS_TEST_URL"],
 		},
 		"@pluxel/cli#test": {
 			// Launcher tests execute bin/pluxel.mjs, which loads the built CLI entry.
-			"dependsOn": ["build", "@pluxel/test#build"],
+			"dependsOn": ["^build", "build"],
 		},
 		"@pluxel/create#test": {
 			// Standalone tests build their own launcher; serialize against Turbo's clean build.
-			"dependsOn": ["build", "@pluxel/test#build"],
+			"dependsOn": ["^build", "build", "@pluxel/test#build"],
 		},
 		"@pluxel/runtime#test": {
 			// Runtime compiler/worker fixtures cross the package export boundary. Keep declarations
 			// stable instead of testing while the runtime build cleans and replaces dist.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
-		},
-		"@pluxel/runtime-dev#test": {
-			// Real Vite runners exercise Node-facing runtime package exports.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
-		},
-		"@pluxel/runtime-node#test": {
-			// Native Vitest tests import runtime subpaths through their built package exports.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+			"dependsOn": ["^build", "@pluxel/runtime#build"],
 		},
 		"@pluxel/runtime-dynamic#test": {
 			// Real distribution-mode config reloads and the fixed-plugin identity smoke test resolve
 			// package exports outside Vitest's source condition. Their own dist must not race a clean
 			// runtime-dynamic build, and the child process also consumes the runtime distribution.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@pluxel/runtime-dynamic#build"],
+			"dependsOn": ["^build", "@pluxel/runtime-dynamic#build"],
 		},
 		"@pluxel/runtime-static#test": {
 			// Static host integration exercises Node-facing runtime package exports, and its real
 			// package-root lowering smoke imports this package's built Vite entry in a child process.
 			// Serialize the test after its own build so a concurrent clean cannot invalidate chunks.
-			"dependsOn": ["build", "@pluxel/test#build"],
-		},
-		"@pluxel/echarts#test": {
-			// The render contract boots a built worker through the production dynamic launcher.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@pluxel/runtime-dynamic#build"],
-		},
-		"@pluxel/package-manager#test": {
-			// Dynamic host fixtures launch a child process through runtime-dynamic's dist export.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime-dynamic#build"],
-		},
-		"@pluxel/takumi-markdown-typst#test": {
-			// The worker smoke test also imports the production dynamic launcher in a child process.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime-dynamic#build"],
-		},
-		"@pluxel/workbench-app#test": {
-			// The UI package exercises current Workbench contract source through Vite's
-			// package-export conditions.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+			"dependsOn": ["^build", "build"],
 		},
 		"@pluxel/rolldown#test": {
 			// Packaging invariants intentionally inspect the runtime-static production declarations.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime-static#build"],
+			"dependsOn": ["^build", "@pluxel/runtime-static#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -333,13 +374,13 @@
 			"outputLogs": "errors-only",
 		},
 		"@worksplit/react#test": {
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@worksplit/core#build"],
+			"dependsOn": ["^build", "@pluxel/test#build", "@pluxel/runtime#build"],
 		},
 		"typecheck": {
 			// Plugin projects and the test helpers validate the published runtime declaration boundary.
-			// Only the few consumers that import runtime-dev declarations add that build explicitly
-			// below; a global edge made unrelated typechecks wait for and hash runtime-dev.
-			"dependsOn": ["@pluxel/runtime#build"],
+			// Workspace dependency builds propagate source and declaration changes into consumer hashes.
+			// Extra edges below cover fixtures outside the declared package dependencies.
+			"dependsOn": ["^build", "@pluxel/runtime#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -352,23 +393,7 @@
 			"outputLogs": "errors-only",
 		},
 		"@worksplit/react#typecheck": {
-			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build", "@worksplit/core#build"],
-		},
-		"@pluxel/package-manager#typecheck": {
-			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
-			// and HMR host subpaths while plugin TypeScript stays on the @pluxel/hmr condition.
-			"dependsOn": ["@pluxel/runtime-dynamic#build"],
-		},
-		"@pluxel/echarts#typecheck": {
-			// The dynamic artifact smoke typechecks its public launcher import against dist.
-			"dependsOn": ["@pluxel/runtime-dynamic#build"],
-		},
-		"@pluxel/takumi-markdown-typst#typecheck": {
-			// The dynamic worker fixture typechecks its launcher import against dist declarations.
-			"dependsOn": ["@pluxel/runtime-dynamic#build"],
-		},
-		"@pluxel/workbench-app#typecheck": {
-			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build", "@worksplit/react#build"],
+			"dependsOn": ["^build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
 		},
 		"@pluxel/plugins-host#typecheck": {
 			// The maintainer host is the explicit dist-boundary smoke check. Wait for every direct

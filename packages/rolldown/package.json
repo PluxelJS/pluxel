@@ -141,6 +141,7 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
+		"@pluxel/test": "workspace:*",
 		"@rolldown/pluginutils": "catalog:build",
 		"@types/mdast": "catalog:types",
 		"@types/node": "catalog:types",

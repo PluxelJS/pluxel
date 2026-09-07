@@ -52,14 +52,14 @@ dev 命令会在连接前拒绝未知选项；例如拼错 `--instance` 会返�
 4. 检查外层请求是否成功、run 的 `state`，再检查脚本返回的领域 `ok`、apply report 和配置 `application`。修改后重新读取目标状态及相关日志；CLI 退出成功不等于配置已应用或插件已启动。
 5. 保留 receipt 中的 root、instanceId 和 runId。工具超时或终端断开后，用这些字段查询 `result`；先确定已发生的操作，再决定下一次提交。已验证的行为需要回归保护时，另写隔离测试。
 
-本仓库的 `projects/plugin-host` 已开启控制台，并提供只读的 `dev/inspect.ts`。保持该项目原有 dev 命令运行后，从仓库根目录调用：
+本仓库的 `projects/plugin-host` 已开启控制台，并提供只读的 `dev/inspect.ts`。仓库根目录的 `pnpm pluxel` 脚本调用本地 CLI，保留当前目录作为相对路径基准。保持该项目原有 dev 命令运行后，从仓库根目录调用：
 
 ```sh
-pnpm exec pluxel dev instances --root projects/plugin-host
-pnpm exec pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <instanceId>
+pnpm pluxel dev instances --root projects/plugin-host
+pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <instanceId>
 ```
 
-其他项目替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
+安装了 `@pluxel/cli` 的用户项目仍使用 `pnpm exec pluxel`，替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
 
 ## 写一个可以反复运行的操作
 

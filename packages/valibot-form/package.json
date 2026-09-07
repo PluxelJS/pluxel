@@ -47,6 +47,7 @@
 		"@dnd-kit/utilities": "catalog:frontend",
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
+		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
 		"@tanstack/react-form": "catalog:frontend",
 		"@types/react": "catalog:types",

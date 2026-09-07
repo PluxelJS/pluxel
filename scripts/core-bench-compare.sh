@@ -97,17 +97,9 @@ run_bench() {
 		echo "[bench] ${label} install log: ${install_log}"
 	fi
 
-	# Build historical toolchain helpers explicitly when the core config imports their dist entry.
-	# The current core config is self-contained, so it skips this branch.
-	if grep -q "@pluxel/rolldown" packages/core/tsdown.config.ts; then
-		pnpm --filter @pluxel/rolldown build >"$log_file" 2>&1
-	elif grep -q "@pluxel/build" packages/core/tsdown.config.ts; then
-		pnpm --filter @pluxel/build build >"$log_file" 2>&1
-	else
-		: >"$log_file"
-	fi
-	# Build declared workspace prerequisites (including Context) before core's declarations.
-	if ! pnpm --filter @pluxel/core... build >>"$log_file" 2>&1; then
+	# Use each revision's artifact graph. Recursive package builds also traverse dev-only test
+	# helpers, which can pull the entire runtime toolchain into the benchmark or form cycles.
+	if ! pnpm exec turbo run build --filter=@pluxel/core >"$log_file" 2>&1; then
 		tail -200 "$log_file"
 		return 1
 	fi

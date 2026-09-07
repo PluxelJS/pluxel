@@ -260,7 +260,8 @@ async function inspectPresetBoundary() {
 async function inspectTurboTaskGraph() {
 	const source = await readFile(resolve(root, 'turbo.jsonc'), 'utf8')
 	const match = /"test"\s*:\s*\{([\s\S]*?)\n\t\t\},/.exec(source)
-	if (!match || !/"dependsOn"\s*:\s*\[\s*"@pluxel\/test#build"\s*\]/.test(match[1])) {
+	const dependencies = match && /"dependsOn"\s*:\s*(\[[^\]]*\])/.exec(match[1])
+	if (!dependencies || !JSON.parse(dependencies[1]).includes('@pluxel/test#build')) {
 		failures.push('turbo.jsonc: every default test task must wait for @pluxel/test#build')
 	}
 }

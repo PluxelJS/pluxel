@@ -20,6 +20,7 @@
 	},
 	"type": "module",
 	"scripts": {
+		"pluxel": "node packages/cli/bin/pluxel.mjs",
 		"test": "turbo run test --concurrency=50%",
 		"build": "turbo run build",
 		"postbuild": "pnpm source-declarations:check",
@@ -49,9 +50,6 @@
 	},
 	"devDependencies": {
 		"@fumapress/tegami": "catalog:dev",
-		"@pluxel/cli": "workspace:*",
-		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/test": "workspace:*",
 		"@tsdown/css": "catalog:build",
 		"oxfmt": "catalog:dev",
 		"oxlint": "catalog:dev",
