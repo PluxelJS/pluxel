@@ -7,6 +7,49 @@ description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主
 
 `@pluxel/otel` 直接向业务 Plugin 提供标准 OpenTelemetry `Meter`、`Tracer` 和 `Logger`，不另造一套遥测 API。宿主统一管理 provider、resource、exporter、上下文传播和生命周期，并保留每个调用方的身份。
 
+## 先选择输出
+
+默认配置启用三种 OTLP signal，关闭 Prometheus：
+
+以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+
+```ts no-twoslash
+await host.start(OtelPlugin, {
+	catalog: [CatalogPlugin],
+	initialConfig: {
+		otlp: ['metrics', 'traces', 'logs'],
+		prometheus: false,
+	},
+})
+await host.start(CatalogPlugin)
+```
+
+`otlp` 可以只包含所需 signal。Prometheus 只读取 metrics，也可以和 OTLP metrics 同时启用：
+
+```ts no-twoslash
+await host.start(OtelPlugin, {
+	initialConfig: {
+		otlp: ['traces', 'logs'],
+		prometheus: { path: '/metrics' },
+	},
+})
+```
+
+只做 Prometheus pull：
+
+```ts no-twoslash
+await host.start(OtelPlugin, {
+	initialConfig: {
+		otlp: [],
+		prometheus: {},
+	},
+})
+```
+
+至少要保留一个输出；`otlp: []` 与 `prometheus: false` 会在配置校验时失败。关闭的 signal 不加载对应 exporter，读取它的 getter 会立即报错，例如未启用 traces 时访问 `otel.tracer` 会抛出 `OpenTelemetry traces signal is disabled`。
+
+Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.elysia` 上声明 `GET /metrics`，由宿主现有 carrier 提供服务，不启动第二个 listener。自定义 path 必须是非根、无 trailing slash、query、hash、反斜杠或空 segment 的最终绝对 Elysia path。并发 scrape 会合并为同一次 collection；失败返回 503，成功使用 Prometheus text format。
+
 ## 记录 metrics、trace 与 log
 
 ```ts twoslash
@@ -48,46 +91,7 @@ export class CatalogPlugin extends BasePlugin {
 
 span、event、link、status、baggage、log body、severity、`eventName` 和 attributes 都是原生 OTel contract。在 active span 内 emit 的 log 可获得 trace/span correlation。
 
-## 先选择输出
-
-默认配置启用三种 OTLP signal，关闭 Prometheus：
-
-```ts no-twoslash
-await host.start(OtelPlugin, {
-	catalog: [CatalogPlugin],
-	initialConfig: {
-		otlp: ['metrics', 'traces', 'logs'],
-		prometheus: false,
-	},
-})
-await host.start(CatalogPlugin)
-```
-
-`otlp` 可以只包含所需 signal。Prometheus 只读取 metrics，也可以和 OTLP metrics 同时启用：
-
-```ts no-twoslash
-await host.start(OtelPlugin, {
-	initialConfig: {
-		otlp: ['traces', 'logs'],
-		prometheus: { path: '/metrics' },
-	},
-})
-```
-
-只做 Prometheus pull：
-
-```ts no-twoslash
-await host.start(OtelPlugin, {
-	initialConfig: {
-		otlp: [],
-		prometheus: {},
-	},
-})
-```
-
-至少要保留一个输出；`otlp: []` 与 `prometheus: false` 会在配置校验时失败。关闭的 signal 不加载对应 exporter，读取它的 getter 会立即报错，例如未启用 traces 时访问 `otel.tracer` 会抛出 `OpenTelemetry traces signal is disabled`。
-
-Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.elysia` 上声明 `GET /metrics`，由宿主现有 carrier 提供服务，不启动第二个 listener。自定义 path 必须是非根、无 trailing slash、query、hash、反斜杠或空 segment 的最终绝对 Elysia path。并发 scrape 会合并为同一次 collection；失败返回 503，成功使用 Prometheus text format。
+上面的 `CatalogPlugin` 同时使用三种 signal：可使用默认 OTLP 配置，或 `otlp: ['traces', 'logs']` 加 `prometheus: {}`。调用 `refresh()` 后，Prometheus 输出应包含 `catalog_refreshes` 计数，Collector 中应出现 `catalog.refresh` span 和日志。若只开启 Prometheus，业务代码也只使用 `meter`，不调用关闭的 `tracer` 与 `logger`。
 
 ## 配置 OTLP endpoint
 

@@ -73,7 +73,7 @@ export default function HomePage() {
 						</p>
 						<div className="pluxel-hero-actions">
 							<Link className="pluxel-primary-action" href="/docs/getting-started">
-								开始编写 <ArrowRight aria-hidden="true" />
+								创建项目 <ArrowRight aria-hidden="true" />
 							</Link>
 							<Link className="pluxel-secondary-action" href="/docs/why-pluxel">
 								为什么需要 Pluxel

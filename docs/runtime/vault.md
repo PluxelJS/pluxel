@@ -7,12 +7,12 @@ Vault 是一项需要宿主显式启用的运行时能力，为每个 Plugin 提
 
 ## 何时选择 Vault
 
-| 数据                                            | 选择                             |
-| ----------------------------------------------- | -------------------------------- |
-| token、cursor、checkpoint、少量加密 JSON        | Vault                            |
-| 需要 query、index、join、migration 的结构化数据 | [数据库](./database.md)          |
-| 大文件、用户上传和远端对象                      | [S3 存储](../plugins/storage.md) |
-| 进程内/跨实例短期加速                           | [缓存](../plugins/cache.md)      |
+| 数据                                            | 选择                                                |
+| ----------------------------------------------- | --------------------------------------------------- |
+| token、cursor、checkpoint、少量加密 JSON        | Vault                                               |
+| 需要 query、index、join、migration 的结构化数据 | [数据库](./database.md)                             |
+| 大文件、用户上传和远端对象                      | 对象存储（[仓库内 S3 预览](../plugins/storage.md)） |
+| 进程内/跨实例短期加速                           | 缓存（[仓库内预览](../plugins/cache.md)）           |
 
 Vault 只在 host 把 `vault` 配置为对象时安装；omitted 或 `false` 时没有 capability property、backend、preflight 或管理成本。
 
@@ -161,9 +161,4 @@ await vault.flush()
 
 ## 安全检查
 
-- 默认 namespace 由 owner 隔离，没有跨 Plugin 隐式共享。
-- log、status、HTTP 和 Workbench DTO 不包含 secret value。
-- 解锁属于 host preflight，不发生在业务请求中。
-- 关系查询、大文件和缓存分别交给 database/storage/cache。
-- batch callback 短小、确定，不执行外部 I/O。
-- 关键写入边界明确决定是否需要 `flush()`。
+写入测试值并 `flush()` 后，正常停止并重启宿主，确认能读回相同值；再用另一个插件读取同名 key，确认默认 namespace 相互隔离。解锁失败应在宿主启动阶段处理，业务请求不会自动解锁。测试内容使用非敏感值，具体测试宿主见 [测试插件](../development/testing.md)。

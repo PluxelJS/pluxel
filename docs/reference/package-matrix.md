@@ -3,17 +3,20 @@ title: Package 与入口矩阵
 description: 区分公开包、仅供仓库内部使用的能力和不可直接导入的实现入口。
 ---
 
-本页说明仓库中每个包允许如何使用，不代表它已经发布到 npm。`private` 和 `exports` 决定源码中的导入边界；实际可安装版本以 npm registry 和发布记录为准。
+先按你要完成的任务选包；通常插件作者从 `@pluxel/runtime` 开始，创建应用用 `@pluxel/create`，只有装配宿主时才直接使用 static/dynamic 包。
+
+本页说明各包的用途和公开入口。`private` 和 `exports` 决定源码中的导入边界；实际可安装版本以 npm registry 和发布记录为准。
 
 ## 公开包
 
 | Package                         | 用途                                                          | 从哪里开始                                                  |
 | ------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------- |
-| `@pluxel/context`               | standalone host 的 immutable、strict-lazy Context kernel      | [组合 Context host](./context-hosts.md)                     |
-| `@pluxel/core`                  | Plugin 图、DI、generation lifecycle 与 Context 投影           | [Plugin 模型](../getting-started/plugin-model.md)           |
-| `@pluxel/runtime`               | Plugin、生命周期、配置、HTTP、日志和宿主共享契约              | [第一个 Plugin](../getting-started/index.md)                |
+| `@pluxel/create`                | 创建包含宿主、插件、前端和测试的示例项目                      | [快速开始](../getting-started/index.md)                     |
+| `@pluxel/context`               | 为独立宿主组合固定能力与惰性服务                              | [组合 Context host](./context-hosts.md)                     |
+| `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                              | [Plugin 模型](../getting-started/plugin-model.md)           |
+| `@pluxel/runtime`               | Plugin、生命周期、配置、HTTP、日志和宿主共享契约              | [第一个 Plugin](../getting-started/first-plugin.md)         |
 | `@pluxel/runtime-static`        | 使用固定 Plugin catalog 的宿主                                | [配置插件宿主](../getting-started/host-setup.md)            |
-| `@pluxel/runtime-dynamic`       | 组合固定 catalog 与 mutable file sources 的宿主               | [配置插件宿主](../getting-started/host-setup.md)            |
+| `@pluxel/runtime-dynamic`       | 插件可由固定列表和可变文件来源共同提供的宿主                  | [配置插件宿主](../getting-started/host-setup.md)            |
 | `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、HMR 与源码工作区命令            | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/rolldown`              | Plugin package 与 static application 构建集成                 | [开发和发布插件包](../development/plugin-package.md)        |
 | `@pluxel/test`                  | Vitest/Vite preset、filesystem fixture 与显式 unsafe lowering | [测试 Plugin](../development/testing.md)                    |
@@ -39,7 +42,7 @@ browser-safe Content、Direct View 和 Attachment definition；`/workbench/clien
 
 ## Workspace-only 能力
 
-以下 package 标记为 `private: true`，仅供当前 workspace 集成：
+以下 package 标记为 `private: true`，不能作为普通 npm 安装依赖。只有在支持这些包的源码 workspace 中才能集成；跨仓库联调先看[源码开发](../development/source-workspaces.md)：
 
 | Package                   | 能力                                       | 文档                                             |
 | ------------------------- | ------------------------------------------ | ------------------------------------------------ |

@@ -1,30 +1,35 @@
 ---
-title: 从 example monorepo 开始
-description: 用固定 starter 学习 static/dynamic host、Plugin 依赖、配置、测试和 Web 前端。
+title: 把示例项目改成自己的应用
+description: 快速开始之后，定位业务代码、添加依赖、切换开发模式并构建应用。
 ---
 
-`@pluxel/create` 发布一个固定、使用中性名称的 example monorepo。它不是按项目名拼接的通用模板；根
-`package.json` 没有 `name`，workspace package 固定使用 `@example/*`。先让示例保持可运行，真正形成自己的产品后再
-统一重命名。
+完成[快速开始](../getting-started/index.md)后，用本页把 Todo 示例改成自己的应用：找到业务代码、调整配置、增加依赖，再构建可运行的目录。还没有项目时，先完成快速开始的创建和启动步骤。
 
 ## 创建和首次验证
 
+以下命令都在生成项目的根目录运行，需要 Node.js 24+ 和 pnpm 11：
+
 ```sh
-pnpm create @pluxel my-workspace
-cd my-workspace
 pnpm verify
 pnpm dev
 ```
 
-默认目录是 `pluxel-example`，默认执行 `pnpm install`；只复制文件时使用：
+`verify` 成功后，打开终端打印的 `Application` 地址。创建一条 Todo，再完成或删除它；这些操作经过真实 Plugin HTTP 路由。管理界面使用同一地址下的 `/__pluxel/workbench`。
 
-```sh
-pnpm create @pluxel my-workspace --no-install
-```
+生成项目暂时保留 `@example/*` 包名，根 `package.json` 没有 `name`。先保持示例可运行，确定自己的业务划分后再一起修改包名、依赖引用和导入。
 
-create package 不依赖 CLI，也不联网下载模板。它只把发布包中的 starter 复制到空目标；框架文档保持在
-[上游唯一真源](https://github.com/PluxelJS/pluxel/blob/main/docs/index.md)，生成项目可用
-`pnpm exec pluxel docs [path]` 打印对应链接。项目自己的 `docs/` 只记录产品契约，不保存需要反复同步的框架快照。
+## 按要修改的功能找文件
+
+| 要做什么                 | 从哪里改                                                 | 如何确认                              |
+| ------------------------ | -------------------------------------------------------- | ------------------------------------- |
+| 修改 Todo 规则           | `packages/domain/`                                       | 运行该包的普通单元测试                |
+| 修改状态、配置或审计集成 | `plugins/todo/src/index.ts`                              | 运行 Todo 插件测试，再通过页面操作    |
+| 新增 HTTP 接口           | `plugins/http/src/index.ts`                              | 用 Runtime test host 请求最终路径     |
+| 修改产品页面             | `host/web/src/client/`                                   | 打开 Application 地址                 |
+| 改启动插件或初始配置     | `host/src/pluxel.static.ts`、`host/src/runtime-state.ts` | 检查启动结果和 Workbench 中的当前状态 |
+| 新增独立插件             | [第一个插件](../getting-started/first-plugin.md)         | 接入宿主后验证业务结果                |
+
+框架文档可用 `pnpm exec pluxel docs [path]` 定位；项目自己的 `docs/` 留给业务说明。
 
 ## 目录与依赖方向
 
@@ -34,7 +39,7 @@ plugins/audit/              @example/audit-plugin，可选 provider
 plugins/todo/               config + domain + optional AuditPlugin
 plugins/http/               constructor required TodoPlugin + validated HTTP route
 host/
-  src/pluxel.static.ts      默认与 production runtime authority
+  src/pluxel.static.ts      默认与生产入口
   src/pluxel.dynamic.ts     相同 fixed catalog/config + mutable file source
   src/runtime-state.ts      两种 host 共用的 auto-start/config snapshot
   vite.config.ts            指向 web/ 的唯一 Vite config；mode 选择 runtime route
@@ -58,7 +63,9 @@ one Vite origin
 workspace dependency 对应 constructor required edge。Todo 对 Audit 使用 optional peer dependency、
 `peerDependenciesMeta.optional` 和非导出的 module-level `definePluginRef<AuditPlugin>()`，provider 不存在时仍能启动。
 
-## Static 是默认与生产 authority
+## 使用默认的 Static 模式开发与部署
+
+默认模式适合插件集合由应用代码决定的产品。
 
 ```sh
 pnpm dev
@@ -66,46 +73,38 @@ pnpm build
 pnpm start
 ```
 
-`host/src/pluxel.static.ts` 的 default export 同时交给 `staticRuntimeVitePlugin()` 和 `staticApplication()`。fixed catalog、
-结构化 auto-start addresses 与 Todo config snapshot 都是显式数据。Workbench Shell、MF producer inventory 和 manifests 会进入 production distribution，
-并默认启用；部署需要 headless 行为时设置 `PLUXEL_WORKBENCH=false`：
+`pnpm build` 生成 `host/dist/`，`pnpm start` 从 `host/dist/app.mjs` 启动。开发与生产使用同一份 `host/src/pluxel.static.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
 
-`host/web/` 是独立 private workspace package，直接声明 React 与以后新增的纯前端依赖，但不 import Pluxel。
-`host/package.json` 把 `@example/web` 声明为 build-time workspace dependency，并直接声明 Workbench/Vite graph 需要共享的
-React singleton、runtime 与三个 Plugin package；两边的 React 版本都来自同一个 catalog，不依赖隐式 hoist。
-`staticApplication()` 的 canonical 配置位于 `host/tsdown.config.ts`；根目录只通过 Turbo 编排，不重复 build config。
+构建先生成 `host/web/dist`，再构建服务端并把页面复制到 `host/dist/public`，最后创建包含全部文件的发行清单。扩展构建时，把额外的静态文件写入安排在清单创建之前；详见[发行物](./distribution.md)。
 
-根目录预装 `pncat`，并用 `pluxel`、`frontend`、`backend`、`test`、`tooling` named catalogs 集中版本政策。
-新增、重新分组或清理依赖分别使用 `pnpm catalog:add -- <package>`、`pnpm catalog:migrate` 和
-`pnpm catalog:clean`，不要手改 catalog 与 package 引用。集中的是版本选择，不是依赖所有权：每个 workspace
-仍声明直接使用的包。governance 会拒绝绕过 named catalog 的第三方裸版本，同时保留内部 workspace dependency
-和 peer contract。Plugin 生产代码通常只需要 `@pluxel/runtime`；测试 runner `@pluxel/test`、core-only host
-`@pluxel/core`、Vitest、TypeScript 继续属于实际使用它们的 Plugin `devDependencies`。`@pluxel/test` 没有 host 根入口；
-host 始终从 `@pluxel/core/test` 或 `@pluxel/runtime/test` 导入。pnpm 会复用安装内容，重复声明
-不会产生多份物理安装。starter 规则已覆盖常见 React UI、测试、后端/数据和构建工具生态；产品引入新的依赖族时再扩展
-`pncat.config.ts`，不要退回按 `dependencies` / `devDependencies` 字段分组。
-
-host build 先用唯一 Vite config 构建 `host/web/dist`，再由 freezer 清理并生成 server/Workbench 产物，同时通过 tsdown
-copy 把 Web 输出放入 `host/dist/public`。最后显式执行 `pluxel distribution create`，让最终 inventory 包含浏览器文件；
-禁止在 finalization 完成后继续写 distribution。
+Workbench 默认包含在构建结果中；无需管理界面时可以关闭：
 
 ```sh
 PLUXEL_WORKBENCH=false pnpm dev
 ```
 
-开发时 `pnpm dev` 通过项目本地固定版本的 Portless 提供稳定入口，并由 `host/vite.config.ts` 启动唯一 Vite server：
+### 打开页面与直接运行 Vite
 
-```text
-➜  Application: https://my-workspace.localhost/
-➜  Workbench:   https://my-workspace.localhost/__pluxel/workbench
+`pnpm dev` 用项目固定的 Portless 提供稳定地址，打开终端打印的 `Application` URL 即可。Workbench 在同一地址的 `/__pluxel/workbench`。不要把内部随机 listener port 保存为应用入口。
+
+需要直接调试 Vite 时用 `pnpm dev:direct`，也可临时设置 `PORTLESS=0 pnpm dev`。Vite root 为 `host/web/`：Todo API `/api/example/todos` 由插件处理，页面、模块和静态文件由同一 Vite 进程提供。生产应用同样从一个 origin 提供 API 与 `public/` 页面。
+
+### 添加依赖
+
+每个 workspace package 声明自己直接使用的依赖。`host/web/` 声明纯前端依赖；`host/` 声明运行时、插件，以及宿主需要共享的 React。两者的 React 版本来自同一 catalog，不依赖隐式 hoist。
+
+根目录的 pncat 集中管理 `pluxel`、`frontend`、`backend`、`test`、`tooling` 分组版本：
+
+```sh
+pnpm catalog:add -- <package>
+pnpm catalog:migrate
+pnpm catalog:clean
+pnpm governance:check
 ```
 
-实际随机 listener port 是 ingress 实现细节，不是应用契约。`pnpm dev:direct` 可绕过命名入口直接启动 Vite；也可临时使用
-`PORTLESS=0 pnpm dev`。Vite 把 `root` 指向 `host/web/`；Pluxel middleware 先认领
-generation-scoped Elysia route `/api/example/todos`，其余 browser module、asset 和 navigation 继续交给 Vite SPA。没有 alias、proxy、CORS
-或第二套 HMR graph。production 则由 frozen host 从同一 origin 提供 `public/` fallback，调用相同 Plugin routes。
+分别用于添加、重新分组、清理和核对依赖。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
 
-Workbench 启用时使用 `/__pluxel/workbench`，不会与产品 SPA 的 `/` fallback 竞争。
+插件生产代码通常只依赖 `@pluxel/runtime`。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](./testing.md)。
 
 ## Dynamic 是 alternative host
 
@@ -162,5 +161,5 @@ starter root 安装 `@pluxel/cli` 是为了后续工具命令，不代表 create
 pnpm exec pluxel new --name @your-scope/your-plugin plugins
 ```
 
-CLI 只生成 Plugin package；它不会再次生成 starter或复制框架文档。Plugin package 的发布形状见
+CLI 会在 `plugins/` 下生成新包。Plugin package 的发布形状见
 [开发和发布插件包](./plugin-package.md)。

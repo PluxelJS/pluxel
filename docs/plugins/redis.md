@@ -5,13 +5,14 @@ description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cach
 
 > `@pluxel/redis` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/redis` 提供三层能力：
+需要队列、Stream、Pub/Sub 或原子 Lua 操作时使用 Redis；只需要缓存或限频时，让业务依赖抽象能力，宿主选择 Redis 后端。
 
-1. 原始 Redis 能力 `Redis` 和默认的单机实现 `RedisPlugin`；
-2. 用于定义类型安全 Lua 脚本的 `defineRedisScript()` 与 `redis.connection(id).scripts`；
-3. 面向 Cache 和 Rates 的两个适配器 `RedisCacheBackendPlugin`、`RedisRatesBackendPlugin`。
-
-三层能力面向不同需求。业务确实需要 Redis 命令、事务、Stream 或 Pub/Sub 时依赖 `Redis`；只需要缓存或请求准入控制时，应依赖对应的抽象能力，不要让 Redis 进入业务 API。
+| 任务                         | 业务插件依赖 | 本页入口                                  |
+| ---------------------------- | ------------ | ----------------------------------------- |
+| 调用 Redis 命令或读写 Stream | `Redis`      | [直接使用 Redis](#直接使用-redis)         |
+| 原子组合多个命令             | `Redis`      | [Typed Lua scripts](#typed-lua-scripts)   |
+| 共享缓存                     | `Cache`      | [作为 Cache backend](#作为-cache-backend) |
+| 多进程共享限频额度           | `Rates`      | [作为 Rates backend](#作为-rates-backend) |
 
 ## 直接使用 Redis
 
@@ -32,6 +33,8 @@ export class QueuePlugin extends BasePlugin {
 ```
 
 host 安装默认 provider：
+
+以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
 import { RedisPlugin } from '@pluxel/redis'
@@ -58,6 +61,8 @@ await host.commit((change) => {
 
 这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
 application boundary；production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
+
+上例需要本机 Redis 监听 `127.0.0.1:6379`。启动后调用 `push()`，返回值是写入后的队列长度；连接失败时先检查服务地址与启动错误，consumer 不会在 provider 未就绪时运行。
 
 `RedisConnection.client` 的公开类型是 node-redis 的 standalone、Cluster 或 Sentinel client union。这个 capability 是 raw server access，不自动添加 caller prefix；key、channel、consumer group 和 stream 的 namespace 都是 consumer 自己定义的业务 contract。
 

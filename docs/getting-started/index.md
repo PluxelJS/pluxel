@@ -1,117 +1,82 @@
 ---
-title: 编写第一个插件
-description: 从 CLI 模板完成配置、HTTP 路由和生命周期测试。
+title: 快速开始
+description: 用 @pluxel/create 创建并启动一个带 React 页面、HTTP API 和 Workbench 的 Pluxel 应用。
 ---
 
-本教程从 CLI 生成的单文件 Plugin 开始，加入配置和 HTTP 路由，再用真实 Runtime test host 验证启动与清理。
+用 `@pluxel/create` 创建一个可以直接运行的应用。示例包含 React Todo 页面、提供 HTTP API 的插件和管理插件的 Workbench；先跑起来，再按需要了解插件、配置和宿主。
 
-## 创建项目
+## 创建并启动
+
+准备 **Node.js 24 或更新版本**和 **pnpm 11**，在你存放项目的目录执行：
 
 ```sh
-pnpm dlx @pluxel/cli new --template plugin --name @acme/pluxel-plugin-status
-cd status
-pnpm verify
+pnpm create @pluxel my-app
+cd my-app
+pnpm dev
 ```
 
-官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。模板已经配置 package root export、
-`@pluxel/hmr` 源码入口、tsdown、Vitest 和本地 `@pluxel/cli`。生成后只有两个需要修改的文件：
+`pnpm create @pluxel` 调用 `@pluxel/create`，默认安装依赖。目标目录需要不存在或为空；不需要克隆 Pluxel 源码，也不需要全局安装 CLI。
 
-```text
-src/status.ts
-tests/status.test.ts
+只想先生成文件时，使用 `pnpm create @pluxel my-app --no-install`，随后在生成目录运行 `pnpm install`。
+
+## 确认应用已运行
+
+打开终端打印的 **Application** 地址。页面标题是 **Todo route lab**：输入一条待办并点击 **Add**，再试着勾选完成或删除。
+
+这条操作已经经过完整的应用链路：React 页面请求同一站点的 `/api/example/todos`，HTTP 插件调用 Todo 插件处理状态。
+
+打开终端打印的 **Workbench** 地址，可以查看和管理插件。它位于同一应用地址的 `/__pluxel/workbench` 路径。
+
+示例的待办数据保存在内存中，重启后会重置。需要持久化时再接入[数据库](../runtime/database.md)。
+
+如果本机无法使用默认的命名开发地址，停止当前命令后运行：
+
+```sh
+pnpm dev:direct
 ```
 
-## 编写 Plugin
+打开这次 Vite 输出的本地地址即可，应用和 API 仍在同一个服务中。
 
-用下面的内容替换 `src/status.ts`：
+## 做第一处修改
 
-```ts twoslash
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+打开 `host/web/src/client/main.tsx`，把页面中的标题改成自己的项目名称：
 
-export const StatusConfig = v.object({
-	label: v.optional(v.pipe(v.string(), f.formMeta({ title: '状态标签' })), 'ready'),
-	intervalMs: v.optional(
-		v.pipe(
-			v.number(),
-			v.integer(),
-			v.minValue(1_000),
-			f.formMeta({ title: '采样间隔' }),
-			f.numberMeta({ step: 1_000 }),
-		),
-		30_000,
-	),
-})
-
-@Plugin({ displayName: 'Status' })
-export class StatusPlugin extends BasePlugin {
-	private readonly config = this.configs.use(StatusConfig)
-	private samples = 0
-
-	protected override init(): void {
-		this.ctx.elysia.get('/status', () => ({
-			label: this.config.label,
-			samples: this.samples,
-		}))
-
-		const timer = setInterval(() => {
-			this.samples += 1
-		}, this.config.intervalMs)
-		this.ctx.effects.defer(() => clearInterval(timer), { tag: 'status-sampler' })
-	}
-}
+```tsx
+<h1>我的待办应用</h1>
 ```
 
-这个文件包含四个固定位置：
+保存后查看页面更新。接下来按你要修改的内容选择文件：
 
-| 内容                     | 位置                                   |
-| ------------------------ | -------------------------------------- |
-| identity 和展示 metadata | module-level `@Plugin()` class         |
-| config contract          | class-level `this.configs.use()` field |
-| Elysia 路由和长期资源    | `init()`                               |
-| 资源释放                 | 当前 Context 的 `effects`              |
+| 要修改什么                 | 从哪里开始                     |
+| -------------------------- | ------------------------------ |
+| 页面与交互                 | `host/web/src/client/main.tsx` |
+| HTTP 接口                  | `plugins/http/src/index.ts`    |
+| 待办业务逻辑与配置 schema  | `plugins/todo/src/index.ts`    |
+| 启动哪些插件、示例初始配置 | `host/src/runtime-state.ts`    |
+| 与框架无关的业务规则       | `packages/domain/`             |
 
-默认值和范围只写在 schema 中。constructor 只用于 required Plugin dependency；当前 Plugin 没有依赖，所以省略。
+生成项目中的包暂时使用 `@example/*` 名称，`my-app` 是你的目录名。可以先围绕示例开发，再统一替换这些包名。
 
-## 验证运行结果
+## 验证与构建
 
-用下面的内容替换 `tests/status.test.ts`：
-
-```ts no-twoslash
-import { createRuntimeTestHost } from '@pluxel/runtime/test'
-import { describe, expect, it } from 'vitest'
-import { StatusPlugin } from '@acme/pluxel-plugin-status'
-
-describe('StatusPlugin', () => {
-	it('starts with config and mounts its route', async () => {
-		await using host = createRuntimeTestHost()
-		await host.start(StatusPlugin, {
-			initialConfig: { label: 'healthy', intervalMs: 1_000 },
-		})
-
-		const response = await host.http.fetch(new URL('/status', host.http.origin))
-
-		expect(response.status).toBe(200)
-		expect(await response.json()).toMatchObject({ label: 'healthy', samples: 0 })
-	})
-})
-```
-
-`createRuntimeTestHost()` 使用真实配置校验、依赖图和 lifecycle。`start()` 立即提交并等待稳定，`initialConfig` 只建立首次
-lifecycle 前的 fixture config；后续更新使用 `host.config.patch()`。`await using` 在作用域结束后关闭 host。
-`ctx.elysia` 是当前 generation 的真实 Elysia 2 application，`/status` 就是最终产品路径。Plugin 与它的 Part 完成 `init()` 后，Runtime
-会 compile/seal app 并原子发布；`host.http.fetch()` 经过同一个 in-process directory，路由和 timer 都随 generation 在 shutdown、
-replacement 或 rollback 时清理。
-
-运行完整检查：
+在项目根目录运行完整检查：
 
 ```sh
 pnpm verify
 ```
 
-## 接下来
+它会执行格式、lint、类型检查、测试和构建。只需要构建并启动生产版本时：
 
-- 添加 required 或 optional dependency：[Plugin 模型与生命周期](./plugin-model.md)
-- 拆分 owner 内部的 config、registration 和 cleanup：[使用 PluginPart](./plugin-parts.md)
-- 增加配置字段和表单 metadata：[配置模型](./configuration.md)
-- 把 Plugin 放进应用宿主：[配置插件宿主](./host-setup.md)
-- 覆盖失败、replacement 和 rollback：[测试 Pluxel 插件](../development/testing.md)
+```sh
+pnpm build
+pnpm start
+```
+
+示例默认使用 static host：插件清单随应用构建，开发时支持热更新。首次运行无需在不同宿主模式之间做选择；需要运行期间增删插件文件时，再阅读[配置插件宿主](./host-setup.md)。
+
+## 接下来做什么
+
+- **继续开发这个应用**：[示例项目结构与开发流程](../development/starter-monorepo.md)。
+- **编写自己的插件**：[编写第一个插件](./first-plugin.md)，再了解[插件依赖与生命周期](./plugin-model.md)。
+- **添加一个功能**：[HTTP 接口](../runtime/http.md)、[配置与默认值](./configuration.md)、[Workbench 界面](../workbench/index.md)。
+- **让 coding agent 协助开发**：先让它阅读本页和当前任务对应的指南；检查已启动的应用时使用[开发控制台](../development/dev-console.md)。

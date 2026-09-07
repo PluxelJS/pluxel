@@ -3,25 +3,29 @@ title: Plugin 模型与生命周期
 description: 理解 Plugin 的依赖关系、版本代际、可选集成、资源回收和失败传播。
 ---
 
-Plugin 不只是一个由宿主任意调用的类，而是依赖图中可独立启动和停止的能力节点。只有必需依赖已经运行、配置通过校验且 `init()` 成功后，它才会进入运行状态。
+当一个 Plugin 需要调用另一个 Plugin，或持有需要关闭的连接、定时器时，按本页组织依赖与清理。
+先完成[第一个插件](./first-plugin.md)，再根据实际需求阅读对应部分。
+
+一个 Plugin 只有在必需依赖可用、配置校验成功且 `init()` 完成后才会运行。
+你负责声明依赖、初始化业务资源并登记清理；宿主负责启动顺序、停止和热更新。
 
 ## 三种组成关系
 
-先判断一项能力是否需要独立的生命周期，再选择关系：
+先看这部分功能是否需要独立启动和停止。下表给出三种插件组成方式，以及无需插件机制的普通 helper：
 
-| 关系             | 何时使用                        | 写法                                     |
-| ---------------- | ------------------------------- | ---------------------------------------- |
-| 必需 Plugin      | 缺少提供方就不能工作            | 构造器参数 + 值导入                      |
-| 可选 Plugin 集成 | 提供方只是可选增强              | `definePluginRef<T>()` + `plugins.use()` |
-| owner-bound Part | 需要局部配置/资源，但不独立治理 | `this.parts.use(CachePart)`              |
-| 简单内部 helper  | 只有少量纯逻辑或显式 wiring     | 普通类或函数 + effects                   |
+| 关系             | 何时使用                               | 写法                                     |
+| ---------------- | -------------------------------------- | ---------------------------------------- |
+| 必需 Plugin      | 缺少提供方就不能工作                   | 构造器参数 + 值导入                      |
+| 可选 Plugin 集成 | 提供方只是可选增强                     | `definePluginRef<T>()` + `plugins.use()` |
+| PluginPart       | 需要局部配置和资源，但随父插件一起启停 | `this.parts.use(CachePart)`              |
+| 简单内部 helper  | 只有少量纯逻辑或显式 wiring            | 普通类或函数，按需登记清理               |
 
-不要把所有组成都拆成 Plugin。Plugin 边界意味着独立的 identity、graph edge、启动结果和 replacement 行为；只服务一个 owner 的 cache、client 或 helper 通常应留在 owner 内部。
+需要被多个插件注入、独立启停的能力适合 Plugin；只服务当前插件的缓存、客户端和辅助逻辑，通常保留为内部代码。
 
 ## Required dependency
 
-从 provider package 根入口 value-import 具体 Plugin，并直接放入实际 consumer 的 constructor；consumer 可以是 graph node Plugin，
-也可以是它静态拥有的 `PluginPart`：
+必须使用的服务通过构造器声明。提供服务的插件称为 provider，调用它的插件称为 consumer。
+使用普通值导入，框架才能识别要注入哪个类：
 
 ```ts twoslash
 // @filename: accounts.ts
@@ -50,9 +54,11 @@ class BillingPlugin extends BasePlugin {
 }
 ```
 
-真实项目应从 `@acme/accounts` package root 的 named export 导入 `AccountsPlugin`。构建工具从这个 value import 和 constructor 参数生成
-required fact；Plugin constructor 直接进入 owner graph，Part constructor 的 requirement 会自动提升到 owning Plugin graph，`@Plugin()`
-不再重复声明依赖。
+真实项目中从提供方包的根入口导入，例如 `import { AccountsPlugin } from '@acme/accounts'`。
+构造器参数就是依赖声明，`@Plugin()` 不再重复列出依赖。依赖只在 Part 中使用时，写在该 Part 的构造器中即可。
+
+启动 Billing 时，应先看到 Accounts 成功运行，再运行 Billing。Accounts 启动失败会阻塞 Billing，
+但不会阻止其他无关插件启动。
 
 同一个 Plugin definition 不能在一个 constructor 中重复声明。dependency override 按 requirement definition 识别依赖，参数名和位置不会成为
 持久配置；如果需要 primary/replica 这类双角色，应先定义具有不同语义身份的 Plugin token，而不是重复同一个参数类型。
@@ -114,45 +120,18 @@ provider absent、当前未运行或 start-failed 时 callback 不执行，也�
 
 不要用动态 `import()`、轮询 availability 或缓存裸实例模拟 optional edge。高频变化的业务对象也不适合建模为 Plugin graph edge。
 
-## 用 PluginPart 拆分 owner 内部资源
+## 用 PluginPart 拆分插件内部资源
 
-当内部组成需要自己的 config、effects、registration 或 nested composition，但仍应与父 Plugin 一起启动、失败和重启时，使用
-`PluginPart`：
+连接管理、缓存和同步任务需要各自的配置与清理，但始终跟随同一个 Plugin 启停时，使用 `PluginPart`。
+这里的 owner 就是包含这个 Part 的插件；Part 不会变成可单独启停或被其他插件注入的新节点。
 
-```ts no-twoslash
-class CachePart extends PluginPart<SearchPlugin> {
-	constructor(private readonly backend: CacheBackendPlugin) {
-		super()
-	}
-
-	protected override init() {
-		const cache = this.backend.createCache()
-		return () => cache.dispose()
-	}
-}
-
-@Plugin()
-class SearchPlugin extends BasePlugin {
-	private readonly cache = this.parts.use(CachePart)
-}
-```
-
-Part 是静态、owner-bound composition，不是新的 graph node：
-
-- `parts.use()` 完整占据普通 private field initializer，Part 不加 `@Plugin()`；
-- required dependency 写在真正消费它的 Part constructor，工具链自动提升并去重到 owner graph；
-- field initializer 只声明结构，资源与副作用留在 protected `init()` 或 `plugins.use()` callback；
-- 每个 field occurrence 有独立 instance、child Context 和 effects scope，但没有独立启停、config revision 或 provider selection；
-- Part、nested Part 和 owning Plugin 按 children-before-owner 顺序启动，任一 Part 失败都会让整个 owner start 失败；
-- `ctx/host/parts/plugins/configs` 只在 Part subclass 内可见，owner 默认持有 private Part field 并只暴露领域 API。
-
-完整的声明规则、依赖、config path、nested host、optional integration 与测试方式见[使用 PluginPart 组织内部资源](./plugin-parts.md)。
+从[使用 PluginPart](./plugin-parts.md)的最小缓存例子开始。没有这些资源需求时，普通函数或类即可。
 
 ## Generation 是资源所有权边界
 
-每次成功启动都是一个 generation。stop、restart、HMR replacement 或 optional graph 变化会结束旧 generation，并在新实例可提交后建立下一代。
+一次插件运行称为一个 generation，表示这一次运行中的实例和资源。停止、重启、热替换或可选依赖变化都会结束旧的一次运行。
 
-资源必须绑定当前 generation：
+创建资源后立即登记清理。这样后续初始化失败或插件停止时，框架仍能释放已创建的部分：
 
 ```ts no-twoslash
 protected override async init(signal: AbortSignal) {
@@ -231,7 +210,7 @@ this.ctx.effects.defer(() => clearInterval(timer))
 
 ## 在 ambient 广播和公开协议之间选择
 
-事件不要求 provider 存在、启动顺序或 replacement 传播，只用于 host 内松耦合广播时，扩展 Core 的 `Events` map，随后通过
+需要在同一宿主中广播消息，而且不要求某个插件存在或先启动时，使用 `ctx.events`。这种无特定提供方的广播称为 ambient 事件。先扩展 `Events` 类型，再通过
 `ctx.events` 订阅和发布：
 
 ```ts twoslash
@@ -290,12 +269,10 @@ listener registration 会绑定调用方 Context effects，stop/replacement 时�
 
 具体 Plugin 必须由 package root `"."` 的唯一 named export 暴露；host-local Plugin 则来自 canonical source entry 的唯一 root export。
 
-Pluxel 只有两个身份作用域：definition 表示 canonical entry + root export 的实现，node 表示该 definition 的 default 或某个 fork
-运行部署。跨配置、RPC、持久化与 URL 使用结构化 `PluginDefinitionAddress` / `PluginNodeAddress`；Core 在进程内把同一 address
-intern 成 `PluginDefinitionSlot` / `PluginNodeSlot` 供 graph、DI 与 lifecycle 使用。Address 与 Slot 是值和引用两种表示，不是四种身份。
+配置、日志和跨进程调用使用稳定地址：`PluginDefinitionAddress` 标识实现，`PluginNodeAddress` 标识默认实例或某个 fork。
+不要把类名或展示名称当作持久化 ID。
 
-fork 是同一 concrete definition 的运行时多态：共享 constructor implementation、schema、artifact input 和 HMR 更新，但各自隔离
-config、lifecycle、Context、effects 与资源。只有确实能安全运行多个实例的 concrete Plugin 才声明
+fork 是同一个插件实现的另一个运行实例：共享实现、schema 和源码更新，各自持有配置、生命周期与资源。只有确实能安全运行多个实例的 concrete Plugin 才声明
 `@Plugin({ forkable: true })`；abstract capability 本身不承诺 forkability，每个 provider 独立作出决定。class name、constructor
 object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 pretty log。日志与 Workbench 会显示 package/source、
 root export 和 fork，例如

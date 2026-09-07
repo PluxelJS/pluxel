@@ -3,9 +3,31 @@ title: CLI 与工具链
 description: 了解脚手架、插件构建、静态应用、HMR、源码联调和发行检查分别由谁负责。
 ---
 
-`@pluxel/cli` 把脚手架、构建和诊断命令组织在一起；具体的 Vite、构建和运行时 API 仍由对应的包提供。CLI 是开发工具，不是应用运行时，因此业务代码不应从中导入运行时或构建辅助函数。
+按任务选择下面的命令。生成项目已固定 `@pluxel/cli`，在项目根目录用 `pnpm exec pluxel` 调用；还没有项目时，从[快速开始](../getting-started/index.md)创建。已有项目补装 CLI 的方法见安装分层。
 
 Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；先发现并固定项目和实例，再执行 TypeScript 操作。
+
+## 当前 CLI 命令地图
+
+| 目标                                                     | 命令                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| 生成固定 example workspace                               | `pnpm create @pluxel [directory]`                             |
+| 定位上游当前文档                                         | `pluxel docs [path]`                                          |
+| 在 workspace 生成 Plugin package                         | `pluxel new`                                                  |
+| 构建当前 Plugin package                                  | `pluxel build`                                                |
+| 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`                       |
+| 创建/检查/验证 static distribution                       | `pluxel distribution create/inspect/verify`                   |
+| 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
+| 发布 npm package 并通知 market                           | `pluxel publish`                                              |
+| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
+| Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`                            |
+| 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
+| 管理 source workspace                                    | `pluxel workspace`                                            |
+
+确切参数通过 `pluxel <command> --help` 查看。
+
+`pluxel workspace doctor` 校验框架共同拥有的 workspace 契约：pnpm 主版本、workspace 文件，以及已激活时由 CLI
+管理的 machine-local source `.pnpmfile.cjs`。产品自己的依赖方向和目录规则仍由项目 `governance:check` 负责。
 
 ## 安装分层
 
@@ -57,31 +79,9 @@ npx nypm add -D @pluxel/market
 
 有 Workbench browser entry 的 host 还需要 Vite/React 等自己的 web toolchain。插件 package 的 canonical scripts 见 [开发和发布插件包](./plugin-package.md)。
 
-这些 owner 只在执行对应命令时从当前项目解析和加载。`pluxel --help`、`pluxel --version` 和
-`pluxel new` 不会加载 Rolldown、runtime-dynamic 或 market；缺少 owner 时只影响被调用的命令，并给出
+这些可选包只在执行对应命令时从当前项目加载。`pluxel --help`、`pluxel --version` 和
+`pluxel new` 不会加载 Rolldown、runtime-dynamic 或 market；缺少对应包时只影响被调用的命令，并给出
 安装提示。
-
-## 当前 CLI 命令地图
-
-| 目标                                                     | 命令                                                          |
-| -------------------------------------------------------- | ------------------------------------------------------------- |
-| 生成固定 example workspace                               | `pnpm create @pluxel [directory]`                             |
-| 定位上游当前文档                                         | `pluxel docs [path]`                                          |
-| 在 workspace 生成 Plugin package                         | `pluxel new`                                                  |
-| 构建当前 Plugin package                                  | `pluxel build`                                                |
-| 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`                       |
-| 创建/检查/验证 static distribution                       | `pluxel distribution create/inspect/verify`                   |
-| 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
-| 发布 npm package 并通知 market                           | `pluxel publish`                                              |
-| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
-| Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`                            |
-| 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
-| 管理 source workspace                                    | `pluxel workspace`                                            |
-
-确切参数通过 `pluxel <command> --help` 查看。
-
-`pluxel workspace doctor` 校验框架共同拥有的 workspace 契约：pnpm 主版本、workspace 文件，以及已激活时由 CLI
-管理的 machine-local source `.pnpmfile.cjs`。产品自己的依赖方向和目录规则仍由项目 `governance:check` 负责。
 
 ## 自定义本地 Plugin 模板
 
@@ -122,7 +122,7 @@ local template 默认不运行 package manager；审查模板内容后显式传�
 
 ## `pluxel build`
 
-命令以当前 package root 为边界：
+在插件包目录运行 `pnpm exec pluxel build`。成功后检查 `dist/` 和更新后的 manifest，再通过 `pnpm pack --dry-run` 确认可交付文件。命令只处理当前 package root：
 
 1. 读取 `package.json` 与 tsdown config；
 2. 合并标准 Plugin build pipeline；

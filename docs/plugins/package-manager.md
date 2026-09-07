@@ -5,7 +5,9 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 
 > `@pluxel/package-manager` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-动态运行时本身不负责下载包。Package Manager Plugin 是一项可选的来源提供者：它通过 `@pnpm/napi` 管理隔离的 pnpm 项目，并把每个受管包以普通 `.mjs` 入口原子发布。动态运行时只观察这些入口，后续仍走正常的依赖图事务和 Plugin 生命周期。
+需要在受控开发宿主中试装 npm 插件时使用本页；它目前是仓库内部预览。已有应用的固定依赖直接写进应用清单，Git 源码协作使用 [源码开发](../development/tooling.md)，静态部署见 [发行物](../development/distribution.md)。
+
+包管理器为动态宿主下载 npm 包并生成可观察的 `.mjs` 入口。安装只增加可用插件，是否启动仍由应用的运行策略决定。
 
 ## 装配宿主
 
@@ -104,6 +106,8 @@ interface PackageManagerApi extends RpcTarget {
 Snapshot 包含 revision、engine、managed root、entries directory、packages 和检测到的 build-script dependencies。Workbench 路由由
 catalog node address 生成，消费者不应拼接 Plugin class name URL。headless dynamic host 仍可使用 commands；Workbench disabled 时不会
 创建相关 UI backend。
+
+安装后应在返回值的 `succeeded` 中找到包，并在宿主清单中看到对应插件。再从正常插件管理入口启动它，确认运行状态；仅看到安装成功不表示插件已在运行。失败时读取 `failed` 中的稳定错误分类。
 
 ## 安装和运行策略不是同一动作
 

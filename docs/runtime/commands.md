@@ -5,18 +5,16 @@ description: 定义一次命令契约，再复用于统一注册表、可选 Age
 
 `@pluxel/commands` 让可携带的业务命令只定义一次输入、输出、副作用等级和执行函数，再由调用方显式发布到 Agent、CLI、HTTP、Workbench 或 carrier。只属于某个 carrier 的命令也使用同一条校验和错误管线，但可以要求该 carrier 构造的扩展 Context，不必进入 root catalog。
 
-```sh package-install
-npx nypm add @pluxel/commands
+在快速开始生成的工作区根目录运行下面命令，选择定义 command 的插件包，然后安装更新后的依赖：
+
+```sh
+pnpm catalog:add -- @pluxel/commands
+pnpm install
 ```
 
-```text
-untrusted JSON / argv
-  -> Command input schema
-  -> defaults + Decode + validate
-  -> execute(decoded input, context)
-  -> Encode + output validation
-  -> wire output or CommandError
-```
+已有、不使用 catalog 的项目可以在对应包目录运行 `npx nypm add @pluxel/commands`。
+
+只在多个入口需要复用同一个业务操作时定义 command。普通插件方法可以继续直接调用；HTTP 路由见 [插件 HTTP](./http.md)，Agent 权限配置见 [Agent tools](../plugins/agent-tools.md)。
 
 ## 1. 定义一个 command
 
@@ -65,6 +63,23 @@ export const jobStatus = defineCommand({
 - carrier/host 仍负责 principal、permission、确认、rate limit、credential 和 audit。
 
 如果成功没有业务数据，省略 `output` 并让 `execute()` 返回 `void`。若调用方需要 `changed`、状态或新 ID，就显式声明 output；未声明 output 却返回值会成为 `OUTPUT_VALIDATION` fault。
+
+## 在插件中发布并验证
+
+在插件 `init()` 中注册上面的 definition：
+
+```ts no-twoslash
+this.ctx.commands.register(jobStatus)
+```
+
+先直接执行一次，验证完整的输入校验与业务结果：
+
+```ts no-twoslash
+const result = await jobStatus.execute({ jobId: 'cache-refresh' })
+// result.status === 'running'
+```
+
+然后在 [开发控制台](../development/dev-console.md) 读取宿主的 command catalog，确认存在 `job.status.get`。注册只让命令进入可发现清单；是否暴露给 Agent、HTTP 或消息平台是各入口独立的配置。
 
 ## 2. Schema 是唯一公开输入协议
 

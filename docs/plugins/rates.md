@@ -45,6 +45,43 @@ export class MessagingPlugin extends BasePlugin {
 
 `use()` 会同步复制、校验、归一化并冻结 policy。相同 caller、name 和归一化 policy 会返回同一个 handle；同名但 policy 不同会同步抛出 `RatesPolicyConflictError`。因此 name 应是静态业务标识，不能由 request、tenant 或用户输入生成。
 
+## host 选择 backend
+
+单进程 host 可使用内存 backend：
+
+以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+
+```ts no-twoslash
+import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
+
+await host.commit((change) => {
+	change.start(MemoryRatesBackendPlugin, {
+		initialConfig: { maxIdentities: 10_000 },
+	})
+	change.start(RatesPlugin)
+	change.start(MessagingPlugin)
+})
+```
+
+内存 backend 重启后额度会重置，也不会淘汰仍有效的 state。达到 `maxIdentities` 时，它会抛出 `RatesUnavailableError`，其中可能带 `retryAfterMs`。
+
+多进程共享额度可改用 `@pluxel/redis` 提供的 adapter：
+
+```ts no-twoslash
+import { RatesPlugin } from '@pluxel/rates'
+import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
+
+await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
+```
+
+consumer 仍只依赖 `Rates`。Redis adapter 使用 Redis server time，并在单 key Lua 调用中校验 policy、更新状态和 TTL，避免多个实例间的读写竞态。
+
+上面的 `host` 是 `createRuntimeTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；同一 application boundary 的
+多项原子 setup 使用同步 `commit()` callback，首次配置使用 `initialConfig`。production static/dynamic host 通过自己的
+ConfigService 与 RuntimeState 表达相同配置和启动策略。
+
+同一个 identity 连续消费 100 次后，第 101 次应得到 `denied: true`；换一个 identity 应获得独立额度。用这个结果验证业务返回值映射，再选下节的成本与算法。内存 backend 的测试不证明跨进程共享额度。
+
 ## identity 与 cost
 
 `consume(identity, { cost? })` 的 `cost` 默认为 `1`，也可以表达一次操作消耗多个单位：
@@ -115,39 +152,6 @@ this.egress = this.rates.global.use('platform.tenant-egress', {
 所有 owner 对同一个 global name 必须注册完全相同的归一化 policy，否则抛出 `RatesPolicyConflictError`。global 只共享 backend state；handle 的生命周期仍归创建它的 caller 所有。
 
 caller、`RatesPlugin` 或 backend generation 停止或被替换后，旧 handle 的新调用抛出 `RatesStoppedError`。已经提交给 backend 的 in-flight 判定不会被事后撤销。
-
-## host 选择 backend
-
-单进程 host 可使用内存 backend：
-
-```ts no-twoslash
-import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
-
-await host.commit((change) => {
-	change.start(MemoryRatesBackendPlugin, {
-		initialConfig: { maxIdentities: 10_000 },
-	})
-	change.start(RatesPlugin)
-	change.start(MessagingPlugin)
-})
-```
-
-内存 backend 重启后额度会重置，也不会淘汰仍有效的 state。达到 `maxIdentities` 时，它会抛出 `RatesUnavailableError`，其中可能带 `retryAfterMs`。
-
-多进程共享额度可改用 `@pluxel/redis` 提供的 adapter：
-
-```ts no-twoslash
-import { RatesPlugin } from '@pluxel/rates'
-import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
-
-await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
-```
-
-consumer 仍只依赖 `Rates`。Redis adapter 使用 Redis server time，并在单 key Lua 调用中校验 policy、更新状态和 TTL，避免多个实例间的读写竞态。
-
-上面的 `host` 是 `createRuntimeTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；同一 application boundary 的
-多项原子 setup 使用同步 `commit()` callback，首次配置使用 `initialConfig`。production static/dynamic host 通过自己的
-ConfigService 与 RuntimeState 表达相同配置和启动策略。
 
 ## 稳定错误契约
 

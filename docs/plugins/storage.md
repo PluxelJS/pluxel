@@ -31,10 +31,6 @@ export class AssetsPlugin extends BasePlugin {
 }
 ```
 
-`S3Client` 是 ``Omit<S3mini, `_${string}`>``，因此公开业务面直接锚定 s3mini：bucket create/exists、listing、字符串/JSON/ArrayBuffer/Response 读取、range 与 conditional read、PUT、multipart、copy/move、delete 和 presign 都使用原生 method signature。
-
-它是 raw bucket capability，不会自动给 key 加 caller prefix。key namespace、metadata schema、对象大小与 content type policy、保留期和删除所有权都由 consumer 或 host contract 定义。
-
 ## 默认 local backend
 
 没有配置时，`S3Plugin` 使用：
@@ -56,6 +52,8 @@ export class AssetsPlugin extends BasePlugin {
 ```
 
 显式配置示例：
+
+以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
 import { S3Plugin } from '@pluxel/storage'
@@ -83,6 +81,12 @@ local backend 支持 CRUD、typed/stream/range/conditional reads、delimiter/pre
 完整 S3 key 会被可逆 base32 编码并拆成有界文件名。`../x`、leading slash、反斜杠、空 path segment 和 Unicode 都只是普通 object key，不参与本地路径解析。
 
 `.pluxel/s3` 适合开发。生产若使用 local backend，应把 `rootDir` 放在 immutable `dist/` 之外，并纳入备份、磁盘容量、权限和故障恢复策略。
+
+`S3Client` 是 ``Omit<S3mini, `_${string}`>``，因此公开业务面直接锚定 s3mini：bucket create/exists、listing、字符串/JSON/ArrayBuffer/Response 读取、range 与 conditional read、PUT、multipart、copy/move、delete 和 presign 都使用原生 method signature。
+
+它是 raw bucket capability，不会自动给 key 加 caller prefix。key namespace、metadata schema、对象大小与 content type policy、保留期和删除所有权都由 consumer 或 host contract 定义。
+
+先调用 `putAvatar()` 写入一个小图片，再调用 `getAvatar()` 确认字节与 `Content-Type`。示例选择的 bucket ID 是 `assets`；默认配置只有 `default`，因此不能省略上面的显式 bucket 配置。
 
 ## 远端 S3：anonymous
 

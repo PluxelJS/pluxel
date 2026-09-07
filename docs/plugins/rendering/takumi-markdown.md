@@ -19,8 +19,10 @@ Markdown table 由 Takumi 的 HTML/CSS layout 排版，不重复调用 Canvas ta
 
 ## 安装与最小装配
 
-```sh package-install
-npx nypm add @pluxel/takumi-markdown @pluxel/takumi @pluxel/fonts
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+
+```sh
+pnpm catalog:add -- @pluxel/takumi-markdown @pluxel/takumi @pluxel/fonts
 ```
 
 host catalog 包含 Fonts、Takumi、Markdown 和 consumer。MarkdownPlugin 已 required-depend Takumi，
@@ -54,10 +56,9 @@ export class ReleaseImagePlugin extends BasePlugin {
 }
 ```
 
-createRenderer() snapshots its extension list and default theme for one caller generation.
-The returned handle is automatically closed when its consumer stops or is replaced; call
-await renderer.close() when it has a shorter explicit lifetime. renderSvg() returns the
-same document as SVG; omit devicePixelRatio and raster output there.
+`createRenderer()` 保存当前插件这一轮运行所需的扩展列表和默认主题。插件停止或被替换时，返回的 renderer 自动关闭；需要提前结束时调用 `await renderer.close()`。
+
+调用 `renderReleaseNotes('# 1.0.0\n\n首次发布')` 后，将返回值的 `data` 保存为 `.webp`，应能看到标题与正文。需要 SVG 时调用 `renderSvg()`，并省略 `devicePixelRatio` 和 raster `output`。
 
 ## GFM、表格与代码块
 
@@ -87,8 +88,8 @@ settle 前都按 Takumi borrowed contract 保持不变。
 
 需要普通 inline/display math 时，额外安装 Typst extension：
 
-```sh package-install
-npx nypm add @pluxel/takumi-markdown-typst
+```sh
+pnpm catalog:add -- @pluxel/takumi-markdown-typst
 ```
 
 catalog 再加入 TypstMathPlugin，consumer 注入它并把 extension 交给 renderer：

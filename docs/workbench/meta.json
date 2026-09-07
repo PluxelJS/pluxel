@@ -8,6 +8,9 @@
 		"content",
 		"view",
 		"composition",
+		"---按需参考---",
+		"renderer-resources",
+		"operations",
 		"---配置表单---",
 		"configuration-playground",
 		"valibot-form"

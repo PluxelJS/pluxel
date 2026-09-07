@@ -6,16 +6,7 @@ description: 发现、注册和管理服务端字体，并为 Canvas、ECharts �
 `@pluxel/fonts` 统一管理服务端字体：发现系统字体、注册 Plugin 随包携带的字体、保存从 Workbench 上传的字体，
 并为 Canvas/ECharts 选择 native default、为 Takumi 等独立 renderer 提供可移植 bytes。
 
-渲染依赖始终从 Fonts 向 renderer 建立：
-
-```text
-                  ┌─> CanvasPlugin -> EChartsPlugin
-FontsPlugin ------┤
-                  └─> TakumiPlugin
-```
-
-`FontsPlugin` 是服务端字体的唯一管理者，但不负责创建画布或图片。Canvas/ECharts 从它取得 native family snapshot；
-Takumi 从它取得内容寻址的可移植资源，不直接修改 `@napi-rs/canvas` 的全局字体注册表。
+Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字体字节。需要一致的跨机器输出时，随包提供字体或从 Workbench 上传；只安装 Fonts 不会替操作系统安装字体。
 
 ## 何时直接使用 FontsPlugin
 
@@ -29,8 +20,10 @@ Takumi 从它取得内容寻址的可移植资源，不直接修改 `@napi-rs/ca
 
 ## 安装与 catalog
 
-```sh package-install
-npx nypm add @pluxel/fonts
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+
+```sh
+pnpm catalog:add -- @pluxel/fonts
 ```
 
 host catalog 必须包含 `FontsPlugin`。直接使用字体能力的 Plugin 将它声明为 required dependency：
@@ -46,6 +39,8 @@ export class ReportsPlugin extends BasePlugin {
 	}
 }
 ```
+
+以下 `host` 是 [测试宿主](../../development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
 import { FontsPlugin } from '@pluxel/fonts'
@@ -79,6 +74,8 @@ export class ReportsPlugin extends BasePlugin {
 	}
 }
 ```
+
+注册后检查 `this.fonts.families` 是否包含 `Report Sans`，再让 renderer 使用它生成一张含中文、数字和标点的图片。部署产物也必须包含 `assets/ReportSans.woff2`，路径相对于最终模块位置解析。
 
 `registerFromPath()` 只接受绝对路径，并使用异步、1 MiB 分块的 bounded 文件 IO。打开 handle 后会先检查 file type/size，
 只分配不超过 `maxFontBytes` 的固定 Buffer；读取期间发生 truncate 或 grow 会拒绝，而不是使用无界 `readFile()`。

@@ -3,9 +3,18 @@ title: 静态应用发行物
 description: 创建、检查并签名验证可搬运的静态 Node 应用目录。
 ---
 
-`@pluxel/rolldown/distribution` 用于封装已经完成构建的静态 Node 应用。它记录目录中的全部文件，可生成 in-toto/DSSE 证明，也可以写入用于关联交付记录的标记。
+需要把静态应用复制到另一台机器，或确认部署文件没有缺失和改动时，为最终构建目录创建发行清单。普通启动不需要读取清单，也不会因此计算哈希或发送遥测。
 
-这些操作属于构建和交付流程，不属于应用启动流程。运行时不会读取清单、扫描目录、计算哈希、验证签名或发送遥测数据。
+已有完成构建的 `dist/` 时，在安装了 CLI 与 `@pluxel/rolldown` 的项目里运行：
+
+```sh
+pnpm exec pluxel distribution create ./dist
+pnpm exec pluxel distribution inspect ./dist
+```
+
+`inspect` 返回 `INTACT` 表示目录与清单一致。把整个目录复制到目标环境后，再运行一次 `inspect`；若还需要确认发行者身份，继续阅读下面的签名与 `verify` 流程。
+
+starter 的 `pnpm build` 已在 `host/dist` 上执行 create，可直接 `pnpm exec pluxel distribution inspect ./host/dist`。不要在已有签名的交付目录中重建清单来掩盖差异。
 
 ## 输入必须是最终目录
 

@@ -14,8 +14,10 @@ Open Graph 图片、社交卡片、邮件插图与服务端模板。它直接依
 
 ## 安装和装配
 
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+
 ```sh
-npx nypm add @pluxel/takumi @pluxel/fonts
+pnpm catalog:add -- @pluxel/takumi @pluxel/fonts
 ```
 
 Host catalog 包含 Fonts、Takumi 与 consumer；业务 Plugin 只声明直接使用的 Takumi：
@@ -45,7 +47,7 @@ export class SocialCardsPlugin extends BasePlugin {
 }
 ```
 
-HTML 不执行 script。动态文本、attribute 和 CSS value 仍由业务模板负责正确编码。
+上面的 `escapeHtml()` 是应用自己的文本转义函数；如果没有 HTML 模板，直接使用下节 node tree，文本通过 `text` 字段传入。调用 `renderCard()` 后将 `result.data` 保存为 WebP，验证尺寸、文字与背景。HTML 不执行 script，动态 attribute 和 CSS value 仍需按模板位置编码。
 
 ## 选择输入
 
@@ -141,6 +143,8 @@ Markdown 再调用 Takumi。它会先取得 Takumi 的同一 fair admission，�
 释放 slot；已经提交的 native render 即使被取消也会先真实 settle 才归还容量。普通页面/卡片渲染继续使用 `render()` / `renderSvg()`，不需要直接管理 reservation。
 
 ## 配置边界
+
+以下 `host` 是 [测试宿主](../../development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts
 await host.start(TakumiPlugin, {

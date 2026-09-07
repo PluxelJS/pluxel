@@ -3,10 +3,35 @@ title: 测试 Pluxel 插件
 description: 选择最小测试边界，用真实构建语义验证依赖、配置、HTTP、Workbench 与资源回收。
 ---
 
-Plugin 测试应经过与生产构建一致的语义处理，包括装饰器转换、构造器依赖提取、配置 schema 提取和包根入口解析。直接 `new`
-实例或模拟 Context 只适合测试普通业务对象，不能证明 Plugin 能被宿主正确加载、组合和停止。
+本页帮助你验证插件能否启动、处理请求并在停止后释放资源。CLI 模板已配置 Vitest preset；在生成的插件目录运行 `pnpm test` 即可。手动接入已有项目时，先按下面的表选择测试宿主，再安装 preset。
+
+插件测试需要真实的装饰器、依赖和配置转换。直接 `new` 实例或模拟 Context 只能验证普通对象行为，不能验证宿主加载和生命周期。
 
 如果目标是操作眼前正在运行的 dev 实例，coding agent 必须使用 [开发控制台](./dev-console.md)。本页的 test host 用于独立的回归测试，不连接当前 dev，也不共享它的数据目录。
+
+## 先选择最小边界
+
+| 需要验证                                                         | 测试入口                                                              |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 纯函数、普通对象                                                 | 不使用 host                                                           |
+| Core graph、config、lifecycle、effects                           | `@pluxel/core/test`                                                   |
+| Plugin 与 Runtime capability                                     | `@pluxel/runtime/test`                                                |
+| fixed static application 的 configure、prepare、bindings、冷启动 | `@pluxel/runtime-static/test`                                         |
+| dynamic source、Vite/HMR、HTTP 或 WebSocket carrier              | 项目 Vite command 或 `@pluxel/runtime-dynamic` 的 production launcher |
+| static deployment artifact、filesystem、assets、TLS              | 启动真实 artifact                                                     |
+| Workbench renderer 与 Shell                                      | React/browser test                                                    |
+
+删除外层 application、source 或 carrier 后仍成立的断言，应回到更小的 host。同一 Plugin behavior 不要在 Runtime、static 和 dynamic
+三层重复测试。
+
+所有 public host 都由创建它的测试拥有：
+
+```ts no-twoslash
+await using host = createRuntimeTestHost()
+```
+
+host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不支持 explicit resource management 时，在 `finally` 中调用
+`await host.dispose()`。
 
 ## 安装 Vitest preset
 
@@ -14,8 +39,7 @@ Plugin 测试应经过与生产构建一致的语义处理，包括装饰器转�
 npx nypm add -D @pluxel/test @pluxel/core vitest@5.0.0 oxlint
 ```
 
-Testing v2 固定使用 Vitest `5.0.0`；它要求 Node.js `>=22.12.0` 和 Vite `>=6.4.0`。Pluxel workspace
-当前要求 Node.js `>=24`，新项目也应保持至少这个版本，不要以 `clearMocks: false` 或旧 runner entry 恢复 Vitest 4 行为。
+当前 preset 使用 Vitest `5.0.0`，项目使用 Node.js 24+。下面的 Core 示例只需上述依赖；测试 HTTP 等 Runtime 能力时，还需由测试包声明 `@pluxel/runtime`。
 
 最小 `vitest.config.ts`：
 
@@ -55,33 +79,11 @@ pluxel source build --package @pluxel/test
 这只构建 preset 的 artifact 及其自身 build graph 前置；config 加载后，测试模块仍通过 `@pluxel/source` / `@pluxel/hmr` 读取当前源码。
 不要改用相对 `src` import 或给整个 Vitest 进程加 condition。需要验证 production launcher/artifact 的测试才额外构建它自己的 owner。
 
-## 先选择最小边界
-
-| 需要验证                                                         | 唯一默认入口                                                          |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
-| 纯函数、普通对象                                                 | 不使用 host                                                           |
-| Core graph、config、lifecycle、effects                           | `@pluxel/core/test`                                                   |
-| Plugin 与 Runtime capability                                     | `@pluxel/runtime/test`                                                |
-| fixed static application 的 configure、prepare、bindings、冷启动 | `@pluxel/runtime-static/test`                                         |
-| dynamic source、Vite/HMR、HTTP 或 WebSocket carrier              | 项目 Vite command 或 `@pluxel/runtime-dynamic` 的 production launcher |
-| static deployment artifact、filesystem、assets、TLS              | 启动真实 artifact                                                     |
-| Workbench renderer 与 Shell                                      | React/browser test                                                    |
-
-删除外层 application、source 或 carrier 后仍成立的断言，应回到更小的 host。同一 Plugin behavior 不要在 Runtime、static 和 dynamic
-三层重复测试。
-
-所有 public host 都由创建它的测试拥有：
-
-```ts no-twoslash
-await using host = createRuntimeTestHost()
-```
-
-host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不支持 explicit resource management 时，在 `finally` 中调用
-`await host.dispose()`。
-
 ## Core：立即修改 graph
 
-Core 没有 Runtime session intent 或 durable auto-start policy。`add/remove/restart/replaceDefinition` 都会立即提交并等待 lifecycle
+将下面内容保存为 `tests/plugin.test.ts`，运行 `pnpm exec vitest run`。通过时应证明 provider 先启动，依赖实例一致，移除后 cleanup 恰好执行一次。
+
+Core host 验证本次测试内的插件依赖与生命周期，不管理应用下次启动的策略。`add/remove/restart/replaceDefinition` 都会立即提交并等待 lifecycle
 稳定；方法 resolve 后可以直接断言，不再额外调用无参数 `commit()`。
 
 ```ts no-twoslash
@@ -136,7 +138,7 @@ callback 只同步描述变化。不要把它声明为 `async`、在其中 `awai
 
 ## Runtime：立即表达本次进程意图
 
-Runtime test host 的 `start/stop/restart/replaceDefinition` 同样立即提交。`start()` 会让目标 implementation 进入 test catalog、建立本次
+需要 HTTP、commands 或 Workbench 等宿主能力时，使用 Runtime test host。它的 `start/stop/restart/replaceDefinition` 同样立即提交。`start()` 会让目标 implementation 进入 test catalog、建立本次
 进程的 running intent、启动 required provider closure，并返回当前实例；它不会修改下次冷启动的 auto-start policy。
 
 ```ts no-twoslash

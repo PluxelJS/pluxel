@@ -3,14 +3,32 @@ title: Valibot 配置表单
 description: 用一个 Valibot object schema 同时驱动 Plugin 配置、字段信息和 Web 表单。
 ---
 
-Pluxel 的配置只需要一份 Valibot object schema，Plugin 通过 `private readonly config = this.configs.use(Config)` 注册它。
+给配置字段加标题、说明、控件偏好时，使用 `valibot-form` metadata。Plugin 仍只声明一份 Valibot schema，
+Workbench 会自动显示配置表单；无需为普通配置另外编写 React 页面。
 
-这份 schema 同时提供 TypeScript 类型、默认值、运行时校验，以及配置界面需要的字段结构。`formMeta()` 把标题、说明和
-表单展示偏好集中在一次声明中；底层仍是 Valibot 标准 metadata，不会创建第二套配置语言。
+## 先给一个字段加标题
+
+```ts twoslash
+import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+
+@Plugin()
+export class ServicePlugin extends BasePlugin {
+	private readonly config = this.configs.use(
+		v.object({
+			enabled: v.optional(v.pipe(v.boolean(), f.formMeta({ title: '启用服务' })), true),
+		}),
+	)
+}
+```
+
+构建并运行插件，标准配置页应出现“启用服务”开关，初始值为开启。
+`f.formMeta()` 只描述显示方式；字段是否必填、默认值和有效范围仍由 Valibot 决定。
+保存与运行时应用的区别见[插件配置](../getting-started/configuration.md)。
 
 ## 最小配置与渲染结果
 
-这一个 schema 覆盖常见配置控件：开关、分段选择、URL 文本、整数输入、嵌套对象和可重复列表。先阅读源码，再展开下方预览操作同一份 schema 生成的表单，并检查原始 Input 与 Valibot Output。
+下面是覆盖多种控件的完整参考例子。按需查找开关、分段选择、URL、整数、嵌套对象和列表；
+无需在第一个 Plugin 中一次性采用全部控件。展开预览可直接操作表单，比较原始 Input 与校验后的 Output。
 
 <ConfigurationExampleLayout>
 
@@ -193,7 +211,8 @@ type FormProps = keyof AutoFormProps<ObjectLikeSchema>
 
 ## Web adapter
 
-只有需要 React 表单时才从 `valibot-form/web` 导入。它依赖 React、Mantine、TanStack Form、Tabler Icons 和 dnd-kit peer：
+只有在自己的 React 应用中需要自动表单，才从 `valibot-form/web` 导入。标准 Workbench 配置页已包含它。
+独立应用需要安装 React、Mantine、TanStack Form、Tabler Icons 和 dnd-kit：
 
 ```sh package-install
 npx nypm add valibot-form valibot react react-dom @mantine/core @mantine/hooks @tanstack/react-form @tabler/icons-react @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
@@ -241,6 +260,9 @@ export function ConfigEditor() {
 	)
 }
 ```
+
+上例是独立 React 应用，因此自行导入 Mantine CSS。放进 Workbench View 时，仍需自己的 `MantineProvider`，
+但应删除 `@mantine/core/styles.css` 导入，基础 CSS 已由宿主加载；见[页面资源参考](./renderer-resources.md)。
 
 `AutoForm` 负责根据 schema metadata 规划和渲染字段；配置 authority 仍然是 runtime 的 `configs.use()` 校验流程。把表单值送回 host API 前，服务端必须再次用同一个 schema 校验，不能把浏览器表单当作信任边界。
 

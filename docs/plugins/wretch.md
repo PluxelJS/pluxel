@@ -7,8 +7,10 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 
 `@pluxel/wretch` 提供一个原生、不可变的 Wretch 基础实例，并在请求真正发出前应用宿主级出站策略。URL 构造、addon、middleware、catcher 和响应链仍使用原生 Wretch API。
 
-```sh package-install
-npx nypm add @pluxel/wretch
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+
+```sh
+pnpm catalog:add -- @pluxel/wretch
 ```
 
 ## 第一个 HTTP consumer
@@ -44,6 +46,8 @@ export class CustomerPlugin extends BasePlugin {
 
 host 安装 provider：
 
+以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+
 ```ts no-twoslash
 await host.start(WretchPlugin, {
 	catalog: [CustomerPlugin],
@@ -66,8 +70,8 @@ await host.start(CustomerPlugin, {
 
 主入口只导出 `WretchPlugin` 与 `Wretch` 类型，不重新导出裸 `wretch()` factory 或 addons。需要 query-string addon、retry middleware 等上游扩展时，由 consumer 直接安装 `wretch`：
 
-```sh package-install
-npx nypm add wretch
+```sh
+pnpm catalog:add -- wretch
 ```
 
 ## 宿主 outbound policy
@@ -93,7 +97,7 @@ policy 通过 Wretch `defer()` 在请求发送前安装。consumer 的 retry mid
 
 队列满时 reject `Error('Outbound HTTP request queue is full')`；origin 不允许时 reject 包含 origin 的 Error；timeout 使用名为 `TimeoutError` 的 `DOMException`。这些目前不是带稳定 code 的 Pluxel error hierarchy，transport 不应依赖完整 message 做协议映射。
 
-retry、dedupe、缓存、认证刷新和业务错误解析不属于 host policy。它们应由 consumer 用 Wretch middleware/addon 明确组合；需要 cache 时使用 `@pluxel/cache`，不要在 provider 内隐式缓存响应。
+retry、dedupe、缓存、认证刷新和业务错误解析不属于 host policy。它们应由 consumer 用 Wretch middleware/addon 明确组合；需要缓存时由业务显式组合缓存实现；仓库内部可以使用 [Cache 预览](./cache.md)，它目前不是公开安装包。
 
 ## 生命周期与 cancellation
 

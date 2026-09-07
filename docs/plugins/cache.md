@@ -19,6 +19,15 @@ description: 为每个 Plugin 隔离缓存，并组合本地缓存、后端、�
 
 `getOrLoad()` 的主流程是 `local -> backend -> loader -> backend/local write`。decorator 只是便利写法，不负责 repository orchestration。
 
+## 安装 provider
+
+consumer 只依赖 `Cache` 抽象；host catalog 选择：
+
+- `MemoryCacheBackendPlugin`：单进程或本地开发；
+- Redis cache backend adapter：多实例共享加速层，见 [Redis](./redis.md)。
+
+业务 Plugin 不同时维护独立 Redis client、第二套 namespace 和 cleanup。backend 选择属于 host composition。
+
 ## 显式绑定稳定 scope
 
 复杂缓存应在 Plugin generation 启动时创建一次：
@@ -177,20 +186,6 @@ return this.catalog.getOrLoad([tenantId, itemId], () =>
 
 404 可以在数据库保存带 `refreshedAt` 的 tombstone，再向 Cache 返回 `null`。不要向 Cache API 添加 database transaction、distributed lock 或 stale ownership 语义。
 
-## 安装 provider
-
-consumer 只依赖 `Cache` 抽象；host catalog 选择：
-
-- `MemoryCacheBackendPlugin`：单进程或本地开发；
-- Redis cache backend adapter：多实例共享加速层，见 [Redis](./redis.md)。
-
-业务 Plugin 不同时维护独立 Redis client、第二套 namespace 和 cleanup。backend 选择属于 host composition。
-
 ## 检查清单
 
-- key 包含 tenant/permission/schema 等所有隔离维度。
-- `undefined` 没有被当成可缓存结果。
-- scope 在稳定 generation 阶段创建，policy 不由首个请求决定。
-- loader 能接受多实例重复执行，或由 repository 提供 claim/fencing。
-- backend bypass 只在权威来源能承受降级流量时启用。
-- cache 没有替代 database durability、transaction 或 object storage。
+在 [测试宿主](../development/testing.md) 中用计数 loader 连续读取同一个 key，两次调用应只加载一次；执行 `delete()` 后再读，应重新加载。使用不同 tenant 的 tuple key 验证隔离，用 `null` 验证负缓存。需要 Redis 共享缓存时，再在目标 backend 验证失效；单进程的请求合并不保证跨实例只运行一次 loader。

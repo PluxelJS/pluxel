@@ -7,8 +7,10 @@ description: 通过 Fonts、Canvas 和共享 Worker 在服务端渲染 Apache EC
 
 ## 安装与 catalog
 
-```sh package-install
-npx nypm add @pluxel/echarts @pluxel/canvas @pluxel/fonts
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+
+```sh
+pnpm catalog:add -- @pluxel/echarts @pluxel/canvas @pluxel/fonts
 ```
 
 host catalog 包含 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 与 consumer。业务 Plugin 只注入 ECharts：
@@ -38,6 +40,8 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
+以下 `host` 是 [测试宿主](../../development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+
 ```ts no-twoslash
 import { CanvasPlugin } from '@pluxel/canvas'
 import { EChartsPlugin } from '@pluxel/echarts'
@@ -48,6 +52,8 @@ await host.start(ReportsPlugin, {
 	catalog: [FontsPlugin, CanvasPlugin, EChartsPlugin],
 })
 ```
+
+调用 `renderSales()`，把返回的 `Buffer` 保存为 PNG，应能看到三个柱子。它不创建浏览器页面；若需要交互图表，在前端直接使用 ECharts。本文后面的 `host` 示例用于测试装配，应用启动配置见 [添加插件](../index.md#把一个插件加入应用)。
 
 ## render 输入与结果
 
@@ -79,28 +85,6 @@ result.devicePixelRatio // 2
 ```
 
 PNG 是默认格式且不接受 `quality`；JPEG/WebP quality 必须在 0 到 100。返回尺寸是逻辑尺寸，实际 surface 按 `ceil(width × DPR)` 与 `ceil(height × DPR)` 创建，因此仍受 Canvas 尺寸和总像素预算约束。
-
-## Worker-only execution
-
-EChartsPlugin 先用 `ctx.workers.runPrepared()` 取得 root-owned shared queue 的 fair execution slot，再 cooperative 检查
-borrowed option 并组装 Canvas `workerSnapshot` 与 render policy。queue full 不先遍历 graph；borrowed input 省略重复
-snapshot，真正 dispatch 时仍由 worker transport 建立私有 graph：
-
-1. worker 从 snapshot 构造 bounded Canvas adapter。
-2. ECharts 以 SSR mode 初始化。
-3. 等待受支持的 render-local 图片、flush 并编码。
-4. 在 `finally` 中撤销 render-local image scope、等待其 JS task settle、dispose ECharts instance，并关闭 Canvas adapter；
-   adapter close 会等 already-submitted native decode 真正 settle 后才让 worker handler 返回。
-
-Worker task concurrency、每 owner 队列和 host 总队列均由 runtime workers 配置，不是 EChartsConfig 或 CanvasConfig 字段；
-每个 adapter 内的 image decode admission 则来自 CanvasConfig。队列满时抛出 `EChartsError`，code 为 `RENDER_BUSY`。
-
-option 必须由 plain object、array、typed array 和 scalar data 组成。formatter function、accessor、native/class object 和
-SharedArrayBuffer 都会以 `WORKER_INPUT_UNSUPPORTED` 拒绝，不存在 inline fallback。admission 后、worker transport 前会同时检查 option 的
-estimated bytes、value count 与 nesting depth；遍历每 2,048 个 value 让出一次 event loop，单个大字符串也按 64 Ki
-characters 分片计量。真正的 worker transport
-serialization 仍发生在宿主线程，因此 Worker-only 表示重 layout/render 已隔离，不表示主线程成本为零。三项预算把这段
-不可避免的 serialization 成本限制在 host 可配置上界内；`setOption` policy 也计入同一预算并使用相同 declarative contract。
 
 ## caller-owned theme
 
@@ -163,6 +147,28 @@ Canvas worker adapter 默认每次只提交 1 个 native decode；Runtime 默认
 
 HTTP(S) URL 与服务端文件路径会被拒绝。ECharts/Canvas 不应隐式拥有网络、认证、redirect、proxy 或文件读取权限。
 先通过业务 outbound HTTP capability 获取 bytes，再转换成受支持的 data URL；native Image 不能进入 declarative option。
+
+## Worker-only execution
+
+EChartsPlugin 先用 `ctx.workers.runPrepared()` 取得 root-owned shared queue 的 fair execution slot，再 cooperative 检查
+borrowed option 并组装 Canvas `workerSnapshot` 与 render policy。queue full 不先遍历 graph；borrowed input 省略重复
+snapshot，真正 dispatch 时仍由 worker transport 建立私有 graph：
+
+1. worker 从 snapshot 构造 bounded Canvas adapter。
+2. ECharts 以 SSR mode 初始化。
+3. 等待受支持的 render-local 图片、flush 并编码。
+4. 在 `finally` 中撤销 render-local image scope、等待其 JS task settle、dispose ECharts instance，并关闭 Canvas adapter；
+   adapter close 会等 already-submitted native decode 真正 settle 后才让 worker handler 返回。
+
+Worker task concurrency、每 owner 队列和 host 总队列均由 runtime workers 配置，不是 EChartsConfig 或 CanvasConfig 字段；
+每个 adapter 内的 image decode admission 则来自 CanvasConfig。队列满时抛出 `EChartsError`，code 为 `RENDER_BUSY`。
+
+option 必须由 plain object、array、typed array 和 scalar data 组成。formatter function、accessor、native/class object 和
+SharedArrayBuffer 都会以 `WORKER_INPUT_UNSUPPORTED` 拒绝，不存在 inline fallback。admission 后、worker transport 前会同时检查 option 的
+estimated bytes、value count 与 nesting depth；遍历每 2,048 个 value 让出一次 event loop，单个大字符串也按 64 Ki
+characters 分片计量。真正的 worker transport
+serialization 仍发生在宿主线程，因此 Worker-only 表示重 layout/render 已隔离，不表示主线程成本为零。三项预算把这段
+不可避免的 serialization 成本限制在 host 可配置上界内；`setOption` policy 也计入同一预算并使用相同 declarative contract。
 
 ## 配置与职责
 

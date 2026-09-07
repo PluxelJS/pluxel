@@ -11,7 +11,7 @@ Pluxel 可以把一段代码构建成独立 Node ESM，也可以把 CPU 密集�
 | 把可结构化克隆的 CPU 密集工作放入共享线程池         | `defineWorkerTask()` |
 | 普通异步 I/O、数据库或短小调用                      | 直接在 Plugin 中执行 |
 
-两种声明都必须位于模块顶层，并使用静态可分析的入口路径，以便 Pluxel 在构建时提取。不要在方法内部动态声明。
+在 [快速开始](../getting-started/index.md) 创建的插件包内添加下列文件；保留 Pluxel 的 Vite/构建配置，普通 TypeScript 编译不会生成这些独立产物。声明必须位于模块顶层，入口使用静态相对路径。
 
 ## 独立 Node module
 
@@ -30,6 +30,17 @@ export class RulesPlugin extends BasePlugin {
 	}
 }
 ```
+
+`rules-entry.ts` 默认没有 Pluxel Context；它导出上面调用的 `setup()`，返回释放资源的函数：
+
+```ts no-twoslash
+export function setup({ logger }: { logger: { info(message: string): void } }) {
+	logger.info('rules module ready')
+	return () => logger.info('rules module released')
+}
+```
+
+启动插件后应看到 `rules module ready`；停用插件后应看到释放日志。
 
 `defineNodeModule()` 只声明 entry，不创建线程。`ctx.nodeModules.use()`：
 
@@ -63,7 +74,7 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-worker entry 默认导出 handler，并且没有 Pluxel Context：
+把下一段保存为与插件文件同目录的 `sum-worker.ts`。它默认导出 handler，不接收 Pluxel Context：
 
 ```ts twoslash
 import type { WorkerTaskHandler } from '@pluxel/runtime'
@@ -78,7 +89,9 @@ const run: WorkerTaskHandler<SumInput, SumOutput> = ({ values }) => ({
 export default run
 ```
 
-所有 Plugin 共享 root-owned、lazy、bounded、owner-fair 的 worker pool。host 统一配置 concurrent execution slots、全局和每
+调用 `calculate([1, 2, 3])` 应得到 `{ total: 6 }`。用 [测试宿主](../development/testing.md) 或现有应用的 [开发控制台](../development/dev-console.md) 调用插件方法，才能同时验证产物提取与执行路径。
+
+所有插件共享宿主的线程池，线程按需创建，队列有上限，并在插件之间公平调度。host 统一配置 concurrent execution slots、全局和每
 Plugin queue limit、idle timeout；Plugin 不创建私有线程池，也不自行扩大进程预算。取消 running task 会终止对应 worker；
 caller Promise 可以立即结束，但 runtime 会等 worker 真正退出后才归还 active slot，避免 replacement task 穿透执行上限。
 
@@ -119,7 +132,7 @@ transfer 规则：
 - queue 已满、任务未接纳时 runtime 不 detach；
 - `SharedArrayBuffer` 本来就是共享内存，不进入 transfer，调用方自行负责同步协议。
 
-## Borrowed admission
+## 借用输入，避免排队时复制
 
 默认 snapshot 适合调用后立即复用或修改 input。若领域 API 已经要求 input 在 Promise settle 前保持不变，可以省略
 排队 snapshot，只保留真正 dispatch 的 transport clone：
@@ -135,7 +148,7 @@ borrowed 模式在 queue 中保留 caller graph，因此 mutation 会改变尚�
 该模式减少一次 clone，不会让 `postMessage` serialization 离开主线程，领域仍必须对超大 object graph 设置 bytes/count/depth
 预算。
 
-## Admission 后准备输入
+## 任务获准执行后再准备输入
 
 如果 domain budget walk 或 snapshot 本身较重，先用共享 queue admission，再准备输入：
 

@@ -5,9 +5,26 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 当应用需要联调尚未发布的 Pluxel 或另一个独立仓库时，可以用 `pluxel source` 管理开发期的包解析。每个源码仓库仍保留自己的 Git 历史、工作区和 lockfile；这个命令也不会接管运行时的 Plugin 安装。
 
+## 准备 checkout 和 CLI
+
+先准备应用、Pluxel 和需要联调的 provider Git checkout，并按各仓库要求安装 mise 工具链。消费方是最终运行 `pnpm dev` 的应用，不是 Pluxel 根仓库。
+
+本页后续命令在消费方根目录执行，要求 `pluxel --version` 可运行。可以使用全局 CLI；希望以 Pluxel 源码为准时，用该 checkout 已构建的 `packages/cli/bin/pluxel.mjs` 入口或它的全局符号链接。CLI 会从自己的真实路径发现 Pluxel，不会根据目录相邻关系猜测。
+
+从新电脑开始开发 bot-new-omni，优先使用[应用自己的 bootstrap 脚本](https://github.com/PluxelJS/bot-new-omni#develop)：用户安装 mise 后，脚本准备工具、三个 Git checkout、登记和源码依赖，布局为：
+
+```text
+pluxel/
+  local-projects/
+    chatbot/
+    bot-new-omni/
+```
+
+通用手动接入继续下面的步骤。每个仓库可自行切换 Git 分支；修改应用或 provider 分支后若依赖声明变化，再执行 `source install`。
+
 ## 声明源码仓库
 
-在消费方根目录提交 `pluxel.sources.jsonc`：
+在消费方根目录提交 `pluxel.sources.jsonc`。下面是同时使用 Pluxel 和 Chatbot 的示例；只联调 Pluxel 时移除 Chatbot URL 与不需要的 singleton：
 
 ```jsonc
 {
@@ -31,7 +48,11 @@ pluxel source doctor
 pnpm dev
 ```
 
+成功时，`source list` 应显示每个 URL 对应的真实 checkout，`source doctor` 应通过；随后应用启动应读取这些 checkout 的源码。若 list 标记 `missing`，先修正路径，不要继续安装。
+
 `source` 命令族始终使用实际调用的 CLI，因此项目尚未安装依赖、安装不完整或固定了另一个 CLI 版本，都不影响源码自举。普通命令仍使用项目固定版本。使用 npm 安装的 CLI 时没有可自动识别的源码 checkout，需要另外运行 `pluxel source register /path/to/pluxel`。
+
+## 管理登记和移动目录
 
 显式登记的同一 repository 优先于自动发现。`pluxel source list` 可在任意目录运行，显示当前可用的路径及来源（`registered` 或 `cli`），路径不存在时标记 `missing`。自动发现不写入 registry，也不从当前目录、相邻目录或父项目猜测源码位置；Git worktree 和入口符号链接同样可用。
 
@@ -43,11 +64,11 @@ pluxel source unregister https://github.com/PluxelJS/chatbot
 
 `unregister` 只删除登记记录，不删除 checkout 或已有项目 overlay；移除 Pluxel 的显式登记后，CLI 自身 checkout 仍会自动出现。`register`、`list`、`unregister` 和其他 source 命令均支持 `--registry <path>`，也可用 `PLUXEL_SOURCE_REGISTRY` 环境变量选择独立 registry。
 
-应用应在自己的仓库维护开发环境启动脚本、工具版本与服务前提；Pluxel CLI 只负责通用的源码发现、登记和安装。依赖 Pluxel 与 Chatbot 的完整例子见 [bot-new-omni 开发指南](https://github.com/PluxelJS/bot-new-omni#develop)：由应用维护的脚本通过 mise 安装 Git 与工具链，准备 `pluxel/local-projects/{chatbot,bot-new-omni}` 布局。
-
 移动显式登记的 checkout 后需要重新登记；移动自动发现的 Pluxel checkout 后需更新外部入口链接。修改路径或 `pluxel.sources.jsonc` 后运行 `source install`；已接入 checkout 内的普通源码修改不需要重装。
 `.pnpmfile.cjs` 与 `.pluxel/` 都是 CLI 生成的机器本地 overlay，应被 Git 忽略，不是需要提交的 workspace 配置。
-因此新 checkout 可以先运行 Corepack、`pnpm store path` 等不安装依赖的命令，再由独立 CLI 激活 source overlay。
+新 checkout 使用 mise 准备工具后，先由独立 CLI 激活 source overlay，再安装应用依赖。
+
+## 何时重新安装或构建
 
 CLI 扫描每个 checkout 自己的 workspace 和 manifest，按实际依赖闭包创建代理。source package 的 devDependencies 仍属于它自己的 checkout，不进入消费方 closure。
 安装和构建顺序从实际 package dependency graph 推导；provider repository 先完成，互不依赖的 repository 可并行。

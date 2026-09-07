@@ -1,11 +1,14 @@
 ---
-title: 配置插件宿主
+title: 把 Pluxel 接入现有项目
 description: 为现有项目选择 static 或 dynamic host，并配置 Plugin 清单、运行状态和 Workbench。
 ---
 
-Pluxel 提供静态和动态两种宿主模式。静态宿主的 Plugin 清单由入口文件确定；动态宿主在固定清单之外，还可以监听运行时增删的文件来源。Plugin 的写法不随模式变化，两者共享同一套依赖图、配置、运行时服务和生命周期。
+宿主负责加载插件、持久化配置和提供网络端口。把 Pluxel 加入现有 TypeScript 项目时，先用本页的 static 示例启动一个插件；
+只有确实要在运行中增删插件文件，才需要 dynamic。
 
-从零创建完整应用时先使用 [example monorepo](../development/starter-monorepo.md)，它已经包含可运行的 static host、alternative dynamic host、Vite 和构建配置。本页用于把 Pluxel 接入现有项目。
+从零创建应用，先完成[快速开始](./index.md)，模板已经配置好 Vite、工作台和构建命令。
+本页假设现有项目使用 ESM（`package.json` 包含 `"type": "module"`），并已安装 Node.js 24 或以上与 pnpm。
+源码仓库开发请沿用项目的 `mise.toml`，先运行 `mise install`。
 
 ## 选择宿主模式
 
@@ -17,9 +20,7 @@ Pluxel 提供静态和动态两种宿主模式。静态宿主的 Plugin 清单�
 
 不要根据是否需要 HMR 选择宿主模式：两种模式在开发期都支持模块热更新，也使用相同的 generation 清理流程。业务 Plugin 不需要为两种模式编写不同实现。
 
-开启 Workbench 的 host 必须能从 application root 解析 `react`、`react-dom`、`@mantine/core` 与 `@mantine/hooks`，并满足当前
-`@pluxel/runtime` 的 peer versions。它们是 Shell 提供给 MF2 remote 的固定 singleton winner；缺包或 Mantine 精确版本不一致会在
-producer build 前失败。Headless host 不需要安装这组 browser peers。
+下面的最小 static 示例先关闭 Workbench，确认插件可以启动；需要界面时再按[工作台配置](#workbench-与-management-access)开启。
 
 ## Static host
 
@@ -31,14 +32,27 @@ npx nypm add @pluxel/runtime @pluxel/runtime-static
 npx nypm add -D @pluxel/rolldown vite tsdown
 ```
 
-### Canonical entry
+先创建一个本地插件 `src/OrdersPlugin.ts`：
+
+```ts twoslash
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+
+@Plugin({ displayName: 'Orders' })
+export class OrdersPlugin extends BasePlugin {
+	protected override init() {
+		this.ctx.logger.info('Orders ready')
+	}
+}
+```
+
+### 定义宿主入口
 
 ```ts no-twoslash
 // src/pluxel.static.ts
 import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineProduct } from '@pluxel/runtime/product'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
-import { OrdersPlugin } from '@acme/orders'
+import { OrdersPlugin } from './OrdersPlugin.ts'
 
 export const product = defineProduct({
 	displayName: 'Rhythm',
@@ -54,16 +68,44 @@ export default defineStaticRuntime({
 				snapshot: { autoStart: [pluginNodeAddressOf(OrdersPlugin)] },
 			},
 			persistence: '.pluxel/persistence',
+			workbench: false,
 		}
 	},
 })
 ```
 
-`plugins` 定义 build-time fixed catalog 和 code closure；运行时依赖图由 auto-start policy、本次进程意图、fork 和 provider override 形成。
-`workbench`、persistence、logging、HTTP、Plugin config records 和 auto-start policy 是 `configure()` 返回的 startup data；本次进程意图
-不持久化，也不进入 startup config。
+### 启动并确认结果
 
-Static Vite host 与 `variant: 'workbench'` 产物默认启用 Workbench；`PLUXEL_WORKBENCH=false` 可在启动时完整关闭 Plane。
+```ts twoslash
+// vite.config.ts
+import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+	plugins: [staticRuntimeVitePlugin({ entry: './src/pluxel.static.ts' })],
+})
+```
+
+运行：
+
+```sh
+pnpm exec vite
+```
+
+终端应显示 Vite 地址和 `Orders ready`。这个最小插件没有业务 HTTP 页面，也没有开启 Workbench；
+看见默认 404 不代表插件启动失败。为插件增加路由见 [HTTP](../runtime/http.md)，启用管理界面见下文。
+
+修改日志文案并保存，应看到插件重新初始化。若没有启动，先检查 `plugins` 是否包含它，以及 `autoStart` 是否包含它的节点地址。
+插件出现在清单中并不等于自动启动。
+
+### 入口还可以配置什么
+
+`plugins` 列出此应用包含哪些插件；`runtimeState.snapshot.autoStart` 决定首次启动哪些插件。
+`configure()` 每次宿主启动时读取部署环境，并返回持久化、日志、工作台和初始配置等设置。
+工作台中的本次进程启停操作不自动改写下次启动策略。
+
+Static Vite host 与 `variant: 'workbench'` 产物默认启用 Workbench；本例通过 `workbench: false` 显式关闭。
+`PLUXEL_WORKBENCH=false` 也可在启动时关闭它。
 `PLUXEL_DATA_ROOT` 会覆盖 string/omitted persistence root，但不会替换 application 明确注入的 custom backend。
 
 `prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。没有应用数据库就无法运行的 static application 在这里打开、迁移并把关闭登记到 root effects；只有部分 Plugin 使用的数据库应成为 provider Plugin，由 graph 隔离失败。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
@@ -97,31 +139,10 @@ export default defineStaticRuntime({
 
 ### Vite development
 
-```ts twoslash
-// vite.config.ts
-import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
-import { defineConfig } from 'vite'
-
-export default defineConfig({
-	plugins: [staticRuntimeVitePlugin({ entry: './src/pluxel.static.ts' })],
-})
-```
-
 Vite SSR 加载 canonical entry。Plugin module 变化执行 catalog HMR；entry/configure dependency 变化重建 host；Workbench remote 由开发 compiler 增量构建。
 
-管理界面的执行诊断会把这里的 Plugin 标为 `static-catalog`，并根据 exact positive semantic fact 区分源码 module、已构建 module
-或无法证明；freezer 产出的 production application 则是 `static-bundle`。`.ts`/`.mjs` 扩展名、package 路径或没有命中 source
-transform 都不能证明 artifact 类型。Plugin 的 package/source 名称仍由 canonical address 决定，因此“static”不等于“未知来源”，
-execution 信息也不是运行期切换构建形态的开关，浏览器诊断不会收到 module ID 或绝对路径。Vite 下三种 artifact 都显示
-`catalog-hmr`（“目录 HMR”）：应用模块图变化时热替换插件目录；entry/应用配置边界变化时重建应用。
-
-Plugin module 的 catalog HMR 会以 `applied` 表示更新已应用且没有结构化异常；失败或异常时，Workbench 会区分旧 catalog 仍生效的
-`retained-previous`，以及新 catalog 已提交但
-commit/lifecycle 有异常的 `applied-with-issues`。Entry/configure 触发 full-host replacement 时旧 host 已经停止；若 candidate host
-创建或启动流程抛出错误，route 会清理 candidate，再用 previous application definition 创建 fresh compensation host。只有补偿成功才显示
-`restored-previous / application-reload`，它不代表旧 running generation 被原地保留或复活。
-若启动返回部分插件的 lifecycle issue，则保留已提交的新宿主并按节点报告，不进入宿主补偿。
-插件源码修改后的运行意图保留、自动恢复及旧实例保留范围见 [HMR 失败与自动恢复](../development/tooling.md#hmr-失败与自动恢复)。
+源码修改后的保留旧实例、失败恢复和更新状态见 [HMR 失败与自动恢复](../development/tooling.md#hmr-失败与自动恢复)。
+工作台中“目录 HMR”、来源和最近更新的读取方法见 [目录诊断](../workbench/operations.md#内置-plugin-目录诊断)。
 
 React、业务 alias 和普通 Vite plugin 属于 host `vite.config.ts`。不要复制 Pluxel semantic transform、SSR package classifier 或 runtime source alias。
 
@@ -171,7 +192,7 @@ import { staticApplication } from '@pluxel/rolldown/build'
 
 export default staticApplication({
 	entry: './src/pluxel.static.ts',
-	variant: 'workbench',
+	variant: 'headless',
 	target: 'node',
 })
 ```
@@ -220,6 +241,8 @@ declare module '@pluxel/runtime/environment' {
 freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使本机开发/测试可选择 PGlite、部署可选择 PostgreSQL。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
 
 ```ts twoslash
+import { staticApplication } from '@pluxel/rolldown/build'
+
 export default staticApplication({
 	entry: './src/pluxel.static.ts',
 	managedDatabaseDrivers: [],
@@ -242,7 +265,7 @@ npx nypm add @pluxel/runtime @pluxel/runtime-dynamic
 npx nypm add -D vite
 ```
 
-### Canonical config
+### 配置动态插件来源
 
 ```ts no-twoslash
 // src/pluxel.dynamic.ts
@@ -304,11 +327,8 @@ Dynamic `root` 是 source、runtime storage 与 module resolution 的显式路�
 
 运行期安装 package 时显式装配官方 [Package Manager Plugin](../plugins/package-manager.md)；它把受管 package 原子发布成 `.mjs` source entry，dynamic route 只观察这些文件。
 
-这类受管 `.mjs` entry 仍可在文件被替换时触发 definition HMR，但 `.mjs` 本身不证明它是 built artifact。只有 active closure 中的
-exact built semantic fact 才显示 `built-module / entry-only`；没有证据时显示 `unreported / entry-only`。两者都只承诺观察 entry，
-不会因为 host 处于开发模式就监听已安装 package 的内部源码。只有 raw source lowering 的 exact fact 能证明 definition 来自当前
-源码图时才显示 `source-module / source-graph`。失败 update 的 semantic fact generation 会 rollback；package/source 名称始终从
-canonical address 派生，不从 HMR 状态猜测。
+只监听已安装包的入口文件时，替换入口可以触发更新，但不意味着会监听该包全部源码。
+要修改 Git checkout 内的插件并即时更新，使用 [源码工作区](../development/source-workspaces.md)。
 
 ### Programmatic dev runtime
 
@@ -363,7 +383,7 @@ Plugin raw config、环境变量映射、custom persistence backend 与 custom l
 
 ### Plugin config 与 runtime state
 
-Host 的两类状态不要混淆：
+宿主分别维护三类状态：
 
 - runtime state：哪些 Plugin 自动启动、fork、provider override；
 - process session：本次进程中哪些 Plugin 明确启动或停止，由 Runtime coordinator 持有，cold boot 时清空；
@@ -402,7 +422,12 @@ workbench: {
 }
 ```
 
-`workbench: false` 或省略该字段时不创建 Workbench registry、MF compiler/watcher、producer route 或 control session。Plugin business HTTP、database、commands 和 lifecycle 不受影响。启用 Workbench 会同时启用 Management Plane。
+`workbench: false` 显式关闭管理界面，Plugin 的 HTTP、数据库、命令和生命周期继续可用。
+省略字段时是否默认开启取决于宿主入口：Static Vite 和带工作台的静态产物默认开启，不能把省略等同于显式关闭。
+
+开启 Workbench 前，应用需要安装与当前 Runtime 匹配的 `react`、`react-dom`、`@mantine/core` 和 `@mantine/hooks`。
+现有模板已经固定这些依赖；接入现有项目时应按所用 `@pluxel/runtime` 的发布包 peerDependencies 配置，
+并确保 Mantine 的实际解析版本与宿主一致。它们由工作台统一加载，缺少依赖或版本不匹配会导致页面构建失败。
 
 不加载 Workbench UI、但需要通过 `@pluxel/runtime/web` 管理宿主时，显式启用 Management：
 
@@ -412,15 +437,9 @@ management: true
 ```
 
 `management: true` 会启用 headless management；省略时，关闭 Workbench 的宿主没有 management route 或 backend。
-该字段只接受布尔值，不承载 catalog 分类。Runtime 按固定优先级自动派生 catalog sections：
-
-1. 有 `provides` 的 concrete Plugin 按被提供的 provider role 归类；
-2. 其余 package-root definitions 按精确 package name 归类；
-3. 其余 source-entry definitions 按直接父目录归类，例如 `src/render/canvas.ts` 与 `src/render/fonts.ts` 同属 `render`。
-
-规则不读取 `requires` / `optional` 依赖边，也不随启动状态或当前 provider selection 改变。用户移动和排序只作为
-Management 偏好保存；同一 definition 的 default node 与 forks 不会被拆开。认证策略和 OIDC secret 属于认证 Plugin。
-Workbench 启用时总会同时启用 Management，不存在同时“启用 Workbench、禁用 Management”的矛盾状态。
+`management` 只接受布尔值。Workbench 开启时也会开启 Management；关闭 Workbench 后，
+需要管理 API 就显式保留 `management: true`。
+插件目录的[自动依赖分组与人工分组](../workbench/plugin-groups.md)只改变界面组织，不修改启停策略或依赖选择。
 
 生产 Node launcher 默认监听 `0.0.0.0`。Runtime 从物理 socket peer 和认证 provider 状态决定 Management 访问：真实
 loopback socket 取得 Runtime recovery principal；remote/unknown 必须由可信 physical carrier 提供 HTTPS，并由当前

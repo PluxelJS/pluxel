@@ -1,11 +1,11 @@
 ---
 title: 插件 HTTP
-description: 直接用 generation-scoped 原生 Elysia 2 application 暴露 API、webhook、流式响应和 WebSocket。
+description: 在插件中添加 HTTP API、webhook 和 WebSocket，并验证路由与热更新行为。
 ---
 
-业务 HTTP 是常驻 Runtime 能力，与 Workbench 是否启用无关。每个 Plugin generation 严格惰性地拥有一个真实的
-Elysia 2 application；Plugin 和它的全部 PluginPart 通过 `ctx.elysia` 取得同一个 instance。Pluxel 不包装 route builder，
-也不在 Elysia path 外再拼接 Plugin namespace。
+要给插件增加 API 或 webhook，在 `init()` 中通过 `this.ctx.elysia` 声明路由即可。宿主负责监听端口，关闭 Workbench 也不影响业务 HTTP。
+
+下面的插件可以加入 [快速开始](../getting-started/index.md) 创建的应用。`ctx.elysia` 使用 Elysia 2 原生 API，路由路径就是最终 URL，不会自动添加插件名前缀。
 
 ## 最小路由
 
@@ -29,6 +29,8 @@ export class OrdersPlugin extends BasePlugin {
 	}
 }
 ```
+
+把 `OrdersPlugin` 加入宿主清单与自动启动项，启动应用后，用终端显示的 origin 请求 `/health`，应得到 `{"ok":true}`；请求 `/orders/42` 应得到 `{"id":"42"}`。若返回 404，先确认插件已运行、请求发往同一宿主端口。
 
 这里的真实地址就是 `/health` 和 `/orders/:id`。需要共同前缀时直接使用 Elysia 的 `group()`：
 
@@ -90,15 +92,7 @@ Plugin 自带另一份 runtime copy。当前 Runtime 锁定 `2.0.0-beta.7`，对
 应用仓库内的 private Plugin 也必须通过 workspace catalog 解析到同一个版本；不能用宽范围产生第二份 Elysia。这个约束同时覆盖
 `elysia` 根入口和 `elysia/websocket` 等 subpath。
 
-`staticApplication()` freezer 会把 Elysia package 当前公开的全部 subpath 解析到 Runtime-owned singleton；dynamic Vite/ModuleRunner
-使用同一 host singleton bridge。这样 source-linked checkout 即使出现不同的 pnpm 物理路径，Plugin 的 `elysia`、
-`elysia/type`、`elysia/websocket` 和官方 plugin 仍与 `ctx.elysia` 属于同一份上游 runtime。当前还没有在 catalog ingestion
-阶段校验 Plugin manifest 的 Elysia version range，因此 exact peer/dev dependency 仍是作者必须遵守的 package contract。
-
-freezer 还会在宿主与 Plugin module 求值前，通过 Elysia 公开的 `setupTypebox()` 一次性安装 TypeBox 的 type、system、value、
-schema、compile namespace 与 `exact-mirror`。因此 schema 可以在已经搬离 source workspace 的 frozen distribution 中惰性编译；
-产物不依赖相对生成 chunk 的同步 `createRequire()` 查找。这个 wiring 只是补齐上游公开 runtime dependency，不替换 `t`、schema
-或 validator，也不增加 Pluxel schema facade。
+静态构建与动态开发都复用宿主的同一份 Elysia，包含其公开子入口。源码关联可能产生不同的 pnpm 物理路径，但插件仍须声明上述精确版本；当前加载流程不会替作者验证所有版本范围。
 
 Elysia 2 的 route schema 位于 handler 之前：
 
@@ -139,6 +133,78 @@ protected override init() {
 	this.ctx.elysia.use(ordersApi(this.orders))
 }
 ```
+
+## WebSocket
+
+Node production carrier、static Vite 和 dynamic Vite 已通过真实 listener 验证 Elysia 2 的基础业务 WebSocket。作者仍直接使用
+Elysia，不需要 Pluxel WebSocket facade：
+
+```ts no-twoslash
+import { websocket } from 'elysia/websocket'
+
+this.ctx.elysia.use(websocket()).ws('/events', {
+	open(socket) {
+		socket.subscribe('orders')
+	},
+	message(socket, message) {
+		socket.send({ type: 'echo', message })
+	},
+	close(socket) {
+		socket.unsubscribe('orders')
+	},
+})
+```
+
+当前 Node 路线支持基础 `open` / `message` / `close` dispatch、send 和 pub/sub。同名 topic 会自动限定在 owning Plugin generation，
+不会跨 owner 广播。replacement 或 owner stop 会先 abort connection owner signal，再以 `1012 Service Restart` 关闭该 owner 的 socket；
+其他 owner 的连接不受影响。若 transport 没有回报 close，宿主会在有界等待后终止连接并释放 generation lease。
+
+Vite 始终先保留自己的 HMR protocol/path，只有非 HMR 且命中当前 Elysia `.ws()` route 的 upgrade 才进入业务 carrier。
+
+## PluginPart 与 Elysia scope
+
+同一 generation 的 root Plugin 和所有 Part 共享相同的 application identity。Part 可以直接注册路由：
+
+```ts no-twoslash
+class MetricsPart extends PluginPart<OrdersPlugin> {
+	protected override init() {
+		this.ctx.elysia.get('/orders/metrics', () => this.snapshot())
+	}
+}
+```
+
+这也表示 Part 不是 Elysia semantic isolation boundary。root 与 Part 按实际 children-before-owner 注册顺序共同组成一个 app，hook、
+model、macro、store 和 named plugin dedupe 遵循 Elysia 在该 app 内的规则。需要独立路径治理、hook 隔离、启停或撤销的组成应成为
+真正 Plugin。
+
+不同 Plugin generation 则各自拥有独立 app。一个 Plugin 的 global hook、store 或 error handler 不会因为宿主组合顺序作用到另一个
+Plugin 或 control plane。
+
+## Finalization 与生命周期
+
+Plugin 和所有 Part 的 `init()` 成功后，Runtime 会等待 lazy Elysia modules，检查 route inventory，再调用 Elysia 2 自己的
+`app.compile()` 固化 application。compile 会 seal 同一个 instance；generation running 后继续增加 route、hook、store 或 decorator
+会由 Elysia 2 fail-fast。
+
+作者不需要保存 publication handle。配置或源码变化建立新 generation；不要在 running generation 内原地改 route tree。finalization
+失败不会发布部分路由；成功 contribution 与 Core running projection 一起提交。Plugin stop、replacement 或 rollback 后，
+旧 generation 不再接收新请求。
+
+请求进入 app 前会取得 owner generation lease。返回 streaming `Response` 时，lease 延伸到 body close、cancel 或 error；generation
+停止会 abort handler 看到的 `request.signal`，并等待已经接纳的 response settle。无法响应 signal 的任意 JavaScript 仍受宿主 drain
+timeout 约束，Runtime 不会假装能同步终止它。
+
+长期 background task 不应挂在某个 HTTP request Promise 上。把它建模为 owner-bound worker/queue，再让 endpoint 只提交任务或查询状态。
+
+## 挂载已有 Fetch application
+
+已有 WinterTC-style Fetch application 使用 Elysia 原生 `mount()`：
+
+```ts no-twoslash
+this.ctx.elysia.mount('/legacy', (request) => legacyRouter.fetch(request))
+```
+
+请求仍从整个 generation contribution 的 admission 与 cleanup 边界进入；Pluxel 不再定义另一套 Fetch boundary 或 mount handle。
 
 ## 按所有权组织大型路由
 
@@ -282,78 +348,6 @@ handler 取得的 `server` 是 generation-scoped、carrier-backed view。`url`�
 `id` 是本 generation 内稳定的 virtual-server value，不是物理 listener identity。`server.url` 每次返回独立 `URL`，修改它不会重配
 listener。Node carrier 还支持 `server.requestIP(request)` 读取该请求的远端 address、port 和 IP family；把其他来源或已经脱离当前
 owner invocation 的 `Request` 传入会明确失败。
-
-## WebSocket
-
-Node production carrier、static Vite 和 dynamic Vite 已通过真实 listener 验证 Elysia 2 的基础业务 WebSocket。作者仍直接使用
-Elysia，不需要 Pluxel WebSocket facade：
-
-```ts no-twoslash
-import { websocket } from 'elysia/websocket'
-
-this.ctx.elysia.use(websocket()).ws('/events', {
-	open(socket) {
-		socket.subscribe('orders')
-	},
-	message(socket, message) {
-		socket.send({ type: 'echo', message })
-	},
-	close(socket) {
-		socket.unsubscribe('orders')
-	},
-})
-```
-
-当前 Node 路线支持基础 `open` / `message` / `close` dispatch、send 和 pub/sub。同名 topic 会自动限定在 owning Plugin generation，
-不会跨 owner 广播。replacement 或 owner stop 会先 abort connection owner signal，再以 `1012 Service Restart` 关闭该 owner 的 socket；
-其他 owner 的连接不受影响。若 transport 没有回报 close，宿主会在有界等待后终止连接并释放 generation lease。
-
-Vite 始终先保留自己的 HMR protocol/path，只有非 HMR 且命中当前 Elysia `.ws()` route 的 upgrade 才进入业务 carrier。
-
-## PluginPart 与 Elysia scope
-
-同一 generation 的 root Plugin 和所有 Part 共享相同的 application identity。Part 可以直接注册路由：
-
-```ts no-twoslash
-class MetricsPart extends PluginPart<OrdersPlugin> {
-	protected override init() {
-		this.ctx.elysia.get('/orders/metrics', () => this.snapshot())
-	}
-}
-```
-
-这也表示 Part 不是 Elysia semantic isolation boundary。root 与 Part 按实际 children-before-owner 注册顺序共同组成一个 app，hook、
-model、macro、store 和 named plugin dedupe 遵循 Elysia 在该 app 内的规则。需要独立路径治理、hook 隔离、启停或撤销的组成应成为
-真正 Plugin。
-
-不同 Plugin generation 则各自拥有独立 app。一个 Plugin 的 global hook、store 或 error handler 不会因为宿主组合顺序作用到另一个
-Plugin 或 control plane。
-
-## Finalization 与生命周期
-
-Plugin 和所有 Part 的 `init()` 成功后，Runtime 会等待 lazy Elysia modules，检查 route inventory，再调用 Elysia 2 自己的
-`app.compile()` 固化 application。compile 会 seal 同一个 instance；generation running 后继续增加 route、hook、store 或 decorator
-会由 Elysia 2 fail-fast。
-
-作者不需要保存 publication handle。配置或源码变化建立新 generation；不要在 running generation 内原地改 route tree。finalization
-失败不会发布部分路由；成功 contribution 与 Core running projection 一起提交。Plugin stop、replacement 或 rollback 后，
-旧 generation 不再接收新请求。
-
-请求进入 app 前会取得 owner generation lease。返回 streaming `Response` 时，lease 延伸到 body close、cancel 或 error；generation
-停止会 abort handler 看到的 `request.signal`，并等待已经接纳的 response settle。无法响应 signal 的任意 JavaScript 仍受宿主 drain
-timeout 约束，Runtime 不会假装能同步终止它。
-
-长期 background task 不应挂在某个 HTTP request Promise 上。把它建模为 owner-bound worker/queue，再让 endpoint 只提交任务或查询状态。
-
-## 挂载已有 Fetch application
-
-已有 WinterTC-style Fetch application 使用 Elysia 原生 `mount()`：
-
-```ts no-twoslash
-this.ctx.elysia.mount('/legacy', (request) => legacyRouter.fetch(request))
-```
-
-请求仍从整个 generation contribution 的 admission 与 cleanup 边界进入；Pluxel 不再定义另一套 Fetch boundary 或 mount handle。
 
 ## 当前 Elysia 2 与 carrier 边界
 

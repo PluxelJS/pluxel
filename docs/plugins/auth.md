@@ -7,40 +7,49 @@ description: 用官方 Auth Plugin 在唯一 Cap’n Web control socket 上提�
 
 ## 启用
 
-宿主先启用 Management/Workbench。Password、password + TOTP 与 confidential OIDC 还需要 Vault：
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+
+```sh
+pnpm catalog:add -- @pluxel/auth
+```
+
+在宿主入口从 `@pluxel/auth` 导入 `AuthPlugin`，加入 `plugins` 清单和自动启动项；完整装配方式见 [添加插件](./index.md#把一个插件加入应用)。
+
+先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用 static 入口合入现有清单：
 
 ```ts no-twoslash
-configure: () => ({
-	vault: {},
-	workbench: { enabled: true },
+import { AuthPlugin } from '@pluxel/auth'
+import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { defineStaticRuntime } from '@pluxel/runtime-static'
+
+export default defineStaticRuntime({
+	name: 'my-app',
+	plugins: [AuthPlugin],
+	configure: () => ({
+		vault: {},
+		workbench: { enabled: true },
+		runtimeState: {
+			snapshot: { autoStart: [pluginNodeAddressOf(AuthPlugin)] },
+		},
+		configService: {
+			snapshot: {
+				plugins: [
+					{
+						owner: pluginNodeAddressOf(AuthPlugin),
+						config: { mode: { type: 'password' } },
+					},
+				],
+			},
+		},
+	}),
 })
 ```
 
-然后加入并启动 `AuthPlugin`：
-
-```ts no-twoslash
-await host.start(AuthPlugin, {
-	initialConfig: { mode: { type: 'password' } },
-})
-```
-
-## 浏览器如何认证
-
-Workbench 每个 document 只建立一个 control WebSocket。没有有效 `HttpOnly` cookie 时，password 与 TOTP challenge 直接在该 socket 上完成：
-
-```text
-password      { password }
-    ↓
-totp（按 mode）{ code }
-    ↓
-authenticated + single-use cookie commit ticket
-```
-
-当前 socket 在 authenticated step 后立即取得 principal authority。浏览器随后用 60 秒、single-use ticket 调用固定 cookie-commit endpoint；响应只有 `204 + Set-Cookie`，cookie 用于下一 document/session。Authentication challenge 和 Management API 始终留在同一 Cap’n Web session。
-
-logout 也是 control capability：插件先撤销当前或刚签发的 server session，再返回 60 秒、single-use clear-cookie ticket，Runtime 随后关闭整个 socket epoch。浏览器使用同一个固定 cookie-commit endpoint 清理 `HttpOnly` cookie；server session 一旦撤销，遗留 cookie 也不能恢复它。
+首次启动后，在本机 Workbench 进入 Auth 的 setup 页面完成账号配置；远程服务器通过 SSH tunnel 打开 loopback Workbench。完成后从远端打开 Workbench 验证登录，退出后重新加载应再次要求认证。密码、TOTP 和 confidential OIDC 的密钥依赖 [Vault](../runtime/vault.md)；public OIDC 只需下节配置。
 
 ## OIDC
+
+把上例的插件 `config` 换为以下内容，并在身份服务登记下方 callback URL：
 
 ```ts no-twoslash
 {
@@ -102,6 +111,22 @@ View 都得到 fresh target 和 provisioning session；close、abort、socket ep
 `workbench: false` 和 production `headless` artifact 没有 setup View/API。它们使用 local credential 或 confidential OIDC 时必须预置
 同一 Vault record，或先用带 Workbench artifact、指向同一 persistence 的部署完成配置再切 headless；否则 provider 保持
 `ready: false`。Public OIDC 无 provisioning，可以仅凭配置用于 headless。
+
+## 浏览器如何认证
+
+Workbench 每个 document 只建立一个 control WebSocket。没有有效 `HttpOnly` cookie 时，password 与 TOTP challenge 直接在该 socket 上完成：
+
+```text
+password      { password }
+    ↓
+totp（按 mode）{ code }
+    ↓
+authenticated + single-use cookie commit ticket
+```
+
+当前 socket 在 authenticated step 后立即取得 principal authority。浏览器随后用 60 秒、single-use ticket 调用固定 cookie-commit endpoint；响应只有 `204 + Set-Cookie`，cookie 用于下一 document/session。Authentication challenge 和 Management API 始终留在同一 Cap’n Web session。
+
+logout 也是 control capability：插件先撤销当前或刚签发的 server session，再返回 60 秒、single-use clear-cookie ticket，Runtime 随后关闭整个 socket epoch。浏览器使用同一个固定 cookie-commit endpoint 清理 `HttpOnly` cookie；server session 一旦撤销，遗留 cookie 也不能恢复它。
 
 ## 安全与生命周期
 

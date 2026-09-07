@@ -9,7 +9,7 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 ## 开启与发现
 
-在现有 Vite route 上显式开启：
+先检查项目是否已有开启控制台的 Vite 进程。已有时直接发现实例；尚未配置时，在现有 Vite route 上显式开启：
 
 ```ts no-twoslash
 import { defineConfig } from 'vite'
@@ -28,9 +28,10 @@ export default defineConfig({
 `dynamicRuntimeVitePlugin({ entry, devConsole: true })` 使用相同选项。启动项目原有的 Vite dev 命令，然后运行：
 
 ```sh
-pluxel dev instances
-pluxel dev run dev/inspect.ts
+pnpm exec pluxel dev instances --root /absolute/project-root
 ```
+
+从返回结果确认 `root`、`pid` 和 `instanceId`。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
 省略 `devConsole` 不安装控制台。两条 Vite integration 只在 serve 时安装；dynamic 的 `mode: 'distribution'` 拒绝开启。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
 
@@ -41,6 +42,47 @@ CLI 默认从命令当前目录向上找到最近的 `package.json`，只查询�
 dev 命令会在连接前拒绝未知选项；例如拼错 `--instance` 会返回 `invalid_input`，不会因此退回自动选择。`instances` 只按 root 列出候选，`--instance` 用于后续 `run/result/cancel`。
 
 入口文件必须在所选 Vite root 内，不能放在 `.pluxel`、`.git` 或 `node_modules`。脚本依赖按原有 Vite 规则解析，可以 import 已允许的工作区源码。相对 CLI 文件路径从命令当前目录解析，`--root` 只选择宿主。
+
+## 写一个可以反复运行的操作
+
+下面以 starter 的 `TodoPlugin` 为例。在所选 Vite root 内创建 `dev/inspect.ts`；其他项目替换为自己的包名和业务方法。成功结果应包含插件状态和当前 Todo 快照：
+
+```ts no-twoslash
+// dev/inspect.ts
+import type { DevConsole } from '@pluxel/runtime/dev'
+import { TodoPlugin } from '@example/todo-plugin'
+
+export default async function (dev: DevConsole) {
+	return {
+		status: await dev.plugins.status(TodoPlugin),
+		todos: dev.plugins.require(TodoPlugin).snapshot(),
+	}
+}
+```
+
+需要写入数据时，在同一文件增加下面的 named export（合并已有 import）：
+
+```ts no-twoslash
+import type { DevConsole, DevRunContext } from '@pluxel/runtime/dev'
+import { TodoPlugin } from '@example/todo-plugin'
+
+export async function add(dev: DevConsole, run: DevRunContext) {
+	if (typeof run.input !== 'string') throw new TypeError('Expected a todo title')
+	const result = dev.plugins.require(TodoPlugin).add(run.input)
+	return result
+}
+```
+
+```sh
+pnpm exec pluxel dev run dev/inspect.ts --root /absolute/project-root --instance INSTANCE_ID
+pnpm exec pluxel dev run dev/inspect.ts --export add --input '"Verify current data"' --root /absolute/project-root --instance INSTANCE_ID
+```
+
+默认调用 default export；`--export` 选择具名函数。`--input` 是 JSON，较大输入可以用互斥的 `--input-file`；省略时 `run.input` 为 `undefined`。`DevRunContext` 同时提供 `id` 和 `signal`。跨进程的 input 类型始终是 unknown，需要脚本校验。
+
+修改文件、增加 export、换文件、传入新参数都不需要重启。每次提交调用当前导出函数；模块顶层不是每次运行的入口，不要把写数据放在那里。HMR 更新代码，但不会自动重放脚本。
+
+每次重新取得当前实例。`require()` 不自动启动插件，也不把旧 constructor 转成新 implementation；旧 target 会报告 `stale_target`。普通实例方法没有额外的可撤销代理，跨 await 后可能已经过期；需要 generation admission 的调用优先使用 commands、Workbench 或已有 database handle。
 
 ## Coding agent 工作流程
 
@@ -60,47 +102,6 @@ pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-h
 ```
 
 安装了 `@pluxel/cli` 的用户项目仍使用 `pnpm exec pluxel`，替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
-
-## 写一个可以反复运行的操作
-
-下面以项目已有的 `TodoPlugin` 为例；方法和配置字段由你的 Plugin 定义：
-
-```ts no-twoslash
-// dev/inspect.ts
-import type { DevConsole } from '@pluxel/runtime/dev'
-import { TodoPlugin } from '@example/todo-plugin'
-
-export default async function (dev: DevConsole) {
-	return {
-		status: await dev.plugins.status(TodoPlugin),
-		todos: dev.plugins.require(TodoPlugin).snapshot(),
-	}
-}
-```
-
-新增操作可以写在同一文件的 named export 中：
-
-```ts no-twoslash
-import type { DevConsole, DevRunContext } from '@pluxel/runtime/dev'
-import { TodoPlugin } from '@example/todo-plugin'
-
-export async function add(dev: DevConsole, run: DevRunContext) {
-	if (typeof run.input !== 'string') throw new TypeError('Expected a todo title')
-	const result = dev.plugins.require(TodoPlugin).add(run.input)
-	return result
-}
-```
-
-```sh
-pluxel dev run dev/inspect.ts
-pluxel dev run dev/actions.ts --export add --input '"Verify current data"'
-```
-
-默认调用 default export；`--export` 选择具名函数。`--input` 是 JSON，较大输入可以用互斥的 `--input-file`；省略时 `run.input` 为 `undefined`。`DevRunContext` 同时提供 `id` 和 `signal`。跨进程的 input 类型始终是 unknown，需要脚本校验。
-
-修改文件、增加 export、换文件、传入新参数都不需要重启。每次提交调用当前导出函数；模块顶层不是每次运行的入口，不要把写数据放在那里。HMR 更新代码，但不会自动重放脚本。
-
-每次重新取得当前实例。`require()` 不自动启动插件，也不把旧 constructor 转成新 implementation；旧 target 会报告 `stale_target`。普通实例方法没有额外的可撤销代理，跨 await 后可能已经过期；需要 generation admission 的调用优先使用 commands、Workbench 或已有 database handle。
 
 ## 先发现，再修改
 
@@ -214,9 +215,9 @@ export async function restartWithLogs(dev: DevConsole) {
 命令执行结果在 stdout 输出单一 JSON envelope。帮助输出和参数解析失败遵循普通 CLI 输出规则，agent 还需检查退出码与 stderr。同步 run 接纳后，stderr 会先输出一行包含 root/instanceId/runId 的 receipt，方便 agent 工具超时后恢复查询。run/result/cancel 返回的 snapshot 同样带 root，便于 agent 校验目标。领域返回值在成功运行 snapshot 的 `value` 中。长操作可以先 detach：
 
 ```sh
-pluxel dev run dev/seed.ts --detach
-pluxel dev result <run-id>
-pluxel dev cancel <run-id>
+pnpm exec pluxel dev run dev/seed.ts --detach --root /absolute/project-root --instance INSTANCE_ID
+pnpm exec pluxel dev result RUN_ID --root /absolute/project-root --instance INSTANCE_ID
+pnpm exec pluxel dev cancel RUN_ID --root /absolute/project-root --instance INSTANCE_ID
 ```
 
 客户端错误保留稳定 `error.code` 和面向人的 `message`，并尽量提供 `error.context.root`、`error.context.instanceId` 和下一步 `error.hint`。root 仅在成功解析目标项目后出现，不会为未知项目猜一个路径。无法确定执行结果时还保留 runId；agent 应据此恢复查询，不能直接重放写操作。多实例错误的 `error.candidates` 只含公开候选信息，选择后用同一 root 与明确 instanceId 重新调用。

@@ -1,13 +1,38 @@
 ---
-title: 配置模型
+title: 声明和更新插件配置
 description: 用一个 Valibot object schema 统一配置类型、默认值、归一化和校验。
 ---
 
-每个 Plugin 和它拥有的每种 `PluginPart` 各自最多维护一份配置定义：传给 `this.configs.use()` 的 Valibot object schema。
-TypeScript 类型、默认值、归一化、运行时校验和 Workbench 表单都从这些局部 schema 派生；宿主仍只保存 owning Plugin 的
-一个 composite config record，不需要再写平行配置接口。
+配置适合会随部署或用户选择变化的值，例如服务地址、超时和开关。
+在 Plugin 中声明一个 Valibot schema，Pluxel 会从中得到类型、默认值、校验规则和 Workbench 配置表单。
 
-## 从一个完整 schema 开始
+开始前，你应已有一个能启动的 Plugin。先给配置加默认值，在 `init()` 中读取，再从工作台修改它。
+普通配置不保存密钥；密码、Token 等使用 [Vault](../runtime/vault.md)。
+
+## 先添加一个有默认值的字段
+
+```ts twoslash
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+
+@Plugin({ displayName: 'Worker' })
+export class WorkerPlugin extends BasePlugin {
+	private readonly config = this.configs.use(
+		v.object({
+			concurrency: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 4),
+		}),
+	)
+
+	protected override init() {
+		this.ctx.logger.info('worker configured', { concurrency: this.config.concurrency })
+	}
+}
+```
+
+首次没有保存配置时，启动日志应显示 `concurrency: 4`；工作台的标准配置页应出现此字段。
+输入 `0` 会校验失败。保存为 `8` 后，若没有注册下文的在线更新处理，重启插件才会应用新值。
+“保存成功”与“运行中已应用”需要分别检查。
+
+## 添加标题、约束和更多字段
 
 ```ts twoslash
 // @filename: config.ts
@@ -45,6 +70,38 @@ export class WorkerPlugin extends BasePlugin {
 }
 ```
 
+## 宿主如何设置配置
+
+日常手动配置使用 Workbench；以下 `host` 指 [Runtime 测试宿主](../development/testing.md)，适合检查初始值和更新结果。
+正在运行的开发应用应通过 [开发控制台](../development/dev-console.md)修改配置。
+测试中，首次启动可以传入 `initialConfig`：
+
+```ts no-twoslash
+const worker = await host.start(WorkerPlugin, {
+	initialConfig: {
+		endpoint: 'https://api.example.com',
+		concurrency: 8,
+	},
+})
+```
+
+node 已拥有 committed config 或进入过 lifecycle 后，使用 Runtime 的 production-like live mutation：
+
+```ts no-twoslash
+const result = await host.config.patch(WorkerPlugin, {
+	endpoint: 'https://api.example.com',
+	concurrency: 12,
+})
+
+// 已注册 configs.onUpdate() 且处理成功时，application 为 'applied'。
+// 否则检查 'saved-not-applied'，再按业务需要显式重启。
+expect(result.ok).toBe(true)
+```
+
+`initialConfig` 不会根据当前状态偷偷变成 live update；越过 bootstrap boundary 后继续传它会明确失败。static 与 dynamic host 的持久化和
+reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存与显式 restart 是两个独立操作，`host.config.patch()` 不会隐式重启；
+运行中的原地更新只通过 `configs.onUpdate()` 通知。
+
 ## 声明规则
 
 工具链依赖这个稳定形状提取 metadata，因此：
@@ -55,13 +112,9 @@ export class WorkerPlugin extends BasePlugin {
 - 每个 Plugin/Part class 各自最多一次，并且 schema 必须产出 object；
 - schema expression 要能由 semantic pass 追踪，不用动态 runtime 分支拼接。
 
-`configs.use()` 的 field 在 generation construction 时先得到一个冻结的 identity sentinel，再由 Core 注入已验证 snapshot；sentinel
-不是动态属性 `Proxy`。因此 constructor/其他 field initializer 的提前读取由 Pluxel semantic/lint pass 直接拒绝，不依赖运行时
-任意属性 trap。
-
-TypeScript 的 `private`/`protected` 可以使用；限制针对真正的 `#private` runtime slot。
-`configs` 本身是 Plugin/Part subclass 内的 protected declaration DSL；宿主与测试通过明确的 bootstrap/live config API 和业务 projection 操作配置，
-不从实例外调用它。
+使用 TypeScript `private` 或 `protected` 字段即可。配置值在构造完成后、`init()` 前才可读取，
+构造器和其他字段初始化器中提前读取会被构建检查拒绝。
+`configs` 只在 Plugin/Part 子类内部使用；测试和宿主通过配置 API 操作，不直接改实例字段。
 
 ## 默认值只写一次
 
@@ -81,10 +134,10 @@ class WorkerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(Config)
 
 	async run() {
-		// ✅ 正确：schema 的 normalized output 是唯一默认值 authority。
+		// 直接读取 schema 已补全的默认值。
 		await request({ timeoutMs: this.config.timeoutMs })
 
-		// ❌ 错误：业务代码再次 fallback，形成第二份默认值 authority。
+		// 避免再次补默认值：这里会与 schema 的默认值重复。
 		await request({ timeoutMs: this.config.timeoutMs ?? 5_000 })
 	}
 }
@@ -122,8 +175,8 @@ constructor 只声明 required Plugin dependency，不读取 config，也不创�
 
 ## 让运行中的 Plugin 接收配置更新
 
-保存配置默认只推进 durable desired config，不会隐式 restart 运行中的 Plugin。能够原地更新的 Plugin 在 `init()` 中为自己的 config field
-注册一次 listener：
+保存配置会先持久化用户希望采用的值，不会自动重启插件。若连接或服务可以原地更新，在 `init()` 中注册一次
+`configs.onUpdate()`；处理完成后，框架才把配置标记为已应用：
 
 ```ts twoslash
 import { BasePlugin, Plugin, v } from '@pluxel/runtime'
@@ -154,11 +207,11 @@ export class GatewayPlugin extends BasePlugin {
 }
 ```
 
-listener 收到两个 deep-frozen snapshot 和一个 generation cancellation signal：
+更新函数收到两个只读快照和一个取消信号。这里的一次运行指插件从启动到停止或重启之前的这段生命周期：
 
-- `applied` 是最后一次被当前 generation 全部相关 listener 确认的 declaration slice；
-- `desired` 是本次已经持久化、等待处理的 slice；
-- `signal` 在 generation stop、restart 或 replacement 时 abort。
+- `applied` 是本次运行已确认应用的配置；
+- `desired` 是本次已保存、等待应用的配置；
+- `signal` 在插件停止、重启或热替换时取消。
 
 listener resolve 表示 Plugin 确认自己已经处理更新。框架随后更新 config field 与 applied revision，但不会检查 Plugin 的普通字段、连接或
 外部系统，也不会回滚 listener 已经产生的副作用。需要并发一致读取时，先构造完整 runtime object，再像示例一样一次替换引用。
@@ -260,34 +313,6 @@ Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织�
 - config form metadata、description 或 option label；
 - structured log properties；
 - status snapshot、command output 或序列化错误。
-
-## 宿主如何设置配置
-
-测试和宿主通过 Plugin identity 设置 raw record，不直接修改实例字段。首次 lifecycle 前的 fixture config 使用 `initialConfig`：
-
-```ts no-twoslash
-const worker = await host.start(WorkerPlugin, {
-	initialConfig: {
-		endpoint: 'https://api.example.com',
-		concurrency: 8,
-	},
-})
-```
-
-node 已拥有 committed config 或进入过 lifecycle 后，使用 Runtime 的 production-like live mutation：
-
-```ts no-twoslash
-const result = await host.config.patch(WorkerPlugin, {
-	endpoint: 'https://api.example.com',
-	concurrency: 12,
-})
-
-expect(result).toMatchObject({ ok: true, application: 'applied' })
-```
-
-`initialConfig` 不会根据当前状态偷偷变成 live update；越过 bootstrap boundary 后继续传它会明确失败。static 与 dynamic host 的持久化和
-reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存与显式 restart 是两个独立操作，`host.config.patch()` 不会隐式重启；
-运行中的原地更新只通过 `configs.onUpdate()` 通知。
 
 ## 用部署环境初始化 static config
 

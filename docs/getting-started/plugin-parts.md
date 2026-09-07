@@ -3,10 +3,10 @@ title: 使用 PluginPart 组织内部资源
 description: 用静态 Part composition 隔离配置、注册和清理，同时保持一个 Plugin 治理边界。
 ---
 
-`PluginPart` 用来拆分一个 Plugin generation 内部的资源所有权。它适合需要独立 config slice、effects、日志、注册或 nested composition，
-但仍应跟随同一个 Plugin 一起启动、失败、重启和停止的组成。
+一个 Plugin 的代码需要拆开，但拆出的缓存、连接或同步任务仍应一起启停时，使用 `PluginPart`。
+Part 可以有自己的配置和资源清理；某个 Part 启动失败，整个插件都会启动失败。
 
-Part 不是迷你 Plugin，也不是 service locator：它没有 catalog identity、独立启停、provider selection、RuntimeState 或 HMR lifecycle。
+开始前，你应知道 Plugin 的 `init()` 和资源清理方法。需要独立启停，或需要被其他插件注入的功能，继续使用 Plugin。
 
 ## 先判断是否应该使用 Part
 
@@ -18,11 +18,47 @@ Part 不是迷你 Plugin，也不是 service locator：它没有 catalog identit
 | 需要独立启停、自动启动策略、失败状态或依赖选择       | 独立 `Plugin`              |
 | 需要被其他 Plugin 注入或被多个 owner 共享            | 独立 `Plugin`              |
 
-判断的关键不是代码量，而是治理边界。Part 可以拥有很多内部代码，但它的运行状态始终属于 owning Plugin。
+选择依据是能否独立运行，而不是代码量。下文将包含 Part 的插件称为 owner，将直接包含它的 Plugin 或 Part 称为 host。
+
+## 先拆出一个缓存
+
+```ts twoslash
+import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+
+class CachePart extends PluginPart<SearchPlugin> {
+	private readonly values = new Map<string, string>()
+
+	get(key: string) {
+		return this.values.get(key)
+	}
+	set(key: string, value: string) {
+		this.values.set(key, value)
+	}
+
+	protected override init() {
+		return () => this.values.clear()
+	}
+}
+
+@Plugin({ displayName: 'Search' })
+export class SearchPlugin extends BasePlugin {
+	private readonly cache = this.parts.use(CachePart)
+
+	remember(key: string, value: string) {
+		this.cache.set(key, value)
+	}
+	read(key: string) {
+		return this.cache.get(key)
+	}
+}
+```
+
+启动 Search 后调用 `remember()` 再 `read()`，应读到保存的值。停止并重新启动后缓存为空。
+工作台只会显示 Search 这个插件，不会多出一个 Cache 插件。下面的例子进一步加入配置和依赖。
 
 ## 标准写法
 
-把 Part 声明为 direct `PluginPart` subclass，并在 owner 的普通 private field 中静态使用：
+需要配置和外部服务时，让 Part 自己声明。此例假设 `@acme/cache-backend` 提供 `createCache()`；实际项目换成自己的依赖：
 
 ```ts no-twoslash
 import { CacheBackendPlugin } from '@acme/cache-backend'
@@ -79,7 +115,7 @@ export class SearchPlugin extends BasePlugin {
 
 ## 静态声明规则
 
-工具链必须在构建时完整确定 containment tree，因此 Part declaration 遵循固定形状：
+构建工具需要提前知道有哪些 Part，因此声明需要保持以下形状：
 
 1. Part 是 concrete direct `PluginPart` subclass，不加 `@Plugin()`。
 2. `this.parts.use(PartClass)` 必须完整占据一个普通 class field initializer。
@@ -186,9 +222,9 @@ Part Context 是资源归属边界，不是安全 sandbox，也不会复制完�
 Workbench definition 只能由 owning Plugin 统一发布，Part 需要参与时向 owner 暴露窄领域能力，由 owner 绑定 Direct View 或
 Attachment target。
 
-## Config path 属于 owner contract
+## Part 字段名也是配置路径
 
-Part 的 schema 位于 occurrence field path。假设 owner field 为 `cache`，raw config 就包含同名 subtree：
+Part 字段名也是配置路径。假设插件中的字段叫 `cache`，保存的配置就有同名对象：
 
 ```json
 {
@@ -228,7 +264,7 @@ field 会改变公开配置 path，应按配置 contract 变更处理。
 - replacement、rollback 和 partial init 是否完整 cleanup；
 - lifecycle failure 是否携带预期 `partPath`。
 
-只有业务确实需要的 projection 才值得成为 public Part method。完整测试入口见[测试 Pluxel 插件](../development/testing.md#pluginpart-business-surface)。
+只有业务确实需要的 projection 才值得成为 public Part method。完整测试入口见[测试 Pluxel 插件](../development/testing.md#pluginpartoptional-integration-与-cleanup)。
 
 ## 提交前检查
 

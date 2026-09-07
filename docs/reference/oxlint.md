@@ -5,6 +5,19 @@ description: 用静态规则检查 Plugin 元数据、配置、资源归属和�
 
 普通 Oxlint 检查 JavaScript 和 TypeScript 代码质量；`@pluxel/rolldown/oxlint` 继续检查只有 Pluxel 才理解的 Plugin 规则，例如元数据位置、配置读取时机和资源归属。
 
+CLI 生成的插件包已经接入这些规则，先在包目录运行：
+
+```sh
+pnpm lint
+pnpm lint:fix
+```
+
+修复后 `pnpm lint` 应成功，且没有 unused-disable 诊断。已有项目手动接入时，安装 `oxlint` 与 `@pluxel/rolldown` 为开发依赖，再保存下面的配置为 `oxlint.config.ts`：
+
+```sh
+pnpm exec oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error src tests
+```
+
 ## 标准配置
 
 ```ts twoslash
@@ -40,6 +53,8 @@ export default defineConfig({
 | `no-direct-logtape-get-logger`                   | logger 保留 Context ownership    | 使用 `ctx.logger`            |
 
 ## Error log
+
+记录完整错误对象，便于日志界面保留错误类型和堆栈：
 
 ```ts no-twoslash
 try {

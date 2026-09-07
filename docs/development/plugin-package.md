@@ -3,15 +3,20 @@ title: 开发和发布插件包
 description: 创建一个可以独立构建、测试和发布的 Pluxel 插件包。
 ---
 
-一个插件包应当让宿主只从包根入口导入 Plugin，同时保留完整的类型声明、运行时 peer dependency 和 Pluxel 构建元数据。这样依赖身份可以追溯到明确的包与导出，而不是某个源码路径或类名。
+需要把插件提供给其他应用时，用 CLI 生成可独立测试、构建和打包的 npm 包。只想在示例应用里写业务，先看[第一个插件](../getting-started/first-plugin.md)。
 
-CLI 模板会生成标准目录结构：
+准备 Node.js 24+、pnpm 11，在空的工作目录运行：
 
 ```sh
-pluxel new --template plugin --name @acme/orders
+pnpm dlx @pluxel/cli@1 new --template plugin --name @acme/orders
 cd orders
 pnpm verify
+pnpm pack --dry-run
 ```
+
+这个名称会规范化为 npm 包 `@acme/pluxel-plugin-orders`，输出目录为 `orders/`，实现文件为 `src/orders.ts`，导出类为 `OrdersPlugin`。
+
+`verify` 应完成治理、格式、lint、类型、测试和构建检查；pack 列表应包含 `dist/index.mjs`、类型声明及插件声明需要的生成文件。已有 workspace 固定 CLI 时，用 `pnpm exec pluxel new`。
 
 官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。local template 则默认不执行安装，必须显式传入
 `--install` 才会运行 package manager。编写 manifest 与 `.tpl` 文件前先阅读[自定义本地 Plugin 模板](./tooling.md#自定义本地-plugin-模板)。
@@ -20,16 +25,18 @@ CLI 生成的插件 TypeScript 配置包含 `ESNext.Disposable`，供 Pluxel 的
 
 ## 标准目录
 
+CLI 先生成实现和测试文件；拆分配置或添加管理界面后，可以扩展为下面的布局，`config.ts`、`workbench.ts` 和 `ui/` 并非默认生成文件：
+
 ```text
 src/
-  OrdersPlugin.ts      Plugin implementation
+  orders.ts            Plugin implementation
   config.ts            server/shared-safe schema
   index.ts             如果模板使用独立 root barrel
   workbench.ts         可选 Workbench definition
   *.md                 可选 Workbench Content source
   ui/                  可选 Workbench browser entry
 tests/
-  OrdersPlugin.test.ts
+  orders.test.ts
 package.json
 tsconfig.json
 tsdown.config.ts
@@ -47,21 +54,21 @@ oxlint.config.ts
 - 不跨 package re-export 别人的 Plugin class。
 - Workbench definition/API、worker adapter 等 plugin-free 模块可以有独立 subpath，但不得形成第二个模糊 plugin-bearing root。
 
-源码文件移动或 root export 重命名会得到新 definition identity。持久 config/runtime state 不按旧 class name 自动迁移。
+对于可发布包，包名或包根导出名改变会得到新的 Plugin definition identity；二者不变时，内部源码文件移动不改变这个身份。持久 config/runtime state 不按旧 class name 自动迁移。
 
-## `package.json` canonical 形状
+## 包清单的关键字段
 
-CLI 模板生成的关键部分如下：
+下面只摘录关键字段；完整依赖、catalog 和 scripts 使用 CLI 生成的文件，不要用这个片段覆盖整个 manifest：
 
 ```json
 {
 	"$schema": "https://market.pluxel.dev/schema/package.json",
-	"name": "@acme/orders",
+	"name": "@acme/pluxel-plugin-orders",
 	"version": "0.1.0",
 	"type": "module",
 	"exports": {
 		".": {
-			"@pluxel/hmr": "./src/OrdersPlugin.ts",
+			"@pluxel/hmr": "./src/orders.ts",
 			"default": "./dist/index.mjs"
 		}
 	},
@@ -92,6 +99,7 @@ Plugin source 需要 decorator 和 source condition：
 {
 	"compilerOptions": {
 		"target": "ES2023",
+		"lib": ["ES2023", "ESNext.Disposable"],
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"moduleDetection": "force",
@@ -103,7 +111,15 @@ Plugin source 需要 decorator 和 source condition：
 		"customConditions": ["@pluxel/hmr"],
 		"experimentalDecorators": true
 	},
-	"include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx"]
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.tsx",
+		"tests/**/*.ts",
+		"tests/**/*.tsx",
+		"tsdown.config.ts",
+		"vitest.config.ts",
+		"oxlint.config.ts"
+	]
 }
 ```
 
@@ -119,7 +135,7 @@ import { defineConfig } from 'tsdown'
 export default defineConfig({
 	tsconfig: './tsconfig.json',
 	entry: {
-		index: 'src/OrdersPlugin.ts',
+		index: 'src/orders.ts',
 	},
 	dts: {
 		sourcemap: true,
@@ -151,7 +167,7 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 
 ## Workbench 内容
 
-Workbench 的 declaration/API 放在 browser-safe `workbench.ts`，Plugin implementation 与 `publish()` 放在 `index.ts`。新页面只从
+Workbench 的声明和 API 类型放在可供浏览器导入的 `workbench.ts`，Plugin implementation 与 `publish()` 留在插件实现文件中。新页面只从
 一条标准路径开始：
 
 - 说明、bounded live state、按钮或一次性表单：[Content 配方](../workbench/content.md)；
@@ -166,8 +182,7 @@ Content-only package 不加载 Federation builder、不生成 remote entry，也
 
 `pluxel build` 在 TypeScript 擦除前提取 owning Plugin definition、entry key 和 literal source，生成一个标准 MF2
 producer、每个 declaration 的 React Bridge expose 和 `mf-manifest.json`。作者不手写 remote name、expose、shared
-或 Bridge wrapper。Server bundle 与 browser producer 分离；browser graph 不能导入 Node builtin、database handle、
-secret 或 Plugin implementation。
+或 Bridge wrapper。Server bundle 与 browser producer 分离。
 
 同一 definition 可以同时含 Content 与 View；发布包和 static/distribution build 中，两类 artifact 必须全部构建成功后再作为
 一个 revision 提交。开发 host 会先发布 Content/topology，再在后台补齐缺失 producer；未就绪 View 显示构建中，
@@ -195,4 +210,4 @@ pnpm pack --dry-run
 - peer dependency 与真正 runtime/provider boundary 一致；
 - consumer 能只从 package root 安装和导入。
 
-下一步：[编写第一个插件](../getting-started/index.md)。
+下一步：[编写第一个插件](../getting-started/first-plugin.md)。

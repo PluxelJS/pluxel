@@ -9,9 +9,28 @@ host-neutral 的 Context kernel，不要求使用 Pluxel Plugin Runtime。
 写普通 Pluxel Plugin 时不需要直接使用它：Runtime 已经组合好 `ctx`，Plugin 间的业务依赖应写进 constructor，而不是尝试
 安装 Context capability。
 
+先安装独立包：
+
+```sh package-install
+npx nypm add @pluxel/context
+```
+
+## 选择作用域
+
+| 作用域     | 构造与共享方式                                                  | 适合                         |
+| ---------- | --------------------------------------------------------------- | ---------------------------- |
+| root       | 每个 root 构造一次；projected property 只出现在 root            | 进程级 registry、pool、clock |
+| scope      | 每个 `createScope()` 结果构造一次，并与其 children 共享         | generation、request、session |
+| owner-view | 每个 root 一个 backing；每个 root/scope/child 各自缓存一个 view | owner-bound 注册和 facade    |
+
+`createChild(parent, name)` 建立 containment parent，并共享 parent 的 scope backing；它不会创建新 scope。owner-view 的
+`createView()` 收到当前 Context，因此共享 backend 可以把注册、日志或 cleanup 归属到正确 owner。
+`createView()` 应返回带 immutable owner reference 的普通 object/class；不要用 `Proxy` 动态替换共享 backend 的 `ctx`。
+共享状态留在 root backing，view 只保留 owner 和调用 backing 所需的最小引用。
+
 ## 创建一个 host
 
-先为每项能力定义 opaque descriptor，再选择它的作用域和可选投影属性：
+下面组合进程时钟、应用资源、请求缓存和带调用者归属的操作接口。descriptor 是能力的唯一标识对象，`property` 决定 Context 上可读取的属性名：
 
 ```ts
 import {
@@ -75,17 +94,17 @@ const root: AppRootContext = appContextHost.createRoot('app')
 const request: AppContext = appContextHost.createScope(root, 'request:42')
 const handler = appContextHost.createChild(request, 'handler')
 
-void root.clock.now()
-void request.cache
-void handler.actions
+console.log(root.clock.now())
+console.assert(request.cache === handler.cache)
+console.assert(handler.actions.owner === handler)
 ```
 
 有 `property` 的 capability 会出现在推导出的 Context 类型上。若能力不适合成为属性，可以省略 `property`，再通过
 `resolveContextCapability(ctx, descriptor)` 显式读取。
 
-Context 的输出类型由 installation tuple 推导；host 的输入配置则由组合层显式定义，不从 service constructor 的第二参数反推。
-一个 service 可能消费多个配置域、共享已归一化的 host policy，或根本没有一一对应的配置 key，因此自动反推会把构造细节误当成
-public config contract。组合层应声明一个 `AppHostConfig`，先把它解析成 immutable inputs，再由 capability factory closure 消费：
+### 让应用配置保留类型提示
+
+Context 属性类型从 `capabilities` 数组推导。应用创建参数则显式定义为自己的配置类型，解析后由 factory 使用：
 
 ```ts
 interface AppHostConfig {
@@ -106,22 +125,7 @@ function createAppContext(config: AppHostConfig = {}) {
 }
 ```
 
-因此 IDE 在 `createAppContext({ ... })` 提示的是 `AppHostConfig`，在 `ctx.clock` 提示的是 installation 推导结果；两条类型链
-各自只有一个 authority。Pluxel Runtime 同样由集中 `RuntimeHostConfig`/`CoreHostConfig` 提供创建参数提示，再由 root plan
-解析和分发给 events、HTTP、database、workers 等 service；完整 host config 不存进 Context，也不交给每个 Plugin。
-
-## 选择作用域
-
-| 作用域     | 构造与共享方式                                                  | 适合                         |
-| ---------- | --------------------------------------------------------------- | ---------------------------- |
-| root       | 每个 root 构造一次；projected property 只出现在 root            | 进程级 registry、pool、clock |
-| scope      | 每个 `createScope()` 结果构造一次，并与其 children 共享         | generation、request、session |
-| owner-view | 每个 root 一个 backing；每个 root/scope/child 各自缓存一个 view | owner-bound 注册和 facade    |
-
-`createChild(parent, name)` 建立 containment parent，并共享 parent 的 scope backing；它不会创建新 scope。owner-view 的
-`createView()` 收到当前 Context，因此共享 backend 可以把注册、日志或 cleanup 归属到正确 owner。
-`createView()` 应返回带 immutable owner reference 的普通 object/class；不要用 `Proxy` 动态替换共享 backend 的 `ctx`。
-共享状态留在 root backing，view 只保留 owner 和调用 backing 所需的最小引用。
+IDE 会分别检查 `createAppContext({ ... })` 的配置和返回 Context 的属性。不要把完整宿主配置交给每个插件；各能力只读取自己需要的配置。
 
 ## Strict lazy
 
@@ -184,7 +188,3 @@ resolution 或 HMR host/runner 副本之间混用。
 同一进程中分别创建 host，但不能把一边创建的 descriptor、installation 或 Context 交给另一边。
 跨 kernel 传值会立即失败并指向 package dedupe/HMR resolution，而不会把一份 host 的私有状态当作另一份
 host 的状态。
-
-Context 的 descriptor 使用 object identity。host compile 与显式 resolve 会用 `Map` 把 descriptor 映射到 numeric slot，常规
-`ctx.foo` 缓存访问直接读取预编译 slot。null-prototype object 的字符串/symbol key 语义不能替代 descriptor object identity；
-具体性能取舍由 package benchmark 验证。

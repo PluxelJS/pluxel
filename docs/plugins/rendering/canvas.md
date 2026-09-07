@@ -9,8 +9,10 @@ description: 在服务端绘制位图与 SVG，解码图片、排版文字和生
 
 ## 安装与 catalog
 
-```sh package-install
-npx nypm add @pluxel/canvas @pluxel/fonts
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+
+```sh
+pnpm catalog:add -- @pluxel/canvas @pluxel/fonts
 ```
 
 host catalog 至少包含 `FontsPlugin`、`CanvasPlugin` 和 consumer。CanvasPlugin required-depend FontsPlugin；业务 Plugin 只需注入 Canvas：
@@ -41,6 +43,8 @@ export class BadgePlugin extends BasePlugin {
 }
 ```
 
+以下 `host` 是 [测试宿主](../../development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+
 ```ts no-twoslash
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
@@ -50,6 +54,8 @@ await host.start(BadgePlugin, {
 	catalog: [FontsPlugin, CanvasPlugin],
 })
 ```
+
+调用 `BadgePlugin.render()` 后将返回的 `Buffer` 保存为 PNG，应得到带 Pluxel 字样的 640 × 320 图片。通过 HTTP 返回时设置 `Content-Type: image/png`；保存文件与响应处理都由业务插件决定。
 
 `createCanvasSync()` 返回上游 native Canvas。名称明确表示 allocation、2D context、绘图和 measure 会占用调用线程；
 encode/stream 遵循上游契约，surface 由 caller 持有。重 drawing 应进入业务 worker task。

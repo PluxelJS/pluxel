@@ -3,7 +3,26 @@ title: 常见错误与排查
 description: 按构建、依赖图、配置、生命周期和宿主边界定位 Pluxel 集成问题。
 ---
 
-遇到问题时，先判断它发生在构建转换、依赖图提交、配置注入还是资源回收阶段。下面按常见现象给出检查顺序。
+先按报错或看得见的现象找对应小节。构建问题在失败的 package 目录重跑原命令；正在运行的应用先读取真实状态和日志，避免用重启掩盖原因。
+
+Coding agent 检查当前 Vite 应用时，使用[开发控制台](../development/dev-console.md)：先发现实例，固定 `--root` 与 `--instance`，再读取状态、执行操作并核对领域结果。
+
+## 刚发布的版本安装时报 `ERR_PNPM_NO_MATURE_MATCHING_VERSION`
+
+这表示当前项目或机器配置了 `minimumReleaseAge`，所需版本仍在等待窗口内，不等于 npm 上没有该版本。先看错误中的发布时间与 cutoff；1440 分钟就是 24 小时。创建新应用应从普通项目目录执行，避免继承框架源码 workspace 的依赖政策。
+
+最直接的处理是等该版本满足等待期后，重跑原安装命令。团队确认要立即使用这个版本时，可以按现有依赖政策批准针对具体包的 `minimumReleaseAgeExclude`，不要为一次安装关闭全部依赖的等待策略。
+
+## 构建无法解析包或 subpath
+
+例如 `Failed to resolve import "valibot-form/web"`：
+
+1. 确认报错文件所在的 package 直接声明了 `valibot-form`，不要依赖根目录偶然 hoist 的依赖。
+2. 查看所安装版本的 `package.json#exports`，确认包含 `./web`，并检查它指向的文件是否存在。
+3. 若解析的是 workspace 包，确认部署构建先完成该依赖的 build。只运行页面项目的 Vite build 不一定构建 workspace 依赖；使用仓库定义的完整部署命令。
+4. 本地正常而 CI 失败时，比较干净 checkout 中的安装与构建顺序；本地旧 `dist/` 可能掩盖缺失步骤。
+
+不要把浏览器真正需要的模块加到 `external` 来消除报错；这样可能只是把构建失败变成浏览器加载失败。使用跨仓库源码时，先运行 `pluxel source doctor`，再按[源码开发](../development/source-workspaces.md)检查生成的解析配置。
 
 ## Plugin 看起来是普通 class
 
@@ -20,7 +39,7 @@ Core、Runtime 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payl
 
 1. Plugin 是否进入宿主的 root/plugin plan；
 2. required dependency 是否都可解析；
-3. graph 是否已经 commit；
+3. 启动或更新操作是否完成，返回结果是否报告失败；
 4. 配置是否通过 schema 校验；
 5. `init()` 是否抛错，或在 signal 取消后仍继续工作。
 
@@ -39,9 +58,9 @@ Part constructor 的 required dependency 会提升到 owning Plugin graph。它�
 多个 occurrence 依赖同一 provider 时，graph 与 package metadata 会自动去重；任一来源为 required 时 effective mode 为 required。
 完整标准写法见[使用 PluginPart](../getting-started/plugin-parts.md#依赖写在实际-consumer)。
 
-## 无法从 owner 或测试读取 PluginPart 的 `ctx`、`host` 或 `plugins`
+## 无法从所属插件或测试读取 PluginPart 的 `ctx`、`host` 或 `plugins`
 
-这是有意的 author boundary。`PluginPart.ctx/host/parts/plugins/configs` 与 `BasePlugin.parts/plugins/configs` 是 protected declaration
+这些字段用于 Part 内部声明能力，不是外部业务 API。`PluginPart.ctx/host/parts/plugins/configs` 与 `BasePlugin.parts/plugins/configs` 是 protected declaration
 DSL，只能在对应 subclass 内使用。Part 不提供 root-owner accessor；不要用类型断言、Context service locator、公开 path/id 或 wrapper
 把这些 composition internals 重新泄露出去。
 
@@ -85,8 +104,7 @@ initializer 无副作用，并把该 integration 的 registration、资源和 cl
 失败。测试时直接请求最终地址，例如 `host.http.fetch(new URL('/orders/1', host.http.origin))`。
 
 当前 Node production、static Vite 与 dynamic Vite carrier 已支持并验证基础业务 WebSocket；若 `.ws()` 返回 404，除 route
-publication 外还要确认请求经过真实 Upgrade listener，而不是 `host.http.fetch()`。external setup/cleanup attach、第二个非 Node carrier、
-完整 socket parity 与 canonical-equivalent route collision 仍缺少稳定 public seam；不要依赖仅参数名不同的 route pattern 自动获得完整冲突诊断。
+publication 外还要确认请求经过真实 Upgrade listener，而不是 `host.http.fetch()`。不要依赖仅参数名不同的 route pattern 自动获得完整冲突诊断；测试应覆盖你的实际 URL 和 Upgrade 请求。
 
 参见 [插件 HTTP](../runtime/http.md) 与 [管理工作台](../workbench/index.md)。
 

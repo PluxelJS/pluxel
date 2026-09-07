@@ -1,13 +1,13 @@
 {
-	"title": "官方 Plugin",
+	"title": "官方插件",
 	"pages": [
 		"index",
-		"---公开 Plugin---",
-		"agent-tools",
-		"auth",
+		"---公开插件---",
 		"wretch",
+		"auth",
 		"rendering",
-		"---Workspace 预览（不可安装）---",
+		"agent-tools",
+		"---工作区预览（不可安装）---",
 		"cache",
 		"rates",
 		"redis",

@@ -1,19 +1,30 @@
 ---
-title: Attachment：跨 Plugin UI
-description: 让 provider 拥有 UI/API、consumer 只拥有 placement 的跨 Plugin UI 配方。
+title: 在插件之间复用界面
+description: 复用设置页和选择器，明确页面、数据与放置位置分别属于哪个插件。
 ---
 
-Attachment 适合“provider 拥有界面，consumer 决定把它放在哪里”的场景。它只组合每次打开所需的
-Cap’n Web roots，不建立新的依赖注入、状态存储或领域模型。这是跨 Plugin 复用 UI 的唯一默认路径。
+当 FontsPlugin 的选择器要出现在 Canvas 的详情页，或者多个插件要共用 HTTP 设置界面时，使用 Attachment。
+提供界面的插件维护 React 代码和服务端 API；使用界面的插件只选择放置位置。
 
-先确认确实需要跨 Plugin 复用 UI。如果 consumer 只在服务端调用 provider，就使用普通 constructor dependency；
-如果 consumer 自己完全拥有页面和 API，就使用本地 View。
+开始前，先完成一个 [View](./view.md)，并让使用方通过构造器声明对提供方的依赖。
+下文把提供界面的插件称为 provider，把放置它的插件称为 consumer。
+
+## 先选一个 API，还是两个 API
+
+| 谁保存页面修改的数据                       | 选择                                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| 全部由 provider 保存                       | 单方 API，先照下面的 HTTP 设置页做                                                    |
+| provider 提供候选，consumer 保存自己的选择 | 双方 API，见[多 collection 且 consumer 自有选择](#多-collection-且-consumer-自有选择) |
+| 不需要跨插件显示 UI，只调用服务端方法      | 普通构造器依赖                                                                        |
+| 只想共用按钮或布局，没有跨插件 API         | 普通 React 组件和 props                                                               |
+
+Attachment 不自动改变依赖、登录权限或存储位置。一次打开得到的 API 对象不能拿去给其他页面复用。
 
 ## Provider-only 设置页
 
 以共享 HTTP provider 为例：provider 已按 caller node 保存设置，consumer 只希望在自己的详情页放置 provider 的设置页。
 
-Provider 的 browser-safe declaration：
+先在提供方的 `src/workbench.ts` 声明 API 和 Attachment。它与 View 的区别是没有固定 `placement`：
 
 ```ts
 import type { RpcTarget } from '@pluxel/runtime/capnweb'
@@ -37,7 +48,7 @@ export const HttpWorkbench = workbench.define({
 })
 ```
 
-Provider 发布一个按 exact consumer node admission 的 target：
+然后在提供方 `init()` 中发布。下面假设业务服务 `settings` 已按使用方保存设置，`HttpSettingsTarget` 是实现该 API 的 `RpcTarget`：
 
 ```ts
 this.ctx.workbench?.publish(HttpWorkbench, {
@@ -49,9 +60,11 @@ this.ctx.workbench?.publish(HttpWorkbench, {
 `consumer.node` 只是 server-issued identity。Provider 可以用它查找自己已经拥有的 per-consumer state，但不能
 取得 consumer instance、Context、config 或任意 dependency facade。
 
-Consumer 通过 constructor dependency 持有 provider，然后声明 placement：
+最后在使用方通过 `place()` 选择标签页位置，并传入构造器注入的 provider。下面是使用方的关键代码；`HttpPlugin` 从提供方包根入口导入：
 
 ```ts
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { HttpPlugin } from '@acme/http'
 import { HttpWorkbench } from '@acme/http/workbench'
 import { workbench } from '@pluxel/runtime/workbench'
 
@@ -99,6 +112,10 @@ export default settingsScope.render(HttpSettingsPanel)
 这条路径只有一个 renderer 和一个 provider API。Consumer 不实现转发 target，不复制 provider 的 UI，也不把
 设置 state 搬到 Workbench。
 
+打开使用方插件的详情，应出现 HTTP 标签，内容来自提供方的 renderer。停止使用方会移除这个位置，
+但不删除提供方的设置；关闭 Workbench 后，服务端构造器依赖仍应可用。
+如果标签缺失，检查双方已经运行、提供方已发布 Attachment、使用方的 binding key 与 `.place()` 声明相符。
+
 ## 官方 FontsPlugin：先用 provider-only
 
 `@pluxel/fonts` 是这套模型的官方参考实现。它的真实需求是：
@@ -107,8 +124,7 @@ export default settingsScope.render(HttpSettingsPanel)
 - Canvas、ECharts、Takumi 只希望在自己的详情页放置同一个选择器；
 - consumer 不拥有另一份选择状态，也不需要修改 FontsPlugin 之外的数据。
 
-因此最诚实的拓扑是一个本地 manager View 加一个 provider-only Attachment，而不是为了形式对称创建空的
-consumer target：
+因此使用一个管理 View 和一个单方 API 的 Attachment 即可：
 
 ```ts
 import type { RpcTarget } from '@pluxel/runtime/capnweb'
@@ -197,7 +213,7 @@ function FontSelectionPanel() {
 export default selectionScope.render(FontSelectionPanel)
 ```
 
-这套实现适合作为默认教材，原因不是它使用了最多概念，而是每个概念都有真实 owner：
+阅读官方实现时，重点检查这些可观察的行为：
 
 - manager API 才能上传和删除；selection API 只暴露读取候选和修改统一默认值，调用面没有被 UI 复用扩大；
 - consumer stop 只撤销 placement；字体、preference 和 native registration 继续属于 FontsPlugin；
@@ -219,7 +235,7 @@ consumer-owned state。完整业务能力见[字体插件](../plugins/rendering/
 - consumer 持久化自己的 `collectionId` 与 fallback policy；
 - picker 同时需要读 provider catalog 和修改 consumer selection。
 
-这种 FontManager 场景多一个真实 owner：
+以下是产品扩展示例，不是官方 FontsPlugin 已有的配置项。数据分别保存在两侧：
 
 - provider 拥有字体资产和 collection catalog；
 - consumer 拥有“当前选择哪个 collection”及自己的 fallback policy；

@@ -24,6 +24,8 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 
 选择 managed database 后，正式部署使用 native PostgreSQL；PGlite 只用于本机开发和自动化测试。两者统一的是 PostgreSQL 作者 contract，不是性能、并发和 durability 等价。
 
+宿主必须启用 managed database，并选好连接后端；如果现有入口设置了 `database: false`，先在 [宿主配置](../getting-started/host-setup.md) 中调整。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
+
 ## 定义 Plugin schema
 
 ```ts twoslash
@@ -78,7 +80,7 @@ schema module 是 server-only。Workbench API/browser bundle 不能导入它。P
 
 `defineDatabase()` 必须作为 module-level `const` 的直接 initializer，显式 `evolution` 必须写在直接 object literal 中。不要把它包进 function、branch 或 config factory；compiler 必须静态看到 package 唯一的 definition，才能注入对应 artifact。
 
-同一个 Twoslash block 同时验证 schema definition、相对 import、handle 泛型和 query/transaction 的返回类型。`use()` 在返回前完成 active instance 选择和 migration prepare。handle 绑定当前 Plugin owner/generation，stop/replacement 后旧 handle 失效。
+`use()` 在返回前完成 active instance 选择和 migration prepare。handle 绑定当前 Plugin owner/generation，stop/replacement 后旧 handle 失效。
 
 读操作放进 `read()`，写操作放进完整 `transaction()` callback。callback 内是标准 Drizzle database/transaction；不要缓存 callback 参数或 row lock，也不要在 transaction 中等待网络、用户交互或 worker task。
 

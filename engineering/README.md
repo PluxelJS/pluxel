@@ -1,7 +1,18 @@
 # Pluxel Engineering Docs
 
-`engineering/` 面向 coding agent、维护者和需要理解实现边界的技术人员，记录当前架构、工程不变量和内部入口。
-插件作者请从 [`docs/index.md`](../docs/index.md) 开始，不需要理解这里的内部 wiring。
+`engineering/` 用于修改 Pluxel 框架本身，记录当前架构、工程不变量和内部入口。
+开发应用或插件的人与 coding agent 都从 [`docs/index.md`](../docs/index.md) 开始；首次创建项目看[快速开始](../docs/getting-started/index.md)。
+
+## 先确定任务范围
+
+| 当前任务                             | 从哪里开始                                                         |
+| ------------------------------------ | ------------------------------------------------------------------ |
+| 使用 Pluxel 开发业务功能             | [用户文档的任务导航](../docs/index.md)，随后读取对应功能指南       |
+| 检查已有 Vite 应用的配置、插件或日志 | [开发控制台](../docs/development/dev-console.md)，先发现并固定实例 |
+| 修改框架的 API、行为或内部实现       | 按下方阅读路径加载通用约束和当前领域文档                           |
+| 维护发布自动化                       | [发布流程](RELEASING.md)                                           |
+
+按任务选择领域文档即可；历史提案描述探索背景，不能用来推断当前公开 API。
 
 ## 阅读路径
 

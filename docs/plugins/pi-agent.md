@@ -3,12 +3,15 @@ title: Pi Agent
 description: 以内置 engine 方式接入 Pi，并复用 Pluxel commands、Toolset、goal 和 bounded subagent。
 ---
 
-`@pluxel/pi-agent` 是 workspace preview。它把 Pi 用作模型循环、streaming、session compaction 与 tool calling engine，
-不会把 Pi extension 系统变成第二套 Pluxel 插件 runtime。
+需要让应用自身运行模型会话、流式输出和业务工具调用时使用 Pi Agent。`@pluxel/pi-agent` 目前仅供工作区内部使用，尚不能从外部项目安装。只想把命令交给已有 Agent 的应用，应使用 [Agent tools](./agent-tools.md)。
+
+下面的内部集成使用 Pi 运行模型循环；业务工具仍由 Pluxel commands 和 Toolset 授权。
 
 ## 装配
 
 Pi 插件 required-depend on `AgentToolsPlugin`。先用 AgentTools assignment 定义可选 tool setup，再为 Pi 设置默认项：
+
+以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
@@ -39,6 +42,8 @@ await host.start(PiAgentPlugin, {
 这里的 `host` 是 `createRuntimeTestHost()` fixture，`initialConfig` 只用于首次 lifecycle；production deployment 通过 ConfigService
 管理相同 records。AgentTools assignment 用作 Pi 的 tool setup。模型 credential 不进入普通 Plugin config；Pi `ModelRuntime`
 从标准 Pi credential store 读取。省略 `model` 时由 Pi 解析已配置的默认可用模型。
+
+开始前先配置 Pi 支持的模型凭据，并确认 `NotesPlugin` 已注册 Toolset 中的命令。装配成功后执行下面的会话，检查是否收到 `text_delta`，以及 `researcher` 只发现读取工具；模型调用错误从 `prompt()` 的结果或异常处理。
 
 ## 创建会话
 
@@ -79,5 +84,4 @@ headless host 与有界面 host 使用同一安全边界。
 当前 session、goal 和完成后的 subagent record 只保存在内存中，尚不承诺 resume/persistence。Plugin 配置仍由
 通用 Plugin Config 页面保存。
 
-Pi Agent 当前不发布 Workbench Definition。若以后增加 session 管理界面，streaming、goal、subagent、abort 和并发状态应放在
-完整 View 中，不拆成 Content；模型 credential 继续服从 Pi `ModelRuntime` 的 credential contract。
+Pi Agent 当前没有专用 Workbench 会话管理界面。会话输出、取消与释放由调用它的应用负责；模型凭据仍由 Pi `ModelRuntime` 管理。
