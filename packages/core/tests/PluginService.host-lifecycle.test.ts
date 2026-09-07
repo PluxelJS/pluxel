@@ -154,7 +154,7 @@ describe('Core host lifecycle seams', () => {
 				await registry.beginUpdate({ reason: 'empty-publication-test' }).commit()
 				expect(host.require(OrderedPlugin)).toBe(second)
 				expect(summaries).toHaveBeenCalledTimes(3)
-				const expected =
+				const expected: CoreCommitPublication[] =
 					consumer === 'none'
 						? []
 						: [
