@@ -1,12 +1,14 @@
 name: Release
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
 
 permissions:
+  actions: read
   contents: write
   id-token: write
   pull-requests: write
@@ -27,28 +29,51 @@ jobs:
   publish:
     name: Version or publish
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           submodules: recursive
 
       - name: Verify release commit
         id: release-commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Manual releases must run from main."
+            exit 1
+          fi
           git fetch --no-tags origin main
-          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+          commit="$(git rev-parse HEAD)"
+          if [ "$commit" != "$(git rev-parse origin/main)" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::main has advanced; start a new manual release from the current main commit."
+              exit 1
+            fi
             echo "current=false" >> "$GITHUB_OUTPUT"
             echo "The successful CI run is no longer the current main commit; a newer run will release."
-          else
-            echo "current=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            successful_runs="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f branch=main -f event=push -f head_sha="$commit" -f status=success -f per_page=1 \
+              --jq '.total_count')"
+            if [ "$successful_runs" -eq 0 ]; then
+              echo "::error::The current main commit has no successful CI push run. Fix or rerun CI before releasing."
+              exit 1
+            fi
+          fi
+          echo "sha=$commit" >> "$GITHUB_OUTPUT"
+          echo "current=true" >> "$GITHUB_OUTPUT"
 
       - name: Install toolchain
         if: steps.release-commit.outputs.current == 'true'
@@ -78,9 +103,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.workflow_run.head_sha }}-release
+          key: ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-release
           restore-keys: |
-            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.workflow_run.head_sha }}-
+            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-
             ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Install dependencies

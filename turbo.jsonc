@@ -284,7 +284,8 @@
 			// The docs preview imports the published `valibot-form/web` entry. On a clean runner that
 			// export points at dist, so the docs build must not race the package build.
 			"dependsOn": ["valibot-form#build"],
-			"outputs": ["dist/**", ".source/**"],
+			"outputs": ["dist/**", ".source/**", ".vercel/output/**"],
+			"env": ["VERCEL*"],
 			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/**"],
 			"outputLogs": "new-only",
 		},

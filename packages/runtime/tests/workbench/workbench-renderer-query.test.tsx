@@ -719,21 +719,31 @@ describe('Workbench renderer query scope', () => {
 	})
 
 	it('marks a continuously observed query stale after staleTime', async () => {
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({
-			queryKey: ['stale-timer'],
-			queryFn: () => ({ value: 1 }),
-			staleTime: 200,
-		}))
-		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page() {
-			observed = query.useQuery()
-			return <p>{`${observed.status}:${observed.isStale}`}</p>
+		vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+		let opened: Awaited<ReturnType<typeof renderOpened>> | undefined
+		try {
+			const scope = createWorkbenchRenderer(QueryWorkbench.query)
+			const query = scope.query(() => ({
+				queryKey: ['stale-timer'],
+				queryFn: () => ({ value: 1 }),
+				staleTime: 200,
+			}))
+			let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
+			function Page() {
+				observed = query.useQuery()
+				return <p>{`${observed.status}:${observed.isStale}`}</p>
+			}
+			opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+			await act(() => vi.advanceTimersByTimeAsync(0))
+			expect(opened.dom.textContent).toBe('success:false')
+			await act(() => vi.advanceTimersByTimeAsync(199))
+			expect(opened.dom.textContent).toBe('success:false')
+			await act(() => vi.advanceTimersByTimeAsync(2))
+			expect(opened.dom.textContent).toBe('success:true')
+		} finally {
+			await opened?.dispose()
+			vi.useRealTimers()
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('success:false'))
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('success:true'), { timeout: 1_000 })
-		await opened.dispose()
 	})
 
 	it('expires instance controls when the Hook that produced them unmounts', async () => {

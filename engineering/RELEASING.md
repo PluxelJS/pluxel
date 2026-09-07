@@ -1,7 +1,8 @@
 # Release Process
 
 Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁、git tags 和 GitHub Releases。
-发布自动化只在 `main` 的 CI push run 成功后运行；普通 pull request 和失败的 CI 不具备发布权限。
+发布自动化只接受 `main` 的成功 CI push run；可以由 CI 完成自动触发，也可以手动触发。
+普通 pull request 和失败的 CI 不具备发布权限。
 
 ## 版本模型
 
@@ -52,6 +53,22 @@ Explain the observable behavior and any migration requirement.
 
 publish lock 是发布事实来源。部分包发布失败时保留原 lock，重跑同一 workflow 会跳过已成功的包并继续未完成任务。
 不要删除 pending lock 或通过手工 npm publish 绕过它。
+
+## 手动发布与重试
+
+在 GitHub Actions → Release → Run workflow 选择 `main`，或运行：
+
+```sh
+gh workflow run release.yml --ref main
+```
+
+手动触发仍要求当前 `main` 的同一提交已有成功的 CI **push** run；没有通过时会明确报错，不会绕过检查。
+它执行同一个 `pnpm tegami ci`：已有 publish lock 时发布，有 pending changelog 时更新版本 PR，没有待处理内容时不发布。
+开发提交和 changelog 可以持续积累在版本 PR 中，由维护者合并版本 PR 决定发布时机。
+
+自动触发的 Release 显示 skipped 时，先查看对应 CI：失败、取消或非 push run 都不会发布；仓库是否公开不影响这一检查。
+修复 CI 后，新的成功 main push run 会自动触发 Release。若只是 npm 信任或发布阶段失败，可在初始化完成后手动重试当前 main。
+旧提交的 Release 在 main 已前进时不会发布，请对当前 main 重新触发。
 
 ## 发布验证
 
