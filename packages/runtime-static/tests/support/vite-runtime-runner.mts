@@ -8,6 +8,7 @@ import {
 import { requirePluginService } from '@pluxel/core/internal'
 import {
 	readRuntimePluginStatusOverview,
+	readRuntimeRouteCapabilities,
 	requireRuntimeHttpService,
 } from '@pluxel/runtime/internal'
 import type { StaticRuntimeHost } from '@pluxel/runtime-static'
@@ -419,7 +420,7 @@ try {
 	)
 
 	const originalSourcePlugin = await readFile(pluginPath, 'utf8')
-	const catalogBeforeUnlink = serializedHost.describeCatalog().plugins
+	const statusBeforeUnlink = await readRuntimePluginStatusOverview(serializedHost.ctx)
 	try {
 		await unlink(pluginPath)
 		await invokeViteWatchChange(pluginPath, 'delete')
@@ -428,26 +429,26 @@ try {
 
 		const statusesAfterUnlinkOverview = await readRuntimePluginStatusOverview(serializedHost.ctx)
 		const statusesAfterUnlink = statusesAfterUnlinkOverview.statuses
-		const unlinkSequences = new Set<number>()
-		for (const catalogPlugin of catalogBeforeUnlink) {
-			const status = statusesAfterUnlink.find((candidate) =>
-				pluginNodeAddressEqual(candidate.address, catalogPlugin.address),
-			)
-			const recentUpdate = status?.recentUpdate
-			assert.ok(
-				recentUpdate,
-				`${catalogPlugin.definition.exportName} has no static unlink update attribution`,
-			)
-			assert.equal(recentUpdate.batch.outcome, 'retained-previous')
-			assert.equal(recentUpdate.batch.phase, 'evaluate')
-			unlinkSequences.add(recentUpdate.batch.sequence)
-		}
-		assert.equal(unlinkSequences.size, 1)
-		const unlinkSequence = unlinkSequences.values().next().value
+		const unlinkAttempt = readRuntimeRouteCapabilities(
+			serializedHost.ctx,
+		)?.recentUpdate?.latestUpdate?.()
+		assert.equal(unlinkAttempt?.outcome, 'retained-previous')
+		assert.equal(unlinkAttempt?.phase, 'evaluate')
 		assert.ok(
-			(unlinkSequence ?? 0) > (serializedStatus?.recentUpdate?.batch.sequence ?? 0),
-			'static unlink did not record one newer catalog-wide update',
+			(unlinkAttempt?.sequence ?? 0) > (serializedStatus?.recentUpdate?.batch.sequence ?? 0),
 		)
+		assert.ok(
+			unlinkAttempt?.error,
+			'unlink must preserve the batch error even without semantic attribution',
+		)
+		// watchChange has withdrawn deleted semantic facts. An uncertain impact scope belongs to
+		// the independent application attempt, never to every Plugin in the old catalog.
+		for (const previous of statusBeforeUnlink.statuses) {
+			const status = statusesAfterUnlink.find((candidate) =>
+				pluginNodeAddressEqual(candidate.address, previous.address),
+			)
+			assert.deepEqual(status?.recentUpdate, previous.recentUpdate)
+		}
 	} finally {
 		await writeFile(pluginPath, originalSourcePlugin)
 	}

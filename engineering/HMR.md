@@ -42,11 +42,21 @@ Route 为受影响 definition 记录进程内 `recentUpdate`，由 Runtime inter
 快照分成 `batch` 与 `lifecycle`：前者含 `scope`（application / definitions）、outcome、phase、sequence、durationMs；后者只含
 当前 node 的生命周期 issue，未观察到该节点的完整报告时为 null。空 issues 表示该批执行没有报告此节点的生命周期错误，不代表当前一定运行。
 
-`batch.retained-previous` 只用于 point of no return 之前的 evaluate、inject 或 commit rejection。Catalog 已成为 authority 后的
+`batch.retained-previous` 只用于 point of no return 之前的 evaluate、artifacts、inject 或 commit rejection。Catalog 已成为 authority 后的
 rejection 记录 `applied-with-issues / commit`，提交返回但生命周期有 issue 则记录 `applied-with-issues / lifecycle`；这些是整批事实，
 不能广播成每个节点的失败。实际生命周期归因只消费该请求的 exact CommitSummary，按 node address（包括 fork）投影 phase、kind、message、blockedBy，
 不读取全局“最后一次 commit”。未知节点或新 fork 不继承同 definition 其他节点的 lifecycle。成功补偿宿主使用 `restored-previous / application-reload`，
 仍附带补偿启动的逐节点事实。
+
+Static Vite 在接纳更新时分配 attempt sequence，区分正在 evaluate / artifacts / commit / application-reload 与已结算结果；
+失败候选即使没有任何已提交 Plugin，也保留独立的 latest attempt。Dynamic module batch 与 Content refresh 使用同一记录器序列。
+Management `updates.snapshot()` / `updates.follow()` 沿现有会话提供这份状态；订阅首帧包含当前值，慢消费者合并到最新快照，dispose 撤回观察者。
+批次错误包含有界 message、可用的相对文件和已观察导入链；原始异常写入本地 runtime log，不把绝对路径或 stack 传入页面。
+无法确认影响范围时只发布应用批次，不把所有旧插件标为根因。Plugin 的 `batch.error` 保留其历史批次原因，不能用最新批次覆盖历史。
+
+Static Vite 分离已提交应用图与失败候选的恢复依赖。候选解析委托 Vite，观察可达 importer/specifier 关系，
+失败后监听已解析新文件、缺失导入候选和相关 package manifest。Vite 忽略的安装目录及根外缺失文件由限于失败候选的 watcher 补充；
+修正新文件或完成安装进入原串行更新队列，提交后释放恢复依赖及补充 watcher，关闭后禁止重新接纳。
 
 记录器限制 definition 与 node 保留数量，先验证整条记录再发布；同批次后续诊断可替换记录，但不得靠相同 sequence 复用旧节点错误。
 后续插件重试或运行状态变化不篡改更新历史。Workbench 的红色生命周期提示只来自节点 issue；批次异常和当前运行问题有独立展示位置。
@@ -159,8 +169,10 @@ compiler 不再为 Workbench 叠加通用 build queue；MF builder 自己拥有�
 process-global application root：同一 application root 最多并发两个 producer；不同 root 按到达顺序形成 cohort，切换前必须等
 当前 cohort 排空，后到的同 root task 不能越过已经等待的其他 root。这个精确约束不能扩大为全局单线程。Node artifact 继续使用
 独立的两个 build slot。同一 output 的 transaction ordering 始终保留，保证 immutable candidate 的 validation/publication 不交错。
-Runtime-dev 会先发布 topology/Content，并把缺失 producer 放入后台构建；已存在的 producer artifact 可在 publish 路径快速
-复用。producer 进入构建时记录 name/revision，完成时记录 `built` 或磁盘 `reused` 及端到端耗时；内存 candidate 复用保持
+Runtime-dev 先准备并验证候选 topology/Content，准备过程不改变 current tuple，也不取消已接受代的后台构建。
+Route 在 Core graph 接受点同步激活候选：正常替换中此时旧代已排空，新代尚未启动；被拒绝候选只丢弃准备结果。
+只有激活才推进 publication epoch 并启动缺失 producer 的后台构建；后台验证完成后再次检查 epoch，拒绝迟到的过期结果。
+已存在的 producer artifact 可在准备路径快速复用。初启和已接受定义的纯 Content 更新使用相同 prepare/commit 实现。producer 进入构建时记录 name/revision，完成时记录 `built` 或磁盘 `reused` 及端到端耗时；内存 candidate 复用保持
 静默，失败日志保留同一归因和原始错误。开发 producer 使用持久 Vite cache，默认不生成 dynamic types；production 或显式
 required type policy 仍严格生成和校验类型资产。
 
@@ -183,9 +195,13 @@ Workbench 不实现页内 remote HMR。Producer inventory commit 或 Plugin publ
 
 1. Server invalidates current Cap’n Web session；
 2. Shell destroy active Bridges 并 dispose opened handles；
-3. 当前 document 显示 reload boundary；
+3. 当前 document 显示更新提示并自动完整刷新；连续刷新使用递增等待，10 秒内达到 3 次后暂停并保留手动入口；
 4. 新 document 创建一条新 socket、重新认证/bootstrap、读取 layout；
 5. MF Runtime 加载 pinned new manifest/expose 并创建 fresh roots/Bridge。
+
+认证撤销与 broken 状态不自动刷新。自动刷新保留 URL 与已持久化工作区布局，不承诺保留未保存的表单草稿。
+
+Shell 源码更新若传播到 document entry，必须在 Vite 重新执行入口前释放 React root 与 session 并整页导航，避免同一 document 创建第二条连接；普通组件热更新保持原路径。
 
 旧 document 不注册新 remote，不把新 roots 接到旧 renderer，不保存 old remote fallback。Candidate build failure 不会
 推进 producer inventory；开发期 topology publication 可以先让未就绪 View 以 building 状态出现，失败后用 registry

@@ -29,6 +29,9 @@ const paths = [
 const mounted: Array<ReturnType<typeof createRoot>> = []
 
 vi.mock('@mantine/hooks', () => ({ useMediaQuery: () => false }))
+vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
+	WorkbenchUpdateStatus: () => <span>HMR 就绪</span>,
+}))
 vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 	RouteErrorScreen: () => <p role="alert">页面错误</p>,
 }))

@@ -19,6 +19,34 @@ const sourceEntry = {
 } satisfies PluginEntryAddress
 
 describe('plugin execution presentation', () => {
+	it('keeps historical artifact failure diagnostics on its batch without marking the running plugin as stopped', () => {
+		const result = describePluginRecentUpdate({
+			batch: {
+				scope: 'definitions',
+				outcome: 'retained-previous',
+				phase: 'artifacts',
+				sequence: 3,
+				durationMs: 42,
+				error: {
+					message: 'Invalid renderer syntax',
+					file: 'new-renderer.tsx',
+					importChain: ['workbench.ts', 'new-renderer.tsx'],
+				},
+			},
+			lifecycle: null,
+		})
+		expect(result).toMatchObject({
+			label: '更新失败 · 已保留上一版本',
+			tone: 'yellow',
+			meta: '#3 · 42 ms · 界面产物准备阶段',
+			details: [
+				'批次错误：Invalid renderer syntax',
+				'失败文件：new-renderer.tsx',
+				'导入链：workbench.ts → new-renderer.tsx',
+			],
+		})
+		expect(result.searchTerms.join(' ')).toContain('Invalid renderer syntax')
+	})
 	it.each<{
 		execution: PluginExecutionSnapshot
 		badge: string

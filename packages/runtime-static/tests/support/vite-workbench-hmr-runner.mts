@@ -28,6 +28,7 @@ await writeFile(
 	}),
 )
 await writeFile(resolve(root, 'src/guide.md'), '# HMR guide\n\n::slot[status]\n')
+await writeFile(resolve(root, 'src/candidate.md'), '# Candidate guide\n\n::slot[status]\n')
 await writeFile(resolve(root, 'src/renderer.ts'), renderer('renderer-first'))
 await writeFile(resolve(root, 'src/workbench.ts'), definition('content', 'initial'))
 await writeFile(
@@ -172,6 +173,49 @@ try {
 	})
 	await writeFile(resolve(root, 'src/workbench.ts'), definition('content', 'recovered'))
 	await eventually(() => healthy('recovered'))
+	// A candidate changes Content and introduces a required cycle in the same source event.
+	// Catalog rejection must retain both the previous running instances and their Content tuple.
+	const previousContent = backend.content.getCurrent(owner.definition)
+	assert.ok(previousContent)
+	const candidateSource = (
+		cyclic: boolean,
+	) => `${definition('content', 'catalog-candidate').replace("'./guide.md'", "'./candidate.md'")}
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { Dependent } from './dependent'
+@Plugin()
+export class Owner extends BasePlugin {
+  ${cyclic ? 'constructor(private readonly dependent: Dependent) { super() }' : ''}
+  readonly version = version
+  protected override init() {
+    this.ctx.workbench.publish(UI, { page: () => ({ load: () => ({ status: {} }) }) })
+  }
+}
+export { Dependent } from './dependent'
+`
+	await writeFile(resolve(root, 'src/index.ts'), candidateSource(true))
+	await retainedPrevious()
+	const rejectedOverview = await readRuntimePluginStatusOverview(host.ctx)
+	assert.equal(
+		rejectedOverview.statuses.find((status) => status.address.definition.exportName === 'Owner')
+			?.recentUpdate?.batch.phase,
+		'commit',
+	)
+	healthy('recovered')
+	assert.equal(backend.content.getCurrent(owner.definition)?.digest, previousContent.digest)
+	const retainedEntry = backend.registry.getLayout(owner).entries[0]!
+	const retainedContent = backend.content.resolveContent(owner.definition, retainedEntry.descriptor)
+	assert.ok(retainedContent)
+	assert.equal(JSON.stringify(retainedContent.plan.document).includes('HMR guide'), true)
+	assert.equal(JSON.stringify(retainedContent.plan.document).includes('Candidate guide'), false)
+	await writeFile(resolve(root, 'src/index.ts'), candidateSource(false))
+	await eventually(() => {
+		healthy('catalog-candidate')
+		assert.notEqual(backend.content.getCurrent(owner.definition)?.digest, previousContent.digest)
+		const entry = backend.registry.getLayout(owner).entries[0]!
+		const acceptedContent = backend.content.resolveContent(owner.definition, entry.descriptor)
+		assert.ok(acceptedContent)
+		assert.equal(JSON.stringify(acceptedContent.plan.document).includes('Candidate guide'), true)
+	})
 } finally {
 	await server.close()
 }

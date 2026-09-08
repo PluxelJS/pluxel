@@ -21,6 +21,7 @@ import {
 	UNREPORTED_PLUGIN_EXECUTION,
 	type PluginExecutionSnapshot,
 	type PluginRecentUpdateSnapshot,
+	type RuntimeUpdateSnapshot,
 } from '../plugin-execution'
 
 export type RuntimePluginAvailability = 'available' | 'unavailable'
@@ -65,6 +66,8 @@ export type RuntimePluginStatusOverview = {
 }
 
 export interface PluginRecentUpdateRead {
+	latestUpdate?(): RuntimeUpdateSnapshot | null
+	subscribeUpdates?(observer: (snapshot: RuntimeUpdateSnapshot | null) => void): () => void
 	resolveRecentUpdate(address: PluginNodeAddress): PluginRecentUpdateSnapshot | null
 }
 

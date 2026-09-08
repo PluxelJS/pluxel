@@ -13,6 +13,7 @@ import { WorkspaceControllerProvider } from './workbench/context'
 import { WorkspaceController } from './workbench/store'
 import { WorkbenchSessionProvider } from '../workbench/runtime'
 import { ManagementQueryProvider } from './managementQuery'
+import { RuntimeUpdatesProvider } from './runtimeUpdates'
 
 export interface AppProps {
 	bootstrap: Extract<RuntimeClientBootstrap, { kind: 'workbench' }>
@@ -26,13 +27,15 @@ export function App({ bootstrap, history }: AppProps) {
 	return (
 		<RuntimeManagementClientProvider client={managementClient}>
 			<ManagementQueryProvider>
-				<WorkbenchSessionProvider session={bootstrap.workbench}>
-					<ProductProvider client={managementClient}>
-						<WorkspaceControllerProvider controller={workspace}>
-							<RouterProvider router={router} />
-						</WorkspaceControllerProvider>
-					</ProductProvider>
-				</WorkbenchSessionProvider>
+				<RuntimeUpdatesProvider>
+					<WorkbenchSessionProvider session={bootstrap.workbench}>
+						<ProductProvider client={managementClient}>
+							<WorkspaceControllerProvider controller={workspace}>
+								<RouterProvider router={router} />
+							</WorkspaceControllerProvider>
+						</ProductProvider>
+					</WorkbenchSessionProvider>
+				</RuntimeUpdatesProvider>
 			</ManagementQueryProvider>
 		</RuntimeManagementClientProvider>
 	)

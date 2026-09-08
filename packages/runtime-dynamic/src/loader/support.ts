@@ -25,6 +25,8 @@ export type LoaderCatalogEntry = Readonly<{
 }>
 
 export type LoaderBatchCommitOptions = Readonly<{
+	/** @internal Activates prevalidated artifacts at the accepted graph boundary. */
+	onGraphCommitted?: () => void
 	reason?: string
 	mode?: 'cold-boot' | 'live'
 	statePatch?: RuntimeStatePatch
@@ -73,6 +75,7 @@ export class LoaderBatchSession implements LoaderBatch {
 		try {
 			return await coordinator.update({
 				catalog: snapshot,
+				onGraphCommitted: options.onGraphCommitted,
 				statePatch: options.statePatch,
 				reason: options.reason ?? 'dynamic-catalog-update',
 				mode: options.mode ?? (coordinator.catalogSnapshot().revision === 0 ? 'cold-boot' : 'live'),

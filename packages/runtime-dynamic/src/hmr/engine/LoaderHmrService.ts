@@ -35,9 +35,13 @@ import {
 	type PluginRecentUpdateSnapshot,
 	type PluginUpdateBatchSnapshot,
 	type PluginRouteCatalogSnapshot,
+	type RuntimeRouteCapabilities,
 } from '@pluxel/runtime/internal'
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
-import type { WorkbenchArtifactCompilations } from '@pluxel/runtime-dev/workbench'
+import type {
+	PreparedWorkbenchArtifacts,
+	WorkbenchArtifactCompilations,
+} from '@pluxel/runtime-dev/workbench'
 import { createViteNodeElysiaApplicationCarrier } from '@pluxel/runtime-dev/vite'
 import {
 	buildLoaderHmrViteConfig,
@@ -116,6 +120,19 @@ export function readLoaderHmrRecentUpdate(
 	address: PluginNodeAddress,
 ): PluginRecentUpdateSnapshot | null {
 	return recentUpdatesByService.get(service)?.resolveRecentUpdate(address) ?? null
+}
+
+/** @internal The route owns one update feed, including failures with no committed Plugin node. */
+export function createLoaderHmrUpdateReader(
+	service: LoaderHmrService,
+): NonNullable<RuntimeRouteCapabilities['recentUpdate']> {
+	return Object.freeze({
+		resolveRecentUpdate: (address: PluginNodeAddress) =>
+			readLoaderHmrRecentUpdate(service, address),
+		latestUpdate: () => recentUpdatesByService.get(service)?.latestUpdate() ?? null,
+		subscribeUpdates: (observer: Parameters<PluginRecentUpdateTracker['subscribeUpdates']>[0]) =>
+			recentUpdatesByService.get(service)?.subscribeUpdates(observer) ?? (() => {}),
+	})
 }
 
 function assertHmrExecutionOk(
@@ -262,7 +279,7 @@ const BATCH_MAX_WAIT_MS = 120
 const BATCH_MAX_FILES = 2000
 
 type WorkbenchArtifactState = {
-	publish?: (input: WorkbenchArtifactCompilations) => Promise<unknown>
+	prepare?: (input: WorkbenchArtifactCompilations) => Promise<PreparedWorkbenchArtifacts>
 	source?: Readonly<{
 		compilations(): Promise<WorkbenchArtifactCompilations>
 	}>
@@ -272,15 +289,15 @@ type WorkbenchArtifactState = {
 const workbenchArtifactStates = new WeakMap<LoaderHmrService, WorkbenchArtifactState>()
 
 /** @internal Connects the route-owned compiler without exposing it on LoaderHmrService. */
-export function attachLoaderHmrWorkbenchArtifactPublisher(
+export function attachLoaderHmrWorkbenchArtifactPreparer(
 	service: LoaderHmrService,
-	publish: (input: WorkbenchArtifactCompilations) => Promise<unknown>,
+	prepare: (input: WorkbenchArtifactCompilations) => Promise<PreparedWorkbenchArtifacts>,
 ): void {
 	const state = workbenchArtifactStates.get(service) ?? {}
-	if (state.publish && state.publish !== publish) {
-		throw new Error('[hmr] Workbench artifact publisher is already attached')
+	if (state.prepare && state.prepare !== prepare) {
+		throw new Error('[hmr] Workbench artifact preparer is already attached')
 	}
-	state.publish = publish
+	state.prepare = prepare
 	workbenchArtifactStates.set(service, state)
 }
 
@@ -301,20 +318,35 @@ export function configureLoaderHmrWorkbenchArtifactSource(
 
 /** @internal Refreshes the complete artifact snapshot and records its exact non-module sources. */
 export async function refreshLoaderHmrWorkbenchArtifacts(service: LoaderHmrService): Promise<void> {
+	const prepared = await prepareLoaderHmrWorkbenchArtifacts(service)
+	prepared?.commit()
+}
+
+async function prepareLoaderHmrWorkbenchArtifacts(
+	service: LoaderHmrService,
+): Promise<PreparedWorkbenchArtifacts | undefined> {
 	const state = workbenchArtifactStates.get(service)
-	if (!state?.publish || !state.source) return
+	if (!state?.prepare || !state.source) return undefined
 	const compilations = await state.source.compilations()
-	state.contentSources = new Set(
+	const contentSources = new Set(
 		compilations.content.flatMap((content) =>
 			content.sources.map((source) => service.normalizeId(source)),
 		),
 	)
-	await state.publish(compilations)
+	const prepared = await state.prepare(compilations)
+	return Object.freeze({
+		commit: () => {
+			const commits = prepared.commit()
+			state.contentSources = contentSources
+			return commits
+		},
+		rollback: () => prepared.rollback(),
+	})
 }
 
 function hasLoaderHmrWorkbenchArtifactPipeline(service: LoaderHmrService): boolean {
 	const state = workbenchArtifactStates.get(service)
-	return Boolean(state?.publish && state.source)
+	return Boolean(state?.prepare && state.source)
 }
 
 /** @internal Exact source predicate used before the TypeScript/module-graph HMR filters. */
@@ -1014,7 +1046,7 @@ export class LoaderHmrService {
 		this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
 			dbgModules: this.dbg.modules,
 			useRequireShims: this.useRequireShims,
-			beforeCommit: () => refreshLoaderHmrWorkbenchArtifacts(this),
+			beforeCommit: () => prepareLoaderHmrWorkbenchArtifacts(this),
 			hasBeforeCommit: () => hasLoaderHmrWorkbenchArtifactPipeline(this),
 		})
 
@@ -1161,6 +1193,7 @@ export class LoaderHmrService {
 									catalogBefore,
 									catalogAfter,
 									commit: exactCommit,
+									error,
 								})
 							} else {
 								this.recordRecentUpdates(result, catalogBefore, exactCommit, false)
@@ -1290,14 +1323,44 @@ export class LoaderHmrService {
 			// Admission is synchronous: execLock reserves this work before close() can append its
 			// drain barrier. An admitted refresh may publish, but it never reloads the browser after close.
 			void this.execLock.run(async () => {
+				const updates = recentUpdatesByService.get(this)
+				const startedAt = performance.now()
+				updates?.beginUpdate(clean.split('/').at(-1) ?? null)
+				updates?.updatePhase('artifacts')
+				let published = false
+				let failure: NonNullable<PluginUpdateBatchSnapshot['error']> | null = null
 				try {
 					await refreshLoaderHmrWorkbenchArtifacts(this)
+					published = true
 					if (!this.closed) this.forwardWorkbenchFullReload()
+					updates?.record({
+						definitionKeys: [],
+						batch: {
+							scope: 'application',
+							outcome: 'applied',
+							phase: null,
+							durationMs: roundHmrMs(performance.now() - startedAt),
+						},
+					})
 				} catch (error) {
+					failure = this.portableUpdateError(error)
+					updates?.record({
+						definitionKeys: [],
+						batch: {
+							scope: 'application',
+							...(published
+								? { outcome: 'applied-with-issues' as const, phase: 'commit' as const }
+								: { outcome: 'retained-previous' as const, phase: 'artifacts' as const }),
+							durationMs: roundHmrMs(performance.now() - startedAt),
+							error: failure,
+						},
+					})
 					this.ctx.logger.error('failed to rebuild Workbench Content artifact', {
 						file: clean,
 						error,
 					})
+				} finally {
+					updates?.finishUpdate(failure)
 				}
 			})
 			return true
@@ -1490,10 +1553,16 @@ export class LoaderHmrService {
 						},
 		)
 
-		this.storeRecentUpdates(definitionKeys, update, commit)
+		const failure = summary.executeError ?? summary.injectError ?? summary.commitError
+		this.storeRecentUpdates(
+			definitionKeys,
+			failure ? { ...update, error: this.portableUpdateError(failure) } : update,
+			commit,
+		)
 	}
 
 	private recordPostCommitFailure(input: {
+		error: unknown
 		files: readonly string[]
 		epoch: number
 		durationMs: number
@@ -1513,9 +1582,25 @@ export class LoaderHmrService {
 				outcome: 'applied-with-issues',
 				phase: 'commit',
 				durationMs: input.durationMs,
+				error: this.portableUpdateError(input.error),
 			}),
 			input.commit,
 		)
+	}
+
+	private portableUpdateError(error: unknown): NonNullable<PluginUpdateBatchSnapshot['error']> {
+		const root = normalizePath(this.config.hostRoot ?? this.vite?.config.root ?? process.cwd())
+		const message = hmrFailureMessage(error)
+			.replaceAll('\\', '/')
+			.replaceAll(/\bfile:(?:\/\/)?/g, '')
+			.replaceAll('/@fs/', '/')
+			.replaceAll(root + '/', '')
+			.replaceAll(
+				/(?:[A-Za-z]:)?\/(?:[^\s'"()<>:]+\/)+[^\s'"()<>:]*/g,
+				(path) => path.split('/').at(-1) ?? '[source]',
+			)
+			.slice(0, 4096)
+		return { message, file: null, importChain: [] }
 	}
 
 	private collectCatalogDeltaDefinitionKeys(
@@ -1544,9 +1629,12 @@ export class LoaderHmrService {
 		batch: PluginUpdateBatchSnapshot,
 		commit?: CommitSummary,
 	): void {
+		// Content refreshes share this feed but not the module debouncer epoch.
+		// Let its single tracker allocate monotonic identities across both update paths.
+		const { sequence: _moduleEpoch, ...update } = batch
 		recentUpdatesByService.get(this)?.record({
 			definitionKeys,
-			batch,
+			batch: update,
 			...(commit
 				? {
 						lifecycle: {

@@ -2,8 +2,9 @@ import type { WorkbenchArtifactCompilations } from '@pluxel/runtime-dev/workbenc
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-	attachLoaderHmrWorkbenchArtifactPublisher,
+	attachLoaderHmrWorkbenchArtifactPreparer,
 	configureLoaderHmrWorkbenchArtifactSource,
+	createLoaderHmrUpdateReader,
 	isLoaderHmrWorkbenchContentSource,
 	LoaderHmrService,
 	refreshLoaderHmrWorkbenchArtifacts,
@@ -15,10 +16,10 @@ describe('Loader HMR Workbench Content sources', () => {
 		const service = {
 			normalizeId: (id: string) => id.replaceAll('\\', '/'),
 		} as LoaderHmrService
-		const publish = vi.fn(async () => undefined)
+		const publish = vi.fn(async () => ({ commit: () => [], rollback: () => {} }))
 		let source = '/workspace/plugin/guide.md'
 		let fail = false
-		attachLoaderHmrWorkbenchArtifactPublisher(service, publish)
+		attachLoaderHmrWorkbenchArtifactPreparer(service, publish)
 		configureLoaderHmrWorkbenchArtifactSource(service, {
 			compilations: async () => {
 				if (fail) throw new Error('invalid Markdown')
@@ -46,7 +47,7 @@ describe('Loader HMR Workbench Content sources', () => {
 	})
 
 	it('refreshes only tracked raw Markdown watcher events and requests one full reload', async () => {
-		const publish = vi.fn(async () => undefined)
+		const publish = vi.fn(async () => ({ commit: () => [], rollback: () => {} }))
 		const send = vi.fn()
 		const consumeFullReloadRequest = vi.fn(() => true)
 		const push = vi.fn()
@@ -67,7 +68,7 @@ describe('Loader HMR Workbench Content sources', () => {
 				if (consumeFullReloadRequest()) send({ type: 'full-reload' })
 			},
 		} as unknown as LoaderHmrService
-		attachLoaderHmrWorkbenchArtifactPublisher(service, publish)
+		attachLoaderHmrWorkbenchArtifactPreparer(service, publish)
 		configureLoaderHmrWorkbenchArtifactSource(service, {
 			compilations: async () =>
 				({
@@ -101,10 +102,14 @@ describe('Loader HMR Workbench Content sources', () => {
 			fixedModuleId: 'pluxel:fixed:/workspace/pluxel.dynamic.ts',
 		})
 		const tracked = '/workspace/plugin/guide.md'
-		const publish = vi.fn(async () => undefined)
+		const publish = vi.fn(async () => ({ commit: () => [], rollback: () => {} }))
 		const forwardReload = vi.fn()
 		Reflect.set(service, 'forwardWorkbenchFullReload', forwardReload)
 		let compilationCount = 0
+		let invalidMarkdown = false
+		const updates = createLoaderHmrUpdateReader(service)
+		const observer = vi.fn()
+		const unsubscribe = updates.subscribeUpdates!(observer)
 		let enterRefresh = (): void => {}
 		const refreshEntered = new Promise<void>((resolve) => {
 			enterRefresh = resolve
@@ -113,11 +118,12 @@ describe('Loader HMR Workbench Content sources', () => {
 		const refreshGate = new Promise<void>((resolve) => {
 			releaseRefresh = resolve
 		})
-		attachLoaderHmrWorkbenchArtifactPublisher(service, publish)
+		attachLoaderHmrWorkbenchArtifactPreparer(service, publish)
 		configureLoaderHmrWorkbenchArtifactSource(service, {
 			compilations: async () => {
 				compilationCount += 1
-				if (compilationCount === 2) {
+				if (invalidMarkdown) throw new Error('invalid Markdown')
+				if (compilationCount === 3) {
 					enterRefresh()
 					await refreshGate
 				}
@@ -133,8 +139,20 @@ describe('Loader HMR Workbench Content sources', () => {
 			file: string,
 		) => boolean
 
+		invalidMarkdown = true
+		expect(enqueueFileChange.call(service, tracked)).toBe(true)
+		await vi.waitFor(() =>
+			expect(updates.latestUpdate!()).toMatchObject({
+				state: 'settled',
+				phase: 'artifacts',
+				outcome: 'retained-previous',
+				error: { message: 'invalid Markdown' },
+			}),
+		)
+		invalidMarkdown = false
 		expect(enqueueFileChange.call(service, tracked)).toBe(true)
 		await refreshEntered
+		expect(updates.latestUpdate!()).toMatchObject({ state: 'updating', phase: 'artifacts' })
 		let closeSettled = false
 		const closing = service.close().then(() => {
 			closeSettled = true
@@ -148,5 +166,14 @@ describe('Loader HMR Workbench Content sources', () => {
 		expect(publish).toHaveBeenCalledTimes(2)
 		expect(forwardReload).not.toHaveBeenCalled()
 		expect(closeSettled).toBe(true)
+		expect(observer).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				sequence: 2,
+				state: 'settled',
+				outcome: 'applied',
+				error: null,
+			}),
+		)
+		unsubscribe()
 	})
 })

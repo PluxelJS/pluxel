@@ -1,3 +1,4 @@
+import type { PreparedWorkbenchArtifacts } from '@pluxel/runtime-dev/workbench'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
@@ -392,25 +393,38 @@ export type HmrExecutorConfig = {
 	useRequireShims: boolean
 	dbgModules: LogtapeLogger | null
 	/** Runs after the candidate modules are injected and before their runtime batch is committed. */
-	beforeCommit?: () => void | Promise<void>
+	beforeCommit?: () =>
+		| void
+		| PreparedWorkbenchArtifacts
+		| Promise<void | PreparedWorkbenchArtifacts>
 	/** Avoids creating an empty batch when no route-owned pre-commit work is configured. */
 	hasBeforeCommit?: () => boolean
 }
 
 class HmrRuntimeCommitScheduler {
-	constructor(private readonly beforeCommit?: () => void | Promise<void>) {}
+	constructor(
+		private readonly beforeCommit?: () =>
+			| void
+			| PreparedWorkbenchArtifacts
+			| Promise<void | PreparedWorkbenchArtifacts>,
+	) {}
 
 	async commitBatch(batch: LoaderBatch): Promise<HmrExecutionResult> {
 		const endCommit = startTimer()
 		let commitResult: RuntimeCommitResult
 		let commitSummary: CommitSummary | undefined
+		let artifacts: void | PreparedWorkbenchArtifacts = undefined
 		try {
-			await this.beforeCommit?.()
-			const report = await batch.commit({ reason: 'hmr' })
+			artifacts = await this.beforeCommit?.()
+			const report = await batch.commit({
+				reason: 'hmr',
+				...(artifacts ? { onGraphCommitted: artifacts.commit } : {}),
+			})
 			commitSummary = report.core.status === 'committed' ? report.core.summary : undefined
 			commitResult = { ok: true, val: null }
 		} catch (error) {
 			commitResult = createRuntimeCommitFailureResult(error)
+			if (artifacts) artifacts.rollback()
 			batch.rollback()
 		}
 

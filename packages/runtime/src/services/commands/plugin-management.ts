@@ -90,6 +90,13 @@ const pluginExecution = Type.Union([
 ])
 
 const updateTiming = {
+	error: Type.Optional(
+		obj({
+			message: Type.String({ maxLength: 4096 }),
+			file: Type.Union([Type.String({ maxLength: 1024 }), Type.Null()]),
+			importChain: Type.Array(Type.String({ maxLength: 1024 }), { maxItems: 32 }),
+		}),
+	),
 	scope: Type.Union([Type.Literal('application'), Type.Literal('definitions')]),
 	sequence: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
 	durationMs: Type.Number({ minimum: 0 }),
@@ -103,7 +110,12 @@ const pluginUpdateBatch = Type.Union([
 	}),
 	obj({
 		outcome: Type.Literal('retained-previous'),
-		phase: Type.Union([Type.Literal('evaluate'), Type.Literal('inject'), Type.Literal('commit')]),
+		phase: Type.Union([
+			Type.Literal('evaluate'),
+			Type.Literal('artifacts'),
+			Type.Literal('inject'),
+			Type.Literal('commit'),
+		]),
 		...updateTiming,
 	}),
 	obj({
@@ -196,12 +208,20 @@ const pluginsOutput = obj({
 	}),
 })
 
+function mutableUpdateBatch(batch: NonNullable<PluginStatusSnapshot['recentUpdate']>['batch']) {
+	const { error, ...result } = batch
+	return {
+		...result,
+		...(error ? { error: { ...error, importChain: [...error.importChain] } } : {}),
+	}
+}
+
 function mutablePluginSnapshot(snapshot: PluginStatusSnapshot) {
 	return {
 		...snapshot,
 		recentUpdate: snapshot.recentUpdate
 			? {
-					batch: { ...snapshot.recentUpdate.batch },
+					batch: mutableUpdateBatch(snapshot.recentUpdate.batch),
 					lifecycle: snapshot.recentUpdate.lifecycle
 						? { issues: snapshot.recentUpdate.lifecycle.issues.map((issue) => ({ ...issue })) }
 						: null,

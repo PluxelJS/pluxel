@@ -141,6 +141,8 @@ export class PluginStartUnavailableError extends Error {
 }
 
 export type RuntimePluginGraphUpdate = Readonly<{
+	/** Activates prevalidated route resources synchronously after catalog acceptance, before new-generation startup. */
+	onGraphCommitted?: () => void
 	reason?: string
 	catalog?: PluginRouteCatalogSnapshot
 	statePatch?: RuntimeStatePatch
@@ -562,10 +564,11 @@ export class RuntimePluginGraphCoordinator<TSummary = unknown> {
 				this.desiredControl = plan.desiredControl
 				this.applied = plan.applied
 				this.reconciliation = plan.blocked
+				update.onGraphCommitted?.()
 			}
 			if (prepared) {
 				// Core invokes this callback synchronously immediately after graph confirmation and
-				// before any teardown/start await. Readers therefore cannot observe new Core graph
+				// after old-generation teardown and before new-generation startup. Readers cannot observe new Core graph
 				// state with an old route catalog.
 				const summary = await prepared.commit({ onGraphCommitted: publishGraph })
 				publishGraph()

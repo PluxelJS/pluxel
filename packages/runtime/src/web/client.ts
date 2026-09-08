@@ -1,3 +1,4 @@
+import { cloneRuntimeUpdateSnapshot, type RuntimeUpdateSnapshot } from '../plugin-execution'
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from '../capnweb'
 import type {
@@ -70,6 +71,12 @@ export type RuntimeLogClient = Readonly<{
 /** Framework-neutral facade over one borrowed Management capability from the page session. */
 export type RuntimeManagementClient = Readonly<{
 	describe(): Promise<RuntimeMeta>
+	updates: Readonly<{
+		snapshot(): Promise<RuntimeUpdateSnapshot | null>
+		follow(
+			observer: (snapshot: RuntimeUpdateSnapshot | null) => void | Promise<void>,
+		): Promise<Disposable>
+	}>
 	catalog: Readonly<{
 		snapshot(): Promise<PluginCatalogSnapshot>
 		updateLayout(input: PluginCatalogLayoutInput): Promise<PluginCatalogLayoutMutationResult>
@@ -133,6 +140,19 @@ export function createRuntimeManagementClient(
 
 	const client: RuntimeManagementClient = {
 		describe: () => call((root) => root.describe(), parseRuntimeMeta),
+		updates: Object.freeze({
+			snapshot: () => call((root) => root.runtimeUpdate(), cloneRuntimeUpdateSnapshot),
+			follow: async (observer) => {
+				if (typeof observer !== 'function')
+					throw new TypeError('Update observer must be a function')
+				const subscription = await management.followRuntimeUpdates(async (snapshot) => {
+					await observer(cloneRuntimeUpdateSnapshot(snapshot))
+				})
+				if (!subscription || typeof subscription[Symbol.dispose] !== 'function')
+					throw new TypeError('Update follow did not return a disposable subscription')
+				return subscription
+			},
+		}),
 		catalog: Object.freeze({
 			snapshot: () => call((root) => root.pluginCatalog(), parsePluginCatalogSnapshot),
 			updateLayout: (input) =>

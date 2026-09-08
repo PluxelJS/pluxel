@@ -43,6 +43,7 @@ import {
 import { RemotePaneLayoutControls } from './RemotePaneLayoutControls'
 import { WorkbenchStatePersistence } from './shell/WorkbenchStatePersistence'
 import { WorkspaceEditorGrid } from './shell/WorkspaceEditorGrid'
+import { WorkbenchUpdateStatus } from './shell/WorkbenchUpdateStatus'
 import './styles.scss'
 
 function resolvePluginRouteFromPath(pathname: string) {
@@ -347,24 +348,23 @@ export function WorkbenchShell() {
 										/>
 									</div>
 
-									{isPluginsSection || editorGroups.length > 1 ? (
-										<div className="plx-workbench__topbarActions">
-											{editorGroups.length > 1 ? (
-												<button
-													className="plx-workbench__editorGroupSwitcher"
-													onClick={cycleEditorGroup}
-													title="切换到下一个编辑组"
-													type="button"
-												>
-													编辑组 {editorGroups.findIndex((group) => group.id === activeGroupId) + 1}
-													/{editorGroups.length}
-												</button>
-											) : null}
-											{isPluginsSection ? (
-												<PluginQuickOpenAction focusWorkbenchSearch={focusWorkbenchSearch} />
-											) : null}
-										</div>
-									) : null}
+									<div className="plx-workbench__topbarActions">
+										<WorkbenchUpdateStatus />
+										{editorGroups.length > 1 ? (
+											<button
+												className="plx-workbench__editorGroupSwitcher"
+												onClick={cycleEditorGroup}
+												title="切换到下一个编辑组"
+												type="button"
+											>
+												编辑组 {editorGroups.findIndex((group) => group.id === activeGroupId) + 1}/
+												{editorGroups.length}
+											</button>
+										) : null}
+										{isPluginsSection ? (
+											<PluginQuickOpenAction focusWorkbenchSearch={focusWorkbenchSearch} />
+										) : null}
+									</div>
 								</header>
 
 								<div className="plx-workbench__body">

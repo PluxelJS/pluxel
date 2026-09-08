@@ -33,3 +33,5 @@ export {
 	parseRuntimePortableData,
 	RuntimeProtocolValidationError,
 } from './web/validation'
+
+export type { RuntimeUpdateSnapshot, RuntimeUpdateError } from './plugin-execution'

@@ -212,23 +212,27 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		definition: StaticRuntimeDefinition,
 		startedAt: number,
 		settlement?: StaticRuntimeReloadSettlement,
+		onGraphCommitted?: () => void,
 	): Promise<StaticRuntimeInternalHmrReport> {
 		if (this.stopRequested || this.disposed) {
 			return Promise.reject(new Error('[runtime-static] cannot reload a disposed host'))
 		}
-		return this.enqueueOperation(() => this.reloadExclusive(definition, startedAt, settlement))
+		return this.enqueueOperation(() =>
+			this.reloadExclusive(definition, startedAt, settlement, onGraphCommitted),
+		)
 	}
 
 	/** @internal Preserves Vite evaluation time and reports the exact catalog publication point. */
 	async reloadFromVite(
 		definition: StaticRuntimeDefinition,
 		startedAt: number,
+		options: Readonly<{ onGraphCommitted?: () => void }> = {},
 	): Promise<StaticRuntimeViteReloadOutcome> {
 		const settlement: StaticRuntimeReloadSettlement = { catalogCommitted: false }
 		try {
 			return Object.freeze({
 				status: 'applied',
-				report: await this.reload(definition, startedAt, settlement),
+				report: await this.reload(definition, startedAt, settlement, options.onGraphCommitted),
 			})
 		} catch (error) {
 			return Object.freeze({
@@ -243,6 +247,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		definition: StaticRuntimeDefinition,
 		startedAt: number,
 		settlement?: StaticRuntimeReloadSettlement,
+		onGraphCommitted?: () => void,
 	): Promise<StaticRuntimeInternalHmrReport> {
 		const previous = this.coordinator.catalogSnapshot()
 		let next: StaticRuntimeCatalog
@@ -268,6 +273,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			applied = await this.coordinator.update({
 				catalog: next,
 				reason: 'static-hmr',
+				onGraphCommitted,
 				mode: 'live',
 			})
 		} catch (error) {

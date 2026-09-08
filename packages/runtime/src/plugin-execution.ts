@@ -65,7 +65,7 @@ export type PluginUpdateBatchResult =
 	  }>
 	| Readonly<{
 			outcome: 'retained-previous'
-			phase: 'evaluate' | 'inject' | 'commit'
+			phase: 'evaluate' | 'artifacts' | 'inject' | 'commit'
 			sequence: number
 			durationMs: number
 	  }>
@@ -80,7 +80,108 @@ export type PluginUpdateBatchSnapshot = PluginUpdateBatchResult &
 	Readonly<{
 		/** Full application replacement or an in-host definition transaction. */
 		scope: 'application' | 'definitions'
+		/** Captured route failure; absent when the route supplied no diagnostic. */
+		error?: RuntimeUpdateError
 	}>
+
+/** Portable, bounded diagnostic. Local stack traces stay in runtime logs. */
+export type RuntimeUpdateError = Readonly<{
+	message: string
+	file: string | null
+	importChain: readonly string[]
+}>
+
+/** The latest route attempt exists independently of the committed Plugin catalog. */
+export type RuntimeUpdateSnapshot = Readonly<{ trigger: string | null }> &
+	(
+		| Readonly<{
+				sequence: number
+				state: 'updating'
+				phase: 'evaluate' | 'artifacts' | 'inject' | 'commit' | 'lifecycle' | 'application-reload'
+				outcome: null
+				durationMs: number
+				error: null
+		  }>
+		| (Readonly<{ state: 'settled'; error: RuntimeUpdateError | null }> & PluginUpdateBatchResult)
+	)
+
+export function cloneRuntimeUpdateError(input: unknown): RuntimeUpdateError {
+	const value = exactRecord(input, ['message', 'file', 'importChain'], 'Runtime update error')
+	if (typeof value.message !== 'string' || value.message.length > 4096)
+		invalid('Invalid update error message')
+	if (value.file !== null && (typeof value.file !== 'string' || value.file.length > 1024))
+		invalid('Invalid update error file')
+	if (
+		!Array.isArray(value.importChain) ||
+		value.importChain.length > 32 ||
+		value.importChain.some((item) => typeof item !== 'string' || item.length > 1024)
+	)
+		invalid('Invalid update import chain')
+	return Object.freeze({
+		message: value.message as string,
+		file: value.file as string | null,
+		importChain: Object.freeze([...(value.importChain as string[])]),
+	})
+}
+
+export function cloneRuntimeUpdateSnapshot(input: unknown): RuntimeUpdateSnapshot | null {
+	if (input === null) return null
+	const value = exactRecord(
+		input,
+		['sequence', 'state', 'phase', 'outcome', 'durationMs', 'trigger', 'error'],
+		'Runtime update',
+	)
+	if (!Number.isSafeInteger(value.sequence) || (value.sequence as number) <= 0)
+		invalid('Invalid update sequence')
+	if (
+		typeof value.durationMs !== 'number' ||
+		!Number.isFinite(value.durationMs) ||
+		value.durationMs < 0
+	)
+		invalid('Invalid update duration')
+	if (value.trigger !== null && (typeof value.trigger !== 'string' || value.trigger.length > 1024))
+		invalid('Invalid update trigger')
+	const state = oneOf(value.state, ['updating', 'settled'], 'Runtime update state')
+	const phase =
+		value.phase === null
+			? null
+			: oneOf(
+					value.phase,
+					['evaluate', 'artifacts', 'inject', 'commit', 'lifecycle', 'application-reload'],
+					'Runtime update phase',
+				)
+	const outcome =
+		value.outcome === null
+			? null
+			: oneOf(
+					value.outcome,
+					['applied', 'applied-with-issues', 'retained-previous', 'restored-previous'],
+					'Runtime update outcome',
+				)
+	if ((state === 'updating') !== (outcome === null)) invalid('Invalid update state/outcome')
+	if (state === 'updating' && (phase === null || value.error !== null))
+		invalid('Updating attempts require a phase and no settled error')
+	if (
+		outcome === 'retained-previous' &&
+		!['evaluate', 'artifacts', 'inject', 'commit'].includes(phase ?? '')
+	)
+		invalid('Invalid retained update phase')
+	if (outcome === 'applied-with-issues' && !['commit', 'lifecycle'].includes(phase ?? ''))
+		invalid('Invalid applied update phase')
+	if (outcome === 'restored-previous' && phase !== 'application-reload')
+		invalid('Invalid restored update phase')
+	if (outcome === 'applied' && (phase !== null || value.error !== null))
+		invalid('Applied updates cannot carry failures')
+	return Object.freeze({
+		sequence: value.sequence as number,
+		state,
+		phase,
+		outcome,
+		durationMs: value.durationMs as number,
+		trigger: value.trigger as string | null,
+		error: value.error === null ? null : cloneRuntimeUpdateError(value.error),
+	}) as RuntimeUpdateSnapshot
+}
 
 /** Node-local historical facts, never inferred from the transaction's overall outcome. */
 export type PluginUpdateLifecycleIssue = Readonly<{
@@ -167,7 +268,9 @@ export function clonePluginUpdateBatchSnapshot(
 	input: unknown,
 	label = 'Plugin recent update',
 ): PluginUpdateBatchSnapshot {
-	const value = exactRecord(input, ['scope', 'outcome', 'phase', 'sequence', 'durationMs'], label)
+	const value = exactRecord(input, ['scope', 'outcome', 'phase', 'sequence', 'durationMs'], label, [
+		'error',
+	])
 	const outcome = oneOf(
 		value.outcome,
 		['applied', 'applied-with-issues', 'retained-previous', 'restored-previous'],
@@ -187,8 +290,10 @@ export function clonePluginUpdateBatchSnapshot(
 		scope: oneOf(value.scope, ['application', 'definitions'], `${label}.scope`),
 		sequence: value.sequence as number,
 		durationMs: value.durationMs as number,
+		...(value.error === undefined ? {} : { error: cloneRuntimeUpdateError(value.error) }),
 	}
 	if (outcome === 'applied') {
+		if (value.error !== undefined) invalid(`${label}.error must be absent when outcome is applied`)
 		if (value.phase !== null) invalid(`${label}.phase must be null when outcome is applied`)
 		return Object.freeze({ outcome, phase: null, ...shared })
 	}
@@ -204,7 +309,7 @@ export function clonePluginUpdateBatchSnapshot(
 		}
 		return Object.freeze({ outcome, phase: 'application-reload' as const, ...shared })
 	}
-	const phase = oneOf(value.phase, ['evaluate', 'inject', 'commit'], `${label}.phase`)
+	const phase = oneOf(value.phase, ['evaluate', 'artifacts', 'inject', 'commit'], `${label}.phase`)
 	return Object.freeze({ outcome, phase, ...shared })
 }
 

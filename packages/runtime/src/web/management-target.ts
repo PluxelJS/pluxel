@@ -1,3 +1,4 @@
+import type { RuntimeUpdateSnapshot } from '../plugin-execution'
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { RpcTarget } from '../capnweb'
 import type { SecurityAuditEvent, SecurityOverview } from './security'
@@ -41,12 +42,16 @@ export type RuntimeLogFollowInput = Readonly<{
 
 export type RuntimeLogObserver = (event: unknown) => Promise<void>
 
-/** Disposal is the only cancellation operation for a live log subscription. */
-export interface RuntimeLogSubscriptionTarget extends RpcTarget {}
+/** Disposal is the only cancellation operation for a live Management subscription. */
+export interface RuntimeSubscriptionTarget extends RpcTarget {}
 
 /** Authenticated, connection-bound Management capability for the current protocol major. */
 export interface RuntimeManagementTarget extends RpcTarget {
 	describe: () => RuntimeMeta | Promise<RuntimeMeta>
+	runtimeUpdate: () => RuntimeUpdateSnapshot | null
+	followRuntimeUpdates: (
+		observer: (snapshot: unknown) => Promise<void>,
+	) => RuntimeSubscriptionTarget
 	pluginCatalog: () => Promise<PluginCatalogSnapshot>
 	updatePluginCatalogLayout: (
 		input: PluginCatalogLayoutInput,
@@ -108,7 +113,7 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	followLogs: (
 		input: unknown,
 		observer: RuntimeLogObserver,
-	) => RuntimeLogSubscriptionTarget | Promise<RuntimeLogSubscriptionTarget>
+	) => RuntimeSubscriptionTarget | Promise<RuntimeSubscriptionTarget>
 
 	securityOverview: () => SecurityOverview | Promise<SecurityOverview>
 	securityEvents: (

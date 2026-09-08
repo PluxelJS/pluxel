@@ -213,6 +213,17 @@ export function describePluginRecentUpdate(
 	if (!update) return { ...batch, warning: false, batchLabel: null, details: [] }
 	const scope = update.batch.scope === 'application' ? '应用重载' : '插件批次更新'
 	const batchLabel = `${scope}：${batch.label}`
+	const diagnostic = update.batch.error
+	const diagnosticDetails = diagnostic
+		? [
+				`批次错误：${diagnostic.message}`,
+				...(diagnostic.file ? [`失败文件：${diagnostic.file}`] : []),
+				...(diagnostic.importChain.length > 0
+					? [`导入链：${diagnostic.importChain.join(' → ')}`]
+					: []),
+			]
+		: []
+	const searchTerms = [...batch.searchTerms, ...diagnosticDetails]
 	const issues = update.lifecycle?.issues ?? []
 	if (issues.length > 0) {
 		const first = issues[0]!
@@ -229,12 +240,15 @@ export function describePluginRecentUpdate(
 			warning: true,
 			batchLabel,
 			meta: batch.meta,
-			details: issues.map(
-				(issue) =>
-					`${stages[issue.phase]}：${issue.message}${issue.blockedBy ? `（依赖：${issue.blockedBy}）` : ''}`,
-			),
+			details: [
+				...diagnosticDetails,
+				...issues.map(
+					(issue) =>
+						`${stages[issue.phase]}：${issue.message}${issue.blockedBy ? `（依赖：${issue.blockedBy}）` : ''}`,
+				),
+			],
 			searchTerms: [
-				...batch.searchTerms,
+				...searchTerms,
 				...issues.flatMap((issue) => [issue.kind, issue.phase, issue.message]),
 			],
 		}
@@ -249,10 +263,11 @@ export function describePluginRecentUpdate(
 			tone: update.lifecycle ? 'teal' : 'gray',
 			warning: false,
 			batchLabel,
-			details: [],
+			details: diagnosticDetails,
+			searchTerms,
 		}
 	}
-	return { ...batch, warning: true, batchLabel, details: [] }
+	return { ...batch, warning: true, batchLabel, details: diagnosticDetails, searchTerms }
 }
 
 function describeUpdateBatch(
@@ -334,6 +349,8 @@ function failurePhaseLabel(
 	switch (phase) {
 		case 'evaluate':
 			return '模块求值阶段'
+		case 'artifacts':
+			return '界面产物准备阶段'
 		case 'inject':
 			return '注入阶段'
 		case 'commit':

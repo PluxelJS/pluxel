@@ -17,6 +17,7 @@ import {
 	configureLoaderHmrDefinitionSource,
 	LoaderHmrService,
 	readLoaderHmrRecentUpdate,
+	createLoaderHmrUpdateReader,
 } from '../../src/hmr/engine/LoaderHmrService'
 import type { HmrBatchSummary, HmrExecutionResult } from '../../src/hmr/engine/pipeline'
 import { requireLoaderService } from '../../src/context-plan'
@@ -432,6 +433,9 @@ describe('Loader HMR execution provenance', () => {
 		})
 		const harness = hmr as unknown as LoaderHmrProvenanceHarness
 		const moduleId = '/workspace/recent-update.mjs'
+		const updates = createLoaderHmrUpdateReader(hmr)
+		const snapshots: unknown[] = []
+		const unsubscribe = updates.subscribeUpdates!((snapshot) => snapshots.push(snapshot))
 
 		@Plugin()
 		class RecentlyUpdated extends BasePlugin {}
@@ -469,6 +473,7 @@ describe('Loader HMR execution provenance', () => {
 					phase,
 					sequence: epoch,
 					durationMs: 2.5,
+					error: { message: Object.values(failure)[0], file: null, importChain: [] },
 				},
 				lifecycle: null,
 			})
@@ -486,6 +491,7 @@ describe('Loader HMR execution provenance', () => {
 				phase: 'commit',
 				sequence: 5,
 				durationMs: 2.5,
+				error: { message: 'post-commit failure', file: null, importChain: [] },
 			},
 			lifecycle: null,
 		})
@@ -541,8 +547,38 @@ describe('Loader HMR execution provenance', () => {
 			'/private/host/lifecycle.ts',
 		)
 
+		expect(updates.latestUpdate!()).toMatchObject({
+			sequence: 6,
+			state: 'settled',
+			outcome: 'applied-with-issues',
+			phase: 'lifecycle',
+		})
+		expect(snapshots).toHaveLength(6)
+		harness.recordRecentUpdates(
+			summary('/new-uncommitted.ts', 7, {
+				ok: false,
+				executeError: 'Cannot import file:///private/host/new.ts: ' + 'x'.repeat(5000),
+			}),
+			catalog,
+			undefined,
+		)
+		const failedAttempt = updates.latestUpdate!()
+		expect(failedAttempt).toMatchObject({
+			sequence: 7,
+			state: 'settled',
+			phase: 'evaluate',
+			error: { file: null, importChain: [] },
+		})
+		expect(failedAttempt?.error?.message.length).toBeLessThanOrEqual(4096)
+		expect(failedAttempt?.error?.message).not.toContain('/private/host')
+		expect(failedAttempt?.error?.message).not.toContain('file:')
+		expect(readLoaderHmrRecentUpdate(hmr, address)?.batch.sequence).toBe(6)
+		expect(snapshots).toHaveLength(7)
+		unsubscribe()
+
 		await hmr.close()
 		expect(readLoaderHmrRecentUpdate(hmr, address)).toBeNull()
+		expect(updates.latestUpdate!()).toBeNull()
 	})
 })
 

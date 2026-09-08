@@ -14,6 +14,9 @@ export type PluginArtifactCompilerAttachmentOptions = PluginArtifactCompilerOpti
 	}>
 
 export type PluginArtifactCompilerAttachment = Readonly<{
+	prepareWorkbenchArtifacts(
+		input: WorkbenchArtifactCompilations,
+	): ReturnType<PluginArtifactCompiler['prepareWorkbenchArtifacts']>
 	publishWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): ReturnType<PluginArtifactCompiler['publishWorkbenchArtifacts']>
@@ -51,6 +54,10 @@ export function attachPluginArtifactCompiler(
 	)
 	let active = true
 	const attachment: PluginArtifactCompilerAttachment = Object.freeze({
+		prepareWorkbenchArtifacts: (input: WorkbenchArtifactCompilations) => {
+			if (!active) return Promise.reject(new Error('[runtime-dev] artifact compiler is disposed'))
+			return compiler.prepareWorkbenchArtifacts(input)
+		},
 		publishWorkbenchArtifacts: (input: WorkbenchArtifactCompilations) => {
 			if (!active) {
 				return Promise.reject(new Error('[runtime-dev] artifact compiler is disposed'))
@@ -76,6 +83,7 @@ export function attachPluginArtifactCompiler(
 }
 
 export type {
+	PreparedWorkbenchArtifacts,
 	WorkbenchArtifactCompilations,
 	WorkbenchContentCompilation,
 	PluginArtifactCompilerOptions,

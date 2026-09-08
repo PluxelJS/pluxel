@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { env as runtimeEnvironment, hostEnv } from '@pluxel/runtime/environment'
 import {
@@ -14,6 +14,7 @@ import {
 	invalidateViteSsrModule,
 	type SrvxViteNodeCarrierAttachment,
 } from '../../runtime-dev/src/vite.ts'
+import { ViteApplicationRecovery } from '../../runtime-dev/src/internal/vite-application-recovery.ts'
 import { attachDevConsole, type DevConsoleAttachment } from '../../runtime-dev/src/console.ts'
 import { staticConfigEnvironmentVitePlugin } from '@pluxel/rolldown/internal/static-config-environment-vite'
 import {
@@ -112,9 +113,13 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 	const sourcePipeline = createPluginSourceVitePipeline({
 		name: 'pluxel:static-runtime-source',
 	})
-	const artifactPublishers = new WeakMap<StaticRuntimeHost, () => Promise<void>>()
+	const artifactPreparers = new WeakMap<
+		StaticRuntimeHost,
+		() => Promise<PreparedStaticArtifacts | undefined>
+	>()
 	const activeModulesByHost = new WeakMap<StaticRuntimeHostImpl, { current: ReadonlySet<string> }>()
 	const recentUpdates = new StaticRuntimeRecentUpdateTracker()
+	const recovery = new ViteApplicationRecovery()
 	const state: {
 		server?: ViteDevServer
 		entryPath?: string
@@ -196,12 +201,12 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		hostEpochs.set(host, randomUUID())
 		activeModulesByHost.set(host, activeModules)
 		try {
-			const publishArtifacts = await configureStaticRuntimeDevRuntime(
+			const prepareArtifacts = await configureStaticRuntimeDevRuntime(
 				server,
 				host,
 				sourcePipeline.semantics,
 			)
-			artifactPublishers.set(host, publishArtifacts)
+			artifactPreparers.set(host, prepareArtifacts)
 			await application.prepare?.({ host, startup })
 			return host
 		} catch (error) {
@@ -367,22 +372,50 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		devConsole?.observed(ctx.file)
 		return enqueueHotUpdate(async (): Promise<EnvironmentModuleNode[] | void> => {
 			const host = state.host
-			if (!state.configFiles.has(ctx.file)) {
-				await (host ? artifactPublishers.get(host)?.() : undefined)
+			if (!state.configFiles.has(ctx.file) && !recovery.matches(ctx.file)) {
+				const prepare = host ? artifactPreparers.get(host) : undefined
+				if (!prepare || !host?.ctx.workbench) return undefined
+				const start = performance.now()
+				recentUpdates.beginUpdate(portableUpdatePath(ctx.file, ctx.server.config.root))
+				recentUpdates.updatePhase('artifacts')
+				try {
+					const prepared = await prepare()
+					prepared?.commit()
+					recentUpdates.recordDefinitions(
+						[],
+						{ outcome: 'applied', phase: null, durationMs: elapsedStaticRuntimeUpdateMs(start) },
+						{ scope: 'application' },
+					)
+					recentUpdates.finishUpdate()
+				} catch (error) {
+					recentUpdates.recordDefinitions(
+						[],
+						{
+							outcome: 'retained-previous',
+							phase: 'artifacts',
+							durationMs: elapsedStaticRuntimeUpdateMs(start),
+						},
+						{ scope: 'application' },
+					)
+					recentUpdates.finishUpdate(describeUpdateError(error, ctx.server.config.root))
+					host?.ctx.logger.error('Workbench artifact refresh failed', {
+						error,
+						batch: recentUpdates.latestUpdate(),
+					})
+					throw error
+				}
 				if (host && sendRequestedStaticRuntimeFullReload(ctx.server, host)) return []
 				return undefined
 			}
 			const server = state.server ?? ctx.server
 			state.server = server
 			const start = performance.now()
-			const previousStaticDefinitions =
-				host?.describeCatalog().plugins.map((entry) => entry.definition) ?? []
 			const viteInvalidation = invalidateStaticRuntimeChangedModules({
 				server,
 				changedFile: ctx.file,
-				applicationFiles: state.configFiles,
+				applicationFiles: recovery.invalidationFiles(state.configFiles),
 				changedModules: ctx.modules,
-				recoverMissingImports: ctx.type === 'create',
+				recoverMissingImports: ctx.type === 'create' || recovery.matches(ctx.file),
 			})
 			const evaluationTargets = affectedStaticRuntimeDefinitions(
 				host,
@@ -395,6 +428,9 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			for (const module of viteInvalidation.modules) invalidateViteSsrModule(server, module)
 			// Normal edits preserve unrelated Plugin constructors; recreated imports use the recovery closure.
 			const artifactGeneration = sourcePipeline.semantics.beginArtifactGeneration()
+			recovery.begin(state.entryPath!)
+			recentUpdates.beginUpdate(portableUpdatePath(ctx.file, server.config.root))
+			let preparedArtifacts: PreparedStaticArtifacts | undefined
 			try {
 				return await artifactGeneration.run(async (): Promise<EnvironmentModuleNode[] | void> => {
 					let loaded: Awaited<ReturnType<typeof loadApplication>>
@@ -406,12 +442,13 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 						// deleted module's semantic facts, so an evaluation failure can leave no exact
 						// targets even though the previous static catalog is still authoritative.
 						recentUpdates.recordDefinitions(
-							evaluationTargets.length > 0 ? evaluationTargets : previousStaticDefinitions,
+							evaluationTargets,
 							{
 								outcome: 'retained-previous',
 								phase: 'evaluate',
 								durationMs: elapsedStaticRuntimeUpdateMs(start),
 							},
+							{ scope: evaluationTargets.length > 0 ? 'definitions' : 'application' },
 						)
 						throw error
 					}
@@ -426,6 +463,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 					) {
 						let startup: StaticRuntimeInternalStartupReport
 						try {
+							recentUpdates.updatePhase('application-reload')
 							startup = await replaceHost({
 								application,
 								product: loaded.product,
@@ -437,6 +475,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 							throw error
 						}
 						artifactGeneration.commit()
+						await recovery.committed()
 						state.configFiles = loaded.configFiles
 						const replacementHost = state.host!
 						void logStaticRuntimeStarted(replacementHost, startup, state.configFiles).catch(
@@ -448,7 +487,8 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 						return []
 					}
 					try {
-						await artifactPublishers.get(host)?.()
+						recentUpdates.updatePhase('artifacts')
+						preparedArtifacts = await artifactPreparers.get(host)?.()
 					} catch (error) {
 						artifactGeneration.rollback()
 						throw error
@@ -462,7 +502,10 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 					}
 					const previousActiveModules = activeModules.current
 					activeModules.current = new Set(loaded.configFiles)
-					const reload = await host.reloadFromVite(toStaticRuntimeDefinition(application), start)
+					recentUpdates.updatePhase('commit')
+					const reload = await host.reloadFromVite(toStaticRuntimeDefinition(application), start, {
+						onGraphCommitted: () => preparedArtifacts?.commit(),
+					})
 					if (reload.status === 'failed') {
 						if (reload.catalogCommitted) {
 							// The Core graph and route catalog crossed their point of no return even though a
@@ -472,6 +515,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 							state.product = loaded.product
 							state.configFiles = loaded.configFiles
 							artifactGeneration.commit()
+							await recovery.committed()
 						} else {
 							activeModules.current = previousActiveModules
 							artifactGeneration.rollback()
@@ -480,6 +524,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 					}
 					const report: StaticRuntimeInternalHmrReport = reload.report
 					artifactGeneration.commit()
+					await recovery.committed()
 					state.application = application
 					state.product = loaded.product
 					state.configFiles = loaded.configFiles
@@ -497,8 +542,28 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 					return []
 				})
 			} catch (error) {
+				preparedArtifacts?.rollback()
 				artifactGeneration.rollback()
+				const failure = await recovery.failed()
+				if (!recentUpdates.hasUpdateSettlement()) {
+					recentUpdates.recordDefinitions(
+						evaluationTargets,
+						{
+							outcome: 'retained-previous',
+							phase: recentUpdates.latestUpdate()?.phase === 'artifacts' ? 'artifacts' : 'commit',
+							durationMs: elapsedStaticRuntimeUpdateMs(start),
+						},
+						{ scope: evaluationTargets.length > 0 ? 'definitions' : 'application' },
+					)
+				}
+				recentUpdates.finishUpdate(describeUpdateError(error, server.config.root, failure?.imports))
+				host?.ctx.logger.error('HMR candidate update failed; see update batch', {
+					error,
+					batch: recentUpdates.latestUpdate(),
+				})
 				throw error
+			} finally {
+				if (recentUpdates.hasUpdateSettlement()) recentUpdates.finishUpdate()
 			}
 		})
 	}
@@ -528,6 +593,16 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				},
 			})
 			state.server = server
+			recovery.attach(server, (file, type) =>
+				applyHotUpdate({
+					file,
+					type,
+					server,
+					timestamp: Date.now(),
+					modules: [],
+					read: async () => '',
+				}),
+			)
 			state.applicationCarrier = createViteNodeElysiaApplicationCarrier(server, {
 				fetch: (request) => {
 					const activeHost = state.host
@@ -620,6 +695,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 		async closeBundle() {
 			closing = true
+			await recovery.close()
 			let consoleError: unknown
 			try {
 				await devConsole?.close()
@@ -667,13 +743,18 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			// Admit update/create/delete once in the owning SSR environment. Runtime
 			// evaluation refreshes that graph itself; suppress further propagation of
 			// handled modules so Vite cannot evict the newly committed constructors.
-			if (this.environment.name === 'client' && state.configFiles.has(ctx.file)) return []
+			if (
+				this.environment.name === 'client' &&
+				(state.configFiles.has(ctx.file) || recovery.matches(ctx.file))
+			)
+				return []
 			if (this.environment.name !== 'ssr') return undefined
 			return applyHotUpdate(ctx)
 		},
 	}
 
 	return [
+		recovery.plugin,
 		staticConfigEnvironmentVitePlugin({ entry: options.entry }),
 		...sourcePipeline.plugins,
 		createHostModuleVitePlugin(),
@@ -998,7 +1079,7 @@ async function configureStaticRuntimeDevRuntime(
 		PluginSourceVitePipeline['semantics'],
 		'invalidateWorkbench' | 'workbenchCompilations' | 'workbenchContentCompilations'
 	>,
-): Promise<() => Promise<void>> {
+): Promise<() => Promise<PreparedStaticArtifacts | undefined>> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
 	if (!readRuntimeRouteCapabilities(ctx)) {
@@ -1008,18 +1089,19 @@ async function configureStaticRuntimeDevRuntime(
 		packageMode: 'development',
 		viteServer: server,
 	})
-	const publish = async (): Promise<void> => {
-		if (!ctx.workbench) return
+	const prepare = async (): Promise<PreparedStaticArtifacts | undefined> => {
+		if (!ctx.workbench) return undefined
 		semantics.invalidateWorkbench()
 		const [producers, content] = await Promise.all([
 			semantics.workbenchCompilations(),
 			semantics.workbenchContentCompilations(),
 		])
-		await compiler.publishWorkbenchArtifacts({ producers, content })
+		return await compiler.prepareWorkbenchArtifacts({ producers, content })
 	}
-	await publish()
+	const initialArtifacts = await prepare()
+	initialArtifacts?.commit()
 	requireRuntimeHttpService(ctx).consumeFullReloadRequest()
-	return publish
+	return prepare
 }
 
 async function loadStaticRuntimeDevModule(
@@ -1047,4 +1129,80 @@ function isStaticRuntimeRouteRequest(
 		matchesMountedRoute: (pathname) => http.matchesMountedRoute(pathname),
 		matchesWorkbenchUiRoute: (pathname) => http.matchesWorkbenchUiRoute(pathname),
 	})
+}
+
+interface PreparedStaticArtifacts {
+	commit(): unknown
+	rollback(): void
+}
+
+function portableUpdatePath(file: string, root: string): string {
+	const clean = normalizePath(file).split('?')[0]!
+	if (!isAbsolute(clean)) return clean.slice(0, 1024)
+	const local = normalizePath(relative(root, clean))
+	return (local.startsWith('../') ? clean.split('/').slice(-2).join('/') : local).slice(0, 1024)
+}
+
+function describeUpdateError(
+	error: unknown,
+	root: string,
+	imports: readonly { importer: string; source: string; resolved?: string; failed: boolean }[] = [],
+) {
+	const chain: string[] = []
+	const messages: string[] = []
+	const seen = new Set<unknown>()
+	let file: string | null = null
+	let current = error
+	while (current && typeof current === 'object' && !seen.has(current) && seen.size < 8) {
+		seen.add(current)
+		const value = current as {
+			message?: unknown
+			id?: unknown
+			file?: unknown
+			importer?: unknown
+			cause?: unknown
+			stack?: unknown
+		}
+		if (typeof value.message === 'string') messages.push(value.message)
+		const stackFiles =
+			typeof value.stack === 'string'
+				? [...value.stack.matchAll(/(?:file:\/\/)?(\/[^()\n]+?):\d+:\d+/g)].map(
+						(match) => match[1]!,
+					)
+				: []
+		const source =
+			typeof value.id === 'string'
+				? value.id
+				: typeof value.file === 'string'
+					? value.file
+					: (stackFiles.find((path) => imports.some((entry) => entry.resolved === path)) ?? null)
+		if (source) {
+			file ??= portableUpdatePath(source, root)
+			chain.push(portableUpdatePath(source, root))
+		}
+		if (typeof value.importer === 'string') chain.push(portableUpdatePath(value.importer, root))
+		current = value.cause
+	}
+	const failedImport =
+		imports.find(
+			(entry) => file && entry.resolved && portableUpdatePath(entry.resolved, root) === file,
+		) ?? imports.find((entry) => entry.failed)
+	if (failedImport) {
+		file ??= portableUpdatePath(failedImport.resolved ?? failedImport.source, root)
+		let importer: string | undefined = failedImport.importer
+		const visited = new Set<string>()
+		while (importer && !visited.has(importer) && visited.size < 24) {
+			visited.add(importer)
+			chain.unshift(portableUpdatePath(importer, root))
+			importer = imports.find((entry) => entry.resolved === importer)?.importer
+		}
+		chain.push(file)
+	}
+	const message = (messages.length > 0 ? [...new Set(messages)].join(' — ') : String(error))
+		.replaceAll(normalizePath(root) + '/', '')
+		.replaceAll(/(?:[A-Za-z]:)?\/(?:[^\s'"()<>:]+\/)+[^\s'"()<>:]*/g, (path) =>
+			portableUpdatePath(path, root),
+		)
+		.slice(0, 4096)
+	return { message, file, importChain: [...new Set(chain)].slice(0, 32) }
 }

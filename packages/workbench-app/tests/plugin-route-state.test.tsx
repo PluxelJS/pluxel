@@ -7,11 +7,16 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { WorkbenchDocumentRenderer } from '../src/app/workbench/shell/WorkbenchDocumentRenderer'
 import { RightPane } from '../src/app/plugins/detail/RightPane'
+import { WorkspaceControllerProvider } from '../src/app/workbench/context'
+import { WorkspaceController } from '../src/app/workbench/store'
+import { createPersistedWorkbenchState, WORKBENCH_STORAGE_KEY } from '../src/app/workbench/state'
+import type { WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
 
 const state = vi.hoisted(() => ({
 	pathname: '',
 	pluginRoute: 'v1/package/FirstPlugin/@fixture/first',
 	crashedRoute: '',
+	entries: [] as WorkbenchLayoutEntry[],
 }))
 const mounted: Root[] = []
 
@@ -43,11 +48,15 @@ vi.mock('../src/app/router/workbench/WorkbenchRouteScreen', () => ({
 }))
 vi.mock('../src/app/security/SecurityAuditScreen', () => ({ SecurityAuditScreen: () => null }))
 vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: () => null }))
-vi.mock('../src/app/workbench/context', () => ({
+vi.mock('../src/app/workbench/context', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../src/app/workbench/context')>()),
 	useWorkbenchDocumentPathname: () => state.pathname,
 }))
 vi.mock('../src/workbench/runtime', () => ({
-	useWorkbenchTabs: () => ({ nodes: [], entries: [] }),
+	useWorkbenchTabs: () => ({
+		nodes: state.entries.map((entry) => <p key={entry.descriptor.key}>Version Content</p>),
+		entries: state.entries,
+	}),
 	useResolvedWorkbenchRoute: () => ({ route: null, snapshot: null }),
 }))
 vi.mock('../src/app/plugins/detail/context', () => ({
@@ -96,6 +105,8 @@ afterEach(async () => {
 	})
 	document.body.replaceChildren()
 	state.crashedRoute = ''
+	state.entries = []
+	window.localStorage.clear()
 })
 
 function mountRoot() {
@@ -186,13 +197,16 @@ describe('plugin route-local state', () => {
 
 	it('returns to configuration from a plugin page without discarding local config state', async () => {
 		const { container, root } = mountRoot()
+		const workspace = new WorkspaceController(`/plugins/${state.pluginRoute}`)
 		const config = { loading: false, refetch: vi.fn() }
 		const render = async (restPath: string) => {
 			state.pathname = `/plugins/${state.pluginRoute}${restPath}`
 			await act(async () => {
 				root.render(
 					<MantineProvider env="test">
-						<RightPane config={config} showLevelsTab />
+						<WorkspaceControllerProvider controller={workspace}>
+							<RightPane config={config} showLevelsTab />
+						</WorkspaceControllerProvider>
 					</MantineProvider>,
 				)
 			})
@@ -219,5 +233,105 @@ describe('plugin route-local state', () => {
 		await render('/config')
 		expect(selectedTab()).toBe('配置')
 		expect(container.querySelector('[aria-label="配置状态"]')).toBe(input)
+	})
+
+	it('restores the selected Workbench tab after document replacement and waits for the new layout', async () => {
+		const { container, root } = mountRoot()
+		state.pathname = `/plugins/${state.pluginRoute}`
+		const entries = [
+			{
+				placement: { kind: 'tab', label: 'Version', order: 0 },
+				descriptor: { key: 'page' },
+				target: { displayName: 'FirstPlugin' },
+			},
+		] as unknown as WorkbenchLayoutEntry[]
+		state.entries = entries
+		const first = new WorkspaceController(state.pathname)
+		const render = async (workspace: WorkspaceController) => {
+			await act(async () => {
+				root.render(
+					<MantineProvider env="test">
+						<WorkspaceControllerProvider controller={workspace}>
+							<RightPane config={{ loading: false, refetch: vi.fn() }} />
+						</WorkspaceControllerProvider>
+					</MantineProvider>,
+				)
+			})
+		}
+		const selected = () =>
+			container.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+		await render(first)
+		await act(async () => {
+			Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+				.find((tab) => tab.textContent === 'Version')!
+				.click()
+		})
+		expect(selected()).toBe('Version')
+		window.localStorage.setItem(
+			WORKBENCH_STORAGE_KEY,
+			JSON.stringify(createPersistedWorkbenchState(first.state.uiState)),
+		)
+		await act(async () => {
+			root.render(null)
+		})
+		state.entries = []
+		const restored = new WorkspaceController(state.pathname)
+		await render(restored)
+		expect(selected()).toBe('配置')
+		state.entries = entries
+		await render(restored)
+		expect(selected()).toBe('Version')
+	})
+
+	it('lets a manual Workbench tab choice override the current route until the route changes', async () => {
+		const { container, root } = mountRoot()
+		state.pathname = `/plugins/${state.pluginRoute}/config`
+		state.entries = [
+			{
+				placement: { kind: 'tab', label: 'Version', order: 0 },
+				descriptor: { key: 'page' },
+				target: { displayName: 'FirstPlugin' },
+			},
+		] as unknown as WorkbenchLayoutEntry[]
+		const workspace = new WorkspaceController(state.pathname)
+		const render = async () => {
+			await act(async () => {
+				root.render(
+					<MantineProvider env="test">
+						<WorkspaceControllerProvider controller={workspace}>
+							<RightPane config={{ loading: false, refetch: vi.fn() }} />
+						</WorkspaceControllerProvider>
+					</MantineProvider>,
+				)
+			})
+		}
+		const selected = () =>
+			container.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+		const chooseVersion = async () => {
+			await act(async () => {
+				Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+					.find((tab) => tab.textContent === 'Version')!
+					.click()
+			})
+		}
+		await render()
+		expect(selected()).toBe('配置')
+		await chooseVersion()
+		expect(selected()).toBe('Version')
+		await act(async () => {
+			workspace.toggleNavigationCollapsed()
+		})
+		state.entries = [...state.entries]
+		await render()
+		expect(selected()).toBe('Version')
+		state.pathname = `/plugins/${state.pluginRoute}/orders`
+		await render()
+		expect(selected()).toBe('页面')
+		await chooseVersion()
+		await render()
+		expect(selected()).toBe('Version')
+		state.pathname = `/plugins/${state.pluginRoute}/config`
+		await render()
+		expect(selected()).toBe('配置')
 	})
 })

@@ -1,10 +1,15 @@
 import { Badge, Box, Center, Loader, Stack, Tabs, Text, Tooltip } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 
 import { EmptyState, ErrorState } from '../../../components'
 import { useResolvedWorkbenchRoute, useWorkbenchTabs } from '../../../workbench/runtime'
-import { useWorkbenchDocumentPathname } from '../../workbench/context'
+import {
+	useActiveWorkbenchTabId,
+	useWorkbenchDocumentPathname,
+	useWorkspaceController,
+} from '../../workbench/context'
+import { useResolvedWorkbenchTabState } from '../../workbench/split'
 import { WorkbenchRouteRenderer } from '../../router/workbench/WorkbenchRouteRenderer'
 import { PANE_TABS_PROPS, PaneTabLabel, getPaneTabsRootClassName } from '../../workbench/PaneTabs'
 import type { PluginConfigState } from '../config/usePluginConfig'
@@ -51,12 +56,35 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		return normalizeRestPath(pathname.slice(prefix.length))
 	}, [pathname, pluginRoute])
 	const showRouteTab = Boolean(restPath && restPath !== '/config')
-	const [activeTab, setActiveTab] = useState(showRouteTab ? 'route' : 'config')
+	const workspace = useWorkspaceController()
+	const editorTabId = useActiveWorkbenchTabId()
+	const selectionScope = `plugin-content:${pluginRoute}`
+	const storedTab = useResolvedWorkbenchTabState(selectionScope, (value) =>
+		typeof value === 'string' ? value : undefined,
+	)
+	const setActiveTab = useCallback(
+		(value: string) => {
+			workspace.setActiveTabState(editorTabId, selectionScope, value)
+		},
+		[editorTabId, selectionScope, workspace],
+	)
+	// Keep the stored choice while the fresh session is still loading its layout. An absent
+	// entry is a display fallback, not a user decision to replace the persisted selection.
+	const activeTab =
+		storedTab === 'route' && showRouteTab
+			? 'route'
+			: storedTab === 'logging' && showLevelsTab
+				? 'logging'
+				: tabGroups.some((tab) => tab.id === storedTab)
+					? storedTab!
+					: 'config'
 	useEffect(() => {
-		setActiveTab((current) =>
-			showRouteTab ? 'route' : restPath === '/config' || current === 'route' ? 'config' : current,
-		)
-	}, [restPath, showRouteTab])
+		const current = editorTabId
+			? workspace.state.uiState.tabState[editorTabId]?.[selectionScope]
+			: undefined
+		if (showRouteTab) setActiveTab('route')
+		else if (restPath === '/config' || current === 'route') setActiveTab('config')
+	}, [editorTabId, restPath, selectionScope, setActiveTab, showRouteTab, workspace])
 	const execution = useMemo(() => describePluginExecution(status.execution), [status.execution])
 
 	return (

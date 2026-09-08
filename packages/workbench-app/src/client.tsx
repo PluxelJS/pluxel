@@ -1,14 +1,5 @@
-import {
-	Button,
-	Center,
-	ColorSchemeScript,
-	Paper,
-	PasswordInput,
-	PinInput,
-	Stack,
-	Text,
-	Title,
-} from '@mantine/core'
+import { Button, ColorSchemeScript, PasswordInput, PinInput, Stack, Text } from '@mantine/core'
+import type { ViteHotContext } from 'vite/types/hot.js'
 import type { ManagementAuthenticationProviderStep } from '@pluxel/runtime'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import type { RuntimeAuthenticationTarget } from '@pluxel/runtime/web/session'
@@ -23,6 +14,8 @@ import {
 } from './runtime'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
+import { GatePanel, InvalidatedSession } from './sessionGate'
+import { installSessionEntryHmrBoundary } from './sessionReload'
 
 type GateState =
 	| Readonly<{ kind: 'loading' }>
@@ -57,7 +50,8 @@ const runtimeSession = createRuntimeSessionClient({
 const sessionObserver = (event: RuntimeSessionEvent) => publishSessionEvent(event)
 const initialBootstrap = runtimeSession.bootstrap(sessionObserver)
 
-ReactDOM.createRoot(document.querySelector('#root') as HTMLElement).render(
+const documentRoot = ReactDOM.createRoot(document.querySelector('#root') as HTMLElement)
+documentRoot.render(
 	<React.StrictMode>
 		<AppThemeProvider>
 			<ColorSchemeScript defaultColorScheme="auto" />
@@ -65,6 +59,18 @@ ReactDOM.createRoot(document.querySelector('#root') as HTMLElement).render(
 		</AppThemeProvider>
 	</React.StrictMode>,
 )
+
+if (import.meta.hot) {
+	installSessionEntryHmrBoundary({
+		hot: import.meta.hot as unknown as ViteHotContext,
+		entryUrl: import.meta.url,
+		dispose: () => {
+			documentRoot.unmount()
+			runtimeSession[Symbol.dispose]()
+		},
+		reload: () => window.location.reload(),
+	})
+}
 
 function RuntimeSessionGate() {
 	const [state, setState] = useState<GateState>({ kind: 'loading' })
@@ -94,7 +100,12 @@ function RuntimeSessionGate() {
 				active && !terminalSessionSignal ? acceptBootstrap(bootstrap, setState) : undefined,
 			)
 			.catch((error: unknown) => {
-				if (active) setState({ kind: 'error', error: toError(error) })
+				if (active)
+					setState(
+						terminalSessionSignal
+							? terminalGateState(terminalSessionSignal)
+							: { kind: 'error', error: toError(error) },
+					)
 			})
 		return () => {
 			active = false
@@ -106,12 +117,7 @@ function RuntimeSessionGate() {
 		return <AuthenticationChallenge state={state} setState={setState} />
 	}
 	if (state.kind === 'invalidated') {
-		return (
-			<GatePanel title="Workbench 会话已更新">
-				<Text c="dimmed">{sessionInvalidationMessage(state.cause)}</Text>
-				<Button onClick={() => window.location.reload()}>重新载入</Button>
-			</GatePanel>
-		)
+		return <InvalidatedSession cause={state.cause} />
 	}
 	if (state.kind === 'error') {
 		return (
@@ -129,17 +135,6 @@ function RuntimeSessionGate() {
 			</Text>
 		</GatePanel>
 	)
-}
-
-function sessionInvalidationMessage(cause: RuntimeSessionEvent['cause']): string {
-	switch (cause) {
-		case 'workbench':
-			return 'Plugin publication、运行 generation 或界面产物已变化。为避免继续使用已撤销的 RPC target，需要重新载入整个页面。'
-		case 'authentication':
-			return '认证 authority 已变化，需要重新载入整个页面并重新确认会话。'
-		case 'service-restart':
-			return 'Runtime 管理服务已重启，需要重新载入整个页面并建立新的会话。'
-	}
 }
 
 function AuthenticationChallenge({
@@ -305,19 +300,6 @@ function authenticationFailureMessage(code: string): string {
 		default:
 			return '管理员认证当前不可用'
 	}
-}
-
-function GatePanel({ title, children }: { title: string; children: React.ReactNode }) {
-	return (
-		<Center mih="100vh" p="md">
-			<Paper withBorder shadow="sm" radius="md" p="xl" w="min(28rem, 100%)">
-				<Stack>
-					<Title order={2}>{title}</Title>
-					{children}
-				</Stack>
-			</Paper>
-		</Center>
-	)
 }
 
 function toError(error: unknown, fallback = 'Runtime session 初始化失败'): Error {

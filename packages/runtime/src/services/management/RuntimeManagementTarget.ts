@@ -1,4 +1,9 @@
 import {
+	readRuntimeRouteCapabilities,
+	type PluginRecentUpdateRead,
+} from '../../runtime/capabilities'
+import type { RuntimeUpdateSnapshot } from '../../plugin-execution'
+import {
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
 	type Context,
@@ -45,7 +50,7 @@ import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limi
 import type {
 	RuntimeLogFollowInput,
 	RuntimeLogObserver,
-	RuntimeLogSubscriptionTarget,
+	RuntimeSubscriptionTarget,
 	RuntimeManagementTarget,
 } from '../../web/management-target'
 import type {
@@ -81,6 +86,17 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		const management = this.ctx.root.runtimeManagement
 		if (!management) throw new Error('Runtime Management is unavailable')
 		return management.describe()
+	}
+
+	runtimeUpdate(): RuntimeUpdateSnapshot | null {
+		return readRuntimeRouteCapabilities(this.ctx)?.recentUpdate?.latestUpdate?.() ?? null
+	}
+
+	followRuntimeUpdates(observer: (snapshot: unknown) => Promise<void>): RuntimeSubscriptionTarget {
+		return new RuntimeUpdateSubscription(
+			readRuntimeRouteCapabilities(this.ctx)?.recentUpdate,
+			observer as RpcStub<(snapshot: unknown) => Promise<void>>,
+		)
 	}
 
 	async pluginCatalog(): Promise<PluginCatalogSnapshot> {
@@ -408,7 +424,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	async followLogs(
 		input: unknown,
 		observer: RuntimeLogObserver,
-	): Promise<RuntimeLogSubscriptionTarget> {
+	): Promise<RuntimeSubscriptionTarget> {
 		return new RuntimeLogSubscription(
 			parseLogFollowInput(input),
 			observer as RpcStub<RuntimeLogObserver>,
@@ -471,7 +487,7 @@ const MAX_LOG_PENDING_BYTES = RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES * 4
 const MAX_DEPLOY_RECIPIENTS = 1_000
 const MAX_DEPLOY_RECIPIENT_LENGTH = 4_096
 
-class RuntimeLogSubscription extends RpcTarget implements RuntimeLogSubscriptionTarget {
+class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTarget {
 	private readonly observer: RpcStub<RuntimeLogObserver>
 	private readonly unsubscribe: () => void
 	private readonly queue: RuntimeLogEvent[] = []
@@ -901,4 +917,60 @@ function unavailableProviderPolicyQuery(error: unknown): {
 		}
 	}
 	throw error
+}
+
+/** Snapshots coalesce while a client is slow; history is route-owned, never queued per connection. */
+class RuntimeUpdateSubscription extends RpcTarget {
+	private readonly observer: RpcStub<(snapshot: unknown) => Promise<void>>
+	private unsubscribe: () => void = () => {}
+	private pending: RuntimeUpdateSnapshot | null | undefined
+	private active = true
+	private draining = false
+
+	constructor(
+		source: PluginRecentUpdateRead | undefined,
+		observer: RpcStub<(snapshot: unknown) => Promise<void>>,
+	) {
+		super()
+		if (typeof observer !== 'function' || typeof observer.dup !== 'function')
+			throw new TypeError('Update observer must be an RPC callback')
+		this.observer = observer.dup()
+		this.unsubscribe =
+			source?.subscribeUpdates?.((snapshot) => this.enqueue(snapshot)) ?? (() => {})
+		this.enqueue(source?.latestUpdate?.() ?? null)
+	}
+
+	[Symbol.dispose](): void {
+		if (!this.active) return
+		this.active = false
+		this.pending = undefined
+		this.unsubscribe()
+		this.observer[Symbol.dispose]()
+	}
+
+	private enqueue(snapshot: RuntimeUpdateSnapshot | null): void {
+		if (!this.active) return
+		this.pending = snapshot
+		if (!this.draining) void this.drain()
+	}
+
+	private async drain(): Promise<void> {
+		this.draining = true
+		try {
+			while (this.active && this.pending !== undefined) {
+				const snapshot = this.pending
+				this.pending = undefined
+				const result = this.observer(snapshot)
+				try {
+					await result
+				} finally {
+					result[Symbol.dispose]()
+				}
+			}
+		} catch {
+			this[Symbol.dispose]()
+		} finally {
+			this.draining = false
+		}
+	}
 }

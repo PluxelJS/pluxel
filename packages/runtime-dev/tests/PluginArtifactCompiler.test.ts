@@ -127,6 +127,114 @@ describe('PluginArtifactCompiler', () => {
 		nodeBuildMocks.validateNodeModuleArtifact.mockReset().mockResolvedValue(undefined)
 	})
 
+	it('does not activate rejected catalog artifacts or cancel the accepted producer build', async () => {
+		await using fixture = await createDiskFixture({
+			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+		})
+		const host = createCoreInternalTestHost()
+		const { federation, content, coordinator, producerStatus } = createWorkbenchStores(host)
+		const compiler = new PluginArtifactCompiler(
+			host.ctx,
+			{ coordinator, producerStatus },
+			{
+				cacheDir: fixture.getPath('.pluxel/artifacts'),
+				packageMode: 'development',
+			},
+		)
+		const root = fixture.getPath('plugin')
+		const previous = createContentCompilation(root, 'Accepted Content')
+		let releaseBuild!: () => void
+		const gate = new Promise<void>((resolve) => {
+			releaseBuild = resolve
+		})
+		producerBuildMocks.buildWorkbenchFederationProducer.mockImplementationOnce(async (input) => {
+			await gate
+			await writeProducer(input.plan, input.outDir)
+		})
+		await compiler.publishWorkbenchArtifacts({
+			producers: [{ plan: createPlan('accepted'), root }],
+			content: [previous],
+		})
+		await vi.waitFor(() =>
+			expect(producerBuildMocks.buildWorkbenchFederationProducer).toHaveBeenCalledOnce(),
+		)
+		const revision = coordinator.revision
+		const rejected = await compiler.prepareWorkbenchArtifacts({
+			producers: [{ plan: createPlan('rejected'), root }],
+			content: [createContentCompilation(root, 'Rejected Content')],
+		})
+		expect(content.getCurrent(definition)?.digest).toBe(previous.digest)
+		expect(coordinator.revision).toBe(revision)
+		expect(producerStatus.getStatus(definition)).toMatchObject({ buildRevision: 'accepted' })
+		rejected.rollback()
+		rejected.commit()
+		releaseBuild()
+		await vi.waitFor(() =>
+			expect(federation.getCurrent(definition)?.buildRevision).toBe('accepted'),
+		)
+		expect(content.getCurrent(definition)?.digest).toBe(previous.digest)
+		expect(producerBuildMocks.buildWorkbenchFederationProducer).toHaveBeenCalledOnce()
+
+		const next = createContentCompilation(root, 'Next accepted Content')
+		const prepared = await compiler.prepareWorkbenchArtifacts({ producers: [], content: [next] })
+		expect(content.getCurrent(definition)?.digest).toBe(previous.digest)
+		prepared.commit()
+		expect(content.getCurrent(definition)?.digest).toBe(next.digest)
+		expect(federation.getCurrent(definition)).toBeUndefined()
+		prepared.rollback()
+		expect(content.getCurrent(definition)?.digest).toBe(next.digest)
+		compiler.dispose()
+		await host.dispose()
+	})
+
+	it('rejects a late validation result from a superseded accepted generation', async () => {
+		await using fixture = await createDiskFixture({
+			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+		})
+		const host = createCoreInternalTestHost()
+		const { federation, coordinator } = createWorkbenchStores(host)
+		let releaseValidation!: () => void
+		let validationEntered!: () => void
+		const gate = new Promise<void>((resolve) => {
+			releaseValidation = resolve
+		})
+		const entered = new Promise<void>((resolve) => {
+			validationEntered = resolve
+		})
+		const originalPrepare = coordinator.prepareCandidate.bind(coordinator)
+		vi.spyOn(coordinator, 'prepareCandidate').mockImplementation(async (candidate) => {
+			const prepared = await originalPrepare(candidate)
+			if (candidate.federation?.plan.buildRevision === 'previous') {
+				validationEntered()
+				await gate
+			}
+			return prepared
+		})
+		const compiler = new PluginArtifactCompiler(
+			host.ctx,
+			{ coordinator },
+			{
+				cacheDir: fixture.getPath('.pluxel/artifacts'),
+				packageMode: 'development',
+			},
+		)
+		const root = fixture.getPath('plugin')
+		await compiler.publishWorkbenchArtifacts({
+			producers: [{ plan: createPlan('previous'), root }],
+			content: [],
+		})
+		await entered
+		await compiler.publishWorkbenchArtifacts({
+			producers: [],
+			content: [createContentCompilation(root, 'Content only')],
+		})
+		releaseValidation()
+		await vi.waitFor(() => expect(Reflect.get(compiler, 'producerBackgroundCommits').size).toBe(0))
+		expect(federation.getCurrent(definition)).toBeUndefined()
+		compiler.dispose()
+		await host.dispose()
+	})
+
 	it('publishes a development producer snapshot before the cold producer build finishes', async () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
@@ -432,7 +540,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator } = createWorkbenchStores(host)
-		const commitCandidate = vi.spyOn(coordinator, 'commitCandidate')
+		const prepareCandidate = vi.spyOn(coordinator, 'prepareCandidate')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator },
@@ -445,8 +553,8 @@ describe('PluginArtifactCompiler', () => {
 			producers: [{ plan: createPlan('mixed-a'), root }],
 			content: [compilation],
 		})
-		expect(commitCandidate).toHaveBeenCalledOnce()
-		expect(commitCandidate).toHaveBeenCalledWith({
+		expect(prepareCandidate).toHaveBeenCalledOnce()
+		expect(prepareCandidate).toHaveBeenCalledWith({
 			definition,
 			content: expect.objectContaining({ digest: compilation.digest }),
 		})
@@ -472,7 +580,7 @@ describe('PluginArtifactCompiler', () => {
 		await compiler.publishWorkbenchArtifacts({ producers: [], content: [] })
 		expect(federation.getCurrent(definition)).toBeUndefined()
 		expect(content.getCurrent(definition)).toBeUndefined()
-		expect(commitCandidate).toHaveBeenLastCalledWith({ definition })
+		expect(prepareCandidate).toHaveBeenLastCalledWith({ definition })
 
 		compiler.dispose()
 		await host.dispose()

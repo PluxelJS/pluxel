@@ -28,7 +28,7 @@ import {
 import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin as PluginDecorator } from '@pluxel/runtime/test'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const definition = (name: string): PluginDefinitionAddress => ({
 	entry: { kind: 'package-root', packageName: `@test/${name.toLowerCase()}` },
@@ -631,10 +631,12 @@ describe('runtime-common Plugin graph publication', () => {
 			}),
 		)
 		await coordinator.reconcileStartup(previous)
+		const activateArtifacts = vi.fn()
 
 		await expect(
 			coordinator.update({
 				catalog: next,
+				onGraphCommitted: activateArtifacts,
 				statePatch: runtimeStatePatch({
 					type: 'set-auto-start',
 					node: consumer,
@@ -654,6 +656,7 @@ describe('runtime-common Plugin graph publication', () => {
 				}),
 			],
 		})
+		expect(activateArtifacts).not.toHaveBeenCalled()
 		expect(coordinator.catalogSnapshot()).toBe(previous)
 		expect(coordinator.reconciliationIssues()).toEqual([])
 		expect(store.versionedSnapshot().state.autoStart).toEqual([provider])
@@ -676,8 +679,9 @@ describe('runtime-common Plugin graph publication', () => {
 		await coordinator.update({
 			catalog,
 			mode: 'cold-boot',
+			onGraphCommitted: () => events.push(`artifacts:${coordinator.catalogSnapshot().revision}`),
 		})
-		expect(events).toEqual(['before:0', 'after:1'])
+		expect(events).toEqual(['before:0', 'artifacts:1', 'after:1'])
 	})
 
 	it('keeps the coordinator catalog published after a post-PONR Core failure', async () => {

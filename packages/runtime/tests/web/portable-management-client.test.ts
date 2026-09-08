@@ -5,7 +5,7 @@ import { createRuntimeManagementClient } from '../../src/web/client'
 import { RUNTIME_MANAGEMENT_CAPABILITIES } from '../../src/web/protocol'
 import type {
 	RuntimeLogObserver,
-	RuntimeLogSubscriptionTarget,
+	RuntimeSubscriptionTarget,
 	RuntimeManagementTarget,
 } from '../../src/web/management-target'
 
@@ -67,7 +67,7 @@ describe('injected Runtime Management client', () => {
 					missingFrom: '1',
 					missingTo: '4',
 				})
-				return { [Symbol.dispose]: subscriptionDispose } as RuntimeLogSubscriptionTarget
+				return { [Symbol.dispose]: subscriptionDispose } as RuntimeSubscriptionTarget
 			}),
 		} as unknown as RpcStub<RuntimeManagementTarget>
 
@@ -107,4 +107,35 @@ describe('injected Runtime Management client', () => {
 		expect(target.describe).toHaveBeenCalledOnce()
 		expect(target.followLogs).toHaveBeenCalledOnce()
 	})
+})
+
+it('validates update snapshots received over the borrowed Management capability and disposes the subscription', async () => {
+	const dispose = vi.fn()
+	const snapshot = {
+		sequence: 1,
+		state: 'settled',
+		phase: 'evaluate',
+		outcome: 'retained-previous',
+		durationMs: 3,
+		trigger: 'entry.ts',
+		error: { message: 'Missing import', file: 'new.ts', importChain: ['entry.ts', 'new.ts'] },
+	}
+	const target = {
+		runtimeUpdate: async () => snapshot,
+		followRuntimeUpdates: async (observer: (value: unknown) => Promise<void>) => {
+			await observer(snapshot)
+			return { [Symbol.dispose]: dispose }
+		},
+	} as unknown as RpcStub<RuntimeManagementTarget>
+	const client = createRuntimeManagementClient(target)
+	const events: unknown[] = []
+	expect(await client.updates.snapshot()).toEqual(snapshot)
+	const subscription = await client.updates.follow((value) => {
+		events.push(value)
+	})
+	expect(events).toEqual([snapshot])
+	subscription[Symbol.dispose]()
+	expect(dispose).toHaveBeenCalledOnce()
+	snapshot.state = 'updating'
+	await expect(client.updates.snapshot()).rejects.toThrow(/state\/outcome/)
 })

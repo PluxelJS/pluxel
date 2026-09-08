@@ -41,9 +41,9 @@ import {
 	type WorkspaceSnapshot,
 } from './diagnose'
 import {
-	attachLoaderHmrWorkbenchArtifactPublisher,
+	attachLoaderHmrWorkbenchArtifactPreparer,
 	LoaderHmrService,
-	readLoaderHmrRecentUpdate,
+	createLoaderHmrUpdateReader,
 	type LoaderHmrConfig,
 } from './engine/LoaderHmrService'
 export {
@@ -530,9 +530,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		...baseRoute,
 		dynamicPluginSources: createDynamicPluginSourceReader(plan.dynamicSources),
 		modules: hmr,
-		recentUpdate: {
-			resolveRecentUpdate: (address) => readLoaderHmrRecentUpdate(hmr, address),
-		},
+		recentUpdate: createLoaderHmrUpdateReader(hmr),
 	})
 	ctx.effects.defer(uninstallRoute, { tag: 'LoaderHmrRouteCapabilities', phase: 'shutdown' })
 
@@ -542,8 +540,8 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		viteServer: viteServer ?? hmr.vite,
 	})
 	if (ctx.workbench) {
-		attachLoaderHmrWorkbenchArtifactPublisher(hmr, (input) =>
-			artifactCompiler.publishWorkbenchArtifacts(input),
+		attachLoaderHmrWorkbenchArtifactPreparer(hmr, (input) =>
+			artifactCompiler.prepareWorkbenchArtifacts(input),
 		)
 	}
 

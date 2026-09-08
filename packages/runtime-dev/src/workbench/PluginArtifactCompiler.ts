@@ -48,7 +48,7 @@ export type PluginArtifactCompilerViteServer = {
 
 export type PluginArtifactCompilerWorkbenchCoordinator = Pick<
 	WorkbenchArtifactCoordinator,
-	'commitCandidate'
+	'prepareCandidate' | 'commitPrepared'
 >
 
 export type PluginArtifactCompilerDeps = Readonly<{
@@ -89,9 +89,12 @@ type WorkbenchDefinitionCandidate = Readonly<{
 	content?: WorkbenchContentArtifactCandidate
 }>
 
-type WorkbenchDefinitionCommitResult = Readonly<{
-	commits: readonly WorkbenchArtifactBatchCommit[]
-	withdrawnDefinitions: readonly WorkbenchFederationProducerPlan['definition'][]
+/** An unpublished, validated semantic snapshot. Commit only when its runtime catalog is accepted. */
+export type PreparedWorkbenchArtifacts = Readonly<{
+	/** Synchronous activation; also admits background producer builds for this accepted generation. */
+	commit(): readonly WorkbenchArtifactBatchCommit[]
+	/** Discards an unaccepted snapshot; does not undo an already accepted generation. */
+	rollback(): void
 }>
 
 type NodeModuleListener = {
@@ -175,7 +178,7 @@ export class PluginArtifactCompiler {
 		WorkbenchFederationProducerPlan['definition']
 	>()
 	private workbenchPublicationEpoch = 0
-	private workbenchCommitTail: Promise<void> = Promise.resolve()
+	private workbenchPublishRequest = 0
 	private readonly nodeEntries = new Map<string, NodeModuleCompileEntry>()
 	private activeNodeBuilds = 0
 	private readonly nodeBuildWaiters: Array<() => void> = []
@@ -194,24 +197,35 @@ export class PluginArtifactCompiler {
 		if (this.packageMode === 'development') this.producerStatus?.enablePendingProducerBuilds()
 	}
 
-	/**
-	 * Materializes one semantic snapshot, then commits each definition's complete desired tuple.
-	 * A newer snapshot supersedes older in-flight materialization before it can commit.
-	 */
+	/** Publishes artifacts for an already accepted runtime snapshot (startup or Content-only refresh). */
 	async publishWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): Promise<readonly WorkbenchArtifactBatchCommit[]> {
-		if (this.packageMode === 'development') {
-			return this.publishDevelopmentWorkbenchArtifacts(input)
+		const request = ++this.workbenchPublishRequest
+		const prepared = await this.prepareWorkbenchArtifacts(input)
+		if (request !== this.workbenchPublishRequest) {
+			prepared.rollback()
+			return []
 		}
-		return this.publishStrictWorkbenchArtifacts(input)
+		return prepared.commit()
 	}
 
-	private async publishStrictWorkbenchArtifacts(
+	/**
+	 * Materializes and validates without changing the artifacts used by the running catalog.
+	 * The route retains its serialized update lane until this candidate is committed or discarded.
+	 */
+	async prepareWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
-	): Promise<readonly WorkbenchArtifactBatchCommit[]> {
+	): Promise<PreparedWorkbenchArtifacts> {
+		return this.packageMode === 'development'
+			? this.prepareDevelopmentWorkbenchArtifacts(input)
+			: this.prepareStrictWorkbenchArtifacts(input)
+	}
+
+	private async prepareStrictWorkbenchArtifacts(
+		input: WorkbenchArtifactCompilations,
+	): Promise<PreparedWorkbenchArtifacts> {
 		this.requireWorkbenchCoordinator()
-		const epoch = ++this.workbenchPublicationEpoch
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
@@ -225,17 +239,14 @@ export class PluginArtifactCompiler {
 				] as const
 			}),
 		)
-		if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) return []
 		const candidates = new Map(materialized)
-		const commitResult = await this.commitWorkbenchDefinitions(epoch, definitions, candidates)
-		return commitResult.commits
+		return this.prepareWorkbenchDefinitions(definitions, candidates)
 	}
 
-	private async publishDevelopmentWorkbenchArtifacts(
+	private async prepareDevelopmentWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
-	): Promise<readonly WorkbenchArtifactBatchCommit[]> {
+	): Promise<PreparedWorkbenchArtifacts> {
 		this.requireWorkbenchCoordinator()
-		const epoch = ++this.workbenchPublicationEpoch
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
@@ -277,7 +288,6 @@ export class PluginArtifactCompiler {
 				] as const
 			}),
 		)
-		if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) return []
 		const candidates = new Map(
 			materialized.map(([key, candidate]) => [
 				key,
@@ -289,26 +299,27 @@ export class PluginArtifactCompiler {
 			]),
 		)
 		const pendingProducers = materialized.filter(([, candidate]) => candidate.producer)
-		const commitResult = await this.commitWorkbenchDefinitions(epoch, definitions, candidates)
-		const commits = commitResult.commits
-		if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) return commits
-		for (const definition of commitResult.withdrawnDefinitions)
-			this.producerStatus?.clear(definition)
-		const pendingKeys = new Set(pendingProducers.map(([key]) => key))
-		for (const [key, candidate] of materialized) {
-			if (pendingKeys.has(key)) this.markProducerBuilding(candidate.producer!.plan)
-			else this.producerStatus?.clear(candidate.definition)
-		}
-		for (const [key, candidate] of pendingProducers) {
-			this.scheduleDevelopmentProducerCommit({
-				key,
-				epoch,
-				definition: candidate.definition,
-				producer: candidate.producer!,
-				content: candidate.content,
-			})
-		}
-		return commits
+		return this.prepareWorkbenchDefinitions(
+			definitions,
+			candidates,
+			(epoch, withdrawnDefinitions) => {
+				for (const definition of withdrawnDefinitions) this.producerStatus?.clear(definition)
+				const pendingKeys = new Set(pendingProducers.map(([key]) => key))
+				for (const [key, candidate] of materialized) {
+					if (pendingKeys.has(key)) this.markProducerBuilding(candidate.producer!.plan)
+					else this.producerStatus?.clear(candidate.definition)
+				}
+				for (const [key, candidate] of pendingProducers) {
+					this.scheduleDevelopmentProducerCommit({
+						key,
+						epoch,
+						definition: candidate.definition,
+						producer: candidate.producer!,
+						content: candidate.content,
+					})
+				}
+			},
+		)
 	}
 
 	private requireWorkbenchCoordinator(): PluginArtifactCompilerWorkbenchCoordinator {
@@ -390,40 +401,47 @@ export class PluginArtifactCompiler {
 		this.nodeEntries.clear()
 	}
 
-	private async commitWorkbenchDefinitions(
-		epoch: number,
+	private async prepareWorkbenchDefinitions(
 		definitions: ReadonlyMap<string, WorkbenchDefinitionCompilation>,
 		candidates: ReadonlyMap<string, WorkbenchDefinitionCandidate>,
-	): Promise<WorkbenchDefinitionCommitResult> {
+		onCommitted?: (
+			epoch: number,
+			withdrawnDefinitions: readonly WorkbenchFederationProducerPlan['definition'][],
+		) => void,
+	): Promise<PreparedWorkbenchArtifacts> {
 		const coordinator = this.requireWorkbenchCoordinator()
-		return this.withWorkbenchCommit(async () => {
-			if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) {
-				return emptyWorkbenchDefinitionCommitResult()
-			}
-			const desired = new Map(this.committedWorkbenchDefinitions)
-			for (const [key, compilation] of definitions) desired.set(key, compilation.definition)
-
-			const commits: WorkbenchArtifactBatchCommit[] = []
-			const withdrawnDefinitions: WorkbenchFederationProducerPlan['definition'][] = []
-			for (const [key, definition] of [...desired].sort(([left], [right]) =>
-				left.localeCompare(right),
-			)) {
-				if (this.signal.signal.aborted || epoch !== this.workbenchPublicationEpoch) break
-				const candidate = candidates.get(key)
-				const commit = await coordinator.commitCandidate(candidate ?? Object.freeze({ definition }))
-				commits.push(commit)
-				if (definitions.has(key)) {
-					this.committedWorkbenchDefinitions.set(key, definition)
-				} else {
-					this.committedWorkbenchDefinitions.delete(key)
-					withdrawnDefinitions.push(definition)
-				}
-			}
-			await this.cleanupWorkbenchCandidates(candidates.values())
-			return Object.freeze({
-				commits: Object.freeze(commits),
-				withdrawnDefinitions: Object.freeze(withdrawnDefinitions),
-			})
+		const desired = new Map(this.committedWorkbenchDefinitions)
+		for (const [key, compilation] of definitions) desired.set(key, compilation.definition)
+		const prepared = await Promise.all(
+			[...desired]
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(async ([key, definition]) =>
+					coordinator.prepareCandidate(candidates.get(key) ?? Object.freeze({ definition })),
+				),
+		)
+		const withdrawn = [...desired]
+			.filter(([key]) => !definitions.has(key))
+			.map(([, definition]) => definition)
+		let state: 'prepared' | 'committed' | 'discarded' = 'prepared'
+		let commits: readonly WorkbenchArtifactBatchCommit[] = Object.freeze([])
+		return Object.freeze({
+			commit: () => {
+				if (state !== 'prepared' || this.signal.signal.aborted) return commits
+				state = 'committed'
+				const epoch = ++this.workbenchPublicationEpoch
+				commits = Object.freeze(prepared.map((candidate) => coordinator.commitPrepared(candidate)))
+				this.committedWorkbenchDefinitions.clear()
+				for (const [key, compilation] of definitions)
+					this.committedWorkbenchDefinitions.set(key, compilation.definition)
+				onCommitted?.(epoch, withdrawn)
+				void this.cleanupWorkbenchCandidates(candidates.values()).catch((error) => {
+					this.ctx.logger.warn('Workbench artifact cache cleanup failed', { error })
+				})
+				return commits
+			},
+			rollback: () => {
+				if (state === 'prepared') state = 'discarded'
+			},
 		})
 	}
 
@@ -473,18 +491,17 @@ export class PluginArtifactCompiler {
 			if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
 			const federation = await this.materializeProducer(input.producer)
 			if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
-			await this.withWorkbenchCommit(async () => {
-				if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
-				const candidate: WorkbenchDefinitionCandidate = Object.freeze({
-					definition: input.definition,
-					federation,
-					...(input.content ? { content: input.content } : {}),
-				})
-				await coordinator.commitCandidate(candidate)
-				this.producerStatus?.clear(input.definition)
-				this.committedWorkbenchDefinitions.set(input.key, input.definition)
-				await this.cleanupWorkbenchCandidates([candidate])
+			const candidate: WorkbenchDefinitionCandidate = Object.freeze({
+				definition: input.definition,
+				federation,
+				...(input.content ? { content: input.content } : {}),
 			})
+			const prepared = await coordinator.prepareCandidate(candidate)
+			// Validation awaits IO. Recheck acceptance immediately before synchronous activation.
+			if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
+			coordinator.commitPrepared(prepared)
+			this.producerStatus?.clear(input.definition)
+			await this.cleanupWorkbenchCandidates([candidate])
 		})()
 			.catch((error) => {
 				if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
@@ -723,15 +740,6 @@ export class PluginArtifactCompiler {
 				await rm(revision.path, { recursive: true, force: true })
 			}
 		}
-	}
-
-	private withWorkbenchCommit<T>(commit: () => Promise<T>): Promise<T> {
-		const task = this.workbenchCommitTail.then(commit, commit)
-		this.workbenchCommitTail = task.then(
-			(): void => undefined,
-			(): void => undefined,
-		)
-		return task
 	}
 
 	private async compileNodeEntry(entry: NodeModuleCompileEntry, initial: boolean): Promise<void> {
@@ -1002,13 +1010,6 @@ function groupWorkbenchCompilations(
 		definitions.set(key, current)
 	}
 	return definitions
-}
-
-function emptyWorkbenchDefinitionCommitResult(): WorkbenchDefinitionCommitResult {
-	return Object.freeze({
-		commits: Object.freeze([]),
-		withdrawnDefinitions: Object.freeze([]),
-	})
 }
 
 async function publishImmutableContentArtifact(

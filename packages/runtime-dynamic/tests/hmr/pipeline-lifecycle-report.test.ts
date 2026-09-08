@@ -140,6 +140,55 @@ describe('HmrExecutor transactions', () => {
 		}
 	})
 
+	it('activates artifacts only for accepted source batches and before replacement startup', async () => {
+		const host = createDynamicInternalTestHost()
+		try {
+			let artifact = 'initial'
+			@Plugin()
+			class Stable extends BasePlugin {}
+			lowerTestPlugin(Stable)
+			const loader = requireLoaderService(host.ctx)
+			const startup = loader.beginBatch()
+			await startup.replaceModule('/stable.ts', { Stable })
+			await startup.commit({ statePatch: pluginsAutoStartPatch(true, Stable) })
+			const first = host.require(Stable)
+			abstract class Missing extends BasePlugin {}
+			lowerTestAbstract(Missing)
+			@Plugin()
+			class Invalid extends BasePlugin {}
+			lowerTestReplacement(Stable, Invalid, { requires: [Missing] })
+			const commit = vi.fn(() => {
+				artifact = 'candidate'
+				return []
+			})
+			const rollback = vi.fn()
+			const rejected = await createExecutor(host.ctx, {
+				importModule: () => ({ Stable: Invalid }),
+				config: { beforeCommit: async () => ({ commit, rollback }) },
+			}).runAndLoadAllClean(['/stable.ts'])
+			expect(rejected?.commitResult.ok).toBe(false)
+			expect(commit).not.toHaveBeenCalled()
+			expect(rollback).toHaveBeenCalledOnce()
+			expect(host.require(Stable)).toBe(first)
+			expect(artifact).toBe('initial')
+
+			@Plugin()
+			class Next extends BasePlugin {
+				readonly startupArtifact = artifact
+			}
+			lowerTestReplacement(Stable, Next)
+			const accepted = await createExecutor(host.ctx, {
+				importModule: () => ({ Stable: Next }),
+				config: { beforeCommit: async () => ({ commit, rollback }) },
+			}).runAndLoadAllClean(['/stable.ts'])
+			expect(accepted?.commitResult.ok).toBe(true)
+			expect(commit).toHaveBeenCalledOnce()
+			expect(host.require(Next)?.startupArtifact).toBe('candidate')
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('keeps missing-dependency auto-start policy while reporting the node as desired but stopped', async () => {
 		abstract class Missing extends BasePlugin {}
 		lowerTestAbstract(Missing)
