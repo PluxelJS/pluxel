@@ -15,7 +15,14 @@ export async function createPgliteDatabaseAdapter(
 	const dataDir = config?.dataDir ?? defaultPgliteDataDir(persistence)
 	if (!dataDir.includes('://')) await mkdir(dirname(dataDir), { recursive: true })
 	const client = new PGlite(dataDir)
-	await client.waitReady
+	try {
+		await client.waitReady
+	} catch (cause) {
+		throw new Error(
+			`PGlite initialization failed for ${JSON.stringify(dataDir)}. Stop other hosts using this directory and restart the host; retrying a Plugin cannot recreate the failed database backend.`,
+			{ cause },
+		)
+	}
 	return {
 		driver: 'pglite',
 		db: drizzle(client),

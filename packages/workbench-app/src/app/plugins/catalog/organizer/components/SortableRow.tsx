@@ -23,6 +23,8 @@ import type { PluginPresentationTone } from '../../../pluginExecutionPresentatio
 import type { RowDensity } from '../constants'
 
 export type RowMeta = {
+	failureLabel?: string
+	failureDescription?: string
 	definition?: string
 	exportName?: string
 	reference?: string
@@ -85,16 +87,19 @@ const SortableRowComponent = ({
 	const rowColorValue = 'var(--plx-text)'
 	const separatorColor = 'color-mix(in srgb, var(--plx-panel-border) 84%, transparent)'
 	const statusLabel =
-		available === false ? '不可用' : running ? '运行中' : desiredRunning ? '等待运行' : '已停止'
-	const statusColor = running
-		? isDark
-			? rgba(theme.colors.teal[4], 0.85)
-			: rgba(theme.colors.teal[6], 0.8)
-		: available === false
-			? rgba(theme.colors.red[6], 0.8)
-			: desiredRunning
-				? rgba(theme.colors.yellow[6], 0.8)
-				: 'color-mix(in srgb, var(--plx-text-muted) 88%, transparent)'
+		meta?.failureLabel ??
+		(available === false ? '不可用' : running ? '运行中' : desiredRunning ? '等待运行' : '已停止')
+	const statusColor = meta?.failureLabel
+		? rgba(theme.colors.red[6], 0.8)
+		: running
+			? isDark
+				? rgba(theme.colors.teal[4], 0.85)
+				: rgba(theme.colors.teal[6], 0.8)
+			: available === false
+				? rgba(theme.colors.red[6], 0.8)
+				: desiredRunning
+					? rgba(theme.colors.yellow[6], 0.8)
+					: 'color-mix(in srgb, var(--plx-text-muted) 88%, transparent)'
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: sortableId,
@@ -347,7 +352,9 @@ const SortableRowComponent = ({
 
 			{typeof running === 'boolean' && (
 				<Tooltip
-					label={statusLabel}
+					label={
+						meta?.failureDescription ? `${statusLabel} · ${meta.failureDescription}` : statusLabel
+					}
 					withinPortal
 					withArrow
 					openDelay={200}
@@ -370,6 +377,11 @@ const SortableRowComponent = ({
 }
 
 const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
+	if (
+		prev.meta?.failureLabel !== next.meta?.failureLabel ||
+		prev.meta?.failureDescription !== next.meta?.failureDescription
+	)
+		return false
 	if (prev.pid !== next.pid) return false
 	if (prev.name !== next.name) return false
 	if (prev.running !== next.running) return false

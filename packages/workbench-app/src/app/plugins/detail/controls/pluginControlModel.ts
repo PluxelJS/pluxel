@@ -11,6 +11,7 @@ export type PluginLifecycleOutcomePresentation = Readonly<{
 	title: string
 	message: string
 	color: 'green' | 'yellow' | 'red'
+	diagnosticText?: string
 }>
 
 const ACTIVATION_REASON_LABEL: Record<
@@ -35,20 +36,37 @@ export function describePluginControl(
 	const available = status.availability === 'available'
 	const running = status.lifecycleState === 'running'
 	const wantsRunning = status.desiredState === 'running'
-	const statusLabel = !available
-		? '不可用'
-		: running
-			? '运行中'
-			: wantsRunning
-				? '等待启动'
-				: '已停止'
-	const statusTone: PluginStatusTone = !available
+	const failure = status.issues.find((issue) =>
+		[
+			'resolve-failed',
+			'config-failed',
+			'start-failed',
+			'dependency-blocked',
+			'drain-failed',
+		].includes(issue.code),
+	)
+	const statusLabel = failure
+		? failure.code === 'dependency-blocked'
+			? '依赖阻塞'
+			: failure.code === 'drain-failed'
+				? '停止异常'
+				: '启动失败'
+		: !available
+			? '不可用'
+			: running
+				? '运行中'
+				: wantsRunning
+					? '等待启动'
+					: '已停止'
+	const statusTone: PluginStatusTone = failure
 		? 'red'
-		: running
-			? 'green'
-			: wantsRunning
-				? 'yellow'
-				: 'gray'
+		: !available
+			? 'red'
+			: running
+				? 'green'
+				: wantsRunning
+					? 'yellow'
+					: 'gray'
 	const primaryCommand: PluginLifecycleCommand = running ? 'restart' : 'start'
 	const primaryLabel = running ? '重启' : wantsRunning ? '重试启动' : '启动'
 	const primaryTone = running ? 'blue' : wantsRunning ? 'orange' : 'green'
@@ -59,15 +77,17 @@ export function describePluginControl(
 		wantsRunning,
 		statusLabel,
 		statusTone,
-		statusDescription: !available
-			? wantsRunning
-				? '当前 Plugin node 不可用，无法启动；仍可停止以清除本次会话运行意图'
-				: '当前 Plugin node 不可用，无法启动或重启'
-			: running
-				? `由${status.activationReason ? ACTIVATION_REASON_LABEL[status.activationReason] : '运行时协调'}激活`
-				: wantsRunning
-					? '运行时仍期望该 Plugin 运行，可重试启动或停止本次会话意图'
-					: '当前会话不要求该 Plugin 运行',
+		statusDescription: failure
+			? failure.message
+			: !available
+				? wantsRunning
+					? '当前 Plugin node 不可用，无法启动；仍可停止以清除本次会话运行意图'
+					: '当前 Plugin node 不可用，无法启动或重启'
+				: running
+					? `由${status.activationReason ? ACTIVATION_REASON_LABEL[status.activationReason] : '运行时协调'}激活`
+					: wantsRunning
+						? '运行时仍期望该 Plugin 运行，可重试启动或停止本次会话意图'
+						: '当前会话不要求该 Plugin 运行',
 		primaryCommand,
 		primaryLabel,
 		primaryTone,
@@ -111,6 +131,15 @@ export function describePluginLifecycleOutcome(
 						: 'Plugin 启动失败',
 			message: `${pluginLabel}：${detail}${partPath?.length ? `（PluginPart：${partPath.join(' / ')}）` : ''}`,
 			color: 'red',
+			diagnosticText: JSON.stringify(
+				{
+					command,
+					address: result.address,
+					lifecycleReport: report.status === 'committed' ? report.summary.lifecycleReport : null,
+				},
+				null,
+				2,
+			),
 		})
 	}
 

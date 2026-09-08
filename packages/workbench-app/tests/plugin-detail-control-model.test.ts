@@ -22,6 +22,21 @@ const fork = forkNode('MemoryCache', 'tenant-a')
 const unavailable = node('RemovedCache')
 
 describe('plugin detail control presentation', () => {
+	it.each([
+		['start-failed', '启动失败'],
+		['dependency-blocked', '依赖阻塞'],
+	] as const)('shows %s instead of waiting to start', (code, label) => {
+		expect(
+			describePluginControl(
+				controlStatus({
+					lifecycleState: 'stopped',
+					desiredState: 'running',
+					issues: [{ id: 'failure', code, message: 'database failed' }],
+				}),
+			),
+		).toMatchObject({ statusLabel: label, statusTone: 'red', statusDescription: 'database failed' })
+	})
+
 	it('presents following the default as an explicit implementation choice', () => {
 		const selection = buildConsumerOverrideSelection(
 			consumerRequirement({ consumerOverride: null, inheritedProvider: memory }),
@@ -188,9 +203,10 @@ describe('plugin detail control presentation', () => {
 			]),
 		})
 
-		expect(outcome).toEqual({
+		expect(outcome).toMatchObject({
 			title: 'Plugin 启动失败',
 			message: 'Discord：DiscordPlugin requires host config vault: {}（PluginPart：accounts）',
+			diagnosticText: expect.stringContaining('DiscordPlugin requires host config vault'),
 			color: 'red',
 		})
 	})

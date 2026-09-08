@@ -1,3 +1,4 @@
+import { describePluginControl } from '../detail/controls/pluginControlModel'
 import type { PluginCatalogSection } from '../../../runtime'
 import { formatPluginNodeReference, pluginNodeIndexKey } from '@pluxel/core'
 import type { PluginStatusEntry } from '../pluginOverview'
@@ -39,9 +40,12 @@ const toStatuses = (entries: readonly (PluginStatusEntry | null | undefined)[] |
 		if (!id) continue
 		const definition = describePluginDefinition(entry.address.definition)
 		const execution = describePluginExecution(entry.execution)
+		const control = describePluginControl(entry)
 		const recentUpdate = describePluginRecentUpdate(entry.recentUpdate)
 		const hasRecentUpdateWarning = recentUpdate.warning
 		snapshot[id] = {
+			failureLabel: control.statusTone === 'red' ? control.statusLabel : undefined,
+			failureDescription: control.statusTone === 'red' ? control.statusDescription : undefined,
 			id,
 			address: entry.address,
 			reference: formatPluginNodeReference(entry.address),

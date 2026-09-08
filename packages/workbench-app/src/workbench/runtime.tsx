@@ -537,7 +537,19 @@ function ReadyFederatedWorkbenchEntryView({
 			contributionId={entry.descriptor.key}
 			point={entry.placement.kind}
 		>
-			<div ref={domRef} style={{ display: 'contents' }} />
+			<div
+				ref={domRef}
+				style={{
+					display: 'grid',
+					flex: 1,
+					gridTemplateColumns: 'minmax(0, 1fr)',
+					gridTemplateRows: 'minmax(0, 1fr)',
+					minWidth: 0,
+					minHeight: 0,
+					height: '100%',
+					width: '100%',
+				}}
+			/>
 			{opening ? <InlineNotice title="Workbench View">正在打开…</InlineNotice> : null}
 			{error ? <InlineNotice title="Workbench View 打开失败">{error.message}</InlineNotice> : null}
 		</WorkbenchErrorBoundary>

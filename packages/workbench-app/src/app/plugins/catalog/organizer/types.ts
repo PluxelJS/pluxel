@@ -4,6 +4,8 @@ import type { PluginPresentationTone } from '../../pluginExecutionPresentation'
 export type PluginStatuses = { [name: string]: PluginStatus }
 
 export interface PluginStatus {
+	failureLabel?: string
+	failureDescription?: string
 	id: string
 	address: PluginNodeAddress
 	reference: string

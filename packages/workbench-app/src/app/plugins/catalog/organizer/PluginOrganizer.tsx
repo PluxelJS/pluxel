@@ -140,6 +140,8 @@ export function PluginOrganizer({
 		(id: string): RowMeta => {
 			const status = statuses[id]
 			return {
+				failureLabel: status?.failureLabel,
+				failureDescription: status?.failureDescription,
 				definition: status?.definitionLabel,
 				exportName: status?.exportName,
 				reference: status?.reference,

@@ -1,3 +1,4 @@
+import { readRuntimePluginLifecycleIssues } from '../../internal/reconciliation/host'
 import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import {
 	requireRuntimePluginGraphCoordinator,
@@ -51,6 +52,7 @@ export function projectCommittedPluginCatalog(ctx: Context, view: RuntimePluginG
 		catalog: view.catalog,
 		state: view.runtimeState.state,
 		reconciliation: view.reconciliation,
+		lifecycleIssues: readRuntimePluginLifecycleIssues(ctx),
 		sessionIntents: view.sessionIntents,
 		desiredControl: view.desiredControl,
 		coreNodes: view.coreAdjacency.nodes,

@@ -70,6 +70,12 @@ pluxel source unregister https://github.com/PluxelJS/chatbot
 
 ## 何时重新安装或构建
 
+源码联调不表示所有模块都由 Vite 直接执行源码。开发期浏览器可读取框架的 source export，
+但 Node 宿主和 Vite 配置使用的框架 singleton 仍加载构建产物。修改或拉取 Pluxel 框架源码后，
+先运行 `pluxel source build` 再重启宿主；应用可以把此命令加入 dev 启动脚本，复用上游构建缓存。
+否则浏览器与服务端可能使用不同版本的 RPC 接口，出现方法不存在等错误。
+`source doctor` 检查源码映射和安装 overlay，不检查构建产物是否与当前源码一致。
+
 CLI 扫描每个 checkout 自己的 workspace 和 manifest，按实际依赖闭包创建代理。source package 的 devDependencies 仍属于它自己的 checkout，不进入消费方 closure。
 安装和构建顺序从实际 package dependency graph 推导；provider repository 先完成，互不依赖的 repository 可并行。
 `--frozen-lockfile` 只在显式传入时生效。

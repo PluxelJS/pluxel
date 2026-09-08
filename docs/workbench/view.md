@@ -6,6 +6,9 @@ description: 从一个可读取、可刷新的页面开始，再按需添加分�
 需要自定义布局、分页或 React 组件时，使用 View。Plugin 提供服务端 API 和 React 页面，Workbench 负责登录与打开、关闭页面。
 如果只有状态和几个按钮，先用更短的 [Content](./content.md)。
 
+Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使用 `height: 100%` 填满可用高度，
+并自行管理内容滚动；Pane Kit 根据该窗格的实际宽度调整分栏。
+
 开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为四份文件：页面声明、服务端实现、查询声明和 React 入口。
 `RpcTarget` 是可以由页面调用的服务端对象；`scope` 将 React 组件与它对应的页面 API 关联。
 

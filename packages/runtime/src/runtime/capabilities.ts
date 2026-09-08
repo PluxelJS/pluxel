@@ -1,3 +1,4 @@
+import { readRuntimePluginLifecycleIssues } from '../internal/reconciliation/host'
 import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
@@ -36,6 +37,11 @@ export type RuntimePluginReconciliationCode =
 	| 'explicit_binding_invalid'
 	| 'missing_required_provider'
 	| 'definition_unavailable'
+	| 'resolve-failed'
+	| 'config-failed'
+	| 'start-failed'
+	| 'dependency-blocked'
+	| 'drain-failed'
 export type RuntimePluginStatusIssue = Readonly<{
 	id: string
 	code: RuntimePluginReconciliationCode
@@ -76,6 +82,7 @@ export type RuntimePluginStatusProjectionView = Readonly<{
 	catalog: PluginRouteCatalogSnapshot
 	state: RuntimeStateSnapshot
 	reconciliation: readonly PluginReconciliationIssue[]
+	lifecycleIssues?: readonly import('../internal/reconciliation/host').RuntimePluginLifecycleDiagnostic[]
 	sessionIntents: ReadonlyMap<string, RuntimePluginSessionEntry>
 	desiredControl: ReadonlyMap<string, RuntimePluginDesiredControl>
 	coreNodes: readonly PluginNodeAddress[]
@@ -188,6 +195,18 @@ function createRuntimePluginStatusProjectionFromView(view: RuntimePluginStatusPr
 			else issuesByNode.set(key, [projected])
 		}
 	}
+	for (const issue of view.lifecycleIssues ?? []) {
+		const key = pluginNodeIndexKey(issue.plugin)
+		const issues = issuesByNode.get(key) ?? []
+		issues.push(
+			Object.freeze({
+				id: `lifecycle:${key}:${issue.kind}`,
+				code: issue.kind,
+				message: issue.message,
+			}),
+		)
+		issuesByNode.set(key, issues)
+	}
 	return {
 		catalog,
 		state,
@@ -260,6 +279,7 @@ export async function readRuntimePluginStatusOverview(
 			catalog: view.catalog,
 			state: view.runtimeState.state,
 			reconciliation: view.reconciliation,
+			lifecycleIssues: readRuntimePluginLifecycleIssues(ctx),
 			sessionIntents: view.sessionIntents,
 			desiredControl: view.desiredControl,
 			coreNodes: view.coreAdjacency.nodes,

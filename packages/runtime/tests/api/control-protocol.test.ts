@@ -3,8 +3,9 @@ import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { serialize } from 'capnweb'
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { applyLifecycleCommands, setAutoStart } from '../../src/api/usecases/pluginStatus'
+import { parsePluginStatusQueryResult } from '../../src/web/management-validation'
 import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
 import type {
 	ConfigResult,
@@ -20,6 +21,14 @@ import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
 
 @Plugin()
 class ManagedPlugin extends BasePlugin {}
+
+let recoverableFailure = true
+@Plugin()
+class RecoverablePlugin extends BasePlugin {
+	override init() {
+		if (recoverableFailure) throw new Error('database initialization failed')
+	}
+}
 
 @Plugin()
 class FailingManagedPlugin extends BasePlugin {
@@ -51,6 +60,50 @@ class ManagedDirectConsumer extends BasePlugin {
 }
 
 describe('runtime web control protocol', () => {
+	it('retains startup diagnostics across unrelated commits and clears them after recovery', async () => {
+		const host = createRuntimeInternalTestHarness({ workbench: false })
+		recoverableFailure = true
+		const logged = vi.spyOn(host.ctx.logger, 'error')
+		try {
+			host.add(RecoverablePlugin)
+			host.add(ManagedPlugin)
+			await host.commit()
+			const address = host.cfg(RecoverablePlugin).owner
+			const other = host.cfg(ManagedPlugin).owner
+			const rpc = new RuntimeManagementTargetImpl(host.ctx)
+			await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			expect(logged).toHaveBeenCalledWith(
+				'Plugin lifecycle operation failed',
+				expect.objectContaining({
+					phase: 'start',
+					kind: 'start-failed',
+					error: expect.objectContaining({ message: 'database initialization failed' }),
+				}),
+			)
+			const failed = parsePluginStatusQueryResult(await rpc.pluginStatus(address))
+			expect(failed).toMatchObject({
+				ok: true,
+				value: {
+					lifecycleState: 'stopped',
+					issues: [{ code: 'start-failed', message: 'database initialization failed' }],
+				},
+			})
+			await rpc.applyPluginLifecycleCommands([{ address: other, command: 'start' }])
+			expect(await rpc.pluginStatus(address)).toMatchObject({
+				ok: true,
+				value: { issues: [{ code: 'start-failed' }] },
+			})
+			recoverableFailure = false
+			await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			expect(await rpc.pluginStatus(address)).toMatchObject({
+				ok: true,
+				value: { lifecycleState: 'running', issues: [] },
+			})
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('exposes only the three process lifecycle commands', () => {
 		expectTypeOf<PluginLifecycleCommand>().toEqualTypeOf<'start' | 'stop' | 'restart'>()
 	})

@@ -60,6 +60,11 @@ export type PluginStatusIssue = Readonly<{
 		| 'explicit_binding_invalid'
 		| 'missing_required_provider'
 		| 'definition_unavailable'
+		| 'resolve-failed'
+		| 'config-failed'
+		| 'start-failed'
+		| 'dependency-blocked'
+		| 'drain-failed'
 	message: string
 }>
 

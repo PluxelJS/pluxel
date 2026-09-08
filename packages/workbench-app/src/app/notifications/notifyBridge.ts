@@ -1,3 +1,5 @@
+import { createElement } from 'react'
+import { NotificationMessage } from './NotificationMessage'
 import { type NotificationData, notifications } from '@mantine/notifications'
 
 type NotificationCenterPush = (input: {
@@ -27,8 +29,17 @@ function getText(value: NotificationData['message']) {
 	return ''
 }
 
-export function notifyAndRecord(payload: NotificationData) {
-	const displayedId = notifications.show(payload)
+export function notifyAndRecord(payload: NotificationData & { diagnosticText?: string }) {
+	const message = getText(payload.message)
+	const title = typeof payload.title === 'string' ? payload.title : ''
+	const copyText = [title, message, payload.diagnosticText].filter(Boolean).join('\n\n')
+	const displayedId = notifications.show({
+		...(({ diagnosticText: _, ...notification }) => notification)(payload),
+		...(payload.color === 'red' && payload.autoClose === undefined ? { autoClose: false } : {}),
+		message: message
+			? createElement(NotificationMessage, { message: payload.message, copyText })
+			: payload.message,
+	})
 	const id =
 		typeof payload.id === 'string'
 			? payload.id
