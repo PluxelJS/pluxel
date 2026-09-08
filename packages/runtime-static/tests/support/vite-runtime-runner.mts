@@ -12,7 +12,7 @@ import {
 } from '@pluxel/runtime/internal'
 import type { StaticRuntimeHost } from '@pluxel/runtime-static'
 import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
-import { createServer, normalizePath, type HmrContext, type Plugin as VitePlugin } from 'vite'
+import { createServer, normalizePath, type HotUpdateOptions, type Plugin as VitePlugin } from 'vite'
 
 const root = requiredEnv('PLUXEL_VITE_SMOKE_ROOT')
 const entryPath = requiredEnv('PLUXEL_VITE_SMOKE_ENTRY')
@@ -460,15 +460,16 @@ try {
 assert.equal(pluginService.isRunning(address), false)
 
 async function invokeHotUpdate(route: VitePlugin, changedFile: string): Promise<void> {
-	const hook = route.handleHotUpdate
+	const hook = route.hotUpdate
 	if (typeof hook !== 'function') throw new Error('static Vite hot-update hook is missing')
-	await hook.call(route, {
+	await hook.call({ environment: server.environments.ssr } as never, {
+		type: 'update',
 		file: normalizePath(changedFile),
 		server,
 		modules: [],
 		read: () => Promise.resolve(''),
 		timestamp: Date.now(),
-	} satisfies HmrContext)
+	} satisfies HotUpdateOptions)
 }
 
 async function invokeViteWatchChange(

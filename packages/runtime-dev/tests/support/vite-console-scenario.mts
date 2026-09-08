@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createServer, type HmrContext, type Plugin, type PluginOption } from 'vite'
+import { createServer, type Plugin, type PluginOption } from 'vite'
 import type {
 	DevConsoleInstance,
 	DevConsoleResponse,
@@ -135,18 +135,24 @@ export async function exerciseViteConsole(options: {
 		return (result as Extract<DevConsoleRunSnapshot, { state: 'succeeded' }>).value
 	}
 	const hotUpdate = async (file: string) => {
-		const hook = routePlugin.handleHotUpdate
+		const hook = routePlugin.hotUpdate ?? routePlugin.handleHotUpdate
 		const handler = typeof hook === 'function' ? hook : hook?.handler
 		assert.ok(handler)
 		await handler.call(
-			{} as never,
+			{ environment: server.environments.ssr } as never,
 			{
+				type: 'update',
 				file,
 				server,
-				modules: [...(server.moduleGraph.getModulesByFile(file) ?? [])],
+				modules: [
+					...((routePlugin.hotUpdate
+						? server.environments.ssr.moduleGraph
+						: server.moduleGraph
+					).getModulesByFile(file) ?? []),
+				],
 				timestamp: Date.now(),
 				read: () => readFile(file, 'utf8'),
-			} as HmrContext,
+			} as never,
 		)
 	}
 	const watchUpdate = async (file: string) => {

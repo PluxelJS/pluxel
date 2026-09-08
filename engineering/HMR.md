@@ -93,7 +93,9 @@ Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevS
 
 ## Static 与 dynamic route
 
-`staticRuntimeVitePlugin({ entry })` 通过 ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 Plugin
+`staticRuntimeVitePlugin({ entry })` 通过 ModuleRunner 加载 canonical `defineStaticRuntime()` entry。Static route 使用 Vite 的
+`hotUpdate` 将 create/update/delete 事件送入同一个更新队列；同一次文件事件只执行一次 runtime 更新，避免 client/SSR
+两套环境重复提交或在提交后再次失效已加载的 constructor。普通 Plugin
 dependency 变化精确失效 importer graph；application entry/configure graph 变化重建 host。Single-active logging root
 要求先停止旧 host；新 application 创建或 start 抛出错误时先停止并清理失败的新 host，再从上一次成功 application definition 创建一个
 fresh host。只有补偿 host 成功启动才记录 `restored-previous / application-reload`。这是 full-host replacement 的 compensation，
@@ -143,6 +145,13 @@ execution lane 的 direct call 必须以 `HmrClosedError` 失败，不能触碰 
 
 Semantic lowering 在 TypeScript 擦除前读取 `workbench.define()` 和 literal `workbench.entry()`，一次生成 owning Plugin
 definition 的完整 producer plan。Compiler 不重新发现 declarations 或计算第二个 build revision。
+
+Workbench 的模块事实与 publication 按模块一起替换；每次 transform 在异步解析前取得更新身份，迟到结果不能覆盖
+较新的 transform、失效或删除。watcher 失效先记录待更新模块，candidate 接管这些失效并在独立快照中重新解析。
+成功编译读取的导入事实也属于这一代，提交时与 source/built facts 共用 ambient version 冲突检查；失败 candidate
+丢弃后仍使用已提交事实，不从失败源码重建旧定义。解析 Promise 只活在本次编译中，失败不会阻塞下一次有效更新。
+删除模块或将它改成普通模块会撤销原 publication。生成 Bridge 和 renderer projection 的目录包含 build revision，
+后续 candidate 不覆盖已返回 plan 引用的生成文件。
 
 同一 producer task 去重；同一 definition 的新 plan supersede 旧 in-flight build。`@module-federation/vite` 1.21.1 的
 producer build 直接在当前进程运行；真实双 producer 并发回归必须验证 expose、Manifest 和 JavaScript 不串线。统一 artifact

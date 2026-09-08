@@ -1,5 +1,5 @@
 import { createFixture } from 'fs-fixture'
-import { symlink } from 'node:fs/promises'
+import { symlink, writeFile } from 'node:fs/promises'
 import { rolldown } from 'rolldown'
 import { describe, expect, it } from 'vitest'
 import { createPluginSemanticsPlugin } from '../../src/rolldown/plugins/pluginSemanticsPlugin'
@@ -8,6 +8,7 @@ async function transformWithExistingCollector(
 	collector: ReturnType<typeof createPluginSemanticsPlugin>,
 	code: string,
 	id = import.meta.filename,
+	resolveImport: (source: string) => Promise<{ id: string } | null> = async () => null,
 ) {
 	const hook = collector.plugin.transform as {
 		handler: (this: unknown, code: string, id: string) => unknown
@@ -17,9 +18,7 @@ async function transformWithExistingCollector(
 			error(message: string): never {
 				throw new Error(message)
 			},
-			async resolve(): Promise<null> {
-				return null
-			},
+			resolve: resolveImport,
 		},
 		code,
 		id,
@@ -363,6 +362,238 @@ describe('plugin semantic lowering', () => {
 		await commitWork
 		committed.commit()
 		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('built-module')
+	})
+
+	describe('Workbench artifact generations', () => {
+		function contentPlugin(className: string): string {
+			return `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { workbench } from '@pluxel/runtime/workbench'
+				export const pages = workbench.define({
+					guide: workbench.content({
+						document: workbench.markdown(import.meta.url, './guide.md'),
+						placement: workbench.tab({ label: 'Guide' }),
+					}),
+				})
+				@Plugin() export class ${className} extends BasePlugin {
+					init() { this.ctx.workbench.publish(pages) }
+				}
+			`
+		}
+
+		async function expectOwner(
+			collector: ReturnType<typeof createPluginSemanticsPlugin>,
+			className: string,
+		) {
+			const definitions = collector.definitions()
+			expect(definitions.map((definition) => definition.className)).toEqual([className])
+			const content = await collector.workbenchContentCompilations()
+			expect(content).toHaveLength(1)
+			expect(content[0]!.contentSet.definition).toEqual(definitions[0]!.definition)
+		}
+
+		it.each(['commit', 'rollback'] as const)(
+			'%s keeps Workbench publication and source facts in the same generation',
+			async (settlement) => {
+				await using fixture = await createFixture({
+					'guide.md': '# Guide',
+					'plugin.ts': contentPlugin('OriginalPlugin'),
+				})
+				const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+				const moduleId = fixture.getPath('plugin.ts')
+				await transformWithExistingCollector(collector, contentPlugin('OriginalPlugin'), moduleId)
+				await expectOwner(collector, 'OriginalPlugin')
+
+				const generation = collector.beginArtifactGeneration()
+				await generation.run(async () => {
+					await transformWithExistingCollector(
+						collector,
+						contentPlugin('CandidatePlugin'),
+						moduleId,
+					)
+					await expectOwner(collector, 'CandidatePlugin')
+				})
+				await expectOwner(collector, 'OriginalPlugin')
+				generation[settlement]()
+				await expectOwner(collector, settlement === 'commit' ? 'CandidatePlugin' : 'OriginalPlugin')
+				await expect(collector.workbenchCompilations()).resolves.toEqual([])
+			},
+		)
+
+		it.each([
+			{ location: 'inline', settlement: 'rollback' },
+			{ location: 'imported', settlement: 'rollback' },
+			{ location: 'imported', settlement: 'commit' },
+		] as const)(
+			'keeps $location definitions consistent after a watched candidate $settlement',
+			async ({ location, settlement }) => {
+				const inlineSource = contentPlugin('OriginalPlugin')
+				const declaration = inlineSource.slice(
+					inlineSource.indexOf('export const pages'),
+					inlineSource.indexOf('@Plugin()'),
+				)
+				const definitionSource = `import { workbench } from '@pluxel/runtime/workbench'
+${declaration}`
+				const pluginSource =
+					location === 'inline'
+						? inlineSource
+						: inlineSource.replace(declaration, "import { pages } from './workbench'\n")
+				await using fixture = await createFixture({
+					'guide.md': '# Guide',
+					'plugin.ts': pluginSource,
+					'workbench.ts': definitionSource,
+				})
+				const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+				const moduleId = fixture.getPath('plugin.ts')
+				const resolveImport = async (source: string) =>
+					source === './workbench' ? { id: fixture.getPath('workbench.ts') } : null
+				await transformWithExistingCollector(collector, pluginSource, moduleId, resolveImport)
+				const accepted = await collector.workbenchContentCompilations()
+				expect(accepted[0]!.contentSet.entries.map(({ key }) => key)).toEqual(['guide'])
+
+				const changedId = location === 'inline' ? moduleId : fixture.getPath('workbench.ts')
+				const changedSource = (location === 'inline' ? pluginSource : definitionSource).replace(
+					'guide: workbench.content',
+					'rejected: workbench.content',
+				)
+				await writeFile(changedId, changedSource)
+				const watchChange = collector.plugin.watchChange as (
+					id: string,
+					change: { event: 'update' },
+				) => void
+				watchChange(changedId, { event: 'update' })
+				const generation = collector.beginArtifactGeneration()
+				await generation.run(async () => {
+					await transformWithExistingCollector(
+						collector,
+						location === 'inline' ? changedSource : pluginSource,
+						moduleId,
+						resolveImport,
+					)
+					const candidate = await collector.workbenchContentCompilations()
+					expect(candidate[0]!.contentSet.entries.map(({ key }) => key)).toEqual(['rejected'])
+				})
+				generation[settlement]()
+				await expectOwner(collector, 'OriginalPlugin')
+				const settled = await collector.workbenchContentCompilations()
+				expect(settled[0]!.contentSet.entries.map(({ key }) => key)).toEqual(
+					settlement === 'rollback' ? ['guide'] : ['rejected'],
+				)
+			},
+		)
+
+		it('rejects an older transform after a newer transform commits while import resolution is pending', async () => {
+			await using fixture = await createFixture({
+				'guide.md': '# Guide',
+				'plugin.ts': contentPlugin('OriginalPlugin'),
+				'slow.ts':
+					"import { BasePlugin, Plugin } from '@pluxel/runtime'; @Plugin() export class Slow extends BasePlugin {}",
+			})
+			const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+			const moduleId = fixture.getPath('plugin.ts')
+			const started = Promise.withResolvers<void>()
+			const resume = Promise.withResolvers<void>()
+			const oldSource = `import { Slow } from './slow'\n${contentPlugin('OldPlugin')}`.replace(
+				'init() {',
+				'constructor(readonly slow: Slow) { super() } init() {',
+			)
+			const pending = transformWithExistingCollector(
+				collector,
+				oldSource,
+				moduleId,
+				async (source) => {
+					if (source !== './slow') return null
+					started.resolve()
+					await resume.promise
+					return { id: fixture.getPath('slow.ts') }
+				},
+			)
+			await started.promise
+			try {
+				await transformWithExistingCollector(collector, contentPlugin('NewPlugin'), moduleId)
+				await expectOwner(collector, 'NewPlugin')
+			} finally {
+				resume.resolve()
+				await pending
+			}
+			await expectOwner(collector, 'NewPlugin')
+			await expect(collector.workbenchCompilations()).resolves.toEqual([])
+		})
+
+		it('preserves newer ambient Workbench facts when committing an older candidate', async () => {
+			await using fixture = await createFixture({
+				'guide.md': '# Guide',
+				'plugin.ts': contentPlugin('OriginalPlugin'),
+			})
+			const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+			const moduleId = fixture.getPath('plugin.ts')
+			await transformWithExistingCollector(collector, contentPlugin('OriginalPlugin'), moduleId)
+
+			const generation = collector.beginArtifactGeneration()
+			await generation.run(() =>
+				transformWithExistingCollector(collector, contentPlugin('CandidatePlugin'), moduleId),
+			)
+			await transformWithExistingCollector(collector, contentPlugin('AmbientPlugin'), moduleId)
+			await expectOwner(collector, 'AmbientPlugin')
+			await generation.run(async () => {
+				await expectOwner(collector, 'CandidatePlugin')
+				// A later candidate write must not take ownership back from the ambient update.
+				await transformWithExistingCollector(
+					collector,
+					contentPlugin('LaterCandidatePlugin'),
+					moduleId,
+				)
+				await expectOwner(collector, 'LaterCandidatePlugin')
+			})
+			generation.commit()
+			await expectOwner(collector, 'AmbientPlugin')
+			await expect(collector.workbenchCompilations()).resolves.toEqual([])
+		})
+
+		it.each(['delete', 'ordinary module'] as const)(
+			'withdraws Workbench publications after %s, including across candidate settlement',
+			async (change) => {
+				await using fixture = await createFixture({
+					'guide.md': '# Guide',
+					'plugin.ts': contentPlugin('OriginalPlugin'),
+				})
+				const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+				const moduleId = fixture.getPath('plugin.ts')
+				await transformWithExistingCollector(collector, contentPlugin('OriginalPlugin'), moduleId)
+				await expectOwner(collector, 'OriginalPlugin')
+				const withdraw = async () => {
+					if (change === 'delete') {
+						const watchChange = collector.plugin.watchChange as (
+							id: string,
+							change: { event: 'delete' },
+						) => void
+						watchChange(moduleId, { event: 'delete' })
+					} else {
+						await transformWithExistingCollector(
+							collector,
+							'export const ordinary = true',
+							moduleId,
+						)
+					}
+					expect(collector.definitions()).toEqual([])
+					await expect(collector.workbenchContentCompilations()).resolves.toEqual([])
+				}
+
+				const rejected = collector.beginArtifactGeneration()
+				await rejected.run(withdraw)
+				rejected.rollback()
+				await expectOwner(collector, 'OriginalPlugin')
+
+				const candidate = collector.beginArtifactGeneration()
+				await candidate.run(() =>
+					transformWithExistingCollector(collector, contentPlugin('CandidatePlugin'), moduleId),
+				)
+				await withdraw()
+				candidate.commit()
+				expect(collector.definitions()).toEqual([])
+				await expect(collector.workbenchContentCompilations()).resolves.toEqual([])
+			},
+		)
 	})
 
 	describe('optional Plugin ref authoring boundaries', () => {

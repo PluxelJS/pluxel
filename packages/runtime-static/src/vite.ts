@@ -51,8 +51,8 @@ import { requirePluginService } from '@pluxel/core/internal'
 import type { IncomingMessage } from 'node:http'
 import {
 	normalizePath,
-	type HmrContext,
-	type ModuleNode,
+	type HotUpdateOptions,
+	type EnvironmentModuleNode,
 	type Plugin,
 	type PluginOption,
 	type ViteDevServer,
@@ -361,11 +361,11 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		}
 	}
 
-	const handleHotUpdate = (ctx: HmrContext): Promise<ModuleNode[] | void> => {
+	const applyHotUpdate = (ctx: HotUpdateOptions): Promise<EnvironmentModuleNode[] | void> => {
 		if (closing) return Promise.resolve(undefined)
 		devConsole?.invalidate(ctx.file)
 		devConsole?.observed(ctx.file)
-		return enqueueHotUpdate(async (): Promise<ModuleNode[] | void> => {
+		return enqueueHotUpdate(async (): Promise<EnvironmentModuleNode[] | void> => {
 			const host = state.host
 			if (!state.configFiles.has(ctx.file)) {
 				await (host ? artifactPublishers.get(host)?.() : undefined)
@@ -377,22 +377,26 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			const start = performance.now()
 			const previousStaticDefinitions =
 				host?.describeCatalog().plugins.map((entry) => entry.definition) ?? []
-			const viteInvalidation = invalidateStaticRuntimeChangedModules(
+			const viteInvalidation = invalidateStaticRuntimeChangedModules({
 				server,
-				ctx.file,
-				state.configFiles,
-			)
+				changedFile: ctx.file,
+				applicationFiles: state.configFiles,
+				changedModules: ctx.modules,
+				recoverMissingImports: ctx.type === 'create',
+			})
 			const evaluationTargets = affectedStaticRuntimeDefinitions(
 				host,
 				sourcePipeline.semantics,
 				viteInvalidation.modules,
 				ctx.file === state.entryPath,
 			)
-			invalidateViteSsrModule(server, ctx.file)
-			// Invalidate only affected importers; unrelated running Plugin constructors retain identity.
+			// A failed import can lose its file identity in the runner. Invalidate the
+			// known importer closure as well so recreating that file retries evaluation.
+			for (const module of viteInvalidation.modules) invalidateViteSsrModule(server, module)
+			// Normal edits preserve unrelated Plugin constructors; recreated imports use the recovery closure.
 			const artifactGeneration = sourcePipeline.semantics.beginArtifactGeneration()
 			try {
-				return await artifactGeneration.run(async (): Promise<ModuleNode[] | void> => {
+				return await artifactGeneration.run(async (): Promise<EnvironmentModuleNode[] | void> => {
 					let loaded: Awaited<ReturnType<typeof loadApplication>>
 					try {
 						loaded = await loadApplication(true)
@@ -659,7 +663,14 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				throw new AggregateError(errors, '[runtime-static/vite] carrier shutdown failed')
 			}
 		},
-		handleHotUpdate,
+		async hotUpdate(ctx) {
+			// Admit update/create/delete once in the owning SSR environment. Runtime
+			// evaluation refreshes that graph itself; suppress further propagation of
+			// handled modules so Vite cannot evict the newly committed constructors.
+			if (this.environment.name === 'client' && state.configFiles.has(ctx.file)) return []
+			if (this.environment.name !== 'ssr') return undefined
+			return applyHotUpdate(ctx)
+		},
 	}
 
 	return [
@@ -826,18 +837,21 @@ function affectedStaticRuntimePlugins(
 	return affected.size
 }
 
-function invalidateStaticRuntimeChangedModules(
-	server: ViteDevServer,
-	changedFile: string,
-	applicationFiles: ReadonlySet<string>,
-): Readonly<{ count: number; modules: ReadonlySet<string> }> {
+function invalidateStaticRuntimeChangedModules(options: {
+	server: ViteDevServer
+	changedFile: string
+	applicationFiles: ReadonlySet<string>
+	changedModules: readonly EnvironmentModuleNode[]
+	recoverMissingImports: boolean
+}): Readonly<{ count: number; modules: ReadonlySet<string> }> {
+	const { server, changedFile, applicationFiles, changedModules, recoverMissingImports } = options
 	type ModuleLike = {
 		id?: string
 		file?: string | null
 		importers?: Set<ModuleLike>
 	}
 
-	const queue: ModuleLike[] = []
+	const queue: ModuleLike[] = [...changedModules]
 	const seen = new Set<ModuleLike>()
 	// The watcher path is the direct update authority. Keep it alongside graph IDs/files because
 	// Vite may index a package-root module through its symlink while semantic transforms use the
@@ -847,10 +861,10 @@ function invalidateStaticRuntimeChangedModules(
 	for (const mod of graph.getModulesByFile(changedFile) ?? []) {
 		queue.push(mod as ModuleLike)
 	}
-	// Package-root imports may be indexed by a resolved symlink target while Vite reports the
-	// physical watcher path (or vice versa). If that exact lookup misses, invalidate only the known
-	// canonical application graph so the fresh SSR evaluation cannot consume a stale transform.
-	if (queue.length === 0) {
+	// A missing file can sever importer edges before it is recreated. Retry the known
+	// application closure on creation, or when a symlink/physical path lookup misses;
+	// both cases must evict failed or stale importer evaluations as well as the file.
+	if (queue.length === 0 || recoverMissingImports) {
 		for (const file of applicationFiles) {
 			for (const mod of graph.getModulesByFile(file) ?? []) {
 				queue.push(mod as ModuleLike)

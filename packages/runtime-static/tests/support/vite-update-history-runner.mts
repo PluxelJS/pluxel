@@ -5,7 +5,7 @@ import { pluginNodeAddressEqual } from '@pluxel/core'
 import { readRuntimePluginStatusOverview } from '@pluxel/runtime/internal'
 import type { StaticRuntimeHost } from '@pluxel/runtime-static'
 import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
-import { createServer, normalizePath, type HmrContext, type Plugin } from 'vite'
+import { createServer, normalizePath, type HotUpdateOptions, type Plugin } from 'vite'
 
 const root = process.argv[2]
 assert.ok(root)
@@ -90,17 +90,18 @@ try {
 
 async function reload(fail: boolean): Promise<void> {
 	await writeFile(entry, source(fail))
-	const hook = route.handleHotUpdate
+	const hook = route.hotUpdate
 	assert.ok(hook)
 	const invoke = typeof hook === 'function' ? hook : hook.handler
 	await invoke.call(
-		{} as never,
+		{ environment: server.environments.ssr } as never,
 		{
+			type: 'update',
 			file: normalizePath(entry),
 			timestamp: Date.now(),
 			modules: [],
 			read: () => readFile(entry, 'utf8'),
 			server,
-		} as HmrContext,
+		} as HotUpdateOptions,
 	)
 }

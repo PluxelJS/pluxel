@@ -23,6 +23,7 @@ import {
 	createWorkbenchSemanticLowering,
 	type WorkbenchSemanticContentCompilation,
 	type WorkbenchSemanticProducerCompilation,
+	type WorkbenchSemanticLowering,
 } from '../../workbench/semantic-lowering.ts'
 import type { WorkbenchFederationProducerPlan } from '@pluxel/core/federation'
 
@@ -63,6 +64,7 @@ type ArtifactGenerationState = {
 	/** Ambient versions captured with the candidate view when the generation began. */
 	baseVersions: ReadonlyMap<string, number>
 	touchedModules: Set<string>
+	workbench: ReturnType<WorkbenchSemanticLowering['fork']>
 }
 
 export type PluginSemanticsPluginOptions = {
@@ -91,7 +93,7 @@ export type PluginSemanticsCollector = {
 		definition: PluginDefinitionAddress,
 		activeModules?: Iterable<string>,
 	): PluginDefinitionArtifactKind
-	/** Begins one non-nested transaction over source/built artifact facts. */
+	/** Begins one non-nested transaction over classification and Workbench semantic facts. */
 	beginArtifactGeneration(): PluginArtifactGeneration
 	/** Final canonical Workbench producer plans for this compilation. */
 	workbenchPlans(): Promise<readonly WorkbenchFederationProducerPlan[]>
@@ -264,6 +266,21 @@ export function createPluginSemanticsPlugin(
 			: { definitionsByModule, builtDefinitionsByModule }
 	}
 
+	const currentWorkbench = (): WorkbenchSemanticLowering =>
+		artifactGenerationContext.getStore()?.workbench.lowering ?? workbenchLowering
+
+	const clearModule = (
+		id: string,
+		update?: ReturnType<WorkbenchSemanticLowering['beginUpdate']>,
+	): void => {
+		if (update) {
+			if (!update.remove()) return
+		} else currentWorkbench().remove(id)
+		mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
+			clearArtifactModuleFacts(definitions, builtDefinitions, id),
+		)
+	}
+
 	const plugin: ViteCompatPlugin = {
 		name: 'pluxel:plugin-semantics',
 		enforce: 'pre',
@@ -289,13 +306,12 @@ export function createPluginSemanticsPlugin(
 				: undefined
 		},
 		watchChange(id, change) {
-			// Renderer-only edits do not re-run the Plugin transform, but they do change
-			// the immutable producer revision computed by the Workbench lowering pass.
-			workbenchLowering.invalidate()
-			if (change.event === 'delete') {
-				mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
-					clearArtifactModuleFacts(definitions, builtDefinitions, id),
-				)
+			// Invalidate both transformed definitions and lazily read imports. Deletion also
+			// withdraws ownership; ordinary changes retain it until a successful transform.
+			if (change.event === 'delete') clearModule(id)
+			else {
+				currentWorkbench().invalidate(id)
+				mutateArtifactModuleFacts(id, () => {})
 			}
 		},
 		transform: {
@@ -304,12 +320,12 @@ export function createPluginSemanticsPlugin(
 			},
 			async handler(code, rawId) {
 				const id = stripQuery(rawId)
+				// Reserve before any asynchronous provenance/resolution work, not just collect().
+				const update = currentWorkbench().beginUpdate(id)
 				const mightContainBuiltFacts = code.includes('__setPluginDefinition')
 				const mightContainSourceFacts = semanticHint(code)
 				if (!mightContainBuiltFacts && !mightContainSourceFacts) {
-					mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
-						clearArtifactModuleFacts(definitions, builtDefinitions, id),
-					)
+					clearModule(id, update)
 					return null
 				}
 				const ast = parseWithLang(this, code, id)
@@ -317,6 +333,7 @@ export function createPluginSemanticsPlugin(
 				if (mightContainBuiltFacts) {
 					const builtDefinitions = extractPreloweredDefinitionKeys(ast)
 					if (builtDefinitions.size > 0) {
+						update.remove()
 						mutateArtifactModuleFacts(id, (definitions, currentBuiltDefinitions) =>
 							replaceBuiltModuleDefinitions(
 								definitions,
@@ -332,9 +349,7 @@ export function createPluginSemanticsPlugin(
 					code.includes('// [pluxel-plugin-semantics] Injected facts') ||
 					!mightContainSourceFacts
 				) {
-					mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
-						clearArtifactModuleFacts(definitions, builtDefinitions, id),
-					)
+					clearModule(id, update)
 					return null
 				}
 				const analysis = analyzeModule(ast)
@@ -372,10 +387,7 @@ export function createPluginSemanticsPlugin(
 					},
 				})
 
-				for (const node of result.dependencyInventory) {
-					dependencyInventory.set(node.key, node)
-				}
-				await workbenchLowering.collect({
+				const accepted = await update.collect({
 					id,
 					code,
 					ast,
@@ -390,6 +402,10 @@ export function createPluginSemanticsPlugin(
 						return resolved?.id ? stripQuery(resolved.id) : undefined
 					},
 				})
+				if (!accepted) return result.code === code ? null : { code: result.code, map: null }
+				for (const node of result.dependencyInventory) {
+					dependencyInventory.set(node.key, node)
+				}
 				mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
 					replaceSourceModuleDefinitions(definitions, builtDefinitions, id, result.definitions),
 				)
@@ -443,6 +459,7 @@ export function createPluginSemanticsPlugin(
 				builtDefinitionsByModule: new Map(builtDefinitionsByModule),
 				baseVersions: new Map(artifactModuleVersions),
 				touchedModules: new Set(),
+				workbench: workbenchLowering.fork(),
 			}
 			activeArtifactGeneration = generation
 			const settle = (rollback: boolean): void => {
@@ -453,7 +470,11 @@ export function createPluginSemanticsPlugin(
 				generation.status = rollback ? 'rolled-back' : 'committed'
 				activeArtifactGeneration = undefined
 				if (rollback) return
-				for (const moduleKey of generation.touchedModules) {
+				const committedModules: string[] = []
+				for (const moduleKey of new Set([
+					...generation.touchedModules,
+					...generation.workbench.changedModules(),
+				])) {
 					const baseVersion = generation.baseVersions.get(moduleKey) ?? 0
 					// A later ambient transform/watch event owns this key. Preserve it instead of
 					// publishing the generation's older candidate fact over newer external state.
@@ -466,7 +487,9 @@ export function createPluginSemanticsPlugin(
 						moduleKey,
 					)
 					artifactModuleVersions.set(moduleKey, baseVersion + 1)
+					committedModules.push(moduleKey)
 				}
+				generation.workbench.commit(committedModules)
 			}
 			return Object.freeze({
 				run: <T>(operation: () => T): T => {
@@ -479,10 +502,10 @@ export function createPluginSemanticsPlugin(
 				rollback: () => settle(true),
 			})
 		},
-		workbenchPlans: () => workbenchLowering.plans(),
-		workbenchCompilations: () => workbenchLowering.compilations(),
-		workbenchContentCompilations: () => workbenchLowering.contentCompilations(),
-		invalidateWorkbench: () => workbenchLowering.invalidate(),
+		workbenchPlans: () => currentWorkbench().plans(),
+		workbenchCompilations: () => currentWorkbench().compilations(),
+		workbenchContentCompilations: () => currentWorkbench().contentCompilations(),
+		invalidateWorkbench: () => currentWorkbench().invalidate(),
 	}
 }
 

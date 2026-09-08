@@ -1235,6 +1235,147 @@ class SemanticPlugin {
 		)
 	})
 
+	it('refreshes imported definitions, renderer choices and failed reads in the same compiler', async () => {
+		const content = `import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({
+ settings: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md', { run: workbench.action({ label: 'Run' }) }), placement: workbench.tab({ label: 'Settings' }) }),
+})`
+		const view = `import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({
+ settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx') }),
+})`
+		await using fixture = await createFixture({
+			...fixtureFiles(),
+			'src/workbench.ts': content,
+			'src/guide.md': '# Guide\n\n::slot[run]\n',
+		})
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		const plugin = `import { SemanticWorkbench } from './workbench.ts'
+class SemanticPlugin { init() { this.ctx.workbench.publish(SemanticWorkbench, { settings: () => ({}) }) } }`
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', plugin)
+		await expect(lowering.plans()).resolves.toHaveLength(0)
+		await expect(lowering.contentCompilations()).resolves.toHaveLength(1)
+		const definitionPath = resolve(fixture.path, 'src/workbench.ts')
+		await writeFile(definitionPath, view)
+		lowering.invalidate(definitionPath)
+		const [initialView] = await lowering.plans()
+		expect(initialView).toBeDefined()
+		const originalBridgePath = resolve(fixture.path, initialView!.entries[0]!.bridgeEntryPath)
+		const originalBridge = await readFile(originalBridgePath, 'utf8')
+		await expect(lowering.contentCompilations()).resolves.toHaveLength(0)
+
+		await writeFile(definitionPath, view.replace('./settings.tsx', './picker.tsx'))
+		lowering.invalidate(definitionPath)
+		const [nextView] = await lowering.plans()
+		expect(nextView?.buildRevision).not.toBe(initialView?.buildRevision)
+		const bridge = await readFile(
+			resolve(fixture.path, nextView!.entries[0]!.bridgeEntryPath),
+			'utf8',
+		)
+		expect(bridge).toContain('picker.tsx')
+		expect(nextView!.entries[0]!.bridgeEntryPath).not.toBe(initialView!.entries[0]!.bridgeEntryPath)
+		expect(await readFile(originalBridgePath, 'utf8')).toBe(originalBridge)
+
+		await writeFile(definitionPath, 'export const unfinished = true')
+		lowering.invalidate(definitionPath)
+		await expect(lowering.plans()).rejects.toThrow('SemanticWorkbench is missing')
+		await rm(definitionPath)
+		lowering.invalidate(definitionPath)
+		await expect(lowering.plans()).rejects.toThrow('cannot read imported module')
+		await writeFile(definitionPath, content)
+		lowering.invalidate(definitionPath)
+		await expect(lowering.plans()).resolves.toHaveLength(0)
+		await expect(lowering.contentCompilations()).resolves.toHaveLength(1)
+
+		// Removing an owner withdraws the entire desired tuple even though imported UI still exists.
+		const pluginPath = resolve(fixture.path, 'src/plugin.ts')
+		await rm(pluginPath)
+		lowering.remove(pluginPath)
+		await expect(lowering.contentCompilations()).resolves.toEqual([])
+	})
+
+	it.each(['replace', 'invalidate', 'remove', 'reset'] as const)(
+		'does not let an in-flight collection write back after %s',
+		async (operation) => {
+			await using fixture = await createFixture({
+				...fixtureFiles(),
+				'src/guide.md': '# Guide\n',
+			})
+			const lowering = createWorkbenchSemanticLowering(fixture.path)
+			const id = resolve(fixture.path, 'src/plugin.ts')
+			const code = `import './delay.ts'
+import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.tab({ label: 'Guide' }) }) })
+class SemanticPlugin { init() { this.ctx.workbench.publish(SemanticWorkbench) } }`
+			const entered = Promise.withResolvers<void>()
+			const release = Promise.withResolvers<void>()
+			const pending = lowering.collect({
+				id,
+				code,
+				ast: parseStandaloneWithLang(code, id)!,
+				owners: [{ className: 'SemanticPlugin', definition: owner }],
+				resolve: async () => {
+					entered.resolve()
+					await release.promise
+					return undefined
+				},
+			})
+			await entered.promise
+			try {
+				if (operation === 'replace')
+					await collectModule(
+						lowering,
+						fixture.path,
+						'src/plugin.ts',
+						'export const ordinary = true',
+					)
+				else if (operation === 'reset') lowering.reset()
+				else lowering[operation](id)
+			} finally {
+				release.resolve()
+			}
+			await pending
+			await expect(lowering.contentCompilations()).resolves.toEqual([])
+		},
+	)
+
+	it('discards an obsolete compilation result and its failed imported reads', async () => {
+		await using fixture = await createFixture(fixtureFiles())
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(
+			lowering,
+			fixture.path,
+			'src/plugin.ts',
+			`import { SemanticWorkbench } from './missing.ts'
+class SemanticPlugin { init() { this.ctx.workbench.publish(SemanticWorkbench) } }`,
+		)
+		const obsolete = lowering.contentCompilations()
+		lowering.remove(resolve(fixture.path, 'src/plugin.ts'))
+		await expect(obsolete).resolves.toEqual([])
+		await expect(lowering.contentCompilations()).resolves.toEqual([])
+	})
+
+	it('does not replace successful module facts when collection fails validation', async () => {
+		await using fixture = await createFixture({ ...fixtureFiles(), 'src/guide.md': '# Guide\n' })
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		const code = `import { workbench } from '@pluxel/runtime/workbench'
+export const SemanticWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.tab({ label: 'Guide' }) }) })
+class SemanticPlugin { init() { this.ctx.workbench.publish(SemanticWorkbench) } }`
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+		const [before] = await lowering.contentCompilations()
+		await expect(
+			collectModule(
+				lowering,
+				fixture.path,
+				'src/plugin.ts',
+				code.replace('init() {', 'init() { if (true)'),
+			),
+		).rejects.toThrow('unconditional')
+		lowering.invalidate()
+		const [after] = await lowering.contentCompilations()
+		expect(after?.digest).toBe(before?.digest)
+	})
+
 	it('rejects conditional publication and inline definition topology', async () => {
 		await using fixture = await createFixture(fixtureFiles())
 		const lowering = createWorkbenchSemanticLowering(fixture.path)

@@ -150,7 +150,7 @@ const WORKBENCH_REACT_IMPORTS = new Set(['@pluxel/runtime/workbench/react'])
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'prototype', 'constructor', 'then'])
 const GENERATED_ABI_VERSION = 3
-const BUILD_REVISION_VERSION = 2
+const BUILD_REVISION_VERSION = 3
 const FIXED_SHARED_PACKAGES = new Set(
 	WORKBENCH_FEDERATION_SHARED_MODULES.map(packageNameFromSpecifier),
 )
@@ -226,7 +226,18 @@ type WorkbenchSemanticCompilationSnapshot = Readonly<{
 
 export type WorkbenchSemanticLowering = Readonly<{
 	reset(): void
-	invalidate(): void
+	invalidate(id?: string): void
+	remove(id: string): void
+	beginUpdate(id: string): Readonly<{
+		collect(input: WorkbenchSemanticModuleInput): Promise<boolean>
+		remove(): boolean
+	}>
+	/** Isolated candidate facts; the caller selects conflict-free modules when committing. */
+	fork(): Readonly<{
+		lowering: WorkbenchSemanticLowering
+		changedModules(): readonly string[]
+		commit(moduleIds: Iterable<string>): void
+	}>
 	collect(input: WorkbenchSemanticModuleInput): Promise<void>
 	plans(): Promise<readonly WorkbenchFederationProducerPlan[]>
 	compilations(): Promise<readonly WorkbenchSemanticProducerCompilation[]>
@@ -239,27 +250,49 @@ export type WorkbenchSemanticLowering = Readonly<{
  * evaluated, imported, or executed by the toolchain.
  */
 export function createWorkbenchSemanticLowering(root: string): WorkbenchSemanticLowering {
-	const sourceRoot = resolve(root)
-	const modules = new Map<string, ModuleFacts>()
-	const publications = new Map<string, PublishFact>()
-	const loadingModules = new Map<string, Promise<ModuleFacts>>()
+	return createWorkbenchModuleStore(resolve(root), new Map())
+}
+
+type CollectedWorkbenchModule = Readonly<{
+	facts?: ModuleFacts
+	publications: ReadonlyMap<string, PublishFact>
+}>
+
+function createWorkbenchModuleStore(
+	sourceRoot: string,
+	collected: Map<string, CollectedWorkbenchModule>,
+): WorkbenchSemanticLowering {
+	const collecting = new Map<string, symbol>()
+	const dirtyModules = new Set<string>()
 	let finalized: Promise<WorkbenchSemanticCompilationSnapshot> | undefined
-
+	let revision = 0
+	const invalidate = (moduleId?: string) => {
+		revision++
+		finalized = undefined
+		if (moduleId === undefined) return
+		const id = stripQuery(resolve(moduleId))
+		collecting.delete(id)
+		dirtyModules.add(id)
+	}
+	const remove = (moduleId: string) => {
+		const id = stripQuery(resolve(moduleId))
+		collecting.delete(id)
+		dirtyModules.delete(id)
+		collected.delete(id)
+		invalidate()
+	}
 	const reset = () => {
-		modules.clear()
-		publications.clear()
-		loadingModules.clear()
-		finalized = undefined
-	}
-	const invalidate = () => {
-		finalized = undefined
+		collected.clear()
+		collecting.clear()
+		dirtyModules.clear()
+		invalidate()
 	}
 
-	const collect = async (input: WorkbenchSemanticModuleInput): Promise<void> => {
-		finalized = undefined
+	const collect = async (input: WorkbenchSemanticModuleInput, token: symbol): Promise<boolean> => {
 		const id = stripQuery(resolve(input.id))
+		if (collecting.get(id) !== token) return false
 		const facts = await moduleFacts(id, input.code, input.ast, input.resolve)
-		modules.set(id, facts)
+		if (collecting.get(id) !== token) return false
 		const owners = new Map(input.owners.map((owner) => [owner.className, owner] as const))
 		const nextPublications = new Map<string, PublishFact>()
 
@@ -306,36 +339,134 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 			})
 		}
 
-		// Vite may concurrently transform one module for prefetch and evaluation. Treat collection as
-		// an atomic module snapshot so repeated transforms are idempotent and HMR can remove a
-		// publication, while still rejecting two distinct modules that claim the same owner.
-		for (const [key, publication] of nextPublications) {
-			const current = publications.get(key)
-			if (current && current.moduleId !== id) {
-				throw semanticError(
-					id,
-					`${publication.owner.className} has duplicate Workbench publication ownership`,
-				)
+		// Commit the module and its ownership together, only after collection fully succeeds.
+		for (const [moduleId, module] of collected) {
+			if (moduleId === id) continue
+			for (const [key, publication] of nextPublications) {
+				if (module.publications.has(key)) {
+					throw semanticError(
+						id,
+						`${publication.owner.className} has duplicate Workbench publication ownership`,
+					)
+				}
 			}
 		}
-		for (const [key, publication] of publications) {
-			if (publication.moduleId === id) publications.delete(key)
-		}
-		for (const [key, publication] of nextPublications) publications.set(key, publication)
+		collected.set(id, { facts, publications: nextPublications })
+		collecting.delete(id)
+		dirtyModules.delete(id)
+		invalidate()
+		return true
 	}
 
-	const compilations = (): Promise<readonly WorkbenchSemanticProducerCompilation[]> => {
-		finalized ??= finalizePlans()
-		return finalized.then((snapshot) => snapshot.producers)
+	const beginUpdate = (moduleId: string): ReturnType<WorkbenchSemanticLowering['beginUpdate']> => {
+		const id = stripQuery(resolve(moduleId))
+		const token = Symbol()
+		collecting.set(id, token)
+		return Object.freeze({
+			collect: (input: WorkbenchSemanticModuleInput) => collect(input, token),
+			remove: () => {
+				if (collecting.get(id) !== token) return false
+				remove(id)
+				return true
+			},
+		})
 	}
-	const plans = async (): Promise<readonly WorkbenchFederationProducerPlan[]> => {
-		const currentCompilations = await compilations()
-		return Object.freeze(currentCompilations.map((compilation) => compilation.plan))
+
+	const snapshot = async (): Promise<WorkbenchSemanticCompilationSnapshot> => {
+		const currentRevision = revision
+		if (!finalized) {
+			const modules = currentModules()
+			finalized = compileWorkbenchSnapshot(sourceRoot, modules).then((result) => {
+				if (revision === currentRevision) {
+					// Keep successful imported facts with their owning generation, so rollback never
+					// reconstructs the retained definition from rejected files on disk.
+					for (const [id, facts] of result.modules) {
+						const previous = collected.get(id)
+						if (previous?.facts !== facts)
+							collected.set(id, { facts, publications: modules.get(id)?.publications ?? new Map() })
+					}
+					dirtyModules.clear()
+				}
+				return result
+			})
+		}
+		const pending = finalized
+		try {
+			const result = await pending
+			return currentRevision === revision ? result : snapshot()
+		} catch (error) {
+			if (currentRevision !== revision) return snapshot()
+			if (finalized === pending) finalized = undefined
+			throw error
+		}
 	}
-	const contentCompilations = (): Promise<readonly WorkbenchSemanticContentCompilation[]> => {
-		finalized ??= finalizePlans()
-		return finalized.then((snapshot) => snapshot.content)
+	const currentModules = (): Map<string, CollectedWorkbenchModule> => {
+		const modules = new Map(collected)
+		for (const id of dirtyModules) {
+			const previous = modules.get(id)
+			if (previous) modules.set(id, { publications: previous.publications })
+		}
+		return modules
 	}
+	return Object.freeze({
+		reset,
+		invalidate,
+		remove,
+		beginUpdate,
+		collect: async (input: WorkbenchSemanticModuleInput) => {
+			await beginUpdate(input.id).collect(input)
+		},
+		plans: async () => {
+			const result = await snapshot()
+			return Object.freeze(result.producers.map(({ plan }) => plan))
+		},
+		compilations: async () => {
+			const result = await snapshot()
+			return result.producers
+		},
+		contentCompilations: async () => {
+			const result = await snapshot()
+			return result.content
+		},
+		fork: () => {
+			const baseline = new Map(collected)
+			const candidate = currentModules()
+			// The route now owns these invalidations. Its candidate may refresh them; the
+			// ambient view retains accepted facts until conflict-free candidate modules commit.
+			dirtyModules.clear()
+			invalidate()
+			const lowering = createWorkbenchModuleStore(sourceRoot, candidate)
+			return Object.freeze({
+				lowering,
+				changedModules: () =>
+					[...new Set([...baseline.keys(), ...candidate.keys()])].filter(
+						(id) => baseline.get(id) !== candidate.get(id),
+					),
+				commit: (moduleIds: Iterable<string>) => {
+					for (const moduleId of moduleIds) {
+						const id = stripQuery(resolve(moduleId))
+						remove(id)
+						const module = candidate.get(id)
+						if (module) collected.set(id, module)
+					}
+				},
+			})
+		},
+	})
+}
+
+async function compileWorkbenchSnapshot(
+	sourceRoot: string,
+	collected: ReadonlyMap<string, CollectedWorkbenchModule>,
+): Promise<WorkbenchSemanticCompilationSnapshot & { modules: ReadonlyMap<string, ModuleFacts> }> {
+	const modules = new Map<string, ModuleFacts>()
+	const publications = new Map<string, PublishFact>()
+	for (const [id, module] of collected) {
+		if (module.facts) modules.set(id, module.facts)
+		for (const [key, publication] of module.publications) publications.set(key, publication)
+	}
+	// In-flight reads and failures belong only to this snapshot; only successful facts may commit.
+	const loadingModules = new Map<string, Promise<ModuleFacts>>()
 
 	const finalizePlans = async (): Promise<WorkbenchSemanticCompilationSnapshot> => {
 		const producers: WorkbenchSemanticProducerCompilation[] = []
@@ -392,29 +523,33 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 			if (localEntries.length === 0) continue
 
 			const producer = workbenchFederationProducerName(publication.owner.definition)
-			const generatedEntries = await Promise.all(
-				localEntries.map(async ([key, descriptor]) => {
-					const identity: WorkbenchFederationDescriptorIdentity = Object.freeze({
-						kind: descriptor.kind,
-						owner: publication.owner.definition,
-						key,
-					})
-					const bridgeEntryPath = await writeBridgeEntry({
-						root: buildRoot,
-						producer,
-						identity,
-						definition,
-						renderer: descriptor.renderer,
-					})
-					return { descriptor: identity, bridgeEntryPath, renderer: descriptor.renderer }
+			const entries = localEntries.map(([key, descriptor]) => ({
+				descriptor: Object.freeze({
+					kind: descriptor.kind,
+					owner: publication.owner.definition,
+					key,
 				}),
-			)
+				renderer: descriptor.renderer,
+			}))
 			const buildRevision = await buildRevisionFor(
 				buildRoot,
 				sourceRoot,
 				publication.owner.definition,
 				definition,
-				generatedEntries,
+				entries,
+			)
+			const generatedEntries = await Promise.all(
+				entries.map(async (entry) => ({
+					descriptor: entry.descriptor,
+					bridgeEntryPath: await writeBridgeEntry({
+						root: buildRoot,
+						producer,
+						buildRevision,
+						identity: entry.descriptor,
+						definition,
+						renderer: entry.renderer,
+					}),
+				})),
 			)
 			const plan = createWorkbenchFederationProducerPlan({
 				definition: publication.owner.definition,
@@ -434,8 +569,8 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 
 	const getModule = async (id: string): Promise<ModuleFacts> => {
 		const canonicalId = stripQuery(resolve(id))
-		const collected = modules.get(canonicalId)
-		if (collected) return collected
+		const existing = modules.get(canonicalId)
+		if (existing) return existing
 		let pending = loadingModules.get(canonicalId)
 		if (!pending) {
 			pending = (async () => {
@@ -1096,7 +1231,7 @@ export function createWorkbenchSemanticLowering(root: string): WorkbenchSemantic
 		return evaluateExpression(callable.moduleId, returned, childEnvironment, stack)
 	}
 
-	return Object.freeze({ reset, invalidate, collect, plans, compilations, contentCompilations })
+	return { ...(await finalizePlans()), modules }
 }
 
 function resolveProducerBuildRoot(sourceRoot: string, publicationModuleId: string): string {
@@ -1264,21 +1399,18 @@ function exportedName(module: ModuleFacts, localName: string): string | undefine
 async function writeBridgeEntry(input: {
 	root: string
 	producer: string
+	buildRevision: string
 	identity: WorkbenchFederationDescriptorIdentity
 	definition: Definition
 	renderer: Renderer
 }): Promise<string> {
-	const entryRevision = createHash('sha256')
-		.update(`workbench-generated-entry:${GENERATED_ABI_VERSION}\n`)
-		.update(`${JSON.stringify(input.identity)}\n`)
-		.update(`definition-export:${input.definition.exportName}\n`)
-		.digest('hex')
-		.slice(0, 16)
+	// An accepted plan must keep pointing to its own generated files while a newer
+	// candidate compiles or builds in the background.
 	const generatedDir = resolve(
 		input.root,
 		'.pluxel/workbench-generated',
 		input.producer,
-		entryRevision,
+		input.buildRevision,
 	)
 	const bridgePath = resolve(generatedDir, `${input.identity.key}.tsx`)
 	await mkdir(generatedDir, { recursive: true })
@@ -1736,7 +1868,6 @@ async function buildRevisionFor(
 	definition: Definition,
 	entries: readonly Readonly<{
 		descriptor: WorkbenchFederationDescriptorIdentity
-		bridgeEntryPath: string
 		renderer: Renderer
 	}>[],
 ): Promise<string> {
@@ -1749,7 +1880,9 @@ async function buildRevisionFor(
 		`definition:${relative(root, definition.binding.moduleId)}#${definition.exportName}\n`,
 	)
 	for (const entry of entries) {
-		hash.update(`entry:${JSON.stringify(entry.descriptor)}:${entry.bridgeEntryPath}\n`)
+		hash.update(
+			`entry:${JSON.stringify(entry.descriptor)}:${relative(root, entry.renderer.entryPath)}\n`,
+		)
 	}
 	const roots = [
 		...new Set([definition.binding.moduleId, ...entries.map((entry) => entry.renderer.entryPath)]),
