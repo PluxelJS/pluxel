@@ -1,11 +1,13 @@
+import { getWorkbenchDirectoryHref } from '../../workbench/route-directory'
+import { WorkbenchRouteConflicts } from './shell/WorkbenchRouteConflicts'
 import { useMediaQuery } from '@mantine/hooks'
 import { formatPluginNodeRoute } from '@pluxel/core'
 import { HotkeysProvider } from '@tanstack/react-hotkeys'
 import { useStore } from '@tanstack/react-store'
 import { useNavigate } from '@tanstack/react-router'
 import { startTransition, useCallback, useEffect, useMemo, useRef } from 'react'
-import { buildWorkbenchHref, parsePluginDetailHref } from '../../workbench/paths'
-import { useWorkbenchNavigationRoutes } from '../../workbench/runtime'
+import { parsePluginDetailHref } from '../../workbench/paths'
+import { useWorkbenchNavigationRoutes, useWorkbenchRouteDirectory } from '../../workbench/runtime'
 import { PLUGIN_SEARCH_EVENT } from '../constants'
 import { baseNavItems, buildWorkbenchNavItems, groupNavItems } from '../navigation/navConfig'
 import { PluginWorkbenchLayoutProvider } from '../plugins/detail/workbench/context'
@@ -67,6 +69,7 @@ export function WorkbenchShell() {
 	const navigate = useNavigate()
 	const pluginLayoutGroupRef = useRef<SplitViewHandle | null>(null)
 	const navigationRoutes = useWorkbenchNavigationRoutes()
+	const directory = useWorkbenchRouteDirectory()
 	const currentLocation = useMemo(() => resolveWorkbenchLocation(pathname), [pathname])
 	const pluginRoute = resolvePluginRouteFromPath(pathname)
 	const isPluginsSection = isPluginWorkbenchLocation(pathname)
@@ -102,13 +105,15 @@ export function WorkbenchShell() {
 				return {
 					id: entry.descriptor.key,
 					label: route?.navigation?.label ?? route?.title,
-					href: route ? buildWorkbenchHref(entry.target.node, route.path, route.frame) : undefined,
+					href: route
+						? getWorkbenchDirectoryHref(directory, entry.target.node, route.path, route.frame)
+						: undefined,
 					icon: route?.icon,
 					group: route?.navigation?.group,
 				}
 			}),
 		).filter((item) => typeof item.href === 'string' && item.href !== '#')
-	}, [navigationRoutes])
+	}, [directory, navigationRoutes])
 
 	const activityItems = useMemo(
 		() => groupNavItems([...baseNavItems, ...workbenchNavItems]),
@@ -349,6 +354,7 @@ export function WorkbenchShell() {
 									</div>
 
 									<div className="plx-workbench__topbarActions">
+										<WorkbenchRouteConflicts />
 										<WorkbenchUpdateStatus />
 										{editorGroups.length > 1 ? (
 											<button

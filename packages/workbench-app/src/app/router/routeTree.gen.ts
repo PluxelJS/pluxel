@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as StandaloneRouteImport } from './routes/_standalone'
 import { Route as WorkbenchRouteImport } from './routes/_workbench'
 import { Route as WorkbenchIndexRouteImport } from './routes/_workbench.index'
+import { Route as WorkbenchSplatRouteImport } from './routes/_workbench.$'
 import { Route as WorkbenchLogsRouteImport } from './routes/_workbench.logs'
 import { Route as WorkbenchPluginGraphRouteImport } from './routes/_workbench.plugin-graph'
 import { Route as WorkbenchPluginsRouteImport } from './routes/_workbench.plugins'
@@ -36,6 +37,11 @@ const WorkbenchRoute = WorkbenchRouteImport.update({
 const WorkbenchIndexRoute = WorkbenchIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => WorkbenchRoute,
+} as any)
+const WorkbenchSplatRoute = WorkbenchSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
   getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchLogsRoute = WorkbenchLogsRouteImport.update({
@@ -106,6 +112,7 @@ const WorkbenchWorkbenchPluginNameSplatRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof WorkbenchIndexRoute
+  '/$': typeof WorkbenchSplatRoute
   '/logs': typeof WorkbenchLogsRoute
   '/plugin-graph': typeof WorkbenchPluginGraphRoute
   '/plugins': typeof WorkbenchPluginsRouteWithChildren
@@ -121,6 +128,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof WorkbenchIndexRoute
+  '/$': typeof WorkbenchSplatRoute
   '/logs': typeof WorkbenchLogsRoute
   '/plugin-graph': typeof WorkbenchPluginGraphRoute
   '/security': typeof WorkbenchSecurityRoute
@@ -136,6 +144,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_standalone': typeof StandaloneRouteWithChildren
   '/_workbench': typeof WorkbenchRouteWithChildren
+  '/_workbench/$': typeof WorkbenchSplatRoute
   '/_workbench/logs': typeof WorkbenchLogsRoute
   '/_workbench/plugin-graph': typeof WorkbenchPluginGraphRoute
   '/_workbench/plugins': typeof WorkbenchPluginsRouteWithChildren
@@ -154,6 +163,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$'
     | '/logs'
     | '/plugin-graph'
     | '/plugins'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/$'
     | '/logs'
     | '/plugin-graph'
     | '/security'
@@ -183,6 +194,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_standalone'
     | '/_workbench'
+    | '/_workbench/$'
     | '/_workbench/logs'
     | '/_workbench/plugin-graph'
     | '/_workbench/plugins'
@@ -224,6 +236,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof WorkbenchIndexRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/$': {
+      id: '/_workbench/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof WorkbenchSplatRouteImport
       parentRoute: typeof WorkbenchRoute
     }
     '/_workbench/logs': {
@@ -353,6 +372,7 @@ const WorkbenchPluginsRouteWithChildren =
   WorkbenchPluginsRoute._addFileChildren(WorkbenchPluginsRouteChildren)
 
 interface WorkbenchRouteChildren {
+  WorkbenchSplatRoute: typeof WorkbenchSplatRoute
   WorkbenchLogsRoute: typeof WorkbenchLogsRoute
   WorkbenchPluginGraphRoute: typeof WorkbenchPluginGraphRoute
   WorkbenchPluginsRoute: typeof WorkbenchPluginsRouteWithChildren
@@ -364,6 +384,7 @@ interface WorkbenchRouteChildren {
 }
 
 const WorkbenchRouteChildren: WorkbenchRouteChildren = {
+  WorkbenchSplatRoute: WorkbenchSplatRoute,
   WorkbenchLogsRoute: WorkbenchLogsRoute,
   WorkbenchPluginGraphRoute: WorkbenchPluginGraphRoute,
   WorkbenchPluginsRoute: WorkbenchPluginsRouteWithChildren,

@@ -685,7 +685,7 @@ export class WorkbenchRegistry {
 			for (const entry of publication.entries.values()) {
 				if (entry.kind === 'attachment') continue
 				const placement = entry.metadata.placement
-				if (placement.kind !== 'route' || !placement.navigation) continue
+				if (placement.kind !== 'route') continue
 				const layoutEntry = this.layoutEntry(publication, entry)
 				if (layoutEntry) entries.push(layoutEntry)
 			}

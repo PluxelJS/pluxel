@@ -50,6 +50,19 @@ Content 使用 Markdown 排版，用 slot 插入数据或操作。宿主统一�
 
 `workbench.tab()` 将页面放到插件详情；`workbench.route()` 提供独立地址。
 同一个编辑器需要打开不同账号时，声明一个 `/accounts/:accountId` 路由，由服务端匹配参数。
+
+浏览器地址直接使用声明路径，并跟随宿主的 `uiBasePath`：`workbench.route('/accounts', ...)`
+在 `uiBasePath: '/__pluxel/workbench'` 下对应 `/__pluxel/workbench/accounts`；默认根路径宿主则是 `/accounts`。不要求设置 `navigation`；参数化路径和
+`frame: 'standalone'` 页面遵循同一规则。其他插件可以链接这个短地址。
+
+当不同插件实例声明的路径重叠时，例如 `/accounts/:id` 和 `/accounts/new`，所有冲突入口都改用包含插件
+身份的完整地址，不按启动顺序抢占短地址。相同 definition 的不同 fork 也是不同实例。同一插件内仍保留静态
+路径优先于参数路径的规则。首页与 `plugins`、`plugin-graph`、`security`、`logs`、`workbench`、
+`workbench-standalone` 路径及其子路径由 Shell 保留，冲突入口同样使用完整地址。
+
+Workbench 显示冲突和各入口的完整地址；直接打开歧义短地址会显示入口选择页。完整地址始终有效，适合必须精确定位某个插件实例的链接。
+新增、移除或热更新 publication 后，Shell 根据当前完整路由目录重新计算短地址；冲突消失后恢复短地址。
+因此跨插件的固定短链接应使用有业务辨识度的路径，并在出现冲突时按界面提示选择精确入口。
 完整写法见 [页面位置和参数](./view.md#placement-与参数化-route)。
 
 ## Attachment

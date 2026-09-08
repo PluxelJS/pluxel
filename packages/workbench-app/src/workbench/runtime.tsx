@@ -54,7 +54,8 @@ import {
 	type WorkbenchResolvedRoute,
 	type WorkbenchTargetId,
 } from './client'
-import { buildWorkbenchHref, normalizeWorkbenchPath } from './paths'
+import { normalizeWorkbenchPath } from './paths'
+import { getWorkbenchDirectoryHref } from './route-directory'
 import { toWorkbenchError } from './errors'
 
 export type WorkbenchBrowserHost = Readonly<{
@@ -198,6 +199,10 @@ export function useWorkbenchTargetSnapshot(target: WorkbenchTargetId) {
 	)
 }
 
+export function useWorkbenchRouteDirectory() {
+	return useWorkbenchTargetSnapshot(null).directory
+}
+
 export function useWorkbenchNavigationRoutes(): readonly WorkbenchLayoutEntry[] {
 	return useWorkbenchTargetSnapshot(null).navigationRoutes
 }
@@ -335,6 +340,7 @@ function ReadyFederatedWorkbenchEntryView({
 }: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchReadyFederatedLayoutEntry }) {
 	const { session, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
 	const navigation = useOptionalWorkspaceNavigation()
+	const directory = useWorkbenchRouteDirectory()
 	const workspace = useWorkspaceController()
 	const activeTabId = useActiveWorkbenchTabId()
 	const viewState = useHostWorkbenchViewState(workbenchEntryKey(entry), frame)
@@ -364,19 +370,21 @@ function ReadyFederatedWorkbenchEntryView({
 				? {
 						navigate(inputPath: string) {
 							const path = resolveShellPath(inputPath, 'navigate')
-							navigation.navigate(buildWorkbenchHref(entry.target.node, path, 'shell'))
+							navigation.navigate(
+								getWorkbenchDirectoryHref(directory, entry.target.node, path, 'shell'),
+							)
 						},
 						openDocument(input: { path: string; title: string; meta?: string }) {
 							const path = resolveShellPath(input.path, 'openDocument')
 							navigation.openTab({
-								path: buildWorkbenchHref(entry.target.node, path, 'shell'),
+								path: getWorkbenchDirectoryHref(directory, entry.target.node, path, 'shell'),
 								title: input.title,
 								...(input.meta === undefined ? {} : { meta: input.meta }),
 							})
 						},
 					}
 				: undefined,
-		[entry.target.node, frame, navigation, resolveShellPath],
+		[directory, entry.target.node, frame, navigation, resolveShellPath],
 	)
 	const paneHeaderRegistration = useMemo<RemotePaneLayoutHeaderRegistration | undefined>(
 		() =>

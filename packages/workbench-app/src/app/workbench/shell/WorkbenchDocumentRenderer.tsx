@@ -4,7 +4,7 @@ import { LiveLog } from '../../log_viewer/LiveLog'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 import { PluginScreen } from '../../plugins/detail/PluginScreen'
 import { LazyPluginGraphScreen } from '../../plugin-graph/LazyPluginGraphScreen'
-import { NotFoundScreen } from '../../router/screens/NotFoundScreen'
+import { WorkbenchDeclaredRouteScreen } from '../../router/workbench/WorkbenchDeclaredRouteScreen'
 import { HomeScreen } from '../../router/screens/HomeScreen'
 import { WorkbenchRouteScreen } from '../../router/workbench/WorkbenchRouteScreen'
 import { SecurityAuditScreen } from '../../security/SecurityAuditScreen'
@@ -52,5 +52,5 @@ function WorkbenchDocumentContent({ pathname }: { pathname: string }) {
 		return <WorkbenchRouteScreen prefix={WORKBENCH_ROUTE_PREFIX} pathname={pathname} />
 	}
 
-	return <NotFoundScreen pathname={pathname} />
+	return <WorkbenchDeclaredRouteScreen pathname={pathname} />
 }

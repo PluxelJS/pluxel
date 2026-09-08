@@ -1,3 +1,4 @@
+import { createWorkbenchRouteDirectory, type WorkbenchRouteDirectory } from './route-directory'
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchLayout, WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
 import {
@@ -5,6 +6,8 @@ import {
 	workbenchRoutesOverlap,
 	type CompiledWorkbenchRoute,
 } from './routes'
+
+const EMPTY_DIRECTORY = createWorkbenchRouteDirectory([])
 
 export type WorkbenchTargetId = PluginNodeAddress | null
 export type WorkbenchTargetState = 'loading' | 'ready' | 'error'
@@ -23,6 +26,7 @@ export type WorkbenchResolvedRoute = Readonly<{
 
 export type WorkbenchTargetSnapshot = Readonly<{
 	target: WorkbenchTargetId
+	directory: WorkbenchRouteDirectory
 	state: WorkbenchTargetState
 	layout: WorkbenchLayout | null
 	error: Error | null
@@ -34,6 +38,7 @@ export type WorkbenchTargetSnapshot = Readonly<{
 export function createInitialWorkbenchSnapshot(target: WorkbenchTargetId): WorkbenchTargetSnapshot {
 	return Object.freeze({
 		target,
+		directory: EMPTY_DIRECTORY,
 		state: 'loading',
 		layout: null,
 		error: null,
@@ -84,6 +89,7 @@ export function compileWorkbenchSnapshot(
 	)
 	return Object.freeze({
 		target,
+		directory: target === null ? createWorkbenchRouteDirectory(layout.entries) : EMPTY_DIRECTORY,
 		state: 'ready',
 		layout,
 		error: null,

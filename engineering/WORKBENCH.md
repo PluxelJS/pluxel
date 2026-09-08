@@ -438,6 +438,12 @@ openEntry({ layoutRevision, target, descriptor, location? })
 Layout 是 capability-free 的 immutable snapshot，只包含目标、placement、declaration/openable identity、owner revisions，
 以及 discriminated federated View 或 Content reference。它不携带 Plugin API root、Content plan 或可遍历的服务字典。
 
+`layout({ target: null })` 包含所有已提交 route placement（含无 navigation 的参数化 route 与 standalone 页面），
+不包含 tab。它是 Shell 路由目录的唯一事实来源；navigation 只是该目录的显示筛选，不能决定可寻址性。
+Shell 在这个完整 snapshot 上纯计算短路径与冲突：跨 node 路径重叠时所有参与者使用 canonical node URL；
+保留 Shell 路径同样回退，不能按 publication 顺序分配赢家。同 node 保持静态 route 优先。完整 node URL 始终
+有效，短路径只是当前 publication inventory 的无歧义别名，不能代替 `openEntry()` 的 node/descriptor admission。
+
 打开流程固定为：
 
 1. Shell 从当前 layout 选择 entry；

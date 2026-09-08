@@ -35,7 +35,14 @@ vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
 vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 	RouteErrorScreen: () => <p role="alert">页面错误</p>,
 }))
-vi.mock('../src/workbench/runtime', () => ({ useWorkbenchNavigationRoutes: () => [] }))
+vi.mock('../src/workbench/runtime', async () => {
+	const { createWorkbenchRouteDirectory } = await import('../src/workbench/route-directory')
+	const directory = createWorkbenchRouteDirectory([])
+	return {
+		useWorkbenchNavigationRoutes: () => [],
+		useWorkbenchRouteDirectory: () => directory,
+	}
+})
 vi.mock('../src/app/workbench/shell/WorkbenchShellViews', () => ({
 	ActivityRail: () => (
 		<nav>

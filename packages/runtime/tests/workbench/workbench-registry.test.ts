@@ -67,7 +67,7 @@ const SharedRouteWorkbenchA = workbench.define({
 const SharedRouteWorkbenchB = workbench.define({
 	settings: workbench.view<SettingsApi>({
 		renderer,
-		placement: workbench.route('/settings', { title: 'Settings B' }),
+		placement: workbench.route('/settings', { title: 'Settings B', frame: 'standalone' }),
 	}),
 })
 
@@ -916,6 +916,8 @@ describe('Workbench vNext publication', () => {
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(RoutedPlugin)
 			const layout = session.target.layout({ target })
+			// Global routing includes parameterized routes that do not enter navigation.
+			expect(session.target.layout({ target: null }).entries).toEqual(layout.entries)
 			const result = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
@@ -951,6 +953,9 @@ describe('Workbench vNext publication', () => {
 			const layoutB = session.target.layout({ target: pluginNodeAddressOf(SharedRoutePluginB) })
 			expect(layoutA.entries[0]?.placement).toMatchObject({ path: '/settings' })
 			expect(layoutB.entries[0]?.placement).toMatchObject({ path: '/settings' })
+			expect(session.target.layout({ target: null }).entries).toEqual(
+				expect.arrayContaining([...layoutA.entries, ...layoutB.entries]),
+			)
 			session.dispose()
 		} finally {
 			await host.dispose()
