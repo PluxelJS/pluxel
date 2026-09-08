@@ -4,7 +4,8 @@ This Contributor License Agreement applies to any contribution submitted to
 Pluxel, including code, documentation, tests, examples, configuration, and other
 materials.
 
-By submitting a contribution, you agree to the following terms.
+By explicitly accepting this agreement as described below, you agree to the
+following terms for your contribution.
 
 ## Copyright
 
@@ -52,9 +53,12 @@ copyright in your contribution.
 
 ## Electronic Acceptance and Records
 
-Submitting the documented CLA approval command from the code-hosting account that
-opened a contribution constitutes your electronic acceptance of this agreement.
-You represent that you control that account and have authority to accept these
-terms. The project may retain the account, host, acceptance timestamp, repository,
-pull request, commit, approval URL, and hash of this agreement as evidence of that
-acceptance.
+Checking the contribution agreement checkbox in a pull request description from
+the code-hosting account that submitted your contribution constitutes your
+electronic acceptance of this agreement for your contributions in that pull
+request. An explicit acceptance comment linking to this agreement from that
+account may also be used, including for additional contributors to the same
+pull request. You represent that you control that account and have authority to
+accept these terms. The pull request description, acceptance comments, and
+available edit history on the code-hosting platform serve as the acceptance
+record; no separate signature registry is maintained in this repository.

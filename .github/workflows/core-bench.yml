@@ -18,6 +18,7 @@ on:
       - 'scripts/core-bench-compare.sh'
       - 'scripts/core-bench-reference-bridge.mjs'
       - 'scripts/core-bench-node-runner.mjs'
+      - 'mise.toml'
       - 'pnpm-lock.yaml'
       - 'turbo.jsonc'
       - '.github/workflows/core-bench.yml'
@@ -37,6 +38,7 @@ on:
       - 'scripts/core-bench-compare.sh'
       - 'scripts/core-bench-reference-bridge.mjs'
       - 'scripts/core-bench-node-runner.mjs'
+      - 'mise.toml'
       - 'pnpm-lock.yaml'
       - 'turbo.jsonc'
       - '.github/workflows/core-bench.yml'
@@ -76,7 +78,7 @@ jobs:
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Checkout head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
@@ -86,7 +88,7 @@ jobs:
         run: git fetch --no-tags origin "$BASE_BRANCH"
 
       - name: Install toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        uses: jdx/mise-action@v4
         with:
           cache: true
           install: true
@@ -97,7 +99,7 @@ jobs:
 
       - name: Restore dependency cache
         id: pnpm-store-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
@@ -119,7 +121,7 @@ jobs:
 
       - name: Save dependency cache
         if: always() && steps.benchmark.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/save@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
@@ -128,7 +130,7 @@ jobs:
 
       - name: Upload benchmark artifacts
         if: always() && steps.benchmark.outcome != 'skipped'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         with:
           name: core-bench-run-${{ github.run_id }}
           path: |
@@ -154,7 +156,7 @@ jobs:
 
       - name: Report benchmark results
         if: always() && steps.benchmark.outcome != 'skipped'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@v9
         env:
           BASE_REF: ${{ env.BASE_REF }}
           HEAD_REF: ${{ env.HEAD_REF }}

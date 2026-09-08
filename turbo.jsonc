@@ -3,6 +3,8 @@
 	// Build/test packages are independent once their declared artifact prerequisites are ready.
 	// Use every logical processor; callers can still lower this with `--concurrency` when needed.
 	"concurrency": "100%",
+	// Toolchain changes must revalidate tasks instead of reusing results from older tools.
+	"globalDependencies": ["mise.toml"],
 	// Keep a useful local history without allowing build artifacts to grow without bounds.
 	"cacheMaxAge": "30d",
 	"cacheMaxSize": "5GB",

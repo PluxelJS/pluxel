@@ -88,7 +88,7 @@ npm trusted publisher 绑定 `PluxelJS/pluxel` 和 `.github/workflows/release.ym
 Release workflow 按 repository visibility 开关 provenance。
 
 首次设置需要 npm package write 权限、账号已启用 2FA，以及交互式 npm 登录。使用 mise 安装的工具链：
-当前 Node 24.18.0 自带 npm 11.16.0，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧的全局 npm，
+当前 Node 24.20.0 自带 npm 11.19.0，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧的全局 npm，
 也不要使用 bypass-2FA granular token 配置信任。
 
 首次 1.0.0 使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包；在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。

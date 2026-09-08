@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -77,7 +77,7 @@ jobs:
 
       - name: Install toolchain
         if: steps.release-commit.outputs.current == 'true'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        uses: jdx/mise-action@v4
         with:
           cache: true
           install: true
@@ -89,7 +89,7 @@ jobs:
 
       - name: Restore pnpm store
         if: steps.release-commit.outputs.current == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
@@ -100,7 +100,7 @@ jobs:
 
       - name: Restore verified build cache
         if: steps.release-commit.outputs.current == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@v6
         with:
           path: .turbo/cache
           key: ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-release
