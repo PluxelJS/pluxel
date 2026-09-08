@@ -5,7 +5,6 @@ const reactDevtoolsCoreStub = fileURLToPath(
 	new URL('./src/vendor/react-devtools-core.ts', import.meta.url),
 )
 
-const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
 const inlineRuntimeDeps = [
 	'@alcalzone/ansi-tokenize',
 	'ansi-escapes',
@@ -76,7 +75,7 @@ export default defineConfig({
 		'react-devtools-core': reactDevtoolsCoreStub,
 	},
 	dts: {
-		sourcemap: !fastBuild,
+		sourcemap: true,
 		eager: true,
 	},
 	env: {
@@ -88,7 +87,7 @@ export default defineConfig({
 	plugins: [],
 	format: ['esm'],
 	clean: true,
-	sourcemap: !fastBuild,
+	sourcemap: true,
 	minify: true,
 	treeshake: true,
 	inputOptions: {

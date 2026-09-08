@@ -6,6 +6,9 @@ const sourceRoots = ['packages', 'plugins', 'projects']
 const ignoredDirectories = new Set(['.git', '.pluxel', '.vercel', 'dist', 'node_modules', 'public'])
 const declarationPattern = /\.d\.[cm]?ts$/
 const declarationMapPattern = /\.d\.[cm]?ts\.map$/
+// Handwritten ambient declarations and module augmentations are source inputs.
+// Register them explicitly; a tracked file or a declaration-looking name alone
+// must never exempt generated compiler output from this check.
 const allowedDeclarations = new Set([
 	'packages/runtime-dynamic/src/third-party.d.ts',
 	'packages/test/src/vendor-types.d.ts',
@@ -27,13 +30,14 @@ const unexpected = declarations
 
 if (unexpected.length > 0) {
 	process.stderr.write(
-		`Unexpected generated declarations in source directories:\n- ${unexpected.join('\n- ')}\n` +
-			'Declaration builds must keep intermediate output in dist or a disposable cache.\n',
+		`Unexpected declarations in source directories:\n- ${unexpected.join('\n- ')}\n` +
+			'Declaration builds must keep intermediate output in dist or a disposable cache.\n' +
+			'Load external environment types through tsconfig types; register handwritten ambient declarations explicitly.\n',
 	)
 	process.exitCode = 1
 } else {
 	process.stdout.write(
-		`Source declaration check passed (${allowedDeclarations.size} explicit declarations)\n`,
+		`Source declaration check passed (${declarations.length} explicit declarations found)\n`,
 	)
 }
 

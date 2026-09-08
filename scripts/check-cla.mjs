@@ -12,10 +12,8 @@ const signaturesFile = resolve(root, options.signatures ?? '.cla/signatures.json
 const claFile = resolve(root, options.cla ?? 'CLA.md')
 const approveCommand = '/approve-cla'
 
-const claSha256 = await hashFile(claFile)
-
 if (options['print-hash']) {
-	console.log(claSha256)
+	console.log(await hashFile(claFile))
 	process.exit(0)
 }
 
@@ -23,14 +21,16 @@ switch (command) {
 	case 'check':
 		await checkSignature()
 		break
+	case 'github':
 	case 'approve':
-		await approveFromComment()
+		await checkGithubPullRequest()
 		break
 	default:
 		fail(`Unknown CLA command: ${command}`)
 }
 
 async function checkSignature() {
+	const claSha256 = await hashFile(claFile)
 	const context = await readCheckContext()
 	const user = normalizeUser(options.user ?? process.env.CLA_USER ?? context.user)
 	const host = normalizeHost(
@@ -54,7 +54,6 @@ async function checkSignature() {
 	)
 
 	if (!validSignature) {
-		await requestApproval(context, { host, user })
 		fail(
 			`${host}/${user} has not approved the current CLA revision. ` +
 				`Reply ${approveCommand} to the CLA comment on this pull request.`,
@@ -66,123 +65,142 @@ async function checkSignature() {
 	)
 }
 
-async function approveFromComment() {
+// GitHub owns the contribution identity and comment evidence. The protected base
+// owns both the policy bytes and reusable signature registry; no PR files are read.
+async function checkGithubPullRequest() {
 	const event = await readRequiredEvent()
-	if (!event.issue?.pull_request) {
-		console.log('CLA approval skipped: comment is not on a pull request.')
+	const number = event.pull_request?.number ?? (event.issue?.pull_request && event.issue.number)
+	if (!Number.isSafeInteger(number)) fail('CLA check requires a pull request event.')
+	const pullRequest = await githubJson(`repos/${repository()}/pulls/${number}`)
+	if (pullRequest.state !== 'open') {
+		console.log('CLA check skipped: pull request is closed.')
 		return
 	}
-	if (normalizeCommand(event.comment?.body) !== approveCommand) {
-		console.log(`CLA approval skipped: comment is not ${approveCommand}.`)
-		return
-	}
-
-	const pullRequest = await githubJson(`repos/${repository()}/pulls/${event.issue.number}`)
-	const commenter = normalizeUser(event.comment?.user?.login)
-	const author = normalizeUser(pullRequest.user?.login)
-	if (!commenter || commenter !== author) {
-		await createIssueComment(
-			event.issue.number,
-			`Only the pull request author can approve the CLA for this contribution.`,
-		)
-		fail('CLA approval rejected: comment author is not the pull request author.')
-	}
-
-	const host = normalizeHost(serverUrl())
-	const entry = {
-		host,
-		username: pullRequest.user.login,
-		acceptedAt: new Date().toISOString(),
-		claSha256,
-		repository: repository(),
-		pullRequest: event.issue.number,
-		headSha: pullRequest.head.sha,
-		evidenceUrl: event.comment.html_url,
-	}
-	const update = await updateSignatureFile(pullRequest, entry)
-
-	await createIssueComment(
-		event.issue.number,
-		update.changed
-			? `Recorded CLA approval for @${pullRequest.user.login} in \`.cla/signatures.json\`.`
-			: `CLA approval for @${pullRequest.user.login} is already recorded in \`.cla/signatures.json\`.`,
-	)
-	console.log(`CLA approval recorded for ${entry.host}/${entry.username}.`)
-}
-
-async function updateSignatureFile(pullRequest, entry) {
-	const path = '.cla/signatures.json'
-	const ownerRepo = pullRequest.head.repo.full_name
-	const branch = pullRequest.head.ref
-	const current = await readRemoteSignatureFile(ownerRepo, path, branch)
-	const registry = current?.registry ?? { version: 1, signatures: [] }
-	const validationErrors = validateRegistry(registry)
-	if (validationErrors.length > 0) {
-		fail(
-			`Invalid CLA signature registry on pull request branch:\n- ${validationErrors.join('\n- ')}`,
-		)
-	}
-
-	const exists = registry.signatures.some(
-		(signature) =>
-			normalizeHost(signature.host ?? signature.forge) === entry.host &&
-			normalizeUser(signature.username) === normalizeUser(entry.username) &&
-			signature.claSha256.toLowerCase() === entry.claSha256,
-	)
-	if (exists) return { changed: false }
-
-	registry.signatures.push(entry)
-	registry.signatures.sort((left, right) =>
-		[
-			normalizeHost(left.host ?? left.forge),
-			normalizeUser(left.username),
-			left.acceptedAt,
-			left.claSha256,
-		]
-			.join('\0')
-			.localeCompare(
-				[
-					normalizeHost(right.host ?? right.forge),
-					normalizeUser(right.username),
-					right.acceptedAt,
-					right.claSha256,
-				].join('\0'),
-			),
-	)
-
-	try {
-		await githubJson(`repos/${ownerRepo}/contents/${path}`, {
-			method: 'PUT',
+	const headSha = pullRequest.head.sha
+	const status = (state, description, targetUrl) =>
+		githubJson(`repos/${repository()}/statuses/${headSha}`, {
+			method: 'POST',
 			body: JSON.stringify({
-				branch,
-				message: `chore: record CLA approval for ${entry.username}`,
-				content: Buffer.from(`${JSON.stringify(registry, null, '\t')}\n`).toString('base64'),
-				...(current?.sha ? { sha: current.sha } : {}),
+				state,
+				context: 'CLA',
+				description,
+				target_url: targetUrl ?? `${serverUrl()}/${repository()}/pull/${number}`,
 			}),
 		})
-	} catch (error) {
-		await createIssueComment(
-			pullRequest.number,
-			`I could not update \`.cla/signatures.json\` automatically. A maintainer may need to record the CLA approval for @${entry.username}.`,
+
+	await status('pending', 'Checking the current CLA policy and acceptance evidence.')
+	try {
+		// Pin the policy and registry to the same protected base commit for this run.
+		const baseSha = pullRequest.base.sha
+		const [policy, registryBytes] = await Promise.all([
+			readProtectedFile('CLA.md', baseSha),
+			readProtectedFile('.cla/signatures.json', baseSha),
+		])
+		const hash = createHash('sha256').update(policy).digest('hex')
+		const registry = JSON.parse(registryBytes.toString('utf8'))
+		const errors = validateRegistry(registry)
+		if (errors.length > 0)
+			throw new Error(`Invalid protected CLA signature registry: ${errors.join('; ')}`)
+		const author = normalizeUser(pullRequest.user.login)
+		const host = normalizeHost(serverUrl())
+		const signature = registry.signatures.find(
+			(entry) =>
+				normalizeHost(entry.host ?? entry.forge) === host &&
+				normalizeUser(entry.username) === author &&
+				entry.claSha256.toLowerCase() === hash,
 		)
+		if (signature) {
+			await status('success', 'The author has accepted the current CLA.', signature.evidenceUrl)
+			console.log(`CLA accepted by ${host}/${author} (protected registry).`)
+			return
+		}
+
+		const comments = await readIssueComments(number)
+		const marker = `<!-- pluxel-cla:v2 sha256:${hash} -->`
+		const prompt = comments.find(
+			(comment) => isWorkflowComment(comment) && comment.body.includes(marker),
+		)
+		const approval =
+			prompt &&
+			comments.find(
+				(comment) =>
+					normalizeUser(comment.user?.login) === author &&
+					normalizeCommand(comment.body) === approveCommand &&
+					comment.id > prompt.id &&
+					Date.parse(comment.created_at) >= Date.parse(prompt.created_at),
+			)
+		if (approval) {
+			const receiptMarker = `<!-- pluxel-cla:acceptance sha256:${hash} comment:${approval.id} -->`
+			if (
+				!comments.some(
+					(comment) => isWorkflowComment(comment) && comment.body.includes(receiptMarker),
+				)
+			) {
+				const evidence = {
+					host,
+					username: pullRequest.user.login,
+					acceptedAt: approval.updated_at ?? approval.created_at,
+					claSha256: hash,
+					repository: repository(),
+					pullRequest: number,
+					headSha,
+					evidenceUrl: approval.html_url,
+				}
+				await createIssueComment(
+					number,
+					`${receiptMarker}\nCLA acceptance verified for @${author}. Acceptance evidence for this contribution follows.\n\n` +
+						'```json\n' +
+						JSON.stringify(evidence, null, 2) +
+						'\n```',
+				)
+			}
+			await status('success', 'The author has accepted the current CLA.', approval.html_url)
+			console.log(`CLA accepted by ${host}/${author}: ${approval.html_url}`)
+			return
+		}
+
+		if (!prompt) {
+			await createIssueComment(
+				number,
+				`${marker}\nThanks for contributing to Pluxel.\n\n` +
+					`@${author}, read [CLA.md](${serverUrl()}/${repository()}/blob/${baseSha}/CLA.md), then post a new comment:\n\n` +
+					`\`\`\`text\n${approveCommand}\n\`\`\`\n\n` +
+					`Your authenticated comment records acceptance of CLA revision \`${hash}\`. ` +
+					'The workflow updates the CLA status directly; it does not write to your branch.',
+			)
+		}
+		await status('failure', 'Awaiting the author’s /approve-cla comment after the CLA prompt.')
+		console.log(
+			`CLA not accepted: @${author} must post ${approveCommand} after the current CLA prompt. The CLA status is failing.`,
+		)
+	} catch (error) {
+		await status('error', 'CLA verification failed; inspect the workflow logs and rerun.')
 		throw error
 	}
-
-	return { changed: true }
 }
 
-async function readRemoteSignatureFile(ownerRepo, path, branch) {
-	try {
-		const response = await githubJson(
-			`repos/${ownerRepo}/contents/${path}?ref=${encodeURIComponent(branch)}`,
+function isWorkflowComment(comment) {
+	return comment.user?.type === 'Bot' && comment.user?.login === 'github-actions[bot]'
+}
+
+async function readProtectedFile(path, sha) {
+	const response = await githubJson(
+		`repos/${repository()}/contents/${path}?ref=${encodeURIComponent(sha)}`,
+	)
+	if (response.encoding !== 'base64' || typeof response.content !== 'string') {
+		throw new Error(`Protected CLA input is not a file: ${path}`)
+	}
+	return Buffer.from(response.content, 'base64')
+}
+
+async function readIssueComments(number) {
+	const comments = []
+	for (let page = 1; ; page += 1) {
+		const batch = await githubJson(
+			`repos/${repository()}/issues/${number}/comments?per_page=100&page=${page}`,
 		)
-		return {
-			sha: response.sha,
-			registry: JSON.parse(Buffer.from(response.content, 'base64').toString('utf8')),
-		}
-	} catch (error) {
-		if (error.status === 404) return undefined
-		throw error
+		comments.push(...batch)
+		if (batch.length < 100) return comments
 	}
 }
 
@@ -292,32 +310,6 @@ async function createIssueComment(issueNumber, body) {
 		method: 'POST',
 		body: JSON.stringify({ body }),
 	})
-}
-
-async function requestApproval(context, identity) {
-	if (!context.issueNumber || !process.env.GITHUB_TOKEN || !process.env.GITHUB_REPOSITORY) return
-
-	const marker = `<!-- pluxel-cla:v1 sha256:${claSha256} -->`
-	const comments = await githubJson(
-		`repos/${repository()}/issues/${context.issueNumber}/comments?per_page=100`,
-	)
-	if (comments.some((comment) => comment.body.includes(marker))) return
-
-	await createIssueComment(
-		context.issueNumber,
-		`${marker}
-Thanks for contributing to Pluxel.
-
-Before this pull request can be merged, @${identity.user} must read [CLA.md](./CLA.md) and comment:
-
-\`\`\`text
-${approveCommand}
-\`\`\`
-
-That comment will record this approval in \`.cla/signatures.json\` on the pull request branch.
-
-Current CLA revision: \`${claSha256}\``,
-	)
 }
 
 async function githubJson(path, init = {}) {

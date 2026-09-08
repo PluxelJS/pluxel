@@ -72,6 +72,16 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 内部依赖范围和 Tegami 发布集合。治理检查与 Tegami 从 `scripts/repository-packages.mjs` 读取同一份 inventory；
 `private`、目录类型和发布排除列表不再分别维护。该命令是 `pnpm verify` 的前置步骤。
 
+本地与 CI 统一执行 `scripts/verify.mjs`：governance、lint、format、Turbo typecheck/build/test，
+最后再次检查源码声明，避免构建过程生成未被前置检查发现的污染。CI 只传入 Turbo 的并发数、
+affected filter 和 summary 选项，不维护另一份验证步骤。产物配置不依赖未纳入 Turbo hash 的环境开关；
+CI 和 Release 使用同一套生产构建语义。
+两者只共享 `.turbo/cache` 任务产物；`.turbo/runs` 属于本次运行报告，不进入跨运行缓存。
+
+外部环境类型（例如 `vite/client`）由各 package 的 `tsconfig.compilerOptions.types` 加载。确有必要的
+本地手写 ambient 声明在 `scripts/check-source-declarations.mjs` 显式登记；生成声明和 declaration maps
+只能输出到 `dist` 或可清理缓存，不能混入源码目录。
+
 生成的独立 workspace 先通过 `pluxel workspace doctor` 校验框架共同拥有的 pnpm major、workspace authority 与
 已激活时的 machine-local source `.pnpmfile.cjs`，再由仓库自己的 governance script 校验产品目录和依赖方向。通用 CLI 不推断产品领域规则。
 

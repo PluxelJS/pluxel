@@ -24,7 +24,6 @@ env:
   CI: 'true'
   NODE_OPTIONS: '--max-old-space-size=4096'
   PNPM_CONFIG_PM_ON_FAIL: 'ignore'
-  PLUXEL_FAST_BUILD: 'true'
 
 jobs:
   verify:
@@ -74,26 +73,20 @@ jobs:
         id: turbo-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: .turbo
+          path: .turbo/cache
           # Cache entries are immutable. Give every attempt its own key so a failed run can save
           # partial Turbo results without preventing a rerun from publishing the completed cache.
-          key: ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-
-            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-
-            ${{ runner.os }}-turbo-v3-
+            ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-
+            ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-turbo-v4-
 
       - name: Install dependencies
         id: install
         run: pnpm install --frozen-lockfile
 
-      - name: Check repository invariants
-        run: pnpm run governance:check
-
-      - name: Lint and check formatting
-        run: pnpm run lint && pnpm run format:check
-
-      - name: Typecheck, build, and test
+      - name: Verify repository
         id: turbo-verify
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -104,9 +97,9 @@ jobs:
           # On the standard two-CPU runner, 50% serialized every package task. Vitest uses
           # one worker there by default, so two package tasks can share the runner.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pnpm exec turbo run typecheck build test --concurrency=2 --summarize "--filter=...[origin/${BASE_REF}]"
+            pnpm run verify --concurrency=2 --summarize "--filter=...[origin/${BASE_REF}]"
           else
-            pnpm exec turbo run typecheck build test --concurrency=2 --summarize
+            pnpm run verify --concurrency=2 --summarize
           fi
 
       - name: Upload task timings and cache results
@@ -123,7 +116,7 @@ jobs:
         if: always() && steps.turbo-cache.outcome == 'success' && steps.turbo-verify.outcome != 'skipped' && steps.turbo-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: .turbo
+          path: .turbo/cache
           key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
       - name: Save pnpm store

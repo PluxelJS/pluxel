@@ -1,6 +1,5 @@
 import { defineConfig } from 'tsdown'
 
-const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
 const inlineRuntimeDeps = ['@rolldown/pluginutils', 'fdir', 'pathe']
 
 export default defineConfig({
@@ -51,7 +50,7 @@ export default defineConfig({
 	},
 	copy: ['schemas'],
 	dts: {
-		sourcemap: !fastBuild,
+		sourcemap: true,
 		eager: true,
 	},
 	env: {
@@ -60,7 +59,7 @@ export default defineConfig({
 		NODE_ENV: 'production',
 	},
 	format: ['esm'],
-	sourcemap: !fastBuild,
+	sourcemap: true,
 	clean: true,
 	minify: true,
 	treeshake: true,

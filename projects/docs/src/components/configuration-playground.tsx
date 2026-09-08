@@ -493,12 +493,12 @@ export function ConfigurationPlayground() {
 										variant="default"
 										disabled={!dirty}
 										onClick={() => {
-											const preset = Object.entries(presets).find(
+											const presetId = Object.entries(presets).find(
 												([, preset]) => preset.code === lastRunCodeRef.current,
 											)?.[0]
 											setEditorCode(
 												lastRunCodeRef.current,
-												preset && isPresetId(preset) ? preset : 'custom',
+												presetId && isPresetId(presetId) ? presetId : 'custom',
 											)
 											setError(undefined)
 											setStatus('已撤销未运行的修改，表单保持不变。')

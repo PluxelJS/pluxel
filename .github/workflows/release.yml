@@ -102,11 +102,11 @@ jobs:
         if: steps.release-commit.outputs.current == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-release
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-release
           restore-keys: |
-            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-
-            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-
+            ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Install dependencies
         if: steps.release-commit.outputs.current == 'true'

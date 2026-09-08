@@ -5,7 +5,8 @@ Pluxel uses a repository-local CLA check instead of a hosted CLA application.
 The source of truth is:
 
 - `CLA.md`: the Contributor License Agreement text
-- `.cla/signatures.json`: code hosting account acceptance records
+- the protected base branch `.cla/signatures.json`: reusable account acceptance records
+- authenticated PR comments: acceptance evidence for the current contribution
 - `scripts/check-cla.mjs`: the portable checker used by CI
 
 ## Signing
@@ -16,17 +17,26 @@ Contributors accept the CLA by commenting on their pull request:
 /approve-cla
 ```
 
-CI records that approval in `.cla/signatures.json` on the pull request branch.
-Pluxel is currently hosted on GitHub, so current pull requests use
-`host: "github.com"`.
+Post the command after the workflow's CLA prompt. The prompt links to the exact
+protected policy revision and includes its SHA-256 hash. CI verifies that the
+comment belongs to the PR author, records an audit receipt on the PR, and updates
+the `CLA` commit status directly. Forks use the same flow; no branch write or new
+commit is required. Current GitHub records use `host: "github.com"`.
 
-Each record preserves the precise UTC acceptance time, repository, pull request,
+Each receipt preserves the precise UTC acceptance time, repository, pull request,
 accepted head commit, public approval comment URL, and CLA content hash. These
 fields bind an account-level approval to a concrete contribution without placing
 private legal identity data in the repository. Employment authorization or other
 non-public evidence belongs in access-controlled legal records.
 
-The `claSha256` value must match the current `CLA.md` content:
+An existing account acceptance in the protected registry can also satisfy the
+check. New comment-based approvals apply to that PR, including later commits;
+contributors sign again on their next PR unless a maintainer has preserved the
+verified acceptance in the protected registry. PR changes to that registry do
+not establish acceptance. The original author comment remains the evidence;
+editing it away or deleting it causes the check to require a new comment.
+
+The `claSha256` value must match the protected `CLA.md` content:
 
 ```sh
 pnpm cla:hash
@@ -43,17 +53,24 @@ for litigation.
 
 ## GitHub
 
-`.github/workflows/cla.yml` runs on pull requests and `/approve-cla` comments.
-The pull request check reads `.cla/signatures.json` from the pull request branch,
-then runs the protected base branch copy of `scripts/check-cla.mjs`.
+`.github/workflows/cla.yml` runs on pull requests and `/approve-cla` comments;
+comment edits and deletions also recheck the evidence. It checks out only the
+trusted base/default branch script, without credentials, and never checks out
+or executes PR head files. The script obtains the current PR through the GitHub
+API and reads both policy and registry at that PR's single pinned base SHA.
 
-This keeps the check from trusting a modified checker script in the pull request.
+Only a prompt authored by GitHub Actions' bot can identify the current policy.
+The author's approval must follow that prompt. Comments are read across all
+pages; contributor-supplied markers and other users' approvals are not evidence.
+Verification and comment handling share the same path and serialize per PR.
 
-When the pull request author comments `/approve-cla`, the workflow updates
-`.cla/signatures.json` on the pull request branch. Same-repository pull requests
-can be updated automatically. Fork pull requests may require a maintainer to
-record the same approval because the repository token may not be able to push to
-the contributor fork.
+The workflow token has contents/pull-request read access, issue-comment write
+access, and commit-status write access. It cannot write signature commits.
+Both PR and approval events publish the `CLA` status to the head SHA obtained
+from the PR API, so approval can replace a failing status without waiting for
+another workflow trigger. A run pinned to an older head cannot mark a newer
+head successful. Missing acceptance produces a failing `CLA` status and an
+explanatory log; an API or verification error also fails the workflow job.
 
 ## Codeberg, Forgejo, and Woodpecker
 
@@ -76,5 +93,8 @@ it is not guaranteed to be fully GitHub Actions compatible.
 
 ## Branch Protection
 
-Require the `CLA` status check before merging pull requests. Keep the normal CI
-checks required as well.
+Require the `CLA` commit status before merging pull requests. The workflow job
+is named `Update CLA status`; that job's success means verification ran, not
+that acceptance exists. When configuring branch protection, select the `CLA`
+status rather than the workflow job, and remove any requirement for the previous
+workflow check with the same name. Keep the normal CI checks required as well.
