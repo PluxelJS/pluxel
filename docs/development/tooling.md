@@ -191,6 +191,9 @@ Static/dynamic Vite adapters 执行 Plugin semantic lowering、config extraction
 Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
 graph 与 server Plugin implementation 保持分离。
 
+Static Vite 更新因新增导入失败时会保留上一版本，并持续观察失败候选需要的文件与 package 安装目录。
+只修复新文件或安装缺失依赖就能触发重试，无需再次编辑原 Plugin 文件；更新成功后释放这些临时恢复监听。
+
 `workbench.markdown(import.meta.url, './guide.md')` 的 source 会进入 adapter watch graph，并在 server transform 阶段编译；
 Content-only definition 不创建 browser module graph，即使 Content 包含 data/action slot。Definition 同时含 Content 与 View
 renderer 时，dev compiler 会先提交 definition topology 与 Content plan；已有 producer artifact 快速复用，缺失或过期的

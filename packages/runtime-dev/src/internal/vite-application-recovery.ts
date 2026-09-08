@@ -194,7 +194,13 @@ export class ViteApplicationRecovery {
 		)
 		// Vite ignores node_modules and does not discover missing imports outside its root. Fill only
 		// these observed gaps until the application accepts a new generation.
-		const watcher = (this.watcher = watch([...anchors], {
+		// An ancestor already scans every relevant descendant through the same ignore filter.
+		// Passing overlapping roots makes Chokidar race its initial directory inventories and can
+		// remove a live descendant's watch before reporting ready, losing later package installs.
+		const watchRoots = [...anchors].filter(
+			(anchor) => ![...anchors].some((other) => other !== anchor && within(anchor, other)),
+		)
+		const watcher = (this.watcher = watch(watchRoots, {
 			ignoreInitial: true,
 			ignored: (path) =>
 				!roots.some(

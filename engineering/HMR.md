@@ -57,6 +57,7 @@ Management `updates.snapshot()` / `updates.follow()` 沿现有会话提供这份
 Static Vite 分离已提交应用图与失败候选的恢复依赖。候选解析委托 Vite，观察可达 importer/specifier 关系，
 失败后监听已解析新文件、缺失导入候选和相关 package manifest。Vite 忽略的安装目录及根外缺失文件由限于失败候选的 watcher 补充；
 修正新文件或完成安装进入原串行更新队列，提交后释放恢复依赖及补充 watcher，关闭后禁止重新接纳。
+补充 watcher 合并相互包含的扫描根，避免重复祖先扫描撤销仍有效的目录监听；精确候选路径过滤保持不变。
 
 记录器限制 definition 与 node 保留数量，先验证整条记录再发布；同批次后续诊断可替换记录，但不得靠相同 sequence 复用旧节点错误。
 后续插件重试或运行状态变化不篡改更新历史。Workbench 的红色生命周期提示只来自节点 issue；批次异常和当前运行问题有独立展示位置。
