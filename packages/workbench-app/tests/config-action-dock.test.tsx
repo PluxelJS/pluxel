@@ -21,6 +21,8 @@ import { ConfigActionDock } from '../src/app/plugins/config/components/ConfigAct
 import { ConfigTabContent } from '../src/app/plugins/config/ConfigTab'
 import { ConfigForm } from '../src/app/plugins/config/ConfigForm'
 import { createManagementQueryClient } from '../src/app/managementQuery'
+import { refreshPluginReadModels } from '../src/app/plugins/pluginReadModels'
+import * as notifyBridge from '../src/app/notifications/notifyBridge'
 
 const OWNER: PluginNodeAddress = {
 	definition: {
@@ -134,6 +136,178 @@ afterEach(() => {
 })
 
 describe('config action dock', () => {
+	it('keeps an acknowledged save clean and reports success when read-model refresh fails', async () => {
+		const notify = vi.spyOn(notifyBridge, 'notifyAndRecord')
+		vi.mocked(refreshPluginReadModels).mockRejectedValueOnce(new Error('Read model unavailable'))
+		const client = createFakeManagementClient()
+		const { container, root } = await mount(<ConfigHarness client={client} />)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			await act(async () => input.click())
+			await act(async () =>
+				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+			)
+			expect(input.checked).toBe(true)
+			expect(buttonWithText(container, '保存').disabled).toBe(true)
+			expect(buttonWithText(container, '撤销').disabled).toBe(true)
+			expect(notify).toHaveBeenCalledExactlyOnceWith({
+				title: '提交成功',
+				message: '配置已保存并应用',
+				color: 'green',
+			})
+			await act(async () =>
+				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+			)
+			expect(client.config.patch).toHaveBeenCalledExactlyOnceWith(OWNER, { rootEnabled: true })
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('submits the native nested form without saving or resetting a dirty sibling', async () => {
+		const client = createFakeManagementClient()
+		const savedConfig = {
+			rootEnabled: false,
+			cache: { enabled: false, child: { secret: 'preserved' } },
+		}
+		client.config.patchField.mockResolvedValue({
+			ok: true,
+			config: { ...savedConfig, cache: { ...savedConfig.cache, enabled: true } },
+			application: 'applied',
+		})
+		const { container, root } = await mount(
+			<ConfigHarness
+				client={client}
+				savedConfig={savedConfig}
+				sections={[
+					{ path: [], fieldName: 'config', fields: rootFields, defaults: { rootEnabled: false } },
+					{
+						path: ['cache'],
+						fieldName: 'cache',
+						fields: nestedFields,
+						defaults: { enabled: false },
+					},
+				]}
+			/>,
+		)
+		try {
+			const sibling = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			const nested = container.querySelector<HTMLInputElement>('input[name="enabled"]')!
+			await act(async () => {
+				sibling.click()
+				nested.click()
+			})
+			await act(async () =>
+				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+			)
+			expect(client.config.patchField).toHaveBeenCalledExactlyOnceWith(OWNER, {
+				fieldPath: 'cache',
+				value: { enabled: true, child: { secret: 'preserved' } },
+			})
+			expect(client.config.patch).not.toHaveBeenCalled()
+			expect(sibling.checked).toBe(true)
+			expect(nested.checked).toBe(true)
+			expect(container.textContent).toContain('待保存 1')
+			expect(buttonWithText(container, '撤销').disabled).toBe(false)
+			await act(async () => buttonWithText(container, '撤销').click())
+			expect(sibling.checked).toBe(false)
+			expect(nested.checked).toBe(true)
+			expect(container.textContent).not.toContain('待保存')
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('releases the native submit lock after a transport rejection and saves the same draft on retry', async () => {
+		const patch = vi
+			.fn()
+			.mockRejectedValueOnce(new Error('Transport unavailable'))
+			.mockResolvedValueOnce({ ok: true, config: { rootEnabled: true }, application: 'applied' })
+		const { container, root } = await mount(
+			<ConfigHarness client={createFakeManagementClient(patch)} />,
+		)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			await act(async () => input.click())
+			await act(async () =>
+				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+			)
+			expect(patch).toHaveBeenCalledOnce()
+			expect(input.checked).toBe(true)
+			expect(buttonWithText(container, '保存').disabled).toBe(false)
+			await act(async () =>
+				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+			)
+			expect(patch).toHaveBeenCalledTimes(2)
+			expect(patch).toHaveBeenNthCalledWith(2, OWNER, { rootEnabled: true })
+			expect(buttonWithText(container, '保存').disabled).toBe(true)
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('ignores another native section submit while a save is pending and permits it after completion', async () => {
+		let resolve!: (result: unknown) => void
+		const patch = vi.fn().mockImplementation(
+			() =>
+				new Promise((done) => {
+					resolve = done
+				}),
+		)
+		const client = createFakeManagementClient(patch)
+		client.config.patchField.mockResolvedValue({
+			ok: true,
+			config: { rootEnabled: true, cache: { enabled: true } },
+			application: 'applied',
+		})
+		const { container, root } = await mount(
+			<ConfigHarness
+				client={client}
+				sections={[
+					{ path: [], fieldName: 'config', fields: rootFields, defaults: { rootEnabled: false } },
+					{
+						path: ['cache'],
+						fieldName: 'cache',
+						fields: nestedFields,
+						defaults: { enabled: false },
+					},
+				]}
+			/>,
+		)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			const nested = container.querySelector<HTMLInputElement>('input[name="enabled"]')!
+			await act(async () => {
+				input.click()
+				nested.click()
+			})
+			await act(async () => {
+				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+			})
+			expect(patch).toHaveBeenCalledOnce()
+			await act(async () => {
+				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+			})
+			expect(client.config.patchField).not.toHaveBeenCalled()
+			expect(patch).toHaveBeenCalledOnce()
+			await act(async () =>
+				resolve({ ok: true, config: { rootEnabled: true }, application: 'applied' }),
+			)
+			expect(nested.checked).toBe(true)
+			await act(async () =>
+				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+			)
+			expect(client.config.patchField).toHaveBeenCalledExactlyOnceWith(OWNER, {
+				fieldPath: 'cache',
+				value: { enabled: true },
+			})
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
 	it('keeps outer controls and sibling panes idle while typing and saves the latest draft', async () => {
 		const fields = f.extractFormFields(v.object({ title: v.string() }))
 		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => ({

@@ -3,21 +3,16 @@ import { Box, ScrollArea } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import type { PluginNodeAddress } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import type { FieldNode } from 'valibot-form'
 
 import { useRuntimeManagementClient } from '../../../runtime'
-import { useNotify } from '../../hooks/useNotify'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
-import { refreshPluginReadModels } from '../pluginReadModels'
-import { type ConfigFormBridge, type ConfigFormState, ConfigTabContent } from './ConfigTab'
+import { ConfigTabContent } from './ConfigTab'
+import { useConfigForms, type ConfigSectionForm, type ConfigFormState } from './useConfigForms'
 import { ConfigActionDock } from './components/ConfigActionDock'
 import { buildEditableConfigPatch } from './presentationAdapter'
-import {
-	commitPluginConfig,
-	refreshPluginConfig,
-	type PluginConfigSection,
-} from './usePluginConfig'
+import { type PluginConfigSection } from './usePluginConfig'
+import { useConfigSave } from './useConfigSave'
 import { mapConfigValidationErrors, mountedFieldNames } from '../../forms/serverValidation'
 
 const EMPTY_CONFIG_SECTIONS: readonly PluginConfigSection[] = []
@@ -70,8 +65,8 @@ function ConfigFormInstance({
 	sections,
 }: ConfigFormProps & { sections: readonly PluginConfigSection[] }) {
 	const management = useRuntimeManagementClient()
-	const queryClient = useQueryClient()
-	const notify = useNotify()
+	const { mutateAsync: saveConfig, isPending: saving, variables } = useConfigSave({ owner })
+	const savingRef = useRef(false)
 	const visibleSections = useMemo<readonly PluginConfigSection[]>(
 		() => (sections.length > 0 ? sections : [{ path: [], fields, defaults, fieldName: '' }]),
 		[defaults, fields, sections],
@@ -93,29 +88,12 @@ function ConfigFormInstance({
 		[savedConfig, visibleSections],
 	)
 	const [activeKey, setActiveKey] = useState(sectionItems[0]?.key ?? '')
-	const [formStates, setFormStates] = useState<Record<string, ConfigFormState>>({})
-	const [savingAll, setSavingAll] = useState(false)
-	const formBridgesRef = useRef<Record<string, ConfigFormBridge>>({})
+	const { formStates, forms, registerForm } = useConfigForms()
 
 	useEffect(() => {
 		if (sectionItems.some((section) => section.key === activeKey)) return
 		setActiveKey(sectionItems[0]?.key ?? '')
 	}, [activeKey, sectionItems])
-
-	const registerForm = useCallback((key: string, bridge: ConfigFormBridge) => {
-		formBridgesRef.current[key] = bridge
-		return () => {
-			if (formBridgesRef.current[key] === bridge) delete formBridgesRef.current[key]
-		}
-	}, [])
-
-	const reportState = useCallback((key: string, state: ConfigFormState) => {
-		setFormStates((current) => {
-			const previous = current[key]
-			if (previous && sameFormState(previous, state)) return current
-			return { ...current, [key]: state }
-		})
-	}, [])
 
 	const dirtySections = sectionItems.filter((section) => formStates[section.key]?.dirty)
 	const dirtyLabels = dirtySections.map((section) => section.label)
@@ -132,20 +110,20 @@ function ConfigFormInstance({
 	}, [dirtySections.length, onDirtyChange])
 
 	const submitCurrent = useCallback(() => {
-		if (!activeState.dirty || !activeState.canSubmit || activeState.submitting || savingAll) return
-		formBridgesRef.current[resolvedActiveKey]?.submit()
-	}, [activeState, resolvedActiveKey, savingAll])
+		if (!activeState.dirty || !activeState.canSubmit || activeState.submitting || saving) return
+		void forms.get()[resolvedActiveKey]?.form.handleSubmit()
+	}, [activeState, forms, resolvedActiveKey, saving])
 
 	const resetCurrent = useCallback(() => {
-		if (activeState.submitting || savingAll) return
-		const bridge = formBridgesRef.current[resolvedActiveKey]
+		if (activeState.submitting || saving) return
+		const bridge = forms.get()[resolvedActiveKey]
 		if (!bridge || !activeSection) return
 		bridge.reset(activeSection.initialValue)
-	}, [activeSection, activeState.submitting, resolvedActiveKey, savingAll])
+	}, [activeSection, activeState.submitting, forms, resolvedActiveKey, saving])
 
 	const resetToDefaults = useCallback(() => {
-		if (activeState.submitting || savingAll) return
-		const bridge = formBridgesRef.current[resolvedActiveKey]
+		if (activeState.submitting || saving) return
+		const bridge = forms.get()[resolvedActiveKey]
 		if (!bridge || !activeSection) return
 		// Restoring defaults replaces the editable draft as a whole.
 		bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
@@ -160,98 +138,79 @@ function ConfigFormInstance({
 			if (!key || parsed.length !== 1 || parsed[0] !== key) continue
 			bridge.form.setFieldValue(key, value)
 		}
-	}, [activeSection, activeState.submitting, resolvedActiveKey, savingAll])
+	}, [activeSection, activeState.submitting, forms, resolvedActiveKey, saving])
 
-	const saveAll = useCallback(async () => {
-		if (savingAll) return
-		// Read each form once. The same snapshot drives readiness, the patch and response guards.
-		// Include clean sections because validation can depend on their values too.
-		const submitted = sectionItems.flatMap((section) => {
-			const bridge = formBridgesRef.current[section.key]
-			return bridge ? [{ section, bridge, state: bridge.form.state }] : []
-		})
-		const dirty = submitted.filter(({ state }) => state.isDirty)
-		if (dirty.length === 0 || dirty.some(({ state }) => !state.canSubmit || state.isSubmitting))
-			return
-		const patch = buildCombinedConfigPatch(savedConfig, dirty)
-		if (Object.keys(patch).length === 0) return
-
-		const unchanged = () =>
-			submitted.every(
-				({ section, bridge, state }) =>
-					formBridgesRef.current[section.key]?.form === bridge.form &&
-					bridge.form.state.values === state.values,
-			)
-		setSavingAll(true)
-		for (const { bridge } of submitted) {
-			bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
-		}
-		try {
-			const result = await management.config.patch(owner, patch)
-			if (result.ok === false) {
-				if (result.code === 'validation_failed' && unchanged()) {
-					for (const { section, bridge } of submitted) {
-						bridge.form.setErrorMap({
-							onServer: mapConfigValidationErrors(
-								result.errors,
-								mountedFieldNames(bridge.form),
-								section.path,
-							),
-						} as never)
-					}
-				}
-				if (result.state === 'unknown') {
-					await Promise.all([
-						refreshPluginConfig(queryClient, owner),
-						refreshPluginReadModels(queryClient),
-					])
-				}
-				notify({
-					title: '全部保存失败',
-					message: result.message ?? result.code ?? '未知错误',
-					color: 'red',
-				})
-				return
-			}
-
-			commitPluginConfig(queryClient, owner, result.config)
-			await refreshPluginReadModels(queryClient)
-			for (const { section, bridge, state } of dirty) {
-				if (formBridgesRef.current[section.key]?.form === bridge.form) {
-					bridge.acceptSaved(state.values)
-				}
-			}
-			if (result.application === 'saved-not-applied') {
-				notify({
-					title: '配置已保存，但尚未应用',
-					message:
-						result.saved === true ? result.applyFailure.message : '运行中的插件尚未应用当前配置。',
-					color: 'yellow',
-				})
-			} else {
-				notify({
-					title: '全部保存成功',
-					message:
-						result.application === 'deferred'
-							? '配置已保存，将在插件启动时应用'
-							: `已保存 ${dirty.length} 个配置分区`,
-					color: 'green',
-				})
-			}
-		} catch (cause) {
-			await Promise.allSettled([
-				refreshPluginConfig(queryClient, owner),
-				refreshPluginReadModels(queryClient),
-			])
-			notify({
-				title: '全部保存失败',
-				message: cause instanceof Error ? cause.message : '无法连接运行时',
-				color: 'red',
+	// Both native section submits and the save-all action enter the same transaction.
+	const save = useCallback(
+		async (key?: string) => {
+			if (savingRef.current) return
+			const submitted = sectionItems.flatMap((section) => {
+				const bridge = forms.get()[section.key]
+				return bridge ? [{ section, bridge, state: bridge.form.state }] : []
 			})
-		} finally {
-			setSavingAll(false)
-		}
-	}, [management, notify, owner, queryClient, savedConfig, savingAll, sectionItems])
+			const targets =
+				key === undefined ? submitted : submitted.filter(({ section }) => section.key === key)
+			const dirty = targets.filter(({ state }) => state.isDirty)
+			if (dirty.length === 0 || dirty.some(({ state }) => !state.canSubmit && !state.isSubmitting))
+				return
+			// Native submits compete for the synchronous guard; save-all waits for their validation.
+			if (key === undefined && submitted.some(({ state }) => state.isSubmitting)) return
+			const patches = dirty.map(({ section, state }) => ({
+				section,
+				patch: buildEditableConfigPatch(section.fields, state.values, section.savedValue),
+			}))
+			const { section: currentSection, patch: sectionPatch } = patches[0]!
+			const patch =
+				key === undefined ? buildCombinedConfigPatch(savedConfig, patches) : sectionPatch
+			if (Object.keys(patch).length === 0) return
+			const unchanged = () =>
+				targets.every(
+					({ section, bridge, state }) =>
+						forms.get()[section.key]?.form === bridge.form &&
+						bridge.form.state.values === state.values,
+				)
+			const request =
+				key !== undefined && currentSection.path.length > 0
+					? () =>
+							management.config.patchField(owner, {
+								fieldPath: currentSection.path.join('.'),
+								value: { ...currentSection.savedValue, ...sectionPatch },
+							})
+					: () => management.config.patch(owner, patch)
+			savingRef.current = true
+			for (const { bridge } of targets)
+				bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
+			try {
+				await saveConfig({
+					request,
+					all: key === undefined,
+					sectionCount: dirty.length,
+					onValidation: (errors) => {
+						if (!unchanged()) return
+						for (const { section, bridge } of targets)
+							bridge.form.setErrorMap({
+								onServer: mapConfigValidationErrors(
+									errors,
+									mountedFieldNames(bridge.form),
+									section.path,
+								),
+							} as never)
+					},
+					onSaved: () => {
+						for (const { section, bridge, state } of dirty) {
+							if (forms.get()[section.key]?.form === bridge.form) bridge.acceptSaved(state.values)
+						}
+					},
+				})
+			} catch {
+				// The mutation owns transport failure recovery and notification.
+			} finally {
+				savingRef.current = false
+			}
+		},
+		[forms, management, owner, savedConfig, saveConfig, sectionItems],
+	)
+	const saveAll = useCallback(() => save(), [save])
 
 	useHotkeys(
 		active
@@ -288,7 +247,7 @@ function ConfigFormInstance({
 						activeState={activeState}
 						dirtyLabels={dirtyLabels}
 						hasMultipleSections={sectionItems.length > 1}
-						savingAll={savingAll}
+						savingScope={saving ? (variables?.all ? 'all' : 'current') : undefined}
 						canSaveAll={canSaveAll}
 						sectionOptions={sectionItems.map((section) => ({
 							value: section.key,
@@ -311,9 +270,8 @@ function ConfigFormInstance({
 						active={active && isActive}
 						displayName={displayName}
 						isVisible={isActive}
-						owner={owner}
+						onSubmit={save}
 						registerForm={registerForm}
-						reportState={reportState}
 						section={section}
 					/>
 				)
@@ -326,17 +284,15 @@ function ConfigSectionPane({
 	active,
 	displayName,
 	isVisible,
-	owner,
+	onSubmit,
 	registerForm,
-	reportState,
 	section,
 }: {
 	active: boolean
 	displayName: string
 	isVisible: boolean
-	owner: PluginNodeAddress
-	registerForm: (key: string, bridge: ConfigFormBridge) => void | (() => void)
-	reportState: (key: string, state: ConfigFormState) => void
+	onSubmit: (key: string) => Promise<void>
+	registerForm: (key: string, form: ConfigSectionForm) => () => void
 	section: SectionItem
 }) {
 	const [scrollHost, setScrollHost] = useState<HTMLDivElement | null>(null)
@@ -355,17 +311,15 @@ function ConfigSectionPane({
 			viewportRef={setViewport}
 		>
 			<ConfigTabContent
-				owner={owner}
+				onSubmit={onSubmit}
 				displayName={displayName}
 				fields={section.fields}
 				savedValue={section.savedValue}
-				persistedValue={section.savedValue}
 				defaultValue={section.defaultValue}
 				path={section.path}
 				showToc={active}
 				scrollHost={scrollHost}
 				registerForm={registerForm}
-				reportState={reportState}
 			/>
 		</ScrollArea>
 	)
@@ -387,23 +341,14 @@ function recordAtPath(record: Record<string, unknown>, path: readonly string[]) 
 	return isRecord(value) ? value : {}
 }
 
-function sameFormState(left: ConfigFormState, right: ConfigFormState): boolean {
-	return (
-		left.dirty === right.dirty &&
-		left.canSubmit === right.canSubmit &&
-		left.submitting === right.submitting
-	)
-}
-
 function buildCombinedConfigPatch(
 	savedConfig: Record<string, unknown>,
-	submissions: readonly { section: SectionItem; state: { values: Record<string, unknown> } }[],
+	submissions: readonly { section: SectionItem; patch: Record<string, unknown> }[],
 ): Record<string, unknown> {
 	const candidate = structuredClone(savedConfig)
 	const changedRootKeys = new Set<string>()
 
-	for (const { section, state } of submissions) {
-		const editablePatch = buildEditableConfigPatch(section.fields, state.values, section.savedValue)
+	for (const { section, patch: editablePatch } of submissions) {
 		if (section.path.length === 0) {
 			for (const [key, value] of Object.entries(editablePatch)) {
 				candidate[key] = value

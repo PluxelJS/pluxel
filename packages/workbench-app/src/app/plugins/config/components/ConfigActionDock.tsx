@@ -14,7 +14,7 @@ export function ConfigActionDock({
 	activeState,
 	dirtyLabels,
 	hasMultipleSections,
-	savingAll,
+	savingScope,
 	canSaveAll,
 	sectionOptions,
 	onActiveKeyChange,
@@ -28,7 +28,7 @@ export function ConfigActionDock({
 	activeState: ActiveState
 	dirtyLabels: string[]
 	hasMultipleSections: boolean
-	savingAll: boolean
+	savingScope?: 'current' | 'all'
 	canSaveAll: boolean
 	sectionOptions: Array<{ value: string; label: string }>
 	onActiveKeyChange: (key: string) => void
@@ -37,6 +37,7 @@ export function ConfigActionDock({
 	onResetCurrent: () => void
 	onResetDefaults: () => void
 }) {
+	const saving = savingScope !== undefined
 	const dirtyCount = dirtyLabels.length
 	const dirtyLabel =
 		dirtyCount > 0
@@ -97,7 +98,7 @@ export function ConfigActionDock({
 					size="xs"
 					variant="default"
 					onClick={onResetCurrent}
-					disabled={!activeState.dirty || activeState.submitting || savingAll}
+					disabled={!activeState.dirty || activeState.submitting || saving}
 				>
 					撤销
 				</Button>
@@ -107,7 +108,7 @@ export function ConfigActionDock({
 					variant="subtle"
 					leftSection={<IconRestore size={14} />}
 					onClick={onResetDefaults}
-					disabled={activeState.submitting || savingAll}
+					disabled={activeState.submitting || saving}
 				>
 					恢复默认
 				</Button>
@@ -117,7 +118,7 @@ export function ConfigActionDock({
 					leftSection={<IconDeviceFloppy size={14} />}
 					onClick={onSubmitCurrent}
 					loading={activeState.submitting}
-					disabled={!activeState.dirty || !activeState.canSubmit || savingAll}
+					disabled={!activeState.dirty || !activeState.canSubmit || saving}
 					title="保存当前配置 (Ctrl/⌘ + S)"
 				>
 					保存
@@ -128,8 +129,8 @@ export function ConfigActionDock({
 						size="xs"
 						variant="light"
 						onClick={onSubmitAll}
-						loading={savingAll}
-						disabled={dirtyCount === 0 || savingAll || !canSaveAll}
+						loading={savingScope === 'all'}
+						disabled={dirtyCount === 0 || saving || !canSaveAll}
 						title="保存全部已修改配置 (Ctrl/⌘ + Shift + S)"
 					>
 						全部保存
