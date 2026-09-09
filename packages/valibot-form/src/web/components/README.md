@@ -9,7 +9,7 @@ This folder is intentionally layered. Keep rendering logic predictable and avoid
 - `SegmentedButtons.tsx`
   Shared public helper component used by form consumers.
 - `internal/`
-  Form context, field planning, field dispatch, and renderer plumbing.
+  Form context, field planning, path binding, field dispatch, and renderer plumbing. `BoundField` owns TanStack registration and maps field semantics to control props.
 - `chrome/`
   Shared field-level presentation wrappers such as label/help/error framing.
 - `debug/`
@@ -39,3 +39,19 @@ This folder is intentionally layered. Keep rendering logic predictable and avoid
 1. If the task changes field extraction or field metadata flow, edit `internal/`.
 2. If the task changes how one schema kind looks or behaves, edit the matching file in `renders/`.
 3. If two renderers need the same lightweight chrome, promote only that chrome into `chrome/`.
+
+## Field ownership
+
+`AutoForm.Fields` and structural renderers recurse with a `FieldNode` and a structured path.
+`BoundField` registers representable paths and supplies value/change/blur/errors to controls.
+Renderers must not split server error paths or rebuild ordinary parent objects for leaf changes.
+Union discriminator transitions and Record key/row operations remain structural edits at their owner.
+Union branches that replace the entire value reuse the current binding through `useValueRenderer`.
+
+Literal keys that TanStack cannot represent are edited through the nearest bound ancestor without
+changing their meaning. A literal root key with no such ancestor is read-only. Hidden fields keep
+values in the form store without registering an invisible error target.
+
+TanStack owns values and interaction metadata. Local state is limited to row identity/order,
+uncommitted input and inactive Union branch drafts. Both the React facade and core FormApi reset
+share the editing-session reset; do not infer resets from dirty-state transitions.

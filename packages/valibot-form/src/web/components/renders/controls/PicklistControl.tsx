@@ -1,5 +1,5 @@
 import { Autocomplete, MultiSelect, Radio, Select, Stack, TagsInput, Text } from '@mantine/core'
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SegmentedButtons } from '../../SegmentedButtons'
 import { toInputString } from '../types'
 
@@ -31,6 +31,12 @@ export interface PicklistControlProps {
 	disabled?: boolean
 	required?: boolean
 	ariaLabel?: string
+	id?: string
+	name?: string
+	'aria-invalid'?: boolean
+	'aria-describedby'?: string
+	/** Composite controls own their Mantine error so the focusable input receives its association. */
+	error?: string
 }
 
 interface NormalizedOption {
@@ -42,22 +48,6 @@ interface NormalizedOption {
 	group?: string
 	accentColor?: string
 }
-
-const SelectOptionItem = forwardRef<HTMLDivElement, any>(
-	({ label, description, accentColor, ...others }, ref) => (
-		<div ref={ref} {...others}>
-			<Text fw={500} size="sm" {...(accentColor && { c: `${accentColor}.6` })}>
-				{label}
-			</Text>
-			{description ? (
-				<Text size="xs" c="dimmed">
-					{description}
-				</Text>
-			) : null}
-		</div>
-	),
-)
-SelectOptionItem.displayName = 'PicklistOptionItem'
 
 function normalizeOptions(
 	options: readonly (string | number)[] = [],
@@ -108,7 +98,23 @@ export function PicklistControl({
 	disabled,
 	required,
 	ariaLabel,
+	id: inputId,
+	name,
+	'aria-invalid': ariaInvalid,
+	'aria-describedby': ariaDescribedBy,
+	error,
 }: PicklistControlProps) {
+	const accessibilityProps = {
+		id: inputId,
+		'aria-invalid': ariaInvalid,
+		'aria-describedby': ariaDescribedBy,
+	}
+	const inputAccessibilityProps = {
+		id: inputId,
+		error: error || ariaInvalid,
+		errorProps: { id: ariaDescribedBy, style: { whiteSpace: 'pre-line' as const } },
+		attributes: { input: { 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedBy } },
+	}
 	const multiple = Boolean(meta.multiple)
 	const variant = meta.control ?? (multiple ? 'select' : 'select')
 
@@ -152,6 +158,22 @@ export function PicklistControl({
 		for (const opt of optionsState) map.set(opt.value, opt)
 		return map
 	}, [optionsState])
+
+	const renderOption = ({ option }: { option: { value: string; label: string } }) => {
+		const detail = optionMap.get(option.value)
+		return (
+			<div>
+				<Text fw={500} size="sm" c={detail?.accentColor ? `${detail.accentColor}.6` : undefined}>
+					{option.label}
+				</Text>
+				{detail?.description ? (
+					<Text size="xs" c="dimmed">
+						{detail.description}
+					</Text>
+				) : null}
+			</div>
+		)
+	}
 
 	const rawToId = useMemo(() => {
 		const map = new Map<string | number, string>()
@@ -239,6 +261,8 @@ export function PicklistControl({
 			}))
 			return (
 				<TagsInput
+					{...inputAccessibilityProps}
+					name={name}
 					data={tagsData}
 					value={multiValue}
 					onChange={(ids) => {
@@ -262,6 +286,8 @@ export function PicklistControl({
 		}
 
 		const multiSelectProps: any = {
+			...inputAccessibilityProps,
+			name,
 			data: sharedData,
 			value: multiValue,
 			onChange: (ids: string[]) => {
@@ -285,27 +311,31 @@ export function PicklistControl({
 		if (disabled !== undefined) multiSelectProps.disabled = disabled
 		if (meta.max) multiSelectProps.maxValues = meta.max
 		if (nothingFound) multiSelectProps.nothingFoundMessage = nothingFound
-		if (SelectOptionItem) multiSelectProps.renderOption = SelectOptionItem
+		multiSelectProps.renderOption = renderOption
 
 		return <MultiSelect {...multiSelectProps} />
 	}
 
 	if (variant === 'segmented') {
 		return (
-			<SegmentedButtons
-				data={sharedData as any}
-				value={singleValue || null}
-				onChange={(id) => onChange(toRaw(id))}
-				onBlur={onBlur}
-				fullWidth
-				disabled={disabled}
-			/>
+			<div {...accessibilityProps} role="group" aria-label={ariaLabel}>
+				<SegmentedButtons
+					data={sharedData as any}
+					value={singleValue || null}
+					onChange={(id) => onChange(toRaw(id))}
+					onBlur={onBlur}
+					fullWidth
+					disabled={disabled}
+				/>
+			</div>
 		)
 	}
 
 	if (variant === 'radio') {
 		return (
 			<Radio.Group
+				{...accessibilityProps}
+				name={name}
 				value={singleValue || null}
 				onChange={(id) => onChange(toRaw(id))}
 				onBlur={onBlur}
@@ -331,6 +361,8 @@ export function PicklistControl({
 		const autoData = optionsState.map((option) => option.value)
 		return (
 			<Autocomplete
+				{...inputAccessibilityProps}
+				name={name}
 				data={autoData}
 				value={singleValue || ''}
 				onChange={(next) => {
@@ -353,6 +385,8 @@ export function PicklistControl({
 	}
 
 	const selectProps: any = {
+		...inputAccessibilityProps,
+		name,
 		data: selectData,
 		value: singleValue || null,
 		onChange: (id: string | null) => onChange(toRaw(id)),
@@ -366,7 +400,7 @@ export function PicklistControl({
 	if (meta.placeholder) selectProps.placeholder = meta.placeholder
 	if (disabled !== undefined) selectProps.disabled = disabled
 	if (nothingFound) selectProps.nothingFoundMessage = nothingFound
-	if (SelectOptionItem) selectProps.renderOption = SelectOptionItem
+	selectProps.renderOption = renderOption
 
 	return <Select {...selectProps} />
 }

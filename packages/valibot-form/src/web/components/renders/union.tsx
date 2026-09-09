@@ -1,17 +1,12 @@
 import { Card, Radio, Select, Stack, Switch, Text } from '@mantine/core'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { UnionBranch, UnionFieldNode } from '../../../core/fields'
 import { cleanProps } from '../../utils/propHelpers'
-import { useFieldRenderer } from '../internal/fieldRendererContext'
+import { UnionSelectionContext } from '../internal/unionSelectionContext'
+import { useFieldRenderer, useValueRenderer } from '../internal/fieldRendererContext'
 import { SegmentedButtons } from '../SegmentedButtons'
 import { FieldChrome } from '../chrome/FieldChrome'
-import {
-	isErrorWithPath,
-	normalizeErrorMessages,
-	type FieldError,
-	type RendererProps,
-	triggerFormEvents,
-} from './types'
+import { normalizeErrorMessages, type RendererProps, triggerFormEvents } from './types'
 
 const booleanVariants = new Set<UnionFieldNode['control']>(['switch'])
 const truthySet = new Set<unknown>([true, 'true', 1, '1'])
@@ -165,9 +160,11 @@ function renderEmptyBranch() {
 }
 
 export function UnionField(props: RendererProps) {
-	const { node, errors, inputProps, value } = props
+	const { node, errors, inputProps, value, path, resetVersion } = props
 	const info = node as UnionFieldNode
 	const renderField = useFieldRenderer()
+	const renderValue = useValueRenderer()
+	const initializeParentUnion = useContext(UnionSelectionContext)
 	const branches = info.branches ?? EMPTY_BRANCHES
 	const discriminator = info.discriminator
 	const sharedFields = info.sharedFields ?? EMPTY_SHARED_FIELDS
@@ -204,19 +201,21 @@ export function UnionField(props: RendererProps) {
 		[sharedFields, discriminator],
 	)
 
-	const [selectedBranchIndex, setSelectedBranchIndex] = useState(() =>
+	const [fallbackBranchIndex, setSelectedBranchIndex] = useState(() =>
 		findMatchingBranchIndex(branches, value, discriminator),
 	)
 
-	useEffect(() => {
-		setSelectedBranchIndex((current) =>
-			findMatchingBranchIndex(branches, value, discriminator, current),
-		)
-	}, [branches, value, discriminator])
+	const selectedBranchIndex = findMatchingBranchIndex(
+		branches,
+		value,
+		discriminator,
+		fallbackBranchIndex,
+	)
 
 	useEffect(() => {
-		branchCacheRef.current = new Map()
-	}, [branchSignature, sharedSignature, discriminator, preserveBranchValues])
+		branchCacheRef.current.clear()
+		setSelectedBranchIndex(0)
+	}, [branchSignature, sharedSignature, discriminator, preserveBranchValues, resetVersion])
 
 	const selectedBranch = branches[selectedBranchIndex]
 
@@ -302,22 +301,28 @@ export function UnionField(props: RendererProps) {
 		snapshotAndSetBranch(targetIndex, explicitValue)
 	}
 
-	const errorBuckets = useMemo(() => {
-		const base: FieldError[] = []
-		const map = new Map<string, FieldError[]>()
-		for (const err of errors ?? []) {
-			if (!isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1) {
-				base.push(err)
-				continue
-			}
-			const key = String(err.dotPath?.[1])
-			if (!map.has(key)) map.set(key, [])
-			map.get(key)!.push({ ...err, dotPath: err.dotPath?.slice(1) })
-		}
-		return { base: normalizeErrorMessages(base), map }
-	}, [errors])
+	const replacementOwnsErrors = selectedBranch?.fields.some(
+		(field) => field.replaceValue && !field.node.meta.hidden,
+	)
+	const baseErrors = replacementOwnsErrors ? [] : normalizeErrorMessages(errors)
 
-	const baseErrors = errorBuckets.base
+	const selectorAccessibility = {
+		id: inputProps.id,
+		'aria-label': node.meta.label,
+		'aria-invalid': inputProps['aria-invalid'],
+		'aria-describedby': inputProps['aria-describedby'],
+	}
+	const selectorInputAccessibility = {
+		id: inputProps.id,
+		'aria-label': node.meta.label,
+		error: inputProps['aria-invalid'],
+		attributes: {
+			input: {
+				'aria-invalid': inputProps['aria-invalid'],
+				'aria-describedby': inputProps['aria-describedby'],
+			},
+		},
+	}
 
 	const selectorNode = (() => {
 		if (!shouldRenderSelector) return null
@@ -325,18 +330,21 @@ export function UnionField(props: RendererProps) {
 		switch (resolvedControl) {
 			case 'segmented':
 				return (
-					<SegmentedButtons
-						data={branchOptions}
-						value={String(selectedBranchIndex)}
-						onChange={handleSelectorChange}
-						onBlur={inputProps.onBlur}
-						disabled={isLocked}
-						fullWidth
-					/>
+					<div {...selectorAccessibility} role="group">
+						<SegmentedButtons
+							data={branchOptions}
+							value={String(selectedBranchIndex)}
+							onChange={handleSelectorChange}
+							onBlur={inputProps.onBlur}
+							disabled={isLocked}
+							fullWidth
+						/>
+					</div>
 				)
 			case 'radio':
 				return (
 					<Radio.Group
+						{...selectorAccessibility}
 						{...cleanProps({
 							value: String(selectedBranchIndex),
 							onChange: handleSelectorChange,
@@ -359,6 +367,7 @@ export function UnionField(props: RendererProps) {
 			case 'switch':
 				return (
 					<Switch
+						{...selectorInputAccessibility}
 						{...cleanProps({
 							checked: isTruthyDiscriminator(selectedBranch?.discriminatorValue),
 							onChange: (event: ChangeEvent<HTMLInputElement>) =>
@@ -374,6 +383,7 @@ export function UnionField(props: RendererProps) {
 			default:
 				return (
 					<Select
+						{...selectorInputAccessibility}
 						{...cleanProps({
 							data: branchOptions,
 							value: String(selectedBranchIndex),
@@ -402,136 +412,93 @@ export function UnionField(props: RendererProps) {
 		})
 	}, [sharedFields, shouldRenderDiscriminatorField, discriminator, info.discriminatorField])
 
+	// Initialization belongs to this union; descendants still perform their own
+	// FieldApi operation. The guard prevents repeated parent initialization in
+	// nested unions before React renders the newly established discriminator.
+	const initializeSelection = useMemo(() => {
+		const branchValue = selectedBranch?.discriminatorValue
+		if (
+			!discriminator ||
+			branchValue === undefined ||
+			branchValue === null ||
+			(isObject(value) && value[discriminator] === branchValue)
+		)
+			return initializeParentUnion
+		let initializedSelection = false
+		return () => {
+			initializeParentUnion?.()
+			if (initializedSelection) return
+			initializedSelection = true
+			triggerFormEvents(inputProps, {
+				...(isObject(value) ? value : {}),
+				[discriminator]: branchValue,
+			})
+		}
+	}, [initializeParentUnion, inputProps, value, discriminator, selectedBranch?.discriminatorValue])
+
 	const sharedFieldsNode =
 		alwaysVisibleFields.length === 0 ? null : (
 			<Stack gap="sm">
-				{alwaysVisibleFields.map((field) => {
-					const fieldKey = field.key
-					const fieldErrors = errorBuckets.map.get(fieldKey) ?? []
-					const fieldValue = isObject(value)
-						? (value as Record<string, unknown>)[fieldKey]
-						: undefined
-					return (
-						<div key={fieldKey}>
-							{renderField({
-								node: field.node,
-								value: fieldValue,
-								errors: fieldErrors,
-								inputProps: {
-									...inputProps,
-									name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
-									onChange: (event: any) => {
-										const newFieldValue = event?.target?.value ?? event
-										if (fieldKey === discriminator) {
-											const nextCandidate = isObject(value)
-												? { ...value, [fieldKey]: newFieldValue }
-												: { [fieldKey]: newFieldValue }
+				{alwaysVisibleFields.map((field) => (
+					<div key={field.key}>
+						{renderField({
+							node: field.node,
+							path: [...path, field.key],
+							disabled: inputProps.disabled,
+							readOnly: inputProps.readOnly,
+							onChange:
+								field.key === discriminator
+									? (nextValue: unknown) => {
+											const candidate = {
+												...(isObject(value) ? value : {}),
+												[field.key]: nextValue,
+											}
 											snapshotAndSetBranch(
 												findMatchingBranchIndex(
 													branches,
-													nextCandidate,
+													candidate,
 													discriminator,
 													selectedBranchIndex,
 												),
-												newFieldValue as UnionBranch['discriminatorValue'],
+												nextValue as UnionBranch['discriminatorValue'],
 											)
-											return
 										}
-										const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-										const nextValue: Record<string, unknown> = {
-											...currentValue,
-											[fieldKey]: newFieldValue,
-										}
-										if (
-											discriminator &&
-											selectedBranch?.discriminatorValue !== null &&
-											selectedBranch?.discriminatorValue !== undefined
-										) {
-											nextValue[discriminator] = selectedBranch.discriminatorValue
-										}
-										triggerFormEvents(inputProps, nextValue)
-									},
-								},
-							})}
-						</div>
-					)
-				})}
+									: undefined,
+						})}
+					</div>
+				))}
 			</Stack>
 		)
 
-	const branchFieldsNode = useMemo(() => {
+	const branchFieldsNode = (() => {
 		if (!selectedBranch?.fields?.length) return info.compact ? null : renderEmptyBranch()
-
 		const fieldsContent = (
-			<Stack gap="sm">
-				{selectedBranch.fields.map((field) => {
-					const fieldKey = field.key
-					const fieldErrors = field.replaceValue
-						? (errors ?? [])
-						: (errorBuckets.map.get(fieldKey) ?? [])
-					const fieldValue = field.replaceValue
-						? value
-						: isObject(value)
-							? (value as Record<string, unknown>)[fieldKey]
-							: undefined
-
-					return (
-						<div key={fieldKey}>
-							{renderField({
-								node: field.node,
-								value: fieldValue,
-								errors: fieldErrors,
-								inputProps: {
-									...inputProps,
-									name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
-									onChange: (event: any) => {
-										const newFieldValue = event?.target?.value ?? event
-										if (field.replaceValue) {
-											const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-											const baseValue: Record<string, unknown> = isObject(newFieldValue)
-												? { ...(newFieldValue as Record<string, unknown>) }
-												: { [fieldKey]: newFieldValue }
-
-											for (const key of nonBranchKeys) {
-												if (key === discriminator) continue
-												if (key in currentValue && !(key in baseValue)) {
-													baseValue[key] = currentValue[key]
-												}
-											}
-
-											if (
-												discriminator &&
-												selectedBranch?.discriminatorValue !== null &&
-												selectedBranch?.discriminatorValue !== undefined
-											) {
-												baseValue[discriminator] = selectedBranch.discriminatorValue
-											}
-
-											triggerFormEvents(inputProps, baseValue)
-										} else {
-											const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-											const nextValue: Record<string, unknown> = {
-												...currentValue,
-												[fieldKey]: newFieldValue,
-											}
-											if (
-												discriminator &&
-												selectedBranch?.discriminatorValue !== null &&
-												selectedBranch?.discriminatorValue !== undefined
-											) {
-												nextValue[discriminator] = selectedBranch.discriminatorValue
-											}
-											triggerFormEvents(inputProps, nextValue)
-										}
-									},
-								},
-							})}
-						</div>
-					)
-				})}
+			<Stack gap="sm" key={selectedBranchIndex}>
+				{selectedBranch.fields.map((field) => (
+					<div key={field.key}>
+						{field.replaceValue
+							? field.node.meta.hidden
+								? null
+								: renderValue({
+										...props,
+										node: field.node,
+										inputProps: {
+											...inputProps,
+											disabled: Boolean(inputProps.disabled || field.node.meta.disabled),
+											readOnly: Boolean(inputProps.readOnly || field.node.meta.readOnly),
+										},
+									})
+							: renderField({
+									node: field.node,
+									path: [...path, field.key],
+									onChange: undefined,
+									disabled: inputProps.disabled,
+									readOnly: inputProps.readOnly,
+								})}
+					</div>
+				))}
 			</Stack>
 		)
-
 		return info.compact ? (
 			fieldsContent
 		) : (
@@ -539,20 +506,11 @@ export function UnionField(props: RendererProps) {
 				{fieldsContent}
 			</Card>
 		)
-	}, [
-		selectedBranch,
-		errors,
-		value,
-		inputProps,
-		discriminator,
-		nonBranchKeys,
-		info.compact,
-		renderField,
-		errorBuckets.map,
-	])
+	})()
 
 	return (
 		<FieldChrome
+			errorId={inputProps.errorId}
 			{...cleanProps({
 				label: node.meta.label,
 				required: node.required,
@@ -565,11 +523,13 @@ export function UnionField(props: RendererProps) {
 				hideRequired: node.meta.hideRequired,
 			})}
 		>
-			<Stack gap="md">
-				{shouldRenderSelector && selectorNode}
-				{sharedFieldsNode}
-				{branchFieldsNode}
-			</Stack>
+			<UnionSelectionContext.Provider value={initializeSelection}>
+				<Stack gap="md">
+					{shouldRenderSelector && selectorNode}
+					{sharedFieldsNode}
+					{branchFieldsNode}
+				</Stack>
+			</UnionSelectionContext.Provider>
 		</FieldChrome>
 	)
 }

@@ -1,50 +1,19 @@
 import { Divider, Stack, Text } from '@mantine/core'
 import { useElementSize, useMediaQuery } from '@mantine/hooks'
-import React, {
-	createContext,
-	memo,
-	Suspense,
-	useCallback,
-	useContext,
-	useEffect,
-	useMemo,
-} from 'react'
+import React, { memo, Suspense, useCallback, useEffect, useMemo } from 'react'
 import { getDefaults, type InferOutput } from 'valibot'
 import type { ObjectLikeSchema } from '../../core'
 import type { FieldNode } from '../../core/fields'
-import { DEFAULT_SECTION_ID, DEFAULT_TEXTS } from '../../core/constants'
+import { DEFAULT_SECTION_ID } from '../../core/constants'
 import { isDevelopmentEnvironment } from '../../core/utils/environment'
-import {
-	type PlannedField,
-	planFieldSections,
-	planSchemaFields,
-	type SectionPlan,
-} from './internal/fieldPlanner'
-import { useAppForm } from './internal/formContext'
+import { planFieldSections, planSchemaFields, type SectionPlan } from './internal/fieldPlanner'
+import { AutoFormCtx, FormResetVersion, useAutoFormCtx, useAppForm } from './internal/formContext'
 import { alignToCss, resolveFieldSpan } from './internal/layout'
+import { BoundField } from './internal/BoundField'
 import { FieldRenderer } from './internal/FieldRenderer'
 import { FieldRendererProvider } from './internal/fieldRendererContext'
 
-// -------- Context（暴露同一表单实例与渲染数据） ----------
-interface Ctx<TValues extends Record<string, unknown>> {
-	form: ReturnType<typeof useAppForm<TValues>>
-	sections: SectionPlan[]
-	hiddenFields: PlannedField[]
-	defaultValues: Record<string, unknown>
-	submit: () => void
-	reset: (values?: Record<string, unknown>) => void
-}
-const AutoFormCtx = createContext<Ctx<Record<string, unknown>> | null>(null)
-
-export function useAutoFormCtx<
-	TValues extends Record<string, unknown> = Record<string, unknown>,
->() {
-	const ctx = useContext(AutoFormCtx)
-	if (!ctx) {
-		throw new Error(DEFAULT_TEXTS.errors.autoFormContextMissing)
-	}
-	return ctx as Ctx<TValues>
-}
+export { useAutoFormCtx } from './internal/formContext'
 
 type AutoFormSharedProps = {
 	/** 你自由摆放内容：标题/按钮/字段/调试等 */
@@ -84,7 +53,7 @@ export function AutoForm<
 	S extends ObjectLikeSchema,
 	TValues extends Record<string, unknown> = InferOutput<S> & Record<string, unknown>,
 >({ schema, fields, formOpts, children, resetKey, formProps }: AutoFormProps<S, TValues>) {
-	const form = useAppForm<Record<string, unknown>>(schema, formOpts)
+	const { form, resetVersion } = useAppForm<Record<string, unknown>>(schema, formOpts)
 	const defaultValues = useMemo(
 		() =>
 			(formOpts?.defaultValues ?? (schema === undefined ? {} : getDefaults(schema))) as Record<
@@ -100,7 +69,7 @@ export function AutoForm<
 		throw new Error('AutoForm requires either schema or fields')
 	}, [fields, schema])
 
-	const ctx = useMemo<Ctx<Record<string, unknown>>>(
+	const ctx = useMemo<ReturnType<typeof useAutoFormCtx>>(
 		() => ({
 			form,
 			sections: fieldPlan.sections,
@@ -129,7 +98,11 @@ export function AutoForm<
 	return (
 		<form {...formProps} onSubmit={onSubmit}>
 			<AutoFormCtx.Provider value={ctx}>
-				<FieldRendererProvider value={FieldRenderer}>{children}</FieldRendererProvider>
+				<FormResetVersion.Provider value={resetVersion}>
+					<FieldRendererProvider value={renderBoundField} renderValue={renderFieldValue}>
+						{children}
+					</FieldRendererProvider>
+				</FormResetVersion.Provider>
 			</AutoFormCtx.Provider>
 		</form>
 	)
@@ -146,23 +119,15 @@ export interface AutoFormFieldsProps {
 
 const FieldsImpl = (props?: AutoFormFieldsProps) => {
 	const { sectionSpacing = 'xl', sectionIdPrefix, fieldIdPrefix } = props ?? {}
-	const { form, sections, hiddenFields, defaultValues } = useAutoFormCtx<any>()
+	const { sections } = useAutoFormCtx()
 
 	return (
 		<>
-			{hiddenFields.map(({ name }) => (
-				<form.Field key={`hidden-${name}`} name={name}>
-					{() => null}
-				</form.Field>
-			))}
-
 			<Stack gap={sectionSpacing}>
 				{sections.map((section) => (
 					<SectionBlock
 						key={section.id}
 						section={section}
-						form={form}
-						defaultValues={defaultValues}
 						sectionIdPrefix={sectionIdPrefix}
 						fieldIdPrefix={fieldIdPrefix}
 					/>
@@ -183,14 +148,10 @@ function toDomSlug(value: string) {
 
 function SectionBlock({
 	section,
-	form,
-	defaultValues,
 	sectionIdPrefix,
 	fieldIdPrefix,
 }: {
 	section: SectionPlan
-	form: ReturnType<typeof useAppForm<any>>
-	defaultValues: Record<string, unknown>
 	sectionIdPrefix?: string
 	fieldIdPrefix?: string
 }) {
@@ -261,27 +222,7 @@ function SectionBlock({
 							data-config-anchor-label={node.meta.label ?? name}
 							data-config-anchor-field-id={fieldDomId}
 						>
-							<form.Field name={name}>
-								{(field) => (
-									<FieldRenderer
-										node={node}
-										value={field.state.value as any}
-										errors={field.state.meta.errors as any}
-										defaultValue={defaultValues[name]}
-										inputProps={{
-											name,
-											onChange: field.handleChange,
-											onBlur: field.handleBlur,
-											...(node.meta.disabled !== undefined && {
-												disabled: node.meta.disabled,
-											}),
-											...(node.meta.readOnly !== undefined && {
-												readOnly: node.meta.readOnly,
-											}),
-										}}
-									/>
-								)}
-							</form.Field>
+							<BoundField node={node} path={[name]} />
 						</div>
 					)
 				})}
@@ -365,4 +306,11 @@ export interface DebugPanelProps {}
 AutoForm.DebugPanel = DebugPanelImpl as React.FC<DebugPanelProps>
 if (isDevelopmentEnvironment()) {
 	AutoForm.DebugPanel.displayName = 'AutoForm.DebugPanel'
+}
+
+function renderBoundField(props: React.ComponentProps<typeof BoundField>) {
+	return <BoundField {...props} />
+}
+function renderFieldValue(props: React.ComponentProps<typeof FieldRenderer>) {
+	return <FieldRenderer {...props} />
 }

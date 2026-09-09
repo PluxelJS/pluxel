@@ -1,3 +1,4 @@
+import { makePathArray } from '@tanstack/react-form'
 import { Box, ScrollArea } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import type { PluginNodeAddress } from '@pluxel/core'
@@ -17,6 +18,7 @@ import {
 	refreshPluginConfig,
 	type PluginConfigSection,
 } from './usePluginConfig'
+import { mapConfigValidationErrors, mountedFieldNames } from '../../forms/serverValidation'
 
 const EMPTY_CONFIG_SECTIONS: readonly PluginConfigSection[] = []
 const EMPTY_FORM_STATE: ConfigFormState = {
@@ -158,12 +160,17 @@ function ConfigFormInstance({
 		if (activeState.submitting || savingAll) return
 		const bridge = formBridgesRef.current[resolvedActiveKey]
 		if (!bridge || !activeSection) return
+		// Restoring defaults replaces the editable draft as a whole.
+		bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
 		const editableDefaults = buildEditableConfigPatch(
 			activeSection.fields,
 			activeSection.defaultValue,
 			activeSection.initialValue,
 		)
 		for (const [key, value] of Object.entries(editableDefaults)) {
+			// Defaults contain literal root keys, not TanStack path expressions.
+			const parsed = makePathArray(key)
+			if (!key || parsed.length !== 1 || parsed[0] !== key) continue
 			bridge.form.setFieldValue(key, value)
 		}
 	}, [activeSection, activeState.submitting, resolvedActiveKey, savingAll])
@@ -174,10 +181,37 @@ function ConfigFormInstance({
 		const patch = buildCombinedConfigPatch(savedConfig, sectionItems, formStates, dirtySet)
 		if (Object.keys(patch).length === 0) return
 
+		// Capture every section: validation can depend on values outside a reported field.
+		const submitted = Object.entries(formBridgesRef.current).map(([key, bridge]) => ({
+			key,
+			bridge,
+			values: bridge.form.state.values,
+		}))
+		const unchanged = () =>
+			submitted.every(
+				({ key, bridge, values }) =>
+					formBridgesRef.current[key]?.form === bridge.form && bridge.form.state.values === values,
+			)
 		setSavingAll(true)
+		for (const bridge of Object.values(formBridgesRef.current)) {
+			bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
+		}
 		try {
 			const result = await management.config.patch(owner, patch)
 			if (result.ok === false) {
+				if (result.code === 'validation_failed' && unchanged()) {
+					for (const section of sectionItems) {
+						const bridge = formBridgesRef.current[section.key]
+						if (bridge)
+							bridge.form.setErrorMap({
+								onServer: mapConfigValidationErrors(
+									result.errors,
+									mountedFieldNames(bridge.form),
+									section.path,
+								),
+							} as never)
+					}
+				}
 				if (result.state === 'unknown') {
 					await Promise.all([
 						refreshPluginConfig(queryClient, owner),
@@ -194,9 +228,10 @@ function ConfigFormInstance({
 
 			commitPluginConfig(queryClient, owner, result.config)
 			await refreshPluginReadModels(queryClient)
-			for (const key of dirtyKeys) {
-				const state = formStates[key]
-				if (state) formBridgesRef.current[key]?.reset(state.values)
+			for (const { key, bridge, values } of submitted) {
+				if (dirtySet.has(key) && formBridgesRef.current[key]?.form === bridge.form) {
+					bridge.acceptSaved(values)
+				}
 			}
 			if (result.application === 'saved-not-applied') {
 				notify({

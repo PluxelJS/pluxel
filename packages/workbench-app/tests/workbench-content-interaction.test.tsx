@@ -11,12 +11,10 @@ import type { ConfigPresentationFieldV1 } from '@pluxel/runtime/web'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { mapServerValidationIssues } from '../src/app/forms/serverValidation'
 import { WorkbenchContentController } from '../src/app/workbench/WorkbenchContentController'
 import { WorkbenchContentRenderer } from '../src/app/workbench/WorkbenchContentRenderer'
-import {
-	mapWorkbenchContentValidationIssues,
-	type WorkbenchContentInteraction,
-} from '../src/app/workbench/WorkbenchContentSlots'
+import { type WorkbenchContentInteraction } from '../src/app/workbench/WorkbenchContentSlots'
 
 const statusField = field({
 	kind: 'picklist',
@@ -362,6 +360,41 @@ describe('interactive Workbench Content', () => {
 		expect(run).toHaveBeenCalledWith('refresh')
 	})
 
+	it.each(['success', 'validation'] as const)(
+		'preserves action drafts edited during a pending response (%s)',
+		async (outcome) => {
+			let resolve!: (result: unknown) => void
+			const run = vi.fn(
+				() =>
+					new Promise<any>((done) => {
+						resolve = done
+					}),
+			)
+			const fixture = await renderInteractive({ run })
+			await tick()
+			const input = fixture.container.querySelector<HTMLInputElement>('input[name="name"]')!
+			await change(input, 'submitted')
+			await click(button(fixture.container, 'Save'))
+			expect(run).toHaveBeenCalledOnce()
+			await change(input, 'newer draft')
+			await act(async () =>
+				resolve({
+					action:
+						outcome === 'success'
+							? { ok: true }
+							: {
+									ok: false,
+									code: 'validation_failed',
+									issues: [{ path: ['name'], message: 'Stale rejection' }],
+								},
+					data: null,
+				}),
+			)
+			expect(input.value).toBe('newer draft')
+			expect(fixture.container.textContent).not.toContain('Stale rejection')
+		},
+	)
+
 	it('maps server validation into AutoForm, preserves a failed draft, and clears it on success', async () => {
 		const run = vi
 			.fn()
@@ -397,6 +430,46 @@ describe('interactive Workbench Content', () => {
 		expect(fixture.container.textContent).not.toContain('Name is required')
 	})
 
+	it('shows nested server errors beside their inputs and keeps unmounted issues visible', async () => {
+		const run = vi
+			.fn()
+			.mockResolvedValueOnce({
+				action: {
+					ok: false,
+					code: 'validation_failed',
+					issues: [
+						{ path: ['profile', 'host'], message: 'Invalid nested host' },
+						{ path: ['removed'], message: 'Unavailable field rejected' },
+					],
+				},
+				data: null,
+			})
+			.mockResolvedValueOnce({ action: { ok: true }, data: null })
+		const nestedPresentation: WorkbenchContentPresentation = {
+			...presentation,
+			slots: presentation.slots.map((slot) =>
+				slot.key === 'save' ? { ...slot, fields: [profileField] } : slot,
+			),
+		}
+		const fixture = await renderInteractive({ run }, {}, false, nestedPresentation)
+		await tick()
+		const input = fixture.container.querySelector<HTMLInputElement>('input[name="profile.host"]')!
+		await change(input, 'invalid')
+		await click(button(fixture.container, 'Save'))
+		expect(run).toHaveBeenNthCalledWith(1, 'save', { profile: { host: 'invalid' } })
+		expect(input.closest('.mantine-Stack-root')?.textContent).toContain('Invalid nested host')
+		expect(input.getAttribute('aria-invalid')).toBe('true')
+		const errorId = input.getAttribute('aria-describedby')!
+		expect(document.getElementById(errorId)?.textContent).toContain('Invalid nested host')
+		expect(fixture.container.textContent).toContain('Invalid nested host')
+		expect(fixture.container.textContent).toContain('Unavailable field rejected')
+		await change(input, 'valid.example')
+		expect(fixture.container.textContent).not.toContain('Invalid nested host')
+		expect(fixture.container.textContent).not.toContain('Unavailable field rejected')
+		await submit(fixture.container.querySelector<HTMLFormElement>('form')!)
+		expect(run).toHaveBeenNthCalledWith(2, 'save', { profile: { host: 'valid.example' } })
+	})
+
 	it('discards a dialog draft when the dialog is cancelled', async () => {
 		const fixture = await renderInteractive()
 		await tick()
@@ -412,20 +485,20 @@ describe('interactive Workbench Content', () => {
 	})
 })
 
-it('groups portable validation issues by AutoForm root field and keeps nested paths', () => {
+it('routes portable validation issues to mounted full paths and summarizes unmounted issues', () => {
 	expect(
-		mapWorkbenchContentValidationIssues(
+		mapServerValidationIssues(
 			[
 				{ path: ['profile', 'host'], message: 'Invalid host' },
 				{ path: [], message: 'Form rejected' },
 				{ path: ['removed'], message: 'Unknown field' },
 			],
-			new Set(['profile']),
+			new Set(['profile.host']),
 		),
 	).toEqual({
 		form: ['Form rejected', 'Unknown field'],
 		fields: {
-			profile: [{ message: 'Invalid host', dotPath: ['profile', 'host'] }],
+			'profile.host': [{ message: 'Invalid host' }],
 		},
 	})
 })
@@ -434,12 +507,13 @@ async function renderInteractive(
 	overrides: Partial<Pick<WorkbenchOpenedContentHandle, 'subscribe' | 'load' | 'run'>> = {},
 	host: Partial<Pick<WorkbenchContentInteraction, 'confirm' | 'notify'>> = {},
 	strict = false,
+	formPresentation: WorkbenchContentPresentation = presentation,
 ) {
 	const handle = interactiveHandle(overrides)
 	const controller = new WorkbenchContentController(handle)
 	controller.start()
 	const interaction: WorkbenchContentInteraction = {
-		presentation,
+		presentation: formPresentation,
 		controller,
 		confirm: host.confirm ?? vi.fn(async () => true),
 		notify: host.notify ?? vi.fn(),

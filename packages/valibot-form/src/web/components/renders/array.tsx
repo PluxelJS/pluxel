@@ -44,7 +44,6 @@ import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 import {
-	isErrorWithPath,
 	joinErrorMessages,
 	normalizeErrorMessages,
 	type FieldError,
@@ -54,7 +53,7 @@ import {
 	triggerFormBlur,
 	triggerFormEvents,
 } from './types'
-import { buildNestedInputProps, tweakNestedNode } from './nested'
+import { tweakNestedNode } from './nested'
 
 const EMPTY_ARRAY_ITEMS: unknown[] = []
 
@@ -178,6 +177,7 @@ function createArrayItemKey(nextId: number) {
 
 type ArrayFieldPicklistProps = {
 	node: RendererProps['node']
+	inputProps: RendererProps['inputProps']
 	items: unknown[]
 	itemNode: PicklistFieldNode
 	baseErrors: FieldError[]
@@ -187,10 +187,11 @@ type ArrayFieldPicklistProps = {
 }
 
 function ArrayFieldPicklist(props: ArrayFieldPicklistProps) {
-	const { node, items, itemNode, baseErrors, updateItems, handleBlur, isLocked } = props
+	const { node, inputProps, items, itemNode, baseErrors, updateItems, handleBlur, isLocked } = props
 
 	return (
 		<FieldChrome
+			errorId={inputProps.errorId}
 			{...cleanProps({
 				label: node.meta.label,
 				required: node.required,
@@ -198,12 +199,17 @@ function ArrayFieldPicklist(props: ArrayFieldPicklistProps) {
 				help: node.meta.help,
 				hint: node.meta.hint,
 				badge: node.meta.badge,
-				errors: baseErrors,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}
 		>
 			<PicklistControl
+				error={joinErrorMessages(normalizeErrorMessages(baseErrors))}
+				id={inputProps.id}
+				name={inputProps.name}
+				aria-invalid={inputProps['aria-invalid']}
+				aria-describedby={inputProps['aria-describedby']}
+				ariaLabel={node.meta.label}
 				meta={{
 					options: itemNode.options,
 					entries: itemNode.entries,
@@ -250,9 +256,7 @@ export function ArrayField(props: RendererProps) {
 	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
 
 	if (layout === 'picker' && itemNode?.kind === 'picklist') {
-		const baseErrors = normalizeErrorMessages(
-			errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
-		)
+		const baseErrors = normalizeErrorMessages(errors)
 
 		const updateItems = (next: unknown[], options?: TriggerOptions) =>
 			triggerFormEvents(inputProps, next, options)
@@ -260,6 +264,7 @@ export function ArrayField(props: RendererProps) {
 
 		return (
 			<ArrayFieldPicklist
+				inputProps={inputProps}
 				node={node}
 				items={items}
 				itemNode={itemNode as PicklistFieldNode}
@@ -271,7 +276,7 @@ export function ArrayField(props: RendererProps) {
 		)
 	}
 
-	return <ArrayFieldMain {...props} />
+	return <ArrayFieldMain key={props.resetVersion} {...props} />
 }
 
 function ArrayFieldMain(props: RendererProps) {
@@ -294,36 +299,22 @@ function ArrayFieldMain(props: RendererProps) {
 
 	const minItems = info.min ?? 0
 	const maxItems = info.max
-	const canAdd = info.addable !== false && !isLocked && (!maxItems || items.length < maxItems)
+	const canAdd =
+		info.addable !== false && !isLocked && (maxItems === undefined || items.length < maxItems)
 	const canRemove = info.removable !== false
 	const canReorder = info.reorderable !== false && items.length > 1
 	const itemLabel = info.itemLabel ?? node.meta.label ?? DEFAULT_TEXTS.array.itemLabel
 	const addLabel = info.addLabel ?? (itemLabel ? `添加${itemLabel}` : DEFAULT_TEXTS.array.addItem)
 
-	const baseErrors = normalizeErrorMessages(
-		errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
-	)
+	const baseErrors = normalizeErrorMessages(errors)
 
-	const itemErrorsMap = useMemo(() => {
-		const map = new Map<number, FieldError[]>()
-		for (const err of errors ?? []) {
-			if (!isErrorWithPath(err)) continue
-			if ((err.dotPath?.length ?? 0) <= 1) continue
-			const idx = Number(err.dotPath?.[1])
-			if (Number.isNaN(idx)) continue
-			if (!map.has(idx)) map.set(idx, [])
-			map.get(idx)!.push({ ...err, dotPath: err.dotPath?.slice(1) })
-		}
-		return map
-	}, [errors])
-
-	const [jsonParseErrors, setJsonParseErrors] = useState<Record<number, string | undefined>>({})
+	const [jsonParseErrors, setJsonParseErrors] = useState<Record<string, string | undefined>>({})
 	const itemKeyIdRef = useRef(0)
 	const itemKeysRef = useRef<string[]>([])
 
 	useEffect(() => {
 		setJsonParseErrors({})
-	}, [items.length])
+	}, [items.length, props.resetVersion])
 
 	if (itemKeysRef.current.length < items.length) {
 		for (let i = itemKeysRef.current.length; i < items.length; i++) {
@@ -334,46 +325,35 @@ function ArrayFieldMain(props: RendererProps) {
 	}
 
 	const itemKeys = itemKeysRef.current
-	const updateItems = (next: unknown[], options?: TriggerOptions, nextKeys = itemKeys) => {
-		itemKeysRef.current = nextKeys
-		triggerFormEvents(inputProps, next, options)
-	}
 	const handleBlur = () => triggerFormBlur(inputProps)
-
 	const handleAdd = () => {
-		const template = info.defaultItem ?? defaultItemForNode(itemNode)
-		updateItems([...items, cloneValue(template)], { blur: true }, [
-			...itemKeys,
-			createArrayItemKey(itemKeyIdRef.current++),
-		])
+		if (!canAdd) return
+		itemKeysRef.current = [...itemKeys, createArrayItemKey(itemKeyIdRef.current++)]
+		props.arrayActions.push(cloneValue(info.defaultItem ?? defaultItemForNode(itemNode)))
+		handleBlur()
 	}
-
 	const handleRemove = (index: number) => {
-		if (!canRemove || isLocked) return
-		if (items.length <= minItems) return
-		const next = items.filter((_, idx) => idx !== index)
-		updateItems(
-			next,
-			{ blur: true },
-			itemKeys.filter((_, itemIndex) => itemIndex !== index),
+		if (!canRemove || isLocked || items.length <= minItems) return
+		itemKeysRef.current = itemKeys.filter((_, i) => i !== index)
+		props.arrayActions.remove(index)
+		handleBlur()
+	}
+	const moveItem = (from: number, to: number) => {
+		if (
+			!canReorder ||
+			isLocked ||
+			from === to ||
+			from < 0 ||
+			to < 0 ||
+			from >= items.length ||
+			to >= items.length
 		)
+			return
+		itemKeysRef.current = reorderList(itemKeys, from, to)
+		props.arrayActions.move(from, to)
+		handleBlur()
 	}
-
-	const handleMove = (index: number, direction: number) => {
-		if (!canReorder || isLocked) return
-		const target = index + direction
-		updateItems(
-			reorderList(items, index, target),
-			{ blur: true },
-			reorderList(itemKeys, index, target),
-		)
-	}
-
-	const handleChange = (index: number, nextValue: unknown, options?: TriggerOptions) => {
-		const next = [...items]
-		next[index] = nextValue
-		updateItems(next, options)
-	}
+	const handleMove = (index: number, direction: number) => moveItem(index, index + direction)
 
 	type ControlRenderResult = { node: ReactNode; inline?: boolean }
 	type ControlRenderOptions = { compact?: boolean }
@@ -408,7 +388,7 @@ function ArrayFieldMain(props: RendererProps) {
 
 	useEffect(() => {
 		setDraftValue(undefined)
-	}, [compactKind])
+	}, [compactKind, props.resetVersion])
 
 	useEffect(() => {
 		if (!inlineAddEnabled) return
@@ -431,209 +411,78 @@ function ArrayFieldMain(props: RendererProps) {
 		})
 	}, [inlineAddEnabled, items.length])
 
-	const renderJsonFallback = (index: number, current: unknown, fallback: 'array' | 'object') => {
-		const formatted =
-			current && typeof current === 'object'
-				? JSON.stringify(current, null, 2)
-				: fallback === 'array'
-					? '[]'
-					: '{}'
-		return (
-			<Textarea
-				key={`${itemKeys[index] ?? `array-json-${index}`}-${items.length}`}
-				defaultValue={formatted}
-				minRows={4}
-				autosize
-				onBlur={(event) => {
-					if (isLocked) return
-					const inputValue = (event.currentTarget as HTMLTextAreaElement).value
-					try {
-						const parsed = JSON.parse(inputValue || formatted)
-						handleChange(index, parsed, { blur: true })
-						setJsonParseErrors((prev) => {
-							const next = { ...prev }
-							delete next[index]
-							return next
-						})
-					} catch {
-						setJsonParseErrors((prev) => ({
-							...prev,
-							[index]: DEFAULT_TEXTS.validation.jsonError,
-						}))
-					}
-				}}
-				disabled={inputProps.disabled ?? false}
-				readOnly={inputProps.readOnly ?? false}
-				styles={{
-					input: { fontFamily: 'var(--mantine-font-family-monospace)' },
-				}}
-			/>
-		)
-	}
-
+	const nestedItemNode = useMemo(() => (itemNode ? tweakNestedNode(itemNode) : null), [itemNode])
 	const renderControl = (
 		index: number,
 		current: unknown,
 		options: ControlRenderOptions = {},
 	): ControlRenderResult => {
-		const inferredType =
-			itemNode?.kind ??
-			(typeof current === 'number'
-				? 'number'
-				: typeof current === 'boolean'
-					? 'boolean'
-					: typeof current === 'string'
-						? 'string'
-						: current && typeof current === 'object'
-							? 'json'
-							: 'string')
-
-		switch (inferredType) {
-			case 'number':
-				return {
-					node: (
-						<NumberInput
-							value={typeof current === 'number' ? current : ''}
-							onChange={(val) => {
-								const parsed = val === '' || val === undefined ? undefined : Number(val)
-								const safe = Number.isNaN(parsed) ? undefined : parsed
-								handleChange(index, safe)
-							}}
-							onBlur={handleBlur}
-							placeholder={numberMeta?.placeholder}
-							min={numberMeta?.min}
-							max={numberMeta?.max}
-							step={numberMeta?.step ?? (numberMeta?.integer ? 1 : undefined)}
-							disabled={isLocked}
-						/>
-					),
-				}
-			case 'boolean':
-				return {
-					inline: !options.compact,
-					node: (
-						<Switch
-							label={options.compact ? undefined : `${itemLabel} #${index + 1}`}
-							checked={Boolean(current)}
-							onChange={(event) => {
-								handleChange(index, (event.currentTarget as HTMLInputElement).checked)
-							}}
-							onBlur={handleBlur}
-							disabled={isLocked}
-						/>
-					),
-				}
-			case 'picklist': {
-				return {
-					node: (
-						<PicklistControl
-							meta={{
-								options: picklistMeta?.options,
-								entries: picklistMeta?.entries,
-								labels: picklistMeta?.labels,
-								disabled: picklistMeta?.disabled,
-								placeholder: picklistMeta?.placeholder,
-								searchable: picklistMeta?.searchable,
-								clearable: picklistMeta?.clearable ?? true,
-								max: picklistMeta?.max,
-								create: picklistMeta?.create,
-								control: picklistMeta?.control ?? 'select',
-								multiple: false,
-								emptyLabel: picklistMeta?.emptyLabel,
-							}}
-							value={current}
-							onChange={(next) => handleChange(index, next)}
-							onBlur={handleBlur}
-							disabled={isLocked}
-						/>
-					),
-				}
-			}
-			case 'string': {
-				const control = stringMeta?.control ?? 'text'
-				if (control === 'textarea' || control === 'code') {
-					return {
-						node: (
-							<Textarea
-								value={toInputString(current)}
-								onChange={(event) =>
-									handleChange(index, (event.currentTarget as HTMLTextAreaElement).value)
-								}
-								onBlur={handleBlur}
-								minRows={stringMeta?.rows ?? 3}
-								autosize
-								disabled={inputProps.disabled ?? false}
-								readOnly={inputProps.readOnly ?? false}
-								placeholder={stringMeta?.placeholder}
-								minLength={stringMeta?.minLength}
-								maxLength={stringMeta?.maxLength}
-								styles={
-									control === 'code'
-										? { input: { fontFamily: 'var(--mantine-font-family-monospace)' } }
-										: undefined
-								}
-							/>
-						),
-					}
-				}
-				return {
-					node: (
-						<TextInput
-							value={toInputString(current)}
-							onChange={(event) => {
-								handleChange(index, (event.currentTarget as HTMLInputElement).value)
-							}}
-							onBlur={handleBlur}
-							type={control === 'password' ? 'password' : 'text'}
-							disabled={inputProps.disabled ?? false}
-							readOnly={inputProps.readOnly ?? false}
-							placeholder={stringMeta?.placeholder}
-							minLength={stringMeta?.minLength}
-							maxLength={stringMeta?.maxLength}
-						/>
-					),
-				}
-			}
-			case 'object':
-			case 'array':
-			case 'union':
-			case 'record': {
-				if (!itemNode) {
-					return {
-						node: renderJsonFallback(index, current, inferredType === 'array' ? 'array' : 'object'),
-					}
-				}
-				const nestedNode = tweakNestedNode(itemNode)
-				const nestedName = inputProps.name ? `${inputProps.name}.${index}` : String(index)
-				const nestedInputProps = buildNestedInputProps(inputProps, nestedName, (nextValue) =>
-					handleChange(index, nextValue),
-				)
-				const itemErrors = itemErrorsMap.get(index) ?? []
-				return {
-					node: renderField({
-						node: nestedNode,
-						value: current,
-						errors: itemErrors,
-						inputProps: nestedInputProps,
-					}),
-				}
-			}
-			case 'json':
-				return { node: renderJsonFallback(index, current, 'object') }
-			default:
-				return {
-					node: (
-						<TextInput
-							value={toInputString(current)}
-							onChange={(event) => {
-								handleChange(index, (event.currentTarget as HTMLInputElement).value)
-							}}
-							onBlur={handleBlur}
-							disabled={inputProps.disabled ?? false}
-							readOnly={inputProps.readOnly ?? false}
-						/>
-					),
-				}
+		const inferred =
+			typeof current === 'number' ? 'number' : typeof current === 'boolean' ? 'boolean' : 'string'
+		const childNode: FieldNode =
+			nestedItemNode ??
+			({
+				...node,
+				kind: inferred,
+				control: inferred === 'boolean' ? 'switch' : 'text',
+				meta: {
+					...node.meta,
+					label: `${itemLabel} #${index + 1}`,
+					hideLabel: true,
+					hideRequired: true,
+				},
+			} as FieldNode)
+		const json = !itemNode && current !== null && typeof current === 'object'
+		return {
+			inline: childNode.kind === 'boolean' && !options.compact,
+			node: renderField({
+				node: childNode,
+				path: [...props.path, index],
+				disabled: inputProps.disabled,
+				readOnly: inputProps.readOnly,
+				...(json
+					? {
+							children: (bound: RendererProps) => {
+								const itemKey = itemKeys[index]!
+								const formatted = JSON.stringify(bound.value, null, 2)
+								return (
+									<Textarea
+										key={`${itemKey}:${props.resetVersion}`}
+										id={bound.inputProps.id}
+										name={bound.inputProps.name}
+										aria-label={`${itemLabel} #${index + 1}`}
+										defaultValue={formatted}
+										minRows={4}
+										autosize
+										error={joinErrorMessages([
+											...(bound.errors ?? []),
+											...(jsonParseErrors[itemKey] ? [jsonParseErrors[itemKey]!] : []),
+										])}
+										onBlur={(event) => {
+											if (isLocked) return
+											try {
+												triggerFormEvents(
+													bound.inputProps,
+													JSON.parse(event.currentTarget.value || formatted),
+													{ blur: true },
+												)
+												setJsonParseErrors((prev) => ({ ...prev, [itemKey]: undefined }))
+											} catch {
+												setJsonParseErrors((prev) => ({
+													...prev,
+													[itemKey]: DEFAULT_TEXTS.validation.jsonError,
+												}))
+											}
+										}}
+										disabled={inputProps.disabled}
+										readOnly={inputProps.readOnly}
+										styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+									/>
+								)
+							},
+						}
+					: {}),
+			}),
 		}
 	}
 
@@ -676,20 +525,6 @@ function ArrayFieldMain(props: RendererProps) {
 		</Group>
 	)
 
-	const renderErrors = (idx: number) => {
-		const combined = [
-			...(itemErrorsMap.get(idx) ?? []),
-			...(jsonParseErrors[idx] ? [jsonParseErrors[idx]] : []),
-		]
-		const errorText = joinErrorMessages(combined)
-		if (!errorText) return null
-		return (
-			<Text size="xs" c="red.6" style={{ whiteSpace: 'pre-line' }}>
-				{errorText}
-			</Text>
-		)
-	}
-
 	const handleInlineAdd = () => {
 		const template = info.defaultItem ?? defaultItemForNode(itemNode)
 		const valueToAdd =
@@ -698,10 +533,10 @@ function ArrayFieldMain(props: RendererProps) {
 			(typeof draftValue === 'number' && Number.isNaN(draftValue))
 				? template
 				: draftValue
-		updateItems([...items, cloneValue(valueToAdd)], { blur: true }, [
-			...itemKeys,
-			createArrayItemKey(itemKeyIdRef.current++),
-		])
+		if (!canAdd) return
+		itemKeysRef.current = [...itemKeys, createArrayItemKey(itemKeyIdRef.current++)]
+		props.arrayActions.push(cloneValue(valueToAdd))
+		handleBlur()
 		setDraftValue(undefined)
 	}
 
@@ -811,7 +646,6 @@ function ArrayFieldMain(props: RendererProps) {
 	const renderItemCard = (item: unknown, idx: number, itemKey: string) => {
 		const control = renderControl(idx, item)
 		const inline = layout === 'grid' ? false : control.inline
-		const errorsNode = renderErrors(idx)
 		const actionsNode = (
 			<Group gap="xs" align="center">
 				{canReorder && !isCompactList ? (
@@ -830,7 +664,6 @@ function ArrayFieldMain(props: RendererProps) {
 							{control.node}
 							{actionsNode}
 						</Group>
-						{errorsNode ? <div style={{ marginTop: 6 }}>{errorsNode}</div> : null}
 					</Card>
 				),
 			}
@@ -846,10 +679,7 @@ function ArrayFieldMain(props: RendererProps) {
 						</Text>
 						{actionsNode}
 					</Group>
-					<Stack gap={6}>
-						{control.node}
-						{errorsNode}
-					</Stack>
+					<Stack gap={6}>{control.node}</Stack>
 				</Card>
 			),
 		}
@@ -869,7 +699,6 @@ function ArrayFieldMain(props: RendererProps) {
 
 	const tableRows = items.map((item, idx) => {
 		const control = renderControl(idx, item, { compact: true })
-		const errorsNode = renderErrors(idx)
 		return (
 			<tr key={itemKeys[idx] ?? `row-${idx}`}>
 				<td style={{ width: 56 }}>
@@ -878,10 +707,7 @@ function ArrayFieldMain(props: RendererProps) {
 					</Text>
 				</td>
 				<td>
-					<Stack gap={4}>
-						{control.node}
-						{errorsNode}
-					</Stack>
+					<Stack gap={4}>{control.node}</Stack>
 				</td>
 				<td style={{ width: 120 }}>{renderActions(idx)}</td>
 			</tr>
@@ -911,7 +737,7 @@ function ArrayFieldMain(props: RendererProps) {
 					if (!over || active.id === over.id) return
 					const from = renderedCards.findIndex((item) => item.id === active.id)
 					const to = renderedCards.findIndex((item) => item.id === over.id)
-					updateItems(reorderList(items, from, to), { blur: true }, reorderList(itemKeys, from, to))
+					moveItem(from, to)
 				}}
 				onDragCancel={() => setActiveId(null)}
 			>
@@ -996,6 +822,7 @@ function ArrayFieldMain(props: RendererProps) {
 
 	return (
 		<FieldChrome
+			errorId={inputProps.errorId}
 			{...cleanProps({
 				label: node.meta.label,
 				required: node.required,

@@ -22,6 +22,7 @@ export function NumberField(props: RendererProps) {
 				hint: node.meta.hint,
 				badge: node.meta.badge,
 				errors: baseErrors,
+				errorId: inputProps.errorId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}
@@ -36,6 +37,14 @@ export function NumberField(props: RendererProps) {
 					},
 					onBlur: inputProps.onBlur,
 					name: inputProps.name,
+					id: inputProps.id,
+					error: inputProps['aria-invalid'],
+					attributes: {
+						input: {
+							'aria-invalid': inputProps['aria-invalid'],
+							'aria-describedby': inputProps['aria-describedby'],
+						},
+					},
 					placeholder: info.placeholder,
 					min: info.min,
 					max: info.max,

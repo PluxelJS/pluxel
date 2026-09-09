@@ -85,7 +85,7 @@ export function planFieldSections(fields: FieldNode[]): FieldPlanResult {
 	const hiddenFields: PlannedField[] = []
 	const visibleFields: PlannedField[] = []
 	for (const node of fields) {
-		if (!node.name) continue
+		if (node.name === undefined) continue
 		const planned: PlannedField = { name: node.name, node }
 		if (node.meta.hidden) hiddenFields.push(planned)
 		else visibleFields.push(planned)

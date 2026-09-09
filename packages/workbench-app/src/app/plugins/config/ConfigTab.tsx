@@ -1,7 +1,7 @@
 import { Box } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { FieldNode } from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
@@ -9,6 +9,11 @@ import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useRuntimeManagementClient } from '../../../runtime'
 import { useNotify } from '../../hooks/useNotify'
 import { commitPluginConfig, refreshPluginConfig } from './usePluginConfig'
+import {
+	mapConfigValidationErrors,
+	mountedFieldNames,
+	ServerValidationSummary,
+} from '../../forms/serverValidation'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
 import { buildEditableConfigPatch } from './presentationAdapter'
@@ -27,6 +32,7 @@ export type ConfigFormBridge = {
 	form: ReturnType<typeof useAutoFormCtx>['form']
 	reset: (values?: Record<string, unknown>) => void
 	submit: () => void
+	acceptSaved: (values: Record<string, unknown>) => void
 }
 
 export function ConfigTabContent({
@@ -64,14 +70,26 @@ export function ConfigTabContent({
 		() => ({ ...defaultValue, ...savedValue }),
 		[defaultValue, savedValue],
 	)
+	// Keep reset and React options aligned while the query publishes the saved configuration.
+	// Subsequent external configuration/default changes remain authoritative.
+	const [baseline, setBaseline] = useState(initialValue)
+	useEffect(() => setBaseline(initialValue), [initialValue])
 	const tabKey = path.join('.') || 'config'
 	const sectionIdPrefix = makeSectionAnchorPrefix(displayName, tabKey)
 	const fieldIdPrefix = makeFieldAnchorPrefix(displayName, tabKey)
 	const opts = useMemo(
 		() =>
 			formOptions({
-				defaultValues: initialValue,
+				defaultValues: baseline,
+				canSubmitWhenInvalid: true,
+				listeners: {
+					onChange: ({ formApi }) => {
+						// Field bindings clear their own errors; a summary can depend on any field.
+						formApi.setErrorMap({ onServer: undefined })
+					},
+				},
 				onSubmit: async ({ value, formApi }) => {
+					formApi.setErrorMap({ onServer: { fields: {} } } as never)
 					const patch = buildEditableConfigPatch(fields, value, savedValue)
 					const result = await (path.length === 0
 						? management.config.patch(owner, patch)
@@ -80,6 +98,15 @@ export function ConfigTabContent({
 								value: { ...persistedValue, ...patch },
 							}))
 					if (result.ok === false) {
+						if (result.code === 'validation_failed' && formApi.state.values === value) {
+							formApi.setErrorMap({
+								onServer: mapConfigValidationErrors(
+									result.errors,
+									mountedFieldNames(formApi),
+									path,
+								),
+							} as never)
+						}
 						if (result.state === 'unknown') {
 							await Promise.all([
 								refreshPluginConfig(queryClient, owner),
@@ -93,9 +120,11 @@ export function ConfigTabContent({
 						})
 						return
 					}
+					setBaseline(value)
 					commitPluginConfig(queryClient, owner, result.config)
 					await refreshPluginReadModels(queryClient)
-					formApi.reset(value)
+					// TanStack updates values immutably, including reset. Never overwrite a newer draft.
+					if (formApi.state.values === value) formApi.reset(value)
 					if (result.application === 'saved-not-applied') {
 						notify({
 							title: '配置已保存，但尚未应用',
@@ -117,25 +146,18 @@ export function ConfigTabContent({
 					}
 				},
 			}),
-		[
-			fields,
-			initialValue,
-			management,
-			notify,
-			owner,
-			path,
-			persistedValue,
-			queryClient,
-			savedValue,
-		],
+		[fields, baseline, management, notify, owner, path, persistedValue, queryClient, savedValue],
 	)
 
 	return (
 		<AutoForm fields={fields} formOpts={opts}>
-			{registerForm ? <FormBridge tabKey={tabKey} registerForm={registerForm} /> : null}
+			{registerForm ? (
+				<FormBridge tabKey={tabKey} registerForm={registerForm} setBaseline={setBaseline} />
+			) : null}
 			{reportState ? <FormStateSlot tabKey={tabKey} reportState={reportState} /> : null}
 			<Box px="xs" pt="xs" pb={24}>
 				<AutoForm.Fields sectionIdPrefix={sectionIdPrefix} fieldIdPrefix={fieldIdPrefix} />
+				<ServerValidationSummary />
 			</Box>
 			{showToc ? (
 				<FormToc
@@ -150,20 +172,33 @@ export function ConfigTabContent({
 }
 
 function FormBridge({
+	setBaseline,
 	tabKey,
 	registerForm,
 }: {
 	tabKey: string
 	registerForm: (key: string, bridge: ConfigFormBridge) => void | (() => void)
+	setBaseline: (values: Record<string, unknown>) => void
 }): null {
 	const { form, reset, submit } = useAutoFormCtx<any>()
 
 	useEffect(() => {
-		const dispose = registerForm(tabKey, { form, reset, submit })
+		const dispose = registerForm(tabKey, {
+			form,
+			reset: (values) => {
+				if (values) setBaseline(values)
+				reset(values)
+			},
+			submit,
+			acceptSaved: (values) => {
+				setBaseline(values)
+				if (form.state.values === values) reset(values)
+			},
+		})
 		return () => {
 			if (typeof dispose === 'function') dispose()
 		}
-	}, [form, registerForm, reset, submit, tabKey])
+	}, [form, registerForm, reset, setBaseline, submit, tabKey])
 
 	return null
 }

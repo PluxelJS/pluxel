@@ -10,6 +10,7 @@ export interface FieldChromeProps {
 	hint?: string
 	badge?: string | { label: string; color?: string }
 	errors?: string[]
+	errorId?: string
 	children: ReactNode
 	hideLabel?: boolean
 	hideRequired?: boolean
@@ -39,6 +40,7 @@ export function FieldChrome({
 	hint,
 	badge,
 	errors,
+	errorId,
 	children,
 	hideLabel,
 	hideRequired,
@@ -81,7 +83,7 @@ export function FieldChrome({
 			) : null}
 			{children}
 			{errorText ? (
-				<Text size="sm" c="red.6" style={{ whiteSpace: 'pre-line' }}>
+				<Text id={errorId} size="sm" c="red.6" style={{ whiteSpace: 'pre-line' }}>
 					{errorText}
 				</Text>
 			) : null}

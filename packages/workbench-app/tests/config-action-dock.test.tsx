@@ -129,6 +129,173 @@ afterEach(() => {
 })
 
 describe('config action dock', () => {
+	it.each(['success', 'validation'] as const)(
+		'preserves edits made during a pending section save (%s)',
+		async (outcome) => {
+			let resolve!: (result: unknown) => void
+			const patch = vi.fn(
+				() =>
+					new Promise<any>((done) => {
+						resolve = done
+					}),
+			)
+			const { container, root } = await mount(
+				<ConfigHarness client={createFakeManagementClient(patch)} />,
+			)
+			try {
+				const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+				await act(async () => input.click())
+				await act(async () => buttonWithText(container, '保存').click())
+				expect(patch).toHaveBeenCalledOnce()
+				await act(async () => input.click())
+				await act(async () =>
+					resolve(
+						outcome === 'success'
+							? { ok: true, config: { rootEnabled: true }, application: 'applied' }
+							: {
+									ok: false,
+									code: 'validation_failed',
+									errors: {
+										_root: { rootEnabled: [{ path: ['rootEnabled'], message: 'Stale rejection' }] },
+									},
+								},
+					),
+				)
+				expect(input.checked).toBe(false)
+				expect(container.textContent).not.toContain('Stale rejection')
+			} finally {
+				await act(async () => root.unmount())
+			}
+		},
+	)
+
+	it.each(['success', 'validation'] as const)(
+		'preserves edits made during a pending save-all (%s)',
+		async (outcome) => {
+			let resolve!: (result: unknown) => void
+			const patch = vi.fn(
+				() =>
+					new Promise<any>((done) => {
+						resolve = done
+					}),
+			)
+			const { container, root } = await mount(
+				<ConfigHarness
+					client={createFakeManagementClient(patch)}
+					sections={[
+						{ path: [], fieldName: 'config', fields: rootFields, defaults: { rootEnabled: false } },
+						{
+							path: ['cache'],
+							fieldName: 'cache',
+							fields: nestedFields,
+							defaults: { enabled: false },
+						},
+					]}
+				/>,
+			)
+			try {
+				const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+				const sibling = container.querySelector<HTMLInputElement>('input[name="enabled"]')!
+				await act(async () => {
+					input.click()
+					sibling.click()
+				})
+				await act(async () => buttonWithText(container, '全部保存').click())
+				expect(patch).toHaveBeenCalledOnce()
+				await act(async () => input.click())
+				await act(async () =>
+					resolve(
+						outcome === 'success'
+							? {
+									ok: true,
+									config: { rootEnabled: true, cache: { enabled: true } },
+									application: 'applied',
+								}
+							: {
+									ok: false,
+									code: 'validation_failed',
+									errors: {
+										_root: { rootEnabled: [{ path: ['rootEnabled'], message: 'Stale rejection' }] },
+									},
+								},
+					),
+				)
+				expect(input.checked).toBe(false)
+				expect(sibling.checked).toBe(true)
+				expect(container.textContent).not.toContain('Stale rejection')
+			} finally {
+				await act(async () => root.unmount())
+			}
+		},
+	)
+
+	it('keeps unrelated field errors when another field is corrected', async () => {
+		const fields = f.extractFormFields(v.object({ rootEnabled: v.boolean(), other: v.boolean() }))
+		const patch = vi.fn().mockResolvedValue({
+			ok: false,
+			code: 'validation_failed',
+			errors: {
+				_root: {
+					rootEnabled: [{ path: ['rootEnabled'], message: 'First rejected' }],
+					other: [{ path: ['other'], message: 'Other rejected' }],
+					_root: [{ path: [], message: 'Cross-field rejection' }],
+				},
+			},
+		})
+		const { container, root } = await mount(
+			<ConfigHarness
+				client={createFakeManagementClient(patch)}
+				sections={[
+					{ path: [], fieldName: 'config', fields, defaults: { rootEnabled: false, other: false } },
+				]}
+			/>,
+		)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			await act(async () => input.click())
+			await act(async () => buttonWithText(container, '保存').click())
+			await act(async () => input.click())
+			expect(container.textContent).not.toContain('First rejected')
+			expect(container.textContent).not.toContain('Cross-field rejection')
+			expect(container.textContent).toContain('Other rejected')
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('keeps a newer draft through saved-config propagation and submits it on retry', async () => {
+		let resolve!: (result: unknown) => void
+		const patch = vi
+			.fn()
+			.mockImplementationOnce(
+				() =>
+					new Promise((done) => {
+						resolve = done
+					}),
+			)
+			.mockResolvedValue({ ok: true, config: { rootEnabled: false }, application: 'applied' })
+		const client = createFakeManagementClient(patch)
+		const { container, root } = await mount(<ConfigHarness client={client} />)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			await act(async () => input.click())
+			await act(async () => buttonWithText(container, '保存').click())
+			await act(async () => input.click())
+			await act(async () => {
+				resolve({ ok: true, config: { rootEnabled: true }, application: 'applied' })
+				root.render(<ConfigHarness client={client} savedConfig={{ rootEnabled: true }} />)
+			})
+			expect(container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!.checked).toBe(
+				false,
+			)
+			expect(buttonWithText(container, '保存').disabled).toBe(false)
+			await act(async () => buttonWithText(container, '保存').click())
+			expect(patch).toHaveBeenLastCalledWith(OWNER, { rootEnabled: false })
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
 	it('keeps the action group outside and before the scrolling form content', async () => {
 		const { container, root } = await mount(<ConfigHarness />)
 		try {
@@ -184,12 +351,115 @@ describe('config action dock', () => {
 		}
 	})
 
+	it('restores safe defaults while preserving literal root keys and their safe siblings', async () => {
+		const fields = f.extractFormFields(
+			v.object({
+				literal: v.object({ key: v.string() }),
+				'literal.key': v.string(),
+				'0': v.string(),
+				'': v.string(),
+				rootEnabled: v.boolean(),
+			}),
+		)
+		const savedConfig = {
+			literal: { key: 'nested saved' },
+			'literal.key': 'dotted saved',
+			'0': 'numeric saved',
+			'': 'empty saved',
+			rootEnabled: true,
+		}
+		let persisted = savedConfig
+		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => {
+			persisted = { ...persisted, ...input }
+			return { ok: true as const, config: persisted, application: 'applied' as const }
+		})
+		const { container, root } = await mount(
+			<ConfigHarness
+				client={createFakeManagementClient(patch)}
+				savedConfig={savedConfig}
+				sections={[
+					{
+						path: [],
+						fieldName: 'config',
+						fields,
+						defaults: {
+							literal: { key: 'nested saved' },
+							'literal.key': 'dotted default',
+							'0': 'numeric default',
+							'': 'empty default',
+							rootEnabled: false,
+						},
+					},
+				]}
+			/>,
+		)
+		try {
+			await act(async () => buttonWithText(container, '恢复默认').click())
+			expect(container.querySelector<HTMLInputElement>('input[name="literal.key"]')?.value).toBe(
+				'nested saved',
+			)
+			expect(container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')?.checked).toBe(
+				false,
+			)
+			expect(buttonWithText(container, '保存').disabled).toBe(false)
+			await act(async () => buttonWithText(container, '保存').click())
+			expect(patch).toHaveBeenCalledOnce()
+			expect(persisted).toEqual({ ...savedConfig, rootEnabled: false })
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('shows server field errors, preserves the draft, and allows saving after correction', async () => {
+		const patch = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: false,
+				code: 'validation_failed',
+				state: 'unchanged',
+				errors: {
+					_root: {
+						rootEnabled: [{ path: ['rootEnabled'], message: 'Rejected toggle' }],
+						_root: [{ path: [], message: 'Configuration rejected' }],
+					},
+				},
+			})
+			.mockResolvedValueOnce({ ok: true, config: { rootEnabled: false }, application: 'applied' })
+		const { container, root } = await mount(
+			<ConfigHarness client={createFakeManagementClient(patch)} />,
+		)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			await act(async () => input.click())
+			await act(async () => buttonWithText(container, '保存').click())
+			expect(input.checked).toBe(true)
+			expect(container.textContent).toContain('Rejected toggle')
+			expect(container.textContent).toContain('Configuration rejected')
+			expect(buttonWithText(container, '保存').disabled).toBe(false)
+			await act(async () => input.click())
+			expect(container.textContent).not.toContain('Rejected toggle')
+			expect(container.textContent).not.toContain('Configuration rejected')
+			// Return to a dirty value so the dock can submit it again.
+			await act(async () => input.click())
+			await act(async () => buttonWithText(container, '保存').click())
+			expect(patch).toHaveBeenCalledTimes(2)
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
 	it('saves all dirty sections in one patch and preserves unrendered nested values', async () => {
 		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => ({
 			ok: true as const,
 			config: input,
 			application: 'applied' as const,
 		}))
+		patch.mockResolvedValueOnce({
+			ok: false,
+			code: 'validation_failed',
+			state: 'unchanged',
+			errors: { _root: { cache: [{ path: ['cache', 'enabled'], message: 'Cache rejected' }] } },
+		} as never)
 		const sections = [
 			{
 				path: [],
@@ -235,7 +505,12 @@ describe('config action dock', () => {
 				await Promise.resolve()
 			})
 
-			expect(patch).toHaveBeenCalledTimes(1)
+			expect(nestedToggle.checked).toBe(true)
+			expect(container.textContent).toContain('Cache rejected')
+			expect(buttonWithText(container, '全部保存').disabled).toBe(false)
+			await act(async () => buttonWithText(container, '全部保存').click())
+			expect(container.textContent).not.toContain('Cache rejected')
+			expect(patch).toHaveBeenCalledTimes(2)
 			expect(patch).toHaveBeenCalledWith(OWNER, {
 				rootEnabled: true,
 				cache: { enabled: true, preserved: 'keep-me' },

@@ -25,6 +25,14 @@ export function StringField(props: RendererProps) {
 						triggerFormEvents(inputProps, event.target.value),
 					onBlur: inputProps.onBlur,
 					name: inputProps.name,
+					id: inputProps.id,
+					error: inputProps['aria-invalid'],
+					attributes: {
+						input: {
+							'aria-invalid': inputProps['aria-invalid'],
+							'aria-describedby': inputProps['aria-describedby'],
+						},
+					},
 					placeholder,
 					minRows: rows,
 					autosize: true,
@@ -46,6 +54,14 @@ export function StringField(props: RendererProps) {
 						triggerFormEvents(inputProps, event.target.value),
 					onBlur: inputProps.onBlur,
 					name: inputProps.name,
+					id: inputProps.id,
+					error: inputProps['aria-invalid'],
+					attributes: {
+						input: {
+							'aria-invalid': inputProps['aria-invalid'],
+							'aria-describedby': inputProps['aria-describedby'],
+						},
+					},
 					placeholder,
 					minLength,
 					maxLength,
@@ -67,6 +83,7 @@ export function StringField(props: RendererProps) {
 				hint: node.meta.hint,
 				badge: node.meta.badge,
 				errors: baseErrors,
+				errorId: inputProps.errorId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}

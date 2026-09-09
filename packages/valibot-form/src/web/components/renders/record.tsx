@@ -26,23 +26,20 @@ import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 import {
-	isErrorWithPath,
 	joinErrorMessages,
 	normalizeErrorMessages,
 	type RendererProps,
-	type TriggerOptions,
 	toInputString,
 	triggerFormBlur,
 	triggerFormEvents,
 } from './types'
-import { buildNestedInputProps, tweakNestedNode } from './nested'
+import { tweakNestedNode } from './nested'
 
 type ValueKind = FieldNode['kind'] | 'json' | null
 
 type RecordRow = {
 	id: string
 	key: string
-	value: unknown
 }
 
 function resolvePicklistDefault(meta?: PicklistFieldNode | null): unknown {
@@ -108,71 +105,44 @@ function inferValueKind(value: unknown): ValueKind {
 }
 
 export function RecordField(props: RendererProps) {
-	const { node, errors, inputProps, value } = props
+	return <RecordFieldEditor key={props.resetVersion} {...props} />
+}
+
+function RecordFieldEditor(props: RendererProps) {
+	const { node, errors, inputProps, value, path, resetVersion } = props
 	const info = node as RecordFieldNode
 	const renderField = useFieldRenderer()
 	const layout = info.layout ?? 'table'
 
 	const rowIdRef = useRef(0)
-	const buildRow = (key: string, rowValue: unknown): RecordRow => ({
-		id: `row_${rowIdRef.current++}`,
-		key,
-		value: rowValue,
-	})
-
-	const entries = useMemo(() => Object.entries((value as Record<string, unknown>) ?? {}), [value])
-
-	const [rows, setRows] = useState<RecordRow[]>(() =>
-		Object.entries((value as Record<string, unknown>) ?? {}).map(([key, rowValue]) =>
-			buildRow(key, rowValue),
-		),
+	const recordValue = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+	const keys = Object.keys(recordValue)
+	// Rows own identity/order only; field values always come from the form store.
+	const [rowState, setRows] = useState<RecordRow[]>(() =>
+		keys.map((key) => ({ id: `row_${rowIdRef.current++}`, key })),
 	)
-
-	useEffect(() => {
-		setRows((prev) => {
-			if (entries.length === 0 && prev.length === 0) return prev
-			const entryMap = new Map(entries)
-			const seen = new Set<string>()
-			const next: RecordRow[] = []
-
-			for (const row of prev) {
-				if (!entryMap.has(row.key)) continue
-				const nextValue = entryMap.get(row.key)
-				const nextRow = row.value === nextValue ? row : { ...row, value: nextValue }
-				next.push(nextRow)
-				seen.add(row.key)
-			}
-
-			for (const [key, rowValue] of entries) {
-				if (seen.has(key)) continue
-				next.push(buildRow(key, rowValue))
-			}
-
-			if (
-				next.length === prev.length &&
-				next.every(
-					(row, idx) =>
-						row.id === prev[idx].id && row.key === prev[idx].key && row.value === prev[idx].value,
-				)
-			) {
-				return prev
-			}
-			return next
-		})
-	}, [entries])
-
-	const inferredValueKind = useMemo<ValueKind>(() => {
-		for (const row of rows) {
-			const kind = inferValueKind(row.value)
-			if (kind) return kind
-		}
-		return null
-	}, [rows])
+	const presentKeys = new Set(keys)
+	const retainedRows = rowState.filter((row) => presentKeys.has(row.key))
+	const retainedKeys = new Set(retainedRows.map((row) => row.key))
+	const rows = [
+		...retainedRows,
+		...keys
+			.filter((key) => !retainedKeys.has(key))
+			.map((key) => ({
+				id: `row_${rowIdRef.current++}`,
+				key,
+			})),
+	]
+	if (rows.length !== rowState.length || rows.some((row, index) => row !== rowState[index])) {
+		setRows(rows)
+	}
+	const inferredValueKind = Object.values(recordValue).map(inferValueKind).find(Boolean) ?? null
 
 	const minItems = info.min ?? 0
 	const maxItems = info.max
 	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
-	const canAdd = info.addable !== false && !isLocked && (!maxItems || rows.length < maxItems)
+	const canAdd =
+		info.addable !== false && !isLocked && (maxItems === undefined || rows.length < maxItems)
 	const canRemove = info.removable !== false
 	const canReorder = info.reorderable !== false && rows.length > 1
 	const editableKey = info.editableKey !== false
@@ -203,7 +173,8 @@ export function RecordField(props: RendererProps) {
 
 	useEffect(() => {
 		setDraftValue(undefined)
-	}, [valueKind])
+		setDraftKey('')
+	}, [valueKind, resetVersion])
 
 	useEffect(() => {
 		if (!inlineAddEnabled) return undefined
@@ -213,38 +184,25 @@ export function RecordField(props: RendererProps) {
 		return () => cancelAnimationFrame(handle)
 	}, [inlineAddEnabled, rows.length])
 
-	const baseErrors = normalizeErrorMessages(
-		errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
-	)
-
-	const entryErrors = useMemo(() => {
-		const map = new Map<string, { message: string; dotPath?: string[] }[]>()
-		for (const err of errors ?? []) {
-			if (!isErrorWithPath(err)) continue
-			if ((err.dotPath?.length ?? 0) <= 1) continue
-			const key = String(err.dotPath?.[1])
-			if (!map.has(key)) map.set(key, [])
-			map.get(key)!.push({ message: err.message, dotPath: err.dotPath?.slice(1) })
-		}
-		return map
-	}, [errors])
-
-	const [jsonErrors, setJsonErrors] = useState<Record<number, string | undefined>>({})
+	const baseErrors = normalizeErrorMessages(errors)
+	const [jsonErrors, setJsonErrors] = useState<Record<string, string | undefined>>({})
 
 	useEffect(() => {
 		setJsonErrors({})
-	}, [rows.length])
+	}, [resetVersion])
 
-	const commitRows = (nextRows: RecordRow[], options?: TriggerOptions) => {
-		const next: Record<string, unknown> = {}
-		for (const row of nextRows) {
-			next[row.key] = row.value
-		}
-		triggerFormEvents(inputProps, next, options)
+	const commitRows = (nextRows: RecordRow[], nextValues = recordValue) => {
+		setRows(nextRows)
+		triggerFormEvents(
+			inputProps,
+			Object.fromEntries(nextRows.map((row) => [row.key, nextValues[row.key]])),
+			{ blur: true },
+		)
 	}
+
 	const handleBlur = () => triggerFormBlur(inputProps)
 
-	const existingKeySet = useMemo(() => new Set(rows.map((row) => row.key)), [rows])
+	const existingKeySet = new Set(rows.map((row) => row.key))
 	const draftKeyTrimmed = draftKey.trim()
 	const draftKeyError =
 		draftKeyTrimmed.length === 0 ? null : existingKeySet.has(draftKeyTrimmed) ? 'Key 已存在' : null
@@ -266,41 +224,28 @@ export function RecordField(props: RendererProps) {
 	}
 
 	const handleInlineAdd = () => {
-		if (!draftKeyValid) return
-		const valueToAdd = resolveDraftValue()
-		commitRows(
-			[...rows, { id: `row_${rowIdRef.current++}`, key: draftKeyTrimmed, value: valueToAdd }],
-			{
-				blur: true,
-			},
-		)
+		if (!draftKeyValid || !canAdd || isLocked) return
+		commitRows([...rows, { id: `row_${rowIdRef.current++}`, key: draftKeyTrimmed }], {
+			...recordValue,
+			[draftKeyTrimmed]: resolveDraftValue(),
+		})
 		setDraftKey('')
 		setDraftValue(undefined)
 	}
 
 	const handleKeyChange = (index: number, nextKey: string) => {
 		const current = rows[index]
-		if (!current) return
-		if (nextKey !== current.key && existingKeySet.has(nextKey)) return
+		if (!current || isLocked || nextKey === current.key) return
+		if (existingKeySet.has(nextKey)) return
 		const next = rows.map((row, idx) => (idx === index ? { ...row, key: nextKey } : row))
-		setRows(next)
-		commitRows(next)
-	}
-
-	const handleValueChange = (index: number, nextValue: unknown) => {
-		const current = rows[index]
-		if (!current) return
-		const next = rows.map((row, idx) => (idx === index ? { ...row, value: nextValue } : row))
-		setRows(next)
-		commitRows(next)
+		commitRows(next, { ...recordValue, [nextKey]: recordValue[current.key] })
 	}
 
 	const handleRemove = (index: number) => {
 		if (!canRemove || isLocked) return
 		if (rows.length <= minItems) return
 		const next = rows.filter((_, idx) => idx !== index)
-		setRows(next)
-		commitRows(next, { blur: true })
+		commitRows(next)
 	}
 
 	const handleMove = (index: number, direction: number) => {
@@ -310,8 +255,7 @@ export function RecordField(props: RendererProps) {
 		const next = [...rows]
 		const [removed] = next.splice(index, 1)
 		next.splice(target, 0, removed)
-		setRows(next)
-		commitRows(next, { blur: true })
+		commitRows(next)
 	}
 
 	const handleAdd = () => {
@@ -324,196 +268,101 @@ export function RecordField(props: RendererProps) {
 			nextKey = `${baseKey}_${index}`
 		}
 		const nextValue = resolveDraftValue()
-		const next: RecordRow[] = [
-			...rows,
-			{ id: `row_${rowIdRef.current++}`, key: nextKey, value: nextValue },
-		]
-		setRows(next)
-		commitRows(next, { blur: true })
+		const next: RecordRow[] = [...rows, { id: `row_${rowIdRef.current++}`, key: nextKey }]
+		commitRows(next, { ...recordValue, [nextKey]: nextValue })
 	}
 
-	const renderJsonFallback = (index: number, current: unknown, fallback: 'array' | 'object') => {
-		const formatted =
-			current && typeof current === 'object'
-				? JSON.stringify(current, null, 2)
-				: fallback === 'array'
-					? '[]'
-					: '{}'
-		return (
-			<Textarea
-				key={`${index}-${rows.length}`}
-				defaultValue={formatted}
-				minRows={4}
-				autosize
-				onBlur={(event) => {
-					if (isLocked) return
-					const inputValue = (event.currentTarget as HTMLTextAreaElement).value
-					try {
-						const parsed = JSON.parse(inputValue || formatted)
-						handleValueChange(index, parsed)
-						handleBlur()
-						setJsonErrors((prev) => {
-							const next = { ...prev }
-							delete next[index]
-							return next
-						})
-					} catch {
-						setJsonErrors((prev) => ({
-							...prev,
-							[index]: DEFAULT_TEXTS.validation.jsonError,
-						}))
-					}
-				}}
-				disabled={inputProps.disabled ?? false}
-				readOnly={inputProps.readOnly ?? false}
-				styles={{
-					input: { fontFamily: 'var(--mantine-font-family-monospace)' },
-				}}
-			/>
-		)
-	}
-
-	const renderValueControl = (index: number, current: unknown, recordKey: string) => {
-		const inferredType = valueNode?.kind ?? inferValueKind(current) ?? 'string'
-
-		switch (inferredType) {
-			case 'number':
-				return (
-					<NumberInput
-						{...cleanProps({
-							value: typeof current === 'number' ? current : '',
-							onChange: (val: string | number) => {
-								const parsed = val === '' || val === undefined ? undefined : Number(val)
-								const safe = Number.isNaN(parsed) ? undefined : parsed
-								handleValueChange(index, safe)
-							},
-							onBlur: handleBlur,
-							disabled: isLocked,
-							placeholder: valuePlaceholder ?? valueNumberMeta?.placeholder,
-							min: valueNumberMeta?.min,
-							max: valueNumberMeta?.max,
-							step: valueNumberMeta?.step ?? (valueNumberMeta?.integer ? 1 : undefined),
-						})}
-					/>
-				)
-			case 'boolean':
-				return (
-					<Switch
-						{...cleanProps({
-							checked: Boolean(current),
-							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-								handleValueChange(index, event.currentTarget.checked),
-							onBlur: handleBlur,
-							disabled: isLocked,
-						})}
-					/>
-				)
-			case 'picklist': {
-				const meta = valueNode as PicklistFieldNode
-				return (
-					<PicklistControl
-						meta={{
-							options: meta.options,
-							entries: meta.entries,
-							labels: meta.labels,
-							disabled: meta.disabled,
-							placeholder: meta.placeholder,
-							searchable: meta.searchable,
-							clearable: meta.clearable ?? true,
-							max: meta.max,
-							create: meta.create,
-							control: meta.control ?? 'select',
-							multiple: false,
-							emptyLabel: meta.emptyLabel,
-						}}
-						value={current}
-						onChange={(next) => handleValueChange(index, next)}
-						onBlur={handleBlur}
-						disabled={isLocked}
-					/>
-				)
-			}
-			case 'string': {
-				const control = valueStringMeta?.control ?? 'text'
-				if (control === 'textarea' || control === 'code') {
-					return (
-						<Textarea
-							value={typeof current === 'string' ? current : ''}
-							onChange={(event) =>
-								handleValueChange(index, (event.currentTarget as HTMLTextAreaElement).value)
-							}
-							onBlur={handleBlur}
-							minRows={valueStringMeta?.rows ?? 3}
-							autosize
-							disabled={inputProps.disabled ?? false}
-							readOnly={inputProps.readOnly ?? false}
-							placeholder={valuePlaceholder ?? valueStringMeta?.placeholder}
-							minLength={valueStringMeta?.minLength}
-							maxLength={valueStringMeta?.maxLength}
-							styles={
-								control === 'code'
-									? { input: { fontFamily: 'var(--mantine-font-family-monospace)' } }
-									: undefined
-							}
-						/>
-					)
-				}
-				return (
-					<TextInput
-						{...cleanProps({
-							value: typeof current === 'string' ? current : '',
-							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-								handleValueChange(index, event.currentTarget.value),
-							onBlur: handleBlur,
-							disabled: inputProps.disabled,
-							placeholder: valuePlaceholder ?? valueStringMeta?.placeholder,
-							minLength: valueStringMeta?.minLength,
-							maxLength: valueStringMeta?.maxLength,
-						})}
-						readOnly={inputProps.readOnly ?? false}
-					/>
-				)
-			}
-			case 'array':
-			case 'object':
-			case 'record':
-			case 'union': {
-				if (!valueNode) {
-					return renderJsonFallback(index, current, inferredType === 'array' ? 'array' : 'object')
-				}
-
-				const nestedName = inputProps.name ? `${inputProps.name}.${recordKey}` : recordKey
-				const nestedInputProps = buildNestedInputProps(inputProps, nestedName, (nextValue) =>
-					handleValueChange(index, nextValue),
-				)
-
-				const itemErrors = entryErrors.get(recordKey) ?? []
-				const nestedNode = tweakNestedNode(valueNode)
-
-				return renderField({
-					node: nestedNode,
-					value: current,
-					errors: itemErrors,
-					inputProps: nestedInputProps,
-				})
-			}
-			case 'json':
-				return renderJsonFallback(index, current, Array.isArray(current) ? 'array' : 'object')
-			default:
-				return (
-					<TextInput
-						{...cleanProps({
-							value: toInputString(current),
-							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-								handleValueChange(index, event.currentTarget.value),
-							onBlur: handleBlur,
-							disabled: inputProps.disabled,
-							placeholder: valuePlaceholder,
-						})}
-						readOnly={inputProps.readOnly ?? false}
-					/>
-				)
+	// Every row of a planned value type shares the same presentation node.
+	// Keep that identity stable so editing one value does not rerender all siblings.
+	const nestedValueNodes = useMemo(() => {
+		const nodes = new Map<string, FieldNode>()
+		for (const kind of valueNode ? [valueNode.kind] : ['string', 'number', 'boolean']) {
+			const inferredNode =
+				valueNode ??
+				({
+					kind,
+					path: '',
+					depth: node.depth + 1,
+					required: false,
+					meta: { label: valueLabel },
+					...(kind === 'string' ? { control: 'text' as const } : {}),
+					...(kind === 'boolean' ? { control: 'switch' as const } : {}),
+				} as FieldNode)
+			nodes.set(
+				kind,
+				tweakNestedNode({
+					...inferredNode,
+					...(valuePlaceholder ? { placeholder: valuePlaceholder } : {}),
+				}),
+			)
 		}
+		return nodes
+	}, [valueNode, node.depth, valueLabel, valuePlaceholder])
+
+	const renderValueControl = (current: unknown, row: RecordRow) => {
+		const inferredType = valueNode?.kind ?? inferValueKind(current) ?? 'string'
+		const childPath = [...path, row.key]
+		const nestedNode = nestedValueNodes.get(inferredType)
+		if (nestedNode) {
+			return renderField({
+				node: nestedNode,
+				path: childPath,
+				disabled: inputProps.disabled,
+				readOnly: inputProps.readOnly,
+			})
+		}
+		// A record without a value plan retains a JSON draft until parsing succeeds.
+		return renderField({
+			node: {
+				kind: 'unsupported',
+				path: '',
+				depth: node.depth + 1,
+				required: false,
+				meta: { label: valueLabel },
+				reason: 'JSON',
+				readOnly: true,
+			},
+			path: childPath,
+			disabled: inputProps.disabled,
+			readOnly: inputProps.readOnly,
+			children: (bound: RendererProps) => {
+				const formatted = JSON.stringify(
+					bound.value ?? (inferredType === 'array' ? [] : {}),
+					null,
+					2,
+				)
+				return (
+					<Textarea
+						key={`${row.id}:${resetVersion}`}
+						id={bound.inputProps.id}
+						name={bound.inputProps.name}
+						defaultValue={formatted}
+						minRows={4}
+						autosize
+						error={joinErrorMessages([
+							...(bound.errors ?? []),
+							...(jsonErrors[row.id] ? [jsonErrors[row.id]!] : []),
+						])}
+						onBlur={(event) => {
+							if (isLocked) return
+							try {
+								triggerFormEvents(
+									bound.inputProps,
+									JSON.parse(event.currentTarget.value || formatted),
+									{ blur: true },
+								)
+								setJsonErrors((prev) => ({ ...prev, [row.id]: undefined }))
+							} catch {
+								setJsonErrors((prev) => ({ ...prev, [row.id]: DEFAULT_TEXTS.validation.jsonError }))
+							}
+						}}
+						disabled={inputProps.disabled ?? false}
+						readOnly={inputProps.readOnly ?? false}
+						styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+					/>
+				)
+			},
+		})
 	}
 
 	const renderActions = (idx: number) => (
@@ -555,20 +404,6 @@ export function RecordField(props: RendererProps) {
 		</Group>
 	)
 
-	const renderErrors = (idx: number, recordKey: string) => {
-		const combined = [
-			...(entryErrors.get(recordKey) ?? []),
-			...(jsonErrors[idx] ? [jsonErrors[idx]] : []),
-		]
-		const errorText = joinErrorMessages(combined)
-		if (!errorText) return null
-		return (
-			<Text size="xs" c="red.6" style={{ whiteSpace: 'pre-line' }}>
-				{errorText}
-			</Text>
-		)
-	}
-
 	const keyWidth = info.key?.width
 	const valueWidth = info.valueMeta?.width
 
@@ -589,8 +424,7 @@ export function RecordField(props: RendererProps) {
 				)}
 			</td>
 			<td style={valueWidth ? { width: valueWidth } : undefined}>
-				{renderValueControl(idx, row.value, row.key)}
-				{renderErrors(idx, row.key)}
+				{renderValueControl(recordValue[row.key], row)}
 			</td>
 			<td style={{ width: 120 }}>{renderActions(idx)}</td>
 		</tr>
@@ -745,10 +579,7 @@ export function RecordField(props: RendererProps) {
 				</Group>
 				{renderActions(idx)}
 			</Group>
-			<Stack gap={6}>
-				{renderValueControl(idx, row.value, row.key)}
-				{renderErrors(idx, row.key)}
-			</Stack>
+			<Stack gap={6}>{renderValueControl(recordValue[row.key], row)}</Stack>
 		</Card>
 	))
 
@@ -788,6 +619,7 @@ export function RecordField(props: RendererProps) {
 
 	return (
 		<FieldChrome
+			errorId={inputProps.errorId}
 			{...cleanProps({
 				label: node.meta.label,
 				required: node.required,

@@ -24,11 +24,16 @@ export function PicklistField(props: RendererProps) {
 				hint: node.meta.hint,
 				badge: node.meta.badge,
 				errors: baseErrors,
+				errorId: inputProps.errorId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}
 		>
 			<PicklistControl
+				id={inputProps.id}
+				name={inputProps.name}
+				aria-invalid={inputProps['aria-invalid']}
+				aria-describedby={inputProps['aria-describedby']}
 				meta={{
 					options: info.options,
 					entries: info.entries,

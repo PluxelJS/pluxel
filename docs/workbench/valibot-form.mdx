@@ -266,6 +266,33 @@ export function ConfigEditor() {
 
 `AutoForm` 负责根据 schema metadata 规划和渲染字段；配置 authority 仍然是 runtime 的 `configs.use()` 校验流程。把表单值送回 host API 前，服务端必须再次用同一个 schema 校验，不能把浏览器表单当作信任边界。
 
+### 嵌套编辑与错误反馈
+
+Object、数组行和当前 Union 分支中的可编辑字段使用完整的 TanStack 字段路径，例如
+`database.host`、`servers[0].host`。各字段独立记录 blur 和错误；数组删除、重排使用 TanStack 的数组操作，
+交互状态随行移动，受影响的校验错误重新校验或清除。
+
+Workbench 的配置保存和 Content action 会把服务端错误放到对应的已显示字段；隐藏字段、未激活分支、
+无法准确定位的路径错误保留在表单摘要。编辑字段会清除该字段的旧服务端错误和表单摘要，
+其他字段的错误继续显示；开始下一次提交时清除上一轮服务端错误。修改后可保留草稿再次提交。
+请求期间继续编辑时，迟到响应不会覆盖新草稿或给新值挂上旧校验错误；配置保存成功仍会更新已保存基线，
+新草稿保留为未保存修改。Content action 有新草稿时也不会自动清空或关闭表单；操作反馈仍报告已提交请求的结果。
+
+独立使用 `AutoForm` 时，
+`form.setErrorMap({ onServer: { fields: { 'database.host': '地址不可用' } } })` 可设置字段错误；
+编辑该字段会清除它的旧服务端错误。跨字段错误与表单摘要的失效策略由调用方决定。
+
+`reset()` 同时重置表单和局部编辑草稿，包括 Union 的非激活分支缓存、数组与 Record 的新增草稿。
+在提交回调中调用 `formApi.reset()` 具有相同效果。切换字段计划时，使用 `resetKey` 明确开始新的编辑会话。
+
+Record 内无法被路径准确表示的字面量 key（如 `x.y`、`0` 或空字符串）保持原样，通过可绑定的祖先字段编辑；
+这类值没有独立的 TanStack 字段路径，Workbench 将相应服务端错误显示在摘要。
+如果顶层 key 本身无法被 TanStack 路径准确表示，则显示只读说明并保留原值，避免写入错误位置。
+需要编辑这类数据时，将它放在普通命名的 Record 或 Object 字段内。
+
+传入 `schema` 用于字段规划和默认值，不会自动安装客户端 validator 或将编辑值转换成 schema output。
+独立表单可通过 `formOpts.validators` 显式选择客户端校验时机；Workbench 的 portable 字段计划仍由服务端执行完整校验。
+
 ## 与 Pluxel 配置界面的边界
 
 `valibot-form` 提供 schema metadata、字段提取和可选 Web adapter，不提供 Pluxel Plugin 发现、配置传输或持久化 API。自定义配置界面应直接接收 browser-safe 的 schema，并通过应用自己的服务端接口提交修改；服务端继续使用同一 schema 校验输入。

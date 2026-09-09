@@ -5,71 +5,29 @@ import type { FieldNode, ObjectFieldNode } from '../../../core/fields'
 import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { alignToCss, resolveFieldSpan } from '../internal/layout'
 import { planFieldSections } from '../internal/fieldPlanner'
-import {
-	isErrorWithPath,
-	joinErrorMessages,
-	normalizeErrorMessages,
-	type FieldError,
-	type RendererProps,
-	triggerFormEvents,
-} from './types'
-
-const isObjectValue = (value: unknown): value is Record<string, unknown> =>
-	Boolean(value) && typeof value === 'object'
+import { joinErrorMessages, normalizeErrorMessages, type RendererProps } from './types'
 
 export function ObjectField(props: RendererProps) {
-	const { node, errors, inputProps, value } = props
+	const { node, errors, inputProps } = props
 	const info = node as ObjectFieldNode
 	const renderFieldNode = useFieldRenderer()
-	const baseErrors = normalizeErrorMessages(
-		errors?.filter((err) => typeof err !== 'object' || (err as any)?.dotPath?.length <= 1),
-	)
-
-	const fieldErrorsMap = useMemo(() => {
-		const map = new Map<string, FieldError[]>()
-		for (const err of errors ?? []) {
-			if (!isErrorWithPath(err)) continue
-			if ((err.dotPath?.length ?? 0) <= 1) continue
-			const key = String(err.dotPath?.[1])
-			if (!map.has(key)) map.set(key, [])
-			map.get(key)!.push({ ...err, dotPath: err.dotPath?.slice(1) })
-		}
-		return map
-	}, [errors])
+	const baseErrors = normalizeErrorMessages(errors)
 
 	const sections = useMemo(() => planFieldSections(info.fields), [info.fields])
 	const [collapsed, setCollapsed] = useState(Boolean(info.collapsible && info.collapsed))
 
 	const renderNestedField = (field: FieldNode) => {
-		if (!field.name) return null
-		const fieldValue = isObjectValue(value) ? value[field.name] : undefined
-		const fieldErrors = fieldErrorsMap.get(field.name) ?? []
-		const nestedName = inputProps.name ? `${inputProps.name}.${field.name}` : field.name
+		if (field.name === undefined) return null
 		return renderFieldNode({
 			node: field,
-			value: fieldValue,
-			errors: fieldErrors,
-			inputProps: {
-				name: nestedName,
-				onChange: (nextValue: unknown) => {
-					const current = isObjectValue(value) ? value : {}
-					const next = { ...current, [field.name!]: nextValue }
-					triggerFormEvents(inputProps, next)
-				},
-				onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
-				disabled: inputProps.disabled || field.meta.disabled,
-				readOnly: inputProps.readOnly || field.meta.readOnly,
-			},
+			path: [...props.path, field.name],
+			disabled: inputProps.disabled,
+			readOnly: inputProps.readOnly,
 		})
 	}
 
 	const content = (
 		<Stack gap={info.gap ?? 'md'}>
-			{sections.hiddenFields.map((field) => (
-				<div key={`hidden-${field.name}`} style={{ display: 'none' }}>
-					{renderNestedField(field.node)}
-				</div>
-			))}
 			{sections.sections.map((section) => (
 				<Stack key={section.id} gap="sm">
 					{section.title || section.description ? (
@@ -140,6 +98,11 @@ export function ObjectField(props: RendererProps) {
 						{node.meta.description}
 					</Text>
 				) : null}
+				{baseErrors.length > 0 ? (
+					<Text id={inputProps.errorId} size="sm" c="red.6">
+						{joinErrorMessages(baseErrors)}
+					</Text>
+				) : null}
 				{info.collapsible ? <Collapse expanded={!collapsed}>{content}</Collapse> : content}
 			</Stack>
 		)
@@ -155,7 +118,7 @@ export function ObjectField(props: RendererProps) {
 					</Text>
 				) : null}
 				{baseErrors.length > 0 ? (
-					<Text size="sm" c="red.6" style={{ whiteSpace: 'pre-line' }}>
+					<Text id={inputProps.errorId} size="sm" c="red.6" style={{ whiteSpace: 'pre-line' }}>
 						{joinErrorMessages(baseErrors)}
 					</Text>
 				) : null}

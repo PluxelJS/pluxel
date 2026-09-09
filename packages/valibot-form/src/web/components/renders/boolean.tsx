@@ -17,6 +17,7 @@ export function BooleanField(props: RendererProps) {
 				hint: node.meta.hint,
 				badge: node.meta.badge,
 				errors: baseErrors,
+				errorId: inputProps.errorId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}
@@ -28,6 +29,14 @@ export function BooleanField(props: RendererProps) {
 						triggerFormEvents(inputProps, event.currentTarget.checked),
 					onBlur: inputProps.onBlur,
 					name: inputProps.name,
+					id: inputProps.id,
+					error: inputProps['aria-invalid'],
+					attributes: {
+						input: {
+							'aria-invalid': inputProps['aria-invalid'],
+							'aria-describedby': inputProps['aria-describedby'],
+						},
+					},
 					disabled: inputProps.disabled,
 					readOnly: inputProps.readOnly,
 					'aria-label': node.meta.label,

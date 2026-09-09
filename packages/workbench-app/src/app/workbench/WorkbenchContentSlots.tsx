@@ -5,7 +5,6 @@ import type {
 	WorkbenchContentActionPresentation,
 	WorkbenchContentDataPresentation,
 	WorkbenchContentPresentation,
-	WorkbenchContentValidationIssue,
 } from '@pluxel/runtime/workbench/client'
 import type {
 	WorkbenchConfirmInput,
@@ -19,6 +18,11 @@ import type {
 	WorkbenchContentDataState,
 } from './WorkbenchContentController'
 import { adaptConfigPresentationFields } from './presentationAdapter'
+import {
+	mapServerValidationIssues,
+	mountedFieldNames,
+	ServerValidationSummary,
+} from '../forms/serverValidation'
 
 const MAX_VISIBLE_ITEMS = 100
 const MAX_INLINE_TEXT = 256
@@ -494,11 +498,6 @@ function ContentActionForm({
 	onSuccess?: () => void
 }) {
 	const fields = useMemo(() => adaptConfigPresentationFields(slot.fields ?? []), [slot.fields])
-	const serverIssues = useRef(false)
-	const fieldNames = useMemo(
-		() => new Set(fields.flatMap((field) => (field.name ? [field.name] : []))),
-		[fields],
-	)
 	const opts = useMemo(
 		() =>
 			formOptions({
@@ -506,61 +505,37 @@ function ContentActionForm({
 				canSubmitWhenInvalid: true,
 				listeners: {
 					onChange: ({ formApi }) => {
-						if (!serverIssues.current) return
-						serverIssues.current = false
-						formApi.setErrorMap({ onServer: { fields: {} } } as never)
+						formApi.setErrorMap({ onServer: undefined })
 					},
 				},
 				onSubmit: async ({ value, formApi }) => {
-					serverIssues.current = false
 					formApi.setErrorMap({ onServer: { fields: {} } } as never)
 					const outcome = await execution.run(value)
-					if (!outcome) return
+					if (!outcome || formApi.state.values !== value) return
 					if (outcome.ok === true) {
 						formApi.reset({})
 						onSuccess?.()
 						return
 					}
 					if (outcome.code === 'validation_failed') {
-						serverIssues.current = true
 						formApi.setErrorMap({
-							onServer: mapWorkbenchContentValidationIssues(outcome.issues, fieldNames),
+							onServer: mapServerValidationIssues(outcome.issues, mountedFieldNames(formApi)),
 						} as never)
 					}
 				},
 			}),
-		[execution, fieldNames, onSuccess],
+		[execution, onSuccess],
 	)
 
 	return (
 		<AutoForm fields={fields} formOpts={opts} formProps={{ 'aria-label': `${slot.label}表单` }}>
 			<Stack gap="md">
 				<AutoForm.Fields sectionSpacing="md" />
-				<ContentActionFormIssueSummary />
+				<ServerValidationSummary />
 				<ActionFeedback feedback={execution.feedback} />
 				<ContentActionFormButtons onCancel={onCancel} slot={slot} />
 			</Stack>
 		</AutoForm>
-	)
-}
-
-function ContentActionFormIssueSummary() {
-	const { form } = useAutoFormCtx()
-	return (
-		<form.Subscribe selector={(state) => state.errorMap.onServer}>
-			{(serverError) => {
-				const messages = readFormIssueMessages(serverError)
-				return messages.length === 0 ? null : (
-					<Alert color="red" title="提交内容有误" variant="light">
-						{messages.map((message, index) => (
-							<Text key={index} size="sm">
-								{message}
-							</Text>
-						))}
-					</Alert>
-				)
-			}}
-		</form.Subscribe>
 	)
 }
 
@@ -596,32 +571,6 @@ function ContentActionFormButtons({
 			)}
 		</AutoForm.Actions>
 	)
-}
-
-export function mapWorkbenchContentValidationIssues(
-	issues: readonly WorkbenchContentValidationIssue[],
-	fieldNames: ReadonlySet<string>,
-): Readonly<{
-	form?: readonly string[]
-	fields: Readonly<Record<string, readonly Readonly<{ message: string; dotPath: string[] }>[]>>
-}> {
-	const form: string[] = []
-	const fields: Record<string, Array<{ message: string; dotPath: string[] }>> = Object.create(null)
-	for (const issue of issues) {
-		const root = issue.path[0]
-		if (typeof root !== 'string' || !fieldNames.has(root)) {
-			form.push(issue.message)
-			continue
-		}
-		;(fields[root] ??= []).push({
-			message: issue.message,
-			dotPath: issue.path.map(String),
-		})
-	}
-	return {
-		...(form.length === 0 ? {} : { form }),
-		fields,
-	}
 }
 
 function ActionFeedback({ feedback }: { feedback: ActionFeedback }) {
@@ -684,14 +633,6 @@ function picklistLabel(
 
 function fieldLabel(field: ConfigPresentationFieldV1): string {
 	return field.meta.label || field.name || '数据'
-}
-
-function readFormIssueMessages(input: unknown): readonly string[] {
-	if (!input || typeof input !== 'object' || !('form' in input)) return []
-	const form = (input as { form?: unknown }).form
-	if (typeof form === 'string') return [form]
-	if (!Array.isArray(form)) return []
-	return form.filter((value): value is string => typeof value === 'string')
 }
 
 function boundedText(value: string, maximum: number): string {
