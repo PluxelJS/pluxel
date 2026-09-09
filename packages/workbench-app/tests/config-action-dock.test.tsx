@@ -14,6 +14,11 @@ vi.mock('../src/app/plugins/pluginReadModels', () => ({
 	refreshPluginReadModels: vi.fn(async () => undefined),
 }))
 
+vi.mock('../src/app/plugins/config/components/ConfigActionDock', { spy: true })
+vi.mock('../src/app/plugins/config/ConfigTab', { spy: true })
+
+import { ConfigActionDock } from '../src/app/plugins/config/components/ConfigActionDock'
+import { ConfigTabContent } from '../src/app/plugins/config/ConfigTab'
 import { ConfigForm } from '../src/app/plugins/config/ConfigForm'
 import { createManagementQueryClient } from '../src/app/managementQuery'
 
@@ -129,6 +134,52 @@ afterEach(() => {
 })
 
 describe('config action dock', () => {
+	it('keeps outer controls and sibling panes idle while typing and saves the latest draft', async () => {
+		const fields = f.extractFormFields(v.object({ title: v.string() }))
+		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => ({
+			ok: true as const,
+			config: input,
+			application: 'applied' as const,
+		}))
+		const { container, root } = await mount(
+			<ConfigHarness
+				client={createFakeManagementClient(patch)}
+				sections={[
+					{ path: [], fieldName: 'config', fields, defaults: { title: '' } },
+					{
+						path: ['cache'],
+						fieldName: 'cache',
+						fields: nestedFields,
+						defaults: { enabled: false },
+					},
+				]}
+			/>,
+		)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="title"]')!
+			const setValue = (value: string) => {
+				Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+					input,
+					value,
+				)
+				input.dispatchEvent(new Event('input', { bubbles: true }))
+			}
+			await act(async () => setValue('first edit'))
+			expect(buttonWithText(container, '全部保存').disabled).toBe(false)
+			const dockCalls = vi.mocked(ConfigActionDock).mock.calls.length
+			const paneCalls = vi.mocked(ConfigTabContent).mock.calls.length
+			await act(async () => setValue('second edit'))
+			await act(async () => setValue('freshest draft'))
+			expect(input.value).toBe('freshest draft')
+			expect(vi.mocked(ConfigActionDock).mock.calls.length).toBe(dockCalls)
+			expect(vi.mocked(ConfigTabContent).mock.calls.length).toBe(paneCalls)
+			await act(async () => buttonWithText(container, '全部保存').click())
+			expect(patch).toHaveBeenCalledExactlyOnceWith(OWNER, { title: 'freshest draft' })
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
 	it.each(['success', 'validation'] as const)(
 		'preserves edits made during a pending section save (%s)',
 		async (outcome) => {

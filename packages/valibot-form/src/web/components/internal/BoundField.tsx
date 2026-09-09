@@ -1,7 +1,7 @@
 import { memo, useContext, useId, type ReactNode } from 'react'
 import type { AnyFieldApi } from '@tanstack/react-form'
 import type { FieldNode } from '../../../core/fields'
-import { FormResetVersion, useAutoFormCtx } from './formContext'
+import { useAutoFormCtx } from './formContext'
 import type { FieldError, RendererProps } from '../renders/types'
 import { FieldRenderer } from './FieldRenderer'
 import { UnionSelectionContext } from './unionSelectionContext'
@@ -50,7 +50,6 @@ export const BoundField = memo(
 )
 
 function BoundControl({ field, ...props }: BoundFieldProps & { field: AnyFieldApi }) {
-	const resetVersion = useContext(FormResetVersion)
 	const initializeUnion = useContext(UnionSelectionContext)
 	const id = useId()
 	const { node, path, children } = props
@@ -70,7 +69,6 @@ function BoundControl({ field, ...props }: BoundFieldProps & { field: AnyFieldAp
 	const rendererProps: RendererProps = {
 		node,
 		path,
-		resetVersion,
 		value: field.state.value,
 		errors,
 		inputProps: {
@@ -90,26 +88,29 @@ function BoundControl({ field, ...props }: BoundFieldProps & { field: AnyFieldAp
 				if (!locked) field.handleBlur()
 			},
 		},
-		arrayActions: {
-			push: (value) => {
-				if (!locked) {
-					beforeChange()
-					field.pushValue(value)
-				}
-			},
-			remove: (index) => {
-				if (!locked) {
-					beforeChange()
-					void field.removeValue(index)
-				}
-			},
-			move: (from, to) => {
-				if (!locked) {
-					beforeChange()
-					field.moveValue(from, to)
-				}
-			},
-		},
+		arrayActions:
+			node.kind === 'array' || node.kind === 'union'
+				? {
+						push: (value) => {
+							if (!locked) {
+								beforeChange()
+								field.pushValue(value)
+							}
+						},
+						remove: (index) => {
+							if (!locked) {
+								beforeChange()
+								void field.removeValue(index)
+							}
+						},
+						move: (from, to) => {
+							if (!locked) {
+								beforeChange()
+								field.moveValue(from, to)
+							}
+						},
+					}
+				: undefined,
 	}
 	return children ? children(rendererProps) : <FieldRenderer {...rendererProps} />
 }
@@ -121,7 +122,6 @@ function BoundControl({ field, ...props }: BoundFieldProps & { field: AnyFieldAp
  */
 function LiteralField(props: BoundFieldProps) {
 	const { form } = useAutoFormCtx()
-	const resetVersion = useContext(FormResetVersion)
 	const initializeUnion = useContext(UnionSelectionContext)
 	const id = useId()
 	let prefixLength = props.path.length - 1
@@ -166,7 +166,6 @@ function LiteralField(props: BoundFieldProps) {
 								}
 							: props.node,
 					path: props.path,
-					resetVersion,
 					value,
 					errors: [],
 					inputProps: {
@@ -182,15 +181,18 @@ function LiteralField(props: BoundFieldProps) {
 							if (field && 'handleBlur' in field) (field as AnyFieldApi).handleBlur()
 						},
 					},
-					arrayActions: {
-						push: (item) => update([...items, item]),
-						remove: (index) => update(items.filter((_, i) => i !== index)),
-						move: (from, to) => {
-							const next = [...items]
-							next.splice(to, 0, next.splice(from, 1)[0])
-							update(next)
-						},
-					},
+					arrayActions:
+						ancestor !== undefined && (props.node.kind === 'array' || props.node.kind === 'union')
+							? {
+									push: (item) => update([...items, item]),
+									remove: (index) => update(items.filter((_, i) => i !== index)),
+									move: (from, to) => {
+										const next = [...items]
+										next.splice(to, 0, next.splice(from, 1)[0])
+										update(next)
+									},
+								}
+							: undefined,
 				}
 				return ancestor !== undefined && props.children ? (
 					props.children(rendererProps)

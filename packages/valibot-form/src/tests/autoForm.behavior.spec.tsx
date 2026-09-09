@@ -648,3 +648,78 @@ it.each(['select', 'radio', 'segmented'] as const)(
 		).toContain('Connection rejected')
 	},
 )
+
+it.each([false, true])(
+	'shares generated schema defaults across fields, context and reset (explicit undefined=%s)',
+	async (explicitUndefined) => {
+		let generated = 0
+		const defaultToken = vi.fn(() => `generated-${++generated}`)
+		const schema = v.object({ token: v.optional(v.string(), defaultToken) })
+		const render = () => (
+			<MantineProvider>
+				<AutoForm
+					schema={schema}
+					formOpts={explicitUndefined ? { defaultValues: undefined } : undefined}
+				>
+					<AutoForm.Fields />
+					<FormObserver />
+				</AutoForm>
+			</MantineProvider>
+		)
+		await act(async () => root.render(render()))
+		const initial = input('token').value
+		expect(initial).toBe('generated-1')
+		expect(ctx.defaultValues).toEqual({ token: initial })
+		expect(ctx.form.state.values).toEqual(ctx.defaultValues)
+		await edit('token', 'edited')
+		await act(async () => root.render(render()))
+		expect(input('token').value).toBe('edited')
+		await act(async () => ctx.reset())
+		expect(input('token').value).toBe(initial)
+		expect(defaultToken).toHaveBeenCalledOnce()
+	},
+)
+
+it('preserves array operations for same-path union replacements', async () => {
+	const fields = extractFormFields(
+		v.object({ setting: v.union([v.array(v.object({ host: v.string() })), v.string()]) }),
+	)
+	const union = fields[0]!
+	if (union.kind !== 'union') throw new Error('Expected union')
+	const branch = union.branches[0]!.fields[0]!
+	expect(branch.replaceValue).toBe(true)
+	if (branch.node.kind !== 'array') throw new Error('Expected array')
+	branch.node.addLabel = 'Add row'
+	branch.node.defaultItem = { host: 'new' }
+	const submitted = await mount({ setting: [{ host: 'first' }, { host: 'second' }] }, fields)
+	await clickButton('Add row')
+	await clickButton('上移', 2)
+	await clickButton('删除', 0)
+	await edit('setting[0].host', 'changed')
+	await clickButton('Save')
+	expect(submitted).toHaveBeenCalledWith({ setting: [{ host: 'changed' }, { host: 'second' }] })
+	await clickButton('Reset')
+	expect(ctx.form.state.values).toEqual({ setting: [{ host: 'first' }, { host: 'second' }] })
+})
+
+it('preserves structural array edits under literal record keys', async () => {
+	const fields = extractFormFields(
+		v.object({ labels: v.record(v.string(), v.array(v.object({ host: v.string() }))) }),
+	)
+	const record = fields[0]!
+	if (record.kind !== 'record' || record.value?.kind !== 'array')
+		throw new Error('Expected record array')
+	record.value.addLabel = 'Add literal row'
+	record.value.defaultItem = { host: 'new' }
+	const initial = { labels: { 'x.y': [{ host: 'first' }, { host: 'second' }] } }
+	const submitted = await mount(initial, fields)
+	await clickButton('Add literal row')
+	await clickButton('下移', 0)
+	await clickButton('删除', 0)
+	await clickButton('Save')
+	expect(submitted).toHaveBeenCalledWith({
+		labels: { 'x.y': [{ host: 'first' }, { host: 'new' }] },
+	})
+	await clickButton('Reset')
+	expect(ctx.form.state.values).toEqual(initial)
+})

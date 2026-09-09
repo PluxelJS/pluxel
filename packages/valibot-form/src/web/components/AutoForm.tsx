@@ -53,7 +53,6 @@ export function AutoForm<
 	S extends ObjectLikeSchema,
 	TValues extends Record<string, unknown> = InferOutput<S> & Record<string, unknown>,
 >({ schema, fields, formOpts, children, resetKey, formProps }: AutoFormProps<S, TValues>) {
-	const { form, resetVersion } = useAppForm<Record<string, unknown>>(schema, formOpts)
 	const defaultValues = useMemo(
 		() =>
 			(formOpts?.defaultValues ?? (schema === undefined ? {} : getDefaults(schema))) as Record<
@@ -62,6 +61,9 @@ export function AutoForm<
 			>,
 		[schema, formOpts?.defaultValues],
 	)
+	const { form, resetVersion } = useAppForm<Record<string, unknown>>(defaultValues, formOpts)
+	const submit = useCallback((): void => void form.handleSubmit(), [form])
+	const reset = useCallback((values?: Record<string, unknown>): void => form.reset(values), [form])
 
 	const fieldPlan = useMemo(() => {
 		if (fields) return planFieldSections([...fields])
@@ -75,10 +77,10 @@ export function AutoForm<
 			sections: fieldPlan.sections,
 			hiddenFields: fieldPlan.hiddenFields,
 			defaultValues,
-			submit: () => void form.handleSubmit(),
-			reset: (values?: Record<string, unknown>) => form.reset(values),
+			submit,
+			reset,
 		}),
-		[form, fieldPlan, defaultValues],
+		[form, fieldPlan, defaultValues, submit, reset],
 	)
 
 	useEffect(() => {
@@ -241,6 +243,7 @@ if (isDevelopmentEnvironment()) {
 export interface ActionsRenderProps {
 	submit: () => void
 	reset: (values?: Record<string, any>) => void
+	/** Update the supplied TanStack field paths without replacing unrelated values. */
 	setValues: (values: Record<string, any>) => void
 	dirty: boolean
 	canSubmit: boolean

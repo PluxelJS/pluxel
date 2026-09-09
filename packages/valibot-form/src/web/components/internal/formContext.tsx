@@ -2,27 +2,21 @@ import type { PlannedField, SectionPlan } from './fieldPlanner'
 import { DEFAULT_TEXTS } from '../../../core/constants'
 import { useForm, type AnyFormApi } from '@tanstack/react-form'
 import { createContext, useContext, useMemo, useRef, useState } from 'react'
-import type { ObjectLikeSchema } from '../../../core'
-import { getDefaults } from 'valibot'
 
 export const FormResetVersion = createContext(0)
 
 export function useAppForm<TValues>(
-	schema: ObjectLikeSchema | undefined,
+	defaultValues: TValues,
 	formOpts?: { defaultValues?: TValues } & Record<string, unknown>,
 ) {
 	const [resetVersion, setResetVersion] = useState(0)
 	const resetRef = useRef<AnyFormApi['reset'] | undefined>(undefined)
-	const defaultValues = useMemo(
-		() => (formOpts?.defaultValues ?? (schema === undefined ? {} : getDefaults(schema))) as TValues,
-		[schema, formOpts?.defaultValues],
-	)
 
 	const opts = useMemo(() => {
 		const listeners = formOpts?.listeners as AnyFormApi['options']['listeners'] | undefined
 		return {
-			defaultValues,
 			...formOpts,
+			defaultValues,
 			listeners: {
 				...listeners,
 				onMount: (event: { formApi: AnyFormApi }) => {

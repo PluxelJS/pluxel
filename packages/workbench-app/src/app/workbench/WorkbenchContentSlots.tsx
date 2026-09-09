@@ -12,7 +12,7 @@ import type {
 } from '@pluxel/runtime/workbench/federation'
 import type { ConfigPresentationFieldV1, RuntimeJsonValue } from '@pluxel/runtime/web'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
+import { AutoForm } from 'valibot-form/web'
 import type {
 	WorkbenchContentController,
 	WorkbenchContentDataState,
@@ -546,10 +546,9 @@ function ContentActionFormButtons({
 	slot: WorkbenchContentActionPresentation
 	onCancel?: () => void
 }) {
-	const { form, submit } = useAutoFormCtx()
 	return (
 		<AutoForm.Actions>
-			{({ submitting }) => (
+			{({ submit, submitting }) => (
 				<Group justify="flex-end">
 					{onCancel ? (
 						<Button disabled={submitting} onClick={onCancel} type="button" variant="default">
@@ -559,10 +558,7 @@ function ContentActionFormButtons({
 					<Button
 						color={slot.confirm ? 'red' : undefined}
 						loading={submitting}
-						onClick={() => {
-							form.setErrorMap({ onServer: { fields: {} } } as never)
-							submit()
-						}}
+						onClick={submit}
 						type="button"
 					>
 						{slot.label}

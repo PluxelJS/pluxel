@@ -25,7 +25,6 @@ const EMPTY_FORM_STATE: ConfigFormState = {
 	dirty: false,
 	canSubmit: false,
 	submitting: false,
-	values: {},
 }
 
 type ConfigFormProps = {
@@ -118,31 +117,19 @@ function ConfigFormInstance({
 		})
 	}, [])
 
-	const dirtyKeys = useMemo(
-		() =>
-			sectionItems
-				.filter((section) => formStates[section.key]?.dirty)
-				.map((section) => section.key),
-		[formStates, sectionItems],
-	)
-	const dirtyLabels = useMemo(
-		() =>
-			sectionItems
-				.filter((section) => formStates[section.key]?.dirty)
-				.map((section) => section.label),
-		[formStates, sectionItems],
-	)
+	const dirtySections = sectionItems.filter((section) => formStates[section.key]?.dirty)
+	const dirtyLabels = dirtySections.map((section) => section.label)
 	const activeSection = sectionItems.find((section) => section.key === activeKey) ?? sectionItems[0]
 	const resolvedActiveKey = activeSection?.key ?? ''
 	const activeState = formStates[resolvedActiveKey] ?? EMPTY_FORM_STATE
-	const canSaveAll = dirtyKeys.every((key) => {
-		const state = formStates[key]
+	const canSaveAll = dirtySections.every((section) => {
+		const state = formStates[section.key]
 		return Boolean(state?.canSubmit && !state.submitting)
 	})
 
 	useEffect(() => {
-		onDirtyChange?.(dirtyKeys.length > 0)
-	}, [dirtyKeys.length, onDirtyChange])
+		onDirtyChange?.(dirtySections.length > 0)
+	}, [dirtySections.length, onDirtyChange])
 
 	const submitCurrent = useCallback(() => {
 		if (!activeState.dirty || !activeState.canSubmit || activeState.submitting || savingAll) return
@@ -176,40 +163,41 @@ function ConfigFormInstance({
 	}, [activeSection, activeState.submitting, resolvedActiveKey, savingAll])
 
 	const saveAll = useCallback(async () => {
-		if (savingAll || dirtyKeys.length === 0 || !canSaveAll) return
-		const dirtySet = new Set(dirtyKeys)
-		const patch = buildCombinedConfigPatch(savedConfig, sectionItems, formStates, dirtySet)
+		if (savingAll) return
+		// Read each form once. The same snapshot drives readiness, the patch and response guards.
+		// Include clean sections because validation can depend on their values too.
+		const submitted = sectionItems.flatMap((section) => {
+			const bridge = formBridgesRef.current[section.key]
+			return bridge ? [{ section, bridge, state: bridge.form.state }] : []
+		})
+		const dirty = submitted.filter(({ state }) => state.isDirty)
+		if (dirty.length === 0 || dirty.some(({ state }) => !state.canSubmit || state.isSubmitting))
+			return
+		const patch = buildCombinedConfigPatch(savedConfig, dirty)
 		if (Object.keys(patch).length === 0) return
 
-		// Capture every section: validation can depend on values outside a reported field.
-		const submitted = Object.entries(formBridgesRef.current).map(([key, bridge]) => ({
-			key,
-			bridge,
-			values: bridge.form.state.values,
-		}))
 		const unchanged = () =>
 			submitted.every(
-				({ key, bridge, values }) =>
-					formBridgesRef.current[key]?.form === bridge.form && bridge.form.state.values === values,
+				({ section, bridge, state }) =>
+					formBridgesRef.current[section.key]?.form === bridge.form &&
+					bridge.form.state.values === state.values,
 			)
 		setSavingAll(true)
-		for (const bridge of Object.values(formBridgesRef.current)) {
+		for (const { bridge } of submitted) {
 			bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
 		}
 		try {
 			const result = await management.config.patch(owner, patch)
 			if (result.ok === false) {
 				if (result.code === 'validation_failed' && unchanged()) {
-					for (const section of sectionItems) {
-						const bridge = formBridgesRef.current[section.key]
-						if (bridge)
-							bridge.form.setErrorMap({
-								onServer: mapConfigValidationErrors(
-									result.errors,
-									mountedFieldNames(bridge.form),
-									section.path,
-								),
-							} as never)
+					for (const { section, bridge } of submitted) {
+						bridge.form.setErrorMap({
+							onServer: mapConfigValidationErrors(
+								result.errors,
+								mountedFieldNames(bridge.form),
+								section.path,
+							),
+						} as never)
 					}
 				}
 				if (result.state === 'unknown') {
@@ -228,9 +216,9 @@ function ConfigFormInstance({
 
 			commitPluginConfig(queryClient, owner, result.config)
 			await refreshPluginReadModels(queryClient)
-			for (const { key, bridge, values } of submitted) {
-				if (dirtySet.has(key) && formBridgesRef.current[key]?.form === bridge.form) {
-					bridge.acceptSaved(values)
+			for (const { section, bridge, state } of dirty) {
+				if (formBridgesRef.current[section.key]?.form === bridge.form) {
+					bridge.acceptSaved(state.values)
 				}
 			}
 			if (result.application === 'saved-not-applied') {
@@ -246,7 +234,7 @@ function ConfigFormInstance({
 					message:
 						result.application === 'deferred'
 							? '配置已保存，将在插件启动时应用'
-							: `已保存 ${dirtyKeys.length} 个配置分区`,
+							: `已保存 ${dirty.length} 个配置分区`,
 					color: 'green',
 				})
 			}
@@ -263,18 +251,7 @@ function ConfigFormInstance({
 		} finally {
 			setSavingAll(false)
 		}
-	}, [
-		canSaveAll,
-		dirtyKeys,
-		formStates,
-		management,
-		notify,
-		owner,
-		queryClient,
-		savedConfig,
-		savingAll,
-		sectionItems,
-	])
+	}, [management, notify, owner, queryClient, savedConfig, savingAll, sectionItems])
 
 	useHotkeys(
 		active
@@ -414,40 +391,18 @@ function sameFormState(left: ConfigFormState, right: ConfigFormState): boolean {
 	return (
 		left.dirty === right.dirty &&
 		left.canSubmit === right.canSubmit &&
-		left.submitting === right.submitting &&
-		deepEqual(left.values, right.values)
-	)
-}
-
-function deepEqual(left: unknown, right: unknown): boolean {
-	if (Object.is(left, right)) return true
-	if (Array.isArray(left) && Array.isArray(right)) {
-		return (
-			left.length === right.length && left.every((value, index) => deepEqual(value, right[index]))
-		)
-	}
-	if (!isRecord(left) || !isRecord(right)) return false
-	const leftKeys = Object.keys(left)
-	const rightKeys = Object.keys(right)
-	return (
-		leftKeys.length === rightKeys.length &&
-		leftKeys.every((key) => key in right && deepEqual(left[key], right[key]))
+		left.submitting === right.submitting
 	)
 }
 
 function buildCombinedConfigPatch(
 	savedConfig: Record<string, unknown>,
-	sections: readonly SectionItem[],
-	states: Readonly<Record<string, ConfigFormState>>,
-	dirtyKeys: ReadonlySet<string>,
+	submissions: readonly { section: SectionItem; state: { values: Record<string, unknown> } }[],
 ): Record<string, unknown> {
 	const candidate = structuredClone(savedConfig)
 	const changedRootKeys = new Set<string>()
 
-	for (const section of sections) {
-		if (!dirtyKeys.has(section.key)) continue
-		const state = states[section.key]
-		if (!state) continue
+	for (const { section, state } of submissions) {
 		const editablePatch = buildEditableConfigPatch(section.fields, state.values, section.savedValue)
 		if (section.path.length === 0) {
 			for (const [key, value] of Object.entries(editablePatch)) {

@@ -2,6 +2,7 @@ import { Card, Radio, Select, Stack, Switch, Text } from '@mantine/core'
 import { useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { UnionBranch, UnionFieldNode } from '../../../core/fields'
 import { cleanProps } from '../../utils/propHelpers'
+import { FormResetVersion } from '../internal/formContext'
 import { UnionSelectionContext } from '../internal/unionSelectionContext'
 import { useFieldRenderer, useValueRenderer } from '../internal/fieldRendererContext'
 import { SegmentedButtons } from '../SegmentedButtons'
@@ -160,7 +161,8 @@ function renderEmptyBranch() {
 }
 
 export function UnionField(props: RendererProps) {
-	const { node, errors, inputProps, value, path, resetVersion } = props
+	const resetVersion = useContext(FormResetVersion)
+	const { node, errors, inputProps, value, path } = props
 	const info = node as UnionFieldNode
 	const renderField = useFieldRenderer()
 	const renderValue = useValueRenderer()

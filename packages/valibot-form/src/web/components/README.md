@@ -55,3 +55,8 @@ values in the form store without registering an invisible error target.
 TanStack owns values and interaction metadata. Local state is limited to row identity/order,
 uncommitted input and inactive Union branch drafts. Both the React facade and core FormApi reset
 share the editing-session reset; do not infer resets from dirty-state transitions.
+
+`AutoForm` resolves defaults once and supplies the same value to form creation, context and reset.
+Its submit/reset callbacks have the form instance's lifetime. Only Array, Record and Union draft
+owners subscribe to the reset session; ordinary control props do not carry session state.
+Array operations are supplied only to array bindings and unions that can render a same-path array.

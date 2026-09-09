@@ -22,8 +22,8 @@ export interface InputProps {
 export interface RendererProps {
 	node: FieldNode
 	path: FieldPath
-	resetVersion: number
-	arrayActions: {
+	/** Arrays and unions that can replace their value with an array. */
+	arrayActions?: {
 		push: (value: unknown) => void
 		remove: (index: number) => void
 		move: (from: number, to: number) => void

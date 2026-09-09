@@ -285,6 +285,10 @@ Workbench 的配置保存和 Content action 会把服务端错误放到对应的
 `reset()` 同时重置表单和局部编辑草稿，包括 Union 的非激活分支缓存、数组与 Record 的新增草稿。
 在提交回调中调用 `formApi.reset()` 具有相同效果。切换字段计划时，使用 `resetKey` 明确开始新的编辑会话。
 
+`formOpts.defaultValues` 未提供或为 `undefined` 时，使用 schema 默认值。控件、context 和重置共享同一次默认值解析结果，
+因此动态默认值工厂生成的值也保持一致。`AutoForm.Actions` 提供的 `setValues` 按 TanStack 字段路径逐项更新，
+例如 `setValues({ 'database.host': 'db.example' })`；它保留其他值，不把带点的 key 当作顶层字面量名称。
+
 Record 内无法被路径准确表示的字面量 key（如 `x.y`、`0` 或空字符串）保持原样，通过可绑定的祖先字段编辑；
 这类值没有独立的 TanStack 字段路径，Workbench 将相应服务端错误显示在摘要。
 如果顶层 key 本身无法被 TanStack 路径准确表示，则显示只读说明并保留原值，避免写入错误位置。

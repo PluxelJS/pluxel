@@ -12,7 +12,8 @@ import {
 	TextInput,
 } from '@mantine/core'
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { FormResetVersion } from '../internal/formContext'
 import { DEFAULT_TEXTS } from '../../../core/constants'
 import type {
 	FieldNode,
@@ -105,11 +106,12 @@ function inferValueKind(value: unknown): ValueKind {
 }
 
 export function RecordField(props: RendererProps) {
-	return <RecordFieldEditor key={props.resetVersion} {...props} />
+	const resetVersion = useContext(FormResetVersion)
+	return <RecordFieldEditor key={resetVersion} {...props} />
 }
 
 function RecordFieldEditor(props: RendererProps) {
-	const { node, errors, inputProps, value, path, resetVersion } = props
+	const { node, errors, inputProps, value, path } = props
 	const info = node as RecordFieldNode
 	const renderField = useFieldRenderer()
 	const layout = info.layout ?? 'table'
@@ -174,7 +176,7 @@ function RecordFieldEditor(props: RendererProps) {
 	useEffect(() => {
 		setDraftValue(undefined)
 		setDraftKey('')
-	}, [valueKind, resetVersion])
+	}, [valueKind])
 
 	useEffect(() => {
 		if (!inlineAddEnabled) return undefined
@@ -186,10 +188,6 @@ function RecordFieldEditor(props: RendererProps) {
 
 	const baseErrors = normalizeErrorMessages(errors)
 	const [jsonErrors, setJsonErrors] = useState<Record<string, string | undefined>>({})
-
-	useEffect(() => {
-		setJsonErrors({})
-	}, [resetVersion])
 
 	const commitRows = (nextRows: RecordRow[], nextValues = recordValue) => {
 		setRows(nextRows)
@@ -333,7 +331,7 @@ function RecordFieldEditor(props: RendererProps) {
 				)
 				return (
 					<Textarea
-						key={`${row.id}:${resetVersion}`}
+						key={row.id}
 						id={bound.inputProps.id}
 						name={bound.inputProps.name}
 						defaultValue={formatted}

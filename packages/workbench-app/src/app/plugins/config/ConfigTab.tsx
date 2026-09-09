@@ -1,5 +1,6 @@
 import { Box } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
+import { useSelector } from '@tanstack/react-store'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import type { PluginNodeAddress } from '@pluxel/core'
@@ -25,7 +26,6 @@ export type ConfigFormState = {
 	dirty: boolean
 	canSubmit: boolean
 	submitting: boolean
-	values: Record<string, unknown>
 }
 
 export type ConfigFormBridge = {
@@ -209,34 +209,15 @@ function FormStateSlot({
 }: {
 	tabKey: string
 	reportState: (key: string, state: ConfigFormState) => void
-}) {
-	const { form } = useAutoFormCtx<any>()
-	return (
-		<form.Subscribe
-			selector={(state: any) => ({
-				dirty: Boolean(state.isDirty),
-				canSubmit: Boolean(state.canSubmit),
-				submitting: Boolean(state.isSubmitting),
-				values: state.values as Record<string, unknown>,
-			})}
-		>
-			{(state) => <FormStateEffect tabKey={tabKey} state={state} reportState={reportState} />}
-		</form.Subscribe>
-	)
-}
-
-function FormStateEffect({
-	tabKey,
-	state,
-	reportState,
-}: {
-	tabKey: string
-	state: ConfigFormState
-	reportState: (key: string, state: ConfigFormState) => void
 }): null {
+	const { form } = useAutoFormCtx()
+	const dirty = useSelector(form.store, (state) => state.isDirty)
+	const canSubmit = useSelector(form.store, (state) => state.canSubmit)
+	const submitting = useSelector(form.store, (state) => state.isSubmitting)
+
 	useEffect(() => {
-		reportState(tabKey, state)
-	}, [reportState, state, tabKey])
+		reportState(tabKey, { dirty, canSubmit, submitting })
+	}, [reportState, tabKey, dirty, canSubmit, submitting])
 
 	return null
 }

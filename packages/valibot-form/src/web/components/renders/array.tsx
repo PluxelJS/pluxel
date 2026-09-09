@@ -30,7 +30,8 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { FormResetVersion } from '../internal/formContext'
 import { DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '../../../core/constants'
 import type {
 	ArrayFieldNode,
@@ -239,23 +240,15 @@ function ArrayFieldPicklist(props: ArrayFieldPicklistProps) {
 }
 
 export function ArrayField(props: RendererProps) {
+	const resetVersion = useContext(FormResetVersion)
 	const { node, errors, inputProps, value } = props
 	const info = node as ArrayFieldNode
 	const items = Array.isArray(value) ? (value as unknown[]) : []
 	const itemNode = info.item ?? null
 
-	const layoutInfo = analyzeArrayItemLayout(itemNode)
-	const columns = resolveArrayColumns(layoutInfo, items.length, info.columns, info.disableAutoGrid)
-	const preferredLayout = info.layout ?? (columns > 1 ? 'grid' : 'list')
-	const layout =
-		preferredLayout === 'picker' && itemNode?.kind !== 'picklist'
-			? columns > 1
-				? 'grid'
-				: 'list'
-			: preferredLayout
 	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
 
-	if (layout === 'picker' && itemNode?.kind === 'picklist') {
+	if (info.layout === 'picker' && itemNode?.kind === 'picklist') {
 		const baseErrors = normalizeErrorMessages(errors)
 
 		const updateItems = (next: unknown[], options?: TriggerOptions) =>
@@ -276,10 +269,13 @@ export function ArrayField(props: RendererProps) {
 		)
 	}
 
-	return <ArrayFieldMain key={props.resetVersion} {...props} />
+	if (!props.arrayActions) throw new Error('Array field requires array actions')
+	return <ArrayFieldMain key={resetVersion} {...props} arrayActions={props.arrayActions} />
 }
 
-function ArrayFieldMain(props: RendererProps) {
+function ArrayFieldMain(
+	props: RendererProps & { arrayActions: NonNullable<RendererProps['arrayActions']> },
+) {
 	const { node, errors, inputProps, value } = props
 	const info = node as ArrayFieldNode
 	const renderField = useFieldRenderer()
@@ -314,7 +310,7 @@ function ArrayFieldMain(props: RendererProps) {
 
 	useEffect(() => {
 		setJsonParseErrors({})
-	}, [items.length, props.resetVersion])
+	}, [items.length])
 
 	if (itemKeysRef.current.length < items.length) {
 		for (let i = itemKeysRef.current.length; i < items.length; i++) {
@@ -388,7 +384,7 @@ function ArrayFieldMain(props: RendererProps) {
 
 	useEffect(() => {
 		setDraftValue(undefined)
-	}, [compactKind, props.resetVersion])
+	}, [compactKind])
 
 	useEffect(() => {
 		if (!inlineAddEnabled) return
@@ -447,7 +443,7 @@ function ArrayFieldMain(props: RendererProps) {
 								const formatted = JSON.stringify(bound.value, null, 2)
 								return (
 									<Textarea
-										key={`${itemKey}:${props.resetVersion}`}
+										key={itemKey}
 										id={bound.inputProps.id}
 										name={bound.inputProps.name}
 										aria-label={`${itemLabel} #${index + 1}`}
