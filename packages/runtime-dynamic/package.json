@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/runtime-dynamic",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Pluxel mutable file-source runtime route",
 	"license": "AGPL-3.0-only",
 	"repository": {

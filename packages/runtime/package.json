@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/runtime",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "Pluxel runtime kernel, control plane, and web SDK",
 	"license": "AGPL-3.0-only",
 	"repository": {

@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/runtime-static",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Pluxel runtime static route (fixed plugin catalog, startup reports, and drift checks)",
 	"license": "AGPL-3.0-only",
 	"repository": {

@@ -1,88 +1,93 @@
 core:changelogs:
-  - content: "---\npackages:\n  \"@pluxel/cli\":\n    type: major\n  \"@pluxel/commands\":\n    type: major\n  \"@pluxel/context\":\n    type: major\n  \"@pluxel/core\":\n    type: major\n  \"@pluxel/create\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/runtime\":\n    type: major\n  \"@pluxel/runtime-dynamic\":\n    type: major\n  \"@pluxel/runtime-static\":\n    type: major\n  \"@pluxel/test\":\n    type: major\n  valibot-form:\n    type: major\n  \"@pluxel/agent-tools\":\n    type: major\n  \"@pluxel/auth\":\n    type: major\n  \"@pluxel/wretch\":\n    type: major\n  \"@pluxel/canvas\":\n    type: major\n  \"@pluxel/echarts\":\n    type: major\n  \"@pluxel/fonts\":\n    type: major\n  \"@pluxel/takumi\":\n    type: major\n  \"@pluxel/takumi-markdown\":\n    type: major\n  \"@pluxel/takumi-markdown-typst\":\n    type: major\n---\n\n## Initial open-source release\n\nPublish the supported Pluxel packages together at 1.0.0. Current package contracts and development workflows are documented in the repository.\n"
-    filename: initial-open-source-release.md
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n  \"@pluxel/runtime-static\":\n    type: patch\n---\n\n## Recover Workbench definition hot updates across edits, failures and file replacement\n\nRefresh standalone Workbench definitions and imported helpers within the same semantic generation as Plugin facts. Reject superseded transforms, discard failed parsing work, withdraw deleted publications, and preserve committed facts when a candidate is rejected. Generated Bridge and renderer projection files now use revision-specific paths.\n\nStatic Vite development handles file creation and deletion through the same update queue as edits, allowing recreated definitions and their dependent plugins to recover without restarting dev.\n"
+    filename: workbench-hmr-generations.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/runtime\":\n    type: minor\n---\n\n## Align development console polymorphism with test hosts\n\nAdd dependency inspection and default/consumer provider selection, persistent fork creation and removal, and synchronous running-state queries to the development console. Abstract requirements and typed fork targets use the existing identity and lifecycle rules; mutations return production domain results and application reports.\n"
+    filename: dev-console-polymorphism.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/runtime\":\n    type: minor\n  \"@pluxel/runtime-static\":\n    type: patch\n  \"@pluxel/runtime-dynamic\":\n    type: patch\n---\n\n## Recover failed candidates without mixing runtime and Workbench generations\n\nPrepare Workbench artifacts before catalog acceptance and activate them at the graph commit boundary. Rejected candidates preserve the running generation's Content and producer builds; superseded background validations cannot publish.\n\nStatic Vite retains failed-candidate recovery dependencies independently of the committed graph, including new files, missing imports and package installation metadata. Fixing those dependencies automatically retries the candidate and restores dependent plugins.\n\nManagement clients can read and subscribe to independent update attempts. Workbench displays batch progress and bounded failure details in its header, preserving the distinction between rejected updates and current plugin health. Revoked Workbench sessions automatically reload the document after cleanup, with a bounded retry interval and manual fallback for repeated refreshes or authentication failures.\n"
+    filename: hmr-recovery-and-workbench-refresh.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/runtime\":\n    type: minor\n---\n\n## Retain and expose Plugin lifecycle failures\n\nPlugin status and management commands include lifecycle failure codes and messages until recovery or removal, including across unrelated commits. Runtime logs record the affected Plugin, phase and serialized error. Workbench distinguishes startup failures and dependency blocking from pending activation, keeps error notifications open, and lets users copy the notification and full lifecycle report. PGlite initialization errors identify the data directory and explain why retrying a Plugin cannot recreate a failed shared backend.\n"
+    filename: plugin-lifecycle-diagnostics.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/runtime\":\n    type: minor\n---\n\n## Prefer declared Workbench route paths and diagnose collisions\n\nWorkbench exposes all committed routes in its global layout, including parameterized routes and pages outside navigation. The Shell uses declared paths below its UI base URL when unambiguous. Overlapping routes from different plugin instances and reserved Shell paths use canonical plugin URLs with visible collision diagnostics. Canonical URLs remain available, and aliases are recomputed after publication changes.\n"
+    filename: workbench-readable-routes.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/runtime\":\n    type: patch\n---\n\n## Fill the available Workbench space for federated pages\n\nGive federated View and Attachment renderers a sized mount container. Pages now fill their editor pane instead of shrinking to their content width, and Pane Kit responds to the actual available width when choosing columns or drawers.\n"
+    filename: workbench-view-fill.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/runtime-static\":\n    type: patch\n---\n\n## Restore HMR after installing a missing package\n\nKeep recovery watches active when package resolution searches overlapping ancestor directories, so installing a previously missing dependency automatically retries the failed application update.\n"
+    filename: hmr-package-install-watch.md
+    v: 0.0.0
+  - content: "---\npackages:\n  valibot-form:\n    type: patch\n---\n\n## Preserve scroll position when focusing collection inputs\n\nArray and record draft inputs retain keyboard focus without scrolling their containing panels or the page when the form renders or entries change.\n"
+    filename: form-focus-scroll.md
+    v: 0.0.0
+  - content: "---\npackages:\n  valibot-form:\n    type: patch\n---\n\n## Share resolved defaults across the form\n\nSchema defaults are resolved once for the controls, form context and reset, keeping values from dynamic default factories consistent. An explicit `defaultValues: undefined` uses schema defaults just like an omitted option.\n"
+    filename: valibot-form-defaults.md
+    v: 0.0.0
+  - content: "---\npackages:\n  valibot-form:\n    type: patch\n---\n\n## Bind nested form fields to TanStack paths\n\nObject, array, union and record editors now bind addressable child fields directly to TanStack Form, preserving independent interaction metadata and field errors. Array operations use TanStack metadata handling; reset also clears local collection drafts and inactive union values, including resets invoked from submission callbacks.\n\nWorkbench config and Content action forms display server errors at mounted field paths, retain unaddressable issues in a summary, and permit correction and retry. Inputs associate field errors with their accessible descriptions.\n\nUnion and Record leaf edits avoid rerendering unchanged sibling controls. Picklist options use Mantine's current render callback, and multi-value picker errors use Mantine's input wrapper to associate the actual input with its error message.\n\nLiteral record keys retain their original meaning. Unaddressable top-level keys are shown as read-only instead of writing to an incorrect nested path; their original values remain in submitted data.\n"
+    filename: valibot-form-nested-binding.md
     v: 0.0.0
 core:packages:
+  - id: npm:@pluxel/cli
+    updated: false
+  - id: npm:@pluxel/commands
+    updated: false
+  - id: npm:@pluxel/context
+    updated: false
+  - id: npm:@pluxel/core
+    updated: false
+  - id: npm:@pluxel/create
+    updated: false
   - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/cli
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/commands
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/context
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/core
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/create
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
+      - workbench-hmr-generations.md
     id: npm:@pluxel/rolldown
     updated: true
   - changelogIds:
-      - initial-open-source-release.md
+      - dev-console-polymorphism.md
+      - hmr-recovery-and-workbench-refresh.md
+      - plugin-lifecycle-diagnostics.md
+      - workbench-readable-routes.md
+      - workbench-view-fill.md
     id: npm:@pluxel/runtime
     updated: true
   - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/runtime-dynamic
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
+      - hmr-package-install-watch.md
+      - hmr-recovery-and-workbench-refresh.md
+      - workbench-hmr-generations.md
     id: npm:@pluxel/runtime-static
     updated: true
   - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/test
+      - hmr-recovery-and-workbench-refresh.md
+    id: npm:@pluxel/runtime-dynamic
     updated: true
+  - id: npm:@pluxel/test
+    updated: false
   - changelogIds:
-      - initial-open-source-release.md
+      - form-focus-scroll.md
+      - valibot-form-defaults.md
+      - valibot-form-nested-binding.md
     id: npm:valibot-form
     updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/agent-tools
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/auth
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/wretch
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/canvas
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/echarts
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/fonts
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/takumi
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/takumi-markdown
-    updated: true
-  - changelogIds:
-      - initial-open-source-release.md
-    id: npm:@pluxel/takumi-markdown-typst
-    updated: true
+  - id: npm:@pluxel/auth
+    updated: false
+  - id: npm:@pluxel/agent-tools
+    updated: false
+  - id: npm:@pluxel/wretch
+    updated: false
+  - id: npm:@pluxel/echarts
+    updated: false
+  - id: npm:@pluxel/fonts
+    updated: false
+  - id: npm:@pluxel/canvas
+    updated: false
+  - id: npm:@pluxel/takumi
+    updated: false
+  - id: npm:@pluxel/takumi-markdown-typst
+    updated: false
+  - id: npm:@pluxel/takumi-markdown
+    updated: false
 npm:packages:
   - id: npm:@pluxel/cli
   - id: npm:@pluxel/commands
@@ -91,16 +96,16 @@ npm:packages:
   - id: npm:@pluxel/create
   - id: npm:@pluxel/rolldown
   - id: npm:@pluxel/runtime
-  - id: npm:@pluxel/runtime-dynamic
   - id: npm:@pluxel/runtime-static
+  - id: npm:@pluxel/runtime-dynamic
   - id: npm:@pluxel/test
   - id: npm:valibot-form
-  - id: npm:@pluxel/agent-tools
   - id: npm:@pluxel/auth
+  - id: npm:@pluxel/agent-tools
   - id: npm:@pluxel/wretch
-  - id: npm:@pluxel/canvas
   - id: npm:@pluxel/echarts
   - id: npm:@pluxel/fonts
+  - id: npm:@pluxel/canvas
   - id: npm:@pluxel/takumi
-  - id: npm:@pluxel/takumi-markdown
   - id: npm:@pluxel/takumi-markdown-typst
+  - id: npm:@pluxel/takumi-markdown
