@@ -32,6 +32,7 @@
    - [`TESTING.md`](TESTING.md)：测试边界、Vitest preset bootstrap 与验证入口。
    - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：面向 coding agent 的在线 TypeScript 操作、Vite 更新、配置、Workbench 与日志。
    - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
+   - [`UI_LIBRARY.md`](UI_LIBRARY.md)：Workbench 的 Mantine 决策、主题边界与 federated renderer Provider/CSS 规则。
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
    - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。
    - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。

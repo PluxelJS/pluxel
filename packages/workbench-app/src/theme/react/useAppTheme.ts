@@ -6,9 +6,7 @@ import {
 	DEFAULT_ACCENT_KEY,
 	normalizeAccentKey,
 } from '../accent/accentPresets'
-import { createMantineAppTheme } from '../mantine/mantineAdapter'
-
-export type { PlxMantineMetadata } from '../mantine/mantineAdapter'
+import { createMantineTheme } from '../mantine/theme'
 
 export function useAccentTheme() {
 	const [storedAccentKey, setStoredAccentKey] = useLocalStorage<string>({
@@ -36,7 +34,7 @@ export function useAccentTheme() {
 /** 动态主题 Hook */
 export function useAppTheme() {
 	const { accentKey, setAccentTheme, presets } = useAccentTheme()
-	const theme = useMemo(() => createMantineAppTheme(accentKey), [accentKey])
+	const theme = useMemo(() => createMantineTheme(accentKey), [accentKey])
 
 	return {
 		theme,

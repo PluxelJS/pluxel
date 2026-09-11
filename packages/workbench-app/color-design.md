@@ -28,8 +28,8 @@ It does not mean:
 2. Semantic color model
    The `src/theme/core/` layer that converts accent plus light/dark mode into `--plx-*` variables.
 
-3. Mantine adapter
-   The `src/theme/mantine/` layer that feeds those colors into Mantine.
+3. Mantine theme configuration
+   The `src/theme/mantine/` layer that directly feeds those colors into Mantine.
 
 4. Layout styling
    Workbench shell, plugin workbench, panel layout, resize affordances, and other structural containers.
@@ -80,7 +80,7 @@ Theme files should stay inside `src/theme/` with this split:
 - `core/`
   tonal math, semantic tokens, CSS variable emission
 - `mantine/`
-  Mantine-specific adapter and typings
+  direct Mantine theme configuration and typings
 - `react/`
   hooks and theme-related React controls
 

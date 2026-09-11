@@ -1,5 +1,5 @@
-import type { PlxMantineMetadata } from './mantineAdapter'
+import type { PlxMantineThemeMetadata } from './theme'
 
 declare module '@mantine/core' {
-	interface MantineThemeOther extends PlxMantineMetadata {}
+	interface MantineThemeOther extends PlxMantineThemeMetadata {}
 }

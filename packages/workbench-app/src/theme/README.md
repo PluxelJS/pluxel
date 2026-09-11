@@ -9,7 +9,7 @@ This directory is intentionally split by responsibility. The goal is to make lat
 - `core/`
   Palette math, semantic tokens, and CSS variable emission.
 - `mantine/`
-  Mantine-only adapter layer. This must stay thin.
+  Direct Mantine theme configuration and Mantine type augmentation.
 - `react/`
   Runtime hooks and theme-related UI controls.
 - `index.ts`
@@ -18,7 +18,7 @@ This directory is intentionally split by responsibility. The goal is to make lat
 ## Hard Rules
 
 1. Mantine owns component design.
-   Do not restyle Mantine primitives globally in `mantineAdapter.ts`. This file may define colors and theme metadata only.
+   Do not use `mantine/theme.ts` to repaint Mantine primitives for visual polish. It owns colors, theme metadata, and the existing CJK-safe text-box normalization. New component defaults need a cross-app correctness or localization reason.
 
 2. We own layout, not component skins.
    Global classes are allowed for app shell/workbench layout and neutral panel surfaces.
@@ -37,6 +37,9 @@ This directory is intentionally split by responsibility. The goal is to make lat
 
 6. Do not wrap a single Mantine field just to make it look custom.
    Avoid `Paper`/custom bordered `Box` around one `TextInput`, `Select`, or `Button` row unless the wrapper solves layout grouping, scrolling, or section separation.
+
+7. Avoid Mantine's advanced component extension APIs by default.
+   Do not introduce `factory`, `useStyles`, `useProps`, `createVarsResolver`, `polymorphicFactory`, or a custom `StylesApiProps` contract for ordinary screens. Use them only for a genuinely reusable Mantine-native component with at least two unrelated call sites and a documented slot/props contract.
 
 ## Edit Protocol For LLMs
 
@@ -58,8 +61,8 @@ Avoid these patterns:
 
 ## Current Boundaries
 
-- `mantine/mantineAdapter.ts`
-  Generates Mantine palettes from our accent source and stores metadata in `theme.other`.
+- `mantine/theme.ts`
+  Directly creates the Workbench Mantine theme from the accent source and stores metadata in `theme.other`. It is not a UI-library adapter.
 - `core/themeModel.ts`
   Emits the semantic CSS variable contract used by app layout, neutral surfaces, and shared selection states.
 - `src/styles/theme/_primitives.scss`
