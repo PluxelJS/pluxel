@@ -1,10 +1,11 @@
+import { ContentOutline } from '../plugins/detail/workbench/ContentOutline'
 import type {
 	WorkbenchContentBlock,
 	WorkbenchContentInline,
 	WorkbenchContentTableAlignment,
 	WorkbenchContentPlan,
 } from '@pluxel/runtime/workbench/client'
-import { createElement, useId, useSyncExternalStore, type ReactNode } from 'react'
+import { createElement, useId, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { WorkbenchContentDataState } from './WorkbenchContentController'
 import { WorkbenchContentSlot, type WorkbenchContentInteraction } from './WorkbenchContentSlots'
 
@@ -25,6 +26,7 @@ export function WorkbenchContentRenderer({
 	plan: WorkbenchContentPlan
 	interaction?: WorkbenchContentInteraction | null
 }) {
+	const hostRef = useRef<HTMLDivElement | null>(null)
 	const instanceId = useId().replaceAll(/[^A-Za-z0-9_-]/g, '')
 	const anchorId = (anchor: string) => `plx-workbench-content-${instanceId}-${anchor}`
 	const state = useSyncExternalStore(
@@ -42,7 +44,8 @@ export function WorkbenchContentRenderer({
 	)
 
 	return (
-		<div className="plx-workbenchContent">
+		<div className="plx-workbenchContent" ref={hostRef}>
+			<ContentOutline hostRef={hostRef} />
 			<article className="plx-workbenchContent__document">
 				{plan.document.blocks.map((block, index) =>
 					renderBlock(block, index, anchorId, renderSlot),

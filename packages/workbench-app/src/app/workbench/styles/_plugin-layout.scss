@@ -6,7 +6,6 @@
 .plx-pluginWorkbench__vertical,
 .plx-pluginWorkbench__workspace > *,
 .plx-pluginWorkbench__viewBody,
-.plx-pluginWorkbench__contextScroll,
 .plx-paneTabs,
 .plx-paneTabs__panel,
 .plx-pluginWorkbench__viewBody > .plx-paneTabs__panel,
@@ -61,6 +60,7 @@
 }
 
 .plx-pluginWorkbench__viewHeader {
+	flex-shrink: 0;
 	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	flex-direction: column;
@@ -117,9 +117,13 @@
 	overflow: hidden;
 }
 
-.plx-pluginWorkbench__contextScroll .mantine-ScrollArea-viewport,
-.plx-pluginWorkbench__contextScroll .mantine-ScrollArea-content {
-	min-height: 100%;
+.plx-pluginWorkbench__contextScroll {
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
 }
 
 .plx-pluginWorkbench__contextStack {
@@ -266,6 +270,7 @@
 	}
 
 	.plx-pluginWorkbench__viewHeader {
+	flex-shrink: 0;
 		padding-inline: 10px;
 	}
 
@@ -273,4 +278,12 @@
 	.plx-pluginWorkbench__dockPane {
 		padding-inline: 8px;
 	}
+}
+
+.plx-pluginWorkbench__entryStack {
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
 }

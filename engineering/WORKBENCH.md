@@ -615,3 +615,9 @@ detach/dispose，不能再更新 React。Framework 自身的 portable、scope、
 - `packages/rolldown/src/workbench/content-compiler.ts`
 - `packages/rolldown/src/vite/workbench-ui.ts`
 - `packages/workbench-app/src/app/workbench/WorkbenchContentRenderer.tsx`
+
+### 内置编辑器滚动与目录
+
+Plugin Workbench 的中部、概览和底部内容各自拥有受限高度的滚动容器；页签栏不参与内容滚动。概览与目录分成右侧两个视图，避免卡片、折叠区和目录列表嵌套滚动。目录搜索框固定，列表占据剩余高度，滚轮不向外层传播。
+
+目录是否存在由当前编辑器的配置 anchor / Markdown heading 决定，不读取 scrollHeight 判定可用性。保持挂载的非活动编辑器通过 tab activity 撤回自己的目录 claim；右侧目录 portal 只属于当前 Plugin Workbench。配置仍由 FormToc 读取表单 anchor，Markdown 由 ContentOutline 在自身文档中读取渲染后的标题；不扫描其他编辑器或 federated renderer 的 DOM，也不新增 Plugin 作者 API。

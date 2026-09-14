@@ -116,3 +116,11 @@ Static/dynamic Vite adapter 在 Vite 自己的 Node listener 上接入 Runtime H
 physical TLS 或 locality。内建 production Node launcher 只监听 HTTP，因此默认只通过 loopback/SSH tunnel 管理，不通过普通
 TLS 反代开放 remote Management，反代也不应从 loopback 地址回源。需要 remote Management 的平台集成必须提供自身能证明
 HTTPS 的 application carrier。多实例部署还需要让 control socket、OIDC callback 和短期 cookie ticket 命中签发它们的实例。
+
+## 编辑器与右侧目录
+
+桌面端插件工作台的中部编辑器、右侧栏和底部面板分别滚动。“概览”保留运行状态和依赖信息，内容较长时可在右侧滚动，页签栏保持可见。
+
+当前编辑器包含配置项或 Markdown 标题时，右侧会增加“目录”页签；短内容也显示目录，不依赖编辑器是否出现滚动条。目录支持搜索、层级导航和当前项高亮，搜索框固定在顶部，目录列表使用侧栏剩余高度。点击标题定位到对应文档，自动跟随仅调整目录自身的滚动位置。
+
+切换编辑器后目录跟随当前内容；没有目录项时回到“概览”。在“概览”和“目录”之间切换会保留已挂载面板的滚动位置。右侧栏关闭或窄屏单栏布局时不显示目录，也不会自动展开右侧栏。

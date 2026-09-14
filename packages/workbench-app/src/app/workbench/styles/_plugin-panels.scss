@@ -491,32 +491,6 @@
 	width: 100%;
 }
 
-.plx-pluginWorkbench__assistCard {
-	box-shadow: none;
-}
-
-.plx-pluginWorkbench__assistCard .mantine-Collapse-content {
-	display: flex;
-	min-width: 0;
-	width: 100%;
-}
-
-.plx-pluginWorkbench__assistCollapse {
-	display: flex;
-	min-width: 0;
-	width: 100%;
-}
-
-.plx-pluginWorkbench__assistCollapse > * {
-	flex: 1 1 auto;
-	min-width: 0;
-	width: 100%;
-}
-
-.plx-pluginWorkbench__assistCard .plx-pluginWorkbench__assistHost {
-	padding: 0;
-}
-
 .plx-pluginWorkbench__assistSection {
 	align-self: stretch;
 	display: flex;
@@ -549,16 +523,16 @@
 }
 
 .plx-pluginWorkbench__outlineScroll {
-	flex: 1 1 auto;
-	max-width: 100%;
+	flex: 1;
+	min-height: 0;
 	min-width: 0;
-	width: 100%;
+	overflow: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
 }
 
-.plx-pluginWorkbench__outlineScroll .mantine-ScrollArea-viewport,
-.plx-pluginWorkbench__outlineScroll .mantine-ScrollArea-content {
-	min-width: 100%;
-	width: 100%;
+.plx-pluginWorkbench__outlineSearch {
+	flex-shrink: 0;
 }
 
 .plx-pluginWorkbench__outlineNode {

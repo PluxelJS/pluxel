@@ -24,23 +24,15 @@ export function FormToc({
 	const [anchors, setAnchors] = useState<{ id: string; label: string; depth: number }[]>([])
 	const anchorsRef = useRef<typeof anchors>([])
 	const [activeId, setActiveId] = useState<string | null>(null)
-	const [showToc, setShowToc] = useState(false)
 	const { assistHost, asideAvailable } = usePluginWorkbenchAside()
 
 	useEffect(() => {
 		const host = scrollHost ?? document
 		let frame = 0
+		let scanFrame = 0
 		let observer: MutationObserver | null = null
-		let resizeObserver: ResizeObserver | null = null
-		let resizeTarget: HTMLElement | null = null
-
-		const shouldShowToc = () => {
-			if (!scrollHost) return false
-			return scrollHost.scrollHeight - scrollHost.clientHeight > 24
-		}
-
 		const scan = () => {
-			frame = 0
+			scanFrame = 0
 			const nodes = Array.from(host.querySelectorAll('[data-config-anchor]')) as HTMLElement[]
 			const parsed = nodes
 				.map((el) => ({
@@ -58,44 +50,31 @@ export function FormToc({
 				if (prev && parsed.some((item) => item.id === prev)) return prev
 				return parsed[0]?.id ?? null
 			})
-			setShowToc(parsed.length > 0 && shouldShowToc())
 		}
 
 		scan()
 		if (scrollHost && typeof MutationObserver !== 'undefined') {
 			observer = new MutationObserver(() => {
-				if (frame) cancelAnimationFrame(frame)
-				frame = requestAnimationFrame(scan)
+				if (scanFrame) cancelAnimationFrame(scanFrame)
+				scanFrame = requestAnimationFrame(scan)
 			})
 			observer.observe(scrollHost, {
 				childList: true,
 				subtree: true,
 				attributes: true,
-				attributeFilter: ['id', 'data-config-anchor-label'],
+				attributeFilter: [
+					'id',
+					'data-config-anchor',
+					'data-config-anchor-label',
+					'data-config-anchor-depth',
+				],
 			})
-		}
-
-		const onResize = () => {
-			if (frame) cancelAnimationFrame(frame)
-			frame = requestAnimationFrame(() => {
-				setShowToc(anchorsRef.current.length > 0 && shouldShowToc())
-			})
-		}
-
-		if (typeof ResizeObserver !== 'undefined') {
-			resizeObserver = new ResizeObserver(onResize)
-			resizeTarget =
-				scrollHost ?? (document.scrollingElement as HTMLElement | null) ?? document.documentElement
-			if (resizeTarget) resizeObserver.observe(resizeTarget)
-		} else {
-			window.addEventListener('resize', onResize)
 		}
 
 		const root = scrollHost ?? window
 		const onScroll = () => {
 			if (frame) cancelAnimationFrame(frame)
 			frame = requestAnimationFrame(() => {
-				if (!showToc) return
 				const scrollTop = scrollHost ? scrollHost.scrollTop : window.scrollY
 				const viewport = scrollHost ? scrollHost.clientHeight : window.innerHeight
 				const anchorOffset = 72
@@ -132,16 +111,15 @@ export function FormToc({
 		return () => {
 			root.removeEventListener('scroll', onScroll)
 			if (observer) observer.disconnect()
-			if (resizeObserver && resizeTarget) resizeObserver.unobserve(resizeTarget)
-			if (!resizeObserver) window.removeEventListener('resize', onResize)
+			if (scanFrame) cancelAnimationFrame(scanFrame)
 			if (frame) cancelAnimationFrame(frame)
 		}
-	}, [scrollHost, sections.length, sectionIdPrefix, fieldIdPrefix, scrollHostVersion, showToc])
+	}, [scrollHost, sections.length, sectionIdPrefix, fieldIdPrefix, scrollHostVersion])
 
 	const scrollToSection = useCallback(
 		(id: string) => {
 			if (!id) return
-			const target = document.querySelector(`#${id}`)
+			const target = document.getElementById(id)
 			if (!target) return
 			const scrollMarginTop =
 				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
@@ -167,7 +145,7 @@ export function FormToc({
 		[scrollHost],
 	)
 
-	const assistVisible = anchors.length > 0 && showToc
+	const assistVisible = anchors.length > 0
 	usePluginWorkbenchAssistVisibility(assistVisible)
 
 	if (!assistVisible) return null

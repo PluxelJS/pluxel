@@ -134,12 +134,14 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 
 					{showRouteTab ? (
 						<PaneTabPanel value="route">
-							<RouteContent
-								target={owner}
-								displayName={pluginLabel}
-								displayPath={pathname}
-								restPath={restPath}
-							/>
+							<PluginWorkbenchTabActivityProvider active={activeTab === 'route'}>
+								<RouteContent
+									target={owner}
+									displayName={pluginLabel}
+									displayPath={pathname}
+									restPath={restPath}
+								/>
+							</PluginWorkbenchTabActivityProvider>
 						</PaneTabPanel>
 					) : null}
 					<PaneTabPanel value="config">
@@ -158,7 +160,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 					{tabGroups.map((tab) => (
 						<PaneTabPanel key={tab.id} value={tab.id}>
 							<PluginWorkbenchTabActivityProvider active={activeTab === tab.id}>
-								<Stack gap="sm">
+								<Stack gap="sm" className="plx-pluginWorkbench__entryStack">
 									{tab.nodes.map(({ key, node }) => (
 										<Fragment key={key}>{node}</Fragment>
 									))}

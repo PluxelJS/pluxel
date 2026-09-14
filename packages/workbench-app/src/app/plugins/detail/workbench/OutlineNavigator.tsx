@@ -1,4 +1,4 @@
-import { Badge, Box, Group, ScrollArea, Stack, Text, TextInput } from '@mantine/core'
+import { Badge, Box, Group, Stack, Text, TextInput } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
@@ -23,7 +23,6 @@ export function OutlineNavigator({
 	emptyLabel,
 	header,
 	showBranchCount = false,
-	maxHeight = 360,
 }: {
 	anchors: OutlineAnchor[]
 	activeId: string | null
@@ -32,7 +31,6 @@ export function OutlineNavigator({
 	emptyLabel: string
 	header?: (state: OutlineNavigatorState) => ReactNode
 	showBranchCount?: boolean
-	maxHeight?: number
 }) {
 	const [query, setQuery] = useState('')
 	const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -58,7 +56,8 @@ export function OutlineNavigator({
 			activeBox.top < viewportBox.top + padding ||
 			activeBox.bottom > viewportBox.bottom - padding
 		) {
-			active.scrollIntoView?.({ block: 'center' })
+			viewport.scrollTop +=
+				activeBox.top - viewportBox.top - (viewport.clientHeight - activeBox.height) / 2
 		}
 	}, [activeId, normalizedQuery])
 
@@ -75,19 +74,17 @@ export function OutlineNavigator({
 			<TextInput
 				size="xs"
 				placeholder={placeholder}
+				aria-label={placeholder}
 				value={query}
 				onChange={(event) => setQuery(event.currentTarget.value)}
 				leftSection={<IconSearch size={14} />}
 				classNames={{ root: 'plx-pluginWorkbench__outlineSearch' }}
 			/>
-			<ScrollArea
-				type="auto"
-				scrollbarSize={8}
-				viewportRef={(node) => {
-					viewportRef.current = node
-				}}
+			<div
+				ref={viewportRef}
 				className="plx-pluginWorkbench__outlineScroll"
-				style={{ maxHeight }}
+				role="navigation"
+				aria-label="内容目录"
 			>
 				{shownItems.length > 0 ? (
 					<Stack gap="xs" className="plx-pluginWorkbench__outlineList">
@@ -106,7 +103,7 @@ export function OutlineNavigator({
 						{emptyLabel}
 					</Text>
 				)}
-			</ScrollArea>
+			</div>
 		</Stack>
 	)
 }
@@ -136,6 +133,8 @@ function OutlineNodeButton({
 				type="button"
 				onClick={() => onSelect(node.id)}
 				className="plx-pluginWorkbench__outlineNode"
+				aria-current={isActive ? 'location' : undefined}
+				title={node.label}
 				data-active={isActive ? 'true' : 'false'}
 				data-toc-active={isActive ? 'true' : undefined}
 			>

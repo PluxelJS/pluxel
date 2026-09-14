@@ -1,6 +1,5 @@
-import { ActionIcon, Collapse, Group, Paper, ScrollArea, Stack, Text } from '@mantine/core'
-import { IconChevronDown } from '@tabler/icons-react'
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Stack } from '@mantine/core'
+import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta } from '../context'
 import { PluginDependencyDetailCard } from '../cards/PluginDependencyDetailCard'
@@ -17,6 +16,7 @@ const LiveLog = memo(LiveLogRaw)
 const SIDEBAR_VIEW_SCOPE = 'plugin:workbench:sidebar-view'
 const PANEL_VIEW_SCOPE = 'plugin:workbench:panel-view'
 
+/* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- Scroll regions need keyboard focus for Page Up/Down and arrow scrolling. */
 function WorkbenchScrollPane({
 	children,
 	compact = false,
@@ -25,11 +25,11 @@ function WorkbenchScrollPane({
 	compact?: boolean
 }) {
 	return (
-		<ScrollArea
-			type="auto"
-			scrollbarSize={8}
-			offsetScrollbars={false}
+		<div
 			className="plx-pluginWorkbench__contextScroll"
+			tabIndex={0}
+			role="region"
+			aria-label="视图内容"
 		>
 			<Stack
 				gap="sm"
@@ -41,9 +41,11 @@ function WorkbenchScrollPane({
 			>
 				{children}
 			</Stack>
-		</ScrollArea>
+		</div>
 	)
 }
+
+/* oxlint-enable jsx-a11y/no-noninteractive-tabindex */
 
 export function PluginWorkbenchSidebar() {
 	const { description, status } = usePluginMeta()
@@ -57,9 +59,14 @@ export function PluginWorkbenchSidebar() {
 					<WorkbenchScrollPane>
 						<PluginRuntimeSummaryCard description={description} status={status} />
 						<PluginDependencyDetailCard />
-						<SidebarOutlineSection visible={assistVisible} onHostChange={setAssistHost} />
 					</WorkbenchScrollPane>
 				),
+			},
+			{
+				id: 'outline',
+				label: '目录',
+				hidden: !assistVisible,
+				content: <AssistHostMount onHostChange={setAssistHost} />,
 			},
 		],
 		[assistVisible, description, setAssistHost, status],
@@ -75,54 +82,6 @@ export function PluginWorkbenchSidebar() {
 			className="plx-pluginWorkbench__contextRail"
 			headerMode="inline"
 		/>
-	)
-}
-
-function SidebarOutlineSection({
-	visible,
-	onHostChange,
-}: {
-	visible: boolean
-	onHostChange: (node: HTMLDivElement | null) => void
-}) {
-	const [open, setOpen] = useState(true)
-
-	useEffect(() => {
-		if (visible) setOpen(true)
-	}, [visible])
-
-	if (!visible) return null
-
-	return (
-		<Paper withBorder radius="sm" p="xs" shadow="none" className="plx-pluginWorkbench__assistCard">
-			<Stack gap={8}>
-				<Group justify="space-between" align="center" wrap="nowrap">
-					<Text size="sm" fw={600}>
-						导航
-					</Text>
-					<ActionIcon
-						variant="subtle"
-						color="gray"
-						size="sm"
-						aria-label={open ? '折叠目录' : '展开目录'}
-						onClick={() => setOpen((value) => !value)}
-					>
-						<IconChevronDown
-							size={16}
-							style={{
-								transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-								transition: 'transform 140ms ease',
-							}}
-						/>
-					</ActionIcon>
-				</Group>
-				<Collapse expanded={open}>
-					<div className="plx-pluginWorkbench__assistCollapse">
-						<AssistHostMount onHostChange={onHostChange} />
-					</div>
-				</Collapse>
-			</Stack>
-		</Paper>
 	)
 }
 
