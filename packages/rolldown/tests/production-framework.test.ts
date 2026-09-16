@@ -71,8 +71,8 @@ await build({...application({cwd:${JSON.stringify(root)},entry:'app.ts',variant:
 `,
 		)
 		await promisify(execFile)(
-			fileURLToPath(new URL('../node_modules/.bin/tsx', import.meta.url)),
-			[buildScript],
+			process.execPath,
+			['--import', import.meta.resolve('tsx'), buildScript],
 			{ timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
 		)
 		const child = await promisify(execFile)(

@@ -1180,6 +1180,9 @@ importers:
         specifier: workspace:^
         version: link:../valibot-form
     devDependencies:
+      '@pluxel/host-dynamic':
+        specifier: workspace:*
+        version: link:../host-dynamic
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -1210,6 +1213,9 @@ importers:
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.13
       vite:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
