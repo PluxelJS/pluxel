@@ -30,11 +30,12 @@ function getText(value: NotificationData['message']) {
 }
 
 export function notifyAndRecord(payload: NotificationData & { diagnosticText?: string }) {
+	const { diagnosticText, ...notification } = payload
 	const message = getText(payload.message)
 	const title = typeof payload.title === 'string' ? payload.title : ''
-	const copyText = [title, message, payload.diagnosticText].filter(Boolean).join('\n\n')
+	const copyText = [title, message, diagnosticText].filter(Boolean).join('\n\n')
 	const displayedId = notifications.show({
-		...(({ diagnosticText: _, ...notification }) => notification)(payload),
+		...notification,
 		...(payload.color === 'red' && payload.autoClose === undefined ? { autoClose: false } : {}),
 		message: message
 			? createElement(NotificationMessage, { message: payload.message, copyText })
