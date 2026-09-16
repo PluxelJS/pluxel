@@ -86,3 +86,6 @@ adapter 自己负责 provider schema 与 annotations、tool name 映射、princi
 
 provider 需要构建 tool setup 选择器时，可以读取 `agentTools.snapshot()`。返回值是 detached 的诊断投影，包含
 policy/catalog revision、Toolsets、assignments 和命令摘要；选择之后仍应创建 `catalog(agentId)`，并让发现与执行都走该 catalog。
+
+Workbench 的状态页面使用独立显示投影：缺省标题与说明显示为空值，command behavior 展开为固定字段。
+业务 snapshot 与 Agent command catalog 保留原有可选字段和 query/mutation 契约。

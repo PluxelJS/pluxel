@@ -16,7 +16,12 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		alwaysBundle: [...inlineWorkspaceHelpers, 'valibot-form', 'valibot-form/*'],
+		alwaysBundle: [
+			...inlineWorkspaceHelpers,
+			'valibot-form',
+			'valibot-form/*',
+			'@pluxel/runtime-node',
+		],
 		onlyBundle: [],
 		neverBundle: [
 			'@pluxel/commands',
@@ -37,6 +42,12 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
+		vite: 'src/vite.ts',
+		'internal/fetch-application': 'src/application/internal/fetch-application.ts',
+		'internal/fetch-workbench-application':
+			'src/application/internal/fetch-workbench-application.ts',
+		'internal/node-application': 'src/application/internal/node-application.ts',
+		'internal/node-workbench-application': 'src/application/internal/node-workbench-application.ts',
 		database: 'src/database.ts',
 		dev: 'src/dev.ts',
 		environment: 'src/environment.ts',
@@ -66,6 +77,7 @@ export default defineConfig({
 	alias: {
 		'valibot-form': `${valibotFormSrc}/index.ts`,
 		'~': valibotFormSrc,
+		'@pluxel/runtime-node': fileURLToPath(new URL('../runtime-node/src/index.ts', import.meta.url)),
 		'@pluxel/rolldown/workspace/fs': rolldownWorkspaceFs,
 		'@pluxel/rolldown/workspace/info': rolldownWorkspaceInfo,
 	},

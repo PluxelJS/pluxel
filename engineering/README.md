@@ -23,7 +23,7 @@
    - [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)：definition/node address 与 slot、source canonicalization、reference/route/label、作用域和持久化边界。
    - [`CORE.md`](CORE.md)：slot identity、DI graph、optional restart、generation lifecycle 与 effects。
    - [`CORE_LIFECYCLE_SEMANTICS.md`](CORE_LIFECYCLE_SEMANTICS.md)：Core lifecycle 抽象状态、不变量和测试证据矩阵。
-   - [`RUNTIME.md`](RUNTIME.md)：常驻服务、static/dynamic route、可选宿主能力。
+   - [`RUNTIME.md`](RUNTIME.md)：常驻服务、Host 来源接入、可选宿主能力。
    - [`PROVIDER_WITHDRAWAL_AUDIT.md`](PROVIDER_WITHDRAWAL_AUDIT.md)：owner-bound runtime capability 的 withdrawal、cached handle 和 in-flight 边界。
    - [`SPATIOTEMPORAL_COMPOSABILITY_NOTES.md`](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)：Cordis 对照后的 lifecycle、capability withdrawal、system boundary 与 compatibility 思考记录。
    - [`DATABASE.md`](DATABASE.md)：PostgreSQL/Drizzle、PGlite/PG、migration、隔离与 outbox。

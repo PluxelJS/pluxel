@@ -30,8 +30,8 @@ catalogs:
     '@pluxel/core': ^1.0.0
     '@pluxel/rolldown': ^1.0.0
     '@pluxel/runtime': ^1.0.0
-    '@pluxel/runtime-dynamic': ^1.0.0
-    '@pluxel/runtime-static': ^1.0.0
+    '@pluxel/host-dynamic': ^1.0.0
+    '@pluxel/host-dev': ^1.0.0
     '@pluxel/test': ^1.0.0
   test:
     vitest: 5.0.0

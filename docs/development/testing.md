@@ -11,15 +11,15 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 
 ## 先选择最小边界
 
-| 需要验证                                                         | 测试入口                                                              |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
-| 纯函数、普通对象                                                 | 不使用 host                                                           |
-| Core graph、config、lifecycle、effects                           | `@pluxel/core/test`                                                   |
-| Plugin 与 Runtime capability                                     | `@pluxel/runtime/test`                                                |
-| fixed static application 的 configure、prepare、bindings、冷启动 | `@pluxel/runtime-static/test`                                         |
-| dynamic source、Vite/HMR、HTTP 或 WebSocket carrier              | 项目 Vite command 或 `@pluxel/runtime-dynamic` 的 production launcher |
-| static deployment artifact、filesystem、assets、TLS              | 启动真实 artifact                                                     |
-| Workbench renderer 与 Shell                                      | React/browser test                                                    |
+| 需要验证                                                         | 测试入口                         |
+| ---------------------------------------------------------------- | -------------------------------- |
+| 纯函数、普通对象                                                 | 不使用 host                      |
+| Core graph、config、lifecycle、effects                           | `@pluxel/core/test`              |
+| Plugin 与 Runtime capability                                     | `@pluxel/runtime/test`           |
+| fixed static application 的 configure、prepare、bindings、冷启动 | `@pluxel/runtime/test`           |
+| dynamic source、Vite/HMR、HTTP 或 WebSocket carrier              | 项目唯一 Vite 配置与真实构建产物 |
+| static deployment artifact、filesystem、assets、TLS              | 启动真实 artifact                |
+| Workbench renderer 与 Shell                                      | React/browser test               |
 
 删除外层 application、source 或 carrier 后仍成立的断言，应回到更小的 host。同一 Plugin behavior 不要在 Runtime、static 和 dynamic
 三层重复测试。
@@ -419,40 +419,13 @@ expect(fixture.fs.existsSync(fixture.getPath('packages/a/src/index.ts'))).toBe(t
 
 只有真实 watcher、child process 或工具链需要 native filesystem 时才使用 disk fixture，并由 fixture disposal 清理临时目录。
 
-## Static application 与 dynamic smoke
+## 应用与开发集成验证
 
-完整 fixed static application 使用 ready-on-return 的 test host：
+Plugin 行为继续使用最小 Core/Runtime test host。完整应用的声明、启动策略、动态发现、HMR、Workbench 与浏览器图，
+通过项目唯一的 Vite 配置验证，不建立第二个测试启动器。已经运行的应用使用[开发控制台](./dev-console.md)检查。
 
-```ts no-twoslash
-import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
-import application from '../src/pluxel.static.ts'
-
-await using host = await startStaticApplicationTestHost(application)
-expect(host.isRunning(OrdersPlugin)).toBe(true)
-
-const response = await host.http.fetch(new URL('/orders', host.http.origin))
-```
-
-这个 host 验证 `defineStaticRuntime()` 的 configure、prepare、bindings、fixed catalog 和 cold boot。它没有 Plugin lifecycle mutation、root
-`ctx`、HMR 或 physical listener；`startupReport` 保存 static partial startup 事实。
-
-Dynamic source/HMR 或物理 carrier 使用 production 入口，不建立第二个 test launcher：
-
-```ts no-twoslash
-import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
-
-await using runtime = await startDynamicDevRuntime({
-	entry: new URL('../fixtures/pluxel.dynamic.ts', import.meta.url),
-})
-
-const response = await fetch(new URL('/health', runtime.origin))
-```
-
-factory resolve 时 Vite、initial reconciliation、HMR、carrier 与 listener 都已 ready。`signal` 只取消尚未完成的 startup；resolve 后 lifetime
-只由 returned resource 拥有。项目已有完整 Vite config、assets 或 browser graph 时，直接运行项目的 Vite command。
-
-Static deployment 的 filesystem、assets、TLS 和 signal ownership 必须由真实 freezer artifact smoke 验证，不能由 in-process application host
-代替。
+生产目录的文件、assets、listener 和 signal ownership 通过真实 `application()` 构建产物的 smoke 验证，不能以
+in-process Plugin test host 代替。`@pluxel/create` 的 packed smoke 同时验证外部安装、生成 workspace、生产 HTTP/Workbench 和 Vite 应用。
 
 ## CI 顺序
 

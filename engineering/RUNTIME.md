@@ -17,7 +17,7 @@ dependency caller view 共享 scope backing，owner-view 则为每个 Plugin/Par
 backend。热 getter 只读取预编译 numeric slot，owner view 使用普通对象，不用 `Proxy` 动态替换共享 service receiver。
 
 `RuntimeRootContextOptions.routeContextCapabilities` 是 package-private 的 pre-root host-authority seam，只允许受信任 route 安装自身
-descriptor；当前 dynamic route 用它组合 Loader/Scan。它不是 Runtime public config、第三方 host SPI 或 Plugin capability
+descriptor；来源通过 Host contract 接入，不安装 Loader/Scan Context 服务。它不是 Runtime public config、第三方 host SPI 或 Plugin capability
 registration。route 必须在 root 创建前提供完整集合，不能在 Plugin 求值、启动或 HMR 后修改 shape。
 
 Context 不暴露完整 host config。launcher 先解析配置，capability factory closure 再捕获各自的冻结输入，因此延迟创建
@@ -31,7 +31,7 @@ Vault 等 leaf service 的领域 `prepare()`。同一成功 attempt 共享 task�
 
 Host environment 统一从 `@pluxel/runtime/environment` 取得。该入口直接转导 `std-env` 的 universal `env` object，并用可声明合并的
 `PluxelEnvironmentVariables` 增强官方 `PLUXEL_*` 字段；`hostEnv` 是唯一经过校验的有效 Host view，并补全共享 data root
-`.pluxel`。Pluxel persistence 使用其 `persistence/` 子目录，其他 integration 各自拥有 sibling 子目录。static/dynamic launcher、生产 bootstrap、Vite config 和 application host 不各自读取 `process.env` 或复制默认路径。
+`.pluxel`。Pluxel persistence 使用其 `persistence/` 子目录，其他 integration 各自拥有 sibling 子目录。Runtime launcher、生产 bootstrap、Vite config 和 application host 不各自读取 `process.env` 或复制默认路径。
 Launcher 注入环境时通过 `resolveHostEnv(input)` 走同一解析边界；完整 environment 不进入 Context、日志或 Management DTO。
 
 业务 HTTP 使用每个 generation 一个严格惰性的原生 Elysia application；root Plugin 与全部 Part 共享同一 scope identity。
@@ -242,7 +242,6 @@ label 推断是否正在 source HMR。
 | ---------------- | ----------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------- |
 | `static-bundle`  | `application-bundle`                            | `deployment`                           | definition 已进入 application deployment bundle，更新需要新部署                   |
 | `static-catalog` | `source-module` / `built-module` / `unreported` | `catalog-hmr` / `manual`               | Vite 监听 application module closure 并热替换 catalog；通用 host 由调用方手动替换 |
-| `dynamic-fixed`  | `source-module` / `built-module` / `unreported` | `host-reload`                          | dynamic config 显式 import 的 fixed plugin，变化通过整个 host reload 生效         |
 | `dynamic-entry`  | `source-module`                                 | `definition-hmr`, scope `source-graph` | mutable entry 与已证明的源码依赖图共同参与 definition HMR                         |
 | `dynamic-entry`  | `built-module` / `unreported`                   | `definition-hmr`, scope `entry-only`   | mutable entry 可替换，但不承诺跟踪其消费 package 的内部源码                       |
 | `unreported`     | `unreported`                                    | `unreported`                           | route 没有足够事实，client 必须保持未知而不是猜测                                 |
@@ -334,24 +333,18 @@ inactive、absent 或 orphan address 不会 intern/materialize Plugin，不会�
 也不 fallback 为逐 node inspection 拼接图事实。Provider 未运行时仍按 status contract 显示 `stopped`，不能在没有稳定事实时
 改称 `failed`。
 
-## Dynamic fixed catalog
+## 统一应用声明与来源
 
-Dynamic config 使用 `plugins` 声明宿主显式 import 的固定 catalog，使用 `sources` 声明运行时可增删的文件 catalog。
-`plugins` 只提供 availability；自动启动、fork、dependency override 和 config validation 读取统一 RuntimeState，本次启停读取 coordinator session
-intent。固定 constructor 即使没有自动启动也可由 catalog resolve，但不会因首次出现而自动运行。RuntimeState 写盘格式是 version 5，以结构化
-node/definition address 保存 `autoStart`、fork family、provider default 和 stable requirement-address dependency override。reader/writer 只接受
-version 5；
-其他版本 fail-fast。runtime 不从 Plugin name、constructor 或 display title 猜测 identity。
+应用默认导出普通 `RuntimeApplication` 对象，`plugins` 提供固定 catalog，`sources` 可选提供持续发现的来源。
+创建 `dynamicSource()` 描述不执行 IO；实际来源生命周期由 Host 拥有。固定与动态定义经同一个 catalog 接受边界，
+自动启动、fork、dependency override 与本次启停仍读取 RuntimeState 和 coordinator 的会话意图。
 
-程序化 dynamic launcher 只接受 config module path，让 config、固定插件和 mutable source 都经由 launcher 所有的 canonical
-Vite SSR runner 求值。object config 不跨 module realm 传递 constructor。
+`runtime({ entry, root?, devConsole? })` 从应用入口加载相同声明。root 默认解析为入口最近 package root，
+与浏览器 Vite root 分离；production launcher 使用 deployment root。`configure({ root, mode, env, bindings, deployment })`
+每次新宿主启动重新执行。`prepare({ host, startup })` 在服务准备后、插件启动前执行，失败清理已创建资源。
 
-`defineDynamicRuntimeConfig()` 捕获直接输入的具体类型，并递归检查所有 Runtime-owned 封闭配置：顶层与 `storage`、source
-declaration，以及 ConfigService、RuntimeState、persistence wrapper、database/pool、workers、Workbench、Vault 和 logging
-plan。不能依靠 TypeScript 的普通结构兼容把额外策略字段混入配置。Runtime module boundary 仍使用同一字段契约重复执行结构校验，
-覆盖 JavaScript、类型断言和外部 module value。Plugin raw config、environment map、custom persistence backend、custom log sink、
-constructor 与 `Iterable` 是显式 extension contract，保持开放，不对其实现私有字段做递归 exact 检查。
-共享字段契约从独立的 lightweight internal entry 加载；config module 求值不经过 Context host、HTTP 或 lifecycle 构造入口。
+`RuntimeApplication` 及 `configure()` 返回值共享封闭字段的运行时校验；普通 `satisfies` 提供编写时检查，
+不通过 Symbol marker 证明有效，也不承诺任意变量的深层 excess-property 检查。Plugin raw config 与自定义 backend 保持原扩展边界。
 
 ## Node module service
 
@@ -446,7 +439,7 @@ backend factory 由 static、dynamic 和 production static launcher 在 immutabl
 
 ## Host application metadata
 
-Static application entry 与 dynamic config module 都可以提供同一个可选 named export `product`。公共作者入口
+应用声明模块可以提供可选 named export `product`。公共作者入口
 `@pluxel/runtime/product` 只包含 browser-safe `ProductDescriptor` 与 `defineProduct()`；helper 和 route boundary 复用同一个
 结构 validator，复制并深度冻结 snapshot。Named export 缺失得到 `null`，显式但非法的值使 module load 失败。
 
@@ -459,13 +452,14 @@ Workbench backend 安装时接收 nullable snapshot，并通过既有 runtime me
 `application.product`。同一 read model 可选投影由 `std-env` 检测的非敏感 platform snapshot（runtime/provider/CI/mode/platform），不投影变量名或值。
 Workbench disabled/headless 不安装 backend，也不创建 product service、route、registry 或持久状态。
 
-## Static application ownership
+## Application ownership
 
-`@pluxel/runtime-static` 的公开源码入口是默认导出的 `defineStaticRuntime()` application：
+`@pluxel/runtime` 的公开源码入口是默认导出的 `RuntimeApplication` application：
 
 ```text
-defineStaticRuntime entry
+RuntimeApplication entry
   ├─ name + fixed plugin constructors     build-time catalog
+  ├─ sources                              optional mutable definition sources
 	├─ configEnvironmentBootstrap            typed Plugin config bootstrap bindings
   ├─ configure(startup)                   bundled resolver, startup-time values
   └─ prepare({ host, startup })            host-owned startup policy
@@ -473,18 +467,15 @@ defineStaticRuntime entry
 
 Vite 和 production freezer 必须加载同一个 entry。production bootstrap 由
 `@pluxel/rolldown/build` 生成，以标准 ESM namespace 分别读取 default application 与 route-neutral product，再内联
-`runtime-static` production adapter；用户不维护第二个 server entry，部署端也不解析 Pluxel packages。Freezer 只静态检查
+`runtime` production adapter；用户不维护第二个 server entry，部署端也不解析 Pluxel packages。Freezer 只静态检查
 default export 的 application authoring boundary，不求值 product，也不把产品字段复制进 deployment manifest。
 
 fixed catalog 只限制可用插件代码集合，不移除运行时启停。ConfigService 与 RuntimeState 仍在每次启动时加载 plugin
 config records、auto-start policy、dependency overrides 和 persistence state。process session intent 总在 cold boot 时清空。`configure()` 的返回值同样在每次 host startup
 重新解析，不是构建时序列化常量。
 
-`defineStaticRuntime()` 捕获 `configure()` 的具体返回类型，对顶层 host options 与全部 Runtime-owned service/logging 子配置执行
-递归 unknown-key 检查；这弥补 TypeScript 对 contextually typed callback return 不执行深层 excess-property checking 的限制。
-Runtime startup 继续使用同一字段契约验证真实对象，类型注解、断言或 JavaScript 不能绕过运行时边界。Plugin raw config、
-environment map、custom persistence backend、custom log sink、constructor 与 `Iterable` 等显式 extension contract 保持开放，
-不会被递归 exact 化。
+`satisfies RuntimeApplication` 不改变对象或创建资源。加载与启动时验证真实配置，JavaScript、类型断言或未经检查的输入
+不能越过运行时字段契约。声明与配置值不是第二份运行状态。
 
 `configEnvironmentBootstrap` 只把当前 startup environment 解码成 ConfigService initial snapshot。Binding 必须指向同一 fixed
 catalog 中 implementation 的 default node，并与该 Plugin 实际 root config schema 做 object identity 断言；同一 implementation
@@ -505,7 +496,7 @@ Workbench 默认根路径时，根 navigation 由 shell 拥有。dynamic/static 
 document navigation 与其 packaged `/__pluxel/workbench/assets/` asset 交给 runtime，其余请求继续交给宿主。Document navigation 按
 method、`Accept` 与 Workbench base path 判定；Plugin identity 中的 `.ts`、`.js` 等源码/包名片段不会被误判为 asset request。
 平台 adapter 不进入
-`runtime-static` application definition。当前 production freezer 只支持
+`runtime` application definition。当前 production freezer 只支持
 Node；Worker/Fetch target 必须等待 runtime services 具备真正 platform-neutral closure 后再开放。
 
 ## Logging

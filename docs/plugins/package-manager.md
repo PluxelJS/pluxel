@@ -12,38 +12,45 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 ## 装配宿主
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { resolve } from 'node:path'
+import { pluginNodeAddressOf, type RuntimeApplication } from '@pluxel/runtime'
+import { resolveHostEnv } from '@pluxel/runtime/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { dynamicSource } from '@pluxel/host-dynamic'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
-const packageManagerConfig = {
-	rootDir: '.pluxel/managed-plugins',
-	ignoreScripts: true,
-	allowBuilds: [],
-	minimumReleaseAgeMinutes: 1_440,
-}
+const managedPackagesRoot = resolve(process.cwd(), resolveHostEnv().dataRoot, 'managed-plugins')
 
-export default defineDynamicRuntimeConfig({
-	root: process.cwd(),
+export default {
+	name: 'managed-plugins',
 	plugins: [PackageManagerPlugin],
 	sources: [
-		{
+		dynamicSource({
 			kind: 'directory',
-			path: '.pluxel/managed-plugins/entries',
+			path: resolve(managedPackagesRoot, 'entries'),
 			include: ['*.mjs'],
-		},
+		}),
 	],
-	configService: {
-		snapshot: {
-			plugins: [{ owner: packageManagerNode, config: packageManagerConfig }],
+	configure: () => ({
+		configService: {
+			snapshot: {
+				plugins: [
+					{
+						owner: packageManagerNode,
+						config: {
+							rootDir: managedPackagesRoot,
+							ignoreScripts: true,
+							allowBuilds: [],
+							minimumReleaseAgeMinutes: 1_440,
+						},
+					},
+				],
+			},
 		},
-	},
-	runtimeState: {
-		snapshot: { autoStart: [packageManagerNode] },
-	},
-	workbench: { enabled: true },
-})
+		runtimeState: { snapshot: { autoStart: [packageManagerNode] } },
+		workbench: { enabled: true },
+	}),
+} satisfies RuntimeApplication
 ```
 
 四处配置缺一不可：
@@ -53,11 +60,13 @@ export default defineDynamicRuntimeConfig({
 3. `runtimeState` 显式让它随宿主自动启动；
 4. `sources` 声明它被允许生产的 directory source。
 
-source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；static host 会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
+示例通过 `PLUXEL_DATA_ROOT` 统一定位存储和来源；默认是 cwd 下的 `.pluxel`。生产运行时设置 distribution root 外的绝对路径。
+
+source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；未声明动态来源的宿主会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 
 ## 配置安全默认值
 
-上例的 `packageManagerConfig` 同时展示了安全默认值。运行中的配置更新由宿主 ConfigService 负责，不通过测试 fixture API 修改
+上例的 Plugin config 同时展示了安全默认值。运行中的配置更新由宿主 ConfigService 负责，不通过测试 fixture API 修改
 production host。
 
 | 字段                       | 默认值                    | 含义                                               |
@@ -104,7 +113,7 @@ interface PackageManagerApi extends RpcTarget {
 
 这些调用与 layout、Management 共用当前 Workbench 的 Cap’n Web over WebSocket Runtime Session，不经过 command registry 或业务 HTTP。
 Snapshot 包含 revision、engine、managed root、entries directory、packages 和检测到的 build-script dependencies。Workbench 路由由
-catalog node address 生成，消费者不应拼接 Plugin class name URL。headless dynamic host 仍可使用 commands；Workbench disabled 时不会
+catalog node address 生成，消费者不应拼接 Plugin class name URL。关闭 Workbench 的宿主 仍可使用 commands；Workbench disabled 时不会
 创建相关 UI backend。
 
 安装后应在返回值的 `succeeded` 中找到包，并在宿主清单中看到对应插件。再从正常插件管理入口启动它，确认运行状态；仅看到安装成功不表示插件已在运行。失败时读取 `failed` 中的稳定错误分类。
@@ -135,6 +144,10 @@ prune managed graph，再删除 entry；source batch 随后按正常 lifecycle �
 ```
 
 不要让其他工具直接改写 `entries/`，也不要让 dynamic route 调用 Package Manager 私有 store。要实现另一种 registry、market 或审批策略，应实现另一个 source producer，并继续通过普通 file source protocol 接入 runtime。
+
+生产原生 ESM 加载器不能替换已经缓存的传递依赖。升级或重新安装涉及已加载入口时，来源层会报告
+`PLUGIN_SOURCE_RESTART_REQUIRED`，需要重启宿主；开发期升级由共享 ModuleRunner 失效并重新求值。
+安装结果只说明 package 与 entry 发布结果，必须另查 catalog 接受和插件运行状态。
 
 ## 输入边界与失败语义
 

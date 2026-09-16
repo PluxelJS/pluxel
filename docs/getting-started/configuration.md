@@ -341,10 +341,10 @@ export class WorkerPlugin extends BasePlugin {
 Canonical static entry 直接声明部署名称；不要在 `configure()` 中重复解析类型或拼装 Plugin address：
 
 ```ts no-twoslash
-import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+import { bindConfigEnvironment, type RuntimeApplication } from '@pluxel/runtime'
 import { WorkerConfig, WorkerPlugin } from './WorkerPlugin.ts'
 
-export default defineStaticRuntime({
+export default {
 	name: 'worker-app',
 	plugins: [WorkerPlugin],
 	configEnvironmentBootstrap: [
@@ -356,7 +356,7 @@ export default defineStaticRuntime({
 			},
 		}),
 	],
-})
+} satisfies RuntimeApplication
 ```
 
 Mapping 从 schema raw input 递归推导：object 可以继续展开，也可以直接绑定一个 JSON environment；array、tuple、record 和 scalar 是 leaf。根 mapping 也可以直接写一个 environment name，用 JSON object 初始化完整 raw record。环境名称必须匹配 `[A-Z_][A-Z0-9_]*`；`PLUXEL_*` 保留给 framework。

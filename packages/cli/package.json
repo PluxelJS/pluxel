@@ -47,20 +47,15 @@
 	"devDependencies": {
 		"@pluxel/market": "catalog:dev",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",
-		"@types/react": "catalog:types",
 		"@types/semver": "catalog:types",
-		"ink": "catalog:dev",
-		"react": "catalog:frontend",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev"
 	},
 	"peerDependencies": {
 		"@pluxel/market": "catalog:peer",
 		"@pluxel/rolldown": "workspace:^",
-		"@pluxel/runtime-dynamic": "workspace:^",
 		"oxlint": "catalog:peer",
 		"tsdown": "catalog:build"
 	},
@@ -69,9 +64,6 @@
 			"optional": true
 		},
 		"@pluxel/rolldown": {
-			"optional": true
-		},
-		"@pluxel/runtime-dynamic": {
 			"optional": true
 		},
 		"oxlint": {

@@ -85,14 +85,51 @@ describe('ManagedPackageStore', () => {
 		const wrapper = await readFile(resolve(snapshot.entriesDir, entryFiles[0]!), 'utf8')
 		expect(wrapper).toContain('export * from')
 		expect(wrapper).toContain('export default pluginModule.default')
+		await store.install(['alpha@^1.2.0', '@scope/beta@2.0.0'])
+		expect(await readFile(resolve(snapshot.entriesDir, entryFiles[0]!), 'utf8')).not.toBe(wrapper)
 
 		const removed = await store.remove(['alpha', '@scope/beta'])
 
 		expect(removed).toEqual({ ok: true, succeeded: ['alpha', '@scope/beta'], failed: [] })
-		expect(install).toHaveBeenCalledTimes(2)
+		expect(install).toHaveBeenCalledTimes(3)
 		const removedSnapshot = await store.snapshot()
 		expect(removedSnapshot.packages).toEqual([])
 		expect(await readdir(resolve(rootDir, 'entries'))).toEqual([])
+	})
+
+	it('revokes publication during native work and waits for actual settlement on close', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const controller = new AbortController()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			signal: controller.signal,
+		})
+		await store.initialize()
+		const started = Promise.withResolvers<void>()
+		const finish = Promise.withResolvers<InstallResult>()
+		install.mockImplementationOnce(async () => {
+			started.resolve()
+			return finish.promise
+		})
+		const operation = store.install(['alpha@1.0.0'])
+		await started.promise
+		controller.abort(new Error('owner stopped'))
+		let closed = false
+		const closing = store.close().then((): void => {
+			closed = true
+			return undefined
+		})
+		await Promise.resolve()
+		expect(closed).toBe(false)
+		finish.resolve({ stats: { added: 1, removed: 0, linkedToRoot: 1 }, storeDir: '/store' })
+		await expect(operation).resolves.toMatchObject({ ok: false, succeeded: [] })
+		await closing
+		expect(await readdir(store.entriesDir)).toEqual([])
+		expect(() => store.install(['alpha@1.0.0'])).toThrow('closed')
 	})
 
 	it('rejects non-registry, empty, and non-canonical inputs without invoking the native engine', async () => {

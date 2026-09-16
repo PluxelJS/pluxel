@@ -3,16 +3,11 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "pnpm run static",
-		"build": "pnpm run build:static",
+		"dev": "pnpm exec vite --config vite.config.ts",
+		"build": "pnpm exec tsdown",
 		"start": "node dist/app.mjs",
-		"dynamic": "pnpm exec vite --config vite.dynamic.config.ts",
-		"static": "pnpm exec vite --config vite.static.config.ts",
-		"build:static": "pnpm exec tsdown --config tsdown.static.config.ts",
 		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "pnpm exec tsc -p src/tsconfig.json --pretty false",
-		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host",
-		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host"
+		"typecheck": "pnpm exec tsc -p src/tsconfig.json --pretty false"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "catalog:prod",
@@ -24,14 +19,13 @@
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/echarts": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
+		"@pluxel/host-dynamic": "workspace:*",
 		"@pluxel/otel": "workspace:*",
 		"@pluxel/package-manager": "workspace:*",
 		"@pluxel/pi-agent": "workspace:*",
 		"@pluxel/rates": "workspace:*",
 		"@pluxel/redis": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
-		"@pluxel/runtime-static": "workspace:*",
 		"@pluxel/storage": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/wretch": "workspace:*"
@@ -40,6 +34,7 @@
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/host-dev": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",

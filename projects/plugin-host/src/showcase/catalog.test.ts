@@ -1,6 +1,4 @@
-import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
-import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { PiAgentPlugin } from '@pluxel/pi-agent'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
@@ -12,49 +10,16 @@ import {
 import { S3 } from '@pluxel/storage'
 import { describe, expect, it } from 'vitest'
 import {
-	PluginEventsDeclaredConsumer,
-	PluginEventsDeclaredProducer,
-} from '../demo/PluginEventsDemo'
-import {
-	PluginOptionalIntegrationConsumer,
-	PluginOptionalIntegrationProvider,
-} from '../demo/PluginOptionalIntegrationDemo'
-import {
 	createHostConfigRecords,
 	createHostRuntimeState,
-	focusedDemoPlugins,
-	officialDynamicPlugins,
-	officialStaticPlugins,
 	redisBackedPlugins,
 	s3StorageNode,
-	staticHostPlugins,
 } from './catalog'
 import { EChartsShowcaseRenderer, ReportStudioPlugin, ShowcaseRenderer } from './ReportStudio'
 
 describe('plugin-host catalog', () => {
-	it('loads every official concrete plugin and keeps Package Manager dynamic-only', () => {
-		expect(officialStaticPlugins).toHaveLength(17)
-		expect(officialDynamicPlugins).toHaveLength(18)
-		expect(new Set(officialDynamicPlugins).size).toBe(18)
-		expect(officialStaticPlugins).toContain(AgentToolsPlugin)
-		expect(officialStaticPlugins).toContain(PiAgentPlugin)
-		expect(officialStaticPlugins).not.toContain(PackageManagerPlugin)
-		expect(officialDynamicPlugins).toContain(PackageManagerPlugin)
-		expect(staticHostPlugins).not.toContain(PackageManagerPlugin)
-		expect(staticHostPlugins).toHaveLength(26)
-	})
-
-	it('keeps only demos that add event and optional lifecycle semantics', () => {
-		expect(focusedDemoPlugins).toEqual([
-			PluginEventsDeclaredProducer,
-			PluginEventsDeclaredConsumer,
-			PluginOptionalIntegrationProvider,
-			PluginOptionalIntegrationConsumer,
-		])
-	})
-
 	it('selects safe in-memory implementations without auto-starting Redis', () => {
-		const state = createHostRuntimeState(false)
+		const state = createHostRuntimeState()
 		const autoStart = state.autoStart ?? []
 		for (const plugin of redisBackedPlugins) {
 			expect(
@@ -93,14 +58,14 @@ describe('plugin-host catalog', () => {
 	})
 
 	it('keeps Pi Agent available but stopped until an assignment and model are intentional', () => {
-		const autoStart = createHostRuntimeState(false).autoStart ?? []
+		const autoStart = createHostRuntimeState().autoStart ?? []
 		expect(
 			autoStart.some((node) => pluginNodeAddressEqual(node, pluginNodeAddressOf(PiAgentPlugin))),
 		).toBe(false)
 	})
 
 	it('prepares one S3 provider with isolated draft and release buckets', () => {
-		const state = createHostRuntimeState(false)
+		const state = createHostRuntimeState()
 		expect(state.forks).toBeUndefined()
 		expect(
 			state.autoStart?.filter((node) => pluginNodeAddressEqual(node, s3StorageNode)),

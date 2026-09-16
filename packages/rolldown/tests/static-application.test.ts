@@ -5,7 +5,7 @@ import { traceNodeModules } from 'nf3'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
-import { staticApplication } from '../src/cli/static-application.ts'
+import { application } from '../src/cli/static-application.ts'
 import { readPublicElysiaSpecifiers } from '../src/cli/elysia-singleton.ts'
 import { createPluginSourceVitePipeline } from '../src/vite/plugin-source.ts'
 
@@ -17,7 +17,7 @@ function pluginNames(config: { plugins?: unknown }): string[] {
 		.map((plugin) => plugin.name ?? '')
 }
 
-describe('staticApplication', () => {
+describe('application', () => {
 	it('exposes one standard plugin package preset and shared source pipeline', () => {
 		const pipeline = createPluginBuildPipeline({ root: '/tmp/pluxel-plugin-package' })
 		const config = pluginPackage({
@@ -63,12 +63,13 @@ describe('staticApplication', () => {
 	it('exposes one concrete Vite source pipeline and its sole semantic collector', () => {
 		const pipeline = createPluginSourceVitePipeline({
 			root: '/tmp/pluxel-plugin-source',
+			preset: 'runtime',
 			lintGuard: false,
 			configSource: false,
 		})
 		expect(pluginNames(pipeline)).toEqual([
-			'unplugin-preprocessor-directives',
 			'pluxel:database-source',
+			'unplugin-preprocessor-directives',
 			'pluxel:plugin-semantics',
 			'pluxel:runtime-source',
 		])
@@ -89,7 +90,7 @@ describe('staticApplication', () => {
 	})
 
 	it('builds Node applications with native residual tracing', () => {
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-node',
 			entry: './src/pluxel.static.ts',
 			variant: 'headless',
@@ -136,8 +137,8 @@ describe('staticApplication', () => {
 			await writeFile(
 				applicationEntry,
 				[
-					"import { defineStaticRuntime } from '@pluxel/runtime-static'",
-					"export default defineStaticRuntime({ name: 'fixture-application', plugins: [] })",
+					"import type { RuntimeApplication } from '@pluxel/runtime'",
+					"export default { name: 'fixture-application', plugins: [] } satisfies RuntimeApplication",
 				].join('\n'),
 			)
 			await writeFile(dependencyEntry, 'export const dependency = true\n')
@@ -151,7 +152,7 @@ describe('staticApplication', () => {
 				'export default function applicationWorker() {}\n',
 			)
 
-			const config = staticApplication({
+			const config = application({
 				cwd: root,
 				entry: './src/pluxel.static.ts',
 				outDir,
@@ -188,6 +189,7 @@ describe('staticApplication', () => {
 						type: 'chunk',
 						fileName: 'app.mjs',
 						isEntry: true,
+						facadeModuleId: '\0pluxel:static-application-bootstrap',
 						imports: [],
 						dynamicImports: [],
 						modules: { [dependencyEntry]: {} },
@@ -240,7 +242,7 @@ describe('staticApplication', () => {
 				elysiaManifest,
 				JSON.stringify({ exports: { '.': './dist/index.mjs', './type': './dist/type.mjs' } }),
 			)
-			const config = staticApplication({
+			const config = application({
 				cwd: root,
 				entry: './src/pluxel.static.ts',
 				lint: false,
@@ -305,7 +307,7 @@ describe('staticApplication', () => {
 
 	it('rejects an unknown launcher instead of silently opening a listener', () => {
 		expect(() =>
-			staticApplication({
+			application({
 				cwd: '/tmp/pluxel-static-invalid-launcher',
 				entry: './src/pluxel.static.ts',
 				launcher: 'invalid' as never,
@@ -314,7 +316,7 @@ describe('staticApplication', () => {
 	})
 
 	it('generates a namespace-based production bootstrap for default and product exports', async () => {
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-node',
 			entry: './src/pluxel.static.ts',
 			variant: 'workbench',
@@ -345,7 +347,7 @@ describe('staticApplication', () => {
 	})
 
 	it('statically wires every Elysia TypeBox runtime namespace before the user module', async () => {
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-node',
 			entry: './src/pluxel.static.ts',
 			lint: false,
@@ -377,7 +379,7 @@ describe('staticApplication', () => {
 	})
 
 	it('emits a fetch-only production bootstrap without a listener address', async () => {
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-fetch',
 			entry: './src/pluxel.static.ts',
 			variant: 'workbench',
@@ -394,7 +396,7 @@ describe('staticApplication', () => {
 		const resolved = plugin?.resolveId?.('pluxel:static-application-bootstrap')
 		const source = String(await plugin?.load?.(String(resolved)))
 
-		expect(source).toContain('@pluxel/runtime-static/internal/fetch-workbench-application')
+		expect(source).toContain('@pluxel/runtime/internal/fetch-workbench-application')
 		expect(source).toContain('runStaticFetchWorkbenchApplication')
 		expect(source).toContain('export const fetch = __pluxelStaticRuntime.fetch')
 		expect(source).not.toContain('runStaticNodeApplication')
@@ -402,7 +404,7 @@ describe('staticApplication', () => {
 	})
 
 	it('keeps PostgreSQL on the Node residual boundary', async () => {
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-node',
 			entry: './src/pluxel.static.ts',
 			variant: 'headless',
@@ -430,7 +432,7 @@ describe('staticApplication', () => {
 
 	it('lowers disabled managed database drivers to explicit absent modules', async () => {
 		vi.mocked(traceNodeModules).mockClear()
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-private-database',
 			entry: './src/pluxel.static.ts',
 			variant: 'headless',
@@ -482,7 +484,7 @@ describe('staticApplication', () => {
 
 	it('still traces application-private driver imports when managed drivers are omitted', async () => {
 		vi.mocked(traceNodeModules).mockClear()
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-private-postgres',
 			entry: './src/pluxel.static.ts',
 			managedDatabaseDrivers: [],
@@ -522,7 +524,7 @@ describe('staticApplication', () => {
 
 	it('rejects unknown managed database drivers', () => {
 		expect(() =>
-			staticApplication({
+			application({
 				entry: './src/pluxel.static.ts',
 				managedDatabaseDrivers: ['sqlite' as never],
 			}),
@@ -543,7 +545,7 @@ describe('staticApplication', () => {
 			await writeFile(join(packageRoot, 'index.cjs'), 'module.exports = { loaded: true }\n')
 			await writeFile(join(packageRoot, 'runtime.asset'), 'runtime-only asset\n')
 
-			const config = staticApplication({
+			const config = application({
 				cwd: root,
 				entry: './src/pluxel.static.ts',
 				outDir: './dist',
@@ -608,7 +610,7 @@ describe('staticApplication', () => {
 	it('rejects residual dependency subpaths and invalid scoped names', () => {
 		for (const packageName of ['fixture-runtime/subpath', '@scope', 'node:fs']) {
 			expect(() =>
-				staticApplication({
+				application({
 					entry: './src/pluxel.static.ts',
 					residualDependencies: { packages: [packageName] },
 				}),
@@ -617,7 +619,7 @@ describe('staticApplication', () => {
 	})
 
 	it('fails the build when a declared residual package cannot be resolved', async () => {
-		const config = staticApplication({
+		const config = application({
 			cwd: '/tmp/pluxel-static-missing-residual',
 			entry: './src/pluxel.static.ts',
 			residualDependencies: { packages: ['missing-runtime-package'] },
@@ -647,7 +649,7 @@ describe('staticApplication', () => {
 
 	it('rejects unsupported platform targets instead of emitting incomplete bundles', () => {
 		expect(() =>
-			staticApplication({
+			application({
 				entry: './src/pluxel.static.ts',
 				variant: 'headless',
 				target: 'fetch' as never,
@@ -663,7 +665,7 @@ describe('staticApplication', () => {
 		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
 		expect(source).not.toContain("from '@pluxel/runtime/internal'")
 		expect(source).toContain("from '@pluxel/runtime/internal/static-host'")
-		expect(source).toContain('@pluxel/runtime-static/internal/node-workbench-application')
+		expect(source).toContain('@pluxel/runtime/internal/node-workbench-application')
 		expect(source).toContain('runStaticNodeWorkbenchApplication')
 		expect(source).toContain('...RuntimeFullTracePackages')
 		expect(source).toContain('...residualDependencies.fullTrace')

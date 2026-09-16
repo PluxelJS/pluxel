@@ -18,15 +18,15 @@ describe('static config environment production watch', () => {
 				export const plugins = [DemoPlugin] as const
 			`,
 			'entry.ts': `
-				import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+				import { bindConfigEnvironment, type RuntimeApplication } from '@pluxel/runtime'
 				import { DemoConfig, DemoPlugin, plugins } from './plugin'
-				export default defineStaticRuntime({
+				export default {
 					name: 'watch-fixture',
 					plugins,
 					configEnvironmentBootstrap: [
 						bindConfigEnvironment(DemoPlugin, DemoConfig, { endpoint: 'APP_ENDPOINT' }),
 					],
-				})
+				} satisfies RuntimeApplication
 			`,
 		})
 		const entry = fixture.getPath('entry.ts')

@@ -61,11 +61,11 @@ const bootSafeOfficialPlugins = Object.freeze([
 	takumiPlugin,
 ])
 
-export function createHostRuntimeState(dynamic: boolean): Partial<RuntimeStateSnapshot> {
+export function createHostRuntimeState(): Partial<RuntimeStateSnapshot> {
 	return {
 		autoStart: [
 			...bootSafeOfficialPlugins,
-			...(dynamic ? [packageManagerNode] : []),
+			packageManagerNode,
 			reportStudioPlugin,
 			eventConsumer,
 			optionalProvider,

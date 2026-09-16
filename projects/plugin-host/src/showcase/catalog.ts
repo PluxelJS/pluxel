@@ -30,9 +30,10 @@ import {
 
 export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
-export const officialStaticPlugins = Object.freeze([
+export const officialPlugins = Object.freeze([
 	AgentToolsPlugin,
 	PiAgentPlugin,
+	PackageManagerPlugin,
 	AuthPlugin,
 	MemoryCacheBackendPlugin,
 	CachePlugin,
@@ -50,11 +51,6 @@ export const officialStaticPlugins = Object.freeze([
 	TakumiPlugin,
 ] as const)
 
-export const officialDynamicPlugins = Object.freeze([
-	...officialStaticPlugins,
-	PackageManagerPlugin,
-] as const)
-
 export const showcasePlugins = Object.freeze([
 	EChartsShowcaseRenderer,
 	TakumiShowcaseRenderer,
@@ -70,8 +66,8 @@ export const focusedDemoPlugins = Object.freeze([
 	PluginOptionalIntegrationConsumer,
 ] as const)
 
-export const staticHostPlugins = Object.freeze([
-	...officialStaticPlugins,
+export const hostPlugins = Object.freeze([
+	...officialPlugins,
 	...showcasePlugins,
 	...focusedDemoPlugins,
 ] as const)

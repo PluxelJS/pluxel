@@ -11,10 +11,11 @@ import {
 	type PluginSemanticsCollector,
 	type PluginSemanticsPluginOptions,
 } from '../rolldown/plugins/pluginSemanticsPlugin'
-import { databaseSourceVitePlugin } from './database-source'
 import { PLUXEL_UI_DEDUPE_PACKAGES } from '../workspace/vite'
 
 export type PluginSourceVitePluginsOptions = {
+	/** Core-only lowering by default. Runtime explicitly enables database lowering and UI dedupe. */
+	preset?: 'core' | 'runtime'
 	root?: string
 	sourceSpaces?: PluginSemanticsPluginOptions['sourceSpaces']
 	configSource?: false | ConfigSourcePluginOptions
@@ -53,13 +54,7 @@ const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
 
 const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
-const PLUXEL_SINGLETON_PACKAGES = [
-	'@pluxel/runtime',
-	'@pluxel/runtime-dev',
-	'@pluxel/runtime-dynamic',
-	'@pluxel/runtime-static',
-	'drizzle-orm',
-] as const
+const PLUXEL_SINGLETON_PACKAGES = ['@pluxel/runtime', '@pluxel/host-dev', 'drizzle-orm'] as const
 
 // Browser UI singletons are part of the Pluxel host boundary. Keep them in
 // the shared source preset so static and dynamic projects do not each have to
@@ -72,8 +67,7 @@ const PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES = [
 const PLUXEL_SSR_EXTERNAL_PACKAGES = [
 	'@pluxel/core',
 	'@pluxel/runtime',
-	'@pluxel/runtime-dev',
-	'@pluxel/runtime-static',
+	'@pluxel/host-dev',
 ] as const
 
 export type PluxelRuntimeSourceVitePluginsOptions = PluginSourceVitePluginsOptions & {
@@ -96,6 +90,7 @@ export function pluginSourceVitePlugins(
 			createPluginSemanticsPlugin({
 				root,
 				sourceSpaces: options.sourceSpaces,
+				helperImportSource: helperImportSource(options),
 			}).plugin as Plugin,
 	)
 }
@@ -107,16 +102,24 @@ function createPluginSourcePlugins(
 	const plugins: PluginOption[] = [
 		PreprocessorDirectives(),
 		serverOnlyVitePluginFactory(
-			'pluxel:database-source',
-			(environment) => databaseSourceVitePlugin({ root: options.root ?? environment.config.root }),
-			{ enforce: 'pre' },
-		),
-		serverOnlyVitePluginFactory(
 			'pluxel:plugin-semantics',
 			(environment) => semantics(options.root ?? environment.config.root) as Plugin,
 			{ enforce: 'pre' },
 		),
 	]
+	if (options.preset === 'runtime') {
+		plugins.unshift(
+			serverOnlyVitePluginFactory(
+				'pluxel:database-source',
+				async (environment) => {
+					const { databaseSourceVitePlugin } = await import('./database-source')
+					return databaseSourceVitePlugin({ root: options.root ?? environment.config.root })
+				},
+				{ enforce: 'pre' },
+			),
+		)
+	}
+
 	if (options.lintGuard !== false) {
 		plugins.push(
 			serverOnlyVitePluginFactory(
@@ -132,9 +135,16 @@ function createPluginSourcePlugins(
 	}
 	if (options.configSource !== false) {
 		plugins.push(
-			serverOnlyVitePlugin('pluxel-config-source', configSourcePlugin(options.configSource ?? {}), {
-				enforce: 'pre',
-			}),
+			serverOnlyVitePlugin(
+				'pluxel-config-source',
+				configSourcePlugin({
+					...options.configSource,
+					metadataHelperImportSource: helperImportSource(options),
+				}),
+				{
+					enforce: 'pre',
+				},
+			),
 		)
 	}
 	return plugins
@@ -159,7 +169,11 @@ export function createPluginSourceVitePipeline(
 			return collector.plugin as Plugin
 		}
 		collectorRoot = root
-		collector = createPluginSemanticsPlugin({ root, sourceSpaces: options.sourceSpaces })
+		collector = createPluginSemanticsPlugin({
+			root,
+			sourceSpaces: options.sourceSpaces,
+			helperImportSource: helperImportSource(options),
+		})
 		return collector.plugin as Plugin
 	}
 	if (options.root !== undefined) createSemantics(options.root)
@@ -194,7 +208,11 @@ export function createPluginSourceVitePipeline(
 export function pluxelRuntimeSourceVitePlugins(
 	options: PluxelRuntimeSourceVitePluginsOptions = {},
 ): PluginOption[] {
-	return [...pluginSourceVitePlugins(options), createRuntimeSourceConfigPlugin(options)]
+	const runtimeOptions = { ...options, preset: 'runtime' as const }
+	return [
+		...pluginSourceVitePlugins(runtimeOptions),
+		createRuntimeSourceConfigPlugin(runtimeOptions),
+	]
 }
 
 function createRuntimeSourceConfigPlugin(options: PluxelRuntimeSourceVitePluginsOptions): Plugin {
@@ -203,9 +221,14 @@ function createRuntimeSourceConfigPlugin(options: PluxelRuntimeSourceVitePlugins
 			? [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS, 'module', 'browser', 'production']
 			: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS]
 	const externalPackages =
-		options.packageMode === 'distribution' ? true : [...PLUXEL_SSR_EXTERNAL_PACKAGES]
+		options.packageMode === 'distribution'
+			? true
+			: options.preset === 'runtime'
+				? [...PLUXEL_SSR_EXTERNAL_PACKAGES]
+				: []
+	const dedupe = options.preset === 'runtime' ? [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES] : []
 	const configPlugin: Plugin = {
-		name: options.name ?? 'pluxel:runtime-source',
+		name: options.name ?? `pluxel:${options.preset ?? 'core'}-source`,
 		config(config) {
 			return {
 				...(config.server?.watch === null
@@ -222,15 +245,16 @@ function createRuntimeSourceConfigPlugin(options: PluxelRuntimeSourceVitePlugins
 				resolve: {
 					conditions: packageConditions,
 					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
-					dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
+					dedupe,
 					preserveSymlinks: false,
 				},
 				ssr: {
+					...(options.packageMode === 'distribution' ? {} : { noExternal: true }),
 					external: externalPackages,
 					resolve: {
 						conditions: packageConditions,
 						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
-						dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
+						dedupe,
 						preserveSymlinks: false,
 					},
 				},
@@ -244,4 +268,10 @@ function createRuntimeSourceConfigPlugin(options: PluxelRuntimeSourceVitePlugins
 		},
 	}
 	return configPlugin
+}
+
+function helperImportSource(
+	options: PluginSourceVitePluginsOptions,
+): '@pluxel/core/toolchain' | '@pluxel/runtime/toolchain' {
+	return options.preset === 'runtime' ? '@pluxel/runtime/toolchain' : '@pluxel/core/toolchain'
 }

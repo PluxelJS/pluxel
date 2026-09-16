@@ -56,6 +56,11 @@ const DEFAULT_EXTENSIONS = [
 
 const resolverCache = new Map<string, OxcResolverFactory | null>()
 
+/** Discard cached package metadata and resolutions after a producer republishes installed packages. */
+export function clearOxcResolutionCache(): void {
+	resolverCache.clear()
+}
+
 export function resolveWithOxc(
 	directory: string,
 	request: string,

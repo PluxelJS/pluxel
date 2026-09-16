@@ -3,7 +3,7 @@ import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { requireDynamicPluginSource } from '@pluxel/runtime-dynamic/source-producer'
+import { requireDynamicPluginSource } from '@pluxel/host-dynamic/source-producer'
 import type {
 	PackageManagerApi,
 	PackageManagerSnapshot,
@@ -75,19 +75,21 @@ export class PackageManagerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(PackageManagerConfig)
 	private store?: ManagedPackageStore
 
-	override async init(): Promise<void> {
+	override async init(signal: AbortSignal): Promise<void> {
 		const rootDir = resolve(process.cwd(), this.config.rootDir)
 		requireDynamicPluginSource(this.ctx, {
 			kind: 'directory',
 			path: resolve(rootDir, 'entries'),
 			include: ['*.mjs'],
 		})
-		const store = new ManagedPackageStore(loadPnpmEngine(), {
+		const store = new ManagedPackageStore(await loadPnpmEngine(), {
 			rootDir,
 			ignoreScripts: this.config.ignoreScripts,
 			allowBuilds: this.config.allowBuilds,
 			minimumReleaseAgeMinutes: this.config.minimumReleaseAgeMinutes,
+			signal,
 		})
+		this.ctx.effects.defer(() => store.close())
 		await store.initialize()
 		this.store = store
 		this.ctx.effects.defer(() => {

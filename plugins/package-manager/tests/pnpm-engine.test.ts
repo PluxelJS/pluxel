@@ -12,8 +12,8 @@ afterEach(async () => {
 })
 
 describe('@pnpm/napi adapter', () => {
-	it('loads the native engine behind the narrow store adapter', () => {
-		const engine = loadPnpmEngine()
+	it('loads the native engine behind the narrow store adapter', async () => {
+		const engine = await loadPnpmEngine()
 		expect(engine.engineVersion()).toMatch(/^12\./)
 		expect(engine.parseBareSpecifier('@scope/plugin@^1.0.0')).toMatchObject({
 			name: '@scope/plugin',
@@ -28,7 +28,7 @@ describe.runIf(process.env.PLUXEL_PNPM_NATIVE_INTEGRATION === '1')(
 		it('installs, publishes, and removes a real registry package', async () => {
 			const rootDir = await mkdtemp(resolve(tmpdir(), 'pluxel-pnpm-native-'))
 			roots.push(rootDir)
-			const store = new ManagedPackageStore(loadPnpmEngine(), {
+			const store = new ManagedPackageStore(await loadPnpmEngine(), {
 				rootDir,
 				ignoreScripts: true,
 				allowBuilds: [],

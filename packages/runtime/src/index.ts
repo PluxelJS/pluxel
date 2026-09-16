@@ -129,3 +129,13 @@ export type {
 	RuntimeStateStoreConfig,
 	RuntimeStateStoreMode,
 } from './services/RuntimeStateStore'
+
+export type {
+	RuntimeApplication,
+	RuntimeBindings,
+	RuntimeHostOptions,
+	RuntimeStartupContext,
+	RuntimeStartupReport,
+	RuntimeHost,
+} from './application/types.ts'
+export { bindConfigEnvironment } from './application/config-environment.ts'

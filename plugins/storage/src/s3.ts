@@ -296,7 +296,27 @@ export class S3Plugin extends S3 {
 			this.deactivate()
 			throw error
 		}
-		this.publishWorkbench()
+		if (this.ctx.workbench) {
+			this.workbenchDataListeners = new Set()
+			this.credentialReplacementSaved = new Set()
+			this.credentialMutation = Promise.resolve()
+		}
+		this.ctx.workbench?.publish(S3Workbench, {
+			buckets: ({ principal, signal: contentSignal, dataChanged }) => {
+				const release = (): void => {
+					this.workbenchDataListeners?.delete(dataChanged)
+				}
+				this.workbenchDataListeners!.add(dataChanged)
+				contentSignal.addEventListener('abort', release, { once: true })
+				if (contentSignal.aborted) release()
+				return {
+					load: () => ({ status: this.workbenchStatus(contentSignal) }),
+					actions: {
+						rotate: (input) => this.rotateCredentials(principal, contentSignal, input),
+					},
+				}
+			},
+		})
 	}
 
 	private async startBucket(config: S3BucketConfig, signal: AbortSignal): Promise<void> {
@@ -403,30 +423,6 @@ export class S3Plugin extends S3 {
 			await dispose()
 			throw error
 		}
-	}
-
-	private publishWorkbench(): void {
-		const workbench = this.ctx.workbench
-		if (!workbench) return
-		this.workbenchDataListeners = new Set()
-		this.credentialReplacementSaved = new Set()
-		this.credentialMutation = Promise.resolve()
-		workbench.publish(S3Workbench, {
-			buckets: ({ principal, signal, dataChanged }) => {
-				const release = (): void => {
-					this.workbenchDataListeners?.delete(dataChanged)
-				}
-				this.workbenchDataListeners.add(dataChanged)
-				signal.addEventListener('abort', release, { once: true })
-				if (signal.aborted) release()
-				return {
-					load: () => ({ status: this.workbenchStatus(signal) }),
-					actions: {
-						rotate: (input) => this.rotateCredentials(principal, signal, input),
-					},
-				}
-			},
-		})
 	}
 
 	private workbenchStatus(signal: AbortSignal): S3OperationsStatus {

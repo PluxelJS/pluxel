@@ -2,7 +2,7 @@
 packages:
   '@pluxel/rolldown':
     type: patch
-  '@pluxel/runtime-static':
+  '@pluxel/runtime':
     type: patch
 ---
 

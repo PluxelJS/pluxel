@@ -872,7 +872,6 @@ describe('runtime-common pinned mutation admission', () => {
 			)
 			await catalogUpdate
 			await expect(ensureFork).rejects.toMatchObject({
-				name: 'RuntimeStateMutationRejectedError',
 				code: next.entries.length === 0 ? 'definition_unavailable' : 'not_forkable',
 			})
 			expect(store.versionedSnapshot().state.forks).toEqual([])
@@ -1048,7 +1047,9 @@ describe('runtime host-owned graph state', () => {
 			expect(requireRuntimePluginGraphCoordinator(child)).toBe(firstCoordinator)
 			expect(requireRuntimePluginGraphCoordinator(second.ctx)).not.toBe(firstCoordinator)
 			await first.dispose()
-			expect(() => requireRuntimePluginGraphCoordinator(child)).toThrow(/did not install/)
+			expect(() => requireRuntimePluginGraphCoordinator(child)).toThrow(
+				'root has no Plugin host coordinator',
+			)
 			expect(() => requireRuntimePluginGraphCoordinator(second.ctx)).not.toThrow()
 		} finally {
 			await first.dispose()

@@ -8,9 +8,9 @@ Vite route 的 `devConsole: true` 安装可选的本地执行服务。CLI 是外
 
 - `@pluxel/runtime/dev`：独立 dev 作者类型、typed targets、必要稳定错误；导入无安装副作用。
 - runtime internal `createDevConsoleScope()`：每 run 的真实 use case、owner-aware capability 与资源接线。
-- runtime-dev `console`：Vite 执行根、源码准备、执行队列、内部 socket 协议及结果保留。
-- static/dynamic Vite：host epoch attachment、观察更新 barrier、watch admission、startup log defaults 和 shutdown。
-- CLI：只做 discovery/提交/结果/取消，不求值 Plugin，也不依赖 private runtime-dev 的发布产物。
+- Runtime development `console`：Vite 执行根、源码准备、执行队列、内部 socket 协议及结果保留。
+- Runtime Vite：host epoch attachment、观察更新 barrier、watch admission、startup log defaults 和 shutdown。
+- CLI：只做 discovery/提交/结果/取消，不求值 Plugin，也不依赖开发驱动的发布产物。
 
 Dev API 不继承 RuntimeTestHost。配置、commands、HTTP、Workbench 复用生产事实及相同数据契约；test 的 fixture/catalog/strict assertions 与 dev 的当前宿主控制、真实 apply report 各自独立。不得用新 dev API 绕过 graph coordinator 或修改 Context shape。
 
@@ -30,9 +30,9 @@ Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回�
 
 每个 Vite server 只有既有 SSR runner；不追加一次性 query ID 创建无限 namespace，不全量 clearCache，不建立第二套 import cache。运行未改变的导出函数可以直接复用模块。
 
-每次调用先核对已知依赖版本。尚未观察的修改等待真实 Vite watcher 在 route 同步入队时确认，再等待有限 barrier；此等待受 run signal 与 deadline 约束。static 使用 route update tail；dynamic 同时覆盖 Vite route tail、loader 的已观察 debouncer batch 与 execution-lock snapshot。不以全局 idle 或 sleep 模拟源码已应用。
+每次调用先核对已知依赖版本。尚未观察的修改等待真实 Vite watcher 在 route 同步入队时确认，再等待有限 barrier；此等待受 run signal 与 deadline 约束。等待范围覆盖统一开发驱动已经接纳的源码与来源更新序列。不以全局 idle 或 sleep 模拟源码已应用。
 
-真实 route admission 对已跟踪源码记录有界 hash 并唤醒等待者。dynamic 早期 listener 只负责 publication 前失效，较晚的 Vite hook 负责确认入队；确认本身不再次失效。控制台不合成文件事件、不吞真实 watcher 事件。删除/无法读取的文件仍进入正常 removal 路径。
+真实 route admission 对已跟踪源码记录有界 hash 并唤醒等待者。来源 listener 与 Vite hook 的确认不重复失效同一已发布 constructor。控制台不合成文件事件、不吞真实 watcher 事件。删除/无法读取的文件仍进入正常 removal 路径。
 
 首次加载没有历史依赖版本，保证的是当前已提交宿主和已观察更新；不声称发现所有尚未观察的磁盘修改。typed target 与当前 catalog 身份不符时明确失败。禁用或忽略 watcher 的已知依赖修改可能等到 run timeout，控制台不会另建更新权威。
 
@@ -87,10 +87,10 @@ queued 取消不执行；running 取消保持 cancelling，直到真实代码 se
 ## 实现与验证入口
 
 - `packages/runtime/src/dev/`、`src/internal/dev-console.ts`：facade、日志与scope。
-- `packages/runtime-dev/src/console.ts`、`src/console/`：Vite接线、队列/协议/IPC。
+- `packages/runtime/src/development/console.ts`、`src/console/`：Vite接线、队列/协议/IPC。
 - `packages/cli/src/dev/client.ts`、`src/commands/dev.ts`：agent交互。
 - runtime `tests/dev/console.test.ts` 与 logger tests：真实配置、typed RPC填数据、target identity、signal/drain和cursor。
-- runtime-dev console tests：重复请求、取消、保留预算、JSON与socket边界、真实CLI互操作。
-- static/dynamic `tests/vite-console.test.ts` 与共享Vite scenario：跨调用状态、工作区源码/HMR、先提交后观察与先观察后提交、host replacement和清理。
+- Runtime console tests：重复请求、取消、保留预算、JSON与socket边界、真实CLI互操作。
+- Runtime Vite console 与共享 Vite scenario：跨调用状态、工作区源码/HMR、先提交后观察与先观察后提交、host replacement和清理。
 
 修改协议、loader admission、日志buffer或public types时，执行直接owner测试和类型检查；涉及testing共享边界时运行testing-v2 gate，再按仓库要求完成稳定验证。

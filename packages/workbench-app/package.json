@@ -43,7 +43,6 @@
 		"@mantine/modals": "catalog:frontend",
 		"@mantine/notifications": "catalog:frontend",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
 		"@tanstack/router-plugin": "catalog:dev",
 		"@types/react": "catalog:types",

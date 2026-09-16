@@ -93,11 +93,12 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
 ## 7. 保持依赖方向
 
 ```text
-@pluxel/context <- @pluxel/core ------\
-                                        @pluxel/runtime <- runtime route <- host
-@pluxel/commands ---------------------/         ^
-                                                |
-                                          build-time tooling
+@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/runtime
+                                     ^   ^
+                                     |   +-- @pluxel/host-dynamic
+                                     +------ @pluxel/host-dev <- @pluxel/runtime/vite
+@pluxel/commands --------------------------------------------> @pluxel/runtime
+@pluxel/cli --optional--> @pluxel/rolldown
 ```
 
 - context 是同步、host-neutral 的 Context kernel，不依赖 Core、Runtime、IO 或生命周期服务。
@@ -105,8 +106,8 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
 - core 源码直接复用 context；发布的 Core JS 与 declarations 完全内联该 kernel，不产生
   `@pluxel/context` production dependency。
 - core 与 commands 彼此独立；runtime 组合两者，但不把 command 变成插件内部生命周期协议。
-- runtime common 不依赖 dynamic loader。
-- static/dynamic route 不复制 core lifecycle。
+- Runtime 的生产入口不依赖开发工具链；动态来源通过 Host 来源契约接入。
+- Host 来源接入不复制 core lifecycle。
 - build-time tooling 不进入 runtime service graph。
 
 收益：fixed catalog、dynamic loader、测试 host 和未来部署入口可以复用同一内核。

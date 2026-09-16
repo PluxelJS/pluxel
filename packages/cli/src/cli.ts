@@ -8,7 +8,6 @@ import {
 	devCommandDefinition,
 	distributionCommandDefinition,
 	docsCommandDefinition,
-	hmrCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
 	sourceCommandDefinition,
@@ -59,10 +58,6 @@ const commands = new Map<string, SubCommandable>([
 			() => import('./commands/publish').then((module) => module.publishCommand),
 			publishCommandDefinition,
 		),
-	],
-	[
-		'hmr',
-		lazy(() => import('./commands/hmr').then((module) => module.hmrCommand), hmrCommandDefinition),
 	],
 	[
 		'source',

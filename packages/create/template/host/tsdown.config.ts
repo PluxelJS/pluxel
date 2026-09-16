@@ -1,8 +1,8 @@
-import { staticApplication } from '@pluxel/rolldown/build'
+import { application } from '@pluxel/rolldown/build'
 
 export default {
-	...staticApplication({
-		entry: './src/pluxel.static.ts',
+	...application({
+		entry: './src/app.ts',
 		variant: 'workbench',
 		target: 'node',
 	}),

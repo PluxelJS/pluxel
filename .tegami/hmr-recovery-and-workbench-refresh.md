@@ -2,10 +2,6 @@
 packages:
   '@pluxel/runtime':
     type: minor
-  '@pluxel/runtime-static':
-    type: patch
-  '@pluxel/runtime-dynamic':
-    type: patch
 ---
 
 ## Recover failed candidates without mixing runtime and Workbench generations

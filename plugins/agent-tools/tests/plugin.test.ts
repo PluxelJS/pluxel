@@ -66,7 +66,7 @@ describe('AgentToolsPlugin', () => {
 	})
 
 	it('projects toolsets, assignments, missing tools and ungrouped commands for Workbench', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = createRuntimeTestHost({ workbench: { enabled: true } })
 		await host.start(AgentToolsPlugin, {
 			catalog: [NotesCommands],
 			initialConfig: {

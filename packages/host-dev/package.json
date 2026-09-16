@@ -1,0 +1,70 @@
+{
+	"name": "@pluxel/host-dev",
+	"version": "0.1.0",
+	"description": "Shared Pluxel host development driver",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/host-dev"
+	},
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./hmr-log": {
+			"@pluxel/source": "./src/hmr-log.ts",
+			"default": "./dist/hmr-log.mjs"
+		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./hmr-log": "./dist/hmr-log.mjs",
+			"./vite": "./dist/vite.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"test": "pnpm exec vitest run && node tests/installed-plugin.smoke.mjs",
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../..",
+		"test:installed": "node tests/installed-plugin.smoke.mjs"
+	},
+	"dependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
+		"chokidar": "catalog:node",
+		"pathe": "catalog:node"
+	},
+	"devDependencies": {
+		"@logtape/logtape": "catalog:dev",
+		"@pluxel/test": "workspace:*",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build"
+	},
+	"peerDependencies": {
+		"vite": ">=8.2.2 <9"
+	},
+	"peerDependenciesMeta": {
+		"vite": {
+			"optional": true
+		}
+	}
+}

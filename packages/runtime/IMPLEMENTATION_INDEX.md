@@ -55,7 +55,7 @@
 - `src/context/runtime-http-capability.ts`：host-only HTTP backend resolver；Plugin Context 不投影 `HttpService`；
 - `src/services/http/HttpService.ts`：host-only control plane、business directory dispatch 与 UI/MF assets；
 - `../runtime-node/src/node-elysia-application-carrier.ts`：srvx `NodeRequest` + crossws + Elysia public WS handler 的 Node carrier；
-- `../runtime-dev/src/vite-node-carrier.ts`：复用 srvx Node handler 的 Vite Fetch/upgrade binding，保留 Vite HMR arbitration；
+- `../host-dev/src/vite-node-carrier.ts`：复用 srvx Node handler 的 Vite Fetch/upgrade binding，保留 Vite HMR arbitration；
 - `src/services/DatabaseService.ts`：database instance registry、lineage promotion、PostgreSQL/PGlite 与 table invalidation；
 - `src/services/admin-access/AdminAccessService.ts`：Management authentication authority；
 - `src/services/vault/VaultService.ts`：加密存储；

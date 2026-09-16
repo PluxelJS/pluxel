@@ -20,15 +20,15 @@ pnpm governance:check
 
 已有、不使用 catalog 的应用可以在对应包目录执行 `npx nypm add @pluxel/wretch`。使用哪种包管理方式不改变下面的宿主装配。
 
-安装只让代码可导入。还要在应用的 static 入口把 provider 加入 `plugins` 清单，并让需要它的业务插件自动启动：
+安装只让代码可导入。还要在应用入口把 provider 加入 `plugins` 清单，并让需要它的业务插件自动启动：
 
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { defineStaticRuntime } from '@pluxel/runtime-static'
+import type { RuntimeApplication } from '@pluxel/runtime'
 import { WretchPlugin } from '@pluxel/wretch'
 import { CustomerPlugin } from './customer-plugin.js'
 
-export default defineStaticRuntime({
+export default {
 	name: 'my-app',
 	plugins: [WretchPlugin, CustomerPlugin],
 	configure: () => ({
@@ -46,7 +46,7 @@ export default defineStaticRuntime({
 			},
 		},
 	}),
-})
+} satisfies RuntimeApplication
 ```
 
 把 `CustomerPlugin` 保存为入口相邻的 `customer-plugin.ts`，完整实现见 [Wretch](./wretch.md#第一个-http-consumer)。它通过构造函数依赖 `WretchPlugin`，因此启动 consumer 时会一起启动 provider。把这段配置合入现有入口，保留项目已有的插件、启动项和配置记录。

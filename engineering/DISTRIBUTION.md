@@ -5,7 +5,7 @@ delivery marker 契约。Runtime 启动不会读取这些文件、遍历发行�
 
 ## Finalization 所有权
 
-`staticApplication()` 会在 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 和 nf3 residual
+`application()` 会在 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 和 nf3 residual
 packages 全部组装完成后调用 `createDistributionManifest()`。Manifest 路径固定为 `pluxel-distribution.json`。
 
 Static application 声明 config environment bootstrap 时，assembly 会在 finalization 前生成 root `.env.example`；它与 server、
@@ -14,7 +14,7 @@ public 和 artifact 文件一样进入 inventory。该文件不是 runtime input
 如果应用任务在 freezer 返回后继续写入 `dist/`，release pipeline 必须在最后一次写入后调用
 `pluxel distribution create ./dist`。自动与显式 finalization 使用同一个函数。Finalizer 从
 `pluxel-deployment.json` 派生 application name、catalog hash、Node target 与 headless/workbench variant；
-`staticApplication()` 不接收 claims、signer 或 trust 配置。
+`application()` 不接收 claims、signer 或 trust 配置。
 
 ## Artifact set v1
 
@@ -73,5 +73,10 @@ HTML、JavaScript、CSS、source map、native binary 或 runtime 行为。
 与一份私有 record 相等，不代表 attribution、authorization、intent、chain of custody 或法律结论。需要调查价值的流水线必须在
 独立系统中保存 record，并另外提供签名、可信时间戳或 append-only 约束。
 
-Dynamic workspace 保持可变，不生成 artifact manifest 或 attestation。未来的 dynamic export 只有在物化出不可变完整闭包后，
-才可以复用本协议。
+声明 `sources` 的应用仍可冻结宿主闭包。Freezer 为动态来源需要的公开框架入口生成确定路径的 facade chunks，
+它们与宿主实现来自同一次 bundle，且作为普通 server 文件进入 inventory。Bootstrap 将 specifier 到 facade URL 的映射
+传给生产来源 loader；Node resolve hook 只处理来源及其传递模块图，令安装插件复用宿主的 Core、Host、Runtime 和 Elysia 身份。
+来源关闭并等待 generation 退出后撤销 hook；这不提供原生 ESM 重新求值能力。
+
+外部动态插件目录保持可变，必须位于 distribution root 外，不属于该宿主 artifact manifest 或 attestation 的声明范围。
+未来若要证明动态插件闭包，必须先物化出不可变完整 artifact set。

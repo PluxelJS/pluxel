@@ -2,8 +2,9 @@ import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { createServer } from 'node:net'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -17,8 +18,8 @@ const publishRoots = [
 	'@pluxel/create',
 	'@pluxel/rolldown',
 	'@pluxel/runtime',
-	'@pluxel/runtime-dynamic',
-	'@pluxel/runtime-static',
+	'@pluxel/host-dynamic',
+	'@pluxel/host-dev',
 	'@pluxel/test',
 ] as const
 
@@ -53,8 +54,7 @@ try {
 	await runPnpm(['install', '--frozen-lockfile=false'], generatedRoot)
 	await runPnpm(['verify'], generatedRoot, { CI: '1' })
 	await verifyFrozenApplicationDistribution(generatedRoot)
-	await verifyStaticViteApplication(generatedRoot)
-	await verifyDynamicViteHost(generatedRoot)
+	await verifyViteApplication(generatedRoot)
 } finally {
 	if (process.env.PLUXEL_KEEP_TEMPLATE_SMOKE) {
 		console.info(`Create smoke workspace kept at ${temporaryRoot}`)
@@ -220,14 +220,14 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	})
 }
 
-async function verifyStaticViteApplication(root: string): Promise<void> {
+async function verifyViteApplication(root: string): Promise<void> {
 	const port = await reservePort()
-	const vite = startVite(root, '@example/host', 'vite.config.ts', port)
+	const vite = startVite(root, port)
 	try {
 		const initial = await Promise.race([
 			waitForResponse(`http://127.0.0.1:${port}/api/example/todos`, 30_000),
 			vite.exit.then(({ code, signal }) => {
-				throw new Error(`Static Vite host exited before it was ready (${signal ?? code})`)
+				throw new Error(`Vite host exited before it was ready (${signal ?? code})`)
 			}),
 		])
 		const initialSnapshot = (await initial.json()) as {
@@ -238,7 +238,7 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 			initialSnapshot.items?.[0]?.title !== 'Trace a Todo from React to a Plugin' ||
 			initialSnapshot.auditEnabled !== true
 		) {
-			throw new Error('Static Vite host returned an unexpected Todo snapshot')
+			throw new Error('Vite host returned an unexpected Todo snapshot')
 		}
 
 		const created = await fetch(`http://127.0.0.1:${port}/api/example/todos`, {
@@ -248,7 +248,7 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 		})
 		const createdSnapshot = (await created.json()) as { items?: unknown[] }
 		if (created.status !== 201 || createdSnapshot.items?.length !== 2) {
-			throw new Error(`Static Vite Todo mutation returned ${created.status}`)
+			throw new Error(`Vite Todo mutation returned ${created.status}`)
 		}
 
 		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
@@ -258,34 +258,6 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 		const pageSource = await page.text()
 		if (!page.ok || !pageSource.includes('<div id="root"></div>')) {
 			throw new Error(`Unified Vite page returned ${page.status}`)
-		}
-		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
-	} finally {
-		await stopVite(vite)
-	}
-}
-
-async function verifyDynamicViteHost(root: string): Promise<void> {
-	const port = await reservePort()
-	const vite = startVite(root, '@example/host', 'vite.config.ts', port, {}, 'dynamic')
-	try {
-		const response = await Promise.race([
-			waitForResponse(`http://127.0.0.1:${port}/api/example/todos`, 30_000),
-			vite.exit.then(({ code, signal }) => {
-				throw new Error(`Dynamic Vite host exited before it was ready (${signal ?? code})`)
-			}),
-		])
-		const snapshot = (await response.json()) as { items?: Array<{ title?: string }> }
-		if (!response.ok || snapshot.items?.[0]?.title !== 'Trace a Todo from React to a Plugin') {
-			throw new Error(`Dynamic Todo route returned ${response.status}`)
-		}
-		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
-		const page = await fetch(`http://127.0.0.1:${port}/nested/page`, {
-			headers: { accept: 'text/html' },
-		})
-		const pageSource = await page.text()
-		if (!page.ok || !pageSource.includes('<div id="root"></div>')) {
-			throw new Error(`Dynamic unified Vite page returned ${page.status}`)
 		}
 		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
 	} finally {
@@ -370,33 +342,24 @@ function requestDocument(url: string): Promise<{ status: number; text: string }>
 	})
 }
 
-function startVite(
-	root: string,
-	packageName: string,
-	config: string,
-	port: number,
-	environment: Record<string, string> = {},
-	mode?: string,
-) {
-	const command = process.env.npm_execpath ?? 'pnpm'
-	const modeArgs = mode ? ['--mode', mode] : []
+function startVite(root: string, port: number) {
+	const hostRoot = resolve(root, 'host')
+	const require = createRequire(resolve(hostRoot, 'package.json'))
+	const viteBin = resolve(dirname(require.resolve('vite/package.json')), 'bin/vite.js')
+	// Own the actual server process so shutdown cannot stop at a package-manager wrapper.
 	const child = spawn(
-		command,
+		process.execPath,
 		[
-			'--filter',
-			packageName,
-			'exec',
-			'vite',
+			viteBin,
 			'--config',
-			config,
-			...modeArgs,
+			'vite.config.ts',
 			'--host',
 			'127.0.0.1',
 			'--port',
 			String(port),
 			'--strictPort',
 		],
-		{ cwd: root, stdio: 'inherit', env: { ...process.env, ...environment } },
+		{ cwd: hostRoot, stdio: 'inherit', env: process.env },
 	)
 	const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
 		(accept, reject) => {

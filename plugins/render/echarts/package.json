@@ -41,13 +41,14 @@
 		"@pluxel/canvas": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
+		"@pluxel/host-dev": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "catalog:build",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
+		"vite": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

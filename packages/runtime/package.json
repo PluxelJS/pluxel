@@ -61,6 +61,22 @@
 			"@pluxel/source": "./src/services/database-adapters/postgres.ts",
 			"default": "./dist/internal/database/postgres.mjs"
 		},
+		"./internal/fetch-application": {
+			"@pluxel/source": "./src/application/internal/fetch-application.ts",
+			"default": "./dist/internal/fetch-application.mjs"
+		},
+		"./internal/fetch-workbench-application": {
+			"@pluxel/source": "./src/application/internal/fetch-workbench-application.ts",
+			"default": "./dist/internal/fetch-workbench-application.mjs"
+		},
+		"./internal/node-application": {
+			"@pluxel/source": "./src/application/internal/node-application.ts",
+			"default": "./dist/internal/node-application.mjs"
+		},
+		"./internal/node-workbench-application": {
+			"@pluxel/source": "./src/application/internal/node-workbench-application.ts",
+			"default": "./dist/internal/node-workbench-application.mjs"
+		},
 		"./internal/static": {
 			"@pluxel/source": "./src/internal-static.ts",
 			"default": "./dist/internal/static.mjs"
@@ -96,6 +112,10 @@
 		"./toolchain": {
 			"@pluxel/source": "./src/toolchain.ts",
 			"default": "./dist/toolchain.mjs"
+		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
 		},
 		"./web": {
 			"@pluxel/source": "./src/web.ts",
@@ -142,6 +162,10 @@
 			"./internal/config-validation": "./dist/internal/config-validation.mjs",
 			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
 			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
+			"./internal/fetch-application": "./dist/internal/fetch-application.mjs",
+			"./internal/fetch-workbench-application": "./dist/internal/fetch-workbench-application.mjs",
+			"./internal/node-application": "./dist/internal/node-application.mjs",
+			"./internal/node-workbench-application": "./dist/internal/node-workbench-application.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
@@ -151,6 +175,7 @@
 			"./services/vault": "./dist/services/vault.mjs",
 			"./test": "./dist/test.mjs",
 			"./toolchain": "./dist/toolchain.mjs",
+			"./vite": "./dist/vite.mjs",
 			"./web": "./dist/web.mjs",
 			"./web/react": "./dist/web/react.mjs",
 			"./web/session": "./dist/web/session.mjs",
@@ -182,10 +207,14 @@
 		"@module-federation/sdk": "catalog:prod",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@sinclair/typebox": "catalog:prod",
+		"@standard-schema/spec": "catalog:prod",
 		"@tanstack/query-core": "catalog:frontend",
 		"age-encryption": "catalog:prod",
 		"capnweb": "catalog:prod",
+		"chokidar": "catalog:node",
+		"crossws": "catalog:prod",
 		"drizzle-orm": "catalog:backend",
 		"elysia": "catalog:prod",
 		"jose": "catalog:prod",
@@ -193,6 +222,7 @@
 		"oxc-resolver": "catalog:prod",
 		"pathe": "catalog:node",
 		"pg": "catalog:backend",
+		"srvx": "catalog:prod",
 		"std-env": "catalog:prod",
 		"superjson": "catalog:validation",
 		"valibot": "catalog:validation"
@@ -201,7 +231,9 @@
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
 		"@mantine/notifications": "catalog:frontend",
+		"@pluxel/host-dev": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
 		"@types/pg": "catalog:types",
@@ -213,14 +245,18 @@
 		"postcss-simple-vars": "catalog:dev",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
+		"tsx": "catalog:dev",
 		"valibot-form": "workspace:*",
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
+		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
 		"react": "catalog:frontend",
-		"react-dom": "catalog:frontend"
+		"react-dom": "catalog:frontend",
+		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"@mantine/core": {
@@ -233,6 +269,15 @@
 			"optional": true
 		},
 		"react-dom": {
+			"optional": true
+		},
+		"@pluxel/host-dev": {
+			"optional": true
+		},
+		"@pluxel/rolldown": {
+			"optional": true
+		},
+		"vite": {
 			"optional": true
 		}
 	},

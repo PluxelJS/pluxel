@@ -13,7 +13,7 @@ shebang, emits one Node 24 ESM chunk and uses the standard `copy` option to publ
 tree:
 
 - `dist/template/`: a neutral `@example/*` monorepo with an independent `host/web` workspace package, one
-  host-owned Vite config, root-owned `pncat` catalog policy, static/dynamic modes, a same-origin Todo API,
+  host-owned Vite config, root-owned `pncat` catalog policy, one application declaration with optional dynamic sources, a same-origin Todo API,
   tests and build governance. Its local pinned Portless dependency gives `pnpm dev` a stable
   `https://<directory>.localhost` origin while the application and Workbench remain two paths on the one
   Vite listener; `dev:direct` and `PORTLESS=0` provide explicit bypasses.
@@ -39,5 +39,4 @@ pnpm --filter @pluxel/create test:starter
 ```
 
 The packed smoke installs the generated workspace outside the repository, verifies its documentation
-link, runs `pnpm verify`, starts the frozen static distribution and exercises both runtime modes of
-the unified Vite application.
+link, runs `pnpm verify`, starts the production distribution and exercises the unified Vite application.

@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict'
-import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
+import { runtime as runtimePlugin } from '@pluxel/runtime/vite'
+import { createServer } from 'vite'
 
 const entry = process.env.PLUXEL_TAKUMI_MARKDOWN_TYPST_DYNAMIC_ENTRY
 assert.ok(entry, 'missing PLUXEL_TAKUMI_MARKDOWN_TYPST_DYNAMIC_ENTRY')
 
-await using runtime = await startDynamicDevRuntime({ entry })
+const server = await createServer({
+	configFile: false,
+	plugins: [runtimePlugin({ entry })],
+	server: { host: '127.0.0.1', port: 0 },
+	logLevel: 'silent',
+})
+await server.listen()
+await using runtime = {
+	origin: server.resolvedUrls!.local[0]!,
+	[Symbol.asyncDispose]: () => server.close(),
+}
 const rendered = await fetch(new URL('/__pluxel-test/typst/render', runtime.origin))
 assert.equal(rendered.status, 200)
 assert.equal(rendered.headers.get('content-type'), 'image/png')

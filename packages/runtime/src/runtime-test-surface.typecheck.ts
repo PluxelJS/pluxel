@@ -12,9 +12,6 @@ type Equal<Left, Right> =
 	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false
 type Assert<Value extends true> = Value
 
-// @ts-expect-error Static application catalog targets belong to @pluxel/runtime-static/test.
-type RuntimeStaticPluginTestTarget = import('./test').RuntimeStaticPluginTestTarget
-
 declare class FirstPlugin extends BasePlugin {
 	readonly first: true
 }
@@ -120,4 +117,3 @@ void (null as unknown as ProviderOnlyApi)
 void (null as unknown as ProviderOnlyConsumer)
 void (null as unknown as ConsumerApiLease)
 void (null as unknown as LocalClient)
-void (null as unknown as RuntimeStaticPluginTestTarget)

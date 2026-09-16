@@ -26,7 +26,7 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 ---
 packages:
   '@pluxel/runtime': minor
-  '@pluxel/runtime-static': patch
+  '@pluxel/host': patch
 ---
 
 ## Describe the change

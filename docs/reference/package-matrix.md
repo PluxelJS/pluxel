@@ -3,7 +3,7 @@ title: Package 与入口矩阵
 description: 区分公开包、仅供仓库内部使用的能力和不可直接导入的实现入口。
 ---
 
-先按你要完成的任务选包；通常插件作者从 `@pluxel/runtime` 开始，创建应用用 `@pluxel/create`，只有装配宿主时才直接使用 static/dynamic 包。
+先按你要完成的任务选包；通常插件作者从 `@pluxel/runtime` 开始，创建应用用 `@pluxel/create`，装配官方宿主使用 Runtime，轻量组合可直接使用 Host。
 
 本页说明各包的用途和公开入口。`private` 和 `exports` 决定源码中的导入边界；实际可安装版本以 npm registry 和发布记录为准。
 
@@ -15,9 +15,10 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/context`               | 为独立宿主组合固定能力与惰性服务                              | [组合 Context host](./context-hosts.md)                     |
 | `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                              | [Plugin 模型](../getting-started/plugin-model.md)           |
 | `@pluxel/runtime`               | Plugin、生命周期、配置、HTTP、日志和宿主共享契约              | [第一个 Plugin](../getting-started/first-plugin.md)         |
-| `@pluxel/runtime-static`        | 使用固定 Plugin catalog 的宿主                                | [配置插件宿主](../getting-started/host-setup.md)            |
-| `@pluxel/runtime-dynamic`       | 插件可由固定列表和可变文件来源共同提供的宿主                  | [配置插件宿主](../getting-started/host-setup.md)            |
-| `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、HMR 与源码工作区命令            | [CLI 与工具链](../development/tooling.md)                   |
+| `@pluxel/host`                  | 通用 catalog、运行意图与图更新控制                            | [配置插件宿主](../getting-started/host-setup.md)            |
+| `@pluxel/host-dynamic`          | 可选动态文件来源，开发与生产共用                              | [配置插件宿主](../getting-started/host-setup.md)            |
+| `@pluxel/host-dev`              | 通用 Vite 开发与 HMR 驱动                                     | [CLI 与工具链](../development/tooling.md)                   |
+| `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、开发控制台与源码工作区命令      | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/rolldown`              | Plugin package 与 static application 构建集成                 | [开发和发布插件包](../development/plugin-package.md)        |
 | `@pluxel/test`                  | Vitest/Vite preset、filesystem fixture 与显式 unsafe lowering | [测试 Plugin](../development/testing.md)                    |
 | `@pluxel/commands`              | command 定义、校验、live registry 与 argv/message 参数路由    | [Commands](../runtime/commands.md)                          |
@@ -58,7 +59,6 @@ browser-safe Content、Direct View 和 Attachment definition；`/workbench/clien
 
 ## 不应成为用户入口的 package
 
-- `@pluxel/runtime-dev` 是开发支持层。
 - `@pluxel/runtime-node` 是 static/dynamic launcher 共用的 Node srvx/crossws platform carrier，不是 Plugin API 或自定义 carrier SPI。
 - `@pluxel/workbench-app` 是组装后的应用，不是 Plugin UI SDK。
 - `@pluxel/runtime/internal*` 等带 `internal` 的 export 由框架自身使用，不承诺作者兼容性。
@@ -68,7 +68,7 @@ browser-safe Content、Direct View 和 Attachment definition；`/workbench/clien
 ## 选择规则
 
 1. 写 Plugin 时从 `@pluxel/runtime` 和一个明确的能力 package 开始。
-2. 装配宿主时选择 static 或 dynamic runtime，不在业务 Plugin 中依赖宿主实现。
-3. 测试 host 从所验证层的 `@pluxel/core/test`、`@pluxel/runtime/test` 或 `@pluxel/runtime-static/test` 导入；`@pluxel/test` 只使用 `/vitest`、`/fixtures` 或 `/unsafe` subpath，不直接 new 内部 host。
+2. 装配宿主时使用 Runtime 应用声明，按需增加动态来源，不在业务 Plugin 中依赖宿主实现。
+3. 测试 host 从所验证层的 `@pluxel/core/test`或 `@pluxel/runtime/test` 导入；`@pluxel/test` 只使用 `/vitest`、`/fixtures` 或 `/unsafe` subpath，不直接 new 内部 host。
 4. 导入路径必须存在于所安装版本的 `exports`，且目标 package 不能是 private。
 5. `package.json#exports` 与真实源码 export 是入口契约；文档必须与该契约保持一致。

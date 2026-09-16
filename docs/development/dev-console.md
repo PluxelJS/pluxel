@@ -13,19 +13,19 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 ```ts no-twoslash
 import { defineConfig } from 'vite'
-import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+import { runtime } from '@pluxel/runtime/vite'
 
 export default defineConfig({
 	plugins: [
-		staticRuntimeVitePlugin({
-			entry: './src/pluxel.static.ts',
+		runtime({
+			entry: './src/app.ts',
 			devConsole: true,
 		}),
 	],
 })
 ```
 
-`dynamicRuntimeVitePlugin({ entry, devConsole: true })` 使用相同选项。启动项目原有的 Vite dev 命令，然后运行：
+启动项目原有的 Vite dev 命令，然后运行：
 
 ```sh
 pnpm exec pluxel dev instances --root /absolute/project-root
@@ -33,7 +33,7 @@ pnpm exec pluxel dev instances --root /absolute/project-root
 
 从返回结果确认 `root`、`pid` 和 `instanceId`。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
-省略 `devConsole` 不安装控制台。两条 Vite integration 只在 serve 时安装；dynamic 的 `mode: 'distribution'` 拒绝开启。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
+省略 `devConsole` 不安装控制台。Vite integration 只在 serve 时安装。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
 
 CLI 默认从命令当前目录向上找到最近的 `package.json`，只查询该目录的控制台；以命令工作目录为准，不以脚本路径为准。该项目没有运行中的控制台就报告 `dev_unavailable`，不会继续寻找父项目或其他项目的服务。
 

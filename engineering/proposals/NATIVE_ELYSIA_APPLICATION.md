@@ -60,18 +60,18 @@ Request/Response + Elysia Server view 边界；srvx 提供 Node、Bun、Deno 等
 
 ### 当前实现基线
 
-| 能力             | 2026-08-28 共享树状态                                                                                                              |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 作者 API         | `ctx.elysia` 是真实 Elysia `2.0.0-beta.7` instance；旧 `ctx.http.plugin`/`publicPath` 作者协议已移除                               |
-| generation       | lazy app、Part 共享、`app.modules`、native `compile()`/seal、owner admission、stream drain 已接入 Core lifecycle                   |
-| publication      | 跨 owner settlement、ready immutable directory 和 CommitSummary 前的同步 pointer swap 已实现                                       |
-| collision        | 只拒绝 `kind + method + declared path` 完全相同的跨 owner route；canonical-equivalent pattern 尚未可靠检测                         |
-| Node production  | `@pluxel/runtime-static` 已通过 srvx Node listener 载入 `@pluxel/runtime-node` carrier，覆盖 Fetch、metadata、disconnect 与真实 WS |
-| Node/Vite WS     | Node/crossws bridge、owner topic 隔离、1012 replacement drain 与 Vite upgrade arbitration 已有实现；这仍只是 Node 证明             |
-| portable WS      | srvx application/carrier seam 已分层，但 Bun/Deno 第二 carrier 和共享 conformance suite 尚未完成                                   |
-| Elysia lifecycle | beta.7 没有 public external attach/detach epoch；`app.setup()` / `app.cleanup()` 在 Plugin app 上立即 fail-fast                    |
-| package contract | static freezer 与 dynamic singleton bridge 已实现；Plugin `elysia` peer-range admission 尚未接入共享 catalog seam                  |
-| frozen schema    | freezer 在用户 module 前以公开 `setupTypebox()` 注入完整 runtime namespace，可搬移产物的 schema 惰性编译已验证                     |
+| 能力             | 2026-08-28 共享树状态                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 作者 API         | `ctx.elysia` 是真实 Elysia `2.0.0-beta.7` instance；旧 `ctx.http.plugin`/`publicPath` 作者协议已移除                        |
+| generation       | lazy app、Part 共享、`app.modules`、native `compile()`/seal、owner admission、stream drain 已接入 Core lifecycle            |
+| publication      | 跨 owner settlement、ready immutable directory 和 CommitSummary 前的同步 pointer swap 已实现                                |
+| collision        | 只拒绝 `kind + method + declared path` 完全相同的跨 owner route；canonical-equivalent pattern 尚未可靠检测                  |
+| Node production  | `@pluxel/runtime` 已通过 srvx Node listener 载入 `@pluxel/runtime-node` carrier，覆盖 Fetch、metadata、disconnect 与真实 WS |
+| Node/Vite WS     | Node/crossws bridge、owner topic 隔离、1012 replacement drain 与 Vite upgrade arbitration 已有实现；这仍只是 Node 证明      |
+| portable WS      | srvx application/carrier seam 已分层，但 Bun/Deno 第二 carrier 和共享 conformance suite 尚未完成                            |
+| Elysia lifecycle | beta.7 没有 public external attach/detach epoch；`app.setup()` / `app.cleanup()` 在 Plugin app 上立即 fail-fast             |
+| package contract | static freezer 与 dynamic singleton bridge 已实现；Plugin `elysia` peer-range admission 尚未接入共享 catalog seam           |
+| frozen schema    | freezer 在用户 module 前以公开 `setupTypebox()` 注入完整 runtime namespace，可搬移产物的 schema 惰性编译已验证              |
 
 因此“原生 Elysia”已是当前作者 contract，但不等于“Elysia 和 srvx 在所有 runtime 上的每个 server 扩展已验收”。
 

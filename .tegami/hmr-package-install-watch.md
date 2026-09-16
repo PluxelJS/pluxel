@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/runtime-static': patch
+  '@pluxel/runtime': patch
 ---
 
 ## Restore HMR after installing a missing package

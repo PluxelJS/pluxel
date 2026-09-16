@@ -3,11 +3,12 @@
 ## 依赖方向
 
 ```text
-@pluxel/context <- @pluxel/core <- @pluxel/runtime <- @pluxel/runtime-dynamic
-                                              └──── @pluxel/runtime-static
-
+@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/runtime
+                                     ^   ^
+                                     |   +-- @pluxel/host-dynamic
+                                     +------ @pluxel/host-dev <- @pluxel/runtime/vite
+@pluxel/commands --------------------------------------------> @pluxel/runtime
 @pluxel/cli --optional--> @pluxel/rolldown
-            --optional--> @pluxel/runtime-dynamic/hmr/diagnose
 ```
 
 `@pluxel/rolldown` 是 build-time tooling，不进入 runtime graph。
@@ -123,7 +124,7 @@ versioned DTO 和 borrowed Management capability facade；React provider 位于 
 `/workbench/federation`。Generated Bridge ABI 固定在 `/internal/workbench-react`，raw server registry、wrapper props 和
 MF Runtime 不进入作者 API。
 
-Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/runtime-dynamic/source-producer` 的声明校验；它不得导入
+Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/host-dynamic/source-producer` 的声明校验；它不得导入
 Vite、watcher、workspace scanner 或 package manager。固定 catalog 只从 dynamic config 的 `plugins` 进入，不提供 package、
 module、export key 或首次启用 author options。
 

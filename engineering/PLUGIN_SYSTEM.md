@@ -81,7 +81,7 @@ Core events 同样使用 owner-view：每个 root 只有一个 emitter backend�
 constructor 是 required dependency 的唯一作者声明。required 使用目标 package 根入口的 value import；optional 使用
 目标 Plugin 的 type-only root import 和 non-exported module-level ref。semantic pass 保留 root Plugin 与每个 Part constructor
 各自有序的 direct requirements，再把完整 reachable Part tree 的 required/optional facts 提升、按 definition identity 去重到
-owning Plugin node。static/dynamic route 必须读取同一 committed core graph；Workbench resolver 不依赖 loader 私有图。
+owning Plugin node。Host 来源接入必须读取同一 committed core graph；Workbench resolver 不依赖 loader 私有图。
 
 owner graph requirements 的稳定顺序是 root direct requirements 在前，再按 Part containment tree 深度优先的 first-seen 顺序追加。
 同一 provider 被 root、不同 Part、nested Part 或同一 Part class 的多个 field occurrence 请求时只形成一条 owner edge；任一来源为
@@ -167,7 +167,7 @@ CLI/诊断使用 node reference，不暴露 digest ID。完整 schema、source `
 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)。
 
 route catalog availability、RuntimeState auto-start policy、process session intent、Core committed graph 与 running generation projection 是五个
-独立平面。static/dynamic route 只生产 immutable catalog candidate snapshot；runtime-common coordinator 统一展开 durable forks、校验
+独立平面。Host 来源接入只生产 immutable catalog candidate snapshot；runtime-common coordinator 统一展开 durable forks、校验
 provider/default/override、计算 activation/provider 与 blocked closure 并提交一个 prepared Core update。不在 effective desired graph 中的 durable
 node 不进入 Core，route 不复制 reconciliation，Core 也不吸收 module/source/artifact provenance。
 
@@ -306,9 +306,11 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
 - `@pluxel/runtime/internal/workbench-react`：toolchain/Shell 共用的 generated React Bridge ABI；
 - `@pluxel/core/federation`：Workbench MF producer/descriptor identity 和固定 shared set；
-- `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
+- `@pluxel/host`：无 Runtime 服务依赖的 catalog、运行意图、图更新控制；
+- `@pluxel/host-dynamic`：显式动态来源的发现、加载、撤回与 producer 文件契约；
 - `valibot-form`：Config schema 的 portable presentation 与 raw-input transport projector；
-- `@pluxel/runtime-dev`：共享 Content/UI/Node source graph、watch、cache 与 immutable artifact publication；
+- `@pluxel/host-dev`：共享 ModuleRunner、模块失效、源码分类与开发驱动；
+- `@pluxel/runtime/vite`：官方开发组合，包含 Runtime singleton、carrier、开发控制台及 Workbench/Node artifact 接入；
 - `@pluxel/rolldown/vite/workbench-ui`：MF2 producer build primitive。
 - `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound Direct View target 和 Workbench 页面。
 
@@ -316,9 +318,9 @@ dynamic route 与 package manager 之间只有文件协议：producer 在宿主�
 route 观察文件并执行正常 graph transaction。runtime 不提供 package-manager capability、RPC DTO、内置页面或 market
 抽象；其他 registry、离线 bundle 或本地开发工具也可以实现同一文件协议，不需要进入核心。
 
-两条 route 的 catalog 语义是 `static = fixed plugins`、`dynamic = fixed plugins + mutable file sources`。Dynamic fixed catalog
+同一个应用声明使用 `plugins` 提供固定 catalog，使用可选 `sources` 增加 mutable entries。固定 catalog
 使用普通 `plugins`，不拥有单独的 auto-start、session intent、fork 或持久状态；fixed 与 mutable constructor 在同一个 Vite evaluated namespace
-中求值。Package Manager 是宿主显式 import、并由 RuntimeState `autoStart` 声明冷启动策略的 dynamic-only fixed plugin。
+中求值。Package Manager 是宿主显式 import、并由 RuntimeState `autoStart` 声明冷启动策略的 声明受管来源后的普通 fixed plugin。
 
 ## 不变量
 

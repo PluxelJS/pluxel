@@ -45,9 +45,10 @@
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-dynamic": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
 		"@types/react": "catalog:types",
@@ -63,8 +64,8 @@
 	"peerDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/commands": "workspace:^",
+		"@pluxel/host-dynamic": "workspace:^",
 		"@pluxel/runtime": "workspace:^",
-		"@pluxel/runtime-dynamic": "workspace:^",
 		"@tabler/icons-react": "catalog:icons",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend"

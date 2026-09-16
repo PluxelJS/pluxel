@@ -6,7 +6,7 @@ import type {
 	AgentToolsSnapshot,
 	AgentToolsetSnapshot,
 } from './contracts.ts'
-import { AgentToolsWorkbench } from './workbench.ts'
+import { agentToolsDisplayStatus, AgentToolsWorkbench } from './workbench.ts'
 
 const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
 const emptyDescriptors: readonly CommandDescriptor[] = Object.freeze([])
@@ -93,7 +93,7 @@ export class AgentToolsPlugin extends BasePlugin {
 				}
 				signal.addEventListener('abort', release, { once: true })
 				if (signal.aborted) release()
-				return { load: () => ({ status: controller.snapshot() }) }
+				return { load: () => ({ status: agentToolsDisplayStatus(controller.snapshot()) }) }
 			},
 		})
 		this.configs.onUpdate(this.config, ({ desired }) => {

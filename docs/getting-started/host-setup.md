@@ -1,35 +1,21 @@
 ---
 title: 把 Pluxel 接入现有项目
-description: 为现有项目选择 static 或 dynamic host，并配置 Plugin 清单、运行状态和 Workbench。
+description: 使用一个应用声明配置插件、可选动态来源、运行状态与 Workbench。
 ---
 
-宿主负责加载插件、持久化配置和提供网络端口。把 Pluxel 加入现有 TypeScript 项目时，先用本页的 static 示例启动一个插件；
-只有确实要在运行中增删插件文件，才需要 dynamic。
+宿主负责加载插件、持久化配置和提供网络端口。应用通过一个 `RuntimeApplication` 声明固定插件与服务配置；
+需要运行期间增删插件文件时，增加可选 `sources` 即可，开发和生产使用同一个入口。
 
-从零创建应用，先完成[快速开始](./index.md)，模板已经配置好 Vite、工作台和构建命令。
-本页假设现有项目使用 ESM（`package.json` 包含 `"type": "module"`），并已安装 Node.js 24 或以上与 pnpm。
-源码仓库开发请沿用项目的 `mise.toml`，先运行 `mise install`。
+从零创建应用先完成[快速开始](./index.md)。本页假设项目使用 ESM、Node.js 24+ 和 pnpm。
 
-## 选择宿主模式
-
-| 场景                                           | 选择         |
-| ---------------------------------------------- | ------------ |
-| 产品内置 Plugin、清单固定、需要审计和冻结      | 静态模式     |
-| 需要在宿主运行期间增加或删除 Plugin 文件入口   | 动态模式     |
-| 需要把包含动态 Plugin 来源的宿主部署到其他环境 | 动态发行模式 |
-
-不要根据是否需要 HMR 选择宿主模式：两种模式在开发期都支持模块热更新，也使用相同的 generation 清理流程。业务 Plugin 不需要为两种模式编写不同实现。
-
-下面的最小 static 示例先关闭 Workbench，确认插件可以启动；需要界面时再按[工作台配置](#workbench-与-management-access)开启。
-
-## Static host
+## 安装与应用声明
 
 ```sh package-install
-npx nypm add @pluxel/runtime @pluxel/runtime-static
+npx nypm add @pluxel/runtime
 ```
 
 ```sh package-install
-npx nypm add -D @pluxel/rolldown vite tsdown
+npx nypm add -D @pluxel/host-dev @pluxel/rolldown vite tsdown
 ```
 
 先创建一个本地插件 `src/OrdersPlugin.ts`：
@@ -48,10 +34,10 @@ export class OrdersPlugin extends BasePlugin {
 ### 定义宿主入口
 
 ```ts no-twoslash
-// src/pluxel.static.ts
+// src/app.ts
 import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineProduct } from '@pluxel/runtime/product'
-import { defineStaticRuntime } from '@pluxel/runtime-static'
+import type { RuntimeApplication } from '@pluxel/runtime'
 import { OrdersPlugin } from './OrdersPlugin.ts'
 
 export const product = defineProduct({
@@ -59,7 +45,7 @@ export const product = defineProduct({
 	publisher: 'Example Company',
 })
 
-export default defineStaticRuntime({
+export default {
 	name: 'rhythm',
 	plugins: [OrdersPlugin],
 	configure() {
@@ -71,18 +57,18 @@ export default defineStaticRuntime({
 			workbench: false,
 		}
 	},
-})
+} satisfies RuntimeApplication
 ```
 
 ### 启动并确认结果
 
 ```ts twoslash
 // vite.config.ts
-import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+import { runtime } from '@pluxel/runtime/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-	plugins: [staticRuntimeVitePlugin({ entry: './src/pluxel.static.ts' })],
+	plugins: [runtime({ entry: './src/app.ts' })],
 })
 ```
 
@@ -104,25 +90,25 @@ pnpm exec vite
 `configure()` 每次宿主启动时读取部署环境，并返回持久化、日志、工作台和初始配置等设置。
 工作台中的本次进程启停操作不自动改写下次启动策略。
 
-Static Vite host 与 `variant: 'workbench'` 产物默认启用 Workbench；本例通过 `workbench: false` 显式关闭。
+Vite host 与 `variant: 'workbench'` 产物默认启用 Workbench；本例通过 `workbench: false` 显式关闭。
 `PLUXEL_WORKBENCH=false` 也可在启动时关闭它。
 `PLUXEL_DATA_ROOT` 会覆盖 string/omitted persistence root，但不会替换 application 明确注入的 custom backend。
 
 `prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。没有应用数据库就无法运行的 static application 在这里打开、迁移并把关闭登记到 root effects；只有部分 Plugin 使用的数据库应成为 provider Plugin，由 graph 隔离失败。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
 
-不要把 `root` 或 `workbench` 直接写进 static application 顶层。`configure()` 每次宿主启动都会重新读取 env、bindings 与 deployment。
+不要把 `root` 或 `workbench` 直接写进 应用声明顶层。`configure()` 每次宿主启动都会重新读取 env、bindings 与 deployment。
 
-`product` 是 canonical module 的可选 named export，不放进 `defineStaticRuntime()`。Static 与 dynamic 使用同一个 `defineProduct()` contract。
+`product` 是 canonical module 的可选 named export，不放进应用对象。开发与生产使用同一个 `defineProduct()` contract。
 
 ### 初始化 Plugin config 的部署变量
 
 少量部署变量需要初始化 Plugin config 时，在 canonical entry 使用 `configEnvironmentBootstrap`，并把 Plugin 实际交给 `configs.use()` 的同一个 exported schema 传给 `bindConfigEnvironment()`：
 
 ```ts no-twoslash
-import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+import { bindConfigEnvironment, type RuntimeApplication } from '@pluxel/runtime'
 import { OrdersConfig, OrdersPlugin } from '@acme/orders'
 
-export default defineStaticRuntime({
+export default {
 	name: 'orders',
 	plugins: [OrdersPlugin],
 	configEnvironmentBootstrap: [
@@ -132,7 +118,7 @@ export default defineStaticRuntime({
 		}),
 	],
 	configure: () => ({ persistence: '.pluxel/persistence' }),
-})
+} satisfies RuntimeApplication
 ```
 
 这里的 environment 是 config store 的一次性 bootstrap transport；已有 persisted config 始终优先。Host-only 的 persistence、Workbench、logging 或 platform policy 仍在 `configure()` 读取自己的环境值。完整的 decoder、缺失值、优先级和 secret 边界见[配置模型](./configuration.md#用部署环境初始化-static-config)。
@@ -188,10 +174,10 @@ Pluxel starter 默认先执行 `portless proxy start --port 1355 --no-tls`，避
 
 ```ts twoslash
 // tsdown.config.ts
-import { staticApplication } from '@pluxel/rolldown/build'
+import { application } from '@pluxel/rolldown/build'
 
-export default staticApplication({
-	entry: './src/pluxel.static.ts',
+export default application({
+	entry: './src/app.ts',
 	variant: 'headless',
 	target: 'node',
 })
@@ -217,7 +203,7 @@ console.log(env.MY_APPLICATION_VARIABLE)
 console.log(hostEnv.dataRoot, hostEnv.workbench)
 ```
 
-`env` 是与 `std-env` 相同的原始字符串对象；`hostEnv` 是 Pluxel 官方字段的有效值，不是第二份可变环境。Launcher 测试或 adapter 需要解析显式输入时使用 `resolveHostEnv(input)`。`PluxelEnvironmentVariables` 已声明 `PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH`、listener、config、Vault 与 HMR 变量；应用可以用 module augmentation 添加自己的部署变量。官方变量的行为为：
+`env` 是与 `std-env` 相同的原始字符串对象；`hostEnv` 是 Pluxel 官方字段的有效值，不是第二份可变环境。Launcher 测试或 adapter 需要解析显式输入时使用 `resolveHostEnv(input)`。`PluxelEnvironmentVariables` 已声明 `PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH`、listener、config 与 Vault 变量；应用可以用 module augmentation 添加自己的部署变量。官方变量的行为为：
 
 ```ts no-twoslash
 declare module '@pluxel/runtime/environment' {
@@ -241,10 +227,10 @@ declare module '@pluxel/runtime/environment' {
 freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使本机开发/测试可选择 PGlite、部署可选择 PostgreSQL。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
 
 ```ts twoslash
-import { staticApplication } from '@pluxel/rolldown/build'
+import { application } from '@pluxel/rolldown/build'
 
-export default staticApplication({
-	entry: './src/pluxel.static.ts',
+export default application({
+	entry: './src/app.ts',
 	managedDatabaseDrivers: [],
 })
 ```
@@ -255,131 +241,60 @@ export default staticApplication({
 
 最终 inventory、签名和 delivery marker 见 [Static 发行物](../development/distribution.md)。
 
-## Dynamic host
+## 增加动态来源
 
-```sh package-install
-npx nypm add @pluxel/runtime @pluxel/runtime-dynamic
-```
-
-```sh package-install
-npx nypm add -D vite
-```
-
-### 配置动态插件来源
+需要运行时发现文件时安装 `@pluxel/host-dynamic`，在同一个应用对象中增加来源：
 
 ```ts no-twoslash
-// src/pluxel.dynamic.ts
-import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { defineProduct } from '@pluxel/runtime/product'
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
-import { HostOperationsPlugin } from './HostOperationsPlugin.ts'
+import { dynamicSource } from '@pluxel/host-dynamic'
+import type { RuntimeApplication } from '@pluxel/runtime'
+import { OrdersPlugin } from './OrdersPlugin.ts'
 
-export const product = defineProduct({
-	displayName: 'Rhythm',
-	publisher: 'Example Company',
-})
-
-export default defineDynamicRuntimeConfig({
-	root: process.cwd(),
-	plugins: [HostOperationsPlugin],
-	runtimeState: {
-		snapshot: { autoStart: [pluginNodeAddressOf(HostOperationsPlugin)] },
-	},
-	configPath: 'pluxel.loader.hmr.jsonc',
-	profile: 'dev',
+export default {
+	name: 'rhythm',
+	plugins: [OrdersPlugin],
 	sources: [
-		{ kind: 'file', path: 'plugins/local.ts' },
-		{
+		dynamicSource({ kind: 'file', path: 'plugins/local.mjs' }),
+		dynamicSource({
 			kind: 'directory',
 			path: '.pluxel/managed-plugins/entries',
 			include: ['*.mjs'],
-		},
-	],
-	logsDir: 'logs',
-	workbench: {
-		enabled: true,
-	},
-})
-```
-
-`plugins` 是宿主显式 import 的 fixed catalog；`sources` 是 mutable file entries。两者只声明 code availability，不会隐式自动启动 Plugin，
-auto-start policy 仍来自 `runtimeState`。
-
-### Vite host
-
-```ts twoslash
-// vite.config.ts
-import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
-import { defineConfig } from 'vite'
-
-export default defineConfig({
-	plugins: [
-		dynamicRuntimeVitePlugin({
-			entry: './src/pluxel.dynamic.ts',
 		}),
 	],
-})
+} satisfies RuntimeApplication
 ```
 
-Dynamic route 只拥有 file/source lifecycle：watch、OXC resolution、module execution、graph transaction 与 HMR。package download、market、安装管理 RPC 和页面不属于 route core。
+Vite 仍使用 `runtime({ entry: './src/app.ts' })`，不需要 mode、第二个 Vite plugin 或 profile。
+`dynamicSource()` 只创建描述，不扫描或打开 watcher。省略 `sources` 时只有显式 `plugins`，不会隐式发现 workspace。
+固定与动态定义进入同一 catalog；身份冲突会被拒绝，来源顺序不表示覆盖优先级。
 
-Dynamic `root` 是 source、runtime storage 与 module resolution 的显式路径基准，不会改变 Vite 进程的 working directory。Plugin 配置中注明“相对当前工作目录”的路径仍以 launcher cwd 为准；如果 dynamic `root` 与它不同，应在配置模块中生成绝对路径。
+来源路径相对 application root 解析。开发入口默认取应用声明所在最近 package root，也可以通过 `runtime({ entry, root })`
+显式指定；生产启动以 deployment root 为基准。Vite 的 browser root 可以是另外的 `web/` 目录，宿主不会改变进程 cwd。
+Plugin 自身的数据路径契约仍然有效。生产 distribution 是不可变目录，持久化数据与安装包存储应使用该目录外的绝对路径。
+官方宿主和 starter 通过 `resolve(process.cwd(), resolveHostEnv().dataRoot)` 同时定位动态来源与 persistence，
+默认使用 cwd 下的 `.pluxel`；部署时设置绝对 `PLUXEL_DATA_ROOT`。宿主不会自动把所有 Plugin 自定义数据目录改到那里。
 
-运行期安装 package 时显式装配官方 [Package Manager Plugin](../plugins/package-manager.md)；它把受管 package 原子发布成 `.mjs` source entry，dynamic route 只观察这些文件。
+`file` 表示精确入口；`directory` 必须提供正向相对 include glob。暂不存在的来源也可以声明，新增、替换、删除按同一图更新
+流程执行。生产来源加载已构建 ESM；开发来源经共享 ModuleRunner 求值，不开第二条生产加载路径。
+生产原生 ESM 支持初始加载、新路径新增及删除；修改或重新加入已经加载过的入口会报告 `PLUGIN_SOURCE_RESTART_REQUIRED`，
+需要重启进程后加载。它不通过给入口加 query 假装刷新传递依赖。开发期更新则交由共享 ModuleRunner 处理。
+目录 glob 限制发现哪些入口，不限制这些入口正常导入的依赖。
 
-只监听已安装包的入口文件时，替换入口可以触发更新，但不意味着会监听该包全部源码。
-要修改 Git checkout 内的插件并即时更新，使用 [源码工作区](../development/source-workspaces.md)。
+带 `sources` 的生产构建会为宿主框架生成确定路径的 facade 模块，动态插件通过作用于来源模块图的 Node resolver
+复用同一份 Core、Host、Runtime 与 Elysia 实例，避免安装包中的另一份框架副本破坏 constructor 和 Context 身份。
+应用无需配置这些模块映射。来源导入未提供的框架入口时会明确报告 `PLUGIN_SOURCE_FRAMEWORK_ENTRY_UNAVAILABLE`；
+这个共享机制不改变原生 ESM 的缓存和重启要求。
 
-### Programmatic dev runtime
+运行期安装 package 时，显式装配 [Package Manager Plugin](../plugins/package-manager.md)。它拥有下载与原子 ESM 发布，来源层拥有
+发现与撤回，Host 拥有图接受及启动停止。安装成功不表示插件已经接受或运行。不要把整个源码仓库或 `node_modules` 设为发现目录。
 
-脚本或 integration test 需要在进程内拥有真实 Vite server 时，使用同一个 production launcher：
-
-```ts no-twoslash
-import { startDynamicDevRuntime } from '@pluxel/runtime-dynamic'
-
-await using runtime = await startDynamicDevRuntime({
-	entry: new URL('./src/pluxel.dynamic.ts', import.meta.url),
-})
-
-const response = await fetch(new URL('/health', runtime.origin))
-```
-
-factory resolve 时 config、initial reconciliation、HMR、carrier 和 listener 已 ready，不需要再调用 `.start()`。返回资源的
-`dispose()` 与异步释放协议幂等；可选 `signal` 只取消尚未完成的 startup，resolve 后不会自动关闭已经交付的 runtime。项目需要验证自己的
-Vite plugins、assets 或 browser graph 时，直接运行项目的 Vite command；只验证 Plugin behavior 时使用更小的
-`createRuntimeTestHost()`。
-
-### Source 约束
-
-- `file` 声明一个精确 entry，暂时不存在时仍 watch parent。
-- `directory` 必须给出相对 include glob；不接受 absolute、negation、`.` 或 `..` segment。
-- startup 中已存在的 entries 必须完成初始 graph commit，runtime 才 ready。
-- add/change/unlink 进入同一 HMR batch，不直接 mutation running instance。
-- entry 普通 import graph 不受 include glob 限制，dependency 变化沿 importer graph 返回 entry。
-
-不要把源码仓库或 `node_modules` 整体作为 source directory。producer 只发布普通 ESM entry，不调用 loader internal API。
-
-### Distribution mode
-
-可搬运 source-based host 显式使用：
-
-```ts no-twoslash
-dynamicRuntimeVitePlugin({
-	entry: './src/pluxel.dynamic.ts',
-	mode: 'distribution',
-})
-```
-
-它使用 built/default package export，不注入 Vite client，并从 runtime artifact 使用 Workbench shell。这个 mode 只定义执行拓扑；目录 closure、inventory、签名和原子发布仍由 distribution tooling 负责。
+只监听已安装包入口不等于监听其全部源码。修改 Git checkout 插件使用[源码工作区](../development/source-workspaces.md)。
 
 ## 共享宿主策略
 
-宿主配置是封闭契约，不是任意 metadata 容器。TypeScript 会在 `defineStaticRuntime()` 的
-`configure()` 返回值和 `defineDynamicRuntimeConfig()` 的直接输入中拒绝未知顶层字段，也会严格检查
-`configService`、`runtimeState`、persistence wrapper、`database.pool`、`workers`、`workbench`、`vault` 与完整
-logging plan 等所有 Runtime-owned 封闭子配置；Runtime 对 JavaScript、类型断言和外部输入重复执行相同的运行时校验。
-Plugin raw config、环境变量映射、custom persistence backend 与 custom log sink 是明确的开放扩展点；其实现私有字段不会被
-递归检查。Plugin 业务配置、产品 metadata 与宿主策略应进入各自已有入口，不能借未知字段附加到 host config。
+应用声明与 `configure()` 返回值在加载、启动边界执行统一运行时校验。`satisfies RuntimeApplication` 提供编写时的类型检查，
+不替代运行时校验，也不承诺对任意变量或扩展对象执行深层 exact-field 检查。Plugin raw config、自定义 persistence backend 和
+log sink 保留各自扩展边界；产品 metadata 使用独立的 `product` named export。
 
 ### Plugin config 与 runtime state
 
@@ -514,14 +429,7 @@ Plugin 不调用 `process.exit()`，也不根据 static/dynamic route 自行改�
 
 ### 测试 host entry
 
-Static application 测试使用：
-
-```ts twoslash
-import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
-```
-
-`startStaticApplicationTestHost(application)` resolve 时已经完成 configure、prepare、bindings 与 cold boot；它只提供
-`startupReport`、只读 Plugin query 和 Runtime drivers，不提供 Plugin lifecycle mutation、root `ctx` 或 physical listener。
+完整应用通过唯一 Vite 配置和生产构建产物验证；运行中状态使用开发控制台读取。
 
 普通 Runtime Plugin 测试使用 `@pluxel/runtime/test` 的 `createRuntimeTestHost()`；Core-only graph 测试使用
 `@pluxel/core/test` 的 `createCoreTestHost()`。两者都由 `await using` 或 `finally` 明确拥有生命周期。顶层 lifecycle command 会立即提交，
@@ -530,7 +438,7 @@ import { startStaticApplicationTestHost } from '@pluxel/runtime-static/test'
 ### 启动前检查
 
 - canonical entry/config 通过 Vite route plugin 加载，不用 raw TS runner。
-- static `plugins` 与 dynamic `sources` 没有重复表示同一 definition。
+- 固定 `plugins` 与动态 `sources` 没有重复表示同一 definition。
 - fixed Plugin 是否自动启动由 runtime state 明确决定；当前进程的启停操作不写回该策略。
 - Management provider 与业务 HTTP auth 保持独立；内建 Node launcher 保持 loopback 管理，需要远程 Management 时确认 provider ready 且 deployment carrier 能证明 HTTPS。
 - persistence、logs、dynamic artifact cache 指向可写 state，不写 immutable deployment root。

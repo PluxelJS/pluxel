@@ -8,8 +8,6 @@
 需要 library API 时直接使用领域包：
 
 - build / Rolldown plugin：`@pluxel/rolldown/build`、`@pluxel/rolldown/plugins`；
-- loader HMR diagnostics：`@pluxel/runtime-dynamic/hmr/diagnose`；
-- dynamic runtime engine：`@pluxel/runtime-dynamic/hmr`。
 
 ## Command loading
 
@@ -36,7 +34,6 @@ CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完�
 可选能力：
 
 - `build`、`workspace` → `@pluxel/rolldown`；
-- `hmr` → `@pluxel/runtime-dynamic/hmr/diagnose`；
 - publish market webhook → `@pluxel/market`。
 
 缺少可选能力只影响对应命令；`--help` 和 `new` 保持可用。
@@ -45,5 +42,4 @@ CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完�
 
 - CLI：参数解析、交互、输出和命令编排；
 - Rolldown：构建 overlay、import tracking 和 workspace build helpers；
-- runtime-dynamic diagnostics：HMR config、profile、workspace scan 和 snapshot；
-- runtime-dynamic engine：runtime registration、module replacement 和 route lifecycle。
+- Host-dev：Vite 模块求值与 HMR；Runtime 的开发入口组合服务与控制台。

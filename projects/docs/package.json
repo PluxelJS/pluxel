@@ -53,8 +53,6 @@
 		"@pluxel/redis": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
-		"@pluxel/runtime-static": "workspace:*",
 		"@pluxel/storage": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/test": "workspace:*",

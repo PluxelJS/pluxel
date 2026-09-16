@@ -13,8 +13,8 @@
 
 仍有未实现边界的文件：
 
-- [`COMPOSABLE_PLUGIN_HOST_HMR.md`](COMPOSABLE_PLUGIN_HOST_HMR.md)：通用插件宿主、Static/Dynamic 共享 HMR 驱动、
-  可组合 Workbench/Node artifact 能力，以及无 Runtime 依赖的轻量 Core 宿主。
+- [`COMPOSABLE_PLUGIN_HOST_HMR.md`](COMPOSABLE_PLUGIN_HOST_HMR.md)：尚未公开的自定义 Host Workbench/Node artifact 能力组合边界；
+  已实现的统一应用与共享宿主契约已进入当前工程文档。
 - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的
   decoratorless Plugin declaration。

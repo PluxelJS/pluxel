@@ -1,6 +1,5 @@
 import { FontsPlugin } from '@pluxel/fonts'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { pluginNodeAddressOf, type RuntimeApplication } from '@pluxel/runtime'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
 import { TypstMathPlugin } from '../../src/index.ts'
@@ -14,15 +13,14 @@ const plugins = [
 	TypstDynamicProbePlugin,
 ] as const
 
-export default defineDynamicRuntimeConfig({
-	root: process.cwd(),
-	configPath: 'tests/support/typst.loader.hmr.jsonc',
-	profile: 'test',
+export default {
+	name: 'render-fixture',
 	plugins,
-	configService: { mode: 'memory' },
-	runtimeState: { mode: 'memory', snapshot: { autoStart: plugins.map(pluginNodeAddressOf) } },
-	persistence: { mode: 'memory' },
-	workbench: false,
-	logging: false,
-	printUrls: false,
-})
+	configure: () => ({
+		configService: { mode: 'memory' },
+		runtimeState: { mode: 'memory', snapshot: { autoStart: plugins.map(pluginNodeAddressOf) } },
+		persistence: { mode: 'memory' },
+		workbench: false,
+		logging: false,
+	}),
+} satisfies RuntimeApplication

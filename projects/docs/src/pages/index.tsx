@@ -28,22 +28,26 @@ const patterns = [
 
 const hosts = [
 	{
-		code: `defineStaticRuntime({
+		code: `export default {
   plugins: [OrdersPlugin],
-})`,
+} satisfies RuntimeApplication`,
 		description: 'Plugin 清单随应用构建，适合固定部署、审计和可复现发行。开发期仍支持 HMR。',
 		icon: ServerCog,
 		meta: 'Fixed catalog',
-		title: 'Static host',
+		title: '固定插件目录',
 	},
 	{
-		code: `defineDynamicRuntimeConfig({
+		code: `export default {
   plugins: [HostOperationsPlugin],
-})`,
+  sources: [dynamicSource({
+    kind: 'directory', path: './plugins',
+    include: ['*.mjs'],
+  })],
+} satisfies RuntimeApplication`,
 		description: '运行期间增加或删除 Plugin 文件入口，适合由配置和 package source 驱动的宿主。',
 		icon: CloudCog,
 		meta: 'Mutable sources',
-		title: 'Dynamic host',
+		title: '增加动态来源',
 	},
 ]
 

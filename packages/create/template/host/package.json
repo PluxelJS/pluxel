@@ -4,7 +4,6 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --config vite.config.ts",
-		"dev:dynamic": "vite --config vite.config.ts --mode dynamic",
 		"start": "node dist/app.mjs",
 		"build": "vite build --config vite.config.ts && tsdown && pluxel distribution create ./dist",
 		"typecheck": "tsc --noEmit --pretty false"
@@ -13,9 +12,8 @@
 		"@example/audit-plugin": "workspace:*",
 		"@example/http-plugin": "workspace:*",
 		"@example/todo-plugin": "workspace:*",
+		"@pluxel/host-dynamic": "catalog:pluxel",
 		"@pluxel/runtime": "catalog:pluxel",
-		"@pluxel/runtime-dynamic": "catalog:pluxel",
-		"@pluxel/runtime-static": "catalog:pluxel",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend"
 	},
@@ -24,6 +22,7 @@
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
 		"@pluxel/cli": "catalog:pluxel",
+		"@pluxel/host-dev": "catalog:pluxel",
 		"@pluxel/rolldown": "catalog:pluxel",
 		"@tabler/icons-react": "catalog:frontend",
 		"@types/node": "catalog:tooling",

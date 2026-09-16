@@ -28,7 +28,7 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
 
 ## Static startup config
 
-`defineStaticRuntime({ configure(startup) {} })` 将固定 catalog 与启动值分开。`startup` 提供 mode、env、platform bindings
+`RuntimeApplication` 的 `configure(startup)` 将固定 catalog 与启动值分开。`startup` 提供 mode、env、platform bindings
 和 deployment facts；resolver 每次 host startup 重新执行，可选择 persistence、ConfigService、RuntimeState、HTTP、
 logging、profile 和 Workbench policy。
 
@@ -167,7 +167,7 @@ control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: fa
 - `packages/core/src/plugins/runtime/definition.ts`
 - `packages/runtime/src/services/ConfigService.ts`
 - `packages/runtime/src/services/config-environment.ts`
-- `packages/runtime-static/src/config-environment.ts`
+- `packages/runtime/src/application/config-environment.ts`
 - `packages/valibot-form/src/core/rawInput.ts`
 - `packages/runtime/src/api/usecases/pluginConfig.ts`
 - `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`

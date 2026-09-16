@@ -1,0 +1,50 @@
+{
+	"name": "@pluxel/host",
+	"version": "0.1.0",
+	"description": "Composable Plugin host, catalog and lifecycle control",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/host"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run"
+	},
+	"dependencies": {
+		"@pluxel/core": "workspace:^"
+	},
+	"devDependencies": {
+		"@pluxel/test": "workspace:*"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

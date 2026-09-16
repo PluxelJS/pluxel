@@ -27,9 +27,6 @@ export interface PluxelEnvironmentVariables extends Readonly<Record<string, stri
 	/** Portless child-process listener port. */
 	readonly PORT?: string
 	readonly PLUXEL_VAULT_DEPLOY_IDENTITY?: string
-	readonly PLUXEL_HMR_PROFILE?: string
-	readonly PLUXEL_HMR_CONFIG?: string
-	readonly PLUXEL_HMR_PORT?: string
 	readonly PLUXEL_HMR_ATTRIBUTION?: string
 }
 

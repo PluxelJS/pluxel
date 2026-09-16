@@ -422,7 +422,7 @@ Workbench document 创建一个物理 WebSocket：
 `epoch-invalidated`，随后关闭物理连接；Shell 销毁 active Bridges、释放 opened handles，并自动完整 document reload。刷新遵守 HMR 文档的连续刷新预算；认证撤销与 broken 状态保留明确的人工恢复入口。
 同一 document 不创建第二条 session，不重建部分 roots，也不恢复旧 workspace 上的 remote instance。
 
-Node production 与 static/dynamic Vite 使用同一个 runtime carrier seam。Vite 保留 listener 和 HMR Upgrade 优先权，
+Node production 与 Runtime Vite 使用同一个 runtime carrier seam。Vite 保留 listener 和 HMR Upgrade 优先权，
 Runtime 只接管匹配的 control/business Upgrade。反向代理必须保持同源 cookie、WebSocket Upgrade 和短期 handoff 的
 实例归属；Runtime 不从 forwarding headers 推导 physical TLS 或 locality。
 

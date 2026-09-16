@@ -15,12 +15,11 @@ export type OfficialCapabilityId =
 	| 'rolldown-distribution'
 	| 'rolldown-workspace-fs'
 	| 'rolldown-workspace-info'
-	| 'runtime-dynamic-hmr-diagnose'
 	| 'market'
 
 type OfficialCapabilityMetadata = {
 	command: string
-	owner: '@pluxel/rolldown' | '@pluxel/runtime-dynamic' | '@pluxel/market'
+	owner: '@pluxel/rolldown' | '@pluxel/market'
 	subpath: '.' | `./${string}`
 	install: string
 }
@@ -57,12 +56,6 @@ const OFFICIAL_CAPABILITIES = {
 		owner: '@pluxel/rolldown',
 		subpath: './workspace/info',
 		install: 'pnpm add -D @pluxel/rolldown',
-	},
-	'runtime-dynamic-hmr-diagnose': {
-		command: 'hmr',
-		owner: '@pluxel/runtime-dynamic',
-		subpath: './hmr/diagnose',
-		install: 'pnpm add -D @pluxel/runtime-dynamic',
 	},
 	market: {
 		command: 'publish --webhook',

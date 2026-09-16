@@ -83,7 +83,7 @@ ctx.logger.getDebugChannel('cache:lookup').debug('cache miss', { key })
 
 ## RuntimeLogging lifecycle
 
-static/dynamic launcher 使用 `@pluxel/runtime/internal` 安装 manager。标准顺序是：
+Runtime launcher 使用 `@pluxel/runtime/internal` 安装 manager。标准顺序是：
 
 ```text
 1. resolve RuntimeLoggingInput
@@ -279,7 +279,7 @@ error summary。它不是新的 author-facing LogRecord。
 @pluxel/runtime/internal
   RuntimeLogging installation, active owner access, persistence adapter
 
-@pluxel/runtime-static / @pluxel/runtime-dynamic
+@pluxel/runtime
   launcher defaults, boot ordering, shutdown ownership
 ```
 
@@ -294,8 +294,8 @@ core 不包含 formatter、sink、policy persistence、host env resolution 或 L
 - `packages/runtime/src/logger/sink.ts`
 - `packages/runtime/src/logger/store.ts`
 - `packages/runtime/src/services/management/RuntimeManagementTarget.ts`
-- `packages/runtime-static/src/internal/host.ts`
-- `packages/runtime-dynamic/src/hmr/host.ts`
+- `packages/runtime/src/application/internal/host.ts`
+- `packages/runtime/src/application/vite.ts`
 
 ## 不变量
 

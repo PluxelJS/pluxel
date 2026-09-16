@@ -10,7 +10,6 @@ const declarationMapPattern = /\.d\.[cm]?ts\.map$/
 // Register them explicitly; a tracked file or a declaration-looking name alone
 // must never exempt generated compiler output from this check.
 const allowedDeclarations = new Set([
-	'packages/runtime-dynamic/src/third-party.d.ts',
 	'packages/test/src/vendor-types.d.ts',
 	'packages/valibot-form/src/web/vite-env.d.ts',
 	'packages/workbench-app/src/theme/mantine/mantine.d.ts',

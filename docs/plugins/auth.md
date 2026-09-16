@@ -15,14 +15,14 @@ pnpm catalog:add -- @pluxel/auth
 
 在宿主入口从 `@pluxel/auth` 导入 `AuthPlugin`，加入 `plugins` 清单和自动启动项；完整装配方式见 [添加插件](./index.md#把一个插件加入应用)。
 
-先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用 static 入口合入现有清单：
+先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用入口合入现有清单：
 
 ```ts no-twoslash
 import { AuthPlugin } from '@pluxel/auth'
 import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { defineStaticRuntime } from '@pluxel/runtime-static'
+import type { RuntimeApplication } from '@pluxel/runtime'
 
-export default defineStaticRuntime({
+export default {
 	name: 'my-app',
 	plugins: [AuthPlugin],
 	configure: () => ({
@@ -42,7 +42,7 @@ export default defineStaticRuntime({
 			},
 		},
 	}),
-})
+} satisfies RuntimeApplication
 ```
 
 首次启动后，在本机 Workbench 进入 Auth 的 setup 页面完成账号配置；远程服务器通过 SSH tunnel 打开 loopback Workbench。完成后从远端打开 Workbench 验证登录，退出后重新加载应再次要求认证。密码、TOTP 和 confidential OIDC 的密钥依赖 [Vault](../runtime/vault.md)；public OIDC 只需下节配置。

@@ -217,7 +217,7 @@ Static entry 对部署路径保持唯一 authority，同时供 Runtime persisten
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
-import { defineStaticRuntime } from '@pluxel/runtime-static'
+import type { RuntimeApplication } from '@pluxel/runtime'
 import { prepareAppDatabase } from '@app/database'
 
 function storagePaths({ env, deployment }) {
@@ -228,7 +228,7 @@ function storagePaths({ env, deployment }) {
 	}
 }
 
-export default defineStaticRuntime({
+export default {
 	name: 'application',
 	plugins: [BillingPlugin, AuditPlugin],
 	configure(startup) {
@@ -242,7 +242,7 @@ export default defineStaticRuntime({
 			filename: storagePaths(startup).applicationDatabase,
 		})
 	},
-})
+} satisfies RuntimeApplication
 ```
 
 Plugin 在 `init()` 或之后同步取得已准备实例：
