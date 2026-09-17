@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.workspace.json",
+	"include": ["src", "tests", "vitest.config.ts"],
+	"compilerOptions": {
+		"outDir": "dist",
+		"experimentalDecorators": true,
+		"lib": ["ESNext", "DOM"]
+	}
+}

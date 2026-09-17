@@ -49,15 +49,20 @@
 		"@opentelemetry/resources": "catalog:prod",
 		"@opentelemetry/sdk-logs": "catalog:prod",
 		"@opentelemetry/sdk-metrics": "catalog:prod",
-		"@opentelemetry/sdk-trace-base": "catalog:prod"
+		"@opentelemetry/sdk-trace-base": "catalog:prod",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@opentelemetry/api": "catalog:dev",
 		"@opentelemetry/api-logs": "catalog:dev",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"@types/node": "catalog:types",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
@@ -66,6 +71,8 @@
 	"peerDependencies": {
 		"@opentelemetry/api": "catalog:peer",
 		"@opentelemetry/api-logs": "catalog:peer",
-		"@pluxel/runtime": "workspace:^"
+		"@pluxel/core": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^"
 	}
 }

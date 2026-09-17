@@ -19,7 +19,7 @@ host catalog 至少包含 `FontsPlugin`、`CanvasPlugin` 和 consumer。CanvasPl
 
 ```ts twoslash
 import { CanvasPlugin, Path2D } from '@pluxel/canvas'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class BadgePlugin extends BasePlugin {

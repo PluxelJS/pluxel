@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WretchManagedSettings } from '../workbench-contracts.ts'
 import { WretchWorkbench } from '../workbench.ts'
 

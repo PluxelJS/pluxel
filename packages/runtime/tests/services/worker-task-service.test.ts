@@ -1,7 +1,9 @@
+import { requireNodeModuleHost } from '@pluxel/services/internal/node'
+import { Workers, defineWorkerTask, type WorkerTaskError } from '@pluxel/services/workers'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { defineWorkerTask, type WorkerTaskError } from '@pluxel/runtime'
+
 import {
 	createRuntimeInternalTestHarness,
 	type RuntimeInternalTestHarness,
@@ -40,56 +42,58 @@ const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs',
 @Plugin()
 class WorkerTaskConsumerA extends BasePlugin {
 	workerView() {
-		return this.ctx.workers
+		return this.ctx.require(Workers)
 	}
 
 	run(input: TaskInput, signal?: AbortSignal): Promise<TaskOutput> {
-		return this.ctx.workers.run(declaration, input, { signal })
+		return this.ctx.require(Workers).run(declaration, input, { signal })
 	}
 
 	borrow(input: TaskInput): Promise<TaskOutput> {
-		return this.ctx.workers.run(declaration, input, { inputOwnership: 'borrowed' })
+		return this.ctx.require(Workers).run(declaration, input, { inputOwnership: 'borrowed' })
 	}
 
 	prepare(
 		prepare: (signal: AbortSignal) => TaskInput | Promise<TaskInput>,
 		signal?: AbortSignal,
 	): Promise<TaskOutput> {
-		return this.ctx.workers.runPrepared(declaration, prepare, {
+		return this.ctx.require(Workers).runPrepared(declaration, prepare, {
 			signal,
 			inputOwnership: 'borrowed',
 		})
 	}
 
 	prepareWithTransfer(): Promise<TaskOutput> {
-		return this.ctx.workers.runPrepared(declaration, async () => ({ label: 'invalid', delay: 0 }), {
-			transfer: [],
-		} as never)
+		return this.ctx
+			.require(Workers)
+			.runPrepared(declaration, async () => ({ label: 'invalid', delay: 0 }), {
+				transfer: [],
+			} as never)
 	}
 
 	transfer(
 		input: TransferTaskInput,
 		transfer: readonly ArrayBuffer[],
 	): Promise<TransferTaskOutput> {
-		return this.ctx.workers.run(transferDeclaration, input, { transfer })
+		return this.ctx.require(Workers).run(transferDeclaration, input, { transfer })
 	}
 }
 
 @Plugin()
 class WorkerTaskConsumerB extends BasePlugin {
 	workerView() {
-		return this.ctx.workers
+		return this.ctx.require(Workers)
 	}
 
 	run(input: TaskInput): Promise<TaskOutput> {
-		return this.ctx.workers.run(declaration, input)
+		return this.ctx.require(Workers).run(declaration, input)
 	}
 }
 
-function createWorkerHost(
+async function createWorkerHost(
 	workers: NonNullable<Parameters<typeof createRuntimeInternalTestHarness>[0]>['workers'] = {},
 ) {
-	return createRuntimeInternalTestHarness({
+	return await createRuntimeInternalTestHarness({
 		workbench: false,
 		nodeModuleArtifactRoot: artifactRoot,
 		workers,
@@ -115,7 +119,7 @@ function holdCurrentWorkerTermination(host: RuntimeInternalTestHarness): Readonl
 	state: WorkerTaskRootStateProbe
 	release(): void
 }> {
-	const state = (host.ctx.workers as unknown as { state: WorkerTaskRootStateProbe }).state
+	const state = (host.ctx.require(Workers) as unknown as { state: WorkerTaskRootStateProbe }).state
 	const worker = [...state.pool.slots][0]!.worker
 	const terminate = worker.terminate.bind(worker)
 	let release!: () => void
@@ -130,14 +134,14 @@ function holdCurrentWorkerTermination(host: RuntimeInternalTestHarness): Readonl
 describe('WorkerTaskService', () => {
 	let workerHost: RuntimeInternalTestHarness
 
-	beforeAll(() => {
-		workerHost = createWorkerHost({ maxThreads: 1 })
+	beforeAll(async () => {
+		workerHost = await createWorkerHost({ maxThreads: 1 })
 	})
 
 	afterAll(() => workerHost.dispose())
 
 	it('creates cold owner views per consumer while sharing one root coordinator', async () => {
-		const host = createWorkerHost({ maxThreads: 1 })
+		const host = await createWorkerHost({ maxThreads: 1 })
 		try {
 			host.add([WorkerTaskConsumerA, WorkerTaskConsumerB])
 			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
@@ -146,7 +150,7 @@ describe('WorkerTaskService', () => {
 			host.start(WorkerTaskConsumerB)
 			await host.commit()
 
-			const rootView = host.ctx.workers
+			const rootView = host.ctx.require(Workers)
 			const a = host.require(WorkerTaskConsumerA)
 			const b = host.require(WorkerTaskConsumerB)
 			const aView = a.workerView()
@@ -166,9 +170,9 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('lazily runs cloneable task data in a worker thread', async () => {
-		const host = createWorkerHost({ maxThreads: 1 })
+		const host = await createWorkerHost({ maxThreads: 1 })
 		try {
-			const rootWorkers = host.ctx.workers as unknown as {
+			const rootWorkers = host.ctx.require(Workers) as unknown as {
 				state?: { pool?: unknown }
 			}
 			expect(rootWorkers.state?.pool).toBeUndefined()
@@ -218,7 +222,7 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('distinguishes admission snapshots from explicitly borrowed input', async () => {
-		const host = createWorkerHost({ maxThreads: 1 })
+		const host = await createWorkerHost({ maxThreads: 1 })
 		try {
 			host.add(WorkerTaskConsumerA)
 			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
@@ -242,7 +246,7 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('rejects transfer ownership on deferred input preparation', async () => {
-		const host = createWorkerHost()
+		const host = await createWorkerHost()
 		try {
 			host.add(WorkerTaskConsumerA)
 			host.cfg(WorkerTaskConsumerA).setAutoStart(true)
@@ -335,14 +339,14 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('bounds tasks while their shared artifact route is still resolving', async () => {
-		const host = createWorkerHost({
+		const host = await createWorkerHost({
 			maxThreads: 1,
 			maxQueuedTasks: 1,
 			maxQueuedTasksPerPlugin: 8,
 		})
 		let releaseRoute!: () => void
 		const routeGate = new Promise<void>((resolve) => void (releaseRoute = resolve))
-		const detach = host.ctx.nodeModules.attachSourceBinder(async () => {
+		const detach = requireNodeModuleHost(host.ctx).attachSourceBinder(async () => {
 			await routeGate
 			return {
 				url: new URL('./fixtures/worker-task.mjs', import.meta.url),
@@ -371,7 +375,7 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('bounds each owner queue independently', async () => {
-		const host = createWorkerHost({
+		const host = await createWorkerHost({
 			maxThreads: 1,
 			maxQueuedTasks: 8,
 			maxQueuedTasksPerPlugin: 1,
@@ -394,7 +398,7 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('bounds the root queue across different plugin owners', async () => {
-		const host = createWorkerHost({
+		const host = await createWorkerHost({
 			maxThreads: 1,
 			maxQueuedTasks: 1,
 			maxQueuedTasksPerPlugin: 8,
@@ -425,7 +429,7 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('starts deferred input preparation only after fair queue admission and dispatch', async () => {
-		const host = createWorkerHost({
+		const host = await createWorkerHost({
 			maxThreads: 1,
 			maxQueuedTasks: 1,
 			maxQueuedTasksPerPlugin: 8,
@@ -462,7 +466,7 @@ describe('WorkerTaskService', () => {
 	})
 
 	it('aborts active deferred preparation and drains it when the owner stops', async () => {
-		const host = createWorkerHost({ maxThreads: 1 })
+		const host = await createWorkerHost({ maxThreads: 1 })
 		try {
 			host.add(WorkerTaskConsumerA)
 			host.cfg(WorkerTaskConsumerA).setAutoStart(true)

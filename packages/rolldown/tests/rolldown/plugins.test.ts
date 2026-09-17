@@ -69,7 +69,7 @@ describe('configSourcePlugin', () => {
 
 		expect(result?.code).toContain('// [pluxel-config] Injected definition')
 		expect(result?.code).toContain(
-			'import { __setPluginConfig as __pluxelSetPluginConfig } from "@pluxel/runtime/toolchain"',
+			'import { __setPluginConfig as __pluxelSetPluginConfig } from "@pluxel/core/toolchain"',
 		)
 		expect(result?.code).toContain(
 			'__pluxelSetPluginConfig(OrdersPlugin, { abiVersion: 2, fieldName: "config", schema: OrdersConfig, source: "v.object({batchSize:v.optional(v.number(),10)})" })',

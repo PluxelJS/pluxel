@@ -1,15 +1,18 @@
-export type * from '@pluxel/runtime/web'
-export { createRuntimeManagementClient, type RuntimeManagementClient } from '@pluxel/runtime/web'
+export type * from '@pluxel/management/client'
+export {
+	createRuntimeManagementClient,
+	type RuntimeManagementClient,
+} from '@pluxel/management/client'
 export {
 	RuntimeManagementClientProvider,
 	useRuntimeManagementClient,
-} from '@pluxel/runtime/web/react'
+} from '@pluxel/management/react'
 export {
 	createRuntimeSessionClient,
 	type RuntimeClientBootstrap,
 	type RuntimeSessionClient,
 	type RuntimeSessionEvent,
-} from '@pluxel/runtime/web/session'
+} from '@pluxel/management/session'
 
 export function runtimeErrorMessage(error: unknown, fallback = '请求失败'): string {
 	if (error instanceof Error) return error.message || fallback

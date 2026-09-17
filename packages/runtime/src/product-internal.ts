@@ -1,4 +1,7 @@
-import { readProductDescriptor, type ProductDescriptor } from './product-contract'
+import {
+	readProductDescriptor,
+	type ProductDescriptor,
+} from '@pluxel/management/internal/product-contract'
 
 export function readHostProduct(
 	moduleNamespace: Record<string, unknown>,

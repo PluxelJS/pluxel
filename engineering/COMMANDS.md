@@ -31,7 +31,7 @@ Plugin publishes the same name.
 `AgentToolsPlugin.catalog(agentId)` returns a live constrained catalog. Its `list()` only exposes
 currently registered commands assigned to that Agent; its single throwing `execute()` checks the current
 assignment again before dispatching through the root command catalog. Carriers must use this bound
-catalog for both publication and execution. Calling `ctx.commands.execute()` directly would bypass the
+catalog for both publication and execution. Calling `ctx.require(Commands).execute()` directly would bypass the
 Agent assignment and is only appropriate for a separately authorized host control path.
 
 The bound catalog publishes `{ catalogRevision, policyRevision }` snapshots and subscriptions. Command
@@ -39,7 +39,7 @@ registration, withdrawal, replacement, or Toolset edits therefore invalidate car
 creating a second registry. A policy edit does not cancel calls already admitted before the edit; it prevents
 subsequent calls, matching command publication withdrawal semantics.
 
-`@pluxel/runtime` installs one root registry behind `ctx.commands`. Its list, snapshot, subscription, and
+`@pluxel/services/commands` exports `Commands` and `commands()`, installing one empty root registry. Plugins obtain the owner view with `ctx.require(Commands)`. Runtime uses the same installer. Its list, snapshot, subscription, and
 execution methods delegate to that registry, so runtime does not maintain another revision or listener set.
 `register()` returns the registry's typed installed command plus disposer and binds disposal to the calling
 Plugin Context's effects. Runtime wraps execution in the owner's internal invocation gate; Core closes and
@@ -47,7 +47,7 @@ drains that gate once per generation before effects drain. A manually disposed r
 publication and does not cancel work that already entered execution or close sibling admission.
 
 Carrier providers that publish a command into their own router or SDK callback surface use
-`ctx.commands.createMount<CarrierContext>()`. A mount is not a second registry: it has no name lookup,
+`ctx.require(Commands).createMount<CarrierContext>()`. A mount is not a second registry: it has no name lookup,
 snapshot, subscription, dynamic execution, or caller-supplied owner. Its caller-bound `bind()` accepts a
 `DirectCommand`, pins the exact command implementation to the provider and publication-owner generations,
 and adopts the provider's synchronous route/SDK registration into the publication owner's effects. The
@@ -59,8 +59,8 @@ registry does not—even when widened to `InstalledCommand`. This is a type-leve
 carrier entry points and Runtime still validate received objects. Root catalog publication and carrier
 publication remain two independent, explicit decisions.
 
-The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers
-consume `ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or
+Runtime registers its six built-in plugin management commands during root preparation in the same catalog; the Commands service does not import management operations or install them in a custom Host. Unscoped host-control carriers
+consume `ctx.root.require(Commands).list()` and dispatch through `execute()` rather than copying descriptors or
 handlers; Agent adapter Plugins consume a constructor-injected `AgentToolsPlugin` bound catalog.
 
 An argv/message carrier explicitly binds its allowed commands to `createArgvRouter()`. The router owns only
@@ -87,7 +87,7 @@ Implementation entry points:
 - `packages/commands/src/argv/parse.ts`: option coercion and untrusted candidate construction;
 - `packages/commands/src/argv/router.ts`: trie registration, routing, and resolution;
 - `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
-- `packages/runtime/src/services/CommandsService.ts`: root publication and owner-bound carrier mounts;
+- `packages/services/src/commands/service.ts`: root publication and owner-bound carrier mounts;
 - `plugins/agent-tools/src/index.ts`: optional Toolset/Agent config projection and call-time enforcement.
 - `plugins/pi-agent/src/tool-adapter.ts`: Pi provider-safe schema/name projection that still dispatches
   through the bound AgentTools catalog; Pi built-ins and default resource discovery stay disabled.

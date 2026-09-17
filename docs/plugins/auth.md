@@ -19,7 +19,7 @@ pnpm catalog:add -- @pluxel/auth
 
 ```ts no-twoslash
 import { AuthPlugin } from '@pluxel/auth'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import type { RuntimeApplication } from '@pluxel/runtime'
 
 export default {

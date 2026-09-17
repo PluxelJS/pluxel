@@ -8,7 +8,7 @@ import {
 	Plugin,
 } from '@pluxel/runtime/test'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -74,7 +74,7 @@ class BorrowedTarget extends RpcTarget {
 
 describe('runtime testing v2 host', () => {
 	it('creates a synchronous public fixture without root authority', async () => {
-		const host = createRuntimeTestHost()
+		const host = await createRuntimeTestHost()
 		try {
 			expect('ctx' in host).toBe(false)
 			expect(host[Symbol.asyncDispose]).toBeTypeOf('function')
@@ -85,7 +85,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('keeps optional Workbench and Vault disabled by default', async () => {
-		const host = createRuntimeInternalTestHost()
+		const host = await createRuntimeInternalTestHost()
 		try {
 			expect(host.ctx.workbench).toBeUndefined()
 			expect(host.ctx.vault).toBeUndefined()
@@ -96,7 +96,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('starts a typed root and its real required dependency in one immediate operation', async () => {
-		const host = createRuntimeTestHost()
+		const host = await createRuntimeTestHost()
 		try {
 			const consumer = await host.start(DependencyConsumer, {
 				catalog: [RequiredDependency],
@@ -111,7 +111,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('stops and restarts immediately without changing durable auto-start policy', async () => {
-		const host = createRuntimeInternalTestHost()
+		const host = await createRuntimeInternalTestHost()
 		try {
 			const first = await host.start(PublicFixture)
 			expect(host.runtimeStateStore.snapshot().autoStart).toEqual([])
@@ -128,7 +128,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('rejects an implicit catalog change on an already-running high-frequency start', async () => {
-		const host = createRuntimeInternalTestHost()
+		const host = await createRuntimeInternalTestHost()
 		try {
 			await host.start(PublicFixture)
 			await expect(host.start(PublicFixture, { catalog: [SupportingFixture] })).rejects.toThrow(
@@ -148,7 +148,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('enforces synchronous callback-scoped drafts', async () => {
-		const host = createRuntimeTestHost()
+		const host = await createRuntimeTestHost()
 		let escaped: Parameters<Parameters<typeof host.commit>[0]>[0] | undefined
 		try {
 			await expect(host.commit(() => undefined)).rejects.toThrow(/at least one change/i)
@@ -168,7 +168,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('requires durable fork removal to be the only callback command', async () => {
-		const host = createRuntimeTestHost()
+		const host = await createRuntimeTestHost()
 		const fork = definePluginFork(ForkableFixture, 'east')
 		try {
 			await host.start(fork)
@@ -194,7 +194,7 @@ describe('runtime testing v2 host', () => {
 			},
 			{ plugin: { displayName: 'Replacement v2' } },
 		)
-		const host = createRuntimeTestHost()
+		const host = await createRuntimeTestHost()
 		try {
 			await host.start(ReplacementV1)
 			await host.replaceDefinition(ReplacementV1, ReplacementV2)
@@ -206,7 +206,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('drains an expected lifecycle failure and accepts the next operation after its requested intent is cleared', async () => {
-		const host = createRuntimeTestHost()
+		const host = await createRuntimeTestHost()
 		rollbackCleanup.mockClear()
 		try {
 			const failure = await host.commitExpectFail((change) => change.start(RollbackFixture))
@@ -228,7 +228,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('reports and closes a leaked public Workbench lease during host disposal', async () => {
-		const host = createRuntimeTestHost({ workbench: { enabled: true } })
+		const host = await createRuntimeTestHost({ workbench: { enabled: true } })
 		let disposalAttempted = false
 		try {
 			await host.start(WorkbenchLeaseFixture)
@@ -262,7 +262,7 @@ describe('runtime testing v2 host', () => {
 	})
 
 	it('shares concurrent disposal settlement and rejects later operations', async () => {
-		const host = createRuntimeTestHost()
+		const host = await createRuntimeTestHost()
 		const first = host.dispose()
 		const second = host.dispose()
 		expect(second).toBe(first)

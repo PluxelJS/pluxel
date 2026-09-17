@@ -3,6 +3,8 @@
 Pluxel 官方 caller-aware 缓存插件。它提供同步 local cache、异步 backend、`getOrLoad()` single-flight、显式 global
 共享和轻量 method decorator。consumer 只依赖抽象 `Cache`，host 可以选择 memory 或 Redis backend。
 
+Memory backend 的 `persistence.mode` 为 `off` 时无需 Persistence；开启持久化时，Host 必须安装 `@pluxel/services/persistence` 提供的服务。
+
 ## 先选择写法
 
 | 场景                                          | 推荐入口                        |
@@ -21,7 +23,7 @@ freshness、transaction 或外部 API 协调塞进 decorator。
 需要稳定策略或主动失效时，在 plugin `init()` 中绑定一次 handle：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { Cache, type CacheNamespace } from '@pluxel/cache'
 
 @Plugin()

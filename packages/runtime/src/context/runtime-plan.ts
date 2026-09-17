@@ -1,85 +1,57 @@
+import { readRuntimeRouteCapabilities } from '../runtime/capabilities'
+import { management as installManagement } from '@pluxel/management/service'
+import { installedLogging, type RuntimeLogging } from '@pluxel/logging/internal'
+import { managementAccess as installManagementAccess } from '@pluxel/management/access'
+import { pglite } from '@pluxel/services/database/pglite'
+import { postgres } from '@pluxel/services/database/postgres'
+import { type Context, type RootContext } from '@pluxel/core'
+import { installRootCapability, type RootCapabilityInstallation } from '@pluxel/core/host'
+import { createPluginLogPolicyStore } from '@pluxel/logging'
 import {
-	createContextHost,
-	type Context,
-	type RootCapabilityInstallation,
-	type RootContext,
-} from '@pluxel/core'
-import {
-	CONFIG_SERVICE_CAPABILITY,
-	createCoreContextInstallations,
-	defineContextCapability,
-	installOwnerViewCapability,
-	installRootCapability,
-	installScopeCapability,
-	resolveContextCapability,
-	resolveCoreRootInputs,
-	type ContextCapabilityInstallation,
-} from '@pluxel/core/internal'
-import { bindContextRuntimeLogging, type RuntimeLogging } from '../logger/logging'
-import {
-	NodeModuleService,
+	nodeModules as installNodeModules,
 	type NodeModuleArtifactHostOptions,
-} from '../node-artifact/NodeModuleService'
-import { WorkerTaskService } from '../node-artifact/WorkerTaskService'
+} from '@pluxel/services/node'
+import { workers as installWorkers } from '@pluxel/services/workers'
 import { resolveRuntimePlanePlan } from '../runtime-plane'
-import { CommandsService } from '../services/CommandsService'
-import { ConfigService, type ConfigServiceConfig } from '../services/ConfigService'
-import {
-	DatabaseService,
-	type DatabaseConfig,
-	type DatabaseServiceHostOptions,
-} from '../services/DatabaseService'
-import { RuntimeStateStore, type RuntimeStateStoreConfig } from '../services/RuntimeStateStore'
-import { RuntimeManagementService } from '../services/RuntimeManagementService'
-import { AdminAccessService } from '../services/admin-access/AdminAccessService'
-import { ManagementAccessService } from '../services/admin-access/ManagementAccessService'
+import { Commands, commands as installCommands } from '@pluxel/services/commands'
+import { createPluginManagementCommands } from '../services/commands/plugin-management'
+import type { ConfigServiceConfig } from '../services/ConfigService'
+import { database as installDatabase, type DatabaseBackend } from '@pluxel/services/database'
+import type { DatabaseConfig } from '../services/database-config'
+import type { RuntimeStateStoreConfig } from '../services/RuntimeStateStore'
 import { HttpService, type RuntimeHttpHostConfig } from '../services/http/HttpService'
-import { ElysiaApplicationDirectory } from '../services/http/ElysiaApplicationDirectory'
-import type { Elysia } from 'elysia'
+import { requireHttpDirectory } from '@pluxel/services/internal/http'
+import { http as installHttp } from '@pluxel/services/http'
 import { RUNTIME_HTTP_CAPABILITY } from './runtime-http-capability'
-import { InternalApiValidationService } from '../services/http/InternalApiValidationService'
 import {
 	PersistenceService,
 	type PersistenceServiceConfig,
-} from '../services/persistence/PersistenceService'
-import { VaultAdminService, VaultService } from '../services/vault/VaultService'
-import type { VaultServiceConfig } from '../services/vault/types'
-import type {
-	WorkbenchBackend,
-	WorkbenchBackendFactory,
-	WorkbenchInstallOptions,
-} from '../services/workbench'
-import { WorkbenchService } from '../services/workbench/WorkbenchService'
-import { PluginCatalogLayoutService } from '../services/management/PluginCatalogLayoutService'
+} from '@pluxel/services/internal/persistence'
+import { persistence as installPersistence } from '@pluxel/services/persistence'
+import { vault as installVault } from '@pluxel/services/vault'
+import { requireHostStateStore } from '@pluxel/host/internal'
+import {
+	createHost,
+	defineHostService,
+	type PluginHost,
+	type HostService,
+	type HostStoreStorageOptions,
+} from '@pluxel/host'
+import { mergeConfigRecords, configRecordsFromEnvironment } from '../services/config-environment'
+import type { VaultServiceConfig } from '@pluxel/services/internal/vault-types'
+import type { WorkbenchBackendFactory, WorkbenchInstallOptions } from '@pluxel/workbench/server'
+import { createWorkbenchService } from '@pluxel/workbench/internal'
 import { resolveWorkbenchUiBasePath } from '../workbench-config'
-import { readProductDescriptor, type HostApplicationMeta } from '../product-contract'
+import {
+	readProductDescriptor,
+	type HostApplicationMeta,
+} from '@pluxel/management/internal/product-contract'
 import type { RuntimeHostConfig } from './runtime-contract'
 import { assertRuntimeHostConfig } from './runtime-config-validation'
 import { RUNTIME_STATE_CAPABILITY } from './runtime-state-capability'
 import './runtime-contract'
 
-const PERSISTENCE_CAPABILITY = defineContextCapability<PersistenceService>('runtime.persistence')
-const ADMIN_ACCESS_CAPABILITY = defineContextCapability<AdminAccessService>('runtime.admin-access')
-const MANAGEMENT_ACCESS_CAPABILITY = defineContextCapability<ManagementAccessService>(
-	'runtime.management-access',
-)
-const RUNTIME_MANAGEMENT_CAPABILITY =
-	defineContextCapability<RuntimeManagementService>('runtime.management')
-const DATABASE_CAPABILITY = defineContextCapability<DatabaseService>('runtime.database')
-const COMMANDS_CAPABILITY = defineContextCapability<CommandsService>('runtime.commands')
-const ELYSIA_CAPABILITY = defineContextCapability<Elysia>('runtime.elysia')
-const WORKBENCH_CAPABILITY = defineContextCapability<WorkbenchService>('runtime.workbench')
-const NODE_MODULES_CAPABILITY = defineContextCapability<NodeModuleService>('runtime.node-modules')
-const WORKERS_CAPABILITY = defineContextCapability<WorkerTaskService>('runtime.workers')
-const INTERNAL_API_VALIDATION_CAPABILITY = defineContextCapability<InternalApiValidationService>(
-	'runtime.internal-api-validation',
-)
-const PLUGIN_CATALOG_LAYOUT_CAPABILITY = defineContextCapability<PluginCatalogLayoutService>(
-	'runtime.plugin-catalog-layout',
-)
-const VAULT_CAPABILITY = defineContextCapability<VaultService>('runtime.vault')
-const VAULT_ADMIN_CAPABILITY = defineContextCapability<VaultAdminService>('runtime.vault-admin')
-const PREPARATION_BY_ROOT = new WeakMap<RootContext, Promise<void>>()
+const HOSTS_BY_ROOT = new WeakMap<RootContext, PluginHost>()
 
 export type RuntimeRootContextOptions = Readonly<{
 	logging?: RuntimeLogging
@@ -98,7 +70,7 @@ type RuntimeRootInputs = Readonly<{
 	persistence?: PersistenceServiceConfig
 	configService?: ConfigServiceConfig
 	runtimeState?: RuntimeStateStoreConfig
-	database: DatabaseServiceHostOptions
+	database: DatabaseBackend | false
 	workers?: RuntimeHostConfig['workers']
 	http: RuntimeHttpHostConfig
 	nodeArtifacts: NodeModuleArtifactHostOptions
@@ -111,184 +83,114 @@ type RuntimeRootInputs = Readonly<{
 	}>
 }>
 
-/** @internal Create the sole root shape used by static, dynamic and test runtime hosts. */
-export function createRuntimeRootContext(
+/** @internal Compose the default product through the same prepared Host as standalone applications. */
+export async function createRuntimeRootContext(
 	config: RuntimeHostConfig = {},
 	options: RuntimeRootContextOptions = {},
-): RootContext {
+): Promise<RootContext> {
 	assertRuntimeHostConfig(config)
-	const coreInputs = resolveCoreRootInputs(config)
 	const inputs = resolveRuntimeRootInputs(config, options)
-	const applications = new ElysiaApplicationDirectory()
-	const installations = createRuntimeContextInstallations(inputs, applications)
-	const host = createContextHost({
-		name: 'runtime',
+	const persistence = new PersistenceService(inputs.persistence ?? { mode: 'memory' })
+	let managementRoot: RootContext | undefined
+	const services: HostService[] = [
+		...(options.logging
+			? [
+					installedLogging(options.logging, {
+						policyStore: createPluginLogPolicyStore(persistence.namespace('logger')),
+					}),
+				]
+			: []),
+		...(inputs.management
+			? [
+					installManagementAccess(),
+					installManagement({
+						application: inputs.application,
+						workbench: !!inputs.workbench,
+						recentUpdate: {
+							latestUpdate: () =>
+								managementRoot
+									? (readRuntimeRouteCapabilities(managementRoot)?.recentUpdate?.latestUpdate?.() ??
+										null)
+									: null,
+							resolveRecentUpdate: (address) =>
+								managementRoot
+									? (readRuntimeRouteCapabilities(
+											managementRoot,
+										)?.recentUpdate?.resolveRecentUpdate(address) ?? null)
+									: null,
+							subscribeUpdates: (observer) =>
+								managementRoot
+									? (readRuntimeRouteCapabilities(managementRoot)?.recentUpdate?.subscribeUpdates?.(
+											observer,
+										) ?? (() => {}))
+									: () => {},
+						},
+					}),
+				]
+			: []),
+		installHttp(),
+		...(inputs.database ? [installDatabase({ backend: inputs.database })] : []),
+		installCommands(),
+		installNodeModules(inputs.nodeArtifacts),
+		installWorkers(inputs.workers),
+		installPersistence({ mode: 'custom', backend: persistence }),
+		...(inputs.vault ? [installVault(inputs.vault)] : []),
+		...(inputs.workbench
+			? [createWorkbenchService(inputs.workbench.options, inputs.workbench.createBackend)]
+			: []),
+	]
+	const runtime = defineHostService({
+		name: 'Runtime product',
 		capabilities: [
-			...createCoreContextInstallations(coreInputs, applications.lifecycleHooks),
-			...installations,
+			installRootCapability(RUNTIME_STATE_CAPABILITY, {
+				create: (ctx) => requireHostStateStore(ctx),
+			}),
+			installRootCapability(RUNTIME_HTTP_CAPABILITY, {
+				create: (root) => HttpService.createRoot(root, inputs.http, requireHttpDirectory(root)),
+			}),
 			...(options.routeContextCapabilities ?? []),
 		],
-		overrides: [
-			installRootCapability(CONFIG_SERVICE_CAPABILITY, {
-				create: (ctx) => new ConfigService(ctx as RootContext, inputs.configService),
-			}),
-		],
-	})
-	const root = host.createRoot(inputs.name) as RootContext
-	if (options.logging) {
-		const unbind = bindContextRuntimeLogging(root, options.logging)
-		root.effects.defer(unbind, { tag: 'RuntimeLoggingBinding', phase: 'shutdown' })
-	}
-	return root
-}
-
-/** @internal Prepare the Runtime-owned startup capabilities exactly once per successful root. */
-export function prepareRuntimeRootContext(root: RootContext): Promise<void> {
-	const existing = PREPARATION_BY_ROOT.get(root)
-	if (existing) return existing
-	let task!: Promise<void>
-	task = Promise.resolve()
-		.then(async (): Promise<void> => {
-			const workbench = root.workbench?.requireBackend()
-			await Promise.all([workbench?.prepare(), root.vaultAdmin?.prepare()])
-			return undefined
-		})
-		.catch((error: unknown) => {
-			if (PREPARATION_BY_ROOT.get(root) === task) PREPARATION_BY_ROOT.delete(root)
-			throw error
-		})
-	PREPARATION_BY_ROOT.set(root, task)
-	return task
-}
-
-function createRuntimeContextInstallations(
-	inputs: RuntimeRootInputs,
-	applications: ElysiaApplicationDirectory,
-): readonly ContextCapabilityInstallation[] {
-	const installations: ContextCapabilityInstallation[] = [
-		installRootCapability(PERSISTENCE_CAPABILITY, {
-			property: 'persistence',
-			create: (ctx) => new PersistenceService(ctx as RootContext, inputs.persistence),
-		}),
-		installRootCapability(RUNTIME_STATE_CAPABILITY, {
-			create: (ctx) => new RuntimeStateStore(ctx as RootContext, inputs.runtimeState),
-		}),
-		installScopeCapability(DATABASE_CAPABILITY, {
-			property: 'database',
-			create: (ctx) => new DatabaseService(ctx as Context, inputs.database),
-		}),
-		installScopeCapability(ELYSIA_CAPABILITY, {
-			property: 'elysia',
-			create: (ctx) => applications.applicationFor(ctx as Context),
-		}),
-		installOwnerViewCapability(COMMANDS_CAPABILITY, {
-			property: 'commands',
-			createRoot: (root) => new CommandsService(root as RootContext, undefined),
-			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : new CommandsService(owner as Context, undefined),
-		}),
-		installRootCapability(RUNTIME_HTTP_CAPABILITY, {
-			create: (root) => HttpService.createRoot(root as RootContext, inputs.http, applications),
-		}),
-		installOwnerViewCapability(NODE_MODULES_CAPABILITY, {
-			property: 'nodeModules',
-			createRoot: (root) => new NodeModuleService(root as RootContext, inputs.nodeArtifacts),
-			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : new NodeModuleService(owner as Context),
-		}),
-		installOwnerViewCapability(WORKERS_CAPABILITY, {
-			property: 'workers',
-			createRoot: (root) => new WorkerTaskService(root as RootContext, inputs.workers),
-			createView: (rootService, owner) =>
-				owner === owner.root ? rootService : new WorkerTaskService(owner as Context, undefined),
-		}),
-	]
-
-	if (inputs.management) {
-		installations.push(
-			installRootCapability(ADMIN_ACCESS_CAPABILITY, {
-				property: 'adminAccess',
-				create: (ctx) => new AdminAccessService(ctx as RootContext),
-			}),
-			installOwnerViewCapability(MANAGEMENT_ACCESS_CAPABILITY, {
-				property: 'managementAccess',
-				createRoot: (root) =>
-					new ManagementAccessService(
-						root as RootContext,
-						resolveContextCapability(root, ADMIN_ACCESS_CAPABILITY),
-					),
-				createView: (rootService, owner) =>
-					owner === owner.root
-						? rootService
-						: new ManagementAccessService(
-								owner as Context,
-								resolveContextCapability(owner.root, ADMIN_ACCESS_CAPABILITY),
-							),
-			}),
-			installRootCapability(RUNTIME_MANAGEMENT_CAPABILITY, {
-				property: 'runtimeManagement',
-				create: (root) => new RuntimeManagementService(root as RootContext, inputs.application),
-			}),
-			installOwnerViewCapability(INTERNAL_API_VALIDATION_CAPABILITY, {
-				property: 'internalApiValidation',
-				createRoot: (root) => new InternalApiValidationService(root as RootContext),
-				createView: (rootService, owner) =>
-					owner === owner.root ? rootService : rootService.forOwner(owner as Context),
-			}),
-			installRootCapability(PLUGIN_CATALOG_LAYOUT_CAPABILITY, {
-				property: 'pluginCatalogLayout',
-				create: (root) => new PluginCatalogLayoutService(root as RootContext),
-			}),
-		)
-	}
-
-	if (inputs.workbench) installations.push(installWorkbenchCapability(inputs.workbench))
-
-	if (inputs.vault) {
-		installations.push(
-			installOwnerViewCapability(VAULT_CAPABILITY, {
-				property: 'vault',
-				createRoot: (root) => new VaultService(root as RootContext, inputs.vault),
-				createView: (rootService, owner) =>
-					owner === owner.root ? rootService : rootService.forOwner(owner as Context),
-			}),
-			installRootCapability(VAULT_ADMIN_CAPABILITY, {
-				property: 'vaultAdmin',
-				create: (root) =>
-					new VaultAdminService(
-						root as RootContext,
-						resolveContextCapability(root, VAULT_CAPABILITY),
-					),
-			}),
-		)
-	}
-
-	return Object.freeze(installations)
-}
-
-type WorkbenchRootCapability = Readonly<{
-	backend: WorkbenchBackend
-	view: WorkbenchService
-}>
-
-function installWorkbenchCapability(
-	input: NonNullable<RuntimeRootInputs['workbench']>,
-): ContextCapabilityInstallation<WorkbenchService> {
-	return installOwnerViewCapability<WorkbenchRootCapability, WorkbenchService>(
-		WORKBENCH_CAPABILITY,
-		{
-			property: 'workbench',
-			createRoot: (root) => {
-				const runtimeRoot = root as RootContext
-				const backend = input.createBackend(runtimeRoot, input.options)
-				return Object.freeze({ backend, view: new WorkbenchService(runtimeRoot, backend) })
-			},
-			createView: (rootValue, owner) =>
-				owner === owner.root
-					? rootValue.view
-					: new WorkbenchService(owner as Context, rootValue.backend),
+		prepare({ ctx }) {
+			managementRoot = ctx
+			const catalog = ctx.require(Commands)
+			for (const command of createPluginManagementCommands(ctx)) catalog.register(command)
 		},
+	})
+	const host = await createHost({
+		plugins: [],
+		config: {
+			name: inputs.name,
+			logger: config.logger,
+			events: config.events,
+			plugins: config.plugins,
+		},
+		services: [...services, runtime],
+		configRecords: {
+			...storeStorage(persistence, 'config', inputs.configService?.mode),
+			initial: mergeConfigRecords(
+				inputs.configService?.snapshot?.plugins,
+				configRecordsFromEnvironment(inputs.configService?.environment),
+			),
+		},
+		state: {
+			...storeStorage(persistence, 'runtime-state', inputs.runtimeState?.mode),
+			initial: inputs.runtimeState?.snapshot,
+		},
+	})
+	HOSTS_BY_ROOT.set(host.ctx, host)
+	host.ctx.effects.defer(
+		() => {
+			HOSTS_BY_ROOT.delete(host.ctx)
+		},
+		{ tag: 'RuntimeHostBinding' },
 	)
+	return host.ctx
+}
+
+export function requireRuntimePluginHost(ctx: Context): PluginHost {
+	const host = HOSTS_BY_ROOT.get(ctx.root)
+	if (!host) throw new Error('[runtime] Context has no Runtime product Host')
+	return host
 }
 
 function resolveRuntimeRootInputs(
@@ -322,10 +224,21 @@ function resolveRuntimeRootInputs(
 		...(httpConfig.uiPublicDir ? { uiPublicDir: httpConfig.uiPublicDir } : {}),
 		...(options.requestAddress ? { requestAddress: options.requestAddress } : {}),
 	})
-	const database = Object.freeze({
-		database: snapshotDatabase(config.database),
-		persistence,
-	})
+	const configuredDatabase = snapshotDatabase(config.database)
+	const database: DatabaseBackend | false =
+		configuredDatabase === false
+			? false
+			: configuredDatabase?.driver === 'postgres'
+				? postgres(configuredDatabase)
+				: pglite({
+						dataDir:
+							configuredDatabase?.dataDir ??
+							(typeof persistence === 'string'
+								? `${persistence}/database/pglite`
+								: persistence?.mode === 'memory'
+									? 'memory://'
+									: '.pluxel/persistence/database/pglite'),
+					})
 	const vault = snapshotVault(config.vault)
 	const application = Object.freeze({
 		product:
@@ -432,4 +345,19 @@ function clonePlainData<T>(value: T): T {
 function normalizePath(value: string | undefined): string | undefined {
 	const normalized = value?.trim()
 	return normalized || undefined
+}
+
+function storeStorage(
+	persistence: PersistenceService,
+	namespace: string,
+	mode?: 'file' | 'memory' | 'readonly',
+): HostStoreStorageOptions {
+	if (mode === 'memory') return { mode: 'memory' }
+	return {
+		storage: persistence.namespace(namespace),
+		mode:
+			mode === 'readonly' || (mode === undefined && persistence.capability === 'readonly')
+				? 'readonly'
+				: 'writable',
+	}
 }

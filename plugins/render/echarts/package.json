@@ -35,16 +35,21 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"echarts": "catalog:prod"
+		"echarts": "catalog:prod",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/canvas": "workspace:*",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/host-dev": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"tsdown": "catalog:build",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
@@ -53,8 +58,10 @@
 	},
 	"peerDependencies": {
 		"@pluxel/canvas": "workspace:^",
+		"@pluxel/core": "workspace:^",
 		"@pluxel/fonts": "workspace:^",
-		"@pluxel/runtime": "workspace:^"
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^"
 	},
 	"engines": {
 		"node": ">=24"

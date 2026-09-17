@@ -18,7 +18,7 @@ import {
 	type SvgCanvas,
 } from '@napi-rs/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
-import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
+import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 import { CanvasConfig, type CanvasPluginConfig } from './config.ts'
 import {
 	CanvasError,

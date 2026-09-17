@@ -26,7 +26,7 @@ Keep these boundaries intact:
 ## Live development operations
 
 For operations on an already running Pluxel Vite host, coding agents must use `pluxel dev` and
-`@pluxel/runtime/dev`. Read `pnpm exec pluxel docs development/dev-console.md` first. Discover the
+`@pluxel/host-dev/console`. Read `pnpm exec pluxel docs development/dev-console.md` first. Discover the
 host and keep its absolute `--root` and exact `--instance` on every run/result/cancel command.
 Use ordinary TS module exports for config edits, Plugin methods, Workbench RPC, data and logs;
 keep isolated regression tests on the test host. Enable `devConsole: true` in the host's Vite

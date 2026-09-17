@@ -1,5 +1,6 @@
+import { Commands } from '@pluxel/services/commands'
 import { CommandError, type CommandContext, type CommandDescriptor } from '@pluxel/commands'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { AgentToolsConfig } from './config.ts'
 import type {
 	AgentToolAssignmentSnapshot,
@@ -75,7 +76,7 @@ export class AgentToolsPlugin extends BasePlugin {
 	private controller?: AgentToolsController
 
 	protected override init(): () => void {
-		const controller = new AgentToolsController(this.ctx.commands, (error) =>
+		const controller = new AgentToolsController(this.ctx.require(Commands), (error) =>
 			this.ctx.logger.error('Agent tools catalog listener failed', { error }),
 		)
 		controller.start(this.config)

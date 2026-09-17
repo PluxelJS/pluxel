@@ -1,4 +1,4 @@
-import type { PluginCatalogSnapshot } from '@pluxel/runtime/web'
+import type { PluginCatalogSnapshot } from '@pluxel/management/client'
 import { describe, expect, it } from 'vitest'
 import { buildPluginOverview } from '../src/app/plugins/pluginOverviewModel'
 

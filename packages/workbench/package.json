@@ -1,0 +1,146 @@
+{
+	"name": "@pluxel/workbench",
+	"version": "0.1.0",
+	"description": "Composable Pluxel Workbench service and browser SDK",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/workbench"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./client": {
+			"@pluxel/source": "./src/workbench/client.ts",
+			"default": "./dist/client.mjs"
+		},
+		"./dev": {
+			"@pluxel/source": "./src/dev.ts",
+			"default": "./dist/dev.mjs"
+		},
+		"./federation": {
+			"@pluxel/source": "./src/workbench/federation.ts",
+			"default": "./dist/federation.mjs"
+		},
+		"./http": {
+			"@pluxel/source": "./src/http.ts",
+			"default": "./dist/http.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./internal/definition": {
+			"@pluxel/source": "./src/workbench/definition.ts",
+			"default": "./dist/internal/definition.mjs"
+		},
+		"./internal/react": {
+			"@pluxel/source": "./src/workbench/react-internal.tsx",
+			"default": "./dist/internal/react.mjs"
+		},
+		"./internal/shell": {
+			"@pluxel/source": "./src/shell/internal.ts",
+			"default": "./dist/internal/shell.mjs"
+		},
+		"./paths": {
+			"@pluxel/source": "./src/paths.ts",
+			"default": "./dist/paths.mjs"
+		},
+		"./react": {
+			"@pluxel/source": "./src/workbench/react.tsx",
+			"default": "./dist/react.mjs"
+		},
+		"./server": {
+			"@pluxel/source": "./src/server.ts",
+			"default": "./dist/server.mjs"
+		},
+		"./service": {
+			"@pluxel/source": "./src/service.ts",
+			"default": "./dist/service.mjs"
+		},
+		"./shell": {
+			"@pluxel/source": "./src/shell.ts",
+			"default": "./dist/shell.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./client": "./dist/client.mjs",
+			"./dev": "./dist/dev.mjs",
+			"./federation": "./dist/federation.mjs",
+			"./http": "./dist/http.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./internal/definition": "./dist/internal/definition.mjs",
+			"./internal/react": "./dist/internal/react.mjs",
+			"./internal/shell": "./dist/internal/shell.mjs",
+			"./paths": "./dist/paths.mjs",
+			"./react": "./dist/react.mjs",
+			"./server": "./dist/server.mjs",
+			"./service": "./dist/service.mjs",
+			"./shell": "./dist/shell.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pnpm run build:web && pnpm run build:lib",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run",
+		"test:installed": "node tests/installed-vite.smoke.mjs",
+		"build:web": "vite build",
+		"build:lib": "tsdown"
+	},
+	"dependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"@module-federation/bridge-react": "catalog:frontend",
+		"@module-federation/runtime": "catalog:prod",
+		"@module-federation/sdk": "catalog:prod",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/management": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@tanstack/query-core": "catalog:frontend",
+		"capnweb": "catalog:prod",
+		"pathe": "catalog:node",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"valibot": "catalog:validation"
+	},
+	"devDependencies": {
+		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"typescript": "catalog:dev",
+		"valibot-form": "workspace:*",
+		"vite": "catalog:build"
+	},
+	"peerDependencies": {
+		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
+		"vite": ">=8.2.2 <9"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host-dev": {
+			"optional": true
+		},
+		"@pluxel/rolldown": {
+			"optional": true
+		},
+		"vite": {
+			"optional": true
+		}
+	}
+}

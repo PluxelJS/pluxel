@@ -5,7 +5,7 @@ Pluxel 官方 Redis capability，同时自带 `RedisCacheBackendPlugin`、`Redis
 
 ```ts
 import { Redis } from '@pluxel/redis'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 class QueuePlugin extends BasePlugin {

@@ -1,6 +1,6 @@
 import { createWorkbenchRouteDirectory, type WorkbenchRouteDirectory } from './route-directory'
 import type { PluginNodeAddress } from '@pluxel/core'
-import type { WorkbenchLayout, WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchLayout, WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 import {
 	compileWorkbenchRoute,
 	workbenchRoutesOverlap,

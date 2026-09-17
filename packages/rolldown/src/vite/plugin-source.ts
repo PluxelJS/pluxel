@@ -54,7 +54,12 @@ const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
 
 const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
-const PLUXEL_SINGLETON_PACKAGES = ['@pluxel/runtime', '@pluxel/host-dev', 'drizzle-orm'] as const
+const PLUXEL_SINGLETON_PACKAGES = [
+	'@pluxel/runtime',
+	'@pluxel/services',
+	'@pluxel/host-dev',
+	'drizzle-orm',
+] as const
 
 // Browser UI singletons are part of the Pluxel host boundary. Keep them in
 // the shared source preset so static and dynamic projects do not each have to
@@ -65,6 +70,7 @@ const PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES = [
 ] as const
 
 const PLUXEL_SSR_EXTERNAL_PACKAGES = [
+	'@pluxel/services',
 	'@pluxel/core',
 	'@pluxel/runtime',
 	'@pluxel/host-dev',

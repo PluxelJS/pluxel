@@ -1,4 +1,4 @@
-import type { RuntimeUpdateSnapshot } from '@pluxel/runtime/web'
+import type { RuntimeUpdateSnapshot } from '@pluxel/management/client'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../runtime'

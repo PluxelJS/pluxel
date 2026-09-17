@@ -6,8 +6,8 @@ import type {
 	WorkbenchContentPlan,
 	WorkbenchContentPresentation,
 	WorkbenchOpenedContentHandle,
-} from '@pluxel/runtime/workbench/client'
-import type { ConfigPresentationFieldV1 } from '@pluxel/runtime/web'
+} from '@pluxel/workbench/client'
+import type { ConfigPresentationFieldV1 } from '@pluxel/management/client'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'

@@ -9,7 +9,7 @@ keep this package README focused on its own contract instead of copying framewor
 ## Install
 
 ```sh
-pnpm add {{packageName}} @pluxel/runtime
+pnpm add {{packageName}} @pluxel/core
 ```
 
 Import the root named Plugin export into a static catalog or expose the same package root through a

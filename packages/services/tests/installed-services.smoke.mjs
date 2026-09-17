@@ -1,0 +1,297 @@
+import { execFile as execFileCallback } from 'node:child_process'
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { expect, it } from 'vitest'
+
+const execFile = promisify(execFileCallback)
+const workspace = fileURLToPath(new URL('../../../', import.meta.url))
+const run = async (file, args, cwd) => {
+	try {
+		return await execFile(file, args, { cwd, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
+	} catch (error) {
+		throw new Error(`${error.message}\n${error.stdout ?? ''}`, { cause: error })
+	}
+}
+
+it('consumes real service tarballs outside the workspace with isolated declarations and lazy ESM imports', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-services-consumer-'))
+	try {
+		const dependencies = {}
+		for (const name of ['core', 'host', 'commands', 'services']) {
+			const tarball = join(root, `${name}.tgz`)
+			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
+			dependencies[`@pluxel/${name}`] = `file:${tarball}`
+		}
+		const nodeTypes = JSON.parse(
+			await readFile(
+				join(workspace, 'packages/context/node_modules/@types/node/package.json'),
+				'utf8',
+			),
+		).version
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: 'independent-service-consumer',
+				private: true,
+				type: 'module',
+				dependencies,
+				devDependencies: { '@types/node': nodeTypes },
+			}),
+		)
+		await writeFile(
+			join(root, 'pnpm-workspace.yaml'),
+			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+		)
+		await run('pnpm', ['--dir', root, 'install', '--offline', '--ignore-scripts'], workspace)
+		for (const name of ['core', 'host', 'commands', 'services'])
+			expect(await realpath(join(root, 'node_modules/@pluxel', name))).not.toContain(workspace)
+		const installed = await readdir(join(root, 'node_modules/.pnpm'))
+		expect(
+			installed.some((name) => /^(?:@pluxel\+runtime|pg@|@electric-sql\+pglite)/.test(name)),
+		).toBe(false)
+		await writeFile(join(root, 'consumer.mjs'), consumer)
+		const result = await run(process.execPath, ['consumer.mjs'], root)
+		expect(result.stdout).toContain('ISOLATED_SERVICES_OK')
+		await writeFile(join(root, 'consumer.ts'), typeConsumer)
+		await writeFile(
+			join(root, 'tsconfig.json'),
+			JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					noEmit: true,
+					module: 'NodeNext',
+					target: 'ESNext',
+					types: ['node'],
+				},
+				files: ['consumer.ts'],
+			}),
+		)
+		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
+		// Expand the same genuinely installed consumer to the optional UI/development plane.
+		for (const name of [
+			'logging',
+			'management',
+			'workbench',
+			'host-dev',
+			'rolldown',
+			'valibot-form',
+		]) {
+			const tarball = join(root, `${name}.tgz`)
+			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
+			dependencies[name === 'valibot-form' ? name : `@pluxel/${name}`] = `file:${tarball}`
+		}
+		const reactTypes = JSON.parse(
+			await readFile(
+				join(workspace, 'packages/workbench/node_modules/@types/react/package.json'),
+				'utf8',
+			),
+		).version
+		const elysiaVersion = JSON.parse(
+			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
+		).version
+		const viteVersion = JSON.parse(
+			await readFile(join(workspace, 'packages/host-dev/node_modules/vite/package.json'), 'utf8'),
+		).version
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: 'independent-service-consumer',
+				private: true,
+				type: 'module',
+				dependencies,
+				devDependencies: {
+					'@types/node': nodeTypes,
+					'@types/react': reactTypes,
+					vite: viteVersion,
+					elysia: elysiaVersion,
+				},
+			}),
+		)
+		await writeFile(
+			join(root, 'pnpm-workspace.yaml'),
+			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+		)
+		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
+		await writeFile(join(root, 'optional.mjs'), optionalConsumer)
+		const optionalResult = await run(process.execPath, ['optional.mjs'], root)
+		expect(optionalResult.stdout).toContain('ISOLATED_WORKBENCH_OK')
+		await writeFile(join(root, 'consumer.ts'), typeConsumer + optionalTypeConsumer)
+		const declarations = await run(
+			join(workspace, 'node_modules/.bin/tsc'),
+			['--project', 'tsconfig.json'],
+			root,
+		)
+			.then(() => ({ failed: false, diagnostics: [] }))
+			.catch((error) => ({
+				failed: true,
+				diagnostics: String(error.cause?.stdout ?? '')
+					.trim()
+					.split(/\r?\n/),
+			}))
+		// capnweb 0.12.0 (also upstream main) spreads a Promise union as a tuple tail.
+		// Keep library checking enabled: only the two confirmed upstream diagnostics are allowed.
+		const upstreamDiagnostics = [333, 469].map(
+			(column) =>
+				`node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.d.ts(63,${column}): error TS2574: A rest element type must be an array type.`,
+		)
+		expect(declarations.diagnostics).toEqual(declarations.failed ? upstreamDiagnostics : [])
+		if (declarations.failed)
+			process.stdout.write(
+				'KNOWN_UPSTREAM_CAPNWEB_DECLARATION_ERRORS: 2 TS2574 in capnweb 0.12.0; all other installed declarations checked\n',
+			)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+}, 180_000)
+
+const consumer = `
+import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+const loads = []
+const hooks = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
+const { Vault, vault } = await import('@pluxel/services/vault')
+assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'token import must not evaluate encryption backend')
+const { persistence, createMemoryPersistenceBackend } = await import('@pluxel/services/persistence')
+const { Commands, commands } = await import('@pluxel/services/commands')
+const { createHost } = await import('@pluxel/host')
+const { NodeModules, nodeModules } = await import('@pluxel/services/node')
+const { Workers, workers, defineWorkerTask } = await import('@pluxel/services/workers')
+const { createCoreContextHost, defineContextCapability, installOwnerViewCapability } = await import('@pluxel/core/host')
+const { ContextCapabilityMissingError } = await import('@pluxel/core')
+const ownerToken = defineContextCapability('consumer.owner', { access: 'all' })
+const core = createCoreContextHost({ capabilities: [installOwnerViewCapability(ownerToken, { createRoot: () => ({}), createView: (_, owner) => owner.name })] })
+const coreRoot = core.createRoot()
+assert.equal(core.createScope(coreRoot, 'isolated').require(ownerToken), 'isolated')
+const storage = persistence({ mode: 'custom', backend: createMemoryPersistenceBackend() })
+const first = await createHost({ plugins: [], services: [vault(), storage, commands()] })
+const second = await createHost({ plugins: [], services: [storage] })
+try {
+ assert.equal(first.ctx.require(Vault), first.ctx.vault)
+ assert.deepEqual(first.ctx.require(Commands).list(), [])
+ assert.equal(second.ctx.vault, undefined)
+ assert.throws(() => second.ctx.require(Vault), ContextCapabilityMissingError)
+ assert.equal('database' in first.ctx, false)
+ assert.equal('database' in second.ctx, false)
+ assert.equal(loads.some(url => /age-encryption/.test(url)), true, 'prepare loads the explicitly selected backend')
+ assert.equal(loads.some(url => /(?:@pluxel\\/runtime|\\/pg\\/|pglite)/.test(url)), false)
+} finally {
+ const close = first.close()
+ assert.equal(first.close(), close)
+ await close
+ await second.close()
+ hooks.deregister()
+}
+await assert.rejects(() => createHost({ plugins: [], services: [workers()] }), /requires unprovided capability/)
+const artifacts = new URL('./artifacts/', import.meta.url)
+await mkdir(artifacts)
+await writeFile(new URL('node-installed.mjs', artifacts), 'export default value => value * 2')
+const task = Reflect.apply(defineWorkerTask, undefined, [import.meta.url, './task.ts', 'node-installed'])
+const workerHost = await createHost({ plugins: [], services: [workers({ maxThreads: 1 }), nodeModules({ root: fileURLToPath(artifacts) })] })
+try {
+ assert.equal('attachSourceBinder' in workerHost.ctx.require(NodeModules), false)
+ assert.equal(await workerHost.ctx.require(Workers).run(task, 21), 42)
+}
+finally { await workerHost.close() }
+console.log('ISOLATED_SERVICES_OK')
+`
+const typeConsumer = `
+import { createHost } from '@pluxel/host'
+import { BasePlugin, type Context } from '@pluxel/core'
+import { Persistence, persistence, createMemoryPersistenceBackend } from '@pluxel/services/persistence'
+import { Vault, vault, type VaultStorageApi } from '@pluxel/services/vault'
+import { nodeModules, NodeModules } from '@pluxel/services/node'
+import { workers, Workers, defineWorkerTask } from '@pluxel/services/workers'
+import { Commands, commands, type CommandsService } from '@pluxel/services/commands'
+const storage = persistence({ mode: 'custom', backend: createMemoryPersistenceBackend() })
+const first = await createHost({ plugins: [], services: [storage, vault(), commands()] })
+const second = await createHost({ plugins: [], services: [storage] })
+const required: VaultStorageApi = first.ctx.vault
+
+const commandCatalog: CommandsService = first.ctx.commands
+// @ts-expect-error Knowing the service type does not install Commands.
+const missingCommands: CommandsService = second.ctx.commands
+// @ts-expect-error Ambient declarations do not install Vault into every Host.
+const absent: VaultStorageApi = second.ctx.vault
+class Consumer extends BasePlugin {
+ init() {
+  const optional: VaultStorageApi | undefined = this.ctx.vault
+  const owned: VaultStorageApi = this.ctx.require(Vault)
+  // @ts-expect-error Root authorities cannot be obtained through author require.
+  this.ctx.root.require(Persistence)
+  void optional; void owned
+ }
+}
+function ambient(ctx: Context): VaultStorageApi | undefined { return ctx.vault }
+const workerHost = await createHost({ plugins: [], services: [nodeModules({ root: '/artifacts' }), workers()] })
+const result: number = await workerHost.ctx.require(Workers).run(defineWorkerTask<number, number>(import.meta.url, './task.ts'), 21)
+// @ts-expect-error Plugin-visible Node views have no development source binding authority.
+workerHost.ctx.require(NodeModules).attachSourceBinder(() => {})
+await workerHost.close()
+void result; void required; void absent; void Consumer; void ambient; void commandCatalog; void missingCommands
+await first.close(); await second.close()
+`
+
+const optionalTypeConsumer = `
+import { Workbench, workbench } from '@pluxel/workbench'
+import { workbenchService } from '@pluxel/workbench/service'
+import { requireWorkbench, createWorkbenchArtifactHandler } from '@pluxel/workbench/server'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
+import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
+import type * as ConsoleContracts from '@pluxel/host-dev/console'
+import { host as viteHost } from '@pluxel/host-dev/vite'
+import { workbenchArtifacts } from '@pluxel/workbench/dev'
+import { workbenchHttp } from '@pluxel/workbench/http'
+import { createWorkbenchShellHandler } from '@pluxel/workbench/shell'
+const uiHost = await createHost({ plugins: [], services: [workbenchService()] })
+const definition = workbench.define({ guide: workbench.content({
+  document: workbench.markdown(import.meta.url, './guide.md', { refresh: workbench.action({ label: 'Refresh' }) }),
+  placement: workbench.tab({ label: 'Guide' }),
+}) })
+class UiConsumer extends BasePlugin { init() {
+  this.ctx.require(Workbench).publish(definition, { guide: () => ({ actions: { refresh: () => {} } }) })
+} }
+const rootUi = requireWorkbench(uiHost.ctx)
+const serveUi = createWorkbenchArtifactHandler(uiHost.ctx)
+const development = [viteHost({ entry: './app.ts' }), workbenchArtifacts()]
+void [UiConsumer, rootUi, serveUi, development, workbench, createWorkbenchRenderer, workbenchHttp, createWorkbenchShellHandler]
+`
+
+const optionalConsumer = `
+import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
+const loads = []
+const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
+const { createHost } = await import('@pluxel/host')
+const { resolveContextCapability } = await import('@pluxel/core/host')
+const { Workbench } = await import('@pluxel/workbench')
+const { workbenchService } = await import('@pluxel/workbench/service')
+const { requireWorkbench } = await import('@pluxel/workbench/server')
+const { workbenchHttp } = await import('@pluxel/workbench/http')
+const { http, HttpServer } = await import('@pluxel/services/http')
+const { persistence } = await import('@pluxel/services/persistence')
+const { management } = await import('@pluxel/management/service')
+const { managementAccess } = await import('@pluxel/management/access')
+const host = await createHost({ plugins: [], services: [http(), persistence({ mode: 'memory' }), management({ workbench: true }), managementAccess(), workbenchService(), workbenchHttp({ uiBasePath: '/admin' })] })
+const server = resolveContextCapability(host.ctx, HttpServer)
+const page = await server.fetch(new Request('http://host.test/admin', { headers: { accept: 'text/html' } }))
+assert.equal(page.status, 200)
+const html = await page.text()
+const entry = /<script type="module" src="([^"]+)"/.exec(html)?.[1]
+assert.ok(entry)
+const asset = await server.fetch(new Request('http://host.test' + entry))
+assert.equal(asset.status, 200)
+assert.ok((await asset.text()).length > 0)
+assert.equal((await server.fetch(new Request('http://host.test/api/missing'))).status, 404)
+assert.equal(host.ctx.workbench, undefined)
+assert.throws(() => host.ctx.require(Workbench), { code: 'CONTEXT_CAPABILITY_ACCESS_DENIED' })
+assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
+await host.close()
+assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
+hook.deregister()
+console.log('ISOLATED_WORKBENCH_OK')
+`

@@ -6,7 +6,7 @@
 
 Vite route 的 `devConsole: true` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 SSR ModuleRunner 求值，并借用当前 runtime root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
 
-- `@pluxel/runtime/dev`：独立 dev 作者类型、typed targets、必要稳定错误；导入无安装副作用。
+- `@pluxel/host-dev/console`：独立 dev 作者类型、typed targets、必要稳定错误；导入无安装副作用。
 - runtime internal `createDevConsoleScope()`：每 run 的真实 use case、owner-aware capability 与资源接线。
 - Runtime development `console`：Vite 执行根、源码准备、执行队列、内部 socket 协议及结果保留。
 - Runtime Vite：host epoch attachment、观察更新 barrier、watch admission、startup log defaults 和 shutdown。

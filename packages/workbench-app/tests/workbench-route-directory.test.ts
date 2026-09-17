@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PluginNodeAddress } from '@pluxel/core'
-import type { WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 import {
 	createWorkbenchRouteDirectory,
 	getWorkbenchDirectoryConflicts,

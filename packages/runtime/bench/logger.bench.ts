@@ -1,10 +1,9 @@
 import { type LogRecord } from '@logtape/logtape'
 import type { PluginNodeAddress } from '@pluxel/core'
 import { pluginLogCategory } from '@pluxel/core/logger'
-import { RuntimePluginLogPolicy } from '@pluxel/runtime/logger'
+import { RuntimePluginLogPolicy, RuntimeLogStoreRegistry } from '@pluxel/logging'
 import { test } from 'vitest'
-import { createRuntimeLogSink } from '../src/logger/sink'
-import { RuntimeLogStoreRegistry } from '../src/logger/store'
+import { createRuntimeLogSink } from '@pluxel/logging/internal'
 
 function pluginAddress(index: number): PluginNodeAddress {
 	return {

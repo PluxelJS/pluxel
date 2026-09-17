@@ -12,7 +12,8 @@ description: 用一个 Valibot object schema 统一配置类型、默认值、�
 ## 先添加一个有默认值的字段
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
@@ -54,7 +55,7 @@ export const WorkerConfig = v.object({
 	),
 })
 // @filename: WorkerPlugin.ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { WorkerConfig } from './config.ts'
 
 @Plugin({ displayName: 'Worker' })
@@ -121,7 +122,8 @@ reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存
 默认值只由 schema 提供。下面是正确写法与重复 fallback 的对照：
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 
 declare function request(options: { timeoutMs: number }): Promise<void>
 
@@ -152,7 +154,8 @@ class WorkerPlugin extends BasePlugin {
 runtime 在实例构造完成后、`init()` 开始前注入并校验 config，所以只在 `init()` 或更晚的方法中读取：
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 
 const ReportsConfig = v.object({ endpoint: v.string() })
 declare function createClient(endpoint: string): { close(): void }
@@ -179,7 +182,8 @@ constructor 只声明 required Plugin dependency，不读取 config，也不创�
 `configs.onUpdate()`；处理完成后，框架才把配置标记为已应用：
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 
 const GatewayConfig = v.object({
 	timeoutMs: v.optional(v.number(), 5_000),
@@ -322,7 +326,8 @@ Plugin 需要导出传给 `configs.use()` 的同一个 schema：
 
 ```ts no-twoslash
 // WorkerPlugin.ts
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 
 export const WorkerConfig = v.object({
 	endpoint: v.pipe(v.string(), v.url()),

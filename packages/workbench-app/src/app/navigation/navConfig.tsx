@@ -1,5 +1,5 @@
 import { isValidElement, type ReactNode } from 'react'
-import type { WorkbenchIcon } from '@pluxel/runtime/workbench'
+import type { WorkbenchIcon } from '@pluxel/workbench'
 import {
 	IconApi,
 	IconBrandDiscord,

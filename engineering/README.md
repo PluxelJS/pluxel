@@ -44,8 +44,8 @@
 
 ## 文档职责
 
-当前待实施设计：[可组合服务、Host 管理面与共享 Workbench](proposals/COMPOSABLE_RUNTIME_SERVICES.md)。
-这是未来组合边界的提案，不代表已发布入口；使用当前 API 仍以上方领域文档和用户指南为准。
+剩余架构迁移设计：[可组合服务、Host 管理面与共享 Workbench](proposals/COMPOSABLE_RUNTIME_SERVICES.md)。
+提案只描述尚未完成的组合边界。已实现的 Core/Host/Services 契约见 [组合服务](../docs/reference/runtime-services.md) 与上方领域文档。
 
 - `.agents/rules/`：可跨项目复用的 agent 决策规则，不作为 Pluxel 当前架构事实。
 - `engineering/`：为什么这样分层、内部不变量、代码从哪里看起。

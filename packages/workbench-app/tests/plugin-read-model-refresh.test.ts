@@ -1,6 +1,6 @@
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { QueryClient } from '@tanstack/react-query'
-import type { RuntimeManagementClient } from '@pluxel/runtime/web'
+import type { RuntimeManagementClient } from '@pluxel/management/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { refreshPluginReadModels } from '../src/app/plugins/pluginReadModels'

@@ -21,7 +21,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const prev = process.cwd()
 		try {
 			process.chdir(fixture.path)
-			const runtime = createRuntimeInternalTestHost({
+			const runtime = await createRuntimeInternalTestHost({
 				configService: { mode: 'memory' },
 			})
 			const ctx = runtime.ctx
@@ -40,7 +40,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const prev = process.cwd()
 		try {
 			process.chdir(fixture.path)
-			const runtime = createRuntimeInternalTestHost({
+			const runtime = await createRuntimeInternalTestHost({
 				configService: {
 					mode: 'readonly',
 					snapshot: {
@@ -69,7 +69,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 	})
 
 	it('initializes typed nested plugin config from the host environment', async () => {
-		const runtime = createRuntimeInternalTestHost({
+		const runtime = await createRuntimeInternalTestHost({
 			configService: {
 				mode: 'memory',
 				snapshot: {
@@ -103,17 +103,15 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		}
 	})
 
-	it('rejects malformed structured Plugin config environment snapshots', () => {
-		expect(() =>
-			requireConfigService(
-				createRuntimeInternalTestHost({
-					configService: {
-						mode: 'memory',
-						environment: { PLUXEL_CONFIG: '{"version":1,"plugins":[]}' },
-					},
-				}).ctx,
-			),
-		).toThrow('config snapshot version 3')
+	it('rejects malformed structured Plugin config environment snapshots', async () => {
+		await expect(
+			createRuntimeInternalTestHost({
+				configService: {
+					mode: 'memory',
+					environment: { PLUXEL_CONFIG: '{"version":1,"plugins":[]}' },
+				},
+			}),
+		).rejects.toThrow('config snapshot version 3')
 	})
 
 	it('keeps persisted plugin config authoritative on later starts', async () => {
@@ -121,7 +119,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const environment = {
 			PLUXEL_CONFIG: environmentSnapshot({ publicUrl: 'https://first.example.test' }),
 		}
-		const first = createRuntimeInternalTestHost({
+		const first = await createRuntimeInternalTestHost({
 			persistence: fixture.path,
 			configService: {
 				mode: 'file',
@@ -138,7 +136,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			await first.dispose()
 		}
 
-		const second = createRuntimeInternalTestHost({
+		const second = await createRuntimeInternalTestHost({
 			persistence: fixture.path,
 			configService: {
 				mode: 'file',

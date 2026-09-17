@@ -6,7 +6,7 @@ import {
 } from './plugins/runtime/identity'
 
 export const WORKBENCH_PROFILE_VERSION = 1 as const
-export const WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION = 2 as const
+export const WORKBENCH_FEDERATION_BUILD_CONTRACT_VERSION = 3 as const
 export const WORKBENCH_FEDERATION_BUILD_ROOT = 'dist' as const
 export const WORKBENCH_FEDERATION_OUT_DIR = 'workbench' as const
 export const WORKBENCH_FEDERATION_MANIFEST_FILE = 'mf-manifest.json' as const
@@ -36,10 +36,10 @@ export const WORKBENCH_FEDERATION_SHARED_MODULES = [
 	'@mantine/core',
 	'@mantine/hooks',
 	'@module-federation/bridge-react',
-	'@pluxel/runtime/workbench',
-	'@pluxel/runtime/workbench/client',
-	'@pluxel/runtime/workbench/react',
-	'@pluxel/runtime/internal/workbench-react',
+	'@pluxel/workbench',
+	'@pluxel/workbench/client',
+	'@pluxel/workbench/react',
+	'@pluxel/workbench/internal/react',
 ] as const
 
 export type WorkbenchFederationSharedModule = (typeof WORKBENCH_FEDERATION_SHARED_MODULES)[number]
@@ -58,7 +58,7 @@ export type WorkbenchFederationCompatibilitySet = Readonly<{
 export type WorkbenchFederationPlatformVersions = Readonly<{
 	react: string
 	reactDom: string
-	runtime: string
+	workbench: string
 }>
 
 export type WorkbenchFederationTypeAssetPolicy = 'required' | 'optional'
@@ -163,10 +163,10 @@ export type WorkbenchFederationDeploymentInventory = Readonly<{
 export function createWorkbenchFederationCompatibilitySet(
 	input: WorkbenchFederationPlatformVersions,
 ): WorkbenchFederationCompatibilitySet {
-	const versions = readExactRecord(input, 'platform versions', ['react', 'reactDom', 'runtime'])
+	const versions = readExactRecord(input, 'platform versions', ['react', 'reactDom', 'workbench'])
 	const react = readNonEmptyText(versions.react, 'React version')
 	const reactDom = readNonEmptyText(versions.reactDom, 'React DOM version')
-	const runtime = readNonEmptyText(versions.runtime, 'Runtime version')
+	const workbench = readNonEmptyText(versions.workbench, 'Workbench version')
 	const shared = Object.freeze({
 		react,
 		'react/jsx-runtime': react,
@@ -176,10 +176,10 @@ export function createWorkbenchFederationCompatibilitySet(
 		'@mantine/core': WORKBENCH_FEDERATION_MANTINE_VERSION,
 		'@mantine/hooks': WORKBENCH_FEDERATION_MANTINE_VERSION,
 		'@module-federation/bridge-react': WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION,
-		'@pluxel/runtime/workbench': runtime,
-		'@pluxel/runtime/workbench/client': runtime,
-		'@pluxel/runtime/workbench/react': runtime,
-		'@pluxel/runtime/internal/workbench-react': runtime,
+		'@pluxel/workbench': workbench,
+		'@pluxel/workbench/client': workbench,
+		'@pluxel/workbench/react': workbench,
+		'@pluxel/workbench/internal/react': workbench,
 	}) satisfies Readonly<Record<WorkbenchFederationSharedModule, string>>
 	return Object.freeze({
 		profile: WORKBENCH_PROFILE_VERSION,

@@ -5,9 +5,9 @@ import {
 	createRuntimeLogging,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
-} from '../../src/logger/logging'
+} from '@pluxel/logging/internal'
 import { afterEach, describe, expect, it } from 'vitest'
-import { parseLogRangeResult } from '../../src/web/management-validation'
+import { parseLogRangeResult } from '@pluxel/management/internal/web/management-validation'
 
 function storePlan(initialPluginPolicy?: RuntimeLoggingInput['root']['initialPluginPolicy']) {
 	return {
@@ -48,7 +48,7 @@ function pluginLogger(
 	displayName = 'Plugin A',
 ) {
 	return new LoggerService(
-		{ name: displayName, pluginInfo: { nodeAddress: address, displayName } } as never,
+		{ root: {}, name: displayName, pluginInfo: { nodeAddress: address, displayName } } as never,
 		logging.contextBinding,
 	)
 }
@@ -161,7 +161,7 @@ describe('RuntimeLogging', () => {
 		await logging.install()
 		await logging.initializePolicy()
 		const logger = new LoggerService(
-			{ name: 'worker', pluginInfo: { nodeAddress: pluginA } } as never,
+			{ root: {}, name: 'worker', pluginInfo: { nodeAddress: pluginA } } as never,
 			logging.contextBinding,
 		)
 
@@ -257,7 +257,7 @@ describe('RuntimeLogging', () => {
 		await logging.install()
 		await logging.initializePolicy()
 		const foreign = new LoggerService(
-			{ name: 'Plugin A', pluginInfo: { nodeAddress: pluginA } } as never,
+			{ root: {}, name: 'Plugin A', pluginInfo: { nodeAddress: pluginA } } as never,
 			{
 				rootId: 'foreign-root',
 			},

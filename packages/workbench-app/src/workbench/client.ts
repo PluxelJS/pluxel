@@ -1,10 +1,10 @@
 import { pluginNodeIndexKey } from '@pluxel/core'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
+import type { RpcStub } from 'capnweb'
 import {
 	readWorkbenchLayout,
 	type WorkbenchLayout,
 	type WorkbenchSessionApi,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import { matchWorkbenchRoute } from './routes'
 import { normalizeWorkbenchPath } from './paths'
 import { toWorkbenchError } from './errors'

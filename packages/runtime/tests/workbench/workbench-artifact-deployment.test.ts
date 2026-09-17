@@ -23,12 +23,14 @@ import * as React from 'react'
 import * as ReactDom from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
 
-import { version as runtimeVersion } from '../../package.json'
-import { requireWorkbench } from '../../src/services/workbench.ts'
-import { WorkbenchArtifactService } from '../../src/services/workbench/WorkbenchArtifactService.ts'
-import { WorkbenchArtifactCoordinator } from '../../src/services/workbench/WorkbenchArtifactCoordinator.ts'
-import { WorkbenchContentArtifactService } from '../../src/services/workbench/WorkbenchContentArtifactService.ts'
-import { loadPackagedWorkbenchDeployment } from '../../src/services/workbench/packaged-artifact.ts'
+import { version as runtimeVersion } from '@pluxel/workbench/package.json'
+import { requireWorkbench } from '@pluxel/workbench/server'
+import {
+	WorkbenchArtifactService,
+	WorkbenchArtifactCoordinator,
+	WorkbenchContentArtifactService,
+	loadPackagedWorkbenchDeployment,
+} from '@pluxel/workbench/internal'
 
 const definition = {
 	entry: { kind: 'package-root', packageName: '@example/fonts' },
@@ -37,7 +39,7 @@ const definition = {
 const compatibility = createWorkbenchFederationCompatibilitySet({
 	react: React.version,
 	reactDom: ReactDom.version,
-	runtime: runtimeVersion,
+	workbench: runtimeVersion,
 })
 
 function createPlan(
@@ -378,7 +380,7 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
@@ -419,7 +421,7 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeInternalTestHarness({
+			await using host = await createRuntimeInternalTestHarness({
 				workbenchArtifactRoot: fixture.getPath('workbench'),
 			})
 
@@ -468,7 +470,7 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeInternalTestHarness({
+			await using host = await createRuntimeInternalTestHarness({
 				workbenchArtifactRoot: fixture.getPath('workbench'),
 			})
 
@@ -513,16 +515,15 @@ describe('WorkbenchArtifactService', () => {
 		})
 
 		{
-			await using host = createRuntimeInternalTestHarness({
+			await using host = await createRuntimeInternalTestHarness({
 				workbenchArtifactRoot: fixture.getPath('workbench'),
 			})
 
 			const backend = requireWorkbench(host.ctx)
-			const commits = vi.fn()
-			backend.artifactCoordinator.subscribe(commits)
+			// Host preparation loads one atomic inventory before any Plugin activation.
+			expect(backend.artifactCoordinator.revision).toBe(1)
 			await host.commit()
-
-			expect(commits).toHaveBeenCalledTimes(1)
+			expect(backend.artifactCoordinator.revision).toBe(1)
 			expect(backend.artifacts.getCurrent(definition)?.buildRevision).toBe('production-mixed')
 			expect(backend.content.getCurrent(definition)?.digest).toBe(content.candidate.digest)
 		}

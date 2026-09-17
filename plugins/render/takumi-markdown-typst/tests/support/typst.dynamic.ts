@@ -1,5 +1,6 @@
 import { FontsPlugin } from '@pluxel/fonts'
-import { pluginNodeAddressOf, type RuntimeApplication } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { type RuntimeApplication } from '@pluxel/runtime'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
 import { TypstMathPlugin } from '../../src/index.ts'

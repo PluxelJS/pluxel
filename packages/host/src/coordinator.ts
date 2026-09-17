@@ -35,6 +35,9 @@ import {
 	type HostPluginSessionEntry,
 } from './reconcile'
 
+/** Cancellation is checked when queued work begins; admitted transactions complete normally. */
+export type HostOperationOptions = Readonly<{ signal?: AbortSignal }>
+
 export interface CorePluginPreparedUpdate<TSummary = unknown> {
 	commit(options: { onGraphCommitted: () => void }): Promise<TSummary>
 	rollback(): void
@@ -235,7 +238,10 @@ export class PluginHostCoordinator<TSummary = unknown> {
 	 * used when a caller must publish a catalog revision, a HostState patch, and explicit
 	 * restarts as one prepared Core transaction.
 	 */
-	update(update: HostPluginGraphUpdate): Promise<PluginApplyReport<TSummary>> {
+	update(
+		update: HostPluginGraphUpdate,
+		options?: HostOperationOptions,
+	): Promise<PluginApplyReport<TSummary>> {
 		return this.enqueue(
 			Object.freeze({
 				...update,
@@ -249,62 +255,78 @@ export class PluginHostCoordinator<TSummary = unknown> {
 					: {}),
 				...(update.restartNodes ? { restartNodes: Object.freeze([...update.restartNodes]) } : {}),
 			}),
+			options,
 		)
 	}
 
 	reconcileStartup(
 		catalog: PluginCatalogSnapshot,
 		reason = 'startup',
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({ reason, catalog, mode: 'cold-boot' })
+		return this.enqueue({ reason, catalog, mode: 'cold-boot' }, options)
 	}
 
 	updateCatalog(
 		catalog: PluginCatalogSnapshot,
 		reason = 'catalog-update',
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({ reason, catalog, mode: 'live' })
+		return this.enqueue({ reason, catalog, mode: 'live' }, options)
 	}
 
 	updateRuntimeState(
 		statePatch: HostStatePatch,
 		reason = 'runtime-state-update',
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({ reason, statePatch, mode: 'live' })
+		return this.enqueue({ reason, statePatch, mode: 'live' }, options)
 	}
 
-	reconcile(reason = 'reconcile'): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({ reason, mode: 'live' })
+	reconcile(
+		reason = 'reconcile',
+		options?: HostOperationOptions,
+	): Promise<PluginApplyReport<TSummary>> {
+		return this.enqueue({ reason, mode: 'live' }, options)
 	}
 
 	restartNode(
 		address: PluginNodeAddress,
 		reason = 'plugin-restart',
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({ reason, mode: 'live', restartNodes: Object.freeze([address]) })
+		return this.enqueue({ reason, mode: 'live', restartNodes: Object.freeze([address]) }, options)
 	}
 
 	startNode(
 		address: PluginNodeAddress,
 		reason = 'plugin-start',
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({
-			reason,
-			mode: 'live',
-			lifecycleCommands: Object.freeze([{ address, desiredState: 'running' as const }]),
-			retryStartNodes: Object.freeze([address]),
-		})
+		return this.enqueue(
+			{
+				reason,
+				mode: 'live',
+				lifecycleCommands: Object.freeze([{ address, desiredState: 'running' as const }]),
+				retryStartNodes: Object.freeze([address]),
+			},
+			options,
+		)
 	}
 
 	stopNode(
 		address: PluginNodeAddress,
 		reason = 'plugin-stop',
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({
-			reason,
-			mode: 'live',
-			lifecycleCommands: Object.freeze([{ address, desiredState: 'stopped' as const }]),
-		})
+		return this.enqueue(
+			{
+				reason,
+				mode: 'live',
+				lifecycleCommands: Object.freeze([{ address, desiredState: 'stopped' as const }]),
+			},
+			options,
+		)
 	}
 
 	/**
@@ -312,12 +334,17 @@ export class PluginHostCoordinator<TSummary = unknown> {
 	 * The callback participates in the same queue so a later mutation cannot interleave while
 	 * process-local Core and Runtime facts are being projected.
 	 */
-	readCommitted<T>(read: (view: HostPluginGraphCommittedView) => T): Promise<T> {
+	readCommitted<T>(
+		read: (view: HostPluginGraphCommittedView) => T,
+		options?: HostOperationOptions,
+	): Promise<T> {
 		if (this.disposed) {
 			return Promise.reject(new Error('[host:reconciliation] coordinator is disposed'))
 		}
+		const signal = options?.signal
 		const execute = this.tail.then(async () => {
 			await this.runtimeState.ready
+			signal?.throwIfAborted()
 			const coreAdjacency = this.core.readCommittedDependencyAdjacency()
 			const runningNodes = Object.freeze(
 				coreAdjacency.nodes.filter((address) => this.core.isRunning(address)),
@@ -352,12 +379,15 @@ export class PluginHostCoordinator<TSummary = unknown> {
 	runExclusive<T>(
 		reason: string,
 		run: (session: HostPluginGraphExclusiveSession<TSummary>) => Promise<T>,
+		options?: HostOperationOptions,
 	): Promise<T> {
 		if (this.disposed) {
 			return Promise.reject(new Error('[host:reconciliation] coordinator is disposed'))
 		}
+		const signal = options?.signal
 		const execute = this.tail.then(async () => {
 			await this.runtimeState.ready
+			signal?.throwIfAborted()
 			const session: HostPluginGraphExclusiveSession<TSummary> = Object.freeze({
 				runtimeStateSnapshot: () => this.runtimeState.versionedSnapshot().state,
 				validateRuntimeStatePatch: (patch: HostStatePatch) =>
@@ -401,11 +431,18 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		return this.tail
 	}
 
-	private enqueue(update: QueuedRuntimePluginGraphUpdate): Promise<PluginApplyReport<TSummary>> {
+	private enqueue(
+		update: QueuedRuntimePluginGraphUpdate,
+		options?: HostOperationOptions,
+	): Promise<PluginApplyReport<TSummary>> {
 		if (this.disposed) {
 			return Promise.reject(new Error('[host:reconciliation] coordinator is disposed'))
 		}
-		const run = this.tail.then(() => this.applyUpdate(update))
+		const signal = options?.signal
+		const run = this.tail.then(() => {
+			signal?.throwIfAborted()
+			return this.applyUpdate(update)
+		})
 		this.tail = run.then(
 			(): void => undefined,
 			(): void => undefined,

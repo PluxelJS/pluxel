@@ -1,6 +1,7 @@
+import { Workers, defineWorkerTask } from '@pluxel/services/workers'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineWorkerTask } from '@pluxel/runtime'
+
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -22,15 +23,17 @@ const byteLength = 8 * 1024 * 1024
 @Plugin()
 class WorkerTaskBenchmark extends BasePlugin {
 	run(bytes: Uint8Array, transfer = false): Promise<TransferOutput> {
-		return this.ctx.workers.run(
-			declaration,
-			{ bytes },
-			transfer ? { transfer: [bytes.buffer as ArrayBuffer] } : undefined,
-		)
+		return this.ctx
+			.require(Workers)
+			.run(
+				declaration,
+				{ bytes },
+				transfer ? { transfer: [bytes.buffer as ArrayBuffer] } : undefined,
+			)
 	}
 }
 
-const host = createRuntimeInternalTestHost({
+const host = await createRuntimeInternalTestHost({
 	workbench: false,
 	nodeModuleArtifactRoot: artifactRoot,
 	workers: { maxThreads: 1, idleTimeoutMs: 60_000 },

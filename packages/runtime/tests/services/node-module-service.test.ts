@@ -1,8 +1,11 @@
+import { requireNodeModuleHost } from '@pluxel/services/internal/node'
+import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
-import { defineNodeModule, pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/runtime'
+
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
@@ -11,16 +14,16 @@ const declaration = defineNodeModule(import.meta.url, './fixtures/task.ts')
 
 describe('NodeModuleService', () => {
 	it('makes the first build/setup failure fail plugin startup', async () => {
-		const host = createRuntimeInternalTestHost({ workbench: false })
+		const host = await createRuntimeInternalTestHost({ workbench: false })
 		try {
-			host.ctx.nodeModules.attachSourceBinder(async () => {
+			requireNodeModuleHost(host.ctx).attachSourceBinder(async () => {
 				throw new Error('node build failed')
 			})
 
 			@Plugin({ displayName: 'NodeModuleFailure' })
 			class NodeModuleFailure extends BasePlugin {
 				override async init() {
-					await this.ctx.nodeModules.use(declaration, () => undefined)
+					await this.ctx.require(NodeModules).use(declaration, () => undefined)
 				}
 			}
 
@@ -42,11 +45,11 @@ describe('NodeModuleService', () => {
 	})
 
 	it('stages updates, keeps the last good consumer, and cleans up with its owner', async () => {
-		const host = createRuntimeInternalTestHost({ workbench: false })
+		const host = await createRuntimeInternalTestHost({ workbench: false })
 		try {
 			let publish!: (url: URL) => void | Promise<void>
 			let sourceDisposals = 0
-			host.ctx.nodeModules.attachSourceBinder(async (_declaration, onUpdate) => {
+			requireNodeModuleHost(host.ctx).attachSourceBinder(async (_declaration, onUpdate) => {
 				publish = onUpdate
 				return {
 					url: new URL('file:///cache/task-a.mjs'),
@@ -58,7 +61,7 @@ describe('NodeModuleService', () => {
 			@Plugin({ displayName: 'NodeModuleConsumer' })
 			class NodeModuleConsumer extends BasePlugin {
 				override async init() {
-					await this.ctx.nodeModules.use(declaration, async (url) => {
+					await this.ctx.require(NodeModules).use(declaration, async (url) => {
 						events.push(`setup:${url.pathname}`)
 						if (url.pathname.endsWith('bad.mjs')) throw new Error('bad setup')
 						return () => void events.push(`cleanup:${url.pathname}`)
@@ -87,7 +90,7 @@ describe('NodeModuleService', () => {
 	})
 
 	it('drains a pending update and late cleanup when the owner stops after source detach', async () => {
-		const host = createRuntimeInternalTestHost({ workbench: false })
+		const host = await createRuntimeInternalTestHost({ workbench: false })
 		try {
 			let publish!: (url: URL) => void | Promise<void>
 			let releaseSetup!: () => void
@@ -97,21 +100,23 @@ describe('NodeModuleService', () => {
 			let sourceDisposed!: () => void
 			const didDisposeSource = new Promise<void>((resolve) => (sourceDisposed = resolve))
 			const events: string[] = []
-			const detach = host.ctx.nodeModules.attachSourceBinder(async (_declaration, onUpdate) => {
-				publish = onUpdate
-				return {
-					url: new URL('file:///cache/initial.mjs'),
-					dispose: () => {
-						events.push('source:dispose')
-						sourceDisposed()
-					},
-				}
-			})
+			const detach = requireNodeModuleHost(host.ctx).attachSourceBinder(
+				async (_declaration, onUpdate) => {
+					publish = onUpdate
+					return {
+						url: new URL('file:///cache/initial.mjs'),
+						dispose: () => {
+							events.push('source:dispose')
+							sourceDisposed()
+						},
+					}
+				},
+			)
 
 			@Plugin({ displayName: 'PendingNodeModuleConsumer' })
 			class PendingNodeModuleConsumer extends BasePlugin {
 				override async init() {
-					await this.ctx.nodeModules.use(declaration, async (url) => {
+					await this.ctx.require(NodeModules).use(declaration, async (url) => {
 						events.push(`setup:${url.pathname}`)
 						if (url.pathname.endsWith('/next.mjs')) {
 							setupStarted()
@@ -165,7 +170,7 @@ describe('NodeModuleService', () => {
 			'./fixtures/task.ts',
 			'node-fixture',
 		) as typeof declaration
-		const host = createRuntimeInternalTestHost({
+		const host = await createRuntimeInternalTestHost({
 			workbench: false,
 			nodeModuleArtifactRoot: artifactRoot,
 		})
@@ -174,7 +179,7 @@ describe('NodeModuleService', () => {
 			@Plugin({ displayName: 'PackagedNodeModule' })
 			class PackagedNodeModule extends BasePlugin {
 				override async init() {
-					await this.ctx.nodeModules.use(lowered, (url) => void (received = url))
+					await this.ctx.require(NodeModules).use(lowered, (url) => void (received = url))
 				}
 			}
 			lowerTestPlugin(PackagedNodeModule)

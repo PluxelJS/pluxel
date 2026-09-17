@@ -29,6 +29,7 @@ export default defineConfig({
 		],
 	},
 	entry: {
+		index: 'src/application.ts',
 		build: 'src/cli/index.ts',
 		database: 'src/database/index.ts',
 		distribution: 'src/distribution/index.ts',

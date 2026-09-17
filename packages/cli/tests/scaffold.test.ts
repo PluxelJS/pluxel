@@ -350,7 +350,7 @@ describe('scaffold template rendering', () => {
 		expect(manifest.scripts).not.toHaveProperty('build:plugin')
 		expect(manifest.scripts.build).toBe('pluxel build')
 		expect(manifest.scripts).toHaveProperty('verify')
-		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': 'catalog:' })
+		expect(manifest.peerDependencies).toEqual({ '@pluxel/core': 'catalog:' })
 		expect(manifest.exports).toEqual({
 			'.': {
 				'@pluxel/hmr': './src/hello-world.ts',
@@ -369,7 +369,7 @@ describe('scaffold template rendering', () => {
 			oxfmt: 'catalog:',
 		})
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			"'@pluxel/runtime': ^1.0.0",
+			"'@pluxel/core': ^1.0.0",
 		)
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
 			'vitest: 5.0.0',
@@ -387,7 +387,7 @@ describe('scaffold template rendering', () => {
 		expect(pluginTest).toContain("from 'pluxel-plugin-hello-world'")
 		expect(pluginTest).not.toContain("from '../src/")
 		expect(source).not.toContain('export default')
-		expect(pluginTest).toContain('createRuntimeTestHost')
+		expect(pluginTest).toContain('createCoreTestHost')
 		expect(pluginTest).toContain("initialConfig: { message: 'configured' }")
 		expect(pluginTest).not.toContain('createRuntimeHost')
 		expect(pluginTest).not.toContain('host.cfg(')

@@ -27,7 +27,7 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 所有 public host 都由创建它的测试拥有：
 
 ```ts no-twoslash
-await using host = createRuntimeTestHost()
+await using host = await createRuntimeTestHost()
 ```
 
 host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不支持 explicit resource management 时，在 `finally` 中调用
@@ -142,18 +142,19 @@ callback 只同步描述变化。不要把它声明为 `async`、在其中 `awai
 进程的 running intent、启动 required provider closure，并返回当前实例；它不会修改下次冷启动的 auto-start policy。
 
 ```ts no-twoslash
+import { Http } from '@pluxel/services/http'
 import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { expect, it } from 'vitest'
 
 @Plugin()
 class HealthPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('/health', () => ({ ok: true }))
+		this.ctx.require(Http).get('/health', () => ({ ok: true }))
 	}
 }
 
 it('publishes and withdraws its route', async () => {
-	await using host = createRuntimeTestHost()
+	await using host = await createRuntimeTestHost()
 	await host.start(HealthPlugin)
 
 	const url = new URL('/health', host.http.origin)
@@ -314,7 +315,7 @@ class TestInngestPlugin extends InngestPlugin {
 
 lowerTestReplacement(InngestPlugin, TestInngestPlugin)
 
-await using host = createRuntimeTestHost()
+await using host = await createRuntimeTestHost()
 await host.start(InngestPlugin)
 await host.replaceDefinition(InngestPlugin, TestInngestPlugin)
 ```
@@ -335,7 +336,7 @@ public author host 不暴露 root `ctx`、raw service、transaction 或 backend 
 Workbench 默认关闭；只在测试发布行为时显式开启，并为每次 open 提供 principal：
 
 ```ts no-twoslash
-await using host = createRuntimeTestHost({
+await using host = await createRuntimeTestHost({
 	vault: {},
 	workbench: { enabled: true },
 })
@@ -424,7 +425,7 @@ expect(fixture.fs.existsSync(fixture.getPath('packages/a/src/index.ts'))).toBe(t
 Plugin 行为继续使用最小 Core/Runtime test host。完整应用的声明、启动策略、动态发现、HMR、Workbench 与浏览器图，
 通过项目唯一的 Vite 配置验证，不建立第二个测试启动器。已经运行的应用使用[开发控制台](./dev-console.md)检查。
 
-生产目录的文件、assets、listener 和 signal ownership 通过真实 `application()` 构建产物的 smoke 验证，不能以
+生产目录的文件、assets、listener 和 signal ownership 通过真实 `pluxel()` 构建产物的 smoke 验证，不能以
 in-process Plugin test host 代替。`@pluxel/create` 的 packed smoke 同时验证外部安装、生成 workspace、生产 HTTP/Workbench 和 Vite 应用。
 
 ## CI 顺序

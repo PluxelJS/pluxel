@@ -33,19 +33,28 @@
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
+	"dependencies": {
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
+	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/commands": "workspace:^",
-		"@pluxel/runtime": "workspace:^"
+		"@pluxel/core": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^"
 	},
 	"engines": {
 		"node": ">=24"

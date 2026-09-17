@@ -14,6 +14,10 @@
 	],
 	"type": "module",
 	"exports": {
+		".": {
+			"@pluxel/source": "./src/application.ts",
+			"default": "./dist/index.mjs"
+		},
 		"./build": {
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
@@ -91,6 +95,7 @@
 	},
 	"publishConfig": {
 		"exports": {
+			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
@@ -144,6 +149,7 @@
 	"devDependencies": {
 		"@pluxel/host-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:^",
 		"@rolldown/pluginutils": "catalog:build",
 		"@types/mdast": "catalog:types",
 		"@types/node": "catalog:types",

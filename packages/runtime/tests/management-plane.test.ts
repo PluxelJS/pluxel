@@ -1,12 +1,12 @@
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { describe, expect, it } from 'vitest'
 
-import { RuntimeManagementTargetImpl } from '../src/services/management/RuntimeManagementTarget'
-import { RUNTIME_SESSION_PATH } from '../src/web/session/protocol'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { RUNTIME_SESSION_PATH } from '@pluxel/management/internal/web/session/protocol'
 
 describe('runtime Management plane installation', () => {
 	it('installs headless Management as a capability with no dynamic HTTP API', async () => {
-		const host = createRuntimeInternalTestHost({ workbench: false, management: true })
+		const host = await createRuntimeInternalTestHost({ workbench: false, management: true })
 		try {
 			expect(host.ctx.workbench).toBeUndefined()
 			expect(host.ctx.root.adminAccess).toBeDefined()
@@ -39,7 +39,7 @@ describe('runtime Management plane installation', () => {
 	})
 
 	it('allocates no Management endpoint or backend when Management and Workbench are disabled', async () => {
-		const host = createRuntimeInternalTestHost({ workbench: false })
+		const host = await createRuntimeInternalTestHost({ workbench: false })
 		try {
 			expect(host.ctx.root.adminAccess).toBeUndefined()
 			expect(host.ctx.root.runtimeManagement).toBeUndefined()
@@ -56,29 +56,26 @@ describe('runtime Management plane installation', () => {
 	})
 
 	it('does not wait indefinitely for an unread in-process response during host disposal', async () => {
-		const host = createRuntimeInternalTestHost({ workbench: false, management: true })
+		const host = await createRuntimeInternalTestHost({ workbench: false, management: true })
 		const response = await host.http.fetch(new Request('http://runtime.test/__pluxel/runtime/meta'))
 		expect(response.status).toBe(404)
 		await expect(host.dispose()).resolves.toBeUndefined()
 	})
 
-	it('rejects unsupported management configuration fields', () => {
-		expect(() =>
-			createRuntimeInternalTestHost({
-				workbench: false,
-				management: { unknownField: true },
-			} as never),
-		).toThrow(/management must be true/)
-		expect(() =>
-			createRuntimeInternalTestHost({
-				workbench: false,
-				management: { enabled: true },
-			} as never),
-		).toThrow(/management must be true/)
+	it('rejects unsupported management configuration fields', async () => {
+		for (const management of [{ unknownField: true }, { enabled: true }]) {
+			await expect(
+				createRuntimeInternalTestHost({ workbench: false, management } as never),
+			).rejects.toThrow(/management must be true/)
+		}
 	})
 
 	it('advertises Vault only when its optional capability is installed', async () => {
-		const host = createRuntimeInternalTestHost({ workbench: false, management: true, vault: {} })
+		const host = await createRuntimeInternalTestHost({
+			workbench: false,
+			management: true,
+			vault: {},
+		})
 		try {
 			const target = new RuntimeManagementTargetImpl(host.ctx)
 			expect(target.describe().protocol.capabilities).toContain('vault')

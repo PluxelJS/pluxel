@@ -100,7 +100,7 @@ function importedModuleSpecifiers(file: string, code: string): string[] {
 }
 
 type CoreContextPublicEntry = Readonly<{
-	createContextHost(
+	createCoreContextHost(
 		options: Readonly<{ name: string; capabilities: readonly unknown[] }>,
 	): Readonly<{
 		createRoot(): unknown
@@ -121,7 +121,7 @@ function expectCoreContextEntriesToShareOneKernel(
 	const installation = internalEntry.installRootCapability(capability, {
 		create: () => 'shared',
 	})
-	const host = publicEntry.createContextHost({
+	const host = publicEntry.createCoreContextHost({
 		name: 'packaging-shared-kernel',
 		capabilities: [installation],
 	})
@@ -250,7 +250,7 @@ describe('toolchain package boundaries', () => {
 		}
 		expect(distLeaks, 'Core JS and declarations must inline the Context kernel').toEqual([])
 
-		const esmPublic = (await import(pathToFileURL(`${coreDist}/index.mjs`).href)) as unknown
+		const esmPublic = (await import(pathToFileURL(`${coreDist}/host.mjs`).href)) as unknown
 		const esmInternal = (await import(pathToFileURL(`${coreDist}/internal.mjs`).href)) as unknown
 		expectCoreContextEntriesToShareOneKernel(
 			esmPublic as CoreContextPublicEntry,
@@ -258,7 +258,7 @@ describe('toolchain package boundaries', () => {
 		)
 
 		const require = createRequire(import.meta.url)
-		const cjsPublic = require(`${coreDist}/index.cjs`) as unknown
+		const cjsPublic = require(`${coreDist}/host.cjs`) as unknown
 		const cjsInternal = require(`${coreDist}/internal.cjs`) as unknown
 		expectCoreContextEntriesToShareOneKernel(
 			cjsPublic as CoreContextPublicEntry,

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { RuntimeManagementClient, RuntimeUpdateSnapshot } from '@pluxel/runtime/web'
+import type { RuntimeManagementClient, RuntimeUpdateSnapshot } from '@pluxel/management/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'

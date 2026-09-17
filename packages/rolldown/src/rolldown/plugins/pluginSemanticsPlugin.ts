@@ -214,7 +214,7 @@ export function createPluginSemanticsPlugin(
 	const exclude = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.*'])
 	const sourceRoot = resolve(options.root ?? process.cwd())
 	const workbenchLowering = createWorkbenchSemanticLowering(sourceRoot)
-	const helperImportSource = options.helperImportSource ?? '@pluxel/runtime/toolchain'
+	const helperImportSource = options.helperImportSource ?? '@pluxel/core/toolchain'
 	if (!helperImportSource.endsWith('/toolchain')) {
 		throw new TypeError(
 			'[pluxel:plugin-semantics] helperImportSource must name a /toolchain subpath',

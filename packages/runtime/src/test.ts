@@ -1,5 +1,5 @@
 import './index'
-import './services/vault'
+import '@pluxel/services/vault'
 
 export { createLocalRpcClient } from './testing/local-rpc'
 export { createRuntimeTestHost } from './testing/runtime-host'

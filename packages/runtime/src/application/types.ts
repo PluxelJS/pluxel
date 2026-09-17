@@ -1,3 +1,4 @@
+import type { PersistenceServiceConfig } from '@pluxel/services/persistence'
 import type { PluginSource } from '@pluxel/host'
 import type {
 	CommitSummary,
@@ -9,14 +10,13 @@ import type {
 import type {
 	ConfigServiceConfig,
 	Context,
-	PersistenceServiceConfig,
 	DatabaseConfig,
 	RuntimeStateStoreConfig,
 	VaultServiceConfig,
 	WorkbenchConfig,
-	WorkersConfig,
 } from '../index.ts'
-import type { RuntimeLoggingInput } from '../logger.ts'
+import type { WorkersConfig } from '@pluxel/services/workers'
+import type { RuntimeLoggingInput } from '@pluxel/logging'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { PluxelEnvironmentVariables } from '../environment.ts'
 

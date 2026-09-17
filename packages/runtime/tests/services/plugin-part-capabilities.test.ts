@@ -1,3 +1,5 @@
+import { Http } from '@pluxel/services/http'
+import { Commands } from '@pluxel/services/commands'
 import { defineCommand } from '@pluxel/commands'
 import { obj, Type } from '@pluxel/commands/typebox'
 import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
@@ -6,7 +8,7 @@ import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime/test'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { Elysia } from 'elysia'
-import { pluginConfigPresentation } from '../../src/api/usecases/pluginConfig'
+import { pluginConfigPresentation } from '@pluxel/management/internal/api/usecases/pluginConfig'
 import { requireRuntimePluginGraphCoordinator } from '../../src/internal/reconciliation'
 
 let partCommands: unknown
@@ -18,11 +20,11 @@ let ownerElysia: unknown
 
 class CapabilityPart extends PluginPart<CapabilityOwner> {
 	protected override init() {
-		partCommands = this.ctx.commands
-		repeatedPartCommands = this.ctx.commands
-		partElysia = this.ctx.elysia
-		repeatedPartElysia = this.ctx.elysia
-		this.ctx.commands.register(
+		partCommands = this.ctx.require(Commands)
+		repeatedPartCommands = this.ctx.require(Commands)
+		partElysia = this.ctx.require(Http)
+		repeatedPartElysia = this.ctx.require(Http)
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'part.capability.read',
 				description: 'Read a value registered by a PluginPart.',
@@ -32,7 +34,7 @@ class CapabilityPart extends PluginPart<CapabilityOwner> {
 				execute: () => ({ value: 'part' }),
 			}),
 		)
-		this.ctx.elysia.get('/part-capability', () => 'part-route')
+		this.ctx.require(Http).get('/part-capability', () => 'part-route')
 	}
 }
 
@@ -41,8 +43,8 @@ class CapabilityOwner extends BasePlugin {
 	readonly capability = this.parts.use(CapabilityPart)
 
 	override init() {
-		ownerCommands = this.ctx.commands
-		ownerElysia = this.ctx.elysia
+		ownerCommands = this.ctx.require(Commands)
+		ownerElysia = this.ctx.require(Http)
 	}
 }
 
@@ -69,7 +71,7 @@ describe('PluginPart runtime capabilities', () => {
 		ownerElysia = undefined
 
 		{
-			await using host = createRuntimeInternalTestHost({ workbench: { enabled: true } })
+			await using host = await createRuntimeInternalTestHost({ workbench: { enabled: true } })
 
 			await host.start(CapabilityOwner)
 			expect(partCommands).toBe(repeatedPartCommands)
@@ -96,7 +98,7 @@ describe('PluginPart runtime capabilities', () => {
 
 	it('projects owner and Part schemas as Workbench sections under one config owner', async () => {
 		{
-			await using host = createRuntimeInternalTestHost({ workbench: false })
+			await using host = await createRuntimeInternalTestHost({ workbench: false })
 
 			await host.start(ConfiguredOwner)
 			const address = pluginNodeAddressOf(ConfiguredOwner)

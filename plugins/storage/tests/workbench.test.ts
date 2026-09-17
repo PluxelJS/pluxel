@@ -4,8 +4,8 @@ import {
 	createRuntimeTestHost,
 	type RuntimeTestHost,
 } from '@pluxel/runtime/test'
-import type { WorkbenchPrincipal } from '@pluxel/runtime/workbench'
-import type { WorkbenchContentObserver } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchPrincipal } from '@pluxel/workbench'
+import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
 import type { RpcStub } from '@pluxel/runtime/capnweb'
 import { describe, expect, it, vi } from 'vitest'
 import { S3Plugin } from '../src/index.ts'
@@ -79,7 +79,7 @@ function contentObserver(
 describe('S3 Workbench credential rotation', () => {
 	it('uses password fields and never echoes replacement credentials', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
 			await startVaultS3(host)
 			using opened = await openCredentials(host, ADMIN)
@@ -184,7 +184,7 @@ describe('S3 Workbench credential rotation', () => {
 
 	it('denies the loopback recovery principal and stops accepting calls with the generation', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
 
 			await startVaultS3(host)
 			using opened = await openCredentials(host, RECOVERY)
@@ -217,7 +217,7 @@ describe('S3 Workbench credential rotation', () => {
 
 	it('keeps credential Content topology fixed and rejects local or anonymous backends', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await host.start(S3Plugin)
 			using opened = await openCredentials(host, ADMIN)
@@ -244,7 +244,7 @@ describe('S3 Workbench credential rotation', () => {
 		}
 
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await host.start(S3Plugin, {
 				initialConfig: {

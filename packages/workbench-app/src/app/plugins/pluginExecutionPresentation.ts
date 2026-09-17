@@ -7,7 +7,7 @@ import type {
 	PluginExecutionSnapshot,
 	PluginRecentUpdateSnapshot,
 	PluginStatusSnapshot,
-} from '@pluxel/runtime/web'
+} from '@pluxel/management/client'
 
 export type PluginPresentationTone = 'blue' | 'cyan' | 'gray' | 'orange' | 'red' | 'teal' | 'yellow'
 

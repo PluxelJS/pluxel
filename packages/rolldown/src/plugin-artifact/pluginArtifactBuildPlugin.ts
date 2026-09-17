@@ -35,7 +35,10 @@ const NODE_MODULE_BUILD_CACHE_VERSION = 1
 const PRODUCTION_ARTIFACT_CACHE_KEEP = 3
 const CODE_HINT = /\b(?:defineNodeModule\s*\(|defineWorkerTask\b)/
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
-const NODE_MODULE_IMPORT_SOURCE = '@pluxel/runtime'
+const NODE_MODULE_IMPORTS = new Map([
+	['@pluxel/services/node', 'defineNodeModule'],
+	['@pluxel/services/workers', 'defineWorkerTask'],
+])
 const NODE_ARTIFACT_RESOLVE_CONDITIONS = [
 	'@pluxel/hmr',
 	'development',
@@ -545,7 +548,7 @@ function collectNodeModuleImports(ast: Program): Set<string> {
 	for (const statement of ast.body) {
 		if (
 			statement.type !== 'ImportDeclaration' ||
-			statement.source.value !== NODE_MODULE_IMPORT_SOURCE
+			!NODE_MODULE_IMPORTS.has(statement.source.value)
 		) {
 			continue
 		}
@@ -555,7 +558,7 @@ function collectNodeModuleImports(ast: Program): Set<string> {
 				specifier.imported.type === 'Identifier'
 					? specifier.imported.name
 					: String((specifier.imported as { value?: unknown }).value ?? '')
-			if (imported === 'defineNodeModule' || imported === 'defineWorkerTask') {
+			if (imported === NODE_MODULE_IMPORTS.get(statement.source.value)) {
 				names.add(specifier.local.name)
 			}
 		}

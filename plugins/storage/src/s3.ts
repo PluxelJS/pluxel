@@ -1,7 +1,10 @@
 import { resolve } from 'node:path'
-import { f, Plugin, type Context, v } from '@pluxel/runtime'
-import type { VaultKvHandle } from '@pluxel/runtime/services/vault'
-import type { WorkbenchContentActionResult, WorkbenchPrincipal } from '@pluxel/runtime/workbench'
+import { type Context, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
+
+import type { VaultKvHandle } from '@pluxel/services/vault'
+import type { WorkbenchContentActionResult, WorkbenchPrincipal } from '@pluxel/workbench'
 import { S3mini } from 's3mini'
 import {
 	S3,

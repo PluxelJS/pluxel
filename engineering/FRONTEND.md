@@ -5,13 +5,13 @@ Workbench 不得成为 Plugin 核心能力的启动前提。
 
 ## 固定边界
 
-- `@pluxel/runtime/web`：portable Runtime session、Management API 与严格校验的 DTO；
-- `@pluxel/runtime/web/react`：Management client 的 React Context adapter；
-- `@pluxel/runtime/workbench`：Content/View/Attachment definition；
-- `@pluxel/runtime/workbench/client`：layout、portable Content plan/presentation 与 opened entry handle validation；
-- `@pluxel/runtime/workbench/react`：descriptor-bound renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
-- `@pluxel/runtime/workbench/federation`：Shell-owned MF Runtime 和 View activation orchestration。
-- `@pluxel/runtime/internal/workbench-react`：toolchain-generated React Bridge wrapper ABI，不是作者入口。
+- `@pluxel/management/client`：portable Runtime session、Management API 与严格校验的 DTO；
+- `@pluxel/management/react`：Management client 的 React Context adapter；
+- `@pluxel/workbench`：Content/View/Attachment definition；
+- `@pluxel/workbench/client`：layout、portable Content plan/presentation 与 opened entry handle validation；
+- `@pluxel/workbench/react`：descriptor-bound renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/workbench/federation`：Shell-owned MF Runtime 和 View activation orchestration。
+- `@pluxel/workbench/internal/react`：toolchain-generated React Bridge wrapper ABI，不是作者入口。
 
 普通 Plugin UI 的 renderer-specific `*.scope.ts(x)` 是唯一可以 value-import 自己 Workbench definition 的 module；renderer graph
 内的 page/panel 只 import scope/resource，跨 renderer shared component 只接收普通 props/data。低层
@@ -112,7 +112,7 @@ per-Bridge React Context，再渲染 Plugin 默认导出的零 props component�
 
 ```tsx
 // settings.scope.ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { SettingsWorkbench } from '../workbench.js'
 
 export const settingsScope = createWorkbenchRenderer(SettingsWorkbench.settings)
@@ -198,8 +198,8 @@ Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写�
 - React/ReactDOM 及其实际 subpaths；
 - `@mantine/core`、`@mantine/hooks`；
 - `@module-federation/bridge-react`；
-- `@pluxel/runtime/workbench`、`/client`、`/react`。
-- `@pluxel/runtime/internal/workbench-react`。
+- `@pluxel/workbench`、`/client`、`/react`。
+- `@pluxel/workbench/internal/react`。
 
 Plugin 不能修改 share scope、runtime plugin、manifest resolution 或 fallback。Mantine 基础 CSS 由 Shell 唯一加载，remote
 只创建自己的 `MantineProvider`；producer 不得重复导入 Core stylesheet。其他 UI/领域依赖由 producer 自己 bundle。

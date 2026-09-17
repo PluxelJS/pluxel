@@ -114,7 +114,7 @@ describe('plugin semantic lowering', () => {
 
 		expect(result?.code).toContain('__setPluginDefinition as __pluxelSetPluginDefinition')
 		expect(result?.code).toContain('__definePluginRef as __pluxelDefinePluginRef')
-		expect(result?.code).toContain('from "@pluxel/runtime/toolchain"')
+		expect(result?.code).toContain('from "@pluxel/core/toolchain"')
 		expect(result?.code.split('// [pluxel-plugin-semantics] Injected facts')[1]).not.toMatch(
 			/from ["']@pluxel\/runtime["']/,
 		)
@@ -368,7 +368,7 @@ describe('plugin semantic lowering', () => {
 		function contentPlugin(className: string): string {
 			return `
 				import { BasePlugin, Plugin } from '@pluxel/runtime'
-				import { workbench } from '@pluxel/runtime/workbench'
+				import { workbench } from '@pluxel/workbench'
 				export const pages = workbench.define({
 					guide: workbench.content({
 						document: workbench.markdown(import.meta.url, './guide.md'),
@@ -432,7 +432,7 @@ describe('plugin semantic lowering', () => {
 					inlineSource.indexOf('export const pages'),
 					inlineSource.indexOf('@Plugin()'),
 				)
-				const definitionSource = `import { workbench } from '@pluxel/runtime/workbench'
+				const definitionSource = `import { workbench } from '@pluxel/workbench'
 ${declaration}`
 				const pluginSource =
 					location === 'inline'
@@ -924,7 +924,7 @@ ${declaration}`
 		`)
 
 		expect(result?.code).toContain('"abiVersion":2')
-		expect(result?.code).toContain('from "@pluxel/runtime/toolchain"')
+		expect(result?.code).toContain('from "@pluxel/core/toolchain"')
 		expect(result?.code.split('// [pluxel-plugin-semantics] Injected facts')[1]).not.toMatch(
 			/from ["']@pluxel\/runtime["']/,
 		)

@@ -1,0 +1,1046 @@
+import { resolveContextCapability } from '@pluxel/core/host'
+import { Management } from '../../token'
+import { AdminAccess } from '../../access'
+import { optionalVaultAdmin } from '../../vault'
+import { readManagementHostOptions } from '../../host-options'
+import type { PluginRecentUpdateRead } from '@pluxel/host/internal'
+import type { RuntimeUpdateSnapshot } from '../../plugin-execution'
+import {
+	parsePluginDefinitionAddress,
+	parsePluginNodeAddress,
+	type Context,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
+import { RpcTarget, type RpcStub } from 'capnweb'
+import {
+	readPluginCatalog,
+	writePluginCatalogLayout,
+} from '../../api/features/pluginCatalog/service'
+import { PluginCatalogLayoutError } from './PluginCatalogLayoutService'
+import { PersistenceError } from '@pluxel/services/internal/persistence'
+import {
+	pluginConfigGet,
+	pluginConfigPatch,
+	pluginConfigPatchField,
+	pluginConfigPresentation,
+} from '../../api/usecases/pluginConfig'
+import {
+	inspectPluginConsumerRequirements,
+	inspectPluginProviderPolicy,
+	PluginNodeUnavailableError,
+	setPluginConsumerOverride as applyPluginConsumerOverride,
+	setPluginProviderPolicyDefault as applyPluginProviderPolicyDefault,
+} from '../../api/usecases/pluginDependencies'
+import { pluginDependencyGraph } from '../../api/usecases/pluginDependencyGraph'
+import { ensureFork, removeFork } from '../../api/usecases/pluginForks'
+import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
+import { logsFollow, logsIndex, logsMeta, logsRange } from '../../api/usecases/logs'
+import { pluginStatus as readPluginStatus } from '../../api/usecases/plugins'
+import { projectPluginApplyReport } from '../../api/presenters/pluginApplyReport'
+import { requireContextRuntimeLogging } from '@pluxel/logging/internal'
+import type {
+	PluginLogPolicyMutationResult,
+	PluginLogPolicySnapshot,
+	RuntimePluginLogLevel,
+	VersionedPluginLogPolicySnapshot,
+} from '@pluxel/logging'
+import type { LogFilter, RuntimeLogEvent } from '@pluxel/logging/protocol'
+import { listSecurityEvents } from '@pluxel/services/internal/security'
+import type { VaultAdminApi } from '@pluxel/services/internal/vault-types'
+import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
+import type {
+	RuntimeLogFollowInput,
+	RuntimeLogObserver,
+	RuntimeSubscriptionTarget,
+	RuntimeManagementTarget,
+} from '../../web/management-target'
+import type {
+	ConfigResult,
+	EnsureForkResult,
+	RemoveForkResult,
+	PluginConsumerRequirementsInspectionResult,
+	PluginDependencyGraphSnapshot,
+	PluginDependencyMutationResult,
+	PluginProviderPolicyInspectionResult,
+	PluginCatalogLayoutInput,
+	PluginCatalogLayoutMutationResult,
+	PluginCatalogSnapshot,
+	PluginControlBatchResult,
+	PluginStatusQueryResult,
+} from '../../web/protocol'
+import {
+	parseConfigPresentationResult,
+	parseConfigResult,
+	parsePluginControlBatchResult,
+} from '../../web/management-validation'
+import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
+
+export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
+	private readonly ctx: Context
+	private get admission() {
+		return this.signal ? { signal: this.signal } : undefined
+	}
+
+	constructor(
+		ctx: Context,
+		private readonly signal?: AbortSignal,
+	) {
+		super()
+		this.ctx = ctx
+	}
+
+	describe() {
+		this.signal?.throwIfAborted()
+		const management = resolveContextCapability(this.ctx.root, Management)
+		if (!management) throw new Error('Runtime Management is unavailable')
+		return management.describe()
+	}
+
+	runtimeUpdate(): RuntimeUpdateSnapshot | null {
+		this.signal?.throwIfAborted()
+		return readManagementHostOptions(this.ctx)?.recentUpdate?.latestUpdate?.() ?? null
+	}
+
+	followRuntimeUpdates(observer: (snapshot: unknown) => Promise<void>): RuntimeSubscriptionTarget {
+		this.signal?.throwIfAborted()
+		return new RuntimeUpdateSubscription(
+			readManagementHostOptions(this.ctx)?.recentUpdate,
+			observer as RpcStub<(snapshot: unknown) => Promise<void>>,
+		)
+	}
+
+	async pluginCatalog(): Promise<PluginCatalogSnapshot> {
+		this.signal?.throwIfAborted()
+		return await readPluginCatalog(this.ctx, this.admission)
+	}
+
+	async pluginStatus(owner: unknown): Promise<PluginStatusQueryResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(owner)
+		if (!address) {
+			return {
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				error: 'Invalid Plugin node address',
+			}
+		}
+		return { ok: true, value: await readPluginStatus(this.ctx, address, this.admission) }
+	}
+
+	async updatePluginCatalogLayout(input: unknown): Promise<PluginCatalogLayoutMutationResult> {
+		this.signal?.throwIfAborted()
+		const parsed = parseRpcPluginCatalogLayout(input)
+		if (parsed.ok === false) {
+			return {
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				error: parsed.error,
+			}
+		}
+		try {
+			return {
+				ok: true,
+				sections: await writePluginCatalogLayout(this.ctx, parsed.value, this.admission),
+			}
+		} catch (error) {
+			if (error instanceof PluginCatalogLayoutError) {
+				return {
+					ok: false,
+					code: 'mutation_rejected',
+					state: 'unchanged',
+					error: error.message,
+				}
+			}
+			if (error instanceof PersistenceError) {
+				return {
+					ok: false,
+					code: 'persistence_failed',
+					state: 'unknown',
+					error: error.message,
+				}
+			}
+			throw error
+		}
+	}
+
+	async pluginConfigPresentation(owner: unknown) {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(owner)
+		if (!address) {
+			return {
+				ok: false as const,
+				code: 'invalid_input' as const,
+				message: 'Invalid Plugin node address',
+			}
+		}
+		return parseConfigPresentationResult(
+			await pluginConfigPresentation(this.ctx, address, this.admission),
+		)
+	}
+
+	async pluginConfig(owner: unknown): Promise<ConfigResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(owner)
+		if (!address) return invalidConfigInput('Invalid Plugin node address')
+		return parseConfigResult(await pluginConfigGet(this.ctx, address, this.admission))
+	}
+
+	async patchPluginConfig(owner: unknown, patch: unknown): Promise<ConfigResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(owner)
+		if (!address) return invalidConfigInput('Invalid Plugin node address')
+		const record = readRpcRecord(patch)
+		if (!record) return invalidConfigInput('Config patch must be an object')
+		return parseConfigResult(await pluginConfigPatch(this.ctx, address, record, this.admission))
+	}
+
+	async patchPluginConfigField(owner: unknown, input: unknown): Promise<ConfigResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(owner)
+		if (!address) return invalidConfigInput('Invalid Plugin node address')
+		if (!readRpcRecord(input)) return invalidConfigInput('Config field mutation must be an object')
+		return parseConfigResult(await pluginConfigPatchField(this.ctx, address, input, this.admission))
+	}
+
+	async pluginDependencyGraph(): Promise<PluginDependencyGraphSnapshot> {
+		this.signal?.throwIfAborted()
+		return await pluginDependencyGraph(this.ctx, this.admission)
+	}
+
+	async inspectPluginConsumerRequirements(
+		consumer: unknown,
+	): Promise<PluginConsumerRequirementsInspectionResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(consumer)
+		if (!address) return invalidDependencyInput('Invalid Plugin node address')
+		try {
+			return {
+				ok: true,
+				items: await inspectPluginConsumerRequirements(this.ctx, address, this.admission),
+			}
+		} catch (error) {
+			return unavailableConsumerRequirementsQuery(error)
+		}
+	}
+
+	async setPluginConsumerOverride(input: unknown): Promise<PluginDependencyMutationResult> {
+		this.signal?.throwIfAborted()
+		const record = readRpcRecord(input)
+		const consumer = parseRpcNode(record?.consumer)
+		const requirement = parseRpcDefinition(record?.requirement)
+		const provider = parseRpcNullableNode(record?.provider)
+		if (
+			!record ||
+			!hasExactKeys(record, ['consumer', 'requirement', 'provider']) ||
+			!consumer ||
+			!requirement ||
+			!provider.ok
+		) {
+			return invalidDependencyInput('Invalid consumer override input')
+		}
+		return await applyPluginConsumerOverride(
+			this.ctx,
+			consumer,
+			requirement,
+			provider.value,
+			this.admission,
+		)
+	}
+
+	async inspectPluginProviderPolicy(
+		policyOwner: unknown,
+	): Promise<PluginProviderPolicyInspectionResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(policyOwner)
+		if (!address) return invalidDependencyInput('Invalid Plugin node address')
+		try {
+			return {
+				ok: true,
+				value: await inspectPluginProviderPolicy(this.ctx, address, this.admission),
+			}
+		} catch (error) {
+			return unavailableProviderPolicyQuery(error)
+		}
+	}
+
+	async setPluginProviderPolicyDefault(input: unknown): Promise<PluginDependencyMutationResult> {
+		this.signal?.throwIfAborted()
+		const record = readRpcRecord(input)
+		const policyOwner = parseRpcNode(record?.policyOwner)
+		const provider = parseRpcNullableNode(record?.provider)
+		if (
+			!record ||
+			!hasExactKeys(record, ['policyOwner', 'provider']) ||
+			!policyOwner ||
+			!provider.ok
+		) {
+			return invalidDependencyInput('Invalid provider policy input')
+		}
+		return await applyPluginProviderPolicyDefault(
+			this.ctx,
+			policyOwner,
+			provider.value,
+			this.admission,
+		)
+	}
+
+	async ensurePluginFork(input: unknown): Promise<EnsureForkResult> {
+		this.signal?.throwIfAborted()
+		const record = readRpcRecord(input)
+		const base = parseRpcNode(record?.base)
+		const selectFor = parseRpcForkSelection(record?.selectFor)
+		if (
+			!record ||
+			!hasOnlyKeys(record, ['base', 'forkId', 'autoStart', 'selectFor']) ||
+			!base ||
+			typeof record.forkId !== 'string' ||
+			(record.autoStart !== undefined && typeof record.autoStart !== 'boolean') ||
+			!selectFor.ok
+		) {
+			return {
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				error: 'Invalid fork input',
+			}
+		}
+		const result = await ensureFork(this.ctx, base, record.forkId, {
+			autoStart: record.autoStart === true,
+			...this.admission,
+			...(selectFor.value === undefined ? {} : { selectFor: selectFor.value }),
+		})
+		if (result.ok === true) {
+			return {
+				ok: true,
+				status: result.status,
+				fork: parsePluginNodeAddress(result.node),
+				report: projectPluginApplyReport(this.ctx, result.report),
+			}
+		}
+		if (result.code === 'persistence_failed') {
+			return {
+				ok: false,
+				code: result.code,
+				state: result.state,
+				error: result.message,
+			}
+		}
+		return {
+			ok: false,
+			code: result.code,
+			state: result.state,
+			error: result.message,
+		}
+	}
+
+	async removePluginFork(input: unknown): Promise<RemoveForkResult> {
+		this.signal?.throwIfAborted()
+		const record = readRpcRecord(input)
+		const base = parseRpcNode(record?.base)
+		if (
+			!record ||
+			!hasExactKeys(record, ['base', 'forkId']) ||
+			!base ||
+			typeof record.forkId !== 'string'
+		) {
+			return {
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				error: 'Invalid fork removal input',
+			}
+		}
+		const result = await removeFork(this.ctx, base, record.forkId, this.admission)
+		if (result.ok === true) {
+			if (result.status === 'already-absent') {
+				return {
+					ok: true,
+					status: result.status,
+					fork: parsePluginNodeAddress(result.node),
+				}
+			}
+			return {
+				ok: true,
+				status: result.status,
+				fork: parsePluginNodeAddress(result.node),
+				report: projectPluginApplyReport(this.ctx, result.report),
+			}
+		}
+		if (result.code === 'fork_referenced') {
+			return {
+				ok: false,
+				code: result.code,
+				state: result.state,
+				references: Object.freeze(
+					result.references.map((reference) =>
+						Object.freeze({
+							consumer: parsePluginNodeAddress(reference.consumer),
+							requirement: parsePluginDefinitionAddress(reference.requirement),
+						}),
+					),
+				),
+				error: result.message,
+			}
+		}
+		if (result.code === 'persistence_failed') {
+			return {
+				ok: false,
+				code: result.code,
+				state: result.state,
+				fork: parsePluginNodeAddress(result.node),
+				...(result.report ? { report: projectPluginApplyReport(this.ctx, result.report) } : {}),
+				error: result.message,
+			}
+		}
+		return {
+			ok: false,
+			code: result.code,
+			state: result.state,
+			error: result.message,
+		}
+	}
+
+	async setPluginAutoStart(items: unknown): Promise<PluginControlBatchResult> {
+		this.signal?.throwIfAborted()
+		return parsePluginControlBatchResult(await setAutoStart(this.ctx, items, this.admission))
+	}
+
+	async applyPluginLifecycleCommands(items: unknown): Promise<PluginControlBatchResult> {
+		this.signal?.throwIfAborted()
+		return parsePluginControlBatchResult(
+			await applyLifecycleCommands(this.ctx, items, this.admission),
+		)
+	}
+
+	async getLogPolicy(): Promise<VersionedPluginLogPolicySnapshot> {
+		this.signal?.throwIfAborted()
+		const logging = requireContextRuntimeLogging(this.ctx)
+		await logging.ready
+		return logging.policy.describe()
+	}
+
+	async replaceLogPolicy(
+		expectedRevision: number,
+		snapshot: PluginLogPolicySnapshot,
+	): Promise<PluginLogPolicyMutationResult> {
+		this.signal?.throwIfAborted()
+		const policy = await this.logPolicy(expectedRevision)
+		return policy.replace(snapshot)
+	}
+
+	async setDefaultLogLevel(
+		expectedRevision: number,
+		level: RuntimePluginLogLevel,
+	): Promise<PluginLogPolicyMutationResult> {
+		this.signal?.throwIfAborted()
+		const policy = await this.logPolicy(expectedRevision)
+		return policy.setDefaultLevel(level)
+	}
+
+	async setPluginLogLevel(
+		expectedRevision: number,
+		owner: PluginNodeAddress,
+		level: RuntimePluginLogLevel,
+	): Promise<PluginLogPolicyMutationResult> {
+		this.signal?.throwIfAborted()
+		const policy = await this.logPolicy(expectedRevision)
+		return policy.setPluginLevel(owner, level)
+	}
+
+	async clearPluginLogLevel(
+		expectedRevision: number,
+		owner: PluginNodeAddress,
+	): Promise<PluginLogPolicyMutationResult> {
+		this.signal?.throwIfAborted()
+		const policy = await this.logPolicy(expectedRevision)
+		return policy.clearPluginLevel(owner)
+	}
+
+	async resetLogPolicy(expectedRevision: number): Promise<VersionedPluginLogPolicySnapshot> {
+		this.signal?.throwIfAborted()
+		const policy = await this.logPolicy(expectedRevision)
+		policy.reset()
+		return policy.describe()
+	}
+
+	logStreams() {
+		this.signal?.throwIfAborted()
+		return logsIndex(this.ctx)
+	}
+
+	logMeta(streamId: unknown) {
+		this.signal?.throwIfAborted()
+		return logsMeta(this.ctx, { streamId: parseLogStreamId(streamId) })
+	}
+
+	logRange(streamId: unknown, query: unknown) {
+		this.signal?.throwIfAborted()
+		const input = parseLogRangeInput(streamId, query)
+		return prepareRuntimeLogRangeForRpc(logsRange(this.ctx, input))
+	}
+
+	async followLogs(
+		input: unknown,
+		observer: RuntimeLogObserver,
+	): Promise<RuntimeSubscriptionTarget> {
+		this.signal?.throwIfAborted()
+		return new RuntimeLogSubscription(
+			this.ctx,
+			parseLogFollowInput(input),
+			observer as RpcStub<RuntimeLogObserver>,
+		)
+	}
+
+	async securityOverview() {
+		this.signal?.throwIfAborted()
+		const adminAccess = resolveContextCapability(this.ctx.root, AdminAccess)
+		if (!adminAccess) throw new Error('Runtime Management authentication is unavailable')
+		const vault = optionalVaultAdmin(this.ctx)
+		return Object.freeze({
+			adminAccess: await adminAccess.describe(),
+			vault: vault
+				? Object.freeze({ enabled: true as const, state: await vault.describe() })
+				: Object.freeze({ enabled: false as const }),
+		})
+	}
+
+	securityEvents(limit?: unknown) {
+		this.signal?.throwIfAborted()
+		return Object.freeze(listSecurityEvents(this.ctx, parseSecurityEventLimit(limit)))
+	}
+
+	async vaultUnlock() {
+		this.signal?.throwIfAborted()
+		return await this.vaultAdmin().unlock()
+	}
+
+	async vaultEnsureHostKey() {
+		this.signal?.throwIfAborted()
+		return Object.freeze({ publicKey: await this.vaultAdmin().ensureHostKey() })
+	}
+
+	async vaultGenerateDeployKey() {
+		this.signal?.throwIfAborted()
+		return await this.vaultAdmin().generateDeployKey()
+	}
+
+	async vaultSetDeployRecipients(publicKeys: unknown) {
+		this.signal?.throwIfAborted()
+		return await this.vaultAdmin().setDeployRecipients(parseDeployRecipients(publicKeys))
+	}
+
+	private async logPolicy(expectedRevision: number) {
+		const logging = requireContextRuntimeLogging(this.ctx)
+		await logging.ready
+		this.signal?.throwIfAborted()
+		logging.policy.assertRevision(expectedRevision)
+		return logging.policy
+	}
+
+	private vaultAdmin(): VaultAdminApi {
+		const vault = optionalVaultAdmin(this.ctx)
+		if (!vault) throw new Error('Runtime Vault is unavailable')
+		return vault
+	}
+}
+
+const MAX_LOG_STREAM_ID = 256
+const MAX_LOG_TEXT = 512
+const MAX_LOG_RANGE_LINES = 20_000
+const MAX_LOG_CALLBACK_LINES = 512
+const MAX_LOG_CALLBACK_BYTES = RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES
+const MAX_LOG_PENDING_EVENTS = 32
+const MAX_LOG_PENDING_BYTES = RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES * 4
+const MAX_DEPLOY_RECIPIENTS = 1_000
+const MAX_DEPLOY_RECIPIENT_LENGTH = 4_096
+
+class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTarget {
+	private readonly observer: RpcStub<RuntimeLogObserver>
+	private readonly unsubscribe: () => void
+	private readonly queue: RuntimeLogEvent[] = []
+	private queuedBytes = 0
+	private draining = false
+	private active = true
+
+	constructor(ctx: Context, input: RuntimeLogFollowInput, observer: RpcStub<RuntimeLogObserver>) {
+		super()
+		if (!observer || typeof observer !== 'function' || typeof observer.dup !== 'function') {
+			throw new TypeError('Log observer must be an RPC callback')
+		}
+		this.observer = observer.dup()
+		try {
+			this.unsubscribe = logsFollow(ctx, input, (event) => this.enqueue(event))
+		} catch (error) {
+			this.observer[Symbol.dispose]()
+			throw error
+		}
+	}
+
+	[Symbol.dispose](): void {
+		if (!this.active) return
+		this.active = false
+		this.unsubscribe()
+		this.queue.length = 0
+		this.queuedBytes = 0
+		this.observer[Symbol.dispose]()
+	}
+
+	private enqueue(event: RuntimeLogEvent): void {
+		if (!this.active) return
+		if (event.type === 'reset') {
+			this.queue.length = 0
+			this.queuedBytes = 0
+			this.push(event)
+			this.startDrain()
+			return
+		}
+
+		const bytes = estimateRuntimeRpcPayloadBytes(event)
+		const oversized =
+			bytes > MAX_LOG_CALLBACK_BYTES ||
+			(event.type === 'append' && event.lines.length > MAX_LOG_CALLBACK_LINES)
+		const overflow =
+			this.queue.length >= MAX_LOG_PENDING_EVENTS ||
+			this.queuedBytes + bytes > MAX_LOG_PENDING_BYTES
+		if (oversized || overflow) {
+			const gap = collapseLogGap(this.queue, event)
+			this.queue.length = 0
+			this.queuedBytes = 0
+			this.push(gap)
+		} else {
+			this.push(event, bytes)
+		}
+		this.startDrain()
+	}
+
+	private push(event: RuntimeLogEvent, bytes = estimateRuntimeRpcPayloadBytes(event)): void {
+		this.queue.push(event)
+		this.queuedBytes += bytes
+	}
+
+	private startDrain(): void {
+		if (this.draining) return
+		this.draining = true
+		void this.drain()
+	}
+
+	private async drain(): Promise<void> {
+		try {
+			while (this.active) {
+				const event = this.queue.shift()
+				if (!event) return
+				this.queuedBytes = Math.max(0, this.queuedBytes - estimateRuntimeRpcPayloadBytes(event))
+				const result = this.observer(event)
+				try {
+					await result
+				} finally {
+					result[Symbol.dispose]()
+				}
+			}
+		} catch {
+			this[Symbol.dispose]()
+		} finally {
+			this.draining = false
+			if (this.active && this.queue.length > 0) this.startDrain()
+		}
+	}
+}
+
+function parseLogStreamId(input: unknown): string {
+	if (typeof input !== 'string') throw new TypeError('Log streamId must be a string')
+	const value = input.trim()
+	if (!value || value.length > MAX_LOG_STREAM_ID) {
+		throw new TypeError(`Log streamId must contain between 1 and ${MAX_LOG_STREAM_ID} characters`)
+	}
+	return value
+}
+
+function parseLogRangeInput(streamId: unknown, input: unknown) {
+	const record = readRpcRecord(input)
+	if (!record || !hasOnlyKeys(record, ['epoch', 'fromSeq', 'limit', 'filter'])) {
+		throw new TypeError('Log range query must be a closed object')
+	}
+	if (!Number.isSafeInteger(record.epoch) || Number(record.epoch) <= 0) {
+		throw new TypeError('Log range epoch must be a positive integer')
+	}
+	if (typeof record.fromSeq !== 'string' || !/^\d+$/.test(record.fromSeq)) {
+		throw new TypeError('Log range fromSeq must be an unsigned integer string')
+	}
+	const limit =
+		record.limit === undefined ? undefined : boundedInteger(record.limit, 1, MAX_LOG_RANGE_LINES)
+	return Object.freeze({
+		streamId: parseLogStreamId(streamId),
+		epoch: Number(record.epoch),
+		fromSeq: record.fromSeq,
+		...(limit === undefined ? {} : { limit }),
+		...(record.filter === undefined ? {} : { filter: parseLogFilter(record.filter) }),
+	})
+}
+
+function parseLogFollowInput(input: unknown): RuntimeLogFollowInput {
+	const record = readRpcRecord(input)
+	if (
+		!record ||
+		!hasOnlyKeys(record, ['streamId', 'filter']) ||
+		!Object.hasOwn(record, 'streamId')
+	) {
+		throw new TypeError('Log follow input must be a closed object with streamId')
+	}
+	return Object.freeze({
+		streamId: parseLogStreamId(record.streamId),
+		...(record.filter === undefined ? {} : { filter: parseLogFilter(record.filter) }),
+	})
+}
+
+function parseLogFilter(input: unknown): LogFilter {
+	const record = readRpcRecord(input)
+	if (!record || !hasOnlyKeys(record, ['plugin', 'context', 'displayName', 'category'])) {
+		throw new TypeError('Log filter must be a closed object')
+	}
+	const plugin = record.plugin === undefined ? undefined : parseRpcNode(record.plugin)
+	if (record.plugin !== undefined && !plugin) throw new TypeError('Log filter plugin is invalid')
+	return Object.freeze({
+		...(plugin ? { plugin } : {}),
+		...parseOptionalLogText(record, 'context'),
+		...parseOptionalLogText(record, 'displayName'),
+		...parseOptionalLogText(record, 'category'),
+	})
+}
+
+function parseOptionalLogText<K extends 'context' | 'displayName' | 'category'>(
+	record: Record<string, unknown>,
+	key: K,
+): Partial<Record<K, string>> {
+	const input = record[key]
+	if (input === undefined) return {}
+	if (typeof input !== 'string') throw new TypeError(`Log filter ${key} must be a string`)
+	const value = input.trim()
+	if (!value || value.length > MAX_LOG_TEXT) {
+		throw new TypeError(`Log filter ${key} must contain between 1 and ${MAX_LOG_TEXT} characters`)
+	}
+	return { [key]: value } as Partial<Record<K, string>>
+}
+
+function parseSecurityEventLimit(input: unknown): number {
+	return input === undefined ? 40 : boundedInteger(input, 0, 200)
+}
+
+function parseDeployRecipients(input: unknown): string[] {
+	if (!Array.isArray(input) || input.length > MAX_DEPLOY_RECIPIENTS) {
+		throw new TypeError(
+			`Vault deploy recipients must contain at most ${MAX_DEPLOY_RECIPIENTS} items`,
+		)
+	}
+	const seen = new Set<string>()
+	const recipients: string[] = []
+	for (const [index, raw] of input.entries()) {
+		if (typeof raw !== 'string')
+			throw new TypeError(`Vault deploy recipient ${index} must be a string`)
+		const value = raw.trim()
+		if (!value || value.length > MAX_DEPLOY_RECIPIENT_LENGTH) {
+			throw new TypeError(`Vault deploy recipient ${index} is invalid`)
+		}
+		if (!seen.has(value)) {
+			seen.add(value)
+			recipients.push(value)
+		}
+	}
+	return recipients
+}
+
+function boundedInteger(input: unknown, min: number, max: number): number {
+	if (!Number.isSafeInteger(input) || Number(input) < min || Number(input) > max) {
+		throw new TypeError(`Expected an integer between ${min} and ${max}`)
+	}
+	return Number(input)
+}
+
+function collapseLogGap(
+	queued: readonly RuntimeLogEvent[],
+	current: Exclude<RuntimeLogEvent, { type: 'reset' }>,
+): RuntimeLogEvent {
+	const candidates = [...queued, current].filter(
+		(event): event is Exclude<RuntimeLogEvent, { type: 'reset' }> =>
+			event.type !== 'reset' &&
+			event.epoch === current.epoch &&
+			event.streamId === current.streamId,
+	)
+	let from = logEventRange(candidates[0] ?? current).from
+	let to = logEventRange(current).to
+	for (const event of candidates) {
+		const range = logEventRange(event)
+		if (compareSequence(range.from, from) < 0) from = range.from
+		if (compareSequence(range.to, to) > 0) to = range.to
+	}
+	return Object.freeze({
+		type: 'gap',
+		streamId: current.streamId,
+		epoch: current.epoch,
+		missingFrom: from,
+		missingTo: to,
+	})
+}
+
+function logEventRange(event: Exclude<RuntimeLogEvent, { type: 'reset' }>): {
+	from: string
+	to: string
+} {
+	if (event.type === 'gap') return { from: event.missingFrom, to: event.missingTo }
+	return { from: event.fromSeq, to: subtractOne(event.nextSeq) }
+}
+
+function subtractOne(input: string): string {
+	try {
+		const value = BigInt(input)
+		return (value > 0n ? value - 1n : 0n).toString(10)
+	} catch {
+		return input
+	}
+}
+
+function compareSequence(left: string, right: string): number {
+	try {
+		const a = BigInt(left)
+		const b = BigInt(right)
+		return a < b ? -1 : a > b ? 1 : 0
+	} catch {
+		return left.localeCompare(right)
+	}
+}
+
+function readRpcRecord(input: unknown): Record<string, unknown> | undefined {
+	return input && typeof input === 'object' && !Array.isArray(input)
+		? (input as Record<string, unknown>)
+		: undefined
+}
+
+const MAX_PLUGIN_CATALOG_SECTIONS = 10_000
+const MAX_PLUGIN_CATALOG_NODES = 10_000
+// A source-derived ID may contain the percent-encoded form of a maximal canonical source path.
+const MAX_PLUGIN_CATALOG_SECTION_ID = 16_384
+
+function parseRpcPluginCatalogLayout(
+	input: unknown,
+):
+	| Readonly<{ ok: true; value: PluginCatalogLayoutInput }>
+	| Readonly<{ ok: false; error: string }> {
+	const layout = readRpcRecord(input)
+	if (!layout || !hasExactKeys(layout, ['sections'])) {
+		return {
+			ok: false,
+			error: 'Plugin catalog layout must contain only sections (an array or null)',
+		}
+	}
+	if (layout.sections === null) return { ok: true, value: { sections: null } }
+	if (!Array.isArray(layout.sections))
+		return { ok: false, error: 'sections must be an array or null' }
+	if (layout.sections.length > MAX_PLUGIN_CATALOG_SECTIONS) {
+		return {
+			ok: false,
+			error: `Plugin catalog layout exceeds ${MAX_PLUGIN_CATALOG_SECTIONS} sections`,
+		}
+	}
+	let totalNodes = 0
+	const sections: NonNullable<PluginCatalogLayoutInput['sections']>[number][] = []
+	for (const [index, value] of layout.sections.entries()) {
+		const section = readRpcRecord(value)
+		if (!section || !hasExactKeys(section, ['sectionId', 'name', 'nodes'])) {
+			return { ok: false, error: `sections[${index}] must be a closed section object` }
+		}
+		const sectionId = boundedRpcText(section.sectionId, MAX_PLUGIN_CATALOG_SECTION_ID)
+		const name = boundedRpcText(section.name, 16_384)
+		if (!sectionId || !name || !Array.isArray(section.nodes)) {
+			return { ok: false, error: `sections[${index}] has invalid fields` }
+		}
+		totalNodes += section.nodes.length
+		if (totalNodes > MAX_PLUGIN_CATALOG_NODES) {
+			return {
+				ok: false,
+				error: `Plugin catalog layout exceeds ${MAX_PLUGIN_CATALOG_NODES} total nodes`,
+			}
+		}
+		const nodes: PluginNodeAddress[] = []
+		for (const [nodeIndex, rawNode] of section.nodes.entries()) {
+			const node = parseRpcNode(rawNode)
+			if (!node) {
+				return {
+					ok: false,
+					error: `sections[${index}].nodes[${nodeIndex}] is invalid`,
+				}
+			}
+			nodes.push(node)
+		}
+		sections.push(Object.freeze({ sectionId, name, nodes: Object.freeze(nodes) }))
+	}
+	return {
+		ok: true,
+		value: Object.freeze({ sections: Object.freeze(sections) }),
+	}
+}
+
+function hasExactKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
+	const keys = Object.keys(record)
+	return keys.length === expected.length && expected.every((key) => Object.hasOwn(record, key))
+}
+
+function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+	return Object.keys(record).every((key) => allowed.includes(key))
+}
+
+function boundedRpcText(input: unknown, maxLength: number): string | undefined {
+	if (typeof input !== 'string') return undefined
+	const value = input.trim()
+	return value && value.length <= maxLength ? value : undefined
+}
+
+function parseRpcNode(input: unknown): PluginNodeAddress | undefined {
+	try {
+		return parsePluginNodeAddress(input)
+	} catch {
+		return undefined
+	}
+}
+
+function parseRpcDefinition(input: unknown): PluginDefinitionAddress | undefined {
+	try {
+		return parsePluginDefinitionAddress(input)
+	} catch {
+		return undefined
+	}
+}
+
+function parseRpcNullableNode(
+	input: unknown,
+): Readonly<{ ok: true; value: PluginNodeAddress | null }> | Readonly<{ ok: false }> {
+	if (input === null) return { ok: true, value: null }
+	const value = parseRpcNode(input)
+	return value ? { ok: true, value } : { ok: false }
+}
+
+function parseRpcForkSelection(input: unknown):
+	| Readonly<{
+			ok: true
+			value?: Readonly<{
+				consumer: PluginNodeAddress
+				requirement: PluginDefinitionAddress
+			}>
+	  }>
+	| Readonly<{ ok: false }> {
+	if (input === undefined) return { ok: true }
+	const record = readRpcRecord(input)
+	const consumer = parseRpcNode(record?.consumer)
+	const requirement = parseRpcDefinition(record?.requirement)
+	if (!record || !hasExactKeys(record, ['consumer', 'requirement']) || !consumer || !requirement) {
+		return { ok: false }
+	}
+	return {
+		ok: true,
+		value: Object.freeze({ consumer, requirement }),
+	}
+}
+
+function invalidConfigInput(message: string): ConfigResult {
+	return { ok: false, code: 'invalid_input', state: 'unchanged', message }
+}
+
+function invalidDependencyInput(message: string): {
+	ok: false
+	code: 'invalid_input'
+	state: 'unchanged'
+	error: string
+} {
+	return { ok: false, code: 'invalid_input', state: 'unchanged', error: message }
+}
+
+function unavailableConsumerRequirementsQuery(error: unknown): {
+	ok: false
+	code: 'consumer_unavailable'
+	state: 'unchanged'
+	error: string
+} {
+	if (error instanceof PluginNodeUnavailableError) {
+		return {
+			ok: false,
+			code: 'consumer_unavailable',
+			state: 'unchanged',
+			error: error.message,
+		}
+	}
+	throw error
+}
+
+function unavailableProviderPolicyQuery(error: unknown): {
+	ok: false
+	code: 'provider_policy_unavailable'
+	state: 'unchanged'
+	error: string
+} {
+	if (error instanceof PluginNodeUnavailableError) {
+		return {
+			ok: false,
+			code: 'provider_policy_unavailable',
+			state: 'unchanged',
+			error: error.message,
+		}
+	}
+	throw error
+}
+
+/** Snapshots coalesce while a client is slow; history is route-owned, never queued per connection. */
+class RuntimeUpdateSubscription extends RpcTarget {
+	private readonly observer: RpcStub<(snapshot: unknown) => Promise<void>>
+	private unsubscribe: () => void = () => {}
+	private pending: RuntimeUpdateSnapshot | null | undefined
+	private active = true
+	private draining = false
+
+	constructor(
+		source: PluginRecentUpdateRead | undefined,
+		observer: RpcStub<(snapshot: unknown) => Promise<void>>,
+	) {
+		super()
+		if (typeof observer !== 'function' || typeof observer.dup !== 'function')
+			throw new TypeError('Update observer must be an RPC callback')
+		this.observer = observer.dup()
+		this.unsubscribe =
+			source?.subscribeUpdates?.((snapshot) => this.enqueue(snapshot)) ?? (() => {})
+		this.enqueue(source?.latestUpdate?.() ?? null)
+	}
+
+	[Symbol.dispose](): void {
+		if (!this.active) return
+		this.active = false
+		this.pending = undefined
+		this.unsubscribe()
+		this.observer[Symbol.dispose]()
+	}
+
+	private enqueue(snapshot: RuntimeUpdateSnapshot | null): void {
+		if (!this.active) return
+		this.pending = snapshot
+		if (!this.draining) void this.drain()
+	}
+
+	private async drain(): Promise<void> {
+		this.draining = true
+		try {
+			while (this.active && this.pending !== undefined) {
+				const snapshot = this.pending
+				this.pending = undefined
+				const result = this.observer(snapshot)
+				try {
+					await result
+				} finally {
+					result[Symbol.dispose]()
+				}
+			}
+		} catch {
+			this[Symbol.dispose]()
+		} finally {
+			this.draining = false
+		}
+	}
+}

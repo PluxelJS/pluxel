@@ -1,5 +1,5 @@
 import { pluginNodeAddressEqual } from '@pluxel/core'
-import type { PluginControlMutationSuccess } from '@pluxel/runtime/web'
+import type { PluginControlMutationSuccess } from '@pluxel/management/client'
 import type { PluginStatusEntry } from '../../pluginOverview'
 import type { PluginLifecycleCommand } from '../../pluginStatusActions'
 

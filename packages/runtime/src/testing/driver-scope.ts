@@ -1,18 +1,19 @@
+import { Commands } from '@pluxel/services/commands'
 import type { PluginNodeAddress, RootContext } from '@pluxel/core'
 import { PluginTestOperationGate } from '@pluxel/core/internal/test'
 import type { PluginTestTarget } from '@pluxel/core/test'
 import { RpcStub } from 'capnweb'
-import { pluginConfigPatch } from '../api/usecases/pluginConfig'
+import { pluginConfigPatch } from '@pluxel/management/internal/api/usecases/pluginConfig'
 import { requireRuntimeHttpService } from '../context/runtime-http-capability'
-import { requireWorkbench } from '../services/workbench'
-import { openWorkbenchEntry, readWorkbenchLayout } from '../workbench/client'
+import { requireWorkbench } from '@pluxel/workbench/server'
+import { openWorkbenchEntry, readWorkbenchLayout } from '@pluxel/workbench/client'
 import {
 	readWorkbenchOpenedContentHandle,
 	readWorkbenchOpenedViewHandle,
 	type WorkbenchOpenedContentHandle,
 	type WorkbenchOpenedViewHandle,
-} from '../workbench/opened-entry'
-import { readWorkbenchDescriptor } from '../workbench/definition'
+} from '@pluxel/workbench/internal'
+import { readWorkbenchDescriptor } from '@pluxel/workbench/internal/definition'
 import type {
 	RuntimeCommandsTestDriver,
 	RuntimeConfigTestDriver,
@@ -84,11 +85,11 @@ export function createRuntimeTestDriverScope<TTarget extends PluginTestTarget>(
 	const commands: RuntimeCommandsTestDriver = Object.freeze({
 		execute(name: string, input: unknown, context?: import('@pluxel/commands').CommandContext) {
 			gate.assertAccepting('commands.execute')
-			return ctx.commands.execute(name, input, context)
+			return ctx.require(Commands).execute(name, input, context)
 		},
 		list() {
 			gate.assertAccepting('commands.list')
-			return ctx.commands.list()
+			return ctx.require(Commands).list()
 		},
 	})
 
@@ -344,8 +345,8 @@ function createTrackedWorkbenchLease(input: {
 	target: PluginNodeAddress
 	descriptor: string
 	handle: WorkbenchOpenedViewHandle | WorkbenchOpenedContentHandle
-	rpc: RpcStub<import('../workbench/client-protocol').WorkbenchSessionApi>
-	session: import('../services/workbench').WorkbenchServerSession
+	rpc: RpcStub<import('@pluxel/workbench/internal').WorkbenchSessionApi>
+	session: import('@pluxel/workbench/server').WorkbenchServerSession
 	onDispose(lease: TrackedWorkbenchLease): void
 }): Readonly<{ lease: TrackedWorkbenchLease; dispose(): void }> {
 	let active = true

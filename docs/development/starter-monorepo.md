@@ -42,7 +42,7 @@ host/
   src/app.ts                开发与生产应用声明：固定插件 + 可选 sources
   src/runtime-state.ts      auto-start/config snapshot
   vite.config.ts            指向 web/ 的唯一 Vite config
-  tsdown.config.ts          application() + Web public copy
+  tsdown.config.ts          pluxel() + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
 pncat.config.ts             catalog 分组和迁移的唯一策略入口
 ```

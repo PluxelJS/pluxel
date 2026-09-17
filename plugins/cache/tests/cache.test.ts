@@ -1,4 +1,4 @@
-import type { PluginConstructor } from '@pluxel/runtime'
+import type { PluginConstructor } from '@pluxel/core'
 import {
 	BasePlugin,
 	createRuntimeTestHost,
@@ -26,8 +26,8 @@ async function startPlugins(
 	await host.start(plugins)
 }
 
-function createHost(): RuntimeTestHost {
-	return createRuntimeTestHost()
+async function createHost(): Promise<RuntimeTestHost> {
+	return await createRuntimeTestHost()
 }
 
 type User = { id: string; name: string }
@@ -153,7 +153,7 @@ describe('@pluxel/cache', () => {
 		vi.useFakeTimers()
 		try {
 			{
-				await using host = createHost()
+				await using host = await createHost()
 
 				await host.commit((change) => {
 					change.start(MemoryCacheBackendPlugin)
@@ -189,7 +189,7 @@ describe('@pluxel/cache', () => {
 
 	it('uses the default memory backend as an async L2 behind local cache', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache.scope('memory-l2', { maxEntries: 1 })
@@ -203,7 +203,7 @@ describe('@pluxel/cache', () => {
 
 	it('uses node identity for caller isolation while global uses one managed shared namespace', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			const a = host.require(ConsumerA)
@@ -239,7 +239,7 @@ describe('@pluxel/cache', () => {
 
 	it('rejects a backend entry whose structured owner does not match its physical key', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			const a = host.require(ConsumerA)
@@ -265,7 +265,7 @@ describe('@pluxel/cache', () => {
 
 	it('deduplicates a global loader across consumers and does not cache rejection', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			const a = host.require(ConsumerA).cache.global
@@ -309,7 +309,7 @@ describe('@pluxel/cache', () => {
 
 	it('coalesces an external miss and preserves per-subscriber abort', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			const backend = host.require(TestCacheBackendPlugin)
@@ -342,7 +342,7 @@ describe('@pluxel/cache', () => {
 
 	it('supports cache-first, cache-and-refresh, and remote-first async reads', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
 			const backend = host.require(TestCacheBackendPlugin)
@@ -369,7 +369,7 @@ describe('@pluxel/cache', () => {
 
 	it('orders invalidation after in-flight load', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache
@@ -385,7 +385,7 @@ describe('@pluxel/cache', () => {
 
 	it('fails loudly instead of reporting a local-only clear as successful', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MissingClearCacheBackend, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache
@@ -397,7 +397,7 @@ describe('@pluxel/cache', () => {
 
 	it('revokes cached namespace handles when provider stops', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const handle = host.require(ConsumerA).cache.scope('saved')
@@ -409,7 +409,7 @@ describe('@pluxel/cache', () => {
 
 	it('revokes caller-local, global, and decorator handles when the caller stops', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
 			const consumer = host.require(DecoratedConsumer)
@@ -429,7 +429,7 @@ describe('@pluxel/cache', () => {
 
 	it('keeps a shared global registration alive until its final owner stops', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			const a = host.require(ConsumerA).cache.global
@@ -445,7 +445,7 @@ describe('@pluxel/cache', () => {
 
 	it('does not let a stopped memory backend handle recreate its state', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const backend = host.require(MemoryCacheBackendPlugin)
@@ -464,7 +464,7 @@ describe('@pluxel/cache', () => {
 
 	it('bounds distinct in-flight work while allowing same-key joins', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache.scope('backpressure', { maxInFlight: 1 })
@@ -480,7 +480,7 @@ describe('@pluxel/cache', () => {
 
 	it('supports @Cached, @Memoized, custom method scopes, and explicit invalidation', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
 			const consumer = host.require(DecoratedConsumer)
@@ -509,7 +509,7 @@ describe('@pluxel/cache', () => {
 
 	it('uses scan-resistant SIEVE eviction', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache
@@ -527,7 +527,7 @@ describe('@pluxel/cache', () => {
 
 	it('validates scopes, capacities, and primitive keys', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache
@@ -540,7 +540,7 @@ describe('@pluxel/cache', () => {
 
 	it('binds one exact normalized policy to each scope', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache
@@ -565,7 +565,7 @@ describe('@pluxel/cache', () => {
 
 	it('encodes bounded typed tuple and record keys without ambiguity', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
 			const cache = host.require(ConsumerA).cache
@@ -603,7 +603,7 @@ describe('@pluxel/cache', () => {
 
 	it('supports required and bypass backend failure policies for getOrLoad only', async () => {
 		{
-			await using host = createHost()
+			await using host = await createHost()
 
 			await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
 			const backend = host.require(TestCacheBackendPlugin)

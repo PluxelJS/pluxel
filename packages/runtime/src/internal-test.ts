@@ -1,5 +1,5 @@
 import './index'
-import './services/vault'
+import '@pluxel/services/vault'
 
 export { createRuntimeInternalTestHost } from './testing/runtime-host'
 export type { RuntimeInternalTestHost } from './testing/runtime-host'

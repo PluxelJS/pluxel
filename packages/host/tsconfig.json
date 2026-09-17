@@ -4,6 +4,7 @@
 	"compilerOptions": {
 		"outDir": "dist",
 		"experimentalDecorators": true,
-		"lib": ["ESNext", "DOM"]
+		"lib": ["ESNext", "DOM"],
+		"types": ["node"]
 	}
 }

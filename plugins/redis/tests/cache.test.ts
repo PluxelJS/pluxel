@@ -112,7 +112,7 @@ describe('@pluxel/redis cache backend', () => {
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.commit((change) => {
 				change.start(FakeRedisPlugin)
@@ -148,7 +148,7 @@ describe('@pluxel/redis cache backend', () => {
 
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.commit((change) => {
 				change.start(FakeRedisPlugin)

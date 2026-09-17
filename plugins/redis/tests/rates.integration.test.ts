@@ -24,7 +24,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.commit((change) => {
 				change.start(RedisPlugin, {

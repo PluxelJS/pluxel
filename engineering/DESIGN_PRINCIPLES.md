@@ -22,11 +22,10 @@
 
 ## 2. 保持能力所有权清晰
 
-- HTTP、config、logger、effects、events、commands、persistence/database 是常驻 runtime 能力。`ctx.events` 提供通过
+- Core 固定提供 logger、effects、events 和插件配置事实；Commands、Persistence、Vault 通过显式服务清单安装。默认 Runtime 还组合 HTTP、database、Node artifacts 等能力。`ctx.events` 提供通过
   module augmentation 扩展的松耦合 host 广播；具名 `EvtChannel` 属性表达沿 Plugin dependency edge 暴露的显式协议。
   ambient event 类型声明不建立、加载或替代 Plugin graph dependency。
-- standalone host 可以用 `@pluxel/context` 组合自己的封闭能力集合；Runtime Context 只由 launcher 在 root
-  创建前组合，Plugin 不能追加、替换或运行时安装 capability。
+- standalone host 可以用 `@pluxel/context` 组合自己的封闭能力集合；Plugin Host 与 Runtime Context 都由宿主在 root 创建前组合；第三方服务通过 `@pluxel/core/host` 使用 Core 所有的 descriptor 身份，Plugin 不能追加、替换或运行时安装 capability。
 - Workbench definition 只能通过可选的 `ctx.workbench?.publish()` 发布；页面 API 直接使用 fresh Cap’n Web
   `RpcTarget`，跨 Plugin UI 只使用 provider-owned Attachment 与 consumer-owned placement。
 - command 的 root catalog publication 与 carrier-specific publication 是两个显式决定。Carrier provider 通过
@@ -93,11 +92,11 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
 ## 7. 保持依赖方向
 
 ```text
-@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/runtime
+@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/services <- @pluxel/runtime
                                      ^   ^
                                      |   +-- @pluxel/host-dynamic
                                      +------ @pluxel/host-dev <- @pluxel/runtime/vite
-@pluxel/commands --------------------------------------------> @pluxel/runtime
+@pluxel/commands --------------------------------------------> @pluxel/services
 @pluxel/cli --optional--> @pluxel/rolldown
 ```
 

@@ -2,7 +2,7 @@ import {
 	assertRuntimeHostConfig,
 	assertRuntimeLoggingInput,
 } from '@pluxel/runtime/internal/config-validation'
-import { createMemoryPersistenceBackend } from '@pluxel/runtime'
+import { createMemoryPersistenceBackend } from '@pluxel/services/persistence'
 import { describe, expect, it } from 'vitest'
 
 const owner = {

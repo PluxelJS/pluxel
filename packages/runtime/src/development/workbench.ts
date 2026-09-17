@@ -1,12 +1,13 @@
+import { attachNodeArtifactCompiler } from '@pluxel/host-dev/node'
 import type { Context } from '../index.ts'
-import { requireWorkbench } from '../internal.ts'
+import { optionalWorkbench } from '@pluxel/workbench/server'
 
 import {
 	PluginArtifactCompiler,
 	type PluginArtifactCompilerOptions,
 	type PluginArtifactCompilerViteServer,
 	type WorkbenchArtifactCompilations,
-} from './workbench/PluginArtifactCompiler.ts'
+} from '@pluxel/workbench/dev'
 
 export type PluginArtifactCompilerAttachmentOptions = PluginArtifactCompilerOptions &
 	Readonly<{
@@ -20,7 +21,7 @@ export type PluginArtifactCompilerAttachment = Readonly<{
 	publishWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): ReturnType<PluginArtifactCompiler['publishWorkbenchArtifacts']>
-	dispose(): void
+	dispose(): Promise<void>
 }>
 
 const attachments = new WeakMap<Context, PluginArtifactCompilerAttachment>()
@@ -42,16 +43,15 @@ export function attachPluginArtifactCompiler(
 		throw new Error('[host-dev] artifact compiler is already attached')
 	}
 
-	const backend = ctx.workbench ? requireWorkbench(ctx) : undefined
+	const backend = optionalWorkbench(ctx)
 	const coordinator = backend?.artifactCoordinator
 	const compiler = new PluginArtifactCompiler(
 		ctx,
 		{ coordinator, producerStatus: backend?.producerStatus, viteServer: options.viteServer },
 		{ cacheDir: options.cacheDir, packageMode: options.packageMode },
 	)
-	const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>
-		compiler.watchNodeModule(declaration, onUpdate, onError),
-	)
+	const nodeCompiler = attachNodeArtifactCompiler(ctx, options)
+	let closeTask: Promise<void> | undefined
 	let active = true
 	const attachment: PluginArtifactCompilerAttachment = Object.freeze({
 		prepareWorkbenchArtifacts: (input: WorkbenchArtifactCompilations) => {
@@ -65,18 +65,24 @@ export function attachPluginArtifactCompiler(
 			return compiler.publishWorkbenchArtifacts(input)
 		},
 		dispose: () => {
-			if (!active) return
+			if (closeTask) return closeTask
 			active = false
 			attachments.delete(ctx)
-			detachNode()
-			compiler.dispose()
+			closeTask = Promise.all([compiler.dispose(), nodeCompiler.dispose()]).then(
+				(): void => undefined,
+			)
+			return closeTask
 		},
 	})
 	attachments.set(ctx, attachment)
 	try {
 		ctx.effects.defer(attachment.dispose)
 	} catch (error) {
-		attachment.dispose()
+		void attachment
+			.dispose()
+			.catch((disposeError) =>
+				ctx.logger.error('failed to dispose artifact compiler', { error: disposeError }),
+			)
 		throw error
 	}
 	return attachment
@@ -89,4 +95,4 @@ export type {
 	PluginArtifactCompilerOptions,
 	PluginArtifactCompilerViteServer,
 	WorkbenchProducerCompilation,
-} from './workbench/PluginArtifactCompiler.ts'
+} from '@pluxel/workbench/dev'

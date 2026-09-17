@@ -7,8 +7,8 @@ import { requirePluginService } from '@pluxel/core/internal'
 import {
 	readRuntimePluginStatusOverview,
 	readRuntimeRouteCapabilities,
-	requireWorkbench,
 } from '@pluxel/runtime/internal'
+import { requireWorkbench } from '@pluxel/workbench/server'
 import type { RuntimeHost } from '@pluxel/runtime'
 import { createServer, createLogger } from 'vite'
 import { runtime } from '@pluxel/runtime/vite'
@@ -272,7 +272,7 @@ try {
 
 function definition(kind: 'content' | 'view', version: string, fail = false): string {
 	return `import { v } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 const StatusSchema = v.object({})
 export const version = ${JSON.stringify(version)}
 export const fail = ${fail}
@@ -300,7 +300,7 @@ async function eventually(check: () => void | Promise<void>): Promise<void> {
 }
 
 function renderer(marker: string): string {
-	return `import { useWorkbench } from '@pluxel/runtime/workbench/react'
+	return `import { useWorkbench } from '@pluxel/workbench/react'
 import { UI } from './workbench'
 export default function Renderer() { useWorkbench(UI.page); return ${JSON.stringify(marker)} }\n`
 }

@@ -3,7 +3,7 @@ import type {
 	PluginDependencyGraphEdge,
 	PluginDependencyGraphSnapshot,
 	PluginStatusSnapshot,
-} from '@pluxel/runtime/web'
+} from '@pluxel/management/client'
 import { describe, expect, it } from 'vitest'
 import { buildPluginDependencyGraphProjection } from '../src/app/plugins/pluginDependencyGraphModel'
 import {

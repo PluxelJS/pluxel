@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 import { createServer, type InlineConfig, type Plugin, type ViteDevServer } from 'vite'
@@ -10,6 +11,7 @@ import {
 	createHostModuleVitePlugin,
 	getPluxelViteSsrModuleRunner,
 	importViteSsrModule,
+	hostSingletons,
 } from '../src/vite'
 
 function createTestViteServer(config: InlineConfig): Promise<ViteDevServer> {
@@ -65,6 +67,44 @@ describe('host-dev Vite plugin stack', () => {
 		expect(config.ssr?.external).toContain('@pluxel/core')
 		expect(config.oxc?.decorator?.legacy).toBe(true)
 		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(false)
+	})
+
+	it('pins selected service entries to their native application installation', async () => {
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
+		await writePackage(
+			root,
+			'@pluxel/services',
+			{
+				name: '@pluxel/services',
+				type: 'module',
+				exports: {
+					'./commands': './index.js',
+					'./persistence': './index.js',
+					'./vault': './index.js',
+					'./internal/security': './index.js',
+				},
+			},
+			'export const token = {}; export default token\n',
+		)
+		const modulePath = join(root, 'entry.ts')
+		await writeFile(modulePath, "export { token } from '@pluxel/services/vault'\n")
+		const native = await import(
+			/* @vite-ignore */ pathToFileURL(join(root, 'node_modules/@pluxel/services/index.js')).href
+		)
+		await withTestViteServer({ root, plugins: [hostSingletons()] }, async (server) => {
+			const first = await importViteSsrModule<{ token: object }>(server, modulePath)
+			expect(first.token).toBe(native.token)
+			for (const source of [
+				'@pluxel/services/commands',
+				'@pluxel/services/persistence',
+				'@pluxel/services/vault',
+				'@pluxel/services/internal/security',
+			]) {
+				const result = await server.environments.ssr.pluginContainer.resolveId(source, modulePath)
+				expect(result).toMatchObject({ external: true })
+			}
+		})
 	})
 
 	it('leaves distribution bare packages to the Node host', () => {

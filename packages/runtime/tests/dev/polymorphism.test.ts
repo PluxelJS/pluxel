@@ -4,8 +4,8 @@ import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it } from 'vitest'
 import { v } from '../../src/config'
-import { setAutoStart } from '../../src/api/usecases/pluginStatus'
-import { createDevConsoleScope } from '../../src/internal/dev-console'
+import { setAutoStart } from '@pluxel/management/internal/api/usecases/pluginStatus'
+import { createDevConsoleScope } from '@pluxel/host-dev/internal/dev/console'
 
 abstract class Service extends BasePlugin {
 	abstract readonly label: string
@@ -37,7 +37,7 @@ class Dependent extends BasePlugin {
 
 describe('development console polymorphism', () => {
 	it('selects abstract defaults and forks, restarts dependents, and clears selections', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		await host.commit((change) => change.catalog.add([Primary, Alternate, Consumer, Dependent]))
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		const { dev } = scope
@@ -116,7 +116,7 @@ describe('development console polymorphism', () => {
 	})
 
 	it('returns domain failures for unavailable consumers and invalid provider selections', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		await host.commit((change) => change.catalog.add([Primary, Alternate, Consumer]))
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		const { dev } = scope
@@ -160,7 +160,7 @@ describe('development console polymorphism', () => {
 	})
 
 	it('keeps fork configuration isolated and preserves existing automatic-start policy', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		await host.start(Primary)
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		const { dev } = scope
@@ -195,7 +195,7 @@ describe('development console polymorphism', () => {
 	})
 
 	it('rejects stale concrete constructors throughout polymorphic operations', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		await host.commit((change) => change.catalog.add([Primary, Consumer]))
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		const next = lowerTestReplacement(Primary, class extends Primary {}, {
@@ -229,7 +229,7 @@ describe('development console polymorphism', () => {
 	})
 
 	it('closes borrowed capabilities without stopping or removing managed instances', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		await host.start(Primary)
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		const { dev } = scope

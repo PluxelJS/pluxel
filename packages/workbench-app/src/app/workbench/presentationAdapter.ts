@@ -1,4 +1,4 @@
-import type { ConfigPresentationFieldV1 } from '@pluxel/runtime/web'
+import type { ConfigPresentationFieldV1 } from '@pluxel/management/client'
 import type { FieldMeta, FieldNode, UnionBranchField } from 'valibot-form'
 
 /** Convert the Runtime-owned portable DTO into valibot-form's renderer-owned data model. */

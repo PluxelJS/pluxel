@@ -23,6 +23,7 @@ export default defineConfig({
 		internal: 'src/internal.ts',
 		'internal/test': 'src/internal-test.ts',
 		index: 'src/index.ts',
+		host: 'src/host.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
 		test: 'src/test.ts',

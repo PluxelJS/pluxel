@@ -17,7 +17,8 @@ pnpm catalog:add -- @pluxel/wretch
 
 ```ts twoslash
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 
 type Customer = { id: string; name: string }
 
@@ -148,7 +149,7 @@ managed settings 使用 runtime persistence，而不是 secret store。不要把
 placement：
 
 ```ts no-twoslash
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { WretchWorkbench } from '@pluxel/wretch/workbench'
 
 export const CustomerWorkbench = workbench.define({

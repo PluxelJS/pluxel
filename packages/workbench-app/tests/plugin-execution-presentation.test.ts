@@ -1,5 +1,5 @@
 import type { PluginEntryAddress, PluginNodeAddress } from '@pluxel/core'
-import type { PluginExecutionSnapshot } from '@pluxel/runtime/web'
+import type { PluginExecutionSnapshot } from '@pluxel/management/client'
 import { describe, expect, it } from 'vitest'
 import {
 	describePluginDefinition,

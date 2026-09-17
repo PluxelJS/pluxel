@@ -3,7 +3,7 @@ title: Package 与入口矩阵
 description: 区分公开包、仅供仓库内部使用的能力和不可直接导入的实现入口。
 ---
 
-先按你要完成的任务选包；通常插件作者从 `@pluxel/runtime` 开始，创建应用用 `@pluxel/create`，装配官方宿主使用 Runtime，轻量组合可直接使用 Host。
+先按你要完成的任务选包；插件作者从 `@pluxel/core` 和实际所需能力包开始，创建应用用 `@pluxel/create`，装配宿主使用 Host 与显式 service 列表。
 
 本页说明各包的用途和公开入口。`private` 和 `exports` 决定源码中的导入边界；实际可安装版本以 npm registry 和发布记录为准。
 
@@ -14,7 +14,12 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/create`                | 创建包含宿主、插件、前端和测试的示例项目                      | [快速开始](../getting-started/index.md)                     |
 | `@pluxel/context`               | 为独立宿主组合固定能力与惰性服务                              | [组合 Context host](./context-hosts.md)                     |
 | `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                              | [Plugin 模型](../getting-started/plugin-model.md)           |
-| `@pluxel/runtime`               | Plugin、生命周期、配置、HTTP、日志和宿主共享契约              | [第一个 Plugin](../getting-started/first-plugin.md)         |
+| `@pluxel/runtime`               | 兼容既有官方 Runtime 应用装配                                 | [配置插件宿主](../getting-started/host-setup.md)            |
+| `@pluxel/services`              | HTTP、Persistence、Vault、Workers、Commands 等显式基础能力    | [组合 Context host](./context-hosts.md)                     |
+| `@pluxel/management`            | 认证入口、Host 管理投影与浏览器协议                           | [Management](../runtime/management.md)                      |
+| `@pluxel/workbench`             | Content、View、Attachment 发布与浏览器客户端                  | [View](../workbench/view.md)                                |
+| `@pluxel/logging`               | Host 日志配置与查询投影                                       | [配置插件宿主](../getting-started/host-setup.md)            |
+| `@pluxel/vault-admin`           | 可选 Vault 管理 View                                          | [Vault](../runtime/vault.md)                                |
 | `@pluxel/host`                  | 通用 catalog、运行意图与图更新控制                            | [配置插件宿主](../getting-started/host-setup.md)            |
 | `@pluxel/host-dynamic`          | 可选动态文件来源，开发与生产共用                              | [配置插件宿主](../getting-started/host-setup.md)            |
 | `@pluxel/host-dev`              | 通用 Vite 开发与 HMR 驱动                                     | [CLI 与工具链](../development/tooling.md)                   |
@@ -35,11 +40,9 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 这些 package 未标记为 private，并声明了面向消费者的入口。消费者只从 package `exports` 导入；版本可用性以 registry 和 release metadata 为准。
 
-`@pluxel/runtime` 还提供职责明确的 browser subpath：`/web` 是 Runtime session、Management Client 与 DTO；
-`/web/react` 只提供 React Context adapter；`/capnweb` 提供固定 RPC object model；`/workbench` 提供
-browser-safe Content、Direct View 和 Attachment definition；`/workbench/client` 提供 Shell layout/opened-handle client；
-`/workbench/react` 提供 exact descriptor hook、host facade 和 Pane Kit。`/web/react` 与 `/workbench/react` 由宿主
-提供 React singleton；internal registry、generated Bridge ABI 和 raw MF Runtime 不是第三方作者入口。
+`@pluxel/management/client`、`/session` 和 `/protocol` 提供浏览器管理客户端、认证会话与 DTO；`/react` 只提供 React Context adapter。`@pluxel/workbench` 提供 browser-safe Content、Direct View 与 Attachment definition，`/client` 提供 Shell layout/opened-handle client，`/react` 提供 exact descriptor hook、host facade 与 Pane Kit。React 入口使用宿主提供的 singleton。RPC object model 直接从 `capnweb` 导入。
+
+`@pluxel/services/http/node` 是标准 Host launcher 使用的 Node srvx/crossws carrier。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
 
 ## Workspace-only 能力
 
@@ -59,7 +62,6 @@ browser-safe Content、Direct View 和 Attachment definition；`/workbench/clien
 
 ## 不应成为用户入口的 package
 
-- `@pluxel/runtime-node` 是 static/dynamic launcher 共用的 Node srvx/crossws platform carrier，不是 Plugin API 或自定义 carrier SPI。
 - `@pluxel/workbench-app` 是组装后的应用，不是 Plugin UI SDK。
 - `@pluxel/runtime/internal*` 等带 `internal` 的 export 由框架自身使用，不承诺作者兼容性。
 
@@ -67,8 +69,8 @@ browser-safe Content、Direct View 和 Attachment definition；`/workbench/clien
 
 ## 选择规则
 
-1. 写 Plugin 时从 `@pluxel/runtime` 和一个明确的能力 package 开始。
-2. 装配宿主时使用 Runtime 应用声明，按需增加动态来源，不在业务 Plugin 中依赖宿主实现。
+1. 写 Plugin 时从 `@pluxel/core` 和实际需要的能力 package 开始。
+2. 装配宿主时使用 Host 应用声明和显式 services，按需增加动态来源。业务 Plugin 不依赖宿主实现。
 3. 测试 host 从所验证层的 `@pluxel/core/test`或 `@pluxel/runtime/test` 导入；`@pluxel/test` 只使用 `/vitest`、`/fixtures` 或 `/unsafe` subpath，不直接 new 内部 host。
 4. 导入路径必须存在于所安装版本的 `exports`，且目标 package 不能是 private。
 5. `package.json#exports` 与真实源码 export 是入口契约；文档必须与该契约保持一致。

@@ -1,13 +1,18 @@
 import { definePluginFork } from '@pluxel/core/test'
 import type { BasePlugin, PluginNodeAddress, PluginDefinitionAddress } from '@pluxel/core'
-import type { DevConsole, DevRunContext, DevScript, OpenedWorkbenchDevEntry } from './dev'
+import type {
+	DevConsole,
+	DevRunContext,
+	DevScript,
+	OpenedWorkbenchDevEntry,
+} from '@pluxel/host-dev/console'
 import type { RpcStub, RpcTarget } from './capnweb'
 import type { RuntimeTestHost } from './test'
 import type {
 	WorkbenchView,
 	WorkbenchAttachmentPlacement,
 	WorkbenchPrincipal,
-} from './workbench/definition'
+} from '@pluxel/workbench/internal/definition'
 
 type Equal<Left, Right> =
 	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false

@@ -1,4 +1,4 @@
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { WretchWorkbench } from '@pluxel/wretch/workbench'
 import type { ReportStudioApi } from './ReportStudio.contracts'
 

@@ -20,10 +20,10 @@ import {
 	parseVaultKeyPair,
 	parseVaultPublicKeyResult,
 	parseVersionedPluginLogPolicySnapshot,
-} from '../../src/web/management-validation'
-import { RuntimeProtocolValidationError } from '../../src/web/validation'
-import { prepareRuntimeLogRangeForRpc } from '../../src/services/management/log-transport'
-import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../src/web/session/limits'
+} from '@pluxel/management/internal/web/management-validation'
+import { RuntimeProtocolValidationError } from '@pluxel/management/internal/web/validation'
+import { prepareRuntimeLogRangeForRpc } from '@pluxel/management/internal/services/management/log-transport'
+import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '@pluxel/management/internal/web/session/limits'
 
 const address = {
 	definition: {

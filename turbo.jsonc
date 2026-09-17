@@ -139,7 +139,13 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/host-dev#build": {
-			"dependsOn": ["@pluxel/core#build", "@pluxel/host#build", "@pluxel/rolldown#build"],
+			"dependsOn": [
+				"@pluxel/core#build",
+				"@pluxel/host#build",
+				"@pluxel/rolldown#build",
+				"@pluxel/management#build",
+				"@pluxel/workbench#build",
+			],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -192,7 +198,7 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/workbench-app#build": {
-			"dependsOn": ["@pluxel/runtime#build", "@worksplit/react#build", "valibot-form#build"],
+			"dependsOn": ["@pluxel/workbench#build", "@worksplit/react#build", "valibot-form#build"],
 			"outputs": ["dist/**", "public/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -310,6 +316,27 @@
 		"dev": {
 			"cache": false,
 			"persistent": true,
+		},
+		"@pluxel/services#build": {
+			"dependsOn": ["@pluxel/commands#build", "@pluxel/host#build"],
+			"outputs": ["dist/**", "public/**"],
+		},
+		"@pluxel/logging#build": {
+			"dependsOn": ["@pluxel/host#build"],
+			"outputs": ["dist/**", "public/**"],
+		},
+		"@pluxel/management#build": {
+			"dependsOn": [
+				"@pluxel/host#build",
+				"@pluxel/services#build",
+				"@pluxel/logging#build",
+				"valibot-form#build",
+			],
+			"outputs": ["dist/**", "public/**"],
+		},
+		"@pluxel/workbench#build": {
+			"dependsOn": ["@pluxel/management#build", "@pluxel/rolldown#build", "@worksplit/react#build"],
+			"outputs": ["dist/**", "public/**"],
 		},
 		"@pluxel/host#build": {
 			"dependsOn": ["@pluxel/core#build"],

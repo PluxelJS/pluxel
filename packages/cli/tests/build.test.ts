@@ -188,6 +188,12 @@ const buildFixtures = {
 		...fixturePackage('react-dom', '19.2.8', ['.', './client']),
 		...fixturePackage('@mantine/core', '9.5.2', ['.']),
 		...fixturePackage('@mantine/hooks', '9.5.2', ['.']),
+		...fixturePackage('@pluxel/workbench', '0.1.0', [
+			'.',
+			'./client',
+			'./react',
+			'./internal/react',
+		]),
 		...fixturePackage('@pluxel/runtime', '1.0.0', [
 			'.',
 			'./capnweb',
@@ -203,7 +209,7 @@ const buildFixtures = {
 		'node_modules/@pluxel/runtime/capnweb.js': 'export class RpcTarget {}\n',
 		'node_modules/@pluxel/runtime/capnweb.d.ts':
 			'export declare class RpcTarget { [Symbol.dispose](): void }\n',
-		'node_modules/@pluxel/runtime/workbench.js': `
+		'node_modules/@pluxel/workbench.js': `
 export const workbench = Object.freeze({
 	entry: (_base, path) => ({ path }),
 	view: (value) => value,
@@ -211,7 +217,7 @@ export const workbench = Object.freeze({
 	define: (value) => Object.freeze(value),
 })
 `,
-		'node_modules/@pluxel/runtime/workbench.d.ts': `
+		'node_modules/@pluxel/workbench.d.ts': `
 export declare const workbench: {
 	entry(base: string, path: string): Readonly<{ path: string }>
 	view<Api>(value: Record<string, unknown>): unknown
@@ -219,12 +225,12 @@ export declare const workbench: {
 	define<const Entries extends Record<string, unknown>>(value: Entries): Readonly<Entries>
 }
 `,
-		'node_modules/@pluxel/runtime/internal/workbench-react.js': `
+		'node_modules/@pluxel/workbench/internal/react.js': `
 export function createWorkbenchBridge(identity, Renderer) {
 	return Object.freeze({ identity, Renderer })
 }
 `,
-		'node_modules/@pluxel/runtime/internal/workbench-react.d.ts':
+		'node_modules/@pluxel/workbench/internal/react.d.ts':
 			'export declare function createWorkbenchBridge(identity: unknown, Renderer: unknown): unknown\n',
 		'package.json': JSON.stringify(
 			{
@@ -275,7 +281,7 @@ export function createWorkbenchBridge(identity, Renderer) {
 		'src/index.ts': [
 			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
 			"import { RpcTarget } from '@pluxel/runtime/capnweb'",
-			"import { workbench } from '@pluxel/runtime/workbench'",
+			"import { workbench } from '@pluxel/workbench'",
 			'',
 			"const first = workbench.entry(import.meta.url, './ui/index.ts')",
 			"const second = workbench.entry(import.meta.url, './ui/second.ts')",
@@ -656,7 +662,7 @@ describe('build command', () => {
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
 			expect(output).toContain('this.ctx.workbench.publish')
-			expect(output).toContain('@pluxel/runtime/workbench')
+			expect(output).toContain('@pluxel/workbench')
 			expect(output).not.toContain('.bind(')
 			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')

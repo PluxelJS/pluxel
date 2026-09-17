@@ -1,56 +1,56 @@
-# Runtime Architecture
+# Runtime 与 Host 服务架构
 
-`@pluxel/runtime` 在 core 之上提供 HTTP、config、persistence、runtime state 和可选 Workbench/Vault 能力。
-launcher 与受信任的 framework route 使用 `@pluxel/context` kernel 为每个 root 编译一份封闭 Context host；不存在
-import-side-effect service registration、public capability append 或 post-root installation。standalone host 可以独立使用 Context
-kernel，但 Plugin 不能修改 Runtime 拥有的 Context shape。
+Core 拥有 Plugin graph、generation 与 Context kernel；Host 拥有 catalog、运行策略、配置存储和唯一协调队列。
+Services、Logging、Management 与 Workbench 分别拥有可选能力。应用在创建 Host 前选择固定服务清单，import 不安装资源。
+`@pluxel/runtime` 保留既有产品入口与测试适配，但根创建与关闭也委托同一 `createHost()`，不再拥有另一份服务实现。
 
-## Runtime Context host
+## 正向服务组合
 
-Runtime 在一个集中 contract 中声明 Context 的 public property type，并由 `RuntimeHostConfig extends CoreHostConfig` 集中声明
-host 创建输入；service constructor 参数不是 public config schema，也不用于反推配置类型。`resolveRuntimeRootInputs()` 在 root
-创建前归一化并冻结输入，再由 capability factory closure 分发。host composition 安装固定能力：root scope
-承载 persistence、runtime state、admin/agent control backing 与 host-only HTTP backend，generation scope capability 承载 database 和
-Elysia application，owner-view scope 承载 commands、Workbench gate、Node module、worker 与 internal
-validation。Core 为每次 Plugin generation 创建一个 scope；Part child 与
-dependency caller view 共享 scope backing，owner-view 则为每个 Plugin/Part/caller edge 保留 owner identity，同时共享 root
-backend。热 getter 只读取预编译 numeric slot，owner view 使用普通对象，不用 `Proxy` 动态替换共享 service receiver。
+`createHost({ plugins, services })` 返回 Promise；省略服务清单时仅安装 Core。Host 在创建 root 和运行工厂前验证
+catalog、token 身份、属性冲突及依赖图。`defineHostService()` 复用 Core 同步 descriptor；`requires` 声明准备依赖，
+`prepare({ ctx, dependencies, effects })` 按依赖顺序获取资源。仅提供准备或附件逻辑的服务可以使用空 capabilities。
 
-`RuntimeRootContextOptions.routeContextCapabilities` 是 package-private 的 pre-root host-authority seam，只允许受信任 route 安装自身
-descriptor；来源通过 Host contract 接入，不安装 Loader/Scan Context 服务。它不是 Runtime public config、第三方 host SPI 或 Plugin capability
-registration。route 必须在 root 创建前提供完整集合，不能在 Plugin 求值、启动或 HMR 后修改 shape。
+每项服务持有独立 effects scope。准备失败释放已获取资源，不返回半初始化 Host；关闭先停止接纳、排空协调操作并停止
+Plugin generation，再按依赖逆序释放服务。清理失败继续聚合。固定 `lifecycle(ctx)` 工厂连接 Core 的 finalize、settle、
+prepare、publish 阶段，不创建第二套图提交或动态注册表；publish 只交换已准备指针。
 
-Context 不暴露完整 host config。launcher 先解析配置，capability factory closure 再捕获各自的冻结输入，因此延迟创建
-不会观察调用方之后的 mutation。Workbench disabled 时不创建 backend、registry、route 或 transport。Vault 只有在
-`vault` 为配置对象时才进入 host shape；omitted/`false` 时 `ctx.vault` 与 `ctx.root.vaultAdmin` 均 absent，且不创建 mount/runtime。
+Persistence、Vault、Commands、HTTP、Node modules、Workers、Database 通过 `@pluxel/services` 对应子入口显式安装。
+Database backend 从 `/database/pglite` 或 `/database/postgres` 选择，驱动是可选依赖；不选择数据库不会触发数据库准备。
+Logging 属于 `@pluxel/logging`；管理接入与认证属于 `@pluxel/management`；Workbench publication、compiler、browser client
+及预构建 shell 属于 `@pluxel/workbench`。Vault 管理页面属于普通 `@pluxel/vault-admin` Plugin。
 
-`@pluxel/context` 保持 strict lazy：编译 host 和创建 Context 都不运行 factory，也没有通用 `prepare()`/`dispose()` hook。
-Runtime 在 Plugin lifecycle 前显式调用 `prepareRuntimeRootContext(root)`，主动读取需要预热的 Runtime-owned lazy capability，并调用
-Vault 等 leaf service 的领域 `prepare()`。同一成功 attempt 共享 task；失败会清除 task，下一次 host startup attempt 可重试。
-资源关闭仍通过 root/generation effects 或 launcher `stop()`，不回流到 Context kernel。
+服务类型目录中的可选属性不证明安装。Plugin 用 `ctx.require(Token)` 同步取得必需能力；missing、access 和实际构造异常
+保持不同语义。root-only 能力由受信任宿主通过 `resolveContextCapability()` 读取，不借作者 `ctx.root` 扩张权限。
+Context kernel 仍严格惰性；异步准备由 Host 完成，factory 不返回 Promise。同一声明可以用于多个 Host，backing 按 root 隔离。
 
-Host environment 统一从 `@pluxel/runtime/environment` 取得。该入口直接转导 `std-env` 的 universal `env` object，并用可声明合并的
-`PluxelEnvironmentVariables` 增强官方 `PLUXEL_*` 字段；`hostEnv` 是唯一经过校验的有效 Host view，并补全共享 data root
-`.pluxel`。Pluxel persistence 使用其 `persistence/` 子目录，其他 integration 各自拥有 sibling 子目录。Runtime launcher、生产 bootstrap、Vite config 和 application host 不各自读取 `process.env` 或复制默认路径。
-Launcher 注入环境时通过 `resolveHostEnv(input)` 走同一解析边界；完整 environment 不进入 Context、日志或 Management DTO。
+当前公开用法与资源责任见[组合 Host 服务](../docs/reference/runtime-services.md)。
 
-业务 HTTP 使用每个 generation 一个严格惰性的原生 Elysia application；root Plugin 与全部 Part 共享同一 scope identity。
-finalizer 在 init 后等待 modules、检查 inventory 并 compile/seal，同一次 Core operation 在 settlement 后构造 immutable directory，
-publication 只同步交换 ready pointer。每个 root 仍只有一个 host-only carrier/backend，用于 control plane、UI assets 与 business
-dispatcher；其中 Runtime backend 拥有组合策略，launcher 只 attach 一个 physical carrier。Plugin Context 不暴露这两者。
-generation stop 会关闭 owner admission、abort 已接纳 request，并等待 handler 与
-streaming response body settle。
-所有 Runtime owner-view service 的 `ctx` 都是 non-writable、non-configurable 普通属性；view 自身需要维护的 cache/lease 可以继续
-变化，但不能在取得后被重新绑定到另一个 cleanup owner。
+## 应用与开发接入
+
+`HostApplication` 保留静态 `plugins`、`sources`，每次启动通过 `configure(startup)` 解析 services、config、state、configRecords。
+`prepare({ host, startup })` 在服务和开发附件准备完成后、Plugin 接纳前执行。Vite 与生产共用解析与启动边界；构建不会
+执行 configure 或连接存储。`standardServices()` 提供明确的常用组合，Database、Vault、Logging、Management、Workbench
+继续显式加入，不以默认全装再关闭的方式决定能力。
+
+Host-dev 的 `host()` 拥有一个 ModuleRunner、更新队列和当前 Host；`nodeArtifacts()`、`workbenchArtifacts()` 与
+`httpDevelopment()` 以普通 Vite 插件接入。服务配置变化替换 Host，普通 Plugin/制品更新复用 Host。开发控制台属于
+Host-dev，借用固定 epoch，取消只撤销尚未接纳的排队操作，不回滚已提交修改。
+
+HTTP 服务提供 root-only `HttpServer`：固定路径 endpoint、业务 directory 与唯一 fallback 按顺序分发。
+Management HTTP adapter 挂载管理路径，Workbench HTTP adapter 复用管理接入并提供 shell fallback。
+物理监听器由 `@pluxel/services/http/listener` 或 Vite 持有，端点关闭不关闭借用的 Host。
+
+Runtime 产品适配保留既有环境解析和输入格式，将 configService/runtimeState 转换为 Host 存储配置；内部与公开测试工厂
+均等待根准备完成。通用 Host 不隐式读取进程环境，完整环境不进入 Context、日志或 Management DTO。
 
 ## Native Elysia application 与 carrier
 
-Plugin 作者面只有 `ctx.elysia`。它是 host-owned Elysia `2.0.0-beta.7` singleton 创建的真实 instance，不是
+Plugin 通过 `ctx.require(Http)` 取得原生应用，可选读取使用 `ctx.elysia`。它是 host-owned Elysia `2.0.0-beta.7` singleton 创建的真实 instance，不是
 facade、Proxy 或 Pluxel route builder。Plugin 与其全部 Part 取得同一 generation app，直接使用 Elysia route、
 group/guard、schema/model/macro、hook、derive/resolve、mount、stream 和 `elysia/websocket`。path 是最终 product path；
 Runtime 不添加 Plugin namespace、`publicPath` 或第二套 mount identity。
 
-Core lifecycle 只向 Runtime 提供 package-private hooks：
+HTTP 安装器通过固定 HostService lifecycle hooks 参与 Core operation：
 
 ```text
 Plugin + Parts init
@@ -64,10 +64,10 @@ finalization failure 进入普通 Plugin start-failed/rollback 语义；Core 不
 `route kind + exact declared method + exact declared path` key。canonical-equivalent pattern 尚无 Elysia public compiled signature，Runtime
 不复制上游 grammar 做不完整推断。
 
-`ElysiaApplicationDirectory` 保留 sealed owner app、route selector、owner request/stream/connection admission 与 immutable snapshot。
+`@pluxel/services/http` 的 `http()` 安装 Plugin `Http` token 与宿主 `HttpServer` 请求边界，不依赖管理面或物理 listener。通过 HostService 的固定 lifecycle 工厂复用 Core 四阶段发布。`ElysiaApplicationDirectory` 保留 sealed owner app、route selector、owner request/stream/connection admission 与 immutable snapshot。
 `HttpService` 是 root-only host backend，只组合 control plane、business dispatcher 与 UI fallback，不投影到 Plugin Context。
-launcher 安装 runtime-private `ElysiaApplicationCarrier`，负责 physical metadata、request IP、WebSocket upgrade/pub-sub/close；
-Node production 由 `@pluxel/runtime-node` 通过 srvx Node listener 与 crossws 实现，Vite binding 复用同一 Node carrier 并保留
+launcher 安装 公开 `ElysiaApplicationCarrier`，负责 physical metadata、request IP、WebSocket upgrade/pub-sub/close；
+Node production 由 `@pluxel/services/http/node` 通过 srvx Node listener 与 crossws 实现，Vite binding 复用同一 Node carrier 并保留
 Vite HMR upgrade 的优先权。
 
 Portless 是可选的开发期 ingress/name adapter，不是 Runtime capability，也不拥有第二个 listener。只有存在合法 HTTP(S)
@@ -93,7 +93,7 @@ exports 授权的精确 Elysia URL。两者都不重导出或代理 Elysia API�
 
 ## Commands capability
 
-runtime 提供 owner-bound `ctx.commands` 和每个 root 唯一的 command registry。插件注册直接进入该 registry，
+Runtime 通过 `@pluxel/services/commands` 的 `commands()` 安装 owner-bound Commands 服务和每个 root 唯一的 command registry；Plugin 使用 `ctx.require(Commands)`。Runtime 在 root 准备期间注册六个内置插件管理命令，独立服务安装只得到空目录。插件注册直接进入该 registry，
 同时把 disposer 登记到插件自己的 effects；stop、replacement、启动回滚与 shutdown 因此使用同一套资源回收语义。
 `register()` 返回同时保留精确 input/output 类型的 installed command 与幂等 disposer；调用方可直接执行该 handle，不需要再按
 name 查回 command。`list()`、`snapshot()`、`subscribe()` 与 throwing `execute()` 都直接委托 `@pluxel/commands` registry，
@@ -169,7 +169,7 @@ runtime 保持五个平面：route catalog 保存 candidate、封闭 execution p
 presence 不等于自动启动或当前 desired；不在 effective desired graph 中的 default/fork 只参与 read model，不创建 Core record、Context、
 effects 或 artifact lease。
 
-static 与 dynamic route 都只向每个 host 唯一的 `RuntimePluginGraphCoordinator` 提交带 monotonic revision 的 immutable catalog
+static 与 dynamic route 都只向每个 host 唯一的 `HostPluginGraphCoordinator` 提交带 monotonic revision 的 immutable catalog
 snapshot。coordinator 是 committed catalog 的唯一 authority；snapshot 同时保存 candidate 与 route provenance。static route 不保留平行的
 committed catalog，dynamic loader/registry 只在一次 batch 内拥有 unpublished mutable draft，commit 后的 resolve、source、module 与 anchor
 查询都从 coordinator snapshot 派生。route 没有 post-commit publication callback，也不能让 reader 看到 draft。
@@ -328,7 +328,7 @@ RuntimeState、reconciliation、applied nodes、running nodes 与 Core adjacency
 candidate aggregated requirements 构造 canonical sorted、deep-frozen DTO。Core reader 只遍历现有 committed slot 并投影 address，查询
 inactive、absent 或 orphan address 不会 intern/materialize Plugin，不会创建 Context、effects、artifact 或 generation。
 
-`@pluxel/runtime/web` 在不可信浏览器边界严格校验 node/edge 唯一性与排序、address、union、endpoint membership、effective
+`@pluxel/management/client` 在不可信浏览器边界严格校验 node/edge 唯一性与排序、address、union、endpoint membership、effective
 组合、DAG 和 portable tree budget，再交给调用方。Transport/programming failure 继续 reject；该无参数 query 不包装业务 result，
 也不 fallback 为逐 node inspection 拼接图事实。Provider 未运行时仍按 status contract 显示 `stopped`，不能在没有稳定事实时
 改称 `failed`。
@@ -348,7 +348,7 @@ inactive、absent 或 orphan address 不会 intern/materialize Plugin，不会�
 
 ## Node module service
 
-`NodeModuleService` 是常驻 root service，`ctx.nodeModules` 是保留 owner Context 的隔离视图。作者只通过
+`NodeModuleService` 从 `@pluxel/services/node` 安装，`ctx.require(NodeModules)` 是保留 owner Context 的隔离视图。默认 Runtime 明确选择 Node modules 和依赖它的 Workers。作者只通过
 `ctx.nodeModules.use(declaration, setup)` 使用 module；service 不暴露任意路径 compiler、revision、lease handle
 或 worker facade。
 
@@ -411,7 +411,7 @@ generation effects 绑定；provider callback 在 owner admission 下执行，�
 Runtime 不从 Host/Forwarded headers 推导 locality，也不把 Management auth 应用于业务 Plugin HTTP。官方 `@pluxel/auth` 用正常 Plugin
 lifecycle 提供 OIDC、password、password+TOTP；秘密进入 owner Vault，session/OIDC state/rate limit 留在有界 generation memory。
 
-公开 browser authority 是 `@pluxel/runtime/web`：document-unique Runtime session client、严格验证的 Management DTO 和
+公开 browser authority 是 `@pluxel/management/client`：document-unique Runtime session client、严格验证的 Management DTO 和
 borrowed Management capability facade。一个 physical WebSocket 上完成 authentication-required → authenticated bootstrap；
 ready 状态返回 Management capability，Workbench-enabled host 同时返回 Workbench session。Client 不暴露 server class、
 React/Mantine 或 generic raw root；React Context adapter 位于 `/web/react`。
@@ -507,4 +507,4 @@ category，动态等级由 root-owned O(1) policy 控制。完整不变量、启
 
 ## Development console scope
 
-`@pluxel/runtime/dev` 定义由 Vite 执行器注入的在线操作界面。每次脚本借用当前 root，通过生产 use case 读取/修改配置、控制插件、打开 Workbench session、调用 commands/HTTP 并读日志。scope 只拥有临时资源，生命周期仍由既有 coordinator 驱动；不暴露 test catalog/fixture authority，不安装第二个 runtime。详细约束见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`@pluxel/host-dev/console` 定义由 Vite 执行器注入的在线操作界面。每次脚本借用当前 root，通过生产 use case 读取/修改配置、控制插件、打开 Workbench session、调用 commands/HTTP 并读日志。scope 只拥有临时资源，生命周期仍由既有 coordinator 驱动；不暴露 test catalog/fixture authority，不安装第二个 runtime。详细约束见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

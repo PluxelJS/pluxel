@@ -10,7 +10,7 @@ import { RightPane } from '../src/app/plugins/detail/RightPane'
 import { WorkspaceControllerProvider } from '../src/app/workbench/context'
 import { WorkspaceController } from '../src/app/workbench/store'
 import { createPersistedWorkbenchState, WORKBENCH_STORAGE_KEY } from '../src/app/workbench/state'
-import type { WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 
 const state = vi.hoisted(() => ({
 	pathname: '',

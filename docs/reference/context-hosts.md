@@ -9,6 +9,8 @@ host-neutral 的 Context kernel，不要求使用 Pluxel Plugin Runtime。
 写普通 Pluxel Plugin 时不需要直接使用它：Runtime 已经组合好 `ctx`，Plugin 间的业务依赖应写进 constructor，而不是尝试
 安装 Context capability。
 
+需要在 Core Plugin 宿主中安装服务、异步准备资源和管理关闭顺序时，使用[组合 Host 服务](./runtime-services.md)。服务作者从 `@pluxel/core/host` 导入组合工具，确保与 Core 内联的 kernel 保持同一身份；不要把独立 `@pluxel/context` 创建的 token 传入 Core Host。
+
 先安装独立包：
 
 ```sh package-install

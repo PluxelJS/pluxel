@@ -7,7 +7,7 @@ import type {
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchSessionApi,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import { createMemoryHistory, Outlet, RouterProvider } from '@tanstack/react-router'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'

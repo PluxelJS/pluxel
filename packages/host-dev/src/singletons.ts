@@ -10,7 +10,7 @@ const directory = dirname(fileURLToPath(import.meta.url))
 export function hostSingletons(): Plugin {
 	const urls = new Map<string, string>()
 	let unregister: (() => void) | undefined
-	let root: string
+	let root = directory
 	return {
 		name: 'pluxel:host-singletons',
 		enforce: 'pre',
@@ -20,12 +20,19 @@ export function hostSingletons(): Plugin {
 		},
 		resolveId(source, _importer, options) {
 			if (!options?.ssr) return null
+			const service = [
+				'@pluxel/services',
+				'@pluxel/workbench',
+				'@pluxel/management',
+				'@pluxel/logging',
+			].some((name) => source === name || source.startsWith(`${name}/`))
 			if (
+				service ||
 				['@pluxel/core', '@pluxel/host'].some(
 					(name) => source === name || source.startsWith(`${name}/`),
 				)
 			) {
-				const result = resolveWithOxc(directory, source, {
+				const result = resolveWithOxc(service ? root : directory, source, {
 					conditionNames: ['node', 'import', 'default'],
 				})
 				if (!result) throw new Error(`Cannot resolve host singleton: ${source}`)

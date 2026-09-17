@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import * as v from 'valibot'
 import { arrayMeta, formMeta, picklistMeta } from 'valibot-form'
 import { serialize } from 'capnweb'
-import { compileConfigPresentationPlanV1 } from '../../src/api/presenters/configPresentation'
-import type { ConfigPresentationFieldV1 } from '../../src/web/protocol'
-import { parseConfigPresentationPlanV1, parseRuntimePortableData } from '../../src/web/validation'
+import { compileConfigPresentationPlanV1 } from '@pluxel/management/internal/config-presentation'
+import type { ConfigPresentationFieldV1 } from '@pluxel/management/internal/web/protocol'
+import {
+	parseConfigPresentationPlanV1,
+	parseRuntimePortableData,
+} from '@pluxel/management/internal/web/validation'
 import {
 	adaptConfigPresentationFields,
 	buildEditableConfigPatch,

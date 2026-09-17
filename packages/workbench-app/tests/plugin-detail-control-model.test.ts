@@ -3,7 +3,7 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import type { PluginConsumerRequirementState } from '@pluxel/runtime/web'
+import type { PluginConsumerRequirementState } from '@pluxel/management/client'
 import { describe, expect, it } from 'vitest'
 import {
 	buildConsumerOverrideSelection,

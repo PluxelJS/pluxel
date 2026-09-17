@@ -13,7 +13,7 @@ description: 按调用方、身份和成本执行原子的请求准入判定。
 
 ```ts twoslash
 import { Rates, type RateLimiter } from '@pluxel/rates'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Messaging' })
 export class MessagingPlugin extends BasePlugin {

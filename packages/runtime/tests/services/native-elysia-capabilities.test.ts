@@ -1,3 +1,4 @@
+import { Http } from '@pluxel/services/http'
 import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
 import { Elysia, t } from 'elysia'
 import { describe, expect, it } from 'vitest'
@@ -8,7 +9,8 @@ const reusableApi = (app: Elysia) =>
 @Plugin({ displayName: 'Native Elysia capabilities' })
 class NativeElysiaCapabilities extends BasePlugin {
 	protected override init(): void {
-		this.ctx.elysia
+		this.ctx
+			.require(Http)
 			.decorate('nativeOwner', 'capabilities')
 			.derive(({ request }) => ({
 				requestMarker: request.headers.get('x-marker') ?? 'missing',
@@ -48,7 +50,8 @@ class NativeElysiaCapabilities extends BasePlugin {
 @Plugin({ displayName: 'Native Elysia isolation A' })
 class NativeElysiaIsolationA extends BasePlugin {
 	protected override init(): void {
-		this.ctx.elysia
+		this.ctx
+			.require(Http)
 			.decorate('isolatedValue', 'a')
 			.get('/native-isolation/a', ({ isolatedValue }) => isolatedValue)
 	}
@@ -57,7 +60,8 @@ class NativeElysiaIsolationA extends BasePlugin {
 @Plugin({ displayName: 'Native Elysia isolation B' })
 class NativeElysiaIsolationB extends BasePlugin {
 	protected override init(): void {
-		this.ctx.elysia
+		this.ctx
+			.require(Http)
 			.decorate('isolatedValue', 'b')
 			.get('/native-isolation/b', ({ isolatedValue }) => isolatedValue)
 	}
@@ -66,7 +70,7 @@ class NativeElysiaIsolationB extends BasePlugin {
 describe('native Elysia authoring capability', () => {
 	it('preserves function plugins, async modules, context, schemas, errors and mounts', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.start(NativeElysiaCapabilities)
 
@@ -125,7 +129,7 @@ describe('native Elysia authoring capability', () => {
 
 	it('keeps decorators and hooks local to each generation application', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.start([NativeElysiaIsolationA, NativeElysiaIsolationB])
 

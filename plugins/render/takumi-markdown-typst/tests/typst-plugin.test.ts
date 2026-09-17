@@ -1,5 +1,5 @@
 import { FontsPlugin } from '@pluxel/fonts'
-import type { PluginConstructor } from '@pluxel/runtime'
+import type { PluginConstructor } from '@pluxel/core'
 import {
 	BasePlugin,
 	createRuntimeTestHost,
@@ -37,7 +37,7 @@ async function startTypstFixture(host: RuntimeTestHost): Promise<void> {
 
 describe('TypstMathPlugin', () => {
 	it('preserves rejected unsafe math as a TypstMathError through the Markdown renderer', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createRuntimeTestHost({ workbench: false })
 		await startTypstFixture(host)
 		const consumer = host.require(TypstMathTestConsumer)
 		const renderer = consumer.markdown.createRenderer({

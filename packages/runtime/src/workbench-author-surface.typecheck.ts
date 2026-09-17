@@ -2,61 +2,61 @@
 // consumers name directly or exported Plugin definitions need for declaration emit. Runtime wiring
 // types stay internal.
 
-type ContentActionResult = import('@pluxel/runtime/workbench').WorkbenchContentActionResult
-type Principal = import('@pluxel/runtime/workbench').WorkbenchPrincipal
-type View = import('@pluxel/runtime/workbench').WorkbenchView<never>
-type Icon = import('@pluxel/runtime/workbench').WorkbenchIcon
-type Attachment = import('@pluxel/runtime/workbench').WorkbenchAttachment<never>
-type AttachmentPlacement = import('@pluxel/runtime/workbench').WorkbenchAttachmentPlacement<never>
-type Content = import('@pluxel/runtime/workbench').WorkbenchContent
-type ContentAction = import('@pluxel/runtime/workbench').WorkbenchContentAction
-type ContentData = import('@pluxel/runtime/workbench').WorkbenchContentData<never>
-type Definition = import('@pluxel/runtime/workbench').WorkbenchDefinition<{}>
+type ContentActionResult = import('@pluxel/workbench').WorkbenchContentActionResult
+type Principal = import('@pluxel/workbench').WorkbenchPrincipal
+type View = import('@pluxel/workbench').WorkbenchView<never>
+type Icon = import('@pluxel/workbench').WorkbenchIcon
+type Attachment = import('@pluxel/workbench').WorkbenchAttachment<never>
+type AttachmentPlacement = import('@pluxel/workbench').WorkbenchAttachmentPlacement<never>
+type Content = import('@pluxel/workbench').WorkbenchContent
+type ContentAction = import('@pluxel/workbench').WorkbenchContentAction
+type ContentData = import('@pluxel/workbench').WorkbenchContentData<never>
+type Definition = import('@pluxel/workbench').WorkbenchDefinition<{}>
 
 // @ts-expect-error Implementation-level definition types are inferred by workbench.define().
-type AnyDefinition = import('@pluxel/runtime/workbench').AnyWorkbenchDefinition
+type AnyDefinition = import('@pluxel/workbench').AnyWorkbenchDefinition
 // @ts-expect-error PluginWorkbench is a Context service contract, not an author helper.
-type PluginWorkbench = import('@pluxel/runtime/workbench').PluginWorkbench
+type PluginWorkbench = import('@pluxel/workbench').PluginWorkbench
 // @ts-expect-error Open contexts are supplied contextually by ctx.workbench.publish().
-type AttachmentOpenContext = import('@pluxel/runtime/workbench').WorkbenchAttachmentOpenContext
+type AttachmentOpenContext = import('@pluxel/workbench').WorkbenchAttachmentOpenContext
 // @ts-expect-error Target factories are supplied contextually by ctx.workbench.publish().
-type AttachmentTargetFactory = import('@pluxel/runtime/workbench').WorkbenchAttachmentTargetFactory
+type AttachmentTargetFactory = import('@pluxel/workbench').WorkbenchAttachmentTargetFactory
 // @ts-expect-error Publication wiring is supplied contextually by ctx.workbench.publish().
-type Bindings = import('@pluxel/runtime/workbench').WorkbenchBindings
+type Bindings = import('@pluxel/workbench').WorkbenchBindings
 // @ts-expect-error Content bindings are supplied contextually by ctx.workbench.publish().
-type ContentBinding = import('@pluxel/runtime/workbench').WorkbenchContentBinding
+type ContentBinding = import('@pluxel/workbench').WorkbenchContentBinding
 // @ts-expect-error Content factories are supplied contextually by ctx.workbench.publish().
-type ContentFactory = import('@pluxel/runtime/workbench').WorkbenchContentFactory
+type ContentFactory = import('@pluxel/workbench').WorkbenchContentFactory
 // @ts-expect-error Open contexts are supplied contextually by ctx.workbench.publish().
-type ContentOpenContext = import('@pluxel/runtime/workbench').WorkbenchContentOpenContext
+type ContentOpenContext = import('@pluxel/workbench').WorkbenchContentOpenContext
 // @ts-expect-error Schema constraints are inferred by workbench.data()/action().
-type ContentSchema = import('@pluxel/runtime/workbench').WorkbenchContentSchema
+type ContentSchema = import('@pluxel/workbench').WorkbenchContentSchema
 // @ts-expect-error Content slots are inferred by workbench.markdown().
-type ContentSlot = import('@pluxel/runtime/workbench').WorkbenchContentSlot
+type ContentSlot = import('@pluxel/workbench').WorkbenchContentSlot
 // @ts-expect-error Content slot maps are inferred by workbench.markdown().
-type ContentSlotMap = import('@pluxel/runtime/workbench').WorkbenchContentSlotMap
+type ContentSlotMap = import('@pluxel/workbench').WorkbenchContentSlotMap
 // @ts-expect-error Entries are inferred from their exact descriptors.
-type Entry = import('@pluxel/runtime/workbench').WorkbenchEntry
+type Entry = import('@pluxel/workbench').WorkbenchEntry
 // @ts-expect-error Entry maps are inferred by workbench.define().
-type EntryMap = import('@pluxel/runtime/workbench').WorkbenchEntryMap
+type EntryMap = import('@pluxel/workbench').WorkbenchEntryMap
 // @ts-expect-error Groups are inferred by workbench.tab()/route().
-type Group = import('@pluxel/runtime/workbench').WorkbenchGroup
+type Group = import('@pluxel/workbench').WorkbenchGroup
 // @ts-expect-error Markdown documents are inferred by workbench.markdown().
-type MarkdownDocument = import('@pluxel/runtime/workbench').WorkbenchMarkdownDocument
+type MarkdownDocument = import('@pluxel/workbench').WorkbenchMarkdownDocument
 // @ts-expect-error Navigation values are inferred by workbench.route().
-type Navigation = import('@pluxel/runtime/workbench').WorkbenchNavigation
+type Navigation = import('@pluxel/workbench').WorkbenchNavigation
 // @ts-expect-error Placements are inferred by workbench.tab()/route().
-type Placement = import('@pluxel/runtime/workbench').WorkbenchPlacement
+type Placement = import('@pluxel/workbench').WorkbenchPlacement
 // @ts-expect-error Renderer entries are inferred by workbench.entry().
-type RendererEntry = import('@pluxel/runtime/workbench').WorkbenchRendererEntry
+type RendererEntry = import('@pluxel/workbench').WorkbenchRendererEntry
 // @ts-expect-error Route placements are inferred by workbench.route().
-type RoutePlacement = import('@pluxel/runtime/workbench').WorkbenchRoutePlacement
+type RoutePlacement = import('@pluxel/workbench').WorkbenchRoutePlacement
 // @ts-expect-error Tab placements are inferred by workbench.tab().
-type TabPlacement = import('@pluxel/runtime/workbench').WorkbenchTabPlacement
+type TabPlacement = import('@pluxel/workbench').WorkbenchTabPlacement
 // @ts-expect-error Target factories are supplied contextually by ctx.workbench.publish().
-type TargetFactory = import('@pluxel/runtime/workbench').WorkbenchTargetFactory
+type TargetFactory = import('@pluxel/workbench').WorkbenchTargetFactory
 // @ts-expect-error View open contexts are supplied contextually by ctx.workbench.publish().
-type ViewOpenContext = import('@pluxel/runtime/workbench').WorkbenchViewOpenContext
+type ViewOpenContext = import('@pluxel/workbench').WorkbenchViewOpenContext
 
 void (null as unknown as ContentActionResult)
 void (null as unknown as Principal)

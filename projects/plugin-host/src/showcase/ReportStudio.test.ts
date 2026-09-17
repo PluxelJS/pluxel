@@ -29,7 +29,7 @@ describe('ReportStudioPlugin', () => {
 	it('renders through selected providers, caches, and publishes to isolated S3 buckets', async () => {
 		const storageRoot = await mkdtemp(join(tmpdir(), 'pluxel-report-studio-'))
 		temporaryRoots.push(storageRoot)
-		await using host = createRuntimeTestHost()
+		await using host = await createRuntimeTestHost()
 		await host.commit((change) => {
 			change.catalog.add([
 				MemoryCacheBackendPlugin,

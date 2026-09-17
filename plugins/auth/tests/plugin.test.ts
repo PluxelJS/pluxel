@@ -5,7 +5,7 @@ import { AuthPlugin } from '../src/index.ts'
 describe('AuthPlugin lifecycle', () => {
 	it('runs in setup-required state and revokes its generation on stop', async () => {
 		{
-			await using host = createRuntimeInternalTestHost({ vault: {}, management: true })
+			await using host = await createRuntimeInternalTestHost({ vault: {}, management: true })
 
 			await host.start(AuthPlugin, {
 				initialConfig: { mode: { type: 'password' } },
@@ -29,7 +29,7 @@ describe('AuthPlugin lifecycle', () => {
 
 	it('runs public OIDC without Vault', async () => {
 		{
-			await using host = createRuntimeInternalTestHost({ management: true })
+			await using host = await createRuntimeInternalTestHost({ management: true })
 
 			await host.start(AuthPlugin, {
 				initialConfig: {

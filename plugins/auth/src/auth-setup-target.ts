@@ -1,4 +1,4 @@
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { RpcTarget } from 'capnweb'
 import { CredentialProvisioning, type CredentialSetupResult } from './credential-provisioning.ts'
 import type {
 	AuthOidcSecretSetupInput,

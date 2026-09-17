@@ -29,7 +29,7 @@ describe('Core-only Host', () => {
 				exportName: 'LifecyclePlugin',
 			},
 		})
-		const host = createHost({ plugins: [LifecyclePlugin] })
+		const host = await createHost({ plugins: [LifecyclePlugin] })
 		const address = {
 			definition: pluginDefinitionAddressOf(LifecyclePlugin),
 			variant: 'default' as const,
@@ -38,6 +38,17 @@ describe('Core-only Host', () => {
 			await host.start()
 			expect(host.catalog().entries).toHaveLength(1)
 			expect(requirePluginService(host.ctx).isRunning(address)).toBe(false)
+			const status1 = await host.status()
+			expect(status1.statuses[0]).toMatchObject({
+				autoStart: false,
+				lifecycleState: 'stopped',
+			})
+			await host.setAutoStart(address, true)
+			const status2 = await host.status()
+			expect(status2.statuses[0]).toMatchObject({
+				autoStart: true,
+				lifecycleState: 'stopped',
+			})
 			await host.startNode(address)
 			expect(requirePluginService(host.ctx).isRunning(address)).toBe(true)
 			await host.updateCatalog([LifecyclePlugin])
@@ -85,11 +96,13 @@ describe('Core-only Host', () => {
 		let loaded: unknown = { Original }
 		let error: unknown
 		let closed = false
-		const host = createHost({
+		const host = await createHost({
 			plugins: [],
 			root: '/',
 			state: {
-				autoStart: [{ definition: pluginDefinitionAddressOf(Original), variant: 'default' }],
+				initial: {
+					autoStart: [{ definition: pluginDefinitionAddressOf(Original), variant: 'default' }],
+				},
 			},
 			sources: [
 				{

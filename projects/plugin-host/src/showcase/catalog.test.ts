@@ -6,7 +6,7 @@ import {
 	pluginDefinitionAddressOf,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
-} from '@pluxel/runtime'
+} from '@pluxel/core'
 import { S3 } from '@pluxel/storage'
 import { describe, expect, it } from 'vitest'
 import {

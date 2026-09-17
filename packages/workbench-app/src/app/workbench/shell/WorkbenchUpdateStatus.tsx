@@ -1,5 +1,5 @@
 import { Badge, Button, Group, Popover, Stack, Text } from '@mantine/core'
-import type { RuntimeUpdateSnapshot } from '@pluxel/runtime/web'
+import type { RuntimeUpdateSnapshot } from '@pluxel/management/client'
 import { IconCircleCheck, IconLoader2, IconRefresh, IconAlertTriangle } from '@tabler/icons-react'
 import { useRuntimeUpdates } from '../../runtimeUpdates'
 import { useRuntimeMeta } from '../../product'

@@ -17,7 +17,7 @@ host catalog 包含 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 与 consume
 
 ```ts twoslash
 import { EChartsPlugin } from '@pluxel/echarts'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class ReportsPlugin extends BasePlugin {

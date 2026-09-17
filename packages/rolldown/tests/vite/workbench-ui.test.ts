@@ -81,7 +81,7 @@ function producerFixtureFiles(): Record<string, string> {
 			devDependencies: {
 				'@mantine/core': '9.5.2',
 				'@mantine/hooks': '9.5.2',
-				'@pluxel/runtime': '1.0.0',
+				'@pluxel/workbench': '0.1.0',
 				react: '19.2.8',
 				'react-dom': '19.2.8',
 			},
@@ -121,7 +121,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		].join('\n'),
 		'node_modules/transitive-react-consumer/package.json': JSON.stringify({
 			name: 'transitive-react-consumer',
-			version: '1.0.0',
+			version: '0.1.0',
 			type: 'module',
 			exports: './index.js',
 			types: './index.d.ts',
@@ -140,12 +140,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		'node_modules/@mantine/hooks/index.js':
 			"export const marker = 'must-not-bundle-mantine-hooks'\n",
 		'node_modules/@mantine/hooks/index.d.ts': 'export declare const marker: string\n',
-		...packageFiles('@pluxel/runtime', '1.0.0', [
-			'.',
-			'./workbench',
-			'./workbench/client',
-			'./workbench/react',
-		]),
+		...packageFiles('@pluxel/workbench', '0.1.0', ['.', './client', './react']),
 	}
 }
 
@@ -237,21 +232,21 @@ describe('Workbench Profile 1 federation producer', () => {
 					singleton: true,
 				}),
 				expect.objectContaining({
-					name: '@pluxel/runtime/workbench',
-					version: '1.0.0',
-					requiredVersion: '1.0.0',
+					name: '@pluxel/workbench',
+					version: '0.1.0',
+					requiredVersion: '0.1.0',
 					singleton: true,
 				}),
 				expect.objectContaining({
-					name: '@pluxel/runtime/internal/workbench-react',
-					version: '1.0.0',
-					requiredVersion: '1.0.0',
+					name: '@pluxel/workbench/internal/react',
+					version: '0.1.0',
+					requiredVersion: '0.1.0',
 					singleton: true,
 				}),
 				expect.objectContaining({
-					name: '@pluxel/runtime/workbench/react',
-					version: '1.0.0',
-					requiredVersion: '1.0.0',
+					name: '@pluxel/workbench/react',
+					version: '0.1.0',
+					requiredVersion: '0.1.0',
 					singleton: true,
 				}),
 			]),
@@ -291,7 +286,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 `
 		files['node_modules/conditional-workbench/package.json'] = JSON.stringify({
 			name: 'conditional-workbench',
-			version: '1.0.0',
+			version: '0.1.0',
 			type: 'module',
 			exports: {
 				'.': {
@@ -580,21 +575,21 @@ export default () => ({ marker, async render() {}, destroy() {} })
 
 	it('hard-fails when a producer-resolved platform shared version is not exact', async () => {
 		const files = producerFixtureFiles()
-		files['node_modules/@pluxel/runtime/package.json'] = JSON.stringify({
+		files['node_modules/@pluxel/workbench/package.json'] = JSON.stringify({
 			name: '@pluxel/runtime',
 			version: '',
 			type: 'module',
 			exports: {
 				'.': './index.js',
 				'./workbench': './workbench.js',
-				'./workbench/client': './workbench/client.js',
-				'./workbench/react': './workbench/react.js',
+				'./client': './workbench/client.js',
+				'./react': './workbench/react.js',
 			},
 		})
 		await using fixture = await createFixture(files)
 
 		expect(() => resolveWorkbenchFederationShared(fixture.path)).toThrow(
-			'shared package has no exact version: @pluxel/runtime',
+			'shared package has no exact version: @pluxel/workbench',
 		)
 	})
 

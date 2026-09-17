@@ -1,3 +1,5 @@
+import { Http } from '@pluxel/services/http'
+import { Commands } from '@pluxel/services/commands'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import {
 	createRuntimeInternalTestHost,
@@ -6,13 +8,13 @@ import {
 import { BasePlugin, Plugin, definePluginFork } from '@pluxel/runtime/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { describe, it, expect, vi } from 'vitest'
 import { LoggerService } from '@pluxel/core/logger'
 import { v } from '../../src/config'
-import { createDevConsoleScope } from '../../src/internal/dev-console'
-import { DevScope } from '../../src/dev/scope'
-import { createRuntimeLogging } from '../../src/logger/logging'
+import { createDevConsoleScope } from '@pluxel/host-dev/internal/dev/console'
+import { DevScope } from '@pluxel/host-dev/internal/dev/scope'
+import { createRuntimeLogging } from '@pluxel/logging/internal'
 
 const Config = v.object({
 	label: v.optional(v.string(), 'initial'),
@@ -46,7 +48,7 @@ class Failing extends BasePlugin {
 class Streaming extends BasePlugin {
 	response = new Response(null)
 	override init() {
-		this.ctx.elysia.get('/stream', () => this.response)
+		this.ctx.require(Http).get('/stream', () => this.response)
 	}
 }
 
@@ -81,7 +83,7 @@ class PanelPlugin extends BasePlugin {
 
 describe('development console', () => {
 	it('borrows the live world across runs and returns production lifecycle reports', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		const first = await host.start(Counter)
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		const { dev } = scope
@@ -106,7 +108,7 @@ describe('development console', () => {
 	})
 
 	it('edits and describes real configuration with validation and application state', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		await host.start(Counter)
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		try {
@@ -135,7 +137,7 @@ describe('development console', () => {
 	})
 
 	it('accepts typed forks and addresses but rejects stale constructors', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		const fork = definePluginFork(Forkable, 'east')
 		const instance = await host.start(fork)
 		const scope = createDevConsoleScope({ ctx: host.ctx })
@@ -161,7 +163,7 @@ describe('development console', () => {
 	})
 
 	it('retains a failed production start report without test assertions', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		await host.commit((change) => change.catalog.add(Failing))
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		try {
@@ -175,7 +177,7 @@ describe('development console', () => {
 
 	it('discovers and opens exact typed Workbench RPC, cleans leases without stopping the plugin', async () => {
 		released.mockClear()
-		await using host = createRuntimeInternalTestHost({ workbench: { enabled: true } })
+		await using host = await createRuntimeInternalTestHost({ workbench: { enabled: true } })
 		await host.start(PanelPlugin)
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		const principal = { provider: 'development', subject: 'agent' }
@@ -217,7 +219,7 @@ describe('development console', () => {
 	})
 
 	it('waits for response body cancellation before publishing disposal completion', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		const cancellation = Promise.withResolvers<void>()
 		const entered = Promise.withResolvers<void>()
 		const response = new Response(
@@ -250,9 +252,9 @@ describe('development console', () => {
 	})
 
 	it('passes cancellation to admitted production commands', async () => {
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		const entered = Promise.withResolvers<AbortSignal>()
-		const execute = vi.spyOn(host.ctx.commands, 'execute').mockImplementation(
+		const execute = vi.spyOn(host.ctx.require(Commands), 'execute').mockImplementation(
 			(_name, _input, context) =>
 				new Promise((resolve) => {
 					const signal = context!.signal!
@@ -290,7 +292,7 @@ describe('development console', () => {
 			routes: { runtime: [{ sink: 'store', minLevel: 'info' }], plugins: [], debug: [], meta: [] },
 		})
 		await logging.install()
-		const host = createRuntimeInternalTestHarness({ workbench: false }, { logging })
+		const host = await createRuntimeInternalTestHarness({ workbench: false }, { logging })
 		const scope = createDevConsoleScope({ ctx: host.ctx })
 		try {
 			const logger = new LoggerService(host.ctx, logging.contextBinding)

@@ -1,8 +1,10 @@
 import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
-import { BasePlugin, Plugin, type Context, type PersistenceNamespace } from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { type Context, BasePlugin, Plugin } from '@pluxel/core'
+
+import { type PersistenceNamespace } from '@pluxel/services/persistence'
+import { RpcTarget } from 'capnweb'
 import { FontsConfig, type FontsPluginConfig } from './config.ts'
 import { FontsError, type FontsErrorCode } from './errors.ts'
 import { FontTaskScheduler, type FontTaskSchedulerOwner } from './font-task-scheduler.ts'
@@ -226,6 +228,8 @@ export class FontsPlugin extends BasePlugin {
 	private lifecycleRevision = 0
 
 	override async init(): Promise<void> {
+		const persistence = this.ctx.root.persistence
+		if (!persistence) throw new Error('FontsPlugin requires the Persistence service')
 		if (this.config.maxQueuedFontTasksPerConsumer > this.config.maxQueuedFontTasks) {
 			throw new FontsError(
 				'INVALID_INPUT',
@@ -233,7 +237,7 @@ export class FontsPlugin extends BasePlugin {
 			)
 		}
 		this.lifecycleRevision += 1
-		const storage = this.ctx.root.persistence.namespace(STORAGE_NAMESPACE)
+		const storage = persistence.namespace(STORAGE_NAMESPACE)
 		const systemFamilies = new Set(GlobalFonts.families.map(({ family }) => family))
 		const configuredDefaultFamily =
 			this.config.defaultFamily === undefined

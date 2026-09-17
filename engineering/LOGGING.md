@@ -23,8 +23,8 @@ ContextLogger                  Context-owned author capability
   └─ LogTape method delegation
 ```
 
-一个进程只允许一个 active root runtime，因此不需要 `Map<scopeId, LoggingScope>`。第二个
-`RuntimeLogging.install()` 会失败；旧 Context 或错误 rootId 产生的 record 会被 active root filter 拒绝。
+一个进程只允许一个 active logging root，因此不需要 `Map<scopeId, LoggingScope>`。第二个
+`RuntimeLogging.install()` 会失败；失败候选的清理不得 reset 已有 owner 的 LogTape 安装；旧 Context 或错误 rootId 产生的 record 会被 active root filter 拒绝。
 
 这个限制同时简化正确性和性能：
 
@@ -83,7 +83,7 @@ ctx.logger.getDebugChannel('cache:lookup').debug('cache miss', { key })
 
 ## RuntimeLogging lifecycle
 
-Runtime launcher 使用 `@pluxel/runtime/internal` 安装 manager。标准顺序是：
+独立 Host 使用 `@pluxel/logging` 的 `logging(plan, { policyStore })` descriptor。其 prepare 阶段读取 Core 已有 root logger identity，安装 manager、绑定 root、初始化 policy，并登记关闭。Runtime launcher 为捕获更早的 bootstrap 日志保留预安装顺序，然后以同一个 manager 加入 Host service plan。Runtime 的顺序是：
 
 ```text
 1. resolve RuntimeLoggingInput
@@ -203,8 +203,7 @@ mutation 规则：
 - 最多 100,000 个 overrides；每个 owner address 都经过严格 schema validation 和 canonical key 编码；
 - `off` 使用专用 numeric rank，不在热路径使用 nullable/string comparison。
 
-policy persistence 由 active root 的 `PersistenceService.namespace('logger')` adapter 提供，不存在 module-level
-singleton。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
+policy persistence 接收显式 `PluginLogPolicyStore`；`createPluginLogPolicyStore(namespace)` 借用文档存储，不关闭后端。Runtime 组合层选择 `PersistenceService.namespace('logger')`，没有 module-level singleton。Host 删除 fork 在同一 exclusive queue 中调用已安装服务的 metadata cleanup，policy flush 失败保留 fork 供重试。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
 
 ## Debug topics
 
@@ -273,11 +272,14 @@ error summary。它不是新的 author-facing LogRecord。
 @pluxel/core
   ContextLogger, LoggerService, category identity
 
-@pluxel/runtime/logger
-  RuntimeLogging input types, policy/store/protocol stable concepts
+@pluxel/logging
+  HostService descriptor, RuntimeLogging manager, policy/stores/sinks
 
-@pluxel/runtime/internal
-  RuntimeLogging installation, active owner access, persistence adapter
+@pluxel/logging/protocol
+  Browser-safe log DTOs and filters
+
+@pluxel/logging/internal
+  RuntimeLogging installation and active owner binding
 
 @pluxel/runtime
   launcher defaults, boot ordering, shutdown ownership
@@ -289,10 +291,10 @@ core 不包含 formatter、sink、policy persistence、host env resolution 或 L
 
 - `packages/core/src/logger/LoggerService.ts`
 - `packages/core/src/logger/categories.ts`
-- `packages/runtime/src/logger/logging.ts`
-- `packages/runtime/src/logger/policy.ts`
-- `packages/runtime/src/logger/sink.ts`
-- `packages/runtime/src/logger/store.ts`
+- `packages/logging/src/logging.ts`
+- `packages/logging/src/policy.ts`
+- `packages/logging/src/sink.ts`
+- `packages/logging/src/store.ts`
 - `packages/runtime/src/services/management/RuntimeManagementTarget.ts`
 - `packages/runtime/src/application/internal/host.ts`
 - `packages/runtime/src/application/vite.ts`

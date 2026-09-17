@@ -14,7 +14,7 @@ Vault 是一项需要宿主显式启用的运行时能力，为每个 Plugin 提
 | 大文件、用户上传和远端对象                      | 对象存储（[仓库内 S3 预览](../plugins/storage.md)） |
 | 进程内/跨实例短期加速                           | 缓存（[仓库内预览](../plugins/cache.md)）           |
 
-Vault 只在 host 把 `vault` 配置为对象时安装；omitted 或 `false` 时没有 capability property、backend、preflight 或管理成本。
+Core Host 通过 `services: [persistence(...), vault(...)]` 显式安装，见[组合 Host 服务](../reference/runtime-services.md)。Runtime 的启动配置把 `vault` 设为对象时安装；omitted 或 `false` 时没有 capability property、backend、preflight 或管理成本。
 
 ## 启用入口
 
@@ -32,13 +32,13 @@ configure: () => ({
 ## 一个 namespace，三种视图
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Vault } from '@pluxel/services/vault'
 
 @Plugin({ displayName: 'Connector' })
 export class ConnectorPlugin extends BasePlugin {
 	protected override async init() {
-		const vault = this.ctx.vault
-		if (!vault) throw new Error('ConnectorPlugin requires host config vault: {}')
+		const vault = this.ctx.require(Vault)
 		const space = vault.namespace()
 		const kv = space.kv()
 		const cursors = space.docs().collection<{ sequence: number; updatedAt: number }>('cursors')
@@ -162,3 +162,24 @@ await vault.flush()
 ## 安全检查
 
 写入测试值并 `flush()` 后，正常停止并重启宿主，确认能读回相同值；再用另一个插件读取同名 key，确认默认 namespace 相互隔离。解锁失败应在宿主启动阶段处理，业务请求不会自动解锁。测试内容使用非敏感值，具体测试宿主见 [测试插件](../development/testing.md)。
+
+## 停止与缓存 handle
+
+KV、document、blob 和 namespace handle 绑定取得它们的 Plugin、Part 或 caller owner。可以在同一 owner 生命周期内缓存；owner 停止或替换后，旧 handle 的异步读写和 `flush()` 都拒绝新操作，不能借同名新 generation 继续访问。
+
+停止会等待已接纳的 batch 或 IO 完成，不强制中断事务，也不把 abort 当作底层持久化已经停止。Blob 的租约覆盖解密、加密及完整存储 IO，不仅覆盖读取密钥。Host 关闭先停止 root 接纳并排空操作，再释放服务和完成最终快照 flush；纯同步 `blob.describe()` 只返回路径，不创建租约。
+
+因此 batch callback 应保持短小，只操作传入的 transaction。不要在其中启动脱离返回 Promise 的异步工作，也不要在回调外保留 transaction。应用需要终止慢 IO 时，应由实际存储 backend 提供相应取消能力。
+
+## 可选管理页面
+
+Vault 的管理界面由普通插件提供，启用 Vault 不会自动安装页面。宿主显式导入
+`VaultAdminPlugin`（`@pluxel/vault-admin`），加入 Plugin catalog 并设置自动启动；默认项目与 starter
+已经这样配置。启动后，Workbench 的 **Vault** 页面提供部署密钥、接收者和 namespace 库存管理。
+
+插件必须有 Vault capability，可以在未启用 Workbench 的宿主中运行。停止插件只撤回页面；
+宿主的 Vault、已保存的数据和 Headless management RPC 继续存在。Shell 的 Security 页面保留
+管理访问状态与安全审计入口。
+
+页面通过 `host.management.security` 借用当前浏览器已认证的管理会话，仍接受同一套授权、
+wire validation 与审计。插件服务端没有 root VaultAdmin 权限，也没有第二套管理 RPC。

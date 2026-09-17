@@ -1,10 +1,12 @@
+import { resolveDevWorkbenchClientEntryUrl } from '@pluxel/workbench/internal/shell'
+import { optionalWorkbench } from '@pluxel/workbench/server'
 import { createHostDevelopmentDriver } from '@pluxel/host-dev'
 import { installPluginSources } from '@pluxel/host/internal'
 import {
 	attachSrvxViteNodeCarrier,
 	createViteNodeElysiaApplicationCarrier,
 	type SrvxViteNodeCarrierAttachment,
-} from '../development/vite-node-carrier.ts'
+} from '@pluxel/host-dev/internal/vite-node-carrier'
 import { installPluxelViteUrlPrinter } from '../development/vite-urls.ts'
 import { createWorkbenchViteClientConfig } from '../development/vite-client.ts'
 import { randomUUID } from 'node:crypto'
@@ -23,7 +25,10 @@ import {
 	importViteSsrModule,
 	invalidateViteSsrModule,
 } from '@pluxel/host-dev/vite'
-import { attachDevConsole, type DevConsoleAttachment } from '../development/console.ts'
+import {
+	attachDevConsole,
+	type DevConsoleAttachment,
+} from '@pluxel/host-dev/internal/console/attachment'
 import { staticConfigEnvironmentVitePlugin } from '@pluxel/rolldown/internal/static-config-environment-vite'
 import {
 	createPluginSourceVitePipeline,
@@ -45,7 +50,6 @@ import {
 	readRuntimePluginStatusOverview,
 	readRuntimeRouteCapabilities,
 	requireRuntimeHttpService,
-	resolveDevWorkbenchClientEntryUrl,
 	sameProduct,
 	type PluginExecutionSnapshot,
 } from '../internal.ts'
@@ -460,7 +464,7 @@ export function runtime(options: RuntimeVitePluginOptions): PluginOption[] {
 			const host = state.host
 			if (!sourceChange && !state.configFiles.has(ctx.file) && !recovery.matches(ctx.file)) {
 				const prepare = host ? artifactPreparers.get(host) : undefined
-				if (!prepare || !host?.ctx.workbench) return undefined
+				if (!prepare || !host || !optionalWorkbench(host.ctx)) return undefined
 				const start = performance.now()
 				recentUpdates.beginUpdate(portableUpdatePath(ctx.file, ctx.server.config.root))
 				recentUpdates.updatePhase('artifacts')
@@ -787,7 +791,11 @@ export function runtime(options: RuntimeVitePluginOptions): PluginOption[] {
 					devConsole = await attachDevConsole({
 						server,
 						getHost: () =>
-							state.host && { ctx: state.host.ctx.root, epoch: hostEpochs.get(state.host)! },
+							state.host && {
+								ctx: state.host.ctx.root,
+								epoch: hostEpochs.get(state.host)!,
+								fetch: state.host.fetch.bind(state.host),
+							},
 						prepare: async (_file, signal) => {
 							const observed = driver.settled()
 							await observed
@@ -1172,7 +1180,7 @@ async function configureRuntimeDevRuntime(
 		viteServer: server,
 	})
 	const prepare = async (): Promise<PreparedStaticArtifacts | undefined> => {
-		if (!ctx.workbench) return undefined
+		if (!optionalWorkbench(ctx)) return undefined
 		semantics.invalidateWorkbench()
 		const [producers, content] = await Promise.all([
 			semantics.workbenchCompilations(),
@@ -1192,7 +1200,7 @@ async function loadRuntimeDevModule(_server: ViteDevServer) {
 
 function isRuntimeRouteRequest(request: IncomingMessage, host: Pick<RuntimeHost, 'ctx'>): boolean {
 	const url = request.url ?? '/'
-	const workbenchEnabled = host.ctx.workbench !== undefined
+	const workbenchEnabled = optionalWorkbench(host.ctx) !== undefined
 	const http = requireRuntimeHttpService(host.ctx)
 	return shouldHandleRuntimeViteRequest({
 		url,

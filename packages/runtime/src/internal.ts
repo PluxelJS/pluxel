@@ -12,7 +12,7 @@ export type {
 	ElysiaCarrierRequestAddress,
 	ElysiaApplicationCarrier,
 	ElysiaWebSocketUpgrade,
-} from './services/http/elysia-application-carrier'
+} from '@pluxel/services/http'
 export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
 export {
 	getPluginRoutingSnapshot,
@@ -31,8 +31,8 @@ export type { RuntimeModuleCacheEntry, RuntimeModuleRuntime } from './runtime/ca
 export type { RuntimeStorageLayout, RuntimeStoragePaths } from './runtime/paths'
 export { resolveRuntimeStoragePaths } from './runtime/paths'
 export { resolveModuleIdBaseDir, resolveModuleIdPath } from './runtime/module-id'
-export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
-export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
+export { createNodeWorkspaceFsBackend } from '@pluxel/services/internal/workspace-fs'
+export type { NodeWorkspaceFs, WorkspaceFsBackend } from '@pluxel/services/internal/workspace-fs'
 export {
 	isWorkbenchEnabled,
 	matchesWorkbenchUiBasePath,
@@ -40,94 +40,25 @@ export {
 } from './workbench-config'
 export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './runtime-plane'
 export { mergeConfigRecords, withPluginConfigEnvironment } from './services/config-environment'
-export { CommandsService } from './services/CommandsService'
-export {
-	NodeModuleService,
-	type NodeModuleSourceBinder,
-	type NodeModuleSourceSubscription,
-} from './node-artifact/NodeModuleService'
-export { WorkerTaskService } from './node-artifact/WorkerTaskService'
-export { readNodeModuleDeclaration } from './node-artifact/node-module'
 export { readHostProduct, sameProduct } from './product-internal'
-export { subscribeDatabaseHandle, databaseHandleOwnsTables } from './services/DatabaseService'
 export {
-	createRuntimeRootContext,
-	prepareRuntimeRootContext,
-	type RuntimeRootContextOptions,
-} from './context/runtime-plan'
+	subscribeDatabaseHandle,
+	databaseHandleOwnsTables,
+} from '@pluxel/services/internal/database'
+export { createRuntimeRootContext, type RuntimeRootContextOptions } from './context/runtime-plan'
 export {
 	readDatabaseDefinition,
 	type DatabaseArtifact,
 	type DatabaseMigration,
-} from './database-internal'
-export {
-	readWorkbenchDefinition,
-	readWorkbenchContentSlot,
-	readWorkbenchDescriptor,
-	readWorkbenchMarkdownDocument,
-	readWorkbenchRendererEntry,
-} from './workbench/definition'
-export type {
-	WorkbenchDefinitionMetadata,
-	WorkbenchContentActionMetadata,
-	WorkbenchContentDataMetadata,
-	WorkbenchContentSlotMetadata,
-	WorkbenchDescriptorMetadata,
-	WorkbenchMarkdownDocumentMetadata,
-	WorkbenchRendererEntryMetadata,
-} from './workbench/definition'
-export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
+} from '@pluxel/services/internal/database'
 export {
 	RUNTIME_INTERNAL_API_BASE,
 	UI_PUBLIC_ASSET_BASE,
 	UI_PUBLIC_BASE,
-	runtimeWorkbenchFederationArtifactBasePath,
-	runtimeWorkbenchFederationArtifactPath,
-} from './web/paths'
-export { RUNTIME_SESSION_PATH } from './web/session/protocol'
+} from '@pluxel/management/internal/web/paths'
+export { RUNTIME_SESSION_PATH } from '@pluxel/management/internal/web/session/protocol'
 
 // Host/toolchain-only federation inventory (kept out of the Plugin author surface).
-export {
-	WorkbenchArtifactService,
-	type WorkbenchArtifactCandidate,
-	type WorkbenchArtifactCommit,
-	type WorkbenchArtifactEntry,
-	type WorkbenchArtifactFile,
-	type WorkbenchArtifactLookup,
-	type WorkbenchArtifactRevision,
-	type WorkbenchResolvedArtifactEntry,
-} from './services/workbench/WorkbenchArtifactService'
-export {
-	WorkbenchArtifactCoordinator,
-	type WorkbenchArtifactBatchCandidate,
-	type WorkbenchArtifactBatchCommit,
-} from './services/workbench/WorkbenchArtifactCoordinator'
-export {
-	WorkbenchContentArtifactService,
-	type WorkbenchContentArtifactCandidate,
-	type WorkbenchContentArtifactCommit,
-	type WorkbenchContentArtifactEntry,
-	type WorkbenchContentArtifactLookup,
-	type WorkbenchContentArtifactRevision,
-	type WorkbenchResolvedContentArtifact,
-} from './services/workbench/WorkbenchContentArtifactService'
-export {
-	WorkbenchProducerStatusService,
-	type WorkbenchProducerBuildIdentity,
-	type WorkbenchProducerStatus,
-	type WorkbenchProducerStatusLookup,
-	type WorkbenchProducerStatusReporter,
-} from './services/workbench/WorkbenchProducerStatusService'
-export {
-	loadPackagedWorkbenchDeployment,
-	resolvePackagedNodeModule,
-} from './services/workbench/packaged-artifact'
-export {
-	createWorkbenchBackend,
-	requireWorkbench,
-	type WorkbenchBackendFactory,
-	type WorkbenchInstallOptions,
-} from './services/workbench'
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export {
 	bindContextRuntimeLogging,
@@ -147,8 +78,10 @@ export {
 	type RuntimeLoggingSinkInput,
 	type RuntimeLoggingState,
 	type RuntimeStoreSinkInput,
-} from './logger/logging'
+} from '@pluxel/logging/internal'
 
 export { PluginRecentUpdateTracker } from './internal/recent-update'
 
-export { createDevConsoleScope, type DevConsoleScope } from './internal/dev-console'
+export { createDevConsoleScope, type DevConsoleScope } from '@pluxel/host-dev/internal/dev/console'
+
+export { resolvePackagedNodeModule } from './runtime/packaged-node-artifact'

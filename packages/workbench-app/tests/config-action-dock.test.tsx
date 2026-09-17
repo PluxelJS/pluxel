@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import type { PluginNodeAddress } from '@pluxel/core'
-import { RuntimeManagementClientProvider } from '@pluxel/runtime/web/react'
+import { RuntimeManagementClientProvider } from '@pluxel/management/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'

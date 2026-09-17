@@ -1,5 +1,6 @@
+import { useRuntimeManagementClient } from '../runtime'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
+import type { RpcStub } from 'capnweb'
 import {
 	openWorkbenchEntry,
 	type WorkbenchFederatedLayoutEntry,
@@ -10,7 +11,7 @@ import {
 	type WorkbenchContentLayoutEntry,
 	type WorkbenchContentPlan,
 	type WorkbenchUnavailableFederatedLayoutEntry,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import {
 	createWorkbenchViewHost,
 	openFederatedWorkbenchView,
@@ -21,7 +22,7 @@ import {
 	type WorkbenchNavigation,
 	type WorkbenchPaneLayoutRenderer,
 	type WorkbenchPaneLayoutRendererProps,
-} from '@pluxel/runtime/workbench/federation'
+} from '@pluxel/workbench/federation'
 import {
 	createContext,
 	useCallback,
@@ -338,6 +339,7 @@ function ReadyFederatedWorkbenchEntryView({
 	location,
 	params,
 }: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchReadyFederatedLayoutEntry }) {
+	const management = useRuntimeManagementClient()
 	const { session, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
 	const navigation = useOptionalWorkspaceNavigation()
 	const directory = useWorkbenchRouteDirectory()
@@ -451,6 +453,7 @@ function ReadyFederatedWorkbenchEntryView({
 			? openingWorkspace.state.uiState.tabs.find((tab) => tab.instanceId === openingTabId)
 			: undefined
 		const host = createWorkbenchViewHost({
+			management,
 			locale: localeRef.current,
 			colorScheme: colorSchemeRef.current,
 			notify: (input) => notifyRef.current(input),
@@ -513,7 +516,7 @@ function ReadyFederatedWorkbenchEntryView({
 			},
 		)
 		return () => releaseFederatedActivation(activation)
-	}, [activation])
+	}, [activation, management])
 
 	useEffect(() => {
 		const host = activation.host

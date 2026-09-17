@@ -1,5 +1,5 @@
 import { Alert, Loader, MantineProvider, Stack, Text } from '@mantine/core'
-import type { WorkbenchHostFacade } from '@pluxel/runtime/workbench/react'
+import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import type { ReactNode } from 'react'
 import type { PluginWithUISnapshot } from '../../PluginWithUI.workbench'
 

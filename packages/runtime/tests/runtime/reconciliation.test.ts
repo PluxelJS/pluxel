@@ -1039,8 +1039,8 @@ describe('runtime-common pinned mutation admission', () => {
 
 describe('runtime host-owned graph state', () => {
 	it('isolates coordinators by root and removes a disposed host identity', async () => {
-		const first = createRuntimeInternalTestHarness()
-		const second = createRuntimeInternalTestHarness()
+		const first = await createRuntimeInternalTestHarness()
+		const second = await createRuntimeInternalTestHarness()
 		const firstCoordinator = requireRuntimePluginGraphCoordinator(first.ctx)
 		const child = createOwnerContext(first.ctx, 'child')
 		try {
@@ -1058,8 +1058,8 @@ describe('runtime host-owned graph state', () => {
 	})
 
 	it('isolates immutable route snapshots and skips disposed lower installations', async () => {
-		const first = createRuntimeInternalTestHarness()
-		const second = createRuntimeInternalTestHarness()
+		const first = await createRuntimeInternalTestHarness()
+		const second = await createRuntimeInternalTestHarness()
 		const child = createOwnerContext(first.ctx, 'child')
 		const base = {
 			dynamicPluginSources: { hasFile: () => true, hasDirectory: () => true },
@@ -1091,7 +1091,7 @@ describe('runtime host-owned graph state', () => {
 		@PluginDecorator({ forkable: true })
 		class Orphan extends BasePlugin {}
 		lowerTestPlugin(Orphan)
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		const base = node(pluginDefinitionAddressOf(Orphan))
 		const fork = host.fork(Orphan, 'stopped')
 		try {

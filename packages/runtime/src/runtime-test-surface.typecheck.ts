@@ -6,7 +6,7 @@ import type {
 	WorkbenchAttachmentPlacement,
 	WorkbenchPrincipal,
 	WorkbenchView,
-} from './workbench/definition'
+} from '@pluxel/workbench/internal/definition'
 
 type Equal<Left, Right> =
 	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false
@@ -67,7 +67,7 @@ host.commands.createMount()
 // @ts-expect-error The Workbench registry is framework authority, not author test API.
 host.workbench.registry
 // @ts-expect-error Test host config cannot inject private ConfigService state.
-createRuntimeTestHost({ configService: { mode: 'memory' } })
+await createRuntimeTestHost({ configService: { mode: 'memory' } })
 
 interface ProviderApi extends RpcTarget {
 	read(): string

@@ -1,3 +1,4 @@
+import { VaultAdminPlugin } from '@pluxel/vault-admin'
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { AuthPlugin } from '@pluxel/auth'
 import { CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
@@ -35,6 +36,7 @@ export const officialPlugins = Object.freeze([
 	PiAgentPlugin,
 	PackageManagerPlugin,
 	AuthPlugin,
+	VaultAdminPlugin,
 	MemoryCacheBackendPlugin,
 	CachePlugin,
 	OtelPlugin,

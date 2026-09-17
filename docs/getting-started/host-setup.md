@@ -21,7 +21,7 @@ npx nypm add -D @pluxel/host-dev @pluxel/rolldown vite tsdown
 先创建一个本地插件 `src/OrdersPlugin.ts`：
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
@@ -35,7 +35,7 @@ export class OrdersPlugin extends BasePlugin {
 
 ```ts no-twoslash
 // src/app.ts
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineProduct } from '@pluxel/runtime/product'
 import type { RuntimeApplication } from '@pluxel/runtime'
 import { OrdersPlugin } from './OrdersPlugin.ts'
@@ -94,7 +94,7 @@ Vite host 与 `variant: 'workbench'` 产物默认启用 Workbench；本例通过
 `PLUXEL_WORKBENCH=false` 也可在启动时关闭它。
 `PLUXEL_DATA_ROOT` 会覆盖 string/omitted persistence root，但不会替换 application 明确注入的 custom backend。
 
-`prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。没有应用数据库就无法运行的 static application 在这里打开、迁移并把关闭登记到 root effects；只有部分 Plugin 使用的数据库应成为 provider Plugin，由 graph 隔离失败。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
+`prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。没有应用数据库就无法运行的 static application 在这里打开、迁移并把关闭登记到 root effects；只有部分 Plugin 使用的数据库应成为 provider Plugin，由 graph 隔离失败。不要在 `prepare()` 中替 Plugin 调用 `ctx.require(Database).use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
 
 不要把 `root` 或 `workbench` 直接写进 应用声明顶层。`configure()` 每次宿主启动都会重新读取 env、bindings 与 deployment。
 
@@ -174,12 +174,12 @@ Pluxel starter 默认先执行 `portless proxy start --port 1355 --no-tls`，避
 
 ```ts twoslash
 // tsdown.config.ts
-import { application } from '@pluxel/rolldown/build'
+import { defineConfig } from 'tsdown'
+import { pluxel } from '@pluxel/rolldown'
 
-export default application({
+export default defineConfig({
 	entry: './src/app.ts',
-	variant: 'headless',
-	target: 'node',
+	plugins: [pluxel({ variant: 'headless' })],
 })
 ```
 
@@ -227,17 +227,18 @@ declare module '@pluxel/runtime/environment' {
 freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使本机开发/测试可选择 PGlite、部署可选择 PostgreSQL。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
 
 ```ts twoslash
-import { application } from '@pluxel/rolldown/build'
+import { defineConfig } from 'tsdown'
+import { pluxel } from '@pluxel/rolldown'
 
-export default application({
+export default defineConfig({
 	entry: './src/app.ts',
-	managedDatabaseDrivers: [],
+	plugins: [pluxel({ managedDatabaseDrivers: [] })],
 })
 ```
 
 这个列表必须覆盖 `configure()` 可能返回的每个 managed database driver。未列出的 driver 不会复制进发行物；Plugin 首次实际取得该 database capability 时会进入明确的 absent module，并报告该 deployment 未包含对应 driver。
 
-需要生产 source map 时可同时设置 `sourcemap: true` 与 `sourcemapExcludeSources: true`。后者保留路径和行列映射，但不在每份 `.map` 中嵌入完整源码；目标环境另有可信源码归档时通常应开启。
+需要生产 source map 时可同时设置 `sourcemap: true` 与 `outputOptions: { sourcemapExcludeSources: true }`。后者保留路径和行列映射，但不在每份 `.map` 中嵌入完整源码；目标环境另有可信源码归档时通常应开启。
 
 最终 inventory、签名和 delivery marker 见 [Static 发行物](../development/distribution.md)。
 
@@ -308,7 +309,7 @@ Static `configure()` 或 dynamic config 提供初始值，file/memory/readonly b
 
 ### 业务 Elysia application 与 carrier
 
-Plugin 直接在 generation-scoped `ctx.elysia` 中声明最终业务 path。宿主不为 Plugin 生成 URL，也不把 route options 塞进 static
+Plugin 直接在 generation-scoped `ctx.require(Http)` 中声明最终业务 path。宿主不为 Plugin 生成 URL，也不把 route options 塞进 static
 或 dynamic config；需要 `/orders` namespace 时由 Plugin 使用 Elysia `group('/orders', ...)` 明确表达。`/__pluxel` 始终由宿主
 control plane 保留。
 
@@ -344,7 +345,7 @@ workbench: {
 现有模板已经固定这些依赖；接入现有项目时应按所用 `@pluxel/runtime` 的发布包 peerDependencies 配置，
 并确保 Mantine 的实际解析版本与宿主一致。它们由工作台统一加载，缺少依赖或版本不匹配会导致页面构建失败。
 
-不加载 Workbench UI、但需要通过 `@pluxel/runtime/web` 管理宿主时，显式启用 Management：
+不加载 Workbench UI、但需要通过 `@pluxel/management/client` 管理宿主时，显式启用 Management：
 
 ```ts no-twoslash
 workbench: false,

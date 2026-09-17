@@ -5,25 +5,21 @@ import {
 	requirePluginService,
 } from '@pluxel/core/internal'
 import {
-	createRuntimeInternalTestContext,
 	createRuntimeInternalTestHarness,
 	type RuntimeInternalTestHarness,
 } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
-import { SuperJSON } from 'superjson'
 import { v } from '../../src/config'
 import {
-	pluginConfigGet,
 	pluginConfigPatch,
 	pluginConfigPatchField,
-} from '../../src/api/usecases/pluginConfig'
+} from '@pluxel/management/internal/api/usecases/pluginConfig'
 import { removeFork } from '../../src/api/usecases/pluginForks'
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
-} from '../../src/services/persistence/PersistenceService'
-import { lowerTestPlugin } from '../helpers/lowered-plugin'
+} from '@pluxel/services/internal/persistence'
 
 const ConfigSchema = v.object({
 	value: v.optional(v.string(), 'initial'),
@@ -298,7 +294,7 @@ afterEach(async () => {
 
 describe('Plugin config application scope', () => {
 	it('serializes a config patch requested during fork removal after final durable removal', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		const fork = host.fork(ConfigFork, 'exclusive-remove')
 		host.cfg(fork).setAutoStart(true)
 		host.start(fork)
@@ -331,7 +327,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('keeps catalog replacement outside config validation, persistence, and restart', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(ConfigOwner)
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
@@ -363,7 +359,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('durably saves and notifies one running default generation', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(ConfigOwner)
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
@@ -388,21 +384,8 @@ describe('Plugin config application scope', () => {
 		expect(generation.config.value).toBe('changed')
 	})
 
-	it('reports a successfully started generation as the applied desired revision', async () => {
-		const host = runtimeHost()
-		host.add(ConfigOwner)
-		host.cfg(ConfigOwner).setAutoStart(true)
-		host.start(ConfigOwner)
-		await host.commit()
-
-		const result = await pluginConfigGet(host.ctx, pluginNodeAddressOf(ConfigOwner))
-		expect(result).toMatchObject({ ok: true, saved: false, application: 'applied' })
-		if (!result.ok) throw new Error(result.message)
-		expect(result.appliedRevision).toBe(result.desiredRevision)
-	})
-
 	it('notifies only the addressed fork and keeps sibling config isolated', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		const East = host.fork(ConfigFork, 'east')
 		const West = host.fork(ConfigFork, 'west')
 		host.cfg(East).setAutoStart(true)
@@ -432,7 +415,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('defers application for a stopped node', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(StoppedConfigOwner)
 		await host.commit()
 
@@ -449,7 +432,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('keeps desired config after a listener failure and reports it as not applied', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(FailingConfigOwner)
 		host.cfg(FailingConfigOwner).setAutoStart(true)
 		host.start(FailingConfigOwner)
@@ -474,7 +457,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('saves without notifying when a running declaration has no listener', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(ConfigWithoutListener)
 		host.cfg(ConfigWithoutListener).setAutoStart(true)
 		host.start(ConfigWithoutListener)
@@ -496,7 +479,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('notifies nested Part declarations before the owner and advances one revision', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(ConfigPartOwner)
 		host.cfg(ConfigPartOwner).setAutoStart(true)
 		host.start(ConfigPartOwner)
@@ -520,7 +503,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('does not notify any declaration when one changed Part has no listener', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(IncompleteConfigOwner)
 		host.cfg(IncompleteConfigOwner).setAutoStart(true)
 		host.start(IncompleteConfigOwner)
@@ -544,7 +527,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('keeps framework fields unconfirmed while allowing earlier listener side effects', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(PartiallyAppliedOwner)
 		host.cfg(PartiallyAppliedOwner).setAutoStart(true)
 		host.start(PartiallyAppliedOwner)
@@ -570,7 +553,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('rejects update listener registration outside init or with a forged object', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(ConfigOwner)
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
@@ -582,7 +565,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('rejects cross-owner registration while independent init windows overlap', async () => {
-		const host = runtimeHost({ plugins: { startConcurrency: 2 } })
+		const host = await runtimeHost({ plugins: { startConcurrency: 2 } })
 		host.add([ConcurrentConfigOwner, ConcurrentConfigBorrower])
 		host.cfg(ConcurrentConfigOwner).setAutoStart(true)
 		host.start(ConcurrentConfigOwner)
@@ -602,7 +585,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('aborts an admitted listener and rejects its acknowledgement after replacement', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(WithdrawnConfigOwner)
 		host.cfg(WithdrawnConfigOwner).setAutoStart(true)
 		host.start(WithdrawnConfigOwner)
@@ -632,7 +615,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('fails generation init on duplicate listener registration', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(DuplicateConfigListenerOwner)
 		host.cfg(DuplicateConfigListenerOwner).setAutoStart(true)
 		host.start(DuplicateConfigListenerOwner)
@@ -650,7 +633,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('retries from the last confirmed snapshot after an earlier listener failure', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(RetryConfigOwner)
 		host.cfg(RetryConfigOwner).setAutoStart(true)
 		host.start(RetryConfigOwner)
@@ -675,7 +658,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('confirms an equivalent normalized snapshot without invoking the listener', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(ConfigOwner)
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
@@ -690,7 +673,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('reuses one pre-persistence validation output when notifying a running node', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(SingleValidationOwner)
 		host.cfg(SingleValidationOwner).set({ value: 'initial' })
 		host.cfg(SingleValidationOwner).setAutoStart(true)
@@ -715,7 +698,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('rejects dangerous field paths without mutating object prototypes', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(StoppedConfigOwner)
 		await host.commit()
 		const owner = pluginNodeAddressOf(StoppedConfigOwner)
@@ -756,7 +739,7 @@ describe('ConfigService persistence', () => {
 				}
 			},
 		}
-		const host = runtimeHost({
+		const host = await runtimeHost({
 			persistence: { mode: 'custom', backend },
 			configService: { mode: 'file' },
 		})
@@ -785,126 +768,15 @@ describe('ConfigService persistence', () => {
 			]),
 		)
 		expect(host.isRunning(ConfigOwner)).toBe(false)
-	})
-
-	it('loads existing config through a readonly backend and rejects mutation', async () => {
-		const backend = createMemoryPersistenceBackend()
-		const owner = pluginNodeAddressOf(ConfigOwner)
-		const persisted = SuperJSON.stringify({
-			version: 3,
-			plugins: [{ owner, config: { value: 'persisted' } }],
-		})
-		await backend.namespace('config').put('config.json', persisted)
-		const runtime = createRuntimeInternalTestContext({
-			persistence: { mode: 'readonly', backend },
-			configService: { environment: false },
-		})
-		try {
-			const configService = requireConfigService(runtime.ctx)
-			await configService.ready
-			expect(configService.getRawConfig(owner)).toEqual({ value: 'persisted' })
-			expect(() => configService.patchConfig(owner, { value: 'changed' })).toThrow(/readonly mode/i)
-			expect(await backend.namespace('config').getText('config.json')).toBe(persisted)
-		} finally {
-			await runtime.dispose()
-		}
-	})
-
-	it('keeps the startup config snapshot when a readonly file is absent', async () => {
-		const backend = createMemoryPersistenceBackend()
-		const owner = pluginNodeAddressOf(ConfigOwner)
-		const runtime = createRuntimeInternalTestContext({
-			persistence: { mode: 'readonly', backend },
-			configService: {
-				environment: false,
-				snapshot: { plugins: [{ owner, config: { value: 'startup' } }] },
-			},
-		})
-		try {
-			const configService = requireConfigService(runtime.ctx)
-			await configService.ready
-			expect(configService.getRawConfig(owner)).toEqual({ value: 'startup' })
-			expect(await backend.namespace('config').stat('config.json')).toBeUndefined()
-		} finally {
-			await runtime.dispose()
-		}
-	})
-
-	it.each([
-		['malformed', '{'],
-		['unsupported version', SuperJSON.stringify({ version: 2, plugins: [] })],
-	])('fails fast on %s readonly config without isolating or rewriting it', async (_case, text) => {
-		const backend = createMemoryPersistenceBackend()
-		await backend.namespace('config').put('config.json', text)
-		const runtime = createRuntimeInternalTestContext({
-			persistence: { mode: 'readonly', backend },
-			configService: { environment: false },
-		})
-		try {
-			await expect(requireConfigService(runtime.ctx).ready).rejects.toThrow(/ConfigService/)
-			expect(await backend.namespace('config').getText('config.json')).toBe(text)
-			const keys: string[] = []
-			for await (const entry of backend.namespace('config').list()) keys.push(entry.key)
-			expect(keys).toEqual(['config.json'])
-		} finally {
-			await runtime.dispose()
-		}
-	})
-
-	it('uses atomic writes, surfaces failure, and retries the desired snapshot', async () => {
-		const delegate = createMemoryPersistenceBackend()
-		const writes: Array<{ namespace: string; key: string; atomic: boolean }> = []
-		let rejectConfigWrite = false
-		const backend: PersistenceBackend = {
-			capability: delegate.capability,
-			preflight: delegate.preflight,
-			namespace(name) {
-				const storage = delegate.namespace(name)
-				return {
-					...storage,
-					async put(key, value, options) {
-						writes.push({ namespace: name, key, atomic: options?.atomic === true })
-						if (rejectConfigWrite && name === 'config' && key === 'config.json') {
-							throw new Error('config storage unavailable')
-						}
-						await storage.put(key, value, options)
-					},
-				}
-			},
-		}
-		const host = runtimeHost({
-			persistence: { mode: 'custom', backend },
-			configService: { mode: 'file' },
-		})
-		const configService = requireConfigService(host.ctx)
-		await configService.ready
-		writes.length = 0
-
-		@Plugin()
-		class PersistedConfigOwner extends BasePlugin {}
-
-		lowerTestPlugin(PersistedConfigOwner)
-		const owner = pluginNodeAddressOf(PersistedConfigOwner)
-		configService.patchConfig(owner, { value: 'desired' })
-		rejectConfigWrite = true
-
-		await expect(configService.flush()).rejects.toThrow('config storage unavailable')
-		expect(writes).toEqual([{ namespace: 'config', key: 'config.json', atomic: true }])
-
-		rejectConfigWrite = false
-		await configService.flush()
-		expect(writes.at(-1)).toEqual({
-			namespace: 'config',
-			key: 'config.json',
-			atomic: true,
-		})
+		hosts.splice(hosts.indexOf(host), 1)
+		await expect(host.dispose()).rejects.toThrow('Runtime internal test harness disposal failed')
 	})
 })
 
-function runtimeHost(
+async function runtimeHost(
 	config: Parameters<typeof createRuntimeInternalTestHarness>[0] = {},
-): RuntimeInternalTestHarness {
-	const host = createRuntimeInternalTestHarness({ workbench: false, ...config })
+): Promise<RuntimeInternalTestHarness> {
+	const host = await createRuntimeInternalTestHarness({ workbench: false, ...config })
 	hosts.push(host)
 	return host
 }

@@ -14,3 +14,9 @@ export {
 	type HostModuleClassifier,
 	type HostModuleDecision,
 } from './host-modules.ts'
+
+export type {
+	HostDevelopmentPluginApi,
+	HostDevelopmentAttachment,
+	HostDevelopmentCandidate,
+} from './attachments'

@@ -4,7 +4,7 @@ import {
 	type WorkbenchPaneLayoutControls,
 	type WorkbenchPaneLayoutMode,
 	type WorkbenchPaneLayoutRendererProps,
-} from '@pluxel/runtime/workbench/federation'
+} from '@pluxel/workbench/federation'
 import {
 	createContext,
 	useContext,

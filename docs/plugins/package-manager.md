@@ -13,7 +13,8 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
-import { pluginNodeAddressOf, type RuntimeApplication } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { type RuntimeApplication } from '@pluxel/runtime'
 import { resolveHostEnv } from '@pluxel/runtime/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host-dynamic'

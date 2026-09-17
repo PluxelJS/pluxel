@@ -74,13 +74,13 @@ scope.mutation((roots) => ({ mutationFn, workbench? }))
 
 入口职责固定为：
 
-- `@pluxel/runtime/workbench`：browser-safe definition builder 和类型；
-- `@pluxel/runtime/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
-- `@pluxel/runtime/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable DTO detach；
+- `@pluxel/workbench`：browser-safe definition builder 和类型；
+- `@pluxel/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable DTO detach；
 - `@pluxel/runtime/capnweb`：固定版本的 `RpcTarget`、`RpcStub` 和 WebSocket session bridge。
 
 Plugin author 不取得 raw socket、MF Runtime、Shell router/store、Bridge wrapper props 或 server registry。
-Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/runtime/internal/workbench-react`；它与其他 internal readers
+Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/workbench/internal/react`；它与其他 internal readers
 只供构建器和 Shell 使用，不进入作者 API。
 
 ## Definition 与源码组织
@@ -237,7 +237,7 @@ export const OrdersWorkbench = workbench.define({
 
 ```tsx
 // src/ui/overview.scope.ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.js'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
@@ -504,8 +504,8 @@ Indirect/re-export/dynamic definition import、错误 entry 或跨 renderer 复�
 - `react-dom`、`react-dom/client`；
 - `@mantine/core`、`@mantine/hooks`；
 - `@module-federation/bridge-react`；
-- `@pluxel/runtime/workbench`、`/client`、`/react`。
-- `@pluxel/runtime/internal/workbench-react`。
+- `@pluxel/workbench`、`/client`、`/react`。
+- `@pluxel/workbench/internal/react`。
 
 版本必须精确匹配并使用 `loaded-first`。Shell 先建立 winner，再按需注册 remote；不接受第二份 React 或 Mantine，
 也不允许 Plugin 局部覆盖 share policy。Producer 对固定 shared 使用 `import: false`，不携带 fallback。Router、编辑器和
@@ -539,6 +539,7 @@ build revision。
 - `notify()`、`confirm()`；
 - 可空的 relative `navigation`；
 - 参数化 document 的 params、dirty marker 和 title；
+- 可选的 management：Shell 显式借用当前已认证会话的 unary management 操作。每个 callable leaf 都绑定到 View 生命周期；缓存 nested namespace 或 detached method 不能绕过关闭检查。已接受的调用保留原会话语义，不承诺撤销或回滚；会话、socket 与订阅仍由 Shell 拥有。
 
 Remote 不取得 generic HTTP client、raw socket、Shell store 或 unrestricted URL navigation。复杂页面可以使用
 `WorkbenchPaneLayout` / `WorkbenchPane` 声明 navigation、primary、inspector 三栏；宿主拥有 resize、drawer、focus

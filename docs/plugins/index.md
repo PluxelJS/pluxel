@@ -23,7 +23,7 @@ pnpm governance:check
 安装只让代码可导入。还要在应用入口把 provider 加入 `plugins` 清单，并让需要它的业务插件自动启动：
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import type { RuntimeApplication } from '@pluxel/runtime'
 import { WretchPlugin } from '@pluxel/wretch'
 import { CustomerPlugin } from './customer-plugin.js'

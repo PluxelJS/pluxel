@@ -30,7 +30,7 @@ host catalog 必须包含 `FontsPlugin`。直接使用字体能力的 Plugin 将
 
 ```ts twoslash
 import { FontsPlugin } from '@pluxel/fonts'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class ReportsPlugin extends BasePlugin {
@@ -57,7 +57,7 @@ await host.start(ReportsPlugin, { catalog: [FontsPlugin] })
 
 ```ts twoslash
 import { FontsPlugin } from '@pluxel/fonts'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { fileURLToPath } from 'node:url'
 
 @Plugin()
@@ -159,7 +159,7 @@ Canvas/ECharts consumer。Manager 使用 descriptor-bound snapshot query 和 mut
 
 ```ts no-twoslash
 import { FontsWorkbench } from '@pluxel/fonts/workbench'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 
 export const ReportsWorkbench = workbench.define({
 	fonts: FontsWorkbench.selection.place(workbench.tab({ label: 'Fonts' })),

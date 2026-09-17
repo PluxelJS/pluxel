@@ -10,16 +10,16 @@ import {
 } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
-import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
-import { createRuntimeLogging, type RuntimeLoggingInput } from '../../src/logger/logging'
-import type { PluginLogPolicyStore } from '../../src/logger/policy'
+import { createRuntimeLogging, type RuntimeLoggingInput } from '@pluxel/logging/internal'
+import type { PluginLogPolicyStore } from '@pluxel/logging'
 import { isPluginAutoStartEnabled, listForkIds } from '../../src/services/RuntimeStateHelpers'
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
-} from '../../src/services/persistence/PersistenceService'
-import type { PluginApplyReport } from '../../src/web/protocol'
+} from '@pluxel/services/internal/persistence'
+import type { PluginApplyReport } from '@pluxel/management/internal/web/protocol'
 
 @Plugin({ forkable: true })
 class ForkProvider extends BasePlugin {}
@@ -55,7 +55,7 @@ afterEach(async () => {
 
 describe('Plugin fork control plane', () => {
 	it('atomically creates, marks for auto-start, and selects a fork without starting it live', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
@@ -90,7 +90,7 @@ describe('Plugin fork control plane', () => {
 	})
 
 	it('rejects an invalid atomic selection without leaving fork intent behind', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
@@ -117,7 +117,7 @@ describe('Plugin fork control plane', () => {
 	})
 
 	it('reports applied and deferred ensure outcomes with reports', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add([ForkProvider, ForkConsumer, FailingForkProvider])
 		host.cfg(ForkConsumer).setAutoStart(true)
 		host.start(ForkConsumer)
@@ -159,7 +159,7 @@ describe('Plugin fork control plane', () => {
 	})
 
 	it('blocks inbound references, removes after clearing them, and is idempotent', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
@@ -196,7 +196,7 @@ describe('Plugin fork control plane', () => {
 				provider: null,
 			}),
 		).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
-		const business = host.ctx.root.persistence.namespace('plugin-business')
+		const business = host.ctx.root.persistence!.namespace('plugin-business')
 		await business.put('referenced/data.json', '{"retained":true}')
 
 		const removed = await rpc.removePluginFork({ base, forkId: 'referenced' })
@@ -217,7 +217,7 @@ describe('Plugin fork control plane', () => {
 	})
 
 	it('retains drain lifecycle issues in the final browser report', async () => {
-		const host = runtimeHost()
+		const host = await runtimeHost()
 		host.add(DrainFailureForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
@@ -251,7 +251,7 @@ describe('Plugin fork control plane', () => {
 	})
 
 	it('returns stopped-retained when readonly Config metadata rejects removal', async () => {
-		const host = runtimeHost({ configService: { mode: 'readonly' } })
+		const host = await runtimeHost({ configService: { mode: 'readonly' } })
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
@@ -290,7 +290,7 @@ describe('Plugin fork control plane', () => {
 				}
 			},
 		}
-		const host = runtimeHost({
+		const host = await runtimeHost({
 			persistence: { mode: 'custom', backend },
 			configService: { mode: 'file' },
 		})
@@ -303,7 +303,7 @@ describe('Plugin fork control plane', () => {
 		const config = requireConfigService(host.ctx)
 		config.patchConfig(ensured.fork, { desired: true })
 		await config.flush()
-		const business = host.ctx.root.persistence.namespace('plugin-business')
+		const business = host.ctx.root.persistence!.namespace('plugin-business')
 		await business.put('retry/data.bin', 'business-state')
 
 		rejectConfigWrite = true
@@ -341,7 +341,7 @@ describe('Plugin fork control plane', () => {
 		const logging = createRuntimeLogging(loggingPlan())
 		await logging.install()
 		await logging.initializePolicy(loggingStore)
-		const host = createRuntimeInternalTestHarness(
+		const host = await createRuntimeInternalTestHarness(
 			{ workbench: false, logger: logging.contextBinding },
 			{ logging },
 		)
@@ -385,10 +385,10 @@ describe('Plugin fork control plane', () => {
 	})
 })
 
-function runtimeHost(
+async function runtimeHost(
 	config: Parameters<typeof createRuntimeInternalTestHarness>[0] = {},
-): RuntimeInternalTestHarness {
-	const host = createRuntimeInternalTestHarness({ workbench: false, ...config })
+): Promise<RuntimeInternalTestHarness> {
+	const host = await createRuntimeInternalTestHarness({ workbench: false, ...config })
 	hosts.push(host)
 	return host
 }

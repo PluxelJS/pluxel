@@ -16,7 +16,7 @@ describe('WretchExamplePlugin', () => {
 		)
 
 		{
-			await using host = createRuntimeTestHost({ workbench: false })
+			await using host = await createRuntimeTestHost({ workbench: false })
 			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin, {
 				initialConfig: {
@@ -44,7 +44,7 @@ describe('WretchExamplePlugin', () => {
 
 	it('places and opens the provider-owned settings Attachment', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
 			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin)
 

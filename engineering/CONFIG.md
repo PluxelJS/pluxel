@@ -7,8 +7,15 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
   -> toolchain owner/path schema facts
   -> core composite defaults / validation / normalized aggregate snapshot
 	  -> one Plugin config record / revision / notification owner
-  -> runtime persistence / patch / reset / Workbench section projection
+  -> Host config get / validate / patch / reset
+  -> Runtime persistence / transport report / Workbench section projection
 ```
+
+## Host 管理用例
+
+`@pluxel/host` 的 `host.config` 提供 get、validate、patch 和 reset。节点可用性与 fork 查询来自同一个 Host coordinator；配置记录、revision、validation ticket 与 generation notification 继续由 Core 拥有。读取和校验也经过协调器队列，异步 schema 处理不会跨越正在接受的配置/目录事务读取混合状态。
+
+Runtime 的配置 RPC、开发控制台和管理客户端通过原 usecase 入口委托 Host；Runtime 只保留 fieldPath 输入解析、presentation 编译和 Slot 到 Address 的 transport report 投影。`ConfigMutationRejectedError` 是 Host 的存储策略拒绝信号，Host readonly adapter 使用同一类，不复制错误判别。
 
 ## 不变量
 
@@ -20,11 +27,19 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
 - config owner 始终是 canonical `PluginNodeAddress`，内存索引使用其稳定 binary-derived index key；ConfigService 不创建或保留 Core slot，
   也不使用 Plugin name/schema key。
 - core validation 不依赖文件系统或 Workbench Plane。
-- raw record、revision 与 validation cache 只有 core `ConfigService` 一份；runtime 子类只增加持久化策略。
+- raw record、revision 与 validation cache 只有 core `ConfigService` 一份；HostConfigStore 子类只增加持久化策略，Runtime 使用该同一实现。
 - `getRawConfig()` 对同一 revision 复用一个深冻结普通 snapshot；revision 改变后返回新 identity，旧引用不变，不使用 live `Proxy` view。
 - 任意 Part config patch 都重新验证 composite record，并通知当前 owning Plugin generation；没有 Part config revision 或独立
   persistence/application owner。
 - static application build 固定的是 Plugin code graph 和 `configure()` resolver code，不是 resolver 的启动返回值。
+
+## 存储与创建边界
+
+Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` 与模式。`HostDocumentStorage` 是借用的 namespaced 文档接口，仅包含现有读取、完整提交写入与 existence/stat 操作；Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。无 storage 时为 memory，有 storage 时默认 writable，可显式 readonly。
+
+`HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留原 SuperJSON v3/v5 格式、初始值覆盖规则、破损文档隔离与 readonly 失败语义。Config debounce、digest 去重、写失败重试、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
+
+Core 的 `createCoreContextHost({ createConfigService })` 只允许在固定 CONFIG_SERVICE descriptor 的严格惰性工厂位置创建 CoreConfigService；它不是任意 root factory，不暴露替换 Core token 的权限。Host 准备阶段等待两个 store.ready 后交付，关闭先排空已接纳操作，再等待 store 自己的写入并聚合 flush 错误。Runtime 的 config/state 文件只保留既有启动输入类型与共享实现转导，环境与 backend capability 到模式的转换留在 Runtime composition。
 
 ## Static startup config
 
@@ -107,7 +122,7 @@ config mutation、显式 restart 或下次 boot 重试。fork 的 config record/
 
 running apply 直接按 canonical node key 查找 generation config binding，不扫描 catalog、不运行 reconciler，也不 restart dependent closure。
 Config field 保存最后一次 framework-confirmed slice；Plugin 自己拥有普通 runtime state、外部资源、幂等与 cleanup，listener reject 不承诺回滚
-已经发生的 Plugin 副作用。RuntimeStateStore 返回 revision-bound immutable snapshot/cache；同一 revision 的 read 不 deep clone。readonly backend
+已经发生的 Plugin 副作用。HostStateStore 返回 revision-bound immutable snapshot/cache；同一 revision 的 read 不 deep clone。readonly backend
 读取既有文件但不创建缺失文件，拒绝 mutation；malformed/version error fail-fast，且不隔离或重写原文件。
 
 ### Running generation notification

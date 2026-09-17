@@ -2,7 +2,8 @@
 // - 你需要一个 Plugin 只声明一次完整 object schema
 // - 你想把内部模块的配置归入 owner Plugin，而不是创建独立配置命名空间
 
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { f, v } from '@pluxel/runtime'
 
 const PluginConfig = v.object({
 	enabled: v.pipe(

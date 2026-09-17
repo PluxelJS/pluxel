@@ -34,7 +34,7 @@ consumer 只依赖 `Cache` 抽象；host catalog 选择：
 
 ```ts twoslash
 import { Cache, type CacheNamespace } from '@pluxel/cache'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 type CatalogItem = { id: string }
 

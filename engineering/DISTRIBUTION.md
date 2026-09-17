@@ -5,7 +5,7 @@ delivery marker 契约。Runtime 启动不会读取这些文件、遍历发行�
 
 ## Finalization 所有权
 
-`application()` 会在 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 和 nf3 residual
+`pluxel()` 会在 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 和 nf3 residual
 packages 全部组装完成后调用 `createDistributionManifest()`。Manifest 路径固定为 `pluxel-distribution.json`。
 
 Static application 声明 config environment bootstrap 时，assembly 会在 finalization 前生成 root `.env.example`；它与 server、
@@ -14,7 +14,7 @@ public 和 artifact 文件一样进入 inventory。该文件不是 runtime input
 如果应用任务在 freezer 返回后继续写入 `dist/`，release pipeline 必须在最后一次写入后调用
 `pluxel distribution create ./dist`。自动与显式 finalization 使用同一个函数。Finalizer 从
 `pluxel-deployment.json` 派生 application name、catalog hash、Node target 与 headless/workbench variant；
-`application()` 不接收 claims、signer 或 trust 配置。
+`pluxel()` 不接收 claims、signer 或 trust 配置。
 
 ## Artifact set v1
 

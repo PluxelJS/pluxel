@@ -1,7 +1,8 @@
+import { installHostPluginDiagnostics } from './diagnostics'
 import type { Context, CommitSummary } from '@pluxel/core'
 import { PluginHostCoordinator, type HostStateCoordinatorStore } from './coordinator'
 import { corePluginGraphDriver } from './driver'
-import { createMemoryHostState } from './memory-state'
+import { HostStateStore } from './state-store'
 
 const coordinators = new WeakMap<Context['root'], PluginHostCoordinator<CommitSummary>>()
 
@@ -13,9 +14,10 @@ export function installPluginHostCoordinator(
 	const root = ctx.root
 	if (coordinators.has(root)) throw new Error('[host] a coordinator is already installed')
 	const coordinator = new PluginHostCoordinator(
-		options.state ?? createMemoryHostState(),
+		options.state ?? new HostStateStore(root),
 		corePluginGraphDriver(root),
 	)
+	installHostPluginDiagnostics(root)
 	coordinators.set(root, coordinator)
 	root.effects.defer(
 		async () => {

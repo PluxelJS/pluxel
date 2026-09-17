@@ -23,7 +23,7 @@ Part 可以有自己的配置和资源清理；某个 Part 启动失败，整个
 ## 先拆出一个缓存
 
 ```ts twoslash
-import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
 
 class CachePart extends PluginPart<SearchPlugin> {
 	private readonly values = new Map<string, string>()
@@ -62,7 +62,8 @@ export class SearchPlugin extends BasePlugin {
 
 ```ts no-twoslash
 import { CacheBackendPlugin } from '@acme/cache-backend'
-import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 
 type CacheHandle = {
 	get(key: string): string | undefined
@@ -153,7 +154,7 @@ optional integration 仍使用 module-level `definePluginRef<T>()`，并在 Part
 
 ```ts no-twoslash
 import type { MetricsPlugin } from '@acme/metrics'
-import { definePluginRef, PluginPart } from '@pluxel/runtime'
+import { definePluginRef, PluginPart } from '@pluxel/core'
 
 const Metrics = definePluginRef<MetricsPlugin>()
 

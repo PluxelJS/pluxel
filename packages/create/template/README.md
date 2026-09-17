@@ -12,7 +12,9 @@ pnpm dev
 ```
 
 The host declares its fixed Plugin catalog and optional mutable sources in `host/src/app.ts`.
-Vite development and production builds consume that same application declaration. `host/web/` is an independent private workspace package
+Vite development and production builds consume that same `HostApplication` declaration.
+Its `configure()` returns an explicit service list; `standardServices()` supplies the common server services,
+with Logging, Vault, Management and Workbench added by the application. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
 configuration, installs the workspace Plugins and serves the page and Plugin routes on
 the stable Portless application origin printed at startup.
@@ -27,7 +29,7 @@ The starter policy already recognizes common React UI, testing, backend/data and
 extend the rules in `pncat.config.ts` when the product adopts a new dependency family.
 
 The host package build runs its one Vite config first, then [`host/tsdown.config.ts`](host/tsdown.config.ts)
-uses `application()` and copies `host/web/dist` into `host/dist/public`. The host finally runs
+uses `pluxel()` and copies `host/web/dist` into `host/dist/public`. The host finally runs
 `pluxel distribution create` after that write so the distribution manifest covers browser assets.
 
 Workbench is enabled by default. It shares the Vite process but owns the non-root
@@ -53,8 +55,8 @@ when the application only needs its fixed imports. No Vite mode or second config
 
 - `packages/domain` provides framework-neutral Todo value rules with ordinary Vitest tests.
 - `plugins/todo` owns Todo state and one exported Valibot config schema. The host reuses that
-  exact schema to bind `EXAMPLE_TODO_MAX_ITEMS` as a first-start config seed; production builds derive
-  `host/dist/.env.example` from the same declaration.
+  schema to validate the `EXAMPLE_TODO_MAX_ITEMS` first-start seed read by `configure()`.
+  Add application-specific environment variables to your deployment configuration explicitly.
 - `plugins/http` declares `TodoPlugin` as a required constructor dependency and validates HTTP input.
 - `plugins/todo` observes `AuditPlugin` through `definePluginRef()` as an optional integration.
 - Plugin tests use the Pluxel Vitest preset and the smallest matching core/runtime test host.

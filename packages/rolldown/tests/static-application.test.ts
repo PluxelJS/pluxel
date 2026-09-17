@@ -5,7 +5,7 @@ import { traceNodeModules } from 'nf3'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
-import { application } from '../src/cli/static-application.ts'
+import { createStaticApplicationConfig as application } from '../src/cli/static-application.ts'
 import { readPublicElysiaSpecifiers } from '../src/cli/elysia-singleton.ts'
 import { createPluginSourceVitePipeline } from '../src/vite/plugin-source.ts'
 
@@ -255,7 +255,7 @@ describe('application', () => {
 				}>
 			).find((candidate) => candidate?.name === 'pluxel:static-elysia-singleton')
 			const resolve = vi.fn(async (id: string, importer: string | undefined) => {
-				if (id === '@pluxel/runtime/package.json') return { id: runtimeManifest }
+				if (id === '@pluxel/services/package.json') return { id: runtimeManifest }
 				if (id === 'elysia/package.json') return { id: elysiaManifest }
 				if (id === 'elysia/type') return { id: typeEntry, external: true }
 				if (id === 'typebox/value') return { id: typeboxValueEntry, external: true }
@@ -312,7 +312,7 @@ describe('application', () => {
 				entry: './src/pluxel.static.ts',
 				launcher: 'invalid' as never,
 			}),
-		).toThrow('[static-application] launcher must be either node or fetch')
+		).toThrow('[static-application] launcher must be node, fetch or host')
 	})
 
 	it('generates a namespace-based production bootstrap for default and product exports', async () => {

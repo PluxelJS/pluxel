@@ -14,10 +14,10 @@ import {
 import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
-import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
-import { projectPluginDependencyGraph } from '../../src/api/usecases/pluginDependencyGraph'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { projectPluginDependencyGraph } from '@pluxel/management/internal/api/usecases/pluginDependencyGraph'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
-import { parsePluginDependencyGraphSnapshot } from '../../src/web/management-validation'
+import { parsePluginDependencyGraphSnapshot } from '@pluxel/management/internal/web/management-validation'
 
 @Plugin()
 class DirectProvider extends BasePlugin {}
@@ -59,7 +59,7 @@ class SafeProvider extends CycleToken {}
 
 describe('Plugin dependency graph read model', () => {
 	it('projects direct, inactive-fork, effective, and zero-intern facts', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			const DirectProviderDefinition = pluginDefinitionAddressOf(DirectProvider)
 			host.add([DirectProvider, DirectConsumer])
@@ -120,7 +120,7 @@ describe('Plugin dependency graph read model', () => {
 	})
 
 	it('keeps stopped lifecycle status separate from committed graph membership', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add([FailingProvider, BlockedConsumer])
 			host.cfg(FailingProvider).setAutoStart(true)
@@ -150,7 +150,7 @@ describe('Plugin dependency graph read model', () => {
 	})
 
 	it('uses the fixed resolution table and expands only eligible declarations', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			const Direct = graphDefinition('Direct')
 			const AbstractDefault = graphDefinition('AbstractDefault')
@@ -294,7 +294,7 @@ describe('Plugin dependency graph read model', () => {
 	})
 
 	it('returns graph_rejected with unchanged policy and graph for a cycle mutation', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			const CycleTokenDefinition = pluginDefinitionAddressOf(CycleToken)
 			host.add([CycleConsumer, CycleProvider, SafeProvider])

@@ -5,12 +5,12 @@ import type {
 	WorkbenchContentActionPresentation,
 	WorkbenchContentDataPresentation,
 	WorkbenchContentPresentation,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import type {
 	WorkbenchConfirmInput,
 	WorkbenchNotificationInput,
-} from '@pluxel/runtime/workbench/federation'
-import type { ConfigPresentationFieldV1, RuntimeJsonValue } from '@pluxel/runtime/web'
+} from '@pluxel/workbench/federation'
+import type { ConfigPresentationFieldV1, RuntimeJsonValue } from '@pluxel/management/client'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AutoForm } from 'valibot-form/web'
 import type {

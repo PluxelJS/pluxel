@@ -1,7 +1,25 @@
-import { application } from '@pluxel/rolldown/build'
+import { defineConfig } from 'tsdown'
+import { pluxel } from '@pluxel/rolldown'
 
-export default application({
+export default defineConfig({
 	entry: './src/app.ts',
-	variant: 'workbench',
-	target: 'node',
+	plugins: [
+		pluxel({
+			variant: 'workbench',
+			sourceFrameworks: [
+				'@pluxel/services/http',
+				'@pluxel/services/node',
+				'@pluxel/services/workers',
+				'@pluxel/services/commands',
+				'@pluxel/services/persistence',
+				'@pluxel/services/vault',
+				'@pluxel/management/access',
+				'@pluxel/workbench',
+				'@pluxel/workbench/federation',
+				'elysia',
+				'elysia/ws',
+				'@pluxel/commands',
+			],
+		}),
+	],
 })

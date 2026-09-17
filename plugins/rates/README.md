@@ -6,7 +6,7 @@ Pluxel 官方 caller-aware admission control 插件。它对一次 `identity + c
 
 ```ts
 import { Rates, type RateLimiter } from '@pluxel/rates'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 class MessagingPlugin extends BasePlugin {

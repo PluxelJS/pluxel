@@ -1,51 +1,133 @@
+import { readHostPluginStatusOverview, type HostPluginStatusOverview } from './status'
+import { ensureFork, removeFork, type ForkEnsureResult, type ForkRemoveResult } from './forks'
+import { hostStatePatch } from './state'
+import {
+	pluginConfigGet,
+	pluginConfigValidate,
+	pluginConfigPatch,
+	pluginConfigReset,
+	type HostPluginConfig,
+} from './config'
 import type {
 	CoreHostConfig,
+	Context,
+	ContextServices,
 	PluginConstructor,
 	PluginNodeAddress,
+	PluginDefinitionAddress,
 	RootContext,
 } from '@pluxel/core'
 import {
+	closeOwnerInvocations,
 	consumePluginDefinitionCandidate,
-	createCoreRootContext,
+	requireConfigService,
 	requirePluginService,
 } from '@pluxel/core/internal'
+import {
+	createCoreContextHost,
+	type RootContextProjection,
+	type ContextCapabilityInstallation,
+	type ValidateContextInstallations,
+} from '@pluxel/core/host'
+import {
+	planHostServices,
+	prepareHostServices,
+	createHostServiceLifecycle,
+	type HostService,
+} from './services'
 import { createPluginCatalogSnapshot, type PluginCatalogSnapshot } from './catalog'
 import type { PluginApplyReport } from './coordinator'
-import { installPluginHostCoordinator } from './install'
-import { createMemoryHostState } from './memory-state'
-import type { HostStateSnapshot } from './policy'
+import { installPluginHostCoordinator, requirePluginHostCoordinator } from './install'
+import { HostStateStore, resolveHostStateInitial, type HostStateStoreOptions } from './state-store'
+import { assertHostStoreStorage } from './document-storage'
+import { HostConfigStore, type HostConfigStoreOptions } from './config-store'
+import { coercePluginConfigRecords } from './config-records'
 import { installPluginSources, type PluginSource, type PluginSourceChange } from './sources'
 import { openPluginSources, type PluginSourceSession } from './source-session'
 import { collectPluginModuleExports } from './module'
 
-type HostBaseOptions = Readonly<{
+type ServiceCapabilities<TServices extends readonly HostService[]> =
+	number extends TServices['length']
+		? readonly ContextCapabilityInstallation[]
+		: TServices extends readonly [
+					infer Head extends HostService,
+					...infer Tail extends readonly HostService[],
+			  ]
+			? readonly [...Head['capabilities'], ...ServiceCapabilities<Tail>]
+			: readonly []
+
+type ValidateHostServices<TServices extends readonly HostService[]> = ValidateContextInstallations<
+	ServiceCapabilities<TServices>,
+	Exclude<keyof Context, keyof ContextServices> | 'constructor' | '__proto__'
+>
+
+type HostBaseOptions<TServices extends readonly HostService[] = readonly HostService[]> = Readonly<{
+	/** Positive service list, fixed before root creation. Omitted means no additional services. */
+	services?: TServices & ValidateHostServices<TServices>
 	/** Explicit definition catalog. A definition is activated only by state.autoStart or startNode. */
 	plugins: readonly PluginConstructor[]
 	/** Core root settings; omitted values use Core defaults. */
 	config?: CoreHostConfig
-	/** Initial graph policy; omitted lists are empty. This lightweight host does not persist policy. */
-	state?: Partial<HostStateSnapshot>
+	/** Graph policy seed and optional borrowed document storage. Omitted means empty in-memory state. */
+	state?: HostStateStoreOptions
+	/** Plugin config seeds and optional borrowed document storage. Omitted means in-memory config. */
+	configRecords?: HostConfigStoreOptions
 }>
 
-/** Shared application declaration for explicit plugins and optional dynamic sources. */
-export type HostApplication = HostBaseOptions & Readonly<{ sources?: readonly PluginSource[] }>
+export type HostRuntimeOptions = Omit<HostBaseOptions, 'plugins'>
+/** Fixed catalog and sources; runtime configuration resolves once for each fresh Host. */
+export type HostApplication = HostBaseOptions &
+	Readonly<{
+		name?: string
+		sources?: readonly PluginSource[]
+		configure?(
+			startup: import('./application').HostStartupContext,
+		): HostRuntimeOptions | Promise<HostRuntimeOptions>
+		prepare?(input: {
+			host: PluginHost
+			startup: import('./application').HostStartupContext
+		}): void | Promise<void>
+	}>
 
-export type HostOptions = HostBaseOptions &
-	(
-		| Readonly<{ sources?: never; root?: never; loadModule?: never; onSourceError?: never }>
-		| Readonly<{
-				/** Application root passed to source discovery. */
-				root: string
-				sources: readonly PluginSource[]
-				/** Owns module resolution and revision identity; return fresh exports after a change. */
-				loadModule(path: string): Promise<unknown>
-				/** Failed candidates retain the committed catalog. Defaults to the root logger. */
-				onSourceError?(error: unknown): void
-		  }>
-	)
+export type HostOptions<TServices extends readonly HostService[] = readonly HostService[]> =
+	HostBaseOptions<TServices> &
+		(
+			| Readonly<{ sources?: never; root?: never; loadModule?: never; onSourceError?: never }>
+			| Readonly<{
+					/** Application root passed to source discovery. */
+					root: string
+					sources: readonly PluginSource[]
+					/** Owns module resolution and revision identity; return fresh exports after a change. */
+					loadModule(path: string): Promise<unknown>
+					/** Failed candidates retain the committed catalog. Defaults to the root logger. */
+					onSourceError?(error: unknown): void
+			  }>
+		)
 
-export interface PluginHost {
-	readonly ctx: RootContext
+export interface PluginHost<TServices extends readonly HostService[] = readonly HostService[]> {
+	readonly ctx: RootContext & RootContextProjection<ServiceCapabilities<TServices>>
+	readonly config: HostPluginConfig
+	/** A snapshot of availability, running intent and lifecycle outcomes from one committed graph. */
+	status(): Promise<HostPluginStatusOverview>
+	/** Persist startup intent and reconcile the same committed graph. */
+	setAutoStart(address: PluginNodeAddress, autoStart: boolean): Promise<PluginApplyReport>
+	setProviderDefault(
+		token: PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): Promise<PluginApplyReport>
+	setDependencyOverride(
+		consumer: PluginNodeAddress,
+		requirement: PluginDefinitionAddress,
+		provider: PluginNodeAddress | null,
+	): Promise<PluginApplyReport>
+	readonly forks: {
+		ensure(
+			base: PluginNodeAddress,
+			forkId: string,
+			options?: Parameters<typeof ensureFork>[3],
+		): Promise<ForkEnsureResult>
+		remove(base: PluginNodeAddress, forkId: string): Promise<ForkRemoveResult>
+	}
 	/** Idempotently publishes the initial catalog and reconciles startup policy. */
 	start(): Promise<PluginApplyReport>
 	catalog(): PluginCatalogSnapshot
@@ -58,13 +140,59 @@ export interface PluginHost {
 	close(): Promise<void>
 }
 
-/** Create a Core-only Plugin host. Construction does not start Plugin generations. */
-export function createHost(options: HostOptions): PluginHost {
-	const state = createMemoryHostState(options.state)
+/** Validate and prepare a fixed service composition. Plugin generations start only through start(). */
+export async function createHost<const TServices extends readonly HostService[] = readonly []>(
+	options: HostOptions<TServices>,
+): Promise<PluginHost<TServices>> {
+	assertHostStoreStorage(options.state ?? {})
+	assertHostStoreStorage(options.configRecords ?? {})
+	const initialState = resolveHostStateInitial(options.state?.initial)
+	const initialConfig = coercePluginConfigRecords(options.configRecords?.initial ?? [])
 	const fixed = [...options.plugins]
 	catalog(1, fixed) // Admit explicit definitions before creating any root resources.
-	const ctx = createCoreRootContext(options.config)
-	const coordinator = installPluginHostCoordinator(ctx, { state })
+	const services = planHostServices(options.services ?? [])
+	const shape = createCoreContextHost({
+		...options.config,
+		createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
+		capabilities: services.flatMap((service) => [...service.capabilities]),
+		createConfigService: (ctx) =>
+			new HostConfigStore(ctx, { ...options.configRecords, initial: initialConfig }),
+	})
+	const ctx = shape.createRoot(options.config?.name)
+	try {
+		const state = new HostStateStore(ctx, { ...options.state, initial: initialState })
+		hostStateStores.set(ctx, state)
+		ctx.effects.defer(
+			() => {
+				hostStateStores.delete(ctx)
+			},
+			{ phase: 'shutdown' },
+		)
+		await Promise.all([state.ready, requireConfigService(ctx).ready])
+		installPluginHostCoordinator(ctx, { state })
+		await prepareHostServices(ctx, services)
+		return createPreparedHost(options, fixed, ctx) as PluginHost<TServices>
+	} catch (error) {
+		const failures: unknown[] = [error]
+		try {
+			await closeOwnerInvocations(ctx)
+			await ctx.effects.dispose()
+		} catch (cleanupError) {
+			failures.push(cleanupError)
+		}
+		if (failures.length > 1) {
+			throw new AggregateError(failures, '[host] preparation and cleanup failed', { cause: error })
+		}
+		throw error
+	}
+}
+
+function createPreparedHost(
+	options: HostOptions,
+	fixed: readonly PluginConstructor[],
+	ctx: RootContext,
+): PluginHost {
+	const coordinator = requirePluginHostCoordinator(ctx)
 	let start: Promise<PluginApplyReport> | undefined
 	let closing: Promise<void> | undefined
 	let revision = 0
@@ -134,6 +262,77 @@ export function createHost(options: HostOptions): PluginHost {
 	return Object.freeze({
 		ctx,
 		start: startHost,
+		async status() {
+			await startHost()
+			assertOpen()
+			return readHostPluginStatusOverview(ctx)
+		},
+		async setAutoStart(address: PluginNodeAddress, autoStart: boolean) {
+			await startHost()
+			assertOpen()
+			return coordinator.updateRuntimeState(
+				hostStatePatch({ type: 'set-auto-start', node: address, autoStart }),
+				'plugin-auto-start-set',
+			)
+		},
+		async setProviderDefault(token: PluginDefinitionAddress, provider: PluginNodeAddress | null) {
+			await startHost()
+			assertOpen()
+			return coordinator.updateRuntimeState(
+				hostStatePatch({ type: 'set-provider-default', token, provider }),
+				'plugin-provider-default-set',
+			)
+		},
+		async setDependencyOverride(
+			consumer: PluginNodeAddress,
+			requirement: PluginDefinitionAddress,
+			provider: PluginNodeAddress | null,
+		) {
+			await startHost()
+			assertOpen()
+			return coordinator.updateRuntimeState(
+				hostStatePatch({ type: 'set-dependency-override', consumer, requirement, provider }),
+				'plugin-dependency-override-set',
+			)
+		},
+		forks: Object.freeze({
+			async ensure(
+				base: PluginNodeAddress,
+				forkId: string,
+				forkOptions?: Parameters<typeof ensureFork>[3],
+			) {
+				await startHost()
+				assertOpen()
+				return ensureFork(ctx, base, forkId, forkOptions)
+			},
+			async remove(base: PluginNodeAddress, forkId: string) {
+				await startHost()
+				assertOpen()
+				return removeFork(ctx, base, forkId)
+			},
+		}),
+		config: Object.freeze({
+			async get(owner: PluginNodeAddress) {
+				await startHost()
+				assertOpen()
+				return pluginConfigGet(ctx, owner)
+			},
+			async validate(owner: PluginNodeAddress, patch: Record<string, unknown>) {
+				await startHost()
+				assertOpen()
+				return pluginConfigValidate(ctx, owner, patch)
+			},
+			async patch(owner: PluginNodeAddress, patch: Record<string, unknown>) {
+				await startHost()
+				assertOpen()
+				return pluginConfigPatch(ctx, owner, patch)
+			},
+			async reset(owner: PluginNodeAddress, keys?: readonly string[]) {
+				await startHost()
+				assertOpen()
+				return pluginConfigReset(ctx, owner, keys)
+			},
+		}),
 		catalog: () => coordinator.catalogSnapshot(),
 		async updateCatalog(plugins: readonly PluginConstructor[]) {
 			assertOpen()
@@ -173,6 +372,7 @@ export function createHost(options: HostOptions): PluginHost {
 		close(): Promise<void> {
 			return (closing ??= (async () => {
 				abort.abort()
+				const rootDrain = closeOwnerInvocations(ctx)
 				const failures: unknown[] = []
 				try {
 					await start
@@ -189,7 +389,16 @@ export function createHost(options: HostOptions): PluginHost {
 				} catch (error) {
 					failures.push(error)
 				}
-				await coordinator.dispose()
+				try {
+					await rootDrain
+				} catch (error) {
+					failures.push(error)
+				}
+				try {
+					await coordinator.dispose()
+				} catch (error) {
+					failures.push(error)
+				}
 				try {
 					const registry = requirePluginService(ctx)
 					const nodes = registry.readCommittedDependencyAdjacency().nodes
@@ -220,4 +429,12 @@ function catalog(revision: number, plugins: readonly PluginConstructor[]): Plugi
 		revision,
 		plugins.map((plugin) => ({ candidate: consumePluginDefinitionCandidate(plugin) })),
 	)
+}
+
+const hostStateStores = new WeakMap<RootContext, HostStateStore>()
+/** The same prepared policy store used by the root's sole coordinator. */
+export function requireHostStateStore(ctx: Context): HostStateStore {
+	const store = hostStateStores.get(ctx.root)
+	if (!store) throw new Error('[host] root has no Host state store')
+	return store
 }

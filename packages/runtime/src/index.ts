@@ -74,39 +74,10 @@ export type {
 	PluginToken,
 	RuntimeUpdateCommitSummary,
 } from '@pluxel/core'
-export {
-	defineWorkerTask,
-	WorkerTaskError,
-	type WorkerTaskDeclaration,
-	type WorkerTaskHandler,
-	type WorkerInputPreparation,
-	type WorkerPreparedRunOptions,
-	type WorkerRunOptions,
-	type WorkersConfig,
-	type WorkerTaskErrorCode,
-} from './node-artifact/worker-task'
-export { defineNodeModule, type NodeModuleDeclaration } from './node-artifact/node-module'
-export type { DatabaseConfig } from './services/DatabaseService'
+export type { DatabaseConfig } from './services/database-config'
 export { f, v } from './config'
-export {
-	PersistenceError,
-	createMemoryPersistenceBackend,
-	createNodePersistenceBackend,
-	createReadonlyPersistenceBackend,
-	createWorkspacePersistenceBackend,
-	type MemoryPersistenceBackendOptions,
-	type PersistenceBackend,
-	type PersistenceCapability,
-	type PersistenceEntry,
-	type PersistenceNamespace,
-	type PersistenceRequirement,
-	type PersistenceServiceConfig,
-	type WorkspacePersistenceBackendFs,
-	type WorkspacePersistenceBackendOptions,
-} from './services/persistence/PersistenceService'
 export type { ConfigServiceConfig } from './services/ConfigService'
-export type { CommandCatalogSnapshot, CommandMount } from './services/CommandsService'
-export type { VaultServiceConfig } from './services/vault/types'
+export type { VaultServiceConfig } from '@pluxel/services/internal/vault-types'
 export type {
 	ManagementAccessMethod,
 	ManagementAccessPrincipal,
@@ -119,7 +90,7 @@ export type {
 	ManagementAuthenticationFailureCode,
 	ManagementAuthenticationProviderSession,
 	ManagementAuthenticationProviderStep,
-} from './services/admin-access/types'
+} from '@pluxel/management/internal/services/admin-access/types'
 export type { WorkbenchConfig } from './workbench-config'
 export type {
 	RuntimeDependencyOverrideState,

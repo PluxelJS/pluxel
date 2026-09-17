@@ -1,7 +1,7 @@
 import type {
 	WorkbenchContentDataOutcome,
 	WorkbenchOpenedContentHandle,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import { describe, expect, it, vi } from 'vitest'
 import { WorkbenchContentController } from '../src/app/workbench/WorkbenchContentController'
 

@@ -2,8 +2,8 @@
 // - 你要在插件里做共享加密持久化
 // - 你想看 kv / docs / blobs 的最小组合
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import type { VaultKvHandle } from '@pluxel/runtime/services/vault'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Vault, type VaultKvHandle } from '@pluxel/services/vault'
 
 const KV_TOKEN = 'demo.token'
 const KV_COUNTER = 'demo.counter'
@@ -11,8 +11,7 @@ const KV_COUNTER = 'demo.counter'
 @Plugin()
 export class PluginVaultDemo extends BasePlugin {
 	override async init() {
-		const vault = this.ctx.vault
-		if (!vault) throw new Error('PluginVaultDemo requires host config vault: {}')
+		const vault = this.ctx.require(Vault)
 		const space = vault.namespace()
 		const kv = space.kv()
 		const profiles = space.docs().collection<{ enabled: boolean; lastSeenAt: number }>('profiles')

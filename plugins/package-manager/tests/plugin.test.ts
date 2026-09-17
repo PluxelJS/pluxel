@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { dynamicSource } from '@pluxel/host-dynamic'
 import { installPluginSources } from '@pluxel/host/internal'
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
@@ -22,7 +22,7 @@ describe('PackageManagerPlugin', () => {
 		const managedRoot = resolve(root, 'managed')
 
 		{
-			await using host = createRuntimeInternalTestHost()
+			await using host = await createRuntimeInternalTestHost()
 			if (include)
 				installPluginSources(host.ctx, {
 					root,
@@ -63,7 +63,7 @@ describe('PackageManagerPlugin', () => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-plugin-'))
 		roots.push(root)
 		const managedRoot = resolve(root, 'managed')
-		await using host = createRuntimeInternalTestHost()
+		await using host = await createRuntimeInternalTestHost()
 		installPluginSources(host.ctx, {
 			root,
 			sources: [

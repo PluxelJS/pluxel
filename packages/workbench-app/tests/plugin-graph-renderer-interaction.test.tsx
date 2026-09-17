@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { PluginNodeAddress } from '@pluxel/core'
-import type { PluginDependencyGraphNode, PluginStatusSnapshot } from '@pluxel/runtime/web'
+import type { PluginDependencyGraphNode, PluginStatusSnapshot } from '@pluxel/management/client'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'

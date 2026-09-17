@@ -3,8 +3,8 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
-import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
-import { parsePluginCatalogSnapshot } from '../../src/web/management-validation'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { parsePluginCatalogSnapshot } from '@pluxel/management/internal/web/management-validation'
 
 @Plugin()
 class Documents extends BasePlugin {}
@@ -19,7 +19,7 @@ class Independent extends BasePlugin {}
 
 describe('committed Management catalog groups', () => {
 	it('projects declared dependencies even while stopped, without interning slots, and accepts named layout/reset RPC', async () => {
-		const host = createRuntimeInternalTestHarness({
+		const host = await createRuntimeInternalTestHarness({
 			workbench: false,
 			management: true,
 			persistence: { mode: 'memory' },

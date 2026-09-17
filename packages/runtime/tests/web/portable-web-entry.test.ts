@@ -5,9 +5,9 @@ import {
 	type PluginDependencyGraphSnapshot,
 	type RuntimeManagementClient,
 	type RuntimeMeta,
-} from '../../src/web'
+} from '@pluxel/management/client'
 
-describe('@pluxel/runtime/web framework boundary', () => {
+describe('@pluxel/management/client framework boundary', () => {
 	it('loads without React, Mantine, fetch, or a transport constructor', async () => {
 		vi.resetModules()
 		vi.doMock('react', () => {
@@ -17,7 +17,7 @@ describe('@pluxel/runtime/web framework boundary', () => {
 			throw new Error('The framework-neutral web entry evaluated Mantine')
 		})
 
-		const web = await import('../../src/web')
+		const web = await import('@pluxel/management/client')
 		expect(web.createRuntimeManagementClient).toEqual(expect.any(Function))
 		expect(web).not.toHaveProperty('discoverRuntime')
 		expect(web).not.toHaveProperty('createRuntimeTransportClient')

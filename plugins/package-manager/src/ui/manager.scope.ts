@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { PackageManagerWorkbench } from '../workbench.ts'
 
 export const managerScope = createWorkbenchRenderer(PackageManagerWorkbench.manager)

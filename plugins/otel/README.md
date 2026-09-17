@@ -13,7 +13,7 @@ pnpm add @pluxel/otel @opentelemetry/api @opentelemetry/api-logs
 import type { Counter } from '@opentelemetry/api'
 import { SeverityNumber } from '@opentelemetry/api-logs'
 import { OtelPlugin } from '@pluxel/otel'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 class CatalogPlugin extends BasePlugin {

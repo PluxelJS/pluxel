@@ -33,6 +33,20 @@ pnpm exec pluxel dev instances --root /absolute/project-root
 
 从返回结果确认 `root`、`pid` 和 `instanceId`。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
+独立 Host 同样可用标准 Vite 配置开启：
+
+```ts no-twoslash
+import { defineConfig } from 'vite'
+import { host } from '@pluxel/host-dev/vite'
+
+export default defineConfig({
+	plugins: [host({ entry: './src/app.ts', devConsole: true })],
+})
+```
+
+控制台借用当前 Host。HTTP、Commands、Workbench 与日志功能仍要求应用显式安装对应服务；
+开启控制台不代替应用选择服务，也不创建第二份 Host。
+
 省略 `devConsole` 不安装控制台。Vite integration 只在 serve 时安装。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
 
 CLI 默认从命令当前目录向上找到最近的 `package.json`，只查询该目录的控制台；以命令工作目录为准，不以脚本路径为准。该项目没有运行中的控制台就报告 `dev_unavailable`，不会继续寻找父项目或其他项目的服务。
@@ -49,7 +63,7 @@ dev 命令会在连接前拒绝未知选项；例如拼错 `--instance` 会返�
 
 ```ts no-twoslash
 // dev/inspect.ts
-import type { DevConsole } from '@pluxel/runtime/dev'
+import type { DevConsole } from '@pluxel/host-dev/console'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export default async function (dev: DevConsole) {
@@ -63,7 +77,7 @@ export default async function (dev: DevConsole) {
 需要写入数据时，在同一文件增加下面的 named export（合并已有 import）：
 
 ```ts no-twoslash
-import type { DevConsole, DevRunContext } from '@pluxel/runtime/dev'
+import type { DevConsole, DevRunContext } from '@pluxel/host-dev/console'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export async function add(dev: DevConsole, run: DevRunContext) {
@@ -202,9 +216,9 @@ export async function increaseLimit(dev: DevConsole) {
 下面假设项目已导出 `TodoWorkbench.editor`，其 View API 提供 `add({ title })`：
 
 ```ts no-twoslash
-import type { DevConsole } from '@pluxel/runtime/dev'
+import type { DevConsole } from '@pluxel/host-dev/console'
 import { TodoPlugin, TodoWorkbench } from '@example/todo-plugin'
-import { detachWorkbenchPortableValue } from '@pluxel/runtime/workbench/client'
+import { detachWorkbenchPortableValue } from '@pluxel/workbench/client'
 
 export default async function (dev: DevConsole) {
 	const principal = { provider: 'dev-console', subject: 'coding-agent' }

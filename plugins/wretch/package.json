@@ -41,15 +41,21 @@
 	},
 	"dependencies": {
 		"undici": "catalog:prod",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^",
 		"wretch": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"capnweb": "catalog:prod",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
@@ -57,8 +63,11 @@
 	},
 	"peerDependencies": {
 		"@mantine/core": "catalog:frontend",
-		"@pluxel/runtime": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
 		"@tabler/icons-react": "catalog:icons",
+		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend"
 	},

@@ -6,7 +6,7 @@ Pluxel 官方、可选的 pnpm package source producer。它使用 `@pnpm/napi` 
 ## Host 装配
 
 ```ts
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host-dynamic'
 import type { RuntimeApplication } from '@pluxel/runtime'

@@ -6,7 +6,8 @@ import {
 	type ResolvedRatePolicy,
 	RatesPolicyConflictError,
 } from '@pluxel/rates'
-import { formatPluginNodeReference, Plugin, type PluginNodeAddress, v } from '@pluxel/runtime'
+import { formatPluginNodeReference, Plugin, type PluginNodeAddress } from '@pluxel/core'
+import * as v from 'valibot'
 import { Redis, type RedisConnection } from './client.ts'
 import { defineRedisScript, type RedisScriptDefinition, type RedisScriptRunner } from './scripts.ts'
 import { isRedisConnectionId, isWellFormedUnicode } from './validation.ts'

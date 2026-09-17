@@ -7,7 +7,7 @@ const principal = Object.freeze({ provider: 'local', subject: 'plugin-host-test'
 
 describe('PluginWithUI Workbench observer', () => {
 	it('delivers updates through a disposable Workbench observer subscription', async () => {
-		await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+		await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
 		await host.start(PluginWithUI)
 		using opened = await host.workbench.open({
 			target: PluginWithUI,

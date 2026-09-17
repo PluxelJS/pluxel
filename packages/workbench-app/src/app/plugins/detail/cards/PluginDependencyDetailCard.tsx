@@ -21,7 +21,10 @@ import {
 } from '@pluxel/core'
 import { IconPlus, IconRefresh, IconTopologyStar3, IconTrash } from '@tabler/icons-react'
 import type { ElementType, ReactNode } from 'react'
-import type { PluginDependencyGraphEdge, PluginDependencyGraphNode } from '@pluxel/runtime/web'
+import type {
+	PluginDependencyGraphEdge,
+	PluginDependencyGraphNode,
+} from '@pluxel/management/client'
 import type {
 	PluginDependencyDetail,
 	PluginDependencyEndpoint,

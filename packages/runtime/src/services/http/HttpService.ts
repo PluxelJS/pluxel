@@ -1,33 +1,31 @@
 import type { Context as PluxelContext } from '@pluxel/core'
 import { Elysia } from 'elysia'
+import type { WSConnectionData } from 'elysia/ws'
 import { isAbsolute, resolve } from 'pathe'
 
-import type { AdminAccessReason } from '../admin-access/types'
-import type { RenderHandler } from '../../server/types'
+import type { RenderHandler } from '@pluxel/workbench/internal/shell'
 import {
 	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_FEDERATION_BASE,
 	UI_PUBLIC_ASSET_BASE,
-} from '../../web/paths'
-import { isAdminAccessHandoffPath } from '../admin-access/transport'
-import { responseWithLease } from '../admin-access/response-lifetime'
+} from '@pluxel/management/internal/web/paths'
 import { matchesWorkbenchUiBasePath, normalizeWorkbenchUiBasePath } from '../../workbench-config'
+import { matchesRuntimeSessionUpgrade } from '@pluxel/management/internal/web/session/ingress'
+import { RUNTIME_SESSION_PATH } from '@pluxel/management/internal/web/session/protocol'
 import {
-	matchesRuntimeSessionUpgrade,
-	RuntimeSessionIngress,
-	validateRuntimeSessionOrigin,
-} from '../../web/session/ingress'
-import { RUNTIME_SESSION_PATH } from '../../web/session/protocol'
+	isLoopbackAddress,
+	createManagementEndpoint,
+	type ManagementEndpoint,
+	type ManagementPeer,
+} from '@pluxel/management/internal/web/session/endpoint'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { requireWorkbench, createWorkbenchArtifactHandler } from '@pluxel/workbench/server'
 import {
 	createHostElysiaApp,
 	type AnyHostElysiaApp,
 	type CreateHostElysiaAppOptions,
 } from './elysia'
-import type { ElysiaApplicationDirectory } from './ElysiaApplicationDirectory'
-import type {
-	ElysiaApplicationCarrier,
-	ElysiaCarrierRequestAddress,
-} from './elysia-application-carrier'
+import type { ElysiaApplicationDirectory } from '@pluxel/services/internal/http'
+import type { ElysiaApplicationCarrier, ElysiaCarrierRequestAddress } from '@pluxel/services/http'
 
 type HttpHandler = (req: Request, env?: unknown, ctx?: unknown) => Response | Promise<Response>
 
@@ -128,7 +126,7 @@ class HttpBackend {
 	private readonly applications: ElysiaApplicationDirectory
 	private readonly requestAddress?: RuntimeHttpHostConfig['requestAddress']
 	private applicationCarrier?: ElysiaApplicationCarrier
-	private readonly runtimeSessions = new Set<RuntimeSessionIngress>()
+	private endpoint?: ManagementEndpoint
 
 	constructor(
 		ctx: PluxelContext,
@@ -146,6 +144,10 @@ class HttpBackend {
 			uiPublicDir: config.uiPublicDir ?? '',
 			uiBasePath: normalizeWorkbenchUiBasePath(config.uiBasePath),
 		}
+		ctx.effects.defer(() => this.endpoint?.close(), {
+			tag: 'ManagementEndpoint',
+			phase: 'shutdown',
+		})
 		this.rebuildRootApp()
 		if (config.management) {
 			this.mountHostBoundary({
@@ -241,7 +243,8 @@ class HttpBackend {
 		return () => {
 			if (!active) return
 			active = false
-			for (const session of this.runtimeSessions) session.close()
+			this.endpoint?.close()
+			this.endpoint = undefined
 			detachDirectory()
 			if (this.applicationCarrier === carrier) this.applicationCarrier = undefined
 		}
@@ -320,7 +323,7 @@ class HttpBackend {
 		const configured = String(this.config.uiPublicDir ?? '').trim()
 		if (configured)
 			return isAbsolute(configured) ? configured : resolve(currentWorkingDirectory(), configured)
-		const { resolveDefaultUiPublicDir } = await import('../../server/ui-public')
+		const { resolveDefaultUiPublicDir } = await import('@pluxel/workbench/internal/shell')
 		return resolveDefaultUiPublicDir()
 	}
 
@@ -331,7 +334,7 @@ class HttpBackend {
 			this.uiPublicHandler = null
 			return null
 		}
-		const { createUiPublicAssetHandler } = await import('../../server/ui-public')
+		const { createUiPublicAssetHandler } = await import('@pluxel/workbench/internal/shell')
 		this.uiPublicHandler = createUiPublicAssetHandler({ publicDirAbs: dir })
 		return this.uiPublicHandler
 	}
@@ -339,109 +342,85 @@ class HttpBackend {
 	private async fetchIngress(request: Request, env?: unknown, ctx?: unknown): Promise<Response> {
 		const url = new URL(request.url)
 		const path = url.pathname
-		const method = request.method.toUpperCase()
 		const facts = this.requestFacts(request)
 		if (path === RUNTIME_SESSION_PATH) {
-			return await this.fetchRuntimeSession(request, facts.local, facts.secure)
+			return await this.fetchRuntimeSession(request, facts)
 		}
 
-		if (this.config.management && isAdminAccessHandoffPath(path)) {
-			const adminAccess = this.hostCtx.root.adminAccess
-			if (!adminAccess) throw new Error('[pluxel/runtime] Management entry requires adminAccess')
-			return await adminAccess.handleEntryRequest(request, facts.local, facts.secure)
+		if (this.config.management) {
+			const handled = await this.managementEndpoint().fetch(request, facts)
+			if (handled) return handled
 		}
-
-		if (!this.isProtectedArtifactPath(path)) return await this.fetchPtr(request, env, ctx)
-		const adminAccess = this.hostCtx.root.adminAccess
-		if (!adminAccess) throw new Error('[pluxel/runtime] Management request requires adminAccess')
-		const admission = await adminAccess.admit(request, facts.local, facts.secure)
-		if (admission.state.allow === false) {
-			return this.buildArtifactAccessDeniedResponse(path, method, admission.state.reason)
-		}
-
-		const admittedRequest = requestWithSignal(request, admission.signal)
-		try {
-			const response = await this.fetchPtr(admittedRequest, env, ctx)
-			return admission.state.method === 'provider'
-				? responseWithLease(response, {
-						signal: admission.signal,
-						dispose: admission.release,
-					})
-				: response
-		} catch (error) {
-			admission.release()
-			throw error
-		}
+		return await this.fetchPtr(request, env, ctx)
 	}
 
-	private async fetchRuntimeSession(
-		request: Request,
-		local: boolean,
-		secure: boolean,
-	): Promise<Response> {
-		const noStore = { 'cache-control': 'no-store' }
-		if (!this.config.management) {
-			return new Response('Not Found', { status: 404, headers: noStore })
-		}
-		if (!matchesRuntimeSessionUpgrade(request)) {
-			return new Response('This endpoint only accepts a WebSocket upgrade.', {
-				status: 400,
-				headers: noStore,
-			})
-		}
-		if ((!local && !secure) || !validateRuntimeSessionOrigin(request, secure)) {
-			return new Response('Runtime session ingress rejected.', {
-				status: 403,
-				headers: noStore,
-			})
-		}
-		const carrier = this.applicationCarrier
-		const adminAccess = this.hostCtx.root.adminAccess
-		if (!carrier || !adminAccess) {
-			return new Response('Runtime session carrier unavailable.', {
-				status: 503,
-				headers: noStore,
-			})
-		}
+	private managementEndpoint(): ManagementEndpoint {
+		if (this.endpoint) return this.endpoint
+		const authentication = this.hostCtx.root.adminAccess
+		if (!authentication) throw new Error('[runtime] Management endpoint requires authentication')
+		return (this.endpoint = createManagementEndpoint({
+			authentication,
+			...(this.config.workbench ? { artifacts: createWorkbenchArtifactHandler(this.hostCtx) } : {}),
+			createManagement: (session) => new RuntimeManagementTargetImpl(this.hostCtx, session.signal),
+			...(this.config.workbench
+				? {
+						createWorkbench: (principal, invalidate) =>
+							requireWorkbench(this.hostCtx).createSession(principal, invalidate),
+					}
+				: {}),
+			onError: (error) => this.logger.error('Runtime control operation failed', { error }),
+		}))
+	}
 
-		let ingress!: RuntimeSessionIngress
-		ingress = new RuntimeSessionIngress({
-			ctx: this.hostCtx,
-			adminAccess,
-			request,
-			local,
-			secure,
-			workbench: this.config.workbench,
-			onRelease: () => this.runtimeSessions.delete(ingress),
-		})
-		this.runtimeSessions.add(ingress)
+	private async fetchRuntimeSession(request: Request, peer: ManagementPeer): Promise<Response> {
+		const headers = { 'cache-control': 'no-store' }
+		if (!this.config.management) return new Response('Not Found', { status: 404, headers })
+		const carrier = this.applicationCarrier
+		const endpoint = this.managementEndpoint()
+		const prepared = endpoint.prepareUpgrade(request, peer)
+		if (prepared.accepted === false) return prepared.response
+		const ingress = prepared.connection
+		if (!carrier) {
+			ingress.release()
+			return new Response('Runtime session carrier unavailable.', { status: 503, headers })
+		}
 		const accepted = carrier.upgrade(
 			Object.freeze({
 				request,
 				upgradeRequest: request,
 				ownerKey: 'pluxel.runtime.control',
-				data: ingress.data,
+				data: {
+					id: undefined,
+					context: Object.freeze({ pluxelRuntimeSession: true }),
+					open: (socket) =>
+						ingress.open({
+							get readyState() {
+								return socket.readyState
+							},
+							send: (message) => {
+								const status = socket.send(message)
+								return typeof status === 'number' ? status > 0 : undefined
+							},
+							close: (code, reason) => socket.raw.close(code, reason),
+						}),
+					message: (_socket, message) => ingress.receive(message),
+					close: (_socket, code, reason) => ingress.transportClosed(code, reason),
+				} satisfies WSConnectionData,
 				signal: ingress.signal,
 				release: () => ingress.release(),
 			}),
 		)
 		if (!accepted) {
 			ingress.release()
-			return new Response('Runtime session upgrade unavailable.', {
-				status: 503,
-				headers: noStore,
-			})
+			return new Response('Runtime session upgrade unavailable.', { status: 503, headers })
 		}
-		return new Response(null, { status: 204, headers: noStore })
+		// The existing carrier adapter consumes this response after taking ownership of the upgrade.
+		return new Response(null, { status: 204, headers })
 	}
 
-	private isProtectedArtifactPath(path: string): boolean {
-		if (!this.config.management || !this.config.workbench) return false
-		const base = `${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_FEDERATION_BASE}`
-		return path === base || path.startsWith(`${base}/`)
-	}
-
-	private requestFacts(request: Request): Readonly<{ local: boolean; secure: boolean }> {
+	private requestFacts(
+		request: Request,
+	): ManagementPeer & Readonly<{ local: boolean; secure: boolean }> {
 		let address: ElysiaCarrierRequestAddress | null = null
 		try {
 			address = this.applicationCarrier
@@ -451,18 +430,27 @@ class HttpBackend {
 			address = null
 		}
 		let secure = false
+		let origin: string | undefined
 		try {
 			if (this.applicationCarrier) {
 				const metadata = this.applicationCarrier.metadata
 				secure = metadata.url.protocol === 'https:'
+				origin = metadata.url.origin
 			} else {
 				const url = new URL(request.url)
 				secure = url.protocol === 'https:'
+				// Explicit isolated-test peer resolver is the only non-carrier source of trusted URL facts.
+				if (this.requestAddress) origin = url.origin
 			}
 		} catch {
 			secure = false
 		}
-		return Object.freeze({ local: isLoopbackAddress(address?.address), secure })
+		return Object.freeze({
+			address: address?.address,
+			local: isLoopbackAddress(address?.address),
+			secure,
+			origin,
+		})
 	}
 
 	private rebuildRootApp() {
@@ -500,27 +488,6 @@ class HttpBackend {
 		root.get('/', fallback).all('/*', fallback)
 		root.compile()
 		this.fetchPtr = (request) => root.fetch(request)
-	}
-
-	private buildArtifactAccessDeniedResponse(
-		path: string,
-		method: string,
-		reason: AdminAccessReason,
-	): Response {
-		this.logger.warn('Blocked immutable Workbench artifact request', { path, method, reason })
-		const status =
-			reason === 'authentication_unavailable'
-				? 503
-				: reason === 'secure_transport_required' || reason === 'forbidden'
-					? 403
-					: 401
-		return Response.json(
-			{ code: 'artifact_access_denied', reason },
-			{
-				status,
-				headers: { 'cache-control': 'no-store' },
-			},
-		)
 	}
 
 	private isHtmlNavigation(req: Request): boolean {
@@ -625,13 +592,13 @@ class HttpBackend {
 			return () => new Response('Not Found', { status: 404 })
 		}
 		if (this.config.uiAssets === 'static-built') {
-			const { createStaticRenderer } = await import('../../server/static')
+			const { createStaticRenderer } = await import('@pluxel/workbench/internal/shell')
 			return createStaticRenderer({
 				publicDirAbs: (await this.resolveUiPublicDir()) ?? undefined,
 				uiBasePath: this.config.uiBasePath,
 			})
 		}
-		const { createHmrRenderer } = await import('../../server/hmr')
+		const { createHmrRenderer } = await import('@pluxel/workbench/internal/shell')
 		return createHmrRenderer({ uiBasePath: this.config.uiBasePath })
 	}
 
@@ -641,39 +608,7 @@ class HttpBackend {
 	}
 }
 
-function requestWithSignal(request: Request, signal: AbortSignal): Request {
-	if (request.signal === signal) return request
-	const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
-	return new Request(request.url, {
-		method: request.method,
-		headers: request.headers,
-		body: hasBody ? request.body : undefined,
-		signal,
-		...(hasBody && request.body ? { duplex: 'half' } : {}),
-	} as RequestInit)
-}
-
-/** Socket-peer loopback check. Host and forwarding headers are deliberately irrelevant. */
-export function isLoopbackAddress(input: string | undefined): boolean {
-	if (!input) return false
-	let address = input.trim().toLowerCase()
-	if (!address) return false
-	if (address.startsWith('[') && address.endsWith(']')) address = address.slice(1, -1)
-	address = address.split('%', 1)[0] ?? ''
-	const ipv4 = address.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-	if (ipv4) {
-		const octets = ipv4.slice(1).map(Number)
-		return octets.every((octet) => octet >= 0 && octet <= 255) && octets[0] === 127
-	}
-	if (address === '::1' || address === '0:0:0:0:0:0:0:1') return true
-	const mappedIpv4 = address.match(/^(?:::ffff:|0:0:0:0:0:ffff:)(\d+\.\d+\.\d+\.\d+)$/)
-	if (mappedIpv4) return isLoopbackAddress(mappedIpv4[1])
-	const mappedHex = address.match(/^(?:::ffff:|0:0:0:0:0:ffff:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
-	if (!mappedHex) return false
-	const high = Number.parseInt(mappedHex[1]!, 16)
-	const low = Number.parseInt(mappedHex[2]!, 16)
-	return high >= 0 && high <= 0xffff && low >= 0 && low <= 0xffff && high >>> 8 === 0x7f
-}
+export { isLoopbackAddress } from '@pluxel/management/internal/web/session/endpoint'
 
 /**
  * Immutable owner view over the root HTTP backend.

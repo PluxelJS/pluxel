@@ -1,3 +1,5 @@
+import { Http } from '@pluxel/services/http'
+import { Commands } from '@pluxel/services/commands'
 import { Cache, type CacheNamespace, type CacheStats } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'
 import { defineCommand } from '@pluxel/commands'
@@ -5,7 +7,8 @@ import { Type, obj } from '@pluxel/commands/typebox'
 import { EChartsPlugin } from '@pluxel/echarts'
 import { OtelPlugin } from '@pluxel/otel'
 import { Rates, type RateDecision, type RateLimiter } from '@pluxel/rates'
-import { BasePlugin, f, formatPluginNodeReference, Plugin, PluginPart, v } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin, PluginPart } from '@pluxel/core'
+import { f, v } from '@pluxel/runtime'
 import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
 import { S3 } from '@pluxel/storage'
 import { TakumiPlugin } from '@pluxel/takumi'
@@ -316,7 +319,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		this.renderCounter = meter.createCounter('showcase.report.generated', { unit: '{report}' })
 		this.renderDuration = meter.createHistogram('showcase.report.duration', { unit: 'ms' })
 
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'showcase.report.generate',
 				title: 'Generate showcase report',
@@ -340,7 +343,7 @@ export class ReportStudioPlugin extends BasePlugin {
 				},
 			}),
 		)
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'showcase.cache.clear',
 				description: 'Clear the Report Studio caller-owned preview cache.',
@@ -352,7 +355,8 @@ export class ReportStudioPlugin extends BasePlugin {
 			}),
 		)
 
-		this.ctx.elysia
+		this.ctx
+			.require(Http)
 			.get('/showcase/status', () => compactSnapshot(this.snapshot()))
 			.post('/showcase/generate/:title', async ({ params }) =>
 				pickCommandArtifact(await this.generate(params.title)),

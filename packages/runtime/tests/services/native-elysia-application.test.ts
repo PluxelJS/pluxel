@@ -1,3 +1,4 @@
+import { Http } from '@pluxel/services/http'
 import { assertPluginLifecycleIssue } from '@pluxel/core/internal/test'
 import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime/test'
@@ -11,8 +12,8 @@ let partApplication: Elysia | undefined
 
 class NativeApplicationPart extends PluginPart<NativeApplicationPlugin> {
 	protected override init() {
-		partApplication = this.ctx.elysia
-		this.ctx.elysia.get('/native/part', () => 'part')
+		partApplication = this.ctx.require(Http)
+		this.ctx.require(Http).get('/native/part', () => 'part')
 	}
 }
 
@@ -21,71 +22,75 @@ class NativeApplicationPlugin extends BasePlugin {
 	readonly part = this.parts.use(NativeApplicationPart)
 
 	protected override init() {
-		ownerApplication = this.ctx.elysia
-		this.ctx.elysia.get('/native/hello', () => 'hello')
+		ownerApplication = this.ctx.require(Http)
+		this.ctx.require(Http).get('/native/hello', () => 'hello')
 	}
 }
 
 @Plugin({ displayName: 'Reserved native Elysia route' })
 class ReservedNativeApplicationPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('/__pluxel/hijack', () => 'invalid')
+		this.ctx.require(Http).get('/__pluxel/hijack', () => 'invalid')
 	}
 }
 
 @Plugin({ displayName: 'Native route conflict A' })
 class NativeRouteConflictA extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('/native/conflict', () => 'a')
+		this.ctx.require(Http).get('/native/conflict', () => 'a')
 	}
 }
 
 @Plugin({ displayName: 'Native route conflict B' })
 class NativeRouteConflictB extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('/native/conflict', () => 'b')
+		this.ctx.require(Http).get('/native/conflict', () => 'b')
 	}
 }
 
 @Plugin({ displayName: 'Native exact route semantics' })
 class NativeExactRouteSemantics extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('/native/exact', () => 'plain').get('/native/exact/', () => 'trailing')
+		this.ctx
+			.require(Http)
+			.get('/native/exact', () => 'plain')
+			.get('/native/exact/', () => 'trailing')
 	}
 }
 
 @Plugin({ displayName: 'Native empty route path' })
 class NativeEmptyRoutePath extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('', () => 'empty-root')
+		this.ctx.require(Http).get('', () => 'empty-root')
 	}
 }
 
 @Plugin({ displayName: 'Native slash route path' })
 class NativeSlashRoutePath extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('/', () => 'slash-root')
+		this.ctx.require(Http).get('/', () => 'slash-root')
 	}
 }
 
 @Plugin({ displayName: 'Native wildcard precedence' })
 class NativeWildcardRoute extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.all('/native/precedence', () => 'wildcard')
+		this.ctx.require(Http).all('/native/precedence', () => 'wildcard')
 	}
 }
 
 @Plugin({ displayName: 'Native concrete precedence' })
 class NativeConcreteRoute extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get('/native/precedence', () => 'concrete')
+		this.ctx.require(Http).get('/native/precedence', () => 'concrete')
 	}
 }
 
 @Plugin({ displayName: 'Native wildcard reserved probe' })
 class NativeReservedWildcard extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia
+		this.ctx
+			.require(Http)
 			.use(websocket())
 			.all('/*', () => 'business-wildcard')
 			.ws('/*', { message() {} })
@@ -97,15 +102,15 @@ let lifecycleApplication: Elysia | undefined
 @Plugin({ displayName: 'Native physical lifecycle guard' })
 class NativePhysicalLifecycleGuard extends BasePlugin {
 	protected override init() {
-		lifecycleApplication = this.ctx.elysia
-		this.ctx.elysia.get('/native/server-id', ({ server }) => server?.id ?? 'missing')
+		lifecycleApplication = this.ctx.require(Http)
+		this.ctx.require(Http).get('/native/server-id', ({ server }) => server?.id ?? 'missing')
 	}
 }
 
 @Plugin({ displayName: 'Native unsupported Elysia lifecycle hook' })
 class NativeUnsupportedLifecycleHook extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.cleanup(() => undefined)
+		this.ctx.require(Http).cleanup(() => undefined)
 	}
 }
 
@@ -114,7 +119,7 @@ let streamAborted: (() => void) | undefined
 @Plugin({ displayName: 'Native streaming route' })
 class NativeStreamingApplicationPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia.get(
+		this.ctx.require(Http).get(
 			'/native/stream',
 			({ request }) =>
 				new ReadableStream<Uint8Array>({
@@ -139,7 +144,7 @@ describe('native generation Elysia application', () => {
 		partApplication = undefined
 
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			host.add(NativeApplicationPlugin).start(NativeApplicationPlugin)
 			await host.commit()
@@ -180,7 +185,7 @@ describe('native generation Elysia application', () => {
 
 	it('rejects reserved and conflicting routes before atomic publication', async () => {
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			host.add(ReservedNativeApplicationPlugin)
 			host.cfg(ReservedNativeApplicationPlugin).setAutoStart(true)
@@ -214,7 +219,7 @@ describe('native generation Elysia application', () => {
 
 	it('preserves exact Elysia method/path semantics in selection and collision checks', async () => {
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			host
 				.add(NativeExactRouteSemantics)
@@ -268,7 +273,7 @@ describe('native generation Elysia application', () => {
 
 	it('hard-excludes the control namespace from HTTP and WebSocket wildcard owners', async () => {
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			host.add(NativeReservedWildcard).start(NativeReservedWildcard)
 			await host.commit()
@@ -316,7 +321,7 @@ describe('native generation Elysia application', () => {
 	it('keeps isolated, generation-stable Server metadata when physical lifecycle is rejected', async () => {
 		lifecycleApplication = undefined
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			host.add(NativePhysicalLifecycleGuard).start(NativePhysicalLifecycleGuard)
 			await host.commit()
@@ -365,7 +370,7 @@ describe('native generation Elysia application', () => {
 
 	it('fails generation start when a Plugin directly registers Elysia lifecycle hooks', async () => {
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			host.add(NativeUnsupportedLifecycleHook)
 			host.cfg(NativeUnsupportedLifecycleHook).setAutoStart(true)
@@ -381,7 +386,7 @@ describe('native generation Elysia application', () => {
 
 	it('aborts and drains an entered streaming response with its generation', async () => {
 		{
-			await using host = createRuntimeInternalTestHarness()
+			await using host = await createRuntimeInternalTestHarness()
 
 			host.add(NativeStreamingApplicationPlugin).start(NativeStreamingApplicationPlugin)
 			await host.commit()

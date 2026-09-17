@@ -1,6 +1,6 @@
 import type { PluginNodeAddress } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
-import { buildPluginNodeLabels } from '../../src/api/features/plugins/catalog-projection'
+import { buildPluginNodeLabels } from '@pluxel/management/internal/api/features/plugins/catalog-projection'
 
 function packageNode(packageName: string, exportName: string, forkId?: string): PluginNodeAddress {
 	const definition = {

@@ -1,3 +1,3 @@
 export * from './internal-static-host'
-export { createWorkbenchBackend } from './services/workbench'
-export type { WorkbenchBackendFactory, WorkbenchInstallOptions } from './services/workbench'
+export { createWorkbenchBackend } from '@pluxel/workbench/server'
+export type { WorkbenchBackendFactory, WorkbenchInstallOptions } from '@pluxel/workbench/server'

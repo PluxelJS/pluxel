@@ -1,3 +1,4 @@
+import { Http } from '@pluxel/services/http'
 import { BasePlugin, definePluginRef, Plugin, v } from '@pluxel/runtime'
 import { TelegramConfig } from './config'
 import { PluginB } from './PluginB'
@@ -27,7 +28,7 @@ export class PluginA extends BasePlugin {
 			this.ctx.logger.info('PluginA optional dep', { pluginC: true })
 		})
 
-		this.ctx.elysia.get('/a', ({ set }) => {
+		this.ctx.require(Http).get('/a', ({ set }) => {
 			set.headers['content-type'] = 'text/html; charset=utf-8'
 			return 'text'
 		})

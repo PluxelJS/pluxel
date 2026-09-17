@@ -6,20 +6,21 @@ import { join } from 'node:path'
 import { pgTable, text } from 'drizzle-orm/pg-core'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
+	Database,
 	defineDatabase,
 	type DatabaseDefinition,
 	type PluginDatabaseHandle,
-} from '@pluxel/runtime/database'
-import type { DatabaseArtifact } from '../../src/database-internal'
+} from '@pluxel/services/database'
 import {
 	createRuntimeInternalTestHarness,
 	type RuntimeInternalTestHarness,
 } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import {
+	type DatabaseArtifact,
 	attachPostgresPoolErrorHandler,
 	subscribeDatabaseHandle,
-} from '../../src/services/DatabaseService'
+} from '@pluxel/services/internal/database'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const migrationSql = `
@@ -163,8 +164,8 @@ async function resetRuntimeHost(host: RuntimeInternalTestHarness): Promise<void>
 describe('DatabaseService', () => {
 	let databaseHost: RuntimeInternalTestHarness
 
-	beforeAll(() => {
-		databaseHost = createRuntimeInternalTestHarness({
+	beforeAll(async () => {
+		databaseHost = await createRuntimeInternalTestHarness({
 			workbench: false,
 			database: { driver: 'pglite', dataDir: 'memory://' },
 		})
@@ -197,7 +198,7 @@ describe('DatabaseService', () => {
 			class QueuedDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.database.use(definition.database)
+					this.db = await this.ctx.require(Database).use(definition.database)
 				}
 			}
 
@@ -243,7 +244,7 @@ describe('DatabaseService', () => {
 			class CachedDatabaseHandlePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.database.use(definition.database)
+					this.db = await this.ctx.require(Database).use(definition.database)
 				}
 			}
 
@@ -276,7 +277,7 @@ describe('DatabaseService', () => {
 			class DatabaseLeft extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.database.use(definition.database)
+					this.db = await this.ctx.require(Database).use(definition.database)
 					await this.db.transaction((tx) =>
 						tx.insert(definition.items).values({ id: 'item', value: 'left' }),
 					)
@@ -287,7 +288,7 @@ describe('DatabaseService', () => {
 			class DatabaseRight extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.database.use(definition.database)
+					this.db = await this.ctx.require(Database).use(definition.database)
 					await this.db.transaction((tx) =>
 						tx.insert(definition.items).values({ id: 'item', value: 'right' }),
 					)
@@ -322,7 +323,7 @@ describe('DatabaseService', () => {
 			class ReadOnlyDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.database.use(definition.database)
+					this.db = await this.ctx.require(Database).use(definition.database)
 				}
 			}
 
@@ -346,12 +347,12 @@ describe('DatabaseService', () => {
 
 	it('fails honestly when the host disables database capability', async () => {
 		const definition = databaseFixture()
-		const host = createRuntimeInternalTestHarness({ workbench: false, database: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false, database: false })
 		try {
 			@Plugin({ displayName: 'DisabledDatabasePlugin' })
 			class DisabledDatabasePlugin extends BasePlugin {
 				override async init() {
-					await this.ctx.database.use(definition.database)
+					await this.ctx.require(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(DisabledDatabasePlugin)
@@ -371,7 +372,7 @@ describe('DatabaseService', () => {
 		const dataDir = join(root, 'pglite')
 		let instanceId: string
 		try {
-			const firstHost = createRuntimeInternalTestHarness({
+			const firstHost = await createRuntimeInternalTestHarness({
 				workbench: false,
 				database: { driver: 'pglite', dataDir },
 			})
@@ -380,7 +381,7 @@ describe('DatabaseService', () => {
 				class FirstProcessPlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
-						this.db = await this.ctx.database.use(definition.database)
+						this.db = await this.ctx.require(Database).use(definition.database)
 						await this.db.transaction((tx) =>
 							tx.insert(definition.items).values({ id: 'kept', value: 'persisted' }),
 						)
@@ -396,7 +397,7 @@ describe('DatabaseService', () => {
 				await firstHost.dispose()
 			}
 
-			const secondHost = createRuntimeInternalTestHarness({
+			const secondHost = await createRuntimeInternalTestHarness({
 				workbench: false,
 				database: { driver: 'pglite', dataDir },
 			})
@@ -405,7 +406,7 @@ describe('DatabaseService', () => {
 				class SecondProcessPlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
-						this.db = await this.ctx.database.use(definition.database)
+						this.db = await this.ctx.require(Database).use(definition.database)
 					}
 				}
 				lowerTestPlugin(SecondProcessPlugin, { id: 'PersistentDatabasePlugin' })
@@ -430,12 +431,12 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture('default-persistence')
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-default-'))
 		const persistence = join(root, 'nested', 'persistence')
-		const host = createRuntimeInternalTestHarness({ workbench: false, persistence })
+		const host = await createRuntimeInternalTestHarness({ workbench: false, persistence })
 		try {
 			@Plugin({ displayName: 'DefaultPersistenceDatabasePlugin' })
 			class DefaultPersistenceDatabasePlugin extends BasePlugin {
 				override async init() {
-					await this.ctx.database.use(definition.database)
+					await this.ctx.require(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(DefaultPersistenceDatabasePlugin)
@@ -459,7 +460,7 @@ describe('DatabaseService', () => {
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
-					this.db = await this.ctx.database.use(initial.database)
+					this.db = await this.ctx.require(Database).use(initial.database)
 					await this.db.transaction((tx) =>
 						tx.insert(initial.items).values({ id: 'kept', value: 'before' }),
 					)
@@ -478,7 +479,7 @@ describe('DatabaseService', () => {
 			class UpgradedPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof upgraded.database>
 				override async init() {
-					this.db = await this.ctx.database.use(upgraded.database)
+					this.db = await this.ctx.require(Database).use(upgraded.database)
 				}
 			}
 			lowerTestPlugin(UpgradedPlugin, { id: 'IncrementalDatabasePlugin' })
@@ -505,7 +506,7 @@ describe('DatabaseService', () => {
 			class FirstRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof first.database>
 				override async init() {
-					this.db = await this.ctx.database.use(first.database)
+					this.db = await this.ctx.require(Database).use(first.database)
 					await this.db.transaction((tx) =>
 						tx.insert(first.items).values({ id: 'old', value: 'archived' }),
 					)
@@ -524,7 +525,7 @@ describe('DatabaseService', () => {
 			class SecondRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof second.database>
 				override async init() {
-					this.db = await this.ctx.database.use(second.database)
+					this.db = await this.ctx.require(Database).use(second.database)
 				}
 			}
 			lowerTestPlugin(SecondRelease, { id: 'RebasedDatabasePlugin' })
@@ -552,7 +553,7 @@ describe('DatabaseService', () => {
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
-					this.db = await this.ctx.database.use(initial.database)
+					this.db = await this.ctx.require(Database).use(initial.database)
 					await this.db.transaction((tx) =>
 						tx.insert(initial.items).values({ id: 'kept', value: 'same-schema' }),
 					)
@@ -571,7 +572,7 @@ describe('DatabaseService', () => {
 			class RebuiltPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof rebuilt.database>
 				override async init() {
-					this.db = await this.ctx.database.use(rebuilt.database)
+					this.db = await this.ctx.require(Database).use(rebuilt.database)
 				}
 			}
 			lowerTestPlugin(RebuiltPlugin, { id: 'ResetDatabasePlugin' })
@@ -598,7 +599,7 @@ describe('DatabaseService', () => {
 			class StableRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
-					this.db = await this.ctx.database.use(stable.database)
+					this.db = await this.ctx.require(Database).use(stable.database)
 					await this.db.transaction((tx) =>
 						tx.insert(stable.items).values({ id: 'kept', value: 'durable' }),
 					)
@@ -616,7 +617,7 @@ describe('DatabaseService', () => {
 			@Plugin({ displayName: 'AtomicReplacementPlugin' })
 			class BrokenRelease extends BasePlugin {
 				override async init() {
-					await this.ctx.database.use(invalid.database)
+					await this.ctx.require(Database).use(invalid.database)
 				}
 			}
 			lowerTestPlugin(BrokenRelease, { id: 'AtomicReplacementPlugin' })
@@ -631,7 +632,7 @@ describe('DatabaseService', () => {
 			class RecoveredRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
-					this.db = await this.ctx.database.use(stable.database)
+					this.db = await this.ctx.require(Database).use(stable.database)
 				}
 			}
 			lowerTestPlugin(RecoveredRelease, { id: 'AtomicReplacementPlugin' })
@@ -657,7 +658,7 @@ describe('DatabaseService', () => {
 			class RollbackDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.database.use(definition.database)
+					this.db = await this.ctx.require(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(RollbackDatabasePlugin)

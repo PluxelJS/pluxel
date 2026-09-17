@@ -4,7 +4,7 @@ Pluxel 官方 S3 capability。S3/s3mini 是唯一对象操作 API；官方安装
 每个 bucket 通过 `backend.type` 选择本地模拟或真实 S3。`S3` 是 constructor dependency token，不是宿主需要逐 bucket 安装和治理的实例。
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { S3, S3Plugin } from '@pluxel/storage'
 
 @Plugin()
@@ -76,7 +76,7 @@ await host.start(S3Plugin, {
 })
 ```
 
-access key 不写入普通 config。启用 `@pluxel/runtime/services/vault` 的 host 将以下对象存入 Vault：
+access key 不写入普通 config。启用 `@pluxel/services/vault` 的 host 将以下对象存入 Vault：
 
 ```ts
 const credentials = {

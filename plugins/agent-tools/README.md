@@ -30,7 +30,7 @@ Agent tools Workbench Content 由宿主渲染，实时只读展示 published com
 
 ```ts
 import { AgentToolsPlugin, type AgentCommandCatalog } from '@pluxel/agent-tools'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class ExampleAgentPlugin extends BasePlugin {

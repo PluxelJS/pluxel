@@ -1,8 +1,11 @@
+import { Commands } from '@pluxel/services/commands'
 import { resolve } from 'node:path'
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
+import { RpcTarget } from 'capnweb'
 import { requireDynamicPluginSource } from '@pluxel/host-dynamic/source-producer'
 import type {
 	PackageManagerApi,
@@ -96,7 +99,7 @@ export class PackageManagerPlugin extends BasePlugin {
 			if (this.store === store) this.store = undefined
 		})
 
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'package.install',
 				description: 'Install plugin packages into the managed dynamic source project.',
@@ -106,7 +109,7 @@ export class PackageManagerPlugin extends BasePlugin {
 				execute: async ({ specs }) => toCommandMutation(await store.install(specs)),
 			}),
 		)
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'package.remove',
 				description: 'Remove plugin packages from the managed dynamic source project.',

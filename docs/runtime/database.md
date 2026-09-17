@@ -5,14 +5,14 @@ description: 根据数据归属选择 Plugin 数据库或应用数据库，并�
 
 先判断数据是否必须跟随 Plugin 独立安装、替换和迁移，再选择数据库组织方式。不要仅因为代码写在 Plugin class 中，就默认使用 `ctx.database`。
 
-| 数据与生命周期要求                                             | 正确组织方式                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin         | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
-| 需要 Plugin 独立 lineage 或旧 generation handle 撤销           | `defineDatabase()` + `ctx.database.use()`                           |
-| fixed catalog、schema 和部署由同一个应用团队控制               | application-private database package                                |
-| 没有共享数据库，整个 static application 就无法成立             | host `prepare()` + root-bound typed accessor                        |
-| 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行     | application-private provider Plugin + constructor dependency        |
-| 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务 | application-private database package                                |
+| 数据与生命周期要求                                             | 正确组织方式                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin         | `defineDatabase()` + `ctx.require(Database).use()`，每个 Plugin 使用独立实例 |
+| 需要 Plugin 独立 lineage 或旧 generation handle 撤销           | `defineDatabase()` + `ctx.require(Database).use()`                           |
+| fixed catalog、schema 和部署由同一个应用团队控制               | application-private database package                                         |
+| 没有共享数据库，整个 static application 就无法成立             | host `prepare()` + root-bound typed accessor                                 |
+| 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行     | application-private provider Plugin + constructor dependency                 |
+| 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务 | application-private database package                                         |
 
 Managed Plugin database 统一使用 PostgreSQL dialect 和 Drizzle。Plugin 作者只依赖 `drizzle-orm`，不选择 driver；部署宿主在 native PostgreSQL 与 PGlite 之间选择，同一份 schema、migration 和 query 不编写 driver 分支。
 
@@ -32,7 +32,7 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 // @filename: database.ts
 // 仅服务端
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-import { defineDatabase } from '@pluxel/runtime/database'
+import { defineDatabase } from '@pluxel/services/database'
 
 export const notes = pgTable(
 	'notes',
@@ -49,8 +49,8 @@ export const NotesDatabase = defineDatabase({
 })
 
 // @filename: NotesPlugin.ts
-import type { PluginDatabaseHandle } from '@pluxel/runtime/database'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { Database, type PluginDatabaseHandle } from '@pluxel/services/database'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { notes, NotesDatabase } from './database.ts'
 
 @Plugin({ displayName: 'Notes' })
@@ -58,7 +58,7 @@ export class NotesPlugin extends BasePlugin {
 	private database!: PluginDatabaseHandle<typeof NotesDatabase>
 
 	protected override async init() {
-		this.database = await this.ctx.database.use(NotesDatabase)
+		this.database = await this.ctx.require(Database).use(NotesDatabase)
 	}
 
 	listNotes() {
@@ -177,7 +177,7 @@ Application package 导出接收 Context 的 typed accessor，不把数据库投
 
 ```ts no-twoslash
 // @app/database — application-private server module
-import type { Context } from '@pluxel/runtime'
+import type { Context } from '@pluxel/core'
 import { openDatabase, migrate, type AppDatabase, type DatabaseOptions } from './internal.js'
 
 const active = new WeakMap<object, AppDatabase>()

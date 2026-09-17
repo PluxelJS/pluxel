@@ -8,12 +8,12 @@ import {
 	type RuntimeInternalTestHost,
 } from '@pluxel/runtime/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PluginCatalogLayoutService } from '../../src/services/management/PluginCatalogLayoutService'
+import { PluginCatalogLayoutService } from '@pluxel/management/internal/services/management/PluginCatalogLayoutService'
 import {
 	automaticCatalogGroups,
 	catalogFamilies,
 	type PluginCatalogLayoutEntry,
-} from '../../src/services/management/catalog-groups'
+} from '@pluxel/management/internal/services/management/catalog-groups'
 
 const hosts: RuntimeInternalTestHost[] = []
 afterEach(async () => {
@@ -35,8 +35,8 @@ const entry = (name: string, requires: string[] = []): PluginCatalogLayoutEntry 
 const ref = (name: string) => formatPluginDefinitionReference(definition(name))
 const automatic = (entries: PluginCatalogLayoutEntry[]) =>
 	automaticCatalogGroups(catalogFamilies(entries))
-function setup() {
-	const host = createRuntimeInternalTestHost({
+async function setup() {
+	const host = await createRuntimeInternalTestHost({
 		workbench: false,
 		management: true,
 		persistence: { mode: 'memory' },
@@ -45,7 +45,7 @@ function setup() {
 	return {
 		host,
 		layout: host.ctx.root.pluginCatalogLayout!,
-		storage: host.ctx.root.persistence.namespace('management'),
+		storage: host.ctx.root.persistence!.namespace('management'),
 	}
 }
 const document = (
@@ -127,15 +127,15 @@ describe('automatic dependency groups', () => {
 
 describe('editable group document', () => {
 	it('does not allocate management or write defaults just to read a catalog', async () => {
-		const disabled = createRuntimeInternalTestHost({ workbench: false })
+		const disabled = await createRuntimeInternalTestHost({ workbench: false })
 		hosts.push(disabled)
 		expect(disabled.ctx.root.pluginCatalogLayout).toBeUndefined()
-		const { layout, storage } = setup()
+		const { layout, storage } = await setup()
 		expect(await layout.listSections([entry('A', ['B']), entry('B')])).toHaveLength(1)
 		expect(await storage.getText('plugin-groups.json')).toBeUndefined()
 	})
 	it('reads human-editable groups live, honors ungrouped, and automatically groups unspecified plugins', async () => {
-		const { layout, storage } = setup()
+		const { layout, storage } = await setup()
 		const entries = [entry('A'), entry('B'), entry('C', ['D']), entry('D')]
 		await storage.put(
 			'plugin-groups.json',
@@ -151,7 +151,7 @@ describe('editable group document', () => {
 		expect(await layout.listSections(entries)).toMatchObject([{ name: 'C' }])
 	})
 	it('persists explicit groups and orders as formatted references and round-trips without migration', async () => {
-		const { host, layout, storage } = setup()
+		const { host, layout, storage } = await setup()
 		const entries = [entry('A'), entry('B'), entry('C')]
 		const saved = await layout.updateSections(
 			[{ sectionId: 'manual:business', name: '业务', nodes: [node('B'), node('A')] }],
@@ -166,7 +166,7 @@ describe('editable group document', () => {
 		expect(await layout.listSections(entries)).toEqual(saved)
 	})
 	it('pins auto groups when saved, preserves manual names on catalog changes, and resets explicitly', async () => {
-		const { layout } = setup()
+		const { layout } = await setup()
 		const entries = [entry('A', ['B']), entry('B')]
 		const auto = await layout.listSections(entries)
 		const saved = await layout.updateSections(
@@ -180,7 +180,7 @@ describe('editable group document', () => {
 		expect(await layout.updateSections(null, entries)).toEqual(auto)
 	})
 	it('keeps absent references dormant and preserves them across edits to a surviving group', async () => {
-		const { layout, storage } = setup()
+		const { layout, storage } = await setup()
 		await storage.put(
 			'plugin-groups.json',
 			JSON.stringify(document([{ id: 'one', name: 'One', plugins: [ref('Absent'), ref('A')] }])),
@@ -192,7 +192,7 @@ describe('editable group document', () => {
 		expect(restored[0]!.nodes).toEqual([node('A'), node('Absent')])
 	})
 	it('applies membership to future forks and rejects partial or split families', async () => {
-		const { layout } = setup()
+		const { layout } = await setup()
 		const entries = [entry('A'), { address: node('A', 'east') }]
 		await layout.updateSections(
 			[{ sectionId: 'manual:one', name: 'One', nodes: entries.map((item) => item.address) }],
@@ -214,7 +214,7 @@ describe('editable group document', () => {
 		).rejects.toThrow('fork variants')
 	})
 	it('rejects malformed file edits without overwriting them and recovers after repair', async () => {
-		const { layout, storage } = setup()
+		const { layout, storage } = await setup()
 		for (const bad of [
 			{ version: 2, groups: [], ungrouped: [] },
 			document([{ id: 'x', name: 'X', plugins: [ref('A')] }], [ref('A')]),
@@ -231,14 +231,14 @@ describe('editable group document', () => {
 		expect(await layout.listSections([entry('A')])).toEqual([])
 	})
 	it('does not publish failed writes and serializes queued mutations', async () => {
-		const { host, layout } = setup()
+		const { host, layout } = await setup()
 		const entries = [entry('A')]
 		await layout.updateSections(
 			[{ sectionId: 'manual:one', name: 'One', nodes: [node('A')] }],
 			entries,
 		)
-		const namespace = host.ctx.root.persistence.namespace('management')
-		vi.spyOn(host.ctx.root.persistence, 'namespace').mockReturnValue({
+		const namespace = host.ctx.root.persistence!.namespace('management')
+		vi.spyOn(host.ctx.root.persistence!, 'namespace').mockReturnValue({
 			...namespace,
 			put: async () => {
 				throw new Error('disk full')

@@ -18,7 +18,7 @@ description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cach
 
 ```ts twoslash
 import { Redis } from '@pluxel/redis'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Queue' })
 export class QueuePlugin extends BasePlugin {

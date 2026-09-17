@@ -29,7 +29,7 @@ host catalog 包含 Fonts、Takumi、Markdown 和 consumer。MarkdownPlugin 已 
 Takumi 又 required-depend Fonts；业务 Plugin 只注入直接使用的 Markdown capability：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
 
 @Plugin()

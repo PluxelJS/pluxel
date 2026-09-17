@@ -25,7 +25,7 @@ import {
 export interface ConfigSourcePluginOptions {
 	include?: string | string[]
 	exclude?: string | string[]
-	/** @default '@pluxel/runtime/toolchain' */
+	/** @default '@pluxel/core/toolchain' */
 	metadataHelperImportSource?: string
 }
 
@@ -87,7 +87,7 @@ const AUTHORING_PACKAGES = new Set([
 	'@pluxel/runtime/test',
 	'@pluxel/test',
 ])
-const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'
+const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/core/toolchain'
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
 	const helperSource =

@@ -1,3 +1,4 @@
+import { requireRuntimePluginHost } from '../context/runtime-plan'
 import {
 	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
@@ -8,6 +9,7 @@ import {
 	type RootContext,
 } from '@pluxel/core'
 import {
+	closeOwnerInvocations,
 	consumePluginDefinitionCandidate,
 	requireConfigService,
 	requirePluginService,
@@ -22,7 +24,6 @@ import {
 } from '@pluxel/core/internal/test'
 import type { RuntimeHostConfig } from '../context/runtime-contract'
 import { requireRuntimeHttpService } from '../context/runtime-http-capability'
-import { prepareRuntimeRootContext } from '../context/runtime-plan'
 import {
 	applyRuntimeStatePatch,
 	createPluginRouteCatalogSnapshot,
@@ -143,11 +144,11 @@ function assertCommitStarted(summary: CommitSummary): void {
  * It owns the Runtime coordinator transaction directly; do not compose a Core internal host
  * here because that would introduce a competing catalog/lifecycle transaction model.
  */
-export function createRuntimeInternalTestHarness(
+export async function createRuntimeInternalTestHarness(
 	config: RuntimeHostConfig = {},
 	rootOptions: RuntimeInternalTestRootOptions = {},
-): RuntimeInternalTestHarness {
-	const ctx = createRuntimeTestRoot(normalizeRuntimeInternalTestConfig(config), rootOptions)
+): Promise<RuntimeInternalTestHarness> {
+	const ctx = await createRuntimeTestRoot(normalizeRuntimeInternalTestConfig(config), rootOptions)
 	const pluginService = requirePluginService(ctx)
 	const configService = requireConfigService(ctx)
 	const runtimeStateStore = requireRuntimeStateStore(ctx)
@@ -229,7 +230,6 @@ export function createRuntimeInternalTestHarness(
 	}
 
 	const commit = async (allowFailure: boolean): Promise<CommitSummary> => {
-		await prepareRuntimeRootContext(ctx)
 		const currentCatalog = coordinator.catalogSnapshot()
 		const catalog = catalogDirty
 			? createPluginRouteCatalogSnapshot(currentCatalog.revision + 1, draftEntries.values())
@@ -281,6 +281,11 @@ export function createRuntimeInternalTestHarness(
 		disposal = (async () => {
 			const errors: unknown[] = []
 			try {
+				await closeOwnerInvocations(ctx.root)
+			} catch (error) {
+				errors.push(error)
+			}
+			try {
 				const current = coordinator.catalogSnapshot()
 				if (current.entries.length > 0) {
 					await coordinator.update({
@@ -293,7 +298,7 @@ export function createRuntimeInternalTestHarness(
 				errors.push(error)
 			}
 			try {
-				await ctx.effects.dispose()
+				await requireRuntimePluginHost(ctx).close()
 			} catch (error) {
 				errors.push(error)
 			}
@@ -416,11 +421,11 @@ export function createRuntimeInternalTestHarness(
 }
 
 /** Creates a raw Runtime root for framework service tests without a Plugin transaction harness. */
-export function createRuntimeInternalTestContext(
+export async function createRuntimeInternalTestContext(
 	config: RuntimeHostConfig = {},
 	rootOptions: RuntimeInternalTestRootOptions = {},
-): RuntimeInternalTestContext {
-	const ctx = createRuntimeTestRoot(normalizeRuntimeInternalTestConfig(config), rootOptions)
+): Promise<RuntimeInternalTestContext> {
+	const ctx = await createRuntimeTestRoot(normalizeRuntimeInternalTestConfig(config), rootOptions)
 	const pluginService = requirePluginService(ctx)
 	installRuntimePluginGraphCoordinator(ctx)
 	let disposal: Promise<void> | undefined
@@ -429,12 +434,17 @@ export function createRuntimeInternalTestContext(
 		disposal = (async () => {
 			const errors: unknown[] = []
 			try {
+				await closeOwnerInvocations(ctx.root)
+			} catch (error) {
+				errors.push(error)
+			}
+			try {
 				pluginService.resetDraft()
 			} catch (error) {
 				errors.push(error)
 			}
 			try {
-				await ctx.effects.dispose()
+				await requireRuntimePluginHost(ctx).close()
 			} catch (error) {
 				errors.push(error)
 			}

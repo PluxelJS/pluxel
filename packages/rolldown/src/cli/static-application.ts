@@ -35,7 +35,11 @@ export type StaticApplicationBuildOptions = {
 	outDir?: string
 	variant?: 'headless' | 'workbench'
 	/** Runtime adapter emitted by the production bootstrap. @default 'node' */
-	launcher?: 'node' | 'fetch'
+	launcher?: 'node' | 'fetch' | 'host'
+	/** @internal Legacy CLI declarations retain their Runtime adapter. */
+	composition?: 'host' | 'runtime'
+	/** Framework author entries shared with dynamically installed Plugins; no services are installed by this list. */
+	sourceFrameworks?: readonly string[]
 	target?: 'node'
 	/** Managed database drivers carried by this deployment. @default ['pglite', 'postgres'] */
 	managedDatabaseDrivers?: readonly StaticApplicationManagedDatabaseDriver[]
@@ -91,7 +95,7 @@ const OMITTED_MANAGED_DATABASE_PREFIX = '\0pluxel:omitted-managed-database:'
 const STATIC_APPLICATION_BOOTSTRAP_ID = 'pluxel:static-application-bootstrap'
 const RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID = `\0${STATIC_APPLICATION_BOOTSTRAP_ID}`
 
-export function application(
+export function createStaticApplicationConfig(
 	options: StaticApplicationBuildOptions,
 ): Omit<UserConfig, 'inputOptions'> & Pick<PluginBuildPipeline, 'inputOptions'> {
 	const cwd = resolve(options.cwd ?? process.cwd())
@@ -99,8 +103,8 @@ export function application(
 	const outDir = resolve(cwd, options.outDir ?? 'dist')
 	const variant = options.variant ?? 'workbench'
 	const launcher = String(options.launcher ?? 'node')
-	if (launcher !== 'node' && launcher !== 'fetch') {
-		throw new Error('[static-application] launcher must be either node or fetch')
+	if (launcher !== 'node' && launcher !== 'fetch' && launcher !== 'host') {
+		throw new Error('[static-application] launcher must be node, fetch or host')
 	}
 	const target = String(options.target ?? 'node')
 	if (target !== 'node')
@@ -172,7 +176,7 @@ export function application(
 					)
 				},
 			}),
-			staticElysiaSingletonPlugin(cwd),
+			...(launcher === 'host' ? [] : [staticElysiaSingletonPlugin(cwd)]),
 			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({
 				cwd,
@@ -199,7 +203,14 @@ export function application(
 					state.residualPackages = Object.keys(packages).sort()
 				},
 			}),
-			staticApplicationEntryPlugin({ entry, variant, launcher, state }),
+			staticApplicationEntryPlugin({
+				entry,
+				variant,
+				launcher,
+				state,
+				composition: options.composition ?? 'runtime',
+				sourceFrameworks: options.sourceFrameworks ?? [],
+			}),
 			staticApplicationAssemblyPlugin({ cwd, outDir, variant, state }),
 		],
 		inputOptions: {
@@ -494,7 +505,9 @@ function readPackageName(id: string): string | null {
 function staticApplicationEntryPlugin(options: {
 	entry: string
 	variant: 'headless' | 'workbench'
-	launcher: 'node' | 'fetch'
+	launcher: 'node' | 'fetch' | 'host'
+	composition: 'host' | 'runtime'
+	sourceFrameworks: readonly string[]
 	state: StaticApplicationBuildState
 }): Plugin {
 	return {
@@ -521,7 +534,36 @@ function staticApplicationEntryPlugin(options: {
 			}
 			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
 			const frameworkReferences = new Map<string, string>()
-			if (options.state.hasSources) {
+			if (options.state.hasSources && options.composition === 'host') {
+				const selected = new Set([
+					'@pluxel/core',
+					'@pluxel/core/host',
+					'@pluxel/core/toolchain',
+					'@pluxel/core/services',
+					'@pluxel/core/logger',
+					'@pluxel/core/federation',
+					...options.sourceFrameworks,
+				])
+				for (const specifier of selected) {
+					if (typeof specifier !== 'string' || !readPackageName(specifier) || /\s/.test(specifier))
+						this.error(
+							'[static-application] sourceFrameworks must contain package entry specifiers',
+						)
+					const resolved = await this.resolve(specifier, options.entry, { skipSelf: true })
+					if (!resolved || resolved.external)
+						this.error(
+							`[static-application] Cannot bundle selected source framework entry ${specifier}`,
+						)
+					const reference = this.emitFile({
+						type: 'chunk',
+						id: resolved.id,
+						fileName: frameworkFacadeFile(specifier),
+						preserveSignature: 'strict',
+					})
+					frameworkReferences.set(specifier, reference)
+				}
+			}
+			if (options.state.hasSources && options.composition !== 'host') {
 				const runtime = await this.resolve('@pluxel/runtime/package.json', options.entry, {
 					skipSelf: true,
 				})
@@ -544,15 +586,48 @@ function staticApplicationEntryPlugin(options: {
 					frameworkReferences.set(specifier, reference)
 				}
 			}
-			return buildBootstrap(options.entry, options.variant, options.launcher, frameworkReferences)
+			return options.composition === 'host'
+				? buildHostBootstrap(options.entry, options.variant, options.launcher, frameworkReferences)
+				: buildBootstrap(options.entry, options.variant, options.launcher, frameworkReferences)
 		},
 	}
+}
+
+function buildHostBootstrap(
+	entry: string,
+	variant: 'headless' | 'workbench',
+	launcher: 'host' | 'node' | 'fetch',
+	frameworkReferences: ReadonlyMap<string, string>,
+): string {
+	const framework = `{ ${[...frameworkReferences].map(([specifier, reference]) => `${JSON.stringify(specifier)}: import.meta.ROLLUP_FILE_URL_${reference}`).join(', ')} }`
+	const http = launcher !== 'host'
+	return `
+${http ? "import 'pluxel:static-elysia-wiring'" : ''}
+import application from ${JSON.stringify(entry)}
+import { runHostApplication } from '@pluxel/host/application'
+${http ? "import { createHostHttpHandler } from '@pluxel/services/http/application'" : ''}
+${launcher === 'node' ? "import { listenHostHttp } from '@pluxel/services/http/listener'" : ''}
+const host = await runHostApplication(application, {
+ startup: {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',variant:${JSON.stringify(variant)}}},
+ frameworkModules: ${framework},
+})
+export const ctx = host.ctx
+export const start = () => host.start()
+${
+	http
+		? `let handler
+try { handler = createHostHttpHandler(host) } catch (error) { await host.close(); throw error }
+export const fetch = handler`
+		: ''
+}
+${launcher === 'node' ? 'const listener = await listenHostHttp(host, {fetch,publicDir:import.meta.dirname+"/public"}).catch(async (error) => { await host.close(); throw error })\nexport const address = listener.address\nexport const stop = listener.close' : 'export const stop = () => host.close()'}
+`
 }
 
 function buildBootstrap(
 	entry: string,
 	variant: 'headless' | 'workbench',
-	launcher: 'node' | 'fetch',
+	launcher: 'node' | 'fetch' | 'host',
 	frameworkReferences: ReadonlyMap<string, string>,
 ): string {
 	const deployment = `{ root: import.meta.dirname, target: 'node', variant: ${JSON.stringify(variant)} }`
@@ -621,7 +696,7 @@ function staticApplicationAssemblyPlugin(options: {
 				})
 				let workbenchInventories = null
 				if (options.variant === 'workbench') {
-					const publicDir = resolveRuntimeWorkbenchPublicDir(options.cwd)
+					const publicDir = resolveWorkbenchPublicDir(options.cwd)
 					await cp(publicDir, resolve(options.outDir, 'workbench/public'), {
 						recursive: true,
 						force: true,
@@ -668,7 +743,7 @@ function staticApplicationAssemblyPlugin(options: {
 							version: 1,
 							kind: 'pluxel-static-application',
 							application: {
-								name: options.state.name ?? null,
+								name: options.state.name ?? 'pluxel-application',
 								catalogHash,
 							},
 							server: {
@@ -770,17 +845,15 @@ function assertBundledPluxelClosure(bundle: OutputBundle): void {
 	}
 }
 
-function resolveRuntimeWorkbenchPublicDir(cwd: string): string {
+function resolveWorkbenchPublicDir(cwd: string): string {
 	const applicationRequire = createRequire(resolve(cwd, 'package.json'))
-	const routeRoot = dirname(applicationRequire.resolve('@pluxel/runtime/package.json'))
-	const routeRequire = createRequire(resolve(routeRoot, 'package.json'))
-	const packageJsonPath = routeRequire.resolve('@pluxel/runtime/package.json')
+	const packageJsonPath = applicationRequire.resolve('@pluxel/workbench/package.json')
 	const packageRoot = dirname(packageJsonPath)
 	for (const candidate of [resolve(packageRoot, 'dist/public'), resolve(packageRoot, 'public')]) {
 		if (existsSync(candidate)) return candidate
 	}
 	throw new Error(
-		'[static-application] Workbench variant requires the built @pluxel/runtime public shell',
+		'[static-application] Workbench variant requires the built @pluxel/workbench public shell',
 	)
 }
 

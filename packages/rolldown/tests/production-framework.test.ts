@@ -9,7 +9,7 @@ it('shares frozen framework identity with installed modules in a fresh Node proc
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-production-bridge-'))
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-		for (const name of ['runtime', 'core', 'host', 'host-dynamic', 'commands']) {
+		for (const name of ['core', 'host', 'host-dynamic', 'commands', 'services']) {
 			await symlink(
 				fileURLToPath(new URL(`../../${name}/`, import.meta.url)),
 				join(root, 'node_modules/@pluxel', name),
@@ -19,18 +19,31 @@ it('shares frozen framework identity with installed modules in a fresh Node proc
 		const sources = join(root, 'mutable/entries')
 		await mkdir(sources, { recursive: true })
 		await mkdir(join(root, 'mutable/node_modules/installed'), { recursive: true })
-		await mkdir(join(root, 'mutable/node_modules/@pluxel/runtime'), { recursive: true })
+		await mkdir(join(root, 'mutable/node_modules/@pluxel/core'), { recursive: true })
 		await writeFile(
-			join(root, 'mutable/node_modules/@pluxel/runtime/package.json'),
+			join(root, 'mutable/node_modules/@pluxel/core/package.json'),
 			JSON.stringify({
-				name: '@pluxel/runtime',
+				name: '@pluxel/core',
 				type: 'module',
 				exports: { '.': './wrong.mjs', './toolchain': './wrong.mjs' },
 			}),
 		)
 		await writeFile(
-			join(root, 'mutable/node_modules/@pluxel/runtime/wrong.mjs'),
-			'throw new Error("WRONG_RUNTIME_COPY")',
+			join(root, 'mutable/node_modules/@pluxel/core/wrong.mjs'),
+			'throw new Error("WRONG_CORE_COPY")',
+		)
+		await mkdir(join(root, 'mutable/node_modules/@pluxel/services'), { recursive: true })
+		await writeFile(
+			join(root, 'mutable/node_modules/@pluxel/services/package.json'),
+			JSON.stringify({
+				name: '@pluxel/services',
+				type: 'module',
+				exports: { './persistence': './wrong.mjs', './commands': './wrong.mjs' },
+			}),
+		)
+		await writeFile(
+			join(root, 'mutable/node_modules/@pluxel/services/wrong.mjs'),
+			'throw new Error("WRONG_SERVICE_COPY")',
 		)
 		await writeFile(
 			join(root, 'mutable/node_modules/installed/package.json'),
@@ -46,11 +59,11 @@ it('shares frozen framework identity with installed modules in a fresh Node proc
 		await writeFile(
 			join(root, 'mutable/node_modules/installed/index.mjs'),
 			`
-import {BasePlugin,Plugin} from '@pluxel/runtime';
-import {__setPluginDefinition} from '@pluxel/runtime/toolchain';
-import {ElysiaWS} from 'elysia/ws';
-if (typeof ElysiaWS !== 'function') throw new Error('MISSING_ELYSIA_WS');
-class Dynamic extends BasePlugin { init(){ process.stdout.write('DYNAMIC_STARTED\\n') } }
+import {BasePlugin,Plugin} from '@pluxel/core';
+import {__setPluginDefinition} from '@pluxel/core/toolchain';
+import {Persistence} from '@pluxel/services/persistence';
+import {Commands} from '@pluxel/services/commands';
+class Dynamic extends BasePlugin { init(){ if (!Array.isArray(this.ctx.require(Commands).list())) throw new Error('MISSING_COMMANDS'); if (Persistence !== globalThis.__frameworkPersistence) throw new Error('PERSISTENCE_IDENTITY_MISMATCH'); process.stdout.write('DYNAMIC_STARTED\\n') } }
 Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(address.definition)}}); export {Dynamic};
 `,
 		)
@@ -58,7 +71,9 @@ Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',def
 		await writeFile(
 			join(root, 'app.ts'),
 			`import {dynamicSource} from '@pluxel/host-dynamic';
-export default {name:'production-bridge', plugins:[],sources:[dynamicSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],configure:()=>({logging:false,configService:{mode:'memory'},runtimeState:{mode:'memory',snapshot:{autoStart:[${JSON.stringify(address)}]}}})}
+import {Persistence,persistence} from '@pluxel/services/persistence';
+import {commands} from '@pluxel/services/commands';
+export default {name:'production-bridge', plugins:[],sources:[dynamicSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkPersistence=Persistence},configure:()=>({services:[persistence({mode:'memory'}),commands()],state:{initial:{autoStart:[${JSON.stringify(address)}]}}})}
 `,
 		)
 		const buildScript = join(root, 'build.mts')
@@ -66,8 +81,8 @@ export default {name:'production-bridge', plugins:[],sources:[dynamicSource({kin
 			buildScript,
 			`
 import { build } from ${JSON.stringify(import.meta.resolve('tsdown'))};
-import { application } from ${JSON.stringify(new URL('../src/cli/static-application.ts', import.meta.url).href)};
-await build({...application({cwd:${JSON.stringify(root)},entry:'app.ts',variant:'headless',launcher:'fetch',managedDatabaseDrivers:[],minify:false,lint:false}),config:false});
+import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)};
+await build({cwd:${JSON.stringify(root)},entry:'app.ts',minify:false,plugins:[pluxel({variant:'headless',launcher:'host',sourceFrameworks:['@pluxel/services/persistence','@pluxel/services/commands'],lint:false})],config:false});
 `,
 		)
 		await promisify(execFile)(
@@ -84,10 +99,9 @@ await build({...application({cwd:${JSON.stringify(root)},entry:'app.ts',variant:
 import assert from 'node:assert/strict';
 const application = await import(${JSON.stringify(pathToFileURL(join(root, 'dist/app.mjs')).href)});
 try {
- const report = await application.start();
- assert(report.entries.some(entry => entry.rootExportName === 'Dynamic' && entry.status === 'started'));
+ await application.start();
 } finally { await application.stop(); }
-await assert.rejects(import(${JSON.stringify(pathToFileURL(join(root, 'mutable/node_modules/@pluxel/runtime/wrong.mjs')).href)}), /WRONG_RUNTIME_COPY/);
+await assert.rejects(import(${JSON.stringify(pathToFileURL(join(root, 'mutable/node_modules/@pluxel/core/wrong.mjs')).href)}), /WRONG_CORE_COPY/);
 console.log('BUNDLED_DYNAMIC_IDENTITY_OK');
 `,
 			],

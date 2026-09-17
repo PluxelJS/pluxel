@@ -1,14 +1,5 @@
-import {
-	env as standardEnvironment,
-	isCI,
-	isDevelopment,
-	isProduction,
-	isTest,
-	nodeVersion,
-	platform,
-	provider,
-	runtime,
-} from 'std-env'
+export type { PluxelPlatformSnapshot } from '@pluxel/management/protocol'
+import { env as standardEnvironment } from 'std-env'
 
 /**
  * Runtime-agnostic environment exposed by Pluxel hosts.
@@ -47,20 +38,6 @@ export type PluxelHostEnvironment = Readonly<{
 	portlessOrigin?: string
 }>
 
-/** Browser-safe facts about the current JavaScript and deployment environment. */
-export type PluxelPlatformSnapshot = Readonly<{
-	runtime: Readonly<{
-		name: string | null
-		version: string | null
-	}>
-	deployment: Readonly<{
-		provider: string | null
-		ci: boolean
-	}>
-	mode: 'development' | 'production' | 'test' | 'unknown'
-	platform: string | null
-}>
-
 /**
  * Resolve framework-owned deployment variables and framework-wide defaults.
  * Invalid explicit values fail startup instead of silently selecting another behavior.
@@ -89,21 +66,7 @@ export function resolveHostEnv(
 /** Effective Pluxel Host environment resolved from the universal {@link env}. */
 export const hostEnv = resolveHostEnv()
 
-/** Detect a small, non-secret snapshot suitable for logs and management clients. */
-export function describePluxelPlatform(): PluxelPlatformSnapshot {
-	return Object.freeze({
-		runtime: Object.freeze({
-			name: runtime || null,
-			version: runtime === 'node' ? nodeVersion : null,
-		}),
-		deployment: Object.freeze({
-			provider: provider || null,
-			ci: isCI,
-		}),
-		mode: isTest ? 'test' : isProduction ? 'production' : isDevelopment ? 'development' : 'unknown',
-		platform: platform || null,
-	})
-}
+export { describePluxelPlatform } from '@pluxel/management/internal/platform-host'
 
 function optionalText(value: string | undefined, name: string): string | undefined {
 	if (value === undefined) return undefined

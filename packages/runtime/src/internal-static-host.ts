@@ -4,7 +4,7 @@ export {
 	resolveWorkbenchUiBasePath,
 } from './workbench-config'
 export { isRuntimeManagementEnabled, resolveRuntimePlanePlan } from './runtime-plane'
-export { createRuntimeRootContext, prepareRuntimeRootContext } from './context/runtime-plan'
+export { createRuntimeRootContext } from './context/runtime-plan'
 export type { RuntimeHostConfig } from './context/runtime-contract'
 export {
 	assertRuntimeHostConfig,
@@ -24,4 +24,4 @@ export {
 	bindContextRuntimeLogging,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
-} from './logger/logging'
+} from '@pluxel/logging/internal'

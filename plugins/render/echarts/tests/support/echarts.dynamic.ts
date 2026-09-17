@@ -1,6 +1,7 @@
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
-import { pluginNodeAddressOf, type RuntimeApplication } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { type RuntimeApplication } from '@pluxel/runtime'
 import { EChartsPlugin } from '../../src/index.ts'
 import { EChartsDynamicProbePlugin } from './echarts-dynamic-probe.ts'
 

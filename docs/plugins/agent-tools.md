@@ -20,7 +20,7 @@ Toolset 保存稳定 command name，Agent 得到所分配 Toolset 的并集。�
 
 ```ts no-twoslash
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
 
 const agentToolsRecord = {
 	owner: pluginNodeAddressOf(AgentToolsPlugin),
@@ -50,7 +50,7 @@ MCP、OpenAI、Claude 或其他 provider adapter 应建模为普通 Plugin，并
 
 ```ts no-twoslash
 import { AgentToolsPlugin, type AgentCommandCatalog } from '@pluxel/agent-tools'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class ExampleAgentPlugin extends BasePlugin {

@@ -14,16 +14,7 @@
 	],
 	"type": "module",
 	"types": "./dist/index.d.mts",
-	"imports": {
-		"#pluxel/database-driver/pglite": {
-			"@pluxel/source": "./src/services/database-adapters/pglite.ts",
-			"default": "./dist/internal/database/pglite.mjs"
-		},
-		"#pluxel/database-driver/postgres": {
-			"@pluxel/source": "./src/services/database-adapters/postgres.ts",
-			"default": "./dist/internal/database/postgres.mjs"
-		}
-	},
+	"imports": {},
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
@@ -32,14 +23,6 @@
 		"./capnweb": {
 			"@pluxel/source": "./src/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
-		},
-		"./database": {
-			"@pluxel/source": "./src/database.ts",
-			"default": "./dist/database.mjs"
-		},
-		"./dev": {
-			"@pluxel/source": "./src/dev.ts",
-			"default": "./dist/dev.mjs"
 		},
 		"./environment": {
 			"@pluxel/source": "./src/environment.ts",
@@ -52,14 +35,6 @@
 		"./internal/config-validation": {
 			"@pluxel/source": "./src/internal-config-validation.ts",
 			"default": "./dist/internal/config-validation.mjs"
-		},
-		"./internal/database/pglite": {
-			"@pluxel/source": "./src/services/database-adapters/pglite.ts",
-			"default": "./dist/internal/database/pglite.mjs"
-		},
-		"./internal/database/postgres": {
-			"@pluxel/source": "./src/services/database-adapters/postgres.ts",
-			"default": "./dist/internal/database/postgres.mjs"
 		},
 		"./internal/fetch-application": {
 			"@pluxel/source": "./src/application/internal/fetch-application.ts",
@@ -89,21 +64,9 @@
 			"@pluxel/source": "./src/internal-test.ts",
 			"default": "./dist/internal/test.mjs"
 		},
-		"./internal/workbench-react": {
-			"@pluxel/source": "./src/workbench/react-internal.tsx",
-			"default": "./dist/internal/workbench-react.mjs"
-		},
-		"./logger": {
-			"@pluxel/source": "./src/logger.ts",
-			"default": "./dist/logger.mjs"
-		},
 		"./product": {
 			"@pluxel/source": "./src/product.ts",
 			"default": "./dist/product.mjs"
-		},
-		"./services/vault": {
-			"@pluxel/source": "./src/services/vault.ts",
-			"default": "./dist/services/vault.mjs"
 		},
 		"./test": {
 			"@pluxel/source": "./src/test.ts",
@@ -117,51 +80,16 @@
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
 		},
-		"./web": {
-			"@pluxel/source": "./src/web.ts",
-			"default": "./dist/web.mjs"
-		},
-		"./web/react": {
-			"@pluxel/source": "./src/web-react.ts",
-			"default": "./dist/web/react.mjs"
-		},
-		"./web/session": {
-			"@pluxel/source": "./src/web/session/index.ts",
-			"default": "./dist/web/session.mjs"
-		},
-		"./workbench": {
-			"@pluxel/source": "./src/workbench.ts",
-			"default": "./dist/workbench.mjs"
-		},
-		"./workbench/client": {
-			"@pluxel/source": "./src/workbench/client.ts",
-			"default": "./dist/workbench/client.mjs"
-		},
-		"./workbench/federation": {
-			"@pluxel/source": "./src/workbench/federation.ts",
-			"default": "./dist/workbench/federation.mjs"
-		},
-		"./workbench/react": {
-			"@pluxel/source": "./src/workbench/react.tsx",
-			"default": "./dist/workbench/react.mjs"
-		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
-		"imports": {
-			"#pluxel/database-driver/pglite": "./dist/internal/database/pglite.mjs",
-			"#pluxel/database-driver/postgres": "./dist/internal/database/postgres.mjs"
-		},
+		"imports": {},
 		"exports": {
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
-			"./database": "./dist/database.mjs",
-			"./dev": "./dist/dev.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/config-validation": "./dist/internal/config-validation.mjs",
-			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
-			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
 			"./internal/fetch-application": "./dist/internal/fetch-application.mjs",
 			"./internal/fetch-workbench-application": "./dist/internal/fetch-workbench-application.mjs",
 			"./internal/node-application": "./dist/internal/node-application.mjs",
@@ -169,20 +97,10 @@
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
-			"./internal/workbench-react": "./dist/internal/workbench-react.mjs",
-			"./logger": "./dist/logger.mjs",
 			"./product": "./dist/product.mjs",
-			"./services/vault": "./dist/services/vault.mjs",
 			"./test": "./dist/test.mjs",
 			"./toolchain": "./dist/toolchain.mjs",
 			"./vite": "./dist/vite.mjs",
-			"./web": "./dist/web.mjs",
-			"./web/react": "./dist/web/react.mjs",
-			"./web/session": "./dist/web/session.mjs",
-			"./workbench": "./dist/workbench.mjs",
-			"./workbench/client": "./dist/workbench/client.mjs",
-			"./workbench/federation": "./dist/workbench/federation.mjs",
-			"./workbench/react": "./dist/workbench/react.mjs",
 			"./package.json": "./package.json"
 		},
 		"access": "public"
@@ -192,22 +110,22 @@
 		"bench:logger": "pnpm exec vitest bench bench/logger.bench.ts",
 		"bench:runtime-state": "pnpm exec vitest bench bench/runtime-state.bench.ts",
 		"bench:workers": "pnpm exec vitest bench bench/worker-task.bench.ts",
-		"build": "pnpm run build:web && pnpm run build:lib",
-		"build:lib": "tsdown",
-		"build:web": "vite build",
+		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false --composite false"
 	},
 	"dependencies": {
 		"@electric-sql/pglite": "catalog:prod",
-		"@logtape/file": "catalog:prod",
 		"@logtape/logtape": "catalog:prod",
-		"@logtape/pretty": "catalog:prod",
 		"@module-federation/bridge-react": "catalog:frontend",
 		"@module-federation/runtime": "catalog:prod",
 		"@module-federation/sdk": "catalog:prod",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
+		"@pluxel/logging": "workspace:^",
+		"@pluxel/management": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
 		"@sinclair/typebox": "catalog:prod",
 		"@standard-schema/spec": "catalog:prod",
 		"@tanstack/query-core": "catalog:frontend",
@@ -233,10 +151,8 @@
 		"@mantine/notifications": "catalog:frontend",
 		"@pluxel/host-dev": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime-node": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
-		"@types/pg": "catalog:types",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
 		"fs-fixture": "catalog:dev",

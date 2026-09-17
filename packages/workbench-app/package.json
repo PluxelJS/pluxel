@@ -27,13 +27,15 @@
 		"@material/material-color-utilities": "catalog:prod",
 		"@module-federation/runtime": "catalog:prod",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/management": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
 		"@tanstack/react-hotkeys": "catalog:frontend",
 		"@tanstack/react-query": "catalog:frontend",
 		"@tanstack/react-router": "catalog:frontend",
 		"@tanstack/react-store": "catalog:frontend",
 		"@tanstack/react-virtual": "catalog:frontend",
 		"@worksplit/react": "workspace:*",
+		"capnweb": "catalog:prod",
 		"valibot-form": "workspace:*"
 	},
 	"devDependencies": {

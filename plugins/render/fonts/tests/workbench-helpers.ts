@@ -1,6 +1,6 @@
-import type { PluginConstructor } from '@pluxel/runtime'
+import type { PluginConstructor } from '@pluxel/core'
 import type { OpenedWorkbenchTestEntry, RuntimeTestHost } from '@pluxel/runtime/test'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { FontsPlugin } from '../src/index.ts'
 import { FontsWorkbench } from '../src/workbench.ts'
 

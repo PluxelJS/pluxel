@@ -1,3 +1,4 @@
+import { requireRuntimePluginHost } from '../context/runtime-plan'
 import {
 	pluginDefinitionAddressEqual,
 	pluginDefinitionAddressOf,
@@ -9,6 +10,7 @@ import {
 	type RootContext,
 } from '@pluxel/core'
 import {
+	closeOwnerInvocations,
 	consumePluginDefinitionCandidate,
 	requireConfigService,
 	requirePluginService,
@@ -41,7 +43,6 @@ import {
 } from '@pluxel/core/test'
 import { removeFork } from '../api/usecases/pluginForks'
 import type { RuntimeHostConfig } from '../context/runtime-contract'
-import { prepareRuntimeRootContext } from '../context/runtime-plan'
 import {
 	createPluginRouteCatalogSnapshot,
 	installRuntimePluginGraphCoordinator,
@@ -222,16 +223,20 @@ const EMPTY_TEST_SUMMARY: PluginTestCommitSummary = Object.freeze({
 })
 
 /** Create an isolated Runtime Plugin world without starting or materializing a Plugin. */
-export function createRuntimeTestHost(config: RuntimeTestHostConfig = {}): RuntimeTestHost {
-	return createRuntimeHostWorld(config, {}, true).host
+export async function createRuntimeTestHost(
+	config: RuntimeTestHostConfig = {},
+): Promise<RuntimeTestHost> {
+	const world = await createRuntimeHostWorld(config, {}, true)
+	return world.host
 }
 
 /** @internal Create the same world with explicit root/service authority. */
-export function createRuntimeInternalTestHost(
+export async function createRuntimeInternalTestHost(
 	config: RuntimeHostConfig = {},
 	options: RuntimeInternalTestRootOptions = {},
-): RuntimeInternalTestHost {
-	return createRuntimeHostWorld(config, options).internalHost
+): Promise<RuntimeInternalTestHost> {
+	const world = await createRuntimeHostWorld(config, options)
+	return world.internalHost
 }
 
 function createPlan(): RuntimeDraftPlan {
@@ -510,12 +515,12 @@ function createChange(
 	})
 }
 
-function createRuntimeHostWorld(
+async function createRuntimeHostWorld(
 	config: RuntimeHostConfig,
 	rootOptions: RuntimeInternalTestRootOptions = {},
 	forceMemoryStores = false,
-): Readonly<{ host: RuntimeTestHost; internalHost: RuntimeInternalTestHost }> {
-	const ctx = createRuntimeTestRoot(
+): Promise<Readonly<{ host: RuntimeTestHost; internalHost: RuntimeInternalTestHost }>> {
+	const ctx = await createRuntimeTestRoot(
 		normalizeRuntimeTestConfig(config, forceMemoryStores),
 		rootOptions,
 	)
@@ -582,7 +587,6 @@ function createRuntimeHostWorld(
 		options: { rejectRunningStartCatalogChange?: boolean } = {},
 	): Promise<RawCommit> => {
 		assertForkRemoveExclusive(plan)
-		await prepareRuntimeRootContext(ctx)
 		if (plan.forkRemoves.size > 0) return commitForkRemoval(plan)
 
 		const catalog = buildCatalog(plan, coordinator)
@@ -835,6 +839,11 @@ function createRuntimeHostWorld(
 		disposal = (async () => {
 			const errors: unknown[] = []
 			try {
+				await closeOwnerInvocations(ctx.root)
+			} catch (error) {
+				errors.push(error)
+			}
+			try {
 				await scope.dispose()
 			} catch (error) {
 				errors.push(error)
@@ -862,7 +871,7 @@ function createRuntimeHostWorld(
 				errors.push(error)
 			}
 			try {
-				await ctx.effects.dispose()
+				await requireRuntimePluginHost(ctx).close()
 			} catch (error) {
 				errors.push(error)
 			}

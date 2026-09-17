@@ -7,7 +7,7 @@ import type {
 	WorkbenchSessionApi,
 	WorkbenchContentLayoutEntry,
 	WorkbenchContentPlan,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -24,13 +24,13 @@ const mocks = vi.hoisted(() => ({
 	openWorkbenchEntry: vi.fn(),
 }))
 
-vi.mock('@pluxel/runtime/workbench/client', async (importOriginal) => ({
-	...(await importOriginal<typeof import('@pluxel/runtime/workbench/client')>()),
+vi.mock('@pluxel/workbench/client', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@pluxel/workbench/client')>()),
 	openWorkbenchEntry: mocks.openWorkbenchEntry,
 }))
 
-vi.mock('@pluxel/runtime/workbench/federation', async (importOriginal) => ({
-	...(await importOriginal<typeof import('@pluxel/runtime/workbench/federation')>()),
+vi.mock('@pluxel/workbench/federation', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@pluxel/workbench/federation')>()),
 	createWorkbenchViewHost: mocks.createWorkbenchViewHost,
 	openFederatedWorkbenchView: mocks.openFederatedWorkbenchView,
 }))

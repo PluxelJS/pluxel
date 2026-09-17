@@ -1,6 +1,6 @@
 // Direct Workbench demo: one definition, fresh Cap'n Web roots, Plugin-owned watch semantics.
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
 import {
 	PluginWithUIWorkbench,

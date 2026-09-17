@@ -1,3 +1,5 @@
+import type { PluginHost } from '@pluxel/host'
+import { requireRuntimePluginHost } from '../../context/runtime-plan'
 import {
 	formatPluginNodeReference,
 	pluginNodeAddressEqual,
@@ -6,25 +8,25 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import {
+	closeOwnerInvocations,
+	requireConfigService,
+	requirePluginService,
+} from '@pluxel/core/internal'
 import type { ProductDescriptor } from '../../product.ts'
 import {
-	createPluginRouteCatalogSnapshot,
 	installRuntimePluginGraphCoordinator,
 	installRuntimeRouteCapabilities,
 	readRuntimePluginStatusOverview,
 	requireRuntimeHttpService,
-	requireRuntimeStateStore,
 	type ElysiaCarrierRequestAddress,
 	type PluginApplyReport,
 	type PluginExecutionSnapshot,
 } from '../../internal.ts'
 import {
-	createContextPluginLogPolicyStore,
 	createRuntimeRootContext,
 	createRuntimeLogging,
 	isWorkbenchEnabled,
-	prepareRuntimeRootContext,
 	type RuntimeHostConfig,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
@@ -84,9 +86,8 @@ export class RuntimeHostImpl implements RuntimeHost {
 
 	constructor(
 		definition: RuntimeDefinition,
-		options: RuntimeHostOptions,
-		private readonly logging: RuntimeLogging,
 		internal: RuntimeHostInternalOptions,
+		private readonly pluginHost: PluginHost,
 	) {
 		this.resolveExecution =
 			internal.resolveExecution ??
@@ -94,22 +95,9 @@ export class RuntimeHostImpl implements RuntimeHost {
 		this.recentUpdates = internal.recentUpdates ?? new RuntimeRecentUpdateTracker()
 		this.startupCatalog = buildCatalog(definition, 1, this.resolveExecution)
 		this.runtimeName = definition.name
-		this.ctx = createRuntimeRootContext(
-			createRuntimeHostConfig(definition, options, logging, internal),
-			{
-				logging,
-				product: internal.product ?? null,
-				...(internal.requestAddress ? { requestAddress: internal.requestAddress } : {}),
-				...(internal.createWorkbenchBackend
-					? { workbench: { createBackend: internal.createWorkbenchBackend } }
-					: {}),
-			},
-		)
+		this.ctx = pluginHost.ctx
 		this.coordinator = installRuntimePluginGraphCoordinator(this.ctx)
-		this.ctx.effects.defer(() => logging.dispose(), {
-			tag: 'RuntimeLogging',
-			phase: 'shutdown',
-		})
+
 		const uninstallRoute = installRuntimeRouteCapabilities(this.ctx, {
 			recentUpdate: this.recentUpdates,
 		})
@@ -125,15 +113,6 @@ export class RuntimeHostImpl implements RuntimeHost {
 			name: this.runtimeName,
 			plugins: Object.freeze(catalog.entries.map((entry) => entry.candidate.implementation)),
 		})
-	}
-
-	async prepare(): Promise<void> {
-		await Promise.all([
-			requireConfigService(this.ctx).ready,
-			requireRuntimeStateStore(this.ctx).ready,
-		])
-		await this.logging.initializePolicy(createContextPluginLogPolicyStore(this.ctx))
-		await prepareRuntimeRootContext(this.ctx.root)
 	}
 
 	describeCatalog(): RuntimeCatalogSnapshot {
@@ -173,7 +152,10 @@ export class RuntimeHostImpl implements RuntimeHost {
 		if (this.stopPromise) return this.stopPromise
 		if (this.disposed) return Promise.resolve()
 		this.stopRequested = true
-		const stopped = this.enqueueOperation(() => this.stopExclusive())
+		const rootDrain = closeOwnerInvocations(this.ctx.root)
+		const stopped = Promise.resolve(rootDrain).then(() =>
+			this.enqueueOperation(() => this.stopExclusive()),
+		)
 		this.stopPromise = stopped
 		return stopped
 	}
@@ -181,31 +163,7 @@ export class RuntimeHostImpl implements RuntimeHost {
 	private async stopExclusive(): Promise<void> {
 		if (this.disposed) return
 		this.disposed = true
-		const errors: unknown[] = []
-		try {
-			const empty = createPluginRouteCatalogSnapshot(
-				this.coordinator.catalogSnapshot().revision + 1,
-				[],
-			)
-			await this.coordinator.update({
-				catalog: empty,
-				reason: 'shutdown',
-				mode: 'live',
-			})
-		} catch (error) {
-			errors.push(error)
-		}
-		try {
-			await this.ctx.effects.dispose()
-		} catch (error) {
-			errors.push(error)
-		}
-		try {
-			await this.logging.dispose()
-		} catch (error) {
-			errors.push(error)
-		}
-		throwRuntimeErrors(errors, '[runtime] host shutdown failed')
+		await this.pluginHost.close()
 	}
 
 	private reload(
@@ -523,13 +481,26 @@ export async function createRuntimeHost(
 	)
 	await logging.install()
 	let host: RuntimeHostImpl | undefined
+	let pluginHost: PluginHost | undefined
 	try {
-		host = new RuntimeHostImpl(definition, options, logging, internal)
-		await host.prepare()
+		const ctx = await createRuntimeRootContext(
+			createRuntimeHostConfig(definition, options, logging, internal),
+			{
+				logging,
+				product: internal.product ?? null,
+				...(internal.requestAddress ? { requestAddress: internal.requestAddress } : {}),
+				...(internal.createWorkbenchBackend
+					? { workbench: { createBackend: internal.createWorkbenchBackend } }
+					: {}),
+			},
+		)
+		pluginHost = requireRuntimePluginHost(ctx)
+		host = new RuntimeHostImpl(definition, internal, pluginHost)
 		return host
 	} catch (error) {
 		try {
 			if (host) await host.stop()
+			else if (pluginHost) await pluginHost.close()
 			else await logging.dispose()
 		} catch (cleanupError) {
 			throw new AggregateError(
@@ -540,11 +511,6 @@ export async function createRuntimeHost(
 		}
 		throw error
 	}
-}
-
-function throwRuntimeErrors(errors: readonly unknown[], message: string): void {
-	if (errors.length === 1) throw errors[0]
-	if (errors.length > 1) throw new AggregateError(errors, message)
 }
 
 export type RuntimeHostDeployment = {

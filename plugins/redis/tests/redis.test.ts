@@ -2,8 +2,8 @@ import {
 	formatPluginNodeReference,
 	pluginNodeAddressOf,
 	type PluginConstructor,
-	v,
-} from '@pluxel/runtime'
+} from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 import {
 	BasePlugin,
 	createRuntimeTestHost,
@@ -125,7 +125,7 @@ beforeEach(() => {
 describe('@pluxel/redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await startPlugins(host, [RedisPlugin, RedisConsumer])
 
@@ -154,7 +154,7 @@ describe('@pluxel/redis', () => {
 
 	it('publishes live connection state and a bounded transient PING form', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
 
 			await host.start(RedisPlugin)
 
@@ -252,7 +252,7 @@ describe('@pluxel/redis', () => {
 			.mockImplementationOnce(() => west.client)
 
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.commit((change) => {
 				change.start(RedisPlugin, {
@@ -291,7 +291,7 @@ describe('@pluxel/redis', () => {
 		redisMock.client.connect.mockRejectedValueOnce(new Error('offline'))
 
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			const failure = await host.commitExpectFail((change) => {
 				change.start(RedisPlugin)

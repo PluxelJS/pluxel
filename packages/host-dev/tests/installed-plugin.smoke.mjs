@@ -1,16 +1,24 @@
 // Built-artifact boundary: run after building Host, Host-dev, Host-dynamic and Rolldown.
-import { mkdtemp, writeFile, mkdir, symlink, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
+import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
+const clientSource = await readFile(new URL('../../cli/src/dev/client.ts', import.meta.url), 'utf8')
+const { discoverDevInstances, runDevFile, selectDevInstance } = await import(
+	'data:text/javascript;base64,' +
+		Buffer.from(stripTypeScriptTypes(clientSource, { mode: 'transform' })).toString('base64')
+)
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(join(workspace, 'packages/host-dev/package.json'))
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href)
 const { host } = await import(
 	pathToFileURL(join(workspace, 'packages/host-dev/dist/vite.mjs')).href
+)
+const { httpDevelopment } = await import(
+	pathToFileURL(join(workspace, 'packages/host-dev/dist/http.mjs')).href
 )
 const root = await mkdtemp(join(tmpdir(), 'pluxel-installed-host-'))
 await mkdir(join(root, 'node_modules/@test/installed'), { recursive: true })
@@ -18,6 +26,11 @@ await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
 await symlink(
 	join(workspace, 'packages/host-dynamic'),
 	join(root, 'node_modules/@pluxel/host-dynamic'),
+	'dir',
+)
+await symlink(
+	join(workspace, 'packages/services'),
+	join(root, 'node_modules/@pluxel/services'),
 	'dir',
 )
 await mkdir(join(root, 'entries'))
@@ -38,12 +51,19 @@ const fixedDefinition = {
 	exportName: 'Installed',
 }
 const installed = (value, identity = definition) =>
-	`import {BasePlugin,Plugin} from '@pluxel/core';import {__setPluginDefinition,PLUGIN_LOWERING_ABI_VERSION} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:PLUGIN_LOWERING_ABI_VERSION,kind:'plugin',definition:${JSON.stringify(identity)}});`
+	`import {BasePlugin,Plugin} from '@pluxel/core';import {Http} from '@pluxel/services/http';import {__setPluginDefinition,PLUGIN_LOWERING_ABI_VERSION} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.require(Http).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:PLUGIN_LOWERING_ABI_VERSION,kind:'plugin',definition:${JSON.stringify(identity)}});`
 await writeFile(join(root, 'node_modules/@test/installed/index.mjs'), installed('one'))
 await writeFile(join(root, 'fixed.mjs'), installed('fixed', fixedDefinition))
+const serviceSource = (
+	revision,
+	fail = false,
+) => `import {http} from '@pluxel/services/http';import {defineContextCapability,installRootCapability} from '@pluxel/core/host';
+const token=defineContextCapability('fixture.service');
+export const services=[http(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects}){await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
+await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
-	`import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host-dynamic';export default {plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs']})],state:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'}]}};`,
+	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host-dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs']})],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'}]}}};`,
 )
 globalThis.__installedHostSmoke = []
 let server
@@ -71,10 +91,31 @@ try {
 			},
 		},
 		server: { port: 0, host: '127.0.0.1' },
-		plugins: host({ entry: 'app.ts' }),
+		plugins: [host({ entry: 'app.ts', devConsole: true }), httpDevelopment()],
 	})
 	await server.listen()
 	await until(() => globalThis.__installedHostSmoke.includes('fixed'), 'fixed plugin startup')
+	const listener = server.resolvedUrls.local[0]
+	const response = await fetch(new URL('/installed/fixed', listener))
+	assert.equal(await response.text(), 'fixed')
+	const instance = await selectDevInstance({ root })
+	const consoleFile = join(root, 'inspect.ts')
+	await writeFile(
+		consoleFile,
+		'export default async (dev) => (await dev.plugins.list()).map(plugin => plugin.address.definition.exportName)',
+	)
+	const inspect = () =>
+		runDevFile({
+			root,
+			instance: instance.instanceId,
+			file: consoleFile,
+			exportName: 'default',
+			timeoutMs: 5000,
+			detach: false,
+		})
+	const initial = await inspect()
+	assert.equal(initial.state, 'succeeded', JSON.stringify(initial))
+	assert.ok(initial.value.includes('Installed'))
 	await writeFile(
 		join(root, 'entries/installed.mjs'),
 		`export {Installed} from '@test/installed'; // revision one\n`,
@@ -88,9 +129,47 @@ try {
 	await until(() => globalThis.__installedHostSmoke.includes('two'), 'upgrade')
 	await rm(join(root, 'entries/installed.mjs'))
 	await until(() => globalThis.__installedHostSmoke.includes('-two'), 'uninstall')
+	await writeFile(join(root, 'services.mjs'), serviceSource('failed', true))
+	await until(
+		() => globalThis.__installedHostSmoke.filter((entry) => entry === 'fixed').length === 2,
+		'service preparation compensation',
+	)
+	// Separate two physical edits beyond Chokidar's same-path change throttle.
+	// Host settlement remains observed through the lifecycle predicates below.
+	await delay(200)
+	await writeFile(join(root, 'services.mjs'), serviceSource('two'))
+	await until(
+		() => globalThis.__installedHostSmoke.filter((entry) => entry === 'fixed').length === 3,
+		'service host replacement',
+	)
+	const updatedResponse = await fetch(new URL('/installed/fixed', listener))
+	assert.equal(await updatedResponse.text(), 'fixed')
+	const replaced = await inspect()
+	assert.equal(replaced.state, 'succeeded', JSON.stringify(replaced))
+	assert.notEqual(replaced.hostEpoch, initial.hostEpoch)
 	await server.close()
 	server = undefined
-	const expected = ['fixed', 'one', '-one', 'two', '-two', '-fixed']
+	assert.deepEqual(await discoverDevInstances(root), [])
+	const expected = [
+		'service:one',
+		'fixed',
+		'one',
+		'-one',
+		'two',
+		'-two',
+		'-fixed',
+		'-service:one',
+		'service:failed',
+		'-service:failed',
+		'service:one',
+		'fixed',
+		'-fixed',
+		'-service:one',
+		'service:two',
+		'fixed',
+		'-fixed',
+		'-service:two',
+	]
 	assert.deepEqual(
 		globalThis.__installedHostSmoke,
 		expected,

@@ -1,6 +1,6 @@
 import { Alert, Text } from '@mantine/core'
 import { makePathArray } from '@tanstack/react-form'
-import type { ConfigValidationErrors } from '@pluxel/runtime/web'
+import type { ConfigValidationErrors } from '@pluxel/management/client'
 import { useAutoFormCtx } from 'valibot-form/web'
 
 type Issue = Readonly<{ message: string; path: readonly (string | number)[] }>

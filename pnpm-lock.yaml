@@ -912,6 +912,9 @@ importers:
       '@clack/prompts':
         specifier: catalog:prod
         version: 1.7.0
+      '@pluxel/workbench':
+        specifier: workspace:^
+        version: link:../workbench
       gunshi:
         specifier: catalog:prod
         version: 0.37.1
@@ -1044,13 +1047,25 @@ importers:
       '@pluxel/core':
         specifier: workspace:^
         version: link:../core
+      ohash:
+        specifier: catalog:prod
+        version: 2.0.12
+      superjson:
+        specifier: catalog:validation
+        version: 2.2.6
     devDependencies:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
 
   packages/host-dev:
     dependencies:
+      '@pluxel/commands':
+        specifier: workspace:^
+        version: link:../commands
       '@pluxel/core':
         specifier: workspace:^
         version: link:../core
@@ -1060,19 +1075,37 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:^
         version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:^
+        version: link:../services
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       chokidar:
         specifier: catalog:node
         version: 5.0.0
       pathe:
         specifier: catalog:node
         version: 2.0.3
+      srvx:
+        specifier: catalog:prod
+        version: 0.12.7
     devDependencies:
       '@logtape/logtape':
         specifier: catalog:dev
         version: 2.3.2
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../management
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../workbench
       react:
         specifier: catalog:frontend
         version: 19.2.8
@@ -1116,6 +1149,83 @@ importers:
       vitest:
         specifier: catalog:test
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  packages/logging:
+    dependencies:
+      '@logtape/file':
+        specifier: catalog:prod
+        version: 2.3.2(@logtape/logtape@2.3.2)
+      '@logtape/logtape':
+        specifier: catalog:prod
+        version: 2.3.2
+      '@logtape/pretty':
+        specifier: catalog:prod
+        version: 2.3.2(@logtape/logtape@2.3.2)
+      '@pluxel/core':
+        specifier: workspace:^
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:^
+        version: link:../host
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
+    devDependencies:
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+
+  packages/management:
+    dependencies:
+      '@logtape/logtape':
+        specifier: catalog:prod
+        version: 2.3.2
+      '@pluxel/core':
+        specifier: workspace:^
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:^
+        version: link:../host
+      '@pluxel/logging':
+        specifier: workspace:^
+        version: link:../logging
+      '@pluxel/services':
+        specifier: workspace:^
+        version: link:../services
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      std-env:
+        specifier: catalog:prod
+        version: 4.2.0
+      valibot-form:
+        specifier: workspace:^
+        version: link:../valibot-form
+    devDependencies:
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../workbench
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+      '@types/react':
+        specifier: catalog:types
+        version: 19.2.18
+      crossws:
+        specifier: catalog:prod
+        version: 0.4.12(srvx@0.12.7)
+      elysia:
+        specifier: catalog:prod
+        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
 
   packages/rolldown:
     dependencies:
@@ -1186,6 +1296,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:^
+        version: link:../workbench
       '@rolldown/pluginutils':
         specifier: catalog:build
         version: 1.0.1
@@ -1225,15 +1338,9 @@ importers:
       '@electric-sql/pglite':
         specifier: catalog:prod
         version: 0.5.8
-      '@logtape/file':
-        specifier: catalog:prod
-        version: 2.3.2(@logtape/logtape@2.3.2)
       '@logtape/logtape':
         specifier: catalog:prod
         version: 2.3.2
-      '@logtape/pretty':
-        specifier: catalog:prod
-        version: 2.3.2(@logtape/logtape@2.3.2)
       '@module-federation/bridge-react':
         specifier: catalog:frontend
         version: 2.9.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1252,6 +1359,18 @@ importers:
       '@pluxel/host':
         specifier: workspace:^
         version: link:../host
+      '@pluxel/logging':
+        specifier: workspace:^
+        version: link:../logging
+      '@pluxel/management':
+        specifier: workspace:^
+        version: link:../management
+      '@pluxel/services':
+        specifier: workspace:^
+        version: link:../services
+      '@pluxel/workbench':
+        specifier: workspace:^
+        version: link:../workbench
       '@sinclair/typebox':
         specifier: catalog:prod
         version: 0.34.52
@@ -1322,18 +1441,12 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
-      '@pluxel/runtime-node':
-        specifier: workspace:*
-        version: link:../runtime-node
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
-      '@types/pg':
-        specifier: catalog:types
-        version: 8.23.1
       '@types/react':
         specifier: catalog:types
         version: 19.2.18
@@ -1368,24 +1481,51 @@ importers:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
-  packages/runtime-node:
+  packages/services:
     dependencies:
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../runtime
+      '@pluxel/commands':
+        specifier: workspace:^
+        version: link:../commands
+      '@pluxel/core':
+        specifier: workspace:^
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:^
+        version: link:../host
+      age-encryption:
+        specifier: catalog:prod
+        version: 0.3.1
       crossws:
         specifier: catalog:prod
         version: 0.4.12(srvx@0.12.7)
-      elysia:
-        specifier: catalog:prod
-        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
+      drizzle-orm:
+        specifier: catalog:backend
+        version: 0.45.2(@electric-sql/pglite@0.5.8)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.23.0)(sql.js@1.14.1)
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
       srvx:
         specifier: catalog:prod
         version: 0.12.7
+      std-env:
+        specifier: catalog:prod
+        version: 4.2.0
     devDependencies:
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
+      '@electric-sql/pglite':
+        specifier: catalog:prod
+        version: 0.5.8
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@types/pg':
+        specifier: catalog:types
+        version: 8.23.1
+      elysia:
+        specifier: catalog:prod
+        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
+      pg:
+        specifier: catalog:backend
+        version: 8.23.0
 
   packages/test:
     dependencies:
@@ -1464,6 +1604,79 @@ importers:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
+  packages/workbench:
+    dependencies:
+      '@mantine/core':
+        specifier: catalog:frontend
+        version: 9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@mantine/hooks':
+        specifier: catalog:frontend
+        version: 9.5.2(react@19.2.8)
+      '@module-federation/bridge-react':
+        specifier: catalog:frontend
+        version: 2.9.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@module-federation/runtime':
+        specifier: catalog:prod
+        version: 2.9.0
+      '@module-federation/sdk':
+        specifier: catalog:prod
+        version: 2.9.0
+      '@pluxel/core':
+        specifier: workspace:^
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:^
+        version: link:../host
+      '@pluxel/management':
+        specifier: workspace:^
+        version: link:../management
+      '@pluxel/services':
+        specifier: workspace:^
+        version: link:../services
+      '@tanstack/query-core':
+        specifier: catalog:frontend
+        version: 5.102.8
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.2.8(react@19.2.8)
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+    devDependencies:
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../host-dev
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@types/react':
+        specifier: catalog:types
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: catalog:types
+        version: 19.2.5(@types/react@19.2.18)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      valibot-form:
+        specifier: workspace:*
+        version: link:../valibot-form
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/workbench-app:
     dependencies:
       '@dagrejs/dagre':
@@ -1487,9 +1700,12 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../runtime
+      '@pluxel/management':
+        specifier: workspace:^
+        version: link:../management
+      '@pluxel/workbench':
+        specifier: workspace:^
+        version: link:../workbench
       '@tanstack/react-form':
         specifier: catalog:frontend
         version: 1.33.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1511,6 +1727,9 @@ importers:
       '@worksplit/react':
         specifier: workspace:*
         version: link:../../vendor/split-like-vscode/packages/react
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form
@@ -1574,6 +1793,13 @@ importers:
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
   plugins/agent-tools:
+    dependencies:
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
@@ -1581,15 +1807,24 @@ importers:
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../../packages/commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -1605,6 +1840,12 @@ importers:
       jose:
         specifier: catalog:prod
         version: 6.2.10
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -1612,18 +1853,27 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../../packages/management
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
-      '@pluxel/runtime-node':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime-node
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
@@ -1633,6 +1883,9 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       crossws:
         specifier: catalog:prod
         version: 0.4.12(srvx@0.12.7)
@@ -1656,16 +1909,26 @@ importers:
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   plugins/cache:
+    dependencies:
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
@@ -1732,6 +1995,12 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: catalog:prod
         version: 2.10.0(@opentelemetry/api@1.9.1)
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@opentelemetry/api':
         specifier: catalog:dev
@@ -1742,15 +2011,24 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@types/node':
         specifier: catalog:types
         version: 26.4.0
@@ -1769,6 +2047,12 @@ importers:
       '@pnpm/napi':
         specifier: catalog:prod
         version: 12.0.0-rc.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -1794,9 +2078,15 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
@@ -1806,6 +2096,9 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       react:
         specifier: catalog:frontend
         version: 19.2.8
@@ -1836,6 +2129,12 @@ importers:
       typebox:
         specifier: catalog:prod
         version: 1.3.7
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@pluxel/agent-tools':
         specifier: workspace:*
@@ -1846,12 +2145,18 @@ importers:
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../../packages/commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
@@ -1866,10 +2171,17 @@ importers:
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   plugins/rates:
+    dependencies:
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -1894,6 +2206,12 @@ importers:
       redis:
         specifier: catalog:backend
         version: 6.2.1(@opentelemetry/api@1.9.1)
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@pluxel/cache':
         specifier: workspace:*
@@ -1916,6 +2234,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -1934,10 +2255,19 @@ importers:
       '@napi-rs/canvas':
         specifier: catalog:prod
         version: 1.0.8
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
@@ -1950,6 +2280,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -1965,6 +2298,12 @@ importers:
       echarts:
         specifier: catalog:prod
         version: 6.1.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@pluxel/canvas':
         specifier: workspace:*
@@ -1972,6 +2311,9 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
@@ -1984,9 +2326,15 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -2008,6 +2356,12 @@ importers:
       '@napi-rs/canvas':
         specifier: catalog:prod
         version: 1.0.8
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -2015,15 +2369,24 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
@@ -2033,6 +2396,9 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       react:
         specifier: catalog:frontend
         version: 19.2.8
@@ -2057,10 +2423,19 @@ importers:
       takumi-js:
         specifier: catalog:prod
         version: 2.13.2(csstype@3.2.3)(react@19.2.8)
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
@@ -2073,6 +2448,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       '@types/react':
         specifier: catalog:types
         version: 19.2.18
@@ -2097,10 +2475,19 @@ importers:
       satteri:
         specifier: 0.10.5
         version: 0.10.5
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
@@ -2131,10 +2518,19 @@ importers:
       '@myriaddreamin/typst-ts-node-compiler':
         specifier: 0.7.0
         version: 0.7.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
@@ -2147,6 +2543,9 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
       '@pluxel/takumi':
         specifier: workspace:*
         version: link:../takumi
@@ -2156,6 +2555,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -2177,25 +2579,104 @@ importers:
       s3mini:
         specifier: catalog:prod
         version: 1.0.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
       typescript:
         specifier: catalog:dev
         version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  plugins/vault-admin:
+    dependencies:
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+    devDependencies:
+      '@mantine/core':
+        specifier: catalog:frontend
+        version: 9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../../packages/management
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
+      '@tabler/icons-react':
+        specifier: catalog:icons
+        version: 3.46.0(react@19.2.8)
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+      '@types/react':
+        specifier: catalog:types
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: catalog:types
+        version: 19.2.5(@types/react@19.2.18)
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.2.8(react@19.2.8)
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       vitest:
         specifier: catalog:test
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2217,6 +2698,12 @@ importers:
       undici:
         specifier: catalog:prod
         version: 8.10.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
       wretch:
         specifier: catalog:prod
         version: 3.0.9
@@ -2224,21 +2711,33 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@types/react':
         specifier: catalog:types
         version: 19.2.18
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -2462,15 +2961,27 @@ importers:
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../../packages/commands
+      '@pluxel/core':
+        specifier: workspace:^
+        version: link:../../packages/core
       '@pluxel/echarts':
         specifier: workspace:*
         version: link:../../plugins/render/echarts
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../../plugins/render/fonts
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/host-dynamic':
         specifier: workspace:*
         version: link:../../packages/host-dynamic
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../../packages/management
       '@pluxel/otel':
         specifier: workspace:*
         version: link:../../plugins/otel
@@ -2489,12 +3000,21 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@pluxel/storage':
         specifier: workspace:*
         version: link:../../plugins/storage
       '@pluxel/takumi':
         specifier: workspace:*
         version: link:../../plugins/render/takumi
+      '@pluxel/vault-admin':
+        specifier: workspace:*
+        version: link:../../plugins/vault-admin
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@pluxel/wretch':
         specifier: workspace:*
         version: link:../../plugins/wretch

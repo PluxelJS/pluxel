@@ -3,6 +3,8 @@ title: Commands 与 Agent 集成
 description: 定义一次命令契约，再复用于统一注册表、可选 Agent Plugin、CLI、HTTP 和 Workbench。
 ---
 
+Host 通过 `@pluxel/services/commands` 的 `commands()` 安装空命令目录，Plugin 通过 `ctx.require(Commands)` 取得当前 owner 的服务。官方 Runtime 使用同一安装器，并在准备期间额外发布六个插件管理命令；自定义 Host 不会隐式安装这些管理命令。
+
 `@pluxel/commands` 让可携带的业务命令只定义一次输入、输出、副作用等级和执行函数，再由调用方显式发布到 Agent、CLI、HTTP、Workbench 或 carrier。只属于某个 carrier 的命令也使用同一条校验和错误管线，但可以要求该 carrier 构造的扩展 Context，不必进入 root catalog。
 
 在快速开始生成的工作区根目录运行下面命令，选择定义 command 的插件包，然后安装更新后的依赖：
@@ -69,7 +71,8 @@ export const jobStatus = defineCommand({
 在插件 `init()` 中注册上面的 definition：
 
 ```ts no-twoslash
-this.ctx.commands.register(jobStatus)
+import { Commands } from '@pluxel/services/commands'
+this.ctx.require(Commands).register(jobStatus)
 ```
 
 先直接执行一次，验证完整的输入校验与业务结果：
@@ -153,7 +156,7 @@ registration.dispose() // 幂等撤销后续查找与发现
 
 不要 `new CommandRegistry()` 或 subclass；需要注解时只 `import type`。`register()` 返回可执行的 typed installed command 与 `dispose()`；动态 name dispatch 无法推导具体 output，因此 `commands.execute()` 返回 `unknown`。`snapshot()` 在 catalog 未变时复用同一 immutable identity，`list()` 就是其 `descriptors`；`subscribe()` 只通知之后成功的 publication/withdrawal。Installed handle 是一个会按 name/schema 跟随 compatible replacement 的 catalog slot，不能作为 carrier route 的固定 registration identity。
 
-Pluxel Plugin 应使用 `this.ctx.commands.register(jobStatus)`。Runtime 原样委托 registry 的 list/snapshot/subscribe/execute，只在 registration 上增加 Plugin owner gate 与 generation effects ownership。stop、replacement、rollback 和 shutdown 会撤销 publication；Core 在 owner 离开 running generation 时统一关闭新 invocation、abort call/owner 组合 signal，并等待已接纳调用退出。手动 dispose 只撤销未来 publication，不取消已经进入执行的调用，也不关闭同 owner 其他 command 的 admission。
+Pluxel Plugin 应使用 `this.ctx.require(Commands).register(jobStatus)`。Runtime 原样委托 registry 的 list/snapshot/subscribe/execute，只在 registration 上增加 Plugin owner gate 与 generation effects ownership。stop、replacement、rollback 和 shutdown 会撤销 publication；Core 在 owner 离开 running generation 时统一关闭新 invocation、abort call/owner 组合 signal，并等待已接纳调用退出。手动 dispose 只撤销未来 publication，不取消已经进入执行的调用，也不关闭同 owner 其他 command 的 admission。
 
 ## 5. Carrier publication mount
 
@@ -180,9 +183,11 @@ class ConsumerPlugin extends BasePlugin {
 Provider 内部才把 declaration 投影成包含 presenter/error rendering 的 direct command，并交给 mount；这些阶段必须在 mounted `execute()` 返回前完成：
 
 ```ts no-twoslash
+import { Commands } from '@pluxel/services/commands'
 import type { CommandContext, Registration } from '@pluxel/commands'
 import { createArgvRouter } from '@pluxel/commands/argv'
-import { BasePlugin, type CommandMount } from '@pluxel/runtime'
+import { BasePlugin } from '@pluxel/core'
+import type { CommandMount } from '@pluxel/services/commands'
 
 interface MessageCommandContext extends CommandContext {
 	readonly reply: (text: string) => Promise<void>
@@ -193,7 +198,7 @@ class MessagePlugin extends BasePlugin {
 	private mount!: CommandMount<MessageCommandContext>
 
 	protected override init() {
-		this.mount = this.ctx.commands.createMount<MessageCommandContext>()
+		this.mount = this.ctx.require(Commands).createMount<MessageCommandContext>()
 	}
 
 	registerCommand<I, O>(definition: MessageCommandDefinition<I, O>): Registration {
@@ -212,7 +217,7 @@ class MessagePlugin extends BasePlugin {
 
 Mount 在 bind 时复制、冻结 name/descriptor snapshot，并捕获当时的 `execute` 函数与原 command receiver。之后替换 `command.execute` 不会改变已挂载实现，但 hand-authored method 仍取得原 receiver；“direct”不代表 deep-freeze receiver 的其他可变状态。Direct definition 也不能带 `dispose` member，lifecycle cleanup 只属于 publication registration。
 
-Mount 的 `install` 必须同步返回一个幂等、同步、no-throw 的 `Registration`。Mount 只管理 exact command、双 owner admission 与撤销事务，不提供 list/snapshot/subscribe/name lookup，也不建立 secondary registry。Carrier 的 route syntax、admission、invocation context、success presenter 和 error renderer 留在 carrier；会触碰 invocation capability 的阶段必须在 mounted command 返回前 settle。Root catalog publication 与 carrier publication 是两个独立决定：需要同时暴露时，分别调用 `ctx.commands.register(raw)` 与 carrier 的 `registerCommand(definition)`。
+Mount 的 `install` 必须同步返回一个幂等、同步、no-throw 的 `Registration`。Mount 只管理 exact command、双 owner admission 与撤销事务，不提供 list/snapshot/subscribe/name lookup，也不建立 secondary registry。Carrier 的 route syntax、admission、invocation context、success presenter 和 error renderer 留在 carrier；会触碰 invocation capability 的阶段必须在 mounted command 返回前 settle。Root catalog publication 与 carrier publication 是两个独立决定：需要同时暴露时，分别调用 `ctx.require(Commands).register(raw)` 与 carrier 的 `registerCommand(definition)`。
 
 ## 6. Agent tool 投影与 allowlist
 
@@ -235,7 +240,7 @@ const tools = catalog.list().map((descriptor) => provider.projectCommand(descrip
 const result = await catalog.execute(toolName, candidate, invocationContext)
 ```
 
-Agent adapter 应是通过 constructor required dependency 取得 `AgentToolsPlugin` 的普通 Plugin。发布和执行必须使用同一个 bound catalog；它会在调用时再次检查 assignment，并提供包含 `catalogRevision`/`policyRevision` 的 snapshot 与订阅能力。Plugin stop/replacement 后旧 catalog 立即撤销。adapter 不应在收到 tool call 后绕过它调用裸 `ctx.commands.execute()`。
+Agent adapter 应是通过 constructor required dependency 取得 `AgentToolsPlugin` 的普通 Plugin。发布和执行必须使用同一个 bound catalog；它会在调用时再次检查 assignment，并提供包含 `catalogRevision`/`policyRevision` 的 snapshot 与订阅能力。Plugin stop/replacement 后旧 catalog 立即撤销。adapter 不应在收到 tool call 后绕过它调用裸 `ctx.require(Commands).execute()`。
 
 Toolset 只保存稳定 command name，不复制 descriptor 或 handler。暂时不存在的 name 会保留在 config，之后同名 command 发布时自动进入投影。MCP、OpenAI、Claude 等 provider schema、tool name 映射、principal、确认与审计仍由 adapter 自己负责。完整用法见 [Agent tools Plugin](../plugins/agent-tools.md)。
 
@@ -286,12 +291,12 @@ argv.bind(patchConfig, {
 
 ## 公开入口
 
-| 需求                               | 入口                                  |
-| ---------------------------------- | ------------------------------------- |
-| Plugin 发布到 root catalog         | `this.ctx.commands.register(command)` |
-| Carrier provider 建 publication 面 | `this.ctx.commands.createMount()`     |
-| 独立 host 建 catalog               | `createCommandRegistry()`             |
-| Agent allowlist                    | `agentTools.catalog(agentId)`         |
-| 自定义 route/positionals/tail      | `createArgvRouter().bind()`           |
+| 需求                               | 入口                                           |
+| ---------------------------------- | ---------------------------------------------- |
+| Plugin 发布到 root catalog         | `this.ctx.require(Commands).register(command)` |
+| Carrier provider 建 publication 面 | `this.ctx.require(Commands).createMount()`     |
+| 独立 host 建 catalog               | `createCommandRegistry()`                      |
+| Agent allowlist                    | `agentTools.catalog(agentId)`                  |
+| 自定义 route/positionals/tail      | `createArgvRouter().bind()`                    |
 
 carrier 负责授权、确认、principal 映射、输出格式和进程退出码；command definition 与 runtime registry 不承担这些宿主策略。

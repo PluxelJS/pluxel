@@ -1,6 +1,13 @@
 import { dynamicSource } from '@pluxel/host-dynamic'
-import type { RuntimeApplication } from '@pluxel/runtime'
-import { resolveHostEnv } from '@pluxel/runtime/environment'
+import type { HostApplication } from '@pluxel/host'
+import { standardServices } from '@pluxel/services'
+import { logging } from '@pluxel/logging'
+import { vault } from '@pluxel/services/vault'
+import { managementAccess } from '@pluxel/management/access'
+import { management } from '@pluxel/management/service'
+import { workbenchService } from '@pluxel/workbench/service'
+import { workbenchHttp } from '@pluxel/workbench/http'
+
 import { resolve } from 'pathe'
 import { hostPlugins } from './showcase/catalog'
 import {
@@ -12,7 +19,7 @@ import {
 
 export { product }
 
-const dataRoot = resolve(process.cwd(), resolveHostEnv().dataRoot)
+const dataRoot = resolve(process.cwd(), process.env.PLUXEL_DATA_ROOT ?? '.pluxel')
 const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
 
 export default {
@@ -25,21 +32,57 @@ export default {
 			include: ['*.mjs'],
 		}),
 	],
-	configure() {
+	configure({ env, deployment }) {
+		const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
 		return {
-			configService: {
+			services: [
+				logging({
+					root: { profile: 'pluxel-architecture-lab' },
+					sinks: {
+						console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
+						store: { kind: 'store', streamId: 'default', caller: true },
+					},
+					routes: {
+						runtime: [
+							{ sink: 'console', minLevel: 'info' },
+							{ sink: 'store', minLevel: 'trace' },
+						],
+						plugins: [
+							{ sink: 'console', minLevel: 'trace' },
+							{ sink: 'store', minLevel: 'trace' },
+						],
+						debug: [
+							{ sink: 'console', minLevel: 'trace' },
+							{ sink: 'store', minLevel: 'trace' },
+						],
+						meta: [{ sink: 'console', minLevel: 'warning' }],
+					},
+				}),
+				...standardServices({ persistence: resolve(dataRoot, 'persistence') }),
+				vault(),
+				managementAccess(),
+				management({ application: { product }, workbench: withWorkbench }),
+				...(withWorkbench
+					? [
+							workbenchService({
+								product,
+								artifacts: deployment ? { root: resolve(deployment.root, 'workbench') } : undefined,
+							}),
+							workbenchHttp({
+								uiBasePath: '/__pluxel/workbench',
+								publicDir: deployment ? resolve(deployment.root, 'workbench/public') : undefined,
+							}),
+						]
+					: []),
+			],
+			configRecords: {
 				mode: 'memory',
-				snapshot: {
-					plugins: [
-						...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
-						{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
-					],
-				},
+				initial: [
+					...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
+					{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
+				],
 			},
-			runtimeState: { mode: 'memory', snapshot: createHostRuntimeState() },
-			workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
-			persistence: resolve(dataRoot, 'persistence'),
-			vault: {},
+			state: { mode: 'memory', initial: createHostRuntimeState() },
 		}
 	},
-} satisfies RuntimeApplication
+} satisfies HostApplication

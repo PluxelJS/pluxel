@@ -1,20 +1,20 @@
 import type { CommandContext, CommandDescriptor } from '@pluxel/commands'
 import type { PluginTestTarget, RawPluginConfig } from '@pluxel/core/test'
 import type { RpcStub, RpcTarget } from '../capnweb'
-import type { PluginConfigResult } from '../api/usecases/pluginConfig'
+import type { PluginConfigResult } from '@pluxel/management/internal/api/usecases/pluginConfig'
 import type {
 	WorkbenchContent,
 	WorkbenchContentSlotMap,
 	WorkbenchDescriptorApi,
 	WorkbenchDescriptorConsumerApi,
 	WorkbenchPrincipal,
-} from '../workbench/definition'
+} from '@pluxel/workbench/internal/definition'
 import type {
 	WorkbenchContentPresentation,
 	WorkbenchContentRef,
 	WorkbenchContentRoot,
 	WorkbenchFederatedViewRef,
-} from '../workbench/client-protocol'
+} from '@pluxel/workbench/internal'
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
 
 export interface RuntimeConfigTestDriver<TTarget extends PluginTestTarget = PluginTestTarget> {

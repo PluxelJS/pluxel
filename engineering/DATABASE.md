@@ -6,7 +6,7 @@
 ## Author boundary
 
 插件用普通 `pgTable()` 定义一份 schema，再调用 `defineDatabase({ schema })`。definition 是不可变、可复用的 schema、
-evolution policy 与 migration 声明，不携带数据 owner；`ctx.database.use()` 在 plugin `init()` 中从 immutable Context 绑定
+evolution policy 与 migration 声明，不携带数据 owner；`ctx.require(Database).use()` 在 plugin `init()` 中从 immutable Context 绑定
 owner、完成 migration prepare，并返回只暴露 `read(callback)` 与 `transaction(callback)` 的 handle。共享 definition 只复用
 结构，不共享数据、handle 或 transaction。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
 
@@ -85,3 +85,13 @@ PGlite 的所有 operation 经单连接 scheduler；`concurrency: 1` 反映 driv
 轮询、公平取队列，限制每 owner pending 数并使排队超时。owner stop 先拒绝新 operation，再等待已接纳的运行中和排队
 operation 排空；内部 invalidation listener 随 owner cleanup 撤销。同 lineage replacement 复用 active instance，
 新 lineage replacement 得到新 instance。archive 会占用宿主存储，但 plugin 无权删除宿主备份或绕过配额策略。
+
+## Host composition 与实现归属
+
+`@pluxel/services/database` 独占 definition、Database token、owner handles、scheduler、migration/outbox coordinator。
+`database({ backend })` 安装 owner-only capability；backend 为 Host 独占的 lazy adapter factory。
+PGlite 与 PostgreSQL 工厂分别从 `@pluxel/services/database/pglite` 和 `/postgres` 导入，彼此不引用；
+通用入口不包含 driver 选择或 driver import。应用显式安装其所选 driver，Services 仅声明 optional peers。
+Runtime 保留旧 `database`/`persistence` 配置的默认路径转换，并组合这些工厂，不拥有第二套数据库实现。
+`database: false` 在 Runtime 中省略 descriptor，Plugin 通过 `ctx.require(Database)` 得到标准 capability 缺失错误。
+acquire 与 cached handle read/transaction 都进入 Core root/owner invocation lease；Host 关闭先排空已接受的操作，再关闭 adapter。

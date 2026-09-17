@@ -2,14 +2,16 @@ import { workbenchFederationExpose, workbenchFederationProducerName } from '@plu
 import type { RootContext } from '@pluxel/core'
 import { createRuntimeRootContext, type RuntimeRootContextOptions } from '../context/runtime-plan'
 import type { RuntimeHostConfig } from '../context/runtime-contract'
-import { WorkbenchBackend } from '../services/workbench'
-import type { WorkbenchArtifactLookup } from '../services/workbench/WorkbenchArtifactService'
-import type { WorkbenchContentArtifactLookup } from '../services/workbench/WorkbenchContentArtifactService'
+import { WorkbenchBackend } from '@pluxel/workbench/server'
+import type {
+	WorkbenchArtifactLookup,
+	WorkbenchContentArtifactLookup,
+} from '@pluxel/workbench/internal'
 import {
 	readWorkbenchContentSlot,
 	readWorkbenchMarkdownDocument,
 	type WorkbenchMarkdownDocument,
-} from '../workbench/definition'
+} from '@pluxel/workbench/internal/definition'
 
 export type RuntimeInternalTestRootOptions = Pick<
 	RuntimeRootContextOptions,
@@ -20,10 +22,10 @@ const TEST_LOOPBACK_REQUEST_ADDRESS: NonNullable<
 	RuntimeInternalTestRootOptions['requestAddress']
 > = () => Object.freeze({ address: '127.0.0.1', port: 1, family: 'IPv4' as const })
 
-export function createRuntimeTestRoot(
+export async function createRuntimeTestRoot(
 	config: RuntimeHostConfig,
 	options: RuntimeInternalTestRootOptions = {},
-): RootContext {
+): Promise<RootContext> {
 	return createRuntimeRootContext(config, {
 		workbench: {
 			createBackend: (root, installOptions) =>

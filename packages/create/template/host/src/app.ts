@@ -1,14 +1,20 @@
-import { TodoConfig, TodoPlugin } from '@example/todo-plugin'
-import { bindConfigEnvironment, type RuntimeApplication } from '@pluxel/runtime'
+import type { HostApplication } from '@pluxel/host'
+import { standardServices } from '@pluxel/services'
+import { logging } from '@pluxel/logging'
+import { vault } from '@pluxel/services/vault'
+import { managementAccess } from '@pluxel/management/access'
+import { management } from '@pluxel/management/service'
+import { workbenchService } from '@pluxel/workbench/service'
+import { workbenchHttp } from '@pluxel/workbench/http'
+
 import { dynamicSource } from '@pluxel/host-dynamic'
-import { resolveHostEnv } from '@pluxel/runtime/environment'
 import { resolve } from 'node:path'
 import { product } from './product'
-import { exampleConfigService, examplePlugins, exampleRuntimeState } from './runtime-state'
+import { exampleConfigRecords, examplePlugins, exampleHostState } from './runtime-state'
 
 export { product }
 
-const dataRoot = resolve(process.cwd(), resolveHostEnv().dataRoot)
+const dataRoot = resolve(process.cwd(), process.env.PLUXEL_DATA_ROOT ?? '.pluxel')
 
 export default {
 	name: 'pluxel-example',
@@ -20,17 +26,51 @@ export default {
 			include: ['*.mjs'],
 		}),
 	],
-	configEnvironmentBootstrap: [
-		bindConfigEnvironment(TodoPlugin, TodoConfig, {
-			maxItems: 'EXAMPLE_TODO_MAX_ITEMS',
-		}),
-	],
-	configure() {
+	configure({ env, deployment }) {
+		const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
 		return {
-			configService: exampleConfigService(),
-			runtimeState: exampleRuntimeState(),
-			persistence: resolve(dataRoot, 'persistence'),
-			workbench: { enabled: true, uiBasePath: '/__pluxel/workbench' },
+			services: [
+				logging({
+					root: { profile: 'pluxel-example' },
+					sinks: {
+						console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
+						store: { kind: 'store', streamId: 'default', caller: true },
+					},
+					routes: {
+						runtime: [
+							{ sink: 'console', minLevel: 'info' },
+							{ sink: 'store', minLevel: 'trace' },
+						],
+						plugins: [
+							{ sink: 'console', minLevel: 'trace' },
+							{ sink: 'store', minLevel: 'trace' },
+						],
+						debug: [
+							{ sink: 'console', minLevel: 'trace' },
+							{ sink: 'store', minLevel: 'trace' },
+						],
+						meta: [{ sink: 'console', minLevel: 'warning' }],
+					},
+				}),
+				...standardServices({ persistence: resolve(dataRoot, 'persistence') }),
+				vault(),
+				managementAccess(),
+				management({ application: { product }, workbench: withWorkbench }),
+				...(withWorkbench
+					? [
+							workbenchService({
+								product,
+								artifacts: deployment ? { root: resolve(deployment.root, 'workbench') } : undefined,
+							}),
+							workbenchHttp({
+								uiBasePath: '/__pluxel/workbench',
+								publicDir: deployment ? resolve(deployment.root, 'workbench/public') : undefined,
+							}),
+						]
+					: []),
+			],
+			configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
+			state: exampleHostState(),
 		}
 	},
-} satisfies RuntimeApplication
+} satisfies HostApplication

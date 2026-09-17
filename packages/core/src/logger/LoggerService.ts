@@ -6,6 +6,7 @@ import { findPluginLogContext } from './context'
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
 const RESERVED_PROPERTY_KEYS = new Set(['context', 'pluginDisplayName'])
+const contextLoggerRootIds = new WeakMap<object, string>()
 const unmanagedRootIds = new WeakMap<object, string>()
 let unmanagedRootIdSequence = 0
 
@@ -34,7 +35,18 @@ function fallbackRootId(ctx: PluxelContext): string {
 
 function rootIdFor(ctx: PluxelContext, config?: LoggerServiceConfig): string {
 	const value = config?.rootId
-	return typeof value === 'string' && value ? value : fallbackRootId(ctx)
+	const id = typeof value === 'string' && value ? value : fallbackRootId(ctx)
+	contextLoggerRootIds.set(ctx.root ?? ctx, id)
+	return id
+}
+
+/** Host logging adapters bind to the exact identity already used by the root logger. */
+export function getContextLoggerRootId(ctx: PluxelContext): string {
+	const root = ctx.root
+	void root.logger
+	const id = contextLoggerRootIds.get(root)
+	if (!id) throw new Error('[core/logger] root logger did not establish an identity')
+	return id
 }
 
 function stripReservedProperties(value: Record<string, unknown>): Record<string, unknown> {

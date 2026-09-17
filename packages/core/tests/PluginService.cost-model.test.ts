@@ -1,11 +1,7 @@
+import { pluginNodeAddressOf, type PluginNodeAddress, type RootContext } from '@pluxel/core'
 import {
 	createContextHost,
 	installRootCapability,
-	pluginNodeAddressOf,
-	type PluginNodeAddress,
-	type RootContext,
-} from '@pluxel/core'
-import {
 	CONFIG_SERVICE_CAPABILITY,
 	consumePluginDefinitionCandidate,
 	createCoreContextInstallations,

@@ -2,15 +2,17 @@ import { pluginNodeAddressOf, type Context } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
-import { requireWorkbench, WorkbenchBackend } from '../../src/services/workbench'
-import type { WorkbenchArtifactLookup } from '../../src/services/workbench/WorkbenchArtifactService'
-import type { WorkbenchContentArtifactLookup } from '../../src/services/workbench/WorkbenchContentArtifactService'
-import type { WorkbenchContentObserver } from '@pluxel/runtime/workbench/client'
+import { requireWorkbench, WorkbenchBackend } from '@pluxel/workbench/server'
+import {
+	type WorkbenchArtifactLookup,
+	type WorkbenchContentArtifactLookup,
+} from '@pluxel/workbench/internal'
+import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
 
 interface SettingsApi extends RpcTarget {
 	snapshot(): Readonly<{ enabled: boolean }>
@@ -281,7 +283,7 @@ class ConsumerPlugin extends BasePlugin {
 
 describe('Workbench vNext publication', () => {
 	it('rejects an explicit undefined binding for a binding-free Content definition', async () => {
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(NoPublicationPlugin)
 		host.start(NoPublicationPlugin)
 		await host.commit()
@@ -304,7 +306,7 @@ describe('Workbench vNext publication', () => {
 	})
 
 	it('opens a static Content without a target, retained lease, or View quota', async () => {
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(ContentPlugin)
 		host.start(ContentPlugin)
 		await host.commit()
@@ -351,7 +353,7 @@ describe('Workbench vNext publication', () => {
 		contentCount = 0
 		contentChanged = undefined
 		contentSignal = undefined
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(InteractiveContentPlugin)
 		host.start(InteractiveContentPlugin)
 		await host.commit()
@@ -413,7 +415,7 @@ describe('Workbench vNext publication', () => {
 		contentCount = 0
 		contentChanged = undefined
 		contentSignal = undefined
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(InteractiveContentPlugin)
 		host.start(InteractiveContentPlugin)
 		await host.commit()
@@ -457,7 +459,7 @@ describe('Workbench vNext publication', () => {
 	it('aborts the Content lifetime when an observer throws synchronously', async () => {
 		contentChanged = undefined
 		contentSignal = undefined
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(InteractiveContentPlugin)
 		host.start(InteractiveContentPlugin)
 		await host.commit()
@@ -500,7 +502,7 @@ describe('Workbench vNext publication', () => {
 	it('keeps layout capability-free and opens one fresh root lazily', async () => {
 		localFactoryCalls = 0
 		disposedTargets.length = 0
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
@@ -540,7 +542,7 @@ describe('Workbench vNext publication', () => {
 
 	it('opens ready entries after producer-status-only layout revisions', async () => {
 		localFactoryCalls = 0
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
@@ -582,7 +584,7 @@ describe('Workbench vNext publication', () => {
 	})
 
 	it('keeps federated entries visible while their producer artifact is unavailable', async () => {
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
@@ -668,7 +670,7 @@ describe('Workbench vNext publication', () => {
 	})
 
 	it('rejects federated publications without artifacts outside development pending mode', async () => {
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
@@ -719,7 +721,7 @@ describe('Workbench vNext publication', () => {
 		reusedFactory = undefined
 		reusedFactoryStarted = undefined
 		disposedTargets.length = 0
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(ReusedTargetPlugin)
 		host.start(ReusedTargetPlugin)
 		await host.commit()
@@ -761,7 +763,7 @@ describe('Workbench vNext publication', () => {
 		reusedFactory = undefined
 		reusedFactoryStarted = undefined
 		disposedTargets.length = 0
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(ReusedTargetPlugin)
 		host.start(ReusedTargetPlugin)
 		await host.commit()
@@ -815,7 +817,7 @@ describe('Workbench vNext publication', () => {
 		lateFactory = Promise.withResolvers<SettingsTarget>()
 		lateFactoryStarted = Promise.withResolvers<void>()
 		lateFactorySignal = undefined
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(LateFactoryPlugin)
 		host.start(LateFactoryPlugin)
 		await host.commit()
@@ -854,7 +856,7 @@ describe('Workbench vNext publication', () => {
 		lateFactory = Promise.withResolvers<SettingsTarget>()
 		lateFactoryStarted = Promise.withResolvers<void>()
 		lateFactorySignal = undefined
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(LateFactoryPlugin)
 		host.start(LateFactoryPlugin)
 		await host.commit()
@@ -907,7 +909,7 @@ describe('Workbench vNext publication', () => {
 
 	it('server-rematches parameterized routes and rejects browser params', async () => {
 		routedParams = undefined
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(RoutedPlugin)
 		host.start(RoutedPlugin)
 		await host.commit()
@@ -941,7 +943,7 @@ describe('Workbench vNext publication', () => {
 	})
 
 	it('scopes identical route paths to their target Plugin', async () => {
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add([SharedRoutePluginA, SharedRoutePluginB])
 		host.start(SharedRoutePluginA)
 		host.start(SharedRoutePluginB)
@@ -964,7 +966,7 @@ describe('Workbench vNext publication', () => {
 
 	it('opens an Attachment through one exact required edge', async () => {
 		attachmentConsumerNode = undefined
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add([ProviderPlugin, ConsumerPlugin])
 		host.start(ProviderPlugin)
 		host.start(ConsumerPlugin)
@@ -998,7 +1000,7 @@ describe('Workbench vNext publication', () => {
 	})
 
 	it('expires the whole socket epoch and opened root on owner withdrawal', async () => {
-		const host = createRuntimeInternalTestHarness()
+		const host = await createRuntimeInternalTestHarness()
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()

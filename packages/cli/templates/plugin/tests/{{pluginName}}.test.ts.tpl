@@ -1,11 +1,11 @@
-import { createRuntimeTestHost } from '@pluxel/runtime/test'
+import { createCoreTestHost } from '@pluxel/core/test'
 import { describe, expect, it } from 'vitest'
 import { {{className}}Plugin } from '{{packageName}}'
 
 describe('{{className}}Plugin', () => {
 	it('starts inside a host with validated config metadata', async () => {
-		await using host = createRuntimeTestHost()
-		await host.start({{className}}Plugin, {
+		await using host = createCoreTestHost()
+		await host.add({{className}}Plugin, {
 			initialConfig: { message: 'configured' },
 		})
 

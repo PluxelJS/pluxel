@@ -1,17 +1,18 @@
-import type { Context } from '@pluxel/core'
-import type { ElysiaWS } from 'elysia/ws'
 import { describe, expect, it, vi } from 'vitest'
 
 import type {
 	AdminAccessService,
 	AdminAuthenticationSession,
-} from '../../src/services/admin-access/AdminAccessService.ts'
-import { RuntimeSessionWebSocket } from '../../src/web/session/elysia-websocket.ts'
+} from '@pluxel/management/internal/services/admin-access/AdminAccessService'
+import {
+	RuntimeSessionWebSocket,
+	type ManagementSocket,
+} from '@pluxel/management/internal/web/session/elysia-websocket'
 import {
 	matchesRuntimeSessionUpgrade,
 	RuntimeSessionIngress,
 	validateRuntimeSessionOrigin,
-} from '../../src/web/session/ingress.ts'
+} from '@pluxel/management/internal/web/session/ingress'
 
 const RUNTIME_SESSION_URL = 'https://runtime.test/__pluxel/runtime/session'
 
@@ -64,14 +65,16 @@ function createAuthentication(): AdminAuthenticationSession {
 function createIngress(authentication: Promise<AdminAuthenticationSession>) {
 	const onRelease = vi.fn()
 	const ingress = new RuntimeSessionIngress({
-		ctx: {} as Context,
+		createManagement: () => {
+			throw new Error('unauthenticated test')
+		},
+		onError: vi.fn(),
 		adminAccess: {
 			openSession: vi.fn(() => authentication),
 		} as unknown as AdminAccessService,
 		request: new Request('https://runtime.test/__pluxel/runtime/session'),
 		local: false,
 		secure: true,
-		workbench: false,
 		onRelease,
 	})
 	return { ingress, onRelease }
@@ -81,10 +84,9 @@ function createSocket() {
 	const close = vi.fn()
 	const socket = {
 		readyState: WebSocket.OPEN,
-		raw: { close },
-		close: vi.fn(),
+		close,
 		send: vi.fn(() => 1),
-	} as unknown as ElysiaWS<any>
+	} as unknown as ManagementSocket
 	return { close, socket }
 }
 
@@ -96,8 +98,8 @@ describe('RuntimeSessionIngress initialization', () => {
 		const { socket } = createSocket()
 		const receive = vi.spyOn(RuntimeSessionWebSocket.prototype, 'receive')
 
-		const opening = ingress.data.open(socket)
-		ingress.data.message(socket, '{"question":1}')
+		const opening = ingress.open(socket)
+		ingress.receive('{"question":1}')
 		expect(receive).not.toHaveBeenCalled()
 
 		pending.resolve(authentication)
@@ -114,14 +116,14 @@ describe('RuntimeSessionIngress initialization', () => {
 	it.each([
 		{
 			name: 'message count',
-			send(ingress: RuntimeSessionIngress, socket: ElysiaWS<any>) {
-				for (let index = 0; index < 33; index += 1) ingress.data.message(socket, '{}')
+			send(ingress: RuntimeSessionIngress, _socket: ManagementSocket) {
+				for (let index = 0; index < 33; index += 1) ingress.receive('{}')
 			},
 		},
 		{
 			name: 'total bytes',
-			send(ingress: RuntimeSessionIngress, socket: ElysiaWS<any>) {
-				ingress.data.message(socket, 'x'.repeat(256 * 1024 + 1))
+			send(ingress: RuntimeSessionIngress, _socket: ManagementSocket) {
+				ingress.receive('x'.repeat(256 * 1024 + 1))
 			},
 		},
 	])('closes initialization that exceeds the $name ceiling', async ({ send }) => {
@@ -130,7 +132,7 @@ describe('RuntimeSessionIngress initialization', () => {
 		const { ingress, onRelease } = createIngress(pending.promise)
 		const { close, socket } = createSocket()
 
-		const opening = ingress.data.open(socket)
+		const opening = ingress.open(socket)
 		send(ingress, socket)
 		expect(close).toHaveBeenCalledOnce()
 		expect(close).toHaveBeenCalledWith(1009, 'Runtime session initialization queue exceeded')
@@ -149,8 +151,8 @@ describe('RuntimeSessionIngress initialization', () => {
 		const { ingress, onRelease } = createIngress(pending.promise)
 		const { socket } = createSocket()
 
-		const opening = ingress.data.open(socket)
-		ingress.data.close(socket, 1000, 'client closed')
+		const opening = ingress.open(socket)
+		ingress.transportClosed(1000, 'client closed')
 		expect(ingress.signal.aborted).toBe(true)
 
 		pending.resolve(authentication)

@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useContext, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { ProductDescriptor } from '@pluxel/runtime/product'
-import type { RuntimeMeta } from '@pluxel/runtime/web'
+import type { ProductDescriptor } from '@pluxel/management/product'
+import type { RuntimeMeta } from '@pluxel/management/client'
 
 import type { RuntimeManagementClient } from '../runtime'
 import { managementQueryKeys } from './managementQuery'

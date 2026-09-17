@@ -4,9 +4,12 @@ import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { serialize } from 'capnweb'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { applyLifecycleCommands, setAutoStart } from '../../src/api/usecases/pluginStatus'
-import { parsePluginStatusQueryResult } from '../../src/web/management-validation'
-import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
+import {
+	applyLifecycleCommands,
+	setAutoStart,
+} from '@pluxel/management/internal/api/usecases/pluginStatus'
+import { parsePluginStatusQueryResult } from '@pluxel/management/internal/web/management-validation'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
 import type {
 	ConfigResult,
 	ConfigPresentationResult,
@@ -16,7 +19,7 @@ import type {
 	PluginControlMutationResult,
 	PluginLifecycleCommand,
 	RemoveForkResult,
-} from '../../src/web/protocol'
+} from '@pluxel/management/internal/web/protocol'
 import { requireRuntimeStateStore } from '../../src/internal/runtime-state'
 
 @Plugin()
@@ -61,7 +64,7 @@ class ManagedDirectConsumer extends BasePlugin {
 
 describe('runtime web control protocol', () => {
 	it('retains startup diagnostics across unrelated commits and clears them after recovery', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		recoverableFailure = true
 		const logged = vi.spyOn(host.ctx.logger, 'error')
 		try {
@@ -109,7 +112,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('keeps expected status and persistence failures closed and state-bearing', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add(ManagedPlugin)
 			await host.commit()
@@ -164,7 +167,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('returns a serializable lifecycle report when an admitted start fails', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add(FailingManagedPlugin)
 			await host.commit()
@@ -207,7 +210,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('keeps provider policy on provider content and consumer override on requirement rows', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add([ManagedProvider, ManagedAlternateProvider, ManagedProviderConsumer])
 			const providerFork = host.fork(ManagedProvider, 'policy-ineligible')
@@ -312,7 +315,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('addresses dependency inspection and mutation by stable requirement identity', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add([ManagedPlugin, ManagedProvider, ManagedProviderConsumer, ManagedDirectConsumer])
 			await host.commit()
@@ -370,7 +373,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('rejects unexpected programming failures instead of classifying their message', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add(ManagedPlugin)
 			await host.commit()
@@ -392,7 +395,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('rejects malformed transport actions before applying any batch item', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add(ManagedPlugin)
 			await host.commit()
@@ -456,7 +459,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('returns closed invalid-input results for every Plugin RPC boundary', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			const invalidNode = { variant: 'default' }
@@ -536,7 +539,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('classifies a queued restart after stop as unchanged and unavailable', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add(ManagedPlugin)
 			await host.commit()
@@ -566,7 +569,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('rejects start for an unavailable node while allowing stop to retain cleanup intent', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add(ManagedPlugin)
 			host.cfg(ManagedPlugin).setAutoStart(true)
@@ -632,7 +635,7 @@ describe('runtime web control protocol', () => {
 	})
 
 	it('returns canonical stopped control when stop releases the last unavailable session reference', async () => {
-		const host = createRuntimeInternalTestHarness({ workbench: false })
+		const host = await createRuntimeInternalTestHarness({ workbench: false })
 		try {
 			host.add(ManagedPlugin)
 			await host.commit()

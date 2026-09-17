@@ -34,7 +34,7 @@ canonical identity。这些是只读诊断，不提供在线 execution-mode 切�
 插件通过 owner-bound `ctx.commands.register(command)` 发布命令。返回值同时是保留精确 input/output 类型的 executable
 registration 与幂等 disposer；registration 自动进入当前 generation effects，也可手动撤销。每个 root 只有一个 command
 registry，Runtime 的 `list()`、`snapshot()`、`subscribe()` 和 throwing `execute()` 直接委托它，不复制 catalog 状态。
-CommandsService 只增加 owner execution gate；generation stop 时由 Core 统一关闭 admission、abort 并等待已接纳调用，再
+`@pluxel/services/commands` 的 CommandsService 只增加 owner execution gate；generation stop 时由 Core 统一关闭 admission、abort 并等待已接纳调用，再
 drain effects。
 
 Carrier provider 可在 `init()` 中调用 `this.ctx.commands.createMount<CarrierContext>()`，并在自己的领域
@@ -70,7 +70,7 @@ Attachment 和 owner-bound publication：
 
 ```ts
 import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 
 interface ExampleApi extends RpcTarget {
 	snapshot(): ExampleSnapshot
@@ -92,7 +92,7 @@ this.ctx.workbench?.publish(ExampleWorkbench, {
 
 ```tsx
 // ui/settings.scope.ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { ExampleWorkbench } from '../workbench.js'
 
 export const settingsScope = createWorkbenchRenderer(ExampleWorkbench.settings)
@@ -121,13 +121,13 @@ publication binding 中传入 constructor-injected provider Plugin。Collection�
 公开入口：
 
 - `@pluxel/runtime`：唯一 Plugin 作者入口，转发 core API 并增加 runtime capabilities；
-- `@pluxel/runtime/services/vault`：Vault 的公开 type-only API；backend 只由 host 顶层 `vault` object 安装；
+- `@pluxel/services/vault`：Vault token、类型与显式安装器；Runtime 配置的 `vault` object 使用同一 backend；
 - `@pluxel/runtime/capnweb`：固定 Cap’n Web `RpcTarget` / `RpcStub` 和 WebSocket session bridge；
-- `@pluxel/runtime/workbench`：browser-safe definition、View、Attachment、placement 和 publication types；
-- `@pluxel/runtime/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 与 declarative Pane Kit；
-- `@pluxel/runtime/workbench/client`：conforming Shell 的 layout/opened-handle client 与 portable DTO detach；
-- `@pluxel/runtime/web`：portable Runtime session、Management API 和严格校验的 wire DTO；
-- `@pluxel/runtime/web/react`：Management client 的 React Context adapter。
+- `@pluxel/workbench`：browser-safe definition、View、Attachment、placement 和 publication types；
+- `@pluxel/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 与 declarative Pane Kit；
+- `@pluxel/workbench/client`：conforming Shell 的 layout/opened-handle client 与 portable DTO detach；
+- `@pluxel/management/client`：portable Runtime session、Management API 和严格校验的 wire DTO；
+- `@pluxel/management/react`：Management client 的 React Context adapter。
 
 Management control 把持久策略与本次进程生命周期分开：`client.plugins.setAutoStart()` 只修改 RuntimeState 的
 `autoStart`，`client.plugins.applyLifecycleCommands()` 只执行 `start | stop | restart`。公开状态分别返回

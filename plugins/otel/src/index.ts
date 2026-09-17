@@ -1,6 +1,7 @@
+import { Http } from '@pluxel/services/http'
 import type { Meter, Tracer } from '@opentelemetry/api'
 import type { Logger } from '@opentelemetry/api-logs'
-import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
@@ -139,7 +140,7 @@ export class OtelPlugin extends BasePlugin {
 	}
 
 	private mountPrometheus(reader: PrometheusPullReader, path: string): void {
-		this.ctx.elysia.get(path, () => this.scrapePrometheus(reader))
+		this.ctx.require(Http).get(path, () => this.scrapePrometheus(reader))
 	}
 
 	private async scrapePrometheus(reader: PrometheusPullReader): Promise<Response> {

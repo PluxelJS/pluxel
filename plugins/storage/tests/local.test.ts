@@ -189,7 +189,7 @@ describe('S3Plugin local backend', () => {
 	it('revokes the caller facade and captured local client on provider stop', async () => {
 		const root = await temporaryRoot()
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.start(S3Plugin, {
 				initialConfig: {
@@ -225,7 +225,7 @@ async function temporaryRoot(): Promise<string> {
 
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
 	{
-		await using host = createRuntimeTestHost()
+		await using host = await createRuntimeTestHost()
 
 		await host.start(S3Plugin, {
 			initialConfig: {

@@ -1,5 +1,5 @@
 import { pluginNodeAddressEqual, type PluginNodeAddress } from '@pluxel/core'
-import type { WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 import { buildWorkbenchHref, normalizeWorkbenchPath, type WorkbenchFrame } from './paths'
 import {
 	compileWorkbenchRoute,

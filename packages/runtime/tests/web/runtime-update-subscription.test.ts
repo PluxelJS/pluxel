@@ -3,11 +3,11 @@ import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { expect, it } from 'vitest'
 import { PluginRecentUpdateTracker } from '../../src/internal/recent-update'
 import { installRuntimeRouteCapabilities } from '../../src/runtime/capabilities'
-import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget'
-import { createRuntimeManagementClient } from '../../src/web/client'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { createRuntimeManagementClient } from '@pluxel/management/internal/web/client'
 
 it('delivers the current route attempt and later failures through RPC, then releases the observer', async () => {
-	const host = createRuntimeInternalTestHost({ workbench: false, management: true })
+	const host = await createRuntimeInternalTestHost({ workbench: false, management: true })
 	const tracker = new PluginRecentUpdateTracker()
 	const detach = installRuntimeRouteCapabilities(host.ctx, { recentUpdate: tracker })
 	const management = new RpcStub(new RuntimeManagementTargetImpl(host.ctx))

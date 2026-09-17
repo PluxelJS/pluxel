@@ -1,5 +1,6 @@
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { formatPluginNodeReference, type PluginConstructor, v } from '@pluxel/runtime'
+import { formatPluginNodeReference, type PluginConstructor } from '@pluxel/core'
+import { v } from '@pluxel/runtime'
 import {
 	BasePlugin,
 	createRuntimeTestHost,
@@ -101,7 +102,7 @@ describe('@pluxel/redis rates backend', () => {
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await host.commit((change) => {
 				change.start(FakeRatesRedisPlugin)
@@ -151,7 +152,7 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await startPlugins(host, [
 				FakeRatesRedisPlugin,
@@ -178,7 +179,7 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createRuntimeTestHost()
 
 			await startPlugins(host, [
 				FakeRatesRedisPlugin,

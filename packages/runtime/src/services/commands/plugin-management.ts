@@ -1,9 +1,18 @@
 import { CommandError, defineCommand, type AnyCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { formatPluginNodeReference, type Context, type PluginNodeAddress } from '@pluxel/core'
-import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
-import { pluginStatus, pluginStatusOverview } from '../../api/usecases/plugins'
-import type { PluginLifecycleCommand, PluginStatusSnapshot } from '../../web/protocol'
+import {
+	applyLifecycleCommands,
+	setAutoStart,
+} from '@pluxel/management/internal/api/usecases/pluginStatus'
+import {
+	pluginStatus,
+	pluginStatusOverview,
+} from '@pluxel/management/internal/api/usecases/plugins'
+import type {
+	PluginLifecycleCommand,
+	PluginStatusSnapshot,
+} from '@pluxel/management/internal/web/protocol'
 
 const pluginEntryAddress = Type.Union([
 	obj({
@@ -236,7 +245,9 @@ function mutablePluginSnapshot(snapshot: PluginStatusSnapshot) {
 	}
 }
 
-function mutablePluginsOutput(output: import('../../api/usecases/plugins').PluginStatusOverview) {
+function mutablePluginsOutput(
+	output: import('@pluxel/management/internal/api/usecases/plugins').PluginStatusOverview,
+) {
 	return {
 		plugins: output.plugins.map(mutablePluginSnapshot),
 		summary: { ...output.summary },

@@ -1,3 +1,4 @@
+import { requireNodeModuleHost } from '@pluxel/services/internal/node'
 import { createOwnerContext } from '@pluxel/core/internal'
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -6,9 +7,9 @@ import { attachPluginArtifactCompiler } from '../src/development/workbench'
 
 describe('attachPluginArtifactCompiler', () => {
 	it('attaches one semantic-plan compiler owner to the Runtime root', async () => {
-		const runtime = createRuntimeInternalTestHost()
+		const runtime = await createRuntimeInternalTestHost()
 		const { ctx } = runtime
-		const attachSourceBinder = vi.spyOn(ctx.nodeModules, 'attachSourceBinder')
+		const attachSourceBinder = vi.spyOn(requireNodeModuleHost(ctx), 'attachSourceBinder')
 
 		const options = { packageMode: 'development' } as const
 		const attachment = attachPluginArtifactCompiler(ctx, options)
@@ -21,7 +22,7 @@ describe('attachPluginArtifactCompiler', () => {
 		)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(1)
 
-		attachment.dispose()
+		await attachment.dispose()
 		await expect(
 			attachment.publishWorkbenchArtifacts({ producers: [], content: [] }),
 		).rejects.toThrow(/disposed/)

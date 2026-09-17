@@ -214,7 +214,7 @@ type-only `declare` instance field 不产生 construction-time shape，以 `plug
 使用平台原生 async context 传递 invocation scope，不使用可变 module-level current owner。若第三方 API 接受对象而非
 全局名称，优先直接传 caller-owned snapshot，避免把无法 unregister 的外部表伪装成可回收 Pluxel resource。
 
-`ctx.database.use()` 保留 immutable plugin owner，并在返回 handle 前解析 active database instance、完成 migration prepare。
+`ctx.require(Database).use()` 保留 immutable plugin owner，并在返回 handle 前解析 active database instance、完成 migration prepare。
 handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；stop/replacement 撤销旧 generation handle。默认
 `migrations` evolution 用 checked immutable history；显式 `reset-on-schema-change` 由 compiler 从 schema snapshot 派生 lineage，
 不要求作者维护 history。同 lineage 复用 active instance，新 lineage 原子激活 candidate 并归档旧 instance，不删除旧数据。
@@ -266,14 +266,14 @@ entry、MF producer、Bridge expose 或 socket。交互 draft 属于浏览器局
 ## Node module capability
 
 插件用 module-level `defineNodeModule(import.meta.url, literal)` 声明单独构建的 Node ESM entry，并在
-`init()` 中通过 `ctx.nodeModules.use(declaration, setup)` 消费。`NodeModuleService` 是常驻 runtime 能力；
+`init()` 中通过 `ctx.require(NodeModules).use(declaration, setup)` 消费。`NodeModuleService` 由 `@pluxel/services/node` 显式安装，默认 Runtime 选择该服务；
 首次 artifact build/load 或 setup 失败会让插件启动失败。开发期更新先完成新 setup，再清理上一成功消费者；
 更新失败保留 last-known-good。owner stop/replacement 通过 effects 自动释放 source lease 和 active cleanup。
 
 declaration key、build revision 和 owner node address 是三个独立身份。相同 declaration 的多个 owner/consumer 共用
 build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包含单文件 ESM，不定义 worker、线程或任务协议。
 
-`defineWorkerTask()` 是同一 artifact primitive 上的 typed specialization。`ctx.workers` 把不同插件的 cloneable CPU/native
+`defineWorkerTask()` 是同一 artifact primitive 上的 typed specialization。`ctx.require(Workers)` 把不同插件的 cloneable CPU/native
 任务提交到 root 共享线程预算，执行 owner-aware bounded admission、round-robin、公用 cancellation 和 shutdown drain。
 插件不依赖具体 pool implementation，也不各自按 CPU 数创建 pool。该能力不替代异步 I/O：网络、数据库和已经真正异步的
 native API 继续使用原 capability；只有会长时间占用 JS event loop 且能用纯数据描述的工作才进入 worker task。取消 running
@@ -296,15 +296,15 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/runtime/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
 - `@pluxel/agent-tools`：可选官方 Plugin，以标准 Plugin config 在唯一 command registry 上投影 Agent allowlist；
-- `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
-- `@pluxel/runtime/dev`：在线开发脚本的独立操作类型；由 Vite opt-in 执行器借用当前 root，不安装 Plugin Context capability；
-- `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
-- `@pluxel/runtime` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；
+- `@pluxel/services/database`：server-only database definition 与 owner-bound handle；
+- `@pluxel/host-dev/console`：在线开发脚本的独立操作类型；由 Vite opt-in 执行器借用当前 root，不安装 Plugin Context capability；
+- `@pluxel/services/node` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
+- `@pluxel/services/workers` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；
 - `@pluxel/runtime/capnweb`：固定 Cap’n Web object model 与 WebSocket session bridge；
-- `@pluxel/runtime/workbench`：browser-safe Definition、host-rendered Content、Direct View、Attachment、placement 和 publication types；
-- `@pluxel/runtime/workbench/client`：conforming Shell 的 layout/opened-handle client；
-- `@pluxel/runtime/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
-- `@pluxel/runtime/internal/workbench-react`：toolchain/Shell 共用的 generated React Bridge ABI；
+- `@pluxel/workbench`：browser-safe Definition、host-rendered Content、Direct View、Attachment、placement 和 publication types；
+- `@pluxel/workbench/client`：conforming Shell 的 layout/opened-handle client；
+- `@pluxel/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/workbench/internal/react`：toolchain/Shell 共用的 generated React Bridge ABI；
 - `@pluxel/core/federation`：Workbench MF producer/descriptor identity 和固定 shared set；
 - `@pluxel/host`：无 Runtime 服务依赖的 catalog、运行意图、图更新控制；
 - `@pluxel/host-dynamic`：显式动态来源的发现、加载、撤回与 producer 文件契约；

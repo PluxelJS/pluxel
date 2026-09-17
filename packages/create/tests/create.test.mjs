@@ -105,17 +105,17 @@ describe('create-pluxel', () => {
 			)
 			assert.deepEqual(
 				Object.keys(pluginManifest.dependencies).filter((name) => name.startsWith('@pluxel/')),
-				['@pluxel/runtime'],
+				plugin === 'http' ? ['@pluxel/core', '@pluxel/services'] : ['@pluxel/core'],
 			)
 			assert.equal(pluginManifest.devDependencies.oxlint, undefined)
 		}
 		const viteConfig = await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8')
 		assert.match(viteConfig, /root: webRoot/)
 		assert.equal(viteConfig.match(/\breact\(\)/g)?.length, 1)
-		assert.match(viteConfig, /runtime\(\{ entry, devConsole: true \}\)/)
+		assert.match(viteConfig, /host\(\{ entry, devConsole: true \}\)/)
 		assert.match(
 			await readFile(resolve(generated, 'host/src/app.ts'), 'utf8'),
-			/satisfies RuntimeApplication/,
+			/satisfies HostApplication/,
 		)
 		await assert.rejects(readFile(resolve(generated, 'host/vite.dynamic.config.ts')), {
 			code: 'ENOENT',

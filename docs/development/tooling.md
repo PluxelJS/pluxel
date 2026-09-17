@@ -168,12 +168,12 @@ import { pluginPackage } from '@pluxel/rolldown/build'
 Static application 使用不同输出拓扑：
 
 ```ts twoslash
-import { application } from '@pluxel/rolldown/build'
+import { defineConfig } from 'tsdown'
+import { pluxel } from '@pluxel/rolldown'
 
-export default application({
+export default defineConfig({
 	entry: './src/app.ts',
-	variant: 'workbench',
-	target: 'node',
+	plugins: [pluxel({ variant: 'workbench' })],
 })
 ```
 

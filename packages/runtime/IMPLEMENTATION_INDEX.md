@@ -4,7 +4,7 @@
 
 - `src/index.ts`：唯一 Plugin 作者入口，并加载封闭的 Runtime Context plan；
 - `src/context/runtime-plan.ts`：immutable capability plan 与常驻/可选能力安装；
-- `src/services/vault.ts`：显式启用的 optional Vault capability；
+- `../services/src/vault.ts`：显式安装的 Vault token、作者类型与服务计划；
 - `src/services/workbench.ts`：host 显式安装的 optional Workbench backend。
 
 ## Workbench author/runtime boundary
@@ -36,15 +36,15 @@
 
 ## Runtime session 与 Management
 
-- `src/web/session/protocol.ts`：authentication-required / management / workbench bootstrap union 和 invalidation event；
-- `src/web/session/client.ts`：document-unique、non-reconnecting Cap’n Web WebSocket client；
-- `src/web/session/server.ts`：same-socket auth → ready bootstrap、Management/Workbench root ownership 和 epoch close；
-- `src/web/session/ingress.ts`：`/__pluxel/runtime/session` physical WebSocket ingress；
-- `src/web/session/elysia-websocket.ts`：Elysia/crossws adapter；
-- `src/web/management-target.ts`：portable Management target types；
-- `src/services/management/RuntimeManagementTarget.ts`：server Management `RpcTarget`；
-- `src/web/logs.ts`：range/follow observer client；
-- `src/web/management-validation.ts`：browser boundary validation、clone 和 freeze。
+- `../management/src/web/session/protocol.ts`：authentication-required / management / workbench bootstrap union 和 invalidation event；
+- `../management/src/web/session/client.ts`：document-unique、non-reconnecting Cap’n Web WebSocket client；
+- `../management/src/web/session/server.ts`：same-socket auth → ready bootstrap、Management/Workbench root ownership 和 epoch close；
+- `../management/src/web/session/ingress.ts`：`/__pluxel/runtime/session` physical WebSocket ingress；
+- `../management/src/web/session/elysia-websocket.ts`：Elysia/crossws adapter；
+- `../management/src/web/management-target.ts`：portable Management target types；
+- `../management/src/services/management/RuntimeManagementTarget.ts`：server Management `RpcTarget`；
+- `../management/src/web/logs.ts`：range/follow observer client；
+- `../management/src/web/management-validation.ts`：browser boundary validation、clone 和 freeze。
 
 ## 常驻服务
 
@@ -54,20 +54,20 @@
   publish/pending；
 - `src/context/runtime-http-capability.ts`：host-only HTTP backend resolver；Plugin Context 不投影 `HttpService`；
 - `src/services/http/HttpService.ts`：host-only control plane、business directory dispatch 与 UI/MF assets；
-- `../runtime-node/src/node-elysia-application-carrier.ts`：srvx `NodeRequest` + crossws + Elysia public WS handler 的 Node carrier；
+- `../services/src/http/node.ts`：srvx `NodeRequest` + crossws + Elysia public WS handler 的 Node carrier；
 - `../host-dev/src/vite-node-carrier.ts`：复用 srvx Node handler 的 Vite Fetch/upgrade binding，保留 Vite HMR arbitration；
-- `src/services/DatabaseService.ts`：database instance registry、lineage promotion、PostgreSQL/PGlite 与 table invalidation；
-- `src/services/admin-access/AdminAccessService.ts`：Management authentication authority；
+- `@pluxel/services/database`：database instance registry、lineage promotion、PostgreSQL/PGlite 与 table invalidation；
+- `../management/src/services/admin-access/AdminAccessService.ts`：Management authentication authority；
 - `src/services/vault/VaultService.ts`：加密存储；
 - `src/services/persistence/PersistenceService.ts`：persistence backend；
 - `src/services/ConfigService.ts`：配置读写。
 
 ## Node module 与共享 worker
 
-- `src/node-artifact/node-module.ts`：opaque Node module declaration 与 setup/cleanup API；
-- `src/node-artifact/NodeModuleService.ts`：owner lease、staged replacement 与 packaged/source resolution；
-- `src/node-artifact/worker-task.ts`：typed worker specialization、稳定错误与 host pool config；
-- `src/node-artifact/WorkerTaskService.ts`：root shared pool、bounded fair admission、cancellation 与 shutdown。
+- `../services/src/node/declaration.ts`：opaque Node module declaration 与 setup/cleanup API；
+- `../services/src/node/service.ts`：owner lease、staged replacement 与 packaged/source resolution；
+- `../services/src/workers/declaration.ts`：typed worker specialization、稳定错误与 host pool config；
+- `../services/src/workers/service.ts`：root shared pool、bounded fair admission、cancellation 与 shutdown。
 
 ## Shell integration
 
