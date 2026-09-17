@@ -4,6 +4,10 @@
 当前契约见 [`../PLUGIN_SYSTEM.md`](../PLUGIN_SYSTEM.md)、[`../HMR.md`](../HMR.md) 与
 [宿主配置](../../docs/getting-started/host-setup.md)。本提案只保留未实现的扩展边界，不是当前 API。
 
+外部自建 Runtime、通用管理端点、浏览器客户端和 AI console 的具体需求，见
+[可组合 Host 管理面与自定义 Runtime](COMPOSABLE_HOST_MANAGEMENT.md)。该提案优先解决宿主组合和管理开发链；
+不以复用官方 Workbench/Node artifact 系统为前提。
+
 ## 尚未公开的组合边界
 
 Workbench 和 Node artifact 的开发接入目前由 Runtime 的开发组合拥有。

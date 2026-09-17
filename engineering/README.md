@@ -44,6 +44,9 @@
 
 ## 文档职责
 
+当前待实施设计：[可组合 Host 管理面与自定义 Runtime](proposals/COMPOSABLE_HOST_MANAGEMENT.md)。
+这是未来组合边界的提案，不代表已发布入口；使用当前 API 仍以上方领域文档和用户指南为准。
+
 - `.agents/rules/`：可跨项目复用的 agent 决策规则，不作为 Pluxel 当前架构事实。
 - `engineering/`：为什么这样分层、内部不变量、代码从哪里看起。
 - `docs/`：用户应该写什么、如何选择 API、如何避免错误设计。
