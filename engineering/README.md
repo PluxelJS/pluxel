@@ -44,7 +44,7 @@
 
 ## 文档职责
 
-当前待实施设计：[可组合 Host 管理面与自定义 Runtime](proposals/COMPOSABLE_HOST_MANAGEMENT.md)。
+当前待实施设计：[可组合服务、Host 管理面与共享 Workbench](proposals/COMPOSABLE_RUNTIME_SERVICES.md)。
 这是未来组合边界的提案，不代表已发布入口；使用当前 API 仍以上方领域文档和用户指南为准。
 
 - `.agents/rules/`：可跨项目复用的 agent 决策规则，不作为 Pluxel 当前架构事实。

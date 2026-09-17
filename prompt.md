@@ -2,9 +2,9 @@
 
 你接手的是已经实现、验证并推送的重构，后续目标是提高可读性和维护性。先复查事实，再选一个有明确收益的事项完成，不要重做架构或把下面所有建议当成必须实现的功能。
 
-后续用户已明确提出「外部自建 Runtime，并复用插件管理面与开发工具链」。设计见
-[可组合 Host 管理面与自定义 Runtime](engineering/proposals/COMPOSABLE_HOST_MANAGEMENT.md)。
-该轮授权为设计、文档提交与推送，尚未实现；后续实施应先读该提案的顺序和验收门槛。
+后续用户已确定「Core 加服务包、Host 创建前静态安装、普通管理 Plugin 复用 Workbench，服务采用单入口，Runtime 收敛为 Services 根入口的默认 Host」的设计方向。设计见
+[可组合服务、Host 管理面与共享 Workbench](engineering/proposals/COMPOSABLE_RUNTIME_SERVICES.md)。
+本轮交付范围为提案整理、文档提交与推送，尚未实现；后续实施应先读该提案的顺序、待验证问题和验收门槛。
 下文维护建议不覆盖这项新目标，也不能据此把提案入口当成已可用 API。
 
 ## 基线与约束
