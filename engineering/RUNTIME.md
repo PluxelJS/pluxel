@@ -450,7 +450,7 @@ import graph，因此产品变化复用正常 host replacement，并在 Workbenc
 
 Workbench backend 安装时接收 nullable snapshot，并通过既有 runtime meta read model 暴露
 `application.product`。同一 read model 可选投影由 `std-env` 检测的非敏感 platform snapshot（runtime/provider/CI/mode/platform），不投影变量名或值。
-Workbench disabled/headless 不安装 backend，也不创建 product service、route、registry 或持久状态。
+未安装 Workbench 服务时不创建其 backend、route 或 registry。构建的 headless 资源选择不决定 Host 可以安装哪些服务。
 
 ## Application ownership
 

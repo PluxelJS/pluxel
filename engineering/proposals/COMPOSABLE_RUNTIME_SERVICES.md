@@ -13,7 +13,15 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 验证优先复用代表性路径：轻量 Host、自有业务 HTTP、官方管理 Plugin、实际 Workbench 页面、独立安装和搬离工作区的生产产物。
 不为每个 facade 复制 graph/lifecycle 测试；测试只在真正的权限、所有权、持久化或发行边界补证据。
 
-## 尚需单独推进的工作
+## 核心重构尚未收拢的接线
+
+- **生产 Node/Worker 制品定位。** freezer 已输出 `artifacts/node`，但 `standardServices()` 安装的 NodeModules 未配置制品目录或 resolver，
+  新 Host production bootstrap 尚未补上这条接线。应复用服务现有定位输入，避免另外建立运行模式或制品注册表。
+- **HTTP 与开发更新的重复编排。** Runtime 仍保留自己的 HttpService 和 Vite application driver；虽然底层服务、协调器和 carrier 已共用，
+  产品入口还未完全委托独立包的组合路径。后续收敛应迁掉实际逻辑，而不只删除导出。
+- **开发更新报告。** Runtime 为 Management 注入 recentUpdate reader，新 Host-dev 驱动尚未提供对应接线；需保留更新结果、失败保留旧版本等管理可见状态。
+
+## 其他剩余工作
 
 - **Runtime 产品适配的最终退场。** 当前保留其既有产品输入、环境绑定、内部发行适配和测试 API，底层已委托 Host 与独立包。
   删除整个包前，需要迁完仍使用这些契约的外部应用和测试宿主；不能把它们改名转发后宣称旧包已完全消失。
@@ -29,5 +37,6 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 未选择服务不应因可解析于开发工作区就被自动收集到产物。固定 Plugin 沿实际依赖构建，动态来源需要的额外 framework 入口通过
 `sourceFrameworks` 显式声明。继续检查真实 artifact inventory、搬离工作区的启动/关闭和浏览器资源，不能以 tree-shaking 推测代替验证。
 
-Workbench variant、实际安装清单与物理监听器是不同边界。发行包含浏览器资源不代表每次启动自动安装服务；省略 Workbench 的
-部署不得间接拉入其 compiler/browser closure。服务声明变化替换 Host，普通 Plugin/制品更新复用 Host；失败准备不发布半成品。
+`headless` / `workbench` 仅保留为现有构建资源选择，不作为 Host 的运行模式，也不增加服务安装禁令。
+应用显式选择服务和 HTTP/UI 接入；实际需要的制品或文件不存在时，由使用它的服务报告具体错误。
+未选择的能力仍应避免进入产物闭包。服务声明变化替换 Host，普通 Plugin/制品更新复用 Host；失败准备不发布半成品。

@@ -108,9 +108,9 @@ provisioning URI 和过期时间，只有同一个 opened target 能用 `{ enrol
 已配置 credential 不能通过这个 API 覆盖。成功保存后同一 Plugin generation 立即变为 ready，并撤销旧 cookie session。每次打开
 View 都得到 fresh target 和 provisioning session；close、abort、socket epoch 失效或 Plugin stop 会销毁未完成的 TOTP enrollment。
 
-`workbench: false` 和 production `headless` artifact 没有 setup View/API。它们使用 local credential 或 confidential OIDC 时必须预置
-同一 Vault record，或先用带 Workbench artifact、指向同一 persistence 的部署完成配置再切 headless；否则 provider 保持
-`ready: false`。Public OIDC 无 provisioning，可以仅凭配置用于 headless。
+没有接入 Workbench setup View/API 的应用，使用 local credential 或 confidential OIDC 时必须预置同一 Vault record，
+或先用提供该配置页面、指向同一 persistence 的部署完成配置；否则 provider 保持 `ready: false`。
+Public OIDC 无 provisioning，可以仅凭配置使用。是否提供配置页面由实际服务和页面接入决定，不由 headless 构建标签决定。
 
 ## 浏览器如何认证
 
