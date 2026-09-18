@@ -38,7 +38,8 @@ definition replacement 通过同一 coordinator/Core plan 自动启动仍在 des
 不依赖 Workbench 的 Start command。显式 Stop 则从 desired graph 移除节点，后续源码修复不能覆盖它。纯 catalog no-op
 不强制创建 Core transaction，也不增加 timer retry loop；只有实际更新或明确 lifecycle command 才触发对应执行。
 
-Runtime 开发组合为受影响 definition 记录进程内 `recentUpdate`，由 Runtime internal 的 `PluginRecentUpdateTracker` 统一保存。
+Host-dev 与 Runtime 开发组合为受影响 definition 记录进程内 `recentUpdate`，由 Host internal 的 `PluginRecentUpdateTracker` 统一保存。
+Host root 绑定路由拥有的 reader，Host status 与 Management 默认读取这份记录；替换宿主继续使用同一路由历史。
 快照分成 `batch` 与 `lifecycle`：前者含 `scope`（application / definitions）、outcome、phase、sequence、durationMs；后者只含
 当前 node 的生命周期 issue，未观察到该节点的完整报告时为 null。空 issues 表示该批执行没有报告此节点的生命周期错误，不代表当前一定运行。
 
@@ -48,7 +49,7 @@ rejection 记录 `applied-with-issues / commit`，提交返回但生命周期有
 不读取全局“最后一次 commit”。未知节点或新 fork 不继承同 definition 其他节点的 lifecycle。成功补偿宿主使用 `restored-previous / application-reload`，
 仍附带补偿启动的逐节点事实。
 
-Runtime Vite 在接纳更新时分配 attempt sequence，区分正在 evaluate / artifacts / commit / application-reload 与已结算结果；
+开发驱动在接纳更新时分配 attempt sequence，区分正在 evaluate / artifacts / commit / application-reload 与已结算结果；
 失败候选即使没有任何已提交 Plugin，也保留独立的 latest attempt。来源更新与 Content refresh 使用同一记录器序列。
 Management `updates.snapshot()` / `updates.follow()` 沿现有会话提供这份状态；订阅首帧包含当前值，慢消费者合并到最新快照，dispose 撤回观察者。
 批次错误包含有界 message、可用的相对文件和已观察导入链；原始异常写入本地 runtime log，不把绝对路径或 stack 传入页面。
@@ -108,7 +109,7 @@ dependency 变化精确失效 importer graph；application entry/configure graph
 要求先停止旧 host；新 application 创建或 start 抛出错误时先停止并清理失败的新 host，再从上一次成功 application definition 创建一个
 fresh host。只有补偿 host 成功启动才记录 `restored-previous / application-reload`。这是 full-host replacement 的 compensation，
 不是保留或复活旧 running generation，也不把同一进程内的普通 definition transaction 改成可回滚；补偿本身失败时不得报告
-restored。Start 正常返回的部分节点 lifecycle issue 保留新 host 并逐节点报告，不触发宿主补偿。
+`restored`；Host-dev 在首次启动或补偿失败、没有 active Host 时记录 `failed / application-reload`。Start 正常返回的部分节点 lifecycle issue 保留新 host 并逐节点报告，不触发宿主补偿。
 
 Management status 将当前 committed definition 的执行方式投影为 Host 提供的 `execution` fact，而不是从文件扩展名、
 `displayName` 或 package label 猜测。production freezer 产物固定为 `static-bundle / application-bundle / deployment`；

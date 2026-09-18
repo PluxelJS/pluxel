@@ -2,6 +2,7 @@ import {
 	formatPluginNodeReference,
 	pluginDefinitionIndexKey,
 	type CommitSummary,
+	type Context,
 	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
@@ -15,8 +16,8 @@ import {
 	type PluginRecentUpdateSnapshot,
 	type PluginUpdateBatchSnapshot,
 	type PluginUpdateLifecycleIssue,
-} from '../plugin-execution'
-import type { PluginRecentUpdateRead } from '../runtime/capabilities'
+} from './execution'
+import type { PluginRecentUpdateRead } from './status'
 
 const MAX_DEFINITIONS = 512
 const MAX_NODES = 2_048
@@ -209,4 +210,23 @@ function trim<T>(map: Map<string, T>, maximum: number): void {
 		if (first === undefined) break
 		map.delete(first)
 	}
+}
+
+const readers = new WeakMap<Context['root'], PluginRecentUpdateRead>()
+
+export function readHostRecentUpdates(ctx: Context): PluginRecentUpdateRead | undefined {
+	return readers.get(ctx.root)
+}
+
+/** A development route retains history across replacement Hosts; each root owns only its binding. */
+export function installHostRecentUpdates(ctx: Context, reader: PluginRecentUpdateRead): void {
+	const root = ctx.root
+	if (readers.has(root)) throw new Error('[host] recent updates are already installed')
+	readers.set(root, reader)
+	root.effects.defer(
+		() => {
+			readers.delete(root)
+		},
+		{ tag: 'HostRecentUpdates', phase: 'shutdown' },
+	)
 }

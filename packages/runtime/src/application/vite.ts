@@ -1,3 +1,4 @@
+import { portableUpdatePath, describeUpdateError } from '@pluxel/host-dev/internal/update-error'
 import { resolveDevWorkbenchClientEntryUrl } from '@pluxel/workbench/internal/shell'
 import { optionalWorkbench } from '@pluxel/workbench/server'
 import { createHostDevelopmentDriver } from '@pluxel/host-dev'
@@ -11,7 +12,7 @@ import { installPluxelViteUrlPrinter } from '../development/vite-urls.ts'
 import { createWorkbenchViteClientConfig } from '../development/vite-client.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { resolve, relative, isAbsolute, dirname } from 'node:path'
+import { resolve, dirname } from 'node:path'
 import { env as runtimeEnvironment, hostEnv } from '../environment.ts'
 import {
 	collectViteSsrImportFiles,
@@ -1215,77 +1216,6 @@ function isRuntimeRouteRequest(request: IncomingMessage, host: Pick<RuntimeHost,
 interface PreparedStaticArtifacts {
 	commit(): unknown
 	rollback(): void
-}
-
-function portableUpdatePath(file: string, root: string): string {
-	const clean = normalizePath(file).split('?')[0]!
-	if (!isAbsolute(clean)) return clean.slice(0, 1024)
-	const local = normalizePath(relative(root, clean))
-	return (local.startsWith('../') ? clean.split('/').slice(-2).join('/') : local).slice(0, 1024)
-}
-
-function describeUpdateError(
-	error: unknown,
-	root: string,
-	imports: readonly { importer: string; source: string; resolved?: string; failed: boolean }[] = [],
-) {
-	const chain: string[] = []
-	const messages: string[] = []
-	const seen = new Set<unknown>()
-	let file: string | null = null
-	let current = error
-	while (current && typeof current === 'object' && !seen.has(current) && seen.size < 8) {
-		seen.add(current)
-		const value = current as {
-			message?: unknown
-			id?: unknown
-			file?: unknown
-			importer?: unknown
-			cause?: unknown
-			stack?: unknown
-		}
-		if (typeof value.message === 'string') messages.push(value.message)
-		const stackFiles =
-			typeof value.stack === 'string'
-				? [...value.stack.matchAll(/(?:file:\/\/)?(\/[^()\n]+?):\d+:\d+/g)].map(
-						(match) => match[1]!,
-					)
-				: []
-		const source =
-			typeof value.id === 'string'
-				? value.id
-				: typeof value.file === 'string'
-					? value.file
-					: (stackFiles.find((path) => imports.some((entry) => entry.resolved === path)) ?? null)
-		if (source) {
-			file ??= portableUpdatePath(source, root)
-			chain.push(portableUpdatePath(source, root))
-		}
-		if (typeof value.importer === 'string') chain.push(portableUpdatePath(value.importer, root))
-		current = value.cause
-	}
-	const failedImport =
-		imports.find(
-			(entry) => file && entry.resolved && portableUpdatePath(entry.resolved, root) === file,
-		) ?? imports.find((entry) => entry.failed)
-	if (failedImport) {
-		file ??= portableUpdatePath(failedImport.resolved ?? failedImport.source, root)
-		let importer: string | undefined = failedImport.importer
-		const visited = new Set<string>()
-		while (importer && !visited.has(importer) && visited.size < 24) {
-			visited.add(importer)
-			chain.unshift(portableUpdatePath(importer, root))
-			importer = imports.find((entry) => entry.resolved === importer)?.importer
-		}
-		chain.push(file)
-	}
-	const message = (messages.length > 0 ? [...new Set(messages)].join(' — ') : String(error))
-		.replaceAll(normalizePath(root) + '/', '')
-		.replaceAll(/(?:[A-Za-z]:)?\/(?:[^\s'"()<>:]+\/)+[^\s'"()<>:]*/g, (path) =>
-			portableUpdatePath(path, root),
-		)
-		.slice(0, 4096)
-	return { message, file, importChain: [...new Set(chain)].slice(0, 32) }
 }
 
 function applicationRoot(entry: string): string {

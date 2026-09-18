@@ -80,7 +80,7 @@ export {
 	type RuntimeStoreSinkInput,
 } from '@pluxel/logging/internal'
 
-export { PluginRecentUpdateTracker } from './internal/recent-update'
+export { PluginRecentUpdateTracker } from '@pluxel/host/internal'
 
 export { createDevConsoleScope, type DevConsoleScope } from '@pluxel/host-dev/internal/dev/console'
 

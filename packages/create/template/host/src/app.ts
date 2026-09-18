@@ -52,7 +52,12 @@ export default {
 						meta: [{ sink: 'console', minLevel: 'warning' }],
 					},
 				}),
-				...standardServices({ persistence: resolve(dataRoot, 'persistence') }),
+				...standardServices({
+					persistence: resolve(dataRoot, 'persistence'),
+					nodeModules: deployment
+						? { root: resolve(deployment.root, 'artifacts/node') }
+						: undefined,
+				}),
 				vault(),
 				managementAccess(),
 				management({ application: { product }, workbench: withWorkbench }),

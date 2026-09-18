@@ -453,3 +453,5 @@ await host.close()
 
 `Http` 仅供 Plugin/Part 使用；`HttpServer` 仅供受信任宿主读取。需要 WebSocket 时，carrier 使用
 `attachApplicationCarrier()` 提供 upgrade、连接统计和物理地址，并负责调用 returned disposer 撤回接线。
+
+旧 Runtime 应用与独立 Host 共用同一个 `HttpServer` 请求边界和业务目录；Runtime 只适配原有 UI 资源配置与开发重载信号。管理会话与 artifact 鉴权复用 Management 的固定端点，Workbench shell 作为业务路由未命中后的 fallback，不再叠加另一层 Runtime Elysia router。

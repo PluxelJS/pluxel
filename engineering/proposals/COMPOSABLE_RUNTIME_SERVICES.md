@@ -15,11 +15,9 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 
 ## 核心重构尚未收拢的接线
 
-- **生产 Node/Worker 制品定位。** freezer 已输出 `artifacts/node`，但 `standardServices()` 安装的 NodeModules 未配置制品目录或 resolver，
-  新 Host production bootstrap 尚未补上这条接线。应复用服务现有定位输入，避免另外建立运行模式或制品注册表。
-- **HTTP 与开发更新的重复编排。** Runtime 仍保留自己的 HttpService 和 Vite application driver；虽然底层服务、协调器和 carrier 已共用，
-  产品入口还未完全委托独立包的组合路径。后续收敛应迁掉实际逻辑，而不只删除导出。
-- **开发更新报告。** Runtime 为 Management 注入 recentUpdate reader，新 Host-dev 驱动尚未提供对应接线；需保留更新结果、失败保留旧版本等管理可见状态。
+- **Runtime Vite 产品入口。** Host 与 Runtime 已共用 source evaluator、candidate、制品附件、更新记录器和错误诊断；
+  HTTP 也已委托同一个 HttpServer 与 Management endpoint。旧 Runtime Vite driver 仍编排既有产品输入、Workbench URL/资源重配和兼容宿主补偿。
+  最终移除应随旧产品契约迁移完成，不为合并两个入口再增加统一模式或通用驱动框架。
 
 ## 其他剩余工作
 

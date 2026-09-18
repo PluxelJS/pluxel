@@ -1,7 +1,7 @@
 import { RpcStub } from 'capnweb'
 import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
 import { expect, it } from 'vitest'
-import { PluginRecentUpdateTracker } from '../../src/internal/recent-update'
+import { PluginRecentUpdateTracker } from '@pluxel/host/internal'
 import { installRuntimeRouteCapabilities } from '../../src/runtime/capabilities'
 import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
 import { createRuntimeManagementClient } from '@pluxel/management/internal/web/client'

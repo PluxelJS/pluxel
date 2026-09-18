@@ -189,12 +189,16 @@ backend 工厂返回 Host 独占的 adapter，Host 在 accepted operations 排�
 ```ts
 import type { HostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
+import { resolve } from 'node:path'
 
 export default {
 	plugins: [],
-	configure({ env }) {
+	configure({ env, deployment }) {
 		return {
-			services: standardServices({ persistence: env.DATA_DIRECTORY ?? './data' }),
+			services: standardServices({
+				persistence: env.DATA_DIRECTORY ?? './data',
+				nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
+			}),
 		}
 	},
 } satisfies HostApplication
@@ -202,6 +206,9 @@ export default {
 
 `standardServices()` 明确提供 HTTP、Commands、NodeModules、Workers、Persistence。
 Vault、Database、Logging、Management、Workbench 另行加入服务数组；它不加入任何 Plugin。
+`nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
+生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
+开发不配置该目录，由 `nodeArtifacts()` 附加源码编译器。自行组合服务时同样把该配置传给 `nodeModules()`。
 直接 `runHostApplication(application, { startup })`（`@pluxel/host/application`）返回普通 `PluginHost`，
 不创建监听器，也不增加 `fetch` 成员。
 
@@ -214,3 +221,7 @@ Workbench 应用显式安装 `workbenchService()` 和 `workbenchHttp()`，并选
 列出它们允许借用的选装框架作者入口，例如 `@pluxel/services/http`、`@pluxel/workbench` 和 `elysia/ws`。
 Core 基础作者入口固定提供；清单中的其他入口必须能从应用解析，并随部署一起打包，动态 Plugin 借用同一模块身份。
 该清单不安装服务，也不扫描工作区发现服务；固定 Plugin 的依赖沿实际 import 图打包。
+
+开发更新结果可从 `host.status()` 的 `recentUpdate` 和 Management 更新订阅读取，无需额外配置 reader。
+候选加载失败时保留上一版本；整应用替换失败后会尝试从上一次成功声明建立新 Host，并报告补偿结果。
+首次启动或补偿失败且没有可用 Host 时记录 `failed`，不会报告为已保留或恢复旧版本。

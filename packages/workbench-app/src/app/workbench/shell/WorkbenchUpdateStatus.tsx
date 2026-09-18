@@ -23,25 +23,28 @@ export function WorkbenchUpdateStatus() {
 		snapshot?.phase === 'artifacts' ||
 		snapshot?.phase === 'inject'
 	const restored = snapshot?.outcome === 'restored-previous'
+	const failed = snapshot?.outcome === 'failed'
 	const retained = snapshot?.outcome === 'retained-previous'
 	const issues =
-		restored || retained || snapshot?.outcome === 'applied-with-issues' || Boolean(error)
+		failed || restored || retained || snapshot?.outcome === 'applied-with-issues' || Boolean(error)
 	const color = issues ? 'yellow' : updating ? 'blue' : 'teal'
 	const label = error
 		? 'HMR 状态不可用'
-		: updating
-			? 'HMR 更新中'
-			: restored
-				? 'HMR 已恢复旧版'
-				: retained
-					? 'HMR 保留旧版'
-					: issues
-						? 'HMR 存在问题'
-						: snapshot
-							? 'HMR 已应用'
-							: ready
-								? 'HMR 就绪'
-								: 'HMR 连接中'
+		: failed
+			? 'HMR 应用启动失败'
+			: updating
+				? 'HMR 更新中'
+				: restored
+					? 'HMR 已恢复旧版'
+					: retained
+						? 'HMR 保留旧版'
+						: issues
+							? 'HMR 存在问题'
+							: snapshot
+								? 'HMR 已应用'
+								: ready
+									? 'HMR 就绪'
+									: 'HMR 连接中'
 	const Icon = issues
 		? IconAlertTriangle
 		: updating
@@ -79,19 +82,21 @@ export function WorkbenchUpdateStatus() {
 					</Group>
 					<Text size="sm">
 						{error ??
-							(updating
-								? preparing
-									? '正在准备新版本，当前版本继续提供服务。'
-									: '正在切换运行版本，部分服务可能暂时不可用。'
-								: restored
-									? '已使用上一应用定义重新建立服务。具体可用性请查看插件当前状态。'
-									: retained
-										? '本次更新未应用，上一版本继续提供服务。修正错误后会自动重试。'
-										: issues
-											? '新版本已应用，但本次更新仍有待处理的问题。请查看批次原因与插件当前状态。'
-											: snapshot
-												? '最近批次已应用。界面产物就绪后会自动载入，具体可用性请查看对应页面。'
-												: '更新状态已连接，目前暂无更新记录。')}
+							(failed
+								? '本次启动或补偿失败，当前没有可用的应用宿主。修正错误后会自动重试。'
+								: updating
+									? preparing
+										? '正在准备新版本，当前版本继续提供服务。'
+										: '正在切换运行版本，部分服务可能暂时不可用。'
+									: restored
+										? '已使用上一应用定义重新建立服务。具体可用性请查看插件当前状态。'
+										: retained
+											? '本次更新未应用，上一版本继续提供服务。修正错误后会自动重试。'
+											: issues
+												? '新版本已应用，但本次更新仍有待处理的问题。请查看批次原因与插件当前状态。'
+												: snapshot
+													? '最近批次已应用。界面产物就绪后会自动载入，具体可用性请查看对应页面。'
+													: '更新状态已连接，目前暂无更新记录。')}
 					</Text>
 					{snapshot ? (
 						<>

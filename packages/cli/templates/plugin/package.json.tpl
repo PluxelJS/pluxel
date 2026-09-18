@@ -30,7 +30,9 @@
 		"typecheck": "tsc --noEmit --pretty false",
 		"verify": "pnpm governance:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
-	"dependencies": { "valibot": "catalog:" },
+	"dependencies": {
+		"valibot": "catalog:"
+	},
 	"peerDependencies": {
 		"@pluxel/core": "catalog:"
 	},
@@ -39,7 +41,6 @@
 		"@pluxel/core": "catalog:",
 		"@pluxel/rolldown": "catalog:",
 		"@pluxel/test": "catalog:",
-		"valibot": "catalog:",
 		"oxfmt": "catalog:",
 		"oxlint": "catalog:",
 		"tsdown": "catalog:",

@@ -6,7 +6,7 @@ import {
 	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
-import { PluginRecentUpdateTracker } from '../src/internal/recent-update'
+import { PluginRecentUpdateTracker } from '../src/recent-update'
 
 const definition = {
 	entry: { kind: 'package-root', packageName: '@fixture/update' },
@@ -142,48 +142,51 @@ describe('route update history attribution', () => {
 	})
 })
 
-it('admits one route attempt before evaluation and preserves a failure outside the old catalog', () => {
-	const history = new PluginRecentUpdateTracker()
-	const events: unknown[] = []
-	const unsubscribe = history.subscribeUpdates((snapshot) => events.push(snapshot))
-	expect(history.beginUpdate('new-plugin.ts')).toBe(1)
-	expect(history.latestUpdate()).toMatchObject({
-		sequence: 1,
-		state: 'updating',
-		phase: 'evaluate',
-	})
-	history.record({
-		definitionKeys: [],
-		batch: {
-			scope: 'application',
-			outcome: 'retained-previous',
+it.each(['retained-previous', 'failed'] as const)(
+	'records %s outside the old catalog without assigning node blame',
+	(outcome) => {
+		const history = new PluginRecentUpdateTracker()
+		const events: unknown[] = []
+		const unsubscribe = history.subscribeUpdates((snapshot) => events.push(snapshot))
+		expect(history.beginUpdate('new-plugin.ts')).toBe(1)
+		expect(history.latestUpdate()).toMatchObject({
+			sequence: 1,
+			state: 'updating',
 			phase: 'evaluate',
-			durationMs: 12,
-		},
-	})
-	expect(events).toHaveLength(1)
-	history.finishUpdate({
-		message: 'New import failed',
-		file: 'new-helper.ts',
-		importChain: ['entry.ts', 'new-plugin.ts', 'new-helper.ts'],
-	})
-	expect(history.latestUpdate()).toMatchObject({
-		sequence: 1,
-		state: 'settled',
-		outcome: 'retained-previous',
-		error: { file: 'new-helper.ts' },
-	})
-	expect(history.resolveRecentUpdate(healthy)).toBeNull()
-	unsubscribe()
-	expect(history.beginUpdate('new-helper.ts')).toBe(2)
-	history.record({
-		definitionKeys: [],
-		batch: { scope: 'application', outcome: 'applied', phase: null, durationMs: 4 },
-	})
-	history.finishUpdate()
-	expect(events).toHaveLength(2)
-	expect(history.latestUpdate()).toMatchObject({ sequence: 2, outcome: 'applied', error: null })
-})
+		})
+		history.record({
+			definitionKeys: [],
+			batch: {
+				scope: 'application',
+				outcome,
+				phase: outcome === 'failed' ? 'application-reload' : 'evaluate',
+				durationMs: 12,
+			},
+		})
+		expect(events).toHaveLength(1)
+		history.finishUpdate({
+			message: 'New import failed',
+			file: 'new-helper.ts',
+			importChain: ['entry.ts', 'new-plugin.ts', 'new-helper.ts'],
+		})
+		expect(history.latestUpdate()).toMatchObject({
+			sequence: 1,
+			state: 'settled',
+			outcome,
+			error: { file: 'new-helper.ts' },
+		})
+		expect(history.resolveRecentUpdate(healthy)).toBeNull()
+		unsubscribe()
+		expect(history.beginUpdate('new-helper.ts')).toBe(2)
+		history.record({
+			definitionKeys: [],
+			batch: { scope: 'application', outcome: 'applied', phase: null, durationMs: 4 },
+		})
+		history.finishUpdate()
+		expect(events).toHaveLength(2)
+		expect(history.latestUpdate()).toMatchObject({ sequence: 2, outcome: 'applied', error: null })
+	},
+)
 
 it('attaches one diagnostic without discarding node-specific lifecycle attribution', () => {
 	const history = new PluginRecentUpdateTracker()

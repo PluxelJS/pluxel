@@ -1,4 +1,5 @@
-import { Http } from '@pluxel/services/http'
+import { Http, HttpServer } from '@pluxel/services/http'
+import { resolveContextCapability } from '@pluxel/core/host'
 import { assertPluginLifecycleIssue } from '@pluxel/core/internal/test'
 import { createRuntimeInternalTestHarness } from '@pluxel/runtime/internal/test'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime/test'
@@ -149,6 +150,9 @@ describe('native generation Elysia application', () => {
 			host.add(NativeApplicationPlugin).start(NativeApplicationPlugin)
 			await host.commit()
 
+			expect(requireRuntimeHttpService(host.ctx).fetch).toBe(
+				resolveContextCapability(host.ctx, HttpServer).fetch,
+			)
 			expect(ownerApplication).toBeInstanceOf(Elysia)
 			expect(partApplication).toBe(ownerApplication)
 			await expect(

@@ -75,6 +75,10 @@
 			"@pluxel/source": "./src/dev/workbench.ts",
 			"default": "./dist/internal/dev/workbench.mjs"
 		},
+		"./internal/update-error": {
+			"@pluxel/source": "./src/internal/update-error.ts",
+			"default": "./dist/internal/update-error.mjs"
+		},
 		"./internal/vite-node-carrier": {
 			"@pluxel/source": "./src/internal/vite-node-carrier.ts",
 			"default": "./dist/internal/vite-node-carrier.mjs"
@@ -106,6 +110,7 @@
 			"./internal/dev/logs": "./dist/internal/dev/logs.mjs",
 			"./internal/dev/scope": "./dist/internal/dev/scope.mjs",
 			"./internal/dev/workbench": "./dist/internal/dev/workbench.mjs",
+			"./internal/update-error": "./dist/internal/update-error.mjs",
 			"./internal/vite-node-carrier": "./dist/internal/vite-node-carrier.mjs",
 			"./node": "./dist/node.mjs",
 			"./vite": "./dist/vite.mjs",

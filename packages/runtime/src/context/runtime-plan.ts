@@ -20,7 +20,6 @@ import { database as installDatabase, type DatabaseBackend } from '@pluxel/servi
 import type { DatabaseConfig } from '../services/database-config'
 import type { RuntimeStateStoreConfig } from '../services/RuntimeStateStore'
 import { HttpService, type RuntimeHttpHostConfig } from '../services/http/HttpService'
-import { requireHttpDirectory } from '@pluxel/services/internal/http'
 import { http as installHttp } from '@pluxel/services/http'
 import { RUNTIME_HTTP_CAPABILITY } from './runtime-http-capability'
 import {
@@ -146,7 +145,7 @@ export async function createRuntimeRootContext(
 				create: (ctx) => requireHostStateStore(ctx),
 			}),
 			installRootCapability(RUNTIME_HTTP_CAPABILITY, {
-				create: (root) => HttpService.createRoot(root, inputs.http, requireHttpDirectory(root)),
+				create: (root) => HttpService.createRoot(root, inputs.http),
 			}),
 			...(options.routeContextCapabilities ?? []),
 		],

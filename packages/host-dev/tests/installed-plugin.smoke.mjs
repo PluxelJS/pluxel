@@ -17,6 +17,9 @@ const { createServer } = await import(pathToFileURL(require.resolve('vite')).hre
 const { host } = await import(
 	pathToFileURL(join(workspace, 'packages/host-dev/dist/vite.mjs')).href
 )
+const { readHostRecentUpdates } = await import(
+	pathToFileURL(join(workspace, 'packages/host/dist/internal.mjs')).href
+)
 const { httpDevelopment } = await import(
 	pathToFileURL(join(workspace, 'packages/host-dev/dist/http.mjs')).href
 )
@@ -59,7 +62,7 @@ const serviceSource = (
 	fail = false,
 ) => `import {http} from '@pluxel/services/http';import {defineContextCapability,installRootCapability} from '@pluxel/core/host';
 const token=defineContextCapability('fixture.service');
-export const services=[http(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects}){await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
+export const services=[http(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects,ctx}){globalThis.__installedHostSmokeContext=ctx;await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
@@ -100,10 +103,7 @@ try {
 	assert.equal(await response.text(), 'fixed')
 	const instance = await selectDevInstance({ root })
 	const consoleFile = join(root, 'inspect.ts')
-	await writeFile(
-		consoleFile,
-		'export default async (dev) => (await dev.plugins.list()).map(plugin => plugin.address.definition.exportName)',
-	)
+	await writeFile(consoleFile, 'export default async (dev) => await dev.plugins.list()')
 	const inspect = () =>
 		runDevFile({
 			root,
@@ -115,7 +115,7 @@ try {
 		})
 	const initial = await inspect()
 	assert.equal(initial.state, 'succeeded', JSON.stringify(initial))
-	assert.ok(initial.value.includes('Installed'))
+	assert.ok(initial.value.some((plugin) => plugin.address.definition.exportName === 'Installed'))
 	await writeFile(
 		join(root, 'entries/installed.mjs'),
 		`export {Installed} from '@test/installed'; // revision one\n`,
@@ -127,13 +127,71 @@ try {
 		`export {Installed} from '@test/installed'; // revision two\n`,
 	)
 	await until(() => globalThis.__installedHostSmoke.includes('two'), 'upgrade')
+	const upgraded = await inspect()
+	assert.equal(upgraded.state, 'succeeded', JSON.stringify(upgraded))
+	const upgradedPlugin = upgraded.value.find(
+		(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
+	)
+	assert.equal(upgradedPlugin.recentUpdate.batch.outcome, 'applied')
+	assert.equal(upgradedPlugin.recentUpdate.batch.scope, 'definitions')
+	const latestUpdate = () =>
+		readHostRecentUpdates(globalThis.__installedHostSmokeContext)?.latestUpdate()
+	await writeFile(join(root, 'entries/installed.mjs'), 'export const invalid = ;\n')
+	await until(
+		() => latestUpdate()?.outcome === 'retained-previous',
+		'failed candidate retained previous catalog',
+	)
+	const failedAttempt = latestUpdate()
+	assert.equal(failedAttempt.phase, 'evaluate')
+	assert.ok(failedAttempt.error)
+	const retainedResponse = await fetch(new URL('/installed/two', listener))
+	assert.equal(await retainedResponse.text(), 'two')
+	const retained = await inspect()
+	assert.equal(retained.state, 'succeeded', JSON.stringify(retained))
+	const retainedPlugin = retained.value.find(
+		(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
+	)
+	assert.deepEqual(
+		retainedPlugin.recentUpdate,
+		upgradedPlugin.recentUpdate,
+		'an unresolvable candidate must not overwrite the old node history',
+	)
+	await delay(200)
+	await writeFile(
+		join(root, 'entries/installed.mjs'),
+		`export {Installed} from '@test/installed'; // recovered\n`,
+	)
+	await until(
+		() => latestUpdate()?.outcome === 'applied' && latestUpdate().sequence > failedAttempt.sequence,
+		'failed candidate recovery',
+	)
+	const stoppedBeforeRemoval = globalThis.__installedHostSmoke.filter(
+		(entry) => entry === '-two',
+	).length
 	await rm(join(root, 'entries/installed.mjs'))
-	await until(() => globalThis.__installedHostSmoke.includes('-two'), 'uninstall')
+	await until(
+		() =>
+			globalThis.__installedHostSmoke.filter((entry) => entry === '-two').length >
+			stoppedBeforeRemoval,
+		'uninstall',
+	)
 	await writeFile(join(root, 'services.mjs'), serviceSource('failed', true))
 	await until(
 		() => globalThis.__installedHostSmoke.filter((entry) => entry === 'fixed').length === 2,
 		'service preparation compensation',
 	)
+	const compensated = await inspect()
+	assert.equal(compensated.state, 'succeeded', JSON.stringify(compensated))
+	const compensatedPlugin = compensated.value.find(
+		(plugin) => plugin.address.definition.entry.packageName === '@test/fixed',
+	)
+	assert.equal(compensatedPlugin.recentUpdate.batch.outcome, 'restored-previous')
+	assert.equal(compensatedPlugin.recentUpdate.batch.phase, 'application-reload')
+	assert.ok(
+		compensatedPlugin.recentUpdate.batch.sequence > upgradedPlugin.recentUpdate.batch.sequence,
+	)
+	const compensatedResponse = await fetch(new URL('/installed/fixed', listener))
+	assert.equal(await compensatedResponse.text(), 'fixed')
 	// Separate two physical edits beyond Chokidar's same-path change throttle.
 	// Host settlement remains observed through the lifecycle predicates below.
 	await delay(200)
@@ -147,6 +205,14 @@ try {
 	const replaced = await inspect()
 	assert.equal(replaced.state, 'succeeded', JSON.stringify(replaced))
 	assert.notEqual(replaced.hostEpoch, initial.hostEpoch)
+	const restoredPlugin = replaced.value.find(
+		(plugin) => plugin.address.definition.entry.packageName === '@test/fixed',
+	)
+	assert.equal(restoredPlugin.recentUpdate.batch.outcome, 'applied')
+	assert.equal(restoredPlugin.recentUpdate.batch.scope, 'application')
+	assert.ok(
+		restoredPlugin.recentUpdate.batch.sequence > compensatedPlugin.recentUpdate.batch.sequence,
+	)
 	await server.close()
 	server = undefined
 	assert.deepEqual(await discoverDevInstances(root), [])
@@ -155,6 +221,8 @@ try {
 		'fixed',
 		'one',
 		'-one',
+		'two',
+		'-two',
 		'two',
 		'-two',
 		'-fixed',

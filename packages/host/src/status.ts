@@ -4,6 +4,7 @@ import {
 	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import { readHostRecentUpdates } from './recent-update'
 import { requirePluginHostCoordinator } from './install'
 import { readHostPluginLifecycleIssues } from './diagnostics'
 import type { HostStateSnapshot } from './policy'
@@ -204,7 +205,7 @@ export async function readHostPluginStatusOverview(
 			desiredControl: view.desiredControl,
 			coreNodes: view.coreAdjacency.nodes,
 			runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
-			recentUpdate: recentUpdate,
+			recentUpdate: recentUpdate ?? readHostRecentUpdates(ctx),
 		}),
 	)
 }

@@ -1,3 +1,4 @@
+import { requirePluginService } from '@pluxel/core/internal'
 import { randomUUID } from 'node:crypto'
 import type { DevConsoleAttachment } from './console/attachment'
 import { resolve } from 'node:path'
@@ -8,8 +9,16 @@ import {
 	assertHostApplication,
 	type HostApplication,
 	type PluginHost,
+	type PluginApplyReport,
 } from '@pluxel/host'
-import { installPluginSources } from '@pluxel/host/internal'
+import {
+	installPluginSources,
+	installHostRecentUpdates,
+	PluginRecentUpdateTracker,
+	type PluginUpdateBatchSnapshot,
+	type RuntimeUpdateError,
+} from '@pluxel/host/internal'
+import { portableUpdatePath, describeUpdateError } from './internal/update-error'
 import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 import { createHostDevelopmentDriver, HostDevelopmentClosedError } from './driver'
@@ -37,6 +46,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	const pipeline = createPluginSourceVitePipeline({ preset: 'core' })
 	const recovery = new ViteApplicationRecovery()
 	const driver = createHostDevelopmentDriver()
+	const recentUpdates = new PluginRecentUpdateTracker()
 	let server: ViteDevServer
 	let entry: string
 	let sources: ReturnType<typeof createHostSourceEvaluator>
@@ -73,6 +83,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			services: declaration.services,
 		})
 		try {
+			installHostRecentUpdates(instance.ctx, recentUpdates)
 			installPluginSources(instance.ctx, {
 				root: server.config.root,
 				sources: declaration.sources ?? [],
@@ -85,8 +96,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			epochs.set(instance, randomUUID())
 			return instance
 		} catch (error) {
-			await instance.close()
-			throw error
+			throw await closeFailedHost(instance, error)
 		}
 	}
 	const apply = async (changed?: {
@@ -110,11 +120,19 @@ export function host(options: HostViteOptions): PluginOption[] {
 		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
 		let sourceCandidate: HostSourceCandidate<HostApplication> | undefined
 		let accepted = false
+		let restored = false
+		let replacement = false
+		let lifecycle: PluginApplyReport | undefined
+		let updateError: RuntimeUpdateError | null = null
+		const started = performance.now()
+		const previousCatalog = active?.catalog()
+		recentUpdates.beginUpdate(changed ? portableUpdatePath(changed.file, server.config.root) : null)
 		let artifactCandidate: HostDevelopmentCandidate | undefined
 		const settle = async (accept: boolean): Promise<void> => {
-			if (accept) artifactCandidate?.commit()
-			else artifactCandidate?.rollback()
 			const results = await Promise.allSettled([
+				Promise.resolve().then(() =>
+					accept ? artifactCandidate?.commit() : artifactCandidate?.rollback(),
+				),
 				accept ? sourceCandidate?.accept() : sourceCandidate?.reject(),
 				accept ? candidate.accept() : candidate.reject(),
 			])
@@ -148,51 +166,52 @@ export function host(options: HostViteOptions): PluginOption[] {
 						!sourceCandidate.sourceModules.has(changed.file) &&
 						!sourceCandidate.sourceFiles.has(changed.file))
 				if (replace) {
+					replacement = true
+					recentUpdates.updatePhase('application-reload')
 					const previous = application
 					await devConsole?.hostChanged()
-					await active?.close()
+					const previousHost = active
 					active = undefined
-					if (closing) throw new HostDevelopmentClosedError()
 					let nextHost: PluginHost | undefined
 					try {
+						await previousHost?.close()
+						if (closing) throw new HostDevelopmentClosedError()
 						nextHost = await create(next)
 						if (closing) throw new HostDevelopmentClosedError()
-						await nextHost.start()
+						lifecycle = await nextHost.start()
 					} catch (error) {
-						await nextHost?.close()
+						const failure = await closeFailedHost(nextHost, error)
 						if (previous && !closing) {
-							let restored: PluginHost | undefined
+							let restoredHost: PluginHost | undefined
 							try {
-								restored = await create(previous)
+								restoredHost = await create(previous)
 								if (closing) throw new HostDevelopmentClosedError()
-								await restored.start()
-								active = restored
+								lifecycle = await restoredHost.start()
+								active = restoredHost
+								restored = true
 							} catch (restoreError) {
-								await restored?.close()
+								const restoreFailure = await closeFailedHost(restoredHost, restoreError)
 								throw new AggregateError(
-									[error, restoreError],
+									[failure, restoreFailure],
 									'[host-dev] replacement and compensation failed',
 									{ cause: restoreError },
 								)
 							}
 						}
-						throw error
+						throw failure
 					}
 					active = nextHost
 					accepted = true
 				} else {
 					try {
+						recentUpdates.updatePhase('artifacts')
 						artifactCandidate = await attachments.get(active!)?.prepareCandidate()
-						await active!.updateCatalog(next.plugins)
+						recentUpdates.updatePhase('commit')
+						lifecycle = await active!.updateCatalog(next.plugins)
 						accepted = true
 					} catch (error) {
 						// Post-PONR lifecycle/observer failure cannot roll semantic facts back behind the graph.
-						const catalog = active!.catalog()
-						accepted =
-							catalog.entries.length === next.plugins.length &&
-							catalog.entries.every((definition) =>
-								next.plugins.includes(definition.candidate.implementation),
-							)
+						accepted = active!.catalog().revision !== previousCatalog?.revision
 						throw error
 					}
 				}
@@ -201,32 +220,133 @@ export function host(options: HostViteOptions): PluginOption[] {
 				await settle(true)
 			})
 		} catch (error) {
-			if (accepted && sourceCandidate) {
-				application = sourceCandidate.application
-				files = sourceCandidate.files
-				await settle(true)
-			} else {
-				await settle(false)
+			let failure = error
+			try {
+				if (accepted && sourceCandidate) {
+					application = sourceCandidate.application
+					files = sourceCandidate.files
+					await settle(true)
+				} else {
+					await settle(false)
+				}
+			} catch (settlementError) {
+				failure = new AggregateError(
+					[error, settlementError],
+					'[host-dev] update settlement failed',
+					{ cause: error },
+				)
 			}
-			throw error
+			updateError = describeUpdateError(failure, server.config.root)
+			if (!accepted) {
+				try {
+					const rejected = await candidate.reject()
+					updateError = describeUpdateError(failure, server.config.root, rejected?.imports)
+				} catch {
+					/* Settlement failure is already included above. */
+				}
+			}
+			throw failure
+		} finally {
+			const commit = lifecycle?.core.status === 'committed' ? lifecycle.core.summary : undefined
+			let result: Pick<PluginUpdateBatchSnapshot, 'outcome' | 'phase'>
+			if (restored) result = { outcome: 'restored-previous', phase: 'application-reload' }
+			else if (accepted) {
+				if (updateError) result = { outcome: 'applied-with-issues', phase: 'commit' }
+				else if (commit?.lifecycleReport.issues.length)
+					result = { outcome: 'applied-with-issues', phase: 'lifecycle' }
+				else result = { outcome: 'applied', phase: null }
+			} else if (!active) result = { outcome: 'failed', phase: 'application-reload' }
+			else {
+				const phase = recentUpdates.latestUpdate()?.phase
+				result = {
+					outcome: 'retained-previous',
+					phase: phase === 'evaluate' || phase === 'artifacts' ? phase : 'commit',
+				}
+			}
+			const catalog = active?.catalog()
+			// Unknown evaluation failures belong to the attempt, not every old definition.
+			const definitionKeys =
+				accepted || restored
+					? (catalog?.entries ?? [])
+							.filter(
+								(definition) =>
+									replacement ||
+									previousCatalog?.byDefinition.get(definition.indexKey)?.candidate
+										.implementation !== definition.candidate.implementation,
+							)
+							.map((definition) => definition.indexKey)
+					: []
+			recentUpdates.record({
+				definitionKeys,
+				batch: {
+					...result,
+					scope: replacement || !active || !sourceCandidate ? 'application' : 'definitions',
+					durationMs: performance.now() - started,
+				},
+				...(commit && active
+					? {
+							lifecycle: {
+								commit,
+								addressOf: (slot) => requirePluginService(active!.ctx).nodeAddressOf(slot),
+							},
+						}
+					: {}),
+			})
+			recentUpdates.finishUpdate(updateError)
 		}
 	}
-	const updateArtifacts = (): Promise<void> =>
+
+	const updateArtifacts = (file: string): Promise<void> =>
 		driver.enqueue(async () => {
 			if (!active || closing) return
 			const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
 			let prepared: HostDevelopmentCandidate | undefined
+			let committed = false
+			let updateError: RuntimeUpdateError | null = null
+			const started = performance.now()
+			recentUpdates.beginUpdate(portableUpdatePath(file, server.config.root))
+			recentUpdates.updatePhase('artifacts')
 			try {
 				await candidate.run(async () => {
 					prepared = await attachments.get(active!)?.prepareCandidate()
 				})
 				if (closing) throw new HostDevelopmentClosedError()
+				committed = true
 				prepared?.commit()
+				recentUpdates.updatePhase('commit')
 				await candidate.accept()
 			} catch (error) {
-				prepared?.rollback()
-				await candidate.reject()
-				throw error
+				let failure = error
+				const results = await Promise.allSettled([
+					Promise.resolve().then(() => {
+						return !committed ? prepared?.rollback() : undefined
+					}),
+					committed ? candidate.accept() : candidate.reject(),
+				])
+				const errors = results.flatMap((result) =>
+					result.status === 'rejected' ? [result.reason] : [],
+				)
+				if (errors.length > 0)
+					failure = new AggregateError(
+						[error, ...errors],
+						'[host-dev] artifact settlement failed',
+						{ cause: error },
+					)
+				updateError = describeUpdateError(failure, server.config.root)
+				throw failure
+			} finally {
+				const result: Omit<PluginUpdateBatchSnapshot, 'sequence'> = {
+					scope: 'application',
+					outcome: updateError
+						? committed
+							? 'applied-with-issues'
+							: 'retained-previous'
+						: 'applied',
+					phase: updateError ? (committed ? 'commit' : 'artifacts') : null,
+					durationMs: performance.now() - started,
+				}
+				recentUpdates.record({ definitionKeys: [], batch: result })
+				recentUpdates.finishUpdate(updateError)
 			}
 		})
 	const update = (file: string, type: 'create' | 'update' | 'delete'): Promise<void> => {
@@ -280,7 +400,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					!sources.covers(context.file)
 				) {
 					if (active && attachments.get(active)?.tracks(context.file)) {
-						await updateArtifacts()
+						await updateArtifacts(context.file)
 						return []
 					}
 					return undefined
@@ -333,4 +453,15 @@ function sameServices(
 	return (
 		previous.length === next.length && previous.every((service, index) => service === next[index])
 	)
+}
+
+async function closeFailedHost(instance: PluginHost | undefined, error: unknown): Promise<unknown> {
+	try {
+		await instance?.close()
+		return error
+	} catch (cleanupError) {
+		return new AggregateError([error, cleanupError], '[host-dev] failed Host cleanup', {
+			cause: error,
+		})
+	}
 }

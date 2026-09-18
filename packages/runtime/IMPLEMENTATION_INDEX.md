@@ -53,7 +53,7 @@
 - `src/services/http/elysia-application-carrier.ts`：runtime-private physical carrier seam，只包含 metadata、request IP、WS upgrade/
   publish/pending；
 - `src/context/runtime-http-capability.ts`：host-only HTTP backend resolver；Plugin Context 不投影 `HttpService`；
-- `src/services/http/HttpService.ts`：host-only control plane、business directory dispatch 与 UI/MF assets；
+- `src/services/http/HttpService.ts`：旧 Runtime HTTP 入口的薄 facade；请求直接委托 Services `HttpServer`，管理挂载复用 Management，UI 复用 Workbench shell；
 - `../services/src/http/node.ts`：srvx `NodeRequest` + crossws + Elysia public WS handler 的 Node carrier；
 - `../host-dev/src/vite-node-carrier.ts`：复用 srvx Node handler 的 Vite Fetch/upgrade binding，保留 Vite HMR arbitration；
 - `@pluxel/services/database`：database instance registry、lineage promotion、PostgreSQL/PGlite 与 table invalidation；

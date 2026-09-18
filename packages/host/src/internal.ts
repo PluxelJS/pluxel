@@ -35,3 +35,5 @@ export * from './plugin-label'
 export { requireHostStateStore } from './host'
 
 export { createProductionSourceLoader } from './production-source-loader'
+
+export * from './recent-update'

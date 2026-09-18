@@ -128,7 +128,7 @@ const pluginUpdateBatch = Type.Union([
 		...updateTiming,
 	}),
 	obj({
-		outcome: Type.Literal('restored-previous'),
+		outcome: Type.Union([Type.Literal('restored-previous'), Type.Literal('failed')]),
 		phase: Type.Literal('application-reload'),
 		...updateTiming,
 	}),

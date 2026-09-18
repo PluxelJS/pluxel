@@ -61,7 +61,13 @@ export async function attachHostDevelopmentPlugins(
 			try {
 				host.ctx.effects.defer(dispose)
 			} catch (error) {
-				await dispose()
+				try {
+					await dispose()
+				} catch (cleanupError) {
+					throw new AggregateError([error, cleanupError], '[host-dev] attachment cleanup failed', {
+						cause: cleanupError,
+					})
+				}
 				throw error
 			}
 		}
@@ -77,7 +83,13 @@ export async function attachHostDevelopmentPlugins(
 					if (candidate) prepared.push(candidate)
 				}
 			} catch (error) {
-				for (const candidate of prepared.toReversed()) candidate.rollback()
+				const errors = settleCandidates(prepared.toReversed(), 'rollback')
+				if (errors.length > 0)
+					throw new AggregateError(
+						[error, ...errors],
+						'[host-dev] candidate preparation cleanup failed',
+						{ cause: error },
+					)
 				throw error
 			}
 			let state: 'prepared' | 'committed' | 'discarded' = 'prepared'
@@ -85,14 +97,37 @@ export async function attachHostDevelopmentPlugins(
 				commit() {
 					if (state !== 'prepared') return
 					state = 'committed'
-					for (const candidate of prepared) candidate.commit()
+					const errors = settleCandidates(prepared, 'commit')
+					if (errors.length > 0)
+						throw new AggregateError(errors, '[host-dev] candidate commit failed', {
+							cause: errors[0],
+						})
 				},
 				rollback() {
 					if (state !== 'prepared') return
 					state = 'discarded'
-					for (const candidate of prepared.toReversed()) candidate.rollback()
+					const errors = settleCandidates(prepared.toReversed(), 'rollback')
+					if (errors.length > 0)
+						throw new AggregateError(errors, '[host-dev] candidate rollback failed', {
+							cause: errors[0],
+						})
 				},
 			})
 		},
 	})
+}
+
+function settleCandidates(
+	candidates: readonly HostDevelopmentCandidate[],
+	action: 'commit' | 'rollback',
+): unknown[] {
+	const errors: unknown[] = []
+	for (const candidate of candidates) {
+		try {
+			candidate[action]()
+		} catch (error) {
+			errors.push(error)
+		}
+	}
+	return errors
 }

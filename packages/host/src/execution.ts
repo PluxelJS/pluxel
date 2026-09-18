@@ -70,7 +70,7 @@ export type PluginUpdateBatchResult =
 			durationMs: number
 	  }>
 	| Readonly<{
-			outcome: 'restored-previous'
+			outcome: 'restored-previous' | 'failed'
 			phase: 'application-reload'
 			sequence: number
 			durationMs: number
@@ -155,7 +155,7 @@ export function cloneRuntimeUpdateSnapshot(input: unknown): RuntimeUpdateSnapsho
 			? null
 			: oneOf(
 					value.outcome,
-					['applied', 'applied-with-issues', 'retained-previous', 'restored-previous'],
+					['applied', 'applied-with-issues', 'retained-previous', 'restored-previous', 'failed'],
 					'Runtime update outcome',
 				)
 	if ((state === 'updating') !== (outcome === null)) invalid('Invalid update state/outcome')
@@ -168,8 +168,8 @@ export function cloneRuntimeUpdateSnapshot(input: unknown): RuntimeUpdateSnapsho
 		invalid('Invalid retained update phase')
 	if (outcome === 'applied-with-issues' && !['commit', 'lifecycle'].includes(phase ?? ''))
 		invalid('Invalid applied update phase')
-	if (outcome === 'restored-previous' && phase !== 'application-reload')
-		invalid('Invalid restored update phase')
+	if ((outcome === 'restored-previous' || outcome === 'failed') && phase !== 'application-reload')
+		invalid('Invalid application reload phase')
 	if (outcome === 'applied' && (phase !== null || value.error !== null))
 		invalid('Applied updates cannot carry failures')
 	return Object.freeze({
@@ -273,7 +273,7 @@ export function clonePluginUpdateBatchSnapshot(
 	])
 	const outcome = oneOf(
 		value.outcome,
-		['applied', 'applied-with-issues', 'retained-previous', 'restored-previous'],
+		['applied', 'applied-with-issues', 'retained-previous', 'restored-previous', 'failed'],
 		`${label}.outcome`,
 	)
 	if (!Number.isSafeInteger(value.sequence) || (value.sequence as number) <= 0) {
@@ -301,11 +301,10 @@ export function clonePluginUpdateBatchSnapshot(
 		const phase = oneOf(value.phase, ['lifecycle', 'commit'], `${label}.phase`)
 		return Object.freeze({ outcome, phase, ...shared })
 	}
-	if (outcome === 'restored-previous') {
-		if (shared.scope !== 'application')
-			invalid(`${label}.scope must be application for compensation`)
+	if (outcome === 'restored-previous' || outcome === 'failed') {
+		if (shared.scope !== 'application') invalid(`${label}.scope must be application for ${outcome}`)
 		if (value.phase !== 'application-reload') {
-			invalid(`${label}.phase must be application-reload when outcome is restored-previous`)
+			invalid(`${label}.phase must be application-reload when outcome is ${outcome}`)
 		}
 		return Object.freeze({ outcome, phase: 'application-reload' as const, ...shared })
 	}

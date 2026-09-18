@@ -243,6 +243,10 @@
 		"./http": {
 			"@pluxel/source": "./src/http.ts",
 			"default": "./dist/http.mjs"
+		},
+		"./internal/http": {
+			"@pluxel/source": "./src/http-internal.ts",
+			"default": "./dist/internal/http.mjs"
 		}
 	},
 	"publishConfig": {
@@ -304,7 +308,8 @@
 			"./internal/platform-host": "./dist/internal/platform-host.mjs",
 			"./service": "./dist/service.mjs",
 			"./internal/host-options": "./dist/internal/host-options.mjs",
-			"./http": "./dist/http.mjs"
+			"./http": "./dist/http.mjs",
+			"./internal/http": "./dist/internal/http.mjs"
 		},
 		"access": "public"
 	},

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFile } from 'node:child_process'
@@ -68,12 +68,25 @@ Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',def
 `,
 		)
 		await writeFile(join(sources, 'installed.mjs'), "export * from 'installed'")
+		await writeFile(join(root, 'task.ts'), 'export default (value: number) => value * 2')
 		await writeFile(
 			join(root, 'app.ts'),
 			`import {dynamicSource} from '@pluxel/host-dynamic';
-import {Persistence,persistence} from '@pluxel/services/persistence';
-import {commands} from '@pluxel/services/commands';
-export default {name:'production-bridge', plugins:[],sources:[dynamicSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkPersistence=Persistence},configure:()=>({services:[persistence({mode:'memory'}),commands()],state:{initial:{autoStart:[${JSON.stringify(address)}]}}})}
+import {Persistence} from '@pluxel/services/persistence';
+import {standardServices} from '@pluxel/services';
+import {BasePlugin,Plugin,pluginNodeAddressOf} from '@pluxel/core';
+import {Workers,defineWorkerTask} from '@pluxel/services/workers';
+import {resolve} from 'node:path';
+const task = defineWorkerTask<number,number>(import.meta.url, './task.ts');
+@Plugin()
+class FrozenWorker extends BasePlugin {
+ async init() {
+  const value = await this.ctx.require(Workers).run(task,21);
+  if(value !== 42) throw new Error('WRONG_WORKER_RESULT');
+  process.stdout.write('FROZEN_WORKER_OK\\n');
+ }
+}
+export default {name:'production-bridge', plugins:[FrozenWorker],sources:[dynamicSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkPersistence=Persistence},configure:({deployment})=>({services:standardServices({persistence:{mode:'memory'},nodeModules:{root:resolve(deployment.root,'artifacts/node')}}),state:{initial:{autoStart:[pluginNodeAddressOf(FrozenWorker),${JSON.stringify(address)}]}}})}
 `,
 		)
 		const buildScript = join(root, 'build.mts')
@@ -90,6 +103,9 @@ await build({cwd:${JSON.stringify(root)},entry:'app.ts',minify:false,plugins:[pl
 			['--import', import.meta.resolve('tsx'), buildScript],
 			{ timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
 		)
+		const deployed = join(root, 'relocated')
+		await rename(join(root, 'dist'), deployed)
+		await rm(join(root, 'task.ts'))
 		const child = await promisify(execFile)(
 			process.execPath,
 			[
@@ -97,7 +113,7 @@ await build({cwd:${JSON.stringify(root)},entry:'app.ts',minify:false,plugins:[pl
 				'-e',
 				`
 import assert from 'node:assert/strict';
-const application = await import(${JSON.stringify(pathToFileURL(join(root, 'dist/app.mjs')).href)});
+const application = await import(${JSON.stringify(pathToFileURL(join(deployed, 'app.mjs')).href)});
 try {
  await application.start();
 } finally { await application.stop(); }
@@ -108,6 +124,7 @@ console.log('BUNDLED_DYNAMIC_IDENTITY_OK');
 			{ timeout: 30000 },
 		)
 		expect(child.stdout).toContain('DYNAMIC_STARTED')
+		expect(child.stdout).toContain('FROZEN_WORKER_OK')
 		expect(child.stdout).toContain('BUNDLED_DYNAMIC_IDENTITY_OK')
 	} finally {
 		await rm(root, { recursive: true, force: true })

@@ -351,6 +351,7 @@ describe('scaffold template rendering', () => {
 		expect(manifest.scripts.build).toBe('pluxel build')
 		expect(manifest.scripts).toHaveProperty('verify')
 		expect(manifest.peerDependencies).toEqual({ '@pluxel/core': 'catalog:' })
+		expect(manifest.dependencies).toEqual({ valibot: 'catalog:' })
 		expect(manifest.exports).toEqual({
 			'.': {
 				'@pluxel/hmr': './src/hello-world.ts',

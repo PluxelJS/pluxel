@@ -100,7 +100,7 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/core'",
 			"import { AlphaPlugin } from 'pluxel-plugin-alpha'",
 			"import type { AlphaPlugin as OptionalAlphaPlugin } from 'pluxel-plugin-alpha'",
 			"import type { BetaPlugin } from 'pluxel-plugin-beta'",
@@ -170,7 +170,7 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'",
 			"import { AlphaPlugin } from 'acme-plugin-alpha'",
 			"import type { BetaPlugin } from 'acme-plugin-beta'",
 			'',
@@ -194,22 +194,22 @@ const buildFixtures = {
 			'./react',
 			'./internal/react',
 		]),
-		...fixturePackage('@pluxel/runtime', '1.0.0', [
+		...fixturePackage('@pluxel/core', '1.0.0', ['.']),
+		...fixturePackage('capnweb', '0.12.0', ['.']),
+		...fixturePackage('@pluxel/workbench', '0.1.0', [
 			'.',
-			'./capnweb',
-			'./internal/workbench-react',
-			'./workbench',
-			'./workbench/client',
-			'./workbench/react',
+			'./client',
+			'./react',
+			'./internal/react',
 		]),
-		'node_modules/@pluxel/runtime/index.js':
+		'node_modules/@pluxel/core/index.js':
 			'export class BasePlugin {}\nexport function Plugin() { return () => {} }\n',
-		'node_modules/@pluxel/runtime/index.d.ts':
+		'node_modules/@pluxel/core/index.d.ts':
 			'export declare class BasePlugin { ctx: any }\nexport declare function Plugin(input?: unknown): any\n',
-		'node_modules/@pluxel/runtime/capnweb.js': 'export class RpcTarget {}\n',
-		'node_modules/@pluxel/runtime/capnweb.d.ts':
+		'node_modules/capnweb/index.js': 'export class RpcTarget {}\n',
+		'node_modules/capnweb/index.d.ts':
 			'export declare class RpcTarget { [Symbol.dispose](): void }\n',
-		'node_modules/@pluxel/workbench.js': `
+		'node_modules/@pluxel/workbench/index.js': `
 export const workbench = Object.freeze({
 	entry: (_base, path) => ({ path }),
 	view: (value) => value,
@@ -217,7 +217,7 @@ export const workbench = Object.freeze({
 	define: (value) => Object.freeze(value),
 })
 `,
-		'node_modules/@pluxel/workbench.d.ts': `
+		'node_modules/@pluxel/workbench/index.d.ts': `
 export declare const workbench: {
 	entry(base: string, path: string): Readonly<{ path: string }>
 	view<Api>(value: Record<string, unknown>): unknown
@@ -240,7 +240,9 @@ export function createWorkbenchBridge(identity, Renderer) {
 				dependencies: {
 					'@mantine/core': '9.5.2',
 					'@mantine/hooks': '9.5.2',
-					'@pluxel/runtime': '1.0.0',
+					'@pluxel/core': '1.0.0',
+					'@pluxel/workbench': '0.1.0',
+					capnweb: '0.12.0',
 					react: '19.2.8',
 					'react-dom': '19.2.8',
 				},
@@ -279,8 +281,8 @@ export function createWorkbenchBridge(identity, Renderer) {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-			"import { RpcTarget } from '@pluxel/runtime/capnweb'",
+			"import { BasePlugin, Plugin } from '@pluxel/core'",
+			"import { RpcTarget } from 'capnweb'",
 			"import { workbench } from '@pluxel/workbench'",
 			'',
 			"const first = workbench.entry(import.meta.url, './ui/index.ts')",
@@ -359,7 +361,7 @@ export function createWorkbenchBridge(identity, Renderer) {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, Plugin } from '@pluxel/core'",
 			'declare const __FIXTURE_INPUT__: string',
 			'export const inputOverride = __FIXTURE_INPUT__',
 			'',
@@ -511,7 +513,7 @@ describe('build command', () => {
 			await writeFile(
 				resolve(fixtureDir, 'src/index.ts'),
 				[
-					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+					"import { BasePlugin, Plugin } from '@pluxel/core'",
 					"@Plugin({ displayName: 'FixturePlugin' })",
 					'export class FixturePlugin extends BasePlugin {}',
 				].join('\n'),
@@ -581,7 +583,7 @@ describe('build command', () => {
 			})
 
 			expect(await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf8')).toMatch(
-				/from ["']@pluxel\/runtime["']/,
+				/from ["']@pluxel\/core["']/,
 			)
 		})
 	})

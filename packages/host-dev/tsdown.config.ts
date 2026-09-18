@@ -8,6 +8,7 @@ export default defineConfig({
 		neverBundle: ['@pluxel/core', '@pluxel/rolldown', '@pluxel/rolldown/*', 'vite', 'vite/*'],
 	},
 	entry: {
+		'internal/update-error': 'src/internal/update-error.ts',
 		http: 'src/http.ts',
 		'internal/vite-node-carrier': 'src/internal/vite-node-carrier.ts',
 		console: 'src/console.ts',
